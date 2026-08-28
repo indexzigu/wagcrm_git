@@ -97,24 +97,27 @@ describe("문② deploy.sh 배포 직전 CI 게이트(안전장치 ⑦)", () => 
       path.join(process.cwd(), ".github", "workflows", "release-preflight.yml"),
       "utf8",
     );
-    // 분할 여부는 워크플로가 정한다(`strategy.matrix.shard`).
-    const isSharded = /matrix:\s*\n\s*shard:\s*\[/.test(wf);
-
     expect(src).toContain("=success");
-    // guard·preflight 는 분할되지 않으므로 이름 그대로 요구한다.
     expect(src).toContain("for GATE_NAME in guard preflight");
+    // `test` 를 판정한다는 사실은 구현 방식과 무관하게 남아야 한다.
+    expect(src).toMatch(/startswith\("test"\)|\.name == "test"/);
 
+    // **핵심 계약: 분할하더라도 `test` 라는 체크 이름은 유지돼야 한다.**
+    // 분할은 구현 세부이고, `test` 는 소비자 셋(이 게이트·브랜치 보호·이 테스트)이
+    // 의존하는 인터페이스다. 조각을 `test (N)` 으로 그대로 노출하면 그 셋이 동시에
+    // 깨진다 — 2026-08-28 에 실제로 그렇게 배포가 세 번 막혔다. 조각은 다른 이름으로
+    // 돌리고 집계 잡이 `test` 를 보고한다.
+    const isSharded = /matrix:\s*\n\s*shard:\s*\[/.test(wf);
     if (isSharded) {
-      // 분할됐다면 접두 일치로 조각을 **전부** 모아야 한다. 정확 일치로 되돌리면
-      // 게이트가 영구 차단된다.
-      expect(src, "테스트가 분할됐는데 게이트가 조각을 접두로 모으지 않는다").toContain(
-        '(.name | startswith("test"))',
+      expect(wf, "분할 잡이 `test` 라는 이름을 직접 쓰면 체크가 `test (N)` 이 된다").toMatch(
+        /^ {2}test-shard:/m,
       );
-      expect(src, "조각 중 하나라도 success 가 아니면 차단해야 한다").toContain("GATE_BAD_TEST");
-    } else {
-      // 분할을 되돌렸다면 단일 `test` 만 있으면 된다 — 접두 일치도 이 경우를 덮으므로
-      // 어느 쪽 구현이든 허용하되, `test` 를 판정한다는 사실은 남아야 한다.
-      expect(src).toMatch(/startswith\("test"\)|\.name == "test"/);
+      expect(wf, "조각을 모아 `test` 로 보고하는 집계 잡이 없다").toMatch(/^ {2}test:\s*$/m);
+      expect(wf, "집계 잡이 조각 결과를 기다리지 않는다").toContain("needs: test-shard");
+      expect(
+        wf,
+        "집계 잡에 always() 가 없으면 조각 실패 시 아예 안 돌아 체크가 pending 으로 남는다",
+      ).toContain("if: always() && github.event_name != 'push'");
     }
   });
 

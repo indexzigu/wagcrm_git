@@ -176,7 +176,14 @@ jobs:
   # 이 잡에는 prod 시크릿을 주입하지 않으며(env 블록 없음), test:ci가 DATABASE_URL을
   # SQLite(file:./dev.db)로 강제하므로 어떤 테스트도 실제 DB에 접근할 수 없다.
   # 비-hermetic 3개 파일은 vitest.config.ts에서 HERMETIC_ONLY=1로 제외(사유는 config 주석 참조).
-  test:
+  # ⚠️ **이 잡의 이름은 `test-shard` 이고, 소비자가 보는 이름은 아래 `test` 집계 잡이다.**
+  # 체크 이름 `test` 는 라벨이 아니라 **인터페이스**다 — 배포 게이트(`infra/selfhost/deploy.sh`
+  # 안전장치 ⑦)·계약 테스트(`main-push-guard.contract.test.ts`)·앞으로 켤 브랜치 보호가
+  # 전부 그 이름으로 판정한다. 2026-08-28 에 분할하면서 이름을 `test (1)`…`test (4)` 로
+  # 바꿨더니 **소비자 셋이 동시에 깨졌고**, 그걸 하나씩 쫓아 고치느라 배포가 세 번 막혔다.
+  # ⇒ 조각은 이 잡이 돌리고, `test` 라는 이름은 집계 잡이 유지한다. 이제 분할 수를
+  # 바꾸거나 되돌려도 **바깥에서 보이는 이름은 그대로**라 소비자를 손댈 일이 없다.
+  test-shard:
     # push(=머지 직후 main) 런에서는 건너뛴다 — squash 머지는 PR 마지막 커밋과 같은 트리를
     # 만들고, 그 트리는 방금 PR 런의 이 잡이 검증했다. GitHub Free 사설 레포의 Actions
     # 무료분(월 2,000분)에서 이 잡이 런당 ~12분(단일 최중량)이라, 머지당 중복 재실행이
@@ -256,3 +263,30 @@ jobs:
           # 상한 없음으로 되돌린다 — 러너 토글과 같은 변수로 두 레인이 함께 갈린다.
           VITEST_MAX_WORKERS: ${{ vars.PREFLIGHT_RUNNER != '' && '3' || '' }}
         run: npm run test:ci -- --shard=${{ matrix.shard }}/4
+
+  # 조각 결과를 모아 **`test` 라는 하나의 체크**로 보고한다.
+  #
+  # 이 잡이 존재하는 이유는 성능이 아니라 **인터페이스 안정성**이다(위 test-shard 주석).
+  # 소비자(배포 게이트·계약 테스트·브랜치 보호)는 `test` 하나만 보면 되고, 분할 수가
+  # 바뀌어도 영향받지 않는다.
+  #
+  # 🪤 `needs.<matrix job>.result` 는 **조각 전체의 종합**이다 — 하나라도 실패하면
+  # success 가 아니다. 그래서 조각별로 따로 셀 필요가 없다.
+  # ⚠️ `if:` 에 `always()` 를 넣지 않으면 조각이 하나라도 실패했을 때 이 잡이 **아예
+  # 안 돌고**, 체크가 pending 으로 남아 게이트가 「검사 없음」으로 판정한다.
+  # ⚠️ push 조건은 test-shard 와 **같아야 한다** — 한쪽만 도는 상태를 만들면 그 런에서
+  # 집계가 skipped 를 실패로 읽는다.
+  test:
+    needs: test-shard
+    if: always() && github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 조각 결과 집계
+        run: |
+          RESULT="${{ needs.test-shard.result }}"
+          echo "test-shard 종합 결과: $RESULT"
+          if [ "$RESULT" != "success" ]; then
+            echo "중단: 테스트 조각 중 하나 이상이 성공하지 않았습니다($RESULT). 개별 조각(test-shard (N)) 로그를 확인하세요." >&2
+            exit 1
+          fi
