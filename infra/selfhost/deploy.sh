@@ -187,21 +187,44 @@ if [ "$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app" ]; then
       fi
       GATE_PR_NUM="${GATE_PR%% *}"
       GATE_HEAD_SHA="${GATE_PR##* }"
+      # ⚠️ `test` 는 **이름이 하나가 아니다.** 2026-08-28 에 4분할하면서 체크 이름이
+      # `test` → `test (1)`…`test (4)` 로 바뀌었다(공개 레포 이전 직후 CI 가속).
+      # 종전처럼 `test` 를 정확 일치로 찾으면 **분할된 뒤로는 영원히 못 찾아** 모든
+      # 배포가 막힌다 — 실제로 이 전환에서 그렇게 멈췄다. 그래서 `test` 로 시작하는
+      # 검사를 **전부** 모으고 **전부 success** 를 요구한다(하나라도 빠지면 조각이
+      # 조용히 누락된 채 통과한다).
       GATE_CHECKS="$(gh api "repos/$GATE_REPO/commits/$GATE_HEAD_SHA/check-runs" \
-        --jq '.check_runs[] | select(.name == "guard" or .name == "preflight" or .name == "test") | "\(.name)=\(.conclusion)"')" \
+        --jq '.check_runs[] | select(.name == "guard" or .name == "preflight" or (.name | startswith("test"))) | "\(.name)=\(.conclusion)"')" \
         || { echo "중단: CI 게이트 조회 실패(PR #$GATE_PR_NUM 의 검사 결과 조회)." >&2; exit 1; }
-      for GATE_NAME in guard preflight test; do
-        if ! grep -qx "${GATE_NAME}=success" <<<"$GATE_CHECKS"; then
-          {
-            echo "중단: PR #$GATE_PR_NUM (커밋 ${GATE_SHA:0:8}) 의 required 검사 '${GATE_NAME}' 이 success 가 아닙니다."
-            echo "  실측: $(tr '\n' ' ' <<<"${GATE_CHECKS:-(검사 기록 없음)}")"
-            echo "  GitHub 브랜치 보호가 무료 플랜에서 정지된 상태라(T-069) 이 게이트가 마지막 방어선입니다."
-            echo "  검사를 통과시킨 뒤 재배포하거나, 원인 파악 후 비상시에만 SKIP_CI_GATE=1 로 우회하세요."
-          } >&2
-          exit 1
-        fi
+      GATE_FAIL_NAME=""
+      for GATE_NAME in guard preflight; do
+        grep -qx "${GATE_NAME}=success" <<<"$GATE_CHECKS" || { GATE_FAIL_NAME="$GATE_NAME"; break; }
       done
-      echo "[deploy] CI 게이트 통과: ${GATE_SHA:0:8} ← PR #$GATE_PR_NUM (guard·preflight·test success)"
+      if [ -z "$GATE_FAIL_NAME" ]; then
+        # 분할 여부와 무관하게: 최소 1개 존재 + 전부 success.
+        GATE_TEST_LINES="$(grep -E '^test( \(|=)' <<<"$GATE_CHECKS" || true)"
+        # 🪤 **`grep -qv` 로 판정하지 말 것 — 이 맥에서 거짓말을 한다.** `grep` 이
+        # ugrep 이라 `-q` 가 **반전 전 패턴** 기준으로 종료코드를 낸다: 실측(2026-08-28)
+        # 에서 `grep -v '=success$'` 는 실패한 조각을 출력하는데 `grep -qv` 는 1(미발견)
+        # 을 냈다 ⇒ 조각 하나가 failure 여도 게이트가 **통과**했다. 종료코드가 아니라
+        # **출력의 유무**로 판정한다.
+        GATE_BAD_TEST="$(grep -v '=success$' <<<"$GATE_TEST_LINES" || true)"
+        if [ -z "$GATE_TEST_LINES" ]; then
+          GATE_FAIL_NAME="test(검사 없음)"
+        elif [ -n "$GATE_BAD_TEST" ]; then
+          GATE_FAIL_NAME="$(head -1 <<<"$GATE_BAD_TEST" | cut -d= -f1)"
+        fi
+      fi
+      if [ -n "$GATE_FAIL_NAME" ]; then
+        {
+          echo "중단: PR #$GATE_PR_NUM (커밋 ${GATE_SHA:0:8}) 의 required 검사 '${GATE_FAIL_NAME}' 이 success 가 아닙니다."
+          echo "  실측: $(tr '\n' ' ' <<<"${GATE_CHECKS:-(검사 기록 없음)}")"
+          echo "  GitHub 브랜치 보호가 무료 플랜에서 정지된 상태라(T-069) 이 게이트가 마지막 방어선입니다."
+          echo "  검사를 통과시킨 뒤 재배포하거나, 원인 파악 후 비상시에만 SKIP_CI_GATE=1 로 우회하세요."
+        } >&2
+        exit 1
+      fi
+      echo "[deploy] CI 게이트 통과: ${GATE_SHA:0:8} ← PR #$GATE_PR_NUM ($(tr '\n' ' ' <<<"$GATE_CHECKS"))"
     done
   fi
 fi
