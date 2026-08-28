@@ -318,15 +318,21 @@ mkdir -p "$LIVE_DIR/releases"
 mv .next/standalone "$LIVE_DIR/releases/$RELEASE_ID"
 # 심링크 교체는 tmp + rename 으로 한다 — `ln -sfn` 은 unlink 후 create 라 원자적이지
 # 않아, 그 찰나에 재기동이 겹치면 링크가 없는 상태로 뜬다.
-# 🪤 **`mv` 에 `-h` 가 없으면 이 교체는 조용히 실패한다.** 대상 `current` 가 이미
-# **디렉터리를 가리키는 심링크**면 `mv` 는 링크를 **따라가** tmp 를 그 디렉터리
-# **안으로** 옮긴다 — 링크는 옛 릴리스를 계속 가리키고 새 릴리스는 서빙되지 않는데
-# 명령은 성공(exit 0)한다. 첫 배포만 우연히 맞고(대상 부재라 단순 rename) 그 뒤로는
+# 🪤 **`mv` 가 대상 심링크를 따라가지 않게 하는 옵션이 없으면 이 교체는 조용히 실패한다.**
+# 대상 `current` 가 이미 **디렉터리를 가리키는 심링크**면 `mv` 는 링크를 **따라가** tmp 를
+# 그 디렉터리 **안으로** 옮긴다 — 링크는 옛 릴리스를 계속 가리키고 새 릴리스는 서빙되지
+# 않는데 명령은 성공(exit 0)한다. 첫 배포만 우연히 맞고(대상 부재라 단순 rename) 그 뒤로는
 # 영영 갱신되지 않는 형태다. 실측으로 잡았다: 4회 교체 후 current 가 **1회차**를
 # 가리켰고 `releases/<1회차>/current.tmp` 가 잔해로 남아 있었다.
-# (GNU 에서는 같은 뜻이 `-T` 다. 이 스크립트는 macOS 전용이라 `-h` 를 쓴다.)
+# ⚠️ **그 옵션의 이름이 구현마다 다르다: BSD/macOS 는 `-h`, GNU/Linux 는 `-T`.**
+# 프로덕션은 macOS 뿐이지만 이 블록은 행위 계약 테스트가 **원본에서 발췌해 CI(Linux)에서
+# 그대로 실행**하므로 양쪽에서 성립해야 한다 — `-h` 로 고정한 초판이 실제로 CI 에서
+# `mv: invalid option -- 'h'` 로 넘어졌다. 판정은 `mv --version` 으로 한다(GNU 만 지원하고
+# BSD 는 실패한다). ⛔ 한쪽으로 고정해 "단순화" 하지 말 것 — 그러면 그 계약이 CI 에서
+# 영영 못 돌고, 앵커 계약만 남아 이 함정을 다시 놓친다.
+if mv --version >/dev/null 2>&1; then MV_NOFOLLOW="-T"; else MV_NOFOLLOW="-h"; fi
 ln -sfn "releases/$RELEASE_ID" "$LIVE_DIR/current.tmp"
-mv -fh "$LIVE_DIR/current.tmp" "$LIVE_DIR/current"
+mv -f "$MV_NOFOLLOW" "$LIVE_DIR/current.tmp" "$LIVE_DIR/current"
 echo "[deploy] 릴리스 교체: .live/current → releases/$RELEASE_ID"
 
 # ── P0 안전장치 ③: HTTP 헬스체크만으로는 "새 프로세스가 떴다"를

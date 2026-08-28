@@ -70,17 +70,23 @@ describe("deploy.sh — 완성된 산출물만 서빙 트리로 들어간다", (
     expect(deploy).toContain(
       'ln -sfn "releases/$RELEASE_ID" "$LIVE_DIR/current.tmp"',
     );
-    // 🪤 `-h` 가 빠지면 **조용히 실패한다**: 대상 `current` 가 이미 디렉터리를 가리키는
-    // 심링크면 `mv` 는 링크를 따라가 tmp 를 그 디렉터리 **안으로** 옮기고 exit 0 을 낸다.
-    // 링크는 옛 릴리스를 계속 가리키는데 배포는 성공으로 보인다 — 첫 배포만 우연히
-    // 맞고(대상 부재) 그 뒤로는 영영 갱신되지 않는다. 실행 검증에서 실제로 잡았다:
-    // 4회 교체 후 current 가 1회차를 가리켰고 `releases/<1회차>/current.tmp` 가 남았다.
+    // 🪤 "대상 심링크를 따라가지 않는다" 옵션이 빠지면 **조용히 실패한다**: 대상
+    // `current` 가 이미 디렉터리를 가리키는 심링크면 `mv` 는 링크를 따라가 tmp 를 그
+    // 디렉터리 **안으로** 옮기고 exit 0 을 낸다. 링크는 옛 릴리스를 계속 가리키는데
+    // 배포는 성공으로 보인다 — 첫 배포만 우연히 맞고(대상 부재) 그 뒤로는 영영 갱신되지
+    // 않는다. 실행 검증에서 실제로 잡았다: 4회 교체 후 current 가 1회차를 가리켰고
+    // `releases/<1회차>/current.tmp` 가 남았다.
+    // ⚠️ 옵션 이름이 구현마다 다르다(BSD `-h` · GNU `-T`). 한쪽으로 고정하면 행위 계약이
+    // CI(Linux)에서 못 돈다 — `-h` 고정판이 실제로 `invalid option` 으로 넘어졌다.
     expect(deploy).toContain(
-      'mv -fh "$LIVE_DIR/current.tmp" "$LIVE_DIR/current"',
+      'if mv --version >/dev/null 2>&1; then MV_NOFOLLOW="-T"; else MV_NOFOLLOW="-h"; fi',
+    );
+    expect(deploy).toContain(
+      'mv -f "$MV_NOFOLLOW" "$LIVE_DIR/current.tmp" "$LIVE_DIR/current"',
     );
     expect(
       deploy,
-      "`-h` 없는 mv 는 심링크를 따라가 교체를 조용히 무효로 만든다",
+      "옵션 없는 mv 는 심링크를 따라가 교체를 조용히 무효로 만든다",
     ).not.toContain('mv -f "$LIVE_DIR/current.tmp"');
   });
 

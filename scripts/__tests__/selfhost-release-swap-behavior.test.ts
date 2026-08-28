@@ -138,8 +138,11 @@ describe("오래된 릴리스 정리 행위", () => {
     // 트리가 사라진다. 이 경우가 정리 로직에서 유일하게 치명적인 지점이다.
     const repo = makeRepo("prune-rollback");
     for (const sha of ["aaa111", "bbb222", "ccc333", "ddd444"]) deployOnce(repo, sha);
+    // `mv` 의 "대상 심링크를 따라가지 않는다" 옵션은 BSD `-h` · GNU `-T` 로 갈린다
+    // (deploy.sh 의 같은 판정과 짝) — 이 테스트는 macOS 와 CI(Linux) 양쪽에서 돈다.
     spawnSync("bash", ["-euo", "pipefail", "-c",
-      'ln -sfn "releases/aaa111" "$1/.live/current.tmp" && mv -fh "$1/.live/current.tmp" "$1/.live/current"',
+      'if mv --version >/dev/null 2>&1; then F="-T"; else F="-h"; fi; ' +
+      'ln -sfn "releases/aaa111" "$1/.live/current.tmp" && mv -f "$F" "$1/.live/current.tmp" "$1/.live/current"',
       "_", repo]);
     expect(target(repo)).toBe("releases/aaa111");
     prune(repo, 1);
