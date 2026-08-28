@@ -84,10 +84,38 @@ describe("문② deploy.sh 배포 직전 CI 게이트(안전장치 ⑦)", () => 
     expect(gateBlock).toContain('"$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app"');
   });
 
-  it("required 3종을 전부, 이름 그대로 요구한다", () => {
+  it("required 3종을 전부 요구하고, 그 이름을 **워크플로에서 파생**한다", () => {
     // 이름 목록이 워크플로와 어긋나면 게이트가 영구 실패(또는 영구 통과)한다.
-    expect(src).toContain("for GATE_NAME in guard preflight test");
+    //
+    // 🪤 **종전 이 단언은 `for GATE_NAME in guard preflight test` 를 문자열로 박아
+    // 뒀는데, 그것이 막으려던 사고를 그대로 겪었다**(2026-08-28). 테스트를 4분할하자
+    // 체크 이름이 `test (1)`…`test (4)` 가 됐고, 정확 일치로 `test` 를 찾던 게이트가
+    // 그것을 영영 못 찾아 **모든 배포가 막혔다**. 문자열을 고정하면 워크플로가 바뀔 때
+    // 테스트가 함께 갱신되지 않고, 오히려 올바른 수정을 되돌리라고 압박한다.
+    // ⇒ 이름을 **워크플로 파일에서 읽어** 게이트가 그것을 덮는지 본다.
+    const wf = readFileSync(
+      path.join(process.cwd(), ".github", "workflows", "release-preflight.yml"),
+      "utf8",
+    );
+    // 분할 여부는 워크플로가 정한다(`strategy.matrix.shard`).
+    const isSharded = /matrix:\s*\n\s*shard:\s*\[/.test(wf);
+
     expect(src).toContain("=success");
+    // guard·preflight 는 분할되지 않으므로 이름 그대로 요구한다.
+    expect(src).toContain("for GATE_NAME in guard preflight");
+
+    if (isSharded) {
+      // 분할됐다면 접두 일치로 조각을 **전부** 모아야 한다. 정확 일치로 되돌리면
+      // 게이트가 영구 차단된다.
+      expect(src, "테스트가 분할됐는데 게이트가 조각을 접두로 모으지 않는다").toContain(
+        '(.name | startswith("test"))',
+      );
+      expect(src, "조각 중 하나라도 success 가 아니면 차단해야 한다").toContain("GATE_BAD_TEST");
+    } else {
+      // 분할을 되돌렸다면 단일 `test` 만 있으면 된다 — 접두 일치도 이 경우를 덮으므로
+      // 어느 쪽 구현이든 허용하되, `test` 를 판정한다는 사실은 남아야 한다.
+      expect(src).toMatch(/startswith\("test"\)|\.name == "test"/);
+    }
   });
 
   it("연결 PR 없는 커밋(main 직접 push)을 거부한다", () => {
