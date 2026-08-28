@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ygrd-link",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": {
+    // 대시보드에서 요청/에러 로그를 보려면 켜 둔다(무료 플랜 포함).
+    "enabled": true
+  },
+  "routes": [
+    {
+      // Cloudflare 가 DNS 레코드와 인증서를 자동 생성한다.
+      // 대시보드에서 Custom Domain 이 막히면 이 블록을 지우고
+      // DNS 에 go → 192.0.2.1(프록시 ON) AAAA/A 더미 + Routes 방식으로 대체한다.
+      "pattern": "go.ygrd.kr",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "FALLBACK_URL": "https://ygrd.kr",
+    "LINK_CACHE_TTL": "300"
+  }
+  // 시크릿은 여기 쓰지 않는다. 아래 명령으로 주입한다:
+  //   npx wrangler secret put SUPABASE_URL
+  //   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+  //   npx wrangler secret put HASH_SALT
+}

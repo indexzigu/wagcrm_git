@@ -1,0 +1,5 @@
+{
+    "typescript.autoClosingTags": false,
+    "chatgpt.followUpQueueMode": "steer",
+    "chatgpt.openOnStartup": true
+}

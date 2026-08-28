@@ -1,0 +1,24 @@
+# cloudflared 터널 ingress 설정 예시.
+#
+# 이 파일은 예시(.example)이며 실값이 없다. 실제 운영 파일
+# (`infra/selfhost/cloudflared-config.yml` 등)은 git 미추적으로 관리하고
+# 커밋하지 않는다 — 터널 ID·크리덴셜 파일 경로는 이 iMac 로컬의 실제
+# 값이라 공개 레포에 올리면 안 된다.
+#
+# 사용법: 이 파일을 복사해 실값으로 채운 뒤 cloudflared 를
+# `--config <복사본 경로>` 로 기동한다.
+
+tunnel: <TUNNEL-ID>
+credentials-file: /Users/z9/.cloudflared/<TUNNEL-ID>.json
+
+ingress:
+  # 앱 본체 — Task 2 의 launchd 서비스가 상주하는 포트.
+  - hostname: crm.ygrd.kr
+    service: http://127.0.0.1:3000
+
+  # Supabase (Docker compose 스택, Kong 게이트웨이 기본 포트).
+  - hostname: sb.ygrd.kr
+    service: http://127.0.0.1:8000
+
+  # catch-all — cloudflared 는 이 규칙이 마지막에 없으면 기동을 거부한다.
+  - service: http_status:404

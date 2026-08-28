@@ -1,0 +1,27 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "wag-heartbeat",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-08-19",
+	"observability": {
+		"enabled": true
+	},
+	// 5분마다 침묵을 판정한다. 이 간격은 decide.ts 의 TICK_MIN 과 짝이다 —
+	// 한쪽만 바꾸면 연속 관측 횟수가 뜻하는 시간이 달라진다.
+	"triggers": {
+		"crons": [
+			"*/5 * * * *"
+		]
+	},
+	"kv_namespaces": [
+		{
+			"binding": "BEAT_KV",
+			"id": "0dce01b0f27a4401b1614b33f01d095e",
+			"remote": true
+		}
+	]
+	// ⛔ 시크릿은 여기 쓰지 않는다(레포 PUBLIC). 아래 명령으로 주입한다:
+	//   npx wrangler secret put BEAT_TOKEN
+	//   npx wrangler secret put TELEGRAM_BOT_TOKEN
+	//   npx wrangler secret put TELEGRAM_CHAT_ID
+}

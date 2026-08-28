@@ -1,0 +1,76 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wag-crm-dev-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:demo"],
+      "port": 3002
+    },
+    {
+      "name": "wag-crm-dev-local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:local"],
+      "port": 3002
+    },
+    {
+      "name": "wag-crm-dev-supabase",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3002
+    },
+    {
+      "name": "wag-crm-dev-envfix",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "set -a; . \"$(git -C . rev-parse --path-format=absolute --git-common-dir)/../.env\"; set +a; exec npm run dev"],
+      "port": 3002
+    },
+    {
+      "name": "wag-crm-dev-ro",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "set -a; . \"$(git -C . rev-parse --path-format=absolute --git-common-dir)/../.env\"; set +a; export NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1; exec npm run dev:ro"],
+      "port": 3002
+    },
+    {
+      "name": "wag-crm-dev-ro-bypass",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "set -a; . \"$(git -C . rev-parse --path-format=absolute --git-common-dir)/../.env\"; set +a; export NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 DEV_AUTH_BYPASS=1; exec npm run dev:ro"],
+      "port": 3002
+    },
+    {
+      "name": "wag-crm-dev-local-worktree",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_SUPABASE_URL=https://local.invalid",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY=local-dev-placeholder",
+        "DEV_AUTH_BYPASS=1",
+        "npm",
+        "run",
+        "dev:local",
+        "--",
+        "-p",
+        "3012"
+      ],
+      "port": 3012,
+      "url": "http://127.0.0.1:3012"
+    },
+    {
+      "name": "wag-crm-dev-local-noauth",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_SUPABASE_URL=https://local.invalid",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY=local-dev-placeholder",
+        "npm",
+        "run",
+        "dev:local"
+      ],
+      "port": 3002
+    },
+    {
+      "name": "wag-crm-dev-supabase-3001",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "-p", "3001"],
+      "port": 3001
+    }
+  ]
+}

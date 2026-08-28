@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 - 경로는 이 iMac(운영 체크아웃 ~/selfhost/wagcrm, 홈 /Users/z9)에 고정된
+	   절대경로다. launchd 는 $HOME/~ 를 전개하지 않으므로 다른 머신으로
+	   옮길 경우 이 파일의 경로를 전부 다시 써야 한다.
+	 - 시각 04:00 KST 선택 이유: 앱 예약 잡은 KST 00:00·02:00·03:00·05:00·
+	   06:30·07:00·07:30·08:00·08:30·09:00·10:00·11:00(월)·12:00·13:00 에
+	   돈다(infra/selfhost/README.md "UTC → KST 환산표"). 04:00 은 이 목록의
+	   유일한 빈 구간(03:00 과 05:00 사이)이라 pg_dump 가 다른 예약 작업과
+	   동시에 DB/CPU 를 두고 경합하지 않는다.
+	 - ⚠️ StartCalendarInterval 을 쓴다 — KeepAlive 는 여기 쓰면 안 된다.
+	   KeepAlive=true 는 "프로세스가 죽으면 다시 띄운다"는 상시 서비스용
+	   의미라서, 이 스크립트가 실패(nonzero exit)하고 종료할 때마다 launchd
+	   가 즉시 재기동을 반복하는 크래시루프가 된다(백업 스크립트는 하루
+	   한 번 돌고 정상 종료하는 주기적 작업이지 상주 서비스가 아니다).
+	   StartCalendarInterval 은 지정한 시각에 "그날 아직 안 돌았으면" 1회
+	   실행하는 launchd 의 표준 cron 대응 메커니즘이고, 실행 실패는 다음
+	   예정 시각까지 그냥 기다린다 — 재시도 폭주가 없다.
+	-->
+	<key>Label</key>
+	<string>kr.ygrd.wagcrm.backup</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/z9/selfhost/wagcrm/infra/selfhost/backup.sh</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/z9/selfhost/wagcrm</string>
+
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>4</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+
+	<key>StandardOutPath</key>
+	<string>/Users/z9/selfhost/logs/backup.out.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/Users/z9/selfhost/logs/backup.err.log</string>
+</dict>
+</plist>

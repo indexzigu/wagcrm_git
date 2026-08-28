@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>kr.ygrd.wagcrm.preview</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/z9/selfhost/wagcrm-preview/infra/selfhost/run-app.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>APP_PORT</key><string>3001</string>
+  </dict>
+  <key>WorkingDirectory</key><string>/Users/z9/selfhost/wagcrm-preview</string>
+  <key>StandardOutPath</key><string>/Users/z9/selfhost/logs/preview.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/z9/selfhost/logs/preview.err.log</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict>
+</plist>

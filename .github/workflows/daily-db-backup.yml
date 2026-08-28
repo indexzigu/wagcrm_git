@@ -1,0 +1,86 @@
+name: Daily DB Backup
+
+# ⛔ 스케줄 발화를 2026-08-13 에 껐다(자체호스팅 이관 완료).
+#
+# 이 워크플로의 대상은 **클라우드(Supabase) DB** 다(`SUPABASE_DB_BACKUP_URL`).
+# 컷오버로 프로덕션이 집 iMac 으로 옮겨간 뒤 그 DB 는 더 이상 쓰이지 않고,
+# 오너가 Free 로 강등하면 **일주일 무활동 후 일시정지**된다 — 그때부터 이 잡은
+# 매일 실패하며 알림만 쌓는다(고장이 아닌 실패는 진짜 고장을 가린다).
+#
+# 지금 백업을 담당하는 것:
+#   - 자체호스팅 DB → 매일 04:00 KST `infra/selfhost/backup.sh`(R2, 30일 보관)
+#   - 스토리지 포함 → 매주 일 22:00 KST `backup-weekly.sh`(Google Drive, 12주)
+#   - 클라우드 마지막 스냅샷 → 2026-08-13 수동 확보(로컬 + R2 `cloud-final/`)
+#
+# `workflow_dispatch` 는 남긴다 — 롤백해서 클라우드에 다시 쓰기 시작하면
+# 그때 수동으로 돌리거나 아래 schedule 을 되살리면 된다.
+on:
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Prepare output directory
+        run: mkdir -p backup-artifacts
+
+      - name: Dump roles
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_BACKUP_URL }}
+        run: |
+          supabase db dump --db-url "$DB_URL" -f backup-artifacts/roles.sql --role-only
+
+      - name: Dump schema
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_BACKUP_URL }}
+        run: |
+          supabase db dump --db-url "$DB_URL" -f backup-artifacts/schema.sql
+
+      - name: Dump data
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_BACKUP_URL }}
+        run: |
+          supabase db dump \
+            --db-url "$DB_URL" \
+            -f backup-artifacts/data.sql \
+            --use-copy \
+            --data-only \
+            -x "storage.buckets_vectors" \
+            -x "storage.vector_indexes"
+
+      - name: Write manifest
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_BACKUP_URL }}
+        run: |
+          {
+            # Extract Project ID from Supabase connection string (supports both pooler and direct URLs)
+            PROJECT_ID=$(echo "$DB_URL" | sed -nE 's/.*postgres\.([a-z0-9]+):.*/\1/p; t; s/.*@([a-z0-9]+)\.supabase\.co.*/\1/p' | head -n1)
+            if [ -z "$PROJECT_ID" ]; then PROJECT_ID="unknown"; fi
+            
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${GITHUB_RUN_ID}"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit_sha=${GITHUB_SHA}"
+            echo "supabase_project_id=${PROJECT_ID}"
+            echo "files=roles.sql schema.sql data.sql"
+            sha256sum backup-artifacts/roles.sql
+            sha256sum backup-artifacts/schema.sql
+            sha256sum backup-artifacts/data.sql
+          } > backup-artifacts/manifest.txt
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup-artifacts/
+          retention-days: 30

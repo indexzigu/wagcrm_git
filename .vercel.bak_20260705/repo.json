@@ -1,0 +1,11 @@
+{
+  "remoteName": "origin",
+  "projects": [
+    {
+      "id": "prj_bLZ9xP4gfS01lWFjyh24AZhavojQ",
+      "name": "wag-crm",
+      "directory": ".",
+      "orgId": "team_hFrImPGwhg4fdAdKyE4sAXff"
+    }
+  ]
+}

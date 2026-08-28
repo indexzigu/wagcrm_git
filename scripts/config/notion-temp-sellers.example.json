@@ -1,0 +1,5 @@
+{
+  "_comment": "이 파일을 notion-temp-sellers.local.json 으로 복사하고 실제 Notion 임시 셀러로 채운다. .local.json 은 gitignore 된다(PUBLIC 레포에 실명 미노출 — AGENTS.md P0). 키는 Notion CSV 의 sourceKey 와 정확히 일치해야 한다.",
+  "sellers:셀러명1": { "platform": "INSTAGRAM", "handle": "notion-temp-handle-1", "note": "temporary-handle-from-notion-import" },
+  "sellers:셀러명2": { "platform": "INSTAGRAM", "handle": "notion-temp-handle-2", "note": "temporary-handle-from-notion-import" }
+}

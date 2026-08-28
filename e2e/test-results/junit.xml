@@ -1,0 +1,122 @@
+<testsuites id="" name="" tests="49" failures="0" skipped="0" errors="0" time="143.66675">
+<testsuite name="auth.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="4" failures="0" skipped="0" time="10.476" errors="0">
+<testcase name="Authentication › unauthenticated user is redirected to /login" classname="auth.spec.ts" time="1.713">
+</testcase>
+<testcase name="Authentication › valid credentials → login success → redirect to dashboard" classname="auth.spec.ts" time="5.277">
+</testcase>
+<testcase name="Authentication › login page exposes current auth entry points only" classname="auth.spec.ts" time="0.694">
+</testcase>
+<testcase name="Authentication › sign-out → session terminated → redirect to /login" classname="auth.spec.ts" time="2.792">
+</testcase>
+</testsuite>
+<testsuite name="calendar.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="3" failures="0" skipped="0" time="7.979" errors="0">
+<testcase name="Calendar › calendar renders with events" classname="calendar.spec.ts" time="2.577">
+</testcase>
+<testcase name="Calendar › campaigns on correct dates" classname="calendar.spec.ts" time="2.385">
+</testcase>
+<testcase name="Calendar › clicking event → details" classname="calendar.spec.ts" time="3.017">
+</testcase>
+</testsuite>
+<testsuite name="campaigns.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="5" failures="0" skipped="0" time="47.81" errors="0">
+<testcase name="Campaigns Pipeline › campaign in pipeline with PROGRESS status" classname="campaigns.spec.ts" time="4.133">
+</testcase>
+<testcase name="Campaigns Pipeline › transition campaign status" classname="campaigns.spec.ts" time="22.227">
+</testcase>
+<testcase name="Campaigns Pipeline › settlement checklist auto-generated" classname="campaigns.spec.ts" time="3.636">
+</testcase>
+<testcase name="Campaigns Pipeline › toggle checklist item" classname="campaigns.spec.ts" time="6.815">
+</testcase>
+<testcase name="Campaigns Pipeline › duplicate campaign" classname="campaigns.spec.ts" time="10.999">
+</testcase>
+</testsuite>
+<testsuite name="csv-import.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="3" failures="0" skipped="0" time="0.756" errors="0">
+<testcase name="CSV Import › upload valid CSV → preview" classname="csv-import.spec.ts" time="0.19">
+</testcase>
+<testcase name="CSV Import › confirm import → success" classname="csv-import.spec.ts" time="0.44">
+</testcase>
+<testcase name="CSV Import › CSV with errors → error messages" classname="csv-import.spec.ts" time="0.126">
+</testcase>
+</testsuite>
+<testsuite name="dashboard.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="3" failures="0" skipped="0" time="6.947" errors="0">
+<testcase name="Dashboard › dashboard displays KPI cards on load" classname="dashboard.spec.ts" time="2.217">
+</testcase>
+<testcase name="Dashboard › dashboard renders chart components" classname="dashboard.spec.ts" time="2.205">
+</testcase>
+<testcase name="Dashboard › dashboard shows summary metrics" classname="dashboard.spec.ts" time="2.525">
+</testcase>
+</testsuite>
+<testsuite name="deals.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="7" failures="0" skipped="0" time="24.791" errors="0">
+<testcase name="Deals CRUD &amp; Status Machine › create deal → status is SOURCING" classname="deals.spec.ts" time="2.544">
+</testcase>
+<testcase name="Deals CRUD &amp; Status Machine › deals grid displays deals" classname="deals.spec.ts" time="1.759">
+</testcase>
+<testcase name="Deals CRUD &amp; Status Machine › inline edit deal field" classname="deals.spec.ts" time="4.84">
+</testcase>
+<testcase name="Deals CRUD &amp; Status Machine › advance status full chain (SOURCING → NEGOTIATING → SAMPLE_TESTING → ARCHIVED)" classname="deals.spec.ts" time="6.548">
+</testcase>
+<testcase name="Deals CRUD &amp; Status Machine › drop deal → DROPPED" classname="deals.spec.ts" time="3.303">
+</testcase>
+<testcase name="Deals CRUD &amp; Status Machine › delete deal without campaigns → removed" classname="deals.spec.ts" time="3.222">
+</testcase>
+<testcase name="Deals CRUD &amp; Status Machine › delete deal with campaigns → blocked" classname="deals.spec.ts" time="2.575">
+</testcase>
+</testsuite>
+<testsuite name="navigation.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="5" failures="0" skipped="0" time="11.061" errors="0">
+<testcase name="Navigation &amp; Search › sidebar displays all nav links in correct order" classname="navigation.spec.ts" time="2.173">
+</testcase>
+<testcase name="Navigation &amp; Search › clicking sidebar link → SPA navigation" classname="navigation.spec.ts" time="2.299">
+</testcase>
+<testcase name="Navigation &amp; Search › global search → results" classname="navigation.spec.ts" time="1.833">
+</testcase>
+<testcase name="Navigation &amp; Search › selecting search result → navigates" classname="navigation.spec.ts" time="1.888">
+</testcase>
+<testcase name="Navigation &amp; Search › applying grid filters" classname="navigation.spec.ts" time="2.868">
+</testcase>
+</testsuite>
+<testsuite name="outreach.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="4" failures="0" skipped="0" time="15.124" errors="0">
+<testcase name="Outreach › propose ARCHIVED deal to seller → PROPOSED" classname="outreach.spec.ts" time="3.659">
+</testcase>
+<testcase name="Outreach › outreach list displays records" classname="outreach.spec.ts" time="2.461">
+</testcase>
+<testcase name="Outreach › accept outreach → ACCEPTED + campaign auto-created" classname="outreach.spec.ts" time="6.017">
+</testcase>
+<testcase name="Outreach › duplicate outreach → error" classname="outreach.spec.ts" time="2.987">
+</testcase>
+</testsuite>
+<testsuite name="partners.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="5" failures="0" skipped="0" time="14.511" errors="0">
+<testcase name="Partners CRUD › create partner with name and type → appears in grid" classname="partners.spec.ts" time="2.39">
+</testcase>
+<testcase name="Partners CRUD › partners grid displays all partners" classname="partners.spec.ts" time="2.059">
+</testcase>
+<testcase name="Partners CRUD › inline edit partner field → changes persisted" classname="partners.spec.ts" time="5.102">
+</testcase>
+<testcase name="Partners CRUD › delete partner without deals → removed from grid" classname="partners.spec.ts" time="2.76">
+</testcase>
+<testcase name="Partners CRUD › delete partner with deals → warning displayed, deletion blocked" classname="partners.spec.ts" time="2.2">
+</testcase>
+</testsuite>
+<testsuite name="reports.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="3" failures="0" skipped="0" time="5.753" errors="0">
+<testcase name="Reports › settlement report table" classname="reports.spec.ts" time="2.057">
+</testcase>
+<testcase name="Reports › CSV export downloads file" classname="reports.spec.ts" time="1.837">
+</testcase>
+<testcase name="Reports › exported CSV has all columns" classname="reports.spec.ts" time="1.859">
+</testcase>
+</testsuite>
+<testsuite name="sellers.spec.ts" timestamp="2026-05-21T04:25:36.480Z" hostname="chromium" tests="7" failures="0" skipped="0" time="48.401" errors="0">
+<testcase name="Sellers CRUD › create seller with unique snsType+snsHandle → appears in grid" classname="sellers.spec.ts" time="7.943">
+</testcase>
+<testcase name="Sellers CRUD › create seller with channel URL only → appears in grid" classname="sellers.spec.ts" time="11.292">
+</testcase>
+<testcase name="Sellers CRUD › create seller with duplicate snsType+snsHandle → uniqueness error" classname="sellers.spec.ts" time="5.026">
+</testcase>
+<testcase name="Sellers CRUD › sellers grid displays sellers" classname="sellers.spec.ts" time="3.399">
+</testcase>
+<testcase name="Sellers CRUD › inline edit seller field → changes persisted" classname="sellers.spec.ts" time="7.105">
+</testcase>
+<testcase name="Sellers CRUD › delete seller without campaigns → removed" classname="sellers.spec.ts" time="8.285">
+</testcase>
+<testcase name="Sellers CRUD › delete seller with campaigns → blocked" classname="sellers.spec.ts" time="5.351">
+</testcase>
+</testsuite>
+</testsuites>

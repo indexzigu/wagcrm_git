@@ -1,0 +1,7 @@
+{
+  "_comment": "이 파일을 pnl-master-sellers.local.json 으로 복사하고 실제 P&L 마스터 셀러로 채운다. .local.json 은 gitignore 된다(PUBLIC 레포에 실명 미노출 — AGENTS.md P0).",
+  "sellers": [
+    { "name": "셀러명1", "alias": "셀러명1", "snsHandle": "seller1_pnl_import" },
+    { "name": "셀러명2", "alias": "셀러명2", "snsHandle": "seller2_pnl_import" }
+  ]
+}

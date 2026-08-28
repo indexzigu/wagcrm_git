@@ -1,0 +1,17 @@
+{
+  "name": "wag-heartbeat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "셀프호스트 dead-man 감시자 — 생존 신고가 끊기면 텔레그램으로 알린다",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260731.1",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.0.0"
+  }
+}

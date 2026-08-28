@@ -1,0 +1,41 @@
+{
+  "type": "index",
+  "title": "wag-crm Agent Runtime Knowledge",
+  "description": "에이전트(ActionProposal 실행기 등)가 런타임에 로드하는 지식 매니페스트. 사람용 문서인 .knowledge/(OKF)와는 별개 디렉터리이므로 혼동 금지 (청사진 R5).",
+  "version": "1.0.0",
+  "createdAt": "2026-07-06",
+  "loadOrder": [
+    "entities/relationships.md",
+    "entities/glossary.md",
+    "rules/settlement.rules.json",
+    "rules/approval.rules.json",
+    "rules/forbidden_expressions.md"
+  ],
+  "files": [
+    {
+      "path": "entities/relationships.md",
+      "type": "markdown",
+      "description": "핵심 엔티티(Seller/Partner/Deal/SalesCampaign/CampaignDeal/SettlementChecklist 등) 관계 요약"
+    },
+    {
+      "path": "entities/glossary.md",
+      "type": "markdown",
+      "description": "동의어 사전 (열 매핑·자연어 질의 해석용)"
+    },
+    {
+      "path": "rules/settlement.rules.json",
+      "type": "json",
+      "description": "정산 금액 언급 시 예정/확정/지급완료 분리 표기 등 규칙"
+    },
+    {
+      "path": "rules/approval.rules.json",
+      "type": "json",
+      "description": "ActionProposal 자동승인 화이트리스트 / 항상 수동승인 목록"
+    },
+    {
+      "path": "rules/forbidden_expressions.md",
+      "type": "markdown",
+      "description": "에이전트 산출물에서 금지되는 표현 목록 (효능 단정, 확정 정산 단정 등)"
+    }
+  ]
+}

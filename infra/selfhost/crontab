@@ -1,0 +1,94 @@
+# ✅ 컷오버 완료 상태 (2026-08-13) — 앱 크론 전부 활성.
+#   부수효과 5개(주문·정산 동기화 · 세금계산서 확인 · 미디어 재호스팅 · 인스타 토큰 갱신)는
+#   컷오버 Stage 8 이 구 배포 크론이 꺼졌음을 확인받은 뒤 해제했다. 이 파일은 그 결과를
+#   레포에 반영한 것이다 — 종전에는 기계에서만 풀려 있어 운영 체크아웃이 영구히 dirty 였고,
+#   그 파일을 건드리는 PR 이 올 때마다 `git pull` 이 충돌했다.
+#
+#   ⛔ 종전 서술 "Phase 5 병행 검증 상태 — 잠금 5개를 컷오버 당일까지 유지"는 SUPERSEDED.
+#
+#   ⚠️ 되돌릴 때(롤백)는 순서가 있다: **이 5개를 먼저 다시 잠그고 재설치한 뒤에** 구 플랫폼을
+#   되살린다. Vercel 크론은 vercel.json 에 정의돼 배포마다 재등록되므로, 순서를 뒤집으면
+#   양쪽이 동시 발화한다(rollback.sh Step 4 와 같은 내용).
+# WAG CRM 셀프호스트 crontab — vercel.json crons 의 이식본 + 이후 합류분.
+# ⛔ **활성 잡 개수를 이 주석에 적지 말 것**(P6). 종전 "현재 16개"는 크론이 늘 때마다 낡았고,
+#    개수를 세는 곳(cutover.sh·README)이 이미 이 파일에서 직접 센다:
+#      grep -cE '^[0-9*].*run-cron\.sh' infra/selfhost/crontab
+#
+# ⚠️ 개수를 이 파일과 별개로 손으로 적어 둔 곳이 있으면 함께 고칠 것 — 판정 스크립트
+#    (cutover.sh)는 이제 이 파일에서 개수를 세므로 고정 숫자를 다시 심지 말 것.
+#    새 크론을 KNOWN_JOBS·vercel.json 에만 넣고 이 파일을 빠뜨리면 **프로덕션에서는
+#    아예 발화하지 않는다**(2026-08-13 컷오버 이후 실제 스케줄러는 이 파일이다) —
+#    그 누락은 cron-jobs.contract.test.ts C6 가 막는다.
+#
+# ⛔ 종전 서술 "전 항목이 주석 처리된 상태로 커밋된다 … Phase 5 에서 그룹 단위로
+# 주석을 해제한다"는 SUPERSEDED(2026-08-13 컷오버 완료) — 그 단계적 전환은 끝났고
+# 지금은 전부 활성 상태로 커밋된다. 이중 발화 위험은 구 배포 크론이 꺼져 있는
+# 한 없다. 그 전제가 깨지는 경우(롤백)의 순서는 위 ✅ 블록 참조.
+#
+# macOS cron 은 로컬 시간대(KST, UTC+9)로 돈다 — vercel.json 의 표현식은
+# UTC 이므로 그대로 옮기면 9시간 어긋난다. 각 줄 위에 원본 UTC 표현식을
+# 주석으로 병기하고, KST 로 +9h 환산한 표현식만 사용한다.
+#
+# 자정을 넘어가는 잡은 모두 요일 필드가 이미 `*` 라서(vercel.json 원본
+# 기준) 요일 넘김에 따른 별도 보정이 필요 없다. 요일이 고정된 유일한 잡인
+# refresh-instagram-token 은 UTC 월요일 02:00 → KST 월요일 11:00 로 자정을
+# 넘지 않으므로 요일 필드도 그대로 1(월)을 쓴다.
+#
+# crontab 필드: 분 시 일 월 요일 명령
+# 각 명령은 run-cron.sh 만 절대경로로 호출한다(체크아웃 경로 규약:
+# /Users/z9/selfhost/wagcrm — infra/selfhost/README.md 참고).
+
+# UTC "0 2 * * 1" (refresh-instagram-token) → KST 월 11:00 (요일 넘김 없음)
+0 11 * * 1 /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh refresh-instagram-token >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 3 * * *" (collect-instagram) → KST 12:00
+0 12 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh collect-instagram >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 3 * * *" (collect-youtube) → KST 12:00
+0 12 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh collect-youtube >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 4 * * *" (price-monitoring) → KST 13:00
+0 13 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh price-monitoring >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 15 * * *" (collect-campaign-posts) → KST 00:00 (자정 넘김, 요일 원본부터 *)
+0 0 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh collect-campaign-posts >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# capture-stories → KST 00:00. **UTC 원본이 없는 유일한 줄이다** — 이 잡은 vercel.json 을 거친
+# 적이 없다(2026-08-04 에 캡차로 서버 크론을 내리고 오너 맥 launchd 로 나갔다가, 2026-08-19 에
+# 앱 자체가 그 맥에서 돌게 되어 공용 레인으로 돌아왔다). 그래서 KST 표기가 곧 원본이고
+# 환산 주석을 지어내지 않는다. 표기 정합은 KNOWN_JOBS.timeKst 와 C5 가 함께 잡는다.
+# 시각을 옮길 거면 자정을 유지할 것 — 스토리 수명이 24h 라 하루 1회로는 심야가 사각이 가장 작다.
+0 0 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh capture-stories >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 18 * * *" (enrich-inbox) → KST 03:00 (자정 넘김, 요일 원본부터 *)
+0 3 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh enrich-inbox >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 20 * * *" (rehost-seller-media) → KST 05:00 (자정 넘김, 요일 원본부터 *)
+0 5 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh rehost-seller-media >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "30 21 * * *" (naver-settlement-sync) → KST 06:30 (자정 넘김, 요일 원본부터 *)
+30 6 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh naver-settlement-sync >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 22 * * *" (naver-order-sync) → KST 07:00 (자정 넘김, 요일 원본부터 *)
+0 7 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh naver-order-sync >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "30 22 * * *" (enrich-references) → KST 07:30 (자정 넘김, 요일 원본부터 *)
+30 7 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh enrich-references >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 23 * * *" (collect-qnas) → KST 08:00 (자정 넘김, 요일 원본부터 *)
+0 8 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh collect-qnas >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "30 23 * * *" (analyze-voc) → KST 08:30 (자정 넘김, 요일 원본부터 *)
+30 8 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh analyze-voc >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 17 * * *" (db-exposure-audit) → KST 02:00 (자정 넘김, 요일 원본부터 *)
+0 2 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh db-exposure-audit >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "30 17 * * *" (encryption-key-audit) → KST 02:30 (자정 넘김, 요일 원본부터 *)
+30 2 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh encryption-key-audit >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 0 * * *" (recampaign-auto-propose) → KST 09:00 (자정 넘김, 요일 원본부터 *)
+0 9 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh recampaign-auto-propose >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# UTC "0 1 * * *" (tax-invoice-issue-confirm) → KST 10:00 (자정 넘김, 요일 원본부터 *)
+0 10 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh tax-invoice-issue-confirm >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1

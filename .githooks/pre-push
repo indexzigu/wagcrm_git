@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# push 게이트: main 으로의 직접 push(force push·삭제 포함)를 서버로 나가기 직전에
+# 거부한다(T-069). 2026-08-26 비공개 전환으로 GitHub 무료 플랜이 브랜치 보호를
+# 정지시켜(rulesets API 403) 서버측 방어가 사라졌다 — 배포 경로는 PR 머지뿐이므로
+# (P6 Deploy Path Is PR-Merge Only) main 직접 push 는 언제나 사고다.
+# 🪤 **머지만으로는 발효되지 않는다** — 워크트리·메인 레포의 core.hooksPath 는
+# 절대경로(/Users/z9/Projects/wag-crm/.githooks)라 git 이 실행하는 것은 언제나
+# **메인 레포 작업트리의 이 파일 하나**다. 메인 레포 체크아웃이 이 커밋을 담은
+# 브랜치로 갱신돼야 15개 워크트리 전부에 동시에 발효한다(셀프호스트 2개는
+# 상대경로라 배포 pull 로 자동 반영). 절차·확인 명령: P6 「Main Push Guard」.
+# 짝 계약: scripts/__tests__/main-push-guard.contract.test.ts
+#
+# 비상 우회: ALLOW_MAIN_PUSH=1 을 붙여 실행(셸 이력에 사유가 남도록 한 줄로만).
+# ⚠️ 이 훅이 못 보는 경로: --no-verify 옵션 · GitHub 웹 UI · gh pr merge(API 직행) ·
+# 이 맥 밖의 머신 — 그쪽은 배포 직전 CI 게이트(infra/selfhost/deploy.sh 안전장치
+# ⑦)가 마지막에 잡는다. 상세: docs/agents/deployment.md 「Main Push Guard」.
+set -euo pipefail
+
+remote="${1:-}"
+
+# stdin 각 줄: "<local ref> <local sha> <remote ref> <remote sha>"
+# 삭제는 local ref 가 "(delete)"·local sha 가 0*40 으로 오지만 remote ref 는
+# 그대로 refs/heads/main 이므로 같은 분기에서 잡힌다. force 여부도 가리지 않는다 —
+# main 으로 가는 push 는 형태 불문 전부 막는 것이 이 훅의 계약이다.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  [ -n "${remote_ref:-}" ] || continue
+  if [ "$remote_ref" = "refs/heads/main" ] || [ "$remote_ref" = "refs/heads/master" ]; then
+    if [ "${ALLOW_MAIN_PUSH:-0}" = "1" ]; then
+      echo "[pre-push] ⚠️ ALLOW_MAIN_PUSH=1 — ${remote_ref#refs/heads/} 게이트를 명시 우회합니다(remote: ${remote:-?})." >&2
+      continue
+    fi
+    {
+      echo "차단: ${remote_ref#refs/heads/} 브랜치로의 직접 push 입니다."
+      echo "  이 레포의 배포 경로는 「PR → 오너 머지」뿐입니다(P6). GitHub 브랜치 보호가"
+      echo "  무료 플랜 비공개 전환으로 정지된 상태라(T-069) 이 훅이 그 자리를 대신합니다."
+      echo "  - 작업 브랜치를 올리고 PR 을 여세요(HEAD 를 세션 브랜치로)."
+      echo "  - 정말 필요한 비상 상황이면 ALLOW_MAIN_PUSH=1 을 붙여 재실행하세요."
+    } >&2
+    exit 1
+  fi
+done
+exit 0

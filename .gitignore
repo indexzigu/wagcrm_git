@@ -1,0 +1,181 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# selfhost: 실제 터널 ID·크리덴셜 경로가 들어가는 운영 파일 — 예시(.example)만 추적
+infra/selfhost/cloudflared-config.yml
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+/src/generated/prisma
+# sqlite Prisma Client 생성물 — 생성 파일에 머신 절대경로(output.value ·
+# sourceFilePath)와 .env 존재 여부에 따라 달라지는 schemaEnvPath가 박힌다.
+# 추적하면 다른 워크트리가 generate 를 한 번 돌릴 때마다 경로만 바뀐 3파일 수정이
+# 떠서 무관한 PR에 섞인다. 소비 경로는 scripts/ensure-sqlite-client.mjs 가 provision 한다.
+/prisma/generated/
+/prisma/dev.db
+/prisma/dev.db-journal
+# 데모 목업 DB — `npm run demo:seed`(build:demo 의 한 단계)가 생성하는 빌드 산출물이라
+# 커밋 대상이 아니다. 빠져 있으면 추적 후보로 남아 실수로 실릴 수 있다(P0: 레포에
+# 데이터 파일을 올리지 않는다). 데모 배포는 Vercel 빌드 때 새로 시드한다.
+/prisma/demo.db
+/prisma/demo.db-journal
+/prisma/sqlite-push.sql
+.env*.local
+
+# google drive mcp
+.gdrive-server-credentials.json
+gcp-oauth.keys.json
+
+# e2e auth state
+e2e/.auth/
+
+# sentry
+.sentryclirc
+
+# playwright mcp
+.playwright-mcp/
+
+# scratch directory for local scripts
+scratch/
+
+# agent lane token (B4-1)
+.agent-token.txt
+mapping-debug.log
+
+# 운영 보드·핸드오프·로그 — 로컬 전용(모드 L, 2026-07-12): PUBLIC 레포에 실명·실측 미노출
+#
+# ⚠️ **접미사 사본까지 무시한다**(`.bak`·`~`·`.orig` 등, 2026-07-30 추가).
+# 종전 규칙은 두 보드 파일을 **정확한 파일명으로만** 등재했다. 그런데 전역 지침이
+# "파일 전체 덮어쓰기 전 백업(`cp file file.bak`)"을 요구하므로, **지침을 따르는
+# 행위 자체가 P0 위반**이었다 — `PROJECT_MASTER.md.bak` 은 무시되지 않아
+# `git status` 에 `??` 로 떴고, 누가 `git add -A` 하면 셀러 실명·프로덕션 실측치가
+# public 레포에 실린다. 2026-07-30 하루에 **세 세션이 같은 함정을 밟았다**(실측,
+# 한 세션은 5회). 지침 간 모순을 남겨두면 성실한 세션이 사고를 낸다.
+#
+# `docs/handoff/*` 와 `docs/archive/handoff/*` 는 디렉터리 와일드카드라 접미사
+# 사본을 **이미** 덮는다 — 그쪽에 중복 패턴을 더하지 말 것(부정 패턴
+# `!docs/handoff/README.md` 는 정확한 파일명이라 `README.md.bak` 은 계속 무시된다).
+#
+# 레포 전역 `*.bak` 을 **도입했다**(2026-08-27, 오너 승인). ⛔ 종전 보류 사유
+# "추적 중인 `test-order-parser.ts.bak` 가 실재해 규칙이 일관되지 않는다"(#165)는
+# **SUPERSEDED** — 그 파일이 같은 PR 에서 삭제돼(원본 없는 죽은 백업본, 소비처 0건)
+# 추적 중인 `*.bak` 은 0건이 됐다. 이제 정확한 파일명 등재에 기대지 않으므로,
+# **아직 이름을 짓지 않은 미래의 백업본**까지 덮는다 — 위 사고가 재발하는 경로는
+# 파일명 목록이 새 이름을 못 따라가는 것이었다.
+#
+# ⚠️ 이미 추적 중인 파일은 이 규칙에 영향받지 않는다(git 은 추적 파일에 무시 규칙을
+# 적용하지 않는다) — 도입 시점 실측으로 추적 `*.bak` 0건임을 확인했다. 일부러
+# `.bak` 을 추적해야 할 일이 생기면 부정 패턴(`!경로`)을 명시하고 그 사유를 적는다.
+#
+# 판정 계약: archive-handoff-ignored.contract.test.ts (`git check-ignore` 로 git 에 직접 질의).
+*.bak
+PROJECT_MASTER.md*
+PROJECT_LOG.md*
+docs/handoff/*
+!docs/handoff/README.md
+# 착지한 핸드오프의 이관처(AGENTS.md 보드 수명주기). 원본이 로컬 전용(모드 L)이라
+# 셀러 실명·실측치를 담을 수 있는데, 이 경로가 무시되지 않으면 정책대로 옮기는
+# 행위 자체가 그 내용을 **public 레포의 추적 후보로 승격**시킨다(P0). 원본과 이관처는
+# 반드시 같은 등급이어야 한다 — 계약은 archive-handoff-ignored.contract.test.ts.
+docs/archive/handoff/*
+
+# 마케팅 스킬 검토 체계(2026-07-31 구축, 2026-08-01 모드 L 등재). 외부 스킬 레포를
+# 전수 검토해 CRM 적용 후보를 관리하는 문서군인데, 가치의 핵심이 **오너 실측·결정
+# 이력**에 있다 — `OWNER_DECISIONS.md` 는 오너 호칭과 D# 결정을, `BASELINE.md`·
+# `reviews/*` 는 셀러 모수·매출 임계값 같은 프로덕션 실측치를 담는다(P0 금지 항목).
+# 익명화하면 알맹이가 빠지므로 **보드 파일과 같은 등급으로 로컬 전용**을 택했다
+# (오너 확정 2026-08-01).
+#
+# ⚠️ 등재 전 8일간 **미추적이면서 무시도 안 되는** 상태였다 — `git status` 에 `??`
+# 로 떠 있었고 누가 `git add -A` 하면 그대로 public 레포에 실렸다. 보드 파일이
+# `.bak` 사본으로 밟았던 함정(위 참조)과 같은 구멍이다. 디렉터리 와일드카드라
+# 접미사 사본도 함께 덮는다. 계약은 archive-handoff-ignored.contract.test.ts.
+docs/marketing-skills/*
+
+# 프로덕션 데이터 덤프 — 절대 커밋 금지(P0 Public Repo Data Guard).
+# 스크립트 입출력은 로컬에만 두고, 산출물을 레포에 남기지 않는다.
+crm.csv
+artifacts/
+prisma/seed-sellers.ts
+prisma/seed-campaigns*.ts
+prisma/seed-pnl.ts
+
+# 스크립트 로컬 설정 — 실명 담김(PUBLIC 레포 미노출, P0)
+scripts/config/*.local.json
+
+# Playwright 산출물(과거에 index.html이 커밋된 실사고 — 재발 방지)
+/playwright-report/
+/test-results/
+/prisma/demo.db
+/prisma/demo.db-journal
+
+# Claude Code 로컬 훅 규칙 — 머신 로컬 전용(팀 공유 대상 아님)
+.claude/*.local.md
+
+# SDD 작업 산출물(원장·브리프·리뷰 패키지) — 로컬 스크래치
+.superpowers/
+infra/selfhost/menubar/build/
+
+# 로컬 문서 서고(모드 L, 2026-08-28 공개 전환 준비 설계) — 설계서·계획서의 서식지.
+# 종전 docs/superpowers/(추적)에 있던 specs·plans 가 여기로 이동했다. 상세 설계
+# 근거·오너 확정 배경·약점 목록을 담으므로 공개 레포에 올리지 않는다(P0).
+# 디렉터리 와일드카드라 접미사 사본(.bak)도 함께 덮는다.
+# 판정 계약: archive-handoff-ignored.contract.test.ts
+docs/private/
+
+# Kiro 스펙 산출물(모드 L, 2026-08-28) — 공개 전환 준비로 로컬 서고
+# `docs/private/kiro/` 로 이관했다. `.claude/agents/kfc/spec-design.md` 가 앞으로도
+# 이 경로에 설계 문서를 쓰므로, 무시해 두면 그 산출물이 자동으로 로컬에 남는다.
+# 판정 계약: archive-handoff-ignored.contract.test.ts
+.kiro/
+
+# QA 검증 산출물·작업용 데이터 파일(2026-08-28 공개 전환 준비).
+# 배경: 루트에 쌓인 QA 스크린샷 36장 중 일부에 셀러 실명·거래처명·정산 실측액이
+# 찍혀 있었고, 반품 엑셀 1건에는 일반 고객의 실명·연락처·주소가 들어 있었다(P0).
+# 전부 앱이 서빙하지 않는 일회성 산출물이라 추적할 이유가 없다 — 애초에 들어오지
+# 못하게 막는다. 검증 캡처가 필요하면 scratchpad 나 docs/private/ 에 둔다.
+# ⚠️ public/ · src/app/ 의 앱 자산과 테스트 픽스처는 여기 걸리지 않는다(경로가 다름).
+/*.png
+/*.jpg
+/*.jpeg
+/*.xlsx
+/*.xls
+/*.csv
+/dev.db

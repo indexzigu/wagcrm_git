@@ -1,0 +1,9 @@
+.env
+.env.local
+.env.vercel
+.env.production
+.env.development
+.env.test
+
+# 에이전트 툴링 스크래치(gitignored, 571MB+ 워크트리 사본) — 배포 업로드 제외
+.claude

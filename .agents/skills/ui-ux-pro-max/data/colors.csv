@@ -1,0 +1,164 @@
+No,Product Type,Color Palette Name,Primary Color,Secondary Color,Accent Color,Success Color,Warning Color,Error Color,Background Color,Text Color,Contrast Ratio (AA),Contrast Ratio (AAA),Accessibility Note,Vibe
+1,SaaS (General),Trust & Modernity,#0052FF (Blue),#4D7CFF (Light Blue),#6366F1 (Indigo),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#0F172A (Slate),4.5+,7+,WCAG AA Compliant,Professional
+2,Micro SaaS,Indie Vibrant,#FF4D4D (Red),#FF7676 (Coral),#00D1FF (Cyan),#22C55E (Green),#FFB800 (Yellow),#FF0000 (Red),#F8FAFC (Grey),#1E293B (Dark),4.5+,7+,High Contrast,Energetic
+3,E-commerce,Sales Focus,#2563EB (Blue),#3B82F6 (Light Blue),#FACC15 (Yellow),#16A34A (Green),#EA580C (Orange),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Action oriented,Trustworthy
+4,E-commerce Luxury,Premium Elegance,#1A1A1A (Black),#404040 (Dark Grey),#D4AF37 (Gold),#2F5233 (Dark Green),#8B4513 (Saddle Brown),#7B0000 (Deep Red),#FDFDFD (Off-White),#000000 (Black),4.5+,7+,Premium material feel,Sophisticated
+5,B2B Service,Authority & Credibility,#1E3A8A (Navy),#3B82F6 (Blue),#94A3B8 (Slate),#059669 (Emerald),#D97706 (Amber),#B91C1C (Red),#FFFFFF (White),#0F172A (Slate),4.5+,7+,Corporate trust,Authoritative
+6,Financial Dashboard,Deep OLED,#000000 (Black),#121212 (Dark Grey),#00E0FF (Cyan),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#000000 (Black),#FFFFFF (White),7+,21+,OLED Power Saving,Modern
+7,Analytics Dashboard,Data Clarity,#FFFFFF (White),#F1F5F9 (Light Grey),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#1E293B (Slate),4.5+,7+,Readable data viz,Functional
+8,Healthcare App,Calm Clinical,#0EA5E9 (Sky),#7DD3FC (Light Sky),#10B981 (Green),#059669 (Emerald),#F59E0B (Amber),#EF4444 (Red),#F0F9FF (Light Blue),#0C4A6E (Dark Blue),4.5+,7+,Soothing for patients,Safe
+9,Educational App,Playful Learning,#F43F5E (Rose),#FB7185 (Light Rose),#FACC15 (Yellow),#22C55E (Green),#F97316 (Orange),#EF4444 (Red),#FFF1F2 (Cream),#4C0519 (Dark Rose),4.5+,7+,Engaging for students,Playful
+10,Creative Agency,Bold Expression,#000000 (Black),#FF0000 (Red),#FFFF00 (Yellow),#00FF00 (Green),#FFA500 (Orange),#FF00FF (Magenta),#FFFFFF (White),#000000 (Black),7+,21+,High visual impact,Artistic
+11,Portfolio/Personal,Personal Branding,#3B82F6 (Blue),#60A5FA (Light Blue),#F472B6 (Pink),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Expressive & unique,Personal
+12,Gaming,Immersive Neon,#0F172A (Dark),#1E293B (Slate),#39FF14 (Neon Green),#00FF00 (Green),#FFFF00 (Yellow),#FF0000 (Red),#020617 (Midnight),#F8FAFC (Light),7+,21+,Game interface feel,Exciting
+13,Government/Public Service,Public Trust,#003366 (Dark Blue),#0055AA (Blue),#DDDDDD (Grey),#008800 (Green),#AA6600 (Brown),#CC0000 (Red),#FFFFFF (White),#000000 (Black),7+,21+,WCAG AAA Mandatory,Reliable
+14,Fintech/Crypto,Web3 Tech,#1E293B (Dark Blue),#334155 (Slate Blue),#8B5CF6 (Violet),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#0F172A (Midnight),#FFFFFF (White),4.5+,7+,Security & Tech feel,Future
+15,Social Media App,Engagement Vibrant,#1D9BF0 (Twitter Blue),#00BA7C (Green),#F91880 (Pink),#00BA7C (Green),#FFD400 (Yellow),#F4212E (Red),#FFFFFF (White),#0F1419 (Black),4.5+,7+,Interactive & lively,Connected
+16,Productivity Tool,Flow State,#4F46E5 (Indigo),#818CF8 (Light Indigo),#10B981 (Green),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#1F2937 (Grey),4.5+,7+,Clear focus,Efficient
+17,Design System,Systematic,#111827 (Black),#374151 (Grey),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#F9FAFB (Light),#111827 (Dark),4.5+,7+,Component contrast,Consistent
+18,AI/Chatbot Platform,AI Intelligence,#6366F1 (AI Purple),#818CF8 (Light Purple),#10B981 (Success),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#FAFAFA (White),#0F172A (Dark),4.5+,7+,Tech & friendly,Intelligent
+19,NFT/Web3 Platform,Cyber Crypto,#0F172A (Midnight),#1E293B (Slate),#FFD700 (Gold),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#020617 (Black),#FFFFFF (White),7+,21+,High-value tech,Futuristic
+20,Creator Economy Platform,Creative Pulse,#EC4899 (Pink),#F472B6 (Light Pink),#8B5CF6 (Violet),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Expressive & Bold,Creative
+21,Remote Work/Collaboration,Calm Collaboration,#3B82F6 (Blue),#93C5FD (Light Blue),#6B7280 (Grey),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#F3F4F6 (Light Grey),#1F2937 (Slate),4.5+,7+,Team focus,Collaborative
+22,Mental Health App,Healing Pastels,#A5B4FC (Soft Blue),#C7D2FE (Pale Blue),#FBCFE8 (Soft Pink),#34D399 (Soft Green),#FDE68A (Soft Yellow),#FDA4AF (Soft Red),#F8FAFC (White),#1E1B4B (Dark Blue),4.5+,7+,Calming & Safe,Peaceful
+23,Pet Tech App,Friendly Furry,#F59E0B (Amber),#FBBF24 (Yellow),#EC4899 (Pink),#10B981 (Green),#F97316 (Orange),#EF4444 (Red),#FFFBEB (Cream),#451A03 (Brown),4.5+,7+,Warm & welcoming,Friendly
+24,Smart Home/IoT,Tech Ambient,#1F2937 (Slate),#374151 (Grey),#06B6D4 (Cyan),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#0F172A (Dark),#FFFFFF (White),4.5+,7+,Intuitive status,Modern
+25,EV/Charging Ecosystem,Electric Green,#009CD1 (Electric Blue),#38BDF8 (Light Blue),#22C55E (Green),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#F8FAFC (Light),#0F172A (Dark),4.5+,7+,Energy feel,Efficient
+26,Subscription Box Service,Exciting Reveal,#8B5CF6 (Violet),#A78BFA (Light Violet),#FB923C (Orange),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#F5F3FF (Light Violet),#1E1B4B (Dark Blue),4.5+,7+,Surprise & delight,Exciting
+27,Podcast Platform,Audio Wave,#111827 (Black),#1F2937 (Grey),#6366F1 (Indigo),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#020617 (Dark),#F9FAFB (Light),7+,21+,Audio focus,Professional
+28,Dating App,Romantic Spark,#F43F5E (Rose),#FB7185 (Pink),#8B5CF6 (Violet),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFF1F2 (Light Rose),#4C0519 (Dark Rose),4.5+,7+,Emotion & warmth,Romantic
+29,Micro-Credentials,Verified Trust,#1E3A8A (Navy),#3B82F6 (Blue),#F59E0B (Amber),#059669 (Emerald),#D97706 (Amber),#B91C1C (Red),#FFFFFF (White),#0F172A (Slate),4.5+,7+,Academic credibility,Authoritative
+30,Knowledge Base/Doc,Clean Info,#111827 (Black),#4B5563 (Grey),#2563EB (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Readability focus,Functional
+31,Hyperlocal Services,Local Hub,#2563EB (Blue),#60A5FA (Light Blue),#EF4444 (Red),#10B981 (Green),#F59E0B (Amber),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Fast recognition,Reliable
+32,Beauty/Spa/Wellness,Soft Serenity,#D946EF (Fuchsia),#F0ABFC (Light Fuchsia),#F59E0B (Amber),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FDF4FF (Light Pink),#4A044E (Dark Pink),4.5+,7+,Relaxing visuals,Elegant
+33,Luxury/Premium Brand,Elite Contrast,#000000 (Black),#1A1A1A (Dark),#FFD700 (Gold),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#000000 (Black),7+,21+,Elegance & Wealth,Exclusive
+34,Restaurant/Food Service,Appetizing Warmth,#EA580C (Orange),#F97316 (Light Orange),#8B4513 (Brown),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFF7ED (Cream),#431407 (Dark Brown),4.5+,7+,Freshness & hunger,Appetizing
+35,Fitness/Gym App,High Energy,#F97316 (Orange),#FB923C (Light Orange),#3B82F6 (Blue),#22C55E (Green),#FBBF24 (Yellow),#EF4444 (Red),#0F172A (Dark Blue),#FFFFFF (White),4.5+,7+,Motivational energy,Active
+36,Real Estate/Property,Established Trust,#0369A1 (Sky),#0EA5E9 (Blue),#B45309 (Amber),#15803D (Green),#D97706 (Orange),#BE123C (Rose),#FFFFFF (White),#0F172A (Dark),4.5+,7+,Financial safety,Professional
+37,Travel/Tourism,Adventure Blue,#0284C7 (Blue),#0EA5E9 (Sky),#F59E0B (Amber),#16A34A (Green),#F97316 (Orange),#DC2626 (Red),#F0F9FF (Light Blue),#082F49 (Dark Blue),4.5+,7+,Exploration & sky,Adventurous
+38,Hotel/Hospitality,Warm Welcome,#7C2D12 (Deep Brown),#9A3412 (Brown),#F59E0B (Amber),#15803D (Green),#D97706 (Orange),#BE123C (Rose),#FFF7ED (Cream),#431407 (Dark Brown),4.5+,7+,Comfort & service,Elegant
+39,Wedding/Event,Romantic Palette,#EC4899 (Pink),#F472B6 (Light Pink),#F59E0B (Gold),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFF1F2 (Cream),#4C0519 (Dark Rose),4.5+,7+,Celebratory feel,Romantic
+40,Legal Services,Judicial Navy,#1E3A8A (Navy),#1E40AF (Blue),#94A3B8 (Slate),#059669 (Emerald),#D97706 (Amber),#B91C1C (Red),#FFFFFF (White),#0F172A (Slate),4.5+,7+,Credibility focus,Authoritative
+41,Insurance Platform,Safe Harbor,#2563EB (Blue),#3B82F6 (Light Blue),#10B981 (Green),#059669 (Emerald),#F59E0B (Amber),#EF4444 (Red),#F8FAFC (Light),#1E293B (Dark),4.5+,7+,Security & trust,Reliable
+42,Banking/Finance,Secure Wealth,#0F172A (Navy),#1E293B (Slate Blue),#F59E0B (Amber),#10B981 (Green),#F97316 (Orange),#EF4444 (Red),#FFFFFF (White),#0F172A (Navy),4.5+,7+,Financial stability,Professional
+43,Online Course,Smart Learning,#4F46E5 (Indigo),#6366F1 (Blue),#FACC15 (Yellow),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#F5F3FF (Light Blue),#1E1B4B (Dark Blue),4.5+,7+,Growth & knowledge,Intelligent
+44,Non-profit/Charity,Heart & Compassion,#DC2626 (Red),#EF4444 (Rose),#22C55E (Green),#16A34A (Green),#F59E0B (Amber),#BE123C (Deep Red),#FFFFFF (White),#111827 (Dark),4.5+,7+,Human connection,Caring
+45,Music Streaming,Rhythm Dark,#121212 (Dark),#1DB954 (Spotify Green),#6366F1 (Indigo),#22C55E (Green),#FBBF24 (Yellow),#EF4444 (Red),#121212 (Dark),#FFFFFF (White),7+,21+,Focus on media,Modern
+46,Video Streaming,Cinema Night,#000000 (Black),#1A1A1A (Dark),#E50914 (Netflix Red),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#000000 (Black),#FFFFFF (White),7+,21+,Content focus,Exciting
+47,Job Board,Career Blue,#2563EB (Blue),#3B82F6 (Light Blue),#10B981 (Green),#059669 (Emerald),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#1F2937 (Grey),4.5+,7+,Professionalism,Reliable
+48,Marketplace (P2P),Active Trade,#2563EB (Blue),#10B981 (Green),#F59E0B (Amber),#16A34A (Green),#EA580C (Orange),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Energy & trust,Lively
+49,Logistics/Delivery,Speedy Service,#2563EB (Blue),#F97316 (Orange),#10B981 (Green),#16A34A (Green),#EA580C (Orange),#DC2626 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Action & alert,Efficient
+50,Agriculture/Farm,Earth & Growth,#15803D (Green),#166534 (Dark Green),#78350F (Brown),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#F0FDF4 (Light Green),#064E3B (Dark Green),4.5+,7+,Natural & organic,Stable
+51,Construction/Arch,Solid Structural,#4A4A4A (Grey),#2563EB (Blue),#EA580C (Safety Orange),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#F9FAFB (Light),#111827 (Dark),4.5+,7+,Precision & safety,Professional
+52,Automotive,Precision Gear,#1A1A1A (Dark),#374151 (Grey),#3B82F6 (Blue),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#111827 (Dark),4.5+,7+,Tech & machinery,Reliable
+53,Photography,Visual Canvas,#000000 (Black),#FFFFFF (White),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#000000 (Black),7+,21+,Zero distraction,Artistic
+54,Coworking Space,Social Energy,#EC4899 (Pink),#F472B6 (Light Pink),#3B82F6 (Blue),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Modern workspace,Connected
+55,Home Services,Reliable Care,#2563EB (Blue),#3B82F6 (Light Blue),#EA580C (Orange),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Trust & safety,Friendly
+56,Childcare/Daycare,Cheerful Safety,#F43F5E (Rose),#FB7185 (Pink),#3B82F6 (Blue),#22C55E (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFF1F2 (Cream),#4C0519 (Dark),4.5+,7+,Playful but safe,Cheerful
+57,Senior Care,Calm Dignity,#0EA5E9 (Blue),#38BDF8 (Light Blue),#10B981 (Green),#15803D (Green),#FACC15 (Yellow),#BE123C (Rose),#F0F9FF (Light),#082F49 (Dark),4.5+,7+,Accessibility first,Safe
+58,Medical Clinic,Sterile Trust,#0077B6 (Blue),#00B4D8 (Light Blue),#10B981 (Green),#008800 (Green),#F59E0B (Amber),#CC0000 (Red),#FFFFFF (White),#003049 (Navy),7+,21+,Clinical accuracy,Professional
+59,Pharmacy/Drug Store,Health Green,#16A34A (Green),#22C55E (Light Green),#2563EB (Blue),#15803D (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Medical reliability,Safe
+60,Dental Practice,Fresh Smile,#0EA5E9 (Blue),#7DD3FC (Light Blue),#FACC15 (Yellow),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#F0F9FF (Light),#0C4A6E (Dark),4.5+,7+,Cleanliness feel,Fresh
+61,Veterinary Clinic,Pet Caring,#3B82F6 (Blue),#60A5FA (Light Blue),#F97316 (Orange),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#F0F9FF (Light),#1E1B4B (Dark),4.5+,7+,Friendly & caring,Safe
+62,Florist/Plant Shop,Garden Growth,#15803D (Green),#16A34A (Light Green),#EC4899 (Pink),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#F0FDF4 (Light),#064E3B (Dark),4.5+,7+,Natural & fresh,Lively
+63,Bakery/Cafe,Tasty Crust,#8B4513 (Brown),#A16207 (Tan),#F59E0B (Amber),#16A34A (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFF7ED (Cream),#431407 (Dark Brown),4.5+,7+,Warm & appetizing,Friendly
+64,Brewery/Winery,Artisan Craft,#78350F (Brown),#92400E (Amber),#FFD700 (Gold),#16A34A (Green),#F59E0B (Yellow),#DC2626 (Red),#1A1A1A (Dark),#FDFDFD (Off-White),4.5+,7+,Quality & heritage,Sophisticated
+65,Airline,Cloud Travel,#003366 (Navy),#0066CC (Blue),#FFFFFF (White),#16A34A (Green),#FBBF24 (Yellow),#EF4444 (Red),#F0F9FF (Light Blue),#003366 (Navy),7+,21+,Professional flight,Reliable
+66,News/Media,Classic Read,#111827 (Black),#374151 (Grey),#DC2626 (Red),#16A34A (Green),#F59E0B (Amber),#991B1B (Dark Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Readability focus,Authoritative
+67,Magazine/Blog,Editorial Flow,#000000 (Black),#4B5563 (Grey),#6366F1 (Indigo),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Typography focus,Artistic
+68,Freelancer Platform,Professional Gig,#2563EB (Blue),#4F46E5 (Indigo),#10B981 (Green),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Trust & energy,Professional
+69,Marketing Agency,Creative Bold,#000000 (Black),#FFFFFF (White),#F43F5E (Rose),#10B981 (Green),#FACC15 (Yellow),#EF4444 (Red),#FFFFFF (White),#000000 (Black),7+,21+,Visual impact,Artistic
+70,Event Management,Energy Peak,#8B5CF6 (Violet),#EC4899 (Pink),#FACC15 (Yellow),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Celebratory energy,Exciting
+71,Membership/Comm,Community Heart,#2563EB (Blue),#60A5FA (Light Blue),#EC4899 (Pink),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Inclusivity,Friendly
+72,Newsletter,Direct Inbox,#111827 (Black),#374151 (Grey),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Content focus,Reliable
+73,Digital Products,Tech Gear,#6366F1 (Indigo),#818CF8 (Light Indigo),#FACC15 (Yellow),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#F9FAFB (Light),#111827 (Dark),4.5+,7+,Download focus,Professional
+74,Church/Religious,Warm Faith,#D4AF37 (Gold),#B45309 (Amber),#1E3A8A (Navy),#15803D (Green),#D97706 (Orange),#B91C1C (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Welcoming & sacred,Peaceful
+75,Sports Team,Victory Spirit,#EF4444 (Team Red),#111827 (Black),#FFD700 (Gold),#22C55E (Green),#FBBF24 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Energetic competition,Exciting
+76,Museum/Gallery,Curation White,#F5F5F5 (Off-White),#D1D5DB (Grey),#111827 (Black),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Zero distraction,Sophisticated
+77,Theater/Cinema,Stage Dramatic,#000000 (Black),#1A1A1A (Dark),#D4AF37 (Gold),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#000000 (Black),#FFFFFF (White),7+,21+,Dramatic contrast,Exciting
+78,Language Learning,Global Play,#3B82F6 (Blue),#60A5FA (Light Blue),#22C55E (Success),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Educational engagement,Playful
+79,Coding Bootcamp,Dev Console,#121212 (Dark),#1DB954 (Green),#6366F1 (Indigo),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#121212 (Dark),#FFFFFF (White),7+,21+,Technical focus,Modern
+80,Cybersecurity,Safe Matrix,#0D0D0D (Black),#00FF00 (Neon Green),#0080FF (Blue),#00FF00 (Green),#FFA500 (Orange),#FF0000 (Red),#0D0D0D (Black),#00FF00 (Green),7+,21+,Security visual,Futuristic
+81,Developer Tool,Syntax Focus,#1A1B26 (Tokyo Night),#24283B (Slate),#7AA2F7 (Blue),#9ECE6A (Green),#E0AF68 (Orange),#F7768E (Red),#1A1B26 (Dark),#A9B1D6 (Light),4.5+,7+,Code readability,Professional
+82,Biotech/Science,Clean Lab,#FFFFFF (White),#E2E8F0 (Light Slate),#0EA5E9 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#0F172A (Dark Blue),4.5+,7+,Sterile & precise,Functional
+83,Space Tech,Orbital Deep,#020617 (Midnight),#1E293B (Slate),#38BDF8 (Cyan),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#020617 (Midnight),#F8FAFC (Light),7+,21+,High-tech precision,Futuristic
+84,Architecture,Form & Void,#000000 (Black),#FFFFFF (White),#D4AF37 (Gold),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#000000 (Black),7+,21+,Structural clarity,Elegant
+85,Quantum Computing,Entanglement,#000000 (Black),#111111 (Dark),#00FFFF (Cyan),#00FF00 (Green),#FFFF00 (Yellow),#FF00FF (Magenta),#000000 (Black),#00FFFF (Cyan),7+,21+,Complexity visualization,Futuristic
+86,Biohacking,Biological Pulse,#000000 (Black),#FF4D4D (Biological Red),#00D1FF (Tech Blue),#22C55E (Green),#FFB800 (Yellow),#FF0000 (Red),#000000 (Black),#FFFFFF (White),7+,21+,Personal data privacy,Intelligent
+87,Autonomous Drone,Tactical View,#0D0D0D (Black),#1A1A1A (Dark),#33FF00 (Tactical Green),#00FF00 (Green),#FF0000 (Alert),#FF0000 (Red),#0D0D0D (Black),#33FF00 (Green),7+,21+,Precision telemetry,Authoritative
+88,Generative Art,Canvas Neutral,#FFFFFF (White),#F3F4F6 (Grey),#000000 (Black),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#000000 (Black),7+,21+,Content focus,Artistic
+89,Spatial Computing,Frosted Depth,rgba(255 255 255 / 0.1),rgba(0 0 0 / 0.5),#FFFFFF (White),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),transparent,rgba(255 255 255 / 0.9),4.5+,7+,Depth hierarchy,Futuristic
+90,Sustainable Energy,Earth Green,#15803D (Green),#F0FDF4 (Light Green),#0EA5E9 (Blue),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#064E3B (Dark Green),4.5+,7+,Low-carbon feel,Safe
+91,Personal Finance,Wallet Blue,#2563EB (Blue),#3B82F6 (Light Blue),#10B981 (Success),#16A34A (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark Grey),4.5+,7+,Financial stability,Professional
+92,Chat & Messaging,Bubble Social,#1D9BF0 (Blue),#EFF3F4 (Light Grey),#00BA7C (Green),#22C55E (Green),#FFD400 (Yellow),#F4212E (Red),#FFFFFF (White),#0F1419 (Dark Blue),4.5+,7+,Conversation flow,Connected
+93,Notes & Writing,Editor Calm,#111827 (Black),#F9FAFB (Light Grey),#2563EB (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Distraction-free,Peaceful
+94,Habit Tracker,Streak Amber,#F59E0B (Amber),#FBBF24 (Yellow),#10B981 (Green),#22C55E (Green),#F97316 (Orange),#EF4444 (Red),#FFFBEB (Light Cream),#451A03 (Dark Brown),4.5+,7+,Motivational consistency,Friendly
+95,Food Delivery,Appetite Red,#EA580C (Orange),#F97316 (Light Orange),#2563EB (Blue),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Freshness & speed,Appetizing
+96,Ride Hailing,Motion Black,#000000 (Black),#1F2937 (Grey),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),7+,21+,Action focus,Reliable
+97,Recipe & Cooking,Chef Terracotta,#C2410C (Terracotta),#EA580C (Orange),#15803D (Green),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFF7ED (Cream),#431407 (Dark Brown),4.5+,7+,Organic & warm,Appetizing
+98,Meditation,Zen Pastel,#818CF8 (Lavender),#A5B4FC (Light Lavender),#34D399 (Mint),#10B981 (Green),#FDE68A (Soft Yellow),#FDA4AF (Soft Red),#F8FAFC (White),#1E1B4B (Deep Purple),4.5+,7+,Calming focus,Peaceful
+99,Weather App,Atmosphere Gradient,#0EA5E9 (Sky Blue),#38BDF8 (Light Blue),#FACC15 (Sun Yellow),#22C55E (Green),#F97316 (Orange),#DC2626 (Red),#F0F9FF (Light),#0C4A6E (Dark),4.5+,7+,Clear utility,Fresh
+100,Diary & Journal,Reflection Paper,#78350F (Warm Brown),#A16207 (Tan),#EC4899 (Pink),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FDFBF7 (Cream Paper),#431407 (Ink Black),4.5+,7+,Personal warmth,Peaceful
+101,CRM & Client,Sales Pipeline,#1E3A8A (Navy),#3B82F6 (Blue),#10B981 (Won),#059669 (Emerald),#D97706 (Amber),#B91C1C (Red),#FFFFFF (White),#0F172A (Slate),4.5+,7+,Business logic,Authoritative
+102,Inventory & Stock,Stock Alert,#374151 (Grey),#4B5563 (Light Grey),#EF4444 (Alert Red),#16A34A (Green),#F59E0B (Amber),#DC2626 (Red),#FFFFFF (White),#111827 (Dark),4.5+,7+,Functional accuracy,Reliable
+103,Flashcard & Study,Focus Blue,#2563EB (Blue),#60A5FA (Light Blue),#10B981 (Correct),#16A34A (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Concentration focus,Intelligent
+104,Booking & Appointment,Reserve Green,#059669 (Emerald),#10B981 (Green),#2563EB (Blue),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Clear availability,Reliable
+105,Invoice & Billing,Payment Professional,#111827 (Black),#374151 (Grey),#16A34A (Paid Green),#22C55E (Green),#F59E0B (Amber),#EF4444 (Overdue),#FFFFFF (White),#111827 (Black),4.5+,7+,Financial trust,Professional
+106,Grocery & Shopping,Fresh List,#16A34A (Green),#22C55E (Light Green),#FACC15 (Yellow),#15803D (Green),#F97316 (Orange),#DC2626 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Utility & fresh,Friendly
+107,Timer & Pomodoro,Focus Red,#DC2626 (Red),#EF4444 (Light Red),#10B981 (Success),#22C55E (Green),#FBBF24 (Yellow),#991B1B (Dark Red),#FFFFFF (White),#111827 (Dark),4.5+,7+,Urgency & focus,Active
+108,Parenting & Baby,Caring Pastels,#FBCFE8 (Pink),#BAE6FD (Blue),#A7F3D0 (Green),#10B981 (Green),#FDE68A (Yellow),#FDA4AF (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Soft & safe feel,Cheerful
+109,Scanner & Document,Archive Grey,#4B5563 (Grey),#6B7280 (Light Grey),#2563EB (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Dark),4.5+,7+,Efficiency focus,Reliable
+110,Calendar & Schedule,Agenda Blue,#2563EB (Blue),#3B82F6 (Light Blue),#10B981 (Success),#16A34A (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Organization focus,Reliable
+111,Password Manager,Vault Security,#111827 (Black),#1F2937 (Grey),#10B981 (Safe Green),#22C55E (Green),#F59E0B (Amber),#EF4444 (Breach),#FFFFFF (White),#111827 (Black),7+,21+,Security focus,Reliable
+112,Expense Splitter,Settle Up,#10B981 (Green),#22C55E (Light Green),#EF4444 (Owed Red),#16A34A (Green),#F59E0B (Amber),#DC2626 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Financial balance,Friendly
+113,Voice Recorder,Audio Pulse,#EF4444 (Recording Red),#FCA5A5 (Light Red),#111827 (Black),#10B981 (Green),#FBBF24 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Capture focus,Modern
+114,Bookmark & Read,Reading Paper,#78350F (Brown),#A16207 (Tan),#2563EB (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FDFBF7 (Cream),#431407 (Ink),4.5+,7+,Information focus,Peaceful
+115,Translator App,Global Connect,#2563EB (Blue),#3B82F6 (Light Blue),#10B981 (Success),#16A34A (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Communication,Intelligent
+116,Calculator,Math Focus,#111827 (Black),#EA580C (Orange),#374151 (Grey),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Functional focus,Functional
+117,Alarm & Clock,Time Dark,#000000 (Black),#1F2937 (Grey),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#000000 (Black),#FFFFFF (White),7+,21+,Night-time focus,Reliable
+118,File Manager,Storage Navy,#1E3A8A (Navy),#3B82F6 (Blue),#F97316 (Orange),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Organization,Reliable
+119,Email Client,Inbox White,#2563EB (Blue),#EFF6FF (Light Blue),#DC2626 (Urgent),#16A34A (Green),#F59E0B (Snooze),#EF4444 (Delete),#FFFFFF (White),#111827 (Black),4.5+,7+,Readability focus,Reliable
+120,Casual Puzzle Game,Fun Tiles,#F43F5E (Rose),#FB7185 (Pink),#FACC15 (Gold),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#4C0519 (Dark Rose),4.5+,7+,Playful engagement,Cheerful
+121,Trivia & Quiz,Quiz Energy,#3B82F6 (Blue),#60A5FA (Light Blue),#FACC15 (Gold),#10B981 (Correct),#F59E0B (Amber),#EF4444 (Wrong),#FFFFFF (White),#1E1B4B (Navy),4.5+,7+,Intellectual energy,Exciting
+122,Card & Board Game,Classic Play,#15803D (Felt Green),#166534 (Dark Green),#FFD700 (Gold),#16A34A (Green),#FBBF24 (Yellow),#DC2626 (Red),#1A1A1A (Dark),#FDFDFD (White),4.5+,7+,Traditional feel,Sophisticated
+123,Idle & Clicker,Progress Pulse,#F59E0B (Gold),#FBBF24 (Yellow),#8B5CF6 (Prestige),#10B981 (Green),#F97316 (Orange),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Growth energy,Exciting
+124,Word Game,Letter Tile,#FACC15 (Yellow),#FEF08A (Light Yellow),#10B981 (Success),#16A34A (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#451A03 (Brown),4.5+,7+,Focus on letters,Intelligent
+125,Arcade Game,Neon Retro,#FF00FF (Magenta),#00FFFF (Cyan),#FFFF00 (Yellow),#00FF00 (Green),#FFA500 (Orange),#FF0000 (Red),#000000 (Black),#FFFFFF (White),7+,21+,High-speed energy,Exciting
+126,Photo Editor,Editor Dark,#121212 (Dark),#3B82F6 (Blue),#10B981 (Green),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#121212 (Dark),#FFFFFF (White),7+,21+,Focus on image,Modern
+127,Short Video Editor,Video Pulse,#000000 (Black),#E50914 (Red),#6366F1 (Indigo),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#000000 (Black),#FFFFFF (White),7+,21+,Focus on media,Exciting
+128,Drawing & Sketch,Artist Canvas,#FFFFFF (White),#F3F4F6 (Grey),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#000000 (Black),7+,21+,Creative focus,Artistic
+129,Music Creation,Studio Dark,#111111 (Black),#6366F1 (Indigo),#EC4899 (Pink),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#111111 (Black),#FFFFFF (White),7+,21+,Audio focus,Modern
+130,Meme Maker,Viral Comedy,#FFFF00 (Yellow),#000000 (Black),#FF0000 (Red),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#000000 (Black),4.5+,7+,High saturation,Cheerful
+131,AI Photo Gen,AI Aurora,#6366F1 (AI Purple),#EC4899 (Pink),#00FFFF (Cyan),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#0F172A (Midnight),#FFFFFF (White),4.5+,7+,Generation focus,Intelligent
+132,Link-in-Bio,Profile Social,#111827 (Black),#FFFFFF (White),#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Identity focus,Connected
+133,Wardrobe Planner,Fashion Neutral,#111827 (Black),#F9FAFB (Light Grey),#D4AF37 (Gold),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Clothing focus,Elegant
+134,Plant Care,Nature Green,#15803D (Green),#F0FDF4 (Light Green),#3B82F6 (Water Blue),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#064E3B (Dark Green),4.5+,7+,Life & growth,Lively
+135,Book Tracker,Literary Paper,#78350F (Brown),#FDFBF7 (Cream),#15803D (Read Green),#16A34A (Green),#FBBF24 (Yellow),#EF4444 (Red),#FDFBF7 (Cream),#431407 (Ink),4.5+,7+,Reading focus,Peaceful
+136,Couple App,Heart Warmth,#F43F5E (Rose),#FB7185 (Pink),#8B5CF6 (Violet),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFF1F2 (Cream),#4C0519 (Dark),4.5+,7+,Intimate focus,Romantic
+137,Family Calendar,Family Unity,#3B82F6 (Blue),#10B981 (Green),#F59E0B (Amber),#22C55E (Green),#F97316 (Orange),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Shared focus,Friendly
+138,Mood Tracker,Emotional Spectrum,#6366F1 (Calm Blue),#FACC15 (Happy Yellow),#EC4899 (Love Pink),#10B981 (Green),#F97316 (Warning),#EF4444 (Error),#FFFFFF (White),#111827 (Black),4.5+,7+,Self-reflection,Peaceful
+139,Gift & Wishlist,Celebrate Gold,#D4AF37 (Gold),#FDF4FF (Pink),#DC2626 (Red),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Gift-giving joy,Cheerful
+140,Running & Cycling,Endurance Orange,#F97316 (Orange),#FB923C (Light Orange),#111827 (Black),#22C55E (Green),#FBBF24 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Physical energy,Active
+141,Yoga App,Muted Earth,#6B7280 (Slate),#D1D5DB (Light Grey),#15803D (Green),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#F9FAFB (White),#1F2937 (Dark),4.5+,7+,Flexibility focus,Peaceful
+142,Sleep Tracker,Midnight Quiet,#020617 (Midnight),#1E293B (Slate),#FBBF24 (Moon),#10B981 (Green),#F59E0B (Amber),#EF4444 (Red),#020617 (Midnight),#FFFFFF (White),7+,21+,Rest focus,Safe
+143,Calorie Counter,Healthy Intake,#16A34A (Green),#DC2626 (Red),#2563EB (Blue),#16A34A (Green),#FACC15 (Yellow),#EF4444 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Nutritional balance,Active
+144,Period Tracker,Body Cycles,#F43F5E (Rose),#FB7185 (Pink),#8B5CF6 (Lavender),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFF1F2 (Cream),#4C0519 (Dark Rose),4.5+,7+,Cycle focus,Safe
+145,Medication Remind,Medical Safety,#2563EB (Blue),#FFFFFF (White),#EF4444 (Alert),#16A34A (Success),#F59E0B (Amber),#DC2626 (Red),#FFFFFF (White),#1E293B (Dark),7+,21+,Security focus,Safe
+146,Water Reminder,Hydration Blue,#0EA5E9 (Blue),#38BDF8 (Light Blue),#FFFFFF (White),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#F0F9FF (Light Blue),#0C4A6E (Dark Blue),4.5+,7+,Freshness focus,Friendly
+147,Fasting Timer,Metabolic Focus,#4F46E5 (Indigo),#10B981 (Eating Window),#1F2937 (Fasting),#16A34A (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Timing focus,Active
+148,Anonymous Comm,Privacy Grey,#374151 (Grey),#111827 (Dark Grey),#10B981 (Upvote),#16A34A (Green),#F59E0B (Amber),#EF4444 (Report),#111827 (Black),#F9FAFB (White),7+,21+,Secretive focus,Safe
+149,Local Discovery,City Vibrant,#F43F5E (Rose),#2563EB (Blue),#FACC15 (Yellow),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Urban energy,Lively
+150,Study Together,Shared Focus,#4F46E5 (Indigo),#F5F3FF (Light Indigo),#10B981 (Online),#22C55E (Green),#F59E0B (Amber),#EF4444 (Red),#FFFFFF (White),#1E1B4B (Navy),4.5+,7+,Productivity,Connected
+151,Coding Challenge,Logic Console,#111827 (Black),#1DB954 (Success Green),#6366F1 (Indigo),#22C55E (Green),#FBBF24 (Yellow),#EF4444 (Red),#111827 (Black),#FFFFFF (White),7+,21+,Technical focus,Modern
+152,Kids Learning,Primary ABC,#3B82F6 (Blue),#EF4444 (Red),#FACC15 (Yellow),#10B981 (Green),#F97316 (Orange),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Educational safety,Cheerful
+153,Music Lessons,Harmony Warmth,#7C2D12 (Brown),#D4AF37 (Gold),#2563EB (Blue),#16A34A (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFF7ED (Cream),#431407 (Dark Brown),4.5+,7+,Musical heritage,Elegant
+154,Parking Finder,Spot Navigation,#2563EB (Blue),#10B981 (Available),#EF4444 (Occupied),#16A34A (Green),#FACC15 (Yellow),#DC2626 (Red),#FFFFFF (White),#1F2937 (Dark),4.5+,7+,Utility focus,Reliable
+155,Public Transit,Line Transit,#EF4444 (Red Line),#2563EB (Blue Line),#16A34A (Active),#10B981 (Green),#FBBF24 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Fast information,Reliable
+156,Road Trip,Adventure Road,#F97316 (Orange),#0EA5E9 (Sky),#15803D (Forest),#16A34A (Green),#FBBF24 (Yellow),#DC2626 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Freedom energy,Adventurous
+157,VPN & Privacy,Shield Security,#111827 (Black),#10B981 (Connected),#DC2626 (Disconnected),#16A34A (Green),#F59E0B (Amber),#EF4444 (Red),#0F172A (Dark Blue),#FFFFFF (White),7+,21+,Security focus,Reliable
+158,Emergency SOS,Life Alert,#EF4444 (Alert Red),#FFFFFF (White),#2563EB (Safety Blue),#22C55E (Green),#FBBF24 (Yellow),#991B1B (Deep Red),#FFFFFF (White),#111827 (Black),7+,21+,Critical focus,Safe
+159,Wallpaper App,Gallery Visual,#000000 (Black),#FFFFFF (White),#EC4899 (Pink),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#000000 (Black),7+,21+,Content focus,Artistic
+160,White Noise,Ambient Calm,#1F2937 (Slate),#374151 (Grey),#0EA5E9 (Sleep Blue),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#0F172A (Midnight),#FFFFFF (White),7+,21+,Relaxation focus,Peaceful
+161,Home Decoration,Interior Style,#FFFFFF (White),#F9FAFB (Light Grey),#B45309 (Amber),#10B981 (Green),#FBBF24 (Yellow),#EF4444 (Red),#FFFFFF (White),#111827 (Black),4.5+,7+,Design focus,Elegant
+162,
+The above content shows the entire, complete file contents of the requested file.

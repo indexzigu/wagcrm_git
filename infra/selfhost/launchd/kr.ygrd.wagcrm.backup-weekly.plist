@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 - 경로는 이 iMac(운영 체크아웃 ~/selfhost/wagcrm, 홈 /Users/z9)에 고정된
+	   절대경로다. launchd 는 $HOME/~ 를 전개하지 않으므로 다른 머신으로
+	   옮길 경우 이 파일의 경로를 전부 다시 써야 한다.
+	 - 요일·시각 일요일 22:00 KST 선택 이유: 앱 예약 잡은 KST 00:00·02:00·
+	   03:00·04:00(일간 백업)·05:00·06:30·07:00·07:30·08:00·08:30·09:00·
+	   10:00·11:00(월)·12:00·13:00 에 돈다(infra/selfhost/README.md
+	   "UTC → KST 환산표"). 13:00 이후부터 다음날 00:00 전까지(14:00~23:59)는
+	   매일 반복되는 완전한 공백 구간이다. 이 잡은 일간 백업보다 무겁다 —
+	   Docker 네임드 볼륨을 일회용 컨테이너에 마운트해 80MB+ 파일 1,200여
+	   개를 타르로 묶고 R2 가 아닌 Google Drive(다른 벤더, 다른 네트워크
+	   경로)로 업로드하므로 소요 시간과 실패 지점이 일간 백업(DB pg_dump
+	   하나만 R2 로 업로드)보다 많다. 그래서 일간 백업이 쓰는 좁은 새벽 틈
+	   (03:00 과 05:00 사이 단 1시간)이 아니라, 앞뒤로 여유가 가장 큰 저녁
+	   공백 구간 중에서도 양쪽 이웃 잡과 거리가 먼 22:00 을 골랐다 — 그날
+	   마지막 잡(13:00)로부터 9시간, 다음날 첫 잡(00:00)까지 2시간 여유가
+	   있어 예상보다 오래 걸려도 다른 예약 작업과 부딪힐 가능성이 낮다.
+	   주간이므로 요일은 임의로 일요일(Weekday=0)을 골랐다 — 특별한 이유는
+	   없고, 주중 운영 활동이 상대적으로 적은 요일이라는 정도의 선택이다.
+	 - ⚠️ StartCalendarInterval 을 쓴다 — KeepAlive 는 여기 쓰면 안 된다.
+	   이유는 kr.ygrd.wagcrm.backup.plist 와 동일: 이 스크립트는 주 1회
+	   돌고 정상 종료하는 주기적 작업이지 상주 서비스가 아니다. KeepAlive
+	   를 쓰면 실패(nonzero exit)할 때마다 launchd 가 즉시 재기동을
+	   반복하는 크래시루프가 된다. StartCalendarInterval 은 지정한
+	   요일·시각에 1회 실행하는 launchd 의 표준 cron 대응 메커니즘이고,
+	   실행 실패는 다음 예정 시각까지 그냥 기다린다.
+	-->
+	<key>Label</key>
+	<string>kr.ygrd.wagcrm.backup-weekly</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/z9/selfhost/wagcrm/infra/selfhost/backup-weekly.sh</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/z9/selfhost/wagcrm</string>
+
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Weekday</key>
+		<integer>0</integer>
+		<key>Hour</key>
+		<integer>22</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+
+	<key>StandardOutPath</key>
+	<string>/Users/z9/selfhost/logs/backup-weekly.out.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/Users/z9/selfhost/logs/backup-weekly.err.log</string>
+</dict>
+</plist>

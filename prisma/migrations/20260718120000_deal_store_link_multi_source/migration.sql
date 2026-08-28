@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "DealStoreLink" ADD COLUMN     "source" TEXT NOT NULL DEFAULT 'LINK',
+ALTER COLUMN "shortLink" DROP NOT NULL;
+

@@ -1,0 +1,1849 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Partner {
+  id                  String           @id @default(cuid())
+  name                String
+  type                String
+  status              String?
+  contactInfo         String?
+  bankAccount         String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  referredById        String?
+  companyRole         String?
+  companyStatus       String?
+  lastContactAt       DateTime?
+  notes               String?
+  businessNumber      String?
+  address             String?
+  bizSyncedAt         DateTime?
+  ceoName             String?
+  businessType        String?
+  businessItem        String?
+  representativeEmail String?
+  // F4-② 딜 온보딩 제로코드화(GROWTH_FLYWHEEL_PLAN.md §F4): 발주 브랜드 설정.
+  // orderTemplateSlug 값이 있으면 이 거래처는 "발주 브랜드"(OrderCampaign.template의 해석 대상).
+  orderTemplateSlug   String?          @unique // 예: nutrione (OrderCampaign.template과 매칭되는 키)
+  orderDisplayName    String? // 발주서/파일명/드롭다운 표시명(예: 뉴트리원). 없으면 name 사용
+  orderEmailDomains   String? // 회신 발주서 허용 발신 도메인(쉼표구분, 예: @example.com)
+  orderFormatAdapter  String? // (레거시) 양식 어댑터 template-file|tripp — Phase 2 매핑 엔진이 대체 예정
+  orderToEmail        String? // 발주서 기본 수신 이메일(To). 값이 있으면 발주 브랜드로 등록됨
+  orderCcEmail        String? // 발주서 보조 수신 이메일(CC, 선택)
+  orderExcelRules     Json? // F4 Phase 2: 네이버→발주서 열 매핑 규칙(OrderExcelRules v1, excel-rules.ts zod 검증)
+  deals               Deal[]
+  referredBy          Partner?         @relation("PartnerReferral", fields: [referredById], references: [id])
+  referrals           Partner[]        @relation("PartnerReferral")
+  contacts            PartnerContact[]
+  sellerAgents        Seller[]         @relation("SellerAgency")
+  priceSheets         PriceSheet[]
+
+  @@index([type])
+  @@index([name])
+  @@index([referredById])
+}
+
+model Seller {
+  id                    String                     @id @default(cuid())
+  name                  String
+  snsType               String
+  snsHandle             String
+  currentFollowers      Int                        @default(0)
+  currentPostsCount     Int?
+  profileBio            String?
+  profilePicUrl         String?
+  profileExternalUrls   String?
+  category              String?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  agencyId              String?
+  accountNumber         String?
+  residentNumber        String?
+  activityFrequency     String?
+  adResponseScore       String?
+  channelUrl            String?
+  collaborationScore    String?
+  commentResponseScore  String?
+  email                 String?
+  fitLevel              String?
+  lastReviewedAt        DateTime?
+  mailingAddress        String?
+  notes                 String?
+  personalCategory      String?
+  phoneNumber           String?
+  proposalProduct       String?
+  proposalStatus        String?
+  proposalWaitlist      String?
+  reviewer              String?
+  isMonitored           Boolean                    @default(false)
+  alias                 String?
+  // 원천징수 신고·간이지급명세서에 적는 법적 실명(2026-08-04). `name` 은 실무에서 활동명이
+  // 들어가 있어 신고 서식에 그대로 쓸 수 없다 — 두 값을 분리해 폴백 없이 이 필드만 쓴다.
+  realName              String?
+  portalToken           String?                    @unique
+  // 셀러 전용 주소 포털(2026-07-10): crm.ygrd.kr/<slug> + 비밀번호 게이트.
+  // slug는 셀러 계정명 기반(공개 취급) — 비밀은 비밀번호(bcrypt 해시)뿐이다.
+  portalSlug            String?                    @unique
+  portalPasswordHash    String?
+  // 무차별 대입 방어: 실패 카운트/잠금 해제 시각(서버리스에서도 살아남게 DB에 둔다)
+  portalAuthFailCount   Int                        @default(0)
+  portalAuthLockedUntil DateTime?
+  // F6 outcome 적립(GROWTH_FLYWHEEL_PLAN.md §F6): 유입 경로·소개 계보·가용 일정 — 소급 불가 데이터라 등록 시점부터 기록
+  acquisitionChannel    String? // REFERRAL | NETWORK | INBOUND | COLD | DISCOVERY
+  referredById          String?
+  acquisitionNote       String?
+  // 가용 일정은 셀러에게 직접 확인한 값만 기록(캠페인 이력 추정 금지 — 2026-07-07 소유자 확정)
+  availabilityNote      String?
+  availabilityUpdatedAt DateTime?
+  referredBy            Seller?                    @relation("SellerReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals             Seller[]                   @relation("SellerReferral")
+  campaigns             SalesCampaign[]
+  campaignGroups        CampaignGroup[]
+  storySnapshots        SellerStorySnapshot[]
+  postClassifications   SellerPostClassification[]
+  salesTasks            SalesTask[]
+  agency                Partner?                   @relation("SellerAgency", fields: [agencyId], references: [id])
+  categoryAssignments   SellerCategoryAssignment[]
+  bioHistories          SellerProfileBioHistory[]
+  outreaches            SellerOutreach[]
+  histories             SellersHistory[]
+
+  @@unique([snsType, snsHandle])
+  @@index([category])
+  @@index([agencyId])
+  @@index([referredById])
+}
+
+model SellersHistory {
+  id                  String   @id @default(cuid())
+  sellerId            String
+  snapshotDate        DateTime
+  followersCount      Int
+  postsCount          Int?
+  profileBio          String?
+  profilePicUrl       String?
+  profileExternalUrls String?
+  source              String   @default("INTERNAL")
+  // ER 추이 (§11-3 결정: SellersHistory 재사용, 파생 스칼라만 적립 — 게시물 원본 JSON 미저장)
+  // (평균 좋아요+평균 댓글)/팔로워. 팔로워-only 갱신 경로는 undefined로 넘겨 기존 값을 보존한다.
+  er                  Float?
+  avgLikes            Float?
+  avgComments         Float?
+  createdAt           DateTime @default(now())
+  seller              Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, snapshotDate])
+  @@index([snapshotDate])
+}
+
+model SellerProfileBioHistory {
+  id          String   @id @default(cuid())
+  sellerId    String
+  collectedAt DateTime @default(now())
+  previousBio String?
+  bio         String
+  source      String   @default("INTERNAL")
+  createdAt   DateTime @default(now())
+  seller      Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, collectedAt])
+}
+
+model Deal {
+  id                      String                 @id @default(cuid())
+  dealName                String
+  costPrice               Decimal                @default(0)
+  baseMarginPolicy        String
+  status                  DealStatus             @default(SOURCING)
+  partnerId               String?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  sellingPrice            Decimal                @default(0)
+  brandName               String?
+  brokerageCommissionRate Decimal?
+  candidateSellers        String?
+  discountRate            Decimal?
+  floorPrice              Decimal?
+  listPrice               Decimal?
+  partnerCompanyName      String?
+  sourcingMemo            String?
+  totalCommissionRate     Decimal?
+  supplyPrice             Float?
+  optionSortOrder         Int                    @default(0)
+  dealType                String                 @default("MAIN")
+  parentDealId            String?
+  unit                    String?
+  unitQuantity            Int?
+  supplementaryInfo       String?
+  shippingFee             Decimal?
+  freeShippingThreshold   Decimal?
+  monitorEnabled          Boolean                @default(true)
+  // 클레임 게이트의 카테고리 규칙 선택자(FOOD|SUPPLEMENT|COSMETIC|GENERAL).
+  // enum이 아니라 String — 카테고리 세트는 운영 중 늘어난다(C1 스펙 §4).
+  category                String?
+  claims                  DealClaim[]
+  offerAnswers            DealOfferAnswer[]
+  assetDrafts             DealAssetDraft[]
+  guideDrafts             DealGuideDraft[]
+  campaignDeals           CampaignDeal[]
+  templates               CampaignTemplate[]
+  parentDeal              Deal?                  @relation("DealOptions", fields: [parentDealId], references: [id])
+  options                 Deal[]                 @relation("DealOptions")
+  partner                 Partner?               @relation(fields: [partnerId], references: [id])
+  campaigns               SalesCampaign[]
+  salesTasks              SalesTask[]
+  outreaches              SellerOutreach[]
+  priceSheetRows          PriceSheetRow[]
+  priceMonitorSnapshots   PriceMonitorSnapshot[]
+
+  @@index([status])
+  @@index([partnerId])
+  @@index([parentDealId])
+}
+
+model SalesCampaign {
+  id                      String                     @id @default(cuid())
+  dealId                  String
+  sellerId                String
+  startDate               DateTime
+  endDate                 DateTime
+  salesChannel            String
+  baseNaverLink           String
+  generatedTrackingLink   String
+  actualSales             Decimal?
+  totalMarginRate         Decimal                    @default(0)
+  sellerMarginRate        Decimal                    @default(0)
+  netMarginRate           Decimal                    @default(0)
+  status                  String                     @default("PROPOSAL")
+  isManualMargin          Boolean                    @default(false)
+  isManualSettlementSales Boolean                    @default(false)
+  isManualSellerExpense   Boolean                    @default(false)
+  isManualTaxExpense      Boolean                    @default(false)
+  assignedTo              String?
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
+  itemCount               Int?
+  nextAction              String?
+  notesFromImport         String?
+  operatingExpense        Decimal?
+  operatingProfit         Decimal?
+  quantity                Int?                       @map("orderCount")
+  rawSchedule             String?
+  salesCode               String?
+  sellerExpense           Decimal?
+  settlementSales         Decimal?
+  sourceCreatedAt         DateTime?
+  actualPayoutAmount      Decimal?
+  commissionBasis         String?
+  isDepositReceived       Boolean                    @default(false)
+  isPayoutCompleted       Boolean                    @default(false)
+  miscExpense             Decimal?
+  roundNumber             Int?
+  sellerTaxType           String?
+  taxExpense              Decimal?
+  depositReceivedAt       DateTime?
+  payoutCompletedAt       DateTime?
+  campaignName            String?
+  accountingCompletedAt   DateTime?
+  expectedDepositDate     DateTime?
+  expectedPayoutDate      DateTime?
+  /// 자사몰 전용 2번째 지급 레그(공급사 물품대금). 자사몰은 몰 정산금이 일별 입금이라 입금
+  /// 일정이 없고 지급이 공급사·셀러 둘이다 — 기존 payout 3종은 셀러 지급으로 좁혀진다.
+  /// 슬롯 판정 SSOT: resolveCampaignMoneySlots(tax-filing-board.ts). 단일 지급 채널은 미사용(null).
+  expectedSupplierPayoutDate DateTime?
+  supplierPayoutCompletedAt  DateTime?
+  isSupplierPayoutCompleted  Boolean                   @default(false)
+  returnPeriodEndDate     DateTime?
+  sellerInvoiceIssuedAt   DateTime?
+  settlementSupplyCost    Decimal?
+  /// 수기 물품대금 = 이 캠페인 앞 매입 계산서 합계(VAT 포함). 세무 대조 전용 — 손익 소비 금지.
+  settlementGoodsCost     Decimal?
+  supplierInvoiceIssuedAt DateTime?
+  shippingFee             Decimal?
+  freeShippingThreshold   Decimal?
+  calendarEventIds        String? // 구글 캘린더 이벤트 id (JSON: {campaign,deposit,payout}) — 멱등 동기화용
+  groupId                 String? // CG-1: 조합 캠페인 묶음(CampaignGroup) 소속. null=미그룹. 멤버십 변경은 서비스 경유만.
+  group                   CampaignGroup?             @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  assets                  Asset[]
+  activities              CampaignActivity[]
+  checklistItems          CampaignChecklistItem[]
+  settlementItems         CampaignSettlementItem[]
+  campaignDeals           CampaignDeal[]
+  notes                   CampaignNote[]
+  deal                    Deal                       @relation(fields: [dealId], references: [id])
+  seller                  Seller                     @relation(fields: [sellerId], references: [id])
+  settlementChecklist     SettlementChecklist?
+  attributions            TrackingAttribution[]
+  trackedLinks            TrackedLink[]
+  orderCampaignId         String?
+  orderCampaign           OrderCampaign?             @relation(fields: [orderCampaignId], references: [id])
+  actionProposals         ActionProposal[]
+  workRecords             WorkRecord[]
+  chatRoomMappings        ChatRoomMapping[]
+  buyerFingerprints       CampaignBuyerFingerprint[]
+
+  // DB에는 DEFERRABLE INITIALLY DEFERRED 제약으로 생성됨(recalculateCampaignRounds의
+  // 차수 재배열 중간 스왑 허용, 커밋 시점 검사) — 마이그 20260720000000 직접 실행.
+  @@unique([dealId, sellerId, roundNumber])
+  @@index([status])
+  @@index([dealId])
+  @@index([sellerId])
+  @@index([startDate, endDate])
+  @@index([assignedTo])
+  @@index([salesCode])
+  @@index([groupId])
+}
+
+// 회차간 재구매 영구 지문 — NaverOrderSnapshot 30일 보관 한계를 넘어 회차별 구매자를 보존한다.
+// 스냅샷이 만료돼도 "이 회차에 누가 샀는가"(해시)만 남겨, 수개월 간격의 다음 회차에서
+// 재구매(returning) 대조가 가능해진다(2026-07-11 소유자 결정, 포워드 전용·과거 소급 불가).
+// buyerHash = sha256(pepper + ordererNo) — 원문 ordererNo(PII)는 절대 저장하지 않는다.
+// 쓰기는 sweepBuyerFingerprints(cron naver-order-sync)만, 읽기는 회차간 재구매 집계만.
+model CampaignBuyerFingerprint {
+  id              String        @id @default(cuid())
+  salesCampaignId String
+  buyerHash       String
+  createdAt       DateTime      @default(now())
+  salesCampaign   SalesCampaign @relation(fields: [salesCampaignId], references: [id], onDelete: Cascade)
+
+  @@unique([salesCampaignId, buyerHash])
+  @@index([salesCampaignId])
+}
+
+// CG-1: 조합 캠페인 묶음(1개 실캠페인 = N개 관리캠페인) 그룹 엔티티.
+// 순수 가산 — SalesCampaign 컬럼 삭제 없음. 전 멤버 동일 sellerId(앱 레벨 불변식).
+// startDate/endDate는 멤버 min/max 롤업(표시용, SoT 아님). 정산/캘린더 필드는 CG-2/3 배선 전 미사용(null 시작).
+model CampaignGroup {
+  id                      String          @id @default(cuid())
+  sellerId                String // 식별 앵커 — 전 멤버 동일 셀러(앱 레벨 불변식)
+  name                    String? // 자동 "[셀러별칭] 대표딜명 외 N-1건"(D4), 수동 override 허용
+  startDate               DateTime? // 대표 기간 롤업(멤버 min) — SoT 아님
+  endDate                 DateTime? // 대표 기간 롤업(멤버 max)
+  expectedDepositDate     DateTime?
+  depositReceivedAt       DateTime?
+  isDepositReceived       Boolean         @default(false)
+  expectedPayoutDate      DateTime?
+  payoutCompletedAt       DateTime?
+  isPayoutCompleted       Boolean         @default(false)
+  // 자사몰 공급사 지급 레그 — SalesCampaign 쪽 주석 참조. 정산일 그룹 스칼라 SoT 규약 동승.
+  expectedSupplierPayoutDate DateTime?
+  supplierPayoutCompletedAt  DateTime?
+  isSupplierPayoutCompleted  Boolean        @default(false)
+  supplierInvoiceIssuedAt DateTime?
+  sellerInvoiceIssuedAt   DateTime?
+  accountingCompletedAt   DateTime?
+  returnPeriodEndDate     DateTime?
+  invoiceInfo             String? // JSON — CG-2 배선 전 미사용
+  calendarEventIds        String? // JSON {campaign,deposit,payout} — CG-3 배선 완료. 그룹 멤버는 개별 이벤트를 갖지 않고(합류 시 삭제) 이 장부가 유일 정본이다
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  seller                  Seller          @relation(fields: [sellerId], references: [id])
+  members                 SalesCampaign[]
+
+  @@index([sellerId])
+  @@index([startDate, endDate])
+}
+
+model CampaignChecklistTemplate {
+  id         String                  @id @default(cuid())
+  status     String
+  label      String
+  sortOrder  Int
+  isRequired Boolean                 @default(true)
+  isActive   Boolean                 @default(true)
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+  items      CampaignChecklistItem[]
+
+  @@unique([status, label])
+  @@index([status, sortOrder])
+  @@index([isActive])
+}
+
+model CampaignChecklistItem {
+  id          String                     @id @default(cuid())
+  campaignId  String
+  templateId  String?
+  status      String
+  label       String
+  sortOrder   Int
+  isRequired  Boolean                    @default(true)
+  isChecked   Boolean                    @default(false)
+  completedAt DateTime?
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  campaign    SalesCampaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  template    CampaignChecklistTemplate? @relation(fields: [templateId], references: [id])
+
+  @@index([campaignId, status, sortOrder])
+  @@index([templateId])
+  @@index([status, isChecked])
+}
+
+/// 캠페인 정산 부가 항목 — 「매출 × 요율」 파생 밖에서 움직이는 돈의 명세.
+/// 평소 0행이 정상이다(항상 발생하는 비용이 아니다 — 해당 케이스에만 추가).
+/// 설계 정본: docs/private/specs/2026-08-07-settlement-money-separation-design.md
+///
+/// ⛔ 셀러 정산 기준(sellerExpense 파생)에 절대 반영하지 않는다 — 불변식
+///    「셀러 정산 = actualSales × 셀러수수료율」(오너 확정). 저장 파생식
+///    operatingProfit 도 바꾸지 않는다(손익 반영은 표시 계층의 조정 후 손익).
+///    이 두 금지는 settlement-items.contract.test.ts 가 소스 스캔으로 강제한다.
+model CampaignSettlementItem {
+  id String @id @default(cuid())
+
+  campaignId String
+  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  /// 계산서 방식: PURCHASE_RECEIVE(매입계산서 수취 = 상대 발행·우리 지급) |
+  /// SALES_ISSUE(매출계산서 발행 = 우리 발행·우리 수취) | NO_INVOICE(계산서 없음
+  /// — 원천징수 대상 개인 셀러 지급, 소비자 현금 수취 등). 값 정본은
+  /// src/lib/settlement-items.ts 의 SETTLEMENT_INVOICE_MODES.
+  invoiceMode String
+
+  /// 대상: BRAND | SELLER | INTERNAL(자사 손익 기록 전용). 대상이 INTERNAL 이면
+  /// invoiceMode 는 NO_INVOICE 로 고정된다(상대 없는 계산서는 성립하지 않는다).
+  counterparty String
+
+  /// VAT 포함 금액 — **부호 있는 값**. 표시 부호 = (방식 기본 부호) × (이 값 부호).
+  /// 평상시엔 양수를 넣고, 음수는 역방향 정정(수정세금계산서·반품 조정 차감)이다.
+  /// 대상이 INTERNAL 이면 이 값의 부호가 곧 수입(+)/지출(−)이다.
+  /// ⛔ 별도 방향 열거 필드를 만들지 않는다 — 부호를 두 곳에 저장하면 어긋난다.
+  amount Decimal
+
+  /// 비고 — 이 비용이 무엇인지(예: 반품배송비). 읽기 모드의 행 라벨이자
+  /// 2단계에서 세금계산서 품목 행 라벨로 쓰인다.
+  note String?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId])
+}
+
+model PartnerContact {
+  id            String    @id @default(cuid())
+  partnerId     String
+  name          String
+  role          String?
+  email         String?
+  phoneNumber   String?
+  notes         String?
+  lastContactAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  partner       Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId, name])
+  @@index([lastContactAt])
+}
+
+model CampaignActivity {
+  id         String        @id @default(cuid())
+  campaignId String
+  action     String
+  label      String
+  details    String?
+  actor      String        @default("SYSTEM")
+  createdAt  DateTime      @default(now())
+  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+  @@index([action, createdAt])
+}
+
+model CampaignNote {
+  id         String        @id @default(cuid())
+  campaignId String
+  content    String
+  actor      String
+  actorName  String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+}
+
+model Asset {
+  id                  String         @id @default(cuid())
+  provider            String
+  section             String
+  entityType          String
+  entityId            String
+  campaignId          String?
+  fileName            String
+  mimeType            String?
+  sizeBytes           Int            @default(0)
+  storagePath         String?
+  externalFileId      String?
+  externalUrl         String?
+  thumbnailUrl        String?
+  notes               String?
+  // 게시물 반응 지표 — 캠페인 셀러 게시물(EXTERNAL_LINK)에만 크론(campaign-engagement-collector)이 채운다.
+  // 3-state 규약: null=미집계 · 숫자=집계값 · likesHidden=true면 좋아요 숨김(임의 숫자 저장 금지, likeCount는 null 유지).
+  likeCount           Int?
+  commentCount        Int?
+  likesHidden         Boolean?
+  engagementSyncedAt  DateTime? // 지표 최종 수집 시각 — 크론 staleness 게이트·화면 기준시점 표기용
+  // 표현 자산 — 같은 Tier0 응답에서 함께 적재(추가 호출 0). 유형 배지·롤오버 재생의 데이터 계약.
+  mediaType           String? // normalizeMediaType 값(image/video/reel/carousel/unknown)
+  videoUrl            String? // 릴스/영상 원본 mp4(fbcdn 서명 URL=만료성 — 활성 창 동안 크론이 매일 갱신)
+  postedAt            DateTime? // 게시 시각(taken_at)
+  uploadedBy          String?
+  archivedAt          DateTime?
+  driveShortcutId     String? // 구글 드라이브 바로가기 파일 ID (바로가기 레코드에만 존재)
+  driveParentFolderId String? // 바로가기가 위치한 구글 드라이브 폴더 ID
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  campaign            SalesCampaign? @relation(fields: [campaignId], references: [id])
+
+  // H1: 부분 유니크 인덱스 "Asset_entity_externalUrl_active_key"가 DB에 존재한다 —
+  // (entityType, entityId, externalUrl) WHERE archivedAt IS NULL AND externalUrl IS NOT NULL.
+  // Prisma가 부분 인덱스를 미지원하므로 raw SQL 마이그레이션
+  // (20260721000000_add_asset_active_external_url_unique)에서만 정의(선례: SellerAiProfile FK).
+  // 위반 시 P2002 — assets POST · reference-inbox assign · promote-content가 재조회 후
+  // alreadyExists로 폴백한다. 보관(archivedAt) 후 같은 링크 재등록은 허용된다.
+  @@index([entityType, entityId])
+  @@index([campaignId])
+  @@index([provider])
+  @@index([section])
+  @@index([archivedAt])
+  @@index([createdAt])
+}
+
+model StorageIntegration {
+  id                    String    @id @default(cuid())
+  provider              String    @unique
+  status                String    @default("DISCONNECTED")
+  accountEmail          String?
+  rootFolderId          String?
+  encryptedRefreshToken String?
+  accessTokenExpiresAt  DateTime?
+  lastSyncAt            DateTime?
+  lastError             String?
+  metadata              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model ApiCallLog {
+  id              String   @id @default(cuid())
+  provider        String
+  permissionScope String?
+  endpoint        String
+  statusCode      Int
+  success         Boolean
+  requestId       String?
+  errorMessage    String?
+  calledAt        DateTime @default(now())
+  metadata        String?
+
+  @@index([provider, calledAt])
+  @@index([permissionScope, calledAt])
+  @@index([success])
+}
+
+model TrackingAttribution {
+  id              String         @id @default(cuid())
+  campaignId      String?
+  ntSource        String?
+  ntMedium        String?
+  ntDetail        String?
+  landingUrl      String?
+  conversionEvent String
+  payload         String?
+  createdAt       DateTime       @default(now())
+  campaign        SalesCampaign? @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([ntSource, ntMedium, ntDetail])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id            String   @id @default(cuid())
+  entityType    String
+  entityId      String
+  type          String
+  fieldName     String?
+  previousValue String?
+  newValue      String?
+  content       String?
+  actor         String   @default("SYSTEM")
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([type])
+  @@index([actor])
+}
+
+model CampaignTemplate {
+  id              String   @id @default(cuid())
+  name            String
+  dealId          String?
+  salesChannel    String?
+  marginSettings  String?
+  trackingPattern String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deal            Deal?    @relation(fields: [dealId], references: [id])
+
+  @@index([name])
+}
+
+model SellerOutreach {
+  id               String    @id @default(cuid())
+  dealId           String
+  sellerId         String
+  status           String    @default("PROPOSED")
+  proposedAt       DateTime  @default(now())
+  acceptedAt       DateTime?
+  linkedCampaignId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deal             Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  seller           Seller    @relation(fields: [sellerId], references: [id])
+
+  @@unique([dealId, sellerId])
+  @@index([dealId, status])
+  @@index([sellerId])
+  @@index([status])
+}
+
+model SalesTask {
+  id               String    @id @default(cuid())
+  dealId           String
+  sellerId         String
+  status           String    @default("PROPOSED")
+  contactChannel   String?   @default("DM")
+  proposalMessage  String?
+  negotiationMemo  String?
+  testingMemo      String?
+  proposalSentAt   DateTime  @default(now())
+  lastReminderAt   DateTime?
+  nextReminderAt   DateTime?
+  respondedAt      DateTime?
+  confirmedAt      DateTime?
+  droppedAt        DateTime?
+  dropReason       String?
+  linkedCampaignId String?
+  totalMarginRate  Decimal   @default(0)
+  sellerMarginRate Decimal   @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deal             Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  seller           Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([dealId, status])
+  @@index([sellerId, status])
+  @@index([status, nextReminderAt])
+}
+
+model SettlementChecklist {
+  id         String                    @id @default(cuid())
+  campaignId String                    @unique
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+  campaign   SalesCampaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  items      SettlementChecklistItem[]
+}
+
+model SettlementChecklistItem {
+  id          String              @id @default(cuid())
+  checklistId String
+  label       String
+  isChecked   Boolean             @default(false)
+  sortOrder   Int
+  completedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  checklist   SettlementChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId, sortOrder])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  authorId   String
+  authorName String
+  content    String
+  mentions   String   @default("[]")
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([authorId])
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  type            String
+  title           String
+  entityType      String
+  entityId        String
+  userId          String
+  isRead          Boolean   @default(false)
+  isDismissed     Boolean   @default(false)
+  // 운영자가 X로 해제한 시각 — 상태형 알림의 7일 스누즈 앵커(notification-dedup.ts).
+  // 크론의 자동 해제(조건 소멸)는 이 값을 남기지 않는다: 조건이 재발하면 즉시
+  // 다시 알리는 것이 정본이고, 스누즈는 운영자의 명시적 해제에만 걸린다.
+  dismissedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  messageTemplate String?
+  stage           Int?
+
+  @@index([userId, isRead, createdAt])
+  @@index([entityType, entityId, type, createdAt])
+}
+
+model ReminderSettings {
+  id        String   @id @default(cuid())
+  settings  String
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model RevenueGoal {
+  id            String   @id @default(cuid())
+  periodType    String
+  periodKey     String   @unique
+  revenueTarget Decimal
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([periodType, periodKey])
+}
+
+model ImportBatch {
+  id             String               @id @default(cuid())
+  sourceSystem   String               @default("NOTION")
+  targetDatabase String
+  mode           String
+  status         String               @default("PENDING")
+  summary        String?
+  startedAt      DateTime             @default(now())
+  finishedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  sourceRecords  ImportSourceRecord[]
+
+  @@index([sourceSystem, createdAt])
+  @@index([targetDatabase, status])
+}
+
+model ImportSourceRecord {
+  id             String      @id @default(cuid())
+  batchId        String
+  sourceTable    String
+  sourceKey      String
+  rowHash        String
+  action         String
+  targetEntity   String?
+  targetId       String?
+  reviewReason   String?
+  rawPayload     String
+  normalizedData String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  batch          ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, sourceTable, sourceKey])
+  @@index([sourceTable, action])
+  @@index([targetEntity, targetId])
+  @@index([rowHash])
+}
+
+model ChannelFeeConfig {
+  id          String   @id @default(cuid())
+  channel     String   @unique
+  label       String
+  feeRate     Decimal  @default(0)
+  paymentRate Decimal  @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SellerCategory {
+  id        String                     @id @default(cuid())
+  name      String                     @unique
+  createdAt DateTime                   @default(now())
+  sellers   SellerCategoryAssignment[]
+}
+
+model SellerCategoryAssignment {
+  id         String         @id @default(cuid())
+  sellerId   String
+  categoryId String
+  createdAt  DateTime       @default(now())
+  category   SellerCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  seller     Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, categoryId])
+  @@index([sellerId])
+  @@index([categoryId])
+}
+
+model CampaignDeal {
+  id               String           @id @default(cuid())
+  campaignId       String
+  dealId           String
+  quantity         Int              @default(0) @map("orderCount")
+  actualSales      Decimal          @default(0)
+  feeRate          Decimal?
+  sellerMarginRate Decimal?
+  costPrice        Decimal?
+  sellingPrice     Decimal?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  campaign         SalesCampaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  deal             Deal             @relation(fields: [dealId], references: [id])
+  productMappings  ProductMapping[]
+
+  @@unique([campaignId, dealId])
+  @@index([campaignId])
+  @@index([dealId])
+}
+
+/// 클레임 게이트 — 광고 표현 컴플라이언스(C1 스펙).
+/// 법령 근거: 식품표시광고법 §8 · 건강기능식품법 · 화장품법 §13 ·
+/// 표시광고법 §3 · 공정위 추천·보증 심사지침. 판정은 guidance이며
+/// 법률 자문이 아니다 — 최종 판단은 운영자.
+model BannedPhraseRule {
+  id         String        @id @default(cuid())
+  /// 표시용 원문("아토피 치료")
+  phrase     String
+  /// 매칭용 정규식(선택). 없으면 phrase 부분일치.
+  pattern    String?
+  /// null = 전 카테고리 공통. 그 외 Deal.category와 대조.
+  category   String?
+  severity   ClaimSeverity @default(WARN)
+  /// "식품표시광고법 §8" 등 — 표시·정렬용
+  legalBasis String
+  /// 대체 표현 제안 등
+  note       String?
+  /// 삭제 대신 비활성 — 판정 이력의 근거를 보존한다.
+  active     Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([active, category])
+}
+
+/// 딜 단위 클레임 — 승인 소구점 / 딜 전용 금지 / 필수 고지.
+/// 증거 범위가 문구보다 좁으면 좁은 문구로 승인한다(C1 스펙 §2-4).
+model DealClaim {
+  id           String            @id @default(cuid())
+  dealId       String
+  deal         Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind         ClaimKind
+  /// 정확한 표현(exact wording) — "대충 이런 소구"가 아니다.
+  text         String
+  /// 시험성적서 번호·인증번호·브랜드 공문 일자 등.
+  /// ⚠️ 계약 조건·원가 등 민감 정보를 넣지 않는다.
+  evidence     String?
+  evidenceType ClaimEvidenceType @default(NEEDS_SOURCE)
+  status       ClaimStatus       @default(PROPOSED)
+  /// 재검토 기한(기간 한정 인증·이벤트 조건의 만료 추적)
+  reviewBy     DateTime?
+  approvedAt   DateTime?
+  rejectedNote String?
+  /// 추출 출처("상품소개서 p.3" | "AI 추출" | "운영자 직접")
+  source       String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([dealId, status])
+  @@index([status, reviewBy])
+}
+
+enum ClaimSeverity {
+  /// 사용 불가 — 법령 위반 소지가 명확
+  BLOCK
+  /// 주의 — 실증 자료가 있어야 사용 가능
+  WARN
+}
+
+enum ClaimKind {
+  /// 승인된 소구점 — 생성물이 이 표현을 쓰도록 프롬프트에 주입
+  APPROVED_CLAIM
+  /// 이 딜에 한정된 금지 표현(전역 사전에 없는 브랜드 고유 제약)
+  BANNED_PHRASE
+  /// 필수 고지(경제적 이해관계 표시 등) — 부재 시 게이트가 지적
+  REQUIRED_DISCLOSURE
+}
+
+enum ClaimEvidenceType {
+  /// 시험성적서·인증번호 등 실물 근거 확보
+  MEASURED
+  /// 브랜드 주장 — 근거 문서는 확보했으나 제3자 실증은 아님
+  USER_PROVIDED
+  /// 근거 미확보. 절대 자동 승격되지 않는다 — 주장 자체는 근거가 아니다.
+  NEEDS_SOURCE
+}
+
+/// 공구 오퍼 진단의 **수동 응답** (C2 M3).
+///
+/// 자동 6행은 기존 필드에서 계산되지만, 4행(한정성 진위·시간 지연·위험
+/// 역전·명명)은 운영자가 확인해야 안다. 그 답을 여기 담는다.
+///
+/// ⚠️ `Deal` 에 컬럼을 붙이지 않고 별도 테이블로 둔 이유: `Deal` 은 ISR
+/// 프리렌더가 읽어 컬럼 추가 시 preflight 가 P2022 로 깨진다(P6 등재된 갭).
+/// 새 테이블은 빌드 때 읽히지 않아 그 문제가 없다.
+model DealOfferAnswer {
+  id         String             @id @default(cuid())
+  dealId     String
+  deal       Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  /// 진단 루브릭의 행 식별자(SCARCITY_TRUTH | TIME_DELAY | RISK_REVERSAL | NAMING)
+  rowId      String
+  /// 운영자 판정. UNKNOWN 은 "아직 확인 못 함"이고 실패가 아니다.
+  verdict    OfferAnswerVerdict @default(UNKNOWN)
+  /// 판정 근거(재고 확보 수량, 배송 리드타임, 반품 조건 문구 등)
+  note       String?
+  answeredAt DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@unique([dealId, rowId])
+  @@index([dealId])
+}
+
+/// 수동 행의 판정값. 자동 행과 달리 PARTIAL 을 쓰지 않는다 —
+/// 운영자에게 "부분 충족"을 물으면 판단이 흐려져 UNKNOWN 과 구분되지 않는다.
+enum OfferAnswerVerdict {
+  PASS
+  FAIL
+  UNKNOWN
+}
+
+/// 셀러에게 보낸 판매 자료 초안 (C3 M4).
+///
+/// **채택분만 저장한다**(오너 결정 §9-Q2) — 생성은 여전히 stateless 고(R4 의
+/// "재생성 자유"), 운영자가 "셀러에게 보냄"을 표시한 것만 남는다. 전량 저장은
+/// 노이즈와 저장 비용이 늘고 재생성 감각을 해친다.
+///
+/// 왜 남기나: 소구점 A/B 실험과 평가 루프가 "무엇을 보냈는지"를 전제한다.
+/// 게이트 판정·쓰인 클레임을 함께 남겨 "이 자료가 어떤 표현을 근거로
+/// 만들어졌나"를 되짚을 수 있어야 실험이 성립한다.
+///
+/// ⚠️ `Deal` 에 컬럼을 붙이지 않은 이유: `Deal` 은 ISR 프리렌더가 읽어 컬럼
+/// 추가 시 preflight 가 P2022 로 깨진다(P6 등재된 갭). C2 `DealOfferAnswer`
+/// 선례를 따른다.
+model DealAssetDraft {
+  id                String   @id @default(cuid())
+  dealId            String
+  deal              Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  /// 자료 종류 — `CONTENT_GUIDE`(셀러용 콘텐츠 가이드) · `BRAND_CONTENT_GUIDE`
+  /// (브랜드용 상품 정보 자료). 값 공간의 정본은 `GUIDE_KINDS`(src/lib/content-guide.ts)다.
+  /// ⚠️ 셀러형이 `CONTENT_GUIDE` 인 것은 **레거시 기본값 보존**이다 — 개명하면 기존
+  /// 행과 시안 캐시 네임스페이스가 함께 깨진다(guide-sketch.ts 의 `cutSketchKey` 참조).
+  kind              String   @default("CONTENT_GUIDE")
+  /// 보낸 자료 전문(근거 카드까지 붙은 최종본).
+  body              String
+  /// 생성 시 게이트 판정(PASS | WARN). BLOCK 은 애초에 내보내지 않으므로 없다.
+  gateVerdict       String
+  /// 생성에 주입된 승인 클레임 id(쉼표 구분).
+  /// ⚠️ 감사 흔적 용도다 — id 로 역조회하는 분석은 조인 테이블이 필요하고,
+  /// 그건 A/B 실험 기능이 붙는 시점의 과제다(지금 만들면 과잉 설계).
+  claimIds          String?
+  /// 근거 카드가 포함됐는지 — 근거 없이 보낸 자료를 나중에 구분해야 한다.
+  proofCardIncluded Boolean  @default(false)
+  /// 생성 모델명(평가 루프에서 모델 교체 전후를 가른다).
+  model             String?
+  /// 셀러에게 보냈다고 표시한 시점.
+  sentAt            DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([dealId, sentAt])
+}
+
+/// 작업 중인 콘텐츠 가이드 **초안** — 딜당 정확히 1행(최신본만 덮어쓴다).
+///
+/// ⚠️ **`DealAssetDraft` 와 섞지 않는다.** 저쪽은 "셀러에게 보낸 자료"의 **감사 기록**
+/// 이라 영구 불변이고, `launch-readiness` 가 그 행의 존재로 **"가이드를 보냈는가"를
+/// 판정**한다. 초안을 같은 테이블에 넣으면 아직 아무한테도 안 보낸 초안이 "보냄 완료"
+/// 로 집혀 캠페인 준비 체크가 거짓 초록불이 된다(설계 검토 2026-08-01에서 이 이유로
+/// status 컬럼 안을 기각하고 테이블을 갈랐다). 수명주기도 반대다 — 저쪽은 append-only,
+/// 이쪽은 매 생성마다 upsert.
+model DealGuideDraft {
+  id                String   @id @default(cuid())
+  dealId            String
+  deal              Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  /// 자료 종류. `DealAssetDraft.kind` 와 같은 값 공간을 쓴다 —
+  /// `CONTENT_GUIDE`(셀러용) · `BRAND_CONTENT_GUIDE`(브랜드용). 정본은 `GUIDE_KINDS`.
+  /// `@@unique([dealId, kind])` 라 두 유형의 초안이 **딜당 나란히 1행씩** 존재한다.
+  kind              String   @default("CONTENT_GUIDE")
+  /// 초안 전문(근거 카드까지 붙은 최종 형태 — 화면이 그대로 복원한다).
+  body              String
+  /// 생성 시 게이트 판정(PASS | WARN). 복원할 때 지적을 함께 되살리기 위해 남긴다.
+  gateVerdict       String
+  /// 생성에 주입된 승인 클레임 id(쉼표 구분) — 보냄 표시로 승격할 때 그대로 넘긴다.
+  claimIds          String?
+  proofCardIncluded Boolean  @default(false)
+  model             String?
+  /// 복원 화면이 "무엇을 반영한 초안인가"를 그대로 다시 보여주기 위한 값.
+  referenceCount    Int      @default(0)
+  vocCount          Int      @default(0)
+  /// 촬영 컷 시안 — `[{key,url}]` JSON. `key` 는 컷 텍스트 해시라 **같은 컷이면 같은 키**다.
+  /// 재생성 시 이 목록을 캐시로 써서 바뀐 컷만 다시 그린다(이미지는 텍스트보다 단가가
+  /// 100배대라 캐시가 곧 비용 설계다). 컬럼 하나로 두는 이유: 딜당 1행·컷 3~5개로
+  /// 크기가 유계이고, 초안과 **수명주기가 완전히 같다**(초안이 지워지면 시안도 무의미).
+  sketches          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  /// 딜당 1행 — 조건부 유니크가 아니라 단순 복합 유니크라 Prisma 가 그대로 만든다
+  /// (`DealAssetDraft` 와 갈라 둔 덕분. 한 테이블에 섞었으면 `WHERE status='DRAFT'`
+  /// 부분 유니크가 필요해 raw SQL 마이그레이션이 됐다).
+  @@unique([dealId, kind])
+}
+
+enum ClaimStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum DealStatus {
+  SOURCING
+  NEGOTIATING
+  CONFIRMED
+  SAMPLE_TESTING
+  ARCHIVED
+  DROPPED
+}
+
+model SystemSettings {
+  id                        String    @id @default("global")
+  // F5 IG 장기토큰 자동 갱신(GROWTH_FLYWHEEL_PLAN.md §F5): DB 사본이 있으면 env보다 우선
+  instagramAccessToken      String?
+  instagramTokenExpiresAt   DateTime?
+  instagramTokenRefreshedAt DateTime?
+  instagramTokenLastError   String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+}
+
+model OrderCampaign {
+  id                        String    @id @default(cuid())
+  name                      String // 예: 와이그라운드(김본명) - 뉴트리원 캠페인
+  template                  String? // 예: nutrione (옵션 1에 의해 더이상 필수 아님)
+  sellerName                String // 예: 와이그라운드(김본명)
+  toEmail                   String? // 수신 이메일 (예: order@example.com)
+  ccEmail                   String? // 참조 이메일
+  thumbnailUrl              String? // 네이버 상품 썸네일 URL
+  category                  String?
+  productStatus             String? // 네이버 상품 판매 상태 (SALE, OUTOFSTOCK 등)
+  salePeriod                String?
+  productId                 String?
+  startDate                 DateTime?
+  endDate                   DateTime?
+  isActive                  Boolean   @default(true)
+  cachedNewOrderBeforeCount Int?      @default(0)
+  cachedNewOrderAfterCount  Int?      @default(0)
+  cachedPendingCount        Int?      @default(0)
+  cachedShippingCount       Int?      @default(0)
+  cachedCompletedCount      Int?      @default(0)
+  cachedTotalOrders         Int?      @default(0)
+  cachedDistinctOrderCount  Int?      @default(0)
+  cachedTotalQuantity       Int?      @default(0)
+  cachedTotalRevenue        Int?      @default(0)
+  cachedDailyStats          Json?
+  // 마감 시점에 동결한 캠페인 인사이트 스냅샷(유입경로·시간대·기기·결제수단·멤버십·구매자·클레임).
+  // 인사이트는 네이버 조회창이 지나면 재구성 불가라, dailyStats와 동일하게 마감 시 계산해 영속한다.
+  // buildCampaignInsights(...) 결과를 JSON.stringify로 저장(비식별 집계 — 구매자 식별자 미포함).
+  cachedInsights            Json?
+  // 마감 시점에 동결한 10분 인트라데이 버킷 — cachedInsights와 같은 취지다.
+  // 인트라데이 분해는 네이버 조회창이 지나면 재구성 불가이고, 마감 캠페인은 읽기 경로가
+  // 스냅샷 집계(dailyAggregate.bv)를 타지 않아 읽기 시점 합성이 구조적으로 불가능하다.
+  // 그래서 dailyStats·insights와 동일하게 마감 시 계산해 영속한다(추가 API 호출 0 —
+  // 마감 라우트가 이미 손에 든 recentOrders에서 같은 분기로 센다).
+  // 형태: { bv, days: { "YYYY-MM-DD"(KST): { "<버킷번호 0~143>": [주문건수, 매출] } } }
+  // 날짜별로 분해하는 이유는 차트가 dateKey 단위로 「기록 없음」을 판정하기 때문이다.
+  // 컬럼이 null인 과거 마감 캠페인은 인트라데이 없음으로 degrade(일별 해상도)한다.
+  cachedIntradayBuckets     Json?
+  // 네이버 정산 결산(마감 캠페인 전용) — 마감 시 캠페인 귀속 productOrderId 목록을 저장하고,
+  // 정산 크론(naver-settlement-sync)이 NaverSettlementCase와 조인해 아래 결산 캐시를 갱신한다.
+  cachedProductOrderIds     Json?
+  cachedSettledAmount       Int?
+  cachedSettleFeeAmount     Int?
+  cachedSettleFeeBreakdown  Json? // { pay, interlock, freeInstallment } — 카드 수수료 툴팁용
+  cachedUnsettledAmount     Int?
+  cachedSettledCount        Int?
+
+  // 마감 이후(isActive=false) 네이버 주문 동기화(naver-order-sync)에서 사후 감지된 취소/수량감소분 누적치 (Atomic Update 델타)
+  cachedPostCloseCancelQuantity Int? @default(0)
+  cachedPostCloseCancelRevenue  Int? @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks          DailyOrderTask[]
+  mappings       ProductMapping[]
+  salesCampaigns SalesCampaign[]
+}
+
+model DailyOrderTask {
+  id               String        @id @default(cuid())
+  campaignId       String
+  campaign         OrderCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  date             String // YYYY-MM-DD 포맷
+  status           String // PENDING, EMAILED, REPLIED, COMPLETED, ERROR
+  sentFileName     String? // 발송된 파일명
+  receivedFileName String? // 수신된 회신 파일명
+  errorMessage     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  logs TaskLog[]
+
+  @@unique([campaignId, date]) // 같은 캠페인은 같은 날짜에 1개의 프로세스만 가짐
+}
+
+model TaskLog {
+  id        String         @id @default(cuid())
+  taskId    String
+  task      DailyOrderTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  level     String // INFO, SUCCESS, ERROR
+  message   String
+  createdAt DateTime       @default(now())
+}
+
+model ProductMapping {
+  id             String        @id @default(cuid())
+  campaignId     String
+  campaign       OrderCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  productName    String
+  optionName     String
+  brandCode      String
+  price          Int
+  createdAt      DateTime      @default(now())
+  campaignDealId String?
+  campaignDeal   CampaignDeal? @relation(fields: [campaignDealId], references: [id], onDelete: SetNull)
+}
+
+// 네이버 주문 일별 스냅샷 (콜드스타트 후에도 캐시 히트를 유지하기 위한 영속화 레이어, B1-1)
+model NaverOrderSnapshot {
+  id                     String   @id @default(cuid())
+  snapshotDate           String
+  orders                 Json
+  // 이 스냅샷(=KST 1일)의 판매캠페인별 사전 집계(v1) — 동기화가 orders와 함께 기록한다.
+  // 모바일 매출 상세(live)가 orders 블롭 전량(조회 1회당 1.5~5.2MB 실측)을 읽는 대신 이
+  // 소형 집계만 select 하게 만든 egress 절감 컬럼(2026-07-15, P7). 형태·계약·버전의 SSOT는
+  // src/lib/order-converter/daily-aggregate.ts. null(레거시 행)이거나 버전 불일치({v:0} 포함)면
+  // 읽기가 블롭 폴백으로 안전 강등된다.
+  dailyAggregate         Json?
+  // 이 스냅샷의 클레임 보유 주문 최소 프로젝션(v1) — 동기화가 orders와 함께 기록한다.
+  // claims 라우트가 30일 orders 블롭 전량을 읽어 read-path 파생하던 것을 이 소형 컬럼만
+  // select 하게 만든 egress 절감 컬럼(2026-07-21, P7 — dailyAggregate와 동일 계약).
+  // 캠페인 귀속은 살아있는 캠페인 목록에 의존하므로 파생 결과가 아닌 소스 프로젝션을
+  // 저장하고, 읽기가 동일 SSOT(deriveClaims)로 파생한다. 형태·계약·버전의 SSOT는
+  // src/lib/order-converter/claim-derive.ts. null(레거시 행)·{v:0}·버전 불일치면
+  // 읽기가 그 행만 블롭 폴백으로 안전 강등된다.
+  claimSource            Json?
+  ordersCount            Int      @default(0)
+  newOrdersCount         Int      @default(0)
+  preparingCount         Int      @default(0)
+  deliveringCount        Int      @default(0)
+  isDirty                Boolean  @default(false)
+  lastCallTime           DateTime
+  fetchedAt              DateTime @default(now())
+  syncType               String?  @default("FULL")
+  lastChangeStatusCursor String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([snapshotDate])
+  @@index([lastCallTime])
+}
+
+// 상품주문 1건 단위 자체 이행 상태(주문관리 파이프라인 재정의, 2026-07-08).
+// "배송대기 = 발주요청(발주서 메일) 발송됨"을 네이버 productOrderStatus와 독립적으로 영속한다.
+// 판정 합성은 lib/order-converter/order-fulfillment.ts(deriveOrderPipelineBucket)가 담당하며,
+// productOrderId(네이버 상품주문번호, 전역 유일)를 키로 조인한다.
+model OrderFulfillmentState {
+  id             String    @id @default(cuid())
+  productOrderId String    @unique
+  campaignId     String? // 어느 캠페인 발주요청에 실렸는지(감사/필터용, 판정은 productOrderId 단독)
+  poRequestedAt  DateTime? // 발주요청 이메일 발송 성공 시각(배송대기 진입 트리거)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([campaignId])
+  @@index([poRequestedAt])
+}
+
+// 시장 최저가 모니터링 일별 스냅샷 (2026-07-05, price_monitor_blueprint.md 기반).
+// NaverOrderSnapshot 관례를 계승: rawResults/evidence는 Postgres에서 Json, SQLite 스키마
+// (schema.sqlite.prisma)에서는 String(JSON 직렬화 텍스트)으로 이원화한다.
+model PriceMonitorSnapshot {
+  id            String   @id @default(cuid())
+  dealId        String
+  campaignId    String?
+  snapshotDate  String
+  searchQuery   String
+  ourUnitPrice  Float?
+  minValidPrice Float?
+  verdict       String // OK | TIE | VIOLATED | NO_DATA
+  validCount    Int      @default(0)
+  rawResults    Json
+  evidence      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deal          Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([dealId, snapshotDate])
+  @@index([campaignId])
+  @@index([verdict, snapshotDate])
+}
+
+// ==== Phase 1 AI 데이터 모델 (2026-07-06, Opus 청사진 기반) ====
+
+model ActionProposal {
+  id               String                @id @default(cuid())
+  requestType      String // "data_query"|"settlement_report"|"price_sheet_ingest"|"crm_mutation" 등
+  kind             String                @default("READ") // READ(산출물) | WRITE(기안)
+  status           String                @default("DRAFT") // DRAFT|PENDING_APPROVAL|APPROVED|EXECUTED|REJECTED|FAILED
+  title            String
+  resultSummary    String?
+  dataSources      Json?
+  assumptions      Json?
+  structuredResult Json?
+  evidence         Json?
+  risks            Json?
+  reviewRequired   Boolean               @default(true)
+  nextActions      Json?
+  payload          Json? // WRITE 전용: {service, method, args}[] 실행 명세
+  targetEntityType String?
+  targetEntityId   String?
+  campaignId       String?
+  executionResult  Json?
+  executedRefType  String?
+  executedRefId    String?
+  createdBy        String                @default("AGENT")
+  approvedBy       String?
+  executedBy       String?
+  approvedAt       DateTime?
+  executedAt       DateTime?
+  llmModel         String?
+  promptTokens     Int?
+  completionTokens Int?
+  latencyMs        Int?
+  errorMessage     String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  campaign         SalesCampaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  events           ActionProposalEvent[]
+
+  @@index([status, createdAt])
+  @@index([kind, status])
+  @@index([targetEntityType, targetEntityId])
+  @@index([campaignId])
+  @@index([createdBy])
+}
+
+model ActionProposalEvent {
+  id         String         @id @default(cuid())
+  proposalId String
+  fromStatus String?
+  toStatus   String
+  actor      String         @default("SYSTEM")
+  note       String?
+  createdAt  DateTime       @default(now())
+  proposal   ActionProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId, createdAt])
+}
+
+// 어시스턴트 채팅 영속화 (Phase 5 청사진 §1) — additive 2테이블.
+// per-user 소유(createdBy 스코프) — 대화 공유/타 사용자 열람은 비목표(YAGNI, §0).
+model AssistantConversation {
+  id        String                 @id @default(cuid())
+  createdBy String // auth userId — 소유 스코프 (에이전트 레인은 저장 자체를 스킵, §2-1)
+  title     String? // 첫 user 메시지 앞 80자 자동 생성
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  messages  AssistantChatMessage[]
+
+  @@index([createdBy, updatedAt])
+}
+
+// 모델명 AssistantChatMessage — 클라이언트 TS 타입 AssistantMessage와 이름 충돌 회피.
+model AssistantChatMessage {
+  id                 String                @id @default(cuid())
+  conversationId     String
+  conversation       AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role               String // "user" | "model"
+  text               String
+  toolCalls          Json? // §1-2 저장 계약(64KB 캡 초과 시 data 제거) 적용본 — 리치 렌더 재수화용
+  toolCallsTruncated Boolean               @default(false) // 캡 초과로 data 제거됨 표시
+  actionProposalIds  Json? // 이 턴에 생성된 기안 ID 배열 (기안 카드 재수화용)
+  createdAt          DateTime              @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model WorkRecord {
+  id           String         @id @default(cuid())
+  source       String // "KAKAO"|"KAKAO_TXT"|"EMAIL"|"MEMO"
+  sourceHash   String // sha256(roomKey+sentAt+sender+rawText) — 멱등키
+  roomKey      String?
+  sender       String?
+  sentAt       DateTime
+  rawText      String // 마스킹 후 원문
+  summary      String?
+  actionItems  Json?
+  isMasked     Boolean        @default(false)
+  entityType   String? // PARTNER|SELLER|CAMPAIGN, 미귀속 null
+  entityId     String?
+  campaignId   String?
+  attributedBy String? // "AUTO"|"MANUAL"|null
+  ingestedBy   String? // Supabase user UUID (TXT_UPLOAD 세션 업로드 시 기록, FK 없음)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  campaign     SalesCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@unique([source, sourceHash])
+  @@index([entityType, entityId])
+  @@index([campaignId])
+  @@index([roomKey, sentAt])
+  @@index([sentAt])
+}
+
+// Phase 4-5: 방별 수집 담당 이원화(KATOK_AUTO=사장 Mac 자동 / TXT_UPLOAD=직원 웹 업로드 / EXCLUDED=수집 제외).
+// entityType/entityId는 미매핑 방도 업로드 가능해야 하므로(유실 방지) nullable로 완화되었다.
+model ChatRoomMapping {
+  id             String         @id @default(cuid())
+  source         String         @default("KAKAO")
+  roomKey        String
+  roomName       String?
+  entityType     String? // PARTNER|SELLER, 미매핑 null
+  entityId       String?
+  roomType       String? // DIRECT|GROUP|OPEN
+  collectorType  String         @default("KATOK_AUTO") // KATOK_AUTO|TXT_UPLOAD|EXCLUDED — 이중 수집 차단용
+  excluded       Boolean        @default(false)
+  sourceFolderId String? // 카톡 폴더 자동등록: 이 방을 관리하는 NTChatFolder.folderId (수동 등록방=null, 불가침)
+  campaignId     String?
+  campaign       SalesCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  lastSyncedAt   DateTime? // 증분 커서(TXT는 "마지막 업로드 일시" 의미)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([source, roomKey])
+  @@index([entityType, entityId])
+  @@index([campaignId])
+  @@index([sourceFolderId])
+}
+
+model PriceSheet {
+  id             String          @id @default(cuid())
+  partnerId      String?
+  sourceFormat   String // "IMAGE"|"XLSX"|"CSV"|"PPTX"|"PDF"
+  extractPath    String          @default("A") // A=스프레드시트 결정적, B=멀티모달
+  assetId        String?
+  status         String          @default("UPLOADED") // UPLOADED|EXTRACTED|MAPPED|REVIEWED|APPLIED|EXTRACT_FAILED
+  detectedTables Int             @default(1)
+  policyText     String? // 분리된 정책 자유텍스트 → knowledge 후보
+  columnMapping  Json? // LLM 열 별칭 매핑 결과
+  reviewNote     String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  createdBy      String          @default("AGENT")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  partner        Partner?        @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  rows           PriceSheetRow[]
+
+  @@index([partnerId])
+  @@index([status, createdAt])
+}
+
+model PriceSheetRow {
+  id                   String     @id @default(cuid())
+  priceSheetId         String
+  rowHash              String // sha256(priceSheetId+rawCells)
+  rowIndex             Int
+  tableSegment         Int        @default(0) // 한 파일 다중 표 인덱스
+  productName          String?
+  optionName           String?
+  sellingPrice         Decimal?
+  commissionRate       Decimal?
+  supplyPrice          Decimal?
+  listPrice            Decimal?
+  floorPrice           Decimal?
+  discountRate         Decimal?
+  note                 String?
+  flags                Json? // 사은품/단독구매불가/음수마진 플래그
+  rawCells             Json // 원본 셀 보존 (필수)
+  mappingStatus        String     @default("UNMAPPED") // UNMAPPED|SUGGESTED|MAPPED|NEW_DEAL
+  mappedDealId         String?
+  mappedCampaignDealId String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  priceSheet           PriceSheet @relation(fields: [priceSheetId], references: [id], onDelete: Cascade)
+  mappedDeal           Deal?      @relation(fields: [mappedDealId], references: [id], onDelete: SetNull)
+
+  @@unique([priceSheetId, rowHash])
+  @@index([priceSheetId, tableSegment, rowIndex])
+  @@index([mappingStatus])
+  @@index([mappedDealId])
+}
+
+/// AI 셀러 분석 확장 테이블 — 셀러 분석 모듈 이식 (§12-A, 4_handoff/seller_analysis_porting_ui_blueprint.md).
+/// 코어 "Seller"는 read-only 마스터로 유지(WAGCRM_PORTING_GUIDE §1). 분석 산출물은 전적으로 이 테이블에 저장.
+/// Prisma 관계를 두지 않아 Seller 모델을 건드리지 않는다 — sellerId FK/CASCADE는 마이그레이션 SQL에서 설정.
+/// 임베딩(profile_embedding)은 Phase C(실임베딩 매칭)로 유보 — pgvector 의존 회피.
+model SellerAiProfile {
+  id             String    @id @default(cuid())
+  sellerId       String    @unique
+  aiTags         Json? // { ...gemini분석(category/tags/audience 등), metrics(SellerMetrics), interaction_id }
+  compositeScore Int? // scores.ts composite 캐시 (T1 정렬/필터용; 세부 서브점수는 aiTags.metrics에서 렌더 시 재계산)
+  confidence     String? // 'high' | 'medium' | 'low' 캐시
+  sourceTier     String? // 수집 티어 (Tier1/2/3)
+  analyzedAt     DateTime? // 신선도 라벨 ("N일 전 분석")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([compositeScore])
+  @@index([confidence])
+}
+
+// R2a 미분류 레퍼런스 인박스. Asset.entityId가 NOT NULL이라 미분류 상태를 Asset에 담을 수
+// 없어 별도 테이블로 둔다. 배정 확정 시 Asset(EXTERNAL_LINK/SNS_CREATIVE)으로 승격 후 삭제,
+// 기각은 status=DISMISSED 소프트 전이(재수집 중복 판단 근거로 유지).
+model ReferenceInboxItem {
+  id              String   @id @default(cuid())
+  rawUrl          String // 사용자/카톡 원본 입력
+  normalizedUrl   String // normalizeReferenceUrl 결과
+  linkName        String // 표시명(사용자 입력 || deriveLinkName)
+  source          String   @default("MANUAL") // MANUAL | KAKAO(향후)
+  sourceRoomKey   String? // 카톡 유입 시 방 키(R2b)
+  sourceRef       String? // 카톡 유입 시 WorkRecord 등 참조(R2b)
+  thumbnailUrl    String? // 인스타그램/유튜브 썸네일 URL
+  videoUrl        String? // 인스타그램 릴스 등 동영상 URL (롤오버 재생용)
+  igUsername      String? // 추출된 계정명
+  igProfilePicUrl String? // 추출된 계정 프로필 이미지 URL
+  igFullName      String? // 프로필 표시명 (PROFILE/PROFILE_REELS 보강)
+  igBio           String? // 프로필 bio 1줄 표시용
+  igFollowerCount Int? // 팔로워 수 (수집 시점 값, 분류 판단용 참고치)
+  igPostCount     Int? // 게시물 수 (수집 시점 값)
+  note            String?
+  status          String   @default("PENDING") // PENDING | DISMISSED
+  createdBy       String? // 세션 사용자 식별
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([normalizedUrl])
+}
+
+// 네이버 정산 건별 원장(/v1/pay-settle/settle/case) 스냅샷 — 마감 캠페인 결산(실입금·수수료) 계산용.
+// 차감/취소 계열(settleType CANCEL 등)이 동일 productOrderId의 별도 행으로 오므로 PK는 `${productOrderId}:${settleType}` 합성.
+model NaverSettlementCase {
+  id                               String    @id
+  productOrderId                   String
+  orderId                          String?
+  productId                        String?
+  productOrderType                 String? // PROD_ORDER / DELIVERY 등 — 캠페인 결산엔 PROD_ORDER만 귀속
+  settleType                       String? // NORMAL / QUICK_SETTLE_ORIGINAL / *_CANCEL 등
+  payDate                          DateTime?
+  settleExpectDate                 DateTime?
+  settleCompleteDate               DateTime?
+  paySettleAmount                  Int       @default(0)
+  totalPayCommissionAmount         Int       @default(0) // 음수
+  sellingInterlockCommissionAmount Int       @default(0) // 음수
+  freeInstallmentCommissionAmount  Int       @default(0)
+  benefitSettleAmount              Int       @default(0)
+  settleExpectAmount               Int       @default(0) // 실입금(정산 예정/완료 금액)
+  settled                          Boolean   @default(false) // settleCompleteDate 존재 여부
+  fetchedAt                        DateTime  @default(now())
+
+  @@index([productOrderId])
+  @@index([settleCompleteDate])
+  @@index([productId])
+}
+
+// 주문관리 4개 액션 버튼(주문확인/발주요청/송장회신/송장등록)의 영속 감사 로그.
+// 동기(실사고): 셀러 중복 송장으로 송장등록 1건이 실패했으나 결과가 토스트로만 떠 사라져
+// 소유자가 실패를 인지하지 못함. 각 버튼 흐름 종료 후 "사용자가 실제 본 집계" 1건을 기록한다.
+// dispatch(송장등록)가 클라이언트 청크 분할이라 서버 라우트별 로깅은 조각나므로, 클라이언트가
+// 집계 완료 후 POST /order-converter/api/action-log 로 기록한다(actor는 서버가 requireAuth로 도출).
+// campaignId는 미리보기 확정 경로에서 귀속이 불확실할 수 있어 nullable, campaignName은 역정규화 보존.
+model OrderActionLog {
+  id           String   @id @default(cuid())
+  campaignId   String?
+  campaignName String
+  action       String // CONFIRM_ORDER | REQUEST_PO | FETCH_INVOICE | REGISTER_INVOICE | DELAY_DISPATCH
+  status       String // OK | PARTIAL | ERROR
+  successCount Int      @default(0)
+  failCount    Int      @default(0)
+  skipCount    Int      @default(0)
+  errorMessage String? // 첫 실패 사유 등 요약 (예: "중복 송장번호 상품주문번호 xxx")
+  details      Json? // { failed: [{productOrderId, reason}], skipped: [...], fileName, ... }
+  actor        String   @default("SYSTEM")
+  createdAt    DateTime @default(now())
+
+  @@index([campaignId, createdAt])
+  @@index([action, createdAt])
+  @@index([status])
+}
+
+// 대시보드의 'System Radar' 위젯에서 가장 최근 상태를 조회하기 위한 단일 상태(Upsert) 테이블
+model SystemTaskStatus {
+  id                String    @id @default(cuid())
+  jobKey            String    @unique // 예: "enrich-inbox"
+  status            String // "SUCCESS" | "ERROR" | "RUNNING"
+  lastRunAt         DateTime?
+  nextExpectedRunAt DateTime? // 실패/지연 감지를 위해 워커가 계산하여 업데이트
+  lastErrorMessage  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+}
+
+// 자동화 파이프라인의 과거 실행 이력을 보관하는 로그 테이블 (디버깅용)
+model SystemTaskLog {
+  id        String   @id @default(cuid())
+  jobKey    String // 예: "enrich-inbox"
+  status    String // "SUCCESS" | "ERROR"
+  message   String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([jobKey, createdAt])
+}
+
+// 셀러 스토리 스냅샷 (2026-07-10, 오너 지시) — 행사 기간 중 셀러의 "모든" 스토리를 12시간
+// 주기로 수집해 24시간 소멸 전에 증거를 남긴다. 멘션/태그 여부와 무관하게 전량 수집하고,
+// 우리 캠페인 홍보인지는 나중에 썸네일을 보고 분류한다(사람 또는 LLM — classification 필드).
+model SellerStorySnapshot {
+  id              String    @id @default(cuid())
+  sellerId        String
+  storyPk         String // 인스타 스토리 미디어 pk — 수집 중복 제거 키
+  takenAt         DateTime
+  expiringAt      DateTime?
+  mediaType       Int       @default(1) // 1=사진 2=영상 (인스타 media_type)
+  // 분류·증빙용 썸네일은 전용 버킷으로 리호스팅(원본 CDN URL은 24h 내 만료)
+  thumbnailUrl    String?
+  sourceImageUrl  String? // 원본 이미지 CDN URL — 만료되지만 리호스팅 실패 시 참고
+  sourceVideoUrl  String? // 영상 원본 URL — 용량상 리호스팅 안 함(ponytail: 썸네일이 분류·증빙 담당)
+  caption         String?
+  capturedAt      DateTime  @default(now())
+  classification  String    @default("UNREVIEWED") // UNREVIEWED | CAMPAIGN | OTHER
+  classifiedAt    DateTime?
+  salesCampaignId String? // CAMPAIGN 분류 시 홍보이력으로 연결(선택)
+  seller          Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, storyPk])
+  @@index([classification, capturedAt])
+  @@index([sellerId, takenAt])
+}
+
+// 셀러 게시물(피드) 분류 — 캠페인 상세 "셀러 게시물"의 후보(postsPreview)에 대한 리뷰어 판정을 영속한다.
+// SellerStorySnapshot의 분류 패턴을 복제하되, 게시물은 "홍보=Asset 등록(성과추적)" 모델이라(오너 2026-07-13)
+// 여기 저장되는 유효값은 사실상 OTHER(무관 숨김)뿐이다:
+//   - CAMPAIGN(홍보 확정)은 이 테이블이 아니라 Asset(EXTERNAL_LINK) 등록으로 표현한다 — 여기 CAMPAIGN을
+//     쓰면 이중 SSOT가 되므로 금지(PATCH 라우트가 OTHER|UNREVIEWED만 허용).
+//   - UNREVIEWED = 행 없음(기본) 또는 무관 되돌리기.
+//   - OTHER = 후보에서 영구 숨김(오너 결정4). is_gongu 자동추천은 파생값이라 여기 저장하지 않는다.
+// postsPreview가 매 analyze마다 통째 덮어써도(개별 per-post 레코드 없음) 이 판정은 permalink 키로 살아남는다.
+model SellerPostClassification {
+  id              String    @id @default(cuid())
+  sellerId        String
+  permalink       String // normalizeReferenceUrl된 IG permalink — SuggestedPost.permalink / Asset.externalUrl과 동일 키 규약
+  classification  String    @default("UNREVIEWED") // UNREVIEWED | OTHER (CAMPAIGN은 Asset이 SSOT — 금지)
+  classifiedAt    DateTime?
+  salesCampaignId String? // 어느 캠페인 패널에서 분류했는지(출처 표시용, 느슨한 참조 — FK 없음)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  seller          Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, permalink])
+  @@index([classification])
+  @@index([sellerId])
+}
+
+// ==== 상품 문의(VOC) 수집 — SSOT: REVIEW_QNA_COLLECTION_PLAN.md (Phase 1) ====
+// 네이버 커머스 공식 API 2종을 수집한다(리뷰 API는 공식 부재 — 계획서 §1). 실호출은 IP
+// 화이트리스트라 prod 경유만 가능(로컬 불가). 네이버 식별자는 이 코드베이스 관례대로 String
+// 보관(BigInt PK 회피 — JSON 직렬화 함정). Json 필드 없음 → sqlite 스키마도 동일 구조.
+
+// 상품문의 `GET /v1/contents/qnas` — 자사 스마트스토어 상품 Q&A(상품 단위, 주문 조인 없음).
+// 딜 매칭은 productId ↔ OrderCampaign.productId(원상품번호) best-effort(실패=null, 후속 재매칭).
+model ProductQna {
+  questionId   String   @id // 네이버 questionId(int64) — String 보관
+  productId    String // 네이버 상품번호(원/채널 미명시 — 매칭은 둘 다 시도)
+  dealId       String? // 매칭 성공 시 캐시(재계산 회피). null=미매칭
+  productName  String?
+  question     String
+  answer       String?
+  answered     Boolean  @default(false)
+  writerMasked String? // maskedWriterId(마스킹됨 — PII 아님)
+  createDate   DateTime // 네이버 문의 등록 일시
+  collectedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([dealId, createDate])
+  @@index([answered])
+  @@index([productId])
+}
+
+// 고객문의 `GET /v1/pay-user/inquiries` — 주문 연결(productOrderId) 보유 = 캠페인 정밀 귀속.
+// customerId/customerName은 저장하지 않는다(P0 PII — 계획서 D4). productOrderIds는 원본 콤마
+// 문자열 그대로 보관하고 소비 시 split(문의는 소량이라 관계 테이블 과설계 회피).
+model CustomerInquiry {
+  inquiryNo       String    @id // 네이버 inquiryNo(int64) — String 보관
+  category        String // 상품|배송|반품|교환|환불|기타
+  title           String
+  content         String
+  answered        Boolean   @default(false)
+  answerAt        DateTime?
+  registeredAt    DateTime
+  orderId         String
+  productNo       String?
+  productOrderIds String // productOrderIdList 원본(콤마 구분) — 소비 시 split
+  optionText      String?
+  collectedAt     DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([registeredAt])
+  @@index([answered])
+}
+
+// ==== 상품 리뷰(VOC) 수집 — Phase 2. SSOT: REVIEW_QNA_COLLECTION_PLAN.md ====
+// Supabase 의존 최소화(오너 지시): 리뷰 **코퍼스 본문은 Google Drive 파일**(voc/reviews/…json)에
+// 저장하고, Postgres에는 **얇은 인덱스**(집계·포인터·프리뷰)만 둔다. 리뷰 행을 Postgres에
+// 넣지 않으므로 리뷰 텍스트가 Supabase egress/스토리지를 소모하지 않는다.
+// 트레이드오프: 리뷰 교차 SQL 쿼리 불가(딜 단위 코퍼스를 Drive에서 통째 로드해 메모리 필터).
+// 회차 귀속·AI 분석은 딜당 1회 코퍼스 로드로 처리(스냅샷 영속). 상세는 voc-store.ts.
+model DealVocSource {
+  id               String    @id @default(cuid())
+  dealId           String
+  channel          String // SMARTSTORE_OWN | SMARTSTORE_EXTERNAL | CAFE24 | MANUAL
+  productUrl       String? // 공개 상품페이지 URL(스크랩 대상). MANUAL은 null 가능
+  originProductNo  String? // 원상품번호(문의 매칭·식별)
+  channelProductNo String?
+  driveFileId      String? // 리뷰 코퍼스 JSON의 Google Drive 파일 ID(포인터). null=아직 미저장
+  reviewCount      Int       @default(0)
+  ratingSum        Int       @default(0) // 평균 = ratingSum / reviewCount
+  ratingCounts     String? // {"1":n,...,"5":n} JSON 문자열(분포 즉시표시 — 작음)
+  photoCount       Int       @default(0)
+  latestReviewAt   DateTime?
+  previewJson      String? // 최신 ~10건 압축 JSON(Drive 왕복 없이 즉시 프리뷰)
+  status           String    @default("ACTIVE") // ACTIVE | PAUSED | ERROR
+  lastError        String? // 스크랩/Drive 실패 사유(침묵 실패 금지 — 화면 강등 표시)
+  lastCollectedAt  DateTime?
+  lastCursor       String? // 증분 커서(마지막 수집 리뷰 작성일 등)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([dealId, channel])
+  @@index([dealId])
+  @@index([status])
+}
+
+// VOC AI 인사이트 스냅샷 — Phase 3(계획서 §6). 딜당 최신 1장(@unique).
+// 비용 불변식 I1: 화면·API 조회는 이 행만 읽는다(LLM 무호출 — 계약 테스트로 강제).
+// 비용 불변식 I2: 갱신은 analyze-voc 크론의 dirty 딜 선별 경로뿐(qnaCount/reviewCount가 기준점).
+// 실패 시 payload·generatedAt은 이전 값을 보존하고 lastError만 기록한다(강등 아닌 유지).
+model VocInsightSnapshot {
+  id            String    @id @default(cuid())
+  dealId        String    @unique
+  rangeFrom     DateTime? // 분석이 커버한 VOC 작성 구간(표시용)
+  rangeTo       DateTime?
+  qnaCount      Int       @default(0) // 분석 시점 총량 — dirty 판정은 count-delta(재매칭 소급분도 포착)
+  reviewCount   Int       @default(0)
+  payload       Json? // §6-3 산출(summary·praises·complaints·faq·mismatchShare·contentAngles·brandFeedback)
+  model         String?
+  promptVersion Int       @default(0) // 프롬프트 개선 시 선별 재분석 트리거(수동)
+  inputTokens   Int? // usageMetadata 실측 — 비용 관측·Batch 전환 판단 근거(§6-5)
+  outputTokens  Int?
+  lastError     String? // 최근 실행 실패 사유(성공 시 null)
+  generatedAt   DateTime? // 마지막 성공 생성 시각(null=성공 이력 없음 → dirty는 초기 규칙 유지)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([generatedAt])
+}
+
+// 딜 ↔ 스토어 리스팅 해석 캐시 — Phase 2b 링크 매칭(오너 결정 ②, 2026-07-18).
+// 리뷰 수집 후보를 OrderCampaign.productId(주문검증·소수) 외에 **딜의 캠페인 단축링크**로도 넓힌다.
+// 단축링크(mkt.shopping)는 JS 리다이렉트라 브라우저로만 채널상품번호를 얻는다 → 비싼 연산이라
+// 딜당 1회 캐시(매 실행 재해석 방지). 스토어 상품 소수라 여러 딜이 한 리스팅(묶음)을 공유할 수 있다
+// → originProductNo가 딜 간 중복될 수 있고, 스크랩은 origin당 1회만(런 내 메모이즈) 후 공유 딜에 배분.
+model DealStoreLink {
+  dealId           String   @id // 딜당 해석 1건
+  source           String   @default("LINK") // 해석 근거(감사): ORDER(주문번호 역추적) | NAME(상품명 단일매칭) | LINK(단축링크)
+  shortLink        String? // 해석에 쓴 mkt.shopping 단축링크(source=LINK일 때만). ORDER/NAME은 null
+  channelProductNo String? // 해석된 채널상품번호. null=해석 실패(로그인벽 등)
+  originProductNo  String? // 스토어 상품과 매칭된 원상품번호(리뷰 API 키). null=스토어 미매칭
+  status           String   @default("RESOLVED") // RESOLVED | FAILED
+  lastError        String? // 실패 사유(침묵 실패 금지). FAILED는 TTL 후 재해석 대상
+  resolvedAt       DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([originProductNo])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 유입추적 단축링크 (go.ygrd.kr)
+//
+// 쓰기 주체가 하나씩이라 경합이 없다:
+//   - TrackedLink : wag-crm(Prisma)만 쓴다. Cloudflare Worker 는 읽기만.
+//   - LinkClick   : Cloudflare Worker(PostgREST)만 쓴다. wag-crm 은 읽기만.
+//
+// ⚠️ LinkClick.id 는 Worker 가 crypto.randomUUID() 로 만들어 보낸다.
+// Prisma 의 @default(cuid()) 는 **앱 레벨** 기본값이라 DB 에는 default 가 없어서,
+// PostgREST 직접 insert 가 id 를 빼면 NOT NULL 위반으로 죽는다. 스키마의 기본값을
+// 지우면 Prisma 경로가 깨지므로 유지하되, Worker 쪽에서 항상 값을 채운다.
+//
+// ⚠️ 종전 서술 "데모용 prisma/schema.sqlite.prisma 에는 일부러 넣지 않았다"는 **틀렸다**
+// (2026-08-14 정정) — 두 모델은 이미 양쪽에 있고, `prisma-schema-parity.contract.test.ts`
+// 가 공통 모델의 필드 집합 일치를 강제한다. 그러므로 **컬럼을 추가할 때 sqlite 쪽도 함께
+// 고쳐야 한다.** 그 낡은 주석을 믿고 postgres 만 고쳐서 계약 테스트에 걸린 사례가 있다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model TrackedLink {
+  id              String         @id @default(cuid())
+  /// go.ygrd.kr/{code} 의 code. 혼동 문자를 뺀 base57 8자.
+  code            String         @unique
+  /// 최종 목적지 — 브랜드사 원본 링크(완성 URL).
+  targetUrl       String
+  /// 감사용: 파라미터를 붙이기 전 브랜드사 원본 링크.
+  baseUrl         String?
+  /// 목록에서 사람이 알아보는 이름(예: "[딜명] 셀러별칭 3회차").
+  label           String?
+  salesCampaignId String?
+  sellerId        String?
+  dealId          String?
+  isActive        Boolean        @default(true)
+  /// 공구 종료 후 링크를 죽일 시각. null 이면 무기한.
+  expiresAt       DateTime?
+  /// 공유 미리보기 스냅샷 — 발급 시점에 목적지 OG 를 긁어 둔다. 리다이렉터가 매 요청에서
+  /// 이미 하는 링크 조회에 얹혀 오므로 미리보기에 드는 추가 왕복이 0회가 된다.
+  /// ⛔ 쓰기는 wag-crm 만 한다(위 단일 writer 규약) — Worker 는 읽기만 하고, 스냅샷이
+  /// 없거나 낡으면 자기 Cache API 에만 담는다.
+  ogTitle         String?
+  ogImage         String?
+  ogDescription   String?
+  /// 마지막 수집 시각. 24시간이 지나면 리다이렉터가 목적지를 다시 긁는다.
+  ogFetchedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  clicks          LinkClick[]
+  salesCampaign   SalesCampaign? @relation(fields: [salesCampaignId], references: [id])
+
+  @@index([salesCampaignId])
+  @@index([sellerId])
+  @@index([dealId])
+  @@index([isActive])
+}
+
+model LinkClick {
+  id            String      @id @default(cuid())
+  trackedLinkId String
+  /// 조인 없이 바로 집계하기 위한 비정규화 사본.
+  code          String
+  /// 같은 셀러의 콘텐츠 구분자. 셀러가 go.ygrd.kr/{code}?s=story1 처럼 붙여 쓴다.
+  /// 스토리 vs 피드, 1차 vs 리마인드 게시물의 성과를 가른다.
+  subId         String?
+  occurredAt    DateTime
+  /// sha256(salt + ip + ua + KST일자) 앞 16바이트. 원문 IP 는 저장하지 않는다.
+  /// 같은 날 같은 사람의 재클릭만 판별 가능하고 개인 역추적은 불가하다.
+  visitorHash   String
+  /// mobile | tablet | desktop
+  device        String
+  /// ios | android | macos | windows | linux | unknown
+  os            String
+  /// 인앱 브라우저 우선(kakaotalk/instagram/...), 아니면 chrome/safari/...
+  browser       String
+  /// 사람이 읽는 유입경로. 인앱이면 앱 이름, 아니면 referer 호스트 기반.
+  channel       String
+  refererHost   String?
+  country       String?
+  city          String?
+  /// 카톡·메타 링크 미리보기 크롤러 등. 집계에서 기본 제외한다.
+  isBot         Boolean     @default(false)
+  userAgent     String?
+  createdAt     DateTime    @default(now())
+  trackedLink   TrackedLink @relation(fields: [trackedLinkId], references: [id], onDelete: Cascade)
+
+  @@index([trackedLinkId, occurredAt])
+  @@index([code, occurredAt])
+  @@index([code, subId])
+  @@index([occurredAt])
+  @@index([visitorHash])
+  @@index([isBot])
+}
+
+/// 원천징수 3절차(원천세 신고·지급명세 제출·지방소득세 특별징수)의 월별 완료 기록.
+/// 캠페인이 아니라 "월"에 붙는 사실이라 캠페인 테이블에 넣지 않고 최소 모델로 분리했다
+/// (세무 신고자료 도우미 설계, docs/private/specs/2026-08-03-tax-filing-helper-design.md
+/// 「스키마 변경 — TaxFilingLog」). `@@unique([month, kind])`가 중복 완료를 막는다 —
+/// 완료 해제는 행 삭제로 처리한다(별도 "미완료" 상태를 두지 않는다).
+model TaxFilingLog {
+  id          String   @id @default(cuid())
+  /// "YYYY-MM" 지급월(오너 확정상 귀속월과 항상 같다).
+  month       String
+  /// WITHHOLDING_RETURN | SIMPLIFIED_STATEMENT | LOCAL_INCOME_TAX
+  kind        String
+  completedAt DateTime
+
+  @@unique([month, kind])
+}
+
+/// 수취 세금계산서 1장에 대한 오너의 **결정** 기록(승인/무관 처리).
+///
+/// 설계 정본은 `docs/private/specs/2026-08-12-group-invoice-similarity-approval-design.md`.
+/// 스캔(`GET /api/settlement/tax-invoice-receipts`)은 종전대로 **아무것도 쓰지 않는다** —
+/// 쓰기는 결정 라우트에만 있고, 이 테이블이 그 유일한 흔적이다.
+///
+/// ⛔ `amountDelta` 를 지우지 말 것. 「얼마 차이를 언제 승인했는가」가 이 테이블의 존재
+/// 이유다 — 그 값이 없으면 나중에 정산 대사에서 그 차이를 설명할 수단이 사라지고, 승인은
+/// 「어떤 근거였는지 모르는 완료 표시」로 퇴화한다.
+///
+/// 키가 국세청 승인번호인 것은 그것이 계산서 1장의 **자연 키**이기 때문이다(`issueId` —
+/// `receipt-match.ts` 의 중복 발행 판정도 같은 값을 쓴다). 결정 해제는 행 삭제로 처리한다
+/// (`TaxFilingLog` 와 같은 규약 — 별도 "미결정" 상태를 두지 않는다).
+model TaxInvoiceReceiptDecision {
+  id            String   @id @default(cuid())
+  /// 국세청 승인번호
+  issueId       String   @unique
+  /// APPROVED | DISMISSED
+  decision      String
+  /// 승인 대상 기대 건 key 목록(`campaignId:slot`)의 **JSON 직렬화 텍스트**. 무관 처리면 `[]`.
+  ///
+  /// ⛔ `Json` 타입으로 바꾸지 말 것. 이 레포의 sqlite 미러 스키마는 Json 을 String 으로
+  /// 두는 규약이라(`schema.sqlite.prisma` 의 「Json은 String 미러 규약」), Json 으로 선언하면
+  /// **Postgres 에선 객체가 오고 SQLite 에선 문자열이 오는** 이원화가 생긴다. 그 이원화가
+  /// 이미 두 번 사고를 냈다(`src/lib/stored-json.ts` 헤더). 양쪽 다 String 으로 두면 모양이
+  /// 하나뿐이라 그 축이 아예 사라진다. 읽기는 `parseStoredJson` 을 통과시킨다.
+  matchedKeys   String
+  /// 승인 당시 스냅샷 — 감사 추적용이라 이후 정산 금액이 바뀌어도 갱신하지 않는다.
+  observedTotal Int?
+  expectedTotal Int?
+  amountDelta   Int?
+  /// 승인 근거 신호 요약(`receipt-similarity.ts` 의 signals)의 JSON 텍스트. 없으면 수동 결정.
+  signalSummary String?
+  /// 승인이 수취일시 필드에 **실제로 쓴 값**(= 계산서 작성일자).
+  ///
+  /// ⛔ 이 필드가 없으면 되돌리기가 성립하지 않는다. 되돌릴 때 현재 저장된 수취일시가 이
+  /// 값과 **정확히 같을 때만** 지우기 때문이다 — 승인 이후 오너가 손으로 다른 날짜를 넣었다면
+  /// 그건 우리가 쓴 값이 아니므로 건드리면 안 된다(남의 입력을 조용히 지우는 사고 방지).
+  appliedDate   DateTime?
+  decidedAt     DateTime @default(now())
+}

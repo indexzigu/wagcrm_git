@@ -1,0 +1,849 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Inter", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  /* 승인 팔레트 신규 — 성장(팔로워) 차트 계열, chart-1..5와 동일 패턴으로 노출 (오너 승인, 2026-07-09) */
+  --color-chart-growth: var(--chart-growth);
+  --color-chart-growth-soft: var(--chart-growth-soft);
+  --color-ring: var(--ring);
+  /* 앱 전역 focus-visible 포커스 링 정본 색 — WCAG 2.2 SC 1.4.11(3:1) 준수용. ring-focus-ring 유틸로 노출 */
+  --color-focus-ring: var(--focus-ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-tertiary: var(--tertiary);
+  --color-tertiary-foreground: var(--tertiary-foreground);
+  /* 레거시 이름색 블록의 잔존 1개. 나머지 13개(lavender-purple·peach-pink·light-blue·
+     mint-blue·deep-blue·mint-green·lime-green·emerald-green·coral-orange·neon-coral·
+     electric-teal·deep-navy·cloud-dancer)는 소비처 0건이라 제거했다(2026-07-30).
+     이름색은 5개 의미축(P8 §1) 밖이라 되살리지 말 것 — 새 색이 필요하면 토큰을 만든다.
+     neon-gold 만 남는 이유는 소비처가 실재하기 때문이다: inline-data-grid 의 행 hover
+     (`hover:bg-neon-gold/5`). 승인 팔레트의 --accent-gold(#E7A567)와는 다른 값이다. */
+  --color-neon-gold: #D4AF37;
+  --color-status-urgent: var(--status-urgent);
+  --color-status-active: var(--status-active);
+  --color-status-pending: var(--status-pending);
+  --color-status-info: var(--status-info);
+  /* 승인 팔레트 신규 — 상태 3계열 확장(caution/success + urgent tint 쌍), 기존 status-* 패턴으로 노출 (오너 승인, 2026-07-09) */
+  --color-status-caution: var(--status-caution);
+  --color-status-caution-bg: var(--status-caution-bg);
+  --color-status-caution-text: var(--status-caution-text);
+  --color-status-urgent-bg: var(--status-urgent-bg);
+  --color-status-urgent-text: var(--status-urgent-text);
+  --color-status-pending-text: var(--status-pending-text);
+  --color-status-success: var(--status-success);
+  --color-status-success-bg: var(--status-success-bg);
+  /* 골드 액센트를 status-* 와 같은 방식으로 유틸에 노출(2026-07-15). 새 색이 아니라
+     기존 --accent-gold/-soft 를 그대로 태우는 것 — 노출이 없어서 소비처가 리터럴 hex
+     (#E7A567/#F2C79C)를 직접 박고 있었다(모바일 홈 히어로). 값 변경 없음. */
+  --color-accent-gold: var(--accent-gold);
+  --color-accent-gold-soft: var(--accent-gold-soft);
+  /* 자금 방향(입금/지급) 전용 축 — 상태 배지 스킴과 별개다(가드레일 2 위반 아님).
+     지급은 "위험"이 아니라서 --status-urgent 에 흡수할 수 없다. 값은 캘린더가 이미
+     리터럴로 쓰던 것 그대로(시각 변화 0) — 이름이 없어서 리터럴이 박혀 있었다. */
+  --color-money-in: var(--money-in);
+  --color-money-out: var(--money-out);
+  /* 자금 축의 텍스트 변형(D1, 오너 승인 2026-07-15) — 기존 --status-*-text 관례와 같은 이유.
+     --money-in(#059669)은 흰 배경 3.77:1 로 본문 텍스트 AA(4.5) 미달이다. 그 값은 원래
+     캘린더 SVG 링(비텍스트 3:1)용으로 고른 것이라 텍스트용 대비가 설계된 적이 없다 —
+     그래서 클래스 유틸 소비처가 0곳이었고, 초록이 필요한 곳마다 리터럴을 손으로 박았다.
+     #047857 = 5.48:1. --money-out(#E11D48)은 4.70:1 로 이미 통과라 -text 짝이 불필요하다.
+     --status-success(#047857)와 값이 같지만 var() 로 묶지 않는다: "성공색 조정" 커밋이
+     자금색을 함께 끌고 가면 안 된다(들어온 돈은 "성공"이 아니다 — 바로 위 주석의 대칭). */
+  --color-money-in-text: var(--money-in-text);
+  /* 목표 달성 축의 "심각 미달" 극 — 히어로 네이비 위 전용(2026-07-15 등록).
+     --status-urgent(#BF5050)로 흡수 불가: 의미는 urgent가 맞지만 네이비 위 대비가
+     2.87:1로 AA 미달이라 **물리적으로 안 보인다**(흰 배경 4.69:1과 다른 세계).
+     바로 위 --money-out 이 "지급은 위험이 아니라서 흡수 불가"인 것과 같은 논리의
+     반대 방향이다. 규칙 SSOT 는 src/lib/goal-band.ts. */
+  --color-goal-miss: var(--goal-miss);
+  --shadow-soft-sm: var(--shadow-soft-sm);
+  --shadow-soft-md: var(--shadow-soft-md);
+  --shadow-soft-lg: var(--shadow-soft-lg);
+  --shadow-soft-hover: var(--shadow-soft-hover);
+  --shadow-ambient: var(--shadow-ambient);
+  --shadow-overlay: var(--shadow-overlay);
+  --radius-soft: 12px;
+  --radius-softer: 16px;
+  --animate-fade-in-up: fade-in-up var(--duration-normal) ease-out;
+  --animate-shimmer: shimmer 1.5s infinite;
+}
+
+:root {
+  --background: #F8FAFC;
+  --foreground: #0F172A;   /* was #2D3436 — 경쟁하던 제2 다크톤 제거, 슬레이트 정합. 승인 팔레트 2026-07-09 */
+  --grid-padding-x: 14px;
+  --grid-padding-y: 8px;
+  --font-size-data: 13px;
+  --pipeline-won: #0A3D62;
+  --pipeline-active: #0A3D62;
+  --pipeline-progress: rgba(15, 23, 42, 0.4);
+  --pipeline-lost: #BF5050;
+  /* 주문 배송진행 분포 바(order-dashboard) 4단. 진행 3단(주문확인→배송대기→배송중)은 네이비 단일 hue 램프(opaque
+     고정, 반투명 /70·/40 비결정 합성 제거). 완료는 골드로 질적 전환 = "다 차면 미션완료" 달성 종착점.
+     오너 결정 2026-07-10: 골드(--accent-gold)를 상태축에 승격(기존 '장식 전용' 원칙 해제). 지연은 색 아닌 라벨 빨간 텍스트로. */
+  --pipeline-unconfirmed: #94A3B8;          /* 미확인(발주확인 대기 큐) = slate-400. 경보 아닌 '아직 손 안 댄 대기'라 회색, 빨강은 지연 전용 보존 */
+  --pipeline-confirm: #0A3D62;              /* 주문확인(발주완료) — --primary 그대로 */
+  --pipeline-pending: #276B9B;              /* 배송대기 */
+  --pipeline-shipping: #649CC4;             /* 배송중 */
+  --pipeline-completed: var(--accent-gold); /* 배송완료 = 미션완료(달성 종착점) #E7A567 */
+  --transition-smooth: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
+  --primary: #0A3D62;
+  --primary-foreground: #FFFFFF;
+  /* 승인 팔레트 신규 — 히어로 네이비 + 골드 액센트. 단일 액센트 원칙(네이비=일하는 색, 골드=강조·장식 전용) (오너 승인, 2026-07-09) */
+  --hero-navy: #08314E; /* --primary(락) 파생값: oklch(from var(--primary) calc(l*0.8) c h), 브라우저 호환 위해 정적 hex로 고정 */
+  --accent-gold: #E7A567;
+  --accent-gold-soft: #F2C79C;
+  /* 자금 방향 축(2026-07-15 등록) — 입금=들어오는 돈, 지급=나가는 돈. 상태 배지
+     스킴과 의미축이 다르다: 지급은 위험 신호가 아니다. 캘린더 링·시트 방향 아이콘이
+     쓰던 리터럴 값 그대로다. */
+  --money-in: #059669;
+  --money-out: #E11D48;
+  /* 위 두 값은 SVG 링·아이콘(비텍스트 3:1)용이다. 흰 배경 본문 텍스트에는 --money-in-text 를
+     쓴다 — --money-in 은 3.77:1 로 AA 미달이다(@theme 블록 주석에 근거). */
+  --money-in-text: #047857;
+  /* 목표 달성 축 "심각 미달"(<80%) — 히어로 네이비 위 5.00:1(AA). rose-400.
+     오너 확정 D3 2026-07-15: amber-400 은 8.07 로 대비는 좋으나 네이비 위에서 달성
+     골드(#F2C79C, 8.61)와 뭉개져 달성/미달이 구분되지 않는다. **흰 배경 금지** — 2.69:1
+     로 텍스트 AA(4.5)는 물론 비텍스트 3:1 도 못 넘는다(emerald-500 2.54 와 같은 함정).
+     이 토큰은 네이비 표면 전용이고, 흰 카드의 위험색은 --status-urgent 계열이 담당한다. */
+  --goal-miss: #FB7185;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #0F172A;
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  --accent: #F8FAFC;
+  --accent-foreground: #0F172A;
+  --destructive: #BF5050;
+  --border: rgba(15, 23, 42, 0.08);
+  --input: rgba(15, 23, 42, 0.08);
+  --ring: rgba(10, 61, 98, 0.2);
+  /* focus-visible 포커스 링 정본(앱 전역 표준). --primary(#0A3D62) 60% 알파 — 신규 hue 아님.
+     반투명 링을 배경에 합성한 실효 대비: 흰 카드 3.60:1 / 페이지배경(#F8FAFC) 3.53:1 / 뮤트(#F1F5F9) 3.47:1
+     로 세 표면 모두 WCAG 2.2 SC 1.4.11(Non-text Contrast) AA 3:1을 안정 마진으로 충족(최악=뮤트).
+     기존 /45는 2.43~2.47:1로 미달이었음. 조정은 이 토큰 한 곳만. .dark는 미사용이라 :root값 상속. */
+  --focus-ring: rgba(10, 61, 98, 0.6);
+  --chart-1: #0A3D62;
+  --chart-2: #0284C7;
+  --chart-3: #9F8329;   /* was #38BDF8 — 약한 3번째 파랑 대신 색맹 안전 골드축. 승인 팔레트 2026-07-09 */
+  --chart-4: #F59E0B;   /* --status-pending 과 값이 같지만 var() 로 묶지 않는다:
+     차트 계열은 P8 5축(방향·판정·심각도·생애주기·달성) 밖의 계열 구분 팔레트라
+     의미가 겹치지 않는다. 실제로 .dark 는 chart-4 만 오버라이드해 이미 갈라져 있다.
+     (--money-in-text == --status-success 선례와 같은 논리 — T-045, 2026-08-25.
+     이 주석이 없던 동안 UI 검토 에이전트가 이 쌍을 "같은 값이면 같은 색" 위반으로
+     잘못 짚은 실사고가 있다.) */
+  --chart-5: #64748B;   /* was #0F172A — chart-1 네이비와 명도 겹침 해소, 중립 슬레이트로 이동. 승인 팔레트 2026-07-09 */
+  /* 승인 팔레트 신규 — 성장(팔로워) 차트 라인 전용 계열, chart-1..5와 별도 의미축 (오너 승인, 2026-07-09) */
+  --chart-growth: var(--status-success);   /* #047857 */
+  --chart-growth-soft: #6EE7B7;
+  --radius: 0.5rem;
+  --radius-dashboard: 14px;   /* was 24px — 오너 각진(squarish) 취향. 승인 팔레트 2026-07-09 */
+  --crm-panel: rgba(255, 255, 255, 0.95);
+  --crm-surface: #F8FAFC;
+  --sidebar: #08314E;   /* 히어로 네이비 통일 — 오너 결정 2026-07-10(밝은 뮤트 슬레이트 #F1F5F9에서 전환). 다크 표면이라 아래 토큰 동반 재조정. 다크모드 사이드바(#0F172A) 처리 미러링 */
+  --sidebar-foreground: #E2E8F0;   /* 네이비 위 라이트 텍스트 (대비 ~13:1) */
+  --sidebar-primary: #E7A567;   /* 액티브/브랜드 액센트 = 골드 (네이비+골드 락, 네이비 위 골드 대비 ~6:1) */
+  --sidebar-primary-foreground: #08314E;   /* 골드 solid 위 네이비 텍스트 (로고 칩) */
+  --sidebar-accent: rgba(255, 255, 255, 0.08);   /* hover wash (다크 표면) */
+  --sidebar-accent-foreground: #F8FAFC;
+  --sidebar-border: rgba(255, 255, 255, 0.10);   /* 헤어라인 (다크 표면) */
+  --sidebar-ring: rgba(231, 165, 103, 0.5);
+  --tertiary: #4F46E5;
+  --tertiary-foreground: #FFFFFF;
+  /* 사다리 값 재보정(오너 A안 확정 2026-07-15). 앱은 카드 그림자로 Tailwind 원시
+     shadow-soft-sm(검정 10%)을 233곳에서 썼고 토큰 soft-sm(네이비 2%)은 25곳뿐이었다 —
+     같은 역할에 강도 5배 차이의 두 언어가 공존했다. 다수파(원시) 세기에 토큰을 맞춰
+     수렴시킨다: 233곳은 거의 그대로 보이고, 토큰 소비처가 또렷해진다.
+
+     틴트는 네이비 유지 — #0F172A 의 상대휘도(≈0.007)가 순검정과 사실상 같아서
+     알파 보정이 필요 없다. 안 보이던 원인은 색이 아니라 ① 알파 2%(원시의 1/5)와
+     ② sm 만 1층이었다는 것이다(md/lg/hover 는 이미 2층 — "차분한 2층 소프트"라는
+     Owner Visual Taste 와 sm 자체가 모순됐다).
+
+     구조: 모든 층 = 접촉층(좁은 블러·가장자리 정의) + 부양층(넓은 블러·뜬 느낌).
+     md/lg/hover 의 부양층 블러(16/32/44px)는 기존(16/30/40)을 거의 보존했다 —
+     형태는 그대로 두고 강도만 올려 "새 디자인"이 아니라 "같은 모양이 조금 더 진해짐"
+     으로 읽히게 했다. 알파 단조 증가 검증: sm(.06/.05) < md(.08/.07) < lg(.09/.09)
+     < hover(.10/.11) — 역전 없음. */
+  --shadow-soft-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-soft-md: 0 2px 4px rgba(15, 23, 42, 0.08), 0 6px 16px rgba(15, 23, 42, 0.07);
+  --shadow-soft-lg: 0 3px 6px rgba(15, 23, 42, 0.09), 0 12px 32px rgba(15, 23, 42, 0.09);
+  --shadow-soft-hover: 0 4px 8px rgba(15, 23, 42, 0.1), 0 16px 44px rgba(15, 23, 42, 0.11);
+  /* 포털 부유 레이어 전용(popover·dropdown·select·sheet·dialog·툴팁). 밀도 사다리의
+     연장이 아니라 별개 축이다 — 이 레이어는 정의상 페이지 흐름과 분리돼 항상 단독으로
+     최상단에 뜨므로 "동시 노출 개수" 규칙의 대상이 아니다. 부양층 블러를 hover(44px)
+     보다 오히려 좁게(32px) 잡아 "더 크게"가 아니라 "더 또렷하게" 잘라낸다. */
+  --shadow-overlay: 0 4px 8px rgba(15, 23, 42, 0.1), 0 16px 32px rgba(15, 23, 42, 0.14);
+  /* 페이지 최상위 컨테이너 전용 앰비언트 층(2026-07-15 등록). 카드 그림자가 아니라
+     페이지 프레임을 띄우는 큰 헤일로 — soft-lg(0 8px 30px)와는 역할이 다르다.
+     값은 이미 19곳이 똑같이 쓰던 것을 그대로 가져왔다(시각 변화 0). 틴트가 웜그레이
+     (#42526E)인 것도 의도다 — 순색 네이비를 이 블러(80px)에 얹으면 헤일로가 무겁게
+     깔린다. 새 값이 아니라 이름 없던 관례에 이름을 준 것이다. */
+  --shadow-ambient: 0 24px 80px rgba(66, 82, 110, 0.08);
+  --shadow-card-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-blur: 16px;
+  --glass-border: rgba(15, 23, 42, 0.06);
+  --status-urgent: #BF5050;
+  --status-active: #0A3D62;
+  --status-pending: #F59E0B;
+  --status-info: #4A6B82;
+  /* 승인 팔레트 신규 — 상태 3계열 확장, "1의미=1색" 원칙 (오너 승인, 2026-07-09) */
+  --status-caution: #B45309;
+  --status-caution-bg: #FFFBEB;
+  --status-caution-text: #92400E;   /* caution 텍스트 전용: 원색(#B45309)에 의도적 저채도 opacity(/80·/70)를 얹으면 흰 배경 대비가 2.96:1로 무너짐(AA 미달). 불투명 amber-800으로 대체, tint 배경 위에서도 6:1대 확보. 약화는 컴포넌트 font-weight로 표현 */
+  --status-urgent-bg: #F9EEEE;
+  --status-urgent-text: #8F3C3C;   /* urgent tint 배경 위 텍스트: 기본 --status-urgent(#BF5050)은 이 tint 위에서 대비가 얕음(약 4.1:1) */
+  --status-pending-text: #B45309;  /* pending tint 배경 위 텍스트: 기본 --status-pending(#F59E0B)은 tint(#FEF5E7) 위 대비가 약 2.1:1(AA 미달), 어두운 amber로 약 4.65:1 확보 */
+  --status-success: #047857;
+  --status-success-bg: #ECFDF5;
+  --spacing-card: 24px;
+  
+  /* Calendar Base */
+  --cal-surface: 210 40% 98%;      
+  --cal-border: 214 32% 91%;       
+  
+  /* Primary Accent */
+  --cal-primary: 207 89% 21%;      
+  --cal-primary-soft: 207 89% 95%; 
+  
+  --spacing-card-sm: 16px;
+  --spacing-section: 24px;
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --easing-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Typography Scale */
+  --font-size-display: 44px;
+  --font-size-heading: 28px;
+  --font-size-subheading: 18px;
+  --font-size-body: 14px;
+  --font-size-caption: 11px;
+
+  --line-height-display: 1.1;
+  --line-height-heading: 1.2;
+  --line-height-subheading: 1.4;
+  --line-height-body: 1.5;
+
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: -0.01em;
+  --letter-spacing-wide: 0.05em;
+
+  --font-weight-bold: 700;
+  --font-weight-semibold: 650;
+
+  /* Layout & Grid Tokens */
+  --grid-gap-lg: 24px;
+  --grid-gap-md: 16px;
+  --grid-gap-sm: 12px;
+  --section-gap-lg: 32px;
+  --section-gap-md: 24px;
+  --section-gap-sm: 16px;
+
+  /* Effect Tokens */
+  --glow-opacity: 0.3;
+  --glow-opacity-hover: 0.4;
+  --highlight-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, transparent 50%, transparent 100%);
+  --stagger-delay: 50ms;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.72 0.16 150);
+  --chart-2: oklch(0.72 0.14 235);
+  --chart-3: oklch(0.78 0.14 75);
+  --chart-4: oklch(0.72 0.16 20);
+  --chart-5: oklch(0.72 0.12 285);
+  /* 승인 팔레트 신규 토큰(2026-07-09) — 다크모드 별도 설계값 없음: 앱에 ThemeProvider/토글 미구현으로
+     .dark는 현재 미사용(확인됨), 기존 chart-1..5 다크값도 라이트 hex와 무관한 별도 배색이라 이 토큰만
+     새로 유추하지 않고 라이트 값을 그대로 상속시켜 "신규 토큰 정의 누락"을 피한다. 다크모드 도입 시 재검토. */
+  --chart-growth: var(--status-success);
+  --chart-growth-soft: #6EE7B7;
+  /* 다크 사이드바 — 현재 앱에 다크 토글 없음(비활성). Option B 다크 대응: 슬레이트 표면 + 골드 액센트 */
+  --sidebar: #0F172A;
+  --sidebar-foreground: #F1F5F9;
+  --sidebar-primary: #E7A567;
+  --sidebar-primary-foreground: #08314E;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #F1F5F9;
+  --sidebar-border: rgba(255, 255, 255, 0.10);
+  --sidebar-ring: rgba(231, 165, 103, 0.5);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-focus-ring;
+  }
+  body {
+    @apply bg-background text-foreground;
+    letter-spacing: -0.015em;
+    background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 50%, #F8FAFC 100%);
+  }
+  html {
+    @apply font-sans;
+  }
+  h1, h2, h3, h4 {
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+/* 대시보드 마이크로 모션(2026-07-11) — ss-motion 규칙: 페이로드(숫자·금액)는 즉시 렌더,
+   보조 시각화(바·도트)만 짧게 움직인다. 무한 루프는 live-indicator(pulse-beat)만 허용. */
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+}
+
+@keyframes grow-y {
+  from { transform: scaleY(0); }
+}
+
+/* 스파크라인 좌→우 reveal. stroke-dasharray 방식은 preserveAspectRatio="none"의
+   수평 stretch를 dash 길이가 따라가지 못해 마지막 세그먼트가 안 그려지는 버그가 있어
+   (렌더 좌표계에서 동작하는) clip-path inset 방식으로 교체. 끝점 점도 함께 드러난다. */
+@keyframes spark-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes pulse-beat {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.75; }
+}
+
+@keyframes pop-in-once {
+  0% { opacity: 0; transform: scale(0.4); }
+  60% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes today-ping {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(2.2); opacity: 0; }
+}
+
+@layer utilities {
+  .crm-hit-area,
+  .crm-hit-area-wide {
+    position: relative;
+  }
+  .crm-hit-area::after,
+  .crm-hit-area-wide::after {
+    content: '';
+    position: absolute;
+    border-radius: inherit;
+  }
+  .crm-hit-area::after {
+    inset: -3px;
+  }
+  .crm-hit-area-wide::after {
+    inset: -4px -6px;
+  }
+  .card-soft {
+    border-radius: var(--radius-softer);
+    box-shadow: var(--shadow-soft-md);
+    padding: var(--spacing-card);
+    transition: box-shadow var(--duration-normal) ease, transform var(--duration-normal) ease;
+    position: relative;
+  }
+  .card-soft::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(255,255,255,0.6) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-soft-hover);
+  }
+  .press-scale:active {
+    transform: scale(0.98);
+    transition-timing-function: var(--easing-spring);
+  }
+  .animate-fade-in-up {
+    animation: var(--animate-fade-in-up);
+  }
+  .animate-shimmer {
+    animation: var(--animate-shimmer);
+    background: linear-gradient(90deg, var(--muted) 25%, rgba(255,255,255,0.5) 50%, var(--muted) 75%);
+    background-size: 200% 100%;
+  }
+  /* 진행 바 fill sweep — width는 최종값 고정(레이아웃 불변), transform만 차오른다.
+     backwards: stagger 지연 중에도 scaleX(0) 상태 유지 */
+  .animate-grow-x {
+    transform-origin: left;
+    animation: grow-x 550ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+  /* SVG 미니 막대 grow-in — transform-box: fill-box가 있어야 rect 자신 기준 bottom 원점 */
+  .animate-grow-y {
+    transform-box: fill-box;
+    transform-origin: bottom;
+    animation: grow-y 450ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+  /* 스파크라인 draw-in(좌→우 reveal). 래퍼 div에 적용 — 라인 SVG와 끝점 점을 함께 드러낸다. */
+  .animate-spark-reveal {
+    animation: spark-reveal 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  /* live-indicator 전용(실행 중 상태 도트) — 이외 용도의 무한 루프 금지(ss-motion) */
+  .pulse-beat-dot {
+    animation: pulse-beat 1.6s ease-in-out infinite;
+  }
+  .pop-in-once {
+    animation: pop-in-once 380ms var(--easing-spring) forwards;
+  }
+  /* '오늘' 마커 1회성 링 확산(2회 후 정지) — 부모에 relative 필요 */
+  .today-marker-ping::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 9999px;
+    border: 2px solid var(--accent-gold);
+    opacity: 0;
+    animation: today-ping 900ms ease-out 2;
+  }
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+  }
+  
+  .glass-card-light {
+    background: rgba(249, 249, 249, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(45, 52, 54, 0.08);
+    box-shadow: var(--shadow-soft-sm), var(--shadow-card-inset);
+  }
+
+  /* 풀스크린 모바일 시트(top-0)의 헤더 — 스탠드얼론 웹앱에서 노치/다이내믹 아일랜드
+     영역까지 덮이므로 상단 safe-area만큼 밀어 닫기 버튼이 가려지지 않게 한다.
+     노치 없는 기기/일반 브라우저에서는 env()가 0px이라 기존 여백(0.5rem)을 유지한다. */
+  .mobile-sheet-safe-top {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem) !important;
+  }
+
+  /* 풀스크린 시트 스크롤 컨테이너의 하단 — 홈 인디케이터(하단 제스처 바)가
+     최하단 액션 버튼/콘텐츠를 덮지 않도록 safe-area만큼 여백을 확보한다.
+     홈 인디케이터 없는 기기/브라우저에서는 env()가 0px이라 1rem 여백만 남는다. */
+  .mobile-sheet-safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem) !important;
+  }
+
+  /* 모바일 탭 본문 스크롤 컨테이너의 상단 — 스탠드얼론 웹앱은 viewportFit:"cover" 라
+     콘텐츠가 상태바/다이내믹 아일랜드 **밑까지** 깔린다. 기존 pt-2(8px)로는 인셋(~59px)을
+     못 덮어 MobileTopBar 카드의 캡션이 시계와 겹쳐 보였다(오너 실기기 확인 2026-07-16).
+
+     **카드가 아니라 컨테이너에 건다** — MobileTopBar 는 rounded-2xl + border + shadow 를
+     가진 "떠 있는 카드"라, 카드 자신의 padding 을 키우면 둥근 상단 모서리·테두리가 상태바에
+     걸린 채 카드 안에만 빈 여백이 생긴다. 로그인 화면(#188)이 카드 자신에 건 것과 다른 이유:
+     그쪽은 화면을 꽉 채우는 배경면(크롬)이라 배경이 상태바 밑에 깔려도 자연스럽다.
+     .mobile-sheet-safe-top / .crm-topbar 도 크롬 계열이라 같은 이유로 자신에 건다.
+
+     값은 기존 pt-2 와 동일한 0.5rem — 노치 없는 기기/일반 브라우저는 env()=0 이라 시각 변화 0.
+     클래스로 빼는 이유: 소비처가 7곳이라 매직넘버를 복붙하면 하나 빠뜨려도 안 드러난다
+     (실제로 6곳이 제각각 pt-2 / pt 없음으로 갈려 있었다). */
+  .mobile-tab-safe-top {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.5rem) !important;
+  }
+
+  .crm-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(248, 250, 252, 0.94);
+    backdrop-filter: blur(14px) saturate(120%);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85), 0 10px 26px rgba(15, 23, 42, 0.04);
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem) !important;
+  }
+
+  .crm-section-surface {
+    border: 1px solid rgba(15, 23, 42, 0.07);
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(10px);
+    box-shadow:
+      0 8px 24px rgba(15, 23, 42, 0.045),
+      inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+
+  .crm-subsection-surface {
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    background: rgba(255, 255, 255, 0.68);
+    box-shadow:
+      0 10px 24px rgba(15, 23, 42, 0.045),
+      inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+
+  .mobile-briefing-section {
+    position: relative;
+    border-left: 4px solid rgba(10, 61, 98, 0.72);
+    padding-block: 0.15rem 0.85rem;
+    padding-left: 0.75rem;
+  }
+
+  .today-section-accent {
+    position: relative;
+  }
+
+  .today-section-accent::before {
+    content: '';
+    position: absolute;
+    top: -18px;
+    left: 0;
+    right: 0;
+    height: 9px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(10, 61, 98, 0.82), rgba(212, 175, 55, 0.62), rgba(10, 61, 98, 0));
+  }
+
+  .today-section-chart::before {
+    background: linear-gradient(90deg, rgba(2, 132, 199, 0.82), rgba(56, 189, 248, 0.55), rgba(2, 132, 199, 0));
+  }
+
+  .today-section-status::before {
+    background: linear-gradient(90deg, rgba(15, 23, 42, 0.72), rgba(148, 163, 184, 0.6), rgba(15, 23, 42, 0));
+  }
+
+  .today-section-performance::before {
+    background: linear-gradient(90deg, rgba(212, 175, 55, 0.86), rgba(245, 158, 11, 0.54), rgba(212, 175, 55, 0));
+  }
+
+  .today-section-calendar::before {
+    background: linear-gradient(90deg, rgba(0, 169, 127, 0.78), rgba(10, 61, 98, 0.5), rgba(0, 169, 127, 0));
+  }
+
+  .crm-horizontal-accent {
+    position: relative;
+  }
+
+  .crm-horizontal-accent::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: linear-gradient(90deg, rgba(10, 61, 98, 0.82), rgba(212, 175, 55, 0.48), rgba(10, 61, 98, 0));
+  }
+
+  .crm-horizontal-accent-settlement::before {
+    background: linear-gradient(90deg, rgba(0, 169, 127, 0.78), rgba(2, 132, 199, 0.48), rgba(0, 169, 127, 0));
+  }
+
+  .crm-horizontal-accent-outreach::before {
+    background: linear-gradient(90deg, rgba(212, 175, 55, 0.86), rgba(10, 61, 98, 0.45), rgba(212, 175, 55, 0));
+  }
+
+  .pearl-hover:hover {
+    box-shadow: var(--shadow-soft-hover);
+    border-color: rgba(10, 61, 98, 0.15);
+  }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: var(--grid-gap-lg, 24px);
+    transition: gap var(--duration-normal, 200ms) ease;
+  }
+
+  .dashboard-section-gap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--section-gap-lg, 32px);
+    transition: gap var(--duration-normal, 200ms) ease;
+  }
+
+  .performance-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  .stagger-fade-in > * {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: fade-in-up 200ms ease-out forwards;
+  }
+  .stagger-fade-in > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger-fade-in > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger-fade-in > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger-fade-in > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger-fade-in > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger-fade-in > *:nth-child(6) { animation-delay: 250ms; }
+  .stagger-fade-in > *:nth-child(7) { animation-delay: 300ms; }
+  .stagger-fade-in > *:nth-child(8) { animation-delay: 350ms; }
+  .stagger-fade-in > *:nth-child(9) { animation-delay: 400ms; }
+  .stagger-fade-in > *:nth-child(n+10) { animation-delay: 450ms; }
+
+  .kpi-card {
+    position: relative;
+    transition: transform 300ms var(--easing-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  }
+
+  .kpi-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--highlight-gradient, linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, transparent 50%, transparent 100%));
+    pointer-events: none;
+  }
+
+  .kpi-detail-list {
+    overflow: hidden;
+    transition: height 200ms ease-out;
+  }
+
+  .kpi-detail-item:hover {
+    background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+    transition: background-color 150ms ease;
+  }
+
+  /* 스크롤바 숨김 — 2026-08-15 이전에는 이 클래스가 `SidebarContent` 에 붙어
+     있으면서 정의처가 없었다(Tailwind v4 · 플러그인 0개). 죽은 채로 "신호를
+     설계했다"는 거짓 흔적만 남겨서, 사이드바가 67px 넘치는데 아무 신호도
+     없는 상태를 아무도 의심하지 않았다. 계약 테스트가 재사망을 막는다. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 넘치는 스크롤러의 잘린 엣지를 16px 페이드로 알린다.
+     - 기본값은 양쪽 0px 이라 마스크가 완전 불투명 = no-op. 넘치지 않으면
+       아무 일도 하지 않는다.
+     - 엣지 토글은 data-fade-top / data-fade-bottom 이 하고, 그 값은 JS 가
+       DOM 에 직접 쓴다(useScrollEdges — 스크롤 값을 React 상태로 흘리면
+       프레임마다 리렌더된다).
+     - 그라디언트의 black/transparent 는 색이 아니라 **알파 스텐실**이다.
+       마스크는 색을 모른다 — 그래서 --sidebar 배경색이 바뀌어도 어긋나지
+       않는다(오버레이 div 방식 대신 마스크를 고른 이유).
+     - ⚠️ 트랜지션을 걸지 않는 것은 의도다. mask-image 는 애니메이션 가능한
+       속성이 아니라 @property 로 길이 커스텀 속성을 등록해야 하는데, 그
+       복잡도를 살 이득이 없다. 꺼지는 토글은 콘텐츠가 멈추는 순간과
+       일치하고, 켜지는 토글은 스크롤 제스처가 시작되는 순간과 일치한다 —
+       콘텐츠가 아직 움직이는 중이라 사용자의 주의가 거기 있고, 160px 레일
+       가장자리에 마스크가 나타나는 것은 눈에 걸리지 않는다. 둘 다 스냅이
+       이물감으로 읽히지 않으므로 트랜지션의 복잡도를 사지 않는다.
+       "빠진 것"이 아니다. */
+  .scroll-fade-y {
+    --scroll-fade-top: 0px;
+    --scroll-fade-bottom: 0px;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      black var(--scroll-fade-top),
+      black calc(100% - var(--scroll-fade-bottom)),
+      transparent 100%
+    );
+  }
+  .scroll-fade-y[data-fade-top="true"] {
+    --scroll-fade-top: 16px;
+  }
+  .scroll-fade-y[data-fade-bottom="true"] {
+    --scroll-fade-bottom: 16px;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --font-size-display: 30px;
+    --font-size-heading: 22px;
+  }
+  .card-soft { padding: var(--spacing-card-sm); }
+  .hover-lift:hover { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up, .animate-shimmer { animation: none; }
+  .animate-grow-x, .animate-grow-y, .pulse-beat-dot, .pop-in-once { animation: none; }
+  /* spark-reveal은 both fill이라 애니메이션 제거 시 from(clip 숨김)이 남지 않도록 리셋 */
+  .animate-spark-reveal { animation: none; clip-path: none; }
+  .today-marker-ping::after { animation: none; opacity: 0; }
+  .hover-lift:hover { transform: none; }
+  .press-scale:active { transform: none; }
+  .stagger-fade-in > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  * { transition-duration: 0.01ms !important; }
+}
+
+@media (max-width: 1279px) and (min-width: 768px) {
+  .dashboard-grid { gap: var(--grid-gap-md, 16px); }
+  .dashboard-section-gap { gap: var(--section-gap-md, 24px); }
+}
+
+@media (max-width: 767px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: var(--grid-gap-sm, 12px);
+  }
+  .dashboard-section-gap { gap: var(--section-gap-sm, 16px); }
+}
+
+@media (min-width: 768px) {
+  .crm-topbar {
+    position: static;
+    top: auto;
+    left: auto;
+    right: auto;
+    z-index: auto;
+    border-bottom: none;
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+    padding-top: 0px !important;
+  }
+
+  .today-section-accent::before,
+  .crm-horizontal-accent::before {
+    content: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .performance-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mutation Feedback Hybrid Strategy */
+body.mutation-pending,
+body.mutation-pending * {
+  cursor: progress !important;
+}
+
+/* ── 인쇄(PDF 저장) — T3 셀러 분석 리포트 (data-print-root 스코프) ──
+   브라우저 네이티브 인쇄로 PDF 산출(리포 관행: settlement-table.tsx).
+   visibility 격리로 shadcn 사이드바 내부 클래스에 의존하지 않고 앱 크롬을 숨긴다. */
+@media print {
+  /* 배경색·배지·점수바가 인쇄에 그대로 나오도록 강제 */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* 앱 크롬(사이드바·하단내비 등)은 감추고 리포트만 표시 */
+  body * {
+    visibility: hidden !important;
+  }
+  [data-print-root],
+  [data-print-root] * {
+    visibility: visible !important;
+  }
+  [data-print-root] {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    /* @page margin:0으로 브라우저 머리말/꼬리말을 없앴으므로 실제 여백은 여기서 확보 */
+    padding: 14mm !important;
+  }
+  /* 인쇄에서 감출 요소(버튼 등) */
+  .no-print {
+    display: none !important;
+  }
+  /* 카드·이미지가 페이지 경계에서 잘리지 않게 */
+  [data-print-root] .grid > *,
+  [data-print-root] img {
+    break-inside: avoid;
+  }
+  /* 링크 밑줄·색 정리(인스타 원본 링크 등) */
+  [data-print-root] a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  /* 브라우저 자동 머리말·꼬리말(날짜·URL·쪽수)은 @page 여백 영역에 렌더된다 —
+     margin:0으로 그 영역 자체를 없애 제거. 실제 여백은 위 print-root padding으로 확보. */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+}

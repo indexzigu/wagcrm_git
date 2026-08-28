@@ -1,0 +1,38 @@
+{
+  "type": "rules",
+  "title": "정산 관련 표현 규칙",
+  "version": "1.0.0",
+  "createdAt": "2026-07-06",
+  "rules": [
+    {
+      "id": "settlement-status-disclosure",
+      "description": "정산 금액을 언급할 때는 예정/확정/지급완료 상태를 반드시 분리 표기한다. AI가 임의로 '확정'되었다고 단정하지 않는다.",
+      "appliesTo": ["ActionProposal.resultSummary", "ActionProposal.structuredResult"],
+      "requiredLabels": ["예정(pending)", "확정(confirmed)", "지급완료(paid)"],
+      "forbiddenPatterns": [
+        "정산(이)? 완료되었습니다(?! \\(예정\\))",
+        "확정되었습니다(?!.*(입금|지급) 확인)"
+      ]
+    },
+    {
+      "id": "settlement-source-of-truth",
+      "description": "정산 관련 숫자는 SalesCampaign.settlementSales/settlementDeposit/settlementPayout, SettlementChecklist 완료 여부를 근거로 제시하며, 근거 없는 추정치는 assumptions 필드에 명시한다.",
+      "appliesTo": ["ActionProposal.dataSources", "ActionProposal.assumptions"]
+    },
+    {
+      "id": "settlement-deposit-payout-distinction",
+      "description": "입금(deposit)과 지급(payout)은 서로 다른 이벤트다. isDepositReceived와 isPayoutCompleted를 혼동해 언급하지 않는다.",
+      "appliesTo": ["ActionProposal.resultSummary"]
+    },
+    {
+      "id": "settlement-tax-caveat",
+      "description": "세금계산서 발행 여부(sellerInvoiceIssuedAt, supplierInvoiceIssuedAt)와 실제 입금/지급 여부는 별개이므로 동시에 단정하지 않는다.",
+      "appliesTo": ["ActionProposal.resultSummary"]
+    },
+    {
+      "id": "settlement-review-required",
+      "description": "정산 확정/지급 관련 실행 기안(WRITE)은 reviewRequired=true를 기본값으로 하며, 자동 승인 대상에서 제외한다 (approval.rules.json의 alwaysManual 참조).",
+      "appliesTo": ["ActionProposal.reviewRequired"]
+    }
+  ]
+}

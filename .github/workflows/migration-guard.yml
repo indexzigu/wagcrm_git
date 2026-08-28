@@ -1,0 +1,212 @@
+name: Migration Guard
+
+# 배포 모델: prod = origin/main 머지 → Vercel Git 자동배포. 마이그레이션의 실 DB
+# 적용은 Vercel production 빌드가 자동 수행한다(scripts/prisma-migrate-on-deploy.mjs).
+# 따라서 이 게이트의 역할은 "이미 적용됐나"가 아니라 "이 마이그레이션이 빈 DB에서
+# 깨끗하게 적용되는가 + schema.prisma와 동기화돼 있는가"를 머지 전에 검증하는 것이다.
+# 깨진 마이그레이션이 auto-apply(배포)에 도달해 배포가 통째로 막히기 전에 PR에서 잡는다.
+# 일회용 Postgres(shadow DB)만 쓰므로 prod 시크릿이 필요 없고 fork PR에서도 돈다.
+
+on:
+  # NOTE: 의도적으로 `paths:` 필터를 두지 않는다. 이 job이 올리는 `guard` 상태는
+  # ①배포 직전 게이트(infra/selfhost/deploy.sh 안전장치 ⑦ — T-069)가 모든 배포 커밋의
+  # 원 PR에 success 로 요구하고, ②브랜치 보호가 살아 있는 동안엔 main ruleset 도
+  # '모든 PR'에 required 로 요구한다(2026-08-26 무료 플랜 비공개 전환으로 정지 상태 —
+  # 유료/공개 복귀 시 부활 전제). 경로 필터를 걸면 마이그레이션을 안 건드린 PR에서
+  # job이 스킵되는데, ①은 check-run 부재로 그 PR 의 배포를 거부하고, ②는 '스킵된
+  # required 체크'를 통과로 쳐주지 않아 머지 불가 데드락이 된다. 대신 항상 실행하고,
+  # prisma 변경이 없으면 아래 'Detect prisma changes' 게이트로 무거운 검증만 건너뛴다.
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: migration-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: prisma
+          POSTGRES_DB: shadow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SHADOW_DB: postgresql://prisma:prisma@localhost:5432/shadow
+      DATABASE_URL: postgresql://prisma:prisma@localhost:5432/shadow
+      DIRECT_URL: postgresql://prisma:prisma@localhost:5432/shadow
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect prisma changes (gate)
+        id: relevant
+        run: |
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base_sha".."$head_sha" -- prisma/migrations prisma/schema.prisma)
+          if [ -n "$changed" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "prisma 변경 감지 — shadow DB 검증을 수행합니다."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "이 PR은 prisma/migrations·schema.prisma를 건드리지 않음 → 검증 스킵, guard 자동 통과."
+          fi
+
+      - name: Setup Node.js
+        if: steps.relevant.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Resolve pinned Prisma version
+        id: prisma
+        if: steps.relevant.outputs.changed == 'true'
+        run: |
+          version=$(node -p "require('./package.json').devDependencies.prisma.replace(/^[^0-9]*/, '')")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Detect migrations added by this PR
+        id: detect
+        if: steps.relevant.outputs.changed == 'true'
+        run: |
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          added=$(git diff --name-only --diff-filter=A "$base_sha".."$head_sha" -- 'prisma/migrations/*/migration.sql' \
+            | sed -E 's|prisma/migrations/([^/]+)/migration\.sql|\1|' | sort -u)
+          {
+            echo "added<<EOF"
+            echo "$added"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          if [ -z "$added" ]; then
+            echo "신규 마이그레이션 없음 (schema.prisma만 변경). 동기화 검증은 계속 진행."
+          else
+            echo "이 PR의 신규 마이그레이션:"
+            echo "$added"
+          fi
+
+      - name: Apply all migrations to a fresh shadow DB
+        id: apply
+        if: steps.relevant.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          npx --yes "prisma@${{ steps.prisma.outputs.version }}" migrate deploy --schema prisma/schema.prisma
+
+      - name: Check schema.prisma is in sync with migrations
+        id: drift
+        if: steps.relevant.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          # exit 0 = 마이그레이션이 schema.prisma를 완전히 재현(동기화됨)
+          # exit 2 = 차이 존재 = schema.prisma가 바뀌었는데 대응 마이그레이션이 없음(migrate dev 누락)
+          npx --yes "prisma@${{ steps.prisma.outputs.version }}" migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DB" \
+            --exit-code
+
+      - name: Evaluate verdict
+        id: verdict
+        if: steps.relevant.outputs.changed == 'true'
+        run: |
+          verdict=pass
+          detail=""
+          if [ "${{ steps.apply.outcome }}" != "success" ]; then
+            verdict=fail
+            detail="마이그레이션 SQL이 빈 DB에서 깨끗하게 적용되지 않습니다(문법 오류·잘못된 순서·이미 존재하는 객체 등). 위 'Apply all migrations' 로그 참조. 이 상태로 머지하면 Vercel production 빌드의 자동 migrate deploy가 실패해 배포가 통째로 막힙니다."
+          elif [ "${{ steps.drift.outcome }}" != "success" ]; then
+            verdict=fail
+            detail="schema.prisma와 prisma/migrations가 어긋납니다 — 스키마를 바꾸고 마이그레이션 생성(prisma migrate dev)을 빠뜨렸을 가능성이 큽니다. 이 상태로 배포하면 코드가 기대하는 컬럼/테이블이 실 DB에 없어 P2022가 납니다."
+          fi
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          echo "detail=$detail" >> "$GITHUB_OUTPUT"
+
+      - name: Post PR comment
+        if: always() && steps.relevant.outputs.changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        env:
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          DETAIL: ${{ steps.verdict.outputs.detail }}
+          ADDED: ${{ steps.detect.outputs.added }}
+        with:
+          script: |
+            const marker = "<!-- migration-guard -->";
+            const added = (process.env.ADDED || "").trim();
+            const addedList = added
+              ? added.split("\n").map((m) => `- \`${m}\``).join("\n")
+              : "_(신규 마이그레이션 없음 — schema.prisma 변경만 감지)_";
+            let body;
+            if (process.env.VERDICT === "pass") {
+              body = [
+                marker,
+                "## ✅ Migration Guard — 검증 통과",
+                "",
+                "빈 DB에서 전체 마이그레이션이 깨끗하게 적용되고, `schema.prisma`와도 동기화돼 있습니다.",
+                "머지 시 Vercel production 빌드가 이 마이그레이션을 실 DB에 자동 적용합니다.",
+                "",
+                "**이 PR의 신규 마이그레이션:**",
+                addedList,
+              ].join("\n");
+            } else {
+              body = [
+                marker,
+                "## 🛑 Migration Guard — 머지 금지",
+                "",
+                `**${process.env.DETAIL}**`,
+                "",
+                "**이 PR의 신규 마이그레이션:**",
+                addedList,
+              ].join("\n");
+            }
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (c) => c.body && c.body.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Fail if validation failed
+        if: steps.verdict.outputs.verdict == 'fail'
+        env:
+          DETAIL: ${{ steps.verdict.outputs.detail }}
+        run: |
+          echo "::error::Migration Guard 실패 — $DETAIL"
+          echo "## 🛑 Migration Guard 실패" >> "$GITHUB_STEP_SUMMARY"
+          echo "$DETAIL" >> "$GITHUB_STEP_SUMMARY"
+          exit 1

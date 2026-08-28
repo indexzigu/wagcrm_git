@@ -1,0 +1,94 @@
+name: Scheduled Crons (manual fallback)
+
+# 크론 스케줄 정본은 `infra/selfhost/crontab`(오너 맥) 이다 — 2026-08-13 컷오버로 옮겨졌고,
+# 2026-08-15 에 vercel.json 의 crons 를 제거하면서 구 플랫폼에는 스케줄이 아예 없어졌다.
+# ⛔ 종전 서술 "정본은 vercel.json 의 crons"(2026-07-20 Vercel Pro 전환)는 SUPERSEDED.
+# 이 워크플로는 더 이상 스케줄을 돌리지 않으며, 수동 재실행(workflow_dispatch) 폴백 전용이다
+# — 롤백 중이라 자체호스팅이 죽어 있는 동안의 임시 발화 수단이기도 하다. 예: 누락 의심 잡의
+# 즉시 재발화, 또는 일시중단된 collect-reviews 의 명시 호출. 일상 수동 실행의 1순위 경로는
+# 홈 화면 시스템 레이더의 실행 버튼(/api/system/cron-run)이다.
+#
+# 필요 설정(오너):
+#   - 리포 시크릿  CRON_SECRET     : Vercel 환경변수 CRON_SECRET 과 동일 값 (Settings → Secrets and variables → Actions → Secrets)
+#   - (선택) 리포 변수 CRON_BASE_URL : 호출 대상 base URL, 기본 https://crm.ygrd.kr
+#
+# 수동 실행: Actions → Scheduled Crons → Run workflow. endpoints 입력에 "all"(기본) 또는
+# 공백으로 구분한 크론 이름(예: "price-monitoring naver-order-sync")을 넣는다.
+#
+# ⛔ collect-reviews 는 2026-07-19 정기 스케줄 제외 → **2026-07-31 오너 결정으로 중단 확정**이다.
+# vercel.json crons 에도 없다. 처음엔 prod egress IP(Vercel hnd1 · Fixie)에 NaPm 통행증이
+# 부여되지 않는 문제로 봤으나, 2026-07-31 전수 실측에서 **주거용 IP(로컬)에서도 CAPTCHA**가 떠
+# 원인이 IP가 아니라 **자동화 브라우저 탐지 자체**임이 확정됐다(서버/로컬 7경로 전부 차단).
+# → 실행 위치·언어를 바꿔도 결과는 같으므로 **재시도하지 말 것.** CAPTCHA 우회는 금지(계정 제재
+#   위험), 유료 프록시·엑셀 수동 업로드는 오너가 사용 안 함으로 확정.
+# 재개 조건은 **네이버 공식 리뷰 API 제공 시 하나뿐**이며, 그때 vercel.json crons + KNOWN_JOBS 를
+# 같은 PR 에서 되살린다. 실측 표·금지 목록·대체 운영(문의 기반 VOC)은
+# REVIEW_QNA_COLLECTION_PLAN.md §2-B-종결 참조.
+# 다만 이 폴백 워크플로에서 이름을 명시하면(endpoints: "collect-reviews") 수동 호출은 여전히
+# 동작한다("all" 목록에는 없다) — 재개 조건 충족 시의 검증용이며, 평시 호출은 무의미하다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      endpoints:
+        description: '호출할 크론(공백 구분 이름, 또는 "all")'
+        required: false
+        default: "all"
+
+# 같은 트리거의 중복 실행 방지.
+concurrency:
+  group: scheduled-crons-${{ github.event.inputs.endpoints || 'manual' }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Invoke cron endpoints
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ vars.CRON_BASE_URL || 'https://crm.ygrd.kr' }}
+          DISPATCH: ${{ github.event.inputs.endpoints }}
+        run: |
+          set -uo pipefail
+
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::리포 시크릿 CRON_SECRET 이 설정되지 않았습니다. Settings → Secrets and variables → Actions 에 추가하세요."
+            exit 1
+          fi
+
+          # collect-reviews 는 의도적으로 빠져 있다(일시중단 — 파일 상단 주석). "all" 이 조용히
+          # 되살리지 않도록 목록에서도 뺀다. 명시 호출(endpoints: "collect-reviews")은 그대로 동작한다.
+          # notifications 는 라우트가 삭제됐다(#101 알림센터 해체) — 목록에 남아 있으면 "all" 수동
+          # 폴백이 404 로 실패한다(실측 2026-07-28). 유령/누락 타깃은 cron-targets 계약 테스트가 강제한다.
+          ALL="refresh-instagram-token collect-instagram collect-youtube naver-order-sync price-monitoring rehost-seller-media enrich-references enrich-inbox naver-settlement-sync collect-campaign-posts collect-qnas analyze-voc db-exposure-audit encryption-key-audit"
+
+          # 이 워크플로는 수동 전용(workflow_dispatch)이다 — endpoints 입력이 없으면 "all" 로 처리.
+          TARGET_INPUT="${DISPATCH:-all}"
+          if [ "$TARGET_INPUT" = "all" ]; then TARGETS="$ALL"; else TARGETS="$TARGET_INPUT"; fi
+
+          echo "대상 엔드포인트: $TARGETS"
+          FAILED=""
+          for ep in $TARGETS; do
+            url="$BASE_URL/api/cron/$ep"
+            echo "──────── $ep ($url)"
+            # 크론은 최대 300s(maxDuration). 단발 호출(재시도 없음 — 부작용 이중 실행 방지).
+            code=$(curl -sS -m 320 -o /tmp/resp.txt -w '%{http_code}' \
+              -H "Authorization: Bearer $CRON_SECRET" "$url") || code="000"
+            echo "  → HTTP $code"
+            head -c 300 /tmp/resp.txt 2>/dev/null | sed 's/^/  ▏ /' || true
+            echo
+            case "$code" in
+              2*) echo "  ✓ ok" ;;
+              *)  echo "  ✗ 실패"; FAILED="$FAILED $ep(HTTP:$code)" ;;
+            esac
+          done
+
+          if [ -n "$FAILED" ]; then
+            echo "::error::실패한 크론:$FAILED"
+            exit 1
+          fi
+          echo "완료 — 전부 2xx: $TARGETS"

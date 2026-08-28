@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 - 경로는 이 iMac(운영 체크아웃 ~/selfhost/wagcrm, 홈 /Users/z9)에 고정된
+	   절대경로다. launchd 는 $HOME/~ 를 전개하지 않으므로 다른 머신으로
+	   옮길 경우 이 파일의 경로를 전부 다시 써야 한다.
+	 - kickstart 로 재시작하는 Task 4 deploy.sh 와 Label 이 정확히 일치해야
+	   한다: kr.ygrd.wagcrm.app
+	-->
+	<key>Label</key>
+	<string>kr.ygrd.wagcrm.app</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/z9/selfhost/wagcrm/infra/selfhost/run-app.sh</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/z9/selfhost/wagcrm</string>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- 크래시·재부팅 후 자동 복구 — 무인 운영 전제 -->
+	<key>KeepAlive</key>
+	<true/>
+
+	<key>StandardOutPath</key>
+	<string>/Users/z9/selfhost/logs/app.out.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/Users/z9/selfhost/logs/app.err.log</string>
+</dict>
+</plist>

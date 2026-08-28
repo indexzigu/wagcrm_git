@@ -1,0 +1,22 @@
+-- Enable Row Level Security on _prisma_migrations (Supabase Data API lockdown — 잔여 구멍).
+--
+-- 배경: 20260715120000_enable_rls_public_tables 가 앱 테이블 57개에 RLS 를 켰지만, Prisma 내부
+-- 관리 테이블인 _prisma_migrations 이 목록에 없어 유일하게 RLS 가 꺼진 채 남았다(실측 2026-07-16:
+-- public 58개 중 57개 켜짐, 이 테이블만 꺼짐).
+--
+-- 위험(읽기 아님 — 쓰기다):
+--  · 읽기 유출은 사실상 0이다. 새는 값은 마이그레이션 이름뿐이고, 이 레포는 PUBLIC 이라 그 이름들이
+--    이미 GitHub prisma/migrations/ 에 그대로 공개돼 있다.
+--  · 진짜 문제는 쓰기다. Supabase 기본값으로 anon 롤은 public 테이블에 INSERT/UPDATE/DELETE/TRUNCATE
+--    권한을 전부 갖고 있고(실측), RLS 가 유일한 차단막이다. 즉 브라우저 번들에 실려 사실상 공개인
+--    anon 키로 이 테이블을 오염시킬 수 있다. 이 프로젝트는 배포마다 `prisma migrate deploy` 가
+--    자동 실행되므로(#97 이후 모델 B), 기록이 깨지면 배포가 막힌다 = 가용성 사고.
+--
+-- 조치: RLS 를 켜고 정책은 만들지 않는다 → anon·authenticated 전면 거부.
+-- Prisma 가 쓰는 postgres 롤은 테이블 소유자이자 BYPASSRLS 라 migrate deploy 는 영향받지 않는다.
+-- (FORCE 는 쓰지 않는다 — 소유자까지 RLS 대상이 되어 마이그레이션 경로를 깰 수 있다. 앞선
+--  마이그레이션과 같은 판단이다.)
+--
+-- IF EXISTS: 이 테이블은 Prisma 가 관리하므로 신규/초기화 환경에서 아직 없을 수 있다.
+
+ALTER TABLE IF EXISTS "_prisma_migrations" ENABLE ROW LEVEL SECURITY;

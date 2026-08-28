@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# 커밋 메시지 게이트: 메시지 본문의 시크릿·PII·금지어를 차단한다(P0).
+set -euo pipefail
+exec node "$(git rev-parse --show-toplevel)/scripts/commit-guard.mjs" --message "$1"

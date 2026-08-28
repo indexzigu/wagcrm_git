@@ -1,0 +1,1595 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/prisma-sqlite"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Partner {
+  id                  String    @id @default(cuid())
+  name                String
+  type                String // BRAND | VENDOR | AGENCY | AGENT
+  status              String?
+  contactInfo         String?
+  bankAccount         String?
+  companyStatus       String?
+  companyRole         String?
+  lastContactAt       DateTime?
+  notes               String?
+  referredById        String?
+  businessNumber      String? // 사업자번호 (10자리 숫자)
+  ceoName             String? // 대표자명 (국세청/Bizno API 자동조회)
+  address             String? // 사업장 주소 (Bizno API 자동조회)
+  bizSyncedAt         DateTime? // 마지막 사업자 정보 동기화 시각
+  businessType        String?
+  businessItem        String?
+  representativeEmail String?
+  // F4-② 발주 브랜드 설정 (schema.prisma와 동기화)
+  orderTemplateSlug   String?   @unique
+  orderDisplayName    String?
+  orderEmailDomains   String?
+  orderFormatAdapter  String?
+  orderToEmail        String?
+  orderCcEmail        String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  deals        Deal[]
+  contacts     PartnerContact[]
+  referredBy   Partner?         @relation("PartnerReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    Partner[]        @relation("PartnerReferral")
+  sellerAgents Seller[]         @relation("SellerAgency")
+  priceSheets  PriceSheet[]
+
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  orderExcelRules String? // postgres Json? 미러 — 발주서 열 매핑 규칙(JSON 직렬화 텍스트)
+
+  @@index([type])
+  @@index([name])
+  @@index([referredById])
+}
+
+model Seller {
+  id                   String    @id @default(cuid())
+  name                 String
+  alias                String?
+  realName             String? // postgres 미러 — 원천징수 신고용 법적 실명
+  snsType              String // INSTAGRAM | YOUTUBE
+  snsHandle            String
+  currentFollowers     Int       @default(0)
+  currentPostsCount    Int?
+  profileBio           String?
+  profilePicUrl        String?
+  profileExternalUrls  String?
+  isMonitored          Boolean   @default(false)
+  category             String?
+  agencyId             String?
+  channelUrl           String?
+  reviewer             String?
+  personalCategory     String?
+  fitLevel             String?
+  proposalStatus       String?
+  proposalProduct      String?
+  proposalWaitlist     String?
+  collaborationScore   String?
+  adResponseScore      String?
+  commentResponseScore String?
+  activityFrequency    String?
+  accountNumber        String?
+  residentNumber       String?
+  email                String?
+  phoneNumber          String?
+  mailingAddress       String?
+  notes                String?
+  lastReviewedAt       DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  portalToken           String?   @unique
+  // 셀러 전용 주소 포털(2026-07-10): crm.ygrd.kr/<slug> + 비밀번호 게이트.
+  // slug는 셀러 계정명 기반(공개 취급) — 비밀은 비밀번호(bcrypt 해시)뿐이다.
+  portalSlug            String?   @unique
+  portalPasswordHash    String?
+  // 무차별 대입 방어: 실패 카운트/잠금 해제 시각(서버리스에서도 살아남게 DB에 둔다)
+  portalAuthFailCount   Int       @default(0)
+  portalAuthLockedUntil DateTime?
+  acquisitionChannel    String?
+  referredById          String?
+  acquisitionNote       String?
+  availabilityNote      String?
+  availabilityUpdatedAt DateTime?
+  referredBy            Seller?   @relation("SellerReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals             Seller[]  @relation("SellerReferral")
+
+  histories           SellersHistory[]
+  bioHistories        SellerProfileBioHistory[]
+  campaigns           SalesCampaign[]
+  campaignGroups      CampaignGroup[]
+  storySnapshots      SellerStorySnapshot[]
+  postClassifications SellerPostClassification[]
+  agency              Partner?                   @relation("SellerAgency", fields: [agencyId], references: [id], onDelete: SetNull)
+  outreaches          SellerOutreach[]
+  salesTasks          SalesTask[]
+  categoryAssignments SellerCategoryAssignment[]
+
+  @@unique([snsType, snsHandle])
+  @@index([category])
+  @@index([agencyId])
+}
+
+model SellersHistory {
+  id                  String   @id @default(cuid())
+  sellerId            String
+  snapshotDate        DateTime
+  followersCount      Int
+  postsCount          Int?
+  profileBio          String?
+  profilePicUrl       String?
+  profileExternalUrls String?
+  source              String   @default("INTERNAL")
+  // ER 추이 (§11-3): 파생 스칼라만 적립 — postgres 본 스키마와 동기 유지
+  er                  Float?
+  avgLikes            Float?
+  avgComments         Float?
+  createdAt           DateTime @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, snapshotDate])
+  @@index([snapshotDate])
+}
+
+model SellerProfileBioHistory {
+  id          String   @id @default(cuid())
+  sellerId    String
+  collectedAt DateTime @default(now())
+  previousBio String?
+  bio         String
+  source      String   @default("INTERNAL")
+  createdAt   DateTime @default(now())
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, collectedAt])
+}
+
+model Deal {
+  id                      String   @id @default(cuid())
+  dealName                String
+  brandName               String?
+  partnerCompanyName      String?
+  costPrice               Decimal  @default(0)
+  sellingPrice            Decimal  @default(0)
+  listPrice               Decimal?
+  floorPrice              Decimal?
+  supplyPrice             Float?
+  optionSortOrder         Int      @default(0)
+  discountRate            Decimal?
+  totalCommissionRate     Decimal?
+  brokerageCommissionRate Decimal?
+  baseMarginPolicy        String
+  status                  String   @default("SOURCING")
+  sourcingMemo            String?
+  candidateSellers        String?
+  partnerId               String
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  partner    Partner            @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  campaigns  SalesCampaign[]
+  templates  CampaignTemplate[]
+  outreaches SellerOutreach[]
+  salesTasks SalesTask[]
+
+  parentDealId          String?
+  parentDeal            Deal?             @relation("DealOptions", fields: [parentDealId], references: [id], onDelete: SetNull)
+  options               Deal[]            @relation("DealOptions")
+  unit                  String?
+  unitQuantity          Int?
+  supplementaryInfo     String?
+  shippingFee           Float?
+  freeShippingThreshold Float?
+  dealType              String            @default("MAIN") // MAIN | OPTION
+  monitorEnabled        Boolean           @default(true)
+  category              String? // FOOD | SUPPLEMENT | COSMETIC | GENERAL (C1 클레임 게이트)
+  claims                DealClaim[]
+  offerAnswers          DealOfferAnswer[]
+  assetDrafts           DealAssetDraft[]
+  guideDrafts           DealGuideDraft[]
+
+  campaignDeals         CampaignDeal[]
+  priceSheetRows        PriceSheetRow[]
+  priceMonitorSnapshots PriceMonitorSnapshot[]
+
+  @@index([status])
+  @@index([partnerId])
+  @@index([parentDealId])
+}
+
+model SalesCampaign {
+  id                      String    @id @default(cuid())
+  dealId                  String
+  sellerId                String
+  campaignName            String?
+  salesCode               String?
+  startDate               DateTime
+  endDate                 DateTime
+  salesChannel            String
+  baseNaverLink           String
+  generatedTrackingLink   String
+  actualSales             Decimal?
+  sellerExpense           Decimal?
+  operatingExpense        Decimal?
+  operatingProfit         Decimal?
+  settlementSales         Decimal?
+  quantity                Int?      @map("orderCount")
+  itemCount               Int?
+  totalMarginRate         Decimal   @default(0)
+  sellerMarginRate        Decimal   @default(0)
+  netMarginRate           Decimal   @default(0)
+  status                  String    @default("PROPOSAL")
+  isManualMargin          Boolean   @default(false)
+  sellerTaxType           String? // INDIVIDUAL | BUSINESS
+  commissionBasis         String? // SP (판매가) | CP (공급원가)
+  isDepositReceived       Boolean   @default(false)
+  isPayoutCompleted       Boolean   @default(false)
+  depositReceivedAt       DateTime?
+  payoutCompletedAt       DateTime?
+  actualPayoutAmount      Decimal?
+  taxExpense              Decimal?
+  miscExpense             Decimal?
+  roundNumber             Int?
+  assignedTo              String?
+  nextAction              String?
+  rawSchedule             String?
+  sourceCreatedAt         DateTime?
+  notesFromImport         String?
+  returnPeriodEndDate     DateTime?
+  settlementSupplyCost    Float?
+  settlementGoodsCost     Float?
+  supplierInvoiceIssuedAt DateTime?
+  sellerInvoiceIssuedAt   DateTime?
+  shippingFee             Float?
+  freeShippingThreshold   Float?
+  expectedDepositDate     DateTime?
+  expectedPayoutDate      DateTime?
+  // 자사몰 공급사 지급 레그(schema.prisma와 동기화) — 슬롯 SSOT: resolveCampaignMoneySlots
+  expectedSupplierPayoutDate DateTime?
+  supplierPayoutCompletedAt  DateTime?
+  isSupplierPayoutCompleted  Boolean  @default(false)
+  accountingCompletedAt   DateTime?
+  groupId                 String? // CG-1: 조합 캠페인 묶음(CampaignGroup) 소속. null=미그룹.
+  orderCampaignId         String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  deal                Deal                       @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  seller              Seller                     @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  group               CampaignGroup?             @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  orderCampaign       OrderCampaign?             @relation(fields: [orderCampaignId], references: [id])
+  campaignDeals       CampaignDeal[]
+  attributions        TrackingAttribution[]
+  trackedLinks        TrackedLink[]
+  assets              Asset[]
+  activities          CampaignActivity[]
+  notes               CampaignNote[]
+  settlementChecklist SettlementChecklist?
+  checklistItems      CampaignChecklistItem[]
+  settlementItems     CampaignSettlementItem[]
+  actionProposals     ActionProposal[]
+  workRecords         WorkRecord[]
+  chatRoomMappings    ChatRoomMapping[]
+  buyerFingerprints   CampaignBuyerFingerprint[]
+
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  isManualSettlementSales Boolean @default(false)
+  isManualSellerExpense   Boolean @default(false)
+  isManualTaxExpense      Boolean @default(false)
+  calendarEventIds        String? // 구글 캘린더 이벤트 id (JSON: {campaign,deposit,payout})
+
+  @@index([status])
+  @@index([dealId])
+  @@index([sellerId])
+  @@index([startDate, endDate])
+  @@index([assignedTo])
+  @@index([salesCode])
+  @@index([groupId])
+}
+
+// 회차간 재구매 영구 지문(schema.prisma와 동기화) — 해시만 저장, PII 미저장.
+model CampaignBuyerFingerprint {
+  id              String        @id @default(cuid())
+  salesCampaignId String
+  buyerHash       String
+  createdAt       DateTime      @default(now())
+  salesCampaign   SalesCampaign @relation(fields: [salesCampaignId], references: [id], onDelete: Cascade)
+
+  @@unique([salesCampaignId, buyerHash])
+  @@index([salesCampaignId])
+}
+
+// CG-1: 조합 캠페인 묶음 그룹 엔티티(schema.prisma와 동기화). 순수 가산.
+model CampaignGroup {
+  id                      String          @id @default(cuid())
+  sellerId                String
+  name                    String?
+  startDate               DateTime?
+  endDate                 DateTime?
+  expectedDepositDate     DateTime?
+  depositReceivedAt       DateTime?
+  isDepositReceived       Boolean         @default(false)
+  expectedPayoutDate      DateTime?
+  payoutCompletedAt       DateTime?
+  isPayoutCompleted       Boolean         @default(false)
+  expectedSupplierPayoutDate DateTime?
+  supplierPayoutCompletedAt  DateTime?
+  isSupplierPayoutCompleted  Boolean       @default(false)
+  supplierInvoiceIssuedAt DateTime?
+  sellerInvoiceIssuedAt   DateTime?
+  accountingCompletedAt   DateTime?
+  returnPeriodEndDate     DateTime?
+  invoiceInfo             String?
+  calendarEventIds        String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  seller                  Seller          @relation(fields: [sellerId], references: [id])
+  members                 SalesCampaign[]
+
+  @@index([sellerId])
+  @@index([startDate, endDate])
+}
+
+model CampaignChecklistTemplate {
+  id         String   @id @default(cuid())
+  status     String
+  label      String
+  sortOrder  Int
+  isRequired Boolean  @default(true)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  items CampaignChecklistItem[]
+
+  @@unique([status, label])
+  @@index([status, sortOrder])
+  @@index([isActive])
+}
+
+model CampaignChecklistItem {
+  id          String    @id @default(cuid())
+  campaignId  String
+  templateId  String?
+  status      String
+  label       String
+  sortOrder   Int
+  isRequired  Boolean   @default(true)
+  isChecked   Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  campaign SalesCampaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  template CampaignChecklistTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, status, sortOrder])
+  @@index([templateId])
+  @@index([status, isChecked])
+}
+
+/// 캠페인 정산 부가 항목 — postgres 스키마의 같은 모델과 필드가 일치해야 한다
+/// (주석 정본은 prisma/schema.prisma).
+model CampaignSettlementItem {
+  id String @id @default(cuid())
+
+  campaignId String
+  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  invoiceMode  String
+  counterparty String
+  amount       Decimal
+  note         String?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId])
+}
+
+model PartnerContact {
+  id            String    @id @default(cuid())
+  partnerId     String
+  name          String
+  role          String?
+  email         String?
+  phoneNumber   String?
+  notes         String?
+  lastContactAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId, name])
+  @@index([lastContactAt])
+}
+
+model CampaignActivity {
+  id         String   @id @default(cuid())
+  campaignId String
+  action     String
+  label      String
+  details    String?
+  actor      String   @default("SYSTEM")
+  createdAt  DateTime @default(now())
+
+  campaign SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+  @@index([action, createdAt])
+}
+
+model CampaignNote {
+  id         String   @id @default(cuid())
+  campaignId String
+  content    String
+  actor      String
+  actorName  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  campaign SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+}
+
+model Asset {
+  id             String    @id @default(cuid())
+  provider       String
+  section        String
+  entityType     String
+  entityId       String
+  campaignId     String?
+  fileName       String
+  mimeType       String?
+  sizeBytes      Int       @default(0)
+  storagePath    String?
+  externalFileId String?
+  externalUrl    String?
+  thumbnailUrl   String?
+  notes          String?
+  uploadedBy     String?
+  archivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  campaign SalesCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  likeCount           Int?
+  commentCount        Int?
+  likesHidden         Boolean?
+  engagementSyncedAt  DateTime?
+  mediaType           String?
+  videoUrl            String?
+  postedAt            DateTime?
+  driveShortcutId     String?
+  driveParentFolderId String?
+
+  @@index([entityType, entityId])
+  @@index([campaignId])
+  @@index([provider])
+  @@index([section])
+  @@index([archivedAt])
+  @@index([createdAt])
+}
+
+model StorageIntegration {
+  id                    String    @id @default(cuid())
+  provider              String
+  status                String    @default("DISCONNECTED")
+  accountEmail          String?
+  rootFolderId          String?
+  encryptedRefreshToken String?
+  accessTokenExpiresAt  DateTime?
+  lastSyncAt            DateTime?
+  lastError             String?
+  metadata              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([provider])
+  @@index([status])
+}
+
+model ApiCallLog {
+  id              String   @id @default(cuid())
+  provider        String
+  permissionScope String?
+  endpoint        String
+  statusCode      Int
+  success         Boolean
+  requestId       String?
+  errorMessage    String?
+  calledAt        DateTime @default(now())
+  metadata        String?
+
+  @@index([provider, calledAt])
+  @@index([permissionScope, calledAt])
+  @@index([success])
+}
+
+model TrackingAttribution {
+  id              String   @id @default(cuid())
+  campaignId      String?
+  ntSource        String?
+  ntMedium        String?
+  ntDetail        String?
+  landingUrl      String?
+  conversionEvent String
+  payload         String?
+  createdAt       DateTime @default(now())
+
+  campaign SalesCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId])
+  @@index([ntSource, ntMedium, ntDetail])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id            String   @id @default(cuid())
+  entityType    String // PARTNER | SELLER | DEAL | CAMPAIGN
+  entityId      String
+  type          String // CHANGE | CREATE | DELETE | MEMO
+  fieldName     String?
+  previousValue String?
+  newValue      String?
+  content       String?
+  actor         String   @default("SYSTEM")
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([type])
+  @@index([actor])
+}
+
+model SystemSettings {
+  id                        String    @id @default("global")
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  instagramAccessToken      String?
+  instagramTokenExpiresAt   DateTime?
+  instagramTokenRefreshedAt DateTime?
+  instagramTokenLastError   String?
+}
+
+model OrderCampaign {
+  id                        String    @id @default(cuid())
+  name                      String // 예: 와이그라운드(김본명) - 뉴트리원 캠페인
+  template                  String? // 예: nutrione (옵션 1에 의해 더이상 필수 아님)
+  sellerName                String // 예: 와이그라운드(김본명)
+  toEmail                   String? // 수신 이메일 (예: order@example.com)
+  ccEmail                   String? // 참조 이메일
+  thumbnailUrl              String? // 네이버 상품 썸네일 URL
+  category                  String?
+  salePeriod                String?
+  productId                 String? // 네이버 원상품번호 — postgres 스키마와 정합(리뷰 소스 판정 조회가 select)
+  startDate                 DateTime?
+  endDate                   DateTime?
+  isActive                  Boolean   @default(true)
+  cachedNewOrderBeforeCount Int?      @default(0)
+  cachedNewOrderAfterCount  Int?      @default(0)
+  cachedPendingCount        Int?      @default(0)
+  cachedShippingCount       Int?      @default(0)
+  cachedCompletedCount      Int?      @default(0)
+  cachedTotalOrders         Int?      @default(0)
+  cachedDistinctOrderCount  Int?      @default(0)
+  cachedTotalQuantity       Int?      @default(0)
+  cachedProductOrderIds     String? // JSON 배열(SQLite는 Json 미지원 — 문자열 보관)
+  cachedSettledAmount       Int?
+  cachedSettleFeeAmount     Int?
+  cachedSettleFeeBreakdown  String? // JSON { pay, interlock, freeInstallment }
+  cachedUnsettledAmount     Int?
+  cachedSettledCount        Int?
+  cachedTotalRevenue        Int?      @default(0)
+  cachedDailyStats          String? // Json은 SQLite에서 지원 안하므로 String으로 변경 (또는 Prisma SQLite의 경우 Json 대신 String 활용)
+  cachedInsights            String? // 마감 시 동결한 인사이트 스냅샷(JSON 문자열) — postgres는 Json?, sqlite는 String?
+  cachedIntradayBuckets     String? // 마감 시 동결한 10분 인트라데이 버킷(JSON 문자열) — postgres는 Json?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  tasks                         DailyOrderTask[]
+  mappings                      ProductMapping[]
+  salesCampaigns                SalesCampaign[]
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  productStatus                 String? // 네이버 상품 판매 상태 (SALE, OUTOFSTOCK 등)
+  cachedPostCloseCancelQuantity Int?             @default(0)
+  cachedPostCloseCancelRevenue  Int?             @default(0)
+}
+
+model DailyOrderTask {
+  id               String        @id @default(cuid())
+  campaignId       String
+  campaign         OrderCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  date             String // YYYY-MM-DD 포맷
+  status           String // PENDING, EMAILED, REPLIED, COMPLETED, ERROR
+  sentFileName     String? // 발송된 파일명
+  receivedFileName String? // 수신된 회신 파일명
+  errorMessage     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  logs TaskLog[]
+
+  @@unique([campaignId, date]) // 같은 캠페인은 같은 날짜에 1개의 프로세스만 가짐
+}
+
+model TaskLog {
+  id        String         @id @default(cuid())
+  taskId    String
+  task      DailyOrderTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  level     String // INFO, SUCCESS, ERROR
+  message   String
+  createdAt DateTime       @default(now())
+}
+
+model ProductMapping {
+  id             String        @id @default(cuid())
+  campaignId     String
+  campaign       OrderCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  productName    String
+  optionName     String
+  brandCode      String
+  price          Int
+  createdAt      DateTime      @default(now())
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  campaignDealId String?
+  campaignDeal   CampaignDeal? @relation(fields: [campaignDealId], references: [id], onDelete: SetNull)
+}
+
+model CampaignTemplate {
+  id              String   @id @default(cuid())
+  name            String
+  dealId          String?
+  salesChannel    String?
+  marginSettings  String?
+  trackingPattern String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  deal Deal? @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  @@index([name])
+}
+
+model SellerOutreach {
+  id               String    @id @default(cuid())
+  dealId           String
+  sellerId         String
+  status           String    @default("PROPOSED")
+  proposedAt       DateTime  @default(now())
+  acceptedAt       DateTime?
+  linkedCampaignId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  @@unique([dealId, sellerId])
+  @@index([dealId, status])
+  @@index([sellerId])
+  @@index([status])
+}
+
+model SalesTask {
+  id               String    @id @default(cuid())
+  dealId           String
+  sellerId         String
+  status           String    @default("PROPOSED")
+  contactChannel   String?   @default("DM")
+  proposalMessage  String?
+  negotiationMemo  String?
+  testingMemo      String?
+  proposalSentAt   DateTime  @default(now())
+  lastReminderAt   DateTime?
+  nextReminderAt   DateTime?
+  respondedAt      DateTime?
+  confirmedAt      DateTime?
+  droppedAt        DateTime?
+  dropReason       String?
+  linkedCampaignId String?
+  totalMarginRate  Decimal   @default(0)
+  sellerMarginRate Decimal   @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([dealId, status])
+  @@index([sellerId, status])
+  @@index([status, nextReminderAt])
+}
+
+model SettlementChecklist {
+  id         String   @id @default(cuid())
+  campaignId String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  campaign SalesCampaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  items    SettlementChecklistItem[]
+}
+
+model SettlementChecklistItem {
+  id          String    @id @default(cuid())
+  checklistId String
+  label       String
+  isChecked   Boolean   @default(false)
+  sortOrder   Int
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  checklist SettlementChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId, sortOrder])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  entityType String // PARTNER | DEAL | CAMPAIGN
+  entityId   String
+  authorId   String
+  authorName String
+  content    String
+  mentions   String   @default("[]") // JSON array of resolved userIds
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([authorId])
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  type            String // SETTLEMENT_OVERDUE | DEADLINE_APPROACHING | SELLER_NO_RESPONSE | STAGNANT_STATUS | PRICE_VIOLATION | CLAIM_* | HANDOFF_OUT | HANDOFF_IN | MENTION (CAMPAIGN_MODIFIED은 2026-07-24 은퇴)
+  title           String
+  entityType      String // CAMPAIGN | OUTREACH | PARTNER | DEAL | NAVER_CLAIM
+  entityId        String
+  userId          String
+  isRead          Boolean   @default(false)
+  isDismissed     Boolean   @default(false)
+  dismissedAt     DateTime? // 운영자 명시 해제 시각 — 7일 스누즈 앵커(자동 해제는 미기록)
+  messageTemplate String? // Generated reminder message text
+  stage           Int? // Seller reminder stage tracking (1, 2, 3)
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([entityType, entityId, type, createdAt])
+}
+
+model ReminderSettings {
+  id        String   @id @default(cuid())
+  settings  String // JSON string of ReminderSettings interface
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model RevenueGoal {
+  id            String   @id @default(cuid())
+  periodType    String
+  periodKey     String   @unique
+  revenueTarget Decimal
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([periodType, periodKey])
+}
+
+model ImportBatch {
+  id             String    @id @default(cuid())
+  sourceSystem   String    @default("NOTION")
+  targetDatabase String
+  mode           String
+  status         String    @default("PENDING")
+  summary        String?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  sourceRecords ImportSourceRecord[]
+
+  @@index([sourceSystem, createdAt])
+  @@index([targetDatabase, status])
+}
+
+model ImportSourceRecord {
+  id             String   @id @default(cuid())
+  batchId        String
+  sourceTable    String
+  sourceKey      String
+  rowHash        String
+  action         String
+  targetEntity   String?
+  targetId       String?
+  reviewReason   String?
+  rawPayload     String
+  normalizedData String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  batch ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, sourceTable, sourceKey])
+  @@index([sourceTable, action])
+  @@index([targetEntity, targetId])
+  @@index([rowHash])
+}
+
+model ChannelFeeConfig {
+  id          String   @id @default(cuid())
+  channel     String   @unique // BRAND_MALL | SELLER_MALL | OWN_MALL_NAVER | OWN_MALL_KAKAO
+  label       String // 표시명
+  feeRate     Decimal  @default(0) // 스토어 수수료율 (%)
+  paymentRate Decimal  @default(0) // 결제 수수료율 (%)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SellerCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique // 카테고리명 (최대 30자)
+  createdAt DateTime @default(now())
+
+  sellers SellerCategoryAssignment[]
+}
+
+model SellerCategoryAssignment {
+  id         String   @id @default(cuid())
+  sellerId   String
+  categoryId String
+  createdAt  DateTime @default(now())
+
+  seller   Seller         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category SellerCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, categoryId])
+  @@index([sellerId])
+  @@index([categoryId])
+}
+
+model CampaignDeal {
+  id               String   @id @default(cuid())
+  campaignId       String
+  dealId           String
+  quantity         Int      @default(0) @map("orderCount")
+  actualSales      Decimal  @default(0)
+  feeRate          Decimal?
+  sellerMarginRate Decimal?
+  costPrice        Decimal?
+  sellingPrice     Decimal?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  campaign SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  deal     Deal          @relation(fields: [dealId], references: [id], onDelete: Restrict)
+
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  productMappings ProductMapping[]
+
+  @@unique([campaignId, dealId])
+  @@index([campaignId])
+  @@index([dealId])
+}
+
+// 네이버 주문 일별 스냅샷 (콜드스타트 후에도 캐시 히트를 유지하기 위한 영속화 레이어, B1-1)
+// SQLite는 Json 타입을 지원하지 않으므로 orders는 String(JSON 직렬화 텍스트)으로 저장한다.
+model NaverOrderSnapshot {
+  id                     String   @id @default(cuid())
+  snapshotDate           String
+  orders                 String
+  // postgres 스키마의 dailyAggregate(Json?) 미러 — SQLite는 Json 미지원이라
+  // orders와 동일하게 String(JSON 직렬화 텍스트)으로 저장한다.
+  dailyAggregate         String?
+  // postgres 스키마의 claimSource(Json?) 미러 — SQLite는 Json 미지원이라
+  // orders와 동일하게 String(JSON 직렬화 텍스트)으로 저장한다.
+  claimSource            String?
+  ordersCount            Int      @default(0)
+  newOrdersCount         Int      @default(0)
+  preparingCount         Int      @default(0)
+  deliveringCount        Int      @default(0)
+  isDirty                Boolean  @default(false)
+  lastCallTime           DateTime
+  fetchedAt              DateTime @default(now())
+  syncType               String?  @default("FULL")
+  lastChangeStatusCursor String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([snapshotDate])
+  @@index([lastCallTime])
+}
+
+// 상품주문 1건 단위 자체 이행 상태(주문관리 파이프라인 재정의, 2026-07-08).
+// "배송대기 = 발주요청(발주서 메일) 발송됨"을 네이버 productOrderStatus와 독립적으로 영속한다.
+// 판정 합성은 lib/order-converter/order-fulfillment.ts(deriveOrderPipelineBucket)가 담당하며,
+// productOrderId(네이버 상품주문번호, 전역 유일)를 키로 조인한다.
+model OrderFulfillmentState {
+  id             String    @id @default(cuid())
+  productOrderId String    @unique
+  campaignId     String?
+  poRequestedAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([campaignId])
+  @@index([poRequestedAt])
+}
+
+// 시장 최저가 모니터링 일별 스냅샷 (2026-07-05, price_monitor_blueprint.md 기반).
+// SQLite는 Json 타입을 지원하지 않으므로 rawResults/evidence는 String(JSON 직렬화 텍스트)으로 저장한다.
+model PriceMonitorSnapshot {
+  id            String   @id @default(cuid())
+  dealId        String
+  campaignId    String?
+  snapshotDate  String
+  searchQuery   String
+  ourUnitPrice  Float?
+  minValidPrice Float?
+  verdict       String
+  validCount    Int      @default(0)
+  rawResults    String
+  evidence      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deal          Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([dealId, snapshotDate])
+  @@index([campaignId])
+  @@index([verdict, snapshotDate])
+}
+
+// ==== Phase 1 AI 데이터 모델 (2026-07-06, Opus 청사진 기반) ====
+// SQLite는 Json 타입을 지원하지 않으므로 Json 필드는 String(JSON 직렬화 텍스트)으로 저장한다.
+
+model ActionProposal {
+  id               String                @id @default(cuid())
+  requestType      String // "data_query"|"settlement_report"|"price_sheet_ingest"|"crm_mutation" 등
+  kind             String                @default("READ") // READ(산출물) | WRITE(기안)
+  status           String                @default("DRAFT") // DRAFT|PENDING_APPROVAL|APPROVED|EXECUTED|REJECTED|FAILED
+  title            String
+  resultSummary    String?
+  dataSources      String?
+  assumptions      String?
+  structuredResult String?
+  evidence         String?
+  risks            String?
+  reviewRequired   Boolean               @default(true)
+  nextActions      String?
+  payload          String? // WRITE 전용: {service, method, args}[] 실행 명세
+  targetEntityType String?
+  targetEntityId   String?
+  campaignId       String?
+  executionResult  String?
+  executedRefType  String?
+  executedRefId    String?
+  createdBy        String                @default("AGENT")
+  approvedBy       String?
+  executedBy       String?
+  approvedAt       DateTime?
+  executedAt       DateTime?
+  llmModel         String?
+  promptTokens     Int?
+  completionTokens Int?
+  latencyMs        Int?
+  errorMessage     String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  campaign         SalesCampaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  events           ActionProposalEvent[]
+
+  @@index([status, createdAt])
+  @@index([kind, status])
+  @@index([targetEntityType, targetEntityId])
+  @@index([campaignId])
+  @@index([createdBy])
+}
+
+model ActionProposalEvent {
+  id         String         @id @default(cuid())
+  proposalId String
+  fromStatus String?
+  toStatus   String
+  actor      String         @default("SYSTEM")
+  note       String?
+  createdAt  DateTime       @default(now())
+  proposal   ActionProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId, createdAt])
+}
+
+// 어시스턴트 채팅 영속화 (Phase 5 청사진 §1) — additive 2테이블.
+// per-user 소유(createdBy 스코프) — 대화 공유/타 사용자 열람은 비목표(YAGNI, §0).
+model AssistantConversation {
+  id        String                 @id @default(cuid())
+  createdBy String // auth userId — 소유 스코프 (에이전트 레인은 저장 자체를 스킵, §2-1)
+  title     String? // 첫 user 메시지 앞 80자 자동 생성
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  messages  AssistantChatMessage[]
+
+  @@index([createdBy, updatedAt])
+}
+
+// 모델명 AssistantChatMessage — 클라이언트 TS 타입 AssistantMessage와 이름 충돌 회피.
+model AssistantChatMessage {
+  id                 String                @id @default(cuid())
+  conversationId     String
+  conversation       AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role               String // "user" | "model"
+  text               String
+  toolCalls          Json? // §1-2 저장 계약(64KB 캡 초과 시 data 제거) 적용본 — 리치 렌더 재수화용
+  toolCallsTruncated Boolean               @default(false) // 캡 초과로 data 제거됨 표시
+  actionProposalIds  Json? // 이 턴에 생성된 기안 ID 배열 (기안 카드 재수화용)
+  createdAt          DateTime              @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model WorkRecord {
+  id           String         @id @default(cuid())
+  source       String // "KAKAO"|"KAKAO_TXT"|"EMAIL"|"MEMO"
+  sourceHash   String // sha256(roomKey+sentAt+sender+rawText) — 멱등키
+  roomKey      String?
+  sender       String?
+  sentAt       DateTime
+  rawText      String // 마스킹 후 원문
+  summary      String?
+  actionItems  String?
+  isMasked     Boolean        @default(false)
+  entityType   String? // PARTNER|SELLER|CAMPAIGN, 미귀속 null
+  entityId     String?
+  campaignId   String?
+  attributedBy String? // "AUTO"|"MANUAL"|null
+  ingestedBy   String? // Supabase user UUID (TXT_UPLOAD 세션 업로드 시 기록, FK 없음)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  campaign     SalesCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@unique([source, sourceHash])
+  @@index([entityType, entityId])
+  @@index([campaignId])
+  @@index([roomKey, sentAt])
+  @@index([sentAt])
+}
+
+// Phase 4-5: 방별 수집 담당 이원화(KATOK_AUTO=사장 Mac 자동 / TXT_UPLOAD=직원 웹 업로드 / EXCLUDED=수집 제외).
+// entityType/entityId는 미매핑 방도 업로드 가능해야 하므로(유실 방지) nullable로 완화되었다.
+model ChatRoomMapping {
+  id             String         @id @default(cuid())
+  source         String         @default("KAKAO")
+  roomKey        String
+  roomName       String?
+  entityType     String? // PARTNER|SELLER, 미매핑 null
+  entityId       String?
+  roomType       String? // DIRECT|GROUP|OPEN
+  collectorType  String         @default("KATOK_AUTO") // KATOK_AUTO|TXT_UPLOAD|EXCLUDED — 이중 수집 차단용
+  excluded       Boolean        @default(false)
+  sourceFolderId String? // 카톡 폴더 자동등록: 이 방을 관리하는 NTChatFolder.folderId (수동 등록방=null, 불가침)
+  campaignId     String?
+  campaign       SalesCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  lastSyncedAt   DateTime? // 증분 커서(TXT는 "마지막 업로드 일시" 의미)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([source, roomKey])
+  @@index([entityType, entityId])
+  @@index([campaignId])
+  @@index([sourceFolderId])
+}
+
+model PriceSheet {
+  id             String          @id @default(cuid())
+  partnerId      String?
+  sourceFormat   String // "IMAGE"|"XLSX"|"CSV"|"PPTX"|"PDF"
+  extractPath    String          @default("A") // A=스프레드시트 결정적, B=멀티모달
+  assetId        String?
+  status         String          @default("UPLOADED") // UPLOADED|EXTRACTED|MAPPED|REVIEWED|APPLIED|EXTRACT_FAILED
+  detectedTables Int             @default(1)
+  policyText     String? // 분리된 정책 자유텍스트 → knowledge 후보
+  columnMapping  String? // LLM 열 별칭 매핑 결과
+  reviewNote     String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  createdBy      String          @default("AGENT")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  partner        Partner?        @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  rows           PriceSheetRow[]
+
+  @@index([partnerId])
+  @@index([status, createdAt])
+}
+
+model PriceSheetRow {
+  id                   String     @id @default(cuid())
+  priceSheetId         String
+  rowHash              String // sha256(priceSheetId+rawCells)
+  rowIndex             Int
+  tableSegment         Int        @default(0) // 한 파일 다중 표 인덱스
+  productName          String?
+  optionName           String?
+  sellingPrice         Decimal?
+  commissionRate       Decimal?
+  supplyPrice          Decimal?
+  listPrice            Decimal?
+  floorPrice           Decimal?
+  discountRate         Decimal?
+  note                 String?
+  flags                String? // 사은품/단독구매불가/음수마진 플래그
+  rawCells             String // 원본 셀 보존 (필수)
+  mappingStatus        String     @default("UNMAPPED") // UNMAPPED|SUGGESTED|MAPPED|NEW_DEAL
+  mappedDealId         String?
+  mappedCampaignDealId String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  priceSheet           PriceSheet @relation(fields: [priceSheetId], references: [id], onDelete: Cascade)
+  mappedDeal           Deal?      @relation(fields: [mappedDealId], references: [id], onDelete: SetNull)
+
+  @@unique([priceSheetId, rowHash])
+  @@index([priceSheetId, tableSegment, rowIndex])
+  @@index([mappingStatus])
+  @@index([mappedDealId])
+}
+
+model SellerAiProfile {
+  id             String    @id @default(cuid())
+  sellerId       String    @unique
+  aiTags         Json?
+  compositeScore Int?
+  confidence     String?
+  sourceTier     String?
+  analyzedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([compositeScore])
+  @@index([confidence])
+}
+
+// R2a 미분류 레퍼런스 인박스(schema.prisma와 동기화). 배정 확정 시 Asset 승격 후 삭제,
+// 기각은 status=DISMISSED 소프트 전이.
+model ReferenceInboxItem {
+  id            String   @id @default(cuid())
+  rawUrl        String
+  normalizedUrl String
+  linkName      String
+  source        String   @default("MANUAL") // MANUAL | KAKAO(향후)
+  sourceRoomKey String?
+  sourceRef     String?
+  note          String?
+  status        String   @default("PENDING") // PENDING | DISMISSED
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
+  thumbnailUrl    String?
+  videoUrl        String?
+  igUsername      String?
+  igProfilePicUrl String?
+  igFullName      String?
+  igBio           String?
+  igFollowerCount Int?
+  igPostCount     Int?
+
+  @@index([status, createdAt])
+  @@index([normalizedUrl])
+}
+
+// 네이버 정산 건별 원장 — postgres 본 스키마(NaverSettlementCase)와 동기 유지(파리티)
+model NaverSettlementCase {
+  id                               String    @id
+  productOrderId                   String
+  orderId                          String?
+  productId                        String?
+  productOrderType                 String?
+  settleType                       String?
+  payDate                          DateTime?
+  settleExpectDate                 DateTime?
+  settleCompleteDate               DateTime?
+  paySettleAmount                  Int       @default(0)
+  totalPayCommissionAmount         Int       @default(0)
+  sellingInterlockCommissionAmount Int       @default(0)
+  freeInstallmentCommissionAmount  Int       @default(0)
+  benefitSettleAmount              Int       @default(0)
+  settleExpectAmount               Int       @default(0)
+  settled                          Boolean   @default(false)
+  fetchedAt                        DateTime  @default(now())
+
+  @@index([productOrderId])
+  @@index([settleCompleteDate])
+  @@index([productId])
+}
+
+// 주문관리 4개 액션 버튼 감사 로그 — postgres 본 스키마(OrderActionLog)와 동기 유지(파리티).
+// SQLite는 Json 미지원이므로 details는 String(JSON 직렬화 텍스트)으로 보관한다.
+model OrderActionLog {
+  id           String   @id @default(cuid())
+  campaignId   String?
+  campaignName String
+  action       String // CONFIRM_ORDER | REQUEST_PO | FETCH_INVOICE | REGISTER_INVOICE | DELAY_DISPATCH
+  status       String // OK | PARTIAL | ERROR
+  successCount Int      @default(0)
+  failCount    Int      @default(0)
+  skipCount    Int      @default(0)
+  errorMessage String?
+  details      String? // JSON 직렬화 텍스트
+  actor        String   @default("SYSTEM")
+  createdAt    DateTime @default(now())
+
+  @@index([campaignId, createdAt])
+  @@index([action, createdAt])
+  @@index([status])
+}
+
+// 셀러 스토리 스냅샷 (2026-07-10, 오너 지시) — 행사 기간 중 셀러의 "모든" 스토리를 12시간
+// 주기로 수집해 24시간 소멸 전에 증거를 남긴다. 멘션/태그 여부와 무관하게 전량 수집하고,
+// 우리 캠페인 홍보인지는 나중에 썸네일을 보고 분류한다(사람 또는 LLM — classification 필드).
+model SellerStorySnapshot {
+  id              String    @id @default(cuid())
+  sellerId        String
+  storyPk         String // 인스타 스토리 미디어 pk — 수집 중복 제거 키
+  takenAt         DateTime
+  expiringAt      DateTime?
+  mediaType       Int       @default(1) // 1=사진 2=영상 (인스타 media_type)
+  // 분류·증빙용 썸네일은 전용 버킷으로 리호스팅(원본 CDN URL은 24h 내 만료)
+  thumbnailUrl    String?
+  sourceImageUrl  String? // 원본 이미지 CDN URL — 만료되지만 리호스팅 실패 시 참고
+  sourceVideoUrl  String? // 영상 원본 URL — 용량상 리호스팅 안 함(ponytail: 썸네일이 분류·증빙 담당)
+  caption         String?
+  capturedAt      DateTime  @default(now())
+  classification  String    @default("UNREVIEWED") // UNREVIEWED | CAMPAIGN | OTHER
+  classifiedAt    DateTime?
+  salesCampaignId String? // CAMPAIGN 분류 시 홍보이력으로 연결(선택)
+  seller          Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, storyPk])
+  @@index([classification, capturedAt])
+  @@index([sellerId, takenAt])
+}
+
+// 셀러 게시물 분류(무관 숨김 영속) — postgres 스키마와 동형. 상세 계약은 schema.prisma 참조.
+model SellerPostClassification {
+  id              String    @id @default(cuid())
+  sellerId        String
+  permalink       String
+  classification  String    @default("UNREVIEWED") // UNREVIEWED | OTHER (CAMPAIGN은 Asset이 SSOT)
+  classifiedAt    DateTime?
+  salesCampaignId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  seller          Seller    @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, permalink])
+  @@index([classification])
+  @@index([sellerId])
+}
+
+// 상품 문의(VOC) 수집 — postgres 스키마와 동형(Json 필드 없음). 상세 계약은 schema.prisma 참조.
+model ProductQna {
+  questionId   String   @id
+  productId    String
+  dealId       String?
+  productName  String?
+  question     String
+  answer       String?
+  answered     Boolean  @default(false)
+  writerMasked String?
+  createDate   DateTime
+  collectedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([dealId, createDate])
+  @@index([answered])
+  @@index([productId])
+}
+
+model CustomerInquiry {
+  inquiryNo       String    @id
+  category        String
+  title           String
+  content         String
+  answered        Boolean   @default(false)
+  answerAt        DateTime?
+  registeredAt    DateTime
+  orderId         String
+  productNo       String?
+  productOrderIds String
+  optionText      String?
+  collectedAt     DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([registeredAt])
+  @@index([answered])
+}
+
+// VOC AI 인사이트 스냅샷 — postgres와 동형(payload는 SQLite Json 미지원이라 String). 계약은 schema.prisma 참조.
+model VocInsightSnapshot {
+  id            String    @id @default(cuid())
+  dealId        String    @unique
+  rangeFrom     DateTime?
+  rangeTo       DateTime?
+  qnaCount      Int       @default(0)
+  reviewCount   Int       @default(0)
+  payload       String?
+  model         String?
+  promptVersion Int       @default(0)
+  inputTokens   Int?
+  outputTokens  Int?
+  lastError     String?
+  generatedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([generatedAt])
+}
+
+// 딜 ↔ 스토어 리스팅 해석 캐시(Phase 2b 링크 매칭). 상세 계약은 schema.prisma 참조.
+model DealStoreLink {
+  dealId           String   @id
+  source           String   @default("LINK")
+  shortLink        String?
+  channelProductNo String?
+  originProductNo  String?
+  status           String   @default("RESOLVED")
+  lastError        String?
+  resolvedAt       DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([originProductNo])
+  @@index([status])
+}
+
+// 상품 리뷰(VOC) 얇은 인덱스 — 코퍼스 본문은 Google Drive. 상세 계약은 schema.prisma 참조.
+model DealVocSource {
+  id               String    @id @default(cuid())
+  dealId           String
+  channel          String
+  productUrl       String?
+  originProductNo  String?
+  channelProductNo String?
+  driveFileId      String?
+  reviewCount      Int       @default(0)
+  ratingSum        Int       @default(0)
+  ratingCounts     String?
+  photoCount       Int       @default(0)
+  latestReviewAt   DateTime?
+  previewJson      String?
+  status           String    @default("ACTIVE")
+  lastError        String?
+  lastCollectedAt  DateTime?
+  lastCursor       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([dealId, channel])
+  @@index([dealId])
+  @@index([status])
+}
+
+// 크론 관측(시스템 레이더) — postgres 스키마 미러. SystemTaskLog.details(Json?)는
+// SQLite Json 미지원 규약대로 String(JSON 직렬화 텍스트)으로 저장한다.
+model SystemTaskStatus {
+  id                String    @id @default(cuid())
+  jobKey            String    @unique // 예: "enrich-inbox"
+  status            String // "SUCCESS" | "ERROR" | "RUNNING"
+  lastRunAt         DateTime?
+  nextExpectedRunAt DateTime? // 실패/지연 감지를 위해 워커가 계산하여 업데이트
+  lastErrorMessage  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model SystemTaskLog {
+  id        String   @id @default(cuid())
+  jobKey    String // 예: "enrich-inbox"
+  status    String // "SUCCESS" | "ERROR"
+  message   String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([jobKey, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// C1 클레임 게이트 — postgres 스키마의 sqlite 사본.
+// sqlite는 enum 미지원이라 String + 주석으로 값 집합을 명시한다.
+// ---------------------------------------------------------------------------
+
+model BannedPhraseRule {
+  id         String   @id @default(cuid())
+  phrase     String
+  pattern    String?
+  category   String? // null = 전 카테고리 공통
+  severity   String   @default("WARN") // BLOCK | WARN
+  legalBasis String
+  note       String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([active, category])
+}
+
+/// 공구 오퍼 진단의 수동 응답 (C2 M3) — SQLite 미러.
+/// ⚠️ SQLite 는 enum 을 지원하지 않아 verdict 를 문자열로 둔다
+/// (Postgres 정본은 OfferAnswerVerdict enum).
+model DealOfferAnswer {
+  id         String   @id @default(cuid())
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  rowId      String
+  verdict    String   @default("UNKNOWN")
+  note       String?
+  answeredAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([dealId, rowId])
+  @@index([dealId])
+}
+
+/// 셀러에게 보낸 판매 자료 초안 (C3 M4) — SQLite 미러.
+model DealAssetDraft {
+  id                String   @id @default(cuid())
+  dealId            String
+  deal              Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind              String   @default("CONTENT_GUIDE")
+  body              String
+  gateVerdict       String
+  claimIds          String?
+  proofCardIncluded Boolean  @default(false)
+  model             String?
+  sentAt            DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([dealId, sentAt])
+}
+
+// 작업 중인 콘텐츠 가이드 초안 — 딜 × 유형당 1행(최신본 upsert).
+// kind: CONTENT_GUIDE(셀러용) | BRAND_CONTENT_GUIDE(브랜드용) — 정본은 GUIDE_KINDS.
+// DealAssetDraft(보낸 자료 감사 기록)와 의도적으로 분리한다 — 상세 근거는 schema.prisma.
+model DealGuideDraft {
+  id                String   @id @default(cuid())
+  dealId            String
+  deal              Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind              String   @default("CONTENT_GUIDE")
+  body              String
+  gateVerdict       String
+  claimIds          String?
+  proofCardIncluded Boolean  @default(false)
+  model             String?
+  referenceCount    Int      @default(0)
+  vocCount          Int      @default(0)
+  sketches          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([dealId, kind])
+}
+
+model DealClaim {
+  id           String    @id @default(cuid())
+  dealId       String
+  deal         Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind         String // APPROVED_CLAIM | BANNED_PHRASE | REQUIRED_DISCLOSURE
+  text         String
+  evidence     String?
+  evidenceType String    @default("NEEDS_SOURCE") // MEASURED | USER_PROVIDED | NEEDS_SOURCE
+  status       String    @default("PROPOSED") // PROPOSED | APPROVED | REJECTED | EXPIRED
+  reviewBy     DateTime?
+  approvedAt   DateTime?
+  rejectedNote String?
+  source       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([dealId, status])
+  @@index([status, reviewBy])
+}
+
+// 유입추적 단축링크 (schema.prisma와 동기화)
+//
+// ⚠️ 데모·로컬 sqlite 에도 반드시 있어야 한다. 캠페인 사이드패널이 이 테이블을 읽는
+// 카드를 렌더하므로, 없으면 **데모 배포에서 그 카드가 영구 오류 상태**가 된다.
+// 실제 발급은 데모에서 일어나지 않는다(쓰기 차단) — 빈 상태로 보이는 것이 정상이다.
+model TrackedLink {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  targetUrl       String
+  baseUrl         String?
+  label           String?
+  salesCampaignId String?
+  sellerId        String?
+  dealId          String?
+  isActive        Boolean   @default(true)
+  expiresAt       DateTime?
+  ogTitle         String?
+  ogImage         String?
+  ogDescription   String?
+  ogFetchedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  clicks        LinkClick[]
+  salesCampaign SalesCampaign? @relation(fields: [salesCampaignId], references: [id])
+
+  @@index([salesCampaignId])
+  @@index([sellerId])
+  @@index([dealId])
+  @@index([isActive])
+}
+
+model LinkClick {
+  id            String   @id @default(cuid())
+  trackedLinkId String
+  code          String
+  subId         String?
+  occurredAt    DateTime
+  visitorHash   String
+  device        String
+  os            String
+  browser       String
+  channel       String
+  refererHost   String?
+  country       String?
+  city          String?
+  isBot         Boolean  @default(false)
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  trackedLink TrackedLink @relation(fields: [trackedLinkId], references: [id], onDelete: Cascade)
+
+  @@index([trackedLinkId, occurredAt])
+  @@index([code, occurredAt])
+  @@index([code, subId])
+  @@index([occurredAt])
+  @@index([visitorHash])
+  @@index([isBot])
+}
+
+/// 원천징수 3절차의 월별 완료 기록 — schema.prisma 와 동일(두 스키마는 동기 유지).
+model TaxFilingLog {
+  id          String   @id @default(cuid())
+  month       String
+  kind        String
+  completedAt DateTime
+
+  @@unique([month, kind])
+}
+
+/// 수취 계산서 결정 기록 — schema.prisma 와 동일(두 스키마는 동기 유지).
+model TaxInvoiceReceiptDecision {
+  id            String   @id @default(cuid())
+  issueId       String   @unique
+  decision      String
+  matchedKeys   String
+  observedTotal Int?
+  expectedTotal Int?
+  amountDelta   Int?
+  signalSummary String?
+  appliedDate   DateTime?
+  decidedAt     DateTime @default(now())
+}

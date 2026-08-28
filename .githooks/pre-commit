@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# 커밋 게이트: 스테이징 diff의 추가 줄에서 시크릿·PII 를 차단한다(P0).
+# 규칙·우회·denylist 안내는 scripts/commit-guard.mjs 헤더 참조.
+set -euo pipefail
+exec node "$(git rev-parse --show-toplevel)/scripts/commit-guard.mjs" --staged
