@@ -10,7 +10,7 @@ WAG CRM 을 Vercel 에서 오너 소유 iMac 으로 이전하는 셀프호스트
 | 구성 요소 | 실행 방식 | 역할 |
 | --- | --- | --- |
 | Supabase | Docker (compose) | Postgres·Auth 등 DB 스택 전용. 앱과 분리 |
-| 앱 (Next.js) | 호스트 네이티브 (launchd, 이 문서) | `127.0.0.1:3000` 상주, `.next/standalone/server.js` |
+| 앱 (Next.js) | 호스트 네이티브 (launchd, 이 문서) | `127.0.0.1:3000` 상주, `.live/current/server.js` (⛔ 종전 `.next/standalone/server.js` 는 SUPERSEDED — 2026-08-29 빌드 트리/서빙 트리 분리) |
 | cloudflared | 호스트 네이티브 (launchd, 아래 "cloudflared 터널" 절 및 "최초 기동 순서") | 외부 도메인 → 로컬 앱 터널 |
 | 크론 | 호스트 네이티브 스크립트 (별도 Task) | `run-cron.sh` 가 `curl 127.0.0.1:3000/api/cron/<job>` 호출 |
 | 백업 | 호스트 네이티브 스크립트 + launchd (아래 "백업" 절) | `backup.sh`(일간, DB → R2) + `backup-weekly.sh`(주간, DB+스토리지 → Google Drive), `restore-drill.sh` 로 복원 리허설 |
@@ -146,8 +146,10 @@ crontab -l | grep -c preview-db.sh   # → 0
 타임에 실제 DB 를 읽어 페이지를 프리렌더한다(`src/lib/cached-crm-data.ts`·
 `cached-portal-data.ts` 의 `"use cache"`). 프리뷰 빌드는 그 DB 가 프로덕션 사본이므로,
 정산·셀러·딜·파트너·손익 등 DB 를 읽는 화면의 프리렌더 결과
-(`.next/server/app/**.rsc`·`.html` 과 `.next/standalone/` 안의 같은 사본)에 **셀러
-레코드가 직렬화된 채로 들어간다.** DB 컨테이너만 지우고 이것을 남기면, "안 쓰는
+(`.next/server/app/**.rsc`·`.html` 과 서빙 트리 `.live/releases/*/.next/server/app/**`
+안의 같은 사본)에 **셀러 레코드가 직렬화된 채로 들어간다.** ⛔ 종전 서술
+「`.next/standalone/` 안의 같은 사본」은 SUPERSEDED — 2026-08-29 부터 그 사본은
+`.live` 로 옮겨진다(`down` 이 두 경로를 **모두** 지운다). DB 컨테이너만 지우고 이것을 남기면, "안 쓰는
 동안 사본이 존재하지 않는다"는 온디맨드의 기준을 **데이터의 절반에만** 적용하는
 셈이었다. 이제 닫은 뒤 프로덕션 사본에서 나온 것은 디스크에 남지 않는다.
 
@@ -496,6 +498,12 @@ Supabase 11개 컨테이너 → 앱 → 터널)가 대화상자 없이 자동 �
    이 복사는 **정기 배포 경로인 `infra/selfhost/deploy.sh`(아래 "배포
    절차" 참고)가 자동으로 수행한다.** 위 두 명령은 그 스크립트를 아직
    쓸 수 없는 **최초 부트스트랩에서만 수동으로** 해야 하는 절차다.
+
+   ℹ️ **부트스트랩 단계에서는 아직 서빙 트리(`.live`)가 없다.** `run-app.sh` 는
+   `.live/current/server.js` 를 먼저 찾고, 없으면 경고 한 줄을 남긴 뒤 여기서 만든
+   `.next/standalone/server.js` 로 폴백한다 — 그래서 최초 기동은 그대로 된다.
+   첫 `deploy.sh` 가 산출물을 `.live/releases/<sha>` 로 옮기고 `.live/current`
+   심링크를 걸면서 정상 상태가 된다(그 뒤로 `.next/standalone` 은 존재하지 않는다).
 4. `infra/selfhost/launchd/kr.ygrd.wagcrm.app.plist` 를
    `~/Library/LaunchAgents/kr.ygrd.wagcrm.app.plist` 로 복사(또는 심볼릭
    링크)한다. **같은 방식으로 터널 서비스도 등록한다:**
@@ -612,8 +620,11 @@ build`, ⚠️ 이 빌드 안에서 마이그레이션이 실제로 적용되는
 위 ".env 필수 변수 계약" 참고. 이 변수가 없으면 `prisma-migrate-on-deploy`
 가 조용히 스스로를 건너뛰고 성공을 보고하므로 빌드는 초록인데 마이그레이션은
 전혀 적용되지 않는다) → `.next/standalone` 에 `public`/`.next/static` 배치
-→ `launchctl kickstart` 재시작 → `127.0.0.1:3000` 헬스체크까지 한 번에
-끝낸다. 기존 promote 레인(main → release)은 그대로 두고, **release 를
+→ **완성된 산출물을 `.live/releases/<sha>` 로 옮기고 `.live/current` 심링크 교체**
+(2026-08-29 안전장치 ⑧ — 빌드가 서빙 중인 트리를 덮어쓰지 않게 한다)
+→ `launchctl kickstart` 재시작 → **새 프로세스가 릴리스 경로로 떴는지 확인**
+→ `127.0.0.1:3000` 헬스체크 → DB 프로브 → 배포 마커 기록 → 오래된 릴리스 정리까지
+한 번에 끝낸다. 기존 promote 레인(main → release)은 그대로 두고, **release 를
 소비하는 쪽만** Vercel 에서 이 스크립트로 바뀐다.
 
 스크립트 맨 앞에 세 가지 안전장치가 있고, 각각 `git`/`npm`/`launchctl`
@@ -1042,8 +1053,10 @@ Storage 정합 검증 통과, **오너의 명시적 "전환한다" 승인**. 이
    은 빌드 타임에 인라이닝되므로 재시작이 아니라 재빌드가 필요하다.
    `.env` 갱신 → `deploy.sh`(`FORCE=1`) 재빌드+재기동 → 빌드 산출물에서
    신규 origin 반영 확인.
-   ⚠️ **확인 대상은 `.next/standalone/.next/server` 다**(client `static`
-   아님). 이 앱에서 그 두 변수를 읽는 표면은 전부 서버 컴포넌트·라우트
+   ⚠️ **확인 대상은 `.live/current/.next/server` 다**(client `static` 아님).
+   ⛔ 종전 경로 `.next/standalone/.next/server` 는 SUPERSEDED — `deploy.sh` 가
+   산출물을 `.live` 로 **옮기므로** 배포 성공 후 그 경로는 존재하지 않는다
+   (2026-08-29 안전장치 ⑧. `cutover.sh` Stage 5 도 같은 경로로 고쳤다). 이 앱에서 그 두 변수를 읽는 표면은 전부 서버 컴포넌트·라우트
    핸들러라 클라이언트 번들에는 애초에 들어가지 않는다 — `static` 만 보면
    정상 재빌드에서도 "반영 안 됨"이 나온다(2026-08-13 실측). 신규 origin
    존재(양성)와 구 origin 부재(음성)를 함께 보되, 구 origin 이 루프백이면

@@ -439,8 +439,14 @@ while IFS= read -r REL; do
   RELEASE_IDX=$((RELEASE_IDX + 1))
   [ "$RELEASE_IDX" -le "$RELEASE_KEEP" ] && continue
   [ "$REL" = "$CURRENT_ID" ] && continue
-  rm -rf "${LIVE_DIR:?}/releases/$REL"
-  echo "[deploy] 오래된 릴리스 제거: $REL"
+  # ⚠️ 이 정리는 **마커를 쓴 뒤**에 돈다 — 즉 배포는 이미 성공했다. 여기서 `set -e` 로
+  # 죽으면 성공한 배포가 호출자에게 **실패로 보고**되고(자동 재배포·경보를 헛되이
+  # 부른다), 정작 서비스는 멀쩡하다. 정리 실패는 디스크 잔여일 뿐이므로 말하고 넘어간다.
+  if rm -rf "${LIVE_DIR:?}/releases/$REL"; then
+    echo "[deploy] 오래된 릴리스 제거: $REL"
+  else
+    echo "[deploy] ⚠️ 오래된 릴리스 제거 실패(디스크에 남습니다): $REL" >&2
+  fi
 done < <(cd "$LIVE_DIR/releases" 2>/dev/null && ls -1td -- */ 2>/dev/null | sed 's#/$##' || true)
 echo "[deploy] OK $AFTER"
 exit 0
