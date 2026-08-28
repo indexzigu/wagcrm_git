@@ -98,6 +98,37 @@ describe("원본과의 동기화 — 위 복제 로직이 deploy.sh 와 같은 �
     expect(code).toContain('GATE_BAD_TEST="$(grep -v');
   });
 
+  it("루트 커밋은 PR 검사를 건너뛴다 — 첫 배포가 영구 차단되지 않게", () => {
+    // 레포의 첫 커밋은 베이스가 없어 PR 을 만들 수 없다. 이 예외가 빠지면
+    // 새 레포의 첫 배포가 「PR 없음 = 직접 push 의심」으로 영구 차단된다.
+    const code = SRC.split("\n")
+      .filter((line) => !line.trim().startsWith("#"))
+      .join("\n");
+    expect(code).toContain('git rev-parse -q --verify "${GATE_SHA}^"');
+    expect(code).toContain("루트 커밋(부모 없음)");
+    // ⛔ `cut -d' ' -f2-` 로 부모를 뽑지 말 것 — 구분자가 없으면 줄 전체를 반환해
+    // 루트 커밋이 "부모 있음"으로 보인다(2026-08-28 실측).
+    expect(code).not.toMatch(/rev-list --parents[^\n]*cut -d' ' -f2-/);
+  });
+
+  it("루트 판정 방법이 실제로 루트와 비루트를 가른다", () => {
+    // 소스에 문자열이 있는 것과 그 명령이 옳게 동작하는 것은 다르다 — 실행해서 본다.
+    const rootSha = execFileSync("git", ["rev-list", "--max-parents=0", "HEAD"], {
+      encoding: "utf8",
+    }).trim().split("\n")[0];
+    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const hasParent = (sha: string) => {
+      try {
+        execFileSync("git", ["rev-parse", "-q", "--verify", `${sha}^`], { stdio: "ignore" });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(hasParent(rootSha), "루트 커밋인데 부모가 있다고 판정됐다").toBe(false);
+    expect(hasParent(headSha), "HEAD 에 부모가 없다고 판정됐다").toBe(true);
+  });
+
   it("조각 실패 시 어느 조각인지 이름을 보고한다", () => {
     const code = SRC.split("\n")
       .filter((line) => !line.trim().startsWith("#"))
