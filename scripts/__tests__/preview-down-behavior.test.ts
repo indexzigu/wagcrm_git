@@ -69,6 +69,9 @@ function makeHome(name: string, fx: Fixture = {}): string {
   mkdirSync(path.join(home, "selfhost", "wagcrm", ".next", "server", "app"), { recursive: true });
   mkdirSync(path.join(home, "selfhost", "wagcrm", ".git"), { recursive: true });
   writeFileSync(path.join(home, "selfhost", "wagcrm", ".next", "server", "app", "page.rsc"), "PROD");
+  // 서빙 트리(2026-08-29 deploy.sh 안전장치 ⑧) — 프로덕션 쪽은 무손상이어야 한다.
+  mkdirSync(path.join(home, "selfhost", "wagcrm", ".live", "releases", "prodsha", ".next", "server", "app"), { recursive: true });
+  writeFileSync(path.join(home, "selfhost", "wagcrm", ".live", "releases", "prodsha", ".next", "server", "app", "page.rsc"), "PROD-LIVE");
   writeFileSync(path.join(home, "selfhost", "logs", "deployed.sha"), "prodsha\n");
 
   const preview = path.join(home, "selfhost", "wagcrm-preview");
@@ -78,6 +81,10 @@ function makeHome(name: string, fx: Fixture = {}): string {
     mkdirSync(path.join(preview, ".next", "standalone", ".next", "server", "app"), { recursive: true });
     mkdirSync(path.join(preview, ".next", "server", "app"), { recursive: true });
     writeFileSync(path.join(preview, ".next", "server", "app", "page.rsc"), "PREVIEW-PRERENDERED");
+    // 서빙 트리 — deploy.sh 안전장치 ⑧ 이후 프리렌더 산출물의 **실제 사본**은 이쪽에 있다.
+    // `.next` 만 지우고 이걸 남기면 프로덕션 사본 DB 로 만든 페이지가 디스크에 남는다.
+    mkdirSync(path.join(preview, ".live", "releases", "previewsha", ".next", "server", "app"), { recursive: true });
+    writeFileSync(path.join(preview, ".live", "releases", "previewsha", ".next", "server", "app", "page.rsc"), "PREVIEW-PRERENDERED-LIVE");
     if (!fx.withoutGit) mkdirSync(path.join(preview, ".git"), { recursive: true });
   }
 
@@ -119,8 +126,10 @@ for _ in $(seq 1 ${times}); do cmd_down; done
 
 const at = (home: string, ...p: string[]) => path.join(home, ...p);
 const PREVIEW_NEXT = ["selfhost", "wagcrm-preview", ".next"];
+const PREVIEW_LIVE = ["selfhost", "wagcrm-preview", ".live"];
 const PREVIEW_MARKER = ["selfhost", "logs", "deployed.preview.sha"];
 const PROD_NEXT = ["selfhost", "wagcrm", ".next"];
+const PROD_LIVE = ["selfhost", "wagcrm", ".live"];
 const PROD_MARKER = ["selfhost", "logs", "deployed.sha"];
 const PLIST = ["Library", "LaunchAgents", "kr.ygrd.wagcrm.preview.plist"];
 
@@ -132,6 +141,7 @@ function expectProductionIntact(home: string) {
     "프로덕션 프리렌더 파일이 사라졌다",
   ).toBe(true);
   expect(existsSync(at(home, ...PROD_MARKER)), "프로덕션 배포 마커가 사라졌다").toBe(true);
+  expect(existsSync(at(home, ...PROD_LIVE)), "프로덕션 서빙 트리가 사라졌다 — 그 자리가 곧 운영 서비스다").toBe(true);
 }
 
 describe("preview.sh cmd_down 행위", () => {
@@ -141,6 +151,10 @@ describe("preview.sh cmd_down 행위", () => {
 
     expect(code, out).toBe(0);
     expect(existsSync(at(home, ...PREVIEW_NEXT))).toBe(false);
+    expect(
+      existsSync(at(home, ...PREVIEW_LIVE)),
+      "서빙 트리가 남았다 — 그 안의 프리렌더 페이지는 프로덕션 사본 DB 로 만든 것이다(P0)",
+    ).toBe(false);
     expect(existsSync(at(home, ...PREVIEW_MARKER))).toBe(false);
     expect(existsSync(at(home, ...PLIST))).toBe(false);
     expect(out).toContain("닫힘");
@@ -172,6 +186,7 @@ describe("preview.sh cmd_down 행위", () => {
 
     expect(code, out).toBe(1);
     expect(existsSync(at(home, ...PREVIEW_NEXT)), "확인되지 않은 대상을 지웠다").toBe(true);
+    expect(existsSync(at(home, ...PREVIEW_LIVE)), "확인되지 않은 대상(서빙 트리)을 지웠다").toBe(true);
     expect(out).toContain("git 체크아웃으로 보이지 않습니다");
     expectProductionIntact(home);
   });

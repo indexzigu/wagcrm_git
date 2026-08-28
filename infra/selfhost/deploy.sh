@@ -283,6 +283,52 @@ cp -R public .next/standalone/public
 mkdir -p .next/standalone/.next
 cp -R .next/static .next/standalone/.next/static
 
+# ── P0 안전장치 ⑧: 완성된 산출물만 서빙 트리로 들여보낸다 (실사고 2026-08-29) ──
+# 종전에는 앱이 `.next/standalone/server.js` 를 **직접** 서빙했다. 그런데 이 스크립트는
+# 앱을 내리지 않은 채 위 `npm run build` 를 돌리고, Next 는 `cleanDistDir: true` 라
+# 빌드 시작 시 `.next` 를 통째로 비운다 — 그동안 살아 있는 구 프로세스가 지연 로딩하려던
+# 청크·매니페스트가 사라져 **빌드가 도는 내내 들어온 요청이 전부 죽는다.**
+# 실측(2026-08-29): 빌드 00:00:03~00:01:06 = 63초. 그 안에서 InvariantError 6건 ·
+# ChunkLoadError 2건이 났다. 에러가 "없다"고 말한 청크는 18초 뒤 실재했다 — 빌드
+# 누락이 아니라 **그 순간의 부재**였다(재현 완료: 서빙 중 산출물의 chunks 를 지우고
+# 첫 요청 → 같은 청크명·같은 모듈 id 로 동일 에러).
+#
+# 그래서 빌드 트리(.next)와 서빙 트리(.live)를 가른다. 완성된 산출물을 릴리스 폴더로
+# **옮기고**(같은 파일시스템 rename 이라 즉시) `current` 심링크만 바꿔 끼운다 —
+# 구 프로세스가 보던 릴리스는 교체 후에도 그대로 남으므로 재기동 전까지 무사하다.
+# 노출은 63초 → 재기동 순간(구 프로세스 종료 ~ 새 프로세스 기동)으로 줄어든다.
+#
+# ⚠️ 릴리스 id 는 **기존 폴더를 절대 덮어쓰지 않는다.** FORCE=1 재배포는 같은 SHA 로
+# 다시 도는데, 그 폴더가 바로 **지금 서빙 중인 릴리스**라 지우면 이 스크립트가 고치려는
+# 사고를 스스로 일으킨다. 충돌하면 접미사를 붙여 새 폴더를 만든다.
+# ⚠️ `.live` 는 체크아웃 **안**에 둔다(밖이 아니라). 프리뷰 레인이 down 할 때
+# `preview.sh` 가 체크아웃을 심링크·물리경로·.git 3중으로 검증한 뒤 재귀 삭제하는데,
+# 프리뷰 산출물에는 프로덕션 사본 DB 로 프리렌더된 페이지가 들어 있어 **반드시 함께
+# 지워져야** 한다(오너 확정 2026-08-13 「잔여 사본 0」). 밖에 두면 그 가드를 새로 만들어야
+# 하고, 가드 밖 경로에 대한 재귀 삭제가 하나 더 생긴다.
+# 짝 계약: scripts/__tests__/selfhost-release-swap.contract.test.ts
+LIVE_DIR="$REPO_ROOT/.live"
+RELEASE_ID="$AFTER"
+RELEASE_SEQ=2
+while [ -e "$LIVE_DIR/releases/$RELEASE_ID" ]; do
+  RELEASE_ID="$AFTER-$RELEASE_SEQ"
+  RELEASE_SEQ=$((RELEASE_SEQ + 1))
+done
+mkdir -p "$LIVE_DIR/releases"
+mv .next/standalone "$LIVE_DIR/releases/$RELEASE_ID"
+# 심링크 교체는 tmp + rename 으로 한다 — `ln -sfn` 은 unlink 후 create 라 원자적이지
+# 않아, 그 찰나에 재기동이 겹치면 링크가 없는 상태로 뜬다.
+# 🪤 **`mv` 에 `-h` 가 없으면 이 교체는 조용히 실패한다.** 대상 `current` 가 이미
+# **디렉터리를 가리키는 심링크**면 `mv` 는 링크를 **따라가** tmp 를 그 디렉터리
+# **안으로** 옮긴다 — 링크는 옛 릴리스를 계속 가리키고 새 릴리스는 서빙되지 않는데
+# 명령은 성공(exit 0)한다. 첫 배포만 우연히 맞고(대상 부재라 단순 rename) 그 뒤로는
+# 영영 갱신되지 않는 형태다. 실측으로 잡았다: 4회 교체 후 current 가 **1회차**를
+# 가리켰고 `releases/<1회차>/current.tmp` 가 잔해로 남아 있었다.
+# (GNU 에서는 같은 뜻이 `-T` 다. 이 스크립트는 macOS 전용이라 `-h` 를 쓴다.)
+ln -sfn "releases/$RELEASE_ID" "$LIVE_DIR/current.tmp"
+mv -fh "$LIVE_DIR/current.tmp" "$LIVE_DIR/current"
+echo "[deploy] 릴리스 교체: .live/current → releases/$RELEASE_ID"
+
 # ── P0 안전장치 ③: HTTP 헬스체크만으로는 "새 프로세스가 떴다"를
 # 증명하지 못한다 — kickstart 가 조용히 실패하면 구 프로세스가 계속
 # 3000 번을 물고 있어서 헬스체크는 통과해버린다. PID 가 실제로 바뀌었는지
@@ -312,6 +358,18 @@ if [ -z "$PID_AFTER" ] || [ "$PID_AFTER" = "$PID_BEFORE" ]; then
   exit 1
 fi
 echo "[deploy] PID 교체 확인: ${PID_BEFORE:-없음} → $PID_AFTER"
+
+# 새 프로세스가 **릴리스 경로**로 떴는지 확인한다. run-app.sh 는 `.live/current` 가
+# 없으면 빌드 트리로 폴백하는데(KeepAlive 크래시루프를 피하려는 fail-safe), 그 폴백이
+# 조용히 굳으면 위 경합이 그대로 살아 있는 채 배포는 매번 초록이 된다 — 이 레포가
+# 반복해서 밟은 「무증상 열화」 형태다. 여기서 잡으면 마커가 갱신되지 않아 다음 실행이
+# 재시도한다(fail-safe 방향은 위 가드들과 같다).
+LIVE_ENTRY="$LIVE_DIR/current/server.js"
+RUNNING_CMD="$(ps -o command= -p "$PID_AFTER" 2>/dev/null || true)"
+if [[ "$RUNNING_CMD" != *"$LIVE_ENTRY"* ]]; then
+  echo "중단: 새 프로세스가 릴리스 경로로 뜨지 않았습니다(기대: $LIVE_ENTRY / 실측: ${RUNNING_CMD:-조회 실패}). run-app.sh 가 이 변경 이전 버전이거나 .live/current 가 유실됐을 수 있습니다 — 그 상태로는 배포 중 산출물 교체 경합이 그대로 남습니다." >&2
+  exit 1
+fi
 
 echo "[deploy] 헬스체크"
 HEALTH_OK=0
@@ -369,5 +427,20 @@ fi
 
 mkdir -p "$MARKER_DIR"
 printf '%s\n' "$AFTER" > "$MARKER_FILE"
+
+# 오래된 릴리스 정리 — 릴리스 1벌이 수백 MB 라 무한정 쌓이면 디스크를 먹는다.
+# 남기는 이유는 롤백이다: 링크만 이전 릴리스로 돌리면 빌드 없이 즉시 되돌아간다.
+# ⛔ 현재 링크 대상은 어떤 경우에도 지우지 않는다(지우면 서빙 중인 앱이 깨진다).
+RELEASE_KEEP="${RELEASE_KEEP:-3}"
+CURRENT_ID="$(basename "$(readlink "$LIVE_DIR/current" 2>/dev/null || echo "")" 2>/dev/null || true)"
+RELEASE_IDX=0
+while IFS= read -r REL; do
+  [ -n "$REL" ] || continue
+  RELEASE_IDX=$((RELEASE_IDX + 1))
+  [ "$RELEASE_IDX" -le "$RELEASE_KEEP" ] && continue
+  [ "$REL" = "$CURRENT_ID" ] && continue
+  rm -rf "${LIVE_DIR:?}/releases/$REL"
+  echo "[deploy] 오래된 릴리스 제거: $REL"
+done < <(cd "$LIVE_DIR/releases" 2>/dev/null && ls -1td -- */ 2>/dev/null | sed 's#/$##' || true)
 echo "[deploy] OK $AFTER"
 exit 0

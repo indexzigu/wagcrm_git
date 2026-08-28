@@ -86,8 +86,12 @@ describe("preview.sh 파괴 명령 가드", () => {
     expect(activeLines(src).join("\n")).not.toContain("supabase-db");
   });
 
-  it("재귀 삭제 대상이 허용된 경로 하나뿐이다", () => {
+  it("재귀 삭제 대상이 허용 목록 안에만 있다", () => {
     // down 이 프리뷰 빌드 산출물(.next)을 지우면서 이 파일에 재귀 삭제가 들어왔다.
+    // 2026-08-29 에 서빙 트리(.live)가 두 번째 대상으로 추가됐다 — deploy.sh 안전장치 ⑧
+    // 이후 프리렌더 산출물의 **실제 사본**이 그쪽에 있어, 안 지우면 「잔여 사본 0」이
+    // 데이터의 절반에만 적용된다(오너 확정 2026-08-13). 목록을 넓히는 이 편집 자체가
+    // 이 계약이 요구하는 「사람이 보는」 절차다.
     //
     // ⚠️ "대상이 $PREVIEW_CHECKOUT 로 시작하는지"만 보는 것은 **불충분하다** — 그건
     // 접두사가 가드됐다는 뜻이지 **대상**이 가드됐다는 뜻이 아니다. 실제로
@@ -95,7 +99,10 @@ describe("preview.sh 파괴 명령 가드", () => {
     // 검사도 전부 통과하는데 런타임에는 프로덕션 체크아웃으로 해석된다(실측).
     // 그래서 **허용 목록과의 정확 일치**로 못 박는다: 이 스크립트가 재귀 삭제해도 되는
     // 경로는 하나뿐이므로, 새 대상을 추가하려면 이 목록을 손대야 하고 그때 사람이 본다.
-    const ALLOWED_TARGETS = ['"$PREVIEW_CHECKOUT/.next"'];
+    // ⛔ 둘 다 체크아웃 **바로 아래 한 단계**여야 한다 — 위 심링크·물리경로·.git 3중
+    //    가드가 검증하는 것은 $PREVIEW_CHECKOUT 자신이므로, 그보다 깊거나 밖으로 나가는
+    //    대상은 그 가드가 덮지 못한다.
+    const ALLOWED_TARGETS = ['"$PREVIEW_CHECKOUT/.next"', '"$PREVIEW_CHECKOUT/.live"'];
 
     const destructive = activeLines(src).filter((l) => /\brm\s+-[A-Za-z]*r/.test(l));
     expect(destructive.length).toBeGreaterThan(0); // 스캐너 고장 감지

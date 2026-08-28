@@ -17,6 +17,12 @@
 /.next/
 /out/
 
+# 셀프호스트 서빙 트리 (실사고 2026-08-29 — infra/selfhost/deploy.sh 안전장치 ⑧).
+# 빌드 트리(.next)와 분리된 릴리스 보관소다. 프리뷰 레인에서는 이 안에 **프로덕션
+# 사본 DB 로 프리렌더된 페이지**가 들어가므로 추적 후보가 되면 안 된다(P0).
+# 판정 계약: scripts/__tests__/selfhost-release-swap.contract.test.ts
+/.live/
+
 # production
 /build
 
