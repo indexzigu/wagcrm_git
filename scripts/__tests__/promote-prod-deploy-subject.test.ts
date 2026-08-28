@@ -47,14 +47,14 @@ function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) {
 
 /**
  * `promote-prod-check.test.ts` 의 `setupRepo` 와 동일한 위장 수법 — 스크립트의 REMOTE
- * 탐지는 push URL 이 `indexzigu/wagcrm` 으로 끝나는지만 보므로, 그 이름의 로컬 bare
+ * 탐지는 push URL 이 `indexzigu/wagcrm_git` 으로 끝나는지만 보므로, 그 이름의 로컬 bare
  * 저장소를 리모트로 붙인다. base 커밋을 main·release 양쪽에 밀어 release 가 존재하게
  * 만들고(그래야 LANE_SHA 가 잡혀 문제의 파이프라인까지 도달한다), `pendingSubjects`
  * 만큼 커밋을 얹어 main 에만 민다 — 그 커밋들의 subject 가 곧 grep 대상이다.
  */
 function setupRepo(pendingSubjects: string[]) {
   const base = mkdtempSync(path.join(tmpdir(), "promote-nums-"));
-  const upstream = path.join(base, "indexzigu", "wagcrm");
+  const upstream = path.join(base, "indexzigu", "wagcrm_git");
   mkdirSync(upstream, { recursive: true });
   git(base, ["init", "-q", "--bare", upstream]);
 

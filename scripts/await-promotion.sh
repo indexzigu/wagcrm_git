@@ -69,7 +69,7 @@
 
 set -euo pipefail
 
-REPO_SLUG="indexzigu/wagcrm"
+REPO_SLUG="indexzigu/wagcrm_git"
 LANE="release"                                   # --lane vercel 에서만 쓰는 구 플랫폼 브랜치
 LANE_MODE="selfhost"                             # 기본 레인(2026-08-18 교체 — 위 ⛔ 참조)
 DEPLOY_MARKER="${AWAIT_DEPLOY_MARKER:-$HOME/selfhost/logs/deployed.sha}"
@@ -301,9 +301,9 @@ fi
 # 끝나면 git 이 SIGPIPE 로 죽고 그 141 이 이 할당의 실패가 된다(리모트가 멀쩡한데 워처가
 # 죽는다). promote-prod.sh 와 **동일 계약**이라 그쪽과 같은 형태로 맞춘다 — 첫 매치만 쓰되
 # 입력은 끝까지 읽는다. 드리프트는 scripts/__tests__/promote-prod-check.test.ts 가 고정한다.
-REMOTE=$(git remote -v | awk '$2 ~ /indexzigu\/wagcrm(\.git)?$/ && $3 == "(push)" && !found { print $1; found = 1 }')
+REMOTE=$(git remote -v | awk '$2 ~ /indexzigu\/wagcrm_git(\.git)?$/ && $3 == "(push)" && !found { print $1; found = 1 }')
 if [ -z "$REMOTE" ]; then
-  echo "⛔ indexzigu/wagcrm 을 가리키는 리모트가 없다. git remote -v 확인 필요." >&2
+  echo "⛔ indexzigu/wagcrm_git 을 가리키는 리모트가 없다. git remote -v 확인 필요." >&2
   exit 1
 fi
 

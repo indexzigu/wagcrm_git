@@ -47,7 +47,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-export const REPO_SLUG = "indexzigu/wagcrm";
+export const REPO_SLUG = "indexzigu/wagcrm_git";
 export const MAIN_REF = "origin/main";
 
 /**

@@ -482,7 +482,7 @@ if [ "$MODE" = "full" ]; then
   #    ⛔ 그래서 **error 를 내는 경로를 늘릴 때는 알림 소음을 함께 따져야 한다** — 지금 error
   #    는 둘뿐이고(등록 0대 · online 0대) 둘 다 진짜 차단 상태다. 폴백 중(노랑)·gh 실패(회색)
   #    는 알림이 나가지 않는다.
-  GH_REPO="$ACTIONS_OWNER/wagcrm"
+  GH_REPO="$ACTIONS_OWNER/wagcrm_git"
   RUNNER_TITLE="PR 검사 러너"
   RUNNER_FALLBACK_CMD="gh api -X DELETE repos/$GH_REPO/actions/variables/PREFLIGHT_RUNNER"
 

@@ -5,13 +5,14 @@
 > 이 모듈의 규칙은 실사고(CLI 배포 경합, 크론 무증상 정지, 지표 부풀림)에서
 > 나왔다 — 전 레인(Claude·Codex·Antigravity) 공통 적용이다.
 
-- **Repo Migration — 두 레포·번호 겹침(2026-07-16):** 저장소가
-  `indexzigu/wag-crm`(구) → `indexzigu/wagcrm`(신)으로 이관됐다. 신 레포는
-  **이력을 공유하지 않고 재출발**(unrelated history)했으므로 PR·커밋 번호가
-  **#1부터 다시 시작**한다 → **두 레포에 같은 번호가 공존**한다(예: `#4`는 구
-  레포의 옛 작업일 수도, 신 레포의 정산 명세서일 수도 있다 — **번호만으로 레포
-  특정 불가**). 판별 규칙:
-  - **현행 작업(push·PR·머지·배포)은 언제나 신 `indexzigu/wagcrm`** 기준이다.
+- **Repo Migration — 저장소가 셋이고 번호가 겹친다:** 이관이 두 번 있었다.
+  `indexzigu/wag-crm`(최초) → `indexzigu/wagcrm`(2026-07-16) →
+  **`indexzigu/wagcrm_git`(2026-08-28, 현행)**. 세 번 다 **이력을 공유하지 않고
+  재출발**(unrelated history)했으므로 PR·커밋 번호가 매번 **#1부터 다시 시작**한다
+  → **세 레포에 같은 번호가 공존**한다(예: `#4` 는 셋 중 어느 것일 수도 있다 —
+  **번호만으로 레포 특정 불가**). 2026-08-28 이관 사유는 구 레포 이력의 개인정보를
+  제거할 수 없어서다(`AGENTS.md` Project Identity). 판별 규칙:
+  - **현행 작업(push·PR·머지·배포)은 언제나 신 `indexzigu/wagcrm_git`** 기준이다.
     ⚠️ 기존 워크트리의 `origin` remote는 **여전히 구 레포**를 가리킬 수 있어
     `git push`가 조용히 구 레포로 간다(오배송) — `git remote -v`로 신 레포인지
     확인하고 push한다.
@@ -20,8 +21,9 @@
     `gh pr list -R indexzigu/wag-crm --state all --search "<키워드>"`,
     코드 히스토리는 `gh api repos/indexzigu/wag-crm/...`. 두 레포 다 private라
     `gh`(오너 권한)로만 열린다(브라우저 타 계정은 404).
-  - **어느 레포인지 애매하면** 참조 시점으로 가른다: **2026-07-16 이관 이전**
-    사고·PR·커밋(`46f8b87` 이하) = 구 `wag-crm`, 이후 = 신 `wagcrm`. 그래도
+  - **어느 레포인지 애매하면** 참조 시점으로 가른다: **2026-07-16 이전**
+    사고·PR·커밋(`46f8b87` 이하) = `wag-crm`, **07-16 ~ 08-28** = `wagcrm`,
+    **08-28 이후** = 현행 `wagcrm_git`. 그래도
     불확실하면 양쪽을 조회해 생성시각·제목으로 대조한다(구 레포에 남은 열린
     PR은 이관 전 잔재일 수 있다). **신규 PR·이슈·머지를 구 레포에 만들지
     않는다.**
@@ -81,7 +83,7 @@
     빌드 취소.** 여기를 뒤집으면 "성공처럼 보이는 영구 미배포"가 된다.
     판정 불능이면 언제나 빌드 쪽(=1)으로 넘어진다.
   - **배포 확인은 state 만 보지 말고 description 까지 읽는다**:
-    `gh api repos/indexzigu/wagcrm/commits/<sha>/status --jq '.statuses[]|"\(.context) \(.state) \(.description)"'`
+    `gh api repos/indexzigu/wagcrm_git/commits/<sha>/status --jq '.statuses[]|"\(.context) \(.state) \(.description)"'`
     → `Deployment has completed` 여야 실배포다.
 
 - **Promotion Policy — 승격은 수동 전용이다 (2026-08-13 자체호스팅 컷오버, 오너 지시
@@ -127,11 +129,19 @@
     Gate」가 이 맥에서 대신한다. 그 전의 SUPERSEDED("main 은 브랜치 보호가 없어 …" →
     2026-07-30 중복 설정 실사고)는 역사 기록으로 유지하되, **그 문장은 지금 다시 사실이
     됐다** — 다만 근거가 다르다(설정 부재가 아니라 플랜 게이트라, 켜서 고칠 수 없다).
-  - ⚠️ **보호 여부 확인은 rulesets API 로 한다 — 지금은 403(플랜 게이트)이 정상 응답이다:**
-    `gh api repos/indexzigu/wagcrm/rulesets` → `Upgrade to GitHub Pro or make this
-    repository public`. **403 은 "규칙 없음"이 아니라 "기능 자체 잠김"이다** — 옛
-    `main-protection` ruleset 이 서버에 보존돼 있는지 삭제됐는지는 **읽을 수 없다**
-    (GitHub 문서도 공개→비공개 방향은 미명시). 유료 전환·공개 복귀 시 이 API 로 재확인한다.
+  - ✅ **공개 전환으로 이 제약이 풀린다 (2026-08-28) — 미결 과제다.** 위 403 메시지가
+    말하는 두 출구가 "유료 전환"과 **"공개로 전환"** 이었고, 이 레포는 후자를 택했다.
+    ⇒ **rulesets/branch protection 을 다시 켤 수 있다.** 아직 설정하지 않았으므로
+    지금은 여전히 무보호 상태다 — `main` 직접 push·검사 미통과 머지가 서버에서
+    막히지 않고, 방어는 아래 「Main Push Guard & Deploy CI Gate」가 이 맥에서 한다.
+    ⚠️ **켤 때 종전 실사고를 되풀이하지 말 것**: 2026-07-30 에 같은 보호를 **중복
+    설정**해 진단이 꼬였다. 켜기 전에 `gh api repos/indexzigu/wagcrm_git/rulesets` 로
+    **기존 규칙이 없음을 먼저 확인**하고, 필수 체크 이름은 실제 잡 이름
+    (`guard`·`preflight`·`test`)과 글자 단위로 맞춘다.
+  - ⚠️ **보호 여부 확인은 rulesets API 로 한다:**
+    `gh api repos/indexzigu/wagcrm_git/rulesets`. **비공개 무료 플랜에서는 403 이
+    "규칙 없음"이 아니라 "기능 자체 잠김"이었다** — 구 레포에서 옛 `main-protection`
+    ruleset 이 서버에 보존돼 있는지조차 읽을 수 없었다.
     그때를 위해 종전 함정 2개를 남긴다: ① classic API(`branches/main/protection`)의
     404 를 무보호 근거로 쓰지 말 것 — 그쪽은 ruleset 을 원래 못 본다. ② 상세 조회에서
     `--jq` 로 `.rules[].parameters` 를 좁혀 읽으면 `rules: []`(규칙 없음)처럼 보인다 —
@@ -582,7 +592,7 @@
 
   **판정 순서(코드를 파헤치기 전에 이걸 먼저 — 일반 서명 "결정론적 결함은 같은
   곳에서 멈춘다"는 전역 AGENTS.md §「CI·배포 결과 판독」):**
-  1. `gh api repos/indexzigu/wagcrm/commits/<sha>/statuses` 로 **시간순** 확인 —
+  1. `gh api repos/indexzigu/wagcrm_git/commits/<sha>/statuses` 로 **시간순** 확인 —
      같은 커밋이 success→failure 로 바뀌었으면 나중 건은 재배포다.
   2. Vercel MCP `get_deployment` 의 `meta.action`/`source` 가 `redeploy` 면 머지
      배포와 별개 건이다(오너 수동 실행).
@@ -731,9 +741,32 @@
   > 실패하는 문제)도 같이 닫히지만 배포 레인 변경이라 별도 PR·검증이 필요하다
   > — **미결 과제**.
 
-- **Self-Hosted Preflight Runner — `release-preflight` 두 잡은 오너 iMac 의 Colima VM
-  러너가 돈다 (2026-08-26 하이브리드 CI 전환, 오너 확정):** 비공개 전환으로 Actions 가
-  월 2,000분으로 계량되는데 소모의 90%+ 가 이 워크플로다(계량 실측은 위 「작업 배칭」
+- **⛔ Self-Hosted Preflight Runner 는 이 레포에서 은퇴했다 (2026-08-28, 공개 레포
+  이전과 함께):** 아래 절 전체는 **구 레포(`indexzigu/wagcrm`) 시절의 기록**이며,
+  좌표·명령은 그 레포를 가리킨다. 이 레포는 **전 잡을 GitHub 러너로 돌린다.**
+  - **왜 되돌렸나:** 자가호스트는 비공개 무료 한도(월 2,000분, 실사용 약 8,000분)를
+    피하려고 만든 것이다. **공개 레포는 GitHub 러너가 무제한 무료**라 그 이유가
+    통째로 사라졌다.
+  - **⛔ 다시 붙이지 말 것 — 공개 레포에서는 보안 사안이다.** 포크에서 올린 PR 이
+    테스트 코드를 바꿔 그 러너에서 임의 코드를 실행할 수 있고, 그 러너는 프로덕션
+    DB·셀프호스트 스택이 있는 오너의 맥 안에 있다. 붙이려면 외부 기여자 워크플로
+    승인제 + 포크 PR 을 자가호스트로 보내지 않는 조건이 **함께** 필요하다.
+  - **실측 비교(2026-08-28):** 자가호스트 = 큐 평균 2분·**최대 137분** + 실행 평균
+    9분. GitHub 러너 = 큐 0분 + 실행 11.5분. ⚠️ **실행 자체는 GitHub 러너가 느리다**
+    (2코어). 이전의 이득은 평균이 아니라 **꼬리**다 — 최악 175분이 11.5분이 된다.
+  - **🪤 「러너를 업그레이드하면 되잖아」는 이미 막다른 길이다.** 병목은 메모리가
+    아니라 **호스트의 물리 6코어**다(iMac20,1 · i5-10600 · 32GB). VM 에 CPU 8 을 준
+    시도는 실패해 4로 되돌렸고(T-070), 러너 3대 동시는 빌드를 5분35초 → 22분으로
+    늘려 기각됐다. 러너를 늘려도 **총 처리량은 VM 에 준 vCPU 로 고정**이라 큐가 준
+    만큼 실행이 느려진다. GitHub 러너는 PR 마다 별도 머신을 받는다 — 한 대짜리
+    호스트가 구조적으로 못 따라가는 지점이다.
+  - **OOM 대비는 이미 돼 있다** — 상한 인상이 아니라 스왑 2GB + 자동 재기동이라는
+    오너 결정(아래 「넘쳤을 때의 자가복구」)이 그대로 유효하다. VM 은 이제 CI 가
+    아니라 셀프호스트 스택 전용이므로 압력이 오히려 내려간다.
+
+  <!-- 아래는 구 레포 기록 — 보존하되 이 레포에 적용하지 않는다. -->
+  구 레포에서는 비공개 전환으로 Actions 가
+  월 2,000분으로 계량되는데 소모의 90%+ 가 이 워크플로였다(계량 실측은 위 「작업 배칭」
   항목). `preflight` 는 required 체크라 분이 소진되면 **전 PR 머지 불가**가 되므로,
   최중량 워크플로 하나만 자가호스트로 옮겨 잔류 소모를 한도의 ~25%로 내렸다.
   - **하이브리드 분담이 의도다 — 전량 이전으로 넓히지 말 것.** `migration-guard` ·
@@ -874,9 +907,9 @@
     'ubuntu-latest' }}` 다. 변수를 지우면 **PR 없이 즉시** GitHub 러너로 복귀한다:
     ```bash
     # 폴백(맥 러너 장애 시): 다음 run 부터 ubuntu-latest
-    gh api -X DELETE repos/indexzigu/wagcrm/actions/variables/PREFLIGHT_RUNNER
+    gh api -X DELETE repos/indexzigu/wagcrm_git/actions/variables/PREFLIGHT_RUNNER
     # 복귀(러너 복구 후):
-    gh api -X POST repos/indexzigu/wagcrm/actions/variables -f name=PREFLIGHT_RUNNER -f value=self-hosted
+    gh api -X POST repos/indexzigu/wagcrm_git/actions/variables -f name=PREFLIGHT_RUNNER -f value=self-hosted
     ```
     변수는 run 시작 시점에 읽히므로 이미 큐에 걸린 run 은 재실행해야 새 값을 탄다.
     실행 주체는 기존 「Merge & Promote」와 같은 결이다 — 오너, 또는 오너 지시를 받은
@@ -1164,9 +1197,9 @@
     run 은 정상 완료했다 — 코드 결함이면 같은 곳에서 멈춘다는 서명과 반대라 외부
     요인이다. 판독:
     ```
-    gh api repos/indexzigu/wagcrm/actions/runs/<runId>/jobs \
+    gh api repos/indexzigu/wagcrm_git/actions/runs/<runId>/jobs \
       --jq '.jobs[] | "\(.name)\t\(.status)\t\(.conclusion)"'
-    gh api repos/indexzigu/wagcrm/actions/runs/<runId>/jobs \
+    gh api repos/indexzigu/wagcrm_git/actions/runs/<runId>/jobs \
       --jq '.jobs[] | select(.name=="<job>") | .steps[] | "\(.number) \(.name)\t\(.status)"'
     ```
     **해제는 `gh run rerun` 이 아니라 빈 커밋으로 새 `synchronize` 이벤트를 내는 것**이다

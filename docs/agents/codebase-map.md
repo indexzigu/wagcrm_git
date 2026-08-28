@@ -395,10 +395,11 @@
 - **⚠️ 이 레포에 없는 것 — 구 레포에서 읽는다(2026-07-30 실측 정정):** 종전 이
   지도는 이관 완료 워크시트 `NOTION_IMPORT_*` · a11y 디버그 덤프
   `seller-detail-*` · `PROJECT_STATUS.md` · `PROJECT_STATUS_HISTORY.md`가
-  `docs/archive/`에 있다고 적었으나, **신 레포(`indexzigu/wagcrm`)에는 그
+  `docs/archive/`에 있다고 적었으나, **2026-07-16 이관 이후의 레포에는 그
   디렉터리가 존재한 적이 없다**(`git log origin/main -- docs/archive` 공백).
-  전부 구 레포 `indexzigu/wag-crm`에 남아 있고, 2026-07-16 이관이 이력을 공유하지
-  않고 재출발하면서 딸려오지 않았다. P6의 **읽기 전용 아카이브** 규칙대로 조회한다:
+  전부 최초 레포 `indexzigu/wag-crm`에 남아 있고, 07-16 이관이 이력을 공유하지
+  않고 재출발하면서 딸려오지 않았다(2026-08-28 이관도 마찬가지다 — 이력을
+  가져오지 않는 것이 그 이전의 목적이었다). P6의 **읽기 전용 아카이브** 규칙대로 조회한다:
   `gh api repos/indexzigu/wag-crm/contents/docs/archive`.
   ⛔ **되살려 오지 말 것** — 구 레포의 그 파일들은 공개 전환 준비 때 실명을
   가명(`김본명` 등)으로 치환한 스크럽본이고, 내용은 3천 줄대의 낡은 디버그 덤프라

@@ -166,12 +166,12 @@ function git(cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) {
 
 /**
  * main 에 `pending` 건이 쌓이고 그중 최고령이 `oldestHoursAgo` 시간 전인 상태를 만든다.
- * 스크립트의 REMOTE 탐지는 URL 이 `indexzigu/wagcrm` 으로 끝나는지만 보므로, 그 이름의
+ * 스크립트의 REMOTE 탐지는 URL 이 `indexzigu/wagcrm_git` 으로 끝나는지만 보므로, 그 이름의
  * 로컬 bare 저장소를 리모트로 붙여 네트워크 없이 실제 `git fetch` 까지 태운다.
  */
 function setupRepo({ pending, oldestHoursAgo = 0 }: { pending: number; oldestHoursAgo?: number }) {
   const base = mkdtempSync(path.join(tmpdir(), "promote-check-"));
-  const upstream = path.join(base, "indexzigu", "wagcrm");
+  const upstream = path.join(base, "indexzigu", "wagcrm_git");
   mkdirSync(upstream, { recursive: true });
   git(base, ["init", "-q", "--bare", upstream]);
 

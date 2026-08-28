@@ -46,8 +46,8 @@ describe("parseBoardItems", () => {
     const board = [
       "# PROJECT_MASTER",
       "",
-      "- **🔴 PR 오너 머지 대기 — 무언가 [PR #122](https://github.com/indexzigu/wagcrm/pull/122)** · 검증 …",
-      "  - 하위 불릿은 항목이 아니다 https://github.com/indexzigu/wagcrm/pull/999",
+      "- **🔴 PR 오너 머지 대기 — 무언가 [PR #122](https://github.com/indexzigu/wagcrm_git/pull/122)** · 검증 …",
+      "  - 하위 불릿은 항목이 아니다 https://github.com/indexzigu/wagcrm_git/pull/999",
       "- **🧹 PR 링크 없는 서술 항목** — 판정 불가라 건너뛴다",
       "## 오너 액션 큐",
     ].join("\n");
@@ -60,7 +60,7 @@ describe("parseBoardItems", () => {
 
   it("본문이 다른 PR 을 근거로 인용해도 판정 대상은 헤더의 PR 이다", () => {
     const board =
-      "- **🔴 PR 오너 머지 대기 — X [PR #90](https://github.com/indexzigu/wagcrm/pull/90)**: 근거는 [#75](https://github.com/indexzigu/wagcrm/pull/75) 참조";
+      "- **🔴 PR 오너 머지 대기 — X [PR #90](https://github.com/indexzigu/wagcrm_git/pull/90)**: 근거는 [#75](https://github.com/indexzigu/wagcrm_git/pull/75) 참조";
     expect(parseBoardItems(board)[0].pr).toBe(90);
   });
 
@@ -68,7 +68,7 @@ describe("parseBoardItems", () => {
     // 보드 헤더는 강조용 중첩 볼드를 흔히 쓴다. 첫 닫는 `**` 를 헤더 끝으로 보면 링크를
     // 못 찾아 항목이 통째로 조용히 사라진다 — 실보드 35건 중 8건이 그렇게 누락됐다.
     const board =
-      "- **🔴 PR 오너 머지 대기 — 알림센터 **전면 해체** → 카드 대체 [PR #101](https://github.com/indexzigu/wagcrm/pull/101)**: 본문…";
+      "- **🔴 PR 오너 머지 대기 — 알림센터 **전면 해체** → 카드 대체 [PR #101](https://github.com/indexzigu/wagcrm_git/pull/101)**: 본문…";
     const items = parseBoardItems(board);
     expect(items).toHaveLength(1);
     expect(items[0].pr).toBe(101);
@@ -77,7 +77,7 @@ describe("parseBoardItems", () => {
 
   it("헤더에 링크가 없으면 본문에서 추정하되 낮은 신뢰로 표시한다(스킵 금지)", () => {
     const board =
-      "- **✅ 트랙 종결·착지 완료 — 코드 정리**: **[PR #52](https://github.com/indexzigu/wagcrm/pull/52)** 본문…";
+      "- **✅ 트랙 종결·착지 완료 — 코드 정리**: **[PR #52](https://github.com/indexzigu/wagcrm_git/pull/52)** 본문…";
     const items = parseBoardItems(board);
     expect(items).toHaveLength(1);
     expect(items[0].pr).toBe(52);
@@ -88,7 +88,7 @@ describe("parseBoardItems", () => {
     // 실제 보드(#120 항목): 상태 문구가 후속 PR #124 를 언급한다. '첫 링크' 규칙이면
     // #124 를 주 PR 로 잡아 M1 서술을 통째로 덮어쓴다(정정 패스 예행에서 실제로 잡혔다).
     const board =
-      "- **🟢 M1 머지 완료(`fefa1ea`) / 후속 [PR #124](https://github.com/indexzigu/wagcrm/pull/124) 오너 머지 대기 — 클레임 레지스트리 M1 [PR #120](https://github.com/indexzigu/wagcrm/pull/120)**: 본문…";
+      "- **🟢 M1 머지 완료(`fefa1ea`) / 후속 [PR #124](https://github.com/indexzigu/wagcrm_git/pull/124) 오너 머지 대기 — 클레임 레지스트리 M1 [PR #120](https://github.com/indexzigu/wagcrm_git/pull/120)**: 본문…";
     expect(parseBoardItems(board)[0].pr).toBe(120);
   });
 });
@@ -135,13 +135,13 @@ describe("readClaims — 주장은 상태 문구에만 있다", () => {
     // 이미 머지된 자기 항목이 '낡은 대기 마커'로 잡혔다. 점검기가 거짓 경보를 내면
     // 사람이 점검기를 무시하게 되므로, 낡은 마커를 놓치는 것만큼 해롭다.
     const line =
-      "- **🚀 머지 완료(`57bf6e3`) / 잔여=승격 배포 확인 — 보드 마커 드리프트 점검기 [PR #126](https://github.com/indexzigu/wagcrm/pull/126)** · 다음 게이트: ①오너 머지 ②승격 배포 확인(세션이 머지대기→`await-promotion.sh` 워처 가동 중)";
+      "- **🚀 머지 완료(`57bf6e3`) / 잔여=승격 배포 확인 — 보드 마커 드리프트 점검기 [PR #126](https://github.com/indexzigu/wagcrm_git/pull/126)** · 다음 게이트: ①오너 머지 ②승격 배포 확인(세션이 머지대기→`await-promotion.sh` 워처 가동 중)";
     expect(readClaims(line).awaitingMerge).toBe(false);
     expect(readClaims(line).awaitingDeploy).toBe(true);
   });
 
   it("상태 문구의 '머지 대기'는 그대로 주장으로 읽는다", () => {
-    const line = "- **🔴 PR 오너 머지 대기 — X [PR #1](https://github.com/indexzigu/wagcrm/pull/1)** · 본문";
+    const line = "- **🔴 PR 오너 머지 대기 — X [PR #1](https://github.com/indexzigu/wagcrm_git/pull/1)** · 본문";
     expect(readClaims(line).awaitingMerge).toBe(true);
   });
 
@@ -156,7 +156,7 @@ describe("readClaims — 주장은 상태 문구에만 있다", () => {
    */
   it("'대기'가 '머지' 앞에 와도 대기 주장으로 읽는다(2026-08-05 위음성)", () => {
     const line =
-      "- **⏳ CI 대기 → 오너 머지 — 무언가 [PR #275](https://github.com/indexzigu/wagcrm/pull/275)** · 본문";
+      "- **⏳ CI 대기 → 오너 머지 — 무언가 [PR #275](https://github.com/indexzigu/wagcrm_git/pull/275)** · 본문";
     expect(readClaims(line).awaitingMerge).toBe(true);
   });
 
@@ -535,7 +535,7 @@ describe("boardItemLines — PR 유무와 무관하게 항목 줄 전부", () =>
     const board = [
       "# PROJECT_MASTER",
       "- **PR 없는 항목** 내용",
-      "- **🔴 머지 대기 — 무언가 [PR #10](https://github.com/indexzigu/wagcrm/pull/10)**: …",
+      "- **🔴 머지 대기 — 무언가 [PR #10](https://github.com/indexzigu/wagcrm_git/pull/10)**: …",
     ].join("\n");
     expect(parseBoardItems(board)[0].lineNumber).toBe(3);
     expect(boardItemLines(board).map((l: BoardLine) => l.lineNumber)).toEqual([2, 3]);
@@ -647,7 +647,7 @@ describe("findCoordinatelessItems", () => {
   it("PR·상세 파일 둘 다 없는 활성 항목만 잡는다", () => {
     const board = [
       "# PROJECT_MASTER",
-      "- **🔴 머지 대기 — A [PR #10](https://github.com/indexzigu/wagcrm/pull/10)**: …",
+      "- **🔴 머지 대기 — A [PR #10](https://github.com/indexzigu/wagcrm_git/pull/10)**: …",
       "- **🖥️ 오너 육안 큐 (3건)**: 화면 확인할 것",
       "- **🔵 조사 완료·오너 결정 대기 — B**: … [상세](docs/handoff/b.md)",
       "- **✅ 종결 — C**: 로그 이관 대기",
@@ -661,7 +661,7 @@ describe("findCoordinatelessItems", () => {
 
   it("PR 링크가 있으면 좌표가 있는 것이다 — 상세 파일이 없어도 제외", () => {
     // PR 번호만 있어도 gh 로 재구성된다(사고 조사에서 실제로 그렇게 확인했다).
-    const board = "- **🔴 머지 대기 — A [PR #10](https://github.com/indexzigu/wagcrm/pull/10)**: …";
+    const board = "- **🔴 머지 대기 — A [PR #10](https://github.com/indexzigu/wagcrm_git/pull/10)**: …";
     expect(findCoordinatelessItems(board)).toHaveLength(0);
   });
 
@@ -701,11 +701,11 @@ describe("splitBoardRegions — 평면 구역 vs 섹션 블록", () => {
   const BOARD = [
     "# PROJECT_MASTER",
     "- **평면 항목 A**: PR 없음",
-    "- **평면 항목 B [PR #10](https://github.com/indexzigu/wagcrm/pull/10)**: …",
+    "- **평면 항목 B [PR #10](https://github.com/indexzigu/wagcrm_git/pull/10)**: …",
     "### 2026-07-30 · 세션 xxx",
     "- **종결 2건**: 이관 완료",
     "- **남은 게이트**: 오너 판단 3건",
-    "- **소급 복원**: [PR #155](https://github.com/indexzigu/wagcrm/pull/155)",
+    "- **소급 복원**: [PR #155](https://github.com/indexzigu/wagcrm_git/pull/155)",
   ].join("\n");
 
   it("첫 ### 이전은 평면, 이후는 섹션으로 가른다", () => {
@@ -731,7 +731,7 @@ describe("findCoordinatelessItems — 섹션 블록은 블록 단위로 판정",
       "### 2026-07-30 · 세션 xxx",
       "- **남은 게이트**: 오너 판단 3건",
       "- **다음 후보**: 감사 BLOCK 축",
-      "- **소급 복원**: [PR #155](https://github.com/indexzigu/wagcrm/pull/155)",
+      "- **소급 복원**: [PR #155](https://github.com/indexzigu/wagcrm_git/pull/155)",
     ].join("\n");
     expect(findCoordinatelessItems(board)).toHaveLength(0);
   });
@@ -759,7 +759,7 @@ describe("findCoordinatelessItems — 섹션 블록은 블록 단위로 판정",
     const board = [
       "# PROJECT_MASTER",
       "- **평면 항목 A**: PR 없음 · 상세 파일 없음",
-      "- **평면 항목 B [PR #10](https://github.com/indexzigu/wagcrm/pull/10)**: …",
+      "- **평면 항목 B [PR #10](https://github.com/indexzigu/wagcrm_git/pull/10)**: …",
     ].join("\n");
     const found = findCoordinatelessItems(board);
     expect(found).toHaveLength(1);

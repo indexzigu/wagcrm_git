@@ -306,9 +306,9 @@ describe("release-status.sh 행위 계약", () => {
     });
     expect(r.recent.title).toBe("최근 반영");
     expect(r.recent.items).toHaveLength(2);
-    expect(r.recent.items[0].url).toBe("https://github.com/indexzigu/wagcrm/pull/467");
+    expect(r.recent.items[0].url).toBe("https://github.com/indexzigu/wagcrm_git/pull/467");
     // 규약 밖 제목은 번호를 추측하지 않고 커밋 페이지로 보낸다.
-    expect(r.recent.items[1].url).toBe("https://github.com/indexzigu/wagcrm/commit/abc1234");
+    expect(r.recent.items[1].url).toBe("https://github.com/indexzigu/wagcrm_git/commit/abc1234");
     // 마커 파일 mtime 에서 나온 마지막 배포 시각이 문구로 완성돼 있다.
     expect(r.recent.detail).toContain("마지막 배포");
   });
