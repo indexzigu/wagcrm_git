@@ -881,11 +881,17 @@ describe("PR 검사 러너(preflightRunner)", () => {
     expect(item.detail).toContain("PREFLIGHT_RUNNER");
   });
 
-  it("변수가 없으면(404) 폴백 중 — 실패가 아니라 정상 응답이다", () => {
-    // ⛔ 이 경로를 인증 실패와 합치면 폴백 중에 회색 「확인 불가」가 상시로 뜬다.
+  it("변수가 없으면(404) GitHub 러너 레인 — 이 레포의 **정규 상태**라 초록이다", () => {
+    // ⛔ 이 경로를 인증 실패와 합치면 회색 「확인 불가」가 상시로 뜬다(아래 404 양가성 참고).
+    // ⛔ 종전 계약(노랑 + "우회")은 SUPERSEDED — 2026-08-28 공개 레포 이전과 함께
+    //    자가호스트 러너가 **의도적으로 은퇴**했다(P6 「Self-Hosted Preflight Runner 는
+    //    이 레포에서 은퇴했다」). 같은 절이 **다시 붙이지 말라**고 ⛔ 로 못박는데 이 행은
+    //    「되돌리세요」라고 권하고 있었다 — 정본과 정반대를 말하는 상시 노랑이었다.
+    //    ⚠️ 되살리려면 P6 의 그 절부터 고쳐야 한다(이 계약만 되돌리면 다시 어긋난다).
     const item = runner({ runnerVarMissing: true });
-    expect(item.level).toBe("warn");
-    expect(item.detail).toContain("우회");
+    expect(item.level).toBe("ok");
+    expect(item.detail).toContain("GitHub 러너");
+    expect(item.detail, "은퇴한 레인으로 되돌리라고 권하지 않는다").not.toContain("되돌리세요");
   });
 
   it("레포가 안 보이면 폴백이 아니라 확인 불가다(404 양가성)", () => {
@@ -899,27 +905,37 @@ describe("PR 검사 러너(preflightRunner)", () => {
     expect(item.detail).not.toContain("우회");
   });
 
-  it("대조군 — 같은 404 라도 레포가 보이면 폴백이 맞다", () => {
+  it("대조군 — 같은 404 라도 레포가 보이면 GitHub 러너 레인이 맞다", () => {
     // 위 테스트와 stderr 가 동일한데 결과가 갈려야 한다. 이 짝이 없으면 프로브가
     // 통째로 죽어도(항상 unknown) 위 테스트만으로는 초록으로 통과한다.
-    expect(runner({ runnerVarMissing: true }).level).toBe("warn");
+    expect(runner({ runnerVarMissing: true }).level).toBe("ok");
   });
 
-  it("변수가 빈 값이어도 폴백 — 워크플로 조건이 != '' 이기 때문이다", () => {
-    expect(runner({ runnerLane: "" }).level).toBe("warn");
+  it("변수가 빈 값이어도 GitHub 러너 레인 — 워크플로 조건이 != '' 이기 때문이다", () => {
+    expect(runner({ runnerLane: "" }).level).toBe("ok");
   });
 
-  it("폴백 중이면 러너 목록을 아예 묻지 않는다", () => {
-    // 러너 조회가 실패하도록 심어 두고도 폴백 노랑이 그대로면, 그 호출이 일어나지
+  it("GitHub 러너 레인이면 러너 목록을 아예 묻지 않는다", () => {
+    // 러너 조회가 실패하도록 심어 두고도 이 행이 그대로면, 그 호출이 일어나지
     // 않았다는 증거다(일어났다면 unknown 이 됐을 것이다). 왕복 1회를 아끼는 것이자,
-    // 「폴백 중 러너 상태는 판정과 무관」이라는 설계를 고정하는 단언이다.
+    // 「이 레인에서 자가호스트 러너 상태는 판정과 무관」이라는 설계를 고정하는 단언이다.
     const item = runner({ runnerVarMissing: true, runnerListFails: "other" });
-    expect(item.level).toBe("warn");
-    expect(item.detail).toContain("우회");
+    expect(item.level).toBe("ok");
+    expect(item.detail).toContain("GitHub 러너");
   });
 
-  it("폴백 노랑은 초록이 아니다 — GitHub 사용 시간을 쓴다는 사실을 말한다", () => {
-    expect(runner({ runnerVarMissing: true }).detail).toContain("시간");
+  it("없어진 비용을 있는 것처럼 말하지 않는다 — 상시 노랑을 만드는 형태다", () => {
+    // ⛔ 종전 계약 「폴백 노랑은 초록이 아니다 — GitHub 사용 시간을 쓴다는 사실을 말한다」는
+    //    SUPERSEDED. 그 전제(자가호스트로 아끼던 유료 시간을 폴백이 도로 쓴다)는 2026-08-28
+    //    공개 레포 이전으로 사라졌다 — 공개 레포는 GitHub 러너가 무제한 무료이고, 그래서
+    //    자가호스트 러너 자체가 은퇴했다(P6 「Self-Hosted Preflight Runner 는 이 레포에서
+    //    은퇴했다」). 🪤 그 이전 커밋이 이 파일의 actionsQuota 문구까지 손보면서 **이 행만
+    //    좌표(wagcrm→wagcrm_git)만 바꾸고 의미를 안 고쳐** 상시 노랑으로 남았다.
+    // 지금 지킬 불변식은 반대다: 들지 않는 비용을 근거로 노랑을 내지 말 것. 늘 켜진
+    // 경고는 곧 무시당하고 그 학습이 진짜 빨강까지 삼킨다(이 파일의 예비 러너 사고와 같다).
+    const detail = runner({ runnerVarMissing: true }).detail;
+    expect(detail).not.toContain("시간");
+    expect(detail).not.toContain("우회");
   });
 
   it("라벨을 러너 조회에 실제로 넘긴다(배선 계약)", () => {
