@@ -196,9 +196,11 @@ cmd_down() {
 
   # ── 파일 삭제는 **언로드 확인 이후에만** 한다 ──
   # bootout 이 비동기라, 위 폴링 전에 지우면 아직 살아 있는 앱 프로세스와 경합한다.
-  # 프리뷰 앱은 체크아웃 안의 .next/standalone/server.js 로 돌고 런타임 캐시를
-  # .next/standalone/.next/cache 아래에 **쓰는 중**이라, 살아 있는 동안의 재귀 삭제는
-  # ENOTEMPTY 로 깨지기 쉽다. 서비스가 도메인에서 빠진 것을 확인한 뒤에 지운다.
+  # 프리뷰 앱은 체크아웃 안의 .live/current/server.js 로 돌고 런타임 캐시를 그 릴리스
+  # 폴더 아래에 **쓰는 중**이라, 살아 있는 동안의 재귀 삭제는 ENOTEMPTY 로 깨지기 쉽다.
+  # 서비스가 도메인에서 빠진 것을 확인한 뒤에 지운다.
+  # ⛔ 종전 서술 「.next/standalone/server.js 로 돌고」는 SUPERSEDED — 2026-08-29 실사고로
+  #    빌드 트리(.next)와 서빙 트리(.live)를 갈랐다(deploy.sh 안전장치 ⑧).
   if [ "$unloaded" != 1 ]; then
     problems="$problems
   - 그래서 배포 마커·빌드 산출물을 **지우지 않았습니다** — 살아 있는 프로세스가 쓰는 중인 디렉터리를 지우면 중간에 깨집니다. 서비스를 먼저 내린 뒤 down 을 다시 실행하세요."
@@ -228,7 +230,7 @@ cmd_down() {
     # 이 앱은 cacheComponents: true 아래 **빌드 타임에 DB 를 읽어** 페이지를 프리렌더한다
     # (`"use cache"` — src/lib/cached-crm-data.ts·cached-portal-data.ts). 프리뷰 빌드가
     # 읽는 DB 는 프로덕션 사본이므로, 그 결과가 .next/server/app/** 과
-    # .next/standalone/.next/server/app/** 에 직렬화된 채 남는다. DB 컨테이너만 지우고
+    # .live/releases/*/.next/server/app/** 에 직렬화된 채 남는다. DB 컨테이너만 지우고
     # 이것을 남기면 "닫는 동안 프로덕션 사본이 디스크에 존재하지 않는다"는 이 기능의
     # 기준을 데이터의 **절반에만** 적용하는 셈이다.
     # ⛔ 종전 결정 "빌드 재사용을 위해 .next 는 남긴다" 는 오너가 뒤집었다(2026-08-13) —
@@ -259,6 +261,12 @@ cmd_down() {
   - 빌드 산출물을 지우지 **않았습니다**: $PREVIEW_CHECKOUT 이 git 체크아웃으로 보이지 않습니다(.git 없음). 재귀 삭제 대상이 맞는지 확인되지 않아 손대지 않았습니다 — 경로를 직접 확인하세요."
     else
       rm -rf "$PREVIEW_CHECKOUT/.next" || true
+      # ⚠️ 서빙 트리도 반드시 함께 지운다 (2026-08-29). deploy.sh 안전장치 ⑧ 이후
+      # 프리렌더 산출물의 **실제 사본**은 이쪽에 있다 — `.next` 만 지우면 프로덕션
+      # 사본 DB 로 만든 페이지가 디스크에 그대로 남아, 「잔여 사본 0」(오너 확정
+      # 2026-08-13)이 데이터의 절반에만 적용된다. 위 심링크·물리경로·.git 3중 가드를
+      # 통과한 같은 체크아웃 안이므로 추가 가드는 필요 없다.
+      rm -rf "$PREVIEW_CHECKOUT/.live" || true
     fi
   fi
 
@@ -285,6 +293,11 @@ cmd_down() {
   if [ -e "$PREVIEW_CHECKOUT/.next" ]; then
     problems="$problems
   - 빌드 산출물이 아직 남아 있습니다: $PREVIEW_CHECKOUT/.next — 그 안에는 프리뷰 DB(프로덕션 사본)로 프리렌더된 페이지가 들어 있습니다."
+  fi
+
+  if [ -e "$PREVIEW_CHECKOUT/.live" ]; then
+    problems="$problems
+  - 서빙 산출물이 아직 남아 있습니다: $PREVIEW_CHECKOUT/.live — 그 안에는 프리뷰 DB(프로덕션 사본)로 프리렌더된 페이지가 들어 있습니다."
   fi
 
   if [ -e "$PREVIEW_MARKER" ]; then

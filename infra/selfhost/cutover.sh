@@ -940,7 +940,11 @@ stage5_switch_app_origin() {
   # 필요했던 이유. 산출물 안에 신규 호스트네임이 실제로 들어갔는지 확인해야
   # "재빌드했다"가 아니라 "반영됐다"를 증명한다. 검사 대상이 server 산출물인
   # 이유와 양성·음성 프로브의 근거는 verify_origin_in_build 주석 참고.
-  if verify_origin_in_build "$REPO_ROOT/.next/standalone/.next" "$PROD_HOSTNAME" "$prev_host"; then
+  # ⚠️ 검사 대상은 **서빙 중인 릴리스**다(2026-08-29 deploy.sh 안전장치 ⑧).
+  # 종전 경로 `.next/standalone/.next` 는 deploy.sh 가 산출물을 `mv` 로 옮긴 뒤라
+  # **존재하지 않는다** — 그대로 두면 origin 이 정상 반영됐는데도 "빌드 산출물
+  # 디렉터리가 없습니다"로 무조건 중단된다(재컷오버 때까지 잠복하는 회귀).
+  if verify_origin_in_build "$REPO_ROOT/.live/current/.next" "$PROD_HOSTNAME" "$prev_host"; then
     log "[5] 빌드 산출물 반영 확인 — $BUILD_ORIGIN_DETAIL"
   else
     abort 5 "앱 공개 origin 전환" "재빌드는 성공했지만 산출물 검증에 실패했습니다($BUILD_ORIGIN_DETAIL). NEXT_PUBLIC_* 인라이닝이 안 됐거나 이전 빌드 산출물이 그대로 남아 있을 수 있습니다. 서비스는 이미 재시작됐으나 여전히 이전 origin 으로 링크를 생성할 위험이 있습니다."
