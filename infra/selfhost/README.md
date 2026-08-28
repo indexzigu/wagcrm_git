@@ -241,7 +241,7 @@ bash ~/selfhost/wagcrm-preview/infra/selfhost/preview.sh down
 colima status                       # VM 이 떠 있나
 brew services info colima           # launchd 등록·기동 상태
 colima ssh -- systemctl list-units 'actions.runner.*' --no-pager --plain
-gh api repos/indexzigu/wagcrm/actions/runners --jq '.runners[] | "\(.name) \(.status) busy=\(.busy)"'
+gh api repos/indexzigu/wagcrm_git/actions/runners --jq '.runners[] | "\(.name) \(.status) busy=\(.busy)"'
 ```
 
 마지막 명령에서 활성 러너 **`imac-colima-1`·`-2` 가 `online`** 이면 끝(`-3` 은 예비라
@@ -288,13 +288,13 @@ colima ssh   # 이후 VM 안에서:
 #   mkdir -p ~/actions-runner && cd ~/actions-runner
 #   curl -sSLo runner.tar.gz https://github.com/actions/runner/releases/download/v<VER>/actions-runner-linux-x64-<VER>.tar.gz
 #   tar xzf runner.tar.gz && rm runner.tar.gz && sudo ./bin/installdependencies.sh
-#   ./config.sh --url https://github.com/indexzigu/wagcrm --token <등록토큰> --name imac-colima-1 --unattended
+#   ./config.sh --url https://github.com/indexzigu/wagcrm_git --token <등록토큰> --name imac-colima-1 --unattended
 #   sudo ./svc.sh install z9 && sudo ./svc.sh start
 # 러너 2·3번(동시 실행 자리를 늘린다 — 위 토폴로지 ⚠️ 참조). 디렉터리를 따로 두고
 # 같은 tarball 을 다시 풀며, 등록 토큰은 러너마다 새로 발급한다:
 #   for n in 2 3; do
 #     mkdir -p ~/actions-runner-$n && tar xzf runner.tar.gz -C ~/actions-runner-$n
-#     (cd ~/actions-runner-$n && ./config.sh --url https://github.com/indexzigu/wagcrm \
+#     (cd ~/actions-runner-$n && ./config.sh --url https://github.com/indexzigu/wagcrm_git \
 #        --token <등록토큰> --name imac-colima-$n --work _work --unattended --replace
 #      sudo ./svc.sh install z9 && sudo ./svc.sh start)
 #   done
@@ -308,7 +308,7 @@ brew services start colima
 ```
 
 등록 토큰은 1시간짜리 일회용이다(러너에 남지 않는다):
-`gh api -X POST repos/indexzigu/wagcrm/actions/runners/registration-token --jq .token`.
+`gh api -X POST repos/indexzigu/wagcrm_git/actions/runners/registration-token --jq .token`.
 재등록(레포 이관·러너 교체)은 VM 안에서 `./config.sh remove --token <제거토큰>` 후 위
 `config.sh` 부터 다시.
 
@@ -322,7 +322,7 @@ brew services start colima
   ⚠️ **판정 기준은 「큐가 비었나」가 아니라 「러너가 `busy=false` 인가」다** — 아직 배정
   안 된 대기 잡은 러너가 사라져도 줄에 남지만, 이미 러너에 얹힌 잡은 그대로 죽는다
   (2026-08-27 OOM 사고의 `cancelled` 가 그 모양이다). 확인:
-  `gh api repos/indexzigu/wagcrm/actions/runners --jq '[.runners[]|select(.busy)]|length'`.
+  `gh api repos/indexzigu/wagcrm_git/actions/runners --jq '[.runners[]|select(.busy)]|length'`.
   실측(2026-08-27 `cpu` 8→4): 러너가 GitHub 에 `online` 으로 돌아오기까지 **약 1분**,
   사람 개입 0(VM=launchd KeepAlive → VM 안 systemd `enabled` 두 겹이 자동 복구).
   재기동 뒤 확인 3종: `colima ssh -- nproc`(새 값) · `docker context ls` 의 `*` 가

@@ -43,7 +43,7 @@
 
 set -euo pipefail
 
-REPO_SLUG="indexzigu/wagcrm"
+REPO_SLUG="indexzigu/wagcrm_git"
 LANE="release"
 # 운영 배포 컨텍스트. 레포 Git 설정 "Consolidated Commit Status" 가 켜지면 Vercel 이
 # 프로젝트별(Vercel – wag-crm / Vercel – wagcrm-demo) 대신 단일 "Vercel" 로 상태를 올린다.
@@ -183,9 +183,9 @@ fi
 # 함정**이다. awk 가 먼저 끝나면 git 이 SIGPIPE 로 죽고 `set -euo pipefail` 이 그 141 을
 # 이 할당의 실패로 만들어, 리모트가 멀쩡한데도 승격이 통째로 죽는다. 첫 매치만 쓰되
 # 입력은 끝까지 읽는다(리모트 목록은 몇 줄이라 비용 차이가 없다).
-REMOTE=$(git remote -v | awk '$2 ~ /indexzigu\/wagcrm(\.git)?$/ && $3 == "(push)" && !found { print $1; found = 1 }')
+REMOTE=$(git remote -v | awk '$2 ~ /indexzigu\/wagcrm_git(\.git)?$/ && $3 == "(push)" && !found { print $1; found = 1 }')
 if [ -z "$REMOTE" ]; then
-  echo "⛔ indexzigu/wagcrm 을 가리키는 리모트가 없다. git remote -v 확인 필요." >&2
+  echo "⛔ indexzigu/wagcrm_git 을 가리키는 리모트가 없다. git remote -v 확인 필요." >&2
   exit 1
 fi
 

@@ -17,7 +17,7 @@ set -euo pipefail
 export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin"
 
 GH="${RELEASE_GH_CMD:-gh}"
-REPO="indexzigu/wagcrm"
+REPO="indexzigu/wagcrm_git"
 MARKER_FILE="$HOME/selfhost/logs/deployed.sha"
 MAX_COMMITS=5
 # 알림 본문에 싣는 최대 건수 — 나머지는 「외 N건」으로 접는다. 목록 표시용

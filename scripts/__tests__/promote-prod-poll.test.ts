@@ -123,7 +123,7 @@ describe("promote-prod.sh --poll-only — 배포 확인 실패 시 이슈 알림
         "  issue)",
         '    case "$2" in',
         `      list) cat "${existingFixture}" ;;`,
-        '      create) echo "https://github.com/indexzigu/wagcrm/issues/999" ;;',
+        '      create) echo "https://github.com/indexzigu/wagcrm_git/issues/999" ;;',
         "      comment) : ;;",
         "    esac",
         "    ;;",

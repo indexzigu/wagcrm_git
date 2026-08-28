@@ -127,7 +127,7 @@ function setupRepo() {
   const B = commit("B");
   const C = commit("C");
   // 정본 URL 을 가진 리모트(스크립트의 REMOTE 탐지가 찾는다) — 실제 fetch 는 SKIP.
-  git(repoDir, ["remote", "add", "origin", "https://github.com/indexzigu/wagcrm.git"]);
+  git(repoDir, ["remote", "add", "origin", "https://github.com/indexzigu/wagcrm_git.git"]);
   git(repoDir, ["update-ref", "refs/remotes/origin/main", C]);
   git(repoDir, ["update-ref", "refs/remotes/origin/release", B]);
   // per-sha gh 스텁: `api repos/.../commits/<sha>/status` → status.<sha>.tsv 를 뱉는다.
