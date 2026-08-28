@@ -21,7 +21,8 @@
 // 판정은 문자열 존재가 아니라 **게이트 판정부를 실제로 실행**해서 한다 — 소스에
 // 특정 문구가 있는지만 보면 로직이 바뀌어도 통과한다.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -111,22 +112,57 @@ describe("원본과의 동기화 — 위 복제 로직이 deploy.sh 와 같은 �
     expect(code).not.toMatch(/rev-list --parents[^\n]*cut -d' ' -f2-/);
   });
 
-  it("루트 판정 방법이 실제로 루트와 비루트를 가른다", () => {
+  it("루트 판정 방법이 실제로 루트와 비루트를 가른다 (격리된 임시 레포)", () => {
     // 소스에 문자열이 있는 것과 그 명령이 옳게 동작하는 것은 다르다 — 실행해서 본다.
-    const rootSha = execFileSync("git", ["rev-list", "--max-parents=0", "HEAD"], {
-      encoding: "utf8",
-    }).trim().split("\n")[0];
-    const headSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    const hasParent = (sha: string) => {
-      try {
-        execFileSync("git", ["rev-parse", "-q", "--verify", `${sha}^`], { stdio: "ignore" });
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    expect(hasParent(rootSha), "루트 커밋인데 부모가 있다고 판정됐다").toBe(false);
-    expect(hasParent(headSha), "HEAD 에 부모가 없다고 판정됐다").toBe(true);
+    //
+    // 🪤 **이 레포의 git 상태로 검사하지 말 것.** 초판이 `HEAD` 와
+    // `rev-list --max-parents=0 HEAD` 로 검사했는데, CI 의 `actions/checkout` 은
+    // **얕은 복제(depth 1)** 라 HEAD 조차 부모가 없다 — 로컬(전체 이력)에서는
+    // 통과하고 CI 에서만 실패했다(2026-08-28 실측). 주변 환경에 기대는 단언은
+    // 그 환경이 다른 곳에서 거짓이 된다. 그래서 레포를 하나 만들어 검사한다.
+    const dir = mkdtempSync(join(tmpdir(), "gate-root-"));
+    try {
+      const git = (...args: string[]) =>
+        execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: "pipe" });
+      git("init", "-q");
+      git("config", "user.email", "t@t.t");
+      git("config", "user.name", "t");
+      writeFileSync(join(dir, "a"), "1");
+      git("add", "-A");
+      git("commit", "-q", "-m", "root");
+      const rootSha = git("rev-parse", "HEAD").trim();
+      writeFileSync(join(dir, "a"), "2");
+      git("add", "-A");
+      git("commit", "-q", "-m", "child");
+      const childSha = git("rev-parse", "HEAD").trim();
+
+      // deploy.sh 가 쓰는 바로 그 판정.
+      const hasParent = (sha: string) => {
+        try {
+          execFileSync("git", ["rev-parse", "-q", "--verify", `${sha}^`], { cwd: dir, stdio: "ignore" });
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      expect(hasParent(rootSha), "루트 커밋인데 부모가 있다고 판정됐다").toBe(false);
+      expect(hasParent(childSha), "자식 커밋인데 부모가 없다고 판정됐다").toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("⛔ 얕은 복제는 fail-closed 로 막는다 — 게이트 전면 무력화 방지", () => {
+    // 얕은 복제에서는 잘린 지점의 커밋이 전부 "부모 없음"으로 보여, 위 루트 예외가
+    // **모든 커밋을 건너뛴다**. 조용한 전면 통과이므로 판정 불능으로 처리해야 한다.
+    const code = SRC.split("\n")
+      .filter((line) => !line.trim().startsWith("#"))
+      .join("\n");
+    expect(code).toContain("--is-shallow-repository");
+    // 루트 예외보다 **먼저** 와야 한다 — 뒤에 오면 이미 건너뛴 뒤다.
+    expect(code.indexOf("--is-shallow-repository")).toBeLessThan(
+      code.indexOf('git rev-parse -q --verify "${GATE_SHA}^"'),
+    );
   });
 
   it("조각 실패 시 어느 조각인지 이름을 보고한다", () => {

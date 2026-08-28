@@ -185,6 +185,14 @@ if [ "$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app" ]; then
       # 🪤 판정을 `git rev-list --parents | cut -d' ' -f2-` 로 하지 말 것 — `cut` 은
       # 구분자가 없으면 **줄 전체를 반환**해서 루트 커밋이 "부모 있음"으로 보인다
       # (같은 날 실측). 필드 수로 세거나 `rev-parse <sha>^` 의 실패로 판정한다.
+      # ⛔ **얕은 복제(shallow)에서는 판정할 수 없다 — fail-closed.** 얕은 복제는
+      # 잘린 지점의 커밋에 부모가 없는 것처럼 보이므로, 아래 루트 예외가 **모든
+      # 커밋을 건너뛰어 게이트를 통째로 무력화**한다(조용한 전면 통과). 배포
+      # 체크아웃은 전체 복제여야 한다.
+      if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+        echo "중단: 배포 체크아웃이 얕은 복제(shallow)라 커밋 계보를 판정할 수 없습니다 — 게이트가 무력화되므로 fail-closed 로 멈춥니다. 'git fetch --unshallow' 로 전체 이력을 받으십시오." >&2
+        exit 1
+      fi
       if ! git rev-parse -q --verify "${GATE_SHA}^" >/dev/null 2>&1; then
         echo "[deploy] CI 게이트 건너뜀: ${GATE_SHA:0:8} 는 루트 커밋(부모 없음) — PR 이 존재할 수 없다"
         continue
