@@ -150,7 +150,16 @@ jobs:
           echo "DATABASE_URL=postgresql://postgres@localhost:${POSTGRES_HOST_PORT}/preflight" >> "$GITHUB_ENV"
           echo "DIRECT_URL=postgresql://postgres@localhost:${POSTGRES_HOST_PORT}/preflight" >> "$GITHUB_ENV"
 
+      # `node_modules` 캐시 — 사유·실측은 아래 test 잡의 같은 스텝 주석 참조.
+      - name: Restore node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       # 빌드가 ISR 프리렌더로 DB 를 읽으므로 스키마가 먼저 있어야 한다. 이 단계가
@@ -189,6 +198,17 @@ jobs:
     # ⚠️ 시간초과 취소는 실패 메시지가 「테스트 실패」가 아니라 「취소」로 나와 원인이
     # 가려진다 — 그래서 여유를 얇게 두는 것 자체가 진단 비용이다.
     timeout-minutes: 30
+    # 테스트를 4조각으로 나눠 병렬로 돌린다(2026-08-28, 공개 레포 이전 직후).
+    # 실측: 분할 전 이 잡의 테스트 스텝이 582초(9.7분)였고 잡 전체가 11.5~20분이었다.
+    # ⚠️ **공개 레포가 됐기 때문에 가능해진 선택이다** — 러너를 4대 쓰는 셈이라
+    # 비공개 무료 한도(월 2,000분)에서는 소모가 4배가 돼 즉시 한도를 넘겼고,
+    # 자가호스트 레인은 활성 러너가 2대뿐이라 애초에 4분할을 소화하지 못했다.
+    # 🪤 **필수 체크 이름이 `test` 에서 `test (1)`…`test (4)` 로 바뀐다** — 브랜치
+    # 보호를 켤 때 그 네 이름을 등록해야 한다(옛 `test` 하나만 걸면 영원히 pending).
+    strategy:
+      fail-fast: false # 한 조각이 깨져도 나머지 결과를 봐야 원인이 좁혀진다
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -206,10 +226,24 @@ jobs:
           # 이득이므로, 러너 토글과 같은 변수로 함께 갈린다.
           cache: ${{ vars.PREFLIGHT_RUNNER == '' && 'npm' || '' }}
 
+      # `node_modules` 자체를 캐시한다 — 위 `setup-node` 캐시는 **내려받은 패키지
+      # 보관소(`~/.npm`)만** 재사용하고 압축 해제·링크는 매번 다시 한다. 실측
+      # (2026-08-28): 캐시가 켜진 상태에서도 `npm ci` 가 두 run 연속 90~143초였다.
+      # 키를 lockfile 해시로 잡아 의존성이 바뀌면 자동으로 무효가 된다.
+      - name: Restore node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Generate Prisma clients (Postgres + SQLite)
+        # ⚠️ 캐시 적중 시에도 반드시 돈다 — 생성물에 머신 절대경로가 박히므로
+        # `node_modules` 와 함께 캐시하면 다른 러너에서 깨진다(.gitignore 주석 참조).
         run: npm run db:generate
 
       - name: Run hermetic test subset (isolated SQLite — no prod secrets)
@@ -221,4 +255,4 @@ jobs:
           # 바꾸지 않은 것은 의도다(한 번에 한 가지만 바꿔야 차이를 귀속시킬 수 있다). GitHub 러너로 폴백하면 잡이 머신을 독점하므로 빈 값 =
           # 상한 없음으로 되돌린다 — 러너 토글과 같은 변수로 두 레인이 함께 갈린다.
           VITEST_MAX_WORKERS: ${{ vars.PREFLIGHT_RUNNER != '' && '3' || '' }}
-        run: npm run test:ci
+        run: npm run test:ci -- --shard=${{ matrix.shard }}/4
