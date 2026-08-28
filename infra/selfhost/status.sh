@@ -536,10 +536,17 @@ if [ "$MODE" = "full" ]; then
   if [ "$RUNNER_LANE" = "unknown" ]; then
     emit preflightRunner unknown "$RUNNER_TITLE" "$(runner_fail_reason "$(cat "$GH_ERR" 2>/dev/null || true)")"
   elif [ "$RUNNER_LANE" = "fallback" ]; then
-    # 폴백은 「고장」이 아니라 「비싼 쪽으로 임시 우회 중」이다 — 머지는 정상으로 되지만
-    # GitHub Actions 사용 시간을 쓴다(그것을 아끼려고 이 맥으로 옮긴 것이다). 그래서
-    # 초록으로 덮지 않는다. 이 노랑은 「고쳤으면 되돌리라」는 표시이고 되돌리면 사라진다.
-    emit preflightRunner warn "$RUNNER_TITLE" "GitHub 러너로 우회 중입니다 — 이 맥의 러너를 고친 뒤 되돌리세요(그동안 GitHub 사용 시간을 씁니다)"
+    # 변수가 없는 상태 = **GitHub 러너로 돈다**. 이 레포에서는 그것이 **정규 레인**이다.
+    # ⛔ 종전 판정(노랑 + "이 맥의 러너를 고친 뒤 되돌리세요")은 SUPERSEDED — 2026-08-28
+    # 공개 레포 이전과 함께 자가호스트 러너가 **의도적으로 은퇴**했다(P6
+    # `docs/agents/deployment.md` 「Self-Hosted Preflight Runner 는 이 레포에서 은퇴했다」).
+    # 그 결정의 근거는 공개 레포에서 GitHub 러너가 무제한 무료라 자가호스트의 존재 이유
+    # (비공개 무료 한도 회피)가 통째로 사라졌다는 것이고, 같은 절이 **다시 붙이지 말라**고
+    # ⛔ 로 못박고 있다(포크 PR 이 오너의 맥에서 임의 코드를 돌릴 수 있는 보안 사안).
+    # 즉 종전 노랑은 **되돌리라고 권하는데 정본은 되돌리지 말라고 하는** 상태였다 —
+    # 늘 켜진 경고는 곧 무시당하고 그 학습이 진짜 빨강까지 삼킨다(이 파일의 예비 러너
+    # 상시 노랑 사고와 같은 형태).
+    emit preflightRunner ok "$RUNNER_TITLE" "GitHub 러너로 돌고 있습니다 — 이 레포의 정규 레인입니다"
   else
     # ② 그쪽이 살아 있는가. 변수 값(=워크플로의 runs-on 라벨)을 그대로 가진 러너만 센다
     #    — 오너가 라벨을 바꾸면 세는 대상도 함께 따라가야 한다. jq 에 값을 넘기는 통로는
