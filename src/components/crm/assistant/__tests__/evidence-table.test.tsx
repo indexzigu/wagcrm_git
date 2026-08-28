@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * evidence-table — 이번 턴 도구 호출의 근거 표(청사진 §3).
  *

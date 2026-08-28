@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「신고자료출력」 트리거 채널 게이트 계약 (2026-08-04).
 //
 // SellerSettlementInfo(campaign-side-panel.tsx)는 exported 되지 않으므로 이 채널

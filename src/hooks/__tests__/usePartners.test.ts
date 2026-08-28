@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * usePartners.updatePartnerField — 인라인 저장 무음 계약 (셀러 PR #36과 동일).
  *

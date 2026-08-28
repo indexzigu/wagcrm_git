@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 정산 카드 「정산 및 회계 일정」 — 계산서 방향 표시 계약(2026-08-07).
 //
 // 카드는 채널 분기를 스스로 쓰지 않고 TAX_INVOICE_OBLIGATION_TABLE 에서 파생한다.

@@ -48,7 +48,19 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "jsdom",
+    // 기본은 `node` — DOM 이 필요한 파일만 맨 위에 `// @vitest-environment jsdom` 을
+    // 선언한다(2026-08-28).
+    //
+    // 종전에는 전역 `jsdom` 이라 **DOM 을 전혀 안 쓰는 파일도 브라우저 환경을 매번
+    // 지었다**. 실측(표본 60파일·924건): 벽시계 29.5초 → 22.1초, environment 누계
+    // 83.0초 → 0.013초. 전체의 79%(510/644)가 DOM 불필요라 로컬·CI 양쪽이 줄어든다.
+    //
+    // 🪤 **선언은 파일마다 하고 중앙 목록을 만들지 말 것** — 목록은 파일이 늘 때마다
+    // 어긋나고, 어긋나도 조용하다. 파일 맨 위 한 줄이면 새 파일이 스스로 필요를
+    // 밝힌다. 빠뜨리면 `document is not defined` 로 **시끄럽게** 실패한다.
+    // 🪤 `src/test/setup.ts` 는 이제 두 환경에서 다 로드된다 — DOM 손질을 무조건
+    // 실행하면 node 쪽이 전부 죽는다(그 파일 주석 참조).
+    environment: "node",
     exclude: [
       "e2e/**",
       "**/node_modules/**",

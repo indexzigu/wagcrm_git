@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * useProposalActions — approve/reject 공용 훅 (청사진 §3-#3).
  *

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * AssistantClient — 퀵 액션 칩 (청사진 §7-1/§7-3, v1.3 追記).
  *

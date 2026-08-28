@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * AssistantClient — 승인 대기함(ApprovalInbox) 마운트 회귀 테스트 (청사진 §2 G3).
  * 사이드바 신규 메뉴 없이 /assistant 페이지 내부에 섹션으로 렌더링되어야 한다.

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Property-based tests for Data Entry Pipeline UX.
  *

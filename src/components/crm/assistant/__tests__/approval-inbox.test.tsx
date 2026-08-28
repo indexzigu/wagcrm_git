@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * ApprovalInbox — 승인 대기함 UI (청사진 §2, G3).
  *

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * AssistantClient — 채팅 영속화 클라이언트 배선 회귀 테스트 (Phase 5 청사진 v2 §3).
  *

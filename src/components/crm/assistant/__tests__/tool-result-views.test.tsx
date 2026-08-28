@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * tool-result-views — READ 도구 5종 리치 렌더 (청사진 §2, §3-#5).
  *

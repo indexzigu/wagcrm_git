@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * ApprovalBadge — 사이드바 승인대기 배지 (청사진 §6-2, §6-3).
  *

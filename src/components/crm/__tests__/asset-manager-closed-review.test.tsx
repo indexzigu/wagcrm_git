@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 종료된 캠페인의 미검토 후보·스토리 접힘 — 실렌더 회귀(오너 2026-07-31).
 // 서버(suggested-posts·stories 라우트)가 reviewClosed 를 내려주면 화면이 ①미검토 항목을 감추고
 // ②되살리는 길을 남기는지, 그리고 ③펼침이 실제로 includeClosed 를 붙여 재조회하는지를 고정한다.

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * ConversationList — 대화 목록 패널 (채팅 영속화 청사진 §3).
  * 최근 대화 30개, 클릭 시 onSelect(id) 호출, "새 대화" 버튼으로 onNewConversation 호출.

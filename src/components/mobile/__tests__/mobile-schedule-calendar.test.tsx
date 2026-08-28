@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 // 링을 색 리터럴이 아니라 의미(입금/지급)로 집는다 — 색이 바뀌어도 동작 단언은 살아야 한다.
