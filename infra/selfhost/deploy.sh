@@ -178,6 +178,25 @@ if [ "$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app" ]; then
     # 빈 채로 조용히 통과하면 "게이트가 돌았나"를 로그로 알 수 없으므로 명시한다.
     [ -n "$GATE_COMMITS" ] || echo "[deploy] CI 게이트: 새로 나가는 커밋이 없습니다(재배포)"
     for GATE_SHA in $GATE_COMMITS; do
+      # 루트 커밋(부모 없음)은 **구조적으로 PR 을 거칠 수 없다** — 레포의 첫 커밋은
+      # 비교할 베이스가 없어 PR 을 만들 수 없기 때문이다. 아래 「연결 PR 없음 = 직접
+      # push 의심」 판정에 그대로 걸리면 **새 레포의 첫 배포가 영구 차단**된다
+      # (2026-08-28 실측: wagcrm_git 전환에서 실제로 여기서 멈췄다).
+      # 🪤 판정을 `git rev-list --parents | cut -d' ' -f2-` 로 하지 말 것 — `cut` 은
+      # 구분자가 없으면 **줄 전체를 반환**해서 루트 커밋이 "부모 있음"으로 보인다
+      # (같은 날 실측). 필드 수로 세거나 `rev-parse <sha>^` 의 실패로 판정한다.
+      # ⛔ **얕은 복제(shallow)에서는 판정할 수 없다 — fail-closed.** 얕은 복제는
+      # 잘린 지점의 커밋에 부모가 없는 것처럼 보이므로, 아래 루트 예외가 **모든
+      # 커밋을 건너뛰어 게이트를 통째로 무력화**한다(조용한 전면 통과). 배포
+      # 체크아웃은 전체 복제여야 한다.
+      if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+        echo "중단: 배포 체크아웃이 얕은 복제(shallow)라 커밋 계보를 판정할 수 없습니다 — 게이트가 무력화되므로 fail-closed 로 멈춥니다. 'git fetch --unshallow' 로 전체 이력을 받으십시오." >&2
+        exit 1
+      fi
+      if ! git rev-parse -q --verify "${GATE_SHA}^" >/dev/null 2>&1; then
+        echo "[deploy] CI 게이트 건너뜀: ${GATE_SHA:0:8} 는 루트 커밋(부모 없음) — PR 이 존재할 수 없다"
+        continue
+      fi
       GATE_PR="$(gh api "repos/$GATE_REPO/commits/$GATE_SHA/pulls" \
         --jq '[.[] | select(.merged_at != null)][0] // empty | "\(.number) \(.head.sha)"')" \
         || { echo "중단: CI 게이트 조회 실패(커밋 ${GATE_SHA:0:8} 의 PR 조회). 네트워크·gh 인증을 확인하세요 — 판정 불능은 fail-closed 입니다." >&2; exit 1; }
