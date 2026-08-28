@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 캠페인 1건 원천징수 입력 도우미 계약 (2026-08-05).
 //
 // 세금계산서 도우미(tax-invoice-helper-dialog.test.tsx)의 자매 테스트다. 핵심

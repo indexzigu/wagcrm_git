@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * ProposalCard — 채팅 안 기안 카드(인라인 승인) (청사진 §1, §3-#4).
  *

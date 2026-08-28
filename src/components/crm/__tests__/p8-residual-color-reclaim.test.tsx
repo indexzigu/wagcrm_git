@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // P8 색 원칙 잔여 후보 3곳 회수 계약 (오너 결정 2026-07-30).
 //
 // PR #149(딜 패널 AI 어피던스) · #152/#154(badge-config CLOSED) · entity-type-badge 색 회수를

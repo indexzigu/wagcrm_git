@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Feature: pipeline-kanban-remodel
  * Integration tests for end-to-end CrmDashboard behavior.

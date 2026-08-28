@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * 화면단 역할 분기 — 서버 게이트의 짝이다.
  *

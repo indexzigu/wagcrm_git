@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // P8 색 회수 계약 — entity-type-badge.tsx (오너 결정 2026-07-30).
 //
 // 두 가지를 한꺼번에 고정한다. 성격이 다르므로 섞어 읽지 말 것:

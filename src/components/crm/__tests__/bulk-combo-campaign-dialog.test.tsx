@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DashboardData } from "@/lib/crm-types";

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 「신고자료출력」(원천징수 도우미) 트리거 게이트 계약 (2026-08-05).
 //
 // 세금계산서 도우미 쪽 자매 테스트(campaign-side-panel-tax-invoice-trigger.test.tsx)는

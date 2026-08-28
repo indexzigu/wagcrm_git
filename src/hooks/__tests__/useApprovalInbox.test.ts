@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * useApprovalInbox — status 파라미터화 (청사진 §6-1, §6-3).
  *

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 홈택스 발행 공용 훅 계약 — 보드와 정산 카드가 공유한다.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";

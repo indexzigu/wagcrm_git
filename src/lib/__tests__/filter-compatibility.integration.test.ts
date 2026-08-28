@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Integration tests for filter compatibility across zone views.
  *

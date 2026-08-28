@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // 원천징수 절차 3카드(WithholdingFilingCards) 계약.
 //
 // 가장 중요한 계약은 위택스 「과세표준」이 `incomeTax`(소득세)와 같고 `preTaxTotal`

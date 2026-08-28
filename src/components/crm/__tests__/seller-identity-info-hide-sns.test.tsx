@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // `hideSns` 계약 — SNS 표시(플랫폼 아이콘 + @계정명) **전체**를 숨긴다.
 //
 // 왜 렌더 테스트인가: 이 버그는 **소스 그렙으로 잡을 수 없다.** 아이콘의 hue(`text-pink-500/80`·

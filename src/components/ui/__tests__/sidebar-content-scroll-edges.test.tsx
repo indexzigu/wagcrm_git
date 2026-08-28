@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { SidebarContent } from "@/components/ui/sidebar";

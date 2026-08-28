@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * PrivacyModeProvider — 탭 제목 누출 + 초기화 레이스 회귀 방지.
  */

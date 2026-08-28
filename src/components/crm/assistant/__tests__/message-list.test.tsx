@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * MessageList — 기안 카드 목록 + READ 리치 렌더 배선 (청사진 §1/§2, §3-#6, §4, §7).
  *

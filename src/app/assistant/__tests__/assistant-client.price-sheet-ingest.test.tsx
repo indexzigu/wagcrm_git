@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * AssistantClient — 가격표 인제스트 슬롯 (1단계).
  *
