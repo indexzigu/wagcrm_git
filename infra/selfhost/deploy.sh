@@ -365,18 +365,6 @@ if [ -z "$PID_AFTER" ] || [ "$PID_AFTER" = "$PID_BEFORE" ]; then
 fi
 echo "[deploy] PID 교체 확인: ${PID_BEFORE:-없음} → $PID_AFTER"
 
-# 새 프로세스가 **릴리스 경로**로 떴는지 확인한다. run-app.sh 는 `.live/current` 가
-# 없으면 빌드 트리로 폴백하는데(KeepAlive 크래시루프를 피하려는 fail-safe), 그 폴백이
-# 조용히 굳으면 위 경합이 그대로 살아 있는 채 배포는 매번 초록이 된다 — 이 레포가
-# 반복해서 밟은 「무증상 열화」 형태다. 여기서 잡으면 마커가 갱신되지 않아 다음 실행이
-# 재시도한다(fail-safe 방향은 위 가드들과 같다).
-LIVE_ENTRY="$LIVE_DIR/current/server.js"
-RUNNING_CMD="$(ps -o command= -p "$PID_AFTER" 2>/dev/null || true)"
-if [[ "$RUNNING_CMD" != *"$LIVE_ENTRY"* ]]; then
-  echo "중단: 새 프로세스가 릴리스 경로로 뜨지 않았습니다(기대: $LIVE_ENTRY / 실측: ${RUNNING_CMD:-조회 실패}). run-app.sh 가 이 변경 이전 버전이거나 .live/current 가 유실됐을 수 있습니다 — 그 상태로는 배포 중 산출물 교체 경합이 그대로 남습니다." >&2
-  exit 1
-fi
-
 echo "[deploy] 헬스체크"
 HEALTH_OK=0
 for _ in $(seq 1 30); do
@@ -394,6 +382,36 @@ if [ "$HEALTH_OK" != "1" ]; then
   echo "[deploy] FAIL — 헬스체크 30회 실패. ~/selfhost/logs/app.err.log 확인" >&2
   exit 1
 fi
+
+# 새 프로세스가 **릴리스 트리**를 서빙하는지 확인한다. run-app.sh 는 `.live/current` 가
+# 없으면 빌드 트리로 폴백하는데(KeepAlive 크래시루프를 피하려는 fail-safe), 그 폴백이
+# 조용히 굳으면 위 경합이 그대로 살아 있는 채 배포는 매번 초록이 된다 — 이 레포가
+# 반복해서 밟은 「무증상 열화」 형태다. 여기서 잡으면 마커가 갱신되지 않아 다음 실행이
+# 재시도한다(fail-safe 방향은 위 가드들과 같다).
+#
+# 🪤 **`ps` 로 판정하지 말 것 — Next 가 프로세스 이름을 갈아치운다.** 실측(2026-08-29):
+# `ps -o command= -p <pid>` 는 `next-server (v16.2.4)` 만 준다. 실행 경로가 거기 없으므로
+# 경로 대조는 **정상 배포에서도 항상 실패**한다(초판이 그렇게 짜여 있었고, 그대로 뒀으면
+# 2회차 배포부터 전부 중단됐을 것이다). 판정은 **프로세스의 cwd** 로 한다 — standalone
+# 서버가 기동 직후 `process.chdir(__dirname)` 을 하므로 cwd 가 곧 서빙 중인 릴리스다.
+# ⚠️ 이 확인을 **헬스체크 뒤**에 두는 것도 계약이다: 200 을 받았다는 것은 그 chdir 이 이미
+# 끝났다는 뜻이라, PID 교체 직후에 읽을 때 생기는 경합이 없다.
+# ⚠️ Node 는 심링크를 실경로로 풀므로(`--preserve-symlinks` 미사용) cwd 는
+# `.live/releases/<id>` 다 — `current` 문자열과 직접 비교하지 말고 실경로로 푼 값과 댄다.
+LIVE_REAL="$(cd "$LIVE_DIR/current" 2>/dev/null && pwd -P || true)"
+# ⚠️ `|| true` 가 없으면 `set -o pipefail` 아래에서 lsof 실패가 **메시지 없이** 이 줄에서
+# 스크립트를 죽인다 — 아래 「판정 불능」 안내가 통째로 무력화된다(프로브로 실측: 없는
+# PID 로 돌리니 아무 출력 없이 종료됐다). 실패는 빈 값으로 받아 아래에서 말하게 한다.
+RUNNING_CWD="$(lsof -a -p "$PID_AFTER" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1 || true)"
+if [ -z "$RUNNING_CWD" ]; then
+  echo "중단: 앱 프로세스($PID_AFTER)의 작업 디렉터리를 읽지 못해 릴리스 서빙 여부를 판정할 수 없습니다(lsof 부재·권한). 판정 불능은 fail-closed 입니다 — 서비스는 계속 뜬 채이고 마커만 갱신되지 않습니다." >&2
+  exit 1
+fi
+if [ -z "$LIVE_REAL" ] || [ "$RUNNING_CWD" != "$LIVE_REAL" ]; then
+  echo "중단: 앱이 릴리스 트리를 서빙하고 있지 않습니다(기대: ${LIVE_REAL:-.live/current 없음} / 실측: $RUNNING_CWD). run-app.sh 가 이 변경 이전 버전이거나 .live/current 가 유실돼 빌드 트리로 폴백한 상태입니다 — 그대로 두면 배포 중 산출물 교체 경합이 남습니다." >&2
+  exit 1
+fi
+echo "[deploy] 릴리스 서빙 확인: $RUNNING_CWD"
 
 # ── P0 안전장치 ④: DB 연결 확인. 위 HTTP 헬스체크와 이 프로브는 서로 다른
 # 것을 증명한다 — 혼동하지 말 것:
