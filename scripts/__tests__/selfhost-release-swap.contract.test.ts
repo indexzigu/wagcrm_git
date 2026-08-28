@@ -103,41 +103,51 @@ describe("deploy.sh — 완성된 산출물만 서빙 트리로 들어간다", (
     ).not.toContain('rm -rf "$LIVE_DIR/releases/$RELEASE_ID"');
   });
 
-  it("릴리스 교체가 kickstart **앞**, 경로 확인이 **뒤**에 온다", () => {
+  it("릴리스 교체가 kickstart **앞**, 서빙 확인이 **헬스체크 뒤**에 온다", () => {
     // 교체가 뒤면 새 프로세스가 옛 릴리스로 뜨고, 확인이 앞이면 아무것도 증명하지 못한다.
+    // ⚠️ 확인을 **헬스체크 뒤**에 두는 것도 계약이다 — 200 을 받았다는 것은 standalone
+    //    서버의 `process.chdir(__dirname)` 이 이미 끝났다는 뜻이라, PID 교체 직후에
+    //    cwd 를 읽을 때 생기는 경합이 없다.
     const swapAt = deploy.indexOf(
       'mv .next/standalone "$LIVE_DIR/releases/$RELEASE_ID"',
     );
     const kickAt = deploy.indexOf("launchctl kickstart -k");
-    const verifyAt = deploy.indexOf(
-      'RUNNING_CMD="$(ps -o command= -p "$PID_AFTER"',
-    );
+    const healthAt = deploy.indexOf("헬스체크 30회 실패");
+    const verifyAt = deploy.indexOf('RUNNING_CWD="$(lsof -a -p "$PID_AFTER"');
     expect(swapAt).toBeGreaterThan(-1);
     expect(kickAt).toBeGreaterThan(-1);
+    expect(healthAt).toBeGreaterThan(-1);
     expect(verifyAt).toBeGreaterThan(-1);
     expect(swapAt, "릴리스 교체가 kickstart 뒤에 있다").toBeLessThan(kickAt);
-    expect(verifyAt, "경로 확인이 kickstart 앞에 있다").toBeGreaterThan(kickAt);
+    expect(verifyAt, "서빙 확인이 헬스체크 앞에 있다").toBeGreaterThan(healthAt);
   });
 
-  it("새 프로세스가 릴리스 경로로 떴는지 확인하고, 아니면 배포를 실패시킨다", () => {
+  it("앱이 릴리스 트리를 서빙하는지 **cwd 로** 확인하고, 아니면 배포를 실패시킨다", () => {
     // run-app.sh 의 폴백이 조용히 굳으면 경합이 그대로 살아 있는 채 배포는 매번 초록이다.
     // 이 레포가 반복해서 밟은 「무증상 열화」 형태라 탐지 장치를 짝으로 둔다.
-    expect(deploy).toContain('LIVE_ENTRY="$LIVE_DIR/current/server.js"');
-    expect(deploy).toMatch(
-      /if \[\[ "\$RUNNING_CMD" != \*"\$LIVE_ENTRY"\* \]\]; then/,
-    );
-    const verifyAt = deploy.indexOf(
-      'if [[ "$RUNNING_CMD" != *"$LIVE_ENTRY"* ]]; then',
-    );
-    expect(deploy.slice(verifyAt, verifyAt + 700)).toMatch(/exit 1/);
+    // 🪤 **`ps` 로 판정하면 안 된다 — Next 가 프로세스 이름을 갈아치운다.** 실측
+    //    (2026-08-29): `ps -o command= -p <pid>` 는 `next-server (v16.2.4)` 만 준다.
+    //    실행 경로가 거기 없으므로 경로 대조는 **정상 배포에서도 항상 실패**한다 —
+    //    초판이 그렇게 짜여 있었고, 그대로 뒀으면 2회차 배포부터 전부 중단됐을 것이다.
+    //    standalone 서버가 `process.chdir(__dirname)` 을 하므로 cwd 가 곧 서빙 릴리스다.
+    expect(deploy).toContain('RUNNING_CWD="$(lsof -a -p "$PID_AFTER"');
+    expect(
+      deploy,
+      "ps 는 Next 가 갈아치운 이름만 준다 — 경로 판정에 쓸 수 없다",
+    ).not.toContain('ps -o command= -p "$PID_AFTER"');
+    // 심링크는 Node 가 실경로로 푸므로 current 문자열이 아니라 푼 값과 댄다.
+    expect(deploy).toContain('LIVE_REAL="$(cd "$LIVE_DIR/current"');
+    expect(deploy).toContain('[ "$RUNNING_CWD" != "$LIVE_REAL" ]');
+    // 판정 불능(lsof 부재·권한)은 fail-closed 이고, **말하고** 멈춰야 한다.
+    // ⚠️ `|| true` 가 없으면 pipefail 이 이 줄에서 조용히 죽여 아래 안내가 무력화된다.
+    expect(deploy).toContain("| head -1 || true)");
+    expect(deploy).toContain("판정할 수 없습니다");
   });
 
   it("마커는 릴리스 경로 확인을 통과한 뒤에만 기록된다", () => {
     // 마커는 "지금 서빙되는 커밋"의 SSOT 다(P6 Deployment Verification ②).
     // 확인보다 먼저 쓰면 폴백으로 뜬 배포까지 "정상 배포"로 기록된다.
-    const verifyAt = deploy.indexOf(
-      'RUNNING_CMD="$(ps -o command= -p "$PID_AFTER"',
-    );
+    const verifyAt = deploy.indexOf('RUNNING_CWD="$(lsof -a -p "$PID_AFTER"');
     const markerAt = deploy.indexOf(
       'printf \'%s\\n\' "$AFTER" > "$MARKER_FILE"',
     );
