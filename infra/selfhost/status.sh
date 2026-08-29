@@ -84,9 +84,6 @@ stamp_epoch() {
 
 json_str() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
 
-# 1240 → "1,240". 운영자가 읽는 숫자라 구분자를 넣는다. printf "%'d" 는 로케일에
-# 의존해 CI(LC_ALL=C)에서 조용히 구분자를 잃으므로 sed 루프로 고정한다.
-group_num() { printf '%s' "$1" | sed -e :a -e 's/\(.*[0-9]\)\([0-9]\{3\}\)/\1,\2/;ta'; }
 
 ITEMS=""
 emit() { # key level title detail [extraRawJson]
@@ -325,127 +322,31 @@ if [ "$MODE" = "full" ]; then
     emit disk unknown "디스크 공간" "확인 불가"
   fi
 
-  # ── GitHub Actions 잔여 분 ──────────────────────────────────────────────
-  # 2026-08-26 레포 비공개 전환으로 Actions 가 계량되기 시작했다(공개 레포는 무제한
-  # 무료였다). 한도를 넘기면 preflight 가 안 돈다. ⛔ 종전 「main ruleset 의 required
-  # 체크라 모든 PR 이 머지 불가」는 SUPERSEDED(T-069 — 같은 날 비공개 전환이 보호도
-  # 정지시켰다): 지금은 머지가 막히는 대신 **검사 없이 머지되고, 배포 직전 게이트
-  # (deploy.sh 안전장치 ⑦)에서야 막힌다**(조용한 고장). 그 사실을 알 방법이 GitHub 웹
-  # UI 뿐이라는 공백은 그대로다 — 이 행은 배포가 막히기 전에 미리 아는 조기 신호다.
+  # ⛔ **GitHub Actions 사용량 행은 제거됐다 (오너 결정 2026-08-29).** 이 행이 있던
+  #    이유는 하나였다 — 2026-08-26 비공개 전환으로 Actions 가 월 한도로 계량되기
+  #    시작했고, 한도를 넘기면 preflight 가 안 돌아 **검증 없는 머지가 배포 직전
+  #    게이트(deploy.sh ⑦)에서야 막히는** 조용한 고장이 되기 때문이다. 그 조기 신호였다.
+  #    **2026-08-28 공개 레포 이전으로 그 한도 자체가 사라졌다** — 공개 레포 실행은
+  #    계량은 되지만 청구가 붙지 않는다(실측 2026-08-29: 이달 사용 분 전액이 할인으로
+  #    상쇄돼 netAmount 0). 남은 것은 아무 결과도 없는 숫자였는데, 그 숫자가 옛 한도를
+  #    넘긴 채 굳어 **상시 노랑**이 됐다. 늘 켜진 경고는 곧 무시당하고 그 학습이 진짜
+  #    빨강까지 삼킨다 — 이 파일이 같은 사고를 이미 두 번 겪었다(예비 러너를 offline 으로
+  #    센 행 · 은퇴한 자가호스트 레인을 되돌리라고 권하던 행).
   #
-  # 🪤 **요약 엔드포인트는 은퇴했다(HTTP 410).** `settings/billing/actions` 는 죽었고
-  #    살아 있는 것은 `settings/billing/usage` 하나다(2026-08-26 실측). 그런데 이쪽은
-  #    요약이 아니라 **일자별 원장**이라 `included_minutes` 필드가 **없다** — 합산은
-  #    우리가 하고 한도는 따로 알아내야 한다. 은퇴한 경로로 되돌리지 말 것.
-  #
-  # 🪤 조회에는 `user` 스코프가 필요하다(실측: repo·workflow 만으로는 404). 없으면 이
-  #    행은 회색 「확인 불가」로 뜨고 조치 명령을 함께 싣는다 — 모르는 것을 초록으로
-  #    가장하지 않는다(이 파일의 규약). PATH 보강은 파일 상단에서 이미 했다(앱이 주는
-  #    PATH 는 /usr/bin:/bin:/usr/sbin:/sbin 뿐이라 gh 가 안 보인다).
-  #
-  # ⛔ watched(알림 감시 목록)에 넣지 말 것 — 오너 결정(2026-08-26): 디스크 잔여와
-  #    같은 부류로 **화면 색으로만** 알리고 알림은 보내지 않는다. 전달 계약
-  #    menubar-app-delegation.test.ts 의 NOTIFY_EXEMPT 에 사유와 함께 등재돼 있다.
-  #
-  # ⛔ UNKNOWN_ESCALATABLE_KEYS 에 넣지 말 것 — unknown 은 패널에서 이미 접히지 않고
-  #    항상 펼쳐진다(정상 항목 접기). 여기서 승격은 소음만 늘린다.
-  ACTIONS_OWNER="indexzigu"
-  ACTIONS_WARN_PCT=20
-  ACTIONS_ERROR_PCT=5
+  # ⛔ **되살리지 말 것 — 되살릴 사유는 「레포를 다시 비공개로 돌린다」 하나다.** 그때는
+  #    한도가 되살아나므로 이 행도 함께 되살린다. 되살릴 때 판정 기준은 「쓴 분」이 아니라
+  #    **「한도를 갉은 분」**이어야 한다 — 그 둘을 같은 것으로 본 것이 상시 노랑의 직접
+  #    원인이었다. 종전 구현(플랜별 포함 분 유도 · 410 은퇴 버킷 · 청구 여부 분기)은 이
+  #    커밋의 부모에 있다.
 
-  # 플랜별 포함 분. ⛔ 2,000 을 그냥 상수로 박지 말 것 — 플랜이 바뀌면 조용히 틀린
-  # 비율을 보여주고, 그 오차는 실제로 바닥날 때까지 드러나지 않는다. 원래는 API 의
-  # included_minutes 를 쓰려 했으나 그 엔드포인트가 은퇴해 값 자체가 사라졌다(위 🪤)
-  # — 대신 **실 플랜 이름**으로 고른다. 모르는 이름은 추측하지 않고 확인 불가로 간다.
-  # 사용자 계정 플랜은 free·pro 둘이다(team·enterprise 는 조직 플랜이라 여기 안 온다).
-  actions_included_minutes() { # $1 = plan.name
-    case "$1" in
-      free) printf '2000' ;;
-      pro)  printf '3000' ;;
-      *)    printf '' ;;
-    esac
-  }
-
-  # gh 실패 사유를 버킷으로 접는다 — 원시 stderr 를 상시 표시 행에 흘리지 않는다
-  # (release-status.sh 의 fail_reason 과 같은 계열). 스코프 부족과 엔드포인트 이전은
-  # 조치가 서로 달라 따로 가른다 — 앞은 오너가 1회 조작으로 풀고, 뒤는 이 스크립트를
-  # 고쳐야 한다. 410 버킷은 이 기능이 실제로 밟은 함정이라 자기진단으로 남긴다.
-  actions_fail_reason() { # $1 = stderr 전문
-    case "$1" in
-      *'"user" scope'*|*'user scope'*)
-        printf '확인 불가 — 조회 권한이 없습니다. 터미널에서 gh auth refresh -h github.com -s user 를 1회 실행하세요' ;;
-      *"has been moved"*|*"HTTP 410"*)
-        printf '확인 불가 — GitHub 사용량 API 가 이전됐습니다. status.sh 의 조회 경로를 고쳐야 합니다' ;;
-      *"auth login"*|*authentication*|*"HTTP 401"*)
-        printf '확인 불가 — GitHub 로그인이 필요합니다' ;;
-      *) printf '확인 불가 — GitHub 사용량 조회에 실패했습니다' ;;
-    esac
-  }
-
+  # gh stderr 를 받는 임시 파일 — 아래 러너 행이 쓴다. 2>&1 로 합치지 않는 이유는 gh 가
+  # 성공 시에도 stderr 로 버전 알림을 흘릴 수 있어서다(그러면 값이 오염된다).
   # 🪤 템플릿을 명시한다 — `mktemp -t <접두사>` 는 BSD(macOS) 전용이고 GNU
   # coreutils(CI ubuntu)에서는 `too few X's in template` 로 즉사한다.
-  # gh stderr 를 받는 임시 파일 — 아래 러너 행과 **공유한다**. bash 의 EXIT trap 은
-  # 자리가 하나뿐이라 블록마다 따로 걸면 나중 것이 앞의 것을 지운다(= 임시 파일이
-  # 남는다). 그래서 파일도 trap 도 여기 하나로 둔다. 2>&1 로 합치지 않는 이유는
-  # gh 가 성공 시에도 stderr 로 버전 알림을 흘릴 수 있어서다 — 그러면 값이 오염된다.
+  # ⚠️ bash 의 EXIT trap 은 자리가 하나뿐이라 블록마다 따로 걸면 나중 것이 앞의 것을
+  # 지운다(= 임시 파일이 남는다). gh 를 쓰는 블록이 늘어도 파일도 trap 도 여기 하나로 둔다.
   GH_ERR="$(mktemp "/tmp/status-gh.XXXXXX")"
   trap 'rm -f "$GH_ERR"' EXIT
-
-  # 월 필터는 `month=8` 처럼 앞자리 0 없이 준다 — date +%m 은 "08" 을 주므로 10# 으로
-  # 십진 정규화한다(그냥 넘기면 bash 가 8진수로 읽어 08·09 에서 산술 오류가 난다).
-  ACTIONS_YEAR="$(date +%Y)"
-  ACTIONS_MONTH="$((10#$(date +%m)))"
-
-  # $GH 는 의도적 미인용(테스트 훅이 "bash <경로>" 두 단어를 줄 수 있다 — 기존 규약).
-  # 합산 대상은 product=actions 이면서 단위가 Minutes 인 항목이다(Actions storage 는
-  # GigabyteHours 라 여기 섞이면 안 된다). 두 번째 값은 "이미 청구가 붙었는가" 다 —
-  # 아래에서 「쓴 분」과 「한도를 갉은 분」을 가르는 데 쓴다.
-  if ACTIONS_OUT="$($GH api "users/$ACTIONS_OWNER/settings/billing/usage?year=$ACTIONS_YEAR&month=$ACTIONS_MONTH" \
-      --jq '[.usageItems[] | select(.product=="actions" and .unitType=="Minutes")] | "\(([.[].quantity]|add // 0)|floor)|\(([.[].netAmount]|add // 0) > 0)"' 2>"$GH_ERR")"; then
-    ACT_USED="${ACTIONS_OUT%%|*}"
-    ACT_BILLED="${ACTIONS_OUT##*|}"
-    # 두 필드가 다 온전할 때만 판정한다. 한쪽이라도 이상하면 분기를 조용히 잘못 고르는
-    # 대신 확인 불가로 간다 — 구분자가 없으면 %% 와 ## 가 같은 문자열을 주기 때문에
-    # 이 검사가 없으면 통짜 응답이 숫자 분기로 새어 들어간다.
-    case "$ACT_BILLED" in true|false) ;; *) ACT_USED="" ;; esac
-    case "$ACT_USED" in ''|*[!0-9]*) ACT_USED="" ;; esac
-    ACT_PLAN="$($GH api "users/$ACTIONS_OWNER" --jq '.plan.name' 2>/dev/null || true)"
-    ACT_INCLUDED="$(actions_included_minutes "$ACT_PLAN")"
-    if [ -z "$ACT_USED" ]; then
-      emit actionsQuota unknown "GitHub Actions" "확인 불가 — 사용량 응답을 해석하지 못했습니다"
-    elif [ -z "$ACT_INCLUDED" ]; then
-      # 사용량은 알지만 한도를 모르는 상태 — 아는 것만 말한다. 한도를 짐작해 비율을
-      # 지어내면 그 숫자가 오너의 판단을 직접 오도한다.
-      emit actionsQuota unknown "GitHub Actions" "한도를 확인하지 못했습니다 — 이달 $(group_num "$((10#$ACT_USED))")분 사용${ACT_PLAN:+ · 플랜 $ACT_PLAN}"
-    else
-      ACT_USED=$((10#$ACT_USED))
-      ACT_NUMS="$(group_num "$ACT_USED") / $(group_num "$ACT_INCLUDED")분"
-      if [ "$ACT_BILLED" = "true" ]; then
-        emit actionsQuota error "GitHub Actions" "$ACT_NUMS 사용"
-      elif [ "$ACT_USED" -ge "$ACT_INCLUDED" ]; then
-        # 🪤 「쓴 분」과 「한도를 갉은 분」은 다르다. 공개 레포 실행은 계량은 되지만
-        #    한도를 소비하지 않는다(2026-08 실측: 6,591분 전부 netAmount 0 —
-        #    discountAmount 가 grossAmount 를 그대로 상쇄). 여기서 빨강을 내면 막히지도
-        #    않은 상태로 거짓 경보가 되고, 그 학습이 진짜 빨강까지 무시하게 만든다.
-        # 문구는 위 error 분기와 같다 — 청구가 붙는 구조가 아니라는 오너 판단으로
-        # 청구 표기를 뺐다(2026-08-27). 두 분기를 가르는 것은 이제 색뿐이다.
-        emit actionsQuota warn "GitHub Actions" "$ACT_NUMS 사용"
-      else
-        ACT_LEFT=$(( ACT_INCLUDED - ACT_USED ))
-        ACT_PCT=$(( ACT_LEFT * 100 / ACT_INCLUDED ))
-        ACT_LEFTNUMS="$(group_num "$ACT_LEFT") / $(group_num "$ACT_INCLUDED")분 남음(${ACT_PCT}%)"
-        if [ "$ACT_PCT" -lt "$ACTIONS_ERROR_PCT" ]; then
-          emit actionsQuota error "GitHub Actions" "$ACT_LEFTNUMS"
-        elif [ "$ACT_PCT" -lt "$ACTIONS_WARN_PCT" ]; then
-          emit actionsQuota warn "GitHub Actions" "$ACT_LEFTNUMS"
-        else
-          emit actionsQuota ok "GitHub Actions" "$ACT_LEFTNUMS"
-        fi
-      fi
-    fi
-  else
-    emit actionsQuota unknown "GitHub Actions" "$(actions_fail_reason "$(cat "$GH_ERR" 2>/dev/null || true)")"
-  fi
 
   # ── PR 검사 러너(자가호스트) ─────────────────────────────────────────────
   # `release-preflight` 의 두 잡(preflight·test)은 2026-08-26 부터 이 맥의 Colima VM
@@ -453,8 +354,7 @@ if [ "$MODE" = "full" ]; then
   # required 체크라 러너가 끊기면 모든 PR 의 머지가 막힌다」는 SUPERSEDED(T-069 보호
   # 정지): 지금은 러너가 끊겨도 머지는 되고 **검사 없는 머지가 배포 직전 게이트
   # (deploy.sh 안전장치 ⑦)에 걸려 그때 배포가 막힌다**(조용한 고장). 그것을 아는 방법이
-  # 사람이 gh 를 손으로 치는 것뿐이라는 공백은 그대로다 — 이 행이 조기 신호를 준다
-  # (actionsQuota 와 같은 계열의 무증상 열화).
+  # 사람이 gh 를 손으로 치는 것뿐이라는 공백은 그대로다 — 이 행이 조기 신호를 준다.
   #
   # **판정 축이 둘인 것이 이 행의 중심이다:**
   #   ① 어느 쪽으로 도는가 = 레포 변수 PREFLIGHT_RUNNER (비었으면 ubuntu-latest 폴백)
@@ -470,19 +370,19 @@ if [ "$MODE" = "full" ]; then
   # 🪤 러너 대수를 상수로 박지 말 것. 2026-08-26 실측은 3대인데 이 수는 오너가 늘리고
   #    줄인다 — 등록 대수는 응답에서 세고 문구도 그 수로 만든다(P6 「고정 숫자 금지」).
   #
-  # ⛔ UNKNOWN_ESCALATABLE_KEYS 에 넣지 말 것 — actionsQuota 와 같은 사유(unknown 행은 패널에서
-  #    이미 항상 펼쳐지므로 승격은 소음만 늘린다)에 더해, 2026-08-27 부터는 **더 센 이유**가
+  # ⛔ UNKNOWN_ESCALATABLE_KEYS 에 넣지 말 것 — unknown 행은 패널에서 이미 항상 펼쳐지므로
+  #    승격이 소음만 늘리고, 2026-08-27 부터는 **더 센 이유**가
   #    생겼다: 이 키는 이제 watched 라, 승격시키면 **gh 조회 실패(네트워크 끊김·로그인 만료)가
   #    error 로 올라가 폰이 울린다.** 「확인 불가」와 「머지가 막혔다」는 조치가 전혀 다르다.
   #
   # ℹ️ 이 행은 **알림 대상이다**(오너 결정 2026-08-27) — ServerStore.watched 에 등재돼 macOS
-  #    알림·텔레그램·일일 요약 세 채널로 나간다. disk·actionsQuota 의 「잔여 자원」 부류와
+  #    알림·텔레그램·일일 요약 세 채널로 나간다. disk 의 「잔여 자원」 부류와
   #    성격이 다르다: 이 행이 빨강인 상태는 「모든 PR 머지 불가」 하나뿐이라, 자리를 비운
   #    사이 막힌 것을 모르면 이 행을 만든 이유 자체가 무너진다.
   #    ⛔ 그래서 **error 를 내는 경로를 늘릴 때는 알림 소음을 함께 따져야 한다** — 지금 error
   #    는 둘뿐이고(등록 0대 · online 0대) 둘 다 진짜 차단 상태다. 폴백 중(노랑)·gh 실패(회색)
   #    는 알림이 나가지 않는다.
-  GH_REPO="$ACTIONS_OWNER/wagcrm_git"
+  GH_REPO="indexzigu/wagcrm_git"
   RUNNER_TITLE="PR 검사 러너"
   RUNNER_FALLBACK_CMD="gh api -X DELETE repos/$GH_REPO/actions/variables/PREFLIGHT_RUNNER"
 
@@ -557,7 +457,6 @@ if [ "$MODE" = "full" ]; then
       RUNNER_TOTAL="${RUNNER_COUNTS%%|*}"
       RUNNER_ONLINE="${RUNNER_COUNTS##*|}"
       # 두 필드가 다 온전할 때만 판정한다. 🪤 **구분자 존재를 따로 확인해야 한다** —
-      # actionsQuota 는 두 번째 필드가 true/false 라 통짜 응답이 저절로 걸리지만, 여기는
       # 양쪽이 다 숫자라 `3` 하나만 와도 %% 와 ## 이 똑같이 "3" 을 준다. 그러면 「러너 3대
       # 전부 연결」이라는 **초록**이 되어, 해석 실패가 정상으로 둔갑한다(계약 테스트가
       # 첫 구현에서 실제로 잡은 결함이다). 앞자리 0 은 10# 으로 십진 고정한다.
