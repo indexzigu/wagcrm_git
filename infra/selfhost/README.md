@@ -552,7 +552,19 @@ Supabase 11개 컨테이너 → 앱 → 터널)가 대화상자 없이 자동 �
 `infra/selfhost/.env` 를 직접 source 해 `CRON_SECRET` 을 확보하고
 `Authorization: Bearer` 헤더로 `/api/cron/<job-name>` 을 호출한다(인증
 계약은 `src/lib/cron-auth.ts` — 시크릿 미설정 시 fail-closed 로 401).
-결과는 `~/selfhost/logs/cron.log` 에 OK/FAIL 한 줄로 남는다.
+결과는 `~/selfhost/logs/cron.log` 에 실행 1회당 한 줄로 남는다. 라벨은 셋이다 —
+`OK`(정상) · `WARN`(HTTP 는 성공했으나 앱이 실패·부분실패를 신고) · `FAIL`(호출 자체
+실패). **읽어야 할 줄을 고르는 질의는 `grep -E ' (WARN|FAIL) ' cron.log` 다.**
+
+⚠️ **`OK` 줄만 짧게 잘린다(200자).** 원인 특정이 필요한 `WARN`·`FAIL` 줄은 상한이
+4,000자이고, 그마저 넘으면 **잘린 사실과 잘린 양이 줄 끝에 명시된다**(무언의 말줄임
+없음). 배경: 종전에는 성공·실패를 가리지 않고 잘라, 스토리 수집 잡이 전원 실패한 날
+그 사유가 상한에서 끊겨 **로그만으로는 원인을 특정할 수 없었다**(2026-08-29). 전문이
+남는 곳은 `SystemTaskLog.details` 하나뿐이다. 판정 계약은
+`scripts/__tests__/run-cron-logging.test.ts`(스텁 `curl` 로 실제 실행).
+
+🪤 **`WARN` 은 종료코드 0 이다** — 잡 성패의 SSOT 는 이 래퍼가 아니라
+`SystemTaskStatus`(시스템 레이더)다. 래퍼가 같은 사실을 한 번 더 판정하게 만들지 말 것.
 
 ⛔ **종전 서술 "전 15줄이 주석 처리된 상태로 커밋돼 있다 … 설치하지 않는다"는
 SUPERSEDED**(2026-08-13 컷오버 완료). 지금은 전 줄이 활성 상태로 커밋되며, 이중 발화

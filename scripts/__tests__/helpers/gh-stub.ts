@@ -170,3 +170,67 @@ export function statStubEnv(dir: string): {
     STAT_STUB_IMPL: path.join(dir, "stat.impl"),
   };
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * `curl` 스텁 레인 (2026-08-29 추가)
+ *
+ * 왜 여기에: 위 처방은 `gh` 만의 것이 아니라 **PATH 로 잡히는 모든 스텁**에 적용된다.
+ * 새 헬퍼 파일을 만들면 `gh-stub-guard.contract.test.ts` 의 예외 목록을 늘려야 하는데
+ * 그 목록은 "추가는 flaky 를 되살리는 결정"이라고 경고한다 — 이미 예외인 이 파일에
+ * 얹는 편이 규약에 맞다(stat 레인이 같은 판단으로 여기 들어왔다).
+ *
+ * 용도: `infra/selfhost/run-cron.sh` 처럼 응답 본문과 종료코드에 따라 분기하는 래퍼를
+ * **네트워크 없이** 실행으로 검증한다. 스텁이 응답과 종료코드를 정한다.
+ */
+export const CURL_STUB_WRAPPER_DIR_NAME = "wagcrm-curl-stub-v1";
+export const CURL_STUB_WRAPPER_BODY =
+  '#!/usr/bin/env bash\nexec bash "$CURL_STUB_IMPL" "$@"\n';
+
+const CURL_WRAPPER_DIR = path.join(tmpdir(), CURL_STUB_WRAPPER_DIR_NAME);
+
+function ensureCurlWrapper(): string {
+  const wrapper = path.join(CURL_WRAPPER_DIR, "curl");
+  let current = "";
+  try {
+    current = readFileSync(wrapper, "utf8");
+  } catch {
+    // 없으면 아래에서 만든다.
+  }
+  if (current !== CURL_STUB_WRAPPER_BODY) {
+    mkdirSync(CURL_WRAPPER_DIR, { recursive: true });
+    const staging = path.join(CURL_WRAPPER_DIR, `curl.${process.pid}.tmp`);
+    writeFileSync(staging, CURL_STUB_WRAPPER_BODY);
+    chmodSync(staging, 0o755);
+    renameSync(staging, wrapper);
+  }
+  return CURL_WRAPPER_DIR;
+}
+
+/**
+ * 응답 본문과 종료코드를 고정한 `curl` 스텁 본문을 만든다.
+ * 본문은 **별도 데이터 파일**(`curl.body`)에 두고 여기서는 읽어 뱉기만 한다 —
+ * 본문을 스크립트 안에 끼워 넣으면 따옴표·백슬래시 이스케이프가 응답을 조용히 바꾼다.
+ */
+export function curlStubBody(bodyFile: string, exitCode: number): string {
+  return [
+    "#!/usr/bin/env bash",
+    `cat ${JSON.stringify(bodyFile)}`,
+    `exit ${exitCode}`,
+    "",
+  ].join("\n");
+}
+
+/** 스텁 본문을 `dir/curl.impl` 에 둔다. 실행 권한은 주지 않는다(데이터 파일). */
+export function writeCurlStub(dir: string, body: string): string {
+  const impl = path.join(dir, "curl.impl");
+  writeFileSync(impl, body);
+  return impl;
+}
+
+/** `writeCurlStub(dir, …)` 로 둔 스텁이 `curl` 로 잡히게 하는 env 조각. */
+export function curlStubEnv(dir: string): { PATH: string; CURL_STUB_IMPL: string } {
+  return {
+    PATH: `${ensureCurlWrapper()}:${process.env.PATH}`,
+    CURL_STUB_IMPL: path.join(dir, "curl.impl"),
+  };
+}
