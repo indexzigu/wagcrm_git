@@ -430,10 +430,6 @@ describe("전달 계약 (error 가능 key ⊆ watched)", () => {
   /** 알림을 의도적으로 보내지 않는 key. 비우지 말고 사유와 함께 남긴다. */
   const NOTIFY_EXEMPT = new Map<string, string>([
     ["disk", "오너 지시 — 디스크 잔여는 알리지 않고 화면 표시만 유지한다"],
-    [
-      "actionsQuota",
-      "오너 결정 2026-08-26 — GitHub Actions 잔여 분은 disk 와 같은 부류로 화면 색으로만 알린다(빨간 행·아이콘 경고는 내되 알림은 보내지 않는다)",
-    ],
   ]);
 
   /** `UNKNOWN_ESCALATABLE_KEYS` 상수를 소스 텍스트에서 파싱한다. error 로 가는 **세 번째**

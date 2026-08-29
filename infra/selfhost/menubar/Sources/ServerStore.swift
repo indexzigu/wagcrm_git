@@ -64,14 +64,12 @@ final class ServerStore: ObservableObject {
     /// 알림 감시 목록 — macOS 알림·텔레그램·화해(reconcile)가 전부 이 하나를 공유한다
     /// (계약: scripts/__tests__/menubar-app-delegation.test.ts "watched 배열은 하나뿐이어야
     /// 한다"). disk 는 의도적으로 뺀다(오너 지시 — 디스크 잔여는 알리지 않고 화면
-    /// 표시만 유지). actionsQuota 도 같은 부류다(오너 결정 2026-08-26 — GitHub Actions
-    /// 잔여 분은 빨간 행·아이콘 경고까지만 내고 알림은 보내지 않는다). 둘 다 전달
-    /// 계약의 NOTIFY_EXEMPT 에 사유와 함께 등재돼 있다 — 여기 추가하려면 그 등재를
-    /// 먼저 지워야 하고, 그 순간 오너 결정을 되돌리는 것임이 드러난다.
+    /// 표시만 유지). 전달 계약의 NOTIFY_EXEMPT 에 사유와 함께 등재돼 있다 — 여기
+    /// 추가하려면 그 등재를 먼저 지워야 하고, 그 순간 오너 지시를 되돌리는 것임이 드러난다.
     ///
     /// preflightRunner 는 반대로 **등재를 지우고 여기 넣은** 경우다(오너 결정 2026-08-27).
     /// 이 행이 error 가 되는 경로는 둘뿐이고(등록 0대 · online 0대) 둘 다 결과가 「모든 PR
-    /// 머지 불가」라, disk·actionsQuota 의 「잔여 자원」 부류와 성격이 다르다. ⛔ 이 키를
+    /// 머지 불가」라, disk 의 「잔여 자원」 부류와 성격이 다르다. ⛔ 이 키를
     /// UNKNOWN_ESCALATABLE_KEYS 에 넣지 말 것 — 그러면 gh 조회 실패(회색)가 error 로 승격돼
     /// **네트워크 끊김마다 폰이 울린다.** 지금은 승격 목록에 없어서 폴백 중·gh 실패는
     /// 알림 대상이 아니다(화면 색으로만).
@@ -191,8 +189,8 @@ final class ServerStore: ObservableObject {
         // crons = 자동 작업 지연·실패(2026-08-19 추가). 레이더에만 있던 신호가 6일간
         // 아무에게도 도달하지 않은 사고에서 나왔다 — 이 배열에서 빼면 그 상태로 되돌아간다.
         // backupWeekly 는 2026-08-19 까지 빠져 있었다 — 주간 백업이 실패해도 화면에 빨간
-        // 행만 뜨고 알림은 가지 않았다. disk·actionsQuota 는 의도적으로 뺀다(오너 지시·오너
-        // 결정 — 디스크 잔여와 Actions 잔여 분은 알리지 않고 화면 표시만).
+        // 행만 뜨고 알림은 가지 않았다. disk 는 의도적으로 뺀다(오너 지시 — 디스크 잔여는
+        // 알리지 않고 화면 표시만).
         // 계약: scripts/__tests__/menubar-app-delegation.test.ts
         for key in Self.watched {
             guard let item = items[key] else { continue }

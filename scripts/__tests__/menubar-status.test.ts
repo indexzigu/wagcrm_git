@@ -63,18 +63,6 @@ interface RunOpts {
   alertSendFailed?: boolean;
   /** 지정하면 그 내용을 그대로 마커 파일에 쓴다(형식 견고성 테스트용) — alertSendFailed 보다 우선. */
   alertSendFailedRaw?: string;
-  /** Actions 이달 사용 분. 기본 200(= free 2,000 중 1,800 남음 → ok). */
-  actionsUsed?: number;
-  /** 계정 플랜 이름. 포함 분은 여기서 유도한다(API 가 더는 included_minutes 를 주지 않는다).
-   *  기본 "free"(2,000분). "" 를 주면 플랜 조회 실패를 흉내 낸다. */
-  actionsPlan?: string;
-  /** 이미 청구가 붙었는가(netAmount 합 > 0). 기본 false. */
-  actionsBilled?: boolean;
-  /** gh 조회 실패 경로. "scope" = user 스코프 부족 / "auth" = 로그인 만료 /
-   *  "moved" = 엔드포인트 이전(410) / "other" = 그 외 */
-  actionsFails?: "scope" | "auth" | "other" | "moved";
-  /** gh 가 형식에 안 맞는 것을 뱉는 경로(응답 해석 실패). actionsFails 보다 뒤에 평가된다. */
-  actionsGarbage?: string;
   /** 레포 변수 PREFLIGHT_RUNNER 의 값(= 워크플로 runs-on 라벨). 기본 "self-hosted".
    *  "" 를 주면 「변수는 있는데 빈 값」 = 폴백이다(워크플로 조건이 != '' 이므로). */
   runnerLane?: string;
@@ -143,23 +131,7 @@ fi`,
   *rev-parse*) echo "main";;
 esac`,
   );
-  // gh 스텁 — status.sh 가 부르는 **두 호출**을 흉내 낸다: ①사용량 원장
-  // (`settings/billing/usage`) ②계정 플랜(`users/<owner>`). 분기 순서가 중요하다 —
-  // 사용량 URL 이 플랜 URL 을 부분문자열로 포함하므로 사용량을 먼저 잡아야 한다.
-  // **기본값이 있어야 한다**: 없으면 모든 full 모드 테스트가 실 GitHub 를 때려
-  // hermetic 이 깨지고 CI 에서 비결정적이 된다.
-  const ghFailMsg = {
-    scope: 'gh: This API operation needs the "user" scope. To request it, run:  gh auth refresh -h github.com -s user',
-    auth: "gh: To get started with GitHub CLI, please run:  gh auth login",
-    moved: "gh: This endpoint has been moved. (HTTP 410)",
-    other: "gh: connection refused",
-  };
-  const usageBody = opts.actionsFails
-    ? `    echo ${JSON.stringify(ghFailMsg[opts.actionsFails])} >&2\n    exit 1`
-    : opts.actionsGarbage !== undefined
-      ? `    printf '%s\\n' ${JSON.stringify(opts.actionsGarbage)}`
-      : `    printf '%s|%s\\n' '${opts.actionsUsed ?? 200}' '${opts.actionsBilled ? "true" : "false"}'`;
-  // 러너 행(preflightRunner)이 부르는 **두 호출** — ①레포 변수 PREFLIGHT_RUNNER
+  // gh 스텁 — 러너 행(preflightRunner)이 부르는 **두 호출** — ①레포 변수 PREFLIGHT_RUNNER
   // ②러너 목록. 404 는 실패가 아니라 「변수 없음 = 폴백 중」이라는 답이므로 인증 실패와
   // 갈라서 흉내 낸다(status.sh 가 그 둘을 다르게 처리하는 것이 이 행 설계의 핵심이다).
   const runnerFailMsg = {
@@ -199,12 +171,6 @@ ${runnersBody}
     ;;
   *repos/*)
 ${repoProbeBody}
-    ;;
-  *settings/billing/usage*)
-${usageBody}
-    ;;
-  *users/*)
-    printf '%s\n' '${opts.actionsPlan ?? "free"}'
     ;;
 esac`,
   );
@@ -678,161 +644,6 @@ describe("emit() 의 승격 오버라이드 — read-only 적용과 full-only �
   });
 });
 
-/**
- * GitHub Actions 잔여 분 — 2026-08-26 레포 비공개 전환으로 계량이 시작됐다.
- * 한도를 넘기면 preflight 가 안 돈다(⚠️ 2026-08-27 정정 — T-069: 종전 「required
- * 체크라 모든 PR 머지 불가」는 보호 정지로 SUPERSEDED. 지금은 검사 없는 머지가 되고
- * 배포 직전 게이트(deploy.sh ⑦)가 배포 시점에 막는다 — 이 행은 그 조기 신호다).
- * 그 사실을 알 방법이 웹 UI 를 직접 열어 보는 것뿐이라는 공백은 그대로다.
- *
- * ⛔ 알림은 보내지 않는다(오너 결정 2026-08-26 — disk 와 같은 부류로 화면 색만).
- *    그 결정은 menubar-app-delegation.test.ts 의 NOTIFY_EXEMPT 가 고정한다.
- */
-describe("GitHub Actions 잔여 분", () => {
-  it("여유가 있으면 정상 — 잔여·한도·비율을 운영자 언어로 싣는다", () => {
-    const item = byKey(runStatus({ actionsUsed: 200 }), "actionsQuota");
-    expect(item.level).toBe("ok");
-    expect(item.title).toBe("GitHub Actions");
-    // 천 단위 구분자는 운영자가 읽는 숫자라 계약이다 — 로케일에 맡기면 CI 에서 사라진다.
-    expect(item.detail).toContain("1,800 / 2,000분 남음(90%)");
-  });
-
-  it("한도는 실 플랜에서 유도한다 — 2000 을 상수로 박지 않는다", () => {
-    // API 가 included_minutes 를 더는 주지 않으므로(엔드포인트 은퇴) plan.name 으로
-    // 고른다. 상수로 박으면 플랜이 바뀌었을 때 조용히 틀린 비율을 보여주고, 그 오차는
-    // 실제로 바닥날 때까지 드러나지 않는다.
-    const item = byKey(runStatus({ actionsUsed: 300, actionsPlan: "pro" }), "actionsQuota");
-    expect(item.detail).toContain("2,700 / 3,000분 남음(90%)");
-    expect(item.level).toBe("ok");
-  });
-
-  it("모르는 플랜은 비율을 지어내지 않는다 — 아는 것(사용 분)만 말한다", () => {
-    const item = byKey(runStatus({ actionsUsed: 500, actionsPlan: "enterprise_cloud" }), "actionsQuota");
-    expect(item.level).toBe("unknown");
-    expect(item.detail).toContain("한도를 확인하지 못했습니다");
-    expect(item.detail).toContain("500분 사용");
-    expect(item.detail).not.toContain("%");
-  });
-
-  it("플랜 조회가 실패해도 사용량은 보여준다", () => {
-    const item = byKey(runStatus({ actionsUsed: 500, actionsPlan: "" }), "actionsQuota");
-    expect(item.level).toBe("unknown");
-    expect(item.detail).toContain("500분 사용");
-  });
-
-  it("20% 미만이면 주의 — 패널에서 접히지 않고 저절로 드러난다", () => {
-    // PanelView 는 ok 만 접는다(#470). warn 으로 올리는 것이 곧 "화면에 뜬다"는 뜻이다.
-    const item = byKey(runStatus({ actionsUsed: 1700 }), "actionsQuota");
-    expect(item.level).toBe("warn");
-    expect(item.detail).toContain("300 / 2,000분 남음(15%)");
-  });
-
-  it("5% 미만이면 빨강", () => {
-    const item = byKey(runStatus({ actionsUsed: 1950 }), "actionsQuota");
-    expect(item.level).toBe("error");
-    expect(item.detail).toContain("50 / 2,000분 남음(2%)");
-  });
-
-  it("경계값 — 정확히 20%·5% 는 한 단계 위다(부등호 방향 고정)", () => {
-    // 문턱을 `-lt` 로 쓴 것이 의도다. `-le` 로 바뀌면 20% 정확히에서 노랑이 되어
-    // 위 "20% 미만" 테스트만으로는 안 잡힌다.
-    expect(byKey(runStatus({ actionsUsed: 1600 }), "actionsQuota").level).toBe("ok");
-    expect(byKey(runStatus({ actionsUsed: 1900 }), "actionsQuota").level).toBe("warn");
-  });
-
-  it("청구가 붙었으면 빨강 — 유료 구간임을 말한다", () => {
-    const item = byKey(runStatus({ actionsUsed: 2400, actionsBilled: true }), "actionsQuota");
-    expect(item.level).toBe("error");
-    expect(item.detail).toContain("2,400 / 2,000분 사용");
-  });
-
-  it("🪤 계산상 초과인데 청구가 0 이면 빨강이 아니라 노랑이다", () => {
-    // 「쓴 분」과 「한도를 갉은 분」은 다르다 — 공개 레포 실행은 계량은 되지만 한도를
-    // 소비하지 않는다(2026-08 실측: 6,591분 전부 netAmount 0). 여기서 빨강을 내면
-    // 막히지도 않은 상태로 거짓 경보가 되고, 그 학습이 진짜 빨강까지 무시하게 만든다.
-    const item = byKey(runStatus({ actionsUsed: 6591, actionsBilled: false }), "actionsQuota");
-    expect(item.level).toBe("warn");
-    expect(item.detail).toContain("6,591 / 2,000분 사용");
-    // 문구는 청구 분기와 같다(청구 표기 제거, 2026-08-27) — 두 분기를 가르는 것은
-    // level 뿐이므로, 이 테스트의 실질 단언은 위 `level === "warn"` 이다.
-  });
-
-  it("스코프가 없으면 확인 불가 — 초록으로 가장하지 않고 조치 명령을 싣는다", () => {
-    // "권한이 없습니다"만 쓰면 오너가 무엇을 해야 하는지 알 수 없어 행이 영영
-    // 회색으로 남는다.
-    const item = byKey(runStatus({ actionsFails: "scope" }), "actionsQuota");
-    expect(item.level).toBe("unknown");
-    expect(item.detail).toContain("gh auth refresh -h github.com -s user");
-  });
-
-  it("🪤 엔드포인트 이전(410)은 따로 가른다 — 이 기능이 실제로 밟은 함정이다", () => {
-    // 구 `settings/billing/actions` 는 410 으로 은퇴했다. 이 버킷이 없으면 "조회에
-    // 실패했습니다"로 뭉개져, 다음에 또 이전됐을 때 원인을 찾는 데 시간이 든다.
-    // 조치가 다르다는 것이 분리 근거다 — 스코프는 오너가 1회 조작으로 풀지만
-    // 이전은 스크립트를 고쳐야 한다.
-    const item = byKey(runStatus({ actionsFails: "moved" }), "actionsQuota");
-    expect(item.level).toBe("unknown");
-    expect(item.detail).toContain("이전됐습니다");
-    expect(item.detail).toContain("status.sh");
-  });
-
-  it("로그인 만료와 그 외 실패를 구분한다", () => {
-    expect(byKey(runStatus({ actionsFails: "auth" }), "actionsQuota").detail).toContain("로그인이 필요합니다");
-    const other = byKey(runStatus({ actionsFails: "other" }), "actionsQuota");
-    expect(other.level).toBe("unknown");
-    expect(other.detail).toContain("조회에 실패했습니다");
-    // 원시 stderr 를 상시 표시 행에 흘리지 않는다(release-status.sh fail_reason 규약).
-    expect(other.detail).not.toContain("connection refused");
-  });
-
-  it("응답이 형식에 안 맞으면 확인 불가", () => {
-    expect(byKey(runStatus({ actionsGarbage: "null|null" }), "actionsQuota").detail).toContain(
-      "해석하지 못했습니다",
-    );
-  });
-
-  it("구분자가 없는 응답이 숫자 분기로 새지 않는다", () => {
-    // `${VAR%%|*}` 와 `${VAR##*|}` 는 구분자가 없으면 **같은 문자열**을 준다 — 검사가
-    // 없으면 통짜 응답이 사용 분으로 읽힌다.
-    expect(byKey(runStatus({ actionsGarbage: "1234" }), "actionsQuota").level).toBe("unknown");
-  });
-
-  it("fast 폴링(30초)에는 싣지 않는다 — gh 왕복은 full 전용이다", () => {
-    expect(runStatus({ fast: true }).items.find((i) => i.key === "actionsQuota")).toBeUndefined();
-  });
-
-  it("조회가 실패해도 다른 항목은 멀쩡하다(한 행의 실패가 패널을 죽이지 않는다)", () => {
-    const r = runStatus({ actionsFails: "other" });
-    expect(byKey(r, "prodLocal").level).toBe("ok");
-    expect(byKey(r, "disk").level).not.toBe("");
-  });
-
-  it("은퇴한 엔드포인트로 되돌아가지 않는다(소스 계약)", () => {
-    // 구 요약 경로는 410 이다. 되살리면 이 행이 영영 회색으로만 뜨는데, 화면상으로는
-    // "조회 실패"라 원인이 안 보인다.
-    //
-    // 🪤 **주석을 먼저 걷어낸다.** status.sh 는 그 은퇴 사실을 주석으로 경고하는데,
-    //    걷어내지 않으면 그 경고문 자체가 위반으로 잡힌다(첫 작성에서 실제로 실패했다).
-    //    그리고 부정 단언만 두면 앵커가 어긋났을 때 조용히 통과하므로, 살아 있는
-    //    경로의 **긍정 단언**과 양성 프로브를 함께 둔다.
-    const active = SRC.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
-    const RETIRED = ["settings", "billing", "actions"].join("/");
-    const LIVE = ["settings", "billing", "usage"].join("/");
-    expect(active).toContain(LIVE); // 긍정 — 스캐너·앵커가 살아 있다는 증거
-    expect(active).not.toContain(RETIRED);
-    // 양성 프로브 — 이 검사가 실제로 잡는다(공허 통과 방지).
-    expect(`$GH api "users/x/${RETIRED}"`).toContain(RETIRED);
-  });
-
-  it("지속 unknown 승격 대상이 아니다(소스 계약)", () => {
-    // unknown 은 패널에서 이미 접히지 않는다(#470) — 승격은 소음만 늘린다. 게다가
-    // 승격은 error 를 만드는 세 번째 경로라, 여기 넣으면 전달 계약의 의미가 흐려진다.
-    const m = SRC.match(/^UNKNOWN_ESCALATABLE_KEYS="([^"]*)"/m);
-    expect(m, "UNKNOWN_ESCALATABLE_KEYS 선언을 찾지 못했다(앵커 함정)").toBeTruthy();
-    expect(m![1].split(/\s+/)).not.toContain("actionsQuota");
-  });
-});
-
 describe("PR 검사 러너(preflightRunner)", () => {
   const runner = (opts: RunOpts = {}) => byKey(runStatus(opts), "preflightRunner");
 
@@ -929,7 +740,7 @@ describe("PR 검사 러너(preflightRunner)", () => {
     //    SUPERSEDED. 그 전제(자가호스트로 아끼던 유료 시간을 폴백이 도로 쓴다)는 2026-08-28
     //    공개 레포 이전으로 사라졌다 — 공개 레포는 GitHub 러너가 무제한 무료이고, 그래서
     //    자가호스트 러너 자체가 은퇴했다(P6 「Self-Hosted Preflight Runner 는 이 레포에서
-    //    은퇴했다」). 🪤 그 이전 커밋이 이 파일의 actionsQuota 문구까지 손보면서 **이 행만
+    //    은퇴했다」). 🪤 그 이전 커밋이 이 파일의 다른 행 문구까지 손보면서 **이 행만
     //    좌표(wagcrm→wagcrm_git)만 바꾸고 의미를 안 고쳐** 상시 노랑으로 남았다.
     // 지금 지킬 불변식은 반대다: 들지 않는 비용을 근거로 노랑을 내지 말 것. 늘 켜진
     // 경고는 곧 무시당하고 그 학습이 진짜 빨강까지 삼킨다(이 파일의 예비 러너 사고와 같다).
@@ -962,9 +773,8 @@ describe("PR 검사 러너(preflightRunner)", () => {
   });
 
   it("구분자가 없는 응답이 숫자 분기로 새지 않는다", () => {
-    // 🪤 actionsQuota 보다 위험한 형태다 — 저쪽은 두 번째 필드가 true/false 라 통짜
-    //    응답이 저절로 걸리지만, 여기는 양쪽이 다 숫자라 `3` 하나가 "3대 전부 연결"이라는
-    //    **초록**이 된다(첫 구현에서 이 테스트가 실제로 잡았다). 해석 실패는 초록이 아니다.
+    // 🪤 양쪽 필드가 다 숫자라 `3` 하나가 "3대 전부 연결"이라는 **초록**이 된다(첫 구현에서
+    //    이 테스트가 실제로 잡았다). 해석 실패는 초록이 아니다 — 구분자 존재를 따로 본다.
     expect(runner({ runnerGarbage: "3" }).level).toBe("unknown");
   });
 
@@ -979,7 +789,7 @@ describe("PR 검사 러너(preflightRunner)", () => {
   it("조회가 실패해도 다른 항목은 멀쩡하다(한 행의 실패가 패널을 죽이지 않는다)", () => {
     const r = runStatus({ runnerVarFails: "other" });
     expect(byKey(r, "prodLocal").level).toBe("ok");
-    expect(byKey(r, "actionsQuota").level).toBe("ok");
+    expect(byKey(r, "disk").level).toBe("ok");
   });
 
   it("busy 를 판정에 쓰지 않는다(소스 계약)", () => {

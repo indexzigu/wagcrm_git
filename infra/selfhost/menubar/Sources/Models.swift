@@ -18,11 +18,13 @@ struct StatusItem: Decodable, Identifiable, Equatable {
 }
 
 /// 패널 표시 순서(status.sh 출력 순서에 의존하지 않는다).
-/// actionsQuota 는 disk 와 같은 「남은 자원」 계열이라 끝에 붙인다. 둘 다 알림 없이
-/// 화면 색으로만 알리는 항목이다(오너 결정 — ServerStore.watched 주석 참고).
+/// disk 는 「남은 자원」 계열이라 끝에 붙인다 — 알림 없이 화면 색으로만 알리는 항목이다
+/// (오너 지시 — ServerStore.watched 주석 참고).
 /// preflightRunner 는 「남은 자원」이 아니라 가용성 판정이라 그 앞에 둔다 — 이 행이
-/// 빨강이면 결과가 「모든 PR 머지 불가」라 disk·actionsQuota 보다 먼저 읽혀야 한다.
-let displayOrder = ["prodLocal", "prodExternal", "db", "backupDaily", "backupWeekly", "crons", "alertDelivery", "preflightRunner", "disk", "actionsQuota"]
+/// 빨강이면 결과가 「모든 PR 머지 불가」라 disk 보다 먼저 읽혀야 한다.
+/// ⛔ `actionsQuota` 를 되살리지 말 것 — 2026-08-29 오너 결정으로 제거됐다(사유는
+/// status.sh 의 같은 자리 묘비 주석: 공개 레포라 한도가 없어 상시 노랑만 남았다).
+let displayOrder = ["prodLocal", "prodExternal", "db", "backupDaily", "backupWeekly", "crons", "alertDelivery", "preflightRunner", "disk"]
 
 /// metrics.sh 의 JSON 출력(계약: scripts/__tests__/menubar-metrics.test.ts) —
 /// 측정·판정은 스크립트가 소유하고 앱은 파싱·차분·그리기만 한다(설계 개정 2).
