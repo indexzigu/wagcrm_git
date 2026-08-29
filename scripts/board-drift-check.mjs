@@ -48,6 +48,22 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 export const REPO_SLUG = "indexzigu/wagcrm_git";
+
+/**
+ * **읽기 전용 아카이브 — 이관 이전 레포들.** 이관이 **두 번**이라 PR 번호가 세 겹이다
+ * (`wag-crm` → `wagcrm` → `wagcrm_git`, 매번 이력 없이 #1 부터 재시작).
+ *
+ * 🪤 **번호만 읽으면 이 세 겹을 가를 수 없고, 그 결과가 상시 빨강이었다(실측 2026-08-29).**
+ * 보드가 참조하는 26건이 전부 구 레포 번호인데 현행 레포에서 조회하니 전부
+ * `PR_NOT_FOUND`(드리프트) 였다 — **진짜 드리프트는 0건인데** 점검기는 매번 26건을
+ * 외쳤다. 상시 빨강은 곧 안 보게 되고 **그 학습이 진짜 드리프트까지 삼킨다**(이 도구가
+ * 막으려던 2026-07-29 사고가 정확히 그것이다 — 설계 원칙 3의 연장).
+ *
+ * 두 레포 다 비공개로 살아 있어 오너 권한 `gh` 로 조회된다. 다만 이관이 이력을
+ * 재작성했으므로 **머지 여부까지만** 알 수 있고 SHA 대조는 원천 불가다(P6 Repo Migration).
+ */
+export const LEGACY_REPO_SLUGS = ["indexzigu/wagcrm", "indexzigu/wag-crm"];
+
 export const MAIN_REF = "origin/main";
 
 /**
@@ -119,6 +135,9 @@ export function parseBoardItems(text) {
       title: line.slice(0, 90).replace(/^- \*\*/, "").trim(),
       pr: resolved.pr,
       prConfident: resolved.confident,
+      // 항목이 스스로 밝히는 레포(URL 슬러그). 없으면 현행 레포다 — 위 primaryPr.
+      repo: resolved.repo,
+      legacy: resolved.repo !== REPO_SLUG,
       claims: readClaims(line),
     });
   }
@@ -332,16 +351,39 @@ export function statusPhrase(line) {
   return sep >= 0 ? header.slice(0, sep) : header;
 }
 
+/**
+ * PR 링크에서 **번호와 레포를 함께** 읽는다.
+ *
+ * 🔑 **레포 식별 정보는 이미 보드 안에 있다.** 규약(P6·codebase-map)은 구 레포 번호를
+ * `구레포#188(4e67fe6)` 로 한정하라고 하지만, 실보드는 그보다 강한 것을 이미 쓰고 있다 —
+ * 실측 2026-08-29 기준 보드의 PR 링크 **83건 전부**가 `github.com/<owner>/<repo>/pull/N`
+ * 풀 URL 이고 슬러그가 100% 균일했다. 그래서 사람이 26줄을 손으로 고칠 필요가 없다:
+ * **보드는 그대로 두고 점검기가 링크를 읽으면 된다.**
+ *
+ * 이 선택이 중요한 이유는 정확성이 아니라 **안전**이다 — 보드는 git 미추적·다세션 공유
+ * 파일이라 되돌릴 이력이 없고, 26회 치환은 그 자체로 P0 위험이다(2026-07-30 덮어쓰기
+ * 실사고: 한 세션이 타 세션 줄을 덮어썼고 무엇이 지워졌는지조차 확정하지 못했다).
+ *
+ * 슬러그가 없는 맨 `pull/N` 은 현행 레포로 본다 — 새로 쓰는 항목의 기본값이다.
+ */
+const PR_LINK = /(?:github\.com\/([\w.-]+\/[\w.-]+)\/)?pull\/(\d+)/g;
+
+function prLinksIn(line) {
+  return [...line.matchAll(PR_LINK)].map((m) => ({
+    index: m.index,
+    pr: Number(m[2]),
+    repo: m[1] ?? REPO_SLUG,
+  }));
+}
+
 export function primaryPr(line) {
   const headerEnd = headerEndOf(line);
-  const all = [...line.matchAll(/pull\/(\d+)/g)];
+  const all = prLinksIn(line);
   if (all.length === 0) return null;
 
   const inHeader = all.filter((m) => m.index < headerEnd);
-  if (inHeader.length > 0) {
-    return { pr: Number(inHeader[inHeader.length - 1][1]), confident: true };
-  }
-  return { pr: Number(all[all.length - 1][1]), confident: false };
+  const chosen = inHeader.length > 0 ? inHeader[inHeader.length - 1] : all[all.length - 1];
+  return { pr: chosen.pr, repo: chosen.repo, confident: inHeader.length > 0 };
 }
 
 /**
@@ -483,6 +525,9 @@ export const VERDICT = {
   // 배포 축을 **판정할 수 없다**(마커 부재·판독 불가). 미배포가 아니다 — 설계 원칙 2.
   DEPLOY_UNVERIFIABLE: "DEPLOY_UNVERIFIABLE",
   PR_NOT_FOUND: "PR_NOT_FOUND",
+  // 구 레포(읽기 전용 아카이브) 항목. 머지까지는 확인되고 배포 축은 **원천 대조 불가**다 —
+  // 이관이 이력을 재작성했기 때문이지 무언가 잘못돼서가 아니다(정상 상태, 드리프트 아님).
+  LEGACY_ARCHIVED: "LEGACY_ARCHIVED",
 };
 
 /** 드리프트로 세는 판정(= 사람이 보드를 고쳐야 하는 것). */
@@ -512,7 +557,9 @@ export function classifyItem(claims, fact) {
   if (!fact || fact.state === "NOT_FOUND") {
     return {
       verdict: VERDICT.PR_NOT_FOUND,
-      detail: "PR 을 조회할 수 없다 — 번호 오기이거나 다른 레포(구 wag-crm)의 번호일 수 있다",
+      detail:
+        `PR 을 조회할 수 없다(${fact?.repo ?? REPO_SLUG}) — 번호 오기이거나, 링크의 레포` +
+        ` 슬러그가 실제와 다르거나(이관이 두 번이라 번호가 세 겹이다), 조회 상한 밖일 수 있다`,
     };
   }
 
@@ -526,7 +573,34 @@ export function classifyItem(claims, fact) {
         };
   }
 
-  // 여기부터는 머지된 항목이다.
+  /**
+   * 구 레포 항목 — **머지 여부까지만 알 수 있다.**
+   *
+   * 이관이 이력을 재작성해 구 커밋은 현행 `main` 의 조상이 **아니다**(P6 Repo Migration —
+   * `merge-base --is-ancestor` 가 항상 거짓). 그래서 SHA 대조는 원천 불가다.
+   *
+   * ⚠️ **이걸 `UNKNOWN_SHA` 로 뭉개지 않는 이유:** 그 판정의 사유는 "2026-07-21 히스토리
+   * 재작성으로 **고아가 된**" 이라 사고 잔여물을 가리킨다. 이관은 사고가 아니라 정상
+   * 상태이고, 실보드에서 이 부류가 26건이라 사유를 뭉개면 진짜 고아를 영영 구분할 수
+   * 없다. 판정이 우연히 맞는 것과 사유가 맞는 것은 다르다.
+   *
+   * ⚠️ **그래도 낡은 대기 마커는 여기서도 잡는다.** 구 레포도 조회되므로 "머지 대기"라는
+   * 주장의 진위는 판정 가능하고, 그 오류(완료된 작업에 재착수 지시)는 레포와 무관하게
+   * 이 도구가 막으려는 바로 그 사고다.
+   */
+  if (fact.legacy) {
+    return claims.awaitingMerge || claims.awaitingDeploy
+      ? {
+          verdict: VERDICT.STALE_MERGE_MARKER,
+          detail: `구 레포(${fact.repo})에서 이미 머지됐는데 보드는 아직 대기라고 주장한다`,
+        }
+      : {
+          verdict: VERDICT.LEGACY_ARCHIVED,
+          detail: `구 레포(${fact.repo}) 항목 — 머지 확인됨. 이관으로 이력이 갈려 배포 축은 대조 불가(정상)`,
+        };
+  }
+
+  // 여기부터는 현행 레포의 머지된 항목이다.
   if (!fact.shaKnown || !fact.inMain) {
     return {
       verdict: VERDICT.UNKNOWN_SHA,
@@ -596,16 +670,19 @@ export function resolveBoardPath(explicit) {
 }
 
 /** PR 상태를 한 번에 가져온다(항목마다 호출하면 수십 회 왕복이 된다). */
-function fetchPullRequests() {
+function fetchPullRequests(slug) {
   const raw = sh("gh", [
     "pr",
     "list",
     "-R",
-    REPO_SLUG,
+    slug,
     "--state",
     "all",
+    // ⚠️ `--limit` 은 **최신순 상한**이다 — 구 레포는 PR 이 500건을 넘어 옛 번호가 조용히
+    // 빠졌다(실측). 빠진 번호는 `PR_NOT_FOUND` 로 뜨는데 그건 "번호 오기"가 아니라
+    // **조회 범위 밖**이다(P9 「검증 판정 위생」의 3분법 ②) — 상한을 넉넉히 둔다.
     "--limit",
-    "500",
+    "1000",
     "--json",
     "number,state,mergeCommit",
   ]);
@@ -659,15 +736,19 @@ function resolveDeployBase() {
   return { file, sha, reason: null };
 }
 
-function buildFact(pr, prInfo, deployBase) {
+function buildFact(item, prInfo, deployBase) {
   // ⚠️ `inProd` 의 미판정값은 `false` 가 아니라 `null` 이다 — classifyItem 주석 참조.
   const empty = { shaKnown: false, inMain: false, inProd: null };
-  if (!prInfo) return { state: "NOT_FOUND", merged: false, sha: null, ...empty };
-  if (!prInfo.merged || !prInfo.sha) return { ...prInfo, ...empty };
+  const origin = { legacy: item.legacy, repo: item.repo };
+  if (!prInfo) return { state: "NOT_FOUND", merged: false, sha: null, ...origin, ...empty };
+  if (!prInfo.merged || !prInfo.sha) return { ...prInfo, ...origin, ...empty };
+  // 구 레포는 이력이 갈려 SHA 대조가 무의미하다 — 조회하지 않는다(무의미한 git 왕복 제거).
+  if (item.legacy) return { ...prInfo, ...origin, ...empty };
   const shaKnown = gitKnows(prInfo.sha);
-  if (!shaKnown) return { ...prInfo, ...empty };
+  if (!shaKnown) return { ...prInfo, ...origin, ...empty };
   return {
     ...prInfo,
+    ...origin,
     shaKnown,
     inMain: isAncestorOf(prInfo.sha, MAIN_REF),
     inProd: deployBase ? isAncestorOf(prInfo.sha, deployBase) : null,
@@ -712,16 +793,19 @@ function main(argv) {
 
   const deploy = resolveDeployBase();
 
-  let prMap;
-  try {
-    prMap = fetchPullRequests();
-  } catch (err) {
-    console.error(`⛔ gh 조회 실패(로그인·네트워크 확인): ${err.message}`);
-    return 1;
+  // 항목이 밝힌 레포마다 한 번씩 조회한다 — 구 레포 항목은 아카이브에서 읽는다.
+  const prMaps = new Map();
+  for (const slug of new Set(items.map((i) => i.repo))) {
+    try {
+      prMaps.set(slug, fetchPullRequests(slug));
+    } catch (err) {
+      console.error(`⛔ gh 조회 실패(${slug} — 로그인·네트워크·접근권한 확인): ${err.message}`);
+      return 1;
+    }
   }
 
   const results = items.map((item) => {
-    const fact = buildFact(item.pr, prMap.get(item.pr), deploy.sha);
+    const fact = buildFact(item, prMaps.get(item.repo)?.get(item.pr), deploy.sha);
     const { verdict, detail } = classifyItem(item.claims, fact);
     return { ...item, fact, verdict, detail };
   });
@@ -803,6 +887,15 @@ function printReport(boardPath, results, deploy) {
     console.log(
       `🌫️ 배포 판정 불가 ${unverifiable.length}건: ${unverifiable.map((r) => `#${r.pr}`).join(" ")}` +
         `\n   → 머지는 확인됐고 배포 여부만 모른다. **미배포가 아니다** — 재착수 금지.`,
+    );
+  }
+  const legacy = by(VERDICT.LEGACY_ARCHIVED);
+  if (legacy.length) {
+    console.log(
+      `🗄️ 구 레포 항목 ${legacy.length}건(머지 확인됨 · 배포 축은 원천 대조 불가 — 정상):` +
+        ` ${legacy.map((r) => `${r.repo.split("/")[1]}#${r.pr}`).join(" ")}` +
+        `\n   → 이관이 이력을 갈라 SHA 대조가 성립하지 않는다(P6 Repo Migration).` +
+        ` **보드 표기를 고칠 필요는 없다** — 링크가 이미 레포를 밝히고 있다.`,
     );
   }
   const unknown = by(VERDICT.UNKNOWN_SHA);
