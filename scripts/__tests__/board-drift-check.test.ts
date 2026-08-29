@@ -785,3 +785,167 @@ describe("findCoordinatelessItems — 섹션 블록은 블록 단위로 판정",
     expect(findCoordinatelessItems(board).map((f) => f.lineNumber)).toEqual([2, 4]);
   });
 });
+
+/**
+ * 세 겹 PR 번호 — 구 레포 항목 (2026-08-29 상시 빨강).
+ *
+ * 🪤 **진짜 드리프트는 0건인데 점검기가 매번 26건을 외치고 있었다.** 이관이 두 번이라
+ * (`wag-crm` → `wagcrm` → `wagcrm_git`, 매번 이력 없이 #1 부터) 보드가 참조하는 26건이
+ * 전부 구 레포 번호인데, 조회는 현행 레포에서만 해서 전부 `PR_NOT_FOUND`(드리프트)로
+ * 떨어졌다. **상시 빨강은 곧 안 보게 되고 그 학습이 진짜 드리프트까지 삼킨다** — 이
+ * 도구가 막으려던 2026-07-29 사고(완료된 작업에 재착수 지시)가 정확히 그것이다.
+ *
+ * 처방의 핵심은 **보드를 고치지 않는 것**이다. 규약(P6)은 구 레포 번호를
+ * `구레포#188(4e67fe6)` 로 한정하라 하지만 실보드는 이미 풀 URL 을 쓰고 있어(실측 83건
+ * 전부) 레포 식별 정보가 보드 안에 있다. 보드는 git 미추적·다세션 공유라 26회 치환은
+ * 그 자체가 P0 위험이다(2026-07-30 덮어쓰기 실사고) — 점검기가 링크를 읽으면 된다.
+ *
+ * 고정하는 계약:
+ *   (F) 레포는 **링크가 밝힌다**. 번호만으로는 세 겹을 가를 수 없다.
+ *   (G) 구 레포 항목은 `LEGACY_ARCHIVED`(드리프트 아님)이되, **고아 SHA 와 사유를 구분**
+ *       한다 — 이관은 정상 상태이고 고아 SHA 는 2026-07-21 사고 잔여물이다.
+ *   (H) **낡은 대기 마커는 구 레포에서도 잡는다** — 재착수 사고는 레포와 무관하다.
+ *       이걸 빠뜨리면 26건을 조용하게 만드느라 탐지력까지 함께 끄는 셈이 된다.
+ */
+describe("primaryPr — 레포는 링크가 밝힌다 (F)", () => {
+  it("구 레포 URL 이면 그 슬러그를 싣고 legacy 로 표시한다", () => {
+    const [item] = parseBoardItems(
+      "- **✅ 종결 — X [PR #226](https://github.com/indexzigu/wagcrm/pull/226)**: 내용",
+    );
+    expect(item.pr).toBe(226);
+    expect(item.repo).toBe("indexzigu/wagcrm");
+    expect(item.legacy).toBe(true);
+  });
+
+  it("현행 레포 URL 은 legacy 가 아니다(음성 대조군)", () => {
+    const [item] = parseBoardItems(
+      "- **✅ 종결 — X [PR #7](https://github.com/indexzigu/wagcrm_git/pull/7)**: 내용",
+    );
+    expect(item.repo).toBe("indexzigu/wagcrm_git");
+    expect(item.legacy).toBe(false);
+  });
+
+  it("첫 이관 이전 레포(wag-crm)도 legacy 로 가른다 — 겹은 둘이 아니라 셋이다", () => {
+    const [item] = parseBoardItems(
+      "- **✅ 종결 — X [PR #188](https://github.com/indexzigu/wag-crm/pull/188)**: 내용",
+    );
+    expect(item.repo).toBe("indexzigu/wag-crm");
+    expect(item.legacy).toBe(true);
+  });
+
+  it("슬러그 없는 맨 `pull/N` 은 현행 레포로 본다(새 항목의 기본값)", () => {
+    const [item] = parseBoardItems("- **🔴 머지 대기 — X [PR #9](pull/9)**: 내용");
+    expect(item.pr).toBe(9);
+    expect(item.legacy).toBe(false);
+  });
+
+  it("⚠️ 번호가 같아도 레포가 다르면 다른 항목이다 — 세 겹 번호 함정", () => {
+    const items = parseBoardItems(
+      [
+        "- **A [PR #188](https://github.com/indexzigu/wagcrm/pull/188)**: 구 레포",
+        "- **B [PR #188](https://github.com/indexzigu/wagcrm_git/pull/188)**: 현행",
+      ].join("\n"),
+    );
+    expect(items.map((i: { repo: string }) => i.repo)).toEqual([
+      "indexzigu/wagcrm",
+      "indexzigu/wagcrm_git",
+    ]);
+  });
+
+  it("헤더 밖 본문 링크로 추정할 때도 레포를 함께 읽는다(신뢰도만 낮다)", () => {
+    const [item] = parseBoardItems(
+      "- **✅ 종결**: 상세는 [#212](https://github.com/indexzigu/wagcrm/pull/212) 참조",
+    );
+    expect(item.prConfident).toBe(false);
+    expect(item.repo).toBe("indexzigu/wagcrm");
+    expect(item.legacy).toBe(true);
+  });
+});
+
+describe("classifyItem — 구 레포 항목 (G)(H)", () => {
+  const legacyMerged = {
+    state: "MERGED",
+    merged: true,
+    sha: "4e67fe6",
+    legacy: true,
+    repo: "indexzigu/wagcrm",
+    shaKnown: false,
+    inMain: false,
+    inProd: null,
+  };
+
+  it("머지 확인된 구 레포 항목은 LEGACY_ARCHIVED 이고 드리프트가 아니다", () => {
+    const r = classifyItem(
+      { awaitingMerge: false, awaitingDeploy: false, deployed: true },
+      legacyMerged,
+    );
+    expect(r.verdict).toBe(VERDICT.LEGACY_ARCHIVED);
+    expect(DRIFT_VERDICTS.has(r.verdict)).toBe(false);
+  });
+
+  it("⚠️ 고아 SHA(UNKNOWN_SHA)와 사유를 구분한다 — 이관은 사고가 아니라 정상 상태다", () => {
+    const r = classifyItem(
+      { awaitingMerge: false, awaitingDeploy: false, deployed: false },
+      legacyMerged,
+    );
+    expect(r.verdict).not.toBe(VERDICT.UNKNOWN_SHA);
+    expect(r.detail).toContain("indexzigu/wagcrm");
+  });
+
+  it("⚠️ 구 레포라도 낡은 대기 마커는 잡는다 — 26건을 조용하게 만드느라 탐지력을 끄지 않는다", () => {
+    const r = classifyItem(
+      { awaitingMerge: true, awaitingDeploy: false, deployed: false },
+      legacyMerged,
+    );
+    expect(r.verdict).toBe(VERDICT.STALE_MERGE_MARKER);
+    expect(DRIFT_VERDICTS.has(r.verdict)).toBe(true);
+  });
+
+  it("배포 대기 주장이 남은 구 레포 항목도 낡은 마커다", () => {
+    const r = classifyItem(
+      { awaitingMerge: false, awaitingDeploy: true, deployed: false },
+      legacyMerged,
+    );
+    expect(r.verdict).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  it("미머지 구 레포 항목 + 대기 마커는 정확하므로 OK", () => {
+    const r = classifyItem(
+      { awaitingMerge: true, awaitingDeploy: false, deployed: false },
+      { ...legacyMerged, state: "OPEN", merged: false, sha: null },
+    );
+    expect(r.verdict).toBe(VERDICT.OK);
+  });
+
+  it("⚠️ 조회 자체가 안 되면 여전히 드리프트다 — legacy 라고 무조건 접지 않는다", () => {
+    const r = classifyItem(
+      { awaitingMerge: false, awaitingDeploy: false, deployed: true },
+      { state: "NOT_FOUND", merged: false, sha: null, legacy: true, repo: "indexzigu/wagcrm" },
+    );
+    expect(r.verdict).toBe(VERDICT.PR_NOT_FOUND);
+    expect(r.detail).toContain("indexzigu/wagcrm");
+  });
+});
+
+describe("보드 문구 → verdict 왕복 — 구 레포 26건 재현 (G)(H)", () => {
+  const legacyLine = (status: string) =>
+    `- **${status} — X [PR #226](https://github.com/indexzigu/wagcrm/pull/226)**: 내용`;
+  const legacyFact = {
+    ...merged("4e67fe6"),
+    legacy: true,
+    repo: "indexzigu/wagcrm",
+    shaKnown: false,
+    inMain: false,
+    inProd: null,
+  };
+  const verdictOf = (status: string) =>
+    classifyItem(readClaims(legacyLine(status)), legacyFact).verdict;
+
+  it("`✅ 머지·승격·prod 배포 완료`(실보드 26건의 형태) → 드리프트가 아니다", () => {
+    expect(verdictOf("✅ 머지·승격·prod 배포 완료")).toBe(VERDICT.LEGACY_ARCHIVED);
+  });
+
+  it("`🔴 PR 오너 머지 대기` → 낡은 마커(2026-07-29 사고 유형은 구 레포에서도 사고다)", () => {
+    expect(verdictOf("🔴 PR 오너 머지 대기")).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+});
