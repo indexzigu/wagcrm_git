@@ -125,19 +125,25 @@
     정지시킨다(실측 2026-08-27: rulesets 계열 API 전부 403 `Upgrade to GitHub Pro` ·
     GraphQL `refUpdateRule` null · PR #501 은 required 검사 시작 16분 전에 머지됨 ·
     PR #502 는 `guard` 미실행 상태로 머지됨). 지금 main 은 검사 미통과 머지·직접 push·
-    force push 가 **서버에서 막히지 않는다** — 방어는 아래 「Main Push Guard & Deploy CI
-    Gate」가 이 맥에서 대신한다. 그 전의 SUPERSEDED("main 은 브랜치 보호가 없어 …" →
-    2026-07-30 중복 설정 실사고)는 역사 기록으로 유지하되, **그 문장은 지금 다시 사실이
-    됐다** — 다만 근거가 다르다(설정 부재가 아니라 플랜 게이트라, 켜서 고칠 수 없다).
-  - ✅ **공개 전환으로 이 제약이 풀린다 (2026-08-28) — 미결 과제다.** 위 403 메시지가
-    말하는 두 출구가 "유료 전환"과 **"공개로 전환"** 이었고, 이 레포는 후자를 택했다.
-    ⇒ **rulesets/branch protection 을 다시 켤 수 있다.** 아직 설정하지 않았으므로
-    지금은 여전히 무보호 상태다 — `main` 직접 push·검사 미통과 머지가 서버에서
-    막히지 않고, 방어는 아래 「Main Push Guard & Deploy CI Gate」가 이 맥에서 한다.
-    ⚠️ **켤 때 종전 실사고를 되풀이하지 말 것**: 2026-07-30 에 같은 보호를 **중복
-    설정**해 진단이 꼬였다. 켜기 전에 `gh api repos/indexzigu/wagcrm_git/rulesets` 로
-    **기존 규칙이 없음을 먼저 확인**하고, 필수 체크 이름은 실제 잡 이름
-    (`guard`·`preflight`·`test`)과 글자 단위로 맞춘다.
+    force push 가 **서버에서 막히지 않았다** — 방어는 아래 「Main Push Guard & Deploy CI
+    Gate」가 이 맥에서 대신했다. ⛔ **이 무보호 서술은 다시 SUPERSEDED 다(2026-08-29
+    실측) — 아래 항목대로 보호가 되살아났다.** 이 블록은 2026-08-26~08-28 구간의 역사
+    기록으로만 읽는다.
+  - ✅ **보호는 복구됐다 — 공개 전환 다음 날 켜졌다 (2026-08-28, 실측 2026-08-29).**
+    위 403 메시지가 말한 두 출구가 "유료 전환"과 **"공개로 전환"** 이었고 이 레포는
+    후자를 택했다. ⇒ ruleset `main-protection` 이 **`enforcement: active`** 로 되살아나
+    기본 브랜치(`~DEFAULT_BRANCH`)에 걸려 있고 **bypass 액터는 없다.** required 체크는
+    **`guard`·`preflight`·`test`** 셋이다.
+    ⛔ **종전 서술 「아직 설정하지 않았으므로 지금은 여전히 무보호 상태다 — 미결 과제」는
+    SUPERSEDED.** 그 문장을 근거로 **보호를 켜러 가지 말 것** — 이미 켜져 있고, 2026-07-30
+    에 같은 보호를 **중복 설정**해 진단이 꼬인 실사고가 정확히 그렇게 났다. 손대기 전에
+    `gh api repos/indexzigu/wagcrm_git/rulesets` 로 **기존 규칙 유무를 먼저 확인**한다.
+    ⚠️ **required 이름은 실제 잡 이름과 글자 단위로 같아야 한다 — 어긋나면 영원히
+    pending 이라 전 PR 이 머지 불가가 된다.** 지금 맞는 것은 우연이 아니다: `test` 는
+    4샤드로 쪼개졌지만(`test-shard (1~4)`) **집계 잡 `test` 가 인터페이스로 남아 있어**
+    이름이 유지됐다(`release-preflight.yml` 의 그 잡 주석이 이유를 적어 둔다).
+    ⛔ 그 집계 잡을 "중복이니 없앤다"며 지우지 말 것 — 지우는 순간 required 이름이
+    사라져 보호가 **머지를 영구 차단**한다.
   - ⚠️ **보호 여부 확인은 rulesets API 로 한다:**
     `gh api repos/indexzigu/wagcrm_git/rulesets`. **비공개 무료 플랜에서는 403 이
     "규칙 없음"이 아니라 "기능 자체 잠김"이었다** — 구 레포에서 옛 `main-protection`
@@ -166,11 +172,17 @@
   테스트)가 대신한다. 프리뷰 URL이 정말 필요하면 `vercel` CLI로 수동
   배포한다(자동 옵트인 마커는 없다).
 
-- **Main Push Guard & Deploy CI Gate — 브랜치 보호의 대체 방어 2문 (T-069, 2026-08-27):**
+- **Main Push Guard & Deploy CI Gate — 이 맥에서 도는 방어 2문 (T-069, 2026-08-27):**
   2026-08-26 비공개 전환으로 GitHub 무료 플랜이 브랜치 보호를 정지시켜(위 Promotion
   Policy 의 403 실측) required 검사·PR 필수·force push 금지가 전부 서버에서 사라졌다.
   오너 결정(2026-08-27): 유료 전환·재공개 없이 **방어를 이 맥으로 옮긴다** — #481
   하이브리드 CI(러너 이전)와 같은 방향(GitHub 의존 축소, 무료 할당량은 유지)이다.
+  ✅ **그 전제는 끝났다 — 서버 보호가 08-28 에 복구됐다**(위 Promotion Policy 의 실측).
+  ⛔ **그렇다고 이 두 문을 걷지 말 것 — 절 이름이 「대체」에서 「겹」으로 바뀐 것이다.**
+  보는 시점이 다르다: 서버 보호는 **머지 시점**을, 문②는 **배포 시점**을 본다. 보호가
+  없던 08-26~08-28 구간에 들어온 커밋은 서버가 소급해 검사하지 않으므로 문②만이 그것을
+  잡고, 가시성은 되돌릴 수 있는 **설정**이라 다시 비공개가 되면 서버 보호는 또 사라진다
+  (그때 이 두 문이 유일한 방어로 남는다).
   - **문① `.githooks/pre-push`** — main 으로의 직접 push(force push·삭제 포함)를 push
     직전에 거부한다. 비상 우회 `ALLOW_MAIN_PUSH=1`.
     - 🪤 **머지만으로는 발효되지 않는다 — 기계에 반영하는 것은 사람 몫이다**(크론
@@ -207,8 +219,16 @@
       으로 나타난다.
   - **정직한 한계:** 문①은 `--no-verify`·GitHub 웹 UI·`gh pr merge`(git 을 거치지 않는
     API 직행)·이 맥 밖의 머신을 못 본다 — 그 경로들은 문②가 prod 직전에 잡는다. 문②로도
-    못 막는 것은 **main 이력 손상**(force push)뿐이다 — 서버측 차단이 없으므로 P0
-    「Critical Data Loss」 조항이 유일한 방어선이다.
+    못 막는 것은 **main 이력 손상**(force push)뿐이었다.
+    ✅ **그 마지막 구멍은 서버가 다시 막는다**(2026-08-29 실측): 복구된 ruleset 의 규칙
+    넷은 `deletion`(브랜치 삭제) · `non_fast_forward`(force push) · `pull_request`(PR 경유
+    필수, 승인은 0건 요구) · `required_status_checks` 다. ⛔ 그래도 P0 「Critical Data
+    Loss」 조항을 느슨하게 읽지 말 것 — 서버 규칙은 **오너가 끌 수 있고**, 비공개로
+    되돌리면 플랜 게이트로 **저절로** 꺼진다(위 T-069 가 정확히 그 경로였다).
+    ℹ️ ruleset 의 `allowed_merge_methods` 는 셋 다 열려 있다 — squash 전용을 실제로
+    강제하는 것은 **레포 설정**(`allow_merge_commit=false`·`allow_rebase_merge=false`)
+    이므로, 그쪽이 이관 등으로 리셋되면 ruleset 은 막아 주지 않는다(위 「PR & Commit
+    Naming」의 재적용 명령).
   - **메뉴바 `preflightRunner` 행의 경보 의미가 뒤집혔다:** 종전엔 「required 라서 러너
     정지 = 전 PR 머지 불가(시끄러운 고장)」였는데, 보호 정지로 「머지는 되고 검증 없이
     나간다(조용한 고장)」가 됐다. 행의 필요성은 그대로다 — 문②가 미검증 머지를 배포
@@ -1111,10 +1131,12 @@
       (16GB 상한 실측 시점의 호스트: unused 196MB · compressor 2,991MB).
 
 - **Migration Guard — 전 PR 에서 도는 게이트:** `Migration Guard / guard`는 모든 PR에서
-  돈다. ⛔ 종전 「required 상태다(`main-protection` ruleset)」는 **SUPERSEDED**(T-069
-  보호 정지 — 위 「Main Push Guard & Deploy CI Gate」) — 지금 서버는 guard 실패 머지를
-  막지 않지만, **배포 직전 게이트(deploy.sh ⑦)가 모든 배포 커밋의 원 PR 에 guard
-  success 를 요구**하므로 사실상의 required 다. 일회용 Postgres(shadow DB)에
+  돈다. **`main-protection` ruleset 의 required 체크 셋 중 하나이므로 서버가 guard 실패
+  머지를 막는다**(2026-08-29 실측). ⛔ 그 사이에 낀 「T-069 보호 정지로 서버는 막지
+  않는다」 서술은 **SUPERSEDED** — 2026-08-26~08-28 구간에만 참이었다. 그 구간에도
+  **배포 직전 게이트(deploy.sh ⑦)가 모든 배포 커밋의 원 PR 에 guard success 를 요구**해
+  사실상의 required 였고, 그 게이트는 지금도 **두 번째 겹으로 남는다**(서버 보호는
+  머지 시점을, ⑦ 은 배포 시점을 본다). 일회용 Postgres(shadow DB)에
   ① 전체 마이그레이션을 `migrate deploy`로 적용해 깨진 SQL을 잡고 ②
   `migrate diff --exit-code`로 `schema.prisma`↔`prisma/migrations` 동기화를
   검증한다(마이그레이션 생성 누락 → 배포 시 자동 적용 실패·P2022 방지). prod
