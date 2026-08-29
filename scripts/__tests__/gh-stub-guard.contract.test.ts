@@ -22,6 +22,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  CURL_STUB_WRAPPER_BODY,
+  CURL_STUB_WRAPPER_DIR_NAME,
   GH_STUB_WRAPPER_BODY,
   GH_STUB_WRAPPER_DIR_NAME,
   STAT_STUB_WRAPPER_BODY,
@@ -128,5 +130,15 @@ describe("고정 래퍼는 본문과 버전이 한 쌍으로 움직인다", () =
 
   it("stat 래퍼도 스텁 본문을 **데이터로** 실행한다", () => {
     expect(STAT_STUB_WRAPPER_BODY).toContain('bash "$STAT_STUB_IMPL"');
+  });
+
+  // curl 레인도 같은 함정을 진다 — 래퍼가 하나 늘었으니 고정도 함께 는다.
+  it("curl 래퍼도 본문과 버전이 한 쌍으로 움직인다", () => {
+    expect(CURL_STUB_WRAPPER_DIR_NAME).toBe("wagcrm-curl-stub-v1");
+    expect(CURL_STUB_WRAPPER_BODY).toBe('#!/usr/bin/env bash\nexec bash "$CURL_STUB_IMPL" "$@"\n');
+  });
+
+  it("curl 래퍼도 스텁 본문을 **데이터로** 실행한다", () => {
+    expect(CURL_STUB_WRAPPER_BODY).toContain('bash "$CURL_STUB_IMPL"');
   });
 });
