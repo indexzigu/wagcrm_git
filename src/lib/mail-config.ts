@@ -159,12 +159,20 @@ export function resolveMailFrom(credentials: MailCredentials): { name: string; e
 
 /**
  * `From` 헤더에서 주소만 뽑는다 — `"표시이름" <addr@dom>` · `addr@dom` 둘 다 받는다.
- * 못 뽑으면 원문을 그대로 돌려준다(판정은 호출부가 보수적으로 한다).
+ * 이미 파싱된 주소를 넘겨도 그대로 통과한다(호출부가 두 모양을 다 넘기므로 멱등해야 한다).
+ *
+ * 🪤 **꺾쇠는 마지막 것을 집는다.** RFC 5322 의 addr-spec 은 마지막 angle-addr 이고,
+ * 표시이름 안에 주소가 들어간 `"공지 <info@ygrd.kr>" <cs@brand.example.com>` 같은 헤더에서
+ * 첫 꺾쇠를 집으면 **거래처 회신이 자기 발송분으로 걸러진다**(위 P2 와 같은 침묵형 폐기).
+ * 꺾쇠가 없는 다중 주소도 마지막 것을 본다.
  */
 function extractAddress(from: string): string {
-  const angled = from.match(/<([^>]+)>/);
-  return (angled ? angled[1] : from).trim().toLowerCase();
+  const angled = [...from.matchAll(/<([^<>]+)>/g)];
+  const raw = angled.length > 0 ? angled[angled.length - 1][1] : from.split(",").pop() ?? from;
+  return raw.trim().toLowerCase();
 }
+
+const OWN_DOMAIN = "@ygrd.kr";
 
 /**
  * 우리가 보낸 메일인가 — 회신 수집이 **자기 발송분을 회신으로 오인하지 않게** 한다.
@@ -181,8 +189,6 @@ function extractAddress(from: string): string {
  * 발송분으로 걸러져 **첨부가 있는데도 「회신 없음」**이 된다(교차 검증 P2, 2026-09-01).
  * 그래서 주소를 뽑아 **정확히** 비교하고, 도메인·로컬파트도 경계를 지켜 본다.
  */
-const OWN_DOMAIN = "@ygrd.kr";
-
 export function isOwnSenderAddress(from: string, loginAddress: string): boolean {
   const address = extractAddress(from);
   if (address.endsWith(OWN_DOMAIN)) return true;

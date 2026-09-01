@@ -26,7 +26,10 @@ const SSOT = "src/lib/mail-config.ts";
  */
 function executableSource(relativePath: string): string {
   const raw = readFileSync(join(process.cwd(), relativePath), "utf8");
-  return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  // 🪤 `//` 앞의 `:` 를 지켜야 한다 — 가드 없이 자르면 `"imaps://imap.gmail.com"` 같은
+  //    **URL 형태 설정이 통째로 잘려** 위반이 스캔에서 사라진다(실측). 레포 선례
+  //    `ingest-lane.contract.test.ts` 가 같은 이유로 같은 가드를 쓴다.
+  return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
 /**
@@ -35,6 +38,23 @@ function executableSource(relativePath: string): string {
  * **한 파일 걸러 한 번씩 거짓 음성**이 난다(공유 정규식 + `g` 의 고전적 함정).
  */
 const MAIL_HOST_LITERAL = /\b(?:imap|smtp)\.[a-z0-9-]+(?:\.[a-z]{2,})+\b/i;
+
+/** 문자열 리터럴(따옴표 3종). 이스케이프를 건너뛰며 짝을 찾는다. */
+const STRING_LITERAL = /(["'`])(?:\\.|(?!\1)[^\\])*\1/g;
+
+/**
+ * 메일 서버 호스트를 **문자열 안에서만** 찾는다.
+ *
+ * 🪤 소스 전체에 정규식을 그냥 돌리면 **속성 체인이 걸린다** — `imap.seq.fetch(…)`
+ * (node-imap 실 API) · `cfg.smtp.auth.user` 가 그대로 매치된다(실측). 호스트는 언제나
+ * 문자열이므로 리터럴 안으로 좁히면 그 부류가 통째로 사라진다.
+ */
+function hasMailHostLiteral(source: string): boolean {
+  for (const match of source.matchAll(STRING_LITERAL)) {
+    if (MAIL_HOST_LITERAL.test(match[0])) return true;
+  }
+  return false;
+}
 
 /** `src` 아래 타입스크립트 소스 전수(레포 관행: 셸이 아니라 readdirSync 재귀). */
 function sourceFiles(dir: string): string[] {
@@ -49,7 +69,7 @@ function sourceFiles(dir: string): string[] {
 
 describe("메일 서버 좌표 단일화", () => {
   it.each(CONSUMERS)("%s 에 메일 서버 호스트를 직접 적지 않는다", (path) => {
-    expect(executableSource(path)).not.toMatch(MAIL_HOST_LITERAL);
+    expect(hasMailHostLiteral(executableSource(path))).toBe(false);
   });
 
   it.each(CONSUMERS)("%s 는 mail-config 에서 접속 설정을 받아 온다", (path) => {
@@ -59,7 +79,7 @@ describe("메일 서버 좌표 단일화", () => {
   it("SSOT 자신은 호스트를 갖는다 — 스캐너가 고장 나면 이 단언이 먼저 깨진다", () => {
     // 양성 프로브. 위 세 단언은 「없음」을 확인하므로, 정규식이 아무것도 못 잡게 망가져도
     // 조용히 통과한다. 실제로 잡히는 문자열이 있는 파일 하나를 대조군으로 둔다.
-    expect(executableSource(SSOT)).toMatch(MAIL_HOST_LITERAL);
+    expect(hasMailHostLiteral(executableSource(SSOT))).toBe(true);
   });
 
   it("소비처에는 옛 메일 사업자 좌표가 남아 있지 않다", () => {
@@ -74,9 +94,11 @@ describe("메일 서버 좌표 단일화", () => {
     //    **불변식 자체**("SSOT 밖에 메일 호스트 리터럴이 없다")를 src 전수로 확인한다.
     //    ⛔ 「메일 라이브러리를 import 하는 파일」로 파생하지 말 것 — require()·동적 import·
     //       하위 `imap` 직접 사용·다른 발송 라이브러리가 전부 빠져나간다(교차 검증 지적).
-    const offenders = sourceFiles("src")
+    //    범위에 `scripts/` 도 넣는다 — 지금은 소비처 0건이지만 운영 스크립트가 메일을
+    //    붙이기 시작하면 `src` 만 보는 스캔은 그것을 못 본다(fail-open).
+    const offenders = [...sourceFiles("src"), ...sourceFiles("scripts")]
       .filter((path) => path !== SSOT && !path.endsWith(".test.ts") && !path.endsWith(".test.tsx"))
-      .filter((path) => MAIL_HOST_LITERAL.test(executableSource(path)))
+      .filter((path) => hasMailHostLiteral(executableSource(path)))
       .sort();
 
     expect(offenders).toEqual([]);

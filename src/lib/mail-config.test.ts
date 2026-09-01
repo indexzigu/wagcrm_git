@@ -238,6 +238,22 @@ describe("자기 발송분 판정", () => {
   it("옛 사업자 로컬파트는 **앞자리**로만 인정한다", () => {
     expect(isOwnSenderAddress("notnutrione01@example.com", CREDS.user)).toBe(false);
   });
+
+  it("표시이름 안에 주소가 들어 있어도 **실제 발신 주소**로 판정한다", () => {
+    // 🪤 첫 꺾쇠를 집으면 거래처 회신이 자기 발송분으로 걸러진다(RFC 5322 의 addr-spec 은
+    //    마지막 angle-addr). P2 와 같은 침묵형 폐기라 같은 자리에서 함께 막는다.
+    expect(
+      isOwnSenderAddress('"공지 <info@ygrd.kr>" <cs@brand.example.com>', CREDS.user),
+    ).toBe(false);
+    expect(
+      isOwnSenderAddress('"브랜드 <cs@brand.example.com>" <info@ygrd.kr>', CREDS.user),
+    ).toBe(true);
+  });
+
+  it("꺾쇠 없는 다중 주소도 마지막 것을 본다", () => {
+    expect(isOwnSenderAddress("cs@brand.example.com, info@ygrd.kr", CREDS.user)).toBe(true);
+    expect(isOwnSenderAddress("info@ygrd.kr, cs@brand.example.com", CREDS.user)).toBe(false);
+  });
 });
 
 describe("중요·별표 편지함", () => {
