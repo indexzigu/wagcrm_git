@@ -24,7 +24,7 @@ import { simpleParser } from "mailparser";
 import { Readable } from "stream";
 import { parseEtaxInvoiceXml, type ParsedEtaxInvoice } from "./etax-xml";
 import { describeAttachment, type AttachmentKind } from "./attachment-kind";
-import { resolveImapConfig, resolveMailCredentials } from "@/lib/mail-config";
+import { resolveImapConfig, resolveMailCredentials, toNfc } from "@/lib/mail-config";
 import {
   isNtsSecureMailHtml,
   parseNtsSecureMailHtml,
@@ -157,18 +157,36 @@ function flattenBoxes(boxes: Record<string, unknown>, prefix = ""): string[] {
  * 세금계산서 전용 편지함을 고른다.
  * 오너가 같은 계정에서 세금계산서 메일을 **전용 폴더로 분리 관리**하고 있으므로,
  * INBOX 전수 스캔이 아니라 그 폴더만 여는 것이 기본이다(비용·오탐 모두 줄어든다).
+ *
+ * ⚠️ 돌려주는 값은 **서버가 준 원문 이름**이다(정규화한 값이 아니다) — `openBox` 는 서버
+ * 어휘로 열어야 하므로, 비교만 정규화하고 반환은 원문을 유지한다.
  */
 export function pickTaxInvoiceBox(boxNames: readonly string[], configured?: string | null): string {
-  if (configured && boxNames.includes(configured)) return configured;
+  const want = configured ? toNfc(configured) : null;
+  if (want) {
+    const exact = boxNames.find((name) => toNfc(name) === want);
+    if (exact) return exact;
+  }
   // 정확 일치를 부분 일치보다 먼저 본다 — '계산서' 가 든 폴더가 둘 이상이면(예: '세금계산서
   // 보관', '계산서_2025') 부분 일치는 어느 것을 집을지가 편지함 나열 순서에 좌우된다.
-  if (boxNames.includes(DEFAULT_BOX_NAME)) return DEFAULT_BOX_NAME;
-  const hinted = boxNames.find((name) => name.includes(BOX_NAME_HINT));
+  const fallbackExact = boxNames.find(
+    (name) => toNfc(name) === DEFAULT_BOX_NAME,
+  );
+  if (fallbackExact) return fallbackExact;
+  const hinted = boxNames.find((name) =>
+    toNfc(name).includes(BOX_NAME_HINT),
+  );
   return hinted ?? "INBOX";
 }
 
+/**
+ * ⚠️ **제목도 정규화하고 비교한다.** 편지함 이름과 같은 축이고(위 `toNfc`), 이쪽은 형태를
+ * 구글이 아니라 **보낸 사람**이 정하므로 실측으로 미리 걸러낼 수도 없다. 놓쳤을 때의 대가가
+ * 조용한 「미수취」라 비대칭이다 — 2026-08-05 실사고가 정확히 이 관문의 실패였다.
+ */
 export function isTaxInvoiceSubject(subject: string): boolean {
-  return SUBJECT_HINTS.some((hint) => subject.includes(hint));
+  const normalized = toNfc(subject);
+  return SUBJECT_HINTS.some((hint) => normalized.includes(hint));
 }
 
 /** 국세청 직발송인가. 헤더의 `From` 원문(표시이름 + 주소)을 그대로 받는다. */

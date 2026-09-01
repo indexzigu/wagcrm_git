@@ -1,5 +1,6 @@
 /**
- * 메일 서버 접속 정보 SSOT — IMAP 읽기 2경로 + SMTP 발신 1경로가 공유한다.
+ * 메일 경로 SSOT — 서버 접속 좌표 · 발신인 · 편지함 순회 정책 · **문자열 정규화**(`toNfc`).
+ * IMAP 읽기 2경로 + SMTP 발신 1경로가 공유한다.
  *
  * ## 왜 한 곳인가
  *
@@ -95,6 +96,19 @@ export interface ImapConnectionConfig extends MailCredentials {
   host: string;
   port: number;
   tls: true;
+  /**
+   * 🔴 **`servername` 을 지우지 말 것 — 구글 IMAP 이 통째로 죽는다.**
+   *
+   * `node-imap` 은 평문 소켓을 먼저 열고 그 소켓을 `tls.connect({ host, socket })` 에
+   * 넘기는데, **소켓을 넘기면 Node 가 `host` 에서 SNI 를 유추하지 않는다.** SNI 가 없으면
+   * 구글 프런트엔드가 이 도메인용이 아닌 인증서를 내주고 접속이
+   * `self-signed certificate` 로 끊긴다(2026-09-02 실측).
+   *
+   * 🪤 **다음메일에서는 이 결함이 드러나지 않았다** — 대조군 실측에서 `imap.daum.net` 은
+   * SNI 유무와 무관하게 붙는다(단일 인증서 호스트). 그래서 사업자를 옮기는 순간
+   * **수신 2경로가 동시에** 죽는 형태였고, 배포 전 실접속 점검에서 잡혔다.
+   */
+  tlsOptions: { servername: string };
   authTimeout: number;
 }
 
@@ -122,12 +136,15 @@ export function resolveImapConfig(
   credentials: MailCredentials,
   options: { authTimeout?: number } = {},
 ): ImapConnectionConfig {
+  const host = resolveImapHost(credentials);
   return {
     user: credentials.user,
     password: credentials.password,
-    host: resolveImapHost(credentials),
+    host,
     port: IMAP_PORT,
     tls: true,
+    // ⛔ host 와 반드시 같은 값이어야 한다 — 위 타입 주석의 사유 참조.
+    tlsOptions: { servername: host },
     authTimeout: options.authTimeout ?? 10_000,
   };
 }
@@ -263,8 +280,27 @@ export interface MailboxDescriptor {
   attribs?: readonly string[];
 }
 
+/**
+ * 🔴 메일 서버가 준 문자열을 **비교하기 전에 반드시 통과시킨다.**
+ *
+ * 구글은 한글을 **자모 분리(NFD)** 로 돌려준다 — 실측 2026-09-02: 라벨 `세금계산서` 가
+ * 코드포인트 12개로 왔고, 조합형(NFC, 5개)으로 적힌 우리 상수와 **정확 일치도 부분 일치도
+ * 전부 실패**했다. 그 결과가 조용한 폴백·0건이라 화면에서는 「미수취」·「회신 없음」과
+ * 구분되지 않는다(P0 침묵형).
+ *
+ * ⚠️ 편지함 이름만의 문제가 아니다 — **제목·첨부 파일명**도 같은 축이고, 그쪽은 구글이
+ * 아니라 **보낸 사람**이 정한다(맥에서 온 첨부는 파일명이 NFD 인 것이 상시 조건이다).
+ * 그래서 서버에서 온 문자열을 우리 한국어 상수와 맞대는 자리는 전부 이 함수를 거친다.
+ *
+ * ⛔ 지우지 말 것. 다음메일에서는 드러나지 않던 종류의 결함이다.
+ */
+export function toNfc(value: string): string {
+  return value.normalize("NFC");
+}
+
+/** 편지함 **이름 비교** 전용 — NFC 위에 공백 제거·소문자화를 얹는다. */
 function normalizeBoxName(name: string): string {
-  return name.replace(/\s+/g, "").toLowerCase();
+  return toNfc(name).replace(/\s+/g, "").toLowerCase();
 }
 
 function hasAttrib(box: MailboxDescriptor, attrib: string): boolean {

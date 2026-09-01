@@ -104,6 +104,40 @@ describe("메일 서버 좌표 단일화", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("IMAP 에 붙는 파일은 **전부** SSOT 를 거친다", () => {
+    // 🔴 `tlsOptions.servername`(SNI) 이 빠지면 구글 IMAP 이 통째로 죽는다(2026-09-02 실측).
+    //    소비처가 접속 옵션을 손으로 지으면 그 한 줄이 조용히 빠진다.
+    // ⛔ 위 「손으로 적은 목록은 새 소비처를 조용히 비켜간다」가 여기에도 적용된다 —
+    //    CONSUMERS 를 돌면서 조기 반환하는 형태로 쓰지 말 것(초판이 그렇게 썼다가
+    //    같은 파일 6줄 위의 자기 금지를 어겼다). 전수로 훑고, **검사 건수 하한**을 함께
+    //    단언해 「하나도 안 걸러서 초록」인 상태를 구분한다(위 양성 프로브와 같은 규약).
+    const connectors = [...sourceFiles("src"), ...sourceFiles("scripts")]
+      .filter((path) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx"))
+      .filter((path) => /(?:imaps?\.connect|new\s+Imap)\s*\(/.test(executableSource(path)));
+
+    expect(connectors.length).toBeGreaterThanOrEqual(2); // 현재 수취 스캔 + 회신 수집
+    for (const path of connectors) {
+      expect(executableSource(path)).toMatch(/resolveImapConfig\s*\(/);
+    }
+  });
+
+  it("메일 경로 소스는 NFC 로 커밋된다 — 그래야 우리 리터럴을 감싸지 않아도 된다", () => {
+    // 서버가 준 문자열만 `toNfc` 로 맞추고 **우리 상수는 그대로 비교**하는 것이 계약이다.
+    // 그 전제가 깨지면(에디터·OS 가 파일을 NFD 로 저장) 비교가 조용히 빗나가므로 여기서 고정한다.
+    const paths = [SSOT, ...CONSUMERS, "src/lib/order-converter/order-parser.ts"];
+    for (const path of paths) {
+      const raw = readFileSync(join(process.cwd(), path), "utf8");
+      expect({ path, nfc: raw === raw.normalize("NFC") }).toEqual({ path, nfc: true });
+    }
+  });
+
+  it("SSOT 는 SNI 를 싣는다 — 빠지면 구글 IMAP 이 인증서 오류로 끊긴다", () => {
+    // 반대 방향 단언(있어야 통과). 위 단언들은 「없음」만 보므로 이것이 대조군이다.
+    // 🪤 `tlsOptions: { servername` 로 재면 **타입 선언에도 걸려** 실제 대입을 지워도
+    //    초록이다(변이 테스트로 실측). 반드시 **값이 host 와 묶인 대입**을 본다.
+    expect(executableSource(SSOT)).toMatch(/servername:\s*host\b/);
+  });
+
   it("SSOT 는 옛 사업자 폴백을 **유지한다** — 지우면 배포 순서 사고가 되살아난다", () => {
     // 🪤 이 단언은 방향이 반대다(있어야 통과). 옛 사업자 계정이 `.env` 에 남아 있는 동안
     //    구글 상수를 무조건 쓰면, 오너가 계정을 바꾸기 전에 배포가 도는 순간 수신 2경로·

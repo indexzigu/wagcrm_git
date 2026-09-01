@@ -97,6 +97,25 @@ describe("접속 설정 — 서버가 계정을 따라간다", () => {
     expect(resolveSmtpConfig(CREDS).secure).toBe(true);
   });
 
+  it("SNI(servername)를 호스트와 같은 값으로 싣는다 — 없으면 구글 IMAP 이 통째로 죽는다", () => {
+    // 🔴 node-imap 은 소켓을 먼저 열고 tls.connect({host, socket}) 에 넘기는데, 소켓을
+    //    넘기면 Node 가 host 에서 SNI 를 유추하지 않는다. SNI 가 없으면 구글이 다른
+    //    인증서를 내줘 self-signed certificate 로 끊긴다(2026-09-02 실측).
+    //    다음메일은 SNI 없이도 붙어서 이 결함이 전환 전까지 드러나지 않았다.
+    const google = resolveImapConfig(CREDS);
+    expect(google.tlsOptions.servername).toBe(google.host);
+    expect(google.tlsOptions.servername).toBe(GOOGLE_IMAP_HOST);
+
+    const legacy = resolveImapConfig(LEGACY_CREDS);
+    expect(legacy.tlsOptions.servername).toBe(legacy.host);
+  });
+
+  it("env 로 서버를 바꾸면 SNI 도 따라간다", () => {
+    process.env.MAIL_IMAP_HOST = "imap.example.test";
+    const cfg = resolveImapConfig(CREDS);
+    expect(cfg.tlsOptions.servername).toBe("imap.example.test");
+  });
+
   it("authTimeout 은 호출부가 정하고 기본값이 있다", () => {
     expect(resolveImapConfig(CREDS).authTimeout).toBe(10_000);
     expect(resolveImapConfig(CREDS, { authTimeout: 5_000 }).authTimeout).toBe(5_000);
@@ -155,6 +174,19 @@ describe("편지함 제외 — 이름 폴백(속성을 안 주는 서버)", () =
   it("영문 이름도 대소문자 무관하게 거른다", () => {
     expect(isScannableMailbox({ name: "Deleted Messages" })).toBe(false);
     expect(isScannableMailbox({ name: "SENT" })).toBe(false);
+  });
+});
+
+describe("자모 분리(NFD) 이름", () => {
+  it("구글이 NFD 로 돌려주는 한국어 편지함도 이름 폴백이 거른다", () => {
+    // 특수용도 속성이 없는 서버에서는 이름 판정이 유일한 방어선인데, NFC 로만 비교하면
+    // 아래가 전부 통과해 버린다(실측: 구글은 NFD 로 준다).
+    expect(isScannableMailbox({ name: "[Gmail]/휴지통".normalize("NFD") })).toBe(false);
+    expect(isScannableMailbox({ name: "[Gmail]/보낸편지함".normalize("NFD") })).toBe(false);
+  });
+
+  it("NFD 전체보관함도 알아본다", () => {
+    expect(isAllMailbox({ name: "[Gmail]/전체보관함".normalize("NFD") })).toBe(true);
   });
 });
 
