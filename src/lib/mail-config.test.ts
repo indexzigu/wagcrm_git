@@ -181,12 +181,12 @@ describe("자모 분리(NFD) 이름", () => {
   it("구글이 NFD 로 돌려주는 한국어 편지함도 이름 폴백이 거른다", () => {
     // 특수용도 속성이 없는 서버에서는 이름 판정이 유일한 방어선인데, NFC 로만 비교하면
     // 아래가 전부 통과해 버린다(실측: 구글은 NFD 로 준다).
-    expect(isScannableMailbox({ name: "[Gmail]/휴지통" })).toBe(false);
-    expect(isScannableMailbox({ name: "[Gmail]/보낸편지함" })).toBe(false);
+    expect(isScannableMailbox({ name: "[Gmail]/휴지통".normalize("NFD") })).toBe(false);
+    expect(isScannableMailbox({ name: "[Gmail]/보낸편지함".normalize("NFD") })).toBe(false);
   });
 
   it("NFD 전체보관함도 알아본다", () => {
-    expect(isAllMailbox({ name: "[Gmail]/전체보관함" })).toBe(true);
+    expect(isAllMailbox({ name: "[Gmail]/전체보관함".normalize("NFD") })).toBe(true);
   });
 });
 

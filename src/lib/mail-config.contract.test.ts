@@ -104,6 +104,22 @@ describe("메일 서버 좌표 단일화", () => {
     expect(offenders).toEqual([]);
   });
 
+  it.each(CONSUMERS)("%s 가 IMAP 에 붙는다면 접속 설정은 SSOT 가 만든다", (path) => {
+    // 🔴 `tlsOptions.servername`(SNI) 이 빠지면 구글 IMAP 이 통째로 죽는다(2026-09-02 실측).
+    //    소비처가 접속 옵션을 손으로 지으면 그 한 줄이 조용히 빠지므로, 접속하는 파일은
+    //    반드시 resolveImapConfig 를 거친다.
+    const source = executableSource(path);
+    if (!/imaps?\.connect\s*\(/.test(source)) return; // IMAP 을 안 쓰는 소비처는 해당 없음
+    expect(source).toMatch(/resolveImapConfig\s*\(/);
+  });
+
+  it("SSOT 는 SNI 를 싣는다 — 빠지면 구글 IMAP 이 인증서 오류로 끊긴다", () => {
+    // 반대 방향 단언(있어야 통과). 위 단언들은 「없음」만 보므로 이것이 대조군이다.
+    // 🪤 `tlsOptions: { servername` 로 재면 **타입 선언에도 걸려** 실제 대입을 지워도
+    //    초록이다(변이 테스트로 실측). 반드시 **값이 host 와 묶인 대입**을 본다.
+    expect(executableSource(SSOT)).toMatch(/servername:\s*host\b/);
+  });
+
   it("SSOT 는 옛 사업자 폴백을 **유지한다** — 지우면 배포 순서 사고가 되살아난다", () => {
     // 🪤 이 단언은 방향이 반대다(있어야 통과). 옛 사업자 계정이 `.env` 에 남아 있는 동안
     //    구글 상수를 무조건 쓰면, 오너가 계정을 바꾸기 전에 배포가 도는 순간 수신 2경로·

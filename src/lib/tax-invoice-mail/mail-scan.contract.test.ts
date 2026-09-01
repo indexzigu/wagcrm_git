@@ -44,20 +44,24 @@ describe("편지함 선택", () => {
   it("서버가 자모 분리(NFD)로 돌려줘도 전용 폴더를 찾는다", () => {
     // 🔴 구글 실측(2026-09-02): 라벨 `세금계산서` 가 NFD 12코드포인트로 온다. 조합형(NFC)
     //    설정값과 정확 일치도 부분 일치도 실패해 조용히 INBOX 로 폴백하던 자리다.
-    const nfd = "세금계산서";
+    const nfd = "세금계산서".normalize("NFD");
     expect(nfd).not.toBe("세금계산서"); // 눈에는 같지만 다른 문자열이다
     expect(pickTaxInvoiceBox(["INBOX", nfd], "세금계산서")).toBe(nfd);
     expect(pickTaxInvoiceBox(["INBOX", nfd])).toBe(nfd);
   });
 
   it("NFD 이름에서도 '계산서' 부분일치 폴백이 산다", () => {
-    const nfd = "전자계산서";
+    const nfd = "전자계산서".normalize("NFD");
     expect(pickTaxInvoiceBox(["INBOX", nfd], "없는폴더")).toBe(nfd);
   });
 
   it("고른 이름은 **서버 원문 그대로** 돌려준다(openBox 가 서버 어휘로 열어야 한다)", () => {
-    const nfd = "세금계산서";
-    expect(pickTaxInvoiceBox(["INBOX", nfd], "세금계산서").normalize("NFD")).toBe(nfd);
+    // ⛔ 반환값에 `.normalize()` 를 걸어 비교하지 말 것 — NFC 를 돌려줘도 통과해서
+    //    이 테스트가 주장하는 회귀를 못 잡는다(교차 검증에서 잡힌 실제 결함이었다).
+    const nfd = "세금계산서".normalize("NFD");
+    const picked = pickTaxInvoiceBox(["INBOX", nfd], "세금계산서");
+    expect(picked).toBe(nfd);
+    expect(picked.normalize("NFC")).not.toBe(picked); // 정규화된 값이 아님을 못박는다
   });
 
   it("후보가 없으면 INBOX", () => {
@@ -69,6 +73,13 @@ describe("제목 힌트", () => {
   it("계산서 계열 제목을 통과시킨다", () => {
     expect(isTaxInvoiceSubject("[전자세금계산서] 발행 안내")).toBe(true);
     expect(isTaxInvoiceSubject("계산서 발행 완료")).toBe(true);
+  });
+
+  it("자모 분리(NFD) 제목도 통과시킨다 — 형태는 보낸 사람이 정한다", () => {
+    // 🔴 편지함 이름과 같은 축이고, 이쪽은 구글이 아니라 발신자가 형태를 정하므로 실측으로
+    //    미리 걸러낼 수 없다. 놓치면 조용한 「미수취」다(2026-08-05 실사고와 같은 관문).
+    expect(isTaxInvoiceSubject("[전자세금계산서] 발행 안내".normalize("NFD"))).toBe(true);
+    expect(isTaxInvoiceSubject("계산서 발행 완료".normalize("NFD"))).toBe(true);
   });
 
   it("무관한 제목은 거른다", () => {

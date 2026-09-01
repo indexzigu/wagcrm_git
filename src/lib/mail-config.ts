@@ -279,11 +279,27 @@ export interface MailboxDescriptor {
   attribs?: readonly string[];
 }
 
+/**
+ * 🔴 메일 서버가 준 문자열을 **비교하기 전에 반드시 통과시킨다.**
+ *
+ * 구글은 한글을 **자모 분리(NFD)** 로 돌려준다 — 실측 2026-09-02: 라벨 `세금계산서` 가
+ * 코드포인트 12개로 왔고, 조합형(NFC, 5개)으로 적힌 우리 상수와 **정확 일치도 부분 일치도
+ * 전부 실패**했다. 그 결과가 조용한 폴백·0건이라 화면에서는 「미수취」·「회신 없음」과
+ * 구분되지 않는다(P0 침묵형).
+ *
+ * ⚠️ 편지함 이름만의 문제가 아니다 — **제목·첨부 파일명**도 같은 축이고, 그쪽은 구글이
+ * 아니라 **보낸 사람**이 정한다(맥에서 온 첨부는 파일명이 NFD 인 것이 상시 조건이다).
+ * 그래서 서버에서 온 문자열을 우리 한국어 상수와 맞대는 자리는 전부 이 함수를 거친다.
+ *
+ * ⛔ 지우지 말 것. 다음메일에서는 드러나지 않던 종류의 결함이다.
+ */
+export function toNfc(value: string): string {
+  return value.normalize("NFC");
+}
+
+/** 편지함 **이름 비교** 전용 — NFC 위에 공백 제거·소문자화를 얹는다. */
 function normalizeBoxName(name: string): string {
-  // 🔴 `normalize("NFC")` 를 지우지 말 것 — 구글은 한글 편지함 이름을 **자모 분리(NFD)** 로
-  //    돌려준다(실측 2026-09-02). 조합형으로 적힌 아래 한국어 조각들이 통째로 빗나가고,
-  //    특수용도 속성이 없는 서버에서는 제외가 전부 무력해진다.
-  return name.normalize("NFC").replace(/\s+/g, "").toLowerCase();
+  return toNfc(name).replace(/\s+/g, "").toLowerCase();
 }
 
 function hasAttrib(box: MailboxDescriptor, attrib: string): boolean {

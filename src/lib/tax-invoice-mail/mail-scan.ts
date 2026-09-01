@@ -24,7 +24,7 @@ import { simpleParser } from "mailparser";
 import { Readable } from "stream";
 import { parseEtaxInvoiceXml, type ParsedEtaxInvoice } from "./etax-xml";
 import { describeAttachment, type AttachmentKind } from "./attachment-kind";
-import { resolveImapConfig, resolveMailCredentials } from "@/lib/mail-config";
+import { resolveImapConfig, resolveMailCredentials, toNfc } from "@/lib/mail-config";
 import {
   isNtsSecureMailHtml,
   parseNtsSecureMailHtml,
@@ -154,22 +154,6 @@ function flattenBoxes(boxes: Record<string, unknown>, prefix = ""): string[] {
 }
 
 /**
- * 편지함 이름 비교용 정규화.
- *
- * 🔴 **한글 이름은 서버마다 정규화 형태가 다르다 — 반드시 NFC 로 맞춰서 비교한다.**
- * 구글은 라벨 이름을 **자모 분리(NFD)** 로 돌려준다(실측 2026-09-02: `세금계산서` 가
- * 코드포인트 12개, `1109 1166 1100 …`). env·상수는 조합형(NFC, 5개)이라 **정확 일치도
- * 부분 일치도 전부 실패**하고, 그러면 아래 함수가 조용히 `INBOX` 로 폴백한다 —
- * 라벨 규칙에 「받은편지함 건너뛰기」가 걸려 있으면 **스캔이 한 건도 못 찾는다.**
- * 화면에는 「메일 미발견」으로 보여서 미수취와 구분되지 않는다(P0 침묵형 실패).
- *
- * ⛔ 이 정규화를 지우지 말 것 — 다음메일에서는 드러나지 않던 종류의 결함이다.
- */
-function normalizeBoxName(name: string): string {
-  return name.normalize("NFC");
-}
-
-/**
  * 세금계산서 전용 편지함을 고른다.
  * 오너가 같은 계정에서 세금계산서 메일을 **전용 폴더로 분리 관리**하고 있으므로,
  * INBOX 전수 스캔이 아니라 그 폴더만 여는 것이 기본이다(비용·오탐 모두 줄어든다).
@@ -178,25 +162,31 @@ function normalizeBoxName(name: string): string {
  * 어휘로 열어야 하므로, 비교만 정규화하고 반환은 원문을 유지한다.
  */
 export function pickTaxInvoiceBox(boxNames: readonly string[], configured?: string | null): string {
-  const want = configured ? normalizeBoxName(configured) : null;
+  const want = configured ? toNfc(configured) : null;
   if (want) {
-    const exact = boxNames.find((name) => normalizeBoxName(name) === want);
+    const exact = boxNames.find((name) => toNfc(name) === want);
     if (exact) return exact;
   }
   // 정확 일치를 부분 일치보다 먼저 본다 — '계산서' 가 든 폴더가 둘 이상이면(예: '세금계산서
   // 보관', '계산서_2025') 부분 일치는 어느 것을 집을지가 편지함 나열 순서에 좌우된다.
   const fallbackExact = boxNames.find(
-    (name) => normalizeBoxName(name) === normalizeBoxName(DEFAULT_BOX_NAME),
+    (name) => toNfc(name) === toNfc(DEFAULT_BOX_NAME),
   );
   if (fallbackExact) return fallbackExact;
   const hinted = boxNames.find((name) =>
-    normalizeBoxName(name).includes(normalizeBoxName(BOX_NAME_HINT)),
+    toNfc(name).includes(toNfc(BOX_NAME_HINT)),
   );
   return hinted ?? "INBOX";
 }
 
+/**
+ * ⚠️ **제목도 정규화하고 비교한다.** 편지함 이름과 같은 축이고(위 `toNfc`), 이쪽은 형태를
+ * 구글이 아니라 **보낸 사람**이 정하므로 실측으로 미리 걸러낼 수도 없다. 놓쳤을 때의 대가가
+ * 조용한 「미수취」라 비대칭이다 — 2026-08-05 실사고가 정확히 이 관문의 실패였다.
+ */
 export function isTaxInvoiceSubject(subject: string): boolean {
-  return SUBJECT_HINTS.some((hint) => subject.includes(hint));
+  const normalized = toNfc(subject);
+  return SUBJECT_HINTS.some((hint) => normalized.includes(toNfc(hint)));
 }
 
 /** 국세청 직발송인가. 헤더의 `From` 원문(표시이름 + 주소)을 그대로 받는다. */
