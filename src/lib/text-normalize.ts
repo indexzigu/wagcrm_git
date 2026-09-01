@@ -37,7 +37,8 @@ export function toNfc(value: string): string {
  * 박혀 있었다」와 같은 모양) 여기로 모은다.
  *
  * ⚠️ **정확 일치가 필요한 자리에는 쓰지 말 것** — 대소문자·공백까지 뭉개므로
- * `세금계산서` 와 `세금 계산서 보관` 을 가르지 못한다. 그런 자리는 `toNfc` 만 쓴다.
+ * `세금계산서` 와 `세금 계산서` 를 **같은 것으로 본다**. 그런 자리는 `toNfc` 만 쓴다.
+ * (`세금 계산서 보관` 처럼 글자가 더 붙은 이름은 그래도 갈린다 — 뭉개지는 것은 공백·대소문자뿐이다.)
  */
 export function normalizeForCompare(value: string): string {
   return toNfc(value).replace(/\s+/g, "").toLowerCase();

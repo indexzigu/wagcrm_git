@@ -219,10 +219,10 @@ function foldLabelForMatch(raw: string): string {
  * 결국 그 캠페인에만 있는 토큰이다 — 목록을 손으로 관리하면 오히려 그게 표류한다.
  */
 function identityTokens(label: string): string[] {
-  // ⚠️ **쪼개기 전에 NFC 로 맞춘다.** 아래 `length >= 2` 는 「2음절 미만은 버린다」는 뜻인데,
-  //    자모 분리 상태에서는 1음절이 코드포인트 3개라 필터를 그냥 통과한다 — 즉 같은 라벨이
-  //    형태에 따라 다른 토큰 집합을 낸다(교차 검증 지적). 실데이터(캠페인 라벨)는 NFC 라
-  //    현재 영향은 없지만, 의도대로 세려면 여기가 맞다.
+  // 쪼개기 전에 NFC 로 맞춘다 — 구분자 매칭이 형태에 좌우되지 않게.
+  // ⚠️ **아래 `length >= 2` 때문은 아니다.** 그 필터는 `foldLabelForMatch`(내부에 NFC) 를
+  //    거친 뒤에 걸리므로 선행 정규화가 없어도 토큰 집합은 같다 — 실측으로 확인했고,
+  //    종전 주석은 그 순서를 잘못 읽어 「없으면 토큰이 갈린다」고 적고 있었다.
   return toNfc(label)
     .split(/[\s\-_/·,.()[\]{}×xX]+/)
     .map((token) => foldLabelForMatch(token))
