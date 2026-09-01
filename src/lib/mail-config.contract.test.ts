@@ -49,9 +49,19 @@ describe("메일 서버 좌표 단일화", () => {
     expect(found.length).toBeGreaterThan(0);
   });
 
-  it("옛 메일 사업자로 되돌아간 자리가 없다", () => {
-    for (const path of [...CONSUMERS, SSOT]) {
+  it("소비처에는 옛 메일 사업자 좌표가 남아 있지 않다", () => {
+    for (const path of CONSUMERS) {
       expect(executableSource(path)).not.toMatch(/daum\.net/i);
     }
+  });
+
+  it("SSOT 는 옛 사업자 폴백을 **유지한다** — 지우면 배포 순서 사고가 되살아난다", () => {
+    // 🪤 이 단언은 방향이 반대다(있어야 통과). 옛 사업자 계정이 `.env` 에 남아 있는 동안
+    //    구글 상수를 무조건 쓰면, 오너가 계정을 바꾸기 전에 배포가 도는 순간 수신 2경로·
+    //    발신 1경로가 **동시에** 인증 실패한다(교차 검증에서 잡힌 P1, 2026-09-01).
+    //    "정리"하려는 다음 세션을 여기서 세운다.
+    const source = executableSource(SSOT);
+    expect(source).toMatch(/imap\.daum\.net/);
+    expect(source).toMatch(/smtp\.daum\.net/);
   });
 });

@@ -10,10 +10,12 @@
  * (자격증명은 새 계정 것이므로 인증 실패다 — 다음메일→구글 전환에서 실제로 걸릴 뻔했다).
  * 호스트를 여기 모아 두면 "계정을 옮긴다"가 env 한 벌 교체로 끝난다.
  *
- * ## 기본값은 구글이다 (2026-09-01 전환, 오너 결정)
+ * ## 구글로 옮겼다 (2026-09-01 전환, 오너 결정)
  *
  * `ygrd.kr` 수신은 2026-08-23 에 Cloudflare Email Routing 으로 넘어갔고 지금은
  * Cloudflare 가 받아 Gmail 로 전달한다. 앱이 붙는 메일함도 구글로 통일했다.
+ * ⚠️ **다만 「구글이 무조건 기본」은 아니다** — 서버는 계정 주소에서 따라 나온다
+ * (아래 `resolveImapHost` 의 배포 순서 함정 참조).
  *
  * ⚠️ **구글은 일반 비밀번호로 IMAP·SMTP 를 받지 않는다**(2025-03-14 부로 차단). `SMTP_PASS`
  * 에는 2단계 인증을 켠 계정에서 발급한 **앱 비밀번호**가 들어간다. OAuth 는 메일함 전체
@@ -23,16 +25,62 @@
  * `hardcoded-secret-literals.contract.test.ts` 가 강제한다.
  */
 
-/** 구글 메일 수신 서버. env 로 덮을 수 있게 두되 기본값으로 설정 누락을 흡수한다. */
+/**
+ * 서버는 호스트만 env 로 덮을 수 있다 — **되돌리기 경로**가 그것뿐이라 포트까지 knob 을
+ * 만들지 않는다(두 사업자 모두 993/465 다). 다른 포트를 써야 할 서버로 옮길 일이 실제로
+ * 생기면 그때 상수를 고친다.
+ */
 export const DEFAULT_IMAP_HOST = "imap.gmail.com";
-export const DEFAULT_IMAP_PORT = 993;
-/** 구글 메일 발신 서버(SSL 직결 포트). */
+export const IMAP_PORT = 993;
 export const DEFAULT_SMTP_HOST = "smtp.gmail.com";
-export const DEFAULT_SMTP_PORT = 465;
+/** SSL 직결 포트. */
+export const SMTP_PORT = 465;
 
-export interface ImapConnectionConfig {
+/**
+ * ## 서버는 **계정 주소에서 따라 나온다** — 배포 순서가 사고를 못 만들게
+ *
+ * 🪤 **이것이 없으면 배포와 `.env` 교체 사이에 창이 열린다.** 셀프호스트는 `main` 을 pull 해
+ * 배포하는데, 오너가 `.env` 를 바꾸기 **전에** 배포가 돌면 앱은 **옛 사업자 자격증명을 구글
+ * 서버로** 보낸다 — 인증 실패로 수신 2경로·발신 1경로가 **동시에** 죽는다. env 점검기는
+ * 「비었는가」만 보므로(`selfhost-env-contract.ts`) 이 불일치를 원리적으로 못 잡는다.
+ * 교차 검증에서 잡힌 지적이다(2026-09-01).
+ *
+ * 그래서 **자격증명이 곧 서버를 정한다**: 계정이 다음메일이면 다음메일 서버로, 그 외에는
+ * 구글로 간다(구글 Workspace 의 자체 도메인 계정도 `imap.gmail.com` 이 맞다). 전환은
+ * 「배포한 순간」이 아니라 「오너가 계정을 바꾼 순간」에 일어나므로 순서 사고가 성립하지 않고,
+ * 되돌리기도 옛 계정을 다시 넣는 것으로 끝난다.
+ *
+ * ⛔ 이 판정을 지우고 구글 상수를 무조건 쓰게 되돌리지 말 것 — 위 창이 그대로 다시 열린다.
+ */
+const LEGACY_PROVIDER = {
+  domains: ["daum.net", "hanmail.net"],
+  imapHost: "imap.daum.net",
+  smtpHost: "smtp.daum.net",
+} as const;
+
+function isLegacyProviderAccount(user: string): boolean {
+  const domain = user.toLowerCase().split("@")[1] ?? "";
+  return LEGACY_PROVIDER.domains.includes(domain as (typeof LEGACY_PROVIDER.domains)[number]);
+}
+
+/** 계정에 맞는 서버. env 명시가 있으면 그것이 이긴다. */
+export function resolveImapHost(credentials: MailCredentials): string {
+  if (process.env.MAIL_IMAP_HOST) return process.env.MAIL_IMAP_HOST;
+  return isLegacyProviderAccount(credentials.user) ? LEGACY_PROVIDER.imapHost : DEFAULT_IMAP_HOST;
+}
+
+export function resolveSmtpHost(credentials: MailCredentials): string {
+  if (process.env.MAIL_SMTP_HOST) return process.env.MAIL_SMTP_HOST;
+  return isLegacyProviderAccount(credentials.user) ? LEGACY_PROVIDER.smtpHost : DEFAULT_SMTP_HOST;
+}
+
+/** 메일 계정 자격증명. 수신 2경로·발신 1경로가 **같은 한 벌**을 쓴다. */
+export interface MailCredentials {
   user: string;
   password: string;
+}
+
+export interface ImapConnectionConfig extends MailCredentials {
   host: string;
   port: number;
   tls: true;
@@ -46,17 +94,12 @@ export interface SmtpConnectionConfig {
   auth: { user: string; pass: string };
 }
 
-function readPort(raw: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(raw ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
 /**
  * 계정 자격증명. 둘 중 하나라도 비면 `null` — 호출부가 각자 실패를 **드러내야** 한다.
  * ⛔ 빈 문자열로 접속을 시도하지 말 것: 인증 실패가 "메일 0건"으로 보여 오너가 미수취를
  * 못 본다(`selfhost-env-contract.ts` 의 `SMTP_USER` 항목이 이 실패 모드를 적어 둔 곳이다).
  */
-export function resolveMailCredentials(): { user: string; password: string } | null {
+export function resolveMailCredentials(): MailCredentials | null {
   const user = process.env.SMTP_USER ?? "";
   const password = process.env.SMTP_PASS ?? "";
   if (!user || !password) return null;
@@ -65,29 +108,25 @@ export function resolveMailCredentials(): { user: string; password: string } | n
 
 /** IMAP 접속 설정. `authTimeout` 만 호출부 사정(스캔 규모)에 따라 다르다. */
 export function resolveImapConfig(
-  credentials: { user: string; password: string },
+  credentials: MailCredentials,
   options: { authTimeout?: number } = {},
 ): ImapConnectionConfig {
   return {
     user: credentials.user,
     password: credentials.password,
-    host: process.env.MAIL_IMAP_HOST || DEFAULT_IMAP_HOST,
-    port: readPort(process.env.MAIL_IMAP_PORT, DEFAULT_IMAP_PORT),
+    host: resolveImapHost(credentials),
+    port: IMAP_PORT,
     tls: true,
     authTimeout: options.authTimeout ?? 10_000,
   };
 }
 
-/** SMTP 접속 설정. 465 는 SSL 직결이고 그 외 포트는 STARTTLS 로 본다. */
-export function resolveSmtpConfig(credentials: {
-  user: string;
-  password: string;
-}): SmtpConnectionConfig {
-  const port = readPort(process.env.MAIL_SMTP_PORT, DEFAULT_SMTP_PORT);
+/** SMTP 접속 설정. */
+export function resolveSmtpConfig(credentials: MailCredentials): SmtpConnectionConfig {
   return {
-    host: process.env.MAIL_SMTP_HOST || DEFAULT_SMTP_HOST,
-    port,
-    secure: port === 465,
+    host: resolveSmtpHost(credentials),
+    port: SMTP_PORT,
+    secure: true,
     auth: { user: credentials.user, pass: credentials.password },
   };
 }
@@ -95,16 +134,33 @@ export function resolveSmtpConfig(credentials: {
 /**
  * 발신인. `SMTP_FROM_EMAIL` 이 비면 로그인 계정으로 떨어진다.
  *
- * ⚠️ **구글은 등록·인증된 주소로만 보낸다** — `SMTP_FROM_EMAIL` 에 `ygrd.kr` 주소를 넣으려면
- * 그 계정의 「다른 주소에서 메일 보내기」에 먼저 등록해야 한다. 등록 없이 넣으면 구글이
- * 발신인을 **로그인 계정 주소로 조용히 바꿔** 보낸다(에러가 아니라 치환이라 로그로는
- * 안 보이고, 브랜드사 화면에서만 드러난다).
+ * ⚠️ **구글은 등록·인증된 주소로만 보낸다.** 등록하지 않은 주소를 넣으면 구글이 발신인을
+ * **로그인 계정 주소로 조용히 바꿔** 보낸다(에러가 아니라 치환이라 로그로는 안 보이고,
+ * 브랜드사 화면에서만 드러난다). 이 실패 모드의 설명 정본은 여기이고, 오너 절차는
+ * `docs/runbooks/gmail-mail-cutover.md` 다.
  */
-export function resolveMailFrom(fallbackUser: string): { name: string; email: string } {
+export function resolveMailFrom(credentials: MailCredentials): { name: string; email: string } {
   return {
     name: process.env.SMTP_FROM_NAME || "와이그라운드",
-    email: process.env.SMTP_FROM_EMAIL || fallbackUser,
+    email: process.env.SMTP_FROM_EMAIL || credentials.user,
   };
+}
+
+/**
+ * 우리가 보낸 메일인가 — 회신 수집이 **자기 발송분을 회신으로 오인하지 않게** 한다.
+ *
+ * 판정 근거가 셋인 것은 발신 주소가 셋으로 갈릴 수 있기 때문이다:
+ * ①정상 경로(자사 도메인) ②위 `resolveMailFrom` 의 치환이 일어난 경우(로그인 계정 주소)
+ * ③옛 메일 사업자 시절 계정으로 나간 과거 메일(아래 상수).
+ */
+const LEGACY_SENDER_LOCALPARTS = ["nutrione01@"] as const;
+const OWN_DOMAIN = "@ygrd.kr";
+
+export function isOwnSenderAddress(from: string, credentials: MailCredentials): boolean {
+  const lowered = from.toLowerCase();
+  if (lowered.includes(OWN_DOMAIN)) return true;
+  if (lowered.includes(credentials.user.toLowerCase())) return true;
+  return LEGACY_SENDER_LOCALPARTS.some((local) => lowered.includes(local));
 }
 
 /**
@@ -129,6 +185,13 @@ const EXCLUDED_SPECIAL_USE = [
   "\\Spam",
   "\\Drafts",
   "\\Sent",
+  /**
+   * `\Important`(중요편지함) · `\Flagged`(별표편지함) 는 **폴더가 아니라 받은편지함의
+   * 걸러 보기**다. 빼지 않으면 일반 사용자 라벨로 취급돼 전체보관함보다 **먼저** 열리고,
+   * 같은 메일을 한 번 더 훑는다(교차 검증 지적 2026-09-01).
+   */
+  "\\Important",
+  "\\Flagged",
   /** 선택 불가 컨테이너(구글의 `[Gmail]` 자체). 열면 예외가 난다. */
   "\\Noselect",
 ] as const;
@@ -149,6 +212,10 @@ const EXCLUDED_NAME_HINTS = [
   "임시보관함",
   "예약편지함",
   "내게쓴편지함",
+  "중요편지함",
+  "별표편지함",
+  "important",
+  "starred",
   "카페",
   "cafe",
 ] as const;

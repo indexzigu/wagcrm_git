@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     }
     const transporter = nodemailer.createTransport(resolveSmtpConfig(credentials));
 
-    const { name: fromName, email: fromEmail } = resolveMailFrom(credentials.user);
+    const { name: fromName, email: fromEmail } = resolveMailFrom(credentials);
 
     const campaign = campaignId ? await prisma.orderCampaign.findUnique({ where: { id: campaignId } }) : null;
     const sellerName = campaign?.sellerName || '미지정';

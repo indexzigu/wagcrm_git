@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   DEFAULT_IMAP_HOST,
-  DEFAULT_IMAP_PORT,
   DEFAULT_SMTP_HOST,
-  DEFAULT_SMTP_PORT,
+  IMAP_PORT,
+  SMTP_PORT,
   isAllMailbox,
+  isOwnSenderAddress,
   isScannableMailbox,
   orderMailboxesForScan,
   resolveImapConfig,
@@ -19,9 +20,7 @@ const MAIL_ENV_KEYS = [
   "SMTP_FROM_EMAIL",
   "SMTP_FROM_NAME",
   "MAIL_IMAP_HOST",
-  "MAIL_IMAP_PORT",
   "MAIL_SMTP_HOST",
-  "MAIL_SMTP_PORT",
 ] as const;
 
 let saved: Record<string, string | undefined> = {};
@@ -38,53 +37,64 @@ afterEach(() => {
   }
 });
 
-const CREDS = { user: "u", password: "p" };
+const CREDS = { user: "test@gmail.com", password: "p" };
+const LEGACY_CREDS = { user: "test@daum.net", password: "p" };
 
 describe("자격증명", () => {
   it("둘 다 있으면 돌려준다", () => {
-    process.env.SMTP_USER = "u";
+    process.env.SMTP_USER = "test@gmail.com";
     process.env.SMTP_PASS = "p";
-    expect(resolveMailCredentials()).toEqual({ user: "u", password: "p" });
+    expect(resolveMailCredentials()).toEqual({ user: "test@gmail.com", password: "p" });
   });
 
   it("한쪽만 있으면 null 이다 — 빈 비밀번호로 접속을 시도하지 않는다", () => {
-    process.env.SMTP_USER = "u";
+    process.env.SMTP_USER = "test@gmail.com";
     expect(resolveMailCredentials()).toBeNull();
   });
 
   it("빈 문자열은 미설정과 같다", () => {
-    process.env.SMTP_USER = "u";
+    process.env.SMTP_USER = "test@gmail.com";
     process.env.SMTP_PASS = "";
     expect(resolveMailCredentials()).toBeNull();
   });
 });
 
-describe("접속 설정", () => {
-  it("기본값은 구글이다", () => {
+describe("접속 설정 — 서버가 계정을 따라간다", () => {
+  it("구글 계정이면 구글 서버로 간다", () => {
     expect(resolveImapConfig(CREDS).host).toBe(DEFAULT_IMAP_HOST);
-    expect(resolveImapConfig(CREDS).port).toBe(DEFAULT_IMAP_PORT);
     expect(resolveSmtpConfig(CREDS).host).toBe(DEFAULT_SMTP_HOST);
-    expect(resolveSmtpConfig(CREDS).port).toBe(DEFAULT_SMTP_PORT);
   });
 
-  it("env 로 다른 서버를 가리킬 수 있다", () => {
+  it("옛 사업자 계정이 남아 있으면 옛 서버로 간다 — 배포와 .env 교체 사이의 창을 없앤다", () => {
+    // 🪤 이 두 줄이 회귀의 본체다. 구글 상수를 무조건 쓰면, 오너가 .env 를 바꾸기 전에
+    //    배포가 돌 때 옛 자격증명이 구글로 가서 수신 2경로·발신 1경로가 동시에 죽는다.
+    expect(resolveImapConfig(LEGACY_CREDS).host).toBe("imap.daum.net");
+    expect(resolveSmtpConfig(LEGACY_CREDS).host).toBe("smtp.daum.net");
+  });
+
+  it("한메일 주소도 같은 사업자로 본다", () => {
+    expect(resolveImapConfig({ user: "test@hanmail.net", password: "p" }).host).toBe(
+      "imap.daum.net",
+    );
+  });
+
+  it("자체 도메인 계정(구글 Workspace)은 구글로 간다", () => {
+    expect(resolveImapConfig({ user: "info@ygrd.kr", password: "p" }).host).toBe(
+      DEFAULT_IMAP_HOST,
+    );
+  });
+
+  it("env 명시가 계정 판정을 이긴다", () => {
     process.env.MAIL_IMAP_HOST = "imap.example.test";
     process.env.MAIL_SMTP_HOST = "smtp.example.test";
-    expect(resolveImapConfig(CREDS).host).toBe("imap.example.test");
-    expect(resolveSmtpConfig(CREDS).host).toBe("smtp.example.test");
+    expect(resolveImapConfig(LEGACY_CREDS).host).toBe("imap.example.test");
+    expect(resolveSmtpConfig(LEGACY_CREDS).host).toBe("smtp.example.test");
   });
 
-  it("포트가 숫자가 아니면 기본값으로 떨어진다(NaN 으로 접속하지 않는다)", () => {
-    process.env.MAIL_IMAP_PORT = "그냥글자";
-    process.env.MAIL_SMTP_PORT = "";
-    expect(resolveImapConfig(CREDS).port).toBe(DEFAULT_IMAP_PORT);
-    expect(resolveSmtpConfig(CREDS).port).toBe(DEFAULT_SMTP_PORT);
-  });
-
-  it("465 만 SSL 직결이고 그 외는 STARTTLS 로 본다", () => {
+  it("포트는 두 사업자가 같아서 상수다", () => {
+    expect(resolveImapConfig(CREDS).port).toBe(IMAP_PORT);
+    expect(resolveSmtpConfig(CREDS).port).toBe(SMTP_PORT);
     expect(resolveSmtpConfig(CREDS).secure).toBe(true);
-    process.env.MAIL_SMTP_PORT = "587";
-    expect(resolveSmtpConfig(CREDS).secure).toBe(false);
   });
 
   it("authTimeout 은 호출부가 정하고 기본값이 있다", () => {
@@ -95,7 +105,7 @@ describe("접속 설정", () => {
 
 describe("발신인", () => {
   it("미설정이면 로그인 계정으로 떨어진다", () => {
-    expect(resolveMailFrom("login@example.com")).toEqual({
+    expect(resolveMailFrom({ user: "login@example.com", password: "p" })).toEqual({
       name: "와이그라운드",
       email: "login@example.com",
     });
@@ -104,7 +114,7 @@ describe("발신인", () => {
   it("설정된 주소가 이긴다", () => {
     process.env.SMTP_FROM_EMAIL = "info@example.com";
     process.env.SMTP_FROM_NAME = "다른이름";
-    expect(resolveMailFrom("login@example.com")).toEqual({
+    expect(resolveMailFrom({ user: "login@example.com", password: "p" })).toEqual({
       name: "다른이름",
       email: "info@example.com",
     });
@@ -191,5 +201,37 @@ describe("순회 차례", () => {
       "INBOX",
       "발주",
     ]);
+  });
+});
+
+describe("자기 발송분 판정", () => {
+  it("자사 도메인에서 온 것은 우리 메일이다", () => {
+    expect(isOwnSenderAddress("발주 <info@ygrd.kr>", CREDS)).toBe(true);
+  });
+
+  it("로그인 계정 주소도 우리 메일이다 — 구글이 발신인을 치환한 경우", () => {
+    expect(isOwnSenderAddress("test@gmail.com", CREDS)).toBe(true);
+  });
+
+  it("옛 사업자 계정으로 나간 과거 메일도 우리 메일이다", () => {
+    expect(isOwnSenderAddress("nutrione01@example.com", CREDS)).toBe(true);
+  });
+
+  it("브랜드사 회신은 우리 메일이 아니다", () => {
+    expect(isOwnSenderAddress("담당자 <cs@brand.example.com>", CREDS)).toBe(false);
+  });
+});
+
+describe("중요·별표 편지함", () => {
+  it("받은편지함의 걸러 보기라 스캔 대상이 아니다", () => {
+    expect(isScannableMailbox({ name: "[Gmail]/중요편지함", attribs: ["\\Important"] })).toBe(
+      false,
+    );
+    expect(isScannableMailbox({ name: "[Gmail]/별표편지함", attribs: ["\\Flagged"] })).toBe(false);
+  });
+
+  it("속성을 안 주는 서버에서도 이름으로 걸린다", () => {
+    expect(isScannableMailbox({ name: "[Gmail]/중요편지함" })).toBe(false);
+    expect(isScannableMailbox({ name: "Starred" })).toBe(false);
   });
 });

@@ -4,7 +4,13 @@ import { simpleParser } from 'mailparser';
 import { Readable } from 'stream';
 import { resolveOrderBrand, resolveReplyRule } from '@/lib/order-converter/order-brand';
 import { extractTrackingMapByReply } from '@/lib/order-converter/order-parser';
-import { orderMailboxesForScan, resolveImapConfig, resolveMailCredentials } from '@/lib/mail-config';
+import {
+  isOwnSenderAddress,
+  orderMailboxesForScan,
+  resolveImapConfig,
+  resolveMailCredentials,
+  type MailboxDescriptor,
+} from '@/lib/mail-config';
 
 // F4-②: 브랜드별 허용 발신자 도메인은 거래처(Partner) 설정에서 해석 (하드코딩 맵 제거).
 
@@ -44,7 +50,7 @@ export async function POST(req: NextRequest) {
     //    한국어 이름만 알고 있어서 구글의 `휴지통`·`보낸편지함`·`전체보관함` 이 하나도
     //    안 걸렸다(전체보관함은 전 메일의 사본이라 메일함을 두 번 훑게 된다).
     const boxesInfo = await connection.getBoxes();
-    const discovered: { name: string; attribs?: string[] }[] = [];
+    const discovered: MailboxDescriptor[] = [];
 
     const extractBoxes = (boxObj: any, prefix = '') => {
       for (const key of Object.keys(boxObj)) {
@@ -159,15 +165,9 @@ export async function POST(req: NextRequest) {
           
           const matchScore = (hasOurCompanyName ? 1 : 0) + (hasSeller ? 1 : 0) + (hasSentDate ? 1 : 0);
           
-          // 내가 발송한 메일(원본)은 제외 처리.
-          // ⚠️ **로그인 계정 주소도 함께 본다.** 발신인(`SMTP_FROM_EMAIL`)을 구글에 등록하지
-          //    않으면 구글이 발신인을 **로그인 계정 주소로 조용히 치환해** 보내므로, 도메인만
-          //    보면 우리가 보낸 발주서 원본이 브랜드사 회신으로 오인된다.
-          const loweredFrom = fromAddress.toLowerCase();
-          const isMyOwnMail =
-            loweredFrom.includes('@ygrd.kr') ||
-            loweredFrom.includes('nutrione01@') ||
-            loweredFrom.includes(credentials.user.toLowerCase());
+          // 내가 발송한 메일(원본)은 제외 처리 — 판정은 `mail-config` 가 소유한다
+          // (자사 도메인 · 로그인 계정 · 옛 사업자 계정 세 갈래. 사유는 그 함수 주석).
+          const isMyOwnMail = isOwnSenderAddress(fromAddress, credentials);
           const subjectMatched = !isMyOwnMail && (domainMatched || matchScore >= 2);
           const hasTagInImap = tagUids.includes(id) && !isMyOwnMail;
           
