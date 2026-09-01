@@ -199,7 +199,29 @@ export const SELFHOST_ENV_CONTRACT: readonly EnvContractEntry[] = [
   {
     envName: "SMTP_FROM_EMAIL",
     disposition: "optional",
-    reason: "비면 SMTP_USER 로 폴백한다(send-email 라우트)",
+    reason:
+      "비면 SMTP_USER 로 폴백한다(send-email 라우트). ⚠️ 구글은 계정에 **등록·인증된 주소**로만 보낸다 — 등록 없이 ygrd.kr 주소를 넣으면 오류가 아니라 로그인 계정 주소로 **조용히 치환**돼 나가므로, 로그에는 성공으로 남고 브랜드사 화면에서만 드러난다",
+  },
+  {
+    envName: "MAIL_IMAP_HOST",
+    disposition: "optional",
+    reason:
+      "비면 mail-config 의 기본값(구글 수신 서버)을 쓴다. 정상 운영에서 채울 일이 없고, 채우는 경우는 메일 사업자를 다시 옮길 때뿐이다",
+  },
+  {
+    envName: "MAIL_IMAP_PORT",
+    disposition: "optional",
+    reason: "위와 짝. 비거나 숫자가 아니면 기본값(993)으로 떨어진다",
+  },
+  {
+    envName: "MAIL_SMTP_HOST",
+    disposition: "optional",
+    reason: "비면 mail-config 의 기본값(구글 발신 서버)을 쓴다. 위 IMAP 항목과 같은 축이다",
+  },
+  {
+    envName: "MAIL_SMTP_PORT",
+    disposition: "optional",
+    reason: "위와 짝. 465 면 SSL 직결, 그 외 값이면 STARTTLS 로 접속한다",
   },
   {
     envName: "SMTP_FROM_NAME",

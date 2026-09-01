@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { prisma } from '@/lib/order-converter/prisma';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
 import { resolveCampaignExpectedOrderIds } from '@/lib/order-converter/campaign-orders';
+import { resolveMailCredentials, resolveMailFrom, resolveSmtpConfig } from '@/lib/mail-config';
 
 // 캠페인 재조회(라이브)를 백그라운드 폴백에서 수행할 수 있으므로 실행시간 한도를 상향한다
 // (execute/validate 라우트와 동일 기준). 메일 발송 자체는 이 한도 이전에 끝난다.
@@ -30,26 +31,17 @@ export async function POST(req: NextRequest) {
 
     // SMTP 자격증명은 env 필수 — 개인 이메일 폴백 하드코딩 금지(공개 레포).
     // 미설정이면 빈 비밀번호로 인증 실패하던 기존 동작 대신 명시적으로 실패한다.
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-    if (!smtpUser || !smtpPass) {
+    // 접속할 서버는 `src/lib/mail-config.ts` 가 소유한다(수신 경로 2곳과 같은 계정).
+    const credentials = resolveMailCredentials();
+    if (!credentials) {
       return NextResponse.json(
         { error: 'SMTP_USER/SMTP_PASS 환경변수가 설정되지 않았습니다. 발주 메일을 보낼 수 없습니다.' },
         { status: 503 }
       );
     }
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.daum.net',
-      port: 465,
-      secure: true, // SSL 보안연결 사용
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      },
-    });
+    const transporter = nodemailer.createTransport(resolveSmtpConfig(credentials));
 
-    const fromName = process.env.SMTP_FROM_NAME || '와이그라운드';
-    const fromEmail = process.env.SMTP_FROM_EMAIL || smtpUser;
+    const { name: fromName, email: fromEmail } = resolveMailFrom(credentials.user);
 
     const campaign = campaignId ? await prisma.orderCampaign.findUnique({ where: { id: campaignId } }) : null;
     const sellerName = campaign?.sellerName || '미지정';

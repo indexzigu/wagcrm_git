@@ -1,0 +1,57 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+/**
+ * 메일 서버 좌표는 `mail-config.ts` **한 곳**에만 있어야 한다.
+ *
+ * **왜 계약인가:** 세 소비처가 같은 계정 자격증명(`SMTP_USER`/`SMTP_PASS`)을 공유하는데
+ * 호스트만 각자 리터럴로 박혀 있었다. 그 상태에서 계정을 옮기면 고쳐야 할 곳이 세 군데인데,
+ * 한 곳을 빠뜨려도 **타입도 테스트도 아무것도 잡지 못한다** — 그 기능만 옛 서버에 새 계정
+ * 자격증명으로 붙어 인증 실패로 죽는다. 2026-09-01 다음메일→구글 전환에서 실제로 걸릴 뻔했다.
+ */
+
+const CONSUMERS = [
+  "src/lib/tax-invoice-mail/mail-scan.ts",
+  "src/app/order-converter/api/fetch-emails/route.ts",
+  "src/app/order-converter/api/send-email/route.ts",
+] as const;
+
+const SSOT = "src/lib/mail-config.ts";
+
+/**
+ * 주석을 걷어낸 실행 코드만 본다.
+ * 이 트랙의 문서가 옛 서버 이름과 새 서버 이름을 **설명하기 위해** 인용하므로, 원문 그대로
+ * 스캔하면 자기 주석에 걸려 영구히 빨간불이 된다(레포 선례 다수).
+ */
+function executableSource(relativePath: string): string {
+  const raw = readFileSync(join(process.cwd(), relativePath), "utf8");
+  return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
+/** `imap.<something>.<tld>` · `smtp.<something>.<tld>` 형태의 메일 서버 호스트. */
+const MAIL_HOST_LITERAL = /\b(?:imap|smtp)\.[a-z0-9-]+(?:\.[a-z]{2,})+\b/gi;
+
+describe("메일 서버 좌표 단일화", () => {
+  it.each(CONSUMERS)("%s 에 메일 서버 호스트를 직접 적지 않는다", (path) => {
+    const found = executableSource(path).match(MAIL_HOST_LITERAL) ?? [];
+    expect(found).toEqual([]);
+  });
+
+  it.each(CONSUMERS)("%s 는 mail-config 에서 접속 설정을 받아 온다", (path) => {
+    expect(executableSource(path)).toMatch(/from ['"]@\/lib\/mail-config['"]/);
+  });
+
+  it("SSOT 자신은 호스트를 갖는다 — 스캐너가 고장 나면 이 단언이 먼저 깨진다", () => {
+    // 양성 프로브. 위 세 단언은 「없음」을 확인하므로, 정규식이 아무것도 못 잡게 망가져도
+    // 조용히 통과한다. 실제로 잡히는 문자열이 있는 파일 하나를 대조군으로 둔다.
+    const found = executableSource(SSOT).match(MAIL_HOST_LITERAL) ?? [];
+    expect(found.length).toBeGreaterThan(0);
+  });
+
+  it("옛 메일 사업자로 되돌아간 자리가 없다", () => {
+    for (const path of [...CONSUMERS, SSOT]) {
+      expect(executableSource(path)).not.toMatch(/daum\.net/i);
+    }
+  });
+});

@@ -4,6 +4,7 @@ import { simpleParser } from 'mailparser';
 import { Readable } from 'stream';
 import { resolveOrderBrand, resolveReplyRule } from '@/lib/order-converter/order-brand';
 import { extractTrackingMapByReply } from '@/lib/order-converter/order-parser';
+import { orderMailboxesForScan, resolveImapConfig, resolveMailCredentials } from '@/lib/mail-config';
 
 // F4-②: 브랜드별 허용 발신자 도메인은 거래처(Partner) 설정에서 해석 (하드코딩 맵 제거).
 
@@ -20,20 +21,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '템플릿(공급사) 또는 셀러명이 제공되지 않았습니다.' }, { status: 400 });
     }
 
-    const config = {
-      imap: {
-        user: process.env.SMTP_USER || '',
-        password: process.env.SMTP_PASS || '',
-        host: 'imap.daum.net',
-        port: 993,
-        tls: true,
-        authTimeout: 5000,
-      },
-    };
-
-    if (!config.imap.user || !config.imap.password) {
+    // 접속할 서버는 `src/lib/mail-config.ts` 가 소유한다(세무처리 스캔·발주 발송과 같은 계정).
+    const credentials = resolveMailCredentials();
+    if (!credentials) {
       return NextResponse.json({ error: '메일 서버(IMAP) 연동 정보가 설정되어 있지 않습니다.' }, { status: 500 });
     }
+    const config = { imap: resolveImapConfig(credentials, { authTimeout: 5000 }) };
 
     let connection;
     try {
@@ -46,17 +39,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '메일 서버 연결에 실패했습니다. 계정 정보를 확인해주세요.' }, { status: 500 });
     }
 
+    // 편지함 전수 나열 → 제외·순서는 `mail-config` 가 판정한다.
+    // ⛔ 여기서 이름 목록을 다시 만들지 말 것: 종전 인라인 목록은 다음메일의 **띄어쓴**
+    //    한국어 이름만 알고 있어서 구글의 `휴지통`·`보낸편지함`·`전체보관함` 이 하나도
+    //    안 걸렸다(전체보관함은 전 메일의 사본이라 메일함을 두 번 훑게 된다).
     const boxesInfo = await connection.getBoxes();
-    const targetBoxes: string[] = [];
-    const excludeBoxes = ['Trash', 'Spam', 'Drafts', 'Sent', '지운 편지함', '스팸', '보낸 편지함', '임시 보관함', 'Deleted Messages', 'Sent Messages', '예약편지함', '내게쓴편지함', '내게 쓴 편지함', '카페', 'cafe'];
+    const discovered: { name: string; attribs?: string[] }[] = [];
 
     const extractBoxes = (boxObj: any, prefix = '') => {
       for (const key of Object.keys(boxObj)) {
         const boxName = prefix + key;
-        const isExcluded = excludeBoxes.some(ex => boxName.toLowerCase().includes(ex.toLowerCase()));
-        if (!isExcluded) {
-          targetBoxes.push(boxName);
-        }
+        discovered.push({ name: boxName, attribs: boxObj[key]?.attribs ?? [] });
         if (boxObj[key].children) {
           extractBoxes(boxObj[key].children, boxName + boxObj[key].delimiter);
         }
@@ -64,12 +57,7 @@ export async function POST(req: NextRequest) {
     };
     extractBoxes(boxesInfo);
 
-    // INBOX를 가장 먼저 검색하도록 앞으로 뺌
-    targetBoxes.sort((a, b) => {
-      if (a.toUpperCase() === 'INBOX') return -1;
-      if (b.toUpperCase() === 'INBOX') return 1;
-      return 0;
-    });
+    const targetBoxes = orderMailboxesForScan(discovered);
 
     console.log(`🔥 [fetch-emails] 스캔 대상 편지함 목록:`, targetBoxes);
 
@@ -171,8 +159,15 @@ export async function POST(req: NextRequest) {
           
           const matchScore = (hasOurCompanyName ? 1 : 0) + (hasSeller ? 1 : 0) + (hasSentDate ? 1 : 0);
           
-          // 내가 발송한 메일(원본)은 제외 처리
-          const isMyOwnMail = fromAddress.toLowerCase().includes('@ygrd.kr') || fromAddress.toLowerCase().includes('nutrione01@');
+          // 내가 발송한 메일(원본)은 제외 처리.
+          // ⚠️ **로그인 계정 주소도 함께 본다.** 발신인(`SMTP_FROM_EMAIL`)을 구글에 등록하지
+          //    않으면 구글이 발신인을 **로그인 계정 주소로 조용히 치환해** 보내므로, 도메인만
+          //    보면 우리가 보낸 발주서 원본이 브랜드사 회신으로 오인된다.
+          const loweredFrom = fromAddress.toLowerCase();
+          const isMyOwnMail =
+            loweredFrom.includes('@ygrd.kr') ||
+            loweredFrom.includes('nutrione01@') ||
+            loweredFrom.includes(credentials.user.toLowerCase());
           const subjectMatched = !isMyOwnMail && (domainMatched || matchScore >= 2);
           const hasTagInImap = tagUids.includes(id) && !isMyOwnMail;
           
