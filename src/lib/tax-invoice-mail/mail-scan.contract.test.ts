@@ -41,6 +41,25 @@ describe("편지함 선택", () => {
     expect(pickTaxInvoiceBox(["INBOX", "세금계산서"], "없는폴더")).toBe("세금계산서");
   });
 
+  it("서버가 자모 분리(NFD)로 돌려줘도 전용 폴더를 찾는다", () => {
+    // 🔴 구글 실측(2026-09-02): 라벨 `세금계산서` 가 NFD 12코드포인트로 온다. 조합형(NFC)
+    //    설정값과 정확 일치도 부분 일치도 실패해 조용히 INBOX 로 폴백하던 자리다.
+    const nfd = "세금계산서";
+    expect(nfd).not.toBe("세금계산서"); // 눈에는 같지만 다른 문자열이다
+    expect(pickTaxInvoiceBox(["INBOX", nfd], "세금계산서")).toBe(nfd);
+    expect(pickTaxInvoiceBox(["INBOX", nfd])).toBe(nfd);
+  });
+
+  it("NFD 이름에서도 '계산서' 부분일치 폴백이 산다", () => {
+    const nfd = "전자계산서";
+    expect(pickTaxInvoiceBox(["INBOX", nfd], "없는폴더")).toBe(nfd);
+  });
+
+  it("고른 이름은 **서버 원문 그대로** 돌려준다(openBox 가 서버 어휘로 열어야 한다)", () => {
+    const nfd = "세금계산서";
+    expect(pickTaxInvoiceBox(["INBOX", nfd], "세금계산서").normalize("NFD")).toBe(nfd);
+  });
+
   it("후보가 없으면 INBOX", () => {
     expect(pickTaxInvoiceBox(["INBOX", "보낸편지함"])).toBe("INBOX");
   });

@@ -154,16 +154,44 @@ function flattenBoxes(boxes: Record<string, unknown>, prefix = ""): string[] {
 }
 
 /**
+ * 편지함 이름 비교용 정규화.
+ *
+ * 🔴 **한글 이름은 서버마다 정규화 형태가 다르다 — 반드시 NFC 로 맞춰서 비교한다.**
+ * 구글은 라벨 이름을 **자모 분리(NFD)** 로 돌려준다(실측 2026-09-02: `세금계산서` 가
+ * 코드포인트 12개, `1109 1166 1100 …`). env·상수는 조합형(NFC, 5개)이라 **정확 일치도
+ * 부분 일치도 전부 실패**하고, 그러면 아래 함수가 조용히 `INBOX` 로 폴백한다 —
+ * 라벨 규칙에 「받은편지함 건너뛰기」가 걸려 있으면 **스캔이 한 건도 못 찾는다.**
+ * 화면에는 「메일 미발견」으로 보여서 미수취와 구분되지 않는다(P0 침묵형 실패).
+ *
+ * ⛔ 이 정규화를 지우지 말 것 — 다음메일에서는 드러나지 않던 종류의 결함이다.
+ */
+function normalizeBoxName(name: string): string {
+  return name.normalize("NFC");
+}
+
+/**
  * 세금계산서 전용 편지함을 고른다.
  * 오너가 같은 계정에서 세금계산서 메일을 **전용 폴더로 분리 관리**하고 있으므로,
  * INBOX 전수 스캔이 아니라 그 폴더만 여는 것이 기본이다(비용·오탐 모두 줄어든다).
+ *
+ * ⚠️ 돌려주는 값은 **서버가 준 원문 이름**이다(정규화한 값이 아니다) — `openBox` 는 서버
+ * 어휘로 열어야 하므로, 비교만 정규화하고 반환은 원문을 유지한다.
  */
 export function pickTaxInvoiceBox(boxNames: readonly string[], configured?: string | null): string {
-  if (configured && boxNames.includes(configured)) return configured;
+  const want = configured ? normalizeBoxName(configured) : null;
+  if (want) {
+    const exact = boxNames.find((name) => normalizeBoxName(name) === want);
+    if (exact) return exact;
+  }
   // 정확 일치를 부분 일치보다 먼저 본다 — '계산서' 가 든 폴더가 둘 이상이면(예: '세금계산서
   // 보관', '계산서_2025') 부분 일치는 어느 것을 집을지가 편지함 나열 순서에 좌우된다.
-  if (boxNames.includes(DEFAULT_BOX_NAME)) return DEFAULT_BOX_NAME;
-  const hinted = boxNames.find((name) => name.includes(BOX_NAME_HINT));
+  const fallbackExact = boxNames.find(
+    (name) => normalizeBoxName(name) === normalizeBoxName(DEFAULT_BOX_NAME),
+  );
+  if (fallbackExact) return fallbackExact;
+  const hinted = boxNames.find((name) =>
+    normalizeBoxName(name).includes(normalizeBoxName(BOX_NAME_HINT)),
+  );
   return hinted ?? "INBOX";
 }
 

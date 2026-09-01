@@ -95,6 +95,19 @@ export interface ImapConnectionConfig extends MailCredentials {
   host: string;
   port: number;
   tls: true;
+  /**
+   * 🔴 **`servername` 을 지우지 말 것 — 구글 IMAP 이 통째로 죽는다.**
+   *
+   * `node-imap` 은 평문 소켓을 먼저 열고 그 소켓을 `tls.connect({ host, socket })` 에
+   * 넘기는데, **소켓을 넘기면 Node 가 `host` 에서 SNI 를 유추하지 않는다.** SNI 가 없으면
+   * 구글 프런트엔드가 이 도메인용이 아닌 인증서를 내주고 접속이
+   * `self-signed certificate` 로 끊긴다(2026-09-02 실측).
+   *
+   * 🪤 **다음메일에서는 이 결함이 드러나지 않았다** — 대조군 실측에서 `imap.daum.net` 은
+   * SNI 유무와 무관하게 붙는다(단일 인증서 호스트). 그래서 사업자를 옮기는 순간
+   * **수신 2경로가 동시에** 죽는 형태였고, 배포 전 실접속 점검에서 잡혔다.
+   */
+  tlsOptions: { servername: string };
   authTimeout: number;
 }
 
@@ -122,12 +135,15 @@ export function resolveImapConfig(
   credentials: MailCredentials,
   options: { authTimeout?: number } = {},
 ): ImapConnectionConfig {
+  const host = resolveImapHost(credentials);
   return {
     user: credentials.user,
     password: credentials.password,
-    host: resolveImapHost(credentials),
+    host,
     port: IMAP_PORT,
     tls: true,
+    // ⛔ host 와 반드시 같은 값이어야 한다 — 위 타입 주석의 사유 참조.
+    tlsOptions: { servername: host },
     authTimeout: options.authTimeout ?? 10_000,
   };
 }
@@ -264,7 +280,10 @@ export interface MailboxDescriptor {
 }
 
 function normalizeBoxName(name: string): string {
-  return name.replace(/\s+/g, "").toLowerCase();
+  // 🔴 `normalize("NFC")` 를 지우지 말 것 — 구글은 한글 편지함 이름을 **자모 분리(NFD)** 로
+  //    돌려준다(실측 2026-09-02). 조합형으로 적힌 아래 한국어 조각들이 통째로 빗나가고,
+  //    특수용도 속성이 없는 서버에서는 제외가 전부 무력해진다.
+  return name.normalize("NFC").replace(/\s+/g, "").toLowerCase();
 }
 
 function hasAttrib(box: MailboxDescriptor, attrib: string): boolean {
