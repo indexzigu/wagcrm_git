@@ -198,8 +198,20 @@ export const SELFHOST_ENV_CONTRACT: readonly EnvContractEntry[] = [
   },
   {
     envName: "SMTP_FROM_EMAIL",
+    disposition: "degrades",
+    reason:
+      "발주 메일이 브랜드사에게 보일 때의 발신 주소. 비면 SMTP_USER(로그인 계정)로 폴백하는데, **그 폴백이 곧 사고다** — 오너가 정한 발신 주소는 자사 도메인 주소인데(2026-09-01) 비면 메일함 계정 주소가 브랜드사 화면에 그대로 나간다. ⚠️ 채워도 그 주소를 구글 계정에 **발신 주소로 등록·인증**하지 않으면 오류가 아니라 로그인 계정 주소로 **조용히 치환**돼 나간다(로그는 성공, 브랜드사 화면에서만 드러난다) — 그 등록 여부는 이 점검기가 볼 수 없으므로 절차는 docs/runbooks/gmail-mail-cutover.md 가 소유한다. 종전 optional 은 이 침묵형 실패를 조용히 통과시켰다(교차 검증 지적)",
+  },
+  {
+    envName: "MAIL_IMAP_HOST",
     disposition: "optional",
-    reason: "비면 SMTP_USER 로 폴백한다(send-email 라우트)",
+    reason:
+      "비면 mail-config 가 **계정 주소에서** 서버를 정한다(옛 사업자 계정이면 옛 서버, 그 외엔 구글) — 배포와 .env 교체 사이에 자격증명·서버가 어긋나는 창을 없애려는 설계라 정상 운영에서 채울 일이 없다. 채우는 경우는 도메인으로 못 알아내는 제3의 서버로 옮길 때뿐이다",
+  },
+  {
+    envName: "MAIL_SMTP_HOST",
+    disposition: "optional",
+    reason: "위 IMAP 항목과 같은 축이고 같은 사유다(발신 쪽)",
   },
   {
     envName: "SMTP_FROM_NAME",

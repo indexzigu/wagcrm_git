@@ -24,6 +24,7 @@ import { simpleParser } from "mailparser";
 import { Readable } from "stream";
 import { parseEtaxInvoiceXml, type ParsedEtaxInvoice } from "./etax-xml";
 import { describeAttachment, type AttachmentKind } from "./attachment-kind";
+import { resolveImapConfig, resolveMailCredentials } from "@/lib/mail-config";
 import {
   isNtsSecureMailHtml,
   parseNtsSecureMailHtml,
@@ -52,6 +53,10 @@ const SENDER_HINTS = ["hometax.go.kr", "nts.go.kr"] as const;
 /**
  * 오너가 실제로 쓰는 전용 편지함 이름(2026-08-03 확인).
  * env 설정 없이도 바로 맞도록 기본값으로 둔다 — 설정을 잊어 INBOX 를 훑는 일이 없게.
+ *
+ * ℹ️ 구글로 옮긴 뒤에도 **같은 이름 그대로다**(2026-09-01 오너 확인 — Gmail 에 같은 이름의
+ * 라벨을 만들고 국세청 메일을 그리로 분류해 뒀다). Gmail 은 라벨을 IMAP 폴더로 노출하므로
+ * 아래 정확 일치 규칙이 그대로 맞는다.
  */
 const DEFAULT_BOX_NAME = "세금계산서";
 
@@ -184,21 +189,21 @@ export function isTaxInvoiceCandidate(subject: string, from: string): boolean {
  * 전용 편지함을 읽기 전용으로 스캔해 계산서 후보를 돌려준다.
  *
  * 자격증명은 기존 발주서 경로와 **같은 계정·같은 변수**(`SMTP_USER`/`SMTP_PASS`)를 쓴다 —
- * 신규 의존성도 신규 인증도 없다.
+ * 신규 의존성도 신규 인증도 없다. 접속할 서버는 `src/lib/mail-config.ts` 가 소유한다
+ * (⛔ 여기에 호스트를 다시 적지 말 것 — 세 소비처가 갈라져 계정 이전이 반쪽이 된다).
  */
 export async function scanTaxInvoiceMails(
   options: ScanTaxMailOptions,
 ): Promise<ScanTaxMailResult> {
   const { sinceDays = 90, maxMessages = 400, invoicePassword } = options;
 
-  const user = process.env.SMTP_USER ?? "";
-  const password = process.env.SMTP_PASS ?? "";
-  if (!user || !password) {
+  const credentials = resolveMailCredentials();
+  if (!credentials) {
     throw new Error("메일 서버(IMAP) 연동 정보가 설정되어 있지 않습니다.");
   }
 
   const connection = await imaps.connect({
-    imap: { user, password, host: "imap.daum.net", port: 993, tls: true, authTimeout: 10_000 },
+    imap: resolveImapConfig(credentials, { authTimeout: 10_000 }),
   });
 
   try {
