@@ -104,13 +104,31 @@ describe("메일 서버 좌표 단일화", () => {
     expect(offenders).toEqual([]);
   });
 
-  it.each(CONSUMERS)("%s 가 IMAP 에 붙는다면 접속 설정은 SSOT 가 만든다", (path) => {
+  it("IMAP 에 붙는 파일은 **전부** SSOT 를 거친다", () => {
     // 🔴 `tlsOptions.servername`(SNI) 이 빠지면 구글 IMAP 이 통째로 죽는다(2026-09-02 실측).
-    //    소비처가 접속 옵션을 손으로 지으면 그 한 줄이 조용히 빠지므로, 접속하는 파일은
-    //    반드시 resolveImapConfig 를 거친다.
-    const source = executableSource(path);
-    if (!/imaps?\.connect\s*\(/.test(source)) return; // IMAP 을 안 쓰는 소비처는 해당 없음
-    expect(source).toMatch(/resolveImapConfig\s*\(/);
+    //    소비처가 접속 옵션을 손으로 지으면 그 한 줄이 조용히 빠진다.
+    // ⛔ 위 「손으로 적은 목록은 새 소비처를 조용히 비켜간다」가 여기에도 적용된다 —
+    //    CONSUMERS 를 돌면서 조기 반환하는 형태로 쓰지 말 것(초판이 그렇게 썼다가
+    //    같은 파일 6줄 위의 자기 금지를 어겼다). 전수로 훑고, **검사 건수 하한**을 함께
+    //    단언해 「하나도 안 걸러서 초록」인 상태를 구분한다(위 양성 프로브와 같은 규약).
+    const connectors = [...sourceFiles("src"), ...sourceFiles("scripts")]
+      .filter((path) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx"))
+      .filter((path) => /(?:imaps?\.connect|new\s+Imap)\s*\(/.test(executableSource(path)));
+
+    expect(connectors.length).toBeGreaterThanOrEqual(2); // 현재 수취 스캔 + 회신 수집
+    for (const path of connectors) {
+      expect(executableSource(path)).toMatch(/resolveImapConfig\s*\(/);
+    }
+  });
+
+  it("메일 경로 소스는 NFC 로 커밋된다 — 그래야 우리 리터럴을 감싸지 않아도 된다", () => {
+    // 서버가 준 문자열만 `toNfc` 로 맞추고 **우리 상수는 그대로 비교**하는 것이 계약이다.
+    // 그 전제가 깨지면(에디터·OS 가 파일을 NFD 로 저장) 비교가 조용히 빗나가므로 여기서 고정한다.
+    const paths = [SSOT, ...CONSUMERS, "src/lib/order-converter/order-parser.ts"];
+    for (const path of paths) {
+      const raw = readFileSync(join(process.cwd(), path), "utf8");
+      expect({ path, nfc: raw === raw.normalize("NFC") }).toEqual({ path, nfc: true });
+    }
   });
 
   it("SSOT 는 SNI 를 싣는다 — 빠지면 구글 IMAP 이 인증서 오류로 끊긴다", () => {

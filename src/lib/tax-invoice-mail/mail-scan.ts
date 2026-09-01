@@ -170,11 +170,11 @@ export function pickTaxInvoiceBox(boxNames: readonly string[], configured?: stri
   // 정확 일치를 부분 일치보다 먼저 본다 — '계산서' 가 든 폴더가 둘 이상이면(예: '세금계산서
   // 보관', '계산서_2025') 부분 일치는 어느 것을 집을지가 편지함 나열 순서에 좌우된다.
   const fallbackExact = boxNames.find(
-    (name) => toNfc(name) === toNfc(DEFAULT_BOX_NAME),
+    (name) => toNfc(name) === DEFAULT_BOX_NAME,
   );
   if (fallbackExact) return fallbackExact;
   const hinted = boxNames.find((name) =>
-    toNfc(name).includes(toNfc(BOX_NAME_HINT)),
+    toNfc(name).includes(BOX_NAME_HINT),
   );
   return hinted ?? "INBOX";
 }
@@ -186,7 +186,7 @@ export function pickTaxInvoiceBox(boxNames: readonly string[], configured?: stri
  */
 export function isTaxInvoiceSubject(subject: string): boolean {
   const normalized = toNfc(subject);
-  return SUBJECT_HINTS.some((hint) => normalized.includes(toNfc(hint)));
+  return SUBJECT_HINTS.some((hint) => normalized.includes(hint));
 }
 
 /** 국세청 직발송인가. 헤더의 `From` 원문(표시이름 + 주소)을 그대로 받는다. */

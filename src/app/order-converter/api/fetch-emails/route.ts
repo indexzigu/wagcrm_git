@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
           // ⚠️ 한글은 **비교 전에 NFC 로 맞춘다**(`toNfc` 주석 참조) — 제목의 정규화 형태는
           //    보낸 사람이 정하므로, 안 맞추면 눈에 같은 글자가 조용히 안 걸린다.
           const normalizedSubject = toNfc(subject).replace(/\s+/g, '').toLowerCase();
-          const hasOurCompanyName = normalizedSubject.includes(toNfc('와이그라운드'));
+          const hasOurCompanyName = normalizedSubject.includes('와이그라운드');
           const hasSeller = coreSellerName && normalizedSubject.includes(toNfc(coreSellerName).toLowerCase());
           
           let hasSentDate = false;
