@@ -228,6 +228,15 @@ describe("순회 차례", () => {
     expect(ordered[ordered.length - 1]).toBe("[Gmail]/전체보관함");
   });
 
+  it("돌려주는 이름은 **서버 원문 그대로**다 — 정규화한 값을 openBox 에 넘기면 안 된다", () => {
+    // `pickTaxInvoiceBox` 에만 있던 계약을 이쪽에도 건다(교차 검증 지적). 호출부가 이 값을
+    // 그대로 openBox 에 넘기므로, 비교용으로 정규화한 문자열을 반환하면 편지함을 못 연다.
+    const nfd = "발주관리".normalize("NFD");
+    const ordered = orderMailboxesForScan([{ name: "INBOX" }, { name: nfd }]);
+    expect(ordered).toContain(nfd);
+    expect(ordered.find((n) => n !== "INBOX")).toBe(nfd);
+  });
+
   it("전체보관함이 없는 서버에서도 받은편지함이 맨 앞이다", () => {
     expect(orderMailboxesForScan([{ name: "발주" }, { name: "INBOX" }])).toEqual([
       "INBOX",

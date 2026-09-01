@@ -117,7 +117,18 @@ describe("메일 서버 좌표 단일화", () => {
 
     expect(connectors.length).toBeGreaterThanOrEqual(2); // 현재 수취 스캔 + 회신 수집
     for (const path of connectors) {
-      expect(executableSource(path)).toMatch(/resolveImapConfig\s*\(/);
+      const source = executableSource(path);
+      expect({ path, usesSsot: /resolveImapConfig\s*\(/.test(source) }).toEqual({
+        path,
+        usesSsot: true,
+      });
+      // 🪤 `resolveImapConfig` 를 **언급**만 하고 실제로는 옵션을 손수 지어 넘길 수 있다
+      //    (교차 검증 지적). 접속 옵션 키는 SSOT 에만 있어야 하므로 소비처에서 그 키가
+      //    보이면 직접 지은 것으로 본다 — `port`·`tls` 는 SSOT 를 거치면 쓸 일이 없다.
+      expect({ path, handBuilt: /\b(?:port|tls)\s*:/.test(source) }).toEqual({
+        path,
+        handBuilt: false,
+      });
     }
   });
 

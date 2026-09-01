@@ -9,9 +9,9 @@ import {
   orderMailboxesForScan,
   resolveImapConfig,
   resolveMailCredentials,
-  toNfc,
   type MailboxDescriptor,
 } from '@/lib/mail-config';
+import { normalizeForCompare } from '@/lib/text-normalize';
 
 // F4-②: 브랜드별 허용 발신자 도메인은 거래처(Partner) 설정에서 해석 (하드코딩 맵 제거).
 
@@ -150,11 +150,11 @@ export async function POST(req: NextRequest) {
             domainMatched = allowedDomains.some((domain) => fromAddress.toLowerCase().includes(domain.toLowerCase()));
           }
 
-          // ⚠️ 한글은 **비교 전에 NFC 로 맞춘다**(`toNfc` 주석 참조) — 제목의 정규화 형태는
+          // ⚠️ 한글은 **비교 전에 정규화한다**(`text-normalize` 주석 참조) — 제목의 형태는
           //    보낸 사람이 정하므로, 안 맞추면 눈에 같은 글자가 조용히 안 걸린다.
-          const normalizedSubject = toNfc(subject).replace(/\s+/g, '').toLowerCase();
+          const normalizedSubject = normalizeForCompare(subject);
           const hasOurCompanyName = normalizedSubject.includes('와이그라운드');
-          const hasSeller = coreSellerName && normalizedSubject.includes(toNfc(coreSellerName).toLowerCase());
+          const hasSeller = coreSellerName && normalizedSubject.includes(normalizeForCompare(coreSellerName));
           
           let hasSentDate = false;
           if (sentDates && sentDates.length > 0) {
@@ -218,12 +218,12 @@ export async function POST(req: NextRequest) {
           for (const attachment of parsed.attachments) {
             const fileName = attachment.filename || '';
             // ⚠️ 맥에서 온 첨부는 **파일명이 NFD 인 것이 상시 조건**이라 여기가 특히 위험하다.
-            const normalizedFilename = toNfc(fileName).replace(/\s+/g, '').toLowerCase();
+            const normalizedFilename = normalizeForCompare(fileName);
             const isExcelOrCsv = fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv');
             
             // 파일명에 셀러명 반드시 포함 (단, 태그 매칭이 되었다면 양식이 달라도 허용)
             const hasSellerName = coreSellerName
-              ? normalizedFilename.includes(toNfc(coreSellerName).toLowerCase())
+              ? normalizedFilename.includes(normalizeForCompare(coreSellerName))
               : true;
 
             if (isExcelOrCsv && (hasSellerName || hasMyRefTag)) {

@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { NAVER_ORDER_ID_PATTERN } from './naver-order-id';
+import { normalizeForCompare, toNfc } from '@/lib/text-normalize';
 
 // Excel 날짜 시리얼 및 문자열 날짜를 안전하게 Date 객체로 파싱하는 헬퍼
 function parseExcelDate(val: any): Date | null {
@@ -181,7 +182,9 @@ export function parseNaverOrders(arrayBuffer: ArrayBuffer): NaverOrderRow[] {
 
     const rowData: Record<string, any> = {};
     headers.forEach((header: string, index: number) => {
-      const cleanHeader = header ? String(header).replace(/\n|\r/g, '').trim() : '';
+      // 🔴 헤더 키도 NFC 로 맞춘다 — 자모 분리로 들어오면 아래 `rowData['주문번호']` 류가
+      //    전부 빗나가 조용히 빈 행이 된다(회신 엑셀 헤더와 같은 축).
+      const cleanHeader = header ? toNfc(String(header).replace(/\n|\r/g, '')).trim() : '';
       if (cleanHeader) {
         rowData[cleanHeader] = row[index];
       }
@@ -290,12 +293,11 @@ export function extractTrackingMapByReply(
   }
 
   // 규칙 헤더도 원본 셀 키와 동일하게 공백 제거해 비교한다(cleanRow 규약).
-  // 🔴 **NFC 를 함께 건다.** 헤더 문자열은 브랜드사가 만든 엑셀에서 오고, 맥에서 만든
-  //    파일은 한글이 **자모 분리(NFD)** 로 들어온다 — 그러면 `송장번호` 가 눈에는 같은데
-  //    우리 상수와 안 맞아 **조용히 0건**이 되고, 화면에는 「송장번호를 찾지 못했습니다」로
-  //    떠서 회신이 없는 것과 구분되지 않는다(2026-09-02 실증). 같은 축의 편지함 이름·제목·
-  //    첨부 파일명은 `src/lib/mail-config.ts` 의 `toNfc` 가 소유한다.
-  const normalize = (h: string) => h.replace(/\s+/g, '').normalize('NFC');
+  // 🔴 정규화 정본은 `src/lib/text-normalize.ts` 다 — 여기서 단계를 다시 적지 말 것.
+  //    브랜드사가 맥에서 만든 엑셀은 한글이 **자모 분리(NFD)** 로 들어와, `송장번호` 가
+  //    눈에는 같은데 우리 상수와 안 맞아 **조용히 0건**이 되고 화면에는 「송장번호를 찾지
+  //    못했습니다」로 떠 회신이 없는 것과 구분되지 않는다(2026-09-02 실증).
+  const normalize = normalizeForCompare;
   const trackingKeys = (reply.trackingHeaders?.length ? reply.trackingHeaders : DEFAULT_TRACKING_HEADERS).map(normalize);
   const orderIdKeys = reply.orderIdHeaders.map(normalize);
   const strict = reply.orderIdPattern === 'naver-strict';
@@ -327,8 +329,11 @@ export function extractTrackingMapByReply(
         orderId = '';
       }
 
-      let courier = String(cleanRow['택배사'] || '').trim() || 'CJ대한통운';
-      if (courier.replace(/\s+/g, '') === 'CJ택배') {
+      let courier = String(cleanRow[normalize('택배사')] || '').trim() || 'CJ대한통운';
+      // 🔴 **셀 값도 헤더와 같은 축이다.** 헤더만 정규화하면 NFD 로 들어온 `CJ택배` 가
+      //    그대로 남아 표기가 갈린다(발주서·송장 조회에서 다른 택배사로 읽힌다).
+      //    교차 검증이 「같은 함수에 남은 같은 결함」으로 짚은 자리다(2026-09-02).
+      if (normalizeForCompare(courier) === normalizeForCompare('CJ택배')) {
         courier = 'CJ대한통운';
       }
 
@@ -379,7 +384,9 @@ export function mergeTrackingIntoNaverRaw(naverRawBuffer: ArrayBuffer, trackingM
   }
 
   const headers = rawData[0] || [];
-  const cleanHeader = (h: any) => h ? String(h).replace(/\s+/g, '') : '';
+  // 🔴 NFC 를 함께 건다 — 없으면 자모 분리 헤더에서 아래 인덱스가 전부 -1 로 남아
+  //    송장 병합이 **조용히 아무것도 안 한다**(회신 엑셀 헤더와 같은 축).
+  const cleanHeader = (h: any) => (h ? toNfc(String(h).replace(/\s+/g, '')) : '');
 
   let orderIdIdx = -1;
   let courierIdx = -1;

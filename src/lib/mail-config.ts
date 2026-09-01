@@ -1,6 +1,7 @@
 /**
- * 메일 경로 SSOT — 서버 접속 좌표 · 발신인 · 편지함 순회 정책 · **문자열 정규화**(`toNfc`).
+ * 메일 경로 SSOT — 서버 접속 좌표 · 발신인 · 편지함 순회 정책.
  * IMAP 읽기 2경로 + SMTP 발신 1경로가 공유한다.
+ * (한국어 문자열 정규화는 `src/lib/text-normalize.ts` 소관 — 메일 밖에서도 쓴다.)
  *
  * ## 왜 한 곳인가
  *
@@ -25,6 +26,8 @@
  * ⛔ **자격증명을 이 파일에 리터럴로 두지 말 것**(P0 — 레포 public).
  * `hardcoded-secret-literals.contract.test.ts` 가 강제한다.
  */
+
+import { normalizeForCompare } from "@/lib/text-normalize";
 
 /**
  * 서버는 호스트만 env 로 덮을 수 있다 — **되돌리기 경로**가 그것뿐이라 포트까지 knob 을
@@ -281,27 +284,11 @@ export interface MailboxDescriptor {
 }
 
 /**
- * 🔴 메일 서버가 준 문자열을 **비교하기 전에 반드시 통과시킨다.**
- *
- * 구글은 한글을 **자모 분리(NFD)** 로 돌려준다 — 실측 2026-09-02: 라벨 `세금계산서` 가
- * 코드포인트 12개로 왔고, 조합형(NFC, 5개)으로 적힌 우리 상수와 **정확 일치도 부분 일치도
- * 전부 실패**했다. 그 결과가 조용한 폴백·0건이라 화면에서는 「미수취」·「회신 없음」과
- * 구분되지 않는다(P0 침묵형).
- *
- * ⚠️ 편지함 이름만의 문제가 아니다 — **제목·첨부 파일명**도 같은 축이고, 그쪽은 구글이
- * 아니라 **보낸 사람**이 정한다(맥에서 온 첨부는 파일명이 NFD 인 것이 상시 조건이다).
- * 그래서 서버에서 온 문자열을 우리 한국어 상수와 맞대는 자리는 전부 이 함수를 거친다.
- *
- * ⛔ 지우지 말 것. 다음메일에서는 드러나지 않던 종류의 결함이다.
+ * 편지함 **이름 비교** 전용. 정규화 자체는 `text-normalize` 가 소유한다 —
+ * ⛔ 여기서 세 단계(NFC·공백 제거·소문자화)를 다시 적지 말 것: 제목·파일명이 쓰는 것과
+ * 갈리면 「같은 규칙인데 한쪽만 고쳐진」 상태가 된다(이 트랙이 고친 호스트 리터럴과 같은 형태).
  */
-export function toNfc(value: string): string {
-  return value.normalize("NFC");
-}
-
-/** 편지함 **이름 비교** 전용 — NFC 위에 공백 제거·소문자화를 얹는다. */
-function normalizeBoxName(name: string): string {
-  return toNfc(name).replace(/\s+/g, "").toLowerCase();
-}
+const normalizeBoxName = normalizeForCompare;
 
 function hasAttrib(box: MailboxDescriptor, attrib: string): boolean {
   return (box.attribs ?? []).some((a) => a.toLowerCase() === attrib.toLowerCase());

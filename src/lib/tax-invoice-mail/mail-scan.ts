@@ -24,7 +24,8 @@ import { simpleParser } from "mailparser";
 import { Readable } from "stream";
 import { parseEtaxInvoiceXml, type ParsedEtaxInvoice } from "./etax-xml";
 import { describeAttachment, type AttachmentKind } from "./attachment-kind";
-import { resolveImapConfig, resolveMailCredentials, toNfc } from "@/lib/mail-config";
+import { resolveImapConfig, resolveMailCredentials } from "@/lib/mail-config";
+import { toNfc } from "@/lib/text-normalize";
 import {
   isNtsSecureMailHtml,
   parseNtsSecureMailHtml,
