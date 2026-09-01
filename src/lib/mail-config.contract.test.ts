@@ -130,6 +130,18 @@ describe("메일 서버 좌표 단일화", () => {
         true,
       );
 
+      /**
+       * 이 바인딩 이름이 `name` 을 묶는가. 구조분해도 본다 —
+       * 🪤 `function p({ config })` 는 `n.name` 이 `{ config }` 라 문자열 비교로는 안 걸려
+       *    바깥 동명 변수를 채택하고 **초록**이 됐다(교차 검증이 실측으로 보였다).
+       */
+      const bindsName = (binding: ts.BindingName, target: string): boolean => {
+        if (ts.isIdentifier(binding)) return binding.getText(source) === target;
+        return binding.elements.some(
+          (el) => ts.isBindingElement(el) && bindsName(el.name, target),
+        );
+      };
+
       /** 이 식이 결국 `resolveImapConfig(...)` 에서 온 값인가. */
       const fromSsot = (node: ts.Node): boolean => {
         if (ts.isCallExpression(node)) {
@@ -162,7 +174,7 @@ describe("메일 서버 좌표 단일화", () => {
               //    오므로 이 파일 구문만으로는 SSOT 유래를 증명할 수 없는데, 종전에는
               //    파라미터를 무시하고 바깥의 동명 변수를 찾아 **초록**이 됐다(교차 검증
               //    재현). 판정 불가는 fail-closed 로 둔다.
-              if (ts.isParameter(n) && n.name.getText(source) === name) shadowedByParam = true;
+              if (ts.isParameter(n) && bindsName(n.name, name)) shadowedByParam = true;
               if (ts.isVariableDeclaration(n) && n.name.getText(source) === name) found = n;
               // 중첩 함수·블록 안으로는 내려가지 않는다(그 안의 선언은 이 스코프가 아니다).
               if (n === scope || (!ts.isBlock(n) && !ts.isFunctionLike(n))) ts.forEachChild(n, scan);
