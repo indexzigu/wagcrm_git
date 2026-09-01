@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
           
           // 내가 발송한 메일(원본)은 제외 처리 — 판정은 `mail-config` 가 소유한다
           // (자사 도메인 · 로그인 계정 · 옛 사업자 계정 세 갈래. 사유는 그 함수 주석).
-          const isMyOwnMail = isOwnSenderAddress(fromAddress, credentials);
+          const isMyOwnMail = isOwnSenderAddress(fromAddress, credentials.user);
           const subjectMatched = !isMyOwnMail && (domainMatched || matchScore >= 2);
           const hasTagInImap = tagUids.includes(id) && !isMyOwnMail;
           

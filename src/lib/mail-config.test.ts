@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
-  DEFAULT_IMAP_HOST,
-  DEFAULT_SMTP_HOST,
+  GOOGLE_IMAP_HOST,
+  GOOGLE_SMTP_HOST,
   IMAP_PORT,
   SMTP_PORT,
   isAllMailbox,
@@ -61,8 +61,8 @@ describe("자격증명", () => {
 
 describe("접속 설정 — 서버가 계정을 따라간다", () => {
   it("구글 계정이면 구글 서버로 간다", () => {
-    expect(resolveImapConfig(CREDS).host).toBe(DEFAULT_IMAP_HOST);
-    expect(resolveSmtpConfig(CREDS).host).toBe(DEFAULT_SMTP_HOST);
+    expect(resolveImapConfig(CREDS).host).toBe(GOOGLE_IMAP_HOST);
+    expect(resolveSmtpConfig(CREDS).host).toBe(GOOGLE_SMTP_HOST);
   });
 
   it("옛 사업자 계정이 남아 있으면 옛 서버로 간다 — 배포와 .env 교체 사이의 창을 없앤다", () => {
@@ -80,7 +80,7 @@ describe("접속 설정 — 서버가 계정을 따라간다", () => {
 
   it("자체 도메인 계정(구글 Workspace)은 구글로 간다", () => {
     expect(resolveImapConfig({ user: "info@ygrd.kr", password: "p" }).host).toBe(
-      DEFAULT_IMAP_HOST,
+      GOOGLE_IMAP_HOST,
     );
   });
 
@@ -206,19 +206,19 @@ describe("순회 차례", () => {
 
 describe("자기 발송분 판정", () => {
   it("자사 도메인에서 온 것은 우리 메일이다", () => {
-    expect(isOwnSenderAddress("발주 <info@ygrd.kr>", CREDS)).toBe(true);
+    expect(isOwnSenderAddress("발주 <info@ygrd.kr>", CREDS.user)).toBe(true);
   });
 
   it("로그인 계정 주소도 우리 메일이다 — 구글이 발신인을 치환한 경우", () => {
-    expect(isOwnSenderAddress("test@gmail.com", CREDS)).toBe(true);
+    expect(isOwnSenderAddress("test@gmail.com", CREDS.user)).toBe(true);
   });
 
   it("옛 사업자 계정으로 나간 과거 메일도 우리 메일이다", () => {
-    expect(isOwnSenderAddress("nutrione01@example.com", CREDS)).toBe(true);
+    expect(isOwnSenderAddress("nutrione01@example.com", CREDS.user)).toBe(true);
   });
 
   it("브랜드사 회신은 우리 메일이 아니다", () => {
-    expect(isOwnSenderAddress("담당자 <cs@brand.example.com>", CREDS)).toBe(false);
+    expect(isOwnSenderAddress("담당자 <cs@brand.example.com>", CREDS.user)).toBe(false);
   });
 });
 

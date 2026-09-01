@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { execSync } from "child_process";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -53,6 +54,22 @@ describe("메일 서버 좌표 단일화", () => {
     for (const path of CONSUMERS) {
       expect(executableSource(path)).not.toMatch(/daum\.net/i);
     }
+  });
+
+  it("메일 서버에 붙는 파일은 위 목록이 전부다 — 네 번째 소비처가 스캔 밖으로 새지 않는다", () => {
+    // 🪤 `CONSUMERS` 는 손으로 적은 목록이라 **새 소비처는 조용히 비켜간다**(레포 선례:
+    //    크론 인증 사본 18개 중 2개가 그렇게 fail-open 으로 남아 있었다). 그래서 목록을
+    //    믿지 말고 "메일 라이브러리를 import 하는 파일"을 소스에서 **파생**해 대조한다.
+    const found = execSync(
+      `grep -rlE "from ['\\"](imap-simple|nodemailer)['\\"]" src --include='*.ts' --include='*.tsx'`,
+      { cwd: process.cwd(), encoding: "utf8" },
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .sort();
+
+    expect(found).toEqual([...CONSUMERS].sort());
   });
 
   it("SSOT 는 옛 사업자 폴백을 **유지한다** — 지우면 배포 순서 사고가 되살아난다", () => {

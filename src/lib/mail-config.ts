@@ -29,10 +29,14 @@
  * 서버는 호스트만 env 로 덮을 수 있다 — **되돌리기 경로**가 그것뿐이라 포트까지 knob 을
  * 만들지 않는다(두 사업자 모두 993/465 다). 다른 포트를 써야 할 서버로 옮길 일이 실제로
  * 생기면 그때 상수를 고친다.
+ *
+ * ⚠️ 이름이 `DEFAULT_` 가 아닌 것은 의도다 — 「무조건 기본」이 아니라 **옛 사업자 계정이
+ * 아닐 때 쓰는 서버**다(아래 `resolveImapHost`). `DEFAULT_` 로 되돌리면 그 이름 자체가
+ * "상수 하나로 정리하자"는 오독을 부른다.
  */
-export const DEFAULT_IMAP_HOST = "imap.gmail.com";
+export const GOOGLE_IMAP_HOST = "imap.gmail.com";
 export const IMAP_PORT = 993;
-export const DEFAULT_SMTP_HOST = "smtp.gmail.com";
+export const GOOGLE_SMTP_HOST = "smtp.gmail.com";
 /** SSL 직결 포트. */
 export const SMTP_PORT = 465;
 
@@ -52,26 +56,33 @@ export const SMTP_PORT = 465;
  *
  * ⛔ 이 판정을 지우고 구글 상수를 무조건 쓰게 되돌리지 말 것 — 위 창이 그대로 다시 열린다.
  */
-const LEGACY_PROVIDER = {
+const LEGACY_PROVIDER: {
+  domains: readonly string[];
+  imapHost: string;
+  smtpHost: string;
+  /** 그 시절 계정으로 나간 과거 발송분을 알아보는 조각(회신 오인 방지). */
+  senderLocalParts: readonly string[];
+} = {
   domains: ["daum.net", "hanmail.net"],
   imapHost: "imap.daum.net",
   smtpHost: "smtp.daum.net",
-} as const;
+  senderLocalParts: ["nutrione01@"],
+};
 
 function isLegacyProviderAccount(user: string): boolean {
   const domain = user.toLowerCase().split("@")[1] ?? "";
-  return LEGACY_PROVIDER.domains.includes(domain as (typeof LEGACY_PROVIDER.domains)[number]);
+  return LEGACY_PROVIDER.domains.includes(domain);
 }
 
 /** 계정에 맞는 서버. env 명시가 있으면 그것이 이긴다. */
 export function resolveImapHost(credentials: MailCredentials): string {
   if (process.env.MAIL_IMAP_HOST) return process.env.MAIL_IMAP_HOST;
-  return isLegacyProviderAccount(credentials.user) ? LEGACY_PROVIDER.imapHost : DEFAULT_IMAP_HOST;
+  return isLegacyProviderAccount(credentials.user) ? LEGACY_PROVIDER.imapHost : GOOGLE_IMAP_HOST;
 }
 
 export function resolveSmtpHost(credentials: MailCredentials): string {
   if (process.env.MAIL_SMTP_HOST) return process.env.MAIL_SMTP_HOST;
-  return isLegacyProviderAccount(credentials.user) ? LEGACY_PROVIDER.smtpHost : DEFAULT_SMTP_HOST;
+  return isLegacyProviderAccount(credentials.user) ? LEGACY_PROVIDER.smtpHost : GOOGLE_SMTP_HOST;
 }
 
 /** 메일 계정 자격증명. 수신 2경로·발신 1경로가 **같은 한 벌**을 쓴다. */
@@ -151,16 +162,18 @@ export function resolveMailFrom(credentials: MailCredentials): { name: string; e
  *
  * 판정 근거가 셋인 것은 발신 주소가 셋으로 갈릴 수 있기 때문이다:
  * ①정상 경로(자사 도메인) ②위 `resolveMailFrom` 의 치환이 일어난 경우(로그인 계정 주소)
- * ③옛 메일 사업자 시절 계정으로 나간 과거 메일(아래 상수).
+ * ③옛 메일 사업자 시절 계정으로 나간 과거 메일(`LEGACY_PROVIDER.senderLocalParts`).
+ *
+ * ⚠️ 자격증명 한 벌이 아니라 **로그인 주소만** 받는다 — 순수 문자열 비교에 비밀번호를 끌고
+ * 들어갈 이유가 없다(교차 검증 지적).
  */
-const LEGACY_SENDER_LOCALPARTS = ["nutrione01@"] as const;
 const OWN_DOMAIN = "@ygrd.kr";
 
-export function isOwnSenderAddress(from: string, credentials: MailCredentials): boolean {
+export function isOwnSenderAddress(from: string, loginAddress: string): boolean {
   const lowered = from.toLowerCase();
   if (lowered.includes(OWN_DOMAIN)) return true;
-  if (lowered.includes(credentials.user.toLowerCase())) return true;
-  return LEGACY_SENDER_LOCALPARTS.some((local) => lowered.includes(local));
+  if (lowered.includes(loginAddress.toLowerCase())) return true;
+  return LEGACY_PROVIDER.senderLocalParts.some((local) => lowered.includes(local));
 }
 
 /**
