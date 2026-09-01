@@ -155,13 +155,20 @@ describe("메일 서버 좌표 단일화", () => {
           const name = node.getText(source);
           for (let scope: ts.Node | undefined = node; scope; scope = scope.parent) {
             let found: ts.VariableDeclaration | undefined;
+            let shadowedByParam = false;
             const scan = (n: ts.Node) => {
-              if (found) return;
+              if (found || shadowedByParam) return;
+              // 🪤 **파라미터로 가려지면 판정 불가다 — 통과시키지 않는다.** 값이 밖에서
+              //    오므로 이 파일 구문만으로는 SSOT 유래를 증명할 수 없는데, 종전에는
+              //    파라미터를 무시하고 바깥의 동명 변수를 찾아 **초록**이 됐다(교차 검증
+              //    재현). 판정 불가는 fail-closed 로 둔다.
+              if (ts.isParameter(n) && n.name.getText(source) === name) shadowedByParam = true;
               if (ts.isVariableDeclaration(n) && n.name.getText(source) === name) found = n;
               // 중첩 함수·블록 안으로는 내려가지 않는다(그 안의 선언은 이 스코프가 아니다).
               if (n === scope || (!ts.isBlock(n) && !ts.isFunctionLike(n))) ts.forEachChild(n, scan);
             };
             scan(scope);
+            if (shadowedByParam) return false;
             if (found) return Boolean(found.initializer && fromSsot(found.initializer));
           }
           return false;
@@ -172,11 +179,14 @@ describe("메일 서버 좌표 단일화", () => {
       const visit = (node: ts.Node) => {
         if (ts.isCallExpression(node)) {
           const callee = node.expression.getText(source);
-          // ⚠️ 탐지 범위는 **`<식별자>.connect(...)`** 다. 구조분해로 떼어낸
-          //    `const { connect } = imaps; connect(...)` 는 잡지 못한다 — 맨 `connect(` 를
-          //    다 물면 DB·소켓 등 무관한 호출이 섞여 계약이 소음이 된다. 알려진 한계로 두고
-          //    **「전부」라고 적지 않는다**(교차 검증이 실제로 이 구멍을 프로브로 보였다).
-          const isConnect = /(?:^|\.)connect$/.test(callee) && /imaps?\b/i.test(callee);
+          // ⚠️ **이 계약은 증명이 아니라 구문 수준 휴리스틱이다.** 알려진 한계를 여기 적어
+          //    둔다 — 교차 검증이 프로브로 하나씩 보여 준 것들이다:
+          //      · 구조분해로 떼어낸 `const { connect } = imaps; connect(…)` 는 탐지 밖이다
+          //        (맨 `connect(` 를 다 물면 DB·소켓 등 무관한 호출이 섞여 소음이 된다).
+          //      · 다른 모듈이 지어 준 옵션을 넘기면 이 파일만 봐서는 판정할 수 없다.
+          //    ⛔ 그래서 「전부」라고 적지 않는다. 수신자 이름에 `imap` 이 들어가면 별칭
+          //    (`imapSimple` 등)도 잡는다 — 종전 `/imaps?\b/` 는 `imapSimple` 을 놓쳤다.
+          const isConnect = /(?:^|\.)connect$/.test(callee) && /imap/i.test(callee);
           if (isConnect) {
             checked.push(path);
             const arg = node.arguments[0];
