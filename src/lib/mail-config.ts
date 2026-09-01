@@ -57,11 +57,11 @@ export const SMTP_PORT = 465;
  * ⛔ 이 판정을 지우고 구글 상수를 무조건 쓰게 되돌리지 말 것 — 위 창이 그대로 다시 열린다.
  */
 const LEGACY_PROVIDER: {
-  domains: readonly string[];
-  imapHost: string;
-  smtpHost: string;
+  readonly domains: readonly string[];
+  readonly imapHost: string;
+  readonly smtpHost: string;
   /** 그 시절 계정으로 나간 과거 발송분을 알아보는 조각(회신 오인 방지). */
-  senderLocalParts: readonly string[];
+  readonly senderLocalParts: readonly string[];
 } = {
   domains: ["daum.net", "hanmail.net"],
   imapHost: "imap.daum.net",
@@ -158,6 +158,15 @@ export function resolveMailFrom(credentials: MailCredentials): { name: string; e
 }
 
 /**
+ * `From` 헤더에서 주소만 뽑는다 — `"표시이름" <addr@dom>` · `addr@dom` 둘 다 받는다.
+ * 못 뽑으면 원문을 그대로 돌려준다(판정은 호출부가 보수적으로 한다).
+ */
+function extractAddress(from: string): string {
+  const angled = from.match(/<([^>]+)>/);
+  return (angled ? angled[1] : from).trim().toLowerCase();
+}
+
+/**
  * 우리가 보낸 메일인가 — 회신 수집이 **자기 발송분을 회신으로 오인하지 않게** 한다.
  *
  * 판정 근거가 셋인 것은 발신 주소가 셋으로 갈릴 수 있기 때문이다:
@@ -166,14 +175,19 @@ export function resolveMailFrom(credentials: MailCredentials): { name: string; e
  *
  * ⚠️ 자격증명 한 벌이 아니라 **로그인 주소만** 받는다 — 순수 문자열 비교에 비밀번호를 끌고
  * 들어갈 이유가 없다(교차 검증 지적).
+ *
+ * 🪤 **부분 문자열로 비교하지 말 것.** 로그인 주소가 `test@example.com` 일 때 거래처의
+ * `mytest@example.com` 이 **우리 주소를 포함**하므로, 부분 일치로 재면 정상 회신이 자기
+ * 발송분으로 걸러져 **첨부가 있는데도 「회신 없음」**이 된다(교차 검증 P2, 2026-09-01).
+ * 그래서 주소를 뽑아 **정확히** 비교하고, 도메인·로컬파트도 경계를 지켜 본다.
  */
 const OWN_DOMAIN = "@ygrd.kr";
 
 export function isOwnSenderAddress(from: string, loginAddress: string): boolean {
-  const lowered = from.toLowerCase();
-  if (lowered.includes(OWN_DOMAIN)) return true;
-  if (lowered.includes(loginAddress.toLowerCase())) return true;
-  return LEGACY_PROVIDER.senderLocalParts.some((local) => lowered.includes(local));
+  const address = extractAddress(from);
+  if (address.endsWith(OWN_DOMAIN)) return true;
+  if (address === extractAddress(loginAddress)) return true;
+  return LEGACY_PROVIDER.senderLocalParts.some((local) => address.startsWith(local));
 }
 
 /**

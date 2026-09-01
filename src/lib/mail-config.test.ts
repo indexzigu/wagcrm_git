@@ -220,6 +220,24 @@ describe("자기 발송분 판정", () => {
   it("브랜드사 회신은 우리 메일이 아니다", () => {
     expect(isOwnSenderAddress("담당자 <cs@brand.example.com>", CREDS.user)).toBe(false);
   });
+
+  it("우리 주소를 **포함**할 뿐인 거래처 주소를 자기 메일로 걸러내지 않는다", () => {
+    // 🪤 부분 일치로 재면 로그인 `test@example.com` 이 거래처 `mytest@example.com` 에
+    //    걸려, 첨부가 있는 정상 회신이 「회신 없음」이 된다(교차 검증 P2, 2026-09-01).
+    const login = "test@example.com";
+    expect(isOwnSenderAddress("mytest@example.com", login)).toBe(false);
+    expect(isOwnSenderAddress("공급사 <mytest@example.com>", login)).toBe(false);
+    expect(isOwnSenderAddress("공급사 <test@example.com>", login)).toBe(true);
+  });
+
+  it("자사 도메인을 흉내 낸 주소는 우리 메일이 아니다", () => {
+    // `@ygrd.kr` 을 부분 문자열로 재면 `ygrd.kr.attacker.example.com` 이 통과한다.
+    expect(isOwnSenderAddress("cs@ygrd.kr.attacker.example.com", CREDS.user)).toBe(false);
+  });
+
+  it("옛 사업자 로컬파트는 **앞자리**로만 인정한다", () => {
+    expect(isOwnSenderAddress("notnutrione01@example.com", CREDS.user)).toBe(false);
+  });
 });
 
 describe("중요·별표 편지함", () => {

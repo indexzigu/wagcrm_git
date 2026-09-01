@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { execSync } from "child_process";
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 /**
@@ -30,13 +29,27 @@ function executableSource(relativePath: string): string {
   return raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
-/** `imap.<something>.<tld>` · `smtp.<something>.<tld>` 형태의 메일 서버 호스트. */
-const MAIL_HOST_LITERAL = /\b(?:imap|smtp)\.[a-z0-9-]+(?:\.[a-z]{2,})+\b/gi;
+/**
+ * `imap.<something>.<tld>` · `smtp.<something>.<tld>` 형태의 메일 서버 호스트.
+ * ⚠️ `g` 플래그를 쓰지 않는다 — `RegExp.test` 는 `lastIndex` 를 들고 다녀서 전수 스캔 중
+ * **한 파일 걸러 한 번씩 거짓 음성**이 난다(공유 정규식 + `g` 의 고전적 함정).
+ */
+const MAIL_HOST_LITERAL = /\b(?:imap|smtp)\.[a-z0-9-]+(?:\.[a-z]{2,})+\b/i;
+
+/** `src` 아래 타입스크립트 소스 전수(레포 관행: 셸이 아니라 readdirSync 재귀). */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(join(process.cwd(), dir), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...sourceFiles(rel));
+    else if (rel.endsWith(".ts") || rel.endsWith(".tsx")) out.push(rel);
+  }
+  return out;
+}
 
 describe("메일 서버 좌표 단일화", () => {
   it.each(CONSUMERS)("%s 에 메일 서버 호스트를 직접 적지 않는다", (path) => {
-    const found = executableSource(path).match(MAIL_HOST_LITERAL) ?? [];
-    expect(found).toEqual([]);
+    expect(executableSource(path)).not.toMatch(MAIL_HOST_LITERAL);
   });
 
   it.each(CONSUMERS)("%s 는 mail-config 에서 접속 설정을 받아 온다", (path) => {
@@ -46,8 +59,7 @@ describe("메일 서버 좌표 단일화", () => {
   it("SSOT 자신은 호스트를 갖는다 — 스캐너가 고장 나면 이 단언이 먼저 깨진다", () => {
     // 양성 프로브. 위 세 단언은 「없음」을 확인하므로, 정규식이 아무것도 못 잡게 망가져도
     // 조용히 통과한다. 실제로 잡히는 문자열이 있는 파일 하나를 대조군으로 둔다.
-    const found = executableSource(SSOT).match(MAIL_HOST_LITERAL) ?? [];
-    expect(found.length).toBeGreaterThan(0);
+    expect(executableSource(SSOT)).toMatch(MAIL_HOST_LITERAL);
   });
 
   it("소비처에는 옛 메일 사업자 좌표가 남아 있지 않다", () => {
@@ -56,20 +68,18 @@ describe("메일 서버 좌표 단일화", () => {
     }
   });
 
-  it("메일 서버에 붙는 파일은 위 목록이 전부다 — 네 번째 소비처가 스캔 밖으로 새지 않는다", () => {
-    // 🪤 `CONSUMERS` 는 손으로 적은 목록이라 **새 소비처는 조용히 비켜간다**(레포 선례:
-    //    크론 인증 사본 18개 중 2개가 그렇게 fail-open 으로 남아 있었다). 그래서 목록을
-    //    믿지 말고 "메일 라이브러리를 import 하는 파일"을 소스에서 **파생**해 대조한다.
-    const found = execSync(
-      `grep -rlE "from ['\\"](imap-simple|nodemailer)['\\"]" src --include='*.ts' --include='*.tsx'`,
-      { cwd: process.cwd(), encoding: "utf8" },
-    )
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
+  it("src 어디에도 SSOT 밖의 메일 서버 좌표가 없다 — 네 번째 소비처가 스캔 밖으로 새지 않는다", () => {
+    // 🪤 손으로 적은 소비처 목록은 **새 소비처를 조용히 비켜간다**(레포 선례: 크론 인증
+    //    사본 18개 중 2개가 그렇게 fail-open 으로 남아 있었다). 그래서 목록이 아니라
+    //    **불변식 자체**("SSOT 밖에 메일 호스트 리터럴이 없다")를 src 전수로 확인한다.
+    //    ⛔ 「메일 라이브러리를 import 하는 파일」로 파생하지 말 것 — require()·동적 import·
+    //       하위 `imap` 직접 사용·다른 발송 라이브러리가 전부 빠져나간다(교차 검증 지적).
+    const offenders = sourceFiles("src")
+      .filter((path) => path !== SSOT && !path.endsWith(".test.ts") && !path.endsWith(".test.tsx"))
+      .filter((path) => MAIL_HOST_LITERAL.test(executableSource(path)))
       .sort();
 
-    expect(found).toEqual([...CONSUMERS].sort());
+    expect(offenders).toEqual([]);
   });
 
   it("SSOT 는 옛 사업자 폴백을 **유지한다** — 지우면 배포 순서 사고가 되살아난다", () => {
