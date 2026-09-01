@@ -34,6 +34,7 @@
  */
 
 import type { ParsedEtaxInvoice } from "./etax-xml";
+import { toNfc } from "@/lib/text-normalize";
 import type { ExpectedIssuance } from "./expected-issuances";
 import { VERIFIED_TYPE_CODES, CORRECTIVE_TYPE_CODES } from "./receipt-match";
 
@@ -194,11 +195,19 @@ function formatWon(value: number): string {
 }
 
 /**
- * 품목명 대조용 정규화 — 공백·기호를 지우고 소문자로 접는다. 계산서와 CRM 이 같은 이름을
+ * 품목명 대조용 접기 — 공백·기호를 지우고 소문자로 접는다. 계산서와 CRM 이 같은 이름을
  * 띄어쓰기·괄호만 다르게 적는 경우가 흔해서다.
+ *
+ * 🔴 **`toNfc` 를 먼저 태운다.** 한쪽(품목명)은 **메일 첨부의 계산서 XML** 에서 오고 다른
+ * 쪽(캠페인 라벨)은 우리 DB 에서 온다 — 형태가 갈리면 눈에 같은 이름이 안 맞아 후보
+ * 좁히기가 조용히 실패한다(편지함 이름·엑셀 헤더와 같은 축, 2026-09-02).
+ *
+ * ⚠️ 이름이 `normalizeForCompare` 가 아닌 것은 의도다 — `text-normalize` 의 그것은 기호를
+ * 남기므로 **계약이 다르다**. 같은 이름으로 두면 grep 이 서로 다른 답을 준다(실측: 정의가
+ * 3개였다).
  */
-function normalizeForCompare(raw: string): string {
-  return raw.replace(/[\s\-_/·,.()[\]{}]/g, "").toLowerCase();
+function foldLabelForMatch(raw: string): string {
+  return toNfc(raw).replace(/[\s\-_/·,.()[\]{}]/g, "").toLowerCase();
 }
 
 /**
@@ -212,7 +221,7 @@ function normalizeForCompare(raw: string): string {
 function identityTokens(label: string): string[] {
   return label
     .split(/[\s\-_/·,.()[\]{}×xX]+/)
-    .map((token) => normalizeForCompare(token))
+    .map((token) => foldLabelForMatch(token))
     .filter((token) => token.length >= 2);
 }
 
@@ -221,7 +230,7 @@ function lineItemHaystack(parsed: ParsedEtaxInvoice): string {
   return parsed.lineItems
     .map((item) => item.name)
     .filter((name): name is string => Boolean(name))
-    .map((name) => normalizeForCompare(name))
+    .map((name) => foldLabelForMatch(name))
     .join("|");
 }
 

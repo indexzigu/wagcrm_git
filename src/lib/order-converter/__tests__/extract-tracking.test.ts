@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { extractTrackingMap, extractTrackingMapByReply } from '../order-parser';
+import { extractTrackingMap, extractTrackingMapByReply, parseNaverOrders } from '../order-parser';
 import {
   NUTRIONE_GOLDEN_RULES as NUTRIONE_LEGACY_RULES,
   TRIPP_GOLDEN_RULES as TRIPP_LEGACY_RULES,
@@ -12,6 +12,29 @@ function toXlsx(sheetName: string, rows: Record<string, unknown>[]): ArrayBuffer
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 }
+
+describe('parseNaverOrders — 헤더 행 탐색', () => {
+  function toSheetWithPreamble(rows: unknown[][]): ArrayBuffer {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '주문');
+    return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  }
+
+  it('머리말이 있고 헤더가 자모 분리여도 **헤더 행을 찾는다**', () => {
+    // 🔴 한 단계 앞의 함정: 탐색이 실패하면 headerRowIndex 가 0 에 남아 **머리말을 헤더로**
+    //    삼고, 뒤의 정규화가 엉뚱한 행에 걸려 주문 필드가 전부 빈 채로 파싱된다.
+    const nfd = (v: string) => v.normalize('NFD');
+    const buf = toSheetWithPreamble([
+      ['◈ 스마트스토어 주문 내역'],
+      [nfd('상품주문번호'), nfd('주문번호'), nfd('수취인명')],
+      ['2026062412345671', '2026062412345671', '홍길동'],
+    ]);
+    const rows = parseNaverOrders(buf);
+    expect(rows.length).toBe(1);
+    expect(rows[0].주문번호).toBe('2026062412345671');
+  });
+});
 
 describe('extractTrackingMapByReply', () => {
   it('뉴트리원 회신(브랜드가 택배사/송장번호 열 삽입, 헤더명 키·lenient): 헤더명으로 매칭', () => {

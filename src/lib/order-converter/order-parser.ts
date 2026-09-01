@@ -164,10 +164,17 @@ export function parseNaverOrders(arrayBuffer: ArrayBuffer): NaverOrderRow[] {
   const rawData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
   if (rawData.length === 0) return [];
 
+  // 🔴 **헤더 행을 찾는 단계도 정규화한다.** 셀을 원문 그대로 비교하면 자모 분리 파일에서
+  //    이 탐색이 실패하고, 그러면 `headerRowIndex` 가 0 에 남아 **머리말을 헤더로 삼는다** —
+  //    아래 정규화가 엉뚱한 행에 걸려 주문 필드가 전부 빈 채로 파싱된다(교차 검증 지적,
+  //    실증 확인). 한 단계 앞을 놓치면 뒤를 아무리 맞춰도 소용이 없다.
+  const HEADER_ROW_MARKERS = ['상품주문번호', '주문번호'];
   let headerRowIndex = 0;
   for (let i = 0; i < Math.min(rawData.length, 10); i++) {
     const row = rawData[i];
-    if (row && (row.includes('상품주문번호') || row.includes('주문번호'))) {
+    if (!row) continue;
+    const cells = row.map((cell: unknown) => normalizeForCompare(String(cell ?? '')));
+    if (HEADER_ROW_MARKERS.some((marker) => cells.includes(normalizeForCompare(marker)))) {
       headerRowIndex = i;
       break;
     }
@@ -379,7 +386,9 @@ export function mergeTrackingIntoNaverRaw(naverRawBuffer: ArrayBuffer, trackingM
   if (rawData.length === 0) return new ArrayBuffer(0);
 
   const firstRow = rawData[0];
-  if (firstRow && firstRow.length > 0 && typeof firstRow[0] === 'string' && firstRow[0].includes('◈')) {
+  // `◈` 는 한글이 아니라 정규화 영향이 없지만, 셀을 문자열로 강제하는 것은 위 탐색과 같은
+  // 규약으로 맞춰 둔다(타입이 다르면 조용히 빗나가는 자리라는 점이 같다).
+  if (firstRow && firstRow.length > 0 && String(firstRow[0] ?? '').includes('◈')) {
     rawData.shift();
   }
 

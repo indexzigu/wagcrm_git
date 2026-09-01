@@ -213,8 +213,12 @@ async function confirmCalculationDialog(page: Page): Promise<boolean> {
   return true;
 }
 
-/** 화면 표시값을 비교용으로 정규화 — 홈택스가 붙이는 콤마·공백·하이픈을 걷어낸다. */
-function normalizeForCompare(value: string): string {
+/**
+ * 화면 표시값을 비교용으로 정규화 — 홈택스가 붙이는 콤마·공백·하이픈을 걷어낸다.
+ * ⚠️ 이름을 `stripDisplayPunctuation` 으로 둔 것은 의도다 — `text-normalize` 의
+ * `normalizeForCompare` 와 계약이 다르다(이쪽은 숫자 표기용이고 NFC·소문자화가 없다).
+ */
+function stripDisplayPunctuation(value: string): string {
   return value.replace(/[,\s-]/g, "");
 }
 
@@ -689,7 +693,7 @@ export async function preflightBeforeSubmit(
       problems.push({ field: label, reason: "화면에서 값을 읽지 못해 CRM 값과 대조할 수 없습니다." });
       continue;
     }
-    if (normalizeForCompare(result.value) !== normalizeForCompare(expected)) {
+    if (stripDisplayPunctuation(result.value) !== stripDisplayPunctuation(expected)) {
       problems.push({ field: label, reason: `화면 값 "${result.value}" 이 CRM 값 "${expected}" 과 다릅니다.` });
     }
   }
@@ -906,8 +910,8 @@ async function fillAmountViaCalcPopup(
   await totalInput.pressSequentially(String(totalVatIncluded), { delay: 30 });
   await trace("입력 직후");
 
-  const typed = normalizeForCompare((await totalInput.inputValue().catch(() => "")).trim());
-  if (typed !== normalizeForCompare(String(totalVatIncluded))) {
+  const typed = stripDisplayPunctuation((await totalInput.inputValue().catch(() => "")).trim());
+  if (typed !== stripDisplayPunctuation(String(totalVatIncluded))) {
     throw new Error(
       `합계 입력이 화면에 들어가지 않았습니다(넣은 값 ${totalVatIncluded} / 화면 "${typed}") — ` +
         `이 상태로 계산하면 0원이 됩니다.`,
@@ -990,7 +994,7 @@ export async function fillInvoiceForm(
     await locator.fill(expected, { timeout: 15_000 });
     // 홈택스가 콤마를 붙이거나 자릿수를 다듬을 수 있으므로 정규화해서 비교한다.
     const actual = await locator.inputValue().catch(() => "");
-    if (normalizeForCompare(actual) !== normalizeForCompare(expected)) {
+    if (stripDisplayPunctuation(actual) !== stripDisplayPunctuation(expected)) {
       mismatched.push({ field: key, expected, actual });
       return;
     }
@@ -1081,8 +1085,8 @@ export async function fillInvoiceForm(
       const result = await fillAmountViaCalcPopup(page, map, total);
       if (result) {
         calculatedAmount = true;
-        const supply = Number(normalizeForCompare(result.supply));
-        const tax = Number(normalizeForCompare(result.tax));
+        const supply = Number(stripDisplayPunctuation(result.supply));
+        const tax = Number(stripDisplayPunctuation(result.tax));
         if (!Number.isFinite(supply) || !Number.isFinite(tax) || supply + tax !== total) {
           mismatched.push({
             field: "itemSupplyAmount",
@@ -1128,7 +1132,7 @@ export async function fillInvoiceForm(
       const selectorForKey = map.fields[key];
       if (!selectorForKey) continue;
       const actual = await page.locator(selectorForKey).inputValue().catch(() => "");
-      if (normalizeForCompare(actual) !== normalizeForCompare(values[key])) {
+      if (stripDisplayPunctuation(actual) !== stripDisplayPunctuation(values[key])) {
         mismatched.push({ field: key, expected: values[key], actual });
       }
     }
@@ -1145,7 +1149,7 @@ export async function fillInvoiceForm(
       const selectorForKey = map.fields[key];
       if (!selectorForKey) continue;
       const actual = await page.locator(selectorForKey).inputValue().catch(() => "");
-      if (normalizeForCompare(actual) !== normalizeForCompare(values[key])) {
+      if (stripDisplayPunctuation(actual) !== stripDisplayPunctuation(values[key])) {
         mismatched.push({ field: key, expected: values[key], actual });
       }
     }

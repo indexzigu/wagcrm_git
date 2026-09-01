@@ -283,13 +283,6 @@ export interface MailboxDescriptor {
   attribs?: readonly string[];
 }
 
-/**
- * 편지함 **이름 비교** 전용. 정규화 자체는 `text-normalize` 가 소유한다 —
- * ⛔ 여기서 세 단계(NFC·공백 제거·소문자화)를 다시 적지 말 것: 제목·파일명이 쓰는 것과
- * 갈리면 「같은 규칙인데 한쪽만 고쳐진」 상태가 된다(이 트랙이 고친 호스트 리터럴과 같은 형태).
- */
-const normalizeBoxName = normalizeForCompare;
-
 function hasAttrib(box: MailboxDescriptor, attrib: string): boolean {
   return (box.attribs ?? []).some((a) => a.toLowerCase() === attrib.toLowerCase());
 }
@@ -297,7 +290,7 @@ function hasAttrib(box: MailboxDescriptor, attrib: string): boolean {
 /** 「전체보관함」인가 — 모든 메일의 사본이라 순회 차례가 달라진다. */
 export function isAllMailbox(box: MailboxDescriptor): boolean {
   if (hasAttrib(box, ALL_MAIL_SPECIAL_USE)) return true;
-  const normalized = normalizeBoxName(box.name);
+  const normalized = normalizeForCompare(box.name);
   return ALL_MAIL_NAME_HINTS.some((hint) => normalized.includes(hint));
 }
 
@@ -310,7 +303,7 @@ export function isAllMailbox(box: MailboxDescriptor): boolean {
  */
 export function isScannableMailbox(box: MailboxDescriptor): boolean {
   if (EXCLUDED_SPECIAL_USE.some((attrib) => hasAttrib(box, attrib))) return false;
-  const normalized = normalizeBoxName(box.name);
+  const normalized = normalizeForCompare(box.name);
   return !EXCLUDED_NAME_HINTS.some((hint) => normalized.includes(hint));
 }
 

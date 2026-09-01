@@ -115,27 +115,46 @@ describe("메일 서버 좌표 단일화", () => {
       .filter((path) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx"))
       .filter((path) => /(?:imaps?\.connect|new\s+Imap)\s*\(/.test(executableSource(path)));
 
-    expect(connectors.length).toBeGreaterThanOrEqual(2); // 현재 수취 스캔 + 회신 수집
+    // 양성 프로브: 탐지가 망가지면 목록이 비어 **아무것도 검사하지 않은 채 초록**이 된다.
+    // 실제로 IMAP 에 붙는 두 파일이 잡히는지를 먼저 못박는다.
+    expect(connectors).toEqual(
+      expect.arrayContaining([
+        "src/lib/tax-invoice-mail/mail-scan.ts",
+        "src/app/order-converter/api/fetch-emails/route.ts",
+      ]),
+    );
+
     for (const path of connectors) {
       const source = executableSource(path);
-      expect({ path, usesSsot: /resolveImapConfig\s*\(/.test(source) }).toEqual({
-        path,
-        usesSsot: true,
-      });
-      // 🪤 `resolveImapConfig` 를 **언급**만 하고 실제로는 옵션을 손수 지어 넘길 수 있다
-      //    (교차 검증 지적). 접속 옵션 키는 SSOT 에만 있어야 하므로 소비처에서 그 키가
-      //    보이면 직접 지은 것으로 본다 — `port`·`tls` 는 SSOT 를 거치면 쓸 일이 없다.
-      expect({ path, handBuilt: /\b(?:port|tls)\s*:/.test(source) }).toEqual({
-        path,
-        handBuilt: false,
-      });
+      // 🪤 `resolveImapConfig` 를 **언급**만 하고 실제로는 옵션을 손수 지어 넘길 수 있다.
+      //    그래서 connect 에 **무엇이 들어가는지**를 본다: 인자가 객체 리터럴이면 `imap:` 값이
+      //    곧 SSOT 호출이어야 하고, 변수면 그 변수 선언이 SSOT 호출을 담아야 한다.
+      //    ⛔ 「`port`·`tls` 키가 없다」로 재지 말 것 — 정작 SNI 키 `tlsOptions:` 가 `\btls\s*:`
+      //       에 안 걸려 거짓 음성이고, 두 소비처 모두 0건이라 공회전이었다(교차 검증 지적).
+      const call = source.match(/imaps?\.connect\(\s*([^)]*)/);
+      expect({ path, hasCall: Boolean(call) }).toEqual({ path, hasCall: true });
+      const arg = (call?.[1] ?? "").trim();
+      const objectForm = /^\{\s*imap\s*:\s*resolveImapConfig\s*\(/.test(arg);
+      const identifier = arg.match(/^([A-Za-z_$][\w$]*)\b/)?.[1];
+      const viaVariable = Boolean(
+        identifier &&
+          new RegExp(`(?:const|let|var)\\s+${identifier}\\s*=[^;]*resolveImapConfig\\s*\\(`, "s").test(
+            source,
+          ),
+      );
+      expect({ path, fromSsot: objectForm || viaVariable }).toEqual({ path, fromSsot: true });
     }
   });
-
   it("메일 경로 소스는 NFC 로 커밋된다 — 그래야 우리 리터럴을 감싸지 않아도 된다", () => {
     // 서버가 준 문자열만 `toNfc` 로 맞추고 **우리 상수는 그대로 비교**하는 것이 계약이다.
     // 그 전제가 깨지면(에디터·OS 가 파일을 NFD 로 저장) 비교가 조용히 빗나가므로 여기서 고정한다.
-    const paths = [SSOT, ...CONSUMERS, "src/lib/order-converter/order-parser.ts"];
+    const paths = [
+      SSOT,
+      ...CONSUMERS,
+      "src/lib/text-normalize.ts",
+      "src/lib/order-converter/order-parser.ts",
+      "src/lib/tax-invoice-mail/issuance-match.ts",
+    ];
     for (const path of paths) {
       const raw = readFileSync(join(process.cwd(), path), "utf8");
       expect({ path, nfc: raw === raw.normalize("NFC") }).toEqual({ path, nfc: true });
