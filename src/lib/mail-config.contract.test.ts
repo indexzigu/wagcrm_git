@@ -105,7 +105,7 @@ describe("메일 서버 좌표 단일화", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("IMAP 에 붙는 파일은 **전부** SSOT 를 거친다", () => {
+  it("`imaps.connect`·`new Imap` 으로 붙는 곳은 SSOT 를 거친다", () => {
     // 🔴 `tlsOptions.servername`(SNI) 이 빠지면 구글 IMAP 이 통째로 죽는다(2026-09-02 실측).
     //    소비처가 접속 옵션을 손수 지으면 그 한 줄이 조용히 빠진다.
     //
@@ -169,9 +169,12 @@ describe("메일 서버 좌표 단일화", () => {
       const visit = (node: ts.Node) => {
         if (ts.isCallExpression(node)) {
           const callee = node.expression.getText(source);
+          // ⚠️ 탐지 범위는 **`<식별자>.connect(...)`** 다. 구조분해로 떼어낸
+          //    `const { connect } = imaps; connect(...)` 는 잡지 못한다 — 맨 `connect(` 를
+          //    다 물면 DB·소켓 등 무관한 호출이 섞여 계약이 소음이 된다. 알려진 한계로 두고
+          //    **「전부」라고 적지 않는다**(교차 검증이 실제로 이 구멍을 프로브로 보였다).
           const isConnect = /(?:^|\.)connect$/.test(callee) && /imaps?\b/i.test(callee);
-          const isNewless = false;
-          if (isConnect || isNewless) {
+          if (isConnect) {
             checked.push(path);
             const arg = node.arguments[0];
             if (!arg || !fromSsot(arg)) offenders.push(`${path} :: ${node.getText(source).slice(0, 60)}`);
