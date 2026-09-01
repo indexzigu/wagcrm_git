@@ -147,21 +147,24 @@ describe("메일 서버 좌표 단일화", () => {
           return Boolean(imapProp && ts.isPropertyAssignment(imapProp) && fromSsot(imapProp.initializer));
         }
         if (ts.isIdentifier(node)) {
-          // 같은 파일에서 그 이름에 대입된 초기값을 되짚는다.
-          let resolved = false;
-          const walk = (n: ts.Node) => {
-            if (
-              ts.isVariableDeclaration(n) &&
-              n.name.getText(source) === node.getText(source) &&
-              n.initializer &&
-              fromSsot(n.initializer)
-            ) {
-              resolved = true;
-            }
-            ts.forEachChild(n, walk);
-          };
-          walk(source);
-          return resolved;
+          // 그 이름의 **선언을 렉시컬 스코프로** 되짚는다.
+          // 🪤 파일 전체에서 동명 선언을 아무거나 찾으면 **가려진 변수**에 뚫린다 — 바깥에
+          //    안전한 `config`(SSOT) 가 있고 안쪽 블록에서 같은 이름으로 손수 지어 넘기면
+          //    바깥 선언을 찾아 초록이 된다(교차 검증이 재현해 보였다). 노드에서 위로 올라가며
+          //    가장 가까운 선언을 집는다.
+          const name = node.getText(source);
+          for (let scope: ts.Node | undefined = node; scope; scope = scope.parent) {
+            let found: ts.VariableDeclaration | undefined;
+            const scan = (n: ts.Node) => {
+              if (found) return;
+              if (ts.isVariableDeclaration(n) && n.name.getText(source) === name) found = n;
+              // 중첩 함수·블록 안으로는 내려가지 않는다(그 안의 선언은 이 스코프가 아니다).
+              if (n === scope || (!ts.isBlock(n) && !ts.isFunctionLike(n))) ts.forEachChild(n, scan);
+            };
+            scan(scope);
+            if (found) return Boolean(found.initializer && fromSsot(found.initializer));
+          }
+          return false;
         }
         return false;
       };
