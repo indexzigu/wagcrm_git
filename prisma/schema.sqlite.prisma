@@ -1017,6 +1017,39 @@ model ActionProposalEvent {
   @@index([proposalId, createdAt])
 }
 
+// Postgres Json fields are mirrored as serialized String values in SQLite.
+model AgentJob {
+  id             String          @id @default(cuid())
+  idempotencyKey String          @unique
+  payload        String
+  status         String          @default("QUEUED")
+  workerId       String?
+  leaseExpiresAt DateTime?
+  heartbeatAt    DateTime?
+  attempt        Int             @default(0)
+  result         String?
+  failureCode    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  events         AgentJobEvent[]
+
+  @@index([status, leaseExpiresAt, createdAt])
+  @@index([createdAt])
+}
+
+model AgentJobEvent {
+  id         String   @id @default(cuid())
+  jobId      String
+  fromStatus String?
+  toStatus   String
+  actor      String   @default("SYSTEM")
+  eventCode  String
+  createdAt  DateTime @default(now())
+  job        AgentJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+}
+
 // 어시스턴트 채팅 영속화 (Phase 5 청사진 §1) — additive 2테이블.
 // per-user 소유(createdBy 스코프) — 대화 공유/타 사용자 열람은 비목표(YAGNI, §0).
 model AssistantConversation {
