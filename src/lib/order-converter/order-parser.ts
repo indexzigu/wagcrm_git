@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { NAVER_ORDER_ID_PATTERN } from './naver-order-id';
+import { normalizeForCompare, toNfc } from '@/lib/text-normalize';
 
 // Excel 날짜 시리얼 및 문자열 날짜를 안전하게 Date 객체로 파싱하는 헬퍼
 function parseExcelDate(val: any): Date | null {
@@ -163,10 +164,17 @@ export function parseNaverOrders(arrayBuffer: ArrayBuffer): NaverOrderRow[] {
   const rawData = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
   if (rawData.length === 0) return [];
 
+  // 🔴 **헤더 행을 찾는 단계도 정규화한다.** 셀을 원문 그대로 비교하면 자모 분리 파일에서
+  //    이 탐색이 실패하고, 그러면 `headerRowIndex` 가 0 에 남아 **머리말을 헤더로 삼는다** —
+  //    아래 정규화가 엉뚱한 행에 걸려 주문 필드가 전부 빈 채로 파싱된다(교차 검증 지적,
+  //    실증 확인). 한 단계 앞을 놓치면 뒤를 아무리 맞춰도 소용이 없다.
+  const HEADER_ROW_MARKERS = ['상품주문번호', '주문번호'];
   let headerRowIndex = 0;
   for (let i = 0; i < Math.min(rawData.length, 10); i++) {
     const row = rawData[i];
-    if (row && (row.includes('상품주문번호') || row.includes('주문번호'))) {
+    if (!row) continue;
+    const cells = row.map((cell: unknown) => normalizeForCompare(String(cell ?? '')));
+    if (HEADER_ROW_MARKERS.some((marker) => cells.includes(normalizeForCompare(marker)))) {
       headerRowIndex = i;
       break;
     }
@@ -181,7 +189,9 @@ export function parseNaverOrders(arrayBuffer: ArrayBuffer): NaverOrderRow[] {
 
     const rowData: Record<string, any> = {};
     headers.forEach((header: string, index: number) => {
-      const cleanHeader = header ? String(header).replace(/\n|\r/g, '').trim() : '';
+      // 🔴 헤더 키도 NFC 로 맞춘다 — 자모 분리로 들어오면 아래 `rowData['주문번호']` 류가
+      //    전부 빗나가 조용히 빈 행이 된다(회신 엑셀 헤더와 같은 축).
+      const cleanHeader = header ? toNfc(String(header).replace(/\n|\r/g, '')).trim() : '';
       if (cleanHeader) {
         rowData[cleanHeader] = row[index];
       }
@@ -290,12 +300,11 @@ export function extractTrackingMapByReply(
   }
 
   // 규칙 헤더도 원본 셀 키와 동일하게 공백 제거해 비교한다(cleanRow 규약).
-  // 🔴 **NFC 를 함께 건다.** 헤더 문자열은 브랜드사가 만든 엑셀에서 오고, 맥에서 만든
-  //    파일은 한글이 **자모 분리(NFD)** 로 들어온다 — 그러면 `송장번호` 가 눈에는 같은데
-  //    우리 상수와 안 맞아 **조용히 0건**이 되고, 화면에는 「송장번호를 찾지 못했습니다」로
-  //    떠서 회신이 없는 것과 구분되지 않는다(2026-09-02 실증). 같은 축의 편지함 이름·제목·
-  //    첨부 파일명은 `src/lib/mail-config.ts` 의 `toNfc` 가 소유한다.
-  const normalize = (h: string) => h.replace(/\s+/g, '').normalize('NFC');
+  // 🔴 정규화 정본은 `src/lib/text-normalize.ts` 다 — 여기서 단계를 다시 적지 말 것.
+  //    브랜드사가 맥에서 만든 엑셀은 한글이 **자모 분리(NFD)** 로 들어와, `송장번호` 가
+  //    눈에는 같은데 우리 상수와 안 맞아 **조용히 0건**이 되고 화면에는 「송장번호를 찾지
+  //    못했습니다」로 떠 회신이 없는 것과 구분되지 않는다(2026-09-02 실증).
+  const normalize = normalizeForCompare;
   const trackingKeys = (reply.trackingHeaders?.length ? reply.trackingHeaders : DEFAULT_TRACKING_HEADERS).map(normalize);
   const orderIdKeys = reply.orderIdHeaders.map(normalize);
   const strict = reply.orderIdPattern === 'naver-strict';
@@ -327,8 +336,11 @@ export function extractTrackingMapByReply(
         orderId = '';
       }
 
-      let courier = String(cleanRow['택배사'] || '').trim() || 'CJ대한통운';
-      if (courier.replace(/\s+/g, '') === 'CJ택배') {
+      let courier = String(cleanRow[normalize('택배사')] || '').trim() || 'CJ대한통운';
+      // 🔴 **셀 값도 헤더와 같은 축이다.** 헤더만 정규화하면 NFD 로 들어온 `CJ택배` 가
+      //    그대로 남아 표기가 갈린다(발주서·송장 조회에서 다른 택배사로 읽힌다).
+      //    교차 검증이 「같은 함수에 남은 같은 결함」으로 짚은 자리다(2026-09-02).
+      if (normalizeForCompare(courier) === normalizeForCompare('CJ택배')) {
         courier = 'CJ대한통운';
       }
 
@@ -374,12 +386,16 @@ export function mergeTrackingIntoNaverRaw(naverRawBuffer: ArrayBuffer, trackingM
   if (rawData.length === 0) return new ArrayBuffer(0);
 
   const firstRow = rawData[0];
-  if (firstRow && firstRow.length > 0 && typeof firstRow[0] === 'string' && firstRow[0].includes('◈')) {
+  // `◈` 는 한글이 아니라 정규화 영향이 없지만, 셀을 문자열로 강제하는 것은 위 탐색과 같은
+  // 규약으로 맞춰 둔다(타입이 다르면 조용히 빗나가는 자리라는 점이 같다).
+  if (firstRow && firstRow.length > 0 && String(firstRow[0] ?? '').includes('◈')) {
     rawData.shift();
   }
 
   const headers = rawData[0] || [];
-  const cleanHeader = (h: any) => h ? String(h).replace(/\s+/g, '') : '';
+  // 🔴 NFC 를 함께 건다 — 없으면 자모 분리 헤더에서 아래 인덱스가 전부 -1 로 남아
+  //    송장 병합이 **조용히 아무것도 안 한다**(회신 엑셀 헤더와 같은 축).
+  const cleanHeader = (h: any) => (h ? toNfc(String(h).replace(/\s+/g, '')) : '');
 
   let orderIdIdx = -1;
   let courierIdx = -1;

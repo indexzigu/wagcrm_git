@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import ts from "typescript";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
@@ -104,27 +105,136 @@ describe("메일 서버 좌표 단일화", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("IMAP 에 붙는 파일은 **전부** SSOT 를 거친다", () => {
+  it("`imaps.connect`·`new Imap` 으로 붙는 곳은 SSOT 를 거친다", () => {
     // 🔴 `tlsOptions.servername`(SNI) 이 빠지면 구글 IMAP 이 통째로 죽는다(2026-09-02 실측).
-    //    소비처가 접속 옵션을 손으로 지으면 그 한 줄이 조용히 빠진다.
-    // ⛔ 위 「손으로 적은 목록은 새 소비처를 조용히 비켜간다」가 여기에도 적용된다 —
-    //    CONSUMERS 를 돌면서 조기 반환하는 형태로 쓰지 말 것(초판이 그렇게 썼다가
-    //    같은 파일 6줄 위의 자기 금지를 어겼다). 전수로 훑고, **검사 건수 하한**을 함께
-    //    단언해 「하나도 안 걸러서 초록」인 상태를 구분한다(위 양성 프로브와 같은 규약).
-    const connectors = [...sourceFiles("src"), ...sourceFiles("scripts")]
-      .filter((path) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx"))
-      .filter((path) => /(?:imaps?\.connect|new\s+Imap)\s*\(/.test(executableSource(path)));
+    //    소비처가 접속 옵션을 손수 지으면 그 한 줄이 조용히 빠진다.
+    //
+    // ⛔ **정규식으로 재지 말 것.** 이 계약은 정규식으로 세 번 뚫렸다(교차 검증 실측):
+    //    ①`resolveImapConfig` 를 **언급**만 해도 통과 ②`port`·`tls` 키 부재로 재니 정작
+    //    `tlsOptions:` 가 `\btls\s*:` 에 안 걸려 거짓 음성 ③`g` 플래그가 없어 **파일당 첫
+    //    connect 만** 봐서 둘째 호출이 손수 지은 옵션이어도 초록. 레포의 「소스 스캔은
+    //    컴파일러로」 선례(`instagram-graph-token-applied.contract.test.ts` 등)를 따른다.
+    const connectors = [...sourceFiles("src"), ...sourceFiles("scripts")].filter(
+      (path) => !path.endsWith(".test.ts") && !path.endsWith(".test.tsx"),
+    );
 
-    expect(connectors.length).toBeGreaterThanOrEqual(2); // 현재 수취 스캔 + 회신 수집
+    // 양성 프로브: 탐지가 망가지면 목록이 비어 **아무것도 검사하지 않은 채 초록**이 된다.
+    const checked: string[] = [];
+    const offenders: string[] = [];
+
     for (const path of connectors) {
-      expect(executableSource(path)).toMatch(/resolveImapConfig\s*\(/);
+      const source = ts.createSourceFile(
+        path,
+        readFileSync(join(process.cwd(), path), "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+      );
+
+      /**
+       * 이 바인딩 이름이 `name` 을 묶는가. 구조분해도 본다 —
+       * 🪤 `function p({ config })` 는 `n.name` 이 `{ config }` 라 문자열 비교로는 안 걸려
+       *    바깥 동명 변수를 채택하고 **초록**이 됐다(교차 검증이 실측으로 보였다).
+       */
+      const bindsName = (binding: ts.BindingName, target: string): boolean => {
+        if (ts.isIdentifier(binding)) return binding.getText(source) === target;
+        return binding.elements.some(
+          (el) => ts.isBindingElement(el) && bindsName(el.name, target),
+        );
+      };
+
+      /** 이 식이 결국 `resolveImapConfig(...)` 에서 온 값인가. */
+      const fromSsot = (node: ts.Node): boolean => {
+        if (ts.isCallExpression(node)) {
+          if (node.expression.getText(source).endsWith("resolveImapConfig")) return true;
+        }
+        if (ts.isAwaitExpression(node)) return fromSsot(node.expression);
+        if (ts.isObjectLiteralExpression(node)) {
+          // `{ imap: <식> }` 형태 — imap 값이 SSOT 에서 와야 한다. 스프레드로 덮어쓰는
+          // 형태(`{ ...resolveImapConfig(), tlsOptions: undefined }`)는 통과시키지 않는다.
+          const props = node.properties;
+          if (props.some((pr) => ts.isSpreadAssignment(pr))) return false;
+          const imapProp = props.find(
+            (pr) => ts.isPropertyAssignment(pr) && pr.name.getText(source) === "imap",
+          );
+          return Boolean(imapProp && ts.isPropertyAssignment(imapProp) && fromSsot(imapProp.initializer));
+        }
+        if (ts.isIdentifier(node)) {
+          // 그 이름의 **선언을 렉시컬 스코프로** 되짚는다.
+          // 🪤 파일 전체에서 동명 선언을 아무거나 찾으면 **가려진 변수**에 뚫린다 — 바깥에
+          //    안전한 `config`(SSOT) 가 있고 안쪽 블록에서 같은 이름으로 손수 지어 넘기면
+          //    바깥 선언을 찾아 초록이 된다(교차 검증이 재현해 보였다). 노드에서 위로 올라가며
+          //    가장 가까운 선언을 집는다.
+          const name = node.getText(source);
+          for (let scope: ts.Node | undefined = node; scope; scope = scope.parent) {
+            let found: ts.VariableDeclaration | undefined;
+            let shadowedByParam = false;
+            const scan = (n: ts.Node) => {
+              if (found || shadowedByParam) return;
+              // 🪤 **파라미터로 가려지면 판정 불가다 — 통과시키지 않는다.** 값이 밖에서
+              //    오므로 이 파일 구문만으로는 SSOT 유래를 증명할 수 없는데, 종전에는
+              //    파라미터를 무시하고 바깥의 동명 변수를 찾아 **초록**이 됐다(교차 검증
+              //    재현). 판정 불가는 fail-closed 로 둔다.
+              if (ts.isParameter(n) && bindsName(n.name, name)) shadowedByParam = true;
+              if (ts.isVariableDeclaration(n) && n.name.getText(source) === name) found = n;
+              // 중첩 함수·블록 안으로는 내려가지 않는다(그 안의 선언은 이 스코프가 아니다).
+              if (n === scope || (!ts.isBlock(n) && !ts.isFunctionLike(n))) ts.forEachChild(n, scan);
+            };
+            scan(scope);
+            if (shadowedByParam) return false;
+            if (found) return Boolean(found.initializer && fromSsot(found.initializer));
+          }
+          return false;
+        }
+        return false;
+      };
+
+      const visit = (node: ts.Node) => {
+        if (ts.isCallExpression(node)) {
+          const callee = node.expression.getText(source);
+          // ⚠️ **이 계약은 증명이 아니라 구문 수준 휴리스틱이다.** 알려진 한계를 여기 적어
+          //    둔다 — 교차 검증이 프로브로 하나씩 보여 준 것들이다:
+          //      · 구조분해로 떼어낸 `const { connect } = imaps; connect(…)` 는 탐지 밖이다
+          //        (맨 `connect(` 를 다 물면 DB·소켓 등 무관한 호출이 섞여 소음이 된다).
+          //      · 다른 모듈이 지어 준 옵션을 넘기면 이 파일만 봐서는 판정할 수 없다.
+          //    ⛔ 그래서 「전부」라고 적지 않는다. 수신자 이름에 `imap` 이 들어가면 별칭
+          //    (`imapSimple` 등)도 잡는다 — 종전 `/imaps?\b/` 는 `imapSimple` 을 놓쳤다.
+          const isConnect = /(?:^|\.)connect$/.test(callee) && /imap/i.test(callee);
+          if (isConnect) {
+            checked.push(path);
+            const arg = node.arguments[0];
+            if (!arg || !fromSsot(arg)) offenders.push(`${path} :: ${node.getText(source).slice(0, 60)}`);
+          }
+        }
+        if (ts.isNewExpression(node) && node.expression.getText(source) === "Imap") {
+          checked.push(path);
+          const arg = node.arguments?.[0];
+          if (!arg || !fromSsot(arg)) offenders.push(`${path} :: new Imap(...)`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
     }
+
+    // 실제로 IMAP 에 붙는 두 파일이 검사됐는지 먼저 못박는다.
+    expect(checked).toEqual(
+      expect.arrayContaining([
+        "src/lib/tax-invoice-mail/mail-scan.ts",
+        "src/app/order-converter/api/fetch-emails/route.ts",
+      ]),
+    );
+    expect(offenders).toEqual([]);
   });
 
   it("메일 경로 소스는 NFC 로 커밋된다 — 그래야 우리 리터럴을 감싸지 않아도 된다", () => {
     // 서버가 준 문자열만 `toNfc` 로 맞추고 **우리 상수는 그대로 비교**하는 것이 계약이다.
     // 그 전제가 깨지면(에디터·OS 가 파일을 NFD 로 저장) 비교가 조용히 빗나가므로 여기서 고정한다.
-    const paths = [SSOT, ...CONSUMERS, "src/lib/order-converter/order-parser.ts"];
+    const paths = [
+      SSOT,
+      ...CONSUMERS,
+      "src/lib/text-normalize.ts",
+      "src/lib/order-converter/order-parser.ts",
+      "src/lib/tax-invoice-mail/issuance-match.ts",
+    ];
     for (const path of paths) {
       const raw = readFileSync(join(process.cwd(), path), "utf8");
       expect({ path, nfc: raw === raw.normalize("NFC") }).toEqual({ path, nfc: true });
