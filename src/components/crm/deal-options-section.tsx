@@ -74,8 +74,8 @@ export function DealOptionsSection({ deal, fetchDealDetails }: DealOptionsSectio
                   key={opt.id}
                   className="flex items-center justify-between rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-xs"
                 >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-medium text-foreground">
+                  <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+                    <span className="font-medium text-foreground [word-break:keep-all]">
                       {opt.dealName}
                     </span>
                     <div className="flex flex-wrap gap-1 pt-0.5">
@@ -101,7 +101,7 @@ export function DealOptionsSection({ deal, fetchDealDetails }: DealOptionsSectio
                       ) : null}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-1">
                     <Button
                       variant="ghost"
                       size="icon"

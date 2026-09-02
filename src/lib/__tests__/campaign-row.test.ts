@@ -148,6 +148,38 @@ describe("toCampaignRow", () => {
     });
   });
 
+  it("keeps the stored option name intact when the relation uses parentDealId", () => {
+    const row = toCampaignRow(
+      createCampaign({
+        campaignDeals: [
+          {
+            id: "campaign-deal-option-1",
+            campaignId: "campaign-1",
+            dealId: "deal-option-1",
+            quantity: 1,
+            actualSales: 0,
+            feeRate: 0,
+            sellerMarginRate: 25,
+            costPrice: 18540,
+            sellingPrice: 30900,
+            deal: {
+              dealName: "듀얼 올레올렛샷 - 2박스 (혼합 40포)",
+              parentDealId: "deal-main",
+              unit: "박스",
+              unitQuantity: 2,
+              supplementaryInfo: JSON.stringify({ supplementaryInfo: "혼합 40포" }),
+              costPrice: 18540,
+              sellingPrice: 30900,
+              totalCommissionRate: 40,
+            },
+          },
+        ],
+      }) as Parameters<typeof toCampaignRow>[0],
+    );
+
+    expect(row.campaignDeals?.[0]?.dealName).toBe("듀얼 올레올렛샷 - 2박스 (혼합 40포)");
+  });
+
   describe("최저가 위반 요약 (UX1-C)", () => {
     it("violationSummary가 주어지지 않으면 hasPriceViolation은 false다 (회귀 금지)", () => {
       const row = toCampaignRow(createCampaign());

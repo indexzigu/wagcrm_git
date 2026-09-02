@@ -41,12 +41,12 @@ const DEAL_3M = "비타플러스 - 3종 혼합 (3개월분)";
 const DEAL_NO_MONTH_A = "비타플러스 - 3종 혼합 에이";
 const DEAL_NO_MONTH_B = "비타플러스 - 3종 혼합 비";
 
-// 하위 딜(parentId 존재)은 getDisplayDealName이 dealName을 그대로 반환한다.
+// 하위 딜(parentDealId 존재)은 getDisplayDealName이 dealName을 그대로 반환한다.
 function makeCampaignDeal(id: string, dealName: string, sellingPrice: number) {
   return {
     id,
     sellingPrice,
-    deal: { id: `deal-${id}`, dealName, parentId: `parent-${id}`, sellingPrice },
+    deal: { id: `deal-${id}`, dealName, parentDealId: `parent-${id}`, sellingPrice },
   };
 }
 

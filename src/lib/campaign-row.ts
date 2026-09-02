@@ -217,7 +217,7 @@ type CampaignWithRelations = {
     sellingPrice: DecimalLike;
     deal: {
       dealName: string;
-      parentId?: string | null;
+      parentDealId?: string | null;
       unit?: string | null;
       unitQuantity?: number | null;
       supplementaryInfo?: string | null;
