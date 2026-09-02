@@ -9,7 +9,7 @@ import { isSupplementProduct, SUPPLEMENT_PRODUCT_CLASS } from '../product-class'
  * 픽스처가 아니라 여기서 고정한다.
  */
 describe('isSupplementProduct — 추가구성상품 판정', () => {
-  it('NFC(조합형) 값을 참으로 본다 — 프로덕션에서 실제로 관측되는 형태다', () => {
+  it('NFC(조합형) 값을 참으로 본다 — 도입 시점 저장 데이터가 전부 이 형태였다', () => {
     expect(isSupplementProduct({ productClass: '추가구성상품' })).toBe(true);
   });
 
@@ -23,7 +23,9 @@ describe('isSupplementProduct — 추가구성상품 판정', () => {
   });
 
   it('메인 품목 분류는 거짓이다', () => {
-    // 네이버가 메인 품목에 실제로 쓰는 값(프로덕션 관측). 정규화가 이것까지 삼키면 안 된다.
+    // 메인 품목 쪽 분류값. 정규화가 이것까지 삼키면 안 된다.
+    // ⚠️ 이 값의 출처는 저장 데이터 관측이고 레포 안에는 근거가 없다 — 재현 방법은
+    //    `product-class.ts` 헤더에 있다(레포에서 검증 불가한 단정을 남기지 않기 위한 표시).
     expect(isSupplementProduct({ productClass: '조합형옵션상품' })).toBe(false);
   });
 
@@ -50,7 +52,7 @@ describe('isSupplementProduct — 추가구성상품 판정', () => {
     // 항등이고, 비문자열은 양쪽 다 거짓). 그래서 NFC 코퍼스에서 두 판정이 일치하면
     // "정규화를 얹어도 집계가 안 바뀐다"가 성립한다.
     //
-    // 도입 시점 프로덕션 저장 스냅샷 전수 대조에서도 갈리는 행은 0 이었다(2026-09-02).
+    // 도입 시점 저장 데이터 대조에서도 갈리는 행은 없었다(재현 방법은 SSOT 헤더).
     // ⚠️ 그 대조는 **그 시점의 데이터**에 대한 것이지 미래 보증이 아니다 — 네이버가 NFD 로
     //    보내기 시작하면 그때부터는 새 판정이 옳고 옛 판정이 틀린다(그것이 이 변경의 목적).
     const corpus = [
