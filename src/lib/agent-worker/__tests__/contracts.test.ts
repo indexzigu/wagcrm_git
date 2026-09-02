@@ -58,6 +58,9 @@ describe("AgentJob contracts", () => {
 
   it("allows only the locked AgentJob state transitions", () => {
     expect(isAgentJobTransitionAllowed("QUEUED", "CLAIMED")).toBe(true);
+    expect(isAgentJobTransitionAllowed("RUNNING", "QUEUED")).toBe(false);
+    expect(isAgentJobTransitionAllowed("CLAIMED", "FAILED_SECURITY")).toBe(true);
+    expect(isAgentJobTransitionAllowed("RUNNING", "FAILED_SECURITY")).toBe(true);
     expect(isAgentJobTransitionAllowed("SUCCEEDED", "QUEUED")).toBe(false);
     expect(isAgentJobTransitionAllowed("NEEDS_EXTERNAL_EXECUTOR", "RUNNING")).toBe(false);
   });

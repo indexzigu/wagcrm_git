@@ -5,6 +5,8 @@ import {
   AGENT_JOB_MAX_ATTEMPTS,
   AgentJobPayloadSchema,
   AgentJobResultSchema,
+  type AgentJobPayload,
+  type AgentJobResult,
   type AgentJobStatus,
   createAgentJobIdempotencyKey,
   isAgentJobTransitionAllowed,
@@ -20,13 +22,56 @@ type AgentJobEventInput = {
   eventCode: string;
 };
 
-export type AgentJobTransitionInput = {
+type AgentJobTransitionBase = {
   jobId: string;
-  fromStatus: AgentJobStatus;
   toStatus: AgentJobStatus;
   actor: string;
   eventCode: string;
   result?: unknown;
+};
+
+type LeasedAgentJobTransitionInput = AgentJobTransitionBase & {
+  fromStatus: "CLAIMED" | "RUNNING";
+  workerId: string;
+  attempt: number;
+  now: Date;
+};
+
+type NonLeasedAgentJobTransitionInput = AgentJobTransitionBase & {
+  fromStatus: Exclude<AgentJobStatus, "CLAIMED" | "RUNNING">;
+};
+
+export type AgentJobTransitionInput =
+  | LeasedAgentJobTransitionInput
+  | NonLeasedAgentJobTransitionInput;
+
+export type AgentJobRequeueInput = {
+  jobId: string;
+  fromStatus: "CLAIMED" | "FAILED_RETRYABLE" | "RESOURCE_DEFERRED";
+  actor: string;
+  workerId: string;
+  attempt: number;
+  now: Date;
+};
+
+type PersistedAgentJob = {
+  id: string;
+  idempotencyKey: string;
+  payload: unknown;
+  status: string;
+  workerId: string | null;
+  leaseExpiresAt: Date | null;
+  heartbeatAt: Date | null;
+  attempt: number;
+  result: unknown;
+  failureCode: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type AgentJobRecord = Omit<PersistedAgentJob, "payload" | "result"> & {
+  payload: AgentJobPayload;
+  result: AgentJobResult | null;
 };
 
 export class ConcurrentAgentJobModificationError extends Error {
@@ -50,6 +95,59 @@ function agentJobEventData(input: AgentJobEventInput) {
   };
 }
 
+function parseStoredJson(value: unknown): unknown {
+  return typeof value === "string" ? JSON.parse(value) : value;
+}
+
+function parseStoredPayload(value: unknown): AgentJobPayload {
+  const payload = AgentJobPayloadSchema.parse(parseStoredJson(value));
+  serializeAgentJobJson(payload, false);
+  return payload;
+}
+
+function parseStoredResult(value: unknown): AgentJobResult | null {
+  if (value === null) {
+    return null;
+  }
+  const result = AgentJobResultSchema.parse(parseStoredJson(value));
+  serializeAgentJobJson(result, false);
+  return result;
+}
+
+function normalizeAgentJob(job: PersistedAgentJob): AgentJobRecord {
+  return {
+    id: job.id,
+    idempotencyKey: job.idempotencyKey,
+    payload: parseStoredPayload(job.payload),
+    status: job.status,
+    workerId: job.workerId,
+    leaseExpiresAt: job.leaseExpiresAt,
+    heartbeatAt: job.heartbeatAt,
+    attempt: job.attempt,
+    result: parseStoredResult(job.result),
+    failureCode: job.failureCode,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+  };
+}
+
+function isValidLeaseInput(input: {
+  workerId: string;
+  attempt: number;
+  now: Date;
+}): boolean {
+  return (
+    input.workerId.trim().length > 0 &&
+    Number.isInteger(input.attempt) &&
+    input.attempt >= 0 &&
+    Number.isFinite(input.now.getTime())
+  );
+}
+
+function isRequeueOrigin(status: string): status is AgentJobRequeueInput["fromStatus"] {
+  return status === "CLAIMED" || status === "FAILED_RETRYABLE" || status === "RESOURCE_DEFERRED";
+}
+
 export class AgentJobRepository {
   static async submit(payload: unknown, now = new Date()) {
     const parsedPayload = AgentJobPayloadSchema.parse(payload);
@@ -63,7 +161,7 @@ export class AgentJobRepository {
           payload: serializeAgentJobJson(parsedPayload, isSqliteDatabaseUrl()),
         },
       });
-      return { created: true, job };
+      return { created: true, job: normalizeAgentJob(job) };
     } catch (error) {
       if (!isUniqueConstraintError(error)) {
         throw error;
@@ -73,7 +171,7 @@ export class AgentJobRepository {
       if (!job) {
         throw new Error(`AgentJob idempotency row disappeared: ${idempotencyKey}`);
       }
-      return { created: false, job };
+      return { created: false, job: normalizeAgentJob(job) };
     }
   }
 
@@ -122,7 +220,13 @@ export class AgentJobRepository {
         }),
       });
 
-      return { ...candidate, status: "CLAIMED", workerId, leaseExpiresAt, heartbeatAt: now };
+      return normalizeAgentJob({
+        ...candidate,
+        status: "CLAIMED",
+        workerId,
+        leaseExpiresAt,
+        heartbeatAt: now,
+      });
     });
   }
 
@@ -192,12 +296,24 @@ export class AgentJobRepository {
     });
   }
 
-  static async requeueRetryable(jobId: string, actor: string) {
+  static async requeue(input: AgentJobRequeueInput) {
+    if (!isRequeueOrigin(input.fromStatus)) {
+      throw new Error("AgentJob requeue source is not allowed");
+    }
+    if (!isValidLeaseInput(input)) {
+      throw new Error("AgentJob requeue requires a valid current lease identity");
+    }
     const prisma = getPrisma();
 
     return prisma.$transaction(async (tx) => {
       const candidate = await tx.agentJob.findFirst({
-        where: { id: jobId, status: "FAILED_RETRYABLE" },
+        where: {
+          id: input.jobId,
+          status: input.fromStatus,
+          workerId: input.workerId,
+          attempt: input.attempt,
+          leaseExpiresAt: { gt: input.now },
+        },
       });
       if (!candidate) {
         return null;
@@ -206,7 +322,13 @@ export class AgentJobRepository {
       const nextAttempt = candidate.attempt + 1;
       const toStatus = nextAttempt >= AGENT_JOB_MAX_ATTEMPTS ? "FAILED_FINAL" : "QUEUED";
       const requeued = await tx.agentJob.updateMany({
-        where: { id: jobId, status: "FAILED_RETRYABLE", attempt: candidate.attempt },
+        where: {
+          id: input.jobId,
+          status: input.fromStatus,
+          workerId: input.workerId,
+          attempt: input.attempt,
+          leaseExpiresAt: { gt: input.now },
+        },
         data: {
           status: toStatus,
           workerId: null,
@@ -221,15 +343,15 @@ export class AgentJobRepository {
 
       await tx.agentJobEvent.create({
         data: agentJobEventData({
-          jobId,
-          fromStatus: "FAILED_RETRYABLE",
+          jobId: input.jobId,
+          fromStatus: input.fromStatus,
           toStatus,
-          actor,
+          actor: input.actor,
           eventCode: toStatus === "QUEUED" ? "RETRY_QUEUED" : "ATTEMPT_LIMIT_REACHED",
         }),
       });
 
-      return { jobId, status: toStatus, attempt: nextAttempt };
+      return { jobId: input.jobId, status: toStatus, attempt: nextAttempt };
     });
   }
 
@@ -237,8 +359,11 @@ export class AgentJobRepository {
     if (!isAgentJobTransitionAllowed(input.fromStatus, input.toStatus)) {
       throw new Error(`Illegal AgentJob transition: ${input.fromStatus} -> ${input.toStatus}`);
     }
-    if (input.fromStatus === "FAILED_RETRYABLE" && input.toStatus === "QUEUED") {
-      throw new Error("Use requeueRetryable to enforce the AgentJob attempt cap");
+    if (
+      (input.fromStatus === "CLAIMED" || input.fromStatus === "RUNNING") &&
+      !isValidLeaseInput(input)
+    ) {
+      throw new Error("AgentJob leased transition requires a valid current lease identity");
     }
 
     const parsedResult = input.result === undefined ? undefined : AgentJobResultSchema.parse(input.result);
@@ -258,11 +383,19 @@ export class AgentJobRepository {
     const result = parsedResult
       ? serializeAgentJobJson(parsedResult, isSqliteDatabaseUrl())
       : undefined;
+    const leaseWhere =
+      input.fromStatus === "CLAIMED" || input.fromStatus === "RUNNING"
+        ? {
+            workerId: input.workerId,
+            attempt: input.attempt,
+            leaseExpiresAt: { gt: input.now },
+          }
+        : {};
     const prisma = getPrisma();
 
     return prisma.$transaction(async (tx) => {
       const updated = await tx.agentJob.updateMany({
-        where: { id: input.jobId, status: input.fromStatus },
+        where: { id: input.jobId, status: input.fromStatus, ...leaseWhere },
         data: {
           status: input.toStatus,
           ...(result === undefined ? {} : { result }),
@@ -290,7 +423,8 @@ export class AgentJobRepository {
   }
 
   static async findById(id: string) {
-    return getPrisma().agentJob.findUnique({ where: { id } });
+    const job = await getPrisma().agentJob.findUnique({ where: { id } });
+    return job ? normalizeAgentJob(job) : null;
   }
 }
 

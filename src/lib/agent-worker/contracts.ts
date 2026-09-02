@@ -188,7 +188,7 @@ export type AgentJobResult = z.infer<typeof AgentJobResultSchema>;
 
 const allowedTransitions: Record<AgentJobStatus, readonly AgentJobStatus[]> = {
   QUEUED: ["CLAIMED"],
-  CLAIMED: ["RUNNING", "QUEUED", "FAILED_FINAL"],
+  CLAIMED: ["RUNNING", "RESOURCE_DEFERRED", "FAILED_FINAL", "FAILED_SECURITY"],
   RUNNING: [
     "SUCCEEDED",
     "NEEDS_APPROVAL",
@@ -196,14 +196,14 @@ const allowedTransitions: Record<AgentJobStatus, readonly AgentJobStatus[]> = {
     "FAILED_RETRYABLE",
     "FAILED_FINAL",
     "RESOURCE_DEFERRED",
-    "QUEUED",
+    "FAILED_SECURITY",
   ],
   SUCCEEDED: [],
   NEEDS_APPROVAL: [],
   NEEDS_EXTERNAL_EXECUTOR: [],
-  FAILED_RETRYABLE: ["QUEUED", "FAILED_FINAL"],
+  FAILED_RETRYABLE: [],
   FAILED_FINAL: [],
-  RESOURCE_DEFERRED: ["QUEUED"],
+  RESOURCE_DEFERRED: [],
   FAILED_SECURITY: [],
 };
 

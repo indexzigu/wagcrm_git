@@ -42,6 +42,21 @@ const payload = {
   },
 } as const;
 
+const persistedJob = {
+  id: "job-1",
+  idempotencyKey: "idempotency-1",
+  payload: JSON.stringify(payload),
+  status: "QUEUED",
+  workerId: null,
+  leaseExpiresAt: null,
+  heartbeatAt: null,
+  attempt: 0,
+  result: null,
+  failureCode: null,
+  createdAt: new Date("2026-09-02T00:00:00.000Z"),
+  updatedAt: new Date("2026-09-02T00:00:00.000Z"),
+};
+
 describe("AgentJobRepository", () => {
   beforeEach(() => {
     createMock.mockReset();
@@ -57,16 +72,16 @@ describe("AgentJobRepository", () => {
 
   it("returns the existing queue row when the database unique idempotency guard wins a race", async () => {
     createMock.mockRejectedValue({ code: "P2002" });
-    findUniqueMock.mockResolvedValue({ id: "job-existing" });
+    findUniqueMock.mockResolvedValue({ ...persistedJob, id: "job-existing" });
 
-    await expect(AgentJobRepository.submit(payload, new Date("2026-09-02T00:00:00.000Z"))).resolves.toEqual({
+    await expect(AgentJobRepository.submit(payload, new Date("2026-09-02T00:00:00.000Z"))).resolves.toMatchObject({
       created: false,
-      job: { id: "job-existing" },
+      job: { id: "job-existing", payload },
     });
   });
 
   it("claims a queued row only through a status-and-lease conditional updateMany and appends its event", async () => {
-    findFirstMock.mockResolvedValue({ id: "job-1", status: "QUEUED" });
+    findFirstMock.mockResolvedValue(persistedJob);
     updateManyMock.mockResolvedValue({ count: 1 });
     eventCreateMock.mockResolvedValue({});
 
@@ -83,7 +98,7 @@ describe("AgentJobRepository", () => {
   });
 
   it("reclaims an expired lease in the same transaction and turns the capped attempt into FAILED_FINAL", async () => {
-    findFirstMock.mockResolvedValue({ id: "job-1", status: "RUNNING", attempt: 2 });
+    findFirstMock.mockResolvedValue({ ...persistedJob, status: "RUNNING", attempt: 2 });
     updateManyMock.mockResolvedValue({ count: 1 });
     eventCreateMock.mockResolvedValue({});
 
@@ -100,16 +115,36 @@ describe("AgentJobRepository", () => {
     );
   });
 
-  it("requeues a retryable failure only through a capped conditional update and finalizes its last attempt", async () => {
-    findFirstMock.mockResolvedValue({ id: "job-1", status: "FAILED_RETRYABLE", attempt: 2 });
+  it("requeues a retryable failure only through a capped owner-and-lease conditional update", async () => {
+    const now = new Date("2026-09-02T00:00:00.000Z");
+    findFirstMock.mockResolvedValue({
+      ...persistedJob,
+      status: "FAILED_RETRYABLE",
+      workerId: "worker-1",
+      leaseExpiresAt: new Date(now.getTime() + 60_000),
+      attempt: 2,
+    });
     updateManyMock.mockResolvedValue({ count: 1 });
     eventCreateMock.mockResolvedValue({});
 
-    await AgentJobRepository.requeueRetryable("job-1", "worker-1");
+    await AgentJobRepository.requeue({
+      jobId: "job-1",
+      fromStatus: "FAILED_RETRYABLE",
+      actor: "worker-1",
+      workerId: "worker-1",
+      attempt: 2,
+      now,
+    });
 
     expect(updateManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "job-1", status: "FAILED_RETRYABLE", attempt: 2 },
+        where: expect.objectContaining({
+          id: "job-1",
+          status: "FAILED_RETRYABLE",
+          workerId: "worker-1",
+          attempt: 2,
+          leaseExpiresAt: { gt: now },
+        }),
         data: expect.objectContaining({ status: "FAILED_FINAL", attempt: { increment: 1 } }),
       }),
     );

@@ -12,6 +12,7 @@ export type ResourceGateResult =
   | {
       status: "RESOURCE_DEFERRED";
       reason:
+        | "invalid_resource_snapshot"
         | "COLIMA_RUNNING"
         | "MEMORY_LOW"
         | "SWAP_USED_HIGH"
@@ -25,10 +26,25 @@ const MIN_FREE_MEMORY_PERCENT = 20;
 const MAX_SWAP_USED_BYTES = 512 * 1024 * 1024;
 const MAX_SWAP_INCREASE_BYTES = 256 * 1024 * 1024;
 
+function isFiniteNonNegative(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
+}
+
+function isValidResourceSnapshot(snapshot: LocalResourceSnapshot): boolean {
+  return [
+    snapshot.memoryFreePercent,
+    snapshot.swapUsedBytes,
+    snapshot.swapIncreaseBytesInFiveMinutes,
+  ].every(isFiniteNonNegative);
+}
+
 export function evaluateResourceGate(
   snapshot: LocalResourceSnapshot,
   localModel: string,
 ): ResourceGateResult {
+  if (!isValidResourceSnapshot(snapshot)) {
+    return { status: "RESOURCE_DEFERRED", reason: "invalid_resource_snapshot" };
+  }
   if (localModel !== "qwen3.5:9b" && localModel !== "glm4:9b") {
     return { status: "RESOURCE_DEFERRED", reason: "MODEL_UNSUPPORTED" };
   }
