@@ -383,4 +383,30 @@ describe("CampaignDealsTable — 헤더 표기·안내 노출 방식", () => {
     );
     expect(queryByRole("button", { name: "최종 정산 기준 데이터 안내" })).not.toBeInTheDocument();
   });
+
+  it("품목명 숫자를 자연 숫자순으로 표시한다", async () => {
+    const { container, findByText } = render(
+      <CampaignDealsTable
+        campaign={buildCampaign({
+          campaignDeals: [
+            { id: "cd-10", campaignId: "camp-1", dealId: "deal-10", dealName: "토탈케어 - 10박스", quantity: 0, actualSales: 0 },
+            { id: "cd-1", campaignId: "camp-1", dealId: "deal-1", dealName: "토탈케어 - 1박스", quantity: 0, actualSales: 0 },
+            { id: "cd-2", campaignId: "camp-1", dealId: "deal-2", dealName: "토탈케어 - 2박스", quantity: 0, actualSales: 0 },
+          ],
+        })}
+        onCampaignUpdated={vi.fn()}
+      />,
+    );
+
+    await findByText("토탈케어 - 1박스");
+
+    const dealNames = Array.from(container.querySelectorAll("tbody tr"))
+      .slice(0, 3)
+      .map((row) => row.querySelector("td")?.textContent?.trim());
+    expect(dealNames).toEqual([
+      expect.stringContaining("토탈케어 - 1박스"),
+      expect.stringContaining("토탈케어 - 2박스"),
+      expect.stringContaining("토탈케어 - 10박스"),
+    ]);
+  });
 });

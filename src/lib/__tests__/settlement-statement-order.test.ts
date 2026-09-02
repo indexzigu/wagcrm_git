@@ -109,16 +109,40 @@ describe("sortStatementCampaigns", () => {
 });
 
 describe("getStatementDeals ordering", () => {
-  it("sorts 품목 by name so a DB reorder cannot reshuffle the statement", () => {
+  it("sorts 품목 by name with natural numeric order so a DB reorder cannot reshuffle the statement", () => {
     // Prisma 의 campaignDeals include 에는 orderBy 가 없다 — 순서는 정의되지 않았다.
     const campaign = createCampaign({
-      campaignDeals: [deal("cd-3", "다 옵션"), deal("cd-1", "가 옵션"), deal("cd-2", "나 옵션")],
+      campaignDeals: [
+        deal("cd-10", "토탈케어 - 10박스"),
+        deal("cd-2", "토탈케어 - 2박스"),
+        deal("cd-1", "토탈케어 - 1박스"),
+      ],
     });
 
     expect(getStatementDeals(campaign).map((d) => d.dealName)).toEqual([
-      "가 옵션",
-      "나 옵션",
-      "다 옵션",
+      "토탈케어 - 1박스",
+      "토탈케어 - 2박스",
+      "토탈케어 - 10박스",
+    ]);
+  });
+
+  it("supports arbitrary multi-digit quantities such as 3, 5, 8, 12, 16", () => {
+    const campaign = createCampaign({
+      campaignDeals: [
+        deal("cd-12", "토탈케어 - 12박스"),
+        deal("cd-3", "토탈케어 - 3박스"),
+        deal("cd-16", "토탈케어 - 16박스"),
+        deal("cd-8", "토탈케어 - 8박스"),
+        deal("cd-5", "토탈케어 - 5박스"),
+      ],
+    });
+
+    expect(getStatementDeals(campaign).map((d) => d.dealName)).toEqual([
+      "토탈케어 - 3박스",
+      "토탈케어 - 5박스",
+      "토탈케어 - 8박스",
+      "토탈케어 - 12박스",
+      "토탈케어 - 16박스",
     ]);
   });
 });

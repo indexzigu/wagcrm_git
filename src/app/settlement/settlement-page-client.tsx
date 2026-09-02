@@ -28,6 +28,7 @@ import type { DashboardData, CampaignRow } from "@/lib/crm-types";
 import type {
   SettlementReportData,
 } from "@/lib/settlement-report";
+import { sortDealRowsByName } from "@/lib/deal-sort";
 import {
   formatSettlementMonth,
   getCurrentMonth,
@@ -297,7 +298,7 @@ interface CsvRow {
 
     filteredCampaigns.forEach((campaign) => {
       const deals = campaign.campaignDeals && campaign.campaignDeals.length > 0
-        ? campaign.campaignDeals
+        ? sortDealRowsByName(campaign.campaignDeals)
         : [
             {
               dealName: campaign.dealName,
