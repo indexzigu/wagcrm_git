@@ -189,6 +189,19 @@ describe("route behavior (plan contract 7)", () => {
     expect(pipelineMock).not.toHaveBeenCalled();
   });
 
+  it("end to end: router stdout past maxBuffer (ERR_CHILD_PROCESS_STDIO_MAXBUFFER) -> FAILED_SECURITY, not a transport escalation", async () => {
+    const execFile = vi.fn(async () => {
+      throw Object.assign(new RangeError("stdout maxBuffer length exceeded"), { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" });
+    });
+    const decideRoute = (payload: AgentJobPayload) => runRouterDecision(payload, { execFile: execFile as never, scriptPath: "/r.py", pythonPath: "python3" });
+
+    await expect(runRouterDecision(job("get_pipeline_status", {}).payload, { execFile: execFile as never, scriptPath: "/r.py", pythonPath: "python3" })).resolves.toEqual({ status: "FAILED_SECURITY" });
+    const outcome = await executeAgentJob(job("get_pipeline_status", {}), { decideRoute });
+
+    expect(outcome).toEqual({ kind: "security", errorClass: "ROUTER_OUTPUT_REJECTED" });
+    expect(pipelineMock).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["timeout", Object.assign(new Error("killed"), { code: null, killed: true, signal: "SIGTERM" }), "router_timeout"],
     ["exit code 2", Object.assign(new Error("exit 2"), { code: 2, killed: false, signal: null }), "router_exit_nonzero"],
@@ -617,7 +630,8 @@ describe("local shadow integration (plan Task 7)", () => {
     if (shadowed.kind !== "terminal" || canonical.kind !== "terminal") throw new Error("expected terminal");
     expect(shadowed.toStatus).toBe("SUCCEEDED");
     expect({ ...shadowed.result, route: "python" }).toEqual(canonical.result);
-    expect(shadowed).toMatchObject({ model: "none", escalationReason: null, errorClass: null, shadow: { validationResult: "fail", correction: true } });
+    expect(shadowed).toMatchObject({ model: "qwen3.5:9b", escalationReason: null, errorClass: null, shadow: { validationResult: "fail", correction: true } });
+    expect(shadowed.result.modelUsed).toBe("none");
     const serialized = JSON.stringify(shadowed);
     for (const sentinel of ["SENTINEL_LOCAL_RAW_OUTPUT_3c9d", "SENTINEL_SHADOW_PROMPT_7a1b"]) {
       expect(serialized).not.toContain(sentinel);
@@ -669,12 +683,45 @@ describe("local shadow integration (plan Task 7)", () => {
     expect(outcome).toMatchObject({
       kind: "terminal",
       toStatus: "SUCCEEDED",
+      model: "qwen3.5:9b",
       escalationReason: "local_model_error",
       errorClass: "OllamaUnavailableError",
       shadow: { validationResult: "not_validated", correction: false },
-      result: { status: "SUCCEEDED", validationResult: "pass" },
+      result: { status: "SUCCEEDED", validationResult: "pass", modelUsed: "none" },
     });
     expect(JSON.stringify(outcome)).not.toContain("ECONNREFUSED");
+  });
+
+  it("two concurrent local_shadow jobs: one local call, the other audited LOCAL_BUSY, both user-facing results SUCCEEDED", async () => {
+    pipelineMock.mockResolvedValue(pipelineOk);
+    let release!: (value: { output: string }) => void;
+    const client: LocalModelClient = {
+      generate: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    };
+    const generate = vi.spyOn(client, "generate");
+    const validator: ShadowValidator = { buildPrompt: () => "p", validate: () => "pass" };
+    const shadow = { client, validators: { "candidate-skill": validator }, resourceSnapshot: async () => healthySnapshot };
+    const decision = accepted("local_shadow", "qwen3.5:9b", "not_promoted");
+    const withSkill = (id: string) => {
+      const current = job("get_pipeline_status", {}, "routine");
+      current.id = id;
+      current.payload.skill = "candidate-skill";
+      return current;
+    };
+
+    const first = executeAgentJob(withSkill("job-a"), deps(decision, shadow));
+    const second = executeAgentJob(withSkill("job-b"), deps(decision, shadow));
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+    const busy = await second;
+    release({ output: "ok" });
+    const validated = await first;
+
+    expect(busy).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", model: "none", escalationReason: "resource_deferred:LOCAL_BUSY", shadow: { validationResult: "not_validated" }, result: { status: "SUCCEEDED", modelUsed: "none" } });
+    expect(validated).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", model: "qwen3.5:9b", shadow: { validationResult: "pass" }, result: { status: "SUCCEEDED", modelUsed: "none" } });
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 });
 

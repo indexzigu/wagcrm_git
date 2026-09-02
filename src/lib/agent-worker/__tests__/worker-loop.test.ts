@@ -221,13 +221,13 @@ describe("worker loop durable processing", () => {
   });
 
   it("persists a security outcome as FAILED_SECURITY without requeue", async () => {
-    const execute = vi.fn(async () => ({ kind: "security", errorClass: "ROUTER_REJECTED" }) as ExecutionOutcome);
+    const execute = vi.fn(async () => ({ kind: "security", errorClass: "ROUTER_OUTPUT_REJECTED" }) as ExecutionOutcome);
     const { repository, loop } = build([job("a")], execute);
 
     loop.start();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(repository.transition).toHaveBeenLastCalledWith(expect.objectContaining({ fromStatus: "RUNNING", toStatus: "FAILED_SECURITY", eventCode: "ROUTER_REJECTED" }));
+    expect(repository.transition).toHaveBeenLastCalledWith(expect.objectContaining({ fromStatus: "RUNNING", toStatus: "FAILED_SECURITY", eventCode: "ROUTER_OUTPUT_REJECTED" }));
     expect(repository.requeue).not.toHaveBeenCalled();
     await loop.shutdown();
   });

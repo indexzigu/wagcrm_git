@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentJobPayload, AgentJobResult } from "../contracts";
 import { evaluateResourceGate, type LocalResourceSnapshot } from "../resource-gate";
 import type { RouterDecision } from "../router";
@@ -6,6 +6,7 @@ import {
   EMPTY_SHADOW_VALIDATORS,
   LOCAL_MODEL_REQUEST_OPTIONS,
   LOCAL_MODELS,
+  SHADOW_TIMEOUT_MS,
   hasShadowValidator,
   runLocalShadow,
   shadowAuditFields,
@@ -186,6 +187,10 @@ describe("local shadow validator registry", () => {
 });
 
 describe("local shadow execution", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("calls the local model once with the pinned options and passes the raw output only to the registered validator", async () => {
     const { client, calls } = fakeClient();
     const { impl, seen } = validator("pass");
@@ -247,6 +252,73 @@ describe("local shadow execution", () => {
     }
   });
 
+  it("pins the shadow time budget inside the 300 s job runtime and ends a never-resolving client as ShadowTimeoutError", async () => {
+    vi.useFakeTimers();
+    expect(SHADOW_TIMEOUT_MS).toBe(90_000);
+    expect(SHADOW_TIMEOUT_MS).toBeLessThan(300_000);
+    let signalAborted = false;
+    const hung: LocalModelClient = {
+      generate: (_request, signal) =>
+        new Promise(() => {
+          signal.addEventListener("abort", () => {
+            signalAborted = true;
+          });
+        }),
+    };
+    const { impl, seen } = validator();
+
+    const pending = runLocalShadow({ payload, decision: decision(), canonical, deps: deps({ client: hung, validators: { "candidate-skill": impl } }) });
+    await vi.advanceTimersByTimeAsync(SHADOW_TIMEOUT_MS - 1);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toEqual({ status: "errored", errorClass: "ShadowTimeoutError" });
+    expect(signalAborted).toBe(true);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("holds a single local slot: an overlapping shadow is skipped with LOCAL_BUSY and the slot is released afterwards", async () => {
+    let release!: (value: { output: string }) => void;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const client: LocalModelClient = {
+      generate: () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        return new Promise((resolve) => {
+          release = (value) => {
+            inFlight -= 1;
+            resolve(value);
+          };
+        });
+      },
+    };
+    const generate = vi.spyOn(client, "generate");
+    const { impl } = validator("pass");
+    const shadowDeps = deps({ client, validators: { "candidate-skill": impl } });
+
+    const first = runLocalShadow({ payload, decision: decision(), canonical, deps: shadowDeps });
+    await Promise.resolve();
+    const second = await runLocalShadow({ payload, decision: decision("glm4:9b"), canonical, deps: shadowDeps });
+    expect(second).toEqual({ status: "skipped", reason: "resource_deferred:LOCAL_BUSY" });
+
+    release({ output: SENTINELS.localOutput });
+    await expect(first).resolves.toEqual({ status: "validated", validationResult: "pass", correction: false });
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(maxInFlight).toBe(1);
+
+    const third = runLocalShadow({ payload, decision: decision(), canonical, deps: shadowDeps });
+    await Promise.resolve();
+    release({ output: SENTINELS.localOutput });
+    await expect(third).resolves.toEqual({ status: "validated", validationResult: "pass", correction: false });
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
   it("maps every outcome onto the frozen audit fields (validationResult, correction, escalationReason, errorClass)", () => {
     expect(shadowAuditFields({ status: "validated", validationResult: "pass", correction: false })).toEqual({
       validationResult: "pass",
@@ -270,6 +342,12 @@ describe("local shadow execution", () => {
       validationResult: "not_validated",
       correction: false,
       escalationReason: "resource_deferred:MEMORY_LOW",
+      errorClass: null,
+    });
+    expect(shadowAuditFields({ status: "skipped", reason: "resource_deferred:LOCAL_BUSY" })).toEqual({
+      validationResult: "not_validated",
+      correction: false,
+      escalationReason: "resource_deferred:LOCAL_BUSY",
       errorClass: null,
     });
     expect(shadowAuditFields({ status: "errored", errorClass: "OllamaUnavailableError" })).toEqual({

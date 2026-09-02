@@ -61,7 +61,30 @@ export type ShadowDeps = {
   resourceSnapshot: () => Promise<LocalResourceSnapshot>;
 };
 
-type DeferredReason = Extract<ResourceGateResult, { status: "RESOURCE_DEFERRED" }>["reason"];
+type DeferredReason = Extract<ResourceGateResult, { status: "RESOURCE_DEFERRED" }>["reason"] | "LOCAL_BUSY";
+
+/**
+ * Shadow time budget (Task 7 re-review MEDIUM-1). A hung local call must never
+ * reach the job's 300 s runtime timeout, because that would requeue an already
+ * successful canonical result. 90 s covers a cold CPU load of a 9B model
+ * (`keep_alive=0` reloads every call) plus one JSON answer, and leaves the rest
+ * of the runtime budget to the canonical operation that ran before it.
+ */
+export const SHADOW_TIMEOUT_MS = 90_000;
+
+export class ShadowTimeoutError extends Error {
+  constructor() {
+    super("local shadow call exceeded its time budget");
+    this.name = "ShadowTimeoutError";
+  }
+}
+
+/**
+ * Contract 8: Local/Ollama concurrency is 1. One slot for the whole worker
+ * process; an overlapping shadow is skipped (it never affects the user result),
+ * not queued. ponytail: process-local boolean — one worker process per host.
+ */
+let localSlotBusy = false;
 
 export type ShadowOutcome =
   | { status: "skipped"; reason: "validator_missing" | `resource_deferred:${DeferredReason}` }
@@ -113,16 +136,36 @@ export async function runLocalShadow(input: {
     return { status: "skipped", reason: `resource_deferred:${reason}` };
   }
 
+  if (localSlotBusy) {
+    return { status: "skipped", reason: "resource_deferred:LOCAL_BUSY" };
+  }
+  localSlotBusy = true;
   const validator = deps.validators[payload.skill];
+  const controller = new AbortController();
+  const onOuterAbort = () => controller.abort(input.signal?.reason);
+  input.signal?.addEventListener("abort", onOuterAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const { output } = await deps.client.generate(
-      { model: decision.model, prompt: validator.buildPrompt(payload), options: LOCAL_MODEL_REQUEST_OPTIONS },
-      input.signal ?? new AbortController().signal,
-    );
+    const request = { model: decision.model, prompt: validator.buildPrompt(payload), options: LOCAL_MODEL_REQUEST_OPTIONS };
+    // The race ends a client that ignores the signal; the signal ends one that honours it.
+    const { output } = await Promise.race([
+      deps.client.generate(request, controller.signal),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          const error = new ShadowTimeoutError();
+          controller.abort(error);
+          reject(error);
+        }, SHADOW_TIMEOUT_MS);
+      }),
+    ]);
     const validationResult = validator.validate({ localOutput: output, canonical });
     return { status: "validated", validationResult, correction: validationResult === "fail" };
   } catch (error) {
     return { status: "errored", errorClass: errorClassOf(error) };
+  } finally {
+    if (timer) clearTimeout(timer);
+    input.signal?.removeEventListener("abort", onOuterAbort);
+    localSlotBusy = false;
   }
 }
 

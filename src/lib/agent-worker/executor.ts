@@ -617,7 +617,9 @@ export async function executeAgentJob(
     kind: "terminal",
     toStatus: outcome.status,
     route,
-    model,
+    // Audit-only truth (re-review LOW-1): the local model was actually invoked on
+    // validated/errored shadows; `result.modelUsed` stays `none` (registry made the result).
+    model: shadow.status === "skipped" ? model : decision.model,
     escalationReason: audit.escalationReason,
     errorClass: audit.errorClass,
     shadow: { validationResult: audit.validationResult, correction: audit.correction },
@@ -700,6 +702,11 @@ export async function runRouterDecision(
       windowsHide: true,
     }));
   } catch (error) {
+    // A `decide` answer is ~80 bytes; stdout past `maxBuffer` is output the parser
+    // must reject, not a transport failure (re-review MEDIUM-2, ruling 28).
+    if ((error as { code?: unknown } | null)?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+      return { status: "FAILED_SECURITY" };
+    }
     return { status: "ROUTER_UNAVAILABLE", errorClass: classifyRouterSpawnError(error) };
   }
   return parseRouterDecision(stdout.trim());

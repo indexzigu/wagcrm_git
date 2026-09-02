@@ -273,7 +273,7 @@ describe("AgentJobRepository — SQLite lease and serialization regressions", ()
       fromStatus: "CLAIMED",
       toStatus: "FAILED_SECURITY",
       actor: "worker-1",
-      eventCode: "ROUTER_REJECTED",
+      eventCode: "ROUTER_OUTPUT_REJECTED",
       workerId: "worker-1",
       attempt: 0,
       now,
