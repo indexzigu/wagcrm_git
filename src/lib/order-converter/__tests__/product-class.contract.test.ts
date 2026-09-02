@@ -38,7 +38,8 @@ const CONSUMERS = [
  *
  * ⚠️ `src` 만 훑으면 안 된다 — `scripts` 는 별도 tsconfig 로 타입체크되는 **실코드**이고
  * 주문 스냅샷을 직접 다루는 운영 스크립트가 그 아래 있다. `e2e` 도 판정을 재구현할 수 있는
- * 코드(페이지 오브젝트·셋업)를 갖는다. 지금은 양쪽 다 소비처가 없지만, 스캔 밖에 두면
+ * 코드(페이지 오브젝트 · `global-setup`)를 갖는다 — 픽스처는 데이터라 아래에서 제외되지만
+ * 그 둘은 아니다. 지금은 양쪽 다 소비처가 없지만, 스캔 밖에 두면
  * **생기는 순간부터 조용히 사각**이다.
  */
 const SCAN_ROOTS = ['src', 'scripts', 'e2e'] as const;
@@ -66,7 +67,9 @@ function sourceFiles(dir: string): string[] {
 function isTestFile(rel: string): boolean {
   return (
     rel.includes('/__tests__/') ||
-    rel.includes('/fixtures/') ||
+    // ⚠️ `fixtures` 세그먼트를 아무 데서나 빼지 않는다 — `__tests__` 와 달리 그 이름은
+    //    "제품 코드가 아님"을 보장하는 관행이 아니다(시드·데모 데이터가 흔히 쓴다).
+    rel.startsWith('e2e/fixtures/') ||
     /\.(test|spec)\.tsx?$/.test(rel)
   );
 }
@@ -84,8 +87,8 @@ function parse(rel: string, text?: string): ts.SourceFile {
  * 이 소스가 추가구성상품 문자열 리터럴을 들고 있는가 — 있으면 그 줄 번호들.
  *
  * 🪤 **파일 읽기와 분리해 `ts.SourceFile` 을 받는다** — 인메모리 프로브가 **진짜 이 함수**를
- * 타야 하기 때문이다. 초판은 프로브가 방문자를 인라인으로 재구현해서, 이 스캐너가 망가져도
- * 프로브는 초록이었다(제목은 "스캐너는 잡는다"인데 스캐너를 부르지 않았다).
+ * 타야 하기 때문이다. 프로브가 방문자를 인라인으로 재구현하면 이 스캐너가 망가져도 프로브는
+ * 초록이라, 제목("스캐너는 잡는다")이 검사하지 않는 것을 주장하게 된다. ⛔ 되돌리지 말 것.
  *
  * 템플릿 리터럴(치환 없는 것)까지 보는 이유: `` `추가구성상품` `` 로 적으면 형태만 바꿔
  * 같은 사본이 부활한다. NFC 로 맞춰 비교하므로 NFD 로 적은 리터럴도 걸린다.
@@ -108,8 +111,8 @@ function supplementLiterals(source: ts.SourceFile): string[] {
  * 이 소스가 `isSupplementProduct(...)` 를 **호출**하는가.
  *
  * 🪤 `source.includes('isSupplementProduct')` 로 재면 안 된다 — 호출부를 리터럴 비교로
- * 되돌려도 `import` 줄이 남아 초록이다(변이 테스트로 실측). 재려는 것은 "이름이 파일에
- * 있다"가 아니라 "판정을 거친다"이므로 호출 노드를 센다.
+ * 되돌려도 `import` 줄이 남아 초록이다. 재려는 것은 "이름이 파일에 있다"가 아니라
+ * "판정을 거친다"이므로 호출 노드를 센다.
  */
 function callsSsotPredicate(source: ts.SourceFile): boolean {
   let found = false;
@@ -163,6 +166,21 @@ describe('추가구성상품 판정 단일화', () => {
     // 경우(예: productClass 를 다른 값으로 비교)는 그 스캔에 안 걸리므로 따로 고정한다.
     const missing = CONSUMERS.filter((rel) => !callsSsotPredicate(parse(rel)));
     expect(missing).toEqual([]);
+  });
+
+  it('제외 규칙은 테스트·픽스처만 뺀다 — 넓히면 진짜 사본이 스캔 밖으로 샌다', () => {
+    // 🪤 이 파일은 「없음」 단언에 양성 프로브를 짝지으라는 규율을 세워 놓았는데, 그 규율이
+    //    적용돼야 할 첫 자리가 **제외 규칙 자신**이다. 여기가 조용히 넓어지면 위 스캔은
+    //    아무것도 안 보면서 초록이 된다.
+    expect(isTestFile('src/lib/order-converter/__tests__/product-class.test.ts')).toBe(true);
+    expect(isTestFile('e2e/tests/orders.spec.ts')).toBe(true);
+    expect(isTestFile('e2e/fixtures/orders.ts')).toBe(true);
+    // 제품 코드로 남아야 하는 것들 — 스캔 근거가 바로 이 부류다.
+    expect(isTestFile('src/lib/order-converter/product-class.ts')).toBe(false);
+    expect(isTestFile('scripts/seed-banned-phrases.ts')).toBe(false);
+    expect(isTestFile('e2e/page-objects/orders.page.ts')).toBe(false);
+    // ⛔ `fixtures` 세그먼트를 아무 데서나 빼면 안 된다(시드·데모 데이터가 쓰는 이름이다).
+    expect(isTestFile('src/lib/fixtures/seed-data.ts')).toBe(false);
   });
 
   it('SSOT 리터럴은 NFC 로 커밋돼 있다 — NFD 로 저장되면 판정이 통째로 뒤집힌다', () => {
