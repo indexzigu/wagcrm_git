@@ -185,3 +185,7 @@ docs/private/
 /*.xls
 /*.csv
 /dev.db
+
+# Agent worker native peer-credential addon build output (task 5) — built only by
+# `npm run agent-worker:build-native`, never by the web deploy. Machine-local binary.
+/src/lib/agent-worker/native/peer-cred/build/

@@ -79,7 +79,8 @@
     "report:apify-comments": "node --import tsx scripts/report-apify-comment-usage.ts",
     "data:seller:mirror-images": "node --import tsx scripts/backfill-seller-profile-images.ts",
     "data:seller:mirror-images:apply": "node --import tsx scripts/backfill-seller-profile-images.ts --apply",
-    "test:browser": "node test-browser-local.js"
+    "test:browser": "node test-browser-local.js",
+    "agent-worker:build-native": "cd src/lib/agent-worker/native/peer-cred && node \"$(dirname \"$npm_execpath\")/../node_modules/node-gyp/bin/node-gyp.js\" rebuild"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -150,6 +151,7 @@
     "eslint-config-next": "16.2.4",
     "fast-check": "^3.23.2",
     "jsdom": "^29.1.1",
+    "node-addon-api": "8.8.0",
     "playwright-core": "^1.59.1",
     "prisma": "^6.19.3",
     "shadcn": "^4.11.0",
