@@ -63,6 +63,8 @@ export type AuditSink = (line: string) => void;
 export type AgentWorkerAuditLogger = {
   recordJob(input: AuditJobInput): void;
   recordConnectionRejected(errorClass: string, now?: Date): void;
+  /** A claimed row whose stored payload failed validation and was finalized FAILED_SECURITY. */
+  recordQuarantinedJob(jobId: string, errorClass: string, now?: Date): void;
 };
 
 /** Error class = the error's `name` only; messages are never propagated. */
@@ -99,6 +101,22 @@ export function createAuditLogger(sink: AuditSink): AgentWorkerAuditLogger {
         startedAt: input.startedAt.toISOString(),
         finishedAt: input.finishedAt.toISOString(),
         errorClass: input.error === undefined || input.error === null ? null : errorClassOf(input.error),
+      });
+    },
+    recordQuarantinedJob(jobId, errorClass, now = new Date()) {
+      const at = now.toISOString();
+      emit({
+        jobId: clip(jobId, 128),
+        taskType: null,
+        route: null,
+        model: null,
+        skill: null,
+        validationResult: "fail",
+        escalationReason: null,
+        correction: false,
+        startedAt: at,
+        finishedAt: at,
+        errorClass: clip(errorClass, 128) ?? "UnknownError",
       });
     },
     recordConnectionRejected(errorClass, now = new Date()) {

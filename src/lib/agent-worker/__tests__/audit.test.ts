@@ -86,8 +86,12 @@ describe("agent worker audit", () => {
       socketFrame: SENTINELS.frame,
     } as never);
     audit.recordConnectionRejected("PEER_UID_MISMATCH", new Date("2026-09-02T00:00:02.000Z"));
+    audit.recordQuarantinedJob("poison-1", "ZodError", new Date("2026-09-02T00:00:03.000Z"));
 
-    expect(lines).toHaveLength(2);
+    expect(lines).toHaveLength(3);
+    const third = JSON.parse(lines[2]);
+    expect(Object.keys(third).sort()).toEqual([...AGENT_WORKER_AUDIT_FIELDS].sort());
+    expect(third).toMatchObject({ jobId: "poison-1", errorClass: "ZodError", validationResult: "fail", taskType: null });
     const joined = lines.join("\n");
     for (const sentinel of Object.values(SENTINELS)) {
       expect(joined).not.toContain(sentinel);

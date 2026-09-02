@@ -377,3 +377,27 @@ describe("agent worker UDS server — framing and dispatch", () => {
     expect(observedSignal?.aborted).toBe(true);
   });
 });
+
+describe("agent worker UDS server — shutdown", () => {
+  it("close() ends idle client connections instead of waiting for them (bounded shutdown)", async () => {
+    const { socketPath } = tempSocketPath();
+    const server = await startAgentWorkerSocketServer({
+      socketPath,
+      peerCredentialProvider: sameUid,
+      handlers: handlers(),
+    });
+    const idle = connect(socketPath);
+    await new Promise<void>((resolve, reject) => {
+      idle.once("connect", () => resolve());
+      idle.once("error", reject);
+    });
+    const idleClosed = new Promise<void>((resolve) => idle.once("close", () => resolve()));
+
+    const startedAt = Date.now();
+    await server.close();
+    await idleClosed;
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(existsSync(socketPath)).toBe(false);
+  });
+});

@@ -37,19 +37,25 @@ async function main(): Promise<void> {
   const startedAt = new Date();
 
   const audit = createAuditLogger(createFileAuditSink(auditPath));
+  let fatal: (errorClass: string) => void = () => undefined;
   const loop = createWorkerLoop({
     repository: AgentJobRepository,
-    execute: (job) =>
-      executeAgentJob(job, {
-        decideRoute: (payload) =>
-          runRouterDecision(payload, {
-            scriptPath: process.env.WAG_AGENT_ROUTER_SCRIPT,
-            pythonPath: process.env.WAG_AGENT_ROUTER_PYTHON,
-          }),
-      }),
+    execute: (job, signal) =>
+      executeAgentJob(
+        job,
+        {
+          decideRoute: (payload) =>
+            runRouterDecision(payload, {
+              scriptPath: process.env.WAG_AGENT_ROUTER_SCRIPT,
+              pythonPath: process.env.WAG_AGENT_ROUTER_PYTHON,
+            }),
+        },
+        signal,
+      ),
     audit,
     workerId,
     onLoopError: (errorClass) => log("loop_error", { errorClass }),
+    onFatal: (errorClass) => fatal(errorClass),
   });
   const handlers = createRpcHandlers({
     queue: AgentJobRepository,
@@ -84,6 +90,17 @@ async function main(): Promise<void> {
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
   process.once("SIGINT", () => void shutdown("SIGINT"));
+
+  // Fail closed but deliberately: an audit-sink failure or any unhandled rejection
+  // ends with lease release + socket close and exit code 1, never a crash mid-job.
+  fatal = (errorClass) => {
+    process.stderr.write(`agent-worker fatal: ${errorClass}\n`);
+    void shutdown(`FATAL:${errorClass}`).finally(() => {
+      process.exitCode = 1;
+    });
+  };
+  process.on("unhandledRejection", (reason) => fatal(errorClassOf(reason)));
+  process.on("uncaughtException", (error) => fatal(errorClassOf(error)));
 }
 
 main().catch((error: unknown) => {

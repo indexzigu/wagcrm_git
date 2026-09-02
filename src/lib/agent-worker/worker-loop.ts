@@ -31,7 +31,7 @@ export type WorkerLoopRepository = Pick<
 export type WorkerLoopOptions = {
   repository: WorkerLoopRepository;
   execute: (job: AgentJobRecord, signal: AbortSignal) => Promise<ExecutionOutcome>;
-  audit: Pick<AgentWorkerAuditLogger, "recordJob">;
+  audit: Pick<AgentWorkerAuditLogger, "recordJob" | "recordQuarantinedJob">;
   workerId: string;
   concurrency?: number;
   heartbeatMs?: number;
@@ -40,6 +40,12 @@ export type WorkerLoopOptions = {
   now?: () => Date;
   /** Receives only an error class for loop-level failures (claim/reclaim). */
   onLoopError?: (errorClass: string) => void;
+  /**
+   * Receives only an error class when the audit sink itself fails. The worker must
+   * then shut down deliberately (fail closed) instead of dying on an unhandled
+   * rejection (Task 5 review LOW-2).
+   */
+  onFatal?: (errorClass: string) => void;
 };
 
 export type WorkerLoop = {
@@ -89,6 +95,13 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
 
   const active = new Map<string, ActiveJob>();
   let stopping = false;
+  const safeAudit = (write: () => void) => {
+    try {
+      write();
+    } catch (error) {
+      options.onFatal?.(errorName(error));
+    }
+  };
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
   const leaseIdentity = (job: AgentJobRecord) => ({ workerId, attempt: job.attempt, now: now() });
@@ -122,17 +135,19 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
       escalationReason: string | null;
       error?: unknown;
     }) =>
-      options.audit.recordJob({
-        job,
-        route: fields.route,
-        model: fields.model,
-        validationResult: fields.validationResult,
-        escalationReason: fields.escalationReason,
-        correction: false,
-        startedAt,
-        finishedAt: now(),
-        error: fields.error,
-      });
+      safeAudit(() =>
+        options.audit.recordJob({
+          job,
+          route: fields.route,
+          model: fields.model,
+          validationResult: fields.validationResult,
+          escalationReason: fields.escalationReason,
+          correction: false,
+          startedAt,
+          finishedAt: now(),
+          error: fields.error,
+        }),
+      );
 
     try {
       await repository.transition({
@@ -252,7 +267,9 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
     try {
       await repository.reclaimExpiredLease(now());
       while (!stopping && active.size < concurrency) {
-        const job = await repository.claimNext(workerId, now());
+        const job = await repository.claimNext(workerId, now(), (jobId, errorClass) =>
+          safeAudit(() => options.audit.recordQuarantinedJob(jobId, errorClass, now())),
+        );
         if (!job) break;
         launch(job);
       }

@@ -175,7 +175,42 @@ export class AgentJobRepository {
     }
   }
 
-  static async claimNext(workerId: string, now = new Date()) {
+  /**
+   * Claims the oldest eligible QUEUED row through the status+lease CAS and only then
+   * normalizes its payload. A row whose stored payload no longer parses (a poison row)
+   * is finalized CLAIMED -> FAILED_SECURITY with an event through the same leased CAS,
+   * reported via `onQuarantined` (error class only) and skipped, so one bad row can
+   * never stall the queue (Task 5 review HIGH-3, Director ruling 12).
+   */
+  static async claimNext(
+    workerId: string,
+    now = new Date(),
+    onQuarantined?: (jobId: string, errorClass: string) => void,
+  ) {
+    const claimed = await AgentJobRepository.claimNextRaw(workerId, now);
+    if (!claimed) {
+      return null;
+    }
+    try {
+      return normalizeAgentJob(claimed);
+    } catch (error) {
+      const errorClass = error instanceof Error ? error.name : "UnknownError";
+      await AgentJobRepository.transition({
+        jobId: claimed.id,
+        fromStatus: "CLAIMED",
+        toStatus: "FAILED_SECURITY",
+        actor: workerId,
+        eventCode: "PAYLOAD_INVALID",
+        workerId,
+        attempt: claimed.attempt,
+        now,
+      });
+      onQuarantined?.(claimed.id, errorClass);
+      return null;
+    }
+  }
+
+  private static async claimNextRaw(workerId: string, now: Date): Promise<PersistedAgentJob | null> {
     const leaseExpiresAt = new Date(now.getTime() + AGENT_JOB_LEASE_MS);
     const prisma = getPrisma();
 
@@ -220,13 +255,13 @@ export class AgentJobRepository {
         }),
       });
 
-      return normalizeAgentJob({
+      return {
         ...candidate,
         status: "CLAIMED",
         workerId,
         leaseExpiresAt,
         heartbeatAt: now,
-      });
+      };
     });
   }
 
@@ -335,6 +370,7 @@ export class AgentJobRepository {
           leaseExpiresAt: null,
           heartbeatAt: null,
           attempt: { increment: 1 },
+          ...(toStatus === "FAILED_FINAL" ? { failureCode: "ATTEMPTS_EXHAUSTED" } : {}),
         },
       });
       if (requeued.count !== 1) {

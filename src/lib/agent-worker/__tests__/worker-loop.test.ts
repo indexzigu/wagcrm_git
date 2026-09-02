@@ -71,7 +71,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function build(queue: AgentJobRecord[], execute: ReturnType<typeof vi.fn>) {
+function build(queue: AgentJobRecord[], execute: ReturnType<typeof vi.fn>, onFatal?: (errorClass: string) => void) {
   const repository = {
     claimNext: vi.fn(async () => queue.shift() ?? null),
     reclaimExpiredLease: vi.fn(async () => null),
@@ -79,13 +79,14 @@ function build(queue: AgentJobRecord[], execute: ReturnType<typeof vi.fn>) {
     requeue: vi.fn(async (input: { jobId: string; attempt: number }) => ({ jobId: input.jobId, status: "QUEUED" as const, attempt: input.attempt + 1 })),
     transition: vi.fn(async (input: { jobId: string; toStatus: string }) => ({ jobId: input.jobId, status: input.toStatus })),
   };
-  const audit = { recordJob: vi.fn() };
+  const audit = { recordJob: vi.fn(), recordQuarantinedJob: vi.fn() };
   const loop = createWorkerLoop({
     repository: repository as unknown as WorkerLoopRepository,
     execute: execute as never,
     audit,
     workerId: "worker-1",
     pollIntervalMs: 1_000,
+    onFatal,
   });
   return { repository, audit, loop };
 }
@@ -270,5 +271,50 @@ describe("worker loop durable processing", () => {
 
     await vi.advanceTimersByTimeAsync(5_000);
     expect(repository.claimNext).toHaveBeenCalledTimes(claimsBeforeShutdown);
+  });
+});
+
+describe("worker loop resilience", () => {
+  it("passes the abort signal into execution and hands a quarantine callback to claimNext", async () => {
+    const execute = vi.fn(async (_job: AgentJobRecord, signal: AbortSignal) => {
+      expect(signal).toBeInstanceOf(AbortSignal);
+      return succeeded("a");
+    });
+    const { repository, audit, loop } = build([job("a")], execute);
+    repository.claimNext.mockImplementationOnce((async (_workerId: string, _now: Date, onQuarantined?: (jobId: string, errorClass: string) => void) => {
+      onQuarantined?.("poison-1", "ZodError");
+      return null;
+    }) as never);
+
+    loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audit.recordQuarantinedJob).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(audit.recordQuarantinedJob).toHaveBeenCalledWith("poison-1", "ZodError", expect.any(Date));
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: "a" }), expect.any(AbortSignal));
+    await loop.shutdown();
+  });
+
+  it("reports an audit-sink failure through onFatal instead of an unhandled rejection", async () => {
+    const execute = vi.fn(async () => succeeded("a"));
+    const onFatal = vi.fn();
+    const { audit, loop } = build([job("a")], execute, onFatal);
+    audit.recordJob.mockImplementation(() => {
+      const error = new Error("ENOSPC: no space left on device");
+      error.name = "AuditSinkError";
+      throw error;
+    });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+
+    loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await loop.shutdown();
+    process.off("unhandledRejection", unhandled);
+
+    expect(onFatal).toHaveBeenCalledWith("AuditSinkError");
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(loop.activeCount()).toBe(0);
   });
 });

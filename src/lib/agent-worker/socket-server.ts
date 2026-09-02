@@ -238,7 +238,13 @@ export async function startAgentWorkerSocketServer(
   const expectedUid = options.expectedUid ?? currentUid();
   await prepareSocketPath(options.socketPath, expectedUid);
 
+  // Every accepted connection is tracked so close() can end idle clients: a bare
+  // server.close() only stops accepting and would wait for Hermes to hang up
+  // (Task 5 review MEDIUM-1).
+  const connections = new Set<Socket>();
   const server: Server = createServer({ pauseOnConnect: true }, (socket) => {
+    connections.add(socket);
+    socket.once("close", () => connections.delete(socket));
     gateConnection(socket, options, expectedUid);
     if (!socket.destroyed) socket.resume();
   });
@@ -262,6 +268,10 @@ export async function startAgentWorkerSocketServer(
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
+        for (const socket of connections) {
+          socket.destroy();
+        }
+        connections.clear();
       }),
   };
 }
