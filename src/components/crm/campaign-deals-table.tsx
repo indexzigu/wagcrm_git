@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import type { CampaignRow, CampaignDealRow } from "@/lib/crm-types";
 import { getDisplayDealName } from "@/lib/deal-display";
+import { sortDealRowsByName } from "@/lib/deal-sort";
 import {
   buildSearchQuery,
   parseSearchKeywordFromSupplementaryInfo,
@@ -84,7 +85,7 @@ export function CampaignDealsTable({
     const run = async () => {
       await Promise.resolve(); // Defer state update
       if (active) {
-        setLocalDeals(campaign.campaignDeals ?? []);
+        setLocalDeals(sortDealRowsByName(campaign.campaignDeals ?? []));
       }
     };
     void run();
@@ -313,7 +314,7 @@ export function CampaignDealsTable({
         ) ?? option.costPrice,
       };
 
-      setLocalDeals((prev) => [...prev, newRow]);
+      setLocalDeals((prev) => sortDealRowsByName([...prev, newRow]));
       toast.success(`"${option.dealName}"이(가) 추가되었습니다.`);
     },
     [dealOptions, localDeals, campaign.id, campaign.sellerMarginRate, campaign.totalMarginRate]

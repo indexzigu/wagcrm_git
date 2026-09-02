@@ -1,6 +1,7 @@
 import type { CampaignDealRow, CampaignRow } from "@/lib/crm-types";
 import { isIndividualSeller, getSellerPayoutBase, calcIndividualIncomeTax, calcBusinessVatBreakdown, computeIndividualWithholding } from "./seller-tax-utils";
 import { sumSellerPayoutItems } from "./settlement-items";
+import { sortDealRowsByName } from "./deal-sort";
 
 const YGRD_COMPANY = {
   name: "와이그라운드",
@@ -73,11 +74,7 @@ function dateSortKey(value?: string | null) {
  * 화면마다 다시 정렬하면 또 갈라진다.
  */
 function sortStatementDeals(deals: CampaignDealRow[]): CampaignDealRow[] {
-  return [...deals].sort((left, right) => {
-    const byName = (left.dealName ?? "").localeCompare(right.dealName ?? "", "ko");
-    if (byName !== 0) return byName;
-    return String(left.id).localeCompare(String(right.id));
-  });
+  return sortDealRowsByName(deals);
 }
 
 /**
