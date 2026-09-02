@@ -168,18 +168,39 @@ beforeEach(() => {
 });
 
 describe("route behavior (plan contract 7)", () => {
-  it("a rejected router decision ends NEEDS_EXTERNAL_EXECUTOR with an escalation class, no fallback, no operation call", async () => {
+  it("router output the Task 4 parser rejects is terminal FAILED_SECURITY (ROUTER_OUTPUT_REJECTED) with no fallback and no operation call", async () => {
     const outcome = await executeAgentJob(job("get_pipeline_status", {}), deps(rejected));
 
-    expect(outcome).toMatchObject({
-      kind: "terminal",
-      toStatus: "NEEDS_EXTERNAL_EXECUTOR",
-      route: "director",
-      model: "none",
-      escalationReason: "router_output_rejected",
-      errorClass: "ROUTER_OUTPUT_REJECTED",
-      result: { status: "NEEDS_EXTERNAL_EXECUTOR", route: "director", modelUsed: "none", validationResult: "not_validated", actionProposalId: null },
+    expect(outcome).toEqual({ kind: "security", errorClass: "ROUTER_OUTPUT_REJECTED" });
+    expect(pipelineMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["malformed stdout on a clean exit", "not json\n"],
+    ["unknown route", '{"mode":"shadow","model":"x","reason":"none","route":"ollama"}\n'],
+    ["wrong mode", '{"mode":"active","model":"python","reason":"deterministic","route":"python"}\n'],
+  ])("end to end: %s from the router spawn -> FAILED_SECURITY, never NEEDS_EXTERNAL_EXECUTOR", async (_label, stdout) => {
+    const execFile = vi.fn(async () => ({ stdout, stderr: "" }));
+    const decideRoute = (payload: AgentJobPayload) => runRouterDecision(payload, { execFile: execFile as never, scriptPath: "/r.py", pythonPath: "python3" });
+
+    const outcome = await executeAgentJob(job("get_pipeline_status", {}), { decideRoute });
+
+    expect(outcome).toEqual({ kind: "security", errorClass: "ROUTER_OUTPUT_REJECTED" });
+    expect(pipelineMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["timeout", Object.assign(new Error("killed"), { code: null, killed: true, signal: "SIGTERM" }), "router_timeout"],
+    ["exit code 2", Object.assign(new Error("exit 2"), { code: 2, killed: false, signal: null }), "router_exit_nonzero"],
+  ])("end to end: router %s from the spawn -> NEEDS_EXTERNAL_EXECUTOR, never FAILED_SECURITY", async (_label, error, escalationReason) => {
+    const execFile = vi.fn(async () => {
+      throw error;
     });
+    const decideRoute = (payload: AgentJobPayload) => runRouterDecision(payload, { execFile: execFile as never, scriptPath: "/r.py", pythonPath: "python3" });
+
+    const outcome = await executeAgentJob(job("get_pipeline_status", {}), { decideRoute });
+
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_EXTERNAL_EXECUTOR", route: "director", model: "none", escalationReason });
     expect(pipelineMock).not.toHaveBeenCalled();
   });
 

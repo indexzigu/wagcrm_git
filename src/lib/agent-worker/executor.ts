@@ -69,8 +69,8 @@ export type TerminalStatus = AgentJobResult["status"];
 export const NO_MODEL_INVOKED = "none";
 
 /**
- * Route recorded when the router itself could not decide (timeout, non-zero exit,
- * spawn failure, rejected output). Contract 7 defines `director` as "return the
+ * Route recorded when the router itself could not answer (timeout, non-zero exit,
+ * spawn failure). Contract 7 defines `director` as "return the
  * result waiting for high-risk judgment", which is exactly what an undecided job
  * needs; no other route is inferred and nothing is executed.
  */
@@ -520,11 +520,11 @@ function externalExecutor(
 }
 
 /**
- * Router timeout / non-zero exit / spawn failure / rejected output: the job ends
+ * Router transport failure (timeout / non-zero exit / spawn failure): the job ends
  * `NEEDS_EXTERNAL_EXECUTOR` carrying the failure class. There is deliberately no
- * local, python, or inferred-route fallback (plan Task 7).
+ * local, python, or inferred-route fallback (plan Task 7, ruling 24).
  */
-function routerUnavailable(job: AgentJobRecord, errorClass: RouterUnavailableClass | "ROUTER_OUTPUT_REJECTED"): ExecutionOutcome {
+function routerUnavailable(job: AgentJobRecord, errorClass: RouterUnavailableClass): ExecutionOutcome {
   return externalExecutor(job, ROUTER_UNAVAILABLE_ROUTE, errorClass.toLowerCase(), errorClass);
 }
 
@@ -539,7 +539,9 @@ export async function executeAgentJob(
     return routerUnavailable(job, decision.errorClass);
   }
   if (decision.status !== "ACCEPTED") {
-    return routerUnavailable(job, "ROUTER_OUTPUT_REJECTED");
+    // Output the Task 4 parser rejects (malformed, unknown route, wrong mode, …) is a
+    // security failure, not an outage: durable FAILED_SECURITY, no escalation (Sol ruling 5).
+    return { kind: "security", errorClass: "ROUTER_OUTPUT_REJECTED" };
   }
 
   switch (decision.route) {
