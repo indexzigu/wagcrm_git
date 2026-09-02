@@ -13,6 +13,8 @@ const WORKER_SOURCES = [
   "src/lib/agent-worker/worker-loop.ts",
   "src/lib/agent-worker/audit.ts",
   "src/lib/agent-worker/peer-cred.ts",
+  "src/lib/agent-worker/shadow.ts",
+  "src/lib/agent-worker/promotion.ts",
 ];
 
 describe("agent worker boundary contract", () => {

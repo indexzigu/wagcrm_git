@@ -55,7 +55,17 @@ vi.mock("@/lib/prisma-client", () => ({
   isSqliteDatabaseUrl: () => false,
 }));
 
-import { NO_MODEL_INVOKED, buildRouterArgv, executeAgentJob, runRouterDecision } from "../executor";
+import { existsSync } from "node:fs";
+import {
+  DEFAULT_ROUTER_SCRIPT_PATH,
+  NO_MODEL_INVOKED,
+  ROUTER_TIMEOUT_MS,
+  buildRouterArgv,
+  executeAgentJob,
+  runRouterDecision,
+  type ExecutionDeps,
+} from "../executor";
+import { EMPTY_SHADOW_VALIDATORS, type LocalModelClient, type LocalModelRequest, type ShadowValidator } from "../shadow";
 
 type Operation = AgentJobPayload["operation"];
 
@@ -91,8 +101,30 @@ const accepted = (route: AgentJobRoute, model: string = route, reason = "determi
 });
 const rejected: RouterDecisionParseResult = { status: "FAILED_SECURITY" };
 
-function deps(decision: RouterDecisionParseResult) {
-  return { decideRoute: vi.fn(async () => decision), now: () => new Date("2026-09-02T00:00:00.000Z") };
+type Decision = Awaited<ReturnType<ExecutionDeps["decideRoute"]>>;
+
+function deps(decision: Decision, shadow?: ExecutionDeps["shadow"]): ExecutionDeps {
+  return { decideRoute: vi.fn(async () => decision), now: () => new Date("2026-09-02T00:00:00.000Z"), shadow };
+}
+
+const healthySnapshot = {
+  colimaRunning: false,
+  memoryFreePercent: 50,
+  swapUsedBytes: 0,
+  swapIncreaseBytesInFiveMinutes: 0,
+  dockerDbHealthy: true,
+  anotherOllamaModelLoaded: false,
+};
+
+function fakeLocalModel(output = "SENTINEL_LOCAL_RAW_OUTPUT_3c9d") {
+  const calls: LocalModelRequest[] = [];
+  const client: LocalModelClient = {
+    generate: async (request) => {
+      calls.push(request);
+      return { output };
+    },
+  };
+  return { client, calls };
 }
 
 const financialCampaignRow = {
@@ -136,31 +168,64 @@ beforeEach(() => {
 });
 
 describe("route behavior (plan contract 7)", () => {
-  it("router rejection is terminal FAILED_SECURITY with no fallback and no operation call", async () => {
+  it("a rejected router decision ends NEEDS_EXTERNAL_EXECUTOR with an escalation class, no fallback, no operation call", async () => {
     const outcome = await executeAgentJob(job("get_pipeline_status", {}), deps(rejected));
 
-    expect(outcome).toEqual({ kind: "security", errorClass: "ROUTER_REJECTED" });
+    expect(outcome).toMatchObject({
+      kind: "terminal",
+      toStatus: "NEEDS_EXTERNAL_EXECUTOR",
+      route: "director",
+      model: "none",
+      escalationReason: "router_output_rejected",
+      errorClass: "ROUTER_OUTPUT_REJECTED",
+      result: { status: "NEEDS_EXTERNAL_EXECUTOR", route: "director", modelUsed: "none", validationResult: "not_validated", actionProposalId: null },
+    });
     expect(pipelineMock).not.toHaveBeenCalled();
   });
 
-  it.each(["gpt_luna", "director"] as const)("%s returns NEEDS_EXTERNAL_EXECUTOR without substituting a model", async (route) => {
+  it.each(["ROUTER_TIMEOUT", "ROUTER_EXIT_NONZERO", "ROUTER_SPAWN_FAILED"] as const)(
+    "router failure %s ends NEEDS_EXTERNAL_EXECUTOR — never a local or python fallback",
+    async (errorClass) => {
+      const outcome = await executeAgentJob(job("get_pipeline_status", {}), deps({ status: "ROUTER_UNAVAILABLE", errorClass }));
+
+      expect(outcome).toMatchObject({
+        kind: "terminal",
+        toStatus: "NEEDS_EXTERNAL_EXECUTOR",
+        route: "director",
+        model: "none",
+        escalationReason: errorClass.toLowerCase(),
+        errorClass,
+        result: { status: "NEEDS_EXTERNAL_EXECUTOR", modelUsed: "none", validationResult: "not_validated" },
+      });
+      expect(pipelineMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["gpt_luna", "director"] as const)("%s returns NEEDS_EXTERNAL_EXECUTOR with route preserved and modelUsed=none (nothing ran)", async (route) => {
     const outcome = await executeAgentJob(job("get_pipeline_status", {}, "routine"), deps(accepted(route, route, "not_promoted")));
 
     expect(outcome).toMatchObject({
       kind: "terminal",
       toStatus: "NEEDS_EXTERNAL_EXECUTOR",
       route,
-      model: route,
+      model: "none",
       escalationReason: "not_promoted",
-      result: { status: "NEEDS_EXTERNAL_EXECUTOR", route, modelUsed: route, validationResult: "not_validated", actionProposalId: null },
+      result: { status: "NEEDS_EXTERNAL_EXECUTOR", route, modelUsed: "none", validationResult: "not_validated", actionProposalId: null },
     });
     expect(pipelineMock).not.toHaveBeenCalled();
   });
 
-  it("local is not active in this scope and fails closed to NEEDS_EXTERNAL_EXECUTOR", async () => {
+  it("local is not active in this scope and fails closed to NEEDS_EXTERNAL_EXECUTOR with modelUsed=none", async () => {
     const outcome = await executeAgentJob(job("get_pipeline_status", {}, "routine"), deps(accepted("local", "qwen3.5:9b", "verified_routine")));
 
-    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_EXTERNAL_EXECUTOR", model: "qwen3.5:9b", escalationReason: "local_route_not_active" });
+    expect(outcome).toMatchObject({
+      kind: "terminal",
+      toStatus: "NEEDS_EXTERNAL_EXECUTOR",
+      route: "local",
+      model: "none",
+      escalationReason: "local_route_not_active",
+      result: { route: "local", modelUsed: "none" },
+    });
     expect(pipelineMock).not.toHaveBeenCalled();
   });
 
@@ -461,6 +526,137 @@ describe("create_action_proposal", () => {
   });
 });
 
+describe("local shadow integration (plan Task 7)", () => {
+  const ALL_ROUTES = ["python", "gemini", "gpt_luna", "director", "local_shadow", "local"] as const;
+  const SKILL_INPUTS = ["none", "", "not-registered", "sk-secret123", "constructor"] as const;
+  const pipelineOk = { ok: true, data: { statusCounts: [{ status: "ACTIVE", count: 1 }], totalCount: 1, campaigns: [] }, evidence: { dataSources: ["SalesCampaign"], query: {} } };
+
+  it("makes zero local model calls across all six routes and every skill input while no validator is registered", async () => {
+    const { client, calls } = fakeLocalModel();
+    const shadow = { client, validators: EMPTY_SHADOW_VALIDATORS, resourceSnapshot: async () => healthySnapshot };
+    pipelineMock.mockResolvedValue(pipelineOk);
+
+    for (const route of ALL_ROUTES) {
+      for (const skill of SKILL_INPUTS) {
+        const current = job("get_pipeline_status", {}, "routine");
+        current.payload.skill = skill;
+        await executeAgentJob(current, deps(accepted(route, route === "local" || route === "local_shadow" ? "qwen3.5:9b" : route, "not_promoted"), shadow));
+      }
+    }
+    await executeAgentJob(job("get_pipeline_status", {}), deps(rejected, shadow));
+    await executeAgentJob(job("get_pipeline_status", {}), deps({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_TIMEOUT" }, shadow));
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it("local_shadow without shadow deps keeps the deterministic result and audits validator_missing", async () => {
+    pipelineMock.mockResolvedValue(pipelineOk);
+
+    const outcome = await executeAgentJob(job("get_pipeline_status", {}, "routine"), deps(accepted("local_shadow", "qwen3.5:9b", "not_promoted")));
+
+    expect(outcome).toMatchObject({
+      kind: "terminal",
+      toStatus: "SUCCEEDED",
+      route: "local_shadow",
+      model: "none",
+      escalationReason: "validator_missing",
+      errorClass: null,
+      shadow: { validationResult: "not_validated", correction: false },
+      result: { status: "SUCCEEDED", route: "local_shadow", modelUsed: "none", validationResult: "pass" },
+    });
+  });
+
+  it("runs deterministic -> local model -> validator in that order and leaves the user-facing result unchanged", async () => {
+    const order: string[] = [];
+    pipelineMock.mockImplementation(async () => {
+      order.push("canonical");
+      return pipelineOk;
+    });
+    const client: LocalModelClient = {
+      generate: async () => {
+        order.push("local_model");
+        return { output: "SENTINEL_LOCAL_RAW_OUTPUT_3c9d" };
+      },
+    };
+    const validator: ShadowValidator = {
+      buildPrompt: () => "SENTINEL_SHADOW_PROMPT_7a1b",
+      validate: () => {
+        order.push("validator");
+        return "fail";
+      },
+    };
+    const shadow = { client, validators: { "candidate-skill": validator }, resourceSnapshot: async () => healthySnapshot };
+    const current = job("get_pipeline_status", {}, "routine");
+    current.payload.skill = "candidate-skill";
+
+    const shadowed = await executeAgentJob(current, deps(accepted("local_shadow", "qwen3.5:9b", "not_promoted"), shadow));
+    const canonical = await executeAgentJob(job("get_pipeline_status", {}), deps(accepted("python")));
+
+    expect(order).toEqual(["canonical", "local_model", "validator", "canonical"]);
+    if (shadowed.kind !== "terminal" || canonical.kind !== "terminal") throw new Error("expected terminal");
+    expect(shadowed.toStatus).toBe("SUCCEEDED");
+    expect({ ...shadowed.result, route: "python" }).toEqual(canonical.result);
+    expect(shadowed).toMatchObject({ model: "none", escalationReason: null, errorClass: null, shadow: { validationResult: "fail", correction: true } });
+    const serialized = JSON.stringify(shadowed);
+    for (const sentinel of ["SENTINEL_LOCAL_RAW_OUTPUT_3c9d", "SENTINEL_SHADOW_PROMPT_7a1b"]) {
+      expect(serialized).not.toContain(sentinel);
+    }
+  });
+
+  it("does not call the local model when the deterministic operation fails, retries, or needs approval", async () => {
+    const { client, calls } = fakeLocalModel();
+    const validator: ShadowValidator = { buildPrompt: () => "p", validate: () => "pass" };
+    const shadow = { client, validators: { "candidate-skill": validator }, resourceSnapshot: async () => healthySnapshot };
+    const withSkill = (operation: Operation, input: AgentJobPayload["input"]) => {
+      const current = job(operation, input, "routine");
+      current.payload.skill = "candidate-skill";
+      return current;
+    };
+    const decision = accepted("local_shadow", "qwen3.5:9b", "not_promoted");
+
+    pipelineMock.mockResolvedValue({ ok: false, error: { code: "QUERY_FAILED", message: "x" }, evidence: { dataSources: [], query: {} } });
+    expect(await executeAgentJob(withSkill("get_pipeline_status", {}), deps(decision, shadow))).toMatchObject({ kind: "retryable" });
+
+    campaignFindUniqueMock.mockResolvedValue(null);
+    expect(await executeAgentJob(withSkill("get_campaign_financials", { campaignId: "camp-x" }), deps(decision, shadow))).toMatchObject({ toStatus: "FAILED_FINAL" });
+
+    dealFindUniqueMock.mockResolvedValue({ id: "deal-1" });
+    proposalCreateMock.mockResolvedValue({ id: "proposal-1" });
+    proposalEventCreateMock.mockResolvedValue({ id: "event-1" });
+    expect(
+      await executeAgentJob(withSkill("create_action_proposal", { action: "change_deal_status", dealId: "deal-1", newStatus: "CONFIRMED" }), deps(decision, shadow)),
+    ).toMatchObject({ toStatus: "NEEDS_APPROVAL" });
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it("a local model failure never changes the user-facing result: SUCCEEDED with the error class audited", async () => {
+    pipelineMock.mockResolvedValue(pipelineOk);
+    const client: LocalModelClient = {
+      generate: async () => {
+        const error = new Error("connect ECONNREFUSED 127.0.0.1:11434");
+        error.name = "OllamaUnavailableError";
+        throw error;
+      },
+    };
+    const validator: ShadowValidator = { buildPrompt: () => "p", validate: () => "pass" };
+    const current = job("get_pipeline_status", {}, "routine");
+    current.payload.skill = "candidate-skill";
+
+    const outcome = await executeAgentJob(current, deps(accepted("local_shadow", "qwen3.5:9b", "not_promoted"), { client, validators: { "candidate-skill": validator }, resourceSnapshot: async () => healthySnapshot }));
+
+    expect(outcome).toMatchObject({
+      kind: "terminal",
+      toStatus: "SUCCEEDED",
+      escalationReason: "local_model_error",
+      errorClass: "OllamaUnavailableError",
+      shadow: { validationResult: "not_validated", correction: false },
+      result: { status: "SUCCEEDED", validationResult: "pass" },
+    });
+    expect(JSON.stringify(outcome)).not.toContain("ECONNREFUSED");
+  });
+});
+
 describe("router invocation", () => {
   it("builds a fixed argv for local-llm-route.py decide from the payload only", () => {
     const argv = buildRouterArgv(job("search_deals", { query: "x" }, "bulk").payload, "/router/local-llm-route.py", "/usr/bin/python3");
@@ -471,27 +667,75 @@ describe("router invocation", () => {
     });
   });
 
-  it("defaults to the absolute /usr/bin/python3 interpreter", async () => {
-    const { DEFAULT_ROUTER_PYTHON } = await import("../executor");
-    expect(DEFAULT_ROUTER_PYTHON).toBe("/usr/bin/python3");
+  it("appends --validator only when the worker has a registered validator for the payload skill", () => {
+    const payload = job("search_deals", {}, "routine").payload;
+    payload.skill = "candidate-skill";
+    const validator: ShadowValidator = { buildPrompt: () => "p", validate: () => "pass" };
+
+    expect(buildRouterArgv(payload, "/r.py", "/usr/bin/python3", { "candidate-skill": validator }).args).toEqual(["/r.py", "decide", "--task-type", "routine", "--skill", "candidate-skill", "--validator"]);
+    expect(buildRouterArgv(payload, "/r.py", "/usr/bin/python3", { "other-skill": validator }).args).not.toContain("--validator");
+    expect(buildRouterArgv(payload, "/r.py", "/usr/bin/python3", EMPTY_SHADOW_VALIDATORS).args).not.toContain("--validator");
+    expect(buildRouterArgv(payload, "/r.py", "/usr/bin/python3").args).not.toContain("--validator");
   });
 
-  it("treats a non-zero router exit or non-JSON stdout as FAILED_SECURITY and accepts exact JSON", async () => {
-    const failing = vi.fn(async () => {
-      throw Object.assign(new Error("exit 1"), { code: 1 });
+  it("defaults to the absolute /usr/bin/python3 interpreter and pins the 15 s spawn timeout", async () => {
+    const { DEFAULT_ROUTER_PYTHON } = await import("../executor");
+    expect(DEFAULT_ROUTER_PYTHON).toBe("/usr/bin/python3");
+    expect(ROUTER_TIMEOUT_MS).toBe(15_000);
+  });
+
+  it("classifies spawn failures: timeout, non-zero exit, spawn error; malformed stdout stays the Task 4 parser verdict", async () => {
+    const options = (execFile: ReturnType<typeof vi.fn>) => ({ execFile: execFile as never, scriptPath: "/r.py", pythonPath: "python3" });
+    const payload = job("search_deals", {}).payload;
+
+    const timedOut = vi.fn(async () => {
+      throw Object.assign(new Error("killed"), { code: null, killed: true, signal: "SIGTERM" });
     });
-    await expect(runRouterDecision(job("search_deals", {}).payload, { execFile: failing, scriptPath: "/r.py", pythonPath: "python3" })).resolves.toEqual({ status: "FAILED_SECURITY" });
+    await expect(runRouterDecision(payload, options(timedOut))).resolves.toEqual({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_TIMEOUT" });
+
+    const nonZero = vi.fn(async () => {
+      throw Object.assign(new Error("exit 2"), { code: 2, killed: false, signal: null });
+    });
+    await expect(runRouterDecision(payload, options(nonZero))).resolves.toEqual({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_EXIT_NONZERO" });
+
+    const enoent = vi.fn(async () => {
+      throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT", errno: -2 });
+    });
+    await expect(runRouterDecision(payload, options(enoent))).resolves.toEqual({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_SPAWN_FAILED" });
 
     const garbage = vi.fn(async () => ({ stdout: "not json", stderr: "" }));
-    await expect(runRouterDecision(job("search_deals", {}).payload, { execFile: garbage, scriptPath: "/r.py", pythonPath: "python3" })).resolves.toEqual({ status: "FAILED_SECURITY" });
+    await expect(runRouterDecision(payload, options(garbage))).resolves.toEqual({ status: "FAILED_SECURITY" });
 
     const exact = vi.fn(async () => ({ stdout: '{"mode":"shadow","model":"python","reason":"deterministic","route":"python"}\n', stderr: "" }));
-    await expect(runRouterDecision(job("search_deals", {}).payload, { execFile: exact, scriptPath: "/r.py", pythonPath: "python3" })).resolves.toEqual({
-      status: "ACCEPTED",
-      route: "python",
-      model: "python",
-      reason: "deterministic",
+    await expect(runRouterDecision(payload, options(exact))).resolves.toEqual({ status: "ACCEPTED", route: "python", model: "python", reason: "deterministic" });
+    expect(exact).toHaveBeenCalledWith("python3", ["/r.py", "decide", "--task-type", "deterministic", "--skill", "none"], expect.objectContaining({ shell: false, timeout: ROUTER_TIMEOUT_MS }));
+  });
+
+  it("enforces the spawn timeout on a real child process that never exits", async () => {
+    // `cat -` blocks on the child's open stdin pipe, so only the execFile timeout can end it.
+    const result = await runRouterDecision(job("search_deals", {}).payload, { pythonPath: "/bin/cat", scriptPath: "-", timeoutMs: 200 });
+
+    expect(result).toEqual({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_TIMEOUT" });
+  });
+
+  describe("against the real local-llm-route.py (read-only decide)", () => {
+    const pythonPath = process.env.WAG_TEST_ROUTER_PYTHON ?? "/usr/bin/python3";
+    const available = existsSync(DEFAULT_ROUTER_SCRIPT_PATH) && existsSync(pythonPath);
+
+    it.skipIf(!available)(`decides deterministic/none as python under ${pythonPath}`, async () => {
+      await expect(runRouterDecision(job("search_deals", {}).payload, { pythonPath })).resolves.toEqual({
+        status: "ACCEPTED",
+        route: "python",
+        model: "python",
+        reason: "deterministic",
+      });
     });
-    expect(exact).toHaveBeenCalledWith("python3", ["/r.py", "decide", "--task-type", "deterministic", "--skill", "none"], expect.objectContaining({ shell: false }));
+
+    it.skipIf(!available)(`maps an unregistered skill (router exit 2) to ROUTER_EXIT_NONZERO under ${pythonPath}`, async () => {
+      const payload = job("search_deals", {}, "routine").payload;
+      payload.skill = "wag-unregistered-skill";
+
+      await expect(runRouterDecision(payload, { pythonPath })).resolves.toEqual({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_EXIT_NONZERO" });
+    });
   });
 });

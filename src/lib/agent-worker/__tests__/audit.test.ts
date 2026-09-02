@@ -13,6 +13,8 @@ const SENTINELS = {
   toolOutput: "SENTINEL_TOOL_OUTPUT_d00d",
   frame: "SENTINEL_SOCKET_FRAME_c0de",
   errorMessage: "SENTINEL_ERROR_MESSAGE password=hunter2",
+  localOutput: "SENTINEL_LOCAL_RAW_OUTPUT_3c9d",
+  shadowPrompt: "SENTINEL_SHADOW_PROMPT_7a1b",
 };
 
 describe("agent worker audit", () => {
@@ -84,6 +86,8 @@ describe("agent worker audit", () => {
       resultSummary: SENTINELS.result,
       toolOutput: SENTINELS.toolOutput,
       socketFrame: SENTINELS.frame,
+      localOutput: SENTINELS.localOutput,
+      shadowPrompt: SENTINELS.shadowPrompt,
     } as never);
     audit.recordConnectionRejected("PEER_UID_MISMATCH", new Date("2026-09-02T00:00:02.000Z"));
     audit.recordQuarantinedJob("poison-1", "ZodError", new Date("2026-09-02T00:00:03.000Z"));

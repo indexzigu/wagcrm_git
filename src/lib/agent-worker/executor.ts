@@ -34,7 +34,15 @@ import {
   type AgentJobResult,
   type AgentJobRoute,
 } from "./contracts";
-import { parseRouterDecision, type RouterDecision, type RouterDecisionParseResult } from "./router";
+import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
+import {
+  hasShadowValidator,
+  runLocalShadow,
+  shadowAuditFields,
+  type ShadowAuditFields,
+  type ShadowDeps,
+  type ShadowValidatorRegistry,
+} from "./shadow";
 
 /**
  * Agent worker executor (plan Task 5, contracts 4/5/7).
@@ -52,12 +60,21 @@ import { parseRouterDecision, type RouterDecision, type RouterDecisionParseResul
 export type TerminalStatus = AgentJobResult["status"];
 
 /**
- * Contract-7 interpretation (Director ruling 14): the five operations are
- * deterministic, so on `python`/`gemini`/`local_shadow` only the in-process registry
- * runs and no model is invoked. `modelUsed` and the audit `model` then carry this
- * sentinel; `route` stays exactly as the router decided.
+ * Contract-7 interpretation (Director ruling 14, Task 5 re-review LOW-5): the five
+ * operations are deterministic, so on `python`/`gemini`/`local_shadow` only the
+ * in-process registry runs and no model is invoked; on every
+ * `NEEDS_EXTERNAL_EXECUTOR` path nothing ran at all. `modelUsed` and the audit
+ * `model` then carry this sentinel; `route` stays exactly as the router decided.
  */
 export const NO_MODEL_INVOKED = "none";
+
+/**
+ * Route recorded when the router itself could not decide (timeout, non-zero exit,
+ * spawn failure, rejected output). Contract 7 defines `director` as "return the
+ * result waiting for high-risk judgment", which is exactly what an undecided job
+ * needs; no other route is inferred and nothing is executed.
+ */
+export const ROUTER_UNAVAILABLE_ROUTE: AgentJobRoute = "director";
 
 export type ExecutionOutcome =
   | {
@@ -68,13 +85,24 @@ export type ExecutionOutcome =
       model: string;
       escalationReason: string | null;
       errorClass: string | null;
+      /** Present only for `local_shadow`: the shadow verdict for the audit line (never in `result`). */
+      shadow?: Pick<ShadowAuditFields, "validationResult" | "correction">;
     }
   | { kind: "security"; errorClass: string }
   | { kind: "retryable"; errorClass: string; route: AgentJobRoute | null; model: string | null };
 
+export type RouterUnavailableClass = "ROUTER_TIMEOUT" | "ROUTER_EXIT_NONZERO" | "ROUTER_SPAWN_FAILED";
+
+/** Task 4 parser verdict, or a process-level failure of the router spawn itself. */
+export type RouterInvocationResult =
+  | RouterDecisionParseResult
+  | { status: "ROUTER_UNAVAILABLE"; errorClass: RouterUnavailableClass };
+
 export type ExecutionDeps = {
-  decideRoute: (payload: AgentJobPayload) => Promise<RouterDecisionParseResult>;
+  decideRoute: (payload: AgentJobPayload) => Promise<RouterInvocationResult>;
   now?: () => Date;
+  /** Local shadow wiring; absent ≡ no registered validator (no local call is possible). */
+  shadow?: ShadowDeps;
 };
 
 export class ExecutionAbortedError extends Error {
@@ -468,22 +496,36 @@ function buildResult(
   });
 }
 
-function externalExecutor(job: AgentJobRecord, decision: RouterDecision, escalationReason: string): ExecutionOutcome {
+function externalExecutor(
+  job: AgentJobRecord,
+  route: AgentJobRoute,
+  escalationReason: string,
+  errorClass: string | null = null,
+): ExecutionOutcome {
   return {
     kind: "terminal",
     toStatus: "NEEDS_EXTERNAL_EXECUTOR",
-    route: decision.route,
-    model: decision.model,
+    route,
+    model: NO_MODEL_INVOKED,
     escalationReason,
-    errorClass: null,
-    result: buildResult(job, decision.route, decision.model, {
+    errorClass,
+    result: buildResult(job, route, NO_MODEL_INVOKED, {
       status: "NEEDS_EXTERNAL_EXECUTOR",
       validationResult: "not_validated",
-      resultSummary: boundSummary(`external executor required (route=${decision.route}, reason=${escalationReason})`),
+      resultSummary: boundSummary(`external executor required (route=${route}, reason=${escalationReason})`),
       actionProposalId: null,
       evidenceRefs: [],
     }),
   };
+}
+
+/**
+ * Router timeout / non-zero exit / spawn failure / rejected output: the job ends
+ * `NEEDS_EXTERNAL_EXECUTOR` carrying the failure class. There is deliberately no
+ * local, python, or inferred-route fallback (plan Task 7).
+ */
+function routerUnavailable(job: AgentJobRecord, errorClass: RouterUnavailableClass | "ROUTER_OUTPUT_REJECTED"): ExecutionOutcome {
+  return externalExecutor(job, ROUTER_UNAVAILABLE_ROUTE, errorClass.toLowerCase(), errorClass);
 }
 
 export async function executeAgentJob(
@@ -493,18 +535,21 @@ export async function executeAgentJob(
 ): Promise<ExecutionOutcome> {
   const now = deps.now ?? (() => new Date());
   const decision = await deps.decideRoute(job.payload);
+  if (decision.status === "ROUTER_UNAVAILABLE") {
+    return routerUnavailable(job, decision.errorClass);
+  }
   if (decision.status !== "ACCEPTED") {
-    return { kind: "security", errorClass: "ROUTER_REJECTED" };
+    return routerUnavailable(job, "ROUTER_OUTPUT_REJECTED");
   }
 
   switch (decision.route) {
     case "gpt_luna":
     case "director":
-      return externalExecutor(job, decision, decision.reason);
+      return externalExecutor(job, decision.route, decision.reason);
     case "local":
       // Contract 7: local runs only after owner promotion + validator + threshold.
       // Nothing is promoted in this scope, so the route fails closed.
-      return externalExecutor(job, decision, "local_route_not_active");
+      return externalExecutor(job, decision.route, "local_route_not_active");
     case "python":
     case "gemini":
     case "local_shadow":
@@ -548,20 +593,33 @@ export async function executeAgentJob(
       }),
     };
   }
+  const result = buildResult(job, route, model, {
+    status: outcome.status,
+    validationResult: "pass",
+    resultSummary: outcome.summary,
+    actionProposalId: outcome.actionProposalId,
+    evidenceRefs: outcome.evidenceRefs,
+  });
+  if (route !== "local_shadow" || outcome.status !== "SUCCEEDED") {
+    return { kind: "terminal", toStatus: outcome.status, route, model, escalationReason: null, errorClass: null, result };
+  }
+
+  // local_shadow: the canonical result above is final and unchanged. The local
+  // model runs only now, only for a registered validator, and only its verdict is
+  // kept for the audit line. NEEDS_APPROVAL (proposal insert) is not shadowed.
+  const shadow = deps.shadow
+    ? await runLocalShadow({ payload: job.payload, decision, canonical: result, deps: deps.shadow, signal })
+    : ({ status: "skipped", reason: "validator_missing" } as const);
+  const audit = shadowAuditFields(shadow);
   return {
     kind: "terminal",
     toStatus: outcome.status,
     route,
     model,
-    escalationReason: null,
-    errorClass: null,
-    result: buildResult(job, route, model, {
-      status: outcome.status,
-      validationResult: "pass",
-      resultSummary: outcome.summary,
-      actionProposalId: outcome.actionProposalId,
-      evidenceRefs: outcome.evidenceRefs,
-    }),
+    escalationReason: audit.escalationReason,
+    errorClass: audit.errorClass,
+    shadow: { validationResult: audit.validationResult, correction: audit.correction },
+    result,
   };
 }
 
@@ -572,6 +630,12 @@ export async function executeAgentJob(
 export const DEFAULT_ROUTER_SCRIPT_PATH = path.join(homedir(), ".gemini", "bin", "local-llm-route.py");
 /** Absolute so a minimal launchd PATH cannot change which interpreter runs (review LOW-4). */
 export const DEFAULT_ROUTER_PYTHON = "/usr/bin/python3";
+/**
+ * Pinned router spawn budget. `decide` is a config read plus a table lookup
+ * (measured well under 1 s); 15 s leaves room for a cold interpreter on a loaded
+ * host while staying far inside the 120 s lease. On expiry the child is killed and
+ * the job ends NEEDS_EXTERNAL_EXECUTOR (`router_timeout`).
+ */
 export const ROUTER_TIMEOUT_MS = 15_000;
 
 export type ExecFileLike = (
@@ -585,21 +649,45 @@ const defaultExecFile: ExecFileLike = async (file, args, options) => {
   return { stdout: String(stdout), stderr: String(stderr) };
 };
 
-export function buildRouterArgv(payload: AgentJobPayload, scriptPath: string, pythonPath: string): { file: string; args: string[] } {
-  return {
-    file: pythonPath,
-    args: [scriptPath, "decide", "--task-type", payload.taskType, "--skill", payload.skill],
-  };
+/**
+ * `--validator` is passed only when this worker holds a validator for the skill;
+ * the script then still requires `validator_skills` membership before it may
+ * answer `local_shadow` (registry semantics live in the script, not here).
+ */
+export function buildRouterArgv(
+  payload: AgentJobPayload,
+  scriptPath: string,
+  pythonPath: string,
+  validators?: ShadowValidatorRegistry,
+): { file: string; args: string[] } {
+  const args = [scriptPath, "decide", "--task-type", payload.taskType, "--skill", payload.skill];
+  if (validators && hasShadowValidator(validators, payload.skill)) args.push("--validator");
+  return { file: pythonPath, args };
+}
+
+/** Node's execFile error shape: `killed` on timeout, numeric `code` on exit, string `code` (ENOENT…) on spawn failure. */
+function classifyRouterSpawnError(error: unknown): RouterUnavailableClass {
+  const failure = error as { killed?: unknown; code?: unknown } | null;
+  if (failure?.killed === true) return "ROUTER_TIMEOUT";
+  if (typeof failure?.code === "number") return "ROUTER_EXIT_NONZERO";
+  return "ROUTER_SPAWN_FAILED";
 }
 
 export async function runRouterDecision(
   payload: AgentJobPayload,
-  options: { scriptPath?: string; pythonPath?: string; execFile?: ExecFileLike; timeoutMs?: number } = {},
-): Promise<RouterDecisionParseResult> {
+  options: {
+    scriptPath?: string;
+    pythonPath?: string;
+    execFile?: ExecFileLike;
+    timeoutMs?: number;
+    validators?: ShadowValidatorRegistry;
+  } = {},
+): Promise<RouterInvocationResult> {
   const argv = buildRouterArgv(
     payload,
     options.scriptPath ?? DEFAULT_ROUTER_SCRIPT_PATH,
     options.pythonPath ?? DEFAULT_ROUTER_PYTHON,
+    options.validators,
   );
   let stdout: string;
   try {
@@ -609,8 +697,8 @@ export async function runRouterDecision(
       maxBuffer: 64 * 1024,
       windowsHide: true,
     }));
-  } catch {
-    return { status: "FAILED_SECURITY" };
+  } catch (error) {
+    return { status: "ROUTER_UNAVAILABLE", errorClass: classifyRouterSpawnError(error) };
   }
   return parseRouterDecision(stdout.trim());
 }

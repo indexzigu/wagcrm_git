@@ -133,6 +133,7 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
       model: string | null;
       validationResult: "pass" | "fail" | "not_validated";
       escalationReason: string | null;
+      correction?: boolean;
       error?: unknown;
     }) =>
       safeAudit(() =>
@@ -142,7 +143,7 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
           model: fields.model,
           validationResult: fields.validationResult,
           escalationReason: fields.escalationReason,
-          correction: false,
+          correction: fields.correction ?? false,
           startedAt,
           finishedAt: now(),
           error: fields.error,
@@ -189,7 +190,9 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
         audit({
           route: outcome.route,
           model: outcome.model,
-          validationResult: outcome.result.validationResult,
+          // local_shadow: the audit line carries the shadow verdict, the stored result never does.
+          validationResult: outcome.shadow?.validationResult ?? outcome.result.validationResult,
+          correction: outcome.shadow?.correction ?? false,
           escalationReason: outcome.escalationReason,
           error: outcome.errorClass ? Object.assign(new Error(outcome.errorClass), { name: outcome.errorClass }) : undefined,
         });

@@ -150,6 +150,27 @@ describe("worker loop durable processing", () => {
     await loop.shutdown();
   });
 
+  it("audits a local_shadow outcome with the shadow validation and correction, keeping the user-facing result intact", async () => {
+    const base = succeeded("a");
+    if (base.kind !== "terminal") throw new Error("expected terminal");
+    const outcome: ExecutionOutcome = {
+      ...base,
+      route: "local_shadow",
+      model: "none",
+      result: { ...base.result, route: "local_shadow", modelUsed: "none" },
+      shadow: { validationResult: "fail", correction: true },
+    };
+    const execute = vi.fn(async () => outcome);
+    const { repository, audit, loop } = build([job("a")], execute);
+
+    loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(repository.transition).toHaveBeenLastCalledWith(expect.objectContaining({ toStatus: "SUCCEEDED", result: expect.objectContaining({ status: "SUCCEEDED", validationResult: "pass", route: "local_shadow" }) }));
+    expect(audit.recordJob).toHaveBeenCalledWith(expect.objectContaining({ route: "local_shadow", model: "none", validationResult: "fail", correction: true }));
+    await loop.shutdown();
+  });
+
   it("heartbeats every 30 s while a job runs and stops afterwards", async () => {
     const pending = deferred<ExecutionOutcome>();
     const execute = vi.fn(() => pending.promise);
