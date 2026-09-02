@@ -52,7 +52,7 @@ const PRICE_A = 31900;
 const PRICE_B = 42900;
 
 function makeCampaignDeal(id: string, dealName: string, sellingPrice: number) {
-  return { id, sellingPrice, deal: { id: `deal-${id}`, dealName, parentId: `p-${id}`, sellingPrice } };
+  return { id, sellingPrice, deal: { id: `deal-${id}`, dealName, parentDealId: `p-${id}`, sellingPrice } };
 }
 
 function makeSalesCamp(

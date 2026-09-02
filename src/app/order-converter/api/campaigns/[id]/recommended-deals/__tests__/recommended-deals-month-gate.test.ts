@@ -35,7 +35,7 @@ function makeCampaignDeal(id: string, dealName: string, sellingPrice: number) {
   return {
     id,
     sellingPrice,
-    deal: { id: `deal-${id}`, dealName, parentId: `parent-${id}`, sellingPrice },
+    deal: { id: `deal-${id}`, dealName, parentDealId: `parent-${id}`, sellingPrice },
   };
 }
 

@@ -27,12 +27,12 @@ export type DealNameInput = {
   unit?: string | null;
   unitQuantity?: number | null;
   supplementaryInfo?: string | null;
-  parentId?: string | null;
+  parentDealId?: string | null;
 };
 
 export function getDisplayDealName(deal: DealNameInput): string {
   // 하위 딜(옵션)은 이미 dealName 필드에 완전한 조합 문자열이 저장되어 있으므로 그대로 사용
-  if (deal.parentId) {
+  if (deal.parentDealId) {
     return deal.dealName;
   }
 
