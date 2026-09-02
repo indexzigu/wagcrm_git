@@ -8,6 +8,7 @@ import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@
 import { isDemoMode } from '@/lib/demo-mode';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from '@/lib/order-converter/campaign-insights';
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from '@/lib/order-converter/group-orders';
+import { isSupplementProduct } from '@/lib/order-converter/product-class';
 import { deriveOrderPipelineBucket } from '@/lib/order-converter/order-fulfillment';
 import { resolveLiveWindowKeys } from '@/lib/order-converter/daily-aggregate';
 import { orderMatchesCampaignProductId, orderBelongsToPeerCampaign, findSharedLinkWindowConflicts, type PeerCampaignWindow } from '@/lib/order-converter/campaign-match';
@@ -725,7 +726,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
 
         // 추가구성상품(추가옵션)은 자체 이름(예: "아이보리")이라 캠페인명/매핑으로 매칭되지 않는다.
         // 같은 productId의 메인 품목이 이 캠페인에 귀속됐는지로 판단하기 위해 2차 패스로 보류한다.
-        if (order.productClass === '추가구성상품') {
+        if (isSupplementProduct(order)) {
           deferredAddons.push(order);
           return;
         }

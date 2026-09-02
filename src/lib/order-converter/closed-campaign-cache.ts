@@ -2,6 +2,7 @@ import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from './group-orders';
 import { resolveSalesReportOptionLabel } from './sales-report-options';
 import { deriveOrderPipelineBucket } from './order-fulfillment';
 import { orderMatchesCampaignProductId, orderBelongsToPeerCampaign, type PeerCampaignWindow } from './campaign-match';
+import { isSupplementProduct } from './product-class';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from './campaign-insights';
 import { pickBestMapping } from './mapping-match';
 import { resolveSaleWindowStartMs, resolveSaleWindowEndMs } from './sale-window';
@@ -203,7 +204,7 @@ export function computeClosedCampaignCache(
     const orderTime = orderTimeStr ? new Date(orderTimeStr).getTime() : 0;
     if (orderTime > 0 && (orderTime < campStart || orderTime > campEnd)) return;
 
-    if (order.productClass === '추가구성상품') {
+    if (isSupplementProduct(order)) {
       deferredAddons.push(order);
       return;
     }

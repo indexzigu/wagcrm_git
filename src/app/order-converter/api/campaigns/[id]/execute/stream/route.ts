@@ -6,6 +6,7 @@ import { loadOrderTemplateBuffer, resolveOrderBrand } from '@/lib/order-converte
 import { syncOrdersByIds } from '@/lib/order-converter/naver-order-sync';
 import { interleaveAddonRows } from '@/lib/order-converter/group-orders';
 import { orderMatchesCampaignProductId } from '@/lib/order-converter/campaign-match';
+import { isSupplementProduct } from '@/lib/order-converter/product-class';
 import {
   createNaverCallTally,
   noteNaverLogicalCall,
@@ -146,7 +147,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           // execute 라우트가 서로 다른 필터를 갖고 있었다(execute 는 PRODUCT_READY 미포함).
           if (!order || !(PENDING_FULFILLMENT_STATUSES as readonly string[]).includes(order.productOrderStatus)) return;
 
-          if (order.productClass === '추가구성상품') {
+          if (isSupplementProduct(order)) {
             deferredAddonWrappers.push(orderWrapper);
             return;
           }

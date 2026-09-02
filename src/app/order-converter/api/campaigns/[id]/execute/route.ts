@@ -6,6 +6,7 @@ import { loadOrderTemplateBuffer, resolveOrderBrand } from '@/lib/order-converte
 import { syncOrdersByIds } from '@/lib/order-converter/naver-order-sync';
 import { interleaveAddonRows } from '@/lib/order-converter/group-orders';
 import { orderMatchesCampaignProductId } from '@/lib/order-converter/campaign-match';
+import { isSupplementProduct } from '@/lib/order-converter/product-class';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
 import {
   createNaverCallTally,
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         return;
       }
 
-      if (order.productClass === '추가구성상품') {
+      if (isSupplementProduct(order)) {
         deferredAddonWrappers.push(orderWrapper);
         return;
       }

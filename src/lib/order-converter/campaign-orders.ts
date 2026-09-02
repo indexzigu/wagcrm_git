@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { apiRequest } from './naver-commerce-client';
 import { fetchAllProductOrderPages, PRODUCT_ORDER_RANGE_TYPE_PAYED } from './product-order-paging';
 import { orderMatchesCampaignProductId } from './campaign-match';
+import { isSupplementProduct } from './product-class';
 
 /**
  * 수동 첨부 발송의 "캠페인 대조" 전용 — 이 캠페인에 귀속되는 네이버 상품주문번호 집합을
@@ -177,7 +178,7 @@ export async function resolveCampaignExpectedOrderIds(campaignId: string): Promi
     if (order.productOrderStatus !== 'PAYED' && order.productOrderStatus !== 'PRODUCT_ORDERED') return;
 
     // 추가구성상품은 2차 귀속(동일 productId 메인 매칭 시 포함)으로 미룬다.
-    if (order.productClass === '추가구성상품') {
+    if (isSupplementProduct(order)) {
       deferredAddons.push(wrapper);
       return;
     }
