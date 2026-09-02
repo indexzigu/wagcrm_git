@@ -37,8 +37,9 @@ const CONSUMERS = [
  * 스캔 대상 트리.
  *
  * ⚠️ `src` 만 훑으면 안 된다 — `scripts` 는 별도 tsconfig 로 타입체크되는 **실코드**이고
- * 주문 스냅샷을 직접 다루는 운영 스크립트가 그 아래 있다. 지금은 그쪽에 소비처가 없지만,
- * 스캔 밖에 두면 **생기는 순간부터 조용히 사각**이다.
+ * 주문 스냅샷을 직접 다루는 운영 스크립트가 그 아래 있다. `e2e` 도 판정을 재구현할 수 있는
+ * 코드(페이지 오브젝트·셋업)를 갖는다. 지금은 양쪽 다 소비처가 없지만, 스캔 밖에 두면
+ * **생기는 순간부터 조용히 사각**이다.
  */
 const SCAN_ROOTS = ['src', 'scripts', 'e2e'] as const;
 
@@ -54,11 +55,20 @@ function sourceFiles(dir: string): string[] {
 }
 
 /**
- * 테스트 파일은 스캔에서 뺀다 — 픽스처의 리터럴은 **판정이 아니라 데이터**다
+ * 테스트·픽스처는 스캔에서 뺀다 — 픽스처의 리터럴은 **판정이 아니라 데이터**다
  * ("네이버가 이 값을 준다"의 재현). SSOT 상수로 바꾸면 동어반복 테스트가 된다.
+ *
+ * 🪤 **`.test.` 만 보면 안 된다** — `e2e` 는 Playwright 관행대로 `.spec.ts` 를 쓰므로
+ * 그 픽스처가 값을 재현하는 순간 "제품 코드 사본"으로 잡혀 **거짓 실패**가 난다
+ * (스캔 범위를 `e2e` 까지 넓히면서 생긴 짝이다 — 범위만 넓히고 제외 규칙을 안 넓히면
+ * 이 계약이 자기 근거와 어긋난다).
  */
 function isTestFile(rel: string): boolean {
-  return rel.includes('/__tests__/') || rel.endsWith('.test.ts') || rel.endsWith('.test.tsx');
+  return (
+    rel.includes('/__tests__/') ||
+    rel.includes('/fixtures/') ||
+    /\.(test|spec)\.tsx?$/.test(rel)
+  );
 }
 
 function parse(rel: string, text?: string): ts.SourceFile {

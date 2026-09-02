@@ -10,6 +10,7 @@ import { isSupplementProduct, SUPPLEMENT_PRODUCT_CLASS } from '../product-class'
  */
 describe('isSupplementProduct — 추가구성상품 판정', () => {
   it('NFC(조합형) 값을 참으로 본다 — 도입 시점 저장 데이터가 전부 이 형태였다', () => {
+    // ⚠️ 「전부」의 근거는 저장 데이터 관측이라 레포 안에 없다 — 재현 방법은 SSOT 헤더.
     expect(isSupplementProduct({ productClass: '추가구성상품' })).toBe(true);
   });
 
