@@ -180,10 +180,12 @@ describe('추가구성상품 판정 단일화', () => {
     expect(isTestFile('scripts/seed-banned-phrases.ts')).toBe(false);
     expect(isTestFile('e2e/page-objects/orders.page.ts')).toBe(false);
     expect(isTestFile('e2e/global-setup.ts')).toBe(false);
-    // 🪤 라우트 경로를 빠뜨리지 말 것 — 소비처 7곳 중 3곳이 `src/app/…/api` 아래다.
-    //    제외가 그쪽으로 넓어지면 스캔의 가장 값비싼 부분이 조용히 꺼지는데, 아래
-    //    CONSUMERS 단언은 그 7개 파일의 호출만 보므로 **새로 생긴** 사본은 못 잡는다.
+    // 🪤 라우트 경로를 빠뜨리지 말 것 — 소비처 7곳 중 3곳이 `src/app/…/api` 아래이고
+    //    그중 2곳은 파일명이 `route.ts` 다. 제외가 그쪽으로 넓어지면 스캔의 가장 값비싼
+    //    부분이 조용히 꺼지는데, CONSUMERS 단언은 그 7개 파일의 호출만 보므로
+    //    **새로 생긴** 사본은 못 잡는다.
     expect(isTestFile('src/app/order-converter/api/campaigns/campaigns-handler.ts')).toBe(false);
+    expect(isTestFile('src/app/order-converter/api/campaigns/[id]/execute/route.ts')).toBe(false);
     // ⛔ `fixtures` 세그먼트를 아무 데서나 빼면 안 된다(시드·데모 데이터가 쓰는 이름이다).
     expect(isTestFile('src/lib/fixtures/seed-data.ts')).toBe(false);
   });
