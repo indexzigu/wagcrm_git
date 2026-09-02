@@ -14,6 +14,7 @@
 import { deriveOrderPipelineBucket, type OrderPipelineBucket } from './order-fulfillment';
 import { deriveClaimsFromOrder, isFinalCompletedStatus } from './claim-derive';
 import { orderMatchesCampaignProductId } from './campaign-match';
+import { isSupplementProduct } from './product-class';
 
 export type UndispatchedBucket = Extract<OrderPipelineBucket, 'newBefore' | 'newAfter' | 'pending'>;
 
@@ -228,7 +229,7 @@ export function buildUndispatchedRows(
     if (t > 0 && (t < startMs || t > endMs)) continue;
 
     // 추가구성상품은 동일 productId의 메인 품목 귀속 여부로 2차 판단 → 보류
-    if (order.productClass === '추가구성상품') {
+    if (isSupplementProduct(order)) {
       deferredAddons.push(order);
       continue;
     }

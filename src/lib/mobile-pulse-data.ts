@@ -4,6 +4,7 @@ import {
 } from "@/lib/order-converter/group-orders";
 import { computeSimilarityScore } from "@/lib/order-converter/similarity";
 import { orderMatchesCampaignProductId } from "@/lib/order-converter/campaign-match";
+import { isSupplementProduct } from "@/lib/order-converter/product-class";
 import { deriveOrderPipelineBucket } from "@/lib/order-converter/order-fulfillment";
 
 /**
@@ -370,7 +371,7 @@ export function attributeOrders(
   for (const order of orders) {
     if (!order) continue;
 
-    if (order.productClass === "추가구성상품") {
+    if (isSupplementProduct(order)) {
       deferredAddons.push(order);
       continue;
     }
