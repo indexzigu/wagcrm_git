@@ -446,8 +446,13 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
 
   it("접기 표시와 같은 키가 원본에 있으면 덮어쓰지 않는다", async () => {
     const c = clock();
+    // ⚠️ `muting: false` 가 **반드시 있어야 한다.** 접을 항목이 하나도 없으면 그 앞의 조기
+    // 반환에 걸려 가드 줄에 **도달조차 못 하고**, 가드를 통째로 지워도 초록인 공허한 테스트가
+    // 된다(5회차 리뷰가 변이로 잡은 실제 구멍).
     const collide = JSON.stringify({
-      result: [{ user: { friendship_status: { blocking: true, "…": "원본값" }, is_private: true } }],
+      result: [
+        { user: { friendship_status: { blocking: true, muting: false, "…": "원본값" }, is_private: true } },
+      ],
     });
     const out = await fetchStoriesForHandles(["someone"], {
       launch: async () =>
@@ -462,6 +467,50 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
 
     // 개수를 잃는 편이 실데이터를 잃는 것보다 낫다.
     expect(out[0].error).toContain("원본값");
+  });
+
+  /**
+   * 프리뷰 상한 3종을 각각 못박는다.
+   *
+   * ⚠️ **한 축이 다른 축을 대신해 주지 않는다.** 종전엔 "사유 합계가 저장 상한 안"이라는
+   * 느슨한 단언 하나가 상한 인상을 우연히 잡고 있었는데, 그 단언이 재는 값이 실제 저장 크기와
+   * 달라 걷어냈다. 그러자 **상한을 20,000 으로 올려도 전부 초록**이 됐다(5회차 리뷰가 변이로
+   * 확인). 걷어낸 것이 못 지키던 축이 있다고 해서 아무것도 안 지킨 것은 아니었다.
+   */
+  it("화면 본문이 길어도 상한까지만 싣는다", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: "{}" },
+          pageState: { title: "t", bodyText: "y".repeat(5_000) },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    const body = /화면:(y+)/.exec(out[0].error ?? "")?.[1] ?? "";
+    expect(body.length).toBe(200);
+  });
+
+  it("프로필 본문이 길어도 상한까지만 싣는다", async () => {
+    const c = clock();
+    // 접기를 거쳐도 여전히 긴 응답 — 노이즈가 아니라 진짜 데이터가 많은 경우다.
+    const huge = JSON.stringify({ note: "z".repeat(5_000) });
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: huge },
+          pageState: { title: "t", bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    const preview = /본문:(\S+?) \//.exec(out[0].error ?? "")?.[1] ?? "";
+    expect(preview.length).toBe(200);
   });
 
   it("본문 읽기 상한이 바깥 상한보다 짧다(어느 쪽이 이길지 정해지게)", () => {
