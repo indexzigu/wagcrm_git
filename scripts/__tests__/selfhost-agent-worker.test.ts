@@ -37,8 +37,11 @@ describe("run-agent-worker.sh", () => {
 
   it("실행 가능 비트가 있다", () => {
     const mode = statSync(WRAPPER).mode;
-    // 소유자 실행 비트(0o100) 확인 — chmod +x 가 됐는지.
-    expect(mode & 0o100, "실행 비트가 없다 — chmod +x 필요").toBeGreaterThan(0);
+    // 소유자 실행 비트(0o100) 확인 — 커밋된 파일 모드가 0755 인지.
+    // ⚠️ 이 파일에 실행권한 부여 명령의 리터럴을 쓰지 말 것(주석·메시지 안이어도).
+    // `gh-stub-guard.contract.test.ts` 가 테스트 소스를 문자열로 스캔해 그 리터럴을
+    // 발견하면 실패한다 — 실제로 실행 파일을 만드는지와 무관하게 걸린다.
+    expect(mode & 0o100, "소유자 실행 비트가 없다 — 파일 모드를 0755 로 커밋할 것").toBeGreaterThan(0);
   });
 
   it("bash -n 으로 문법 오류 없이 파싱된다", () => {

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import type { AgentJobPayload, AgentJobRoute } from "../contracts";
@@ -780,10 +783,30 @@ describe("router invocation", () => {
   });
 
   it("enforces the spawn timeout on a real child process that never exits", async () => {
-    // `cat -` blocks on the child's open stdin pipe, so only the execFile timeout can end it.
-    const result = await runRouterDecision(job("search_deals", {}).payload, { pythonPath: "/bin/cat", scriptPath: "-", timeoutMs: 200 });
+    // The child must block on EVERY platform, and `buildRouterArgv` always appends
+    // `decide --task-type … --skill …` after `scriptPath`, so the child has to ignore
+    // stray operands. A tiny Node script does both; shell utilities do not.
+    //   ⛔ The previous `/bin/cat -` version was macOS-only: BSD `cat` blocked on the
+    //   still-open stdin pipe and hit the timeout, while GNU `cat` on Linux CI failed
+    //   on the extra operands and exited 1 — so the assertion saw ROUTER_EXIT_NONZERO.
+    //   Measured 2026-09-03 on this host vs a node:22-slim container.
+    // The script is written WITHOUT an executable bit: `node <file>` reads it as data,
+    // which is what `gh-stub-guard.contract.test.ts` requires of test fixtures.
+    const dir = mkdtempSync(join(tmpdir(), "router-timeout-"));
+    const neverExits = join(dir, "never-exits.cjs");
+    writeFileSync(neverExits, "setTimeout(() => {}, 60_000);\n");
 
-    expect(result).toEqual({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_TIMEOUT" });
+    try {
+      const result = await runRouterDecision(job("search_deals", {}).payload, {
+        pythonPath: process.execPath,
+        scriptPath: neverExits,
+        timeoutMs: 200,
+      });
+
+      expect(result).toEqual({ status: "ROUTER_UNAVAILABLE", errorClass: "ROUTER_TIMEOUT" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   describe("against the real local-llm-route.py (read-only decide)", () => {
