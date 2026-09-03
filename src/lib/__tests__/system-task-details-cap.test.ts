@@ -514,13 +514,11 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     // 바깥이 비워졌다(항목 2개를 잃었다고 신고한다).
     expect(capped.misc).toEqual([]);
     expect(marker.misc).toBe(2);
-    // ⚠️ 그리고 **결과에 없는 자리를 가리키지 않는다.** 바깥을 비우기 전에 안쪽을 줄인
-    // 기록이 남아 있으면, 읽는 사람은 `misc[0]` 을 찾으러 갔다가 못 찾는다. 그 손실은
-    // 바깥 한 줄이 이미 포함해 말하고 있다.
-    const insideMisc = Object.keys(marker).filter(
-      (path) => path.startsWith("misc[") || path.startsWith("misc."),
-    );
-    expect(insideMisc).toEqual([]);
+    // 안쪽은 **바깥이 비워지기 전에** 주 루프가 줄인 몫만 신고한다. 8 이 나오면 마지막
+    // 한 건을 `misc: 2` 와 겹쳐 두 번 센 것이다.
+    // ⛔ 이 기록을 **지우는 것으로 「없는 경로를 가리킨다」를 해결하지 말 것** — 그 손실은
+    // 실제로 일어났고, 지우면 총 손실이 실제보다 작게 보고된다(축소 보고가 더 나쁘다).
+    expect(marker["misc[0]"]).toBe(7);
   });
 
   it("보호 판정은 이름이 아니라 값이 배열인지를 본다", () => {

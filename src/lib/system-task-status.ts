@@ -382,14 +382,13 @@ export function capDetailsForLog(details: unknown): unknown {
         const held = readAt(site);
         if (!Array.isArray(held) || held.length === 0) continue;
         writeAt(site, []);
-        // 이 자리를 비우면 **안쪽에서 앞서 줄인 몫은 이야기할 대상이 사라진다.** 남겨
-        // 두면 표시가 결과에 없는 경로(`misc[0]` 등)를 가리켜, 읽는 사람이 그 자리를
-        // 찾다가 못 찾는다. 바깥 한 줄로 합쳐 말한다.
-        for (const recorded of Object.keys(trimmed)) {
-          if (recorded.startsWith(`${site.path}[`) || recorded.startsWith(`${site.path}.`)) {
-            delete trimmed[recorded];
-          }
-        }
+        // ⛔ **앞선 회차가 안쪽에 남긴 기록을 지우지 말 것.** 결과에 없는 경로를 가리켜
+        // 어색해 보이지만, 그 손실은 **실제로 일어났다**(주 루프가 안쪽을 줄일 때 그
+        // 자리는 살아 있었다). 지우면 총 손실이 실제보다 작게 보고된다 — 이 파일이
+        // 「149건을 잃고 1건이라 적었다」로 규탄하는 축소 보고를 되사는 셈이다.
+        // 실측: 안쪽에서 4,009자를 잃은 기록이 통째로 사라졌다.
+        // 막아야 하는 것은 **같은 회차의 중복 계수**뿐이고, 그건 위 `emptiedPaths` 가
+        // 이미 막는다(떨어져 나간 자리를 다시 세지 않는다).
         note(site.path, held.length, "items");
         emptiedPaths.push(`${site.path}[`, `${site.path}.`);
       }
