@@ -79,20 +79,15 @@ const MAX_TRIMMED_ENTRIES = 12;
 /**
  * 진단 배열 — 사고의 "왜"가 여기 담긴다. 다른 곳을 다 줄이고도 모자랄 때 손댄다.
  *
- * ⚠️ 크기순으로만 줄이면 **가장 값진 것을 먼저 잃는다.** 실측: 셀러 120명 전량 실패 회차에서
- * `errors` 가 120→3건으로 깎이는 동안 진단 가치가 없는 `handles`(그 이름은 각 `errors` 문자열
- * 안에 이미 있다)가 120건 전량 살아남아 예산의 대부분을 점유했다.
+ * ⚠️ 크기순으로만 줄이면 **가장 값진 것을 먼저 잃는다.** 합성 페이로드로 재현한 결과, 대상
+ * 전량 실패 회차에서 `errors` 가 몇 건까지 깎이는 동안 진단 가치가 없는 대상 이름 목록(그
+ * 이름은 각 `errors` 문자열 안에 이미 있다)이 전량 살아남아 예산의 대부분을 점유했다.
+ * (수치는 합성 입력 기준이다 — 프로덕션 실측이 아니다.)
  */
 const DIAGNOSTIC_KEYS = new Set(["errors", "failures"]);
 
 /** 줄이기 반복 상한 — 한 번에 한 자리씩 줄이므로 무한 반복을 막는 안전장치다. */
 const MAX_TRIM_ROUNDS = 40;
-
-/** 통째로 들어낸 자리에 남길 값 — 키는 남으므로 "원래 있었다"는 사실은 읽힌다. */
-const REMOVED_FIELD = "…";
-
-/** 표시에서 "통째로 들어냄"을 뜻하는 값(건수를 셀 수 없다). */
-const REMOVED_WHOLE = -1;
 
 /** 줄일 수 있는 자리 하나. */
 type Shrinkable = {
@@ -129,7 +124,6 @@ function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]):
   if (node == null || typeof node !== "object") return;
   const obj = node as Record<string, unknown>;
   for (const [key, value] of Object.entries(obj)) {
-    if (key === TRIMMED_MARKER) continue;
     const path = prefix ? `${prefix}.${key}` : key;
     if (Array.isArray(value) || (typeof value === "string" && value.length > MIN_KEPT_CHARS)) {
       // 뒤로 미룰수록 큰 순위. 요약(2) > 진단 배열(1) > 나머지(0).
@@ -175,11 +169,13 @@ export function capDetailsForLog(details: unknown): unknown {
     // 실제 손실을 크게 축소해 알린다(실측: 149건을 잃고 1건이라 적었다). 표시가 있으되
     // 숫자가 틀리면 없는 것보다 나쁘다 — 읽는 사람이 거의 다 남았다고 믿는다.
     if (path in trimmed) {
-      trimmed[path] = amount === REMOVED_WHOLE ? REMOVED_WHOLE : (trimmed[path] ?? 0) + amount;
+      trimmed[path] = (trimmed[path] ?? 0) + amount;
     } else if (Object.keys(trimmed).length < MAX_TRIMMED_ENTRIES) {
       trimmed[path] = amount;
     } else {
-      extraTrims += 1;
+      // 표시 자리가 다 찼다 — 경로는 못 적어도 **잃은 양은 합쳐서** 알린다. 종전엔 경로 수만
+      // 세어, 13건이 사라져도 표시에 아무 숫자도 안 남았다(실측).
+      extraTrims += amount;
     }
     // 화면이 "일부만"을 판단하는 짝 표시를 함께 세운다 — 깎인 자리가 그 목록 **안쪽**이어도.
     for (const [listKey, flag] of Object.entries(CAPPED_FLAG_OF)) {
@@ -228,29 +224,40 @@ export function capDetailsForLog(details: unknown): unknown {
 
   // 마지막 수단 — 줄일 자리를 다 써도 넘치면(작은 필드가 아주 많은 모양) 덩치 큰 비-요약
   // 필드를 통째로 들어낸다. 요약과 스칼라는 건드리지 않는다.
-  // ⚠️ 한 번만 정렬하고 순서대로 들어낸다. 매번 다시 정렬하면 필드 수만큼 전체 직렬화가
-  // 반복돼 느려진다(실측: 200개에서 139ms). 반복 상한을 두지 않는 것은 매 회 키가 하나씩
-  // 확실히 줄어 반드시 끝나기 때문이다.
-  const removable = Object.keys(out)
-    .filter((k) => k !== TRIMMED_MARKER && !SUMMARY_KEYS.has(k))
-    .filter((k) => out[k] != null && typeof out[k] === "object")
+  // 마지막 수단 — 줄일 자리를 다 써도 넘치면 **값이 낮은** 큰 필드를 비운다.
+  //
+  // ⚠️ 지켜야 할 것을 지운 적이 있다(리뷰 실측). 순위를 안 보고 지워 진단 배열이 전멸했고,
+  // 확인필요 목록을 지워 화면이 300건을 "없음"으로 그렸다 — **고치기 전보다 나빴다.**
+  // 그래서 요약·진단·짝 표시가 걸린 목록은 건드리지 않고, **타입도 유지**한다(배열은 빈
+  // 배열로). 소비처가 `errors.map()` 처럼 쓰는데 문자열로 바꾸면 그 자리에서 터진다.
+  const protectedKeys = new Set([...SUMMARY_KEYS, ...DIAGNOSTIC_KEYS, ...Object.keys(CAPPED_FLAG_OF)]);
+  const emptiable = Object.keys(out)
+    .filter((k) => !protectedKeys.has(k) && out[k] != null && typeof out[k] === "object")
     .sort((a, b) => size(out[b]) - size(out[a]));
-  for (const key of removable) {
+  for (const key of emptiable) {
     if (size(out) <= workingCap) break;
-    out[key] = REMOVED_FIELD;
-    note(key, REMOVED_WHOLE);
+    const value = out[key];
+    const dropped = Array.isArray(value) ? value.length : Object.keys(value as object).length;
+    if (dropped === 0) continue;
+    out[key] = Array.isArray(value) ? [] : {};
+    note(key, dropped);
   }
 
-  if (extraTrims > 0) trimmed.andMore = extraTrims;
+  if (extraTrims > 0) trimmed.andMoreItems = extraTrims;
   if (Object.keys(trimmed).length > 0) {
     // 잡이 같은 이름을 자기 뜻으로 쓰고 있으면 덮지 않는다 — 남의 값을 조용히 지우지 않는다.
-    const markerKey = TRIMMED_MARKER in out ? `${TRIMMED_MARKER}ByStore` : TRIMMED_MARKER;
+    // 잡이 이미 쓰는 이름을 덮지 않는다 — 빈 자리를 찾을 때까지 접미를 늘린다.
+    // (종전엔 후보를 하나만 두어 그 이름마저 쓰이면 남의 값을 지웠다 — 리뷰 실측.)
+    let markerKey = TRIMMED_MARKER;
+    for (let n = 2; markerKey in out; n += 1) markerKey = `${TRIMMED_MARKER}${n}`;
     out[markerKey] = trimmed;
     // 여기까지 와서도 넘치면 이 함수가 다루지 못한 덩치가 남은 것이다(최소 보존분만으로 초과
     // 하거나 줄일 자리가 없는 모양). 조용히 넘기지 않고 실제 크기를 적어 둔다.
     if (size(out) > DETAILS_MAX_CHARS) trimmed.overCap = size(out);
   } else if (size(out) > DETAILS_MAX_CHARS) {
-    out[TRIMMED_MARKER in out ? `${TRIMMED_MARKER}ByStore` : TRIMMED_MARKER] = { overCap: size(out) };
+    let markerKey = TRIMMED_MARKER;
+    for (let n = 2; markerKey in out; n += 1) markerKey = `${TRIMMED_MARKER}${n}`;
+    out[markerKey] = { overCap: size(out) };
   }
   return out;
 }

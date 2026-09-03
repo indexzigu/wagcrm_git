@@ -151,6 +151,72 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     expect(capped.needsReviewDetailCapped).toBe(true);
   });
 
+  it("배열 원소 안의 덩치도 줄인다(배열만 깎고 원소는 그대로 두지 않게)", () => {
+    // ⚠️ 종전엔 배열 원소를 후보로 안 세어, 항목 하나가 거대하면 배열을 1건까지 깎고도
+    // 그 1건이 6,000자라 그대로 새어 나갔다. 크기·`failed` 만 보는 단언은 이 회귀를
+    // 못 잡는다(변이 생존 실측) — **원소가 실제로 짧아졌는지**를 본다.
+    const capped = capDetailsForLog({
+      failed: true,
+      errors: ["가".repeat(6_000), "b", "c"],
+    }) as Record<string, unknown>;
+
+    const errors = capped.errors as string[];
+    expect(Array.isArray(errors)).toBe(true); // 타입이 바뀌면 소비처가 터진다
+    expect(errors[0].length).toBeLessThan(6_000); // 원소 자체가 줄었다
+    expect(errors[0].startsWith("가")).toBe(true); // 앞부분은 남는다
+  });
+
+  it("배열 안의 배열도 줄인다", () => {
+    const capped = capDetailsForLog({
+      failed: true,
+      rows: [Array.from({ length: 500 }, (_, i) => `행${i}: ${"값".repeat(30)}`)],
+    }) as Record<string, unknown>;
+
+    const rows = capped.rows as string[][];
+    expect(Array.isArray(rows[0])).toBe(true);
+    expect(rows[0].length).toBeLessThan(500);
+    expect(rows[0].length).toBeGreaterThan(0);
+  });
+
+  it("잡이 같은 이름을 쓰고 있으면 그 값을 덮지 않는다", () => {
+    // ⚠️ 후보 이름을 하나만 두면 그것마저 쓰일 때 남의 값을 지운다(실측). 빈 자리를
+    // 찾을 때까지 접미를 늘린다.
+    const capped = capDetailsForLog({
+      failed: true,
+      detailsTrimmed: { mineToo: 2 },
+      detailsTrimmed2: { alsoMine: 3 },
+      errors: Array.from({ length: 120 }, (_, i) => `e${i}: ${"사유".repeat(40)}`),
+    }) as Record<string, unknown>;
+
+    expect(capped.detailsTrimmed).toEqual({ mineToo: 2 });
+    expect(capped.detailsTrimmed2).toEqual({ alsoMine: 3 });
+    expect(capped.detailsTrimmed3).toBeTruthy(); // 우리 표시는 빈 자리로 갔다
+  });
+
+  it("최후 수단으로 비울 때도 진단 배열과 확인필요 목록은 지키고 타입도 유지한다", () => {
+    // ⚠️ 순위를 안 보고 비우면 순위 도입이 지키려던 것을 같은 함수가 지운다. 그리고
+    // 배열을 문자열로 바꾸면 `errors.map()` 쓰는 소비처가 그 자리에서 터진다(리뷰 실측).
+    const input = Object.fromEntries([
+      ["failed", true],
+      ["errors", Array.from({ length: 60 }, (_, i) => `e${i}: ${"사유".repeat(20)}`)],
+      ["needsReviewDetail", Array.from({ length: 20 }, (_, i) => ({ key: `k${i}` }))],
+      // 비워질 쪽 — 보호 대상이 아니고 덩치가 크다.
+      ["debugRows", Array.from({ length: 400 }, (_, i) => ({ i, note: "값".repeat(10) }))],
+      ...Array.from({ length: 300 }, (_, i) => [`g${i}`, { x: "값".repeat(10) }]),
+    ]);
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    // 지켜야 할 것은 배열로 살아남는다.
+    expect(Array.isArray(capped.errors)).toBe(true);
+    expect((capped.errors as unknown[]).length).toBeGreaterThan(0);
+    expect(Array.isArray(capped.needsReviewDetail)).toBe(true);
+    expect((capped.needsReviewDetail as unknown[]).length).toBeGreaterThan(0);
+    // ⚠️ 비운 자리도 **타입은 유지**한다 — 문자열로 바꾸면 `rows.map()` 쓰는 소비처가
+    // 그 자리에서 터진다(단언이 보호 필드만 보면 이 회귀를 못 잡는다 — 변이로 겪었다).
+    expect(Array.isArray(capped.debugRows)).toBe(true);
+    expect((capped.debugRows as unknown[]).length).toBe(0);
+  });
+
   it("요약 스칼라만으로 넘치면 줄이지 않고 넘쳤다는 사실만 남긴다", () => {
     // 판정 근거를 줄이느니 봉투를 넘긴다 — 다만 조용히 넘기지는 않는다.
     const scalarsOnly = Object.fromEntries([
