@@ -279,9 +279,27 @@ export function capDetailsForLog(details: unknown): unknown {
 
   for (let round = 0; round < MAX_TRIM_ROUNDS && size(out) > workingCap; round += 1) {
     const candidates: Shrinkable[] = [];
-    collectShrinkables(out, "", candidates, lowRankFloorsRelaxed ? 0 : MIN_KEPT_CHARS);
+    // ⚠️ **주 루프의 문자열 문턱은 언제나 `MIN_KEPT_CHARS` 다 — 포기했다고 0 으로 낮추지
+    // 말 것.** 낮추면 `값1` 같은 **두어 글자짜리 문자열까지 전부 후보**가 되고, 순위 0 이라
+    // 정렬에서 맨 앞에 선다. 자리마다 한 회차씩 먹으므로 잡다한 필드가 수십 개만 있어도
+    // 회차 예산이 거기서 끝나고, 정작 순위 높은 자리는 큰 채로 남아 **종전 구현에서는
+    // 상한 안에 들던 페이로드가 넘친다**(합성 표본 400개 차분 실측 12건, 예: 3,767자 →
+    // 6,799자). 하한 아래 문자열은 **아래 일괄 포기가 이미 처리했다** — 여기서 다시
+    // 훑을 이유가 없다.
+    collectShrinkables(out, "", candidates, MIN_KEPT_CHARS);
     candidates.sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : size(readAt(b)) - size(readAt(a))));
-    const target = candidates.find((c) => !exhausted.has(c.path));
+    // ⚠️ **이미 하한에 닿은 자리를 고르지 않는다.** 종전엔 그런 자리도 한 번 골라 보고
+    // "진전 없음"을 확인한 뒤에야 소진 처리했는데, 그 확인에 **자리마다 회차 하나**가
+    // 든다. 잡다한 배열이 열 개만 있어도 회차 예산의 4분의 1이 아무것도 못 줄이고
+    // 사라지고, 그만큼 순위 높은 자리에 닿기 전에 예산이 끝난다(실측 트레이스: 배열
+    // 11개가 회차 10개를 그렇게 태웠다). 줄일 수 있는지는 값만 보면 바로 안다.
+    const canShrink = (c: Shrinkable) => {
+      const value = readAt(c);
+      const relaxedHere = lowRankFloorsRelaxed && c.rank === 0;
+      if (Array.isArray(value)) return value.length > (relaxedHere ? 0 : MIN_KEPT_ITEMS);
+      return typeof value === "string" && value.length > (relaxedHere ? 0 : MIN_KEPT_CHARS);
+    };
+    let target = candidates.find((c) => !exhausted.has(c.path) && canShrink(c));
     if (!target) break;
 
     // ⚠️ **회차가 바닥나기 전에도 반드시 한 번은 내놓는다.** 순위 상승은 "값 낮은 쪽을
@@ -309,9 +327,13 @@ export function capDetailsForLog(details: unknown): unknown {
       lowRankFloorsRelaxed = true;
       const lowRankSites: Shrinkable[] = [];
       collectShrinkables(out, "", lowRankSites, 0);
+      // 🪤 비교자 안에서 `size()` 를 부르지 말 것 — 정렬은 비교를 O(n log n) 번 하는데
+      // 그때마다 **페이로드 전체를 다시 직렬화**한다. 길이를 미리 재서 그 수로 정렬한다.
       const lowRankStrings = lowRankSites
         .filter((c) => c.rank === 0 && typeof readAt(c) === "string")
-        .sort((a, b) => size(readAt(b)) - size(readAt(a)));
+        .map((c) => ({ site: c, len: (readAt(c) as string).length }))
+        .sort((a, b) => b.len - a.len)
+        .map((x) => x.site);
       for (const site of lowRankStrings) {
         if (size(out) <= workingCap) break;
         const original = readAt(site) as string;
@@ -321,8 +343,79 @@ export function capDetailsForLog(details: unknown): unknown {
           note(site.path, original.length - kept, "chars");
         }
       }
-      for (const c of candidates) if (c.rank === 0) exhausted.delete(c.path);
-      continue;
+      // 값 낮은 **배열**의 개수 하한도 같은 자리에서 내놓는다.
+      // ⚠️ **이것을 주 루프에 맡기지 말 것(= `exhausted` 를 비워 다시 태우지 말 것).**
+      // 배열 하나를 비우는 데 회차 하나가 드는데, 잡다한 배열은 열 개 스무 개씩 있고
+      // 한 번 비워 봐야 십수 자밖에 안 준다. 실측(합성 seed): 배열 11개를 되돌렸더니
+      // **회차 40개 중 22개**를 거기서 태우고 154자를 벌었으며, 정작 요약·진단은 손도
+      // 못 댄 채 예산이 끝나 **베이스에서는 상한 안에 들던 페이로드가 넘쳤다**(400개
+      // 표본 중 12건). 회차를 쓰지 않는 이 자리에서 한 번에 비운다.
+      // 배열을 비우면 그 안쪽 자리의 부모 참조가 끊기므로 **매번 다시 모아** 고른다
+      // (끊긴 자리에 써 봐야 결과에 반영되지 않는다 — 이 파일 위쪽의 같은 경고).
+      // ⚠️ 넘칠 때만 모으고 정렬한다 — 문자열만으로 이미 상한 안에 들었으면 이 아래는
+      // 통째로 헛일이고, 정렬 자체가 싸지 않다(위 🪤).
+      const lowRankArrays: Shrinkable[] = [];
+      if (size(out) > workingCap) {
+        const arraySites: Shrinkable[] = [];
+        collectShrinkables(out, "", arraySites, MIN_KEPT_CHARS);
+        lowRankArrays.push(
+          ...arraySites
+            .filter((c) => c.rank === 0 && Array.isArray(readAt(c)))
+            .map((c) => ({ site: c, bulk: size(readAt(c)) }))
+            .sort((a, b) => b.bulk - a.bulk)
+            .map((x) => x.site),
+        );
+      }
+      for (const site of lowRankArrays) {
+        if (size(out) <= workingCap) break;
+        // 🪤 큰 것부터 비우므로 **바깥 배열을 먼저 비우면 그 안쪽 자리는 떨어져 나간다.**
+        // 떨어진 자리에 써 봐야 결과에 반영되지 않으니(파일 위쪽의 같은 경고) 쓰기 직전에
+        // 값을 다시 읽어 살아 있는 자리만 손댄다 — 목록을 매번 다시 모으는 것보다 싸다.
+        const held = readAt(site);
+        if (!Array.isArray(held) || held.length === 0) continue;
+        writeAt(site, []);
+        note(site.path, held.length, "items");
+      }
+
+      // ⚠️ **이 회차를 버리지 않는다 — 같은 회차에서 다시 고른다.** 종전엔 여기서
+      // `continue` 했는데, 내놓을 문자열이 없는 모양(순위 0 문자열이 아예 없고 순위 1
+      // 후보만 남은 경우)에서는 **아무것도 바꾸지 않은 채 회차만 태웠다.** 그 한 회차가
+      // 모자라 순위 높은 배열을 한 번 덜 줄이게 되어, **종전 구현에서는 상한 안에 들던
+      // 페이로드가 넘쳤다**(합성 표본 400개 차분 실측: 12건이 그렇게 회귀했다).
+      // ⛔ 대신 그냥 아래로 흘려보내지도 말 것 — 방금 하한이 풀려 **더 값싼 자리가
+      // 생겼을 수 있는데** relax 이전에 고른 순위 높은 target 을 그대로 깎으면 순위가
+      // 뒤집힌다. 반드시 낮춘 문턱으로 **다시 모아 다시 고른다.**
+      if (size(out) <= workingCap) break;
+      const relaxedCandidates: Shrinkable[] = [];
+      collectShrinkables(out, "", relaxedCandidates, MIN_KEPT_CHARS);
+      relaxedCandidates.sort((a, b) =>
+        a.rank !== b.rank ? a.rank - b.rank : size(readAt(b)) - size(readAt(a)),
+      );
+      const next = relaxedCandidates.find((c) => !exhausted.has(c.path) && canShrink(c));
+      if (!next) break;
+      target = next;
+    }
+
+    // ⚠️ **컨테이너는 자기 내용물보다 언제나 크다 — 크기순만 쓰면 원소가 영영 안 걸린다.**
+    // 순위를 부모에서 물려받게 한 뒤로 `errors` 와 `errors[0]` 이 같은 순위가 되는데,
+    // 배열 크기 = 원소들의 합이라 정렬은 **항상 배열을 먼저** 집는다. 그러면 거대한 원소
+    // 하나 때문에 배열이 깎여 **멀쩡한 짧은 진단이 통째로 사라지고**(실측:
+    // `["거대한 사유…", "네트워크 끊김", "인증 만료"]` 에서 뒤 둘이 없어졌다) 정작 덩치는
+    // 그 원소에 남아 있어 크기도 거의 안 준다.
+    // 그래서 **덩치의 대부분이 원소 하나에 몰려 있을 때만** 그 원소로 겨냥을 옮긴다.
+    // ⛔ 깊이를 무조건 우선하는 규칙으로 바꾸지 말 것 — 얕고 큰 배열 하나보다 깊고 작은
+    // 후보가 수십 개인 모양(확인필요 목록의 `reasons` 60개)에서 회차 예산이 그 수십 개에
+    // 다 소진돼 배열은 손도 못 댄다(실측: 계약 2건이 그렇게 깨졌다).
+    const holder = readAt(target);
+    if (Array.isArray(holder)) {
+      const dominant = candidates.find(
+        (c) =>
+          c !== target &&
+          !exhausted.has(c.path) &&
+          c.parent === holder &&
+          size(readAt(c)) * 2 > size(holder),
+      );
+      if (dominant) target = dominant;
     }
 
     const relaxed = lowRankFloorsRelaxed && target.rank === 0;
