@@ -330,11 +330,15 @@ export function capDetailsForLog(details: unknown): unknown {
       const lowRankSites: Shrinkable[] = [];
       collectShrinkables(out, "", lowRankSites, 0);
       // 🪤 비교자 안에서 `size()` 를 부르지 말 것 — 정렬은 비교를 O(n log n) 번 하는데
-      // 그때마다 **페이로드 전체를 다시 직렬화**한다. 길이를 미리 재서 그 수로 정렬한다.
+      // 그때마다 다시 직렬화한다. 후보마다 **한 번만** 재서 그 수로 정렬한다.
+      // ⚠️ 재는 것은 원문 길이가 아니라 **직렬화 크기**다. 예산을 먹는 것은 저장될 형태이고,
+      // 따옴표·역슬래시·줄바꿈이 많은 문자열은 원문보다 훨씬 크게 저장된다(`"` 900자 →
+      // 1,802자). 원문 길이로 재면 더 작은 쪽을 먼저 희생한다. 주 루프와 아래 배열 쪽이
+      // 이미 직렬화 크기로 재므로 여기만 다르면 같은 정책이 자리마다 갈린다.
       const lowRankStrings = lowRankSites
         .filter((c) => c.rank === 0 && typeof readAt(c) === "string")
-        .map((c) => ({ site: c, len: (readAt(c) as string).length }))
-        .sort((a, b) => b.len - a.len)
+        .map((c) => ({ site: c, bulk: size(readAt(c)) }))
+        .sort((a, b) => b.bulk - a.bulk)
         .map((x) => x.site);
       for (const site of lowRankStrings) {
         if (size(out) <= workingCap) break;
