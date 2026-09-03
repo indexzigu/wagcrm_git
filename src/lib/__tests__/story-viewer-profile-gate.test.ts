@@ -388,29 +388,27 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
     expect(out[0].error).not.toContain("읽기 실패");
   }, 20_000);
 
-  it("셀러가 늘어도 전원의 사유가 예산 안에 함께 들어간다(뒤쪽이 사라지지 않게)", async () => {
+  it("현재 셀러 규모의 전원 실패 회차가 이력 저장 상한 안에 들어간다", async () => {
     const c = clock();
-    const many = Array.from({ length: 10 }, (_, i) => `seller${i}`);
-    const out = await fetchStoriesForHandles(many, {
+    // 프로덕션 현재 규모(3명). 사유를 자르지 않기로 한 근거가 이 여유다 — 여기가 빨강이 되면
+    // 자를 자리를 찾을 게 아니라 **상한이 실제로 걸리는 계층**에서 다뤄야 한다.
+    const out = await fetchStoriesForHandles(["a", "b", "c"], {
       launch: async () =>
         makeCtx({
           resultsRender: false,
-          profileResponse: { status: 200, body: "{}" },
+          profileResponse: { status: 200, body: PROFILE_BODY_SHAPE_0829 },
           pageState: { title: "x".repeat(300), bodyText: "y".repeat(900) },
         }),
       now: c.now,
       sleep: c.sleep,
     });
 
-    // ① 아무도 빠지지 않는다 — 뒤쪽 핸들이 통째로 사라지는 것이 막으려는 실패 모드다.
-    expect(out).toHaveLength(10);
+    expect(out).toHaveLength(3);
+    // 아무도 빠지지 않고, 전원의 사유가 온전히 남는다.
     expect(out.every((r) => (r.error ?? "").length > 0)).toBe(true);
-    // ② 합계가 저장 상한(4000) 안에 든다.
     const total = out.reduce((sum, r) => sum + (r.error ?? "").length, 0);
     expect(total).toBeLessThan(4_000);
-    // ③ 잘렸다면 그 사실이 드러난다 — 조용한 절단이 이 사고의 정확한 지점이었다.
-    expect(out[0].error).toContain("자 잘림");
-  }, 20_000);
+  });
 
   it("화면 제목이 길어도 상한까지만 싣는다(이력 저장 예산 보호)", async () => {
     const c = clock();

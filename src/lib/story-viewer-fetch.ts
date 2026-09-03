@@ -7,6 +7,7 @@
 //  - 로컬(러너/dev): playwright-core 가 ms-playwright 캐시 브라우저를 자동 탐색
 // ⚠ Vercel 데이터센터 IP는 뷰어 Cloudflare에 막힐 수 있음(미검증 리스크) — 그때 수동 경로가 보조.
 import type { BrowserContext, Page } from "playwright-core";
+import { raceWithTimeout } from "./mobile-order-refresh";
 
 /** 시도할 뷰어들 — 첫 성공에서 멈춘다(하나 죽어도 다음으로 폴백). storiesig.info 계열이 STORIES 버튼→
  *  /api/v1/instagram/stories POST(서명 포함) 흐름으로 검증됨. selector/흐름이 다르면 여기에 추가. */
@@ -136,11 +137,13 @@ function foldFalseFlags(value: unknown): unknown {
   let folded = 0;
   for (const [key, v] of Object.entries(value)) {
     if (v === false) folded += 1;
-    else kept[key] = v;
+    // 남기는 값도 계속 걷는다 — 노이즈 키가 늘면 그 안에 중첩 노이즈가 있을 수 있다.
+    else kept[key] = stripProfileNoise(v);
   }
-  if (folded === 0) return value;
+  if (folded === 0) return kept;
   if (Object.keys(kept).length === 0) return FOLDED; // 전부 거짓 — 통째로 접는다
-  return { ...kept, [FOLDED]: folded };
+  // 원본에 이미 접기 표시와 같은 키가 있으면 덮지 않는다(개수를 잃는 편이 실데이터를 잃는 것보다 낫다).
+  return FOLDED in kept ? kept : { ...kept, [FOLDED]: folded };
 }
 
 /**
@@ -180,32 +183,24 @@ const PAGE_STATE_PREVIEW_CHARS = 200;
 /** 화면 제목 상한 — 제목은 짧은 게 정상이고, 길면 그 자체가 비정상 신호다(예산도 지킨다). */
 const PAGE_TITLE_PREVIEW_CHARS = 80;
 
-/** 화면 상태 읽기의 상한 — 이미 실패한 경로라 여기서 더 기다리면 조회 예산만 먹는다. */
-const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
-
 /**
- * 상한 안에 못 끝나면 null 로 접는다.
+ * 화면 상태 읽기의 **바깥** 상한 — 호출이 아예 안 돌아올 때를 덮는 안전망이다.
  *
  * ⚠️ **`page.title()` 은 Playwright 가 타임아웃 인자를 아예 받지 않는다**(`title(): Promise<string>`).
  * `setDefaultTimeout` 으로도 해결되지 않는다 — 그 기본값은 **인자를 받는 호출에만** 적용되므로
- * `title()` 은 어차피 걸리지 않는다. 상한을 걸 자리가 밖뿐이라 여기서 건다.
+ * `title()` 은 어차피 걸리지 않는다. 상한을 걸 자리가 밖뿐이라 밖에서 건다.
  * 이 보호가 없으면 **이미 깨진 페이지**(차단 챌린지·닫히지 않은 다이얼로그·single-process 크래시)
  * 에서 `title()` 이 영영 안 돌아오고, `driveViewer` 가 끝나지 않아 조회 예산·`maxDuration` 을
  * 넘겨 **성공한 핸들의 스토리까지 통째로 유실**된다(이 파일이 예산 기계를 만든 이유 그 자체).
  */
-type Deadline<T> = { timedOut: false; value: T } | { timedOut: true };
+const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
 
-function withDeadline<T>(work: Promise<T>, ms: number): Promise<Deadline<T>> {
-  // 진 쪽이 나중에 거부해도 unhandled rejection 으로 새지 않게 미리 삼킨다.
-  work.catch(() => {});
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const guard = new Promise<{ timedOut: true }>((resolve) => {
-    timer = setTimeout(() => resolve({ timedOut: true }), ms);
-  });
-  return Promise.race([work.then((value) => ({ timedOut: false as const, value })), guard]).finally(() =>
-    clearTimeout(timer),
-  );
-}
+/**
+ * `textContent` **자신에게** 거는 상한 — 바깥보다 **짧아야 한다.**
+ * 같은 값이면 어느 쪽이 이길지 비결정이라 "(시한 초과)"와 "(읽기 실패)"가 회차마다 뒤바뀐다.
+ * 안쪽은 작업 자체를 중단하고 바깥은 기다림만 끊으므로, 안쪽이 먼저 이겨야 사유가 정확해진다.
+ */
+const PAGE_TEXT_TIMEOUT_MS = 1_500;
 
 /**
  * 화면에서 한 조각을 읽고, 못 읽었으면 **왜 못 읽었는지**를 돌려준다.
@@ -213,10 +208,16 @@ function withDeadline<T>(work: Promise<T>, ms: number): Promise<Deadline<T>> {
  * ⚠️ 결과를 `null` 하나로 뭉개지 않는다. `page.textContent()` 는 요소가 없을 때 정상적으로
  * `null` 을 주므로, `null` 을 실패로도 쓰면 **"시한 초과"와 "그런 요소가 없음"이 같은 얼굴**이
  * 된다 — 원인을 가리려고 만든 함수가 스스로 원인을 흐리는 셈이다.
+ *
+ * 시한 처리는 `raceWithTimeout`(mobile-order-refresh)을 그대로 쓴다. 같은 모양을 또 만들면
+ * 판별 유니언까지 중복되고, 그 파일은 import 가 없는 순수 모듈이라 딸려오는 것도 없다.
  */
 async function readPagePart(work: () => Promise<string | null>): Promise<string> {
   try {
-    const outcome = await withDeadline(work(), PAGE_STATE_READ_TIMEOUT_MS);
+    const pending = work();
+    // 진 쪽이 나중에 거부해도 unhandled rejection 으로 새지 않게 미리 삼킨다.
+    pending.catch(() => {});
+    const outcome = await raceWithTimeout(pending, PAGE_STATE_READ_TIMEOUT_MS);
     if (outcome.timedOut) return "(시한 초과)";
     return outcome.value ?? "(없음)";
   } catch {
@@ -235,13 +236,11 @@ async function readPagePart(work: () => Promise<string | null>): Promise<string>
  * ⚠️ **이 함수는 throw 하지도, 매달리지도 않는다.** 이미 깨진 페이지에서 읽는 것이라 예외와
  * **멈춤(hang)** 둘 다 가능한데, 어느 쪽이든 원래 실패 사유를 잃는다 — 예외는 사유를 덮어써
  * **진단이 진단을 잡아먹고**, 멈춤은 그보다 나빠서 실행 전체를 예산 밖으로 끌고 간다.
- * 그래서 예외는 try/catch 로, 멈춤은 `withDeadline` 으로 각각 막는다(둘 다 필요하다).
+ * 그래서 예외는 try/catch 로, 멈춤은 `raceWithTimeout` 으로 각각 막는다(둘 다 필요하다).
  */
 async function describePageState(page: Page): Promise<string> {
   const title = await readPagePart(() => page.title());
-  // textContent 는 자체 타임아웃도 받는다 — 밖의 상한과 겹치지만, 안쪽은 **작업 자체를 중단**하고
-  // 바깥은 **기다림만 끊는다**. 둘은 다른 일을 하므로 함께 둔다.
-  const bodyText = await readPagePart(() => page.textContent("body", { timeout: PAGE_STATE_READ_TIMEOUT_MS }));
+  const bodyText = await readPagePart(() => page.textContent("body", { timeout: PAGE_TEXT_TIMEOUT_MS }));
   return `화면 제목:${previewText(title, PAGE_TITLE_PREVIEW_CHARS)} 화면:${previewText(bodyText, PAGE_STATE_PREVIEW_CHARS)}`;
 }
 
@@ -346,31 +345,20 @@ const MAX_ATTEMPTS = 2;
 const MIN_RETRY_GAP_MS = 20_000;
 
 /**
- * 전 핸들의 사유가 **함께** 들어가야 할 예산 — `SystemTaskLog.details` 상한 4,000자에서
- * 요약 필드(핸들 목록·집계 수치) 몫을 남긴 값이다.
- */
-const ERROR_BUDGET_CHARS = 3_000;
-
-/** 사유 하나가 최소한 지킬 길이 — 핸들이 아주 많아도 실패 지점 정도는 읽혀야 한다. */
-const MIN_ERROR_CHARS = 160;
-
-/**
- * 사유를 핸들 수로 나눠 담는다 — 전원이 함께 예산 안에 들어가게.
+ * ⚠️ **사유 총량을 여기서 재려다 실패했다(2026-09-03, 리뷰 3회차에 걷어냄).**
  *
- * ⚠️ **예산은 실행 하나에 걸리는데 증거는 핸들마다 쌓인다.** 상한이 없으면 앞쪽 몇 명이 예산을
- * 다 먹고 **뒤쪽 핸들의 사유가 통째로 사라진다**(저장부가 페이로드 전체를 자르기 때문) — 그건
- * 이 진단 보강이 없애려던 바로 그 증상이 저장 단계에서 되살아나는 것이다.
- * 실측(2026-09-03): 사유 1건이 최대 ≈430자라 **셀러 6명이면 4,000자를 넘긴다**(3명은 ≈2,860자).
+ * 핸들 수로 예산을 나눠 담는 함수를 뒀었는데, 세 리뷰어가 각각 같은 결론에 도달했다:
+ * 진짜 상한은 **다른 모듈**(`system-task-status.ts` 의 4,000자)에서, **JSON 직렬화 뒤**에,
+ * 또 **다른 모듈**(`story-capture.ts`)이 `fetch <핸들>: ` 접두를 붙인 다음에 걸린다. 세 겹
+ * 떨어진 자리에서 문자열을 조립하며 그 크기를 맞히려 했으니 산수가 두 회차 내내 틀렸다.
  *
- * ⚠️ 조용히 자르지 않는다 — 잘렸다는 사실과 양을 함께 남긴다(이 파일의 사고가 그 지점이었다).
+ * 게다가 **오늘을 나쁘게 만들었다** — 셀러 3명이면 몫이 1,000자인데 실제 사유가 ≈1,036자라
+ * 4,000자 상한에 여유가 넘치는데도 잘라 냈다. 그러면서 21명부터는 상한을 못 지켰다.
+ *
+ * 그래서 자르지 않는다. 현재 규모(3명, 전원 실패 회차 ≈2,200자)는 상한 안이고, 넘칠 때는
+ * 저장부가 자르되 **`truncated: true` 를 함께 남긴다**(무음 절단이 아니다). 셀러가 늘어
+ * 이 여유가 사라지면, 고칠 자리는 여기가 아니라 **상한이 실제로 걸리는 그 계층**이다.
  */
-function fitErrorToBudget(error: string, handleCount: number): string {
-  const share = Math.floor(ERROR_BUDGET_CHARS / Math.max(1, handleCount));
-  const max = Math.max(MIN_ERROR_CHARS, share);
-  if (error.length <= max) return error;
-  // 문구에 em-dash 를 쓰지 않는다(`ui-copy-em-dash.contract.test.ts` 가 강제한다).
-  return `${error.slice(0, max)}…[${error.length - max}자 잘림, 전문은 SystemTaskLog.details]`;
-}
 
 /** 한 핸들을 한 번 시도한다 — 뷰어 목록을 순서대로 폴백. 성공 시 items, 실패 시 error 문자열. */
 async function attemptHandle(
@@ -480,7 +468,5 @@ export async function fetchStoriesForHandles(
     await ctx.close();
   }
 
-  return handles
-    .map((h) => results.get(h) ?? { handle: h, items: [], error: "결과 누락(내부 오류)" })
-    .map((r) => (r.error ? { ...r, error: fitErrorToBudget(r.error, handles.length) } : r));
+  return handles.map((h) => results.get(h) ?? { handle: h, items: [], error: "결과 누락(내부 오류)" });
 }
