@@ -6,13 +6,24 @@
  * disposable local PostgreSQL (for example a throw-away `postgres:17` container on a
  * random loopback port). The test creates the worker role, applies every Prisma
  * migration (so the grant block of the AgentJob migration runs for real), then probes
- * the role. It never reads the repository `.env` and refuses URLs that look like the
- * self-hosted production stack.
+ * the role.
+ *
+ * Two rules keep this off any database that matters. A role left behind here does not
+ * stay inert: the AgentJob migration's `IF EXISTS` grant block hands any surviving
+ * `wag_agent_worker` real privileges the next time it runs.
+ *   1. `assertDisposablePostgresUrl` refuses production endpoints. It reads the
+ *      repository `.env` to learn which host:port is off-limits — never to connect,
+ *      and never echoing the value.
+ *   2. The role must not already exist. This test creates it and drops exactly what
+ *      it created. It never adopts, alters or drops a pre-existing role: on the
+ *      self-hosted stack that role is the live worker's login, so taking it over
+ *      would rotate the running worker's password.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import { assertDisposablePostgresUrl } from "./support/disposable-postgres";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import type { AgentJobPayload } from "@/lib/agent-worker/contracts";
 
@@ -31,17 +42,6 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/lib/prisma-client", () => ({
   isSqliteDatabaseUrl: () => false,
 }));
-
-function assertDisposable(url: string): void {
-  const parsed = new URL(url);
-  const host = parsed.hostname;
-  if (host !== "127.0.0.1" && host !== "localhost") {
-    throw new Error("privilege test refuses non-loopback databases");
-  }
-  if (parsed.port === "55432" || parsed.port === "5432" || parsed.port === "6543") {
-    throw new Error("privilege test refuses the self-hosted production ports (55432/5432/6543)");
-  }
-}
 
 function workerUrlFrom(url: string, password: string): string {
   const parsed = new URL(url);
@@ -87,21 +87,52 @@ function jobFor(operation: AgentJobPayload["operation"], input: AgentJobPayload[
 const python = { decideRoute: async () => ({ status: "ACCEPTED", route: "python", model: "python", reason: "deterministic" }) as const };
 
 describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQL)", () => {
+  // base64url, so the literal below carries no quote to escape.
   const password = randomBytes(18).toString("base64url");
   let admin: PrismaClient;
+  let createdRole = false;
 
   beforeAll(async () => {
-    assertDisposable(adminUrl);
+    await assertDisposablePostgresUrl(adminUrl);
     admin = new PrismaClient({ datasourceUrl: adminUrl });
-    await admin.$executeRawUnsafe(
-      `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'wag_agent_worker') THEN CREATE ROLE wag_agent_worker LOGIN; END IF; END $$;`,
+
+    // A pre-existing role is refused rather than adopted: the test cannot tell a
+    // crashed earlier run from a database whose `wag_agent_worker` is somebody's live
+    // login, and the difference decides whether dropping it in afterAll is cleanup or
+    // an outage. Refusing keeps "drop only what this run created" structural.
+    const existing = await admin.$queryRawUnsafe<Array<{ present: number }>>(
+      `SELECT 1 AS present FROM pg_roles WHERE rolname = 'wag_agent_worker'`,
     );
-    await admin.$executeRawUnsafe(`ALTER ROLE wag_agent_worker WITH LOGIN PASSWORD '${password}'`);
+    if (existing.length > 0) {
+      throw new Error(
+        "privilege test refuses a database that already has a wag_agent_worker role — " +
+          "use a fresh throw-away container, or drop the leftover role there by hand",
+      );
+    }
+    await admin.$executeRawUnsafe(`CREATE ROLE wag_agent_worker LOGIN PASSWORD '${password}'`);
+    createdRole = true;
+
     execFileSync("./node_modules/.bin/prisma", ["migrate", "deploy", "--schema", "prisma/schema.prisma"], {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: adminUrl, DIRECT_URL: adminUrl },
       stdio: "pipe",
     });
+    // The AgentJob migration grants this role its privileges from an `IF EXISTS` block,
+    // so the grants only land when that migration runs while the role exists. On a
+    // database whose migrations were already applied, `migrate deploy` is a no-op and
+    // the freshly created role ends up with nothing — every probe below would then
+    // fail as "permission denied" and read like a privilege regression. Say so here
+    // instead.
+    const [{ granted }] = await admin.$queryRawUnsafe<Array<{ granted: boolean }>>(
+      `SELECT has_table_privilege('wag_agent_worker', '"AgentJob"', 'SELECT') AS granted`,
+    );
+    if (!granted) {
+      throw new Error(
+        "the AgentJob migration's grant block did not run for the freshly created role — " +
+          "this database already had the migrations applied; use a fresh throw-away container",
+      );
+    }
+
     worker = new PrismaClient({ datasourceUrl: workerUrlFrom(adminUrl, password) });
 
     // Seed (admin) one partner/seller/deal/campaign for the executor run.
@@ -121,7 +152,24 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
 
   afterAll(async () => {
     await worker?.$disconnect();
-    await admin?.$disconnect();
+    worker = undefined;
+    try {
+      if (!createdRole) return;
+      // `prisma migrate deploy` granted this role privileges, and PostgreSQL refuses
+      // to DROP a role while grants still reference it. DROP OWNED BY revokes them
+      // within this database; the role owns no objects, so nothing else is destroyed.
+      await admin.$executeRawUnsafe(`DROP OWNED BY wag_agent_worker`);
+      await admin.$executeRawUnsafe(`DROP ROLE wag_agent_worker`);
+      createdRole = false;
+    } catch (error) {
+      throw new Error(
+        `failed to drop the wag_agent_worker role this test created — it is still on the target database, ` +
+          `drop it by hand (DROP OWNED BY wag_agent_worker; DROP ROLE wag_agent_worker): ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      await admin?.$disconnect();
+    }
   });
 
   it("can SELECT the granted read scope and sees rows the app wrote (positive control)", async () => {
