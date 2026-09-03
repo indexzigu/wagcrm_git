@@ -37,63 +37,131 @@ const DETAILS_MAX_CHARS = 4_000;
 /** 줄인 배열에 최소한 남길 항목 수 — 한 건도 없으면 "무엇이 실패했나"를 아예 못 읽는다. */
 const MIN_KEPT_ITEMS = 1;
 
-/** 줄인 문자열에 최소한 남길 길이 — 실패 계열을 가릴 만큼은 남긴다. */
+/** 줄인 문자열에 최소한 남길 길이 — 실패 계열(차단·타임아웃·모양 변경)을 가릴 만큼은 남긴다. */
 const MIN_KEPT_CHARS = 200;
 
-/** `truncated` 표시가 차지할 몫 — 줄인 뒤 그 표시를 얹다가 다시 넘치지 않게 미리 뺀다. */
-const TRUNCATION_SLACK_CHARS = 120;
+/**
+ * 저장부가 페이로드를 줄였다는 표시.
+ *
+ * ⚠️ 이름을 `truncated` 로 두지 않는다 — 잡이 자기 뜻으로 그 이름을 이미 쓸 수 있고
+ * (`scan.truncated` 등), 그러면 저장부가 남의 값을 조용히 덮어쓴다.
+ */
+const TRIMMED_MARKER = "detailsTrimmed";
+
+/**
+ * 이 잡들의 화면은 이 짝 필드로 "다 못 보여준다"를 판단한다. 저장부가 목록을 깎았는데
+ * 이 표시를 안 세우면 **부분 목록이 전부인 것처럼** 보인다 — `system-task-needs-review.ts`
+ * 가 애초에 막으려던 오해가 그것이다.
+ */
+const CAPPED_FLAG_OF: Record<string, string> = {
+  needsReviewDetail: "needsReviewDetailCapped",
+};
+
+/**
+ * 마지막까지 지키는 요약 필드 — 판정의 근거라 다른 무엇을 다 줄인 뒤에야 손댄다.
+ * (그마저도 줄이면 표시를 남기므로 조용히 사라지지는 않는다.)
+ */
+const SUMMARY_KEYS = new Set(["ok", "failed", "failureReason", "error", "message", "lane"]);
+
+/** 줄일 수 있는 자리 하나 — 깊이에 상관없이 같은 줄에 세워 큰 것부터 처리한다. */
+type Shrinkable = { parent: Record<string, unknown>; key: string; path: string; summary: boolean };
+
+/** 페이로드 전체를 훑어 줄일 수 있는 자리를 모은다(배열·긴 문자열). 중첩도 같은 자격이다. */
+function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]): void {
+  if (node == null || typeof node !== "object" || Array.isArray(node)) return;
+  const obj = node as Record<string, unknown>;
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === TRIMMED_MARKER) continue;
+    const path = prefix ? `${prefix}.${key}` : key;
+    const summary = !prefix && SUMMARY_KEYS.has(key);
+    if (Array.isArray(value)) {
+      found.push({ parent: obj, key, path, summary });
+      for (const [i, item] of value.entries()) collectShrinkables(item, `${path}[${i}]`, found);
+    } else if (typeof value === "string" && value.length > MIN_KEPT_CHARS) {
+      found.push({ parent: obj, key, path, summary });
+    } else {
+      collectShrinkables(value, path, found);
+    }
+  }
+}
 
 /**
  * 이력에 남길 페이로드를 상한 안으로 줄인다(순수 함수 — DB 없이 검증 가능).
  *
- * ⚠️ **문자열을 자르지 않는다.** 종전 구현은 직렬화 결과를 상한 자리에서 싹둑 잘랐는데,
- * 그러면 ①남은 조각이 JSON 중간에서 끊겨 기계로 못 읽고 ②뒤쪽 **요약 필드(실패 여부·
- * 사유·집계)가 통째로 사라진다** — 사고를 판정할 때 가장 먼저 보는 값들이다.
+ * ⚠️ **문자열을 통째로 자르지 않는다.** 종전 구현은 직렬화 결과를 상한 자리에서 싹둑
+ * 잘랐는데, 그러면 ①남은 조각이 JSON 중간에서 끊겨 기계로 못 읽고 ②뒤쪽 **요약 필드
+ * (실패 여부·사유·집계)가 통째로 사라진다** — 판정할 때 가장 먼저 보는 값들이다.
  *
- * 덩치의 정체는 언제나 반복 항목 배열이므로 **큰 배열부터 뒤에서 잘라 낸다.** 요약 필드는
- * 손대지 않고, 몇 건을 덜어냈는지는 `truncated` 에 남긴다(무음 절단 금지).
+ * 줄일 수 있는 자리(배열·긴 문자열)를 **깊이에 상관없이 한 줄로 세워 큰 것부터** 줄인다.
+ * 중첩 배열도 같은 자격이다 — 한 겹 아래에 있다는 이유로 통째로 버리면 필요 이상을 잃는다.
+ * 요약 필드는 **맨 뒤로 미룬다**: 다른 것을 다 줄이고도 모자랄 때만 손댄다.
+ *
+ * ⚠️ **줄이지 못하는 모양이어도 조용히 넘기지 않는다.** 마지막에 그 사실을 표시로 남긴다.
  */
 export function capDetailsForLog(details: unknown): unknown {
   if (details == null || typeof details !== "object" || Array.isArray(details)) return details;
   const size = (value: unknown) => JSON.stringify(value)?.length ?? 0;
   if (size(details) <= DETAILS_MAX_CHARS) return details;
 
-  const out: Record<string, unknown> = { ...(details as Record<string, unknown>) };
-  const dropped: Record<string, number> = {};
-  // 큰 배열부터 줄인다 — 작은 것을 먼저 비워 봐야 상한에 닿지 못하고 정보만 잃는다.
-  const arrayKeys = Object.keys(out)
-    .filter((k) => Array.isArray(out[k]))
-    .sort((a, b) => size(out[b]) - size(out[a]));
+  // 원본을 건드리지 않도록 깊은 사본에서 작업한다(호출자가 같은 객체를 계속 쓴다).
+  const out = JSON.parse(JSON.stringify(details)) as Record<string, unknown>;
+  const trimmed: Record<string, number> = {};
+  // ⚠️ 표시를 **미리** 얹어 둔다. 다 줄인 뒤에 붙이면 그 표시의 무게 때문에 다시 상한을
+  // 넘는다(실측: 4,007자). 같은 객체를 계속 채우므로 `size(out)` 이 늘 표시까지 센다.
+  out[TRIMMED_MARKER] = trimmed;
 
-  for (const key of arrayKeys) {
+  const candidates: Shrinkable[] = [];
+  collectShrinkables(out, "", candidates);
+  // 요약은 맨 뒤, 그 안에서는 덩치 큰 것부터.
+  candidates.sort((a, b) => {
+    if (a.summary !== b.summary) return a.summary ? 1 : -1;
+    return size(b.parent[b.key]) - size(a.parent[a.key]);
+  });
+
+  for (const { parent, key, path } of candidates) {
     if (size(out) <= DETAILS_MAX_CHARS) break;
-    const items = out[key] as unknown[];
-    let kept = items.length;
-    while (kept > MIN_KEPT_ITEMS && size(out) > DETAILS_MAX_CHARS) {
-      kept -= 1;
-      out[key] = items.slice(0, kept);
-      out.truncated = { ...dropped, [key]: items.length - kept };
+    const value = parent[key];
+    // 표시에 들어갈 자리를 **줄이기 전에** 예약한다 — 줄인 뒤에 적으면 그 숫자의 무게로
+    // 다시 상한을 넘는다(실측).
+    trimmed[path] = Array.isArray(value) ? value.length : (value as string).length;
+
+    if (Array.isArray(value)) {
+      // 남길 개수는 이분 탐색으로 정한다 — 한 건씩 줄이며 매번 전체를 직렬화하면 항목이
+      // 많을 때 크론 쓰기 경로를 초 단위로 붙잡는다.
+      let low = MIN_KEPT_ITEMS;
+      let high = value.length;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        parent[key] = value.slice(0, mid);
+        if (size(out) <= DETAILS_MAX_CHARS) low = mid;
+        else high = mid - 1;
+      }
+      parent[key] = value.slice(0, low);
+      if (low < value.length) {
+        trimmed[path] = value.length - low;
+        const cappedFlag = CAPPED_FLAG_OF[key];
+        if (cappedFlag) parent[cappedFlag] = true;
+      } else {
+        delete trimmed[path];
+      }
+      continue;
     }
-    if (kept < items.length) dropped[key] = items.length - kept;
+
+    const original = value as string;
+    const kept = Math.max(MIN_KEPT_CHARS, original.length - (size(out) - DETAILS_MAX_CHARS));
+    if (kept >= original.length) {
+      delete trimmed[path];
+      continue;
+    }
+    parent[key] = original.slice(0, kept);
+    trimmed[path] = original.length - kept;
   }
 
-  // 배열을 다 줄여도 넘치면 덩치가 긴 문자열 하나인 경우다(설명·본문 필드). 같은 원칙으로
-  // 큰 것부터 줄이되, 요약 필드는 여기서도 손대지 않는다.
-  const stringKeys = Object.keys(out)
-    .filter((k) => typeof out[k] === "string" && (out[k] as string).length > MIN_KEPT_CHARS)
-    .sort((a, b) => (out[b] as string).length - (out[a] as string).length);
-
-  for (const key of stringKeys) {
-    if (size(out) <= DETAILS_MAX_CHARS) break;
-    const original = (details as Record<string, unknown>)[key] as string;
-    const over = size(out) - DETAILS_MAX_CHARS;
-    const kept = Math.max(MIN_KEPT_CHARS, original.length - over - TRUNCATION_SLACK_CHARS);
-    if (kept >= original.length) continue;
-    out[key] = original.slice(0, kept);
-    dropped[key] = original.length - kept;
-  }
-
-  if (Object.keys(dropped).length > 0) out.truncated = dropped;
+  // 여기까지 와서도 넘치면 줄일 수 있는 자리가 없다는 뜻이다(스칼라 요약만으로 초과).
+  // 그건 줄여서는 안 된다 — 요약이 곧 판정 근거다. 넘쳤다는 사실만 남긴다.
+  if (size(out) > DETAILS_MAX_CHARS) trimmed.overCap = size(out);
+  // 아무것도 줄이지 않았으면 표시를 남기지 않는다(위에서 미리 얹어 둔 자리를 걷는다).
+  if (Object.keys(trimmed).length === 0) delete out[TRIMMED_MARKER];
   return out;
 }
 
@@ -122,9 +190,9 @@ async function readOutcomeBody(response: Response): Promise<CronOutcomeBody | nu
 
 /**
  * `details` 에 실행 소요시간을 얹는다. `durationMs` 는 항상 유한한 정수라 —
- * `DETAILS_MAX_CHARS` 절단이 막으려는 "핸들러가 임의로 큰 값을 돌려줘 이력 테이블이
- * 비대해지는" 위험을 재도입하지 않는다. 그래서 재절단 없이 그대로 얹는다(body 가 이미
- * truncated 상태여도 preview 는 그대로 두고 durationMs 만 추가).
+ * `DETAILS_MAX_CHARS` 상한이 막으려는 "핸들러가 임의로 큰 값을 돌려줘 이력 테이블이
+ * 비대해지는" 위험을 재도입하지 않는다. 그래서 여기서는 크기를 재지 않고 그대로 얹는다 —
+ * 상한은 이 결과를 받는 `capDetailsForLog` 가 건다(소요시간까지 포함해 총량이 보장된다).
  *
  * ⚠️ `details` 가 배열이면 병합하지 않고 `durationMs` 만 남긴다(배열 내용은 버려진다) —
  * 현재 크론 핸들러는 전부 `{ ok, ... }` 형태의 객체만 응답 본문으로 돌려주므로
