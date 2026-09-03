@@ -471,7 +471,7 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     // ①하한에 닿은 자리도 한 번 골라 보고 "진전 없음"을 확인해야 소진 처리됐고
     // ②하한을 포기한 뒤 그 자리들을 되돌려 **또 한 번씩** 골랐다. 자리마다 두 회차씩
     // 드는 셈이라 배열 스무 개면 예산이 거기서 끝나고, 정작 요약·진단은 손도 못 댄 채
-    // **상한을 넘긴 채로 저장된다.** 실측(이 픽스처): 4,447자 → 3,760자.
+    // **상한을 넘긴 채로 저장된다.** 실측(이 픽스처): 4,459자 → 3,772자.
     // 그래서 배열 비우기는 회차를 쓰지 않는 일괄 처리로 옮겼고, 하한에 닿은 자리는
     // 애초에 고르지 않는다.
     const input = Object.fromEntries([
@@ -493,6 +493,34 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
     // 그 대가로 진단 배열도 일부 깎이지만 전멸하지는 않는다.
     expect((capped.errors as string[]).length).toBeGreaterThan(0);
+  });
+
+  it("바깥 배열을 비울 때 안쪽 손실을 두 번 세지 않는다", () => {
+    // ⚠️ 배열을 비우면 그 **안쪽 자리는 떨어져 나가는데**, 후보 목록은 낡은 부모를 들고
+    // 있어 값을 다시 읽어도 살아 있는 것처럼 보인다. 거르지 않으면 이미 바깥에서 센
+    // 항목을 안쪽 이름으로 **한 번 더** 신고한다. 이 파일이 규탄하는 「숫자가 틀리면
+    // 없는 것보다 나쁘다」가 표시 자신에게 적용되는 자리다.
+    const input = {
+      failed: true,
+      failureReason: `사유: ${"가".repeat(3_400)}`,
+      errors: Array.from({ length: 40 }, (_, i) => `e${i}: ${"사유".repeat(20)}`),
+      misc: [Array.from({ length: 8 }, (_, i) => `m${i}`), Array.from({ length: 8 }, (_, i) => `n${i}`)],
+    };
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+    const marker = capped.detailsTrimmed as Record<string, number>;
+
+    // 바깥이 비워졌다(항목 2개를 잃었다고 신고한다).
+    expect(capped.misc).toEqual([]);
+    expect(marker.misc).toBe(2);
+    // ⚠️ 그리고 **결과에 없는 자리를 가리키지 않는다.** 바깥을 비우기 전에 안쪽을 줄인
+    // 기록이 남아 있으면, 읽는 사람은 `misc[0]` 을 찾으러 갔다가 못 찾는다. 그 손실은
+    // 바깥 한 줄이 이미 포함해 말하고 있다.
+    const insideMisc = Object.keys(marker).filter(
+      (path) => path.startsWith("misc[") || path.startsWith("misc."),
+    );
+    expect(insideMisc).toEqual([]);
   });
 
   it("보호 판정은 이름이 아니라 값이 배열인지를 본다", () => {
@@ -552,6 +580,24 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     // 대신 덩치를 진 원소가 줄어든다(줄이되 계열은 읽히게).
     expect(errors[0].length).toBeLessThan(items[0].length);
     expect(errors[0].startsWith("거대한 사유")).toBe(true);
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+  });
+
+  it("덩치가 한 겹 더 안쪽에 있어도 짧은 진단을 버리지 않는다", () => {
+    // ⚠️ 위 계약의 한 겹 아래 판이다. 덩치를 진 원소가 **또 배열**이면 그 배열은 항목이
+    // 하나뿐이라 하한에 잠겨 못 줄인다 — 거기서 멈추면 겨냥이 도로 바깥 배열로 돌아가
+    // 결국 배열을 깎고 짧은 진단이 사라진다. 줄일 수 있는 **가장 깊은** 자리까지
+    // 내려가야 한다(실측: 내려가지 않으면 3건이 1건이 됐다. 베이스는 3건을 지킨다).
+    const items = [[`거대한 사유: ${"가".repeat(6_000)}`], "네트워크 끊김", "인증 만료"];
+    const capped = capDetailsForLog({ failed: true, errors: items }) as Record<string, unknown>;
+
+    const errors = capped.errors as [string[], string, string];
+    expect(errors.length).toBe(items.length);
+    expect(errors[1]).toBe("네트워크 끊김");
+    expect(errors[2]).toBe("인증 만료");
+    // 안쪽 배열은 항목 수를 지키고, 그 안의 문자열만 줄어든다.
+    expect(errors[0]).toHaveLength(1);
+    expect(errors[0][0].length).toBeLessThan(6_000);
     expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
   });
 

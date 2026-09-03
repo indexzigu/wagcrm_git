@@ -137,9 +137,11 @@ function rankOf(key: string, prefix: string, parentRank: number): number {
 /**
  * 이 문자열을 후보로 셀지 — 남길 하한보다 길어야 줄일 여지가 있다.
  *
- * `lowRankStringFloor` 는 **순위 0 에만** 적용된다. 평시엔 `MIN_KEPT_CHARS` 라 이미
- * 하한까지 깎인 문자열은 후보에서 빠지고, 하한을 포기한 뒤엔 0 이라 그것들이 다시
- * 후보가 된다(안 그러면 포기를 선언해도 손댈 자리가 없다).
+ * `lowRankStringFloor` 는 **순위 0 에만** 적용된다. 주 루프는 언제나 `MIN_KEPT_CHARS`
+ * 를 넘기므로 하한까지 깎인 문자열은 후보에서 빠지고, **아래 일괄 포기만** 0 을 넘겨
+ * 그것들까지 훑는다(안 그러면 포기를 선언해도 손댈 자리가 없다).
+ * ⛔ 주 루프에서 0 을 쓰지 말 것 — 두어 글자짜리 문자열이 전부 후보가 되어 회차 예산을
+ * 먹는다(아래 주 루프의 같은 경고).
  */
 function isShrinkableString(value: unknown, rank: number, lowRankStringFloor: number): boolean {
   return typeof value === "string" && value.length > (rank === 0 ? lowRankStringFloor : MIN_KEPT_CHARS);
@@ -321,9 +323,9 @@ export function capDetailsForLog(details: unknown): unknown {
       // 다 소진돼 정작 순위 높은 자리는 손도 못 댄 채 최후 수단으로 넘어간다(실측: 4자
       // 짜리 문자열 300개가 40회차를 전부 먹고, 최후 수단이 진단 배열을 품은 부모를
       // 비웠다 — 고치려던 것을 고치는 과정에서 되사는 셈이다).
-      // 여기서 **문자열만** 다루는 것도 계약이다 — 배열을 줄이면 새 배열이 생겨 이
-      // 목록에 담긴 다른 자리의 부모 참조가 끊긴다(순위 0 배열의 하한은 다음 회차부터
-      // 평소 경로가 `keepItems = 0` 으로 처리한다).
+      // 문자열과 배열을 **따로** 훑는 것도 계약이다 — 배열을 줄이면 새 배열이 생겨 이
+      // 목록에 담긴 다른 자리의 부모 참조가 끊기므로, 문자열을 다 훑은 **뒤에** 배열을
+      // 손대고 배열 쪽은 자기 목록을 따로 모은다.
       lowRankFloorsRelaxed = true;
       const lowRankSites: Shrinkable[] = [];
       collectShrinkables(out, "", lowRankSites, 0);
@@ -366,15 +368,30 @@ export function capDetailsForLog(details: unknown): unknown {
             .map((x) => x.site),
         );
       }
+      // 🪤 큰 것부터 비우므로 **바깥 배열을 먼저 비우면 그 안쪽 자리는 떨어져 나간다.**
+      // ⚠️ 떨어진 자리를 값 재확인으로 거를 수 없다 — 참조가 같은 (낡은) 부모를 거치므로
+      // **언제나 살아 있는 것처럼 보인다.** 그대로 두면 쓰기는 결과에 반영되지 않으면서
+      // 표시에만 숫자가 남아, 바깥을 비울 때 이미 센 항목을 **이 회차에서 한 번 더
+      // 센다.** 그래서 비운 **경로 아래**는 건너뛴다.
+      // ℹ️ 앞선 회차가 안쪽을 줄이며 남긴 숫자까지 지우지는 못한다(그때는 실제 손실이
+      // 맞았고, 그 누적 보고는 베이스도 같다) — 여기서 막는 것은 **같은 회차의 중복**이다.
+      const emptiedPaths: string[] = [];
       for (const site of lowRankArrays) {
         if (size(out) <= workingCap) break;
-        // 🪤 큰 것부터 비우므로 **바깥 배열을 먼저 비우면 그 안쪽 자리는 떨어져 나간다.**
-        // 떨어진 자리에 써 봐야 결과에 반영되지 않으니(파일 위쪽의 같은 경고) 쓰기 직전에
-        // 값을 다시 읽어 살아 있는 자리만 손댄다 — 목록을 매번 다시 모으는 것보다 싸다.
+        if (emptiedPaths.some((prefix) => site.path.startsWith(prefix))) continue;
         const held = readAt(site);
         if (!Array.isArray(held) || held.length === 0) continue;
         writeAt(site, []);
+        // 이 자리를 비우면 **안쪽에서 앞서 줄인 몫은 이야기할 대상이 사라진다.** 남겨
+        // 두면 표시가 결과에 없는 경로(`misc[0]` 등)를 가리켜, 읽는 사람이 그 자리를
+        // 찾다가 못 찾는다. 바깥 한 줄로 합쳐 말한다.
+        for (const recorded of Object.keys(trimmed)) {
+          if (recorded.startsWith(`${site.path}[`) || recorded.startsWith(`${site.path}.`)) {
+            delete trimmed[recorded];
+          }
+        }
         note(site.path, held.length, "items");
+        emptiedPaths.push(`${site.path}[`, `${site.path}.`);
       }
 
       // ⚠️ **이 회차를 버리지 않는다 — 같은 회차에서 다시 고른다.** 종전엔 여기서
@@ -406,21 +423,30 @@ export function capDetailsForLog(details: unknown): unknown {
     // ⛔ 깊이를 무조건 우선하는 규칙으로 바꾸지 말 것 — 얕고 큰 배열 하나보다 깊고 작은
     // 후보가 수십 개인 모양(확인필요 목록의 `reasons` 60개)에서 회차 예산이 그 수십 개에
     // 다 소진돼 배열은 손도 못 댄다(실측: 계약 2건이 그렇게 깨졌다).
-    const holder = readAt(target);
-    if (Array.isArray(holder)) {
-      const dominant = candidates.find(
-        (c) =>
-          c !== target &&
-          !exhausted.has(c.path) &&
-          c.parent === holder &&
-          size(readAt(c)) * 2 > size(holder),
+    // ⚠️ 한 갈래로 **끝까지 내려간다.** 덩치가 원소 하나에 몰려 있어도 그 원소가 또
+    // 배열이면(항목 1개짜리 배열 등) 거기서 멈춰선 안 된다 — 그 원소는 하한에 잠겨
+    // 못 줄이므로 겨냥이 도로 바깥 배열로 돌아가고, 결국 **배열을 깎아 짧은 진단을
+    // 버린다**(실측: `errors: [[거대한 문자열], "네트워크 끊김", "인증 만료"]` 에서
+    // 베이스는 3건을 지키는데 뒤 둘이 사라졌다). 줄일 수 있는 가장 깊은 자리를 잡는다.
+    let probe: Shrinkable | undefined = target;
+    while (probe) {
+      const held = readAt(probe);
+      if (!Array.isArray(held)) break;
+      const inner: Shrinkable | undefined = candidates.find(
+        (c) => c !== probe && c.parent === held && size(readAt(c)) * 2 > size(held),
       );
-      if (dominant) target = dominant;
+      if (!inner) break;
+      if (canShrink(inner) && !exhausted.has(inner.path)) target = inner;
+      probe = inner;
     }
 
-    const relaxed = lowRankFloorsRelaxed && target.rank === 0;
-    const keepItems = relaxed ? 0 : MIN_KEPT_ITEMS;
-    const keepChars = relaxed ? 0 : MIN_KEPT_CHARS;
+    // ℹ️ 주 루프는 하한을 그대로 지킨다. 값 낮은 자리의 하한 포기는 **위 일괄 처리가
+    // 전부 끝낸다** — 종전엔 여기에도 `relaxed ? 0 : …` 분기를 뒀지만 합성 3,200 표본에서
+    // 한 번도 발화하지 않았다(포기 뒤 순위 0 배열은 이미 비어 있고, 문자열은 위에서
+    // 훑었으며, `canShrink` 가 하한에 닿은 자리를 애초에 거른다). 안 도는 갈래를 남기면
+    // 다음 사람이 그 갈래가 뭔가를 지키는 줄로 읽는다.
+    const keepItems = MIN_KEPT_ITEMS;
+    const keepChars = MIN_KEPT_CHARS;
     const before = size(out);
     const value = readAt(target);
 
