@@ -435,7 +435,7 @@ export function capDetailsForLog(details: unknown): unknown {
         (c) => c !== probe && c.parent === held && size(readAt(c)) * 2 > size(held),
       );
       if (!inner) break;
-      if (canShrink(inner) && !exhausted.has(inner.path)) target = inner;
+      if (canShrink(inner)) target = inner;
       probe = inner;
     }
 
