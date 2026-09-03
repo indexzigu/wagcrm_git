@@ -119,33 +119,44 @@ function previewText(text: string, max: number): string {
 }
 
 /**
+ * 노이즈 키의 값에서 **거짓인 항목만** 접는다.
+ *
+ * ⚠️ 두 방향 모두 틀린다는 게 이 함수의 요점이다.
+ * - 키 이름만 보고 **통째로 접으면**, `blocking: true` 같은 "왜 프로필이 안 떴나"의 답이 지워진다.
+ * - 참이 하나라도 있다고 **통째로 남기면**, 나머지 거짓 플래그가 프리뷰 예산을 도로 먹어
+ *   `is_private`·`username` 이 다시 잘린다 — **2026-08-29 와 똑같은 결과**다. 하필 차단 플래그가
+ *   참인 회차가 그 필드들을 가장 보고 싶은 회차라, 이 실수는 가장 중요할 때 발동한다.
+ *
+ * 그래서 항목 단위로 가른다: 참인 것은 남기고, 거짓인 것은 **개수로만** 접는다.
+ * 모양이 예상 밖(문자열·배열)이면 손대지 않는다 — 모르는 것은 남기는 쪽이 안전하다.
+ */
+function foldFalseFlags(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const kept: Record<string, unknown> = {};
+  let folded = 0;
+  for (const [key, v] of Object.entries(value)) {
+    if (v === false) folded += 1;
+    else kept[key] = v;
+  }
+  if (folded === 0) return value;
+  if (Object.keys(kept).length === 0) return FOLDED; // 전부 거짓 — 통째로 접는다
+  return { ...kept, [FOLDED]: folded };
+}
+
+/**
  * 프로필 응답에서 진단 가치가 없는 가지를 걷어낸다 — 프리뷰 예산을 신호에 쓰기 위해서다.
  *
  * ⚠️ 파싱에 실패하면(차단 페이지 HTML 등) **원문이 그대로 남아야 한다** — "JSON 이 아니었다"는
  * 사실 자체가 그때는 가장 중요한 증거다. 그래서 호출부가 try/catch 로 감싼다.
  */
-/**
- * 접어도 되는 값인가 — **전부 false 일 때만** 그렇다.
- *
- * ⚠️ 키 이름만 보고 접으면 안 된다. `blocking: true`·`outgoing_request: true` 처럼 **하나라도
- * 참인 값이 오면 그게 바로 "왜 프로필이 안 떴나"의 답**인데, 이름만 보고 접는 구현은 그 답을
- * 지운다 — 이 파일이 경고하는 "추측으로 늘리면 다음 사고의 답이 지워진다"를 스스로 어기는 셈.
- * 값 모양이 예상 밖(문자열·중첩)이어도 접지 않는다: 모르는 것은 남기는 쪽이 안전하다.
- */
-function isAllFalseFlags(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const values = Object.values(value);
-  return values.length > 0 && values.every((v) => v === false);
-}
-
 function stripProfileNoise(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((v) => stripProfileNoise(v));
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, v] of Object.entries(value)) {
-      // ⚠️ 키를 **지우지 않고 값만 접는다.** 통째로 지우면 "원래 없었다"와 "우리가 접었다"를
-      // 구분할 수 없고, 뷰어가 응답 모양을 바꾼 것(= 이 계열 사고의 유력 원인)을 놓친다.
-      out[key] = PROFILE_NOISE_KEYS.has(key) && isAllFalseFlags(v) ? FOLDED : stripProfileNoise(v);
+      // ⚠️ 키를 **지우지 않는다.** 통째로 지우면 "원래 없었다"와 "우리가 접었다"를 구분할 수
+      // 없고, 뷰어가 응답 모양을 바꾼 것(= 이 계열 사고의 유력 원인)을 놓친다.
+      out[key] = PROFILE_NOISE_KEYS.has(key) ? foldFalseFlags(v) : stripProfileNoise(v);
     }
     return out;
   }
@@ -176,19 +187,41 @@ const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
  * 상한 안에 못 끝나면 null 로 접는다.
  *
  * ⚠️ **`page.title()` 은 Playwright 가 타임아웃 인자를 아예 받지 않는다**(`title(): Promise<string>`).
- * 이 레포는 `setDefaultTimeout` 도 걸지 않아 기본 상한조차 없다 — 그래서 상한을 밖에서 건다.
+ * `setDefaultTimeout` 으로도 해결되지 않는다 — 그 기본값은 **인자를 받는 호출에만** 적용되므로
+ * `title()` 은 어차피 걸리지 않는다. 상한을 걸 자리가 밖뿐이라 여기서 건다.
  * 이 보호가 없으면 **이미 깨진 페이지**(차단 챌린지·닫히지 않은 다이얼로그·single-process 크래시)
  * 에서 `title()` 이 영영 안 돌아오고, `driveViewer` 가 끝나지 않아 조회 예산·`maxDuration` 을
  * 넘겨 **성공한 핸들의 스토리까지 통째로 유실**된다(이 파일이 예산 기계를 만든 이유 그 자체).
  */
-function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {
+type Deadline<T> = { timedOut: false; value: T } | { timedOut: true };
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<Deadline<T>> {
   // 진 쪽이 나중에 거부해도 unhandled rejection 으로 새지 않게 미리 삼킨다.
   work.catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const guard = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), ms);
+  const guard = new Promise<{ timedOut: true }>((resolve) => {
+    timer = setTimeout(() => resolve({ timedOut: true }), ms);
   });
-  return Promise.race([work, guard]).finally(() => clearTimeout(timer));
+  return Promise.race([work.then((value) => ({ timedOut: false as const, value })), guard]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+/**
+ * 화면에서 한 조각을 읽고, 못 읽었으면 **왜 못 읽었는지**를 돌려준다.
+ *
+ * ⚠️ 결과를 `null` 하나로 뭉개지 않는다. `page.textContent()` 는 요소가 없을 때 정상적으로
+ * `null` 을 주므로, `null` 을 실패로도 쓰면 **"시한 초과"와 "그런 요소가 없음"이 같은 얼굴**이
+ * 된다 — 원인을 가리려고 만든 함수가 스스로 원인을 흐리는 셈이다.
+ */
+async function readPagePart(work: () => Promise<string | null>): Promise<string> {
+  try {
+    const outcome = await withDeadline(work(), PAGE_STATE_READ_TIMEOUT_MS);
+    if (outcome.timedOut) return "(시한 초과)";
+    return outcome.value ?? "(없음)";
+  } catch {
+    return "(읽기 실패)";
+  }
 }
 
 /**
@@ -205,20 +238,11 @@ function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {
  * 그래서 예외는 try/catch 로, 멈춤은 `withDeadline` 으로 각각 막는다(둘 다 필요하다).
  */
 async function describePageState(page: Page): Promise<string> {
-  const read = async (work: () => Promise<string | null>): Promise<string | null> => {
-    try {
-      return await withDeadline(work(), PAGE_STATE_READ_TIMEOUT_MS);
-    } catch {
-      return null;
-    }
-  };
-  const title = await read(() => page.title());
+  const title = await readPagePart(() => page.title());
   // textContent 는 자체 타임아웃도 받는다 — 밖의 상한과 겹치지만, 안쪽은 **작업 자체를 중단**하고
   // 바깥은 **기다림만 끊는다**. 둘은 다른 일을 하므로 함께 둔다.
-  const bodyText = await read(() => page.textContent("body", { timeout: PAGE_STATE_READ_TIMEOUT_MS }));
-  if (title === null && bodyText === null) return "화면 상태 읽기 실패(페이지 소실·응답 없음)";
-  const titleText = title === null ? "(읽기 실패)" : previewText(title, PAGE_TITLE_PREVIEW_CHARS);
-  return `화면 제목:${titleText} 화면:${previewText(bodyText ?? "", PAGE_STATE_PREVIEW_CHARS)}`;
+  const bodyText = await readPagePart(() => page.textContent("body", { timeout: PAGE_STATE_READ_TIMEOUT_MS }));
+  return `화면 제목:${previewText(title, PAGE_TITLE_PREVIEW_CHARS)} 화면:${previewText(bodyText, PAGE_STATE_PREVIEW_CHARS)}`;
 }
 
 /** 검색 결과가 뜨기를 기다리는 상한 — 종전의 고정 7s 대기 + 탭 클릭 8s 타임아웃과 같은 총량이다. */
@@ -320,6 +344,33 @@ const MAX_ATTEMPTS = 2;
  * 핸들이 여러 개면 1차 순회 자체가 이 간격을 채우므로 추가 대기 없이 넘어간다.
  */
 const MIN_RETRY_GAP_MS = 20_000;
+
+/**
+ * 전 핸들의 사유가 **함께** 들어가야 할 예산 — `SystemTaskLog.details` 상한 4,000자에서
+ * 요약 필드(핸들 목록·집계 수치) 몫을 남긴 값이다.
+ */
+const ERROR_BUDGET_CHARS = 3_000;
+
+/** 사유 하나가 최소한 지킬 길이 — 핸들이 아주 많아도 실패 지점 정도는 읽혀야 한다. */
+const MIN_ERROR_CHARS = 160;
+
+/**
+ * 사유를 핸들 수로 나눠 담는다 — 전원이 함께 예산 안에 들어가게.
+ *
+ * ⚠️ **예산은 실행 하나에 걸리는데 증거는 핸들마다 쌓인다.** 상한이 없으면 앞쪽 몇 명이 예산을
+ * 다 먹고 **뒤쪽 핸들의 사유가 통째로 사라진다**(저장부가 페이로드 전체를 자르기 때문) — 그건
+ * 이 진단 보강이 없애려던 바로 그 증상이 저장 단계에서 되살아나는 것이다.
+ * 실측(2026-09-03): 사유 1건이 최대 ≈430자라 **셀러 6명이면 4,000자를 넘긴다**(3명은 ≈2,860자).
+ *
+ * ⚠️ 조용히 자르지 않는다 — 잘렸다는 사실과 양을 함께 남긴다(이 파일의 사고가 그 지점이었다).
+ */
+function fitErrorToBudget(error: string, handleCount: number): string {
+  const share = Math.floor(ERROR_BUDGET_CHARS / Math.max(1, handleCount));
+  const max = Math.max(MIN_ERROR_CHARS, share);
+  if (error.length <= max) return error;
+  // 문구에 em-dash 를 쓰지 않는다(`ui-copy-em-dash.contract.test.ts` 가 강제한다).
+  return `${error.slice(0, max)}…[${error.length - max}자 잘림, 전문은 SystemTaskLog.details]`;
+}
 
 /** 한 핸들을 한 번 시도한다 — 뷰어 목록을 순서대로 폴백. 성공 시 items, 실패 시 error 문자열. */
 async function attemptHandle(
@@ -429,5 +480,7 @@ export async function fetchStoriesForHandles(
     await ctx.close();
   }
 
-  return handles.map((h) => results.get(h) ?? { handle: h, items: [], error: "결과 누락(내부 오류)" });
+  return handles
+    .map((h) => results.get(h) ?? { handle: h, items: [], error: "결과 누락(내부 오류)" })
+    .map((r) => (r.error ? { ...r, error: fitErrorToBudget(r.error, handles.length) } : r));
 }

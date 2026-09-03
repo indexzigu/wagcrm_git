@@ -20,6 +20,8 @@ import { fetchStoriesForHandles } from "../story-viewer-fetch";
 type Scenario = {
   /** 검색 후 프로필 결과(탭)가 렌더되는가 */
   resultsRender: boolean;
+  /** 탭을 눌렀을 때 스토리 응답이 흐르는가(기본 true) — false 면 "스토리 응답 미포착" 경로 */
+  storiesRespond?: boolean;
   /** 프로필 조회 응답 — null 이면 응답 자체가 없었던 것(요청 미발화·네트워크 차단) */
   profileResponse: { status: number; body: string } | null;
   /**
@@ -51,7 +53,9 @@ function makeCtx(scenario: Scenario) {
         },
         async textContent() {
           if (scenario.pageState === null) throw new Error("page.textContent: Target closed");
-          if (scenario.pageState === "hang") return "";
+          // 제목과 본문 **둘 다** 멈추게 한다 — 상한이 한쪽에만 걸린 구현을 잡으려면
+          // 두 경로가 모두 막혀 있어야 한다.
+          if (scenario.pageState === "hang") return new Promise<string>(() => {});
           return scenario.pageState?.bodyText ?? "";
         },
         async waitForTimeout() {},
@@ -74,6 +78,8 @@ function makeCtx(scenario: Scenario) {
         locator: () => ({
           first: () => ({
             async click() {
+              // 뷰어가 스토리 응답을 안 주는 회차 — 탭은 눌렸지만 아무것도 안 흐른다.
+              if (scenario.storiesRespond === false) return;
               // 탭 클릭이 서명된 스토리 요청을 트리거한다.
               await onResponse?.({
                 url: () => "https://api-wh.storiesig.info/api/v1/instagram/stories",
@@ -299,6 +305,66 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
     expect(out[0].error).not.toContain('"friendship_status":"…"');
   });
 
+  it("참인 플래그를 살리느라 판별 필드를 도로 잃지 않는다(08-29 재현 방지)", async () => {
+    const c = clock();
+    // 참 1개 + 거짓 여럿 — 뭉치를 통째로 남기면 거짓 플래그가 예산을 먹어 아래 둘이 잘린다.
+    const blockedWithNoise = JSON.stringify({
+      result: [
+        {
+          user: {
+            pk: "0000000000",
+            friendship_status: {
+              following: false,
+              blocking: true,
+              is_feed_favorite: false,
+              outgoing_request: false,
+              followed_by: false,
+              incoming_request: false,
+              is_restricted: false,
+              is_bestie: false,
+            },
+            is_private: true,
+            username: "someone",
+          },
+        },
+      ],
+    });
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: blockedWithNoise },
+          pageState: { title: "StoriesIG", bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    // 단서와 판별 필드가 **함께** 살아야 한다 — 어느 한쪽만 지키는 구현은 여기서 걸린다.
+    expect(out[0].error).toContain("blocking");
+    expect(out[0].error).toContain("is_private");
+    expect(out[0].error).toContain("username");
+  });
+
+  it("스토리 응답을 못 잡았을 때도 3지 선다로 두지 않고 프로필 응답을 싣는다", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          // 검색 결과는 떴지만(탭 렌더 성공) 스토리 응답이 안 잡히는 경로.
+          resultsRender: true,
+          storiesRespond: false,
+          profileResponse: { status: 200, body: '{"result":[{"user":{"is_private":true}}]}' },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    expect(out[0].error).toContain("스토리 응답 미포착");
+    // 이게 없으면 "비공개/스토리없음/차단" 셋 중 무엇인지 영영 못 가른다.
+    expect(out[0].error).toContain("is_private");
+  });
+
   it("화면 제목 읽기가 끝나지 않아도 실행이 매달리지 않는다(예산 보호)", async () => {
     const c = clock();
     const out = await fetchStoriesForHandles(["someone"], {
@@ -306,8 +372,8 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
         makeCtx({
           resultsRender: false,
           profileResponse: { status: 200, body: "{}" },
-          // page.title() 이 영영 안 돌아오는 상황. Playwright 는 title() 에 타임아웃 인자를
-          // 주지 않으므로, 상한을 밖에서 걸지 않으면 여기서 실행 전체가 멈춘다.
+          // page.title()·textContent 가 영영 안 돌아오는 상황. Playwright 는 title() 에
+          // 타임아웃 인자를 주지 않으므로, 상한을 밖에서 걸지 않으면 여기서 실행이 멈춘다.
           pageState: "hang",
         }),
       now: c.now,
@@ -317,5 +383,50 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
     // 멈추지 않고 사유가 만들어졌다는 것 자체가 판정이다.
     expect(out[0].error).toContain("검색 결과 미렌더");
     expect(out[0].error).toContain("200");
+    // 멈춤과 예외를 같은 말로 적으면, 이 커밋이 쓰인 이유인 멈춤을 로그에서 못 가른다.
+    expect(out[0].error).toContain("시한 초과");
+    expect(out[0].error).not.toContain("읽기 실패");
   }, 20_000);
+
+  it("셀러가 늘어도 전원의 사유가 예산 안에 함께 들어간다(뒤쪽이 사라지지 않게)", async () => {
+    const c = clock();
+    const many = Array.from({ length: 10 }, (_, i) => `seller${i}`);
+    const out = await fetchStoriesForHandles(many, {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: "{}" },
+          pageState: { title: "x".repeat(300), bodyText: "y".repeat(900) },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    // ① 아무도 빠지지 않는다 — 뒤쪽 핸들이 통째로 사라지는 것이 막으려는 실패 모드다.
+    expect(out).toHaveLength(10);
+    expect(out.every((r) => (r.error ?? "").length > 0)).toBe(true);
+    // ② 합계가 저장 상한(4000) 안에 든다.
+    const total = out.reduce((sum, r) => sum + (r.error ?? "").length, 0);
+    expect(total).toBeLessThan(4_000);
+    // ③ 잘렸다면 그 사실이 드러난다 — 조용한 절단이 이 사고의 정확한 지점이었다.
+    expect(out[0].error).toContain("자 잘림");
+  }, 20_000);
+
+  it("화면 제목이 길어도 상한까지만 싣는다(이력 저장 예산 보호)", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: "{}" },
+          pageState: { title: "가".repeat(500), bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    const title = /화면 제목:(가+)/.exec(out[0].error ?? "")?.[1] ?? "";
+    // 상한을 지우거나 크게 늘리면 여기서 걸린다(종전엔 500자가 그대로 실렸다).
+    expect(title.length).toBe(80);
+  });
 });
