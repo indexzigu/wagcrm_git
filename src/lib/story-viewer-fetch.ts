@@ -7,6 +7,7 @@
 //  - 로컬(러너/dev): playwright-core 가 ms-playwright 캐시 브라우저를 자동 탐색
 // ⚠ Vercel 데이터센터 IP는 뷰어 Cloudflare에 막힐 수 있음(미검증 리스크) — 그때 수동 경로가 보조.
 import type { BrowserContext, Page } from "playwright-core";
+import { raceWithTimeout } from "./mobile-order-refresh";
 
 /** 시도할 뷰어들 — 첫 성공에서 멈춘다(하나 죽어도 다음으로 폴백). storiesig.info 계열이 STORIES 버튼→
  *  /api/v1/instagram/stories POST(서명 포함) 흐름으로 검증됨. selector/흐름이 다르면 여기에 추가. */
@@ -93,13 +94,168 @@ export async function launchStoryContext(): Promise<BrowserContext> {
  * 검색 결과가 안 떴을 때 남길 진단 문자열 — 프로필 조회 응답이 유일한 단서다.
  * 본문은 앞부분만 싣는다(차단 페이지인지 정상 JSON 인지 가르는 데는 충분하고,
  * 통째로 실으면 SystemTaskLog.details 의 4KB 상한을 혼자 먹는다).
+ *
+ * ⚠️ **상한을 올리는 것으로는 안 풀린다(2026-08-29 실사고).** 그날 이 200자 중 **161자를
+ * 전부 false 인 `friendship_status` 하나가 먹어**, 판별에 필요한 필드(`is_private`·
+ * `username`)는 한 글자도 실리지 않았다. 예산이 모자란 게 아니라 **노이즈가 신호를 밀어낸
+ * 것**이라, 아래 `stripProfileNoise` 로 걷어낸 뒤 프리뷰한다.
  */
 const PROFILE_BODY_PREVIEW_CHARS = 200;
 
+/**
+ * 값을 접을 키 — **실측으로 노이즈임이 확인된 것만** 올린다. 추측으로 늘리면 다음 사고의
+ * 답이 여기서 지워진다. 막히면 그때 로그에 응답 모양이 남아 있으니 그걸 보고 늘릴 것.
+ *
+ * - `friendship_status`: 전부 false 인 관계 플래그 뭉치. 2026-08-29 실측으로 프리뷰 200자 중
+ *   161자를 혼자 먹었고, 익명 뷰어라 이 값이 무언가를 뜻한 적이 없다.
+ */
+const PROFILE_NOISE_KEYS = new Set(["friendship_status"]);
+
+/** 접힌 자리에 남길 표시 — 키는 남으므로 "응답 모양"은 계속 읽을 수 있다. */
+const FOLDED = "…";
+
+/** 진단 문자열 공통 프리뷰 — 줄바꿈을 접고 상한까지만. 예산 관리를 한자리에 모은다. */
+function previewText(text: string, max: number): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/**
+ * 노이즈 키의 값에서 **거짓인 항목만** 접는다.
+ *
+ * ⚠️ 두 방향 모두 틀린다는 게 이 함수의 요점이다.
+ * - 키 이름만 보고 **통째로 접으면**, `blocking: true` 같은 "왜 프로필이 안 떴나"의 답이 지워진다.
+ * - 참이 하나라도 있다고 **통째로 남기면**, 나머지 거짓 플래그가 프리뷰 예산을 도로 먹어
+ *   `is_private`·`username` 이 다시 잘린다 — **2026-08-29 와 똑같은 결과**다. 하필 차단 플래그가
+ *   참인 회차가 그 필드들을 가장 보고 싶은 회차라, 이 실수는 가장 중요할 때 발동한다.
+ *
+ * 그래서 항목 단위로 가른다: 참인 것은 남기고, 거짓인 것은 **개수로만** 접는다.
+ * 모양이 예상 밖(문자열·배열)이면 손대지 않는다 — 모르는 것은 남기는 쪽이 안전하다.
+ */
+/**
+ * 한 항목을 어떻게 걷을지 정한다 — **접기 판정은 값이 아니라 그 값이 달린 키가 한다.**
+ * 그래서 `stripProfileNoise` 와 `foldFalseFlags` 가 같은 이 함수를 거쳐야 중첩 노이즈도 걸린다
+ * (한쪽만 재귀하면 노이즈 키가 한 겹 아래 있을 때 그대로 실린다 — 테스트가 잡은 실제 구멍).
+ */
+function stripEntry(key: string, value: unknown): unknown {
+  return PROFILE_NOISE_KEYS.has(key) ? foldFalseFlags(value) : stripProfileNoise(value);
+}
+
+function foldFalseFlags(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const kept: Record<string, unknown> = {};
+  let folded = 0;
+  for (const [key, v] of Object.entries(value)) {
+    if (v === false) folded += 1;
+    else kept[key] = stripEntry(key, v);
+  }
+  if (folded === 0) return kept;
+  if (Object.keys(kept).length === 0) return FOLDED; // 전부 거짓 — 통째로 접는다
+  // 원본에 이미 접기 표시와 같은 키가 있으면 덮지 않는다(개수를 잃는 편이 실데이터를 잃는 것보다 낫다).
+  return FOLDED in kept ? kept : { ...kept, [FOLDED]: folded };
+}
+
+/**
+ * 프로필 응답에서 진단 가치가 없는 가지를 걷어낸다 — 프리뷰 예산을 신호에 쓰기 위해서다.
+ *
+ * ⚠️ 파싱에 실패하면(차단 페이지 HTML 등) **원문이 그대로 남아야 한다** — "JSON 이 아니었다"는
+ * 사실 자체가 그때는 가장 중요한 증거다. 그래서 호출부가 try/catch 로 감싼다.
+ */
+function stripProfileNoise(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((v) => stripProfileNoise(v));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value)) {
+      // ⚠️ 키를 **지우지 않는다.** 통째로 지우면 "원래 없었다"와 "우리가 접었다"를 구분할 수
+      // 없고, 뷰어가 응답 모양을 바꾼 것(= 이 계열 사고의 유력 원인)을 놓친다.
+      out[key] = stripEntry(key, v);
+    }
+    return out;
+  }
+  return value;
+}
+
 function describeProfileProbe(probe: { status: number; body: string } | null): string {
   if (!probe) return "프로필 조회 응답 없음(요청 미발화·네트워크 차단 의심)";
-  const preview = probe.body.replace(/\s+/g, " ").slice(0, PROFILE_BODY_PREVIEW_CHARS);
-  return `프로필 조회 status=${probe.status} 본문:${preview}`;
+  let body = probe.body;
+  try {
+    body = JSON.stringify(stripProfileNoise(JSON.parse(body)));
+  } catch {
+    /* JSON 이 아니거나 모양이 예상 밖 — 원문 프리뷰가 곧 증거다 */
+  }
+  return `프로필 조회 status=${probe.status} 본문:${previewText(body, PROFILE_BODY_PREVIEW_CHARS)}`;
+}
+
+/** 화면 본문 프리뷰 상한 — 차단 화면인지 빈 결과인지 가르는 데 필요한 만큼만. */
+const PAGE_STATE_PREVIEW_CHARS = 200;
+
+/** 화면 제목 상한 — 제목은 짧은 게 정상이고, 길면 그 자체가 비정상 신호다(예산도 지킨다). */
+const PAGE_TITLE_PREVIEW_CHARS = 80;
+
+/**
+ * 화면 상태 읽기의 **바깥** 상한 — 호출이 아예 안 돌아올 때를 덮는 안전망이다.
+ *
+ * ⚠️ **`page.title()` 은 Playwright 가 타임아웃 인자를 아예 받지 않는다**(`title(): Promise<string>`).
+ * `setDefaultTimeout` 으로도 해결되지 않는다 — 그 기본값은 **인자를 받는 호출에만** 적용되므로
+ * `title()` 은 어차피 걸리지 않는다. 상한을 걸 자리가 밖뿐이라 밖에서 건다.
+ * 이 보호가 없으면 **이미 깨진 페이지**(차단 챌린지·닫히지 않은 다이얼로그·single-process 크래시)
+ * 에서 `title()` 이 영영 안 돌아오고, `driveViewer` 가 끝나지 않아 조회 예산·`maxDuration` 을
+ * 넘겨 **성공한 핸들의 스토리까지 통째로 유실**된다(이 파일이 예산 기계를 만든 이유 그 자체).
+ */
+const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
+
+/**
+ * `textContent` **자신에게** 거는 상한 — 바깥보다 **짧아야 한다.**
+ * 같은 값이면 어느 쪽이 이길지 비결정이라 "(시한 초과)"와 "(읽기 실패)"가 회차마다 뒤바뀐다.
+ * 안쪽은 작업 자체를 중단하고 바깥은 기다림만 끊으므로, 안쪽이 먼저 이겨야 사유가 정확해진다.
+ */
+const PAGE_TEXT_TIMEOUT_MS = 1_500;
+
+/** 두 상한의 순서를 산문이 아니라 값으로 고정한다 — 같아지면 사유가 회차마다 뒤바뀐다. */
+export const PAGE_STATE_TIMEOUTS = {
+  outer: PAGE_STATE_READ_TIMEOUT_MS,
+  innerText: PAGE_TEXT_TIMEOUT_MS,
+} as const;
+
+/**
+ * 화면에서 한 조각을 읽고, 못 읽었으면 **왜 못 읽었는지**를 돌려준다.
+ *
+ * ⚠️ 결과를 `null` 하나로 뭉개지 않는다. `page.textContent()` 는 요소가 없을 때 정상적으로
+ * `null` 을 주므로, `null` 을 실패로도 쓰면 **"시한 초과"와 "그런 요소가 없음"이 같은 얼굴**이
+ * 된다 — 원인을 가리려고 만든 함수가 스스로 원인을 흐리는 셈이다.
+ *
+ * 시한 처리는 `raceWithTimeout`(mobile-order-refresh)을 그대로 쓴다. 같은 모양을 또 만들면
+ * 판별 유니언까지 중복되고, 그 파일은 import 가 없는 순수 모듈이라 딸려오는 것도 없다.
+ */
+async function readPagePart(work: () => Promise<string | null>): Promise<string> {
+  try {
+    const pending = work();
+    // 진 쪽이 나중에 거부해도 unhandled rejection 으로 새지 않게 미리 삼킨다.
+    pending.catch(() => {});
+    const outcome = await raceWithTimeout(pending, PAGE_STATE_READ_TIMEOUT_MS);
+    if (outcome.timedOut) return "(시한 초과)";
+    return outcome.value ?? "(없음)";
+  } catch {
+    return "(읽기 실패)";
+  }
+}
+
+/**
+ * 화면 대기가 깨진 순간의 페이지 상태 — "응답은 정상인데 화면이 안 떴다"의 유일한 증거원.
+ *
+ * **왜 필요한가(2026-08-29 실사고):** 프로필 조회가 200 이었는데도 결과 화면이 안 떴다.
+ * 차단 화면이었는지·계정이 비공개였는지·뷰어 UI 가 바뀐 것인지 가를 증거가 **아무 데도
+ * 없었고**, 스토리는 24h 수명이라 소급 재현도 불가능했다. 프로필 응답(직전 단계)만 계측하면
+ * 실패 지점이 그다음 단계로 옮겨간 순간 다시 깜깜해진다.
+ *
+ * ⚠️ **이 함수는 throw 하지도, 매달리지도 않는다.** 이미 깨진 페이지에서 읽는 것이라 예외와
+ * **멈춤(hang)** 둘 다 가능한데, 어느 쪽이든 원래 실패 사유를 잃는다 — 예외는 사유를 덮어써
+ * **진단이 진단을 잡아먹고**, 멈춤은 그보다 나빠서 실행 전체를 예산 밖으로 끌고 간다.
+ * 그래서 예외는 try/catch 로, 멈춤은 `raceWithTimeout` 으로 각각 막는다(둘 다 필요하다).
+ */
+async function describePageState(page: Page): Promise<string> {
+  const title = await readPagePart(() => page.title());
+  const bodyText = await readPagePart(() => page.textContent("body", { timeout: PAGE_TEXT_TIMEOUT_MS }));
+  return `화면 제목:${previewText(title, PAGE_TITLE_PREVIEW_CHARS)} 화면:${previewText(bodyText, PAGE_STATE_PREVIEW_CHARS)}`;
 }
 
 /** 검색 결과가 뜨기를 기다리는 상한 — 종전의 고정 7s 대기 + 탭 클릭 8s 타임아웃과 같은 총량이다. */
@@ -140,8 +296,11 @@ async function driveViewer(page: Page, viewer: Viewer, handle: string): Promise<
   try {
     await page.waitForSelector(viewer.resultsReady, { timeout: RESULTS_READY_TIMEOUT_MS });
   } catch {
+    // 직전 단계(프로필 응답)와 **그 순간의 화면**을 함께 싣는다 — 2026-08-29 에는 앞엣것만
+    // 있어서 "200 인데 화면이 안 떴다"까지만 알고 그 이유는 끝내 확정하지 못했다.
+    const pageState = await describePageState(page);
     throw new Error(
-      `${viewer.name}: 검색 결과 미렌더(핸들 ${handle}): ${describeProfileProbe(profileProbe)}`,
+      `${viewer.name}: 검색 결과 미렌더(핸들 ${handle}): ${describeProfileProbe(profileProbe)} / ${pageState}`,
     );
   }
 
@@ -150,7 +309,14 @@ async function driveViewer(page: Page, viewer: Viewer, handle: string): Promise<
   await page.waitForTimeout(8000);
   page.off("response", onResponse);
 
-  if (!storyBody) throw new Error(`${viewer.name}: 스토리 응답 미포착(핸들 ${handle}, 비공개/스토리없음/차단 가능)`);
+  // 3지 선다("비공개/스토리없음/차단")를 그대로 두지 않는다 — 그 셋을 가르는 증거를 이미
+  // 손에 들고 있는데(profileProbe) 싣지 않으면, 실패 지점이 여기로 옮겨간 회차에서 08-29 와
+  // 똑같이 원인 미상이 된다.
+  if (!storyBody) {
+    throw new Error(
+      `${viewer.name}: 스토리 응답 미포착(핸들 ${handle}, 비공개/스토리없음/차단 가능): ${describeProfileProbe(profileProbe)}`,
+    );
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(storyBody);
@@ -191,6 +357,24 @@ const MAX_ATTEMPTS = 2;
  * 핸들이 여러 개면 1차 순회 자체가 이 간격을 채우므로 추가 대기 없이 넘어간다.
  */
 const MIN_RETRY_GAP_MS = 20_000;
+
+/**
+ * ⚠️ **사유 총량을 이 파일에서 재려다 실패했다(2026-09-03, 리뷰 3회차에 걷어냄).**
+ *
+ * 핸들 수로 예산을 나눠 담는 함수를 뒀었는데, 세 리뷰어가 각각 같은 결론에 도달했다:
+ * 진짜 상한은 **다른 모듈**(`system-task-status.ts` 의 `DETAILS_MAX_CHARS`)에서, **JSON
+ * 직렬화 뒤**에, 또 **다른 모듈**(`story-capture.ts`)이 `fetch <핸들>: ` 접두를 붙인 다음에
+ * 걸린다. 세 겹 떨어진 자리에서 문자열을 조립하며 그 크기를 맞히려 했으니 산수가 두 회차
+ * 내내 틀렸고, 정작 여유가 있는 규모에서 멀쩡한 사유를 잘라 **오늘을 나쁘게 만들었다.**
+ *
+ * 그래서 여기서는 자르지 않는다. 넘칠 때는 저장부가 자르되 `truncated: true` 를 함께 남기므로
+ * **무음 절단은 아니다**(`system-task-status.ts` 의 `toDetails`).
+ *
+ * ⚠️ 다만 **이 파일은 그 한계를 감시하지 않는다.** 실패 핸들이 늘면 `errors` 가 직렬화 뒤쪽에
+ * 있어 **뒤 핸들의 사유부터 사라진다**. 특히 일부만 실패한 회차는 계통 장애 판정이 서지 않아
+ * 실패 핸들마다 1·2차 사유가 모두 실려 전멸 회차보다 빨리 상한에 닿는다. 이 감시를 붙일 자리는
+ * 여기가 아니라 **상한이 실제로 걸리는 그 계층**이다(별도 티켓).
+ */
 
 /** 한 핸들을 한 번 시도한다 — 뷰어 목록을 순서대로 폴백. 성공 시 items, 실패 시 error 문자열. */
 async function attemptHandle(
