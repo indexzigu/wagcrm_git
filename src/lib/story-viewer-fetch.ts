@@ -131,14 +131,22 @@ function previewText(text: string, max: number): string {
  * 그래서 항목 단위로 가른다: 참인 것은 남기고, 거짓인 것은 **개수로만** 접는다.
  * 모양이 예상 밖(문자열·배열)이면 손대지 않는다 — 모르는 것은 남기는 쪽이 안전하다.
  */
+/**
+ * 한 항목을 어떻게 걷을지 정한다 — **접기 판정은 값이 아니라 그 값이 달린 키가 한다.**
+ * 그래서 `stripProfileNoise` 와 `foldFalseFlags` 가 같은 이 함수를 거쳐야 중첩 노이즈도 걸린다
+ * (한쪽만 재귀하면 노이즈 키가 한 겹 아래 있을 때 그대로 실린다 — 테스트가 잡은 실제 구멍).
+ */
+function stripEntry(key: string, value: unknown): unknown {
+  return PROFILE_NOISE_KEYS.has(key) ? foldFalseFlags(value) : stripProfileNoise(value);
+}
+
 function foldFalseFlags(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const kept: Record<string, unknown> = {};
   let folded = 0;
   for (const [key, v] of Object.entries(value)) {
     if (v === false) folded += 1;
-    // 남기는 값도 계속 걷는다 — 노이즈 키가 늘면 그 안에 중첩 노이즈가 있을 수 있다.
-    else kept[key] = stripProfileNoise(v);
+    else kept[key] = stripEntry(key, v);
   }
   if (folded === 0) return kept;
   if (Object.keys(kept).length === 0) return FOLDED; // 전부 거짓 — 통째로 접는다
@@ -159,7 +167,7 @@ function stripProfileNoise(value: unknown): unknown {
     for (const [key, v] of Object.entries(value)) {
       // ⚠️ 키를 **지우지 않는다.** 통째로 지우면 "원래 없었다"와 "우리가 접었다"를 구분할 수
       // 없고, 뷰어가 응답 모양을 바꾼 것(= 이 계열 사고의 유력 원인)을 놓친다.
-      out[key] = PROFILE_NOISE_KEYS.has(key) ? foldFalseFlags(v) : stripProfileNoise(v);
+      out[key] = stripEntry(key, v);
     }
     return out;
   }
@@ -201,6 +209,12 @@ const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
  * 안쪽은 작업 자체를 중단하고 바깥은 기다림만 끊으므로, 안쪽이 먼저 이겨야 사유가 정확해진다.
  */
 const PAGE_TEXT_TIMEOUT_MS = 1_500;
+
+/** 두 상한의 순서를 산문이 아니라 값으로 고정한다 — 같아지면 사유가 회차마다 뒤바뀐다. */
+export const PAGE_STATE_TIMEOUTS = {
+  outer: PAGE_STATE_READ_TIMEOUT_MS,
+  innerText: PAGE_TEXT_TIMEOUT_MS,
+} as const;
 
 /**
  * 화면에서 한 조각을 읽고, 못 읽었으면 **왜 못 읽었는지**를 돌려준다.
@@ -345,19 +359,21 @@ const MAX_ATTEMPTS = 2;
 const MIN_RETRY_GAP_MS = 20_000;
 
 /**
- * ⚠️ **사유 총량을 여기서 재려다 실패했다(2026-09-03, 리뷰 3회차에 걷어냄).**
+ * ⚠️ **사유 총량을 이 파일에서 재려다 실패했다(2026-09-03, 리뷰 3회차에 걷어냄).**
  *
  * 핸들 수로 예산을 나눠 담는 함수를 뒀었는데, 세 리뷰어가 각각 같은 결론에 도달했다:
- * 진짜 상한은 **다른 모듈**(`system-task-status.ts` 의 4,000자)에서, **JSON 직렬화 뒤**에,
- * 또 **다른 모듈**(`story-capture.ts`)이 `fetch <핸들>: ` 접두를 붙인 다음에 걸린다. 세 겹
- * 떨어진 자리에서 문자열을 조립하며 그 크기를 맞히려 했으니 산수가 두 회차 내내 틀렸다.
+ * 진짜 상한은 **다른 모듈**(`system-task-status.ts` 의 `DETAILS_MAX_CHARS`)에서, **JSON
+ * 직렬화 뒤**에, 또 **다른 모듈**(`story-capture.ts`)이 `fetch <핸들>: ` 접두를 붙인 다음에
+ * 걸린다. 세 겹 떨어진 자리에서 문자열을 조립하며 그 크기를 맞히려 했으니 산수가 두 회차
+ * 내내 틀렸고, 정작 여유가 있는 규모에서 멀쩡한 사유를 잘라 **오늘을 나쁘게 만들었다.**
  *
- * 게다가 **오늘을 나쁘게 만들었다** — 셀러 3명이면 몫이 1,000자인데 실제 사유가 ≈1,036자라
- * 4,000자 상한에 여유가 넘치는데도 잘라 냈다. 그러면서 21명부터는 상한을 못 지켰다.
+ * 그래서 여기서는 자르지 않는다. 넘칠 때는 저장부가 자르되 `truncated: true` 를 함께 남기므로
+ * **무음 절단은 아니다**(`system-task-status.ts` 의 `toDetails`).
  *
- * 그래서 자르지 않는다. 현재 규모(3명, 전원 실패 회차 ≈2,200자)는 상한 안이고, 넘칠 때는
- * 저장부가 자르되 **`truncated: true` 를 함께 남긴다**(무음 절단이 아니다). 셀러가 늘어
- * 이 여유가 사라지면, 고칠 자리는 여기가 아니라 **상한이 실제로 걸리는 그 계층**이다.
+ * ⚠️ 다만 **이 파일은 그 한계를 감시하지 않는다.** 실패 핸들이 늘면 `errors` 가 직렬화 뒤쪽에
+ * 있어 **뒤 핸들의 사유부터 사라진다**. 특히 일부만 실패한 회차는 계통 장애 판정이 서지 않아
+ * 실패 핸들마다 1·2차 사유가 모두 실려 전멸 회차보다 빨리 상한에 닿는다. 이 감시를 붙일 자리는
+ * 여기가 아니라 **상한이 실제로 걸리는 그 계층**이다(별도 티켓).
  */
 
 /** 한 핸들을 한 번 시도한다 — 뷰어 목록을 순서대로 폴백. 성공 시 items, 실패 시 error 문자열. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BrowserContext } from "playwright-core";
-import { fetchStoriesForHandles } from "../story-viewer-fetch";
+import { PAGE_STATE_TIMEOUTS, fetchStoriesForHandles } from "../story-viewer-fetch";
 
 /**
  * 프로필 조회 단계의 관측 회귀.
@@ -388,10 +388,15 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
     expect(out[0].error).not.toContain("읽기 실패");
   }, 20_000);
 
-  it("현재 셀러 규모의 전원 실패 회차가 이력 저장 상한 안에 들어간다", async () => {
+  /**
+   * ⚠️ 이 자리에 "이력 저장 상한 안에 든다"를 단언하던 테스트가 있었는데 걷어냈다.
+   * 그 단언은 **이 파일이 지킬 수 없는 약속**이었다 — 진짜 상한은 직렬화 뒤에, 다른 모듈이
+   * 접두를 붙인 다음 걸리므로 여기서 잰 원문 길이 합과 애초에 다른 값이다. 게다가 핸들 수를
+   * 고정한 테스트라 셀러가 늘어도 영영 초록이어서 경보 구실도 못 했다.
+   * 지금 이 테스트가 지키는 것은 **"아무도 빠지지 않는다"** 하나다(그건 여기서 지킬 수 있다).
+   */
+  it("실패한 핸들이 전원 결과에 남는다(뒤쪽이 조용히 사라지지 않게)", async () => {
     const c = clock();
-    // 프로덕션 현재 규모(3명). 사유를 자르지 않기로 한 근거가 이 여유다 — 여기가 빨강이 되면
-    // 자를 자리를 찾을 게 아니라 **상한이 실제로 걸리는 계층**에서 다뤄야 한다.
     const out = await fetchStoriesForHandles(["a", "b", "c"], {
       launch: async () =>
         makeCtx({
@@ -403,11 +408,65 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
       sleep: c.sleep,
     });
 
-    expect(out).toHaveLength(3);
-    // 아무도 빠지지 않고, 전원의 사유가 온전히 남는다.
+    expect(out.map((r) => r.handle)).toEqual(["a", "b", "c"]);
     expect(out.every((r) => (r.error ?? "").length > 0)).toBe(true);
-    const total = out.reduce((sum, r) => sum + (r.error ?? "").length, 0);
-    expect(total).toBeLessThan(4_000);
+  });
+
+  it("남기는 값 안의 노이즈도 계속 걷는다(중첩 노이즈가 그대로 실리지 않게)", async () => {
+    const c = clock();
+    const nested = JSON.stringify({
+      result: [
+        {
+          user: {
+            // 참이 하나 있어 뭉치가 보존되는데, 그 안에 또 노이즈 키가 있다.
+            friendship_status: {
+              blocking: true,
+              friendship_status: { following: false, blocking: false, muting: false },
+            },
+            is_private: true,
+          },
+        },
+      ],
+    });
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: nested },
+          pageState: { title: "StoriesIG", bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    expect(out[0].error).toContain("blocking");
+    // 중첩된 전부-거짓 뭉치는 접혀야 한다. 재귀를 빼면 muting 까지 그대로 실린다.
+    expect(out[0].error).not.toContain("muting");
+  });
+
+  it("접기 표시와 같은 키가 원본에 있으면 덮어쓰지 않는다", async () => {
+    const c = clock();
+    const collide = JSON.stringify({
+      result: [{ user: { friendship_status: { blocking: true, "…": "원본값" }, is_private: true } }],
+    });
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: collide },
+          pageState: { title: "StoriesIG", bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    // 개수를 잃는 편이 실데이터를 잃는 것보다 낫다.
+    expect(out[0].error).toContain("원본값");
+  });
+
+  it("본문 읽기 상한이 바깥 상한보다 짧다(어느 쪽이 이길지 정해지게)", () => {
+    // 같은 값이면 "(시한 초과)"와 "(읽기 실패)"가 회차마다 뒤바뀌어 사유를 믿을 수 없게 된다.
+    expect(PAGE_STATE_TIMEOUTS.innerText).toBeLessThan(PAGE_STATE_TIMEOUTS.outer);
   });
 
   it("화면 제목이 길어도 상한까지만 싣는다(이력 저장 예산 보호)", async () => {
