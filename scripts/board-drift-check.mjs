@@ -108,12 +108,70 @@ export function parseDeployMarker(raw) {
 
 // ── 순수 로직(테스트가 고정하는 계약) ────────────────────────────────────────
 
-/** 보드의 최상위 항목 줄 전부(PR 유무 무관). 항목은 `- **` 로 시작한다. */
+/**
+ * **항목 줄 판정은 구역마다 다르다** — 형태로는 갈리지 않기 때문이다(실측 2026-09-04).
+ *
+ * 종전 기준은 `- **` 하나였는데, 보드에 새로 올라오는 항목이 하네스 세션명 규약
+ * (`상태프리픽스 #PR번호 [계보슬러그] 제목`)을 그대로 쓰면서 **볼드 없이 이모지로
+ * 시작**하게 됐다(`- ✅ #7 #8 #9 [슬러그] …`). 옛 산문형(`- 착수 대기: …`)도 같이
+ * 빠져 있었다. 그렇게 빠진 줄은 대조에서 통째로 제외돼 **낡아도 점검기가 조용하다** —
+ * 상시 빨강(설계 원칙 3)보다 나쁘다. 빨강은 눈에라도 띄지만 침묵은 안 띈다.
+ *
+ * 🪤 **그렇다고 `- ` 전부로 넓히면 안 된다.** 실보드 실측:
+ *   - 평면 구역(첫 `###` 이전) 최상위 불릿 30줄 — **전부 항목**, 부연 0줄.
+ *   - 섹션 블록(`###` 이하 인계 서사) 최상위 불릿 294줄 — 그중 `- **` 159줄 외
+ *     **135줄이 부연**이다(`- 검증: …` · `- 다음 에이전트: …` · `- ⚠️ **함정**…`).
+ * 즉 넓히기의 이득 4줄과 대가 135줄이 **구역으로 정확히 갈린다**.
+ *
+ * ⛔ 형태(줄 생김새)로 가르려던 대안은 실측으로 기각했다. `이모지 + #번호` 를 항목의
+ * 표식으로 삼으면 평면 구역의 진짜 항목 4줄 중 **2줄만** 잡고(산문형 2줄 누락), 섹션
+ * 블록의 부연 **4줄을 새로 끌어온다** — 두 오류가 동시에 나빠진다. 부연 줄이 항목과
+ * 같은 얼굴을 하고 있어서다(`- ✅ **머지 완료** …` 는 양쪽에 다 있다).
+ *
+ * 그래서 **구역이 기준이다**:
+ *   - 평면 구역 = 항목 레지스트리(AGENTS.md 「활성 항목당 정확히 1줄」이 가리키는
+ *     바로 그 구역). 형태를 묻지 않고 최상위 불릿 전부를 항목으로 본다.
+ *   - 섹션 블록 = 인계 서사. 항목 레지스트리가 아니므로 넓히지 않고 **종전 `- **`
+ *     그대로** 둔다.
+ *
+ * ⚖️ **두 오류의 균형을 어디에 뒀나:** 섹션 블록의 `- **` 159줄은 엄밀히는 항목이
+ * 아니라 서사 줄이고, 지금 그것들이 대조 대상에 들어와 있다(부수적으로 좌표 없는
+ * 항목 경고도 그 구역에서 다수 발생한다). 그럼에도 **빼지 않았다** — 빼는 것은
+ * 커버리지를 줄이는 것이고 그 방향의 오류가 곧 침묵(미탐)이기 때문이다. 이 판정기의
+ * 기존 원칙은 "거짓 경보가 낡은 마커보다 해롭다"(설계 원칙 3)지만, 그 원칙은
+ * **종료코드를 흔드는 거짓 경보**에 대한 것이다. 섹션 블록에서 나오는 것은 대부분
+ * `LEGACY_ARCHIVED`(구 레포 번호)이거나 종료코드에 반영되지 않는 경고라 사람을
+ * 무디게 만드는 힘이 약하다. 반면 항목이 스캔에서 빠지는 것은 **경고 자체가 없어서**
+ * 무디게 만들 것조차 없다. 그래서 이번 변경은 **넓히는 방향으로만** 움직이고,
+ * 섹션 블록을 좁히는 판단은 별건으로 남긴다.
+ *
+ * 🛑 **여기서 멈춘다 — 이 다음 한 걸음이 함정이다.** 새 형식은 PR 을 링크가 아니라 맨
+ * 번호로 적는다(`- ✅ #7 #8 #9 …`). 그래서 이 줄들은 **항목으로는 잡히지만 PR 대조는
+ * 여전히 안 된다** — `primaryPr` 이 `pull/N` 링크만 읽기 때문이다. 그걸 "덜 고친 것"으로
+ * 보고 맨 `#번호` 도 읽게 넓히지 말 것: 이 레포는 이관이 두 번이라 번호가 세 겹이고,
+ * **번호만으로는 어느 레포인지 가릴 수 없다.** 그렇게 했던 판정이 실보드 26건을 전부
+ * `PR_NOT_FOUND` 로 띄웠다(실측 2026-08-29, 진짜 드리프트는 0건 — 위 LEGACY_REPO_SLUGS
+ * 주석). 링크 없는 항목의 안전망은 PR 대조가 아니라 `findCoordinatelessItems` 쪽이다.
+ */
+
+/** 평면 구역의 항목 줄 — 최상위 불릿이면 형태 불문 항목이다(위 주석). */
+function isFlatItemLine(line) {
+  return line.startsWith("- ") && line.trim().length > 2;
+}
+
+/** 섹션 블록에서 항목으로 인정하는 형태 — 종전 기준 유지(위 주석의 ⚖️). */
+function isSectionItemLine(line) {
+  return line.startsWith("- **");
+}
+
+/** 보드의 항목 줄 전부(PR 유무 무관). 구역별 기준은 위 주석. */
 export function boardItemLines(text) {
-  return text
-    .split("\n")
-    .map((line, i) => ({ line, lineNumber: i + 1 }))
-    .filter(({ line }) => line.startsWith("- **"));
+  const { flat, sections } = splitBoardRegions(text);
+  const lines = [
+    ...flat.filter(({ line }) => isFlatItemLine(line)),
+    ...sections.flatMap((s) => s.lines.filter(({ line }) => isSectionItemLine(line))),
+  ];
+  return lines.sort((a, b) => a.lineNumber - b.lineNumber);
 }
 
 /**
@@ -250,8 +308,10 @@ export function findCoordinatelessItems(text) {
     });
 
   // 평면 구역: 줄 하나가 곧 항목이다 — 줄 단위로 판정한다.
+  // 항목 인정 범위는 boardItemLines 와 같은 술어를 쓴다 — 여기만 좁으면 대조에는
+  // 들어온 항목이 좌표 경고에서만 조용히 빠진다(같은 침묵 실패의 반쪽).
   for (const entry of flat) {
-    if (!entry.line.startsWith("- **")) continue;
+    if (!isFlatItemLine(entry.line)) continue;
     if (primaryPr(entry.line) !== null) continue;
     if (hasDurableReference(entry.line)) continue;
     if (isClosedItem(entry.line)) continue;
@@ -263,7 +323,7 @@ export function findCoordinatelessItems(text) {
     const whole = [section.heading, ...section.lines.map((e) => e.line)].join("\n");
     if (/pull\/\d+/.test(whole) || hasDurableReference(whole)) continue;
     for (const entry of section.lines) {
-      if (!entry.line.startsWith("- **")) continue;
+      if (!isSectionItemLine(entry.line)) continue;
       if (isClosedItem(entry.line)) continue;
       record(entry);
     }

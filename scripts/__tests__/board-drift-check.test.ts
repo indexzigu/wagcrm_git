@@ -540,6 +540,53 @@ describe("boardItemLines — PR 유무와 무관하게 항목 줄 전부", () =>
     expect(parseBoardItems(board)[0].lineNumber).toBe(3);
     expect(boardItemLines(board).map((l: BoardLine) => l.lineNumber)).toEqual([2, 3]);
   });
+
+  /**
+   * 아래 4건은 2026-09-04 실측에서 나왔다. 보드에 새로 올라오는 항목이 하네스 세션명
+   * 규약(`상태프리픽스 #번호 [계보슬러그] 제목`)을 쓰면서 **볼드 없이** 시작하게 됐고,
+   * `- **` 만 보던 종전 스캐너가 그 줄들을 항목으로 보지 않았다 — 낡아도 조용한
+   * 침묵 실패다. 반대로 `- ` 전부로 넓히면 `###` 이하 인계 서사의 부연 줄 135개가
+   * 딸려 들어온다. 그래서 **구역**으로 가른다.
+   */
+  it("평면 구역에서는 볼드 없는 새 형식(이모지 프리픽스) 도 항목이다", () => {
+    const board = [
+      "# PROJECT_MASTER",
+      "- ✅ #7 #8 [슬러그] 무언가 — 머지·배포 완료",
+      "- 🚀 #9 [슬러그] 다른 것 — 남은 게이트 = 오너 재설치",
+    ].join("\n");
+    expect(boardItemLines(board).map((l: BoardLine) => l.lineNumber)).toEqual([2, 3]);
+  });
+
+  it("평면 구역의 옛 산문형(`- 착수 대기: …`) 도 항목이다", () => {
+    const board = ["# PROJECT_MASTER", "- 착수 대기: 무언가 — 다음 게이트: 오너 확인"].join(
+      "\n",
+    );
+    expect(boardItemLines(board).map((l: BoardLine) => l.lineNumber)).toEqual([2]);
+  });
+
+  it("`###` 이하 인계 서사의 볼드 없는 부연 줄은 항목이 아니다", () => {
+    // 이 가드가 없으면 실보드에서 부연 135줄이 항목으로 잡혀 대량 오탐이 난다.
+    // 부연은 항목과 **형태가 같아서**(`- ✅ **…**`) 생김새로는 가를 수 없다 — 구역이 기준이다.
+    const board = [
+      "# PROJECT_MASTER",
+      "- **평면 항목** 내용",
+      "### 2026-09-04 · 세션 [슬러그] — 무언가",
+      "- 검증: typecheck·lint 클린",
+      "- 다음 에이전트: 남은 것 없음",
+      "- ✅ 실렌더 확인 완료",
+    ].join("\n");
+    expect(boardItemLines(board).map((l: BoardLine) => l.lineNumber)).toEqual([2]);
+  });
+
+  it("`###` 이하의 `- **` 줄은 종전대로 항목으로 유지한다", () => {
+    // 넓히는 변경이 커버리지를 **줄이지는** 않게 고정한다 — 줄이는 방향의 오류가 곧 침묵이다.
+    const board = [
+      "# PROJECT_MASTER",
+      "### 2026-09-04 · 세션 [슬러그] — 무언가",
+      "- **✅ 머지 완료 — 무언가 [PR #10](https://github.com/indexzigu/wagcrm_git/pull/10)**: …",
+    ].join("\n");
+    expect(boardItemLines(board).map((l: BoardLine) => l.lineNumber)).toEqual([3]);
+  });
 });
 
 describe("hasDurableReference — 보드 밖 두 번째 사본이 있는가", () => {
@@ -663,6 +710,13 @@ describe("findCoordinatelessItems", () => {
     // PR 번호만 있어도 gh 로 재구성된다(사고 조사에서 실제로 그렇게 확인했다).
     const board = "- **🔴 머지 대기 — A [PR #10](https://github.com/indexzigu/wagcrm_git/pull/10)**: …";
     expect(findCoordinatelessItems(board)).toHaveLength(0);
+  });
+
+  it("평면 구역의 볼드 없는 새 형식도 좌표 경고 대상이다", () => {
+    // 항목 인정 범위를 boardItemLines 와 공유하지 않으면, 대조에는 들어온 항목이
+    // 좌표 경고에서만 조용히 빠진다 — 같은 침묵 실패의 반쪽이다.
+    const board = "- 🔴 [슬러그] 좌표 없는 새 형식 항목 — 다음 게이트: 오너 확인";
+    expect(findCoordinatelessItems(board).map((f) => f.lineNumber)).toEqual([1]);
   });
 
   it("하위 불릿·섹션 헤더는 항목이 아니다", () => {
