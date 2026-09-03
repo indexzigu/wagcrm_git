@@ -716,7 +716,11 @@ describe("findCoordinatelessItems", () => {
     // 항목 인정 범위를 boardItemLines 와 공유하지 않으면, 대조에는 들어온 항목이
     // 좌표 경고에서만 조용히 빠진다 — 같은 침묵 실패의 반쪽이다.
     const board = "- 🔴 [슬러그] 좌표 없는 새 형식 항목 — 다음 게이트: 오너 확인";
-    expect(findCoordinatelessItems(board).map((f) => f.lineNumber)).toEqual([1]);
+    const [found] = findCoordinatelessItems(board);
+    expect(found.lineNumber).toBe(1);
+    // 제목에서 불릿 표식이 걷혀야 한다 — `- **` 만 걷던 종전 치환은 볼드 없는 새 형식에서
+    // `- ` 를 남겨 보고서에 그대로 실렸다.
+    expect(found.title).toBe("🔴 [슬러그] 좌표 없는 새 형식 항목 — 다음 게이트: 오너 확인");
   });
 
   it("하위 불릿·섹션 헤더는 항목이 아니다", () => {

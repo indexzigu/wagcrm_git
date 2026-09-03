@@ -151,11 +151,27 @@ export function parseDeployMarker(raw) {
  * 보고 맨 `#번호` 도 읽게 넓히지 말 것: 이 레포는 이관이 두 번이라 번호가 세 겹이고,
  * **번호만으로는 어느 레포인지 가릴 수 없다.** 그렇게 했던 판정이 실보드 26건을 전부
  * `PR_NOT_FOUND` 로 띄웠다(실측 2026-08-29, 진짜 드리프트는 0건 — 위 LEGACY_REPO_SLUGS
- * 주석). 링크 없는 항목의 안전망은 PR 대조가 아니라 `findCoordinatelessItems` 쪽이다.
+ * 주석).
+ *
+ * ⚠️ **그래서 링크 없는 항목의 낡음은 이 도구가 못 잡는다 — 대신 잡아 주는 곳이 없다.**
+ * `findCoordinatelessItems` 는 **유실 복구 가능성**을 재는 것이지 마커가 낡았는지를 재지
+ * 않고, 상세 파일 링크가 있으면 그것마저 침묵한다. 실측 2026-09-04: 지금 보드의 새 형식
+ * 항목 4건이 정확히 그 상태다 — **항목으로는 잡히지만 어느 축으로도 대조되지 않는다.**
+ * 이걸 코드로 메우려 들지 말 것. 항목을 쓸 때 **PR 을 링크로** 적으면 그 순간 대조 대상이
+ * 되고, 그것이 이 구멍의 유일하게 안전한 해법이다.
  */
+
+/**
+ * 보고서에 싣는 항목 제목. 불릿 표식과 **볼드 여는 표식이 있으면** 함께 걷는다.
+ * `- **` 만 걷으면 볼드 없는 새 형식 항목의 제목에 `- ` 가 남는다(실측).
+ */
+function itemTitle(line) {
+  return line.slice(0, 90).replace(/^- (?:\*\*)?/, "").trim();
+}
 
 /** 평면 구역의 항목 줄 — 최상위 불릿이면 형태 불문 항목이다(위 주석). */
 function isFlatItemLine(line) {
+  // `length > 2` = 내용 없는 맨 `- ` 줄을 뺀다(불릿 표식 2자 뒤에 아무것도 없는 줄).
   return line.startsWith("- ") && line.trim().length > 2;
 }
 
@@ -175,7 +191,7 @@ export function boardItemLines(text) {
 }
 
 /**
- * 보드 텍스트에서 항목 줄을 뽑는다. 항목은 `- **` 로 시작하는 최상위 불릿이고,
+ * 보드 텍스트에서 항목 줄을 뽑는다. 무엇을 항목으로 보는지는 `boardItemLines` 가 정하고,
  * PR 링크(`pull/NNN`)를 가진 것만 대조 대상이다(PR 없는 서술 항목은 판정 불가).
  *
  * ⚠️ PR 없는 항목은 여기서 **의도적으로 빠진다** — gh·git 로 대조할 좌표가 없어서
@@ -190,7 +206,7 @@ export function parseBoardItems(text) {
     items.push({
       lineNumber,
       // 제목 = 첫 마커부터 PR 링크 직전까지. 보고서에서 항목을 사람이 알아보게만 하면 된다.
-      title: line.slice(0, 90).replace(/^- \*\*/, "").trim(),
+      title: itemTitle(line),
       pr: resolved.pr,
       prConfident: resolved.confident,
       // 항목이 스스로 밝히는 레포(URL 슬러그). 없으면 현행 레포다 — 위 primaryPr.
@@ -304,7 +320,7 @@ export function findCoordinatelessItems(text) {
   const record = ({ line, lineNumber }) =>
     found.push({
       lineNumber,
-      title: line.slice(0, 90).replace(/^- \*\*/, "").trim(),
+      title: itemTitle(line),
     });
 
   // 평면 구역: 줄 하나가 곧 항목이다 — 줄 단위로 판정한다.
