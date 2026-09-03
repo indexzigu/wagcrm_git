@@ -217,6 +217,96 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     expect((capped.debugRows as unknown[]).length).toBe(0);
   });
 
+  it("최후 수단이 실제로 도는 상황에서도 확인필요 목록을 비우지 않는다", () => {
+    // ⚠️ 앞선 픽스처는 주 루프에서 이미 상한을 맞춰 **최후 수단에 도달하지 않았고**, 그래서
+    // 보호 목록에서 이 키를 빼는 변이가 살아남았다(리뷰 실측). 주 루프 반복을 소진시킬 만큼
+    // 잡다한 필드를 깔아 최후 수단까지 밀어 넣는다.
+    // ⚠️ 목록이 **최후 수단의 첫 대상**이 되도록 만든다. 잡다한 필드가 더 크면 그것들만
+    // 비우고 상한에 닿아 목록에 도달조차 하지 않는다(그래서 변이가 살아남았다).
+    // 주 루프가 손댈 수 없게 항목은 1건, 안쪽 문자열은 짧게 둔다.
+    const input = Object.fromEntries([
+      ["failed", true],
+      [
+        "needsReviewDetail",
+        [Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`f${i}`, `값${i}`]))],
+      ],
+      ...Array.from({ length: 300 }, (_, i) => [`bulk${i}`, { x: `값${i}` }]),
+    ]);
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    // 최후 수단이 실제로 돌았음을 확인한다(잡다한 필드가 비워졌다).
+    const emptied = Array.from({ length: 300 }, (_, i) => capped[`bulk${i}`]).filter(
+      (v) => v != null && typeof v === "object" && Object.keys(v as object).length === 0,
+    );
+    expect(emptied.length).toBeGreaterThan(0);
+    // 그런데도 화면이 읽는 목록은 배열로 살아 있다.
+    expect(Array.isArray(capped.needsReviewDetail)).toBe(true);
+    expect((capped.needsReviewDetail as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("표시 자리가 다 차도 잃은 양을 단위별로 합쳐 알린다", () => {
+    // ⚠️ 종전엔 경로 수만 세어 13건이 사라져도 숫자가 안 남았고, 그다음엔 문자와 항목을
+    // 한 자리에 합쳐 9,000자 손실을 9,000"건"으로 발표했다. 단위를 갈라 센다.
+    const input = Object.fromEntries([
+      ["failed", true],
+      ...Array.from({ length: 20 }, (_, i) => [`s${i}`, "문".repeat(600)]),
+    ]);
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+    const marker = capped.detailsTrimmed as Record<string, number>;
+
+    // 문자로 줄인 몫은 문자 자리에만 합쳐진다.
+    expect(marker.andMoreItems).toBeUndefined();
+    // ⚠️ `> 0` 만 보면 "경로 수를 센다"로 바꿔도 통과한다(변이 생존 실측). 넘친 경로가
+    // 한 자리씩만 셌다면 한 자리 수인데, 실제로는 문자 수라 수천이다 — 자릿수로 가른다.
+    expect(marker.andMoreChars).toBeGreaterThan(1_000);
+  });
+
+  it("잡이 표시 이름을 쓰고 그 값이 크면 그것도 줄인다", () => {
+    // ⚠️ 그 이름을 수집 대상에서 통째로 빼면 아무도 못 건드리는 자리가 되어, 잡이 거기에
+    // 큰 값을 담으면 상한을 크게 넘긴 채 조용히 나간다(리뷰 실측 10,775자).
+    const capped = capDetailsForLog({
+      failed: true,
+      detailsTrimmed: Array.from({ length: 200 }, (_, i) => `내가쓰는값${i}: ${"값".repeat(40)}`),
+    }) as Record<string, unknown>;
+
+    expect(Array.isArray(capped.detailsTrimmed)).toBe(true);
+    const kept = (capped.detailsTrimmed as unknown[]).length;
+    // ⚠️ `< 200` 만 보면 **통째로 비워진 0건**도 통과한다(변이 생존 실측). 수집 대상에서
+    // 빼면 최후 수단이 통째로 비우는데, 그건 "줄였다"가 아니라 "다 잃었다"이다.
+    expect(kept).toBeGreaterThan(0);
+    expect(kept).toBeLessThan(200);
+    expect(capped.detailsTrimmed2).toBeTruthy(); // 우리 표시는 옆자리로
+  });
+
+  it("진단 배열을 품은 부모는 다른 것을 다 비운 뒤에 손댄다", () => {
+    // ⚠️ 최후 수단의 보호 판정이 **루트 키만** 보면, 진단 배열이 한 겹 아래 있을 때 부모째
+    // 비워져 사라진다. 실제로 그런 모양을 내는 잡이 있다(수집 결과를 감싼 뒤 그 안에 errors).
+    const capped = capDetailsForLog(
+      Object.fromEntries([
+        ["failed", true],
+        ["engagement", { errors: Array.from({ length: 40 }, (_, i) => `e${i}: ${"사유".repeat(20)}`), scanned: 40 }],
+        ...Array.from({ length: 300 }, (_, i) => [`m${i}`, { x: `값${i}` }]),
+      ]),
+    ) as Record<string, unknown>;
+
+    const engagement = capped.engagement as { errors?: unknown[] };
+    expect(Array.isArray(engagement?.errors)).toBe(true);
+    expect(engagement.errors!.length).toBeGreaterThan(0);
+  });
+
+  it("중첩된 error·message 는 요약 자격을 얻지 않는다", () => {
+    // ⚠️ 요약 순위를 깊이 상관없이 주면, 항목 안의 `message` 가 최상위 `failureReason` 과
+    // 같은 자격을 얻어 **상위 진단 배열이 먼저 깎인다.** 요약은 최상위에서만이다.
+    const capped = capDetailsForLog({
+      failed: true,
+      errors: Array.from({ length: 60 }, (_, i) => `e${i}: ${"사유".repeat(20)}`),
+      detail: Array.from({ length: 60 }, (_, i) => ({ message: `안쪽 메시지 ${i}: ${"값".repeat(60)}` })),
+    }) as Record<string, unknown>;
+
+    // 안쪽 message 뭉치가 먼저 줄고, 진단 배열이 더 많이 남는다.
+    expect((capped.errors as unknown[]).length).toBeGreaterThan((capped.detail as unknown[]).length);
+  });
+
   it("요약 스칼라만으로 넘치면 줄이지 않고 넘쳤다는 사실만 남긴다", () => {
     // 판정 근거를 줄이느니 봉투를 넘긴다 — 다만 조용히 넘기지는 않는다.
     const scalarsOnly = Object.fromEntries([

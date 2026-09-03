@@ -127,15 +127,37 @@ function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]):
     const path = prefix ? `${prefix}.${key}` : key;
     if (Array.isArray(value) || (typeof value === "string" && value.length > MIN_KEPT_CHARS)) {
       // 뒤로 미룰수록 큰 순위. 요약(2) > 진단 배열(1) > 나머지(0).
-      const rank = SUMMARY_KEYS.has(key) ? 2 : DIAGNOSTIC_KEYS.has(key) ? 1 : 0;
+      // ⚠️ 요약 순위는 **최상위에서만** 준다. 중첩된 `error`·`message` 는 요약이 아니라
+      // 진단 내용 자체다 — 그것에 요약 자격을 주면 상위 진단 배열이 먼저 깎인다.
+      const rank = !prefix && SUMMARY_KEYS.has(key) ? 2 : DIAGNOSTIC_KEYS.has(key) ? 1 : 0;
       found.push({ parent: obj, key, path, rank });
     }
     collectShrinkables(value, path, found);
   }
 }
 
+/** 이 값 어딘가에 진단 배열이 들어 있는가 — 있으면 부모째 비우지 않는다. */
+function holdsDiagnostic(node: unknown): boolean {
+  if (Array.isArray(node)) return node.some(holdsDiagnostic);
+  if (node == null || typeof node !== "object") return false;
+  return Object.entries(node as Record<string, unknown>).some(
+    ([key, value]) => DIAGNOSTIC_KEYS.has(key) || holdsDiagnostic(value),
+  );
+}
+
 /**
- * 이력에 남길 페이로드를 상한 안으로 줄인다(순수 함수 — DB 없이 검증 가능).
+ * 표시를 얹을 빈 자리를 찾는다 — 잡이 이미 그 이름을 쓰고 있으면 접미를 늘린다.
+ * (후보를 하나만 두면 그것마저 쓰일 때 남의 값을 지운다 — 리뷰 실측.)
+ */
+function freeMarkerKey(out: Record<string, unknown>): string {
+  let key = TRIMMED_MARKER;
+  for (let n = 2; key in out; n += 1) key = `${TRIMMED_MARKER}${n}`;
+  return key;
+}
+
+/**
+ * 이력에 남길 페이로드를 **줄일 수 있는 만큼 값어치 순으로** 줄인다(순수 함수 — DB 없이
+ * 검증 가능).
  *
  * ⚠️ **문자열을 통째로 자르지 않는다.** 종전 구현은 직렬화 결과를 상한 자리에서 싹둑
  * 잘랐는데, 그러면 ①남은 조각이 JSON 중간에서 끊겨 기계로 못 읽고 ②뒤쪽 **요약 필드
@@ -144,7 +166,10 @@ function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]):
  * 한 번에 **한 자리씩** 줄이고 그때마다 후보를 다시 모은다. 줄이는 순서는 진단 가치가
  * 낮은 것부터다: 나머지 → 진단 배열 → 요약. 같은 순위 안에서는 덩치 큰 것부터.
  *
- * ⚠️ **줄이지 못하는 모양이어도 조용히 넘기지 않는다.** 마지막에 그 사실을 표시로 남긴다.
+ * ⚠️ **상한을 언제나 지킨다고 약속하지 않는다.** 값을 줄여서는 못 줄이는 모양이 있다 —
+ * 요약 스칼라만으로 초과하거나, 남은 덩치가 키 이름 자체인 경우다. 그때는 줄이지 않고
+ * **넘쳤다는 사실과 실제 크기를 표시로 남긴다**(조용한 초과는 만들지 않는다).
+ * 실제 잡이 내는 모양은 전부 상한 안에 든다.
  */
 export function capDetailsForLog(details: unknown): unknown {
   if (details == null || typeof details !== "object" || Array.isArray(details)) return details;
@@ -163,8 +188,11 @@ export function capDetailsForLog(details: unknown): unknown {
   // 표시가 쓸 몫을 미리 떼어 둔다 — 다 줄인 뒤 표시를 붙이다가 다시 넘기지 않도록.
   const workingCap = DETAILS_MAX_CHARS - MARKER_BUDGET_CHARS;
   const trimmed: Record<string, number> = {};
-  let extraTrims = 0;
-  const note = (path: string, amount: number) => {
+  // ⚠️ 문자 수와 항목 수를 **한 자리에 합치지 않는다.** 합쳐 놓고 이름을 "항목"이라 붙이면
+  // 9,000자 손실을 9,000건으로 발표하게 된다 — 이 파일이 다른 곳에서 규탄하는 바로 그
+  // 잘못("숫자가 틀리면 없는 것보다 나쁘다")을 표시 자신이 저지르는 셈이다.
+  const overflow = { items: 0, chars: 0 };
+  const note = (path: string, amount: number, unit: "items" | "chars") => {
     // ⚠️ 같은 자리를 여러 회차에 걸쳐 줄이므로 **누적**한다. 덮어쓰면 마지막 회차 몫만 남아
     // 실제 손실을 크게 축소해 알린다(실측: 149건을 잃고 1건이라 적었다). 표시가 있으되
     // 숫자가 틀리면 없는 것보다 나쁘다 — 읽는 사람이 거의 다 남았다고 믿는다.
@@ -175,7 +203,7 @@ export function capDetailsForLog(details: unknown): unknown {
     } else {
       // 표시 자리가 다 찼다 — 경로는 못 적어도 **잃은 양은 합쳐서** 알린다. 종전엔 경로 수만
       // 세어, 13건이 사라져도 표시에 아무 숫자도 안 남았다(실측).
-      extraTrims += amount;
+      overflow[unit] += amount;
     }
     // 화면이 "일부만"을 판단하는 짝 표시를 함께 세운다 — 깎인 자리가 그 목록 **안쪽**이어도.
     for (const [listKey, flag] of Object.entries(CAPPED_FLAG_OF)) {
@@ -207,13 +235,13 @@ export function capDetailsForLog(details: unknown): unknown {
         else high = mid - 1;
       }
       writeAt(target, value.slice(0, low));
-      if (low < value.length) note(target.path, value.length - low);
+      if (low < value.length) note(target.path, value.length - low, "items");
     } else {
       const original = value as string;
       const kept = Math.max(MIN_KEPT_CHARS, original.length - (size(out) - workingCap));
       if (kept < original.length) {
         writeAt(target, original.slice(0, kept));
-        note(target.path, original.length - kept);
+        note(target.path, original.length - kept, "chars");
       }
     }
 
@@ -222,8 +250,6 @@ export function capDetailsForLog(details: unknown): unknown {
     if (size(out) >= before) exhausted.add(target.path);
   }
 
-  // 마지막 수단 — 줄일 자리를 다 써도 넘치면(작은 필드가 아주 많은 모양) 덩치 큰 비-요약
-  // 필드를 통째로 들어낸다. 요약과 스칼라는 건드리지 않는다.
   // 마지막 수단 — 줄일 자리를 다 써도 넘치면 **값이 낮은** 큰 필드를 비운다.
   //
   // ⚠️ 지켜야 할 것을 지운 적이 있다(리뷰 실측). 순위를 안 보고 지워 진단 배열이 전멸했고,
@@ -233,31 +259,34 @@ export function capDetailsForLog(details: unknown): unknown {
   const protectedKeys = new Set([...SUMMARY_KEYS, ...DIAGNOSTIC_KEYS, ...Object.keys(CAPPED_FLAG_OF)]);
   const emptiable = Object.keys(out)
     .filter((k) => !protectedKeys.has(k) && out[k] != null && typeof out[k] === "object")
-    .sort((a, b) => size(out[b]) - size(out[a]));
+    // ⚠️ 진단 배열이 **비보호 부모 아래**에 있으면 부모째 비워져 사라진다(실제로 그런 모양을
+    // 내는 잡이 있다 — 수집 결과를 한 겹 감싼 뒤 그 안에 `errors` 를 둔다). 그렇다고 절대
+    // 금지로 두면 그런 부모만 잔뜩인 페이로드에서 상한을 아예 못 맞춘다. 주 루프와 같이
+    // **후순위**로 둔다 — 진단을 품지 않은 것부터 비우고, 모자랄 때만 그쪽으로 넘어간다.
+    .sort((a, b) => {
+      const da = holdsDiagnostic(out[a]) ? 1 : 0;
+      const db = holdsDiagnostic(out[b]) ? 1 : 0;
+      return da !== db ? da - db : size(out[b]) - size(out[a]);
+    });
   for (const key of emptiable) {
     if (size(out) <= workingCap) break;
     const value = out[key];
     const dropped = Array.isArray(value) ? value.length : Object.keys(value as object).length;
     if (dropped === 0) continue;
     out[key] = Array.isArray(value) ? [] : {};
-    note(key, dropped);
+    note(key, dropped, "items");
   }
 
-  if (extraTrims > 0) trimmed.andMoreItems = extraTrims;
-  if (Object.keys(trimmed).length > 0) {
-    // 잡이 같은 이름을 자기 뜻으로 쓰고 있으면 덮지 않는다 — 남의 값을 조용히 지우지 않는다.
-    // 잡이 이미 쓰는 이름을 덮지 않는다 — 빈 자리를 찾을 때까지 접미를 늘린다.
-    // (종전엔 후보를 하나만 두어 그 이름마저 쓰이면 남의 값을 지웠다 — 리뷰 실측.)
-    let markerKey = TRIMMED_MARKER;
-    for (let n = 2; markerKey in out; n += 1) markerKey = `${TRIMMED_MARKER}${n}`;
-    out[markerKey] = trimmed;
+  if (overflow.items > 0) trimmed.andMoreItems = overflow.items;
+  if (overflow.chars > 0) trimmed.andMoreChars = overflow.chars;
+
+  if (Object.keys(trimmed).length > 0 || size(out) > DETAILS_MAX_CHARS) {
+    out[freeMarkerKey(out)] = trimmed;
     // 여기까지 와서도 넘치면 이 함수가 다루지 못한 덩치가 남은 것이다(최소 보존분만으로 초과
-    // 하거나 줄일 자리가 없는 모양). 조용히 넘기지 않고 실제 크기를 적어 둔다.
+    // 하거나, 남은 덩치가 키 이름 자체라 어떤 값 축소로도 못 줄이는 모양).
+    // ⚠️ 표시를 **붙인 뒤에** 잰다. 붙이기 전에 재면 자기 무게가 빠져 실제보다 작게 적는다 —
+    // 정직하려고 만든 유일한 필드가 축소 보고를 한다(리뷰 실측: 26,830 을 26,795 로).
     if (size(out) > DETAILS_MAX_CHARS) trimmed.overCap = size(out);
-  } else if (size(out) > DETAILS_MAX_CHARS) {
-    let markerKey = TRIMMED_MARKER;
-    for (let n = 2; markerKey in out; n += 1) markerKey = `${TRIMMED_MARKER}${n}`;
-    out[markerKey] = { overCap: size(out) };
   }
   return out;
 }
