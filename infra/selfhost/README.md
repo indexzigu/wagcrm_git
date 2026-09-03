@@ -645,6 +645,85 @@ macOS cron 은 로컬 시간대(KST, UTC+9)로 돈다. `vercel.json` 의 크론
 | recampaign-auto-propose | `0 0 * * *` | `0 9 * * *` |
 | tax-invoice-issue-confirm | `0 1 * * *` | `0 10 * * *` |
 
+## Agent Worker (launchd, 계보 [HHostWAG] Task 7)
+
+⚠️ **이 세션(Task 7 구현자)은 아래 어떤 명령도 실행하지 않았다** —
+`infra/selfhost/run-agent-worker.sh`·
+`infra/selfhost/launchd/kr.ygrd.wagcrm.agent-worker.plist` 를 새로 만들고
+`bash -n`/`plutil -lint`/유닛 테스트로만 정적 검증했다. `launchctl
+bootstrap`·워커 기동·`~/selfhost` 실환경 조작은 전혀 하지 않았다. 아래
+순서는 설치 패킷(`task-8-install-packet.md` §A-2~A-3)과 대조하는
+체크리스트로 쓴다 — 실제 실행 결과는 그 문서·Task 9 소관이다.
+
+Hermes 가 WAG 도메인 작업(딜 조회 등)을 처리하도록 맡기는 별도 상주
+프로세스다. 앱(`kr.ygrd.wagcrm.app`)과 **완전히 분리된 launchd 서비스**이고,
+DB 접속도 최소권한 역할(`wag_agent_worker`)로 앱과 분리된다 — 두 접속
+문자열이 섞이면 워커가 조용히 전체 권한을 갖게 되므로(아래 참고), 절대
+`infra/selfhost/.env`(앱 크리덴셜)를 워커에 재사용하지 않는다.
+
+### 최초 기동 순서
+
+1. **워커 전용 env 파일을 새로 만든다** — `infra/selfhost/agent-worker.env`
+   (git 미추적, `.gitignore` 가 명시적으로 커버). 앱 `.env` 를 복사하지
+   말고, `DATABASE_URL` 하나만 **워커 role(`wag_agent_worker`) 접속
+   문자열**로 채운다. 이 role 생성은 오너 전용 수동 단계다(설치 패킷
+   §A-2-1) — 저장소 어디에도 이 role 을 만드는 코드가 없다:
+   ```sql
+   CREATE ROLE wag_agent_worker LOGIN PASSWORD '<오너-발급-비밀번호>';
+   ```
+   `run-agent-worker.sh` 는 이 파일의 `DATABASE_URL` 이 앱 `.env` 의
+   `DATABASE_URL` 과 같으면(값은 출력하지 않고 비교만 해서) 기동을 거부한다
+   — 두 값이 같다는 것은 role 을 분리하지 않았다는 신호이기 때문이다.
+2. **네이티브 addon 을 빌드한다**(레포 루트에서):
+   ```bash
+   npm run agent-worker:build-native
+   ```
+   `src/lib/agent-worker/native/peer-cred/build/Release/peer_cred.node` 가
+   없으면 래퍼가 정확한 빌드 명령을 담은 한글 오류로 기동을 거부한다.
+3. `mkdir -p ~/selfhost/logs` — 앱과 같은 로그 디렉터리를 공유한다(이미
+   앱을 설치했다면 보통 이미 존재한다).
+4. `infra/selfhost/launchd/kr.ygrd.wagcrm.agent-worker.plist` 를
+   `~/Library/LaunchAgents/kr.ygrd.wagcrm.agent-worker.plist` 로 복사(또는
+   심볼릭 링크)한다.
+5. ```bash
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/kr.ygrd.wagcrm.agent-worker.plist
+   ```
+   (구 `launchctl load` 대신 `bootstrap` — 이 문서의 다른 서비스들도 같은
+   경로를 쓴다.)
+
+### 상태 확인
+
+```bash
+launchctl print gui/$(id -u)/kr.ygrd.wagcrm.agent-worker | grep state
+tail -n 50 ~/selfhost/logs/agent-worker.out.log
+```
+`state = running` 이고 로그에 `"event":"started"` JSON 줄이 보이면 정상이다.
+워커는 HTTP 를 열지 않는다 — 로컬 유닉스 도메인 소켓(UDS) RPC 로만
+응답한다(소켓 경로는 `scripts/agent-worker.ts` 참고, 기본값은 코드가
+결정한다). 소켓 파일이 보이지 않으면 위 로그에서 `startup_failed` 를 먼저
+찾는다.
+
+### 재시작 / 중지
+
+```bash
+launchctl kickstart -k "gui/$(id -u)/kr.ygrd.wagcrm.agent-worker"   # 재시작
+launchctl bootout "gui/$(id -u)/kr.ygrd.wagcrm.agent-worker"        # 완전 중지(등록 해제)
+```
+워커는 `SIGTERM` 을 받으면 자신이 쥔 lease 만 정리하고 종료한다
+(`scripts/agent-worker.ts` shutdown 경로) — plist 의 `ExitTimeOut` 30 초는
+그 정리 시간을 보장하기 위한 값이다.
+
+### 소켓 경로 메모
+
+이 워커는 앱과 달리 포트를 열지 않고 로컬 UDS 하나로만 통신한다. 소켓
+경로를 명시적으로 지정하려면 `agent-worker.env` 에
+`WAG_AGENT_WORKER_SOCKET` 을 추가하면 되지만(선택), **값은 이 문서에도,
+어떤 커밋에도 적지 않는다** — 이 레포는 PUBLIC 이고 소켓 경로 자체는
+민감정보가 아니지만 관례상 운영 좌표는 `agent-worker.env`(미추적)에만
+둔다. 네이티브 addon 경로 오버라이드(`WAG_AGENT_WORKER_PEER_CRED_ADDON`)도
+같은 파일에 둔다 — `WorkingDirectory` 가 레포 루트(`~/selfhost/wagcrm`)면
+기본값(상대경로 해석)으로 충분하다.
+
 ## 배포 절차 (Task 4)
 
 정기 배포는 **운영 체크아웃(`~/selfhost/wagcrm`)에서만**

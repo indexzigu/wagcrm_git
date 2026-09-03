@@ -42,6 +42,11 @@ yarn-error.log*
 # selfhost: 실제 터널 ID·크리덴셜 경로가 들어가는 운영 파일 — 예시(.example)만 추적
 infra/selfhost/cloudflared-config.yml
 
+# selfhost: Agent Worker 전용 워커-role DATABASE_URL — infra/selfhost/.env(앱
+# 크리덴셜)와 별개 파일이라 파일명이 ".env" 로 시작하지 않아 위 `.env*` 패턴에
+# 걸리지 않는다. 명시적으로 제외한다(run-agent-worker.sh 가 읽는 파일).
+infra/selfhost/agent-worker.env
+
 # vercel
 .vercel
 
@@ -185,3 +190,7 @@ docs/private/
 /*.xls
 /*.csv
 /dev.db
+
+# Agent worker native peer-credential addon build output (task 5) — built only by
+# `npm run agent-worker:build-native`, never by the web deploy. Machine-local binary.
+/src/lib/agent-worker/native/peer-cred/build/

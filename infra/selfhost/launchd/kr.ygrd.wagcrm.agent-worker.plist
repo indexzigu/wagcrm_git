@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 - 경로는 이 iMac(운영 체크아웃 ~/selfhost/wagcrm, 홈 /Users/z9)에 고정된
+	   절대경로다. launchd 는 $HOME/~ 를 전개하지 않으므로 다른 머신으로
+	   옮길 경우 이 파일의 경로를 전부 다시 써야 한다(kr.ygrd.wagcrm.app.plist
+	   와 동일한 관례).
+	 - 실 크리덴셜은 이 파일에 두지 않는다 — run-agent-worker.sh 가
+	   infra/selfhost/agent-worker.env(git 미추적, 워커 전용 최소권한 role
+	   DATABASE_URL)를 직접 읽는다. EnvironmentVariables 키를 여기 추가하지
+	   말 것 — 이 plist 는 PUBLIC 레포에 커밋된다(P0).
+	 - 워커는 SIGTERM 을 받아 자신이 쥔 lease 만 정리하고 종료한다
+	   (scripts/agent-worker.ts 의 shutdown 경로) — ExitTimeOut 을 넉넉히
+	   준다.
+	-->
+	<key>Label</key>
+	<string>kr.ygrd.wagcrm.agent-worker</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/z9/selfhost/wagcrm/infra/selfhost/run-agent-worker.sh</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/z9/selfhost/wagcrm</string>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- 크래시·재부팅 후 자동 복구 — 무인 운영 전제 -->
+	<key>KeepAlive</key>
+	<true/>
+
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+
+	<!-- 워커가 SIGTERM 을 받아 lease 를 정리하고 스스로 종료할 시간을 준다. -->
+	<key>ExitTimeOut</key>
+	<integer>30</integer>
+
+	<key>StandardOutPath</key>
+	<string>/Users/z9/selfhost/logs/agent-worker.out.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/Users/z9/selfhost/logs/agent-worker.err.log</string>
+</dict>
+</plist>
