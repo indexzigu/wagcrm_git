@@ -93,13 +93,88 @@ export async function launchStoryContext(): Promise<BrowserContext> {
  * 검색 결과가 안 떴을 때 남길 진단 문자열 — 프로필 조회 응답이 유일한 단서다.
  * 본문은 앞부분만 싣는다(차단 페이지인지 정상 JSON 인지 가르는 데는 충분하고,
  * 통째로 실으면 SystemTaskLog.details 의 4KB 상한을 혼자 먹는다).
+ *
+ * ⚠️ **상한을 올리는 것으로는 안 풀린다(2026-08-29 실사고).** 그날 이 200자 중 **161자를
+ * 전부 false 인 `friendship_status` 하나가 먹어**, 판별에 필요한 필드(`is_private`·
+ * `username`)는 한 글자도 실리지 않았다. 예산이 모자란 게 아니라 **노이즈가 신호를 밀어낸
+ * 것**이라, 아래 `stripProfileNoise` 로 걷어낸 뒤 프리뷰한다.
  */
 const PROFILE_BODY_PREVIEW_CHARS = 200;
 
+/**
+ * 프로필 응답에서 진단 가치가 없는 가지를 걷어낸다 — 프리뷰 예산을 신호에 쓰기 위해서다.
+ *
+ * ⚠️ 파싱에 실패하면(차단 페이지 HTML 등) **원문이 그대로 남아야 한다** — "JSON 이 아니었다"는
+ * 사실 자체가 그때는 가장 중요한 증거다. 그래서 호출부가 try/catch 로 감싼다.
+ */
+/**
+ * 값을 접을 키 — **실측으로 노이즈임이 확인된 것만** 올린다. 추측으로 늘리면 다음 사고의
+ * 답이 여기서 지워진다. 막히면 그때 로그에 응답 모양이 남아 있으니 그걸 보고 늘릴 것.
+ *
+ * - `friendship_status`: 전부 false 인 관계 플래그 뭉치. 2026-08-29 실측으로 프리뷰 200자 중
+ *   161자를 혼자 먹었고, 익명 뷰어라 이 값이 무언가를 뜻한 적이 없다.
+ */
+const PROFILE_NOISE_KEYS = new Set(["friendship_status"]);
+
+/** 접힌 자리에 남길 표시 — 키는 남으므로 "응답 모양"은 계속 읽을 수 있다. */
+const FOLDED = "…";
+
+function stripProfileNoise(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((v) => stripProfileNoise(v));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value)) {
+      // ⚠️ 키를 **지우지 않고 값만 접는다.** 통째로 지우면 "원래 없었다"와 "우리가 접었다"를
+      // 구분할 수 없고, 뷰어가 응답 모양을 바꾼 것(= 이 계열 사고의 유력 원인)을 놓친다.
+      out[key] = PROFILE_NOISE_KEYS.has(key) ? FOLDED : stripProfileNoise(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 function describeProfileProbe(probe: { status: number; body: string } | null): string {
   if (!probe) return "프로필 조회 응답 없음(요청 미발화·네트워크 차단 의심)";
-  const preview = probe.body.replace(/\s+/g, " ").slice(0, PROFILE_BODY_PREVIEW_CHARS);
+  let body = probe.body;
+  try {
+    body = JSON.stringify(stripProfileNoise(JSON.parse(body)));
+  } catch {
+    /* JSON 이 아니거나 모양이 예상 밖 — 원문 프리뷰가 곧 증거다 */
+  }
+  const preview = body.replace(/\s+/g, " ").slice(0, PROFILE_BODY_PREVIEW_CHARS);
   return `프로필 조회 status=${probe.status} 본문:${preview}`;
+}
+
+/** 화면 상태 프리뷰 상한 — 차단 화면인지 빈 결과인지 가르는 데 필요한 만큼만. */
+const PAGE_STATE_PREVIEW_CHARS = 200;
+
+/** 화면 상태 읽기의 상한 — 이미 실패한 경로라 여기서 더 기다리면 조회 예산만 먹는다. */
+const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
+
+/**
+ * 화면 대기가 깨진 순간의 페이지 상태 — "응답은 정상인데 화면이 안 떴다"의 유일한 증거원.
+ *
+ * **왜 필요한가(2026-08-29 실사고):** 프로필 조회가 200 이었는데도 결과 화면이 안 떴다.
+ * 차단 화면이었는지·계정이 비공개였는지·뷰어 UI 가 바뀐 것인지 가를 증거가 **아무 데도
+ * 없었고**, 스토리는 24h 수명이라 소급 재현도 불가능했다. 프로필 응답(직전 단계)만 계측하면
+ * 실패 지점이 그다음 단계로 옮겨간 순간 다시 깜깜해진다.
+ *
+ * ⚠️ **이 함수는 절대 throw 하지 않는다.** 이미 깨진 페이지에서 읽는 것이라 title·textContent
+ * 가 실패할 수 있는데, 그 예외가 올라가면 원래 실패 사유를 덮어써 **진단이 진단을 잡아먹는다**.
+ */
+async function describePageState(page: Page): Promise<string> {
+  const read = async (fn: () => Promise<string | null>): Promise<string | null> => {
+    try {
+      return await fn();
+    } catch {
+      return null;
+    }
+  };
+  const title = await read(() => page.title());
+  const bodyText = await read(() => page.textContent("body", { timeout: PAGE_STATE_READ_TIMEOUT_MS }));
+  if (title === null && bodyText === null) return "화면 상태 읽기 실패(페이지 소실·네비게이션 중)";
+  const text = (bodyText ?? "").replace(/\s+/g, " ").trim().slice(0, PAGE_STATE_PREVIEW_CHARS);
+  return `화면 제목:${title ?? "(읽기 실패)"} 화면:${text}`;
 }
 
 /** 검색 결과가 뜨기를 기다리는 상한 — 종전의 고정 7s 대기 + 탭 클릭 8s 타임아웃과 같은 총량이다. */
@@ -140,8 +215,11 @@ async function driveViewer(page: Page, viewer: Viewer, handle: string): Promise<
   try {
     await page.waitForSelector(viewer.resultsReady, { timeout: RESULTS_READY_TIMEOUT_MS });
   } catch {
+    // 직전 단계(프로필 응답)와 **그 순간의 화면**을 함께 싣는다 — 2026-08-29 에는 앞엣것만
+    // 있어서 "200 인데 화면이 안 떴다"까지만 알고 그 이유는 끝내 확정하지 못했다.
+    const pageState = await describePageState(page);
     throw new Error(
-      `${viewer.name}: 검색 결과 미렌더(핸들 ${handle}): ${describeProfileProbe(profileProbe)}`,
+      `${viewer.name}: 검색 결과 미렌더(핸들 ${handle}): ${describeProfileProbe(profileProbe)} / ${pageState}`,
     );
   }
 

@@ -22,6 +22,8 @@ type Scenario = {
   resultsRender: boolean;
   /** 프로필 조회 응답 — null 이면 응답 자체가 없었던 것(요청 미발화·네트워크 차단) */
   profileResponse: { status: number; body: string } | null;
+  /** 렌더 실패 순간의 화면 — null 이면 그 읽기마저 실패한 것(페이지 소실·네비게이션 중) */
+  pageState?: { title: string; bodyText: string } | null;
 };
 
 /** driveViewer 가 실제로 쓰는 Page 표면만 흉내낸다. */
@@ -35,6 +37,16 @@ function makeCtx(scenario: Scenario) {
         },
         off: () => {},
         async goto() {},
+        // 화면 상태 읽기 — 실패 순간의 페이지가 무엇을 보여줬는지가 이 사고의 유일한 증거원.
+        // pageState 가 null 이면 그 읽기 자체가 깨지는 상황을 흉내낸다.
+        async title() {
+          if (scenario.pageState === null) throw new Error("page.title: Target closed");
+          return scenario.pageState?.title ?? "";
+        },
+        async textContent() {
+          if (scenario.pageState === null) throw new Error("page.textContent: Target closed");
+          return scenario.pageState?.bodyText ?? "";
+        },
         async waitForTimeout() {},
         async fill() {},
         // 검색 버튼 클릭 — 이 시점에 프로필 조회 응답이 흐른다(성공이든 차단이든).
@@ -131,5 +143,120 @@ describe("driveViewer — 프로필 결과 대기(명시적 대기 대상)", () 
 
     expect(out[0].error).toContain("200");
     expect(out[0].error).not.toContain("응답 없음");
+  });
+});
+
+/**
+ * 화면 미렌더의 **사유**까지 남기는 회귀.
+ *
+ * **왜 이 테스트가 있나(실사고 2026-08-29, 하루치 전량 무수집):** 위 게이트 덕에 "프로필은
+ * 200 이었는데 화면이 안 떴다"까지는 알 수 있었다. 그런데 거기서 멈췄다 — 차단 화면이었는지,
+ * 계정이 비공개였는지, 뷰어 UI 가 바뀐 것인지 가를 증거가 **어디에도 없었다.**
+ *
+ * 절단이 두 겹이었다. 바깥 겹(크론 로그 200자)은 run-cron.sh 가 닫았지만, 안쪽 겹은 이
+ * 파일이 검증하는 사유 문자열 자체였다. 프로필 본문 프리뷰 200자 중 **161자를 전부 false 인
+ * 중첩 객체가 먹어**, 판별에 필요한 필드는 한 글자도 실리지 않았다(실측).
+ *
+ * 그래서 두 가지를 고정한다: ① 실패 순간의 **화면 상태**를 함께 남긴다 ② 프로필 본문은
+ * 예산을 신호에 쓴다. 진단은 로깅을 늘려서가 아니라 **예산을 어디에 쓰는지**로 얻는다.
+ */
+describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => {
+  /**
+   * 그날 프로덕션이 받은 응답의 **모양**만 옮긴 것 — 식별자·핸들은 가짜다(공개 레포).
+   * 고정해야 하는 것은 값이 아니라 "판별 필드가 보일러플레이트 뒤에 눕는다"는 배치다.
+   */
+  const REAL_0829_BODY = JSON.stringify({
+    result: [
+      {
+        user: {
+          pk: "0000000000",
+          friendship_status: {
+            following: false,
+            blocking: false,
+            is_feed_favorite: false,
+            outgoing_request: false,
+            followed_by: false,
+            incoming_request: false,
+            is_restricted: false,
+            is_bestie: false,
+          },
+          is_private: true,
+          username: "someone",
+        },
+      },
+    ],
+  });
+
+  it("실패 순간의 화면 상태(제목·안내문구)를 사유에 담는다", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: "{}" },
+          pageState: { title: "Just a moment...", bodyText: "Verify you are human before continuing" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    // 이게 있어야 "차단 화면이었다" 를 로그만 보고 말할 수 있다.
+    expect(out[0].error).toContain("Just a moment");
+    expect(out[0].error).toContain("Verify you are human");
+  });
+
+  it("화면 상태 읽기가 깨져도 원래 실패 사유를 덮지 않는다(진단이 진단을 잡아먹지 않게)", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: "{}" },
+          pageState: null, // title/textContent 가 throw 한다
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    expect(out[0].error).toContain("검색 결과 미렌더");
+    expect(out[0].error).toContain("200");
+  });
+
+  it("프로필 본문 프리뷰가 보일러플레이트에 먹히지 않고 판별 필드를 싣는다", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: REAL_0829_BODY },
+          pageState: { title: "StoriesIG", bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    // 08-29 에는 이 둘이 정확히 200자 뒤에 있어 잘려 나갔다.
+    expect(out[0].error).toContain("is_private");
+    expect(out[0].error).toContain("username");
+  });
+
+  it("JSON 이 아니면 원문 앞부분을 그대로 남긴다(차단 페이지는 파싱되지 않는 것 자체가 증거)", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: {
+            status: 429,
+            body: "<html><title>Rate limited</title>Too many requests</html>",
+          },
+          pageState: { title: "", bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    expect(out[0].error).toContain("429");
+    expect(out[0].error).toContain("Rate limited");
   });
 });
