@@ -22,8 +22,12 @@ type Scenario = {
   resultsRender: boolean;
   /** 프로필 조회 응답 — null 이면 응답 자체가 없었던 것(요청 미발화·네트워크 차단) */
   profileResponse: { status: number; body: string } | null;
-  /** 렌더 실패 순간의 화면 — null 이면 그 읽기마저 실패한 것(페이지 소실·네비게이션 중) */
-  pageState?: { title: string; bodyText: string } | null;
+  /**
+   * 렌더 실패 순간의 화면.
+   * - `null`: 읽기 자체가 예외로 깨진 것(페이지 소실)
+   * - `"hang"`: 읽기가 끝나지 않는 것 — 예외보다 나쁜 실패 모드라 따로 흉내낸다
+   */
+  pageState?: { title: string; bodyText: string } | null | "hang";
 };
 
 /** driveViewer 가 실제로 쓰는 Page 표면만 흉내낸다. */
@@ -41,10 +45,13 @@ function makeCtx(scenario: Scenario) {
         // pageState 가 null 이면 그 읽기 자체가 깨지는 상황을 흉내낸다.
         async title() {
           if (scenario.pageState === null) throw new Error("page.title: Target closed");
+          // Playwright 의 title() 은 타임아웃 인자가 없어, 깨진 페이지에서 영영 안 돌아올 수 있다.
+          if (scenario.pageState === "hang") return new Promise<string>(() => {});
           return scenario.pageState?.title ?? "";
         },
         async textContent() {
           if (scenario.pageState === null) throw new Error("page.textContent: Target closed");
+          if (scenario.pageState === "hang") return "";
           return scenario.pageState?.bodyText ?? "";
         },
         async waitForTimeout() {},
@@ -162,10 +169,11 @@ describe("driveViewer — 프로필 결과 대기(명시적 대기 대상)", () 
  */
 describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => {
   /**
-   * 그날 프로덕션이 받은 응답의 **모양**만 옮긴 것 — 식별자·핸들은 가짜다(공개 레포).
+   * 그날 프로덕션이 받은 응답의 **모양**만 옮긴 것 — 식별자·핸들은 전부 가짜다(공개 레포라
+   * 실데이터를 커밋하지 않는다. 이름에 `REAL` 을 쓰지 않는 이유이기도 하다).
    * 고정해야 하는 것은 값이 아니라 "판별 필드가 보일러플레이트 뒤에 눕는다"는 배치다.
    */
-  const REAL_0829_BODY = JSON.stringify({
+  const PROFILE_BODY_SHAPE_0829 = JSON.stringify({
     result: [
       {
         user: {
@@ -228,7 +236,7 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
       launch: async () =>
         makeCtx({
           resultsRender: false,
-          profileResponse: { status: 200, body: REAL_0829_BODY },
+          profileResponse: { status: 200, body: PROFILE_BODY_SHAPE_0829 },
           pageState: { title: "StoriesIG", bodyText: "" },
         }),
       now: c.now,
@@ -238,9 +246,17 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
     // 08-29 에는 이 둘이 정확히 200자 뒤에 있어 잘려 나갔다.
     expect(out[0].error).toContain("is_private");
     expect(out[0].error).toContain("username");
+    // 접기 표시까지 못박는다 — 이게 있어야 "상한만 올린 구현"과 구분된다(상한을 올리면
+    // 위 두 필드는 실리지만 노이즈도 그대로 실린다).
+    expect(out[0].error).toContain('"friendship_status":"…"');
   });
 
-  it("JSON 이 아니면 원문 앞부분을 그대로 남긴다(차단 페이지는 파싱되지 않는 것 자체가 증거)", async () => {
+  /**
+   * ⚠️ 이 테스트가 잡는 변이는 **try/catch 제거**다(파싱은 남기고 보호만 없애는 회귀).
+   * 파싱 자체를 통째로 되돌리는 변이는 잡지 못한다 — 그때는 원문 슬라이스라 결과가 같다.
+   * 그 축은 위 "접기 표시" 단언이 맡는다. 두 테스트가 함께 있어야 경로가 덮인다.
+   */
+  it("JSON 이 아니어도 진단 문자열이 정상적으로 만들어진다(파싱 실패가 사유를 날리지 않게)", async () => {
     const c = clock();
     const out = await fetchStoriesForHandles(["someone"], {
       launch: async () =>
@@ -258,5 +274,27 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
 
     expect(out[0].error).toContain("429");
     expect(out[0].error).toContain("Rate limited");
+    // 파싱 예외가 새면 사유가 통째로 예외 메시지로 바뀐다 — 그걸 못박는다.
+    expect(out[0].error).toContain("검색 결과 미렌더");
   });
+
+  it("화면 제목 읽기가 끝나지 않아도 실행이 매달리지 않는다(예산 보호)", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: "{}" },
+          // page.title() 이 영영 안 돌아오는 상황. Playwright 는 title() 에 타임아웃 인자를
+          // 주지 않으므로, 상한을 밖에서 걸지 않으면 여기서 실행 전체가 멈춘다.
+          pageState: "hang",
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    // 멈추지 않고 사유가 만들어졌다는 것 자체가 판정이다.
+    expect(out[0].error).toContain("검색 결과 미렌더");
+    expect(out[0].error).toContain("200");
+  }, 20_000);
 });

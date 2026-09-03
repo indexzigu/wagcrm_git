@@ -102,12 +102,6 @@ export async function launchStoryContext(): Promise<BrowserContext> {
 const PROFILE_BODY_PREVIEW_CHARS = 200;
 
 /**
- * 프로필 응답에서 진단 가치가 없는 가지를 걷어낸다 — 프리뷰 예산을 신호에 쓰기 위해서다.
- *
- * ⚠️ 파싱에 실패하면(차단 페이지 HTML 등) **원문이 그대로 남아야 한다** — "JSON 이 아니었다"는
- * 사실 자체가 그때는 가장 중요한 증거다. 그래서 호출부가 try/catch 로 감싼다.
- */
-/**
  * 값을 접을 키 — **실측으로 노이즈임이 확인된 것만** 올린다. 추측으로 늘리면 다음 사고의
  * 답이 여기서 지워진다. 막히면 그때 로그에 응답 모양이 남아 있으니 그걸 보고 늘릴 것.
  *
@@ -119,6 +113,17 @@ const PROFILE_NOISE_KEYS = new Set(["friendship_status"]);
 /** 접힌 자리에 남길 표시 — 키는 남으므로 "응답 모양"은 계속 읽을 수 있다. */
 const FOLDED = "…";
 
+/** 진단 문자열 공통 프리뷰 — 줄바꿈을 접고 상한까지만. 예산 관리를 한자리에 모은다. */
+function previewText(text: string, max: number): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/**
+ * 프로필 응답에서 진단 가치가 없는 가지를 걷어낸다 — 프리뷰 예산을 신호에 쓰기 위해서다.
+ *
+ * ⚠️ 파싱에 실패하면(차단 페이지 HTML 등) **원문이 그대로 남아야 한다** — "JSON 이 아니었다"는
+ * 사실 자체가 그때는 가장 중요한 증거다. 그래서 호출부가 try/catch 로 감싼다.
+ */
 function stripProfileNoise(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((v) => stripProfileNoise(v));
   if (value && typeof value === "object") {
@@ -141,15 +146,36 @@ function describeProfileProbe(probe: { status: number; body: string } | null): s
   } catch {
     /* JSON 이 아니거나 모양이 예상 밖 — 원문 프리뷰가 곧 증거다 */
   }
-  const preview = body.replace(/\s+/g, " ").slice(0, PROFILE_BODY_PREVIEW_CHARS);
-  return `프로필 조회 status=${probe.status} 본문:${preview}`;
+  return `프로필 조회 status=${probe.status} 본문:${previewText(body, PROFILE_BODY_PREVIEW_CHARS)}`;
 }
 
-/** 화면 상태 프리뷰 상한 — 차단 화면인지 빈 결과인지 가르는 데 필요한 만큼만. */
+/** 화면 본문 프리뷰 상한 — 차단 화면인지 빈 결과인지 가르는 데 필요한 만큼만. */
 const PAGE_STATE_PREVIEW_CHARS = 200;
+
+/** 화면 제목 상한 — 제목은 짧은 게 정상이고, 길면 그 자체가 비정상 신호다(예산도 지킨다). */
+const PAGE_TITLE_PREVIEW_CHARS = 80;
 
 /** 화면 상태 읽기의 상한 — 이미 실패한 경로라 여기서 더 기다리면 조회 예산만 먹는다. */
 const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
+
+/**
+ * 상한 안에 못 끝나면 null 로 접는다.
+ *
+ * ⚠️ **`page.title()` 은 Playwright 가 타임아웃 인자를 아예 받지 않는다**(`title(): Promise<string>`).
+ * 이 레포는 `setDefaultTimeout` 도 걸지 않아 기본 상한조차 없다 — 그래서 상한을 밖에서 건다.
+ * 이 보호가 없으면 **이미 깨진 페이지**(차단 챌린지·닫히지 않은 다이얼로그·single-process 크래시)
+ * 에서 `title()` 이 영영 안 돌아오고, `driveViewer` 가 끝나지 않아 조회 예산·`maxDuration` 을
+ * 넘겨 **성공한 핸들의 스토리까지 통째로 유실**된다(이 파일이 예산 기계를 만든 이유 그 자체).
+ */
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  // 진 쪽이 나중에 거부해도 unhandled rejection 으로 새지 않게 미리 삼킨다.
+  work.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const guard = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  return Promise.race([work, guard]).finally(() => clearTimeout(timer));
+}
 
 /**
  * 화면 대기가 깨진 순간의 페이지 상태 — "응답은 정상인데 화면이 안 떴다"의 유일한 증거원.
@@ -159,22 +185,26 @@ const PAGE_STATE_READ_TIMEOUT_MS = 2_000;
  * 없었고**, 스토리는 24h 수명이라 소급 재현도 불가능했다. 프로필 응답(직전 단계)만 계측하면
  * 실패 지점이 그다음 단계로 옮겨간 순간 다시 깜깜해진다.
  *
- * ⚠️ **이 함수는 절대 throw 하지 않는다.** 이미 깨진 페이지에서 읽는 것이라 title·textContent
- * 가 실패할 수 있는데, 그 예외가 올라가면 원래 실패 사유를 덮어써 **진단이 진단을 잡아먹는다**.
+ * ⚠️ **이 함수는 throw 하지도, 매달리지도 않는다.** 이미 깨진 페이지에서 읽는 것이라 예외와
+ * **멈춤(hang)** 둘 다 가능한데, 어느 쪽이든 원래 실패 사유를 잃는다 — 예외는 사유를 덮어써
+ * **진단이 진단을 잡아먹고**, 멈춤은 그보다 나빠서 실행 전체를 예산 밖으로 끌고 간다.
+ * 그래서 예외는 try/catch 로, 멈춤은 `withDeadline` 으로 각각 막는다(둘 다 필요하다).
  */
 async function describePageState(page: Page): Promise<string> {
-  const read = async (fn: () => Promise<string | null>): Promise<string | null> => {
+  const read = async (work: () => Promise<string | null>): Promise<string | null> => {
     try {
-      return await fn();
+      return await withDeadline(work(), PAGE_STATE_READ_TIMEOUT_MS);
     } catch {
       return null;
     }
   };
   const title = await read(() => page.title());
+  // textContent 는 자체 타임아웃도 받는다 — 밖의 상한과 겹치지만, 안쪽은 **작업 자체를 중단**하고
+  // 바깥은 **기다림만 끊는다**. 둘은 다른 일을 하므로 함께 둔다.
   const bodyText = await read(() => page.textContent("body", { timeout: PAGE_STATE_READ_TIMEOUT_MS }));
-  if (title === null && bodyText === null) return "화면 상태 읽기 실패(페이지 소실·네비게이션 중)";
-  const text = (bodyText ?? "").replace(/\s+/g, " ").trim().slice(0, PAGE_STATE_PREVIEW_CHARS);
-  return `화면 제목:${title ?? "(읽기 실패)"} 화면:${text}`;
+  if (title === null && bodyText === null) return "화면 상태 읽기 실패(페이지 소실·응답 없음)";
+  const titleText = title === null ? "(읽기 실패)" : previewText(title, PAGE_TITLE_PREVIEW_CHARS);
+  return `화면 제목:${titleText} 화면:${previewText(bodyText ?? "", PAGE_STATE_PREVIEW_CHARS)}`;
 }
 
 /** 검색 결과가 뜨기를 기다리는 상한 — 종전의 고정 7s 대기 + 탭 클릭 8s 타임아웃과 같은 총량이다. */
@@ -228,7 +258,14 @@ async function driveViewer(page: Page, viewer: Viewer, handle: string): Promise<
   await page.waitForTimeout(8000);
   page.off("response", onResponse);
 
-  if (!storyBody) throw new Error(`${viewer.name}: 스토리 응답 미포착(핸들 ${handle}, 비공개/스토리없음/차단 가능)`);
+  // 3지 선다("비공개/스토리없음/차단")를 그대로 두지 않는다 — 그 셋을 가르는 증거를 이미
+  // 손에 들고 있는데(profileProbe) 싣지 않으면, 실패 지점이 여기로 옮겨간 회차에서 08-29 와
+  // 똑같이 원인 미상이 된다.
+  if (!storyBody) {
+    throw new Error(
+      `${viewer.name}: 스토리 응답 미포착(핸들 ${handle}, 비공개/스토리없음/차단 가능): ${describeProfileProbe(profileProbe)}`,
+    );
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(storyBody);
