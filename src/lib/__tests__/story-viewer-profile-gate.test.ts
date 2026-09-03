@@ -278,6 +278,27 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
     expect(out[0].error).toContain("검색 결과 미렌더");
   });
 
+  it("관계 플래그에 참인 값이 있으면 접지 않고 보존한다(그게 렌더 실패의 단서다)", async () => {
+    const c = clock();
+    const blocked = JSON.stringify({
+      result: [{ user: { pk: "0000000000", friendship_status: { following: false, blocking: true } } }],
+    });
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: blocked },
+          pageState: { title: "StoriesIG", bodyText: "" },
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    // 이름만 보고 접는 구현이면 이 단서가 통째로 사라진다.
+    expect(out[0].error).toContain("blocking");
+    expect(out[0].error).not.toContain('"friendship_status":"…"');
+  });
+
   it("화면 제목 읽기가 끝나지 않아도 실행이 매달리지 않는다(예산 보호)", async () => {
     const c = clock();
     const out = await fetchStoriesForHandles(["someone"], {

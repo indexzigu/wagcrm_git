@@ -124,6 +124,20 @@ function previewText(text: string, max: number): string {
  * ⚠️ 파싱에 실패하면(차단 페이지 HTML 등) **원문이 그대로 남아야 한다** — "JSON 이 아니었다"는
  * 사실 자체가 그때는 가장 중요한 증거다. 그래서 호출부가 try/catch 로 감싼다.
  */
+/**
+ * 접어도 되는 값인가 — **전부 false 일 때만** 그렇다.
+ *
+ * ⚠️ 키 이름만 보고 접으면 안 된다. `blocking: true`·`outgoing_request: true` 처럼 **하나라도
+ * 참인 값이 오면 그게 바로 "왜 프로필이 안 떴나"의 답**인데, 이름만 보고 접는 구현은 그 답을
+ * 지운다 — 이 파일이 경고하는 "추측으로 늘리면 다음 사고의 답이 지워진다"를 스스로 어기는 셈.
+ * 값 모양이 예상 밖(문자열·중첩)이어도 접지 않는다: 모르는 것은 남기는 쪽이 안전하다.
+ */
+function isAllFalseFlags(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const values = Object.values(value);
+  return values.length > 0 && values.every((v) => v === false);
+}
+
 function stripProfileNoise(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((v) => stripProfileNoise(v));
   if (value && typeof value === "object") {
@@ -131,7 +145,7 @@ function stripProfileNoise(value: unknown): unknown {
     for (const [key, v] of Object.entries(value)) {
       // ⚠️ 키를 **지우지 않고 값만 접는다.** 통째로 지우면 "원래 없었다"와 "우리가 접었다"를
       // 구분할 수 없고, 뷰어가 응답 모양을 바꾼 것(= 이 계열 사고의 유력 원인)을 놓친다.
-      out[key] = PROFILE_NOISE_KEYS.has(key) ? FOLDED : stripProfileNoise(v);
+      out[key] = PROFILE_NOISE_KEYS.has(key) && isAllFalseFlags(v) ? FOLDED : stripProfileNoise(v);
     }
     return out;
   }
