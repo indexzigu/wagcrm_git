@@ -86,6 +86,15 @@ const MAX_TRIMMED_ENTRIES = 12;
  */
 const DIAGNOSTIC_KEYS = new Set(["errors", "failures"]);
 
+/**
+ * 짝 표시가 걸린 목록 — 최후 수단이 비우지 않는 자리다(`CAPPED_FLAG_OF` 파생).
+ *
+ * ⚠️ 순위에서도 같이 지킨다. 최후 수단만 지키고 주 루프가 안 지키면, 아래 하한 포기가
+ * 이 목록을 통째로 비워 **같은 함수의 두 곳이 서로 다른 것을 보호**하게 된다(화면이
+ * 300건을 "없음"으로 그린 그 사고를 다른 문으로 되사는 셈이다).
+ */
+const PAIRED_LIST_KEYS = new Set(Object.keys(CAPPED_FLAG_OF));
+
 /** 줄이기 반복 상한 — 한 번에 한 자리씩 줄이므로 무한 반복을 막는 안전장치다. */
 const MAX_TRIM_ROUNDS = 40;
 
@@ -105,19 +114,57 @@ function writeAt(s: Shrinkable, value: unknown): void {
 }
 
 /**
+ * 이 자리의 순위. 뒤로 미룰수록 큰 순위 — 요약(2) > 진단·짝목록(1) > 나머지(0).
+ *
+ * ⚠️ 요약 순위는 **최상위에서만** 준다. 중첩된 `error`·`message` 는 요약이 아니라 진단
+ * 내용 자체다 — 그것에 요약 자격을 주면 상위 진단 배열이 먼저 깎인다.
+ * ⚠️ 그 외에는 **부모 순위를 물려받는다.** 이름만으로 매기면 `errors[0]` 같은 진단
+ * **내용물**이 순위 0 이 되어, 아래 「하한 포기」가 지켜야 할 것을 지우는 문이 된다.
+ *
+ * ⚠️ **여기서는 이름만 본다 — `holdsDiagnostic` 의 값 종류 검사를 옮겨오지 말 것.**
+ * 두 함수가 묻는 것이 다르다: 저쪽은 "지킬 진단 **내용**이 안에 있는가"(그래서 배열이어야
+ * 한다)이고, 이쪽은 "이 자리가 진단으로 **불리는가**"다. 긴 `errors: "…"` 문자열은 이름이
+ * 곧 내용이라, 여기에 `Array.isArray` 를 걸면 진짜 진단 문자열이 순위 0 으로 떨어진다.
+ * (최후 수단의 `protectedKeys` 도 같은 이유로 이름만 본다.)
+ */
+function rankOf(key: string, prefix: string, parentRank: number): number {
+  if (!prefix && SUMMARY_KEYS.has(key)) return 2;
+  if (DIAGNOSTIC_KEYS.has(key)) return 1;
+  if (!prefix && PAIRED_LIST_KEYS.has(key)) return 1;
+  return parentRank;
+}
+
+/**
+ * 이 문자열을 후보로 셀지 — 남길 하한보다 길어야 줄일 여지가 있다.
+ *
+ * `lowRankStringFloor` 는 **순위 0 에만** 적용된다. 평시엔 `MIN_KEPT_CHARS` 라 이미
+ * 하한까지 깎인 문자열은 후보에서 빠지고, 하한을 포기한 뒤엔 0 이라 그것들이 다시
+ * 후보가 된다(안 그러면 포기를 선언해도 손댈 자리가 없다).
+ */
+function isShrinkableString(value: unknown, rank: number, lowRankStringFloor: number): boolean {
+  return typeof value === "string" && value.length > (rank === 0 ? lowRankStringFloor : MIN_KEPT_CHARS);
+}
+
+/**
  * 페이로드를 훑어 줄일 수 있는 자리(배열·긴 문자열)를 모은다. 깊이·배열 안쪽 모두 센다.
  *
  * ⚠️ 결과는 **한 번 줄일 때마다 버린다.** 배열을 줄이면 새 배열이 생겨 그 안쪽 자리들의
  * 부모 참조가 끊기기 때문이다(끊긴 자리에 써 봐야 결과에 반영되지 않는다 — 실측).
  */
-function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]): void {
+function collectShrinkables(
+  node: unknown,
+  prefix: string,
+  found: Shrinkable[],
+  lowRankStringFloor: number,
+  parentRank = 0,
+): void {
   if (Array.isArray(node)) {
     node.forEach((item, index) => {
       const path = `${prefix}[${index}]`;
-      if (Array.isArray(item) || (typeof item === "string" && item.length > MIN_KEPT_CHARS)) {
-        found.push({ parent: node, key: index, path, rank: 0 });
+      if (Array.isArray(item) || isShrinkableString(item, parentRank, lowRankStringFloor)) {
+        found.push({ parent: node, key: index, path, rank: parentRank });
       }
-      collectShrinkables(item, path, found);
+      collectShrinkables(item, path, found, lowRankStringFloor, parentRank);
     });
     return;
   }
@@ -125,14 +172,11 @@ function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]):
   const obj = node as Record<string, unknown>;
   for (const [key, value] of Object.entries(obj)) {
     const path = prefix ? `${prefix}.${key}` : key;
-    if (Array.isArray(value) || (typeof value === "string" && value.length > MIN_KEPT_CHARS)) {
-      // 뒤로 미룰수록 큰 순위. 요약(2) > 진단 배열(1) > 나머지(0).
-      // ⚠️ 요약 순위는 **최상위에서만** 준다. 중첩된 `error`·`message` 는 요약이 아니라
-      // 진단 내용 자체다 — 그것에 요약 자격을 주면 상위 진단 배열이 먼저 깎인다.
-      const rank = !prefix && SUMMARY_KEYS.has(key) ? 2 : DIAGNOSTIC_KEYS.has(key) ? 1 : 0;
+    const rank = rankOf(key, prefix, parentRank);
+    if (Array.isArray(value) || isShrinkableString(value, rank, lowRankStringFloor)) {
       found.push({ parent: obj, key, path, rank });
     }
-    collectShrinkables(value, path, found);
+    collectShrinkables(value, path, found, lowRankStringFloor, rank);
   }
 }
 
@@ -141,7 +185,10 @@ function holdsDiagnostic(node: unknown): boolean {
   if (Array.isArray(node)) return node.some(holdsDiagnostic);
   if (node == null || typeof node !== "object") return false;
   return Object.entries(node as Record<string, unknown>).some(
-    ([key, value]) => DIAGNOSTIC_KEYS.has(key) || holdsDiagnostic(value),
+    // ⚠️ 이름만 보지 않는다 — 잡이 `errors: 3` 처럼 **집계 수치**에 같은 이름을 쓰면,
+    // 지킬 진단 내용이 하나도 없는 부모가 보호 순위를 얻어 뒤로 밀리고 정작 진단 배열을
+    // 품은 쪽이 먼저 비워진다. 지키는 대상은 이름이 아니라 **배열**이다.
+    ([key, value]) => (DIAGNOSTIC_KEYS.has(key) && Array.isArray(value)) || holdsDiagnostic(value),
   );
 }
 
@@ -216,17 +263,76 @@ export function capDetailsForLog(details: unknown): unknown {
   // 줄여 봐야 진전이 없던 자리 — 다시 고르지 않는다(같은 자리를 붙잡고 맴돌지 않게).
   const exhausted = new Set<string>();
 
+  /**
+   * 값 낮은 자리(순위 0)의 최소 보존량을 포기했는가.
+   *
+   * ⚠️ **순위는 하한보다 위다.** 하한은 자리마다 주는 약속인데 예산은 전체가 하나라,
+   * 값 낮은 자리가 여럿이면 그 하한들의 **합**이 예산을 먼저 먹고 적자는 순위 높은
+   * 진단 배열이 혼자 떠안는다(합성 재현: 사유 40건이 1건까지 깎이는 동안 값 낮은
+   * 문자열들은 저마다 하한만큼 온전히 살아남았다). 그래서 순위 높은 자리를 깎으러
+   * 가기 **전에** 값 낮은 자리의 하한을 먼저 내놓는다.
+   * ⚠️ 포기는 **한 번뿐이고 순위 0 에만** 적용한다 — 진단·짝목록(1)·요약(2)의 하한까지
+   * 풀면 "무엇이 실패했나를 한 건은 읽게 한다"는 보장이 사라진다. 다 내놓고도 모자라면
+   * 그때는 진짜 적자이므로 종전대로 순위 순서를 따라 깎는다.
+   */
+  let lowRankFloorsRelaxed = false;
+
   for (let round = 0; round < MAX_TRIM_ROUNDS && size(out) > workingCap; round += 1) {
     const candidates: Shrinkable[] = [];
-    collectShrinkables(out, "", candidates);
+    collectShrinkables(out, "", candidates, lowRankFloorsRelaxed ? 0 : MIN_KEPT_CHARS);
     candidates.sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : size(readAt(b)) - size(readAt(a))));
     const target = candidates.find((c) => !exhausted.has(c.path));
     if (!target) break;
+
+    // ⚠️ **회차가 바닥나기 전에도 반드시 한 번은 내놓는다.** 순위 상승은 "값 낮은 쪽을
+    // 다 훑었다"는 신호일 뿐인데, 값 낮은 문자열이 회차 수보다 많으면 **하한까지 깎는
+    // 데만 예산이 다 들어가 그 신호가 영영 오지 않는다**(자리마다 한 회차씩 쓴다).
+    // 실측: 하한보다 긴 문구가 `MAX_TRIM_ROUNDS` 개를 넘으면 이 분기가 발동조차 못 해
+    // 사유가 1건까지 깎인 채 상한도 못 맞췄다 — 티켓이 든 바로 그 모양이다.
+    // 회차 소진도 순위 상승과 같은 신호로 본다.
+    const lastRound = round === MAX_TRIM_ROUNDS - 1;
+    if (!lowRankFloorsRelaxed && (target.rank > 0 || lastRound)) {
+      // 순위 높은 자리로 넘어가려는 참이다 — 그 전에 값 낮은 자리의 하한을 내놓는다.
+      //
+      // ⚠️ **"값 낮은 후보가 남아 있으면"으로 조건을 달지 말 것** — 하한까지 이미 깎인
+      // (또는 애초에 하한보다 짧은) 문자열은 **평시 문턱에서 후보로 보이지도 않는다.**
+      // 그것들이 정확히 예산을 붙들고 있는 자리인데 보이는 후보로 조건을 걸면 이 분기가
+      // 영영 발동하지 않는다(초판이 그랬다 — 사유 40건 중 1건만 남는 모양 그대로였다).
+      //
+      // ⚠️ **포기는 한 회차에 몰아서 한다.** 한 자리씩 돌면 회차 예산이 자잘한 문자열에
+      // 다 소진돼 정작 순위 높은 자리는 손도 못 댄 채 최후 수단으로 넘어간다(실측: 4자
+      // 짜리 문자열 300개가 40회차를 전부 먹고, 최후 수단이 진단 배열을 품은 부모를
+      // 비웠다 — 고치려던 것을 고치는 과정에서 되사는 셈이다).
+      // 여기서 **문자열만** 다루는 것도 계약이다 — 배열을 줄이면 새 배열이 생겨 이
+      // 목록에 담긴 다른 자리의 부모 참조가 끊긴다(순위 0 배열의 하한은 다음 회차부터
+      // 평소 경로가 `keepItems = 0` 으로 처리한다).
+      lowRankFloorsRelaxed = true;
+      const lowRankSites: Shrinkable[] = [];
+      collectShrinkables(out, "", lowRankSites, 0);
+      const lowRankStrings = lowRankSites
+        .filter((c) => c.rank === 0 && typeof readAt(c) === "string")
+        .sort((a, b) => size(readAt(b)) - size(readAt(a)));
+      for (const site of lowRankStrings) {
+        if (size(out) <= workingCap) break;
+        const original = readAt(site) as string;
+        const kept = Math.max(0, original.length - (size(out) - workingCap));
+        if (kept < original.length) {
+          writeAt(site, original.slice(0, kept));
+          note(site.path, original.length - kept, "chars");
+        }
+      }
+      for (const c of candidates) if (c.rank === 0) exhausted.delete(c.path);
+      continue;
+    }
+
+    const relaxed = lowRankFloorsRelaxed && target.rank === 0;
+    const keepItems = relaxed ? 0 : MIN_KEPT_ITEMS;
+    const keepChars = relaxed ? 0 : MIN_KEPT_CHARS;
     const before = size(out);
     const value = readAt(target);
 
     if (Array.isArray(value)) {
-      let low = MIN_KEPT_ITEMS;
+      let low = keepItems;
       let high = value.length;
       while (low < high) {
         const mid = Math.ceil((low + high) / 2);
@@ -238,7 +344,7 @@ export function capDetailsForLog(details: unknown): unknown {
       if (low < value.length) note(target.path, value.length - low, "items");
     } else {
       const original = value as string;
-      const kept = Math.max(MIN_KEPT_CHARS, original.length - (size(out) - workingCap));
+      const kept = Math.max(keepChars, original.length - (size(out) - workingCap));
       if (kept < original.length) {
         writeAt(target, original.slice(0, kept));
         note(target.path, original.length - kept, "chars");
