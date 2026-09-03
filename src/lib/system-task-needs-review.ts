@@ -9,9 +9,12 @@ import { salesChannelLabels } from "@/lib/crm-types";
  * 나머지는 빈 결과를 돌려 화면에서 섹션이 아예 안 그려지게 한다. 잡별 분기를 컴포넌트에
  * 심지 않으려는 배치다 — 같은 규약을 내는 잡이 생기면 그 잡도 그대로 표시된다.
  *
- * ⚠️ `details` 는 4,000자를 넘으면 통째로 `{truncated, preview}` 로 대체된다
- * (`system-task-status.ts`). 그때 이 파서는 빈 결과를 낸다 — 잘린 문자열에서 항목을
- * 되살리려 들지 않는다. 반쯤 복원한 목록을 "확인 필요 전부"로 보여주는 것이 더 나쁘다.
+ * ⚠️ 저장 상한을 넘으면 저장부가 **`needsReviewDetail` 을 깎을 수 있다**
+ * (`system-task-status.ts` 의 `capDetailsForLog`). 그때 저장부가 짝 필드
+ * `needsReviewDetailCapped` 를 함께 세우므로, 이 파서는 깎인 목록을 **"일부"로** 읽는다.
+ * ⛔ 종전 서술 「넘으면 통째로 `{truncated, preview}` 로 대체돼 이 파서가 빈 결과를 낸다」는
+ * **SUPERSEDED**(T-084). 다만 그때 적어 둔 이유는 그대로 살아 있다 — **반쯤 남은 목록을
+ * "확인 필요 전부"로 보여주는 것이 더 나쁘다.** 그래서 깎였다는 표시가 반드시 함께 온다.
  */
 
 export interface NeedsReviewReason {

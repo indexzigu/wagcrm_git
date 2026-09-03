@@ -183,21 +183,23 @@ describe("withSystemTaskStatus 기록", () => {
     expect(typeof details.durationMs).toBe("number");
   });
 
-  it("과대 페이로드는 잘라서 저장한다(이력 테이블 비대 방지) — durationMs는 절단돼도 보존된다", async () => {
+  it("과대 페이로드는 줄여서 저장한다(이력 테이블 비대 방지) — 요약과 durationMs는 보존된다", async () => {
     const handler = vi.fn(async () =>
-      Response.json({ ok: true, blob: "x".repeat(10_000) }),
+      Response.json({ ok: true, failed: true, blob: "x".repeat(10_000) }),
     );
     const wrapped = withSystemTaskStatus("job-a", handler);
 
     await wrapped(makeRequest(`Bearer ${SECRET}`));
 
-    const details = loggedRuns()[0].details as {
-      truncated?: boolean;
-      preview?: string;
-      durationMs?: number;
-    };
-    expect(details.truncated).toBe(true);
-    expect(details.preview!.length).toBeLessThanOrEqual(4_000);
+    const details = loggedRuns()[0].details as Record<string, unknown>;
+    expect(JSON.stringify(details).length).toBeLessThanOrEqual(4_000);
+    // ⚠️ 종전 계약은 `{ truncated: true, preview: "<잘린 문자열>" }` 였다(T-084 에서 교체).
+    // 그 preview 는 JSON 중간에서 끊긴 조각이라 못 읽었고, 그 자리에 있던 요약 필드가
+    // 통째로 사라졌다. 지금은 **덩치만 줄이고 요약은 남기며**, 무엇을 얼마나 덜어냈는지를
+    // `detailsTrimmed` 에 적는다(잡이 쓰는 `truncated` 와 이름이 겹치지 않게).
+    expect(details.ok).toBe(true);
+    expect(details.failed).toBe(true);
+    expect(details.detailsTrimmed).toEqual({ blob: expect.any(Number) });
     expect(typeof details.durationMs).toBe("number");
   });
 

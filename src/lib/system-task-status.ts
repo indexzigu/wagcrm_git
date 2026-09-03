@@ -34,16 +34,274 @@ type CronOutcomeBody = {
 /** `SystemTaskLog.details` 직렬화 상한 — 이력 테이블이 페이로드로 비대해지지 않게 한다. */
 const DETAILS_MAX_CHARS = 4_000;
 
+/** 줄인 배열에 최소한 남길 항목 수 — 한 건도 없으면 "무엇이 실패했나"를 아예 못 읽는다. */
+const MIN_KEPT_ITEMS = 1;
+
+/** 줄인 문자열에 최소한 남길 길이 — 실패 계열(차단·타임아웃·모양 변경)을 가릴 만큼은 남긴다. */
+const MIN_KEPT_CHARS = 200;
+
+/**
+ * 저장부가 페이로드를 줄였다는 표시.
+ *
+ * ⚠️ 이름을 `truncated` 로 두지 않는다 — 잡이 자기 뜻으로 그 이름을 이미 쓸 수 있고
+ * (`scan.truncated` 등), 그러면 저장부가 남의 값을 조용히 덮어쓴다.
+ */
+const TRIMMED_MARKER = "detailsTrimmed";
+
+/**
+ * 이 잡들의 화면은 이 짝 필드로 "다 못 보여준다"를 판단한다. 저장부가 목록을 깎았는데
+ * 이 표시를 안 세우면 **부분 목록이 전부인 것처럼** 보인다 — `system-task-needs-review.ts`
+ * 가 애초에 막으려던 오해가 그것이다.
+ */
+const CAPPED_FLAG_OF: Record<string, string> = {
+  needsReviewDetail: "needsReviewDetailCapped",
+};
+
+/**
+ * 마지막까지 지키는 요약 필드 — 판정의 근거라 다른 무엇을 다 줄인 뒤에야 손댄다.
+ * (그마저도 줄이면 표시를 남기므로 조용히 사라지지는 않는다.)
+ */
+const SUMMARY_KEYS = new Set(["ok", "failed", "failureReason", "error", "message", "lane"]);
+
+/**
+ * 표시(`detailsTrimmed`)가 쓸 수 있는 몫. 줄이는 동안은 이만큼을 미리 떼어 두고, 다 줄인
+ * 뒤에 표시를 붙인다.
+ *
+ * ⚠️ 종전엔 후보마다 자리를 예약했는데, 그러면 **표시 맵이 후보 수만큼 자라** 스스로
+ * 예산을 먹었다(실측: 중첩 200그룹에서 표시만 3.1k자, 총 12,920자). 예약을 없애고 몫을
+ * 통째로 떼는 편이 단순하고, 아래 항목 수 상한이 그 몫을 실제로 지킨다.
+ */
+const MARKER_BUDGET_CHARS = 400;
+
+/** 표시에 적을 최대 항목 수 — 그 이상은 개수로 합친다(표시가 예산을 넘지 않게). */
+const MAX_TRIMMED_ENTRIES = 12;
+
+/**
+ * 진단 배열 — 사고의 "왜"가 여기 담긴다. 다른 곳을 다 줄이고도 모자랄 때 손댄다.
+ *
+ * ⚠️ 크기순으로만 줄이면 **가장 값진 것을 먼저 잃는다.** 합성 페이로드로 재현한 결과, 대상
+ * 전량 실패 회차에서 `errors` 가 몇 건까지 깎이는 동안 진단 가치가 없는 대상 이름 목록(그
+ * 이름은 각 `errors` 문자열 안에 이미 있다)이 전량 살아남아 예산의 대부분을 점유했다.
+ * (수치는 합성 입력 기준이다 — 프로덕션 실측이 아니다.)
+ */
+const DIAGNOSTIC_KEYS = new Set(["errors", "failures"]);
+
+/** 줄이기 반복 상한 — 한 번에 한 자리씩 줄이므로 무한 반복을 막는 안전장치다. */
+const MAX_TRIM_ROUNDS = 40;
+
+/** 줄일 수 있는 자리 하나. */
+type Shrinkable = {
+  parent: Record<string, unknown> | unknown[];
+  key: string | number;
+  path: string;
+  rank: number;
+};
+
+function readAt(s: Shrinkable): unknown {
+  return (s.parent as Record<string | number, unknown>)[s.key];
+}
+function writeAt(s: Shrinkable, value: unknown): void {
+  (s.parent as Record<string | number, unknown>)[s.key] = value;
+}
+
+/**
+ * 페이로드를 훑어 줄일 수 있는 자리(배열·긴 문자열)를 모은다. 깊이·배열 안쪽 모두 센다.
+ *
+ * ⚠️ 결과는 **한 번 줄일 때마다 버린다.** 배열을 줄이면 새 배열이 생겨 그 안쪽 자리들의
+ * 부모 참조가 끊기기 때문이다(끊긴 자리에 써 봐야 결과에 반영되지 않는다 — 실측).
+ */
+function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]): void {
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => {
+      const path = `${prefix}[${index}]`;
+      if (Array.isArray(item) || (typeof item === "string" && item.length > MIN_KEPT_CHARS)) {
+        found.push({ parent: node, key: index, path, rank: 0 });
+      }
+      collectShrinkables(item, path, found);
+    });
+    return;
+  }
+  if (node == null || typeof node !== "object") return;
+  const obj = node as Record<string, unknown>;
+  for (const [key, value] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (Array.isArray(value) || (typeof value === "string" && value.length > MIN_KEPT_CHARS)) {
+      // 뒤로 미룰수록 큰 순위. 요약(2) > 진단 배열(1) > 나머지(0).
+      // ⚠️ 요약 순위는 **최상위에서만** 준다. 중첩된 `error`·`message` 는 요약이 아니라
+      // 진단 내용 자체다 — 그것에 요약 자격을 주면 상위 진단 배열이 먼저 깎인다.
+      const rank = !prefix && SUMMARY_KEYS.has(key) ? 2 : DIAGNOSTIC_KEYS.has(key) ? 1 : 0;
+      found.push({ parent: obj, key, path, rank });
+    }
+    collectShrinkables(value, path, found);
+  }
+}
+
+/** 이 값 어딘가에 진단 배열이 들어 있는가 — 있으면 부모째 비우지 않는다. */
+function holdsDiagnostic(node: unknown): boolean {
+  if (Array.isArray(node)) return node.some(holdsDiagnostic);
+  if (node == null || typeof node !== "object") return false;
+  return Object.entries(node as Record<string, unknown>).some(
+    ([key, value]) => DIAGNOSTIC_KEYS.has(key) || holdsDiagnostic(value),
+  );
+}
+
+/**
+ * 표시를 얹을 빈 자리를 찾는다 — 잡이 이미 그 이름을 쓰고 있으면 접미를 늘린다.
+ * (후보를 하나만 두면 그것마저 쓰일 때 남의 값을 지운다 — 리뷰 실측.)
+ */
+function freeMarkerKey(out: Record<string, unknown>): string {
+  let key = TRIMMED_MARKER;
+  for (let n = 2; key in out; n += 1) key = `${TRIMMED_MARKER}${n}`;
+  return key;
+}
+
+/**
+ * 이력에 남길 페이로드를 **줄일 수 있는 만큼 값어치 순으로** 줄인다(순수 함수 — DB 없이
+ * 검증 가능).
+ *
+ * ⚠️ **문자열을 통째로 자르지 않는다.** 종전 구현은 직렬화 결과를 상한 자리에서 싹둑
+ * 잘랐는데, 그러면 ①남은 조각이 JSON 중간에서 끊겨 기계로 못 읽고 ②뒤쪽 **요약 필드
+ * (실패 여부·사유·집계)가 통째로 사라진다** — 판정할 때 가장 먼저 보는 값들이다.
+ *
+ * 한 번에 **한 자리씩** 줄이고 그때마다 후보를 다시 모은다. 줄이는 순서는 진단 가치가
+ * 낮은 것부터다: 나머지 → 진단 배열 → 요약. 같은 순위 안에서는 덩치 큰 것부터.
+ *
+ * ⚠️ **상한을 언제나 지킨다고 약속하지 않는다.** 값을 줄여서는 못 줄이는 모양이 있다 —
+ * 요약 스칼라만으로 초과하거나, 남은 덩치가 키 이름 자체인 경우다. 그때는 줄이지 않고
+ * **넘쳤다는 사실과 실제 크기를 표시로 남긴다**(조용한 초과는 만들지 않는다).
+ * 실제 잡이 내는 모양은 전부 상한 안에 든다.
+ */
+export function capDetailsForLog(details: unknown): unknown {
+  if (details == null || typeof details !== "object" || Array.isArray(details)) return details;
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(details);
+  } catch {
+    return null; // 순환 참조 등 — 이력에 남길 수 없다(상태 기록 자체는 막지 않는다)
+  }
+  if (serialized == null) return null;
+  if (serialized.length <= DETAILS_MAX_CHARS) return details;
+
+  const size = (value: unknown) => JSON.stringify(value)?.length ?? 0;
+  // 원본을 건드리지 않도록 사본에서 작업한다(호출자가 같은 객체를 계속 쓴다).
+  const out = JSON.parse(serialized) as Record<string, unknown>;
+  // 표시가 쓸 몫을 미리 떼어 둔다 — 다 줄인 뒤 표시를 붙이다가 다시 넘기지 않도록.
+  const workingCap = DETAILS_MAX_CHARS - MARKER_BUDGET_CHARS;
+  const trimmed: Record<string, number> = {};
+  // ⚠️ 문자 수와 항목 수를 **한 자리에 합치지 않는다.** 합쳐 놓고 이름을 "항목"이라 붙이면
+  // 9,000자 손실을 9,000건으로 발표하게 된다 — 이 파일이 다른 곳에서 규탄하는 바로 그
+  // 잘못("숫자가 틀리면 없는 것보다 나쁘다")을 표시 자신이 저지르는 셈이다.
+  const overflow = { items: 0, chars: 0 };
+  const note = (path: string, amount: number, unit: "items" | "chars") => {
+    // ⚠️ 같은 자리를 여러 회차에 걸쳐 줄이므로 **누적**한다. 덮어쓰면 마지막 회차 몫만 남아
+    // 실제 손실을 크게 축소해 알린다(실측: 149건을 잃고 1건이라 적었다). 표시가 있으되
+    // 숫자가 틀리면 없는 것보다 나쁘다 — 읽는 사람이 거의 다 남았다고 믿는다.
+    if (path in trimmed) {
+      trimmed[path] = (trimmed[path] ?? 0) + amount;
+    } else if (Object.keys(trimmed).length < MAX_TRIMMED_ENTRIES) {
+      trimmed[path] = amount;
+    } else {
+      // 표시 자리가 다 찼다 — 경로는 못 적어도 **잃은 양은 합쳐서** 알린다. 종전엔 경로 수만
+      // 세어, 13건이 사라져도 표시에 아무 숫자도 안 남았다(실측).
+      overflow[unit] += amount;
+    }
+    // 화면이 "일부만"을 판단하는 짝 표시를 함께 세운다 — 깎인 자리가 그 목록 **안쪽**이어도.
+    for (const [listKey, flag] of Object.entries(CAPPED_FLAG_OF)) {
+      if (path === listKey || path.startsWith(`${listKey}[`) || path.startsWith(`${listKey}.`)) {
+        out[flag] = true;
+      }
+    }
+  };
+
+  // 줄여 봐야 진전이 없던 자리 — 다시 고르지 않는다(같은 자리를 붙잡고 맴돌지 않게).
+  const exhausted = new Set<string>();
+
+  for (let round = 0; round < MAX_TRIM_ROUNDS && size(out) > workingCap; round += 1) {
+    const candidates: Shrinkable[] = [];
+    collectShrinkables(out, "", candidates);
+    candidates.sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : size(readAt(b)) - size(readAt(a))));
+    const target = candidates.find((c) => !exhausted.has(c.path));
+    if (!target) break;
+    const before = size(out);
+    const value = readAt(target);
+
+    if (Array.isArray(value)) {
+      let low = MIN_KEPT_ITEMS;
+      let high = value.length;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        writeAt(target, value.slice(0, mid));
+        if (size(out) <= workingCap) low = mid;
+        else high = mid - 1;
+      }
+      writeAt(target, value.slice(0, low));
+      if (low < value.length) note(target.path, value.length - low, "items");
+    } else {
+      const original = value as string;
+      const kept = Math.max(MIN_KEPT_CHARS, original.length - (size(out) - workingCap));
+      if (kept < original.length) {
+        writeAt(target, original.slice(0, kept));
+        note(target.path, original.length - kept, "chars");
+      }
+    }
+
+    // ⚠️ 진전이 없다고 **멈추지 않는다.** 이 자리만 못 줄이는 것일 수 있다(항목 하나뿐인
+    // 배열 안에 또 배열이 있는 모양이 그렇다 — 실측으로 겪었다). 이 자리만 빼고 계속한다.
+    if (size(out) >= before) exhausted.add(target.path);
+  }
+
+  // 마지막 수단 — 줄일 자리를 다 써도 넘치면 **값이 낮은** 큰 필드를 비운다.
+  //
+  // ⚠️ 지켜야 할 것을 지운 적이 있다(리뷰 실측). 순위를 안 보고 지워 진단 배열이 전멸했고,
+  // 확인필요 목록을 지워 화면이 300건을 "없음"으로 그렸다 — **고치기 전보다 나빴다.**
+  // 그래서 요약·진단·짝 표시가 걸린 목록은 건드리지 않고, **타입도 유지**한다(배열은 빈
+  // 배열로). 소비처가 `errors.map()` 처럼 쓰는데 문자열로 바꾸면 그 자리에서 터진다.
+  const protectedKeys = new Set([...SUMMARY_KEYS, ...DIAGNOSTIC_KEYS, ...Object.keys(CAPPED_FLAG_OF)]);
+  const emptiable = Object.keys(out)
+    .filter((k) => !protectedKeys.has(k) && out[k] != null && typeof out[k] === "object")
+    // ⚠️ 진단 배열이 **비보호 부모 아래**에 있으면 부모째 비워져 사라진다(실제로 그런 모양을
+    // 내는 잡이 있다 — 수집 결과를 한 겹 감싼 뒤 그 안에 `errors` 를 둔다). 그렇다고 절대
+    // 금지로 두면 그런 부모만 잔뜩인 페이로드에서 상한을 아예 못 맞춘다. 주 루프와 같이
+    // **후순위**로 둔다 — 진단을 품지 않은 것부터 비우고, 모자랄 때만 그쪽으로 넘어간다.
+    .sort((a, b) => {
+      const da = holdsDiagnostic(out[a]) ? 1 : 0;
+      const db = holdsDiagnostic(out[b]) ? 1 : 0;
+      return da !== db ? da - db : size(out[b]) - size(out[a]);
+    });
+  for (const key of emptiable) {
+    if (size(out) <= workingCap) break;
+    const value = out[key];
+    const dropped = Array.isArray(value) ? value.length : Object.keys(value as object).length;
+    if (dropped === 0) continue;
+    out[key] = Array.isArray(value) ? [] : {};
+    note(key, dropped, "items");
+  }
+
+  if (overflow.items > 0) trimmed.andMoreItems = overflow.items;
+  if (overflow.chars > 0) trimmed.andMoreChars = overflow.chars;
+
+  if (Object.keys(trimmed).length > 0 || size(out) > DETAILS_MAX_CHARS) {
+    out[freeMarkerKey(out)] = trimmed;
+    // 여기까지 와서도 넘치면 이 함수가 다루지 못한 덩치가 남은 것이다(최소 보존분만으로 초과
+    // 하거나, 남은 덩치가 키 이름 자체라 어떤 값 축소로도 못 줄이는 모양).
+    // ⚠️ 표시를 **붙인 뒤에** 잰다. 붙이기 전에 재면 자기 무게가 빠져 실제보다 작게 적는다 —
+    // 정직하려고 만든 유일한 필드가 축소 보고를 한다(리뷰 실측: 26,830 을 26,795 로).
+    if (size(out) > DETAILS_MAX_CHARS) trimmed.overCap = size(out);
+  }
+  return out;
+}
+
 /**
  * 응답 본문을 이력에 남길 형태로 정규화한다. 파싱 불가(JSON 아님)면 null —
  * details 기록 실패가 상태 기록 자체를 막지 않는다.
  */
 function toDetails(body: unknown): unknown {
   if (body == null || typeof body !== "object") return null;
-  const serialized = JSON.stringify(body);
-  if (serialized == null) return null;
-  if (serialized.length <= DETAILS_MAX_CHARS) return body;
-  return { truncated: true, preview: serialized.slice(0, DETAILS_MAX_CHARS) };
+  // 직렬화 불가(순환 참조 등)면 남기지 않는다 — details 기록 실패가 상태 기록을 막지 않는다.
+  if (JSON.stringify(body) == null) return null;
+  // ⚠️ 여기서 자르지 않는다. 상한은 `recordSystemTaskRun`(쓰는 지점)이 걸어 두 레인이
+  // 같은 규칙을 따르게 한다 — 이 자리에만 두면 로컬 러너 레인이 통째로 빠진다.
+  return body;
 }
 
 /** 크론 응답 본문을 안전하게 읽는다(비-JSON·본문 없음 모두 null). */
@@ -58,9 +316,9 @@ async function readOutcomeBody(response: Response): Promise<CronOutcomeBody | nu
 
 /**
  * `details` 에 실행 소요시간을 얹는다. `durationMs` 는 항상 유한한 정수라 —
- * `DETAILS_MAX_CHARS` 절단이 막으려는 "핸들러가 임의로 큰 값을 돌려줘 이력 테이블이
- * 비대해지는" 위험을 재도입하지 않는다. 그래서 재절단 없이 그대로 얹는다(body 가 이미
- * truncated 상태여도 preview 는 그대로 두고 durationMs 만 추가).
+ * `DETAILS_MAX_CHARS` 상한이 막으려는 "핸들러가 임의로 큰 값을 돌려줘 이력 테이블이
+ * 비대해지는" 위험을 재도입하지 않는다. 그래서 여기서는 크기를 재지 않고 그대로 얹는다 —
+ * 상한은 이 결과를 받는 `capDetailsForLog` 가 건다(소요시간까지 포함해 총량이 보장된다).
  *
  * ⚠️ `details` 가 배열이면 병합하지 않고 `durationMs` 만 남긴다(배열 내용은 버려진다) —
  * 현재 크론 핸들러는 전부 `{ ok, ... }` 형태의 객체만 응답 본문으로 돌려주므로
@@ -107,7 +365,10 @@ export async function recordSystemTaskRun(
       // 응답 본문 + durationMs를 함께 남긴다 — 이게 없으면 "SUCCESS인데 산출 0"의 원인을
       // 사후에 알 방법이 없다(11일 무음 실패 때 실제로 단서가 0이었다). durationMs는
       // 본문 형식(JSON 여부)과 무관하게 항상 남는다 — 계측이 응답 파싱에 얹혀가지 않는다.
-      const mergedDetails = withDuration(details, durationMs);
+      // ⚠️ 상한은 **여기서** 건다. 종전엔 `toDetails`(HTTP 응답 해석부)에만 있어서, 이
+      // 함수를 직접 부르는 로컬 러너 레인은 상한을 아예 거치지 않았다 — 같은 잡인데
+      // 레인에 따라 저장 규칙이 달랐다. 소요시간을 얹은 뒤에 재므로 총량이 보장된다.
+      const mergedDetails = capDetailsForLog(withDuration(details, durationMs));
       await prisma.systemTaskLog.create({
         data: {
           jobKey,
