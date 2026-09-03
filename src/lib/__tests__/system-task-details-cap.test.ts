@@ -106,6 +106,64 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     expect(capped.detailsTrimmed).toEqual({ "detail.errors": 60 - detail.errors.length });
   });
 
+  it.each([
+    ["항목 하나가 거대한 배열", { failed: true, errors: ["가".repeat(6_000), "b", "c"] }],
+    ["배열 안의 배열", { failed: true, rows: [Array.from({ length: 500 }, (_, i) => `행${i}: ${"값".repeat(30)}`)] }],
+    [
+      "작은 필드가 아주 많은 모양",
+      Object.fromEntries([
+        ["failed", true],
+        ...Array.from({ length: 200 }, (_, i) => [`g${i}`, { errors: [`e${i}: ${"사유".repeat(20)}`] }]),
+      ]),
+    ],
+  ])("%s 도 상한 안으로 들여보낸다", (_name, input) => {
+    // ⚠️ 이 세 모양은 전부 리뷰가 **실측으로** 잡아낸 초과 경로다. 각각 다른 이유로 새어
+    // 나갔다: 배열 원소 문자열을 후보로 안 셌고, 배열 안의 배열을 못 봤고, 줄일 자리가
+    // 없는데 통째로 들어내지 않았다.
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+    expect(capped.failed).toBe(true); // 판정 필드는 어느 경로에서도 살아남는다
+    expect(capped.detailsTrimmed).toBeTruthy();
+  });
+
+  it("표시 숫자가 실제로 덜어낸 양과 일치한다(여러 회차에 걸쳐 줄여도)", () => {
+    // ⚠️ 같은 자리를 여러 회차에 걸쳐 줄이는데 덮어쓰면 마지막 회차 몫만 남는다.
+    // 실측으로 149건을 잃고 1건이라 적은 적이 있다 — 표시가 있으되 숫자가 틀리면
+    // 읽는 사람이 "거의 다 남았다"고 믿어, 없는 것보다 나쁘다.
+    const input = {
+      failed: true,
+      needsReviewDetail: [
+        {
+          key: "k1",
+          reasons: Array.from({ length: 200 }, (_, i) => ({ code: `C${i}`, message: "사유".repeat(20) })),
+        },
+      ],
+    };
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    const kept = ((capped.needsReviewDetail as Array<{ reasons: unknown[] }>)[0].reasons).length;
+    const noted = (capped.detailsTrimmed as Record<string, number>)["needsReviewDetail[0].reasons"];
+    expect(noted).toBe(200 - kept);
+    // 목록 **안쪽**이 깎여도 화면이 쓰는 짝 표시는 세워진다.
+    expect(capped.needsReviewDetailCapped).toBe(true);
+  });
+
+  it("요약 스칼라만으로 넘치면 줄이지 않고 넘쳤다는 사실만 남긴다", () => {
+    // 판정 근거를 줄이느니 봉투를 넘긴다 — 다만 조용히 넘기지는 않는다.
+    const scalarsOnly = Object.fromEntries([
+      ["failed", true],
+      ...Array.from({ length: 400 }, (_, i) => [`집계${i}`, i]),
+    ]);
+    const capped = capDetailsForLog(scalarsOnly) as Record<string, unknown>;
+
+    expect(capped.failed).toBe(true);
+    expect(capped["집계399"]).toBe(399); // 하나도 버리지 않았다
+    expect((capped.detailsTrimmed as Record<string, number>).overCap).toBeGreaterThan(4_000);
+  });
+
   it("요약 문자열은 맨 나중에 줄인다(판정 근거를 먼저 잃지 않게)", () => {
     // ⚠️ 요약이 상세 배열보다 **더 커야** 이 계약이 발동한다. 상세가 더 크면 크기순만으로도
     // 상세가 먼저 걸려, 후순위 규칙을 지워도 테스트가 통과한다(실측으로 겪음).
@@ -139,17 +197,32 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     expect(capped.needsReviewDetailCapped).toBe(true);
   });
 
-  it("큰 배열부터 줄인다(작은 것을 먼저 비워 정보만 잃지 않게)", () => {
-    // 작은 배열은 다 비워도 상한에 못 닿는다 — 순서가 뒤집히면 그걸 먼저 없애고도
-    // 결국 큰 배열까지 손대게 되어, 아무 이득 없이 두 종류를 다 잃는다.
+  it("진단 배열보다 값이 낮은 배열을 먼저 줄인다", () => {
+    // ⚠️ 크기순으로만 줄이면 **가장 값진 것을 먼저 잃는다.** 실측(리뷰): 셀러 전량 실패
+    // 회차에서 `errors` 가 3건까지 깎이는 동안 `handles` 는 전량 살아남아 예산을 점유했다 —
+    // 그 이름들은 각 `errors` 문자열 안에 이미 들어 있는데도.
     const capped = capDetailsForLog({
       failed: true,
-      handles: Array.from({ length: 12 }, (_, i) => `h${i}`),
-      errors: Array.from({ length: 60 }, (_, i) => `${i}: ${"사유".repeat(60)}`),
+      handles: Array.from({ length: 120 }, (_, i) => `아주긴핸들이름${i}`),
+      errors: Array.from({ length: 120 }, (_, i) => `핸들${i} 실패: ${"사유".repeat(40)}`),
     }) as Record<string, unknown>;
 
-    expect((capped.handles as string[]).length).toBe(12); // 작은 쪽은 온전
-    expect((capped.errors as string[]).length).toBeLessThan(60); // 큰 쪽에서 덜어냄
+    const errors = capped.errors as string[];
+    const handles = capped.handles as string[];
+    // 값이 낮은 쪽이 먼저 깎이고, 진단 배열이 더 많이 살아남는다.
+    expect(handles.length).toBeLessThan(120);
+    expect(errors.length).toBeGreaterThan(handles.length);
+  });
+
+  it("같은 값어치끼리는 덩치 큰 것부터 줄인다", () => {
+    const capped = capDetailsForLog({
+      failed: true,
+      small: Array.from({ length: 8 }, (_, i) => `s${i}`),
+      large: Array.from({ length: 80 }, (_, i) => `${i}: ${"내역".repeat(50)}`),
+    }) as Record<string, unknown>;
+
+    expect((capped.small as string[]).length).toBe(8); // 작은 쪽은 온전
+    expect((capped.large as string[]).length).toBeLessThan(80);
   });
 
   it("항목이 아무리 커도 최소 한 건은 남긴다(무엇이 실패했는지 아예 못 읽지 않게)", () => {

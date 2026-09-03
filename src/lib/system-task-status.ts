@@ -63,25 +63,80 @@ const CAPPED_FLAG_OF: Record<string, string> = {
  */
 const SUMMARY_KEYS = new Set(["ok", "failed", "failureReason", "error", "message", "lane"]);
 
-/** 줄일 수 있는 자리 하나 — 깊이에 상관없이 같은 줄에 세워 큰 것부터 처리한다. */
-type Shrinkable = { parent: Record<string, unknown>; key: string; path: string; summary: boolean };
+/**
+ * 표시(`detailsTrimmed`)가 쓸 수 있는 몫. 줄이는 동안은 이만큼을 미리 떼어 두고, 다 줄인
+ * 뒤에 표시를 붙인다.
+ *
+ * ⚠️ 종전엔 후보마다 자리를 예약했는데, 그러면 **표시 맵이 후보 수만큼 자라** 스스로
+ * 예산을 먹었다(실측: 중첩 200그룹에서 표시만 3.1k자, 총 12,920자). 예약을 없애고 몫을
+ * 통째로 떼는 편이 단순하고, 아래 항목 수 상한이 그 몫을 실제로 지킨다.
+ */
+const MARKER_BUDGET_CHARS = 400;
 
-/** 페이로드 전체를 훑어 줄일 수 있는 자리를 모은다(배열·긴 문자열). 중첩도 같은 자격이다. */
+/** 표시에 적을 최대 항목 수 — 그 이상은 개수로 합친다(표시가 예산을 넘지 않게). */
+const MAX_TRIMMED_ENTRIES = 12;
+
+/**
+ * 진단 배열 — 사고의 "왜"가 여기 담긴다. 다른 곳을 다 줄이고도 모자랄 때 손댄다.
+ *
+ * ⚠️ 크기순으로만 줄이면 **가장 값진 것을 먼저 잃는다.** 실측: 셀러 120명 전량 실패 회차에서
+ * `errors` 가 120→3건으로 깎이는 동안 진단 가치가 없는 `handles`(그 이름은 각 `errors` 문자열
+ * 안에 이미 있다)가 120건 전량 살아남아 예산의 대부분을 점유했다.
+ */
+const DIAGNOSTIC_KEYS = new Set(["errors", "failures"]);
+
+/** 줄이기 반복 상한 — 한 번에 한 자리씩 줄이므로 무한 반복을 막는 안전장치다. */
+const MAX_TRIM_ROUNDS = 40;
+
+/** 통째로 들어낸 자리에 남길 값 — 키는 남으므로 "원래 있었다"는 사실은 읽힌다. */
+const REMOVED_FIELD = "…";
+
+/** 표시에서 "통째로 들어냄"을 뜻하는 값(건수를 셀 수 없다). */
+const REMOVED_WHOLE = -1;
+
+/** 줄일 수 있는 자리 하나. */
+type Shrinkable = {
+  parent: Record<string, unknown> | unknown[];
+  key: string | number;
+  path: string;
+  rank: number;
+};
+
+function readAt(s: Shrinkable): unknown {
+  return (s.parent as Record<string | number, unknown>)[s.key];
+}
+function writeAt(s: Shrinkable, value: unknown): void {
+  (s.parent as Record<string | number, unknown>)[s.key] = value;
+}
+
+/**
+ * 페이로드를 훑어 줄일 수 있는 자리(배열·긴 문자열)를 모은다. 깊이·배열 안쪽 모두 센다.
+ *
+ * ⚠️ 결과는 **한 번 줄일 때마다 버린다.** 배열을 줄이면 새 배열이 생겨 그 안쪽 자리들의
+ * 부모 참조가 끊기기 때문이다(끊긴 자리에 써 봐야 결과에 반영되지 않는다 — 실측).
+ */
 function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]): void {
-  if (node == null || typeof node !== "object" || Array.isArray(node)) return;
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => {
+      const path = `${prefix}[${index}]`;
+      if (Array.isArray(item) || (typeof item === "string" && item.length > MIN_KEPT_CHARS)) {
+        found.push({ parent: node, key: index, path, rank: 0 });
+      }
+      collectShrinkables(item, path, found);
+    });
+    return;
+  }
+  if (node == null || typeof node !== "object") return;
   const obj = node as Record<string, unknown>;
   for (const [key, value] of Object.entries(obj)) {
     if (key === TRIMMED_MARKER) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    const summary = !prefix && SUMMARY_KEYS.has(key);
-    if (Array.isArray(value)) {
-      found.push({ parent: obj, key, path, summary });
-      for (const [i, item] of value.entries()) collectShrinkables(item, `${path}[${i}]`, found);
-    } else if (typeof value === "string" && value.length > MIN_KEPT_CHARS) {
-      found.push({ parent: obj, key, path, summary });
-    } else {
-      collectShrinkables(value, path, found);
+    if (Array.isArray(value) || (typeof value === "string" && value.length > MIN_KEPT_CHARS)) {
+      // 뒤로 미룰수록 큰 순위. 요약(2) > 진단 배열(1) > 나머지(0).
+      const rank = SUMMARY_KEYS.has(key) ? 2 : DIAGNOSTIC_KEYS.has(key) ? 1 : 0;
+      found.push({ parent: obj, key, path, rank });
     }
+    collectShrinkables(value, path, found);
   }
 }
 
@@ -92,76 +147,111 @@ function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]):
  * 잘랐는데, 그러면 ①남은 조각이 JSON 중간에서 끊겨 기계로 못 읽고 ②뒤쪽 **요약 필드
  * (실패 여부·사유·집계)가 통째로 사라진다** — 판정할 때 가장 먼저 보는 값들이다.
  *
- * 줄일 수 있는 자리(배열·긴 문자열)를 **깊이에 상관없이 한 줄로 세워 큰 것부터** 줄인다.
- * 중첩 배열도 같은 자격이다 — 한 겹 아래에 있다는 이유로 통째로 버리면 필요 이상을 잃는다.
- * 요약 필드는 **맨 뒤로 미룬다**: 다른 것을 다 줄이고도 모자랄 때만 손댄다.
+ * 한 번에 **한 자리씩** 줄이고 그때마다 후보를 다시 모은다. 줄이는 순서는 진단 가치가
+ * 낮은 것부터다: 나머지 → 진단 배열 → 요약. 같은 순위 안에서는 덩치 큰 것부터.
  *
  * ⚠️ **줄이지 못하는 모양이어도 조용히 넘기지 않는다.** 마지막에 그 사실을 표시로 남긴다.
  */
 export function capDetailsForLog(details: unknown): unknown {
   if (details == null || typeof details !== "object" || Array.isArray(details)) return details;
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(details);
+  } catch {
+    return null; // 순환 참조 등 — 이력에 남길 수 없다(상태 기록 자체는 막지 않는다)
+  }
+  if (serialized == null) return null;
+  if (serialized.length <= DETAILS_MAX_CHARS) return details;
+
   const size = (value: unknown) => JSON.stringify(value)?.length ?? 0;
-  if (size(details) <= DETAILS_MAX_CHARS) return details;
-
-  // 원본을 건드리지 않도록 깊은 사본에서 작업한다(호출자가 같은 객체를 계속 쓴다).
-  const out = JSON.parse(JSON.stringify(details)) as Record<string, unknown>;
+  // 원본을 건드리지 않도록 사본에서 작업한다(호출자가 같은 객체를 계속 쓴다).
+  const out = JSON.parse(serialized) as Record<string, unknown>;
+  // 표시가 쓸 몫을 미리 떼어 둔다 — 다 줄인 뒤 표시를 붙이다가 다시 넘기지 않도록.
+  const workingCap = DETAILS_MAX_CHARS - MARKER_BUDGET_CHARS;
   const trimmed: Record<string, number> = {};
-  // ⚠️ 표시를 **미리** 얹어 둔다. 다 줄인 뒤에 붙이면 그 표시의 무게 때문에 다시 상한을
-  // 넘는다(실측: 4,007자). 같은 객체를 계속 채우므로 `size(out)` 이 늘 표시까지 센다.
-  out[TRIMMED_MARKER] = trimmed;
+  let extraTrims = 0;
+  const note = (path: string, amount: number) => {
+    // ⚠️ 같은 자리를 여러 회차에 걸쳐 줄이므로 **누적**한다. 덮어쓰면 마지막 회차 몫만 남아
+    // 실제 손실을 크게 축소해 알린다(실측: 149건을 잃고 1건이라 적었다). 표시가 있으되
+    // 숫자가 틀리면 없는 것보다 나쁘다 — 읽는 사람이 거의 다 남았다고 믿는다.
+    if (path in trimmed) {
+      trimmed[path] = amount === REMOVED_WHOLE ? REMOVED_WHOLE : (trimmed[path] ?? 0) + amount;
+    } else if (Object.keys(trimmed).length < MAX_TRIMMED_ENTRIES) {
+      trimmed[path] = amount;
+    } else {
+      extraTrims += 1;
+    }
+    // 화면이 "일부만"을 판단하는 짝 표시를 함께 세운다 — 깎인 자리가 그 목록 **안쪽**이어도.
+    for (const [listKey, flag] of Object.entries(CAPPED_FLAG_OF)) {
+      if (path === listKey || path.startsWith(`${listKey}[`) || path.startsWith(`${listKey}.`)) {
+        out[flag] = true;
+      }
+    }
+  };
 
-  const candidates: Shrinkable[] = [];
-  collectShrinkables(out, "", candidates);
-  // 요약은 맨 뒤, 그 안에서는 덩치 큰 것부터.
-  candidates.sort((a, b) => {
-    if (a.summary !== b.summary) return a.summary ? 1 : -1;
-    return size(b.parent[b.key]) - size(a.parent[a.key]);
-  });
+  // 줄여 봐야 진전이 없던 자리 — 다시 고르지 않는다(같은 자리를 붙잡고 맴돌지 않게).
+  const exhausted = new Set<string>();
 
-  for (const { parent, key, path } of candidates) {
-    if (size(out) <= DETAILS_MAX_CHARS) break;
-    const value = parent[key];
-    // 표시에 들어갈 자리를 **줄이기 전에** 예약한다 — 줄인 뒤에 적으면 그 숫자의 무게로
-    // 다시 상한을 넘는다(실측).
-    trimmed[path] = Array.isArray(value) ? value.length : (value as string).length;
+  for (let round = 0; round < MAX_TRIM_ROUNDS && size(out) > workingCap; round += 1) {
+    const candidates: Shrinkable[] = [];
+    collectShrinkables(out, "", candidates);
+    candidates.sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : size(readAt(b)) - size(readAt(a))));
+    const target = candidates.find((c) => !exhausted.has(c.path));
+    if (!target) break;
+    const before = size(out);
+    const value = readAt(target);
 
     if (Array.isArray(value)) {
-      // 남길 개수는 이분 탐색으로 정한다 — 한 건씩 줄이며 매번 전체를 직렬화하면 항목이
-      // 많을 때 크론 쓰기 경로를 초 단위로 붙잡는다.
       let low = MIN_KEPT_ITEMS;
       let high = value.length;
       while (low < high) {
         const mid = Math.ceil((low + high) / 2);
-        parent[key] = value.slice(0, mid);
-        if (size(out) <= DETAILS_MAX_CHARS) low = mid;
+        writeAt(target, value.slice(0, mid));
+        if (size(out) <= workingCap) low = mid;
         else high = mid - 1;
       }
-      parent[key] = value.slice(0, low);
-      if (low < value.length) {
-        trimmed[path] = value.length - low;
-        const cappedFlag = CAPPED_FLAG_OF[key];
-        if (cappedFlag) parent[cappedFlag] = true;
-      } else {
-        delete trimmed[path];
+      writeAt(target, value.slice(0, low));
+      if (low < value.length) note(target.path, value.length - low);
+    } else {
+      const original = value as string;
+      const kept = Math.max(MIN_KEPT_CHARS, original.length - (size(out) - workingCap));
+      if (kept < original.length) {
+        writeAt(target, original.slice(0, kept));
+        note(target.path, original.length - kept);
       }
-      continue;
     }
 
-    const original = value as string;
-    const kept = Math.max(MIN_KEPT_CHARS, original.length - (size(out) - DETAILS_MAX_CHARS));
-    if (kept >= original.length) {
-      delete trimmed[path];
-      continue;
-    }
-    parent[key] = original.slice(0, kept);
-    trimmed[path] = original.length - kept;
+    // ⚠️ 진전이 없다고 **멈추지 않는다.** 이 자리만 못 줄이는 것일 수 있다(항목 하나뿐인
+    // 배열 안에 또 배열이 있는 모양이 그렇다 — 실측으로 겪었다). 이 자리만 빼고 계속한다.
+    if (size(out) >= before) exhausted.add(target.path);
   }
 
-  // 여기까지 와서도 넘치면 줄일 수 있는 자리가 없다는 뜻이다(스칼라 요약만으로 초과).
-  // 그건 줄여서는 안 된다 — 요약이 곧 판정 근거다. 넘쳤다는 사실만 남긴다.
-  if (size(out) > DETAILS_MAX_CHARS) trimmed.overCap = size(out);
-  // 아무것도 줄이지 않았으면 표시를 남기지 않는다(위에서 미리 얹어 둔 자리를 걷는다).
-  if (Object.keys(trimmed).length === 0) delete out[TRIMMED_MARKER];
+  // 마지막 수단 — 줄일 자리를 다 써도 넘치면(작은 필드가 아주 많은 모양) 덩치 큰 비-요약
+  // 필드를 통째로 들어낸다. 요약과 스칼라는 건드리지 않는다.
+  // ⚠️ 한 번만 정렬하고 순서대로 들어낸다. 매번 다시 정렬하면 필드 수만큼 전체 직렬화가
+  // 반복돼 느려진다(실측: 200개에서 139ms). 반복 상한을 두지 않는 것은 매 회 키가 하나씩
+  // 확실히 줄어 반드시 끝나기 때문이다.
+  const removable = Object.keys(out)
+    .filter((k) => k !== TRIMMED_MARKER && !SUMMARY_KEYS.has(k))
+    .filter((k) => out[k] != null && typeof out[k] === "object")
+    .sort((a, b) => size(out[b]) - size(out[a]));
+  for (const key of removable) {
+    if (size(out) <= workingCap) break;
+    out[key] = REMOVED_FIELD;
+    note(key, REMOVED_WHOLE);
+  }
+
+  if (extraTrims > 0) trimmed.andMore = extraTrims;
+  if (Object.keys(trimmed).length > 0) {
+    // 잡이 같은 이름을 자기 뜻으로 쓰고 있으면 덮지 않는다 — 남의 값을 조용히 지우지 않는다.
+    const markerKey = TRIMMED_MARKER in out ? `${TRIMMED_MARKER}ByStore` : TRIMMED_MARKER;
+    out[markerKey] = trimmed;
+    // 여기까지 와서도 넘치면 이 함수가 다루지 못한 덩치가 남은 것이다(최소 보존분만으로 초과
+    // 하거나 줄일 자리가 없는 모양). 조용히 넘기지 않고 실제 크기를 적어 둔다.
+    if (size(out) > DETAILS_MAX_CHARS) trimmed.overCap = size(out);
+  } else if (size(out) > DETAILS_MAX_CHARS) {
+    out[TRIMMED_MARKER in out ? `${TRIMMED_MARKER}ByStore` : TRIMMED_MARKER] = { overCap: size(out) };
+  }
   return out;
 }
 
