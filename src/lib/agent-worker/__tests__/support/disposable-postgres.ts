@@ -54,13 +54,32 @@ export function readConfiguredDatabaseUrls(repositoryRoot = process.cwd()): stri
   return collected.filter((value): value is string => typeof value === "string" && value.trim() !== "");
 }
 
-function endpointOf(url: string): string | null {
+/**
+ * `postgres:` / `postgresql:` are non-special schemes to the WHATWG URL parser, which
+ * has two consequences this guard would otherwise walk into:
+ *   - an omitted port stays `""` instead of becoming PostgreSQL's 5432, so
+ *     `postgresql://127.0.0.1/db` — a perfectly ordinary connection string that
+ *     connects on 5432 — would slip past a check against the port list;
+ *   - the host is not lowercased (unlike `https://LOCALHOST`, which parses to
+ *     `localhost`), so an endpoint comparison would miss a differently-cased `.env`.
+ * Everything downstream compares normalized values.
+ */
+const POSTGRES_DEFAULT_PORT = "5432";
+
+function normalize(url: string): { host: string; port: string } | null {
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
-    return `${parsed.hostname}:${parsed.port}`;
+    parsed = new URL(url);
   } catch {
     return null;
   }
+  if (parsed.hostname === "") return null;
+  return { host: parsed.hostname.toLowerCase(), port: parsed.port || POSTGRES_DEFAULT_PORT };
+}
+
+function endpointOf(url: string): string | null {
+  const normalized = normalize(url);
+  return normalized && `${normalized.host}:${normalized.port}`;
 }
 
 /**
@@ -82,20 +101,23 @@ export async function assertDisposablePostgresUrl(
   adminUrl: string,
   configuredUrls: readonly string[] = readConfiguredDatabaseUrls(),
 ): Promise<void> {
-  const parsed = new URL(adminUrl);
-  if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
+  const target = normalize(adminUrl);
+  if (!target) {
+    throw new Error("privilege test refuses a url it cannot resolve to a host");
+  }
+  if (!LOOPBACK_HOSTS.has(target.host)) {
     throw new Error("privilege test refuses non-loopback databases");
   }
-  if (PRODUCTION_PORTS.has(parsed.port)) {
+  if (PRODUCTION_PORTS.has(target.port)) {
     throw new Error("privilege test refuses the self-hosted production ports (55432/5432/6543)");
   }
 
   const isRemoteDatabaseUrl = await resolveIsRemoteDatabaseUrl();
-  const target = endpointOf(adminUrl);
+  const targetEndpoint = `${target.host}:${target.port}`;
   for (const configured of configuredUrls) {
     // sqlite and empty values are not a production database (isRemoteDatabaseUrl).
     if (!isRemoteDatabaseUrl(configured)) continue;
-    if (endpointOf(configured) === target) {
+    if (endpointOf(configured) === targetEndpoint) {
       throw new Error(
         "privilege test refuses the database this repository is configured against " +
           "(DATABASE_URL/DIRECT_URL — AGENTS.md P0: the repo .env is the production DB)",
