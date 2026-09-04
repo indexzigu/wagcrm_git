@@ -23,11 +23,13 @@ import "dotenv/config";
 import { getPrisma } from "../src/lib/prisma";
 import {
   clusterByDateWindow,
+  GROUP_WINDOW_DAYS,
   type CampaignClusterInput,
 } from "../src/lib/campaign-group-clustering";
 import { campaignGroupService } from "../src/services/campaignGroupService";
 
-export const DEFAULT_WINDOW_DAYS = 3;
+/** 근접 창 기본값 — 화면의 후보 조회와 같은 값을 써야 하므로 클러스터링 정본에서 가져온다. */
+export const DEFAULT_WINDOW_DAYS = GROUP_WINDOW_DAYS;
 
 /** 클러스터링 입력 + 리포트 표기 필드. */
 export type BackfillCampaign = CampaignClusterInput & {

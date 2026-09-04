@@ -99,6 +99,50 @@ export const campaignGroupRepository = {
     });
   },
 
+  /**
+   * 「그룹으로 묶기」 후보 모집단 — 넓힌 기간 창 안의 같은 셀러 캠페인을
+   * **그룹 소속 여부와 무관하게** 모두 돌려준다. 미그룹 필터는 호출자(라우트)가 한다.
+   *
+   * ⚠️ `groupId: null` 을 여기서 걸지 않는 것이 의도다 — 라우트가 "후보 0건"과
+   * "가까운 캠페인은 있으나 전부 다른 그룹 소속"을 갈라 말해야 하는데(빈 상태 문구),
+   * 여기서 미리 거르면 그 구분에 필요한 개수를 세려고 **쿼리를 한 번 더** 돌게 된다.
+   */
+  findSellerCampaignsForCombine(params: {
+    sellerId: string;
+    rangeStart: Date;
+    rangeEnd: Date;
+    excludeCampaignId?: string;
+  }) {
+    const { sellerId, rangeStart, rangeEnd, excludeCampaignId } = params;
+    return getPrisma().salesCampaign.findMany({
+      where: {
+        sellerId,
+        // 호출자가 **근접 창만큼 넓혀서** 넘긴 범위다(`expandYmdRangeByWindow`).
+        // 그래서 이 순수 겹침 술어가 `overlapsOrNear` 와 같은 집합을 고르고,
+        // 여기서 창 규칙을 다시 쓰지 않으면서도 `@@index([startDate, endDate])` 를 탄다.
+        startDate: { lte: rangeEnd },
+        endDate: { gte: rangeStart },
+        ...(excludeCampaignId ? { id: { not: excludeCampaignId } } : {}),
+      },
+      select: {
+        id: true,
+        status: true,
+        startDate: true,
+        endDate: true,
+        roundNumber: true,
+        groupId: true,
+        deal: {
+          select: {
+            dealName: true,
+            brandName: true,
+            partner: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ startDate: "asc" }, { id: "asc" }],
+    });
+  },
+
   /** 롤업/이름 스칼라 갱신(트랜잭션 내). sellerId·멤버 필드는 시그니처상 건드릴 수 없다. */
   update(id: string, data: CampaignGroupRollupUpdate, tx: Prisma.TransactionClient) {
     return tx.campaignGroup.update({ where: { id }, data });

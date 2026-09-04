@@ -6,11 +6,21 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,8 +33,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatDateRange } from "@/lib/date-utils";
 import { formatDealContextLabel } from "@/lib/deal-display";
+import {
+  expandYmdRangeByWindow,
+  GROUP_WINDOW_DAYS,
+} from "@/lib/campaign-group-clustering";
 import { cn } from "@/lib/utils";
 import type {
+  CampaignCombineCandidateRow,
   CampaignGroupDetailRow,
   CampaignGroupMemberRow,
   CampaignGroupRow,
@@ -32,8 +47,10 @@ import type {
 } from "@/lib/crm-types";
 import { SubStageBadge } from "./sub-stage-badge";
 import {
+  createCampaignGroup,
   dismissSuggestion,
   fetchActiveSuggestions,
+  fetchCombineCandidates,
   fetchGroupDetail,
   fetchGroupSuggestions,
   formatGroupLabel,
@@ -89,6 +106,7 @@ export function CampaignGroupSection({
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const [joiningGroupId, setJoiningGroupId] = useState<string | null>(null);
+  const [combining, setCombining] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<CampaignGroupMemberRow | null>(null);
 
@@ -146,16 +164,38 @@ export function CampaignGroupSection({
     // suggestNonce가 오를 때만 실행. 날짜 변경은 nonce와 함께 오므로 필드 deps 포함해도 1회.
   }, [suggestNonce, groupId, campaign.id, campaign.sellerId, campaign.startDate, campaign.endDate]);
 
-  const refreshCurrentCampaign = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/campaigns/${campaign.id}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const refreshed = (await res.json()) as CampaignRow;
-      onGroupMembershipChanged?.(refreshed);
-    } catch {
-      // 비차단 — 상위 동기화 실패해도 섹션 로컬 상태는 이미 갱신됨.
-    }
-  }, [campaign.id, onGroupMembershipChanged]);
+  /**
+   * 멤버십이 바뀐 캠페인들을 다시 읽어 상위 목록에 흘려보낸다.
+   *
+   * ⚠️ **id 목록을 받는 것이 요점이다** — 상위 콜백(`onCampaignUpdated` →
+   * `replaceCampaignRow`)은 **행 하나를 교체하는** 계약이라 목록이 스스로 따라오지
+   * 않는다. 그런데 그룹 **생성**은 고른 캠페인 전부의 `groupId` 를 한 번에 바꾼다.
+   * 현재 캠페인만 갱신하면 나머지 행은 새로고침 전까지 미그룹으로 남아 보드의 그룹
+   * 배지가 거짓말을 한다(방금 묶은 것이 안 묶인 것처럼 보인다).
+   */
+  const refreshCampaigns = useCallback(
+    async (campaignIds: string[]) => {
+      const rows = await Promise.all(
+        campaignIds.map(async (id) => {
+          try {
+            const res = await fetch(`/api/campaigns/${id}`, { cache: "no-store" });
+            if (!res.ok) return null;
+            return (await res.json()) as CampaignRow;
+          } catch {
+            // 비차단 — 상위 동기화 실패해도 섹션 로컬 상태는 이미 갱신됨.
+            return null;
+          }
+        }),
+      );
+      let failed = 0;
+      for (const row of rows) {
+        if (row) onGroupMembershipChanged?.(row);
+        else failed += 1;
+      }
+      return failed;
+    },
+    [onGroupMembershipChanged],
+  );
 
   useEffect(() => {
     if (editingName) {
@@ -171,7 +211,7 @@ export function CampaignGroupSection({
       setBanner(null);
       setPickerOpen(false);
       toast.success("그룹에 합류했습니다.");
-      await refreshCurrentCampaign();
+      await refreshCampaigns([campaign.id]);
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
@@ -180,6 +220,36 @@ export function CampaignGroupSection({
       );
     } finally {
       setJoiningGroupId(null);
+    }
+  }
+
+  /**
+   * 기존 캠페인들을 새 그룹으로 묶는다(경로 ⓐ). `campaignIds` 에는 호출부가 현재
+   * 캠페인을 이미 포함시켜 넘긴다(서버 최소 2건 요구).
+   */
+  async function handleCombine(campaignIds: string[]) {
+    setCombining(true);
+    try {
+      await createCampaignGroup(campaignIds);
+      setBanner(null);
+      setPickerOpen(false);
+      toast.success(`${campaignIds.length}건을 하나의 그룹으로 묶었습니다.`);
+      // ⛔ 현재 캠페인만 갱신하지 말 것 — 이 호출은 `campaignIds` **전부**의
+      // groupId 를 바꿨고, 상위는 행 하나씩만 교체한다(위 refreshCampaigns 주석).
+      const failed = await refreshCampaigns(campaignIds);
+      if (failed > 0) {
+        // 묶기 자체는 성공했다. 다만 목록이 못 따라왔으므로 그 사실을 말한다 —
+        // 조용히 두면 방금 묶은 캠페인이 안 묶인 것처럼 보이는 상태로 남는다.
+        toast.warning("묶기는 끝났지만 목록 갱신이 일부 실패했습니다. 새로고침해 주세요.");
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "그룹으로 묶지 못했습니다. 다시 시도해 주세요.",
+      );
+    } finally {
+      setCombining(false);
     }
   }
 
@@ -208,7 +278,7 @@ export function CampaignGroupSection({
         setDetail(result.group);
         toast.success(`${member.dealName}을 그룹에서 제외했습니다.`);
       }
-      await refreshCurrentCampaign();
+      await refreshCampaigns([campaign.id]);
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
@@ -538,12 +608,14 @@ export function CampaignGroupSection({
         이 캠페인은 그룹에 속해 있지 않습니다.
       </p>
 
-      <GroupPicker
+      <GroupCombineDialog
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         campaign={campaign}
         joiningGroupId={joiningGroupId}
+        combining={combining}
         onJoin={handleJoin}
+        onCombine={handleCombine}
       />
     </section>
   );
@@ -624,43 +696,85 @@ function GroupJoinBanner({
 }
 
 // ---------------------------------------------------------------------------
-// 무그룹 "그룹으로 묶기" 조합 피커 — suggest로 겹치는 기존 그룹을 찾아 합류.
+// 무그룹 "그룹으로 묶기" — 사이드패널의 조합 다이얼로그 (표면 ⓒ 안에서 열린다.
+// ⚠️ 청사진의 「표면 ⓐ」는 `bulk-combo-campaign-dialog.tsx`(캠페인을 새로 만들며
+// 묶는 창)가 이미 쓰고 있다 — 같은 글자를 여기에 겹쳐 쓰지 말 것)
 // ---------------------------------------------------------------------------
+//
+// ⛔ 이 자리에 있던 종전 팝오버는 `suggest`(= 이미 만들어진 **그룹** 조회)만 부르면서
+// 문구는 "묶을 수 있는 캠페인이 없습니다"라고 말했다. 그룹이 하나도 없는 셀러에서는
+// 무엇을 골라도 영원히 빈 목록이었고(기존 캠페인을 새 그룹으로 묶는 경로가 앱에
+// 아예 없었다), 오너는 그 침묵을 "브랜드가 달라서 안 묶인다"로 읽었다. 그래서 두
+// 질문을 갈라서 묻는다 — 합류할 기존 그룹은 `suggest`, 새로 묶을 캠페인은 `combinable`.
+//
+// 두 동작이 한 창에 있지만 커밋 모델이 섞이지 않게 한다: 합류는 줄마다 붙은 명시적
+// 버튼(즉시 실행), 새로 묶기는 체크박스 + 푸터 확정. 줄 아무 데나 눌러서 실행되는
+// 자리는 이 창에 없다.
 
-function GroupPicker({
+function GroupCombineDialog({
   open,
   onOpenChange,
   campaign,
   joiningGroupId,
+  combining,
   onJoin,
+  onCombine,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   campaign: CampaignRow;
   joiningGroupId: string | null;
+  combining: boolean;
   onJoin: (group: CampaignGroupRow) => void;
+  onCombine: (campaignIds: string[]) => Promise<void>;
 }) {
   const [loading, setLoading] = useState(false);
-  const [candidates, setCandidates] = useState<CampaignGroupRow[] | null>(null);
   const [error, setError] = useState(false);
+  const [groups, setGroups] = useState<CampaignGroupRow[]>([]);
+  const [joinError, setJoinError] = useState(false);
+  const [candidates, setCandidates] = useState<CampaignCombineCandidateRow[]>([]);
+  const [alreadyGroupedCount, setAlreadyGroupedCount] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
     setError(false);
+    setJoinError(false);
+    setSelectedIds([]);
     // 수동 조회 — 세션 억제 미적용(사용자가 명시적으로 열었으므로).
-    fetchGroupSuggestions({
+    const params = {
       sellerId: campaign.sellerId,
       startDate: campaign.startDate,
       endDate: campaign.endDate,
       excludeCampaignId: campaign.id,
-    })
-      .then((groups) => {
-        if (!cancelled) setCandidates(groups);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
+    };
+    // 합류 후보(기존 그룹)는 순수 겹침으로 조회되므로 범위를 근접 창만큼 넓혀
+    // 묶기 후보와 **같은 날짜 규칙**을 태운다. 안 넓히면 2일 떨어진 그룹이 합류
+    // 목록엔 없는데 그 멤버는 "이미 다른 그룹에 속해 있다"로 집계돼, 오너가 취할
+    // 행동이 화면에 없는 막다른 길이 생긴다(이 기능이 없애려던 바로 그 형태다).
+    // ⚠️ 이 일치는 **이 창 안에서만** 성립한다 — 날짜 수정 직후의 합류 배너
+    // (`fetchActiveSuggestions`)는 의도적으로 안 넓힌 범위를 쓴다(nag 억제).
+    const joinParams = { ...params, ...expandYmdRangeByWindow(params) };
+    // ⛔ Promise.all 로 묶지 말 것 — 합류 목록은 **보조**이고 묶기 목록이 이 창의
+    // 본체다. all 이면 suggest 한 번 실패가 후보 목록까지 통째로 가려, 고치려던
+    // "아무것도 안 보인다"가 다른 이유로 재현된다. 합류 조회가 실패해도 묶기는
+    // 그대로 진행되지만, **실패 자체는 숨기지 않는다**(joinError → 안내 문구).
+    // 빈 목록으로 접으면 "조회 실패"와 "합류할 그룹 없음"이 같은 모양이 된다.
+    Promise.allSettled([fetchGroupSuggestions(joinParams), fetchCombineCandidates(params)])
+      .then(([joinResult, combineResult]) => {
+        if (cancelled) return;
+        setGroups(joinResult.status === "fulfilled" ? joinResult.value : []);
+        // ⛔ 실패를 빈 목록으로 접지 말 것 — "조회 실패"와 "합류할 그룹 없음"이
+        // 화면에서 같은 모양이 되면, 이 창이 없애려던 막다른 길이 그대로 재현된다.
+        setJoinError(joinResult.status === "rejected");
+        if (combineResult.status === "fulfilled") {
+          setCandidates(combineResult.value.candidates);
+          setAlreadyGroupedCount(combineResult.value.alreadyGroupedCount);
+        } else {
+          setError(true);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -670,36 +784,217 @@ function GroupPicker({
     };
   }, [open, campaign.sellerId, campaign.startDate, campaign.endDate, campaign.id]);
 
+  function toggleCandidate(campaignId: string) {
+    setSelectedIds((prev) =>
+      prev.includes(campaignId)
+        ? prev.filter((id) => id !== campaignId)
+        : [...prev, campaignId],
+    );
+  }
+
+  // 합류가 날아가는 중이면 묶기도 잠근다 — 둘 다 이 캠페인의 groupId 를 바꾸므로,
+  // 겹쳐 누르면 서버 advisory lock 에서 진 쪽이 ALREADY_GROUPED(409)로 떨어져
+  // 한 번의 조작에 성공 토스트와 오류 토스트가 같이 뜬다(데이터는 안전하다).
+  const busy = combining || joiningGroupId !== null;
+
+  // 서버는 최소 2건을 요구한다. 현재 캠페인이 항상 포함되므로 1건만 골라도 성립한다.
+  const canSubmit = selectedIds.length > 0 && !busy;
+
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="h-8 w-fit text-xs">
           <Boxes className="mr-1 size-3.5" />
           그룹으로 묶기
         </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-2">
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>그룹으로 묶기</DialogTitle>
+          <DialogDescription>
+            {`같은 셀러의 캠페인 중 일정이 겹치거나 ${GROUP_WINDOW_DAYS}일 이내인 것만 보입니다. 이미 그룹에 속한 캠페인은 새로 묶을 수 없고, 대신 그 그룹에 합류할 수 있습니다.`}
+          </DialogDescription>
+        </DialogHeader>
+
         {loading ? (
-          <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-            불러오는 중…
-          </p>
+          <CombineSkeleton />
         ) : error ? (
-          <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-            후보를 불러오지 못했습니다.
+          <p className="py-6 text-center text-xs text-muted-foreground">
+            후보를 불러오지 못했습니다. 창을 닫았다가 다시 열어 주세요.
           </p>
-        ) : candidates && candidates.length > 0 ? (
-          <GroupCandidateList
-            candidates={candidates}
-            joiningGroupId={joiningGroupId}
-            onJoin={onJoin}
-          />
         ) : (
-          <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-            묶을 수 있는 같은 셀러·기간 캠페인이 없습니다.
-          </p>
+          <div className="space-y-4">
+            {joinError ? (
+              <p className="rounded-md border border-dashed border-border/70 px-2 py-3 text-center text-xs text-muted-foreground">
+                합류할 수 있는 기존 그룹을 불러오지 못했습니다. 새로 묶는 것은 아래에서 그대로 할 수 있습니다.
+              </p>
+            ) : groups.length > 0 ? (
+              <section className="space-y-1.5">
+                <h3 className="text-xs font-semibold text-foreground">
+                  이미 있는 그룹에 합류
+                </h3>
+                <ul role="list" className="flex flex-col gap-1">
+                  {groups.map((group) => {
+                    const label = formatGroupLabel(group);
+                    const joining = joiningGroupId === group.id;
+                    return (
+                      <li
+                        key={group.id}
+                        className="flex items-center gap-2 rounded-md border border-border/70 px-2 py-1.5 text-xs"
+                      >
+                        <GroupRowContent group={group} />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 shrink-0 text-xs"
+                          disabled={busy}
+                          onClick={() => onJoin(group)}
+                          aria-label={`${label} 그룹에 합류`}
+                        >
+                          {joining ? "합류 중…" : "합류"}
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
+
+            <section className="space-y-1.5">
+              <h3 className="text-xs font-semibold text-foreground">새로 묶기</h3>
+              {candidates.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border/70 px-2 py-4 text-center text-xs text-muted-foreground">
+                  {alreadyGroupedCount > 0
+                    ? "일정이 가까운 캠페인은 이미 다른 그룹에 속해 있습니다."
+                    : "일정이 가까운 다른 캠페인이 없습니다."}
+                </p>
+              ) : (
+                <div className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border border-border p-2">
+                  {candidates.map((candidate) => (
+                    <CombineCandidateRow
+                      key={candidate.campaignId}
+                      candidate={candidate}
+                      checked={selectedIds.includes(candidate.campaignId)}
+                      disabled={busy}
+                      onToggle={() => toggleCandidate(candidate.campaignId)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
         )}
-      </PopoverContent>
-    </Popover>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+          >
+            취소
+          </Button>
+          <Button
+            type="button"
+            disabled={!canSubmit}
+            onClick={() => onCombine([campaign.id, ...selectedIds])}
+          >
+            {combining ? "묶는 중…" : `선택한 ${selectedIds.length}건과 묶기`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** 후보 1줄. 오너가 "이게 같은 묶음인가"를 판단하는 축(브랜드·거래처·차수·상태·기간)을 함께 싣는다. */
+function CombineCandidateRow({
+  candidate,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  candidate: CampaignCombineCandidateRow;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  // 제목은 딜 이름이다 — 캠페인명(`{딜} - {셀러} {N}차`)을 쓰면 차수가 배지와 겹쳐
+  // 두 번 나오고(P2), 같은 셀러만 나열되는 목록에서 셀러명이 매 줄 반복된다.
+  const title = candidate.dealName;
+  const context = formatDealContextLabel({
+    brandName: candidate.brandName,
+    partnerName: candidate.partnerName,
+  });
+
+  return (
+    <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent/40">
+      {/* 라벨이 감싸고 있어도 이름을 명시한다 — 라벨 안이 배지·기간까지 섞인 조각
+          여러 개라 접근성 트리에서 캠페인 이름으로 읽히지 않는다(실측값 "on"). */}
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={onToggle}
+        aria-label={`${title} 선택`}
+        className="mt-0.5 size-4 cursor-pointer rounded border-slate-300 text-primary focus:ring-focus-ring"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="min-w-0 truncate text-xs font-medium" title={title}>
+            {title}
+          </span>
+          {candidate.roundNumber ? (
+            <span className={ROUND_BADGE}>{candidate.roundNumber}차</span>
+          ) : null}
+          <SubStageBadge status={candidate.status} size="compact" className="shrink-0" />
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          {context ? <span className="min-w-0 truncate">{context}</span> : null}
+          <span className="shrink-0">
+            {formatDateRange(candidate.startDate, candidate.endDate)}
+          </span>
+        </span>
+      </span>
+    </label>
+  );
+}
+
+/** 로딩은 스피너가 아니라 최종 레이아웃 모양의 스켈레톤(styleseed 기계 점검 3). */
+function CombineSkeleton() {
+  return (
+    <div className="space-y-2 py-2" role="status" aria-live="polite">
+      <span className="sr-only">후보를 불러오는 중</span>
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="flex items-center gap-2 rounded-md px-2 py-1.5">
+          <Skeleton className="size-4 shrink-0" />
+          <Skeleton className="h-3 flex-1" />
+          <Skeleton className="h-3 w-20 shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * 합류 후보 그룹 1줄의 **표시 내용** — 배너의 그룹 고르기와 조합 다이얼로그가 공유한다.
+ *
+ * 두 표면은 조작 방식이 다르다(줄 전체가 버튼 vs 줄 옆 「합류」 버튼). 그래서 껍데기는
+ * 각자 두되 "그룹 1건을 무엇으로 보여줄 것인가"(이름 폴백·기간·멤버 수)는 여기 한 곳에
+ * 둔다 — 이 레포에서 반복해 난 결함이 "화면이 같은 판정을 손으로 재구현하는 것"이다.
+ */
+function GroupRowContent({ group }: { group: CampaignGroupRow }) {
+  const label = formatGroupLabel(group);
+  return (
+    <>
+      <span className="min-w-0 flex-1 truncate font-medium" title={label}>
+        {label}
+      </span>
+      <span className="shrink-0 text-[11px] text-muted-foreground">
+        {formatDateRange(group.startDate, group.endDate)} · {group.memberCount}건
+      </span>
+    </>
   );
 }
 
@@ -726,12 +1021,7 @@ function GroupCandidateList({
               className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent/40 disabled:opacity-60"
               aria-label={`${label} 그룹에 합류`}
             >
-              <span className="min-w-0 flex-1 truncate font-medium" title={label}>
-                {label}
-              </span>
-              <span className="shrink-0 text-[11px] text-muted-foreground">
-                {formatDateRange(group.startDate, group.endDate)} · {group.memberCount}건
-              </span>
+              <GroupRowContent group={group} />
             </button>
           </li>
         );

@@ -1,4 +1,5 @@
 import type {
+  CampaignCombineCandidateRow,
   CampaignGroupDetailRow,
   CampaignGroupMemberRow,
   CampaignGroupRow,
@@ -130,4 +131,26 @@ export function toCampaignGroupDetail(group: GroupWithMembers): CampaignGroupDet
   }));
 
   return { ...toCampaignGroupRow(group), members };
+}
+
+/** 「그룹으로 묶기」 후보 1건의 저장소 행 → 응답 행. 매핑을 라우트에 인라인으로 두면
+ * 소비처가 늘 때 codebase-map 이 경고하는 "손으로 재구현한 사본"이 된다. */
+export function toCampaignCombineCandidateRow(row: {
+  id: string;
+  status: string;
+  startDate: Date;
+  endDate: Date;
+  roundNumber: number | null;
+  deal: { dealName: string; brandName: string | null; partner: { name: string } | null };
+}): CampaignCombineCandidateRow {
+  return {
+    campaignId: row.id,
+    dealName: row.deal.dealName,
+    brandName: row.deal.brandName ?? null,
+    partnerName: row.deal.partner?.name ?? null,
+    status: row.status as CampaignStatus,
+    roundNumber: row.roundNumber ?? null,
+    startDate: toKstDateStr(row.startDate)!,
+    endDate: toKstDateStr(row.endDate)!,
+  };
 }
