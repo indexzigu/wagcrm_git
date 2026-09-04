@@ -100,6 +100,18 @@ describe("그룹으로 묶기 다이얼로그", () => {
         campaignIds: ["c-current", "c-other"],
       });
     });
+
+    // 묶인 캠페인 **전부**를 다시 읽어야 한다 — 상위 목록은 행 하나씩만 교체하므로,
+    // 현재 캠페인만 갱신하면 나머지 행이 새로고침 전까지 미그룹으로 남아 보드의
+    // 그룹 배지가 방금 묶은 것을 안 묶인 것처럼 보여준다.
+    await waitFor(() => {
+      const refreshed = fetchMock.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.startsWith("/api/campaigns/"));
+      expect(refreshed).toEqual(
+        expect.arrayContaining(["/api/campaigns/c-current", "/api/campaigns/c-other"]),
+      );
+    });
   });
 
   it("아무것도 고르지 않으면 확정 버튼이 눌리지 않는다", async () => {

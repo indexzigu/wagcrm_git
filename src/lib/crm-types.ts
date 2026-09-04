@@ -526,6 +526,16 @@ export type CampaignCombineCandidateRow = {
    * 같은 이유로 `dealName` 을 쓴다.
    */
   dealName: string;
+  /**
+   * ⚠️ `Deal.brandName` **원본**이다 — `normalizeDealBrandName`(`deal-display.ts`)을
+   * 거치지 않는다. 캠페인 표면의 기존 관례(`campaign-row.ts` 의 `deal.brandName ?? null`)를
+   * 따른 것이고, 지금 소비처가 `formatDealContextLabel` 하나뿐이라 **화면 출력은 같다**
+   * (그 함수는 라벨을 버리고 값만 이어 붙이며, 브랜드와 거래처가 같으면 하나로 접는다).
+   * 🪤 다만 `brandName=null` + `partner.type="BRAND"` 인 딜에서 정규화를 거치면
+   * 브랜드가 거래처명으로 채워진다. 라벨("브랜드"/"거래처")을 **보여주는**
+   * `getDealIdentityParts` 로 소비하는 표면이 생기면, 다른 화면이 "브랜드"라 부르는
+   * 값을 이 표면은 "거래처"로 읽는다 — 그때는 정규화를 통과시킬 것.
+   */
   brandName: string | null;
   partnerName: string | null;
   status: CampaignStatus;

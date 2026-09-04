@@ -164,16 +164,35 @@ export function CampaignGroupSection({
     // suggestNonce가 오를 때만 실행. 날짜 변경은 nonce와 함께 오므로 필드 deps 포함해도 1회.
   }, [suggestNonce, groupId, campaign.id, campaign.sellerId, campaign.startDate, campaign.endDate]);
 
-  const refreshCurrentCampaign = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/campaigns/${campaign.id}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const refreshed = (await res.json()) as CampaignRow;
-      onGroupMembershipChanged?.(refreshed);
-    } catch {
-      // 비차단 — 상위 동기화 실패해도 섹션 로컬 상태는 이미 갱신됨.
-    }
-  }, [campaign.id, onGroupMembershipChanged]);
+  /**
+   * 멤버십이 바뀐 캠페인들을 다시 읽어 상위 목록에 흘려보낸다.
+   *
+   * ⚠️ **id 목록을 받는 것이 요점이다** — 상위 콜백(`onCampaignUpdated` →
+   * `replaceCampaignRow`)은 **행 하나를 교체하는** 계약이라 목록이 스스로 따라오지
+   * 않는다. 그런데 그룹 **생성**은 고른 캠페인 전부의 `groupId` 를 한 번에 바꾼다.
+   * 현재 캠페인만 갱신하면 나머지 행은 새로고침 전까지 미그룹으로 남아 보드의 그룹
+   * 배지가 거짓말을 한다(방금 묶은 것이 안 묶인 것처럼 보인다).
+   */
+  const refreshCampaigns = useCallback(
+    async (campaignIds: string[]) => {
+      const rows = await Promise.all(
+        campaignIds.map(async (id) => {
+          try {
+            const res = await fetch(`/api/campaigns/${id}`, { cache: "no-store" });
+            if (!res.ok) return null;
+            return (await res.json()) as CampaignRow;
+          } catch {
+            // 비차단 — 상위 동기화 실패해도 섹션 로컬 상태는 이미 갱신됨.
+            return null;
+          }
+        }),
+      );
+      for (const row of rows) {
+        if (row) onGroupMembershipChanged?.(row);
+      }
+    },
+    [onGroupMembershipChanged],
+  );
 
   useEffect(() => {
     if (editingName) {
@@ -189,7 +208,7 @@ export function CampaignGroupSection({
       setBanner(null);
       setPickerOpen(false);
       toast.success("그룹에 합류했습니다.");
-      await refreshCurrentCampaign();
+      await refreshCampaigns([campaign.id]);
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
@@ -212,7 +231,9 @@ export function CampaignGroupSection({
       setBanner(null);
       setPickerOpen(false);
       toast.success(`${campaignIds.length}건을 하나의 그룹으로 묶었습니다.`);
-      await refreshCurrentCampaign();
+      // ⛔ 현재 캠페인만 갱신하지 말 것 — 이 호출은 `campaignIds` **전부**의
+      // groupId 를 바꿨고, 상위는 행 하나씩만 교체한다(위 refreshCampaigns 주석).
+      await refreshCampaigns(campaignIds);
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
@@ -249,7 +270,7 @@ export function CampaignGroupSection({
         setDetail(result.group);
         toast.success(`${member.dealName}을 그룹에서 제외했습니다.`);
       }
-      await refreshCurrentCampaign();
+      await refreshCampaigns([campaign.id]);
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
