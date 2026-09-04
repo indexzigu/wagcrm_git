@@ -86,6 +86,15 @@ const MAX_TRIMMED_ENTRIES = 12;
  */
 const DIAGNOSTIC_KEYS = new Set(["errors", "failures"]);
 
+/**
+ * 짝 표시가 걸린 목록 — 최후 수단이 비우지 않는 자리다(`CAPPED_FLAG_OF` 파생).
+ *
+ * ⚠️ 순위에서도 같이 지킨다. 최후 수단만 지키고 주 루프가 안 지키면, 아래 하한 포기가
+ * 이 목록을 통째로 비워 **같은 함수의 두 곳이 서로 다른 것을 보호**하게 된다(화면이
+ * 300건을 "없음"으로 그린 그 사고를 다른 문으로 되사는 셈이다).
+ */
+const PAIRED_LIST_KEYS = new Set(Object.keys(CAPPED_FLAG_OF));
+
 /** 줄이기 반복 상한 — 한 번에 한 자리씩 줄이므로 무한 반복을 막는 안전장치다. */
 const MAX_TRIM_ROUNDS = 40;
 
@@ -105,19 +114,59 @@ function writeAt(s: Shrinkable, value: unknown): void {
 }
 
 /**
+ * 이 자리의 순위. 뒤로 미룰수록 큰 순위 — 요약(2) > 진단·짝목록(1) > 나머지(0).
+ *
+ * ⚠️ 요약 순위는 **최상위에서만** 준다. 중첩된 `error`·`message` 는 요약이 아니라 진단
+ * 내용 자체다 — 그것에 요약 자격을 주면 상위 진단 배열이 먼저 깎인다.
+ * ⚠️ 그 외에는 **부모 순위를 물려받는다.** 이름만으로 매기면 `errors[0]` 같은 진단
+ * **내용물**이 순위 0 이 되어, 아래 「하한 포기」가 지켜야 할 것을 지우는 문이 된다.
+ *
+ * ⚠️ **여기서는 이름만 본다 — `holdsDiagnostic` 의 값 종류 검사를 옮겨오지 말 것.**
+ * 두 함수가 묻는 것이 다르다: 저쪽은 "지킬 진단 **내용**이 안에 있는가"(그래서 배열이어야
+ * 한다)이고, 이쪽은 "이 자리가 진단으로 **불리는가**"다. 긴 `errors: "…"` 문자열은 이름이
+ * 곧 내용이라, 여기에 `Array.isArray` 를 걸면 진짜 진단 문자열이 순위 0 으로 떨어진다.
+ * (최후 수단의 `protectedKeys` 도 같은 이유로 이름만 본다.)
+ */
+function rankOf(key: string, prefix: string, parentRank: number): number {
+  if (!prefix && SUMMARY_KEYS.has(key)) return 2;
+  if (DIAGNOSTIC_KEYS.has(key)) return 1;
+  if (!prefix && PAIRED_LIST_KEYS.has(key)) return 1;
+  return parentRank;
+}
+
+/**
+ * 이 문자열을 후보로 셀지 — 남길 하한보다 길어야 줄일 여지가 있다.
+ *
+ * `lowRankStringFloor` 는 **순위 0 에만** 적용된다. 주 루프는 언제나 `MIN_KEPT_CHARS`
+ * 를 넘기므로 하한까지 깎인 문자열은 후보에서 빠지고, **아래 일괄 포기만** 0 을 넘겨
+ * 그것들까지 훑는다(안 그러면 포기를 선언해도 손댈 자리가 없다).
+ * ⛔ 주 루프에서 0 을 쓰지 말 것 — 두어 글자짜리 문자열이 전부 후보가 되어 회차 예산을
+ * 먹는다(아래 주 루프의 같은 경고).
+ */
+function isShrinkableString(value: unknown, rank: number, lowRankStringFloor: number): boolean {
+  return typeof value === "string" && value.length > (rank === 0 ? lowRankStringFloor : MIN_KEPT_CHARS);
+}
+
+/**
  * 페이로드를 훑어 줄일 수 있는 자리(배열·긴 문자열)를 모은다. 깊이·배열 안쪽 모두 센다.
  *
  * ⚠️ 결과는 **한 번 줄일 때마다 버린다.** 배열을 줄이면 새 배열이 생겨 그 안쪽 자리들의
  * 부모 참조가 끊기기 때문이다(끊긴 자리에 써 봐야 결과에 반영되지 않는다 — 실측).
  */
-function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]): void {
+function collectShrinkables(
+  node: unknown,
+  prefix: string,
+  found: Shrinkable[],
+  lowRankStringFloor: number,
+  parentRank = 0,
+): void {
   if (Array.isArray(node)) {
     node.forEach((item, index) => {
       const path = `${prefix}[${index}]`;
-      if (Array.isArray(item) || (typeof item === "string" && item.length > MIN_KEPT_CHARS)) {
-        found.push({ parent: node, key: index, path, rank: 0 });
+      if (Array.isArray(item) || isShrinkableString(item, parentRank, lowRankStringFloor)) {
+        found.push({ parent: node, key: index, path, rank: parentRank });
       }
-      collectShrinkables(item, path, found);
+      collectShrinkables(item, path, found, lowRankStringFloor, parentRank);
     });
     return;
   }
@@ -125,14 +174,11 @@ function collectShrinkables(node: unknown, prefix: string, found: Shrinkable[]):
   const obj = node as Record<string, unknown>;
   for (const [key, value] of Object.entries(obj)) {
     const path = prefix ? `${prefix}.${key}` : key;
-    if (Array.isArray(value) || (typeof value === "string" && value.length > MIN_KEPT_CHARS)) {
-      // 뒤로 미룰수록 큰 순위. 요약(2) > 진단 배열(1) > 나머지(0).
-      // ⚠️ 요약 순위는 **최상위에서만** 준다. 중첩된 `error`·`message` 는 요약이 아니라
-      // 진단 내용 자체다 — 그것에 요약 자격을 주면 상위 진단 배열이 먼저 깎인다.
-      const rank = !prefix && SUMMARY_KEYS.has(key) ? 2 : DIAGNOSTIC_KEYS.has(key) ? 1 : 0;
+    const rank = rankOf(key, prefix, parentRank);
+    if (Array.isArray(value) || isShrinkableString(value, rank, lowRankStringFloor)) {
       found.push({ parent: obj, key, path, rank });
     }
-    collectShrinkables(value, path, found);
+    collectShrinkables(value, path, found, lowRankStringFloor, rank);
   }
 }
 
@@ -141,7 +187,10 @@ function holdsDiagnostic(node: unknown): boolean {
   if (Array.isArray(node)) return node.some(holdsDiagnostic);
   if (node == null || typeof node !== "object") return false;
   return Object.entries(node as Record<string, unknown>).some(
-    ([key, value]) => DIAGNOSTIC_KEYS.has(key) || holdsDiagnostic(value),
+    // ⚠️ 이름만 보지 않는다 — 잡이 `errors: 3` 처럼 **집계 수치**에 같은 이름을 쓰면,
+    // 지킬 진단 내용이 하나도 없는 부모가 보호 순위를 얻어 뒤로 밀리고 정작 진단 배열을
+    // 품은 쪽이 먼저 비워진다. 지키는 대상은 이름이 아니라 **배열**이다.
+    ([key, value]) => (DIAGNOSTIC_KEYS.has(key) && Array.isArray(value)) || holdsDiagnostic(value),
   );
 }
 
@@ -216,17 +265,196 @@ export function capDetailsForLog(details: unknown): unknown {
   // 줄여 봐야 진전이 없던 자리 — 다시 고르지 않는다(같은 자리를 붙잡고 맴돌지 않게).
   const exhausted = new Set<string>();
 
+  /**
+   * 값 낮은 자리(순위 0)의 최소 보존량을 포기했는가.
+   *
+   * ⚠️ **순위는 하한보다 위다.** 하한은 자리마다 주는 약속인데 예산은 전체가 하나라,
+   * 값 낮은 자리가 여럿이면 그 하한들의 **합**이 예산을 먼저 먹고 적자는 순위 높은
+   * 진단 배열이 혼자 떠안는다(합성 재현: 사유 40건이 1건까지 깎이는 동안 값 낮은
+   * 문자열들은 저마다 하한만큼 온전히 살아남았다). 그래서 순위 높은 자리를 깎으러
+   * 가기 **전에** 값 낮은 자리의 하한을 먼저 내놓는다.
+   * ⚠️ 포기는 **한 번뿐이고 순위 0 에만** 적용한다 — 진단·짝목록(1)·요약(2)의 하한까지
+   * 풀면 "무엇이 실패했나를 한 건은 읽게 한다"는 보장이 사라진다. 다 내놓고도 모자라면
+   * 그때는 진짜 적자이므로 종전대로 순위 순서를 따라 깎는다.
+   */
+  let lowRankFloorsRelaxed = false;
+
   for (let round = 0; round < MAX_TRIM_ROUNDS && size(out) > workingCap; round += 1) {
     const candidates: Shrinkable[] = [];
-    collectShrinkables(out, "", candidates);
+    // ⚠️ **주 루프의 문자열 문턱은 언제나 `MIN_KEPT_CHARS` 다 — 포기했다고 0 으로 낮추지
+    // 말 것.** 낮추면 `값1` 같은 **두어 글자짜리 문자열까지 전부 후보**가 되고, 순위 0 이라
+    // 정렬에서 맨 앞에 선다. 자리마다 한 회차씩 먹으므로 잡다한 필드가 수십 개만 있어도
+    // 회차 예산이 거기서 끝나고, 정작 순위 높은 자리는 큰 채로 남아 **종전 구현에서는
+    // 상한 안에 들던 페이로드가 넘친다**(합성 표본 400개 차분 실측 12건, 예: 3,767자 →
+    // 6,799자). 하한 아래 문자열은 **아래 일괄 포기가 이미 처리했다** — 여기서 다시
+    // 훑을 이유가 없다.
+    collectShrinkables(out, "", candidates, MIN_KEPT_CHARS);
     candidates.sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : size(readAt(b)) - size(readAt(a))));
-    const target = candidates.find((c) => !exhausted.has(c.path));
+    // ⚠️ **이미 하한에 닿은 자리를 고르지 않는다.** 종전엔 그런 자리도 한 번 골라 보고
+    // "진전 없음"을 확인한 뒤에야 소진 처리했는데, 그 확인에 **자리마다 회차 하나**가
+    // 든다. 잡다한 배열이 열 개만 있어도 회차 예산의 4분의 1이 아무것도 못 줄이고
+    // 사라지고, 그만큼 순위 높은 자리에 닿기 전에 예산이 끝난다(실측 트레이스: 배열
+    // 11개가 회차 10개를 그렇게 태웠다). 줄일 수 있는지는 값만 보면 바로 안다.
+    const canShrink = (c: Shrinkable) => {
+      const value = readAt(c);
+      const relaxedHere = lowRankFloorsRelaxed && c.rank === 0;
+      if (Array.isArray(value)) return value.length > (relaxedHere ? 0 : MIN_KEPT_ITEMS);
+      return typeof value === "string" && value.length > (relaxedHere ? 0 : MIN_KEPT_CHARS);
+    };
+    let target = candidates.find((c) => !exhausted.has(c.path) && canShrink(c));
     if (!target) break;
+
+    // ⚠️ **회차가 바닥나기 전에도 반드시 한 번은 내놓는다.** 순위 상승은 "값 낮은 쪽을
+    // 다 훑었다"는 신호일 뿐인데, 값 낮은 문자열이 회차 수보다 많으면 **하한까지 깎는
+    // 데만 예산이 다 들어가 그 신호가 영영 오지 않는다**(자리마다 한 회차씩 쓴다).
+    // 실측: 하한보다 긴 문구가 `MAX_TRIM_ROUNDS` 개를 넘으면 이 분기가 발동조차 못 해
+    // 사유가 1건까지 깎인 채 상한도 못 맞췄다 — 티켓이 든 바로 그 모양이다.
+    // 회차 소진도 순위 상승과 같은 신호로 본다.
+    const lastRound = round === MAX_TRIM_ROUNDS - 1;
+    if (!lowRankFloorsRelaxed && (target.rank > 0 || lastRound)) {
+      // 순위 높은 자리로 넘어가려는 참이다 — 그 전에 값 낮은 자리의 하한을 내놓는다.
+      //
+      // ⚠️ **"값 낮은 후보가 남아 있으면"으로 조건을 달지 말 것** — 하한까지 이미 깎인
+      // (또는 애초에 하한보다 짧은) 문자열은 **평시 문턱에서 후보로 보이지도 않는다.**
+      // 그것들이 정확히 예산을 붙들고 있는 자리인데 보이는 후보로 조건을 걸면 이 분기가
+      // 영영 발동하지 않는다(초판이 그랬다 — 사유 40건 중 1건만 남는 모양 그대로였다).
+      //
+      // ⚠️ **포기는 한 회차에 몰아서 한다.** 한 자리씩 돌면 회차 예산이 자잘한 문자열에
+      // 다 소진돼 정작 순위 높은 자리는 손도 못 댄 채 최후 수단으로 넘어간다(실측: 4자
+      // 짜리 문자열 300개가 40회차를 전부 먹고, 최후 수단이 진단 배열을 품은 부모를
+      // 비웠다 — 고치려던 것을 고치는 과정에서 되사는 셈이다).
+      // 문자열과 배열을 **따로** 훑는 것도 계약이다 — 배열을 줄이면 새 배열이 생겨 이
+      // 목록에 담긴 다른 자리의 부모 참조가 끊기므로, 문자열을 다 훑은 **뒤에** 배열을
+      // 손대고 배열 쪽은 자기 목록을 따로 모은다.
+      lowRankFloorsRelaxed = true;
+      const lowRankSites: Shrinkable[] = [];
+      collectShrinkables(out, "", lowRankSites, 0);
+      // 🪤 비교자 안에서 `size()` 를 부르지 말 것 — 정렬은 비교를 O(n log n) 번 하는데
+      // 그때마다 다시 직렬화한다. 후보마다 **한 번만** 재서 그 수로 정렬한다.
+      // ⚠️ 재는 것은 원문 길이가 아니라 **직렬화 크기**다. 예산을 먹는 것은 저장될 형태이고,
+      // 따옴표·역슬래시·줄바꿈이 많은 문자열은 원문보다 훨씬 크게 저장된다(`"` 900자 →
+      // 1,802자). 원문 길이로 재면 더 작은 쪽을 먼저 희생한다. 주 루프와 아래 배열 쪽이
+      // 이미 직렬화 크기로 재므로 여기만 다르면 같은 정책이 자리마다 갈린다.
+      const lowRankStrings = lowRankSites
+        .filter((c) => c.rank === 0 && typeof readAt(c) === "string")
+        .map((c) => ({ site: c, bulk: size(readAt(c)) }))
+        .sort((a, b) => b.bulk - a.bulk)
+        .map((x) => x.site);
+      for (const site of lowRankStrings) {
+        if (size(out) <= workingCap) break;
+        const original = readAt(site) as string;
+        const kept = Math.max(0, original.length - (size(out) - workingCap));
+        if (kept < original.length) {
+          writeAt(site, original.slice(0, kept));
+          note(site.path, original.length - kept, "chars");
+        }
+      }
+      // 값 낮은 **배열**의 개수 하한도 같은 자리에서 내놓는다.
+      // ⚠️ **이것을 주 루프에 맡기지 말 것(= `exhausted` 를 비워 다시 태우지 말 것).**
+      // 배열 하나를 비우는 데 회차 하나가 드는데, 잡다한 배열은 열 개 스무 개씩 있고
+      // 한 번 비워 봐야 십수 자밖에 안 준다. 실측(합성 seed): 배열 11개를 되돌렸더니
+      // **회차 40개 중 22개**를 거기서 태우고 154자를 벌었으며, 정작 요약·진단은 손도
+      // 못 댄 채 예산이 끝나 **베이스에서는 상한 안에 들던 페이로드가 넘쳤다**(400개
+      // 표본 중 12건). 회차를 쓰지 않는 이 자리에서 한 번에 비운다.
+      // 배열을 비우면 그 안쪽 자리의 부모 참조가 끊기므로 **매번 다시 모아** 고른다
+      // (끊긴 자리에 써 봐야 결과에 반영되지 않는다 — 이 파일 위쪽의 같은 경고).
+      // ⚠️ 넘칠 때만 모으고 정렬한다 — 문자열만으로 이미 상한 안에 들었으면 이 아래는
+      // 통째로 헛일이고, 정렬 자체가 싸지 않다(위 🪤).
+      const lowRankArrays: Shrinkable[] = [];
+      if (size(out) > workingCap) {
+        const arraySites: Shrinkable[] = [];
+        collectShrinkables(out, "", arraySites, MIN_KEPT_CHARS);
+        lowRankArrays.push(
+          ...arraySites
+            .filter((c) => c.rank === 0 && Array.isArray(readAt(c)))
+            .map((c) => ({ site: c, bulk: size(readAt(c)) }))
+            .sort((a, b) => b.bulk - a.bulk)
+            .map((x) => x.site),
+        );
+      }
+      // 🪤 큰 것부터 비우므로 **바깥 배열을 먼저 비우면 그 안쪽 자리는 떨어져 나간다.**
+      // ⚠️ 떨어진 자리를 값 재확인으로 거를 수 없다 — 참조가 같은 (낡은) 부모를 거치므로
+      // **언제나 살아 있는 것처럼 보인다.** 그대로 두면 쓰기는 결과에 반영되지 않으면서
+      // 표시에만 숫자가 남아, 바깥을 비울 때 이미 센 항목을 **이 회차에서 한 번 더
+      // 센다.** 그래서 비운 **경로 아래**는 건너뛴다.
+      // ℹ️ 앞선 회차가 안쪽을 줄이며 남긴 숫자까지 지우지는 못한다(그때는 실제 손실이
+      // 맞았고, 그 누적 보고는 베이스도 같다) — 여기서 막는 것은 **같은 회차의 중복**이다.
+      const emptiedPaths: string[] = [];
+      for (const site of lowRankArrays) {
+        if (size(out) <= workingCap) break;
+        if (emptiedPaths.some((prefix) => site.path.startsWith(prefix))) continue;
+        const held = readAt(site);
+        if (!Array.isArray(held) || held.length === 0) continue;
+        writeAt(site, []);
+        // ⛔ **앞선 회차가 안쪽에 남긴 기록을 지우지 말 것.** 결과에 없는 경로를 가리켜
+        // 어색해 보이지만, 그 손실은 **실제로 일어났다**(주 루프가 안쪽을 줄일 때 그
+        // 자리는 살아 있었다). 지우면 총 손실이 실제보다 작게 보고된다 — 이 파일이
+        // 「149건을 잃고 1건이라 적었다」로 규탄하는 축소 보고를 되사는 셈이다.
+        // 실측: 안쪽에서 4,009자를 잃은 기록이 통째로 사라졌다.
+        // 막아야 하는 것은 **같은 회차의 중복 계수**뿐이고, 그건 위 `emptiedPaths` 가
+        // 이미 막는다(떨어져 나간 자리를 다시 세지 않는다).
+        note(site.path, held.length, "items");
+        emptiedPaths.push(`${site.path}[`, `${site.path}.`);
+      }
+
+      // ⚠️ **이 회차를 버리지 않는다 — 같은 회차에서 다시 고른다.** 종전엔 여기서
+      // `continue` 했는데, 내놓을 문자열이 없는 모양(순위 0 문자열이 아예 없고 순위 1
+      // 후보만 남은 경우)에서는 **아무것도 바꾸지 않은 채 회차만 태웠다.** 그 한 회차가
+      // 모자라 순위 높은 배열을 한 번 덜 줄이게 되어, **종전 구현에서는 상한 안에 들던
+      // 페이로드가 넘쳤다**(합성 표본 400개 차분 실측: 12건이 그렇게 회귀했다).
+      // ⛔ 대신 그냥 아래로 흘려보내지도 말 것 — 방금 하한이 풀려 **더 값싼 자리가
+      // 생겼을 수 있는데** relax 이전에 고른 순위 높은 target 을 그대로 깎으면 순위가
+      // 뒤집힌다. 반드시 낮춘 문턱으로 **다시 모아 다시 고른다.**
+      if (size(out) <= workingCap) break;
+      const relaxedCandidates: Shrinkable[] = [];
+      collectShrinkables(out, "", relaxedCandidates, MIN_KEPT_CHARS);
+      relaxedCandidates.sort((a, b) =>
+        a.rank !== b.rank ? a.rank - b.rank : size(readAt(b)) - size(readAt(a)),
+      );
+      const next = relaxedCandidates.find((c) => !exhausted.has(c.path) && canShrink(c));
+      if (!next) break;
+      target = next;
+    }
+
+    // ⚠️ **컨테이너는 자기 내용물보다 언제나 크다 — 크기순만 쓰면 원소가 영영 안 걸린다.**
+    // 순위를 부모에서 물려받게 한 뒤로 `errors` 와 `errors[0]` 이 같은 순위가 되는데,
+    // 배열 크기 = 원소들의 합이라 정렬은 **항상 배열을 먼저** 집는다. 그러면 거대한 원소
+    // 하나 때문에 배열이 깎여 **멀쩡한 짧은 진단이 통째로 사라지고**(실측:
+    // `["거대한 사유…", "네트워크 끊김", "인증 만료"]` 에서 뒤 둘이 없어졌다) 정작 덩치는
+    // 그 원소에 남아 있어 크기도 거의 안 준다.
+    // 그래서 **덩치의 대부분이 원소 하나에 몰려 있을 때만** 그 원소로 겨냥을 옮긴다.
+    // ⛔ 깊이를 무조건 우선하는 규칙으로 바꾸지 말 것 — 얕고 큰 배열 하나보다 깊고 작은
+    // 후보가 수십 개인 모양(확인필요 목록의 `reasons` 60개)에서 회차 예산이 그 수십 개에
+    // 다 소진돼 배열은 손도 못 댄다(실측: 계약 2건이 그렇게 깨졌다).
+    // ⚠️ 한 갈래로 **끝까지 내려간다.** 덩치가 원소 하나에 몰려 있어도 그 원소가 또
+    // 배열이면(항목 1개짜리 배열 등) 거기서 멈춰선 안 된다 — 그 원소는 하한에 잠겨
+    // 못 줄이므로 겨냥이 도로 바깥 배열로 돌아가고, 결국 **배열을 깎아 짧은 진단을
+    // 버린다**(실측: `errors: [[거대한 문자열], "네트워크 끊김", "인증 만료"]` 에서
+    // 베이스는 3건을 지키는데 뒤 둘이 사라졌다). 줄일 수 있는 가장 깊은 자리를 잡는다.
+    let probe: Shrinkable | undefined = target;
+    while (probe) {
+      const held = readAt(probe);
+      if (!Array.isArray(held)) break;
+      const inner: Shrinkable | undefined = candidates.find(
+        (c) => c !== probe && c.parent === held && size(readAt(c)) * 2 > size(held),
+      );
+      if (!inner) break;
+      if (canShrink(inner)) target = inner;
+      probe = inner;
+    }
+
+    // ℹ️ 주 루프는 하한을 그대로 지킨다. 값 낮은 자리의 하한 포기는 **위 일괄 처리가
+    // 전부 끝낸다** — 종전엔 여기에도 `relaxed ? 0 : …` 분기를 뒀지만 합성 3,200 표본에서
+    // 한 번도 발화하지 않았다(포기 뒤 순위 0 배열은 이미 비어 있고, 문자열은 위에서
+    // 훑었으며, `canShrink` 가 하한에 닿은 자리를 애초에 거른다). 안 도는 갈래를 남기면
+    // 다음 사람이 그 갈래가 뭔가를 지키는 줄로 읽는다.
+    const keepItems = MIN_KEPT_ITEMS;
+    const keepChars = MIN_KEPT_CHARS;
     const before = size(out);
     const value = readAt(target);
 
     if (Array.isArray(value)) {
-      let low = MIN_KEPT_ITEMS;
+      let low = keepItems;
       let high = value.length;
       while (low < high) {
         const mid = Math.ceil((low + high) / 2);
@@ -238,7 +466,7 @@ export function capDetailsForLog(details: unknown): unknown {
       if (low < value.length) note(target.path, value.length - low, "items");
     } else {
       const original = value as string;
-      const kept = Math.max(MIN_KEPT_CHARS, original.length - (size(out) - workingCap));
+      const kept = Math.max(keepChars, original.length - (size(out) - workingCap));
       if (kept < original.length) {
         writeAt(target, original.slice(0, kept));
         note(target.path, original.length - kept, "chars");

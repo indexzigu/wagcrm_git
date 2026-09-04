@@ -295,16 +295,23 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
   });
 
   it("중첩된 error·message 는 요약 자격을 얻지 않는다", () => {
-    // ⚠️ 요약 순위를 깊이 상관없이 주면, 항목 안의 `message` 가 최상위 `failureReason` 과
-    // 같은 자격을 얻어 **상위 진단 배열이 먼저 깎인다.** 요약은 최상위에서만이다.
-    const capped = capDetailsForLog({
-      failed: true,
-      errors: Array.from({ length: 60 }, (_, i) => `e${i}: ${"사유".repeat(20)}`),
-      detail: Array.from({ length: 60 }, (_, i) => ({ message: `안쪽 메시지 ${i}: ${"값".repeat(60)}` })),
-    }) as Record<string, unknown>;
+    // ⚠️ 요약 순위를 깊이 상관없이 주면, 안쪽 `message` 가 최상위 `failureReason` 과 같은
+    // 자격을 얻어 **상위 진단 배열이 먼저 깎인다.** 요약은 최상위에서만이다.
+    // ⚠️ **덩치를 배열에 담지 말 것** — 종전 픽스처는 안쪽 message 를 `detail` **배열**에
+    // 담았는데, 그러면 순위 0 인 그 배열이 어느 쪽이든 먼저 깎여 **안쪽 문자열의 순위가
+    // 결과에 관여하지 않는다**(`!prefix` 가드를 지워도 통과했다 — 변이 생존 실측).
+    // 여기서는 `detail` 을 객체로 둬 후보에서 빼고, 경합을 **안쪽 문자열 대 진단 배열**로
+    // 좁힌다.
+    const errorItems = Array.from({ length: 20 }, (_, i) => `e${i} 실패: ${"사유".repeat(20)}`);
+    const innerMessage = `안쪽 메시지: ${"값".repeat(3_000)}`;
+    const input = { failed: true, errors: errorItems, detail: { message: innerMessage } };
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
 
-    // 안쪽 message 뭉치가 먼저 줄고, 진단 배열이 더 많이 남는다.
-    expect((capped.errors as unknown[]).length).toBeGreaterThan((capped.detail as unknown[]).length);
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    // 안쪽 message 만 깎아도 상한을 맞출 수 있으므로 진단 배열은 손도 대지 않는다.
+    expect((capped.errors as string[]).length).toBe(errorItems.length);
+    expect((capped.detail as { message: string }).message.length).toBeLessThan(innerMessage.length);
   });
 
   it("요약 스칼라만으로 넘치면 줄이지 않고 넘쳤다는 사실만 남긴다", () => {
@@ -370,6 +377,180 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     expect(errors.length).toBeGreaterThan(handles.length);
   });
 
+  it("값 낮은 자리가 여럿이면 그 하한부터 내놓는다(적자를 진단 배열이 떠안지 않게)", () => {
+    // ⚠️ T-085. 하한(`MIN_KEPT_ITEMS`·`MIN_KEPT_CHARS`)은 **자리마다** 주는 약속인데
+    // 예산은 전체가 하나다. 값 낮은 자리가 여럿이면 그 하한들의 **합**이 예산을 먼저
+    // 먹고, 남은 적자를 순위 높은 진단 배열이 혼자 떠안는다.
+    // 베이스 실측(같은 픽스처): 사유 40건이 **3건**까지 깎이는 동안 값 낮은 문구 16개는
+    // 전부 하한(200자)에 딱 붙어 살아남았다. 값 낮은 쪽 개수를 늘리면 사유는 1건까지
+    // 내려가고 그러고도 상한을 넘겼다.
+    const errorItems = Array.from({ length: 40 }, (_, i) => `핸들${i} 실패: ${"사유".repeat(20)}`);
+    const input = Object.fromEntries([
+      ["failed", true],
+      ["errors", errorItems],
+      // 하한보다 길어야 "하한을 지키느라 자리를 차지한다"가 성립한다(250자 → 하한 200자).
+      ...Array.from({ length: 16 }, (_, i) => [`note${i}`, `안내 ${i}: ${"값".repeat(250)}`]),
+    ]);
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+    // ⚠️ **`> 1` 로 재지 말 것** — 베이스도 3건은 남겼다. 적자가 이쪽에 오지 **않았다**를
+    // 보려면 진단 배열이 **통째로 온전한지**를 봐야 한다.
+    expect((capped.errors as string[]).length).toBe(errorItems.length);
+    // 그 자리는 값 낮은 쪽이 하한 아래로 내려가며 내줬다. 하한에 딱 붙어 있으면(=베이스)
+    // 아무도 하한을 내놓지 않은 것이다.
+    const noteLengths = Array.from({ length: 16 }, (_, i) => (capped[`note${i}`] as string).length);
+    expect(noteLengths.filter((n) => n < 200).length).toBeGreaterThan(0);
+  });
+
+  it("값 낮은 자리가 회차 예산보다 많아도 하한을 내놓는다", () => {
+    // ⚠️ 순위 상승은 "값 낮은 쪽을 다 훑었다"는 **신호**일 뿐이다. 값 낮은 문자열이
+    // 회차 예산(`MAX_TRIM_ROUNDS`)보다 많으면 하한까지 깎는 데만 예산이 다 들어가
+    // **그 신호가 영영 오지 않는다** — 티켓 메모가 든 모양(값 낮은 메시지 50개)이
+    // 정확히 이 구간이라, 개수를 회차 예산 아래로 두면 이 계약이 통째로 헛돈다.
+    //
+    // ⚠️ **이 구간의 베이스 증상은 앞 계약과 다르다 — 숫자를 옮겨 적지 말 것.**
+    // 베이스 실측(같은 픽스처, 값 낮은 문구 M개):
+    //   M=16    → 상한 안, 사유 3/40 (적자를 진단 배열이 떠안는다)
+    //   M=18~39 → 상한 초과, 사유 1/40
+    //   M=50    → **13,445자**(상한의 세 배)를 저장하는데 사유는 40/40 **그대로**다.
+    // 즉 여기서는 사유가 깎여서가 아니라, 회차가 먼저 끝나 **아무것도 못 줄인 채
+    // 조용히 상한을 넘겨** 저장된다. 그래서 이 계약의 1차 단언은 "상한 안에 든다"이다.
+    const errorItems = Array.from({ length: 40 }, (_, i) => `핸들${i} 실패: ${"사유".repeat(20)}`);
+    const input = Object.fromEntries([
+      ["failed", true],
+      ["errors", errorItems],
+      ...Array.from({ length: 50 }, (_, i) => [`note${i}`, `안내 ${i}: ${"값".repeat(250)}`]),
+    ]);
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    // 조용한 초과가 아니라 실제로 상한 안에 들어온다(베이스는 세 배를 넘겼다).
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+    expect((capped.errors as string[]).length).toBe(errorItems.length);
+    // ⚠️ 이 단언이 **회차 예산과 무관하게** 판별력을 유지시킨다 — 하한을 내놓지 않았다면
+    // 값 낮은 쪽은 전부 정확히 하한(200자)에 붙어 있다.
+    const noteLengths = Array.from({ length: 50 }, (_, i) => (capped[`note${i}`] as string).length);
+    expect(noteLengths.filter((n) => n < 200).length).toBeGreaterThan(0);
+  });
+
+  it("값 낮은 배열도 하한을 내놓는다(한 건만 남겨도 그 한 건이 덩치인 경우)", () => {
+    // ⚠️ 하한은 **개수**로 걸리는데 자리를 먹는 것은 **부피**다. 순위 낮은 배열이 항목
+    // 하나만 남겨도 그 한 건이 거대하면 예산은 그대로 잠긴 채다 — 문자열 쪽 하한만
+    // 내놓아서는 이 모양이 안 풀린다.
+    // 베이스 실측(같은 픽스처): 사유가 1건까지 깎이고 결과가 187자로 쪼그라들었다.
+    const errorItems = Array.from({ length: 40 }, (_, i) => `핸들${i} 실패: ${"사유".repeat(20)}`);
+    const input = Object.fromEntries([
+      ["failed", true],
+      ["errors", errorItems],
+      // 항목마다 300개 필드짜리 객체 — 1건만 남겨도 예산을 통째로 먹는다.
+      [
+        "list",
+        Array.from({ length: 2 }, (_, k) =>
+          Object.fromEntries(Array.from({ length: 300 }, (_, j) => [`f${k}_${j}`, j])),
+        ),
+      ],
+      ...Array.from({ length: 4 }, (_, i) => [`note${i}`, `안내 ${i}`]),
+    ]);
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+    // 값 낮은 배열이 개수 하한까지 내놓은 덕에 진단 배열이 온전히 남는다.
+    expect((capped.errors as string[]).length).toBe(errorItems.length);
+    // 타입은 유지한다 — 소비처가 `list.map()` 을 쓴다.
+    expect(Array.isArray(capped.list)).toBe(true);
+  });
+
+  it("값 낮은 배열이 여럿이어도 회차를 태우지 않는다", () => {
+    // ⚠️ **회차가 진짜 희소 자원이다.** 값 낮은 배열은 금세 하한(1건)에 닿는데, 종전엔
+    // ①하한에 닿은 자리도 한 번 골라 보고 "진전 없음"을 확인해야 소진 처리됐고
+    // ②하한을 포기한 뒤 그 자리들을 되돌려 **또 한 번씩** 골랐다. 자리마다 두 회차씩
+    // 드는 셈이라 배열 스무 개면 예산이 거기서 끝나고, 정작 요약·진단은 손도 못 댄 채
+    // **상한을 넘긴 채로 저장된다.** 실측(이 픽스처): 4,459자 → 3,772자.
+    // 그래서 배열 비우기는 회차를 쓰지 않는 일괄 처리로 옮겼고, 하한에 닿은 자리는
+    // 애초에 고르지 않는다.
+    const input = Object.fromEntries([
+      ["failed", true],
+      ["failureReason", `사유: ${"가".repeat(2_500)}`],
+      ["errors", Array.from({ length: 30 }, (_, i) => `e${i}: ${"사유".repeat(20)}`)],
+      // 값 낮은 배열 20개 — 하나씩 회차를 쓰면 그것만으로 예산의 절반이 사라진다.
+      ...Array.from({ length: 20 }, (_, i) => [
+        `rows${i}`,
+        Array.from({ length: 10 }, (_, j) => ({ v: j, t: "값".repeat(20) })),
+      ]),
+      ...Array.from({ length: 4 }, (_, i) => [`note${i}`, `안내${i}: ${"값".repeat(300)}`]),
+    ]);
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    // 회차를 헛되이 쓰지 않았다면 상한 안에 들어온다.
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+    // 그 대가로 진단 배열도 일부 깎이지만 전멸하지는 않는다.
+    expect((capped.errors as string[]).length).toBeGreaterThan(0);
+  });
+
+  it("바깥 배열을 비울 때 안쪽 손실을 두 번 세지 않는다", () => {
+    // ⚠️ 배열을 비우면 그 **안쪽 자리는 떨어져 나가는데**, 후보 목록은 낡은 부모를 들고
+    // 있어 값을 다시 읽어도 살아 있는 것처럼 보인다. 거르지 않으면 이미 바깥에서 센
+    // 항목을 안쪽 이름으로 **한 번 더** 신고한다. 이 파일이 규탄하는 「숫자가 틀리면
+    // 없는 것보다 나쁘다」가 표시 자신에게 적용되는 자리다.
+    const input = {
+      failed: true,
+      failureReason: `사유: ${"가".repeat(3_400)}`,
+      errors: Array.from({ length: 40 }, (_, i) => `e${i}: ${"사유".repeat(20)}`),
+      misc: [Array.from({ length: 8 }, (_, i) => `m${i}`), Array.from({ length: 8 }, (_, i) => `n${i}`)],
+    };
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+    const marker = capped.detailsTrimmed as Record<string, number>;
+
+    // 바깥이 비워졌다(항목 2개를 잃었다고 신고한다).
+    expect(capped.misc).toEqual([]);
+    expect(marker.misc).toBe(2);
+    // 안쪽은 **바깥이 비워지기 전에** 주 루프가 줄인 몫만 신고한다. 8 이 나오면 마지막
+    // 한 건을 `misc: 2` 와 겹쳐 두 번 센 것이다.
+    // ⛔ 이 기록을 **지우는 것으로 「없는 경로를 가리킨다」를 해결하지 말 것** — 그 손실은
+    // 실제로 일어났고, 지우면 총 손실이 실제보다 작게 보고된다(축소 보고가 더 나쁘다).
+    expect(marker["misc[0]"]).toBe(7);
+  });
+
+  it("보호 판정은 이름이 아니라 값이 배열인지를 본다", () => {
+    // ⚠️ `holdsDiagnostic` 이 키 이름만 보면, 잡이 `errors: 7` 처럼 **집계 수치**에 같은
+    // 이름을 쓰는 순간 그 부모가 보호 순위를 얻어 뒤로 밀린다. 지킬 진단 내용이 하나도
+    // 없는 쪽이 살아남고, 정작 진단 배열을 품은 쪽이 먼저 비워진다.
+    // 베이스 실측(같은 픽스처): `engagement` 가 통째로 비워져 `errors` 배열이 사라지는
+    // 동안 `counters` 는 61개 필드가 전부 살아남았다.
+    // 숫자만 담은 뭉치를 쓰는 이유: 문자열이면 주 루프가 먼저 깎아 최후 수단의 순서를
+    // 겨루기 전에 크기가 뒤바뀐다(이 계약이 보려는 것은 최후 수단의 **순서**다).
+    const numbers = (prefix: string, n: number) =>
+      Object.fromEntries(Array.from({ length: n }, (_, i) => [`${prefix}${i}`, i]));
+    const input = Object.fromEntries([
+      ["failed", true],
+      // 이름만 진단 — 값이 배열이 아니다.
+      ["counters", { errors: 7, ...numbers("c", 60) }],
+      // 진짜 진단 배열을 품은 부모.
+      ["engagement", { errors: ["끊김", "차단", "시간초과"], meta: numbers("g", 80) }],
+      ...Array.from({ length: 280 }, (_, i) => [`m${i}`, { x: `값${i}` }]),
+    ]);
+    expect(JSON.stringify(input).length).toBeGreaterThan(4_000);
+
+    const capped = capDetailsForLog(input) as Record<string, unknown>;
+
+    // 이름만 같은 집계 뭉치는 보호받지 못하고 먼저 비워진다.
+    expect(Object.keys(capped.counters as object).length).toBe(0);
+    // 그 덕에 진짜 진단 배열은 배열인 채로 살아남는다.
+    const engagement = capped.engagement as { errors?: unknown[] };
+    expect(Array.isArray(engagement?.errors)).toBe(true);
+    expect(engagement.errors!.length).toBeGreaterThan(0);
+  });
+
   it("같은 값어치끼리는 덩치 큰 것부터 줄인다", () => {
     const capped = capDetailsForLog({
       failed: true,
@@ -381,14 +562,59 @@ describe("capDetailsForLog — 이력 저장 상한", () => {
     expect((capped.large as string[]).length).toBeLessThan(80);
   });
 
-  it("항목이 아무리 커도 최소 한 건은 남긴다(무엇이 실패했는지 아예 못 읽지 않게)", () => {
-    const capped = capDetailsForLog({
-      failed: true,
-      errors: [`거대한 사유: ${"가".repeat(6_000)}`, "두 번째", "세 번째"],
-    }) as Record<string, unknown>;
+  it("거대한 원소 하나 때문에 짧은 진단을 버리지 않는다", () => {
+    // ⚠️ 배열 크기는 **원소들의 합**이라 크기순 정렬은 언제나 배열을 자기 원소보다 먼저
+    // 집는다. 그대로 두면 거대한 원소 하나를 줄이겠다고 **배열을 깎아** 짧고 멀쩡한
+    // 진단이 사라진다 — 크기는 거의 안 주는데 값만 잃는 최악의 교환이다.
+    // 🪤 이 계약이 없던 동안 "최소 한 건은 남긴다" 계약이 `toBe(1)` 로 **그 손실을 규약으로
+    // 굳혀** 놓았다(베이스는 3건을 지키는데 1건으로 줄이는 것을 정답으로 적었다).
+    const items = [`거대한 사유: ${"가".repeat(6_000)}`, "네트워크 끊김", "인증 만료"];
+    const capped = capDetailsForLog({ failed: true, errors: items }) as Record<string, unknown>;
 
-    // 한 건도 안 남기면 종류조차 못 가린다. 그래서 상한을 넘기더라도 하나는 지킨다.
-    expect((capped.errors as string[]).length).toBeGreaterThanOrEqual(1);
+    const errors = capped.errors as string[];
+    expect(errors.length).toBe(items.length); // 한 건도 잃지 않는다
+    expect(errors[1]).toBe("네트워크 끊김");
+    expect(errors[2]).toBe("인증 만료");
+    // 대신 덩치를 진 원소가 줄어든다(줄이되 계열은 읽히게).
+    expect(errors[0].length).toBeLessThan(items[0].length);
+    expect(errors[0].startsWith("거대한 사유")).toBe(true);
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+  });
+
+  it("덩치가 한 겹 더 안쪽에 있어도 짧은 진단을 버리지 않는다", () => {
+    // ⚠️ 위 계약의 한 겹 아래 판이다. 덩치를 진 원소가 **또 배열**이면 그 배열은 항목이
+    // 하나뿐이라 하한에 잠겨 못 줄인다 — 거기서 멈추면 겨냥이 도로 바깥 배열로 돌아가
+    // 결국 배열을 깎고 짧은 진단이 사라진다. 줄일 수 있는 **가장 깊은** 자리까지
+    // 내려가야 한다(실측: 내려가지 않으면 3건이 1건이 됐다. 베이스는 3건을 지킨다).
+    const items = [[`거대한 사유: ${"가".repeat(6_000)}`], "네트워크 끊김", "인증 만료"];
+    const capped = capDetailsForLog({ failed: true, errors: items }) as Record<string, unknown>;
+
+    const errors = capped.errors as [string[], string, string];
+    expect(errors.length).toBe(items.length);
+    expect(errors[1]).toBe("네트워크 끊김");
+    expect(errors[2]).toBe("인증 만료");
+    // 안쪽 배열은 항목 수를 지키고, 그 안의 문자열만 줄어든다.
+    expect(errors[0]).toHaveLength(1);
+    expect(errors[0][0].length).toBeLessThan(6_000);
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+  });
+
+  it("항목이 아무리 커도 최소 한 건은 남긴다(무엇이 실패했는지 아예 못 읽지 않게)", () => {
+    // ⚠️ 하한이 **실제로 일하는** 모양이라야 한다. 원소 하나가 압도적이면 위 계약이
+    // 그 원소를 줄여 배열은 손도 안 대므로 하한에 닿지 않는다 — 그래서 **비슷한 덩치
+    // 둘**을 둔다(어느 쪽도 압도적이지 않아 배열을 깎을 수밖에 없고, 한 건만 남겨도
+    // 상한을 넘어 하한이 마지막 방어선이 된다).
+    const items = [`첫 사유: ${"가".repeat(4_000)}`, `둘째 사유: ${"나".repeat(4_000)}`];
+    const capped = capDetailsForLog({ failed: true, errors: items }) as Record<string, unknown>;
+
+    const errors = capped.errors as string[];
+    // ⚠️ **`>= 1` 만 보면 하한을 0 으로 낮추는 변이가 살아남는다**(실측). 남은 개수가
+    // 정확히 하한인지를 본다 — 그래야 "한 건은 지킨다"가 계약이 된다.
+    expect(errors.length).toBe(1);
+    expect((capped.detailsTrimmed as Record<string, number>).errors).toBe(items.length - 1);
+    // 남은 한 건이 빈 문자열이면 "종류조차 못 가린다"는 목적이 그대로 무너진다.
+    expect(errors[0].startsWith("첫 사유")).toBe(true);
+    expect(errors[0].length).toBeGreaterThanOrEqual(200);
   });
 
   it("요약이 예산을 거의 다 먹어도 문자열을 계열 가릴 만큼은 남긴다", () => {
