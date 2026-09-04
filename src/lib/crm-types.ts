@@ -473,6 +473,17 @@ export type CampaignGroupMemberRow = {
   campaignId: string;
   dealName: string;
   campaignName: string | null;
+  /**
+   * 딜의 브랜드·거래처. **optional 로 두지 않는 것이 의도다** — 아래
+   * `settlementItems` 와 같은 규율이고, 멤버 행을 만드는 새 자리가 생기면 컴파일이
+   * 막아 이 필드를 빠뜨릴 수 없게 한다. 빠뜨리면 멤버 목록은 「이게 같은 묶음인가」를
+   * 판단할 축을 잃는다 — 그 정보 부재가 곧 "같은 셀러·같은 일정인데 브랜드가
+   * 달라서 안 묶이는 것 같다"는 오진이 나온 자리다.
+   * 표기 조립은 화면이 직접 하지 말고 `formatDealContextLabel`(`lib/deal-display`)에
+   * 위임한다(브랜드=거래처면 하나만 보여주는 규칙을 그 함수가 소유한다).
+   */
+  brandName: string | null;
+  partnerName: string | null;
   status: CampaignStatus;
   startDate: string;
   endDate: string;

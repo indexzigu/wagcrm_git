@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatDateRange } from "@/lib/date-utils";
+import { formatDealContextLabel } from "@/lib/deal-display";
 import { cn } from "@/lib/utils";
 import type {
   CampaignGroupDetailRow,
@@ -382,6 +383,13 @@ export function CampaignGroupSection({
           {detail.members.map((member) => {
             const isCurrent = member.campaignId === campaign.id;
             const navigable = !isCurrent && Boolean(onNavigateToCampaign);
+            // 표기 조립은 `formatDealContextLabel` 이 소유한다 — 브랜드와 거래처가
+            // 같은 딜이면 하나만 보여주는 규칙이라, 호출부가 손으로 이어붙이는 순간
+            // 같은 딜이 표면마다 다르게 읽힌다.
+            const context = formatDealContextLabel({
+              brandName: member.brandName,
+              partnerName: member.partnerName,
+            });
             return (
               <li key={member.campaignId} className="group/member">
                 <div
@@ -399,7 +407,7 @@ export function CampaignGroupSection({
                       : undefined
                   }
                   className={cn(
-                    "flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors",
+                    "flex items-start gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors",
                     isCurrent
                       ? "border-primary/30 bg-primary/5"
                       : "border-border/70 bg-background",
@@ -409,27 +417,45 @@ export function CampaignGroupSection({
                   <SubStageBadge
                     status={member.status}
                     size="compact"
-                    className="shrink-0"
+                    className="mt-0.5 shrink-0"
                   />
-                  <span
-                    className="min-w-0 flex-1 truncate font-medium text-foreground"
-                    title={member.dealName}
-                  >
-                    {member.dealName}
-                  </span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {formatDateRange(member.startDate, member.endDate)}
-                  </span>
-                  {member.roundNumber ? (
-                    <span className={ROUND_BADGE}>{member.roundNumber}차</span>
-                  ) : null}
+                  {/* 2행으로 가른 것은 축이 둘이기 때문이다 — 1행은 정체성(무슨
+                      캠페인인가), 2행은 판단 근거(같은 묶음인가). 한 줄에서 경쟁시키면
+                      딜이름과 브랜드가 둘 다 잘려 판단 축이 되레 사라진다.
+                      브랜드·거래처는 좋고 나쁨이 없는 범주라 무채색이다(P8 §4). */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className="min-w-0 truncate font-medium text-foreground"
+                        title={member.dealName}
+                      >
+                        {member.dealName}
+                      </span>
+                      {member.roundNumber ? (
+                        <span className={ROUND_BADGE}>{member.roundNumber}차</span>
+                      ) : null}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      {context ? (
+                        <span className="min-w-0 truncate" title={context}>
+                          {context}
+                        </span>
+                      ) : null}
+                      <span className="shrink-0">
+                        {formatDateRange(member.startDate, member.endDate)}
+                      </span>
+                    </div>
+                  </div>
+                  {/* 이동 어포던스·제거 버튼은 2행 블록 밖에 남긴다 — 행 전체가 클릭
+                      대상(role="button")이라 행 수준 조작이지 정체성 줄의 일부가
+                      아니다. `mt-0.5` 는 items-start 아래에서 첫 줄에 맞추는 값. */}
                   {isCurrent ? (
-                    <span className="shrink-0 text-[10px] font-semibold text-primary">
+                    <span className="mt-0.5 shrink-0 text-[10px] font-semibold text-primary">
                       현재
                     </span>
                   ) : navigable ? (
                     <ChevronRight
-                      className="size-3.5 shrink-0 text-muted-foreground"
+                      className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
                       aria-hidden="true"
                     />
                   ) : null}
@@ -440,7 +466,7 @@ export function CampaignGroupSection({
                       setPendingRemoval(member);
                     }}
                     disabled={removingId === member.campaignId}
-                    className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/member:opacity-100 focus-visible:opacity-100"
+                    className="mt-0.5 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover/member:opacity-100 focus-visible:opacity-100"
                     aria-label={`${member.dealName} 캠페인을 그룹에서 제외`}
                   >
                     <X className="size-3.5" />
