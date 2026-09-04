@@ -8,6 +8,7 @@ import {
   overlapsOrNear,
   clusterByDateWindow,
   type CampaignClusterInput,
+  expandYmdRangeByWindow,
 } from "../campaign-group-clustering";
 
 const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
@@ -132,5 +133,42 @@ describe("clusterByDateWindow", () => {
     expect(proposals).toEqual([]);
     expect(clusters).toEqual([]);
     expect(sameDealSplits).toEqual([]);
+  });
+});
+
+describe("expandYmdRangeByWindow", () => {
+  it("범위를 근접 창만큼 양옆으로 넓힌다", () => {
+    expect(expandYmdRangeByWindow({ startDate: "2026-08-18", endDate: "2026-08-21" })).toEqual({
+      startDate: "2026-08-15",
+      endDate: "2026-08-24",
+    });
+  });
+
+  it("월 경계를 넘어도 달력대로 계산한다", () => {
+    expect(
+      expandYmdRangeByWindow({ startDate: "2026-03-02", endDate: "2026-03-30" }, 5),
+    ).toEqual({ startDate: "2026-02-25", endDate: "2026-04-04" });
+  });
+
+  it("넓힌 범위의 순수 겹침 = overlapsOrNear — 등가를 실제로 대조한다", () => {
+    // 이 함수의 존재 이유가 그 등가다. 주장으로 두지 말고 경계에서 직접 잰다.
+    const origin = { startDate: new Date("2026-08-18Z"), endDate: new Date("2026-08-21Z") };
+    const wide = expandYmdRangeByWindow({ startDate: "2026-08-18", endDate: "2026-08-21" });
+    const rangeStart = new Date(`${wide.startDate}T00:00:00Z`);
+    const rangeEnd = new Date(`${wide.endDate}T00:00:00Z`);
+
+    for (const [start, end] of [
+      ["2026-08-24", "2026-08-26"], // 간격 3일 — 경계 포함
+      ["2026-08-25", "2026-08-27"], // 간격 4일 — 제외
+      ["2026-08-14", "2026-08-15"], // 앞쪽 간격 3일 — 경계 포함
+      ["2026-08-19", "2026-08-20"], // 완전 포함
+    ] as const) {
+      const other = { startDate: new Date(`${start}Z`), endDate: new Date(`${end}Z`) };
+      // findSuggestions 의 where 와 같은 형태: startDate <= rangeEnd AND endDate >= rangeStart
+      const pureOverlapOnWidened =
+        other.startDate.getTime() <= rangeEnd.getTime() &&
+        other.endDate.getTime() >= rangeStart.getTime();
+      expect(pureOverlapOnWidened).toBe(overlapsOrNear(origin, other, 3));
+    }
   });
 });

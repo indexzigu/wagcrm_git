@@ -510,6 +510,41 @@ export type CampaignGroupDetailRow = CampaignGroupRow & {
   members: CampaignGroupMemberRow[];
 };
 
+/**
+ * CG-1: 「그룹으로 묶기」 후보 캠페인 1건 — 같은 셀러이면서 아직 어느 그룹에도
+ * 속하지 않은 캠페인. 그룹 멤버 행(`CampaignGroupMemberRow`)과 **다른 타입인 것이
+ * 의도다** — 후보는 아직 멤버가 아니라 정산 항목을 싣지 않고, 대신 오너가 "이게 같은
+ * 묶음인가"를 판단하는 데 필요한 브랜드·거래처를 싣는다.
+ */
+export type CampaignCombineCandidateRow = {
+  campaignId: string;
+  /**
+   * 줄 제목. **캠페인명이 아니라 딜 이름인 것이 의도다** — 캠페인명은
+   * `generateCampaignName` 이 `{딜} - {셀러} {N}차` 로 만들어서, 차수 배지와 나란히
+   * 두면 차수가 두 번 나오고(P2 「Campaign Round Badge」), 같은 셀러만 나열되는
+   * 이 목록에서 셀러명이 매 줄 반복돼 브랜드·거래처를 밀어낸다. 그룹 멤버 목록도
+   * 같은 이유로 `dealName` 을 쓴다.
+   */
+  dealName: string;
+  brandName: string | null;
+  partnerName: string | null;
+  status: CampaignStatus;
+  roundNumber: number | null;
+  startDate: string;
+  endDate: string;
+};
+
+/**
+ * 후보 조회 응답. `alreadyGroupedCount` 는 **빈 상태 문구를 정직하게 가르기 위한
+ * 필드다** — 같은 기간 창에 캠페인이 아예 없는 것과, 있는데 전부 다른 그룹에 속해
+ * 후보에서 빠진 것은 오너가 취할 다음 행동이 다르다. 이 구분이 없으면 화면은 다시
+ * "없습니다" 한마디로 두 상황을 뭉갠다(이 기능이 고치려던 결함이 그것이다).
+ */
+export type CampaignCombineCandidatesResponse = {
+  candidates: CampaignCombineCandidateRow[];
+  alreadyGroupedCount: number;
+};
+
 export type CampaignNoteRow = {
   id: string;
   campaignId: string;

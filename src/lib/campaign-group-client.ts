@@ -10,6 +10,7 @@
  */
 
 import type {
+  CampaignCombineCandidatesResponse,
   CampaignGroupDetailRow,
   CampaignGroupRow,
 } from "./crm-types";
@@ -75,10 +76,11 @@ export type SuggestParams = {
   excludeCampaignId?: string;
 };
 
-/** 합류 후보(기존 그룹) 조회 — 동일 셀러·기간 포락선 겹침. 세션 억제 미적용(원본). */
-export async function fetchGroupSuggestions(
-  params: SuggestParams,
-): Promise<CampaignGroupRow[]> {
+/**
+ * 두 후보 조회(`suggest`·`combinable`)가 **같은 파라미터 계약**을 쓴다 — 한쪽만 필드를
+ * 바꾸면 다른 쪽이 400 으로 떨어지므로 조립을 한 곳에 둔다.
+ */
+function toCandidateSearch(params: SuggestParams): URLSearchParams {
   const search = new URLSearchParams({
     sellerId: params.sellerId,
     startDate: params.startDate,
@@ -87,6 +89,14 @@ export async function fetchGroupSuggestions(
   if (params.excludeCampaignId) {
     search.set("excludeCampaignId", params.excludeCampaignId);
   }
+  return search;
+}
+
+/** 합류 후보(기존 그룹) 조회 — 동일 셀러·기간 포락선 겹침. 세션 억제 미적용(원본). */
+export async function fetchGroupSuggestions(
+  params: SuggestParams,
+): Promise<CampaignGroupRow[]> {
+  const search = toCandidateSearch(params);
   const res = await fetch(`/api/campaign-groups/suggest?${search.toString()}`);
   if (!res.ok) throw new Error("합류 후보 조회에 실패했습니다.");
   const payload = (await res.json()) as { groups?: CampaignGroupRow[] };
@@ -104,6 +114,43 @@ export async function fetchActiveSuggestions(
   const excludeId = params.excludeCampaignId;
   if (!excludeId) return groups;
   return groups.filter((group) => !isSuggestionDismissed(excludeId, group.id));
+}
+
+/**
+ * 「그룹으로 묶기」 후보(아직 안 묶인 같은 셀러 캠페인) 조회.
+ * `fetchGroupSuggestions`(합류할 **기존 그룹**)와 답하는 질문이 다르다 — 섞지 말 것.
+ */
+export async function fetchCombineCandidates(
+  params: SuggestParams,
+): Promise<CampaignCombineCandidatesResponse> {
+  const search = toCandidateSearch(params);
+  const res = await fetch(`/api/campaign-groups/combinable?${search.toString()}`);
+  if (!res.ok) throw new Error("묶을 캠페인 조회에 실패했습니다.");
+  const payload = (await res.json()) as Partial<CampaignCombineCandidatesResponse>;
+  return {
+    candidates: payload.candidates ?? [],
+    alreadyGroupedCount: payload.alreadyGroupedCount ?? 0,
+  };
+}
+
+/**
+ * 기존 캠페인들을 새 그룹으로 묶는다(경로 ⓐ). 서버가 최소 2건을 요구하므로
+ * 호출자는 **현재 캠페인을 포함해서** 넘긴다.
+ */
+export async function createCampaignGroup(
+  campaignIds: string[],
+): Promise<CampaignGroupDetailRow> {
+  const res = await fetch("/api/campaign-groups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ campaignIds }),
+  });
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    const message = typeof detail?.error === "string" ? detail.error : null;
+    throw new Error(message ?? "그룹으로 묶지 못했습니다.");
+  }
+  return (await res.json()) as CampaignGroupDetailRow;
 }
 
 /** 그룹 상세(멤버 목록 포함) 조회. */

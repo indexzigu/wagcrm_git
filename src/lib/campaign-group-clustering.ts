@@ -16,6 +16,13 @@
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * 조합 후보로 볼 기간 근접 창(일). 소급 스크립트(`--window` 기본값)와 화면의
+ * 「그룹으로 묶기」 후보 조회가 **같은 값을 공유**해야 한다 — 갈리면 스크립트가
+ * 제안한 묶음이 화면에서는 후보로 안 보이고, 오너는 그 침묵을 결함으로 조사한다.
+ */
+export const GROUP_WINDOW_DAYS = 3;
+
 /** 클러스터링에 필요한 최소 캠페인 형태. 소비자는 이 필드를 포함한 상위 타입을 넘길 수 있다. */
 export type CampaignClusterInput = {
   id: string;
@@ -72,6 +79,32 @@ export function overlapsOrNear(
 }
 
 /**
+ * `YYYY-MM-DD` 범위를 근접 창만큼 양옆으로 넓힌다.
+ *
+ * 쓰는 곳: **순수 겹침**으로 질의하는 소비처(`campaignGroupRepository.findSuggestions` 의
+ * `startDate <= rangeEnd AND endDate >= rangeStart`)를 `overlapsOrNear(..., windowDays)` 와
+ * **같은 집합**으로 만들 때. 대수적으로 등가다 —
+ * `(a.start - w <= b.end) AND (b.start <= a.end + w)` 는 `겹침 또는 간격 <= w` 와 같다.
+ *
+ * ⛔ 소비처에서 날짜 산술을 다시 적지 말 것. 합류 후보(기존 그룹)와 묶기 후보(미그룹
+ * 캠페인)가 서로 다른 날짜 규칙을 쓰면, 창 밖 그룹이 합류 목록엔 없는데 그 멤버는
+ * "이미 다른 그룹에 속해 있다"로 집계되어 사용자에게 막다른 길이 된다.
+ */
+export function expandYmdRangeByWindow(
+  range: { startDate: string; endDate: string },
+  windowDays = GROUP_WINDOW_DAYS,
+): { startDate: string; endDate: string } {
+  const shift = (ymd: string, days: number) =>
+    new Date(new Date(`${ymd}T00:00:00Z`).getTime() + days * DAY_MS)
+      .toISOString()
+      .slice(0, 10);
+  return {
+    startDate: shift(range.startDate, -windowDays),
+    endDate: shift(range.endDate, windowDays),
+  };
+}
+
+/**
  * 캠페인 배열을 셀러별 파티션 → startDate 정렬 → 롤링 엔벨로프 그리디로 클러스터링한다.
  *
  * 반환:
@@ -83,7 +116,7 @@ export function overlapsOrNear(
  */
 export function clusterByDateWindow<T extends CampaignClusterInput>(
   campaigns: T[],
-  windowDays = 3,
+  windowDays = GROUP_WINDOW_DAYS,
 ): DateWindowClusterResult<T> {
   const clusters: T[][] = [];
   const sameDealSplits: SameDealSplit[] = [];

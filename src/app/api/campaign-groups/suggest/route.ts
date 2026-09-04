@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { requireAuth } from "@/lib/api-auth";
+import { parseCandidateQuery } from "@/lib/campaign-group-candidate-query";
 import { campaignGroupRepository } from "@/repositories/campaignGroupRepository";
 import { toCampaignGroupRow } from "@/lib/campaign-group-row";
 
@@ -12,24 +12,11 @@ import { toCampaignGroupRow } from "@/lib/campaign-group-row";
  * 후보 없으면 빈 배열. 합류는 PATCH { addCampaignIds }로 수행(별도 백엔드 없음).
  */
 
-const suggestSchema = z.object({
-  sellerId: z.string().min(1, "sellerId는 필수입니다."),
-  startDate: z.string().date(),
-  endDate: z.string().date(),
-  excludeCampaignId: z.string().min(1).optional(),
-});
-
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
 
-  const { searchParams } = request.nextUrl;
-  const parsed = suggestSchema.safeParse({
-    sellerId: searchParams.get("sellerId") ?? undefined,
-    startDate: searchParams.get("startDate") ?? undefined,
-    endDate: searchParams.get("endDate") ?? undefined,
-    excludeCampaignId: searchParams.get("excludeCampaignId") ?? undefined,
-  });
+  const parsed = parseCandidateQuery(request.nextUrl.searchParams);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
