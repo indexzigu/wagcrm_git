@@ -187,9 +187,12 @@ export function CampaignGroupSection({
           }
         }),
       );
+      let failed = 0;
       for (const row of rows) {
         if (row) onGroupMembershipChanged?.(row);
+        else failed += 1;
       }
+      return failed;
     },
     [onGroupMembershipChanged],
   );
@@ -233,7 +236,12 @@ export function CampaignGroupSection({
       toast.success(`${campaignIds.length}건을 하나의 그룹으로 묶었습니다.`);
       // ⛔ 현재 캠페인만 갱신하지 말 것 — 이 호출은 `campaignIds` **전부**의
       // groupId 를 바꿨고, 상위는 행 하나씩만 교체한다(위 refreshCampaigns 주석).
-      await refreshCampaigns(campaignIds);
+      const failed = await refreshCampaigns(campaignIds);
+      if (failed > 0) {
+        // 묶기 자체는 성공했다. 다만 목록이 못 따라왔으므로 그 사실을 말한다 —
+        // 조용히 두면 방금 묶은 캠페인이 안 묶인 것처럼 보이는 상태로 남는다.
+        toast.warning("묶기는 끝났지만 목록 갱신이 일부 실패했습니다. 새로고침해 주세요.");
+      }
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
@@ -688,7 +696,9 @@ function GroupJoinBanner({
 }
 
 // ---------------------------------------------------------------------------
-// 무그룹 "그룹으로 묶기" — 조합 다이얼로그(표면 ⓐ)
+// 무그룹 "그룹으로 묶기" — 사이드패널의 조합 다이얼로그 (표면 ⓒ 안에서 열린다.
+// ⚠️ 청사진의 「표면 ⓐ」는 `bulk-combo-campaign-dialog.tsx`(캠페인을 새로 만들며
+// 묶는 창)가 이미 쓰고 있다 — 같은 글자를 여기에 겹쳐 쓰지 말 것)
 // ---------------------------------------------------------------------------
 //
 // ⛔ 이 자리에 있던 종전 팝오버는 `suggest`(= 이미 만들어진 **그룹** 조회)만 부르면서
@@ -721,6 +731,7 @@ function GroupCombineDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [groups, setGroups] = useState<CampaignGroupRow[]>([]);
+  const [joinError, setJoinError] = useState(false);
   const [candidates, setCandidates] = useState<CampaignCombineCandidateRow[]>([]);
   const [alreadyGroupedCount, setAlreadyGroupedCount] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -730,6 +741,7 @@ function GroupCombineDialog({
     let cancelled = false;
     setLoading(true);
     setError(false);
+    setJoinError(false);
     setSelectedIds([]);
     // 수동 조회 — 세션 억제 미적용(사용자가 명시적으로 열었으므로).
     const params = {
@@ -753,6 +765,9 @@ function GroupCombineDialog({
       .then(([joinResult, combineResult]) => {
         if (cancelled) return;
         setGroups(joinResult.status === "fulfilled" ? joinResult.value : []);
+        // ⛔ 실패를 빈 목록으로 접지 말 것 — "조회 실패"와 "합류할 그룹 없음"이
+        // 화면에서 같은 모양이 되면, 이 창이 없애려던 막다른 길이 그대로 재현된다.
+        setJoinError(joinResult.status === "rejected");
         if (combineResult.status === "fulfilled") {
           setCandidates(combineResult.value.candidates);
           setAlreadyGroupedCount(combineResult.value.alreadyGroupedCount);
@@ -808,7 +823,11 @@ function GroupCombineDialog({
           </p>
         ) : (
           <div className="space-y-4">
-            {groups.length > 0 ? (
+            {joinError ? (
+              <p className="rounded-md border border-dashed border-border/70 px-2 py-3 text-center text-xs text-muted-foreground">
+                합류할 수 있는 기존 그룹을 불러오지 못했습니다. 새로 묶는 것은 아래에서 그대로 할 수 있습니다.
+              </p>
+            ) : groups.length > 0 ? (
               <section className="space-y-1.5">
                 <h3 className="text-xs font-semibold text-foreground">
                   이미 있는 그룹에 합류

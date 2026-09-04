@@ -160,7 +160,13 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   // 이 파일에 있던 사본은 비활성으로 방치돼 있던 레거시 시트 전용이었고, 그 시트와 함께
   // 제거했다(T-023 — "같은 결과물인데 다른 모듈"의 정체 중 하나).
   const syncSelectedCampaignState = useCallback((campaign: CampaignRow) => {
-    setSelectedCampaign(campaign);
+    // ⚠️ **id 가드가 있어야 한다** — 이 콜백은 "선택된 캠페인이 바뀌었다"가 아니라
+    // "어떤 캠페인이 바뀌었다"이다. 그룹으로 묶기는 형제 캠페인까지 한 번에 갱신해
+    // 흘려보내므로, 가드 없이 갈아끼우면 **열어 둔 패널이 마지막 형제로 점프한다**.
+    // 대시보드의 `replaceCampaignRow`(crm-dashboard.tsx)가 이미 같은 가드를 쓴다.
+    setSelectedCampaign((previous) =>
+      previous?.id === campaign.id ? campaign : previous,
+    );
   }, []);
 
   const refreshReport = useCallback(async () => {

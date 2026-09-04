@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CampaignRow } from "@/lib/crm-types";
 
 vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
 
 import { CampaignGroupSection } from "../campaign-group-section";
@@ -59,17 +59,27 @@ function stubFetch(options: {
     if (url === "/api/campaign-groups" && init?.method === "POST") {
       return json({ id: "g-new", members: [] });
     }
-    return json(ungroupedCampaign());
+    // 캠페인 재조회 — 요청한 id 를 그대로 돌려줘야 전파 단언이 의미를 갖는다.
+    const id = url.replace("/api/campaigns/", "");
+    return json({ ...ungroupedCampaign(), id });
   });
 }
 
+const onGroupMembershipChanged = vi.fn();
+
 async function openDialog() {
-  render(<CampaignGroupSection campaign={ungroupedCampaign()} />);
+  render(
+    <CampaignGroupSection
+      campaign={ungroupedCampaign()}
+      onGroupMembershipChanged={onGroupMembershipChanged}
+    />,
+  );
   fireEvent.click(screen.getByRole("button", { name: "그룹으로 묶기" }));
   await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
 }
 
 beforeEach(() => {
+  onGroupMembershipChanged.mockReset();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -111,6 +121,13 @@ describe("그룹으로 묶기 다이얼로그", () => {
       expect(refreshed).toEqual(
         expect.arrayContaining(["/api/campaigns/c-current", "/api/campaigns/c-other"]),
       );
+    });
+
+    // 다시 읽는 것만으로는 부족하다 — 상위 목록은 이 콜백으로만 갱신되므로 **행마다**
+    // 올라가야 한다. fetch URL 만 단언하면 전파를 현재 캠페인 1회로 되돌려도 통과한다.
+    await waitFor(() => {
+      const propagated = onGroupMembershipChanged.mock.calls.map(([row]) => row.id).sort();
+      expect(propagated).toEqual(["c-current", "c-other"]);
     });
   });
 

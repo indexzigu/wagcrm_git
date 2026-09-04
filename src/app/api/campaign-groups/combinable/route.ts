@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { parseCandidateQuery } from "@/lib/campaign-group-candidate-query";
 import { campaignGroupRepository } from "@/repositories/campaignGroupRepository";
-import { toKstDateStr } from "@/lib/campaign-row";
+import { toCampaignCombineCandidateRow } from "@/lib/campaign-group-row";
 import {
   expandYmdRangeByWindow,
   GROUP_WINDOW_DAYS,
@@ -11,7 +11,6 @@ import {
 import type {
   CampaignCombineCandidateRow,
   CampaignCombineCandidatesResponse,
-  CampaignStatus,
 } from "@/lib/crm-types";
 
 /**
@@ -66,16 +65,7 @@ export async function GET(request: NextRequest) {
 
     const candidates: CampaignCombineCandidateRow[] = near
       .filter((row) => row.groupId === null)
-      .map((row) => ({
-        campaignId: row.id,
-        dealName: row.deal.dealName,
-        brandName: row.deal.brandName ?? null,
-        partnerName: row.deal.partner?.name ?? null,
-        status: row.status as CampaignStatus,
-        roundNumber: row.roundNumber ?? null,
-        startDate: toKstDateStr(row.startDate)!,
-        endDate: toKstDateStr(row.endDate)!,
-      }));
+      .map(toCampaignCombineCandidateRow);
 
     const payload: CampaignCombineCandidatesResponse = {
       candidates,
