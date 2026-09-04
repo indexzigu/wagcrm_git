@@ -159,11 +159,23 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   // 정산 일정·재무 편집 state 는 여기 없다 — 그 폼은 `CampaignSidePanel` 이 소유한다.
   // 이 파일에 있던 사본은 비활성으로 방치돼 있던 레거시 시트 전용이었고, 그 시트와 함께
   // 제거했다(T-023 — "같은 결과물인데 다른 모듈"의 정체 중 하나).
-  const syncSelectedCampaignState = useCallback((campaign: CampaignRow) => {
-    // ⚠️ **id 가드가 있어야 한다** — 이 콜백은 "선택된 캠페인이 바뀌었다"가 아니라
-    // "어떤 캠페인이 바뀌었다"이다. 그룹으로 묶기는 형제 캠페인까지 한 번에 갱신해
-    // 흘려보내므로, 가드 없이 갈아끼우면 **열어 둔 패널이 마지막 형제로 점프한다**.
-    // 대시보드의 `replaceCampaignRow`(crm-dashboard.tsx)가 이미 같은 가드를 쓴다.
+  /**
+   * 행 클릭 = "이 캠페인을 골랐다". **무조건 갈아끼운다** — 아래 동기화용과 반드시
+   * 갈라 둬야 한다. 하나로 합치고 id 가드를 걸면 최초 선택 때 `previous` 가 null 이라
+   * 교체가 일어나지 않아 **패널이 빈 채로 뜬다**(`CampaignSidePanel` 은 campaign 이
+   * 없으면 null 을 반환한다). 대시보드도 같은 이유로 `openCampaign` 과
+   * `replaceCampaignRow` 를 나눠 둔다(crm-dashboard.tsx).
+   */
+  const selectCampaign = useCallback((campaign: CampaignRow) => {
+    setSelectedCampaign(campaign);
+  }, []);
+
+  /**
+   * "어떤 캠페인이 **바뀌었다**" — 지금 열려 있는 그 캠페인일 때만 갈아끼운다.
+   * 그룹으로 묶기는 형제 캠페인까지 한 번에 갱신해 흘려보내므로, 가드가 없으면
+   * 열어 둔 패널이 마지막 형제로 점프한다.
+   */
+  const syncUpdatedCampaign = useCallback((campaign: CampaignRow) => {
     setSelectedCampaign((previous) =>
       previous?.id === campaign.id ? campaign : previous,
     );
@@ -395,7 +407,7 @@ interface CsvRow {
   }, [filteredCampaigns, selectedMonth]);
 
   const handleSelectCampaign = (campaign: CampaignRow) => {
-    syncSelectedCampaignState(campaign);
+    selectCampaign(campaign);
     setPanelOpen(true);
   };
 
@@ -613,7 +625,7 @@ interface CsvRow {
         open={panelOpen}
         onOpenChange={setPanelOpen}
         onActualSalesSaved={(campaign) => {
-          syncSelectedCampaignState(campaign);
+          syncUpdatedCampaign(campaign);
           setData((prev) => ({
             ...prev,
             campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
@@ -621,7 +633,7 @@ interface CsvRow {
           void refreshReport();
         }}
         onCampaignUpdated={(campaign) => {
-          syncSelectedCampaignState(campaign);
+          syncUpdatedCampaign(campaign);
           setData((prev) => ({
             ...prev,
             campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),

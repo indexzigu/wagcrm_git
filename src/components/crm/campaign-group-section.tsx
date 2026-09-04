@@ -759,8 +759,9 @@ function GroupCombineDialog({
     const joinParams = { ...params, ...expandYmdRangeByWindow(params) };
     // ⛔ Promise.all 로 묶지 말 것 — 합류 목록은 **보조**이고 묶기 목록이 이 창의
     // 본체다. all 이면 suggest 한 번 실패가 후보 목록까지 통째로 가려, 고치려던
-    // "아무것도 안 보인다"가 다른 이유로 재현된다. 합류 조회 실패는 조용히 접는다
-    // (이 파일의 합류 배너가 이미 쓰는 비차단 규약과 같다).
+    // "아무것도 안 보인다"가 다른 이유로 재현된다. 합류 조회가 실패해도 묶기는
+    // 그대로 진행되지만, **실패 자체는 숨기지 않는다**(joinError → 안내 문구).
+    // 빈 목록으로 접으면 "조회 실패"와 "합류할 그룹 없음"이 같은 모양이 된다.
     Promise.allSettled([fetchGroupSuggestions(joinParams), fetchCombineCandidates(params)])
       .then(([joinResult, combineResult]) => {
         if (cancelled) return;
