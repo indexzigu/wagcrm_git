@@ -121,6 +121,8 @@ describe("세금계산서 입력 도우미", () => {
         campaignId: "x",
         dealName: "딜",
         campaignName: null,
+        brandName: null,
+        partnerName: null,
         status: "SETTLEMENT_IN_PROGRESS",
         startDate: "2026-07-01",
         endDate: "2026-07-10",

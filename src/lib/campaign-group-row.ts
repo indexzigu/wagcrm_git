@@ -55,7 +55,7 @@ type GroupWithMembers = {
     salesChannel: string;
     actualSales: DecimalLike;
     sellerExpense: DecimalLike;
-    deal: { dealName: string };
+    deal: { dealName: string; brandName: string | null; partner: { name: string } | null };
     settlementItems?: Array<{
       id: string;
       invoiceMode: string;
@@ -100,6 +100,11 @@ export function toCampaignGroupDetail(group: GroupWithMembers): CampaignGroupDet
     campaignId: m.id,
     dealName: m.deal.dealName,
     campaignName: m.campaignName ?? null,
+    // 원본 두 값을 그대로 싣는다 — 접기 규칙(브랜드=거래처면 하나만)은 매퍼가
+    // 아니라 `formatDealContextLabel` 이 소유한다. 여기서 미리 접으면 같은 딜을
+    // 다른 축으로 보고 싶은 표면이 원본을 되찾을 수 없다.
+    brandName: m.deal.brandName ?? null,
+    partnerName: m.deal.partner?.name ?? null,
     status: m.status as CampaignStatus,
     startDate: toKstDateStr(m.startDate)!,
     endDate: toKstDateStr(m.endDate)!,
