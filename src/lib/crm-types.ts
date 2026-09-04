@@ -481,6 +481,11 @@ export type CampaignGroupMemberRow = {
    * 달라서 안 묶이는 것 같다"는 오진이 나온 자리다.
    * 표기 조립은 화면이 직접 하지 말고 `formatDealContextLabel`(`lib/deal-display`)에
    * 위임한다(브랜드=거래처면 하나만 보여주는 규칙을 그 함수가 소유한다).
+   * ⚠️ 두 값은 **딜의 원본**이다 — 브랜드사 거래처를 브랜드로 승격하는
+   * `normalizeDealBrandName` 을 거치지 않는다. `formatDealContextLabel` 은 값만
+   * 이어붙이고 라벨을 버리므로 지금 화면 출력은 같지만, 라벨("브랜드"/"거래처")을
+   * 보여주는 `getDealIdentityParts` 로 이 행을 소비하면 다른 화면이 "브랜드"라
+   * 부르는 값을 "거래처"로 읽게 된다. 그때는 승격을 함께 태울 것.
    */
   brandName: string | null;
   partnerName: string | null;
