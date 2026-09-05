@@ -64,6 +64,24 @@ describe("parseBoardItems", () => {
     expect(parseBoardItems(board)[0].pr).toBe(90);
   });
 
+  /**
+   * T-104 — 「추정 경고」를 낼 이유가 있는지의 판정 축.
+   *
+   * 링크가 **전부** 구 레포면 어느 것을 골라도 결론이 같아(구 레포 항목 = 할 일 없음)
+   * 확인 요청이 사람에게 줄 행동이 없다. 실보드에서 그 부류가 22건 중 17건이라 매일
+   * 같은 항목이 다시 올라왔다. ⛔ 하나라도 현행 레포 링크가 섞이면 **경고를 남긴다** —
+   * 그때만 잘못 고른 링크가 살아 있는 항목을 구 레포로 오분류할 수 있다.
+   */
+  it("링크가 전부 구 레포면 allLinksLegacy — 섞여 있으면 아니다(추정 경고 억제의 안전 조건)", () => {
+    const allOld =
+      "- **✅ 완료 — X**: 본문 [#380](https://github.com/indexzigu/wagcrm/pull/380) · [#182](https://github.com/indexzigu/wag-crm/pull/182)";
+    const mixed =
+      "- **✅ 완료 — X**: 본문 [#380](https://github.com/indexzigu/wagcrm/pull/380) · [#31](https://github.com/indexzigu/wagcrm_git/pull/31)";
+
+    expect(parseBoardItems(allOld)[0].allLinksLegacy).toBe(true);
+    expect(parseBoardItems(mixed)[0].allLinksLegacy).toBe(false);
+  });
+
   it("헤더 안 중첩 볼드가 있어도 항목을 스킵하지 않는다", () => {
     // 보드 헤더는 강조용 중첩 볼드를 흔히 쓴다. 첫 닫는 `**` 를 헤더 끝으로 보면 링크를
     // 못 찾아 항목이 통째로 조용히 사라진다 — 실보드 35건 중 8건이 그렇게 누락됐다.

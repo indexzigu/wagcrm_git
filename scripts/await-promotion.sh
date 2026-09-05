@@ -182,6 +182,19 @@ evaluate_selfhost() {
     echo "unverifiable"
     return 0
   fi
+  # 🪤 **공통 조상이 없으면 「미배포」가 아니라 「판정 불가」다(T-104).**
+  # 이 레포는 세 번 이관되며 매번 이력을 버리고 재출발했다(P6 Repo Migration). 구 저장소
+  # 커밋은 잔존 브랜치 덕에 **객체로는 남아 있어도** 마커와 무관한 이력이라
+  # `--is-ancestor` 가 항상 거짓이고, 종전에는 그 전부를 exit 3("아직 서버에 반영 안 됨")
+  # 으로 **주장**했다(실측: 2026-07-16 이관 커밋에 --check → exit 3). 3 은 "안 실렸다"는
+  # 주장이고 5 는 "모른다"이며, 둘을 접지 말라는 것이 이 스크립트의 계약이다(P6).
+  # ⛔ **이관 커밋 SHA 를 상수로 박아 가르지 말 것** — 이관이 또 있으면 그 상수가 낡는다
+  #    (이미 세 번 있었다). 이력 위상(공통 조상 유무)은 이관 횟수와 무관하게 성립한다.
+  if ! git merge-base "$target" "$marker" >/dev/null 2>&1; then
+    echo "마커와 공통 조상이 없다: $target — 이 체크아웃의 이력으로는 대조가 성립하지 않는다(저장소 이관으로 이력이 갈린 구 커밋이면 정상)" >&2
+    echo "unverifiable"
+    return 0
+  fi
   if git merge-base --is-ancestor "$target" "$marker" 2>/dev/null; then
     echo "live"
   else
