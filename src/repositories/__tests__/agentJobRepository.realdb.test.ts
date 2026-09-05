@@ -134,6 +134,39 @@ beforeEach(async () => {
 });
 
 describe("AgentJobRepository — SQLite lease and serialization regressions", () => {
+  it("requeues a FAILED_RETRYABLE row whose worker died before requeue (audit 2026-09-05 #2)", async () => {
+    const { AgentJobRepository } = await import("../agentJobRepository");
+    const now = new Date("2026-09-05T00:00:00.000Z");
+    const orphan = await createJob({
+      status: "FAILED_RETRYABLE",
+      workerId: "worker-a",
+      leaseExpiresAt: new Date(now.getTime() - 1),
+      attempt: 0,
+    });
+
+    const reclaimed = await AgentJobRepository.reclaimExpiredLease(now);
+    const row = await database().agentJob.findUniqueOrThrow({ where: { id: orphan.id } });
+
+    expect(reclaimed).toEqual({ jobId: orphan.id, status: "QUEUED", attempt: 1 });
+    expect(row).toMatchObject({ status: "QUEUED", workerId: null, leaseExpiresAt: null, attempt: 1 });
+    const claimed = await AgentJobRepository.claimNext("worker-b", new Date(now.getTime() + 1));
+    expect(claimed?.id).toBe(orphan.id);
+  });
+
+  it("leaves a FAILED_RETRYABLE row alone while its worker still holds the lease", async () => {
+    const { AgentJobRepository } = await import("../agentJobRepository");
+    const now = new Date("2026-09-05T00:00:00.000Z");
+    const inFlight = await createJob({
+      status: "FAILED_RETRYABLE",
+      workerId: "worker-a",
+      leaseExpiresAt: new Date(now.getTime() + 60_000),
+    });
+
+    expect(await AgentJobRepository.reclaimExpiredLease(now)).toBeNull();
+    const row = await database().agentJob.findUniqueOrThrow({ where: { id: inFlight.id } });
+    expect(row.status).toBe("FAILED_RETRYABLE");
+  });
+
   it("rejects a stale worker after lease reclaim and a newer worker claim", async () => {
     const { AgentJobRepository, ConcurrentAgentJobModificationError } = await import("../agentJobRepository");
     const now = new Date("2026-09-02T00:00:00.000Z");
