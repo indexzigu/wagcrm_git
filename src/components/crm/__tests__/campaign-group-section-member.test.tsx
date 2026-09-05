@@ -181,17 +181,22 @@ describe("멤버 제외 후 목록 동기화", () => {
     );
   });
 
-  it("그룹이 남으면 제외된 캠페인을 다시 읽는다", async () => {
-    // 해체가 아니어도 **뺀 캠페인**의 groupId 는 바뀐다 — 종전에는 현재 캠페인만
-    // 갱신해서 뺀 행이 목록에 그룹 소속으로 남았다. 남는 형제(c-third)는 소속이
-    // 그대로이므로 갱신 대상이 아니다. 서버는 비해체 시 그룹 행만 보낸다(감싸는
-    // 것은 클라이언트다) — 픽스처에 `dissolved` 를 넣지 않는 이유다.
+  it("그룹이 남아도 제외 전 멤버 전원을 다시 읽는다 — 형제의 「N건」이 하나 줄기 때문", async () => {
+    // 뺀 캠페인(c-sibling)은 `groupId` 가 null 이 되고, **남는 형제(c-third)와 현재
+    // 캠페인은 배지 숫자**(`groupMemberCount`)가 3 → 2 로 줄어든다. 그래서 해체가
+    // 아니어도 갱신 대상은 「제외 전 멤버 전원」으로 해체와 같다.
+    // ⚠️ 이 단언은 T-100 이 착지한 뒤에야 옳다 — 그전에는 단건 재조회 응답에 `_count`
+    // 가 없어 형제를 다시 읽으면 숫자가 **사라졌다**(그래서 일부러 빼고 있었다).
+    // 서버는 비해체 시 그룹 행만 보낸다(감싸는 것은 클라이언트다) — 픽스처에
+    // `dissolved` 를 넣지 않는 이유다.
     stubRemoval([member(), sibling(), third()], groupDetail([member(), third()]));
     renderSection();
 
     fireEvent.click(await screen.findByRole("button", removeSiblingButton));
     fireEvent.click(await screen.findByRole("button", { name: "제외" }));
 
-    await waitFor(() => expect(propagatedIds()).toEqual(["c-current", "c-sibling"]));
+    await waitFor(() =>
+      expect(propagatedIds()).toEqual(["c-current", "c-sibling", "c-third"]),
+    );
   });
 });

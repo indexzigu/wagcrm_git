@@ -74,7 +74,14 @@ export const CAMPAIGN_DETAIL_INCLUDE = {
   notes: { orderBy: { createdAt: "desc" } },
   checklistItems: { orderBy: [{ status: "asc" }, { sortOrder: "asc" }] },
   settlementItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-  group: true,
+  // ⚠️ `_count` 를 빼지 말 것 — `toCampaignRow` 의 `groupMemberCount`(카드의 조합 그룹
+  // 배지 숫자)가 이 값에서만 나온다. 종전 `group: true` 는 스칼라만 실어서, 단건 재조회
+  // 응답을 받은 행은 배지 숫자를 **잃었다**(목록 읽기 경로 `dashboard-data.ts` 만
+  // `_count` 를 싣고 있었다). 그래서 그룹에서 한 건을 뺀 뒤 형제 행을 다시 읽어도
+  // 숫자가 고쳐지는 게 아니라 사라져, 화면을 맞출 방법이 아예 없었다(T-100).
+  // ⛔ `include` 를 `select` 로 바꾸지 말 것 — 스칼라 전체가 필요하다(아래 타입 주석과
+  // `campaign-update-plan.ts` 의 「전체 행」 전제가 여기에 걸려 있다).
+  group: { include: { _count: { select: { members: true } } } },
 } satisfies Prisma.SalesCampaignInclude;
 
 export type CampaignDetail = Prisma.SalesCampaignGetPayload<{
@@ -746,7 +753,15 @@ export const campaignService = {
         const rolled = await recomputeGroupRollup(previous.groupId, tx);
         // 위 include 가 롤업 갱신 **전**의 그룹을 담았으므로 응답용으로 교체한다 —
         // 안 하면 저장 직후 화면이 한 박자 낡은 그룹 기간을 보여준다(다음 조회에서야 맞음).
-        if (rolled) updated.group = rolled;
+        // ⚠️ `_count` 는 갈아끼우는 값에 없다 — `recomputeGroupRollup` 은 날짜만 고치는
+        // 경로라 **멤버 수는 그대로**이므로 방금 읽은 값을 그대로 들고 간다. 빠뜨리면
+        // 기간을 수정한 캠페인만 배지 숫자를 잃는다(T-100 과 같은 구멍).
+        // `updated.group` 은 `previous.groupId` 가 있으면 non-null 이고
+        // `recomputeGroupRollup` 은 해체하지 않는다(그 계약이 정본) — 그래도 값을
+        // 지어내지 않고, 없으면 교체를 건너뛴다(DB 가 말하는 대로 둔다).
+        if (rolled && updated.group) {
+          updated.group = { ...rolled, _count: updated.group._count };
+        }
       }
 
       return updated;

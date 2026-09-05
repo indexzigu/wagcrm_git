@@ -12,8 +12,15 @@ import type { Prisma } from "@prisma/client";
 /** 그룹 스칼라 롤업/이름 갱신 — sellerId 등 앵커 필드는 의도적으로 제외한다. */
 export type CampaignGroupRollupUpdate = {
   name?: string | null;
-  startDate?: Date | null;
-  endDate?: Date | null;
+  /**
+   * 기간 롤업 — **`null` 을 받지 않는다**(T-101). 이 값이 비면 합류 후보 조회
+   * (`findSuggestions`)의 범위 술어가 그 그룹을 통째로 빼서, 멤버는 「이미 다른 그룹에
+   * 속해 있다」로 집계되는데 합류할 대상은 화면에 없는 막다른 길이 된다.
+   * ⛔ `| null` 을 되돌리지 말 것 — 컬럼은 nullable 이지만(생성 직후 한 순간 비어 있다)
+   * **갱신 경로가 비우는 것**은 막는다. 지금 호출부는 전부 실날짜를 넘긴다.
+   */
+  startDate?: Date;
+  endDate?: Date;
   // 정산 이벤트 블록 — 그룹 형성 시 멤버 잔존값 승계(virgin 블록 한정, 서비스가 판정).
   expectedDepositDate?: Date | null;
   depositReceivedAt?: Date | null;
@@ -77,6 +84,16 @@ export const campaignGroupRepository = {
    * (그룹 롤업 `startDate <= rangeEnd AND endDate >= rangeStart`).
    * excludeCampaignId가 주어지면 그 캠페인이 이미 속한 그룹은 제외한다
    * (이미 속한 그룹을 "합류하시겠어요?"로 재제안하지 않음).
+   *
+   * ⚠️ **이 술어는 기간이 빈 그룹을 통째로 뺀다** — Prisma 의 범위 비교는 NULL 행을
+   * 반환하지 않는다. 그러면 그 그룹은 「합류할 그룹」에서 사라지는데 멤버는 「그룹으로
+   * 묶기」에서 여전히 「이미 다른 그룹에 속해 있다」로 집계돼, 오너가 취할 행동이 화면에
+   * 없는 막다른 길이 된다.
+   * ℹ️ 지금 그런 그룹은 없고 앱 경로로는 생기지도 않는다(멤버 날짜가 NOT NULL 이고 생성·
+   * 멤버십 변경이 같은 트랜잭션에서 롤업을 채운다 — T-095 프로덕션 전수 조회 0건).
+   * ⛔ **그러니 여기 술어를 넓히지 말 것** — 기간을 모르는 그룹이 날짜와 무관하게 후보로
+   * 올라오는 다른 오동작이 된다. 지켜야 하는 것은 조회가 아니라 **쓰기 쪽 전제**이고,
+   * 그 전제는 `campaignGroupRollup.contract.test.ts` 「롤업 비어있음 방지」가 고정한다.
    */
   async findSuggestions(params: {
     sellerId: string;
