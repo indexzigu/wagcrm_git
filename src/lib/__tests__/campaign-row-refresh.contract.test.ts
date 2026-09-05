@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LIST_REFRESH_FAILED_MESSAGE } from "../campaign-row-refresh";
@@ -27,7 +28,9 @@ function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split("\n")
-    .map((line) => line.replace(/\/\/.*$/, ""))
+    // 🪤 `://` 는 지킨다 — 가드 없이 자르면 URL 이 든 줄이 통째로 잘려 그 줄의 위반이
+    // **사라진다**(레포의 mail-config 계약이 같은 이유로 같은 가드를 둔다).
+    .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
     .join("\n");
 }
 
@@ -41,13 +44,32 @@ const LIST_SURFACES = [
   "src/components/crm/crm-dashboard.tsx",
 ];
 
-/** 상수에서 파생한 금지 어절(함정 ③) — 리워딩하면 이 needle 도 함께 바뀐다. */
-const HANDCOPY_NEEDLE = LIST_REFRESH_FAILED_MESSAGE.slice(0, 12);
+/**
+ * 상수에서 파생한 금지 어절(함정 ③) — 리워딩하면 이 needle 도 함께 바뀐다.
+ *
+ * 🪤 **접두가 아니라 꼬리에서 딴다.** 원 결함은 *"동사만 다른 문장"* 이었으므로 앞머리
+ * (`묶기는`/`제외는`/`작업은`)는 사본마다 다르다 — 접두 12자로 잘랐더니 정작 옛 사본
+ * 둘을 **하나도 못 잡았다**(하드코딩 needle 보다 약해졌다). 첫 어절을 떼면 사본들이
+ * 공유하던 절만 남는다. 그 성질은 아래 「옛 사본을 실제로 잡는다」가 고정한다.
+ */
+const HANDCOPY_NEEDLE = LIST_REFRESH_FAILED_MESSAGE.slice(
+  LIST_REFRESH_FAILED_MESSAGE.indexOf(" ") + 1,
+);
+
+/** 이 가드가 생기기 전 실제로 손으로 적혀 있던 문장들(origin/main 실측). */
+const HISTORICAL_HANDCOPIES = [
+  "묶기는 끝났지만 목록 갱신이 일부 실패했습니다. 새로고침해 주세요.",
+  "제외는 끝났지만 목록 갱신이 일부 실패했습니다. 새로고침해 주세요.",
+];
 
 describe("목록 실패 문구는 상수 한 곳이 소유한다", () => {
-  it("needle 이 실제로 상수에서 나온다 — 손복사본이면 이 단언이 먼저 깨진다", () => {
-    expect(LIST_REFRESH_FAILED_MESSAGE).toContain(HANDCOPY_NEEDLE);
-    expect(HANDCOPY_NEEDLE.length).toBeGreaterThan(6);
+  it("needle 이 옛 사본을 실제로 잡는다 — 좁아지면 여기서 먼저 깨진다", () => {
+    // ⛔ `expect(상수).toContain(needle)` 로 되돌리지 말 것 — slice 정의상 항상 참이라
+    // 아무것도 지키지 않는다. 지켜야 하는 성질은 "이 needle 이면 그 사본들을 잡았다"다.
+    for (const copy of HISTORICAL_HANDCOPIES) {
+      expect(copy).toContain(HANDCOPY_NEEDLE);
+    }
+    expect(HANDCOPY_NEEDLE.length).toBeGreaterThan(10);
   });
 
   it.each(LIST_SURFACES)("%s 는 상수를 쓰고 문장을 손으로 적지 않는다", (rel) => {
@@ -100,17 +122,40 @@ function rollupWritesIn(code: string): string[] {
 }
 
 describe("그룹 기간을 쓰는 경로는 리포지토리를 거친다 (T-101)", () => {
-  /** 리포지토리 밖에서 CampaignGroup 을 직접 갱신하는 파일 — 새로 생기면 여기 등재. */
+  /**
+   * 리포지토리 밖에서 CampaignGroup 을 직접 갱신하는 파일 — **전수를 소스에서 뽑아 대조**한다.
+   * ⛔ `it.each` 로 손 목록만 돌리지 말 것: 새 파일이 생겨도 조용히 통과한다(초판이 그랬고
+   * 실제로 `scripts/` 두 개를 빠뜨렸다). 형제 계약(`campaignGroupRollup.contract.test.ts`)이
+   * 쓰는 `git grep -l` 전수 열거가 이 트랙의 선례다.
+   */
   const DIRECT_GROUP_WRITERS = [
+    "scripts/backfill-campaign-group-settlement-dates.ts",
+    "scripts/sync-group-return-period.ts",
     "src/app/api/cron/tax-invoice-issue-confirm/route.ts",
     "src/lib/campaign-checklist.ts",
     "src/lib/google-calendar-sync.ts",
     "src/lib/settlement-flag-write.ts",
-    "src/services/taxInvoiceReceiptDecisionService.ts",
     "src/services/campaignService.ts",
+    "src/services/taxInvoiceReceiptDecisionService.ts",
   ];
 
-  it.each(DIRECT_GROUP_WRITERS)("%s 의 직접 갱신은 기간을 건드리지 않는다", (rel) => {
+  it("직접 갱신 파일 목록이 소스와 일치한다 — 새 경로가 생기면 여기서 걸린다", () => {
+    const found = execFileSync(
+      "git",
+      ["grep", "-l", "campaignGroup\\.update", "--", "src", "scripts"],
+      { cwd: root, encoding: "utf8" },
+    )
+      .split("\n")
+      .filter((f) => f && !f.includes("__tests__") && !f.endsWith("campaignGroupRepository.ts"));
+    expect(found.sort()).toEqual(DIRECT_GROUP_WRITERS);
+  });
+
+  it.each(DIRECT_GROUP_WRITERS)("%s 의 직접 갱신은 기간을 리터럴로 쓰지 않는다", (rel) => {
+    // ⚠️ **이 스캔은 리터럴 형태만 본다** — `data: someVariable` 이나 동적 키
+    // (`{ [field]: v }`)로 넘기면 못 본다. 실제로 지금 등재된 파일 전부가 그 형태라
+    // 이 단언은 오늘 아무것도 걸러내지 못한다. 방어의 본체는 **위 전수 대조**이고,
+    // 이건 리터럴로 쓰는 새 코드를 값싸게 잡는 보조선이다. ⛔ 이걸 「기간을 안 쓴다」의
+    // 증명으로 읽지 말 것.
     expect(rollupWritesIn(stripComments(read(rel)))).toEqual([]);
   });
 
