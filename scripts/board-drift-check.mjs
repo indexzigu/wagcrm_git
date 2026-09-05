@@ -212,6 +212,22 @@ export function parseBoardItems(text) {
       // 항목이 스스로 밝히는 레포(URL 슬러그). 없으면 현행 레포다 — 위 primaryPr.
       repo: resolved.repo,
       legacy: resolved.repo !== REPO_SLUG,
+      /**
+       * 이 줄의 **모든** PR 링크가 구 레포인가 — 「추정 경고」를 낼 이유가 있는지의 판정 축(T-104).
+       *
+       * 그 경고는 "대표 PR 을 헤더가 아니라 본문 링크로 **추정**했으니 사람이 확인하라"는
+       * 뜻이다. 줄의 링크가 전부 구 레포면 어느 것을 골라도 **구 레포 쪽 판정**으로 가므로
+       * 확인해도 사람이 취할 행동이 대개 없는데, 그 부류가 매일 목록에 다시 올랐다
+       * (T-104 의 실제 증상).
+       * ⛔ **하나라도 현행 레포 링크가 섞여 있으면 경고를 남긴다** — 그때는 잘못 고른
+       * 링크가 **살아 있는 항목을 구 레포로 오분류**할 수 있고, 그게 이 경고가 지키는
+       * 바로 그 경우다. 조건을 `legacy`(대표 링크 하나)로 느슨하게 바꾸지 말 것.
+       * ⚠️ **이 플래그 하나로 경고를 빼면 안 된다** — 구 레포라도 **미머지**면 판정이
+       * `LEGACY_ARCHIVED` 가 아니라 `OK` 로 빠지고(`classifyItem` 이 `!fact.merged` 를
+       * 먼저 본다), 그때는 고른 번호가 틀렸을 때 낡은 대기 마커가 조용히 통과한다.
+       * 실제 억제 조건은 이 플래그 **와** 판정이 함께 성립할 때다 — 소비처 주석 참조.
+       */
+      allLinksLegacy: prLinksIn(line).every((m) => m.repo !== REPO_SLUG),
       claims: readClaims(line),
     });
   }
@@ -968,10 +984,18 @@ function printReport(boardPath, results, deploy) {
   const legacy = by(VERDICT.LEGACY_ARCHIVED);
   if (legacy.length) {
     console.log(
-      `🗄️ 구 레포 항목 ${legacy.length}건(머지 확인됨 · 배포 축은 원천 대조 불가 — 정상):` +
-        ` ${legacy.map((r) => `${r.repo.split("/")[1]}#${r.pr}`).join(" ")}` +
+      // T-104: **번호를 나열하지 않는다.** 이 부류의 결론은 「할 일 없음」이라 매 실행마다
+      // 26건 규모의 번호 벽을 찍으면, 정작 봐야 할 줄(드리프트·대기)을 밀어낸다 —
+      // 오너가 매일 같은 항목을 다시 들여다보게 되던 것이 이 티켓의 증상이다.
+      // ⛔ **분류를 바꾼 게 아니다** — 판정도 종료코드도 그대로이고 출력 분량만 줄인다.
+      //    목록이 필요하면 아래 한 줄로 언제든 뽑을 수 있다(보드가 이미 레포를 밝힌다).
+      `🗄️ 구 레포 항목 ${legacy.length}건(머지 확인됨 · 배포 축은 원천 대조 불가 — 정상, 할 일 없음)` +
         `\n   → 이관이 이력을 갈라 SHA 대조가 성립하지 않는다(P6 Repo Migration).` +
-        ` **보드 표기를 고칠 필요는 없다** — 링크가 이미 레포를 밝히고 있다.`,
+        ` **보드 표기를 고칠 필요는 없다** — 링크가 이미 레포를 밝히고 있다.` +
+        // ⚠️ 힌트의 좌표를 손으로 적지 않는다 — 슬러그는 `LEGACY_REPO_SLUGS` 에서,
+        //    보드 경로는 이 보고서가 이미 아는 값에서 파생한다(이관이 또 있어도 안 낡고,
+        //    워크트리 세션이 그대로 붙여넣어도 자기 보드가 아니라 정본을 가리킨다).
+        `\n   → 목록이 필요하면: grep -nE '(${LEGACY_REPO_SLUGS.join("|")})/pull' ${boardPath}`,
     );
   }
   const unknown = by(VERDICT.UNKNOWN_SHA);
@@ -983,7 +1007,18 @@ function printReport(boardPath, results, deploy) {
   }
   console.log(`✅ 일치 ${by(VERDICT.OK).length}건`);
 
-  const guessed = results.filter((r) => !r.prConfident);
+  // T-104: 확인해도 사람이 취할 행동이 없는 항목만 뺀다 — 그 부류가 이 목록의 대부분이라
+  // 매일 다시 올라왔다. 조건은 **둘 다** 만족해야 한다:
+  //   ① 줄의 모든 PR 링크가 구 레포(`allLinksLegacy`) — 어느 것을 골라도 구 레포 판정이다.
+  //   ② 실제 판정이 `LEGACY_ARCHIVED` — 즉 「머지 확인 · 할 일 없음」으로 끝난 항목이다.
+  // ⛔ **①만으로 빼지 말 것.** `classifyItem` 은 `!fact.merged` 를 legacy 분기보다 **먼저**
+  //    보므로, 추정이 **미머지** 구 PR 을 집으면 판정이 `OK`("미머지 — 대기 마커가
+  //    정확하다")로 빠진다. 그 경우는 고른 번호가 틀렸을 때 낡은 대기 마커가 조용히
+  //    통과하므로 확인 요청이 살아 있어야 한다(교차 검증 지적).
+  // ⛔ 조건을 `r.legacy`(대표 링크 하나)로 넓히지도 말 것 — 사유는 `allLinksLegacy` 주석.
+  const guessed = results.filter(
+    (r) => !r.prConfident && !(r.allLinksLegacy && r.verdict === VERDICT.LEGACY_ARCHIVED),
+  );
   if (guessed.length) {
     console.log(
       `\n⚠️ 주 PR 을 본문 링크로 추정한 항목 ${guessed.length}건 — 판정 근거가 약하니 눈으로 확인할 것:` +

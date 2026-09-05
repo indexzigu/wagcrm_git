@@ -441,6 +441,31 @@ describe("await-promotion.sh — 셀프호스트 레인(기본값)", () => {
     expect(vercel.out).toContain("미승격");
   });
 
+  /**
+   * 🚨 T-104 — 저장소 이관으로 **이력이 갈린** 구 커밋. 객체는 남아 있는데 마커와
+   * 공통 조상이 없다(이 레포는 이관이 세 번이라 잔존 브랜치에 실재한다).
+   * 종전에는 그 전부를 exit 3("아직 서버에 반영 안 됨")으로 **단정**했다 — 3 은
+   * "안 실렸다"는 주장이고 5 는 "모른다"이며, 이 경우의 참은 후자다.
+   * ⛔ 이관 커밋 SHA 를 상수로 박아 가르는 구현으로 되돌리지 말 것(이관이 또 있으면 낡는다).
+   */
+  it("🚨 마커와 공통 조상이 없는 구 이력 커밋은 판정 불가(5)이지 미배포(3)가 아니다", () => {
+    const { repoDir, stubDir, sha } = setupRepo();
+    // 고아 커밋 = 이관 전 이력의 대역 — main 과 어떤 조상도 공유하지 않는다.
+    git(repoDir, ["checkout", "-q", "--orphan", "legacy"]);
+    writeFileSync(path.join(repoDir, "g.txt"), "legacy");
+    git(repoDir, ["add", "g.txt"]);
+    git(repoDir, ["commit", "-q", "-m", "legacy root"]);
+    const orphan = git(repoDir, ["rev-parse", "HEAD"]);
+    git(repoDir, ["checkout", "-q", "main"]);
+
+    const m = writeMarker(stubDir, `${sha.C}\n`);
+    const r = runSelfhost(repoDir, stubDir, orphan, m);
+
+    expect(r.status).toBe(5);
+    expect(r.out).toContain("공통 조상이 없다");
+    expect(r.out).toContain("미배포가 아니다");
+  });
+
   it("⚠️ 마커 부재는 판정 불가(exit 5)이지 미배포(3)가 아니다", () => {
     const { repoDir, stubDir, sha } = setupRepo();
     const r = runSelfhost(repoDir, stubDir, sha.B, path.join(stubDir, "absent.sha"));
