@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -280,5 +281,91 @@ describe("소스 계약 — 호출부·산식 공유", () => {
     // min/max 를 손으로 다시 쓰지 않고 공유 헬퍼를 통과시킨다.
     const rollupCalls = src.match(/rollupGroupPeriod\(/g) ?? [];
     expect(rollupCalls.length).toBeGreaterThanOrEqual(3); // 정의 1 + 소비 2
+  });
+});
+
+/**
+ * 롤업이 **비어 있지 않다**는 전제를 지키는 장치 (T-101).
+ *
+ * 합류 후보 조회(`campaignGroupRepository.findSuggestions`)는 그룹의 기간으로 거른다 —
+ * Prisma 의 `startDate: { lte }` · `endDate: { gte }` 는 **NULL 행을 통째로 뺀다.** 그래서
+ * 기간이 빈 그룹은 「합류할 그룹」 목록에서 사라지는데, 그 멤버는 「그룹으로 묶기」에서
+ * 여전히 「이미 다른 그룹에 속해 있다」로 집계된다 — 오너가 취할 행동이 화면에 없는
+ * 막다른 길이다.
+ *
+ * 📋 **조사 기록(T-095, 2026-09-05):** 프로덕션 전수 조회에서 기간이 빈 그룹은 **0건**이었고
+ * 앱 경로로는 생길 수 없다 — 멤버 날짜가 NOT NULL 이라 `rollupGroupPeriod` 가 항상 실날짜를
+ * 내고, 그룹은 날짜 없이 태어나지만 **같은 트랜잭션 안에서** 롤업이 채워진다. 그래서 조회
+ * 술어를 넓히는 방어는 넣지 않았다(기간을 모르는 그룹이 날짜와 무관하게 후보로 올라오는
+ * 다른 오동작이 된다). 대신 **그 전제 자체를 여기서 고정한다** — 컬럼도 갱신 타입도 null 을
+ * 허용하므로, 새 경로가 생기면 아무것도 막지 않은 채 조용히 뚫린다.
+ */
+describe("롤업 비어있음 방지 (T-101)", () => {
+  it("기간이 빈 그룹도 멤버가 있으면 포락선으로 채운다 — 막다른 길의 복구 경로", async () => {
+    seedGroup({ id: "g-null", sellerId: "s1", startDate: null, endDate: null });
+    seedMember({
+      id: "c1",
+      sellerId: "s1",
+      groupId: "g-null",
+      startDate: d("2026-07-03"),
+      endDate: d("2026-07-09"),
+    });
+    seedMember({
+      id: "c2",
+      sellerId: "s1",
+      groupId: "g-null",
+      startDate: d("2026-07-01"),
+      endDate: d("2026-07-05"),
+    });
+
+    const rolled = await recomputeGroupRollup("g-null", hoisted.tx as never);
+
+    expect(rolled?.startDate).toEqual(d("2026-07-01"));
+    expect(rolled?.endDate).toEqual(d("2026-07-09"));
+    // 저장까지 확인한다 — 반환값만 보면 화면만 맞고 DB 는 빈 채로 남는 회귀를 놓친다.
+    const stored = hoisted.state.groups.get("g-null")!;
+    expect(stored.startDate).not.toBeNull();
+    expect(stored.endDate).not.toBeNull();
+  });
+
+  it("그룹을 만드는 자리는 한 곳뿐이고, 그 자리가 같은 트랜잭션에서 롤업을 채운다", () => {
+    const root = join(__dirname, "..", "..");
+    const service = readFileSync(join(root, "services", "campaignGroupService.ts"), "utf8");
+
+    // ⚠️ 주석을 걷어내고 센다 — 이 트랙의 문서·주석이 금지 문자열을 설명으로 인용해서,
+    // 원문 그대로 세면 계약이 자기 주석에 걸린다(레포 선례 다수).
+    const stripped = service
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .map((line) => line.replace(/\/\/.*$/, ""))
+      .join("\n");
+
+    const createCalls = stripped.match(/campaignGroupRepository\.create\(/g) ?? [];
+    expect(createCalls).toHaveLength(1);
+
+    // 생성 직후 같은 함수 안에서 롤업을 채우는지 — 순서까지 본다.
+    const createAt = stripped.indexOf("campaignGroupRepository.create(");
+    const recomputeAt = stripped.indexOf("recomputeGroup(created.id", createAt);
+    expect(recomputeAt).toBeGreaterThan(createAt);
+
+    // 양성 프로브 — 스캐너가 고장 나도 초록이 되지 않게 한다.
+    expect(stripped).toContain("campaignGroupRepository.create(");
+    expect(stripped.match(/campaignGroupRepository\.setGroupId\(/g) ?? []).not.toHaveLength(0);
+  });
+
+  it("그룹 생성은 서비스 밖에서 일어나지 않는다 — 새 경로가 전제를 우회하지 못하게", () => {
+    // 리포지토리 정의(`tx.campaignGroup.create`)와 서비스 호출부 외에는 없어야 한다.
+    const out = execFileSync(
+      "git",
+      ["grep", "-l", "-e", "campaignGroup\\.create(", "-e", "campaignGroupRepository\\.create(", "--", "src", "scripts"],
+      { cwd: join(__dirname, "..", "..", ".."), encoding: "utf8" },
+    )
+      .split("\n")
+      .filter((f) => f && !f.includes("__tests__"));
+
+    expect(out.sort()).toEqual([
+      "src/repositories/campaignGroupRepository.ts",
+      "src/services/campaignGroupService.ts",
+    ]);
   });
 });
