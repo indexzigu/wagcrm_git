@@ -1,12 +1,15 @@
 /**
  * 캠페인 행 재조회 SSOT 의 계약 (T-099).
  *
- * 이 동작은 종전에 네 곳(그룹 묶기·합류·제외, 정산 수취 결정)에 손으로 복사돼 있었고,
- * 사본마다 **한 조각씩 빠져 있었다** — 한 곳만 응답 모양을 검증했고, 두 곳은 실패를 아예
- * 통지하지 않았다. 여기 고정하는 것은 그 빠진 조각들이다.
+ * 이 동작은 화면마다 손으로 복사돼 있었고 **사본이 갖춘 조각이 서로 달랐다** — 정산 쪽은
+ * 모양 검증과 실패 통지를 둘 다 갖췄는데, 그룹 섹션과 대시보드 합류 후처리는 검증이 없고
+ * 실패도 삼켰다. 여기 고정하는 것은 「갖춘 쪽을 기준으로 끌어올린」 그 조각들이다.
+ * (사본 전수 목록과 이번에 흡수하지 않은 자리는 모듈 docstring 참조.)
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { CampaignRow } from "../crm-types";
 import { refreshCampaignRows, LIST_REFRESH_FAILED_MESSAGE } from "../campaign-row-refresh";
 
@@ -74,8 +77,21 @@ describe("refreshCampaignRows", () => {
     expect(seen).toHaveLength(0);
   });
 
-  it("목록 표면의 실패 문구는 한 곳이 소유한다", () => {
+  it("목록 표면의 실패 문구는 한 곳이 소유한다 — 사본이 다시 생기면 실패한다", () => {
     // 종전에는 동사만 다른 문장이 두 곳에 복사돼 있어 한쪽을 다듬으면 조용히 갈렸다.
+    // ⚠️ 상수 존재만 단언하면 사본이 다시 생겨도 초록이다 — 실제로 소스를 훑는다.
+    const listSurfaces = [
+      "src/components/crm/campaign-group-section.tsx",
+      "src/components/crm/crm-dashboard.tsx",
+    ];
+    for (const rel of listSurfaces) {
+      const src = readFileSync(join(process.cwd(), rel), "utf8");
+      expect(src).toContain("LIST_REFRESH_FAILED_MESSAGE");
+      // 같은 뜻의 문장을 손으로 다시 적은 자리가 없어야 한다.
+      expect(src).not.toContain("목록 갱신이 일부 실패");
+    }
+    // 양성 프로브 — 스캐너가 파일을 못 읽으면 위 단언이 통째로 무의미해진다.
+    expect(readFileSync(join(process.cwd(), listSurfaces[0]), "utf8").length).toBeGreaterThan(1000);
     expect(LIST_REFRESH_FAILED_MESSAGE).toContain("새로고침");
   });
 });

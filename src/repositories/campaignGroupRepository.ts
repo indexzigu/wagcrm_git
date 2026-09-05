@@ -12,8 +12,15 @@ import type { Prisma } from "@prisma/client";
 /** 그룹 스칼라 롤업/이름 갱신 — sellerId 등 앵커 필드는 의도적으로 제외한다. */
 export type CampaignGroupRollupUpdate = {
   name?: string | null;
-  startDate?: Date | null;
-  endDate?: Date | null;
+  /**
+   * 기간 롤업 — **`null` 을 받지 않는다**(T-101). 이 값이 비면 합류 후보 조회
+   * (`findSuggestions`)의 범위 술어가 그 그룹을 통째로 빼서, 멤버는 「이미 다른 그룹에
+   * 속해 있다」로 집계되는데 합류할 대상은 화면에 없는 막다른 길이 된다.
+   * ⛔ `| null` 을 되돌리지 말 것 — 컬럼은 nullable 이지만(생성 직후 한 순간 비어 있다)
+   * **갱신 경로가 비우는 것**은 막는다. 지금 호출부는 전부 실날짜를 넘긴다.
+   */
+  startDate?: Date;
+  endDate?: Date;
   // 정산 이벤트 블록 — 그룹 형성 시 멤버 잔존값 승계(virgin 블록 한정, 서비스가 판정).
   expectedDepositDate?: Date | null;
   depositReceivedAt?: Date | null;

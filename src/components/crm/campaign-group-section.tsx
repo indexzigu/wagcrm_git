@@ -169,13 +169,8 @@ export function CampaignGroupSection({
   }, [suggestNonce, groupId, campaign.id, campaign.sellerId, campaign.startDate, campaign.endDate]);
 
   /**
-   * 멤버십이 바뀐 캠페인들을 다시 읽어 상위 목록에 흘려보낸다.
-   *
-   * ⚠️ **id 목록을 받는 것이 요점이다** — 상위 콜백(`onCampaignUpdated` →
-   * `replaceCampaignRow`)은 **행 하나를 교체하는** 계약이라 목록이 스스로 따라오지
-   * 않는다. 그런데 그룹 **생성**은 고른 캠페인 전부의 `groupId` 를 한 번에 바꾼다.
-   * 현재 캠페인만 갱신하면 나머지 행은 새로고침 전까지 미그룹으로 남아 보드의 그룹
-   * 배지가 거짓말을 한다(방금 묶은 것이 안 묶인 것처럼 보인다).
+   * 멤버십이 바뀐 캠페인들을 다시 읽어 상위 목록에 흘려보낸다(SSOT 에 얇게 위임).
+   * ⚠️ **id 목록을 받는 것이 요점이다** — 근거는 `lib/campaign-row-refresh` docstring.
    */
   const refreshCampaigns = useCallback(
     (campaignIds: string[]) =>

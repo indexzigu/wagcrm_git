@@ -59,6 +59,17 @@ function stubFetch(options: {
     if (url === "/api/campaign-groups" && init?.method === "POST") {
       return json({ id: "g-new", members: [] });
     }
+    // 합류(PATCH) — 서버는 합류 **후** 멤버 전원을 실은 그룹 상세를 돌려준다.
+    if (url.startsWith("/api/campaign-groups/") && init?.method === "PATCH") {
+      return json({
+        id: "g-1",
+        members: [
+          { campaignId: "c-current" },
+          { campaignId: "c-existing-a" },
+          { campaignId: "c-existing-b" },
+        ],
+      });
+    }
     // 캠페인 재조회 — 요청한 id 를 그대로 돌려줘야 전파 단언이 의미를 갖는다.
     const id = url.replace("/api/campaigns/", "");
     return json({ ...ungroupedCampaign(), id });
@@ -128,6 +139,24 @@ describe("그룹으로 묶기 다이얼로그", () => {
     await waitFor(() => {
       const propagated = onGroupMembershipChanged.mock.calls.map(([row]) => row.id).sort();
       expect(propagated).toEqual(["c-current", "c-other"]);
+    });
+  });
+
+  it("합류하면 기존 멤버까지 다시 읽는다 — 그들의 「N건」 배지가 하나 늘기 때문", async () => {
+    // ⛔ 현재 캠페인만 갱신하면 기존 멤버 카드가 새로고침 전까지 옛 숫자를 보여준다
+    // (제외 경로에서 고친 것과 같은 결함이 합류 쪽에 남아 있었다).
+    stubFetch({
+      groups: [{ id: "g-1", name: "묶음", startDate: "2026-08-18", endDate: "2026-08-21" }],
+      candidates: [],
+    });
+    await openDialog();
+
+    // 버튼의 접근 이름은 `aria-label`(「<그룹> 그룹에 합류」)이 정한다.
+    fireEvent.click(await screen.findByRole("button", { name: /그룹에 합류$/ }));
+
+    await waitFor(() => {
+      const propagated = onGroupMembershipChanged.mock.calls.map(([row]) => row.id).sort();
+      expect(propagated).toEqual(["c-current", "c-existing-a", "c-existing-b"]);
     });
   });
 
