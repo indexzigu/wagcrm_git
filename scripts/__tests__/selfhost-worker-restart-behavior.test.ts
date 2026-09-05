@@ -26,7 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const DEPLOY = path.resolve(__dirname, "..", "..", "infra", "selfhost", "deploy.sh");
 const deploySrc = readFileSync(DEPLOY, "utf8");
 
-const START_ANCHOR = 'WORKER_LAUNCHD_LABEL="${WORKER_LAUNCHD_LABEL:-kr.ygrd.wagcrm.agent-worker}"';
+const START_ANCHOR = 'WORKER_LAUNCHD_LABEL="kr.ygrd.wagcrm.agent-worker"';
 const END_ANCHOR = "[deploy] 워커 PID 교체 확인";
 const LANE_GATE = 'if [ "$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app" ]; then';
 
@@ -50,7 +50,7 @@ const BLOCK = extract();
 const PID_BEFORE = "23305";
 const PID_AFTER = "87958";
 
-type StubMode = "missing" | "swap" | "stuck";
+type StubMode = "swap" | "stuck" | "notloaded" | "crashloop";
 
 let workRoot = "";
 beforeAll(() => {
@@ -61,14 +61,25 @@ afterAll(() => {
 });
 
 /**
- * `launchctl` 을 가리는 셸 함수를 만든다.
- * - `missing` : `list` 가 실패한다(이 기계에 서비스가 설치돼 있지 않다)
- * - `swap`    : `kickstart` 뒤 PID 가 바뀐다(정상 재기동)
- * - `stuck`   : `kickstart` 는 성공하나 PID 가 그대로다(조용한 실패)
+ * `launchctl` 을 가리는 셸 함수와, 워커 plist 를 둘 가짜 HOME 을 만든다.
+ * - `notloaded`  : plist 는 있는데 `list` 가 실패한다(bootout 된 상태)
+ * - `swap`       : `kickstart` 뒤 PID 가 바뀌고 그대로 유지된다(정상 재기동)
+ * - `stuck`      : `kickstart` 는 성공하나 PID 가 그대로다(조용한 실패)
+ * - `crashloop`  : PID 가 바뀐 뒤 또 바뀐다(기동 실패 후 KeepAlive 가 되살리는 중)
+ *
+ * `installPlist:false` 면 plist 자체를 두지 않는다 — 워커를 운영하지 않는 기계.
  */
-function makeStub(name: string, mode: StubMode): { prelude: string; calls: string } {
+function makeStub(
+  name: string,
+  mode: StubMode,
+  { installPlist = true }: { installPlist?: boolean } = {},
+): { prelude: string; calls: string; home: string } {
   const dir = path.join(workRoot, name);
-  mkdirSync(dir, { recursive: true });
+  const home = path.join(dir, "home");
+  mkdirSync(path.join(home, "Library", "LaunchAgents"), { recursive: true });
+  if (installPlist) {
+    writeFileSync(path.join(home, "Library", "LaunchAgents", "kr.ygrd.wagcrm.agent-worker.plist"), "<plist/>\n");
+  }
   const calls = path.join(dir, "calls.log");
   const state = path.join(dir, "pid");
   writeFileSync(state, `${PID_BEFORE}\n`);
@@ -80,25 +91,30 @@ function makeStub(name: string, mode: StubMode): { prelude: string; calls: strin
     "launchctl() {",
     '  echo "$*" >> "$_STUB_CALLS"',
     '  if [ "$1" = "list" ]; then',
-    '    if [ "$_STUB_MODE" = missing ]; then return 1; fi',
+    '    if [ "$_STUB_MODE" = notloaded ]; then return 1; fi',
+    // crashloop: kickstart 뒤 조회할 때마다 PID 가 또 바뀐다.
+    '    if [ "$_STUB_MODE" = crashloop ] && [ -f "$_STUB_STATE.kicked" ]; then',
+    '      echo $(( $(cat "$_STUB_STATE") + 1 )) > "$_STUB_STATE"',
+    "    fi",
     // 실제 `launchctl list <label>` 의 출력 모양(따옴표 친 키 = 값;)을 그대로 흉내낸다.
     '    printf \'{\\n\\t"PID" = %s;\\n}\\n\' "$(cat "$_STUB_STATE")"',
     "    return 0",
     "  fi",
     '  if [ "$1" = "kickstart" ]; then',
     `    if [ "$_STUB_MODE" = swap ]; then echo ${PID_AFTER} > "$_STUB_STATE"; fi`,
+    '    if [ "$_STUB_MODE" = crashloop ]; then : > "$_STUB_STATE.kicked"; fi',
     "    return 0",
     "  fi",
     "  return 0",
     "}",
   ].join("\n");
 
-  return { prelude, calls };
+  return { prelude, calls, home };
 }
 
-function runBlock(stub: { prelude: string }, env: Record<string, string> = {}) {
+function runBlock(stub: { prelude: string; home: string }, env: Record<string, string> = {}) {
   return spawnSync("bash", ["-euo", "pipefail", "-c", `${stub.prelude}\n${BLOCK}`], {
-    env: { ...process.env, APP_LAUNCHD_LABEL: "kr.ygrd.wagcrm.app", ...env },
+    env: { ...process.env, HOME: stub.home, APP_LAUNCHD_LABEL: "kr.ygrd.wagcrm.app", ...env },
     encoding: "utf8",
   });
 }
@@ -118,20 +134,56 @@ describe("deploy.sh — 배포는 워커도 새 코드로 다시 띄운다", () 
 
   it("PID 가 그대로면 배포를 세운다 — 옛 코드가 계속 도는 것을 성공으로 보고하지 않는다", () => {
     const stub = makeStub("stuck", "stuck");
-    const r = runBlock(stub);
+    // 대기 상한만 줄여 시간 초과 경로를 그대로 탄다(기본값 40 은 아래 계약이 지킨다).
+    const r = runBlock(stub, { WORKER_RESTART_WAIT_TRIES: "2" });
 
     expect(r.status).not.toBe(0);
     expect(`${r.stdout}${r.stderr}`).toContain("워커 PID");
     expect(`${r.stdout}${r.stderr}`).toContain("agent-worker.err.log");
+  });
+
+  it("기동 직후 PID 가 또 바뀌면 배포를 세운다 — crash loop 를 성공으로 기록하지 않는다", () => {
+    const stub = makeStub("crashloop", "crashloop");
+    const r = runBlock(stub);
+
+    expect(r.status).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain("crash loop");
   }, 30_000);
 
-  it("워커가 설치되지 않은 기계에서는 건너뛰고 배포를 계속한다", () => {
-    const stub = makeStub("missing", "missing");
+  it("워커를 운영하지 않는 기계(plist 없음)에서는 건너뛰고 배포를 계속한다", () => {
+    const stub = makeStub("noplist", "swap", { installPlist: false });
     const r = runBlock(stub);
 
     expect(r.status, `${r.stdout}${r.stderr}`).toBe(0);
     expect(r.stdout).toContain("건너뜀");
+    expect(existsSync(stub.calls)).toBe(false);
+  });
+
+  it("설치돼 있는데 내려가 있으면 건너뛰지 않고 배포를 세운다", () => {
+    // bootout 한 채 잊은 상태를 "미설치"로 오인해 지나가면, 이 가드가 없애려는
+    // 무증상 상태(배포는 성공인데 워커는 안 돎)가 그대로 재현된다.
+    const stub = makeStub("notloaded", "notloaded");
+    const r = runBlock(stub);
+
+    expect(r.status).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain("launchd 에 올라가 있지 않습니다");
     expect(readFileSync(stub.calls, "utf8")).not.toContain("kickstart");
+  });
+
+  it("PID 교체 대기 상한은 plist 의 ExitTimeOut 보다 길다", () => {
+    // 워커는 SIGTERM 뒤 lease 정리에 ExitTimeOut 까지 쓸 수 있다. 대기 상한이 그보다
+    // 짧으면 **정상 종료 중인 워커**를 "PID 안 바뀜"으로 오판해 배포를 세운다.
+    // 두 값이 서로 다른 파일에 있어 한쪽만 바뀌면 조용히 어긋난다 — 여기서 묶어 둔다.
+    const tries = Number(/WORKER_RESTART_WAIT_TRIES:-(\d+)/.exec(deploySrc)?.[1]);
+    const plist = readFileSync(
+      path.resolve(__dirname, "..", "..", "infra", "selfhost", "launchd", "kr.ygrd.wagcrm.agent-worker.plist"),
+      "utf8",
+    );
+    const exitTimeOut = Number(/<key>ExitTimeOut<\/key>\s*<integer>(\d+)<\/integer>/.exec(plist)?.[1]);
+
+    expect(tries, "deploy.sh 에서 대기 상한 기본값을 읽지 못했다").toBeGreaterThan(0);
+    expect(exitTimeOut, "plist 에서 ExitTimeOut 을 읽지 못했다").toBeGreaterThan(0);
+    expect(tries).toBeGreaterThan(exitTimeOut);
   });
 
   it("프리뷰 레인은 프로덕션 워커를 건드리지 않는다", () => {
