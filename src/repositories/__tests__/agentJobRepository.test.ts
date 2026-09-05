@@ -115,7 +115,7 @@ describe("AgentJobRepository", () => {
     );
   });
 
-  it("reclaims an orphaned FAILED_RETRYABLE row once its lease expires (audit 2026-09-05 #2)", async () => {
+  it("reclaims an orphaned FAILED_RETRYABLE row once its lease expires", async () => {
     // Worker died between the RUNNING -> FAILED_RETRYABLE write and its requeue.
     findFirstMock.mockResolvedValue({ ...persistedJob, status: "FAILED_RETRYABLE", workerId: "worker-1", attempt: 0 });
     updateManyMock.mockResolvedValue({ count: 1 });
@@ -127,7 +127,7 @@ describe("AgentJobRepository", () => {
     expect(findFirstMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          status: { in: ["CLAIMED", "RUNNING", "FAILED_RETRYABLE"] },
+          status: { in: ["CLAIMED", "RUNNING", "FAILED_RETRYABLE", "RESOURCE_DEFERRED"] },
           leaseExpiresAt: { lt: now },
         }),
       }),

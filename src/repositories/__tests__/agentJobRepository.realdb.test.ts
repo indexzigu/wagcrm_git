@@ -134,7 +134,7 @@ beforeEach(async () => {
 });
 
 describe("AgentJobRepository — SQLite lease and serialization regressions", () => {
-  it("requeues a FAILED_RETRYABLE row whose worker died before requeue (audit 2026-09-05 #2)", async () => {
+  it("requeues a FAILED_RETRYABLE row whose worker died before requeue", async () => {
     const { AgentJobRepository } = await import("../agentJobRepository");
     const now = new Date("2026-09-05T00:00:00.000Z");
     const orphan = await createJob({

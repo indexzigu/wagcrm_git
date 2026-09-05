@@ -269,12 +269,12 @@ export class AgentJobRepository {
     const prisma = getPrisma();
 
     return prisma.$transaction(async (tx) => {
-      // FAILED_RETRYABLE keeps its lease: the worker writes it and requeues in
-      // two calls, so a crash in between leaves the row here until the lease
-      // expires (audit 2026-09-05 #2, Task 8 ruling 35).
+      // FAILED_RETRYABLE / RESOURCE_DEFERRED keep their lease: the worker writes
+      // them and requeues in a second call, so a crash in between leaves the
+      // row here until the lease expires (audit 2026-09-05 #2, Task 8 ruling 35).
       const candidate = await tx.agentJob.findFirst({
         where: {
-          status: { in: ["CLAIMED", "RUNNING", "FAILED_RETRYABLE"] },
+          status: { in: ["CLAIMED", "RUNNING", "FAILED_RETRYABLE", "RESOURCE_DEFERRED"] },
           leaseExpiresAt: { lt: now },
         },
         orderBy: { leaseExpiresAt: "asc" },
