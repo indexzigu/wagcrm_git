@@ -449,6 +449,49 @@ if ! DATABASE_URL="$DATABASE_URL" node -e '
   exit 1
 fi
 
+# ── P0 안전장치 ⑤: 워커도 새 코드로 다시 띄운다.
+# 앱은 `.live/current` 릴리스를 서빙하지만 `agent-worker` 는 이 체크아웃을
+# (plist `WorkingDirectory` = 이 저장소) tsx 로 직접 읽는다. 즉 워커의 코드는 위
+# git 갱신 시점에 이미 바뀌어 있고, **프로세스를 다시 띄우기 전까지 메모리에는 옛
+# 코드가 남는다.** 실사고(2026-09-06, PR #36): 배포도 마커 갱신도 성공했고 파일도
+# 제자리에 있었지만 워커는 3일 전 기동분 그대로여서 수정이 동작하지 않았다 — 겉으로
+# 드러나는 신호가 하나도 없어, 사람이 프로세스 기동 시각을 직접 재고서야 알았다.
+# 판정 기준은 앱과 같다: kickstart 성공(명령이 받아들여짐)이 아니라 **PID 교체**
+# (새 프로세스가 실제로 떴음)를 본다.
+# ⛔ 프로덕션 레인에서만 돈다 — 프리뷰 레인이 프로덕션 워커를 재기동하면 프리뷰 배포가
+# 프로덕션 작업을 끊는다.
+if [ "$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app" ]; then
+  WORKER_LAUNCHD_LABEL="${WORKER_LAUNCHD_LABEL:-kr.ygrd.wagcrm.agent-worker}"
+  get_worker_pid() {
+    launchctl list "$WORKER_LAUNCHD_LABEL" 2>/dev/null \
+      | awk -F'= ' '/"PID"/ { gsub(/[; ]/, "", $2); print $2 }'
+  }
+  if ! launchctl list "$WORKER_LAUNCHD_LABEL" >/dev/null 2>&1; then
+    # launchd 가 "이 기계에 설치돼 있는가"의 정본이다. 워커를 안 쓰는 기계에서
+    # 배포가 실패하면 안 되므로 건너뛰되, 조용히 넘어가지는 않는다.
+    echo "[deploy] 워커 서비스 미설치 — 재기동 건너뜀 ($WORKER_LAUNCHD_LABEL)"
+  else
+    WORKER_PID_BEFORE="$(get_worker_pid || true)"
+    if ! launchctl kickstart -k "gui/$(id -u)/$WORKER_LAUNCHD_LABEL"; then
+      echo "중단: 워커 launchctl kickstart 명령이 실패했습니다 ($WORKER_LAUNCHD_LABEL)." >&2
+      exit 1
+    fi
+    WORKER_PID_AFTER=""
+    for _ in $(seq 1 10); do
+      sleep 1
+      WORKER_PID_AFTER="$(get_worker_pid || true)"
+      if [ -n "$WORKER_PID_AFTER" ] && [ "$WORKER_PID_AFTER" != "$WORKER_PID_BEFORE" ]; then
+        break
+      fi
+    done
+    if [ -z "$WORKER_PID_AFTER" ] || [ "$WORKER_PID_AFTER" = "$WORKER_PID_BEFORE" ]; then
+      echo "중단: 워커 PID 가 바뀌지 않았습니다(이전: ${WORKER_PID_BEFORE:-없음}) — 옛 코드가 계속 도는 채로 배포가 성공 보고될 뻔했습니다. ~/selfhost/logs/agent-worker.err.log 확인" >&2
+      exit 1
+    fi
+    echo "[deploy] 워커 PID 교체 확인: ${WORKER_PID_BEFORE:-없음} → $WORKER_PID_AFTER"
+  fi
+fi
+
 mkdir -p "$MARKER_DIR"
 printf '%s\n' "$AFTER" > "$MARKER_FILE"
 

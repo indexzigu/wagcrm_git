@@ -709,6 +709,13 @@ tail -n 50 ~/selfhost/logs/agent-worker.out.log
 launchctl kickstart -k "gui/$(id -u)/kr.ygrd.wagcrm.agent-worker"   # 재시작
 launchctl bootout "gui/$(id -u)/kr.ygrd.wagcrm.agent-worker"        # 완전 중지(등록 해제)
 ```
+⚠️ **배포는 이 재시작을 자동으로 한다** — `deploy.sh` 가 DB 프로브 뒤 마커 기록 앞에서
+워커를 `kickstart` 하고 PID 교체까지 확인한다(프로덕션 레인 한정). 위 명령은 배포와
+무관하게 손으로 재시작할 때만 쓴다.
+🪤 **왜 자동화했나(2026-09-06 실사고):** 앱은 `.live/current` 릴리스를 서빙하지만 워커는
+이 체크아웃을 tsx 로 직접 읽는다. 그래서 배포가 성공하고 마커가 갱신되고 파일도 제자리에
+있는데 **워커만 옛 코드로 계속 도는** 상태가 생겼다(PR #36, 워커가 3일 전 기동분 그대로).
+겉으로 드러나는 신호가 없어 프로세스 기동 시각을 직접 재야만 알 수 있었다.
 워커는 `SIGTERM` 을 받으면 자신이 쥔 lease 만 정리하고 종료한다
 (`scripts/agent-worker.ts` shutdown 경로) — plist 의 `ExitTimeOut` 30 초는
 그 정리 시간을 보장하기 위한 값이다.
@@ -737,7 +744,8 @@ build`, ⚠️ 이 빌드 안에서 마이그레이션이 실제로 적용되는
 → **완성된 산출물을 `.live/releases/<sha>` 로 옮기고 `.live/current` 심링크 교체**
 (2026-08-29 안전장치 ⑧ — 빌드가 서빙 중인 트리를 덮어쓰지 않게 한다)
 → `launchctl kickstart` 재시작 → **새 프로세스가 릴리스 경로로 떴는지 확인**
-→ `127.0.0.1:3000` 헬스체크 → DB 프로브 → 배포 마커 기록 → 오래된 릴리스 정리까지
+→ `127.0.0.1:3000` 헬스체크 → DB 프로브 → **Agent Worker 재기동(PID 교체 확인)**
+→ 배포 마커 기록 → 오래된 릴리스 정리까지
 한 번에 끝낸다. 기존 promote 레인(main → release)은 그대로 두고, **release 를
 소비하는 쪽만** Vercel 에서 이 스크립트로 바뀐다.
 
