@@ -227,9 +227,44 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     }
   }, [refreshReport]);
 
+  // 캠페인이 바뀌면 리포트를 다시 읽는다. ⚠️ 상위 콜백은 **행 하나**를 넘기는 계약이라
+  // (`lib/campaign-row-refresh`) 그룹 묶기·합류·제외처럼 한 조작이 여러 행을 바꾸면
+  // 같은 틱 안에서 **바뀐 행 수만큼** 연달아 불린다. 그런데 리포트는 행이 아니라
+  // **현재 필터**로 조회하는 화면 전체 값이라, 콜백마다 부르면 같은 응답을 건수만큼
+  // 다시 받는다(3건을 묶으면 3회 — T-096. 결과가 같아 화면은 멀쩡하고 대기·왕복만 는다).
+  // 그래서 콜백은 fetch 를 직접 걸지 않고 이 카운터만 올린다 — React 가 한 틱의 상태
+  // 갱신을 한 번의 렌더로 접으므로(0→3) 이 effect 는 **한 번만** 돈다.
+  // ⛔ 디바운스 타이머로 바꾸지 말 것: 묶어야 하는 것은 "잠깐 사이의 연타"가 아니라
+  // **한 틱 안의 팬아웃**이고, 타이머를 두면 대기 시간에 따라 동작이 갈린다
+  // (`InlineDateField` 가 같은 이유로 타이머를 버렸다).
+  const [reportRefreshNonce, setReportRefreshNonce] = useState(0);
+  const requestReportRefresh = useCallback(() => {
+    setReportRefreshNonce((nonce) => nonce + 1);
+  }, []);
+
   useEffect(() => {
     void refreshReport();
-  }, [refreshReport]);
+  }, [refreshReport, reportRefreshNonce]);
+
+  /**
+   * 패널에서 캠페인 한 건이 저장·갱신됐다. 두 prop 이 같은 일을 하므로 핸들러는 **하나만**
+   * 둔다 — 사본을 두면 한쪽만 고쳐진다(실제로 이 자리가 그렇게 갈릴 뻔했다).
+   * ℹ️ `onActualSalesSaved` 는 지금 **도달하지 않는다** — `CampaignSidePanel` 이 그 prop 을
+   * `_onActualSalesSaved` 로 받아 `void` 로 버린다(`campaign-side-panel.tsx` 에서 직접 확인
+   * 가능한 좌표다. 처분은 로컬 티켓 보드 T-103 — 레포에는 이 줄 말고 흔적이 없다).
+   * 살아 있는 경로는 `onCampaignUpdated` 하나다.
+   */
+  const handleCampaignSaved = useCallback(
+    (campaign: CampaignRow) => {
+      syncUpdatedCampaign(campaign);
+      setData((prev) => ({
+        ...prev,
+        campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
+      }));
+      requestReportRefresh();
+    },
+    [syncUpdatedCampaign, requestReportRefresh],
+  );
 
   const filteredCampaigns = useMemo(() => {
     const allowedIds = new Set(reportData?.campaigns.map((campaign) => campaign.id) ?? []);
@@ -624,22 +659,8 @@ interface CsvRow {
         storage={initialData.storage}
         open={panelOpen}
         onOpenChange={setPanelOpen}
-        onActualSalesSaved={(campaign) => {
-          syncUpdatedCampaign(campaign);
-          setData((prev) => ({
-            ...prev,
-            campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
-          }));
-          void refreshReport();
-        }}
-        onCampaignUpdated={(campaign) => {
-          syncUpdatedCampaign(campaign);
-          setData((prev) => ({
-            ...prev,
-            campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
-          }));
-          void refreshReport();
-        }}
+        onActualSalesSaved={handleCampaignSaved}
+        onCampaignUpdated={handleCampaignSaved}
         title="정산관리 캠페인 상세 페이지"
         description="캠페인의 정산 및 재무 내역을 확인하고 설정을 관리합니다."
         settlementWorkspace

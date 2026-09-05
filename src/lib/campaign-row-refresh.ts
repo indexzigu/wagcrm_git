@@ -61,6 +61,15 @@ async function fetchCampaignRow(campaignId: string): Promise<CampaignRow | null>
  * 반환값은 **다시 읽지 못한 건수**다. 0 이 아니면 호출부가 사용자에게 알린다.
  * 같은 id 가 여러 번 들어와도 한 번만 읽는다(호출부가 「해체 전 멤버 + 현재 캠페인」처럼
  * 겹칠 수 있는 목록을 만들기 때문이다).
+ *
+ * ⛔ **`onRow` 호출 **사이**에 `await` 를 두지 말 것 — 흘려보내기는 한 틱 안에서 끝나야
+ * 한다.** (루프 **이전**의 행별 fetch 를 직렬화하는 것은 이 조항 밖이다.)
+ * 이 모듈은 소비처가 넷이라 조항의 협상 상대를 밝혀 둔다 — **정산 페이지**가 이 동기성
+ * 위에서 「콜백 N 회 → 리포트 조회 1회」를 접는다(T-096. 사유·계측의 정본은
+ * `src/app/settlement/settlement-page-client.tsx` 의 리포트 재조회 주석이다).
+ * ⚠️ 「콜백 사이에 틱이 끼면 그 접기가 풀린다」는 **그쪽의 전제이지 계측된 인과가 아니다**
+ * — 다만 풀려도 화면 결과는 같아 **증상이 조회 횟수로만 드러나므로** 보수적으로 잠근다.
+ * 고정은 `campaign-row-refresh.test.ts` 「한 틱 안에서」.
  */
 export async function refreshCampaignRows(
   campaignIds: string[],

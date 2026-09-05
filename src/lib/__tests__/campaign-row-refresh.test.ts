@@ -75,4 +75,24 @@ describe("refreshCampaignRows", () => {
     expect(seen).toHaveLength(0);
   });
 
+  it("행들을 한 틱 안에서 흘려보낸다 — 소비처가 그 동기성에 기대 재조회를 접는다", async () => {
+    // 사유·협상 상대는 모듈 docstring 의 ⛔ 항목이 정본이다(여기서 다시 적지 않는다).
+    // 계측: 첫 행에서 마이크로태스크를 걸고 그것이 **마지막 행보다 뒤에** 도는지 본다.
+    // 🪤 무장을 `order.length === 0` 으로 하지 말 것 — 훗날 첫 행을 실패로 바꾸는 픽스처가
+    //    오면 첫 간극이 **조용히** 무검사가 된다. 고정 id 로 무장하면 그때 기대 배열이
+    //    어긋나 시끄럽게 실패한다.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: unknown) => ok({ id: String(url).replace("/api/campaigns/", "") })),
+    );
+    const order: string[] = [];
+
+    await refreshCampaignRows(["a", "b", "c"], (row) => {
+      if (row.id === "a") queueMicrotask(() => order.push("microtask"));
+      order.push(row.id);
+    });
+
+    expect(order).toEqual(["a", "b", "c", "microtask"]);
+  });
+
 });
