@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CampaignGroupMemberRow, CampaignRow } from "@/lib/crm-types";
 
 vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
 }));
 
 import { CampaignGroupSection } from "../campaign-group-section";
@@ -72,6 +72,7 @@ function stubDetail(members: CampaignGroupMemberRow[]) {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  onGroupMembershipChanged.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -95,5 +96,104 @@ describe("그룹 멤버 목록 — 브랜드·거래처 표기", () => {
 
     expect(await screen.findByText("뉴트리원")).toBeInTheDocument();
     expect(screen.queryByText("뉴트리원 - 뉴트리원")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 멤버를 빼면 **바뀐 행 전부**가 상위로 올라가는지 본다.
+ *
+ * 상위 콜백은 행 하나를 교체하는 계약이라 목록이 스스로 따라오지 않는다(섹션의
+ * `refreshCampaigns` 주석). 2건짜리 그룹은 하나만 빼도 **해체**되어 남은 캠페인까지
+ * 미그룹이 되는데, 현재 캠페인만 갱신하면 남은 행은 새로고침 전까지 보드에 그룹
+ * 배지를 그대로 달고 있다. 묶는 쪽의 같은 결함은 이미 고쳐졌고 빼는 쪽만 남아 있었다.
+ */
+const onGroupMembershipChanged = vi.fn();
+
+/** 그룹 상세 조회 · 멤버 제외 PATCH · 캠페인 재조회를 URL·method 로 가른다. */
+function stubRemoval(members: CampaignGroupMemberRow[], patchResult: unknown) {
+  fetchMock.mockImplementation((input: unknown, init?: { method?: string }) => {
+    const url = String(input);
+    const json = (body: unknown) =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+
+    if (url.includes("/api/campaign-groups/g1")) {
+      if (init?.method === "PATCH") return json(patchResult);
+      return json({
+        id: "g1",
+        sellerId: "s1",
+        sellerName: "테스트셀러",
+        name: null,
+        startDate: "2026-08-18",
+        endDate: "2026-08-21",
+        memberCount: members.length,
+        memberCampaignIds: members.map((m) => m.campaignId),
+        members,
+      });
+    }
+    // 재조회는 요청한 id 를 그대로 돌려줘야 전파 단언이 의미를 갖는다.
+    const id = url.replace("/api/campaigns/", "");
+    return json({ ...groupedCampaign(), id, groupId: null });
+  });
+}
+
+describe("멤버 제외 후 목록 동기화", () => {
+  it("그룹이 해체되면 남은 캠페인까지 다시 읽어 상위로 올린다", async () => {
+    const sibling = member({ campaignId: "c-sibling", dealName: "콜라겐" });
+    stubRemoval([member(), sibling], { dissolved: true });
+    render(
+      <CampaignGroupSection
+        campaign={groupedCampaign()}
+        onGroupMembershipChanged={onGroupMembershipChanged}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "콜라겐 캠페인을 그룹에서 제외" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "제외하고 그룹 해제" }),
+    );
+
+    // 해체는 **전원**의 groupId 를 null 로 만든다 — 뺀 쪽만 올리면 남은 행의
+    // 그룹 배지가 새로고침 전까지 거짓말을 한다(이 티켓의 증상 그대로).
+    await waitFor(() => {
+      const propagated = onGroupMembershipChanged.mock.calls.map(([row]) => row.id).sort();
+      expect(propagated).toEqual(["c-current", "c-sibling"]);
+    });
+  });
+
+  it("그룹이 남으면 제외된 캠페인을 다시 읽는다", async () => {
+    const sibling = member({ campaignId: "c-sibling", dealName: "콜라겐" });
+    const third = member({ campaignId: "c-third", dealName: "비오틴" });
+    stubRemoval([member(), sibling, third], {
+      dissolved: false,
+      id: "g1",
+      sellerId: "s1",
+      sellerName: "테스트셀러",
+      name: null,
+      startDate: "2026-08-18",
+      endDate: "2026-08-21",
+      memberCount: 2,
+      memberCampaignIds: ["c-current", "c-third"],
+      members: [member(), third],
+    });
+    render(
+      <CampaignGroupSection
+        campaign={groupedCampaign()}
+        onGroupMembershipChanged={onGroupMembershipChanged}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "콜라겐 캠페인을 그룹에서 제외" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "제외" }));
+
+    // 해체가 아니어도 **뺀 캠페인**의 groupId 는 바뀐다 — 종전에는 현재 캠페인만
+    // 갱신해서 뺀 행이 목록에 그룹 소속으로 남았다.
+    await waitFor(() => {
+      const propagated = onGroupMembershipChanged.mock.calls.map(([row]) => row.id).sort();
+      expect(propagated).toEqual(["c-current", "c-sibling"]);
+    });
   });
 });

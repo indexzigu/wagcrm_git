@@ -264,6 +264,9 @@ export function CampaignGroupSection({
 
   async function handleRemove(member: CampaignGroupMemberRow) {
     if (!groupId) return;
+    // 제외 **전** 멤버 명단을 미리 확보한다 — 해체되면 이 전원이 미그룹으로 바뀌는데,
+    // 아래 await 뒤에는 `setDetail(null)` 로 명단을 읽을 곳이 사라진다.
+    const memberIdsBeforeRemoval = detail?.members.map((m) => m.campaignId) ?? [];
     setRemovingId(member.campaignId);
     try {
       const result = await removeGroupMember(groupId, member.campaignId);
@@ -278,7 +281,23 @@ export function CampaignGroupSection({
         setDetail(result.group);
         toast.success(`${member.dealName}을 그룹에서 제외했습니다.`);
       }
-      await refreshCampaigns([campaign.id]);
+      // ⛔ 현재 캠페인만 갱신하지 말 것 — 해체는 **남은 멤버까지** 미그룹으로 만들고,
+      // 형제를 뺀 경우엔 그 형제의 groupId 가 바뀐다. 상위는 행 하나씩만 교체하므로
+      // (위 refreshCampaigns 주석) 빠뜨린 행은 새로고침 전까지 보드에 그룹 배지를
+      // 그대로 달고 있어 실제와 다르게 보인다.
+      const affectedIds = [
+        ...new Set(
+          result.dissolved
+            ? [...memberIdsBeforeRemoval, campaign.id]
+            : [member.campaignId, campaign.id],
+        ),
+      ];
+      const failed = await refreshCampaigns(affectedIds);
+      if (failed > 0) {
+        // 제외 자체는 성공했다. 조용히 두면 고치려던 "배지가 거짓말하는" 상태가
+        // 다른 이유로 그대로 재현된다(handleCombine 과 같은 규율).
+        toast.warning("제외는 끝났지만 목록 갱신이 일부 실패했습니다. 새로고침해 주세요.");
+      }
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
