@@ -37,6 +37,10 @@ import {
   expandYmdRangeByWindow,
   GROUP_WINDOW_DAYS,
 } from "@/lib/campaign-group-clustering";
+import {
+  LIST_REFRESH_FAILED_MESSAGE,
+  refreshCampaignRows,
+} from "@/lib/campaign-row-refresh";
 import { cn } from "@/lib/utils";
 import type {
   CampaignCombineCandidateRow,
@@ -174,26 +178,8 @@ export function CampaignGroupSection({
    * 배지가 거짓말을 한다(방금 묶은 것이 안 묶인 것처럼 보인다).
    */
   const refreshCampaigns = useCallback(
-    async (campaignIds: string[]) => {
-      const rows = await Promise.all(
-        campaignIds.map(async (id) => {
-          try {
-            const res = await fetch(`/api/campaigns/${id}`, { cache: "no-store" });
-            if (!res.ok) return null;
-            return (await res.json()) as CampaignRow;
-          } catch {
-            // 비차단 — 상위 동기화 실패해도 섹션 로컬 상태는 이미 갱신됨.
-            return null;
-          }
-        }),
-      );
-      let failed = 0;
-      for (const row of rows) {
-        if (row) onGroupMembershipChanged?.(row);
-        else failed += 1;
-      }
-      return failed;
-    },
+    (campaignIds: string[]) =>
+      refreshCampaignRows(campaignIds, (row) => onGroupMembershipChanged?.(row)),
     [onGroupMembershipChanged],
   );
 
@@ -207,11 +193,21 @@ export function CampaignGroupSection({
   async function handleJoin(group: CampaignGroupRow) {
     setJoiningGroupId(group.id);
     try {
-      await joinCampaignToGroup(group.id, campaign.id);
+      const joined = await joinCampaignToGroup(group.id, campaign.id);
       setBanner(null);
       setPickerOpen(false);
       toast.success("그룹에 합류했습니다.");
-      await refreshCampaigns([campaign.id]);
+      // ⛔ 현재 캠페인만 갱신하지 말 것 — 합류는 **기존 멤버들의 배지 숫자**
+      // (`groupMemberCount`)도 하나 늘린다. 응답이 합류 후 멤버 전원을 싣고 있으므로
+      // 그대로 쓴다(제외 경로와 같은 규칙 — 「바뀐 행 전부」).
+      const failed = await refreshCampaigns([
+        campaign.id,
+        ...joined.members.map((m) => m.campaignId),
+      ]);
+      if (failed > 0) {
+        // 합류 자체는 성공했다 — 삼키면 배지가 거짓말하는 상태로 조용히 남는다.
+        toast.warning(LIST_REFRESH_FAILED_MESSAGE);
+      }
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
@@ -240,7 +236,7 @@ export function CampaignGroupSection({
       if (failed > 0) {
         // 묶기 자체는 성공했다. 다만 목록이 못 따라왔으므로 그 사실을 말한다 —
         // 조용히 두면 방금 묶은 캠페인이 안 묶인 것처럼 보이는 상태로 남는다.
-        toast.warning("묶기는 끝났지만 목록 갱신이 일부 실패했습니다. 새로고침해 주세요.");
+        toast.warning(LIST_REFRESH_FAILED_MESSAGE);
       }
     } catch (err) {
       toast.error(
@@ -284,29 +280,23 @@ export function CampaignGroupSection({
         setDetail(result.group);
         toast.success(`${member.dealName}을 그룹에서 제외했습니다.`);
       }
-      // ⛔ 현재 캠페인만 갱신하지 말 것 — 해체는 **남은 멤버까지** 미그룹으로 만들고,
-      // 형제를 뺀 경우엔 그 형제의 groupId 가 바뀐다. 상위는 행 하나씩만 교체하므로
-      // (위 refreshCampaigns 주석) 빠뜨린 행은 새로고침 전까지 보드에 그룹 배지를
-      // 그대로 달고 있어 실제와 다르게 보인다.
-      // ℹ️ **이 화면에서만 두 갈래의 결과가 같다** — 여기서는 한 번에 1건씩 빼고
-      // (`removeGroupMember`) 서버는 남는 멤버가 1건 이하일 때 해체하므로, 해체는 곧
-      // "2건짜리에서 하나를 뺐다"이고 제외 전 명단이 그대로 [뺀 멤버, 현재]가 된다.
-      // ⛔ 같다는 이유로 접지 말 것 — 그 일치는 **호출부가 1건씩 보낸다는 사실**에
-      // 기대고 있는데, 서버 계약은 이미 복수다(`removeCampaignIds` 는 배열,
-      // `campaignGroupService.removeMembers(groupId, campaignIds[])`). 3건에서 2건을
-      // 한 번에 빼면 오늘도 해체가 나고, 그때 접힌 코드는 남은 1건을 빠뜨린다.
-      const affectedIds = [
-        ...new Set(
-          result.dissolved
-            ? [...memberIdsBeforeRemoval, campaign.id]
-            : [member.campaignId, campaign.id],
-        ),
-      ];
-      const failed = await refreshCampaigns(affectedIds);
+      // ⛔ 현재 캠페인만 갱신하지 말 것 — 상위는 행 하나씩만 교체하므로(위
+      // refreshCampaigns 주석) 빠뜨린 행은 새로고침 전까지 보드에서 실제와 다르게 보인다.
+      //
+      // **해체든 아니든 갱신 대상은 「제외 전 멤버 전원」으로 같다** — 갈래가 다른 것은
+      // 무엇이 바뀌는가이지 누가 바뀌는가가 아니다:
+      //   · 해체  → 전원의 `groupId` 가 null 이 된다.
+      //   · 존속  → 뺀 멤버는 `groupId` 가 null 이 되고, **남은 형제들은 배지 숫자**
+      //             (`groupMemberCount`)가 하나 줄어든다.
+      // ⚠️ 아래쪽(존속 시 형제 갱신)은 **T-100 이 착지한 뒤에야 옳아졌다.** 그전에는
+      // `CAMPAIGN_DETAIL_INCLUDE` 가 `_count` 를 안 실어서 형제를 다시 읽으면 숫자가
+      // 고쳐지는 게 아니라 **사라졌다** — 그래서 일부러 형제를 빼고 있었다.
+      // ⛔ 그 시절 코드로 되돌리지 말 것(형제를 빼면 숫자가 낡은 채로 남는다).
+      const failed = await refreshCampaigns([...memberIdsBeforeRemoval, campaign.id]);
       if (failed > 0) {
         // 제외 자체는 성공했다. 조용히 두면 고치려던 "배지가 거짓말하는" 상태가
         // 다른 이유로 그대로 재현된다(handleCombine 과 같은 규율).
-        toast.warning("제외는 끝났지만 목록 갱신이 일부 실패했습니다. 새로고침해 주세요.");
+        toast.warning(LIST_REFRESH_FAILED_MESSAGE);
       }
     } catch (err) {
       toast.error(

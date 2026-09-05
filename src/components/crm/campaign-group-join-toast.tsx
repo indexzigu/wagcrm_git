@@ -21,7 +21,14 @@ import {
  */
 export async function maybeSuggestGroupJoin(
   campaign: CampaignRow,
-  options?: { onJoined?: (campaignId: string) => void },
+  options?: {
+    /**
+     * 합류 후 **다시 읽어야 할 캠페인 id 전부**(합류한 캠페인 + 기존 멤버들).
+     * ⛔ 합류한 캠페인 하나만 넘기지 말 것 — 합류는 기존 멤버들의 배지 숫자
+     * (`groupMemberCount`)도 늘리므로, 그 행들을 안 읽으면 보드에 낡은 숫자가 남는다.
+     */
+    onJoined?: (campaignIds: string[]) => void;
+  },
 ): Promise<void> {
   if (campaign.groupId) return; // 이미 그룹 소속 — 합류 제안 없음.
 
@@ -53,9 +60,12 @@ export async function maybeSuggestGroupJoin(
       onClick: () => {
         void (async () => {
           try {
-            await joinCampaignToGroup(representative.id, campaign.id);
+            const joined = await joinCampaignToGroup(representative.id, campaign.id);
             toast.success("그룹에 합류했습니다.");
-            options?.onJoined?.(campaign.id);
+            options?.onJoined?.([
+              campaign.id,
+              ...joined.members.map((m) => m.campaignId),
+            ]);
           } catch {
             toast.error("합류하지 못했습니다. 다시 시도해 주세요.");
           }

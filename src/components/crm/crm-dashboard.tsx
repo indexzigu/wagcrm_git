@@ -27,6 +27,10 @@ import { getZoneCounts } from "@/lib/zone-config";
 import { loadZoneViewMode } from "@/lib/zone-settings";
 import { applyPipelineFilters } from "@/lib/pipeline-filters";
 import { patchCampaign } from "@/lib/campaign-patch";
+import {
+  LIST_REFRESH_FAILED_MESSAGE,
+  refreshCampaignRows,
+} from "@/lib/campaign-row-refresh";
 import { toast } from "sonner";
 import { useStageFilter, type StageFilter } from "@/hooks/use-stage-filter";
 import { useCampaignDeepLink } from "@/hooks/use-campaign-deep-link";
@@ -622,13 +626,12 @@ export function CrmDashboard({
           prependCampaignRow(campaign);
           // 표면 ⓑ — 단건 생성 직후 겹치는 그룹이 있으면 지속 토스트로 합류 제안.
           void maybeSuggestGroupJoin(campaign, {
-            onJoined: async (campaignId) => {
-              try {
-                const res = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" });
-                if (res.ok) replaceCampaignRow((await res.json()) as CampaignRow);
-              } catch {
-                // 비차단 — 배지 동기화 실패해도 합류는 성공.
-              }
+            onJoined: async (campaignIds) => {
+              // ⛔ 실패를 삼키지 말 것 — 합류는 이미 끝났으므로 이건 「실패」가 아니라
+              // 「보드가 낡았다」다. 조용히 두면 방금 묶인 캠페인이 안 묶인 것처럼 보이고,
+              // 기존 멤버의 배지 숫자도 하나 모자란 채로 남는다.
+              const failed = await refreshCampaignRows(campaignIds, replaceCampaignRow);
+              if (failed > 0) toast.warning(LIST_REFRESH_FAILED_MESSAGE);
             },
           });
         }}

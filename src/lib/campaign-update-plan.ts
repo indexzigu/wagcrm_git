@@ -145,7 +145,8 @@ function resolveSharedSettlementDate(
  * 인 날짜 문자열이고 이전값은 Date 다).
  *
  * ℹ️ 이전값의 `undefined` 는 null 과 같게(= 비어 있음) 본다. 프로덕션의 `previous` 는
- * `CAMPAIGN_DETAIL_INCLUDE`(`group: true`)로 조회한 **전체 행**이라 컬럼이 빠질 일이 없지만,
+ * `CAMPAIGN_DETAIL_INCLUDE`(`group` 을 `include` 로 통째로 싣는다)로 조회한 **전체 행**이라
+ * 컬럼이 빠질 일이 없지만,
  * 부분 객체가 들어와도 판정이 터지지 않고 **거짓 양성(변경으로 봄) 쪽으로만** 기울게 한다 —
  * 거짓 음성(실제 변경을 무변경으로 봄)은 이력 유실이라 반대 방향보다 나쁘다.
  */
