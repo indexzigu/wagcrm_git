@@ -123,6 +123,13 @@ resolve_live_sha() {
 
 # evaluate_vercel <target_sha> → 한 단어 stdout: live | pending | notpromoted | failed
 # 구 플랫폼(롤백 창구) 레인 판정. 종전 `evaluate` 를 이름만 바꾼 것이고 내용은 무수정이다.
+#
+# ⚠️ **두 레인의 계약은 여기서 비대칭이다(T-104, 의도적 스코프).** 기본(셀프호스트) 레인은
+# 마커와 **공통 조상이 없으면** `unverifiable`(exit 5)을 내는데, 이쪽은 그 경우에도
+# `notpromoted`(exit 3)로 떨어진다 — 즉 이력이 갈린 구 커밋에 "안 실렸다"고 단정한다.
+# 같은 부류의 결함이지만 이 레인은 **은퇴한 롤백 창구**라 평시 소비자가 없고, 실제로
+# 롤백을 올릴 때가 아니면 실행 검증도 못 한다. 그래서 이번에는 **고치지 않고 적어 둔다** —
+# 롤백을 실제로 올리면서 구 커밋을 조회하게 되면 그때 같은 가드를 넣을 것.
 evaluate_vercel() {
   local target="$1" live_sha lane_ref="refs/remotes/$REMOTE/$LANE" tip tip_st
   if live_sha=$(resolve_live_sha); then
@@ -347,7 +354,9 @@ if [ "$MODE" = "--check" ]; then
     unverifiable)
       # ⚠️ 3(아직) 으로 접지 말 것 — 모르는 것을 "안 실렸다"로 답하면 멀쩡한 기능에
       # 재착수가 걸린다. 판정 불가는 별도 코드로 표면화한다.
-      echo "🌫️ 배포 판정 불가: $SHORT — 위 사유 참조. **미배포가 아니다**(마커는 프로덕션 호스트에만 있다). 롤백 창구를 보려면 --lane vercel." >&2
+      # ⚠️ 사유를 여기서 **단정하지 않는다** — 판정 불가는 마커 부재만이 아니라 이력이
+      # 갈린 구 커밋(T-104)에서도 나온다. 실제 사유는 바로 위 줄이 이미 말했다.
+      echo "🌫️ 배포 판정 불가: $SHORT — 위 사유 참조(마커를 못 읽었거나, 이력이 갈려 대조가 성립하지 않는다). **미배포가 아니다.** 롤백 창구를 보려면 --lane vercel." >&2
       exit 5 ;;
     pending)
       echo "⏳ 승격됨 · 배포 빌드 진행 중: $SHORT (아직 prod 아님)"
