@@ -76,10 +76,11 @@ describe("refreshCampaignRows", () => {
   });
 
   it("행들을 한 틱 안에서 흘려보낸다 — 소비처가 그 동기성에 기대 재조회를 접는다", async () => {
-    // T-096: 정산 페이지는 「콜백 N 회 → 리포트 조회 1회」를 React 배칭으로 접는데,
-    // 그 전제가 이 루프의 동기성이다. 행마다 await 로 쪼개면 콜백 사이에 마이크로태스크가
-    // 끼어 렌더가 갈리고 중복 조회가 되살아나는데, 화면 결과는 같아 조회 횟수로만 드러난다.
-    // 그래서 첫 행에서 마이크로태스크를 걸어 두고, 그것이 **마지막 행보다 뒤에** 도는지 본다.
+    // 사유·협상 상대는 모듈 docstring 의 ⛔ 항목이 정본이다(여기서 다시 적지 않는다).
+    // 계측: 첫 행에서 마이크로태스크를 걸고 그것이 **마지막 행보다 뒤에** 도는지 본다.
+    // 🪤 무장을 `order.length === 0` 으로 하지 말 것 — 훗날 첫 행을 실패로 바꾸는 픽스처가
+    //    오면 첫 간극이 **조용히** 무검사가 된다. 고정 id 로 무장하면 그때 기대 배열이
+    //    어긋나 시끄럽게 실패한다.
     vi.stubGlobal(
       "fetch",
       vi.fn((url: unknown) => ok({ id: String(url).replace("/api/campaigns/", "") })),
@@ -87,7 +88,7 @@ describe("refreshCampaignRows", () => {
     const order: string[] = [];
 
     await refreshCampaignRows(["a", "b", "c"], (row) => {
-      if (order.length === 0) queueMicrotask(() => order.push("microtask"));
+      if (row.id === "a") queueMicrotask(() => order.push("microtask"));
       order.push(row.id);
     });
 

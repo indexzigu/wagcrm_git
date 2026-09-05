@@ -250,7 +250,9 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
    * 패널에서 캠페인 한 건이 저장·갱신됐다. 두 prop 이 같은 일을 하므로 핸들러는 **하나만**
    * 둔다 — 사본을 두면 한쪽만 고쳐진다(실제로 이 자리가 그렇게 갈릴 뻔했다).
    * ℹ️ `onActualSalesSaved` 는 지금 **도달하지 않는다** — `CampaignSidePanel` 이 그 prop 을
-   * 받아 그대로 버린다(T-103). 살아 있는 경로는 `onCampaignUpdated` 하나다.
+   * `_onActualSalesSaved` 로 받아 `void` 로 버린다(`campaign-side-panel.tsx` 에서 직접 확인
+   * 가능한 좌표다. 처분은 로컬 티켓 보드 T-103 — 레포에는 이 줄 말고 흔적이 없다).
+   * 살아 있는 경로는 `onCampaignUpdated` 하나다.
    */
   const handleCampaignSaved = useCallback(
     (campaign: CampaignRow) => {
