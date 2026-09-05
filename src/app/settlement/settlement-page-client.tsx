@@ -246,6 +246,24 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     void refreshReport();
   }, [refreshReport, reportRefreshNonce]);
 
+  /**
+   * 패널에서 캠페인 한 건이 저장·갱신됐다. 두 prop 이 같은 일을 하므로 핸들러는 **하나만**
+   * 둔다 — 사본을 두면 한쪽만 고쳐진다(실제로 이 자리가 그렇게 갈릴 뻔했다).
+   * ℹ️ `onActualSalesSaved` 는 지금 **도달하지 않는다** — `CampaignSidePanel` 이 그 prop 을
+   * 받아 그대로 버린다(T-103). 살아 있는 경로는 `onCampaignUpdated` 하나다.
+   */
+  const handleCampaignSaved = useCallback(
+    (campaign: CampaignRow) => {
+      syncUpdatedCampaign(campaign);
+      setData((prev) => ({
+        ...prev,
+        campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
+      }));
+      requestReportRefresh();
+    },
+    [syncUpdatedCampaign, requestReportRefresh],
+  );
+
   const filteredCampaigns = useMemo(() => {
     const allowedIds = new Set(reportData?.campaigns.map((campaign) => campaign.id) ?? []);
     return data.campaigns.filter((c) => allowedIds.has(c.id));
@@ -639,22 +657,8 @@ interface CsvRow {
         storage={initialData.storage}
         open={panelOpen}
         onOpenChange={setPanelOpen}
-        onActualSalesSaved={(campaign) => {
-          syncUpdatedCampaign(campaign);
-          setData((prev) => ({
-            ...prev,
-            campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
-          }));
-          requestReportRefresh();
-        }}
-        onCampaignUpdated={(campaign) => {
-          syncUpdatedCampaign(campaign);
-          setData((prev) => ({
-            ...prev,
-            campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
-          }));
-          requestReportRefresh();
-        }}
+        onActualSalesSaved={handleCampaignSaved}
+        onCampaignUpdated={handleCampaignSaved}
         title="정산관리 캠페인 상세 페이지"
         description="캠페인의 정산 및 재무 내역을 확인하고 설정을 관리합니다."
         settlementWorkspace

@@ -61,6 +61,12 @@ async function fetchCampaignRow(campaignId: string): Promise<CampaignRow | null>
  * 반환값은 **다시 읽지 못한 건수**다. 0 이 아니면 호출부가 사용자에게 알린다.
  * 같은 id 가 여러 번 들어와도 한 번만 읽는다(호출부가 「해체 전 멤버 + 현재 캠페인」처럼
  * 겹칠 수 있는 목록을 만들기 때문이다).
+ *
+ * ⛔ **행마다 `await` 하도록 바꾸지 말 것 — 흘려보내기는 한 틱 안에서 끝나야 한다.**
+ * 정산 페이지가 그 동기성에 기대 「콜백 N 회 → 리포트 조회 1회」로 접는다(T-096: 3건을
+ * 묶으면 조회가 3번 나갔다). 루프를 쪼개면 콜백마다 렌더가 갈려 중복 조회가 되살아나는데,
+ * **화면 결과는 같아 증상이 조회 횟수로만 드러난다** — 그래서 아래 테스트가 이 동기성
+ * 자체를 고정한다(`campaign-row-refresh.test.ts` 「한 틱 안에서」).
  */
 export async function refreshCampaignRows(
   campaignIds: string[],
