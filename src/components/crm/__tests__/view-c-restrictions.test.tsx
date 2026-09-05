@@ -247,7 +247,6 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
         storage={{ supabaseLimitBytes: 0, supabaseWarningBytes: 0, supabaseEstimatedBytes: 0, googleDriveConnected: false, recentAssets: [] }}
         open={true}
         onOpenChange={vi.fn()}
-        onActualSalesSaved={vi.fn()}
         onCampaignUpdated={vi.fn()}
         viewMode="VIEW_C"
       />,
@@ -340,7 +339,6 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
         storage={{ supabaseLimitBytes: 0, supabaseWarningBytes: 0, supabaseEstimatedBytes: 0, googleDriveConnected: false, recentAssets: [] }}
         open={true}
         onOpenChange={vi.fn()}
-        onActualSalesSaved={vi.fn()}
         onCampaignUpdated={onCampaignUpdated}
         viewMode="VIEW_C"
       />,

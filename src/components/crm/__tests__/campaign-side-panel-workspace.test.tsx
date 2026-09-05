@@ -93,7 +93,6 @@ function renderPanel(
       storage={storage}
       open={true}
       onOpenChange={vi.fn()}
-      onActualSalesSaved={vi.fn()}
       onCampaignUpdated={vi.fn()}
       {...props}
     />,

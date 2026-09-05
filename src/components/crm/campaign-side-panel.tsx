@@ -340,7 +340,16 @@ type CampaignSidePanelProps = {
   storage: StorageSummary;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onActualSalesSaved: (campaign: CampaignRow) => void;
+  /**
+   * 이 패널과 그 자식의 저장·갱신 통지가 모이는 **단일 창구**.
+   * 🪤 **어느 자리가 이걸 부르는지 주석에 열거하지 말 것** — 패널 본문과 자식을 합쳐
+   * 호출부가 수십 곳이라 목록은 태어나는 순간 낡는다(`codebase-map.md` 「낡은 주석이
+   * 오진의 출발점이 된다」). 실제 호출부는 `onCampaignUpdated(` 로 직접 센다.
+   * ⛔ **「실매출 저장 전용」 같은 두 번째 통지 prop 을 다시 만들지 말 것**(T-103) —
+   * 종전에 `onActualSalesSaved` 가 정확히 그 모양으로 있었는데 패널이 **한 번도 부르지
+   * 않았다.** 타입은 「prop 이 있는가」만 보고 결함은 「부르는가」 쪽에 있어 tsc·eslint 가
+   * 전부 초록이었고, 소비처 둘은 살아 있어 보이는 핸들러를 계속 넘기고 있었다.
+   */
   onCampaignUpdated: (campaign: CampaignRow) => void;
   /** CG-1: 그룹 섹션에서 형제 멤버로 패널을 스왑(미제공 시 멤버 행은 조회 전용). */
   onNavigateToCampaign?: (campaignId: string) => void;
@@ -360,7 +369,6 @@ export function CampaignSidePanel({
   storage,
   open,
   onOpenChange,
-  onActualSalesSaved: _onActualSalesSaved,
   onCampaignUpdated,
   onNavigateToCampaign,
   workspaceFilter,
@@ -371,7 +379,6 @@ export function CampaignSidePanel({
   settlementWorkspace = false,
 }: CampaignSidePanelProps) {
   const isDesktop = useDesktop();
-  void _onActualSalesSaved;
   const [noteContent, setNoteContent] = useState("");
   const [isSellerSearchOpen, setIsSellerSearchOpen] = useState(false);
   const [isDealSearchOpen, setIsDealSearchOpen] = useState(false);

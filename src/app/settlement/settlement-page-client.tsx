@@ -246,14 +246,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     void refreshReport();
   }, [refreshReport, reportRefreshNonce]);
 
-  /**
-   * 패널에서 캠페인 한 건이 저장·갱신됐다. 두 prop 이 같은 일을 하므로 핸들러는 **하나만**
-   * 둔다 — 사본을 두면 한쪽만 고쳐진다(실제로 이 자리가 그렇게 갈릴 뻔했다).
-   * ℹ️ `onActualSalesSaved` 는 지금 **도달하지 않는다** — `CampaignSidePanel` 이 그 prop 을
-   * `_onActualSalesSaved` 로 받아 `void` 로 버린다(`campaign-side-panel.tsx` 에서 직접 확인
-   * 가능한 좌표다. 처분은 로컬 티켓 보드 T-103 — 레포에는 이 줄 말고 흔적이 없다).
-   * 살아 있는 경로는 `onCampaignUpdated` 하나다.
-   */
+  /** 패널에서 캠페인 한 건이 저장·갱신됐다(통지 창구는 `onCampaignUpdated` 하나다). */
   const handleCampaignSaved = useCallback(
     (campaign: CampaignRow) => {
       syncUpdatedCampaign(campaign);
@@ -659,7 +652,6 @@ interface CsvRow {
         storage={initialData.storage}
         open={panelOpen}
         onOpenChange={setPanelOpen}
-        onActualSalesSaved={handleCampaignSaved}
         onCampaignUpdated={handleCampaignSaved}
         title="정산관리 캠페인 상세 페이지"
         description="캠페인의 정산 및 재무 내역을 확인하고 설정을 관리합니다."

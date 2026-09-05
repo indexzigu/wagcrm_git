@@ -103,7 +103,6 @@ function renderPanel(campaign: CampaignRow) {
       storage={storage}
       open
       onOpenChange={vi.fn()}
-      onActualSalesSaved={vi.fn()}
       onCampaignUpdated={vi.fn()}
       settlementWorkspace
     />,

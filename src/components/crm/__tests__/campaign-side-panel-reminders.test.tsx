@@ -86,7 +86,6 @@ function renderPanel(props: Partial<React.ComponentProps<typeof CampaignSidePane
     storage: emptyStorage,
     open: true,
     onOpenChange: vi.fn(),
-    onActualSalesSaved: vi.fn(),
     onCampaignUpdated: vi.fn(),
   };
   return render(<CampaignSidePanel {...defaultProps} {...props} />);

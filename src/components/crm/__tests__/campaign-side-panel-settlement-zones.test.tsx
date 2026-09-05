@@ -100,7 +100,6 @@ function renderCard(overrides: Partial<CampaignRow> = {}) {
       open
       settlementWorkspace
       onOpenChange={vi.fn()}
-      onActualSalesSaved={vi.fn()}
       onCampaignUpdated={vi.fn()}
     />,
   );
