@@ -109,7 +109,6 @@ function renderPanel(campaign: CampaignRow, onCampaignUpdated = vi.fn()) {
       storage={storage}
       open
       onOpenChange={vi.fn()}
-      onActualSalesSaved={vi.fn()}
       onCampaignUpdated={onCampaignUpdated}
       settlementWorkspace
     />,
@@ -173,7 +172,6 @@ describe("정산 정보 섹션 — 셀러/공급사 탭", () => {
         storage={storage}
         open
         onOpenChange={vi.fn()}
-        onActualSalesSaved={vi.fn()}
         onCampaignUpdated={vi.fn()}
         settlementWorkspace
       />,

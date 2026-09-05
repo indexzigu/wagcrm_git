@@ -660,9 +660,6 @@ export function CrmDashboard({
         storage={initialData.storage}
         open={panelOpen}
         onOpenChange={setPanelOpen}
-        onActualSalesSaved={(campaign) => {
-          replaceCampaignRow(campaign);
-        }}
         onCampaignUpdated={(campaign) => {
           replaceCampaignRow(campaign);
         }}

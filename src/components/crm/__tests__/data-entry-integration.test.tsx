@@ -333,7 +333,6 @@ describe("Integration: Inline edit → API → toast feedback", () => {
         storage={emptyStorage}
         open={true}
         onOpenChange={vi.fn()}
-        onActualSalesSaved={vi.fn()}
         onCampaignUpdated={onCampaignUpdated}
       />,
     );
@@ -401,7 +400,6 @@ describe("Integration: Inline edit → API → toast feedback", () => {
         storage={emptyStorage}
         open={true}
         onOpenChange={vi.fn()}
-        onActualSalesSaved={vi.fn()}
         onCampaignUpdated={onCampaignUpdated}
       />,
     );
@@ -470,7 +468,6 @@ describe("Integration: Inline edit → API → toast feedback", () => {
         storage={emptyStorage}
         open={true}
         onOpenChange={vi.fn()}
-        onActualSalesSaved={vi.fn()}
         onCampaignUpdated={vi.fn()}
       />,
     );
