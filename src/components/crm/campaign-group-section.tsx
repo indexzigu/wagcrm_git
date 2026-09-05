@@ -264,8 +264,11 @@ export function CampaignGroupSection({
 
   async function handleRemove(member: CampaignGroupMemberRow) {
     if (!groupId) return;
-    // 제외 **전** 멤버 명단을 미리 확보한다 — 해체되면 이 전원이 미그룹으로 바뀌는데,
-    // 아래 await 뒤에는 `setDetail(null)` 로 명단을 읽을 곳이 사라진다.
+    // 제외 **전** 멤버 명단 — 해체되면 이 전원이 미그룹으로 바뀐다.
+    // ℹ️ 이 렌더의 `detail` 은 await 뒤에도 같은 값이다(`setDetail` 은 다음 렌더의
+    // 바인딩을 만들 뿐 실행 중인 클로저가 잡은 값을 바꾸지 않는다) — 미리 잡는 것은
+    // 필수가 아니라, 아래에서 `setDetail(null)` 을 부르는 자리라 "언제 기준의
+    // 명단인가"를 이름으로 못박기 위해서다.
     const memberIdsBeforeRemoval = detail?.members.map((m) => m.campaignId) ?? [];
     setRemovingId(member.campaignId);
     try {
@@ -285,6 +288,11 @@ export function CampaignGroupSection({
       // 형제를 뺀 경우엔 그 형제의 groupId 가 바뀐다. 상위는 행 하나씩만 교체하므로
       // (위 refreshCampaigns 주석) 빠뜨린 행은 새로고침 전까지 보드에 그룹 배지를
       // 그대로 달고 있어 실제와 다르게 보인다.
+      // ℹ️ **오늘은 두 갈래의 결과가 같다** — 서버는 남는 멤버가 1건 이하일 때만
+      // 해체하므로 해체는 곧 "2건짜리에서 하나를 뺐다"이고, 그러면 제외 전 명단이
+      // 그대로 [뺀 멤버, 현재]다. 그래도 갈래를 남기는 것은 그 일치가 **서버의 해체
+      // 조건과의 결합**이기 때문이다 — 한 번에 여러 건을 빼는 경로가 생기면
+      // "해체 = 2건" 전제가 조용히 깨진다. ⛔ 같다는 이유로 접지 말 것.
       const affectedIds = [
         ...new Set(
           result.dissolved
