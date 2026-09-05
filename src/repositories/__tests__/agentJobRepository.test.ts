@@ -115,6 +115,32 @@ describe("AgentJobRepository", () => {
     );
   });
 
+  it("reclaims an orphaned FAILED_RETRYABLE row once its lease expires", async () => {
+    // Worker died between the RUNNING -> FAILED_RETRYABLE write and its requeue.
+    findFirstMock.mockResolvedValue({ ...persistedJob, status: "FAILED_RETRYABLE", workerId: "worker-1", attempt: 0 });
+    updateManyMock.mockResolvedValue({ count: 1 });
+    eventCreateMock.mockResolvedValue({});
+
+    const now = new Date("2026-09-05T00:00:00.000Z");
+    const reclaimed = await AgentJobRepository.reclaimExpiredLease(now);
+
+    expect(findFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ["CLAIMED", "RUNNING", "FAILED_RETRYABLE", "RESOURCE_DEFERRED"] },
+          leaseExpiresAt: { lt: now },
+        }),
+      }),
+    );
+    expect(updateManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "job-1", status: "FAILED_RETRYABLE", attempt: 0 }),
+        data: expect.objectContaining({ status: "QUEUED", attempt: { increment: 1 }, failureCode: "LEASE_EXPIRED" }),
+      }),
+    );
+    expect(reclaimed).toEqual({ jobId: "job-1", status: "QUEUED", attempt: 1 });
+  });
+
   it("requeues a retryable failure only through a capped owner-and-lease conditional update", async () => {
     const now = new Date("2026-09-02T00:00:00.000Z");
     findFirstMock.mockResolvedValue({
