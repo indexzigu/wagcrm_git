@@ -789,7 +789,14 @@ describe("PR 검사 러너(preflightRunner)", () => {
   it("조회가 실패해도 다른 항목은 멀쩡하다(한 행의 실패가 패널을 죽이지 않는다)", () => {
     const r = runStatus({ runnerVarFails: "other" });
     expect(byKey(r, "prodLocal").level).toBe("ok");
-    expect(byKey(r, "disk").level).toBe("ok");
+    // 🪤 **`disk` 레벨을 값으로 고정하지 말 것** — 이 항목만 스텁이 없어 실행 머신의 실제
+    //    `df` 를 읽는다(사유는 「정상 픽스처」 케이스 주석이 정본). 여기서 봐야 하는 것은
+    //    디스크 상태가 아니라 **그 행이 살아남았는가**이므로 판정을 페이로드 존속 + 레벨
+    //    토큰 유효성으로 옮긴다(「089」 케이스와 같은 관용구).
+    //    ⛔ 「not unknown」 으로 조이지 말 것 — 「`df` 가 도는 머신인가」라는 환경 가정을
+    //    다시 들여오는 것이고, 그게 이 테스트를 깨뜨린 부류다.
+    expect(r.items.map((i) => i.key)).toContain("disk");
+    expect(["ok", "warn", "error", "unknown"]).toContain(byKey(r, "disk").level);
   });
 
   it("busy 를 판정에 쓰지 않는다(소스 계약)", () => {
