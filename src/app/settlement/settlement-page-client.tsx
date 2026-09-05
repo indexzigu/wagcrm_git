@@ -227,9 +227,24 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     }
   }, [refreshReport]);
 
+  // 캠페인이 바뀌면 리포트를 다시 읽는다. ⚠️ 상위 콜백은 **행 하나**를 넘기는 계약이라
+  // (`lib/campaign-row-refresh`) 그룹 묶기·합류·제외처럼 한 조작이 여러 행을 바꾸면
+  // 같은 틱 안에서 **바뀐 행 수만큼** 연달아 불린다. 그런데 리포트는 행이 아니라
+  // **현재 필터**로 조회하는 화면 전체 값이라, 콜백마다 부르면 같은 응답을 건수만큼
+  // 다시 받는다(3건을 묶으면 3회 — T-096. 결과가 같아 화면은 멀쩡하고 대기·왕복만 는다).
+  // 그래서 콜백은 fetch 를 직접 걸지 않고 이 카운터만 올린다 — React 가 한 틱의 상태
+  // 갱신을 한 번의 렌더로 접으므로(0→3) 이 effect 는 **한 번만** 돈다.
+  // ⛔ 디바운스 타이머로 바꾸지 말 것: 묶어야 하는 것은 "잠깐 사이의 연타"가 아니라
+  // **한 틱 안의 팬아웃**이고, 타이머를 두면 대기 시간에 따라 동작이 갈린다
+  // (`InlineDateField` 가 같은 이유로 타이머를 버렸다).
+  const [reportRefreshNonce, setReportRefreshNonce] = useState(0);
+  const requestReportRefresh = useCallback(() => {
+    setReportRefreshNonce((nonce) => nonce + 1);
+  }, []);
+
   useEffect(() => {
     void refreshReport();
-  }, [refreshReport]);
+  }, [refreshReport, reportRefreshNonce]);
 
   const filteredCampaigns = useMemo(() => {
     const allowedIds = new Set(reportData?.campaigns.map((campaign) => campaign.id) ?? []);
@@ -630,7 +645,7 @@ interface CsvRow {
             ...prev,
             campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
           }));
-          void refreshReport();
+          requestReportRefresh();
         }}
         onCampaignUpdated={(campaign) => {
           syncUpdatedCampaign(campaign);
@@ -638,7 +653,7 @@ interface CsvRow {
             ...prev,
             campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
           }));
-          void refreshReport();
+          requestReportRefresh();
         }}
         title="정산관리 캠페인 상세 페이지"
         description="캠페인의 정산 및 재무 내역을 확인하고 설정을 관리합니다."
