@@ -449,6 +449,79 @@ if ! DATABASE_URL="$DATABASE_URL" node -e '
   exit 1
 fi
 
+# ── P0 안전장치 ⑨: 워커도 새 코드로 다시 띄운다 (실사고 2026-09-06).
+# 앱은 `.live/current` 릴리스를 서빙하지만 `agent-worker` 는 이 체크아웃을
+# (plist `WorkingDirectory`) tsx 로 직접 읽는다. 즉 워커의 코드는 위 git 갱신
+# 시점에 이미 바뀌어 있고, **프로세스를 다시 띄우기 전까지 메모리에는 옛 코드가
+# 남는다.** PR #36 배포 때 실제로 그랬다 — 배포도 마커 갱신도 성공했고 파일도
+# 제자리에 있었지만 워커만 3일 전 기동분이라 수정이 동작하지 않았다. 겉으로 드러나는
+# 신호가 하나도 없어 사람이 프로세스 기동 시각을 직접 재고서야 알았다.
+#
+# 이 가드가 증명하는 것과 못 하는 것을 구분할 것:
+#   - PID 교체        → 새 프로세스가 실제로 떴다(kickstart 성공 ≠ 재기동됨).
+#   - 잠시 뒤 PID 유지 → 뜨자마자 죽지 않았다(설정 오류·crash loop 배제). KeepAlive 가
+#     계속 되살리면 PID 가 또 바뀌므로 이 재확인에 걸린다.
+#   - ⛔ 증명하지 못하는 것 → 워커가 UDS RPC 를 실제로 서빙한다. 그건 소켓 프로브가
+#     필요한데 소켓 경로 기본값은 코드(`src/lib/agent-worker/socket-server.ts`)에 있어
+#     여기 복제하면 정본이 둘이 된다. 기동 실패는 위 두 관측으로 잡히므로 여기까지 한다.
+# ⛔ 프로덕션 레인 전용 — 프리뷰 배포가 프로덕션 워커를 끊으면 안 된다.
+if [ "$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app" ]; then
+  WORKER_LAUNCHD_LABEL="kr.ygrd.wagcrm.agent-worker"
+  WORKER_PLIST="$HOME/Library/LaunchAgents/$WORKER_LAUNCHD_LABEL.plist"
+  # 앱의 get_app_pid 와 모양이 같다. 공유 헬퍼로 묶지 않는 이유는
+  # `selfhost-worker-restart-behavior.test.ts` 가 이 블록만 발췌해 실행하기 때문이다 —
+  # 앞쪽에 정의된 함수를 참조하게 만들면 그 발췌 실행이 깨진다.
+  get_worker_pid() {
+    launchctl list "$WORKER_LAUNCHD_LABEL" 2>/dev/null \
+      | awk -F'= ' '/"PID"/ { gsub(/[; ]/, "", $2); print $2 }'
+  }
+  if [ ! -f "$WORKER_PLIST" ]; then
+    # plist 부재가 "이 기계는 워커를 운영하지 않는다"의 정본이다. 워커를 안 쓰는
+    # 기계에서 배포가 실패하면 안 되므로 건너뛰되, 조용히 넘어가지는 않는다.
+    echo "[deploy] 워커 미설치 — 재기동 건너뜀 ($WORKER_LAUNCHD_LABEL)"
+  elif ! launchctl list "$WORKER_LAUNCHD_LABEL" >/dev/null 2>&1; then
+    # 설치돼 있는데 launchd 에 올라가 있지 않다 — 누군가 bootout 하고 되돌리지 않았다.
+    # 여기서 건너뛰면 "배포는 성공했는데 워커는 아예 돌지 않는다"가 조용히 남는다.
+    # 그건 이 가드가 없애려는 무증상 상태와 같은 종류다.
+    echo "중단: 워커가 설치돼 있으나 launchd 에 올라가 있지 않습니다 ($WORKER_LAUNCHD_LABEL). 'launchctl bootstrap gui/$(id -u) \"$WORKER_PLIST\"' 로 올린 뒤 다시 배포하십시오." >&2
+    exit 1
+  else
+    WORKER_PID_BEFORE="$(get_worker_pid || true)"
+    if ! launchctl kickstart -k "gui/$(id -u)/$WORKER_LAUNCHD_LABEL"; then
+      echo "중단: 워커 launchctl kickstart 명령이 실패했습니다 ($WORKER_LAUNCHD_LABEL)." >&2
+      exit 1
+    fi
+    # 대기 상한은 plist 의 ExitTimeOut(30초)보다 넉넉해야 한다 — 워커는 SIGTERM 을 받으면
+    # 쥐고 있던 lease 를 정리하고 나가며, plist 가 그 시간을 30초까지 보장한다. 앱과 같은
+    # 10초로 두면 정상 범위의 정리(11~29초)를 "PID 안 바뀜"으로 오판해 배포를 세운다.
+    # 이 값이 환경변수인 이유는 하나뿐이다 — 행위 테스트가 시간 초과 경로를 40초 기다리지
+    # 않고 재기 위해서다. ⛔ 프로덕션 기본값은 ExitTimeOut 보다 커야 하고, 그 부등식은
+    # `selfhost-worker-restart-behavior.test.ts` 가 plist 와 대조해 고정한다.
+    WORKER_RESTART_WAIT_TRIES="${WORKER_RESTART_WAIT_TRIES:-40}"
+    WORKER_PID_AFTER=""
+    for _ in $(seq 1 "$WORKER_RESTART_WAIT_TRIES"); do
+      sleep 1
+      WORKER_PID_AFTER="$(get_worker_pid || true)"
+      if [ -n "$WORKER_PID_AFTER" ] && [ "$WORKER_PID_AFTER" != "$WORKER_PID_BEFORE" ]; then
+        break
+      fi
+    done
+    if [ -z "$WORKER_PID_AFTER" ] || [ "$WORKER_PID_AFTER" = "$WORKER_PID_BEFORE" ]; then
+      echo "중단: 워커 PID 가 바뀌지 않았습니다(이전: ${WORKER_PID_BEFORE:-없음}) — 옛 코드가 계속 도는 채로 배포가 성공 보고될 뻔했습니다. ~/selfhost/logs/agent-worker.err.log 확인" >&2
+      exit 1
+    fi
+    # 뜬 직후 죽는 경우를 가른다: 설정 오류·DB 초기화 실패면 KeepAlive 가 되살리며
+    # PID 가 계속 바뀐다. PID 교체만 보고 통과하면 crash loop 를 성공으로 기록한다.
+    sleep 3
+    WORKER_PID_SETTLED="$(get_worker_pid || true)"
+    if [ "$WORKER_PID_SETTLED" != "$WORKER_PID_AFTER" ]; then
+      echo "중단: 워커가 기동 직후 다시 바뀌었습니다($WORKER_PID_AFTER → ${WORKER_PID_SETTLED:-없음}) — 기동에 실패해 crash loop 일 수 있습니다. ~/selfhost/logs/agent-worker.err.log 확인" >&2
+      exit 1
+    fi
+    echo "[deploy] 워커 PID 교체 확인: ${WORKER_PID_BEFORE:-없음} → $WORKER_PID_AFTER"
+  fi
+fi
+
 mkdir -p "$MARKER_DIR"
 printf '%s\n' "$AFTER" > "$MARKER_FILE"
 
