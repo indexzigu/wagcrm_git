@@ -48,7 +48,11 @@ function member(over: Partial<CampaignGroupMemberRow> = {}): CampaignGroupMember
 const fetchMock = vi.fn();
 const onGroupMembershipChanged = vi.fn();
 
-/** 그룹 상세 응답. 멤버 명단에서 파생되는 값은 손으로 적지 않는다(사본이 갈린다). */
+/**
+ * 그룹 상세 응답. 멤버 수·id 목록은 명단에서 **파생시킨다** — 손으로 적으면 사본이
+ * 갈린다. 기간은 픽스처 상수다(서버는 멤버 min/max 롤업이지만 여기 멤버는 전부
+ * 같은 기간이라 값이 일치한다).
+ */
 function groupDetail(members: CampaignGroupMemberRow[]) {
   return {
     id: "g1",
@@ -130,7 +134,7 @@ function stubRemoval(members: CampaignGroupMemberRow[], patchResult: unknown) {
 describe("멤버 제외 후 목록 동기화", () => {
   const sibling = () => member({ campaignId: "c-sibling", dealName: "콜라겐" });
   const third = () => member({ campaignId: "c-third", dealName: "비오틴" });
-  const removeSibling = { name: "콜라겐 캠페인을 그룹에서 제외" };
+  const removeSiblingButton = { name: "콜라겐 캠페인을 그룹에서 제외" };
 
   function renderSection() {
     render(
@@ -151,7 +155,7 @@ describe("멤버 제외 후 목록 동기화", () => {
     stubRemoval([member(), sibling()], { dissolved: true });
     renderSection();
 
-    fireEvent.click(await screen.findByRole("button", removeSibling));
+    fireEvent.click(await screen.findByRole("button", removeSiblingButton));
     fireEvent.click(await screen.findByRole("button", { name: "제외하고 그룹 해제" }));
 
     await waitFor(() => expect(propagatedIds()).toEqual(["c-current", "c-sibling"]));
@@ -169,7 +173,7 @@ describe("멤버 제외 후 목록 동기화", () => {
     stubRemoval([member(), sibling(), third()], { dissolved: true });
     renderSection();
 
-    fireEvent.click(await screen.findByRole("button", removeSibling));
+    fireEvent.click(await screen.findByRole("button", removeSiblingButton));
     fireEvent.click(await screen.findByRole("button", { name: "제외" }));
 
     await waitFor(() =>
@@ -185,7 +189,7 @@ describe("멤버 제외 후 목록 동기화", () => {
     stubRemoval([member(), sibling(), third()], groupDetail([member(), third()]));
     renderSection();
 
-    fireEvent.click(await screen.findByRole("button", removeSibling));
+    fireEvent.click(await screen.findByRole("button", removeSiblingButton));
     fireEvent.click(await screen.findByRole("button", { name: "제외" }));
 
     await waitFor(() => expect(propagatedIds()).toEqual(["c-current", "c-sibling"]));
