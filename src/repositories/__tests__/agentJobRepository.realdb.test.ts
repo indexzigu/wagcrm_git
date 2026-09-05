@@ -153,6 +153,25 @@ describe("AgentJobRepository — SQLite lease and serialization regressions", ()
     expect(claimed?.id).toBe(orphan.id);
   });
 
+  it("requeues an orphaned RESOURCE_DEFERRED row the same way", async () => {
+    // No caller transitions into RESOURCE_DEFERRED yet, but `isRequeueOrigin`
+    // already accepts it, so the orphan window opens the day one is wired.
+    const { AgentJobRepository } = await import("../agentJobRepository");
+    const now = new Date("2026-09-05T00:00:00.000Z");
+    const orphan = await createJob({
+      status: "RESOURCE_DEFERRED",
+      workerId: "worker-a",
+      leaseExpiresAt: new Date(now.getTime() - 1),
+      attempt: 0,
+    });
+
+    const reclaimed = await AgentJobRepository.reclaimExpiredLease(now);
+    const row = await database().agentJob.findUniqueOrThrow({ where: { id: orphan.id } });
+
+    expect(reclaimed).toEqual({ jobId: orphan.id, status: "QUEUED", attempt: 1 });
+    expect(row).toMatchObject({ status: "QUEUED", workerId: null, attempt: 1 });
+  });
+
   it("leaves a FAILED_RETRYABLE row alone while its worker still holds the lease", async () => {
     const { AgentJobRepository } = await import("../agentJobRepository");
     const now = new Date("2026-09-05T00:00:00.000Z");
