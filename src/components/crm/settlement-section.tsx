@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { patchCampaign } from "@/lib/campaign-patch";
 import { InlineDateField } from "./inline-date-field";
 import type { CampaignRow } from "@/lib/crm-types";
+import { refreshCampaignRows } from "@/lib/campaign-row-refresh";
 import {
   resolveCampaignInvoiceSlots,
   resolveCampaignMoneySlots,
@@ -391,13 +392,11 @@ export function SettlementSection({
    */
   const handleReceiptDecided = useCallback(async () => {
     const refreshCampaign = async () => {
-      try {
-        const res = await fetch(`/api/campaigns/${campaign.id}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body: unknown = await res.json();
-        if (!body || typeof body !== "object" || !("id" in body)) throw new Error("shape");
-        onCampaignUpdated(body as CampaignRow);
-      } catch {
+      // 읽기·검증·전파는 SSOT 에 맡긴다(`campaign-row-refresh`). ⛔ 문구는 여기가 소유한다 —
+      // 목록 배지가 낡는 것과 **이 패널의 칸이 빈 채로 남는 것**은 사용자가 취할 행동이
+      // 달라서, 목록용 공통 문구(`LIST_REFRESH_FAILED_MESSAGE`)를 쓰면 한쪽이 틀려진다.
+      const failed = await refreshCampaignRows([campaign.id], onCampaignUpdated);
+      if (failed > 0) {
         // 삼키지 않는다 — 쓰기는 이미 끝났으므로 「실패」가 아니라 「화면이 낡았다」고 말한다.
         toast.warning("처리는 저장됐지만 화면 갱신에 실패했습니다. 새로고침해 주세요.");
       }
