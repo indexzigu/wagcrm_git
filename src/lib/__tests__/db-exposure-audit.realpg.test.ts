@@ -46,13 +46,24 @@ const FIXTURE_TABLES = [
   "Untouched",
 ] as const;
 const FIXTURE_SCHEMAS = ["wag_probe_schema"] as const;
+/** 변이가 만드는 함수. 롤백되므로 남지 않지만, 미리 있으면 변이가 원인 불명으로 실패한다. */
+const FIXTURE_FUNCTIONS = ["probe_fn"] as const;
 
-/** 허용 형태 그대로 — public 스키마 USAGE + 컬럼 단위 SELECT 만. 여기서 뭔가 나오면 오탐이다. */
+/**
+ * 허용 형태 그대로. **계정 생성 SQL 이 실제로 하는 구문 종류를 빠짐없이 재현한다** —
+ * 세션 가드레일(`ALTER ROLE ... SET`), 스키마 USAGE, 컬럼 단위 SELECT, RLS 활성화,
+ * 그리고 이 롤을 대상으로 하는 SELECT 정책까지. 음성 대조군이 "배포 직후 상태"를
+ * 대표하지 못하면 **계정을 만들자마자 감사가 빨강이 되는 것**을 여기서 못 잡는다.
+ */
 const FIXTURE_GRANTS: string[] = [
+  `ALTER ROLE wag_readonly SET statement_timeout = '15s'`,
+  `ALTER ROLE wag_readonly SET default_transaction_read_only = on`,
   `GRANT USAGE ON SCHEMA public TO wag_readonly`,
   `GRANT SELECT ("id", "realName") ON public."Seller" TO wag_readonly`,
   `GRANT SELECT ("id", "promptTokens") ON public."ActionProposal" TO wag_readonly`,
   `GRANT SELECT ("id", "instagramTokenExpiresAt") ON public."SystemSettings" TO wag_readonly`,
+  `ALTER TABLE public."Seller" ENABLE ROW LEVEL SECURITY`,
+  `CREATE POLICY wag_readonly_select_seller ON public."Seller" FOR SELECT TO wag_readonly USING (true)`,
 ];
 
 const TABLE_COLUMNS: Record<(typeof FIXTURE_TABLES)[number], string> = {
@@ -112,6 +123,10 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     }
 
     // 만들자마자 되돌릴 문장을 쌓는다(역순). 중간에 실패해도 여기까지 만든 것은 정리된다.
+    // ⚠️ **스키마를 맨 먼저 만든다.** 같은 DB 를 두 실행이 동시에 겨누면 위 이름 검사와
+    // 생성 사이에 틈이 있는데(TOCTOU), 스키마 생성이 먼저면 진 쪽이 여기서 즉시 죽고 그
+    // 시점의 cleanup 은 비어 있어 이긴 쪽 객체를 건드리지 않는다. 순서를 바꾸면 그 보호가
+    // 조용히 사라진다.
     for (const schema of FIXTURE_SCHEMAS) {
       await admin.$executeRawUnsafe(`CREATE SCHEMA ${schema}`);
       cleanup.unshift(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
@@ -188,6 +203,18 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     ).toEqual([]);
   });
 
+  it("롤 존재 질의가 코드가 읽는 컬럼 이름 그대로 돌려준다", async () => {
+    // 🪤 별칭 하나만 어긋나도(예: `AS "publicRoles"` 로 대소문자가 보존되면) 코드는 두 축을
+    // 다 "롤 없음"으로 읽어 **모든 환경에서 감사가 조용히 통과한다.** 목킹 테스트는 목이
+    // TS 타입과 같은 키를 손으로 적으므로 이 어긋남을 영원히 못 본다 — 실 DB 가 돌려주는
+    // 키 이름을 여기서 직접 본다.
+    const rows = (await admin!.$queryRawUnsafe(shippedQueries[0])) as Record<string, unknown>[];
+    expect(Object.keys(rows[0] ?? {}).sort()).toEqual(["publicroles", "wagrole"]);
+    // 픽스처는 wag_readonly 만 만든다. 이름뿐 아니라 값의 의미도 함께 고정한다.
+    expect(Number(rows[0].wagrole)).toBe(1);
+    expect(Number(rows[0].publicroles)).toBe(0);
+  });
+
   it("출고되는 질의가 전부 실 PostgreSQL 에서 실행된다", async () => {
     // 이 레인을 만든 계기인 42725 는 `wag_readonly_scope` 가 아니라 `default_privileges`
     // 에서 났다. 한 항목만 태우면 나머지 6종은 여전히 목킹만 거친 채 나간다.
@@ -208,7 +235,11 @@ async function findNameClashes(admin: PrismaClient): Promise<string[]> {
      UNION ALL
      SELECT ('table ' || c.relname) FROM pg_class c
      JOIN pg_namespace n ON n.oid = c.relnamespace
-     WHERE n.nspname = 'public' AND c.relname IN (${list(FIXTURE_TABLES)})`,
+     WHERE n.nspname = 'public' AND c.relname IN (${list(FIXTURE_TABLES)})
+     UNION ALL
+     SELECT ('function ' || p.proname) FROM pg_proc p
+     JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname IN (${list(FIXTURE_FUNCTIONS)})`,
   )) as { name: string }[];
   return rows.map((row) => row.name);
 }

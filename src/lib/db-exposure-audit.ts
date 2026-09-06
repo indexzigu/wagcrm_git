@@ -127,7 +127,15 @@ const wagForbiddenColumnsLiteral = WAG_READONLY_FORBIDDEN_COLUMNS.map((c) => `'$
  * 점검 쿼리 7종. 전부 카탈로그 **읽기**다(`$queryRawUnsafe` — 파라미터 없음, 문자열 보간도
  * 상수뿐이라 주입면이 없다). 쓰기 경로를 타지 않으므로 `DB_READ_ONLY=1` 레인에서도 돈다.
  */
-type CheckScope = "public" | "wag";
+/**
+ * 어느 축의 롤이 있을 때 이 점검을 도는가.
+ * ⚠️ `always` 는 **PUBLIC 의사롤(grantee = 0)** 을 보는 점검을 위한 것이다. PUBLIC 부여는
+ * 이름 있는 롤과 무관하게 **로그인하는 모두**에게 적용되므로 어느 축이든 하나라도 있으면
+ * 봐야 한다. 실측: anon·authenticated 가 없는 DB 에서 `GRANT SELECT (residentNumber) ...
+ * TO PUBLIC` 한 줄을 치면 `has_column_privilege('wag_readonly', ...)` 가 참인데
+ * (= 실제로 읽힌다) 이 점검들이 꺼져 있으면 감사는 `ok` 를 찍는다.
+ */
+type CheckScope = "public" | "wag" | "always";
 
 const CHECKS: { check: string; scope: CheckScope; label: string; sql: string }[] = [
   {
@@ -174,7 +182,7 @@ const CHECKS: { check: string; scope: CheckScope; label: string; sql: string }[]
   },
   {
     check: "public_pseudo_role_grants",
-    scope: "public",
+    scope: "always",
     label: "public 테이블이 PUBLIC 의사롤에 열려 있음 (= anon 포함 전원)",
     // ⚠️ 위의 GRANT 점검들은 `pg_roles` 를 조인하므로 **PUBLIC 을 절대 보지 못한다** —
     // aclexplode 가 PUBLIC 을 grantee=0(실재하지 않는 롤 OID)으로 돌려주기 때문이다.
@@ -191,7 +199,7 @@ const CHECKS: { check: string; scope: CheckScope; label: string; sql: string }[]
   },
   {
     check: "column_grants",
-    scope: "public",
+    scope: "always",
     label: "public 테이블의 컬럼 단위 GRANT 가 anon/authenticated/PUBLIC 에 열려 있음",
     // 컬럼 단위 부여(`GRANT SELECT (email) ON "Seller" TO anon`)는 `pg_class.relacl` 이
     // 아니라 `pg_attribute.attacl` 에 저장돼, 위 관계 GRANT 점검이 통째로 놓친다.
@@ -230,7 +238,9 @@ const CHECKS: { check: string; scope: CheckScope; label: string; sql: string }[]
     // ⚠️ 이 항목은 `pg_roles` 를 조인하므로 **PUBLIC 의사롤(grantee = 0)을 보지 못한다** —
     // `GRANT SELECT ON "Seller" TO PUBLIC` 은 wag_readonly 도 읽게 만든다. 여기서 중복
     // 구현하지 않는 이유는 위 `public_pseudo_role_grants`(관계)와 `column_grants`(컬럼)가
-    // 롤·컬럼명 무관하게 그 형태를 이미 전수로 잡기 때문이다. 그 두 항목을 지우면 이 사각이 열린다.
+    // 롤·컬럼명 무관하게 그 형태를 이미 전수로 잡기 때문이다. 그래서 그 두 항목만 `scope`
+    // 가 `always` 다 — 공개 롤 축에 묶어 두면 wag_readonly 만 있는 DB 에서 함께 꺼지고,
+    // 여기 적은 "저쪽이 덮는다"가 그 순간 거짓이 된다(실측으로 확인한 사각이다).
     //
     // ⚠️ `||` 에 붙는 카탈로그 컬럼은 전부 `::text` 로 캐스트한다. 위 `default_privileges`
     // 가 `"char"` 를 캐스트 없이 이어 붙여 42725 로 통째로 실패했던 것과 같은 함정이다.
@@ -281,6 +291,9 @@ const CHECKS: { check: string; scope: CheckScope; label: string; sql: string }[]
             JOIN wag ON wag.oid = c.relowner
             WHERE n.nspname = 'public'
             UNION
+            -- 스키마 소유만 전 스키마를 본다. 테이블·함수 소유는 public 으로 좁히는데,
+            -- public 밖 객체는 그 스키마의 USAGE 가 없으면 실효 접근이 안 되고 그 USAGE 는
+            -- schema-privilege 분기가 잡기 때문이다. 스키마 소유는 그 자체로 USAGE 를 준다.
             SELECT ('namespace-owner:' || n.nspname::text)
             FROM pg_namespace n JOIN wag ON wag.oid = n.nspowner
             UNION
@@ -417,8 +430,20 @@ export async function runDbExposureAudit(
   }
 
   const roleRows = (await client.$queryRawUnsafe(ROLE_PRESENCE_SQL)) as RolePresenceRow[];
-  const publicRolesPresent = toNumber(roleRows[0]?.publicroles ?? 0) > 0;
-  const wagRolePresent = toNumber(roleRows[0]?.wagrole ?? 0) > 0;
+  const presence = roleRows[0];
+  if (presence?.publicroles === undefined || presence?.wagrole === undefined) {
+    // ⚠️ 여기서 `?? 0` 으로 넘어가면 **모든 환경에서 감사가 skip 으로 조용히 통과한다.**
+    // 위 질의의 별칭 하나만 어긋나도(예: 인용부호를 붙여 대소문자가 보존되면) 두 축이 다
+    // "롤 없음"으로 읽히는데, 그 고장은 위반 0건과 결과가 똑같이 생겼다. 이 파일이 내내
+    // 경계해 온 실패 형태라, 기본값으로 덮지 않고 빨강으로 띄운다.
+    return {
+      status: "broken",
+      reason:
+        "롤 존재 질의가 예상한 컬럼(publicroles·wagrole)을 돌려주지 않았다. 위반 0건이 아니라 감사기가 판정 근거를 못 읽는 상태다.",
+    };
+  }
+  const publicRolesPresent = toNumber(presence.publicroles) > 0;
+  const wagRolePresent = toNumber(presence.wagrole) > 0;
   if (!publicRolesPresent && !wagRolePresent) {
     // shadow DB(순정 postgres)·로컬 Postgres 에는 이 롤들이 없다. 감사 대상이 아니라는
     // 뜻이므로 조용히 건너뛴다 — 회수 마이그레이션의 DO 블록과 같은 방어다.
@@ -427,9 +452,10 @@ export async function runDbExposureAudit(
       reason: "anon·authenticated·wag_readonly 중 아무 롤도 없다. 감사 대상 DB 가 아니다.",
     };
   }
-  const activeChecks = CHECKS.filter((c) =>
-    c.scope === "wag" ? wagRolePresent : publicRolesPresent,
-  );
+  const activeChecks = CHECKS.filter((c) => {
+    if (c.scope === "always") return true;
+    return c.scope === "wag" ? wagRolePresent : publicRolesPresent;
+  });
 
   const tableRows = (await client.$queryRawUnsafe(PUBLIC_TABLE_COUNT_SQL)) as CountRow[];
   const publicTables = toNumber(tableRows[0]?.n ?? 0);

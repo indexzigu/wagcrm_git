@@ -111,25 +111,28 @@ describe("실행 — 환경별 분기", () => {
     expect(r.status).toBe("skipped");
   });
 
-  it("anon·authenticated 가 없어도 wag_readonly 가 있으면 그 축은 점검한다", async () => {
+  it("anon·authenticated 가 없어도 wag 축과 PUBLIC 의사롤 점검은 돈다", async () => {
     // 종전에는 공개 롤이 없으면 감사 전체가 skip 이었다 — 그러면 wag_readonly 만 있는
     // Postgres 에서 권한 상승이 통째로 무시된다. 축이 셋이 된 이상 존재 판정도 축별로 한다.
-    const queries: string[] = [];
+    //
+    // ⚠️ 다만 **PUBLIC 의사롤 점검 2종은 축과 무관하게 돌아야 한다.** PUBLIC 부여는
+    // 로그인하는 모두에게 적용되므로 anon 이 없는 DB 에서도 wag_readonly 가 그걸로 읽는다.
+    // 이 단언이 없으면 축 분리가 그대로 새 사각을 만든다(실측으로 확인한 회귀다).
+    const ran: string[] = [];
     let call = 0;
     const client = {
-      $queryRawUnsafe: async (query: string) => {
-        queries.push(query);
+      $queryRawUnsafe: async () => {
         call += 1;
         if (call === 1) return [{ publicroles: BigInt(0), wagrole: BigInt(1) }];
         if (call === 2) return [{ n: BigInt(67) }];
-        return [{ name: "relation-owner:Seller" }];
+        return [];
       },
     };
     const r = await runDbExposureAudit(client, "postgresql://localhost:5432/app");
-    expect(r.status).toBe("drift");
-    // 공개 롤 점검 6종은 돌지 않는다(거짓 경보 방지) — 롤 존재·테이블 수 + wag 1종뿐.
-    expect(queries).toHaveLength(3);
-    expect(r.status === "drift" && r.findings.map((f) => f.check)).toEqual(["wag_readonly_scope"]);
+    expect(r.status).toBe("ok");
+    void ran;
+    // 롤 존재 + 테이블 수 + (PUBLIC 의사롤 2종 + wag 1종). 공개 롤 전용 4종은 돌지 않는다.
+    expect(call).toBe(5);
   });
 
   it("Supabase 환경에서 깨끗하면 ok, 위반이 있으면 drift", async () => {
@@ -225,12 +228,40 @@ describe("wag_readonly 범위 — 이름 규칙이 의도한 것을 실제로 �
     // 정렬표까지 함께 보는 이유: `ORDER BY` 의 `ELSE` 가 미등록 접두사를 조용히 최하위로
     // 떨어뜨려서, 새 분기를 넣고 정렬을 잊으면 그 위반이 offenders 절단에 먼저 잘린다.
     const sql = await captureScopeSql();
+    // ① 아는 분기가 사라지지 않았는가.
     for (const prefix of BRANCH_PREFIXES) {
       expect(sql, `${prefix} 분기가 출고 SQL 에서 사라졌다`).toContain(`'${prefix}:`);
+    }
+    // ② 반대 방향 — 출고 SQL 에 **실재하는** 접두사를 전수로 뽑아 정렬 등록과 대조한다.
+    // ①만으로는 "새 분기를 넣고 목록에도 정렬에도 안 넣는" 경우를 못 잡는다(둘 다 초록인데
+    // 그 위반만 ELSE 로 밀려 offenders 절단에 먼저 잘린다).
+    const emitted = [...sql.matchAll(/\('([a-z-]+):'/g)].map((m) => m[1]);
+    expect(emitted.length, "접두사를 하나도 못 뽑았다면 이 추출식이 고장난 것이다").toBeGreaterThan(
+      0,
+    );
+    for (const prefix of new Set(emitted)) {
+      expect(BRANCH_PREFIXES as readonly string[], `${prefix} 가 목록에 없다`).toContain(prefix);
       expect(sql, `${prefix} 가 심각도 정렬에 등록되지 않았다`).toContain(
         `WHEN name LIKE '${prefix}:%'`,
       );
     }
+  });
+
+  it("롤 존재 질의의 별칭이 코드가 읽는 키와 같다", async () => {
+    // 옆의 realpg 레인이 실 DB 가 돌려주는 키를 보지만 그건 옵트인이라 CI 에서 돌지 않는다.
+    // 여기서는 **한쪽만 개명하는 것**을 막는다 — 별칭과 타입 키가 한 파일에서 마주보게 둔다.
+    // (둘 다 바꾸면 이 단언도 같이 고치게 되고, 그때는 의도한 개명이다.)
+    const roleSql = await captureRolePresenceSql();
+    expect(roleSql).toContain("AS publicroles");
+    expect(roleSql).toContain("AS wagrole");
+  });
+
+  it("롤 존재 질의의 컬럼이 어긋나면 skip 이 아니라 broken 이다", async () => {
+    // 별칭 하나만 바뀌어도 두 축이 다 "롤 없음"으로 읽혀 **모든 환경에서 조용히 통과**한다.
+    // 그 고장은 위반 0건과 결과가 똑같이 생겨서, 기본값으로 덮으면 아무도 알아채지 못한다.
+    const client = { $queryRawUnsafe: async () => [{ publicRoles: BigInt(2), wagRole: BigInt(1) }] };
+    const r = await runDbExposureAudit(client, "postgresql://localhost:5432/app");
+    expect(r.status).toBe("broken");
   });
 
   it("패턴이 못 보는 제외 컬럼은 명시 목록이 덮는다", () => {
@@ -280,4 +311,19 @@ async function captureScopeSql(): Promise<string> {
   const sql = seen.find((query) => query.includes("role-membership:"));
   if (!sql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
   return sql;
+}
+
+/** 출고되는 **첫** 질의(롤 존재 판정)를 뽑는다. */
+async function captureRolePresenceSql(): Promise<string> {
+  let captured = "";
+  await runDbExposureAudit(
+    {
+      $queryRawUnsafe: async (query: string) => {
+        if (!captured) captured = query;
+        return [{ publicroles: BigInt(0), wagrole: BigInt(0) }];
+      },
+    },
+    "postgresql://localhost:5432/app",
+  );
+  return captured;
 }
