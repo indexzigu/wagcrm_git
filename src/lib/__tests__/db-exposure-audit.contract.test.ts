@@ -118,21 +118,25 @@ describe("실행 — 환경별 분기", () => {
     // ⚠️ 다만 **PUBLIC 의사롤 점검 2종은 축과 무관하게 돌아야 한다.** PUBLIC 부여는
     // 로그인하는 모두에게 적용되므로 anon 이 없는 DB 에서도 wag_readonly 가 그걸로 읽는다.
     // 이 단언이 없으면 축 분리가 그대로 새 사각을 만든다(실측으로 확인한 회귀다).
-    const ran: string[] = [];
+    // 개수가 아니라 **정체**로 단언한다. 개수만 보면 어느 점검을 `always` 로 둘지 뒤바꿔도
+    // 총계가 같아 초록이다 — 이 테스트가 막으려는 회귀가 정확히 그 바꿔치기다.
     let call = 0;
     const client = {
       $queryRawUnsafe: async () => {
         call += 1;
         if (call === 1) return [{ publicroles: BigInt(0), wagrole: BigInt(1) }];
         if (call === 2) return [{ n: BigInt(67) }];
-        return [];
+        // 돈 점검마다 위반 1건을 돌려주면 findings 가 곧 "무엇이 돌았는가"의 목록이 된다.
+        return [{ name: "something" }];
       },
     };
     const r = await runDbExposureAudit(client, "postgresql://localhost:5432/app");
-    expect(r.status).toBe("ok");
-    void ran;
-    // 롤 존재 + 테이블 수 + (PUBLIC 의사롤 2종 + wag 1종). 공개 롤 전용 4종은 돌지 않는다.
-    expect(call).toBe(5);
+    expect(r.status).toBe("drift");
+    expect(r.status === "drift" && r.findings.map((f) => f.check)).toEqual([
+      "public_pseudo_role_grants",
+      "column_grants",
+      "wag_readonly_scope",
+    ]);
   });
 
   it("Supabase 환경에서 깨끗하면 ok, 위반이 있으면 drift", async () => {
@@ -228,19 +232,21 @@ describe("wag_readonly 범위 — 이름 규칙이 의도한 것을 실제로 �
     // 정렬표까지 함께 보는 이유: `ORDER BY` 의 `ELSE` 가 미등록 접두사를 조용히 최하위로
     // 떨어뜨려서, 새 분기를 넣고 정렬을 잊으면 그 위반이 offenders 절단에 먼저 잘린다.
     const sql = await captureScopeSql();
-    // ① 아는 분기가 사라지지 않았는가.
-    for (const prefix of BRANCH_PREFIXES) {
-      expect(sql, `${prefix} 분기가 출고 SQL 에서 사라졌다`).toContain(`'${prefix}:`);
-    }
-    // ② 반대 방향 — 출고 SQL 에 **실재하는** 접두사를 전수로 뽑아 정렬 등록과 대조한다.
-    // ①만으로는 "새 분기를 넣고 목록에도 정렬에도 안 넣는" 경우를 못 잡는다(둘 다 초록인데
-    // 그 위반만 ELSE 로 밀려 offenders 절단에 먼저 잘린다).
-    const emitted = [...sql.matchAll(/\('([a-z-]+):'/g)].map((m) => m[1]);
-    expect(emitted.length, "접두사를 하나도 못 뽑았다면 이 추출식이 고장난 것이다").toBeGreaterThan(
-      0,
+    // 🪤 **"출고 SQL 에 'relation-owner:' 라는 글자가 있는가"로 물으면 안 된다.** 그 글자는
+    // 아래 `ORDER BY` 의 `WHEN name LIKE 'relation-owner:%'` 에도 있어서, SELECT 분기를
+    // 통째로 지워도 단언이 통과한다(교차 검증이 실증했다). 그래서 **분기가 실제로 방출하는
+    // 접두사만** 뽑아 목록과 집합으로 맞댄다 — 삭제와 추가를 한 단언이 양방향으로 잡는다.
+    const emitted = [...sql.matchAll(/\('([a-z-]+):' \|\|/g)].map((m) => m[1]);
+
+    // 추출식이 분기를 놓치면 위 집합 비교가 조용히 통과한다(새 분기를 다른 형태로 쓰면
+    // 안 잡힌다). 분기 수는 UNION 수 + 1 이므로, 뽑은 개수를 그 구조와 맞춰 못 박는다.
+    const unions = (sql.match(/\bUNION\b/g) ?? []).length;
+    expect(emitted, "분기 하나가 추출식에 안 걸렸다 — 접두사를 다른 형태로 쓴 분기가 있다").toHaveLength(
+      unions + 1,
     );
-    for (const prefix of new Set(emitted)) {
-      expect(BRANCH_PREFIXES as readonly string[], `${prefix} 가 목록에 없다`).toContain(prefix);
+
+    expect(new Set(emitted)).toEqual(new Set(BRANCH_PREFIXES));
+    for (const prefix of emitted) {
       expect(sql, `${prefix} 가 심각도 정렬에 등록되지 않았다`).toContain(
         `WHEN name LIKE '${prefix}:%'`,
       );

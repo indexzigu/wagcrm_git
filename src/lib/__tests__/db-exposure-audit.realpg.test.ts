@@ -58,11 +58,14 @@ const FIXTURE_FUNCTIONS = ["probe_fn"] as const;
 const FIXTURE_GRANTS: string[] = [
   `ALTER ROLE wag_readonly SET statement_timeout = '15s'`,
   `ALTER ROLE wag_readonly SET default_transaction_read_only = on`,
+  `ALTER ROLE wag_readonly SET idle_in_transaction_session_timeout = '30s'`,
   `GRANT USAGE ON SCHEMA public TO wag_readonly`,
   `GRANT SELECT ("id", "realName") ON public."Seller" TO wag_readonly`,
   `GRANT SELECT ("id", "promptTokens") ON public."ActionProposal" TO wag_readonly`,
   `GRANT SELECT ("id", "instagramTokenExpiresAt") ON public."SystemSettings" TO wag_readonly`,
-  `ALTER TABLE public."Seller" ENABLE ROW LEVEL SECURITY`,
+  // 프로덕션은 model 테이블 전부에 RLS 가 켜져 있다. 일부만 켜면 `rls_disabled` 점검이
+  // 픽스처 때문에 울려서, 아래 "점검 7종 전부 0건" 대조군을 세울 수 없다.
+  ...FIXTURE_TABLES.map((table) => `ALTER TABLE public."${table}" ENABLE ROW LEVEL SECURITY`),
   `CREATE POLICY wag_readonly_select_seller ON public."Seller" FOR SELECT TO wag_readonly USING (true)`,
 ];
 
@@ -107,6 +110,7 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
   let admin: PrismaClient | undefined;
   let scopeSql = "";
   let shippedQueries: string[] = [];
+  let checkQueries: string[] = [];
   /** 이번 실행이 **실제로 만든** 것만 담는다. 정리는 오직 여기 있는 것만 지운다. */
   const cleanup: string[] = [];
 
@@ -147,6 +151,8 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     shippedQueries = await captureShippedQueries();
     scopeSql = shippedQueries.find((query) => query.includes("role-membership:")) ?? "";
     if (!scopeSql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
+    // 앞 두 개는 롤 존재·테이블 수 질의다. 나머지가 점검 본체다.
+    checkQueries = shippedQueries.slice(2);
   }, 60_000);
 
   afterAll(async () => {
@@ -184,9 +190,17 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     return rows.map((row) => row.name);
   }
 
-  it("허용 형태 그대로면 위반 0건이다 (음성 대조군)", async () => {
+  it("배포 직후 형태에서는 점검 전체가 0건이다 (음성 대조군)", async () => {
     // 여기서 무엇이든 나오면 상시 오탐이고, 상시 빨강인 감사기는 곧 안 보게 된다.
-    expect(await violationsAfter([])).toEqual([]);
+    // ⚠️ `wag_readonly_scope` 하나만 보면 안 된다. PUBLIC 의사롤 점검 2종은 이 브랜치에서
+    // `scope: "always"` 가 되어 wag 롤만 있는 DB 에서도 돌기 시작했는데, 그 둘이 배포 직후
+    // 형태를 통과하는지는 아무도 확인한 적이 없었다.
+    const violations: string[] = [];
+    for (const query of checkQueries) {
+      const rows = (await admin!.$queryRawUnsafe(query)) as { name: string }[];
+      violations.push(...rows.map((row) => row.name));
+    }
+    expect(violations).toEqual([]);
   });
 
   it.each(MUTATIONS)("$label 변이를 잡는다", async ({ sql, expected }) => {
