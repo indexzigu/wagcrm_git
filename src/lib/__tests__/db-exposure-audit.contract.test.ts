@@ -21,6 +21,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  SECRET_COLUMN_NAME_PATTERN,
+  WAG_READONLY_EXCLUDED_COLUMNS,
   evaluateExposureAudit,
   runDbExposureAudit,
   type ExposureFinding,
@@ -40,6 +42,7 @@ const CLEAN_FINDINGS: ExposureFinding[] = [
   clean("public_pseudo_role_grants", "PUBLIC 의사롤"),
   clean("column_grants", "컬럼 GRANT"),
   clean("rls_disabled", "RLS"),
+  clean("wag_readonly_scope", "wag_readonly 범위"),
 ];
 
 describe("판정 — 드리프트는 반드시 빨강이 된다", () => {
@@ -55,6 +58,7 @@ describe("판정 — 드리프트는 반드시 빨강이 된다", () => {
     ["public_pseudo_role_grants", "PUBLIC 의사롤 부여"],
     ["column_grants", "컬럼 단위 GRANT"],
     ["rls_disabled", "RLS 꺼진 테이블"],
+    ["wag_readonly_scope", "wag_readonly 권한 범위 이탈"],
   ])("%s 위반 1건이면 drift", (check, label) => {
     const findings = CLEAN_FINDINGS.map((f) =>
       f.check === check ? { ...f, label, count: 1, offenders: ["Something"] } : f,
@@ -107,7 +111,7 @@ describe("실행 — 환경별 분기", () => {
     // "로컬 그린"이 아무것도 보장하지 않게 만든다.
     const PG_URL = "postgresql://localhost:5432/app";
     let call = 0;
-    // 호출 순서: 롤 수 → 테이블 수 → CHECKS 6종
+    // 호출 순서: 롤 수 → 테이블 수 → CHECKS 7종
     const responses = (offenders: unknown[][]) => async () => {
       call += 1;
       if (call === 1) return [{ n: BigInt(2) }];
@@ -117,13 +121,13 @@ describe("실행 — 환경별 분기", () => {
 
     call = 0;
     expect(
-      (await runDbExposureAudit({ $queryRawUnsafe: responses([[], [], [], [], [], []]) }, PG_URL))
+      (await runDbExposureAudit({ $queryRawUnsafe: responses([[], [], [], [], [], [], []]) }, PG_URL))
         .status,
     ).toBe("ok");
 
     call = 0;
     const dirty = await runDbExposureAudit(
-      { $queryRawUnsafe: responses([[{ name: "Seller" }], [], [], [], [], [{ name: "Seller" }]]) },
+      { $queryRawUnsafe: responses([[{ name: "Seller" }], [], [], [], [], [{ name: "Seller" }], []]) },
       PG_URL,
     );
     expect(dirty.status).toBe("drift");
@@ -158,5 +162,42 @@ describe("배선 — 라우트가 실패를 선언한다", () => {
     for (const f of ["$executeRaw", "fetch(", "prisma.$transaction"]) {
       expect(src.includes(f), `라우트에 ${f} 발견 — 감사는 읽기 전용이어야 한다`).toBe(false);
     }
+  });
+});
+
+describe("wag_readonly 범위 — 이름 규칙이 의도한 것을 실제로 덮는가", () => {
+  // 이 검사의 값은 "울릴 때 울리고, 안 울릴 때 조용한가" 두 쪽 모두에 있다. 한쪽만 보면
+  // 상시 오탐(→ 무시당함)이나 상시 침묵(→ 없는 것과 같음)으로 조용히 기운다.
+  const secretRx = new RegExp(SECRET_COLUMN_NAME_PATTERN, "i");
+
+  it("2026-09-06 오너가 허용으로 되살린 이름에는 울리지 않는다", () => {
+    // `token`·`key`·`email` 을 패턴에 넣으면 이 계열 21개가 매일 빨강이 된다.
+    for (const name of [
+      "promptTokens",
+      "instagramTokenExpiresAt",
+      "jobKey",
+      "roomKey",
+      "orderToEmail",
+      "ccEmail",
+    ]) {
+      expect(secretRx.test(name), `${name} 은 허용 컬럼인데 패턴이 잡았다`).toBe(false);
+    }
+  });
+
+  it("이름만으로 비밀값이 드러나는 컬럼에는 울린다", () => {
+    for (const name of ["portalPasswordHash", "residentNumber", "bankAccount", "phoneNumber"]) {
+      expect(secretRx.test(name), `${name} 을 패턴이 놓쳤다`).toBe(true);
+    }
+  });
+
+  it("패턴이 못 보는 제외 컬럼은 명시 목록이 덮는다", () => {
+    // `token`·`email` 을 뺀 대가로 이름만으로는 안 보이는 진짜 비밀값들. 목록이 이걸
+    // 잃으면 `Seller.portalToken` 재부여가 무증상으로 통과한다.
+    const blind = WAG_READONLY_EXCLUDED_COLUMNS.filter(
+      (c) => !secretRx.test(c.split(".")[1] ?? ""),
+    );
+    expect(blind).toContain("Seller.portalToken");
+    expect(blind).toContain("SystemSettings.instagramAccessToken");
+    expect(WAG_READONLY_EXCLUDED_COLUMNS).toHaveLength(16);
   });
 });
