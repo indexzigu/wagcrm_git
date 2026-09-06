@@ -15,14 +15,19 @@
 // `operator is not unique (42725)` 로 **통째로 실패**했는데, 여기 단위 테스트는 49건 전부
 // green 이었다. 실 Postgres 에 붙여 돌리고 나서야 드러났다.
 // 그래서 SQL 변경 시에는 목킹 테스트 통과를 근거로 삼지 말고 **실 DB(읽기 전용 레인)에서
-// 한 번 실행**한다. 그때 storage 스키마로 같은 쿼리를 돌리는 양성 대조군을 함께 본다 —
-// "늘 빈 배열을 주는 고장"과 "정말 위반이 없음"은 결과가 똑같이 생겼기 때문이다.
+// 한 번 실행**한다. 그때 양성 대조군을 함께 본다 — "늘 빈 배열을 주는 고장"과 "정말 위반이
+// 없음"은 결과가 똑같이 생겼기 때문이다.
+//
+// `wag_readonly_scope` 에 대해서는 그 실행이 옆 파일 `db-exposure-audit.realpg.test.ts` 에
+// 상주한다(옵트인 — 일회용 PostgreSQL URL 을 주면 돈다). 음성 대조군 + 분기별 변이 12종 +
+// 오탐 대조군을 **출고되는 쿼리 문자열 그대로** 돌린다. 위 42725 를 일부러 되살려 보면
+// 그 파일이 빨강이 되는 것을 확인했다(2026-09-07).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   SECRET_COLUMN_NAME_PATTERN,
-  WAG_READONLY_EXCLUDED_COLUMNS,
+  WAG_READONLY_FORBIDDEN_COLUMNS,
   evaluateExposureAudit,
   runDbExposureAudit,
   type ExposureFinding,
@@ -193,11 +198,11 @@ describe("wag_readonly 범위 — 이름 규칙이 의도한 것을 실제로 �
   it("패턴이 못 보는 제외 컬럼은 명시 목록이 덮는다", () => {
     // `token`·`email` 을 뺀 대가로 이름만으로는 안 보이는 진짜 비밀값들. 목록이 이걸
     // 잃으면 `Seller.portalToken` 재부여가 무증상으로 통과한다.
-    const blind = WAG_READONLY_EXCLUDED_COLUMNS.filter(
+    const blind = WAG_READONLY_FORBIDDEN_COLUMNS.filter(
       (c) => !secretRx.test(c.split(".")[1] ?? ""),
     );
     expect(blind).toContain("Seller.portalToken");
     expect(blind).toContain("SystemSettings.instagramAccessToken");
-    expect(WAG_READONLY_EXCLUDED_COLUMNS).toHaveLength(16);
+    expect(WAG_READONLY_FORBIDDEN_COLUMNS).toHaveLength(16);
   });
 });

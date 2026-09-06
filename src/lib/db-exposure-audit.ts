@@ -15,6 +15,11 @@
 //                 있었고, 그래서 RLS 를 한 번 잊은 테이블이 전량 노출됐다).
 // 둘 중 하나만 남아도 즉시 유출은 아니지만, **한 겹으로 버티는 상태를 모르고 지내는 것**이
 // 위험이다. 이 감사는 그 상태를 시스템 레이더에 빨강으로 띄운다.
+//
+// 세 번째 축(2026-09-06) — **명명 계정 `wag_readonly` 의 권한 범위.** 위 두 겹이 Supabase
+// 공개 경로 롤(anon·authenticated)을 보는 것과 달리, 이쪽은 외부 봇이 쓰는 읽기 전용 로그인
+// 계정이 "스키마 USAGE + 컬럼 단위 SELECT" 밖으로 벗어났는지를 본다. 실패 모드는 같다 —
+// psql 한 줄로 벗겨지고, 앱은 멀쩡히 돌고, 레포에는 흔적이 없다.
 import { isSqliteDatabaseUrl } from "./prisma-client";
 
 /** 감사 대상 롤 — Supabase 가 만드는 공개 경로 롤. `service_role` 은 서버 전용이라 제외한다. */
@@ -63,8 +68,12 @@ const rolesLiteral = PUBLIC_ROLES.map((r) => `'${r}'`).join(", ");
  */
 const WAG_READONLY_ROLE = "wag_readonly";
 
-/** 이 롤에게 어떤 권한도 가면 안 되는 테이블 — 에이전트 작업 큐(역할 봇 자신의 지시·산출물). */
-const WAG_READONLY_EXCLUDED_TABLES = ["AgentJob", "AgentJobEvent"] as const;
+/**
+ * 이 롤에게 **어떤 권한도** 가면 안 되는 테이블 — 에이전트 작업 큐(역할 봇 자신의 지시·산출물).
+ * 이름이 `FORBIDDEN` 인 이유: 감사 코드에서 `EXCLUDED` 는 "감사 대상에서 뺀다(=허용)"로
+ * 읽히는데 의미가 정반대라, 다음 사람이 조건을 뒤집어 읽을 자리다.
+ */
+const WAG_READONLY_FORBIDDEN_TABLES = ["AgentJob", "AgentJobEvent"] as const;
 
 /**
  * 이름이 비밀값을 가리키는 컬럼 패턴(Postgres `~*` — 대소문자 무시).
@@ -80,13 +89,17 @@ export const SECRET_COLUMN_NAME_PATTERN =
 /**
  * 설계상 SELECT 가 가면 안 되는 컬럼 16개(계정 생성 SQL 부록 B와 같은 목록).
  *
+ * ⚠️ **짝맞춤이 기계로 강제되지 않는다.** 원본인 계정 생성 SQL 은 이 레포 밖에 있어
+ * 계약 테스트가 볼 수 없다 — 아래 개수 단언은 이 사본의 자기 개수만 지킨다. 원본의 제외
+ * 집합이 바뀌면 여기도 같이 고쳐야 하고, 안 고치면 감사가 조용히 좁아진다.
+ *
  * 왜 패턴만으로 부족한가 — 위 패턴은 이 16개 중 **9개만** 잡는다. `token`·`email` 을 뺀
  * 대가로 `Seller.portalToken`·`SystemSettings.instagramAccessToken` 같은 **진짜 비밀값
  * 7개가 이름만으로는 보이지 않는다**(2026-09-06 실측). 패턴은 앞으로 생길 컬럼을 위한
  * 그물이고, 이 목록은 지금 아는 것을 정확히 못 박는 핀이다 — 둘을 OR 로 묶어야 의도한
  * 범위가 실제로 덮인다. 제외 집합이 바뀔 때만 같이 고치면 된다(스키마가 늘 때가 아니라).
  */
-export const WAG_READONLY_EXCLUDED_COLUMNS = [
+export const WAG_READONLY_FORBIDDEN_COLUMNS = [
   "Partner.bankAccount",
   "Partner.businessNumber",
   "Partner.representativeEmail",
@@ -106,8 +119,8 @@ export const WAG_READONLY_EXCLUDED_COLUMNS = [
 ] as const;
 
 const wagRoleLiteral = `'${WAG_READONLY_ROLE}'`;
-const wagExcludedTablesLiteral = WAG_READONLY_EXCLUDED_TABLES.map((t) => `'${t}'`).join(", ");
-const wagExcludedColumnsLiteral = WAG_READONLY_EXCLUDED_COLUMNS.map((c) => `'${c}'`).join(", ");
+const wagForbiddenTablesLiteral = WAG_READONLY_FORBIDDEN_TABLES.map((t) => `'${t}'`).join(", ");
+const wagForbiddenColumnsLiteral = WAG_READONLY_FORBIDDEN_COLUMNS.map((c) => `'${c}'`).join(", ");
 
 /**
  * 점검 쿼리 7종. 전부 카탈로그 **읽기**다(`$queryRawUnsafe` — 파라미터 없음, 문자열 보간도
@@ -196,58 +209,109 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
   },
   {
     check: "wag_readonly_scope",
-    label: "wag_readonly 가 정해진 범위(컬럼 단위 SELECT)를 넘어선 권한을 가짐",
-    // 5분기를 UNION 으로 묶는다. 접두사(`relation:`·`secret-column:` …)를 붙여 두는 이유는
-    // `offenders` 만 보고도 **어느 분기가 울렸는지** 알기 위해서다 — 라벨 하나에 5종이
-    // 뭉쳐 있어 접두사가 없으면 레이더에서 원인을 못 가른다.
+    label: "wag_readonly 가 정해진 범위(스키마 USAGE + 컬럼 단위 SELECT)를 넘어선 권한을 가짐",
+    // ⚠️ **분기가 5개가 아니라 10개인 이유.** 발주 제안서는 5종을 정의했는데, 그 5종만으로는
+    // 라벨이 약속한 "정해진 범위를 넘어선 권한"의 절반만 본다. 교차 검증 3건이 같은 축을
+    // 짚었고 일회용 Postgres 실측이 결론을 냈다 — 특히 **소유권 이전**은 `relacl` 이 NULL 인
+    // 테이블에서 `has_column_privilege` 가 참인데(= 실제로 읽힌다) 5종은 전부 0건이었다.
+    // ACL 을 안 거치는 상승 경로(소유권·멤버십·기본권한)가 남아 있으면 이 감사는 "있다고
+    // 믿게 만드는" 쪽이 되므로, 범위 정의를 그대로 열거해 닫는다.
+    //
+    // 정해진 범위 = `GRANT USAGE ON SCHEMA public` + 컬럼 단위 `SELECT`. 그 밖은 전부 위반이다.
     // ⚠️ `||` 에 붙는 카탈로그 컬럼은 전부 `::text` 로 캐스트한다. 위 `default_privileges`
     // 가 `"char"` 를 캐스트 없이 이어 붙여 42725 로 통째로 실패했던 것과 같은 함정이다.
-    sql: `SELECT ('relation:' || c.relname::text || ':' || a.privilege_type) AS name
-          FROM pg_class c
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          CROSS JOIN LATERAL aclexplode(c.relacl) a
-          JOIN pg_roles r ON r.oid = a.grantee
-          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
-          UNION
-          SELECT ('column-privilege:' || c.relname::text || '.' || att.attname::text || ':' || a.privilege_type)
-          FROM pg_attribute att
-          JOIN pg_class c ON c.oid = att.attrelid
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          CROSS JOIN LATERAL aclexplode(att.attacl) a
-          JOIN pg_roles r ON r.oid = a.grantee
-          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
-            AND a.privilege_type <> 'SELECT'
-          UNION
-          SELECT ('secret-column:' || c.relname::text || '.' || att.attname::text)
-          FROM pg_attribute att
-          JOIN pg_class c ON c.oid = att.attrelid
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          CROSS JOIN LATERAL aclexplode(att.attacl) a
-          JOIN pg_roles r ON r.oid = a.grantee
-          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
-            AND (att.attname::text ~* '${SECRET_COLUMN_NAME_PATTERN}'
-                 OR (c.relname::text || '.' || att.attname::text) IN (${wagExcludedColumnsLiteral}))
-          UNION
-          SELECT ('role-attribute:' || v.attr)
-          FROM pg_roles r
-          CROSS JOIN LATERAL (VALUES
-              ('rolsuper', r.rolsuper),
-              ('rolcreatedb', r.rolcreatedb),
-              ('rolcreaterole', r.rolcreaterole),
-              ('rolbypassrls', r.rolbypassrls),
-              ('rolreplication', r.rolreplication)
-            ) AS v(attr, enabled)
-          WHERE r.rolname = ${wagRoleLiteral} AND v.enabled
-          UNION
-          SELECT ('excluded-table:' || c.relname::text || '.' || att.attname::text)
-          FROM pg_attribute att
-          JOIN pg_class c ON c.oid = att.attrelid
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-          CROSS JOIN LATERAL aclexplode(att.attacl) a
-          JOIN pg_roles r ON r.oid = a.grantee
-          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
-            AND c.relname::text IN (${wagExcludedTablesLiteral})
-          ORDER BY 1`,
+    // ⚠️ 정렬은 **심각도 우선**이다. `offenders` 는 MAX_OFFENDERS 개에서 잘리는데, 이름순으로
+    // 두면 `column-privilege:` 가 20건 넘게 나는 사고에서 정작 `role-attribute:`(슈퍼유저
+    // 승격)가 목록 밖으로 밀려난다 — 원인을 가르라고 붙인 접두사가 무용해진다.
+    sql: `WITH col AS (
+            SELECT c.relname::text AS rel, att.attname::text AS col, a.privilege_type AS priv
+            FROM pg_attribute att
+            JOIN pg_class c ON c.oid = att.attrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            CROSS JOIN LATERAL aclexplode(att.attacl) a
+            JOIN pg_roles r ON r.oid = a.grantee
+            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+          ), rel AS (
+            SELECT c.relname::text AS rel, a.privilege_type AS priv
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            CROSS JOIN LATERAL aclexplode(c.relacl) a
+            JOIN pg_roles r ON r.oid = a.grantee
+            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+          )
+          SELECT name FROM (
+            SELECT ('relation:' || rel || ':' || priv) AS name
+            FROM rel WHERE rel NOT IN (${wagForbiddenTablesLiteral})
+            UNION
+            SELECT ('column-privilege:' || rel || '.' || col || ':' || priv)
+            FROM col WHERE priv <> 'SELECT' AND rel NOT IN (${wagForbiddenTablesLiteral})
+            UNION
+            SELECT ('secret-column:' || rel || '.' || col)
+            FROM col
+            WHERE col ~* '${SECRET_COLUMN_NAME_PATTERN}'
+               OR (rel || '.' || col) IN (${wagForbiddenColumnsLiteral})
+            UNION
+            SELECT ('forbidden-table:' || rel || ':' || priv)
+            FROM rel WHERE rel IN (${wagForbiddenTablesLiteral})
+            UNION
+            SELECT ('forbidden-table:' || rel || '.' || col || ':' || priv)
+            FROM col WHERE rel IN (${wagForbiddenTablesLiteral})
+            UNION
+            SELECT ('role-attribute:' || v.attr)
+            FROM pg_roles r
+            CROSS JOIN LATERAL (VALUES
+                ('rolsuper', r.rolsuper),
+                ('rolcreatedb', r.rolcreatedb),
+                ('rolcreaterole', r.rolcreaterole),
+                ('rolbypassrls', r.rolbypassrls),
+                ('rolreplication', r.rolreplication)
+              ) AS v(attr, enabled)
+            WHERE r.rolname = ${wagRoleLiteral} AND v.enabled
+            UNION
+            SELECT ('role-membership:' || g.rolname::text)
+            FROM pg_auth_members m
+            JOIN pg_roles r ON r.oid = m.member
+            JOIN pg_roles g ON g.oid = m.roleid
+            WHERE r.rolname = ${wagRoleLiteral}
+            UNION
+            SELECT ('relation-owner:' || c.relname::text)
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_roles r ON r.oid = c.relowner
+            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            UNION
+            SELECT ('default-privilege:' || d.defaclobjtype::text || ':' || a.privilege_type)
+            FROM pg_default_acl d
+            JOIN pg_namespace n ON n.oid = d.defaclnamespace
+            CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+            JOIN pg_roles r ON r.oid = a.grantee
+            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            UNION
+            SELECT ('function-grant:' || p.proname::text || ':' || a.privilege_type)
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            CROSS JOIN LATERAL aclexplode(p.proacl) a
+            JOIN pg_roles r ON r.oid = a.grantee
+            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            UNION
+            SELECT ('schema-privilege:' || n.nspname::text || ':' || a.privilege_type)
+            FROM pg_namespace n
+            CROSS JOIN LATERAL aclexplode(n.nspacl) a
+            JOIN pg_roles r ON r.oid = a.grantee
+            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+              AND a.privilege_type <> 'USAGE'
+          ) q
+          ORDER BY CASE
+              WHEN name LIKE 'role-attribute:%' THEN 0
+              WHEN name LIKE 'role-membership:%' THEN 1
+              WHEN name LIKE 'relation-owner:%' THEN 2
+              WHEN name LIKE 'secret-column:%' THEN 3
+              WHEN name LIKE 'default-privilege:%' THEN 4
+              WHEN name LIKE 'forbidden-table:%' THEN 5
+              WHEN name LIKE 'relation:%' THEN 6
+              WHEN name LIKE 'schema-privilege:%' THEN 7
+              ELSE 8
+            END, name`,
   },
 ];
 
