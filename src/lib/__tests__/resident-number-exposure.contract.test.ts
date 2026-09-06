@@ -40,6 +40,10 @@ const ALLOWED_FILES = [
   // encryption-audit.contract.test.ts 의 소스 스캔이 별도로 고정한다.
   "src/lib/encryption-audit.ts",
   "src/app/api/cron/encryption-key-audit/route.ts",
+  // 권한 드리프트 감사(2026-09-06) — **컬럼 값이 아니라 컬럼 이름만** 다룬다.
+  // `wag_readonly` 에게 SELECT 가 가면 안 되는 제외 컬럼 목록에 `Seller.residentNumber`
+  // 가 이름으로 등장할 뿐이고, 쿼리는 `pg_attribute` 카탈로그만 읽는다(행 조회 없음).
+  "src/lib/db-exposure-audit.ts",
 ];
 
 // ── 요청 바디 통째 로깅 금지 (2026-08-14) ────────────────────────────────────

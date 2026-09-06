@@ -55,7 +55,62 @@ type CountRow = { n: bigint | number };
 const rolesLiteral = PUBLIC_ROLES.map((r) => `'${r}'`).join(", ");
 
 /**
- * 점검 쿼리 4종. 전부 카탈로그 **읽기**다(`$queryRawUnsafe` — 파라미터 없음, 문자열 보간도
+ * Hermes wag-db 역할 봇이 WAG CRM DB 를 읽는 데 쓰는 읽기 전용 계정.
+ * 안전이 **"컬럼 단위 SELECT 만 가진다"는 모양 하나**에 걸려 있는데, 그 모양은
+ * psql 한 줄(`GRANT SELECT ON "Seller" TO wag_readonly`)로 벗겨지고 레포에는 흔적이
+ * 남지 않는다 — 위 anon·authenticated 와 **똑같은 실패 모드**라 같은 레이더에 얹는다.
+ * 계정이 아직 없는 DB 에서는 아래 5분기가 전부 0건이라 조용하다(거짓 경보 없음).
+ */
+const WAG_READONLY_ROLE = "wag_readonly";
+
+/** 이 롤에게 어떤 권한도 가면 안 되는 테이블 — 에이전트 작업 큐(역할 봇 자신의 지시·산출물). */
+const WAG_READONLY_EXCLUDED_TABLES = ["AgentJob", "AgentJobEvent"] as const;
+
+/**
+ * 이름이 비밀값을 가리키는 컬럼 패턴(Postgres `~*` — 대소문자 무시).
+ *
+ * ⚠️ `token`·`key`·`email` 을 **넣지 않는다.** 2026-09-06 오너 결정으로 그 이름을 가졌지만
+ * 비밀값이 아닌 21개 컬럼(LLM 사용량 정수·식별자·타임스탬프·발주 라우팅용 업무 이메일)이
+ * 허용으로 되살아났다 — 넣으면 **상시 오탐 21건**이 되어 감사기가 무시당한다.
+ * 허용 916개 컬럼 전체에 대해 이 패턴을 돌려 오탐 0건을 확인했다(2026-09-06).
+ */
+export const SECRET_COLUMN_NAME_PATTERN =
+  "(password|secret|residentnumber|accountnumber|bankaccount|businessnumber|ssn|phone|contactinfo|mailingaddress)";
+
+/**
+ * 설계상 SELECT 가 가면 안 되는 컬럼 16개(계정 생성 SQL 부록 B와 같은 목록).
+ *
+ * 왜 패턴만으로 부족한가 — 위 패턴은 이 16개 중 **9개만** 잡는다. `token`·`email` 을 뺀
+ * 대가로 `Seller.portalToken`·`SystemSettings.instagramAccessToken` 같은 **진짜 비밀값
+ * 7개가 이름만으로는 보이지 않는다**(2026-09-06 실측). 패턴은 앞으로 생길 컬럼을 위한
+ * 그물이고, 이 목록은 지금 아는 것을 정확히 못 박는 핀이다 — 둘을 OR 로 묶어야 의도한
+ * 범위가 실제로 덮인다. 제외 집합이 바뀔 때만 같이 고치면 된다(스키마가 늘 때가 아니라).
+ */
+export const WAG_READONLY_EXCLUDED_COLUMNS = [
+  "Partner.bankAccount",
+  "Partner.businessNumber",
+  "Partner.representativeEmail",
+  "Partner.contactInfo",
+  "Seller.accountNumber",
+  "Seller.residentNumber",
+  "Seller.email",
+  "Seller.phoneNumber",
+  "Seller.portalToken",
+  "Seller.portalPasswordHash",
+  "Seller.mailingAddress",
+  "PartnerContact.email",
+  "PartnerContact.phoneNumber",
+  "StorageIntegration.accountEmail",
+  "StorageIntegration.encryptedRefreshToken",
+  "SystemSettings.instagramAccessToken",
+] as const;
+
+const wagRoleLiteral = `'${WAG_READONLY_ROLE}'`;
+const wagExcludedTablesLiteral = WAG_READONLY_EXCLUDED_TABLES.map((t) => `'${t}'`).join(", ");
+const wagExcludedColumnsLiteral = WAG_READONLY_EXCLUDED_COLUMNS.map((c) => `'${c}'`).join(", ");
+
+/**
+ * 점검 쿼리 7종. 전부 카탈로그 **읽기**다(`$queryRawUnsafe` — 파라미터 없음, 문자열 보간도
  * 상수뿐이라 주입면이 없다). 쓰기 경로를 타지 않으므로 `DB_READ_ONLY=1` 레인에서도 돈다.
  */
 const CHECKS: { check: string; label: string; sql: string }[] = [
@@ -137,6 +192,61 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
           FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relrowsecurity
+          ORDER BY 1`,
+  },
+  {
+    check: "wag_readonly_scope",
+    label: "wag_readonly 가 정해진 범위(컬럼 단위 SELECT)를 넘어선 권한을 가짐",
+    // 5분기를 UNION 으로 묶는다. 접두사(`relation:`·`secret-column:` …)를 붙여 두는 이유는
+    // `offenders` 만 보고도 **어느 분기가 울렸는지** 알기 위해서다 — 라벨 하나에 5종이
+    // 뭉쳐 있어 접두사가 없으면 레이더에서 원인을 못 가른다.
+    // ⚠️ `||` 에 붙는 카탈로그 컬럼은 전부 `::text` 로 캐스트한다. 위 `default_privileges`
+    // 가 `"char"` 를 캐스트 없이 이어 붙여 42725 로 통째로 실패했던 것과 같은 함정이다.
+    sql: `SELECT ('relation:' || c.relname::text || ':' || a.privilege_type) AS name
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(c.relacl) a
+          JOIN pg_roles r ON r.oid = a.grantee
+          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+          UNION
+          SELECT ('column-privilege:' || c.relname::text || '.' || att.attname::text || ':' || a.privilege_type)
+          FROM pg_attribute att
+          JOIN pg_class c ON c.oid = att.attrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(att.attacl) a
+          JOIN pg_roles r ON r.oid = a.grantee
+          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            AND a.privilege_type <> 'SELECT'
+          UNION
+          SELECT ('secret-column:' || c.relname::text || '.' || att.attname::text)
+          FROM pg_attribute att
+          JOIN pg_class c ON c.oid = att.attrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(att.attacl) a
+          JOIN pg_roles r ON r.oid = a.grantee
+          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            AND (att.attname::text ~* '${SECRET_COLUMN_NAME_PATTERN}'
+                 OR (c.relname::text || '.' || att.attname::text) IN (${wagExcludedColumnsLiteral}))
+          UNION
+          SELECT ('role-attribute:' || v.attr)
+          FROM pg_roles r
+          CROSS JOIN LATERAL (VALUES
+              ('rolsuper', r.rolsuper),
+              ('rolcreatedb', r.rolcreatedb),
+              ('rolcreaterole', r.rolcreaterole),
+              ('rolbypassrls', r.rolbypassrls),
+              ('rolreplication', r.rolreplication)
+            ) AS v(attr, enabled)
+          WHERE r.rolname = ${wagRoleLiteral} AND v.enabled
+          UNION
+          SELECT ('excluded-table:' || c.relname::text || '.' || att.attname::text)
+          FROM pg_attribute att
+          JOIN pg_class c ON c.oid = att.attrelid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN LATERAL aclexplode(att.attacl) a
+          JOIN pg_roles r ON r.oid = a.grantee
+          WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            AND c.relname::text IN (${wagExcludedTablesLiteral})
           ORDER BY 1`,
   },
 ];
