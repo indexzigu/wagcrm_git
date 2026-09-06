@@ -36,7 +36,16 @@ const adminUrl = process.env.DB_EXPOSURE_AUDIT_TEST_ADMIN_URL ?? "";
 const enabled = adminUrl.length > 0;
 
 /** 픽스처가 점유하는 이름. 하나라도 이미 있으면 실행하지 않는다(남의 것을 지우지 않기 위해). */
-const FIXTURE_ROLES = ["wag_readonly", "wag_readonly_probe_peer"] as const;
+const FIXTURE_ROLES = [
+  "wag_readonly",
+  "wag_readonly_probe_peer",
+  // 🪤 `anon`·`authenticated` 가 없으면 `relation_grants`·`function_grants`·
+  // `default_privileges` 점검은 **롤이 없어서** 0건이 된다. 그 0건은 "배포 직후 형태가
+  // 깨끗하다"의 근거가 못 된다 — 질의가 실제로 매칭을 시도해야 대조군이 성립한다.
+  // 권한 없이 이름만 만든다(프로덕션의 그 롤들과 달리 아무것도 부여하지 않는다).
+  "anon",
+  "authenticated",
+] as const;
 const FIXTURE_TABLES = [
   "Seller",
   "ActionProposal",
@@ -111,6 +120,8 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
   let scopeSql = "";
   let shippedQueries: string[] = [];
   let checkQueries: string[] = [];
+  /** 픽스처를 만들기 **전**의 위반 목록. 대상 DB 에 원래 있던 것을 우리 탓으로 세지 않는다. */
+  let baselineViolations: string[] = [];
   /** 이번 실행이 **실제로 만든** 것만 담는다. 정리는 오직 여기 있는 것만 지운다. */
   const cleanup: string[] = [];
 
@@ -125,6 +136,24 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
           "이 테스트는 남의 객체를 넘겨받아 고치거나 지우지 않는다.",
       );
     }
+
+    shippedQueries = await captureShippedQueries();
+    scopeSql = shippedQueries.find((query) => query.includes("role-membership:")) ?? "";
+    if (!scopeSql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
+    // 앞 두 개는 롤 존재·테이블 수 질의다. 나머지가 점검 본체다.
+    checkQueries = shippedQueries.slice(2);
+    // ⚠️ 개수를 못 박지 않으면 **점검이 7종에서 3종으로 줄어도 이 파일은 초록이다.**
+    // (`slice(2)` 라는 위치 지식도 여기서 함께 지킨다 — preamble 질의가 하나 늘면
+    // 이 단언이 먼저 깨진다. 안 그러면 이 레인만 조용히 어긋난다.)
+    if (checkQueries.length !== 7) {
+      throw new Error(`점검 질의가 7종이어야 하는데 ${checkQueries.length}종이다.`);
+    }
+
+    // ⚠️ **픽스처를 만들기 전에** 한 번 잰다. 대상 DB 가 비어 있으리라는 보장이 없고
+    // (이 파일은 다른 객체가 있을 수 있다는 전제로 이름 충돌을 따로 막는다), 점검은
+    // `public` 스키마 전체를 훑는다 — 남이 만든 RLS 꺼진 테이블 하나가 우리 음성 대조군을
+    // 빨갛게 만든다. 기준선을 빼고 **픽스처가 더한 것만** 보는 게 이 대조군의 뜻이다.
+    baselineViolations = await allViolations();
 
     // 만들자마자 되돌릴 문장을 쌓는다(역순). 중간에 실패해도 여기까지 만든 것은 정리된다.
     // ⚠️ **스키마를 맨 먼저 만든다.** 같은 DB 를 두 실행이 동시에 겨누면 위 이름 검사와
@@ -147,13 +176,17 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
       cleanup.unshift(`DROP OWNED BY ${role}`);
     }
     for (const grant of FIXTURE_GRANTS) await admin.$executeRawUnsafe(grant);
-
-    shippedQueries = await captureShippedQueries();
-    scopeSql = shippedQueries.find((query) => query.includes("role-membership:")) ?? "";
-    if (!scopeSql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
-    // 앞 두 개는 롤 존재·테이블 수 질의다. 나머지가 점검 본체다.
-    checkQueries = shippedQueries.slice(2);
   }, 60_000);
+
+  /** 점검 질의 전체를 돌려 위반 이름을 모은다. */
+  async function allViolations(): Promise<string[]> {
+    const names: string[] = [];
+    for (const query of checkQueries) {
+      const rows = (await admin!.$queryRawUnsafe(query)) as { name: string }[];
+      names.push(...rows.map((row) => row.name));
+    }
+    return names;
+  }
 
   afterAll(async () => {
     if (!admin) return;
@@ -195,12 +228,8 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     // ⚠️ `wag_readonly_scope` 하나만 보면 안 된다. PUBLIC 의사롤 점검 2종은 이 브랜치에서
     // `scope: "always"` 가 되어 wag 롤만 있는 DB 에서도 돌기 시작했는데, 그 둘이 배포 직후
     // 형태를 통과하는지는 아무도 확인한 적이 없었다.
-    const violations: string[] = [];
-    for (const query of checkQueries) {
-      const rows = (await admin!.$queryRawUnsafe(query)) as { name: string }[];
-      violations.push(...rows.map((row) => row.name));
-    }
-    expect(violations).toEqual([]);
+    const added = (await allViolations()).filter((name) => !baselineViolations.includes(name));
+    expect(added).toEqual([]);
   });
 
   it.each(MUTATIONS)("$label 변이를 잡는다", async ({ sql, expected }) => {
@@ -224,9 +253,10 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     // 키 이름을 여기서 직접 본다.
     const rows = (await admin!.$queryRawUnsafe(shippedQueries[0])) as Record<string, unknown>[];
     expect(Object.keys(rows[0] ?? {}).sort()).toEqual(["publicroles", "wagrole"]);
-    // 픽스처는 wag_readonly 만 만든다. 이름뿐 아니라 값의 의미도 함께 고정한다.
+    // 이름뿐 아니라 값의 의미도 함께 고정한다. 픽스처는 wag_readonly 1개와
+    // 공개 롤 2개(anon·authenticated)를 만든다.
     expect(Number(rows[0].wagrole)).toBe(1);
-    expect(Number(rows[0].publicroles)).toBe(0);
+    expect(Number(rows[0].publicroles)).toBe(2);
   });
 
   it("출고되는 질의가 전부 실 PostgreSQL 에서 실행된다", async () => {
