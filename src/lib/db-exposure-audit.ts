@@ -56,6 +56,7 @@ export type RawQueryClient = {
 
 type NameRow = { name: string };
 type CountRow = { n: bigint | number };
+type RolePresenceRow = { publicroles: bigint | number; wagrole: bigint | number };
 
 const rolesLiteral = PUBLIC_ROLES.map((r) => `'${r}'`).join(", ");
 
@@ -126,9 +127,12 @@ const wagForbiddenColumnsLiteral = WAG_READONLY_FORBIDDEN_COLUMNS.map((c) => `'$
  * 점검 쿼리 7종. 전부 카탈로그 **읽기**다(`$queryRawUnsafe` — 파라미터 없음, 문자열 보간도
  * 상수뿐이라 주입면이 없다). 쓰기 경로를 타지 않으므로 `DB_READ_ONLY=1` 레인에서도 돈다.
  */
-const CHECKS: { check: string; label: string; sql: string }[] = [
+type CheckScope = "public" | "wag";
+
+const CHECKS: { check: string; scope: CheckScope; label: string; sql: string }[] = [
   {
     check: "relation_grants",
+    scope: "public",
     label: "public 테이블·뷰·시퀀스에 anon/authenticated GRANT 가 살아 있음",
     // relacl 이 NULL 이면 명시 그랜트가 없다는 뜻 = LATERAL 이 행을 만들지 않는다(정상).
     sql: `SELECT c.relname::text AS name
@@ -141,6 +145,7 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
   },
   {
     check: "function_grants",
+    scope: "public",
     label: "public 함수에 anon/authenticated EXECUTE 가 살아 있음",
     sql: `SELECT p.proname::text AS name
           FROM pg_proc p
@@ -152,6 +157,7 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
   },
   {
     check: "default_privileges",
+    scope: "public",
     label: "미래 객체 자동 부여가 되살아남 (pg_default_acl 에 public 항목 재등장)",
     // 이게 가장 위험한 항목이다 — 지금 객체는 깨끗해도 **다음 마이그레이션이 만드는 테이블부터**
     // 다시 anon 에 열린다. 회수 마이그레이션의 핵심이 정확히 이 항목이었다.
@@ -168,6 +174,7 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
   },
   {
     check: "public_pseudo_role_grants",
+    scope: "public",
     label: "public 테이블이 PUBLIC 의사롤에 열려 있음 (= anon 포함 전원)",
     // ⚠️ 위의 GRANT 점검들은 `pg_roles` 를 조인하므로 **PUBLIC 을 절대 보지 못한다** —
     // aclexplode 가 PUBLIC 을 grantee=0(실재하지 않는 롤 OID)으로 돌려주기 때문이다.
@@ -184,6 +191,7 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
   },
   {
     check: "column_grants",
+    scope: "public",
     label: "public 테이블의 컬럼 단위 GRANT 가 anon/authenticated/PUBLIC 에 열려 있음",
     // 컬럼 단위 부여(`GRANT SELECT (email) ON "Seller" TO anon`)는 `pg_class.relacl` 이
     // 아니라 `pg_attribute.attacl` 에 저장돼, 위 관계 GRANT 점검이 통째로 놓친다.
@@ -200,6 +208,7 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
   },
   {
     check: "rls_disabled",
+    scope: "public",
     label: "public 테이블에 RLS 가 꺼져 있음",
     sql: `SELECT c.relname::text AS name
           FROM pg_class c
@@ -209,55 +218,45 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
   },
   {
     check: "wag_readonly_scope",
-    label: "wag_readonly 가 정해진 범위(스키마 USAGE + 컬럼 단위 SELECT)를 넘어선 권한을 가짐",
-    // ⚠️ **분기가 5개가 아니라 10개인 이유.** 발주 제안서는 5종을 정의했는데, 그 5종만으로는
-    // 라벨이 약속한 "정해진 범위를 넘어선 권한"의 절반만 본다. 교차 검증 3건이 같은 축을
-    // 짚었고 일회용 Postgres 실측이 결론을 냈다 — 특히 **소유권 이전**은 `relacl` 이 NULL 인
-    // 테이블에서 `has_column_privilege` 가 참인데(= 실제로 읽힌다) 5종은 전부 0건이었다.
-    // ACL 을 안 거치는 상승 경로(소유권·멤버십·기본권한)가 남아 있으면 이 감사는 "있다고
-    // 믿게 만드는" 쪽이 되므로, 범위 정의를 그대로 열거해 닫는다.
+    scope: "wag",
+    label: "wag_readonly 가 정해진 범위(public 스키마 USAGE + 컬럼 단위 SELECT)를 넘어선 권한을 가짐",
+    // ⚠️ **분기가 발주 제안서의 5종이 아니라 13개인 이유.** 5종만으로는 라벨이 약속한
+    // "정해진 범위를 넘어선 권한"의 절반만 본다. 교차 검증이 같은 축을 짚었고 일회용
+    // PostgreSQL 실측이 결론을 냈다 — **소유권 이전**은 `relacl` 이 NULL 인 테이블에서
+    // `has_column_privilege` 가 참인데(= 실제로 읽힌다) 5종이 전부 0건이었다. ACL 에 이 롤이
+    // grantee 로 등장하지 않는 경로(소유권·멤버십·기본권한)가 남아 있으면 이 감사는
+    // "있다고 믿게 만드는" 쪽이 되므로, 범위 정의의 여집합을 그대로 열거해 닫는다.
     //
-    // 정해진 범위 = `GRANT USAGE ON SCHEMA public` + 컬럼 단위 `SELECT`. 그 밖은 전부 위반이다.
+    // ⚠️ 이 항목은 `pg_roles` 를 조인하므로 **PUBLIC 의사롤(grantee = 0)을 보지 못한다** —
+    // `GRANT SELECT ON "Seller" TO PUBLIC` 은 wag_readonly 도 읽게 만든다. 여기서 중복
+    // 구현하지 않는 이유는 위 `public_pseudo_role_grants`(관계)와 `column_grants`(컬럼)가
+    // 롤·컬럼명 무관하게 그 형태를 이미 전수로 잡기 때문이다. 그 두 항목을 지우면 이 사각이 열린다.
+    //
     // ⚠️ `||` 에 붙는 카탈로그 컬럼은 전부 `::text` 로 캐스트한다. 위 `default_privileges`
     // 가 `"char"` 를 캐스트 없이 이어 붙여 42725 로 통째로 실패했던 것과 같은 함정이다.
     // ⚠️ 정렬은 **심각도 우선**이다. `offenders` 는 MAX_OFFENDERS 개에서 잘리는데, 이름순으로
-    // 두면 `column-privilege:` 가 20건 넘게 나는 사고에서 정작 `role-attribute:`(슈퍼유저
-    // 승격)가 목록 밖으로 밀려난다 — 원인을 가르라고 붙인 접두사가 무용해진다.
-    sql: `WITH col AS (
-            SELECT c.relname::text AS rel, att.attname::text AS col, a.privilege_type AS priv
+    // 두면 `column-privilege:` 가 20건 넘게 나는 사고에서 정작 슈퍼유저 승격이 목록 밖으로
+    // 밀려난다 — 원인을 가르라고 붙인 접두사가 무용해진다.
+    sql: `WITH wag AS (
+            SELECT oid FROM pg_roles WHERE rolname = ${wagRoleLiteral}
+          ), relation_grant AS (
+            SELECT c.relname::text AS relname, a.privilege_type AS priv
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            CROSS JOIN LATERAL aclexplode(c.relacl) a
+            JOIN wag ON wag.oid = a.grantee
+            WHERE n.nspname = 'public'
+          ), column_grant AS (
+            SELECT c.relname::text AS relname, att.attname::text AS attname, a.privilege_type AS priv
             FROM pg_attribute att
             JOIN pg_class c ON c.oid = att.attrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
             CROSS JOIN LATERAL aclexplode(att.attacl) a
-            JOIN pg_roles r ON r.oid = a.grantee
-            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
-          ), rel AS (
-            SELECT c.relname::text AS rel, a.privilege_type AS priv
-            FROM pg_class c
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            CROSS JOIN LATERAL aclexplode(c.relacl) a
-            JOIN pg_roles r ON r.oid = a.grantee
-            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            JOIN wag ON wag.oid = a.grantee
+            WHERE n.nspname = 'public'
           )
           SELECT name FROM (
-            SELECT ('relation:' || rel || ':' || priv) AS name
-            FROM rel WHERE rel NOT IN (${wagForbiddenTablesLiteral})
-            UNION
-            SELECT ('column-privilege:' || rel || '.' || col || ':' || priv)
-            FROM col WHERE priv <> 'SELECT' AND rel NOT IN (${wagForbiddenTablesLiteral})
-            UNION
-            SELECT ('secret-column:' || rel || '.' || col)
-            FROM col
-            WHERE col ~* '${SECRET_COLUMN_NAME_PATTERN}'
-               OR (rel || '.' || col) IN (${wagForbiddenColumnsLiteral})
-            UNION
-            SELECT ('forbidden-table:' || rel || ':' || priv)
-            FROM rel WHERE rel IN (${wagForbiddenTablesLiteral})
-            UNION
-            SELECT ('forbidden-table:' || rel || '.' || col || ':' || priv)
-            FROM col WHERE rel IN (${wagForbiddenTablesLiteral})
-            UNION
-            SELECT ('role-attribute:' || v.attr)
+            SELECT ('role-attribute:' || v.attr) AS name
             FROM pg_roles r
             CROSS JOIN LATERAL (VALUES
                 ('rolsuper', r.rolsuper),
@@ -270,47 +269,86 @@ const CHECKS: { check: string; label: string; sql: string }[] = [
             UNION
             SELECT ('role-membership:' || g.rolname::text)
             FROM pg_auth_members m
-            JOIN pg_roles r ON r.oid = m.member
+            JOIN wag ON wag.oid = m.member
             JOIN pg_roles g ON g.oid = m.roleid
-            WHERE r.rolname = ${wagRoleLiteral}
             UNION
+            -- 소유자는 ACL 에 등장하지 않아도 전권을 갖는다. 테이블을 소유하면 제외 컬럼까지
+            -- 읽고, 스키마를 소유하면 그 안에 객체를 만들고 지우며, 함수를 소유하면 정의를
+            -- 바꿔 실행 경로를 쥔다. 셋 다 \`relacl\` 이 NULL 인 채로 성립한다.
             SELECT ('relation-owner:' || c.relname::text)
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            JOIN pg_roles r ON r.oid = c.relowner
-            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            JOIN wag ON wag.oid = c.relowner
+            WHERE n.nspname = 'public'
             UNION
-            SELECT ('default-privilege:' || d.defaclobjtype::text || ':' || a.privilege_type)
+            SELECT ('namespace-owner:' || n.nspname::text)
+            FROM pg_namespace n JOIN wag ON wag.oid = n.nspowner
+            UNION
+            SELECT ('function-owner:' || p.proname::text)
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            JOIN wag ON wag.oid = p.proowner
+            WHERE n.nspname = 'public'
+            UNION
+            SELECT ('secret-column:' || relname || '.' || attname)
+            FROM column_grant
+            WHERE attname ~* '${SECRET_COLUMN_NAME_PATTERN}'
+               OR (relname || '.' || attname) IN (${wagForbiddenColumnsLiteral})
+            UNION
+            -- 스키마로 좁히지 않는다. \`ALTER DEFAULT PRIVILEGES GRANT ... TO wag_readonly\` 를
+            -- \`IN SCHEMA\` 없이 치면 \`defaclnamespace = 0\` 이라 pg_namespace 조인이 그 행을
+            -- 떨군다 . **가장 넓게 여는 형태가 필터에 걸려 사라지는** 셈이다.
+            SELECT ('default-privilege:' || COALESCE(n.nspname::text, '*') || '/'
+                    || d.defaclobjtype::text || ':' || a.privilege_type)
             FROM pg_default_acl d
-            JOIN pg_namespace n ON n.oid = d.defaclnamespace
+            LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
             CROSS JOIN LATERAL aclexplode(d.defaclacl) a
-            JOIN pg_roles r ON r.oid = a.grantee
-            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            JOIN wag ON wag.oid = a.grantee
             UNION
+            -- SECURITY DEFINER 함수 하나면 소유자 권한으로 무엇이든 읽을 수 있다.
             SELECT ('function-grant:' || p.proname::text || ':' || a.privilege_type)
             FROM pg_proc p
             JOIN pg_namespace n ON n.oid = p.pronamespace
             CROSS JOIN LATERAL aclexplode(p.proacl) a
-            JOIN pg_roles r ON r.oid = a.grantee
-            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
+            JOIN wag ON wag.oid = a.grantee
+            WHERE n.nspname = 'public'
             UNION
+            SELECT ('forbidden-table:' || relname || ':' || priv)
+            FROM relation_grant WHERE relname IN (${wagForbiddenTablesLiteral})
+            UNION
+            SELECT ('forbidden-column:' || relname || '.' || attname || ':' || priv)
+            FROM column_grant WHERE relname IN (${wagForbiddenTablesLiteral})
+            UNION
+            SELECT ('relation:' || relname || ':' || priv)
+            FROM relation_grant WHERE relname NOT IN (${wagForbiddenTablesLiteral})
+            UNION
+            -- 허용은 **public 스키마의 USAGE 하나뿐**이다. 다른 스키마의 USAGE 도 위반이다
+            -- (\`GRANT USAGE ON SCHEMA auth\` 한 줄이면 인증 테이블이 사정권에 든다).
             SELECT ('schema-privilege:' || n.nspname::text || ':' || a.privilege_type)
             FROM pg_namespace n
             CROSS JOIN LATERAL aclexplode(n.nspacl) a
-            JOIN pg_roles r ON r.oid = a.grantee
-            WHERE n.nspname = 'public' AND r.rolname = ${wagRoleLiteral}
-              AND a.privilege_type <> 'USAGE'
+            JOIN wag ON wag.oid = a.grantee
+            WHERE NOT (n.nspname = 'public' AND a.privilege_type = 'USAGE')
+            UNION
+            SELECT ('column-privilege:' || relname || '.' || attname || ':' || priv)
+            FROM column_grant
+            WHERE priv <> 'SELECT' AND relname NOT IN (${wagForbiddenTablesLiteral})
           ) q
           ORDER BY CASE
               WHEN name LIKE 'role-attribute:%' THEN 0
               WHEN name LIKE 'role-membership:%' THEN 1
-              WHEN name LIKE 'relation-owner:%' THEN 2
-              WHEN name LIKE 'secret-column:%' THEN 3
-              WHEN name LIKE 'default-privilege:%' THEN 4
-              WHEN name LIKE 'forbidden-table:%' THEN 5
-              WHEN name LIKE 'relation:%' THEN 6
-              WHEN name LIKE 'schema-privilege:%' THEN 7
-              ELSE 8
+              WHEN name LIKE 'namespace-owner:%' THEN 2
+              WHEN name LIKE 'relation-owner:%' THEN 3
+              WHEN name LIKE 'function-owner:%' THEN 4
+              WHEN name LIKE 'secret-column:%' THEN 5
+              WHEN name LIKE 'default-privilege:%' THEN 6
+              WHEN name LIKE 'function-grant:%' THEN 7
+              WHEN name LIKE 'forbidden-table:%' THEN 8
+              WHEN name LIKE 'forbidden-column:%' THEN 9
+              WHEN name LIKE 'relation:%' THEN 10
+              WHEN name LIKE 'schema-privilege:%' THEN 11
+              WHEN name LIKE 'column-privilege:%' THEN 12
+              ELSE 13
             END, name`,
   },
 ];
@@ -320,8 +358,18 @@ const PUBLIC_TABLE_COUNT_SQL = `SELECT count(*)::bigint AS n
   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')`;
 
-/** 감사 대상 롤이 이 DB 에 실재하는가. */
-const ROLE_COUNT_SQL = `SELECT count(*)::bigint AS n FROM pg_roles WHERE rolname IN (${rolesLiteral})`;
+/**
+ * 두 감사 축의 롤이 각각 이 DB 에 실재하는가.
+ *
+ * ⚠️ 두 축을 **따로** 센다. 종전에는 anon·authenticated 가 없으면 감사 전체가 `skipped` 였는데,
+ * 그러면 그 둘이 없고 `wag_readonly` 만 있는 Postgres 에서 **권한 상승이 통째로 무시된다** —
+ * 이 파일이 내내 경계해 온 "조용히 초록"의 또 다른 얼굴이다. 축이 셋이 된 이상 존재 판정도
+ * 축별로 해야 한다.
+ */
+const ROLE_PRESENCE_SQL = `SELECT
+    count(*) FILTER (WHERE rolname IN (${rolesLiteral}))::bigint AS publicroles,
+    count(*) FILTER (WHERE rolname = ${wagRoleLiteral})::bigint AS wagrole
+  FROM pg_roles`;
 
 function toNumber(value: bigint | number): number {
   return typeof value === "bigint" ? Number(value) : value;
@@ -368,18 +416,26 @@ export async function runDbExposureAudit(
     return { status: "skipped", reason: "sqlite 레인: public 스키마 노출 개념이 없다." };
   }
 
-  const roleRows = (await client.$queryRawUnsafe(ROLE_COUNT_SQL)) as CountRow[];
-  if (toNumber(roleRows[0]?.n ?? 0) === 0) {
-    // shadow DB(순정 postgres)·로컬 Postgres 에는 anon·authenticated 가 없다. Supabase 가
-    // 아니라는 뜻이므로 감사 대상이 아니다 — 회수 마이그레이션의 DO 블록과 같은 방어다.
-    return { status: "skipped", reason: "anon·authenticated 롤이 없다. Supabase 프로젝트가 아니다." };
+  const roleRows = (await client.$queryRawUnsafe(ROLE_PRESENCE_SQL)) as RolePresenceRow[];
+  const publicRolesPresent = toNumber(roleRows[0]?.publicroles ?? 0) > 0;
+  const wagRolePresent = toNumber(roleRows[0]?.wagrole ?? 0) > 0;
+  if (!publicRolesPresent && !wagRolePresent) {
+    // shadow DB(순정 postgres)·로컬 Postgres 에는 이 롤들이 없다. 감사 대상이 아니라는
+    // 뜻이므로 조용히 건너뛴다 — 회수 마이그레이션의 DO 블록과 같은 방어다.
+    return {
+      status: "skipped",
+      reason: "anon·authenticated·wag_readonly 중 아무 롤도 없다. 감사 대상 DB 가 아니다.",
+    };
   }
+  const activeChecks = CHECKS.filter((c) =>
+    c.scope === "wag" ? wagRolePresent : publicRolesPresent,
+  );
 
   const tableRows = (await client.$queryRawUnsafe(PUBLIC_TABLE_COUNT_SQL)) as CountRow[];
   const publicTables = toNumber(tableRows[0]?.n ?? 0);
 
   const findings: ExposureFinding[] = [];
-  for (const { check, label, sql } of CHECKS) {
+  for (const { check, label, sql } of activeChecks) {
     const rows = (await client.$queryRawUnsafe(sql)) as NameRow[];
     findings.push({
       check,

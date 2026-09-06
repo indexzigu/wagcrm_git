@@ -101,12 +101,35 @@ describe("실행 — 환경별 분기", () => {
     expect(r.status).toBe("skipped");
   });
 
-  it("anon·authenticated 롤이 없으면 skip (shadow DB·순정 Postgres)", async () => {
-    // migration-guard 의 shadow DB 는 순정 postgres:16 이라 이 롤들이 없다. 여기서
+  it("감사 대상 롤이 하나도 없으면 skip (shadow DB·순정 Postgres)", async () => {
+    // migration-guard 의 shadow DB 는 순정 postgres 라 이 롤들이 없다. 여기서
     // 실패로 찍으면 Supabase 가 아닌 환경 전부가 거짓 경보를 낸다.
-    const client = { $queryRawUnsafe: async () => [{ n: BigInt(0) }] };
+    const client = {
+      $queryRawUnsafe: async () => [{ publicroles: BigInt(0), wagrole: BigInt(0) }],
+    };
     const r = await runDbExposureAudit(client, "postgresql://localhost:5432/shadow");
     expect(r.status).toBe("skipped");
+  });
+
+  it("anon·authenticated 가 없어도 wag_readonly 가 있으면 그 축은 점검한다", async () => {
+    // 종전에는 공개 롤이 없으면 감사 전체가 skip 이었다 — 그러면 wag_readonly 만 있는
+    // Postgres 에서 권한 상승이 통째로 무시된다. 축이 셋이 된 이상 존재 판정도 축별로 한다.
+    const queries: string[] = [];
+    let call = 0;
+    const client = {
+      $queryRawUnsafe: async (query: string) => {
+        queries.push(query);
+        call += 1;
+        if (call === 1) return [{ publicroles: BigInt(0), wagrole: BigInt(1) }];
+        if (call === 2) return [{ n: BigInt(67) }];
+        return [{ name: "relation-owner:Seller" }];
+      },
+    };
+    const r = await runDbExposureAudit(client, "postgresql://localhost:5432/app");
+    expect(r.status).toBe("drift");
+    // 공개 롤 점검 6종은 돌지 않는다(거짓 경보 방지) — 롤 존재·테이블 수 + wag 1종뿐.
+    expect(queries).toHaveLength(3);
+    expect(r.status === "drift" && r.findings.map((f) => f.check)).toEqual(["wag_readonly_scope"]);
   });
 
   it("Supabase 환경에서 깨끗하면 ok, 위반이 있으면 drift", async () => {
@@ -116,10 +139,10 @@ describe("실행 — 환경별 분기", () => {
     // "로컬 그린"이 아무것도 보장하지 않게 만든다.
     const PG_URL = "postgresql://localhost:5432/app";
     let call = 0;
-    // 호출 순서: 롤 수 → 테이블 수 → CHECKS 7종
+    // 호출 순서: 롤 존재 → 테이블 수 → CHECKS 7종
     const responses = (offenders: unknown[][]) => async () => {
       call += 1;
-      if (call === 1) return [{ n: BigInt(2) }];
+      if (call === 1) return [{ publicroles: BigInt(2), wagrole: BigInt(1) }];
       if (call === 2) return [{ n: BigInt(67) }];
       return offenders[call - 3] ?? [];
     };
@@ -195,6 +218,21 @@ describe("wag_readonly 범위 — 이름 규칙이 의도한 것을 실제로 �
     }
   });
 
+  it("출고 SQL 에 분기 13종이 전부 실려 있고 심각도 정렬에도 등록돼 있다", async () => {
+    // ⚠️ 이 단언이 없으면 **분기를 하나 지워도 CI 는 초록이다.** 분기별 발화는 옆의
+    // realpg 레인이 보는데 그건 옵트인이라 기본 실행에서 전부 skip 되고, 나머지 계약은
+    // `check` 키만 볼 뿐 SQL 문자열을 건드리지 않는다.
+    // 정렬표까지 함께 보는 이유: `ORDER BY` 의 `ELSE` 가 미등록 접두사를 조용히 최하위로
+    // 떨어뜨려서, 새 분기를 넣고 정렬을 잊으면 그 위반이 offenders 절단에 먼저 잘린다.
+    const sql = await captureScopeSql();
+    for (const prefix of BRANCH_PREFIXES) {
+      expect(sql, `${prefix} 분기가 출고 SQL 에서 사라졌다`).toContain(`'${prefix}:`);
+      expect(sql, `${prefix} 가 심각도 정렬에 등록되지 않았다`).toContain(
+        `WHEN name LIKE '${prefix}:%'`,
+      );
+    }
+  });
+
   it("패턴이 못 보는 제외 컬럼은 명시 목록이 덮는다", () => {
     // `token`·`email` 을 뺀 대가로 이름만으로는 안 보이는 진짜 비밀값들. 목록이 이걸
     // 잃으면 `Seller.portalToken` 재부여가 무증상으로 통과한다.
@@ -206,3 +244,40 @@ describe("wag_readonly 범위 — 이름 규칙이 의도한 것을 실제로 �
     expect(WAG_READONLY_FORBIDDEN_COLUMNS).toHaveLength(16);
   });
 });
+
+/** `wag_readonly_scope` 가 덮어야 하는 상승 경로 전체. 하나라도 빠지면 위 계약이 깨진다. */
+const BRANCH_PREFIXES = [
+  "role-attribute",
+  "role-membership",
+  "namespace-owner",
+  "relation-owner",
+  "function-owner",
+  "secret-column",
+  "default-privilege",
+  "function-grant",
+  "forbidden-table",
+  "forbidden-column",
+  "relation",
+  "schema-privilege",
+  "column-privilege",
+] as const;
+
+/** 출고되는 점검 SQL 을 공개 API 로 뽑는다 — 손으로 옮겨 적은 사본은 출고본을 대표하지 못한다. */
+async function captureScopeSql(): Promise<string> {
+  const seen: string[] = [];
+  let call = 0;
+  await runDbExposureAudit(
+    {
+      $queryRawUnsafe: async (query: string) => {
+        seen.push(query);
+        call += 1;
+        if (call === 1) return [{ publicroles: BigInt(2), wagrole: BigInt(1) }];
+        return call === 2 ? [{ n: BigInt(2) }] : [];
+      },
+    },
+    "postgresql://localhost:5432/app",
+  );
+  const sql = seen.find((query) => query.includes("role-membership:"));
+  if (!sql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
+  return sql;
+}
