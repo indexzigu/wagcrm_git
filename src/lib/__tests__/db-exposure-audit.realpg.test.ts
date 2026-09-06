@@ -59,6 +59,14 @@ const FIXTURE_SCHEMAS = ["wag_probe_schema"] as const;
 const FIXTURE_FUNCTIONS = ["probe_fn"] as const;
 
 /**
+ * 출고되는 질의의 구성. 정본은 `src/lib/db-exposure-audit.ts` 의 `CHECKS` 배열과 그 앞의
+ * 롤 존재·테이블 수 질의다. 점검을 정당하게 늘릴 때 **여기 하나만 고치면 되도록** 뽑아 둔다
+ * (종전에는 `!== 7` 과 `>= 9` 가 따로 박혀 있어 앞의 것만 고치면 뒤가 조용히 헐거워졌다).
+ */
+const PREAMBLE_QUERY_COUNT = 2;
+const CHECK_QUERY_COUNT = 7;
+
+/**
  * 허용 형태 그대로. **계정 생성 SQL 이 실제로 하는 구문 종류를 빠짐없이 재현한다** —
  * 세션 가드레일(`ALTER ROLE ... SET`), 스키마 USAGE, 컬럼 단위 SELECT, RLS 활성화,
  * 그리고 이 롤을 대상으로 하는 SELECT 정책까지. 음성 대조군이 "배포 직후 상태"를
@@ -145,8 +153,11 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     // ⚠️ 개수를 못 박지 않으면 **점검이 7종에서 3종으로 줄어도 이 파일은 초록이다.**
     // (`slice(2)` 라는 위치 지식도 여기서 함께 지킨다 — preamble 질의가 하나 늘면
     // 이 단언이 먼저 깨진다. 안 그러면 이 레인만 조용히 어긋난다.)
-    if (checkQueries.length !== 7) {
-      throw new Error(`점검 질의가 7종이어야 하는데 ${checkQueries.length}종이다.`);
+    if (checkQueries.length !== CHECK_QUERY_COUNT) {
+      throw new Error(
+        `점검 질의가 ${CHECK_QUERY_COUNT}종이어야 하는데 ${checkQueries.length}종이다. ` +
+          "정본은 src/lib/db-exposure-audit.ts 의 CHECKS 배열이다.",
+      );
     }
 
     // ⚠️ **픽스처를 만들기 전에** 한 번 잰다. 대상 DB 가 비어 있으리라는 보장이 없고
@@ -228,7 +239,16 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     // ⚠️ `wag_readonly_scope` 하나만 보면 안 된다. PUBLIC 의사롤 점검 2종은 이 브랜치에서
     // `scope: "always"` 가 되어 wag 롤만 있는 DB 에서도 돌기 시작했는데, 그 둘이 배포 직후
     // 형태를 통과하는지는 아무도 확인한 적이 없었다.
-    const added = (await allViolations()).filter((name) => !baselineViolations.includes(name));
+    // ⚠️ **개수로 뺀다.** 이름만 빼면(집합 뺄셈) 기준선에 이미 있던 이름을 픽스처가 한 건
+    // 더해도 차집합이 비어 조용히 통과한다 — 점검 3종은 이름이 `relname`·`proname` 단독이라
+    // 같은 이름이 여러 행으로 반복될 수 있다(권한 종류가 이름에 안 들어간다).
+    const tally = (names: string[]): Map<string, number> =>
+      names.reduce((acc, name) => acc.set(name, (acc.get(name) ?? 0) + 1), new Map<string, number>());
+    const before = tally(baselineViolations);
+    const after = tally(await allViolations());
+    const added = [...after]
+      .filter(([name, count]) => count > (before.get(name) ?? 0))
+      .map(([name]) => name);
     expect(added).toEqual([]);
   });
 
@@ -262,7 +282,7 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
   it("출고되는 질의가 전부 실 PostgreSQL 에서 실행된다", async () => {
     // 이 레인을 만든 계기인 42725 는 `wag_readonly_scope` 가 아니라 `default_privileges`
     // 에서 났다. 한 항목만 태우면 나머지 6종은 여전히 목킹만 거친 채 나간다.
-    expect(shippedQueries.length).toBeGreaterThanOrEqual(9);
+    expect(shippedQueries).toHaveLength(PREAMBLE_QUERY_COUNT + CHECK_QUERY_COUNT);
     for (const query of shippedQueries) {
       await expect(admin!.$queryRawUnsafe(query)).resolves.toBeDefined();
     }
