@@ -75,7 +75,7 @@ export const KNOWN_JOBS: readonly KnownJob[] = [
   { key: "collect-youtube", name: "YouTube 셀러 분석", cycle: "매일", timeKst: "12:00", lane: "vercel", desc: "감시 셀러의 유튜브 채널 지표를 수집합니다. 매일 돌면서 마지막 갱신에서 7일이 지난 셀러만 골라 수집합니다." },
   { key: "recampaign-auto-propose", name: "재진행 적기 자동 기안", cycle: "매일", timeKst: "09:00", lane: "vercel", desc: "재진행 시점이 온 (셀러×딜) 조합을 승인 대기 기안으로 올립니다. 매출 D3 문턱을 넘는 조합만 자동 발화하고(화면에는 문턱 미만도 전부 보입니다), 같은 조합은 쿨다운 3개월 안에 다시 올리지 않습니다. 승인하면 셀러에 재접촉 결정이 메모로 남습니다. 셀러에게 나가는 것은 없습니다." },
   { key: "tax-invoice-issue-confirm", name: "발행 계산서 자동 확정", cycle: "매일", timeKst: "10:00", lane: "vercel", desc: "세금계산서 전용 메일함을 읽어, 우리가 발행한 계산서를 정산 건과 대조해 발행일을 자동으로 찍습니다. 첨부(국세청 표준 XML)를 연 건만 대상이고 금액이 완전히 맞을 때만 확정합니다. 어긋나면 찍지 않고 「확인 필요」로 남기므로 그때는 정산 화면에서 직접 완료를 누르면 됩니다. 이미 찍힌 날짜는 덮지 않고, 메일이 없다고 해서 이미 찍힌 것을 지우지도 않습니다." },
-  { key: "db-exposure-audit", name: "DB 노출 방어 감사", cycle: "매일", timeKst: "02:00", lane: "vercel", desc: "Supabase Data API 노출 방어 두 겹(anon GRANT 회수 · public 테이블 RLS)이 그대로인지 점검합니다. 방어가 벗겨져도 앱은 멀쩡히 돌아 사람이 알아챌 계기가 없으므로 기계가 매일 확인합니다. 빨강이면 유출이 났다는 뜻이 아니라 방어가 한 겹으로 줄었다는 뜻입니다." },
+  { key: "db-exposure-audit", name: "DB 노출 방어 감사", cycle: "매일", timeKst: "02:00", lane: "vercel", desc: "Supabase Data API 노출 방어 두 겹(anon GRANT 회수 · public 테이블 RLS)이 그대로인지, 그리고 읽기 전용 계정 wag_readonly 가 정해진 조회 범위 밖으로 권한을 얻지 않았는지 점검합니다. 방어가 벗겨져도 앱은 멀쩡히 돌아 사람이 알아챌 계기가 없으므로 기계가 매일 확인합니다. 빨강이면 유출이 났다는 뜻이 아니라 방어가 한 겹으로 줄었거나 그 계정이 범위를 넘었다는 뜻입니다." },
   { key: "encryption-key-audit", name: "암호화 키 정합 감사", cycle: "매일", timeKst: "02:30", lane: "vercel", desc: "저장된 셀러 주민등록번호가 현재 암호화 키로 열리는지 점검합니다. 키가 데이터와 어긋나면 화면에는 그냥 빈칸으로 보여서(미입력과 구분되지 않습니다) 사람이 알아챌 계기가 없으므로 기계가 매일 셉니다. 개수만 세고 값은 어디에도 남기지 않으며, 읽기만 합니다. 빨강이면 그 셀러의 정산·원천징수 화면에서 주민등록번호가 비어 보이는 상태라는 뜻입니다." },
 ];
 
