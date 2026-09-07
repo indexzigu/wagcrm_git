@@ -151,12 +151,19 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     scopeSql = shippedQueries.find((query) => query.includes("role-membership:")) ?? "";
     if (!scopeSql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
     // 앞의 것들은 롤 존재·테이블 수 질의다. 나머지가 점검 본체다.
-    // 🪤 자르는 위치는 리터럴(`slice(2)`)이 아니라 상수를 탄다. 리터럴로 두면 상수를 올려도
-    // 경계가 따라오지 않아 둘이 어긋난 채로 남는다. 어긋나면 아래 개수 단언이나 끝의 총계
-    // 단언 중 하나가 반드시 깨지므로 조용히 통과하지는 않지만, 실패가 원인에서 먼 자리에
-    // 뜬다.
     rolePresenceSql = shippedQueries[0];
     checkQueries = shippedQueries.slice(PREAMBLE_QUERY_COUNT);
+
+    // 🪤 **개수만으로는 이 경계를 못 지킨다.** preamble 이 하나 늘고 점검이 하나 줄면
+    // 총수도 점검 수도 그대로라 아래 두 단언이 다 통과하는데, `checkQueries` 에는
+    // preamble 이 섞여 든다. 그래서 **모양으로** 확인한다 — 점검 질의는 전부 위반 이름을
+    // `AS name` 으로 내보내고 preamble 질의(롤 존재·테이블 수)는 그렇지 않다(실측 확인).
+    const notChecks = checkQueries.filter((query) => !/\bAS name\b/.test(query));
+    if (notChecks.length > 0) {
+      throw new Error(
+        `점검 본체에 preamble 질의가 ${notChecks.length}건 섞였다. 자르는 위치를 확인할 것.`,
+      );
+    }
     // ⚠️ 개수를 못 박지 않으면 **점검이 7종에서 3종으로 줄어도 이 파일은 초록이다.**
     if (checkQueries.length !== CHECK_QUERY_COUNT) {
       throw new Error(
