@@ -151,14 +151,13 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     scopeSql = shippedQueries.find((query) => query.includes("role-membership:")) ?? "";
     if (!scopeSql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
     // 앞의 것들은 롤 존재·테이블 수 질의다. 나머지가 점검 본체다.
-    // 🪤 여기 `2` 를 리터럴로 두면 상수 추출이 절반만 된 것이다 — `PREAMBLE_QUERY_COUNT` 를
-    // 늘려도 이 줄이 그대로면 점검 본체에 preamble 이 섞여 들고, 개수 단언은 여전히 7이라
-    // 앞에서는 안 깨지고 뒤에서만 깨진다(고치려던 어긋남이 방향만 바꿔 재현된다).
+    // 🪤 자르는 위치를 리터럴로 두면(`slice(2)`) 상수 추출이 절반만 된 것이다 —
+    // `PREAMBLE_QUERY_COUNT` 를 늘려도 이 줄이 그대로면 점검 본체에 preamble 이 섞여 드는데,
+    // 아래 개수 단언은 여전히 7이라 **그대로 통과한다**(고치려던 어긋남이 방향만 바꿔
+    // 재현된다). 자르는 쪽과 세는 쪽이 같은 상수를 타야 그 어긋남이 생기지 않는다.
     rolePresenceSql = shippedQueries[0];
     checkQueries = shippedQueries.slice(PREAMBLE_QUERY_COUNT);
     // ⚠️ 개수를 못 박지 않으면 **점검이 7종에서 3종으로 줄어도 이 파일은 초록이다.**
-    // (`slice(2)` 라는 위치 지식도 여기서 함께 지킨다 — preamble 질의가 하나 늘면
-    // 이 단언이 먼저 깨진다. 안 그러면 이 레인만 조용히 어긋난다.)
     if (checkQueries.length !== CHECK_QUERY_COUNT) {
       throw new Error(
         `점검 질의가 ${CHECK_QUERY_COUNT}종이어야 하는데 ${checkQueries.length}종이다. ` +
