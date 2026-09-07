@@ -127,6 +127,8 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
   let admin: PrismaClient | undefined;
   let scopeSql = "";
   let shippedQueries: string[] = [];
+  /** preamble 의 첫 질의 — 롤 존재 판정. */
+  let rolePresenceSql = "";
   let checkQueries: string[] = [];
   /** 픽스처를 만들기 **전**의 위반 목록. 대상 DB 에 원래 있던 것을 우리 탓으로 세지 않는다. */
   let baselineViolations: string[] = [];
@@ -148,8 +150,12 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     shippedQueries = await captureShippedQueries();
     scopeSql = shippedQueries.find((query) => query.includes("role-membership:")) ?? "";
     if (!scopeSql) throw new Error("wag_readonly_scope 점검 SQL 을 출고본에서 못 찾았다.");
-    // 앞 두 개는 롤 존재·테이블 수 질의다. 나머지가 점검 본체다.
-    checkQueries = shippedQueries.slice(2);
+    // 앞의 것들은 롤 존재·테이블 수 질의다. 나머지가 점검 본체다.
+    // 🪤 여기 `2` 를 리터럴로 두면 상수 추출이 절반만 된 것이다 — `PREAMBLE_QUERY_COUNT` 를
+    // 늘려도 이 줄이 그대로면 점검 본체에 preamble 이 섞여 들고, 개수 단언은 여전히 7이라
+    // 앞에서는 안 깨지고 뒤에서만 깨진다(고치려던 어긋남이 방향만 바꿔 재현된다).
+    rolePresenceSql = shippedQueries[0];
+    checkQueries = shippedQueries.slice(PREAMBLE_QUERY_COUNT);
     // ⚠️ 개수를 못 박지 않으면 **점검이 7종에서 3종으로 줄어도 이 파일은 초록이다.**
     // (`slice(2)` 라는 위치 지식도 여기서 함께 지킨다 — preamble 질의가 하나 늘면
     // 이 단언이 먼저 깨진다. 안 그러면 이 레인만 조용히 어긋난다.)
@@ -189,14 +195,19 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     for (const grant of FIXTURE_GRANTS) await admin.$executeRawUnsafe(grant);
   }, 60_000);
 
-  /** 점검 질의 전체를 돌려 위반 이름을 모은다. */
+  /**
+   * 점검 질의 전체를 돌려 위반을 모은다. **어느 점검이 냈는지를 이름에 붙인다** —
+   * 이름만 뭉치면 종류가 다른 위반끼리 상쇄된다. 점검 3종은 이름이 `relname`·`proname`
+   * 단독이라(권한 종류가 이름에 안 들어간다) 기준선의 관계 권한 1건이 사라지고 RLS 꺼짐
+   * 1건이 생겨도 총계가 같아 조용해진다.
+   */
   async function allViolations(): Promise<string[]> {
-    const names: string[] = [];
-    for (const query of checkQueries) {
+    const tagged: string[] = [];
+    for (const [index, query] of checkQueries.entries()) {
       const rows = (await admin!.$queryRawUnsafe(query)) as { name: string }[];
-      names.push(...rows.map((row) => row.name));
+      tagged.push(...rows.map((row) => `#${index} ${row.name}`));
     }
-    return names;
+    return tagged;
   }
 
   afterAll(async () => {
@@ -246,9 +257,10 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
       names.reduce((acc, name) => acc.set(name, (acc.get(name) ?? 0) + 1), new Map<string, number>());
     const before = tally(baselineViolations);
     const after = tally(await allViolations());
+    // 증분 수까지 남긴다 — 이름만 돌려주면 실패했을 때 "몇 건 늘었나"를 다시 조사해야 한다.
     const added = [...after]
-      .filter(([name, count]) => count > (before.get(name) ?? 0))
-      .map(([name]) => name);
+      .map(([name, count]) => [name, count - (before.get(name) ?? 0)] as const)
+      .filter(([, delta]) => delta > 0);
     expect(added).toEqual([]);
   });
 
@@ -271,7 +283,7 @@ describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)
     // 다 "롤 없음"으로 읽어 **모든 환경에서 감사가 조용히 통과한다.** 목킹 테스트는 목이
     // TS 타입과 같은 키를 손으로 적으므로 이 어긋남을 영원히 못 본다 — 실 DB 가 돌려주는
     // 키 이름을 여기서 직접 본다.
-    const rows = (await admin!.$queryRawUnsafe(shippedQueries[0])) as Record<string, unknown>[];
+    const rows = (await admin!.$queryRawUnsafe(rolePresenceSql)) as Record<string, unknown>[];
     expect(Object.keys(rows[0] ?? {}).sort()).toEqual(["publicroles", "wagrole"]);
     // 이름뿐 아니라 값의 의미도 함께 고정한다. 픽스처는 wag_readonly 1개와
     // 공개 롤 2개(anon·authenticated)를 만든다.
