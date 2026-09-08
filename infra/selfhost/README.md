@@ -15,7 +15,7 @@ WAG CRM 을 Vercel 에서 오너 소유 iMac 으로 이전하는 셀프호스트
 | 크론 | 호스트 네이티브 스크립트 (별도 Task) | `run-cron.sh` 가 `curl 127.0.0.1:3000/api/cron/<job>` 호출 |
 | 백업 | 호스트 네이티브 스크립트 + launchd (아래 "백업" 절) | `backup.sh`(일간, DB → R2) + `backup-weekly.sh`(주간, DB+스토리지 → Google Drive), `restore-drill.sh` 로 복원 리허설 |
 | **프리뷰 앱** | 호스트 네이티브 (launchd `kr.ygrd.wagcrm.preview`, **온디맨드**) | `127.0.0.1:3001`. `preview.sh up` 으로 열고 `down` 으로 닫는다. 별도 체크아웃 `~/selfhost/wagcrm-preview` (아래 "프리뷰(스테이징) 레인") |
-| **프리뷰 DB** | Docker (단독 컨테이너 `wagcrm-preview-db`, **온디맨드**) | `127.0.0.1:55432`. `preview.sh up` 이 매번 최신 백업으로 재구축, `down` 이 삭제 |
+| **프리뷰 DB** | Docker (단독 컨테이너 `wagcrm-preview-db`, **온디맨드**) | `127.0.0.1:55433`. `preview.sh up` 이 매번 최신 백업으로 재구축, `down` 이 삭제. ⛔ `55432` 는 프로덕션 `supabase-db` 의 포트다(2026-08-25 루프백 조치) — 종전 표기는 SUPERSEDED |
 | **메뉴바 앱** | 호스트 네이티브 (launchd `kr.ygrd.wagcrm.menubar`) | 오너용 상태 표시 + 프리뷰 온·오프 화면. `install-menubar.sh` 로 설치 (아래 "메뉴바 앱" 절) |
 | **CI 러너** | Colima VM (Linux) + VM 안 systemd (**프로덕션 Docker 와 별개 VM**) | GitHub Actions `release-preflight` 자가호스트 러너. VM 상시기동은 `brew services start colima` (아래 "GitHub Actions 자가호스트 러너" 절, 판단 규칙은 P6) |
 
@@ -71,7 +71,7 @@ WAG CRM 을 Vercel 에서 오너 소유 iMac 으로 이전하는 셀프호스트
 | 포트 | `127.0.0.1:3000` | `127.0.0.1:3001` |
 | 체크아웃 | `~/selfhost/wagcrm` | `~/selfhost/wagcrm-preview` |
 | launchd 라벨 | `kr.ygrd.wagcrm.app` | `kr.ygrd.wagcrm.preview` |
-| DB | `supabase-db` (풀러 `127.0.0.1:6543`) | `wagcrm-preview-db` (`127.0.0.1:55432` 직결) |
+| DB | `supabase-db` (`127.0.0.1:55432` 직결 · 풀러 `127.0.0.1:6543`) | `wagcrm-preview-db` (`127.0.0.1:55433` 직결) |
 | 배포 마커 | `~/selfhost/logs/deployed.sha` | `~/selfhost/logs/deployed.preview.sha` |
 | 스토리지 버킷 | `crm-assets` · `seller-media` | `crm-assets-preview` · `seller-media-preview` |
 | 앱 크론 | 전량 (`run-cron.sh`) | **없음** |

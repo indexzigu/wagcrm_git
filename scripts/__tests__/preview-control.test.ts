@@ -147,6 +147,25 @@ describe("preview.sh 파괴 명령 가드", () => {
     expect('PREVIEW_CHECKOUT="$HOME/selfhost/wagcrm-preview"').not.toMatch(PROD_CHECKOUT_RE);
   });
 
+  it("프리뷰 env 의 DB 확인이 DB 재구축·서비스 로드보다 앞에 온다", () => {
+    // 프리뷰 레인의 실행 env 는 호스트 로컬 파일이라 이 레포가 고칠 수 없다. 그 값이
+    // 프로덕션 DB 를 가리키면 deploy.sh 가 프로덕션에 마이그레이션을 걸고 프리뷰 앱이
+    // 프로덕션 데이터를 만진다(deploy.sh 의 host 가드는 127.0.0.1 을 통과시킨다).
+    // 2026-08-25 이후 실제로 그 상태였고, 프리뷰 DB 가 같은 포트를 잡으려다 실패해
+    // 레인이 안 뜬 것만이 제동이었다 — 포트를 옮기면 그 제동이 풀리므로 이 검사가
+    // 그 자리를 대신한다. 확인은 반드시 docker·launchd 를 건드리기 **전**이어야 한다.
+    const lines = activeLines(functionBody(src, "cmd_up"));
+    const envCheckIdx = lines.findIndex((l) => /env_hostport.*PREVIEW_DB_HOSTPORT|PREVIEW_DB_HOSTPORT.*env_hostport/.test(l));
+    const dbRebuildIdx = lines.findIndex((l) => /preview-db\.sh/.test(l));
+    const bootstrapIdx = lines.findIndex((l) => /launchctl\s+bootout|launchctl\s+bootstrap/.test(l));
+
+    expect(envCheckIdx, "프리뷰 env 의 DB 확인을 찾지 못했다 — 계약 기준을 갱신할 것").toBeGreaterThan(-1);
+    expect(dbRebuildIdx, "preview-db.sh 호출을 찾지 못했다").toBeGreaterThan(-1);
+    expect(bootstrapIdx, "launchctl 조작을 찾지 못했다").toBeGreaterThan(-1);
+    expect(dbRebuildIdx, "DB 재구축이 env 확인보다 앞에 있다").toBeGreaterThan(envCheckIdx);
+    expect(bootstrapIdx, "서비스 로드가 env 확인보다 앞에 있다").toBeGreaterThan(envCheckIdx);
+  });
+
   it("파일 삭제가 launchd 언로드 확인보다 뒤에 온다", () => {
     // `bootout` 은 비동기다. 언로드를 확인하기 전에 지우면 아직 살아 있는 앱 프로세스와
     // 경합한다 — 프리뷰 앱은 체크아웃 안의 standalone 서버로 돌면서 런타임 캐시를

@@ -4,9 +4,17 @@ cd "$(dirname "$0")/../.."
 
 # 프리뷰 Postgres 컨테이너를 최신 백업으로 재구축한다(멱등 — 매 실행이 새로 만든다).
 #
-# 왜 별도 컨테이너인가: supabase-db 는 호스트에 포트를 열지 않는다(풀러만 5432/6543).
-# 프리뷰 앱은 호스트 프로세스라 붙을 대상이 필요하다. restore-drill.sh 가 검증한
-# "라이브와 같은 이미지로 일회용 컨테이너" 패턴을 이름·포트 고정으로 상주화한 것이다.
+# 왜 별도 컨테이너인가: 프리뷰는 프로덕션 데이터를 만지면 안 되므로 백업에서 복원한
+# 별도 DB 가 필요하고, 프리뷰 앱은 호스트 프로세스라 호스트 포트로 붙을 대상이 있어야
+# 한다. restore-drill.sh 가 검증한 "라이브와 같은 이미지로 일회용 컨테이너" 패턴을
+# 이름·포트 고정으로 상주화한 것이다.
+#
+# ⛔ 종전 주석 "supabase-db 는 호스트에 포트를 열지 않는다(풀러만 5432/6543)" 는
+# **SUPERSEDED** — 2026-08-25 루프백 전용 조치로 supabase-db 가 127.0.0.1:55432 를
+# 열었다(compose override, 정본 docs/agents/dev-qa.md P9). 이 스크립트의 초판은 그
+# 낡은 전제 위에서 55432 를 골랐고, 그래서 프로덕션과 포트가 겹쳐 프리뷰 레인이
+# 통째로 기동 불가가 됐다(docker: "Bind for 127.0.0.1:55432 failed: port is already
+# allocated"). 프리뷰는 55433 을 쓴다 — 아래 가드 ③ 이 이 충돌의 재발을 막는다.
 #
 # 볼륨을 두지 않는다 — 매일 재생성하므로 영속이 무의미하고, 이 기계는 데이터 볼륨이
 # 95% 차 있다.
@@ -16,7 +24,7 @@ cd "$(dirname "$0")/../.."
 # `scripts/__tests__/preview-db.test.ts` 가 그 경로를 막는다.
 
 PREVIEW_CONTAINER="wagcrm-preview-db"
-PREVIEW_PORT="55432"
+PREVIEW_PORT="55433"
 LIVE_CONTAINER="supabase-db"          # 이미지 참조 전용 — 절대 파괴 대상이 아니다
 PW_FILE="$HOME/selfhost/preview-db-password.txt"
 R2_CREDS_FILE="$HOME/selfhost/r2-credentials.txt"
@@ -51,7 +59,17 @@ case "$PREVIEW_CONTAINER" in
   *) abort "프리뷰 컨테이너 이름이 비정상입니다($PREVIEW_CONTAINER) — 안전을 위해 중단합니다." ;;
 esac
 
-# ── 가드 ③: 프리뷰 체크아웃 ──
+# ── 가드 ③: 프로덕션 포트 침범 방지 ──
+# 프로덕션 DB 로 가는 문은 전부 루프백 전용이고(2026-08-25 오너 확정) 그 포트들은
+# 이미 임자가 있다: supabase-db 55432, supavisor 5432·6543. 프리뷰가 그중 하나를
+# 집으려 하면 docker 가 "port is already allocated" 로 거절해 레인이 죽는다.
+# 여기서 먼저 멈춰 원인을 이름으로 말해 준다(거부 목록 정본은
+# src/lib/agent-worker/__tests__/support/disposable-postgres.ts 의 PRODUCTION_PORTS).
+case "$PREVIEW_PORT" in
+  55432|5432|6543) abort "프리뷰 포트($PREVIEW_PORT)가 프로덕션 DB 포트입니다 — 다른 포트를 쓰세요(현행 규약: 55433)." ;;
+esac
+
+# ── 가드 ④: 프리뷰 체크아웃 ──
 # 스키마 재구축은 프리뷰 체크아웃의 prisma 로 한다(프리뷰 앱이 실제로 도는 코드와
 # 같은 마이그레이션이어야 하기 때문). 체크아웃이 없으면 데이터 주입 직전에
 # 실패하므로, 컨테이너를 갈아엎기 **전에** 여기서 멈춘다.

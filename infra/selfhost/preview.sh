@@ -23,6 +23,10 @@ PREVIEW_CHECKOUT="$HOME/selfhost/wagcrm-preview"
 PLIST_NAME="kr.ygrd.wagcrm.preview.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 PREVIEW_PORT=3001
+# 프리뷰 DB 의 호스트 포트. SSOT 는 preview-db.sh 의 PREVIEW_PORT 이고 여기 값은 그
+# 사본이다 — 아래 env 가드가 "프리뷰 앱이 프리뷰 DB 를 보고 있는가" 를 검사하는 데만
+# 쓴다. 둘이 어긋나면 가드가 정상 구성을 거부하므로 함께 고쳐야 한다.
+PREVIEW_DB_HOSTPORT="127.0.0.1:55433"
 # deploy.sh 가 쓰는 배포 완료 마커. 그쪽의 유도 규칙(마커 디렉터리는 체크아웃의
 # 부모 + 파일명은 라벨 끝단에서 파생)을 그대로 재현한다 — 경로를 손으로 박아두면
 # deploy.sh 가 규칙을 바꿀 때 여기만 조용히 낡는다.
@@ -103,6 +107,25 @@ cmd_up() {
     command -v "$bin" >/dev/null 2>&1 || missing="${missing:+$missing }$bin"
   done
   [ -z "$missing" ] || abort "필수 실행파일을 PATH 에서 찾지 못함: $missing (PATH=$PATH)"
+
+  # ── env 가드: 프리뷰 앱이 프리뷰 DB 를 보고 있는가 ──
+  # 프리뷰 레인의 실행 env(체크아웃의 infra/selfhost/.env, run-app.sh 가 source 한다)는
+  # 호스트 로컬 파일이라 이 레포가 고칠 수 없다. 그 값이 프로덕션 DB 를 가리키면
+  # deploy.sh 가 **프로덕션에 마이그레이션을 걸고** 프리뷰 앱이 프로덕션 데이터를
+  # 만진다 — deploy.sh 의 host 가드는 127.0.0.1 을 정상으로 통과시키므로 그쪽에서
+  # 걸리지 않는다.
+  #
+  # 2026-08-25 루프백 조치가 55432 를 프로덕션(supabase-db)에 넘긴 뒤로 이 env 는
+  # 실제로 프로덕션을 가리키고 있었다. 그동안 사고가 나지 않은 이유는 프리뷰 DB 가
+  # 같은 포트를 잡으려다 실패해 레인이 아예 안 떴기 때문이다 — 즉 **포트 충돌이
+  # 우연히 제동 역할을 하고 있었다.** 프리뷰 DB 를 55433 으로 옮기면 그 제동이
+  # 풀리므로, 같은 제동을 여기서 제 이유로 다시 건다.
+  local env_file="$PREVIEW_CHECKOUT/infra/selfhost/.env"
+  [ -r "$env_file" ] || abort "프리뷰 실행 env 를 읽을 수 없습니다($env_file)."
+  local env_hostport
+  env_hostport="$(grep -hE '^DATABASE_URL=' "$env_file" 2>/dev/null | head -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
+  [ "$env_hostport" = "$PREVIEW_DB_HOSTPORT" ] \
+    || abort "프리뷰 실행 env 의 DATABASE_URL 이 프리뷰 DB($PREVIEW_DB_HOSTPORT)가 아니라 ${env_hostport:-미설정} 을 가리킵니다 — 이대로 열면 프리뷰가 그 DB 에 마이그레이션을 걸고 데이터를 씁니다. $env_file 의 호스트·포트를 $PREVIEW_DB_HOSTPORT 로 고친 뒤 다시 실행하세요."
 
   # 브랜치 존재는 DB 를 건드리기 **전에** 확인한다 — 오타로 DB 만 갈아엎는 것을 막는다.
   git -C "$PREVIEW_CHECKOUT" fetch --quiet origin

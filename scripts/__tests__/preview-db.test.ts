@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
@@ -22,7 +22,7 @@ const REAL_TOOLS = [
   "tr", "cat", "mktemp", "seq", "id", "dirname", "basename", "sleep", "env", "gzip",
 ];
 
-function runWithStubs(stubs: string[], extraEnv: Record<string, string> = {}) {
+function runWithStubs(stubs: string[], extraEnv: Record<string, string> = {}, script: string = SCRIPT) {
   const dir = mkdtempSync(path.join(tmpdir(), "preview-db-"));
   const binDir = path.join(dir, "bin");
   mkdirSync(binDir);
@@ -32,7 +32,7 @@ function runWithStubs(stubs: string[], extraEnv: Record<string, string> = {}) {
     const src = [`/usr/bin/${tool}`, `/bin/${tool}`].find((p) => existsSync(p));
     if (src) symlinkSync(src, path.join(binDir, tool));
   }
-  const r = spawnSync("/bin/bash", [SCRIPT], {
+  const r = spawnSync("/bin/bash", [script], {
     env: { PATH: binDir, HOME: dir, PREVIEW_DB_TEST_PATH_CANDIDATES: path.join(dir, "empty"), ...extraEnv },
     encoding: "utf8",
   });
@@ -46,6 +46,27 @@ describe("preview-db.sh 가드", () => {
     expect(r.out).toMatch(/찾지 못함:.*docker/);
     expect(r.out).toMatch(/찾지 못함:.*psql/);
     expect(r.out).toMatch(/찾지 못함:.*rclone/);
+  });
+
+  it("프리뷰 포트가 프로덕션 DB 포트면 docker 를 건드리기 전에 중단한다", () => {
+    // 2026-08-25 루프백 조치가 55432 를 프로덕션(supabase-db)에 넘겼는데 이 스크립트는
+    // 그 이전 전제("supabase-db 는 호스트 포트를 안 연다") 위에서 55432 를 골라 둬,
+    // 프리뷰 레인이 통째로 기동 불가가 됐다. 값을 되돌리는 편집을 여기서 잡는다.
+    // 대조군(현행 값)이 이 가드를 통과해 **다음** 가드에서 멈추는 것까지 함께 고정한다 —
+    // 그래야 "무엇이든 중단한다"는 무의미한 초록과 갈린다.
+    const dir = mkdtempSync(path.join(tmpdir(), "preview-db-port-"));
+    const mutated = path.join(dir, "mutated.sh");
+    const src = readFileSync(SCRIPT, "utf8");
+    const swapped = src.replace(/^PREVIEW_PORT="55433"$/m, 'PREVIEW_PORT="55432"');
+    expect(swapped, "변이가 적재되지 않았다 — PREVIEW_PORT 표기가 바뀌었는지 확인할 것").not.toBe(src);
+    writeFileSync(mutated, swapped);
+
+    const bad = runWithStubs(["docker", "psql", "rclone"], {}, mutated);
+    expect(bad.status).not.toBe(0);
+    expect(bad.out).toMatch(/프리뷰 포트.*프로덕션 DB 포트/);
+
+    const good = runWithStubs(["docker", "psql", "rclone"]);
+    expect(good.out).not.toMatch(/프리뷰 포트.*프로덕션 DB 포트/);
   });
 
   it("프로덕션 컨테이너 이름을 대상으로 삼지 않는다", () => {
