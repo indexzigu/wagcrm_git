@@ -68,8 +68,16 @@ export async function collectInstagramEngagement(options?: {
     result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: `skipped: ${collectModeUnsetReason("INSTAGRAM")}` });
     return result;
   }
+  // ⚠️ mock 은 **돌지 않기로 명시 선택한 것**이라 시도가 아니다 — 감시 대상을 전부 스킵으로
+  // 세어 크론의 전량 실패 판정에서 뺀다. 아래 Tier0 미설정 게이트와 반대다: 저쪽은 "돌아야
+  // 하는데 못 돈 것"이라 시도로 남겨야 한다. 같이 취급하면 로컬 mock QA 마다 ERROR 가 남는다.
+  // 🪤 이 설명을 분기 **안**에 두지 말 것 — `mock-collect-write-guard.contract.test.ts` 가
+  //    이 분기의 조건부터 반환까지를 200자 창으로 훑어 면제 성립을 확인한다. 창을 넘기면
+  //    면제가 깨지고, 조건·반환 문구를 주석에 그대로 인용하면 **가짜 매치**가 생겨 진짜
+  //    게이트를 지워도 계약이 초록이 된다(스캐너 공허화).
   if (mode === "mock") {
     result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: "skipped: INSTAGRAM_COLLECT_MODE=mock" });
+    result.skippedCount = sellers.length;
     return result;
   }
   // 게이트보다 먼저 DB 토큰을 프로세스 env 에 얹는다 — 사유는 `campaign-posts-refresh.ts`

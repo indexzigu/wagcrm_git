@@ -76,6 +76,18 @@ describe("EngagementCollectionResult 카운터 계약", () => {
     expect(result.monitoredCount - result.skippedCount - result.deferredCount).toBe(3);
   });
 
+  it("mock 모드는 의도적 스킵이므로 시도로 세지 않는다(로컬 QA 가 헛빨강이 되지 않게)", async () => {
+    // ⚠️ Tier0 미설정(위 케이스)과 다르다 — 저쪽은 "돌아야 하는데 못 돈 것"이고 이쪽은
+    //    "돌지 않기로 명시 선택한 것"이다. 같이 취급하면 mock QA 마다 ERROR 가 기록된다.
+    vi.stubEnv("INSTAGRAM_COLLECT_MODE", "mock");
+
+    const result = await collectInstagramEngagement();
+
+    expect(result.monitoredCount).toBe(3);
+    expect(result.skippedCount).toBe(3);
+    expect(result.monitoredCount - result.skippedCount - result.deferredCount).toBe(0);
+  });
+
   it("감시 셀러가 없으면 감시 수도 0이다(정상 — 상시 빨강 방지)", async () => {
     findManyMock.mockResolvedValue([]);
 
