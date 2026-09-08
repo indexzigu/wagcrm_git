@@ -98,7 +98,21 @@ function makeCheckout(name: string, fx: Fixture = {}): Checkout {
   return { root, home, addonOverride };
 }
 
-type RunOptions = { trace?: boolean; addonOverride?: string };
+type RunOptions = { trace?: boolean; addonOverride?: string; withoutNode?: boolean };
+
+/**
+ * `command -v node` 를 실패하게 만드는 스텁. 래퍼가 PATH 후보(`/usr/local/bin` ·
+ * `/opt/homebrew/bin`)를 자기 손으로 붙이므로 **env 로는 node 를 숨길 수 없다** —
+ * 그 경로에 node 가 있는 기계에서는 PATH 를 비워도 찾아진다. bash 는 비대화형
+ * 실행 시 `BASH_ENV` 를 먼저 source 하므로 거기서 `command` 를 함수로 덮는다:
+ * 함수는 빌트인보다 우선하고, 실행파일을 새로 만들지 않으므로
+ * `gh-stub-guard.contract.test.ts` 의 금지에도 걸리지 않는다.
+ */
+const NO_NODE_STUB = `command() {
+  if [ "\${1:-}" = "-v" ] && [ "\${2:-}" = "node" ]; then return 1; fi
+  builtin command "$@"
+}
+`;
 
 function run(checkout: Checkout, options: RunOptions = {}) {
   const args = options.trace ? ["-x", "infra/selfhost/run-agent-worker.sh"] : ["infra/selfhost/run-agent-worker.sh"];
@@ -106,6 +120,11 @@ function run(checkout: Checkout, options: RunOptions = {}) {
   delete env.DATABASE_URL;
   delete env.WAG_AGENT_WORKER_PEER_CRED_ADDON;
   if (options.addonOverride !== undefined) env.WAG_AGENT_WORKER_PEER_CRED_ADDON = options.addonOverride;
+  if (options.withoutNode) {
+    const stub = path.join(checkout.root, "no-node.sh");
+    writeFileSync(stub, NO_NODE_STUB);
+    env.BASH_ENV = stub;
+  }
 
   const result = spawnSync("bash", args, { cwd: checkout.root, env, encoding: "utf8" });
   return { code: result.status, out: `${result.stdout}${result.stderr}`, stderr: result.stderr };
@@ -185,6 +204,30 @@ describe("run-agent-worker.sh addon 경로", () => {
 
     expect(code, out).toBe(1);
     expect(out).toContain("custom-peer-cred.node");
+  });
+});
+
+describe("run-agent-worker.sh node 탐지", () => {
+  it("node 를 못 찾으면 PATH 를 보여주고 멈춘다", { timeout: 20_000 }, () => {
+    // launchd GUI 에이전트의 기본 PATH 에는 Homebrew node 가 없다 — 래퍼가 후보를
+    // 직접 붙이는 이유이자, 그 목록이 낡으면 exec 가 "command not found" 로 죽어
+    // KeepAlive 크래시루프가 되던 자리다. 그 실패를 재현해 안내가 실제로 나오는지 본다.
+    const { code, out } = run(makeCheckout("no-node", { appEnv: "different", withAddon: true }), {
+      withoutNode: true,
+    });
+
+    expect(code, out).toBe(1);
+    expect(out).toContain("node 실행파일을 찾을 수 없습니다");
+    expect(out, "고칠 대상인 PATH 를 안 보여주면 안내가 반쪽이다").toContain("/opt/homebrew/bin");
+  });
+
+  it("스텁이 없으면 같은 픽스처가 node 검사를 통과한다 — 스텁 자체의 대조군", { timeout: 20_000 }, () => {
+    // 위 테스트가 "스텁이 실제로 무언가를 바꿨다"를 증명하려면 짝이 필요하다.
+    // 이것이 없으면 픽스처가 다른 이유로 죽어도 위 단언이 초록일 수 있다.
+    const { out } = run(makeCheckout("node-present", { appEnv: "different", withAddon: true }));
+
+    expect(out).not.toContain("node 실행파일을 찾을 수 없습니다");
+    expect(out).toContain(PASSED_ALL_GUARDS);
   });
 });
 
