@@ -38,6 +38,19 @@ async function handler(request: Request) {
 
     // fire-and-forget: 알림 처리 실패/지연이 이 응답을 막지 않는다.
 
+    // ⚠️ HTTP 200 이어도 동기화가 실패했으면 **실패로 선언**한다(`failed: true`).
+    // `runSync` 는 실패를 throw 하지 않고 `SyncResult.error` 에 담아 돌려주므로, 결과를
+    // 그대로 넘기면 `withSystemTaskStatus` 가 SUCCESS 로 기록한다(CronOutcomeBody 계약).
+    // 실사고 2026-08-31~09-08: 아웃바운드 프록시가 막혀 9일간 매일 `{"error":"fetch failed"}`
+    // 를 담은 채 SUCCESS 로 남았고, **마지막 SUCCESS 시각**을 보는 지연 감시(`status.sh`)에도
+    // 안 잡혀 주문 동기화가 멈춘 것을 아무도 몰랐다.
+    // ⚠️ 선언은 부수효과(지문 스위프·캐시 무효화) **뒤**에 둔다 — 부분 실패는 저장에 성공한
+    // 날짜가 있고, 조기 반환하면 그 날짜들의 캐시가 낡은 채로 남는다.
+    if (result.error) {
+      console.error("[cron/naver-order-sync] 동기화 실패:", result.error);
+      return NextResponse.json({ ...result, failed: true, failureReason: result.error });
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     console.error("[cron/naver-order-sync] Unexpected error:", error);
