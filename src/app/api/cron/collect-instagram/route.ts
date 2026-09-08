@@ -67,11 +67,16 @@ async function handler(request: Request) {
     // **두 단계를 합쳐 잰다** — 한 단계가 죽어도 다른 단계가 셀러를 갱신했으면 그 실행은
     // 헛돌지 않았다. 멱등 게이트로 건너뛴 셀러(`skippedCount`)와 데드라인 이월분은 시도가
     // 아니므로 넣지 않는다(넣으면 정상 이월이 매일 빨강이 된다).
-    // ℹ️ 단계가 **아예 시작하지 못한 경우**(Tier0 미설정 등 `SYSTEM` 스코프 오류로 조기 반환)는
-    // 시도 0이라 이 판정에 걸리지 않는다 — 그 축(키가 설정됐는가)의 소유자는
-    // `scripts/selfhost-env-contract.ts` 와 `instagram-graph-token-applied.contract.test.ts` 다.
+    // ⚠️ 2단계의 시도는 `monitoredCount - skippedCount` 이지 `successCount + failedCount` 가
+    // 아니다 — 모드 미설정처럼 **단계가 통째로 막히면 두 카운터가 모두 0**이고, 종전에는
+    // 건너뛴 셀러까지 `successCount` 로 세서 실제 수집이 전량 실패한 날에도 그 값이 양수였다.
+    // 어느 쪽이든 그 값으로 재면 이 선언이 발화하지 못한다.
+    // ℹ️ 1단계가 통째로 막힌 경우(Tier0 미설정)는 1단계 시도가 0이지만, 그때도 2단계가
+    // 감시 셀러를 시도로 남기므로 합산 판정이 덮는다.
     const attempted =
-      engagement.collectedCount + engagement.failedCount + result.successCount + result.failedCount;
+      engagement.collectedCount +
+      engagement.failedCount +
+      (result.monitoredCount - result.skippedCount);
     const succeeded = engagement.collectedCount + result.successCount;
 
     return NextResponse.json({

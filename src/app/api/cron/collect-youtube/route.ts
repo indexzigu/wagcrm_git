@@ -23,11 +23,14 @@ async function handler(request: Request) {
 
     // ⚠️ HTTP 200 이어도 시도한 셀러가 전원 실패했으면 **실패로 선언**한다 — 선언이 없으면
     // `withSystemTaskStatus` 가 SUCCESS 로 기록한다(`CronOutcomeBody` 계약).
-    // 감시 셀러가 0명이면 시도도 0이라 정상이다(대상 없음을 빨강으로 만들지 않는다).
+    // ⚠️ 시도는 `monitoredCount - skippedCount` 이지 `successCount + failedCount` 가 아니다 —
+    // 쿼터 소진·키 미설정처럼 **단계가 통째로 막히면 두 카운터가 모두 0**이라, 그것으로 재면
+    // 이 잡이 죽은 날과 "감시 셀러가 없는 날"이 구분되지 않는다.
+    // 감시 셀러가 0명이거나 전원 멱등 스킵이면 시도도 0이라 정상이다.
     return NextResponse.json({
       ...result,
       ...declareTotalFailure({
-        attempted: result.successCount + result.failedCount,
+        attempted: result.monitoredCount - result.skippedCount,
         succeeded: result.successCount,
         unit: "명",
         what: "유튜브 구독자 수집",

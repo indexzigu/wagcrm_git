@@ -75,13 +75,23 @@ export async function collectYouTubeSubscribers(
   config: YouTubeCollectorConfig
 ): Promise<CollectionResult> {
   const prisma = getPrisma();
-  const result: CollectionResult = { successCount: 0, failedCount: 0, errors: [] };
+  const result: CollectionResult = {
+    successCount: 0,
+    failedCount: 0,
+    monitoredCount: 0,
+    skippedCount: 0,
+    errors: [],
+  };
 
   // Query all YouTube sellers that are monitored
   const sellers = await prisma.seller.findMany({
     where: { snsType: "YOUTUBE", isMonitored: true },
     select: { id: true, snsHandle: true, currentFollowers: true },
   });
+
+  // ⚠️ 아래 조기 반환(모드·키 미설정, 쿼터 소진)보다 **먼저** 채운다 — 그 경우 성공·실패
+  // 카운터가 모두 0이라, 이 값이 없으면 "감시 셀러가 없는 날"과 구분되지 않는다.
+  result.monitoredCount = sellers.length;
 
   if (sellers.length === 0) return result;
 
@@ -119,7 +129,8 @@ export async function collectYouTubeSubscribers(
         where: { sellerId_snapshotDate: { sellerId: seller.id, snapshotDate: today } },
       });
       if (existing) {
-        result.successCount++;
+        // 건너뛴 것은 성공이 아니다 — 인스타 수집기와 같은 규약.
+        result.skippedCount++;
         continue;
       }
 
@@ -133,7 +144,7 @@ export async function collectYouTubeSubscribers(
       });
 
       if (lastHistory && lastHistory.snapshotDate > cutoffDate) {
-        result.successCount++;
+        result.skippedCount++;
         continue;
       }
 
