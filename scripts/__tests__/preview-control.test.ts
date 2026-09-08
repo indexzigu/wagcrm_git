@@ -185,6 +185,12 @@ describe("preview.sh 파괴 명령 가드", () => {
     expect(probe, "env 값 추출 줄을 찾지 못했다 — 계약 기준을 갱신할 것").toBeDefined();
     expect(probe, "grep 패턴이 루프 변수를 쓰지 않는다").toMatch(/\$\{?key\}?/);
     expect(probe, "grep 패턴에 키 이름이 하드코딩돼 있다").not.toMatch(/(DATABASE_URL|DIRECT_URL)=/);
+
+    // 이 파일은 셸이 소스하므로 같은 변수가 여러 번 나오면 **마지막 할당이 이긴다.**
+    // `head -1` 로 첫 줄을 보면 "프리뷰 다음 줄에 프로덕션" 인 파일이 가드를 통과한 채
+    // 앱과 마이그레이션은 프로덕션으로 간다.
+    expect(probe, "마지막 할당이 아니라 첫 할당을 본다 — 셸의 실제 값과 어긋난다").toContain("tail -1");
+    expect(probe, "head -1 은 셸이 쓰는 값과 다른 줄을 본다").not.toContain("head -1");
   });
 
   it("파일 삭제가 launchd 언로드 확인보다 뒤에 온다", () => {

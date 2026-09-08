@@ -138,7 +138,11 @@ cmd_up() {
     # ⚠️ `|| true` 가 필요하다 — set -e + pipefail 아래에서 변수가 아예 없으면 grep 이
     # 1 로 끝나 **대입식 자체가 스크립트를 죽인다.** 그러면 아래 "미설정" 안내가 영영
     # 나오지 않고 종료코드 1 만 남는 조용한 실패가 된다(실측).
-    env_hostport="$({ grep -hE "^[[:space:]]*(export[[:space:]]+)?${key}=" "$env_file" || true; } | head -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
+    # ⚠️ `tail -1` 이다 — `head -1` 이 아니다. 이 파일은 셸이 소스하므로 같은 변수가
+    # 여러 번 나오면 **마지막 할당이 이긴다.** 첫 줄을 보면 "프리뷰(55433) 다음 줄에
+    # 프로덕션(55432)" 같은 파일이 가드를 통과한 채 앱과 마이그레이션은 프로덕션으로
+    # 간다(실측: head 는 55433, 셸은 55432 를 쓴다).
+    env_hostport="$({ grep -hE "^[[:space:]]*(export[[:space:]]+)?${key}=" "$env_file" || true; } | tail -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
     [ "$env_hostport" = "$PREVIEW_DB_HOSTPORT" ] \
       || abort "프리뷰 실행 env 의 ${key} 이 프리뷰 DB($PREVIEW_DB_HOSTPORT)가 아니라 ${env_hostport:-미설정} 을 가리킵니다 — 이대로 열면 프리뷰가 그 DB 에 마이그레이션을 걸고 데이터를 씁니다. $env_file 의 호스트·포트를 $PREVIEW_DB_HOSTPORT 로 고친 뒤 다시 실행하세요."
   done
