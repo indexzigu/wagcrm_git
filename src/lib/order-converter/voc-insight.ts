@@ -568,7 +568,16 @@ export type AnalyzeRunResult = {
   candidates: number;
   dirtyFound: number;
   analyzed: number;
-  failed: number;
+  /**
+   * 분석에 실패한 딜 **수**.
+   *
+   * ⛔ 이 필드를 `failed` 로 되돌리지 말 것 — `failed` 는 크론 응답 계약
+   * (`CronOutcomeBody`, `src/lib/system-task-status.ts`)이 **불리언으로 예약**한 키다.
+   * 개수가 그 이름을 쓰고 있으면 라우트가 결과를 펼친 뒤 실패 선언을 얹을 때 개수를
+   * 조용히 덮어쓰고(반대로 순서를 바꾸면 선언이 개수에 덮인다), 어느 쪽이든 두 값 중
+   * 하나가 소리 없이 사라진다. 개수 어휘는 수집기들이 이미 쓰는 `failedCount` 로 맞춘다.
+   */
+  failedCount: number;
   backlog: number; // dirtyFound - 이번에 처리한 수(다음 실행 자연 처리)
   batchSignal: { avgAnalyzedPerDay7d: number; backlogConsecutiveRuns: number; alerted: boolean };
   deals: DealAnalyzeResult[];
@@ -704,7 +713,7 @@ export async function analyzeDirtyDeals(): Promise<AnalyzeRunResult> {
     candidates: dealIds.length,
     dirtyFound: dirty.length,
     analyzed: analyzedOk,
-    failed: deals.length - analyzedOk,
+    failedCount: deals.length - analyzedOk,
     backlog: Math.max(0, dirty.length - deals.length), // 캡+데드라인 이탈분 — 다음 실행 자연 처리
     batchSignal,
     deals,

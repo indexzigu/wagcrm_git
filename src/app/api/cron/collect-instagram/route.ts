@@ -6,6 +6,7 @@ import {
 } from "@/lib/collectors/instagram-collector";
 import { collectInstagramEngagement } from "@/lib/collectors/instagram-engagement-collector";
 import { applyDbInstagramToken } from "@/lib/instagram-token";
+import { declareTotalFailure } from "@/lib/cron-outcome";
 import { SELLER_METRICS_INVALIDATION_TAGS, revalidateCrmTags } from "@/lib/cache-tags";
 import { verifyCronAuth } from "@/lib/cron-auth";
 
@@ -61,7 +62,24 @@ async function handler(request: Request) {
     // 이벤트 기반 무효화(2026-07-10): 팔로워·ER 갱신을 셀러 목록/상세·대시보드 모멘텀에 즉시 반영.
     revalidateCrmTags(SELLER_METRICS_INVALIDATION_TAGS);
 
-    return NextResponse.json({ ...result, engagement, tokenSource });
+    // ⚠️ HTTP 200 이어도 시도한 셀러가 전원 실패했으면 **실패로 선언**한다 — 선언이 없으면
+    // `withSystemTaskStatus` 가 SUCCESS 로 기록한다(`CronOutcomeBody` 계약).
+    // **두 단계를 합쳐 잰다** — 한 단계가 죽어도 다른 단계가 셀러를 갱신했으면 그 실행은
+    // 헛돌지 않았다. 멱등 게이트로 건너뛴 셀러(`skippedCount`)와 데드라인 이월분은 시도가
+    // 아니므로 넣지 않는다(넣으면 정상 이월이 매일 빨강이 된다).
+    // ℹ️ 단계가 **아예 시작하지 못한 경우**(Tier0 미설정 등 `SYSTEM` 스코프 오류로 조기 반환)는
+    // 시도 0이라 이 판정에 걸리지 않는다 — 그 축(키가 설정됐는가)의 소유자는
+    // `scripts/selfhost-env-contract.ts` 와 `instagram-graph-token-applied.contract.test.ts` 다.
+    const attempted =
+      engagement.collectedCount + engagement.failedCount + result.successCount + result.failedCount;
+    const succeeded = engagement.collectedCount + result.successCount;
+
+    return NextResponse.json({
+      ...result,
+      engagement,
+      tokenSource,
+      ...declareTotalFailure({ attempted, succeeded, unit: "명", what: "인스타 수집" }),
+    });
   } catch (error) {
     console.error("[collect-instagram] Unexpected error:", error);
     return NextResponse.json(
