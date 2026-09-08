@@ -22,8 +22,24 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_STALE_MS = 20 * 60 * 60 * 1000;
 
 export interface CampaignEngagementSyncResult {
+  /**
+   * 이번 실행이 손대야 했던 셀러 수(활성 창 캠페인의 자산 보유 셀러) — **설정 게이트보다
+   * 먼저** 채운다.
+   *
+   * 🪤 이게 없으면 "Tier0 미설정으로 단계가 아예 못 돌았다"와 "활성 캠페인이 없는 날"이
+   * 카운터상 똑같아진다(둘 다 전부 0). 크론이 두 단계를 합쳐 전량 실패를 선언하는데,
+   * 2단계(썸네일 스윕)가 마침 대상 0이면 합산 시도도 0이 되어 **반응 지표 수집이 죽은 채
+   * SUCCESS** 가 된다.
+   */
+  sellersMonitored: number;
   sellersProcessed: number;
   sellersSkipped: number;
+  /**
+   * 실행 예산(데드라인)이 끝나 **손도 못 댄** 셀러 수 — 다음 회차가 이어받는다.
+   *
+   * ⚠️ 시도가 아니다. 시도로 세면 느린 날이 전량 실패로 오인돼 상시 빨강이 된다.
+   */
+  sellersDeferred: number;
   assetsUpdated: number;
   failedCount: number;
   deadlineReached: boolean;
@@ -39,36 +55,15 @@ export async function syncCampaignPostEngagement(options?: {
 }): Promise<CampaignEngagementSyncResult> {
   const prisma = getPrisma();
   const result: CampaignEngagementSyncResult = {
+    sellersMonitored: 0,
     sellersProcessed: 0,
     sellersSkipped: 0,
+    sellersDeferred: 0,
     assetsUpdated: 0,
     failedCount: 0,
     deadlineReached: false,
     errors: [],
   };
-
-  // instagram-engagement-collector와 동일 게이트 — mock(로컬/테스트)·Tier0 미설정은 사유를 남기고 중단
-  const mode = resolveCollectMode("INSTAGRAM");
-  if (!mode) {
-    result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: `skipped: ${collectModeUnsetReason("INSTAGRAM")}` });
-    return result;
-  }
-  if (mode === "mock") {
-    result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: "skipped: INSTAGRAM_COLLECT_MODE=mock" });
-    return result;
-  }
-  // 게이트보다 먼저 DB 토큰을 프로세스 env 에 얹는다 — 사유는 `campaign-posts-refresh.ts`
-  // 의 같은 호출부 주석(2026-08-26 실사고). ⚠️ 이 경로의 진입점 `enrich-references` 크론은
-  // 토큰 주입을 부르지 않았다 — `collect-campaign-posts` 와 같은 잠복 결함이었다.
-  await applyDbInstagramToken();
-  if (!isGraphConfigured()) {
-    result.errors.push({
-      sellerId: "SYSTEM",
-      snsHandle: "",
-      error: "skipped: INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정 (Tier0 전용 단계)",
-    });
-    return result;
-  }
 
   const now = Date.now();
   const campaigns = await prisma.salesCampaign.findMany({
@@ -110,13 +105,54 @@ export async function syncCampaignPostEngagement(options?: {
     bySeller.set(seller.id, bucket);
   }
 
+  // ⚠️ 대상 집계를 **설정 게이트보다 먼저** 한다 — 게이트로 조기 반환하는 날에도 "손대야
+  // 했던 셀러가 있었다"는 사실이 남아야 크론이 그 실패를 볼 수 있다. 게이트가 아끼려는 것은
+  // Graph 호출이지 위 DB 조회 2건이 아니다(둘 다 인덱스 조회, 외부 비용 0).
+  result.sellersMonitored = bySeller.size;
+  if (bySeller.size === 0) return result;
+
+  // instagram-engagement-collector와 동일 게이트 — mock(로컬/테스트)·Tier0 미설정은 사유를 남기고 중단
+  const mode = resolveCollectMode("INSTAGRAM");
+  if (!mode) {
+    result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: `skipped: ${collectModeUnsetReason("INSTAGRAM")}` });
+    return result;
+  }
+  // ⚠️ mock 은 **돌지 않기로 명시 선택한 것**이라 시도가 아니다 — 대상을 전부 스킵으로 세어
+  // 크론의 전량 실패 판정에서 뺀다. 아래 Tier0 미설정 게이트와 반대다: 저쪽은 "돌아야 하는데
+  // 못 돈 것"이라 시도로 남겨야 한다. 같이 취급하면 로컬 QA 마다 ERROR 가 남는다.
+  // 🪤 이 설명을 분기 **안**에 두지 말 것 — `mock-collect-write-guard.contract.test.ts` 가 이
+  //    분기의 조건부터 반환까지를 200자 창으로 훑어 면제 성립을 확인한다. 창을 넘기면 면제가
+  //    깨지고, 조건·반환 문구를 주석에 그대로 인용하면 **가짜 매치**가 생겨 진짜 게이트를
+  //    지워도 계약이 초록이 된다(스캐너 공허화).
+  if (mode === "mock") {
+    result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: "skipped: INSTAGRAM_COLLECT_MODE=mock" });
+    result.sellersSkipped = bySeller.size;
+    return result;
+  }
+  // 게이트보다 먼저 DB 토큰을 프로세스 env 에 얹는다 — 사유는 `campaign-posts-refresh.ts`
+  // 의 같은 호출부 주석(2026-08-26 실사고). ⚠️ 이 경로의 진입점 `enrich-references` 크론은
+  // 토큰 주입을 부르지 않았다 — `collect-campaign-posts` 와 같은 잠복 결함이었다.
+  await applyDbInstagramToken();
+  if (!isGraphConfigured()) {
+    result.errors.push({
+      sellerId: "SYSTEM",
+      snsHandle: "",
+      error: "skipped: INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정 (Tier0 전용 단계)",
+    });
+    return result;
+  }
+
   const staleMs = options?.staleMs ?? DEFAULT_STALE_MS;
   const spacingMs = options?.spacingMs ?? 1500;
   const freshCutoff = now - staleMs;
 
-  for (const [sellerId, { snsHandle, assets: sellerAssets }] of bySeller) {
+  const sellerEntries = [...bySeller];
+  for (const [index, [sellerId, { snsHandle, assets: sellerAssets }]] of sellerEntries.entries()) {
     if (options?.deadlineMs && Date.now() >= options.deadlineMs) {
       result.deadlineReached = true;
+      // 손도 못 댄 셀러는 **시도가 아니다** — 크론의 전량 실패 판정에서 빼야 느린 날이
+      // 빨강이 되지 않는다.
+      result.sellersDeferred = sellerEntries.length - index;
       break;
     }
 
