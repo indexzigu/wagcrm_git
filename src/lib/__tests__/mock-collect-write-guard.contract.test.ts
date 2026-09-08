@@ -234,11 +234,11 @@ const SRC_DIR = join(process.cwd(), "src");
 const GATE_EXEMPT = new Map([
   [
     "src/lib/collectors/instagram-engagement-collector.ts",
-    "mock 이면 DB 를 보지 않고 항상 skip(ER 수집은 mock 경로 자체가 없다)",
+    "mock 이면 수집·쓰기 없이 무조건 skip(ER 수집은 mock 경로 자체가 없다 — 감시 대상 조회가 게이트 앞에 있지만 읽기뿐이다)",
   ],
   [
     "src/lib/collectors/campaign-engagement-collector.ts",
-    "mock 이면 DB 를 보지 않고 항상 skip(위와 동일 게이트)",
+    "mock 이면 수집·쓰기 없이 무조건 skip(위와 동일 게이트 — 대상 집계 조회가 게이트 앞에 있지만 읽기뿐이다)",
   ],
 ]);
 

@@ -54,6 +54,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * 지표 수집이 죽은 채 SUCCESS 가 된다. 감시 대상에서 멱등 스킵·데드라인 이월분을 뺀 값으로 잰다.
  * ⚠️ 2단계의 미지원 호스트(`skippedUnsupported`)와 데드라인에 걸려 손도 못 댄 자산은 시도가
  * 아니다 — 시도로 세면 tiktok 링크만 쌓인 날·느린 날이 상시 빨강이 된다.
+ *
+ * 🪤 **2단계만은 `enriched + sweepFailed`(= 성공 + 실패)로 재는데, 이는 위에서 1단계에 대해
+ * 금지한 형태와 같은 모양이다.** 지금 성립하는 이유는 하나뿐이다 — **이 스윕에는 단계를
+ * 통째로 막는 게이트가 루프 안에 없다.** 유일한 전면 차단(스토리지 미설정)은 위쪽 별도
+ * 반환 경로로 빠지므로 이 식에 도달하지 않는다. ⛔ 따라서 **스윕 루프 앞에 새 전면 게이트를
+ * 넣는다면(예: Apify 예산 소진·프록시 미설정으로 조기 반환) 그 순간 두 카운터가 함께 0이 되어
+ * 이 선언이 조용히 죽는다.** 그때는 1단계처럼 "대상 수 − 스킵 − 이월"로 재도록 함께 고칠 것.
  */
 function declareEnrichOutcome(input: {
   engagement: CampaignEngagementSyncResult;
