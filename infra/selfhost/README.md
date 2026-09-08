@@ -95,6 +95,22 @@ exit 1 로 중단). 프리뷰를 만지던 셸에 `export APP_TRACK_BRANCH=…` 
 그래서 값이 `main` 이어도 거부한다 — 설정돼 있다는 것 자체가 셸 오염의 신호다.
 `unset APP_TRACK_BRANCH` 후 다시 실행하면 된다.
 
+### ⚠️ 프리뷰 실행 env 는 프리뷰 DB 포트(55433)를 가리켜야 한다
+
+프리뷰 레인의 실행 env(`~/selfhost/wagcrm-preview/infra/selfhost/.env`, 호스트 로컬
+파일 — 레포에 없다)의 `DATABASE_URL`·`DIRECT_URL` 은 `127.0.0.1:55433` 이어야 한다.
+`55432` 는 **프로덕션 `supabase-db`** 의 포트다 — 그대로 두면 프리뷰 앱이 프로덕션
+데이터를 만지고 `deploy.sh` 가 프로덕션에 마이그레이션을 건다(`deploy.sh` 의 host
+가드는 `127.0.0.1` 을 정상으로 통과시키므로 그쪽에서 걸리지 않는다).
+
+`preview.sh up` 이 docker·launchd 를 건드리기 **전에** 이 값을 확인하고 다르면
+멈춘다. 비밀번호는 `~/selfhost/preview-db-password.txt` 와 같아야 한다.
+
+🪤 **옛 브랜치를 프리뷰로 올릴 때:** `preview.sh up <브랜치>` 는 체크아웃을 그 브랜치로
+바꾼 뒤 **그 브랜치의** `preview-db.sh` 를 실행한다. 포트 분리(55433) 이전 브랜치는
+아직 55432 를 잡으려 하므로 프로덕션과 충돌해 실패한다. 그 브랜치를 `main` 위로
+리베이스하면 풀린다 — 프리뷰가 안 뜨는 원인을 이 레인 설정에서 찾지 말 것.
+
 ### ⚠️ 프리뷰 DB 는 프로덕션 사본이라 민감도가 같다
 
 `preview-db.sh` 는 R2 의 최신 백업(`public-data-only.sql.gz`)을 그대로 복원한다 —

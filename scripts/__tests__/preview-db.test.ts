@@ -69,6 +69,27 @@ describe("preview-db.sh 가드", () => {
     expect(good.out).not.toMatch(/프리뷰 포트.*프로덕션 DB 포트/);
   });
 
+  it("프리뷰 DB 포트 상수가 세 스크립트에서 같은 값이다", () => {
+    // 포트는 preview-db.sh 가 SSOT 이고 dev.sh·preview.sh 는 사본이다(공유 lib 없는
+    // 독립 스크립트 관행). 각 파일의 자기 가드는 "프로덕션 포트가 아닌가" 만 보므로,
+    // SSOT 만 다른 값으로 옮기면 세 가드가 개별적으로는 전부 통과하면서 사본이 낡는다.
+    // 그러면 preview.sh 는 정상 .env 를 거부하고 dev.sh 는 DB 준비를 조용히 건너뛴다.
+    const active = (src: string) => src.split("\n").filter((l) => !l.trim().startsWith("#"));
+    const pick = (file: string, re: RegExp) => {
+      const line = active(readFileSync(path.resolve(__dirname, "..", "..", "infra", "selfhost", file), "utf8"))
+        .find((l) => re.test(l.trim()));
+      expect(line, `${file} 에서 포트 상수를 찾지 못했다 — 계약 기준을 갱신할 것`).toBeDefined();
+      // 값만 떼고(키 이름 제거) host:port 표기면 포트만 남긴다 — preview-db.sh 는
+      // 포트 단독, 나머지 둘은 "127.0.0.1:<포트>" 라 표기가 다르다.
+      const value = line!.split("=").slice(1).join("=").replace(/["']/g, "").trim();
+      return value.split(":").pop()!.trim();
+    };
+    const ssot = pick("preview-db.sh", /^PREVIEW_PORT=/);
+    expect(ssot).toMatch(/^\d+$/); // 스캐너 고장 감지
+    expect(pick("dev.sh", /^DB_HOSTPORT=/), "dev.sh 의 포트가 SSOT 와 다르다").toBe(ssot);
+    expect(pick("preview.sh", /^PREVIEW_DB_HOSTPORT=/), "preview.sh 의 포트가 SSOT 와 다르다").toBe(ssot);
+  });
+
   it("프로덕션 컨테이너 이름을 대상으로 삼지 않는다", () => {
     // 소스 자체의 계약 — 이 이름이 파괴적 명령의 인자로 등장하면 안 된다.
     const src = readFileSync(SCRIPT, "utf8");

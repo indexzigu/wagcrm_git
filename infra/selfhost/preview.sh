@@ -123,7 +123,10 @@ cmd_up() {
   local env_file="$PREVIEW_CHECKOUT/infra/selfhost/.env"
   [ -r "$env_file" ] || abort "프리뷰 실행 env 를 읽을 수 없습니다($env_file)."
   local env_hostport
-  env_hostport="$(grep -hE '^DATABASE_URL=' "$env_file" 2>/dev/null | head -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
+  # `export DATABASE_URL=` 도 받는다 — 이 파일은 `set -a; . …` 로 소스되는 셸 파일이라
+  # export 접두가 정당한 표기다. 안 받으면 값이 빈 문자열이 되어 "미설정" 이라는
+  # 사실과 다른 이유로 막힌다(파서 정본은 disposable-postgres.ts 의 같은 정규식).
+  env_hostport="$(grep -hE '^[[:space:]]*(export[[:space:]]+)?DATABASE_URL=' "$env_file" 2>/dev/null | head -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
   [ "$env_hostport" = "$PREVIEW_DB_HOSTPORT" ] \
     || abort "프리뷰 실행 env 의 DATABASE_URL 이 프리뷰 DB($PREVIEW_DB_HOSTPORT)가 아니라 ${env_hostport:-미설정} 을 가리킵니다 — 이대로 열면 프리뷰가 그 DB 에 마이그레이션을 걸고 데이터를 씁니다. $env_file 의 호스트·포트를 $PREVIEW_DB_HOSTPORT 로 고친 뒤 다시 실행하세요."
 
