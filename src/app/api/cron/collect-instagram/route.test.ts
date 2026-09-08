@@ -49,6 +49,8 @@ function engagement(over: Partial<Record<string, unknown>> = {}) {
     skippedCount: 0,
     failedCount: 0,
     deadlineReached: false,
+    monitoredCount: 0,
+    deferredCount: 0,
     errors: [],
     ...over,
   };
@@ -71,7 +73,7 @@ afterEach(() => {
 
 describe("collect-instagram 실질 실패 선언", () => {
   it("두 단계 모두 시도했는데 전량 실패하면 failed 를 선언한다", async () => {
-    engagementMock.mockResolvedValue(engagement({ failedCount: 5 }));
+    engagementMock.mockResolvedValue(engagement({ monitoredCount: 5, failedCount: 5 }));
     followersMock.mockResolvedValue(followers({ monitoredCount: 2, failedCount: 2 }));
 
     const body = await (await call()).json();
@@ -95,8 +97,37 @@ describe("collect-instagram 실질 실패 선언", () => {
     expect(body.failureReason).toContain("6");
   });
 
+  it("1단계가 Tier0 미설정으로 막히고 2단계는 전원 스킵이어도 failed 를 선언한다", async () => {
+    // 🪤 GPT 리뷰가 짚은 사각. 직전까지 수집이 정상이었으면 2단계는 최근 스냅샷 때문에
+    //    전원 스킵되므로, 1단계의 감시 수가 없으면 합산 시도가 0이 되어 ER 수집이 죽은
+    //    채로 SUCCESS 가 된다.
+    engagementMock.mockResolvedValue(
+      engagement({
+        monitoredCount: 8,
+        errors: [{ sellerId: "SYSTEM", snsHandle: "", error: "skipped: Tier0 미설정" }],
+      }),
+    );
+    followersMock.mockResolvedValue(followers({ monitoredCount: 8, skippedCount: 8 }));
+
+    const body = await (await call()).json();
+
+    expect(body.failed).toBe(true);
+    expect(body.failureReason).toContain("8");
+  });
+
+  it("1단계가 데드라인으로 이월되고 산출이 없어도 정상이다(이월분은 시도가 아니다)", async () => {
+    engagementMock.mockResolvedValue(
+      engagement({ monitoredCount: 8, deferredCount: 8, deadlineReached: true }),
+    );
+    followersMock.mockResolvedValue(followers({ monitoredCount: 8, skippedCount: 8 }));
+
+    const body = await (await call()).json();
+
+    expect(body.failed).toBe(false);
+  });
+
   it("1단계가 전량 실패해도 2단계가 성공했으면 정상이다", async () => {
-    engagementMock.mockResolvedValue(engagement({ failedCount: 5 }));
+    engagementMock.mockResolvedValue(engagement({ monitoredCount: 5, failedCount: 5 }));
     followersMock.mockResolvedValue(followers({ monitoredCount: 3, successCount: 3 }));
 
     const body = await (await call()).json();
@@ -105,7 +136,7 @@ describe("collect-instagram 실질 실패 선언", () => {
   });
 
   it("2단계가 전원 멱등 스킵이고 1단계가 수집했으면 정상이다(그날의 평상시)", async () => {
-    engagementMock.mockResolvedValue(engagement({ collectedCount: 6 }));
+    engagementMock.mockResolvedValue(engagement({ monitoredCount: 6, collectedCount: 6 }));
     followersMock.mockResolvedValue(followers({ monitoredCount: 10, skippedCount: 10 }));
 
     const body = await (await call()).json();
@@ -114,7 +145,7 @@ describe("collect-instagram 실질 실패 선언", () => {
   });
 
   it("양쪽 다 시도가 없으면 정상이다(대상 없음 — 상시 빨강 방지)", async () => {
-    engagementMock.mockResolvedValue(engagement({ skippedCount: 10 }));
+    engagementMock.mockResolvedValue(engagement({ monitoredCount: 10, skippedCount: 10 }));
     followersMock.mockResolvedValue(followers({ monitoredCount: 10, skippedCount: 10 }));
 
     const body = await (await call()).json();

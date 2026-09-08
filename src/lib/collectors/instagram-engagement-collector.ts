@@ -19,6 +19,20 @@ export interface EngagementCollectionResult {
   skippedCount: number;
   failedCount: number;
   deadlineReached: boolean;
+  /**
+   * 감시 대상(`isMonitored`) 셀러 수 — **설정 게이트보다 먼저** 채운다.
+   *
+   * 🪤 이게 없으면 "Tier0 미설정으로 단계가 아예 못 돌았다"와 "감시 셀러가 없는 날"이
+   * 카운터상 똑같아진다(둘 다 전부 0). 크론이 두 단계를 합쳐 전량 실패를 선언하는데,
+   * 2단계가 마침 전원 멱등 스킵이면 합산 시도도 0이 되어 **ER 수집이 죽은 채 SUCCESS** 가 된다.
+   */
+  monitoredCount: number;
+  /**
+   * 실행 예산(데드라인)이 끝나 **손도 못 댄** 셀러 수 — 다음 회차가 이어받는다.
+   *
+   * ⚠️ 시도가 아니다. 시도로 세면 느린 날이 전량 실패로 오인돼 상시 빨강이 된다.
+   */
+  deferredCount: number;
   errors: Array<{ sellerId: string; snsHandle: string; error: string }>;
 }
 
@@ -34,8 +48,19 @@ export async function collectInstagramEngagement(options?: {
     skippedCount: 0,
     failedCount: 0,
     deadlineReached: false,
+    monitoredCount: 0,
+    deferredCount: 0,
     errors: [],
   };
+
+  // ⚠️ 감시 대상 조회를 **설정 게이트보다 먼저** 한다 — 게이트로 조기 반환하는 경우에도
+  // "손대야 했던 셀러가 있었다"는 사실이 남아야 크론이 그 실패를 볼 수 있다.
+  const sellers = await prisma.seller.findMany({
+    where: { snsType: "INSTAGRAM", isMonitored: true },
+    select: { id: true, snsHandle: true },
+  });
+  result.monitoredCount = sellers.length;
+  if (sellers.length === 0) return result;
 
   // mock 모드(로컬/테스트)나 Tier0 미설정이면 조용히 성공하지 않고 사유를 남긴다 (P0 No Silent Failure)
   const mode = resolveCollectMode("INSTAGRAM");
@@ -60,11 +85,6 @@ export async function collectInstagramEngagement(options?: {
     return result;
   }
 
-  const sellers = await prisma.seller.findMany({
-    where: { snsType: "INSTAGRAM", isMonitored: true },
-    select: { id: true, snsHandle: true },
-  });
-  if (sellers.length === 0) return result;
 
   // 1단계와 동일한 주기 규약 (기본 7일, SSOT=collect-cycle): 주기 내 ER 적립분이 있으면
   // 건너뛴다 (재시도 멱등). 크론이 매일 발화하므로 이 cutoff가 실제 수집 주기를 결정한다.
@@ -72,10 +92,13 @@ export async function collectInstagramEngagement(options?: {
 
   const spacingMs = options?.spacingMs ?? 1500;
 
-  for (const seller of sellers) {
+  for (const [index, seller] of sellers.entries()) {
     if (options?.deadlineMs && Date.now() >= options.deadlineMs) {
       // 남은 셀러는 다음 날 크론이 cutoff 검사로 자연히 이어받는다(크론이 매일이므로 최대 1일 지연)
       result.deadlineReached = true;
+      // 손도 못 댄 셀러는 **시도가 아니다** — 크론의 전량 실패 판정에서 빼야 느린 날이
+      // 빨강이 되지 않는다.
+      result.deferredCount = sellers.length - index;
       break;
     }
 
