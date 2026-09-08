@@ -14,8 +14,27 @@ export type InstagramCollectorConfig = {
 };
 
 export type CollectionResult = {
+  /**
+   * 실제로 수집해 저장한 셀러 수.
+   *
+   * ⛔ **멱등·주기 게이트로 건너뛴 셀러를 여기 세지 말 것** — 종전에 그렇게 세는 바람에,
+   * 실제 수집이 전량 실패한 날에도 이 값이 양수라 크론의 전량 실패 선언이 **영원히 발화하지
+   * 못했다**. 건너뛴 것은 `skippedCount` 로 간다.
+   */
   successCount: number;
   failedCount: number;
+  /** 감시 대상(`isMonitored`) 셀러 수 — 조기 반환해도 채워진다. 시도 = 이 값 - `skippedCount`. */
+  monitoredCount: number;
+  /** 오늘 이미 수집됐거나 수집 주기 안이라 건너뛴 셀러 수. 시도가 아니므로 실패 판정에서 뺀다. */
+  skippedCount: number;
+  /**
+   * **비동기 수집을 발주한** 셀러 수 — 적립은 웹훅이 나중에 한다(유튜브 Apify 경로).
+   *
+   * 🪤 그 경로는 발주에 **성공해도 `successCount` 를 일부러 올리지 않는다**(그 시점엔 아직
+   * 적립된 것이 없다). 그래서 동기 성공만으로 전량 실패를 판정하면 **정상 발주가 매번 빨강**이
+   * 된다 — 이 필드가 그 경우의 "성공"이다. 동기 경로만 있는 수집기에서는 0으로 남는다.
+   */
+  dispatchedCount: number;
   errors: Array<{ sellerId: string; snsHandle: string; error: string }>;
 };
 
@@ -117,13 +136,24 @@ export async function collectInstagramFollowers(
   config: InstagramCollectorConfig
 ): Promise<CollectionResult> {
   const prisma = getPrisma();
-  const result: CollectionResult = { successCount: 0, failedCount: 0, errors: [] };
+  const result: CollectionResult = {
+    successCount: 0,
+    failedCount: 0,
+    monitoredCount: 0,
+    skippedCount: 0,
+    dispatchedCount: 0,
+    errors: [],
+  };
 
   // Query all Instagram sellers that are monitored
   const sellers = await prisma.seller.findMany({
     where: { snsType: "INSTAGRAM", isMonitored: true },
     select: { id: true, snsHandle: true, currentFollowers: true, currentPostsCount: true },
   });
+
+  // ⚠️ 아래 조기 반환(모드 미설정·mock 차단)보다 **먼저** 채운다 — 단계가 통째로 막힌 경우와
+  // "감시 셀러가 없는 날"이 구분되지 않으면 크론의 전량 실패 선언이 전자를 놓친다.
+  result.monitoredCount = sellers.length;
 
   if (sellers.length === 0) return result;
 
@@ -172,7 +202,8 @@ export async function collectInstagramFollowers(
         where: { sellerId_snapshotDate: { sellerId: seller.id, snapshotDate: today } },
       });
       if (existing) {
-        result.successCount++;
+        // 건너뛴 것은 성공이 아니다 — 여기 successCount 를 올리면 전량 실패 선언이 무력해진다.
+        result.skippedCount++;
         continue;
       }
 
@@ -187,7 +218,7 @@ export async function collectInstagramFollowers(
 
       if (lastHistory && lastHistory.snapshotDate > cutoffDate) {
         // Skip if collected less than N days ago
-        result.successCount++;
+        result.skippedCount++;
         continue;
       }
 

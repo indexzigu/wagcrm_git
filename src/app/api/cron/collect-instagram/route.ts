@@ -6,6 +6,7 @@ import {
 } from "@/lib/collectors/instagram-collector";
 import { collectInstagramEngagement } from "@/lib/collectors/instagram-engagement-collector";
 import { applyDbInstagramToken } from "@/lib/instagram-token";
+import { declareTotalFailure } from "@/lib/cron-outcome";
 import { SELLER_METRICS_INVALIDATION_TAGS, revalidateCrmTags } from "@/lib/cache-tags";
 import { verifyCronAuth } from "@/lib/cron-auth";
 
@@ -61,7 +62,31 @@ async function handler(request: Request) {
     // 이벤트 기반 무효화(2026-07-10): 팔로워·ER 갱신을 셀러 목록/상세·대시보드 모멘텀에 즉시 반영.
     revalidateCrmTags(SELLER_METRICS_INVALIDATION_TAGS);
 
-    return NextResponse.json({ ...result, engagement, tokenSource });
+    // ⚠️ HTTP 200 이어도 시도한 셀러가 전원 실패했으면 **실패로 선언**한다 — 선언이 없으면
+    // `withSystemTaskStatus` 가 SUCCESS 로 기록한다(`CronOutcomeBody` 계약).
+    // **두 단계를 합쳐 잰다** — 한 단계가 죽어도 다른 단계가 셀러를 갱신했으면 그 실행은
+    // 헛돌지 않았다. 멱등 게이트로 건너뛴 셀러(`skippedCount`)와 데드라인 이월분은 시도가
+    // 아니므로 넣지 않는다(넣으면 정상 이월이 매일 빨강이 된다).
+    // ⚠️ 2단계의 시도는 `monitoredCount - skippedCount` 이지 `successCount + failedCount` 가
+    // 아니다 — 모드 미설정처럼 **단계가 통째로 막히면 두 카운터가 모두 0**이고, 종전에는
+    // 건너뛴 셀러까지 `successCount` 로 세서 실제 수집이 전량 실패한 날에도 그 값이 양수였다.
+    // 어느 쪽이든 그 값으로 재면 이 선언이 발화하지 못한다.
+    // 두 단계 모두 같은 식으로 잰다: 시도 = 감시 대상 - 멱등 스킵 - (1단계는) 데드라인 이월분.
+    // ⚠️ 1단계도 `collectedCount + failedCount` 로 재면 안 된다 — Tier0 미설정으로 단계가
+    // 막히면 둘 다 0인데, 직전까지 수집이 정상이었으면 2단계는 최근 스냅샷 때문에 **전원
+    // 스킵**된다. 그러면 합산 시도가 0이 되어 **ER 수집이 죽은 채로 SUCCESS** 가 된다.
+    // ⚠️ 반대로 데드라인 이월분은 손도 안 댄 것이라 시도에서 뺀다 — 넣으면 느린 날이 빨강이 된다.
+    const attempted =
+      (engagement.monitoredCount - engagement.skippedCount - engagement.deferredCount) +
+      (result.monitoredCount - result.skippedCount);
+    const succeeded = engagement.collectedCount + result.successCount;
+
+    return NextResponse.json({
+      ...result,
+      engagement,
+      tokenSource,
+      ...declareTotalFailure({ attempted, succeeded, unit: "명", what: "인스타 수집" }),
+    });
   } catch (error) {
     console.error("[collect-instagram] Unexpected error:", error);
     return NextResponse.json(

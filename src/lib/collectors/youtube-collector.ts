@@ -75,13 +75,24 @@ export async function collectYouTubeSubscribers(
   config: YouTubeCollectorConfig
 ): Promise<CollectionResult> {
   const prisma = getPrisma();
-  const result: CollectionResult = { successCount: 0, failedCount: 0, errors: [] };
+  const result: CollectionResult = {
+    successCount: 0,
+    failedCount: 0,
+    monitoredCount: 0,
+    skippedCount: 0,
+    dispatchedCount: 0,
+    errors: [],
+  };
 
   // Query all YouTube sellers that are monitored
   const sellers = await prisma.seller.findMany({
     where: { snsType: "YOUTUBE", isMonitored: true },
     select: { id: true, snsHandle: true, currentFollowers: true },
   });
+
+  // ⚠️ 아래 조기 반환(모드·키 미설정, 쿼터 소진)보다 **먼저** 채운다 — 그 경우 성공·실패
+  // 카운터가 모두 0이라, 이 값이 없으면 "감시 셀러가 없는 날"과 구분되지 않는다.
+  result.monitoredCount = sellers.length;
 
   if (sellers.length === 0) return result;
 
@@ -119,7 +130,8 @@ export async function collectYouTubeSubscribers(
         where: { sellerId_snapshotDate: { sellerId: seller.id, snapshotDate: today } },
       });
       if (existing) {
-        result.successCount++;
+        // 건너뛴 것은 성공이 아니다 — 인스타 수집기와 같은 규약.
+        result.skippedCount++;
         continue;
       }
 
@@ -133,7 +145,7 @@ export async function collectYouTubeSubscribers(
       });
 
       if (lastHistory && lastHistory.snapshotDate > cutoffDate) {
-        result.successCount++;
+        result.skippedCount++;
         continue;
       }
 
@@ -193,7 +205,10 @@ export async function collectYouTubeSubscribers(
       } else {
         const data = await response.json();
         await logApiCall("YOUTUBE", "POST https://api.apify.com/v2/acts/apify~youtube-scraper/runs", 201, true, null, "apify", JSON.stringify({ runId: data.data.id, startUrlsCount: startUrls.length, webhookUrl }));
-        // For Apify, we don't immediately count as success because it will be processed in the webhook.
+        // 적립은 웹훅(`/api/cron/apify-webhook/youtube`)이 하므로 여기서는 successCount 를
+        // 올리지 않는다. 대신 **발주에 성공했다는 사실**을 남긴다 — 이게 없으면 크론의 전량
+        // 실패 판정이 정상 발주를 매번 실패로 읽는다(상시 빨강).
+        result.dispatchedCount += targetsToCollect.length;
       }
     } catch (fetchErr) {
       const errMsg = fetchErr instanceof Error ? fetchErr.message : "Network error";
