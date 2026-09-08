@@ -4,7 +4,9 @@
  * Runs the durable AgentJob loop and the local Unix-domain-socket RPC for the
  * Hermes `wag-worker` profile. Startup fails closed when:
  *  - DATABASE_URL is missing (the worker-role connection is supplied by the
- *    service wrapper, never by Hermes requests), or
+ *    service wrapper, never by Hermes requests),
+ *  - the database answers that this connection is not the least-privilege
+ *    `wag_agent_worker` role (T-117 — the wrapper can only compare strings), or
  *  - the native peer-credential addon is not built (no mode-only degradation).
  *
  * No HTTP listener. SIGTERM/SIGINT release only the leases this process owns.
@@ -12,7 +14,10 @@
 import { hostname } from "node:os";
 import path from "node:path";
 import { AgentJobRepository } from "../src/repositories/agentJobRepository";
+import { getPrisma } from "../src/lib/prisma";
+import { isSqliteDatabaseUrl } from "../src/lib/prisma-client";
 import { createAuditLogger, createFileAuditSink, errorClassOf } from "../src/lib/agent-worker/audit";
+import { assertAgentWorkerDbIdentity } from "../src/lib/agent-worker/db-identity";
 import { executeAgentJob, runRouterDecision } from "../src/lib/agent-worker/executor";
 import { loadNativePeerCredentialProvider } from "../src/lib/agent-worker/peer-cred";
 import { createRpcHandlers } from "../src/lib/agent-worker/rpc-handlers";
@@ -26,6 +31,17 @@ const log = (event: string, fields: Record<string, string | number | boolean> = 
 async function main(): Promise<void> {
   if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim().length === 0) {
     throw new Error("DATABASE_URL is required (worker-role connection from the service wrapper)");
+  }
+
+  // Ask the database who this connection actually is. The wrapper's string
+  // comparison cannot answer that: the same full-privilege account passes it as
+  // soon as one connection option differs. SQLite has no roles at all, so the
+  // probe is meaningless on the local dev lane and is skipped there.
+  if (!isSqliteDatabaseUrl()) {
+    const identity = await assertAgentWorkerDbIdentity(
+      () => getPrisma().$queryRaw`SELECT current_user AS "currentUser", session_user AS "sessionUser"`,
+    );
+    log("db_identity_verified", identity);
   }
 
   // Fail closed: the peer-UID gate needs the native bridge. No fallback exists.
