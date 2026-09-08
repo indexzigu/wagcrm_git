@@ -122,13 +122,26 @@ cmd_up() {
   # 풀리므로, 같은 제동을 여기서 제 이유로 다시 건다.
   local env_file="$PREVIEW_CHECKOUT/infra/selfhost/.env"
   [ -r "$env_file" ] || abort "프리뷰 실행 env 를 읽을 수 없습니다($env_file)."
-  local env_hostport
-  # `export DATABASE_URL=` 도 받는다 — 이 파일은 `set -a; . …` 로 소스되는 셸 파일이라
-  # export 접두가 정당한 표기다. 안 받으면 값이 빈 문자열이 되어 "미설정" 이라는
-  # 사실과 다른 이유로 막힌다(파서 정본은 disposable-postgres.ts 의 같은 정규식).
-  env_hostport="$(grep -hE '^[[:space:]]*(export[[:space:]]+)?DATABASE_URL=' "$env_file" 2>/dev/null | head -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
-  [ "$env_hostport" = "$PREVIEW_DB_HOSTPORT" ] \
-    || abort "프리뷰 실행 env 의 DATABASE_URL 이 프리뷰 DB($PREVIEW_DB_HOSTPORT)가 아니라 ${env_hostport:-미설정} 을 가리킵니다 — 이대로 열면 프리뷰가 그 DB 에 마이그레이션을 걸고 데이터를 씁니다. $env_file 의 호스트·포트를 $PREVIEW_DB_HOSTPORT 로 고친 뒤 다시 실행하세요."
+  #
+  # ⚠️ **두 변수를 모두 본다.** DATABASE_URL 만 보면 구멍이 남는다 —
+  # scripts/prisma-migrate-on-deploy.mjs 는 `DIRECT_URL || DATABASE_URL` 순으로
+  # 고르므로(직결이 필요해서), DATABASE_URL 이 프리뷰인데 DIRECT_URL 이 프로덕션이면
+  # 이 가드를 통과한 채 **프로덕션에 migrate deploy 가 나간다.**
+  #
+  # `export DATABASE_URL=` 표기도 받는다 — 이 파일은 셸이 `set -a; . …` 로 소스하므로
+  # export 접두가 정당하다. 안 받으면 정상 구성이 "미설정" 이라는 사실과 다른 이유로
+  # 막힌다. 파서 정본은 disposable-postgres.ts 의
+  # `^\s*(?:export\s+)?(DATABASE_URL|DIRECT_URL)\s*=` 이고 여기는 그 **취지**를 따르되
+  # `=` 양옆 공백은 받지 않는다(셸 파일에서 `KEY = value` 는 문법 오류라 나타날 수 없다).
+  local key env_hostport
+  for key in DATABASE_URL DIRECT_URL; do
+    # ⚠️ `|| true` 가 필요하다 — set -e + pipefail 아래에서 변수가 아예 없으면 grep 이
+    # 1 로 끝나 **대입식 자체가 스크립트를 죽인다.** 그러면 아래 "미설정" 안내가 영영
+    # 나오지 않고 종료코드 1 만 남는 조용한 실패가 된다(실측).
+    env_hostport="$({ grep -hE "^[[:space:]]*(export[[:space:]]+)?${key}=" "$env_file" || true; } | head -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
+    [ "$env_hostport" = "$PREVIEW_DB_HOSTPORT" ] \
+      || abort "프리뷰 실행 env 의 ${key} 이 프리뷰 DB($PREVIEW_DB_HOSTPORT)가 아니라 ${env_hostport:-미설정} 을 가리킵니다 — 이대로 열면 프리뷰가 그 DB 에 마이그레이션을 걸고 데이터를 씁니다. $env_file 의 호스트·포트를 $PREVIEW_DB_HOSTPORT 로 고친 뒤 다시 실행하세요."
+  done
 
   # 브랜치 존재는 DB 를 건드리기 **전에** 확인한다 — 오타로 DB 만 갈아엎는 것을 막는다.
   git -C "$PREVIEW_CHECKOUT" fetch --quiet origin

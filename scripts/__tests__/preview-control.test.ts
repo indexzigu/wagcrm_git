@@ -166,6 +166,18 @@ describe("preview.sh 파괴 명령 가드", () => {
     expect(bootstrapIdx, "서비스 로드가 env 확인보다 앞에 있다").toBeGreaterThan(envCheckIdx);
   });
 
+  it("프리뷰 env 검사가 DATABASE_URL 과 DIRECT_URL 을 모두 본다", () => {
+    // scripts/prisma-migrate-on-deploy.mjs 는 `DIRECT_URL || DATABASE_URL` 순으로
+    // 마이그레이션 대상을 고른다. 그래서 DATABASE_URL 만 검사하면 DATABASE_URL 은
+    // 프리뷰인데 DIRECT_URL 이 프로덕션인 구성이 가드를 통과하고, 프리뷰 배포가
+    // **프로덕션에 migrate deploy 를 건다.** 한쪽만 보는 회귀를 여기서 잡는다.
+    const body = functionBody(src, "cmd_up");
+    const loop = activeLines(body).find((l) => /^\s*for\s+key\s+in\b/.test(l));
+    expect(loop, "env 검사 루프를 찾지 못했다 — 계약 기준을 갱신할 것").toBeDefined();
+    expect(loop, "DATABASE_URL 이 검사 대상에서 빠졌다").toContain("DATABASE_URL");
+    expect(loop, "DIRECT_URL 이 검사 대상에서 빠졌다").toContain("DIRECT_URL");
+  });
+
   it("파일 삭제가 launchd 언로드 확인보다 뒤에 온다", () => {
     // `bootout` 은 비동기다. 언로드를 확인하기 전에 지우면 아직 살아 있는 앱 프로세스와
     // 경합한다 — 프리뷰 앱은 체크아웃 안의 standalone 서버로 돌면서 런타임 캐시를
