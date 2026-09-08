@@ -28,18 +28,25 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const HOOK = path.join(REPO_ROOT, ".githooks", "pre-push");
 const DEPLOY = path.join(REPO_ROOT, "infra", "selfhost", "deploy.sh");
 
+/** 워크플로를 잡 이름 → 그 잡의 본문으로 쪼갠다(잡 헤더는 2칸, 내부 키는 4칸 이상). */
+function readJobBlocks(workflow: string): Map<string, string> {
+  const blocks = new Map<string, string>();
+  const headers = [...workflow.matchAll(/^ {2}([A-Za-z0-9_-]+):[ \t]*$/gm)];
+  headers.forEach((header, index) => {
+    const start = header.index + header[0].length;
+    const end = index + 1 < headers.length ? headers[index + 1].index : workflow.length;
+    blocks.set(header[1], workflow.slice(start, end));
+  });
+  return blocks;
+}
+
 /**
  * 워크플로에서 잡의 `needs` 를 읽는다. 표기 세 가지(`needs: a` · `needs: [a, b]` · 블록 목록)를
  * 모두 받는다 — 표기 하나를 문자열로 못 박으면 아래 🪤 의 브리틀함이 그대로 돌아온다.
  */
 function readJobNeeds(workflow: string, job: string): string[] {
-  const start = workflow.search(new RegExp(`^ {2}${job}:[ \\t]*$`, "m"));
-  if (start < 0) return [];
-  const afterHeader = workflow.slice(start);
-  const body = afterHeader.slice(afterHeader.indexOf("\n") + 1);
-  // 같은 들여쓰기의 다음 잡이 이 잡의 끝이다(잡 내부 키는 4칸 이상).
-  const nextJob = body.search(/^ {2}[A-Za-z0-9_-]+:[ \t]*$/m);
-  const block = nextJob < 0 ? body : body.slice(0, nextJob);
+  const block = readJobBlocks(workflow).get(job);
+  if (!block) return [];
 
   const inline = /^ {4}needs:[ \t]*(.+)$/m.exec(block);
   if (inline) {
@@ -148,8 +155,15 @@ describe("문② deploy.sh 배포 직전 CI 게이트(안전장치 ⑦)", () => 
       // **"테스트를 돌리는 잡이 하나도 빠짐없이 집계 뒤에 선다"** 이다 — 빠진 잡은 required
       // 가 아니라서 빨개져도 머지·배포가 그대로 나간다(체크 이름 `test` 가 인터페이스인 것과
       // 같은 축). 새 테스트 잡을 집계에 안 물리는 것이 이 계약이 막는 회귀다.
+      // 🪤 **잡을 이름(`test-*`)으로 찾지 않는다.** 이름 규약을 벗어난 새 테스트 잡은 그
+      // 방식이 **아예 발견하지 못해** 루프가 조용히 통과한다(리뷰 교차검증에서 실측 —
+      // `test-realpg` 를 `realpg-audit` 으로 개명하니 14건 전부 초록이었다). 스캐너가 못 보는
+      // 것은 지켜지지 않는 것과 같으므로, 판정 근거를 이름이 아니라 **그 잡이 테스트를
+      // 실제로 돌리는가**(테스트 명령의 존재)로 옮긴다.
       const aggregated = readJobNeeds(wf, "test");
-      const testJobs = [...wf.matchAll(/^ {2}(test-[A-Za-z0-9-]+):[ \t]*$/gm)].map((m) => m[1]);
+      const testJobs = [...readJobBlocks(wf)]
+        .filter(([name, body]) => name !== "test" && /npm run test:ci\b/.test(body))
+        .map(([name]) => name);
       // 양성 대조군 — 스캐너가 고장 나면 목록이 비어 아래 루프가 공허하게 통과한다.
       expect(testJobs, "테스트를 돌리는 잡을 하나도 찾지 못했다(스캐너 고장)").toContain(
         "test-shard",
