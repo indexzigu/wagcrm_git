@@ -28,6 +28,35 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const HOOK = path.join(REPO_ROOT, ".githooks", "pre-push");
 const DEPLOY = path.join(REPO_ROOT, "infra", "selfhost", "deploy.sh");
 
+/**
+ * 워크플로에서 잡의 `needs` 를 읽는다. 표기 세 가지(`needs: a` · `needs: [a, b]` · 블록 목록)를
+ * 모두 받는다 — 표기 하나를 문자열로 못 박으면 아래 🪤 의 브리틀함이 그대로 돌아온다.
+ */
+function readJobNeeds(workflow: string, job: string): string[] {
+  const start = workflow.search(new RegExp(`^ {2}${job}:[ \\t]*$`, "m"));
+  if (start < 0) return [];
+  const afterHeader = workflow.slice(start);
+  const body = afterHeader.slice(afterHeader.indexOf("\n") + 1);
+  // 같은 들여쓰기의 다음 잡이 이 잡의 끝이다(잡 내부 키는 4칸 이상).
+  const nextJob = body.search(/^ {2}[A-Za-z0-9_-]+:[ \t]*$/m);
+  const block = nextJob < 0 ? body : body.slice(0, nextJob);
+
+  const inline = /^ {4}needs:[ \t]*(.+)$/m.exec(block);
+  if (inline) {
+    return inline[1]
+      .split("#")[0]
+      .replace(/^\[|\]$/g, "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+  }
+  const listed = /^ {4}needs:[ \t]*\n((?: {6}- .+\n)+)/m.exec(block);
+  if (listed) {
+    return [...listed[1].matchAll(/^ {6}- (.+)$/gm)].map((m) => m[1].split("#")[0].trim());
+  }
+  return [];
+}
+
 function runHook(stdinLine: string, env: Record<string, string> = {}) {
   const r = spawnSync("/bin/bash", [HOOK, "origin"], {
     input: `${stdinLine}\n`,
@@ -113,7 +142,21 @@ describe("문② deploy.sh 배포 직전 CI 게이트(안전장치 ⑦)", () => 
         /^ {2}test-shard:/m,
       );
       expect(wf, "조각을 모아 `test` 로 보고하는 집계 잡이 없다").toMatch(/^ {2}test:\s*$/m);
-      expect(wf, "집계 잡이 조각 결과를 기다리지 않는다").toContain("needs: test-shard");
+      // 🪤 **여기서도 문자열을 박지 않는다 — 위 주석의 교훈이 이 줄에 그대로 적용된다.**
+      // 종전 `toContain("needs: test-shard")` 는 테스트를 돌리는 잡이 하나 늘어 `needs` 가
+      // 리스트가 되는 순간(정당한 변경) 깨졌다. 지킬 불변식은 표기가 아니라
+      // **"테스트를 돌리는 잡이 하나도 빠짐없이 집계 뒤에 선다"** 이다 — 빠진 잡은 required
+      // 가 아니라서 빨개져도 머지·배포가 그대로 나간다(체크 이름 `test` 가 인터페이스인 것과
+      // 같은 축). 새 테스트 잡을 집계에 안 물리는 것이 이 계약이 막는 회귀다.
+      const aggregated = readJobNeeds(wf, "test");
+      const testJobs = [...wf.matchAll(/^ {2}(test-[A-Za-z0-9-]+):[ \t]*$/gm)].map((m) => m[1]);
+      // 양성 대조군 — 스캐너가 고장 나면 목록이 비어 아래 루프가 공허하게 통과한다.
+      expect(testJobs, "테스트를 돌리는 잡을 하나도 찾지 못했다(스캐너 고장)").toContain(
+        "test-shard",
+      );
+      for (const job of testJobs) {
+        expect(aggregated, `집계 잡이 \`${job}\` 결과를 기다리지 않는다`).toContain(job);
+      }
       expect(
         wf,
         "집계 잡에 always() 가 없으면 조각 실패 시 아예 안 돌아 체크가 pending 으로 남는다",
