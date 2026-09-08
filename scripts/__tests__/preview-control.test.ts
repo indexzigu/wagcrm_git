@@ -172,10 +172,19 @@ describe("preview.sh 파괴 명령 가드", () => {
     // 프리뷰인데 DIRECT_URL 이 프로덕션인 구성이 가드를 통과하고, 프리뷰 배포가
     // **프로덕션에 migrate deploy 를 건다.** 한쪽만 보는 회귀를 여기서 잡는다.
     const body = functionBody(src, "cmd_up");
-    const loop = activeLines(body).find((l) => /^\s*for\s+key\s+in\b/.test(l));
+    const lines = activeLines(body);
+    const loop = lines.find((l) => /^\s*for\s+key\s+in\b/.test(l));
     expect(loop, "env 검사 루프를 찾지 못했다 — 계약 기준을 갱신할 것").toBeDefined();
     expect(loop, "DATABASE_URL 이 검사 대상에서 빠졌다").toContain("DATABASE_URL");
     expect(loop, "DIRECT_URL 이 검사 대상에서 빠졌다").toContain("DIRECT_URL");
+
+    // 루프가 두 키를 나열하는 것만으로는 부족하다 — grep 패턴이 `${key}` 가 아니라
+    // 한쪽 이름을 하드코딩하고 있으면 루프를 돌아도 같은 변수만 두 번 본다.
+    // 그 형태의 되돌림은 위 단언을 전부 통과하므로 여기서 따로 잡는다.
+    const probe = lines.find((l) => /env_hostport=/.test(l));
+    expect(probe, "env 값 추출 줄을 찾지 못했다 — 계약 기준을 갱신할 것").toBeDefined();
+    expect(probe, "grep 패턴이 루프 변수를 쓰지 않는다").toMatch(/\$\{?key\}?/);
+    expect(probe, "grep 패턴에 키 이름이 하드코딩돼 있다").not.toMatch(/(DATABASE_URL|DIRECT_URL)=/);
   });
 
   it("파일 삭제가 launchd 언로드 확인보다 뒤에 온다", () => {
