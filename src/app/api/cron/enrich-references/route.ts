@@ -12,7 +12,11 @@ import {
   fetchInstagramPostMeta,
   rehostReferenceThumbnail,
 } from "@/lib/reference-enrich-proxy";
-import { syncCampaignPostEngagement } from "@/lib/collectors/campaign-engagement-collector";
+import {
+  syncCampaignPostEngagement,
+  type CampaignEngagementSyncResult,
+} from "@/lib/collectors/campaign-engagement-collector";
+import { declareTotalFailure } from "@/lib/cron-outcome";
 import { verifyCronAuth } from "@/lib/cron-auth";
 
 // 레퍼런스 링크 메타데이터 보강 sweep (R3) — 일일 크론(30 22 * * * UTC = KST 07:30).
@@ -36,6 +40,36 @@ const LOOKBACK_DAYS = 14;
 const BATCH_SIZE = 8;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 이 크론의 **실질 실패 선언** — HTTP 200 이어도 시도한 대상이 전부 실패했으면 실패로
+ * 기록한다. 선언이 없으면 `withSystemTaskStatus` 가 SUCCESS 로 남긴다(`CronOutcomeBody` 계약).
+ *
+ * **두 단계를 합쳐 잰다** — 한 단계가 죽어도 다른 단계가 산출을 냈으면 그 실행은 헛돌지
+ * 않았다(`collect-instagram` 과 같은 판단). 그래서 반환 경로가 둘(스토리지 미설정 디그레이드
+ * 포함)이어도 계산은 여기 한 곳에 둔다 — 한쪽만 고치면 그 경로가 조용히 초록으로 남는다.
+ *
+ * ⚠️ 1단계의 시도는 `sellersProcessed + failedCount` 가 **아니다** — Tier0 미설정처럼 단계가
+ * 통째로 막히면 두 값이 모두 0이라, 2단계가 마침 대상 0인 날 합산 시도까지 0이 되어 반응
+ * 지표 수집이 죽은 채 SUCCESS 가 된다. 감시 대상에서 멱등 스킵·데드라인 이월분을 뺀 값으로 잰다.
+ * ⚠️ 2단계의 미지원 호스트(`skippedUnsupported`)와 데드라인에 걸려 손도 못 댄 자산은 시도가
+ * 아니다 — 시도로 세면 tiktok 링크만 쌓인 날·느린 날이 상시 빨강이 된다.
+ */
+function declareEnrichOutcome(input: {
+  engagement: CampaignEngagementSyncResult;
+  enriched: number;
+  sweepFailed: number;
+}) {
+  const { engagement, enriched, sweepFailed } = input;
+  const engagementAttempted =
+    engagement.sellersMonitored - engagement.sellersSkipped - engagement.sellersDeferred;
+  return declareTotalFailure({
+    attempted: engagementAttempted + enriched + sweepFailed,
+    succeeded: engagement.sellersProcessed + enriched,
+    unit: "건",
+    what: "레퍼런스 보강(반응 지표·썸네일)",
+  });
+}
 
 async function handler(request: Request) {
   if (!verifyCronAuth(request)) {
@@ -61,9 +95,11 @@ async function handler(request: Request) {
       scanned: 0,
       enriched: 0,
       skippedUnsupported: 0,
-      failed: 0,
+      failedCount: 0,
       skipped: "storage env 미설정 (SUPABASE_SERVICE_ROLE_KEY 필요)",
       engagement,
+      // 스윕은 못 돌았지만 1단계는 이미 돌았다 — 그 전량 실패는 여기서도 보여야 한다.
+      ...declareEnrichOutcome({ engagement, enriched: 0, sweepFailed: 0 }),
     });
   }
 
@@ -87,7 +123,15 @@ async function handler(request: Request) {
 
   let enriched = 0;
   let skippedUnsupported = 0;
-  let failed = 0;
+  /**
+   * 보강에 실패한 자산 **수**.
+   *
+   * ⛔ 이 이름을 `failed` 로 되돌리지 말 것 — `failed` 는 크론 응답 계약(`CronOutcomeBody`,
+   * `src/lib/system-task-status.ts`)이 **불리언으로 예약**한 키다. 개수가 그 이름을 쓰고 있으면
+   * 실패 선언을 얹을 때 둘 중 하나가 소리 없이 사라지고, 개수가 남는 쪽이면 `=== true` 비교에
+   * 걸리지 않아 **전량 실패가 영영 초록**이 된다(이 잡이 실제로 그 상태였다).
+   */
+  let failedCount = 0;
   let instagramTouched = false;
 
   for (const asset of assets) {
@@ -141,7 +185,7 @@ async function handler(request: Request) {
       });
       enriched++;
     } catch (e) {
-      failed++;
+      failedCount++;
       console.error(
         `[enrich-references] asset ${asset.id} (${asset.externalUrl}) 보강 실패:`,
         e instanceof Error ? e.message : e
@@ -155,7 +199,14 @@ async function handler(request: Request) {
   }
 
   // 부분 실패 명시(P0) — scanned는 이번 스윕 선택 건수(take 8 캡). engagement는 1단계에서 수집.
-  return NextResponse.json({ scanned: assets.length, enriched, skippedUnsupported, failed, engagement });
+  return NextResponse.json({
+    scanned: assets.length,
+    enriched,
+    skippedUnsupported,
+    failedCount,
+    engagement,
+    ...declareEnrichOutcome({ engagement, enriched, sweepFailed: failedCount }),
+  });
 }
 
 export const GET = withSystemTaskStatus("enrich-references", handler);
