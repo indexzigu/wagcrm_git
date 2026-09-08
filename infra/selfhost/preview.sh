@@ -23,6 +23,10 @@ PREVIEW_CHECKOUT="$HOME/selfhost/wagcrm-preview"
 PLIST_NAME="kr.ygrd.wagcrm.preview.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 PREVIEW_PORT=3001
+# 프리뷰 DB 의 호스트 포트. SSOT 는 preview-db.sh 의 PREVIEW_PORT 이고 여기 값은 그
+# 사본이다 — 아래 env 가드가 "프리뷰 앱이 프리뷰 DB 를 보고 있는가" 를 검사하는 데만
+# 쓴다. 둘이 어긋나면 가드가 정상 구성을 거부하므로 함께 고쳐야 한다.
+PREVIEW_DB_HOSTPORT="127.0.0.1:55433"
 # deploy.sh 가 쓰는 배포 완료 마커. 그쪽의 유도 규칙(마커 디렉터리는 체크아웃의
 # 부모 + 파일명은 라벨 끝단에서 파생)을 그대로 재현한다 — 경로를 손으로 박아두면
 # deploy.sh 가 규칙을 바꿀 때 여기만 조용히 낡는다.
@@ -103,6 +107,45 @@ cmd_up() {
     command -v "$bin" >/dev/null 2>&1 || missing="${missing:+$missing }$bin"
   done
   [ -z "$missing" ] || abort "필수 실행파일을 PATH 에서 찾지 못함: $missing (PATH=$PATH)"
+
+  # ── env 가드: 프리뷰 앱이 프리뷰 DB 를 보고 있는가 ──
+  # 프리뷰 레인의 실행 env(체크아웃의 infra/selfhost/.env, run-app.sh 가 source 한다)는
+  # 호스트 로컬 파일이라 이 레포가 고칠 수 없다. 그 값이 프로덕션 DB 를 가리키면
+  # deploy.sh 가 **프로덕션에 마이그레이션을 걸고** 프리뷰 앱이 프로덕션 데이터를
+  # 만진다 — deploy.sh 의 host 가드는 127.0.0.1 을 정상으로 통과시키므로 그쪽에서
+  # 걸리지 않는다.
+  #
+  # 2026-08-25 루프백 조치가 55432 를 프로덕션(supabase-db)에 넘긴 뒤로 이 env 는
+  # 실제로 프로덕션을 가리키고 있었다. 그동안 사고가 나지 않은 이유는 프리뷰 DB 가
+  # 같은 포트를 잡으려다 실패해 레인이 아예 안 떴기 때문이다 — 즉 **포트 충돌이
+  # 우연히 제동 역할을 하고 있었다.** 프리뷰 DB 를 55433 으로 옮기면 그 제동이
+  # 풀리므로, 같은 제동을 여기서 제 이유로 다시 건다.
+  local env_file="$PREVIEW_CHECKOUT/infra/selfhost/.env"
+  [ -r "$env_file" ] || abort "프리뷰 실행 env 를 읽을 수 없습니다($env_file)."
+  #
+  # ⚠️ **두 변수를 모두 본다.** DATABASE_URL 만 보면 구멍이 남는다 —
+  # scripts/prisma-migrate-on-deploy.mjs 는 `DIRECT_URL || DATABASE_URL` 순으로
+  # 고르므로(직결이 필요해서), DATABASE_URL 이 프리뷰인데 DIRECT_URL 이 프로덕션이면
+  # 이 가드를 통과한 채 **프로덕션에 migrate deploy 가 나간다.**
+  #
+  # `export DATABASE_URL=` 표기도 받는다 — 이 파일은 셸이 `set -a; . …` 로 소스하므로
+  # export 접두가 정당하다. 안 받으면 정상 구성이 "미설정" 이라는 사실과 다른 이유로
+  # 막힌다. 파서 정본은 disposable-postgres.ts 의
+  # `^\s*(?:export\s+)?(DATABASE_URL|DIRECT_URL)\s*=` 이고 여기는 그 **취지**를 따르되
+  # `=` 양옆 공백은 받지 않는다(셸 파일에서 `KEY = value` 는 문법 오류라 나타날 수 없다).
+  local key env_hostport
+  for key in DATABASE_URL DIRECT_URL; do
+    # ⚠️ `|| true` 가 필요하다 — set -e + pipefail 아래에서 변수가 아예 없으면 grep 이
+    # 1 로 끝나 **대입식 자체가 스크립트를 죽인다.** 그러면 아래 "미설정" 안내가 영영
+    # 나오지 않고 종료코드 1 만 남는 조용한 실패가 된다(실측).
+    # ⚠️ `tail -1` 이다 — `head -1` 이 아니다. 이 파일은 셸이 소스하므로 같은 변수가
+    # 여러 번 나오면 **마지막 할당이 이긴다.** 첫 줄을 보면 "프리뷰(55433) 다음 줄에
+    # 프로덕션(55432)" 같은 파일이 가드를 통과한 채 앱과 마이그레이션은 프로덕션으로
+    # 간다(실측: head 는 55433, 셸은 55432 를 쓴다).
+    env_hostport="$({ grep -hE "^[[:space:]]*(export[[:space:]]+)?${key}=" "$env_file" || true; } | tail -1 | sed -E 's#.*@##; s#/.*##; s#["'"'"']##g')"
+    [ "$env_hostport" = "$PREVIEW_DB_HOSTPORT" ] \
+      || abort "프리뷰 실행 env 의 ${key} 이 프리뷰 DB($PREVIEW_DB_HOSTPORT)가 아니라 ${env_hostport:-미설정} 을 가리킵니다 — 이대로 열면 프리뷰가 그 DB 에 마이그레이션을 걸고 데이터를 씁니다. $env_file 의 호스트·포트를 $PREVIEW_DB_HOSTPORT 로 고친 뒤 다시 실행하세요."
+  done
 
   # 브랜치 존재는 DB 를 건드리기 **전에** 확인한다 — 오타로 DB 만 갈아엎는 것을 막는다.
   git -C "$PREVIEW_CHECKOUT" fetch --quiet origin

@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREVIEW_DB_SCRIPT="$SCRIPT_DIR/preview-db.sh"
 PREVIEW_PLIST="$HOME/Library/LaunchAgents/kr.ygrd.wagcrm.preview.plist"
 DB_CONTAINER="wagcrm-preview-db"
-DB_HOSTPORT="127.0.0.1:55432"
+DB_HOSTPORT="127.0.0.1:55433"
 LOG_DIR="$HOME/selfhost/logs"
 PIDFILE="$LOG_DIR/dev.pid"
 LOG_FILE="$LOG_DIR/dev.out.log"
@@ -39,6 +39,14 @@ esac
 case "$DEV_PORT" in
   3002) ;;
   *) abort "개발 포트가 비정상입니다($DEV_PORT) — 3000(프로덕션)/3001(프리뷰)과 겹칠 위험이 있어 중단합니다." ;;
+esac
+# DB 포트 가드 — 아래 db_reachable 은 "무엇이 응답하는가" 가 아니라 "응답이 있는가" 만
+# 본다. 그래서 이 값이 프로덕션 DB 포트(55432·5432·6543, 2026-08-25 루프백 조치)를
+# 가리키면 프로덕션이 대신 응답하고, 스크립트는 그것을 "프리뷰 사본이 준비됐다" 로
+# 읽는다 — 실패가 아니라 **조용한 오인**이라 로그만 보고는 알 수 없다.
+case "${DB_HOSTPORT##*:}" in
+  55433) ;;
+  *) abort "DB 포트가 비정상입니다($DB_HOSTPORT) — 프로덕션 DB 포트와 겹치면 프리뷰 사본 대신 프로덕션에 붙습니다. 현행 규약은 55433 입니다." ;;
 esac
 
 http_code() { curl -o /dev/null -s -m 3 -w '%{http_code}' "http://127.0.0.1:$DEV_PORT/" 2>/dev/null || true; }
@@ -73,8 +81,9 @@ cmd_up() {
 
   [ -d "$DEV_CHECKOUT" ] || abort "개발 체크아웃이 없습니다($DEV_CHECKOUT)."
 
-  # DB 준비 — 개발 체크아웃 .env 가 프리뷰 DB(127.0.0.1:55432)를 가리키는 구성일 때만
-  # 재구축한다. 다른 DB(로컬 파일 등)를 가리키면 건드리지 않는다.
+  # DB 준비 — 개발 체크아웃 .env 가 프리뷰 DB($DB_HOSTPORT)를 가리키는 구성일 때만
+  # 재구축한다. 다른 DB(프로덕션 55432·로컬 파일 등)를 가리키면 건드리지 않고,
+  # 아래 else 가지가 실제 접속 대상을 로그에 찍는다 — 어느 DB 로 도는지는 그 줄로 판정한다.
   local env_hostport
   env_hostport="$(grep -hE '^DATABASE_URL=' "$DEV_CHECKOUT/.env.local" "$DEV_CHECKOUT/.env" 2>/dev/null | head -1 \
     | sed -E 's#.*@##; s#/.*##')"

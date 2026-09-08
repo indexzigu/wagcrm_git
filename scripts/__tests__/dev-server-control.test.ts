@@ -33,6 +33,22 @@ describe("dev.sh 가드 계약", () => {
     expect(SRC).toMatch(/case "\$DEV_PORT" in\s*\n\s*3002\)/);
   });
 
+  it("DB 호스트포트가 프로덕션 DB 포트가 아니다", () => {
+    // db_reachable 은 "무엇이 응답하는가" 가 아니라 "응답이 있는가" 만 본다. 그래서 이
+    // 값이 프로덕션 DB 포트(55432·5432·6543, 2026-08-25 루프백 조치)를 가리키면
+    // 프로덕션이 대신 응답하고 스크립트는 그것을 "프리뷰 사본 준비됨" 으로 읽는다 —
+    // 실패가 아니라 조용한 오인이라 로그로도 안 드러난다.
+    const assigns = lines.filter((l) => /^DB_HOSTPORT=/.test(l.trim()));
+    expect(assigns.length).toBeGreaterThan(0); // 스캐너 고장 감지
+    for (const line of assigns) {
+      const port = line.trim().replace(/^DB_HOSTPORT=/, "").replace(/["']/g, "").split(":").pop();
+      for (const prod of ["55432", "5432", "6543"]) {
+        expect(port, `DB 포트가 프로덕션 DB 포트와 겹친다: ${line}`).not.toBe(prod);
+      }
+    }
+    expect(SRC).toMatch(/case "\$\{DB_HOSTPORT##\*:\}" in\s*\n\s*55433\)/);
+  });
+
   it("kill 은 launchd 소유 판정(부모 PID 1) 뒤에 온다", () => {
     const killIdx = lines.findIndex((l) => /\bkill\s+"?\$/.test(l));
     expect(killIdx, "kill 줄을 찾지 못했다 — 스캐너 고장").toBeGreaterThan(-1);

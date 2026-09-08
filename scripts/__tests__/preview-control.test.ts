@@ -147,6 +147,52 @@ describe("preview.sh 파괴 명령 가드", () => {
     expect('PREVIEW_CHECKOUT="$HOME/selfhost/wagcrm-preview"').not.toMatch(PROD_CHECKOUT_RE);
   });
 
+  it("프리뷰 env 의 DB 확인이 DB 재구축·서비스 로드보다 앞에 온다", () => {
+    // 프리뷰 레인의 실행 env 는 호스트 로컬 파일이라 이 레포가 고칠 수 없다. 그 값이
+    // 프로덕션 DB 를 가리키면 deploy.sh 가 프로덕션에 마이그레이션을 걸고 프리뷰 앱이
+    // 프로덕션 데이터를 만진다(deploy.sh 의 host 가드는 127.0.0.1 을 통과시킨다).
+    // 2026-08-25 이후 실제로 그 상태였고, 프리뷰 DB 가 같은 포트를 잡으려다 실패해
+    // 레인이 안 뜬 것만이 제동이었다 — 포트를 옮기면 그 제동이 풀리므로 이 검사가
+    // 그 자리를 대신한다. 확인은 반드시 docker·launchd 를 건드리기 **전**이어야 한다.
+    const lines = activeLines(functionBody(src, "cmd_up"));
+    const envCheckIdx = lines.findIndex((l) => /env_hostport.*PREVIEW_DB_HOSTPORT|PREVIEW_DB_HOSTPORT.*env_hostport/.test(l));
+    const dbRebuildIdx = lines.findIndex((l) => /preview-db\.sh/.test(l));
+    const bootstrapIdx = lines.findIndex((l) => /launchctl\s+bootout|launchctl\s+bootstrap/.test(l));
+
+    expect(envCheckIdx, "프리뷰 env 의 DB 확인을 찾지 못했다 — 계약 기준을 갱신할 것").toBeGreaterThan(-1);
+    expect(dbRebuildIdx, "preview-db.sh 호출을 찾지 못했다").toBeGreaterThan(-1);
+    expect(bootstrapIdx, "launchctl 조작을 찾지 못했다").toBeGreaterThan(-1);
+    expect(dbRebuildIdx, "DB 재구축이 env 확인보다 앞에 있다").toBeGreaterThan(envCheckIdx);
+    expect(bootstrapIdx, "서비스 로드가 env 확인보다 앞에 있다").toBeGreaterThan(envCheckIdx);
+  });
+
+  it("프리뷰 env 검사가 DATABASE_URL 과 DIRECT_URL 을 모두 본다", () => {
+    // scripts/prisma-migrate-on-deploy.mjs 는 `DIRECT_URL || DATABASE_URL` 순으로
+    // 마이그레이션 대상을 고른다. 그래서 DATABASE_URL 만 검사하면 DATABASE_URL 은
+    // 프리뷰인데 DIRECT_URL 이 프로덕션인 구성이 가드를 통과하고, 프리뷰 배포가
+    // **프로덕션에 migrate deploy 를 건다.** 한쪽만 보는 회귀를 여기서 잡는다.
+    const body = functionBody(src, "cmd_up");
+    const lines = activeLines(body);
+    const loop = lines.find((l) => /^\s*for\s+key\s+in\b/.test(l));
+    expect(loop, "env 검사 루프를 찾지 못했다 — 계약 기준을 갱신할 것").toBeDefined();
+    expect(loop, "DATABASE_URL 이 검사 대상에서 빠졌다").toContain("DATABASE_URL");
+    expect(loop, "DIRECT_URL 이 검사 대상에서 빠졌다").toContain("DIRECT_URL");
+
+    // 루프가 두 키를 나열하는 것만으로는 부족하다 — grep 패턴이 `${key}` 가 아니라
+    // 한쪽 이름을 하드코딩하고 있으면 루프를 돌아도 같은 변수만 두 번 본다.
+    // 그 형태의 되돌림은 위 단언을 전부 통과하므로 여기서 따로 잡는다.
+    const probe = lines.find((l) => /env_hostport=/.test(l));
+    expect(probe, "env 값 추출 줄을 찾지 못했다 — 계약 기준을 갱신할 것").toBeDefined();
+    expect(probe, "grep 패턴이 루프 변수를 쓰지 않는다").toMatch(/\$\{?key\}?/);
+    expect(probe, "grep 패턴에 키 이름이 하드코딩돼 있다").not.toMatch(/(DATABASE_URL|DIRECT_URL)=/);
+
+    // 이 파일은 셸이 소스하므로 같은 변수가 여러 번 나오면 **마지막 할당이 이긴다.**
+    // `head -1` 로 첫 줄을 보면 "프리뷰 다음 줄에 프로덕션" 인 파일이 가드를 통과한 채
+    // 앱과 마이그레이션은 프로덕션으로 간다.
+    expect(probe, "마지막 할당이 아니라 첫 할당을 본다 — 셸의 실제 값과 어긋난다").toContain("tail -1");
+    expect(probe, "head -1 은 셸이 쓰는 값과 다른 줄을 본다").not.toContain("head -1");
+  });
+
   it("파일 삭제가 launchd 언로드 확인보다 뒤에 온다", () => {
     // `bootout` 은 비동기다. 언로드를 확인하기 전에 지우면 아직 살아 있는 앱 프로세스와
     // 경합한다 — 프리뷰 앱은 체크아웃 안의 standalone 서버로 돌면서 런타임 캐시를
