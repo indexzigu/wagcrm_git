@@ -33,7 +33,15 @@ function call() {
 }
 
 function collection(over: Partial<Record<string, unknown>> = {}) {
-  return { successCount: 0, failedCount: 0, monitoredCount: 0, skippedCount: 0, errors: [], ...over };
+  return {
+    successCount: 0,
+    failedCount: 0,
+    monitoredCount: 0,
+    skippedCount: 0,
+    dispatchedCount: 0,
+    errors: [],
+    ...over,
+  };
 }
 
 beforeEach(() => {
@@ -67,6 +75,16 @@ describe("collect-youtube 실질 실패 선언", () => {
 
     expect(body.failed).toBe(true);
     expect(body.failureReason).toContain("2");
+  });
+
+  it("Apify 비동기 발주에 성공했으면 동기 성공이 0이어도 정상이다", async () => {
+    // 🪤 그 경로는 적립을 웹훅에 넘기므로 successCount 가 0인 채로 정상 종료한다 —
+    //    발주 수를 성공으로 세지 않으면 정상 실행이 매번 빨강이 된다.
+    collectMock.mockResolvedValue(collection({ monitoredCount: 2, dispatchedCount: 2 }));
+
+    const body = await (await call()).json();
+
+    expect(body.failed).toBe(false);
   });
 
   it("하나라도 성공했으면 정상이다(개별 실패를 승격하지 않는다)", async () => {

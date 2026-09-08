@@ -27,11 +27,13 @@ async function handler(request: Request) {
     // 쿼터 소진·키 미설정처럼 **단계가 통째로 막히면 두 카운터가 모두 0**이라, 그것으로 재면
     // 이 잡이 죽은 날과 "감시 셀러가 없는 날"이 구분되지 않는다.
     // 감시 셀러가 0명이거나 전원 멱등 스킵이면 시도도 0이라 정상이다.
+    // ⚠️ 성공에 `dispatchedCount` 를 더한다 — Apify 경로는 **발주에 성공해도** 적립을 웹훅에
+    // 넘기므로 `successCount` 가 0인 채로 정상 종료한다. 빼면 정상 발주가 매번 빨강이 된다.
     return NextResponse.json({
       ...result,
       ...declareTotalFailure({
         attempted: result.monitoredCount - result.skippedCount,
-        succeeded: result.successCount,
+        succeeded: result.successCount + result.dispatchedCount,
         unit: "명",
         what: "유튜브 구독자 수집",
       }),

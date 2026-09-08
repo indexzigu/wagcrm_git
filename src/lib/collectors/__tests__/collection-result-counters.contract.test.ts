@@ -124,6 +124,32 @@ describe("CollectionResult 카운터 계약 — 유튜브", () => {
     expect(result.monitoredCount - result.skippedCount).toBe(2);
   });
 
+  it("Apify 발주에 성공하면 동기 성공이 0이어도 발주 수로 잡힌다(비동기 적립은 웹훅 몫)", async () => {
+    // 🪤 이 경로는 **성공했을 때 successCount 를 일부러 올리지 않는다**(결과가 웹훅으로 온다).
+    //    그래서 성공만으로 판정하면 정상 발주가 매번 전량 실패로 찍힌다 — 상시 빨강.
+    vi.stubEnv("YOUTUBE_COLLECT_MODE", "apify");
+    vi.stubEnv("APIFY_API_TOKEN", "apify-token");
+    globalFetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ data: { id: "run-1" } }), { status: 201 }),
+    );
+
+    const result = await collectYouTubeSubscribers({ apiKey: "yt-key" });
+
+    expect(result.successCount).toBe(0);
+    expect(result.dispatchedCount).toBe(2);
+  });
+
+  it("Apify 발주가 실패하면 발주 수가 0이라 전량 실패로 드러난다", async () => {
+    vi.stubEnv("YOUTUBE_COLLECT_MODE", "apify");
+    vi.stubEnv("APIFY_API_TOKEN", "apify-token");
+    globalFetchMock.mockResolvedValue(new Response("nope", { status: 500 }));
+
+    const result = await collectYouTubeSubscribers({ apiKey: "yt-key" });
+
+    expect(result.dispatchedCount).toBe(0);
+    expect(result.monitoredCount - result.skippedCount).toBe(2);
+  });
+
   it("감시 셀러가 없으면 시도도 0이다(정상 — 상시 빨강 방지)", async () => {
     vi.stubEnv("YOUTUBE_COLLECT_MODE", "api");
     findManyMock.mockResolvedValue([]);

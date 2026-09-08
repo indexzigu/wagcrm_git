@@ -80,6 +80,7 @@ export async function collectYouTubeSubscribers(
     failedCount: 0,
     monitoredCount: 0,
     skippedCount: 0,
+    dispatchedCount: 0,
     errors: [],
   };
 
@@ -204,7 +205,10 @@ export async function collectYouTubeSubscribers(
       } else {
         const data = await response.json();
         await logApiCall("YOUTUBE", "POST https://api.apify.com/v2/acts/apify~youtube-scraper/runs", 201, true, null, "apify", JSON.stringify({ runId: data.data.id, startUrlsCount: startUrls.length, webhookUrl }));
-        // For Apify, we don't immediately count as success because it will be processed in the webhook.
+        // 적립은 웹훅(`/api/cron/apify-webhook/youtube`)이 하므로 여기서는 successCount 를
+        // 올리지 않는다. 대신 **발주에 성공했다는 사실**을 남긴다 — 이게 없으면 크론의 전량
+        // 실패 판정이 정상 발주를 매번 실패로 읽는다(상시 빨강).
+        result.dispatchedCount += targetsToCollect.length;
       }
     } catch (fetchErr) {
       const errMsg = fetchErr instanceof Error ? fetchErr.message : "Network error";

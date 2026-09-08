@@ -27,6 +27,14 @@ export type CollectionResult = {
   monitoredCount: number;
   /** 오늘 이미 수집됐거나 수집 주기 안이라 건너뛴 셀러 수. 시도가 아니므로 실패 판정에서 뺀다. */
   skippedCount: number;
+  /**
+   * **비동기 수집을 발주한** 셀러 수 — 적립은 웹훅이 나중에 한다(유튜브 Apify 경로).
+   *
+   * 🪤 그 경로는 발주에 **성공해도 `successCount` 를 일부러 올리지 않는다**(그 시점엔 아직
+   * 적립된 것이 없다). 그래서 동기 성공만으로 전량 실패를 판정하면 **정상 발주가 매번 빨강**이
+   * 된다 — 이 필드가 그 경우의 "성공"이다. 동기 경로만 있는 수집기에서는 0으로 남는다.
+   */
+  dispatchedCount: number;
   errors: Array<{ sellerId: string; snsHandle: string; error: string }>;
 };
 
@@ -133,6 +141,7 @@ export async function collectInstagramFollowers(
     failedCount: 0,
     monitoredCount: 0,
     skippedCount: 0,
+    dispatchedCount: 0,
     errors: [],
   };
 
