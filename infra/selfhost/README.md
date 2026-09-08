@@ -690,6 +690,11 @@ DB 접속도 최소권한 역할(`wag_agent_worker`)로 앱과 분리된다 — 
    `run-agent-worker.sh` 는 이 파일의 `DATABASE_URL` 이 앱 `.env` 의
    `DATABASE_URL` 과 같으면(값은 출력하지 않고 비교만 해서) 기동을 거부한다
    — 두 값이 같다는 것은 role 을 분리하지 않았다는 신호이기 때문이다.
+   ⚠️ **그 비교는 신원 확인이 아니다** — 같은 전체권한 계정이라도 접속 옵션
+   하나만 다르면 "앱과 다르다"로 통과한다. 그래서 워커 본체가 기동 직후 DB 에
+   직접 `current_user`/`session_user` 를 물어 `wag_agent_worker` 가 아니면
+   멈춘다(`src/lib/agent-worker/db-identity.ts`). 이 role 로 붙지 않았다면
+   `agent-worker.err.log` 에 어떤 role 로 붙었는지가 남는다.
 2. **네이티브 addon 을 빌드한다**(레포 루트에서):
    ```bash
    npm run agent-worker:build-native
@@ -711,13 +716,23 @@ DB 접속도 최소권한 역할(`wag_agent_worker`)로 앱과 분리된다 — 
 
 ```bash
 launchctl print gui/$(id -u)/kr.ygrd.wagcrm.agent-worker | grep state
-tail -n 50 ~/selfhost/logs/agent-worker.out.log
+tail -n 50 ~/selfhost/logs/agent-worker.out.log   # 정상 기동·운영 로그
+tail -n 50 ~/selfhost/logs/agent-worker.err.log   # 기동 거부 사유는 전부 이쪽
 ```
-`state = running` 이고 로그에 `"event":"started"` JSON 줄이 보이면 정상이다.
+`state = running` 이고 `out.log` 에 `"event":"started"` JSON 줄이 보이면
+정상이다. 그 앞줄의 `"event":"db_identity_verified"` 는 워커가 DB 에 직접
+"지금 접속한 계정이 누구냐"를 물어 `wag_agent_worker` 임을 확인했다는 뜻이다.
 워커는 HTTP 를 열지 않는다 — 로컬 유닉스 도메인 소켓(UDS) RPC 로만
 응답한다(소켓 경로는 `scripts/agent-worker.ts` 참고, 기본값은 코드가
 결정한다). 소켓 파일이 보이지 않으면 위 로그에서 `startup_failed` 를 먼저
 찾는다.
+
+⚠️ **`out.log` 만 보면 기동 거부가 안 보인다.** 래퍼(`run-agent-worker.sh`)의
+가드는 전부 stderr 로 나가므로 `agent-worker.err.log` 에만 쌓인다 — plist 가
+`KeepAlive` 라 원인을 고치기 전까지 `ThrottleInterval`(10초)마다 같은 줄이
+되풀이된다. 즉 **"out.log 는 조용한데 워커가 없다" = err.log 를 볼 때**다.
+같은 줄이 반복되는 것 자체는 새 사고가 아니라 첫 실패가 계속 재생되는 것이니,
+가장 오래된 것 하나만 읽고 그 원인을 고친다.
 
 ### 재시작 / 중지
 
@@ -751,7 +766,9 @@ launchctl bootout "gui/$(id -u)/kr.ygrd.wagcrm.agent-worker"        # 완전 중
 민감정보가 아니지만 관례상 운영 좌표는 `agent-worker.env`(미추적)에만
 둔다. 네이티브 addon 경로 오버라이드(`WAG_AGENT_WORKER_PEER_CRED_ADDON`)도
 같은 파일에 둔다 — `WorkingDirectory` 가 레포 루트(`~/selfhost/wagcrm`)면
-기본값(상대경로 해석)으로 충분하다.
+기본값(상대경로 해석)으로 충분하다. 래퍼도 이 변수를 함께 읽는다(종전에는
+래퍼만 기본 경로를 고집해, 이 안내대로 오버라이드를 켜면 워커는 뜰 수 있는데
+래퍼가 먼저 "addon 이 없다"로 막았다).
 
 ## 배포 절차 (Task 4)
 

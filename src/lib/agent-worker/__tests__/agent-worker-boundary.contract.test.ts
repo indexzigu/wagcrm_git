@@ -69,6 +69,24 @@ describe("agent worker boundary contract", () => {
     expect(read(".gitignore")).toMatch(/^\/src\/lib\/agent-worker\/native\/peer-cred\/build\/$/m);
   });
 
+  it("the worker entrypoint verifies its database role before it starts working", () => {
+    // T-117: the launcher can only compare connection strings, so the identity guard
+    // is the only thing that actually answers "which role am I". It has to run before
+    // the loop claims a job — a guard that fires afterwards has already let writes
+    // through. Asserting the call site (not just the import) keeps the module from
+    // becoming dead code that every test still passes without.
+    const entry = read("scripts/agent-worker.ts");
+    expect(entry).toMatch(/import \{ assertAgentWorkerDbIdentity \} from "\.\.\/src\/lib\/agent-worker\/db-identity"/);
+    const guardAt = entry.indexOf("assertAgentWorkerDbIdentity(");
+    const loopStartAt = entry.indexOf("loop.start()");
+    expect(guardAt, "entrypoint never calls the identity guard").toBeGreaterThan(-1);
+    expect(loopStartAt).toBeGreaterThan(-1);
+    expect(guardAt, "identity guard runs after the loop starts claiming jobs").toBeLessThan(loopStartAt);
+    expect(entry, "the guard result must be awaited or a rejection cannot stop startup").toMatch(
+      /await assertAgentWorkerDbIdentity\(/,
+    );
+  });
+
   it("the worker entrypoint fails closed without the native peer-credential addon", () => {
     const entry = read("scripts/agent-worker.ts");
     expect(entry).toMatch(/loadNativePeerCredentialProvider/);

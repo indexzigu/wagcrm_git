@@ -10,10 +10,15 @@ import { describe, expect, it } from "vitest";
  * 설치 패킷(`task-8-install-packet.md` §A-2-1 MEDIUM-2)이 지목한 실사고
  * 위험은 "워커에 앱용 DATABASE_URL(전체 권한)이 실수로 들어가도 아무 신호가
  * 없다"는 것이었다. 그래서 이 계약은 래퍼가 ① 워커 전용 env 파일만 주
- * 소스로 쓰고 ② 앱 .env 와 값이 같으면 기동을 막고 ③ 값을 어디에도 echo 하지
+ * 소스로 쓰고 ② 앱 .env 와 값이 같으면 기동을 막고 ③ 값을 어디에도 출력하지
  * 않는지를 소스 스캔 + 실제 `bash -n` 파싱으로 확인한다. plist 쪽은
  * `kr.ygrd.wagcrm.app.plist`(참조 템플릿)와 같은 키 구조를 갖는지,
  * 크리덴셜을 EnvironmentVariables 에 박아 PUBLIC 레포에 흘리지 않는지를 본다.
+ *
+ * ⚠️ **이 파일은 모양만 본다.** 가드가 실제로 막는지는 옆 파일
+ * `selfhost-agent-worker-behavior.test.ts` 가 임시 체크아웃에서 래퍼를 실행해
+ * 확인한다(T-119 지적 — 소스 글자 검사만으로는 "올바른 비교가 적혀 있는데 실행
+ * 결과가 틀린" 부류를 못 잡는다). 새 가드를 넣을 때 여기만 늘리지 말 것.
  */
 const INFRA = path.resolve(__dirname, "..", "..", "infra", "selfhost");
 const WRAPPER = path.join(INFRA, "run-agent-worker.sh");
@@ -78,21 +83,23 @@ describe("run-agent-worker.sh", () => {
 
   it("agent-worker.env 가 없으면 한글 오류로 중단한다", () => {
     expect(src).toMatch(/if \[ ! -f "\$ENV_FILE" \]; then/);
-    expect(src).toMatch(/치명적 오류.*agent-worker\.env|치명적 오류.*ENV_FILE/);
+    expect(src).toMatch(/die "\$ENV_FILE 이 없습니다/);
+    expect(src).toMatch(/echo "치명적 오류: \$1" >&2/);
   });
 
   it("DATABASE_URL 이 비어 있으면 한글 오류로 중단한다", () => {
     expect(src).toMatch(/if \[ -z "\$\{DATABASE_URL:-\}" \]; then/);
   });
 
-  it("워커 DATABASE_URL 이 앱 DATABASE_URL 과 같으면 중단하고, 값은 echo 하지 않는다", () => {
+  it("워커 DATABASE_URL 이 앱 DATABASE_URL 과 같으면 중단하고, 값은 출력하지 않는다", () => {
     expect(src).toMatch(/\[ "\$APP_DATABASE_URL" = "\$DATABASE_URL" \]/);
-    // echo 는 사람이 읽는 stderr 출력 통로다 — 여기에 DATABASE_URL 값 변수가
-    // 실리면 로그로 값이 샌다. printf 는 예외다: 서브셸 안에서 command
-    // substitution 으로 값을 상위 변수에 담아 반환하는 용도로만 한 줄 쓰고,
-    // 그 결과는 터미널/로그로 출력되지 않는다 — 아래에서 그 한 줄만 허용한다.
-    const echoes = activeLines(src).filter((l) => /\becho\b/.test(l));
-    for (const line of echoes) {
+    // 출력 통로는 셋이다 — `echo`(사람이 읽는 stderr) · `die`(그 echo 를 감싼 헬퍼,
+    // 인자가 곧 출력이다) · `printf`. 여기에 DATABASE_URL 값 변수가 실리면 로그로
+    // 값이 샌다. ⚠️ `die` 를 이 목록에서 빼면 스캐너가 통째로 눈이 먼다 —
+    // 호출부가 전부 `die` 로 바뀌었으므로 `echo` 만 세면 남는 것은 헬퍼 한 줄뿐이다.
+    const outputs = activeLines(src).filter((l) => /\becho\b|\bdie\b/.test(l));
+    expect(outputs.length, "출력 줄을 하나도 못 찾았다 — 스캐너가 고장 났다").toBeGreaterThan(5);
+    for (const line of outputs) {
       expect(line, `DATABASE_URL 값을 출력할 위험이 있는 줄: ${line}`).not.toMatch(
         /\$DATABASE_URL\b|\$APP_DATABASE_URL\b|\$\{DATABASE_URL\b|\$\{APP_DATABASE_URL\b/,
       );
@@ -131,9 +138,18 @@ describe("run-agent-worker.sh", () => {
   it("npm run build 나 postinstall 을 실행형으로 호출하지 않는다(런처는 실행만, 빌드는 배포 절차 소관)", () => {
     // "npm ci 를 실행하세요" 같은 사람이 읽는 오류 메시지 문자열은 허용한다 —
     // 여기서 막는 것은 스크립트가 그 명령을 **실행**하는 줄이다.
-    const invocationLines = activeLines(src).filter(
-      (l) => /\bnpm\s+(run\s+build|ci|install)\b/.test(l) && !/치명적 오류/.test(l),
-    );
+    // 🪤 제외 술어를 특정 리터럴("치명적 오류")에 묶지 말 것: 그 문구가 `die` 헬퍼로
+    // 옮겨간 순간 메시지 줄이 실행 줄로 오분류돼 거짓 실패가 났다(T-118 작업 중 실측).
+    // 판정은 문구가 아니라 **줄의 첫 낱말이 출력 명령인가**로 한다.
+    const isMessageLine = (line: string) => /^(die|echo)\b/.test(line.trim());
+    const findInvocations = (lines: string[]) =>
+      lines.filter((l) => /\bnpm\s+(run\s+build|ci|install)\b/.test(l) && !isMessageLine(l));
+
+    // 술어 프로브 — 스캐너가 살아 있는지 먼저 확인한다. 이 두 줄이 갈리지 않으면
+    // 아래 빈 배열은 "위반이 없다"가 아니라 "아무것도 못 본다"는 뜻이다.
+    expect(findInvocations(['  npm ci', '  die "먼저 npm ci 를 실행하세요."'])).toEqual(["  npm ci"]);
+
+    const invocationLines = findInvocations(activeLines(src));
     expect(invocationLines, `빌드/설치 명령을 직접 실행하는 줄: ${invocationLines.join(" | ")}`).toEqual([]);
     expect(src).not.toMatch(/postinstall/);
   });
