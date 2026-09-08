@@ -264,6 +264,103 @@ jobs:
           VITEST_MAX_WORKERS: ${{ vars.PREFLIGHT_RUNNER != '' && '3' || '' }}
         run: npm run test:ci -- --shard=${{ matrix.shard }}/4
 
+  # 실 PostgreSQL 이 필요한 옵트인 테스트 전용 잡 (T-115).
+  #
+  # **종전에는 이 테스트가 CI 에서 한 번도 돌지 않았다.** 옵트인 변수가 없으면
+  # `describe.skipIf` 가 파일을 통째로 건너뛰고 체크는 초록이라, CI 가 실제로 지키는 것은
+  # "점검 항목이 코드에 남아 있는가"까지였다 — 점검 SQL 하나가 아무것도 못 잡는 상태로
+  # 망가져도 통과한다. 그건 이 감사기가 막으려는 무증상 열화와 같은 얼굴이다.
+  #
+  # 🪤 **조각(test-shard)에 실을 수 없다.** 이 테스트는 픽스처가 쓰는 이름(`Seller` ·
+  # `anon` · `wag_readonly` …)이 하나라도 이미 있으면 **실행을 거부**한다(남의 객체를
+  # 넘겨받아 지우지 않기 위한 장치 — 그 파일 주석의 실사고). 그래서 `prisma migrate deploy`
+  # 를 마친 preflight 잡의 DB 도, 앱 스키마가 올라간 어떤 DB 도 쓸 수 없고 **아무것도 없는
+  # 새 컨테이너**여야 한다. 조각 4개에 서비스를 달면 컨테이너가 4개 뜨는데 정작 이 파일은
+  # 그중 한 조각에만 실린다.
+  #
+  # ⚠️ push 조건은 test-shard 와 **같아야 한다** — 아래 집계 잡이 두 결과를 함께 읽으므로
+  # 한쪽만 도는 런에서는 집계가 skipped 를 실패로 읽는다.
+  test-realpg:
+    if: github.event_name != 'push'
+    # ⛔ 자가호스트로 옮기지 말 것 — 공개 레포에서는 포크 PR 이 이 잡의 테스트 코드를 바꿔
+    # 오너 맥에서 임의 코드를 돌릴 수 있다(P6 「Self-Hosted Preflight Runner」의 은퇴 사유).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        # 프로덕션과 같은 메이저(17.6) — 점검 SQL 이 시스템 카탈로그를 직접 읽으므로
+        # 마이너 버전차보다 메이저차가 결과를 바꿀 수 있다.
+        image: postgres:17
+        env:
+          # 비밀번호를 두지 않는다 — 잡 안에서만 사는 서비스이고, 자격증명이 없으면 연결
+          # 문자열에 `user:pass@` 형태가 생기지 않아 commit-guard(공개 레포 자격증명 차단)
+          # 와도 다투지 않는다.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: dbaudit
+        ports:
+          # 호스트 포트를 고정하지 않는다 — 사유는 preflight 잡의 같은 자리 주석.
+          - 5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: ${{ vars.PREFLIGHT_RUNNER == '' && 'npm' || '' }}
+
+      - name: Restore node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Generate Prisma clients (Postgres + SQLite)
+        # 캐시 적중 시에도 반드시 돈다 — 생성물에 머신 절대경로가 박힌다(test-shard 와 동일).
+        run: npm run db:generate
+
+      - name: Resolve the ephemeral Postgres host port
+        env:
+          POSTGRES_HOST_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          # 빈 값을 그대로 흘려보내면 접속 문자열이 `localhost:/dbaudit` 가 되어 **실패 원인이
+          # DB 장애로 위장**된다(preflight 잡의 같은 스텝과 같은 사유).
+          if [ -z "$POSTGRES_HOST_PORT" ]; then
+            echo "서비스 컨테이너의 호스트 포트를 읽지 못했다 (job.services.postgres.ports)."
+            exit 1
+          fi
+          # 🪤 도커가 고르는 임시 포트 범위에는 프로덕션 규약 포트도 들어 있다. 하필 그 값을
+          # 잡으면 테스트의 안전 가드가 거부해 **원인이 코드처럼 보이는 실패**가 난다 —
+          # 드물지만 그때 헤매지 않도록 여기서 먼저 이름을 붙인다(재실행하면 다른 포트를 잡는다).
+          case "$POSTGRES_HOST_PORT" in
+            55432 | 5432 | 6543)
+              echo "일회용 컨테이너가 하필 프로덕션 규약 포트($POSTGRES_HOST_PORT)를 잡았다."
+              echo "테스트 안전 가드가 그 포트를 거부한다(support/disposable-postgres.ts). 재실행할 것."
+              exit 1
+              ;;
+          esac
+          # 🪤 이 값을 `DATABASE_URL` 로 내보내지 않는다 — 안전 가드가 "이 레포가 설정된 DB"
+          # 를 거부하므로, 같은 엔드포인트를 DATABASE_URL 에 두면 테스트가 돌지 못하고 던진다.
+          # `test:ci` 가 DATABASE_URL 을 sqlite 로 강제하는 것이 그대로 맞다.
+          echo "DB_EXPOSURE_AUDIT_TEST_ADMIN_URL=postgresql://postgres@localhost:${POSTGRES_HOST_PORT}/dbaudit" >> "$GITHUB_ENV"
+
+      - name: Run the real-PostgreSQL audit test
+        env:
+          # 배선이 끊겨 파일이 skip 되면 **실패시킨다** — 이 잡의 존재 이유가 그 skip 이다.
+          DB_EXPOSURE_AUDIT_REQUIRE_REAL_PG: "1"
+        run: npm run test:ci -- src/lib/__tests__/db-exposure-audit.realpg.test.ts
+
   # 조각 결과를 모아 **`test` 라는 하나의 체크**로 보고한다.
   #
   # 이 잡이 존재하는 이유는 성능이 아니라 **인터페이스 안정성**이다(위 test-shard 주석).
@@ -277,7 +374,10 @@ jobs:
   # ⚠️ push 조건은 test-shard 와 **같아야 한다** — 한쪽만 도는 상태를 만들면 그 런에서
   # 집계가 skipped 를 실패로 읽는다.
   test:
-    needs: test-shard
+    # ⚠️ 실 PostgreSQL 잡도 여기로 모은다 — 새 체크 이름을 바깥에 노출하는 대신 기존
+    # 인터페이스(`test`)로 보고해야 배포 게이트·브랜치 보호가 그 실패를 **차단으로** 읽는다.
+    # 별도 체크로 두면 required 가 아니라서 빨개져도 머지·배포가 그대로 나간다.
+    needs: [test-shard, test-realpg]
     if: always() && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -285,8 +385,18 @@ jobs:
       - name: 조각 결과 집계
         run: |
           RESULT="${{ needs.test-shard.result }}"
+          REALPG="${{ needs.test-realpg.result }}"
           echo "test-shard 종합 결과: $RESULT"
+          echo "test-realpg 결과: $REALPG"
+          failed=0
           if [ "$RESULT" != "success" ]; then
             echo "중단: 테스트 조각 중 하나 이상이 성공하지 않았습니다($RESULT). 개별 조각(test-shard (N)) 로그를 확인하세요." >&2
+            failed=1
+          fi
+          if [ "$REALPG" != "success" ]; then
+            echo "중단: 실 PostgreSQL 감사 테스트가 성공하지 않았습니다($REALPG). test-realpg 로그를 확인하세요." >&2
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
             exit 1
           fi

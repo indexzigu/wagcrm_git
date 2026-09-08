@@ -35,6 +35,18 @@ import { runDbExposureAudit } from "@/lib/db-exposure-audit";
 const adminUrl = process.env.DB_EXPOSURE_AUDIT_TEST_ADMIN_URL ?? "";
 const enabled = adminUrl.length > 0;
 
+/**
+ * 이 파일이 **돌아야 하는 레인인가.** CI 가 일회용 PostgreSQL 을 띄워 준 잡만 `1` 로 선언한다
+ * (`.github/workflows/release-preflight.yml` 의 `test-realpg`).
+ *
+ * 🪤 **옵트인 테스트의 기본 실패 모드는 조용한 skip 이다.** URL 배선이 끊기면 아래 describe 가
+ * 통째로 건너뛰어지고 체크는 초록이다 — 이 파일이 지키려던 것("점검 SQL 이 실제로 돈다")이
+ * 사라졌는데 알 계기가 없다. 그건 **이 감사기가 막으려는 무증상 열화와 정확히 같은 얼굴**이다
+ * (`db-exposure-audit.ts` 가 「테이블 0개는 깨끗함이 아니라 감사 불능」이라고 판정하는 것과
+ * 같은 축). 그래서 돌아야 하는 레인에서는 **돌지 않은 것 자체가 실패**여야 한다.
+ */
+const requiredHere = process.env.DB_EXPOSURE_AUDIT_REQUIRE_REAL_PG === "1";
+
 /** 픽스처가 점유하는 이름. 하나라도 이미 있으면 실행하지 않는다(남의 것을 지우지 않기 위해). */
 const FIXTURE_ROLES = [
   "wag_readonly",
@@ -122,6 +134,18 @@ const MUTATIONS: { label: string; sql: string[]; expected: string }[] = [
   { label: "public 스키마 USAGE 초과", sql: [`GRANT CREATE ON SCHEMA public TO wag_readonly`], expected: "schema-privilege:public:CREATE" },
   { label: "컬럼 단위 비-SELECT", sql: [`GRANT UPDATE ("realName") ON public."Seller" TO wag_readonly`], expected: "column-privilege:Seller.realName:UPDATE" },
 ];
+
+// ⚠️ 이 단언은 아래 `describe.skipIf` **밖**에 둔다 — 안에 두면 skip 될 때 단언까지 함께
+// 사라져, 자기가 감시하려던 바로 그 상태에서 침묵한다.
+describe("실 PostgreSQL 레인 배선", () => {
+  it("요구된 레인에서는 옵트인 URL 이 반드시 배선돼 있다", () => {
+    expect(
+      requiredHere && !enabled,
+      "DB_EXPOSURE_AUDIT_REQUIRE_REAL_PG=1 인데 DB_EXPOSURE_AUDIT_TEST_ADMIN_URL 이 비었다 — " +
+        "일회용 PostgreSQL 배선이 끊겼다. 이 레인에서 skip 은 통과가 아니다.",
+    ).toBe(false);
+  });
+});
 
 describe.skipIf(!enabled)("wag_readonly 범위 점검 SQL (일회용 PostgreSQL)", () => {
   let admin: PrismaClient | undefined;
