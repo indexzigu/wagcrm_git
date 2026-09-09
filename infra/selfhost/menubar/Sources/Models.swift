@@ -24,7 +24,7 @@ struct StatusItem: Decodable, Identifiable, Equatable {
 /// 빨강이면 결과가 「모든 PR 머지 불가」라 disk 보다 먼저 읽혀야 한다.
 /// ⛔ `actionsQuota` 를 되살리지 말 것 — 2026-08-29 오너 결정으로 제거됐다(사유는
 /// status.sh 의 같은 자리 묘비 주석: 공개 레포라 한도가 없어 상시 노랑만 남았다).
-let displayOrder = ["prodLocal", "prodExternal", "db", "backupDaily", "backupWeekly", "crons", "alertDelivery", "preflightRunner", "disk"]
+let displayOrder = ["prodLocal", "prodExternal", "db", "backupDaily", "backupWeekly", "botBackup", "crons", "alertDelivery", "preflightRunner", "disk"]
 
 /// metrics.sh 의 JSON 출력(계약: scripts/__tests__/menubar-metrics.test.ts) —
 /// 측정·판정은 스크립트가 소유하고 앱은 파싱·차분·그리기만 한다(설계 개정 2).

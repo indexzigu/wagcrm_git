@@ -47,6 +47,8 @@ interface RunOpts {
   dbState?: string;
   dailyAgeH?: number;
   weeklyAgeH?: number;
+  /** 봇 코드 오프머신 백업의 마지막 성공이 몇 시간 전인가(미지정 = 성공 기록 없음). */
+  botBackupAgeH?: number;
   plistUp?: boolean;
   fast?: boolean;
   /** crontab 픽스처에 넣을 잡. "<job>" = 매일, "<job>@weekly" = 요일 고정(매주). 기본 2개(매일). */
@@ -196,6 +198,15 @@ esac`,
       path.join(home, "selfhost", "logs", "backup-weekly.out.log"),
       `[backup-weekly] 완료: gdrive:wagcrm-weekly-backups/${stampHoursAgo(opts.weeklyAgeH)} (업로드·검증 성공)\n`,
     );
+  if (opts.botBackupAgeH !== undefined) {
+    // 이 로그만 `selfhost/logs` 가 아니라 `~/.hermes/logs` 에 있다 — 봇(hermes-agent)
+    // 쪽 잡이 쓰는 자리라서다. 디렉터리가 없으면 writeFileSync 가 던지므로 먼저 만든다.
+    mkdirSync(path.join(home, ".hermes", "logs"), { recursive: true });
+    writeFileSync(
+      path.join(home, ".hermes", "logs", "backup-push.log"),
+      `2026-01-01 00:00:00 [bot-backup] 완료: ${stampHoursAgo(opts.botBackupAgeH)} (main abc1234)\n`,
+    );
+  }
   if (opts.plistUp) {
     writeFileSync(path.join(home, "Library", "LaunchAgents", "kr.ygrd.wagcrm.preview.plist"), "<plist/>");
     mkdirSync(path.join(home, "selfhost", "wagcrm-preview"), { recursive: true });
@@ -327,6 +338,16 @@ describe("status.sh 행위 계약", () => {
     expect(byKey(runStatus({ dailyAgeH: 30 }), "backupDaily").level).toBe("warn");
     expect(byKey(runStatus({ dailyAgeH: 60 }), "backupDaily").level).toBe("error");
     expect(byKey(runStatus({}), "backupDaily").level).toBe("unknown");
+  });
+
+  it("봇 코드 백업: 나이로 ok/warn/error, 기록 없으면 unknown", () => {
+    // 이 행의 존재 이유가 「자동 갱신이 멈춰도 아무 일이 안 일어나는 것」을 끝내는 것이라,
+    // **낡음이 실제로 색을 바꾸는지**가 계약의 전부다. 기록이 아예 없을 때 ok 로 빠지면
+    // 잡이 한 번도 안 돈 기계가 초록으로 보인다 — unknown 이어야 한다.
+    expect(byKey(runStatus({ botBackupAgeH: 5 }), "botBackup").level).toBe("ok");
+    expect(byKey(runStatus({ botBackupAgeH: 30 }), "botBackup").level).toBe("warn");
+    expect(byKey(runStatus({ botBackupAgeH: 60 }), "botBackup").level).toBe("error");
+    expect(byKey(runStatus({}), "botBackup").level).toBe("unknown");
   });
 
   it("DB 상태: running ok / exited error / 컨테이너 없음 error", () => {
@@ -547,7 +568,7 @@ describe("status.sh 행위 계약", () => {
     expect(streakOf(r.home, "disk")).toBeNull();
   });
 
-  it("UNKNOWN_ESCALATABLE_KEYS 선언에 disk 가 없고 의도한 4개는 있다(소스 스캔)", () => {
+  it("UNKNOWN_ESCALATABLE_KEYS 선언에 disk 가 없고 의도한 키가 전부 있다(소스 스캔)", () => {
     // 위 런타임 테스트("disk 는 승격 대상이 아니다")는 이 하네스에서 $HOME 이 항상 실제
     // 임시 디렉터리라 df 가 늘 성공한다 — disk 의 level 이 unknown 이 될 일이 없어
     // streak-append 분기 자체에 도달하지 못한다. 그래서 disk 를 UNKNOWN_ESCALATABLE_KEYS
@@ -560,9 +581,15 @@ describe("status.sh 행위 계약", () => {
     const keys = m![1].split(/\s+/).filter(Boolean);
     // 부정: disk 는 오너 결정으로 제외돼야 한다.
     expect(keys).not.toContain("disk");
-    // 긍정: 상수 전체를 지워도 위 not.toContain 은 공허하게 통과하므로, 의도한 4개가
+    // 긍정: 상수 전체를 지워도 위 not.toContain 은 공허하게 통과하므로, 의도한 키가
     // 실제로 있는지도 함께 본다.
-    expect(keys).toEqual(expect.arrayContaining(["db", "backupDaily", "backupWeekly", "crons"]));
+    // ⛔ 개수를 문구에 박지 말 것 — 키는 늘어난다(이 줄이 실제로 4개→5개가 됐다).
+    // 🪤 새 키를 여기 등재하지 않으면 **그 키만 조용히 빠질 수 있다** — 승격은
+    //    `emit()` 의 공용 로직이라 등재를 빼도 다른 테스트는 전부 통과하고, 그 키의
+    //    「확인 불가」가 영영 error 로 올라가지 않는다(botBackup 리뷰 지적, 2026-09-09).
+    expect(keys).toEqual(
+      expect.arrayContaining(["db", "backupDaily", "backupWeekly", "botBackup", "crons"]),
+    );
   });
 
   it("--fast 는 상태 파일에 손대지 않는다", () => {
