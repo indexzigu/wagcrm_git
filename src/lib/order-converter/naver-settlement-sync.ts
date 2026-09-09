@@ -1,6 +1,7 @@
 import { apiRequest } from './naver-commerce-client';
 import { prisma } from './prisma';
 import { queryOrderDetails } from './naver-order-sync';
+import { isSalesCampaignLocked } from './mapping-service';
 
 /**
  * 네이버 정산(pay-settle) 수집 — SSOT: NAVER_SETTLEMENT_API_PLAN.md
@@ -173,9 +174,28 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  * 정산 동기화 시점에 호출되어, 마감 당시의 원본 주문(cachedProductOrderIds) 상태를 조회하고
  * 취소/반품 수량과 금액을 산출해 캠페인의 cachedPostCloseCancelQuantity/Revenue를 갱신합니다.
  * (Absolute Snapshot 방식 - 멱등성 보장)
+ *
+ * **정산이 시작된 캠페인은 조회하지 않는다(2026-09-09).** 동결 기준은 마감(`isActive`)이
+ * 아니라 **정산 락**이라는 것이 오너 확정(2026-07-15)이고, 그 판정 SSOT 가
+ * `isSalesCampaignLocked` 다 — 정산대기(SETTLEMENT_WAIT)까지는 반품·구매확정으로 변동
+ * 가능하고 **정산중부터 확정**이다. 확정된 캠페인을 매일 다시 조회하는 것은 결과가 바뀔 수
+ * 없는 헛일이면서 네이버 호출을 태운다.
+ * ⛔ 기준을 정산대기로 앞당기지 말 것 — 그 구간의 취소·반품을 놓친다(위 오너 확정).
+ * ⛔ `lockedStatuses` 목록을 여기에 베껴 오지 말 것 — 판정은 위 SSOT 한 곳이다.
+ *
+ * 🪤 **동결에는 구멍이 하나 있다.** 이 함수가 이 필드들의 **유일한 writer** 이고 계산이
+ * 델타 누적이 아니라 **절대 스냅샷**이라, 마감과 정산 시작 사이에 이 잡(하루 1회)이 한
+ * 번도 못 돌면 값이 0 인 채로 굳는다. 마감은 판매 단계와 독립된 수동 조작이라 순서를
+ * 보장하는 장치가 없다. 그래서 `includeLocked` 로 **되돌릴 길을 남긴다** — 화면의
+ * 취소·반품이 비어 보이면 크론을 `?includeLocked=1` 로 한 번 돌려 재계산한다.
  */
-export async function syncPostCloseCancellations(): Promise<{ campaigns: number; updated: number }> {
-  // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회(API 요금 및 Rate Limit, timeout 방지)
+export async function syncPostCloseCancellations(
+  options: { includeLocked?: boolean } = {},
+): Promise<{ campaigns: number; updated: number; skippedLocked: number }> {
+  // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회.
+  // ⚠️ 이 창의 **역할이 바뀌었다**(2026-09-09): 원래는 호출량 1차 통제였는데, 이제 그것은
+  //    위 정산 락이 담당하고 이 창은 **끝내 락되지 않는 캠페인**(마감·정산대기에 오래 머무는
+  //    건)이 영원히 조회되는 것을 막는 백스톱이다. 줄이면 그런 건의 조정이 조용히 멈춘다.
   const limitDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
   const closedCampaigns = await prisma.orderCampaign.findMany({
@@ -189,14 +209,23 @@ export async function syncPostCloseCancellations(): Promise<{ campaigns: number;
       cachedPostCloseCancelQuantity: true,
       cachedPostCloseCancelRevenue: true,
       mappings: true,
-      name: true
+      name: true,
+      salesCampaigns: { select: { status: true } }
     }
   });
 
   let updated = 0;
+  let skippedLocked = 0;
   const CHUNK_SIZE = 300;
 
   for (const camp of closedCampaigns) {
+    // 딜 하나라도 정산에 들어갔으면 그 캠페인은 확정이다 — `campaigns-handler` 의 집계 창
+    // 동결(`periodFrozenBySettlement`)과 같은 기준을 쓴다.
+    if (!options.includeLocked && (camp.salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status))) {
+      skippedLocked++;
+      continue;
+    }
+
     const rawIds = camp.cachedProductOrderIds;
     const ids = Array.isArray(rawIds) ? (rawIds as any[]).map(v => String(v)) : [];
     if (ids.length === 0) continue;
@@ -265,5 +294,6 @@ export async function syncPostCloseCancellations(): Promise<{ campaigns: number;
     }
   }
 
-  return { campaigns: closedCampaigns.length, updated };
+  // `campaigns` 는 **창 안의 전체**이고 실제 조회한 것은 `campaigns - skippedLocked` 다.
+  return { campaigns: closedCampaigns.length, updated, skippedLocked };
 }

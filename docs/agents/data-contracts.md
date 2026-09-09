@@ -746,7 +746,17 @@
   ↔ `next.config.ts`(cacheLife) ↔ `CACHE_OPERATIONS.md` 3곳을 함께 갱신하고
   `npm run verify:cache-policy`로 검증한다.
 
-- **Progressive Lock Architecture (마감 캠페인 사후 취소 동기화):** 캠페인 마감(`isActive=false`) 이후 네이버에서 발생하는 '취소/반품'은 원본 스냅샷의 `cachedTotalRevenue` / `cachedDistinctOrderCount`를 직접 변조하거나 읽기 시점(Read-Path)에 라이브 재계산하지 않는다. 대신 `cachedPostCloseCancelQuantity`, `cachedPostCloseCancelRevenue` 필드에 "사후 취소 델타(Delta)"만 원자적(Atomic)으로 누적 업데이트(Write-Path)한 뒤 클라이언트에는 합산하여 반환한다.
+- **Progressive Lock Architecture (마감 캠페인 사후 취소 동기화):** 캠페인 마감(`isActive=false`) 이후 네이버에서 발생하는 '취소/반품'은 원본 스냅샷의 `cachedTotalRevenue` / `cachedDistinctOrderCount`를 직접 변조하거나 읽기 시점(Read-Path)에 라이브 재계산하지 않는다. 대신 `cachedPostCloseCancelQuantity`, `cachedPostCloseCancelRevenue` 필드에 사후 취소분만 따로 적어 두고 클라이언트에는 합산하여 반환한다.
+  - ⚠️ **"델타를 원자적으로 누적"이 아니다(2026-09-09 정정).** 실제 구현
+    (`naver-settlement-sync.syncPostCloseCancellations` — **이 필드들의 유일한 writer**)은
+    귀속 주문 전체를 다시 조회해 **절대값으로 덮어쓰는 멱등 스냅샷**이다. 이 차이가 중요한
+    이유는 아래 종료 조건 때문이다 — 델타 누적이라면 조회를 멈춰도 이미 쌓인 값이 남지만,
+    절대 스냅샷은 **한 번도 계산되지 않으면 0 인 채로 굳는다.**
+  - **종료 조건 = 정산 락(2026-09-09).** 딜 하나라도 정산중·완료·드랍이면 그 캠페인은
+    확정이므로 더 조회하지 않는다(판정 SSOT `isSalesCampaignLocked` — 정산대기까지는 변동).
+    90일 창은 이제 1차 비용 통제가 아니라 **끝내 락되지 않는 건**의 백스톱이다.
+    🪤 마감과 정산 시작 사이에 크론(하루 1회)이 한 번도 못 돌면 값이 0 으로 굳고 복구
+    경로가 없다 — 그래서 `?includeLocked=1` 로 재계산할 수 있게 열어 두었다.
   - **Why (도입 이유):** (1) **데이터 무결성 보존**: 마감 당시의 스냅샷 원본(수익, 수량)을 훼손하지 않아 과거 정산 내역과의 대조 및 보존이 가능하다. (2) **성능 최적화**: 매번 GET 요청 시 무거운 JSON 파싱 및 동적 델타 차감을 수행하지 않음으로써, 조회 성능과 데이터베이스 부하를 획기적으로 낮춘다. (3) **유연성**: 운영자가 언제든 원본 스냅샷과 사후 취소 변동분을 분리해서 추적할 수 있다. (2026-07-13 확정, PR #134)
 
 - **정산 신원(주민등록번호·계좌) 소유 모델 — 개인 셀러에게 거래처를 만들지 않는다

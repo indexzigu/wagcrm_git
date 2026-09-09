@@ -1083,7 +1083,8 @@ model OrderCampaign {
   cachedUnsettledAmount     Int?
   cachedSettledCount        Int?
 
-  // 마감 이후(isActive=false) 네이버 주문 동기화(naver-order-sync)에서 사후 감지된 취소/수량감소분 누적치 (Atomic Update 델타)
+  // 마감 이후(isActive=false) 감지된 취소/수량감소분. writer 는 naver-settlement-sync 의
+  // syncPostCloseCancellations 하나이고, 델타 누적이 아니라 절대값 덮어쓰기다(2026-09-09 정정).
   cachedPostCloseCancelQuantity Int? @default(0)
   cachedPostCloseCancelRevenue  Int? @default(0)
 
