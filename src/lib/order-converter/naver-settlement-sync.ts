@@ -183,11 +183,19 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  * ⛔ 기준을 정산대기로 앞당기지 말 것 — 그 구간의 취소·반품을 놓친다(위 오너 확정).
  * ⛔ `lockedStatuses` 목록을 여기에 베껴 오지 말 것 — 판정은 위 SSOT 한 곳이다.
  *
- * 🪤 **동결에는 구멍이 하나 있다.** 이 함수가 이 필드들의 **유일한 writer** 이고 계산이
- * 델타 누적이 아니라 **절대 스냅샷**이라, 마감과 정산 시작 사이에 이 잡(하루 1회)이 한
- * 번도 못 돌면 값이 0 인 채로 굳는다. 마감은 판매 단계와 독립된 수동 조작이라 순서를
- * 보장하는 장치가 없다. 그래서 `includeLocked` 로 **되돌릴 길을 남긴다** — 화면의
- * 취소·반품이 비어 보이면 크론을 `?includeLocked=1` 로 한 번 돌려 재계산한다.
+ * 🪤 **동결에는 구멍이 있다 — 그래서 「값이 아직 0 이면 건너뛰지 않는다」.**
+ * 이 함수가 이 필드들의 **유일한 writer** 이고 계산이 델타 누적이 아니라 **절대 스냅샷**
+ * 이다. 그런데 두 필드의 기본값이 0 이라 **"계산했는데 취소가 없었다"와 "계산된 적이
+ * 없다"를 구분할 수 없다.** 마감은 판매 단계와 독립된 수동 조작이라 마감과 정산 착수를
+ * 같은 날 하면 하루 1회인 이 잡이 그 사이에 끼지 못하고, 그러면 0 이 영구가 되는데
+ * 되돌릴 길이 없다(유일 writer). 그래서 **락이어도 두 값이 모두 0 이면 계속 조회한다** —
+ * 틀리는 방향을 "헛조회"(유계: 90일 창이 상한) 쪽으로 잡는다.
+ * ⛔ 이 예외를 "락이면 무조건 건너뛴다"로 단순화하지 말 것 — 그 순간 위 손실이 되살아난다.
+ *
+ * `includeLocked` 는 그 위의 수동 재계산 레버다(값이 0 이 아닌데 틀린 경우).
+ * ⚠️ **오너가 화면에서 부를 수 있는 경로가 아니다** — 크론 실행기(`run-cron.sh`)도
+ * 레이더의 수동 실행(`/api/system/cron-run`)도 URL 에 쿼리를 붙이지 않는다. `CRON_SECRET`
+ * 을 든 수동 curl 이 유일하고, 그 호출은 정산 원장 재수집까지 함께 태운다(전부 멱등).
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
@@ -221,7 +229,12 @@ export async function syncPostCloseCancellations(
   for (const camp of closedCampaigns) {
     // 딜 하나라도 정산에 들어갔으면 그 캠페인은 확정이다 — `campaigns-handler` 의 집계 창
     // 동결(`periodFrozenBySettlement`)과 같은 기준을 쓴다.
-    if (!options.includeLocked && (camp.salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status))) {
+    const locked = (camp.salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status));
+    // 두 값이 모두 0 이면 아직 한 번도 계산되지 않았을 수 있다(위 🪤) — 건너뛰지 않는다.
+    const mayBeUncomputed =
+      (camp.cachedPostCloseCancelQuantity ?? 0) === 0 && (camp.cachedPostCloseCancelRevenue ?? 0) === 0;
+
+    if (!options.includeLocked && locked && !mayBeUncomputed) {
       skippedLocked++;
       continue;
     }

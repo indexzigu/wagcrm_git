@@ -10,6 +10,8 @@ export const maxDuration = 300;
 /**
  * 네이버 정산 원장 일일 수집 + 마감 캠페인 결산 캐시 갱신.
  * 쿼리 파라미터(수동 백필용): ?settledDays=31&unsettledDays=31 (기본 3/21)
+ * · ?includeLocked=1 — 정산이 시작된 캠페인의 사후 취소를 강제로 재계산한다.
+ *   ⚠️ 크론 실행기·레이더 수동 실행은 쿼리를 붙이지 않으므로 수동 curl 전용이다.
  */
 async function handler(request: Request) {
   if (!verifyCronAuth(request)) {

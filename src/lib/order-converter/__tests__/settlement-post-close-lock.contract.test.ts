@@ -31,12 +31,17 @@ vi.mock('../naver-order-sync', () => ({
   queryOrderDetails: (...a: unknown[]) => queryOrderDetailsMock(...a),
 }));
 
+/**
+ * 기본 픽스처는 **이미 계산된** 캠페인이다(취소값이 0 이 아님). 두 값이 모두 0 이면
+ * "아직 계산 안 됨"과 구분되지 않아 건너뛰지 않는 것이 계약이므로(아래 별도 케이스),
+ * 동결을 검증하려면 값이 있어야 한다.
+ */
 function campaign(status: string | null, overrides: Record<string, unknown> = {}) {
   return {
     id: `oc-${status ?? 'none'}`,
     cachedProductOrderIds: ['po-1', 'po-2'],
-    cachedPostCloseCancelQuantity: 0,
-    cachedPostCloseCancelRevenue: 0,
+    cachedPostCloseCancelQuantity: 3,
+    cachedPostCloseCancelRevenue: 30000,
     mappings: [],
     name: '테스트 캠페인',
     salesCampaigns: status === null ? [] : [{ status }],
@@ -78,6 +83,25 @@ describe('syncPostCloseCancellations — 정산 락 캠페인 건너뛰기', () 
       expect(res).toMatchObject({ skippedLocked: 0 });
     },
   );
+
+  it('잠겼어도 취소값이 아직 0 이면 계속 조회한다', async () => {
+    // ⛔ **이 계약을 지우지 말 것 — 지우면 데이터가 영구히 0 으로 굳는다.**
+    //    두 필드의 기본값이 0 이라 "계산했는데 취소가 없었다"와 "계산된 적이 없다"를
+    //    구분할 수 없다. 마감과 정산 착수를 같은 날 하면 하루 1회인 이 잡이 그 사이에
+    //    끼지 못하는데, 이 함수가 유일한 writer 라 되돌릴 길이 없다.
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_IN_PROGRESS', {
+        cachedPostCloseCancelQuantity: 0,
+        cachedPostCloseCancelRevenue: 0,
+      }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).toHaveBeenCalledTimes(1);
+    expect(res).toMatchObject({ skippedLocked: 0 });
+  });
 
   it('includeLocked 면 잠긴 캠페인도 다시 조회한다', async () => {
     // 동결에는 구멍이 있다 — 마감과 정산 시작 사이에 이 잡이 한 번도 못 돌면 값이 0 으로
