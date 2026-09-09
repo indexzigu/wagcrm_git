@@ -611,6 +611,7 @@ model OrderCampaign {
   productStatus                 String? // 네이버 상품 판매 상태 (SALE, OUTOFSTOCK 등)
   cachedPostCloseCancelQuantity Int?             @default(0)
   cachedPostCloseCancelRevenue  Int?             @default(0)
+  cachedPostCloseCancelFinalizedAt DateTime?
 }
 
 model DailyOrderTask {

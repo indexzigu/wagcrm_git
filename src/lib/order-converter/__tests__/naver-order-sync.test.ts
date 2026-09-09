@@ -197,6 +197,16 @@ describe('normalizeQueriedOrder', () => {
     expect(normalizeQueriedOrder(null)).toBeNull();
   });
 
+  it('productOrder만 있으면 productOrderId가 없어도 통과시킨다', () => {
+    // 🪤 **버리지 않는다** — 이 함수가 거르는 것은 `productOrder` 자체의 부재뿐이다.
+    //    `syncPostCloseCancellations` 의 응답 완전성 판정이 이 사실 위에 서 있다: id 없는 행이
+    //    배열에 남으므로 **개수로 재면 그 행이 빠진 id 를 메워** 과소 계상 값이 확정된다.
+    //    그래서 그쪽은 개수가 아니라 id 집합으로 판정한다(P7 Progressive Lock Architecture).
+    const result = normalizeQueriedOrder({ order: {}, productOrder: {} });
+    expect(result).not.toBeNull();
+    expect(result.productOrderId).toBeUndefined();
+  });
+
   it('클레임 필드가 전부 없어도 옵셔널 체이닝으로 안전하게 처리된다', () => {
     const dataItem = { order: {}, productOrder: { productOrderId: 'P2' } };
     const result = normalizeQueriedOrder(dataItem);

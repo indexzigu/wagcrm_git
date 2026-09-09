@@ -1087,6 +1087,12 @@ model OrderCampaign {
   // syncPostCloseCancellations 하나이고, 델타 누적이 아니라 절대값 덮어쓰기다(2026-09-09 정정).
   cachedPostCloseCancelQuantity Int? @default(0)
   cachedPostCloseCancelRevenue  Int? @default(0)
+  // 위 두 값이 **정산 락 상태에서** 계산돼 확정된 시각. null = 아직 확정 전.
+  // ⚠️ 「마지막 계산 시각」이 아니다 — 락이 아닌 동안의 계산에는 찍지 않고, 락이 풀리면
+  //    다시 null 로 지운다. 그래야 「확정됐는가」와 「언제 마지막으로 돌았는가」가 안 섞인다.
+  // 이 칸이 있어야 하는 이유: 위 두 값이 `@default(0)` 이라 "계산했는데 취소가 0"과
+  // "계산된 적이 없다"가 값만으로는 구분되지 않는다(유일 writer 라 되돌릴 길도 없다).
+  cachedPostCloseCancelFinalizedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
