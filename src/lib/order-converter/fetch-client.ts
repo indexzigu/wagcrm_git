@@ -50,22 +50,37 @@ function getProxyAgent(proxyUrl: string): ProxyAgent {
   return agent;
 }
 
-/** 오류와 그 `cause` 사슬의 메시지를 한 문자열로 모은다. */
+/**
+ * 오류와 그 `cause` 사슬(및 `AggregateError.errors`)의 메시지를 한 문자열로 모은다.
+ * `AggregateError` 를 함께 보는 이유: 그쪽은 `cause` 가 아니라 `errors` 배열에 원인을
+ * 담아, 사슬만 훑으면 놓친다 — 그리고 놓치면 **재시도를 허용하는 쪽**으로 틀린다.
+ */
 function errorChainText(err: unknown): string {
   const parts: string[] = [];
-  let cur: unknown = err;
-  for (let depth = 0; cur && depth < 5; depth++) {
+  const seen = new Set<unknown>();
+  const walk = (cur: unknown, depth: number) => {
+    if (!cur || depth > 4 || seen.has(cur)) return;
+    seen.add(cur);
     parts.push(String((cur as { message?: unknown }).message ?? cur));
-    cur = (cur as { cause?: unknown }).cause;
-  }
+    walk((cur as { cause?: unknown }).cause, depth + 1);
+    const nested = (cur as { errors?: unknown }).errors;
+    if (Array.isArray(nested)) for (const e of nested) walk(e, depth + 1);
+  };
+  walk(err, 0);
   return parts.join(' | ');
 }
 
 /**
  * 같은 프록시로 **1회만** 다시 보낼 실패인가.
  *
- * 재사용하려던 터널이 이미 죽어 있는 경우(프록시가 우리보다 먼저 끊음)만 흡수한다.
- * 그 외에는 다시 보내도 같은 자리에서 죽거나, 되레 해롭다.
+ * 노리는 것은 재사용하려던 터널이 이미 죽어 있던 경우(프록시가 우리보다 먼저 끊음)다.
+ * ⚠️ 다만 이 술어는 **거부 목록이지 허용 목록이 아니다** — "죽은 소켓의 모양"을 골라
+ * 내는 대신, 다시 보내면 안 되는 것을 빼고 나머지를 재시도한다. 그래서 DNS 실패·
+ * ECONNREFUSED·TLS 오류도 1회 더 시도한다. 허용 목록으로 짜지 않은 이유는 undici 의
+ * 소켓 오류 모양이 여럿이라(`other side closed` · `socket hang up` · `UND_ERR_SOCKET` …)
+ * **하나라도 빠뜨리면 이 장치가 조용히 무력해지기** 때문이다. 대신 그 대가로 프록시에
+ * 닿지도 못한 실패(DNS·연결 거부)에 요청을 한 번 더 쓰는데, 그건 프록시 사업자의
+ * 요청 수를 늘리지 않는다(CONNECT 가 나가지 않는다).
  *
  * ⛔ **GET·HEAD 만 재시도한다.** 연결이 끊겼을 때 요청이 서버에 닿았는지 알 수 없는데,
  * 이 경로에는 네이버 주문확인·발주요청처럼 **되돌릴 수 없는 부수효과** 호출이 함께 흐른다
@@ -87,9 +102,13 @@ function shouldRetrySameProxy(
   // 즉시 같은 자리에서 죽으므로 재시도가 아니라 낭비다.
   if (options.signal?.aborted) return false;
 
-  // 프록시가 CONNECT 에 200 이 아닌 응답을 줬다 — 죽은 소켓이 아니라 **확정 거절**이다
-  // (한도 소진의 407 이 이 모양이다). 다시 보내면 프록시 요청만 한 번 더 태우고
-  // 폴백만 늦춘다 — 사용량을 줄이려는 이 변경이 정확히 실패 구간에서 사용량을 늘린다.
+  // 프록시가 CONNECT 에 200 이 아닌 응답을 줬다 — 죽은 소켓이 아니라 **프록시가 답을 한**
+  // 경우다. 다시 보내면 프록시 요청만 한 번 더 태우고 폴백을 늦춘다 — 사용량을 줄이려는
+  // 이 변경이 정확히 실패 구간에서 사용량을 두 배로 태운다.
+  // ⚠️ 상태코드를 가리지 않는다: 대표 사례는 한도 소진의 **407** 이지만 502·504 같은
+  //    일시적 거절도 함께 걸린다. 그쪽은 재시도가 유효할 수도 있으나, 어차피 다음
+  //    프록시로 즉시 넘어가므로(폴백) 안전한 쪽이다. 문구는 undici 의
+  //    `proxy-agent.js` 가 던지는 것이고, 계약 테스트가 그 실물과 대조한다.
   if (/Proxy response \(\d+\)/.test(errorChainText(err))) return false;
 
   return true;
@@ -131,13 +150,13 @@ export async function proxyFetch(url: string, options: any = {}) {
       } catch (err: any) {
         if (!retriedThisProxy && shouldRetrySameProxy(err, options)) {
           retriedThisProxy = true;
-          console.warn(`Proxy [${i}] connection failed: ${err.message}. Retrying same proxy once...`);
+          console.warn(`Proxy [${i}] connection failed: ${errorChainText(err)}. Retrying same proxy once...`);
           continue; // 같은 프록시로 1회 재시도
         }
         if (i === urls.length - 1) {
           throw err; // 마지막 프록시까지 실패하면 에러 반환
         }
-        console.warn(`Proxy [${i}] fetch failed: ${err.message}. Retrying with next proxy...`);
+        console.warn(`Proxy [${i}] fetch failed: ${errorChainText(err)}. Retrying with next proxy...`);
         break; // 다음 프록시 시도
       }
     }

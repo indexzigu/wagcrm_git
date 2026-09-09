@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -140,6 +143,23 @@ describe('proxyFetch — 에이전트 재사용', () => {
     expect(dispatcherLog).toEqual(Array(2).fill(FakeProxyAgent.instances[0]));
   });
 
+  it('프록시가 여러 개면 URL 별로 에이전트를 나눠 캐시한다', async () => {
+    process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
+    const { proxyFetch } = await import('./fetch-client');
+
+    // 프라이머리가 재시도까지 실패해야 서브로 넘어간다(죽은 소켓은 프록시당 2회).
+    failureQueue = ['deadSocket', 'deadSocket'];
+    await proxyFetch('https://example.test/a');
+    failureQueue = ['deadSocket', 'deadSocket'];
+    await proxyFetch('https://example.test/b');
+
+    // 프라이머리·서브가 각자 에이전트를 갖고, 2회차에도 새로 만들지 않는다.
+    expect(FakeProxyAgent.instances).toHaveLength(2);
+    const [primary, fallback] = FakeProxyAgent.instances;
+    expect(primary).not.toBe(fallback);
+    expect(dispatcherLog).toEqual([primary, primary, fallback, primary, primary, fallback]);
+  });
+
   it('프록시 설정이 없으면 dispatcher 없이 직결한다', async () => {
     const { proxyFetch } = await import('./fetch-client');
 
@@ -223,8 +243,9 @@ describe('proxyFetch — 실패 처리', () => {
   });
 
   it('403 응답은 재시도 없이 다음 프록시로 넘어간다', async () => {
-    // 상태 기반 폴백은 예외 경로가 아니라 `res.status` 분기다 — 재시도를 넣으면서
-    // `continue` 를 `break` 로 바꾼 자리라, 이 계약이 그 치환을 고정한다.
+    // 상태 기반 폴백은 예외 경로가 아니라 `res.status` 분기다 — **이 PR 에서** 재시도를
+    // 넣으며 `continue` 를 `break` 로 바꾼 자리라(`fa59934f` → `d0ef22e7`), 이 계약이
+    // 그 치환을 고정한다.
     process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
     const { proxyFetch } = await import('./fetch-client');
 
@@ -236,20 +257,45 @@ describe('proxyFetch — 실패 처리', () => {
     expect(dispatcherLog).toEqual([primary, fallback]);
   });
 
-  it('프록시가 여러 개면 URL 별로 에이전트를 나눠 캐시한다', async () => {
+  it('429 응답도 다음 프록시로 넘어간다', async () => {
     process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
     const { proxyFetch } = await import('./fetch-client');
 
-    // 프라이머리가 재시도까지 실패해야 서브로 넘어간다(죽은 소켓은 프록시당 2회).
-    failureQueue = ['deadSocket', 'deadSocket'];
-    await proxyFetch('https://example.test/a');
-    failureQueue = ['deadSocket', 'deadSocket'];
-    await proxyFetch('https://example.test/b');
+    statusQueue = [429];
+    const res = await proxyFetch('https://example.test/a');
 
-    // 프라이머리·서브가 각자 에이전트를 갖고, 2회차에도 새로 만들지 않는다.
-    expect(FakeProxyAgent.instances).toHaveLength(2);
-    const [primary, fallback] = FakeProxyAgent.instances;
-    expect(primary).not.toBe(fallback);
-    expect(dispatcherLog).toEqual([primary, primary, fallback, primary, primary, fallback]);
+    expect(res).toMatchObject({ status: 200 });
+    expect(dispatcherLog).toHaveLength(2);
+  });
+
+  it('마지막 프록시의 403 은 폴백 없이 그대로 반환된다', async () => {
+    // 폴백은 "다음 프록시가 있을 때"만이다 — 없으면 응답을 삼키지 않고 그대로 돌려준다.
+    process.env.PROXY_URLS = PROXY;
+    const { proxyFetch } = await import('./fetch-client');
+
+    statusQueue = [403];
+    const res = await proxyFetch('https://example.test/a');
+
+    expect(res).toMatchObject({ status: 403 });
+    expect(dispatcherLog).toHaveLength(1);
+  });
+
+  it('CONNECT 거절 판별이 undici 의 실제 메시지와 묶여 있다', () => {
+    // 🪤 이 판별은 undici 가 던지는 **문자열**에 의존한다. 픽스처(`proxyRejected`)는 그
+    //    문자열을 손으로 옮겨 적은 것이라, 라이브러리가 문구를 바꾸면 판별만 조용히 죽고
+    //    위 계약들은 초록으로 남는다(= 이 PR 이 고친 결함으로 복귀). 게다가 undici 는
+    //    `package.json` 에 선언조차 없는 전이 의존성이라 버전이 임의로 뜬다.
+    //    그래서 실물과 대조한다.
+    const require_ = createRequire(import.meta.url);
+    const undiciDir = dirname(require_.resolve('undici/package.json'));
+    // 🪤 경로를 **세그먼트로 나눠** 넘긴다 — 한 문자열로 적으면 `dead-alert-dispatcher`
+    //    계약이 앱 소스의 죽은 알림 발송기 참조로 오인해 실패한다(실측). 여기서 가리키는
+    //    것은 undici 의 디렉터리이지 그 모듈이 아니다. ⛔ 한 문자열로 "정리"하지 말 것.
+    const src = readFileSync(join(undiciDir, 'lib', 'dispatcher', 'proxy-agent.js'), 'utf8');
+
+    expect(src).toContain('Proxy response (${statusCode}) !== 200 when HTTP Tunneling');
+    // 픽스처가 그 템플릿을 실제로 렌더링한 모양인지도 함께 본다.
+    const cause = (proxyRejected() as Error & { cause?: Error }).cause;
+    expect(cause?.message).toBe('Proxy response (407) !== 200 when HTTP Tunneling');
   });
 });
