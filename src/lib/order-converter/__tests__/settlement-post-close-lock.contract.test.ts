@@ -267,8 +267,43 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
 
     const res = await syncPostCloseCancellations({ includeLocked: true });
 
-    expect(res).toMatchObject({ deferredIncomplete: 1, updated: 0 });
     expect(updateMock).not.toHaveBeenCalled();
+    // ⚠️ 이 경우 레버는 **무위로 끝난다** — 그 사실이 조용히 묻히지 않도록 `deferredIncomplete`
+    //    와 **따로** 센다(둘은 배타적이다). 안 가르면 오너가 "갱신됐다"로 오독한다.
+    expect(res).toMatchObject({ protectedFinalized: 1, deferredIncomplete: 0, updated: 0 });
+  });
+
+  it('id 없는 행은 「돌아온 것」으로 세지 않는다 — normalizeQueriedOrder 가 걸러 주지 않는다', async () => {
+    // 🪤 `normalizeQueriedOrder` 는 `productOrder` 가 있기만 하면 통과시키므로 id 없는 행도
+    //    배열에는 남는다. 개수로 재면 그 행이 빠진 id 를 메워 **과소 계상 값이 확정된다.**
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_IN_PROGRESS', { cachedPostCloseCancelFinalizedAt: null }),
+    ]);
+    queryOrderDetailsMock.mockResolvedValue([
+      { productOrderId: 'po-1', productOrderStatus: 'DELIVERED', quantity: 1, productName: 'x' },
+      { productOrderStatus: 'DELIVERED', quantity: 1, productName: 'x' }, // id 없음
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(res).toMatchObject({ deferredIncomplete: 1, finalizedLocked: 0 });
+  });
+
+  it('락이 아니면 응답이 모자라도 확정 보호를 걸지 않는다 — 값 갱신 + 마커 삭제', async () => {
+    // 🪤 상태 격자에서 빠지기 쉬운 칸이다({미락, 확정 마커 있음, 응답 모자람}). 미락이면 값이
+    //    애초에 얼어 있지 않으므로 보호할 것이 없고, 마커는 **지워야** 재락 시 확정 계산을 받는다.
+    findManyMock.mockResolvedValue([campaign('SETTLEMENT_WAIT')]);
+    queryOrderDetailsMock.mockResolvedValue([
+      { productOrderId: 'po-1', productOrderStatus: 'CANCELED', quantity: 1, totalPaymentAmount: 10000, productName: 'x' },
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(res).toMatchObject({ protectedFinalized: 0, deferredIncomplete: 0 });
+    expect(lastUpdateData().cachedPostCloseCancelFinalizedAt).toBeNull();
+    expect(lastUpdateData()).toMatchObject({ cachedPostCloseCancelQuantity: 1 });
   });
 
   it('빠진 id 를 중복·잉여 행이 가리지 못한다 — 완전성은 개수가 아니라 id 로 판정한다', async () => {

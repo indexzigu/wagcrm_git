@@ -179,8 +179,16 @@ export interface PostCloseCancelSyncResult {
   skippedLocked: number;
   /** 이번 실행에서 확정된 건수(락 상태 첫 계산). */
   finalizedLocked: number;
-  /** 응답이 모자라 확정을 미룬 건수 — 매일 0 이 아니면 그 캠페인은 수렴하지 못하고 있다. */
+  /**
+   * 응답이 모자라 **확정만** 미룬 건수(값은 갱신됐다) — 매일 0 이 아니면 그 캠페인은
+   * 수렴하지 못하고 있다. `protectedFinalized` 와 배타적이다.
+   */
   deferredIncomplete: number;
+  /**
+   * 응답이 모자라 **이미 확정된 값을 지키느라 통째로 건너뛴** 건수(값도 마커도 안 썼다).
+   * `includeLocked` 로 강제 재계산했는데 0 이 아니면 그 캠페인은 레버로도 갱신되지 않았다.
+   */
+  protectedFinalized: number;
 }
 
 /**
@@ -289,6 +297,9 @@ export async function syncPostCloseCancellations(
   // 응답이 모자라 확정을 **미룬** 락 캠페인 수 — 이 값이 매일 0 이 아니면 그 캠페인은
   // 수렴하지 못하고 있다는 뜻이다(조용히 넘기지 않으려고 응답에 싣는다, P0 No Silent Failure).
   let deferredIncomplete = 0;
+  // 응답이 모자라 **확정된 값을 지키느라 건너뛴** 건수(위와 배타적) — `includeLocked` 로
+  // 강제 재계산했는데 0 이 아니면 그 캠페인은 레버로도 갱신되지 않았다는 뜻이다.
+  let protectedFinalized = 0;
   const CHUNK_SIZE = 300;
 
   for (const camp of closedCampaigns) {
@@ -313,8 +324,10 @@ export async function syncPostCloseCancellations(
     let cancelQty = 0;
     let cancelRev = 0;
     // 요청한 주문이 전부 돌아왔는가 — 확정(동결)의 전제다(위 doc 🔒).
-    // ⛔ 개수로 재지 말 것: `normalizeQueriedOrder` 가 형태가 깨진 항목을 버리므로, 남는
-    //    중복·잉여 행 하나가 **빠진 id 를 가려 「온전함」으로 읽힌다**(그 오판의 대가가 영구 동결이다).
+    // ⛔ 개수로 재지 말 것: 중복·잉여 행 하나가 **빠진 id 를 가려 「온전함」으로 읽힌다**
+    //    (그 오판의 대가가 영구 동결이다). 🪤 `normalizeQueriedOrder` 는 `productOrder` 가
+    //    있기만 하면 통과시키므로 **id 없는 행도 배열에는 남는다** — 그런 행은 이 집합에
+    //    들어오지 않아 「모자람」으로 판정된다(fail-closed, 의도한 방향이다).
     const fetchedIds = new Set<string>();
 
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
@@ -377,17 +390,20 @@ export async function syncPostCloseCancellations(
     // ⚠️ 값은 그대로 쓴다 — 부분 응답이라도 **지금 알 수 있는 최선**이고, 안 쓰면 탈퇴 구매자
     //    주문이 섞인 캠페인은 영영 값을 못 갖는다(그 주문은 API 가 원래 돌려주지 않는다, P7).
     //    미루는 것은 **동결뿐**이라 다음 회차가 다시 계산한다.
-    // 🔒-b ⚠️ **단 이미 확정된 캠페인은 값도 쓰지 않는다** — 부분 응답을 쓰면 온전했던 값이
-    //    과소 계상 값으로 바뀌는데 마커가 남아 다음 회차부터 다시 건너뛴다(영구 동결의 재발).
-    //    `includeLocked` 강제 재계산이 정확히 그 경로다.
+    // 🔒-b ⚠️ **단 이미 확정된 캠페인은 값도 쓰지 않는다**(사유는 그 가드 주석에). 그 결과
+    //    `includeLocked` 레버는 응답이 모자라는 동안 무위이며, 그때는 `protectedFinalized` 로 센다.
     const complete = ids.every((id) => fetchedIds.has(id));
-    if (locked && !complete) deferredIncomplete++;
 
-    // 🔒-b **이미 확정된 값은 부분 응답으로 덮지 않는다.** `includeLocked` 로 강제 재계산하다
-    //    응답이 모자라면, 그대로 쓰면 온전했던 값이 과소 계상 값으로 바뀌고 마커는 남아 있어
-    //    **다음 회차부터 다시 건너뛴다** — 위 🔒 가 막으려던 영구 동결이 이 경로로 되살아난다.
-    //    그래서 이 조합에서는 값도 마커도 손대지 않고 다음 회차에 맡긴다.
-    if (locked && finalized && !complete) continue;
+    // 🔒-b **이미 확정된 값은 부분 응답으로 덮지 않는다.** 그대로 쓰면 온전했던 값이 과소 계상
+    //    값으로 바뀌는데 마커는 남아 **다음 회차부터 다시 건너뛴다** — 위 🔒 가 막으려던 영구
+    //    동결이 이 경로로 되살아난다. 그래서 값도 마커도 손대지 않는다.
+    //    ⚠️ 그 결과 `includeLocked` 레버는 **응답이 모자라는 동안 무위로 끝난다.** 그 사실이
+    //    조용히 묻히지 않도록 `deferredIncomplete` 와 **따로** 센다(둘은 서로 배타적이다).
+    if (locked && finalized && !complete) {
+      protectedFinalized++;
+      continue;
+    }
+    if (locked && !complete) deferredIncomplete++;
 
     // 락 상태에서 온전히 계산했으면 확정으로 찍고, 락이 풀렸으면 지운다(다시 락될 때 확정
     // 계산을 한 번 더 받게 하려는 것이다 — 안 지우면 옛 값으로 굳는다).
@@ -419,5 +435,5 @@ export async function syncPostCloseCancellations(
 
   // `campaigns` 는 **창 안의 전체**다. 실제 조회한 것은 `campaigns - skippedLocked` **에서
   // 주문 목록이 빈 캠페인을 뺀 수**이므로 그 뺄셈을 조회 수로 그대로 읽지 말 것.
-  return { campaigns: closedCampaigns.length, updated, skippedLocked, finalizedLocked, deferredIncomplete };
+  return { campaigns: closedCampaigns.length, updated, skippedLocked, finalizedLocked, deferredIncomplete, protectedFinalized };
 }
