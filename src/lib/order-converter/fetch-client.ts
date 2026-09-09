@@ -29,10 +29,16 @@ function getProxyAgent(proxyUrl: string): ProxyAgent {
     agent = new ProxyAgent({
       uri: proxyUrl,
       // 크론 1회 실행 안에서도 호출 간격이 3~4초까지 벌어진다(정산 동기화 실측).
-      // undici 기본 유휴 타임아웃(4초)으로는 그 틈에 터널이 끊겨 재사용이 깨지므로
-      // 잡 하나가 끝날 때까지 살아 있도록 넉넉히 잡는다.
-      keepAliveTimeout: 60_000,
-      keepAliveMaxTimeout: 10 * 60_000,
+      // undici 기본 유휴 타임아웃 4초는 그 틈에 딱 걸쳐 있어 재사용이 자주 깨진다.
+      // ⚠️ 이 값은 **우리 쪽 상한일 뿐이다** — 응답에 `Keep-Alive: timeout=N` 이 실려
+      // 오면 그쪽이 이기고, 프록시가 우리보다 먼저 끊으면 재사용하려던 소켓이 이미
+      // 죽어 있을 수 있다. 그건 **호출마다 새 소켓을 열던 종전에는 없던 실패 모드**이고,
+      // 프록시가 하나뿐이면 아래 폴백 루프도 구제하지 못한 채 호출자에게 던진다.
+      // 그래서 관측된 간격을 덮는 최소한으로만 잡는다 — 길게 잡을수록 죽은 소켓을
+      // 집을 창이 넓어진다. ⛔ 늘리려면 프록시의 실제 유휴 타임아웃을 먼저 실측할 것.
+      // (`keepAliveMaxTimeout` 은 지정하지 않는다 — undici 기본값 600s 와 같아서
+      //  적으면 튜닝한 것처럼 읽히지만 아무것도 바꾸지 않는다.)
+      keepAliveTimeout: 15_000,
     });
     cache.set(proxyUrl, agent);
   }
