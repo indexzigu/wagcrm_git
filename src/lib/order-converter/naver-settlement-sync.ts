@@ -194,17 +194,39 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  *
  * **락 전이 훅이 필요 없는 이유가 여기 있다.** 마커는 「락 상태에서 계산했다」일 때만 찍히므로,
  * 락이 걸린 캠페인은 **락 이후 첫 성공 실행에서 정확히 한 번** 계산된다 — 그 계산이 실행
- * 시각까지의 취소를 전부 담으므로 ③의 누락 구간이 아예 없다. `SalesCampaign.status` 를 쓰는
+ * 시각까지의 취소를 전부 담으므로 ③의 누락 구간이 없다. `SalesCampaign.status` 를 쓰는
  * 경로가 라우트·리포지토리·lib 에 흩어져 있어 전이 훅은 그 전부에 배선해야 하는데, 이
  * 방식은 배선 0 으로 같은 결과를 얻는다.
+ * ⚠️ **단 90일 창 안에서만이다** — 창을 벗어난 뒤 락이 걸리는 캠페인은 애초에 대상 조회에
+ * 안 들어와 확정 계산도 없다(그쪽은 창이 유일한 통제이고 종전과 같다).
+ *
+ * 🔒 **확정에는 전제가 하나 더 있다 — 응답이 온전해야 한다.** `queryOrderDetails` 는 응답이
+ * 요청보다 모자라도 `console.warn` 만 남기고 짧은 배열을 돌려준다. 그 결과로 확정하면 일시적
+ * API 저하가 **과소 계상된 값을 영구히 동결**시킨다(유일 writer 라 수동 레버 말고는 복구
+ * 경로가 없다). 그래서 요청 id 수보다 적게 돌아오면 **값은 쓰되 확정은 미룬다** — 다음 회차가
+ * 다시 계산한다. 미룬 건수는 `deferredIncomplete` 로 응답에 실어 조용히 넘기지 않는다.
+ * ⚠️ **탈퇴한 구매자의 주문은 커머스API 가 영구히 돌려주지 않으므로**(P7) 그런 주문이 섞인
+ * 캠페인은 이 전제를 영영 못 채우고 90일 창이 끝날 때까지 매일 재조회된다 — 알고 택한
+ * 값이다(틀리는 방향을 「헛조회」 쪽으로 잡는다). `deferredIncomplete` 가 그 부류를 드러낸다.
+ *
  * ⚠️ **대신 남는 어긋남 하나를 적어 둔다(방향이 반대다).** 확정 계산이 락 **이후**에 돌므로
- * 「락 ~ 그 실행」 사이에 들어온 취소는 **포함된다** — 의도(락=확정) 대비 취소 과다 계상 =
- * **정산액 과소**다. 종전의 ③과 반대 방향이고, 돈에서는 받을 돈을 적게 잡는 쪽이 안전하다.
- * 그 창은 다음 성공 실행까지이며(크론 실패가 끼면 늘어난다) **한 번 확정되면 더 벌어지지
- * 않는다** — 종전 ③은 반대로 실패가 낄수록 누락이 커졌다.
+ * 「락 ~ 그 실행」 사이에 들어온 취소는 **포함된다** — 의도(락=확정) 대비 취소 과다 계상이다.
+ * 종전 ③과 반대 방향이고, 그 창은 다음 성공 실행까지이며(크론 실패가 끼면 늘어난다)
+ * **한 번 확정되면 더 벌어지지 않는다** — 종전 ③은 반대로 실패가 낄수록 누락이 커졌다.
+ * ⚠️ **이 두 값을 「정산액」으로 말하지 말 것(2026-09-09 실측 정정).** 소비처는
+ * `campaigns-handler` → 마감 캠페인 판매 리포트·보드 카드의 **표시**뿐이고(`cancelReturnQuantity`
+ * /`cancelReturnAmount`), 정산 금액 계산에 들어가지 않는다 — 그 리포트의 총매출·총수량은
+ * 이미 취소·반품이 빠진 순수치라 이 값은 「차감」이 아니라 「참고」로 붙는다
+ * (`SalesReportModal` 주석). 종전 소스·P7 의 「정산액 과대/과소」 표현은 그만큼 과장이었다.
+ * 실제 피해는 **오너가 보는 참고 수치가 틀리는 것**이다.
  *
  * ⚠️ 락이 **풀리면 마커를 지운다**(값을 다시 계산하는 그 회차에). 안 지우면 되돌린 캠페인이
  * 다시 락될 때 확정 계산 없이 옛 값으로 굳는다.
+ * 🪤 **단 이 삭제는 「관측했을 때」만 일어난다** — 두 크론 실행 **사이에** 락 해제 → 재락 을
+ * 마치면 이 잡은 해제를 못 보고 옛 마커로 건너뛴다. 상태를 되돌렸다 다시 정산에 넣은
+ * 캠페인의 값을 다시 받으려면 `includeLocked` 레버를 쓴다. 이것을 배선으로 닫으려면 결국
+ * status 를 쓰는 경로 전부에 마커 무효화를 넣어야 해서, 위 「전이 훅 불필요」와 같은 비용
+ * 판단으로 **문서화를 택했다.**
  * ⚠️ `cachedProductOrderIds` 가 비면 계산도 마커도 남기지 않는다 — "주문이 0 건"과 "마감
  * 스냅샷이 주문을 못 담았다"가 구분되지 않아, 그 상태로 0 을 확정하면 되돌릴 길이 없다.
  * 네이버 호출은 어차피 0 이라 매일 재평가해도 비용이 없다.
@@ -223,7 +245,7 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
-): Promise<{ campaigns: number; updated: number; skippedLocked: number; finalizedLocked: number }> {
+): Promise<{ campaigns: number; updated: number; skippedLocked: number; finalizedLocked: number; deferredIncomplete: number }> {
   // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회.
   // ⚠️ 이 창은 **「끝내 락되지 않는 건」의 백스톱**이다 — 락이 걸리는 캠페인은 확정 마커가
   //    1차 통제를 맡는다. 줄이면 락되지 않은 채 방치된 캠페인의 조정이 멈춘다.
@@ -250,6 +272,9 @@ export async function syncPostCloseCancellations(
   let skippedLocked = 0;
   // 이번 실행에서 **확정**된 건수(락 상태 첫 계산). 배포 후 따라잡기의 진행과 수렴을 재는 신호다.
   let finalizedLocked = 0;
+  // 응답이 모자라 확정을 **미룬** 락 캠페인 수 — 이 값이 매일 0 이 아니면 그 캠페인은
+  // 수렴하지 못하고 있다는 뜻이다(조용히 넘기지 않으려고 응답에 싣는다, P0 No Silent Failure).
+  let deferredIncomplete = 0;
   const CHUNK_SIZE = 300;
 
   for (const camp of closedCampaigns) {
@@ -265,17 +290,21 @@ export async function syncPostCloseCancellations(
       continue;
     }
     const rawIds = camp.cachedProductOrderIds;
-    const ids = Array.isArray(rawIds) ? (rawIds as any[]).map(v => String(v)) : [];
+    // 중복 id 는 응답이 1건이라 아래 **완전성 대조의 분모를 부풀린다** — 먼저 접는다.
+    const ids = Array.isArray(rawIds) ? [...new Set((rawIds as any[]).map(v => String(v)))] : [];
     // ⚠️ 주문 목록이 비면 계산도 **확정도** 하지 않는다 — "주문 0 건" 과 "마감 스냅샷이
     //    주문을 못 담았다" 가 구분되지 않아, 그대로 확정하면 0 이 영구가 된다(위 doc).
     if (ids.length === 0) continue;
 
     let cancelQty = 0;
     let cancelRev = 0;
+    // 요청한 주문이 전부 돌아왔는가 — 확정(동결)의 전제다(위 doc 🔒).
+    let fetchedCount = 0;
 
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
       const chunk = ids.slice(i, i + CHUNK_SIZE);
       const orders = await queryOrderDetails(chunk);
+      fetchedCount += orders.length;
 
       for (const order of orders) {
         const status = order.productOrderStatus;
@@ -323,14 +352,29 @@ export async function syncPostCloseCancellations(
     const currentRev = camp.cachedPostCloseCancelRevenue || 0;
     const valuesChanged = cancelQty !== currentQty || cancelRev !== currentRev;
 
-    // 락 상태에서 계산했으면 확정으로 찍고, 락이 풀렸으면 지운다(다시 락될 때 확정 계산을
-    // 한 번 더 받게 하려는 것이다 — 안 지우면 옛 값으로 굳는다).
-    const nextFinalizedAt = locked ? new Date() : null;
-    const markerChanged = locked !== finalized;
+    // 🔒 **응답이 온전할 때만 확정한다.** `queryOrderDetails` 는 응답이 모자라도 `console.warn`
+    //    만 남기고 짧은 배열을 돌려준다 — 그 결과로 확정해 버리면 일시적 API 저하가
+    //    **과소 계상된 값을 영구히 동결**시키고, 유일 writer 라 `includeLocked` 수동 레버
+    //    말고는 복구 경로가 없다. 종전 값 기반 판별은 그 경우 다음 날 재조회로 자연 치유됐다.
+    // ⚠️ 값은 그대로 쓴다 — 부분 응답이라도 **지금 알 수 있는 최선**이고, 안 쓰면 탈퇴 구매자
+    //    주문이 섞인 캠페인은 영영 값을 못 갖는다(그 주문은 API 가 원래 돌려주지 않는다, P7).
+    //    미루는 것은 **동결뿐**이라 다음 회차가 다시 계산한다.
+    const complete = fetchedCount >= ids.length;
+    if (locked && !complete) deferredIncomplete++;
+
+    // 락 상태에서 온전히 계산했으면 확정으로 찍고, 락이 풀렸으면 지운다(다시 락될 때 확정
+    // 계산을 한 번 더 받게 하려는 것이다 — 안 지우면 옛 값으로 굳는다).
+    const shouldFinalize = locked && complete;
+    const nextFinalizedAt = shouldFinalize
+      ? new Date()
+      : locked
+        ? camp.cachedPostCloseCancelFinalizedAt ?? null
+        : null;
+    const needsMarkerWrite = (shouldFinalize && !finalized) || (!locked && finalized);
 
     // ⛔ `valuesChanged` 만으로 쓰기를 결정하지 말 것 — 값이 그대로인 락 캠페인이 영영
     //    확정되지 않아 90일 내내 재조회된다(그것이 이 작업이 닫은 「수렴하지 않는다」다).
-    if (valuesChanged || markerChanged) {
+    if (valuesChanged || needsMarkerWrite) {
       await prisma.orderCampaign.update({
         where: { id: camp.id },
         data: {
@@ -342,10 +386,11 @@ export async function syncPostCloseCancellations(
       // `updated` 는 **값이 바뀐 건수**로 유지한다 — 마커만 찍힌 회차까지 세면 이 지표가
       // 종전 실행과 비교 불가가 된다.
       if (valuesChanged) updated++;
-      if (locked && !finalized) finalizedLocked++;
+      if (shouldFinalize && !finalized) finalizedLocked++;
     }
   }
 
-  // `campaigns` 는 **창 안의 전체**이고 실제 조회한 것은 `campaigns - skippedLocked` 다.
-  return { campaigns: closedCampaigns.length, updated, skippedLocked, finalizedLocked };
+  // `campaigns` 는 **창 안의 전체**다. 실제 조회한 것은 `campaigns - skippedLocked` **에서
+  // 주문 목록이 빈 캠페인을 뺀 수**이므로 그 뺄셈을 조회 수로 그대로 읽지 말 것.
+  return { campaigns: closedCampaigns.length, updated, skippedLocked, finalizedLocked, deferredIncomplete };
 }

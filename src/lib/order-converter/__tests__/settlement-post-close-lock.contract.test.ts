@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * 종전에는 「두 값이 모두 0 이면 아직 계산 안 된 것으로 본다」는 값 기반 판별을 썼는데,
  * `@default(0)` 이라 "계산했는데 0" 과 구분되지 않아 한계 셋을 남겼다 —
  * ①동결 시점이 부분집합마다 달랐고 ②취소가 0 인 캠페인은 수렴하지 않았으며
- * ③컷오프가 「직전 크론 실행」이라 락 직전 취소를 놓쳤다(정산액 과대).
+ * ③컷오프가 「직전 크론 실행」이라 락 직전 취소를 놓쳤다(취소 과소 계상).
  *
  * ⛔ 기준을 정산대기(SETTLEMENT_WAIT)로 앞당기지 말 것 — 그 구간은 반품·구매확정으로
  *    아직 변동한다(오너 확정). 아래 두 번째 케이스가 그것을 고정한다.
@@ -60,12 +60,23 @@ function lastUpdateData(): Record<string, unknown> {
   return (call?.[0] as { data: Record<string, unknown> }).data;
 }
 
+/**
+ * 취소가 없는 **온전한** 응답(요청 2건 → 2건). 확정은 "요청한 주문이 전부 돌아왔는가" 를
+ * 전제로 하므로, 기본 응답이 빈 배열이면 모든 확정 케이스가 「응답 모자람」으로 빠진다.
+ */
+function completeOrders() {
+  return [
+    { productOrderId: 'po-1', productOrderStatus: 'DELIVERED', quantity: 1, productName: 'x' },
+    { productOrderId: 'po-2', productOrderStatus: 'DELIVERED', quantity: 1, productName: 'x' },
+  ];
+}
+
 beforeEach(() => {
   vi.resetModules();
   findManyMock.mockReset();
   updateMock.mockReset();
   queryOrderDetailsMock.mockReset();
-  queryOrderDetailsMock.mockResolvedValue([]);
+  queryOrderDetailsMock.mockResolvedValue(completeOrders());
 });
 
 describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () => {
@@ -98,7 +109,9 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
   it('잠겼는데 마커가 없으면 「확정 계산」을 한 번 하고 마커를 찍는다', async () => {
     // ⛔ **이 계약을 지우지 말 것.** 이 한 번의 계산이 락 **이후**에 돌기 때문에
     //    「직전 크론 실행 ~ 락」 사이에 들어온 취소가 값에 담긴다 — 락 전이 훅 없이
-    //    한계 ③(과소 계상 = 정산액 과대)을 닫는 것이 정확히 이 실행이다.
+    //    한계 ③(취소 과소 계상)을 닫는 것이 정확히 이 실행이다.
+    //    ⚠️ 이 두 값은 정산 금액 계산이 아니라 마감 캠페인 리포트의 **표시**에 쓰인다
+    //    (실측 2026-09-09) — 「정산액 과대」로 서술하지 말 것.
     findManyMock.mockResolvedValue([
       campaign('SETTLEMENT_IN_PROGRESS', { cachedPostCloseCancelFinalizedAt: null }),
     ]);
@@ -210,6 +223,70 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
 
     expect(queryOrderDetailsMock).not.toHaveBeenCalled();
     expect(res).toMatchObject({ skippedLocked: 1 });
+  });
+
+  it('응답이 요청보다 모자라면 값은 쓰되 확정은 미룬다', async () => {
+    // ⛔ **이 계약을 지우지 말 것.** `queryOrderDetails` 는 응답이 모자라도 console.warn 만
+    //    남기고 짧은 배열을 돌려준다. 그 결과로 확정하면 일시적 API 저하가 과소 계상된 값을
+    //    **영구히 동결**시키고, 유일 writer 라 수동 레버 말고는 복구 경로가 없다.
+    //    값을 쓰는 것은 유지한다 — 부분 응답이라도 지금 알 수 있는 최선이고, 탈퇴 구매자
+    //    주문이 섞인 캠페인은 그러지 않으면 영영 값을 못 갖는다.
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_IN_PROGRESS', {
+        cachedProductOrderIds: ['po-1', 'po-2'],
+        cachedPostCloseCancelFinalizedAt: null,
+      }),
+    ]);
+    // 2건을 요청했는데 1건만 돌아온다(취소 1건).
+    queryOrderDetailsMock.mockResolvedValue([
+      { productOrderStatus: 'CANCELED', quantity: 1, totalPaymentAmount: 10000, productName: 'x' },
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(res).toMatchObject({ deferredIncomplete: 1, finalizedLocked: 0 });
+    // 값은 갱신되고, 마커는 null 로 남는다.
+    expect(lastUpdateData()).toMatchObject({ cachedPostCloseCancelQuantity: 1 });
+    expect(lastUpdateData().cachedPostCloseCancelFinalizedAt).toBeNull();
+  });
+
+  it('응답이 모자라도 이미 있던 확정 마커를 지우지 않는다', async () => {
+    // 🪤 `includeLocked` 로 재계산하다 응답이 모자라면, 미확정으로 되돌리는 것이 아니라
+    //    **기존 확정 시각을 보존**해야 한다(안 그러면 그 캠페인이 다시 매일 조회 대상이 된다).
+    const marker = new Date('2026-09-01T00:00:00Z');
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_IN_PROGRESS', { cachedPostCloseCancelFinalizedAt: marker }),
+    ]);
+    queryOrderDetailsMock.mockResolvedValue([
+      { productOrderStatus: 'CANCELED', quantity: 9, totalPaymentAmount: 90000, productName: 'x' },
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations({ includeLocked: true });
+
+    expect(res).toMatchObject({ deferredIncomplete: 1 });
+    expect(lastUpdateData().cachedPostCloseCancelFinalizedAt).toEqual(marker);
+  });
+
+  it('중복 주문 id 는 접어서 완전성을 판정한다 — 안 접으면 영영 확정되지 않는다', async () => {
+    // 🪤 `cachedProductOrderIds` 에 같은 id 가 두 번 들어 있으면 응답은 1건이라, 접지 않으면
+    //    분모가 부풀어 **완전한 응답도 「모자람」으로 읽힌다**(수렴 실패).
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_IN_PROGRESS', {
+        cachedProductOrderIds: ['po-1', 'po-1'],
+        cachedPostCloseCancelFinalizedAt: null,
+      }),
+    ]);
+    queryOrderDetailsMock.mockResolvedValue([
+      { productOrderStatus: 'DELIVERED', quantity: 1, totalPaymentAmount: 10000, productName: 'x' },
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).toHaveBeenCalledWith(['po-1']);
+    expect(res).toMatchObject({ deferredIncomplete: 0, finalizedLocked: 1 });
   });
 
   it('확정 마커를 조회 select 에 담는다 — 빠지면 전부 미확정으로 읽혀 건너뛰기가 죽는다', async () => {
