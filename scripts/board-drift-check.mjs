@@ -437,9 +437,14 @@ function headerEndOf(line) {
  * 이미 머지된 자기 항목이 '낡은 대기 마커'로 잡혔다. 점검기가 거짓 경보를 내면
  * 사람이 점검기를 무시하게 되므로, 낡은 마커를 놓치는 것만큼 해롭다).
  */
+/** 헤더에서 상태와 제목을 가르는 구분자 — 두 형식이 공유한다(어느 쪽이 상태인지만 다르다). */
+const HEADER_SEP = " — ";
+/** 구분자가 없는 긴 항목 대비 안전 상한 — 구역을 잘라 읽는 판정이 공유한다. */
+const REGION_CAP = 200;
+
 export function statusPhrase(line) {
   const header = line.slice(0, headerEndOf(line)).replace(/^- \*\*/, "");
-  const sep = header.indexOf(" — ");
+  const sep = header.indexOf(HEADER_SEP);
   return sep >= 0 ? header.slice(0, sep) : header;
 }
 
@@ -465,9 +470,7 @@ export function statusPhrase(line) {
  * `MERGE_DONE`(`머지\s*[·・]`)에 걸려 대기 주장이 **조용히 사라진다** — 넓히려던 변경이 스스로를
  * 무력화한다.
  */
-const TRAILING_SEP = " — ";
 const FIELD_SEP = /\s·\s/;
-const TRAILING_CAP = 200; // 구분자가 없는 긴 항목 대비 안전 상한(아래 GATE_CAP 과 같은 이유)
 
 /**
  * 뒤 구역의 **필드 목록 전체** — 헤더 안의 첫 ` — ` 뒤부터 볼드 표식까지(필드 구분자는 넘는다).
@@ -480,10 +483,10 @@ const TRAILING_CAP = 200; // 구분자가 없는 긴 항목 대비 안전 상한
  */
 function trailingRegion(line) {
   const headerEnd = headerEndOf(line);
-  const sep = line.indexOf(TRAILING_SEP);
+  const sep = line.indexOf(HEADER_SEP);
   if (sep < 0 || sep >= headerEnd) return "";
-  const start = sep + TRAILING_SEP.length;
-  const rest = line.slice(start, Math.min(headerEnd, start + TRAILING_CAP));
+  const start = sep + HEADER_SEP.length;
+  const rest = line.slice(start, Math.min(headerEnd, start + REGION_CAP));
   // 상태 서술 전체가 볼드인 형태(`— **머지·배포 완료. 남은 게이트 = …**`)는 닫는 `**` 까지다.
   if (rest.startsWith("**")) {
     const close = rest.indexOf("**", 2);
@@ -506,6 +509,44 @@ export function trailingStatusPhrase(line) {
   const region = trailingRegion(line);
   const end = region.search(FIELD_SEP);
   return (end >= 0 ? region.slice(0, end) : region).trim();
+}
+
+/**
+ * 이 줄이 **새 형식 헤더**인가 — 앞 구역이 하네스 세션명 규약(`#<번호>` + `[<계보슬러그>]`)을
+ * 담고 있으면 앞 구역은 **제목**이고 상태 서술은 ` — ` 뒤에 있다.
+ *
+ * 🪤 **"앞 구역이 그 축에 침묵하면 뒤를 본다"로는 가를 수 없다(리뷰 실측 2026-09-09).** 옛 형식의
+ * ` — ` 뒤는 제목인데, 제목에 머지·배포 어휘가 들어가는 것은 이 레포에서 예사다(점검기 자신을
+ * 고치는 항목이 바로 그렇다). 침묵 기준으로 뒤를 읽으면 `✅ 구현 완료 — 머지 대기 탐지 개선` 이
+ * 낡은 대기 마커로, `🚀 머지 완료 → 승격 대기 — prod 반영 점검 개선` 이 과대보고로 뒤집힌다(둘 다
+ * 재현 확인). 새 형식에서는 같은 문제가 **앞 구역**에서 난다(`✅ #5 [슬러그] 낡은 머지 대기 마커
+ * 정리 — 머지·prod 반영 완료`). 어느 쪽이든 결함은 **제목을 상태로 읽는 것**이고, 그건 침묵이
+ * 아니라 **형식**으로만 갈린다.
+ *
+ * 판별 근거는 어휘가 아니라 구조다 — 실보드 평면 구역 실측에서 `#번호`와 `[슬러그]`가 **둘 다**
+ * 앞 구역에 있는 줄은 전부 새 형식이었고, 옛 형식 중 번호만 있는 줄(`✅ #295·#296… 머지·prod 반영
+ * 완료 — [홈택스] …`)과 태그만 있는 줄(`✅ [셀프호스팅] 이관 완료 — …`)은 걸리지 않았다. 그래서
+ * **둘 다** 요구한다. ⚠️ 마크다운 링크(`[PR #5](…)`)는 태그가 아니다 — 뒤에 `(` 가 붙으므로 뺀다.
+ *
+ * ⚠️ **잔여 사각:** 계보 태그 없이 올린 새 형식 줄은 옛 형식으로 읽혀 뒤 구역을 보지 않는다. 이 방향의
+ * 오류는 침묵(미탐)이고 반대 방향은 거짓 경보라 설계 원칙 3 에 따라 이쪽을 택했다 — 태그는 하네스
+ * 세션명 규약이 이미 요구하므로 규약을 지키면 덮인다.
+ */
+const LEAD_PR_NUMBER = /(?:^|\s)#\d+/;
+const LEAD_LINEAGE_TAG = /\[[^\]]+\](?!\()/;
+
+function isNewDialectHeader(line) {
+  const lead = statusPhrase(line);
+  return LEAD_PR_NUMBER.test(lead) && LEAD_LINEAGE_TAG.test(lead);
+}
+
+/**
+ * 주장을 읽는 **상태 구역** — 형식에 따라 앞/뒤가 갈린다.
+ *
+ * ⛔ 주장 판독에서 `statusPhrase` 를 직접 쓰지 말 것 — 새 형식에서 제목을 상태로 읽는다.
+ */
+export function claimStatus(line) {
+  return isNewDialectHeader(line) ? trailingStatusPhrase(line) : statusPhrase(line);
 }
 
 /**
@@ -558,7 +599,6 @@ export function primaryPr(line) {
 // 문장이라도 항목 길이에 따라 판정이 뒤집힌다(첫 구현이 실제로 그랬다 — 실보드에서는
 // 우연히 통과하고 축약 픽스처에서는 오탐).
 const GATE_END = /\s[—·]\s|\*\*|$/;
-const GATE_CAP = 200; // 구분자가 없는 항목 대비 안전 상한
 
 /**
  * 상태 문구가 **머지를 기다린다**고 주장하는가.
@@ -619,26 +659,6 @@ export function claimsAwaitingMerge(status) {
   return WAIT_SIGNAL.test(status);
 }
 
-/** 상태 문구가 머지 축에 대해 **무언가 말하는가**(대기든 완료든) — 침묵의 판정축이다. */
-const MERGE_AXIS = /머지|오너\s*(?:리뷰|검토)/;
-
-/**
- * 줄 하나가 **머지를 기다린다고 주장하는가** — 두 구역을 우선순위로 읽는다.
- *
- * ① 앞 구역(`statusPhrase`)이 머지 축에 말하면 그것이 SSOT 다. 옛 형식은 거기에 상태가 있고
- *    ` — ` 뒤는 **제목**이라, 뒤 구역까지 함께 읽으면 제목이 주장으로 오독된다.
- * ② 앞 구역이 머지 축에 **침묵하면** 뒤 구역(`trailingStatusPhrase`)을 본다 — 새 형식은
- *    거기에 상태 서술이 있다.
- *
- * 아래 `claimsDeployed` 가 배포 축에서 이미 쓰는 우선순위와 같은 구조다. ⛔ 두 구역을 무조건
- * OR 로 합치지 말 것 — 항목 자신의 최신 선언이 다른 구역의 서술을 이겨야 한다.
- */
-export function claimsAwaitingMergeOn(line) {
-  const lead = statusPhrase(line);
-  if (MERGE_AXIS.test(lead)) return claimsAwaitingMerge(lead);
-  return claimsAwaitingMerge(trailingStatusPhrase(line));
-}
-
 const DEPLOYED_RE =
   /(?:prod\s*)?(?:배포|착지)\s*(?:확인\s*)?완료|prod\s*(?:라이브|착지|반영)|배포\s*완료/;
 
@@ -660,17 +680,16 @@ const DEPLOYED_RE =
  *   ③ 상태 문구가 배포에 침묵하면 → 본문까지 본다(과대보고 탐지력 보존).
  */
 export function claimsDeployed(line) {
-  const status = statusPhrase(line);
-  // ① 새 형식은 그 배포 주장이 ` — ` 뒤 구역에 실린다 — 두 구역 어느 쪽이든 주장이다.
-  if (DEPLOYED_RE.test(status) || DEPLOYED_RE.test(trailingStatusPhrase(line))) return true;
-  if (claimsAwaitingMergeOn(line)) return false;
+  const status = claimStatus(line);
+  if (DEPLOYED_RE.test(status)) return true;
+  if (claimsAwaitingMerge(status)) return false;
   if (MERGE_DONE.test(status) && WAIT_SIGNAL.test(status)) return false; // 승격 대기 명시
   return DEPLOYED_RE.test(line);
 }
 
 export function readClaims(line) {
   const gateSegments = [...line.matchAll(/(잔여|다음\s*게이트)/g)].map((m) => {
-    const rest = line.slice(m.index, m.index + GATE_CAP);
+    const rest = line.slice(m.index, m.index + REGION_CAP);
     const end = rest.slice(1).search(GATE_END);
     return end >= 0 ? rest.slice(0, end + 1) : rest;
   });
@@ -679,16 +698,15 @@ export function readClaims(line) {
   );
   // "승격 대기"/"승격(배포) 대기" 는 잔여 게이트 라벨 없이 상태 문구에 직접 실리기도 한다
   // (2026-08-08 실사고) — 그 경우도 배포 대기 자백으로 센다.
-  // 새 형식은 그 문구가 ` — ` 뒤 구역에 실린다. `승격 대기` 는 관용구가 좁아(대기가 반드시
-  // 뒤따른다) 구역 우선순위를 두지 않고 둘 다 본다 — 어느 쪽에 있어도 미배포 자백이다.
+  // 새 형식은 그 문구가 ` — ` 뒤에 실리고, 상태 필드가 아니라 그 다음 필드에 오기도 한다
+  // (`머지 완료 · 승격 대기`) — 그래서 새 형식에서만 필드 목록 전체를 본다. 관용구가 좁아
+  // (`승격`+`대기` 인접) 필드를 넘어 읽어도 낱말이 엉키지 않는다.
   const pendingDeploy =
     pendingDeployInGate ||
-    PROMOTION_WAIT.test(statusPhrase(line)) ||
-    PROMOTION_WAIT.test(trailingRegion(line));
+    PROMOTION_WAIT.test(isNewDialectHeader(line) ? trailingRegion(line) : statusPhrase(line));
   return {
-    // 머지 대기 주장은 **상태 서술 구역**에 적혔을 때만 센다(본문의 같은 낱말은 서술).
-    // 앞/뒤 어느 구역을 읽을지는 `claimsAwaitingMergeOn` 이 우선순위로 가른다.
-    awaitingMerge: claimsAwaitingMergeOn(line),
+    // 머지 대기 주장은 **상태 구역**에 적혔을 때만 센다(제목·본문의 같은 낱말은 서술이다).
+    awaitingMerge: claimsAwaitingMerge(claimStatus(line)),
     // "배포 확인"이 **잔여 게이트로** 적혔거나 "승격 대기"가 상태 문구에 있으면
     // 아직 prod 에 없다는 자백이다.
     awaitingDeploy: pendingDeploy,
