@@ -567,9 +567,21 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     );
   });
 
-  it("새 형식의 `승격 대기` 도 배포 대기 자백으로 읽는다", () => {
+  it("새 형식의 `승격 대기` 도 배포 대기 자백으로 읽는다(같은 필드 안)", () => {
+    expect(readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료. 승격 대기 · ${PR}`).awaitingDeploy).toBe(
+      true,
+    );
+  });
+
+  it("⚠️ 잔여 사각: `승격 대기` 가 둘째 필드 이후에만 있으면 읽지 못한다", () => {
+    // 필드를 넘어 읽으면 뒤쪽의 **서술**이 자백으로 읽혀 거짓 경보가 난다(리뷰 실측 2건).
+    // 방향이 침묵이라 이쪽을 택했고, 라벨을 붙여 적으면(`다음 게이트 = 승격`) 게이트 경로가 잡는다.
     expect(
-      readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료 · 승격 대기 · ${PR}`).awaitingDeploy,
+      readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료 · 종결 · 승격 대기 · ${PR}`).awaitingDeploy,
+    ).toBe(false);
+    expect(
+      readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료 · 다음 게이트 = 승격 배포 확인 · ${PR}`)
+        .awaitingDeploy,
     ).toBe(true);
   });
 
@@ -591,10 +603,10 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     expect(readClaims(line).awaitingMerge).toBe(false);
   });
 
-  it("볼드로 감싼 뒤 상태 서술도 읽는다 — 강조 표식은 걷어내고 문장에서 끊는다", () => {
+  it("볼드로 감싼 뒤 상태 서술도 읽는다 — 강조 표식은 경계가 아니라 잡음이다", () => {
     expect(
       trailingStatusPhrase("- 🚀 #5 [슬러그] 제목 — **머지·배포 완료. 남은 게이트 = 재설치**. 🪤 본문"),
-    ).toBe("머지·배포 완료.");
+    ).toBe("머지·배포 완료. 남은 게이트 = 재설치");
   });
 
   /**
@@ -657,9 +669,22 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
   it("상태 문구에 강조가 들어가도 읽는다 — 중간 `**` 는 경계가 아니다", () => {
     // 실보드의 지배적 형태가 `— 머지·**prod 반영 완료** · 종결` 이다. 첫 `**` 에서 끊으면
     // 강조된 상태 낱말이 통째로 빠져, 고치려던 침묵이 그대로 남는다(리뷰 실측).
-    expect(verdictOf(`- 🔴 #5 [슬러그] 제목 — 머지·**오너 머지 대기** · ${PR}`, shipped)).toBe(
+    expect(verdictOf(`- 🔴 #5 [슬러그] 제목 — **오너 머지 대기** · 상세 · ${PR}`, shipped)).toBe(
       VERDICT.STALE_MERGE_MARKER,
     );
+  });
+
+  it("⚠️ 문장이 끝난 뒤의 대기 주장도 읽는다 — 문장 부호는 경계가 아니다", () => {
+    // 문장에서 끊던 안은 이 줄의 대기 주장을 잘라 고치려던 침묵을 되돌렸다(리뷰 실측).
+    expect(verdictOf(`- 🔴 #5 [슬러그] 제목 — CI 통과. 오너 머지 대기 ${PR}`, shipped)).toBe(
+      VERDICT.STALE_MERGE_MARKER,
+    );
+  });
+
+  it("⚠️ 완료·승격대기가 한 필드에 있고 본문에 완료 서술이 있어도 과대보고가 아니다", () => {
+    const line = `- 🚀 #5 [슬러그] 제목 — 머지 완료. → 승격 대기 ${PR} · 본문: prod 반영 완료 확인 예정`;
+    expect(readClaims(line).deployed).toBe(false);
+    expect(verdictOf(line, deployPending)).toBe(VERDICT.AWAITING_DEPLOY);
   });
 
   it("⚠️ 링크 아닌 맨 `[PR #268]` 은 계보 태그가 아니다(새 형식 오분류 방지)", () => {

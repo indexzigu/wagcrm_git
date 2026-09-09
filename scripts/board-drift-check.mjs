@@ -461,10 +461,8 @@ export function statusPhrase(line) {
  * 사고의 새 형식판 재발).
  *
  * ⛔ **줄 전체로 넓혀 메우지 말 것** — 본문 서술을 주장으로 오독하는 2026-08-05 거짓 경보가
- * 그대로 되돌아온다(위 `statusPhrase` 주석). 그래서 구역을 보드가 실제로 쓰는 **필드 구분자
- * ` · `**(AGENTS.md 보드 아키텍처의 `상태 · 다음 게이트 · 상세 링크`)와 볼드 표식에서 끊는다.
- * 옛 형식 줄에 이 함수를 쓰면 본문 구분자 `**:` 의 `**` 에서 끊겨 **제목까지만** 나오는데,
- * 그게 의도다(본문은 어느 경우에도 이 구역에 들어오지 않는다).
+ * 그대로 되돌아온다(위 `statusPhrase` 주석). 구역은 보드 규약이 실제로 쓰는 **필드 구분자
+ * ` · `**(AGENTS.md 보드 아키텍처의 `상태 · 다음 게이트 · 상세 링크`)로 끊어 **첫 필드만** 본다.
  *
  * 🪤 **구분자를 구역에 포함하지 말 것.** ` · ` 를 함께 넣으면 `⏳ CI 대기 → 오너 머지 ·` 가
  * `MERGE_DONE`(`머지\s*[·・]`)에 걸려 대기 주장이 **조용히 사라진다** — 넓히려던 변경이 스스로를
@@ -473,7 +471,8 @@ export function statusPhrase(line) {
 const FIELD_SEP = /\s·\s/;
 
 /**
- * 뒤 구역의 **필드 목록 전체** — 헤더 안의 첫 ` — ` 뒤부터 볼드 표식까지(필드 구분자는 넘는다).
+ * 뒤 구역의 **원문** — 헤더 안의 첫 ` — ` 뒤부터 헤더 끝까지. 필드로 자르는 것은 아래
+ * `trailingStatusPhrase` 가 한다.
  *
  * 🪤 **구역은 반드시 헤더 안이다(실측 2026-09-09).** 처음 구현은 줄 전체에서 첫 ` — ` 를 찾았는데,
  * 실보드 202줄에 돌려 보니 **본문에만 ` — ` 가 있는 서술 줄**이 걸렸다(`- **패스한 것**: … — …
@@ -481,49 +480,44 @@ const FIELD_SEP = /\s·\s/;
  * 것인데 주장으로 읽혀 낡은 마커 오탐이 났다 — 2026-08-05 거짓 경보와 같은 계열이다. `headerEndOf`
  * 로 잘라 두면 본문의 ` — ` 는 애초에 후보가 아니다.
  *
- * 구역의 경계는 세 겹이고, 셋 다 실사고에서 나왔다:
+ * 🪤 **강조 표식은 경계가 아니라 잡음이다(리뷰 실측 2026-09-10).** 첫 `**` 에서 자르면 실보드의
+ * 지배적 형태인 `— 머지·**prod 반영 완료** · 종결` 에서 구역이 `머지·` 로만 남아 **강조된 상태
+ * 문구를 못 읽고**(`— 머지·**오너 머지 대기**` 가 통과했다 — 고치려던 침묵 그대로), 반대로 표식을
+ * 남겨 두면 `머지 **완료**` 가 `MERGE_DONE` 에 안 걸려 **정상 배포 대기가 낡은 마커로 뒤집힌다**.
+ * 양쪽 다 재현 확인했다 — 그래서 경계로도 쓰지 않고 남기지도 않는다. 걷어낸다.
  *
- * ① **헤더 안**(위) — 본문에만 ` — ` 가 있는 줄을 후보에서 뺀다.
- * ② **강조 표식은 경계가 아니라 잡음이다(리뷰 실측 2026-09-10).** 종전 구현이 첫 `**` 에서 잘랐더니
- *    실보드의 지배적 형태인 `— 머지·**prod 반영 완료** · 종결` 에서 구역이 `머지·` 로만 남아
- *    **강조가 들어간 상태 문구는 여전히 안 읽혔다**(`— 머지·**오너 머지 대기**` 가 통과했다 —
- *    고치려던 침묵 그대로). 그렇다고 표식을 남겨 두면 `머지 **완료**` 가 `MERGE_DONE` 에 안 걸려
- *    **정상 배포 대기가 낡은 마커로 뒤집힌다**(재현 확인). 그래서 경계로 쓰지 않고 걷어낸다.
- * ③ **문장이 끝나면 본문이다(리뷰 실측 2026-09-10).** ② 만 하고 경계를 늦추면 새 형식 줄의 본문
- *    서술이 구역에 들어와 `… 완료. 본문: … 오너 머지 대기 로 남아 있었다는 설명` 이 대기 주장으로
- *    읽힌다 — 2026-08-05 거짓 경보의 새 형식판이다(두 리뷰가 각각 재현했다).
- *    ⛔ 그 방어를 `headerEndOf` 에 맡기지 말 것: 그것이 본문을 자르는 것은 `**:` 가 있는 **옛 형식**
- *    줄뿐이고, 새 형식 줄에는 그 표식이 없어 아무 경계도 되지 않는다.
+ * ⛔ **경계를 문장 부호(`. `)로 잡으려던 안은 기각됐다(리뷰 실측 2026-09-10).** 그렇게 끊으면
+ * `— CI 통과. 오너 머지 대기` 의 대기 주장이 잘려 **고치려던 침묵이 그대로 돌아오고**,
+ * `— 머지 완료. → 승격 대기 …` 에서는 `승격 대기` 가 잘려 `claimsDeployed` 의 ② 보호가 풀리며
+ * 본문의 완료 서술이 이겨 **과대보고**가 났다(침묵과 거짓 경보를 동시에 만들었다). 경계는 필드
+ * 하나로 족하고, **필드 안에 본문이 섞이는 경우는 `claimsAwaitingMerge` 의 위치 규칙이 막는다.**
  */
-const SENTENCE_END = /[.。]\s/;
 function trailingRegion(line) {
   const headerEnd = headerEndOf(line);
   const sep = line.indexOf(HEADER_SEP);
   if (sep < 0 || sep >= headerEnd) return "";
   const start = sep + HEADER_SEP.length;
-  // 강조 표식은 경계가 아니라 **잡음**이다 — 걷어내고 읽는다(위 주석 ②).
-  let region = line.slice(start, Math.min(headerEnd, start + REGION_CAP)).replace(/\*\*/g, "");
-  // 문장이 끝나면 그 뒤는 본문 서술이다(위 주석 ③).
-  const sentence = region.search(SENTENCE_END);
-  return sentence >= 0 ? region.slice(0, sentence + 1) : region;
-}
-
-/** 필드 목록의 앞 `count` 개 — 뒤로 갈수록 서술이라 축마다 필요한 만큼만 읽는다. */
-function leadingFields(region, count) {
-  return region.split(FIELD_SEP).slice(0, count).join(" · ");
+  // 강조 표식은 경계가 아니라 **잡음**이다 — 걷어내고 읽는다.
+  return line.slice(start, Math.min(headerEnd, start + REGION_CAP)).replace(/\*\*/g, "");
 }
 
 /**
- * 머지 축이 읽는 뒤 구역 = 필드 목록의 **첫 필드**(` · ` 앞).
+ * 주장을 읽는 뒤 구역 = 필드 목록의 **첫 필드**(` · ` 앞). 보드 규약에서 그 자리가 상태 필드다.
  *
- * 🪤 **축마다 구역 폭이 다른 것이 의도다.** 머지 대기 판정은 `머지` 와 대기 신호(`대기`·⏳·🔴)가
- * 같은 구역에 있으면 발화하므로, 필드를 넘어 읽으면 **필드 1의 `머지` + 게이트 필드의 `대기`**
- * 가 엮여 끝난 항목이 낡은 마커로 뜬다(실측 픽스처: `머지(sha) 후 prod 반영 · 다음 게이트 =
- * 오너 육안 대기`). 반면 `승격 대기` 관용구는 낱말 둘이 붙어 있어야 매치하므로 필드 목록 전체를
- * 봐도 그 엮임이 생기지 않는다 — 그래서 그쪽만 `trailingRegion` 을 쓴다.
+ * 🪤 **필드를 넘어 읽지 말 것.** 머지 대기 판정은 `머지` 와 대기 신호(`대기`·⏳·🔴)가 같은 구역에
+ * 있으면 발화하므로, 필드를 넘으면 **필드 1의 `머지` + 게이트 필드의 `대기`** 가 엮여 끝난 항목이
+ * 낡은 마커로 뜬다(픽스처: `머지(sha) 후 prod 반영 · 다음 게이트 = 오너 육안 대기`).
+ * `승격 대기` 관용구만 예외로 넓히려던 안도 리뷰 실측에서 기각됐다 — 뒤쪽 필드는 서술이라
+ * `… · 종결 · 본문: 예전엔 승격 대기였다` 가 미배포 자백으로 읽혔다(종료코드를 흔든다).
+ *
+ * ⚠️ **잔여 사각:** 그래서 `승격 대기` 가 **둘째 필드 이후에만** 적힌 줄은 읽지 못한다
+ * (`— 머지 완료 · 종결 · 승격 대기`). 방향은 침묵이고, 보드 규약대로 게이트에 라벨을 붙여 적으면
+ * (`다음 게이트 = 승격`) 아래 `readClaims` 의 게이트 경로가 잡는다.
  */
 export function trailingStatusPhrase(line) {
-  return leadingFields(trailingRegion(line), 1).trim();
+  const region = trailingRegion(line);
+  const end = region.search(FIELD_SEP);
+  return (end >= 0 ? region.slice(0, end) : region).trim();
 }
 
 /**
@@ -568,8 +562,9 @@ function isNewDialectHeader(line) {
 }
 
 /**
- * 주장을 읽는 **상태 구역** — 형식에 따라 앞/뒤가 갈린다. 아래 `wideStatusRegion` 과 형제이고
- * 폭만 다르다(이쪽은 상태 필드 하나, 저쪽은 필드 목록 전체) — 형식 분기는 이 둘에만 둔다.
+ * 주장을 읽는 **상태 구역** — 형식에 따라 앞/뒤가 갈린다. **모든 축이 이 구역 하나를 읽는다**
+ * (축마다 폭을 달리 두려던 안은 리뷰 실측에서 기각됐다 — 위 `trailingStatusPhrase` 주석).
+ * 형식 분기는 이 함수에만 있다.
  *
  * ⛔ **머지·배포 주장 판독에서 `statusPhrase` 를 직접 쓰지 말 것** — 새 형식에서 제목을 상태로
  * 읽는다.
@@ -586,19 +581,6 @@ function statusRegion(line) {
   return isNewDialectHeader(line) ? trailingStatusPhrase(line) : statusPhrase(line);
 }
 
-/**
- * `승격 대기` 관용구가 읽는 구역 = **앞의 두 필드**. 새 형식은 그 문구가 상태 필드가 아니라 그
- * 다음 필드에 오기도 한다(`머지 완료 · 승격 대기`). 관용구가 좁아(`승격`+`대기` 인접) 한 필드를
- * 더 봐도 낱말이 엉키지 않는다 — 머지 축이 같은 폭을 쓰면 안 되는 이유는 `trailingStatusPhrase`
- * 주석에 있다.
- *
- * ⛔ **필드 목록 전체로 넓히지 말 것(리뷰 실측 2026-09-10).** 뒤쪽 필드는 서술이라,
- * `… · 종결 [PR #5](…) · 본문: 예전엔 승격 대기였다` 가 미배포 자백으로 읽혀 배포까지 끝난 항목이
- * 드리프트가 된다(재현 확인 — 종료코드를 흔든다).
- */
-function statusFieldsRegion(line) {
-  return isNewDialectHeader(line) ? leadingFields(trailingRegion(line), 2) : statusPhrase(line);
-}
 
 /**
  * PR 링크에서 **번호와 레포를 함께** 읽는다.
@@ -702,11 +684,28 @@ const PROMOTION_WAIT = /승격\s*(?:\([^)]*\)\s*)?대기/;
 const MERGE_DONE =
   /머지\s*(?:완료|됨|끝)|머지\s*[·・]|머지\s*(?:→|->|~>|후|뒤)\s*[^—]*?(?:승격|배포|prod)/;
 
+/** 고전 어순의 대기 관용구 — 아래 위치 규칙의 한쪽 축이다. */
+const CLASSIC_WAIT = /머지\s*대기/;
+
+function firstIndexOf(text, patterns) {
+  const hits = patterns.map((re) => text.search(re)).filter((i) => i >= 0);
+  return hits.length ? Math.min(...hits) : -1;
+}
+
+/**
+ * 🪤 **주장은 구역의 앞쪽에 있다 — 뒤에 오는 것은 그 주장에 대한 서술이다(리뷰 실측 2026-09-10).**
+ * 종전 판정은 `머지 대기`·`오너 리뷰 대기` 를 만나면 곧바로 참을 냈는데, 새 형식은 상태 필드 안에
+ * 경과 서술이 이어지는 일이 있어(`머지·prod 반영 완료. 본문: … 오너 머지 대기 로 남아 있었다는
+ * 설명`) **끝난 항목이 낡은 마커로 뒤집혔다**. 그래서 완료 선언과 대기 관용구가 **둘 다** 있으면
+ * 먼저 나온 쪽을 항목의 주장으로 본다. 구역을 문장 부호로 자르는 대안은 침묵을 만들어 기각됐다
+ * (위 `trailingRegion` 주석).
+ */
 export function claimsAwaitingMerge(status) {
-  if (/머지\s*대기/.test(status)) return true; // 고전 어순 — 그대로 유지(회귀 방지)
-  if (OWNER_REVIEW_WAIT.test(status)) return true; // "머지" 글자 없이 대기를 주장하는 관용구
+  const done = status.search(MERGE_DONE);
+  const waitIdiom = firstIndexOf(status, [CLASSIC_WAIT, OWNER_REVIEW_WAIT]);
+  if (waitIdiom >= 0) return !(done >= 0 && done < waitIdiom);
   if (!/머지/.test(status)) return false;
-  if (MERGE_DONE.test(status)) return false; // `머지 완료 → 승격 대기` 는 대기 주장이 아니다
+  if (done >= 0) return false; // `머지 완료 → 승격 대기` 는 대기 주장이 아니다
   return WAIT_SIGNAL.test(status);
 }
 
@@ -749,7 +748,7 @@ export function readClaims(line) {
   );
   // "승격 대기"/"승격(배포) 대기" 는 잔여 게이트 라벨 없이 상태 문구에 직접 실리기도 한다
   // (2026-08-08 실사고) — 그 경우도 배포 대기 자백으로 센다.
-  const pendingDeploy = pendingDeployInGate || PROMOTION_WAIT.test(statusFieldsRegion(line));
+  const pendingDeploy = pendingDeployInGate || PROMOTION_WAIT.test(statusRegion(line));
   return {
     // 머지 대기 주장은 **상태 구역**에 적혔을 때만 센다(제목·본문의 같은 낱말은 서술이다).
     awaitingMerge: claimsAwaitingMerge(statusRegion(line)),
