@@ -480,6 +480,11 @@ const FIELD_SEP = /\s·\s/;
  * 「오너 머지 대기」로 남아 있으나 실제로는 MERGED …`). 그 본문은 다른 항목의 경과를 **설명**한
  * 것인데 주장으로 읽혀 낡은 마커 오탐이 났다 — 2026-08-05 거짓 경보와 같은 계열이다. `headerEndOf`
  * 로 잘라 두면 본문의 ` — ` 는 애초에 후보가 아니다.
+ *
+ * 🪤 **중간의 `**` 에서 끊지 말 것(리뷰 실측 2026-09-09).** 종전 구현이 첫 `**` 에서 잘랐더니
+ * 실보드의 지배적 형태인 `— 머지·**prod 반영 완료** · 종결` 에서 상태 구역이 `머지·` 로만 남아,
+ * **강조가 들어간 상태 문구는 여전히 안 읽혔다** — `— 머지·**오너 머지 대기**` 가 통과했다(고치려던
+ * 침묵 그대로). 본문 배제는 `headerEndOf` 가 이미 하므로 `**` 를 경계로 쓸 이유가 없다.
  */
 function trailingRegion(line) {
   const headerEnd = headerEndOf(line);
@@ -487,13 +492,13 @@ function trailingRegion(line) {
   if (sep < 0 || sep >= headerEnd) return "";
   const start = sep + HEADER_SEP.length;
   const rest = line.slice(start, Math.min(headerEnd, start + REGION_CAP));
-  // 상태 서술 전체가 볼드인 형태(`— **머지·배포 완료. 남은 게이트 = …**`)는 닫는 `**` 까지다.
+  // 상태 서술 **전체**가 볼드인 형태(`— **머지·배포 완료. 남은 게이트 = …**`)는 닫는 `**` 까지가
+  // 그 구역이다 — 그 뒤는 본문 서술이 이어진다(실보드 형태).
   if (rest.startsWith("**")) {
     const close = rest.indexOf("**", 2);
     return close >= 0 ? rest.slice(2, close) : rest.slice(2);
   }
-  const end = rest.indexOf("**");
-  return end >= 0 ? rest.slice(0, end) : rest;
+  return rest;
 }
 
 /**
@@ -526,14 +531,25 @@ export function trailingStatusPhrase(line) {
  * 판별 근거는 어휘가 아니라 구조다 — 실보드 평면 구역 실측에서 `#번호`와 `[슬러그]`가 **둘 다**
  * 앞 구역에 있는 줄은 전부 새 형식이었고, 옛 형식 중 번호만 있는 줄(`✅ #295·#296… 머지·prod 반영
  * 완료 — [홈택스] …`)과 태그만 있는 줄(`✅ [셀프호스팅] 이관 완료 — …`)은 걸리지 않았다. 그래서
- * **둘 다** 요구한다. ⚠️ 마크다운 링크(`[PR #5](…)`)는 태그가 아니다 — 뒤에 `(` 가 붙으므로 뺀다.
+ * **둘 다** 요구한다.
  *
- * ⚠️ **잔여 사각:** 계보 태그 없이 올린 새 형식 줄은 옛 형식으로 읽혀 뒤 구역을 보지 않는다. 이 방향의
- * 오류는 침묵(미탐)이고 반대 방향은 거짓 경보라 설계 원칙 3 에 따라 이쪽을 택했다 — 태그는 하네스
- * 세션명 규약이 이미 요구하므로 규약을 지키면 덮인다.
+ * 🪤 **PR 참조는 태그가 아니다(리뷰 실측 2026-09-09).** 마크다운 링크(`[PR #5](…)`)는 뒤에 `(` 가
+ * 붙어 걸러지지만, 실보드에는 **링크 아닌 맨 `[PR #268]`** 로 적힌 줄이 있다(취소선 안에 들어 있다).
+ * 그걸 태그로 세면 그 줄이 새 형식으로 재분류돼 **취소선 본문을 상태로 읽고** 거짓 낡은 마커가 난다
+ * (재현 확인 — 종료코드를 흔드는 쪽이라 설계 원칙 3 정면). 그래서 태그 안의 `#` 를 배제한다
+ * (계보 슬러그에는 `#` 가 없다 — `[PR최소화]` 처럼 PR 로 시작하는 슬러그는 그대로 통과한다).
+ *
+ * ⚠️ **잔여 사각 ①:** 계보 태그 없이 올린 새 형식 줄은 옛 형식으로 읽혀 뒤 구역을 보지 않는다
+ * (실측: 실보드의 새 형식 줄 중 13건이 인식되고, 태그 없는 것들이 남는다). 이 방향의 오류는
+ * 침묵(미탐)이고 반대 방향은 거짓 경보라 설계 원칙 3 에 따라 이쪽을 택했다 — 태그는 하네스 세션명
+ * 규약이 이미 요구하므로 규약을 지키면 덮인다.
+ * ⚠️ **잔여 사각 ②:** 옛 형식이면서 앞 구역에 번호와 태그가 **둘 다** 우연히 든 줄
+ * (`✅ #5 [T-020] 머지·prod 반영 완료 — <제목>`)은 새 형식으로 오분류된다. 두 형식이 이 지점에서
+ * 구조적으로 구별되지 않는다 — 지금 보드에는 그 형태가 없고, 있으면 태그를 빼거나 옛 형식으로 통일
+ * 하는 것이 처방이다(코드로는 못 가른다).
  */
 const LEAD_PR_NUMBER = /(?:^|\s)#\d+/;
-const LEAD_LINEAGE_TAG = /\[[^\]]+\](?!\()/;
+const LEAD_LINEAGE_TAG = /\[[^\]#]+\](?!\()/;
 
 function isNewDialectHeader(line) {
   const lead = statusPhrase(line);
@@ -541,12 +557,31 @@ function isNewDialectHeader(line) {
 }
 
 /**
- * 주장을 읽는 **상태 구역** — 형식에 따라 앞/뒤가 갈린다.
+ * 주장을 읽는 **상태 구역** — 형식에 따라 앞/뒤가 갈린다. 아래 `wideStatusRegion` 과 형제이고
+ * 폭만 다르다(이쪽은 상태 필드 하나, 저쪽은 필드 목록 전체) — 형식 분기는 이 둘에만 둔다.
  *
- * ⛔ 주장 판독에서 `statusPhrase` 를 직접 쓰지 말 것 — 새 형식에서 제목을 상태로 읽는다.
+ * ⛔ **머지·배포 주장 판독에서 `statusPhrase` 를 직접 쓰지 말 것** — 새 형식에서 제목을 상태로
+ * 읽는다.
+ * ℹ️ **예외 1건: `isClosedItem` 은 의도적으로 `statusPhrase` 를 쓴다.** 그것이 찾는 종결 표식
+ * (`✅`·`종결`·`SUPERSEDED`)은 두 형식 **모두 앞 구역**에 있다 — 새 형식의 앞 구역은 제목이지만
+ * 그 제목 앞에 항목의 상태 이모지가 붙기 때문이다(세션명 규약). 실측(실보드 평면 항목 35건):
+ * 종결 표식이 앞 구역에만 있는 줄 14건, 뒤 구역에 있는 줄 **0건** — 이 함수를 뒤 구역으로 돌리면
+ * 종결 판정 14건을 통째로 잃는다(「좌표 없음」 경고가 그만큼 늘어난다).
+ * ⚠️ 그 대가로 남는 오독: 새 형식 **제목**에 게이트 낱말(`다음 게이트`)이 들어가면 살아 있는
+ * 게이트로 읽힌다. 방향이 경고 과다(침묵 아님)이고 종료코드에 반영되지 않는 경로라 별건으로 둔다.
  */
-export function claimStatus(line) {
+function statusRegion(line) {
   return isNewDialectHeader(line) ? trailingStatusPhrase(line) : statusPhrase(line);
+}
+
+/**
+ * `승격 대기` 관용구가 읽는 **넓은 상태 구역** — 새 형식은 그 문구가 상태 필드가 아니라 그 다음
+ * 필드에 오기도 한다(`머지 완료 · 승격 대기`). 관용구가 좁아(`승격`+`대기` 인접) 필드를 넘어
+ * 읽어도 낱말이 엉키지 않는다 — 머지 축이 같은 폭을 쓰면 안 되는 이유는 `trailingStatusPhrase`
+ * 주석에 있다.
+ */
+function wideStatusRegion(line) {
+  return isNewDialectHeader(line) ? trailingRegion(line) : statusPhrase(line);
 }
 
 /**
@@ -680,7 +715,7 @@ const DEPLOYED_RE =
  *   ③ 상태 문구가 배포에 침묵하면 → 본문까지 본다(과대보고 탐지력 보존).
  */
 export function claimsDeployed(line) {
-  const status = claimStatus(line);
+  const status = statusRegion(line);
   if (DEPLOYED_RE.test(status)) return true;
   if (claimsAwaitingMerge(status)) return false;
   if (MERGE_DONE.test(status) && WAIT_SIGNAL.test(status)) return false; // 승격 대기 명시
@@ -698,15 +733,10 @@ export function readClaims(line) {
   );
   // "승격 대기"/"승격(배포) 대기" 는 잔여 게이트 라벨 없이 상태 문구에 직접 실리기도 한다
   // (2026-08-08 실사고) — 그 경우도 배포 대기 자백으로 센다.
-  // 새 형식은 그 문구가 ` — ` 뒤에 실리고, 상태 필드가 아니라 그 다음 필드에 오기도 한다
-  // (`머지 완료 · 승격 대기`) — 그래서 새 형식에서만 필드 목록 전체를 본다. 관용구가 좁아
-  // (`승격`+`대기` 인접) 필드를 넘어 읽어도 낱말이 엉키지 않는다.
-  const pendingDeploy =
-    pendingDeployInGate ||
-    PROMOTION_WAIT.test(isNewDialectHeader(line) ? trailingRegion(line) : statusPhrase(line));
+  const pendingDeploy = pendingDeployInGate || PROMOTION_WAIT.test(wideStatusRegion(line));
   return {
     // 머지 대기 주장은 **상태 구역**에 적혔을 때만 센다(제목·본문의 같은 낱말은 서술이다).
-    awaitingMerge: claimsAwaitingMerge(claimStatus(line)),
+    awaitingMerge: claimsAwaitingMerge(statusRegion(line)),
     // "배포 확인"이 **잔여 게이트로** 적혔거나 "승격 대기"가 상태 문구에 있으면
     // 아직 prod 에 없다는 자백이다.
     awaitingDeploy: pendingDeploy,
