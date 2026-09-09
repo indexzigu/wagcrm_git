@@ -100,11 +100,12 @@ describe('syncPostCloseCancellations — 정산 락 캠페인 건너뛰기', () 
     const res = await syncPostCloseCancellations();
 
     expect(queryOrderDetailsMock).toHaveBeenCalledTimes(1);
-    expect(res).toMatchObject({ skippedLocked: 0 });
+    // 이 부류만 세는 카운터 — 「수렴하지 않는다」를 배포 후 실측하는 유일한 신호다.
+    expect(res).toMatchObject({ skippedLocked: 0, requeriedUncomputed: 1 });
   });
 
   it('includeLocked 면 잠긴 캠페인도 다시 조회한다', async () => {
-    // 0 으로 굳는 구멍은 위 `mayBeUncomputed` 계약이 닫는다. 이 옵션은 **그 위의 수동
+    // 0 으로 굳는 구멍은 위 「값이 아직 0 이면 조회한다」 계약이 닫는다. 이 옵션은 **그 위의 수동
     // 레버**다 — 값이 0 이 아닌데 틀린 경우에 다시 계산하려고 쓴다.
     // 호출 경로: `run-cron.sh 'naver-settlement-sync?includeLocked=1'` 또는 수동 curl.
     findManyMock.mockResolvedValue([campaign('SETTLEMENT_IN_PROGRESS')]);
@@ -117,9 +118,10 @@ describe('syncPostCloseCancellations — 정산 락 캠페인 건너뛰기', () 
   });
 
   it('한쪽 값만 0 이면 계산된 것으로 보고 건너뛴다', async () => {
-    // 🪤 판정은 **두 값이 모두 0** 일 때만 미계산이다(AND). 매핑이 어긋나 수량은 잡히고
-    //    금액이 0 으로 계산되는 경우가 실제로 있어, `||` 로 넓히면 그런 캠페인이 90일 내내
-    //    재조회된다. 이 케이스가 그 경계를 고정한다.
+    // 🪤 판정은 **두 값이 모두 0** 일 때만 미계산이다(AND). 수량은 잡히고 금액이 0 이 되는
+    //    조합은 **구조적으로 가능하다**(결제액·할인이 0 이면 단가가 매핑 가격으로 떨어지고,
+    //    매핑이 없으면 그것도 0 이다 — 프로덕션 실사례를 확인한 것은 아니다).
+    //    `||` 로 넓히면 그런 캠페인이 90일 내내 재조회되므로 이 케이스가 경계를 고정한다.
     findManyMock.mockResolvedValue([
       campaign('SETTLEMENT_IN_PROGRESS', {
         cachedPostCloseCancelQuantity: 2,

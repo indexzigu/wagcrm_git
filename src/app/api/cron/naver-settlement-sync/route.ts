@@ -24,8 +24,9 @@ async function handler(request: Request) {
     const settledDays = Math.min(Math.max(Number(url.searchParams.get("settledDays")) || 3, 1), 62);
     const unsettledDays = Math.min(Math.max(Number(url.searchParams.get("unsettledDays")) || 21, 1), 62);
 
-    // 정산이 시작된 캠페인은 기본적으로 건너뛴다(결과가 바뀔 수 없다). 그 동결에 구멍이
-    // 있어(naver-settlement-sync 의 🪤) 값이 0 으로 굳은 캠페인을 되살릴 길로 남겨 둔다.
+    // 정산이 시작된 캠페인은 기본적으로 건너뛴다(결과가 바뀔 수 없다). 0 으로 굳는 구멍은
+    // 그쪽 코드가 스스로 닫으므로(값이 아직 0 이면 건너뛰지 않는다) 이 옵션은 **그 위의
+    // 수동 레버**다 — 값이 0 이 아닌데 틀린 경우에 강제로 재계산한다.
     const includeLocked = url.searchParams.get("includeLocked") === "1";
 
     const sync = await runSettlementSync(settledDays, unsettledDays);

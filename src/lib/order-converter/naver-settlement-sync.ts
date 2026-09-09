@@ -199,7 +199,16 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  * **0 영구 고정**보다는 안전하다는 판단이다.
  * ⚠️ 그리고 **수렴하지 않는다**: 취소가 정말 0 인 캠페인은 값이 계속 0 이라 90일 창이
  * 끝날 때까지 매일 재조회된다. 그런 캠페인이 흔하면 이 변경의 절감이 대부분 사라진다 —
- * 배포 후 응답의 `skippedLocked` 로 실측할 것. 둘을 함께 닫는 근본 처방은 「마지막 계산
+ * 배포 후 응답의 `requeriedUncomputed`(락인데 값이 0 이라 다시 조회한 건수)로 실측할 것 —
+ * `campaigns - skippedLocked` 로는 미락 캠페인이 섞여 이 부류만 분리되지 않는다.
+ * ⚠️ `cron.log` 의 성공 줄은 상한이 있어 응답 끝이 잘릴 수 있다 — `SystemTaskLog.details`
+ * 나 수동 호출로 읽을 것.
+ *
+ * 🪤 **반대 방향의 한계도 하나 있다(이쪽이 돈에 가깝다).** 컷오프가 「락 시점」이 아니라
+ * 「직전 크론 실행 시점」이라, **마지막 실행과 수동 락 사이(최대 24시간)에 들어온 취소는
+ * 값이 이미 0 이 아니면 반영되지 않고 그대로 굳는다.** 위 「수렴하지 않는다」는 헛조회
+ * (과다 조회) 쪽으로 틀리지만 이쪽은 **취소 과소 계상 = 정산액 과대** 쪽으로 틀린다.
+ * 값싼 후속안은 락으로 전이하는 시점에 1회 재계산하는 것이다(별건). 둘을 함께 닫는 근본 처방은 「마지막 계산
  * 시각」 컬럼(`cachedPostCloseCancelSyncedAt` 류)이고, 스키마 변경이라 별건이다.
  *
  * `includeLocked` 는 그 위의 수동 재계산 레버다(값이 0 이 아닌데 틀린 경우).
@@ -210,7 +219,7 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
-): Promise<{ campaigns: number; updated: number; skippedLocked: number }> {
+): Promise<{ campaigns: number; updated: number; skippedLocked: number; requeriedUncomputed: number }> {
   // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회.
   // ⚠️ 이 창의 역할이 **둘로 갈렸다**(2026-09-09): 락이 걸리는 캠페인에는 정산 락이 1차
   //    통제이고 이 창은 「끝내 락되지 않는 건」의 백스톱이다. 반면 **취소가 정말 0 인 락
@@ -236,6 +245,8 @@ export async function syncPostCloseCancellations(
 
   let updated = 0;
   let skippedLocked = 0;
+  // 락인데 값이 아직 0 이라 다시 조회한 건수 — 위 「수렴하지 않는다」를 재는 유일한 신호.
+  let requeriedUncomputed = 0;
   const CHUNK_SIZE = 300;
 
   for (const camp of closedCampaigns) {
@@ -250,6 +261,7 @@ export async function syncPostCloseCancellations(
       skippedLocked++;
       continue;
     }
+    if (locked && mayBeUncomputed) requeriedUncomputed++;
 
     const rawIds = camp.cachedProductOrderIds;
     const ids = Array.isArray(rawIds) ? (rawIds as any[]).map(v => String(v)) : [];
@@ -320,5 +332,5 @@ export async function syncPostCloseCancellations(
   }
 
   // `campaigns` 는 **창 안의 전체**이고 실제 조회한 것은 `campaigns - skippedLocked` 다.
-  return { campaigns: closedCampaigns.length, updated, skippedLocked };
+  return { campaigns: closedCampaigns.length, updated, skippedLocked, requeriedUncomputed };
 }
