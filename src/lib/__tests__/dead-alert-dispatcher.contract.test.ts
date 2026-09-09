@@ -24,6 +24,10 @@ function tsFiles(dir: string): string[] {
   return out;
 }
 
+export function isTestFile(path: string): boolean {
+  return path.includes("__tests__") || /\.(?:test|spec)\.[jt]sx?$/.test(path);
+}
+
 describe("죽은 알림 발송기 부재 계약", () => {
   const files = tsFiles(join(ROOT, "src"));
 
@@ -36,9 +40,27 @@ describe("죽은 알림 발송기 부재 계약", () => {
     expect(existsSync(join(ROOT, "src", "services", "dispatcherService.ts"))).toBe(false);
   });
 
+  it("테스트 파일 제외 규칙이 폴더와 파일명 확장자 모두 인식한다", () => {
+    expect(isTestFile("src/lib/__tests__/sample.ts")).toBe(true);
+    expect(isTestFile("src/components/button.test.tsx")).toBe(true);
+    expect(isTestFile("src/services/order.spec.ts")).toBe(true);
+    expect(isTestFile("src/services/orderService.ts")).toBe(false);
+    expect(isTestFile("src/lib/order-converter.ts")).toBe(false);
+  });
+
+  it("파일명 규칙으로 끝나는 테스트 파일은 검사에서 걸러지고 일반 소스는 남는다", () => {
+    const mockPaths = [
+      "src/components/sample.test.ts",
+      "src/components/sample.spec.tsx",
+      "src/services/sampleService.ts",
+    ];
+    const nonTestFiles = mockPaths.filter((p) => !isTestFile(p));
+    expect(nonTestFiles).toEqual(["src/services/sampleService.ts"]);
+  });
+
   it("앱 소스 어디서도 발송기를 참조하지 않는다", () => {
     const offenders = files.filter((f) => {
-      if (f.includes("__tests__")) return false;
+      if (isTestFile(f)) return false;
       const src = readFileSync(f, "utf8");
       return /dispatcherService|lib\/dispatcher|sendDiscordMessage|sendEmailAlert/.test(src);
     });
