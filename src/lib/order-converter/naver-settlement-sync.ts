@@ -169,6 +169,20 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
   return { campaigns: closed.length, updated };
 }
 
+/** `syncPostCloseCancellations` 의 실행 요약 — 크론 응답과 `SystemTaskLog.details` 에 그대로 실린다. */
+export interface PostCloseCancelSyncResult {
+  /** 90일 창 안의 마감 캠페인 전체. */
+  campaigns: number;
+  /** 취소 **값이 실제로 바뀐** 건수(마커만 찍힌 회차는 세지 않는다). */
+  updated: number;
+  /** 확정돼 있어 조회를 건너뛴 건수. */
+  skippedLocked: number;
+  /** 이번 실행에서 확정된 건수(락 상태 첫 계산). */
+  finalizedLocked: number;
+  /** 응답이 모자라 확정을 미룬 건수 — 매일 0 이 아니면 그 캠페인은 수렴하지 못하고 있다. */
+  deferredIncomplete: number;
+}
+
 /**
  * 마감 캠페인 사후 취소 동기화
  * 정산 동기화 시점에 호출되어, 마감 당시의 원본 주문(cachedProductOrderIds) 상태를 조회하고
@@ -245,7 +259,7 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
-): Promise<{ campaigns: number; updated: number; skippedLocked: number; finalizedLocked: number; deferredIncomplete: number }> {
+): Promise<PostCloseCancelSyncResult> {
   // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회.
   // ⚠️ 이 창은 **「끝내 락되지 않는 건」의 백스톱**이다 — 락이 걸리는 캠페인은 확정 마커가
   //    1차 통제를 맡는다. 줄이면 락되지 않은 채 방치된 캠페인의 조정이 멈춘다.
@@ -299,12 +313,16 @@ export async function syncPostCloseCancellations(
     let cancelQty = 0;
     let cancelRev = 0;
     // 요청한 주문이 전부 돌아왔는가 — 확정(동결)의 전제다(위 doc 🔒).
-    let fetchedCount = 0;
+    // ⛔ 개수로 재지 말 것: `normalizeQueriedOrder` 가 형태가 깨진 항목을 버리므로, 남는
+    //    중복·잉여 행 하나가 **빠진 id 를 가려 「온전함」으로 읽힌다**(그 오판의 대가가 영구 동결이다).
+    const fetchedIds = new Set<string>();
 
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
       const chunk = ids.slice(i, i + CHUNK_SIZE);
       const orders = await queryOrderDetails(chunk);
-      fetchedCount += orders.length;
+      for (const o of orders) {
+        if (o?.productOrderId != null) fetchedIds.add(String(o.productOrderId));
+      }
 
       for (const order of orders) {
         const status = order.productOrderStatus;
@@ -359,8 +377,17 @@ export async function syncPostCloseCancellations(
     // ⚠️ 값은 그대로 쓴다 — 부분 응답이라도 **지금 알 수 있는 최선**이고, 안 쓰면 탈퇴 구매자
     //    주문이 섞인 캠페인은 영영 값을 못 갖는다(그 주문은 API 가 원래 돌려주지 않는다, P7).
     //    미루는 것은 **동결뿐**이라 다음 회차가 다시 계산한다.
-    const complete = fetchedCount >= ids.length;
+    // 🔒-b ⚠️ **단 이미 확정된 캠페인은 값도 쓰지 않는다** — 부분 응답을 쓰면 온전했던 값이
+    //    과소 계상 값으로 바뀌는데 마커가 남아 다음 회차부터 다시 건너뛴다(영구 동결의 재발).
+    //    `includeLocked` 강제 재계산이 정확히 그 경로다.
+    const complete = ids.every((id) => fetchedIds.has(id));
     if (locked && !complete) deferredIncomplete++;
+
+    // 🔒-b **이미 확정된 값은 부분 응답으로 덮지 않는다.** `includeLocked` 로 강제 재계산하다
+    //    응답이 모자라면, 그대로 쓰면 온전했던 값이 과소 계상 값으로 바뀌고 마커는 남아 있어
+    //    **다음 회차부터 다시 건너뛴다** — 위 🔒 가 막으려던 영구 동결이 이 경로로 되살아난다.
+    //    그래서 이 조합에서는 값도 마커도 손대지 않고 다음 회차에 맡긴다.
+    if (locked && finalized && !complete) continue;
 
     // 락 상태에서 온전히 계산했으면 확정으로 찍고, 락이 풀렸으면 지운다(다시 락될 때 확정
     // 계산을 한 번 더 받게 하려는 것이다 — 안 지우면 옛 값으로 굳는다).
