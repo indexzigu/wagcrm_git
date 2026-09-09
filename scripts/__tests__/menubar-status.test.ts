@@ -568,7 +568,7 @@ describe("status.sh 행위 계약", () => {
     expect(streakOf(r.home, "disk")).toBeNull();
   });
 
-  it("UNKNOWN_ESCALATABLE_KEYS 선언에 disk 가 없고 의도한 4개는 있다(소스 스캔)", () => {
+  it("UNKNOWN_ESCALATABLE_KEYS 선언에 disk 가 없고 의도한 키가 전부 있다(소스 스캔)", () => {
     // 위 런타임 테스트("disk 는 승격 대상이 아니다")는 이 하네스에서 $HOME 이 항상 실제
     // 임시 디렉터리라 df 가 늘 성공한다 — disk 의 level 이 unknown 이 될 일이 없어
     // streak-append 분기 자체에 도달하지 못한다. 그래서 disk 를 UNKNOWN_ESCALATABLE_KEYS
@@ -581,9 +581,15 @@ describe("status.sh 행위 계약", () => {
     const keys = m![1].split(/\s+/).filter(Boolean);
     // 부정: disk 는 오너 결정으로 제외돼야 한다.
     expect(keys).not.toContain("disk");
-    // 긍정: 상수 전체를 지워도 위 not.toContain 은 공허하게 통과하므로, 의도한 4개가
+    // 긍정: 상수 전체를 지워도 위 not.toContain 은 공허하게 통과하므로, 의도한 키가
     // 실제로 있는지도 함께 본다.
-    expect(keys).toEqual(expect.arrayContaining(["db", "backupDaily", "backupWeekly", "crons"]));
+    // ⛔ 개수를 문구에 박지 말 것 — 키는 늘어난다(이 줄이 실제로 4개→5개가 됐다).
+    // 🪤 새 키를 여기 등재하지 않으면 **그 키만 조용히 빠질 수 있다** — 승격은
+    //    `emit()` 의 공용 로직이라 등재를 빼도 다른 테스트는 전부 통과하고, 그 키의
+    //    「확인 불가」가 영영 error 로 올라가지 않는다(botBackup 리뷰 지적, 2026-09-09).
+    expect(keys).toEqual(
+      expect.arrayContaining(["db", "backupDaily", "backupWeekly", "botBackup", "crons"]),
+    );
   });
 
   it("--fast 는 상태 파일에 손대지 않는다", () => {
