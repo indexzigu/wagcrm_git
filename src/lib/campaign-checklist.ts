@@ -443,15 +443,13 @@ export async function ensureCampaignChecklistForCurrentStatus(
 }
 
 /**
- * 체크리스트 항목 하나가 체크됨으로써 그 항목의 캠페인이 다음 상태로 전이할 수
- * 있는지 재평가한다. `setChecklistItemChecked` 본체와 아래 형제 동기화
- * (`syncGroupSiblingChecklistItems`) 가 공유한다 — 그룹 형제 캠페인도 "이 상태의
- * 필수 항목이 전부 체크됐는가"를 똑같이 다시 물어야 하기 때문이다.
+ * 체크리스트는 리마인드(환기) 용도로 사용되며, 실질적인 상태 전이와 연계되지 않는다 (오너 결정 2026-09-09).
+ * 따라서 필수 항목이 모두 체크되더라도 캠페인 status를 변경하지 않고 현재 상태를 유지한다.
  */
 async function advanceCampaignStatusIfChecklistComplete(
   tx: ChecklistDb,
   checklistItem: CampaignChecklistItemRow,
-  templatesEnsuredRef?: TemplatesEnsuredRef,
+  _templatesEnsuredRef?: TemplatesEnsuredRef,
 ): Promise<{ campaignStatus: CampaignStatus; transitioned: boolean }> {
   const campaign = await tx.salesCampaign.findUnique({
     where: { id: checklistItem.campaignId },
@@ -461,29 +459,6 @@ async function advanceCampaignStatusIfChecklistComplete(
     throw new Error("CAMPAIGN_NOT_FOUND");
   }
   const currentStatus = campaign.status as CampaignStatus;
-  if (checklistItem.status !== currentStatus) {
-    return { campaignStatus: currentStatus, transitioned: false };
-  }
-
-  const items = await tx.campaignChecklistItem.findMany({
-    where: { campaignId: checklistItem.campaignId, status: currentStatus },
-    orderBy: { sortOrder: "asc" },
-  });
-  const nextItems = items.map((candidate) =>
-    candidate.id === checklistItem.id ? checklistItem : candidate,
-  );
-  const summary = summarizeChecklist(nextItems, currentStatus);
-  const nextStatus = getNextCampaignStatus(currentStatus);
-
-  if (summary.isComplete && nextStatus) {
-    const updatedCampaign = await tx.salesCampaign.update({
-      where: { id: checklistItem.campaignId },
-      data: { status: nextStatus },
-      select: { id: true, status: true },
-    });
-    await ensureCampaignChecklistForStatus(tx, checklistItem.campaignId, nextStatus, templatesEnsuredRef);
-    return { campaignStatus: updatedCampaign.status as CampaignStatus, transitioned: true };
-  }
   return { campaignStatus: currentStatus, transitioned: false };
 }
 
