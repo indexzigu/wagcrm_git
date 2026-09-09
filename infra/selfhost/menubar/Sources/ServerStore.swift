@@ -73,7 +73,7 @@ final class ServerStore: ObservableObject {
     /// UNKNOWN_ESCALATABLE_KEYS 에 넣지 말 것 — 그러면 gh 조회 실패(회색)가 error 로 승격돼
     /// **네트워크 끊김마다 폰이 울린다.** 지금은 승격 목록에 없어서 폴백 중·gh 실패는
     /// 알림 대상이 아니다(화면 색으로만).
-    private static let watched = ["prodLocal", "prodExternal", "db", "backupDaily", "backupWeekly", "crons", "preflightRunner"]
+    private static let watched = ["prodLocal", "prodExternal", "db", "backupDaily", "backupWeekly", "botBackup", "crons", "preflightRunner"]
 
     var previewUp: Bool { items["preview"]?.state == "up" }
     var devUp: Bool { items["devServer"]?.state == "up" }

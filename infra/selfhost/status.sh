@@ -66,7 +66,7 @@ UNKNOWN_ESCALATE_MIN_OBS=12
 STREAK_FIRSTSEEN_MAX_AGE_H=8760
 # ⛔ disk 는 넣지 말 것 — 오너 지시(디스크 잔여는 알리지 않고 화면 표시만 유지한다).
 #    제외는 누락이 아니라 결정이다.
-UNKNOWN_ESCALATABLE_KEYS="db backupDaily backupWeekly crons"
+UNKNOWN_ESCALATABLE_KEYS="db backupDaily backupWeekly botBackup crons"
 STREAK_FILE="$LOGS_DIR/status-unknown-streak.tsv"
 STREAK_PREV="$(cat "$STREAK_FILE" 2>/dev/null || true)"
 STREAK_NEXT=""
@@ -225,6 +225,17 @@ if [ "$MODE" = "full" ]; then
   }
   backup_item backupDaily  "매일 백업" "$LOGS_DIR/backup.out.log"        backup        26 50
   backup_item backupWeekly "주간 백업" "$LOGS_DIR/backup-weekly.out.log" backup-weekly 192 360
+  # 슬랙 봇(hermes-agent) 코드의 오프머신 백업 — 위 둘과 **대상이 다르다**. 저 둘은 이
+  # CRM 의 DB 백업이고, 이 행은 봇을 돌리는 코드가 이 기계 밖에도 있는지를 본다.
+  #
+  # 왜 여기 있나(다른 프로젝트인데): 그 백업은 매일 자동으로 갱신되는데(launchd
+  # `ai.hermes.backup-push`) **멈춰도 화면에 아무 일이 안 일어났다.** 백업이 낡으면 그
+  # 저장소에 걸어 둔 취약점 감시까지 함께 낡는데 둘 다 조용해서, 「자동으로 돌고 있다」는
+  # 믿음만 남는다. 이 기계의 상태를 보여주는 판이 여기 하나뿐이라 여기 붙인다.
+  # ⚠️ 로그 형식(`[bot-backup] 완료:` + 타임스탬프)은 `~/.hermes/bin/backup-push.sh` 와
+  #    **짝**이다 — 한쪽만 고치면 이 행이 조용히 「성공 기록을 찾지 못했습니다」로 굳는다.
+  # 문턱은 매일 백업과 같다(그 잡도 하루 주기라 26시간이면 한 번은 놓친 것이다).
+  backup_item botBackup "봇 코드 백업" "$HOME/.hermes/logs/backup-push.log" bot-backup 26 50
 
   # ── 자동 작업(크론) 지연·실패 ────────────────────────────────────────────
   # 설계 정본: docs/private/specs/2026-08-19-cron-staleness-alert-design.md
