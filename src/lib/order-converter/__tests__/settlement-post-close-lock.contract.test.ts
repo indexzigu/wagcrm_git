@@ -104,6 +104,41 @@ describe('syncPostCloseCancellations — 정산 락 캠페인 건너뛰기', () 
     expect(res).toMatchObject({ skippedLocked: 0, requeriedUncomputed: 1 });
   });
 
+  it('잠기지 않은 캠페인은 값이 0 이어도 재조회 건수로 세지 않는다', async () => {
+    // 🪤 이 카운터의 모집단은 **락 ∧ 값 0** 이다. `locked &&` 를 지워도 다른 케이스는
+    //    전부 초록이므로(비락 픽스처가 모두 비0), 이 케이스가 그 조건을 고정한다.
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_WAIT', {
+        cachedPostCloseCancelQuantity: 0,
+        cachedPostCloseCancelRevenue: 0,
+      }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).toHaveBeenCalledTimes(1);
+    expect(res).toMatchObject({ requeriedUncomputed: 0, skippedLocked: 0 });
+  });
+
+  it('주문 목록이 비면 재조회 건수로 세지 않는다', async () => {
+    // 🪤 이 카운터의 쓸모는 「재조회 비용」을 재는 것 하나뿐이라, 실제로 조회하지 않는
+    //    캠페인을 세면 지표가 무의미해진다. 빈 주문 목록 검사보다 뒤에 있어야 한다.
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_IN_PROGRESS', {
+        cachedPostCloseCancelQuantity: 0,
+        cachedPostCloseCancelRevenue: 0,
+        cachedProductOrderIds: [],
+      }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ requeriedUncomputed: 0, skippedLocked: 0 });
+  });
+
   it('includeLocked 면 잠긴 캠페인도 다시 조회한다', async () => {
     // 0 으로 굳는 구멍은 위 「값이 아직 0 이면 조회한다」 계약이 닫는다. 이 옵션은 **그 위의 수동
     // 레버**다 — 값이 0 이 아닌데 틀린 경우에 다시 계산하려고 쓴다.

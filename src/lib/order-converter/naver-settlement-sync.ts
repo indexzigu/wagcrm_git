@@ -205,9 +205,13 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  * 나 수동 호출로 읽을 것.
  *
  * 🪤 **반대 방향의 한계도 하나 있다(이쪽이 돈에 가깝다).** 컷오프가 「락 시점」이 아니라
- * 「직전 크론 실행 시점」이라, **마지막 실행과 수동 락 사이(최대 24시간)에 들어온 취소는
- * 값이 이미 0 이 아니면 반영되지 않고 그대로 굳는다.** 위 「수렴하지 않는다」는 헛조회
- * (과다 조회) 쪽으로 틀리지만 이쪽은 **취소 과소 계상 = 정산액 과대** 쪽으로 틀린다.
+ * 「직전 크론 실행 시점」이라, **마지막 실행과 수동 락 사이에 들어온 취소는 값이 이미
+ * 0 이 아니면 반영되지 않는다.** 위 「수렴하지 않는다」는 헛조회(과다 조회) 쪽으로 틀리지만
+ * 이쪽은 **취소 과소 계상 = 정산액 과대** 쪽으로 틀린다.
+ * ⚠️ 그 창은 크론이 매일 성공할 때 24시간이고 **실패 회차가 끼면 그만큼 늘어난다.**
+ * 영구는 아니다 — 아래 `includeLocked` 로 되돌릴 수 있다.
+ * ℹ️ 이 한계는 **의도(락=확정) 대비**의 어긋남이다. 종전 동작(락이어도 매일 다시 씀) 대비로는
+ * 락 이후의 취소도 함께 빠지는데, 그쪽은 오너 확정(2026-07-15)대로다.
  * 값싼 후속안은 락으로 전이하는 시점에 1회 재계산하는 것이다(별건). 둘을 함께 닫는 근본 처방은 「마지막 계산
  * 시각」 컬럼(`cachedPostCloseCancelSyncedAt` 류)이고, 스키마 변경이라 별건이다.
  *
@@ -261,11 +265,13 @@ export async function syncPostCloseCancellations(
       skippedLocked++;
       continue;
     }
-    if (locked && mayBeUncomputed) requeriedUncomputed++;
-
     const rawIds = camp.cachedProductOrderIds;
     const ids = Array.isArray(rawIds) ? (rawIds as any[]).map(v => String(v)) : [];
     if (ids.length === 0) continue;
+
+    // ⚠️ **빈 주문 목록 검사 뒤에** 센다 — 앞에 두면 실제로 조회하지 않는 캠페인까지
+    //    세어 이 지표로 재조회 비용을 잴 수 없게 된다(그것이 이 카운터의 유일한 쓸모다).
+    if (locked && mayBeUncomputed) requeriedUncomputed++;
 
     let cancelQty = 0;
     let cancelRev = 0;
