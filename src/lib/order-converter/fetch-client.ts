@@ -58,8 +58,11 @@ function getProxyAgent(proxyUrl: string): ProxyAgent {
 function errorChainText(err: unknown): string {
   const parts: string[] = [];
   const seen = new Set<unknown>();
+  // 폭 상한 — `AggregateError.errors` 는 개수 제한이 없어(happy-eyeballs 등) 이 문자열이
+  // 곧 `console.warn` 한 줄이 되면 로그가 통째로 묻힌다. 판별에는 앞쪽이면 충분하다.
+  const MAX_PARTS = 8;
   const walk = (cur: unknown, depth: number) => {
-    if (!cur || depth > 4 || seen.has(cur)) return;
+    if (!cur || depth > 4 || seen.has(cur) || parts.length >= MAX_PARTS) return;
     seen.add(cur);
     parts.push(String((cur as { message?: unknown }).message ?? cur));
     walk((cur as { cause?: unknown }).cause, depth + 1);
@@ -78,9 +81,10 @@ function errorChainText(err: unknown): string {
  * 내는 대신, 다시 보내면 안 되는 것을 빼고 나머지를 재시도한다. 그래서 DNS 실패·
  * ECONNREFUSED·TLS 오류도 1회 더 시도한다. 허용 목록으로 짜지 않은 이유는 undici 의
  * 소켓 오류 모양이 여럿이라(`other side closed` · `socket hang up` · `UND_ERR_SOCKET` …)
- * **하나라도 빠뜨리면 이 장치가 조용히 무력해지기** 때문이다. 대신 그 대가로 프록시에
- * 닿지도 못한 실패(DNS·연결 거부)에 요청을 한 번 더 쓰는데, 그건 프록시 사업자의
- * 요청 수를 늘리지 않는다(CONNECT 가 나가지 않는다).
+ * **하나라도 빠뜨리면 이 장치가 조용히 무력해지기** 때문이다.
+ * 그 대가는 실패 종류마다 다르다: 프록시에 닿지도 못한 실패(DNS·연결 거부)는 CONNECT 가
+ * 나가지 않아 프록시 요청 수를 늘리지 않지만, **터널이 뚫린 뒤의 실패(오리진 TLS 등)는
+ * CONNECT 를 이미 썼으므로 재시도가 한 건을 더 태운다.** 대가를 0 으로 적지 말 것.
  *
  * ⛔ **GET·HEAD 만 재시도한다.** 연결이 끊겼을 때 요청이 서버에 닿았는지 알 수 없는데,
  * 이 경로에는 네이버 주문확인·발주요청처럼 **되돌릴 수 없는 부수효과** 호출이 함께 흐른다

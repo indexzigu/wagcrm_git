@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +29,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * 재시도해야 하는 것(죽은 소켓)과 재시도하면 안 되는 것(프록시의 확정 거절)이
  * 테스트상 같은 얼굴이면 계약이 아무것도 고정하지 못한다.
  */
-type FailureKind = 'deadSocket' | 'proxyRejected';
+type FailureKind = 'deadSocket' | 'proxyRejected' | 'proxyRejectedInAggregate';
 let failureQueue: FailureKind[] = [];
 /** 실패가 아닐 때 돌려줄 상태코드(앞에서부터 소비, 비면 200). */
 let statusQueue: number[] = [];
@@ -62,10 +62,27 @@ function proxyRejected(): Error {
   return err;
 }
 
+/**
+ * 같은 407 이 `AggregateError` 안에 실려 오는 경우. `AggregateError` 는 원인을 `cause` 가
+ * 아니라 `errors` 배열에 담으므로, 사슬만 훑는 판별은 이것을 **놓치고 재시도를 허용하는
+ * 쪽으로** 틀린다(happy-eyeballs 처럼 여러 주소를 시도하면 이 모양이 나온다).
+ */
+function proxyRejectedInAggregate(): Error {
+  const aggregate = new AggregateError(
+    [new Error('ECONNREFUSED'), new Error('Proxy response (407) !== 200 when HTTP Tunneling')],
+    'all attempts failed',
+  );
+  const err = new TypeError('fetch failed');
+  (err as Error & { cause?: unknown }).cause = aggregate;
+  return err;
+}
+
 const undiciFetchMock = vi.fn(async (_url: unknown, options?: { dispatcher?: unknown }) => {
   dispatcherLog.push(options?.dispatcher);
   const failure = failureQueue.shift();
-  if (failure) throw failure === 'deadSocket' ? deadSocket() : proxyRejected();
+  if (failure === 'deadSocket') throw deadSocket();
+  if (failure === 'proxyRejected') throw proxyRejected();
+  if (failure === 'proxyRejectedInAggregate') throw proxyRejectedInAggregate();
   const status = statusQueue.shift() ?? 200;
   return { ok: status >= 200 && status < 300, status };
 });
@@ -265,7 +282,31 @@ describe('proxyFetch — 실패 처리', () => {
     const res = await proxyFetch('https://example.test/a');
 
     expect(res).toMatchObject({ status: 200 });
-    expect(dispatcherLog).toHaveLength(2);
+    const [primary, fallback] = FakeProxyAgent.instances;
+    expect(dispatcherLog).toEqual([primary, fallback]);
+  });
+
+  it('50x 응답도 다음 프록시로 넘어간다', async () => {
+    // 폴백 조건은 세 갈래(403 · 429 · >=500)다 — 셋 다 계약으로 고정한다.
+    process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
+    const { proxyFetch } = await import('./fetch-client');
+
+    statusQueue = [503];
+    const res = await proxyFetch('https://example.test/a');
+
+    expect(res).toMatchObject({ status: 200 });
+    const [primary, fallback] = FakeProxyAgent.instances;
+    expect(dispatcherLog).toEqual([primary, fallback]);
+  });
+
+  it('AggregateError 안의 CONNECT 거절도 재시도하지 않는다', async () => {
+    process.env.PROXY_URLS = PROXY;
+    const { proxyFetch } = await import('./fetch-client');
+
+    failureQueue = ['proxyRejectedInAggregate'];
+    await expect(proxyFetch('https://example.test/a')).rejects.toThrow('fetch failed');
+
+    expect(dispatcherLog).toHaveLength(1);
   });
 
   it('마지막 프록시의 403 은 폴백 없이 그대로 반환된다', async () => {
@@ -288,10 +329,18 @@ describe('proxyFetch — 실패 처리', () => {
     //    그래서 실물과 대조한다.
     const require_ = createRequire(import.meta.url);
     const undiciDir = dirname(require_.resolve('undici/package.json'));
+    // 🪤 이 경로는 **메인 레포의 공유 `node_modules`** 를 가리킨다(워크트리는 그것을
+    //    공유한다). prune·재설치 중이면 파일이 없을 수 있는데, 그때 생 ENOENT 만 뜨면
+    //    "판별이 깨졌다"로 오독된다 — 무엇을 못 찾았는지 말하고 죽는다.
+    const proxyAgentSrc = join(undiciDir, 'lib', 'dispatcher', 'proxy-agent.js');
+    expect(
+      existsSync(proxyAgentSrc),
+      `undici 설치본을 찾지 못했다: ${proxyAgentSrc} (판별 문구를 대조할 수 없다)`,
+    ).toBe(true);
     // 🪤 경로를 **세그먼트로 나눠** 넘긴다 — 한 문자열로 적으면 `dead-alert-dispatcher`
     //    계약이 앱 소스의 죽은 알림 발송기 참조로 오인해 실패한다(실측). 여기서 가리키는
     //    것은 undici 의 디렉터리이지 그 모듈이 아니다. ⛔ 한 문자열로 "정리"하지 말 것.
-    const src = readFileSync(join(undiciDir, 'lib', 'dispatcher', 'proxy-agent.js'), 'utf8');
+    const src = readFileSync(proxyAgentSrc, 'utf8');
 
     expect(src).toContain('Proxy response (${statusCode}) !== 200 when HTTP Tunneling');
     // 픽스처가 그 템플릿을 실제로 렌더링한 모양인지도 함께 본다.
