@@ -694,6 +694,38 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
   });
 
+  it("⚠️ 위치 규칙은 옛 형식에 적용하지 않는다 — 회차를 나란히 적는 관행이 있다", () => {
+    // 옛 형식 상태 문구는 짧고 `1차 완료 / 2차 대기` 처럼 회차를 함께 적어 완료가 앞서는 것이
+    // 예사다. 거기에 규칙을 대면 낡은 대기 마커를 놓친다(리뷰 실측 2건).
+    expect(verdictOf(`- **⏳ 1차 머지 완료 / 2차 오너 머지 대기 — 제목 ${PR}**: 본문`, shipped)).toBe(
+      VERDICT.STALE_MERGE_MARKER,
+    );
+    expect(
+      verdictOf(`- **⏳ 머지·prod 반영 완료 / 후속 오너 리뷰 대기 — 제목 ${PR}**: 본문`, shipped),
+    ).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  it("⚠️ 완료 선언이 `머지` 없이 적혀도 앞선 완료로 센다", () => {
+    // `MERGE_DONE` 은 `머지` 를 요구해서, 배포 어휘로만 적은 완료를 놓치고 뒤의 서술만 읽어
+    // 끝난 항목을 낡은 마커로 뒤집었다(리뷰 실측 2건).
+    expect(
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — prod 반영 완료. 종전 「오너 리뷰 대기」 표기를 정정함 · ${PR}`, shipped),
+    ).toBe(VERDICT.OK);
+    expect(
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — 배포 완료. 보드에 오너 머지 대기 로 남아 있던 줄 정리 · ${PR}`, shipped),
+    ).toBe(VERDICT.OK);
+  });
+
+  it("⚠️ 과거형 `승격 대기였다` 는 미배포 자백이 아니다", () => {
+    // 상태 필드에 경과가 이어 붙는 형태. 위치 규칙은 이 축에 못 쓴다 — 옛 형식은
+    // `머지 완료 · 승격(배포) 대기` 가 정상 표기라 완료가 앞서는 것이 기본이다.
+    const line = `- 🚀 #5 [슬러그] 제목 — 머지·prod 반영 완료. 본문: 예전엔 승격 대기였다 · ${PR}`;
+    expect(readClaims(line).awaitingDeploy).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+    // 음성 대조군 — 현재형은 그대로 자백이다(옛 형식의 정상 표기가 죽지 않았는지).
+    expect(readClaims("- **🚀 머지 완료 · 승격(배포) 대기 — X**").awaitingDeploy).toBe(true);
+  });
+
   it("⚠️ 옛 형식은 본문도 대기 주장으로 읽지 않는다(2026-08-05 거짓 경보 방지)", () => {
     const line = `- **🔵 조사 완료 — X ${PR}**: 본문 서술 … 세션이 머지 대기로 남아 있었다는 설명`;
     expect(readClaims(line).awaitingMerge).toBe(false);

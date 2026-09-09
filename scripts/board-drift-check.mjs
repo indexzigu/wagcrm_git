@@ -490,7 +490,9 @@ const FIELD_SEP = /\s·\s/;
  * `— CI 통과. 오너 머지 대기` 의 대기 주장이 잘려 **고치려던 침묵이 그대로 돌아오고**,
  * `— 머지 완료. → 승격 대기 …` 에서는 `승격 대기` 가 잘려 `claimsDeployed` 의 ② 보호가 풀리며
  * 본문의 완료 서술이 이겨 **과대보고**가 났다(침묵과 거짓 경보를 동시에 만들었다). 경계는 필드
- * 하나로 족하고, **필드 안에 본문이 섞이는 경우는 `claimsAwaitingMerge` 의 위치 규칙이 막는다.**
+ * 하나로 족하고, 필드 안에 경과 서술이 섞이는 경우는 **머지 축**을 `claimsAwaitingMerge` 의 위치
+ * 규칙이, **배포 축**을 `PROMOTION_WAIT` 의 어미 판별이 각각 막는다(축마다 장치가 다르다 —
+ * 위치 규칙을 배포 축에 그대로 쓰면 옛 형식의 정상 표기가 통째로 침묵한다).
  */
 function trailingRegion(line) {
   const headerEnd = headerEndOf(line);
@@ -511,8 +513,10 @@ function trailingRegion(line) {
  * `… · 종결 · 본문: 예전엔 승격 대기였다` 가 미배포 자백으로 읽혔다(종료코드를 흔든다).
  *
  * ⚠️ **잔여 사각:** 그래서 `승격 대기` 가 **둘째 필드 이후에만** 적힌 줄은 읽지 못한다
- * (`— 머지 완료 · 종결 · 승격 대기`). 방향은 침묵이고, 보드 규약대로 게이트에 라벨을 붙여 적으면
- * (`다음 게이트 = 승격`) 아래 `readClaims` 의 게이트 경로가 잡는다.
+ * (`— 머지 완료 · 종결 · 승격 대기`). 방향은 침묵이다.
+ * 🪤 **우회 경로는 라벨만으로는 안 열린다(리뷰 실측 2026-09-10).** 아래 `readClaims` 의 게이트
+ * 경로가 찾는 것은 라벨 안의 **`배포 확인`** 이라, `다음 게이트 = 승격 대기` 는 그대로 놓친다 —
+ * `다음 게이트 = 승격 배포 확인` 이라고 적어야 걸린다. 라벨 어휘를 넓히는 것은 별건이다.
  */
 export function trailingStatusPhrase(line) {
   const region = trailingRegion(line);
@@ -663,8 +667,17 @@ const OWNER_REVIEW_WAIT = /오너\s*(?:리뷰|검토)\s*대기/;
  * 관용구다(같은 실사고). 기존 pendingDeploy 는 `잔여`/`다음 게이트` 라벨이 붙은
  * 세그먼트 안에서만 "배포 확인"을 찾아, 상태 문구 자체에 실린 이 표현을 놓쳤다.
  * "대기"가 뒤따를 때만 매치해 "승격 완료" 류를 과대 매치하지 않는다.
+ *
+ * 🪤 **과거형은 주장이 아니라 서술이다(리뷰 실측 2026-09-10).** 새 형식의 상태 필드에는
+ * 경과가 이어 붙기도 하는데(`머지·prod 반영 완료. 본문: 예전엔 승격 대기였다`), 그 `대기였다`
+ * 를 자백으로 읽어 **배포까지 끝난 항목이 드리프트로 뒤집혔다**. 아래 `claimsAwaitingMerge`
+ * 의 위치 규칙(완료가 앞서면 뒤는 서술)을 이 축에 그대로 쓸 수는 없다 — 옛 형식은
+ * `머지 완료 · 승격(배포) 대기` 처럼 **완료 뒤에 대기를 적는 것이 정상 표기**라(2026-08-08
+ * 실사고의 그 문구) 그 규칙을 대면 정상 항목이 통째로 침묵한다. 그래서 어미로 가른다.
+ * ⚠️ 남는 것: 현재형 서술(`… 완료. 승격 대기 문구가 남아 있었다`)이 상태 **필드 안**에
+ * 들어오면 여전히 자백으로 읽힌다. 그 자리는 규약상 상태 필드라 서술을 적지 않는 것이 전제다.
  */
-const PROMOTION_WAIT = /승격\s*(?:\([^)]*\)\s*)?대기/;
+const PROMOTION_WAIT = /승격\s*(?:\([^)]*\)\s*)?대기(?!였|이었|했)/;
 
 /**
  * 머지가 **이미 끝났다**는 서술. 두 갈래를 다 덮어야 한다:
@@ -685,28 +698,45 @@ const MERGE_DONE =
   /머지\s*(?:완료|됨|끝)|머지\s*[·・]|머지\s*(?:→|->|~>|후|뒤)\s*[^—]*?(?:승격|배포|prod)/;
 
 /** 고전 어순의 대기 관용구 — 아래 위치 규칙의 한쪽 축이다. */
-const CLASSIC_WAIT = /머지\s*대기/;
+const CLASSIC_WAIT = /머지\s*대기(?!였|이었|했)/;
 
-function firstIndexOf(text, patterns) {
+function earliestMatchIndex(text, patterns) {
   const hits = patterns.map((re) => text.search(re)).filter((i) => i >= 0);
   return hits.length ? Math.min(...hits) : -1;
 }
 
-/**
- * 🪤 **주장은 구역의 앞쪽에 있다 — 뒤에 오는 것은 그 주장에 대한 서술이다(리뷰 실측 2026-09-10).**
- * 종전 판정은 `머지 대기`·`오너 리뷰 대기` 를 만나면 곧바로 참을 냈는데, 새 형식은 상태 필드 안에
- * 경과 서술이 이어지는 일이 있어(`머지·prod 반영 완료. 본문: … 오너 머지 대기 로 남아 있었다는
- * 설명`) **끝난 항목이 낡은 마커로 뒤집혔다**. 그래서 완료 선언과 대기 관용구가 **둘 다** 있으면
- * 먼저 나온 쪽을 항목의 주장으로 본다. 구역을 문장 부호로 자르는 대안은 침묵을 만들어 기각됐다
- * (위 `trailingRegion` 주석).
- */
 export function claimsAwaitingMerge(status) {
-  const done = status.search(MERGE_DONE);
-  const waitIdiom = firstIndexOf(status, [CLASSIC_WAIT, OWNER_REVIEW_WAIT]);
-  if (waitIdiom >= 0) return !(done >= 0 && done < waitIdiom);
+  if (CLASSIC_WAIT.test(status)) return true; // 고전 어순 — 그대로 유지(회귀 방지)
+  if (OWNER_REVIEW_WAIT.test(status)) return true; // "머지" 글자 없이 대기를 주장하는 관용구
   if (!/머지/.test(status)) return false;
-  if (done >= 0) return false; // `머지 완료 → 승격 대기` 는 대기 주장이 아니다
+  if (MERGE_DONE.test(status)) return false; // `머지 완료 → 승격 대기` 는 대기 주장이 아니다
   return WAIT_SIGNAL.test(status);
+}
+
+/**
+ * 줄 하나의 머지 대기 주장 — **새 형식에만** 위치 규칙을 얹는다.
+ *
+ * 🪤 **위치 규칙을 옛 형식에 대면 정상 항목이 침묵한다(리뷰 실측 2026-09-10).** 옛 형식의 상태
+ * 문구는 짧고 회차를 나란히 적는 관행이 있어(`⏳ 1차 머지 완료 / 2차 오너 머지 대기`) 완료가
+ * 앞서는 것이 예사다 — 거기에 규칙을 대면 낡은 대기 마커를 놓친다(실측 2건). 서술이 상태에
+ * 이어 붙는 것은 **새 형식 필드**의 성질이므로 규칙도 거기서만 쓴다.
+ *
+ * 🪤 **완료 어휘는 `머지` 만이 아니다(같은 실측).** `MERGE_DONE` 은 `머지` 를 요구해서
+ * `prod 반영 완료. 종전 「오너 리뷰 대기」 표기를 정정함` 같은 줄의 완료를 못 보고 뒤의 서술만
+ * 읽어 **끝난 항목을 낡은 마커로 뒤집었다**. 그래서 완료 위치는 배포 완료 서술까지 함께 본다.
+ *
+ * ⚠️ **잔여 사각 — 완료 선언의 주어가 이 항목이 아닐 때.** 스택 PR 에서 베이스의 완료를 먼저
+ * 적으면(`스택 베이스 머지 완료 → 오너 머지 대기`) 이 규칙이 완료로 읽어 대기 주장을 놓친다.
+ * 주어를 가리는 것은 낱말 목록으로 하는 일이라 또 다른 오탐을 부르므로 하지 않았다 — 방향은
+ * 침묵이고, 베이스 경과는 본문에 적고 상태 필드에는 자기 상태만 적으면 풀린다.
+ */
+function claimsAwaitingMergeIn(line) {
+  const status = statusRegion(line);
+  if (!isNewDialectHeader(line)) return claimsAwaitingMerge(status);
+  const wait = earliestMatchIndex(status, [CLASSIC_WAIT, OWNER_REVIEW_WAIT]);
+  const done = earliestMatchIndex(status, [MERGE_DONE, DEPLOYED_RE]);
+  if (wait >= 0 && done >= 0 && done < wait) return false;
+  return claimsAwaitingMerge(status);
 }
 
 const DEPLOYED_RE =
@@ -732,7 +762,7 @@ const DEPLOYED_RE =
 export function claimsDeployed(line) {
   const status = statusRegion(line);
   if (DEPLOYED_RE.test(status)) return true;
-  if (claimsAwaitingMerge(status)) return false;
+  if (claimsAwaitingMergeIn(line)) return false;
   if (MERGE_DONE.test(status) && WAIT_SIGNAL.test(status)) return false; // 승격 대기 명시
   return DEPLOYED_RE.test(line);
 }
@@ -751,7 +781,7 @@ export function readClaims(line) {
   const pendingDeploy = pendingDeployInGate || PROMOTION_WAIT.test(statusRegion(line));
   return {
     // 머지 대기 주장은 **상태 구역**에 적혔을 때만 센다(제목·본문의 같은 낱말은 서술이다).
-    awaitingMerge: claimsAwaitingMerge(statusRegion(line)),
+    awaitingMerge: claimsAwaitingMergeIn(line),
     // "배포 확인"이 **잔여 게이트로** 적혔거나 "승격 대기"가 상태 문구에 있으면
     // 아직 prod 에 없다는 자백이다.
     awaitingDeploy: pendingDeploy,
