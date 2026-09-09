@@ -26,8 +26,12 @@ const SSOT = "src/lib/mail-config.ts";
  * 스캔하면 자기 주석에 걸려 영구히 빨간불이 된다(레포 선례 다수).
  */
 /**
- * 파일 내용은 항목마다 되풀이해 읽힌다 — 한 번만 읽고 나눠 쓴다(#495 선례: 전수 스캔 계약이
- * 각자 트리를 걸고 각자 읽던 것을 1회로 합쳐 합계 2270ms → 674ms).
+ * 파일 내용은 항목마다 되풀이해 읽힌다 — 한 번만 읽고 나눠 쓴다. 레포 선례는
+ * `src/lib/__tests__/resident-number-exposure.contract.test.ts` 다(전수 스캔 계약 셋이 각자
+ * 트리를 걷고 각자 읽던 것을 1회로 합쳤다).
+ * ⚠️ 캐시에 **무효화가 없다** — 실행 중 파일이 새로 생기거나 바뀌면 낡은 내용을 준다. 지금은
+ * 두 항목 다 디스크에 쓰지 않고 프로브도 인메모리라 안전하다. 디스크를 건드리는 프로브를
+ * 새로 넣는다면 그 항목은 캐시를 우회해야 한다.
  */
 const sourceCache = new Map<string, string>();
 function read(relativePath: string): string {
@@ -76,8 +80,10 @@ function hasMailHostLiteral(source: string): boolean {
  */
 const walkCache = new Map<string, string[]>();
 function sourceFiles(dir: string): string[] {
+  // ⚠️ 사본을 준다 — 내부 배열을 그대로 넘기면 호출부의 제자리 변형(`.sort()` 등)이 다음
+  //    항목의 스캔 목록을 조용히 줄인다(fail-open. 이 파일의 규율은 fail-closed 다).
   const cached = walkCache.get(dir);
-  if (cached) return cached;
+  if (cached) return [...cached];
   const out: string[] = [];
   for (const entry of readdirSync(join(process.cwd(), dir), { withFileTypes: true })) {
     const rel = `${dir}/${entry.name}`;
@@ -85,15 +91,19 @@ function sourceFiles(dir: string): string[] {
     else if (rel.endsWith(".ts") || rel.endsWith(".tsx")) out.push(rel);
   }
   walkCache.set(dir, out);
-  return out;
+  return [...out];
 }
 
 /**
- * 전수 스캔 항목의 시간 예산. **기본 5000ms 는 단위 테스트용 예산이라 900여 파일 스캔에 애초에
- * 맞지 않는다** — 그래서 이 레포는 그런 항목에 30초를 명시한다(선례:
- * `src/lib/__tests__/resident-number-exposure.contract.test.ts` 의 `REPO_SCAN_TIMEOUT_MS`).
- * 그 항목이 없어 이 파일은 병렬 부하에서 반복 실패했다(로컬 전체 실행에서 재현, CI 는 샤딩되어
- * 통과 — 유휴 소요는 1.3초라 코드가 느린 것이 아니다).
+ * 전수 스캔 항목의 시간 예산. **기본 5000ms 는 단위 테스트용 예산이라 1,000여 파일을 훑는 항목에
+ * 애초에 맞지 않는다** — 부하와 무관한 이유이고, 그래서 이 레포는 그런 항목에 30초를 명시한다
+ * (선례: `src/lib/__tests__/resident-number-exposure.contract.test.ts` 의 `REPO_SCAN_TIMEOUT_MS`).
+ * (그 선언이 없어 이 파일은 병렬 부하에서 반복 실패하기도 했다 — 유휴 소요는 1.3초다.)
+ *
+ * 🪤 **`vitest.config.ts` 의 ⛔「이 증상을 테스트 결함으로 읽고 timeout 값을 올리지 말 것」과
+ * 헷갈리지 말 것.** 그 조항이 겨냥하는 것은 **CI 워커 초과구독**이고 처방은 `maxWorkers` 다.
+ * 여기는 항목의 **예산 등급**이 틀렸던 경우이며, 값을 올려 흡수한 것이 아니라 아래 두 금지를
+ * 함께 지고 스캔 자체(중복 워크·중복 읽기)도 줄였다.
  *
  * ⛔ **이 값을 올려 느려짐을 흡수하지 말 것** — 스캔이 무거워지면 고칠 곳은 제한이 아니라
  * 스캔이다(선례 파일의 같은 금지). ⛔ 범위를 좁혀 빠르게 만들지도 말 것 — 덮는 면적이 곧
@@ -269,7 +279,7 @@ describe("메일 서버 좌표 단일화", () => {
       "src/lib/tax-invoice-mail/issuance-match.ts",
     ];
     for (const path of paths) {
-      const raw = readFileSync(join(process.cwd(), path), "utf8");
+      const raw = read(path);
       expect({ path, nfc: raw === raw.normalize("NFC") }).toEqual({ path, nfc: true });
     }
   });
