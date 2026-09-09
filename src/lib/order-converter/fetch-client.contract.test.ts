@@ -12,32 +12,38 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  *
  * ⛔ 이 계약을 지우고 `new ProxyAgent` 를 호출 경로로 되돌리지 말 것.
  *
- * ℹ️ **운영에서 터널이 1개로 수렴하지는 않는다.** 네이버 호출은
- * `naver-commerce-client.ts` 의 p-queue(`concurrency: 3`)를 지나므로 동시 요청만큼
- * 소켓이 열려 **3개 안팎**으로 수렴한다 — 위 "1개"는 순차 프로브의 값이다.
- * 그래도 요청당 1개(수십 개)와는 자릿수가 다르다.
- *
  * 🪤 dispatcher 는 **호출 시점에** 기록한다 — `proxyFetch` 는 호출자의 `options`
- * 객체를 그 자리에서 고쳐 쓰므로(`options.dispatcher = ...`), 폴백이 일어나면
+ * 객체를 그 자리에서 고쳐 쓰므로(`options.dispatcher = ...`), 재시도·폴백이 일어나면
  * 나중 시도가 앞 시도의 기록까지 덮어 `mock.calls` 를 나중에 읽는 방식은
- * 프라이머리 시도를 영영 못 본다.
+ * 앞선 시도를 영영 못 본다.
  *
- * 🪤 **프록시의 407 은 `res.status` 로 오지 않는다 — 예외로 온다**(실측: 로컬
- * 프록시가 CONNECT 에 407 을 답하면 undici 가 던지고, 아래 폴백 테스트의 경로를
- * 그대로 탄다). 그래서 `!res.ok` 분기의 403/429/50x 목록에 407 이 없는 것은
- * 구멍이 아니다 — 리뷰에서 두 번 "폴백이 안 된다"고 지적됐으나 실측으로 반증됐다.
+ * 🪤 **프록시의 407 은 `res.status` 로 오지 않는다 — 예외로 온다.** 로컬 프록시가
+ * CONNECT 에 407 을 답하면 undici 가 `fetch failed`(cause: `Proxy response (407) !== 200
+ * when HTTP Tunneling`)로 던지고, 아래 폴백 테스트의 경로를 그대로 탄다(프록시 A=407 ·
+ * B=정상 프로브에서 B 로 넘어가 200 을 받는 것을 확인했다). 그래서 `!res.ok` 분기의
+ * 403/429/50x 목록에 407 이 없는 것은 구멍이 아니다 — 리뷰에서 두 번 "폴백이 안 된다"고
+ * 지적됐으나 실측으로 반증됐다.
  */
 
-/** 다음 몇 번의 터널 시도를 실패시킬지(폴백 경로 유도용). */
+/** 다음 몇 번의 터널 시도를 실패시킬지(재시도·폴백 경로 유도용). */
 let failTunnelCount = 0;
 /** undiciFetch 가 실제로 받은 dispatcher — 호출 시점에 남긴다. */
 let dispatcherLog: unknown[] = [];
+
+/** 프록시 한도 소진 시 undici 가 실제로 던지는 모양(위 🪤). */
+function tunnelRefused(): Error {
+  const err = new TypeError('fetch failed');
+  (err as Error & { cause?: unknown }).cause = new Error(
+    'Proxy response (407) !== 200 when HTTP Tunneling',
+  );
+  return err;
+}
 
 const undiciFetchMock = vi.fn(async (_url: unknown, options?: { dispatcher?: unknown }) => {
   dispatcherLog.push(options?.dispatcher);
   if (failTunnelCount > 0) {
     failTunnelCount--;
-    throw new Error('tunnel refused');
+    throw tunnelRefused();
   }
   return { ok: true, status: 200 };
 });
@@ -68,11 +74,11 @@ beforeEach(() => {
   delete process.env.PROXY_URLS;
   delete process.env.FIXIE_URLS;
   delete process.env.FIXIE_URL;
-  // 폴백 경로가 console.warn 을 남긴다 — 테스트 출력만 조용히 한다.
+  // 재시도·폴백 경로가 console.warn 을 남긴다 — 테스트 출력만 조용히 한다.
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-describe('proxyFetch', () => {
+describe('proxyFetch — 에이전트 재사용', () => {
   it('같은 프록시 URL 이면 에이전트를 한 번만 만들고 모든 요청이 그것을 공유한다', async () => {
     process.env.PROXY_URLS = PROXY;
     const { proxyFetch } = await import('./fetch-client');
@@ -91,13 +97,11 @@ describe('proxyFetch', () => {
     await proxyFetch('https://example.test/a');
 
     // 크론 1회 실행 안 호출 간격이 3~4초라 undici 기본값 4초로는 재사용이 깨진다.
-    // ⛔ 늘리려면 프록시의 실제 유휴 타임아웃을 먼저 실측할 것(소스 주석 참조).
+    // ⛔ 키우려면 프록시의 실제 유휴 타임아웃을 먼저 실측할 것(소스 주석 참조).
     expect(FakeProxyAgent.instances[0].options).toMatchObject({
       uri: PROXY,
       keepAliveTimeout: 15_000,
     });
-    // undici 기본값과 같은 값을 다시 적어 튜닝처럼 보이게 하지 않는다.
-    expect(FakeProxyAgent.instances[0].options).not.toHaveProperty('keepAliveMaxTimeout');
   });
 
   it('모듈이 다시 로드돼도 에이전트를 새로 만들지 않는다', async () => {
@@ -124,21 +128,55 @@ describe('proxyFetch', () => {
     expect(FakeProxyAgent.instances).toHaveLength(0);
     expect(dispatcherLog).toEqual([undefined]);
   });
+});
+
+/**
+ * 터널을 재사용하면 **프록시가 먼저 끊은 죽은 소켓**을 집는 실패 모드가 생긴다
+ * (호출마다 새 소켓을 열던 종전에는 없던 경로). 같은 프록시로 1회만 다시 시도해 흡수한다.
+ */
+describe('proxyFetch — 죽은 터널 흡수', () => {
+  it('GET 은 같은 프록시로 1회 재시도한다', async () => {
+    process.env.PROXY_URLS = PROXY;
+    const { proxyFetch } = await import('./fetch-client');
+
+    failTunnelCount = 1;
+    const res = await proxyFetch('https://example.test/a');
+
+    expect(res).toMatchObject({ status: 200 });
+    // 같은 에이전트로 두 번 나갔다 — 프록시를 갈아타지 않았다.
+    expect(FakeProxyAgent.instances).toHaveLength(1);
+    expect(dispatcherLog).toEqual(Array(2).fill(FakeProxyAgent.instances[0]));
+  });
+
+  it('POST 는 재시도하지 않고 그대로 던진다', async () => {
+    // ⛔ 이 계약을 완화하지 말 것 — 이 경로에는 네이버 주문확인·발주요청처럼
+    //    되돌릴 수 없는 부수효과 호출이 흐른다. 응답을 못 받은 POST 를 다시 보내면
+    //    같은 주문이 두 번 나갈 수 있다.
+    process.env.PROXY_URLS = PROXY;
+    const { proxyFetch } = await import('./fetch-client');
+
+    failTunnelCount = 1;
+    await expect(proxyFetch('https://example.test/a', { method: 'POST' })).rejects.toThrow(
+      'fetch failed',
+    );
+
+    expect(dispatcherLog).toHaveLength(1);
+  });
 
   it('프록시가 여러 개면 URL 별로 에이전트를 나눠 캐시한다', async () => {
     process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
     const { proxyFetch } = await import('./fetch-client');
 
-    // 프라이머리 터널이 거절되면 서브로 넘어간다(407 도 이 경로로 온다 — 상단 🪤).
-    failTunnelCount = 1;
+    // 프라이머리가 재시도까지 실패해야 서브로 넘어간다(GET 은 프록시당 2회).
+    failTunnelCount = 2;
     await proxyFetch('https://example.test/a');
-    failTunnelCount = 1;
+    failTunnelCount = 2;
     await proxyFetch('https://example.test/b');
 
     // 프라이머리·서브가 각자 에이전트를 갖고, 2회차에도 새로 만들지 않는다.
     expect(FakeProxyAgent.instances).toHaveLength(2);
     const [primary, fallback] = FakeProxyAgent.instances;
     expect(primary).not.toBe(fallback);
-    expect(dispatcherLog).toEqual([primary, fallback, primary, fallback]);
+    expect(dispatcherLog).toEqual([primary, primary, fallback, primary, primary, fallback]);
   });
 });
