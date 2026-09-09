@@ -14,6 +14,7 @@ import {
   parseDeployMarker,
   readClaims,
   statusPhrase,
+  trailingStatusPhrase,
 } from "../board-drift-check.mjs";
 
 // board-drift-check.mjs는 타입 없는 .mjs다 — boardItemLines/splitBoardRegions가 만드는
@@ -519,6 +520,85 @@ describe("보드 문구 → verdict 왕복 — 2026-08-08 실사고 6건 재현"
 
   it("`머지 완료 · 승격 대기` + 머지·배포 완료 → 낡은 마커(#303·#297 유형)", () => {
     expect(verdictOf("- **머지 완료 · 승격 대기 — X**", shipped)).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+});
+
+/**
+ * 보드 줄 형식이 둘로 갈렸다 — **상태 서술이 ` — ` 뒤로 갔다**(T-142, 실측 2026-09-09).
+ *
+ * 옛 형식은 `- **<상태> — <제목> [PR #N]**: <본문>` 이라 상태가 첫 ` — ` **앞**에 있고,
+ * `statusPhrase` 가 정확히 그 구역을 판정 대상으로 잡았다. 그런데 새로 올라오는 항목은
+ * 하네스 세션명 규약(`<상태이모지> #<번호> [<계보슬러그>] <제목>`)을 그대로 헤더로 쓰면서
+ * **상태 서술을 ` — ` 뒤에** 적는다(`- 🔴 #5 [슬러그] 제목 — 오너 머지 대기 · …`).
+ * 그래서 대기 주장이 판정 구역 **밖**으로 나갔다.
+ *
+ * 🪤 **증상이 침묵이라 종전 계약이 못 잡았다.** 같은 상태 문구·같은 PR·같은 배포 사실인데
+ * 줄 형식만 바꾸면 옛 형식은 `STALE_MERGE_MARKER`, 새 형식은 `OK` 로 갈렸다 — 머지·배포가
+ * 끝난 항목이 "아직 대기"로 남아 있어도 점검기가 "드리프트 없음"을 보고한다. 이 도구가
+ * 막으려고 만들어진 바로 그 사고(2026-07-29 완료된 작업에 재착수 지시)를 새 형식에 대해서만
+ * 재현한 셈이다.
+ * ⚠️ 종전에도 새 형식 픽스처는 있었지만 **전부 PR 링크가 없어서** 항목 인정·좌표 경고
+ * 경로만 타고 판정 경로(`readClaims`→`classifyItem`)를 **한 번도 지나지 않았다.** 아래
+ * 픽스처가 링크를 갖는 것이 이 절의 핵심이다 — 링크를 빼면 계약이 다시 눈을 감는다.
+ *
+ * 처방은 구역을 옮기는 것이 아니라 `claimsDeployed` 가 이미 쓰던 **우선순위를 머지 축에도**
+ * 적용하는 것이다: ①앞 구역이 머지 축에 말하면 그것이 SSOT ②침묵하면 뒤 구역(상태 서술)을
+ * 본다. 뒤 구역은 **필드 구분자까지만** 본다 — 본문까지 읽으면 2026-08-05 의 거짓 경보(본문
+ * 서술을 주장으로 오독)가 되돌아온다.
+ */
+describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
+  const verdictOf = (line: string, fact: Record<string, unknown>) =>
+    classifyItem(readClaims(line), fact).verdict;
+  const shipped = { ...merged(), shaKnown: true, inMain: true, inProd: true };
+  const deployPending = { ...merged(), shaKnown: true, inMain: true, inProd: false };
+  const PR = "[PR #5](https://github.com/indexzigu/wagcrm_git/pull/5)";
+
+  it("새 형식 대기 마커 + 머지·배포 완료 → 낡은 마커(옛 형식과 같은 판정)", () => {
+    expect(verdictOf(`- 🔴 #5 [슬러그] 제목 — PR 오너 머지 대기 · 상세 ${PR}`, shipped)).toBe(
+      VERDICT.STALE_MERGE_MARKER,
+    );
+  });
+
+  it("새 형식에서도 `⏳ CI 대기 → 오너 머지` 어순을 읽는다", () => {
+    expect(verdictOf(`- 🔴 #5 [슬러그] 제목 — ⏳ CI 대기 → 오너 머지 · ${PR}`, shipped)).toBe(
+      VERDICT.STALE_MERGE_MARKER,
+    );
+  });
+
+  it("새 형식의 `승격 대기` 도 배포 대기 자백으로 읽는다", () => {
+    expect(
+      readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료 · 승격 대기 · ${PR}`).awaitingDeploy,
+    ).toBe(true);
+  });
+
+  it("⚠️ 새 형식 완료 문구는 그대로 OK(음성 대조군 — 넓히다 오탐을 만들지 않는다)", () => {
+    expect(
+      verdictOf(`- ✅ #5 [슬러그] 제목 — 머지·**prod 반영 완료** · 종결 · ${PR}`, shipped),
+    ).toBe(VERDICT.OK);
+  });
+
+  it("뒤 구역의 경계는 첫 필드 구분자(` · `)다 — 구분자는 포함하지 않는다", () => {
+    // 구분자를 포함하면 `머지 ·` 가 완료 서술로 읽혀(MERGE_DONE) 대기 주장이 조용히 사라진다.
+    expect(trailingStatusPhrase("- ✅ #5 [슬러그] 제목 — 머지·배포 완료 · 다음 게이트 = 오너")).toBe(
+      "머지·배포 완료",
+    );
+  });
+
+  it("⚠️ 뒤 구역이 게이트 서술까지 새지 않는다 — 게이트의 `대기` 는 상태 주장이 아니다", () => {
+    const line = `- ✅ #5 [슬러그] 제목 — 머지(\`abc1234\`) 후 prod 반영 · 다음 게이트 = 오너 육안 대기 · ${PR}`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
+  });
+
+  it("⚠️ 앞 구역이 머지 축에 말하면 뒤 구역을 보지 않는다(옛 형식 회귀 방지)", () => {
+    // 옛 형식의 ` — ` 뒤는 **제목**이다. 뒤 구역을 무조건 읽으면 제목이 주장으로 오독된다.
+    const line = `- **🚀 머지 완료 → 승격(배포) 대기 — X ${PR}**: 머지·prod 반영이 끝난 PR 2건이 그 문구로 남아 있었다`;
+    expect(readClaims(line).deployed).toBe(false);
+    expect(verdictOf(line, deployPending)).toBe(VERDICT.AWAITING_DEPLOY);
+  });
+
+  it("⚠️ 앞 구역이 침묵해도 본문은 주장이 아니다(2026-08-05 거짓 경보 방지)", () => {
+    const line = `- **🔵 조사 완료 — X ${PR}**: 본문 서술 … 세션이 머지 대기로 남아 있었다는 설명`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
   });
 });
 
