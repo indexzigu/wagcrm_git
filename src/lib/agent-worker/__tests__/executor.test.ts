@@ -536,6 +536,118 @@ describe("create_action_proposal", () => {
     });
   });
 
+  it("still refuses a missing target for all three pre-existing actions (regression: nullable targets must not loosen them)", async () => {
+    partnerFindUniqueMock.mockResolvedValue(null);
+    dealFindUniqueMock.mockResolvedValue(null);
+    campaignFindUniqueMock.mockResolvedValue(null);
+
+    const cases: ReadonlyArray<readonly [string, AgentJobPayload["input"]]> = [
+      ["add_entity_memo", { action: "add_entity_memo", entityType: "PARTNER", entityId: "partner-x", content: "memo" }],
+      ["change_deal_status", { action: "change_deal_status", dealId: "deal-x", newStatus: "CONFIRMED" }],
+      ["confirm_settlement", { action: "confirm_settlement", campaignId: "camp-x", target: "deposit" }],
+    ];
+    for (const [action, input] of cases) {
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome, action).toMatchObject({
+        kind: "terminal",
+        toStatus: "FAILED_FINAL",
+        errorClass: "TARGET_NOT_FOUND",
+      });
+    }
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("create_partner is proposed with no target at all — nothing exists yet to point at", async () => {
+    proposalCreateMock.mockResolvedValue({ id: "proposal-partner" });
+    proposalEventCreateMock.mockResolvedValue({ id: "event-partner" });
+
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", { action: "create_partner", partner: { name: "위엄식품", type: "BRAND" } }),
+      deps(accepted("python")),
+    );
+
+    expect(proposalCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        requestType: "crm_mutation",
+        status: "PENDING_APPROVAL",
+        reviewRequired: true,
+        targetEntityType: null,
+        targetEntityId: null,
+        campaignId: null,
+      }),
+    });
+    // The existence lookup is skipped, not merely satisfied — no entity was ever read.
+    expect(partnerFindUniqueMock).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
+  });
+
+  it("create_deal with an existing partnerId attaches the PARTNER target and checks it exists", async () => {
+    partnerFindUniqueMock.mockResolvedValue({ id: "partner-1" });
+    proposalCreateMock.mockResolvedValue({ id: "proposal-deal" });
+    proposalEventCreateMock.mockResolvedValue({ id: "event-deal" });
+
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", {
+        action: "create_deal",
+        partnerId: "partner-1",
+        mainDeal: { dealName: "샤인머스캣 1kg" },
+      }),
+      deps(accepted("python")),
+    );
+
+    expect(partnerFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "partner-1" } }));
+    expect(proposalCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        requestType: "crm_mutation",
+        targetEntityType: "PARTNER",
+        targetEntityId: "partner-1",
+        campaignId: null,
+      }),
+    });
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
+  });
+
+  it("create_deal naming a partnerId that does not exist is refused before anything is inserted", async () => {
+    partnerFindUniqueMock.mockResolvedValue(null);
+
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", {
+        action: "create_deal",
+        partnerId: "partner-gone",
+        mainDeal: { dealName: "샤인머스캣 1kg" },
+      }),
+      deps(accepted("python")),
+    );
+
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "TARGET_NOT_FOUND" });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("create_deal carrying a brand-new partner object is proposed with no target", async () => {
+    proposalCreateMock.mockResolvedValue({ id: "proposal-deal-new" });
+    proposalEventCreateMock.mockResolvedValue({ id: "event-deal-new" });
+
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", {
+        action: "create_deal",
+        partner: { name: "위엄식품", type: "BRAND" },
+        mainDeal: { dealName: "샤인머스캣 1kg" },
+        optionDeals: [{ dealName: "2kg" }, { dealName: "3kg" }],
+      }),
+      deps(accepted("python")),
+    );
+
+    expect(partnerFindUniqueMock).not.toHaveBeenCalled();
+    expect(proposalCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        targetEntityType: null,
+        targetEntityId: null,
+        resultSummary: '딜 "샤인머스캣 1kg" 등록 (거래처 "위엄식품" 신규 등록), 옵션 2건',
+      }),
+    });
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
+  });
+
   it("does not open the transaction when the lease was already lost (aborted signal)", async () => {
     const controller = new AbortController();
     controller.abort(new Error("lease lost"));

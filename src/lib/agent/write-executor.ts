@@ -18,11 +18,24 @@
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import {
+  MAX_OPTION_DEALS,
+  MAX_PARTNER_CONTACTS,
+  mainDealInputSchema,
+  newPartnerInputSchema,
+  optionDealInputSchema,
+  partnerContactInputSchema,
+} from "@/lib/agent-worker/contracts";
+import {
   CAMPAIGN_INVALIDATION_TAGS,
   MASTER_DATA_INVALIDATION_TAGS,
   type CrmCacheTag,
 } from "@/lib/cache-tags";
-import { recordActivityMemo, recordActivityChange, type ActivityEntityType } from "@/lib/activity-log";
+import {
+  recordActivityMemo,
+  recordActivityChange,
+  recordActivityCreate,
+  type ActivityEntityType,
+} from "@/lib/activity-log";
 import { DEAL_STATUSES, isValidTransition, getValidNextStatuses, type DealStatus } from "@/lib/deal-status";
 import {
   deriveSettlementState,
@@ -71,6 +84,48 @@ const confirmSettlementArgsSchema = z.object({
 });
 
 export type ConfirmSettlementArgs = z.infer<typeof confirmSettlementArgsSchema>;
+
+/**
+ * `create_partner`·`create_deal` 의 args = 계약(`@/lib/agent-worker/contracts`)의 같은 변형에서
+ * `action` 칸만 뺀 모양. **칸의 모양은 계약이 export 한 조각을 그대로 부른다** — 승인 시점
+ * 재검증(파일 머리 ②)이 기안 시점보다 느슨하면 그 틈이 우회로다. ⚠️ 봉투(키 이름·개수·「둘 중
+ * 하나」)만 한 벌 더 있다(계약 변형은 익명 객체라 `action` 만 뗄 손잡이가 없다) — 갈리면
+ * `__tests__/write-executor.test.ts` 의 계약 대조가 잡는다.
+ */
+const opaqueEntityIdSchema = z.string().trim().min(1).max(128); // 계약 `opaqueIdSchema` 와 같은 상한
+
+const createPartnerArgsSchema = z
+  .object({
+    partner: newPartnerInputSchema,
+    contacts: z.array(partnerContactInputSchema).max(MAX_PARTNER_CONTACTS).optional(),
+  })
+  .strict();
+
+export type CreatePartnerArgs = z.infer<typeof createPartnerArgsSchema>;
+
+const createDealArgsSchema = z
+  .object({
+    partnerId: opaqueEntityIdSchema.optional(),
+    partner: newPartnerInputSchema.optional(),
+    mainDeal: mainDealInputSchema,
+    optionDeals: z.array(optionDealInputSchema).max(MAX_OPTION_DEALS).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    // 계약과 같은 「둘 중 정확히 하나」. 거래처 없는 딜은 어느 화면에도 안 걸리고, 둘 다 오면
+    // 어느 쪽을 믿을지 실행기가 고르게 된다 — 그 선택은 계약이 이미 금지했다.
+    if (Boolean(value.partnerId) === Boolean(value.partner)) {
+      context.addIssue({
+        code: "custom",
+        path: ["partnerId"],
+        message:
+          "거래처를 정확히 하나로 지정해야 한다: 이미 등록된 거래처는 partnerId, " +
+          "새로 만들 거래처는 partner.",
+      });
+    }
+  });
+
+export type CreateDealArgs = z.infer<typeof createDealArgsSchema>;
 
 export type WriteActionResult = {
   refType: string;
@@ -430,8 +485,226 @@ async function handleConfirmSettlement(
 }
 
 /**
+ * 정책 없는 딜의 `baseMarginPolicy` — 정본(`src/services/dealService.ts:342`)이 넣는 값과
+ * **같은 글자**다. 컬럼이 필수라 비울 수 없고, 다르면 마진 화면이 두 경로에서 갈린다.
+ */
+const DEFAULT_BASE_MARGIN_POLICY = '{"byChannel":{}}';
+
+type NewPartnerArgs = z.infer<typeof newPartnerInputSchema>;
+type PartnerContactArgs = z.infer<typeof partnerContactInputSchema>;
+type OptionDealArgs = z.infer<typeof optionDealInputSchema>;
+type MainDealArgs = z.infer<typeof mainDealInputSchema>;
+
+/** 옵션 딜이 부모에게서 물려받는 값 묶음(정본 C2-1 상속 대상 + 거래처 연결). */
+type ParentDealContext = {
+  readonly id: string;
+  readonly brandName: string | null;
+  readonly unit: string | null;
+  readonly partnerId: string;
+  readonly partnerCompanyName: string;
+};
+
+/**
+ * 거래처 1행(+담당자)을 **호출부가 연 tx 안에서** 만든다. `create_partner` 와 거래처를 동봉한
+ * `create_deal` 이 같은 함수를 부른다 — 두 곳에 따로 적으면 한쪽만 칸이 늘어난다. 정본
+ * `PartnerService.createPartner` 는 tx 를 받지 않아 재사용하지 않는다(change_deal_status 와 같은 이유).
+ */
+async function createPartnerRow(
+  partner: NewPartnerArgs,
+  contacts: readonly PartnerContactArgs[],
+  actor: string,
+  tx: Prisma.TransactionClient
+): Promise<{ id: string; name: string }> {
+  const created = await tx.partner.create({
+    data: {
+      name: partner.name,
+      type: partner.type,
+      businessNumber: partner.businessNumber ?? null,
+      ceoName: partner.ceoName ?? null,
+      representativeEmail: partner.representativeEmail ?? null,
+      address: partner.address ?? null,
+      notes: partner.notes ?? null,
+      ...(contacts.length > 0
+        ? {
+            contacts: {
+              create: contacts.map((contact) => ({
+                name: contact.name,
+                role: contact.role ?? null,
+                email: contact.email ?? null,
+                phoneNumber: contact.phoneNumber ?? null,
+              })),
+            },
+          }
+        : {}),
+    },
+    select: { id: true, name: true },
+  });
+
+  await recordActivityCreate("PARTNER", created.id, actor, tx);
+  return created;
+}
+
+/** 거래처를 만든다(WRITE 4종째). 정본이 라우트 둘로 나눠 하는 일을 한 트랜잭션으로 묶는다. */
+async function handleCreatePartner(
+  args: CreatePartnerArgs,
+  actor: string,
+  tx: Prisma.TransactionClient
+): Promise<WriteActionResult> {
+  const contacts = args.contacts ?? [];
+  const partner = await createPartnerRow(args.partner, contacts, actor, tx);
+
+  return {
+    refType: "PARTNER",
+    refId: partner.id,
+    summary:
+      `거래처 "${partner.name}"(${args.partner.type}) 등록` +
+      (contacts.length > 0 ? `, 담당자 ${contacts.length}명` : ""),
+  };
+}
+
+/** 딜이 붙을 거래처 확정: 등록된 거래처면 존재 검증(§0-6), 동봉돼 오면 **같은 tx 안에서** 생성. */
+async function resolveDealPartner(
+  args: CreateDealArgs,
+  actor: string,
+  tx: Prisma.TransactionClient
+): Promise<{ id: string; name: string }> {
+  if (args.partnerId) {
+    await assertEntityExists("PARTNER", args.partnerId, tx);
+    const partner = await tx.partner.findUnique({
+      where: { id: args.partnerId },
+      select: { id: true, name: true },
+    });
+    if (!partner) {
+      // assertEntityExists가 이미 확인했으므로 도달 불가하지만 타입 좁히기 및 방어적 코딩용
+      // (handleChangeDealStatus와 같은 패턴).
+      throw new Error(`대상 거래처(${args.partnerId})를 찾을 수 없습니다. 이미 삭제되었거나 잘못된 대상입니다.`);
+    }
+    return partner;
+  }
+
+  if (!args.partner) {
+    // argsSchema의 「둘 중 정확히 하나」가 이미 막는다. 스키마가 느슨해져도 거래처 없는 딜이
+    // 서지 않도록 실행기에서도 닫는다.
+    throw new Error(
+      "딜을 만들 거래처가 지정되지 않았습니다 (partnerId 또는 partner 중 하나가 필요합니다)."
+    );
+  }
+
+  // 계약의 `partner` 는 담당자를 품지 않는다(중첩 깊이 상한) — 담당자는 create_partner 소관.
+  return createPartnerRow(args.partner, [], actor, tx);
+}
+
+/** 부모 딜(MAIN) 한 행의 생성 데이터. 값 규칙은 정본 `dealService.createDeal` 과 같다. */
+function toMainDealCreateData(
+  main: MainDealArgs,
+  partner: { id: string; name: string }
+): Prisma.DealUncheckedCreateInput {
+  return {
+    dealName: main.dealName,
+    brandName: main.brandName ?? null,
+    partnerId: partner.id,
+    // 계약에 `partnerCompanyName` 칸이 없다 — 확정된 거래처 이름을 그대로 넣는다.
+    partnerCompanyName: partner.name,
+    costPrice: main.costPrice ?? 0,
+    sellingPrice: main.sellingPrice ?? 0,
+    supplyPrice: main.supplyPrice ?? null,
+    listPrice: main.listPrice ?? null,
+    shippingFee: main.shippingFee ?? null,
+    unit: main.unit ?? null,
+    unitQuantity: main.unitQuantity ?? null,
+    sourcingMemo: main.sourcingMemo ?? null,
+    dealType: "MAIN",
+    baseMarginPolicy: DEFAULT_BASE_MARGIN_POLICY,
+    status: "SOURCING",
+  };
+}
+
+/**
+ * 옵션 딜들을 방금 만든 부모 밑에 만든다. `optionSortOrder` 는 배열 순서대로 0,1,2… 인데,
+ * 정본의 「형제 중 최대값+1」(`dealService.createDeal` 의 needsSiblingLookup)과 결과가 같다 —
+ * 부모를 **이 트랜잭션에서 방금** 만들어 형제가 하나도 없기 때문이다. brandName·unit 은
+ * 옵션에 값이 없으면 부모 값을 물려받는다(정본 C2-1) — 옵션 입력에는 brandName 칸 자체가 없다.
+ */
+async function createOptionDeals(
+  options: readonly OptionDealArgs[],
+  parent: ParentDealContext,
+  actor: string,
+  tx: Prisma.TransactionClient
+): Promise<void> {
+  for (const [index, option] of options.entries()) {
+    const created = await tx.deal.create({
+      data: {
+        dealName: option.dealName,
+        brandName: parent.brandName,
+        partnerId: parent.partnerId,
+        partnerCompanyName: parent.partnerCompanyName,
+        // 옵션 입력에는 원가 칸이 없다 — 컬럼 기본값과 같은 0으로 둔다(가격표 반영 경로도 동일).
+        costPrice: 0,
+        sellingPrice: option.sellingPrice ?? 0,
+        supplyPrice: option.supplyPrice ?? null,
+        listPrice: option.listPrice ?? null,
+        unit: option.unit ?? parent.unit,
+        unitQuantity: option.unitQuantity ?? null,
+        sourcingMemo: option.sourcingMemo ?? null,
+        dealType: "OPTION",
+        parentDealId: parent.id,
+        optionSortOrder: index,
+        baseMarginPolicy: DEFAULT_BASE_MARGIN_POLICY,
+        status: "SOURCING",
+      },
+      select: { id: true },
+    });
+
+    await recordActivityCreate("DEAL", created.id, actor, tx);
+  }
+}
+
+/**
+ * 딜을 만든다(Phase 5 HITL WRITE 5종째). 거래처 확정 → 부모 딜(MAIN) → 옵션 딜(OPTION)이
+ * 한 트랜잭션이다. 값 규칙은 정본 `dealService.createDeal` 을 따른다.
+ */
+async function handleCreateDeal(
+  args: CreateDealArgs,
+  actor: string,
+  tx: Prisma.TransactionClient
+): Promise<WriteActionResult> {
+  const partner = await resolveDealPartner(args, actor, tx);
+  const main = args.mainDeal;
+  const options = args.optionDeals ?? [];
+
+  const parentDeal = await tx.deal.create({
+    data: toMainDealCreateData(main, partner),
+    select: { id: true },
+  });
+
+  await recordActivityCreate("DEAL", parentDeal.id, actor, tx);
+
+  await createOptionDeals(
+    options,
+    {
+      id: parentDeal.id,
+      brandName: main.brandName ?? null,
+      unit: main.unit ?? null,
+      partnerId: partner.id,
+      partnerCompanyName: partner.name,
+    },
+    actor,
+    tx
+  );
+
+  return {
+    refType: "DEAL",
+    refId: parentDeal.id,
+    summary:
+      `딜 "${main.dealName}" 등록 (거래처 ${partner.name}${args.partnerId ? "" : " 신규 등록"})` +
+      (options.length > 0 ? `, 옵션 ${options.length}건` : ""),
+  };
+}
+
+/**
  * WRITE 액션 화이트리스트. Phase 5 HITL은 add_entity_memo, change_deal_status,
- * confirm_settlement 3종을 등록한다(청사진 확정 설계).
+ * confirm_settlement 3종으로 시작했고(청사진 확정 설계), 에이전트가 거래처·딜을
+ * 등록할 수 있도록 create_partner, create_deal 2종을 더한 5종이다.
  */
 export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
   add_entity_memo: {
@@ -453,6 +726,20 @@ export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
     handler: handleChangeDealStatus,
     // 정본 버튼 경로 `PATCH /api/deals/[id]` 와 **같은 집합**(revalidateMasterDataCaches).
     // 집합을 여기서 새로 고르지 말 것 — 정본과 갈리는 순간 두 경로의 화면이 달라진다.
+    effects: () => ({ revalidate: MASTER_DATA_INVALIDATION_TAGS, calendarCampaignId: null }),
+  },
+  create_partner: {
+    argsSchema: createPartnerArgsSchema,
+    handler: handleCreatePartner,
+    // 정본 라우트 `POST /api/partners` 의 `revalidateMasterDataCaches()` 와 **같은 집합**.
+    // 집합을 여기서 새로 고르지 말 것 — 정본과 갈리는 순간 두 경로의 화면이 달라진다.
+    effects: () => ({ revalidate: MASTER_DATA_INVALIDATION_TAGS, calendarCampaignId: null }),
+  },
+  create_deal: {
+    argsSchema: createDealArgsSchema,
+    handler: handleCreateDeal,
+    // 정본 라우트 `POST /api/deals` 의 `revalidateMasterDataCaches()` 와 **같은 집합**
+    // (거래처를 동봉해 만드는 경로가 필요로 하는 거래처 태그도 이미 이 집합에 있다).
     effects: () => ({ revalidate: MASTER_DATA_INVALIDATION_TAGS, calendarCampaignId: null }),
   },
   confirm_settlement: {

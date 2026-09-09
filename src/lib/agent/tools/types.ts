@@ -37,8 +37,14 @@ export type WriteIntent = {
   args: Record<string, unknown>;
   /** 승인 카드에 노출할 사람이 읽을 수 있는 요약 */
   summary: string;
-  targetEntityType: string;
-  targetEntityId: string;
+  /**
+   * 기안이 가리키는 **이미 존재하는** 엔티티. 생성 도구(create_partner 등)는 아직
+   * 아무것도 없으므로 둘 다 null 이다 — 만들어질 엔티티는 승인 시점에야 id 를 얻는다.
+   * ⚠️ 한쪽만 null 로 채우지 말 것: 대상을 지목해 놓고 찾을 수 없는 것과 같아
+   * agent-worker 의 존재 검사가 그대로 막는다.
+   */
+  targetEntityType: string | null;
+  targetEntityId: string | null;
 };
 
 export type ToolResult<TData = unknown> =
@@ -57,6 +63,8 @@ export const WRITE_TOOL_NAMES = new Set<string>([
   "add_entity_memo",
   "change_deal_status",
   "confirm_settlement",
+  "create_partner",
+  "create_deal",
 ]);
 
 export function missingParam(message: string, query: Record<string, unknown> = {}): ToolResult<never> {

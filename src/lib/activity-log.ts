@@ -43,13 +43,21 @@ export async function recordActivityChange(
 
 /**
  * Records a CREATE entry in the ActivityLog table.
+ *
+ * recordActivityChange/recordActivityMemo와 같은 optional tx 파라미터를 받는다 —
+ * write-executor의 생성 액션(create_partner/create_deal)이 엔티티 INSERT와 생성 기록을
+ * 한 트랜잭션으로 묶기 위함이다. tx 없이 부르면 그 기록은 롤백돼도 남아, 존재하지 않는
+ * 엔티티의 생성행이 감사 로그에 남는다. tx를 넘기지 않는 기존 호출부는 지금까지와 동일
+ * (동작 변화 없음 — 순수 추가 파라미터).
  */
 export async function recordActivityCreate(
   entityType: ActivityEntityType,
   entityId: string,
   actor: string = "SYSTEM",
+  tx?: Prisma.TransactionClient,
 ) {
-  return getPrisma().activityLog.create({
+  const client = tx ?? getPrisma();
+  return client.activityLog.create({
     data: {
       entityType,
       entityId,

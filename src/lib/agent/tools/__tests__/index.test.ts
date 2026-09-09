@@ -3,13 +3,15 @@ import { AGENT_TOOLS, findTool, toGeminiTools } from "../index";
 import { WRITE_TOOL_NAMES } from "../types";
 
 describe("AGENT_TOOLS 레지스트리", () => {
-  it("READ 5종 + WRITE 3종(add_entity_memo, change_deal_status, confirm_settlement) 총 8종이 등록되어 있다 (Phase 5 HITL)", () => {
+  it("READ 5종 + WRITE 5종(메모/딜상태/정산확정/거래처등록/딜등록) 총 10종이 등록되어 있다 (Phase 5 HITL + 생성 2종)", () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort();
     expect(names).toEqual(
       [
         "add_entity_memo",
         "change_deal_status",
         "confirm_settlement",
+        "create_deal",
+        "create_partner",
         "get_campaign_financials",
         "get_order_snapshot",
         "get_pipeline_status",
@@ -24,10 +26,11 @@ describe("AGENT_TOOLS 레지스트리", () => {
     expect(findTool("존재하지않는도구")).toBeUndefined();
   });
 
-  it("WRITE_TOOL_NAMES에 add_entity_memo, change_deal_status, confirm_settlement가 등록되어 agent-loop가 writeIntent를 걷어낼 수 있다", () => {
-    expect(WRITE_TOOL_NAMES.has("add_entity_memo")).toBe(true);
-    expect(WRITE_TOOL_NAMES.has("change_deal_status")).toBe(true);
-    expect(WRITE_TOOL_NAMES.has("confirm_settlement")).toBe(true);
+  it("WRITE 도구 5종이 모두 WRITE_TOOL_NAMES에도 등록되어 agent-loop가 writeIntent를 걷어낼 수 있다", () => {
+    // 레지스트리에만 더하고 이 Set을 빠뜨리면 그 도구의 writeIntent는 조용히 버려진다.
+    for (const name of ["add_entity_memo", "change_deal_status", "confirm_settlement", "create_partner", "create_deal"]) {
+      expect(WRITE_TOOL_NAMES.has(name), name).toBe(true);
+    }
     expect(WRITE_TOOL_NAMES.has("search_deals")).toBe(false);
   });
 });
@@ -35,7 +38,7 @@ describe("AGENT_TOOLS 레지스트리", () => {
 describe("toGeminiTools — zod → JSON Schema 변환", () => {
   it("각 도구가 name/description/parameters를 갖는다", () => {
     const geminiTools = toGeminiTools();
-    expect(geminiTools).toHaveLength(8);
+    expect(geminiTools).toHaveLength(10);
     for (const tool of geminiTools) {
       expect(typeof tool.name).toBe("string");
       expect(typeof tool.description).toBe("string");
