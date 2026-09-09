@@ -17,21 +17,41 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * 나중 시도가 앞 시도의 기록까지 덮어 `mock.calls` 를 나중에 읽는 방식은
  * 앞선 시도를 영영 못 본다.
  *
- * 🪤 **프록시의 407 은 `res.status` 로 오지 않는다 — 예외로 온다.** 로컬 프록시가
- * CONNECT 에 407 을 답하면 undici 가 `fetch failed`(cause: `Proxy response (407) !== 200
- * when HTTP Tunneling`)로 던지고, 아래 폴백 테스트의 경로를 그대로 탄다(프록시 A=407 ·
- * B=정상 프로브에서 B 로 넘어가 200 을 받는 것을 확인했다). 그래서 `!res.ok` 분기의
- * 403/429/50x 목록에 407 이 없는 것은 구멍이 아니다 — 리뷰에서 두 번 "폴백이 안 된다"고
- * 지적됐으나 실측으로 반증됐다.
+ * 🪤 **프록시의 407 은 `res.status` 로 오지 않는다 — 예외로 온다.** 근거와 실측은
+ * 아래 `proxyRejected()` 주석에 있다.
  */
 
-/** 다음 몇 번의 터널 시도를 실패시킬지(재시도·폴백 경로 유도용). */
-let failTunnelCount = 0;
+/**
+ * 다음 요청들을 어떻게 실패시킬지(앞에서부터 소비). 두 실패를 **구분해서** 넣는다 —
+ * 재시도해야 하는 것(죽은 소켓)과 재시도하면 안 되는 것(프록시의 확정 거절)이
+ * 테스트상 같은 얼굴이면 계약이 아무것도 고정하지 못한다.
+ */
+type FailureKind = 'deadSocket' | 'proxyRejected';
+let failureQueue: FailureKind[] = [];
+/** 실패가 아닐 때 돌려줄 상태코드(앞에서부터 소비, 비면 200). */
+let statusQueue: number[] = [];
 /** undiciFetch 가 실제로 받은 dispatcher — 호출 시점에 남긴다. */
 let dispatcherLog: unknown[] = [];
 
-/** 프록시 한도 소진 시 undici 가 실제로 던지는 모양(위 🪤). */
-function tunnelRefused(): Error {
+/**
+ * 재사용하려던 터널이 이미 죽어 있던 경우. undici 의 소켓 오류 모양.
+ */
+function deadSocket(): Error {
+  const err = new TypeError('fetch failed');
+  (err as Error & { cause?: unknown }).cause = new Error('other side closed');
+  return err;
+}
+
+/**
+ * 프록시가 CONNECT 를 거절한 경우 — **한도 소진의 407 이 이 모양이다.**
+ * 🪤 407 은 `res.status` 로 오지 않는다: 로컬 프록시가 CONNECT 에 407 을 답하면
+ * undici 가 이 형태로 던지고 `catch` 경로를 탄다(프록시 A=407 · B=정상 프로브에서
+ * B 로 넘어가 200 을 받는 것을 확인했다). 리뷰에서 두 번 "폴백이 안 된다"고
+ * 지적됐으나 실측으로 반증됐다.
+ * ⚠️ 이 문장은 **undici 의 동작에 대한 가정**이고, 여기서 목을 쓰는 한 이 파일이
+ * 그것을 증명하지는 못한다 — 근거는 위 프로브와 프로덕션 로그다.
+ */
+function proxyRejected(): Error {
   const err = new TypeError('fetch failed');
   (err as Error & { cause?: unknown }).cause = new Error(
     'Proxy response (407) !== 200 when HTTP Tunneling',
@@ -41,11 +61,10 @@ function tunnelRefused(): Error {
 
 const undiciFetchMock = vi.fn(async (_url: unknown, options?: { dispatcher?: unknown }) => {
   dispatcherLog.push(options?.dispatcher);
-  if (failTunnelCount > 0) {
-    failTunnelCount--;
-    throw tunnelRefused();
-  }
-  return { ok: true, status: 200 };
+  const failure = failureQueue.shift();
+  if (failure) throw failure === 'deadSocket' ? deadSocket() : proxyRejected();
+  const status = statusQueue.shift() ?? 200;
+  return { ok: status >= 200 && status < 300, status };
 });
 
 class FakeProxyAgent {
@@ -68,7 +87,8 @@ beforeEach(() => {
   undiciFetchMock.mockClear();
   FakeProxyAgent.instances = [];
   dispatcherLog = [];
-  failTunnelCount = 0;
+  failureQueue = [];
+  statusQueue = [];
   // 에이전트 캐시는 라우트 번들 간 공유를 위해 globalThis 에 산다 — 테스트 간 누수 방지.
   delete (globalThis as Record<string, unknown>).__wagProxyAgentCache;
   delete process.env.PROXY_URLS;
@@ -132,14 +152,15 @@ describe('proxyFetch — 에이전트 재사용', () => {
 
 /**
  * 터널을 재사용하면 **프록시가 먼저 끊은 죽은 소켓**을 집는 실패 모드가 생긴다
- * (호출마다 새 소켓을 열던 종전에는 없던 경로). 같은 프록시로 1회만 다시 시도해 흡수한다.
+ * (호출마다 새 소켓을 열던 종전에는 없던 경로). 같은 프록시로 1회만 다시 시도해 흡수하되,
+ * **다시 보내도 소용없거나 해로운 실패는 가려낸다.**
  */
-describe('proxyFetch — 죽은 터널 흡수', () => {
-  it('GET 은 같은 프록시로 1회 재시도한다', async () => {
+describe('proxyFetch — 실패 처리', () => {
+  it('GET 은 죽은 터널을 같은 프록시로 1회 재시도한다', async () => {
     process.env.PROXY_URLS = PROXY;
     const { proxyFetch } = await import('./fetch-client');
 
-    failTunnelCount = 1;
+    failureQueue = ['deadSocket'];
     const res = await proxyFetch('https://example.test/a');
 
     expect(res).toMatchObject({ status: 200 });
@@ -155,7 +176,7 @@ describe('proxyFetch — 죽은 터널 흡수', () => {
     process.env.PROXY_URLS = PROXY;
     const { proxyFetch } = await import('./fetch-client');
 
-    failTunnelCount = 1;
+    failureQueue = ['deadSocket'];
     await expect(proxyFetch('https://example.test/a', { method: 'POST' })).rejects.toThrow(
       'fetch failed',
     );
@@ -163,14 +184,66 @@ describe('proxyFetch — 죽은 터널 흡수', () => {
     expect(dispatcherLog).toHaveLength(1);
   });
 
+  it('프록시가 CONNECT 를 거절하면(한도 소진 407) 재시도 없이 다음 프록시로 넘어간다', async () => {
+    // ⛔ 이것을 재시도로 되돌리지 말 것 — 확정 거절이라 다시 보내도 결과가 같고,
+    //    **사용량을 줄이려는 이 변경이 정확히 실패 구간에서 사용량을 두 배로 태운다.**
+    process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
+    const { proxyFetch } = await import('./fetch-client');
+
+    failureQueue = ['proxyRejected'];
+    const res = await proxyFetch('https://example.test/a');
+
+    expect(res).toMatchObject({ status: 200 });
+    const [primary, fallback] = FakeProxyAgent.instances;
+    expect(dispatcherLog).toEqual([primary, fallback]); // 프라이머리는 1회뿐
+  });
+
+  it('프록시가 하나뿐이면 CONNECT 거절은 1회 시도로 끝난다', async () => {
+    process.env.PROXY_URLS = PROXY;
+    const { proxyFetch } = await import('./fetch-client');
+
+    failureQueue = ['proxyRejected'];
+    await expect(proxyFetch('https://example.test/a')).rejects.toThrow('fetch failed');
+
+    expect(dispatcherLog).toHaveLength(1);
+  });
+
+  it('호출자가 이미 포기한 요청은 재시도하지 않는다', async () => {
+    // `reference-enrich-proxy.ts` 는 `AbortSignal.timeout` 을 넘긴다 — 예산을 다 쓴 뒤
+    // 같은 signal 로 다시 보내면 즉시 같은 자리에서 죽으므로 재시도가 아니라 낭비다.
+    process.env.PROXY_URLS = PROXY;
+    const { proxyFetch } = await import('./fetch-client');
+
+    failureQueue = ['deadSocket'];
+    await expect(
+      proxyFetch('https://example.test/a', { signal: { aborted: true } }),
+    ).rejects.toThrow('fetch failed');
+
+    expect(dispatcherLog).toHaveLength(1);
+  });
+
+  it('403 응답은 재시도 없이 다음 프록시로 넘어간다', async () => {
+    // 상태 기반 폴백은 예외 경로가 아니라 `res.status` 분기다 — 재시도를 넣으면서
+    // `continue` 를 `break` 로 바꾼 자리라, 이 계약이 그 치환을 고정한다.
+    process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
+    const { proxyFetch } = await import('./fetch-client');
+
+    statusQueue = [403];
+    const res = await proxyFetch('https://example.test/a');
+
+    expect(res).toMatchObject({ status: 200 });
+    const [primary, fallback] = FakeProxyAgent.instances;
+    expect(dispatcherLog).toEqual([primary, fallback]);
+  });
+
   it('프록시가 여러 개면 URL 별로 에이전트를 나눠 캐시한다', async () => {
     process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
     const { proxyFetch } = await import('./fetch-client');
 
-    // 프라이머리가 재시도까지 실패해야 서브로 넘어간다(GET 은 프록시당 2회).
-    failTunnelCount = 2;
+    // 프라이머리가 재시도까지 실패해야 서브로 넘어간다(죽은 소켓은 프록시당 2회).
+    failureQueue = ['deadSocket', 'deadSocket'];
     await proxyFetch('https://example.test/a');
-    failTunnelCount = 2;
+    failureQueue = ['deadSocket', 'deadSocket'];
     await proxyFetch('https://example.test/b');
 
     // 프라이머리·서브가 각자 에이전트를 갖고, 2회차에도 새로 만들지 않는다.

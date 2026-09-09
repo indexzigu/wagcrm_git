@@ -50,18 +50,49 @@ function getProxyAgent(proxyUrl: string): ProxyAgent {
   return agent;
 }
 
+/** 오류와 그 `cause` 사슬의 메시지를 한 문자열로 모은다. */
+function errorChainText(err: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = err;
+  for (let depth = 0; cur && depth < 5; depth++) {
+    parts.push(String((cur as { message?: unknown }).message ?? cur));
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return parts.join(' | ');
+}
+
 /**
- * 같은 프록시로 다시 보내도 안전한 요청인가.
+ * 같은 프록시로 **1회만** 다시 보낼 실패인가.
  *
- * ⛔ **GET·HEAD 만 재시도한다.** 연결이 끊겼을 때 요청이 서버에 닿았는지는 알 수 없는데,
+ * 재사용하려던 터널이 이미 죽어 있는 경우(프록시가 우리보다 먼저 끊음)만 흡수한다.
+ * 그 외에는 다시 보내도 같은 자리에서 죽거나, 되레 해롭다.
+ *
+ * ⛔ **GET·HEAD 만 재시도한다.** 연결이 끊겼을 때 요청이 서버에 닿았는지 알 수 없는데,
  * 이 경로에는 네이버 주문확인·발주요청처럼 **되돌릴 수 없는 부수효과** 호출이 함께 흐른다
  * (`naver-commerce-client.apiRequest`). 응답을 못 받은 POST 를 다시 보내면 같은 주문이
  * 두 번 나갈 수 있고, 그 피해는 터널 재사용이 아끼는 것보다 훨씬 크다.
- * ⛔ 여기에 POST 를 추가하지 말 것 — 부수효과 호출부를 전수로 가려낸 뒤에야 논의할 수 있다.
+ * ⚠️ **이 기준은 필요보다 넓게 배제한다** — `product-orders/query`(주문 조회)와 토큰 발급은
+ * POST 지만 부수효과가 없다. 그런데 이 계층에는 그것을 가릴 수단이 없다(URL 을 알아보는
+ * 것은 계층 침범이다). 넓히려면 **호출부가 안전하다고 선언**하는 통로를 먼저 만들 것 —
+ * ⛔ 여기에서 메서드 목록만 늘리지 말 것.
  */
-function isRetriableRequest(options: { method?: string }): boolean {
-  const method = (options?.method ?? 'GET').toUpperCase();
-  return method === 'GET' || method === 'HEAD';
+function shouldRetrySameProxy(
+  err: unknown,
+  options: { method?: string; signal?: { aborted?: boolean } },
+): boolean {
+  const method = (options.method ?? 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return false;
+
+  // 호출자가 이미 포기했다(예: `AbortSignal.timeout`). 같은 signal 로 다시 보내면
+  // 즉시 같은 자리에서 죽으므로 재시도가 아니라 낭비다.
+  if (options.signal?.aborted) return false;
+
+  // 프록시가 CONNECT 에 200 이 아닌 응답을 줬다 — 죽은 소켓이 아니라 **확정 거절**이다
+  // (한도 소진의 407 이 이 모양이다). 다시 보내면 프록시 요청만 한 번 더 태우고
+  // 폴백만 늦춘다 — 사용량을 줄이려는 이 변경이 정확히 실패 구간에서 사용량을 늘린다.
+  if (/Proxy response \(\d+\)/.test(errorChainText(err))) return false;
+
+  return true;
 }
 
 export async function proxyFetch(url: string, options: any = {}) {
@@ -79,11 +110,11 @@ export async function proxyFetch(url: string, options: any = {}) {
   for (let i = 0; i < urls.length; i++) {
     const proxyUrl = urls[i];
     // 터널 재사용이 들여온 실패 모드(위 `keepAliveTimeout` 주석)를 같은 프록시로
-    // 1회 다시 시도해 흡수한다 — undici 가 죽은 소켓을 풀에서 걷어낸 뒤이므로
-    // 재시도는 새 터널로 나간다.
-    const maxAttempts = isRetriableRequest(options) ? 2 : 1;
+    // 1회 다시 시도해 흡수한다. undici 는 죽은 소켓을 풀에서 걷어내므로 재시도는
+    // 새 터널로 나가리라 **기대**한다 — 이 계층에서 소켓 풀을 관찰할 수는 없다.
+    let retriedThisProxy = false;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    for (;;) {
       try {
         options.dispatcher = getProxyAgent(proxyUrl);
         const res = await undiciFetch(url, options);
@@ -98,7 +129,8 @@ export async function proxyFetch(url: string, options: any = {}) {
         }
         return res;
       } catch (err: any) {
-        if (attempt < maxAttempts) {
+        if (!retriedThisProxy && shouldRetrySameProxy(err, options)) {
+          retriedThisProxy = true;
           console.warn(`Proxy [${i}] connection failed: ${err.message}. Retrying same proxy once...`);
           continue; // 같은 프록시로 1회 재시도
         }
@@ -106,6 +138,7 @@ export async function proxyFetch(url: string, options: any = {}) {
           throw err; // 마지막 프록시까지 실패하면 에러 반환
         }
         console.warn(`Proxy [${i}] fetch failed: ${err.message}. Retrying with next proxy...`);
+        break; // 다음 프록시 시도
       }
     }
   }

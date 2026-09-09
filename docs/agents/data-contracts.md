@@ -264,6 +264,11 @@
     특히 `searchNaverProducts`(`naver-commerce-api.ts` = `apiRequest` 와 **별개의 두 번째
     클라이언트**)는 종국 실패만 계측된다. ⛔ 종전 서술 "쿨다운이 없다"는 **SUPERSEDED**
     (2026-07-30, 아래 항목).
+    ⚠️ **전송 계층 재시도도 안 들어간다** — `proxyFetch`(`fetch-client.ts`)는 재사용하려던
+    터널이 죽어 있으면 같은 프록시로 1회 다시 보내는데(GET·HEAD 한정), `noteNaverHttpAttempt`
+    는 그 **바깥**에서 요청당 1회만 세므로 그 재시도는 어디에도 안 잡힌다. 그래서 **프록시
+    사업자가 세는 요청 수와 `httpAttempts` 는 원래 어긋난다** — 둘이 다르다고 계측 결함으로
+    조사하지 말 것. 판정 계약은 `fetch-client.contract.test.ts`.
 
 - **`searchNaverProducts` = 60초 TTL 쿨다운 (측정 후 결정, 2026-07-30):** 이 조회는
   `campaigns-handler` 의 `needsNaver` 가 참인 동안 **대시보드 GET 1회당 1회** 나갔다.
