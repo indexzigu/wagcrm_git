@@ -591,10 +591,34 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     expect(readClaims(line).awaitingMerge).toBe(false);
   });
 
-  it("볼드로 감싼 뒤 상태 서술도 읽는다 — 닫는 `**` 까지가 그 구역이다", () => {
+  it("볼드로 감싼 뒤 상태 서술도 읽는다 — 강조 표식은 걷어내고 문장에서 끊는다", () => {
     expect(
       trailingStatusPhrase("- 🚀 #5 [슬러그] 제목 — **머지·배포 완료. 남은 게이트 = 재설치**. 🪤 본문"),
-    ).toBe("머지·배포 완료. 남은 게이트 = 재설치");
+    ).toBe("머지·배포 완료.");
+  });
+
+  /**
+   * ⚠️ 아래 3건은 **강조 표식을 경계로 쓰지 않게 바꾸면서 열렸던 구멍**의 재현이다(리뷰 실측).
+   * 구역이 본문 서술까지 늘어나면 배포까지 끝난 항목이 드리프트로 뒤집힌다 — 종료코드를 흔드는
+   * 거짓 경보라 2026-08-05 계열의 재발이다. 셋 다 `origin/main` 에서는 통과했다.
+   */
+  it("⚠️ 새 형식에서도 본문의 `승격 대기` 서술은 미배포 자백이 아니다", () => {
+    const line = `- 🚀 #5 [슬러그] 제목 — 머지·**prod 반영 완료** · 종결 ${PR} · 본문: 예전엔 승격 대기였다 **끝**`;
+    expect(readClaims(line).awaitingDeploy).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+  });
+
+  it("⚠️ 문장이 끝난 뒤의 경과 서술은 상태가 아니다", () => {
+    const line = `- ✅ #5 [슬러그] 제목 — 머지·**prod 반영 완료**. 본문: … 오너 머지 대기 로 남아 있었다는 **설명** ${PR}`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+  });
+
+  it("⚠️ 강조 표식이 완료 서술을 가리지 않는다 — `머지 **완료**` 는 완료다", () => {
+    // 표식을 걷어내지 않으면 MERGE_DONE 이 못 걸려 정상 배포 대기가 낡은 마커로 뒤집힌다.
+    const line = `- **🔴 #5 [슬러그] 제목 — 머지 **완료** → 승격 대기 ${PR}**: 본문`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
+    expect(verdictOf(line, deployPending)).toBe(VERDICT.AWAITING_DEPLOY);
   });
 
   it("인식 계층까지 통과한다 — 보드 텍스트 → parseBoardItems → 판정", () => {
