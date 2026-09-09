@@ -182,6 +182,8 @@ export interface PostCloseCancelSyncResult {
   /**
    * 응답이 모자라 **확정만** 미룬 건수(값은 갱신됐다) — 매일 0 이 아니면 그 캠페인은
    * 수렴하지 못하고 있다. `protectedFinalized` 와 배타적이다.
+   * ⚠️ **둘 다 락 캠페인만 센다** — 미락 캠페인의 모자란 응답은 어느 쪽에도 안 잡힌다
+   *    (미락은 애초에 확정 대상이 아니라 다음 회차가 그냥 다시 계산한다).
    */
   deferredIncomplete: number;
   /**

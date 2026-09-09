@@ -273,9 +273,12 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
     expect(res).toMatchObject({ protectedFinalized: 1, deferredIncomplete: 0, updated: 0 });
   });
 
-  it('id 없는 행은 「돌아온 것」으로 세지 않는다 — normalizeQueriedOrder 가 걸러 주지 않는다', async () => {
-    // 🪤 `normalizeQueriedOrder` 는 `productOrder` 가 있기만 하면 통과시키므로 id 없는 행도
-    //    배열에는 남는다. 개수로 재면 그 행이 빠진 id 를 메워 **과소 계상 값이 확정된다.**
+  it('id 없는 행은 「돌아온 것」으로 세지 않는다', async () => {
+    // 🪤 개수로 재면 id 없는 행이 빠진 id 를 메워 **과소 계상 값이 확정된다.**
+    // ⚠️ 이 테스트는 `queryOrderDetails` 를 모킹하므로 **`normalizeQueriedOrder` 를 태우지
+    //    않는다** — "id 없는 행이 실제로 배열에 남는다" 는 전제는 `naver-order-sync.test.ts`
+    //    의 「`productOrderId` 가 없어도 …」 케이스가 고정한다(4회차 리뷰 지적).
+    //    여기서 고정하는 것은 **그런 행이 오면 완전성 판정이 어떻게 되는가** 하나다.
     findManyMock.mockResolvedValue([
       campaign('SETTLEMENT_IN_PROGRESS', { cachedPostCloseCancelFinalizedAt: null }),
     ]);
@@ -307,8 +310,8 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
   });
 
   it('빠진 id 를 중복·잉여 행이 가리지 못한다 — 완전성은 개수가 아니라 id 로 판정한다', async () => {
-    // 🪤 `normalizeQueriedOrder` 는 형태가 깨진 항목을 버린다. 개수로만 재면 po-1 이 두 번
-    //    돌아오고 po-2 가 빠진 응답이 "2건 = 온전" 으로 읽혀 **과소 계상 값이 확정된다.**
+    // 🪤 개수로만 재면 po-1 이 두 번 돌아오고 po-2 가 빠진 응답이 "2건 = 온전" 으로 읽혀
+    //    **과소 계상 값이 확정된다.** 그래서 판정은 개수가 아니라 요청 id 집합이다.
     findManyMock.mockResolvedValue([
       campaign('SETTLEMENT_IN_PROGRESS', { cachedPostCloseCancelFinalizedAt: null }),
     ]);
