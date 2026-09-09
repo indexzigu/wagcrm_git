@@ -4,6 +4,8 @@ import { runSync } from "@/lib/order-converter/naver-order-sync";
 import { sweepBuyerFingerprints } from "@/lib/cross-campaign-repurchase";
 import { ORDER_SYNC_INVALIDATION_TAGS, revalidateCrmTags } from "@/lib/cache-tags";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { getPrisma } from "@/lib/prisma";
+import { syncCampaignStatusesBySchedule } from "@/lib/campaign-status-sync";
 
 // collect-instagram/route.ts의 verifyCronAuth 패턴을 그대로 복제한다.
 // 운영자-무관 안전망(현재 scheduled-crons.yml 기준 하루 1회, 0 22 * * * UTC). 아무도 주문관리
@@ -34,6 +36,18 @@ async function handler(request: Request) {
       // 이벤트 기반 무효화(2026-07-10): 주문 스냅샷이 실제로 바뀐 날에만 포털 재구매/이력·
       // 파이프라인·정산 캐시를 깬다. 변경 없으면 캐시 유지(ISR Writes 절약).
       revalidateCrmTags(ORDER_SYNC_INVALIDATION_TAGS);
+    }
+
+    // 캠페인 기간 도달/만료 상태 자동 전이 (2026-09-09 오너 확정: 시작일 도달 ACTIVE, 종료 +1일 경과 CLOSED)
+    try {
+      const statusSyncResult = await syncCampaignStatusesBySchedule(getPrisma());
+      if (statusSyncResult.expiredToClosedCount > 0 || statusSyncResult.startedToActiveCount > 0) {
+        console.log(
+          `[cron/naver-order-sync] campaign status auto-transition: expired->closed: ${statusSyncResult.expiredToClosedCount}, started->active: ${statusSyncResult.startedToActiveCount}`,
+        );
+      }
+    } catch (err) {
+      console.error("[cron/naver-order-sync] 캠페인 상태 자동 전이 실패(sync 자체는 정상, 다음 주기 재시도):", err);
     }
 
     // fire-and-forget: 알림 처리 실패/지연이 이 응답을 막지 않는다.

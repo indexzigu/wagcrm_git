@@ -385,17 +385,16 @@ describe("setChecklistItemChecked — 그룹 형제 체크리스트 항목 캐�
     expect(itemRows.find((i) => i.id === "m2-sibling")?.isChecked).toBe(false);
   });
 
-  it("형제 항목까지 체크되면 형제 캠페인도 각자 다음 상태로 전이한다(stranding 해소 확인)", async () => {
-    const { prisma, campaignStates } = createFakeChecklistPrisma({
+  it("형제 항목까지 체크되어도 캠페인 상태는 자동 전이되지 않는다(체크리스트 분리)", async () => {
+    const { prisma, campaignStates, itemRows } = createFakeChecklistPrisma({
       campaigns: [
         { id: "m1", groupId: "g1" },
         { id: "m2", groupId: "g1" },
       ],
       items: [
-        // m1: 발행 항목만 남음(체크하면 그룹 필드에서 전이 완료).
+        // m1: 발행 항목만 남음
         { id: "m1-invoice", campaignId: "m1", label: "확정 매출 기준 수수료 청구 세금계산서 발행" },
-        // m2: 발행 항목 외 나머지 필수 항목은 이미 체크됨 — 발행 항목만 형제
-        // 캐스케이드로 체크되면 m2 도 완료 조건을 채운다.
+        // m2: 발행 항목 외 나머지 필수 항목은 이미 체크됨
         { id: "m2-invoice", campaignId: "m2", label: "확정 매출 기준 수수료 청구 세금계산서 발행" },
         { id: "m2-schedule", campaignId: "m2", label: "대금 입금 일정 확정", isChecked: true },
         { id: "m2-final", campaignId: "m2", label: "수수료 입금 완료", isChecked: true },
@@ -403,11 +402,13 @@ describe("setChecklistItemChecked — 그룹 형제 체크리스트 항목 캐�
       groups: [{ id: "g1", supplierInvoiceIssuedAt: null }],
     });
 
-    await setChecklistItemChecked(prisma, "m1-invoice", true);
+    const result = await setChecklistItemChecked(prisma, "m1-invoice", true);
 
-    // m2 는 형제 캐스케이드로 발행 항목까지 체크되어 필수 항목이 전부 체크됐으므로
-    // SETTLEMENT_IN_PROGRESS 에서 다음 상태(COMPLETED)로 전이해야 한다.
-    expect(campaignStates.get("m2")?.status).toBe("COMPLETED");
+    // 형제 캐스케이드로 항목은 체크되지만 상태는 전이되지 않는다 (리마인드 분리)
+    expect(itemRows.find((i) => i.id === "m2-invoice")?.isChecked).toBe(true);
+    expect(result.transitioned).toBe(false);
+    expect(campaignStates.get("m2")?.status).toBe("SETTLEMENT_IN_PROGRESS");
+    expect(campaignStates.get("m1")?.status).toBe("SETTLEMENT_IN_PROGRESS");
   });
 
   it("이미 체크된 형제 항목은 건드리지 않는다(멱등)", async () => {
@@ -524,16 +525,14 @@ describe("setChecklistItemChecked — Finding 3: 형제 캐스케이드가 전�
 
     await setChecklistItemChecked(prisma, "m1-invoice", true);
 
-    // 전제 확인 — 실제로 4명 전원이 COMPLETED 로 전이했다(이 회귀가 실제로 발생하는
-    // 조건을 재현했는지 검증). 이게 거짓이면 아래 카운트 단정이 무의미하다.
+    // 체크리스트 항목이 체크되어도 상태 전이는 발생하지 않고 현재 상태를 유지한다 (리마인드 분리)
     for (const id of ["m1", "m2", "m3", "m4"]) {
-      expect(campaignStates.get(id)?.status).toBe("COMPLETED");
+      expect(campaignStates.get(id)?.status).toBe("SETTLEMENT_IN_PROGRESS");
     }
 
-    // 핵심 단정 — 어떤 (status,label) 키도 2회 이상 upsert 되지 않았다. 고쳐지기
-    // 전이었다면 최대값이 멤버 수(4)에 가까웠을 것이다(대표 1 + 형제 3).
-    const maxSeen = Math.max(...upsertKeySeenCount.values());
-    expect(maxSeen).toBe(1);
+    // 상태 전이가 없으므로 다음 상태 템플릿 재시딩도 불필요하게 돌지 않는다
+    const maxSeen = Math.max(0, ...upsertKeySeenCount.values());
+    expect(maxSeen).toBeLessThanOrEqual(1);
   });
 });
 
