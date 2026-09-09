@@ -25,8 +25,21 @@ const SSOT = "src/lib/mail-config.ts";
  * 이 트랙의 문서가 옛 서버 이름과 새 서버 이름을 **설명하기 위해** 인용하므로, 원문 그대로
  * 스캔하면 자기 주석에 걸려 영구히 빨간불이 된다(레포 선례 다수).
  */
-function executableSource(relativePath: string): string {
+/**
+ * 파일 내용은 항목마다 되풀이해 읽힌다 — 한 번만 읽고 나눠 쓴다(#495 선례: 전수 스캔 계약이
+ * 각자 트리를 걸고 각자 읽던 것을 1회로 합쳐 합계 2270ms → 674ms).
+ */
+const sourceCache = new Map<string, string>();
+function read(relativePath: string): string {
+  const cached = sourceCache.get(relativePath);
+  if (cached !== undefined) return cached;
   const raw = readFileSync(join(process.cwd(), relativePath), "utf8");
+  sourceCache.set(relativePath, raw);
+  return raw;
+}
+
+function executableSource(relativePath: string): string {
+  const raw = read(relativePath);
   // 🪤 `//` 앞의 `:` 를 지켜야 한다 — 가드 없이 자르면 `"imaps://imap.gmail.com"` 같은
   //    **URL 형태 설정이 통째로 잘려** 위반이 스캔에서 사라진다(실측). 레포 선례
   //    `ingest-lane.contract.test.ts` 가 같은 이유로 같은 가드를 쓴다.
@@ -57,16 +70,36 @@ function hasMailHostLiteral(source: string): boolean {
   return false;
 }
 
-/** `src` 아래 타입스크립트 소스 전수(레포 관행: 셸이 아니라 readdirSync 재귀). */
+/**
+ * `src` 아래 타입스크립트 소스 전수(레포 관행: 셸이 아니라 readdirSync 재귀).
+ * 전수 스캔 항목 둘이 각자 `src`·`scripts` 를 걸어 **트리를 4회** 걸었다 — 디렉터리별로 캐시한다.
+ */
+const walkCache = new Map<string, string[]>();
 function sourceFiles(dir: string): string[] {
+  const cached = walkCache.get(dir);
+  if (cached) return cached;
   const out: string[] = [];
   for (const entry of readdirSync(join(process.cwd(), dir), { withFileTypes: true })) {
     const rel = `${dir}/${entry.name}`;
     if (entry.isDirectory()) out.push(...sourceFiles(rel));
     else if (rel.endsWith(".ts") || rel.endsWith(".tsx")) out.push(rel);
   }
+  walkCache.set(dir, out);
   return out;
 }
+
+/**
+ * 전수 스캔 항목의 시간 예산. **기본 5000ms 는 단위 테스트용 예산이라 900여 파일 스캔에 애초에
+ * 맞지 않는다** — 그래서 이 레포는 그런 항목에 30초를 명시한다(선례:
+ * `src/lib/__tests__/resident-number-exposure.contract.test.ts` 의 `REPO_SCAN_TIMEOUT_MS`).
+ * 그 항목이 없어 이 파일은 병렬 부하에서 반복 실패했다(로컬 전체 실행에서 재현, CI 는 샤딩되어
+ * 통과 — 유휴 소요는 1.3초라 코드가 느린 것이 아니다).
+ *
+ * ⛔ **이 값을 올려 느려짐을 흡수하지 말 것** — 스캔이 무거워지면 고칠 곳은 제한이 아니라
+ * 스캔이다(선례 파일의 같은 금지). ⛔ 범위를 좁혀 빠르게 만들지도 말 것 — 덮는 면적이 곧
+ * 방어력이다.
+ */
+const REPO_SCAN_TIMEOUT_MS = 30_000;
 
 describe("메일 서버 좌표 단일화", () => {
   it.each(CONSUMERS)("%s 에 메일 서버 호스트를 직접 적지 않는다", (path) => {
@@ -103,7 +136,7 @@ describe("메일 서버 좌표 단일화", () => {
       .sort();
 
     expect(offenders).toEqual([]);
-  });
+  }, REPO_SCAN_TIMEOUT_MS);
 
   it("`imaps.connect`·`new Imap` 으로 붙는 곳은 SSOT 를 거친다", () => {
     // 🔴 `tlsOptions.servername`(SNI) 이 빠지면 구글 IMAP 이 통째로 죽는다(2026-09-02 실측).
@@ -125,7 +158,7 @@ describe("메일 서버 좌표 단일화", () => {
     for (const path of connectors) {
       const source = ts.createSourceFile(
         path,
-        readFileSync(join(process.cwd(), path), "utf8"),
+        read(path),
         ts.ScriptTarget.Latest,
         true,
       );
@@ -223,7 +256,7 @@ describe("메일 서버 좌표 단일화", () => {
       ]),
     );
     expect(offenders).toEqual([]);
-  });
+  }, REPO_SCAN_TIMEOUT_MS);
 
   it("메일 경로 소스는 NFC 로 커밋된다 — 그래야 우리 리터럴을 감싸지 않아도 된다", () => {
     // 서버가 준 문자열만 `toNfc` 로 맞추고 **우리 상수는 그대로 비교**하는 것이 계약이다.
