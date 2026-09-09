@@ -175,63 +175,58 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  * 취소/반품 수량과 금액을 산출해 캠페인의 cachedPostCloseCancelQuantity/Revenue를 갱신합니다.
  * (Absolute Snapshot 방식 - 멱등성 보장)
  *
- * **정산이 시작된 캠페인은 조회하지 않는다(2026-09-09).** 동결 기준은 마감(`isActive`)이
- * 아니라 **정산 락**이라는 것이 오너 확정(2026-07-15)이고, 그 판정 SSOT 가
+ * **정산이 시작된 캠페인은 「확정 계산」을 한 번 마친 뒤로는 조회하지 않는다.** 동결 기준은
+ * 마감(`isActive`)이 아니라 **정산 락**이라는 것이 오너 확정(2026-07-15)이고, 그 판정 SSOT 가
  * `isSalesCampaignLocked` 다 — 정산대기(SETTLEMENT_WAIT)까지는 반품·구매확정으로 변동
- * 가능하고 **정산중부터 확정**이다. 확정된 캠페인을 매일 다시 조회하는 것은 결과가 바뀔 수
- * 없는 헛일이면서 네이버 호출을 태운다.
+ * 가능하고 **정산중부터 확정**이다.
  * ⛔ 기준을 정산대기로 앞당기지 말 것 — 그 구간의 취소·반품을 놓친다(위 오너 확정).
  * ⛔ `lockedStatuses` 목록을 여기에 베껴 오지 말 것 — 판정은 위 SSOT 한 곳이다.
  *
- * 🪤 **동결에는 구멍이 있다 — 그래서 「값이 아직 0 이면 건너뛰지 않는다」.**
- * 이 함수가 이 필드들의 **유일한 writer** 이고 계산이 델타 누적이 아니라 **절대 스냅샷**
- * 이다. 그런데 두 필드의 기본값이 0 이라 **"계산했는데 취소가 없었다"와 "계산된 적이
- * 없다"를 구분할 수 없다.** 마감은 판매 단계와 독립된 수동 조작이라 마감과 정산 착수를
- * 같은 날 하면 하루 1회인 이 잡이 그 사이에 끼지 못하고, 그러면 0 이 영구가 되는데
- * 되돌릴 길이 없다(유일 writer). 그래서 **락이어도 두 값이 모두 0 이면 계속 조회한다** —
- * 틀리는 방향을 "헛조회"(유계: 90일 창이 상한) 쪽으로 잡는다.
- * ⛔ 이 예외를 "락이면 무조건 건너뛴다"로 단순화하지 말 것 — 그 순간 위 손실이 되살아난다.
+ * 🔑 **「한 번 마친 뒤로는」이 이 함수의 핵심이고, 그 판정은 값이 아니라 마커가 한다.**
+ * 이 함수가 두 값의 **유일한 writer** 이고 계산이 델타 누적이 아니라 **절대 스냅샷**이라,
+ * 두 값이 `@default(0)` 인 한 "계산했는데 취소가 0" 과 "계산된 적이 없다" 가 값만으로는
+ * 구분되지 않는다. 그래서 확정 여부는 **`cachedPostCloseCancelFinalizedAt` 하나**가 답한다.
+ * ⛔ **값이 0 인지로 미계산을 판별하던 종전 방식으로 되돌리지 말 것**(2026-09-09 → T-140).
+ * 그 방식은 한계 셋을 남겼고 이 마커가 셋을 함께 닫았다: ①동결 시점이 부분집합마다
+ * 달랐다(「락 시점」이 아니라 「처음 0 이 아닌 값이 나온 시점」) ②취소가 정말 0 인 캠페인은
+ * 90일 창이 끝날 때까지 매일 재조회돼 **수렴하지 않았다** ③컷오프가 「직전 크론 실행 시점」
+ * 이라 마지막 실행과 수동 락 사이의 취소를 놓쳤다(**과소 계상 = 정산액 과대**, 돈 방향).
  *
- * ⚠️ **이 예외는 비용만의 문제가 아니라 의미의 변화다.** 건너뛰지 않는다는 것은 조회에
- * 그치지 않고 **값을 다시 쓴다**는 뜻이라, 그 부분집합의 동결 시점은 「락 시점」이 아니라
- * **「처음으로 0 이 아닌 값이 나온 시점」**이 된다(락 이후의 취소가 반영될 수 있다).
- * 락=확정이라는 원칙과 완전히 같지는 않지만, 종전(락이어도 매일 다시 씀)보다는 좁고
- * **0 영구 고정**보다는 안전하다는 판단이다.
- * ⚠️ 그리고 **수렴하지 않는다**: 취소가 정말 0 인 캠페인은 값이 계속 0 이라 90일 창이
- * 끝날 때까지 매일 재조회된다. 그런 캠페인이 흔하면 이 변경의 절감이 대부분 사라진다 —
- * 배포 후 응답의 `requeriedUncomputed`(락인데 값이 0 이라 다시 조회한 건수)로 실측할 것 —
- * `campaigns - skippedLocked` 로는 미락 캠페인이 섞여 이 부류만 분리되지 않는다.
+ * **락 전이 훅이 필요 없는 이유가 여기 있다.** 마커는 「락 상태에서 계산했다」일 때만 찍히므로,
+ * 락이 걸린 캠페인은 **락 이후 첫 성공 실행에서 정확히 한 번** 계산된다 — 그 계산이 실행
+ * 시각까지의 취소를 전부 담으므로 ③의 누락 구간이 아예 없다. `SalesCampaign.status` 를 쓰는
+ * 경로가 라우트·리포지토리·lib 에 흩어져 있어 전이 훅은 그 전부에 배선해야 하는데, 이
+ * 방식은 배선 0 으로 같은 결과를 얻는다.
+ * ⚠️ **대신 남는 어긋남 하나를 적어 둔다(방향이 반대다).** 확정 계산이 락 **이후**에 돌므로
+ * 「락 ~ 그 실행」 사이에 들어온 취소는 **포함된다** — 의도(락=확정) 대비 취소 과다 계상 =
+ * **정산액 과소**다. 종전의 ③과 반대 방향이고, 돈에서는 받을 돈을 적게 잡는 쪽이 안전하다.
+ * 그 창은 다음 성공 실행까지이며(크론 실패가 끼면 늘어난다) **한 번 확정되면 더 벌어지지
+ * 않는다** — 종전 ③은 반대로 실패가 낄수록 누락이 커졌다.
+ *
+ * ⚠️ 락이 **풀리면 마커를 지운다**(값을 다시 계산하는 그 회차에). 안 지우면 되돌린 캠페인이
+ * 다시 락될 때 확정 계산 없이 옛 값으로 굳는다.
+ * ⚠️ `cachedProductOrderIds` 가 비면 계산도 마커도 남기지 않는다 — "주문이 0 건"과 "마감
+ * 스냅샷이 주문을 못 담았다"가 구분되지 않아, 그 상태로 0 을 확정하면 되돌릴 길이 없다.
+ * 네이버 호출은 어차피 0 이라 매일 재평가해도 비용이 없다.
  * ⚠️ `cron.log` 의 성공 줄은 상한이 있어 응답 끝이 잘릴 수 있다 — `SystemTaskLog.details`
  * 나 수동 호출로 읽을 것.
  *
- * 🪤 **반대 방향의 한계도 하나 있다(이쪽이 돈에 가깝다).** 컷오프가 「락 시점」이 아니라
- * 「직전 크론 실행 시점」이라, **마지막 실행과 수동 락 사이에 들어온 취소는 값이 이미
- * 0 이 아니면 반영되지 않는다.** 위 「수렴하지 않는다」는 헛조회(과다 조회) 쪽으로 틀리지만
- * 이쪽은 **취소 과소 계상 = 정산액 과대** 쪽으로 틀린다.
- * ⚠️ 그 창은 크론이 매일 성공할 때 24시간이고 **실패 회차가 끼면 그만큼 늘어난다.**
- * 영구는 아니다 — 아래 `includeLocked` 로 되돌릴 수 있다. ⛔ **단 90일 창 안에서만이다** —
- * 대상 조회의 `endDate >= limitDate` 는 그 옵션과 무관하게 걸려, 창을 벗어난 캠페인은
- * 이 레버로도 조회되지 않는다.
- * ℹ️ 이 한계는 **의도(락=확정) 대비**의 어긋남이다. 종전 동작(락이어도 매일 다시 씀) 대비로는
- * 락 이후의 취소도 함께 빠지는데, 그쪽은 오너 확정(2026-07-15)대로다.
- * 값싼 후속안은 락으로 전이하는 시점에 1회 재계산하는 것이다(별건).
- * 위 ①②와 이 한계까지 **셋을 함께 닫는** 근본 처방은 「마지막 계산 시각」 컬럼
- * (`cachedPostCloseCancelSyncedAt` 류)이고, 스키마 변경이라 별건이다.
+ * 90일 창(`endDate >= limitDate`)은 이제 **「끝내 락되지 않는 건」의 백스톱 하나**다. 종전에는
+ * 취소가 0 인 락 캠페인에도 그 창이 유일한 1차 통제였는데, 마커가 그쪽을 가져갔다.
  *
- * `includeLocked` 는 그 위의 수동 재계산 레버다(값이 0 이 아닌데 틀린 경우).
+ * `includeLocked` 는 그 위의 수동 재계산 레버다(확정된 값이 틀렸다고 판단될 때).
  * 호출 경로: `run-cron.sh 'naver-settlement-sync?includeLocked=1'`(잡 이름이 URL 에 그대로
  * 이어 붙고 허용목록이 없다 — 그 스크립트가 `CRON_SECRET` 을 알아서 읽는다) 또는 같은
  * 시크릿을 든 수동 curl. ⛔ 레이더의 실행 버튼(`/api/system/cron-run`)은 쿼리를 붙이지
- * 않으므로 이 레버를 못 쓴다. 어느 경로든 정산 원장 재수집까지 함께 태운다(전부 멱등).
+ * 않으므로 이 레버를 못 쓴다. ⛔ **단 90일 창 안에서만이다** — 대상 조회의 `endDate` 필터는
+ * 그 옵션과 무관하게 걸린다. 어느 경로든 정산 원장 재수집까지 함께 태운다(전부 멱등).
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
-): Promise<{ campaigns: number; updated: number; skippedLocked: number; requeriedUncomputed: number }> {
+): Promise<{ campaigns: number; updated: number; skippedLocked: number; finalizedLocked: number }> {
   // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회.
-  // ⚠️ 이 창의 역할이 **둘로 갈렸다**(2026-09-09): 락이 걸리는 캠페인에는 정산 락이 1차
-  //    통제이고 이 창은 「끝내 락되지 않는 건」의 백스톱이다. 반면 **취소가 정말 0 인 락
-  //    캠페인**은 위 `mayBeUncomputed` 때문에 계속 조회되므로 그쪽에는 이 창이 **여전히
-  //    유일한 1차 통제**다. 줄이면 그 두 부류의 조정이 함께 멈춘다.
+  // ⚠️ 이 창은 **「끝내 락되지 않는 건」의 백스톱**이다 — 락이 걸리는 캠페인은 확정 마커가
+  //    1차 통제를 맡는다. 줄이면 락되지 않은 채 방치된 캠페인의 조정이 멈춘다.
   const limitDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
   const closedCampaigns = await prisma.orderCampaign.findMany({
@@ -244,6 +239,7 @@ export async function syncPostCloseCancellations(
       cachedProductOrderIds: true,
       cachedPostCloseCancelQuantity: true,
       cachedPostCloseCancelRevenue: true,
+      cachedPostCloseCancelFinalizedAt: true,
       mappings: true,
       name: true,
       salesCampaigns: { select: { status: true } }
@@ -252,29 +248,27 @@ export async function syncPostCloseCancellations(
 
   let updated = 0;
   let skippedLocked = 0;
-  // 락인데 값이 아직 0 이라 다시 조회한 건수 — 위 「수렴하지 않는다」를 재는 유일한 신호.
-  let requeriedUncomputed = 0;
+  // 이번 실행에서 **확정**된 건수(락 상태 첫 계산). 배포 후 따라잡기의 진행과 수렴을 재는 신호다.
+  let finalizedLocked = 0;
   const CHUNK_SIZE = 300;
 
   for (const camp of closedCampaigns) {
     // 딜 하나라도 정산에 들어갔으면 그 캠페인은 확정이다 — `campaigns-handler` 의 집계 창
     // 동결(`periodFrozenBySettlement`)과 같은 기준을 쓴다.
     const locked = (camp.salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status));
-    // 두 값이 모두 0 이면 아직 한 번도 계산되지 않았을 수 있다(위 🪤) — 건너뛰지 않는다.
-    const mayBeUncomputed =
-      (camp.cachedPostCloseCancelQuantity ?? 0) === 0 && (camp.cachedPostCloseCancelRevenue ?? 0) === 0;
+    // ⛔ 확정 여부는 **마커만** 본다 — 값이 0 인지로 판별하던 종전 방식으로 되돌리지 말 것
+    //    (기본값이 0 이라 "계산했는데 0" 과 "계산된 적 없음" 이 구분되지 않는다. 위 doc 🔑).
+    const finalized = camp.cachedPostCloseCancelFinalizedAt != null;
 
-    if (!options.includeLocked && locked && !mayBeUncomputed) {
+    if (!options.includeLocked && locked && finalized) {
       skippedLocked++;
       continue;
     }
     const rawIds = camp.cachedProductOrderIds;
     const ids = Array.isArray(rawIds) ? (rawIds as any[]).map(v => String(v)) : [];
+    // ⚠️ 주문 목록이 비면 계산도 **확정도** 하지 않는다 — "주문 0 건" 과 "마감 스냅샷이
+    //    주문을 못 담았다" 가 구분되지 않아, 그대로 확정하면 0 이 영구가 된다(위 doc).
     if (ids.length === 0) continue;
-
-    // ⚠️ **빈 주문 목록 검사 뒤에** 센다 — 앞에 두면 실제로 조회하지 않는 캠페인까지
-    //    세어 이 지표로 재조회 비용을 잴 수 없게 된다(그것이 이 카운터의 유일한 쓸모다).
-    if (locked && mayBeUncomputed) requeriedUncomputed++;
 
     let cancelQty = 0;
     let cancelRev = 0;
@@ -327,19 +321,31 @@ export async function syncPostCloseCancellations(
 
     const currentQty = camp.cachedPostCloseCancelQuantity || 0;
     const currentRev = camp.cachedPostCloseCancelRevenue || 0;
+    const valuesChanged = cancelQty !== currentQty || cancelRev !== currentRev;
 
-    if (cancelQty !== currentQty || cancelRev !== currentRev) {
+    // 락 상태에서 계산했으면 확정으로 찍고, 락이 풀렸으면 지운다(다시 락될 때 확정 계산을
+    // 한 번 더 받게 하려는 것이다 — 안 지우면 옛 값으로 굳는다).
+    const nextFinalizedAt = locked ? new Date() : null;
+    const markerChanged = locked !== finalized;
+
+    // ⛔ `valuesChanged` 만으로 쓰기를 결정하지 말 것 — 값이 그대로인 락 캠페인이 영영
+    //    확정되지 않아 90일 내내 재조회된다(그것이 이 작업이 닫은 「수렴하지 않는다」다).
+    if (valuesChanged || markerChanged) {
       await prisma.orderCampaign.update({
         where: { id: camp.id },
         data: {
           cachedPostCloseCancelQuantity: cancelQty,
-          cachedPostCloseCancelRevenue: cancelRev
+          cachedPostCloseCancelRevenue: cancelRev,
+          cachedPostCloseCancelFinalizedAt: nextFinalizedAt
         }
       });
-      updated++;
+      // `updated` 는 **값이 바뀐 건수**로 유지한다 — 마커만 찍힌 회차까지 세면 이 지표가
+      // 종전 실행과 비교 불가가 된다.
+      if (valuesChanged) updated++;
+      if (locked && !finalized) finalizedLocked++;
     }
   }
 
   // `campaigns` 는 **창 안의 전체**이고 실제 조회한 것은 `campaigns - skippedLocked` 다.
-  return { campaigns: closedCampaigns.length, updated, skippedLocked, requeriedUncomputed };
+  return { campaigns: closedCampaigns.length, updated, skippedLocked, finalizedLocked };
 }
