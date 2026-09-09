@@ -620,10 +620,13 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
   });
 
-  it("⚠️ 문장이 끝난 뒤의 경과 서술은 상태가 아니다", () => {
+  it("⚠️ 상태 필드에 경과 서술을 적으면 그 줄은 대기 주장으로 잡힌다 — 받아들인 대가다", () => {
+    // 머지 축에서 이 부류를 걸러내려던 처방(완료가 앞서면 뒤엣것은 서술)은 실제 대기 주장을
+    // 함께 침묵시켜 기각됐다(`claimsAwaitingMergeIn` 주석의 세 가지 재현). 그래서 이 줄은
+    // 빨강으로 잡히고, 고칠 곳은 판정기가 아니라 **그 보드 줄**이다(상태 필드에 서술을 쓴 것).
     const line = `- ✅ #5 [슬러그] 제목 — 머지·**prod 반영 완료**. 본문: … 오너 머지 대기 로 남아 있었다는 **설명** ${PR}`;
-    expect(readClaims(line).awaitingMerge).toBe(false);
-    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+    expect(readClaims(line).awaitingMerge).toBe(true);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.STALE_MERGE_MARKER);
   });
 
   it("⚠️ 강조 표식이 완료 서술을 가리지 않는다 — `머지 **완료**` 는 완료다", () => {
@@ -694,26 +697,33 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
   });
 
-  it("⚠️ 위치 규칙은 옛 형식에 적용하지 않는다 — 회차를 나란히 적는 관행이 있다", () => {
-    // 옛 형식 상태 문구는 짧고 `1차 완료 / 2차 대기` 처럼 회차를 함께 적어 완료가 앞서는 것이
-    // 예사다. 거기에 규칙을 대면 낡은 대기 마커를 놓친다(리뷰 실측 2건).
-    expect(verdictOf(`- **⏳ 1차 머지 완료 / 2차 오너 머지 대기 — 제목 ${PR}**: 본문`, shipped)).toBe(
+  /**
+   * ⚠️ 아래 3건은 **머지 축에 위치 규칙을 얹으려던 시도를 기각시킨 재현**이다(리뷰 실측).
+   * 완료 신호를 무엇으로 잡든 실제 대기 주장이 함께 침묵했다 — 셋 다 `origin/main` 에서도
+   * 잡히던 것이므로, 깨지면 탐지력을 잃은 것이다.
+   */
+  it("⚠️ 회차를 나란히 적은 대기 마커는 두 형식 **모두** 잡는다", () => {
+    // 새 형식에만 규칙을 걸면 티켓이 문제 삼은 형식 비대칭이 **반대로** 되살아난다.
+    expect(verdictOf(`- **⏳ 1차 머지·배포 완료 / 2차 오너 머지 대기 — 제목 ${PR}**: 본문`, shipped)).toBe(
       VERDICT.STALE_MERGE_MARKER,
     );
     expect(
-      verdictOf(`- **⏳ 머지·prod 반영 완료 / 후속 오너 리뷰 대기 — 제목 ${PR}**: 본문`, shipped),
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — 1차 머지·배포 완료 / 2차 오너 머지 대기 · ${PR}`, shipped),
     ).toBe(VERDICT.STALE_MERGE_MARKER);
   });
 
-  it("⚠️ 완료 선언이 `머지` 없이 적혀도 앞선 완료로 센다", () => {
-    // `MERGE_DONE` 은 `머지` 를 요구해서, 배포 어휘로만 적은 완료를 놓치고 뒤의 서술만 읽어
-    // 끝난 항목을 낡은 마커로 뒤집었다(리뷰 실측 2건).
+  it("⚠️ `머지·` 는 나열 구분자다 — 완료로 읽어 대기 주장을 덮지 않는다", () => {
     expect(
-      verdictOf(`- 🔴 #5 [슬러그] 제목 — prod 반영 완료. 종전 「오너 리뷰 대기」 표기를 정정함 · ${PR}`, shipped),
-    ).toBe(VERDICT.OK);
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — 머지·배포 대기. 오너 머지 대기 · ${PR}`, shipped),
+    ).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  it("⚠️ 데모 레인 배포 완료를 prod 완료로 읽지 않는다", () => {
+    // 완료 어휘를 배포 서술까지 넓히면 데모 첫 배포가 prod 완료로 읽혀 대기가 침묵한다
+    // (이 파일의 「데모 레인은 prod 승격과 다른 축」 규칙 정면 위반).
     expect(
-      verdictOf(`- 🔴 #5 [슬러그] 제목 — 배포 완료. 보드에 오너 머지 대기 로 남아 있던 줄 정리 · ${PR}`, shipped),
-    ).toBe(VERDICT.OK);
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — 데모 첫 배포 완료 후 오너 머지 대기 · ${PR}`, shipped),
+    ).toBe(VERDICT.STALE_MERGE_MARKER);
   });
 
   it("⚠️ 과거형 `승격 대기였다` 는 미배포 자백이 아니다", () => {
