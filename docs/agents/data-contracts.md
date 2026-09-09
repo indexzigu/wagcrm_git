@@ -264,6 +264,14 @@
     특히 `searchNaverProducts`(`naver-commerce-api.ts` = `apiRequest` 와 **별개의 두 번째
     클라이언트**)는 종국 실패만 계측된다. ⛔ 종전 서술 "쿨다운이 없다"는 **SUPERSEDED**
     (2026-07-30, 아래 항목).
+    ⚠️ **전송 계층 재시도도 안 들어간다** — `proxyFetch`(`fetch-client.ts`)는 전송 실패를
+    같은 프록시로 1회 다시 보낸다. 판정은 **거부 목록**이다(허용 목록이 아니다): GET·HEAD
+    이면서 ⓐ프록시가 CONNECT 를 거절한 경우 ⓑ호출자가 이미 중단한 요청이 아니면 재시도한다
+    — 즉 DNS 실패·연결 거부·TLS 오류도 재시도 대상이다. `noteNaverHttpAttempt` 는 그 **바깥**
+    에서 요청당 1회만 세므로 그 재시도는 어디에도 안 잡힌다. 그래서 **프록시 사업자가
+    세는 요청 수와 `httpAttempts` 는 원래 어긋난다** — 둘이 다르다고 계측 결함으로
+    조사하지 말 것. 술어의 정본은 `fetch-client.ts` 의 `shouldRetrySameProxy` 이고
+    계약은 `fetch-client.contract.test.ts` 가 고정한다.
 
 - **`searchNaverProducts` = 60초 TTL 쿨다운 (측정 후 결정, 2026-07-30):** 이 조회는
   `campaigns-handler` 의 `needsNaver` 가 참인 동안 **대시보드 GET 1회당 1회** 나갔다.
