@@ -192,18 +192,30 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
  * 틀리는 방향을 "헛조회"(유계: 90일 창이 상한) 쪽으로 잡는다.
  * ⛔ 이 예외를 "락이면 무조건 건너뛴다"로 단순화하지 말 것 — 그 순간 위 손실이 되살아난다.
  *
+ * ⚠️ **이 예외는 비용만의 문제가 아니라 의미의 변화다.** 건너뛰지 않는다는 것은 조회에
+ * 그치지 않고 **값을 다시 쓴다**는 뜻이라, 그 부분집합의 동결 시점은 「락 시점」이 아니라
+ * **「처음으로 0 이 아닌 값이 나온 시점」**이 된다(락 이후의 취소가 반영될 수 있다).
+ * 락=확정이라는 원칙과 완전히 같지는 않지만, 종전(락이어도 매일 다시 씀)보다는 좁고
+ * **0 영구 고정**보다는 안전하다는 판단이다.
+ * ⚠️ 그리고 **수렴하지 않는다**: 취소가 정말 0 인 캠페인은 값이 계속 0 이라 90일 창이
+ * 끝날 때까지 매일 재조회된다. 그런 캠페인이 흔하면 이 변경의 절감이 대부분 사라진다 —
+ * 배포 후 응답의 `skippedLocked` 로 실측할 것. 둘을 함께 닫는 근본 처방은 「마지막 계산
+ * 시각」 컬럼(`cachedPostCloseCancelSyncedAt` 류)이고, 스키마 변경이라 별건이다.
+ *
  * `includeLocked` 는 그 위의 수동 재계산 레버다(값이 0 이 아닌데 틀린 경우).
- * ⚠️ **오너가 화면에서 부를 수 있는 경로가 아니다** — 크론 실행기(`run-cron.sh`)도
- * 레이더의 수동 실행(`/api/system/cron-run`)도 URL 에 쿼리를 붙이지 않는다. `CRON_SECRET`
- * 을 든 수동 curl 이 유일하고, 그 호출은 정산 원장 재수집까지 함께 태운다(전부 멱등).
+ * 호출 경로: `run-cron.sh 'naver-settlement-sync?includeLocked=1'`(잡 이름이 URL 에 그대로
+ * 이어 붙고 허용목록이 없다 — 그 스크립트가 `CRON_SECRET` 을 알아서 읽는다) 또는 같은
+ * 시크릿을 든 수동 curl. ⛔ 레이더의 실행 버튼(`/api/system/cron-run`)은 쿼리를 붙이지
+ * 않으므로 이 레버를 못 쓴다. 어느 경로든 정산 원장 재수집까지 함께 태운다(전부 멱등).
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
 ): Promise<{ campaigns: number; updated: number; skippedLocked: number }> {
   // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회.
-  // ⚠️ 이 창의 **역할이 바뀌었다**(2026-09-09): 원래는 호출량 1차 통제였는데, 이제 그것은
-  //    위 정산 락이 담당하고 이 창은 **끝내 락되지 않는 캠페인**(마감·정산대기에 오래 머무는
-  //    건)이 영원히 조회되는 것을 막는 백스톱이다. 줄이면 그런 건의 조정이 조용히 멈춘다.
+  // ⚠️ 이 창의 역할이 **둘로 갈렸다**(2026-09-09): 락이 걸리는 캠페인에는 정산 락이 1차
+  //    통제이고 이 창은 「끝내 락되지 않는 건」의 백스톱이다. 반면 **취소가 정말 0 인 락
+  //    캠페인**은 위 `mayBeUncomputed` 때문에 계속 조회되므로 그쪽에는 이 창이 **여전히
+  //    유일한 1차 통제**다. 줄이면 그 두 부류의 조정이 함께 멈춘다.
   const limitDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
   const closedCampaigns = await prisma.orderCampaign.findMany({

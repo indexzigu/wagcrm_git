@@ -104,9 +104,9 @@ describe('syncPostCloseCancellations — 정산 락 캠페인 건너뛰기', () 
   });
 
   it('includeLocked 면 잠긴 캠페인도 다시 조회한다', async () => {
-    // 동결에는 구멍이 있다 — 마감과 정산 시작 사이에 이 잡이 한 번도 못 돌면 값이 0 으로
-    // 굳고, 이 함수가 유일한 writer 라 되돌릴 길이 없다. 이 옵션이 그 복구 경로다.
-    // ⛔ 지우지 말 것 — 지우면 그 상태가 영구가 된다.
+    // 0 으로 굳는 구멍은 위 `mayBeUncomputed` 계약이 닫는다. 이 옵션은 **그 위의 수동
+    // 레버**다 — 값이 0 이 아닌데 틀린 경우에 다시 계산하려고 쓴다.
+    // 호출 경로: `run-cron.sh 'naver-settlement-sync?includeLocked=1'` 또는 수동 curl.
     findManyMock.mockResolvedValue([campaign('SETTLEMENT_IN_PROGRESS')]);
     const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
 
@@ -114,6 +114,24 @@ describe('syncPostCloseCancellations — 정산 락 캠페인 건너뛰기', () 
 
     expect(queryOrderDetailsMock).toHaveBeenCalledTimes(1);
     expect(res).toMatchObject({ skippedLocked: 0 });
+  });
+
+  it('한쪽 값만 0 이면 계산된 것으로 보고 건너뛴다', async () => {
+    // 🪤 판정은 **두 값이 모두 0** 일 때만 미계산이다(AND). 매핑이 어긋나 수량은 잡히고
+    //    금액이 0 으로 계산되는 경우가 실제로 있어, `||` 로 넓히면 그런 캠페인이 90일 내내
+    //    재조회된다. 이 케이스가 그 경계를 고정한다.
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_IN_PROGRESS', {
+        cachedPostCloseCancelQuantity: 2,
+        cachedPostCloseCancelRevenue: 0,
+      }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ skippedLocked: 1 });
   });
 
   it('딜이 여럿이면 하나만 정산에 들어가도 건너뛴다', async () => {
