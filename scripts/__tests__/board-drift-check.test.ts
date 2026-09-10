@@ -892,8 +892,26 @@ describe("isClosedItem — 닫힌 항목은 좌표 위험이 아니다", () => {
     // **종결 항목이 「살아 있는 게이트」로 뒤집힌다**(리뷰 실측 — 실보드에 그 문구가 있다).
     expect(hasOpenGate("남은 게이트는 없다")).toBe(false);
     expect(hasOpenGate("다음 게이트는 없다")).toBe(false); // 선재 구멍도 같이 닫는다
-    // 음성 대조군 — 조사를 무조건 걷으면 진짜 게이트를 삼킨다(공백이 뒤따를 때만 걷는다).
+    // 음성 대조군 — 조사를 무조건 걷으면 진짜 게이트를 삼킨다(구분자가 뒤따를 때만 걷는다).
     expect(hasOpenGate("다음 게이트 은행 확인")).toBe(true);
+    expect(hasOpenGate("남은 게이트는:없음")).toBe(false); // 조사 뒤 구두점도 걷는다
+  });
+
+  it("⚠️ 이어지는 어미(`없고`)는 부정이 아니다 — 뒤에 할 일이 남는다", () => {
+    // 「살아 있는데 닫혔다」는 이 파일이 가장 위험하다고 규정한 방향이다(스윕이 남의 줄을 지운다).
+    expect(hasOpenGate("잔여는 없고 오너 실명 입력만 남았다")).toBe(true);
+    // 종결형만 부정으로 센다.
+    expect(hasOpenGate("다음 게이트 없음")).toBe(false);
+    expect(hasOpenGate("다음 게이트 = 없다")).toBe(false);
+  });
+
+  it("⚠️ 잔여 사각: 헤더에 ` — ` 가 없으면 제목의 게이트 낱말이 다시 읽힌다", () => {
+    // 폴백의 대가다 — 없애면 헤더에 적힌 게이트를 잃어 미배포 자백이 사라진다(종료코드 축의 침묵).
+    // 이쪽은 경고가 하나 늘 뿐이라 방향을 보고 택했다(`gateSearchText` 주석).
+    const link = "[PR #5](https://github.com/indexzigu/wagcrm_git/pull/5)";
+    expect(
+      isClosedItem(`- **✅ #5 [슬러그] 다음 게이트 정리 작업: 머지·prod 반영 완료**: 본문 ${link}`),
+    ).toBe(false);
   });
 
   it("⚠️ ` — ` 가 본문에만 있으면 게이트 탐색을 좁히지 않는다", () => {
