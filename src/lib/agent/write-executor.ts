@@ -22,6 +22,7 @@ import {
   MAX_PARTNER_CONTACTS,
   mainDealInputSchema,
   newPartnerInputSchema,
+  opaqueIdSchema,
   optionDealInputSchema,
   partnerContactInputSchema,
 } from "@/lib/agent-worker/contracts";
@@ -92,7 +93,6 @@ export type ConfirmSettlementArgs = z.infer<typeof confirmSettlementArgsSchema>;
  * 하나」)만 한 벌 더 있다(계약 변형은 익명 객체라 `action` 만 뗄 손잡이가 없다) — 갈리면
  * `__tests__/write-executor.test.ts` 의 계약 대조가 잡는다.
  */
-const opaqueEntityIdSchema = z.string().trim().min(1).max(128); // 계약 `opaqueIdSchema` 와 같은 상한
 
 const createPartnerArgsSchema = z
   .object({
@@ -105,7 +105,7 @@ export type CreatePartnerArgs = z.infer<typeof createPartnerArgsSchema>;
 
 const createDealArgsSchema = z
   .object({
-    partnerId: opaqueEntityIdSchema.optional(),
+    partnerId: opaqueIdSchema.optional(),
     partner: newPartnerInputSchema.optional(),
     mainDeal: mainDealInputSchema,
     optionDeals: z.array(optionDealInputSchema).max(MAX_OPTION_DEALS).optional(),

@@ -83,8 +83,11 @@ async function execute(input: CreateDealInput): Promise<ToolResult<CreateDealDat
       mainDeal,
       ...(options.length > 0 ? { optionDeals: options } : {}),
     },
-    // 승인 시점 요약(`handleCreateDeal`)과 같은 문장 — 승인 카드와 실행 결과가 다른
-    // 말을 하면 무엇을 승인했는지 되짚을 근거가 사라진다.
+    // 실행 시점 요약(`handleCreateDeal`)과 **거의** 같은 문장이다. 다른 곳이 하나 있다:
+    // 이미 등록된 거래처에 붙일 때 이 도구는 `기존 거래처 <id>` 로 **불투명 id 를** 적고,
+    // 실행기는 그때 조회한 상호를 적는다. 이 도구는 설계상 DB 를 보지 않아(§0-1) 이름을
+    // 알 방법이 없다 — 「같다」고 적어 두면 다음 사람이 카드에 상호가 뜬다고 믿는다.
+    // 승인 화면이 저장될 값을 보여주는 문제는 이 자리에서 풀 수 없다(별도 후속).
     summary:
       `딜 "${mainDeal.dealName}" 등록 (${partnerLabel})` +
       (options.length > 0 ? `, 옵션 ${options.length}건` : ""),
@@ -108,8 +111,14 @@ export const createDealTool: AgentTool<CreateDealInput, CreateDealData> = {
   name: "create_deal",
   description:
     "새 딜(상품)을 등록합니다. 사용자가 딜/상품 등록을 명시적으로 요청할 때만 사용합니다. " +
-    "거래처는 반드시 하나로 지정해야 합니다 — 이미 등록된 거래처면 partnerId(search_deals 등으로 " +
-    "먼저 확인), 이번에 새로 만들 거래처면 partner에 그 정보를 담습니다(둘 다 주면 거부됩니다). " +
+    // ⛔ 여기에 "search_deals 로 partnerId 를 먼저 확인하라"고 적지 말 것 — 그 도구는 딜 id 만
+    //    돌려주고 거래처 id 는 어떤 조회 도구로도 얻을 수 없다(2026-09-10 확인). 라우터에게
+    //    할 수 없는 일을 시키면 지어낸 값을 넣거나 조용히 실패한다. 거래처 조회 도구가 생기면
+    //    그때 이 문장을 바꾼다.
+    "거래처는 반드시 하나로 지정해야 합니다 — 이번에 새로 만들 거래처면 partner에 그 정보를 " +
+    "담습니다. 이미 등록된 거래처에 붙이려면 그 거래처의 내부 id(partnerId)가 필요한데 이를 " +
+    "찾아주는 조회 도구가 아직 없으니, id를 모르면 지어내지 말고 사용자에게 물어보십시오 " +
+    "(둘 다 주면 거부됩니다). " +
     "단가표에 옵션 줄이 있으면 optionDeals에 배열 순서대로 담으면 부모 딜 밑에 함께 만들어집니다. " +
     "실제로 만들지 않고 승인 대기 기안을 생성합니다 — 관리자 승인 후에만 실제 등록됩니다.",
   inputSchema,
