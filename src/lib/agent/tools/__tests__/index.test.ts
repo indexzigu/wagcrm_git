@@ -3,7 +3,7 @@ import { AGENT_TOOLS, findTool, toGeminiTools } from "../index";
 import { WRITE_TOOL_NAMES } from "../types";
 
 describe("AGENT_TOOLS 레지스트리", () => {
-  it("READ 5종 + WRITE 5종(메모/딜상태/정산확정/거래처등록/딜등록) 총 10종이 등록되어 있다 (Phase 5 HITL + 생성 2종)", () => {
+  it("READ 6종 + WRITE 5종(메모/딜상태/정산확정/거래처등록/딜등록) 총 11종이 등록되어 있다 (Phase 5 HITL + 생성 2종 + 거래처 조회)", () => {
     const names = AGENT_TOOLS.map((t) => t.name).sort();
     expect(names).toEqual(
       [
@@ -17,6 +17,7 @@ describe("AGENT_TOOLS 레지스트리", () => {
         "get_pipeline_status",
         "get_settlement_report",
         "search_deals",
+        "search_partners",
       ].sort()
     );
   });
@@ -32,13 +33,15 @@ describe("AGENT_TOOLS 레지스트리", () => {
       expect(WRITE_TOOL_NAMES.has(name), name).toBe(true);
     }
     expect(WRITE_TOOL_NAMES.has("search_deals")).toBe(false);
+    // search_partners는 READ다 — 이 Set에 들어가면 조회 결과가 승인 대기 기안으로 샌다.
+    expect(WRITE_TOOL_NAMES.has("search_partners")).toBe(false);
   });
 });
 
 describe("toGeminiTools — zod → JSON Schema 변환", () => {
   it("각 도구가 name/description/parameters를 갖는다", () => {
     const geminiTools = toGeminiTools();
-    expect(geminiTools).toHaveLength(10);
+    expect(geminiTools).toHaveLength(11);
     for (const tool of geminiTools) {
       expect(typeof tool.name).toBe("string");
       expect(typeof tool.description).toBe("string");

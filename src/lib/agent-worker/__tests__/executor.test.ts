@@ -9,6 +9,7 @@ import type { RouterDecisionParseResult } from "../router";
 const pipelineMock = vi.fn();
 const snapshotMock = vi.fn();
 const dealFindManyMock = vi.fn();
+const partnerFindManyMock = vi.fn();
 const proposalCreateMock = vi.fn();
 const proposalEventCreateMock = vi.fn();
 const dealFindUniqueMock = vi.fn();
@@ -41,6 +42,9 @@ vi.mock("@/lib/agent/tools/order-snapshot", async (importOriginal) => {
 });
 vi.mock("@/repositories/dealRepository", () => ({
   dealRepository: { findMany: (args: unknown) => dealFindManyMock(args) },
+}));
+vi.mock("@/repositories/partnerRepository", () => ({
+  PartnerRepository: { findMany: (args: unknown) => partnerFindManyMock(args) },
 }));
 // getPrisma() is invoked at import time by @/lib/order-converter/prisma.ts, before the
 // hoisted vi.fn() consts above exist, so every member defers to the mock lazily.
@@ -156,6 +160,7 @@ beforeEach(() => {
     pipelineMock,
     snapshotMock,
     dealFindManyMock,
+    partnerFindManyMock,
     proposalCreateMock,
     proposalEventCreateMock,
     dealFindUniqueMock,
@@ -378,6 +383,79 @@ describe("read operations reuse existing calculations inside the granted read sc
     const outcome = await executeAgentJob(job("search_deals", { query: "nothing" }), deps(accepted("python")));
 
     expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { evidenceRefs: [] } });
+  });
+
+  // search_partners — 이 조회가 없어서 `create_deal` 이 이미 등록된 거래처에 붙을 수
+  // 없었다(2026-09-10). 아래 다섯은 그 구멍이 다시 열리는 길을 하나씩 막는다.
+  const partnerRow = (index: number) => ({
+    id: `partner-${index}`,
+    name: `위엄식품 ${index}`,
+    type: "BRAND",
+    businessNumber: null,
+    updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+  });
+
+  it("search_partners puts the partner id in every result line — that id is why this operation exists", async () => {
+    partnerFindManyMock.mockResolvedValue([
+      { id: "partner-1", name: "위엄식품", type: "BRAND", businessNumber: "1234567890", updatedAt: new Date("2026-09-01T00:00:00.000Z") },
+    ]);
+
+    const outcome = await executeAgentJob(job("search_partners", { name: "위엄" }), deps(accepted("python")));
+
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED" });
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    expect(outcome.result.resultSummary).toContain("위엄식품 [BRAND] 사업자번호 1234567890 id=partner-1");
+    expect(outcome.result.evidenceRefs).toEqual(["partner-1"]);
+  });
+
+  it("search_partners matches a name by substring", async () => {
+    partnerFindManyMock.mockResolvedValue([partnerRow(1)]);
+
+    await executeAgentJob(job("search_partners", { name: "위엄" }), deps(accepted("python")));
+
+    const args = partnerFindManyMock.mock.calls[0][0] as { where: Record<string, unknown> };
+    expect(args.where.name).toMatchObject({ contains: "위엄" });
+  });
+
+  it("search_partners filters by partner type", async () => {
+    partnerFindManyMock.mockResolvedValue([partnerRow(1)]);
+
+    await executeAgentJob(job("search_partners", { type: "VENDOR" }), deps(accepted("python")));
+
+    const args = partnerFindManyMock.mock.calls[0][0] as { where: Record<string, unknown> };
+    expect(args.where).toMatchObject({ type: "VENDOR" });
+    expect(args.where.name).toBeUndefined();
+  });
+
+  it("search_partners marks a result set over 20 rows as truncated", async () => {
+    partnerFindManyMock.mockResolvedValue(Array.from({ length: 21 }, (_, index) => partnerRow(index)));
+
+    const outcome = await executeAgentJob(job("search_partners", {}), deps(accepted("python")));
+
+    const args = partnerFindManyMock.mock.calls[0][0] as { take: number };
+    expect(args.take).toBe(21);
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    expect(outcome.result.resultSummary).toContain("truncated at 20");
+    expect(outcome.result.evidenceRefs).toHaveLength(10);
+  });
+
+  it("search_partners returns a partner that has no deal at all (the hole this operation closed)", async () => {
+    // 딜이 하나도 없는 거래처. Deal 과 조인하는 순간 이 행은 결과에서 사라지고,
+    // 「거래처 먼저 등록 → 그 거래처에 단가표」 갈래가 다시 막힌다.
+    partnerFindManyMock.mockResolvedValue([
+      { id: "partner-new", name: "갓 만든 거래처", type: "BRAND", businessNumber: null, updatedAt: new Date("2026-09-01T00:00:00.000Z") },
+    ]);
+
+    const outcome = await executeAgentJob(job("search_partners", { name: "갓 만든" }), deps(accepted("python")));
+
+    const args = partnerFindManyMock.mock.calls[0][0] as { where: Record<string, unknown>; select: Record<string, boolean>; include?: unknown };
+    expect(JSON.stringify(args.where)).not.toContain("deal");
+    expect(args.include).toBeUndefined();
+    expect(Object.keys(args.select).sort()).toEqual(["businessNumber", "id", "name", "type", "updatedAt"]);
+    expect(dealFindManyMock).not.toHaveBeenCalled();
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    expect(outcome.result.resultSummary).toContain("id=partner-new");
+    expect(outcome.result.evidenceRefs).toEqual(["partner-new"]);
   });
 
   it("get_order_snapshot maps startAt/endAt to KST date keys and reuses the snapshot tool", async () => {

@@ -16,6 +16,7 @@ import {
   type SnapshotDailyAggregate,
 } from "@/lib/order-converter/daily-aggregate";
 import { dealRepository } from "@/repositories/dealRepository";
+import { PartnerRepository } from "@/repositories/partnerRepository";
 import { serializeJsonFields } from "@/repositories/actionProposalRepository";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import { getPipelineStatusTool } from "@/lib/agent/tools/pipeline-status";
@@ -49,7 +50,7 @@ import {
 /**
  * Agent worker executor (plan Task 5, contracts 4/5/7).
  *
- * - exact operation registry for the five frozen operations
+ * - exact operation registry for the frozen operations the contract declares
  * - every read stays inside the worker role's SELECT scope (SalesCampaign, Deal,
  *   Partner, Seller, NaverOrderSnapshot, CampaignGroup) by reusing existing pure
  *   calculations over narrow projections; no business formula is copied here
@@ -134,6 +135,7 @@ type OperationHandler = (input: AgentJobPayload["input"], context: OperationCont
  * by cast instead of re-declaring the frozen schemas here.
  */
 type SearchDealsInput = { query?: string; status?: string; partnerId?: string };
+type SearchPartnersInput = { name?: string; type?: string };
 type OrderSnapshotInput = { campaignId?: string; startAt?: string; endAt?: string };
 type CampaignFinancialsInput = { campaignId: string };
 type ProposalScalar = string | number | boolean | null;
@@ -234,6 +236,45 @@ async function searchDeals(input: SearchDealsInput): Promise<OperationOutcome> {
     status: "SUCCEEDED",
     summary: boundSummary(
       `search_deals: ${items.length} deal(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
+    ),
+    evidenceRefs: boundEvidence(items.map((row) => row.id)),
+    actionProposalId: null,
+  };
+}
+
+/**
+ * 거래처를 이름으로 찾아 **id 를 돌려준다**. `create_deal` 이 이미 등록된 거래처에 붙으려면
+ * 그 id 가 필요한데 라우터가 얻을 길이 없었다 — `search_deals` 는 딜 id 만 돌려주고, 딜이
+ * 아직 없는 거래처는 결과에 나오지도 않는다(2026-09-10).
+ *
+ * ⛔ Deal 과 조인하지 말 것. 조인하는 순간 「거래처 먼저 등록 → 그 거래처에 단가표」 갈래가
+ *    다시 막힌다 — 방금 만든 거래처에는 딜이 없다.
+ * 🔎 `type` 은 여기서 다시 검사하지 않는다. 계약이 `AgentJobPartnerTypeSchema` 로 이미
+ *    고정하기 때문이다(`search_deals.status` 는 계약에서 자유 문자열이라 실행기가 유일한
+ *    관문이고, 그래서 그쪽에만 검사가 있다).
+ */
+async function searchPartners(input: SearchPartnersInput): Promise<OperationOutcome> {
+  const where: Prisma.PartnerWhereInput = {
+    ...(input.type ? { type: input.type } : {}),
+    ...(input.name ? { name: containsSearch(input.name) } : {}),
+  };
+  const rows = await PartnerRepository.findMany({
+    where,
+    select: { id: true, name: true, type: true, businessNumber: true, updatedAt: true },
+    orderBy: { updatedAt: "desc" },
+    take: SEARCH_TAKE_LIMIT + 1,
+  });
+  const truncated = rows.length > SEARCH_TAKE_LIMIT;
+  const items = rows.slice(0, SEARCH_TAKE_LIMIT);
+  // 상호가 같은 거래처를 사람이 가려낼 수 있도록 사업자번호도 함께 보인다(있을 때만).
+  const lines = items.map(
+    (row) =>
+      `${row.name} [${row.type}]${row.businessNumber ? ` 사업자번호 ${row.businessNumber}` : ""} id=${row.id}`,
+  );
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(
+      `search_partners: ${items.length} partner(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
     ),
     evidenceRefs: boundEvidence(items.map((row) => row.id)),
     actionProposalId: null,
@@ -496,13 +537,14 @@ async function createActionProposal(
   };
 }
 
-/** Exact registry — the only dispatch surface for the five frozen operations. */
+/** Exact registry — the only dispatch surface for the operations the contract declares. */
 export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationHandler> = {
   search_deals: (input) => searchDeals(input as SearchDealsInput),
   get_pipeline_status: () => pipelineStatus(),
   get_order_snapshot: (input, context) => orderSnapshot(input as OrderSnapshotInput, context.now),
   get_campaign_financials: (input) => campaignFinancials(input as CampaignFinancialsInput),
   create_action_proposal: (input, context) => createActionProposal(input as CreateActionProposalInput, context),
+  search_partners: (input) => searchPartners(input as SearchPartnersInput),
 };
 
 function buildResult(

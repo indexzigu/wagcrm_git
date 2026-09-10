@@ -34,12 +34,16 @@ export const AgentJobTaskTypeSchema = z.enum([
   "research",
 ]);
 
+// ⚠️ 순서가 계약이다 — 파이썬 쪽 검증기가 이 목록을 **글자 순서 그대로** 자기 목록과
+// 대조한다(hermes `test_payload_mirror_matches_contract_literals`). 새 operation 은
+// 끝에 붙인다.
 export const AgentJobOperationSchema = z.enum([
   "search_deals",
   "get_pipeline_status",
   "get_order_snapshot",
   "get_campaign_financials",
   "create_action_proposal",
+  "search_partners",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -119,6 +123,21 @@ export const MAX_OPTION_DEALS = 50;
  * **글자**를 읽어 자기 목록과 대조한다(hermes `test_payload_mirror_matches_contract_literals`).
  */
 export const AgentJobPartnerTypeSchema = z.enum(["BRAND", "VENDOR", "AGENCY", "AGENT", "SELLER"]);
+
+/**
+ * 거래처를 이름으로 찾아 **id 를 돌려주는** 조회. `create_deal` 이 이미 등록된 거래처에
+ * 붙으려면 그 id 가 필요한데, `search_deals` 는 딜 id 만 돌려주고 딜이 없는 거래처는
+ * 결과에 아예 나오지 않아 라우터가 이 값을 채울 방법이 없었다(2026-09-10).
+ *
+ * ⛔ 이름으로 딜을 거는 길을 대신 열지 말 것 — 동명이인 거래처를 실행기가 임의로 고르게
+ * 된다. 사람이 목록에서 고르고 라우터는 고른 id 를 그대로 넘기는 것이 이 조회의 목적이다.
+ */
+const searchPartnersInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160).optional(),
+    type: AgentJobPartnerTypeSchema.optional(),
+  })
+  .strict();
 
 /** 거래처 담당자 한 명. 정본 화면(`POST /api/partners/[id]/contacts`)이 만드는 것과 같은 칸이다. */
 export const partnerContactInputSchema = z
@@ -263,6 +282,7 @@ const operationInputSchemas = {
   get_order_snapshot: orderSnapshotInputSchema,
   get_campaign_financials: campaignFinancialsInputSchema,
   create_action_proposal: createActionProposalInputSchema,
+  search_partners: searchPartnersInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;
