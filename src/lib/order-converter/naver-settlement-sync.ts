@@ -1,4 +1,5 @@
 import { apiRequest } from './naver-commerce-client';
+import { createNaverCallTally, runWithNaverCallTally } from './naver-api-usage';
 import { prisma } from './prisma';
 import { queryOrderDetails } from './naver-order-sync';
 import { isSalesCampaignLocked } from './mapping-service';
@@ -133,20 +134,35 @@ export async function runSettlementSync(settledDays = 3, unsettledDays = 21): Pr
 
 /** `runPlannedSettlementSync` 의 실행 요약 — 크론 응답과 `SystemTaskLog.details` 에 실린다. */
 export interface PlannedSettlementSyncResult {
-  /** 부른 결제일 수(= 계획의 날짜 수). */
+  /** 결제일 축으로 부른 날짜 수. */
   datesFetched: number;
-  /** 실제 HTTP 호출 수(페이지 포함) — 프록시 사용량과 대조하는 값이다. */
-  calls: number;
+  /** 정산완료일 축(안전망)으로 부른 날짜 수. */
+  completionDatesFetched: number;
+  /** 논리 요청 수(페이지 포함). 재시도는 세지 않는다. */
+  requests: number;
+  /**
+   * 실제 HTTP 시도 수 — `apiRequest` 의 401·429 재시도를 포함한다(`naver-api-usage` 집계기).
+   * ⚠️ 그래도 프록시 사용량과 **같지는 않다**: 토큰 발급과 `proxyFetch` 의 전송 계층 재시도는
+   * 어느 집계에도 안 들어가므로(P7) 프록시가 세는 수는 이 값 **이상**이다.
+   */
+  httpAttempts: number;
   /** upsert 한 원장 행 수. */
   casesUpserted: number;
+  /**
+   * 조회에 실패한 날짜(`pay:YYYY-MM-DD` · `complete:YYYY-MM-DD`). 비어 있지 않으면 호출자가
+   * 크론을 **실패로 선언**해야 한다. ⛔ 오류 메시지는 싣지 않는다 — 전송 계층 오류 사슬에 프록시
+   * 주소가 섞일 수 있어 `SystemTaskLog.details` 로 새면 안 된다(P0). 원인은 서버 로그에 남긴다.
+   */
+  failedDates: string[];
 }
 
 /**
- * **계획한 결제일만** 조회한다 — 정산 조회의 기본 경로(2단계, 2026-09-10).
+ * **계획한 날짜만** 조회한다 — 정산 조회의 기본 경로(2단계, 2026-09-10).
  *
- * 부를 날짜는 `settlement-pending-dates` 가 DB 만 읽어 정한다(정산 대기 주문의 결제일 ·
- * 주문이 있었던 최근 날짜 · 차감을 기다리는 취소 주문의 결제일). 대기 주문이 없는 날은
- * **0콜**이다 — 종전 고정 달력은 그런 날에도 24콜을 썼다.
+ * 부를 날짜는 `settlement-pending-dates` 가 DB 만 읽어 정한다: 결제일 축(정산 대기 주문의
+ * 결제일 · 주문이 있었던 최근 날짜 · 차감을 기다리는 취소 주문의 결제일)과 정산완료일 축
+ * 안전망(최근 끝난 며칠). 대기 주문이 없는 날은 결제일 조회가 **0콜**이고 안전망 몫만 남는다 —
+ * 종전 고정 달력은 그런 날에도 24콜을 썼다.
  *
  * 🔑 결제일 축을 `settleDecisionType` **없이** 부른다 — 정산완료·미정산·차감 행이 한 응답에
  * 함께 온다. 공식 문서는 이 파라미터를 선택으로만 적고 생략 시 동작을 명시하지 않아서,
@@ -154,19 +170,48 @@ export interface PlannedSettlementSyncResult {
  * 들어 있었고, 과거 날짜는 정산완료 행이 왔다. 그래서 날짜당 **1콜**로 충분하다.
  * ⛔ 「안전하게」 정산·미정산을 나눠 두 번 부르지 말 것 — 같은 데이터에 호출량만 두 배다.
  *
- * **정산완료일 축 루프가 없는 이유:** 정산 완료는 대기 주문의 결제일을 다시 볼 때
- * `settleCompleteDate` 로 드러나고, 차감(`*_CANCEL`) 행은 원거래 결제일로 온다(설계 정본
- * §0-3③ 실측). 완료일 축을 따로 훑을 이유가 사라졌다.
+ * 🔑 **정산완료일 축은 좁게 남는다 — 이것이 안전망이다.** 2단계 첫 커밋은 이 축을 통째로
+ * 뺐고, 교차 검증 두 레인이 같은 결함을 잡았다: 취소 사실을 읽는 스냅샷 프로젝션이 놓치는
+ * 반품(평평한 클레임 모양 · 결제 30일 이후 반품)의 차감이 **영영 조회되지 않아** 금액이 부풀려진
+ * 채 남는다. 완료·차감은 끝나는 날 정산완료일 축에 반드시 나타나므로 그 축이 그것을 닫는다.
+ * 창 크기의 근거는 `SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS`.
+ *
+ * **날짜별로 실패를 격리한다.** 한 날짜의 조회가 계속 실패해도 나머지 날짜(특히 재확인 창이
+ * 짧은 최근 주문일)는 받아야 한다 — 종전처럼 첫 실패에서 전체를 멈추면, 결정론적으로 실패하는
+ * 옛 날짜 하나가 최근 날짜를 재확인 창 밖으로 밀어낸다. 실패는 `failedDates` 로 돌려준다.
  */
-export async function runPlannedSettlementSync(plan: Pick<SettlementQueryPlan, 'dates'>): Promise<PlannedSettlementSyncResult> {
-  let calls = 0;
+export async function runPlannedSettlementSync(
+  plan: Pick<SettlementQueryPlan, 'dates' | 'completionDates'>,
+): Promise<PlannedSettlementSyncResult> {
+  const tally = createNaverCallTally();
+  let requests = 0;
   let casesUpserted = 0;
-  for (const { dateKey } of plan.dates) {
-    const { cases, pages } = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_PAY_DATE');
-    calls += pages;
-    casesUpserted += await upsertCases(cases);
-  }
-  return { datesFetched: plan.dates.length, calls, casesUpserted };
+  const failedDates: string[] = [];
+
+  const fetchInto = async (label: string, dateKey: string, periodType: string) => {
+    try {
+      const { cases, pages } = await fetchCasesForDate(dateKey, periodType);
+      requests += pages;
+      casesUpserted += await upsertCases(cases);
+    } catch (error) {
+      failedDates.push(`${label}:${dateKey}`);
+      console.error(`[naver-settlement-sync] ${label}:${dateKey} 조회 실패 — 다른 날짜는 계속한다:`, error);
+    }
+  };
+
+  await runWithNaverCallTally(tally, async () => {
+    for (const { dateKey } of plan.dates) await fetchInto('pay', dateKey, 'SETTLE_CASEBYCASE_PAY_DATE');
+    for (const dateKey of plan.completionDates) await fetchInto('complete', dateKey, 'SETTLE_CASEBYCASE_SETTLE_COMPLETE_DATE');
+  });
+
+  return {
+    datesFetched: plan.dates.length,
+    completionDatesFetched: plan.completionDates.length,
+    requests,
+    httpAttempts: tally.httpAttempts,
+    casesUpserted,
+    failedDates,
+  };
 }
 
 const IN_CHUNK = 500;

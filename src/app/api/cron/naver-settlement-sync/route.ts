@@ -17,8 +17,10 @@ export const maxDuration = 300;
  * 네이버 정산 원장 일일 수집 + 마감 캠페인 결산 캐시 갱신.
  *
  * **기본 경로 = 대기 기반 계획**(2단계, 2026-09-10): `settlement-pending-dates` 가 DB 만 읽어
- * 부를 결제일을 정하고 `runPlannedSettlementSync` 가 **그 날짜만** 조회한다. 종전 고정 달력
- * (정산완료일 3일 + 결제일 21일 = 데이터 유무와 무관하게 하루 24콜)은 **백필 전용**으로 남았다.
+ * 부를 결제일을 정하고 `runPlannedSettlementSync` 가 **그 날짜만** 조회한다 — 여기에 정산완료일
+ * 축 **안전망**(최근 끝난 며칠)이 매 회차 붙는다(취소 감지가 놓치는 차감을 받는 유일한 경로다).
+ * 종전 고정 달력(정산완료일 3일 + 결제일 21일 = 데이터 유무와 무관하게 하루 24콜)은
+ * **백필 전용**으로 남았다.
  *
  * 쿼리 파라미터:
  * · ?settledDays=N&unsettledDays=M — **백필.** 둘 중 하나라도 주면 계획 대신 고정 달력으로
@@ -78,7 +80,24 @@ async function handler(request: Request) {
     // 과거엔 hot TTL(60s)이 이 역할을 대신했다 — 이제 TTL은 보험이고 반영은 태그가 담당.
     revalidateCampaignCaches();
 
-    return NextResponse.json({ ok: true, includeLocked, ...sync, plan, claimSourceUnavailableDates, recompute, cancellations });
+    // 날짜별 실패는 격리했으므로(한 날짜가 나머지를 막지 않는다) 여기서 **실패로 선언**한다 —
+    // 안 하면 HTTP 200 이라 래퍼가 SUCCESS 로 기록해 레이더가 초록으로 남는다(CronOutcomeBody 계약).
+    const failedDates = sync.mode === "planned" ? sync.failedDates : [];
+    const failure =
+      failedDates.length > 0
+        ? { failed: true, failureReason: `정산 조회 ${failedDates.length}건 실패: ${failedDates.join(", ")}` }
+        : {};
+
+    return NextResponse.json({
+      ok: failedDates.length === 0,
+      includeLocked,
+      ...sync,
+      plan,
+      claimSourceUnavailableDates,
+      recompute,
+      cancellations,
+      ...failure,
+    });
   } catch (error) {
     console.error("[cron/naver-settlement-sync] Unexpected error:", error);
     return NextResponse.json(
