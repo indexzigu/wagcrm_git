@@ -17,7 +17,7 @@ import {
 } from "@/lib/order-converter/daily-aggregate";
 import { dealRepository } from "@/repositories/dealRepository";
 import { PartnerRepository } from "@/repositories/partnerRepository";
-import { ActionProposalRepository, serializeJsonFields } from "@/repositories/actionProposalRepository";
+import { serializeJsonFields } from "@/repositories/actionProposalRepository";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import { getPipelineStatusTool } from "@/lib/agent/tools/pipeline-status";
 import { getOrderSnapshotTool } from "@/lib/agent/tools/order-snapshot";
@@ -52,8 +52,9 @@ import {
  *
  * - exact operation registry for the frozen operations the contract declares
  * - every read stays inside the worker role's SELECT scope (SalesCampaign, Deal,
- *   Partner, Seller, NaverOrderSnapshot, CampaignGroup) by reusing existing pure
- *   calculations over narrow projections; no business formula is copied here
+ *   Partner, Seller, NaverOrderSnapshot, CampaignGroup, and ActionProposal rows this
+ *   worker created) by reusing existing pure calculations over narrow projections;
+ *   no business formula is copied here
  * - `create_action_proposal` validates WRITE_ACTIONS + Zod args + target existence,
  *   then INSERTs the proposal as PENDING_APPROVAL plus its initial event in one
  *   transaction — never an UPDATE, never an approval/execution function
@@ -184,16 +185,35 @@ function failure(errorClass: string, summary: string): OperationFailure {
  *    거래처의 정확한 id** 라, 이어지는 딜 기안이 이름 검색 없이 붙는다.
  */
 async function getActionProposal(input: GetActionProposalInput): Promise<OperationOutcome> {
-  const proposal = await ActionProposalRepository.findById(input.proposalId);
+  const proposal = await getPrisma().actionProposal.findUnique({
+    where: { id: input.proposalId },
+    select: {
+      id: true,
+      status: true,
+      title: true,
+      createdBy: true,
+      executedRefType: true,
+      executedRefId: true,
+      errorMessage: true,
+    },
+  });
   if (!proposal || proposal.createdBy !== ACTOR) {
     return failure("PROPOSAL_NOT_FOUND", "no proposal by this worker with that id");
   }
-  const lines = [`get_action_proposal: ${proposal.id} status=${proposal.status}`, `title=${proposal.title}`];
-  if (proposal.executedRefType && proposal.executedRefId) {
-    lines.push(`executedRef=${proposal.executedRefType}:${proposal.executedRefId}`);
-  }
+  // ⛔ 기계가 읽는 사실(상태·만들어진 대상)은 **첫 줄에만** 싣는다. 제목은 봇이 사진에서
+  //    읽은 글로 만들어져, 제목 속 줄바꿈 뒤의 "executedRef=PARTNER:<남의 id>" 가 진짜 줄보다
+  //    앞에 서면 딜이 엉뚱한 거래처에 붙는다. 첫 줄은 DB 가 만든 값만으로 이뤄지고, 사람이
+  //    읽는 둘째 줄 이후는 줄바꿈을 눌러 한 줄씩으로 둔다.
+  const executedRef =
+    proposal.executedRefType && proposal.executedRefId
+      ? ` executedRef=${proposal.executedRefType}:${proposal.executedRefId}`
+      : "";
+  const lines = [
+    `get_action_proposal: ${proposal.id} status=${proposal.status}${executedRef}`,
+    `title=${flattenLineBreaks(proposal.title)}`,
+  ];
   if (proposal.status === "FAILED" && proposal.errorMessage) {
-    lines.push(`error=${proposal.errorMessage.slice(0, PROPOSAL_ERROR_EXCERPT_CHARS)}`);
+    lines.push(`error=${flattenLineBreaks(proposal.errorMessage.slice(0, PROPOSAL_ERROR_EXCERPT_CHARS))}`);
   }
   return {
     status: "SUCCEEDED",
@@ -203,6 +223,14 @@ async function getActionProposal(input: GetActionProposalInput): Promise<Operati
     ),
     actionProposalId: null,
   };
+}
+
+/**
+ * 줄을 나누는 문자를 공백 하나로 누른다. JS `\s` 에 없는 \u0085·\u001c-\u001e 도 넣는다 —
+ * 결과를 읽는 쪽(hermes, Python `splitlines`)은 그것들도 줄바꿈으로 친다.
+ */
+function flattenLineBreaks(text: string): string {
+  return text.replace(/[\s\u0085\u001c-\u001e]+/g, " ").trim();
 }
 
 /** Maps a tool error onto the queue contract without copying its raw message. */
