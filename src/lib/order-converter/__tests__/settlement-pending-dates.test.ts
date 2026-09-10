@@ -197,7 +197,8 @@ describe('decideSettlementQueryPlan — 조용히 빠지는 길이 없다', () =
     const future = addDays(TODAY, 3);
     const result = plan({ cases: [caseRow({ productOrderId: 'A', payDate: new Date(`${future}T00:00:00.000Z`) })] });
     expect(result.dates).toEqual([]);
-    expect(result.counters.droppedByAge).toBe(1);
+    expect(result.counters.droppedByFutureDate).toBe(1);
+    expect(result.counters.droppedByAge).toBe(0); // 「오래됨」과 「미래」는 다른 사고다 — 섞지 않는다
   });
 
   it('날짜가 상한을 넘으면 오래된 쪽을 남기고 잘린 수를 신고한다', () => {
@@ -212,8 +213,35 @@ describe('decideSettlementQueryPlan — 조용히 빠지는 길이 없다', () =
     const result = plan({ cases, claimedOrders });
     expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN);
     expect(result.counters.truncatedDates).toBe(3);
-    // 오래된 쪽이 남는다 — 최근 날짜는 다음 회차에 다시 들어온다.
+    // 오래된 쪽이 남는다 — 상한에 먼저 닿아 기회가 적은 쪽이다.
     expect(result.dates[0].dateKey).toBe(addDays(TODAY, -(SETTLEMENT_MAX_DATES_PER_RUN + 2 + 10)));
+  });
+
+  it('상한이 가득 차도 최근 주문 날짜는 굶지 않는다', () => {
+    // 🪤 차감이 영영 안 오는 옛 클레임이 상한을 매 회차 독점하면, 오늘 주문일이 재확인 창을
+    //    벗어나 **다시는 계획에 오르지 못한다**(원장을 못 받았으니 종료①로도 안 잡힌다).
+    const cases = [];
+    const claimedOrders = [];
+    for (let i = 0; i < SETTLEMENT_MAX_DATES_PER_RUN + 5; i++) {
+      const dateKey = addDays(TODAY, -(i + 10));
+      cases.push(caseRow({ productOrderId: `A${i}`, settled: true, payDate: new Date(`${dateKey}T00:00:00.000Z`) }));
+      claimedOrders.push({ productOrderId: `A${i}`, payDateKey: dateKey });
+    }
+    const result = plan({ cases, claimedOrders, snapshots: [{ snapshotDate: TODAY, ordersCount: 3 }] });
+    expect(result.dates.map((d) => d.dateKey)).toContain(TODAY);
+    expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN);
+  });
+
+  it('미래 날짜는 세 경로 모두에서 계수하며 건너뛴다', () => {
+    // 0 이 아니면 KST 날짜키가 하루 밀린 것이다 — 카운터가 없으면 「할 일 없음」과 같은 얼굴이 된다.
+    const future = addDays(TODAY, 2);
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'A', settled: true, payDate: new Date(`${future}T00:00:00.000Z`) })],
+      claimedOrders: [{ productOrderId: 'A', payDateKey: future }],
+      snapshots: [{ snapshotDate: future, ordersCount: 1 }],
+    });
+    expect(result.dates).toEqual([]);
+    expect(result.counters.droppedByFutureDate).toBe(2);
   });
 });
 

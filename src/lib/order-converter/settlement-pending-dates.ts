@@ -201,6 +201,14 @@ export interface SettlementQueryPlan {
    * 넘을 때만 페이지가 늘어난다(하루 주문 규모는 P7 *Product-Order Query Paging* 참조).
    */
   estimatedCalls: number;
+  /**
+   * 관측 카운터.
+   *
+   * ⚠️ **`dropped*` 계열의 기준선은 읽기 창이 정한다** — `loadSettlementQueryPlan` 이 관측용
+   * 으로 읽는 범위(`SETTLEMENT_CLAIM_LOOKBACK_DAYS` + `SETTLEMENT_CLAIM_OBSERVE_MARGIN_DAYS`)를
+   * 넓히거나 좁히면 같은 데이터에서도 값이 계단식으로 움직인다. 추세를 볼 때 그 창이 그대로
+   * 였는지 먼저 확인할 것 — 안 그러면 창을 넓힌 날의 점프를 「포기 건 급증」으로 오독한다.
+   */
   counters: {
     /** 정산완료 행이 없어 대기 중인 주문 수. */
     pendingUnsettledOrders: number;
@@ -214,6 +222,13 @@ export interface SettlementQueryPlan {
     droppedByClaim: number;
     /** 상한(`SETTLEMENT_PENDING_MAX_AGE_DAYS`)을 넘겨 포기한 **주문** 수(종료③). */
     droppedByAge: number;
+    /**
+     * 날짜가 **미래**라 건너뛴 건수(세 경로 합계).
+     *
+     * 🪤 정상 운영에서는 0 이다. 0 이 아니면 KST 날짜키를 만드는 어딘가가 하루 밀린 것이고,
+     * 그때 이 카운터가 없으면 로그가 「할 일 없음」과 **완전히 같은 얼굴**이 된다.
+     */
+    droppedByFutureDate: number;
     /**
      * 원장이 그 날짜 키로 **하나도 안 잡힌 채** 재확인 창을 벗어난 날짜 수.
      *
@@ -359,6 +374,7 @@ export function decideSettlementQueryPlan(args: {
     droppedBySettled: 0,
     droppedByClaim: 0,
     droppedByAge: 0,
+    droppedByFutureDate: 0,
     droppedByAgeDates: 0,
     droppedByClaimWindow: 0,
     claimsWithoutSettledOriginal: 0,
@@ -438,9 +454,11 @@ export function decideSettlementQueryPlan(args: {
       counters.droppedByClaim++;
       continue;
     }
-    if (dateKey < oldestPendingKey || dateKey > todayKey) {
-      // 미래 결제일도 여기서 막는다 — 안 막으면 잘못 들어온 행 하나가 그 날짜를 매일
-      // 계획에 올리면서 `droppedByAge` 에도 안 잡혀 카운터로 보이지도 않는다.
+    if (dateKey > todayKey) {
+      counters.droppedByFutureDate++;
+      continue;
+    }
+    if (dateKey < oldestPendingKey) {
       counters.droppedByAge++;
       continue;
     }
@@ -458,7 +476,10 @@ export function decideSettlementQueryPlan(args: {
   const oldestRecheckKey = addKstDays(todayKey, -(SETTLEMENT_ORDER_DATE_RECHECK_DAYS - 1));
   for (const snap of snapshots) {
     if (snap.ordersCount <= 0) continue;
-    if (snap.snapshotDate > todayKey) continue;
+    if (snap.snapshotDate > todayKey) {
+      counters.droppedByFutureDate++;
+      continue;
+    }
 
     const ledgerCount = ledgerOrderIdsByDate.get(snap.snapshotDate)?.size ?? 0;
     if (ledgerCount < snap.ordersCount) counters.ledgerShortDates++; // 관측 전용 — 판정에 쓰지 않는다
@@ -482,7 +503,10 @@ export function decideSettlementQueryPlan(args: {
       continue;
     }
     if (deducted.has(claimed.productOrderId)) continue; // 차감이 이미 왔다
-    if (claimed.payDateKey > todayKey) continue;
+    if (claimed.payDateKey > todayKey) {
+      counters.droppedByFutureDate++;
+      continue;
+    }
     if (claimed.payDateKey < oldestClaimKey) {
       // 차감이 끝내 안 온 채 창을 벗어난 클레임 — **돈이 걸린 배제**라 신호를 남긴다.
       counters.droppedByClaimWindow++;
@@ -500,8 +524,19 @@ export function decideSettlementQueryPlan(args: {
     }))
     .sort((a, b) => (a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : 0));
 
-  // 오래된 날짜를 먼저 남긴다 — 상한에 먼저 닿아 기회가 적은 쪽이다(§`MAX_DATES_PER_RUN`).
-  const dates = allDates.slice(0, SETTLEMENT_MAX_DATES_PER_RUN);
+  // 🪤 **상한을 그냥 「오래된 순 자르기」로 하면 최근 날짜가 굶는다.** 차감이 영영 안 오는
+  // 클레임(예: 접수 후 철회된 반품)이 서로 다른 결제일 여러 곳에 남으면 그 옛 날짜가 매
+  // 회차 상한을 가득 채우고, 옛 날짜는 하루에 하나씩만 창을 벗어나므로 포화가 재확인 창
+  // (`SETTLEMENT_ORDER_DATE_RECHECK_DAYS`)보다 오래 간다 → 오늘 주문일이 그 창 밖으로 나가
+  // **다시는 계획에 오르지 못한다**(원장을 못 받았으니 종료①로도 안 잡힌다).
+  // 그래서 재확인 몫을 **먼저 확보**한 뒤 남은 자리를 오래된 날짜로 채운다. 재확인 날짜는
+  // 정의상 `SETTLEMENT_ORDER_DATE_RECHECK_DAYS` 개를 넘지 않으므로 상한 안에 항상 들어간다.
+  const recentDates = allDates.filter((d) => d.reasons.includes('recent-order-date'));
+  const olderDates = allDates.filter((d) => !d.reasons.includes('recent-order-date'));
+  const roomForOlder = Math.max(0, SETTLEMENT_MAX_DATES_PER_RUN - recentDates.length);
+  const dates = [...recentDates, ...olderDates.slice(0, roomForOlder)].sort((a, b) =>
+    a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : 0,
+  );
   counters.truncatedDates = allDates.length - dates.length;
 
   return { dates, estimatedCalls: dates.length, counters };
@@ -564,7 +599,11 @@ export async function loadSettlementQueryPlan(nowMs: number = Date.now()): Promi
   for (const row of claimRows) {
     const projected = parseSnapshotClaimSource(row.claimSource);
     if (projected === null) {
-      claimSourceUnavailableDates.push(row.snapshotDate);
+      // ⚠️ **창 밖은 경고하지 않는다.** 관측용으로 넓게 읽은 구간(`observeFromKey` ~
+      // `oldestClaimKey`)은 애초에 재진입 대상이 아니라, 거기서 판독 불가를 알려 봐야
+      // 손 쓸 수 없는 경고가 매 회차 쌓여 **창 안쪽의 진짜 신호를 덮는다**(레거시 스냅샷은
+      // `claimSource` 가 비어 있다). 경고는 판정에 실제로 쓰이는 범위에만 건다.
+      if (row.snapshotDate >= oldestClaimKey) claimSourceUnavailableDates.push(row.snapshotDate);
       continue;
     }
     for (const order of projected) {
@@ -588,15 +627,24 @@ export async function loadSettlementQueryPlan(nowMs: number = Date.now()): Promi
   return { plan, claimSourceUnavailableDates };
 }
 
-/** 한 줄 로그·응답용 요약. 날짜가 많아도 줄이 터지지 않게 앞 12개만 적는다. */
+/**
+ * 로그 한 줄에 이름을 적을 날짜 수.
+ *
+ * ⛔ `SETTLEMENT_MAX_DATES_PER_RUN` 과 **같은 뜻이 아니다** — 이건 줄 길이 제한이고 저건
+ * 조회 상한이다. 두 수가 우연히 같으면 `+N` 표기가 도달 불가가 되고, 나중에 상한만 올리면
+ * 읽는 사람이 그 `+N` 을 「절단됨」으로 오독한다(절단은 `truncated=` 가 말한다).
+ */
+const PLAN_LOG_MAX_DATES = 8;
+
+/** 한 줄 로그·응답용 요약. 날짜가 많아도 줄이 터지지 않게 앞부분만 적는다. */
 export function formatSettlementQueryPlan(plan: SettlementQueryPlan): string {
-  const shown = plan.dates.slice(0, 12).map((d) => d.dateKey);
+  const shown = plan.dates.slice(0, PLAN_LOG_MAX_DATES).map((d) => d.dateKey);
   const more = plan.dates.length > shown.length ? `+${plan.dates.length - shown.length}` : '';
   const c = plan.counters;
   return (
     `calls=${plan.estimatedCalls} dates=[${shown.join(',')}${more}] ` +
     `pending=${c.pendingUnsettledOrders} recheck=${c.datesRechecked} claims=${c.claimsAwaitingDeduction} ` +
-    `dropped(settled=${c.droppedBySettled},claim=${c.droppedByClaim},age=${c.droppedByAge},ageDates=${c.droppedByAgeDates},` +
+    `dropped(settled=${c.droppedBySettled},claim=${c.droppedByClaim},age=${c.droppedByAge},future=${c.droppedByFutureDate},ageDates=${c.droppedByAgeDates},` +
     `claimWindow=${c.droppedByClaimWindow},deductionRows=${c.droppedByDeductionRows},nonProductRows=${c.droppedByNonProductLedgerRows}) ` +
     `unknownPayDate=${c.unknownPayDateOrders} ledgerShort=${c.ledgerShortDates} ` +
     `claimsNoOriginal=${c.claimsWithoutSettledOriginal} truncated=${c.truncatedDates}`
