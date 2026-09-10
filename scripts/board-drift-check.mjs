@@ -267,10 +267,28 @@ export function hasDurableReference(line) {
  * **아니다**. 낱말만 찾던 종전 판정은 이걸 "게이트 있음"으로 읽어, 진짜 종결 항목을 영영
  * 안 닫힌 것으로 봤다(실측 위음성 1건).
  */
-const GATE_MARK = /다음\s*게이트|잔여/;
+/**
+ * 게이트 라벨 어휘 — 실보드가 쓰는 세 형태다(실측 2026-09-10: `다음 게이트` 49 · `잔여` 44 ·
+ * `남은 게이트` 6).
+ *
+ * 🪤 **종전에는 앞의 둘만, 그것도 세 곳에 각각 하드코딩돼 있었다.** 그래서 `남은 게이트` 로 적은
+ * 줄은 게이트가 **아예 없는 것**으로 읽혔다 — 그 줄의 「아직 서버에 안 올라갔다」는 자백이 배포 축
+ * 판정에서 사라지고, 종결 판정도 그 줄을 닫힌 것으로 봤다. 사본이 셋이라 한 곳만 고쳐도 조용히
+ * 어긋나는 구조였으므로 **어휘는 여기 한 곳이 소유한다.**
+ * ⛔ 넓힐 때 소비처에 사본을 두지 말 것 — 그게 이 결함의 형태였다.
+ */
+const GATE_MARK = /다음\s*게이트|잔여|남은\s*게이트/;
+
+/**
+ * 같은 어휘의 전역 판본. **공유 인스턴스를 쓰지 않는다** — `g` 플래그 정규식은 `lastIndex` 를
+ * 들고 다녀서 호출 사이에 판정이 어긋난다(이 파일이 `MAIL_HOST_LITERAL` 급으로 이미 겪은 함정).
+ */
+function gateLabelMatches(text) {
+  return text.matchAll(new RegExp(GATE_MARK.source, "g"));
+}
 
 export function hasOpenGate(text) {
-  for (const m of text.matchAll(/다음\s*게이트|잔여/g)) {
+  for (const m of gateLabelMatches(text)) {
     const rest = text.slice(m.index + m[0].length).replace(/^[\s=:*·—-]+/, "");
     if (/^없(?:음|다|고)/.test(rest)) continue; // "게이트 없음" 은 게이트가 아니다
     return true;
@@ -295,8 +313,27 @@ export function hasOpenGate(text) {
  * 스윕이 남의 줄을 지우고(2026-07-31 실사고 형태, 되돌릴 이력 없음) "닫혔는데 살았다"고
  * 하면 줄이 조금 더 남을 뿐이다. 모호하면 **살아 있는 쪽**으로 판정한다.
  */
+/**
+ * 게이트 서술을 찾는 범위 — 새 형식은 **제목이 앞에** 있으므로 ` — ` 뒤부터 본다.
+ *
+ * 🪤 게이트를 상태 문구가 아니라 **본문**에 적는 것이 이 보드의 관례라(아래 `isClosedItem`
+ * 주석) 탐색 범위는 줄 전체였는데, 새 형식에서는 그 「줄 전체」에 제목이 포함된다. 그래서 제목에
+ * 게이트 낱말이 든 항목(`✅ #5 [슬러그] 다음 게이트 정리 작업 — 머지·prod 반영 완료`)이 **살아
+ * 있는 게이트를 가진 것**으로 읽혀, 끝난 항목이 종결로 안 잡히고 「좌표 없음」 경고 목록에 계속
+ * 올라왔다(리뷰 실측). 옛 형식은 ` — ` 뒤가 제목이므로 종전대로 줄 전체를 본다.
+ */
+function gateSearchText(line) {
+  if (!isNewDialectHeader(line)) return line;
+  const sep = line.indexOf(HEADER_SEP);
+  return sep >= 0 ? line.slice(sep) : line;
+}
+
 export function isClosedItem(line) {
   const status = statusPhrase(line);
+  // 게이트 주장은 **상태 구역**에서 읽는다 — 새 형식은 그것이 ` — ` 뒤에 있다.
+  // ⚠️ 종결 표식(`✅`·`종결`)은 아래에서 계속 `statusPhrase` 로 본다(두 형식 모두 앞 구역에
+  //    있다 — `statusRegion` 주석의 실측). 두 판정이 서로 다른 구역을 보는 것이 의도다.
+  const claimed = statusRegion(line);
 
   // 우선순위: 상태 문구가 게이트를 **언급하면** 그것이 항목 자신의 최신 주장이다.
   // 침묵할 때만 본문을 본다.
@@ -306,10 +343,10 @@ export function isClosedItem(line) {
   // (`… 다음 게이트 = **오너: CI 3종 통과 확인 후 머지**` 가 이미 머지된 항목의 본문에
   // 그대로 있다). 본문을 무조건 우선하면 그 낡은 서술이 전부 "살아 있는 게이트"가 되어
   // 아무것도 닫히지 않고, 판정기가 조용히 무용지물이 된다.
-  if (GATE_MARK.test(status)) {
-    if (hasOpenGate(status)) return false;
-    // 상태 문구가 "다음 게이트 없음"을 **명시**했다 — 본문의 낡은 서술보다 우선한다.
-  } else if (hasOpenGate(line)) {
+  if (GATE_MARK.test(claimed)) {
+    if (hasOpenGate(claimed)) return false;
+    // 상태 구역이 "다음 게이트 없음"을 **명시**했다 — 본문의 낡은 서술보다 우선한다.
+  } else if (hasOpenGate(gateSearchText(line))) {
     return false; // 상태 문구는 침묵하는데 본문이 게이트를 선언한다 = 살아 있다
   }
 
@@ -768,8 +805,11 @@ export function claimsDeployed(line) {
 }
 
 export function readClaims(line) {
-  const gateSegments = [...line.matchAll(/(잔여|다음\s*게이트)/g)].map((m) => {
-    const rest = line.slice(m.index, m.index + REGION_CAP);
+  // ⚠️ 매치를 찾은 텍스트에서 잘라낸다 — `gateSearchText` 가 부분 문자열을 돌려줄 수 있으므로
+  //    `m.index` 를 원본 `line` 에 대고 자르면 **다른 구간을 읽는다**(오프셋 기준 불일치).
+  const gateText = gateSearchText(line);
+  const gateSegments = [...gateLabelMatches(gateText)].map((m) => {
+    const rest = gateText.slice(m.index, m.index + REGION_CAP);
     const end = rest.slice(1).search(GATE_END);
     return end >= 0 ? rest.slice(0, end + 1) : rest;
   });
