@@ -270,18 +270,20 @@ export async function queryOrderDetails(productOrderIds: string[]): Promise<any[
     }
 
     // **빠진 id 를 함께 남긴다(T-154).** 건수만 남기면 이 경고를 본 사람이 대상을 좁힐 방법이
-    // 커머스API 재조회뿐이다 — 2026-09-10 조사에서 실제로 그 특정에만 조회 15회를 썼고,
-    // 그 조회는 아웃바운드 프록시의 월 한도를 직접 태운다(그 한도 소진이 크론 4종을 열흘간
-    // 멈춰 세운 적이 있다). 즉 이 한 줄의 부재가 장애 원인 자원을 조사할 때마다 갉았다.
+    // **커머스API 재조회뿐**인데, 그 경로는 아웃바운드 프록시의 월 한도를 태우고 그 한도
+    // 소진은 실제로 크론을 멈춰 세운 적이 있다(위 `fetch-client` 의 같은 배경). 즉 이 한 줄의
+    // 부재가 장애 원인 자원을 조사할 때마다 갉았다. 조사 실측은 핸드오프에 있다.
     // ℹ️ 미회신 자체는 결함이 아닐 수 있다 — **탈퇴 구매자의 주문을 커머스API 가 영구히
     //    제공하지 않는** 구조적 사유가 있다(P7). 이 줄의 몫은 차단이 아니라 **식별**이다.
+    // ⚠️ 건수는 **실제로 보낸** `chunk.length` 로 적는다 — 판정용 `requestedIds` 는 dedupe 한
+    //    값이라 그것을 「요청」이라 적으면 중복 입력에서 보낸 건수보다 작게 보고된다.
     const requestedIds = [...new Set(chunk.map((id) => String(id)))];
     const missingIds = requestedIds.filter((id) => !returnedIds.has(id));
     if (missingIds.length > 0) {
       const shown = missingIds.slice(0, MISSING_ID_LOG_CAP);
       const rest = missingIds.length - shown.length;
       console.warn(
-        `[naver-order-sync] query 요청 ${requestedIds.length}건 중 ${missingIds.length}건이 회신되지 않았습니다.` +
+        `[naver-order-sync] query 요청 ${chunk.length}건 중 ${missingIds.length}건이 회신되지 않았습니다.` +
           ` 미회신 productOrderId: ${shown.join(', ')}${rest > 0 ? ` 외 ${rest}건` : ''}`,
       );
     }

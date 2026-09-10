@@ -6,11 +6,11 @@ import {
   mergeOrdersByProductOrderId,
   isSnapshotStale,
   toDateKeyKst,
+  queryOrderDetails,
   runSync,
   runChangedSync,
   runFullSync,
   syncOrdersByIds,
-  queryOrderDetails,
 } from '../naver-order-sync';
 
 /**
@@ -735,6 +735,12 @@ describe('runChangedSync 커서 전진 — 좁은 advanceCursor 경로 (egress �
 });
 
 describe('queryOrderDetails 미회신 경고 (T-154)', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -748,7 +754,6 @@ describe('queryOrderDetails 미회신 경고 (T-154)', () => {
   }
 
   it('회신되지 않은 productOrderId 를 경고에 싣는다', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await mockQueryResponse([row('1001'), row('1003')]);
 
     await queryOrderDetails(['1001', '1002', '1003']);
@@ -758,7 +763,6 @@ describe('queryOrderDetails 미회신 경고 (T-154)', () => {
   });
 
   it('응답이 온전하면 경고하지 않는다', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await mockQueryResponse([row('1001'), row('1002')]);
 
     await queryOrderDetails(['1001', '1002']);
@@ -769,7 +773,6 @@ describe('queryOrderDetails 미회신 경고 (T-154)', () => {
   // ⛔ 판정을 개수로 되돌리면 이 케이스만 빨개진다 — 중복 행이 빠진 id 를 가려
   //    "요청 3 = 응답 3" 으로 읽히던 것이 P7 이 금지한 실패 모드다.
   it('개수가 같아도 id 가 빠졌으면 잡는다 (중복 행이 가리지 못한다)', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await mockQueryResponse([row('1001'), row('1001'), row('1003')]);
 
     await queryOrderDetails(['1001', '1002', '1003']);
@@ -779,12 +782,12 @@ describe('queryOrderDetails 미회신 경고 (T-154)', () => {
   });
 
   it('미회신이 많으면 상한까지만 싣고 나머지는 건수로 접는다', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const ids = Array.from({ length: 30 }, (_, i) => `20${String(i).padStart(3, '0')}`);
     await mockQueryResponse([]);
 
     await queryOrderDetails(ids);
 
+    expect(warn).toHaveBeenCalledTimes(1);
     const message = String(warn.mock.calls[0][0]);
     expect(message).toContain('30건이 회신되지 않았습니다');
     expect(message).toContain('외 10건');
