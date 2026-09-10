@@ -17,38 +17,43 @@ const campaignFindManyMock = vi.fn();
 const groupUpdateManyMock = vi.fn();
 const groupFindUniqueMock = vi.fn();
 const partnerFindUniqueMock = vi.fn();
+const partnerCreateMock = vi.fn();
+const dealCreateMock = vi.fn();
+const recordActivityCreateMock = vi.fn();
 const sellerFindUniqueMock = vi.fn();
 
 vi.mock("@/lib/activity-log", () => ({
   recordActivityMemo: (...args: unknown[]) => recordActivityMemoMock(...args),
   recordActivityChange: (...args: unknown[]) => recordActivityChangeMock(...args),
+  recordActivityCreate: (...args: unknown[]) => recordActivityCreateMock(...args),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
-    deal: { findUnique: dealFindUniqueMock, update: dealUpdateMock },
+    deal: { findUnique: dealFindUniqueMock, update: dealUpdateMock, create: dealCreateMock },
     salesCampaign: {
       findUnique: campaignFindUniqueMock,
       updateMany: campaignUpdateManyMock,
       findMany: campaignFindManyMock,
     },
     campaignGroup: { updateMany: groupUpdateManyMock, findUnique: groupFindUniqueMock },
-    partner: { findUnique: partnerFindUniqueMock },
+    partner: { findUnique: partnerFindUniqueMock, create: partnerCreateMock },
     seller: { findUnique: sellerFindUniqueMock },
   }),
 }));
 
 const { executeWriteAction, WRITE_ACTIONS } = await import("../write-executor");
+const { createActionProposalInputSchema } = await import("@/lib/agent-worker/contracts");
 
 const fakeTx = {
-  deal: { findUnique: dealFindUniqueMock, update: dealUpdateMock },
+  deal: { findUnique: dealFindUniqueMock, update: dealUpdateMock, create: dealCreateMock },
   salesCampaign: {
     findUnique: campaignFindUniqueMock,
     updateMany: campaignUpdateManyMock,
     findMany: campaignFindManyMock,
   },
   campaignGroup: { updateMany: groupUpdateManyMock, findUnique: groupFindUniqueMock },
-  partner: { findUnique: partnerFindUniqueMock },
+  partner: { findUnique: partnerFindUniqueMock, create: partnerCreateMock },
   seller: { findUnique: sellerFindUniqueMock },
 } as any;
 
@@ -64,9 +69,15 @@ describe("write-executor — 화이트리스트 디스패치", () => {
     sellerFindUniqueMock.mockReset();
   });
 
-  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement 3종이 등록되어 있다 (Phase 5 확장)", () => {
+  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal 5종이 등록되어 있다 (Phase 5 확장)", () => {
     expect(Object.keys(WRITE_ACTIONS).sort()).toEqual(
-      ["add_entity_memo", "change_deal_status", "confirm_settlement"].sort()
+      [
+        "add_entity_memo",
+        "change_deal_status",
+        "confirm_settlement",
+        "create_partner",
+        "create_deal",
+      ].sort()
     );
   });
 
@@ -963,5 +974,310 @@ describe("write-executor — confirm_settlement × 조합 캠페인 (CG-1)", () 
 
     expect(campaignUpdateManyMock).not.toHaveBeenCalled();
     expect(recordActivityChangeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("write-executor — create_partner (거래처 등록)", () => {
+  beforeEach(() => {
+    partnerCreateMock.mockReset();
+    recordActivityCreateMock.mockReset();
+  });
+
+  it("거래처 1행과 담당자 2명을 중첩 create로 한 번에 만든다", async () => {
+    partnerCreateMock.mockResolvedValue({ id: "partner-new", name: "왜그컴퍼니" });
+
+    const result = await executeWriteAction(
+      "create_partner",
+      {
+        partner: { name: "왜그컴퍼니", type: "BRAND", businessNumber: "1234567890" },
+        contacts: [
+          { name: "김담당", role: "영업", email: "sales@example.com" },
+          { name: "이담당", phoneNumber: "010-1234-5678" },
+        ],
+      } as never,
+      "approver@example.com",
+      fakeTx
+    );
+
+    expect(partnerCreateMock).toHaveBeenCalledTimes(1);
+    expect(partnerCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          name: "왜그컴퍼니",
+          type: "BRAND",
+          businessNumber: "1234567890",
+          contacts: {
+            create: [
+              { name: "김담당", role: "영업", email: "sales@example.com", phoneNumber: null },
+              { name: "이담당", role: null, email: null, phoneNumber: "010-1234-5678" },
+            ],
+          },
+        }),
+      })
+    );
+    expect(recordActivityCreateMock).toHaveBeenCalledWith(
+      "PARTNER",
+      "partner-new",
+      "approver@example.com",
+      fakeTx
+    );
+    expect(result).toMatchObject({ refType: "PARTNER", refId: "partner-new" });
+    expect(result.summary).toEqual(expect.stringContaining("담당자 2명"));
+  });
+
+  it("담당자가 없으면 중첩 create 없이 거래처만 만든다", async () => {
+    partnerCreateMock.mockResolvedValue({ id: "partner-solo", name: "단독거래처" });
+
+    await executeWriteAction(
+      "create_partner",
+      { partner: { name: "단독거래처", type: "VENDOR" } } as never,
+      "approver@example.com",
+      fakeTx
+    );
+
+    expect(partnerCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.not.objectContaining({ contacts: expect.anything() }) })
+    );
+  });
+
+  it("거래처 종류가 계약 밖 값이면 args 검증에서 거부하고 아무것도 쓰지 않는다", async () => {
+    await expect(
+      executeWriteAction(
+        "create_partner",
+        { partner: { name: "이상한거래처", type: "NOT_A_TYPE" } } as never,
+        "approver@example.com",
+        fakeTx
+      )
+    ).rejects.toThrow();
+
+    expect(partnerCreateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("write-executor — create_deal (딜 등록)", () => {
+  beforeEach(() => {
+    partnerCreateMock.mockReset();
+    partnerFindUniqueMock.mockReset();
+    dealCreateMock.mockReset();
+    recordActivityCreateMock.mockReset();
+  });
+
+  it("기존 partnerId 경로: 거래처 존재를 확인하고 부모 딜과 옵션 딜을 만든다", async () => {
+    partnerFindUniqueMock.mockResolvedValue({ id: "partner-1", name: "왜그컴퍼니" });
+    dealCreateMock
+      .mockResolvedValueOnce({ id: "deal-parent" })
+      .mockResolvedValueOnce({ id: "deal-option-0" });
+
+    const result = await executeWriteAction(
+      "create_deal",
+      {
+        partnerId: "partner-1",
+        mainDeal: { dealName: "콜라겐 스틱", brandName: "왜그", sellingPrice: 30000, unit: "박스" },
+        optionDeals: [{ dealName: "콜라겐 스틱 - 2박스", sellingPrice: 55000 }],
+      } as never,
+      "approver@example.com",
+      fakeTx
+    );
+
+    expect(partnerFindUniqueMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "partner-1" } })
+    );
+    expect(partnerCreateMock).not.toHaveBeenCalled();
+    expect(dealCreateMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          dealName: "콜라겐 스틱",
+          dealType: "MAIN",
+          partnerId: "partner-1",
+          partnerCompanyName: "왜그컴퍼니",
+          sellingPrice: 30000,
+          // 정본(dealService.createDeal)이 정책 없이 만들 때 넣는 값과 같은 글자여야 한다.
+          baseMarginPolicy: '{"byChannel":{}}',
+          status: "SOURCING",
+        }),
+      })
+    );
+    expect(dealCreateMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          dealName: "콜라겐 스틱 - 2박스",
+          dealType: "OPTION",
+          parentDealId: "deal-parent",
+          // 부모→옵션 상속(정본 C2-1): 옵션에 없는 brandName·unit은 부모 값을 물려받는다.
+          brandName: "왜그",
+          unit: "박스",
+        }),
+      })
+    );
+    expect(result).toMatchObject({ refType: "DEAL", refId: "deal-parent" });
+  });
+
+  it("partner 동봉 경로: 거래처를 먼저 만들고 그 id를 딜에 붙인다", async () => {
+    partnerCreateMock.mockResolvedValue({ id: "partner-new", name: "신규거래처" });
+    dealCreateMock.mockResolvedValueOnce({ id: "deal-parent-2" });
+
+    const result = await executeWriteAction(
+      "create_deal",
+      {
+        partner: { name: "신규거래처", type: "VENDOR" },
+        mainDeal: { dealName: "신규 딜" },
+      } as never,
+      "approver@example.com",
+      fakeTx
+    );
+
+    expect(partnerCreateMock).toHaveBeenCalledTimes(1);
+    expect(partnerFindUniqueMock).not.toHaveBeenCalled();
+    expect(dealCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          partnerId: "partner-new",
+          partnerCompanyName: "신규거래처",
+        }),
+      })
+    );
+    expect(result).toMatchObject({ refType: "DEAL", refId: "deal-parent-2" });
+  });
+
+  it("옵션의 optionSortOrder는 배열 순서대로 0,1,2…로 붙는다", async () => {
+    partnerFindUniqueMock.mockResolvedValue({ id: "partner-1", name: "왜그컴퍼니" });
+    dealCreateMock
+      .mockResolvedValueOnce({ id: "deal-parent-3" })
+      .mockResolvedValueOnce({ id: "deal-option-a" })
+      .mockResolvedValueOnce({ id: "deal-option-b" })
+      .mockResolvedValueOnce({ id: "deal-option-c" });
+
+    await executeWriteAction(
+      "create_deal",
+      {
+        partnerId: "partner-1",
+        mainDeal: { dealName: "단가표 상품" },
+        optionDeals: [
+          { dealName: "1박스" },
+          { dealName: "2박스" },
+          { dealName: "3박스" },
+        ],
+      } as never,
+      "approver@example.com",
+      fakeTx
+    );
+
+    const sortOrders = dealCreateMock.mock.calls
+      .slice(1)
+      .map((call) => (call[0] as { data: { optionSortOrder: number } }).data.optionSortOrder);
+    expect(sortOrders).toEqual([0, 1, 2]);
+  });
+
+  it("partnerId도 partner도 없으면 args 검증(둘 중 정확히 하나)에서 거부된다", async () => {
+    await expect(
+      executeWriteAction(
+        "create_deal",
+        { mainDeal: { dealName: "주인 없는 딜" } } as never,
+        "approver@example.com",
+        fakeTx
+      )
+    ).rejects.toThrow(/거래처를 정확히 하나/);
+
+    expect(partnerCreateMock).not.toHaveBeenCalled();
+    expect(dealCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("partnerId와 partner를 함께 보내도 같은 이유로 거부된다", async () => {
+    await expect(
+      executeWriteAction(
+        "create_deal",
+        {
+          partnerId: "partner-1",
+          partner: { name: "겹치는거래처", type: "BRAND" },
+          mainDeal: { dealName: "겹치는 딜" },
+        } as never,
+        "approver@example.com",
+        fakeTx
+      )
+    ).rejects.toThrow(/거래처를 정확히 하나/);
+
+    expect(dealCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("존재하지 않는 partnerId면 throw하고 딜을 만들지 않는다 (§0-6)", async () => {
+    partnerFindUniqueMock.mockResolvedValue(null);
+
+    await expect(
+      executeWriteAction(
+        "create_deal",
+        { partnerId: "partner-ghost", mainDeal: { dealName: "유령 딜" } } as never,
+        "approver@example.com",
+        fakeTx
+      )
+    ).rejects.toThrow(/찾을 수 없|존재하지 않/);
+
+    expect(dealCreateMock).not.toHaveBeenCalled();
+    expect(recordActivityCreateMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 실행기의 argsSchema는 계약 변형에서 `action` 칸만 뺀 것이어야 한다. 봉투(키 이름·개수)는
+ * write-executor에 한 벌 더 있으므로, 갈리면 승인 시점 재검증이 기안 시점보다 느슨해진다.
+ * 여기서는 **계약이 받는 최대 payload**와 **계약이 거부하는 모양**을 양쪽에 같이 물어본다.
+ */
+describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양인지", () => {
+  const createPartnerArgs = {
+    partner: {
+      name: "왜그컴퍼니",
+      type: "BRAND",
+      businessNumber: "1234567890",
+      ceoName: "홍길동",
+      representativeEmail: "ceo@example.com",
+      address: "서울시 강남구",
+      notes: "메모",
+    },
+    contacts: [{ name: "김담당", role: "영업", email: "sales@example.com", phoneNumber: "010-1234-5678" }],
+  };
+
+  const createDealArgs = {
+    partnerId: "partner-1",
+    mainDeal: {
+      dealName: "콜라겐 스틱",
+      brandName: "왜그",
+      costPrice: 10000,
+      sellingPrice: 30000,
+      supplyPrice: 20000,
+      listPrice: 39000,
+      shippingFee: 3000,
+      unit: "박스",
+      unitQuantity: 1,
+      sourcingMemo: "소싱 메모",
+    },
+    optionDeals: [
+      {
+        dealName: "2박스",
+        supplyPrice: 38000,
+        sellingPrice: 55000,
+        listPrice: 60000,
+        unit: "박스",
+        unitQuantity: 2,
+        sourcingMemo: "옵션 메모",
+      },
+    ],
+  };
+
+  it.each([
+    ["create_partner", createPartnerArgs],
+    ["create_deal", createDealArgs],
+  ])("%s: 계약이 받는 최대 payload를 argsSchema도 그대로 받는다", (action, args) => {
+    expect(createActionProposalInputSchema.safeParse({ action, ...args }).success).toBe(true);
+    expect(WRITE_ACTIONS[action].argsSchema.safeParse(args).success).toBe(true);
+  });
+
+  it.each([
+    ["create_partner", createPartnerArgs],
+    ["create_deal", createDealArgs],
+  ])("%s: 계약에 없는 칸은 양쪽 모두 거부한다", (action, args) => {
+    const withUnknownKey = { ...args, unknownField: "x" };
+    expect(createActionProposalInputSchema.safeParse({ action, ...withUnknownKey }).success).toBe(false);
+    expect(WRITE_ACTIONS[action].argsSchema.safeParse(withUnknownKey).success).toBe(false);
   });
 });

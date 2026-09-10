@@ -28,6 +28,16 @@ describe("getRequestTypeForAction", () => {
     expect(getRequestTypeForAction("confirm_settlement")).toBe("settlement_confirm");
   });
 
+  it("생성 2종(create_partner, create_deal)은 명시 등재로 crm_mutation(수동 승인)이다", () => {
+    // fail-closed 기본값과 값은 같지만, 빠져서 그렇게 된 것과 그렇게 정한 것은 다르다.
+    // 매핑에 실제로 들어 있는지까지 본다 — 등재가 지워져도 아래 두 줄만으로는 안 걸린다.
+    expect(REQUEST_TYPE_BY_ACTION.create_partner).toBe("crm_mutation");
+    expect(REQUEST_TYPE_BY_ACTION.create_deal).toBe("crm_mutation");
+    expect(getRequestTypeForAction("create_partner")).toBe("crm_mutation");
+    expect(getRequestTypeForAction("create_deal")).toBe("crm_mutation");
+    expect(isAutoApprovable("crm_mutation", "WRITE")).toBe(false);
+  });
+
   it("미등록 action → fail-closed로 crm_mutation을 반환한다", () => {
     expect(getRequestTypeForAction("delete_everything")).toBe("crm_mutation");
     expect(getRequestTypeForAction("")).toBe("crm_mutation");

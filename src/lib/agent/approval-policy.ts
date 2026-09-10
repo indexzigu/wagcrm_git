@@ -32,6 +32,10 @@ export const REQUEST_TYPE_BY_ACTION: Record<string, string> = {
   add_entity_memo: "campaign_note_add", // autoApprove 등재 → 자동승인 대상
   change_deal_status: "crm_mutation", // alwaysManual → 수동
   confirm_settlement: "settlement_confirm", // alwaysManual → 수동(영구)
+  // 생성은 언제나 수동 승인 — 없던 거래처·딜이 생기는 일은 되돌리기가 삭제뿐이다.
+  // fail-closed 기본값도 같은 값이지만, 빠져서 그렇게 된 것과 그렇게 정한 것은 다르다.
+  create_partner: "crm_mutation", // alwaysManual → 수동
+  create_deal: "crm_mutation", // alwaysManual → 수동
 };
 
 const FAIL_CLOSED_REQUEST_TYPE = "crm_mutation";

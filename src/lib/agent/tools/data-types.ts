@@ -1,4 +1,4 @@
-// 5개 READ 도구의 Data 타입(+구성 타입) 전용 모듈 (청사진 §2-1/§3-1).
+// READ 도구의 Data 타입(+구성 타입) 전용 모듈 (청사진 §2-1/§3-1).
 //
 // ⚠️ 런타임 import 0 — 이 파일은 타입 선언만 포함한다. 값 import를 한 줄이라도
 // 추가하면 클라이언트 번들에 prisma/service 런타임이 딸려 들어가는 위험 구조가
@@ -60,6 +60,24 @@ export type DealSearchResultItem = {
 
 export type SearchDealsData = {
   items: DealSearchResultItem[];
+  count: number;
+  truncated: boolean;
+};
+
+// ---- search_partners ----
+
+export type PartnerSearchResultItem = {
+  /** 이 조회의 존재 이유 — `create_deal`의 partnerId 로 그대로 넘어갈 값이다. */
+  id: string;
+  name: string;
+  type: string;
+  /** 동명 거래처를 사람이 가려낼 단서. 등록돼 있지 않으면 null. */
+  businessNumber: string | null;
+  updatedAt: string;
+};
+
+export type SearchPartnersData = {
+  items: PartnerSearchResultItem[];
   count: number;
   truncated: boolean;
 };

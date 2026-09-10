@@ -2,15 +2,21 @@ import { getPrisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
 export class PartnerRepository {
+  /**
+   * `take` 는 순수 추가다 — 넘기지 않으면 예전처럼 전량을 돌려준다. 조회 도구가
+   * 상한(+1로 truncated 판정)을 걸 수 있어야 해서 열었다.
+   */
   static async findMany(params: {
     where?: Prisma.PartnerWhereInput;
     orderBy?: Prisma.PartnerOrderByWithRelationInput;
     select?: Prisma.PartnerSelect;
+    take?: number;
   }) {
     return getPrisma().partner.findMany({
       where: params.where,
       orderBy: params.orderBy,
       select: params.select,
+      take: params.take,
     });
   }
 

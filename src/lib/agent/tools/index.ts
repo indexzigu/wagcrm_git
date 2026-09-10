@@ -3,27 +3,38 @@ import type { GeminiToolDeclaration } from "../gemini-client";
 import type { AgentTool } from "./types";
 import { getSettlementReportTool } from "./settlement-report";
 import { searchDealsTool } from "./search-deals";
+import { searchPartnersTool } from "./search-partners";
 import { getPipelineStatusTool } from "./pipeline-status";
 import { getCampaignFinancialsTool } from "./campaign-financials";
 import { getOrderSnapshotTool } from "./order-snapshot";
 import { addEntityMemoTool } from "./add-entity-memo";
 import { changeDealStatusTool } from "./change-deal-status";
 import { confirmSettlementTool } from "./confirm-settlement";
+import { createPartnerTool } from "./create-partner";
+import { createDealTool } from "./create-deal";
 
 /**
- * READ 5종 + WRITE 3종(add_entity_memo, change_deal_status, confirm_settlement) 도구
- * 레지스트리 (청사진 §2-3, Phase 5 §2). 자유 SQL 금지 — 전부 기존 report/repository
- * 래퍼만 호출. WRITE 도구는 실제 쓰기를 하지 않고 writeIntent만 반환한다(§0-1).
+ * READ 6종 + WRITE 5종(add_entity_memo, change_deal_status, confirm_settlement,
+ * create_partner, create_deal) 도구 레지스트리 (청사진 §2-3, Phase 5 §2). 자유 SQL
+ * 금지 — 전부 기존 report/repository 래퍼만 호출. WRITE 도구는 실제 쓰기를 하지 않고
+ * writeIntent만 반환한다(§0-1).
+ *
+ * ⚠️ WRITE 도구를 여기에만 더하면 그 도구의 writeIntent는 조용히 버려진다 —
+ * agent-loop가 `WRITE_TOOL_NAMES`(types.ts)로 걷어내므로 두 곳을 함께 고칠 것.
+ * 반대로 READ 도구는 그 Set에 넣지 않는다 — 넣으면 조회 결과가 승인 대기로 샌다.
  */
 export const AGENT_TOOLS: AgentTool[] = [
   getSettlementReportTool,
   searchDealsTool,
+  searchPartnersTool,
   getPipelineStatusTool,
   getCampaignFinancialsTool,
   getOrderSnapshotTool,
   addEntityMemoTool,
   changeDealStatusTool,
   confirmSettlementTool,
+  createPartnerTool,
+  createDealTool,
 ];
 
 export function findTool(name: string): AgentTool | undefined {

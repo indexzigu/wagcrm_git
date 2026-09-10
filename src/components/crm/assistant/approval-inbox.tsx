@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { useApprovalInbox } from "@/hooks/useApprovalInbox";
 import type { ActionProposalStatus } from "@/repositories/actionProposalRepository";
 import { ENTITY_TYPE_LABELS } from "./types";
+import { ProposalPayloadPreview } from "./proposal-payload-preview";
 
 /** /api/action-proposals GET 응답 항목 형태 (route.ts와 형태를 맞춘다). */
 export type ApprovalInboxItem = {
@@ -58,7 +59,14 @@ function PayloadSummary({ item }: { item: ApprovalInboxItem }) {
   if (typeof content === "string" && content.length > 0) {
     return <p className="text-sm text-foreground">&quot;{content}&quot;</p>;
   }
-  return <p className="text-sm text-muted-foreground">{item.title}</p>;
+  // 생성 기안은 제목만으로 판단할 수 없다(가격·옵션이 제목에 없다). 승인 버튼이 이
+  // 카드에 붙어 있으므로 저장될 값도 같은 카드에서 보여야 한다.
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-muted-foreground">{item.title}</p>
+      <ProposalPayloadPreview action={item.payload?.action} args={item.payload?.args} />
+    </div>
+  );
 }
 
 function EntityBadge({ item }: { item: ApprovalInboxItem }) {

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { AgentJobOperationSchema } from "../contracts";
 
 const root = process.cwd();
 const read = (relative: string) => readFileSync(path.join(root, relative), "utf8");
@@ -40,17 +41,25 @@ describe("agent worker boundary contract", () => {
     expect(source).not.toMatch(/"APPROVED"|"EXECUTED"/);
   });
 
-  it("uses only the frozen five operations and five methods", () => {
+  // ⚠️ 이 테스트의 이름은 한때 "only the frozen five" 였는데, 정작 세던 것은 **다섯 개가
+  // 있는가**뿐이었다("only"도, 개수도 검사하지 않았다). 그래서 2026-09-10 에 여섯 번째
+  // (`search_partners`)가 들어와도 초록으로 남았고, 이름만 사실과 어긋났다.
+  // 이제 목록을 계약에서 가져와 **양방향**으로 센다: 계약에 있는 것은 전부 등록돼 있어야
+  // 하고, 등록된 것은 전부 계약에 있어야 한다. 개수는 계약이 정하므로 여기 적지 않는다.
+  it("registers exactly the operations the contract declares, and no others", () => {
     const executor = read("src/lib/agent-worker/executor.ts");
-    for (const operation of [
-      "search_deals",
-      "get_pipeline_status",
-      "get_order_snapshot",
-      "get_campaign_financials",
-      "create_action_proposal",
-    ]) {
-      expect(executor).toContain(`${operation}:`);
+    const registry = executor.slice(executor.indexOf("export const OPERATION_REGISTRY"));
+    const body = registry.slice(0, registry.indexOf("\n};"));
+
+    const declared = AgentJobOperationSchema.options;
+    for (const operation of declared) {
+      expect(body, operation).toContain(`${operation}:`);
     }
+    const registered = [...body.matchAll(/^\s{2}([a-z_]+):/gm)].map((match) => match[1]);
+    expect(new Set(registered)).toEqual(new Set(declared));
+  });
+
+  it("uses only the frozen five socket methods", () => {
     const server = read("src/lib/agent-worker/socket-server.ts");
     expect(server).toMatch(/\["submit",\s*"get",\s*"wait",\s*"cancel_unclaimed",\s*"health"\]/);
   });
