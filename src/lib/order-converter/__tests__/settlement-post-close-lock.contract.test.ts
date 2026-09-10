@@ -351,7 +351,7 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
   });
 
   it('확인 기간 판정에 쓰는 필드를 select 에 담고, 후보 창은 90일이 아니라 판매 종료 +26일 근처다', async () => {
-    // 🪤 `endDate`·`salePeriod`·종결 시각이 select 에서 빠지면 판매 종료일을 몰라 **전부 안전선
+    // 🪤 `endDate`·`salePeriod`·종결 시각이 select 에서 빠지면 판매 종료일을 몰라 **전부 종결 미관측 상한
     //    중단**(요청 0 — 취소가 조용히 안 잡힌다)이 되는데, 아래 케이스들은 픽스처가 값을 직접 주므로 초록이다.
     findManyMock.mockResolvedValue([]);
     const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
@@ -387,7 +387,7 @@ describe('syncPostCloseCancellations — 확인 기간(전 주문 종결 +10일 
     expect(res).toMatchObject({ stoppedAfterTerminal: 1, stoppedByBackstop: 0 });
   });
 
-  it('판매 종료 +15일 안전선을 넘으면 종결이 안 보여도 조회하지 않는다', async () => {
+  it('종결을 못 본 채 판매 종료 +15일을 넘으면 조회하지 않는다', async () => {
     // 탈퇴 구매자 주문이 섞여 응답이 영영 모자란 캠페인이 종전엔 90일 내내 매일 재조회됐다.
     findManyMock.mockResolvedValue([
       campaign('SETTLEMENT_WAIT', { endDate: new Date(Date.now() - 16 * DAY) }),

@@ -12,19 +12,30 @@ import { deriveClaimsFromOrder } from './claim-derive';
  * (`OrderCampaign.cachedPostCloseAllTerminalAt`)을 기준으로 삼는다. 관측이 하루 1회라 최대 하루
  * 늦게 잡히고, 추가 요청은 없다.
  *
- * 종결을 본 캠페인은 **그 시각 +10일**에 멈춘다 — 판매 종료일과 무관하다(공구는 판매 종료 뒤 배송이
- * 흔해서, 판매 종료 기준으로 자르면 늦게 배송된 캠페인의 10일이 잘린다).
+ * 종결을 본 캠페인은 **그 날 +10일(KST 날짜)**에 멈춘다 — 판매 종료일과 무관하다(공구는 판매 종료 뒤
+ * 배송이 흔해서, 판매 종료 기준으로 자르면 늦게 배송된 캠페인의 10일이 잘린다).
  * 종결을 한 번도 못 본 캠페인(탈퇴 구매자 주문은 커머스API 가 돌려주지 않는다 · 배송 추적이 멈춘
- * 주문)은 **판매 종료 +15일**에서 멈춘다. 이 두 규칙이 종전 90일 창(구 레포에서 넘어온 상수로 오너
- * 결정 기록이 없었다)을 대체한다.
+ * 주문)은 **판매 종료 +15일(KST 날짜)**에서 멈춘다 — 오너 승인 계획(2026-09-11)의 상한이다. 오너
+ * 원문의 「최대 15일」은 배송완료 기준이고, 배송완료를 끝내 못 보는 부류라 판매 종료일에 걸었다.
+ * 이 두 규칙이 종전 90일 창(구 레포에서 넘어온 상수로 오너 결정 기록이 없었다)을 대체한다.
  *
  * 설계 정본: docs/private/plans/2026-09-11-post-close-cancel-window.md (로컬 전용)
  */
 export const POST_CLOSE_DAYS_AFTER_ALL_TERMINAL = 10;
-/** 종결을 한 번도 못 본 캠페인의 상한(판매 종료 기준). */
+/** 종결을 한 번도 못 본 캠페인의 상한(판매 종료 기준, KST 날짜 수). */
 export const POST_CLOSE_MAX_DAYS_WITHOUT_TERMINAL = 15;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/**
+ * KST 달력 날짜 번호. 이 판정은 정산 크론 끝자락에서 도는데, 그 앞 단계(정산 원장 조회·재계산)의
+ * 소요 시간이 매일 달라 도달 시각이 흔들린다 — 밀리초로 비교하면 +10일째 실행이 찍힌 시각보다 몇 초
+ * 일찍 오면 하루 더 조회한다. 그래서 「며칠째인가」는 날짜 단위로 센다.
+ */
+function kstDayIndex(ms: number): number {
+  return Math.floor((ms + KST_OFFSET_MS) / DAY_MS);
+}
 
 /** 더 움직이지 않는 주문 상태. DELIVERED 는 클레임이 전부 끝났을 때만 종결이다(아래). */
 const TERMINAL_ORDER_STATUSES = new Set([
@@ -39,8 +50,10 @@ const TERMINAL_ORDER_STATUSES = new Set([
  * 더 움직이지 않는 클레임 상태 — 완료 또는 거부.
  * ⛔ claim-derive 의 `isCompleted` 를 쓰지 말 것: 그쪽은 알림·접힘 UI 용 부분 문자열 판정('DONE' 포함)
  *    이라 `COLLECT_DONE`(수거만 끝나고 반품은 진행 중)을 완료로 읽어 +10일 시계를 일찍 켠다.
- * 목록에 없는 상태(요청·수거중·재배송중·미확인 null)는 **아직 움직이는 것**으로 본다 — 틀리면
- * 확인이 길어지는 쪽(요청 수 증가)이지 취소를 놓치는 쪽이 아니다. 상한은 판매 종료 +15일이 막는다.
+ * 목록에 없는 상태(요청·수거중·재배송중·구매확정 보류·미확인 null)는 **아직 움직이는 것**으로 본다 —
+ * 틀리면 확인이 길어지는 쪽(요청 수 증가)이지 취소를 놓치는 쪽이 아니다.
+ * ⚠️ 값들은 실제 클레임 응답과 대조하지 못했다(claim-derive.ts 머리 TODO 와 같은 사정). 철자가 틀린
+ *    값은 조용히 「진행 중」이 되어 확인이 상한까지 길어진다 — 실응답을 보면 먼저 이 목록을 대조할 것.
  */
 const FINISHED_CLAIM_STATUSES = new Set([
   'CANCEL_DONE',
@@ -57,11 +70,17 @@ const FINISHED_CLAIM_STATUSES = new Set([
  * 이 주문이 더 이상 취소·교환으로 움직이지 않는가.
  * 배송완료 뒤 반품·교환 요청이 들어와도 주문 상태는 DELIVERED 로 남고 클레임만 움직인다 —
  * 클레임 상태 **추출**은 claim-derive SSOT(`deriveClaimsFromOrder`)를 쓰고, 끝났는지는 위 목록으로 본다.
+ * 🪤 그 추출은 클레임 객체에 상태가 없으면 `currentClaim` 의 상태를 빌려 온다 — 드물게 다른 종류의 완료
+ *    상태를 이어받을 수 있지만, 빌려 오지 않으면 실제로 끝난 클레임을 영영 못 알아봐 확인이 늘 상한까지 간다.
  */
 export function isPostCloseTerminalOrder(order: any): boolean {
   const status = order?.productOrderStatus;
   if (TERMINAL_ORDER_STATUSES.has(status)) return true;
   if (status === 'DELIVERED') {
+    // 주문 단위 클레임 상태(구매확정 보류처럼 claim-derive 가 추출하지 않는 종류 포함)가 실려 있으면 그것도
+    // 끝나 있어야 한다. 없으면 영향이 없다 — 실응답 모양은 미확인이라 보수적인 쪽(진행 중)으로만 작동한다.
+    const orderClaimStatus = order?.claimStatus;
+    if (orderClaimStatus && !FINISHED_CLAIM_STATUSES.has(orderClaimStatus)) return false;
     return deriveClaimsFromOrder(order).every((claim) => FINISHED_CLAIM_STATUSES.has(claim.claimStatus ?? ''));
   }
   return false;
@@ -70,7 +89,7 @@ export function isPostCloseTerminalOrder(order: any): boolean {
 export type PostCloseCheckDecision =
   | 'check' // 오늘 조회한다
   | 'skip-finalized' // 정산 락 상태에서 확정 계산을 마쳤다(기존 규칙, #48·#49)
-  | 'stop-after-terminal' // 전 주문 종결을 처음 본 지 10일이 지났다
+  | 'stop-after-terminal' // 전 주문 종결을 처음 본 날 +10일이 됐다
   | 'stop-backstop'; // 종결을 못 본 채 판매 종료 +15일을 넘었다
 
 export function decidePostCloseCheck(
@@ -83,13 +102,14 @@ export function decidePostCloseCheck(
   },
   nowMs: number,
 ): PostCloseCheckDecision {
+  const today = kstDayIndex(nowMs);
   if (input.allTerminalAtMs == null) {
     // 종결을 못 본 캠페인의 상한은 수동 재계산 레버(includeLocked)도 넘지 않는다 — 넘기면 후보 창의
     // 미종결 캠페인 전부를 다시 조회하게 된다. 판매 종료일을 모르면 상한을 세울 수 없으므로 멈춘다
     // (후보 조회가 `endDate` 로 걸러서 실제로는 오지 않는 경로다).
     if (input.saleEndMs == null) return 'stop-backstop';
-    if (nowMs > input.saleEndMs + POST_CLOSE_MAX_DAYS_WITHOUT_TERMINAL * DAY_MS) return 'stop-backstop';
-  } else if (!input.includeLocked && nowMs >= input.allTerminalAtMs + POST_CLOSE_DAYS_AFTER_ALL_TERMINAL * DAY_MS) {
+    if (today - kstDayIndex(input.saleEndMs) > POST_CLOSE_MAX_DAYS_WITHOUT_TERMINAL) return 'stop-backstop';
+  } else if (!input.includeLocked && today - kstDayIndex(input.allTerminalAtMs) >= POST_CLOSE_DAYS_AFTER_ALL_TERMINAL) {
     return 'stop-after-terminal';
   }
   if (input.includeLocked) return 'check';
@@ -103,7 +123,7 @@ export type AllTerminalMarkerChange = 'marked' | 'cleared' | 'kept';
  * 조회 결과로 「전 주문 종결 최초 관측 시각」을 어떻게 바꿀지.
  * - 모자란 응답: 판단하지 않는다(그대로).
  * - 온전 + 전부 종결: 처음이면 `nowMs`(실행 시작 시각)로 찍고, 이미 있으면 유지한다 — 다시 찍으면
- *   +10일 기준점이 매일 밀린다. 실행 시작 시각으로 찍어야 +10일째 06:30 실행에서 정확히 멈춘다.
+ *   +10일 기준점이 매일 밀린다. 비교는 KST 날짜 단위라 찍는 시각의 분 단위 차이는 결과를 바꾸지 않는다.
  * - 온전 + 움직이는 주문 있음(새 반품·교환 요청 등): 지워서 확인을 이어 간다. 지운 뒤 판매 종료
  *   +15일을 넘었으면 다음 회차에 상한에서 멈춘다 — 이번 회차 값에는 그 요청 수량이 이미 담긴다.
  */
