@@ -2,7 +2,7 @@ import { apiRequest } from './naver-commerce-client';
 import { prisma } from './prisma';
 import { queryOrderDetails } from './naver-order-sync';
 import { isSalesCampaignLocked } from './mapping-service';
-import { isProductOrderLedgerRow } from './settlement-pending-dates';
+import { isProductOrderLedgerRow, type SettlementQueryPlan } from './settlement-pending-dates';
 
 /**
  * 네이버 정산(pay-settle) 수집 — SSOT: NAVER_SETTLEMENT_API_PLAN.md
@@ -31,11 +31,19 @@ function recentDateKeys(days: number): string[] {
   return keys;
 }
 
-/** settle/case 1일치 수집(페이지네이션). 응답 스키마 방어적 파싱. */
-async function fetchCasesForDate(searchDate: string, periodType: string, extra: Record<string, string> = {}): Promise<any[]> {
+/**
+ * settle/case 1일치 수집(페이지네이션). 응답 스키마 방어적 파싱.
+ * 실제로 나간 HTTP 호출 수(`pages`)도 돌려준다 — 프록시 사용량과 대조하는 값이다.
+ */
+async function fetchCasesForDate(
+  searchDate: string,
+  periodType: string,
+  extra: Record<string, string> = {},
+): Promise<{ cases: any[]; pages: number }> {
   const all: any[] = [];
   const pageSize = 1000;
   let page = 1;
+  let pages = 0;
   for (;;) {
     const res = await apiRequest('GET', '/v1/pay-settle/settle/case', undefined, {
       searchDate,
@@ -44,6 +52,7 @@ async function fetchCasesForDate(searchDate: string, periodType: string, extra: 
       pageSize: String(pageSize),
       ...extra,
     });
+    pages++;
     const body = res?.data ?? res ?? {};
     const elements: any[] = body.elements || body.contents || body.data?.elements || [];
     if (!Array.isArray(elements) || elements.length === 0) break;
@@ -52,7 +61,7 @@ async function fetchCasesForDate(searchDate: string, periodType: string, extra: 
     page++;
     if (page > 50) break; // 안전 상한(5만 행/일 — 실사용 초과 불가)
   }
-  return all;
+  return { cases: all, pages };
 }
 
 function toIntOrZero(v: any): number {
@@ -92,9 +101,16 @@ async function upsertCases(cases: any[]): Promise<number> {
 }
 
 /**
- * 정산 원장 수집.
- * @param settledDays 정산완료일 기준 lookback (기본 3일 — 일일 크론이면 충분, 초기 백필 시 확대)
- * @param unsettledDays 결제일 기준 미정산 lookback (기본 21일 — 일반정산의 구매확정 대기 기간 커버)
+ * 정산 원장 **백필** — 고정 달력으로 넓게 훑는다. ⚠️ **기본 경로가 아니다**(2단계, 2026-09-10).
+ *
+ * 크론이 `?settledDays=` · `?unsettledDays=` 를 **명시적으로** 받았을 때만 부른다. 기본 경로는
+ * 아래 `runPlannedSettlementSync` 다. 이 함수는 데이터 유무와 무관하게 날짜 수만큼 부르므로
+ * (기본값 3 + 21 = 24콜) 매일 돌리면 프록시 한도를 태운다 — 그게 재설계의 출발점이었다.
+ * ⛔ 그렇다고 지우지 말 것: 재확인 창(`SETTLEMENT_ORDER_DATE_RECHECK_DAYS`)보다 긴 크론 중단
+ * (프록시 한도 소진·자격증명 만료 등) 구간은 계획으로는 영영 안 메워지고, **이 경로가 유일한
+ * 복구 수단**이다.
+ * @param settledDays 정산완료일 기준 lookback
+ * @param unsettledDays 결제일 기준 미정산 lookback
  */
 export async function runSettlementSync(settledDays = 3, unsettledDays = 21): Promise<{ settledFetched: number; unsettledFetched: number }> {
   let settledFetched = 0;
@@ -102,17 +118,55 @@ export async function runSettlementSync(settledDays = 3, unsettledDays = 21): Pr
 
   // 1) 정산완료분 — 완료일 기준 최근 N일
   for (const dateKey of recentDateKeys(settledDays)) {
-    const cases = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_SETTLE_COMPLETE_DATE');
+    const { cases } = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_SETTLE_COMPLETE_DATE');
     settledFetched += await upsertCases(cases);
   }
 
   // 2) 미정산(정산예정)분 — 결제일 기준 최근 N일 (settleExpectAmount 선확보)
   for (const dateKey of recentDateKeys(unsettledDays)) {
-    const cases = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_PAY_DATE', { settleDecisionType: 'UNSETTLED' });
+    const { cases } = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_PAY_DATE', { settleDecisionType: 'UNSETTLED' });
     unsettledFetched += await upsertCases(cases);
   }
 
   return { settledFetched, unsettledFetched };
+}
+
+/** `runPlannedSettlementSync` 의 실행 요약 — 크론 응답과 `SystemTaskLog.details` 에 실린다. */
+export interface PlannedSettlementSyncResult {
+  /** 부른 결제일 수(= 계획의 날짜 수). */
+  datesFetched: number;
+  /** 실제 HTTP 호출 수(페이지 포함) — 프록시 사용량과 대조하는 값이다. */
+  calls: number;
+  /** upsert 한 원장 행 수. */
+  casesUpserted: number;
+}
+
+/**
+ * **계획한 결제일만** 조회한다 — 정산 조회의 기본 경로(2단계, 2026-09-10).
+ *
+ * 부를 날짜는 `settlement-pending-dates` 가 DB 만 읽어 정한다(정산 대기 주문의 결제일 ·
+ * 주문이 있었던 최근 날짜 · 차감을 기다리는 취소 주문의 결제일). 대기 주문이 없는 날은
+ * **0콜**이다 — 종전 고정 달력은 그런 날에도 24콜을 썼다.
+ *
+ * 🔑 결제일 축을 `settleDecisionType` **없이** 부른다 — 정산완료·미정산·차감 행이 한 응답에
+ * 함께 온다. 공식 문서는 이 파라미터를 선택으로만 적고 생략 시 동작을 명시하지 않아서,
+ * 2026-09-10 실호출로 확인했다: 같은 날짜의 `UNSETTLED` 응답 행이 필터 없는 응답에 **전부**
+ * 들어 있었고, 과거 날짜는 정산완료 행이 왔다. 그래서 날짜당 **1콜**로 충분하다.
+ * ⛔ 「안전하게」 정산·미정산을 나눠 두 번 부르지 말 것 — 같은 데이터에 호출량만 두 배다.
+ *
+ * **정산완료일 축 루프가 없는 이유:** 정산 완료는 대기 주문의 결제일을 다시 볼 때
+ * `settleCompleteDate` 로 드러나고, 차감(`*_CANCEL`) 행은 원거래 결제일로 온다(설계 정본
+ * §0-3③ 실측). 완료일 축을 따로 훑을 이유가 사라졌다.
+ */
+export async function runPlannedSettlementSync(plan: Pick<SettlementQueryPlan, 'dates'>): Promise<PlannedSettlementSyncResult> {
+  let calls = 0;
+  let casesUpserted = 0;
+  for (const { dateKey } of plan.dates) {
+    const { cases, pages } = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_PAY_DATE');
+    calls += pages;
+    casesUpserted += await upsertCases(cases);
+  }
+  return { datesFetched: plan.dates.length, calls, casesUpserted };
 }
 
 const IN_CHUNK = 500;

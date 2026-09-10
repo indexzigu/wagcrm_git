@@ -2,18 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 
 /**
- * `?dryRun=1` 의 유일한 계약: **아무것도 부르지 않고 아무것도 쓰지 않는다.**
+ * 정산 크론 라우트의 경로 계약 셋.
  *
- * 이 레버는 재설계 전환(2단계) 전에 "새 규칙이었다면 몇 콜이었나"를 값싸게 확인하려고 있다.
- * 종전 구조는 확인 자체가 한 회차치 네이버 호출이라 검증이 곧 프록시 한도 소모였다.
- *
- * 🪤 **크론 상태 기록도 「쓰기」다.** dry-run 분기를 `withSystemTaskStatus` **안**에 두면
- * 실제 동기화를 한 적이 없는데 마지막 실행 시각이 갱신되고 직전 실패 기록이 덮여, 레이더가
- * 정상 실행으로 표시된다(교차 검증이 잡은 결함). 그래서 아래 테스트가 세 축을 함께 본다 —
- * 네이버 조회 함수 미호출 · 상태 기록 미호출 · 캐시 무효화 미호출.
+ * ① **기본 경로는 계획이다**(2단계, 2026-09-10) — 파라미터가 없으면 `runPlannedSettlementSync`
+ *    가 계획한 결제일만 부르고, 고정 달력(`runSettlementSync`, 하루 24콜)은 부르지 않는다.
+ * ② **백필은 명시적 요청일 때만** — `settledDays`/`unsettledDays` 중 하나라도 있으면 고정
+ *    달력으로 넓게 훑는다(재확인 창보다 긴 크론 중단 구간의 유일한 복구 경로).
+ * ③ **`?dryRun=1` 은 아무것도 부르지 않고 아무것도 쓰지 않는다.**
+ *    🪤 크론 상태 기록도 「쓰기」다. dry-run 분기를 `withSystemTaskStatus` **안**에 두면 실제
+ *    동기화를 한 적이 없는데 마지막 실행 시각이 갱신되고 직전 실패 기록이 덮여, 레이더가 정상
+ *    실행으로 표시된다(교차 검증이 잡은 결함). 그래서 조회·상태 기록·캐시 무효화를 함께 본다.
  */
 
 const runSettlementSyncMock = vi.fn();
+const runPlannedMock = vi.fn();
 const recomputeMock = vi.fn();
 const syncPostCloseCancellationsMock = vi.fn();
 const revalidateMock = vi.fn();
@@ -22,6 +24,7 @@ const loadPlanMock = vi.fn();
 
 vi.mock("@/lib/order-converter/naver-settlement-sync", () => ({
   runSettlementSync: (...args: unknown[]) => runSettlementSyncMock(...args),
+  runPlannedSettlementSync: (...args: unknown[]) => runPlannedMock(...args),
   recomputeClosedCampaignSettlements: (...args: unknown[]) => recomputeMock(...args),
   syncPostCloseCancellations: (...args: unknown[]) => syncPostCloseCancellationsMock(...args),
 }));
@@ -44,7 +47,7 @@ vi.mock("@/lib/system-task-status", () => ({
 const PLAN = {
   dates: [{ dateKey: "2026-09-10", reasons: ["recent-order-date"], pendingOrders: 0 }],
   estimatedCalls: 1,
-  counters: {},
+  counters: { truncatedDates: 0 },
 };
 
 function call(query: string) {
@@ -55,8 +58,28 @@ beforeEach(() => {
   vi.clearAllMocks();
   loadPlanMock.mockResolvedValue({ plan: PLAN, claimSourceUnavailableDates: [] });
   runSettlementSyncMock.mockResolvedValue({ settledFetched: 0, unsettledFetched: 0 });
+  runPlannedMock.mockResolvedValue({ datesFetched: 1, calls: 1, casesUpserted: 0 });
   recomputeMock.mockResolvedValue({ campaigns: 0, updated: 0 });
   syncPostCloseCancellationsMock.mockResolvedValue({ campaigns: 0, updated: 0 });
+});
+
+describe("naver-settlement-sync 기본 경로 — 계획", () => {
+  it("파라미터가 없으면 계획한 날짜만 조회하고 고정 달력은 부르지 않는다", async () => {
+    const res = await call("");
+
+    expect(runPlannedMock).toHaveBeenCalledWith(PLAN);
+    expect(runSettlementSyncMock).not.toHaveBeenCalled();
+    expect(await res.json()).toMatchObject({ ok: true, mode: "planned", calls: 1 });
+    expect(withSystemTaskStatusMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("백필 파라미터를 주면 계획 대신 고정 달력으로 넓게 훑는다", async () => {
+    const res = await call("?settledDays=31&unsettledDays=31");
+
+    expect(runSettlementSyncMock).toHaveBeenCalledWith(31, 31);
+    expect(runPlannedMock).not.toHaveBeenCalled();
+    expect(await res.json()).toMatchObject({ ok: true, mode: "backfill", settledDays: 31, unsettledDays: 31 });
+  });
 });
 
 describe("naver-settlement-sync ?dryRun=1", () => {
@@ -64,6 +87,7 @@ describe("naver-settlement-sync ?dryRun=1", () => {
     const res = await call("?dryRun=1");
 
     expect(await res.json()).toMatchObject({ ok: true, dryRun: true, plan: PLAN });
+    expect(runPlannedMock).not.toHaveBeenCalled();
     expect(runSettlementSyncMock).not.toHaveBeenCalled();
     expect(recomputeMock).not.toHaveBeenCalled();
     expect(syncPostCloseCancellationsMock).not.toHaveBeenCalled();
@@ -73,11 +97,5 @@ describe("naver-settlement-sync ?dryRun=1", () => {
   it("크론 실행 상태를 기록하지 않는다", async () => {
     await call("?dryRun=1");
     expect(withSystemTaskStatusMock).not.toHaveBeenCalled();
-  });
-
-  it("플래그가 없으면 평소대로 동기화하고 상태도 기록한다", async () => {
-    await call("");
-    expect(withSystemTaskStatusMock).toHaveBeenCalledTimes(1);
-    expect(runSettlementSyncMock).toHaveBeenCalledTimes(1);
   });
 });
