@@ -460,19 +460,25 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 변경피드 동기화(변경피드 커서). 아래 진입 동기화 간격 판정·설정 카드 문구와 같은 시각이다.
       // lastCallTime(latestSyncMeta)은 배송중 sweep·액션 직후 정밀 갱신도 밀어 올려, 새 주문을 안 물었는데도
       // 「방금 동기화함」으로 보이게 한다 — 커서가 아직 없을 때(최초 FULL 부트스트랩 직후)만 대신 쓴다.
-      const lastChangeSyncMs = await getLastChangeSyncMs();
+      // 두 조회는 서로 독립이라 병렬로 읽는다(getLastChangeSyncMs 는 실패를 null 로 삼킨 뒤 warn 한다).
+      const [lastChangeSyncMs, metaResult] = await Promise.all([
+        getLastChangeSyncMs(),
+        naverOrderSnapshotRepository.latestSyncMeta().then(
+          (meta) => ({ ok: true as const, meta }),
+          (error: unknown) => ({ ok: false as const, error }),
+        ),
+      ]);
+      let metaSyncType: string | null = null;
+      if (metaResult.ok) {
+        metaSyncType = metaResult.meta?.syncType ?? null;
+      } else {
+        console.warn('Failed to read latestSyncMeta:', metaResult.error);
+      }
+      const lastCallTime = metaResult.ok ? metaResult.meta?.lastCallTime : null;
       if (lastChangeSyncMs != null) {
         lastSyncIso = new Date(lastChangeSyncMs).toISOString();
-      }
-      let metaSyncType: string | null = null;
-      try {
-        const meta = await naverOrderSnapshotRepository.latestSyncMeta();
-        if (lastChangeSyncMs == null && meta?.lastCallTime) {
-          lastSyncIso = new Date(meta.lastCallTime).toISOString();
-        }
-        metaSyncType = meta?.syncType ?? null;
-      } catch (metaErr) {
-        console.warn('Failed to read latestSyncMeta:', metaErr);
+      } else if (lastCallTime) {
+        lastSyncIso = new Date(lastCallTime).toISOString();
       }
 
       // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 보정을 건다 (서버판 SWR).

@@ -8,6 +8,8 @@ const afterCallbacks: Array<() => Promise<void>> = [];
 const runSyncMock = vi.fn();
 const sweepMock = vi.fn();
 const lastChangeSyncMsMock = vi.fn();
+// latestSyncMeta 의 lastCallTime — sweep·액션도 밀어 올리는 값이라 기본은 「10분 전」으로 커서보다 최근이다.
+let metaLastCallTimeMs = Date.now() - 10 * 60 * 1000;
 
 vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
@@ -39,7 +41,7 @@ vi.mock("@/repositories/naverOrderSnapshotRepository", () => ({
     findRangeMeta: vi.fn(async () => []),
     findByDates: vi.fn(async () => []),
     findRange: vi.fn(async () => []),
-    latestSyncMeta: vi.fn(async () => ({ lastCallTime: new Date(Date.now() - 10 * 60 * 1000), syncType: "CHANGED" })),
+    latestSyncMeta: vi.fn(async () => ({ lastCallTime: new Date(metaLastCallTimeMs), syncType: "CHANGED" })),
     parseOrders: vi.fn(() => []),
   },
 }));
@@ -70,6 +72,7 @@ async function enterDashboard() {
 describe("campaigns-handler 진입 동기화 배선", () => {
   beforeEach(() => {
     afterCallbacks.length = 0;
+    metaLastCallTimeMs = Date.now() - 10 * 60 * 1000;
     runSyncMock.mockReset().mockResolvedValue({ skipped: false });
     sweepMock.mockReset().mockResolvedValue({ swept: 1, skipped: false });
     // 오늘자 스냅샷이 10분 전 기록(당일 TTL 1분 초과 → stale)이고 배송중 1건을 담고 있다.
@@ -94,6 +97,14 @@ describe("campaigns-handler 진입 동기화 배선", () => {
     expect(response.headers.get("X-Naver-Syncing")).toBe("0");
     // 「마지막 동기화」는 lastCallTime(10분 전 — sweep·액션도 밀어 올림)이 아니라 변경피드 커서 시각이다.
     expect(response.headers.get("X-Naver-Last-Sync")).toBe(new Date(lastChangeSyncMs).toISOString());
+  });
+
+  it("변경피드 커서가 없으면(최초 부트스트랩 직후) 「마지막 동기화」는 lastCallTime 으로, 동기화는 건다", async () => {
+    metaLastCallTimeMs = Date.now() - 20 * 60 * 1000;
+    lastChangeSyncMsMock.mockResolvedValue(null);
+    const response = await enterDashboard();
+    expect(runSyncMock).toHaveBeenCalledWith("CHANGED");
+    expect(response.headers.get("X-Naver-Last-Sync")).toBe(new Date(metaLastCallTimeMs).toISOString());
   });
 
   it("간격이 지났으면 변경피드 동기화와 배송중 sweep 을 함께 건다", async () => {

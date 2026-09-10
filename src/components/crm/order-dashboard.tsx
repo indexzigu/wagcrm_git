@@ -95,6 +95,17 @@ type ShippingOrderLine = {
 // 독촉할지" 판단하는 화면이라, "모든 배송대기"가 아니라 파악이 필요한 경고 건만 담는다(서버가 이미
 // 걸러 보냄). 핵심 판단값 "발주요청 후 경과일"을 좌측에 크게 세운다. 임계값 2일 = 카드 배송대기
 // 경고(pendingDelayDays)와 동일 집합. 데스크톱 카드 전용(P5). 배송 지연 팝오버와 대칭.
+// 툴바 「마지막 동기화」 표시. 진입 동기화가 1·3·6시간 간격이라(order-auto-sync.ts) 이 시각은 몇 시간 전·전날일 수
+// 있다 — 오늘이 아니면 날짜(MM.DD, 셀러 포털 fmtSyncTime 과 같은 꼴)를 붙여 어제 시각이 오늘로 읽히지 않게 한다.
+function formatLastSyncLabel(iso: string, now: Date = new Date()): string {
+  const synced = new Date(iso);
+  const time = synced.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (synced.toDateString() === now.toDateString()) return time;
+  const mm = String(synced.getMonth() + 1).padStart(2, '0');
+  const dd = String(synced.getDate()).padStart(2, '0');
+  return `${mm}.${dd} ${time}`;
+}
+
 function PendingOrdersPopover({ campName, orders, onClose }: { campName: string; orders: PendingOrderLine[]; onClose: () => void }) {
     // eslint-disable-next-line react-hooks/purity
   const now = Date.now(); // 클릭(마운트 후)에만 렌더되므로 하이드레이션 불일치 없음
@@ -1204,7 +1215,7 @@ export default function OrderDashboard() {
                   {syncMeta.lastSync ? (
                     <>
                       마지막 동기화{' '}
-                      {new Date(syncMeta.lastSync).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                      {formatLastSyncLabel(syncMeta.lastSync)}
                     </>
                   ) : (
                     '동기화 대기 중'

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { latestChangeCursorMock } = vi.hoisted(() => ({ latestChangeCursorMock: vi.fn() }));
 vi.mock("@/repositories/naverOrderSnapshotRepository", () => ({
@@ -55,6 +55,13 @@ describe("normalizeOrderAutoSyncInterval", () => {
 });
 
 describe("getLastChangeSyncMs", () => {
+  beforeEach(() => {
+    latestChangeCursorMock.mockReset();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("변경피드 커서(latestChangeCursor)의 ISO 시각을 ms로 읽는다", async () => {
     latestChangeCursorMock.mockResolvedValueOnce({ lastChangeStatusCursor: "2026-09-10T03:00:00.000Z" });
     expect(await getLastChangeSyncMs()).toBe(Date.parse("2026-09-10T03:00:00.000Z"));

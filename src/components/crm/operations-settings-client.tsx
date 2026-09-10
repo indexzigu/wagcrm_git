@@ -118,7 +118,8 @@ export function OperationsSettingsClient() {
       });
       if (!response.ok) throw new Error(`PATCH /api/settings/order-sync ${response.status}`);
       toast.success("자동 동기화 간격을 저장했습니다.");
-    } catch {
+    } catch (error) {
+      console.warn("[settings/order-sync] save failed:", error);
       toast.error("자동 동기화 간격 저장에 실패했습니다.");
     } finally {
       setSavingSection(null);
