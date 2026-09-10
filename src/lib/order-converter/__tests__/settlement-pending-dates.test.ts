@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SETTLEMENT_MAX_DATES_PER_RUN,
   SETTLEMENT_ORDER_DATE_RECHECK_DAYS,
   SETTLEMENT_PENDING_MAX_AGE_DAYS,
   decideSettlementQueryPlan,
@@ -142,6 +143,19 @@ describe('decideSettlementQueryPlan — 주문이 있었던 최근 날짜 재확
     expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['recent-order-date'], pendingOrders: 0 }]);
   });
 
+  it('재확인 창의 마지막 날은 포함한다(경계)', () => {
+    // ⚠️ 경계를 안 고정하면 `<` ↔ `<=` 변이로 창이 하루 줄어도 테스트가 전부 초록이다.
+    const lastIncluded = addDays(TODAY, -(SETTLEMENT_ORDER_DATE_RECHECK_DAYS - 1));
+    const result = plan({ snapshots: [{ snapshotDate: lastIncluded, ordersCount: 1 }] });
+    expect(result.dates.map((d) => d.dateKey)).toEqual([lastIncluded]);
+  });
+
+  it('재확인 창 바로 밖의 날은 부르지 않는다(경계)', () => {
+    const justOutside = addDays(TODAY, -SETTLEMENT_ORDER_DATE_RECHECK_DAYS);
+    const result = plan({ snapshots: [{ snapshotDate: justOutside, ordersCount: 1 }] });
+    expect(result.dates).toEqual([]);
+  });
+
   it('재확인 기간을 벗어난 날은 부르지 않는다', () => {
     const old = addDays(TODAY, -(SETTLEMENT_ORDER_DATE_RECHECK_DAYS + 1));
     const result = plan({ snapshots: [{ snapshotDate: old, ordersCount: 9 }] });
@@ -159,6 +173,47 @@ describe('decideSettlementQueryPlan — 주문이 있었던 최근 날짜 재확
     });
     expect(result.dates).toEqual([]);
     expect(result.counters.ledgerShortDates).toBe(1);
+  });
+});
+
+describe('decideSettlementQueryPlan — 조용히 빠지는 길이 없다', () => {
+  it('비상품 원장 행은 건너뛰되 센다', () => {
+    // 🪤 네이버가 productOrderType 표기를 바꾸면 전 행이 여기로 빠져 계획이 아무 이유 없이
+    //    비어 보인다 — 「할 일 0」과 구분되지 않는다.
+    const result = plan({ cases: [caseRow({ productOrderId: 'A', productOrderType: 'DELIVERY' })] });
+    expect(result.counters.droppedByNonProductLedgerRows).toBe(1);
+  });
+
+  it('원거래가 정산 안 된 클레임은 건너뛰되 센다', () => {
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'A', settled: false })],
+      claimedOrders: [{ productOrderId: 'A', payDateKey: TODAY }],
+    });
+    expect(result.counters.claimsWithoutSettledOriginal).toBe(1);
+  });
+
+  it('미래 결제일은 계획에 넣지 않는다', () => {
+    // 안 막으면 잘못 들어온 행 하나가 그 날짜를 매일 계획에 올린다.
+    const future = addDays(TODAY, 3);
+    const result = plan({ cases: [caseRow({ productOrderId: 'A', payDate: new Date(`${future}T00:00:00.000Z`) })] });
+    expect(result.dates).toEqual([]);
+    expect(result.counters.droppedByAge).toBe(1);
+  });
+
+  it('날짜가 상한을 넘으면 오래된 쪽을 남기고 잘린 수를 신고한다', () => {
+    // 차감이 끝내 안 오는 주문이 여러 결제일에 흩어지면 계획이 종전 고정 달력보다 커질 수 있다.
+    const cases = [];
+    const claimedOrders = [];
+    for (let i = 0; i < SETTLEMENT_MAX_DATES_PER_RUN + 3; i++) {
+      const dateKey = addDays(TODAY, -(i + 10));
+      cases.push(caseRow({ productOrderId: `A${i}`, settled: true, payDate: new Date(`${dateKey}T00:00:00.000Z`) }));
+      claimedOrders.push({ productOrderId: `A${i}`, payDateKey: dateKey });
+    }
+    const result = plan({ cases, claimedOrders });
+    expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN);
+    expect(result.counters.truncatedDates).toBe(3);
+    // 오래된 쪽이 남는다 — 최근 날짜는 다음 회차에 다시 들어온다.
+    expect(result.dates[0].dateKey).toBe(addDays(TODAY, -(SETTLEMENT_MAX_DATES_PER_RUN + 2 + 10)));
   });
 });
 

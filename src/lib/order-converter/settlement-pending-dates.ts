@@ -71,18 +71,49 @@ export const SETTLEMENT_PENDING_MAX_AGE_DAYS = 10;
 export const SETTLEMENT_CLAIM_LOOKBACK_DAYS = 60;
 
 /**
- * 주문이 있었던 날을 무조건 다시 보는 기간(일).
+ * 클레임 창 **밖**까지 얼마나 더 읽어 관측만 할 것인가(일).
  *
- * 정산 원장이 **결제 직후 한꺼번에 생기지 않을 수 있다**는 것이 이 상수의 존재 이유다. 늦게
- * 생긴 행은 우리가 가진 `cases` 에 없어 대기 판정으로는 절대 발견되지 않으므로, 주문이 있던
- * 날짜에 대해 **정해진 횟수만큼** 다시 물어 그 창을 닫는다.
+ * 조회 계획은 `SETTLEMENT_CLAIM_LOOKBACK_DAYS` 안에서만 만들지만, 그 창을 **넘어가 버린**
+ * 클레임(차감이 끝내 안 온 건)은 창 밖이라 읽지 않으면 존재조차 못 센다 — 창 이탈 카운터가
+ * 구조적으로 영원히 0 이 된다(교차 검증이 모킹으로 확인). 여기만큼 더 읽어 그 이탈을
+ * **관측**한다. 네이버 호출과 무관한 DB 읽기다.
+ */
+export const SETTLEMENT_CLAIM_OBSERVE_MARGIN_DAYS = 30;
+
+/**
+ * 한 회차에 부를 날짜의 상한.
  *
- * 4일인 근거는 결제→정산완료 지연 분포의 상위 구간(설계 정본 §0-3②)이다 — 그 안에 사실상
- * 전부가 들어온다. 날짜당 정확히 이 횟수만큼만 불리므로 **수렴이 자명하다**(대기 판정과 달리
- * 데이터 상태에 좌우되지 않는다).
+ * 세 경로의 날짜가 겹치지 않고 쌓이면 계획이 이론상 클레임 창(60일)만큼 커질 수 있다 —
+ * 원거래는 정산됐는데 차감이 끝내 안 오는 주문이 서로 다른 결제일에 흩어지는 경우다. 그러면
+ * **줄이려던 호출량을 오히려 넘긴다.** 상한을 두되, 잘린 날짜는 조용히 버리지 않고
+ * `counters.truncatedDates` 로 신고한다(P7 이 같은 상황에 정한 규약 — 상한에 걸리면
+ * 삼키지 않고 고지한다).
  *
- * ⛔ 이 값을 늘려 「안전」을 사는 것은 곧 상시 호출량이다 — 캠페인이 도는 동안 날짜마다
- * 이 횟수가 그대로 붙는다.
+ * **우선순위는 오래된 날짜다.** 오래된 쪽이 상한(§`MAX_AGE`)에 먼저 닿아 기회가 적고,
+ * 최근 날짜는 어차피 다음 회차의 재확인 창에 다시 들어온다.
+ */
+export const SETTLEMENT_MAX_DATES_PER_RUN = 12;
+
+/**
+ * 주문이 있었던 날을 무조건 다시 보는 **횟수**(= 결제일 당일 포함 연속 일수).
+ *
+ * 정산 원장 행이 **결제 직후 한꺼번에 생지 않을 수 있다**는 것이 이 상수의 존재 이유다.
+ * 늦게 생긴 행은 우리가 가진 `cases` 에 없어 대기 판정으로는 절대 발견되지 않으므로, 주문이
+ * 있던 날짜를 **정해진 횟수만큼** 다시 물어 그 창을 닫는다. 창 이탈 조건이 `todayKey` 의
+ * 단조 증가에만 의존하고 데이터 상태와 무관해 **수렴이 자명하다.**
+ *
+ * ⚠️ **이 값은 실측에서 도출한 것이 아니다 — 고른 값이다.** 우리가 가진 실측은 결제→정산
+ * *완료* 지연 분포(설계 정본 §0-3②)이고, 이 상수가 막으려는 것은 **원장 행 *생성* 지연**
+ * 이라 축이 다르다. 그 분포는 아직 관측되지 않았다.
+ * ⛔ 다음 세션이 이 주석을 근거로 재도출을 건너뛰지 말 것.
+ *
+ * 🪤 **이 값은 「늦게 생긴 원장」의 복구 창을 정한다.** 종전 초안(개수 대조)은 그 복구가
+ * `SETTLEMENT_PENDING_MAX_AGE_DAYS` 까지 살아 있었으므로, 여기로 바꾸면서 복구 창이 그만큼
+ * **좁아졌다** — 대신 그 초안은 판정 근거가 무효였다(모수가 다른 두 수의 대조). 좁힌 것이
+ * 실제로 무언가를 놓치는지는 `counters.ledgerShortDates` 추세로 관측한다.
+ *
+ * ⛔ 값을 늘려 「안전」을 사는 것은 곧 상시 호출량이다 — 캠페인이 도는 동안 주문이 있는
+ * 날짜마다 이 횟수가 그대로 붙는다.
  */
 export const SETTLEMENT_ORDER_DATE_RECHECK_DAYS = 4;
 
@@ -183,10 +214,23 @@ export interface SettlementQueryPlan {
     droppedByClaim: number;
     /** 상한(`SETTLEMENT_PENDING_MAX_AGE_DAYS`)을 넘겨 포기한 **주문** 수(종료③). */
     droppedByAge: number;
-    /** 원장을 한 번도 못 받은 채 재확인 창을 벗어난 **날짜** 수 — 그 날은 백필 대상이다. */
+    /**
+     * 원장이 그 날짜 키로 **하나도 안 잡힌 채** 재확인 창을 벗어난 날짜 수.
+     *
+     * ⚠️ 이 값도 `ledgerShortDates` 와 **같은 조인**(스냅샷 날짜키 ↔ 원장 `payDate`)에 기대므로
+     * 단정이 아니라 신호다 — 그 날 주문이 전부 결제일 없이 주문일로 폴백 귀속됐다면 원장은
+     * 영영 그 키에 안 잡힌다. 「백필이 필요할 수 있다」까지가 이 값이 말하는 전부다.
+     */
     droppedByAgeDates: number;
     /** 차감이 끝내 안 온 채 클레임 창을 벗어난 주문 수 — 돈이 걸린 배제라 따로 센다. */
     droppedByClaimWindow: number;
+    /**
+     * 원거래가 정산되지 않아 차감 재진입 대상이 아닌 클레임 수(정상 종료).
+     *
+     * 🪤 이 값이 갑자기 커지면 `isDeductionRow` 가 원거래를 차감으로 오분류하고 있다는
+     * 신호다 — 그러면 `claimsAwaitingDeduction=0` 이 「대기 없음」처럼 보인다.
+     */
+    claimsWithoutSettledOriginal: number;
     /**
      * 차감으로 분류돼 대기 후보에서 빠진 **행** 수(주문 수가 아니다 — 한 주문에 차감 행이
      * 여럿일 수 있다). 대기에서 빼는 경로에는 전부 카운터가 있어야 한다.
@@ -216,6 +260,11 @@ export interface SettlementQueryPlan {
      * 쓰라고 못박은 것과 같은 이유다. 추세를 보는 용도이지 「누락 건수」가 아니다.
      */
     ledgerShortDates: number;
+    /**
+     * 상한(`SETTLEMENT_MAX_DATES_PER_RUN`)에 걸려 이번 회차에서 잘린 날짜 수.
+     * 0 이 아니면 계획이 상한에 눌린 것이고, 호출자는 이것을 **경고로 드러내야 한다.**
+     */
+    truncatedDates: number;
   };
 }
 
@@ -312,10 +361,12 @@ export function decideSettlementQueryPlan(args: {
     droppedByAge: 0,
     droppedByAgeDates: 0,
     droppedByClaimWindow: 0,
+    claimsWithoutSettledOriginal: 0,
     droppedByDeductionRows: 0,
     droppedByNonProductLedgerRows: 0,
     unknownPayDateOrders: 0,
     ledgerShortDates: 0,
+    truncatedDates: 0,
   };
 
   // ── 원장 한 패스 — 파생 집합을 전부 여기서 만든다(이중 순회·이중 계산 제거) ──
@@ -387,7 +438,9 @@ export function decideSettlementQueryPlan(args: {
       counters.droppedByClaim++;
       continue;
     }
-    if (dateKey < oldestPendingKey) {
+    if (dateKey < oldestPendingKey || dateKey > todayKey) {
+      // 미래 결제일도 여기서 막는다 — 안 막으면 잘못 들어온 행 하나가 그 날짜를 매일
+      // 계획에 올리면서 `droppedByAge` 에도 안 잡혀 카운터로 보이지도 않는다.
       counters.droppedByAge++;
       continue;
     }
@@ -401,7 +454,8 @@ export function decideSettlementQueryPlan(args: {
   // ⛔ 「스냅샷 주문 수 vs 원장 수」로 판정하지 말 것 — 두 수는 같은 술어로 센 값이 아니고
   //    (`order-fetch-window.findChunkIntegrityIssues` 가 그 이유와 함께 **차단 근거 금지**를
   //    명시한다), 실측에서 양방향으로 어긋난다. 그 대조는 아래 `ledgerShortDates` 로 **관측만** 한다.
-  const oldestRecheckKey = addKstDays(todayKey, -SETTLEMENT_ORDER_DATE_RECHECK_DAYS);
+  // 당일 포함 정확히 `SETTLEMENT_ORDER_DATE_RECHECK_DAYS` 회가 되게 −(N−1) 이다.
+  const oldestRecheckKey = addKstDays(todayKey, -(SETTLEMENT_ORDER_DATE_RECHECK_DAYS - 1));
   for (const snap of snapshots) {
     if (snap.ordersCount <= 0) continue;
     if (snap.snapshotDate > todayKey) continue;
@@ -419,7 +473,14 @@ export function decideSettlementQueryPlan(args: {
 
   // ── ③ 취소·반품인데 차감 행이 아직 없는 주문의 결제일 ─────────────────────
   for (const claimed of claimedOrders) {
-    if (!settledOriginals.has(claimed.productOrderId)) continue; // 정산 전 취소 → 차감할 돈이 없다
+    if (!settledOriginals.has(claimed.productOrderId)) {
+      // 정산 전 취소 → 차감할 돈이 없다(정상 종료). 다만 **조용히 빼지는 않는다** —
+      // `isDeductionRow` 가 원거래를 차감으로 오분류하면 `settledOriginals` 가 비고, 그러면
+      // 그 주문의 클레임이 전부 여기로 빠져 `claimsAwaitingDeduction=0` 이 「대기 없음」과
+      // 구분되지 않는다.
+      counters.claimsWithoutSettledOriginal++;
+      continue;
+    }
     if (deducted.has(claimed.productOrderId)) continue; // 차감이 이미 왔다
     if (claimed.payDateKey > todayKey) continue;
     if (claimed.payDateKey < oldestClaimKey) {
@@ -431,13 +492,17 @@ export function decideSettlementQueryPlan(args: {
     addDate(claimed.payDateKey, 'claim-without-deduction', claimed.productOrderId);
   }
 
-  const dates: PendingDateEntry[] = [...reasonsByDate.entries()]
+  const allDates: PendingDateEntry[] = [...reasonsByDate.entries()]
     .map(([dateKey, reasons]) => ({
       dateKey,
       reasons: [...reasons].sort(),
       pendingOrders: ordersByDate.get(dateKey)?.size ?? 0,
     }))
     .sort((a, b) => (a.dateKey < b.dateKey ? -1 : a.dateKey > b.dateKey ? 1 : 0));
+
+  // 오래된 날짜를 먼저 남긴다 — 상한에 먼저 닿아 기회가 적은 쪽이다(§`MAX_DATES_PER_RUN`).
+  const dates = allDates.slice(0, SETTLEMENT_MAX_DATES_PER_RUN);
+  counters.truncatedDates = allDates.length - dates.length;
 
   return { dates, estimatedCalls: dates.length, counters };
 }
@@ -468,6 +533,9 @@ export async function loadSettlementQueryPlan(nowMs: number = Date.now()): Promi
   const todayKey = toKstDateKey(nowMs);
   const oldestPendingKey = addKstDays(todayKey, -SETTLEMENT_PENDING_MAX_AGE_DAYS);
   const oldestClaimKey = addKstDays(todayKey, -SETTLEMENT_CLAIM_LOOKBACK_DAYS);
+  // 계획은 클레임 창 안에서만 만들지만, **창을 벗어난 건을 세려면 그 밖까지 읽어야 한다** —
+  // 안 읽으면 `droppedByClaimWindow` 가 구조적으로 영원히 0 이다(교차 검증 지적).
+  const observeFromKey = addKstDays(oldestClaimKey, -SETTLEMENT_CLAIM_OBSERVE_MARGIN_DAYS);
 
   const [caseRows, snapshotRows, claimRows] = await Promise.all([
     // 원장은 클레임 창까지 읽는다 — 재진입 판정이 "원거래가 정산됐는가"(`settledOriginals`)와
@@ -477,7 +545,7 @@ export async function loadSettlementQueryPlan(nowMs: number = Date.now()): Promi
     // 「대기 0」을 보고한다(카운터도 안 붙는 유일한 배제 경로가 된다). 명시적으로 실어서
     // `counters.unknownPayDateOrders` 로 드러낸다.
     prisma.naverSettlementCase.findMany({
-      where: { OR: [{ payDate: { gte: new Date(kstDayStartMs(oldestClaimKey)) } }, { payDate: null }] },
+      where: { OR: [{ payDate: { gte: new Date(kstDayStartMs(observeFromKey)) } }, { payDate: null }] },
       select: {
         productOrderId: true,
         settleType: true,
@@ -488,7 +556,7 @@ export async function loadSettlementQueryPlan(nowMs: number = Date.now()): Promi
       },
     }),
     naverOrderSnapshotRepository.findRangeCounts(oldestPendingKey, todayKey),
-    naverOrderSnapshotRepository.findRangeClaimSources(oldestClaimKey, todayKey),
+    naverOrderSnapshotRepository.findRangeClaimSources(observeFromKey, todayKey),
   ]);
 
   const claimedOrders: ClaimedOrderRow[] = [];
@@ -530,6 +598,7 @@ export function formatSettlementQueryPlan(plan: SettlementQueryPlan): string {
     `pending=${c.pendingUnsettledOrders} recheck=${c.datesRechecked} claims=${c.claimsAwaitingDeduction} ` +
     `dropped(settled=${c.droppedBySettled},claim=${c.droppedByClaim},age=${c.droppedByAge},ageDates=${c.droppedByAgeDates},` +
     `claimWindow=${c.droppedByClaimWindow},deductionRows=${c.droppedByDeductionRows},nonProductRows=${c.droppedByNonProductLedgerRows}) ` +
-    `unknownPayDate=${c.unknownPayDateOrders} ledgerShort=${c.ledgerShortDates}`
+    `unknownPayDate=${c.unknownPayDateOrders} ledgerShort=${c.ledgerShortDates} ` +
+    `claimsNoOriginal=${c.claimsWithoutSettledOriginal} truncated=${c.truncatedDates}`
   );
 }

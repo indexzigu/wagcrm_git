@@ -41,6 +41,12 @@ async function handler(request: Request) {
     // 크론 형제들(`[cron/naver-order-sync] …`)과 같은 관용구. cron.log 는 잘릴 수 있어
     // 판정 정본은 아래 응답(=`SystemTaskLog.details`)이고 이 줄은 즉시 확인용이다.
     console.log(`[cron/naver-settlement-sync] plan ${formatSettlementQueryPlan(plan)}`);
+    if (plan.counters.truncatedDates > 0) {
+      // 상한에 눌린 계획은 조용히 넘기지 않는다 — 그 회차는 대상 날짜를 다 못 본 것이다.
+      console.warn(
+        `[cron/naver-settlement-sync] 계획이 상한에 걸려 ${plan.counters.truncatedDates}일이 잘렸다 — 남은 날짜는 다음 회차로 밀린다`,
+      );
+    }
     if (claimSourceUnavailableDates.length > 0) {
       console.warn(
         `[cron/naver-settlement-sync] claimSource 판독 불가 ${claimSourceUnavailableDates.length}일 — 그 날짜는 취소 재진입을 판정할 수 없다:`,
