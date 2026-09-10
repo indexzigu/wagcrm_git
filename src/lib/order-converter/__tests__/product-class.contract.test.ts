@@ -56,6 +56,22 @@ function sourceFiles(dir: string): string[] {
 }
 
 /**
+ * 전수 스캔 항목의 시간 예산. **기본 5000ms 는 단위 테스트용 예산이라 1,000여 파일을 AST 로 훑는
+ * 항목에 애초에 맞지 않는다** — 부하와 무관한 이유이고, 이 레포는 그런 항목에 30초를 명시한다
+ * (선례: `src/lib/__tests__/resident-number-exposure.contract.test.ts` 의 `REPO_SCAN_TIMEOUT_MS`).
+ * (그 선언이 없어 이 파일은 병렬 부하에서 반복 실패하기도 했다 — 유휴 소요 1.4초다.)
+ *
+ * 🪤 `vitest.config.ts` 의 ⛔「timeout 값을 올리지 말 것」은 **CI 워커 초과구독**을 겨냥한
+ * 조항이고 처방은 `maxWorkers` 다 — 여기는 항목의 **예산 등급**이 틀렸던 경우라 축이 다르다.
+ * ℹ️ 이 파일의 스캔은 **이미 단일 패스**다(전수 항목이 하나뿐이라 트리를 한 번만 걷는다) —
+ * 캐시를 얹어 봤지만 재사용이 없어 측정 차이가 잡음 수준이었고, 죽은 캐시라 되돌렸다.
+ *
+ * ⛔ 이 값을 올려 느려짐을 흡수하지 말 것 — 무거워지면 고칠 곳은 제한이 아니라 스캔이다.
+ * ⛔ 범위(`SCAN_ROOTS`)를 좁혀 빠르게 만들지도 말 것 — 위 주석대로 면적이 곧 방어력이다.
+ */
+const REPO_SCAN_TIMEOUT_MS = 30_000;
+
+/**
  * 테스트·픽스처는 스캔에서 뺀다 — 픽스처의 리터럴은 **판정이 아니라 데이터**다
  * ("네이버가 이 값을 준다"의 재현). SSOT 상수로 바꾸면 동어반복 테스트가 된다.
  *
@@ -159,7 +175,7 @@ describe('추가구성상품 판정 단일화', () => {
       .filter((rel) => rel !== SSOT && !isTestFile(rel))
       .flatMap((rel) => supplementLiterals(parse(rel)));
     expect(strays).toEqual([]);
-  });
+  }, REPO_SCAN_TIMEOUT_MS);
 
   it('집계·발주 표면은 SSOT 판정을 거친다', () => {
     // 리터럴 스캔은 "사본이 없다"만 말한다 — 소비처가 판정을 **자기 방식으로 다시 짜는**
