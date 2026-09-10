@@ -10,6 +10,7 @@ import {
   runChangedSync,
   runFullSync,
   syncOrdersByIds,
+  queryOrderDetails,
 } from '../naver-order-sync';
 
 /**
@@ -730,5 +731,63 @@ describe('runChangedSync 커서 전진 — 좁은 advanceCursor 경로 (egress �
 
     expect(result.cursorAdvancedTo).toBeUndefined();
     expect(advanceSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('queryOrderDetails 미회신 경고 (T-154)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 커머스API query 응답 1행. `normalizeQueriedOrder` 가 통과시키는 최소 형태다. */
+  const row = (productOrderId?: string) => ({ order: {}, productOrder: { productOrderId } });
+
+  async function mockQueryResponse(rows: unknown[]) {
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    vi.spyOn(clientModule, 'apiRequest').mockResolvedValue({ data: rows });
+  }
+
+  it('회신되지 않은 productOrderId 를 경고에 싣는다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await mockQueryResponse([row('1001'), row('1003')]);
+
+    await queryOrderDetails(['1001', '1002', '1003']);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('1002');
+  });
+
+  it('응답이 온전하면 경고하지 않는다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await mockQueryResponse([row('1001'), row('1002')]);
+
+    await queryOrderDetails(['1001', '1002']);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  // ⛔ 판정을 개수로 되돌리면 이 케이스만 빨개진다 — 중복 행이 빠진 id 를 가려
+  //    "요청 3 = 응답 3" 으로 읽히던 것이 P7 이 금지한 실패 모드다.
+  it('개수가 같아도 id 가 빠졌으면 잡는다 (중복 행이 가리지 못한다)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await mockQueryResponse([row('1001'), row('1001'), row('1003')]);
+
+    await queryOrderDetails(['1001', '1002', '1003']);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('1002');
+  });
+
+  it('미회신이 많으면 상한까지만 싣고 나머지는 건수로 접는다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ids = Array.from({ length: 30 }, (_, i) => `20${String(i).padStart(3, '0')}`);
+    await mockQueryResponse([]);
+
+    await queryOrderDetails(ids);
+
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain('30건이 회신되지 않았습니다');
+    expect(message).toContain('외 10건');
+    expect(message).not.toContain(ids[20]);
   });
 });
