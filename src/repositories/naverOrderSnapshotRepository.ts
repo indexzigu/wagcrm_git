@@ -236,6 +236,8 @@ export const naverOrderSnapshotRepository = {
   // 변경피드 폴링 커서로 사용할, lastChangeStatusCursor가 있는 스냅샷 중 가장 최근 것을 반환한다.
   // 소비자(runChangedSync)는 커서 문자열과 날짜키만 쓴다 — orders 블롭을 싣지 않는다
   // (종전에는 전 컬럼을 읽어 CHANGED 동기화마다 최신행 블롭이 왕복했다).
+  // ⚠️ 아래 latestChangeCursor 와 정렬이 다르다(이쪽 lastCallTime · 저쪽 커서 값) — 서로 맞추지 말 것.
+  // 이쪽은 「커서를 전진시킬 행」을 고르고(advanceCursor 대상), 저쪽은 「마지막 성공 시각」을 읽는다.
   async findLatestCursor() {
     return prisma.naverOrderSnapshot.findFirst({
       where: { lastChangeStatusCursor: { not: null } },

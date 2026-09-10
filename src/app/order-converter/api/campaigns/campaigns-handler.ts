@@ -456,13 +456,18 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
       }
 
-      // 응답 헤더용 최신 동기화 메타를 DB에서 조회 (L1 lastCallTime 순회보다 신뢰도 높음).
-      // 진입 동기화 간격 판정에는 쓰지 않는다 — lastCallTime 은 배송중 sweep·액션 직후 정밀 갱신도
-      // 밀어 올린다. 간격 판정은 변경피드 커서(getLastChangeSyncMs)가 맡는다.
+      // 「마지막 동기화」(응답 헤더 X-Naver-Last-Sync — 주문관리 툴바·셀러 포털 기준 시각) = 마지막으로 성공한
+      // 변경피드 동기화(변경피드 커서). 아래 진입 동기화 간격 판정·설정 카드 문구와 같은 시각이다.
+      // lastCallTime(latestSyncMeta)은 배송중 sweep·액션 직후 정밀 갱신도 밀어 올려, 새 주문을 안 물었는데도
+      // 「방금 동기화함」으로 보이게 한다 — 커서가 아직 없을 때(최초 FULL 부트스트랩 직후)만 대신 쓴다.
+      const lastChangeSyncMs = await getLastChangeSyncMs();
+      if (lastChangeSyncMs != null) {
+        lastSyncIso = new Date(lastChangeSyncMs).toISOString();
+      }
       let metaSyncType: string | null = null;
       try {
         const meta = await naverOrderSnapshotRepository.latestSyncMeta();
-        if (meta?.lastCallTime) {
+        if (lastChangeSyncMs == null && meta?.lastCallTime) {
           lastSyncIso = new Date(meta.lastCallTime).toISOString();
         }
         metaSyncType = meta?.syncType ?? null;
@@ -481,10 +486,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 데모 배포: 동기화가 no-op이라 stale이 영원히 해소되지 않는다 — syncing 상태를 아예 켜지
       // 않아 클라이언트 폴링 루프("동기화 중" 배지)가 돌지 않게 한다.
       if (!isDemoMode() && staleDates.length > 0 && hadAnySnapshot) {
-        const [intervalHours, lastChangeSyncMs] = await Promise.all([
-          getOrderAutoSyncIntervalHoursOrDefault(),
-          getLastChangeSyncMs(),
-        ]);
+        const intervalHours = await getOrderAutoSyncIntervalHoursOrDefault();
         const changedSyncDue = isOrderAutoSyncDue(lastChangeSyncMs, intervalHours, Date.now());
         if (changedSyncDue) {
           isSyncing = true;

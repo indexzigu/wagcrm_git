@@ -1,8 +1,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const { latestChangeCursorMock } = vi.hoisted(() => ({ latestChangeCursorMock: vi.fn() }));
+vi.mock("@/repositories/naverOrderSnapshotRepository", () => ({
+  naverOrderSnapshotRepository: { latestChangeCursor: latestChangeCursorMock },
+}));
+
 import {
   DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS,
+  getLastChangeSyncMs,
   isOrderAutoSyncDue,
   normalizeOrderAutoSyncInterval,
 } from "../order-auto-sync";
@@ -44,5 +51,25 @@ describe("normalizeOrderAutoSyncInterval", () => {
       const match = source.match(/orderAutoSyncIntervalHours\s+Int\s+@default\((\d+)\)/);
       expect(match?.[1], schema).toBe(String(DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS));
     }
+  });
+});
+
+describe("getLastChangeSyncMs", () => {
+  it("변경피드 커서(latestChangeCursor)의 ISO 시각을 ms로 읽는다", async () => {
+    latestChangeCursorMock.mockResolvedValueOnce({ lastChangeStatusCursor: "2026-09-10T03:00:00.000Z" });
+    expect(await getLastChangeSyncMs()).toBe(Date.parse("2026-09-10T03:00:00.000Z"));
+    expect(latestChangeCursorMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("커서 없음·해석 불가·조회 실패는 null(「모름」 → 진입 동기화를 건다)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    latestChangeCursorMock.mockResolvedValueOnce(null);
+    expect(await getLastChangeSyncMs()).toBeNull();
+    latestChangeCursorMock.mockResolvedValueOnce({ lastChangeStatusCursor: "not-a-date" });
+    expect(await getLastChangeSyncMs()).toBeNull();
+    latestChangeCursorMock.mockRejectedValueOnce(new Error("db down"));
+    expect(await getLastChangeSyncMs()).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });

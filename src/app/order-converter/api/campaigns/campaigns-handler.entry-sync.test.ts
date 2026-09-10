@@ -86,11 +86,14 @@ describe("campaigns-handler 진입 동기화 배선", () => {
   });
 
   it("마지막 변경피드 동기화가 간격보다 최근이면 변경피드는 건너뛰고 배송중 sweep 은 건다", async () => {
-    lastChangeSyncMsMock.mockResolvedValue(Date.now() - 1 * HOUR);
+    const lastChangeSyncMs = Date.now() - 1 * HOUR;
+    lastChangeSyncMsMock.mockResolvedValue(lastChangeSyncMs);
     const response = await enterDashboard();
     expect(runSyncMock).not.toHaveBeenCalled();
     expect(sweepMock).toHaveBeenCalledWith(["po-delivering"]);
     expect(response.headers.get("X-Naver-Syncing")).toBe("0");
+    // 「마지막 동기화」는 lastCallTime(10분 전 — sweep·액션도 밀어 올림)이 아니라 변경피드 커서 시각이다.
+    expect(response.headers.get("X-Naver-Last-Sync")).toBe(new Date(lastChangeSyncMs).toISOString());
   });
 
   it("간격이 지났으면 변경피드 동기화와 배송중 sweep 을 함께 건다", async () => {

@@ -712,6 +712,7 @@ export async function runChangedSync(): Promise<SyncResult> {
       // 다음 GET마다 불필요하게 재동기화가 반복 트리거되는 것을 막을 수 있다.
       const todayKey = toDateKeyKst(now);
       const todayCacheEntry = dailyCache[todayKey];
+      let cursorWrittenToToday = false;
 
       if (todayCacheEntry) {
         todayCacheEntry.lastCallTime = Date.now();
@@ -738,16 +739,20 @@ export async function runChangedSync(): Promise<SyncResult> {
             lastChangeStatusCursor: nowIso,
           });
           affectedDatesSet.add(todayKey);
+          cursorWrittenToToday = true;
         } catch (err) {
           console.warn(`[naver-order-sync] Failed to refresh lastCallTime for ${todayKey}:`, err);
         }
       }
 
-      // 커서 자체는 반드시 전진시켜야 한다. 오늘자 스냅샷을 이미 갱신했다면 그걸로 충분하니
-      // 중복 upsert를 피하고, 그렇지 않을 때만(오늘자가 L1/DB에 아직 없는 경우) 최신 스냅샷에 커서만 기록한다.
+      // 커서 자체는 반드시 전진시켜야 한다. 위에서 오늘자 스냅샷에 커서를 실었다면 그걸로 충분하니
+      // 중복 기록을 피하고, 그렇지 않을 때만(오늘자가 L1에 없거나 그 upsert가 실패한 경우) 커서 보유 최신 행에
+      // 커서만 기록한다. 종전 조건 `latest.snapshotDate !== todayKey` 는 「오늘자 행이 커서를 가졌지만 이
+      // 인스턴스 L1에는 없는」 경우(재기동 직후)를 빠뜨려 커서가 멈췄다 — 진입 동기화 간격(order-auto-sync.ts)이
+      // 이 커서를 기준으로 쓰므로 멈추면 매 진입이 재동기화를 건다.
       try {
         const latest = await naverOrderSnapshotRepository.findLatestCursor();
-        if (latest && latest.snapshotDate !== todayKey) {
+        if (latest && !cursorWrittenToToday) {
           // 커서만 좁게 기록(위 advanceCursor와 동일 근거 — 블롭 왕복 제거).
           await naverOrderSnapshotRepository.advanceCursor(latest.snapshotDate, nowIso);
         }
