@@ -40,6 +40,45 @@ describe("AgentJob contracts", () => {
     ).toBe(false);
   });
 
+  // 봉투가 깊이 2로 열리면서 시크릿 검사도 재귀(`inputKeyPaths`)로 함께 깊어졌다.
+  // 최상위만 보던 검사를 그대로 두고 봉투만 열면 `input.partner.password` 가 통과한다.
+  //
+  // ⚠️ `success === false` 만 보면 이 테스트는 **헛돈다.** 모든 operation 스키마가
+  // `.strict()` 라 시크릿 유사 키는 「모르는 칸」으로도 거부되기 때문에, 재귀 검사를
+  // 통째로 지워도 초록으로 남는다. 그래서 거부됐다는 사실이 아니라 **그 경로에서 시크릿
+  // 사유로 거부됐는지**를 짚는다. 배열 분기는 재귀에서 가장 빠뜨리기 쉬운 갈래라 따로 센다.
+  it.each([
+    [
+      "중첩 객체 안",
+      "create_action_proposal",
+      { action: "create_partner", partner: { name: "테스트", type: "BRAND", password: "x" } },
+      "input.partner.password",
+    ],
+    [
+      "배열 안 객체",
+      "create_action_proposal",
+      {
+        action: "create_partner",
+        partner: { name: "테스트", type: "BRAND" },
+        contacts: [{ name: "담당", api_key: "x" }],
+      },
+      "input.contacts.0.api_key",
+    ],
+    [
+      "배열 안 객체(다른 operation)",
+      "search_deals",
+      { query: [{ authorization: "Bearer x" }] },
+      "input.query.0.authorization",
+    ],
+  ])("flags a secret-like key nested %s at its own path", (_label, operation, input, path) => {
+    const result = AgentJobPayloadSchema.safeParse({ ...payload, operation, input });
+    expect(result.success).toBe(false);
+    const secretIssues = result.success
+      ? []
+      : result.error.issues.filter((issue) => issue.message.includes("secret-like"));
+    expect(secretIssues.map((issue) => issue.path.join("."))).toContain(path);
+  });
+
   it("caps durable result summaries and evidence references", () => {
     expect(
       AgentJobResultSchema.safeParse({
