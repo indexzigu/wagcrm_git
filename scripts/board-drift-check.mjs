@@ -267,12 +267,46 @@ export function hasDurableReference(line) {
  * **아니다**. 낱말만 찾던 종전 판정은 이걸 "게이트 있음"으로 읽어, 진짜 종결 항목을 영영
  * 안 닫힌 것으로 봤다(실측 위음성 1건).
  */
-const GATE_MARK = /다음\s*게이트|잔여/;
+/**
+ * 게이트 라벨 어휘 — 실보드가 쓰는 세 형태다(실측 2026-09-10: `다음 게이트` 49 · `잔여` 44 ·
+ * `남은 게이트` 6 — 보드는 다세션이 계속 쓰는 파일이라 이 수는 곧 달라진다).
+ *
+ * 🪤 **종전에는 앞의 둘만, 그것도 세 곳에 각각 하드코딩돼 있었다.** 그래서 `남은 게이트` 로 적은
+ * 줄은 게이트가 **아예 없는 것**으로 읽혔다 — 그 줄의 「아직 서버에 안 올라갔다」는 자백이 배포 축
+ * 판정에서 사라지고, 종결 판정도 그 줄을 닫힌 것으로 봤다. 사본이 셋이라 한 곳만 고쳐도 조용히
+ * 어긋나는 구조였으므로 **어휘는 여기 한 곳이 소유한다.**
+ * ⛔ 넓힐 때 소비처에 사본을 두지 말 것 — 그게 이 결함의 형태였다.
+ */
+const GATE_MARK = /다음\s*게이트|잔여|남은\s*게이트/;
+
+/**
+ * 같은 어휘의 전역 판본으로 표식을 훑는다.
+ *
+ * ℹ️ `matchAll` 은 넘긴 정규식을 **복제**하므로 `lastIndex` 가 호출 사이에 새지 않는다 — 그 함정은
+ * `.test`/`.exec` 쪽이고, 이 레포의 선례는 `src/lib/mail-config.contract.test.ts` 의
+ * `MAIL_HOST_LITERAL` 이다(리뷰 정정 2026-09-10 — 종전 주석이 근거를 잘못 적었다).
+ * 🪤 그래도 **`GATE_MARK` 를 그대로 넘겨 만든다** — `.source` 로 지으면 나중에 `i`·`u` 가 붙어도
+ * 조용히 빠져 두 판본이 갈린다. 사본 divergence 를 없애려고 만든 상수에서 그건 자기모순이다.
+ */
+function findGateLabels(text) {
+  return text.matchAll(new RegExp(GATE_MARK, "g"));
+}
 
 export function hasOpenGate(text) {
-  for (const m of text.matchAll(/다음\s*게이트|잔여/g)) {
-    const rest = text.slice(m.index + m[0].length).replace(/^[\s=:*·—-]+/, "");
-    if (/^없(?:음|다|고)/.test(rest)) continue; // "게이트 없음" 은 게이트가 아니다
+  for (const m of findGateLabels(text)) {
+    // 🪤 **조사를 함께 걷는다(리뷰 실측 2026-09-10).** 표식 뒤에 오는 것은 `=`·`:` 만이 아니라
+    //    조사이기도 하다 — `남은 게이트는 없다` 처럼 쓴 줄에서 `는` 을 남겨 두면 부정어 판정이
+    //    실패해 **종결 항목이 「살아 있는 게이트」로 뒤집힌다**(어휘를 넓히면서 그 형태가 실보드에
+    //    닿아 실제로 뒤집혔다. `다음 게이트는 없다` 는 그전에도 같은 구멍이었다).
+    //    조사는 **뒤에 공백이 올 때만** 걷어 `게이트 은행 확인` 류를 잘못 먹지 않는다.
+    const rest = text
+      .slice(m.index + m[0].length)
+      .replace(/^[\s=:*·—-]*(?:(?:은|는|이|가|도)[\s=:*·—-]+)?[\s=:*·—-]*/, "");
+    // 🪤 **이어지는 어미(`없고`)는 부정으로 세지 않는다(리뷰 실측 2026-09-10).** `잔여는 없고 오너
+    //    실명 입력만 남았다` 는 **뒤에 할 일이 이어지는** 문장인데 종전 판정은 이걸 「게이트 없음」
+    //    으로 읽어 **살아 있는 항목을 닫힌 것으로** 봤다 — 이 파일이 가장 위험하다고 규정한 방향
+    //    (스윕이 남의 줄을 지운다)이다. 종결형(`없음`·`없다`)만 부정으로 센다.
+    if (/^없(?:음|다)/.test(rest)) continue; // "게이트 없음" 은 게이트가 아니다
     return true;
   }
   return false;
@@ -295,8 +329,37 @@ export function hasOpenGate(text) {
  * 스윕이 남의 줄을 지우고(2026-07-31 실사고 형태, 되돌릴 이력 없음) "닫혔는데 살았다"고
  * 하면 줄이 조금 더 남을 뿐이다. 모호하면 **살아 있는 쪽**으로 판정한다.
  */
+/**
+ * 게이트 서술을 찾는 범위 — 새 형식은 **제목이 앞에** 있으므로 ` — ` 뒤부터 본다.
+ *
+ * 🪤 게이트를 상태 문구가 아니라 **본문**에 적는 것이 이 보드의 관례라(아래 `isClosedItem`
+ * 주석) 탐색 범위는 줄 전체였는데, 새 형식에서는 그 「줄 전체」에 제목이 포함된다. 그래서 제목에
+ * 게이트 낱말이 든 항목(`✅ #5 [슬러그] 다음 게이트 정리 작업 — 머지·prod 반영 완료`)이 **살아
+ * 있는 게이트를 가진 것**으로 읽혀, 끝난 항목이 종결로 안 잡히고 「좌표 없음」 경고 목록에 계속
+ * 올라왔다(리뷰 실측). 옛 형식은 ` — ` 뒤가 제목이므로 종전대로 줄 전체를 본다.
+ */
+function gateSearchText(line) {
+  if (!isNewDialectHeader(line)) return line;
+  // 🪤 **` — ` 는 헤더 안에서 찾는다(리뷰 실측 2026-09-10).** 헤더에는 없고 **본문에만** 그 구분자가
+  //    있는 줄에서 무작정 첫 것을 잡으면 탐색이 본문에서 시작해 **헤더에 적힌 게이트를 잃는다**
+  //    (`- **… 제목: 머지 완료 · 다음 게이트 = 승격 배포 확인**: 본문 — 경과` 에서 배포 대기 자백이
+  //    사라졌다 — 이 도구가 막으려는 침묵 그대로). 헤더 밖이면 좁히지 않고 줄 전체를 본다.
+  // ⚠️ **그 폴백에는 대가가 있다(리뷰 실측 2026-09-10).** 헤더에 ` — ` 가 없는 새 형식 줄
+  //    (`- **✅ #5 [슬러그] 다음 게이트 정리 작업: 머지·prod 반영 완료**: 본문 — 경과`)은 줄 전체를
+  //    보게 되므로 **제목의 게이트 낱말이 다시 읽힌다** — 위가 고친 그 오독이 이 형태에서는 남는다.
+  //    그래도 폴백을 택한 이유는 **오류 방향**이다: 이쪽은 항목이 닫히지 않아 경고가 하나 늘 뿐이고
+  //    (종료코드 불변), 폴백을 없애면 헤더에 적힌 게이트를 잃어 **미배포 자백이 사라진다**(종료코드
+  //    축의 침묵). 그 형태를 안 만드는 것이 가장 싸다 — 상태는 ` — ` 뒤에 적는다.
+  const sep = line.indexOf(HEADER_SEP);
+  return sep >= 0 && sep < headerEndOf(line) ? line.slice(sep) : line;
+}
+
 export function isClosedItem(line) {
   const status = statusPhrase(line);
+  // 게이트 주장은 **상태 구역**에서 읽는다 — 새 형식은 그것이 ` — ` 뒤에 있다.
+  // ⚠️ 종결 표식(`✅`·`종결`)은 아래에서 계속 `statusPhrase` 로 본다(두 형식 모두 앞 구역에
+  //    있다 — `statusRegion` 주석의 실측). 두 판정이 서로 다른 구역을 보는 것이 의도다.
+  const claimed = statusRegion(line);
 
   // 우선순위: 상태 문구가 게이트를 **언급하면** 그것이 항목 자신의 최신 주장이다.
   // 침묵할 때만 본문을 본다.
@@ -306,10 +369,10 @@ export function isClosedItem(line) {
   // (`… 다음 게이트 = **오너: CI 3종 통과 확인 후 머지**` 가 이미 머지된 항목의 본문에
   // 그대로 있다). 본문을 무조건 우선하면 그 낡은 서술이 전부 "살아 있는 게이트"가 되어
   // 아무것도 닫히지 않고, 판정기가 조용히 무용지물이 된다.
-  if (GATE_MARK.test(status)) {
-    if (hasOpenGate(status)) return false;
-    // 상태 문구가 "다음 게이트 없음"을 **명시**했다 — 본문의 낡은 서술보다 우선한다.
-  } else if (hasOpenGate(line)) {
+  if (GATE_MARK.test(claimed)) {
+    if (hasOpenGate(claimed)) return false;
+    // 상태 구역이 "다음 게이트 없음"을 **명시**했다 — 본문의 낡은 서술보다 우선한다.
+  } else if (hasOpenGate(gateSearchText(line))) {
     return false; // 상태 문구는 침묵하는데 본문이 게이트를 선언한다 = 살아 있다
   }
 
@@ -579,8 +642,10 @@ function isNewDialectHeader(line) {
  * 항목 37건 기준 — 섹션 블록은 제외): 종결 표식이 앞 구역에 있는 줄 15건, 뒤 구역에 있는 줄
  * **0건**. 이 함수를 뒤 구역으로 돌리면 그 15건의 종결 판정을 통째로 잃는다(「좌표 없음」 경고가
  * 그만큼 늘어난다). 수치는 보드가 바뀌면 달라지지만 **비대칭의 방향**은 형식 규약에서 나온다.
- * ⚠️ 그 대가로 남는 오독: 새 형식 **제목**에 게이트 낱말(`다음 게이트`)이 들어가면 살아 있는
- * 게이트로 읽힌다. 방향이 경고 과다(침묵 아님)이고 종료코드에 반영되지 않는 경로라 별건으로 둔다.
+ * ℹ️ 종전에 여기 적혀 있던 「제목에 게이트 낱말이 들어가면 살아 있는 게이트로 읽힌다」는 T-145 에서
+ * **대부분 해소됐다** — 게이트 탐색 범위는 `gateSearchText` 가 형식을 인지해 좁힌다. ⚠️ 단
+ * **헤더에 ` — ` 가 없는 줄은 그 함수의 폴백으로 되돌아온다**(그 주석의 ⚠️ 절 — 방향은 경고 과다).
+ * 종결 표식만 앞 구역에서 읽는 이 비대칭이 그대로 남는 것은 의도다.
  */
 function statusRegion(line) {
   return isNewDialectHeader(line) ? trailingStatusPhrase(line) : statusPhrase(line);
@@ -764,12 +829,20 @@ export function claimsDeployed(line) {
   if (DEPLOYED_RE.test(status)) return true;
   if (claimsAwaitingMergeIn(line)) return false;
   if (MERGE_DONE.test(status) && WAIT_SIGNAL.test(status)) return false; // 승격 대기 명시
+  // ⚠️ ③ 은 **줄 전체**를 본다 — 새 형식에서는 그 안에 제목도 포함된다. 과대보고 탐지력을 지키려는
+  //    의도된 폭이지만(위 ③), 제목에 배포 완료 어휘를 쓰면 그 항목이 배포를 주장한 것으로 읽힌다.
   return DEPLOYED_RE.test(line);
 }
 
 export function readClaims(line) {
-  const gateSegments = [...line.matchAll(/(잔여|다음\s*게이트)/g)].map((m) => {
-    const rest = line.slice(m.index, m.index + REGION_CAP);
+  // ⚠️ 매치를 찾은 텍스트에서 잘라낸다 — `gateSearchText` 가 부분 문자열을 돌려줄 수 있으므로
+  //    `m.index` 를 원본 `line` 에 대고 자르면 **다른 구간을 읽는다**(오프셋 기준 불일치).
+  // ℹ️ **이 축은 종료코드를 흔든다** — 여기서 읽은 게이트가 `awaitingDeploy` 를 만들고 그것이
+  //    `STALE_MERGE_MARKER`(드리프트)로 이어진다. T-145 는 「종료코드를 흔들지 않는」 종결 판정만
+  //    지목했지만, 제목을 게이트로 읽는 결함은 같은 것이라 이 축에도 같이 적용했다(범위 확장).
+  const gateText = gateSearchText(line);
+  const gateSegments = [...findGateLabels(gateText)].map((m) => {
+    const rest = gateText.slice(m.index, m.index + REGION_CAP);
     const end = rest.slice(1).search(GATE_END);
     return end >= 0 ? rest.slice(0, end + 1) : rest;
   });
