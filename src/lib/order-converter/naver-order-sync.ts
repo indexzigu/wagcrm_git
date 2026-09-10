@@ -230,6 +230,16 @@ export async function fetchChangedProductOrderIds(fromIso: string): Promise<stri
 const QUERY_CHUNK_SIZE = 100;
 
 /**
+ * 미회신 경고 한 줄에 실을 productOrderId 개수 상한.
+ *
+ * 청크가 통째로 안 돌아오면 100개가 되는데, 그러면 이 한 줄이 로그를 점거해 정작
+ * 함께 읽어야 할 앞뒤 줄이 묻힌다(`fetch-client.errorChainText` 의 `MAX_PARTS` 와 같은
+ * 이유). 사람이 손으로 쫓는 용도라 앞쪽 몇 개면 충분하고, 전체 규모는 함께 찍는
+ * **건수**가 말한다.
+ */
+const MISSING_ID_LOG_CAP = 20;
+
+/**
  * productOrderId 목록의 상세 내역을 100건 청크로 나눠 query API를 호출하고,
  * 정규화된 평면 주문 객체 배열로 반환한다.
  */
@@ -244,13 +254,38 @@ export async function queryOrderDetails(productOrderIds: string[]): Promise<any[
     });
 
     const data = Array.isArray(res?.data) ? res.data : [];
-    if (data.length < chunk.length) {
-      console.warn(`[naver-order-sync] query 응답 개수(${data.length})가 요청 개수(${chunk.length})보다 적습니다. 일부 productOrderId 조회가 누락됐을 수 있습니다.`);
-    }
 
+    // ⛔ **모자람을 「개수」로 재지 말 것 — 판정은 id 집합이다**(P7 정본, 확정 게이트와 같은
+    //    근거). 중복·잉여 행 하나가 빠진 id 를 가려 「온전함」으로 읽힌다. 소비처
+    //    (`syncPostCloseCancellations` 의 `complete`)는 이미 집합으로 판정하는데 이 경고만
+    //    개수로 재고 있었다 — 같은 사실을 두 술어로 재던 것이라 서로 어긋날 수 있었다.
+    // 🪤 `normalizeQueriedOrder` 는 `productOrder` 가 있기만 하면 통과시키므로 **id 없는 행도
+    //    배열에 남는다** — 그런 행은 이 집합에 안 들어와 「모자람」으로 판정된다(fail-closed).
+    const returnedIds = new Set<string>();
     for (const item of data) {
       const normalized = normalizeQueriedOrder(item);
-      if (normalized) results.push(normalized);
+      if (!normalized) continue;
+      if (normalized.productOrderId != null) returnedIds.add(String(normalized.productOrderId));
+      results.push(normalized);
+    }
+
+    // **빠진 id 를 함께 남긴다(T-154).** 건수만 남기면 이 경고를 본 사람이 대상을 좁힐 방법이
+    // **커머스API 재조회뿐**인데, 그 경로는 아웃바운드 프록시의 월 한도를 태우고 그 한도
+    // 소진은 실제로 크론을 멈춰 세운 적이 있다(위 `fetch-client` 의 같은 배경). 즉 이 한 줄의
+    // 부재가 장애 원인 자원을 조사할 때마다 갉았다. 조사 실측은 핸드오프에 있다.
+    // ℹ️ 미회신 자체는 결함이 아닐 수 있다 — **탈퇴 구매자의 주문을 커머스API 가 영구히
+    //    제공하지 않는** 구조적 사유가 있다(P7). 이 줄의 몫은 차단이 아니라 **식별**이다.
+    // ⚠️ 건수는 **실제로 보낸** `chunk.length` 로 적는다 — 판정용 `requestedIds` 는 dedupe 한
+    //    값이라 그것을 「요청」이라 적으면 중복 입력에서 보낸 건수보다 작게 보고된다.
+    const requestedIds = [...new Set(chunk.map((id) => String(id)))];
+    const missingIds = requestedIds.filter((id) => !returnedIds.has(id));
+    if (missingIds.length > 0) {
+      const shown = missingIds.slice(0, MISSING_ID_LOG_CAP);
+      const rest = missingIds.length - shown.length;
+      console.warn(
+        `[naver-order-sync] query 요청 ${chunk.length}건 중 ${missingIds.length}건이 회신되지 않았습니다.` +
+          ` 미회신 productOrderId: ${shown.join(', ')}${rest > 0 ? ` 외 ${rest}건` : ''}`,
+      );
     }
   }
 
