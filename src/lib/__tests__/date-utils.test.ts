@@ -1,5 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { formatDateRange, getDateUrgency } from "../date-utils";
+import { formatDateRange, formatLastSyncLabel, getDateUrgency } from "../date-utils";
+
+describe("formatLastSyncLabel", () => {
+  it("KST 기준 오늘이면 시:분만 보인다", () => {
+    // 05:10Z = KST 14:10, 기준 시각 10:00Z = KST 19:00(같은 날)
+    expect(formatLastSyncLabel("2026-09-10T05:10:00.000Z", new Date("2026-09-10T10:00:00.000Z"))).toBe("14:10");
+  });
+
+  it("KST 기준 전날이면 MM.DD 를 붙인다", () => {
+    // 14:10Z = KST 09.09 23:10, 기준 01:00Z = KST 09.10 10:00
+    expect(formatLastSyncLabel("2026-09-09T14:10:00.000Z", new Date("2026-09-10T01:00:00.000Z"))).toBe("09.09 23:10");
+  });
+
+  it("UTC 로는 같은 날이어도 KST 로 날짜가 다르면 날짜를 붙인다(브라우저 시간대가 아니라 KST 로 가른다)", () => {
+    // 14:30Z = KST 09.09 23:30, 기준 15:30Z = KST 09.10 00:30 — UTC 날짜는 둘 다 09.09
+    expect(formatLastSyncLabel("2026-09-09T14:30:00.000Z", new Date("2026-09-09T15:30:00.000Z"))).toBe("09.09 23:30");
+  });
+
+  it("해석할 수 없는 값은 빈 문자열", () => {
+    expect(formatLastSyncLabel("not-a-date")).toBe("");
+  });
+});
 
 describe("formatDateRange", () => {
   it("formats valid start and end dates as MM.DD ~ MM.DD", () => {

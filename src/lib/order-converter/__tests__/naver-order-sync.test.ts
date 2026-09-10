@@ -748,7 +748,11 @@ describe('runChangedSync 커서 전진 — 좁은 advanceCursor 경로 (egress �
     const result = await runChangedSync();
 
     expect(advanceSpy).toHaveBeenCalledWith(todayKey, result.fetchedAt);
-    expect(warn).toHaveBeenCalled();
+    // 오늘자 upsert 가 실제로 실패해 폴백 경로를 탔다는 증거(다른 warn 에 우연히 통과하지 않게 문구로 좁힌다).
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(`Failed to refresh lastCallTime for ${todayKey}`),
+      expect.any(Error),
+    );
   });
 
   it('부분 실패 시 advanceCursor도 호출되지 않는다', async () => {

@@ -469,12 +469,13 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         ),
       ]);
       let metaSyncType: string | null = null;
+      let lastCallTime: Date | null = null;
       if (metaResult.ok) {
         metaSyncType = metaResult.meta?.syncType ?? null;
+        lastCallTime = metaResult.meta?.lastCallTime ?? null;
       } else {
         console.warn('Failed to read latestSyncMeta:', metaResult.error);
       }
-      const lastCallTime = metaResult.ok ? metaResult.meta?.lastCallTime : null;
       if (lastChangeSyncMs != null) {
         lastSyncIso = new Date(lastChangeSyncMs).toISOString();
       } else if (lastCallTime) {
