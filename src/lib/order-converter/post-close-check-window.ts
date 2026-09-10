@@ -54,7 +54,8 @@ const TERMINAL_ORDER_STATUSES = new Set([
  * ⚠️ 그 효과는 한 방향이 아니다 — 종결 시각이 안 찍혀 판매 종료 +15일 상한으로 넘어가므로, 판매 종료 뒤
  *    늦게 배송된 캠페인은 「종결 +10일」보다 **일찍** 멈출 수 있다(오너 원칙 「예외는 수동」 범위로 감수).
  * ⚠️ 값들은 실제 클레임 응답과 대조하지 못했다(claim-derive.ts 머리 TODO 와 같은 사정). 철자가 틀린
- *    값은 조용히 「진행 중」이 되어 확인이 상한까지 길어진다 — 실응답을 보면 먼저 이 목록을 대조할 것.
+ *    값은 조용히 「진행 중」이 되어 바로 위 ⚠️ 의 효과(상한으로 넘어감 — 늦은 배송이면 오히려 일찍 멈춤)를
+ *    낸다 — 실응답을 보면 먼저 이 목록을 대조할 것.
  */
 const FINISHED_CLAIM_STATUSES = new Set([
   'CANCEL_DONE',
@@ -74,7 +75,8 @@ const FINISHED_CLAIM_STATUSES = new Set([
  * 배송완료 뒤 반품·교환 요청이 들어와도 주문 상태는 DELIVERED 로 남고 클레임만 움직인다 —
  * 클레임 상태 **추출**은 claim-derive SSOT(`deriveClaimsFromOrder`)를 쓰고, 끝났는지는 위 목록으로 본다.
  * 🪤 그 추출은 클레임 객체에 상태가 없으면 `currentClaim` 의 상태를 빌려 온다 — 드물게 다른 종류의 완료
- *    상태를 이어받을 수 있지만, 빌려 오지 않으면 실제로 끝난 클레임을 영영 못 알아봐 확인이 늘 상한까지 간다.
+ *    상태를 이어받을 수 있지만, 빌려 오지 않으면 실제로 끝난 클레임을 영영 못 알아봐 종결 시각이 안 찍히고
+ *    판매 종료 +15일 상한으로 넘어간다(효과는 위 목록 주석의 ⚠️ 와 같다).
  */
 export function isPostCloseTerminalOrder(order: any): boolean {
   const status = order?.productOrderStatus;

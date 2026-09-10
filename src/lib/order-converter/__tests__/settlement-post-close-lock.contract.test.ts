@@ -369,7 +369,7 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
   });
 });
 
-describe('syncPostCloseCancellations — 확인 기간(전 주문 종결 +10일 · 판매 종료 +15일, 오너 확정 2026-09-11)', () => {
+describe('syncPostCloseCancellations — 확인 기간(전 주문 종결 +10일 오너 확정 · 종결 미관측 상한 판매 종료 +15일 오너 승인 계획, 2026-09-11)', () => {
   const DAY = 24 * 60 * 60 * 1000;
 
   it('전 주문 종결을 처음 본 지 10일이 지나면 조회하지 않는다', async () => {
