@@ -217,6 +217,12 @@ describe('decideSettlementQueryPlan — 조용히 빠지는 길이 없다', () =
     expect(result.dates[0].dateKey).toBe(addDays(TODAY, -(SETTLEMENT_MAX_DATES_PER_RUN + 2 + 10)));
   });
 
+  it('재확인 몫이 상한 안에 들어간다(예약 배분의 전제)', () => {
+    // ⚠️ 뒤집히면 이번엔 오래된 날짜가 굶고 상한 자체가 무력해진다 — 회복 창을 넓힐 때
+    //    이 관계를 함께 보라는 기계 장치다.
+    expect(SETTLEMENT_ORDER_DATE_RECHECK_DAYS).toBeLessThanOrEqual(SETTLEMENT_MAX_DATES_PER_RUN);
+  });
+
   it('상한이 가득 차도 최근 주문 날짜는 굶지 않는다', () => {
     // 🪤 차감이 영영 안 오는 옛 클레임이 상한을 매 회차 독점하면, 오늘 주문일이 재확인 창을
     //    벗어나 **다시는 계획에 오르지 못한다**(원장을 못 받았으니 종료①로도 안 잡힌다).
@@ -232,7 +238,7 @@ describe('decideSettlementQueryPlan — 조용히 빠지는 길이 없다', () =
     expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN);
   });
 
-  it('미래 날짜는 세 경로 모두에서 계수하며 건너뛴다', () => {
+  it('스냅샷·클레임 경로의 미래 날짜를 계수하며 건너뛴다', () => {
     // 0 이 아니면 KST 날짜키가 하루 밀린 것이다 — 카운터가 없으면 「할 일 없음」과 같은 얼굴이 된다.
     const future = addDays(TODAY, 2);
     const result = plan({
