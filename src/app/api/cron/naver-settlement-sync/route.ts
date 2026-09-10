@@ -29,7 +29,6 @@ async function handler(request: Request) {
     const url = new URL(request.url);
     const settledDays = Math.min(Math.max(Number(url.searchParams.get("settledDays")) || 3, 1), 62);
     const unsettledDays = Math.min(Math.max(Number(url.searchParams.get("unsettledDays")) || 21, 1), 62);
-    const dryRun = url.searchParams.get("dryRun") === "1";
 
     // 정산이 시작된 캠페인은 **확정 계산을 한 번 마친 뒤로는** 건너뛴다(결과가 바뀔 수 없다).
     // 확정 여부는 `cachedPostCloseCancelFinalizedAt` 마커가 답하므로 0 으로 굳는 구멍이 없다 —
@@ -47,10 +46,6 @@ async function handler(request: Request) {
         `[cron/naver-settlement-sync] claimSource 판독 불가 ${claimSourceUnavailableDates.length}일 — 그 날짜는 취소 재진입을 판정할 수 없다:`,
         claimSourceUnavailableDates.join(","),
       );
-    }
-
-    if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, plan, claimSourceUnavailableDates });
     }
 
     const sync = await runSettlementSync(settledDays, unsettledDays);
@@ -71,4 +66,35 @@ async function handler(request: Request) {
   }
 }
 
-export const GET = withSystemTaskStatus("naver-settlement-sync", handler);
+/**
+ * 계획만 계산해 돌려준다 — **네이버 호출 0, 쓰기 0.**
+ *
+ * 🪤 이 경로가 `withSystemTaskStatus` **밖에** 있는 것이 핵심이다. 그 래퍼는 인증된 크론
+ * 호출마다 `RUNNING` → `SUCCESS` 를 기록하므로, dry-run 을 그 안에서 처리하면 **실제
+ * 동기화를 한 적이 없는데** 마지막 실행 시각이 갱신되고 직전 실패 기록이 덮인다 — 레이더가
+ * 정상 실행으로 표시된다(교차 검증이 모킹 실행으로 DB 쓰기 3회를 확인했다).
+ * ⛔ 편의를 이유로 이 분기를 핸들러 안으로 되돌리지 말 것.
+ */
+async function dryRunHandler(request: Request) {
+  if (!verifyCronAuth(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  try {
+    const { plan, claimSourceUnavailableDates } = await loadSettlementQueryPlan();
+    console.log(`[cron/naver-settlement-sync] dry-run plan ${formatSettlementQueryPlan(plan)}`);
+    return NextResponse.json({ ok: true, dryRun: true, plan, claimSourceUnavailableDates });
+  } catch (error) {
+    console.error("[cron/naver-settlement-sync] dry-run 실패:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Internal server error" },
+      { status: 500 },
+    );
+  }
+}
+
+const trackedHandler = withSystemTaskStatus("naver-settlement-sync", handler);
+
+export const GET = async (request: Request): Promise<Response> => {
+  if (new URL(request.url).searchParams.get("dryRun") === "1") return dryRunHandler(request);
+  return trackedHandler(request);
+};

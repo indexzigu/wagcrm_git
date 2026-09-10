@@ -93,7 +93,17 @@ describe('decideSettlementQueryPlan — 종료 조건(수렴)', () => {
     // 날짜 축 조회로는 원리적으로 닿을 수 없다 — 조용히 사라지면 「대기 0」이 거짓말이 된다.
     const result = plan({ cases: [caseRow({ productOrderId: 'A', payDate: null })] });
     expect(result.dates).toEqual([]);
-    expect(result.counters.unknownPayDate).toBe(1);
+    expect(result.counters.unknownPayDateOrders).toBe(1);
+  });
+
+  it('취소로 끝난 주문은 결제일이 없어도 unknownPayDate 로 세지 않는다', () => {
+    // 이 카운터는 「조회 방식을 바꿔야 하나」를 재는 신호다 — 이미 끝난 건이 영구 바닥으로
+    // 앉으면 신호가 흐려진다.
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'A', payDate: null })],
+      claimedOrders: [{ productOrderId: 'A', payDateKey: TODAY }],
+    });
+    expect(result.counters.unknownPayDateOrders).toBe(0);
   });
 
   it('상한을 넘긴 결제 건은 포기한다', () => {
@@ -105,20 +115,39 @@ describe('decideSettlementQueryPlan — 종료 조건(수렴)', () => {
   });
 });
 
-describe('decideSettlementQueryPlan — 원장을 못 받은 날', () => {
+describe('decideSettlementQueryPlan — 원장이 모자란 날', () => {
   it('주문이 있는데 그 결제일의 원장이 하나도 없으면 부른다', () => {
     // 크론이 며칠 멈춰도 그 구간이 조회 대상에서 사라지지 않게 하는 경로다.
     const result = plan({ snapshots: [{ snapshotDate: '2026-09-08', ordersCount: 9 }] });
-    expect(result.dates).toEqual([{ dateKey: '2026-09-08', reasons: ['no-ledger-yet'], pendingOrders: 0 }]);
+    expect(result.dates).toEqual([{ dateKey: '2026-09-08', reasons: ['ledger-incomplete'], pendingOrders: 0 }]);
   });
 
-  it('그 결제일의 원장을 이미 받았으면 부르지 않는다', () => {
+  it('주문 수만큼 원장을 받았으면 부르지 않는다', () => {
     const result = plan({
       cases: [caseRow({ productOrderId: 'A', settled: true })],
-      snapshots: [{ snapshotDate: TODAY, ordersCount: 9 }],
+      snapshots: [{ snapshotDate: TODAY, ordersCount: 1 }],
     });
     expect(result.dates).toEqual([]);
-    expect(result.counters.datesWithoutLedger).toBe(0);
+    expect(result.counters.datesWithIncompleteLedger).toBe(0);
+  });
+
+  it('같은 날 일부 주문의 원장만 도착했으면 다시 부른다', () => {
+    // 「그 날짜에 행이 하나라도 있으면 받았다」로 접으면, 원장이 아직 없는 주문 B 는
+    // `cases` 에 없어 다른 대기 조건에도 안 걸린다 — 라벨이 아니라 **행 자체가 빈다.**
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'A', settled: true })],
+      snapshots: [{ snapshotDate: TODAY, ordersCount: 2 }],
+    });
+    expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['ledger-incomplete'], pendingOrders: 0 }]);
+  });
+
+  it('비상품 원장만 먼저 도착한 날도 다시 부른다', () => {
+    // 배송비 원장이 상품 원장보다 먼저 오는 날을 「받았다」로 접으면 그 날이 통째로 사라진다.
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'A', productOrderType: 'DELIVERY', settled: true })],
+      snapshots: [{ snapshotDate: TODAY, ordersCount: 1 }],
+    });
+    expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['ledger-incomplete'], pendingOrders: 0 }]);
   });
 });
 
@@ -165,6 +194,25 @@ describe('decideSettlementQueryPlan — 취소 차감 재진입', () => {
       claimedOrders: [{ productOrderId: 'A', payDateKey: TODAY }],
     });
     expect(result.dates).toEqual([]);
+    expect(result.counters.claimsAwaitingDeduction).toBe(0);
+  });
+
+  it('미정산 음수 행은 차감으로 보지 않는다(원거래가 조용히 빠지지 않게)', () => {
+    // 「차감 계열은 음수 흐름」은 계열 단위 서술이라, 미정산 행까지 음수만으로 차감 취급하면
+    // 수수료·혜택 구성 때문에 음수가 된 원거래가 카운터 없이 대기에서 빠진다.
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'B', settleType: 'QUICK_SETTLE_ORIGINAL', settleExpectAmount: -1_000, settled: false })],
+    });
+    expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['unsettled-order'], pendingOrders: 1 }]);
+    expect(result.counters.droppedByDeduction).toBe(0);
+  });
+
+  it('미정산 차감 행이 대기에서 빠질 때는 카운터가 붙는다', () => {
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'B', settleType: 'QUICK_SETTLE_CANCEL', settled: false })],
+    });
+    expect(result.dates).toEqual([]);
+    expect(result.counters.droppedByDeduction).toBe(1);
   });
 
   it('취소 재진입은 대기 상한(10일)보다 긴 창을 본다', () => {

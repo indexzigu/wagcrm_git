@@ -2,6 +2,7 @@ import { apiRequest } from './naver-commerce-client';
 import { prisma } from './prisma';
 import { queryOrderDetails } from './naver-order-sync';
 import { isSalesCampaignLocked } from './mapping-service';
+import { isProductOrderLedgerRow } from './settlement-pending-dates';
 
 /**
  * 네이버 정산(pay-settle) 수집 — SSOT: NAVER_SETTLEMENT_API_PLAN.md
@@ -138,8 +139,10 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
       const part = await prisma.naverSettlementCase.findMany({ where: { productOrderId: { in: chunk } } });
       rows.push(...part);
     }
-    // productOrderType이 오는 경우 PROD_ORDER만, 미기재(null)면 포함(조인 키 자체가 캠페인 귀속 주문이므로)
-    const scoped = rows.filter((r) => !r.productOrderType || r.productOrderType === 'PROD_ORDER');
+    // productOrderType이 오는 경우 PROD_ORDER만, 미기재(null)면 포함(조인 키 자체가 캠페인 귀속 주문이므로).
+    // 판정 SSOT 는 `isProductOrderLedgerRow` 하나다 — 종전엔 여기 인라인으로만 있어서
+    // 같은 술어를 쓰는 새 모듈이 그것을 복사했고, 사본이 둘이 되면 한쪽만 고쳐진다.
+    const scoped = rows.filter(isProductOrderLedgerRow);
     if (scoped.length === 0) continue;
 
     const settledRows = scoped.filter((r) => r.settled);
