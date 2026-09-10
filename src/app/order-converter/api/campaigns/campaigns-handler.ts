@@ -5,6 +5,7 @@ import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCam
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
+import { DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS, getOrderAutoSyncIntervalHours, isOrderAutoSyncDue } from '@/lib/order-converter/order-auto-sync';
 import { isDemoMode } from '@/lib/demo-mode';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from '@/lib/order-converter/campaign-insights';
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from '@/lib/order-converter/group-orders';
@@ -455,10 +456,37 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
       }
 
+      // 최신 동기화 메타를 DB에서 조회한다(L1 lastCallTime 순회보다 신뢰도 높음). 응답 헤더와
+      // 아래 진입 동기화 간격 판정이 같은 값을 쓴다 — 변경 없는 동기화도 오늘자 lastCallTime을 갱신한다.
+      let lastSyncMs: number | null = null;
+      let metaSyncType: string | null = null;
+      try {
+        const meta = await naverOrderSnapshotRepository.latestSyncMeta();
+        if (meta?.lastCallTime) {
+          lastSyncMs = new Date(meta.lastCallTime).getTime();
+          lastSyncIso = new Date(lastSyncMs).toISOString();
+        }
+        metaSyncType = meta?.syncType ?? null;
+      } catch (metaErr) {
+        console.warn('Failed to read latestSyncMeta:', metaErr);
+      }
+
       // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 변경피드 동기화를 트리거한다 (서버판 SWR).
+      // 단 마지막 동기화가 설정 간격(1·3·6시간 — order-auto-sync.ts)보다 최근이면 걸지 않는다.
+      // 당일 낡음 기준이 1분이라 이 게이트 없이는 매 진입이 네이버 호출이었다. 그 사이는 새로고침 버튼 몫이다.
       // 데모 배포: 동기화가 no-op이라 stale이 영원히 해소되지 않는다 — syncing 상태를 아예 켜지
       // 않아 클라이언트 폴링 루프("동기화 중" 배지)가 돌지 않게 한다.
+      let autoSyncDue = false;
       if (!isDemoMode() && staleDates.length > 0 && hadAnySnapshot) {
+        let intervalHours: number = DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS;
+        try {
+          intervalHours = await getOrderAutoSyncIntervalHours();
+        } catch (settingErr) {
+          console.warn('Failed to read order auto-sync interval, using default:', settingErr);
+        }
+        autoSyncDue = isOrderAutoSyncDue(lastSyncMs, intervalHours, Date.now());
+      }
+      if (autoSyncDue) {
         isSyncing = true;
         syncTypeHeader = 'CHANGED';
         // 배송중(DELIVERING) 건은 변경피드가 배송완료 전이(DELIVERING→DELIVERED)를 안 실어 CHANGED
@@ -474,17 +502,8 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         });
       }
 
-      // 응답 헤더용 최신 동기화 메타를 DB에서 조회 (L1 lastCallTime 순회보다 신뢰도 높음)
-      try {
-        const meta = await naverOrderSnapshotRepository.latestSyncMeta();
-        if (meta?.lastCallTime) {
-          lastSyncIso = new Date(meta.lastCallTime).toISOString();
-        }
-        if (!syncTypeHeader && meta?.syncType) {
-          syncTypeHeader = meta.syncType;
-        }
-      } catch (metaErr) {
-        console.warn('Failed to read latestSyncMeta:', metaErr);
+      if (!syncTypeHeader && metaSyncType) {
+        syncTypeHeader = metaSyncType;
       }
     } catch (apiErr) {
       console.warn('Failed to hydrate naver orders from snapshots:', apiErr);
