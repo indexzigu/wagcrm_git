@@ -44,6 +44,7 @@ export const AgentJobOperationSchema = z.enum([
   "get_campaign_financials",
   "create_action_proposal",
   "search_partners",
+  "get_action_proposal",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -276,6 +277,21 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     }),
 ]);
 
+/**
+ * 봇이 올린 기안 하나의 **현재 상태**를 읽는다. 기안은 오너가 CRM 화면에서 승인하는데
+ * 그 결과가 봇에게 돌아올 길이 없어서, 봇이 "올렸다"까지만 보고하고 멈췄다(2026-09-10).
+ * 봇이 이 조회로 결정(완료·실패·반려)을 확인해 같은 스레드로 결과를 전하고, 거래처가
+ * 만들어졌으면 그 **정확한 id**(`executedRefId`)로 이어지는 딜 기안을 올린다.
+ *
+ * ⛔ 실행기는 봇이 올린 기안(`createdBy = AGENT_WORKER`)만 돌려준다 — 사람이 올린 기안은
+ *    id 를 알아도 읽지 못한다. 이 조회가 필요한 범위는 봇 자신의 기안뿐이다.
+ */
+const getActionProposalInputSchema = z
+  .object({
+    proposalId: opaqueIdSchema,
+  })
+  .strict();
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -283,6 +299,7 @@ const operationInputSchemas = {
   get_campaign_financials: campaignFinancialsInputSchema,
   create_action_proposal: createActionProposalInputSchema,
   search_partners: searchPartnersInputSchema,
+  get_action_proposal: getActionProposalInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;

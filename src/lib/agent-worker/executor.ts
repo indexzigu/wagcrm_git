@@ -52,8 +52,9 @@ import {
  *
  * - exact operation registry for the frozen operations the contract declares
  * - every read stays inside the worker role's SELECT scope (SalesCampaign, Deal,
- *   Partner, Seller, NaverOrderSnapshot, CampaignGroup) by reusing existing pure
- *   calculations over narrow projections; no business formula is copied here
+ *   Partner, Seller, NaverOrderSnapshot, CampaignGroup, and ActionProposal rows this
+ *   worker created) by reusing existing pure calculations over narrow projections;
+ *   no business formula is copied here
  * - `create_action_proposal` validates WRITE_ACTIONS + Zod args + target existence,
  *   then INSERTs the proposal as PENDING_APPROVAL plus its initial event in one
  *   transaction — never an UPDATE, never an approval/execution function
@@ -136,6 +137,7 @@ type OperationHandler = (input: AgentJobPayload["input"], context: OperationCont
  */
 type SearchDealsInput = { query?: string; status?: string; partnerId?: string };
 type SearchPartnersInput = { name?: string; type?: string };
+type GetActionProposalInput = { proposalId: string };
 type OrderSnapshotInput = { campaignId?: string; startAt?: string; endAt?: string };
 type CampaignFinancialsInput = { campaignId: string };
 type ProposalScalar = string | number | boolean | null;
@@ -150,6 +152,8 @@ type CreateActionProposalInput = { action: string } & Record<string, ProposalArg
 
 const ACTOR = "AGENT_WORKER";
 const SEARCH_TAKE_LIMIT = 20;
+// 실패한 기안의 오류 문구는 봇이 오너에게 그대로 옮기므로 앞부분만 싣는다.
+const PROPOSAL_ERROR_EXCERPT_CHARS = 300;
 
 function boundSummary(text: string): string {
   const trimmed = text.trim();
@@ -168,6 +172,65 @@ function boundEvidence(refs: Array<string | null | undefined>): string[] {
 
 function failure(errorClass: string, summary: string): OperationFailure {
   return { status: "FAILED_FINAL", errorClass, summary };
+}
+
+/**
+ * 봇이 올린 기안 하나의 현재 상태. 오너가 CRM 화면에서 승인·반려하는데 그 결과가 봇에게
+ * 돌아올 길이 없어서, 봇이 이 조회로 결정을 확인한다(2026-09-10).
+ *
+ * ⛔ 봇이 올린 기안(`createdBy = ACTOR`)만 돌려준다. **없는 기안과 남이 올린 기안은 같은
+ *    답**을 받는다 — 다르게 답하면 id 를 넣어 보는 것만으로 사람이 올린 기안이 있는지를
+ *    알아낼 수 있다.
+ * 🔎 `executedRef` 가 이 조회의 판단 가치다. 거래처 기안이 완료되면 그 값이 **방금 만든
+ *    거래처의 정확한 id** 라, 이어지는 딜 기안이 이름 검색 없이 붙는다.
+ */
+async function getActionProposal(input: GetActionProposalInput): Promise<OperationOutcome> {
+  const proposal = await getPrisma().actionProposal.findUnique({
+    where: { id: input.proposalId },
+    select: {
+      id: true,
+      status: true,
+      title: true,
+      createdBy: true,
+      executedRefType: true,
+      executedRefId: true,
+      errorMessage: true,
+    },
+  });
+  if (!proposal || proposal.createdBy !== ACTOR) {
+    return failure("PROPOSAL_NOT_FOUND", "no proposal by this worker with that id");
+  }
+  // ⛔ 기계가 읽는 사실(상태·만들어진 대상)은 **첫 줄에만** 싣는다. 제목은 봇이 사진에서
+  //    읽은 글로 만들어져, 제목 속 줄바꿈 뒤의 "executedRef=PARTNER:<남의 id>" 가 진짜 줄보다
+  //    앞에 서면 딜이 엉뚱한 거래처에 붙는다. 첫 줄은 DB 가 만든 값만으로 이뤄지고, 사람이
+  //    읽는 둘째 줄 이후는 줄바꿈을 눌러 한 줄씩으로 둔다.
+  const executedRef =
+    proposal.executedRefType && proposal.executedRefId
+      ? ` executedRef=${proposal.executedRefType}:${proposal.executedRefId}`
+      : "";
+  const lines = [
+    `get_action_proposal: ${proposal.id} status=${proposal.status}${executedRef}`,
+    `title=${flattenLineBreaks(proposal.title)}`,
+  ];
+  if (proposal.status === "FAILED" && proposal.errorMessage) {
+    lines.push(`error=${flattenLineBreaks(proposal.errorMessage.slice(0, PROPOSAL_ERROR_EXCERPT_CHARS))}`);
+  }
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(lines.join("\n")),
+    evidenceRefs: boundEvidence(
+      proposal.executedRefId ? [proposal.id, proposal.executedRefId] : [proposal.id],
+    ),
+    actionProposalId: null,
+  };
+}
+
+/**
+ * 줄을 나누는 문자를 공백 하나로 누른다. JS `\s` 에 없는 \u0085·\u001c-\u001e 도 넣는다 —
+ * 결과를 읽는 쪽(hermes, Python `splitlines`)은 그것들도 줄바꿈으로 친다.
+ */
+function flattenLineBreaks(text: string): string {
+  return text.replace(/[\s\u0085\u001c-\u001e]+/g, " ").trim();
 }
 
 /** Maps a tool error onto the queue contract without copying its raw message. */
@@ -545,6 +608,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   get_campaign_financials: (input) => campaignFinancials(input as CampaignFinancialsInput),
   create_action_proposal: (input, context) => createActionProposal(input as CreateActionProposalInput, context),
   search_partners: (input) => searchPartners(input as SearchPartnersInput),
+  get_action_proposal: (input) => getActionProposal(input as GetActionProposalInput),
 };
 
 function buildResult(
