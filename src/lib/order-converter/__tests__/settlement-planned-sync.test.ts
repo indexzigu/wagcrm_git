@@ -124,4 +124,15 @@ describe('runPlannedSettlementSync', () => {
     expect(result.failedDates).toEqual(['pay:2026-09-09']);
     expect(result.casesUpserted).toBe(2);
   });
+
+  it('안전망 날짜가 실패해도 격리된다(크론 전체를 멈추지 않는다)', async () => {
+    // 정산완료일 루프를 격리 밖으로 빼면, 안전망 날짜 하나의 실패가 throw 로 크론 전체를 세운다.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    apiRequestMock.mockResolvedValueOnce(page(1)).mockRejectedValueOnce(new Error('boom')).mockResolvedValue(page(1));
+
+    const result = await runPlannedSettlementSync(plan(['2026-09-10'], ['2026-09-08', '2026-09-09']));
+
+    expect(apiRequestMock).toHaveBeenCalledTimes(3);
+    expect(result.failedDates).toEqual(['complete:2026-09-08']);
+  });
 });
