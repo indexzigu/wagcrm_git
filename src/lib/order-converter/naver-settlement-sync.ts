@@ -372,7 +372,8 @@ export interface PostCloseCancelSyncResult {
  *
  * 확인 기간은 `post-close-check-window.ts` 가 정한다 — 전 주문 종결을 처음 본 날 +10일에 멈추고,
  * 종결을 한 번도 못 본 캠페인만 판매 종료 +15일에서 멈춘다. 종전 90일 창을 대체했다
- * (그 90일은 구 레포에서 넘어온 상수로 오너 결정 기록이 없었다 · 오너 확정 2026-09-11).
+ * (그 90일은 구 레포에서 넘어온 상수로 오너 결정 기록이 없었다 · 종결 +10일은 오너 확정, 종결 미관측
+ * 상한은 오너 승인 계획 — 2026-09-11).
  * 락 캠페인은 여전히 확정 마커가 먼저 건너뛴다.
  *
  * `includeLocked` 는 그 위의 수동 재계산 레버다(확정된 값이 틀렸다고 판단될 때).
@@ -387,7 +388,7 @@ export async function syncPostCloseCancellations(
 ): Promise<PostCloseCancelSyncResult> {
   // 대상은 확인 기간(post-close-check-window.ts) 후보 안의 마감 캠페인이다 — 날짜 필터는 판매 종료
   // +26일(종결 미관측 상한 15일 + 종결 후 10일 + 여유 1일)의 거친 창이고, 캠페인별 정밀 판정(종결 +10일 ·
-  // 종결 미관측 상한 · 확정 건너뛰기)은 아래 decidePostCloseCheck 가 한다. 종전 90일 창을 대체했다(오너 확정 2026-09-11).
+  // 종결 미관측 상한 · 확정 건너뛰기)은 아래 decidePostCloseCheck 가 한다. 종전 90일 창을 대체했다(종결 +10일 오너 확정 · 미관측 상한 오너 승인 계획, 2026-09-11).
   const nowMs = Date.now();
 
   const closedCampaigns = await prisma.orderCampaign.findMany({

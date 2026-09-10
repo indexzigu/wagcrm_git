@@ -116,6 +116,7 @@ describe('isPostCloseTerminalOrder', () => {
   it('주문 단위 클레임 상태가 끝나지 않았으면(구매확정 보류 등) 종결이 아니다', () => {
     expect(isPostCloseTerminalOrder(order('DELIVERED', { claimStatus: 'PURCHASE_DECISION_HOLDBACK' }))).toBe(false);
     expect(isPostCloseTerminalOrder(order('DELIVERED', { claimStatus: 'RETURN_DONE' }))).toBe(true);
+    expect(isPostCloseTerminalOrder(order('DELIVERED', { claimStatus: 'PURCHASE_DECISION_HOLDBACK_RELEASE' }))).toBe(true);
   });
 });
 

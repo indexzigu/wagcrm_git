@@ -50,8 +50,9 @@ const TERMINAL_ORDER_STATUSES = new Set([
  * 더 움직이지 않는 클레임 상태 — 완료 또는 거부.
  * ⛔ claim-derive 의 `isCompleted` 를 쓰지 말 것: 그쪽은 알림·접힘 UI 용 부분 문자열 판정('DONE' 포함)
  *    이라 `COLLECT_DONE`(수거만 끝나고 반품은 진행 중)을 완료로 읽어 +10일 시계를 일찍 켠다.
- * 목록에 없는 상태(요청·수거중·재배송중·구매확정 보류·미확인 null)는 **아직 움직이는 것**으로 본다 —
- * 틀리면 확인이 길어지는 쪽(요청 수 증가)이지 취소를 놓치는 쪽이 아니다.
+ * 목록에 없는 상태(요청·수거중·재배송중·구매확정 보류·미확인 null)는 **아직 움직이는 것**으로 본다.
+ * ⚠️ 그 효과는 한 방향이 아니다 — 종결 시각이 안 찍혀 판매 종료 +15일 상한으로 넘어가므로, 판매 종료 뒤
+ *    늦게 배송된 캠페인은 「종결 +10일」보다 **일찍** 멈출 수 있다(오너 원칙 「예외는 수동」 범위로 감수).
  * ⚠️ 값들은 실제 클레임 응답과 대조하지 못했다(claim-derive.ts 머리 TODO 와 같은 사정). 철자가 틀린
  *    값은 조용히 「진행 중」이 되어 확인이 상한까지 길어진다 — 실응답을 보면 먼저 이 목록을 대조할 것.
  */
@@ -64,6 +65,8 @@ const FINISHED_CLAIM_STATUSES = new Set([
   'RETURN_REJECT',
   'EXCHANGE_REJECT',
   'ADMIN_CANCEL_REJECT',
+  // 구매확정 보류가 풀린 상태 — 보류 자체(PURCHASE_DECISION_HOLDBACK)는 진행 중이다.
+  'PURCHASE_DECISION_HOLDBACK_RELEASE',
 ]);
 
 /**
@@ -78,7 +81,8 @@ export function isPostCloseTerminalOrder(order: any): boolean {
   if (TERMINAL_ORDER_STATUSES.has(status)) return true;
   if (status === 'DELIVERED') {
     // 주문 단위 클레임 상태(구매확정 보류처럼 claim-derive 가 추출하지 않는 종류 포함)가 실려 있으면 그것도
-    // 끝나 있어야 한다. 없으면 영향이 없다 — 실응답 모양은 미확인이라 보수적인 쪽(진행 중)으로만 작동한다.
+    // 끝나 있어야 한다. 없으면 영향이 없다. 실응답 모양은 미확인이다 — 진행 중으로 읽히면 위 목록 주석대로
+    // 종결 시각이 안 찍혀 판매 종료 +15일 상한으로 넘어간다.
     const orderClaimStatus = order?.claimStatus;
     if (orderClaimStatus && !FINISHED_CLAIM_STATUSES.has(orderClaimStatus)) return false;
     return deriveClaimsFromOrder(order).every((claim) => FINISHED_CLAIM_STATUSES.has(claim.claimStatus ?? ''));
