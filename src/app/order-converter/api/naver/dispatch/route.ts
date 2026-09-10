@@ -174,7 +174,8 @@ export async function POST(request: NextRequest) {
       // 이미 권위 있게 최신이다 — 여기서 다시 dirty로 찍으면 **방금 자기가 한 갱신을 되돌린다.**
       // (종전 코드가 정확히 그랬고, `markAllDirty()`가 30일을 찍어 플래그가 상시 true로 고착됐다.)
       // 반대로 syncOrdersByIds가 실패하면 스냅샷은 발송 전 상태로 남으므로, 그때는 아는 날짜
-      // (결제일자 기준 datesToInvalidate)만 dirty로 찍어 다음 GET의 SWR이 재조회하게 한다.
+      // (결제일자 기준 datesToInvalidate)만 dirty로 찍는다. 재조회는 바로 아래 runSync가 맡고, 그것이
+      // 45초 쿨다운으로 건너뛰면 진입 동기화 간격(order-auto-sync.ts)이 지나거나 새로고침 버튼을 눌러야 한다.
       // 이 갈래가 없으면 재조회 실패가 console.warn 하나로 조용히 묻힌다(P0 No Silent Failure).
       if (snapshotRefreshFailed) {
         const dates = [...datesToInvalidate];

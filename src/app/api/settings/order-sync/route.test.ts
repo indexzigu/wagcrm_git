@@ -10,8 +10,9 @@ vi.mock("@/lib/api-auth", () => ({
   requireRole: (...args: unknown[]) => requireRoleMock(...args),
 }));
 
-vi.mock("@/lib/order-converter/order-auto-sync", () => ({
-  ORDER_AUTO_SYNC_INTERVAL_OPTIONS: [1, 3, 6],
+// 허용값 판정(isOrderAutoSyncInterval)은 실물을 쓴다 — DB 읽기·쓰기만 대체한다.
+vi.mock("@/lib/order-converter/order-auto-sync", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/order-converter/order-auto-sync")>()),
   getOrderAutoSyncIntervalHours: (...args: unknown[]) => getIntervalMock(...args),
   setOrderAutoSyncIntervalHours: (...args: unknown[]) => setIntervalMock(...args),
 }));

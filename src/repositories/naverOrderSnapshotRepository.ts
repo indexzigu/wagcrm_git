@@ -244,6 +244,19 @@ export const naverOrderSnapshotRepository = {
     });
   },
 
+  // 변경피드(CHANGED) 동기화가 마지막으로 끝까지 성공한 시각 — 주문관리 진입 동기화 간격 판정용
+  // (order-auto-sync.ts). 커서는 성공한 CHANGED 사이클만 그 사이클 시작 시각(ISO)으로 전진시키고
+  // 배송중 sweep·액션 직후 정밀 갱신(syncOrdersByIds)은 건드리지 않는다 — lastCallTime 은 그 둘도
+  // 밀어 올리므로 간격 기준으로 쓰면 변경피드를 안 물었는데도 「방금 동기화함」으로 읽힌다.
+  // 커서가 여러 행에 남아 있을 수 있어 lastCallTime 이 아니라 값(같은 형식 ISO 문자열) 기준 최댓값을 쓴다.
+  async latestChangeCursor() {
+    return prisma.naverOrderSnapshot.findFirst({
+      where: { lastChangeStatusCursor: { not: null } },
+      orderBy: { lastChangeStatusCursor: "desc" },
+      select: { lastChangeStatusCursor: true },
+    });
+  },
+
   // 커서 전진 전용 좁은 update — orders를 다시 쓰지도, 돌려받지도 않는다.
   // (종전 경로: findLatestCursor로 블롭을 읽어 동일 orders를 upsertDaily로 재기록.
   //  dailyAggregate·claimSource는 실제 주문 변경 upsert 때만 재계산되며, 커서 전진이

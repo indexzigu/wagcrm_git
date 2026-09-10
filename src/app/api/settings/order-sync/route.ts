@@ -4,12 +4,16 @@ import { requireAuth, requireRole } from "@/lib/api-auth";
 import {
   ORDER_AUTO_SYNC_INTERVAL_OPTIONS,
   getOrderAutoSyncIntervalHours,
+  isOrderAutoSyncInterval,
   setOrderAutoSyncIntervalHours,
+  type OrderAutoSyncIntervalHours,
 } from "@/lib/order-converter/order-auto-sync";
 
-// 주문관리 화면 진입 시 자동 동기화 간격(1·3·6시간). 판정 SSOT는 order-auto-sync.ts.
+// 주문관리 화면 진입 시 자동 동기화 간격(1·3·6시간). 허용값·판정 SSOT는 order-auto-sync.ts.
 const patchSchema = z.object({
-  intervalHours: z.union([z.literal(1), z.literal(3), z.literal(6)]),
+  intervalHours: z.custom<OrderAutoSyncIntervalHours>(isOrderAutoSyncInterval, {
+    message: `intervalHours must be one of ${ORDER_AUTO_SYNC_INTERVAL_OPTIONS.join(", ")}`,
+  }),
 });
 
 export async function GET() {

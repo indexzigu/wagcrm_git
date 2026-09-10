@@ -110,16 +110,21 @@ export function OperationsSettingsClient() {
   async function saveOrderSync() {
     if (!orderSync) return;
     setSavingSection("order-sync");
-    const response = await fetch("/api/settings/order-sync", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intervalHours: orderSync.intervalHours }),
-    });
-    setSavingSection(null);
-    if (response.ok) {
-      toast.success("자동 동기화 간격을 저장했습니다.");
-    } else {
+    try {
+      const response = await fetch("/api/settings/order-sync", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intervalHours: orderSync.intervalHours }),
+      });
+      if (response.ok) {
+        toast.success("자동 동기화 간격을 저장했습니다.");
+      } else {
+        toast.error("자동 동기화 간격 저장에 실패했습니다.");
+      }
+    } catch {
       toast.error("자동 동기화 간격 저장에 실패했습니다.");
+    } finally {
+      setSavingSection(null);
     }
   }
 
@@ -346,7 +351,7 @@ export function OperationsSettingsClient() {
               <div>
                 <p className="text-xs font-semibold text-slate-800">주문관리 화면을 열 때 자동으로 불러오는 간격</p>
                 <p className="text-[11px] text-muted-foreground">
-                  마지막 동기화가 이 간격보다 오래됐을 때만 네이버 주문을 자동으로 불러옵니다. 그 사이에는 주문관리 화면의 새로고침 버튼으로 바로 불러올 수 있습니다.
+                  마지막 동기화가 이 간격보다 오래됐을 때만 네이버 주문을 자동으로 불러옵니다. 셀러 포털 화면도 같은 간격을 따릅니다. 그 사이에는 주문관리 화면의 새로고침 버튼으로 바로 불러올 수 있습니다.
                 </p>
               </div>
               <div className="space-y-2 border-t border-slate-100 pt-5">

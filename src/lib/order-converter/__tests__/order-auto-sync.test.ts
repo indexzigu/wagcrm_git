@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS,
@@ -33,6 +35,14 @@ describe("normalizeOrderAutoSyncInterval", () => {
     expect(DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS).toBe(6);
     for (const value of [undefined, null, 0, 2, 24, "3"]) {
       expect(normalizeOrderAutoSyncInterval(value)).toBe(6);
+    }
+  });
+
+  it("코드 기본값이 두 스키마의 @default 와 같다(새 행은 DB 기본값으로 생긴다)", () => {
+    for (const schema of ["prisma/schema.prisma", "prisma/schema.sqlite.prisma"]) {
+      const source = readFileSync(join(process.cwd(), schema), "utf8");
+      const match = source.match(/orderAutoSyncIntervalHours\s+Int\s+@default\((\d+)\)/);
+      expect(match?.[1], schema).toBe(String(DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS));
     }
   });
 });

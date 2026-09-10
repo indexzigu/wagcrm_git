@@ -5,7 +5,7 @@ import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCam
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
-import { DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS, getOrderAutoSyncIntervalHours, isOrderAutoSyncDue } from '@/lib/order-converter/order-auto-sync';
+import { getLastChangeSyncMs, getOrderAutoSyncIntervalHoursOrDefault, isOrderAutoSyncDue } from '@/lib/order-converter/order-auto-sync';
 import { isDemoMode } from '@/lib/demo-mode';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from '@/lib/order-converter/campaign-insights';
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from '@/lib/order-converter/group-orders';
@@ -456,48 +456,48 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
       }
 
-      // 최신 동기화 메타를 DB에서 조회한다(L1 lastCallTime 순회보다 신뢰도 높음). 응답 헤더와
-      // 아래 진입 동기화 간격 판정이 같은 값을 쓴다 — 변경 없는 동기화도 오늘자 lastCallTime을 갱신한다.
-      let lastSyncMs: number | null = null;
+      // 응답 헤더용 최신 동기화 메타를 DB에서 조회 (L1 lastCallTime 순회보다 신뢰도 높음).
+      // 진입 동기화 간격 판정에는 쓰지 않는다 — lastCallTime 은 배송중 sweep·액션 직후 정밀 갱신도
+      // 밀어 올린다. 간격 판정은 변경피드 커서(getLastChangeSyncMs)가 맡는다.
       let metaSyncType: string | null = null;
       try {
         const meta = await naverOrderSnapshotRepository.latestSyncMeta();
         if (meta?.lastCallTime) {
-          lastSyncMs = new Date(meta.lastCallTime).getTime();
-          lastSyncIso = new Date(lastSyncMs).toISOString();
+          lastSyncIso = new Date(meta.lastCallTime).toISOString();
         }
         metaSyncType = meta?.syncType ?? null;
       } catch (metaErr) {
         console.warn('Failed to read latestSyncMeta:', metaErr);
       }
 
-      // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 변경피드 동기화를 트리거한다 (서버판 SWR).
-      // 단 마지막 동기화가 설정 간격(1·3·6시간 — order-auto-sync.ts)보다 최근이면 걸지 않는다.
-      // 당일 낡음 기준이 1분이라 이 게이트 없이는 매 진입이 네이버 호출이었다. 그 사이는 새로고침 버튼 몫이다.
+      // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 보정을 건다 (서버판 SWR).
+      // ① 변경피드 동기화는 마지막으로 성공한 변경피드 동기화가 설정 간격(1·3·6시간 — order-auto-sync.ts)
+      //    보다 오래됐을 때만 건다. 당일 낡음 기준이 1분이라 이 게이트 없이는 매 진입이 네이버 호출이었다.
+      //    그 사이의 신규 변경분은 새로고침 버튼 몫이다.
+      // ② 배송중 sweep 은 간격을 타지 않는다. 배송중(DELIVERING) 건은 변경피드가 배송완료 전이
+      //    (DELIVERING→DELIVERED)를 안 실어 CHANGED 동기화로는 못 잡힌다(피드 갭). 그 건들을 query-by-id로
+      //    직접 재조회(3h 쿨다운 내장)해 '배송중'에 stale하게 남아 false 지연이 되던 문제를 해소한다 —
+      //    이 보정의 호출자는 여기뿐이라(버튼·크론은 안 돌린다) 간격 안에 두면 배송완료 반영이 멈춘다.
       // 데모 배포: 동기화가 no-op이라 stale이 영원히 해소되지 않는다 — syncing 상태를 아예 켜지
       // 않아 클라이언트 폴링 루프("동기화 중" 배지)가 돌지 않게 한다.
-      let autoSyncDue = false;
       if (!isDemoMode() && staleDates.length > 0 && hadAnySnapshot) {
-        let intervalHours: number = DEFAULT_ORDER_AUTO_SYNC_INTERVAL_HOURS;
-        try {
-          intervalHours = await getOrderAutoSyncIntervalHours();
-        } catch (settingErr) {
-          console.warn('Failed to read order auto-sync interval, using default:', settingErr);
+        const [intervalHours, lastChangeSyncMs] = await Promise.all([
+          getOrderAutoSyncIntervalHoursOrDefault(),
+          getLastChangeSyncMs(),
+        ]);
+        const changedSyncDue = isOrderAutoSyncDue(lastChangeSyncMs, intervalHours, Date.now());
+        if (changedSyncDue) {
+          isSyncing = true;
+          syncTypeHeader = 'CHANGED';
         }
-        autoSyncDue = isOrderAutoSyncDue(lastSyncMs, intervalHours, Date.now());
-      }
-      if (autoSyncDue) {
-        isSyncing = true;
-        syncTypeHeader = 'CHANGED';
-        // 배송중(DELIVERING) 건은 변경피드가 배송완료 전이(DELIVERING→DELIVERED)를 안 실어 CHANGED
-        // 동기화로는 못 잡힌다(피드 갭). 그 건들을 query-by-id로 직접 재조회(3h 쿨다운 내장)해 배송완료
-        // 반영을 보정 → '배송중'에 stale하게 남아 false 지연이 되던 문제를 해소한다.
         const deliveringIds = recentOrders
           .filter((o: any) => o?.productOrderStatus === 'DELIVERING' || o?.productOrderStatus === 'DISPATCHED')
           .map((o: any) => String(o?.productOrderId || ''))
           .filter(Boolean);
         after(async () => {
-          try { await runSync('CHANGED'); } catch (err) { console.warn('Background CHANGED sync failed:', err); }
+          if (changedSyncDue) {
+            try { await runSync('CHANGED'); } catch (err) { console.warn('Background CHANGED sync failed:', err); }
+          }
           try { await sweepDeliveringOrders(deliveringIds); } catch (err) { console.warn('Background delivering sweep failed:', err); }
         });
       }
