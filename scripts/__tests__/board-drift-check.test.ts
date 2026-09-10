@@ -541,10 +541,12 @@ describe("보드 문구 → verdict 왕복 — 2026-08-08 실사고 6건 재현"
  * 경로만 타고 판정 경로(`readClaims`→`classifyItem`)를 **한 번도 지나지 않았다.** 아래
  * 픽스처가 링크를 갖는 것이 이 절의 핵심이다 — 링크를 빼면 계약이 다시 눈을 감는다.
  *
- * 처방은 구역을 옮기는 것이 아니라 `claimsDeployed` 가 이미 쓰던 **우선순위를 머지 축에도**
- * 적용하는 것이다: ①앞 구역이 머지 축에 말하면 그것이 SSOT ②침묵하면 뒤 구역(상태 서술)을
- * 본다. 뒤 구역은 **필드 구분자까지만** 본다 — 본문까지 읽으면 2026-08-05 의 거짓 경보(본문
- * 서술을 주장으로 오독)가 되돌아온다.
+ * 처방은 **형식을 구조로 판별해 상태 구역을 고르는 것**이다(`statusRegion`). 앞 구역이 세션명
+ * 규약(`#번호` + `[슬러그]`)을 담고 있으면 앞은 제목이고 상태는 뒤에 있다.
+ * 🪤 **"앞 구역이 그 축에 침묵하면 뒤를 본다"는 첫 처방은 리뷰 실측에서 기각됐다** — 옛 형식의
+ * ` — ` 뒤는 제목이고, 제목에 머지·배포 어휘가 들어가는 것은 이 레포에서 예사라(점검기 자신을
+ * 고치는 항목이 그렇다) 정상 항목이 낡은 마커·과대보고로 뒤집혔다. 아래 「옛 형식 제목」 2건이
+ * 그 재현이고, 「새 형식 제목」 1건은 같은 결함의 거울상(그쪽은 제목이 앞에 있다)이다.
  */
 describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
   const verdictOf = (line: string, fact: Record<string, unknown>) =>
@@ -565,9 +567,21 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     );
   });
 
-  it("새 형식의 `승격 대기` 도 배포 대기 자백으로 읽는다", () => {
+  it("새 형식의 `승격 대기` 도 배포 대기 자백으로 읽는다(같은 필드 안)", () => {
+    expect(readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료. 승격 대기 · ${PR}`).awaitingDeploy).toBe(
+      true,
+    );
+  });
+
+  it("⚠️ 잔여 사각: `승격 대기` 가 둘째 필드 이후에만 있으면 읽지 못한다", () => {
+    // 필드를 넘어 읽으면 뒤쪽의 **서술**이 자백으로 읽혀 거짓 경보가 난다(리뷰 실측 2건).
+    // 방향이 침묵이라 이쪽을 택했고, 라벨을 붙여 적으면(`다음 게이트 = 승격`) 게이트 경로가 잡는다.
     expect(
-      readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료 · 승격 대기 · ${PR}`).awaitingDeploy,
+      readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료 · 종결 · 승격 대기 · ${PR}`).awaitingDeploy,
+    ).toBe(false);
+    expect(
+      readClaims(`- 🚀 #5 [슬러그] 제목 — 머지 완료 · 다음 게이트 = 승격 배포 확인 · ${PR}`)
+        .awaitingDeploy,
     ).toBe(true);
   });
 
@@ -589,14 +603,140 @@ describe("새 형식(상태가 ` — ` 뒤) 도 판정한다 — T-142", () => {
     expect(readClaims(line).awaitingMerge).toBe(false);
   });
 
-  it("⚠️ 앞 구역이 머지 축에 말하면 뒤 구역을 보지 않는다(옛 형식 회귀 방지)", () => {
-    // 옛 형식의 ` — ` 뒤는 **제목**이다. 뒤 구역을 무조건 읽으면 제목이 주장으로 오독된다.
-    const line = `- **🚀 머지 완료 → 승격(배포) 대기 — X ${PR}**: 머지·prod 반영이 끝난 PR 2건이 그 문구로 남아 있었다`;
+  it("볼드로 감싼 뒤 상태 서술도 읽는다 — 강조 표식은 경계가 아니라 잡음이다", () => {
+    expect(
+      trailingStatusPhrase("- 🚀 #5 [슬러그] 제목 — **머지·배포 완료. 남은 게이트 = 재설치**. 🪤 본문"),
+    ).toBe("머지·배포 완료. 남은 게이트 = 재설치");
+  });
+
+  /**
+   * ⚠️ 아래 3건은 **강조 표식을 경계로 쓰지 않게 바꾸면서 열렸던 구멍**의 재현이다(리뷰 실측).
+   * 구역이 본문 서술까지 늘어나면 배포까지 끝난 항목이 드리프트로 뒤집힌다 — 종료코드를 흔드는
+   * 거짓 경보라 2026-08-05 계열의 재발이다. 셋 다 `origin/main` 에서는 통과했다.
+   */
+  it("⚠️ 새 형식에서도 본문의 `승격 대기` 서술은 미배포 자백이 아니다", () => {
+    const line = `- 🚀 #5 [슬러그] 제목 — 머지·**prod 반영 완료** · 종결 ${PR} · 본문: 예전엔 승격 대기였다 **끝**`;
+    expect(readClaims(line).awaitingDeploy).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+  });
+
+  it("⚠️ 상태 필드에 경과 서술을 적으면 그 줄은 대기 주장으로 잡힌다 — 받아들인 대가다", () => {
+    // 머지 축에서 이 부류를 걸러내려던 처방(완료가 앞서면 뒤엣것은 서술)은 실제 대기 주장을
+    // 함께 침묵시켜 기각됐다(`claimsAwaitingMergeIn` 주석의 세 가지 재현). 그래서 이 줄은
+    // 빨강으로 잡히고, 고칠 곳은 판정기가 아니라 **그 보드 줄**이다(상태 필드에 서술을 쓴 것).
+    const line = `- ✅ #5 [슬러그] 제목 — 머지·**prod 반영 완료**. 본문: … 오너 머지 대기 로 남아 있었다는 **설명** ${PR}`;
+    expect(readClaims(line).awaitingMerge).toBe(true);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  it("⚠️ 강조 표식이 완료 서술을 가리지 않는다 — `머지 **완료**` 는 완료다", () => {
+    // 표식을 걷어내지 않으면 MERGE_DONE 이 못 걸려 정상 배포 대기가 낡은 마커로 뒤집힌다.
+    const line = `- **🔴 #5 [슬러그] 제목 — 머지 **완료** → 승격 대기 ${PR}**: 본문`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
+    expect(verdictOf(line, deployPending)).toBe(VERDICT.AWAITING_DEPLOY);
+  });
+
+  it("인식 계층까지 통과한다 — 보드 텍스트 → parseBoardItems → 판정", () => {
+    // 원래 침묵은 인식 계층에서 시작했다(새 형식 픽스처가 PR 링크가 없어 대조 대상에서 빠졌다).
+    const board = ["# PROJECT_MASTER", `- 🔴 #5 [슬러그] 제목 — 오너 머지 대기 · ${PR}`].join("\n");
+    const items = parseBoardItems(board);
+    expect(items).toHaveLength(1);
+    expect(items[0].pr).toBe(5);
+    expect(classifyItem(items[0].claims, shipped).verdict).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  /**
+   * ⚠️ 아래 3건은 **첫 처방(침묵 기준)을 기각시킨 재현**이다. 제목을 상태로 읽으면 정상 항목이
+   * 드리프트로 뒤집힌다 — 종료코드를 흔드는 거짓 경보라 설계 원칙 3 정면 위반이다. 이 파일의
+   * 다른 음성 대조군과 달리 **base 에서도 통과했던 것**이므로, 깨지면 회귀다.
+   */
+  it("⚠️ 옛 형식은 제목에 「머지 대기」가 있어도 대기 주장이 아니다", () => {
+    const line = `- **✅ 구현 완료 — 머지 대기 탐지 개선 ${PR}**: 본문`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+  });
+
+  it("⚠️ 옛 형식은 제목에 「prod 반영」이 있어도 배포 주장이 아니다", () => {
+    const line = `- **🚀 머지 완료 → 승격(배포) 대기 — prod 반영 점검 개선 ${PR}**: 본문`;
     expect(readClaims(line).deployed).toBe(false);
     expect(verdictOf(line, deployPending)).toBe(VERDICT.AWAITING_DEPLOY);
   });
 
-  it("⚠️ 앞 구역이 침묵해도 본문은 주장이 아니다(2026-08-05 거짓 경보 방지)", () => {
+  it("⚠️ 새 형식은 **제목(앞 구역)** 의 대기 어휘를 상태로 읽지 않는다", () => {
+    // 거울상 결함 — 새 형식은 제목이 앞에 있어, 앞 구역을 상태로 읽으면 같은 오독이 난다.
+    const line = `- ✅ #5 [슬러그] 낡은 머지 대기 마커 정리 — 머지·prod 반영 완료 · 종결 · ${PR}`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+  });
+
+  it("상태 문구에 강조가 들어가도 읽는다 — 중간 `**` 는 경계가 아니다", () => {
+    // 실보드의 지배적 형태가 `— 머지·**prod 반영 완료** · 종결` 이다. 첫 `**` 에서 끊으면
+    // 강조된 상태 낱말이 통째로 빠져, 고치려던 침묵이 그대로 남는다(리뷰 실측).
+    expect(verdictOf(`- 🔴 #5 [슬러그] 제목 — **오너 머지 대기** · 상세 · ${PR}`, shipped)).toBe(
+      VERDICT.STALE_MERGE_MARKER,
+    );
+  });
+
+  it("⚠️ 문장이 끝난 뒤의 대기 주장도 읽는다 — 문장 부호는 경계가 아니다", () => {
+    // 문장에서 끊던 안은 이 줄의 대기 주장을 잘라 고치려던 침묵을 되돌렸다(리뷰 실측).
+    expect(verdictOf(`- 🔴 #5 [슬러그] 제목 — CI 통과. 오너 머지 대기 ${PR}`, shipped)).toBe(
+      VERDICT.STALE_MERGE_MARKER,
+    );
+  });
+
+  it("⚠️ 완료·승격대기가 한 필드에 있고 본문에 완료 서술이 있어도 과대보고가 아니다", () => {
+    const line = `- 🚀 #5 [슬러그] 제목 — 머지 완료. → 승격 대기 ${PR} · 본문: prod 반영 완료 확인 예정`;
+    expect(readClaims(line).deployed).toBe(false);
+    expect(verdictOf(line, deployPending)).toBe(VERDICT.AWAITING_DEPLOY);
+  });
+
+  it("⚠️ 링크 아닌 맨 `[PR #268]` 은 계보 태그가 아니다(새 형식 오분류 방지)", () => {
+    // 오분류되면 취소선 본문이 상태로 읽혀 거짓 낡은 마커가 난다 — 실보드에 이 형태가 있다.
+    const line = `- 🚀 ~~[PR #268] 오픈 — 2단계 분리. 머지 대기.~~ 아래는 착지분 기록 ${PR}`;
+    expect(readClaims(line).awaitingMerge).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+  });
+
+  /**
+   * ⚠️ 아래 3건은 **머지 축에 위치 규칙을 얹으려던 시도를 기각시킨 재현**이다(리뷰 실측).
+   * 완료 신호를 무엇으로 잡든 실제 대기 주장이 함께 침묵했다 — 셋 다 `origin/main` 에서도
+   * 잡히던 것이므로, 깨지면 탐지력을 잃은 것이다.
+   */
+  it("⚠️ 회차를 나란히 적은 대기 마커는 두 형식 **모두** 잡는다", () => {
+    // 새 형식에만 규칙을 걸면 티켓이 문제 삼은 형식 비대칭이 **반대로** 되살아난다.
+    expect(verdictOf(`- **⏳ 1차 머지·배포 완료 / 2차 오너 머지 대기 — 제목 ${PR}**: 본문`, shipped)).toBe(
+      VERDICT.STALE_MERGE_MARKER,
+    );
+    expect(
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — 1차 머지·배포 완료 / 2차 오너 머지 대기 · ${PR}`, shipped),
+    ).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  it("⚠️ `머지·` 는 나열 구분자다 — 완료로 읽어 대기 주장을 덮지 않는다", () => {
+    expect(
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — 머지·배포 대기. 오너 머지 대기 · ${PR}`, shipped),
+    ).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  it("⚠️ 데모 레인 배포 완료를 prod 완료로 읽지 않는다", () => {
+    // 완료 어휘를 배포 서술까지 넓히면 데모 첫 배포가 prod 완료로 읽혀 대기가 침묵한다
+    // (이 파일의 「데모 레인은 prod 승격과 다른 축」 규칙 정면 위반).
+    expect(
+      verdictOf(`- 🔴 #5 [슬러그] 제목 — 데모 첫 배포 완료 후 오너 머지 대기 · ${PR}`, shipped),
+    ).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+
+  it("⚠️ 과거형 `승격 대기였다` 는 미배포 자백이 아니다", () => {
+    // 상태 필드에 경과가 이어 붙는 형태. 위치 규칙은 이 축에 못 쓴다 — 옛 형식은
+    // `머지 완료 · 승격(배포) 대기` 가 정상 표기라 완료가 앞서는 것이 기본이다.
+    const line = `- 🚀 #5 [슬러그] 제목 — 머지·prod 반영 완료. 본문: 예전엔 승격 대기였다 · ${PR}`;
+    expect(readClaims(line).awaitingDeploy).toBe(false);
+    expect(verdictOf(line, shipped)).toBe(VERDICT.OK);
+    // 음성 대조군 — 현재형은 그대로 자백이다(옛 형식의 정상 표기가 죽지 않았는지).
+    expect(readClaims("- **🚀 머지 완료 · 승격(배포) 대기 — X**").awaitingDeploy).toBe(true);
+  });
+
+  it("⚠️ 옛 형식은 본문도 대기 주장으로 읽지 않는다(2026-08-05 거짓 경보 방지)", () => {
     const line = `- **🔵 조사 완료 — X ${PR}**: 본문 서술 … 세션이 머지 대기로 남아 있었다는 설명`;
     expect(readClaims(line).awaitingMerge).toBe(false);
   });
