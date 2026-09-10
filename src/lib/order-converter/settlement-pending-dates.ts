@@ -67,8 +67,36 @@ export const SETTLEMENT_PENDING_MAX_AGE_DAYS = 10;
  *
  * **이 범위가 넓어도 조회가 늘지 않는다** — 재진입은 DB 가 「취소가 실제로 일어났다」고
  * 말하는 주문에만 붙기 때문이다(§`claim-without-deduction`). 예외가 없으면 0콜이다.
+ *
+ * ⚠️ **이 경로는 가속기이지 보장이 아니다(2단계 교차 검증에서 반증, 2026-09-10).** 취소 사실을
+ * 스냅샷 `claimSource` 에서 읽는데 그 프로젝션에는 구멍이 둘 있다: ①`__claim` 객체가 있는
+ * 주문만 담아 **평평한 모양의 클레임은 빠진다**(실제 차감 행이 있던 주문의 일부가 여기에
+ * 없었다) ②주문 변경 동기화가 **결제 30일이 지난 주문의 변경을 버려** 그 날짜의 프로젝션이
+ * 갱신되지 않는다(`naver-order-sync` 의 30일 하한). 그래서 차감 누락을 막는 실제 안전망은
+ * `SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS` 의 정산완료일 조회다.
  */
 export const SETTLEMENT_CLAIM_LOOKBACK_DAYS = 60;
+
+/**
+ * 정산완료일 축으로 매 회차 다시 보는 **최근 끝난 날짜 수**(어제부터 거슬러) — 안전망.
+ *
+ * 결제일 계획은 「대기 주문」에서 출발하므로, 우리가 모르는 사이 **정산이 완료되거나 차감이
+ * 확정된** 건은 결제일이 계획에 없으면 영영 못 받는다. 2단계 교차 검증이 그 입력을 셋 찾았다:
+ * ①취소 사실이 `claimSource` 에 안 잡힌 반품(평평한 클레임 모양 · 결제 30일 이후 반품 —
+ * 오너가 말한 사후 불량 반품이 정확히 이 부류다) ②재확인 창이 지난 뒤 두 회차 사이에 정산과
+ * 취소가 함께 일어난 주문 ③결제 후 재확인 창보다 늦게 처음 생긴 원장 행. 셋 다 **완료되는 날**
+ * 정산완료일 축에는 반드시 나타나므로, 그 축을 좁게 남기면 결제일·클레임 감지와 무관하게
+ * 닫힌다. ②③은 금액이 아니라 라벨·시점 문제가 되고, ①의 차감(금액을 부풀리는 방향)이 막힌다.
+ * 전제 「정산완료일 축 응답에 차감(`*_CANCEL`) 행도 온다」는 2026-09-10 실호출로 확인했다
+ * (차감이 확정됐던 날짜를 이 축으로 조회하니 `QUICK_SETTLE_CANCEL` 행이 원거래 행과 함께 왔다).
+ *
+ * **2일인 이유:** 크론이 하루 한 번이라 1일(어제만)이면 매 날짜를 정확히 한 번 본다 — 그러나
+ * 한 회차만 실패해도 그 날짜가 영영 빠진다. 2일이면 **한 번의 실패를 흡수**한다. 그보다 긴
+ * 중단은 이 창으로 막을 수 없고 백필(`?settledDays=`)이 맡는다.
+ * 오늘은 넣지 않는다 — 오늘 완료분은 내일 「어제」로 들어온다.
+ * ⛔ 이 조회를 「0콜을 위해」 다시 빼지 말 것 — 그게 2단계 첫 커밋의 결함이었다.
+ */
+export const SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS = 2;
 
 /**
  * 클레임 창 **밖**까지 얼마나 더 읽어 관측만 할 것인가(일).
@@ -143,16 +171,18 @@ export type PendingDateReason =
    *
    * ⚠️ **복구 범위는 이 일수까지다.** 그보다 긴 중단(프록시 한도 소진·자격증명 만료 등)이
    * 나면 그 구간은 이 경로로 안 채워진다 — 그때는 크론의 **수동 백필 파라미터**
-   * (`?settledDays=&unsettledDays=`)로 한 번 넓게 훑어야 한다. 전환(2단계) 이후에도 그 두
-   * 파라미터를 지운다면 백필 경로가 함께 사라진다.
+   * (`?settledDays=&unsettledDays=`)로 한 번 넓게 훑어야 한다. 2단계에서 그 두 파라미터를
+   * **백필 전용**으로 남긴 이유가 이것이다 — 지우면 이 복구 경로가 함께 사라진다.
    */
   | 'recent-order-date'
   /**
    * 취소·반품이 일어났고 원거래는 정산까지 끝났는데 **차감 행이 아직 없는** 주문의 결제일.
    *
    * 취소 사실 자체는 주문 동기화의 변경피드가 **프록시 비용 0으로** 알려준다(스냅샷의
-   * `claimSource` 프로젝션). 그래서 「사후 반품이 올 수도 있으니」 넓은 창을 상시 유지할
-   * 필요가 없다 — **취소가 실제로 일어난 그 결제일만 다시 부른다.**
+   * `claimSource` 프로젝션). 그래서 **취소가 실제로 일어난 그 결제일을 다시 불러** 차감을
+   * 빨리 받는다.
+   * ⚠️ 이 경로만으로는 차감 누락을 막지 못한다 — 프로젝션이 놓치는 클레임이 있다
+   * (`SETTLEMENT_CLAIM_LOOKBACK_DAYS` ⚠️). 누락을 막는 것은 정산완료일 안전망이다.
    *
    * ⚠️ 「원거래가 정산됐을 때만」이 수렴 조건이다. 정산 전에 취소된 주문은 차감할 돈이
    * 애초에 없어 차감 행이 영영 안 온다(실측에서 미정산으로 남은 취소 건이 전부 이 부류였다).
@@ -201,11 +231,17 @@ export interface PendingDateEntry {
 }
 
 export interface SettlementQueryPlan {
-  /** 부를 날짜(오름차순). 비어 있으면 이번 회차의 정산 조회는 **0콜**이다. */
+  /** 결제일 축으로 부를 날짜(오름차순). 비어 있으면 결제일 조회는 **0콜**이다. */
   dates: PendingDateEntry[];
   /**
-   * 예상 호출 수. 날짜당 1콜을 가정한다 — `pageSize` 가 1000 이라 하루 주문이 1000건을
-   * 넘을 때만 페이지가 늘어난다(하루 주문 규모는 P7 *Product-Order Query Paging* 참조).
+   * 정산완료일 축으로 부를 날짜(오름차순) — 안전망(`SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS`).
+   * 데이터와 무관하게 매 회차 같은 개수다. 대기 주문이 없는 날의 호출은 이것뿐이다.
+   */
+  completionDates: string[];
+  /**
+   * 예상 호출 수 = 결제일 날짜 수 + 정산완료일 날짜 수. 날짜당 1콜을 가정한다 — `pageSize` 가
+   * 1000 이라 하루 주문이 1000건을 넘을 때만 페이지가 늘어난다(하루 주문 규모는 P7
+   * *Product-Order Query Paging* 참조). HTTP 재시도·토큰 발급은 포함하지 않는다.
    */
   estimatedCalls: number;
   /**
@@ -546,7 +582,11 @@ export function decideSettlementQueryPlan(args: {
   );
   counters.truncatedDates = allDates.length - dates.length;
 
-  return { dates, estimatedCalls: dates.length, counters };
+  // 안전망 — 어제부터 거슬러 `SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS` 일(오름차순). 오늘은 넣지 않는다.
+  const completionDates: string[] = [];
+  for (let i = SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS; i >= 1; i--) completionDates.push(addKstDays(todayKey, -i));
+
+  return { dates, completionDates, estimatedCalls: dates.length + completionDates.length, counters };
 }
 
 /** 차감을 만들 수 있는 클레임. 교환은 정산 차감 행을 만들지 않으므로 재진입 대상이 아니다. */
@@ -649,7 +689,7 @@ export function formatSettlementQueryPlan(plan: SettlementQueryPlan): string {
   const more = plan.dates.length > shown.length ? `+${plan.dates.length - shown.length}` : '';
   const c = plan.counters;
   return (
-    `calls=${plan.estimatedCalls} dates=[${shown.join(',')}${more}] ` +
+    `calls=${plan.estimatedCalls} dates=[${shown.join(',')}${more}] completion=[${plan.completionDates.join(',')}] ` +
     `pending=${c.pendingUnsettledOrders} recheck=${c.datesRechecked} claims=${c.claimsAwaitingDeduction} ` +
     `dropped(settled=${c.droppedBySettled},claim=${c.droppedByClaim},age=${c.droppedByAge},future=${c.droppedByFutureDate},ageDates=${c.droppedByAgeDates},` +
     `claimWindow=${c.droppedByClaimWindow},deductionRows=${c.droppedByDeductionRows},nonProductRows=${c.droppedByNonProductLedgerRows}) ` +

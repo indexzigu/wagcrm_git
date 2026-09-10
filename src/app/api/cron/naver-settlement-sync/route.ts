@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
-import { runSettlementSync, recomputeClosedCampaignSettlements, syncPostCloseCancellations } from "@/lib/order-converter/naver-settlement-sync";
+import {
+  runPlannedSettlementSync,
+  runSettlementSync,
+  recomputeClosedCampaignSettlements,
+  syncPostCloseCancellations,
+} from "@/lib/order-converter/naver-settlement-sync";
 import { formatSettlementQueryPlan, loadSettlementQueryPlan } from "@/lib/order-converter/settlement-pending-dates";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
 import { verifyCronAuth } from "@/lib/cron-auth";
@@ -10,15 +15,23 @@ export const maxDuration = 300;
 // collect-instagram/naver-order-sync의 verifyCronAuth 패턴을 그대로 복제한다.
 /**
  * 네이버 정산 원장 일일 수집 + 마감 캠페인 결산 캐시 갱신.
- * 쿼리 파라미터(수동 백필용): ?settledDays=31&unsettledDays=31 (기본 3/21)
+ *
+ * **기본 경로 = 대기 기반 계획**(2단계, 2026-09-10): `settlement-pending-dates` 가 DB 만 읽어
+ * 부를 결제일을 정하고 `runPlannedSettlementSync` 가 **그 날짜만** 조회한다 — 여기에 정산완료일
+ * 축 **안전망**(최근 끝난 며칠)이 매 회차 붙는다(취소 감지가 놓치는 차감을 받는 유일한 경로다).
+ * 종전 고정 달력(정산완료일 3일 + 결제일 21일 = 데이터 유무와 무관하게 하루 24콜)은
+ * **백필 전용**으로 남았다.
+ *
+ * 쿼리 파라미터:
+ * · ?settledDays=N&unsettledDays=M — **백필.** 둘 중 하나라도 주면 계획 대신 고정 달력으로
+ *   넓게 훑는다(재확인 창보다 긴 크론 중단 구간을 메우는 유일한 경로). 예: `?settledDays=31&unsettledDays=31`.
+ *   호출: `run-cron.sh 'naver-settlement-sync?settledDays=31&unsettledDays=31'`.
  * · ?includeLocked=1 — 이미 확정된(정산 락) 캠페인의 사후 취소를 강제로 재계산한다.
  *   호출: `run-cron.sh 'naver-settlement-sync?includeLocked=1'`(잡 이름이 URL 에 그대로
  *   이어 붙는다) 또는 수동 curl. ⛔ 레이더 실행 버튼은 쿼리를 안 붙여 이 레버를 못 쓴다.
- * · ?dryRun=1 — **네이버를 한 번도 부르지 않고** 「대기 기반 조회 계획」만 돌려준다
- *   (`settlement-pending-dates`). 재설계 1단계의 계측 레버다: 지금의 고정 달력(3+21일 =
- *   하루 24콜)과 계획의 `estimatedCalls` 를 하루 나란히 놓고 대조한 뒤 2단계에서 전환한다.
- *   ⛔ 이 플래그로는 아무것도 쓰지 않는다 — 결산·사후취소·캐시 무효화까지 전부 건너뛴다.
- *   호출: `run-cron.sh 'naver-settlement-sync?dryRun=1'`.
+ * · ?dryRun=1 — **네이버를 한 번도 부르지 않고** 이번 회차에 부를 날짜(계획)만 돌려준다.
+ *   ⛔ 이 플래그로는 아무것도 쓰지 않는다 — 결산·사후취소·캐시 무효화·크론 상태 기록까지
+ *   전부 건너뛴다. 호출: `run-cron.sh 'naver-settlement-sync?dryRun=1'`.
  */
 async function handler(request: Request) {
   if (!verifyCronAuth(request)) {
@@ -27,6 +40,9 @@ async function handler(request: Request) {
 
   try {
     const url = new URL(request.url);
+    // 백필은 **명시적으로 요청했을 때만**이다 — 파라미터가 하나라도 있으면 고정 달력으로 훑는다.
+    // 기본값(3/21)을 기본 경로에 쓰던 종전 동작으로 되돌리면 하루 24콜이 다시 나간다.
+    const backfill = url.searchParams.has("settledDays") || url.searchParams.has("unsettledDays");
     const settledDays = Math.min(Math.max(Number(url.searchParams.get("settledDays")) || 3, 1), 62);
     const unsettledDays = Math.min(Math.max(Number(url.searchParams.get("unsettledDays")) || 21, 1), 62);
 
@@ -35,8 +51,8 @@ async function handler(request: Request) {
     // 이 옵션은 **그 위의 수동 레버**다(확정된 값이 틀렸다고 판단될 때 강제로 재계산한다).
     const includeLocked = url.searchParams.get("includeLocked") === "1";
 
-    // 계획은 DB 만 읽으므로 dry-run 이 아닐 때도 매 회차 계산해 로그·응답에 남긴다 —
-    // 전환(2단계) 전에 "새 규칙이었다면 몇 콜이었나"를 실운영에서 매일 쌓기 위한 계측이다.
+    // 계획은 DB 만 읽는다(네이버 0회). 기본 경로에서는 이 계획이 곧 이번 회차에 부를 날짜이고,
+    // 백필 경로에서도 로그·응답에 남겨 「계획이었다면 몇 콜이었나」를 비교할 수 있게 한다.
     const { plan, claimSourceUnavailableDates } = await loadSettlementQueryPlan();
     // 크론 형제들(`[cron/naver-order-sync] …`)과 같은 관용구. cron.log 는 잘릴 수 있어
     // 판정 정본은 아래 응답(=`SystemTaskLog.details`)이고 이 줄은 즉시 확인용이다.
@@ -54,7 +70,9 @@ async function handler(request: Request) {
       );
     }
 
-    const sync = await runSettlementSync(settledDays, unsettledDays);
+    const sync = backfill
+      ? { mode: "backfill" as const, settledDays, unsettledDays, ...(await runSettlementSync(settledDays, unsettledDays)) }
+      : { mode: "planned" as const, ...(await runPlannedSettlementSync(plan)) };
     const recompute = await recomputeClosedCampaignSettlements();
     const cancellations = await syncPostCloseCancellations({ includeLocked });
 
@@ -62,7 +80,24 @@ async function handler(request: Request) {
     // 과거엔 hot TTL(60s)이 이 역할을 대신했다 — 이제 TTL은 보험이고 반영은 태그가 담당.
     revalidateCampaignCaches();
 
-    return NextResponse.json({ ok: true, settledDays, unsettledDays, includeLocked, plan, claimSourceUnavailableDates, ...sync, recompute, cancellations });
+    // 날짜별 실패는 격리했으므로(한 날짜가 나머지를 막지 않는다) 여기서 **실패로 선언**한다 —
+    // 안 하면 HTTP 200 이라 래퍼가 SUCCESS 로 기록해 레이더가 초록으로 남는다(CronOutcomeBody 계약).
+    const failedDates = sync.mode === "planned" ? sync.failedDates : [];
+    const failure =
+      failedDates.length > 0
+        ? { failed: true, failureReason: `정산 조회 ${failedDates.length}건 실패: ${failedDates.join(", ")}` }
+        : {};
+
+    return NextResponse.json({
+      ok: failedDates.length === 0,
+      includeLocked,
+      ...sync,
+      plan,
+      claimSourceUnavailableDates,
+      recompute,
+      cancellations,
+      ...failure,
+    });
   } catch (error) {
     console.error("[cron/naver-settlement-sync] Unexpected error:", error);
     return NextResponse.json(

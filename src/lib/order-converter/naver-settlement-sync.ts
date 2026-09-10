@@ -1,8 +1,9 @@
 import { apiRequest } from './naver-commerce-client';
+import { createNaverCallTally, runWithNaverCallTally } from './naver-api-usage';
 import { prisma } from './prisma';
 import { queryOrderDetails } from './naver-order-sync';
 import { isSalesCampaignLocked } from './mapping-service';
-import { isProductOrderLedgerRow } from './settlement-pending-dates';
+import { isProductOrderLedgerRow, type SettlementQueryPlan } from './settlement-pending-dates';
 
 /**
  * 네이버 정산(pay-settle) 수집 — SSOT: NAVER_SETTLEMENT_API_PLAN.md
@@ -31,11 +32,19 @@ function recentDateKeys(days: number): string[] {
   return keys;
 }
 
-/** settle/case 1일치 수집(페이지네이션). 응답 스키마 방어적 파싱. */
-async function fetchCasesForDate(searchDate: string, periodType: string, extra: Record<string, string> = {}): Promise<any[]> {
+/**
+ * settle/case 1일치 수집(페이지네이션). 응답 스키마 방어적 파싱.
+ * 실제로 나간 HTTP 호출 수(`pages`)도 돌려준다 — 프록시 사용량과 대조하는 값이다.
+ */
+async function fetchCasesForDate(
+  searchDate: string,
+  periodType: string,
+  extra: Record<string, string> = {},
+): Promise<{ cases: any[]; pages: number }> {
   const all: any[] = [];
   const pageSize = 1000;
   let page = 1;
+  let pages = 0;
   for (;;) {
     const res = await apiRequest('GET', '/v1/pay-settle/settle/case', undefined, {
       searchDate,
@@ -44,6 +53,7 @@ async function fetchCasesForDate(searchDate: string, periodType: string, extra: 
       pageSize: String(pageSize),
       ...extra,
     });
+    pages++;
     const body = res?.data ?? res ?? {};
     const elements: any[] = body.elements || body.contents || body.data?.elements || [];
     if (!Array.isArray(elements) || elements.length === 0) break;
@@ -52,7 +62,7 @@ async function fetchCasesForDate(searchDate: string, periodType: string, extra: 
     page++;
     if (page > 50) break; // 안전 상한(5만 행/일 — 실사용 초과 불가)
   }
-  return all;
+  return { cases: all, pages };
 }
 
 function toIntOrZero(v: any): number {
@@ -92,9 +102,16 @@ async function upsertCases(cases: any[]): Promise<number> {
 }
 
 /**
- * 정산 원장 수집.
- * @param settledDays 정산완료일 기준 lookback (기본 3일 — 일일 크론이면 충분, 초기 백필 시 확대)
- * @param unsettledDays 결제일 기준 미정산 lookback (기본 21일 — 일반정산의 구매확정 대기 기간 커버)
+ * 정산 원장 **백필** — 고정 달력으로 넓게 훑는다. ⚠️ **기본 경로가 아니다**(2단계, 2026-09-10).
+ *
+ * 크론이 `?settledDays=` · `?unsettledDays=` 를 **명시적으로** 받았을 때만 부른다. 기본 경로는
+ * 아래 `runPlannedSettlementSync` 다. 이 함수는 데이터 유무와 무관하게 날짜 수만큼 부르므로
+ * (기본값 3 + 21 = 24콜) 매일 돌리면 프록시 한도를 태운다 — 그게 재설계의 출발점이었다.
+ * ⛔ 그렇다고 지우지 말 것: 재확인 창(`SETTLEMENT_ORDER_DATE_RECHECK_DAYS`)보다 긴 크론 중단
+ * (프록시 한도 소진·자격증명 만료 등) 구간은 계획으로는 영영 안 메워지고, **이 경로가 유일한
+ * 복구 수단**이다.
+ * @param settledDays 정산완료일 기준 lookback
+ * @param unsettledDays 결제일 기준 미정산 lookback
  */
 export async function runSettlementSync(settledDays = 3, unsettledDays = 21): Promise<{ settledFetched: number; unsettledFetched: number }> {
   let settledFetched = 0;
@@ -102,17 +119,99 @@ export async function runSettlementSync(settledDays = 3, unsettledDays = 21): Pr
 
   // 1) 정산완료분 — 완료일 기준 최근 N일
   for (const dateKey of recentDateKeys(settledDays)) {
-    const cases = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_SETTLE_COMPLETE_DATE');
+    const { cases } = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_SETTLE_COMPLETE_DATE');
     settledFetched += await upsertCases(cases);
   }
 
   // 2) 미정산(정산예정)분 — 결제일 기준 최근 N일 (settleExpectAmount 선확보)
   for (const dateKey of recentDateKeys(unsettledDays)) {
-    const cases = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_PAY_DATE', { settleDecisionType: 'UNSETTLED' });
+    const { cases } = await fetchCasesForDate(dateKey, 'SETTLE_CASEBYCASE_PAY_DATE', { settleDecisionType: 'UNSETTLED' });
     unsettledFetched += await upsertCases(cases);
   }
 
   return { settledFetched, unsettledFetched };
+}
+
+/** `runPlannedSettlementSync` 의 실행 요약 — 크론 응답과 `SystemTaskLog.details` 에 실린다. */
+export interface PlannedSettlementSyncResult {
+  /** 결제일 축으로 부른 날짜 수. */
+  datesFetched: number;
+  /** 정산완료일 축(안전망)으로 부른 날짜 수. */
+  completionDatesFetched: number;
+  /** 논리 요청 수(페이지 포함). 재시도는 세지 않는다. */
+  requests: number;
+  /**
+   * 실제 HTTP 시도 수 — `apiRequest` 의 401·429 재시도를 포함한다(`naver-api-usage` 집계기).
+   * ⚠️ 그래도 프록시 사용량과 **같지는 않다**: 토큰 발급과 `proxyFetch` 의 전송 계층 재시도는
+   * 어느 집계에도 안 들어가므로(P7) 프록시가 세는 수는 이 값 **이상**이다.
+   */
+  httpAttempts: number;
+  /** upsert 한 원장 행 수. */
+  casesUpserted: number;
+  /**
+   * 조회에 실패한 날짜(`pay:YYYY-MM-DD` · `complete:YYYY-MM-DD`). 비어 있지 않으면 호출자가
+   * 크론을 **실패로 선언**해야 한다. ⛔ 오류 메시지는 싣지 않는다 — 전송 계층 오류 사슬에 프록시
+   * 주소가 섞일 수 있어 `SystemTaskLog.details` 로 새면 안 된다(P0). 원인은 서버 로그에 남긴다.
+   */
+  failedDates: string[];
+}
+
+/**
+ * **계획한 날짜만** 조회한다 — 정산 조회의 기본 경로(2단계, 2026-09-10).
+ *
+ * 부를 날짜는 `settlement-pending-dates` 가 DB 만 읽어 정한다: 결제일 축(정산 대기 주문의
+ * 결제일 · 주문이 있었던 최근 날짜 · 차감을 기다리는 취소 주문의 결제일)과 정산완료일 축
+ * 안전망(최근 끝난 며칠). 대기 주문이 없는 날은 결제일 조회가 **0콜**이고 안전망 몫만 남는다 —
+ * 종전 고정 달력은 그런 날에도 24콜을 썼다.
+ *
+ * 🔑 결제일 축을 `settleDecisionType` **없이** 부른다 — 정산완료·미정산·차감 행이 한 응답에
+ * 함께 온다. 공식 문서는 이 파라미터를 선택으로만 적고 생략 시 동작을 명시하지 않아서,
+ * 2026-09-10 실호출로 확인했다: 같은 날짜의 `UNSETTLED` 응답 행이 필터 없는 응답에 **전부**
+ * 들어 있었고, 과거 날짜는 정산완료 행이 왔다. 그래서 날짜당 **1콜**로 충분하다.
+ * ⛔ 「안전하게」 정산·미정산을 나눠 두 번 부르지 말 것 — 같은 데이터에 호출량만 두 배다.
+ *
+ * 🔑 **정산완료일 축은 좁게 남는다 — 이것이 안전망이다.** 2단계 첫 커밋은 이 축을 통째로
+ * 뺐고, 교차 검증 두 레인이 같은 결함을 잡았다: 취소 사실을 읽는 스냅샷 프로젝션이 놓치는
+ * 반품(평평한 클레임 모양 · 결제 30일 이후 반품)의 차감이 **영영 조회되지 않아** 금액이 부풀려진
+ * 채 남는다. 완료·차감은 끝나는 날 정산완료일 축에 반드시 나타나므로 그 축이 그것을 닫는다.
+ * 창 크기의 근거는 `SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS`.
+ *
+ * **날짜별로 실패를 격리한다.** 한 날짜의 조회가 계속 실패해도 나머지 날짜(특히 재확인 창이
+ * 짧은 최근 주문일)는 받아야 한다 — 종전처럼 첫 실패에서 전체를 멈추면, 결정론적으로 실패하는
+ * 옛 날짜 하나가 최근 날짜를 재확인 창 밖으로 밀어낸다. 실패는 `failedDates` 로 돌려준다.
+ */
+export async function runPlannedSettlementSync(
+  plan: Pick<SettlementQueryPlan, 'dates' | 'completionDates'>,
+): Promise<PlannedSettlementSyncResult> {
+  const tally = createNaverCallTally();
+  let requests = 0;
+  let casesUpserted = 0;
+  const failedDates: string[] = [];
+
+  const fetchInto = async (label: string, dateKey: string, periodType: string) => {
+    try {
+      const { cases, pages } = await fetchCasesForDate(dateKey, periodType);
+      requests += pages;
+      casesUpserted += await upsertCases(cases);
+    } catch (error) {
+      failedDates.push(`${label}:${dateKey}`);
+      console.error(`[naver-settlement-sync] ${label}:${dateKey} 조회 실패 — 다른 날짜는 계속한다:`, error);
+    }
+  };
+
+  await runWithNaverCallTally(tally, async () => {
+    for (const { dateKey } of plan.dates) await fetchInto('pay', dateKey, 'SETTLE_CASEBYCASE_PAY_DATE');
+    for (const dateKey of plan.completionDates) await fetchInto('complete', dateKey, 'SETTLE_CASEBYCASE_SETTLE_COMPLETE_DATE');
+  });
+
+  return {
+    datesFetched: plan.dates.length,
+    completionDatesFetched: plan.completionDates.length,
+    requests,
+    httpAttempts: tally.httpAttempts,
+    casesUpserted,
+    failedDates,
+  };
 }
 
 const IN_CHUNK = 500;

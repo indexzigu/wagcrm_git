@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS,
   SETTLEMENT_MAX_DATES_PER_RUN,
   SETTLEMENT_ORDER_DATE_RECHECK_DAYS,
   SETTLEMENT_PENDING_MAX_AGE_DAYS,
@@ -48,16 +49,29 @@ function plan(args: {
 }
 
 describe('decideSettlementQueryPlan — 대기 집합에서 날짜를 뽑는다', () => {
-  it('대기 주문도 새 주문도 없으면 0콜이다', () => {
+  it('대기 주문도 새 주문도 없으면 결제일 조회는 0이고 정산완료일 안전망만 남는다', () => {
     const result = plan({ snapshots: [{ snapshotDate: TODAY, ordersCount: 0 }] });
     expect(result.dates).toEqual([]);
-    expect(result.estimatedCalls).toBe(0);
+    expect(result.estimatedCalls).toBe(SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS);
   });
 
   it('정산완료 행이 없는 주문의 결제일을 부른다', () => {
     const result = plan({ cases: [caseRow({ productOrderId: 'A' })] });
     expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['unsettled-order'], pendingOrders: 1 }]);
-    expect(result.estimatedCalls).toBe(1);
+    expect(result.estimatedCalls).toBe(1 + SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS);
+  });
+
+  it('정산완료일 안전망은 어제부터 거슬러 끝난 날들이고 오늘은 넣지 않는다', () => {
+    // ⛔ 이 조회를 「0콜을 위해」 빼지 말 것 — 취소 감지가 놓치는 반품(평평한 클레임 모양 ·
+    //    결제 30일 이후)의 차감을 받는 유일한 경로다(2단계 교차 검증에서 반증된 전제).
+    const result = plan({});
+    expect(result.completionDates).toEqual(
+      Array.from({ length: SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS }, (_, i) =>
+        addDays(TODAY, -(SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS - i)),
+      ),
+    );
+    expect(result.completionDates).not.toContain(TODAY);
+    expect(SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS).toBeGreaterThanOrEqual(2); // 한 회차 실패를 흡수하는 최소값
   });
 });
 
@@ -211,7 +225,7 @@ describe('decideSettlementQueryPlan — 조용히 빠지는 길이 없다', () =
       claimedOrders.push({ productOrderId: `A${i}`, payDateKey: dateKey });
     }
     const result = plan({ cases, claimedOrders });
-    expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN);
+    expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN + SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS);
     expect(result.counters.truncatedDates).toBe(3);
     // 오래된 쪽이 남는다 — 상한에 먼저 닿아 기회가 적은 쪽이다.
     expect(result.dates[0].dateKey).toBe(addDays(TODAY, -(SETTLEMENT_MAX_DATES_PER_RUN + 2 + 10)));
@@ -235,7 +249,7 @@ describe('decideSettlementQueryPlan — 조용히 빠지는 길이 없다', () =
     }
     const result = plan({ cases, claimedOrders, snapshots: [{ snapshotDate: TODAY, ordersCount: 3 }] });
     expect(result.dates.map((d) => d.dateKey)).toContain(TODAY);
-    expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN);
+    expect(result.estimatedCalls).toBe(SETTLEMENT_MAX_DATES_PER_RUN + SETTLEMENT_COMPLETE_DATE_LOOKBACK_DAYS);
   });
 
   it('스냅샷·클레임 경로의 미래 날짜를 계수하며 건너뛴다', () => {
