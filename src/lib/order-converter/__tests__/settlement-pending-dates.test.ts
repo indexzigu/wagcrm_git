@@ -17,7 +17,9 @@ const TODAY = '2026-09-10';
 function caseRow(over: Partial<SettlementCaseRow> & { productOrderId: string }): SettlementCaseRow {
   return {
     settleType: 'QUICK_SETTLE_ORIGINAL',
+    productOrderType: 'PROD_ORDER',
     payDate: new Date(`${TODAY}T00:00:00.000Z`),
+    settleExpectAmount: 10_000,
     settled: false,
     ...over,
   };
@@ -72,6 +74,26 @@ describe('decideSettlementQueryPlan — 종료 조건(수렴)', () => {
     });
     expect(result.dates).toEqual([]);
     expect(result.counters.droppedByClaim).toBe(1);
+  });
+
+  it('비상품 원장(배송비 등)이 정산돼도 그 주문의 상품 결제는 계속 기다린다', () => {
+    // 안 거르면 배송비 원장 하나가 정산 완료된 것만으로 상품 결제까지 「끝났다」로 읽혀,
+    // 그 주문이 나이 제한도 없이 영구 배제된다.
+    const result = plan({
+      cases: [
+        caseRow({ productOrderId: 'A', settled: false }),
+        caseRow({ productOrderId: 'A', productOrderType: 'DELIVERY', settleType: 'QUICK_SETTLE_DELIVERY', settled: true }),
+      ],
+    });
+    expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['unsettled-order'], pendingOrders: 1 }]);
+    expect(result.counters.droppedBySettled).toBe(0);
+  });
+
+  it('결제일을 모르는 미정산 행은 계획에 넣지 않되 센다', () => {
+    // 날짜 축 조회로는 원리적으로 닿을 수 없다 — 조용히 사라지면 「대기 0」이 거짓말이 된다.
+    const result = plan({ cases: [caseRow({ productOrderId: 'A', payDate: null })] });
+    expect(result.dates).toEqual([]);
+    expect(result.counters.unknownPayDate).toBe(1);
   });
 
   it('상한을 넘긴 결제 건은 포기한다', () => {
@@ -130,6 +152,19 @@ describe('decideSettlementQueryPlan — 취소 차감 재진입', () => {
     });
     expect(result.dates).toEqual([]);
     expect(result.counters.claimsAwaitingDeduction).toBe(0);
+  });
+
+  it('이름에 CANCEL 이 없어도 금액이 음수면 차감으로 본다', () => {
+    // `settleType` 전체 목록이 확정 문서화돼 있지 않다 — 이름만 보면 못 알아본 차감 때문에
+    // 재진입이 클레임 창 내내 같은 날짜를 다시 부른다.
+    const result = plan({
+      cases: [
+        settledOriginal,
+        caseRow({ productOrderId: 'A', settleType: 'QUICK_SETTLE_ADJUST', settleExpectAmount: -10_000, settled: true }),
+      ],
+      claimedOrders: [{ productOrderId: 'A', payDateKey: TODAY }],
+    });
+    expect(result.dates).toEqual([]);
   });
 
   it('취소 재진입은 대기 상한(10일)보다 긴 창을 본다', () => {
