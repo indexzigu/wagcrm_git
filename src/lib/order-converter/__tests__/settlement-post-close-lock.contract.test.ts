@@ -47,6 +47,10 @@ function campaign(status: string | null, overrides: Record<string, unknown> = {}
     cachedPostCloseCancelQuantity: 3,
     cachedPostCloseCancelRevenue: 30000,
     cachedPostCloseCancelFinalizedAt: new Date('2026-09-01T00:00:00Z'),
+    cachedPostCloseAllTerminalAt: null,
+    // 판매 종료가 이틀 전 — 확인 기간(post-close-check-window.ts, 판매 종료 +15일 안전선) 안이다.
+    endDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    salePeriod: null,
     mappings: [],
     name: '테스트 캠페인',
     salesCampaigns: status === null ? [] : [{ status }],
@@ -346,6 +350,123 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
     expect(res).toMatchObject({ deferredIncomplete: 0, finalizedLocked: 1 });
   });
 
+  it('확인 기간 판정에 쓰는 필드를 select 에 담고, 후보 창은 90일이 아니라 안전선(+15일) 근처다', async () => {
+    // 🪤 `endDate`·`salePeriod`·종결 시각이 select 에서 빠지면 판매 종료일을 몰라 **전부 안전선
+    //    중단**(요청 0 — 취소가 조용히 안 잡힌다)이 되는데, 아래 케이스들은 픽스처가 값을 직접 주므로 초록이다.
+    findManyMock.mockResolvedValue([]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    await syncPostCloseCancellations();
+
+    const args = findManyMock.mock.calls[0][0] as {
+      select: Record<string, unknown>;
+      where: { endDate: { gte: Date } };
+    };
+    expect(args.select).toMatchObject({ endDate: true, salePeriod: true, cachedPostCloseAllTerminalAt: true });
+    const floorAgeDays = (Date.now() - args.where.endDate.gte.getTime()) / (24 * 60 * 60 * 1000);
+    expect(floorAgeDays).toBeGreaterThan(15);
+    expect(floorAgeDays).toBeLessThan(17);
+  });
+});
+
+describe('syncPostCloseCancellations — 확인 기간(전 주문 종결 +10일 · 판매 종료 +15일, 오너 확정 2026-09-11)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('전 주문 종결을 처음 본 지 10일이 지나면 조회하지 않는다', async () => {
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_WAIT', {
+        endDate: new Date(Date.now() - 13 * DAY),
+        cachedPostCloseAllTerminalAt: new Date(Date.now() - 11 * DAY),
+      }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ stoppedAfterTerminal: 1, stoppedByBackstop: 0 });
+  });
+
+  it('판매 종료 +15일 안전선을 넘으면 종결이 안 보여도 조회하지 않는다', async () => {
+    // 탈퇴 구매자 주문이 섞여 응답이 영영 모자란 캠페인이 종전엔 90일 내내 매일 재조회됐다.
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_WAIT', { endDate: new Date(Date.now() - 16 * DAY) }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).not.toHaveBeenCalled();
+    expect(res).toMatchObject({ stoppedByBackstop: 1 });
+  });
+
+  it('온전한 응답이 전부 종결이면 종결 시각을 처음 한 번 찍는다', async () => {
+    findManyMock.mockResolvedValue([campaign('SETTLEMENT_WAIT', { cachedPostCloseCancelFinalizedAt: null })]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(lastUpdateData().cachedPostCloseAllTerminalAt).toBeInstanceOf(Date);
+    expect(res).toMatchObject({ markedAllTerminal: 1 });
+  });
+
+  it('이미 찍힌 종결 시각은 다시 찍지 않는다(+10일 기준점이 밀리지 않게)', async () => {
+    const terminalAt = new Date(Date.now() - 3 * DAY);
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_WAIT', { cachedPostCloseCancelFinalizedAt: null, cachedPostCloseAllTerminalAt: terminalAt }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    // 값도 마커도 그대로면 쓰기 자체가 없고, 쓰더라도 시각은 종전 값이어야 한다.
+    const written = updateMock.mock.calls.length ? lastUpdateData().cachedPostCloseAllTerminalAt : terminalAt;
+    expect(written).toEqual(terminalAt);
+    expect(res).toMatchObject({ markedAllTerminal: 0 });
+  });
+
+  it('배송완료 뒤 반품 요청이 진행 중이면 종결 시각을 지워 확인을 이어 간다', async () => {
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_WAIT', {
+        cachedPostCloseCancelFinalizedAt: null,
+        cachedPostCloseAllTerminalAt: new Date(Date.now() - 3 * DAY),
+      }),
+    ]);
+    queryOrderDetailsMock.mockResolvedValue([
+      { productOrderId: 'po-1', productOrderStatus: 'DELIVERED', quantity: 1, productName: 'x' },
+      {
+        productOrderId: 'po-2',
+        productOrderStatus: 'DELIVERED',
+        quantity: 1,
+        productName: 'x',
+        __claim: { return: { claimStatus: 'RETURN_REQUEST', claimQuantity: 1 } },
+      },
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    await syncPostCloseCancellations();
+
+    expect(lastUpdateData().cachedPostCloseAllTerminalAt).toBeNull();
+  });
+
+  it('응답이 모자라면 종결 여부를 판단하지 않는다(찍힌 시각을 그대로 둔다)', async () => {
+    const terminalAt = new Date(Date.now() - 3 * DAY);
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_WAIT', { cachedPostCloseCancelFinalizedAt: null, cachedPostCloseAllTerminalAt: terminalAt }),
+    ]);
+    // 2건 요청에 1건(취소)만 온다 — 값은 바뀌므로 쓰기는 일어난다.
+    queryOrderDetailsMock.mockResolvedValue([
+      { productOrderId: 'po-1', productOrderStatus: 'CANCELED', quantity: 1, totalPaymentAmount: 10000, productName: 'x' },
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    await syncPostCloseCancellations();
+
+    expect(lastUpdateData().cachedPostCloseAllTerminalAt).toEqual(terminalAt);
+  });
+});
+
+describe('syncPostCloseCancellations — select 계약', () => {
   it('확정 마커를 조회 select 에 담는다 — 빠지면 전부 미확정으로 읽혀 건너뛰기가 죽는다', async () => {
     // 🪤 `select` 에서 이 필드가 빠지면 값이 항상 `undefined` 라 **모든 락 캠페인이 매일
     //    재조회**되는데, 위 케이스들은 픽스처가 값을 직접 주므로 전부 초록이다.
