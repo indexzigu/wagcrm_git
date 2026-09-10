@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProposalActions } from "@/hooks/useProposalActions";
 import { ENTITY_TYPE_LABELS } from "./types";
+import { ProposalPayloadPreview } from "./proposal-payload-preview";
 
 /**
  * ProposalCard — 채팅 메시지 안 기안 카드(인라인 승인) (청사진 §1, §3-#4).
@@ -210,6 +211,9 @@ export function ProposalCard({
       </div>
 
       <p className="text-sm text-foreground">{proposal.title}</p>
+
+      {/* 제목은 무엇을 만드는지만 말한다. 승인 판단에 필요한 값(가격·옵션·담당자)은 여기 있다. */}
+      <ProposalPayloadPreview action={proposal.payload?.action} args={proposal.payload?.args} />
 
       {proposal.status === "FAILED" && proposal.errorMessage && (
         <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
