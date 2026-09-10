@@ -42,7 +42,7 @@ vi.mock("@/lib/system-task-status", () => ({
 }));
 
 const PLAN = {
-  dates: [{ dateKey: "2026-09-10", reasons: ["ledger-incomplete"], pendingOrders: 0 }],
+  dates: [{ dateKey: "2026-09-10", reasons: ["recent-order-date"], pendingOrders: 0 }],
   estimatedCalls: 1,
   counters: {},
 };

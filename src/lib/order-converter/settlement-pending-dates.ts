@@ -70,22 +70,45 @@ export const SETTLEMENT_PENDING_MAX_AGE_DAYS = 10;
  */
 export const SETTLEMENT_CLAIM_LOOKBACK_DAYS = 60;
 
+/**
+ * 주문이 있었던 날을 무조건 다시 보는 기간(일).
+ *
+ * 정산 원장이 **결제 직후 한꺼번에 생기지 않을 수 있다**는 것이 이 상수의 존재 이유다. 늦게
+ * 생긴 행은 우리가 가진 `cases` 에 없어 대기 판정으로는 절대 발견되지 않으므로, 주문이 있던
+ * 날짜에 대해 **정해진 횟수만큼** 다시 물어 그 창을 닫는다.
+ *
+ * 4일인 근거는 결제→정산완료 지연 분포의 상위 구간(설계 정본 §0-3②)이다 — 그 안에 사실상
+ * 전부가 들어온다. 날짜당 정확히 이 횟수만큼만 불리므로 **수렴이 자명하다**(대기 판정과 달리
+ * 데이터 상태에 좌우되지 않는다).
+ *
+ * ⛔ 이 값을 늘려 「안전」을 사는 것은 곧 상시 호출량이다 — 캠페인이 도는 동안 날짜마다
+ * 이 횟수가 그대로 붙는다.
+ */
+export const SETTLEMENT_ORDER_DATE_RECHECK_DAYS = 4;
+
 /** 이 날짜를 부르는 이유. 한 날짜에 여러 이유가 겹칠 수 있다. */
 export type PendingDateReason =
   /** 정산완료 행이 아직 없는 주문의 결제일. 완료 행이 생기면 자동으로 빠진다. */
   | 'unsettled-order'
   /**
-   * 스냅샷이 아는 주문 수만큼 정산 원장을 **아직 못 받은** 날.
-   * 이게 없으면 크론이 며칠 멈춘 뒤 그 구간이 통째로 조회 대상에서 사라지고
-   * (`unsettled-order` 는 이미 받아 둔 행에서만 출발한다), 같은 날 일부 주문의 원장만
-   * 먼저 도착한 경우에도 나머지가 영영 안 채워진다.
+   * 주문이 있었던 **최근 결제일** — 결제 후 `SETTLEMENT_ORDER_DATE_RECHECK_DAYS` 동안은
+   * 대기 주문이 없어 보여도 한 번씩 다시 본다.
    *
-   * ⚠️ **복구 범위는 `SETTLEMENT_PENDING_MAX_AGE_DAYS` 까지다.** 그보다 긴 중단(프록시 한도
-   * 소진·자격증명 만료 등)이 나면 그 구간은 이 경로로 영영 안 채워진다 — 그때는 크론의
-   * **수동 백필 파라미터**(`?settledDays=&unsettledDays=`)로 한 번 넓게 훑어야 한다.
-   * 그래서 전환(2단계) 이후에도 그 두 파라미터를 지운다면 백필 경로가 함께 사라진다.
+   * 정산 원장 행은 결제 직후 한꺼번에 생기지 않을 수 있고, 늦게 생긴 행은 우리 `cases` 에
+   * 없으므로 `unsettled-order`(이미 받아 둔 행에서 출발한다)로는 영영 안 잡힌다 — 라벨이
+   * 아니라 **행 자체가 빈다.** 크론이 며칠 멈춘 구간도 같은 경로로 메워진다.
+   *
+   * ⛔ 이것을 「스냅샷 주문 수 vs 원장 수」 대조로 바꾸지 말 것 — 두 수는 같은 술어로 센 값이
+   * 아니다(스냅샷은 결제일이 없으면 주문일로 폴백 귀속하고, 정산 원장은 애초에 케이스가
+   * 생기는 주문만 담는다). `order-fetch-window.findChunkIntegrityIssues` 가 같은 대조를
+   * **차단 근거로 쓰지 말라**고 명시하고 있고, 실측에서도 양방향으로 어긋났다.
+   *
+   * ⚠️ **복구 범위는 이 일수까지다.** 그보다 긴 중단(프록시 한도 소진·자격증명 만료 등)이
+   * 나면 그 구간은 이 경로로 안 채워진다 — 그때는 크론의 **수동 백필 파라미터**
+   * (`?settledDays=&unsettledDays=`)로 한 번 넓게 훑어야 한다. 전환(2단계) 이후에도 그 두
+   * 파라미터를 지운다면 백필 경로가 함께 사라진다.
    */
-  | 'ledger-incomplete'
+  | 'recent-order-date'
   /**
    * 취소·반품이 일어났고 원거래는 정산까지 끝났는데 **차감 행이 아직 없는** 주문의 결제일.
    *
@@ -150,32 +173,49 @@ export interface SettlementQueryPlan {
   counters: {
     /** 정산완료 행이 없어 대기 중인 주문 수. */
     pendingUnsettledOrders: number;
-    /** 주문 수만큼 원장을 못 받아 다시 부르는 날짜 수. */
-    datesWithIncompleteLedger: number;
+    /** 「주문이 있었던 최근 날」이라 다시 부르는 날짜 수. */
+    datesRechecked: number;
     /** 차감 행을 기다리는 취소·반품 주문 수. */
     claimsAwaitingDeduction: number;
     /** 정산완료 행이 있어 대기에서 빠진 주문 수(종료①). */
     droppedBySettled: number;
     /** 취소·반품이라 대기에서 빠진 주문 수(종료②) — 차감 대기와는 다른 부류다. */
     droppedByClaim: number;
-    /** 상한(`SETTLEMENT_PENDING_MAX_AGE_DAYS`)을 넘겨 포기한 주문 수(종료③). */
+    /** 상한(`SETTLEMENT_PENDING_MAX_AGE_DAYS`)을 넘겨 포기한 **주문** 수(종료③). */
     droppedByAge: number;
+    /** 원장을 한 번도 못 받은 채 재확인 창을 벗어난 **날짜** 수 — 그 날은 백필 대상이다. */
+    droppedByAgeDates: number;
+    /** 차감이 끝내 안 온 채 클레임 창을 벗어난 주문 수 — 돈이 걸린 배제라 따로 센다. */
+    droppedByClaimWindow: number;
+    /**
+     * 차감으로 분류돼 대기 후보에서 빠진 **행** 수(주문 수가 아니다 — 한 주문에 차감 행이
+     * 여럿일 수 있다). 대기에서 빼는 경로에는 전부 카운터가 있어야 한다.
+     */
+    droppedByDeductionRows: number;
+    /**
+     * 상품주문 원장이 아니라 건너뛴 **행** 수.
+     *
+     * 🪤 이 값이 갑자기 전체 행 수에 가까워지면 네이버가 `productOrderType` 표기를 바꾼
+     * 것이고, 그 순간 계획은 **아무 이유 없이 비어 보인다**(할 일 0 과 구분되지 않는다).
+     */
+    droppedByNonProductLedgerRows: number;
     /**
      * `payDate` 가 없어 **어느 날짜를 불러야 할지 알 수 없는** 미정산 주문 수.
      *
      * 결제일 기준 창이 안 돌려주는 결제대기 주문 등이 이 부류다(P7 *Product-Order Query
      * Paging* 의 구조적 원인 ①). 날짜 축 조회로는 원리적으로 닿을 수 없으므로 계획에
-     * 넣지 않되, **조용히 버리지 않고 센다**(P0 No Silent Failure) — 이 값이 커지면
-     * 날짜 축 말고 `productOrderId` 단독 조회가 필요하다는 신호다.
+     * 넣지 않되, **조용히 버리지 않고 센다** — 이 값이 커지면 날짜 축 말고
+     * `productOrderId` 단독 조회가 필요하다는 신호다.
      */
     unknownPayDateOrders: number;
     /**
-     * 차감 행으로 분류돼 대기 후보에서 빠진 행 수.
+     * 원장 수가 스냅샷 주문 수보다 적은 날짜 수 — **관측 전용이고 판정에 쓰지 않는다.**
      *
-     * 대기에서 빼는 모든 경로에는 카운터가 있어야 한다 — 카운터 없는 배제가 정확히 이
-     * 모듈이 없애려는 형태이고, 차감 판정이 넓어질수록 그 위험도 커진다(교차 검증 지적).
+     * 두 수는 같은 술어로 센 값이 아니라(스냅샷은 결제일이 없으면 주문일로 폴백 귀속한다)
+     * 정상 운영에서도 양방향으로 어긋난다. `order-fetch-window` 가 같은 대조를 관측 신호로만
+     * 쓰라고 못박은 것과 같은 이유다. 추세를 보는 용도이지 「누락 건수」가 아니다.
      */
-    droppedByDeduction: number;
+    ledgerShortDates: number;
   };
 }
 
@@ -255,21 +295,38 @@ export function decideSettlementQueryPlan(args: {
   const settledOriginals = new Set<string>();
   /** 차감 행이 이미 온 주문 — 재진입이 여기서 멈춘다. */
   const deducted = new Set<string>();
-  /**
-   * 결제일별로 **원장을 받아 본 상품주문**의 집합 — `ledger-incomplete` 의 반대편이다.
-   *
-   * ⛔ 「그 날짜에 원장 행이 하나라도 있는가」로 판정하지 말 것(교차 검증이 잡은 구멍 둘).
-   * ①한 날짜에 주문 A 의 원장만 오고 B 의 원장은 아직 없으면, 날짜 단위 판정은 그 날을
-   *   통째로 「받았다」로 접는다 — B 는 `cases` 에 없으니 다른 대기 조건에도 안 걸려
-   *   **영영 조회되지 않는다**(라벨이 아니라 행 자체가 빈다).
-   * ②배송비 원장이 상품 원장보다 먼저 도착한 날도 같은 방식으로 억제된다.
-   * 그래서 **상품주문 원장만**, **주문 단위로** 모아 스냅샷의 주문 수와 맞대 본다.
-   */
+  /** 결제일별로 원장을 받아 본 상품주문 수 — **관측 전용**이다(§`ledgerShortDates`). */
   const ledgerOrderIdsByDate = new Map<string, Set<string>>();
+  /** 정산완료 행이 아직 없는 주문 → 그 결제일. */
+  const unsettledCandidates = new Map<string, string>();
+  /** 미정산인데 결제일을 모르는 주문. */
+  const payDatelessOrders = new Set<string>();
   const claimedIds = new Set(claimedOrders.map((o) => o.productOrderId));
 
+  const counters: SettlementQueryPlan['counters'] = {
+    pendingUnsettledOrders: 0,
+    datesRechecked: 0,
+    claimsAwaitingDeduction: 0,
+    droppedBySettled: 0,
+    droppedByClaim: 0,
+    droppedByAge: 0,
+    droppedByAgeDates: 0,
+    droppedByClaimWindow: 0,
+    droppedByDeductionRows: 0,
+    droppedByNonProductLedgerRows: 0,
+    unknownPayDateOrders: 0,
+    ledgerShortDates: 0,
+  };
+
+  // ── 원장 한 패스 — 파생 집합을 전부 여기서 만든다(이중 순회·이중 계산 제거) ──
   for (const row of cases) {
-    if (!isProductOrderLedgerRow(row)) continue;
+    if (!isProductOrderLedgerRow(row)) {
+      // 🪤 **여기가 가장 위험한 배제다.** 네이버가 상품 원장에 예상 밖 `productOrderType` 을
+      // 붙이는 순간 전 행이 조용히 빠져 「대기 0」 이 된다 — 계획이 비는 것과 할 일이 없는
+      // 것이 구분되지 않는다. 그래서 반드시 센다(P0 No Silent Failure).
+      counters.droppedByNonProductLedgerRows++;
+      continue;
+    }
 
     const key = payDateKeyOf(row.payDate);
     if (key) {
@@ -280,9 +337,20 @@ export function decideSettlementQueryPlan(args: {
 
     if (isDeductionRow(row)) {
       deducted.add(row.productOrderId);
-    } else if (row.settled) {
-      settledOriginals.add(row.productOrderId);
+      counters.droppedByDeductionRows++;
+      continue;
     }
+    if (row.settled) {
+      settledOriginals.add(row.productOrderId);
+      continue;
+    }
+    if (!key) {
+      // 결제일을 모르면 **어느 날짜를 불러야 할지도 모른다.** 날짜 축 조회로는 닿을 수 없어
+      // 계획에 넣지 못하지만, 조용히 버리지 않고 센다.
+      payDatelessOrders.add(row.productOrderId);
+      continue;
+    }
+    unsettledCandidates.set(row.productOrderId, key);
   }
 
   const reasonsByDate = new Map<string, Set<PendingDateReason>>();
@@ -298,48 +366,18 @@ export function decideSettlementQueryPlan(args: {
     }
   };
 
-  const counters: SettlementQueryPlan['counters'] = {
-    pendingUnsettledOrders: 0,
-    datesWithIncompleteLedger: 0,
-    claimsAwaitingDeduction: 0,
-    droppedBySettled: 0,
-    droppedByClaim: 0,
-    droppedByAge: 0,
-    unknownPayDateOrders: 0,
-    droppedByDeduction: 0,
-  };
-
-  // ── ① 정산완료 행이 없는 주문의 결제일 ────────────────────────────────────
-  // 같은 주문의 여러 행(원거래·차감)이 같은 productOrderId 를 공유하므로 **주문 단위**로
-  // 접은 뒤 판정한다 — 행 단위로 세면 낡은 미정산 사본 하나가 이미 끝난 주문을 되살린다
-  // (실측에서 남아 있던 미정산 행 대부분이 정확히 그 부류였다).
-  const unsettledCandidates = new Map<string, string>(); // productOrderId → payDateKey
-  const payDatelessOrders = new Set<string>();
-  for (const row of cases) {
-    if (!isProductOrderLedgerRow(row)) continue;
-    if (row.settled) continue;
-    if (isDeductionRow(row)) {
-      counters.droppedByDeduction++;
-      continue;
-    }
-    const key = payDateKeyOf(row.payDate);
-    if (!key) {
-      // 결제일을 모르면 **어느 날짜를 불러야 할지도 모른다.** 날짜 축 조회로는 닿을 수 없어
-      // 계획에 넣지 못하지만, 조용히 버리지 않고 센다(P0 No Silent Failure).
-      payDatelessOrders.add(row.productOrderId);
-      continue;
-    }
-    unsettledCandidates.set(row.productOrderId, key);
-  }
   for (const productOrderId of payDatelessOrders) {
-    // 이 카운터는 「날짜 축으로는 못 닿는 주문이 얼마나 되나」를 재는 신호다. 그래서 **이미
-    // 다른 경로로 끝난 주문은 빼야** 한다 — 안 빼면 취소·차감으로 종결된 건이 영구 바닥으로
-    // 앉아 「조회 방식을 바꿔야 한다」는 신호를 흐린다(교차 검증 지적).
-    if (unsettledCandidates.has(productOrderId)) continue; // 결제일 있는 행이 이미 계획을 만든다
-    if (settledOriginals.has(productOrderId) || deducted.has(productOrderId)) continue; // 정산·차감으로 종결
-    if (claimedIds.has(productOrderId)) continue; // 취소·반품 — 종료②와 같은 부류
+    // 이 카운터는 「날짜 축으로는 못 닿는 주문이 얼마나 되나」를 재는 신호다. 이미 다른 경로로
+    // 끝난 주문을 빼지 않으면 종결 건이 영구 바닥으로 앉아 신호가 흐려진다.
+    if (unsettledCandidates.has(productOrderId)) continue;
+    if (settledOriginals.has(productOrderId) || deducted.has(productOrderId)) continue;
+    if (claimedIds.has(productOrderId)) continue;
     counters.unknownPayDateOrders++;
   }
+
+  // ── ① 정산완료 행이 없는 주문의 결제일 ────────────────────────────────────
+  // 주문 단위로 접은 뒤 판정한다 — 행 단위로 세면 낡은 미정산 사본 하나가 이미 끝난 주문을
+  // 되살린다(실측에서 남아 있던 미정산 행 대부분이 정확히 그 부류였다).
   for (const [productOrderId, dateKey] of unsettledCandidates) {
     if (settledOriginals.has(productOrderId)) {
       counters.droppedBySettled++;
@@ -357,24 +395,38 @@ export function decideSettlementQueryPlan(args: {
     addDate(dateKey, 'unsettled-order', productOrderId);
   }
 
-  // ── ② 주문 수만큼 원장을 못 받은 날 ───────────────────────────────────────
-  // 스냅샷의 주문 수를 oracle 로 쓴다(`order-fetch-window` 의 조회 온전성 대조와 같은 관용구).
-  // ⚠️ 끝내 원장이 안 생기는 주문(결제대기·즉시취소 등)이 낀 날은 상한(§`MAX_AGE`)까지 매일
-  //    한 번씩 다시 불린다 — **틀리는 방향을 「헛조회」 쪽으로 잡은** 것이고, 반대로 잡으면
-  //    돈이 통째로 빠진다(P7 *Progressive Lock* 이 `deferredIncomplete` 에서 택한 방향과 같다).
+  // ── ② 주문이 있었던 최근 날짜는 정해진 기간 동안 다시 본다 ─────────────────
+  // 원장 행은 결제 직후 한꺼번에 생기지 않을 수 있다. 그 늦게 생긴 행은 `cases` 에 없으니
+  // ①로도 안 잡힌다 — 그래서 **주문이 있었던 날은 결제 후 며칠간 무조건 재확인**한다.
+  // ⛔ 「스냅샷 주문 수 vs 원장 수」로 판정하지 말 것 — 두 수는 같은 술어로 센 값이 아니고
+  //    (`order-fetch-window.findChunkIntegrityIssues` 가 그 이유와 함께 **차단 근거 금지**를
+  //    명시한다), 실측에서 양방향으로 어긋난다. 그 대조는 아래 `ledgerShortDates` 로 **관측만** 한다.
+  const oldestRecheckKey = addKstDays(todayKey, -SETTLEMENT_ORDER_DATE_RECHECK_DAYS);
   for (const snap of snapshots) {
     if (snap.ordersCount <= 0) continue;
-    if (snap.snapshotDate < oldestPendingKey || snap.snapshotDate > todayKey) continue;
-    if ((ledgerOrderIdsByDate.get(snap.snapshotDate)?.size ?? 0) >= snap.ordersCount) continue;
-    counters.datesWithIncompleteLedger++;
-    addDate(snap.snapshotDate, 'ledger-incomplete');
+    if (snap.snapshotDate > todayKey) continue;
+
+    const ledgerCount = ledgerOrderIdsByDate.get(snap.snapshotDate)?.size ?? 0;
+    if (ledgerCount < snap.ordersCount) counters.ledgerShortDates++; // 관측 전용 — 판정에 쓰지 않는다
+
+    if (snap.snapshotDate < oldestRecheckKey) {
+      if (ledgerCount === 0) counters.droppedByAgeDates++; // 원장을 한 번도 못 받은 채 창을 벗어난 날
+      continue;
+    }
+    counters.datesRechecked++;
+    addDate(snap.snapshotDate, 'recent-order-date');
   }
 
   // ── ③ 취소·반품인데 차감 행이 아직 없는 주문의 결제일 ─────────────────────
   for (const claimed of claimedOrders) {
     if (!settledOriginals.has(claimed.productOrderId)) continue; // 정산 전 취소 → 차감할 돈이 없다
     if (deducted.has(claimed.productOrderId)) continue; // 차감이 이미 왔다
-    if (claimed.payDateKey < oldestClaimKey || claimed.payDateKey > todayKey) continue;
+    if (claimed.payDateKey > todayKey) continue;
+    if (claimed.payDateKey < oldestClaimKey) {
+      // 차감이 끝내 안 온 채 창을 벗어난 클레임 — **돈이 걸린 배제**라 신호를 남긴다.
+      counters.droppedByClaimWindow++;
+      continue;
+    }
     counters.claimsAwaitingDeduction++;
     addDate(claimed.payDateKey, 'claim-without-deduction', claimed.productOrderId);
   }
@@ -475,8 +527,9 @@ export function formatSettlementQueryPlan(plan: SettlementQueryPlan): string {
   const c = plan.counters;
   return (
     `calls=${plan.estimatedCalls} dates=[${shown.join(',')}${more}] ` +
-    `pending=${c.pendingUnsettledOrders} incompleteLedger=${c.datesWithIncompleteLedger} claims=${c.claimsAwaitingDeduction} ` +
-    `dropped(settled=${c.droppedBySettled},claim=${c.droppedByClaim},age=${c.droppedByAge}) ` +
-    `unknownPayDate=${c.unknownPayDateOrders} droppedByDeduction=${c.droppedByDeduction}`
+    `pending=${c.pendingUnsettledOrders} recheck=${c.datesRechecked} claims=${c.claimsAwaitingDeduction} ` +
+    `dropped(settled=${c.droppedBySettled},claim=${c.droppedByClaim},age=${c.droppedByAge},ageDates=${c.droppedByAgeDates},` +
+    `claimWindow=${c.droppedByClaimWindow},deductionRows=${c.droppedByDeductionRows},nonProductRows=${c.droppedByNonProductLedgerRows}) ` +
+    `unknownPayDate=${c.unknownPayDateOrders} ledgerShort=${c.ledgerShortDates}`
   );
 }

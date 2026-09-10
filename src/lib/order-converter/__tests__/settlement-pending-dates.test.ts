@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SETTLEMENT_ORDER_DATE_RECHECK_DAYS,
   SETTLEMENT_PENDING_MAX_AGE_DAYS,
   decideSettlementQueryPlan,
   type ClaimedOrderRow,
@@ -13,6 +14,13 @@ import {
  */
 
 const TODAY = '2026-09-10';
+
+/** KST 날짜키에 일수를 더한다(테스트 지역 헬퍼 — 픽스처가 상수와 함께 움직이게 한다). */
+function addDays(dateKey: string, days: number): string {
+  const d = new Date(`${dateKey}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 function caseRow(over: Partial<SettlementCaseRow> & { productOrderId: string }): SettlementCaseRow {
   return {
@@ -115,39 +123,42 @@ describe('decideSettlementQueryPlan — 종료 조건(수렴)', () => {
   });
 });
 
-describe('decideSettlementQueryPlan — 원장이 모자란 날', () => {
-  it('주문이 있는데 그 결제일의 원장이 하나도 없으면 부른다', () => {
-    // 크론이 며칠 멈춰도 그 구간이 조회 대상에서 사라지지 않게 하는 경로다.
+describe('decideSettlementQueryPlan — 주문이 있었던 최근 날짜 재확인', () => {
+  it('주문이 있었던 날은 대기 주문이 없어 보여도 재확인 기간 동안 다시 부른다', () => {
+    // 원장 행이 결제 직후 한꺼번에 안 생기면, 늦게 생긴 행은 `cases` 에 없어 대기 판정으로는
+    // 영영 안 잡힌다 — 라벨이 아니라 행 자체가 빈다.
     const result = plan({ snapshots: [{ snapshotDate: '2026-09-08', ordersCount: 9 }] });
-    expect(result.dates).toEqual([{ dateKey: '2026-09-08', reasons: ['ledger-incomplete'], pendingOrders: 0 }]);
+    expect(result.dates).toEqual([{ dateKey: '2026-09-08', reasons: ['recent-order-date'], pendingOrders: 0 }]);
+    expect(result.counters.datesRechecked).toBe(1);
   });
 
-  it('주문 수만큼 원장을 받았으면 부르지 않는다', () => {
+  it('원장을 이미 받았어도 재확인 기간 안이면 다시 부른다', () => {
+    // ⛔ 「원장이 있으니 받았다」로 접으면, 같은 날 일부 주문의 원장만 먼저 온 경우 나머지가
+    //    영영 안 채워진다. 판정을 개수 대조로 바꾸는 것도 금지다(모수가 다르다).
     const result = plan({
       cases: [caseRow({ productOrderId: 'A', settled: true })],
       snapshots: [{ snapshotDate: TODAY, ordersCount: 1 }],
+    });
+    expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['recent-order-date'], pendingOrders: 0 }]);
+  });
+
+  it('재확인 기간을 벗어난 날은 부르지 않는다', () => {
+    const old = addDays(TODAY, -(SETTLEMENT_ORDER_DATE_RECHECK_DAYS + 1));
+    const result = plan({ snapshots: [{ snapshotDate: old, ordersCount: 9 }] });
+    expect(result.dates).toEqual([]);
+    // 원장을 한 번도 못 받은 채 창을 벗어났다 = 백필 대상. 조용히 사라지지 않는다.
+    expect(result.counters.droppedByAgeDates).toBe(1);
+  });
+
+  it('원장 수가 스냅샷보다 적어도 그것만으로는 부르지 않는다(관측 전용)', () => {
+    // 두 수는 같은 술어로 센 값이 아니다 — `order-fetch-window` 가 차단 근거 금지를 명시한다.
+    const old = addDays(TODAY, -(SETTLEMENT_ORDER_DATE_RECHECK_DAYS + 1));
+    const result = plan({
+      cases: [caseRow({ productOrderId: 'A', settled: true, payDate: new Date(`${old}T00:00:00.000Z`) })],
+      snapshots: [{ snapshotDate: old, ordersCount: 5 }],
     });
     expect(result.dates).toEqual([]);
-    expect(result.counters.datesWithIncompleteLedger).toBe(0);
-  });
-
-  it('같은 날 일부 주문의 원장만 도착했으면 다시 부른다', () => {
-    // 「그 날짜에 행이 하나라도 있으면 받았다」로 접으면, 원장이 아직 없는 주문 B 는
-    // `cases` 에 없어 다른 대기 조건에도 안 걸린다 — 라벨이 아니라 **행 자체가 빈다.**
-    const result = plan({
-      cases: [caseRow({ productOrderId: 'A', settled: true })],
-      snapshots: [{ snapshotDate: TODAY, ordersCount: 2 }],
-    });
-    expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['ledger-incomplete'], pendingOrders: 0 }]);
-  });
-
-  it('비상품 원장만 먼저 도착한 날도 다시 부른다', () => {
-    // 배송비 원장이 상품 원장보다 먼저 오는 날을 「받았다」로 접으면 그 날이 통째로 사라진다.
-    const result = plan({
-      cases: [caseRow({ productOrderId: 'A', productOrderType: 'DELIVERY', settled: true })],
-      snapshots: [{ snapshotDate: TODAY, ordersCount: 1 }],
-    });
-    expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['ledger-incomplete'], pendingOrders: 0 }]);
+    expect(result.counters.ledgerShortDates).toBe(1);
   });
 });
 
@@ -204,7 +215,7 @@ describe('decideSettlementQueryPlan — 취소 차감 재진입', () => {
       cases: [caseRow({ productOrderId: 'B', settleType: 'QUICK_SETTLE_ORIGINAL', settleExpectAmount: -1_000, settled: false })],
     });
     expect(result.dates).toEqual([{ dateKey: TODAY, reasons: ['unsettled-order'], pendingOrders: 1 }]);
-    expect(result.counters.droppedByDeduction).toBe(0);
+    expect(result.counters.droppedByDeductionRows).toBe(0);
   });
 
   it('미정산 차감 행이 대기에서 빠질 때는 카운터가 붙는다', () => {
@@ -212,7 +223,7 @@ describe('decideSettlementQueryPlan — 취소 차감 재진입', () => {
       cases: [caseRow({ productOrderId: 'B', settleType: 'QUICK_SETTLE_CANCEL', settled: false })],
     });
     expect(result.dates).toEqual([]);
-    expect(result.counters.droppedByDeduction).toBe(1);
+    expect(result.counters.droppedByDeductionRows).toBe(1);
   });
 
   it('취소 재진입은 대기 상한(10일)보다 긴 창을 본다', () => {
