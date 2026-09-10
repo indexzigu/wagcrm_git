@@ -17,7 +17,7 @@ import {
 } from "@/lib/order-converter/daily-aggregate";
 import { dealRepository } from "@/repositories/dealRepository";
 import { PartnerRepository } from "@/repositories/partnerRepository";
-import { serializeJsonFields } from "@/repositories/actionProposalRepository";
+import { ActionProposalRepository, serializeJsonFields } from "@/repositories/actionProposalRepository";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import { getPipelineStatusTool } from "@/lib/agent/tools/pipeline-status";
 import { getOrderSnapshotTool } from "@/lib/agent/tools/order-snapshot";
@@ -136,6 +136,7 @@ type OperationHandler = (input: AgentJobPayload["input"], context: OperationCont
  */
 type SearchDealsInput = { query?: string; status?: string; partnerId?: string };
 type SearchPartnersInput = { name?: string; type?: string };
+type GetActionProposalInput = { proposalId: string };
 type OrderSnapshotInput = { campaignId?: string; startAt?: string; endAt?: string };
 type CampaignFinancialsInput = { campaignId: string };
 type ProposalScalar = string | number | boolean | null;
@@ -150,6 +151,8 @@ type CreateActionProposalInput = { action: string } & Record<string, ProposalArg
 
 const ACTOR = "AGENT_WORKER";
 const SEARCH_TAKE_LIMIT = 20;
+// 실패한 기안의 오류 문구는 봇이 오너에게 그대로 옮기므로 앞부분만 싣는다.
+const PROPOSAL_ERROR_EXCERPT_CHARS = 300;
 
 function boundSummary(text: string): string {
   const trimmed = text.trim();
@@ -168,6 +171,38 @@ function boundEvidence(refs: Array<string | null | undefined>): string[] {
 
 function failure(errorClass: string, summary: string): OperationFailure {
   return { status: "FAILED_FINAL", errorClass, summary };
+}
+
+/**
+ * 봇이 올린 기안 하나의 현재 상태. 오너가 CRM 화면에서 승인·반려하는데 그 결과가 봇에게
+ * 돌아올 길이 없어서, 봇이 이 조회로 결정을 확인한다(2026-09-10).
+ *
+ * ⛔ 봇이 올린 기안(`createdBy = ACTOR`)만 돌려준다. **없는 기안과 남이 올린 기안은 같은
+ *    답**을 받는다 — 다르게 답하면 id 를 넣어 보는 것만으로 사람이 올린 기안이 있는지를
+ *    알아낼 수 있다.
+ * 🔎 `executedRef` 가 이 조회의 판단 가치다. 거래처 기안이 완료되면 그 값이 **방금 만든
+ *    거래처의 정확한 id** 라, 이어지는 딜 기안이 이름 검색 없이 붙는다.
+ */
+async function getActionProposal(input: GetActionProposalInput): Promise<OperationOutcome> {
+  const proposal = await ActionProposalRepository.findById(input.proposalId);
+  if (!proposal || proposal.createdBy !== ACTOR) {
+    return failure("PROPOSAL_NOT_FOUND", "no proposal by this worker with that id");
+  }
+  const lines = [`get_action_proposal: ${proposal.id} status=${proposal.status}`, `title=${proposal.title}`];
+  if (proposal.executedRefType && proposal.executedRefId) {
+    lines.push(`executedRef=${proposal.executedRefType}:${proposal.executedRefId}`);
+  }
+  if (proposal.status === "FAILED" && proposal.errorMessage) {
+    lines.push(`error=${proposal.errorMessage.slice(0, PROPOSAL_ERROR_EXCERPT_CHARS)}`);
+  }
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(lines.join("\n")),
+    evidenceRefs: boundEvidence(
+      proposal.executedRefId ? [proposal.id, proposal.executedRefId] : [proposal.id],
+    ),
+    actionProposalId: null,
+  };
 }
 
 /** Maps a tool error onto the queue contract without copying its raw message. */
@@ -545,6 +580,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   get_campaign_financials: (input) => campaignFinancials(input as CampaignFinancialsInput),
   create_action_proposal: (input, context) => createActionProposal(input as CreateActionProposalInput, context),
   search_partners: (input) => searchPartners(input as SearchPartnersInput),
+  get_action_proposal: (input) => getActionProposal(input as GetActionProposalInput),
 };
 
 function buildResult(
