@@ -48,7 +48,7 @@ function campaign(status: string | null, overrides: Record<string, unknown> = {}
     cachedPostCloseCancelRevenue: 30000,
     cachedPostCloseCancelFinalizedAt: new Date('2026-09-01T00:00:00Z'),
     cachedPostCloseAllTerminalAt: null,
-    // 판매 종료가 이틀 전 — 확인 기간(post-close-check-window.ts, 판매 종료 +15일 안전선) 안이다.
+    // 판매 종료가 이틀 전 — 확인 기간(post-close-check-window.ts) 안이다(종결 미관측이라도 판매 종료 +15일까지).
     endDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
     salePeriod: null,
     mappings: [],
@@ -350,7 +350,7 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
     expect(res).toMatchObject({ deferredIncomplete: 0, finalizedLocked: 1 });
   });
 
-  it('확인 기간 판정에 쓰는 필드를 select 에 담고, 후보 창은 90일이 아니라 안전선(+15일) 근처다', async () => {
+  it('확인 기간 판정에 쓰는 필드를 select 에 담고, 후보 창은 90일이 아니라 판매 종료 +26일 근처다', async () => {
     // 🪤 `endDate`·`salePeriod`·종결 시각이 select 에서 빠지면 판매 종료일을 몰라 **전부 안전선
     //    중단**(요청 0 — 취소가 조용히 안 잡힌다)이 되는데, 아래 케이스들은 픽스처가 값을 직접 주므로 초록이다.
     findManyMock.mockResolvedValue([]);
@@ -364,8 +364,8 @@ describe('syncPostCloseCancellations — 확정된 캠페인 건너뛰기', () =
     };
     expect(args.select).toMatchObject({ endDate: true, salePeriod: true, cachedPostCloseAllTerminalAt: true });
     const floorAgeDays = (Date.now() - args.where.endDate.gte.getTime()) / (24 * 60 * 60 * 1000);
-    expect(floorAgeDays).toBeGreaterThan(15);
-    expect(floorAgeDays).toBeLessThan(17);
+    expect(floorAgeDays).toBeGreaterThan(25);
+    expect(floorAgeDays).toBeLessThan(27);
   });
 });
 
@@ -398,6 +398,22 @@ describe('syncPostCloseCancellations — 확인 기간(전 주문 종결 +10일 
 
     expect(queryOrderDetailsMock).not.toHaveBeenCalled();
     expect(res).toMatchObject({ stoppedByBackstop: 1 });
+  });
+
+  it('종결을 본 캠페인은 판매 종료 +15일을 넘어도 종결 +10일까지 조회한다(늦은 배송)', async () => {
+    // 공구는 판매 종료 뒤 배송이 흔하다 — 종결을 판매 종료 +8일에 봤으면 +18일까지가 오너 기준(배송완료 +10일)이다.
+    findManyMock.mockResolvedValue([
+      campaign('SETTLEMENT_WAIT', {
+        endDate: new Date(Date.now() - 17 * DAY),
+        cachedPostCloseAllTerminalAt: new Date(Date.now() - 9 * DAY),
+      }),
+    ]);
+    const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
+
+    const res = await syncPostCloseCancellations();
+
+    expect(queryOrderDetailsMock).toHaveBeenCalledTimes(1);
+    expect(res).toMatchObject({ stoppedByBackstop: 0, stoppedAfterTerminal: 0 });
   });
 
   it('온전한 응답이 전부 종결이면 종결 시각을 처음 한 번 찍는다', async () => {
@@ -444,9 +460,11 @@ describe('syncPostCloseCancellations — 확인 기간(전 주문 종결 +10일 
     ]);
     const { syncPostCloseCancellations } = await import('../naver-settlement-sync');
 
-    await syncPostCloseCancellations();
+    const res = await syncPostCloseCancellations();
 
     expect(lastUpdateData().cachedPostCloseAllTerminalAt).toBeNull();
+    // 연장이 조용히 묻히지 않게 따로 센다.
+    expect(res).toMatchObject({ clearedAllTerminal: 1 });
   });
 
   it('응답이 모자라면 종결 여부를 판단하지 않는다(찍힌 시각을 그대로 둔다)', async () => {

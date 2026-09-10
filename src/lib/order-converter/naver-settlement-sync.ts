@@ -4,7 +4,7 @@ import { prisma } from './prisma';
 import { queryOrderDetails } from './naver-order-sync';
 import { isSalesCampaignLocked } from './mapping-service';
 import { resolveSaleWindowEndMs } from './sale-window';
-import { decidePostCloseCheck, isPostCloseTerminalOrder, postCloseCandidateEndDateFloor } from './post-close-check-window';
+import { decidePostCloseCheck, isPostCloseTerminalOrder, nextAllTerminalMarker, postCloseCandidateEndDateFloor } from './post-close-check-window';
 import { isProductOrderLedgerRow, type SettlementQueryPlan } from './settlement-pending-dates';
 
 /**
@@ -275,7 +275,7 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
 
 /** `syncPostCloseCancellations` 의 실행 요약 — 크론 응답과 `SystemTaskLog.details` 에 그대로 실린다. */
 export interface PostCloseCancelSyncResult {
-  /** 확인 기간 후보(판매 종료 +15일 안전선에 하루 여유) 안의 마감 캠페인 전체 — post-close-check-window.ts. */
+  /** 확인 후보 창(판매 종료 +26일 — 종결 미관측 상한 15일 + 종결 후 10일 + 여유 1일) 안의 마감 캠페인 전체. */
   campaigns: number;
   /** 취소 **값이 실제로 바뀐** 건수(마커만 찍힌 회차는 세지 않는다). */
   updated: number;
@@ -297,10 +297,12 @@ export interface PostCloseCancelSyncResult {
   protectedFinalized: number;
   /** 전 주문 종결을 처음 본 지 10일이 지나 조회를 멈춘 건수(오너 확정 2026-09-11). */
   stoppedAfterTerminal: number;
-  /** 판매 종료 +15일 안전선을 넘어 조회를 멈춘 건수 — 종결이 끝내 안 보인 캠페인(탈퇴 구매자 주문 등)이 여기로 온다. */
+  /** 종결을 한 번도 못 본 채 판매 종료 +15일을 넘어 조회를 멈춘 건수 — 탈퇴 구매자 주문이 섞인 캠페인 등. */
   stoppedByBackstop: number;
   /** 이번 실행에서 「전 주문 종결」을 처음 관측해 시각을 찍은 건수. */
   markedAllTerminal: number;
+  /** 찍혀 있던 종결 시각을 지운 건수 — 새 반품·교환 요청 등으로 움직이는 주문이 다시 보여 확인을 연장했다. */
+  clearedAllTerminal: number;
 }
 
 /**
@@ -377,15 +379,15 @@ export interface PostCloseCancelSyncResult {
  * 호출 경로: `run-cron.sh 'naver-settlement-sync?includeLocked=1'`(잡 이름이 URL 에 그대로
  * 이어 붙고 허용목록이 없다 — 그 스크립트가 `CRON_SECRET` 을 알아서 읽는다) 또는 같은
  * 시크릿을 든 수동 curl. ⛔ 레이더의 실행 버튼(`/api/system/cron-run`)은 쿼리를 붙이지
- * 않으므로 이 레버를 못 쓴다. ⛔ **단 판매 종료 +15일 안전선 안에서만이다** — 안전선은 그
- * 옵션과 무관하게 걸린다(전 주문 종결 +10일 중단과 확정 건너뛰기는 레버가 넘는다). 어느 경로든 정산 원장 재수집까지 함께 태운다(전부 멱등).
+ * 않으므로 이 레버를 못 쓴다. ⛔ **단 확인 후보 창 안에서만이다** — 종결을 못 본 캠페인은 판매 종료
+ * +15일, 종결을 본 캠페인은 후보 창(판매 종료 +26일)까지다(종결 +10일 중단과 확정 건너뛰기는 레버가 넘는다). 어느 경로든 정산 원장 재수집까지 함께 태운다(전부 멱등).
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
 ): Promise<PostCloseCancelSyncResult> {
   // 대상은 확인 기간(post-close-check-window.ts) 후보 안의 마감 캠페인이다 — 날짜 필터는 판매 종료
-  // +15일 안전선에 하루 여유를 둔 거친 창이고, 캠페인별 정밀 판정(안전선 · 전 주문 종결 +10일 ·
-  // 확정 건너뛰기)은 아래 decidePostCloseCheck 가 한다. 종전 90일 창을 대체했다(오너 확정 2026-09-11).
+  // +26일(종결 미관측 상한 15일 + 종결 후 10일 + 여유 1일)의 거친 창이고, 캠페인별 정밀 판정(종결 +10일 ·
+  // 종결 미관측 상한 · 확정 건너뛰기)은 아래 decidePostCloseCheck 가 한다. 종전 90일 창을 대체했다(오너 확정 2026-09-11).
   const nowMs = Date.now();
 
   const closedCampaigns = await prisma.orderCampaign.findMany({
@@ -421,6 +423,7 @@ export async function syncPostCloseCancellations(
   let stoppedAfterTerminal = 0;
   let stoppedByBackstop = 0;
   let markedAllTerminal = 0;
+  let clearedAllTerminal = 0;
   const CHUNK_SIZE = 300;
 
   for (const camp of closedCampaigns) {
@@ -558,14 +561,16 @@ export async function syncPostCloseCancellations(
         : null;
     const needsMarkerWrite = (shouldFinalize && !finalized) || (!locked && finalized);
 
-    // 전 주문 종결 최초 관측 시각 — 온전한 응답에서 전부 종결이면 처음 한 번 찍고(있으면 유지),
-    // 온전한 응답에서 종결이 아닌 주문(새 반품·교환 요청 등)이 보이면 지워 확인을 이어 간다.
-    // 모자란 응답은 판단하지 않는다 — 탈퇴 구매자 주문이 섞인 캠페인은 여기서 영영 안 찍히고 안전선에서 멈춘다.
-    const hadAllTerminalAt = camp.cachedPostCloseAllTerminalAt != null;
-    const nextAllTerminalAt = complete
-      ? (allOrdersTerminal ? (camp.cachedPostCloseAllTerminalAt ?? new Date()) : null)
-      : (camp.cachedPostCloseAllTerminalAt ?? null);
-    const needsTerminalWrite = complete && allOrdersTerminal !== hadAllTerminalAt;
+    // 전 주문 종결 최초 관측 시각 — 찍기·유지·지우기 규칙은 nextAllTerminalMarker(post-close-check-window.ts)
+    // 한 곳이다. 모자란 응답은 판단하지 않는다 — 탈퇴 구매자 주문이 섞인 캠페인은 여기서 영영 안 찍히고
+    // 판매 종료 +15일에 멈춘다.
+    const terminalMarker = nextAllTerminalMarker({
+      previous: camp.cachedPostCloseAllTerminalAt ?? null,
+      complete,
+      allOrdersTerminal,
+      nowMs,
+    });
+    const needsTerminalWrite = terminalMarker.change !== 'kept';
 
     // ⛔ `valuesChanged` 만으로 쓰기를 결정하지 말 것 — 값이 그대로인 락 캠페인이 영영
     //    확정되지 않아 확인 기간 내내 재조회된다(그것이 T-140 이 닫은 「수렴하지 않는다」다).
@@ -577,14 +582,15 @@ export async function syncPostCloseCancellations(
           cachedPostCloseCancelQuantity: cancelQty,
           cachedPostCloseCancelRevenue: cancelRev,
           cachedPostCloseCancelFinalizedAt: nextFinalizedAt,
-          cachedPostCloseAllTerminalAt: nextAllTerminalAt,
+          cachedPostCloseAllTerminalAt: terminalMarker.next,
         }
       });
       // `updated` 는 **값이 바뀐 건수**로 유지한다 — 마커만 찍힌 회차까지 세면 이 지표가
       // 종전 실행과 비교 불가가 된다.
       if (valuesChanged) updated++;
       if (shouldFinalize && !finalized) finalizedLocked++;
-      if (complete && allOrdersTerminal && !hadAllTerminalAt) markedAllTerminal++;
+      if (terminalMarker.change === 'marked') markedAllTerminal++;
+      if (terminalMarker.change === 'cleared') clearedAllTerminal++;
     }
   }
 
@@ -601,5 +607,6 @@ export async function syncPostCloseCancellations(
     stoppedAfterTerminal,
     stoppedByBackstop,
     markedAllTerminal,
+    clearedAllTerminal,
   };
 }
