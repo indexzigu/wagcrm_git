@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withProxySource } from '@/lib/order-converter/proxy-usage';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { buildStoreMappingRows } from '@/lib/order-converter/store-option-rows';
 
@@ -7,7 +8,10 @@ import { buildStoreMappingRows } from '@/lib/order-converter/store-option-rows';
  * [id] = channelProductNo. 스토어 상품 상세에서 캠페인 매핑 표 행(옵션명·가격, 추가구성 포함)을 생성해 반환.
  * 코드표 없는 거래처의 매핑 자동 로드 용도 — brandCode는 빈 값(미기입 운영).
  */
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 product-options 로 센다(proxy-usage.ts).
+export const GET = withProxySource('product-options', handleProductOptionsGet);
+
+async function handleProductOptionsGet(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!id || !/^\d+$/.test(id)) {
     return NextResponse.json({ success: false, error: '유효한 채널상품번호가 필요합니다.' }, { status: 400 });

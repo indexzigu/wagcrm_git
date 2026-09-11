@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withProxySource } from '@/lib/order-converter/proxy-usage';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, syncOrdersByIds } from '@/lib/order-converter/naver-order-sync';
@@ -6,7 +7,10 @@ import { runSync, syncOrdersByIds } from '@/lib/order-converter/naver-order-sync
 const ALREADY_DISPATCHED_STATUSES = new Set(['DELIVERING', 'DELIVERED', 'PURCHASE_DECIDED']);
 
 // 발송 처리
-export async function POST(request: NextRequest) {
+// 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 dispatch 로 센다(proxy-usage.ts).
+export const POST = withProxySource('dispatch', handleDispatchPost);
+
+async function handleDispatchPost(request: NextRequest) {
   try {
     const { dispatchRequests } = await request.json();
     

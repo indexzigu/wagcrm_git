@@ -553,6 +553,21 @@ model ApiCallLog {
   @@index([success])
 }
 
+// 프록시(Fixie) 요청 수의 경로별 일 집계 — 1행 = (KST 날짜 · 누가 · 어디로). 판정·기록 SSOT
+// src/lib/order-converter/proxy-usage.ts. ⛔ ApiCallLog 에 넣지 말 것(최근 20행 창을 UI 3곳이 공유 — P7).
+model ProxyRequestDaily {
+  id        String   @id @default(cuid())
+  day       String // KST YYYY-MM-DD
+  source    String // 누가 불렀나(cron:<작업> · entry-sync · manual-sync …, 모르면 unlabeled)
+  target    String // 어디로(naver:order · naver:token · 호스트명 …) — 경로의 id·쿼리는 담지 않는다(P0)
+  requests  Int      @default(0)
+  failures  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([day, source, target])
+  @@index([day])
+}
+
 model TrackingAttribution {
   id              String         @id @default(cuid())
   campaignId      String?

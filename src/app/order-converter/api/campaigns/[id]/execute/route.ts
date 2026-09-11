@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withProxySource } from '@/lib/order-converter/proxy-usage';
 import { prisma } from '@/lib/order-converter/prisma';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { generateOrderExcelBuffer } from '@/lib/order-converter/excel-generator';
@@ -24,7 +25,10 @@ import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotR
 // 한 함수라 기본 실행시간 한도에 걸리면 발주확인이 끊긴 채 파일만 생성됨. stream과 동일 상향.
 export const maxDuration = 300;
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 order-execute 로 센다(proxy-usage.ts).
+export const GET = withProxySource('order-execute', handleExecuteGet);
+
+async function handleExecuteGet(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // 네이버 호출 계측(P7) — 이 라우트는 실패를 throw 하지 않고 4xx/5xx JSON 으로 돌려주는
   // 경로가 여럿이라, 응답 상태코드로 성공/실패를 판정한다(조기 반환도 실패로 기록).
   const tally = createNaverCallTally();

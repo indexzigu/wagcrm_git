@@ -1,4 +1,5 @@
 import { fetch as undiciFetch, ProxyAgent } from 'undici';
+import { recordProxyRequest } from './proxy-usage';
 
 /**
  * 프록시 에이전트 캐시.
@@ -141,6 +142,8 @@ export async function proxyFetch(url: string, options: any = {}) {
       try {
         options.dispatcher = getProxyAgent(proxyUrl);
         const res = await undiciFetch(url, options);
+        // 프록시로 보낸 시도 1회 = 경로별 일 집계 1(재시도·폴백도 각각). 기다리지 않는다(proxy-usage.ts).
+        recordProxyRequest({ url, failed: false });
 
         // 403(IP 차단), 429(할당량 초과), 50x(서버 에러) 발생 시 다음 프록시(서브)로 폴백
         // (프록시 한도 소진의 407 은 여기로 오지 않는다 — CONNECT 가 실패해 아래 catch 로 온다.)
@@ -152,6 +155,7 @@ export async function proxyFetch(url: string, options: any = {}) {
         }
         return res;
       } catch (err: any) {
+        recordProxyRequest({ url, failed: true });
         if (!retriedThisProxy && shouldRetrySameProxy(err, options)) {
           retriedThisProxy = true;
           console.warn(`Proxy [${i}] connection failed: ${errorChainText(err)}. Retrying same proxy once...`);

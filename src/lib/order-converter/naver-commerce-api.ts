@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import { proxyFetch } from './fetch-client';
+import { runWithProxySource } from './proxy-usage';
 import {
   getNaverCallTally,
   noteNaverHttpAttempt,
@@ -131,7 +132,8 @@ export async function searchNaverProducts(): Promise<any> {
   }
 
   // ⚠️ IIFE 는 여기서 **동기적으로** 생성돼야 tally 의 AsyncLocalStorage 컨텍스트가 보존된다(P7).
-  g.__naverProductsSearchInFlight = (async () => {
+  // 프록시 요청 경로별 집계에서 상품검색은 호출부(대시보드 GET·상품 라우트)와 무관하게 product-search 로 센다.
+  g.__naverProductsSearchInFlight = runWithProxySource('product-search', async () => {
     try {
       const data = await fetchNaverProducts();
       g.__naverProductsSearchCache = { data, fetchedAt: Date.now() } satisfies ProductsSearchCacheEntry;
@@ -139,7 +141,7 @@ export async function searchNaverProducts(): Promise<any> {
     } finally {
       g.__naverProductsSearchInFlight = null;
     }
-  })();
+  });
 
   return g.__naverProductsSearchInFlight;
 }

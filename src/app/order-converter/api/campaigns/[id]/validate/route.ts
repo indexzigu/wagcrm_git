@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { prisma } from '@/lib/order-converter/prisma';
 import { resolveCampaignExpectedOrderIds } from '@/lib/order-converter/campaign-orders';
+import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
 
 // 라이브 재조회(캠페인 기간 전체)를 포함하므로 execute 라우트와 동일하게 실행시간 한도를 상향한다.
 export const maxDuration = 300;
@@ -182,7 +183,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     let campaignOrderCount = 0;
     if (fileOrderIds.size > 0) {
       try {
-        const { orderIds: expected, count } = await resolveCampaignExpectedOrderIds(campaignId);
+        // 캠페인 주문 재조회가 보내는 프록시 요청을 campaign-validate 로 센다(proxy-usage.ts).
+        const { orderIds: expected, count } = await runWithProxySource('campaign-validate', () =>
+          resolveCampaignExpectedOrderIds(campaignId),
+        );
         campaignOrderCount = count;
 
         const foreign: string[] = [];

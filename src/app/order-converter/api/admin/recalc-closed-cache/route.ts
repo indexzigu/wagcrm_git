@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withProxySource } from '@/lib/order-converter/proxy-usage';
 import { requireAuth } from '@/lib/api-auth';
 import { prisma } from '@/lib/order-converter/prisma';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
@@ -122,7 +123,10 @@ async function run(opts: { apply: boolean; name: string; limit: number; allowZer
   };
 }
 
-export async function GET(request: NextRequest) {
+// 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 admin-recalc 로 센다(proxy-usage.ts).
+export const GET = withProxySource('admin-recalc', handleRecalcGet);
+
+async function handleRecalcGet(request: NextRequest) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
   const q = request.nextUrl.searchParams;
@@ -140,7 +144,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+// 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 admin-recalc 로 센다(proxy-usage.ts).
+export const POST = withProxySource('admin-recalc', handleRecalcPost);
+
+async function handleRecalcPost(request: NextRequest) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
   let body: any = {};
