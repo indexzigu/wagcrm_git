@@ -23,6 +23,13 @@ function buildDeepLink(toolCall: AssistantToolCallView): { href: string; label: 
       const qs = params.toString();
       return { href: qs ? `/deals?${qs}` : "/deals", label: "딜 목록에서 보기" };
     }
+    case "search_partners": {
+      // 거래처 화면은 이름 검색(q)만 URL로 받는다 — 구분(type) 필터는 화면에 없어 넘기지 않는다.
+      const params = new URLSearchParams();
+      if (typeof query.name === "string" && query.name) params.set("q", query.name);
+      const qs = params.toString();
+      return { href: qs ? `/partners?${qs}` : "/partners", label: "거래처 목록에서 보기" };
+    }
     case "get_pipeline_status":
       return { href: "/pipeline", label: "파이프라인 화면에서 보기" };
     case "get_campaign_financials": {

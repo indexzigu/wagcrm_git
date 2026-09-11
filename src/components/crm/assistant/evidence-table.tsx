@@ -5,6 +5,7 @@ import type { AssistantToolCallView } from "./types";
 const TOOL_LABELS: Record<string, string> = {
   get_settlement_report: "정산 리포트",
   search_deals: "딜 검색",
+  search_partners: "거래처 검색",
   get_pipeline_status: "파이프라인 현황",
   get_campaign_financials: "캠페인 재무",
   get_order_snapshot: "주문 스냅샷",
