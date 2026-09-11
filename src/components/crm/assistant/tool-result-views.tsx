@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 // ⚠️ 타입은 오직 런타임-프리 모듈(data-types.ts)에서만 import한다(청사진 §2-1/§3-1,
@@ -8,10 +9,13 @@ import type {
   GetSettlementReportData,
   SettlementStateLabel,
   SearchDealsData,
+  SearchPartnersData,
   GetPipelineStatusData,
   GetCampaignFinancialsData,
   GetOrderSnapshotData,
 } from "@/lib/agent/tools/data-types";
+// 구분 라벨 정본. crm-types.ts 는 type-only import 뿐이라 클라이언트 번들에 안전하다.
+import { partnerTypeLabels, type PartnerType } from "@/lib/crm-types";
 
 /**
  * tool-result-views — READ 도구 5종 v1 리치 렌더 (청사진 §2-2, §3-#5).
@@ -178,6 +182,61 @@ const SearchDealsView: FC<ToolResultViewProps> = ({ data }) => {
   );
 };
 
+// ---- search_partners ----
+
+function isSearchPartnersData(data: unknown): data is SearchPartnersData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  return Array.isArray(d.items);
+}
+
+// 동명 거래처를 사람이 가려내야 하므로(도구 설명 참조) 사업자번호를 열로 보여주고,
+// 상호는 그 거래처 상세로 여는 링크다 — 전역 검색과 같은 `/partners?selectedPartner=` 경로.
+const SearchPartnersView: FC<ToolResultViewProps> = ({ data }) => {
+  if (!isSearchPartnersData(data)) return null;
+  const { items, count, truncated } = data;
+
+  return (
+    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-3">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{count}건</span>
+        {truncated && <span>상위 20건까지 표시됩니다</span>}
+      </div>
+      <div className="overflow-hidden rounded-md border border-border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">상호</th>
+              <th className="px-2 py-1.5 font-medium">구분</th>
+              <th className="px-2 py-1.5 font-medium">사업자번호</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((p) => (
+              <tr key={p.id} className="border-t border-border">
+                <td className="px-2 py-1.5">
+                  <Link
+                    href={`/partners?selectedPartner=${encodeURIComponent(p.id)}`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {p.name}
+                  </Link>
+                </td>
+                <td className="px-2 py-1.5">
+                  <Badge variant="outline">
+                    {partnerTypeLabels[p.type as PartnerType] ?? p.type}
+                  </Badge>
+                </td>
+                <td className="px-2 py-1.5 text-muted-foreground">{p.businessNumber ?? "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 // ---- get_pipeline_status ----
 
 function isGetPipelineStatusData(data: unknown): data is GetPipelineStatusData {
@@ -337,6 +396,7 @@ const OrderSnapshotView: FC<ToolResultViewProps> = ({ data }) => {
 export const TOOL_RESULT_RENDERERS: Record<string, FC<ToolResultViewProps>> = {
   get_settlement_report: SettlementReportView,
   search_deals: SearchDealsView,
+  search_partners: SearchPartnersView,
   get_pipeline_status: PipelineStatusView,
   get_campaign_financials: CampaignFinancialsView,
   get_order_snapshot: OrderSnapshotView,

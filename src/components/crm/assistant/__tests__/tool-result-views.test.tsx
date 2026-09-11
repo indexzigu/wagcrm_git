@@ -12,17 +12,19 @@ import { TOOL_RESULT_RENDERERS } from "../tool-result-views";
 import type {
   GetSettlementReportData,
   SearchDealsData,
+  SearchPartnersData,
   GetPipelineStatusData,
   GetCampaignFinancialsData,
   GetOrderSnapshotData,
 } from "@/lib/agent/tools/data-types";
 
 describe("TOOL_RESULT_RENDERERS 레지스트리", () => {
-  it("5개 도구명이 모두 등록되어 있다", () => {
+  it("6개 도구명이 모두 등록되어 있다", () => {
     expect(Object.keys(TOOL_RESULT_RENDERERS).sort()).toEqual(
       [
         "get_settlement_report",
         "search_deals",
+        "search_partners",
         "get_pipeline_status",
         "get_campaign_financials",
         "get_order_snapshot",
@@ -252,6 +254,40 @@ describe("search_deals 뷰", () => {
   it("data가 null이면 렌더하지 않는다", () => {
     const { container } = render(<View data={null} />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it("필수 필드(items)가 없으면 렌더하지 않는다", () => {
+    const { container } = render(<View data={{ count: 1 }} />);
+    expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("search_partners 뷰", () => {
+  const View = TOOL_RESULT_RENDERERS["search_partners"];
+
+  const sampleData: SearchPartnersData = {
+    items: [
+      { id: "p1", name: "거래처A", type: "VENDOR", businessNumber: "123-45-67890", updatedAt: "2026-09-01T00:00:00Z" },
+      { id: "p2", name: "거래처B", type: "BRAND", businessNumber: null, updatedAt: "2026-08-01T00:00:00Z" },
+    ],
+    count: 2,
+    truncated: false,
+  };
+
+  it("상호·구분(한글 라벨)·사업자번호를 표로 렌더한다", () => {
+    render(<View data={sampleData} />);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.getByText("벤더")).toBeInTheDocument();
+    expect(screen.getByText("123-45-67890")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
+  });
+
+  it("상호는 그 거래처 상세로 가는 링크다", () => {
+    render(<View data={sampleData} />);
+    expect(screen.getByRole("link", { name: "거래처A" })).toHaveAttribute(
+      "href",
+      "/partners?selectedPartner=p1"
+    );
   });
 
   it("필수 필드(items)가 없으면 렌더하지 않는다", () => {

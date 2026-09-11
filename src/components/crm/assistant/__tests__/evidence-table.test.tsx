@@ -40,6 +40,25 @@ describe("EvidenceTable", () => {
     expect(screen.getByText("조회 완료")).toHaveAttribute("data-variant", "status-success");
   });
 
+  it("거래처 검색 행은 라벨과 이름 검색어를 실은 거래처 목록 링크를 보여준다", () => {
+    render(
+      <EvidenceTable
+        toolCalls={[
+          makeCall({
+            toolName: "search_partners",
+            args: { name: "거래처A" },
+            evidence: { dataSources: ["Partner"], query: { name: "거래처A" } },
+          }),
+        ]}
+      />
+    );
+    expect(screen.getByText("거래처 검색")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /거래처 목록에서 보기/ })).toHaveAttribute(
+      "href",
+      `/partners?q=${encodeURIComponent("거래처A")}`
+    );
+  });
+
   it("실패 행은 destructive 배지로 오류 라벨을 보여준다", () => {
     render(
       <EvidenceTable
