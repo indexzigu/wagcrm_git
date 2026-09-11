@@ -694,6 +694,67 @@ describe('runChangedSync 커서 전진 — 좁은 advanceCursor 경로 (egress �
     expect(cursorCalls).toHaveLength(0);
   });
 
+  it('변경분이 없고 오늘자가 L1에 없으면, 커서 보유 최신 행이 오늘자여도 그 행의 커서를 전진시킨다', async () => {
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    const { toDateKeyKst } = await import('@/lib/order-converter/naver-order-sync');
+
+    vi.spyOn(clientModule, 'apiRequest').mockImplementation(async (_m: string, path: string) =>
+      path.includes('last-changed-statuses') ? { data: { lastChangeStatuses: [] } } : { data: {} },
+    );
+    // 재기동 직후: 오늘자 행이 커서를 가졌지만 이 인스턴스 L1(__naverDailyCache)은 비어 있다.
+    const todayKey = toDateKeyKst(new Date());
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue({
+      snapshotDate: todayKey,
+      lastChangeStatusCursor: '2026-06-30T00:00:00.000Z',
+    } as any);
+    const upsertSpy = vi
+      .spyOn(repoModule.naverOrderSnapshotRepository, 'upsertDaily')
+      .mockResolvedValue({} as any);
+    const advanceSpy = vi
+      .spyOn(repoModule.naverOrderSnapshotRepository, 'advanceCursor')
+      .mockResolvedValue({} as any);
+
+    const result = await runChangedSync();
+
+    expect(advanceSpy).toHaveBeenCalledWith(todayKey, result.fetchedAt);
+    expect(upsertSpy).not.toHaveBeenCalled();
+  });
+
+  it('변경분이 없고 오늘자 upsert가 실패하면, 커서 보유 최신 행의 커서를 대신 전진시킨다', async () => {
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    const { toDateKeyKst } = await import('@/lib/order-converter/naver-order-sync');
+
+    vi.spyOn(clientModule, 'apiRequest').mockImplementation(async (_m: string, path: string) =>
+      path.includes('last-changed-statuses') ? { data: { lastChangeStatuses: [] } } : { data: {} },
+    );
+    const todayKey = toDateKeyKst(new Date());
+    // 오늘자가 L1에 있어 오늘자 upsert(커서 동봉)를 시도하지만 그 쓰기가 실패한다.
+    (global as any).__naverDailyCache = {
+      [todayKey]: { lastCallTime: 0, orders: [], newOrdersCount: 0, preparingCount: 0, deliveringCount: 0, isDirty: false },
+    };
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findOne').mockResolvedValue(null);
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'upsertDaily').mockRejectedValue(new Error('DB write failed'));
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue({
+      snapshotDate: todayKey,
+      lastChangeStatusCursor: '2026-06-30T00:00:00.000Z',
+    } as any);
+    const advanceSpy = vi
+      .spyOn(repoModule.naverOrderSnapshotRepository, 'advanceCursor')
+      .mockResolvedValue({} as any);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await runChangedSync();
+
+    expect(advanceSpy).toHaveBeenCalledWith(todayKey, result.fetchedAt);
+    // 오늘자 upsert 가 실제로 실패해 폴백 경로를 탔다는 증거(다른 warn 에 우연히 통과하지 않게 문구로 좁힌다).
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(`Failed to refresh lastCallTime for ${todayKey}`),
+      expect.any(Error),
+    );
+  });
+
   it('부분 실패 시 advanceCursor도 호출되지 않는다', async () => {
     const clientModule = await import('@/lib/order-converter/naver-commerce-client');
     const repoModule = await import('@/repositories/naverOrderSnapshotRepository');

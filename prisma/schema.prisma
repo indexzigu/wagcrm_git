@@ -1032,6 +1032,8 @@ model SystemSettings {
   instagramTokenExpiresAt   DateTime?
   instagramTokenRefreshedAt DateTime?
   instagramTokenLastError   String?
+  // 주문관리 화면 진입 시 자동 동기화의 최소 간격(시간). 허용값 1·3·6 — src/lib/order-converter/order-auto-sync.ts
+  orderAutoSyncIntervalHours Int      @default(6)
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
 }

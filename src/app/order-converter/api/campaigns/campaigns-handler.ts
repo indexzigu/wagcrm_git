@@ -5,6 +5,7 @@ import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCam
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
+import { getLastChangeSyncMs, getOrderAutoSyncIntervalHoursOrDefault, isOrderAutoSyncDue } from '@/lib/order-converter/order-auto-sync';
 import { isDemoMode } from '@/lib/demo-mode';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from '@/lib/order-converter/campaign-insights';
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from '@/lib/order-converter/group-orders';
@@ -455,36 +456,63 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
       }
 
-      // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 변경피드 동기화를 트리거한다 (서버판 SWR).
+      // 「마지막 동기화」(응답 헤더 X-Naver-Last-Sync — 주문관리 툴바·셀러 포털 기준 시각) = 마지막으로 성공한
+      // 변경피드 동기화(변경피드 커서). 아래 진입 동기화 간격 판정·설정 카드 문구와 같은 시각이다.
+      // lastCallTime(latestSyncMeta)은 배송중 sweep·액션 직후 정밀 갱신도 밀어 올려, 새 주문을 안 물었는데도
+      // 「방금 동기화함」으로 보이게 한다 — 커서가 아직 없을 때(최초 FULL 부트스트랩 직후)만 대신 쓴다.
+      // 두 조회는 서로 독립이라 병렬로 읽는다(getLastChangeSyncMs 는 실패를 null 로 삼킨 뒤 warn 한다).
+      const [lastChangeSyncMs, metaResult] = await Promise.all([
+        getLastChangeSyncMs(),
+        naverOrderSnapshotRepository.latestSyncMeta().then(
+          (meta) => ({ ok: true as const, meta }),
+          (error: unknown) => ({ ok: false as const, error }),
+        ),
+      ]);
+      let metaSyncType: string | null = null;
+      let lastCallTime: Date | null = null;
+      if (metaResult.ok) {
+        metaSyncType = metaResult.meta?.syncType ?? null;
+        lastCallTime = metaResult.meta?.lastCallTime ?? null;
+      } else {
+        console.warn('Failed to read latestSyncMeta:', metaResult.error);
+      }
+      if (lastChangeSyncMs != null) {
+        lastSyncIso = new Date(lastChangeSyncMs).toISOString();
+      } else if (lastCallTime) {
+        lastSyncIso = new Date(lastCallTime).toISOString();
+      }
+
+      // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 보정을 건다 (서버판 SWR).
+      // ① 변경피드 동기화는 마지막으로 성공한 변경피드 동기화가 설정 간격(1·3·6시간 — order-auto-sync.ts)
+      //    보다 오래됐을 때만 건다. 당일 낡음 기준이 1분이라 이 게이트 없이는 매 진입이 네이버 호출이었다.
+      //    그 사이의 신규 변경분은 새로고침 버튼 몫이다.
+      // ② 배송중 sweep 은 간격을 타지 않는다. 배송중(DELIVERING) 건은 변경피드가 배송완료 전이
+      //    (DELIVERING→DELIVERED)를 안 실어 CHANGED 동기화로는 못 잡힌다(피드 갭). 그 건들을 query-by-id로
+      //    직접 재조회(3h 쿨다운 내장)해 '배송중'에 stale하게 남아 false 지연이 되던 문제를 해소한다 —
+      //    이 보정의 호출자는 여기뿐이라(버튼·크론은 안 돌린다) 간격 안에 두면 배송완료 반영이 멈춘다.
       // 데모 배포: 동기화가 no-op이라 stale이 영원히 해소되지 않는다 — syncing 상태를 아예 켜지
       // 않아 클라이언트 폴링 루프("동기화 중" 배지)가 돌지 않게 한다.
       if (!isDemoMode() && staleDates.length > 0 && hadAnySnapshot) {
-        isSyncing = true;
-        syncTypeHeader = 'CHANGED';
-        // 배송중(DELIVERING) 건은 변경피드가 배송완료 전이(DELIVERING→DELIVERED)를 안 실어 CHANGED
-        // 동기화로는 못 잡힌다(피드 갭). 그 건들을 query-by-id로 직접 재조회(3h 쿨다운 내장)해 배송완료
-        // 반영을 보정 → '배송중'에 stale하게 남아 false 지연이 되던 문제를 해소한다.
+        const intervalHours = await getOrderAutoSyncIntervalHoursOrDefault();
+        const changedSyncDue = isOrderAutoSyncDue(lastChangeSyncMs, intervalHours, Date.now());
+        if (changedSyncDue) {
+          isSyncing = true;
+          syncTypeHeader = 'CHANGED';
+        }
         const deliveringIds = recentOrders
           .filter((o: any) => o?.productOrderStatus === 'DELIVERING' || o?.productOrderStatus === 'DISPATCHED')
           .map((o: any) => String(o?.productOrderId || ''))
           .filter(Boolean);
         after(async () => {
-          try { await runSync('CHANGED'); } catch (err) { console.warn('Background CHANGED sync failed:', err); }
+          if (changedSyncDue) {
+            try { await runSync('CHANGED'); } catch (err) { console.warn('Background CHANGED sync failed:', err); }
+          }
           try { await sweepDeliveringOrders(deliveringIds); } catch (err) { console.warn('Background delivering sweep failed:', err); }
         });
       }
 
-      // 응답 헤더용 최신 동기화 메타를 DB에서 조회 (L1 lastCallTime 순회보다 신뢰도 높음)
-      try {
-        const meta = await naverOrderSnapshotRepository.latestSyncMeta();
-        if (meta?.lastCallTime) {
-          lastSyncIso = new Date(meta.lastCallTime).toISOString();
-        }
-        if (!syncTypeHeader && meta?.syncType) {
-          syncTypeHeader = meta.syncType;
-        }
-      } catch (metaErr) {
-        console.warn('Failed to read latestSyncMeta:', metaErr);
+      if (!syncTypeHeader && metaSyncType) {
+        syncTypeHeader = metaSyncType;
       }
     } catch (apiErr) {
       console.warn('Failed to hydrate naver orders from snapshots:', apiErr);

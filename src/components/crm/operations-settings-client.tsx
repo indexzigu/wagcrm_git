@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { CircleDollarSign, Save, Target, CalendarRange } from "lucide-react";
+import { CircleDollarSign, Save, Target, CalendarRange, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 type GoalResponse = {
   year: string;
@@ -19,6 +20,9 @@ type GoalResponse = {
 type ReminderSettings = {
   scheduleThresholds: { idealDays: number; minDays: number; deadlineDays: number };
 };
+
+// 주문관리 화면 진입 시 자동 동기화 간격(시간). 판정 SSOT: src/lib/order-converter/order-auto-sync.ts
+type OrderSyncSettings = { intervalHours: number; options: number[]; canEdit: boolean };
 
 type ChannelFee = {
   id: string;
@@ -36,6 +40,8 @@ function parseAmount(value: string) {
 export function OperationsSettingsClient() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [goals, setGoals] = useState<GoalResponse | null>(null);
+  const [orderSync, setOrderSync] = useState<OrderSyncSettings | null>(null);
+  const [orderSyncLoadFailed, setOrderSyncLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reminders, setReminders] = useState<ReminderSettings | null>(null);
   const [channels, setChannels] = useState<ChannelFee[]>([]);
@@ -55,12 +61,15 @@ export function OperationsSettingsClient() {
 
   useEffect(() => {
     async function loadOperationsSettings() {
-      const [reminderResponse, channelResponse] = await Promise.all([
+      const [reminderResponse, channelResponse, orderSyncResponse] = await Promise.all([
         fetch("/api/settings/reminders"),
         fetch("/api/settings/channel-fees"),
+        fetch("/api/settings/order-sync"),
       ]);
       if (reminderResponse.ok) setReminders(await reminderResponse.json());
       if (channelResponse.ok) setChannels((await channelResponse.json()).channels);
+      if (orderSyncResponse.ok) setOrderSync(await orderSyncResponse.json());
+      else setOrderSyncLoadFailed(true);
     }
     void loadOperationsSettings();
   }, []);
@@ -95,6 +104,25 @@ export function OperationsSettingsClient() {
       toast.success("일정 확보 기준일을 저장했습니다.");
     } else {
       toast.error("일정 확보 기준일 저장에 실패했습니다.");
+    }
+  }
+
+  async function saveOrderSync() {
+    if (!orderSync) return;
+    setSavingSection("order-sync");
+    try {
+      const response = await fetch("/api/settings/order-sync", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intervalHours: orderSync.intervalHours }),
+      });
+      if (!response.ok) throw new Error(`PATCH /api/settings/order-sync ${response.status}`);
+      toast.success("자동 동기화 간격을 저장했습니다.");
+    } catch (error) {
+      console.warn("[settings/order-sync] save failed:", error);
+      toast.error("자동 동기화 간격 저장에 실패했습니다.");
+    } finally {
+      setSavingSection(null);
     }
   }
 
@@ -302,6 +330,68 @@ export function OperationsSettingsClient() {
               </div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-[24px] border border-border/70 bg-white/90 shadow-soft-sm overflow-hidden">
+        <CardHeader className="border-b border-border/50 py-3.5 px-6">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <RefreshCw className="size-4 text-primary" /> 주문 자동 동기화
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5 p-6">
+          {orderSyncLoadFailed ? (
+            <p className="text-xs text-muted-foreground">설정을 불러오지 못했습니다. 페이지를 새로고침해 주세요.</p>
+          ) : !orderSync ? (
+            <p className="text-xs text-muted-foreground">불러오는 중...</p>
+          ) : (
+            <>
+              <div>
+                <p className="text-xs font-semibold text-slate-800">주문관리 화면을 열 때 자동으로 불러오는 간격</p>
+                <p className="text-[11px] text-muted-foreground">
+                  마지막 동기화가 이 간격보다 오래됐을 때만 네이버 주문을 자동으로 불러옵니다. 셀러 포털 화면도 같은 간격을 따릅니다. 그 사이에는 주문관리 화면의 새로고침 버튼으로 바로 불러올 수 있습니다. 배송중 주문의 배송완료 확인은 이 간격과 별도로 3시간에 한 번까지 합니다.
+                </p>
+              </div>
+              <div className="space-y-2 border-t border-slate-100 pt-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    size="sm"
+                    aria-label="자동 동기화 간격"
+                    disabled={!orderSync.canEdit}
+                    value={String(orderSync.intervalHours)}
+                    onValueChange={(value) => {
+                      if (!value) return;
+                      setOrderSync({ ...orderSync, intervalHours: Number(value) });
+                    }}
+                  >
+                    {orderSync.options.map((hours) => (
+                      <ToggleGroupItem key={hours} value={String(hours)} className="h-9 px-4 text-xs">
+                        {hours}시간
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                  {orderSync.canEdit ? (
+                    <Button
+                      variant="outline"
+                      onClick={saveOrderSync}
+                      disabled={savingSection === "order-sync"}
+                      className="h-9 px-4 rounded-lg text-xs shadow-soft-sm hover:bg-slate-50"
+                    >
+                      <Save className="mr-1.5 size-3.5" />
+                      설정 저장
+                    </Button>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {orderSync.canEdit
+                    ? "간격이 짧을수록 최신 상태에 가깝지만 네이버 호출이 늘어납니다."
+                    : "간격 변경은 관리자만 가능합니다."}
+                </p>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

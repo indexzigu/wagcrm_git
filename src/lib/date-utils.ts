@@ -80,6 +80,26 @@ export function toKstYmd(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(date);
 }
 
+/**
+ * 주문관리 툴바 「마지막 동기화」 표시. 진입 동기화가 1·3·6시간 간격이라(order-auto-sync.ts) 이 시각은
+ * 몇 시간 전·전날일 수 있다 — KST 기준 오늘이 아니면 MM.DD 를 붙여 어제 시각이 오늘로 읽히지 않게 한다.
+ * 셀러 포털 fmtSyncTime(seller-portal-report.tsx)과 같은 KST·같은 꼴이다. `now` 는 테스트 주입용.
+ */
+export function formatLastSyncLabel(iso: string, now: Date = new Date()): string {
+  const synced = new Date(iso);
+  if (Number.isNaN(synced.getTime())) return "";
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(synced);
+  const syncedYmd = toKstYmd(synced);
+  if (syncedYmd === toKstYmd(now)) return time;
+  const [, mm, dd] = syncedYmd.split("-");
+  return `${mm}.${dd} ${time}`;
+}
+
 export function getDateUrgency(
   endDate: string | null | undefined,
   today?: Date,

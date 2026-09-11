@@ -42,6 +42,7 @@ import CampaignInsightsModal from './shipping/modals/CampaignInsightsModal';
 import { downloadExcelBlob } from '@/lib/order-converter/export-utils';
 import type { TrackingData } from '@/lib/order-converter/order-parser';
 import { isNaverProductOrderId } from '@/lib/order-converter/naver-order-id';
+import { formatLastSyncLabel } from '@/lib/date-utils';
 import {
   buildConfirmOrderLog,
   buildRequestPoLog,
@@ -1204,7 +1205,7 @@ export default function OrderDashboard() {
                   {syncMeta.lastSync ? (
                     <>
                       마지막 동기화{' '}
-                      {new Date(syncMeta.lastSync).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                      {formatLastSyncLabel(syncMeta.lastSync)}
                     </>
                   ) : (
                     '동기화 대기 중'

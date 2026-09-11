@@ -236,11 +236,26 @@ export const naverOrderSnapshotRepository = {
   // 변경피드 폴링 커서로 사용할, lastChangeStatusCursor가 있는 스냅샷 중 가장 최근 것을 반환한다.
   // 소비자(runChangedSync)는 커서 문자열과 날짜키만 쓴다 — orders 블롭을 싣지 않는다
   // (종전에는 전 컬럼을 읽어 CHANGED 동기화마다 최신행 블롭이 왕복했다).
+  // ⚠️ 아래 latestChangeCursor 와 정렬이 다르다(이쪽 lastCallTime · 저쪽 커서 값) — 서로 맞추지 말 것.
+  // 이쪽은 「커서를 전진시킬 행」을 고르고(advanceCursor 대상), 저쪽은 「마지막 성공 시각」을 읽는다.
   async findLatestCursor() {
     return prisma.naverOrderSnapshot.findFirst({
       where: { lastChangeStatusCursor: { not: null } },
       orderBy: { lastCallTime: "desc" },
       select: { snapshotDate: true, lastChangeStatusCursor: true },
+    });
+  },
+
+  // 변경피드(CHANGED) 동기화가 마지막으로 끝까지 성공한 시각 — 주문관리 진입 동기화 간격 판정용
+  // (order-auto-sync.ts). 커서는 성공한 CHANGED 사이클만 그 사이클 시작 시각(ISO)으로 전진시키고
+  // 배송중 sweep·액션 직후 정밀 갱신(syncOrdersByIds)은 건드리지 않는다 — lastCallTime 은 그 둘도
+  // 밀어 올리므로 간격 기준으로 쓰면 변경피드를 안 물었는데도 「방금 동기화함」으로 읽힌다.
+  // 커서가 여러 행에 남아 있을 수 있어 lastCallTime 이 아니라 값(같은 형식 ISO 문자열) 기준 최댓값을 쓴다.
+  async latestChangeCursor() {
+    return prisma.naverOrderSnapshot.findFirst({
+      where: { lastChangeStatusCursor: { not: null } },
+      orderBy: { lastChangeStatusCursor: "desc" },
+      select: { lastChangeStatusCursor: true },
     });
   },
 
