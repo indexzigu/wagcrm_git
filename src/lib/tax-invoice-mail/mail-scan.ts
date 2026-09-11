@@ -64,6 +64,33 @@ const DEFAULT_BOX_NAME = "세금계산서";
 /** 위 이름이 안 보일 때(개명·계정 변경) 이 문자열이 든 편지함으로 자동 탐지한다. */
 const BOX_NAME_HINT = "계산서";
 
+/**
+ * 본문을 한 번에 몇 통씩 받아 오는가.
+ *
+ * ⛔ **1통씩 따로 요청하지 말 것**(2026-09-11 실측). 종전 루프는 후보마다 UID 검색 + 본문
+ * 요청을 따로 보내, 구글 IMAP 왕복 대기만으로 33통에 61초가 걸렸다(복호 0.03초 · MIME 해석
+ * 1초 · 본문 합계 3.8MB). 같은 33통을 UID 묶음 한 번으로 받으면 4.4초였다 — 병목은 전송량이
+ * 아니라 **왕복 횟수**다. 오너 화면의 「조회」가 1분 넘게 멈춰 보여 실패로 오인됐다.
+ *
+ * 상한을 두는 이유는 한 응답의 크기다(통당 ~115KB 실측 → 50통 ≈ 6MB).
+ */
+const BODY_FETCH_BATCH_SIZE = 50;
+
+/**
+ * UID 목록을 요청 묶음으로 자른다.
+ *
+ * 🪤 묶음은 **숫자 배열 그대로** `["UID", ...uids]` 로 넘긴다 — `uids.join(",")` 한 문자열을
+ * 넘기면 `node-imap` 이 인자마다 `parseInt` 를 걸어 **첫 번호 하나만** 남기고, 오류 없이 1통만
+ * 돌려준다(실측). 나머지는 조용히 「못 받은 메일」이 된다.
+ */
+export function chunkUids(uids: readonly number[], size: number = BODY_FETCH_BATCH_SIZE): number[][] {
+  const chunks: number[][] = [];
+  for (let start = 0; start < uids.length; start += size) {
+    chunks.push(uids.slice(start, start + size));
+  }
+  return chunks;
+}
+
 export interface UnparsedAttachment {
   filename: string | null;
   contentType: string | null;
@@ -280,16 +307,27 @@ export async function scanTaxInvoiceMails(
     candidates.sort((a, b) => b.date.getTime() - a.date.getTime());
     const targets = candidates.slice(0, maxMessages);
 
-    const mails: ScannedTaxMail[] = [];
-    for (const candidate of targets) {
-      const full = await connection.search([["UID", candidate.uid]], {
+    // 본문은 묶음으로 받는다(위 `BODY_FETCH_BATCH_SIZE` 주석). 서버는 UID 순으로 돌려주므로
+    // 결과는 UID 로 찾아 쓰고, **순회는 아래 `targets` 의 최신순을 그대로 따른다** — 라우트의
+    // 중복 승인번호 판정이 「먼저 본 쪽」을 기준으로 삼기 때문에 순서가 판정에 들어간다.
+    const bodyByUid = new Map<number, unknown>();
+    for (const uids of chunkUids(targets.map((candidate) => candidate.uid))) {
+      const fetched = await connection.search([["UID", ...uids]], {
         bodies: [""],
         markSeen: false,
       });
-      const whole = full?.[0]?.parts.find((part) => part.which === "");
-      if (!whole) continue;
+      for (const message of fetched) {
+        const whole = message.parts.find((part) => part.which === "");
+        if (whole) bodyByUid.set(message.attributes.uid, whole.body);
+      }
+    }
 
-      const parsedMail = await parseMime(whole.body);
+    const mails: ScannedTaxMail[] = [];
+    for (const candidate of targets) {
+      // 헤더 조회와 본문 조회 사이에 지워진 메일은 종전처럼 건너뛴다.
+      if (!bodyByUid.has(candidate.uid)) continue;
+
+      const parsedMail = await parseMime(bodyByUid.get(candidate.uid));
       let parsed: ParsedEtaxInvoice | null = null;
       const unparsed: UnparsedAttachment[] = [];
 
