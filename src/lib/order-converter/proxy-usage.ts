@@ -22,7 +22,8 @@ import { toKstYmd } from '@/lib/date-utils';
  * 볼륨: 요청마다 행을 만들지 않고 (날짜·source·target) 행의 카운터를 올린다 — 하루 행 수는 경로 수만큼.
  * 쓰기도 요청마다 하지 않는다 — 메모리에 모았다가 짧은 간격으로 한 번에 쓴다(인스타 수집처럼 요청이
  * 몰리면 같은 행에 대한 쓰기가 줄지어 DB 연결을 붙잡는다). 대가: 프로세스가 그 사이에 죽으면 몇 초치
- * 카운트를 잃는다 — 한도 파악용 집계라 감수한다.
+ * 카운트를 잃는다 — 한도 파악용 집계라 감수한다. 이 가정은 **상주 프로세스**(셀프호스트 `next-server`)
+ * 기준이다 — 응답 뒤 실행을 얼리는 서버리스(Vercel 롤백 창구)에선 타이머가 못 돌아 더 많이 잃는다.
  * ⛔ `ApiCallLog` 에 넣지 말 것 — 그 표는 provider 무관 최근 20행을 UI 3곳이 읽어, 고볼륨 행이
  *    들어가면 Meta 증빙 표가 무너진다(P7 「Naver Call Observability」).
  *
@@ -50,6 +51,8 @@ export type ProxySource =
   | 'dispatch' // 송장 등록(발송처리)
   | 'delay-dispatch' // 발송지연 처리
   | 'order-execute' // 주문확인·발주서
+  | 'send-email' // 발주 메일 발송 후 발주요청 스탬프 폴백(캠페인 주문 재조회)
+  | 'campaign-validate' // 업로드한 발주서와 캠페인 주문 대조
   | 'campaign-update' // 캠페인 저장·마감(마감 주문 스냅샷 조회 포함)
   | 'campaign-reopen' // 마감 취소
   | 'product-search' // 스토어 상품 목록(60초 쿨다운)

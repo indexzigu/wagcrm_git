@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { prisma } from '@/lib/order-converter/prisma';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
 import { resolveCampaignExpectedOrderIds } from '@/lib/order-converter/campaign-orders';
+import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
 import { resolveMailCredentials, resolveMailFrom, resolveSmtpConfig } from '@/lib/mail-config';
 
 // 캠페인 재조회(라이브)를 백그라운드 폴백에서 수행할 수 있으므로 실행시간 한도를 상향한다
@@ -102,7 +103,8 @@ export async function POST(req: NextRequest) {
       // 원 시각을 보존하려고 제외한다(멱등).
       after(async () => {
         try {
-          const { orderIds } = await resolveCampaignExpectedOrderIds(campaignId);
+          // 캠페인 주문 재조회가 보내는 프록시 요청을 send-email 로 센다(proxy-usage.ts) — after() 콜백이라 여기서 직접 붙인다.
+          const { orderIds } = await runWithProxySource('send-email', () => resolveCampaignExpectedOrderIds(campaignId));
           const allIds = Array.from(orderIds);
           if (allIds.length === 0) return;
           const already = await orderFulfillmentRepository.getPoRequestedSet(allIds);
