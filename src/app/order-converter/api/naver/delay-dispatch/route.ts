@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
+import { withProxySource } from '@/lib/order-converter/proxy-usage';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { requireAuth } from '@/lib/api-auth';
 import { syncOrdersByIds, normalizeQueriedOrder } from '@/lib/order-converter/naver-order-sync';
@@ -76,10 +76,8 @@ function sanitizeRequests(raw: unknown): { requests: DelayRequest[] } | { error:
   return { requests };
 }
 
-export async function POST(request: NextRequest) {
-  // 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 delay-dispatch 로 센다(proxy-usage.ts).
-  return runWithProxySource('delay-dispatch', () => handleDelayDispatchPost(request));
-}
+// 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 delay-dispatch 로 센다(proxy-usage.ts).
+export const POST = withProxySource('delay-dispatch', handleDelayDispatchPost);
 
 async function handleDelayDispatchPost(request: NextRequest) {
   const auth = await requireAuth();

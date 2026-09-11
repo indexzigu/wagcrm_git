@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
+import { runWithProxySource, withProxySource } from '@/lib/order-converter/proxy-usage';
 import { prisma } from '@/lib/order-converter/prisma';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { autoMapOrderCampaign } from '@/lib/order-converter/mapping-service';
@@ -12,7 +12,10 @@ import { sortProductMappingsByProductName } from '@/lib/order-converter/product-
 import { parseSalePeriodBounds, isSameKstDay } from '@/lib/order-converter/sale-window';
 import { isCrossSellerSet, CrossSellerRejectedError, CROSS_SELLER_REJECTED_CODE } from '@/lib/cross-seller';
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// 저장·마감(마감 주문 스냅샷 조회)이 보내는 프록시 요청을 campaign-update 로 센다 — 마감 취소의 재동기화는 안쪽 campaign-reopen 라벨이 이긴다(proxy-usage.ts).
+export const PUT = withProxySource('campaign-update', handleCampaignPut);
+
+async function handleCampaignPut(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // catch 블록의 거부 로그가 대상 식별자를 남길 수 있도록 try 밖에서 받는다.
   const { id } = await params;
   try {

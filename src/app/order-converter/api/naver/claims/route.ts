@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withProxySource } from '@/lib/order-converter/proxy-usage';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { toDateKeyKst } from '@/lib/order-converter/naver-order-sync';
 import {
@@ -27,7 +28,10 @@ function approxJsonBytes(value: unknown): number {
 // 이제 동기화가 쓰기 시점에 저장한 claimSource(클레임 보유 주문 최소 프로젝션)만 읽고,
 // 미가용 행(레거시 null·{v:0}·버전 불일치)만 그 날짜 블롭을 폴백으로 읽어 동일
 // SSOT(extractClaimSourceOrders → deriveClaims)로 파생한다 — 두 경로 수치는 일치한다.
-export async function GET(request: NextRequest) {
+// 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 claims 로 센다(proxy-usage.ts).
+export const GET = withProxySource('claims', handleClaimsGet);
+
+async function handleClaimsGet(request: NextRequest) {
   const debug = request.nextUrl.searchParams.get('debug') === '1';
 
   try {

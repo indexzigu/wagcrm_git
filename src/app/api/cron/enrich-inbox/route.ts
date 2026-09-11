@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withProxySource } from "@/lib/order-converter/proxy-usage";
 import { getPrisma } from "@/lib/prisma";
 import { classifyReferenceUrl, deriveYoutubeThumbnailUrl } from "@/lib/reference-enrich";
 import { fetchInstagramPostMeta, fetchInstagramProfileMeta } from "@/lib/reference-enrich-proxy";
@@ -14,7 +15,10 @@ const BATCH_SIZE = 8;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function GET(request: Request) {
+// withSystemTaskStatus 를 쓰지 않는 크론이라 크론 라벨이 자동으로 붙지 않는다 — 프록시 요청 집계 라벨을 직접 붙인다(proxy-usage.ts).
+export const GET = withProxySource('cron:enrich-inbox', handleEnrichInboxGet);
+
+async function handleEnrichInboxGet(request: Request) {
   if (!verifyCronAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
