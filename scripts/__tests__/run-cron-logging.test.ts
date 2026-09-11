@@ -155,6 +155,21 @@ describe("run-cron.sh 로그 기록", () => {
     expect(line).toContain("두 번째 줄");
   });
 
+  it("응답에 제어문자가 섞여도 로그 줄에 남기지 않는다 — grep 의 바이너리 오판을 막는다(T-153)", () => {
+    // 재현: 이 호스트의 grep(ugrep -I)은 파일 어디든 제어문자가 하나만 있어도
+    // 전체를 "바이너리"로 판정해 -a 없이는 조용히 0건을 반환한다. cron.log 는
+    // append-only 라 한 번 섞이면 그날 이후 전체 검색이 막힌다.
+    const body = '{"ok":true,"tail":"\x01\x1F\x7F메일 파싱 결과"}';
+    const { status, line } = runJob(body);
+    expect(status).toBe(0);
+    expect(line).toMatch(/\] OK {3}some-job /);
+    expect(line).toContain("메일 파싱 결과");
+    expect(
+      /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(line),
+      `제어문자가 남았다: ${JSON.stringify(line)}`,
+    ).toBe(false);
+  });
+
   describe("절단 지점의 한글이 깨지지 않는다", () => {
     // 🪤 cron 은 `LANG` 을 물려주지 않아 `LC_CTYPE=C` 로 떨어지고, 그러면 bash 의
     // `${text:0:max}` 가 **문자가 아니라 바이트**를 센다 — 한글이 절단 경계에서
