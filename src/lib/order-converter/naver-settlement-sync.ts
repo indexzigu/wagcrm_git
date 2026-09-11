@@ -1,7 +1,7 @@
 import { apiRequest } from './naver-commerce-client';
 import { createNaverCallTally, runWithNaverCallTally } from './naver-api-usage';
 import { prisma } from './prisma';
-import { queryOrderDetails } from './naver-order-sync';
+import { collectProductOrderIds, findMissingProductOrderIds, queryOrderDetails } from './naver-order-sync';
 import { isSalesCampaignLocked } from './mapping-service';
 import { resolveSaleWindowEndMs } from './sale-window';
 import { decidePostCloseCheck, isPostCloseTerminalOrder, nextAllTerminalMarker, postCloseCandidateEndDateFloor } from './post-close-check-window';
@@ -342,6 +342,9 @@ export interface PostCloseCancelSyncResult {
  * API 저하가 **과소 계상된 값을 영구히 동결**시킨다(유일 writer 라 수동 레버 말고는 복구
  * 경로가 없다). 그래서 요청 id 수보다 적게 돌아오면 **값은 쓰되 확정은 미룬다** — 다음 회차가
  * 다시 계산한다. 미룬 건수는 `deferredIncomplete` 로 응답에 실어 조용히 넘기지 않는다.
+ * 온전성 판정 자체(`complete`)는 `findMissingProductOrderIds`(naver-order-sync.ts) 하나다 —
+ * `queryOrderDetails` 의 미회신 경고도 같은 함수를 쓴다(T-155, 종전엔 같은 판정이 두 곳에
+ * 각자 구현돼 있었다).
  * ⚠️ **탈퇴한 구매자의 주문은 커머스API 가 영구히 돌려주지 않으므로**(P7) 그런 주문이 섞인
  * 캠페인은 이 전제를 영영 못 채우고(종결도 못 본다) 판매 종료 +15일까지 매일 재조회된다 — 알고 택한
  * 값이다(틀리는 방향을 「헛조회」 쪽으로 잡는다). `deferredIncomplete` 가 그 부류를 드러낸다.
@@ -467,11 +470,9 @@ export async function syncPostCloseCancellations(
 
     let cancelQty = 0;
     let cancelRev = 0;
-    // 요청한 주문이 전부 돌아왔는가 — 확정(동결)의 전제다(위 doc 🔒).
-    // ⛔ 개수로 재지 말 것: 중복·잉여 행 하나가 **빠진 id 를 가려 「온전함」으로 읽힌다**
-    //    (그 오판의 대가가 영구 동결이다). 🪤 `normalizeQueriedOrder` 는 `productOrder` 가
-    //    있기만 하면 통과시키므로 **id 없는 행도 배열에는 남는다** — 그런 행은 이 집합에
-    //    들어오지 않아 「모자람」으로 판정된다(fail-closed, 의도한 방향이다).
+    // 요청한 주문이 전부 돌아왔는가 — 확정(동결)의 전제다(위 doc 🔒). 판정 SSOT 는
+    // `findMissingProductOrderIds`(naver-order-sync.ts, T-155) 하나다 — 여기서 다시
+    // 구현하지 말 것.
     const fetchedIds = new Set<string>();
     // 받은 주문이 전부 종결인가(post-close-check-window.ts) — 응답이 온전할 때만 의미가 있다.
     let allOrdersTerminal = true;
@@ -480,9 +481,7 @@ export async function syncPostCloseCancellations(
       const chunk = ids.slice(i, i + CHUNK_SIZE);
       const orders = await queryOrderDetails(chunk);
       if (!orders.every(isPostCloseTerminalOrder)) allOrdersTerminal = false;
-      for (const o of orders) {
-        if (o?.productOrderId != null) fetchedIds.add(String(o.productOrderId));
-      }
+      collectProductOrderIds(orders, fetchedIds);
 
       for (const order of orders) {
         const status = order.productOrderStatus;
@@ -539,7 +538,7 @@ export async function syncPostCloseCancellations(
     //    미루는 것은 **동결뿐**이라 다음 회차가 다시 계산한다.
     // 🔒-b ⚠️ **단 이미 확정된 캠페인은 값도 쓰지 않는다**(사유는 그 가드 주석에). 그 결과
     //    `includeLocked` 레버는 응답이 모자라는 동안 무위이며, 그때는 `protectedFinalized` 로 센다.
-    const complete = ids.every((id) => fetchedIds.has(id));
+    const complete = findMissingProductOrderIds(ids, fetchedIds).length === 0;
 
     // 🔒-b **이미 확정된 값은 부분 응답으로 덮지 않는다.** 그대로 쓰면 온전했던 값이 과소 계상
     //    값으로 바뀌는데 마커는 남아 **다음 회차부터 다시 건너뛴다** — 위 🔒 가 막으려던 영구

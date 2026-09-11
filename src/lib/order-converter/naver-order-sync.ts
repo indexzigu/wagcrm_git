@@ -240,6 +240,35 @@ const QUERY_CHUNK_SIZE = 100;
 const MISSING_ID_LOG_CAP = 20;
 
 /**
+ * 주문 배열에서 productOrderId 집합을 뽑는다(`into` 를 주면 거기에 누적) — 완전성 판정의
+ * 공통 1차 재료.
+ */
+export function collectProductOrderIds(
+  orders: Array<({ productOrderId?: unknown } & Record<string, unknown>) | null | undefined>,
+  into: Set<string> = new Set<string>(),
+): Set<string> {
+  for (const o of orders) {
+    if (o?.productOrderId != null) into.add(String(o.productOrderId));
+  }
+  return into;
+}
+
+/**
+ * 요청한 productOrderId 중 반환 집합에 없는 것을 찾는다 — 「네이버에 물어본 주문이 전부
+ * 돌아왔는가」판정의 SSOT(T-155). `queryOrderDetails` 의 미회신 경고(아래)와
+ * `syncPostCloseCancellations`(`naver-settlement-sync.ts`)의 확정 게이트가 같은 판정을
+ * 각자 구현해 서로 어긋날 수 있었다 — 단위(전자는 100건 청크마다, 후자는 캠페인 전체
+ * 누적)는 여전히 다르지만 비교 자체는 이제 이 함수 하나다.
+ * ⛔ 개수로 재지 말 것: 중복·잉여 행 하나가 **빠진 id 를 가려 「온전함」으로 읽힌다.**
+ * 🪤 `normalizeQueriedOrder` 는 `productOrder` 가 있기만 하면 통과시키므로 **id 없는 행도
+ *    배열에 남는다** — 그런 행은 반환 집합에 안 들어와 「모자람」으로 판정된다(fail-closed,
+ *    의도한 방향).
+ */
+export function findMissingProductOrderIds(requestedIds: Iterable<string>, returnedIds: Set<string>): string[] {
+  return [...new Set(requestedIds)].filter((id) => !returnedIds.has(id));
+}
+
+/**
  * productOrderId 목록의 상세 내역을 100건 청크로 나눠 query API를 호출하고,
  * 정규화된 평면 주문 객체 배열로 반환한다.
  */
@@ -255,17 +284,11 @@ export async function queryOrderDetails(productOrderIds: string[]): Promise<any[
 
     const data = Array.isArray(res?.data) ? res.data : [];
 
-    // ⛔ **모자람을 「개수」로 재지 말 것 — 판정은 id 집합이다**(P7 정본, 확정 게이트와 같은
-    //    근거). 중복·잉여 행 하나가 빠진 id 를 가려 「온전함」으로 읽힌다. 소비처
-    //    (`syncPostCloseCancellations` 의 `complete`)는 이미 집합으로 판정하는데 이 경고만
-    //    개수로 재고 있었다 — 같은 사실을 두 술어로 재던 것이라 서로 어긋날 수 있었다.
-    // 🪤 `normalizeQueriedOrder` 는 `productOrder` 가 있기만 하면 통과시키므로 **id 없는 행도
-    //    배열에 남는다** — 그런 행은 이 집합에 안 들어와 「모자람」으로 판정된다(fail-closed).
-    const returnedIds = new Set<string>();
+    const normalizedChunk: any[] = [];
     for (const item of data) {
       const normalized = normalizeQueriedOrder(item);
       if (!normalized) continue;
-      if (normalized.productOrderId != null) returnedIds.add(String(normalized.productOrderId));
+      normalizedChunk.push(normalized);
       results.push(normalized);
     }
 
@@ -275,10 +298,12 @@ export async function queryOrderDetails(productOrderIds: string[]): Promise<any[
     // 부재가 장애 원인 자원을 조사할 때마다 갉았다. 조사 실측은 핸드오프에 있다.
     // ℹ️ 미회신 자체는 결함이 아닐 수 있다 — **탈퇴 구매자의 주문을 커머스API 가 영구히
     //    제공하지 않는** 구조적 사유가 있다(P7). 이 줄의 몫은 차단이 아니라 **식별**이다.
-    // ⚠️ 건수는 **실제로 보낸** `chunk.length` 로 적는다 — 판정용 `requestedIds` 는 dedupe 한
-    //    값이라 그것을 「요청」이라 적으면 중복 입력에서 보낸 건수보다 작게 보고된다.
-    const requestedIds = [...new Set(chunk.map((id) => String(id)))];
-    const missingIds = requestedIds.filter((id) => !returnedIds.has(id));
+    // ⚠️ 건수는 **실제로 보낸** `chunk.length` 로 적는다 — 판정용 `requestedIds` 는
+    //    `findMissingProductOrderIds` 가 내부에서 dedupe 하므로 원본 그대로 넘긴다.
+    const missingIds = findMissingProductOrderIds(
+      chunk.map((id) => String(id)),
+      collectProductOrderIds(normalizedChunk),
+    );
     if (missingIds.length > 0) {
       const shown = missingIds.slice(0, MISSING_ID_LOG_CAP);
       const rest = missingIds.length - shown.length;

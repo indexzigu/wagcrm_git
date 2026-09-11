@@ -11,6 +11,8 @@ import {
   runChangedSync,
   runFullSync,
   syncOrdersByIds,
+  collectProductOrderIds,
+  findMissingProductOrderIds,
 } from '../naver-order-sync';
 
 /**
@@ -126,6 +128,30 @@ describe('mergeOrdersByProductOrderId', () => {
   it('existing이 빈 배열이어도 동작한다', () => {
     const merged = mergeOrdersByProductOrderId([], [{ productOrderId: 'X' }]);
     expect(merged).toHaveLength(1);
+  });
+});
+
+describe('collectProductOrderIds / findMissingProductOrderIds (완전성 판정 SSOT, T-155)', () => {
+  it('반환 집합에 없는 요청 id 를 찾는다', () => {
+    const returnedIds = collectProductOrderIds([{ productOrderId: '1001' }, { productOrderId: '1003' }]);
+    expect(findMissingProductOrderIds(['1001', '1002', '1003'], returnedIds)).toEqual(['1002']);
+  });
+
+  it('id 가 없는 행은 반환 집합에 들어오지 않는다(fail-closed)', () => {
+    const returnedIds = collectProductOrderIds([{ productOrderId: '1001' }, { productOrderStatus: 'DELIVERED' }]);
+    expect(returnedIds).toEqual(new Set(['1001']));
+  });
+
+  it('중복 요청 id 는 접어서 판정한다', () => {
+    const returnedIds = collectProductOrderIds([{ productOrderId: 'po-1' }]);
+    expect(findMissingProductOrderIds(['po-1', 'po-1'], returnedIds)).toEqual([]);
+  });
+
+  it('into 를 주면 기존 집합에 누적한다(여러 청크를 걸친 완전성 판정용)', () => {
+    const acc = new Set(['po-1']);
+    const result = collectProductOrderIds([{ productOrderId: 'po-2' }], acc);
+    expect(result).toBe(acc);
+    expect(acc).toEqual(new Set(['po-1', 'po-2']));
   });
 });
 

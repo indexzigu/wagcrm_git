@@ -32,9 +32,15 @@ vi.mock('@/lib/order-converter/prisma', () => ({
   },
 }));
 
-vi.mock('../naver-order-sync', () => ({
-  queryOrderDetails: (...a: unknown[]) => queryOrderDetailsMock(...a),
-}));
+// 완전성 판정(`findMissingProductOrderIds`·`collectProductOrderIds`, T-155)은 실제 구현을
+// 그대로 쓴다 — 이 계약이 지키려는 것이 바로 그 판정이라 목으로 대체하면 무의미해진다.
+vi.mock('../naver-order-sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../naver-order-sync')>();
+  return {
+    ...actual,
+    queryOrderDetails: (...a: unknown[]) => queryOrderDetailsMock(...a),
+  };
+});
 
 /**
  * 기본 픽스처는 **이미 확정된** 캠페인이다(마커 있음). 마커가 없으면 락이어도 한 번은
