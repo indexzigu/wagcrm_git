@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { runWithProxySource } from "@/lib/order-converter/proxy-usage";
 import { requireAuth } from "@/lib/api-auth";
 import { naverOrderSnapshotRepository } from "@/repositories/naverOrderSnapshotRepository";
 import { runSync } from "@/lib/order-converter/naver-order-sync";
@@ -65,7 +66,7 @@ export async function POST() {
 
     // runSync는 내부에서 예외를 삼켜 SyncResult.error로 돌려주므로 reject하지
     // 않는다. 타임아웃 시에도 이 Promise는 계속 진행돼 스냅샷을 완주한다.
-    const raced = await raceWithTimeout(runSync("CHANGED"), SYNC_WAIT_TIMEOUT_MS);
+    const raced = await raceWithTimeout(runWithProxySource("mobile-sync", () => runSync("CHANGED")), SYNC_WAIT_TIMEOUT_MS);
 
     if (raced.timedOut) {
       return NextResponse.json({

@@ -6,6 +6,7 @@ import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-repor
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
 import { getLastChangeSyncMs, getOrderAutoSyncIntervalHoursOrDefault, isOrderAutoSyncDue } from '@/lib/order-converter/order-auto-sync';
+import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
 import { isDemoMode } from '@/lib/demo-mode';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from '@/lib/order-converter/campaign-insights';
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from '@/lib/order-converter/group-orders';
@@ -416,7 +417,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 부트스트랩: L1+DB 완전 무데이터(첫 조회)면, 이 요청에서 1회 FULL 동기화를 await하고 재하이드레이션한다.
       if (!hadAnySnapshot) {
         try {
-          await runSync('FULL', { startDateKey, endDateKey });
+          await runWithProxySource('bootstrap-sync', () => runSync('FULL', { startDateKey, endDateKey }));
           const snapshots = await naverOrderSnapshotRepository.findRange(startDateKey, endDateKey);
           for (const snapshot of snapshots) {
             dailyCache[snapshot.snapshotDate] = {
@@ -505,9 +506,10 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
           .filter(Boolean);
         after(async () => {
           if (changedSyncDue) {
-            try { await runSync('CHANGED'); } catch (err) { console.warn('Background CHANGED sync failed:', err); }
+            // 프록시 요청 경로별 집계 라벨(proxy-usage.ts) — 화면 진입 백그라운드 동기화.
+            try { await runWithProxySource('entry-sync', () => runSync('CHANGED')); } catch (err) { console.warn('Background CHANGED sync failed:', err); }
           }
-          try { await sweepDeliveringOrders(deliveringIds); } catch (err) { console.warn('Background delivering sweep failed:', err); }
+          try { await runWithProxySource('delivering-sweep', () => sweepDeliveringOrders(deliveringIds)); } catch (err) { console.warn('Background delivering sweep failed:', err); }
         });
       }
 

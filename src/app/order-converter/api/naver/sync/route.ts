@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runSync } from '@/lib/order-converter/naver-order-sync';
+import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
 
 // 수동 새로고침 엔드포인트. GET(dashboard-stats/campaigns)이 read-only로 전환됨에 따라
 // 클라이언트가 "지금 당장 최신화"를 원할 때 사용하는 유일한 동기 트리거 경로다.
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await runSync(mode, range);
+    const result = await runWithProxySource('manual-sync', () => runSync(mode, range));
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('[naver/sync] Error:', error);

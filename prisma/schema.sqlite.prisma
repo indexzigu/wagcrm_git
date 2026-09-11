@@ -523,6 +523,20 @@ model ApiCallLog {
   @@index([success])
 }
 
+// 프록시(Fixie) 요청 수의 경로별 일 집계 — postgres 스키마와 동일(proxy-usage.ts).
+model ProxyRequestDaily {
+  id        String   @id @default(cuid())
+  day       String
+  source    String
+  target    String
+  requests  Int      @default(0)
+  failures  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([day, source, target])
+  @@index([day])
+}
+
 model TrackingAttribution {
   id              String   @id @default(cuid())
   campaignId      String?

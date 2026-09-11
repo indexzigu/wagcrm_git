@@ -99,12 +99,19 @@ vi.mock('undici', () => ({
   ProxyAgent: FakeProxyAgent,
 }));
 
+// 프록시 요청 집계(proxy-usage.ts)는 DB 에 쓰므로 대역으로 바꾸고, 무엇을 세는지만 본다.
+const { recordProxyRequestMock } = vi.hoisted(() => ({ recordProxyRequestMock: vi.fn() }));
+vi.mock('./proxy-usage', () => ({
+  recordProxyRequest: (...args: unknown[]) => recordProxyRequestMock(...args),
+}));
+
 const PROXY = 'http://proxy-a.example:8080';
 const PROXY_FALLBACK = 'http://proxy-b.example:8080';
 
 beforeEach(() => {
   vi.resetModules();
   undiciFetchMock.mockClear();
+  recordProxyRequestMock.mockClear();
   FakeProxyAgent.instances = [];
   dispatcherLog = [];
   failureQueue = [];
@@ -346,5 +353,30 @@ describe('proxyFetch — 실패 처리', () => {
     // 픽스처가 그 템플릿을 실제로 렌더링한 모양인지도 함께 본다.
     const cause = (proxyRejected() as Error & { cause?: Error }).cause;
     expect(cause?.message).toBe('Proxy response (407) !== 200 when HTTP Tunneling');
+  });
+});
+
+describe('proxyFetch — 프록시 요청 집계(proxy-usage.ts)', () => {
+  it('프록시로 보낸 시도마다 1회 센다 — 같은 프록시 재시도와 다음 프록시 폴백도 각각', async () => {
+    process.env.PROXY_URLS = `${PROXY},${PROXY_FALLBACK}`;
+    // 1: 죽은 소켓(실패) → 같은 프록시 재시도 2: 407(실패) → 다음 프록시 3: 성공
+    failureQueue = ['deadSocket', 'proxyRejected'];
+    const { proxyFetch } = await import('./fetch-client');
+
+    await proxyFetch('https://example.test/a');
+
+    expect(recordProxyRequestMock.mock.calls.map(([arg]) => arg)).toEqual([
+      { url: 'https://example.test/a', failed: true },
+      { url: 'https://example.test/a', failed: true },
+      { url: 'https://example.test/a', failed: false },
+    ]);
+  });
+
+  it('프록시가 없으면 세지 않는다(한도와 무관하다)', async () => {
+    const { proxyFetch } = await import('./fetch-client');
+
+    await proxyFetch('https://example.test/a');
+
+    expect(recordProxyRequestMock).not.toHaveBeenCalled();
   });
 });

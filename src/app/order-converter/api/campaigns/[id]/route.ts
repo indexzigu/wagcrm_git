@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
 import { prisma } from '@/lib/order-converter/prisma';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { autoMapOrderCampaign } from '@/lib/order-converter/mapping-service';
@@ -159,7 +160,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       if (reopenedDateKeys.length > 0) {
         naverOrderSnapshotRepository.markDirty(reopenedDateKeys).catch(console.warn);
       }
-      runSync('CHANGED').catch(console.warn);
+      runWithProxySource('campaign-reopen', () => runSync('CHANGED')).catch(console.warn);
     }
 
     // 마감 스냅샷의 판매기간 컷오프는 sale-window SSOT에 위임 — 라이브 집계와 동일 규칙(KST 종일 포함,

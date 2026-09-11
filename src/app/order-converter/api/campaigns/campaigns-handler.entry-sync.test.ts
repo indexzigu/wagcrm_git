@@ -60,6 +60,9 @@ vi.mock("@/lib/order-converter/order-auto-sync", async (importOriginal) => ({
 
 const { fetchAndSyncCampaigns } = await import("./campaigns-handler");
 const { toDateKeyKst } = await import("@/lib/order-converter/naver-order-sync");
+const { getProxySource } = await import("@/lib/order-converter/proxy-usage");
+/** runSync 가 불린 순간의 프록시 요청 집계 라벨(proxy-usage.ts). */
+const runSyncSources: string[] = [];
 
 const HOUR = 60 * 60 * 1000;
 
@@ -73,7 +76,11 @@ describe("campaigns-handler 진입 동기화 배선", () => {
   beforeEach(() => {
     afterCallbacks.length = 0;
     metaLastCallTimeMs = Date.now() - 10 * 60 * 1000;
-    runSyncMock.mockReset().mockResolvedValue({ skipped: false });
+    runSyncSources.length = 0;
+    runSyncMock.mockReset().mockImplementation(async () => {
+      runSyncSources.push(getProxySource());
+      return { skipped: false };
+    });
     sweepMock.mockReset().mockResolvedValue({ swept: 1, skipped: false });
     // 오늘자 스냅샷이 10분 전 기록(당일 TTL 1분 초과 → stale)이고 배송중 1건을 담고 있다.
     (globalThis as any).__naverDailyCache = {
@@ -113,5 +120,7 @@ describe("campaigns-handler 진입 동기화 배선", () => {
     expect(runSyncMock).toHaveBeenCalledWith("CHANGED");
     expect(sweepMock).toHaveBeenCalledWith(["po-delivering"]);
     expect(response.headers.get("X-Naver-Syncing")).toBe("1");
+    // 화면 진입 백그라운드 동기화는 프록시 요청 집계에서 entry-sync 로 센다.
+    expect(runSyncSources).toEqual(["entry-sync"]);
   });
 });

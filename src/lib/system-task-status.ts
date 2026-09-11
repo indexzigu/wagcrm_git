@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { runWithProxySource } from "@/lib/order-converter/proxy-usage";
 
 // 시스템 레이더(SystemTaskStatus) 공용 기록기 — 크론 라우트 핸들러를 감싸
 // 실행 결과(성공/실패)와 실제 작동 시각을 남긴다. enrich-inbox처럼 라우트가
@@ -631,7 +632,8 @@ export function withSystemTaskStatus(
     // 소스 스캔이 잡아냈다). SSOT는 시크릿 미설정 시 false이므로 종전 `expected == null`
     // 분기와 의미가 같고, 비교가 상수 시간이 되는 이득만 추가된다.
     if (authHeader == null || !verifyCronAuth(request)) {
-      return handler(request);
+      // 기록 게이트를 못 넘은 호출(수동 실행 등)도 프록시 요청은 이 작업 이름으로 센다(proxy-usage.ts).
+      return runWithProxySource(`cron:${jobKey}`, () => handler(request));
     }
 
     // 시작 마커 — 핸들러가 플랫폼 타임아웃/강제종료로 완주하지 못해도 RUNNING 행이 남아,
@@ -645,7 +647,7 @@ export function withSystemTaskStatus(
 
     let response: Response;
     try {
-      response = await handler(request);
+      response = await runWithProxySource(`cron:${jobKey}`, () => handler(request));
     } catch (error) {
       await recordSystemTaskRun(
         jobKey,

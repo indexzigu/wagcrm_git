@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
 import { prisma } from '@/lib/order-converter/prisma';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { generateOrderExcelBuffer } from '@/lib/order-converter/excel-generator';
@@ -26,7 +27,12 @@ export const maxDuration = 300;
 
 
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  // 이 요청 안에서 나가는 프록시(Fixie) 요청을 경로별 일 집계에서 order-execute 로 센다(proxy-usage.ts).
+  return runWithProxySource('order-execute', () => handleExecuteStreamGet(request, context));
+}
+
+async function handleExecuteStreamGet(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: campaignId } = await params;
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
