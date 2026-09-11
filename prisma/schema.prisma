@@ -1095,6 +1095,10 @@ model OrderCampaign {
   // 이 칸이 있어야 하는 이유: 위 두 값이 `@default(0)` 이라 "계산했는데 취소가 0"과
   // "계산된 적이 없다"가 값만으로는 구분되지 않는다(유일 writer 라 되돌릴 길도 없다).
   cachedPostCloseCancelFinalizedAt DateTime?
+  // 마감 후 매일 확인한 주문이 **전부 종결**(배송완료·구매확정·취소·반품·교환완료)인 것을 처음 본
+  // 시각. 이 시각 +10일에 사후 취소·교환 확인을 멈춘다(오너 확정 2026-09-11, 판정 SSOT
+  // post-close-check-window.ts). ⚠️ 위 확정 마커와 섞지 말 것 — 그쪽은 「정산 락 상태에서 계산됨」이다.
+  cachedPostCloseAllTerminalAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -3,6 +3,8 @@ import { createNaverCallTally, runWithNaverCallTally } from './naver-api-usage';
 import { prisma } from './prisma';
 import { queryOrderDetails } from './naver-order-sync';
 import { isSalesCampaignLocked } from './mapping-service';
+import { resolveSaleWindowEndMs } from './sale-window';
+import { decidePostCloseCheck, isPostCloseTerminalOrder, nextAllTerminalMarker, postCloseCandidateEndDateFloor } from './post-close-check-window';
 import { isProductOrderLedgerRow, type SettlementQueryPlan } from './settlement-pending-dates';
 
 /**
@@ -273,7 +275,7 @@ export async function recomputeClosedCampaignSettlements(): Promise<{ campaigns:
 
 /** `syncPostCloseCancellations` 의 실행 요약 — 크론 응답과 `SystemTaskLog.details` 에 그대로 실린다. */
 export interface PostCloseCancelSyncResult {
-  /** 90일 창 안의 마감 캠페인 전체. */
+  /** 확인 후보 창(판매 종료 +26일 — 종결 미관측 상한 15일 + 종결 후 10일 + 여유 1일) 안의 마감 캠페인 전체. */
   campaigns: number;
   /** 취소 **값이 실제로 바뀐** 건수(마커만 찍힌 회차는 세지 않는다). */
   updated: number;
@@ -293,6 +295,14 @@ export interface PostCloseCancelSyncResult {
    * `includeLocked` 로 강제 재계산했는데 0 이 아니면 그 캠페인은 레버로도 갱신되지 않았다.
    */
   protectedFinalized: number;
+  /** 전 주문 종결을 처음 본 지 10일이 지나 조회를 멈춘 건수(오너 확정 2026-09-11). */
+  stoppedAfterTerminal: number;
+  /** 종결을 한 번도 못 본 채 판매 종료 +15일을 넘어 조회를 멈춘 건수 — 탈퇴 구매자 주문이 섞인 캠페인 등. */
+  stoppedByBackstop: number;
+  /** 이번 실행에서 「전 주문 종결」을 처음 관측해 시각을 찍은 건수. */
+  markedAllTerminal: number;
+  /** 찍혀 있던 종결 시각을 지운 건수 — 새 반품·교환 요청 등으로 움직이는 주문이 다시 보여 확인을 연장했다. */
+  clearedAllTerminal: number;
 }
 
 /**
@@ -323,8 +333,9 @@ export interface PostCloseCancelSyncResult {
  * 시각까지의 취소를 전부 담으므로 ③의 누락 구간이 없다. `SalesCampaign.status` 를 쓰는
  * 경로가 라우트·리포지토리·lib 에 흩어져 있어 전이 훅은 그 전부에 배선해야 하는데, 이
  * 방식은 배선 0 으로 같은 결과를 얻는다.
- * ⚠️ **단 90일 창 안에서만이다** — 창을 벗어난 뒤 락이 걸리는 캠페인은 애초에 대상 조회에
- * 안 들어와 확정 계산도 없다(그쪽은 창이 유일한 통제이고 종전과 같다).
+ * ⚠️ **단 확인 기간 안에서만이다**(post-close-check-window.ts — 전 주문 종결 +10일, 종결을 못 본
+ * 캠페인은 판매 종료 +15일). 그 뒤에 락이 걸리는 캠페인은 확정 계산이 없고 기간 안 마지막 값이 최종이다 —
+ * 오너 확정(2026-09-11): 그 뒤 건은 정산 때 수동 조정한다.
  *
  * 🔒 **확정에는 전제가 하나 더 있다 — 응답이 온전해야 한다.** `queryOrderDetails` 는 응답이
  * 요청보다 모자라도 `console.warn` 만 남기고 짧은 배열을 돌려준다. 그 결과로 확정하면 일시적
@@ -332,7 +343,7 @@ export interface PostCloseCancelSyncResult {
  * 경로가 없다). 그래서 요청 id 수보다 적게 돌아오면 **값은 쓰되 확정은 미룬다** — 다음 회차가
  * 다시 계산한다. 미룬 건수는 `deferredIncomplete` 로 응답에 실어 조용히 넘기지 않는다.
  * ⚠️ **탈퇴한 구매자의 주문은 커머스API 가 영구히 돌려주지 않으므로**(P7) 그런 주문이 섞인
- * 캠페인은 이 전제를 영영 못 채우고 90일 창이 끝날 때까지 매일 재조회된다 — 알고 택한
+ * 캠페인은 이 전제를 영영 못 채우고(종결도 못 본다) 판매 종료 +15일까지 매일 재조회된다 — 알고 택한
  * 값이다(틀리는 방향을 「헛조회」 쪽으로 잡는다). `deferredIncomplete` 가 그 부류를 드러낸다.
  *
  * ⚠️ **대신 남는 어긋남 하나를 적어 둔다(방향이 반대다).** 확정 계산이 락 **이후**에 돌므로
@@ -359,28 +370,31 @@ export interface PostCloseCancelSyncResult {
  * ⚠️ `cron.log` 의 성공 줄은 상한이 있어 응답 끝이 잘릴 수 있다 — `SystemTaskLog.details`
  * 나 수동 호출로 읽을 것.
  *
- * 90일 창(`endDate >= limitDate`)은 이제 **「끝내 락되지 않는 건」의 백스톱 하나**다. 종전에는
- * 취소가 0 인 락 캠페인에도 그 창이 유일한 1차 통제였는데, 마커가 그쪽을 가져갔다.
+ * 확인 기간은 `post-close-check-window.ts` 가 정한다 — 전 주문 종결을 처음 본 날 +10일에 멈추고,
+ * 종결을 한 번도 못 본 캠페인만 판매 종료 +15일에서 멈춘다. 종전 90일 창을 대체했다
+ * (그 90일은 구 레포에서 넘어온 상수로 오너 결정 기록이 없었다 · 종결 +10일은 오너 확정, 종결 미관측
+ * 상한은 오너 승인 계획 — 2026-09-11).
+ * 락 캠페인은 여전히 확정 마커가 먼저 건너뛴다.
  *
  * `includeLocked` 는 그 위의 수동 재계산 레버다(확정된 값이 틀렸다고 판단될 때).
  * 호출 경로: `run-cron.sh 'naver-settlement-sync?includeLocked=1'`(잡 이름이 URL 에 그대로
  * 이어 붙고 허용목록이 없다 — 그 스크립트가 `CRON_SECRET` 을 알아서 읽는다) 또는 같은
  * 시크릿을 든 수동 curl. ⛔ 레이더의 실행 버튼(`/api/system/cron-run`)은 쿼리를 붙이지
- * 않으므로 이 레버를 못 쓴다. ⛔ **단 90일 창 안에서만이다** — 대상 조회의 `endDate` 필터는
- * 그 옵션과 무관하게 걸린다. 어느 경로든 정산 원장 재수집까지 함께 태운다(전부 멱등).
+ * 않으므로 이 레버를 못 쓴다. ⛔ **단 확인 후보 창 안에서만이다** — 종결을 못 본 캠페인은 판매 종료
+ * +15일, 종결을 본 캠페인은 후보 창(판매 종료 +26일)까지다(종결 +10일 중단과 확정 건너뛰기는 레버가 넘는다). 어느 경로든 정산 원장 재수집까지 함께 태운다(전부 멱등).
  */
 export async function syncPostCloseCancellations(
   options: { includeLocked?: boolean } = {},
 ): Promise<PostCloseCancelSyncResult> {
-  // 최대 90일 전 마감된 캠페인까지만 취소 분을 조회.
-  // ⚠️ 이 창은 **「끝내 락되지 않는 건」의 백스톱**이다 — 락이 걸리는 캠페인은 확정 마커가
-  //    1차 통제를 맡는다. 줄이면 락되지 않은 채 방치된 캠페인의 조정이 멈춘다.
-  const limitDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  // 대상은 확인 기간(post-close-check-window.ts) 후보 안의 마감 캠페인이다 — 날짜 필터는 판매 종료
+  // +26일(종결 미관측 상한 15일 + 종결 후 10일 + 여유 1일)의 거친 창이고, 캠페인별 정밀 판정(종결 +10일 ·
+  // 종결 미관측 상한 · 확정 건너뛰기)은 아래 decidePostCloseCheck 가 한다. 종전 90일 창을 대체했다(종결 +10일 오너 확정 · 미관측 상한 오너 승인 계획, 2026-09-11).
+  const nowMs = Date.now();
 
   const closedCampaigns = await prisma.orderCampaign.findMany({
     where: { 
       isActive: false,
-      endDate: { gte: limitDate }
+      endDate: { gte: postCloseCandidateEndDateFloor(nowMs) }
     },
     select: {
       id: true,
@@ -388,6 +402,9 @@ export async function syncPostCloseCancellations(
       cachedPostCloseCancelQuantity: true,
       cachedPostCloseCancelRevenue: true,
       cachedPostCloseCancelFinalizedAt: true,
+      cachedPostCloseAllTerminalAt: true,
+      endDate: true,
+      salePeriod: true,
       mappings: true,
       name: true,
       salesCampaigns: { select: { status: true } }
@@ -404,6 +421,10 @@ export async function syncPostCloseCancellations(
   // 응답이 모자라 **확정된 값을 지키느라 건너뛴** 건수(위와 배타적) — `includeLocked` 로
   // 강제 재계산했는데 0 이 아니면 그 캠페인은 레버로도 갱신되지 않았다는 뜻이다.
   let protectedFinalized = 0;
+  let stoppedAfterTerminal = 0;
+  let stoppedByBackstop = 0;
+  let markedAllTerminal = 0;
+  let clearedAllTerminal = 0;
   const CHUNK_SIZE = 300;
 
   for (const camp of closedCampaigns) {
@@ -414,8 +435,27 @@ export async function syncPostCloseCancellations(
     //    (기본값이 0 이라 "계산했는데 0" 과 "계산된 적 없음" 이 구분되지 않는다. 위 doc 🔑).
     const finalized = camp.cachedPostCloseCancelFinalizedAt != null;
 
-    if (!options.includeLocked && locked && finalized) {
+    const decision = decidePostCloseCheck(
+      {
+        saleEndMs: resolveSaleWindowEndMs(camp),
+        allTerminalAtMs: camp.cachedPostCloseAllTerminalAt ? new Date(camp.cachedPostCloseAllTerminalAt).getTime() : null,
+        locked,
+        finalized,
+        includeLocked: options.includeLocked === true,
+      },
+      nowMs,
+    );
+    if (decision === 'skip-finalized') {
       skippedLocked++;
+      continue;
+    }
+    // 확인 기간이 끝났다 — 조회 없이 넘기되 건수는 응답에 실어 조용히 묻지 않는다.
+    if (decision === 'stop-after-terminal') {
+      stoppedAfterTerminal++;
+      continue;
+    }
+    if (decision === 'stop-backstop') {
+      stoppedByBackstop++;
       continue;
     }
     const rawIds = camp.cachedProductOrderIds;
@@ -433,10 +473,13 @@ export async function syncPostCloseCancellations(
     //    있기만 하면 통과시키므로 **id 없는 행도 배열에는 남는다** — 그런 행은 이 집합에
     //    들어오지 않아 「모자람」으로 판정된다(fail-closed, 의도한 방향이다).
     const fetchedIds = new Set<string>();
+    // 받은 주문이 전부 종결인가(post-close-check-window.ts) — 응답이 온전할 때만 의미가 있다.
+    let allOrdersTerminal = true;
 
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
       const chunk = ids.slice(i, i + CHUNK_SIZE);
       const orders = await queryOrderDetails(chunk);
+      if (!orders.every(isPostCloseTerminalOrder)) allOrdersTerminal = false;
       for (const o of orders) {
         if (o?.productOrderId != null) fetchedIds.add(String(o.productOrderId));
       }
@@ -519,25 +562,52 @@ export async function syncPostCloseCancellations(
         : null;
     const needsMarkerWrite = (shouldFinalize && !finalized) || (!locked && finalized);
 
+    // 전 주문 종결 최초 관측 시각 — 찍기·유지·지우기 규칙은 nextAllTerminalMarker(post-close-check-window.ts)
+    // 한 곳이다. 모자란 응답은 판단하지 않는다 — 탈퇴 구매자 주문이 섞인 캠페인은 여기서 영영 안 찍히고
+    // 판매 종료 +15일에 멈춘다.
+    const terminalMarker = nextAllTerminalMarker({
+      previous: camp.cachedPostCloseAllTerminalAt ?? null,
+      complete,
+      allOrdersTerminal,
+      nowMs,
+    });
+    const needsTerminalWrite = terminalMarker.change !== 'kept';
+
     // ⛔ `valuesChanged` 만으로 쓰기를 결정하지 말 것 — 값이 그대로인 락 캠페인이 영영
-    //    확정되지 않아 90일 내내 재조회된다(그것이 이 작업이 닫은 「수렴하지 않는다」다).
-    if (valuesChanged || needsMarkerWrite) {
+    //    확정되지 않아 확인 기간 내내 재조회된다(그것이 T-140 이 닫은 「수렴하지 않는다」다).
+    //    종결 시각도 같다 — 값이 그대로여도 찍어야 +10일 중단이 걸린다.
+    if (valuesChanged || needsMarkerWrite || needsTerminalWrite) {
       await prisma.orderCampaign.update({
         where: { id: camp.id },
         data: {
           cachedPostCloseCancelQuantity: cancelQty,
           cachedPostCloseCancelRevenue: cancelRev,
-          cachedPostCloseCancelFinalizedAt: nextFinalizedAt
+          cachedPostCloseCancelFinalizedAt: nextFinalizedAt,
+          cachedPostCloseAllTerminalAt: terminalMarker.next,
         }
       });
       // `updated` 는 **값이 바뀐 건수**로 유지한다 — 마커만 찍힌 회차까지 세면 이 지표가
       // 종전 실행과 비교 불가가 된다.
       if (valuesChanged) updated++;
       if (shouldFinalize && !finalized) finalizedLocked++;
+      if (terminalMarker.change === 'marked') markedAllTerminal++;
+      if (terminalMarker.change === 'cleared') clearedAllTerminal++;
     }
   }
 
-  // `campaigns` 는 **창 안의 전체**다. 실제 조회한 것은 `campaigns - skippedLocked` **에서
-  // 주문 목록이 빈 캠페인을 뺀 수**이므로 그 뺄셈을 조회 수로 그대로 읽지 말 것.
-  return { campaigns: closedCampaigns.length, updated, skippedLocked, finalizedLocked, deferredIncomplete, protectedFinalized };
+  // `campaigns` 는 **후보 창 안의 전체**다. 실제 조회한 것은 `campaigns - skippedLocked -
+  // stoppedAfterTerminal - stoppedByBackstop` **에서 주문 목록이 빈 캠페인을 뺀 수**이므로 그 뺄셈을
+  // 조회 수로 그대로 읽지 말 것.
+  return {
+    campaigns: closedCampaigns.length,
+    updated,
+    skippedLocked,
+    finalizedLocked,
+    deferredIncomplete,
+    protectedFinalized,
+    stoppedAfterTerminal,
+    stoppedByBackstop,
+    markedAllTerminal,
+    clearedAllTerminal,
+  };
 }

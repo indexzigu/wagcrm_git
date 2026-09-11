@@ -614,6 +614,7 @@ model OrderCampaign {
   cachedPostCloseCancelQuantity Int?             @default(0)
   cachedPostCloseCancelRevenue  Int?             @default(0)
   cachedPostCloseCancelFinalizedAt DateTime?
+  cachedPostCloseAllTerminalAt DateTime?
 }
 
 model DailyOrderTask {
