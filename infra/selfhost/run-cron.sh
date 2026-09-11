@@ -37,6 +37,11 @@ clip() {
   local text="${1//$'\n'/ }"
   local max="$2"
   text="${text//$'\r'/ }"
+  # 🪤 남은 제어문자(탭·NUL 등, \n·\r 은 이미 위에서 걷었다)가 단 하나만 있어도
+  # 이 호스트의 grep(ugrep -I)이 cron.log 전체를 "바이너리"로 판정해 -a 없이는
+  # 조용히 0건을 반환한다(T-153 — append-only 라 옛 손상 줄 하나가 오늘 줄까지
+  # 가린다). 문자 단위로 걷어야 다국어 바이트 경계를 안 깬다.
+  text="${text//[[:cntrl:]]/ }"
   if [ "${#text}" -le "$max" ]; then
     printf '%s' "$text"
     return
