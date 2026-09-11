@@ -23,10 +23,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 
-/** 플래그만 쓰는 경로 = 이 계약의 대상. */
+/**
+ * 플래그만 쓰는 경로 = 이 계약의 대상.
+ * ⚠️ `src/lib/agent/write-executor.ts` 는 T-151(2026-09-11)로 배럴이 됐다 — 실제
+ * `handleConfirmSettlement` 본체는 `write-actions/confirm-settlement.ts` 로 옮겼다.
+ */
 const DELEGATING_PATHS = [
   "src/app/api/campaigns/[id]/settlement-status/route.ts",
-  "src/lib/agent/write-executor.ts",
+  "src/lib/agent/write-actions/confirm-settlement.ts",
 ] as const;
 
 const SSOT_MODULE = "@/lib/settlement-flag-write";

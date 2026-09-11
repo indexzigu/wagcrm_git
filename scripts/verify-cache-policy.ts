@@ -55,7 +55,8 @@ const mutationGroups: readonly MutationGroup[] = [
         // 자동승인 경로가 공유한다). 무효화 **집행**은 write-action-effects.ts 지만
         // **어느 태그 묶음이냐**는 판정은 여기 effects 명세에 있으므로 이 파일을 건다.
         // 종전엔 이 레인이 DB 만 쓰고 무효화를 하지 않아 "승인했는데 화면은 그대로"가 났다.
-        path: "src/lib/agent/write-executor.ts",
+        // T-151(2026-09-11)에서 write-executor.ts 핸들러 분할 시 이 파일로 이동.
+        path: "src/lib/agent/write-actions/confirm-settlement.ts",
         expectedSource: ["revalidate: CAMPAIGN_INVALIDATION_TAGS"],
       },
     ],
@@ -95,7 +96,8 @@ const mutationGroups: readonly MutationGroup[] = [
       {
         // 어시스턴트 레인 라이터 — `change_deal_status` WRITE 액션. 위 campaigns 그룹과
         // 같은 이유로 태그 판정이 있는 파일(effects 명세)을 건다.
-        path: "src/lib/agent/write-executor.ts",
+        // T-151(2026-09-11)에서 write-executor.ts 핸들러 분할 시 이 파일로 이동.
+        path: "src/lib/agent/write-actions/change-deal-status.ts",
         expectedSource: ["revalidate: MASTER_DATA_INVALIDATION_TAGS"],
       },
     ],
