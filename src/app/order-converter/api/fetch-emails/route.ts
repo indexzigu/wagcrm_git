@@ -12,6 +12,7 @@ import {
   type MailboxDescriptor,
 } from '@/lib/mail-config';
 import { normalizeForCompare } from '@/lib/text-normalize';
+import { fetchBodiesByUid } from '@/lib/tax-invoice-mail/mail-scan';
 
 // F4-②: 브랜드별 허용 발신자 도메인은 거래처(Partner) 설정에서 해석 (하드코딩 맵 제거).
 
@@ -182,16 +183,14 @@ export async function POST(req: NextRequest) {
 
         console.log(`🔥 [fetch-emails] [${boxName}] 1차 필터링 통과 후보 수: ${candidateUids.length}`);
 
-        for (const uid of candidateUids) {
-          console.log(`🔥 [fetch-emails] 후보 메일(UID:${uid}) 전체 다운로드 시작...`);
-          const fullMsgArr = await connection.search([['UID', uid]], { bodies: [''], markSeen: false });
-          if (!fullMsgArr || fullMsgArr.length === 0) continue;
-          
-          const msg = fullMsgArr[0];
-          const allBody = msg.parts.find((part: any) => part.which === '');
-          if (!allBody) continue;
+        // 후보 본문은 1통씩이 아니라 UID 묶음으로 받는다 — 1통씩 요청하면 왕복 대기만으로
+        // 느려진다(`mail-scan.ts` 의 `fetchBodiesByUid` 실측 참조).
+        const bodyByUid = await fetchBodiesByUid(connection, candidateUids);
 
-          let rawBody = allBody.body;
+        for (const uid of candidateUids) {
+          if (!bodyByUid.has(uid)) continue;
+
+          let rawBody = bodyByUid.get(uid);
           if (typeof rawBody === 'string') {
             rawBody = Buffer.from(rawBody, 'utf8');
           }
@@ -199,7 +198,7 @@ export async function POST(req: NextRequest) {
           streamBody.push(rawBody);
           streamBody.push(null);
           const parsed = await simpleParser(streamBody);
-          
+
           const textBody = parsed.text || '';
           const htmlBody = parsed.html || '';
           const refTagPrefix = `[YGRD-REF:${campaignId}`;
