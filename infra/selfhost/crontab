@@ -75,8 +75,10 @@
 # UTC "30 22 * * *" (enrich-references) → KST 07:30 (자정 넘김, 요일 원본부터 *)
 30 7 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh enrich-references >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
 
-# UTC "0 23 * * *" (collect-qnas) → KST 08:00 (자정 넘김, 요일 원본부터 *)
-0 8 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh collect-qnas >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+# UTC "0 23 * * *" (collect-qnas) → KST 08:00 — 셀프호스트에서 **주 1회(월)** 로 줄였다: 프록시 월 요청 한도 절약.
+#   수집 창은 QNA_DEFAULT_LOOKBACK_DAYS(8일 = 한 주 + 경계 겹침 1일)라 사이 문의를 놓치지 않는다 —
+#   이 간격을 늘리면 그 상수도 함께 늘릴 것(cron-jobs.contract.test.ts C7 이 대조한다).
+0 8 * * 1 /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh collect-qnas >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
 
 # UTC "30 23 * * *" (analyze-voc) → KST 08:30 (자정 넘김, 요일 원본부터 *)
 30 8 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh analyze-voc >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1

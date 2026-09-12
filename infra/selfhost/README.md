@@ -639,8 +639,9 @@ grep -cE '^[0-9*].*run-cron\.sh' ~/selfhost/wagcrm/infra/selfhost/crontab
 macOS cron 은 로컬 시간대(KST, UTC+9)로 돈다. `vercel.json` 의 크론
 표현식은 UTC 이므로 그대로 옮기면 9시간 어긋난다. 아래는 전부를
 +9h 환산한 표다(자정을 넘는 잡은 요일 필드가 원본부터 `*` 라 별도 요일
-보정이 필요 없다 — 유일하게 요일이 고정된 `refresh-instagram-token` 은
-자정을 넘지 않아 요일도 그대로 월요일이다).
+보정이 필요 없다 — 요일이 고정된 잡은 둘이다: `refresh-instagram-token` 은
+자정을 넘지 않아 요일도 그대로 월요일이고, `collect-qnas` 는 원본이 매일이지만
+셀프호스트에서 프록시 요청 한도를 아끼려 **주 1회(월 08:00 KST)** 로 줄였다).
 
 | job | UTC (vercel.json) | KST (crontab) |
 | --- | --- | --- |
@@ -654,7 +655,7 @@ macOS cron 은 로컬 시간대(KST, UTC+9)로 돈다. `vercel.json` 의 크론
 | naver-settlement-sync | `30 21 * * *` | `30 6 * * *` |
 | naver-order-sync | `0 22 * * *` | `0 7 * * *` |
 | enrich-references | `30 22 * * *` | `30 7 * * *` |
-| collect-qnas | `0 23 * * *` | `0 8 * * *` |
+| collect-qnas | `0 23 * * *` (원본 매일) | `0 8 * * 1` (주 1회) |
 | analyze-voc | `30 23 * * *` | `30 8 * * *` |
 | db-exposure-audit | `0 17 * * *` | `0 2 * * *` |
 | encryption-key-audit | `30 17 * * *` | `30 2 * * *` |
