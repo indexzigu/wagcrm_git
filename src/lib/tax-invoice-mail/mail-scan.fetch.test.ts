@@ -65,7 +65,7 @@ vi.mock("imap-simple", () => ({
   },
 }));
 
-const { scanTaxInvoiceMails, chunkUids } = await import("./mail-scan");
+const { scanTaxInvoiceMails, chunkUids, collapseDuplicateCopies } = await import("./mail-scan");
 
 /** uid 1..count, 날짜는 uid 와 **반대 순서**(큰 uid 가 오래된 메일) — 정렬 기준을 가르기 위해. */
 function seedMailbox(count: number) {
@@ -137,5 +137,49 @@ describe("chunkUids", () => {
 
   it("빈 목록이면 요청하지 않는다", () => {
     expect(chunkUids([])).toEqual([]);
+  });
+});
+
+describe("collapseDuplicateCopies — 같은 계산서가 두 통 도착한 경우", () => {
+  type Mail = Parameters<typeof collapseDuplicateCopies>[0][number];
+  const invoice = (issueId: string | null, totalAmount = 330_000) =>
+    ({
+      issueId,
+      writtenDate: "2026-08-03",
+      invoicerBusinessNumber: "1234567890",
+      invoiceeBusinessNumber: "0987654321",
+      amounts: { supplyAmount: null, taxAmount: null, totalAmount },
+      lineItems: [],
+    }) as unknown as NonNullable<Mail["parsed"]>;
+  const mail = (uid: number, parsed: Mail["parsed"]): Mail => ({
+    uid,
+    box: "세금계산서",
+    subject: "s",
+    fromAddress: "f",
+    receivedAt: "2026-08-03T00:00:00.000Z",
+    parsed,
+    unparsedAttachments: [],
+  });
+
+  it("승인번호·내용이 같은 사본은 먼저 온 한 통만 남기고 접은 수를 센다", () => {
+    const result = collapseDuplicateCopies([mail(1, invoice("A")), mail(2, invoice("A"))]);
+    expect(result.mails.map((m) => m.uid)).toEqual([1]);
+    expect(result.duplicateCopies).toBe(1);
+  });
+
+  it("승인번호만 같고 내용이 다르면 접지 않는다(중복 의심 판정에 맡긴다)", () => {
+    const result = collapseDuplicateCopies([mail(1, invoice("A")), mail(2, invoice("A", 660_000))]);
+    expect(result.mails).toHaveLength(2);
+    expect(result.duplicateCopies).toBe(0);
+  });
+
+  it("승인번호가 없거나 첨부를 못 읽은 메일은 건드리지 않는다", () => {
+    const result = collapseDuplicateCopies([
+      mail(1, null),
+      mail(2, null),
+      mail(3, invoice(null)),
+      mail(4, invoice(null)),
+    ]);
+    expect(result.mails).toHaveLength(4);
   });
 });

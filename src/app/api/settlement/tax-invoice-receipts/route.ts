@@ -96,7 +96,8 @@ export async function GET(request: Request) {
     ]),
   );
 
-  // ── 5. 판정. 승인번호를 누적해 중복 발행을 잡는다.
+  // ── 5. 판정. 승인번호를 누적해 중복 발행을 잡는다. 같은 계산서의 사본 메일은 스캔이
+  //    이미 접었으므로, 여기서 걸리는 것은 승인번호만 같고 내용이 다른 이상 건뿐이다.
   const seenIssueIds: string[] = [];
   const results = scan.mails.map((mail) => {
     const verdict: ReceiptVerdict = judgeReceipt({
@@ -168,6 +169,8 @@ export async function GET(request: Request) {
       skippedByFilter: scan.skippedByFilter,
       /** 0 이 아니면 화면이 "전부 확인했다"고 말하면 안 된다. */
       truncated: scan.truncated,
+      /** 같은 계산서의 사본이라 접은 통수 — 판정에 들어가지 않았다(`collapseDuplicateCopies`). */
+      duplicateCopies: scan.duplicateCopies,
       sinceDays,
     },
     summary: {

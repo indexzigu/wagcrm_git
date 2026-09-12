@@ -176,7 +176,43 @@ export interface ScanTaxMailResult {
   skippedByFilter: number;
   /** 상한에 걸려 본문을 못 읽은 수. 0 이 아니면 화면이 "전부 봤다"고 말하면 안 된다. */
   truncated: number;
+  /**
+   * 같은 계산서의 **사본**이라 `mails` 에서 접은 통수(`collapseDuplicateCopies`).
+   * 조용히 버리지 않고 세어 둔다 — 0 이 아니면 수신 경로가 같은 알림을 두 번 넣고 있다는 뜻이다.
+   */
+  duplicateCopies: number;
   mails: ScannedTaxMail[];
+}
+
+/**
+ * 같은 계산서의 **사본 메일**을 하나로 접는다.
+ *
+ * 국세청 승인번호는 계산서 1장에 1개다 — 승인번호가 같고 첨부 내용까지 같으면 그것은
+ * 「두 번 발행된 계산서」가 아니라 **같은 계산서가 두 번 도착한 것**이다. 실발생 경로:
+ * 발행 시 수신 이메일을 2개까지 넣을 수 있는데 두 주소가 한 편지함으로 모이면 같은
+ * 알림이 2통 들어온다. 접지 않으면 두 번째가 「중복 발행 의심」으로 확인 필요에 올라가고
+ * (수취), 발행 대조에서는 두 장이 한 건에 배정돼 **금액이 두 배로** 합산된다(발행).
+ *
+ * ⛔ 승인번호만 같고 내용이 다르면 접지 않는다 — 그건 사본이 아니라 설명되지 않은
+ *    이상이므로 두 판정 엔진의 `DUPLICATE_ISSUE` 가 그대로 잡게 둔다.
+ * ⚠️ 먼저 온 쪽(입력 순서 = 최신순)을 남긴다. 첨부를 못 읽은 메일(`parsed` null)은
+ *    판별 근거가 없으므로 건드리지 않는다.
+ */
+export function collapseDuplicateCopies(mails: readonly ScannedTaxMail[]): {
+  mails: ScannedTaxMail[];
+  duplicateCopies: number;
+} {
+  const seen = new Set<string>();
+  const kept: ScannedTaxMail[] = [];
+  for (const mail of mails) {
+    if (mail.parsed?.issueId) {
+      const fingerprint = JSON.stringify(mail.parsed);
+      if (seen.has(fingerprint)) continue;
+      seen.add(fingerprint);
+    }
+    kept.push(mail);
+  }
+  return { mails: kept, duplicateCopies: mails.length - kept.length };
 }
 
 function toBuffer(body: unknown): Buffer {
@@ -422,7 +458,7 @@ export async function scanTaxInvoiceMails(
       candidates: candidates.length,
       skippedByFilter,
       truncated: Math.max(0, candidates.length - targets.length),
-      mails,
+      ...collapseDuplicateCopies(mails),
     };
   } finally {
     connection.end();
