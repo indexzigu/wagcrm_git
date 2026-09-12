@@ -339,6 +339,7 @@ async function handler(request: Request): Promise<Response> {
       candidates: scan.candidates,
       skippedByFilter: scan.skippedByFilter,
       truncated: scan.truncated,
+      duplicateCopies: scan.duplicateCopies,
       parsedInvoices: invoices.length,
       sinceDays: SCAN_SINCE_DAYS,
       /** 화면이 「이 범위는 확인했다」고 말할 때 근거로 쓸 실제 시작일 */
