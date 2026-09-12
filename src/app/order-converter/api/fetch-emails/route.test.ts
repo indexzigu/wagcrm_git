@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 /**
  * 본문 조회 방식 계약(T-158) — 후보 메일을 1통씩이 아니라 UID 묶음으로 받는다.
- * `mail-scan.ts` 의 `chunkUids` 를 재사용한 것과 같은 회귀를 잡는다
+ * `mail-scan.ts` 의 `fetchBodiesByUid` 를 재사용한 것과 같은 회귀를 잡는다
  * (`mail-scan.fetch.test.ts` 와 같은 형태 — 가짜 IMAP 서버가 UID 검색 인자를 기록한다).
  */
 
