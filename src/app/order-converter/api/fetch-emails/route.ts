@@ -12,7 +12,7 @@ import {
   type MailboxDescriptor,
 } from '@/lib/mail-config';
 import { normalizeForCompare } from '@/lib/text-normalize';
-import { chunkUids } from '@/lib/tax-invoice-mail/mail-scan';
+import { fetchBodiesByUid } from '@/lib/tax-invoice-mail/mail-scan';
 
 // F4-②: 브랜드별 허용 발신자 도메인은 거래처(Partner) 설정에서 해석 (하드코딩 맵 제거).
 
@@ -184,16 +184,8 @@ export async function POST(req: NextRequest) {
         console.log(`🔥 [fetch-emails] [${boxName}] 1차 필터링 통과 후보 수: ${candidateUids.length}`);
 
         // 후보 본문은 1통씩이 아니라 UID 묶음으로 받는다 — 1통씩 요청하면 왕복 대기만으로
-        // 느려진다(`mail-scan.ts` 의 `chunkUids` 실측 참조). UID 는 숫자 배열 그대로 넘긴다:
-        // 쉼표로 이은 문자열을 넘기면 서버가 첫 번호 하나만 돌려준다.
-        const bodyByUid = new Map<number, unknown>();
-        for (const uids of chunkUids(candidateUids)) {
-          const fetched = await connection.search([['UID', ...uids]], { bodies: [''], markSeen: false });
-          for (const msg of fetched) {
-            const allBody = msg.parts.find((part: any) => part.which === '');
-            if (allBody) bodyByUid.set(msg.attributes.uid, allBody.body);
-          }
-        }
+        // 느려진다(`mail-scan.ts` 의 `fetchBodiesByUid` 실측 참조).
+        const bodyByUid = await fetchBodiesByUid(connection, candidateUids);
 
         for (const uid of candidateUids) {
           if (!bodyByUid.has(uid)) continue;

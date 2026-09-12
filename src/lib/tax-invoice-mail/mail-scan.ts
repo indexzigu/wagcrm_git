@@ -19,7 +19,7 @@
  * `unparsedAttachments` 로 실어 보내 관측 가능하게 둔다(P0 No Silent Failure).
  */
 
-import imaps from "imap-simple";
+import imaps, { type ImapSimple } from "imap-simple";
 import { simpleParser } from "mailparser";
 import { Readable } from "stream";
 import { parseEtaxInvoiceXml, type ParsedEtaxInvoice } from "./etax-xml";
@@ -89,6 +89,30 @@ export function chunkUids(uids: readonly number[], size: number = BODY_FETCH_BAT
     chunks.push(uids.slice(start, start + size));
   }
   return chunks;
+}
+
+/**
+ * UID 목록의 전체 본문을 {@link chunkUids} 묶음으로 받아 UID → 본문 맵으로 돌려준다.
+ *
+ * 두 소비처(이 모듈의 `scanTaxInvoiceMails` · `order-converter/api/fetch-emails`)가
+ * 같은 모양의 루프를 각자 들고 있었다 — 여기 한 곳으로 모은다.
+ */
+export async function fetchBodiesByUid(
+  connection: ImapSimple,
+  uids: readonly number[],
+): Promise<Map<number, unknown>> {
+  const bodyByUid = new Map<number, unknown>();
+  for (const chunk of chunkUids(uids)) {
+    const fetched = await connection.search([["UID", ...chunk]], {
+      bodies: [""],
+      markSeen: false,
+    });
+    for (const message of fetched) {
+      const whole = message.parts.find((part) => part.which === "");
+      if (whole) bodyByUid.set(message.attributes.uid, whole.body);
+    }
+  }
+  return bodyByUid;
 }
 
 export interface UnparsedAttachment {
@@ -310,17 +334,10 @@ export async function scanTaxInvoiceMails(
     // 본문은 묶음으로 받는다(위 `BODY_FETCH_BATCH_SIZE` 주석). 서버는 UID 순으로 돌려주므로
     // 결과는 UID 로 찾아 쓰고, **순회는 아래 `targets` 의 최신순을 그대로 따른다** — 라우트의
     // 중복 승인번호 판정이 「먼저 본 쪽」을 기준으로 삼기 때문에 순서가 판정에 들어간다.
-    const bodyByUid = new Map<number, unknown>();
-    for (const uids of chunkUids(targets.map((candidate) => candidate.uid))) {
-      const fetched = await connection.search([["UID", ...uids]], {
-        bodies: [""],
-        markSeen: false,
-      });
-      for (const message of fetched) {
-        const whole = message.parts.find((part) => part.which === "");
-        if (whole) bodyByUid.set(message.attributes.uid, whole.body);
-      }
-    }
+    const bodyByUid = await fetchBodiesByUid(
+      connection,
+      targets.map((candidate) => candidate.uid),
+    );
 
     const mails: ScannedTaxMail[] = [];
     for (const candidate of targets) {
