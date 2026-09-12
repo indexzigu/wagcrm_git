@@ -65,7 +65,7 @@ export const KNOWN_JOBS: readonly KnownJob[] = [
   { key: "naver-settlement-sync", name: "네이버 정산 동기화", cycle: "매일", timeKst: "06:30", lane: "vercel", desc: "네이버페이 정산 내역을 조회해 캠페인 정산 케이스에 반영합니다." },
   { key: "naver-order-sync", name: "네이버 발주 동기화", cycle: "매일", timeKst: "07:00", lane: "vercel", desc: "네이버 스토어 주문 스냅샷을 수집해 발주·배송 상태를 갱신합니다." },
   { key: "enrich-references", name: "레퍼런스 심층 수집", cycle: "매일", timeKst: "07:30", lane: "vercel", desc: "발굴 레퍼런스의 인스타·유튜브 상세 지표를 심층 수집합니다." },
-  { key: "collect-qnas", name: "상품 문의 수집", cycle: "매일", timeKst: "08:00", lane: "vercel", desc: "네이버 상품문의·고객문의(VOC)를 수집해 상품·캠페인에 귀속합니다." },
+  { key: "collect-qnas", name: "상품 문의 수집", cycle: "매주 월", timeKst: "08:00", lane: "vercel", desc: "네이버 상품문의·고객문의(VOC)를 수집해 상품·캠페인에 귀속합니다." },
   { key: "analyze-voc", name: "VOC AI 인사이트", cycle: "매일", timeKst: "08:30", lane: "vercel", desc: "신규 문의·리뷰가 임계 이상 쌓인 딜만 골라 AI 요약(소구점·불만·FAQ)을 생성합니다." },
   { key: "price-monitoring", name: "최저가 모니터링", cycle: "매일", timeKst: "13:00", lane: "vercel", desc: "캠페인 상품의 최저가를 판매기간 ±7일 창에서 수집하고 가격 위반을 감지합니다." },
   { key: "capture-stories", name: "스토리 스냅샷 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "행사 수집창(시작 7일 전~마감 1일 후) 캠페인의 인스타 셀러 스토리를 익명 뷰어로 전량 스냅샷 수집합니다. 태그·멘션과 무관하게 다 담고, 우리 캠페인 홍보인지는 나중에 썸네일로 분류합니다. ⚠️ 스토리는 24시간 뒤 사라지므로 거른 회차는 소급이 불가능합니다. 이 줄이 지연으로 뜨면 그날 밤 수집이 통째로 빠졌다는 뜻이니 맥이 꺼져 있었는지부터 확인하세요. 아직 같은 날 안이라면 지금 실행 버튼으로 만회할 수 있습니다." },

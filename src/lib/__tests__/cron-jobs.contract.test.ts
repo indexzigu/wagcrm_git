@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { KNOWN_JOBS, KNOWN_JOB_KEYS } from "@/lib/cron-jobs";
+import { QNA_DEFAULT_LOOKBACK_DAYS } from "@/lib/order-converter/naver-qna-sync";
 
 /**
  * 크론 잡 목록 계약 — cron-jobs.ts가 레이더 표시·수동 실행 허용의 SSOT임을 강제한다.
@@ -274,5 +275,16 @@ describe("C3 — 소비처는 사본이 아니라 SSOT를 import한다", () => {
     expect(src).toContain("KNOWN_JOBS"); // 앵커
     expect(src).toContain('from "@/lib/cron-jobs"');
     expect(src.includes("const KNOWN_JOBS")).toBe(false);
+  });
+});
+
+describe("C7 — 문의 수집 창은 크론 간격보다 길다(사이 문의 누락 금지)", () => {
+  it("collect-qnas: 발화 간격(일) + 경계 겹침 1일 ≤ QNA_DEFAULT_LOOKBACK_DAYS", () => {
+    const entry = crontabByKey().get("collect-qnas");
+    expect(entry, "crontab 에 collect-qnas 활성 줄이 없다").toBeDefined();
+    // 요일 고정 = 주 1회(7일), `*` = 매일(1일). 그 밖의 표현(격일 등)은 여기서 해석하지 않으니 실패시킨다.
+    expect(entry!.dow === "*" || /^[0-7]$/.test(entry!.dow), `해석하지 않는 요일 필드: ${entry!.dow}`).toBe(true);
+    const intervalDays = entry!.dow === "*" ? 1 : 7;
+    expect(QNA_DEFAULT_LOOKBACK_DAYS).toBeGreaterThanOrEqual(intervalDays + 1);
   });
 });

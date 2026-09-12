@@ -348,12 +348,19 @@ async function upsertCustomerInquiries(items: any[]): Promise<number> {
 }
 
 /**
+ * 크론의 기본 수집 창(일). 크론은 주 1회(월, `infra/selfhost/crontab`)라 한 주 7일 + 경계 겹침 1일.
+ * ⚠️ 크론 간격보다 짧으면 그 사이 문의가 **영영** 수집되지 않는다(다음 창이 거기까지 거슬러 가지 않는다) —
+ *    간격을 바꾸면 이 값도 함께 바꿀 것. cron-jobs.contract.test.ts C7 이 「간격 + 1일 ≤ 이 값」을 대조한다.
+ */
+export const QNA_DEFAULT_LOOKBACK_DAYS = 8;
+
+/**
  * 문의 수집 오케스트레이션. 증분은 questionId/inquiryNo upsert dedup에 의존하고, 창은
  * 직전 창과 하루 겹쳐 폴링한다(공식 권고: 경계 누락 방지). lookbackDays 만큼 거슬러 수집.
  *
- * @param lookbackDays 수집 창 길이(일). 기본 3(일일 크론 충분), 초기 백필은 확대(각 API 상한 내).
+ * @param lookbackDays 수집 창 길이(일). 기본 QNA_DEFAULT_LOOKBACK_DAYS, 초기 백필은 확대(각 API 상한 내).
  */
-export async function runQnaSync(lookbackDays = 3): Promise<{
+export async function runQnaSync(lookbackDays = QNA_DEFAULT_LOOKBACK_DAYS): Promise<{
   productQnaFetched: number;
   productQnaUpserted: number;
   customerInquiryFetched: number;
