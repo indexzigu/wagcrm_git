@@ -33,7 +33,7 @@ const prisma = new PrismaClient();
 
 const HEADERS = ["이름", "핸드폰", "전화", "주소", "품목", "특기사항", "주문번호", "판매처", "수량", "박스수", "대한통운"];
 
-export const WHITELABS_RULES: OrderExcelRulesCore = {
+const WHITELABS_RULES: OrderExcelRulesCore = {
   version: 1,
   sourceAssetId: null,
   templateStoragePath: null,
