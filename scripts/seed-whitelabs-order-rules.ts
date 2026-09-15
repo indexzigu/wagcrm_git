@@ -1,14 +1,16 @@
 /**
  * 화이트랩스(피움컴퍼니) 거래처 orderExcelRules 시드.
  *
- * 배경: 화이트랩스 발주서는 브랜드가 준 빈 양식에 행을 채우는 형태가 아니라 11열 표를
+ * 배경: 화이트랩스 발주서는 브랜드가 준 빈 양식에 행을 채우는 형태가 아니라 12열 표를
  * 새로 만드는 형태(new-workbook)라, 검수 UI(analyze = 업로드된 ORDER_TEMPLATE 자산 필요)로
  * 등록할 원본 파일이 없다 → 트리프 시드(seed-tripp-order-rules.ts)와 같은 방식으로 직접 기입한다.
  *
- * 열 매핑(오너가 준 양식 캡처 기준):
+ * 열 매핑(오너가 전달한 실제 양식 파일 기준, 2026-09-15 정정 — 최초 시드는 오너가 준 양식
+ * 캡처만 보고 11열로 기입했는데 실물 파일은 K열이 빈 칸으로 한 칸 더 있어 12열이었다):
  *   이름=수취인명 · 핸드폰=수취인연락처1 · 전화=수취인연락처2 · 주소=배송지 · 품목=옵션정보(네이버 원문)
  *   특기사항=배송메시지 · 주문번호=상품주문번호 · 판매처=와이그라운드(셀러명) · 수량=수량(없으면 1)
- *   박스수·대한통운=공란(브랜드가 채워 회신). 회신 송장 열 이름이 '대한통운'이라 기본 후보에
+ *   박스수량(공란, 브랜드가 채워 회신) · K열=헤더 없는 빈 칸(rules.columns 에 미기재 — 항상 공란)
+ *   · 대한통운(L열, 공란·브랜드가 채워 회신). 회신 송장 열 이름이 '대한통운'이라 기본 후보에
  *   없으므로 reply.trackingHeaders 에 명시한다.
  *
  * 멱등: 이미 orderExcelRules 가 있으면 건너뜀(--force 로 덮어쓰기 — previous 슬롯에 직전 보존).
@@ -31,7 +33,7 @@ const FORCE = process.argv.includes("--force");
 const NAME_KEYWORDS = ["화이트랩스", "피움"];
 const prisma = new PrismaClient();
 
-const HEADERS = ["이름", "핸드폰", "전화", "주소", "품목", "특기사항", "주문번호", "판매처", "수량", "박스수", "대한통운"];
+const HEADERS = ["이름", "핸드폰", "전화", "주소", "품목", "특기사항", "주문번호", "판매처", "수량", "박스수량", "", "대한통운"];
 
 const WHITELABS_RULES: OrderExcelRulesCore = {
   version: 1,
@@ -50,8 +52,9 @@ const WHITELABS_RULES: OrderExcelRulesCore = {
     { col: 7, header: "주문번호", source: { type: "field", field: "상품주문번호" } },
     { col: 8, header: "판매처", source: { type: "template", template: "와이그라운드({{sellerName}})", fallback: "와이그라운드" } },
     { col: 9, header: "수량", source: { type: "field", field: "수량", fallbackValue: 1 } },
-    { col: 10, header: "박스수", source: { type: "empty" } },
-    { col: 11, header: "대한통운", source: { type: "empty" } },
+    { col: 10, header: "박스수량", source: { type: "empty" } },
+    // 11열(K)은 실제 양식에 헤더 없는 빈 칸이 있다 — 규칙에 없는 열은 헤더·값 모두 안 쓰여 공란으로 남는다.
+    { col: 12, header: "대한통운", source: { type: "empty" } },
   ],
   reply: {
     orderIdHeaders: ["주문번호", "상품주문번호"],
