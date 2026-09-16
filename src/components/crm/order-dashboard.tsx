@@ -657,7 +657,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
 }
 
 export default function OrderDashboard() {
-  const { campaigns, isLoading, fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, toggleCampaignStatus, syncMeta, refreshNow, refreshing } = useCampaigns();
+  const { campaigns: rawCampaigns, isLoading, fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, toggleCampaignStatus, syncMeta, refreshNow, refreshing } = useCampaigns();
   const { naverProducts, isFetchingNaver, fetchNaverProducts } = useNaverProducts();
   const { toasts, addToast, removeToast } = useToast();
   // 캠페인 카드별 배지 카운트 + 상단 요약 바 카운터에 쓰는 클레임 데이터.
@@ -707,7 +707,7 @@ export default function OrderDashboard() {
     });
 
   // 정산까지 끝난 캠페인은 서버가 목록에서 요약으로 접어 보낸다(초기 로딩 제외). 펼친 것만
-  // 단건 조회로 받아 여기 담아 두고, 아래 visibleCampaigns 가 요약 자리에 끼워 넣는다.
+  // 단건 조회로 받아 여기 담아 두고, 아래 병합본(campaigns)이 요약 자리에 끼워 넣는다.
   // 새로고침하면 목록이 다시 요약으로 오므로 접힌 상태로 돌아간다(의도 — 오너 확정 2026-09-16).
   const [settledDetails, setSettledDetails] = useState<Record<string, CampaignPayload>>({});
   const [expandingSettledId, setExpandingSettledId] = useState<string | null>(null);
@@ -736,7 +736,13 @@ export default function OrderDashboard() {
   };
 
   // 요약으로 온 캠페인 중 이미 펼친 것은 받아 온 전체 데이터로 바꿔 끼운다(순서 보존).
-  const visibleCampaigns = campaigns.map(camp => settledDetails[camp.id] ?? camp);
+  //
+  // ⚠️ **이 병합본이 `campaigns` 라는 이름을 갖는 것이 요점이다.** 원본(rawCampaigns)을 따로
+  // 쓸 수 있게 두면 렌더는 펼친 데이터를, 모달·조회는 접힌 요약을 보게 된다 — 카드는 멀쩡한데
+  // 매출리포트가 빈 그래프로 뜨고 발송 모달의 수신자가 비는 식으로 **조용히** 어긋난다(리뷰에서
+  // 실제로 잡힌 결함). 이름을 덮어써서 이 파일의 모든 조회(`campaigns.find` 6곳 포함)가 자동으로
+  // 병합본을 보게 한다 — 규약으로 지키는 대신 실수를 불가능하게 만든다.
+  const campaigns = rawCampaigns.map(camp => settledDetails[camp.id] ?? camp);
 
   // Accordion State
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
@@ -1402,7 +1408,7 @@ export default function OrderDashboard() {
         </div>
       ) : (
         <div className="grid gap-6">
-          {visibleCampaigns.map(camp => {
+          {campaigns.map(camp => {
             // 정산까지 끝난 캠페인은 서버가 요약만 내려보낸다(초기 로딩에서 제외). 펼치기 전에는
             // 한 줄로 두고, 눌렀을 때 그 캠페인만 받아 아래 카드로 교체한다.
             if (isCollapsedCampaign(camp)) {
