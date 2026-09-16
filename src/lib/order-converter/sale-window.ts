@@ -185,6 +185,54 @@ export function resolveSalesCampaignWindow(
 }
 
 /**
+ * 회차가 **확정(정산 락)** 됐는지. 정산대기(SETTLEMENT_WAIT)까지는 반품·구매확정으로 값이
+ * 움직이므로 락이 아니고, 정산중/정산완료/드랍부터 확정이다(오너 확정 2026-07-15).
+ *
+ * 종전에는 mapping-service에 있었는데 그쪽은 prisma를 import하므로, 순수 함수인 조회창 계산이
+ * 쓰려면 여기로 내려와야 했다(mapping-service가 그대로 재노출하므로 호출부는 바뀌지 않는다).
+ * 상태 목록의 사본을 만들지 말 것 — 이 레포에서 상태 집합을 손으로 베낀 곳은 예외 없이 갈렸다.
+ *
+ * null/undefined(미선택·미확정, 또는 **select에서 status가 빠진 경우**)는 락 아님으로 취급한다 —
+ * `status.toUpperCase()` 크래시 방어인 동시에, 조회창 계산에서는 "모르면 좁히지 않는다"는
+ * fail-safe 방향이기도 하다(모름을 '끝난 회차'로 읽으면 발주서에서 주문이 조용히 빠진다).
+ */
+export function isSalesCampaignLocked(status: string | null | undefined): boolean {
+  if (status == null) return false;
+  const lockedStatuses = ['SETTLEMENT_IN_PROGRESS', 'COMPLETED', 'DROPPED'];
+  return lockedStatuses.includes(status.toUpperCase());
+}
+
+/**
+ * 조회창 시작일 계산에 기여할 판매캠페인만 남긴다 — **끝난 회차(정산 락)는 뺀다.**
+ *
+ * 실사고(2026-09-16): 2차 주문캠페인에 1차 판매캠페인 3건(6/12 시작, 완료·정산중)이 아직
+ * 연결돼 있어, 캠페인 기간이 9/10~9/16인데 주문확인이 **6/12부터 97일**을 훑었다(실측:
+ * 네이버 조회 13회 + 생략 84일 · 53초). 창은 연결된 판매캠페인 시작일의 **최솟값**이라
+ * 지난 회차가 붙어 있기만 해도 그만큼 앞으로 끌린다. 증상이 "주문확인이 느리다" 뿐이라
+ * 조용히 누적된다.
+ *
+ * 제외 기준은 **새로 만들지 않고 정산 락(`isSalesCampaignLocked`)을 그대로 쓴다** — 오너가
+ * 이미 "정산중·완료·드랍이면 그 회차는 확정이므로 더 조회하지 않는다"로 정한 경계다
+ * (2026-07-15 · T-140 Progressive Lock). 상태 집합의 사본이 생기는 순간 갈라진다.
+ * ⛔ 마감(`CLOSED`)·정산대기는 빼지 않는다 — 판매 종료 직후 결제분이 아직 발주 대상이다.
+ *
+ * ⚠️ **전부 끝난 회차면 아무것도 빼지 않는다.** 제외가 후보를 0으로 만들면 창이 저장 창이나
+ * 기본 창(오늘-14일)으로 떨어져 **발주서에서 주문이 조용히 빠질 수 있다**(P0). 창을 좁히는
+ * 것은 살아있는 회차가 창을 붙들고 있을 때뿐이라는 뜻이다.
+ *
+ * ⚠️ 이 필터를 `resolveSalesCampaignWindow` 자체에 넣지 말 것 — 그쪽은 **집계 창**(캠페인의
+ * startDate/endDate 정본)을 만들고, 그 창은 "연결된 전부를 min~max로 합성하되 어긋나면
+ * 경고"가 오너 결정이다(P7). 여기서 거르는 것은 **조회창** 하나뿐이다.
+ */
+function resolveQueryWindowContributors<T extends { status?: string | null }>(
+  salesCampaigns: T[] | null | undefined,
+): T[] | null | undefined {
+  if (!salesCampaigns || salesCampaigns.length === 0) return salesCampaigns;
+  const live = salesCampaigns.filter((sc) => !isSalesCampaignLocked(sc.status));
+  return live.length > 0 ? live : salesCampaigns;
+}
+
+/**
  * 이 캠페인이 '네이버 주문 조회창 시작일'에 기여할 시각(ms). null=기여 없음.
  *
  * 실사고(2026-07-15): 조회창 계산이 이 SSOT를 쓰지 않고 `camp.startDate`를 raw로 읽어,
@@ -197,18 +245,31 @@ export function resolveSalesCampaignWindow(
  * 조회조차 안 돼 위 실사고가 재현된다. 그래서 후보가 둘 다 있으면 이른 쪽(min)을 택한다 —
  * 정상 상태에선 startDate가 판매관리 파생이라 두 값이 같고, 어긋나는 건 동결(정산 락)로 startDate가
  * 옛 창에 멈춰 있거나 아직 동기화가 안 닿은 과도기뿐이다. 그 경우 넓게 잡아 조회한 뒤 컷오프가
- * 걸러내므로 결과는 정확하고 비용만 조금 는다(조회창 상한 MAX_DAYS로 이미 봉인).
+ * 걸러내므로 결과는 정확하고 비용만 조금 는다.
+ *
+ * ⛔ 종전 주석의 "조회창 상한 MAX_DAYS로 이미 봉인"은 **사실이 아니다**(SUPERSEDED). now 상대
+ * 하한은 조회 구간을 조용히 갉아먹어 제거됐고 `live-window-floor.contract.test.ts`가 부활을
+ * 막는다 — 즉 창을 넓히는 실수에는 **비용 상한이 없다.** 2026-09-16 실사고에서 한 캠페인이
+ * 97일을 훑은 것이 그 결과다(아래 `resolveQueryWindowContributors` 참조).
+ *
+ * 그래서 후보 판매캠페인은 `resolveQueryWindowContributors`가 한 번 거른다 — **끝난 회차(정산
+ * 락)는 시작일을 앞으로 끌지 못한다.** 저장 창(`storedStart`)은 거르지 않는다: 그건 이 캠페인이
+ * 스스로 선언한 창이라 위 불변식(조회창 ≤ 컷오프)의 바닥이다.
  */
 export function resolveCampaignQueryStartMs(camp: {
   startDate?: Date | string | null;
   salePeriod?: string | null;
-  salesCampaigns?: Array<{ startDate?: Date | string | null; endDate?: Date | string | null }> | null;
+  salesCampaigns?: Array<{
+    startDate?: Date | string | null;
+    endDate?: Date | string | null;
+    status?: string | null;
+  }> | null;
 }): number | null {
   // 저장된 창(startDate → salePeriod 폴백) — 컷오프가 실제로 읽는 값.
   const storedStart = resolveSaleWindowStartMs(camp);
 
   // 판매관리 창(정본). 동기화가 아직 안 닿았거나 동결된 캠페인에서도 컷오프를 놓치지 않게 함께 본다.
-  const salesWindow = resolveSalesCampaignWindow(camp.salesCampaigns);
+  const salesWindow = resolveSalesCampaignWindow(resolveQueryWindowContributors(camp.salesCampaigns));
   const salesStart =
     salesWindow === null
       ? null

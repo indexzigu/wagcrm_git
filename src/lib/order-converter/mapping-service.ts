@@ -8,7 +8,7 @@ import { countDistinctSellerIds, isCrossSellerSet, CROSS_SELLER_REJECT_MESSAGE }
 // 순수 유사도 함수는 클라이언트 번들 안전한 similarity.ts로 이전.
 // 로컬 사용 + 기존 import 경로 보존을 위해 import 후 재수출.
 import { computeSimilarityScore, extractSupplyMonths, computeSellerScore, scoreDealCandidate } from './similarity';
-import { parseStoredPeriodEndMs, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, parseSalePeriodBounds, isSameKstDay } from './sale-window';
+import { parseStoredPeriodEndMs, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, parseSalePeriodBounds, isSameKstDay } from './sale-window';
 export { computeSimilarityScore };
 
 const MAPPING_DEBUG_LOG_FILE = 'mapping-debug.log';
@@ -218,17 +218,6 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
   });
 }
 
-/**
- * 정산완료(SETTLEMENT 이상) 여부를 확인하여, 락(Lock)이 걸렸는지 반환
- */
-export function isSalesCampaignLocked(status: string | null | undefined) {
-  // 정산대기(SETTLEMENT_WAIT)까지는 업데이트 허용, 정산중/정산완료/드랍 상태일 때만 잠금.
-  // null/undefined(미선택·미확정)는 락 아님으로 취급 — status.toUpperCase() 크래시 방어(defense-in-depth).
-  if (status == null) return false;
-  const lockedStatuses = ['SETTLEMENT_IN_PROGRESS', 'COMPLETED', 'DROPPED'];
-  return lockedStatuses.includes(status.toUpperCase());
-}
-
 // 종료 임박 2일 전부터 네이버 실기간 재동기화 후보로 삼는다. 상시(모든 로드마다) 네이버를
 // 호출하지 않고, 판매기간 연장/종료 경계에서만 따라가기 위한 여유 창.
 export const PERIOD_RESYNC_LEAD_MS = 2 * 24 * 60 * 60 * 1000;
@@ -240,7 +229,7 @@ export const PERIOD_RESYNC_STALE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 // 판매기간 컷오프 해석(순수 함수)은 ./sale-window로 이관해 라이브 집계(campaigns-handler)·마감
 // 스냅샷(closed-campaign-cache)·재동기화 판정(shouldResyncCampaignPeriod)이 같은 SSOT를 공유한다.
 // 하위 호환을 위해 mapping-service에서도 재노출한다.
-export { parseStoredPeriodEndMs, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, parseSalePeriodBounds, isSameKstDay };
+export { parseStoredPeriodEndMs, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, parseSalePeriodBounds, isSameKstDay };
 
 /**
  * 활성(미마감) 캠페인의 판매기간을 네이버에서 재동기화할지 판정한다.

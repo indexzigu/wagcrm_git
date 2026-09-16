@@ -262,6 +262,74 @@ describe('resolveCampaignQueryStartMs — 주문 조회창 시작일 기여값',
     expect(resolveCampaignQueryStartMs({ salePeriod: '기간 미정', salesCampaigns: [] })).toBeNull();
     expect(resolveCampaignQueryStartMs({})).toBeNull();
   });
+
+  it('실사고 회귀(2026-09-16): 끝난 회차는 조회창 시작일을 앞으로 끌지 못한다', () => {
+    // 2차 주문캠페인(9/10~)에 1차 판매캠페인 3건(6/12 시작, 완료·정산중)이 아직 연결돼 있었다.
+    // 창이 연결 전체의 min이라 주문확인이 6/12부터 97일을 훑었다(실측: 조회 13회 + 생략 84일 · 53초).
+    // 화면에 뜨는 캠페인 기간은 9/10인데 조회만 석 달을 거슬러 올라가는 게 이 결함의 지문이다.
+    expect(
+      resolveCampaignQueryStartMs({
+        startDate: new Date('2026-09-10T00:00:00.000Z'),
+        salesCampaigns: [
+          { startDate: new Date('2026-09-10T00:00:00.000Z'), endDate: new Date('2026-09-16T00:00:00.000Z'), status: 'ACTIVE' },
+          { startDate: new Date('2026-06-12T00:00:00.000Z'), endDate: new Date('2026-06-18T00:00:00.000Z'), status: 'COMPLETED' },
+          { startDate: new Date('2026-06-12T00:00:00.000Z'), endDate: new Date('2026-06-18T00:00:00.000Z'), status: 'SETTLEMENT_IN_PROGRESS' },
+        ],
+      }),
+    ).toBe(startKst('2026.09.10'));
+  });
+
+  it('마감·정산대기 회차는 빼지 않는다 — 판매 종료 직후 결제분이 아직 발주 대상이다', () => {
+    expect(
+      resolveCampaignQueryStartMs({
+        startDate: new Date('2026-09-10T00:00:00.000Z'),
+        salesCampaigns: [
+          { startDate: new Date('2026-09-10T00:00:00.000Z'), endDate: new Date('2026-09-16T00:00:00.000Z'), status: 'ACTIVE' },
+          { startDate: new Date('2026-09-02T00:00:00.000Z'), endDate: new Date('2026-09-08T00:00:00.000Z'), status: 'CLOSED' },
+          { startDate: new Date('2026-09-04T00:00:00.000Z'), endDate: new Date('2026-09-09T00:00:00.000Z'), status: 'SETTLEMENT_WAIT' },
+        ],
+      }),
+    ).toBe(startKst('2026.09.02'));
+  });
+
+  it('전부 끝난 회차면 아무것도 빼지 않는다(창이 기본값으로 떨어져 발주서가 비는 것을 막는다)', () => {
+    // 제외가 후보를 0으로 만들면 호출부가 '오늘-14일' 기본 창으로 떨어진다 — 좁히는 것은
+    // 살아있는 회차가 창을 붙들고 있을 때뿐이라는 뜻이다(P0: 발주서 주문 누락).
+    expect(
+      resolveCampaignQueryStartMs({
+        salesCampaigns: [
+          { startDate: new Date('2026-06-12T00:00:00.000Z'), endDate: new Date('2026-06-18T00:00:00.000Z'), status: 'COMPLETED' },
+          { startDate: new Date('2026-06-23T00:00:00.000Z'), endDate: new Date('2026-06-30T00:00:00.000Z'), status: 'DROPPED' },
+        ],
+      }),
+    ).toBe(startKst('2026.06.12'));
+  });
+
+  it('status가 없으면(select 누락 등) 좁히지 않는다 — 모름은 끝난 회차가 아니다', () => {
+    expect(
+      resolveCampaignQueryStartMs({
+        startDate: new Date('2026-09-10T00:00:00.000Z'),
+        salesCampaigns: [
+          { startDate: new Date('2026-09-10T00:00:00.000Z'), endDate: new Date('2026-09-16T00:00:00.000Z') },
+          { startDate: new Date('2026-06-12T00:00:00.000Z'), endDate: new Date('2026-06-18T00:00:00.000Z') },
+        ],
+      }),
+    ).toBe(startKst('2026.06.12'));
+  });
+
+  it('저장 창은 거르지 않는다 — 끝난 회차를 빼도 컷오프 바닥 아래로는 내려가지 않는다', () => {
+    // 불변식(조회창 ≤ 컷오프)의 바닥은 캠페인이 스스로 선언한 창이다. 연결이 전부 종결돼도
+    // 저장 창이 더 이르면 그대로 쓴다.
+    expect(
+      resolveCampaignQueryStartMs({
+        startDate: new Date('2026-08-01T00:00:00.000Z'),
+        salesCampaigns: [
+          { startDate: new Date('2026-09-10T00:00:00.000Z'), endDate: new Date('2026-09-16T00:00:00.000Z'), status: 'ACTIVE' },
+          { startDate: new Date('2026-06-12T00:00:00.000Z'), endDate: new Date('2026-06-18T00:00:00.000Z'), status: 'COMPLETED' },
+        ],
+      }),
+    ).toBe(startKst('2026.08.01'));
+  });
 });
 
 describe('parseSalePeriodBounds — 판매기간 문자열 → 정본(startDate/endDate)', () => {

@@ -70,9 +70,12 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
         // salesCampaigns 를 함께 싣는다 — 조회창 시작 SSOT(resolveCampaignQueryStartMs)가
         // "저장 창과 판매관리 창 중 이른 쪽"을 쓰기 때문이다(P7). 종전엔 startDate 만 봐서
         // 판매관리가 더 이르면 그 앞 구간 주문이 발주서에서 통째로 빠질 수 있었다.
+        // status 는 **끝난 회차(정산 락)를 창 계산에서 빼는 게이트의 유일한 입력**이다 — 빠지면
+        // sc.status=undefined 라 전부 "살아있는 회차"로 읽혀, 지난 회차가 조회창을 몇 달 앞으로
+        // 끌어당기는 2026-09-16 실사고가 조용히 되살아난다(증상은 "주문확인이 느리다" 뿐이다).
         const campaign = await prisma.orderCampaign.findUnique({
           where: { id: campaignId },
-          include: { mappings: true, salesCampaigns: { select: { startDate: true, endDate: true } } }
+          include: { mappings: true, salesCampaigns: { select: { startDate: true, endDate: true, status: true } } }
         });
         
         const activeCampaigns = await prisma.orderCampaign.findMany({

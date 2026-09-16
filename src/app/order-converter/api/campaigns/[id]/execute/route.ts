@@ -45,9 +45,12 @@ async function handleExecuteGet(request: NextRequest, { params }: { params: Prom
 
     // 1. 캠페인 및 매핑 룰 로드
     // salesCampaigns 동승 — 조회창 시작 SSOT(resolveCampaignQueryStartMs)가 요구한다(P7).
+    // status 는 **끝난 회차(정산 락)를 창 계산에서 빼는 게이트의 유일한 입력**이다 — 빠지면
+    // sc.status=undefined 라 전부 "살아있는 회차"로 읽혀, 지난 회차가 조회창을 몇 달 앞으로
+    // 끌어당기는 2026-09-16 실사고가 조용히 되살아난다(증상은 "주문확인이 느리다" 뿐이다).
     const campaign = await prisma.orderCampaign.findUnique({
       where: { id: campaignId },
-      include: { mappings: true, salesCampaigns: { select: { startDate: true, endDate: true } } }
+      include: { mappings: true, salesCampaigns: { select: { startDate: true, endDate: true, status: true } } }
     });
     
     const activeCampaigns = await prisma.orderCampaign.findMany({
