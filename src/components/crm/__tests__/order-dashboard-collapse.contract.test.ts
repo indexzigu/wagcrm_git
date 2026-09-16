@@ -62,6 +62,18 @@ describe('주문관리 화면 — 접힌 캠페인 병합본 계약', () => {
     ).toBe(4);
   });
 
+  it('사본 파기는 쓰기 **성공 뒤**에만 한다 — 실패했는데 화면이 접히지 않게', () => {
+    // 쓰기 전에 버리면 실패 시 서버 목록은 그대로 접힌 요약인데 사본만 사라져, 펼쳐 보던
+    // 화면이 아무 설명 없이 접힌다(3회차 리뷰 지적). 개수만 세면 이 순서를 못 본다.
+    expect(
+      CODE,
+      '쓰기 호출 앞에서 사본을 버리고 있다 — 성공 분기 안으로 옮길 것',
+    ).not.toMatch(/forgetSettledDetail\([^)]*\);\s*(await\s+)?(toggleCampaignStatus|updateCampaign|deleteCampaign)\(/);
+
+    // 양성 대조: 성공 확인과 짝지어진 호출이 실제로 존재해야 위 금지가 의미를 갖는다.
+    expect(CODE).toMatch(/success\)\s*forgetSettledDetail\(|res\.success\)\s*\{[\s\S]{0,400}?forgetSettledDetail\(/);
+  });
+
   it('조회는 병합본을 본다 — campaigns.find 가 살아 있다(양성 대조)', () => {
     // 위 금지 단언들이 "그 표현이 파일에 아예 없어서" 통과하는 것을 막는 대조군.
     // 모달들이 실제로 id 로 캠페인을 되찾는 경로가 존재해야 이 계약이 의미를 갖는다.

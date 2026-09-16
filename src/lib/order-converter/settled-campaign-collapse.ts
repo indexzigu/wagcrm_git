@@ -107,8 +107,14 @@ export function isCollapsedCampaignSummary(camp: { isCollapsed?: unknown }): boo
  * 화면은 계속 마감 카드를 보여주고, **설정을 저장하면** 저장 전 값이 다시 보이며 그 상태로 한 번
  * 더 저장하면 되돌아간 값이 쓰인다.
  *
- * 그래서 규칙은 둘이다. ①여기서는 접힌 자리에만 끼운다. ②쓰기가 성공하면 호출부가 그 id 의
- * 사본을 버린다(`forgetSettledDetail`) — 여전히 접힌 채로 내용만 바뀌는 경우는 ①로 못 걸러진다.
+ * 그래서 규칙은 둘이다. ①여기서는 접힌 자리에만 끼운다. ②쓰기가 **성공했을 때** 호출부가 그
+ * id 의 사본을 버린다(`forgetSettledDetail`) — 여전히 접힌 채로 내용만 바뀌는 경우는 ①로 못
+ * 걸러진다. ⚠️ ②를 쓰기 **전에** 부르지 말 것: 실패하면 서버 목록은 그대로 접힌 요약인데 사본만
+ * 사라져 **펼쳐 보던 화면이 아무 설명 없이 접힌다.**
+ *
+ * ℹ️ 남는 한계(알고 둔다): 다른 세션이 그 캠페인을 고쳐 배경 폴링이 새 요약을 가져와도, 여전히
+ * 접힌 항목이면 ①이 사본을 계속 끼운다. 이 화면은 운영자 1인용이라 그 상황이 실질적으로 없고,
+ * 막으려면 요약과 사본을 필드 단위로 대조해야 해서 비용이 이득을 넘는다.
  */
 export function mergeExpandedCampaignDetails<T extends { id: string; isCollapsed?: unknown }, D>(
   serverCampaigns: T[],
