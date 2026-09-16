@@ -32,6 +32,7 @@ type Campaign = {
 // 등이 빠져 있다). 목록 파이프라인에 그 타입을 끼우면 기존 접근이 전부 타입 오류로 터지므로,
 // 서버 페이로드를 다루는 새 코드는 정본 타입을 쓴다. 로컬 사본 정리는 이 변경의 범위 밖이다.
 import type { Campaign as CampaignPayload } from '@/types/campaign';
+import { mergeExpandedCampaignDetails } from '@/lib/order-converter/settled-campaign-collapse';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { useToast } from '@/hooks/useToast';
@@ -735,6 +736,21 @@ export default function OrderDashboard() {
     }
   };
 
+  /**
+   * 펼쳐 둔 상세 사본을 버린다 — 그 캠페인을 바꾸는 쓰기가 성공한 직후에 부른다.
+   *
+   * 이걸 안 하면 **서버가 최신값을 보내도 낡은 사본이 이긴다**(GPT 검수 지적). 예: 정산종료
+   * 캠페인을 펼친 뒤 설정을 저장하면 서버는 갱신된 요약을 주는데 화면은 저장 전 값을 계속
+   * 보여주고, 그 상태에서 설정 모달을 다시 열어 저장하면 **되돌아간 값이 다시 쓰인다.**
+   */
+  const forgetSettledDetail = (id: string) =>
+    setSettledDetails(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
   // 요약으로 온 캠페인 중 이미 펼친 것은 받아 온 전체 데이터로 바꿔 끼운다(순서 보존).
   //
   // ⚠️ **이 병합본이 `campaigns` 라는 이름을 갖는 것이 요점이다.** 원본(rawCampaigns)을 따로
@@ -742,7 +758,10 @@ export default function OrderDashboard() {
   // 매출리포트가 빈 그래프로 뜨고 발송 모달의 수신자가 비는 식으로 **조용히** 어긋난다(리뷰에서
   // 실제로 잡힌 결함). 이름을 덮어써서 이 파일의 모든 조회(`campaigns.find` 6곳 포함)가 자동으로
   // 병합본을 보게 한다 — 규약으로 지키는 대신 실수를 불가능하게 만든다.
-  const campaigns = rawCampaigns.map(camp => settledDetails[camp.id] ?? camp);
+  //
+  // ⚠️ **서버가 접어 보낸 자리에만 끼운다.** 무조건 사본을 우선하면 서버가 최신 전체 응답을
+  // 줘도(마감 취소로 다시 활성이 된 경우 등) 낡은 사본이 이겨 화면이 마감 상태에 머문다.
+  const campaigns = mergeExpandedCampaignDetails(rawCampaigns, settledDetails) as CampaignPayload[];
 
   // Accordion State
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
@@ -1473,7 +1492,7 @@ export default function OrderDashboard() {
                       </button>
                       {camp.isActive !== false ? (
                         <button 
-                          onClick={() => { toggleCampaignStatus(camp.id, true); setOpenDropdownId(null); }}
+                          onClick={() => { forgetSettledDetail(camp.id); toggleCampaignStatus(camp.id, true); setOpenDropdownId(null); }}
                           className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors border-t border-slate-100"
                         >
                           <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
@@ -1481,7 +1500,7 @@ export default function OrderDashboard() {
                         </button>
                       ) : (
                         <button 
-                          onClick={() => { toggleCampaignStatus(camp.id, false); setOpenDropdownId(null); }}
+                          onClick={() => { forgetSettledDetail(camp.id); toggleCampaignStatus(camp.id, false); setOpenDropdownId(null); }}
                           className="w-full text-left px-4 py-2.5 text-emerald-600 hover:bg-emerald-50 flex items-center gap-2 transition-colors border-t border-slate-100"
                         >
                           <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
@@ -1921,6 +1940,9 @@ export default function OrderDashboard() {
           onSubmit={async (id, data) => {
             const res = await updateCampaign(id, data);
             if (res.success) {
+              // 펼쳐 둔 상세 사본은 저장 전 값이다 — 버리지 않으면 갱신된 목록을 덮어써
+              // 화면이 저장 전으로 보이고, 다시 저장하면 그 값이 되돌아간다.
+              forgetSettledDetail(id);
               setEditingCampaign(null);
               addToast('성공적으로 수정되었습니다.', 'success');
             } else {
@@ -1930,6 +1952,7 @@ export default function OrderDashboard() {
           onDelete={async (id) => {
             const res = await deleteCampaign(id);
             if (res.success) {
+              forgetSettledDetail(id); // 사라진 캠페인의 상세 사본을 들고 있을 이유가 없다.
               setEditingCampaign(null);
               addToast('캠페인이 삭제되었습니다.', 'success');
             } else {

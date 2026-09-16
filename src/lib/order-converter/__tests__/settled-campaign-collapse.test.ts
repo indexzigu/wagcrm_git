@@ -4,6 +4,7 @@ import {
   collapseSettledCampaigns,
   isSettledClosedCampaign,
   isSettledRoundStatus,
+  mergeExpandedCampaignDetails,
   SETTLED_ROUND_STATUSES,
 } from '../settled-campaign-collapse';
 
@@ -99,9 +100,36 @@ describe('collapseSettledCampaigns — 목록에서 무엇을 덜어내나', () 
     expect(out.map((c) => (c as { id: string }).id)).toEqual(['a', 'b', 'c']);
   });
 
-  it('요약 필드 목록에 무거운 필드가 섞여 들어오지 않는다', () => {
+  it('요약 필드 목록에 무거운 필드가 섞여 들어오지 않는다(중복 없음)', () => {
     for (const heavy of ['dailyStats', 'insights', 'mappings', 'tasks', 'salesCampaigns']) {
       expect(COLLAPSED_CAMPAIGN_FIELDS as readonly string[]).not.toContain(heavy);
     }
+  });
+});
+
+describe('mergeExpandedCampaignDetails — 펼친 사본을 언제 끼우나', () => {
+  const collapsed = { id: 'a', name: '접힌 이름', isCollapsed: true as const };
+  const detail = { id: 'a', name: '펼친 이름', dailyStats: [{ date: '2026-06-12' }] };
+
+  it('서버가 접어 보낸 자리에는 펼친 사본을 끼운다', () => {
+    expect(mergeExpandedCampaignDetails([collapsed], { a: detail })).toEqual([detail]);
+  });
+
+  it('사본이 없으면 서버 것을 그대로 둔다', () => {
+    expect(mergeExpandedCampaignDetails([collapsed], {})).toEqual([collapsed]);
+  });
+
+  it('실사고 회귀(GPT 검수): 서버가 전체를 보내면 낡은 사본이 이기지 않는다', () => {
+    // 정산종료 캠페인을 펼친 뒤 **마감을 취소하면** 서버는 그 캠페인을 활성·라이브로 돌려준다.
+    // 사본을 무조건 우선하면 화면이 계속 마감 카드에 머물고, 설정을 저장해도 저장 전 값이 보이며
+    // 그 상태로 한 번 더 저장하면 되돌아간 값이 쓰인다.
+    const reopened = { id: 'a', name: '마감 취소된 최신 이름', isActive: true };
+    expect(mergeExpandedCampaignDetails([reopened], { a: detail })).toEqual([reopened]);
+  });
+
+  it('순서를 바꾸지 않는다', () => {
+    const other = { id: 'b', name: '다른 캠페인' };
+    const out = mergeExpandedCampaignDetails([collapsed, other], { a: detail });
+    expect(out.map((c) => (c as { id: string }).id)).toEqual(['a', 'b']);
   });
 });

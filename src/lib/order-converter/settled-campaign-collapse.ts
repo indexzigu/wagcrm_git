@@ -93,6 +93,33 @@ export function toCollapsedCampaignSummary(camp: Record<string, unknown>): Colla
   return { ...summary, isCollapsed: true } as CollapsedCampaignSummary;
 }
 
+/** 서버가 요약으로 접어 보낸 항목인가. */
+export function isCollapsedCampaignSummary(camp: { isCollapsed?: unknown }): boolean {
+  return camp?.isCollapsed === true;
+}
+
+/**
+ * 서버 목록에, 화면이 펼쳐 받아 둔 상세 사본을 끼워 넣는다.
+ *
+ * ⚠️ **끼우는 자리는 「서버가 접어 보낸 항목」뿐이다.** 사본을 무조건 우선하면 서버가 최신 전체
+ * 응답을 줘도 낡은 사본이 이긴다 — GPT 검수가 잡은 회귀다(Claude 리뷰 3회가 모두 놓쳤다):
+ * 정산종료 캠페인을 펼친 뒤 **마감을 취소하면** 서버는 그 캠페인을 활성·라이브로 돌려주는데
+ * 화면은 계속 마감 카드를 보여주고, **설정을 저장하면** 저장 전 값이 다시 보이며 그 상태로 한 번
+ * 더 저장하면 되돌아간 값이 쓰인다.
+ *
+ * 그래서 규칙은 둘이다. ①여기서는 접힌 자리에만 끼운다. ②쓰기가 성공하면 호출부가 그 id 의
+ * 사본을 버린다(`forgetSettledDetail`) — 여전히 접힌 채로 내용만 바뀌는 경우는 ①로 못 걸러진다.
+ */
+export function mergeExpandedCampaignDetails<T extends { id: string; isCollapsed?: unknown }, D>(
+  serverCampaigns: T[],
+  expandedDetails: Record<string, D>,
+): Array<T | D> {
+  return serverCampaigns.map((camp) => {
+    const detail = expandedDetails[camp.id];
+    return detail !== undefined && isCollapsedCampaignSummary(camp) ? detail : camp;
+  });
+}
+
 /**
  * 목록에서 정산종료 캠페인만 요약으로 바꾼다. **순서는 바꾸지 않는다** — 정렬은 호출부(목록
  * 응답)의 계약이고, 여기서 접힌 것을 아래로 몰면 화면의 시간순 배열이 조용히 깨진다.

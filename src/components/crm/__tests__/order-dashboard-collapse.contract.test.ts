@@ -45,8 +45,21 @@ describe('주문관리 화면 — 접힌 캠페인 병합본 계약', () => {
     }
   });
 
-  it('병합본이 campaigns 라는 이름을 차지한다', () => {
-    expect(CODE).toMatch(/const campaigns = rawCampaigns\.map\(/);
+  it('병합본이 campaigns 라는 이름을 차지하고, 병합 규칙은 SSOT 에 위임한다', () => {
+    // 규칙 자체(언제 사본을 끼우나)는 `settled-campaign-collapse` 가 갖는다 — 여기서 손으로
+    // 다시 쓰면 "서버 최신본이 낡은 사본에 지는" GPT 검수 지적이 화면에서만 되살아난다.
+    expect(CODE).toMatch(/const campaigns = mergeExpandedCampaignDetails\(rawCampaigns,/);
+  });
+
+  it('쓰기가 성공하면 펼친 사본을 버린다 — 저장 전 값이 되살아나지 않게', () => {
+    // 접힌 채로 내용만 바뀌는 경우(설정 저장)는 병합 규칙만으로 못 거른다. 쓰기 4곳
+    // (마감·마감취소·수정·삭제)이 사본을 버려야 한다.
+    // 선언은 `forgetSettledDetail = (` 라 이 정규식에 안 걸린다 — 세는 것은 **호출**뿐이다.
+    const evictions = CODE.match(/forgetSettledDetail\(/g) ?? [];
+    expect(
+      evictions.length,
+      `forgetSettledDetail 호출이 ${evictions.length}회다 — 마감·마감취소·수정·삭제 4곳이어야 한다`,
+    ).toBe(4);
   });
 
   it('조회는 병합본을 본다 — campaigns.find 가 살아 있다(양성 대조)', () => {
