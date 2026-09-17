@@ -14,6 +14,10 @@ import {
   isDayBoundaryMs,
   PERIOD_RESYNC_LEAD_MS,
   PERIOD_RESYNC_STALE_GRACE_MS,
+  PERIOD_RESYNC_IDLE_INTERVAL_MS,
+  usesIdlePeriodCheckInterval,
+  resolveStorePeriodDrift,
+  formatKstYmd,
 } from '../mapping-service';
 
 // KST 자정(23:59:59.999+09:00) 기준 종료 시각.
@@ -59,9 +63,54 @@ describe('shouldResyncCampaignPeriod', () => {
     expect(soon - now).toBeLessThanOrEqual(PERIOD_RESYNC_LEAD_MS);
   });
 
-  it('활성 + 종료가 리드 창보다 멀면 재동기화 안 함(상시 네이버 호출 방지)', () => {
-    // 07.20 종료 → 지금(07.12)로부터 8일 뒤, 리드(2일) 밖 → 후보 아님.
-    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(false);
+  it('활성 + 종료가 먼 구간 + 확인 기록 없음 → 재동기화(캠페인 중반 변경을 보려면 한 번은 물어야 한다)', () => {
+    // 07.20 종료 → 지금(07.12)로부터 8일 뒤, 리드(2일) 밖. 종전에는 여기서 false 였고 그래서
+    // 2주짜리 캠페인 3일차의 기간 연장·단축을 종료 이틀 전까지 못 봤다(오너 신고 2026-09-17).
+    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(true);
+  });
+
+  it('활성 + 종료가 먼 구간 + 간격 이내 확인 → 재동기화 안 함(상시 네이버 호출 방지)', () => {
+    const checkedRecently = new Date(now - PERIOD_RESYNC_IDLE_INTERVAL_MS + 60_000);
+    expect(
+      shouldResyncCampaignPeriod(
+        { isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20', periodCheckedAt: checkedRecently },
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it('활성 + 종료가 먼 구간 + 간격 경과 → 재동기화', () => {
+    const checkedLongAgo = new Date(now - PERIOD_RESYNC_IDLE_INTERVAL_MS - 60_000);
+    expect(
+      shouldResyncCampaignPeriod(
+        { isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20', periodCheckedAt: checkedLongAgo },
+        now,
+      ),
+    ).toBe(true);
+  });
+
+  it('종료 임박 구간은 방금 확인했어도 재동기화한다(간격이 임박 구간을 막지 않는다)', () => {
+    // 집계 경계가 실제로 걸리는 구간이라 촘촘히 따라가야 한다 — 유휴 간격은 여기에 적용되지 않는다.
+    expect(
+      shouldResyncCampaignPeriod(
+        { isActive: true, salePeriod: '2026.07.06 ~ 2026.07.13', periodCheckedAt: new Date(now) },
+        now,
+      ),
+    ).toBe(true);
+  });
+
+  it('유예를 지난 오래된 미마감 캠페인은 확인 기록이 없어도 폴링하지 않는다', () => {
+    const wellPast = now - PERIOD_RESYNC_STALE_GRACE_MS - 24 * 60 * 60 * 1000;
+    expect(shouldResyncCampaignPeriod({ isActive: true, endDate: new Date(wellPast) }, now)).toBe(false);
+  });
+
+  it('확인 기록이 읽을 수 없는 값이면 묻는다(모름을 건너뜀으로 기울이지 않는다)', () => {
+    expect(
+      shouldResyncCampaignPeriod(
+        { isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20', periodCheckedAt: 'not-a-date' },
+        now,
+      ),
+    ).toBe(true);
   });
 
   it('활성 + 기간 미정(파싱 불가)이면 항상 재동기화(최초 확정 필요)', () => {
@@ -75,6 +124,96 @@ describe('shouldResyncCampaignPeriod', () => {
     const wellPast = now - PERIOD_RESYNC_STALE_GRACE_MS - 24 * 60 * 60 * 1000; // 8일 전 종료
     expect(shouldResyncCampaignPeriod({ isActive: true, endDate: new Date(justInside) }, now)).toBe(true);
     expect(shouldResyncCampaignPeriod({ isActive: true, endDate: new Date(wellPast) }, now)).toBe(false);
+  });
+});
+
+describe('usesIdlePeriodCheckInterval — 확인 시각을 찍어야 하는 구간인가', () => {
+  const now = endKst('2026.07.12');
+
+  it('종료가 먼 활성 캠페인만 true — 그 구간에서만 판정이 periodCheckedAt 을 읽는다', () => {
+    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(true);
+  });
+
+  it('종료 임박·경과 구간은 false — 시각과 무관하게 항상 후보라 찍을 이유가 없다', () => {
+    // 매 GET 마다 찍으면 캠페인 수만큼 쓰기가 나간다(P7 egress 규율).
+    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.13' }, now)).toBe(false);
+    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.11' }, now)).toBe(false);
+  });
+
+  it('기간 미확정·마감은 false', () => {
+    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '기간 미정' }, now)).toBe(false);
+    expect(usesIdlePeriodCheckInterval({ isActive: false, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(false);
+  });
+});
+
+describe('formatKstYmd — 날짜 단위 API(판매캠페인 PATCH)에 넘길 값', () => {
+  it('KST 달력일을 YYYY-MM-DD 로 — UTC 자정(=KST 09:00)도 같은 KST 날짜', () => {
+    expect(formatKstYmd(Date.parse('2026-09-14T00:00:00.000Z'))).toBe('2026-09-14');
+    expect(formatKstYmd(endKst('2026.09.19'))).toBe('2026-09-19');
+    // KST 자정 직전(UTC 14:59)은 아직 전날이 아니라 그 날이다 — UTC 로 자르면 하루 밀린다.
+    expect(formatKstYmd(Date.parse('2026-09-19T15:30:00.000Z'))).toBe('2026-09-20');
+  });
+});
+
+describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다른가 (오너 결정 2026-09-17)', () => {
+  it('실측 회귀(2026-09-17): 스토어가 09.19 까지인데 화면은 09.17 → 어긋남 + 맞출 날짜', () => {
+    // 프로덕션 활성 캠페인 실측값. 화면·집계는 판매관리 일정을 따르므로 스토어 연장이
+    // 아무 흔적도 남기지 않았고, 오너는 그것을 "등록 당시 값으로 고정"으로 보았다.
+    const drift = resolveStorePeriodDrift({
+      salePeriod: '2026.09.14 ~ 2026.09.19',
+      windowStartMs: startKst('2026.09.14'),
+      windowEndMs: endKst('2026.09.17'),
+    });
+    expect(drift).toEqual({
+      storeLabel: '2026.09.14 ~ 2026.09.19',
+      storeStartYmd: '2026-09-14',
+      storeEndYmd: '2026-09-19',
+    });
+  });
+
+  it('스토어가 더 짧아진 경우(단축)도 어긋남으로 본다', () => {
+    const drift = resolveStorePeriodDrift({
+      salePeriod: '2026.09.14 ~ 2026.09.16',
+      windowStartMs: startKst('2026.09.14'),
+      windowEndMs: endKst('2026.09.19'),
+    });
+    expect(drift?.storeEndYmd).toBe('2026-09-16');
+  });
+
+  it('같은 기간이면 null — 저장 형태(UTC 자정 vs KST 종일)가 달라도 같은 달력일이면 같다', () => {
+    // 연결 판매캠페인 endDate 는 UTC 자정으로 저장되고 창은 KST 종일로 보정된다. 그 차이를
+    // 어긋남으로 읽으면 전 캠페인에 상시 배지가 떠 신호가 죽는다.
+    expect(
+      resolveStorePeriodDrift({
+        salePeriod: '2026.09.14 ~ 2026.09.17',
+        windowStartMs: resolveSaleWindowStartMs({ startDate: new Date('2026-09-14T00:00:00.000Z') }),
+        windowEndMs: resolveSaleWindowEndMs({ endDate: new Date('2026-09-17T00:00:00.000Z') }),
+      }),
+    ).toBeNull();
+  });
+
+  it("스토어 종료가 '계속'이면 storeEndYmd 는 null — 판매관리 종료일을 맞출 근거가 없다", () => {
+    const drift = resolveStorePeriodDrift({
+      salePeriod: '2026.09.14 ~ 계속',
+      windowStartMs: startKst('2026.09.14'),
+      windowEndMs: endKst('2026.09.17'),
+    });
+    expect(drift?.storeLabel).toBe('2026.09.14 ~ 계속');
+    expect(drift?.storeEndYmd).toBeNull();
+  });
+
+  it('스토어 관측값이 폴백(미정·미등록·null)이면 null — 비교할 기간이 없다', () => {
+    for (const sp of ['기간 미정', '미등록', '', null, undefined]) {
+      expect(
+        resolveStorePeriodDrift({ salePeriod: sp, windowStartMs: startKst('2026.09.14'), windowEndMs: endKst('2026.09.17') }),
+      ).toBeNull();
+    }
+  });
+
+  it('창이 없으면(판매캠페인 미연결) null — 그땐 salePeriod 가 이미 화면값이다', () => {
+    expect(
+      resolveStorePeriodDrift({ salePeriod: '2026.09.14 ~ 2026.09.19', windowStartMs: null, windowEndMs: null }),
+    ).toBeNull();
   });
 });
 

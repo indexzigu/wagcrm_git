@@ -56,6 +56,20 @@ export type Campaign = {
    * 조용한 무응답을 드러내는 신호(운영자가 "종료일을 늘리세요" 안내를 따랐는데 안 먹는 경우).
    */
   periodFrozenDrift?: boolean;
+  /**
+   * 스토어(네이버)에서 판매기간이 바뀌었는데 화면 기간(=판매관리 일정)이 그대로인 상태.
+   * 정본을 자동으로 뒤집지 않고 어긋남만 드러낸 뒤, 운영자가 한 번 눌러 판매관리 일정을 맞춘다
+   * (오너 결정 2026-09-17). 맞출 대상이 없으면 서버가 null 을 준다.
+   */
+  storePeriodDrift?: {
+    /** 스토어 기간을 periodLabel 과 같은 포맷으로. */
+    storeLabel: string;
+    storeStartYmd: string;
+    /** 종료 미정('계속')이면 null — 판매관리 종료일을 맞출 근거가 없어 액션을 막는다. */
+    storeEndYmd: string | null;
+    /** 맞출 대상 판매캠페인(정산 확정된 회차는 제외됨). */
+    salesCampaignIds: string[];
+  } | null;
   productId?: string | null; // 네이버 상품번호 (스토어 옵션 자동 로드 시 상품 식별에 사용)
   insights?: CampaignInsights | null;
   // 활성이지만 라이브 집계가 비어(조회창 만료) 마감 시점 스냅샷으로 폴백 중임을 알리는 표식.

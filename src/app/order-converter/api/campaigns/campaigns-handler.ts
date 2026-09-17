@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/order-converter/prisma';
 import { searchNaverProducts } from '@/lib/order-converter/naver-commerce-api';
-import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, isConcretePeriodString, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel } from '@/lib/order-converter/mapping-service';
+import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesIdlePeriodCheckInterval, isConcretePeriodString, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
@@ -138,10 +138,14 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 스토어 조회를 아예 시도하지 않는다(매 GET마다 실패 경고가 쌓이는 것 방지).
     const needsNaver = !isDemoMode() && rawCampaigns.some((c: any) => needsFirstFill(c) || needsResync(c));
     let naverProducts: any[] = [];
+    // 스토어를 **실제로** 읽었는가. 확인 시각(periodCheckedAt)은 이 값이 참일 때만 찍는다 —
+    // 조회가 실패했는데 찍으면 '확인했다'가 거짓이 되어 다음 간격까지 기간 변경을 놓친다.
+    let didReadStore = false;
     if (needsNaver) {
       try {
         const prodData = await searchNaverProducts();
         naverProducts = prodData.contents || [];
+        didReadStore = true;
       } catch (err) {
         console.warn('Failed to fetch naver products for period sync:', err);
       }
@@ -152,6 +156,9 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       const camp = rawCamp as any;
       const firstFill = needsFirstFill(camp);
       const resync = needsResync(camp);
+      // 확인 시각은 그 값을 **판정이 읽는 구간**에서만 찍는다(종료 임박 구간은 시각과 무관하게
+      // 항상 후보라 읽지 않는다) — 매 GET 마다 캠페인 수만큼 쓰기가 나가는 것을 막는다(P7).
+      const stampCheckedAt = didReadStore && usesIdlePeriodCheckInterval(camp, nowMs);
       if (firstFill || resync) {
         // 스토어 상품 매칭은 productId(원상품/채널 어느 쪽이든)가 1순위 — 캠페인 productId는 네이버
         // 원상품번호로 저장되고 채널상품번호와 다르므로 둘 다 비교한다(campaign-match.ts와 같은 신뢰키, PR#106).
@@ -226,7 +233,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
           };
           const changed = camp.salePeriod !== nextPeriod || camp.productStatus !== status || camp.category !== nextCategory
             || !sameMs(camp.startDate ?? null, nextStart) || !sameMs(camp.endDate ?? null, nextEnd);
-          if (changed) {
+          if (changed || stampCheckedAt) {
             const updated = await prisma.orderCampaign.update({
               where: { id: camp.id },
               data: {
@@ -235,6 +242,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
                 productStatus: status,
                 startDate: nextStart,
                 endDate: nextEnd,
+                ...(stampCheckedAt ? { periodCheckedAt: new Date() } : {}),
               } as any
             }) as any;
             camp.category = updated.category;
@@ -242,6 +250,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
             camp.productStatus = updated.productStatus;
             camp.startDate = updated.startDate;
             camp.endDate = updated.endDate;
+            camp.periodCheckedAt = updated.periodCheckedAt;
           }
         } else if (firstFill) {
           // 최초 확정에서 매칭 실패 시에만 미정 폴백. 재동기화(resync) 매칭 실패는 기존값을 유지한다.
@@ -256,6 +265,14 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
           camp.category = updated.category;
           camp.salePeriod = updated.salePeriod;
           camp.productStatus = updated.productStatus;
+        } else if (stampCheckedAt) {
+          // 스토어에 매칭되는 상품이 없었다 — 기존 값은 그대로 두되(재동기화 매칭 실패는 되돌리지
+          // 않는다) '확인은 했다'는 사실만 남겨 다음 간격까지 같은 조회를 반복하지 않는다.
+          const updated = await prisma.orderCampaign.update({
+            where: { id: camp.id },
+            data: { periodCheckedAt: new Date() } as any,
+          }) as any;
+          camp.periodCheckedAt = updated.periodCheckedAt;
         }
       }
       backfilledCampaigns.push(camp);
@@ -691,6 +708,23 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       const campEndRaw = resolveSaleWindowEndMs(camp);
       const campStart = campStartRaw ?? 0;
       const campEnd = campEndRaw ?? Number.MAX_SAFE_INTEGER;
+
+      // 스토어에서 판매기간을 바꿨는데 판매관리 일정이 그대로인 상태. 화면 기간도 매출 집계도
+      // 판매관리 일정을 따르므로(오너 2026-07-15) 조용히 두면 "스토어에서 늘렸는데 아무 일도
+      // 일어나지 않는다"가 된다 — 오너가 "등록 당시 값으로 고정"이라고 본 것이 이 상태다.
+      // 처방은 정본을 뒤집는 것이 아니라 어긋남을 드러내고 한 번에 맞추게 하는 것이다(오너 결정
+      // 2026-09-17). ⛔ 자동 반영으로 바꾸지 말 것 — '종료 후 임시 오픈'까지 회차 창으로 흘러든다.
+      // 정산 락으로 창이 얼었으면 맞춰도 반영되지 않으므로 그쪽은 기존 periodFrozenDrift 가 알린다.
+      const storeDrift = periodFrozenBySettlement
+        ? null
+        : resolveStorePeriodDrift({ salePeriod: camp.salePeriod, windowStartMs: campStartRaw, windowEndMs: campEndRaw });
+      // 맞출 대상은 **확정되지 않은** 회차뿐이다 — 정산 락이 걸린 회차의 기간을 움직이면 마감
+      // 스냅샷·정산 귀속과 어긋난다(isSalesCampaignLocked 가 그 경계의 SSOT).
+      const storeDriftTargetIds: string[] = storeDrift
+        ? (camp.salesCampaigns ?? [])
+            .filter((sc: any) => !isSalesCampaignLocked(sc.status))
+            .map((sc: any) => String(sc.id))
+        : [];
 
       // 교차 귀속 가드용 이웃 목록 — 캠페인당 1회만 만든다(주문 루프 안에서 만들면 주문×캠페인 배).
       const peerCampaigns: PeerCampaignWindow[] = activeCampaigns
@@ -1170,6 +1204,11 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         periodMismatch: camp._periodMismatch === true,
         // 정산 확정으로 창이 얼어 판매관리 기간 변경이 반영되지 않는 상태(무응답을 드러내는 신호).
         periodFrozenDrift: camp._periodFrozenDrift === true,
+        // 스토어 기간이 화면 기간과 다른 상태 + 맞출 대상 회차. 맞출 대상이 없으면(연결이 없거나
+        // 전부 정산 확정) 누를 것이 없으므로 신호도 내지 않는다 — 그 경우는 위 두 배지 소관이다.
+        storePeriodDrift: storeDrift && storeDriftTargetIds.length > 0
+          ? { ...storeDrift, salesCampaignIds: storeDriftTargetIds }
+          : null,
         newOrderBeforeCount,
         newOrderAfterCount,
         pendingCount,

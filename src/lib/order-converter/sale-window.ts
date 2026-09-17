@@ -135,6 +135,66 @@ export function formatKstPeriodLabel(startMs: number | null, endMs: number | nul
   return `${fmt(startMs)} ~ ${end}`;
 }
 
+/**
+ * ms 가 속한 KST 달력일을 `YYYY-MM-DD` 로. 날짜 단위 API(판매캠페인 PATCH 의 `startDate`·
+ * `endDate` 는 `z.string().date()`)에 넘길 값이라 표시용 `formatKstPeriodLabel`(점 구분)과
+ * 포맷이 다르다 — 둘을 한 함수로 합치지 말 것(구분자만 바꾸면 소비처가 어느 쪽인지 흐려진다).
+ */
+export function formatKstYmd(ms: number): string {
+  const d = new Date(ms + KST_OFFSET_MS);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dt = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${dt}`;
+}
+
+/** 스토어 관측 기간이 집계 창과 어긋난 상태. `resolveStorePeriodDrift` 참조. */
+export type StorePeriodDrift = {
+  /** 스토어 기간을 화면 라벨과 **같은 포맷**으로(비교도 이 문자열로 한다). */
+  storeLabel: string;
+  /** 판매캠페인 PATCH 에 넘길 시작일(KST). */
+  storeStartYmd: string;
+  /** 종료 미정('계속')이면 null — 그 경우 판매관리 종료일을 맞출 근거가 없다. */
+  storeEndYmd: string | null;
+};
+
+/**
+ * 스토어(네이버) 판매기간이 **집계 창과 다른가**를 판정한다(순수).
+ *
+ * 왜 필요한가: 집계 창의 정본은 판매관리 일정이고 스토어 기간은 관측값이라(오너 확정
+ * 2026-07-15), 스토어에서 기간을 연장·단축해도 주문관리 화면과 매출 집계는 그대로다.
+ * 그 상태가 **화면에 아무 흔적도 남기지 않는 것**이 오너가 "등록 당시 값으로 고정돼 있다"고
+ * 본 실체다(2026-09-17). 정본을 뒤집는 대신 어긋남을 드러내 오너가 한 번에 맞추게 한다.
+ *
+ * ⛔ 이 함수를 스토어 기간을 창으로 **승격**하는 데 쓰지 말 것 — 스토어는 '종료 후 별도
+ * 주문건을 받으려고 임시로 판매를 여는' 운영 때문에 실제 회차 경계와 어긋나고, 그 값이
+ * 자동으로 흘러들면 정산서·구글 캘린더·재구매 집계까지 오염된다(제거된 `syncSalesCampaignPeriod`).
+ *
+ * 비교는 **같은 포맷터를 통과한 문자열**로 한다 — 한쪽은 KST 자정, 다른 쪽은 스토어 정밀
+ * 시각처럼 저장 형태가 달라도 같은 달력일이면 같은 기간이기 때문이다.
+ * 창이 없으면(판매캠페인 미연결) null — 그땐 `salePeriod` 가 이미 화면에 그대로 나온다.
+ */
+export function resolveStorePeriodDrift(camp: {
+  salePeriod?: string | null;
+  windowStartMs: number | null;
+  windowEndMs: number | null;
+}): StorePeriodDrift | null {
+  const windowLabel = formatKstPeriodLabel(camp.windowStartMs, camp.windowEndMs);
+  if (windowLabel === null) return null;
+
+  const { startMs, endMs } = parseSalePeriodBounds(camp.salePeriod);
+  if (startMs === null) return null; // '기간 미정'·'미등록'·null — 비교할 관측값이 없다
+
+  const storeLabel = formatKstPeriodLabel(startMs, endMs);
+  if (storeLabel === null || storeLabel === windowLabel) return null;
+
+  return {
+    storeLabel,
+    storeStartYmd: formatKstYmd(startMs),
+    storeEndYmd: endMs === null ? null : formatKstYmd(endMs),
+  };
+}
+
 /** 두 시각이 같은 KST 달력일인지. 날짜 단위 편집이 스토어 정밀 시각을 덮어쓰지 않게 하는 게이트. */
 export function isSameKstDay(a: Date | string | null | undefined, bMs: number | null): boolean {
   if (!a || bMs === null) return false;

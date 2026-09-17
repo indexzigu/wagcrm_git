@@ -33,6 +33,7 @@ type Campaign = {
 // 서버 페이로드를 다루는 새 코드는 정본 타입을 쓴다. 로컬 사본 정리는 이 변경의 범위 밖이다.
 import type { Campaign as CampaignPayload } from '@/types/campaign';
 import { mergeExpandedCampaignDetails } from '@/lib/order-converter/settled-campaign-collapse';
+import { patchCampaign } from '@/lib/campaign-patch';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { useToast } from '@/hooks/useToast';
@@ -332,6 +333,82 @@ function PostPeriodOrdersPopover({ campName, salePeriod, totalCount, orders, onC
             )}
           </div>
         )}
+    </PopoverContent>
+  );
+}
+
+type StorePeriodDriftInfo = NonNullable<CampaignPayload['storePeriodDrift']>;
+
+/**
+ * 스토어 판매기간이 화면 기간과 다를 때 뜨는 팝오버.
+ *
+ * 왜 자동 반영이 아닌가: 화면 기간과 매출 집계의 정본은 판매관리 일정이고(오너 2026-07-15),
+ * 스토어는 '마감 뒤 취소·교환 주문을 받으려고 잠깐 다시 여는' 운영 때문에 실제 회차 경계와
+ * 어긋난다. 그래서 어긋남을 보여주고 **오너가 한 번 눌러** 맞춘다(오너 결정 2026-09-17).
+ * 맞추기는 판매관리 캠페인 PATCH 를 그대로 타므로 그룹 일정 팬아웃·구글 캘린더·단축링크
+ * 만료가 전부 기존 경로로 따라온다(⛔ 전용 쓰기 경로를 새로 만들지 말 것 — 그 훅들이 빠진다).
+ */
+function StorePeriodDriftPopover({ campName, currentLabel, drift, isSyncing, onSync, onClose }: {
+  campName: string;
+  currentLabel: string;
+  drift: StorePeriodDriftInfo;
+  isSyncing: boolean;
+  onSync: () => void;
+  onClose: () => void;
+}) {
+  const canSync = drift.storeEndYmd !== null;
+  return (
+    <PopoverContent
+      align="start"
+      sideOffset={8}
+      collisionPadding={12}
+      aria-label={`${campName} 스토어 판매기간 차이`}
+      onClick={(e) => e.stopPropagation()}
+      className="flex w-[380px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay"
+    >
+      <div className="shrink-0 px-4 py-2.5 border-b border-slate-100 bg-status-caution-bg/60">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-status-caution shrink-0" aria-hidden="true" />
+            <span className="text-[12px] font-bold text-slate-700 shrink-0">스토어 판매기간이 다릅니다</span>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-600 p-0.5 shrink-0" aria-label="닫기">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      </div>
+      <div className="px-4 py-3 space-y-2.5">
+        {/* 순서는 '지금 값 → 바뀔 값'이다(자연스러운 독해 순서). 색은 바뀔 값(스토어)에만 남겨
+            "이게 다른 값이고 버튼이 적용할 값"이 읽히게 한다. */}
+        <dl className="space-y-1.5 text-[12px]">
+          <div className="flex items-baseline gap-2">
+            <dt className="w-[92px] shrink-0 text-slate-500">판매관리 일정</dt>
+            <dd className="font-bold tabular-nums text-slate-700">{currentLabel || '기간 정보 없음'}</dd>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <dt className="w-[92px] shrink-0 text-slate-500">네이버 스토어</dt>
+            <dd className="font-bold tabular-nums text-status-caution">{drift.storeLabel}</dd>
+          </div>
+        </dl>
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          화면의 판매기간과 매출 집계는 <b>판매관리 일정</b>을 따릅니다. 스토어에서 기간을 바꿔도 여기에는
+          자동으로 반영되지 않습니다. 아래 버튼을 누르면 이 캠페인에 연결된 회차 {drift.salesCampaignIds.length}건의
+          판매관리 일정이 스토어 기간으로 바뀌고, 정산 명세서와 구글 캘린더도 같은 날짜가 됩니다.
+        </p>
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          마감 뒤 취소나 교환 주문을 받으려고 스토어를 잠깐 다시 연 경우라면 맞추지 마세요.
+        </p>
+        {canSync ? (
+          <Button type="button" size="sm" className="w-full" disabled={isSyncing} onClick={onSync}>
+            {isSyncing ? '맞추는 중…' : '판매관리 일정을 스토어 기간으로 맞추기'}
+          </Button>
+        ) : (
+          /* 버튼 자리를 대체하는 문장이라 바로 위 설명과 같은 톤이면 "여기가 끝"이라는 무게가 안 선다. */
+          <p className="text-[11px] font-medium text-slate-600 leading-relaxed rounded-lg bg-slate-50 px-3 py-2">
+            스토어 종료일이 미정이라 자동으로 맞출 수 없습니다. 판매관리에서 종료일을 직접 입력하세요.
+          </p>
+        )}
+      </div>
     </PopoverContent>
   );
 }
@@ -787,6 +864,42 @@ export default function OrderDashboard() {
   const [shippingListCampaignId, setShippingListCampaignId] = useState<string | null>(null);
   const [confirmListCampaignId, setConfirmListCampaignId] = useState<string | null>(null);
   const [postPeriodListCampaignId, setPostPeriodListCampaignId] = useState<string | null>(null);
+  // 스토어 판매기간 차이 팝오버가 열린 카드 id + 맞추는 중인 카드 id(중복 클릭 차단).
+  const [storePeriodDriftCampaignId, setStorePeriodDriftCampaignId] = useState<string | null>(null);
+  const [syncingStorePeriodCampaignId, setSyncingStorePeriodCampaignId] = useState<string | null>(null);
+
+  /**
+   * 스토어 기간을 판매관리 일정에 반영한다 — 연결된 회차마다 **기존 캠페인 PATCH** 를 부른다.
+   * 그 라우트가 그룹 일정 팬아웃·롤업·단축링크 만료·구글 캘린더(after 훅)를 전부 소유하므로
+   * 전용 경로를 새로 만들면 그 훅들이 통째로 빠진다(2026-07-30 실사고와 같은 부류).
+   * 부분 실패는 삼키지 않고 몇 건이 실패했는지 그대로 알린다(P0 No Silent Failure).
+   */
+  const syncStorePeriodToSalesCampaigns = async (campaignId: string, drift: StorePeriodDriftInfo) => {
+    if (drift.storeEndYmd === null) return;
+    setSyncingStorePeriodCampaignId(campaignId);
+    try {
+      const results = await Promise.all(
+        drift.salesCampaignIds.map((salesCampaignId) =>
+          patchCampaign(salesCampaignId, { startDate: drift.storeStartYmd, endDate: drift.storeEndYmd }, {
+            fallbackError: '판매관리 일정을 맞추지 못했습니다.',
+          }),
+        ),
+      );
+      const failures = results.filter((r) => !r.ok);
+      if (failures.length > 0) {
+        // 409(그룹 구성이 방금 바뀜)는 "다시 누르면 되는 상태"라 문구가 다르다 — 헬퍼가 주는
+        // 문구를 그대로 쓴다(호출처에서 재시도 안내를 다시 적으면 또 갈린다).
+        const first = failures[0] as Extract<typeof failures[number], { ok: false }>;
+        addToast(`판매관리 일정 ${results.length}건 중 ${failures.length}건 실패: ${first.error}`, 'error');
+      } else {
+        addToast(`판매관리 일정 ${results.length}건을 ${drift.storeLabel}로 맞췄습니다.`, 'success');
+        setStorePeriodDriftCampaignId(null);
+      }
+      await fetchCampaigns(true);
+    } finally {
+      setSyncingStorePeriodCampaignId(null);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -1564,6 +1677,43 @@ export default function OrderDashboard() {
                       >
                         ⚠ 정산 확정: 기간 변경 미반영
                       </span>
+                    )}
+                    {/* 스토어에서 판매기간이 바뀌었는데 화면·집계 기간(=판매관리 일정)이 그대로인 상태.
+                        정본은 판매관리라 자동 반영하지 않고(‘마감 뒤 임시 오픈’이 회차 창으로 흘러든다),
+                        차이를 드러낸 뒤 오너가 한 번 눌러 맞춘다(오너 결정 2026-09-17). */}
+                    {camp.storePeriodDrift && (
+                      <Popover
+                        modal
+                        open={storePeriodDriftCampaignId === camp.id}
+                        onOpenChange={(open) => {
+                          if (open) { setPendingListCampaignId(null); setShippingListCampaignId(null); setConfirmListCampaignId(null); setPostPeriodListCampaignId(null); }
+                          setStorePeriodDriftCampaignId(open ? camp.id : null);
+                        }}
+                      >
+                        <span className="inline-flex">
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 rounded-full border border-status-caution/30 bg-status-caution-bg px-2 py-0.5 text-[11px] font-semibold text-status-caution hover:bg-status-caution-bg/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer"
+                              title="네이버 스토어의 판매기간이 화면 기간과 다릅니다: 클릭해 맞추기"
+                            >
+                              {/* 기간 문자열은 팝오버가 이미 두 값을 나란히 보여준다 — 배지에 또 넣으면
+                                  형제 배지(10~14자)의 2배가 돼 같은 줄의 신호들이 다른 무게로 읽힌다. */}
+                              ⚠ 스토어 기간 다름
+                              <svg className={`w-2.5 h-2.5 transition-transform ${storePeriodDriftCampaignId === camp.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                          </PopoverTrigger>
+                          <StorePeriodDriftPopover
+                            campName={camp.name}
+                            currentLabel={camp.periodLabel || camp.salePeriod || ''}
+                            drift={camp.storePeriodDrift}
+                            isSyncing={syncingStorePeriodCampaignId === camp.id}
+                            onSync={() => { void syncStorePeriodToSalesCampaigns(camp.id, camp.storePeriodDrift!); }}
+                            onClose={() => setStorePeriodDriftCampaignId(null)}
+                          />
+                        </span>
+                      </Popover>
                     )}
                     {/* 마감취소됐지만 라이브 집계가 비어(조회창 만료) 마감 시점 스냅샷으로 표시 중 — 활성 카드지만
                         수치가 라이브가 아님을 알리는 평문 신호(카드 흐림 없이 메타 톤 유지). */}
