@@ -127,17 +127,20 @@ export default function ClaimList({ campaignNameFilter, orderIdsFilter, unmatche
   }, [claims, campaignNameFilter, orderIdsFilter, unmatchedOnly]);
 
   const filteredClaims = useMemo(() => {
-    return scopedClaims.filter((c) => {
-      if (typeFilter !== 'ALL' && c.claimType !== typeFilter) return false;
-      if (progressFilter === 'IN_PROGRESS' && c.isCompleted) return false;
-      if (progressFilter === 'COMPLETED' && !c.isCompleted) return false;
-      if (searchTerm.trim()) {
-        const needle = searchTerm.trim().toLowerCase();
-        const haystack = `${c.productName ?? ''} ${c.productOption ?? ''} ${c.matchedCampaignName ?? ''}`.toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      return true;
-    });
+    return scopedClaims
+      .filter((c) => {
+        if (typeFilter !== 'ALL' && c.claimType !== typeFilter) return false;
+        if (progressFilter === 'IN_PROGRESS' && c.isCompleted) return false;
+        if (progressFilter === 'COMPLETED' && !c.isCompleted) return false;
+        if (searchTerm.trim()) {
+          const needle = searchTerm.trim().toLowerCase();
+          const haystack = `${c.productName ?? ''} ${c.productOption ?? ''} ${c.matchedCampaignName ?? ''}`.toLowerCase();
+          if (!haystack.includes(needle)) return false;
+        }
+        return true;
+      })
+      // 진행중 항목을 완료 항목보다 위로: Array#sort는 안정 정렬이라 같은 그룹 내 기존 순서는 유지된다.
+      .sort((a, b) => Number(a.isCompleted) - Number(b.isCompleted));
   }, [scopedClaims, typeFilter, progressFilter, searchTerm]);
 
   const inProgressCount = useMemo(() => scopedClaims.filter((c) => !c.isCompleted).length, [scopedClaims]);
