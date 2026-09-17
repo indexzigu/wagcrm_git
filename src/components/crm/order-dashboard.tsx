@@ -34,6 +34,7 @@ type Campaign = {
 import type { Campaign as CampaignPayload } from '@/types/campaign';
 import { mergeExpandedCampaignDetails } from '@/lib/order-converter/settled-campaign-collapse';
 import { patchCampaign, type CampaignPatchResult } from '@/lib/campaign-patch';
+import { buildStorePeriodPatchBody } from '@/lib/order-converter/sale-window';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { useToast } from '@/hooks/useToast';
@@ -899,7 +900,8 @@ export default function OrderDashboard() {
    * 부분 실패는 삼키지 않고 몇 건이 실패했는지 그대로 알린다(P0 No Silent Failure).
    */
   const syncStorePeriodToSalesCampaigns = async (campaignId: string, drift: StorePeriodDriftInfo) => {
-    if (drift.storeEndYmd === null) return;
+    const patchBody = buildStorePeriodPatchBody(drift);
+    if (patchBody === null) return; // 스토어 종료일이 '계속' — 맞출 근거가 없다
     setSyncingStorePeriodCampaignId(campaignId);
     // 무엇을 맞췄는지 문구가 실제 전송 내용과 어긋나면 오너가 시작일도 바뀐 줄로 읽는다.
     const syncedNoun = drift.scope === 'end-only' ? '판매관리 종료일' : '판매관리 일정';
@@ -911,12 +913,9 @@ export default function OrderDashboard() {
       const results: CampaignPatchResult<{ groupScheduleSyncedCount?: number }>[] = [];
       for (const salesCampaignId of drift.salesCampaignIds) {
         results.push(
-          // ⛔ end-only 에서 시작일을 함께 보내지 말 것 — 그 값이 이 사고의 원인이었다
-          //    (판매 종료 뒤 네이버가 시작일을 종료일 기준으로 다시 쓴다, 2026-09-17).
-          await patchCampaign(salesCampaignId, {
-            ...(drift.storeStartYmd !== null ? { startDate: drift.storeStartYmd } : {}),
-            endDate: drift.storeEndYmd,
-          }, {
+          // 본문 조립은 sale-window SSOT 에 있다 — end-only 에서 시작일 키가 빠지는 것이
+          // 이 사고의 방어선이라, 호출부에서 손으로 다시 만들면 그 계약이 표면마다 갈린다.
+          await patchCampaign(salesCampaignId, patchBody, {
             fallbackError: '판매관리 일정을 맞추지 못했습니다.',
           }),
         );
@@ -1756,11 +1755,7 @@ export default function OrderDashboard() {
                           </PopoverTrigger>
                           <StorePeriodDriftPopover
                             campName={camp.name}
-                            currentLabel={
-                              camp.storePeriodDrift.scope === 'end-only'
-                                ? (camp.periodLabel || camp.salePeriod || '').split('~').pop()?.trim() || ''
-                                : camp.periodLabel || camp.salePeriod || ''
-                            }
+                            currentLabel={camp.storePeriodDrift.windowLabel}
                             drift={camp.storePeriodDrift}
                             isSyncing={syncingStorePeriodCampaignId === camp.id}
                             onSync={() => { void syncStorePeriodToSalesCampaigns(camp.id, camp.storePeriodDrift!); }}

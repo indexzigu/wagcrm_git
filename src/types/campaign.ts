@@ -70,6 +70,8 @@ export type Campaign = {
     scope: 'full' | 'end-only';
     /** 화면에 보여줄 스토어 값. `full` 이면 기간, `end-only` 면 종료일 하나. */
     storeLabel: string;
+    /** 비교 대상인 지금 화면 값 — `storeLabel` 과 같은 해상도(서버가 만든다). */
+    windowLabel: string;
     /** `end-only` 면 null — 시작일은 보내지 않는다. */
     storeStartYmd: string | null;
     /** 종료 미정('계속')이면 null — 판매관리 종료일을 맞출 근거가 없어 액션을 막는다. */

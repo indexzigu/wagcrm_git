@@ -8,7 +8,7 @@ import { countDistinctSellerIds, isCrossSellerSet, CROSS_SELLER_REJECT_MESSAGE }
 // 순수 유사도 함수는 클라이언트 번들 안전한 similarity.ts로 이전.
 // 로컬 사용 + 기존 import 경로 보존을 위해 import 후 재수출.
 import { computeSimilarityScore, extractSupplyMonths, computeSellerScore, scoreDealCandidate } from './similarity';
-import { parseStoredPeriodEndMs, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, formatKstDateLabel, formatKstYmd, parseSalePeriodBounds, isSameKstDay, resolveStorePeriodDrift, STORE_PERIOD_TRUSTED_STATUS } from './sale-window';
+import { parseStoredPeriodEndMs, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, formatKstDateLabel, formatKstYmd, parseSalePeriodBounds, isSameKstDay, resolveStorePeriodDrift, buildStorePeriodPatchBody, STORE_PERIOD_TRUSTED_STATUS } from './sale-window';
 export { computeSimilarityScore };
 
 const MAPPING_DEBUG_LOG_FILE = 'mapping-debug.log';
@@ -238,7 +238,7 @@ export const PERIOD_RESYNC_IDLE_INTERVAL_MS = 4 * 60 * 60 * 1000;
 // 판매기간 컷오프 해석(순수 함수)은 ./sale-window로 이관해 라이브 집계(campaigns-handler)·마감
 // 스냅샷(closed-campaign-cache)·재동기화 판정(shouldResyncCampaignPeriod)이 같은 SSOT를 공유한다.
 // 하위 호환을 위해 mapping-service에서도 재노출한다.
-export { parseStoredPeriodEndMs, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, formatKstDateLabel, formatKstYmd, parseSalePeriodBounds, isSameKstDay, resolveStorePeriodDrift, STORE_PERIOD_TRUSTED_STATUS };
+export { parseStoredPeriodEndMs, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, formatKstDateLabel, formatKstYmd, parseSalePeriodBounds, isSameKstDay, resolveStorePeriodDrift, buildStorePeriodPatchBody, STORE_PERIOD_TRUSTED_STATUS };
 export type { StorePeriodDrift } from './sale-window';
 
 /** 재동기화 판정·확인 시각 기록이 공유하는 캠페인 최소 형태. */

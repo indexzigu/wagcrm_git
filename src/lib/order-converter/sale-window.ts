@@ -189,6 +189,12 @@ export type StorePeriodDrift = {
   scope: 'full' | 'end-only';
   /** 화면에 보여줄 스토어 값. `full` 이면 기간 전체, `end-only` 면 종료일 하나. */
   storeLabel: string;
+  /**
+   * 비교 대상인 **지금 화면 값**을 `storeLabel` 과 **같은 해상도**로. 두 값을 나란히 놓는 자리라
+   * 해상도가 어긋나면 안 된다.
+   * ⛔ 호출부에서 기간 문자열을 잘라 만들지 말 것 — 폴백이 바뀌면 두 행에 같은 값이 뜬다.
+   */
+  windowLabel: string;
   /** 판매캠페인 PATCH 에 넘길 시작일(KST). `end-only` 면 **null — 보내지 않는다.** */
   storeStartYmd: string | null;
   /** 종료 미정('계속')이면 null — 그 경우 판매관리 종료일을 맞출 근거가 없다. */
@@ -224,8 +230,8 @@ export function resolveStorePeriodDrift(camp: {
   windowEndMs: number | null;
   salesCampaigns?: Array<{ id: string; status?: string | null }> | null;
 }): StorePeriodDrift | null {
-  const windowLabel = formatKstPeriodLabel(camp.windowStartMs, camp.windowEndMs);
-  if (windowLabel === null) return null;
+  const windowPeriodLabel = formatKstPeriodLabel(camp.windowStartMs, camp.windowEndMs);
+  if (windowPeriodLabel === null) return null;
 
   const { startMs, endMs } = parseSalePeriodBounds(camp.salePeriod);
   if (startMs === null) return null; // '기간 미정'·'미등록'·null — 비교할 관측값이 없다
@@ -233,18 +239,24 @@ export function resolveStorePeriodDrift(camp: {
   const scope: StorePeriodDrift['scope'] =
     camp.productStatus === STORE_PERIOD_TRUSTED_STATUS ? 'full' : 'end-only';
 
-  let storeLabel: string | null;
+  // 비교 쌍(스토어 값 / 지금 화면 값)을 **여기서 함께** 만든다 — 해상도가 갈리면 화면에서
+  // 서로 다른 단위가 나란히 놓인다.
+  let storeLabel: string;
+  let shownWindowLabel: string;
   let storeStartYmd: string | null;
   if (scope === 'full') {
-    storeLabel = formatKstPeriodLabel(startMs, endMs);
+    const fullStoreLabel = formatKstPeriodLabel(startMs, endMs);
+    if (fullStoreLabel === null || fullStoreLabel === windowPeriodLabel) return null;
+    storeLabel = fullStoreLabel;
+    shownWindowLabel = windowPeriodLabel;
     storeStartYmd = formatKstYmd(startMs);
-    if (storeLabel === null || storeLabel === windowLabel) return null;
   } else {
     // 종료일만 비교·표시한다. 맞출 종료일이 없으면(스토어가 '계속') 할 일이 없다.
     if (endMs === null) return null;
     const windowEndMs = camp.windowEndMs;
     if (windowEndMs !== null && formatKstDateLabel(windowEndMs) === formatKstDateLabel(endMs)) return null;
     storeLabel = formatKstDateLabel(endMs);
+    shownWindowLabel = windowEndMs === null ? '계속' : formatKstDateLabel(windowEndMs);
     storeStartYmd = null;
   }
 
@@ -265,9 +277,28 @@ export function resolveStorePeriodDrift(camp: {
   return {
     scope,
     storeLabel,
+    windowLabel: shownWindowLabel,
     storeStartYmd,
     storeEndYmd: endMs === null ? null : formatKstYmd(endMs),
     salesCampaignIds,
+  };
+}
+
+/**
+ * 「맞추기」가 판매캠페인 PATCH 에 실을 본문. **이 지점이 실사고의 현장이다**(2026-09-17) —
+ * 판매 종료 상태의 스토어 시작일을 실어 보내 회차 시작일이 망가졌다.
+ *
+ * ⛔ `startDate` 를 `?? undefined` 나 빈 문자열로 넣지 말 것 — **키 자체가 없어야** 라우트가
+ * 기존 시작일을 보존한다(`campaignService.updateCampaign` 이 `data.startDate ? … : {}`).
+ * 맞출 종료일이 없으면(스토어가 '계속') null — 호출부는 액션을 열지 않는다.
+ */
+export function buildStorePeriodPatchBody(
+  drift: Pick<StorePeriodDrift, 'storeStartYmd' | 'storeEndYmd'>,
+): { startDate?: string; endDate: string } | null {
+  if (drift.storeEndYmd === null) return null;
+  return {
+    ...(drift.storeStartYmd !== null ? { startDate: drift.storeStartYmd } : {}),
+    endDate: drift.storeEndYmd,
   };
 }
 

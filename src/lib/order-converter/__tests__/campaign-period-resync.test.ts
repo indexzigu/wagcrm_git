@@ -17,6 +17,7 @@ import {
   PERIOD_RESYNC_IDLE_INTERVAL_MS,
   usesIdlePeriodCheckInterval,
   resolveStorePeriodDrift,
+  buildStorePeriodPatchBody,
   formatKstYmd,
 } from '../mapping-service';
 
@@ -169,6 +170,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
     expect(drift).toEqual({
       scope: 'full',
       storeLabel: '2026.09.14 ~ 2026.09.19',
+      windowLabel: '2026.09.14 ~ 2026.09.17',
       storeStartYmd: '2026-09-14',
       storeEndYmd: '2026-09-19',
       salesCampaignIds: ['sc-1'],
@@ -264,6 +266,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
     expect(drift).toEqual({
       scope: 'end-only',
       storeLabel: '2026.09.17', // 기간이 아니라 종료일 하나만 보여준다
+      windowLabel: '2026.09.16', // 비교 대상도 같은 해상도(종료일)여야 한다
       storeStartYmd: null, // ⛔ 시작일은 보내지 않는다 — 이 null 이 사고를 막는 지점이다
       storeEndYmd: '2026-09-17',
       salesCampaignIds: ['sc-1'],
@@ -328,8 +331,8 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
           salePeriod: '2026.09.14 ~ 2026.09.19',
           windowStartMs: startKst('2026.09.14'),
           windowEndMs: endKst('2026.09.17'),
-          productStatus: 'SALE',
-          salesCampaigns,
+        productStatus: 'SALE',
+        salesCampaigns,
         }),
       ).toBeNull();
     }
@@ -339,6 +342,25 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
     expect(
       resolveStorePeriodDrift({ salePeriod: '2026.09.14 ~ 2026.09.19', windowStartMs: null, windowEndMs: null, productStatus: 'SALE', salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
     ).toBeNull();
+  });
+});
+
+describe('buildStorePeriodPatchBody — 실사고의 현장(2026-09-17)', () => {
+  it("end-only 면 본문에 startDate 키가 **없다** — 라우트가 기존 시작일을 보존하는 조건이다", () => {
+    const body = buildStorePeriodPatchBody({ storeStartYmd: null, storeEndYmd: '2026-09-17' });
+    expect(body).toEqual({ endDate: '2026-09-17' });
+    expect(body && 'startDate' in body).toBe(false); // undefined 로도 들어가면 안 된다
+  });
+
+  it('full 이면 시작일·종료일 둘 다 싣는다', () => {
+    expect(buildStorePeriodPatchBody({ storeStartYmd: '2026-09-14', storeEndYmd: '2026-09-19' })).toEqual({
+      startDate: '2026-09-14',
+      endDate: '2026-09-19',
+    });
+  });
+
+  it("스토어 종료일이 없으면('계속') null — 호출부가 액션을 열지 않는다", () => {
+    expect(buildStorePeriodPatchBody({ storeStartYmd: '2026-09-14', storeEndYmd: null })).toBeNull();
   });
 });
 
