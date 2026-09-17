@@ -804,6 +804,9 @@ export default function OrderDashboard() {
   // 미리보기 송장 데이터가 어느 캠페인 것인지 추적 — '확정'(미리보기 탭) 재등록 경로가
   // campaign 식별자 없이 previewTracking만 쓰므로, 감사 로그 귀속을 위해 소스 캠페인을 보관.
   const [previewCampaign, setPreviewCampaign] = useState<{ id: string; name: string } | null>(null);
+  // 미리보기 표를 어느 캠페인 카드 아래에 붙일지 — 위치 전용이다. 감사 로그 귀속은
+  // previewCampaign 이 따로 소유한다(탭 두 개가 서로 다른 캠페인 것일 수 있어 합치면 어긋난다).
+  const [previewAnchorCampaignId, setPreviewAnchorCampaignId] = useState<string | null>(null);
   // 새 작업 로그 기록 시 증가 — 아코디언 '작업 기록' 패널이 이 값을 구독해 재조회한다.
   const [actionLogRefresh, setActionLogRefresh] = useState(0);
   
@@ -1081,6 +1084,7 @@ export default function OrderDashboard() {
         setPreviewTracking(trackingMap);
         setPreviewTab('tracking');
         setPreviewCampaign({ id: campaign.id, name: campaign.name });
+        setPreviewAnchorCampaignId(campaign.id);
 
         // 다운로드를 위해 버퍼 상태에 저장 (0건이어도 원본 확인용으로 보관)
         setPreviewInvoiceBuffer(bytes.buffer);
@@ -1316,6 +1320,7 @@ export default function OrderDashboard() {
       setPreviewTracking(trackingMap);
       setPreviewTab('tracking');
       setPreviewCampaign({ id: campaign.id, name: campaign.name });
+      setPreviewAnchorCampaignId(campaign.id);
 
       setPreviewInvoiceBuffer(buffer);
       setPreviewInvoiceFileName(file.name);
@@ -1409,6 +1414,7 @@ export default function OrderDashboard() {
                       const worksheet = workbook.Sheets[sheetName];
                       const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
                       setPreviewOrders(jsonData as any[]);
+                      setPreviewAnchorCampaignId(campRef.id);
                       setPreviewTab('orders');
                     }
                   }).catch(e => console.error("XLSX load error for preview", e));
@@ -1473,6 +1479,144 @@ export default function OrderDashboard() {
     }
   };
 
+  // 미리보기 표(발주·송장)는 방금 조회한 **그 캠페인 카드 바로 아래**에 붙인다. 목록 끝에 두면
+  // 정산이 끝난 캠페인이 한 줄로 접히면서 카드와 표 사이에 다른 캠페인들이 끼어들어, 눌러서 받은
+  // 데이터가 화면 밖으로 밀려난다(마감 캠페인 접기 도입 뒤 실제로 그렇게 보였다).
+  // 귀속 캠페인을 모르거나 그 캠페인이 아직 접힌 요약이면 종전처럼 목록 끝에 둔다.
+  const isPreviewAnchored =
+    !!previewAnchorCampaignId &&
+    campaigns.some(c => c.id === previewAnchorCampaignId && !isCollapsedCampaign(c));
+  const dataPreviewPanel = (previewOrders.length > 0 || Object.keys(previewTracking).length > 0) ? (
+    // ⚠️ key 는 장식이 아니다 — 이 패널은 목록 배열 안에서 **자리를 옮긴다**(앵커 카드 아래 ↔ 목록 끝).
+    // 같은 부모 배열에서 같은 key 를 유지해야 React 가 언마운트·리마운트 대신 **이동**으로 처리한다.
+    // 리마운트되면 패널 안(탭·저장·발송처리 버튼)에 있던 포커스가 body 로 떨어지고 표 스크롤이 튄다.
+    // 앵커됐을 때는 **위 카드에 딸린 상세**로 읽혀야 한다(오너 확정 2026-09-17). 흰 배경 + 카드와
+    // 같은 그림자·간격이면 "목록의 다음 항목"으로 읽혀, 위치만 옮겨도 소속이 전달되지 않는다.
+    // 그래서 아코디언 상세와 같은 무채색 틴트를 쓰고, 그림자를 빼고(떠 있으면 독립 카드다),
+    // 카드와의 간격을 24 → 8px 로 좁힌다. 목록 끝으로 밀려났을 때는 붙을 카드가 없으므로
+    // 종전의 독립 카드 모양(흰 배경 + sm 그림자)을 그대로 쓴다.
+    <div
+      key="campaign-data-preview"
+      className={`rounded-2xl border border-slate-200 overflow-hidden ${
+        isPreviewAnchored ? '-mt-4 bg-slate-50/50' : 'bg-white shadow-soft-sm'
+      }`}
+    >
+      <div className="flex border-b border-slate-200 bg-slate-50">
+        <button 
+          onClick={() => setPreviewTab('orders')}
+          className={`px-6 py-4 text-sm font-bold transition-colors ${previewTab === 'orders' ? 'text-blue-600 bg-white border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          발주 데이터 ({previewOrders.length}건)
+        </button>
+        <button 
+          onClick={() => setPreviewTab('tracking')}
+          className={`px-6 py-4 text-sm font-bold transition-colors ${previewTab === 'tracking' ? 'text-blue-600 bg-white border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          송장 데이터 ({Object.keys(previewTracking).length}건)
+        </button>
+      </div>
+
+      <div className="p-0">
+        {previewTab === 'orders' && (
+          <div className="overflow-x-auto max-h-[400px]">
+            {previewOrders.length > 0 ? (
+              <table className="w-full text-[10px] text-left whitespace-nowrap">
+                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-soft-sm z-10">
+                  <tr>
+                    {Object.keys(previewOrders[0]).map(key => (
+                      <th key={key} className="px-3 py-2 font-bold text-slate-500 text-[10px]">{key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 relative z-0">
+                  {previewOrders.map((row, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      {Object.values(row).map((val: any, vIdx) => (
+                        <td key={vIdx} className="px-3 py-1.5 text-slate-500">{val}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="p-8 text-center text-slate-500 text-sm">확보된 발주 데이터가 없습니다. 주문확인 시 자동 등록됩니다.</div>
+            )}
+          </div>
+        )}
+
+        {previewTab === 'tracking' && (
+          <div className="flex flex-col h-full">
+            <div className="p-4 bg-white flex justify-between items-center border-b border-slate-100">
+              <p className="text-sm text-slate-600 font-medium">송장회신 메일을 통해 확보된 임시 송장 데이터입니다.</p>
+              {/* 파일을 받았으면(버퍼 존재) 0건이어도 원본 확인용 '저장'은 항상 노출 */}
+              {previewInvoiceBuffer && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (previewInvoiceBuffer) {
+                        downloadExcelBlob(previewInvoiceBuffer, previewInvoiceFileName);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    저장
+                  </button>
+                  {Object.keys(previewTracking).length > 0 && (() => {
+                    const submitBusy = isActionBusy(`submitTracking:${previewCampaign?.id ?? '__nocampaign__'}`);
+                    return (
+                      <button
+                        onClick={() => submitTrackingData(previewTracking, { skipDownload: true, campaign: previewCampaign ?? undefined })}
+                        disabled={submitBusy}
+                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-800"
+                      >
+                        {submitBusy ? (
+                          <><RefreshCw className="w-4 h-4 animate-spin" />발송처리 중…</>
+                        ) : (
+                          <><span className="text-green-400 font-black text-base leading-none">N</span>발송처리</>
+                        )}
+                      </button>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+            <div className="overflow-x-auto max-h-[400px]">
+              {Object.keys(previewTracking).length > 0 ? (
+                <table className="w-full text-[10px] text-left whitespace-nowrap">
+                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-soft-sm z-10">
+                    <tr>
+                      <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">주문번호</th>
+                      <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">택배사</th>
+                      <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">송장번호</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 relative z-0">
+                    {Object.keys(previewTracking).map((orderId) => {
+                      const item = previewTracking[orderId];
+                      return (
+                        <tr key={orderId} className="hover:bg-slate-50">
+                          <td className="px-3 py-1.5 text-slate-600 font-medium">{orderId}</td>
+                          <td className="px-3 py-1.5 text-slate-500">{item.택배사}</td>
+                          <td className="px-3 py-1.5 text-slate-500 font-mono">{item.송장번호}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-8 text-center text-slate-500 text-sm">
+                  {previewInvoiceBuffer
+                    ? "회신 파일은 받았지만 송장번호를 찾지 못했습니다. 파일에 '송장번호/운송장번호' 컬럼이 없거나 값이 비어 있을 수 있어요. 위 '저장'으로 원본을 열어 확인하거나, 올바른 파일을 직접 업로드하세요."
+                    : "확보된 송장 데이터가 없습니다. 송장회신 버튼으로 메일을 조회하거나 직접 파일을 업로드하세요."}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
   return (
     <CrmShell variant="focus">
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
@@ -1603,7 +1747,7 @@ export default function OrderDashboard() {
         </div>
       ) : (
         <div className="grid gap-6">
-          {campaigns.map(camp => {
+          {[...campaigns.flatMap(camp => {
             // 정산까지 끝난 캠페인은 서버가 요약만 내려보낸다(초기 로딩에서 제외). 펼치기 전에는
             // 한 줄로 두고, 눌렀을 때 그 캠페인만 받아 아래 카드로 교체한다.
             if (isCollapsedCampaign(camp)) {
@@ -1617,7 +1761,7 @@ export default function OrderDashboard() {
                 />
               );
             }
-            return (
+            return [
             <div key={camp.id} className={`bg-white rounded-2xl shadow-soft-sm border border-slate-200 relative transition-opacity ${camp.isActive === false ? 'opacity-60 hover:opacity-100' : ''}`}>
               {/* 카드 상단 (헤더) */}
               <div 
@@ -2130,9 +2274,12 @@ export default function OrderDashboard() {
                   <DailyStatusAccordion camp={camp} />
                 </div>
               )}
-            </div>
-            );
-          })}
+            </div>,
+            ...(previewAnchorCampaignId === camp.id && dataPreviewPanel ? [dataPreviewPanel] : []),
+            ];
+          }),
+          // 귀속 캠페인을 못 찾으면(목록에서 사라졌거나 다시 접혔거나) 목록 끝에 둔다 — 같은 배열이라 이동이다.
+          ...(!isPreviewAnchored && dataPreviewPanel ? [dataPreviewPanel] : [])]}
         </div>
       )}
 
@@ -2250,124 +2397,9 @@ export default function OrderDashboard() {
         />
       )}
 
-      {/* Data Preview Section */}
-      {(previewOrders.length > 0 || Object.keys(previewTracking).length > 0) && (
-        <div className="mt-8 bg-white rounded-2xl shadow-soft-sm border border-slate-200 overflow-hidden">
-          <div className="flex border-b border-slate-200 bg-slate-50">
-            <button 
-              onClick={() => setPreviewTab('orders')}
-              className={`px-6 py-4 text-sm font-bold transition-colors ${previewTab === 'orders' ? 'text-blue-600 bg-white border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              발주 데이터 ({previewOrders.length}건)
-            </button>
-            <button 
-              onClick={() => setPreviewTab('tracking')}
-              className={`px-6 py-4 text-sm font-bold transition-colors ${previewTab === 'tracking' ? 'text-blue-600 bg-white border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              송장 데이터 ({Object.keys(previewTracking).length}건)
-            </button>
-          </div>
-
-          <div className="p-0">
-            {previewTab === 'orders' && (
-              <div className="overflow-x-auto max-h-[400px]">
-                {previewOrders.length > 0 ? (
-                  <table className="w-full text-[10px] text-left whitespace-nowrap">
-                    <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-soft-sm z-10">
-                      <tr>
-                        {Object.keys(previewOrders[0]).map(key => (
-                          <th key={key} className="px-3 py-2 font-bold text-slate-500 text-[10px]">{key}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 relative z-0">
-                      {previewOrders.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50">
-                          {Object.values(row).map((val: any, vIdx) => (
-                            <td key={vIdx} className="px-3 py-1.5 text-slate-500">{val}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <div className="p-8 text-center text-slate-500 text-sm">확보된 발주 데이터가 없습니다. 주문확인 시 자동 등록됩니다.</div>
-                )}
-              </div>
-            )}
-
-            {previewTab === 'tracking' && (
-              <div className="flex flex-col h-full">
-                <div className="p-4 bg-white flex justify-between items-center border-b border-slate-100">
-                  <p className="text-sm text-slate-600 font-medium">송장회신 메일을 통해 확보된 임시 송장 데이터입니다.</p>
-                  {/* 파일을 받았으면(버퍼 존재) 0건이어도 원본 확인용 '저장'은 항상 노출 */}
-                  {previewInvoiceBuffer && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          if (previewInvoiceBuffer) {
-                            downloadExcelBlob(previewInvoiceBuffer, previewInvoiceFileName);
-                          }
-                        }}
-                        className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors"
-                      >
-                        <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        저장
-                      </button>
-                      {Object.keys(previewTracking).length > 0 && (() => {
-                        const submitBusy = isActionBusy(`submitTracking:${previewCampaign?.id ?? '__nocampaign__'}`);
-                        return (
-                          <button
-                            onClick={() => submitTrackingData(previewTracking, { skipDownload: true, campaign: previewCampaign ?? undefined })}
-                            disabled={submitBusy}
-                            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-800"
-                          >
-                            {submitBusy ? (
-                              <><RefreshCw className="w-4 h-4 animate-spin" />발송처리 중…</>
-                            ) : (
-                              <><span className="text-green-400 font-black text-base leading-none">N</span>발송처리</>
-                            )}
-                          </button>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-                <div className="overflow-x-auto max-h-[400px]">
-                  {Object.keys(previewTracking).length > 0 ? (
-                    <table className="w-full text-[10px] text-left whitespace-nowrap">
-                      <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-soft-sm z-10">
-                        <tr>
-                          <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">주문번호</th>
-                          <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">택배사</th>
-                          <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">송장번호</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 relative z-0">
-                        {Object.keys(previewTracking).map((orderId) => {
-                          const item = previewTracking[orderId];
-                          return (
-                            <tr key={orderId} className="hover:bg-slate-50">
-                              <td className="px-3 py-1.5 text-slate-600 font-medium">{orderId}</td>
-                              <td className="px-3 py-1.5 text-slate-500">{item.택배사}</td>
-                              <td className="px-3 py-1.5 text-slate-500 font-mono">{item.송장번호}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div className="p-8 text-center text-slate-500 text-sm">
-                      {previewInvoiceBuffer
-                        ? "회신 파일은 받았지만 송장번호를 찾지 못했습니다. 파일에 '송장번호/운송장번호' 컬럼이 없거나 값이 비어 있을 수 있어요. 위 '저장'으로 원본을 열어 확인하거나, 올바른 파일을 직접 업로드하세요."
-                        : "확보된 송장 데이터가 없습니다. 송장회신 버튼으로 메일을 조회하거나 직접 파일을 업로드하세요."}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Data Preview Section — 캠페인 목록 자체가 없을 때의 자리(목록이 있으면 위 그리드 안에 산다) */}
+      {(isLoading || campaigns.length === 0) && dataPreviewPanel && (
+        <div className="mt-8">{dataPreviewPanel}</div>
       )}
 
       {/* Toast Notifications */}
