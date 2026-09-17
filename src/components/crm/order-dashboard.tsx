@@ -455,6 +455,44 @@ type OrderActionLogRow = {
 const isCollapsedCampaign = (camp: CampaignPayload): boolean => (camp as unknown as { isCollapsed?: boolean }).isCollapsed === true;
 
 /**
+ * 미리보기 패널의 탭 하나 — 제목 아래에 **그 탭 데이터가 어느 캠페인 것인지** 적는다.
+ *
+ * 두 탭은 서로 다른 캠페인 것일 수 있는데(발주=A, 송장=B), 패널이 카드 아래에 붙으면서
+ * **위치가 소속을 주장**하게 됐다. 이름이 없으면 B 의 송장을 A 의 것으로 읽는다.
+ *
+ * ⚠️ **소속 줄은 데이터가 없어도 자리를 비워 둔다**(P8 Layout Stability ②) — 조건부로
+ * 마운트하면 탭 하나만 이름을 가질 때 두 탭의 높이가 어긋나 탭바가 흔들린다.
+ * ⚠️ 캠페인명은 길다(딜+셀러+옵션). 잘라 쓰고 전체는 `title` 로 넘긴다 — 줄바꿈을 허용하면
+ * 탭 높이가 이름 길이에 따라 달라져 같은 흔들림이 난다.
+ */
+function PreviewTab({ label, campaignName, isActive, onSelect }: {
+  label: string;
+  campaignName: string | null;
+  isActive: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      aria-current={isActive ? 'true' : undefined}
+      className={`px-6 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
+        isActive ? 'bg-white border-b-2 border-blue-600' : 'hover:bg-slate-100/60'
+      }`}
+    >
+      <span className={`block text-sm font-bold ${isActive ? 'text-blue-600' : 'text-slate-500'}`}>
+        {label}
+      </span>
+      <span
+        className="mt-0.5 block max-w-[220px] truncate text-[10px] text-slate-500"
+        title={campaignName ?? undefined}
+      >
+        {campaignName ?? '—'}
+      </span>
+    </button>
+  );
+}
+
+/**
  * 정산까지 끝난 캠페인의 **접힌 줄**. 카드 대신 한 줄만 그린다.
  *
  * 줄에 적는 수치는 마감 시점에 이미 확정돼 저장된 값(매출·주문수)뿐이다 — 아직 안 받아 온
@@ -801,11 +839,22 @@ export default function OrderDashboard() {
   const [previewTab, setPreviewTab] = useState<'orders' | 'tracking'>('orders');
   const [previewInvoiceBuffer, setPreviewInvoiceBuffer] = useState<ArrayBuffer | null>(null);
   const [previewInvoiceFileName, setPreviewInvoiceFileName] = useState<string>('');
-  // 미리보기 송장 데이터가 어느 캠페인 것인지 추적 — '확정'(미리보기 탭) 재등록 경로가
-  // campaign 식별자 없이 previewTracking만 쓰므로, 감사 로그 귀속을 위해 소스 캠페인을 보관.
-  const [previewCampaign, setPreviewCampaign] = useState<{ id: string; name: string } | null>(null);
+  // **탭마다 자기 캠페인을 따로 든다.** 두 탭은 서로 다른 캠페인 것일 수 있다 — 캠페인 A 를
+  // 주문확인한 뒤 B 를 송장회신하면 발주 탭엔 A, 송장 탭엔 B 가 남는다. 종전에는 패널이 목록
+  // 끝 중립 위치라 소속을 주장하지 않았지만 지금은 카드 아래에 붙어 **위치가 곧 소속 주장**
+  // 이므로, 어긋난 탭을 이름으로 드러내지 않으면 다른 캠페인 데이터를 그 캠페인 것으로 읽는다.
+  //
+  // ⛔ **어긋났다고 다른 탭을 비우지 말 것(오너 확정 2026-09-18).** 송장 데이터는 발송처리를
+  // 기다리는 **대기 작업**이다(송장회신은 자동 제출하지 않는다) — 비우면 아직 처리 안 한 일이
+  // 조용히 사라지고, 되살리려면 메일을 다시 조회하거나 파일을 다시 올려야 한다. 지우는 대신
+  // 이름을 붙여 어긋남을 보이게 한다.
+  const [previewOrdersCampaign, setPreviewOrdersCampaign] = useState<{ id: string; name: string } | null>(null);
+  // 송장 탭의 소유자 — '확정'(미리보기 탭) 재등록 경로가 campaign 식별자 없이 previewTracking
+  // 만 쓰므로 **감사 로그 귀속도 이 값이 소유한다**(발주 탭 소유자로 갈아끼우면 탭이 어긋날 때
+  // 로그가 엉뚱한 캠페인에 붙는다).
+  const [previewTrackingCampaign, setPreviewTrackingCampaign] = useState<{ id: string; name: string } | null>(null);
   // 미리보기 표를 어느 캠페인 카드 아래에 붙일지 — 위치 전용이다. 감사 로그 귀속은
-  // previewCampaign 이 따로 소유한다(탭 두 개가 서로 다른 캠페인 것일 수 있어 합치면 어긋난다).
+  // previewTrackingCampaign 이 따로 소유한다(탭 두 개가 서로 다른 캠페인 것일 수 있어 합치면 어긋난다).
   const [previewAnchorCampaignId, setPreviewAnchorCampaignId] = useState<string | null>(null);
   // 새 작업 로그 기록 시 증가 — 아코디언 '작업 기록' 패널이 이 값을 구독해 재조회한다.
   const [actionLogRefresh, setActionLogRefresh] = useState(0);
@@ -1083,7 +1132,7 @@ export default function OrderDashboard() {
         const trackingMap: Record<string, TrackingData> = data.trackingMap ?? {};
         setPreviewTracking(trackingMap);
         setPreviewTab('tracking');
-        setPreviewCampaign({ id: campaign.id, name: campaign.name });
+        setPreviewTrackingCampaign({ id: campaign.id, name: campaign.name });
         setPreviewAnchorCampaignId(campaign.id);
 
         // 다운로드를 위해 버퍼 상태에 저장 (0건이어도 원본 확인용으로 보관)
@@ -1267,8 +1316,8 @@ export default function OrderDashboard() {
 
     // 송장등록 감사 로그 — 이 실사고(중복 송장 실패 미인지)의 핵심 기록. 부분 실패가
     // failed[]로 여기 보존되어 소유자가 사후 조회할 수 있다. campaign은 호출부가 제공하며
-    // (업로드=현재 캠페인 / 미리보기 확정=previewCampaign), 없으면 미상 캠페인으로 남긴다.
-    const logCampaign = options.campaign ?? previewCampaign ?? { name: options.sellerName ? `${options.sellerName}` : '(미상 캠페인)' };
+    // (업로드=현재 캠페인 / 미리보기 확정=previewTrackingCampaign), 없으면 미상 캠페인으로 남긴다.
+    const logCampaign = options.campaign ?? previewTrackingCampaign ?? { name: options.sellerName ? `${options.sellerName}` : '(미상 캠페인)' };
     logOrderAction(buildRegisterInvoiceLog({
       campaign: logCampaign,
       successCount: totalSuccess,
@@ -1319,7 +1368,7 @@ export default function OrderDashboard() {
       const trackingMap: Record<string, TrackingData> = data.trackingMap ?? {};
       setPreviewTracking(trackingMap);
       setPreviewTab('tracking');
-      setPreviewCampaign({ id: campaign.id, name: campaign.name });
+      setPreviewTrackingCampaign({ id: campaign.id, name: campaign.name });
       setPreviewAnchorCampaignId(campaign.id);
 
       setPreviewInvoiceBuffer(buffer);
@@ -1414,6 +1463,7 @@ export default function OrderDashboard() {
                       const worksheet = workbook.Sheets[sheetName];
                       const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
                       setPreviewOrders(jsonData as any[]);
+                      setPreviewOrdersCampaign(campRef);
                       setPreviewAnchorCampaignId(campRef.id);
                       setPreviewTab('orders');
                     }
@@ -1511,18 +1561,18 @@ export default function OrderDashboard() {
       }`}
     >
       <div className="flex border-b border-slate-200 bg-slate-50">
-        <button 
-          onClick={() => setPreviewTab('orders')}
-          className={`px-6 py-4 text-sm font-bold transition-colors ${previewTab === 'orders' ? 'text-blue-600 bg-white border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-        >
-          발주 데이터 ({previewOrders.length}건)
-        </button>
-        <button 
-          onClick={() => setPreviewTab('tracking')}
-          className={`px-6 py-4 text-sm font-bold transition-colors ${previewTab === 'tracking' ? 'text-blue-600 bg-white border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-        >
-          송장 데이터 ({Object.keys(previewTracking).length}건)
-        </button>
+        <PreviewTab
+          label={`발주 데이터 (${previewOrders.length}건)`}
+          campaignName={previewOrdersCampaign?.name ?? null}
+          isActive={previewTab === 'orders'}
+          onSelect={() => setPreviewTab('orders')}
+        />
+        <PreviewTab
+          label={`송장 데이터 (${Object.keys(previewTracking).length}건)`}
+          campaignName={previewTrackingCampaign?.name ?? null}
+          isActive={previewTab === 'tracking'}
+          onSelect={() => setPreviewTab('tracking')}
+        />
       </div>
 
       <div className="p-0">
@@ -1572,10 +1622,10 @@ export default function OrderDashboard() {
                     저장
                   </button>
                   {Object.keys(previewTracking).length > 0 && (() => {
-                    const submitBusy = isActionBusy(`submitTracking:${previewCampaign?.id ?? '__nocampaign__'}`);
+                    const submitBusy = isActionBusy(`submitTracking:${previewTrackingCampaign?.id ?? '__nocampaign__'}`);
                     return (
                       <button
-                        onClick={() => submitTrackingData(previewTracking, { skipDownload: true, campaign: previewCampaign ?? undefined })}
+                        onClick={() => submitTrackingData(previewTracking, { skipDownload: true, campaign: previewTrackingCampaign ?? undefined })}
                         disabled={submitBusy}
                         className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-800"
                       >

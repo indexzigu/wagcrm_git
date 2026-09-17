@@ -128,11 +128,51 @@ describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
 
   it('위치용 앵커와 감사 로그 귀속은 다른 state 다', () => {
     expect(CODE).toMatch(/const \[previewAnchorCampaignId, setPreviewAnchorCampaignId\]/);
-    // 감사 로그 귀속은 previewCampaign 이 계속 소유한다 — 앵커로 갈아끼우면 탭이 어긋날 때
-    // '확정' 재등록이 다른 캠페인 이름으로 기록된다.
+    // 감사 로그 귀속은 **송장 탭 소유자**가 계속 갖는다 — 앵커(위치)나 발주 탭 소유자로
+    // 갈아끼우면 탭이 어긋날 때 '확정' 재등록이 다른 캠페인 이름으로 기록된다.
     expect(
       CODE,
-      "'확정' 재등록 로그 귀속이 previewCampaign 에서 떨어져 나갔다",
-    ).toMatch(/submitTrackingData\(previewTracking, \{[^}]*campaign: previewCampaign/);
+      "'확정' 재등록 로그 귀속이 previewTrackingCampaign 에서 떨어져 나갔다",
+    ).toMatch(/submitTrackingData\(previewTracking, \{[^}]*campaign: previewTrackingCampaign/);
+  });
+
+  it('탭마다 자기 캠페인을 따로 든다 — 두 탭은 서로 다른 캠페인 것일 수 있다', () => {
+    // 하나로 합치면 한쪽 탭의 이름표가 반드시 거짓말이 된다(발주=A · 송장=B 인 상태가 실재한다).
+    for (const owner of ['previewOrdersCampaign', 'previewTrackingCampaign']) {
+      expect(CODE, `${owner} state 가 없다 — 탭 소속을 표시할 근거가 사라진다`).toMatch(
+        new RegExp(`const \\[${owner}, set${owner[0].toUpperCase()}${owner.slice(1)}\\]`),
+      );
+    }
+    // 두 생산 경로가 각자 자기 소유자를 채워야 이름표가 실제 데이터를 따라간다.
+    expect(CODE, '발주 경로가 자기 탭 소유자를 기록하지 않는다').toContain(
+      'setPreviewOrdersCampaign(',
+    );
+    expect(CODE, '송장 경로가 자기 탭 소유자를 기록하지 않는다').toContain(
+      'setPreviewTrackingCampaign(',
+    );
+  });
+
+  it('두 탭 모두 자기 소유자를 화면에 적는다', () => {
+    // 한쪽만 적으면 어긋남이 비대칭으로 보여 오히려 오독을 부른다.
+    const tabs = [...CODE.matchAll(/<PreviewTab[\s\S]*?\/>/g)].map((m) => m[0]);
+    expect(tabs.length, `PreviewTab 이 ${tabs.length}개다 — 발주·송장 2개여야 한다`).toBe(2);
+    expect(tabs[0]).toContain('campaignName={previewOrdersCampaign?.name');
+    expect(tabs[1]).toContain('campaignName={previewTrackingCampaign?.name');
+  });
+
+  it('소속 줄은 캠페인이 없어도 자리를 지킨다 — 탭바가 흔들리지 않게', () => {
+    // 조건부로 마운트하면 한 탭만 이름을 가질 때 두 탭의 높이가 어긋난다(P8 Layout Stability ②).
+    // ⚠️ 끝 경계를 `\n}` 로 잡으면 **구조분해 타입의 닫는 중괄호**(`}) {`)에서 먼저 끊긴다 —
+    //    함수 본문을 한 줄도 못 본 채 통과·실패한다. 자기 줄에 홀로 선 `}` 까지 가야 한다.
+    const tabComponent = CODE.match(/function PreviewTab\([\s\S]*?\n\}\n/)?.[0] ?? '';
+    expect(tabComponent, 'PreviewTab 선언을 찾지 못했다').not.toBe('');
+    expect(
+      tabComponent,
+      '소속 줄을 조건부로 렌더한다 — 없을 때도 자리를 채울 것(`?? \'—\'` 형태)',
+    ).toMatch(/campaignName \?\? '—'/);
+    expect(
+      tabComponent,
+      '긴 캠페인명을 잘라 쓰지 않는다 — 줄바꿈되면 탭 높이가 이름 길이에 따라 달라진다',
+    ).toContain('truncate');
   });
 });
