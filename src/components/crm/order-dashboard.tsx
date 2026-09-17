@@ -890,7 +890,8 @@ export default function OrderDashboard() {
           }),
         );
       }
-      const failures = results.filter((r): r is Extract<CampaignPatchResult<unknown>, { ok: false }> => !r.ok);
+      // 판별 유니온이라 평범한 술어로도 좁혀진다(TS 추론 서술어) — 손으로 쓴 `r is …` 불요.
+      const failures = results.filter((r) => !r.ok);
       if (failures.length > 0) {
         // 409(그룹 구성이 방금 바뀜)는 "다시 누르면 되는 상태"라 문구가 다르다 — 헬퍼가 주는
         // 문구를 그대로 쓴다(호출처에서 재시도 안내를 다시 적으면 또 갈린다).

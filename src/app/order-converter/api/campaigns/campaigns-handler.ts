@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/order-converter/prisma';
 import { searchNaverProducts } from '@/lib/order-converter/naver-commerce-api';
-import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesIdlePeriodCheckInterval, isConcretePeriodString, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
+import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesIdlePeriodCheckInterval, isIdlePeriodResyncDue, isConcretePeriodString, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
@@ -138,9 +138,9 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 스토어 조회를 아예 시도하지 않는다(매 GET마다 실패 경고가 쌓이는 것 방지).
     const needsNaver = !isDemoMode() && rawCampaigns.some((c: any) => needsFirstFill(c) || needsResync(c));
     // 이번 회차의 조회를 **유휴 만기**가 불렀는가. 위상 모으기(아래 stampCheckedAt)는 이때만 한다.
-    const idleDueThisRound = rawCampaigns.some(
-      (c: any) => usesIdlePeriodCheckInterval(c, nowMs) && needsResync(c),
-    );
+    // ⚠️ 루프 **전에** 한 번 확정한다 — 루프 안에서 재평가하면 앞 캠페인의 확인 시각 쓰기가
+    // 뒤 캠페인의 판정을 바꿔(read-after-write) 위상 모으기가 절반만 일어난다.
+    const idleDueThisRound = rawCampaigns.some((c: any) => isIdlePeriodResyncDue(c, nowMs));
     let naverProducts: any[] = [];
     // 스토어를 **실제로** 읽었는가. 확인 시각(periodCheckedAt)은 이 값이 참일 때만 찍는다 —
     // 조회가 실패했는데 찍으면 '확인했다'가 거짓이 되어 다음 간격까지 기간 변경을 놓친다.
@@ -682,8 +682,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 딜 하나라도 정산에 들어갔으면 창 전체를 얼린다. 창은 주문캠페인당 하나뿐이라 늘리면 이미 정산 중인
       // 딜의 귀속 주문까지 바뀌기 때문 — 정산 무결성 쪽으로 보수적으로 잡는다. 오너도 "정산시작이 들어가면
       // 판매마감도 확정"이라며 회차 단위로 본다(실측상 한 캠페인의 딜들은 상태가 함께 움직인다).
-      const periodFrozenBySettlement =
-        !!camp.salesCampaigns?.some((sc: any) => isSalesCampaignLocked(sc.status));
+      const periodFrozenBySettlement = isCampaignPeriodFrozen(camp.salesCampaigns);
       camp._periodMismatch = salesWindow?.hasPeriodMismatch ?? false;
 
       const sameMs = (a: Date | string | null | undefined, b: Date | null) => {

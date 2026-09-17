@@ -148,6 +148,20 @@ export function formatKstYmd(ms: number): string {
   return `${y}-${m}-${dt}`;
 }
 
+/**
+ * 이 주문캠페인의 **집계 창이 얼었는가** — 딜 하나라도 정산 락이면 참.
+ *
+ * 창은 주문캠페인당 하나뿐이라 늘리면 이미 정산 중인 딜의 귀속 주문까지 바뀐다. 그래서 회차를
+ * 골라내지 않고 캠페인 단위로 얼린다(오너: "정산시작이 들어가면 판매마감도 확정"). 두 소비처가
+ * 같은 술어를 써야 한다 — 화면 동결(`campaigns-handler`)과 「눌러서 바꿀 수 있는가」
+ * (`resolveStorePeriodDrift`)가 갈리면 **누를 것 없는 배지**가 뜬다.
+ */
+export function isCampaignPeriodFrozen(
+  salesCampaigns: Array<{ status?: string | null }> | null | undefined,
+): boolean {
+  return (salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status));
+}
+
 /** 스토어 관측 기간이 집계 창과 어긋난 상태. `resolveStorePeriodDrift` 참조. */
 export type StorePeriodDrift = {
   /** 스토어 기간을 화면 라벨과 **같은 포맷**으로(비교도 이 문자열로 한다). */
@@ -194,15 +208,15 @@ export function resolveStorePeriodDrift(camp: {
   // 맞출 수 있는 상태인지까지 여기서 판정한다 — 「다른가」와 「눌러서 바꿀 수 있는가」가 갈리면
   // 누를 것 없는 배지가 뜬다.
   //
-  // ⛔ **딜 하나라도 정산 락이면 이 캠페인 전체를 뺀다**(호출부의 `periodFrozenBySettlement` 와
-  // 같은 판정이다 — 두 곳에 두면 갈린다). 미락 회차만 골라 PATCH 해 봤자 **집계 창이 얼려 있어
-  // 화면이 움직이지 않고**, 배지는 눌러도 사라지지 않는 무한 루프가 된다. 창 동결은 오너 결정
-  // (2026-07-15 「정산 시작 = 확정」)이라 여기서 푸는 것이 아니다.
+  // ⛔ **창이 얼었으면 이 캠페인 전체를 뺀다**(`isCampaignPeriodFrozen` — 집계 창 동결과 **같은**
+  // 술어를 쓴다). 미락 회차만 골라 PATCH 해 봤자 창이 얼려 있어 **화면이 움직이지 않고**, 배지는
+  // 눌러도 사라지지 않는 무한 루프가 된다. 창 동결은 오너 결정(2026-07-15 「정산 시작 = 확정」)이라
+  // 여기서 푸는 것이 아니다.
   // ⚠️ 그래서 이 구간의 스토어 변경은 **어느 표면에도 뜨지 않는다** — `periodFrozenDrift` 는
   // 판매관리 일정↔저장 창 차이만 보므로 스토어만 바뀐 경우를 덮지 못한다. 알고 택한 값이다.
   const salesCampaigns = camp.salesCampaigns ?? [];
   if (salesCampaigns.length === 0) return null; // 연결이 없으면 salePeriod 가 이미 화면값이다
-  if (salesCampaigns.some((sc) => isSalesCampaignLocked(sc.status))) return null;
+  if (isCampaignPeriodFrozen(salesCampaigns)) return null;
   const salesCampaignIds = salesCampaigns.map((sc) => sc.id);
 
   return {
