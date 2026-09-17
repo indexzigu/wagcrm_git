@@ -76,8 +76,12 @@ export function resolveCandidateNotice(context: TimelineContext | null): string 
 }
 
 /**
- * **콘텐츠가 한 건도 없는 이유** — 빈 상태 전용이다. 후보가 있으면 그 수를 인용하고,
- * 없으면 검토 기간 종료 여부로 갈린다. 말할 것이 없으면 null.
+ * **콘텐츠가 한 건도 없는 이유** — 후보가 있으면 그 수를 인용하고, 없으면 검토 기간 종료
+ * 여부로 갈린다. 말할 것이 없으면 null.
+ *
+ * ⚠️ 빈 상태 전용이 **아니다.** 주문은 있는데 콘텐츠만 0건인 화면은 빈 상태 분기를 타지
+ * 않고 차트를 그리는데, 그 화면도 같은 사유를 말해야 한다(UX 리뷰 P1). 호출자는
+ * `chartNotice` 와 `resolveEmptyStateMessage` 둘이다.
  */
 export function resolveContentGapNotice(context: TimelineContext | null): string | null {
   const candidateNotice = resolveCandidateNotice(context);
@@ -364,15 +368,6 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
   const totalEvents = (days ?? []).reduce((sum, d) => sum + d.events.length, 0);
   const totalOrders = (days ?? []).reduce((sum, d) => sum + d.orders, 0);
 
-  /**
-   * 차트 위 고지 — 콘텐츠가 **하나도 없으면** 사유 전부를(검토 기간 종료 포함), 있으면
-   * 미등록 후보만 말한다. 후자에서 '검토 기간 종료'까지 붙이면 후보 0건인 정상 캠페인마다
-   * 뜨는 소음이 되고, 전자에서 그것을 빼면 "주문은 있는데 콘텐츠만 0건"인 화면이 아무
-   * 설명 없이 남는다(UX 리뷰 P1 이 고쳤던 자리 — 이번 변경이 되돌릴 뻔했다).
-   */
-  const chartNotice =
-    totalEvents === 0 ? resolveContentGapNotice(context) : resolveCandidateNotice(context);
-
   if (totalEvents === 0 && totalOrders === 0) {
     return (
       <div className="space-y-2">
@@ -383,6 +378,15 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
       </div>
     );
   }
+
+  /**
+   * 차트 위 고지 — 콘텐츠가 **하나도 없으면** 사유 전부를(검토 기간 종료 포함), 있으면
+   * 미등록 후보만 말한다. 후자에서 '검토 기간 종료'까지 붙이면 후보 0건인 정상 캠페인마다
+   * 뜨는 소음이 되고, 전자에서 그것을 빼면 "주문은 있는데 콘텐츠만 0건"인 화면이 아무
+   * 설명 없이 남는다(UX 리뷰 P1 이 고쳤던 자리 — 이번 변경이 되돌릴 뻔했다).
+   */
+  const chartNotice =
+    totalEvents === 0 ? resolveContentGapNotice(context) : resolveCandidateNotice(context);
 
   return (
     <div className="space-y-3">
