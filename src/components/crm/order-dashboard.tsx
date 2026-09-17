@@ -1487,7 +1487,7 @@ export default function OrderDashboard() {
   // 그 화면(접힌 줄들 아래 페이지 끝)이 그대로 재현된다 — 폴백이 증상을 되살리면 폴백이 아니다.
   const isPreviewAnchored =
     !!previewAnchorCampaignId && campaigns.some(c => c.id === previewAnchorCampaignId);
-  const dataPreviewPanel = (previewOrders.length > 0 || Object.keys(previewTracking).length > 0) ? (
+  const dataPreviewPanel: React.ReactElement | null = (previewOrders.length > 0 || Object.keys(previewTracking).length > 0) ? (
     // ⚠️ key 는 장식이 아니다 — 이 패널은 목록 배열 안에서 **자리를 옮긴다**(앵커 카드 아래 ↔ 목록 끝).
     // 같은 부모 배열에서 같은 key 를 유지해야 React 가 언마운트·리마운트 대신 **이동**으로 처리한다.
     // 리마운트되면 패널 안(탭·저장·발송처리 버튼)에 있던 포커스가 body 로 떨어지고 표 스크롤이 튄다.
@@ -1626,6 +1626,10 @@ export default function OrderDashboard() {
       </div>
     </div>
   ) : null;
+  // 앵커 자리는 **한 곳이 소유한다.** 접힌 요약 줄과 펼친 카드 두 분기가 같은 조건을 각자
+  // 적으면, 앵커 규칙이 바뀔 때 한쪽만 고쳐져 "접은 것만 안 따라온다"가 조용히 생긴다.
+  const anchorSlot = (campaignId: string): React.ReactElement[] =>
+    previewAnchorCampaignId === campaignId && dataPreviewPanel ? [dataPreviewPanel] : [];
   return (
     <CrmShell variant="focus">
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
@@ -1768,7 +1772,7 @@ export default function OrderDashboard() {
                   error={settledErrors[camp.id] ?? null}
                   onExpand={() => expandSettledCampaign(camp.id)}
                 />,
-                ...(previewAnchorCampaignId === camp.id && dataPreviewPanel ? [dataPreviewPanel] : []),
+                ...anchorSlot(camp.id),
               ];
             }
             return [
@@ -2285,10 +2289,11 @@ export default function OrderDashboard() {
                 </div>
               )}
             </div>,
-            ...(previewAnchorCampaignId === camp.id && dataPreviewPanel ? [dataPreviewPanel] : []),
+            ...anchorSlot(camp.id),
             ];
           }),
-          // 귀속 캠페인을 못 찾으면(목록에서 사라졌거나 다시 접혔거나) 목록 끝에 둔다 — 같은 배열이라 이동이다.
+          // 귀속 캠페인이 목록에 아예 없을 때만 끝에 둔다 — 같은 배열이라 이동이다.
+          // ⛔ "다시 접혔을 때"를 여기 되돌리지 말 것: 접힌 줄도 앵커 대상이다(위 isPreviewAnchored).
           ...(!isPreviewAnchored && dataPreviewPanel ? [dataPreviewPanel] : [])]}
         </div>
       )}

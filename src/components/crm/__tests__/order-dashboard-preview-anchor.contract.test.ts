@@ -36,16 +36,56 @@ function stripComments(source: string): string {
 const CODE = stripComments(readFileSync(SOURCE_PATH, 'utf8'));
 
 describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
-  it('표는 캠페인 목록과 같은 배열 안에서 렌더된다(앵커 자리 + 목록 끝 자리)', () => {
+  it('표는 캠페인 목록과 같은 배열 안에서, 두 분기 **모두**에 자리를 갖는다', () => {
     // 목록을 배열로 펼쳐(flatMap) 카드와 표를 같은 형제로 두는 구조가 ①의 실체다.
-    expect(CODE, '목록을 flatMap 으로 펼치지 않으면 표를 카드 사이에 끼울 자리가 없다').toContain(
-      'campaigns.flatMap(camp =>',
+    // ⚠️ 서식이 아니라 구조를 본다 — 리터럴 대조는 arrow-paren 설정·줄바꿈 하나에 거짓 빨강이 된다.
+    expect(CODE, '목록을 flatMap 으로 펼치지 않으면 표를 카드 사이에 끼울 자리가 없다').toMatch(
+      /campaigns\s*\.\s*flatMap\s*\(/,
     );
-    const placements = CODE.match(/\[dataPreviewPanel\]/g) ?? [];
+
+    // ⛔ 배치를 **개수로 세지 말 것** — 개수는 "어느 자리인가"를 구분하지 못한다. 접힌 줄 배치를
+    // 지우고 엉뚱한 곳에 하나 끼워 넣어도 총계는 그대로라 초록이다(리뷰에서 잡힌 실제 공백).
+    // 그래서 분기를 잘라 **그 안에** 자리가 있는지 본다.
+    const listBody = CODE.slice(CODE.search(/campaigns\s*\.\s*flatMap\s*\(/));
+    const expandedAt = listBody.indexOf('<div key={camp.id}');
+    const collapsedAt = listBody.indexOf('if (isCollapsedCampaign(camp))');
+    expect(collapsedAt, '접힘 분기를 찾지 못했다').toBeGreaterThanOrEqual(0);
+    expect(expandedAt, '펼친 카드 분기를 찾지 못했다').toBeGreaterThan(collapsedAt);
+
+    const collapsedBranch = listBody.slice(collapsedAt, expandedAt);
     expect(
-      placements.length,
-      `배열 안 배치가 ${placements.length}곳이다 — 펼친 카드 아래·접힌 줄 아래·목록 끝 3곳이어야 한다`,
-    ).toBe(3);
+      collapsedBranch,
+      '접힌 요약 줄 아래에 자리가 없다 — 접힌 캠페인을 조회하면 표가 목록 끝으로 밀려난다(신고된 증상)',
+    ).toContain('anchorSlot(camp.id)');
+
+    const expandedBranch = listBody.slice(expandedAt);
+    expect(expandedBranch, '펼친 카드 아래에 자리가 없다').toContain('anchorSlot(camp.id)');
+
+    // 목록 끝 폴백도 **같은 배열 안**이어야 한다(다른 부모로 나가면 자리 이동이 리마운트가 된다).
+    expect(
+      expandedBranch,
+      '목록 끝 폴백이 배열 밖으로 나갔다 — key 가 있어도 이동이 아니라 리마운트가 된다',
+    ).toMatch(/!isPreviewAnchored && dataPreviewPanel \? \[dataPreviewPanel\] : \[\]/);
+  });
+
+  it('앵커 자리의 조건은 한 곳이 소유한다 — 두 분기가 각자 적지 않는다', () => {
+    expect(CODE, 'anchorSlot 선언이 없다').toMatch(/const anchorSlot = \(campaignId: string\)/);
+    // 조건을 손으로 다시 적은 분기가 있으면, 앵커 규칙이 바뀔 때 한쪽만 고쳐져 조용히 갈린다.
+    const inlined = CODE.match(/previewAnchorCampaignId === camp\.id/g) ?? [];
+    expect(
+      inlined.length,
+      `앵커 조건을 분기에서 직접 적은 곳이 ${inlined.length}곳이다 — anchorSlot 에 위임할 것`,
+    ).toBe(0);
+  });
+
+  it('붙었을 때의 테두리는 섹션 경계 등급이다(P8 구분선 2단)', () => {
+    // 카드 테두리(`border-slate-200`)를 그대로 두르면 틴트로 지운 "독립 박스" 인상이
+    // 테두리에서 되살아난다 — 위치를 옮긴 목적이 절반만 전달된다.
+    const anchoredVariant = CODE.match(/isPreviewAnchored\s*\n?\s*\?\s*'[^']*'/)?.[0] ?? '';
+    expect(anchoredVariant, '앵커 변형의 className 분기를 찾지 못했다').not.toBe('');
+    expect(anchoredVariant, '앵커 변형이 섹션 경계 등급을 쓰지 않는다').toContain(
+      'border-slate-200/60',
+    );
   });
 
   it('배열 안에서 고정 key 를 유지한다 — 자리 이동이 리마운트가 되지 않게', () => {
