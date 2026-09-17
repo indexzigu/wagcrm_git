@@ -19,8 +19,9 @@ import { join } from 'node:path';
  * ③ 앵커 판정은 **접힘 여부를 보지 않는다.** 접혔다는 이유로 표를 목록 끝으로 보내면
  *    오너가 신고한 바로 그 화면이 그대로 재현된다 — 폴백이 증상을 되살리면 폴백이 아니다.
  *
- * 그리고 위치용 앵커는 감사 로그 귀속용 `previewCampaign` 과 **분리돼 있어야** 한다. 두 탭이
- * 서로 다른 캠페인 데이터를 담을 수 있어, 합치면 '확정' 재등록 로그가 엉뚱한 캠페인에 붙는다.
+ * 그리고 위치용 앵커는 감사 로그 귀속용 `previewTrackingCampaign` 과 **분리돼 있어야** 한다.
+ * 두 탭이 서로 다른 캠페인 데이터를 담을 수 있어, 합치면 '확정' 재등록 로그가 엉뚱한 캠페인에
+ * 붙는다.
  */
 const SOURCE_PATH = join(__dirname, '..', 'order-dashboard.tsx');
 
@@ -128,11 +129,103 @@ describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
 
   it('위치용 앵커와 감사 로그 귀속은 다른 state 다', () => {
     expect(CODE).toMatch(/const \[previewAnchorCampaignId, setPreviewAnchorCampaignId\]/);
-    // 감사 로그 귀속은 previewCampaign 이 계속 소유한다 — 앵커로 갈아끼우면 탭이 어긋날 때
-    // '확정' 재등록이 다른 캠페인 이름으로 기록된다.
+    // 감사 로그 귀속은 **송장 탭 소유자**가 계속 갖는다 — 앵커(위치)나 발주 탭 소유자로
+    // 갈아끼우면 탭이 어긋날 때 '확정' 재등록이 다른 캠페인 이름으로 기록된다.
     expect(
       CODE,
-      "'확정' 재등록 로그 귀속이 previewCampaign 에서 떨어져 나갔다",
-    ).toMatch(/submitTrackingData\(previewTracking, \{[^}]*campaign: previewCampaign/);
+      "'확정' 재등록 로그 귀속이 previewTrackingCampaign 에서 떨어져 나갔다",
+    ).toMatch(/submitTrackingData\(previewTracking, \{[^}]*campaign: previewTrackingCampaign/);
+  });
+
+  it('탭마다 자기 캠페인을 따로 든다 — 두 탭은 서로 다른 캠페인 것일 수 있다', () => {
+    // 하나로 합치면 한쪽 탭의 이름표가 반드시 거짓말이 된다(발주=A · 송장=B 인 상태가 실재한다).
+    for (const owner of ['previewOrdersCampaign', 'previewTrackingCampaign']) {
+      expect(CODE, `${owner} state 가 없다 — 탭 소속을 표시할 근거가 사라진다`).toMatch(
+        new RegExp(`const \\[${owner}, set${owner[0].toUpperCase()}${owner.slice(1)}\\]`),
+      );
+    }
+    // 생산 경로가 각자 자기 소유자를 채워야 이름표가 실제 데이터를 따라간다.
+    // ⚠️ **존재 여부로 세지 말 것** — 송장 생산 경로는 둘(메일 회신 · 파일 업로드)이라,
+    // "한 번이라도 쓰였는가"로 보면 **한 곳이 빠져도 초록**이다. 데이터를 쓰는 호출과
+    // 소유자를 쓰는 호출의 **개수를 맞춰** 본다.
+    // ⚠️ 한계: **위치를 보지 않는 개수 대조**다 — 한 블록에서 소유자를 두 번 쓰고 데이터 경로를
+    // 하나 지우면 개수가 맞아 통과한다. 노린 결함(경로 하나가 이름표를 안 남김)은 잡는다.
+    const dataWrites = (needle: string) => (CODE.match(new RegExp(`${needle}\\(`, 'g')) ?? []).length;
+    expect(
+      dataWrites('setPreviewOrdersCampaign'),
+      '발주 데이터를 쓰는 곳과 소유자를 쓰는 곳의 수가 다르다',
+    ).toBe(dataWrites('setPreviewOrders'));
+    expect(
+      dataWrites('setPreviewTrackingCampaign'),
+      '송장 데이터를 쓰는 곳과 소유자를 쓰는 곳의 수가 다르다 — 경로 하나가 이름표를 안 남긴다',
+    ).toBe(dataWrites('setPreviewTracking'));
+  });
+
+  it('어긋난 탭을 비우지 않는다 — 오너 확정(2026-09-18)', () => {
+    // 송장 데이터는 **발송처리를 기다리는 대기 작업**이다(송장회신은 자동 제출하지 않는다).
+    // 비우면 아직 처리 안 한 일이 조용히 사라지고, 되살리려면 메일 재조회나 파일 재업로드가
+    // 필요하다. 그래서 오너가 "지우지 말고 이름을 붙인다"를 골랐다 — 뒷세션이 "어긋나면
+    // 비우기"를 다시 넣어도 아무 계약도 반응하지 않던 자리라 여기에 못 박는다.
+    // ⛔ 이 단언을 지우려면 오너 승인이 필요하다.
+    // ⚠️ 리터럴 대조는 **복붙 재도입만** 막는다 — 공백 하나만 달라도 빠져나간다. 빈 값 형태를
+    // 정규식으로 넓힌다. 그래도 변수를 거치는 형태(`setPreviewTracking(empty)`)는 못 잡는다 —
+    // 이 단언은 완전한 차단이 아니라 **오너 결정의 이정표**다(정직한 한계).
+    const resets: Array<[RegExp, string]> = [
+      [/setPreviewTracking\(\s*\{\s*\}\s*\)/, 'setPreviewTracking({})'],
+      [/setPreviewOrders\(\s*\[\s*\]\s*\)/, 'setPreviewOrders([])'],
+    ];
+    for (const [pattern, shown] of resets) {
+      expect(
+        CODE,
+        `${shown} — 미리보기 데이터를 비우는 경로가 생겼다. 대기 중인 발송처리가 사라진다(오너 기각안)`,
+      ).not.toMatch(pattern);
+    }
+  });
+
+  it('탭 표기는 레포의 확립된 어휘를 쓴다', () => {
+    // `segmented-tab-card.tsx` 선례와 같은 tablist/tab/tabpanel 짝. 여기만 다른 어휘를 쓰면
+    // 같은 일을 하는 방식이 하나 더 생긴다(이 레포가 반복해 사고를 낸 형태).
+    // ⛔ role="tab" 만 있고 부모 tablist 가 없으면 표기가 통째로 무효라 **짝으로** 본다.
+    // ⚠️ **속성 모양으로 본다**(자기 줄에 홀로 선 형태). 단순 `toContain('role="tab"')` 은
+    // 코드 안의 셀렉터 문자열(`querySelectorAll('[role="tab"]')` 등)이 대신 만족시켜, JSX 속성을
+    // 지워도 초록이 된다 — 실측으로 확인한 구멍이다(주석은 stripComments 가 이미 걷어낸다).
+    expect(CODE, 'role="tablist" 속성이 없다 — role="tab" 만으로는 무효다').toMatch(
+      /\n\s+role="tablist"\n/,
+    );
+    expect(CODE, 'role="tab" 속성이 없다').toMatch(/\n\s+role="tab"\n/);
+    expect(CODE, 'aria-selected 가 없다 — 선택 상태가 리더에 전달되지 않는다').toContain(
+      'aria-selected={isActive}',
+    );
+    expect(CODE, 'aria-controls 가 가리킬 tabpanel 이 없다').toContain('role="tabpanel"');
+    // 자리 예약용 `—` 는 낭독에서 빠져야 한다 — 리더마다 "대시"로 읽히거나 묵음이라
+    // 결과가 예측 불가이고, 의미가 아니라 높이를 맞추려고 있는 글자다.
+    expect(
+      CODE,
+      '자리 예약용 — 가 낭독에 포함된다 — campaignName 이 없을 때 aria-hidden 으로 뺄 것',
+    ).toContain('aria-hidden={campaignName === null ? true : undefined}');
+  });
+
+  it('두 탭 모두 자기 소유자를 화면에 적는다', () => {
+    // 한쪽만 적으면 어긋남이 비대칭으로 보여 오히려 오독을 부른다.
+    const tabs = [...CODE.matchAll(/<PreviewTab[\s\S]*?\/>/g)].map((m) => m[0]);
+    expect(tabs.length, `PreviewTab 이 ${tabs.length}개다 — 발주·송장 2개여야 한다`).toBe(2);
+    expect(tabs[0]).toContain('campaignName={previewOrdersCampaign?.name');
+    expect(tabs[1]).toContain('campaignName={previewTrackingCampaign?.name');
+  });
+
+  it('소속 줄은 캠페인이 없어도 자리를 지킨다 — 탭바가 흔들리지 않게', () => {
+    // 조건부로 마운트하면 한 탭만 이름을 가질 때 두 탭의 높이가 어긋난다(P8 Layout Stability ②).
+    // ⚠️ 끝 경계를 `\n}` 로 잡으면 **구조분해 타입의 닫는 중괄호**(`}) {`)에서 먼저 끊긴다 —
+    //    함수 본문을 한 줄도 못 본 채 통과·실패한다. 자기 줄에 홀로 선 `}` 까지 가야 한다.
+    const tabComponent = CODE.match(/function PreviewTab\([\s\S]*?\n\}\n/)?.[0] ?? '';
+    expect(tabComponent, 'PreviewTab 선언을 찾지 못했다').not.toBe('');
+    expect(
+      tabComponent,
+      '소속 줄을 조건부로 렌더한다 — 없을 때도 자리를 채울 것(`?? \'—\'` 형태)',
+    ).toMatch(/campaignName \?\? '—'/);
+    expect(
+      tabComponent,
+      '긴 캠페인명을 잘라 쓰지 않는다 — 줄바꿈되면 탭 높이가 이름 길이에 따라 달라진다',
+    ).toContain('truncate');
   });
 });
