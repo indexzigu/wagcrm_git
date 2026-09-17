@@ -1482,14 +1482,17 @@ export default function OrderDashboard() {
   // 미리보기 표(발주·송장)는 방금 조회한 **그 캠페인 카드 바로 아래**에 붙인다. 목록 끝에 두면
   // 정산이 끝난 캠페인이 한 줄로 접히면서 카드와 표 사이에 다른 캠페인들이 끼어들어, 눌러서 받은
   // 데이터가 화면 밖으로 밀려난다(마감 캠페인 접기 도입 뒤 실제로 그렇게 보였다).
-  // 귀속 캠페인을 모르거나 그 캠페인이 아직 접힌 요약이면 종전처럼 목록 끝에 둔다.
+  // 귀속 캠페인이 목록에 없을 때만 종전처럼 목록 끝에 둔다.
+  // ⚠️ **접힌 요약 줄도 앵커 대상이다.** 접혔다는 이유로 목록 끝으로 보내면 오너가 신고한 바로
+  // 그 화면(접힌 줄들 아래 페이지 끝)이 그대로 재현된다 — 폴백이 증상을 되살리면 폴백이 아니다.
   const isPreviewAnchored =
-    !!previewAnchorCampaignId &&
-    campaigns.some(c => c.id === previewAnchorCampaignId && !isCollapsedCampaign(c));
+    !!previewAnchorCampaignId && campaigns.some(c => c.id === previewAnchorCampaignId);
   const dataPreviewPanel = (previewOrders.length > 0 || Object.keys(previewTracking).length > 0) ? (
     // ⚠️ key 는 장식이 아니다 — 이 패널은 목록 배열 안에서 **자리를 옮긴다**(앵커 카드 아래 ↔ 목록 끝).
     // 같은 부모 배열에서 같은 key 를 유지해야 React 가 언마운트·리마운트 대신 **이동**으로 처리한다.
     // 리마운트되면 패널 안(탭·저장·발송처리 버튼)에 있던 포커스가 body 로 떨어지고 표 스크롤이 튄다.
+    // ℹ️ 보장 범위는 **그 배열 안**이다 — 목록이 아예 없는 상태(로딩·0건)의 자리는 부모가 다르므로
+    //    그 전환에서는 리마운트가 난다. 데이터가 오기 전 구간이라 포커스가 걸릴 일이 사실상 없다.
     // 앵커됐을 때는 **위 카드에 딸린 상세**로 읽혀야 한다(오너 확정 2026-09-17). 흰 배경 + 카드와
     // 같은 그림자·간격이면 "목록의 다음 항목"으로 읽혀, 위치만 옮겨도 소속이 전달되지 않는다.
     // 그래서 아코디언 상세와 같은 무채색 틴트를 쓰고, 그림자를 빼고(떠 있으면 독립 카드다),
@@ -1497,8 +1500,14 @@ export default function OrderDashboard() {
     // 종전의 독립 카드 모양(흰 배경 + sm 그림자)을 그대로 쓴다.
     <div
       key="campaign-data-preview"
-      className={`rounded-2xl border border-slate-200 overflow-hidden ${
-        isPreviewAnchored ? '-mt-4 bg-slate-50/50' : 'bg-white shadow-soft-sm'
+      // 테두리 등급이 앵커 여부에 따라 갈린다(P8 「구분선 2단」): 붙었을 때는 **섹션 경계**
+      // (`border-slate-200/60`) 라 위 카드에 딸린 영역으로 읽히고, 독립 카드로 설 때는 카드
+      // 테두리(`border-slate-200`) 를 그대로 쓴다. ⛔ 앵커 변형에 카드 테두리를 두르면 틴트로
+      // 지운 "독립 박스" 인상이 테두리에서 되살아난다.
+      className={`rounded-2xl border overflow-hidden ${
+        isPreviewAnchored
+          ? '-mt-4 bg-slate-50/50 border-slate-200/60'
+          : 'bg-white shadow-soft-sm border-slate-200'
       }`}
     >
       <div className="flex border-b border-slate-200 bg-slate-50">
@@ -1751,15 +1760,16 @@ export default function OrderDashboard() {
             // 정산까지 끝난 캠페인은 서버가 요약만 내려보낸다(초기 로딩에서 제외). 펼치기 전에는
             // 한 줄로 두고, 눌렀을 때 그 캠페인만 받아 아래 카드로 교체한다.
             if (isCollapsedCampaign(camp)) {
-              return (
+              return [
                 <SettledCampaignRow
                   key={camp.id}
                   camp={camp}
                   isLoading={expandingSettledId === camp.id}
                   error={settledErrors[camp.id] ?? null}
                   onExpand={() => expandSettledCampaign(camp.id)}
-                />
-              );
+                />,
+                ...(previewAnchorCampaignId === camp.id && dataPreviewPanel ? [dataPreviewPanel] : []),
+              ];
             }
             return [
             <div key={camp.id} className={`bg-white rounded-2xl shadow-soft-sm border border-slate-200 relative transition-opacity ${camp.isActive === false ? 'opacity-60 hover:opacity-100' : ''}`}>
