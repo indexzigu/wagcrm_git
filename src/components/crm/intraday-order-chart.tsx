@@ -581,9 +581,12 @@ export function IntradayOrderChart({
                 e.stopPropagation();
                 onSelectEvents(cluster.members);
               }}
-              aria-label={`${formatKstMonthDay(cluster.timeMs)} ${formatKstHm(cluster.timeMs)} ${
-                EVENT_TYPE_LABEL[cluster.members[0].type]
-              } 콘텐츠 ${cluster.members.length}건`}
+              // 대표 시각은 **첫 발행 시각**이다 — 여러 건이면 "부터"를 붙여 그 시각 하나에
+              // 다 발행된 것처럼 읽히지 않게 한다(종전 평균 시각은 아무 발행도 없는 시각을
+              // 단정했다).
+              aria-label={`${formatKstMonthDay(cluster.timeMs)} ${formatKstHm(cluster.timeMs)}${
+                cluster.members.length > 1 ? "부터" : ""
+              } ${EVENT_TYPE_LABEL[cluster.members[0].type]} 콘텐츠 ${cluster.members.length}건`}
             >
               <Icon aria-hidden className="size-2.5 text-muted-foreground" />
               {extra > 0 && (

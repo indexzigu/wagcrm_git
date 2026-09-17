@@ -162,30 +162,34 @@ export async function GET(_request: Request, context: Context) {
      * 데이터가 아니라 설명의 부재였다(오너 지적 2026-08-02) — 미검토 후보는 타임라인에
      * 오르지 않는다는 사실이 화면 어디에도 없었다.
      *
-     * 후보 카운트는 **이벤트가 0건일 때만** 센다. 정상 경로(콘텐츠가 있는 캠페인)에 조회
-     * 4건(프로필·등록자산·무관분류·스토리 count)을 상시로 얹지 않기 위해서다.
      * 후보 수는 자료관리와 **같은 SSOT**(`loadSuggestedPosts`)로 계산한다 — 두 화면이 서로
      * 다른 숫자를 말하면 안내 자체가 신뢰를 잃는다.
+     *
+     * ⚠️ 종전에는 **이벤트가 0건일 때만** 셌다(정상 경로에 조회를 상시로 얹지 않으려고).
+     * 그런데 체감 모순은 빈 화면이 아니라 **중간 상태**에서 더 크다 — 다른 날 콘텐츠가
+     * 있으면 차트는 그려지므로, 자료관리에 후보로 쌓인 날의 발행은 아무 설명 없이 그냥
+     * 빠진다(오너 지적 2026-09-17: "수집은 돼 있는데 그래프엔 없다" — 그 날 게시물이
+     * 미검토 후보였다). 그래서 **항상** 센다. 비용은 스토리 count 1건 +
+     * `loadSuggestedPosts` 내부 조회(스코프·프로필·등록자산·무관분류 최대 4건)다.
+     *
+     * ⚠️ **검토 기간이 끝난 캠페인에서는 게시물 후보가 구조적으로 0이다** —
+     * `loadSuggestedPosts` 가 `includeClosed` 없이는 빈 배열을 돌려준다(후보 집합이 마감
+     * 시점에 확정돼 더 늘지 않는다는 오너 결정 2026-07-31). 그 결정을 여기서 뒤집지
+     * 않는다. 미검토 **스토리** 수는 마감과 무관하게 세므로 안내가 통째로 죽지는 않는다.
      */
     const orderLinked = scopeCampaigns.some((sc) => sc.orderCampaignId !== null);
-    let unreviewedStories = 0;
-    let unreviewedPostCandidates = 0;
-    let reviewClosed = false;
-    if (events.length === 0) {
-      const [storyCount, suggested] = await Promise.all([
-        prisma.sellerStorySnapshot.count({
-          where: {
-            sellerId: campaign.sellerId,
-            classification: "UNREVIEWED",
-            takenAt: { gte: new Date(windowStartMs), lte: new Date(windowEndMs) },
-          },
-        }),
-        loadSuggestedPosts(prisma, campaign),
-      ]);
-      unreviewedStories = storyCount;
-      unreviewedPostCandidates = suggested.suggestions.length;
-      reviewClosed = suggested.reviewClosed;
-    }
+    const [unreviewedStories, suggested] = await Promise.all([
+      prisma.sellerStorySnapshot.count({
+        where: {
+          sellerId: campaign.sellerId,
+          classification: "UNREVIEWED",
+          takenAt: { gte: new Date(windowStartMs), lte: new Date(windowEndMs) },
+        },
+      }),
+      loadSuggestedPosts(prisma, campaign),
+    ]);
+    const unreviewedPostCandidates = suggested.suggestions.length;
+    const reviewClosed = suggested.reviewClosed;
 
     return NextResponse.json({
       campaignId,

@@ -8,6 +8,7 @@ import {
   clampViewport,
   kstDayRange,
   clusterMarkers,
+  MARKER_CLUSTER_MAX_SPAN_MS,
   CUMULATIVE_FILL,
   DAY_BUCKET_MS,
   densifyPoints,
@@ -228,10 +229,28 @@ describe("마커 클러스터링 — 화면 거리 기준·줌 연동", () => {
     expect(clusters.filter((c) => c.members.length > 1)).toHaveLength(0);
   });
 
-  it("클러스터 대표 시각은 구성원 평균이다", () => {
+  it("클러스터 대표 시각은 첫 구성원의 실제 발행 시각이다(평균 금지)", () => {
+    // 평균(30분)은 아무도 발행하지 않은 시각을 단정한다 — 마커 위치도 라벨도 거짓이 된다.
     const clusters = clusterMarkers(markers, wideX);
-    const avg = (0 + 30 * 60 * 1000 + 60 * 60 * 1000) / 3;
-    expect(clusters[0].timeMs).toBeCloseTo(avg, 0);
+    expect(clusters[0].timeMs).toBe(0);
+  });
+
+  it("묶음의 시간 폭이 상한을 넘으면 px 임계 안이어도 새 묶음으로 끊는다", () => {
+    // 10분 간격 사슬 — 인접 간격은 늘 임계 안이라 종전에는 4시간이 한 점으로 뭉쳤다
+    // (실사고 2026-09-17: 하루치 발행 전체). 폭 상한 1시간이면 시작 시각 기준으로 끊긴다.
+    const chain = Array.from({ length: 25 }, (_, i) => ({ id: `c${i}`, timeMs: i * 10 * 60 * 1000 }));
+    const clusters = clusterMarkers(chain, wideX);
+    expect(clusters.length).toBeGreaterThan(1);
+    for (const cluster of clusters) {
+      const span = cluster.members[cluster.members.length - 1].timeMs - cluster.members[0].timeMs;
+      expect(span).toBeLessThanOrEqual(MARKER_CLUSTER_MAX_SPAN_MS);
+    }
+  });
+
+  it("폭 상한은 구성원을 잃지 않는다 — 끊어도 전원이 어느 묶음엔가 있다", () => {
+    const chain = Array.from({ length: 25 }, (_, i) => ({ id: `c${i}`, timeMs: i * 10 * 60 * 1000 }));
+    const ids = clusterMarkers(chain, wideX).flatMap((c) => c.members.map((m) => m.id));
+    expect(ids).toEqual(chain.map((m) => m.id));
   });
 });
 

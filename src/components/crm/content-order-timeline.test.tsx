@@ -425,7 +425,10 @@ describe("ContentOrderTimeline", () => {
     expect(document.querySelector("canvas")).not.toBeNull();
   });
 
-  it("콘텐츠가 있으면 후보 안내를 내지 않는다(정상 상태에 잡음을 얹지 않는다)", async () => {
+  // 오너 2026-09-17: 콘텐츠가 있어도 미등록 후보가 남아 있으면 안내한다. 종전에는 마커가
+  // 0건일 때만 냈는데, 다른 날 콘텐츠가 있으면 차트가 그려지므로 후보로만 쌓인 날의 발행이
+  // 아무 설명 없이 빠져 "수집은 됐는데 그래프엔 없다"로 보였다(실사고).
+  it("콘텐츠가 있어도 미등록 후보가 남아 있으면 안내한다", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -451,7 +454,65 @@ describe("ContentOrderTimeline", () => {
     await waitFor(() => {
       expect(document.querySelector("canvas")).not.toBeNull();
     });
-    expect(screen.queryByText(/미검토 후보/)).not.toBeInTheDocument();
+    expect(screen.getByText(/미검토 후보가 3건/)).toBeInTheDocument();
+  });
+
+  // 주문은 있는데 콘텐츠 마커만 0건인 중간 상태 — 빈 상태 분기를 타지 않으므로 UX 리뷰 P1 이
+  // 고쳤던 자리다. 후보 안내를 항상 내도록 바꾸면서 이 경로의 '검토 기간 종료'를 되돌릴 뻔했다.
+  it("콘텐츠가 0건이면 후보가 없어도 '검토 기간 종료' 사유를 차트 위에 남긴다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          campaignId: "c1",
+          window: { start: "2026-07-01T00:00:00.000Z", end: null },
+          source: "cached",
+          days: [
+            { date: "2026-07-01", orders: 12, cumulativeOrders: 12, revenue: 0, events: [] },
+          ] satisfies TimelineDay[],
+          intraday: null,
+          context: {
+            orderLinked: true,
+            unreviewedStories: 0,
+            unreviewedPostCandidates: 0,
+            reviewClosed: true,
+          },
+        }),
+      }),
+    );
+    render(<ContentOrderTimeline campaignId="c1" />);
+    expect(await screen.findByText(/검토 기간이 끝나/)).toBeInTheDocument();
+    expect(document.querySelector("canvas")).not.toBeNull();
+  });
+
+  it("콘텐츠가 있고 후보가 0건이면 '검토 기간 종료'는 붙이지 않는다(정상 캠페인마다 뜨면 잡음)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          campaignId: "c1",
+          window: { start: "2026-07-01T00:00:00.000Z", end: null },
+          source: "cached",
+          days: [
+            { date: "2026-07-01", orders: 12, cumulativeOrders: 12, revenue: 0, events: [baseEvent] },
+          ] satisfies TimelineDay[],
+          intraday: null,
+          context: {
+            orderLinked: true,
+            unreviewedStories: 0,
+            unreviewedPostCandidates: 0,
+            reviewClosed: true,
+          },
+        }),
+      }),
+    );
+    render(<ContentOrderTimeline campaignId="c1" />);
+    await waitFor(() => {
+      expect(document.querySelector("canvas")).not.toBeNull();
+    });
+    expect(screen.queryByText(/검토 기간이 끝나/)).not.toBeInTheDocument();
   });
 
   it("콘텐츠는 있는데 발주가 없으면 차트 위에 주문축이 빈 이유를 고지한다", async () => {

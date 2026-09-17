@@ -36,6 +36,17 @@ export function resolveMinViewportMs(bucketMs: number): number {
 /** 마커 클러스터 임계(px) — 확정 설계 지정값. 줌하면 시간상 임계가 좁아져 자연히 풀린다. */
 export const MARKER_CLUSTER_PX = 18;
 
+/**
+ * 한 클러스터가 담을 수 있는 최대 **시간 폭**(ms).
+ *
+ * 사슬 방식은 "직전 구성원과 가까운가"만 보므로 묶음 **전체**의 폭에는 상한이 없었다 —
+ * 발행이 촘촘한 날에는 임계를 조금씩 넘지 않는 마커가 계속 이어붙어 하루가 한 점이 된다.
+ * 실사고(2026-09-17): 임계가 두어 시간인 축소 화면에서 **하루치 발행 전체가 마커 하나로**
+ * 뭉쳐, 그날 언제 발행됐는지가 화면에서 통째로 사라졌다(오너 지적). px 임계와 이 폭 상한을
+ * **둘 다** 만족해야 같은 묶음이다.
+ */
+export const MARKER_CLUSTER_MAX_SPAN_MS = 60 * 60 * 1000;
+
 /** 속도(활동량) 곡선이 플롯 높이를 채우는 비율(오너 지정). */
 export const RATE_FILL = 0.92;
 
@@ -203,7 +214,12 @@ export function downsampleMax(values: number[], targetCount: number): number[] {
 export type MarkerInput = { id: string; timeMs: number };
 
 export type MarkerCluster<T extends MarkerInput> = {
-  /** 클러스터 대표 시각(구성원 평균) — 화면 위치 계산용. */
+  /**
+   * 클러스터 대표 시각 — **첫 구성원의 실제 발행 시각**이다(구성원 평균이 아니다).
+   * 평균은 아무도 발행하지 않은 시각을 가리킬 수 있어, 마커 위치와 라벨이 둘 다 거짓이
+   * 된다(실사고 2026-09-17: 반나절에 걸친 묶음의 라벨이 그 한가운데를 단정했다). 구성원이 여럿이면
+   * 이 시각은 "이때부터"라는 뜻이므로 소비처는 라벨에 그 사실을 드러내야 한다.
+   */
   timeMs: number;
   members: T[];
 };
@@ -212,11 +228,16 @@ export type MarkerCluster<T extends MarkerInput> = {
  * 화면 거리 기준 마커 클러스터링 — 임계 안에 들어온 마커를 묶는다.
  * **줌 연동이다**: toX 가 현재 뷰포트 기준이므로 확대하면 임계가 시간상 좁아져 자연히 풀린다
  * (별도 펼치기 버튼 불요 — 확정 설계).
+ *
+ * 묶이려면 조건이 **둘 다** 성립해야 한다: ①직전 구성원과 화면상 `thresholdPx` 이내
+ * ②묶음의 첫 구성원부터 `maxSpanMs` 이내. ②가 없으면 사슬이 무한히 이어져 하루치 발행이
+ * 한 점이 된다(2026-09-17 실측 — MARKER_CLUSTER_MAX_SPAN_MS 주석).
  */
 export function clusterMarkers<T extends MarkerInput>(
   markers: T[],
   toX: (timeMs: number) => number,
   thresholdPx: number = MARKER_CLUSTER_PX,
+  maxSpanMs: number = MARKER_CLUSTER_MAX_SPAN_MS,
 ): MarkerCluster<T>[] {
   const sorted = [...markers].sort((a, b) => a.timeMs - b.timeMs);
   const clusters: MarkerCluster<T>[] = [];
@@ -226,10 +247,14 @@ export function clusterMarkers<T extends MarkerInput>(
     // 구성원이 늘수록 대표가 뒤로 밀려 **바로 옆 마커가 임계 밖으로 튕긴다** — 12.5px 간격으로
     // 늘어선 3개가 2개+1개로 갈리는 것을 테스트가 잡았다. 인접 간격 사슬이 올바른 판정이다.
     const previous = last?.members[last.members.length - 1];
-    if (last && previous && Math.abs(toX(marker.timeMs) - toX(previous.timeMs)) <= thresholdPx) {
+    const isWithinThresholdPx =
+      last !== undefined &&
+      previous !== undefined &&
+      Math.abs(toX(marker.timeMs) - toX(previous.timeMs)) <= thresholdPx;
+    // 대표 시각이 첫 구성원이므로 `last.timeMs` 가 곧 묶음의 시작이다 — 폭은 여기서 잰다.
+    const isWithinMaxSpan = last !== undefined && marker.timeMs - last.timeMs <= maxSpanMs;
+    if (isWithinThresholdPx && isWithinMaxSpan) {
       last.members.push(marker);
-      // 대표 시각은 구성원 평균 — 묶음이 자기 구성원들의 가운데에 놓인다(배치 전용).
-      last.timeMs = last.members.reduce((sum, m) => sum + m.timeMs, 0) / last.members.length;
       continue;
     }
     clusters.push({ timeMs: marker.timeMs, members: [marker] });
