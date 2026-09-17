@@ -464,8 +464,15 @@ const isCollapsedCampaign = (camp: CampaignPayload): boolean => (camp as unknown
  * 마운트하면 탭 하나만 이름을 가질 때 두 탭의 높이가 어긋나 탭바가 흔들린다.
  * ⚠️ 캠페인명은 길다(딜+셀러+옵션). 잘라 쓰고 전체는 `title` 로 넘긴다 — 줄바꿈을 허용하면
  * 탭 높이가 이름 길이에 따라 달라져 같은 흔들림이 난다.
+ *
+ * ⚠️ **표기는 이 레포의 확립된 탭 어휘를 따른다**(`segmented-tab-card.tsx` 선례) —
+ * `role="tablist"`/`role="tab"`/`aria-selected`/`aria-controls` + roving `tabIndex`.
+ * 여기만 다른 어휘(`aria-current` 등)를 쓰면 같은 일을 하는 방식이 하나 더 생긴다.
+ * ⛔ `role="tab"` 만 붙이고 부모의 `role="tablist"` 를 빠뜨리지 말 것 — 짝이 없으면 무효다.
  */
-function PreviewTab({ label, campaignName, isActive, onSelect }: {
+function PreviewTab({ id, panelId, label, campaignName, isActive, onSelect }: {
+  id: string;
+  panelId: string;
   label: string;
   campaignName: string | null;
   isActive: boolean;
@@ -473,8 +480,13 @@ function PreviewTab({ label, campaignName, isActive, onSelect }: {
 }) {
   return (
     <button
+      type="button"
+      role="tab"
+      id={id}
+      aria-selected={isActive}
+      aria-controls={panelId}
+      tabIndex={isActive ? 0 : -1}
       onClick={onSelect}
-      aria-current={isActive ? 'true' : undefined}
       className={`px-6 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
         isActive ? 'bg-white border-b-2 border-blue-600' : 'hover:bg-slate-100/60'
       }`}
@@ -484,6 +496,9 @@ function PreviewTab({ label, campaignName, isActive, onSelect }: {
       </span>
       <span
         className="mt-0.5 block max-w-[220px] truncate text-[10px] text-slate-500"
+        // 자리 예약용 `—` 는 낭독에서 뺀다 — 리더마다 "대시"로 읽히거나 묵음이라 결과가
+        // 예측 불가이고, 애초에 의미가 아니라 **높이를 맞추려고** 있는 글자다.
+        aria-hidden={campaignName === null ? true : undefined}
         title={campaignName ?? undefined}
       >
         {campaignName ?? '—'}
@@ -491,6 +506,10 @@ function PreviewTab({ label, campaignName, isActive, onSelect }: {
     </button>
   );
 }
+
+/** 미리보기 탭의 DOM id — 탭과 패널이 `aria-controls`/`aria-labelledby` 로 서로를 가리킨다. */
+const previewTabId = (key: 'orders' | 'tracking') => `preview-tab-${key}`;
+const previewPanelId = (key: 'orders' | 'tracking') => `preview-panel-${key}`;
 
 /**
  * 정산까지 끝난 캠페인의 **접힌 줄**. 카드 대신 한 줄만 그린다.
@@ -1560,14 +1579,37 @@ export default function OrderDashboard() {
           : 'bg-white shadow-soft-sm border-slate-200'
       }`}
     >
-      <div className="flex border-b border-slate-200 bg-slate-50">
+      <div
+        role="tablist"
+        aria-orientation="horizontal"
+        onKeyDown={(e) => {
+          // tablist 는 Tab 키가 아니라 **화살표로** 탭 사이를 옮긴다(선례와 같은 규약).
+          const order: Array<'orders' | 'tracking'> = ['orders', 'tracking'];
+          const idx = order.indexOf(previewTab);
+          let next = -1;
+          if (e.key === 'ArrowRight') next = (idx + 1) % order.length;
+          else if (e.key === 'ArrowLeft') next = (idx - 1 + order.length) % order.length;
+          else if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = order.length - 1;
+          if (next < 0) return;
+          e.preventDefault();
+          setPreviewTab(order[next]);
+          const tabs = e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]');
+          tabs[next]?.focus();
+        }}
+        className="flex border-b border-slate-200 bg-slate-50"
+      >
         <PreviewTab
+          id={previewTabId('orders')}
+          panelId={previewPanelId('orders')}
           label={`발주 데이터 (${previewOrders.length}건)`}
           campaignName={previewOrdersCampaign?.name ?? null}
           isActive={previewTab === 'orders'}
           onSelect={() => setPreviewTab('orders')}
         />
         <PreviewTab
+          id={previewTabId('tracking')}
+          panelId={previewPanelId('tracking')}
           label={`송장 데이터 (${Object.keys(previewTracking).length}건)`}
           campaignName={previewTrackingCampaign?.name ?? null}
           isActive={previewTab === 'tracking'}
@@ -1577,7 +1619,12 @@ export default function OrderDashboard() {
 
       <div className="p-0">
         {previewTab === 'orders' && (
-          <div className="overflow-x-auto max-h-[400px]">
+          <div
+            role="tabpanel"
+            id={previewPanelId('orders')}
+            aria-labelledby={previewTabId('orders')}
+            className="overflow-x-auto max-h-[400px]"
+          >
             {previewOrders.length > 0 ? (
               <table className="w-full text-[10px] text-left whitespace-nowrap">
                 <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-soft-sm z-10">
@@ -1604,7 +1651,12 @@ export default function OrderDashboard() {
         )}
 
         {previewTab === 'tracking' && (
-          <div className="flex flex-col h-full">
+          <div
+            role="tabpanel"
+            id={previewPanelId('tracking')}
+            aria-labelledby={previewTabId('tracking')}
+            className="flex flex-col h-full"
+          >
             <div className="p-4 bg-white flex justify-between items-center border-b border-slate-100">
               <p className="text-sm text-slate-600 font-medium">송장회신 메일을 통해 확보된 임시 송장 데이터입니다.</p>
               {/* 파일을 받았으면(버퍼 존재) 0건이어도 원본 확인용 '저장'은 항상 노출 */}

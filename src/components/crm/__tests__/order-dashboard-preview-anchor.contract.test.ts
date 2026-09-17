@@ -19,8 +19,9 @@ import { join } from 'node:path';
  * ③ 앵커 판정은 **접힘 여부를 보지 않는다.** 접혔다는 이유로 표를 목록 끝으로 보내면
  *    오너가 신고한 바로 그 화면이 그대로 재현된다 — 폴백이 증상을 되살리면 폴백이 아니다.
  *
- * 그리고 위치용 앵커는 감사 로그 귀속용 `previewCampaign` 과 **분리돼 있어야** 한다. 두 탭이
- * 서로 다른 캠페인 데이터를 담을 수 있어, 합치면 '확정' 재등록 로그가 엉뚱한 캠페인에 붙는다.
+ * 그리고 위치용 앵커는 감사 로그 귀속용 `previewTrackingCampaign` 과 **분리돼 있어야** 한다.
+ * 두 탭이 서로 다른 캠페인 데이터를 담을 수 있어, 합치면 '확정' 재등록 로그가 엉뚱한 캠페인에
+ * 붙는다.
  */
 const SOURCE_PATH = join(__dirname, '..', 'order-dashboard.tsx');
 
@@ -143,13 +144,51 @@ describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
         new RegExp(`const \\[${owner}, set${owner[0].toUpperCase()}${owner.slice(1)}\\]`),
       );
     }
-    // 두 생산 경로가 각자 자기 소유자를 채워야 이름표가 실제 데이터를 따라간다.
-    expect(CODE, '발주 경로가 자기 탭 소유자를 기록하지 않는다').toContain(
-      'setPreviewOrdersCampaign(',
+    // 생산 경로가 각자 자기 소유자를 채워야 이름표가 실제 데이터를 따라간다.
+    // ⚠️ **존재 여부로 세지 말 것** — 송장 생산 경로는 둘(메일 회신 · 파일 업로드)이라,
+    // "한 번이라도 쓰였는가"로 보면 **한 곳이 빠져도 초록**이다. 데이터를 쓰는 호출과
+    // 소유자를 쓰는 호출의 **개수를 맞춰** 본다.
+    const dataWrites = (needle: string) => (CODE.match(new RegExp(`${needle}\\(`, 'g')) ?? []).length;
+    expect(
+      dataWrites('setPreviewOrdersCampaign'),
+      '발주 데이터를 쓰는 곳과 소유자를 쓰는 곳의 수가 다르다',
+    ).toBe(dataWrites('setPreviewOrders'));
+    expect(
+      dataWrites('setPreviewTrackingCampaign'),
+      '송장 데이터를 쓰는 곳과 소유자를 쓰는 곳의 수가 다르다 — 경로 하나가 이름표를 안 남긴다',
+    ).toBe(dataWrites('setPreviewTracking'));
+  });
+
+  it('어긋난 탭을 비우지 않는다 — 오너 확정(2026-09-18)', () => {
+    // 송장 데이터는 **발송처리를 기다리는 대기 작업**이다(송장회신은 자동 제출하지 않는다).
+    // 비우면 아직 처리 안 한 일이 조용히 사라지고, 되살리려면 메일 재조회나 파일 재업로드가
+    // 필요하다. 그래서 오너가 "지우지 말고 이름을 붙인다"를 골랐다 — 뒷세션이 "어긋나면
+    // 비우기"를 다시 넣어도 아무 계약도 반응하지 않던 자리라 여기에 못 박는다.
+    // ⛔ 이 단언을 지우려면 오너 승인이 필요하다.
+    for (const reset of ['setPreviewTracking({})', 'setPreviewOrders([])']) {
+      expect(
+        CODE,
+        `${reset} — 미리보기 데이터를 비우는 경로가 생겼다. 대기 중인 발송처리가 사라진다(오너 기각안)`,
+      ).not.toContain(reset);
+    }
+  });
+
+  it('탭 표기는 레포의 확립된 어휘를 쓴다', () => {
+    // `segmented-tab-card.tsx` 선례와 같은 tablist/tab/tabpanel 짝. 여기만 다른 어휘를 쓰면
+    // 같은 일을 하는 방식이 하나 더 생긴다(이 레포가 반복해 사고를 낸 형태).
+    // ⛔ role="tab" 만 있고 부모 tablist 가 없으면 표기가 통째로 무효라 **짝으로** 본다.
+    expect(CODE, 'role="tablist" 가 없다 — role="tab" 만으로는 무효다').toContain('role="tablist"');
+    expect(CODE, 'role="tab" 이 없다').toContain('role="tab"');
+    expect(CODE, 'aria-selected 가 없다 — 선택 상태가 리더에 전달되지 않는다').toContain(
+      'aria-selected={isActive}',
     );
-    expect(CODE, '송장 경로가 자기 탭 소유자를 기록하지 않는다').toContain(
-      'setPreviewTrackingCampaign(',
-    );
+    expect(CODE, 'aria-controls 가 가리킬 tabpanel 이 없다').toContain('role="tabpanel"');
+    // 자리 예약용 `—` 는 낭독에서 빠져야 한다 — 리더마다 "대시"로 읽히거나 묵음이라
+    // 결과가 예측 불가이고, 의미가 아니라 높이를 맞추려고 있는 글자다.
+    expect(
+      CODE,
+      '자리 예약용 — 가 낭독에 포함된다 — campaignName 이 없을 때 aria-hidden 으로 뺄 것',
+    ).toContain('aria-hidden={campaignName === null ? true : undefined}');
   });
 
   it('두 탭 모두 자기 소유자를 화면에 적는다', () => {
