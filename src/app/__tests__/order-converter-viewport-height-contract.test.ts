@@ -21,9 +21,18 @@ import { describe, expect, it } from "vitest";
  *
  * jsdom 은 svh·레이아웃을 모르므로 렌더 테스트로는 못 잡는다 — 소스 계약으로 고정한다
  * (`pipeline-loading-height-contract` 와 같은 형태).
+ *
+ * ⚠️ **이 계약이 못 보는 것(정직한 한계):** 클래스 리터럴을 문자열로 훑으므로 `h-svh` 와
+ * `h-full` 이 **실제로 부모-자식으로 중첩됐는지**는 확인하지 못한다 — 서로 다른 요소라는
+ * 것까지만 본다. 형제 요소에 흩어 놓으면 통과한다. 구조까지 보려면 JSX 를 AST 로 파싱해야
+ * 하는데, 이 파일의 요소가 둘뿐이라 지금은 비용이 이득을 넘는다. 요소가 늘면 그때 옮긴다.
  */
 
 const PAGE_RAW = readFileSync(join(process.cwd(), "src/app/order-converter/page.tsx"), "utf8");
+const DASHBOARD_RAW = readFileSync(
+  join(process.cwd(), "src/components/crm/order-dashboard.tsx"),
+  "utf8",
+);
 // 주석 제거 — 이 파일도 본문 주석이 `flex-1` 을 금지 사유로 **인용**하므로, 원문을 그대로
 // 검사하면 가드가 자기 경고문에 걸려 오탐한다. `[^:]` 는 `https://` 를 지키기 위한 것.
 const PAGE = PAGE_RAW.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
@@ -61,6 +70,34 @@ describe("주문 관리 화면 뷰포트 높이 계약", () => {
       offender,
       `flex-1 과 h-svh 가 같은 요소에 있다("${offender}") — 높이가 무시돼 흔들림이 그대로다`,
     ).toBeUndefined();
+  });
+
+  it("높이 확정은 데스크톱 폭에서만 켠다(반응형 접두사 필수)", () => {
+    // 모바일에서는 `SidebarInset` 이 하단 nav 자리로 `pb-20` 을 잡는데, 뷰포트 높이를 그대로
+    // 주면 그 패딩을 무시해 셸 하단이 nav 밑에 깔린다. 접두사를 떼는 것이 그 회귀다 —
+    // 접두사를 허용만 하고 **요구하지 않으면** 이 커밋의 요지가 계약 밖에 남는다.
+    const unscoped = CLASS_ATTRS.find((c) => tokens(c).includes("h-svh"));
+    expect(
+      unscoped,
+      `접두사 없는 h-svh 가 있다("${unscoped}") — 모바일에서 셸 하단이 하단 nav 밑에 깔린다`,
+    ).toBeUndefined();
+    expect(
+      CLASS_ATTRS.some((c) => tokens(c).some((t) => t.endsWith(":h-svh"))),
+      "반응형 접두사가 붙은 h-svh 가 없다",
+    ).toBe(true);
+  });
+
+  it("목록 스크롤러도 스크롤바 자리를 예약한다", () => {
+    // 넘침이 셸 스크롤러가 아니라 이 div 로 갈 수 있고, 그때 자리 예약이 없으면 같은
+    // 흔들림이 되살아난다. 두 후보 **모두** 예약해야 "어디로 가도 안 흔들린다"가 성립한다.
+    const listScroller = DASHBOARD_RAW.match(
+      /className="[^"]*overflow-auto bg-\[#f8fafc\][^"]*"/,
+    )?.[0];
+    expect(listScroller, "목록 스크롤러를 찾지 못했다 — 클래스가 바뀌었다면 이 계약도 함께 고칠 것").toBeDefined();
+    expect(
+      listScroller,
+      "목록 스크롤러에 [scrollbar-gutter:stable] 이 없다 — 이쪽이 스크롤러가 되는 순간 카드 폭이 흔들린다",
+    ).toContain("[scrollbar-gutter:stable]");
   });
 
   it("안쪽 래퍼가 그 높이를 **다른 요소로** 물려받는다(h-full)", () => {
