@@ -584,16 +584,29 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
         )}
       </div>
       <div className="space-y-3">
+        {/* 행은 뷰포트가 아니라 **자기 카드 폭**을 기준으로 한 줄/두 줄을 정한다(`@container`).
+            같은 뷰포트라도 사이드바 폭·아코디언 패딩에 따라 이 카드의 실제 폭이 달라지므로
+            md/lg 뷰포트 브레이크포인트로는 줄바꿈 시점을 맞출 수 없다(오너 해상도 변경 시
+            배송완료 한 칸만 다음 줄로 밀린 실사고).
+            문턱 860px = 카드 내부 폭 기준. 실측 최소 필요폭은 814px(매출 칸의 라벨-값 여백이
+            0이 되는 지점)이고, 그 아래에서는 고정폭 + 줄바꿈이라는 기존 동작으로 되돌린다.
+            ⚠️ 카드 자신에는 `@[...]` 유틸을 붙이지 말 것 — 컨테이너 쿼리는 조상 컨테이너만 찾아서
+            자기가 선언한 컨테이너를 자기가 읽을 수 없다. 클래스는 붙는데 스타일만 조용히 죽는다
+            (실사고: 묶음 사이 간격 `@[860px]:gap-5` 가 렌더에 도달하지 못하고 16px 로 남았다).
+            그래서 좌/우 묶음 경계는 간격이 아니라 자식으로 넣은 구분선이 맡는다.
+            ⚠️ `@container` 선언을 `lg:` 로 가둔 것은 의도다 — 컨테이너 선언은 카드 폭을 내용이
+            아니라 부모에 고정시켜서, 좁은 화면에서 기존에 카드가 늘어나 담던 내용이 카드 밖으로
+            넘친다(실측: 뷰포트 820에서 91px 넘침). lg 미만은 컨테이너를 켜지 않아 기존 동작 그대로다. */}
         {visibleItems.map((item, idx) => {
           const s = item.stat;
           return (
-            <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-soft-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-soft-sm lg:@container flex flex-col md:flex-row md:items-center justify-between gap-4">
               {/* 좌측: 날짜 / 총주문 / 매출액 */}
-              <div className="flex items-center gap-4 shrink-0">
+              <div className="flex items-center gap-4 @max-[860px]:shrink-0 @[860px]:flex-1 @[860px]:gap-3">
                 <span className="font-medium text-slate-700 text-sm w-24 shrink-0 text-center">{item.date}</span>
                 <div className="w-px h-4 bg-slate-200 shrink-0"></div>
                 
-                <div className="flex items-center w-[90px] shrink-0 justify-between">
+                <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">주문</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.orders ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
@@ -602,7 +615,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
                 
                 <div className="w-px h-4 bg-slate-200 shrink-0"></div>
 
-                <div className="flex items-center w-[90px] shrink-0 justify-between">
+                <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">수량</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.quantity ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">개</span>
@@ -611,38 +624,41 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
                 
                 <div className="w-px h-4 bg-slate-200 shrink-0"></div>
                 
-                <div className="flex items-center w-[130px] shrink-0 justify-between">
+                <div className="flex items-center w-[130px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-[1.4]">
                   <span className="text-[11px] text-slate-500 font-normal">매출</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.revenue ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">원</span>
                   </div>
                 </div>
               </div>
-              
+
+              {/* 좌/우 묶음 경계 — 한 줄로 붙을 때만 보인다(줄바꿈 상태에서는 줄이 곧 경계다) */}
+              <div className="w-px h-4 bg-slate-200 shrink-0 hidden @[860px]:block"></div>
+
               {/* 우측: 일자별 주문 상태 건수 (주문확인, 배송대기, 배송중, 배송완료) */}
-              <div className="flex-1 flex flex-wrap gap-x-4 gap-y-2 md:justify-end items-center mt-2 md:mt-0 px-2 md:px-0">
-                <div className="flex items-center w-[130px] shrink-0 justify-between">
+              <div className="flex-1 flex flex-wrap gap-x-4 gap-y-2 md:justify-end items-center mt-2 md:mt-0 px-2 md:px-0 @[860px]:flex-nowrap @[860px]:gap-x-3">
+                <div className="flex items-center w-[130px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-[1.4]">
                   <span className="text-[11px] text-slate-500 font-normal">주문확인</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.newOrderBefore ?? 0).toLocaleString()} / {(s.newOrderAfter ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
                   </div>
                 </div>
                 <div className="w-px h-3.5 bg-slate-200 hidden md:block"></div>
-                <div className="flex items-center w-[90px] shrink-0 justify-between">
+                <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">배송대기</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.pending ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
                   </div>
                 </div>
                 <div className="w-px h-3.5 bg-slate-200 hidden md:block"></div>
-                <div className="flex items-center w-[90px] shrink-0 justify-between">
+                <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">배송중</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.shipping ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
                   </div>
                 </div>
                 <div className="w-px h-3.5 bg-slate-200 hidden md:block"></div>
-                <div className="flex items-center w-[90px] shrink-0 justify-between">
+                <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">배송완료</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.completed ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
