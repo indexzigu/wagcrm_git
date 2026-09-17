@@ -47,31 +47,51 @@ describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
     // 지우고 엉뚱한 곳에 하나 끼워 넣어도 총계는 그대로라 초록이다(리뷰에서 잡힌 실제 공백).
     // 그래서 분기를 잘라 **그 안에** 자리가 있는지 본다.
     const listBody = CODE.slice(CODE.search(/campaigns\s*\.\s*flatMap\s*\(/));
-    const expandedAt = listBody.indexOf('<div key={camp.id}');
-    const collapsedAt = listBody.indexOf('if (isCollapsedCampaign(camp))');
+    // ⚠️ 분기를 자를 때 **끝 경계를 반드시 잡는다.** 파일 끝까지 슬라이스하면 나중에 이 컴포넌트
+    // 아무 데나 같은 호출이 생겼을 때 분기에서 자리를 지워도 초록이 된다(거짓 통과).
+    const fallbackAt = listBody.indexOf('...(!isPreviewAnchored');
+    expect(fallbackAt, '목록 끝 폴백을 찾지 못했다 — 분기 끝 경계를 잡을 수 없다').toBeGreaterThan(0);
+    const flatMapBody = listBody.slice(0, fallbackAt);
+
+    const expandedAt = flatMapBody.indexOf('<div key={camp.id}');
+    const collapsedAt = flatMapBody.indexOf('if (isCollapsedCampaign(camp))');
     expect(collapsedAt, '접힘 분기를 찾지 못했다').toBeGreaterThanOrEqual(0);
     expect(expandedAt, '펼친 카드 분기를 찾지 못했다').toBeGreaterThan(collapsedAt);
 
-    const collapsedBranch = listBody.slice(collapsedAt, expandedAt);
+    // 자리는 **그 줄/카드 아래**여야 한다 — 오너 지시의 핵심이 "밑으로"다. 분기 안에 있기만
+    // 하면 통과시키면, 위로 올려도 계약이 초록이라 지시의 절반만 지켜진다.
+    const collapsedBranch = flatMapBody.slice(collapsedAt, expandedAt);
     expect(
       collapsedBranch,
       '접힌 요약 줄 아래에 자리가 없다 — 접힌 캠페인을 조회하면 표가 목록 끝으로 밀려난다(신고된 증상)',
     ).toContain('anchorSlot(camp.id)');
+    expect(
+      collapsedBranch.indexOf('anchorSlot(camp.id)'),
+      '자리가 접힌 줄보다 **위**에 있다 — 표가 줄 위로 올라간다',
+    ).toBeGreaterThan(collapsedBranch.indexOf('/>,'));
 
-    const expandedBranch = listBody.slice(expandedAt);
+    const expandedBranch = flatMapBody.slice(expandedAt);
     expect(expandedBranch, '펼친 카드 아래에 자리가 없다').toContain('anchorSlot(camp.id)');
+    expect(
+      expandedBranch.indexOf('anchorSlot(camp.id)'),
+      '자리가 카드보다 **위**에 있다 — 표가 카드 위로 올라간다',
+    ).toBeGreaterThan(expandedBranch.indexOf('</div>,'));
 
     // 목록 끝 폴백도 **같은 배열 안**이어야 한다(다른 부모로 나가면 자리 이동이 리마운트가 된다).
     expect(
-      expandedBranch,
+      listBody.slice(fallbackAt),
       '목록 끝 폴백이 배열 밖으로 나갔다 — key 가 있어도 이동이 아니라 리마운트가 된다',
-    ).toMatch(/!isPreviewAnchored && dataPreviewPanel \? \[dataPreviewPanel\] : \[\]/);
+    ).toMatch(/!isPreviewAnchored\s*&&\s*dataPreviewPanel\s*\?\s*\[dataPreviewPanel\]\s*:\s*\[\]/);
   });
 
   it('앵커 자리의 조건은 한 곳이 소유한다 — 두 분기가 각자 적지 않는다', () => {
     expect(CODE, 'anchorSlot 선언이 없다').toMatch(/const anchorSlot = \(campaignId: string\)/);
     // 조건을 손으로 다시 적은 분기가 있으면, 앵커 규칙이 바뀔 때 한쪽만 고쳐져 조용히 갈린다.
-    const inlined = CODE.match(/previewAnchorCampaignId === camp\.id/g) ?? [];
+    // ⚠️ **양방향으로 센다** — 비교 순서만 뒤집어 적으면(`camp.id === previewAnchorCampaignId`)
+    // 한 방향 패턴은 조용히 초록이다. 이 단언이 막으려는 바로 그 중복이 그렇게 빠져나간다.
+    const inlined = CODE.match(
+      /(previewAnchorCampaignId\s*===\s*camp\.id|camp\.id\s*===\s*previewAnchorCampaignId)/g,
+    ) ?? [];
     expect(
       inlined.length,
       `앵커 조건을 분기에서 직접 적은 곳이 ${inlined.length}곳이다 — anchorSlot 에 위임할 것`,
