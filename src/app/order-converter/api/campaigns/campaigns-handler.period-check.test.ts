@@ -90,6 +90,8 @@ const prismaStub: unknown = new Proxy(
   },
 );
 
+// `after()` 콜백은 버린다 — 확인 시각 기록은 핸들러 본문에서 끝나고 이 테스트는 그 배선만 본다.
+// (형제 테스트 `campaigns-handler.entry-sync.test.ts` 는 진입 동기화가 after 안에 있어 드레인한다.)
 vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
   after: () => {},
@@ -144,6 +146,18 @@ describe("campaigns-handler — 스토어 확인 시각 기록 배선", () => {
     await fetchAndSyncCampaigns(false);
 
     expect(stampedIds()).toEqual(["idle"]);
+  });
+
+  it("임박 캠페인이 매 GET 조회를 일으켜도, 유휴 만기가 없으면 아무도 찍지 않는다", async () => {
+    // 🪤 조회가 났다는 이유만으로 찍으면 유휴 캠페인 전원이 **매 GET 쓰기**를 받는다 —
+    // 임박 구간을 기록에서 뺀 바로 그 이유(P7 egress)가 유휴로 옮겨갈 뿐이다.
+    // 이 회차의 조회를 부른 것은 임박 캠페인이라 위상을 모을 이유도 없다.
+    stubCampaigns = [nearEndCampaign("near-end"), idleCampaign("idle-fresh", 1 * HOUR)];
+
+    await fetchAndSyncCampaigns(false);
+
+    expect(searchNaverProductsMock).toHaveBeenCalledTimes(1); // 임박 캠페인이 불렀다
+    expect(stampedIds()).toEqual([]);
   });
 
   it("아무도 만기가 아니면 스토어를 부르지 않고 아무것도 찍지 않는다", async () => {

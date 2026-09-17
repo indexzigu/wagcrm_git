@@ -137,6 +137,10 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 데모 배포: 네이버 자격증명이 없고 시드가 category/salePeriod/productStatus를 채워 두므로
     // 스토어 조회를 아예 시도하지 않는다(매 GET마다 실패 경고가 쌓이는 것 방지).
     const needsNaver = !isDemoMode() && rawCampaigns.some((c: any) => needsFirstFill(c) || needsResync(c));
+    // 이번 회차의 조회를 **유휴 만기**가 불렀는가. 위상 모으기(아래 stampCheckedAt)는 이때만 한다.
+    const idleDueThisRound = rawCampaigns.some(
+      (c: any) => usesIdlePeriodCheckInterval(c, nowMs) && needsResync(c),
+    );
     let naverProducts: any[] = [];
     // 스토어를 **실제로** 읽었는가. 확인 시각(periodCheckedAt)은 이 값이 참일 때만 찍는다 —
     // 조회가 실패했는데 찍으면 '확인했다'가 거짓이 되어 다음 간격까지 기간 변경을 놓친다.
@@ -156,14 +160,16 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       const camp = rawCamp as any;
       const firstFill = needsFirstFill(camp);
       const resync = needsResync(camp);
-      // 확인 시각은 그 값을 **판정이 읽는 구간**에서만 찍는다(종료 임박 구간은 시각과 무관하게
-      // 항상 후보라 읽지 않는다) — 매 GET 마다 캠페인 수만큼 쓰기가 나가는 것을 막는다(P7).
-      const stampCheckedAt = didReadStore && usesIdlePeriodCheckInterval(camp, nowMs);
-      // 🪤 만기가 된 캠페인에만 찍으면 **위상이 영영 어긋난다** — 캠페인마다 만기 시각이 달라
-      // 캠페인 수만큼 스토어 호출이 따로 나고, 오너가 고른 "몇 시간에 한 번"이 전체 기준이
-      // 아니라 캠페인당이 된다(60초 TTL 은 동시 진입만 합칠 뿐 4시간 위상차는 못 합친다).
-      // 이미 스토어를 읽은 회차에는 유휴 구간 전원에 적용하고 함께 찍어 위상을 모은다 —
-      // 응답은 이미 손에 있으므로 추가 호출이 0 이다.
+      // 확인 시각은 그 값을 **판정이 읽는 구간**(유휴)에서만, 그리고 **유휴 만기 때문에 조회가
+      // 난 회차**에만 찍는다. 두 조건이 다 필요하다:
+      //  · 유휴 구간만 — 임박 구간 판정은 이 값을 읽지 않으므로 찍어 봐야 쓰기만 는다.
+      //  · 유휴 만기 회차만 — 임박 캠페인이 하나라도 있으면 조회는 매 GET 나는데, 거기에 얹으면
+      //    유휴 캠페인 전원이 **매 GET 마다 쓰기**를 받는다(임박 구간을 뺀 바로 그 이유가 유휴로
+      //    옮겨갈 뿐이다). 그 회차엔 위상을 모을 이유도 없다 — 추가 호출을 만든 주체가 아니다.
+      // 🪤 반대로 만기 캠페인 **하나에만** 찍으면 위상이 영영 어긋나 캠페인 수만큼 조회가 따로
+      // 난다. 그래서 유휴 만기가 하나라도 있으면 그 회차에 유휴 구간 전원을 함께 찍어 모은다
+      // (응답은 이미 손에 있어 추가 호출 0).
+      const stampCheckedAt = didReadStore && idleDueThisRound && usesIdlePeriodCheckInterval(camp, nowMs);
       if (firstFill || resync || stampCheckedAt) {
         // 스토어 상품 매칭은 productId(원상품/채널 어느 쪽이든)가 1순위 — 캠페인 productId는 네이버
         // 원상품번호로 저장되고 채널상품번호와 다르므로 둘 다 비교한다(campaign-match.ts와 같은 신뢰키, PR#106).
@@ -719,15 +725,14 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 일어나지 않는다"가 된다 — 오너가 "등록 당시 값으로 고정"이라고 본 것이 이 상태다.
       // 처방은 정본을 뒤집는 것이 아니라 어긋남을 드러내고 한 번에 맞추게 하는 것이다(오너 결정
       // 2026-09-17). ⛔ 자동 반영으로 바꾸지 말 것 — '종료 후 임시 오픈'까지 회차 창으로 흘러든다.
-      // 정산 락으로 창이 얼었으면 맞춰도 반영되지 않으므로 그쪽은 기존 periodFrozenDrift 가 알린다.
-      const storeDrift = periodFrozenBySettlement
-        ? null
-        : resolveStorePeriodDrift({
-            salePeriod: camp.salePeriod,
-            windowStartMs: campStartRaw,
-            windowEndMs: campEndRaw,
-            salesCampaigns: camp.salesCampaigns,
-          });
+      // 정산 락(창 동결) 판정도 그 함수가 갖는다 — 여기서 미리 걸러내면 그쪽 필터가 도달 불가
+      // 코드가 되고, 그걸 고정한 테스트가 프로덕션에서 발화하지 않는 초록불이 된다.
+      const storeDrift = resolveStorePeriodDrift({
+        salePeriod: camp.salePeriod,
+        windowStartMs: campStartRaw,
+        windowEndMs: campEndRaw,
+        salesCampaigns: camp.salesCampaigns,
+      });
 
       // 교차 귀속 가드용 이웃 목록 — 캠페인당 1회만 만든다(주문 루프 안에서 만들면 주문×캠페인 배).
       const peerCampaigns: PeerCampaignWindow[] = activeCampaigns

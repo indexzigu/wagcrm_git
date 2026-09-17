@@ -156,11 +156,7 @@ export type StorePeriodDrift = {
   storeStartYmd: string;
   /** 종료 미정('계속')이면 null — 그 경우 판매관리 종료일을 맞출 근거가 없다. */
   storeEndYmd: string | null;
-  /**
-   * 맞출 대상 판매캠페인. **정산 락이 걸린 회차는 빠진다** — 그 회차의 기간을 움직이면 마감
-   * 스냅샷·정산 귀속과 어긋난다(`isSalesCampaignLocked` 가 그 경계의 SSOT).
-   * 호출부에서 이 필터를 다시 쓰지 말 것 — 같은 판정이 표면마다 갈리는 것이 이 레포의 상습 결함이다.
-   */
+  /** 맞출 대상 판매캠페인(전원 미락 — 아래 판정이 락이 섞인 캠페인 자체를 걸러낸다). */
   salesCampaignIds: string[];
 };
 
@@ -195,12 +191,19 @@ export function resolveStorePeriodDrift(camp: {
   const storeLabel = formatKstPeriodLabel(startMs, endMs);
   if (storeLabel === null || storeLabel === windowLabel) return null;
 
-  // 맞출 대상이 하나도 없으면 신호를 내지 않는다 — 누를 것이 없는 배지는 막다른 골목이고,
-  // 그 상태(연결 없음·전부 정산 확정)는 다른 신호가 이미 담당한다.
-  const salesCampaignIds = (camp.salesCampaigns ?? [])
-    .filter((sc) => !isSalesCampaignLocked(sc.status))
-    .map((sc) => sc.id);
-  if (salesCampaignIds.length === 0) return null;
+  // 맞출 수 있는 상태인지까지 여기서 판정한다 — 「다른가」와 「눌러서 바꿀 수 있는가」가 갈리면
+  // 누를 것 없는 배지가 뜬다.
+  //
+  // ⛔ **딜 하나라도 정산 락이면 이 캠페인 전체를 뺀다**(호출부의 `periodFrozenBySettlement` 와
+  // 같은 판정이다 — 두 곳에 두면 갈린다). 미락 회차만 골라 PATCH 해 봤자 **집계 창이 얼려 있어
+  // 화면이 움직이지 않고**, 배지는 눌러도 사라지지 않는 무한 루프가 된다. 창 동결은 오너 결정
+  // (2026-07-15 「정산 시작 = 확정」)이라 여기서 푸는 것이 아니다.
+  // ⚠️ 그래서 이 구간의 스토어 변경은 **어느 표면에도 뜨지 않는다** — `periodFrozenDrift` 는
+  // 판매관리 일정↔저장 창 차이만 보므로 스토어만 바뀐 경우를 덮지 못한다. 알고 택한 값이다.
+  const salesCampaigns = camp.salesCampaigns ?? [];
+  if (salesCampaigns.length === 0) return null; // 연결이 없으면 salePeriod 가 이미 화면값이다
+  if (salesCampaigns.some((sc) => isSalesCampaignLocked(sc.status))) return null;
+  const salesCampaignIds = salesCampaigns.map((sc) => sc.id);
 
   return {
     storeLabel,

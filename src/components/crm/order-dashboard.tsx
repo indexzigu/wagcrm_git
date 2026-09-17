@@ -33,7 +33,7 @@ type Campaign = {
 // 서버 페이로드를 다루는 새 코드는 정본 타입을 쓴다. 로컬 사본 정리는 이 변경의 범위 밖이다.
 import type { Campaign as CampaignPayload } from '@/types/campaign';
 import { mergeExpandedCampaignDetails } from '@/lib/order-converter/settled-campaign-collapse';
-import { patchCampaign } from '@/lib/campaign-patch';
+import { patchCampaign, type CampaignPatchResult } from '@/lib/campaign-patch';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { useToast } from '@/hooks/useToast';
@@ -881,8 +881,8 @@ export default function OrderDashboard() {
       // ⛔ Promise.all 로 동시에 보내지 말 것 — 이 라우트는 그룹 공유 일정 팬아웃과 멤버십
       // 낙관 검사를 한 트랜잭션에서 하므로, 같은 그룹의 형제 회차를 나란히 보내면 서로의
       // 팬아웃 때문에 409(그룹 구성이 바뀜)가 나거나 뒤덮인다. 한 건씩 보내면 앞 건의 팬아웃이
-      // 이미 반영돼 뒤 건은 무변경으로 통과한다(회차는 실측상 4~5건이라 순차 비용이 미미하다).
-      const results: Awaited<ReturnType<typeof patchCampaign>>[] = [];
+      // 이미 반영돼 뒤 건은 무변경으로 통과한다(한 캠페인의 회차는 소수라 순차 비용이 미미하다).
+      const results: CampaignPatchResult<unknown>[] = [];
       for (const salesCampaignId of drift.salesCampaignIds) {
         results.push(
           await patchCampaign(salesCampaignId, { startDate: drift.storeStartYmd, endDate: drift.storeEndYmd }, {
@@ -890,12 +890,11 @@ export default function OrderDashboard() {
           }),
         );
       }
-      const failures = results.filter((r) => !r.ok);
+      const failures = results.filter((r): r is Extract<CampaignPatchResult<unknown>, { ok: false }> => !r.ok);
       if (failures.length > 0) {
         // 409(그룹 구성이 방금 바뀜)는 "다시 누르면 되는 상태"라 문구가 다르다 — 헬퍼가 주는
         // 문구를 그대로 쓴다(호출처에서 재시도 안내를 다시 적으면 또 갈린다).
-        const first = failures[0] as Extract<typeof failures[number], { ok: false }>;
-        addToast(`판매관리 일정 ${results.length}건 중 ${failures.length}건 실패: ${first.error}`, 'error');
+        addToast(`판매관리 일정 ${results.length}건 중 ${failures.length}건 실패: ${failures[0].error}`, 'error');
       } else {
         addToast(`판매관리 일정 ${results.length}건을 ${drift.storeLabel}로 맞췄습니다.`, 'success');
         setStorePeriodDriftCampaignId(null);

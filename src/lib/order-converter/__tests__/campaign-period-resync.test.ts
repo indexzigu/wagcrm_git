@@ -215,31 +215,37 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
     }
   });
 
-  it('맞출 대상은 정산 락이 걸리지 않은 회차뿐이다 — 확정된 회차의 기간은 움직이지 않는다', () => {
+  it('마감·정산대기 회차는 맞출 수 있다 — 아직 변동 구간이라 창이 얼지 않았다', () => {
     const drift = resolveStorePeriodDrift({
       salePeriod: '2026.09.14 ~ 2026.09.19',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.17'),
       salesCampaigns: [
         { id: 'sc-live', status: 'ACTIVE' },
+        { id: 'sc-closed', status: 'CLOSED' },
         { id: 'sc-wait', status: 'SETTLEMENT_WAIT' },
-        { id: 'sc-locked', status: 'SETTLEMENT_IN_PROGRESS' },
-        { id: 'sc-done', status: 'COMPLETED' },
-        { id: 'sc-drop', status: 'DROPPED' },
       ],
     });
-    // 마감·정산대기는 아직 변동 구간이라 빼지 않는다(isSalesCampaignLocked 경계 그대로).
-    expect(drift?.salesCampaignIds).toEqual(['sc-live', 'sc-wait']);
+    expect(drift?.salesCampaignIds).toEqual(['sc-live', 'sc-closed', 'sc-wait']);
   });
 
-  it('맞출 대상이 하나도 없으면 null — 누를 것이 없는 배지는 막다른 골목이다', () => {
-    // 연결이 없거나 전부 정산 확정인 경우. 그 상태는 periodFrozenDrift 등 다른 신호 소관이다.
-    for (const salesCampaigns of [
-      [],
-      null,
-      undefined,
-      [{ id: 'sc-locked', status: 'COMPLETED' }],
-    ]) {
+  it('딜 하나라도 정산 락이면 캠페인 전체를 뺀다 — 창이 얼어 맞춰도 화면이 안 움직인다', () => {
+    // 🪤 미락 회차만 골라 PATCH 하면 배지가 눌러도 사라지지 않는 무한 루프가 된다.
+    // 호출부(campaigns-handler)의 periodFrozenBySettlement 와 **같은 판정**이라 여기 하나로 둔다.
+    for (const locked of ['SETTLEMENT_IN_PROGRESS', 'COMPLETED', 'DROPPED']) {
+      expect(
+        resolveStorePeriodDrift({
+          salePeriod: '2026.09.14 ~ 2026.09.19',
+          windowStartMs: startKst('2026.09.14'),
+          windowEndMs: endKst('2026.09.17'),
+          salesCampaigns: [{ id: 'sc-live', status: 'ACTIVE' }, { id: 'sc-locked', status: locked }],
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it('연결이 없으면 null — 그땐 salePeriod 가 이미 화면값이라 어긋날 수가 없다', () => {
+    for (const salesCampaigns of [[], null, undefined]) {
       expect(
         resolveStorePeriodDrift({
           salePeriod: '2026.09.14 ~ 2026.09.19',
