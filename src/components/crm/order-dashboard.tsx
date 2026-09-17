@@ -1690,7 +1690,10 @@ export default function OrderDashboard() {
 
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc] p-4 md:p-6">
+          {/* scrollbar-gutter: 지금은 넘침을 셸 스크롤러가 받지만(실측), 내용·높이 조건이
+              바뀌어 이 div 가 스크롤러가 되는 순간 스크롤바 등장으로 카드 폭이 흔들린다.
+              P8 Layout Stability 관례대로 자리를 미리 예약해 그 경로를 원천 차단한다. */}
+          <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc] p-4 md:p-6 [scrollbar-gutter:stable]">
             <div className="space-y-6">
 
       <CampaignCreateModal
