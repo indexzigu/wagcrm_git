@@ -162,30 +162,28 @@ export async function GET(_request: Request, context: Context) {
      * 데이터가 아니라 설명의 부재였다(오너 지적 2026-08-02) — 미검토 후보는 타임라인에
      * 오르지 않는다는 사실이 화면 어디에도 없었다.
      *
-     * 후보 카운트는 **이벤트가 0건일 때만** 센다. 정상 경로(콘텐츠가 있는 캠페인)에 조회
-     * 4건(프로필·등록자산·무관분류·스토리 count)을 상시로 얹지 않기 위해서다.
      * 후보 수는 자료관리와 **같은 SSOT**(`loadSuggestedPosts`)로 계산한다 — 두 화면이 서로
      * 다른 숫자를 말하면 안내 자체가 신뢰를 잃는다.
+     *
+     * ⚠️ 종전에는 **이벤트가 0건일 때만** 셌다(정상 경로에 조회를 상시로 얹지 않으려고).
+     * 그런데 체감 모순은 빈 화면이 아니라 **중간 상태**에서 더 크다 — 다른 날 콘텐츠가
+     * 있으면 차트는 그려지므로, 자료관리에 후보로 쌓인 날의 발행은 아무 설명 없이 그냥
+     * 빠진다(오너 지적 2026-09-17: "수집은 돼 있는데 그래프엔 없다" — 그 날 게시물이
+     * 미검토 후보였다). 그래서 **항상** 센다. 비용은 조회 2건 추가다.
      */
     const orderLinked = scopeCampaigns.some((sc) => sc.orderCampaignId !== null);
-    let unreviewedStories = 0;
-    let unreviewedPostCandidates = 0;
-    let reviewClosed = false;
-    if (events.length === 0) {
-      const [storyCount, suggested] = await Promise.all([
-        prisma.sellerStorySnapshot.count({
-          where: {
-            sellerId: campaign.sellerId,
-            classification: "UNREVIEWED",
-            takenAt: { gte: new Date(windowStartMs), lte: new Date(windowEndMs) },
-          },
-        }),
-        loadSuggestedPosts(prisma, campaign),
-      ]);
-      unreviewedStories = storyCount;
-      unreviewedPostCandidates = suggested.suggestions.length;
-      reviewClosed = suggested.reviewClosed;
-    }
+    const [unreviewedStories, suggested] = await Promise.all([
+      prisma.sellerStorySnapshot.count({
+        where: {
+          sellerId: campaign.sellerId,
+          classification: "UNREVIEWED",
+          takenAt: { gte: new Date(windowStartMs), lte: new Date(windowEndMs) },
+        },
+      }),
+      loadSuggestedPosts(prisma, campaign),
+    ]);
+    const unreviewedPostCandidates = suggested.suggestions.length;
+    const reviewClosed = suggested.reviewClosed;
 
     return NextResponse.json({
       campaignId,

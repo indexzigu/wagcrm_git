@@ -56,19 +56,28 @@ type TimelineResponse = {
 };
 
 /**
- * **콘텐츠가 한 건도 없는 이유** — 후보가 있으면 그 수를 인용하고(자료관리와 같은 SSOT),
- * 없으면 검토 기간 종료 여부로 갈린다. 말할 것이 없으면 null.
+ * **미등록 후보가 남아 있다는 사실** — 자료관리와 같은 SSOT 로 센 수를 인용한다.
+ * 후보가 0건이면 null.
  *
- * ⚠️ 이 문구는 완전 빈 상태 **전용이 아니다.** 주문은 있는데 콘텐츠 마커만 0건인 중간 상태
- * (발주 동기화가 콘텐츠 분류보다 앞선 흔한 국면)에서도 같은 체감 모순이 난다 — 그때는 차트가
- * 그려지므로 빈 상태 분기를 타지 않아 안내가 통째로 사라졌었다(UX 리뷰 P1).
+ * ⚠️ 이 문구는 빈 상태 **전용이 아니다.** 다른 날 콘텐츠가 있으면 차트는 그려지므로,
+ * 후보로만 쌓인 날의 발행은 아무 설명 없이 빠진다 — 오너에게는 "수집은 됐는데 그래프엔
+ * 없다"로만 보인다(실사고 2026-09-17, 그 전에도 UX 리뷰 P1 로 같은 지적). 그래서 소비처는
+ * 콘텐츠 유무와 무관하게 이 문구를 낸다.
  */
-export function resolveContentGapNotice(context: TimelineContext | null): string | null {
+export function resolveCandidateNotice(context: TimelineContext | null): string | null {
   const candidates =
     (context?.unreviewedStories ?? 0) + (context?.unreviewedPostCandidates ?? 0);
-  if (candidates > 0) {
-    return `수집된 미검토 후보가 ${candidates}건 있습니다. 자료관리에서 홍보로 등록하면 발행 시점이 여기 표시됩니다.`;
-  }
+  if (candidates === 0) return null;
+  return `수집된 미검토 후보가 ${candidates}건 있습니다. 자료관리에서 홍보로 등록하면 발행 시점이 여기 표시됩니다.`;
+}
+
+/**
+ * **콘텐츠가 한 건도 없는 이유** — 빈 상태 전용이다. 후보가 있으면 그 수를 인용하고,
+ * 없으면 검토 기간 종료 여부로 갈린다. 말할 것이 없으면 null.
+ */
+export function resolveContentGapNotice(context: TimelineContext | null): string | null {
+  const candidateNotice = resolveCandidateNotice(context);
+  if (candidateNotice) return candidateNotice;
   if (context?.reviewClosed) return "콘텐츠 검토 기간이 끝나 새 후보가 제시되지 않습니다.";
   return null;
 }
@@ -377,10 +386,13 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
         </div>
         <SeriesLegend mode={mode} />
       </div>
-      {/* 주문은 그려지는데 콘텐츠 마커만 0건인 상태 — 빈 상태 분기를 타지 않아 안내가
-          사라졌던 자리다(UX 리뷰 P1). 서버가 이미 계산해 내려준 사유를 그대로 쓴다. */}
-      {totalEvents === 0 && resolveContentGapNotice(context) && (
-        <p className="text-[11px] text-slate-500">{resolveContentGapNotice(context)}</p>
+      {/* 미등록 후보 안내 — **콘텐츠가 있든 없든 항상** 낸다(오너 2026-09-17).
+          종전에는 마커가 0건일 때만 냈는데, 다른 날 콘텐츠가 있으면 차트는 그려지므로
+          후보로만 쌓인 날의 발행이 아무 설명 없이 빠져 "수집은 됐는데 그래프엔 없다"로
+          보였다. '검토 기간 종료'는 여기서 내지 않는다 — 후보가 0건인 정상 캠페인마다
+          붙으면 안내가 아니라 소음이 된다(그 문구는 빈 상태 전용). */}
+      {resolveCandidateNotice(context) && (
+        <p className="text-[11px] text-slate-500">{resolveCandidateNotice(context)}</p>
       )}
       {/* 콘텐츠는 있는데 주문이 0인 캠페인 — 원인이 "안 팔렸다"가 아니라 "연동이 없다"임을
           밝힌다. 판정·심각도가 아니라 사실 고지라 색을 쓰지 않는다(P8 §4). */}

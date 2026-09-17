@@ -313,7 +313,11 @@ describe("content-order-timeline GET", () => {
       expect(body.context.unreviewedPostCandidates).toBe(0);
     });
 
-    it("이벤트가 있으면 후보 조회를 아예 하지 않는다(정상 경로에 쿼리를 얹지 않는다)", async () => {
+    // 오너 2026-09-17: 후보 수는 **항상** 센다. 종전에는 이벤트가 0건일 때만 셌는데,
+    // 다른 날 콘텐츠가 있으면 차트가 그려지므로 후보로만 쌓인 날의 발행이 아무 설명 없이
+    // 빠졌다("수집은 돼 있는데 그래프엔 없다" — 그 날 게시물이 미검토 후보였다).
+    // 비용은 조회 2건 추가다.
+    it("이벤트가 있어도 후보를 센다 — 중간 상태에서 사유를 말할 수 있어야 한다", async () => {
       assetFindMany.mockResolvedValue([
         {
           id: "a1", mediaType: "reel", postedAt: new Date("2026-07-02T10:00:00+09:00"),
@@ -321,16 +325,22 @@ describe("content-order-timeline GET", () => {
           likesHidden: false,
         },
       ]);
-      const res = await callGet();
-      const body = await res.json();
-      expect(body.context).toEqual({
-        orderLinked: true,
-        unreviewedStories: 0,
-        unreviewedPostCandidates: 0,
+      storyCount.mockResolvedValue(2);
+      loadSuggestedPosts.mockResolvedValue({
+        suggestions: [{ id: "s1" }],
+        lastCollectedAt: null,
+        sharedCampaignIds: ["camp-1"],
         reviewClosed: false,
       });
-      expect(loadSuggestedPosts).not.toHaveBeenCalled();
-      expect(storyCount).not.toHaveBeenCalled();
+      const res = await callGet();
+      const body = await res.json();
+      expect(body.days.some((d: { events: unknown[] }) => d.events.length > 0)).toBe(true);
+      expect(body.context).toEqual({
+        orderLinked: true,
+        unreviewedStories: 2,
+        unreviewedPostCandidates: 1,
+        reviewClosed: false,
+      });
     });
   });
 
