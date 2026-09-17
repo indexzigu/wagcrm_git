@@ -163,9 +163,11 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
       salePeriod: '2026.09.14 ~ 2026.09.19',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.17'),
+      productStatus: 'SALE',
       salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
     });
     expect(drift).toEqual({
+      scope: 'full',
       storeLabel: '2026.09.14 ~ 2026.09.19',
       storeStartYmd: '2026-09-14',
       storeEndYmd: '2026-09-19',
@@ -178,6 +180,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
       salePeriod: '2026.09.14 ~ 2026.09.16',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.19'),
+      productStatus: 'SALE',
       salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
     });
     expect(drift?.storeEndYmd).toBe('2026-09-16');
@@ -191,7 +194,8 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
         salePeriod: '2026.09.14 ~ 2026.09.17',
         windowStartMs: resolveSaleWindowStartMs({ startDate: new Date('2026-09-14T00:00:00.000Z') }),
         windowEndMs: resolveSaleWindowEndMs({ endDate: new Date('2026-09-17T00:00:00.000Z') }),
-        salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
+        productStatus: 'SALE',
+      salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
       }),
     ).toBeNull();
   });
@@ -201,6 +205,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
       salePeriod: '2026.09.14 ~ 계속',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.17'),
+      productStatus: 'SALE',
       salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
     });
     expect(drift?.storeLabel).toBe('2026.09.14 ~ 계속');
@@ -210,7 +215,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
   it('스토어 관측값이 폴백(미정·미등록·null)이면 null — 비교할 기간이 없다', () => {
     for (const sp of ['기간 미정', '미등록', '', null, undefined]) {
       expect(
-        resolveStorePeriodDrift({ salePeriod: sp, windowStartMs: startKst('2026.09.14'), windowEndMs: endKst('2026.09.17'), salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
+        resolveStorePeriodDrift({ salePeriod: sp, windowStartMs: startKst('2026.09.14'), windowEndMs: endKst('2026.09.17'), productStatus: 'SALE', salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
       ).toBeNull();
     }
   });
@@ -220,6 +225,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
       salePeriod: '2026.09.14 ~ 2026.09.19',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.17'),
+      productStatus: 'SALE',
       salesCampaigns: [
         { id: 'sc-live', status: 'ACTIVE' },
         { id: 'sc-closed', status: 'CLOSED' },
@@ -238,10 +244,81 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
           salePeriod: '2026.09.14 ~ 2026.09.19',
           windowStartMs: startKst('2026.09.14'),
           windowEndMs: endKst('2026.09.17'),
+          productStatus: 'SALE',
           salesCampaigns: [{ id: 'sc-live', status: 'ACTIVE' }, { id: 'sc-locked', status: locked }],
         }),
       ).toBeNull();
     }
+  });
+
+  it('실사고 회귀(2026-09-17): 판매가 끝난 상태면 스토어 시작일을 쓰지 않는다 — 종료일만', () => {
+    // 프로덕션 실측: 09.10~09.16 회차인데 스토어(CLOSE)가 `09.16 ~ 09.17` 을 돌려줬다.
+    // 시작일 09.16 은 **원래 종료일**이고, 그 값을 반영해 회차 시작일이 망가지는 사고가 났다.
+    const drift = resolveStorePeriodDrift({
+      salePeriod: '2026.09.16 ~ 2026.09.17',
+      productStatus: 'CLOSE',
+      windowStartMs: startKst('2026.09.10'),
+      windowEndMs: endKst('2026.09.16'),
+      salesCampaigns: [{ id: 'sc-1', status: 'CLOSED' }],
+    });
+    expect(drift).toEqual({
+      scope: 'end-only',
+      storeLabel: '2026.09.17', // 기간이 아니라 종료일 하나만 보여준다
+      storeStartYmd: null, // ⛔ 시작일은 보내지 않는다 — 이 null 이 사고를 막는 지점이다
+      storeEndYmd: '2026-09-17',
+      salesCampaignIds: ['sc-1'],
+    });
+  });
+
+  it('실사고 회귀: 판매 종료 뒤 시작일만 다르고 종료일이 같으면 배지를 내지 않는다', () => {
+    // 이 캠페인의 정정 후 상태(창 09.10~09.17, 스토어 09.16~09.17). 시작일 차이를 어긋남으로
+    // 세면 **눌러도 사라지지 않는 배지**가 되고, 누르면 다시 시작일이 망가진다.
+    expect(
+      resolveStorePeriodDrift({
+        salePeriod: '2026.09.16 ~ 2026.09.17',
+        productStatus: 'CLOSE',
+        windowStartMs: startKst('2026.09.10'),
+        windowEndMs: endKst('2026.09.17'),
+        salesCampaigns: [{ id: 'sc-1', status: 'CLOSED' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('품절도 같은 취급 — 판매중(SALE)만 기간 전체를 신뢰한다', () => {
+    // 프로덕션 실측 2건째: 07.06~07.20 회차인데 스토어(OUTOFSTOCK)가 `07.20 ~ 07.20`(하루)로 왔다.
+    const drift = resolveStorePeriodDrift({
+      salePeriod: '2026.07.20 ~ 2026.07.20',
+      productStatus: 'OUTOFSTOCK',
+      windowStartMs: startKst('2026.07.06'),
+      windowEndMs: endKst('2026.07.19'),
+      salesCampaigns: [{ id: 'sc-1', status: 'CLOSED' }],
+    });
+    expect(drift?.scope).toBe('end-only');
+    expect(drift?.storeStartYmd).toBeNull();
+    expect(drift?.storeEndYmd).toBe('2026-07-20');
+  });
+
+  it('상태를 모르면(null) 보수적으로 종료일만 — 모름을 판매중으로 읽지 않는다', () => {
+    const drift = resolveStorePeriodDrift({
+      salePeriod: '2026.09.16 ~ 2026.09.17',
+      productStatus: null,
+      windowStartMs: startKst('2026.09.10'),
+      windowEndMs: endKst('2026.09.16'),
+      salesCampaigns: [{ id: 'sc-1', status: 'CLOSED' }],
+    });
+    expect(drift?.scope).toBe('end-only');
+  });
+
+  it("판매 종료 + 스토어 종료가 '계속'이면 null — 맞출 종료일이 없다", () => {
+    expect(
+      resolveStorePeriodDrift({
+        salePeriod: '2026.09.16 ~ 계속',
+        productStatus: 'CLOSE',
+        windowStartMs: startKst('2026.09.10'),
+        windowEndMs: endKst('2026.09.16'),
+        salesCampaigns: [{ id: 'sc-1', status: 'CLOSED' }],
+      }),
+    ).toBeNull();
   });
 
   it('연결이 없으면 null — 그땐 salePeriod 가 이미 화면값이라 어긋날 수가 없다', () => {
@@ -251,6 +328,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
           salePeriod: '2026.09.14 ~ 2026.09.19',
           windowStartMs: startKst('2026.09.14'),
           windowEndMs: endKst('2026.09.17'),
+          productStatus: 'SALE',
           salesCampaigns,
         }),
       ).toBeNull();
@@ -259,7 +337,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
 
   it('창이 없으면(판매캠페인 미연결) null — 그땐 salePeriod 가 이미 화면값이다', () => {
     expect(
-      resolveStorePeriodDrift({ salePeriod: '2026.09.14 ~ 2026.09.19', windowStartMs: null, windowEndMs: null, salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
+      resolveStorePeriodDrift({ salePeriod: '2026.09.14 ~ 2026.09.19', windowStartMs: null, windowEndMs: null, productStatus: 'SALE', salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
     ).toBeNull();
   });
 });
