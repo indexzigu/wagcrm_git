@@ -30,18 +30,32 @@ const PAGE = PAGE_RAW.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/
 
 /** className 문자열만 남긴다 — 주석을 걷어낸 뒤에도 남는 식별자·문구를 배제한다. */
 const CLASS_ATTRS = [...PAGE.matchAll(/className="([^"]*)"/g)].map((m) => m[1]);
+const tokens = (c: string) => c.split(/\s+/).filter(Boolean);
+/** 반응형 접두사(`md:` 등)를 떼고 본다 — 높이는 `md:h-svh` 로 좁혀져 있다. */
+const hasUtility = (c: string, name: string) =>
+  tokens(c).some((t) => t === name || t.endsWith(`:${name}`));
 
 describe("주문 관리 화면 뷰포트 높이 계약", () => {
+  it("검사할 className 을 실제로 읽어 왔다(음성 대조군)", () => {
+    // ⚠️ 이 가드가 없으면 아래 **부정 단언**(flex-1 부재)이 조용히 초록이 된다 — className 이
+    // `cn()`·템플릿 리터럴로 바뀌어 리터럴 추출이 0건이 되면, 위반이 있어도 없는 것처럼 보인다.
+    // 이 레포의 소스 스캔 계약이 반복해서 밟은 함정이라 관례대로 대조군을 둔다.
+    expect(
+      CLASS_ATTRS.length,
+      "className 리터럴을 하나도 못 읽었다 — cn()/템플릿 리터럴로 바뀌었다면 이 계약을 그 형태에 맞게 고칠 것",
+    ).toBeGreaterThan(0);
+  });
+
   it("바깥 래퍼가 뷰포트 높이를 확정한다(h-svh)", () => {
     expect(
-      CLASS_ATTRS.some((c) => c.split(/\s+/).includes("h-svh")),
+      CLASS_ATTRS.some((c) => hasUtility(c, "h-svh")),
       "h-svh 가 없다 — 셸 높이가 auto 가 되어 문서가 스크롤하고, 창 스크롤바 등장으로 카드 폭이 흔들린다",
     ).toBe(true);
   });
 
   it("그 래퍼에 flex-1 을 함께 쓰지 않는다 — flex-basis 가 height 를 이긴다", () => {
     const offender = CLASS_ATTRS.find(
-      (c) => c.split(/\s+/).includes("h-svh") && c.split(/\s+/).includes("flex-1"),
+      (c) => hasUtility(c, "h-svh") && hasUtility(c, "flex-1"),
     );
     expect(
       offender,
@@ -49,11 +63,16 @@ describe("주문 관리 화면 뷰포트 높이 계약", () => {
     ).toBeUndefined();
   });
 
-  it("안쪽 래퍼가 그 높이를 물려받는다(h-full)", () => {
+  it("안쪽 래퍼가 그 높이를 **다른 요소로** 물려받는다(h-full)", () => {
     // 여기서 끊기면 CrmShell 이 다시 auto 높이가 되어 바깥 h-svh 가 무의미해진다.
+    // ⚠️ 존재만 보지 않고 **서로 다른 요소**인지까지 본다 — 한 요소에 몰아 쓰면 사슬이 아니다.
+    const heightOwner = CLASS_ATTRS.findIndex((c) => hasUtility(c, "h-svh"));
+    const inheritor = CLASS_ATTRS.findIndex(
+      (c, i) => i !== heightOwner && hasUtility(c, "h-full"),
+    );
     expect(
-      CLASS_ATTRS.some((c) => c.split(/\s+/).includes("h-full")),
-      "안쪽 래퍼의 h-full 이 없다 — 확정한 높이가 CrmShell 까지 내려가지 않는다",
-    ).toBe(true);
+      inheritor,
+      "h-svh 를 가진 요소와 **별개 요소**의 h-full 이 없다 — 확정한 높이가 CrmShell 까지 내려가지 않는다",
+    ).toBeGreaterThanOrEqual(0);
   });
 });

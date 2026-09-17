@@ -24,10 +24,19 @@ import OrderDashboard from '@/components/crm/order-dashboard';
  * ⛔ 전역 셸(`AppShellFrame` · `ui/sidebar.tsx`)의 `min-h-svh` 를 `h-svh` 로 바꿔 고치지
  * 말 것 — 그 래퍼는 문서 스크롤에 기대는 페이지(`/privacy` · 로그인 랜딩 등)도 함께 쓴다.
  * 높이를 전역에서 자르면 그런 화면의 아래쪽이 **스크롤 수단 없이 잘린다**(실측 확인).
+ *
+ * ⚠️ **`md:` 로 좁힌 것은 모바일 하단 nav 때문이다.** `SidebarInset` 이 모바일에서
+ * `pb-20`(nav 자리 80px)을 잡는데(`persistent-sidebar-layout.tsx`), 뷰포트 높이를 그대로
+ * 주면 그 패딩을 무시해 셸 하단이 nav 밑에 깔린다. 이 화면은 모바일 분기가 없어
+ * (UA 분기도 전용 뷰도 없다) 모바일에서는 종전 동작을 그대로 둔다.
+ *
+ * ⚠️ **사이드바를 `variant="inset"` 으로 바꾸면 이 높이가 다시 넘친다** — 그 변형은
+ * `SidebarInset` 에 `m-2` 를 붙이는데 `h-svh` 는 그 마진을 모른다(현재는 기본 변형이라
+ * 무해). 변형을 바꾼다면 높이도 함께 손봐야 한다.
  */
 export default function OrderConverterPage() {
   return (
-    <div className="h-svh w-full bg-slate-50 font-sans text-slate-900">
+    <div className="w-full bg-slate-50 font-sans text-slate-900 md:h-svh">
       <div className="h-full w-full max-w-full">
         <OrderDashboard />
       </div>
