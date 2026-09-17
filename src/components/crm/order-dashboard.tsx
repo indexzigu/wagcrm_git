@@ -395,6 +395,13 @@ function StorePeriodDriftPopover({ campName, currentLabel, drift, isSyncing, onS
           자동으로 반영되지 않습니다. 아래 버튼을 누르면 이 캠페인에 연결된 회차 {drift.salesCampaignIds.length}건의
           판매관리 일정이 스토어 기간으로 바뀌고, 정산 명세서와 구글 캘린더도 같은 날짜가 됩니다.
         </p>
+        {/* 조합 캠페인은 일정이 묶음 단위로 운영돼(fanOutMemberSchedule) 같은 그룹의 형제 회차 날짜도
+            함께 바뀐다 — 그 회차가 **다른 카드**에 속할 수 있으므로 누르기 전에 알린다. 실제 건수는
+            응답의 groupScheduleSyncedCount 로 토스트에서 고지한다(고지용 일회성 신호). */}
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          조합 캠페인으로 묶인 회차가 있으면 <b>다른 카드의 일정까지</b> 함께 바뀝니다. 조합은 일정을 묶음
+          단위로 운영하기 때문이며, 몇 건이 함께 바뀌었는지는 실행 후 알려 드립니다.
+        </p>
         <p className="text-[11px] text-slate-500 leading-relaxed">
           마감 뒤 취소나 교환 주문을 받으려고 스토어를 잠깐 다시 연 경우라면 맞추지 마세요.
         </p>
@@ -882,7 +889,7 @@ export default function OrderDashboard() {
       // 낙관 검사를 한 트랜잭션에서 하므로, 같은 그룹의 형제 회차를 나란히 보내면 서로의
       // 팬아웃 때문에 409(그룹 구성이 바뀜)가 나거나 뒤덮인다. 한 건씩 보내면 앞 건의 팬아웃이
       // 이미 반영돼 뒤 건은 무변경으로 통과한다(한 캠페인의 회차는 소수라 순차 비용이 미미하다).
-      const results: CampaignPatchResult<unknown>[] = [];
+      const results: CampaignPatchResult<{ groupScheduleSyncedCount?: number }>[] = [];
       for (const salesCampaignId of drift.salesCampaignIds) {
         results.push(
           await patchCampaign(salesCampaignId, { startDate: drift.storeStartYmd, endDate: drift.storeEndYmd }, {
@@ -890,6 +897,13 @@ export default function OrderDashboard() {
           }),
         );
       }
+      // 조합 캠페인 일정 팬아웃으로 **함께 바뀐 형제 회차 수**. 되돌릴 수 없는 변경이고 그 회차가
+      // 다른 주문캠페인 카드에 속할 수 있어 반드시 고지한다(응답의 일회성 신호 —
+      // `campaign-side-panel` 이 같은 필드를 같은 문구로 쓴다. 문구를 새로 만들지 말 것).
+      const groupSyncedCount = results.reduce(
+        (sum, r) => sum + (r.ok ? r.data?.groupScheduleSyncedCount ?? 0 : 0),
+        0,
+      );
       // 판별 유니온이라 평범한 술어로도 좁혀진다(TS 추론 서술어) — 손으로 쓴 `r is …` 불요.
       const failures = results.filter((r) => !r.ok);
       if (failures.length > 0) {
@@ -897,7 +911,12 @@ export default function OrderDashboard() {
         // 문구를 그대로 쓴다(호출처에서 재시도 안내를 다시 적으면 또 갈린다).
         addToast(`판매관리 일정 ${results.length}건 중 ${failures.length}건 실패: ${failures[0].error}`, 'error');
       } else {
-        addToast(`판매관리 일정 ${results.length}건을 ${drift.storeLabel}로 맞췄습니다.`, 'success');
+        addToast(
+          groupSyncedCount > 0
+            ? `판매관리 일정 ${results.length}건을 ${drift.storeLabel}로 맞췄습니다 · 같은 그룹 ${groupSyncedCount}건도 함께 반영`
+            : `판매관리 일정 ${results.length}건을 ${drift.storeLabel}로 맞췄습니다.`,
+          'success',
+        );
         setStorePeriodDriftCampaignId(null);
       }
       await fetchCampaigns(true);
