@@ -148,6 +148,8 @@ describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
     // ⚠️ **존재 여부로 세지 말 것** — 송장 생산 경로는 둘(메일 회신 · 파일 업로드)이라,
     // "한 번이라도 쓰였는가"로 보면 **한 곳이 빠져도 초록**이다. 데이터를 쓰는 호출과
     // 소유자를 쓰는 호출의 **개수를 맞춰** 본다.
+    // ⚠️ 한계: **위치를 보지 않는 개수 대조**다 — 한 블록에서 소유자를 두 번 쓰고 데이터 경로를
+    // 하나 지우면 개수가 맞아 통과한다. 노린 결함(경로 하나가 이름표를 안 남김)은 잡는다.
     const dataWrites = (needle: string) => (CODE.match(new RegExp(`${needle}\\(`, 'g')) ?? []).length;
     expect(
       dataWrites('setPreviewOrdersCampaign'),
@@ -165,11 +167,18 @@ describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
     // 필요하다. 그래서 오너가 "지우지 말고 이름을 붙인다"를 골랐다 — 뒷세션이 "어긋나면
     // 비우기"를 다시 넣어도 아무 계약도 반응하지 않던 자리라 여기에 못 박는다.
     // ⛔ 이 단언을 지우려면 오너 승인이 필요하다.
-    for (const reset of ['setPreviewTracking({})', 'setPreviewOrders([])']) {
+    // ⚠️ 리터럴 대조는 **복붙 재도입만** 막는다 — 공백 하나만 달라도 빠져나간다. 빈 값 형태를
+    // 정규식으로 넓힌다. 그래도 변수를 거치는 형태(`setPreviewTracking(empty)`)는 못 잡는다 —
+    // 이 단언은 완전한 차단이 아니라 **오너 결정의 이정표**다(정직한 한계).
+    const resets: Array<[RegExp, string]> = [
+      [/setPreviewTracking\(\s*\{\s*\}\s*\)/, 'setPreviewTracking({})'],
+      [/setPreviewOrders\(\s*\[\s*\]\s*\)/, 'setPreviewOrders([])'],
+    ];
+    for (const [pattern, shown] of resets) {
       expect(
         CODE,
-        `${reset} — 미리보기 데이터를 비우는 경로가 생겼다. 대기 중인 발송처리가 사라진다(오너 기각안)`,
-      ).not.toContain(reset);
+        `${shown} — 미리보기 데이터를 비우는 경로가 생겼다. 대기 중인 발송처리가 사라진다(오너 기각안)`,
+      ).not.toMatch(pattern);
     }
   });
 
@@ -177,8 +186,13 @@ describe('주문관리 화면 — 미리보기 표 앵커 계약', () => {
     // `segmented-tab-card.tsx` 선례와 같은 tablist/tab/tabpanel 짝. 여기만 다른 어휘를 쓰면
     // 같은 일을 하는 방식이 하나 더 생긴다(이 레포가 반복해 사고를 낸 형태).
     // ⛔ role="tab" 만 있고 부모 tablist 가 없으면 표기가 통째로 무효라 **짝으로** 본다.
-    expect(CODE, 'role="tablist" 가 없다 — role="tab" 만으로는 무효다').toContain('role="tablist"');
-    expect(CODE, 'role="tab" 이 없다').toContain('role="tab"');
+    // ⚠️ **속성 모양으로 본다**(자기 줄에 홀로 선 형태). 단순 `toContain('role="tab"')` 은
+    // 코드 안의 셀렉터 문자열(`querySelectorAll('[role="tab"]')` 등)이 대신 만족시켜, JSX 속성을
+    // 지워도 초록이 된다 — 실측으로 확인한 구멍이다(주석은 stripComments 가 이미 걷어낸다).
+    expect(CODE, 'role="tablist" 속성이 없다 — role="tab" 만으로는 무효다').toMatch(
+      /\n\s+role="tablist"\n/,
+    );
+    expect(CODE, 'role="tab" 속성이 없다').toMatch(/\n\s+role="tab"\n/);
     expect(CODE, 'aria-selected 가 없다 — 선택 상태가 리더에 전달되지 않는다').toContain(
       'aria-selected={isActive}',
     );

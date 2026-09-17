@@ -1594,8 +1594,9 @@ export default function OrderDashboard() {
           if (next < 0) return;
           e.preventDefault();
           setPreviewTab(order[next]);
-          const tabs = e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]');
-          tabs[next]?.focus();
+          // ⚠️ 인덱스로 DOM 을 집지 말 것 — 배열 순서와 화면 순서가 같다는 **적히지 않은
+          // 전제**에 기대게 되고, 탭을 더하거나 순서를 바꾸면 조용히 어긋난다. id 로 찾는다.
+          document.getElementById(previewTabId(order[next]))?.focus();
         }}
         className="flex border-b border-slate-200 bg-slate-50"
       >
