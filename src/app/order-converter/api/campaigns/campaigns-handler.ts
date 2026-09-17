@@ -159,7 +159,12 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 확인 시각은 그 값을 **판정이 읽는 구간**에서만 찍는다(종료 임박 구간은 시각과 무관하게
       // 항상 후보라 읽지 않는다) — 매 GET 마다 캠페인 수만큼 쓰기가 나가는 것을 막는다(P7).
       const stampCheckedAt = didReadStore && usesIdlePeriodCheckInterval(camp, nowMs);
-      if (firstFill || resync) {
+      // 🪤 만기가 된 캠페인에만 찍으면 **위상이 영영 어긋난다** — 캠페인마다 만기 시각이 달라
+      // 캠페인 수만큼 스토어 호출이 따로 나고, 오너가 고른 "몇 시간에 한 번"이 전체 기준이
+      // 아니라 캠페인당이 된다(60초 TTL 은 동시 진입만 합칠 뿐 4시간 위상차는 못 합친다).
+      // 이미 스토어를 읽은 회차에는 유휴 구간 전원에 적용하고 함께 찍어 위상을 모은다 —
+      // 응답은 이미 손에 있으므로 추가 호출이 0 이다.
+      if (firstFill || resync || stampCheckedAt) {
         // 스토어 상품 매칭은 productId(원상품/채널 어느 쪽이든)가 1순위 — 캠페인 productId는 네이버
         // 원상품번호로 저장되고 채널상품번호와 다르므로 둘 다 비교한다(campaign-match.ts와 같은 신뢰키, PR#106).
         // 과거 여기서 이름 부분일치(정규화 없는 raw includes)만 썼더니, 캠페인명에 공백이 둘 들어간 것만으로도
@@ -717,14 +722,12 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 정산 락으로 창이 얼었으면 맞춰도 반영되지 않으므로 그쪽은 기존 periodFrozenDrift 가 알린다.
       const storeDrift = periodFrozenBySettlement
         ? null
-        : resolveStorePeriodDrift({ salePeriod: camp.salePeriod, windowStartMs: campStartRaw, windowEndMs: campEndRaw });
-      // 맞출 대상은 **확정되지 않은** 회차뿐이다 — 정산 락이 걸린 회차의 기간을 움직이면 마감
-      // 스냅샷·정산 귀속과 어긋난다(isSalesCampaignLocked 가 그 경계의 SSOT).
-      const storeDriftTargetIds: string[] = storeDrift
-        ? (camp.salesCampaigns ?? [])
-            .filter((sc: any) => !isSalesCampaignLocked(sc.status))
-            .map((sc: any) => String(sc.id))
-        : [];
+        : resolveStorePeriodDrift({
+            salePeriod: camp.salePeriod,
+            windowStartMs: campStartRaw,
+            windowEndMs: campEndRaw,
+            salesCampaigns: camp.salesCampaigns,
+          });
 
       // 교차 귀속 가드용 이웃 목록 — 캠페인당 1회만 만든다(주문 루프 안에서 만들면 주문×캠페인 배).
       const peerCampaigns: PeerCampaignWindow[] = activeCampaigns
@@ -1204,11 +1207,8 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         periodMismatch: camp._periodMismatch === true,
         // 정산 확정으로 창이 얼어 판매관리 기간 변경이 반영되지 않는 상태(무응답을 드러내는 신호).
         periodFrozenDrift: camp._periodFrozenDrift === true,
-        // 스토어 기간이 화면 기간과 다른 상태 + 맞출 대상 회차. 맞출 대상이 없으면(연결이 없거나
-        // 전부 정산 확정) 누를 것이 없으므로 신호도 내지 않는다 — 그 경우는 위 두 배지 소관이다.
-        storePeriodDrift: storeDrift && storeDriftTargetIds.length > 0
-          ? { ...storeDrift, salesCampaignIds: storeDriftTargetIds }
-          : null,
+        // 스토어 기간이 화면 기간과 다른 상태 + 맞출 대상 회차(둘 다 sale-window SSOT 판정).
+        storePeriodDrift: storeDrift,
         newOrderBeforeCount,
         newOrderAfterCount,
         pendingCount,

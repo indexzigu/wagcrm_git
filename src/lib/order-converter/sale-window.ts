@@ -156,6 +156,12 @@ export type StorePeriodDrift = {
   storeStartYmd: string;
   /** 종료 미정('계속')이면 null — 그 경우 판매관리 종료일을 맞출 근거가 없다. */
   storeEndYmd: string | null;
+  /**
+   * 맞출 대상 판매캠페인. **정산 락이 걸린 회차는 빠진다** — 그 회차의 기간을 움직이면 마감
+   * 스냅샷·정산 귀속과 어긋난다(`isSalesCampaignLocked` 가 그 경계의 SSOT).
+   * 호출부에서 이 필터를 다시 쓰지 말 것 — 같은 판정이 표면마다 갈리는 것이 이 레포의 상습 결함이다.
+   */
+  salesCampaignIds: string[];
 };
 
 /**
@@ -178,6 +184,7 @@ export function resolveStorePeriodDrift(camp: {
   salePeriod?: string | null;
   windowStartMs: number | null;
   windowEndMs: number | null;
+  salesCampaigns?: Array<{ id: string; status?: string | null }> | null;
 }): StorePeriodDrift | null {
   const windowLabel = formatKstPeriodLabel(camp.windowStartMs, camp.windowEndMs);
   if (windowLabel === null) return null;
@@ -188,10 +195,18 @@ export function resolveStorePeriodDrift(camp: {
   const storeLabel = formatKstPeriodLabel(startMs, endMs);
   if (storeLabel === null || storeLabel === windowLabel) return null;
 
+  // 맞출 대상이 하나도 없으면 신호를 내지 않는다 — 누를 것이 없는 배지는 막다른 골목이고,
+  // 그 상태(연결 없음·전부 정산 확정)는 다른 신호가 이미 담당한다.
+  const salesCampaignIds = (camp.salesCampaigns ?? [])
+    .filter((sc) => !isSalesCampaignLocked(sc.status))
+    .map((sc) => sc.id);
+  if (salesCampaignIds.length === 0) return null;
+
   return {
     storeLabel,
     storeStartYmd: formatKstYmd(startMs),
     storeEndYmd: endMs === null ? null : formatKstYmd(endMs),
+    salesCampaignIds,
   };
 }
 

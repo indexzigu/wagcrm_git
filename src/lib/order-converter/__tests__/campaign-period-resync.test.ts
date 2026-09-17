@@ -163,11 +163,13 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
       salePeriod: '2026.09.14 ~ 2026.09.19',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.17'),
+      salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
     });
     expect(drift).toEqual({
       storeLabel: '2026.09.14 ~ 2026.09.19',
       storeStartYmd: '2026-09-14',
       storeEndYmd: '2026-09-19',
+      salesCampaignIds: ['sc-1'],
     });
   });
 
@@ -176,6 +178,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
       salePeriod: '2026.09.14 ~ 2026.09.16',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.19'),
+      salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
     });
     expect(drift?.storeEndYmd).toBe('2026-09-16');
   });
@@ -188,6 +191,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
         salePeriod: '2026.09.14 ~ 2026.09.17',
         windowStartMs: resolveSaleWindowStartMs({ startDate: new Date('2026-09-14T00:00:00.000Z') }),
         windowEndMs: resolveSaleWindowEndMs({ endDate: new Date('2026-09-17T00:00:00.000Z') }),
+        salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
       }),
     ).toBeNull();
   });
@@ -197,6 +201,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
       salePeriod: '2026.09.14 ~ 계속',
       windowStartMs: startKst('2026.09.14'),
       windowEndMs: endKst('2026.09.17'),
+      salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
     });
     expect(drift?.storeLabel).toBe('2026.09.14 ~ 계속');
     expect(drift?.storeEndYmd).toBeNull();
@@ -205,14 +210,50 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
   it('스토어 관측값이 폴백(미정·미등록·null)이면 null — 비교할 기간이 없다', () => {
     for (const sp of ['기간 미정', '미등록', '', null, undefined]) {
       expect(
-        resolveStorePeriodDrift({ salePeriod: sp, windowStartMs: startKst('2026.09.14'), windowEndMs: endKst('2026.09.17') }),
+        resolveStorePeriodDrift({ salePeriod: sp, windowStartMs: startKst('2026.09.14'), windowEndMs: endKst('2026.09.17'), salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
+      ).toBeNull();
+    }
+  });
+
+  it('맞출 대상은 정산 락이 걸리지 않은 회차뿐이다 — 확정된 회차의 기간은 움직이지 않는다', () => {
+    const drift = resolveStorePeriodDrift({
+      salePeriod: '2026.09.14 ~ 2026.09.19',
+      windowStartMs: startKst('2026.09.14'),
+      windowEndMs: endKst('2026.09.17'),
+      salesCampaigns: [
+        { id: 'sc-live', status: 'ACTIVE' },
+        { id: 'sc-wait', status: 'SETTLEMENT_WAIT' },
+        { id: 'sc-locked', status: 'SETTLEMENT_IN_PROGRESS' },
+        { id: 'sc-done', status: 'COMPLETED' },
+        { id: 'sc-drop', status: 'DROPPED' },
+      ],
+    });
+    // 마감·정산대기는 아직 변동 구간이라 빼지 않는다(isSalesCampaignLocked 경계 그대로).
+    expect(drift?.salesCampaignIds).toEqual(['sc-live', 'sc-wait']);
+  });
+
+  it('맞출 대상이 하나도 없으면 null — 누를 것이 없는 배지는 막다른 골목이다', () => {
+    // 연결이 없거나 전부 정산 확정인 경우. 그 상태는 periodFrozenDrift 등 다른 신호 소관이다.
+    for (const salesCampaigns of [
+      [],
+      null,
+      undefined,
+      [{ id: 'sc-locked', status: 'COMPLETED' }],
+    ]) {
+      expect(
+        resolveStorePeriodDrift({
+          salePeriod: '2026.09.14 ~ 2026.09.19',
+          windowStartMs: startKst('2026.09.14'),
+          windowEndMs: endKst('2026.09.17'),
+          salesCampaigns,
+        }),
       ).toBeNull();
     }
   });
 
   it('창이 없으면(판매캠페인 미연결) null — 그땐 salePeriod 가 이미 화면값이다', () => {
     expect(
-      resolveStorePeriodDrift({ salePeriod: '2026.09.14 ~ 2026.09.19', windowStartMs: null, windowEndMs: null }),
+      resolveStorePeriodDrift({ salePeriod: '2026.09.14 ~ 2026.09.19', windowStartMs: null, windowEndMs: null, salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
     ).toBeNull();
   });
 });

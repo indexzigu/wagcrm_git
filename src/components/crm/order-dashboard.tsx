@@ -878,13 +878,18 @@ export default function OrderDashboard() {
     if (drift.storeEndYmd === null) return;
     setSyncingStorePeriodCampaignId(campaignId);
     try {
-      const results = await Promise.all(
-        drift.salesCampaignIds.map((salesCampaignId) =>
-          patchCampaign(salesCampaignId, { startDate: drift.storeStartYmd, endDate: drift.storeEndYmd }, {
+      // ⛔ Promise.all 로 동시에 보내지 말 것 — 이 라우트는 그룹 공유 일정 팬아웃과 멤버십
+      // 낙관 검사를 한 트랜잭션에서 하므로, 같은 그룹의 형제 회차를 나란히 보내면 서로의
+      // 팬아웃 때문에 409(그룹 구성이 바뀜)가 나거나 뒤덮인다. 한 건씩 보내면 앞 건의 팬아웃이
+      // 이미 반영돼 뒤 건은 무변경으로 통과한다(회차는 실측상 4~5건이라 순차 비용이 미미하다).
+      const results: Awaited<ReturnType<typeof patchCampaign>>[] = [];
+      for (const salesCampaignId of drift.salesCampaignIds) {
+        results.push(
+          await patchCampaign(salesCampaignId, { startDate: drift.storeStartYmd, endDate: drift.storeEndYmd }, {
             fallbackError: '판매관리 일정을 맞추지 못했습니다.',
           }),
-        ),
-      );
+        );
+      }
       const failures = results.filter((r) => !r.ok);
       if (failures.length > 0) {
         // 409(그룹 구성이 방금 바뀜)는 "다시 누르면 되는 상태"라 문구가 다르다 — 헬퍼가 주는
