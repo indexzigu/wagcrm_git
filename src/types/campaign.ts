@@ -62,9 +62,18 @@ export type Campaign = {
    * (오너 결정 2026-09-17). 맞출 대상이 없으면 서버가 null 을 준다.
    */
   storePeriodDrift?: {
-    /** 스토어 기간을 periodLabel 과 같은 포맷으로. */
+    /**
+     * `full` 스토어가 판매중 — 시작일·종료일 둘 다 맞춘다.
+     * `end-only` 판매가 끝난 상태 — 네이버가 시작일을 종료일 기준으로 다시 쓰므로 **종료일만** 맞춘다
+     * (오너 결정 2026-09-17, 실측 근거는 `sale-window.ts` 의 `STORE_PERIOD_TRUSTED_STATUS`).
+     */
+    scope: 'full' | 'end-only';
+    /** 화면에 보여줄 스토어 값. `full` 이면 기간, `end-only` 면 종료일 하나. */
     storeLabel: string;
-    storeStartYmd: string;
+    /** 비교 대상인 지금 화면 값 — `storeLabel` 과 같은 해상도(서버가 만든다). */
+    windowLabel: string;
+    /** `end-only` 면 null — 시작일은 보내지 않는다. */
+    storeStartYmd: string | null;
     /** 종료 미정('계속')이면 null — 판매관리 종료일을 맞출 근거가 없어 액션을 막는다. */
     storeEndYmd: string | null;
     /** 맞출 대상 판매캠페인(정산 확정된 회차는 제외됨). */

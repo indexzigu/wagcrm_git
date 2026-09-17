@@ -728,6 +728,8 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 코드가 되고, 그걸 고정한 테스트가 프로덕션에서 발화하지 않는 초록불이 된다.
       const storeDrift = resolveStorePeriodDrift({
         salePeriod: camp.salePeriod,
+        // 판매가 끝난 상태의 스토어 기간은 시작일이 재작성돼 종료일만 쓴다(오너 결정 2026-09-17).
+        productStatus: camp.productStatus,
         windowStartMs: campStartRaw,
         windowEndMs: campEndRaw,
         salesCampaigns: camp.salesCampaigns,

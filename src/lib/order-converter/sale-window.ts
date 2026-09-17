@@ -124,15 +124,17 @@ export function parseSalePeriodBounds(sp: string | null | undefined): {
  */
 export function formatKstPeriodLabel(startMs: number | null, endMs: number | null): string | null {
   if (startMs === null || !Number.isFinite(startMs)) return null;
-  const fmt = (ms: number) => {
-    const d = new Date(ms + KST_OFFSET_MS);
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const dt = String(d.getUTCDate()).padStart(2, '0');
-    return `${y}.${m}.${dt}`;
-  };
-  const end = endMs !== null && Number.isFinite(endMs) ? fmt(endMs) : '계속';
-  return `${fmt(startMs)} ~ ${end}`;
+  const end = endMs !== null && Number.isFinite(endMs) ? formatKstDateLabel(endMs) : '계속';
+  return `${formatKstDateLabel(startMs)} ~ ${end}`;
+}
+
+/** 표시용 KST 달력일 한 개(`YYYY.MM.DD`). 기간 라벨과 **같은 포맷터**여야 화면에서 어긋나지 않는다. */
+export function formatKstDateLabel(ms: number): string {
+  const d = new Date(ms + KST_OFFSET_MS);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dt = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}.${m}.${dt}`;
 }
 
 /**
@@ -162,12 +164,39 @@ export function isCampaignPeriodFrozen(
   return (salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status));
 }
 
+/**
+ * 스토어가 **판매중**일 때만 그 기간 전체를 신뢰한다.
+ *
+ * 실측(2026-09-17, 프로덕션 2건): 판매가 끝난 상태(`CLOSE`·`OUTOFSTOCK`)의 상품은 네이버가
+ * 판매기간을 **종료일 기준으로 다시 써서** 돌려준다 — 2주짜리 회차가 `07.20 ~ 07.20`(하루)로,
+ * 09.10~09.16 회차가 `09.16 ~ 09.17`(시작일 = 원래 종료일)로 왔다. **시작일이 못 쓰는 값이 되고
+ * 종료일은 실제와 맞았다.** 오너 신고(2026-09-17): 그 값을 판매관리에 반영해 회차 시작일이
+ * 망가지는 사고가 실제로 났다.
+ *
+ * ⛔ 이 상수를 넓혀 다른 상태까지 '판매중'으로 취급하지 말 것. 같은 계열의 선례가 이미 있다 —
+ * `campaigns-handler` 가 `WAIT`·`SUSPENDED`·`OUTOFSTOCK` 의 14일짜리 기본 기간을 '미등록'으로
+ * 걸러낸다(네이버가 기간을 합성하는 또 다른 모양).
+ */
+export const STORE_PERIOD_TRUSTED_STATUS = 'SALE';
+
 /** 스토어 관측 기간이 집계 창과 어긋난 상태. `resolveStorePeriodDrift` 참조. */
 export type StorePeriodDrift = {
-  /** 스토어 기간을 화면 라벨과 **같은 포맷**으로(비교도 이 문자열로 한다). */
+  /**
+   * 무엇을 맞출 수 있는가.
+   * - `full` 스토어가 판매중 — 시작일·종료일 둘 다.
+   * - `end-only` 판매가 끝난 상태라 시작일은 재작성돼 믿을 수 없다 — **종료일만**.
+   */
+  scope: 'full' | 'end-only';
+  /** 화면에 보여줄 스토어 값. `full` 이면 기간 전체, `end-only` 면 종료일 하나. */
   storeLabel: string;
-  /** 판매캠페인 PATCH 에 넘길 시작일(KST). */
-  storeStartYmd: string;
+  /**
+   * 비교 대상인 **지금 화면 값**을 `storeLabel` 과 **같은 해상도**로. 두 값을 나란히 놓는 자리라
+   * 해상도가 어긋나면 안 된다.
+   * ⛔ 호출부에서 기간 문자열을 잘라 만들지 말 것 — 폴백이 바뀌면 두 행에 같은 값이 뜬다.
+   */
+  windowLabel: string;
+  /** 판매캠페인 PATCH 에 넘길 시작일(KST). `end-only` 면 **null — 보내지 않는다.** */
+  storeStartYmd: string | null;
   /** 종료 미정('계속')이면 null — 그 경우 판매관리 종료일을 맞출 근거가 없다. */
   storeEndYmd: string | null;
   /** 맞출 대상 판매캠페인(전원 미락 — 아래 판정이 락이 섞인 캠페인 자체를 걸러낸다). */
@@ -189,21 +218,47 @@ export type StorePeriodDrift = {
  * 비교는 **같은 포맷터를 통과한 문자열**로 한다 — 한쪽은 KST 자정, 다른 쪽은 스토어 정밀
  * 시각처럼 저장 형태가 달라도 같은 달력일이면 같은 기간이기 때문이다.
  * 창이 없으면(판매캠페인 미연결) null — 그땐 `salePeriod` 가 이미 화면에 그대로 나온다.
+ *
+ * ⚠️ **판매가 끝난 상태면 종료일만 본다**(오너 결정 2026-09-17 — `STORE_PERIOD_TRUSTED_STATUS`
+ * 주석의 실측 근거). 그 구간의 스토어 시작일은 네이버가 다시 쓴 값이라, 시작일 차이는 어긋남으로
+ * 세지 않는다 — 세면 **영원히 사라지지 않는 배지**가 되고, 누르면 회차 시작일이 망가진다.
  */
 export function resolveStorePeriodDrift(camp: {
   salePeriod?: string | null;
+  productStatus?: string | null;
   windowStartMs: number | null;
   windowEndMs: number | null;
   salesCampaigns?: Array<{ id: string; status?: string | null }> | null;
 }): StorePeriodDrift | null {
-  const windowLabel = formatKstPeriodLabel(camp.windowStartMs, camp.windowEndMs);
-  if (windowLabel === null) return null;
+  const windowPeriodLabel = formatKstPeriodLabel(camp.windowStartMs, camp.windowEndMs);
+  if (windowPeriodLabel === null) return null;
 
   const { startMs, endMs } = parseSalePeriodBounds(camp.salePeriod);
   if (startMs === null) return null; // '기간 미정'·'미등록'·null — 비교할 관측값이 없다
 
-  const storeLabel = formatKstPeriodLabel(startMs, endMs);
-  if (storeLabel === null || storeLabel === windowLabel) return null;
+  const scope: StorePeriodDrift['scope'] =
+    camp.productStatus === STORE_PERIOD_TRUSTED_STATUS ? 'full' : 'end-only';
+
+  // 비교 쌍(스토어 값 / 지금 화면 값)을 **여기서 함께** 만든다 — 해상도가 갈리면 화면에서
+  // 서로 다른 단위가 나란히 놓인다.
+  let storeLabel: string;
+  let shownWindowLabel: string;
+  let storeStartYmd: string | null;
+  if (scope === 'full') {
+    const fullStoreLabel = formatKstPeriodLabel(startMs, endMs);
+    if (fullStoreLabel === null || fullStoreLabel === windowPeriodLabel) return null;
+    storeLabel = fullStoreLabel;
+    shownWindowLabel = windowPeriodLabel;
+    storeStartYmd = formatKstYmd(startMs);
+  } else {
+    // 종료일만 비교·표시한다. 맞출 종료일이 없으면(스토어가 '계속') 할 일이 없다.
+    if (endMs === null) return null;
+    const windowEndMs = camp.windowEndMs;
+    if (windowEndMs !== null && formatKstDateLabel(windowEndMs) === formatKstDateLabel(endMs)) return null;
+    storeLabel = formatKstDateLabel(endMs);
+    shownWindowLabel = windowEndMs === null ? '계속' : formatKstDateLabel(windowEndMs);
+    storeStartYmd = null;
+  }
 
   // 맞출 수 있는 상태인지까지 여기서 판정한다 — 「다른가」와 「눌러서 바꿀 수 있는가」가 갈리면
   // 누를 것 없는 배지가 뜬다.
@@ -220,10 +275,30 @@ export function resolveStorePeriodDrift(camp: {
   const salesCampaignIds = salesCampaigns.map((sc) => sc.id);
 
   return {
+    scope,
     storeLabel,
-    storeStartYmd: formatKstYmd(startMs),
+    windowLabel: shownWindowLabel,
+    storeStartYmd,
     storeEndYmd: endMs === null ? null : formatKstYmd(endMs),
     salesCampaignIds,
+  };
+}
+
+/**
+ * 「맞추기」가 판매캠페인 PATCH 에 실을 본문. **이 지점이 실사고의 현장이다**(2026-09-17) —
+ * 판매 종료 상태의 스토어 시작일을 실어 보내 회차 시작일이 망가졌다.
+ *
+ * ⛔ `startDate` 를 `?? undefined` 나 빈 문자열로 넣지 말 것 — **키 자체가 없어야** 라우트가
+ * 기존 시작일을 보존한다(`campaignService.updateCampaign` 이 `data.startDate ? … : {}`).
+ * 맞출 종료일이 없으면(스토어가 '계속') null — 호출부는 액션을 열지 않는다.
+ */
+export function buildStorePeriodPatchBody(
+  drift: Pick<StorePeriodDrift, 'storeStartYmd' | 'storeEndYmd'>,
+): { startDate?: string; endDate: string } | null {
+  if (drift.storeEndYmd === null) return null;
+  return {
+    ...(drift.storeStartYmd !== null ? { startDate: drift.storeStartYmd } : {}),
+    endDate: drift.storeEndYmd,
   };
 }
 
