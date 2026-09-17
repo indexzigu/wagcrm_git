@@ -37,9 +37,13 @@ type TimelineIntraday = {
 type TimelineContext = {
   /** 발주(주문 연동)가 붙어 있는가 — false 면 주문축이 구조적으로 빈다. */
   orderLinked: boolean;
-  /** 창 안의 미검토 스토리 수(이벤트가 있으면 0 — 세지 않는다). */
+  /** 창 안의 미검토 스토리 수 — 콘텐츠 유무와 무관하게 센다(오너 2026-09-17). */
   unreviewedStories: number;
-  /** 자료관리와 같은 SSOT 로 센 미등록 게시물 후보 수. */
+  /**
+   * 자료관리와 같은 SSOT 로 센 미등록 게시물 후보 수.
+   * 검토 기간이 끝난 캠페인에서는 구조적으로 0이다(후보 집합이 마감 시점에 확정된다는
+   * 오너 결정 2026-07-31 — 서버 주석 참조). "후보가 없다"와 구분되지 않는 값이다.
+   */
   unreviewedPostCandidates: number;
   /** 검토 기간(마감 +7일) 종료 — 후보가 더 늘지 않는 상태. */
   reviewClosed: boolean;
@@ -360,6 +364,15 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
   const totalEvents = (days ?? []).reduce((sum, d) => sum + d.events.length, 0);
   const totalOrders = (days ?? []).reduce((sum, d) => sum + d.orders, 0);
 
+  /**
+   * 차트 위 고지 — 콘텐츠가 **하나도 없으면** 사유 전부를(검토 기간 종료 포함), 있으면
+   * 미등록 후보만 말한다. 후자에서 '검토 기간 종료'까지 붙이면 후보 0건인 정상 캠페인마다
+   * 뜨는 소음이 되고, 전자에서 그것을 빼면 "주문은 있는데 콘텐츠만 0건"인 화면이 아무
+   * 설명 없이 남는다(UX 리뷰 P1 이 고쳤던 자리 — 이번 변경이 되돌릴 뻔했다).
+   */
+  const chartNotice =
+    totalEvents === 0 ? resolveContentGapNotice(context) : resolveCandidateNotice(context);
+
   if (totalEvents === 0 && totalOrders === 0) {
     return (
       <div className="space-y-2">
@@ -386,14 +399,11 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
         </div>
         <SeriesLegend mode={mode} />
       </div>
-      {/* 미등록 후보 안내 — **콘텐츠가 있든 없든 항상** 낸다(오너 2026-09-17).
-          종전에는 마커가 0건일 때만 냈는데, 다른 날 콘텐츠가 있으면 차트는 그려지므로
-          후보로만 쌓인 날의 발행이 아무 설명 없이 빠져 "수집은 됐는데 그래프엔 없다"로
-          보였다. '검토 기간 종료'는 여기서 내지 않는다 — 후보가 0건인 정상 캠페인마다
-          붙으면 안내가 아니라 소음이 된다(그 문구는 빈 상태 전용). */}
-      {resolveCandidateNotice(context) && (
-        <p className="text-[11px] text-slate-500">{resolveCandidateNotice(context)}</p>
-      )}
+      {/* 미등록 후보 안내는 **콘텐츠가 있든 없든 항상** 낸다(오너 2026-09-17). 종전에는
+          마커가 0건일 때만 냈는데, 다른 날 콘텐츠가 있으면 차트는 그려지므로 후보로만 쌓인
+          날의 발행이 아무 설명 없이 빠져 "수집은 됐는데 그래프엔 없다"로 보였다.
+          문구 선택은 위 `chartNotice` 가 한다. */}
+      {chartNotice && <p className="text-[11px] text-slate-500">{chartNotice}</p>}
       {/* 콘텐츠는 있는데 주문이 0인 캠페인 — 원인이 "안 팔렸다"가 아니라 "연동이 없다"임을
           밝힌다. 판정·심각도가 아니라 사실 고지라 색을 쓰지 않는다(P8 §4). */}
       {context && !context.orderLinked && totalOrders === 0 && (

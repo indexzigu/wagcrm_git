@@ -169,7 +169,13 @@ export async function GET(_request: Request, context: Context) {
      * 그런데 체감 모순은 빈 화면이 아니라 **중간 상태**에서 더 크다 — 다른 날 콘텐츠가
      * 있으면 차트는 그려지므로, 자료관리에 후보로 쌓인 날의 발행은 아무 설명 없이 그냥
      * 빠진다(오너 지적 2026-09-17: "수집은 돼 있는데 그래프엔 없다" — 그 날 게시물이
-     * 미검토 후보였다). 그래서 **항상** 센다. 비용은 조회 2건 추가다.
+     * 미검토 후보였다). 그래서 **항상** 센다. 비용은 스토리 count 1건 +
+     * `loadSuggestedPosts` 내부 조회(스코프·프로필·등록자산·무관분류 최대 4건)다.
+     *
+     * ⚠️ **검토 기간이 끝난 캠페인에서는 게시물 후보가 구조적으로 0이다** —
+     * `loadSuggestedPosts` 가 `includeClosed` 없이는 빈 배열을 돌려준다(후보 집합이 마감
+     * 시점에 확정돼 더 늘지 않는다는 오너 결정 2026-07-31). 그 결정을 여기서 뒤집지
+     * 않는다. 미검토 **스토리** 수는 마감과 무관하게 세므로 안내가 통째로 죽지는 않는다.
      */
     const orderLinked = scopeCampaigns.some((sc) => sc.orderCampaignId !== null);
     const [unreviewedStories, suggested] = await Promise.all([

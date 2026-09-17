@@ -457,7 +457,36 @@ describe("ContentOrderTimeline", () => {
     expect(screen.getByText(/미검토 후보가 3건/)).toBeInTheDocument();
   });
 
-  it("후보가 0건이면 '검토 기간 종료'를 차트 위에 붙이지 않는다(정상 캠페인마다 뜨면 잡음)", async () => {
+  // 주문은 있는데 콘텐츠 마커만 0건인 중간 상태 — 빈 상태 분기를 타지 않으므로 UX 리뷰 P1 이
+  // 고쳤던 자리다. 후보 안내를 항상 내도록 바꾸면서 이 경로의 '검토 기간 종료'를 되돌릴 뻔했다.
+  it("콘텐츠가 0건이면 후보가 없어도 '검토 기간 종료' 사유를 차트 위에 남긴다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          campaignId: "c1",
+          window: { start: "2026-07-01T00:00:00.000Z", end: null },
+          source: "cached",
+          days: [
+            { date: "2026-07-01", orders: 12, cumulativeOrders: 12, revenue: 0, events: [] },
+          ] satisfies TimelineDay[],
+          intraday: null,
+          context: {
+            orderLinked: true,
+            unreviewedStories: 0,
+            unreviewedPostCandidates: 0,
+            reviewClosed: true,
+          },
+        }),
+      }),
+    );
+    render(<ContentOrderTimeline campaignId="c1" />);
+    expect(await screen.findByText(/검토 기간이 끝나/)).toBeInTheDocument();
+    expect(document.querySelector("canvas")).not.toBeNull();
+  });
+
+  it("콘텐츠가 있고 후보가 0건이면 '검토 기간 종료'는 붙이지 않는다(정상 캠페인마다 뜨면 잡음)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
