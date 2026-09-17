@@ -1067,6 +1067,13 @@ model OrderCampaign {
   productId                 String?
   startDate                 DateTime?
   endDate                   DateTime?
+  // 네이버 스토어 판매기간을 마지막으로 **확인한** 시각(값이 바뀌었는지와 무관하다).
+  // 종료가 아직 먼 활성 캠페인은 이 값으로 재확인 간격을 재고(PERIOD_RESYNC_IDLE_INTERVAL_MS),
+  // 종료 임박 구간은 이 값을 읽지 않으므로 찍지도 않는다. 판정 SSOT =
+  // shouldResyncCampaignPeriod · usesIdlePeriodCheckInterval (order-converter/mapping-service).
+  // ⚠️ 스토어 조회가 실패한 회차에는 찍지 않는다 — 찍으면 '확인했다'가 거짓이 되어 다음 간격까지
+  //    기간 변경을 놓친다.
+  periodCheckedAt           DateTime?
   isActive                  Boolean   @default(true)
   cachedNewOrderBeforeCount Int?      @default(0)
   cachedNewOrderAfterCount  Int?      @default(0)

@@ -8,7 +8,7 @@ import { countDistinctSellerIds, isCrossSellerSet, CROSS_SELLER_REJECT_MESSAGE }
 // 순수 유사도 함수는 클라이언트 번들 안전한 similarity.ts로 이전.
 // 로컬 사용 + 기존 import 경로 보존을 위해 import 후 재수출.
 import { computeSimilarityScore, extractSupplyMonths, computeSellerScore, scoreDealCandidate } from './similarity';
-import { parseStoredPeriodEndMs, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, parseSalePeriodBounds, isSameKstDay } from './sale-window';
+import { parseStoredPeriodEndMs, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, formatKstYmd, parseSalePeriodBounds, isSameKstDay, resolveStorePeriodDrift } from './sale-window';
 export { computeSimilarityScore };
 
 const MAPPING_DEBUG_LOG_FILE = 'mapping-debug.log';
@@ -225,30 +225,103 @@ export const PERIOD_RESYNC_LEAD_MS = 2 * 24 * 60 * 60 * 1000;
 // 마감하지 않은' 캠페인이 매 로드마다 네이버를 호출하는 비용 누수를 막는다 — 그 시점엔 배지가
 // 운영자에게 마감/연장 확인을 안내하므로 폴링을 지속할 이유가 없다.
 export const PERIOD_RESYNC_STALE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+// 종료가 아직 먼 구간(= 위 리드 창 밖)의 재확인 간격. 오너 결정 2026-09-17: "몇 시간에 한 번 +
+// 종료 무렵엔 지금처럼". 종전에는 이 구간에서 스토어를 **아예** 묻지 않아, 2주짜리 캠페인
+// 3일차에 스토어에서 기간을 바꾸면 종료 이틀 전이 될 때까지 그 사실 자체를 몰랐다.
+// ⛔ 이 구간을 '매 로드'로 되돌리지 말 것 — 스토어 조회는 대시보드 GET 안에서 동기 await 되고
+// (P7 실측 avg 751ms = GET 평균의 약 43%) 프록시 요청 수도 화면을 여는 만큼 는다.
+// ⚠️ 이 상수만으로는 **캠페인당** 상한이지 전체 상한이 아니다 — 캠페인마다 만기 시각이 어긋나면
+// 호출이 그만큼 흩어진다. 전체 상한이 되는 것은 호출부가 **한 회차에 유휴 구간 전원을 함께 찍어**
+// 위상을 모으기 때문이다(campaigns-handler). 그 짝을 떼면 이 주석의 전제가 깨진다.
+export const PERIOD_RESYNC_IDLE_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 // 판매기간 컷오프 해석(순수 함수)은 ./sale-window로 이관해 라이브 집계(campaigns-handler)·마감
 // 스냅샷(closed-campaign-cache)·재동기화 판정(shouldResyncCampaignPeriod)이 같은 SSOT를 공유한다.
 // 하위 호환을 위해 mapping-service에서도 재노출한다.
-export { parseStoredPeriodEndMs, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, parseSalePeriodBounds, isSameKstDay };
+export { parseStoredPeriodEndMs, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, isDayBoundaryMs, startOfKstDayMs, endOfKstDayMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, formatKstYmd, parseSalePeriodBounds, isSameKstDay, resolveStorePeriodDrift };
+export type { StorePeriodDrift } from './sale-window';
+
+/** 재동기화 판정·확인 시각 기록이 공유하는 캠페인 최소 형태. */
+type PeriodResyncCampaign = {
+  isActive?: boolean | null;
+  endDate?: Date | string | null;
+  salePeriod?: string | null;
+  periodCheckedAt?: Date | string | null;
+};
+
+/**
+ * 재동기화 구간 분류 — **리드·그레이스 경계를 아는 유일한 자리**다.
+ *
+ * 아래 두 공개 판정이 이걸 공유한다. 각자 `!isActive → parseStoredPeriodEndMs → 리드 비교`를
+ * 다시 쓰면 리드 창을 옮길 때 한쪽만 고쳐져 **찍는 구간과 읽는 구간이 어긋난다**(그러면 유휴
+ * 캠페인이 영영 안 찍히거나 임박 캠페인이 매 GET 마다 쓰인다).
+ *
+ * - `frozen` 마감 캠페인(기간 동결, 오너 2026-07-12)
+ * - `unset` 기간 미확정 — 최초 확정이 필요해 간격을 보지 않는다
+ * - `near-end` 종료 임박~경과 — 집계 경계가 걸리는 구간이라 촘촘히 본다
+ * - `idle` 종료가 아직 먼 구간 — 유휴 간격(`periodCheckedAt`)으로 판정한다
+ * - `stale` 그레이스를 지난 오래된 미마감 — 폴링을 멈춘다
+ */
+type PeriodResyncRegime = 'frozen' | 'unset' | 'near-end' | 'idle' | 'stale';
+
+function classifyPeriodResyncRegime(camp: PeriodResyncCampaign, nowMs: number): PeriodResyncRegime {
+  if (!camp.isActive) return 'frozen';
+  const end = parseStoredPeriodEndMs(camp);
+  if (end === null) return 'unset';
+  if (end < nowMs - PERIOD_RESYNC_STALE_GRACE_MS) return 'stale';
+  if (end <= nowMs + PERIOD_RESYNC_LEAD_MS) return 'near-end';
+  return 'idle';
+}
+
+/**
+ * 이 캠페인의 재동기화 판정이 **유휴 간격**(`periodCheckedAt`)에 걸리는 구간인가.
+ *
+ * 구간을 따로 물어보는 이유는 **확인 시각을 찍는 비용** 때문이다 — 종료 임박 구간은 시각과
+ * 무관하게 항상 후보라 `periodCheckedAt` 을 읽지 않는데, 거기서도 매번 찍으면 대시보드 GET
+ * 마다 캠페인 수만큼 쓰기가 나간다(P7 egress 규율). 판정이 실제로 그 값을 읽는 구간에서만 찍는다.
+ */
+export function usesIdlePeriodCheckInterval(camp: PeriodResyncCampaign, nowMs: number): boolean {
+  return classifyPeriodResyncRegime(camp, nowMs) === 'idle';
+}
+
+/**
+ * **유휴 구간이면서 간격이 지났는가** — 즉 이번 회차의 스토어 조회를 이 캠페인이 불렀는가.
+ *
+ * 호출부가 `usesIdlePeriodCheckInterval(…) && shouldResyncCampaignPeriod(…)` 로 손수 합성하면
+ * 두 판정의 결합 방식이 표면마다 갈린다(이 모듈이 구간 분류를 한 곳으로 모은 것과 같은 이유).
+ * 소비처는 확인 시각 **위상 모으기** 하나다(`campaigns-handler`).
+ */
+export function isIdlePeriodResyncDue(camp: PeriodResyncCampaign, nowMs: number): boolean {
+  return usesIdlePeriodCheckInterval(camp, nowMs) && shouldResyncCampaignPeriod(camp, nowMs);
+}
 
 /**
  * 활성(미마감) 캠페인의 판매기간을 네이버에서 재동기화할지 판정한다.
  *  - 마감(isActive=false) 캠페인은 기간을 동결한다(소유자 결정 2026-07-12): 네이버 스토어가
  *    계속 열려 있어도 마감된 캠페인의 집계 창을 늘리지 않는다.
- *  - 활성 캠페인은 저장된 종료가 임박/경과했을 때만(=기간 드리프트가 실제로 집계에 영향을 주는
- *    구간) 재동기화 후보로 삼아, 판매 중인 캠페인마다 상시 네이버를 호출하지 않는다.
  *  - 저장 기간이 없으면(null/'기간 미정') 항상 후보(최초 확정 필요).
+ *  - 종료 임박(리드 2일)~경과 구간은 촘촘히 — 기간 드리프트가 집계 경계에 바로 걸리는 구간이다.
+ *  - 종료가 아직 먼 구간은 `PERIOD_RESYNC_IDLE_INTERVAL_MS` 에 1회만(오너 결정 2026-09-17).
+ *    ⛔ 이 갈래를 지우지 말 것 — 없애면 캠페인 중반의 기간 연장·단축을 종료 이틀 전까지 못 본다.
+ *  - 유예(그레이스 7일)를 지난 오래된 미마감 캠페인은 폴링을 멈춘다(비용 누수 차단). 그 시점엔
+ *    배지가 운영자에게 마감/연장 확인을 안내하므로 계속 물을 이유가 없다.
  */
-export function shouldResyncCampaignPeriod(
-  camp: { isActive?: boolean | null; endDate?: Date | string | null; salePeriod?: string | null },
-  nowMs: number,
-): boolean {
-  if (!camp.isActive) return false;
-  const end = parseStoredPeriodEndMs(camp);
-  if (end === null) return true; // 기간 미확정(null/'기간 미정') → 항상 최초 확정 시도
-  // 종료 임박(리드) ~ 종료 후 유예(그레이스) 구간에서만 재동기화. 종료가 한참 남았으면 상시 폴링을
-  // 피하고, 유예를 지난 오래된 미마감 캠페인은 폴링을 멈춰 비용 누수를 막는다.
-  return end <= nowMs + PERIOD_RESYNC_LEAD_MS && end >= nowMs - PERIOD_RESYNC_STALE_GRACE_MS;
+export function shouldResyncCampaignPeriod(camp: PeriodResyncCampaign, nowMs: number): boolean {
+  switch (classifyPeriodResyncRegime(camp, nowMs)) {
+    case 'frozen':
+    case 'stale':
+      return false;
+    case 'unset':
+    case 'near-end':
+      return true;
+    case 'idle': {
+      const checkedAtMs = camp.periodCheckedAt ? new Date(camp.periodCheckedAt).getTime() : Number.NaN;
+      // 확인 기록이 없거나 읽을 수 없으면 묻는다 — "모르면 건너뛴다"로 기울면 신규·레거시
+      // 캠페인이 영영 조회되지 않는다(이 레포가 반복해서 데인 fail-open/closed 방향 선택).
+      if (!Number.isFinite(checkedAtMs)) return true;
+      return nowMs - checkedAtMs >= PERIOD_RESYNC_IDLE_INTERVAL_MS;
+    }
+  }
 }
 
 // 네이버 상품 상태 유추로 만든 판매기간 문자열이 "구체적 기간"인지(미등록/미정 폴백이 아닌지).

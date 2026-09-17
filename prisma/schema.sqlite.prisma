@@ -598,6 +598,8 @@ model OrderCampaign {
   productId                 String? // 네이버 원상품번호 — postgres 스키마와 정합(리뷰 소스 판정 조회가 select)
   startDate                 DateTime?
   endDate                   DateTime?
+  // 스토어 판매기간 마지막 확인 시각 — postgres 스키마와 정합(재동기화 간격 판정이 읽는다).
+  periodCheckedAt           DateTime?
   isActive                  Boolean   @default(true)
   cachedNewOrderBeforeCount Int?      @default(0)
   cachedNewOrderAfterCount  Int?      @default(0)
