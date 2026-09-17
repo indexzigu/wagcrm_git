@@ -11,6 +11,57 @@ import { enumerateSnapshotDateKeys, runSync } from '@/lib/order-converter/naver-
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
 import { parseSalePeriodBounds, isSameKstDay } from '@/lib/order-converter/sale-window';
 import { isCrossSellerSet, CrossSellerRejectedError, CROSS_SELLER_REJECTED_CODE } from '@/lib/cross-seller';
+import { buildCampaignSnapshotResponse } from '@/lib/order-converter/campaign-snapshot-response';
+import { resolveOrderBrand } from '@/lib/order-converter/order-brand';
+
+/**
+ * 접힌(정산종료) 캠페인을 펼칠 때 쓰는 **단건 조회**.
+ *
+ * 목록 응답이 정산종료 캠페인을 요약으로 접으므로(`settled-campaign-collapse`), 화면이 한 건을
+ * 펼치려면 그 캠페인만 다시 받아야 한다. 대상은 정의상 **마감 캠페인**이라 라이브 집계가 필요
+ * 없고 마감 시점 캐시를 그대로 돌려주면 된다 — 목록 전체를 다시 계산하는 `fetchAndSyncCampaigns`
+ * 를 부르지 않는 이유다(그쪽은 활성 캠페인의 스냅샷 순회·백그라운드 동기화까지 딸려 온다).
+ *
+ * 활성 캠페인에는 쓰지 않는다: 활성은 애초에 접히지 않아 목록 응답에 이미 전량 실려 있고,
+ * 여기서 캐시를 돌려주면 **라이브 수치 대신 얼린 수치**를 보여주게 된다. 그래서 명시적으로 막는다.
+ */
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
+    const campaign = await prisma.orderCampaign.findUnique({
+      where: { id },
+      include: { mappings: true, tasks: { orderBy: { date: 'desc' }, take: 5 } },
+    });
+    if (!campaign) {
+      return NextResponse.json({ error: '캠페인을 찾을 수 없습니다.' }, { status: 404 });
+    }
+    if (campaign.isActive !== false) {
+      // 조용히 캐시를 돌려주면 "펼쳤더니 숫자가 다르다"가 된다 — 실패로 말한다(P0: 삼키지 말 것).
+      return NextResponse.json(
+        { error: '판매 중인 캠페인은 목록 응답에 이미 실려 있습니다. 단건 조회는 마감 캠페인 전용입니다.' },
+        { status: 400 },
+      );
+    }
+
+    let orderProvider = campaign.template || '기본';
+    if (campaign.template) {
+      try {
+        const brand = await resolveOrderBrand(campaign.template);
+        orderProvider = brand?.displayName || campaign.template;
+      } catch {
+        // 파일명 프리뷰용 표기명일 뿐이라 실패해도 슬러그로 폴백한다(목록 응답과 같은 처리).
+      }
+    }
+
+    return NextResponse.json(buildCampaignSnapshotResponse(campaign, orderProvider));
+  } catch (error) {
+    console.error('[campaigns/[id]] 단건 조회 실패:', error);
+    return NextResponse.json(
+      { error: (error as Error).message || '캠페인을 불러오지 못했습니다.' },
+      { status: 500 },
+    );
+  }
+}
 
 // 저장·마감(마감 주문 스냅샷 조회)이 보내는 프록시 요청을 campaign-update 로 센다 — 마감 취소의 재동기화는 안쪽 campaign-reopen 라벨이 이긴다(proxy-usage.ts).
 export const PUT = withProxySource('campaign-update', handleCampaignPut);

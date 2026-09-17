@@ -11,6 +11,8 @@ import { isDemoMode } from '@/lib/demo-mode';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from '@/lib/order-converter/campaign-insights';
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from '@/lib/order-converter/group-orders';
 import { isSupplementProduct } from '@/lib/order-converter/product-class';
+import { collapseSettledCampaigns } from '@/lib/order-converter/settled-campaign-collapse';
+import { buildCampaignSnapshotResponse, hasFrozenSnapshot } from '@/lib/order-converter/campaign-snapshot-response';
 import { deriveOrderPipelineBucket } from '@/lib/order-converter/order-fulfillment';
 import { resolveLiveWindowKeys } from '@/lib/order-converter/daily-aggregate';
 import { orderMatchesCampaignProductId, orderBelongsToPeerCampaign, findSharedLinkWindowConflicts, type PeerCampaignWindow } from '@/lib/order-converter/campaign-match';
@@ -57,7 +59,19 @@ function findMappingByOptionName(oName: string, mappings: any[]): any | null {
 export async function GET(request: NextRequest) {
   // isForceRefresh 파라미터는 더 이상 동기 재조회를 유발하지 않는다 (하위호환을 위해 파싱은 유지).
   void request.nextUrl.searchParams.get('forceRefresh');
-  return await fetchAndSyncCampaigns(false);
+  const response = await fetchAndSyncCampaigns(false);
+
+  // 정산까지 끝난 캠페인은 **HTTP 응답에서만** 요약으로 접는다(오너 요청 2026-09-16).
+  // ⚠️ 이 접기를 `fetchAndSyncCampaigns` 안으로 옮기지 말 것 — 그 함수는 셀러 포털 리포트·성과
+  // 카드가 직접 호출하므로, 거기서 덜어내면 셀러 화면에서 끝난 캠페인이 조용히 사라진다(#137 계열).
+  // 경계는 `settled-campaign-collapse.contract.test.ts` 가 고정한다.
+  if (!response.ok) return response;
+  const body = await response.json();
+  if (!Array.isArray(body)) return NextResponse.json(body, { status: response.status, headers: response.headers });
+  return NextResponse.json(collapseSettledCampaigns(body), {
+    status: response.status,
+    headers: response.headers,
+  });
 }
 
 // 매출전송(push) 결과 수집기 — handler가 채우고 push-sales 라우트가 읽어 운영자에게 보고한다.
@@ -557,47 +571,12 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 마감 시점에 동결한 캐시 컬럼으로 캠페인 응답을 구성한다. 마감(isActive=false) 캠페인과,
     // 마감취소됐지만 라이브 집계가 비어(조회창 만료) 스냅샷으로 폴백하는 활성 캠페인이 공유한다.
     // extra로 폴백 표식(isFrozenFallback) 등을 덧입힌다. isActive는 ...camp에서 그대로 상속.
-    const buildSnapshotResponse = (camp: any, extra: Record<string, unknown> = {}) => ({
-      ...camp,
-      mappings: sortProductMappingsByProductName(camp.mappings ?? []),
-      orderProvider: resolveProvider(camp),
-      // 마감·스냅샷 폴백 카드도 표시 기간은 **창에서 파생**해야 한다. 여기서 안 실으면 클라이언트가
-      // salePeriod(스토어 관측값)로 폴백해, 정작 운영자가 가장 자주 보는 완료 회차에서 표시와 동결 수치의
-      // 출처가 갈라진다. 스냅샷 수치는 마감 시점 창으로 계산됐으므로 그 창(저장된 startDate/endDate)을 쓴다.
-      periodLabel:
-        formatKstPeriodLabel(resolveSaleWindowStartMs(camp), resolveSaleWindowEndMs(camp)) ?? camp.salePeriod ?? null,
-      newOrderBeforeCount: camp.cachedNewOrderBeforeCount || 0,
-      newOrderAfterCount: camp.cachedNewOrderAfterCount || 0,
-      pendingCount: camp.cachedPendingCount,
-      shippingCount: camp.cachedShippingCount,
-      completedCount: camp.cachedCompletedCount,
-      postPeriodOrderCount: 0,
-      postPeriodOrders: [],
-      totalOrders: camp.cachedTotalOrders,
-      distinctOrderCount: camp.cachedDistinctOrderCount ?? camp.cachedTotalOrders ?? 0,
-      totalQuantity: camp.cachedTotalQuantity,
-      naverSettlement: camp.cachedSettledAmount != null ? {
-        settledAmount: camp.cachedSettledAmount ?? 0,
-        feeAmount: camp.cachedSettleFeeAmount ?? 0,
-        feeBreakdown: camp.cachedSettleFeeBreakdown ?? null,
-        unsettledAmount: camp.cachedUnsettledAmount ?? 0,
-        settledCount: camp.cachedSettledCount ?? 0,
-      } : null,
-      totalRevenue: camp.cachedTotalRevenue,
-      dailyStats: camp.cachedDailyStats ? (typeof camp.cachedDailyStats === 'string' ? JSON.parse(camp.cachedDailyStats) : camp.cachedDailyStats) : [],
-      insights: camp.cachedInsights ? (typeof camp.cachedInsights === 'string' ? JSON.parse(camp.cachedInsights) : camp.cachedInsights) : null,
-      cancelReturnOrderIds: null,
-      cancelReturnQuantity: camp.cachedPostCloseCancelQuantity || 0,
-      cancelReturnAmount: camp.cachedPostCloseCancelRevenue || 0,
-      pendingOrders: [],
-      shippingOrders: [],
-      confirmOrders: [],
-      ...extra,
-    });
-
-    // 마감 스냅샷이 존재하는가(폴백 가능 여부) — 이전 마감으로 캐시가 채워진 캠페인만 참.
-    const hasFrozenSnapshot = (camp: any) =>
-      (camp.cachedDistinctOrderCount ?? 0) > 0 || (camp.cachedTotalQuantity ?? 0) > 0 || (camp.cachedTotalOrders ?? 0) > 0;
+    // 응답 모양은 campaign-snapshot-response SSOT 에 위임한다 — 접힌 캠페인을 펼칠 때 쓰는
+    // 단건 조회(`GET …/campaigns/[id]`)가 **같은 모양**을 만들어야 하는데, 이 매핑이 이 클로저
+    // 안에만 있으면 그쪽이 사본을 갖게 된다. 사본이 갈리면 목록 수치와 펼친 뒤 수치가 달라지고
+    // 둘을 나란히 볼 일이 없어 아무도 눈치채지 못한다.
+    const buildSnapshotResponse = (camp: any, extra: Record<string, unknown> = {}) =>
+      buildCampaignSnapshotResponse(camp, resolveProvider(camp), extra);
 
     const campaignsWithStats = campaigns.map((camp: any) => {
       let newOrderBeforeCount = 0;

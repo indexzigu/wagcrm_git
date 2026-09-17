@@ -28,6 +28,11 @@ type Campaign = {
 };
 
 
+// ⚠️ 이 파일 위쪽의 로컬 `Campaign`(9행)은 실제 응답보다 좁은 **옛 사본**이다(periodLabel·productStatus
+// 등이 빠져 있다). 목록 파이프라인에 그 타입을 끼우면 기존 접근이 전부 타입 오류로 터지므로,
+// 서버 페이로드를 다루는 새 코드는 정본 타입을 쓴다. 로컬 사본 정리는 이 변경의 범위 밖이다.
+import type { Campaign as CampaignPayload } from '@/types/campaign';
+import { mergeExpandedCampaignDetails } from '@/lib/order-converter/settled-campaign-collapse';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { useToast } from '@/hooks/useToast';
@@ -344,6 +349,63 @@ type OrderActionLogRow = {
   createdAt: string;
 };
 
+/** 서버가 요약으로 접어 보낸 캠페인인가(`settled-campaign-collapse` 가 찍는 표식). */
+const isCollapsedCampaign = (camp: CampaignPayload): boolean => (camp as unknown as { isCollapsed?: boolean }).isCollapsed === true;
+
+/**
+ * 정산까지 끝난 캠페인의 **접힌 줄**. 카드 대신 한 줄만 그린다.
+ *
+ * 줄에 적는 수치는 마감 시점에 이미 확정돼 저장된 값(매출·주문수)뿐이다 — 아직 안 받아 온
+ * 일자별 집계·주문 목록은 0 이나 빈칸으로 **표시하지 않는다.** "안 가져왔다"를 "0건이다"로
+ * 보여주는 것이 이 레포가 반복해서 데인 형태다(P7).
+ */
+function SettledCampaignRow({ camp, isLoading, error, onExpand }: {
+  camp: CampaignPayload;
+  isLoading: boolean;
+  error: string | null;
+  onExpand: () => void;
+}) {
+  const revenue = (camp as unknown as { totalRevenue?: number | null }).totalRevenue;
+  const orderCount = (camp as unknown as { distinctOrderCount?: number | null }).distinctOrderCount;
+  const period = camp.periodLabel || camp.salePeriod || '기간 정보 없음';
+
+  return (
+    <div className="bg-white rounded-2xl shadow-soft-sm border border-slate-200">
+      <button
+        type="button"
+        onClick={onExpand}
+        disabled={isLoading}
+        aria-expanded={false}
+        className="w-full px-6 py-4 flex items-center gap-4 text-left rounded-2xl hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-wait"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="font-bold text-sm text-slate-500 truncate">{camp.name}</div>
+          <div className="text-xs text-slate-400 mt-0.5">정산 완료 · {period}</div>
+        </div>
+        <div className="hidden sm:flex items-center gap-5 shrink-0 text-xs text-slate-500">
+          {typeof orderCount === 'number' && (
+            <span><span className="text-slate-400">주문</span> <b className="text-slate-600">{orderCount.toLocaleString()}</b></span>
+          )}
+          {typeof revenue === 'number' && (
+            <span><span className="text-slate-400">매출</span> <b className="text-slate-600">{revenue.toLocaleString()}원</b></span>
+          )}
+        </div>
+        <span className="shrink-0 text-xs text-slate-500 font-medium flex items-center gap-1">
+          {isLoading ? '불러오는 중…' : '펼치기'}
+          {!isLoading && (
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          )}
+        </span>
+      </button>
+      {error && (
+        <div className="px-6 pb-4 -mt-1 text-xs text-destructive">
+          {error} — 다시 누르면 재시도합니다.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 작업 기록 패널 — 4개 액션 버튼(주문확인/발주요청/송장회신/송장등록)의 영속 감사 로그를
 // 캠페인 아코디언 상세 최상단에 표시한다. 실사고(중복 송장 실패 미인지) 예방이 목적이므로,
 // styleseed 색=의미 규칙대로 '정상'은 회색으로 가라앉히고 실패/부분실패만 색으로 끌어올린다.
@@ -596,7 +658,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
 }
 
 export default function OrderDashboard() {
-  const { campaigns, isLoading, fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, toggleCampaignStatus, syncMeta, refreshNow, refreshing } = useCampaigns();
+  const { campaigns: rawCampaigns, isLoading, fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, toggleCampaignStatus, syncMeta, refreshNow, refreshing } = useCampaigns();
   const { naverProducts, isFetchingNaver, fetchNaverProducts } = useNaverProducts();
   const { toasts, addToast, removeToast } = useToast();
   // 캠페인 카드별 배지 카운트 + 상단 요약 바 카운터에 쓰는 클레임 데이터.
@@ -644,6 +706,62 @@ export default function OrderDashboard() {
       delete next[key];
       return next;
     });
+
+  // 정산까지 끝난 캠페인은 서버가 목록에서 요약으로 접어 보낸다(초기 로딩 제외). 펼친 것만
+  // 단건 조회로 받아 여기 담아 두고, 아래 병합본(campaigns)이 요약 자리에 끼워 넣는다.
+  // 새로고침하면 목록이 다시 요약으로 오므로 접힌 상태로 돌아간다(의도 — 오너 확정 2026-09-16).
+  const [settledDetails, setSettledDetails] = useState<Record<string, CampaignPayload>>({});
+  const [expandingSettledId, setExpandingSettledId] = useState<string | null>(null);
+  const [settledErrors, setSettledErrors] = useState<Record<string, string>>({});
+
+  const expandSettledCampaign = async (id: string) => {
+    if (expandingSettledId) return; // 연타로 같은 요청을 겹쳐 보내지 않는다.
+    setExpandingSettledId(id);
+    setSettledErrors(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    try {
+      const res = await fetch(`/order-converter/api/campaigns/${id}`, { cache: 'no-store' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || '캠페인을 불러오지 못했습니다.');
+      setSettledDetails(prev => ({ ...prev, [id]: body as CampaignPayload }));
+    } catch (e) {
+      // 실패를 삼키면 눌러도 아무 일이 없는 화면이 된다 — 줄 안에 사유를 남기고 다시 누를 수 있게 한다.
+      setSettledErrors(prev => ({ ...prev, [id]: e instanceof Error ? e.message : '캠페인을 불러오지 못했습니다.' }));
+    } finally {
+      setExpandingSettledId(null);
+    }
+  };
+
+  /**
+   * 펼쳐 둔 상세 사본을 버린다 — 그 캠페인을 바꾸는 쓰기가 성공한 직후에 부른다.
+   *
+   * 이걸 안 하면 **서버가 최신값을 보내도 낡은 사본이 이긴다**(GPT 검수 지적). 예: 정산종료
+   * 캠페인을 펼친 뒤 설정을 저장하면 서버는 갱신된 요약을 주는데 화면은 저장 전 값을 계속
+   * 보여주고, 그 상태에서 설정 모달을 다시 열어 저장하면 **되돌아간 값이 다시 쓰인다.**
+   */
+  const forgetSettledDetail = (id: string) =>
+    setSettledDetails(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
+  // 요약으로 온 캠페인 중 이미 펼친 것은 받아 온 전체 데이터로 바꿔 끼운다(순서 보존).
+  //
+  // ⚠️ **이 병합본이 `campaigns` 라는 이름을 갖는 것이 요점이다.** 원본(rawCampaigns)을 따로
+  // 쓸 수 있게 두면 렌더는 펼친 데이터를, 모달·조회는 접힌 요약을 보게 된다 — 카드는 멀쩡한데
+  // 매출리포트가 빈 그래프로 뜨고 발송 모달의 수신자가 비는 식으로 **조용히** 어긋난다(리뷰에서
+  // 실제로 잡힌 결함). 이름을 덮어써서 이 파일의 모든 조회(`campaigns.find` 6곳 포함)가 자동으로
+  // 병합본을 보게 한다 — 규약으로 지키는 대신 실수를 불가능하게 만든다.
+  //
+  // ⚠️ **서버가 접어 보낸 자리에만 끼운다.** 무조건 사본을 우선하면 서버가 최신 전체 응답을
+  // 줘도(마감 취소로 다시 활성이 된 경우 등) 낡은 사본이 이겨 화면이 마감 상태에 머문다.
+  const campaigns = mergeExpandedCampaignDetails(rawCampaigns, settledDetails) as CampaignPayload[];
 
   // Accordion State
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
@@ -1309,7 +1427,21 @@ export default function OrderDashboard() {
         </div>
       ) : (
         <div className="grid gap-6">
-          {campaigns.map(camp => (
+          {campaigns.map(camp => {
+            // 정산까지 끝난 캠페인은 서버가 요약만 내려보낸다(초기 로딩에서 제외). 펼치기 전에는
+            // 한 줄로 두고, 눌렀을 때 그 캠페인만 받아 아래 카드로 교체한다.
+            if (isCollapsedCampaign(camp)) {
+              return (
+                <SettledCampaignRow
+                  key={camp.id}
+                  camp={camp}
+                  isLoading={expandingSettledId === camp.id}
+                  error={settledErrors[camp.id] ?? null}
+                  onExpand={() => expandSettledCampaign(camp.id)}
+                />
+              );
+            }
+            return (
             <div key={camp.id} className={`bg-white rounded-2xl shadow-soft-sm border border-slate-200 relative transition-opacity ${camp.isActive === false ? 'opacity-60 hover:opacity-100' : ''}`}>
               {/* 카드 상단 (헤더) */}
               <div 
@@ -1360,7 +1492,7 @@ export default function OrderDashboard() {
                       </button>
                       {camp.isActive !== false ? (
                         <button 
-                          onClick={() => { toggleCampaignStatus(camp.id, true); setOpenDropdownId(null); }}
+                          onClick={async () => { setOpenDropdownId(null); const res = await toggleCampaignStatus(camp.id, true); if (res?.success) forgetSettledDetail(camp.id); }}
                           className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors border-t border-slate-100"
                         >
                           <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
@@ -1368,7 +1500,7 @@ export default function OrderDashboard() {
                         </button>
                       ) : (
                         <button 
-                          onClick={() => { toggleCampaignStatus(camp.id, false); setOpenDropdownId(null); }}
+                          onClick={async () => { setOpenDropdownId(null); const res = await toggleCampaignStatus(camp.id, false); if (res?.success) forgetSettledDetail(camp.id); }}
                           className="w-full text-left px-4 py-2.5 text-emerald-600 hover:bg-emerald-50 flex items-center gap-2 transition-colors border-t border-slate-100"
                         >
                           <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
@@ -1784,7 +1916,8 @@ export default function OrderDashboard() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1807,6 +1940,9 @@ export default function OrderDashboard() {
           onSubmit={async (id, data) => {
             const res = await updateCampaign(id, data);
             if (res.success) {
+              // 펼쳐 둔 상세 사본은 저장 전 값이다 — 버리지 않으면 갱신된 목록을 덮어써
+              // 화면이 저장 전으로 보이고, 다시 저장하면 그 값이 되돌아간다.
+              forgetSettledDetail(id);
               setEditingCampaign(null);
               addToast('성공적으로 수정되었습니다.', 'success');
             } else {
@@ -1816,6 +1952,7 @@ export default function OrderDashboard() {
           onDelete={async (id) => {
             const res = await deleteCampaign(id);
             if (res.success) {
+              forgetSettledDetail(id); // 사라진 캠페인의 상세 사본을 들고 있을 이유가 없다.
               setEditingCampaign(null);
               addToast('캠페인이 삭제되었습니다.', 'success');
             } else {
@@ -1831,7 +1968,10 @@ export default function OrderDashboard() {
         // 발주서 파일명 기본값을 서버 provider 기준으로 미리 조합(서버 execute 라우트와 동일 포맷).
         // 발송 팝업에서 미리 보이고 사용자가 편집 가능. 날짜는 KST yyMMdd.
         const provider = (camp as any)?.orderProvider || (camp as any)?.template || '기본';
-        // eslint-disable-next-line react-hooks/purity
+        // (구) eslint-disable react-hooks/purity — 이 컴포넌트에 코드가 늘며 규칙의 분석 범위가
+        // 바뀌어 지시자가 미사용이 됐다(「미사용 지시자」 경고). React Compiler 가 next.config 에서
+        // 비활성이라 purity 위반이 실버그로 이어질 경로가 없어(eslint.config.mjs 주석이 정본)
+        // 지시자를 걷어낸다 — 규칙이 다시 걸리면 error 가 아니라 warn 으로 표면화된다.
         const dKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
         const today = `${String(dKst.getUTCFullYear()).slice(2)}${String(dKst.getUTCMonth() + 1).padStart(2, '0')}${String(dKst.getUTCDate()).padStart(2, '0')}`;
         const defaultFileName = `발주서_${provider}_와이그라운드_${camp?.sellerName ?? ''}_${today}.xlsx`;
