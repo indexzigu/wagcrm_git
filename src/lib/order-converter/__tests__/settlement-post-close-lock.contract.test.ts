@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import ts from 'typescript';
 
 /**
  * 사후 취소 동기화가 **정산이 확정된 캠페인을 다시 조회하지 않는다**는 계약.
@@ -501,5 +504,57 @@ describe('syncPostCloseCancellations — select 계약', () => {
 
     const args = findManyMock.mock.calls[0][0] as { select: Record<string, unknown> };
     expect(args.select.cachedPostCloseCancelFinalizedAt).toBe(true);
+  });
+});
+
+/**
+ * 「캠페인 전체가 정산에 들어갔나」(딜 하나라도 락) 판정은 `isCampaignPeriodFrozen` 한 곳이다(T-176).
+ * 집계 창 동결(`campaigns-handler`)과 이 잡의 건너뛰기가 같은 답을 내야 하는데, 식을 호출부에
+ * 다시 풀어 쓰면 한쪽만 고쳐졌을 때 **조용히** 갈라진다(타입도 테스트도 못 잡는다). 그래서
+ * `.some(… isSalesCampaignLocked …)` 모양을 소스에서 찾아 SSOT 파일 밖이면 실패시킨다.
+ */
+const SRC_ROOT = join(__dirname, '..', '..', '..');
+const LOCK_SSOT_FILE = 'lib/order-converter/sale-window.ts';
+
+function findInlineAnyLocked(fileName: string, source: string): number {
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  let hits = 0;
+  const callsLocked = (node: ts.Node): boolean =>
+    (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'isSalesCampaignLocked') ||
+    ts.forEachChild(node, callsLocked) === true;
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'some' &&
+      node.arguments.some(callsLocked)
+    ) hits++;
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return hits;
+}
+
+function listSourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) return e.name === '__tests__' ? [] : listSourceFiles(full);
+    return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [full] : [];
+  });
+}
+
+describe('캠페인 정산 락 판정 SSOT — 식을 호출부에 다시 풀어 쓰지 않는다', () => {
+  it('양성 대조 — 스캐너가 종전 중복 모양을 실제로 잡는다', () => {
+    const old = 'const locked = (camp.salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status));';
+    expect(findInlineAnyLocked('probe.ts', old)).toBe(1);
+    expect(findInlineAnyLocked('probe.ts', 'const locked = isCampaignPeriodFrozen(camp.salesCampaigns);')).toBe(0);
+  });
+
+  it('SSOT 파일 밖에 같은 식이 없다', () => {
+    const offenders = listSourceFiles(SRC_ROOT)
+      .map((full) => ({ rel: relative(SRC_ROOT, full), hits: findInlineAnyLocked(full, readFileSync(full, 'utf8')) }))
+      .filter((f) => f.hits > 0);
+    // SSOT 자신은 정확히 1건 — 0 이면 스캔 루트가 틀어져 전부 초록인 고장이다.
+    expect(offenders).toEqual([{ rel: LOCK_SSOT_FILE, hits: 1 }]);
   });
 });
