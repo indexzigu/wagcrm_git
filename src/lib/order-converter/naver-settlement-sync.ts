@@ -2,8 +2,7 @@ import { apiRequest } from './naver-commerce-client';
 import { createNaverCallTally, runWithNaverCallTally } from './naver-api-usage';
 import { prisma } from './prisma';
 import { collectProductOrderIds, findMissingProductOrderIds, queryOrderDetails } from './naver-order-sync';
-import { isSalesCampaignLocked } from './mapping-service';
-import { resolveSaleWindowEndMs } from './sale-window';
+import { isCampaignPeriodFrozen, resolveSaleWindowEndMs } from './sale-window';
 import { decidePostCloseCheck, isPostCloseTerminalOrder, nextAllTerminalMarker, postCloseCandidateEndDateFloor } from './post-close-check-window';
 import { isProductOrderLedgerRow, type SettlementQueryPlan } from './settlement-pending-dates';
 
@@ -432,8 +431,9 @@ export async function syncPostCloseCancellations(
 
   for (const camp of closedCampaigns) {
     // 딜 하나라도 정산에 들어갔으면 그 캠페인은 확정이다 — `campaigns-handler` 의 집계 창
-    // 동결(`periodFrozenBySettlement`)과 같은 기준을 쓴다.
-    const locked = (camp.salesCampaigns ?? []).some((sc) => isSalesCampaignLocked(sc.status));
+    // 동결(`periodFrozenBySettlement`)과 **같은 함수**를 부른다. 식을 여기 다시 풀어 쓰면 한쪽만
+    // 고쳐졌을 때 두 화면이 「어느 캠페인이 확정인가」를 다르게 답한다(T-176).
+    const locked = isCampaignPeriodFrozen(camp.salesCampaigns);
     // ⛔ 확정 여부는 **마커만** 본다 — 값이 0 인지로 판별하던 종전 방식으로 되돌리지 말 것
     //    (기본값이 0 이라 "계산했는데 0" 과 "계산된 적 없음" 이 구분되지 않는다. 위 doc 🔑).
     const finalized = camp.cachedPostCloseCancelFinalizedAt != null;
