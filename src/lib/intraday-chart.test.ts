@@ -8,7 +8,7 @@ import {
   clampViewport,
   kstDayRange,
   clusterMarkers,
-  MARKER_CLUSTER_MAX_SPAN_MS,
+  MARKER_CLUSTER_PX,
   CUMULATIVE_FILL,
   DAY_BUCKET_MS,
   densifyPoints,
@@ -218,10 +218,9 @@ describe("마커 클러스터링 — 화면 거리 기준·줌 연동", () => {
   const zoomX = (t: number) => (t / (3 * HOUR)) * 600;
 
   it("축소하면 가까운 마커가 묶이고 +N 이 된다", () => {
+    // wideX 에서 a=0px · b=12.5px · c=25px. 묶음 폭 상한이 24px 라 c 는 새 묶음이다.
     const clusters = clusterMarkers(markers, wideX);
-    expect(clusters).toHaveLength(2);
-    expect(clusters[0].members.map((m) => m.id)).toEqual(["a", "b", "c"]);
-    expect(clusters[1].members.map((m) => m.id)).toEqual(["z"]);
+    expect(clusters.map((c) => c.members.map((m) => m.id))).toEqual([["a", "b"], ["c"], ["z"]]);
   });
 
   it("확대하면 같은 마커가 개별로 풀린다(별도 펼치기 버튼 불요)", () => {
@@ -235,16 +234,27 @@ describe("마커 클러스터링 — 화면 거리 기준·줌 연동", () => {
     expect(clusters[0].timeMs).toBe(0);
   });
 
-  it("묶음의 시간 폭이 상한을 넘으면 px 임계 안이어도 새 묶음으로 끊는다", () => {
-    // 10분 간격 사슬 — 인접 간격은 늘 임계 안이라 종전에는 4시간이 한 점으로 뭉쳤다
-    // (실사고 2026-09-17: 하루치 발행 전체). 폭 상한 1시간이면 시작 시각 기준으로 끊긴다.
+  it("묶음의 화면 폭은 상한을 넘지 않는다 — 촘촘한 발행이 하루 한 점으로 뭉치지 않는다", () => {
+    // 10분 간격 25개 = 4시간 = wideX 에서 100px. 사슬 규칙이면 전부 한 점이 된다(실사고 2026-09-17).
     const chain = Array.from({ length: 25 }, (_, i) => ({ id: `c${i}`, timeMs: i * 10 * 60 * 1000 }));
     const clusters = clusterMarkers(chain, wideX);
     expect(clusters.length).toBeGreaterThan(1);
     for (const cluster of clusters) {
-      const span = cluster.members[cluster.members.length - 1].timeMs - cluster.members[0].timeMs;
-      expect(span).toBeLessThanOrEqual(MARKER_CLUSTER_MAX_SPAN_MS);
+      const last = cluster.members[cluster.members.length - 1];
+      expect(wideX(last.timeMs) - wideX(cluster.timeMs)).toBeLessThanOrEqual(MARKER_CLUSTER_PX);
     }
+  });
+
+  it("이웃한 대표 마커는 항상 상한보다 멀다 — 마커와 +N 라벨이 포개지지 않는다", () => {
+    // 65분 간격은 종전 「시간 폭 1시간」 규칙에서 하나도 안 묶였다. 7일 화면(1시간 ≈ 3.6px)에서는
+    // 그 마커들이 약 4px 간격으로 포개진다(오너 스크린샷 2026-09-18).
+    const weekX = (t: number) => (t / (7 * 24 * HOUR)) * 600;
+    const spaced = Array.from({ length: 20 }, (_, i) => ({ id: `s${i}`, timeMs: i * 65 * 60 * 1000 }));
+    const clusters = clusterMarkers(spaced, weekX);
+    for (let i = 1; i < clusters.length; i += 1) {
+      expect(weekX(clusters[i].timeMs) - weekX(clusters[i - 1].timeMs)).toBeGreaterThan(MARKER_CLUSTER_PX);
+    }
+    expect(clusters.flatMap((c) => c.members.map((m) => m.id))).toEqual(spaced.map((m) => m.id));
   });
 
   it("폭 상한은 구성원을 잃지 않는다 — 끊어도 전원이 어느 묶음엔가 있다", () => {

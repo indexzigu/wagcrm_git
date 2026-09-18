@@ -33,19 +33,21 @@ export function resolveMinViewportMs(bucketMs: number): number {
   return Math.max(MIN_VIEWPORT_MS, 2 * bucketMs);
 }
 
-/** 마커 클러스터 임계(px) — 확정 설계 지정값. 줌하면 시간상 임계가 좁아져 자연히 풀린다. */
-export const MARKER_CLUSTER_PX = 18;
-
 /**
- * 한 클러스터가 담을 수 있는 최대 **시간 폭**(ms).
+ * 마커 묶음의 최대 **화면 폭**(px) — 묶음 첫 구성원부터 잰다. 줌하면 시간상 폭이 좁아져
+ * 자연히 풀린다.
  *
- * 사슬 방식은 "직전 구성원과 가까운가"만 보므로 묶음 **전체**의 폭에는 상한이 없었다 —
- * 발행이 촘촘한 날에는 임계를 조금씩 넘지 않는 마커가 계속 이어붙어 하루가 한 점이 된다.
- * 실사고(2026-09-17): 임계가 두어 시간인 축소 화면에서 **하루치 발행 전체가 마커 하나로**
- * 뭉쳐, 그날 언제 발행됐는지가 화면에서 통째로 사라졌다(오너 지적). px 임계와 이 폭 상한을
- * **둘 다** 만족해야 같은 묶음이다.
+ * 24 의 근거는 마커의 실제 크기다: 지름 14px(중심 ±7) + 오른쪽 `+N` 라벨 10px. 앞 마커의
+ * 라벨 끝(x+17)과 뒤 마커의 왼쪽 끝(x'−7)이 안 겹치려면 x'−x ≥ 24.
+ *
+ * ⛔ 종전 「직전 구성원과 18px 이내 + 묶음 시간 폭 1시간 상한」(2026-09-17)은 **SUPERSEDED**
+ * (2026-09-18). 그 규칙은 "하루치 발행이 한 점이 된다"를 고쳤지만, 축소 화면(1시간 ≈ 6px)에서
+ * 안 묶인 마커끼리 포개지는 반대편 결함을 열었다(오너 스크린샷). 폭을 **화면 단위로 첫 구성원
+ * 부터** 재면 두 결함이 함께 닫힌다 — 묶음이 24px 보다 넓어질 수 없고, 이웃 대표는 항상
+ * 24px 넘게 떨어진다. 마커 크기(`intraday-order-chart.tsx` 의 size-[14px]·라벨 위치)를 바꾸면
+ * 이 값도 다시 계산할 것.
  */
-export const MARKER_CLUSTER_MAX_SPAN_MS = 60 * 60 * 1000;
+export const MARKER_CLUSTER_PX = 24;
 
 /** 속도(활동량) 곡선이 플롯 높이를 채우는 비율(오너 지정). */
 export const RATE_FILL = 0.92;
@@ -225,35 +227,23 @@ export type MarkerCluster<T extends MarkerInput> = {
 };
 
 /**
- * 화면 거리 기준 마커 클러스터링 — 임계 안에 들어온 마커를 묶는다.
- * **줌 연동이다**: toX 가 현재 뷰포트 기준이므로 확대하면 임계가 시간상 좁아져 자연히 풀린다
- * (별도 펼치기 버튼 불요 — 확정 설계).
+ * 화면 거리 기준 마커 클러스터링 — **줌 연동이다**: toX 가 현재 뷰포트 기준이므로 확대하면
+ * 같은 24px 이 더 짧은 시간이 되어 자연히 풀린다(별도 펼치기 버튼 불요 — 확정 설계).
  *
- * 묶이려면 조건이 **둘 다** 성립해야 한다: ①직전 구성원과 화면상 `thresholdPx` 이내
- * ②묶음의 첫 구성원부터 `maxSpanMs` 이내. ②가 없으면 사슬이 무한히 이어져 하루치 발행이
- * 한 점이 된다(2026-09-17 실측 — MARKER_CLUSTER_MAX_SPAN_MS 주석).
+ * 묶는 기준은 **묶음 첫 구성원(= 대표 시각)에서의 화면 거리**다. 직전 구성원과 비교하는
+ * 사슬 방식은 묶음 전체 폭에 상한이 없다 — `MARKER_CLUSTER_PX` 주석 참조.
  */
 export function clusterMarkers<T extends MarkerInput>(
   markers: T[],
   toX: (timeMs: number) => number,
-  thresholdPx: number = MARKER_CLUSTER_PX,
-  maxSpanMs: number = MARKER_CLUSTER_MAX_SPAN_MS,
+  maxWidthPx: number = MARKER_CLUSTER_PX,
 ): MarkerCluster<T>[] {
   const sorted = [...markers].sort((a, b) => a.timeMs - b.timeMs);
   const clusters: MarkerCluster<T>[] = [];
   for (const marker of sorted) {
     const last = clusters[clusters.length - 1];
-    // ⚠️ 비교 기준은 **직전 구성원**이지 클러스터 대표 시각(평균)이 아니다. 평균과 비교하면
-    // 구성원이 늘수록 대표가 뒤로 밀려 **바로 옆 마커가 임계 밖으로 튕긴다** — 12.5px 간격으로
-    // 늘어선 3개가 2개+1개로 갈리는 것을 테스트가 잡았다. 인접 간격 사슬이 올바른 판정이다.
-    const previous = last?.members[last.members.length - 1];
-    const isWithinThresholdPx =
-      last !== undefined &&
-      previous !== undefined &&
-      Math.abs(toX(marker.timeMs) - toX(previous.timeMs)) <= thresholdPx;
-    // 대표 시각이 첫 구성원이므로 `last.timeMs` 가 곧 묶음의 시작이다 — 폭은 여기서 잰다.
-    const isWithinMaxSpan = last !== undefined && marker.timeMs - last.timeMs <= maxSpanMs;
-    if (isWithinThresholdPx && isWithinMaxSpan) {
+    // `last.timeMs` 는 첫 구성원의 시각이다(MarkerCluster 계약) — 폭은 여기서 잰다.
+    if (last !== undefined && toX(marker.timeMs) - toX(last.timeMs) <= maxWidthPx) {
       last.members.push(marker);
       continue;
     }
