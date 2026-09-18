@@ -68,7 +68,9 @@ export function ContentReactionTable({
                 }`}
               >
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                  {/* 13px semibold = 행 주 식별자 단(P8 데이터 그리드 3단 사다리) — 바로 아래 펼쳐지는
+                      IntradayEventList 머리와 같은 단이어야 같은 섹션 안에서 위계가 갈리지 않는다. */}
+                  <span className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
                     <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="truncate">{formatReactionLabel(row)}</span>
                   </span>
