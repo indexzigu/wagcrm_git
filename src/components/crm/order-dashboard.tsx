@@ -104,6 +104,10 @@ type ShippingOrderLine = {
 // 독촉할지" 판단하는 화면이라, "모든 배송대기"가 아니라 파악이 필요한 경고 건만 담는다(서버가 이미
 // 걸러 보냄). 핵심 판단값 "발주요청 후 경과일"을 좌측에 크게 세운다. 임계값 2일 = 카드 배송대기
 // 경고(pendingDelayDays)와 동일 집합. 데스크톱 카드 전용(P5). 배송 지연 팝오버와 대칭.
+// 카드 1행 주의 배지·+N 칩의 눌림 영역 확장(T-180). 보이는 크기(≈22px)는 그대로 두고 투명 의사요소로
+// 위아래 1px씩 넓혀 고밀도 화면 기준 24px을 채운다 — 같은 줄 배지가 한 개만 커져 어긋나는 것을 막는다.
+const CAUTION_HIT_AREA = 'relative before:absolute before:inset-x-0 before:-inset-y-px';
+
 function PendingOrdersPopover({ campName, orders, onClose }: { campName: string; orders: PendingOrderLine[]; onClose: () => void }) {
     // eslint-disable-next-line react-hooks/purity
   const now = Date.now(); // 클릭(마운트 후)에만 렌더되므로 하이드레이션 불일치 없음
@@ -2012,7 +2016,7 @@ export default function OrderDashboard() {
                                 <button
                                   type="button"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex items-center gap-1 rounded-full border border-status-caution/30 bg-status-caution-bg px-2 py-0.5 text-[11px] font-semibold text-status-caution hover:bg-status-caution-bg/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer"
+                                  className={`inline-flex items-center gap-1 rounded-full border border-status-caution/30 bg-status-caution-bg px-2 py-0.5 text-[11px] font-semibold text-status-caution hover:bg-status-caution-bg/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer ${CAUTION_HIT_AREA}`}
                                   title={camp.storePeriodDrift!.scope === 'end-only'
                                     ? '네이버 스토어의 판매 종료일이 화면 기간과 다릅니다: 클릭해 맞추기'
                                     : '네이버 스토어의 판매기간이 화면 기간과 다릅니다: 클릭해 맞추기'}
@@ -2053,7 +2057,7 @@ export default function OrderDashboard() {
                                 <button
                                   type="button"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex items-center gap-1 rounded-full border border-status-caution/30 bg-status-caution-bg px-2 py-0.5 text-[11px] font-semibold text-status-caution hover:bg-status-caution-bg/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer"
+                                  className={`inline-flex items-center gap-1 rounded-full border border-status-caution/30 bg-status-caution-bg px-2 py-0.5 text-[11px] font-semibold text-status-caution hover:bg-status-caution-bg/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer ${CAUTION_HIT_AREA}`}
                                   title="판매기간 종료 후 들어온 발주 대상 주문: 클릭해 내역 보기"
                                 >
                                   ⚠ {labelFor('post-period')}
@@ -2111,7 +2115,7 @@ export default function OrderDashboard() {
                               }}
                               aria-expanded={expanded}
                               title={expanded ? '주의 표시 접기' : `다른 주의 표시: ${hidden.map(labelFor).join(' · ')}`}
-                              className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap"
+                              className={`rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`}
                             >
                               {expanded ? '접기' : `+${hidden.length}`}
                             </button>
