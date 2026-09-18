@@ -34,7 +34,15 @@ export function PersistentSidebarLayout({ children }: { children: React.ReactNod
           설계 정본: `docs/private/specs/2026-08-28-sidebar-hover-overlay-design.md` */}
       <SidebarProvider>
         <CrmSidebar />
-        <SidebarInset className="min-w-0 flex-1 animate-fade-in-up bg-background pb-20 md:pb-0">
+        {/* `md:h-svh` — 사이드바 화면 전체의 높이 사슬을 여기서 확정한다. 상위 래퍼는
+            `min-h-svh`(최소값)뿐이라, 이게 없으면 `CrmShell` 의 `h-full` 이 기댈 높이가 없어
+            넘침이 셸 안쪽 스크롤러가 아니라 창으로 새고, 창 스크롤바 15px 만큼 폭이 흔들린다
+            (#84 는 주문관리 한 화면에만 이 앵커를 뒀었다 — T-178 실측: 나머지 CrmShell 화면 전부 재현).
+            사이드바 없는 화면(/login·/privacy 등)은 이 요소를 거치지 않아 영향이 없다.
+            `flex-1` 과 공존해도 된다 — 부모가 가로 flex 라 `flex-1` 은 폭을, `h-svh` 는 높이를 정한다.
+            `md:` 는 모바일 하단 nav 자리(`pb-20`)를 뷰포트 높이가 무시하지 않게 하려는 것.
+            ⚠️ 사이드바를 `variant="inset"` 으로 바꾸면 `m-2` 만큼 다시 넘친다. */}
+        <SidebarInset className="min-w-0 flex-1 animate-fade-in-up bg-background pb-20 md:h-svh md:pb-0">
           {children}
         </SidebarInset>
       </SidebarProvider>
