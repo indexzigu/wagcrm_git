@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ContentOrderTimeline, IntradayEventList } from "./content-order-timeline";
 import { resolveIntradayBounds } from "./intraday-order-chart";
 import { DAY_BUCKET_MS } from "@/lib/intraday-chart";
@@ -191,6 +191,71 @@ describe("ContentOrderTimeline", () => {
     expect(screen.getByText(/시간대별/)).toBeInTheDocument();
     // 조작 힌트(버튼 줄 대신 — 확정 설계)
     expect(screen.getByText(/휠로 확대/)).toBeInTheDocument();
+  });
+
+  it("인트라데이가 있으면 콘텐츠별 반응 표를 내고, 줄을 누르면 그 콘텐츠 상세가 펴진다", async () => {
+    // Date 만 얼린다 — 기본값은 setTimeout 까지 얼려 waitFor 가 죽는다.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-10T12:00:00+09:00"));
+    const posted = Date.parse("2026-07-08T20:00:00+09:00");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          campaignId: "c1",
+          window: { start: "2026-07-08T00:00:00.000Z", end: null },
+          source: "live",
+          days: [
+            {
+              date: "2026-07-08", orders: 9, cumulativeOrders: 9, revenue: 90000,
+              events: [{ ...baseEvent, id: "reel-1", postedAt: new Date(posted).toISOString(), dateKey: "2026-07-08" }],
+            },
+          ] satisfies TimelineDay[],
+          intraday: {
+            points: [
+              { startMs: posted - 60 * 60 * 1000, orders: 2, revenue: 20000 },
+              { startMs: posted, orders: 7, revenue: 70000 },
+            ],
+            daysWithoutBuckets: [],
+          },
+        }),
+      }),
+    );
+
+    try {
+      render(<ContentOrderTimeline campaignId="c1" />);
+      await waitFor(() => expect(screen.getByText("콘텐츠별 반응")).toBeInTheDocument());
+      expect(screen.getByText("2건 → 7건")).toBeInTheDocument();
+      expect(screen.getByText("70,000원")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { pressed: false }));
+      expect(screen.getByRole("button", { pressed: true })).toBeInTheDocument();
+      // 고른 줄의 콘텐츠 상세(IntradayEventList)가 펴진다 — 원본 링크가 그 증거다.
+      expect(screen.getByRole("link", { name: /원본/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("일별 모드에서는 반응 표를 내지 않는다(3시간 창을 계산할 수 없다)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          campaignId: "c1",
+          window: { start: "2026-07-01T00:00:00.000Z", end: null },
+          source: "live",
+          days: [
+            { date: "2026-07-01", orders: 3, cumulativeOrders: 3, revenue: 30000, events: [baseEvent] },
+          ] satisfies TimelineDay[],
+        }),
+      }),
+    );
+    render(<ContentOrderTimeline campaignId="c1" />);
+    await waitFor(() => expect(document.querySelector("canvas")).not.toBeNull());
+    expect(screen.queryByText("콘텐츠별 반응")).not.toBeInTheDocument();
   });
 
   it("인트라데이가 없어도 같은 캔버스를 일별 해상도로 그린다(렌더러 통일 — 오너 개정 2026-08-02)", async () => {

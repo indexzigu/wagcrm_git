@@ -16,9 +16,19 @@ import {
   IntradayOrderChart,
   resolveIntradayBounds,
   type IntradayPointInput,
+  type ReactionHighlight,
 } from "./intraday-order-chart";
+import { ContentReactionTable } from "./content-reaction-table";
+import { buildReactionRows, REACTION_WINDOW_MS, type ReactionRow } from "@/lib/content-reaction";
+import {
+  BUCKET_MS,
+  clampViewport,
+  DAY_BUCKET_MS,
+  kstDayRange,
+  resolveMinViewportMs,
+  type Viewport,
+} from "@/lib/intraday-chart";
 import { IntradayHourHeatmap } from "./intraday-hour-heatmap";
-import { BUCKET_MS, DAY_BUCKET_MS, kstDayRange, type Viewport } from "@/lib/intraday-chart";
 
 // Task 3 응답 껍데기 — GET /api/campaigns/[id]/content-order-timeline 계약과 동일(로컬 선언).
 type TimelineScope = { kind: "campaign" | "group"; campaignCount: number };
@@ -136,7 +146,8 @@ function formatDaySummary(day: { orders: number; events: ContentEvent[] }): stri
 }
 
 /**
- * 계열 범례 문구 — **캔버스에는 축 눈금이 없다**(수치는 툴팁·시간대 히트맵이 답한다).
+ * 계열 범례 문구 — 캔버스의 값 눈금은 **막대 축 숫자 3개뿐**이고(2026-09-18 도입) 누적선에는
+ * 눈금이 없다(가시 구간 리스케일이라 고정 눈금이 거짓이 된다 — 수치는 툴팁이 답한다).
  * 그래서 종전 recharts 시절의 "(좌축)/(우축)" 표기는 있지도 않은 축을 가리키는 거짓 라벨이라
  * 두 모드 모두에서 제거했다. 남는 차이는 활동량 계열의 **단위**뿐이다.
  */
@@ -257,6 +268,9 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
   const [intraday, setIntraday] = useState<TimelineIntraday | null>(null);
   const [viewport, setViewport] = useState<Viewport | null>(null);
   const [selectedEvents, setSelectedEvents] = useState<ContentEvent[] | null>(null);
+  /** 데이터 수신 시점의 현재 시각 — 렌더 중 Date.now() 를 읽지 않으려고 상태로 든다. */
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  const [selectedReactionKey, setSelectedReactionKey] = useState<string | null>(null);
   const [scope, setScope] = useState<TimelineScope | null>(null);
   const [context, setContext] = useState<TimelineContext | null>(null);
   const [loading, setLoading] = useState(true);
@@ -271,6 +285,7 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
     setIntraday(null);
     setViewport(null);
     setSelectedEvents(null);
+    setSelectedReactionKey(null);
     fetch(`/api/campaigns/${campaignId}/content-order-timeline`)
       .then(async (res) => {
         if (!res.ok) throw new Error("타임라인을 불러오지 못했습니다.");
@@ -278,6 +293,7 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
       })
       .then((json) => {
         if (cancelled) return;
+        setNowMs(Date.now());
         setDays(json.days);
         setScope(json.scope ?? null);
         setContext(json.context ?? null);
@@ -334,10 +350,51 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
   );
   // 뷰포트 미설정(첫 렌더·데이터 교체 직후)이면 전체 구간이 기본값이다.
   const effectiveViewport = viewport ?? bounds;
-  const canRenderChart = points.length > 0 && bounds !== null && effectiveViewport !== null;
+  const canRenderChart =
+    points.length > 0 && bounds !== null && effectiveViewport !== null && nowMs !== null;
 
   /** 창 안의 모든 콘텐츠 — 마커는 날짜가 아니라 정확한 발행 시각에 찍힌다(두 모드 공통). */
   const allEvents = useMemo(() => (days ?? []).flatMap((d) => d.events), [days]);
+
+  /** 콘텐츠별 반응 — 10분 버킷이 있을 때만 계산할 수 있다(일별에는 3시간 창이 없다). */
+  const reactionRows = useMemo(
+    () =>
+      mode === "intraday" && nowMs !== null
+        ? buildReactionRows({
+            events: allEvents,
+            points: intradayPoints,
+            missingDayKeys: intraday?.daysWithoutBuckets ?? [],
+            nowMs,
+          })
+        : [],
+    [mode, nowMs, allEvents, intradayPoints, intraday],
+  );
+
+  const highlight = useMemo<ReactionHighlight | null>(() => {
+    const row = reactionRows.find((r) => r.key === selectedReactionKey);
+    return row
+      ? {
+          beforeStartMs: row.pivotMs - REACTION_WINDOW_MS,
+          pivotMs: row.pivotMs,
+          afterEndMs: row.pivotMs + REACTION_WINDOW_MS,
+        }
+      : null;
+  }, [reactionRows, selectedReactionKey]);
+
+  /** 표의 줄 선택 — 띠를 칠하고, 그 콘텐츠 상세를 펴고, 앞뒤가 다 보이는 24시간으로 확대한다. */
+  const handleSelectReaction = (row: ReactionRow<ContentEvent> | null) => {
+    setSelectedReactionKey(row?.key ?? null);
+    setSelectedEvents(row?.members ?? null);
+    if (row && bounds) {
+      setViewport(
+        clampViewport(
+          { startMs: row.pivotMs - 3 * REACTION_WINDOW_MS, endMs: row.pivotMs + 5 * REACTION_WINDOW_MS },
+          bounds,
+          resolveMinViewportMs(bucketMs),
+        ),
+      );
+    }
+  };
 
   const heading = (
     <h3 className="text-sm font-semibold text-foreground">콘텐츠 × 주문 타임라인</h3>
@@ -421,7 +478,10 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
               스크린리더에 아무것도 주지 않으므로 일별 요약이 대체 경로다. 주문만 있고 콘텐츠가
               없는 날은 마커가 없어 포인터로도 도달할 수 없으므로 두 모드 모두 이 목록을 낸다. */}
           <ul className="sr-only" aria-label="일별 콘텐츠·주문 요약">
-            {(days ?? []).map((day) => (
+            {(days ?? [])
+              // 아직 오지 않은 날은 "주문 0건"이 아니다 — 차트가 지금 이후를 비우는 것과 같은 이유.
+              .filter((day) => (kstDayRange(day.date)?.startMs ?? 0) <= nowMs!)
+              .map((day) => (
               <li key={day.date}>
                 {formatMonthDay(day.date)} · {formatDaySummary(day)} · 누적 주문{" "}
                 {day.cumulativeOrders}건
@@ -437,8 +497,14 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
             bucketMs={bucketMs}
             cumulativeByDate={cumulativeByDate}
             daysWithoutBuckets={mode === "intraday" ? intraday?.daysWithoutBuckets : undefined}
+            nowMs={nowMs!}
+            highlight={highlight}
             onViewportChange={setViewport}
-            onSelectEvents={setSelectedEvents}
+            onSelectEvents={(events) => {
+              // 마커를 직접 누른 것은 표의 선택과 별개다 — 띠를 남기면 다른 콘텐츠의 구간을 가리킨다.
+              setSelectedReactionKey(null);
+              setSelectedEvents(events);
+            }}
           />
           {mode === "intraday" && intraday && intraday.daysWithoutBuckets.length > 0 && (
             // 신뢰도 고지는 **차트 바로 아래**다 — 판단 전에 전제를 먼저 알려야 한다.
@@ -449,11 +515,16 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
               뒀습니다(회색 구간). 그 구간의 주문도 누적선과 일별 합계에는 들어 있습니다.
             </p>
           )}
+          <ContentReactionTable
+            rows={reactionRows}
+            selectedKey={selectedReactionKey}
+            onSelect={handleSelectReaction}
+          />
+          {selectedEvents && <IntradayEventList events={selectedEvents} />}
           {/* 시간대 보조뷰(C-1)는 인트라데이 전용이다 — 일 버킷에는 시간 정보가 없다. */}
           {mode === "intraday" && (
             <IntradayHourHeatmap points={intradayPoints} viewport={effectiveViewport!} />
           )}
-          {selectedEvents && <IntradayEventList events={selectedEvents} />}
         </>
       ) : (
         // 창은 있는데 그릴 점이 하나도 없는 경우(일별 집계조차 비어 있음).
