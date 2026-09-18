@@ -87,15 +87,20 @@ export function ContentReactionTable({
                         집계 중
                       </span>
                     )}
-                    <span aria-hidden className="h-1.5 min-w-6 flex-1 overflow-hidden rounded-full bg-slate-100">
-                      <span
-                        className="block h-full rounded-full"
-                        style={{
-                          width: `${((row.after?.orders ?? 0) / peak) * 100}%`,
-                          backgroundColor: "var(--chart-4)",
-                        }}
-                      />
-                    </span>
+                    {/* row.after === null("기록 없음")이면 진행바를 렌더하지 않는다 — 폭 0%는
+                        실제 0건과 시각적으로 구분되지 않아 "모른다"를 "없다"로 위조한다
+                        (ss-ux-designer 검토 P1, 설계서 「v2 2단계 ⓑ」가 이미 잡았던 결함의 재발). */}
+                    {row.after !== null && (
+                      <span aria-hidden className="h-1.5 min-w-6 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <span
+                          className="block h-full rounded-full"
+                          style={{
+                            width: `${(row.after.orders / peak) * 100}%`,
+                            backgroundColor: "var(--chart-4)",
+                          }}
+                        />
+                      </span>
+                    )}
                   </span>
                   {row.overlapCount > 0 && (
                     <span className="block text-[11px] text-slate-500">

@@ -58,6 +58,14 @@ describe("ContentReactionTable", () => {
     expect(screen.getByText("앞뒤 3시간 안에 다른 콘텐츠 2건")).toBeInTheDocument();
   });
 
+  it("직후가 '기록 없음'이면 진행바를 렌더하지 않는다(폭 0%는 실제 0건과 구분되지 않는다)", () => {
+    const { container } = render(
+      <ContentReactionTable rows={[row({ after: null })]} selectedKey={null} onSelect={() => {}} />,
+    );
+    expect(screen.getByText("12건 → 기록 없음")).toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden][class*="rounded-full"]')).toBeNull();
+  });
+
   it("줄을 누르면 그 줄을, 고른 줄을 다시 누르면 null 을 넘긴다", () => {
     const onSelect = vi.fn();
     const r = row();
