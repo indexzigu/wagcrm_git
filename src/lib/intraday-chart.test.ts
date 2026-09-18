@@ -8,7 +8,7 @@ import {
   clampViewport,
   kstDayRange,
   clusterMarkers,
-  MARKER_CLUSTER_MAX_SPAN_MS,
+  MARKER_CLUSTER_PX,
   CUMULATIVE_FILL,
   DAY_BUCKET_MS,
   densifyPoints,
@@ -19,6 +19,8 @@ import {
   resolveMinViewportMs,
   RATE_FILL,
   resolveCumulativeScale,
+  resolveGridRange,
+  clipPointsToRange,
   resolveRateScale,
   timeRatio,
   visibleIndexRange,
@@ -218,10 +220,9 @@ describe("마커 클러스터링 — 화면 거리 기준·줌 연동", () => {
   const zoomX = (t: number) => (t / (3 * HOUR)) * 600;
 
   it("축소하면 가까운 마커가 묶이고 +N 이 된다", () => {
+    // wideX 에서 a=0px · b=12.5px · c=25px. 묶음 폭 상한이 24px 라 c 는 새 묶음이다.
     const clusters = clusterMarkers(markers, wideX);
-    expect(clusters).toHaveLength(2);
-    expect(clusters[0].members.map((m) => m.id)).toEqual(["a", "b", "c"]);
-    expect(clusters[1].members.map((m) => m.id)).toEqual(["z"]);
+    expect(clusters.map((c) => c.members.map((m) => m.id))).toEqual([["a", "b"], ["c"], ["z"]]);
   });
 
   it("확대하면 같은 마커가 개별로 풀린다(별도 펼치기 버튼 불요)", () => {
@@ -235,16 +236,27 @@ describe("마커 클러스터링 — 화면 거리 기준·줌 연동", () => {
     expect(clusters[0].timeMs).toBe(0);
   });
 
-  it("묶음의 시간 폭이 상한을 넘으면 px 임계 안이어도 새 묶음으로 끊는다", () => {
-    // 10분 간격 사슬 — 인접 간격은 늘 임계 안이라 종전에는 4시간이 한 점으로 뭉쳤다
-    // (실사고 2026-09-17: 하루치 발행 전체). 폭 상한 1시간이면 시작 시각 기준으로 끊긴다.
+  it("묶음의 화면 폭은 상한을 넘지 않는다 — 촘촘한 발행이 하루 한 점으로 뭉치지 않는다", () => {
+    // 10분 간격 25개 = 4시간 = wideX 에서 100px. 사슬 규칙이면 전부 한 점이 된다(실사고 2026-09-17).
     const chain = Array.from({ length: 25 }, (_, i) => ({ id: `c${i}`, timeMs: i * 10 * 60 * 1000 }));
     const clusters = clusterMarkers(chain, wideX);
     expect(clusters.length).toBeGreaterThan(1);
     for (const cluster of clusters) {
-      const span = cluster.members[cluster.members.length - 1].timeMs - cluster.members[0].timeMs;
-      expect(span).toBeLessThanOrEqual(MARKER_CLUSTER_MAX_SPAN_MS);
+      const last = cluster.members[cluster.members.length - 1];
+      expect(wideX(last.timeMs) - wideX(cluster.timeMs)).toBeLessThanOrEqual(MARKER_CLUSTER_PX);
     }
+  });
+
+  it("이웃한 대표 마커는 항상 상한보다 멀다 — 마커와 +N 라벨이 포개지지 않는다", () => {
+    // 65분 간격은 종전 「시간 폭 1시간」 규칙에서 하나도 안 묶였다. 7일 화면(1시간 ≈ 3.6px)에서는
+    // 그 마커들이 약 4px 간격으로 포개진다(오너 스크린샷 2026-09-18).
+    const weekX = (t: number) => (t / (7 * 24 * HOUR)) * 600;
+    const spaced = Array.from({ length: 20 }, (_, i) => ({ id: `s${i}`, timeMs: i * 65 * 60 * 1000 }));
+    const clusters = clusterMarkers(spaced, weekX);
+    for (let i = 1; i < clusters.length; i += 1) {
+      expect(weekX(clusters[i].timeMs) - weekX(clusters[i - 1].timeMs)).toBeGreaterThan(MARKER_CLUSTER_PX);
+    }
+    expect(clusters.flatMap((c) => c.members.map((m) => m.id))).toEqual(spaced.map((m) => m.id));
   });
 
   it("폭 상한은 구성원을 잃지 않는다 — 끊어도 전원이 어느 묶음엔가 있다", () => {
@@ -397,7 +409,7 @@ describe("막대 열 집계(buildSumColumns) — 절대 활동량 보존", () =>
   it("점이 목표보다 적으면 버킷 그대로 1:1 (폭 = 버킷 폭)", () => {
     const cols = buildSumColumns(pts([2, 3]), 10);
     expect(cols).toHaveLength(2);
-    expect(cols[0]).toEqual({ startMs: 0, endMs: BUCKET_MS, orders: 2 });
+    expect(cols[0]).toEqual({ startMs: 0, endMs: BUCKET_MS, orders: 2, revenue: 0 });
   });
 
   it("열의 시간 범위가 이어진다(빈 화면 틈 없음)", () => {
@@ -440,5 +452,66 @@ describe("densifyPoints range — 버킷보다 넓은 창", () => {
     const start = Date.parse("2026-07-12T00:00:00+09:00");
     const dense = densifyPoints([], BUCKET_MS, [], { startMs: start, endMs: start + 3 * BUCKET_MS });
     expect(dense).toHaveLength(3);
+  });
+});
+
+describe("막대 열 집계 — 매출도 합산으로 보존된다", () => {
+  it("열 매출 합의 총합 = 원본 매출 총합", () => {
+    const points = Array.from({ length: 100 }, (_, i) => ({
+      startMs: i * BUCKET_MS,
+      orders: i % 3,
+      revenue: (i % 3) * 12000,
+    }));
+    const columns = buildSumColumns(points, 17);
+    expect(columns.reduce((s, c) => s + c.revenue, 0)).toBe(points.reduce((s, p) => s + p.revenue, 0));
+  });
+
+  it("revenue 가 없는 입력은 0 으로 센다", () => {
+    expect(buildSumColumns([{ startMs: 0, orders: 2 }], 5)[0].revenue).toBe(0);
+  });
+});
+
+describe("resolveGridRange — 아직 오지 않은 시간을 0건으로 그리지 않는다", () => {
+  const window7d = { startMs: 0, endMs: 7 * 24 * HOUR };
+
+  it("지금이 창 안이면 격자는 지금이 든 버킷의 끝에서 멈춘다", () => {
+    const now = 3 * 24 * HOUR + 25 * 60 * 1000; // 3일 00:25
+    expect(resolveGridRange(window7d, now, BUCKET_MS)).toEqual({
+      startMs: 0,
+      endMs: 3 * 24 * HOUR + 30 * 60 * 1000,
+    });
+  });
+
+  it("일 버킷이면 오늘 하루는 남긴다(오늘 막대가 사라지지 않게)", () => {
+    const now = 3 * 24 * HOUR + 5 * HOUR;
+    expect(resolveGridRange(window7d, now, DAY_BUCKET_MS)).toEqual({ startMs: 0, endMs: 4 * 24 * HOUR });
+  });
+
+  it("지금이 창 끝을 지났으면(마감 캠페인) 창 그대로다", () => {
+    expect(resolveGridRange(window7d, 30 * 24 * HOUR, BUCKET_MS)).toEqual(window7d);
+  });
+
+  it("지금이 창 시작보다 앞이어도 최소 한 버킷은 남긴다(0 폭 격자 방지)", () => {
+    expect(resolveGridRange(window7d, -5 * HOUR, BUCKET_MS)).toEqual({ startMs: 0, endMs: BUCKET_MS });
+  });
+});
+
+describe("clipPointsToRange — 미래 입력점이 격자를 다시 늘리지 않는다(GPT 최종검수 P2)", () => {
+  it("일별 모드: 종료일까지 오는 미래 0건 점을 잘라야 격자가 지금에서 멈춘다", () => {
+    const window7d = { startMs: 0, endMs: 7 * DAY_BUCKET_MS };
+    // 서버는 종료일까지 일별 행을 보낸다 — 미래 날은 주문 0.
+    const points = Array.from({ length: 7 }, (_, i) => ({ startMs: i * DAY_BUCKET_MS, orders: i < 3 ? 2 : 0, revenue: 0 }));
+    const now = 2 * DAY_BUCKET_MS + 5 * HOUR;
+    const range = resolveGridRange(window7d, now, DAY_BUCKET_MS);
+    // 자르지 않으면 densifyPoints 가 마지막 입력점까지 격자를 늘린다(재현된 결함).
+    expect(densifyPoints(points, DAY_BUCKET_MS, [], range)).toHaveLength(7);
+    const grid = densifyPoints(clipPointsToRange(points, range), DAY_BUCKET_MS, [], range);
+    expect(grid).toHaveLength(3);
+    expect(grid[grid.length - 1].startMs).toBeLessThan(range.endMs);
+  });
+
+  it("범위 안의 점은 그대로 둔다", () => {
+    const pts = [{ startMs: 0, orders: 1, revenue: 0 }, { startMs: BUCKET_MS, orders: 2, revenue: 0 }];
+    expect(clipPointsToRange(pts, { startMs: 0, endMs: 2 * BUCKET_MS })).toEqual(pts);
   });
 });

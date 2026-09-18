@@ -11,12 +11,15 @@ import {
   buildAnchoredCumulativeSeries,
   clusterMarkers,
   buildSumColumns,
+  clipPointsToRange,
   DAY_BUCKET_MS,
   densifyPoints,
   splitSegments,
   downsampleMax,
   panViewport,
+  RATE_FILL,
   resolveCumulativeScale,
+  resolveGridRange,
   resolveMinViewportMs,
   resolveRateScale,
   timeRatio,
@@ -28,7 +31,8 @@ import {
 
 export type IntradayPointInput = { startMs: number; orders: number; revenue: number };
 
-const PLOT_PADDING = { top: 10, right: 8, bottom: 20, left: 8 } as const;
+// left 30 = 막대 축 숫자 3개(0·중간·최대)의 자리다. 숫자는 최대 4자리를 10px 로 쓴다.
+const PLOT_PADDING = { top: 10, right: 8, bottom: 20, left: 30 } as const;
 const MARKER_RADIUS = 7;
 /** 마커가 곡선을 가리지 않도록 띄우는 높이(플롯 상단 기준 px). */
 const MARKER_TOP_OFFSET = 10;
@@ -66,6 +70,9 @@ export function formatTickLabel(ms: number, spanMs: number): string {
   return spanMs >= 24 * 60 * 60 * 1000 ? formatKstMonthDay(ms) : formatKstHm(ms);
 }
 
+/** 선택한 콘텐츠 묶음의 직전/직후 창 — 상위(반응 표)가 고른 줄 하나만 칠한다(자동 강조 아님). */
+export type ReactionHighlight = { beforeStartMs: number; pivotMs: number; afterEndMs: number };
+
 type Props = {
   points: IntradayPointInput[];
   events: ContentEvent[];
@@ -88,6 +95,9 @@ type Props = {
   cumulativeByDate: ReadonlyMap<string, number>;
   /** 버킷이 아직 없는 날짜(YYYY-MM-DD KST) — 그 구간은 0 으로 채우지 않고 **끊어서** 그린다. */
   daysWithoutBuckets?: string[];
+  /** 현재 시각(ms) — 상위가 데이터 수신 시점에 1회 잡아 넘긴다(렌더 중 Date.now() 금지). */
+  nowMs: number;
+  highlight?: ReactionHighlight | null;
   onViewportChange: (next: Viewport) => void;
   /** 마커(또는 클러스터) 선택 — 상위가 상세 목록을 편다. */
   onSelectEvents: (events: ContentEvent[]) => void;
@@ -143,6 +153,8 @@ export function IntradayOrderChart({
   bucketMs,
   cumulativeByDate,
   daysWithoutBuckets,
+  nowMs,
+  highlight,
   onViewportChange,
   onSelectEvents,
 }: Props) {
@@ -215,9 +227,14 @@ export function IntradayOrderChart({
 
   // 저장은 희소(주문 있는 칸만)지만 **그리기 전에 균일 격자로 편다** — 안 그러면 주문 없는
   // 시간대가 압축돼 곡선이 시각축과 어긋나고, 이동평균이 시간 간격을 건너뛴다(dev 실측).
+  // 격자는 **지금까지만** 편다 — 미래를 0 으로 채우면 누적선이 "주문이 멈췄다"로 읽힌다.
+  // 화면 범위(bounds)는 그대로라 지금 이후는 빈 채로 보인다.
+  const gridRange = useMemo(() => resolveGridRange(bounds, nowMs, bucketMs), [bounds, nowMs, bucketMs]);
   const grid = useMemo(
-    () => densifyPoints(points, bucketMs, daysWithoutBuckets ?? [], bounds),
-    [points, bucketMs, daysWithoutBuckets, bounds],
+    // 입력점도 지금에서 자른다 — densifyPoints 는 마지막 입력점까지 격자를 늘리므로 범위만
+    // 줄이면 일별 모드의 미래 0건 점이 다시 들어온다(clipPointsToRange 주석).
+    () => densifyPoints(clipPointsToRange(points, gridRange), bucketMs, daysWithoutBuckets ?? [], gridRange),
+    [points, bucketMs, daysWithoutBuckets, gridRange],
   );
   const startMsList = useMemo(() => grid.map((p) => p.startMs), [grid]);
   // 누적의 일 경계 정본은 서버 값이다 — 버킷 자체 누계는 「기록 없음」 구간을 흘린다.
@@ -247,7 +264,7 @@ export function IntradayOrderChart({
         : segments.map((seg) => {
             const segPoints = visiblePoints
               .slice(seg.from, seg.to)
-              .map((p) => ({ startMs: p.startMs, orders: p.orders as number }));
+              .map((p) => ({ startMs: p.startMs, orders: p.orders as number, revenue: p.revenue }));
             const target = Math.max(
               1,
               Math.floor((plot.width * (seg.to - seg.from)) / visiblePoints.length / 3),
@@ -321,6 +338,20 @@ export function IntradayOrderChart({
       ctx.stroke();
     }
 
+    // 선택한 콘텐츠의 직전(무채색)·직후(막대와 같은 색) 창. 막대 **뒤**에 깔아 막대를 가리지 않는다.
+    // 오너가 표에서 고른 줄 하나만 칠한다 — 급증 자동 강조는 오너가 기각했다(설계 v2).
+    if (highlight) {
+      const band = (fromMs: number, toMs: number, fill: string) => {
+        const x0 = Math.max(plot.x, toX(fromMs));
+        const x1 = Math.min(plot.x + plot.width, toX(toMs));
+        if (x1 <= x0) return;
+        ctx.fillStyle = fill;
+        ctx.fillRect(x0, plot.y, x1 - x0, plot.height);
+      };
+      band(highlight.beforeStartMs, highlight.pivotMs, "rgba(100, 116, 139, 0.10)");
+      band(highlight.pivotMs, highlight.afterEndMs, withAlpha(rateColor, 0.18));
+    }
+
     const strokeSegments = (
       bySegment: Array<{ seg: { from: number; to: number }; values: number[] }>,
       normalize: (v: number) => number,
@@ -392,6 +423,50 @@ export function IntradayOrderChart({
     }
     strokeSegments(cumulativeBySegment, cumulativeScale.normalize, cumulativeColor);
 
+    // 발행 마커 → 막대 세로 점선. "이 발행 직후에 막대가 솟았나"를 눈으로 세로 정렬하지 않게 한다.
+    // 호버 선([3,3]·α0.45)과 구분되게 더 성기고 옅다.
+    ctx.strokeStyle = "rgba(100, 116, 139, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    for (const cluster of markerClusters) {
+      const x = toX(cluster.timeMs);
+      if (x < plot.x || x > plot.x + plot.width) continue;
+      ctx.beginPath();
+      ctx.moveTo(x, plot.y + MARKER_TOP_OFFSET + MARKER_RADIUS * 2);
+      ctx.lineTo(x, plot.y + plot.height);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // 지금 선 — 그 오른쪽은 "0건"이 아니라 "아직 오지 않음"이다. 마감 캠페인(지금이 창 밖)은 안 그린다.
+    if (nowMs > viewport.startMs && nowMs < Math.min(viewport.endMs, bounds.endMs)) {
+      const x = toX(nowMs);
+      ctx.strokeStyle = tickColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, plot.y);
+      ctx.lineTo(x, plot.y + plot.height);
+      ctx.stroke();
+      ctx.fillStyle = tickColor;
+      ctx.font = "10px system-ui, -apple-system, sans-serif";
+      const nearRight = x > plot.x + plot.width - 28;
+      ctx.textAlign = nearRight ? "right" : "left";
+      ctx.fillText("지금", nearRight ? x - 4 : x + 4, plot.y + 10);
+    }
+
+    // 막대 축 숫자 3개(0 · 중간 · 최대). 누적선은 가시 구간 리스케일이라 눈금을 두지 않는다
+    // (수치는 툴팁이 답한다) — 이 숫자가 막대의 것임은 차트 아래 힌트 줄이 밝힌다.
+    const peak = rateScale.max * RATE_FILL;
+    if (peak >= 1) {
+      const labels = [...new Set([0, Math.round(peak / 2), Math.round(peak)])];
+      ctx.fillStyle = tickColor;
+      ctx.font = "10px system-ui, -apple-system, sans-serif";
+      ctx.textAlign = "right";
+      for (const value of labels) {
+        ctx.fillText(`${value}`, plot.x - 4, seriesY(rateScale.normalize(value)) + 3);
+      }
+    }
+
     // 기록 없는 구간 — "여기는 0 이 아니라 모른다"를 그림으로도 말한다. 연속 구간(run)으로
     // 묶어 그리고, 폭이 충분하면 라벨을 얹는다(외부 캡션 한 줄에만 의존하면 큰 공백이
     // 무주문으로 오독된다 — UX 리뷰 P2).
@@ -452,7 +527,7 @@ export function IntradayOrderChart({
       ctx.stroke();
       ctx.setLineDash([]);
     }
-  }, [view, viewport, plot, size, hover, toX, bucketMs]);
+  }, [view, viewport, plot, size, hover, toX, bucketMs, markerClusters, highlight, nowMs, bounds]);
 
   // ── 조작(휠 줌 · 드래그 팬 · 더블클릭 복귀) ───────────────────────────────
   // 버튼 줄은 두지 않는다(확정 설계 — 오너 지시). 발견성은 아래 힌트 한 줄이 담당한다.
@@ -511,6 +586,12 @@ export function IntradayOrderChart({
     if (plot.width <= 0) return;
     const ratio = (x - plot.x) / plot.width;
     const timeMs = viewport.startMs + ratio * (viewport.endMs - viewport.startMs);
+    // 지금 이후에는 격자가 없다 — nearestIndex 가 마지막 점을 돌려줘 미래 위치에서 과거 값의
+    // 툴팁이 뜬다(그 시각의 값인 것처럼 읽힌다).
+    if (timeMs >= gridRange.endMs) {
+      setHover(null);
+      return;
+    }
     const index = nearestIndex(startMsList, timeMs);
     setHover(index === -1 ? null : { x, index });
   };
@@ -603,7 +684,7 @@ export function IntradayOrderChart({
             /* 툴팁은 elevation 사다리에서 overlay 층이다(P8) — 포털이 아니라 캔버스 위
                절대위치지만 "페이지 흐름과 분리돼 항상 단독으로 뜨는 레이어"라는 정의에 부합한다. */
             className="pointer-events-none absolute top-2 rounded-lg border border-black/5 bg-white px-3 py-2 text-xs shadow-overlay"
-            style={{ left: Math.min(Math.max(0, hover!.x - 60), Math.max(0, size.width - 140)) }}
+            style={{ left: Math.min(Math.max(0, hover!.x - 60), Math.max(0, size.width - 160)) }}
           >
             <p className="mb-0.5 font-semibold text-[var(--primary)]">
               {formatKstMonthDay(hoveredPoint.startMs)}
@@ -628,6 +709,14 @@ export function IntradayOrderChart({
                     {isDaily ? "일별" : "10분"} 주문 {hoveredPoint.orders}건
                   </p>
                 )}
+                <p className="text-muted-foreground">
+                  매출{" "}
+                  {(hoveredColumnIsAggregate && hoveredColumn
+                    ? hoveredColumn.revenue
+                    : hoveredPoint.revenue
+                  ).toLocaleString()}
+                  원
+                </p>
                 <p className="text-muted-foreground">누적 {hoveredCumulative ?? "—"}건</p>
               </>
             )}
@@ -636,7 +725,7 @@ export function IntradayOrderChart({
       </div>
 
       <p className="text-[11px] text-slate-500">
-        휠로 확대·축소 · 드래그로 이동 · 더블클릭으로 전체 보기
+        휠로 확대·축소 · 드래그로 이동 · 더블클릭으로 전체 보기 · 왼쪽 숫자 = 막대 1개의 주문 수
       </p>
     </div>
   );
