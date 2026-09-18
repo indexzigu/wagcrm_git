@@ -17,8 +17,10 @@ import { describe, expect, it } from "vitest";
  * jsdom 은 svh·레이아웃을 모르므로 소스 계약으로 고정한다.
  */
 
+// 블록 주석 제거가 JSX `{/* */}` 주석도 함께 걷는다(`{}` 만 남는다) — 주석이 `md:h-svh` 를
+// 인용해도 스캔에 잡히지 않는다.
 const strip = (raw: string) =>
-  raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 const read = (p: string) => strip(readFileSync(join(process.cwd(), p), "utf8"));
 
 const classAttrs = (src: string) => [...src.matchAll(/className="([^"]*)"/g)].map((m) => m[1]);
