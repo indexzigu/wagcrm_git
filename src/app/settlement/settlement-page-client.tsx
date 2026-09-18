@@ -455,7 +455,7 @@ interface CsvRow {
       loading={loading}
     />
   ) : (
-    <div className="flex min-h-0 w-full flex-1 flex-col overflow-auto px-5 pb-5 pt-5 md:px-8">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-auto px-5 pb-5 pt-5 [scrollbar-gutter:stable] md:px-8">
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
         <div className="flex shrink-0 items-center gap-1.5">
           <TrendingUp className="size-3.5 text-muted-foreground" />
