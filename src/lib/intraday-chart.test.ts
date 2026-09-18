@@ -19,6 +19,7 @@ import {
   resolveMinViewportMs,
   RATE_FILL,
   resolveCumulativeScale,
+  resolveGridRange,
   resolveRateScale,
   timeRatio,
   visibleIndexRange,
@@ -407,7 +408,7 @@ describe("막대 열 집계(buildSumColumns) — 절대 활동량 보존", () =>
   it("점이 목표보다 적으면 버킷 그대로 1:1 (폭 = 버킷 폭)", () => {
     const cols = buildSumColumns(pts([2, 3]), 10);
     expect(cols).toHaveLength(2);
-    expect(cols[0]).toEqual({ startMs: 0, endMs: BUCKET_MS, orders: 2 });
+    expect(cols[0]).toEqual({ startMs: 0, endMs: BUCKET_MS, orders: 2, revenue: 0 });
   });
 
   it("열의 시간 범위가 이어진다(빈 화면 틈 없음)", () => {
@@ -450,5 +451,46 @@ describe("densifyPoints range — 버킷보다 넓은 창", () => {
     const start = Date.parse("2026-07-12T00:00:00+09:00");
     const dense = densifyPoints([], BUCKET_MS, [], { startMs: start, endMs: start + 3 * BUCKET_MS });
     expect(dense).toHaveLength(3);
+  });
+});
+
+describe("막대 열 집계 — 매출도 합산으로 보존된다", () => {
+  it("열 매출 합의 총합 = 원본 매출 총합", () => {
+    const points = Array.from({ length: 100 }, (_, i) => ({
+      startMs: i * BUCKET_MS,
+      orders: i % 3,
+      revenue: (i % 3) * 12000,
+    }));
+    const columns = buildSumColumns(points, 17);
+    expect(columns.reduce((s, c) => s + c.revenue, 0)).toBe(points.reduce((s, p) => s + p.revenue, 0));
+  });
+
+  it("revenue 가 없는 입력은 0 으로 센다", () => {
+    expect(buildSumColumns([{ startMs: 0, orders: 2 }], 5)[0].revenue).toBe(0);
+  });
+});
+
+describe("resolveGridRange — 아직 오지 않은 시간을 0건으로 그리지 않는다", () => {
+  const window7d = { startMs: 0, endMs: 7 * 24 * HOUR };
+
+  it("지금이 창 안이면 격자는 지금이 든 버킷의 끝에서 멈춘다", () => {
+    const now = 3 * 24 * HOUR + 25 * 60 * 1000; // 3일 00:25
+    expect(resolveGridRange(window7d, now, BUCKET_MS)).toEqual({
+      startMs: 0,
+      endMs: 3 * 24 * HOUR + 30 * 60 * 1000,
+    });
+  });
+
+  it("일 버킷이면 오늘 하루는 남긴다(오늘 막대가 사라지지 않게)", () => {
+    const now = 3 * 24 * HOUR + 5 * HOUR;
+    expect(resolveGridRange(window7d, now, DAY_BUCKET_MS)).toEqual({ startMs: 0, endMs: 4 * 24 * HOUR });
+  });
+
+  it("지금이 창 끝을 지났으면(마감 캠페인) 창 그대로다", () => {
+    expect(resolveGridRange(window7d, 30 * 24 * HOUR, BUCKET_MS)).toEqual(window7d);
+  });
+
+  it("지금이 창 시작보다 앞이어도 최소 한 버킷은 남긴다(0 폭 격자 방지)", () => {
+    expect(resolveGridRange(window7d, -5 * HOUR, BUCKET_MS)).toEqual({ startMs: 0, endMs: BUCKET_MS });
   });
 });

@@ -367,7 +367,7 @@ export function splitSegments(grid: GridPoint[]): Array<{ from: number; to: numb
   return segments;
 }
 
-export type SumColumn = { startMs: number; endMs: number; orders: number };
+export type SumColumn = { startMs: number; endMs: number; orders: number; revenue: number };
 
 /**
  * 막대용 열 집계 — 버킷들을 화면 열(≈3px)로 접되 **합산**한다.
@@ -378,13 +378,18 @@ export type SumColumn = { startMs: number; endMs: number; orders: number };
  * "보이는 막대의 합 = 그 구간 주문 합"이 어느 배율에서도 성립한다.
  */
 export function buildSumColumns(
-  points: Array<{ startMs: number; orders: number }>,
+  points: Array<{ startMs: number; orders: number; revenue?: number }>,
   targetCount: number,
   bucketMs: number = BUCKET_MS,
 ): SumColumn[] {
   if (points.length === 0 || targetCount <= 0) return [];
   if (points.length <= targetCount) {
-    return points.map((p) => ({ startMs: p.startMs, endMs: p.startMs + bucketMs, orders: p.orders }));
+    return points.map((p) => ({
+      startMs: p.startMs,
+      endMs: p.startMs + bucketMs,
+      orders: p.orders,
+      revenue: p.revenue ?? 0,
+    }));
   }
   const out: SumColumn[] = [];
   const step = points.length / targetCount;
@@ -398,8 +403,12 @@ export function buildSumColumns(
         ? points.length
         : Math.max(from + 1, Math.min(points.length, Math.floor((i + 1) * step)));
     let orders = 0;
-    for (let j = from; j < to; j += 1) orders += points[j].orders;
-    out.push({ startMs: points[from].startMs, endMs: points[to - 1].startMs + bucketMs, orders });
+    let revenue = 0;
+    for (let j = from; j < to; j += 1) {
+      orders += points[j].orders;
+      revenue += points[j].revenue ?? 0;
+    }
+    out.push({ startMs: points[from].startMs, endMs: points[to - 1].startMs + bucketMs, orders, revenue });
   }
   return out;
 }
@@ -423,4 +432,21 @@ export function visibleIndexRange(
   if (to === -1) to = startMsList.length;
   to = Math.min(startMsList.length, to + 1);
   return { from, to: Math.max(from + 1, to) };
+}
+
+/**
+ * 격자를 펼 범위 — 창 전체가 아니라 **지금까지**다.
+ *
+ * 창은 캠페인 종료일까지라 진행 중 캠페인에서는 미래를 포함한다. 그 구간을 0 으로 채우면
+ * 누적선이 평평하게 이어져 "주문이 멈췄다"로 읽힌다(오너 스크린샷 2026-09-18) — 아직 오지
+ * 않은 것과 안 팔린 것은 다르다. 화면 범위(bounds)는 그대로 두고 **격자만** 지금에서 끊는다.
+ * 끝은 지금이 든 버킷의 끝이다(일 버킷이면 오늘 막대가 남는다).
+ */
+export function resolveGridRange(bounds: Viewport, nowMs: number, bucketMs: number): Viewport {
+  if (nowMs >= bounds.endMs) return bounds;
+  const bucketsElapsed = Math.max(1, Math.ceil((nowMs - bounds.startMs) / bucketMs));
+  return {
+    startMs: bounds.startMs,
+    endMs: Math.min(bounds.endMs, bounds.startMs + bucketsElapsed * bucketMs),
+  };
 }
