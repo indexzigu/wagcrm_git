@@ -58,6 +58,15 @@ describe("ContentReactionTable", () => {
     expect(screen.getByText("앞뒤 3시간 안에 다른 콘텐츠 2건")).toBeInTheDocument();
   });
 
+  it("그룹 합산이면 건수가 겹쳐 셀 수 있다고 밝힌다(버킷은 멤버별 합이라 결제 중복 제거 불가)", () => {
+    const { rerender } = render(
+      <ContentReactionTable rows={[row()]} selectedKey={null} onSelect={() => {}} countsMayOverlap />,
+    );
+    expect(screen.getByText(/한 결제가 여러 회차 상품을 담으면 건수가 겹쳐/)).toBeInTheDocument();
+    rerender(<ContentReactionTable rows={[row()]} selectedKey={null} onSelect={() => {}} />);
+    expect(screen.queryByText(/건수가 겹쳐/)).not.toBeInTheDocument();
+  });
+
   it("직후가 '기록 없음'이면 진행바를 렌더하지 않는다(폭 0%는 실제 0건과 구분되지 않는다)", () => {
     const { container } = render(
       <ContentReactionTable rows={[row({ after: null })]} selectedKey={null} onSelect={() => {}} />,

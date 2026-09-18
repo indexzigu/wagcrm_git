@@ -450,3 +450,13 @@ export function resolveGridRange(bounds: Viewport, nowMs: number, bucketMs: numb
     endMs: Math.min(bounds.endMs, bounds.startMs + bucketsElapsed * bucketMs),
   };
 }
+
+/**
+ * 격자 범위 밖의 입력점을 버린다 — `densifyPoints` 는 range 와 **마지막 입력점 중 늦은 쪽**까지
+ * 격자를 편다. 그래서 `resolveGridRange` 로 범위만 줄이면 일별 모드에서 서버가 종료일까지 보내는
+ * 미래 0건 점이 격자를 다시 늘린다(GPT 최종검수 P2, 합성 데이터로 재현). 두 함수는 이 순서로
+ * 함께 써야 한다: `densifyPoints(clipPointsToRange(points, range), …, range)`.
+ */
+export function clipPointsToRange<T extends { startMs: number }>(points: T[], range: Viewport): T[] {
+  return points.filter((p) => p.startMs < range.endMs);
+}

@@ -519,6 +519,7 @@ export function ContentOrderTimeline({ campaignId }: { campaignId: string }) {
             rows={reactionRows}
             selectedKey={selectedReactionKey}
             onSelect={handleSelectReaction}
+            countsMayOverlap={scope?.kind === "group"}
           />
           {selectedEvents && <IntradayEventList events={selectedEvents} />}
           {/* 시간대 보조뷰(C-1)는 인트라데이 전용이다 — 일 버킷에는 시간 정보가 없다. */}

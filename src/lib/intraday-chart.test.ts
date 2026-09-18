@@ -20,6 +20,7 @@ import {
   RATE_FILL,
   resolveCumulativeScale,
   resolveGridRange,
+  clipPointsToRange,
   resolveRateScale,
   timeRatio,
   visibleIndexRange,
@@ -492,5 +493,25 @@ describe("resolveGridRange — 아직 오지 않은 시간을 0건으로 그리�
 
   it("지금이 창 시작보다 앞이어도 최소 한 버킷은 남긴다(0 폭 격자 방지)", () => {
     expect(resolveGridRange(window7d, -5 * HOUR, BUCKET_MS)).toEqual({ startMs: 0, endMs: BUCKET_MS });
+  });
+});
+
+describe("clipPointsToRange — 미래 입력점이 격자를 다시 늘리지 않는다(GPT 최종검수 P2)", () => {
+  it("일별 모드: 종료일까지 오는 미래 0건 점을 잘라야 격자가 지금에서 멈춘다", () => {
+    const window7d = { startMs: 0, endMs: 7 * DAY_BUCKET_MS };
+    // 서버는 종료일까지 일별 행을 보낸다 — 미래 날은 주문 0.
+    const points = Array.from({ length: 7 }, (_, i) => ({ startMs: i * DAY_BUCKET_MS, orders: i < 3 ? 2 : 0, revenue: 0 }));
+    const now = 2 * DAY_BUCKET_MS + 5 * HOUR;
+    const range = resolveGridRange(window7d, now, DAY_BUCKET_MS);
+    // 자르지 않으면 densifyPoints 가 마지막 입력점까지 격자를 늘린다(재현된 결함).
+    expect(densifyPoints(points, DAY_BUCKET_MS, [], range)).toHaveLength(7);
+    const grid = densifyPoints(clipPointsToRange(points, range), DAY_BUCKET_MS, [], range);
+    expect(grid).toHaveLength(3);
+    expect(grid[grid.length - 1].startMs).toBeLessThan(range.endMs);
+  });
+
+  it("범위 안의 점은 그대로 둔다", () => {
+    const pts = [{ startMs: 0, orders: 1, revenue: 0 }, { startMs: BUCKET_MS, orders: 2, revenue: 0 }];
+    expect(clipPointsToRange(pts, { startMs: 0, endMs: 2 * BUCKET_MS })).toEqual(pts);
   });
 });

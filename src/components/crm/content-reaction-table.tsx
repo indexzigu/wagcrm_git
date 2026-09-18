@@ -40,10 +40,18 @@ export function ContentReactionTable({
   rows,
   selectedKey,
   onSelect,
+  countsMayOverlap = false,
 }: {
   rows: Row[];
   selectedKey: string | null;
   onSelect: (row: Row | null) => void;
+  /**
+   * 그룹 통합 스코프인가 — 그룹의 10분 버킷은 멤버별 값을 **합산**만 하므로(버킷은 키가 아니라
+   * 카운트를 담는다, `composeIntradayFromAggregates` 주석) 한 결제가 여러 회차 상품을 담으면 건수가
+   * 겹쳐 센다. 결제 단위 distinct(P7 주문건수 정본)가 아니므로 그 사실을 밝힌다(GPT 최종검수 P2).
+   * 매출은 상품별로 한 회차에만 속해 겹치지 않는다.
+   */
+  countsMayOverlap?: boolean;
 }) {
   if (rows.length === 0) return null;
   const peak = Math.max(1, ...rows.map((r) => r.after?.orders ?? 0));
@@ -122,6 +130,8 @@ export function ContentReactionTable({
         1시간 안에 올린 콘텐츠는 한 줄로 묶습니다. 아침 발행은 직전이 새벽이라 차이가 크게 보일 수
         있고, 다른 콘텐츠와 겹친 줄은 같은 주문이 양쪽에 잡힙니다. 줄을 누르면 차트에서 그 구간을
         보여줍니다.
+        {countsMayOverlap &&
+          " 그룹 합산이라 한 결제가 여러 회차 상품을 담으면 건수가 겹쳐 셀 수 있습니다(매출은 겹치지 않습니다)."}
       </p>
     </div>
   );

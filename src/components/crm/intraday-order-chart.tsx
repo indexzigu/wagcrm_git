@@ -11,6 +11,7 @@ import {
   buildAnchoredCumulativeSeries,
   clusterMarkers,
   buildSumColumns,
+  clipPointsToRange,
   DAY_BUCKET_MS,
   densifyPoints,
   splitSegments,
@@ -230,7 +231,9 @@ export function IntradayOrderChart({
   // 화면 범위(bounds)는 그대로라 지금 이후는 빈 채로 보인다.
   const gridRange = useMemo(() => resolveGridRange(bounds, nowMs, bucketMs), [bounds, nowMs, bucketMs]);
   const grid = useMemo(
-    () => densifyPoints(points, bucketMs, daysWithoutBuckets ?? [], gridRange),
+    // 입력점도 지금에서 자른다 — densifyPoints 는 마지막 입력점까지 격자를 늘리므로 범위만
+    // 줄이면 일별 모드의 미래 0건 점이 다시 들어온다(clipPointsToRange 주석).
+    () => densifyPoints(clipPointsToRange(points, gridRange), bucketMs, daysWithoutBuckets ?? [], gridRange),
     [points, bucketMs, daysWithoutBuckets, gridRange],
   );
   const startMsList = useMemo(() => grid.map((p) => p.startMs), [grid]);
