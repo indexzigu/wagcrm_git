@@ -27,6 +27,7 @@ describe('heuristicFieldForHeader (동의어 사전)', () => {
     expect(heuristicFieldForHeader('수취인 연락처')).toBe('수취인연락처1');
     expect(heuristicFieldForHeader('운임')).toBe('배송비');
     expect(heuristicFieldForHeader('메세지')).toBe('배송메시지');
+    expect(heuristicFieldForHeader('특기사항')).toBe('배송메시지'); // 화이트랩스 양식
     expect(heuristicFieldForHeader('품목')).toBe('옵션정보');
     expect(heuristicFieldForHeader('자체코드')).toBe('상품코드');
   });
