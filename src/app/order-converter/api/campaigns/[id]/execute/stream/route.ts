@@ -18,6 +18,7 @@ import {
 } from '@/lib/order-converter/naver-api-usage';
 import { fetchPendingOrderWindow, PENDING_FULFILLMENT_STATUSES } from '@/lib/order-converter/order-fetch-window';
 import { resolveCampaignQueryStartMs } from '@/lib/order-converter/mapping-service';
+import { resolveShippingMemo } from '@/lib/order-converter/shipping-memo';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 
 // 주문확인 1클릭이 전체기간 재조회→발주확인→스냅샷 반영→엑셀 생성을 한 함수에서 수행 —
@@ -239,7 +240,7 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
               옵션정보: oName,
               수량: order.quantity || 1,
               배송비: order.shippingFee || '0',
-              배송메시지: order.shippingAddress?.shippingMemo || '',
+              배송메시지: resolveShippingMemo(order, orderWrapper.order),
               사은품: '',
               _placeOrderStatus: order.placeOrderStatus
             });
@@ -269,7 +270,7 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
             옵션정보: order.productOption || '',
             수량: order.quantity || 1,
             배송비: order.shippingFee || '0',
-            배송메시지: order.shippingAddress?.shippingMemo || '',
+            배송메시지: resolveShippingMemo(order, orderWrapper.order),
             사은품: '',
             _placeOrderStatus: order.placeOrderStatus
           });

@@ -19,6 +19,7 @@ import {
 } from '@/lib/order-converter/naver-api-usage';
 import { fetchPendingOrderWindow, PENDING_FULFILLMENT_STATUSES } from '@/lib/order-converter/order-fetch-window';
 import { resolveCampaignQueryStartMs } from '@/lib/order-converter/mapping-service';
+import { resolveShippingMemo } from '@/lib/order-converter/shipping-memo';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 
 // 발주요청(이메일 첨부) 경로도 이 라우트를 사용 — 전체기간 재조회+발주확인+엑셀 생성이
@@ -221,7 +222,7 @@ async function handleExecuteGet(request: NextRequest, { params }: { params: Prom
           옵션정보: oName,
           수량: order.quantity || 1,
           배송비: order.shippingFee || '0',
-          배송메시지: order.shippingAddress?.shippingMemo || '',
+          배송메시지: resolveShippingMemo(order, orderWrapper.order),
           사은품: '',
           _placeOrderStatus: order.placeOrderStatus
         });
@@ -256,7 +257,7 @@ async function handleExecuteGet(request: NextRequest, { params }: { params: Prom
         옵션정보: order.productOption || '',
         수량: order.quantity || 1,
         배송비: order.shippingFee || '0',
-        배송메시지: order.shippingAddress?.shippingMemo || '',
+        배송메시지: resolveShippingMemo(order, orderWrapper.order),
         사은품: '',
         _placeOrderStatus: order.placeOrderStatus
       });
