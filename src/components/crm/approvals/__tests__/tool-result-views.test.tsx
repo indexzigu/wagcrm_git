@@ -6,8 +6,8 @@
  * data는 unknown으로 받아 런타임 가드(필수 필드 존재 체크) 후 렌더하므로,
  * 필드가 없거나 null인 경우 컴포넌트가 null을 반환하는지도 함께 검증한다.
  */
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { TOOL_RESULT_RENDERERS, TOOL_RESULT_GUARD_NAMES } from "../tool-result-views";
 import type {
   GetSettlementReportData,
@@ -85,144 +85,6 @@ describe("get_settlement_report 뷰", () => {
   it("필수 필드(summary)가 없으면 렌더하지 않는다", () => {
     const { container } = render(<View data={{ period: "2026-07" }} />);
     expect(container.firstChild).toBeNull();
-  });
-});
-
-// 청사진 §7-2/§7-3: 정산 리포트 캠페인 행 액션(상태별 기안 요청 퀵액션).
-describe("get_settlement_report 뷰 — 행 액션 (§7-2)", () => {
-  const View = TOOL_RESULT_RENDERERS["get_settlement_report"];
-
-  function dataWithState(state: "pending" | "confirmed" | "paid"): GetSettlementReportData {
-    return {
-      period: "2026-07",
-      summary: { totalRevenue: 1000000, totalMargin: 200000, totalSellerPayouts: 300000, campaignCount: 1 },
-      campaigns: [
-        {
-          id: "camp1",
-          dealName: "락토핏 골드",
-          brandName: "락토핏",
-          sellerName: "셀러A",
-          actualSales: 1000000,
-          sellerPayoutAmount: 300000,
-          netMarginAmount: 200000,
-          state,
-          isDepositReceived: state !== "pending",
-          isPayoutCompleted: state === "paid",
-          depositReceivedAt: state !== "pending" ? "2026-07-10T00:00:00Z" : null,
-          payoutCompletedAt: state === "paid" ? "2026-07-15T00:00:00Z" : null,
-        },
-      ],
-      stateCounts: { pending: 0, confirmed: 0, paid: 0, [state]: 1 } as Record<
-        GetSettlementReportData["campaigns"][number]["state"],
-        number
-      >,
-    };
-  }
-
-  it("state=pending이면 [입금확정 기안] 버튼을 렌더한다", () => {
-    render(<View data={dataWithState("pending")} onQuickAction={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "입금확정 기안" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "지급완료 기안" })).not.toBeInTheDocument();
-  });
-
-  it("state=confirmed이면 [지급완료 기안] 버튼을 렌더한다", () => {
-    render(<View data={dataWithState("confirmed")} onQuickAction={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "지급완료 기안" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "입금확정 기안" })).not.toBeInTheDocument();
-  });
-
-  it("state=paid이면 버튼이 없다", () => {
-    render(<View data={dataWithState("paid")} onQuickAction={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: "입금확정 기안" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "지급완료 기안" })).not.toBeInTheDocument();
-  });
-
-  it("onQuickAction 미제공 시 pending 행이라도 버튼이 렌더되지 않는다", () => {
-    render(<View data={dataWithState("pending")} />);
-    expect(screen.queryByRole("button", { name: "입금확정 기안" })).not.toBeInTheDocument();
-  });
-
-  it("[입금확정 기안] 클릭 시 dealName+ID 포함 문장으로 onQuickAction을 호출한다", () => {
-    const onQuickAction = vi.fn();
-    render(<View data={dataWithState("pending")} onQuickAction={onQuickAction} />);
-    fireEvent.click(screen.getByRole("button", { name: "입금확정 기안" }));
-    expect(onQuickAction).toHaveBeenCalledWith(
-      '"락토핏 골드" 캠페인(ID: camp1)의 정산 입금확정 처리를 기안해줘'
-    );
-  });
-
-  it("[지급완료 기안] 클릭 시 dealName+ID 포함 문장으로 onQuickAction을 호출한다", () => {
-    const onQuickAction = vi.fn();
-    render(<View data={dataWithState("confirmed")} onQuickAction={onQuickAction} />);
-    fireEvent.click(screen.getByRole("button", { name: "지급완료 기안" }));
-    expect(onQuickAction).toHaveBeenCalledWith(
-      '"락토핏 골드" 캠페인(ID: camp1)의 정산 지급완료 처리를 기안해줘'
-    );
-  });
-});
-
-// 청사진 §7-3: 다른 4개 뷰는 onQuickAction prop을 받아도 무동작(버튼 없음) — presentational
-// 순수성 확인. prop을 넘겨도 회귀 없이 기존 렌더 그대로 유지되는지 검증한다.
-describe("다른 4개 뷰 — onQuickAction prop 통과만(무동작)", () => {
-  it("search_deals 뷰는 onQuickAction을 받아도 버튼을 렌더하지 않는다", () => {
-    const View = TOOL_RESULT_RENDERERS["search_deals"];
-    const sampleData: SearchDealsData = {
-      items: [
-        {
-          id: "deal1",
-          dealName: "락토핏 골드",
-          brandName: "락토핏",
-          status: "NEGOTIATING",
-          sellingPrice: 10000,
-          costPrice: 5000,
-          partnerName: "파트너A",
-          updatedAt: "2026-07-01T00:00:00Z",
-        },
-      ],
-      count: 1,
-      truncated: false,
-    };
-    render(<View data={sampleData} onQuickAction={vi.fn()} />);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-  });
-
-  it("get_pipeline_status 뷰는 onQuickAction을 받아도 버튼을 렌더하지 않는다", () => {
-    const View = TOOL_RESULT_RENDERERS["get_pipeline_status"];
-    const sampleData: GetPipelineStatusData = {
-      statusCounts: [{ status: "ACTIVE", count: 3 }],
-      totalCount: 3,
-      campaigns: [],
-    };
-    render(<View data={sampleData} onQuickAction={vi.fn()} />);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-  });
-
-  it("get_campaign_financials 뷰는 onQuickAction을 받아도 버튼을 렌더하지 않는다", () => {
-    const View = TOOL_RESULT_RENDERERS["get_campaign_financials"];
-    const sampleData: GetCampaignFinancialsData = {
-      campaignId: "camp1",
-      dealName: "락토핏 골드",
-      sellerName: "셀러A",
-      status: "ACTIVE",
-      actualSales: 1000000,
-      derived: { settlementSales: 900000, sellerExpense: 300000, taxExpense: 30000, operatingProfit: 570000 },
-      isDepositReceived: false,
-      isPayoutCompleted: false,
-    };
-    render(<View data={sampleData} onQuickAction={vi.fn()} />);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
-  });
-
-  it("get_order_snapshot 뷰는 onQuickAction을 받아도 버튼을 렌더하지 않는다", () => {
-    const View = TOOL_RESULT_RENDERERS["get_order_snapshot"];
-    const sampleData: GetOrderSnapshotData = {
-      days: [
-        { snapshotDate: "2026-07-01", ordersCount: 10, newOrdersCount: 3, preparingCount: 2, deliveringCount: 5, lastCallTime: "2026-07-01T09:00:00Z" },
-      ],
-      totals: { ordersCount: 10, newOrdersCount: 3, preparingCount: 2, deliveringCount: 5 },
-    };
-    render(<View data={sampleData} onQuickAction={vi.fn()} />);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
 

@@ -65,10 +65,10 @@ async function fetchProposal(id: string): Promise<ProposalDetail> {
  * 상태 칩 6종 (§1-2 표). EXECUTED+executedBy==="AGENT"만 특수 라벨.
  *
  * ⛔ **「완료」는 `status-success` 다 — `status-active`(브랜드 네이비)로 되돌리지 말 것**
- * (오너 승인 2026-08-26). 이 주석이 비서 표면 4개 파일의 **어휘 정본**이다:
- * `components/crm/approvals/approval-cards`(완료 카드, Plan 2 Task 3에서 이 디렉터리로 이동) ·
- * `evidence-table`(조회 완료) · `tool-result-views`(입금/지급 완료) 가 이 표의 관례를
- * 재사용한다 — 값은 여기 한 곳에만 적는다.
+ * (오너 승인 2026-08-26). 이 주석이 결재함 표면 3개 파일의 **어휘 정본**이다:
+ * `components/crm/approvals/approval-cards`(완료 카드) · `tool-result-views`(입금/지급 완료)
+ * 가 이 표의 관례를 재사용한다 — 값은 여기 한 곳에만 적는다(채팅 전용이던
+ * `evidence-table` 은 은퇴).
  *
  * 근거 두 겹:
  * ① P8 §4 는 브랜드 네이비 틴트를 "5개 의미축의 hue 가 아니라 **중립 태그 캐리어**"로만

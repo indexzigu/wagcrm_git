@@ -7,6 +7,9 @@
 --
 -- 드롭 전 프로덕션 백업 완료(읽기 전용, 2026-09-23 — 행 수는 로컬 백업 파일 참조):
 -- docs/private/backups/assistant-chat-20260923.json (모드 L, 미추적).
+-- 롤백 주의: 코드 제거와 이 DROP 이 같은 배포에 실린다. 이 배포 이전 체크아웃으로 되돌리면
+-- 채팅 코드가 없는 표를 읽어 /assistant · /api/assistant 가 500 이 난다 — 되돌려야 하면
+-- 위 백업으로 두 표를 먼저 되살린다(스키마는 이 마이그레이션 직전 상태).
 --
 -- 자식(FK 보유) 표를 먼저 드롭한다 — AssistantChatMessage.conversationId 가
 -- AssistantConversation 을 참조하므로 순서를 뒤집으면 의존성 오류가 난다.
