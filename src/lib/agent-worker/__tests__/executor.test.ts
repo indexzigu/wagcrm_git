@@ -1161,9 +1161,10 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
   });
 
   it("get_pipeline_status records the tool data and its evidence dataSources", async () => {
+    const pipelineData = { totalCount: 2, statusCounts: [{ status: "ACTIVE", count: 2 }], campaigns: [{ id: "c1" }, { id: "c2" }] };
     pipelineMock.mockResolvedValue({
       ok: true,
-      data: { totalCount: 2, statusCounts: [{ status: "ACTIVE", count: 2 }], campaigns: [{ id: "c1" }, { id: "c2" }] },
+      data: pipelineData,
       evidence: { dataSources: ["SalesCampaign"], query: {} },
     });
     const outcome = await executeAgentJob(job("get_pipeline_status", {}), deps(accepted("python")));
@@ -1171,6 +1172,8 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
     expect(data).toMatchObject({ title: "파이프라인 현황 총 2건", dataSources: ["SalesCampaign"] });
     expect(data.structuredResult).toMatchObject({ operation: "get_pipeline_status", data: { totalCount: 2 } });
+    // 스펙 §5: 저장 필드 = 도구 반환 필드 그대로(추가 노출 0) — 부분 일치가 아니라 정확 일치로 고정
+    expect((data.structuredResult as { data: unknown }).data).toEqual(pipelineData);
   });
 
   it("get_campaign_financials records the projected campaign and derived numbers", async () => {
@@ -1183,9 +1186,10 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
   });
 
   it("get_order_snapshot (window) records the tool data", async () => {
+    const snapshotData = { days: [{ snapshotDate: "2026-09-01", ordersCount: 3 }], totals: { ordersCount: 3 } };
     snapshotMock.mockResolvedValue({
       ok: true,
-      data: { days: [{ snapshotDate: "2026-09-01", ordersCount: 3 }], totals: { ordersCount: 3 } },
+      data: snapshotData,
       evidence: { dataSources: ["NaverOrderSnapshot"], query: { startDate: "2026-09-01", endDate: "2026-09-02" } },
     });
     const outcome = await executeAgentJob(
@@ -1195,6 +1199,8 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     expect(outcome).toMatchObject({ kind: "terminal", result: { actionProposalId: "read-1" } });
     const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
     expect(data).toMatchObject({ title: "주문 스냅샷 2026-09-01~2026-09-02", dataSources: ["NaverOrderSnapshot"] });
+    // 스펙 §5: 저장 필드 = 도구 반환 필드 그대로(추가 노출 0) — 부분 일치가 아니라 정확 일치로 고정
+    expect((data.structuredResult as { data: unknown }).data).toEqual(snapshotData);
   });
 
   it("get_order_snapshot (campaign) records window and detail", async () => {
@@ -1327,6 +1333,8 @@ describe("get_settlement_report (spec §3-E)", () => {
         campaigns: [expect.objectContaining({ id: "c1" }), expect.objectContaining({ id: "c2" })],
       },
     });
+    // 스펙 §5: 저장 필드 = 도구 반환 필드 그대로(추가 노출 0) — 부분 일치가 아니라 정확 일치로 고정
+    expect((data.structuredResult as { data: unknown }).data).toEqual(reportData);
   });
 
   it("maps the tool's NOT_FOUND (no campaigns) to an empty SUCCEEDED result that is still recorded", async () => {
