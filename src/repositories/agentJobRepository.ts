@@ -468,6 +468,22 @@ export class AgentJobRepository {
     const job = await getPrisma().agentJob.findUnique({ where: { id } });
     return job ? normalizeAgentJob(job) : null;
   }
+
+  /**
+   * 결재함 「봇 활동」 탭 — 최신순, 커서(before), 성공 행은 기본 제외(중복 사건: 성공은
+   * 조회 결과·기안 탭에 이미 있다).
+   */
+  static async listRecent(input: { before?: Date; includeSucceeded: boolean; take: number }) {
+    const rows = await getPrisma().agentJob.findMany({
+      where: {
+        ...(input.includeSucceeded ? {} : { status: { not: "SUCCEEDED" } }),
+        ...(input.before ? { createdAt: { lt: input.before } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: input.take,
+    });
+    return rows.map(normalizeAgentJob);
+  }
 }
 
 export type AgentJobTransactionClient = Prisma.TransactionClient;
