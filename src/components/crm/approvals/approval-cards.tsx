@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Loader2Icon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,16 +44,44 @@ function formatDateTime(value: string): string {
   }
 }
 
+/**
+ * 상세(`/approvals/[id]`)로 가는 끈 (Plan 2 Task 5, 설계 §3-B 「카드 제목 링크」).
+ *
+ * ⛔ 카드 전체(`<li>`)를 링크로 감싸지 말 것 — 이 카드들 안에는 승인·반려·재시도
+ * 버튼이 있다. 링크 안의 버튼은 클릭이 어느 쪽으로 갈지 사람도 브라우저도 헷갈린다
+ * (조회 결과 카드는 버튼이 없어서 카드 전체를 링크로 둘 수 있었다 — 여기는 다르다).
+ */
+function DetailLink({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={`/approvals/${id}`}
+      className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+    >
+      {children}
+    </Link>
+  );
+}
+
 function PayloadSummary({ item }: { item: ApprovalInboxItem }) {
   const content = item.payload?.args?.content;
   if (typeof content === "string" && content.length > 0) {
-    return <p className="text-sm text-foreground">&quot;{content}&quot;</p>;
+    // 메모 본문 자체를 링크로 만들면 읽는 글에 밑줄이 깔린다 — 끈은 뒤에 짧게 단다.
+    return (
+      <p className="text-sm text-foreground">
+        &quot;{content}&quot;{" "}
+        <span className="text-xs text-muted-foreground">
+          <DetailLink id={item.id}>자세히</DetailLink>
+        </span>
+      </p>
+    );
   }
   // 생성 기안은 제목만으로 판단할 수 없다(가격·옵션이 제목에 없다). 승인 버튼이 이
   // 카드에 붙어 있으므로 저장될 값도 같은 카드에서 보여야 한다.
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">{item.title}</p>
+      <p className="text-sm text-muted-foreground">
+        <DetailLink id={item.id}>{item.title}</DetailLink>
+      </p>
       <ProposalPayloadPreview action={item.payload?.action} args={item.payload?.args} />
     </div>
   );

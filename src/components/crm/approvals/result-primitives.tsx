@@ -1,4 +1,4 @@
-import { formatShortDateTime } from "./format-time";
+import { formatDateTimeWithYear } from "./format-time";
 
 /**
  * 조회 결과를 **모양을 모르는 채로** 그리는 두 기본기 (Plan 2 Task 5).
@@ -16,17 +16,29 @@ export const MAX_TABLE_ROWS = 200;
 
 const ISO_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}T/;
 
-/** 셀 하나의 표기. 값이 없으면 빈 칸이 아니라 `-` 다(빈 칸은 「깨졌나」로 읽힌다). */
+/**
+ * 셀 하나의 표기. 값이 없으면 빈 칸이 아니라 `-` 다(빈 칸은 「깨졌나」로 읽힌다).
+ *
+ * 날짜에는 **연도를 남긴다** — 이 표는 목록 카드와 달리 「최근」이라는 전제가 없다.
+ * 숫자는 천 단위 구분을 넣는다(자리수를 눈으로 세는 것이 이 표의 유일한 용도일 때가 많다).
+ */
 export function formatCellValue(value: unknown): string {
   if (value === null || value === undefined) return "-";
   if (typeof value === "string") {
-    return ISO_DATE_PREFIX.test(value) ? formatShortDateTime(value) : value;
+    return ISO_DATE_PREFIX.test(value) ? formatDateTimeWithYear(value) : value;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toLocaleString("ko-KR");
   }
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 
-/** 열 = 모든 행의 키 합집합, 순서는 **처음 등장한 순서**(행마다 키가 다를 수 있다). */
+/**
+ * 열 = 주어진 행들의 키 합집합, 순서는 **처음 등장한 순서**(행마다 키가 다를 수 있다).
+ * ⚠️ 호출자는 **화면에 그릴 행만** 넘긴다 — 잘려 나간 뒤쪽 행에만 있는 키로 열을 만들면
+ * 그 열은 표 전체가 `-` 로 채워진 빈 칸이 된다(없는 데이터를 있는 것처럼 보이게 한다).
+ */
 export function unionColumns(rows: ReadonlyArray<Record<string, unknown>>): string[] {
   const columns: string[] = [];
   const seen = new Set<string>();
@@ -41,8 +53,8 @@ export function unionColumns(rows: ReadonlyArray<Record<string, unknown>>): stri
 }
 
 export function GenericTable({ rows }: { rows: ReadonlyArray<Record<string, unknown>> }) {
-  const columns = unionColumns(rows);
   const visible = rows.slice(0, MAX_TABLE_ROWS);
+  const columns = unionColumns(visible);
 
   return (
     <div className="flex flex-col gap-2">

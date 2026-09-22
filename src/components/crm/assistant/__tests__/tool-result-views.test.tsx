@@ -8,7 +8,7 @@
  */
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { TOOL_RESULT_RENDERERS } from "../tool-result-views";
+import { TOOL_RESULT_RENDERERS, TOOL_RESULT_GUARD_NAMES } from "../tool-result-views";
 import type {
   GetSettlementReportData,
   SearchDealsData,
@@ -34,6 +34,12 @@ describe("TOOL_RESULT_RENDERERS 레지스트리", () => {
 
   it("미지 toolName은 레지스트리에 없다", () => {
     expect(TOOL_RESULT_RENDERERS["unknown_tool"]).toBeUndefined();
+  });
+
+  // 뷰만 더하고 가드를 빠뜨리면 그 뷰는 결재함 상세에서 영영 안 불린다 — 화면은
+  // 조용히 제네릭 표가 되고, 고장처럼 보이지 않아서 더 오래 간다.
+  it("가드 표는 레지스트리와 같은 도구 목록을 갖는다", () => {
+    expect([...TOOL_RESULT_GUARD_NAMES].sort()).toEqual(Object.keys(TOOL_RESULT_RENDERERS).sort());
   });
 });
 
@@ -442,8 +448,11 @@ describe("bare — 상세 화면 안에서는 테두리 한 겹을 끈다", () =
     expect((plain.firstElementChild as HTMLElement).className).toContain("border-border");
 
     const { container: bare } = render(<View data={sampleData} bare />);
-    expect((bare.firstElementChild as HTMLElement).className).not.toContain("border-border");
-    // 내용은 그대로다 — 끄는 것은 테두리 한 겹뿐이다.
-    expect((bare.firstElementChild as HTMLElement).className).toContain("flex-col");
+    const bareClass = (bare.firstElementChild as HTMLElement).className;
+    expect(bareClass).not.toContain("border-border");
+    // 바깥 껍데기와 함께 「앞 메시지와 띄우던」 여백도 끈다 — 상세에선 위가 카드 머리다.
+    expect(bareClass).not.toContain("mt-2");
+    // 내용은 그대로다 — 끄는 것은 껍데기뿐이다.
+    expect(bareClass).toContain("flex-col");
   });
 });

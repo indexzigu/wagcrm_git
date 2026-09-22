@@ -38,6 +38,9 @@ import { partnerTypeLabels, type PartnerType } from "@/lib/crm-types";
  * (`/approvals/[id]`, Plan 2 Task 5)에서는 이미 카드 안에 들어가 있어 테두리를 또
  * 그리면 카드 속 카드가 된다. 소비처가 두 곳이 된 순간 생긴 차이라 뷰마다 복제하지
  * 않고 한 플래그로 둔다.
+ *
+ * 끄는 것은 **바깥 껍데기뿐**이다 — 테두리·안쪽 여백과 함께 앞 메시지와 띄우던
+ * `mt-2` 도 끈다(상세에서는 위가 카드 머리라 그 여백이 어긋난 틈으로 보인다).
  */
 type ToolResultViewProps = {
   data: unknown;
@@ -80,7 +83,7 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, onQuickAction, ba
   const { summary, campaigns, stateCounts } = data;
 
   return (
-    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-4 gap-2 text-xs">
         <div>
           <p className="text-muted-foreground">총매출</p>
@@ -180,7 +183,7 @@ const SearchDealsView: FC<ToolResultViewProps> = ({ data, bare }) => {
   const { items, count, truncated } = data;
 
   return (
-    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{count}건</span>
         {truncated && <span>상위 20건만 표시합니다.</span>}
@@ -214,7 +217,7 @@ const SearchPartnersView: FC<ToolResultViewProps> = ({ data, bare }) => {
   const { items, count, truncated } = data;
 
   return (
-    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{count}건</span>
         {truncated && <span>상위 20건만 표시합니다.</span>}
@@ -267,7 +270,7 @@ const PipelineStatusView: FC<ToolResultViewProps> = ({ data, bare }) => {
   const { statusCounts, totalCount, campaigns } = data;
 
   return (
-    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         {statusCounts.map((sc) => (
           <Badge key={sc.status} variant="outline">
@@ -304,7 +307,7 @@ const CampaignFinancialsView: FC<ToolResultViewProps> = ({ data, bare }) => {
   const { actualSales, derived, isDepositReceived, isPayoutCompleted } = data;
 
   return (
-    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-5 gap-2 text-xs">
         <div>
           <p className="text-muted-foreground">실매출</p>
@@ -361,7 +364,7 @@ const OrderSnapshotView: FC<ToolResultViewProps> = ({ data, bare }) => {
   const { days, totals } = data;
 
   return (
-    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-4 gap-2 text-xs">
         <div>
           <p className="text-muted-foreground">주문</p>
@@ -436,6 +439,13 @@ const TOOL_RESULT_GUARDS: Record<string, (data: unknown) => boolean> = {
   get_campaign_financials: isGetCampaignFinancialsData,
   get_order_snapshot: isGetOrderSnapshotData,
 };
+
+/**
+ * 가드가 등록된 operation 목록 — 레지스트리와 **짝이 맞는지** 테스트가 대조한다.
+ * 뷰를 하나 더하고 가드를 빠뜨리면 그 뷰는 영영 안 불린다(화면은 조용히 제네릭 표가
+ * 된다 — 고장처럼 보이지 않아서 더 오래 간다).
+ */
+export const TOOL_RESULT_GUARD_NAMES = Object.keys(TOOL_RESULT_GUARDS);
 
 export function hasToolResultRenderer(operation: string, data: unknown): boolean {
   const guard = TOOL_RESULT_GUARDS[operation];
