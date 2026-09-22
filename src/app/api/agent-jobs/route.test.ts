@@ -84,6 +84,7 @@ describe("GET /api/agent-jobs", () => {
       resultStatus: "SUCCEEDED",
       resultSummary: "search_deals: 3 deal(s)",
       actionProposalId: "read-9",
+      payloadUnreadable: false,
     });
     expect(JSON.stringify(body)).not.toContain("비밀 검색어");
     expect(JSON.stringify(body)).not.toContain("requesterDigest");
@@ -97,5 +98,39 @@ describe("GET /api/agent-jobs", () => {
     const body = await (await GET(req())).json();
     expect(body.items).toHaveLength(50);
     expect(body.nextBefore).toBe(job(49).createdAt.toISOString());
+  });
+
+  it("before 파라미터를 Date 로 변환해 넘기고, 파싱 불가면 undefined 를 넘긴다", async () => {
+    listRecentMock.mockResolvedValue([]);
+    await GET(req("?before=2026-09-22T01:00:00.000Z"));
+    expect(listRecentMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ before: new Date("2026-09-22T01:00:00.000Z") })
+    );
+
+    await GET(req("?before=garbage"));
+    expect(listRecentMock).toHaveBeenLastCalledWith(expect.objectContaining({ before: undefined }));
+  });
+
+  it("payload 가 깨진 degraded 행도 500 없이 목록에 그대로 실린다", async () => {
+    listRecentMock.mockResolvedValue([
+      {
+        degraded: true,
+        id: "poison-1",
+        status: "FAILED_SECURITY",
+        attempt: 1,
+        failureCode: "PAYLOAD_INVALID",
+        createdAt: new Date("2026-09-22T00:00:00.000Z"),
+        updatedAt: new Date("2026-09-22T00:00:00.000Z"),
+      },
+      job(1),
+    ]);
+
+    const res = await GET(req());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0]).toEqual(
+      expect.objectContaining({ id: "poison-1", operation: "unknown", taskType: "unknown", payloadUnreadable: true })
+    );
   });
 });

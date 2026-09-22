@@ -1,4 +1,4 @@
-import type { AgentJobRecord } from "@/repositories/agentJobRepository";
+import type { AgentJobListRow } from "@/repositories/agentJobRepository";
 
 /**
  * `GET /api/agent-jobs` 한 페이지 크기. Next App Router route.ts는 GET 등 알려진 이름 외의
@@ -7,7 +7,11 @@ import type { AgentJobRecord } from "@/repositories/agentJobRepository";
  */
 export const AGENT_JOBS_PAGE_SIZE = 50;
 
-/** 결재함 「봇 활동」 행. payload.input(봇이 넣은 원문)·origin(슬랙 digest)은 싣지 않는다(§3-C). */
+/**
+ * 결재함 「봇 활동」 행. payload.input(봇이 넣은 원문)·origin(슬랙 digest)은 싣지 않는다(§3-C).
+ * `payloadUnreadable`이 true면 저장된 payload가 poison row라 operation/taskType을
+ * 복원하지 못했다는 뜻이다(`AgentJobRepository.listRecent`의 degraded 행).
+ */
 export type AgentJobListItem = {
   id: string;
   status: string;
@@ -20,20 +24,39 @@ export type AgentJobListItem = {
   resultStatus: string | null;
   resultSummary: string | null;
   actionProposalId: string | null;
+  payloadUnreadable: boolean;
 };
 
-export function toListItem(job: AgentJobRecord): AgentJobListItem {
+export function toListItem(row: AgentJobListRow): AgentJobListItem {
+  if ("degraded" in row) {
+    return {
+      id: row.id,
+      status: row.status,
+      operation: "unknown",
+      taskType: "unknown",
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      attempt: row.attempt,
+      failureCode: row.failureCode,
+      resultStatus: null,
+      resultSummary: null,
+      actionProposalId: null,
+      payloadUnreadable: true,
+    };
+  }
+
   return {
-    id: job.id,
-    status: job.status,
-    operation: job.payload.operation,
-    taskType: job.payload.taskType,
-    createdAt: job.createdAt.toISOString(),
-    updatedAt: job.updatedAt.toISOString(),
-    attempt: job.attempt,
-    failureCode: job.failureCode,
-    resultStatus: job.result?.status ?? null,
-    resultSummary: job.result?.resultSummary ?? null,
-    actionProposalId: job.result?.actionProposalId ?? null,
+    id: row.id,
+    status: row.status,
+    operation: row.payload.operation,
+    taskType: row.payload.taskType,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    attempt: row.attempt,
+    failureCode: row.failureCode,
+    resultStatus: row.result?.status ?? null,
+    resultSummary: row.result?.resultSummary ?? null,
+    actionProposalId: row.result?.actionProposalId ?? null,
+    payloadUnreadable: false,
   };
 }

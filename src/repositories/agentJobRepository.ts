@@ -74,6 +74,24 @@ export type AgentJobRecord = Omit<PersistedAgentJob, "payload" | "result"> & {
   result: AgentJobResult | null;
 };
 
+/**
+ * `listRecent`가 한 행씩 돌려주는 형태. 정상 행은 `AgentJobRecord` 그대로이고,
+ * 저장된 payload가 더 이상 파싱되지 않는 poison row(`claimNext`가 격리한
+ * FAILED_SECURITY 등)는 스칼라만 담은 degraded 형태로 내려 페이지 전체를
+ * 500으로 만들지 않는다.
+ */
+export type AgentJobListRow =
+  | AgentJobRecord
+  | {
+      degraded: true;
+      id: string;
+      status: string;
+      attempt: number;
+      failureCode: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    };
+
 export class ConcurrentAgentJobModificationError extends Error {
   constructor(jobId: string) {
     super(`AgentJob ${jobId} was modified concurrently`);
@@ -472,8 +490,13 @@ export class AgentJobRepository {
   /**
    * 결재함 「봇 활동」 탭 — 최신순, 커서(before), 성공 행은 기본 제외(중복 사건: 성공은
    * 조회 결과·기안 탭에 이미 있다).
+   *
+   * poison row(저장된 payload가 더 이상 Zod 파싱을 통과하지 못하는 행 — `claimNext`가
+   * CLAIMED→FAILED_SECURITY로 격리하는 그 행들이며, terminal 상태라 기본 뷰
+   * `status != SUCCEEDED`에 계속 남는다)는 `normalizeAgentJob`이 던지므로, 한 행이
+   * 페이지 전체를 500으로 만들지 않도록 행 단위로 잡아 degraded 형태로 내린다.
    */
-  static async listRecent(input: { before?: Date; includeSucceeded: boolean; take: number }) {
+  static async listRecent(input: { before?: Date; includeSucceeded: boolean; take: number }): Promise<AgentJobListRow[]> {
     const rows = await getPrisma().agentJob.findMany({
       where: {
         ...(input.includeSucceeded ? {} : { status: { not: "SUCCEEDED" } }),
@@ -482,7 +505,22 @@ export class AgentJobRepository {
       orderBy: { createdAt: "desc" },
       take: input.take,
     });
-    return rows.map(normalizeAgentJob);
+    return rows.map((row): AgentJobListRow => {
+      try {
+        return normalizeAgentJob(row);
+      } catch {
+        console.warn("[agent-jobs] payload unreadable", { id: row.id });
+        return {
+          degraded: true,
+          id: row.id,
+          status: row.status,
+          attempt: row.attempt,
+          failureCode: row.failureCode,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        };
+      }
+    });
   }
 }
 
