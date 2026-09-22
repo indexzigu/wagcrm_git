@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toListItem } from "../list-item";
-import type { AgentJobRecord } from "@/repositories/agentJobRepository";
+import type { AgentJobListRow, AgentJobRecord } from "@/repositories/agentJobRepository";
 
 function makeJob(overrides: Partial<AgentJobRecord> = {}): AgentJobRecord {
   return {
@@ -58,6 +58,7 @@ describe("toListItem", () => {
       resultStatus: "SUCCEEDED",
       resultSummary: "search_deals: 3 deal(s)",
       actionProposalId: "read-9",
+      payloadUnreadable: false,
     });
     expect(JSON.stringify(item)).not.toContain("비밀 검색어");
     expect(JSON.stringify(item)).not.toContain("requesterDigest");
@@ -70,5 +71,35 @@ describe("toListItem", () => {
     expect(item.resultSummary).toBeNull();
     expect(item.actionProposalId).toBeNull();
     expect(item.failureCode).toBe("NOT_FOUND");
+    expect(item.payloadUnreadable).toBe(false);
+  });
+
+  it("degraded 행(poison payload)은 operation·taskType을 unknown으로, payloadUnreadable을 true로 채운다", () => {
+    const degradedRow: AgentJobListRow = {
+      degraded: true,
+      id: "poison-1",
+      status: "FAILED_SECURITY",
+      attempt: 1,
+      failureCode: "PAYLOAD_INVALID",
+      createdAt: new Date("2026-09-22T00:00:00.000Z"),
+      updatedAt: new Date("2026-09-22T00:00:00.000Z"),
+    };
+
+    const item = toListItem(degradedRow);
+
+    expect(item).toEqual({
+      id: "poison-1",
+      status: "FAILED_SECURITY",
+      operation: "unknown",
+      taskType: "unknown",
+      createdAt: "2026-09-22T00:00:00.000Z",
+      updatedAt: "2026-09-22T00:00:00.000Z",
+      attempt: 1,
+      failureCode: "PAYLOAD_INVALID",
+      resultStatus: null,
+      resultSummary: null,
+      actionProposalId: null,
+      payloadUnreadable: true,
+    });
   });
 });

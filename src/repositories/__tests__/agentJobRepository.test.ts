@@ -231,7 +231,49 @@ describe("AgentJobRepository", () => {
 
       const rows = await AgentJobRepository.listRecent({ includeSucceeded: true, take: 10 });
 
-      expect(rows[0].payload.operation).toBe(payload.operation);
+      const row = rows[0];
+      if ("degraded" in row) throw new Error("expected a normalized row");
+      expect(row.payload.operation).toBe(payload.operation);
+    });
+
+    it("payload가 파싱되지 않는 poison row는 던지지 않고 degraded 형태로 내린다", async () => {
+      findManyMock.mockResolvedValue([
+        {
+          id: "poison-1",
+          idempotencyKey: "k-poison",
+          payload: "{not json",
+          status: "FAILED_SECURITY",
+          workerId: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          attempt: 1,
+          result: null,
+          failureCode: "PAYLOAD_INVALID",
+          createdAt: new Date("2026-09-22T00:00:00Z"),
+          updatedAt: new Date("2026-09-22T00:00:00Z"),
+        },
+        {
+          ...persistedJob,
+          id: "j2",
+          status: "FAILED_FINAL",
+        },
+      ]);
+
+      const rows = await AgentJobRepository.listRecent({ includeSucceeded: true, take: 10 });
+
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toEqual(
+        expect.objectContaining({
+          degraded: true,
+          id: "poison-1",
+          status: "FAILED_SECURITY",
+          attempt: 1,
+          failureCode: "PAYLOAD_INVALID",
+        }),
+      );
+      const secondRow = rows[1];
+      if ("degraded" in secondRow) throw new Error("expected a normalized row");
+      expect(secondRow.id).toBe("j2");
     });
   });
 });
