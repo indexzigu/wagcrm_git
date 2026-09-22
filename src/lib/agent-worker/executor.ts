@@ -21,6 +21,7 @@ import { serializeJsonFields } from "@/repositories/actionProposalRepository";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import { getPipelineStatusTool } from "@/lib/agent/tools/pipeline-status";
 import { getOrderSnapshotTool } from "@/lib/agent/tools/order-snapshot";
+import { getSettlementReportTool } from "@/lib/agent/tools/settlement-report";
 import { addEntityMemoTool } from "@/lib/agent/tools/add-entity-memo";
 import { changeDealStatusTool } from "@/lib/agent/tools/change-deal-status";
 import { confirmSettlementTool } from "@/lib/agent/tools/confirm-settlement";
@@ -143,6 +144,7 @@ type SearchPartnersInput = { name?: string; type?: string };
 type GetActionProposalInput = { proposalId: string };
 type OrderSnapshotInput = { campaignId?: string; startAt?: string; endAt?: string };
 type CampaignFinancialsInput = { campaignId: string };
+type SettlementReportInput = { month?: string; year?: string; sellerName?: string; statusFilter?: "SETTLEMENT_IN_PROGRESS" | "COMPLETED" | "ALL" };
 type ProposalScalar = string | number | boolean | null;
 type ProposalNestedValue = ProposalScalar | Record<string, ProposalScalar>;
 /**
@@ -612,6 +614,42 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
   };
 }
 
+/**
+ * 정산 리포트(§3-E). 웹 어시스턴트 도구를 `runTool` 로 그대로 재사용한다 — 도구가 읽는
+ * 표(SalesCampaign·Deal·Seller·Partner(agency)·CampaignGroup)는 전부 워커 역할의 SELECT
+ * 범위 안이라 권한 변경이 없다(`settlementService.ts` `getSettlementReport` 실독).
+ */
+async function settlementReport(input: SettlementReportInput): Promise<OperationOutcome> {
+  const result = await runTool(getSettlementReportTool, input);
+  if (isOperationFailure(result)) return result;
+  if (!result.ok) {
+    return result.error.code === "NOT_FOUND"
+      ? { status: "SUCCEEDED", summary: "get_settlement_report: no campaigns in period", evidenceRefs: [], actionProposalId: null }
+      : toolFailure(result);
+  }
+  const { period, summary: totals, stateCounts, campaigns } = result.data;
+  const lines = campaigns.map(
+    (campaign) =>
+      `${campaign.dealName} / ${campaign.sellerName} [${campaign.state}] sales=${campaign.actualSales} payout=${campaign.sellerPayoutAmount} id=${campaign.id}`,
+  );
+  const summary = boundSummary(
+    `get_settlement_report period=${period} campaigns=${totals.campaignCount} revenue=${totals.totalRevenue} margin=${totals.totalMargin} payouts=${totals.totalSellerPayouts} states=${JSON.stringify(stateCounts)}\n${lines.join("\n")}`,
+  );
+  return {
+    status: "SUCCEEDED",
+    summary,
+    evidenceRefs: boundEvidence(campaigns.map((campaign) => campaign.id)),
+    actionProposalId: null,
+    record: {
+      title: `정산 리포트 ${period} (${totals.campaignCount}건)`,
+      resultSummary: summary,
+      structuredResult: result.data,
+      dataSources: result.evidence.dataSources,
+      query: result.evidence.query,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // create_action_proposal — INSERT only (contract 5)
 // ---------------------------------------------------------------------------
@@ -728,6 +766,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   create_action_proposal: (input, context) => createActionProposal(input as CreateActionProposalInput, context),
   search_partners: (input) => searchPartners(input as SearchPartnersInput),
   get_action_proposal: (input) => getActionProposal(input as GetActionProposalInput),
+  get_settlement_report: (input) => settlementReport(input as SettlementReportInput),
 };
 
 function buildResult(

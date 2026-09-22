@@ -234,7 +234,7 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     await expectDenied(worker!.$executeRawUnsafe(`CREATE ROLE wag_priv_probe`), "CREATE ROLE");
   });
 
-  it("runs all five executor operations as the worker role", async () => {
+  it("runs every read operation and a proposal as the worker role", async () => {
     const { executeAgentJob } = await import("@/lib/agent-worker/executor");
 
     const search = await executeAgentJob(jobFor("search_deals", { query: "privilege" }), python);
@@ -256,6 +256,9 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     expect(financials).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { evidenceRefs: ["priv-camp-1"], modelUsed: "none" } });
     if (financials.kind !== "terminal") throw new Error("expected terminal");
     expect(financials.result.resultSummary).toMatch(/settlementSales/);
+
+    const settlement = await executeAgentJob(jobFor("get_settlement_report", { year: String(new Date().getFullYear()) }), python);
+    expect(settlement).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED" });
 
     const proposal = await executeAgentJob(
       jobFor("create_action_proposal", { action: "change_deal_status", dealId: "priv-deal-1", newStatus: "CONFIRMED" }),

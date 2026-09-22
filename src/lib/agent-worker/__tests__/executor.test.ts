@@ -19,6 +19,7 @@ const partnerFindUniqueMock = vi.fn();
 const sellerFindUniqueMock = vi.fn();
 const snapshotFindManyMock = vi.fn();
 const transactionMock = vi.fn();
+const settlementMock = vi.fn();
 
 const tx = {
   actionProposal: { create: proposalCreateMock, updateMany: vi.fn(), update: vi.fn() },
@@ -39,6 +40,13 @@ vi.mock("@/lib/agent/tools/order-snapshot", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/agent/tools/order-snapshot")>();
   return {
     getOrderSnapshotTool: { ...actual.getOrderSnapshotTool, execute: (input: unknown) => snapshotMock(input) },
+  };
+});
+vi.mock("@/lib/agent/tools/settlement-report", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agent/tools/settlement-report")>();
+  return {
+    ...actual,
+    getSettlementReportTool: { ...actual.getSettlementReportTool, execute: (input: unknown) => settlementMock(input) },
   };
 });
 vi.mock("@/repositories/dealRepository", () => ({
@@ -171,6 +179,7 @@ beforeEach(() => {
     sellerFindUniqueMock,
     snapshotFindManyMock,
     transactionMock,
+    settlementMock,
   ]) {
     mock.mockReset();
   }
@@ -1279,5 +1288,54 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     expect(proposalCreateMock).toHaveBeenCalledTimes(1);
     const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
     expect(data.kind).toBe("WRITE");
+  });
+});
+
+describe("get_settlement_report (spec §3-E)", () => {
+  const reportData = {
+    period: "2026-09",
+    summary: { totalRevenue: 3000000, totalMargin: 900000, totalSellerPayouts: 300000, campaignCount: 2 },
+    campaigns: [
+      { id: "c1", dealName: "딜A", brandName: "B", sellerName: "셀러1", actualSales: 2000000, sellerPayoutAmount: 200000, netMarginAmount: 600000, state: "confirmed", isDepositReceived: true, isPayoutCompleted: false, depositReceivedAt: "2026-09-10", payoutCompletedAt: null },
+      { id: "c2", dealName: "딜B", brandName: null, sellerName: "셀러2", actualSales: 1000000, sellerPayoutAmount: 100000, netMarginAmount: 300000, state: "pending", isDepositReceived: false, isPayoutCompleted: false, depositReceivedAt: null, payoutCompletedAt: null },
+    ],
+    stateCounts: { pending: 1, confirmed: 1, paid: 0 },
+  };
+
+  it("reuses the settlement tool through its inputSchema and summarises period, totals and one line per campaign", async () => {
+    settlementMock.mockResolvedValue({ ok: true, data: reportData, evidence: { dataSources: ["SalesCampaign", "Deal", "Seller"], query: { month: "2026-09" } } });
+    const outcome = await executeAgentJob(job("get_settlement_report", { month: "2026-09" }), deps(accepted("python")));
+    expect(settlementMock).toHaveBeenCalledWith({ month: "2026-09" });
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { evidenceRefs: ["c1", "c2"], actionProposalId: "read-1", modelUsed: "none" } });
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    const lines = outcome.result.resultSummary.split("\n");
+    expect(lines[0]).toBe('get_settlement_report period=2026-09 campaigns=2 revenue=3000000 margin=900000 payouts=300000 states={"pending":1,"confirmed":1,"paid":0}');
+    expect(lines[1]).toBe("딜A / 셀러1 [confirmed] sales=2000000 payout=200000 id=c1");
+    expect(lines[2]).toBe("딜B / 셀러2 [pending] sales=1000000 payout=100000 id=c2");
+    const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).toMatchObject({ title: "정산 리포트 2026-09 (2건)", dataSources: ["SalesCampaign", "Deal", "Seller"] });
+    // 브리프 원문은 campaigns 를 `[expect.objectContaining({ id: "c1" })]`(길이 1) 로 적었으나,
+    // `toMatchObject` 는 배열을 길이까지 정확히 대조한다 — mock 이 2건을 돌려주므로 그 리터럴은
+    // 구현이 맞아도 항상 실패한다(RED 단계에서 실측). 의도(“c1 항목이 들어있는지”)는 그대로 두고
+    // `arrayContaining` 으로 부분집합 대조로 고쳤다.
+    expect(data.structuredResult).toMatchObject({
+      operation: "get_settlement_report",
+      query: { month: "2026-09" },
+      data: { period: "2026-09", campaigns: expect.arrayContaining([expect.objectContaining({ id: "c1" })]) },
+    });
+  });
+
+  it("maps the tool's NOT_FOUND (no campaigns) to an empty SUCCEEDED result without a record", async () => {
+    settlementMock.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "none" }, evidence: { dataSources: [], query: {} } });
+    const outcome = await executeAgentJob(job("get_settlement_report", { month: "2026-01" }), deps(accepted("python")));
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { resultSummary: "get_settlement_report: no campaigns in period", actionProposalId: null } });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("maps MISSING_PARAM to FAILED_FINAL and QUERY_FAILED to retryable", async () => {
+    settlementMock.mockResolvedValueOnce({ ok: false, error: { code: "MISSING_PARAM", message: "bad month" } });
+    expect(await executeAgentJob(job("get_settlement_report", { month: "2026-09" }), deps(accepted("python")))).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "MISSING_PARAM" });
+    settlementMock.mockResolvedValueOnce({ ok: false, error: { code: "QUERY_FAILED", message: "db" } });
+    expect(await executeAgentJob(job("get_settlement_report", { month: "2026-09" }), deps(accepted("python")))).toMatchObject({ kind: "retryable", errorClass: "QUERY_FAILED" });
   });
 });
