@@ -28,12 +28,26 @@ function DetailNote({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** 값이 비어 있는 조건은 칩으로 만들지 않는다 — 「status: 」 는 아무 말도 하지 않는다. */
+/**
+ * 값이 비어 있는 조건은 칩으로 만들지 않는다 — 「status: 」 는 아무 말도 하지 않는다.
+ * 중첩 값(기간 객체·id 배열)은 JSON 으로 적는다 — `String()` 에 맡기면 화면에
+ * `[object Object]` 가 찍히는데, 그건 조건을 **감추는** 표기다.
+ */
+function chipValueOf(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "object") return JSON.stringify(value);
+  const text = String(value);
+  return text.length > 0 ? text : null;
+}
+
 function conditionChips(query: ReadEnvelope["query"]): [string, string][] {
   if (!query || typeof query !== "object") return [];
-  return Object.entries(query)
-    .filter(([, value]) => value !== null && value !== undefined && String(value).length > 0)
-    .map(([key, value]) => [key, String(value)]);
+  const chips: [string, string][] = [];
+  for (const [key, value] of Object.entries(query)) {
+    const text = chipValueOf(value);
+    if (text !== null) chips.push([key, text]);
+  }
+  return chips;
 }
 
 function rowLimitReached(data: unknown): boolean {

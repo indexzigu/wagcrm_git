@@ -78,6 +78,21 @@ describe("ApprovalDetail — READ", () => {
     expect(screen.queryByText(/^status:/)).not.toBeInTheDocument();
   });
 
+  it("중첩된 조건 값은 JSON 으로 적는다 — [object Object] 는 조건을 감춘다", () => {
+    const proposal = readProposal({
+      structuredResult: {
+        operation: "get_order_snapshot",
+        jobId: null,
+        query: { window: { startKey: "2026-09-01" }, campaignId: null },
+        truncated: false,
+        data: { items: [], rowLimitReached: false },
+      },
+    });
+    render(<ApprovalDetail id="proposal-read-1" useDetailHook={hookOf(proposal)} />);
+    expect(screen.getByText('window: {"startKey":"2026-09-01"}')).toBeInTheDocument();
+    expect(screen.queryByText(/campaignId/)).not.toBeInTheDocument();
+  });
+
   it("행 상한에 걸린 기록은 그 사실을 고지한다", () => {
     render(<ApprovalDetail id="proposal-read-1" useDetailHook={hookOf(readProposal())} />);
     expect(screen.getByText("상위 20건만 표시합니다.")).toBeInTheDocument();

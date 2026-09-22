@@ -8,6 +8,21 @@
  */
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// 실제 next/link 처럼 나머지 props 를 <a> 로 흘린다 — 포커스 링 클래스 계약을
+// 이 스텁 위에서도 검증할 수 있어야 한다.
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    ...rest
+  }: { children: React.ReactNode; href: string } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
+}));
+
 import {
   PendingCard,
   ExecutedCard,
@@ -42,6 +57,46 @@ describe("SourceBadge", () => {
   ])("%s → %s", (createdBy, label) => {
     render(<SourceBadge createdBy={createdBy} />);
     expect(screen.getByText(label)).toBeInTheDocument();
+  });
+});
+
+// 설계 §3-B 「카드 제목 링크」 (Plan 2 Task 5) — 카드에서 상세로 가는 끈.
+// ⛔ `<li>` 전체를 링크로 감싸면 안 된다: 이 카드 안에는 승인·반려 버튼이 있다.
+describe("카드 → 상세 링크", () => {
+  it("대기 카드의 제목이 /approvals/<id> 로 간다", () => {
+    render(
+      <ul>
+        <PendingCard
+          item={makeItem({ payload: { action: "create_deal", args: { dealName: "딜 A" } } })}
+          onApprove={vi.fn()}
+          onReject={vi.fn()}
+        />
+      </ul>
+    );
+    const link = screen.getByRole("link", { name: "딜(deal-1)에 메모 추가" });
+    expect(link).toHaveAttribute("href", "/approvals/proposal-1");
+    expect(link.className).toContain("focus-visible:ring-focus-ring");
+  });
+
+  it("메모 기안처럼 본문을 보여주는 카드도 끈을 따로 단다", () => {
+    render(
+      <ul>
+        <PendingCard item={makeItem()} onApprove={vi.fn()} onReject={vi.fn()} />
+      </ul>
+    );
+    expect(screen.getByRole("link", { name: "자세히" })).toHaveAttribute(
+      "href",
+      "/approvals/proposal-1"
+    );
+  });
+
+  it("카드 전체를 링크로 감싸지 않는다 — 승인 버튼이 그 안에 있다", () => {
+    const { container } = render(
+      <ul>
+        <PendingCard item={makeItem()} onApprove={vi.fn()} onReject={vi.fn()} />
+      </ul>
+    );
+    expect(container.querySelector("li > a")).toBeNull();
   });
 });
 

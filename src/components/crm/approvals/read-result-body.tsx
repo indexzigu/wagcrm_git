@@ -32,15 +32,23 @@ export function isReadEnvelope(value: unknown): value is ReadEnvelope {
   return typeof (value as Record<string, unknown>).operation === "string";
 }
 
-/** 표로 그릴 수 있는 모양인가 — 객체의 배열이어야 하고, 비어 있으면 표가 열도 못 만든다. */
-function toTableRows(payload: unknown): Record<string, unknown>[] | null {
+/** 목록형 결과인가 — `items` 가 배열이면 그렇다(비어 있어도 목록형이다). */
+function listItemsOf(payload: unknown): unknown[] | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const items = (payload as Record<string, unknown>).items;
-  if (!Array.isArray(items) || items.length === 0) return null;
+  return Array.isArray(items) ? items : null;
+}
+
+/** 표로 그릴 수 있는 모양인가 — 행이 전부 객체여야 열을 만들 수 있다. */
+function toTableRows(items: unknown[]): Record<string, unknown>[] | null {
+  if (items.length === 0) return null;
   const isFlatObject = (row: unknown) => !!row && typeof row === "object" && !Array.isArray(row);
   if (!items.every(isFlatObject)) return null;
   return items as Record<string, unknown>[];
 }
+
+/** 0건은 고장이 아니다 — 조건에 맞는 것이 없었다는 **답**이므로 그렇게 말한다. */
+export const EMPTY_RESULT_MESSAGE = "조회 결과가 0건입니다.";
 
 export function ReadResultBody({ envelope }: { envelope: unknown }) {
   const isEnvelope = isReadEnvelope(envelope);
@@ -65,8 +73,16 @@ function renderPayload(operation: string | null, payload: unknown) {
     return <View data={payload} bare />;
   }
 
-  const rows = toTableRows(payload);
-  if (rows) return <GenericTable rows={rows} />;
+  const items = listItemsOf(payload);
+  if (items) {
+    // ⛔ 빈 목록을 key/value 로 흘려보내지 말 것 — `items → []`, `rowLimitReached → false`
+    // 두 줄은 운영자에게 아무 말도 하지 않는다(모양이 깨진 것처럼 보이기까지 한다).
+    if (items.length === 0) {
+      return <p className="text-sm text-muted-foreground">{EMPTY_RESULT_MESSAGE}</p>;
+    }
+    const rows = toTableRows(items);
+    if (rows) return <GenericTable rows={rows} />;
+  }
 
   if (typeof payload !== "object") {
     return <p className="text-sm text-foreground">{String(payload)}</p>;

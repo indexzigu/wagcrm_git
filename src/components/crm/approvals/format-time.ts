@@ -25,3 +25,33 @@ export function formatShortDateTime(value: string): string {
     parts.find((part) => part.type === type)?.value ?? "";
   return `${pick("month")}-${pick("day")} ${pick("hour")}:${pick("minute")}`;
 }
+
+/**
+ * 감사용 표기 — `YYYY-MM-DD HH:mm` (KST).
+ *
+ * 목록 카드와 달리 **상세의 표에는 연도가 남아야 한다**. 카드는 "최근 기록"이라는
+ * 전제가 있어 연도를 뺐지만(`formatShortDateTime`), 상세의 표는 조회 결과 원본을
+ * 그대로 펼치는 자리라 그 전제가 없다 — 작년 행이 올해 행처럼 읽히면 그것은 표기가
+ * 아니라 **오정보**다.
+ *
+ * ⛔ 두 포매터를 하나로 합치지 말 것: 자리수를 아끼는 곳과 사실을 남기는 곳의
+ * 정답이 서로 다르다. 타임존 고정(Asia/Seoul)은 위와 같은 이유로 공유한다.
+ */
+const YEAR_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+export function formatDateTimeWithYear(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = YEAR_FORMATTER.formatToParts(date);
+  const pick = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${pick("year")}-${pick("month")}-${pick("day")} ${pick("hour")}:${pick("minute")}`;
+}
