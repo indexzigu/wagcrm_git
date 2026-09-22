@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MessageList } from "../message-list";
 import type { AssistantMessage } from "../types";
 
-vi.mock("../proposal-card", () => ({
+vi.mock("@/components/crm/approvals/proposal-card", () => ({
   ProposalCard: ({ id }: { id: string }) => <div data-testid={`proposal-card-${id}`}>카드:{id}</div>,
 }));
 

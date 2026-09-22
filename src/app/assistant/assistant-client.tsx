@@ -10,8 +10,8 @@ import { ConversationList } from "@/components/crm/assistant/conversation-list";
 import {
   PriceSheetIngestSlot,
   usePriceSheetIngest,
-} from "@/components/crm/assistant/price-sheet-ingest-slot";
-import { PRICE_SHEET_ACCEPT } from "@/components/crm/assistant/price-sheet-ingest";
+} from "@/components/crm/approvals/price-sheet-ingest-slot";
+import { PRICE_SHEET_ACCEPT } from "@/components/crm/approvals/price-sheet-ingest";
 import type { AssistantConversationSummaryView } from "@/components/crm/assistant/conversation-list";
 import type { AssistantApiResponse, AssistantMessage, AssistantToolCallView } from "@/components/crm/assistant/types";
 

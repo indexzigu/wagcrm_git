@@ -25,7 +25,7 @@ vi.mock("next/link", () => ({
 }));
 
 // 기안 카드는 자기 fetch 를 갖는다 — 여기서는 「마운트되는가」만 본다.
-vi.mock("@/components/crm/assistant/proposal-card", () => ({
+vi.mock("../proposal-card", () => ({
   ProposalCard: ({ id }: { id: string }) => <div data-testid="proposal-card-mock">{id}</div>,
 }));
 

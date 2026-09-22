@@ -1,17 +1,6 @@
 // /api/assistant 응답을 UI에서 다루기 위한 공용 타입.
 // route.ts의 NextResponse.json(...) 페이로드와 형태를 맞춘다.
 
-/**
- * 대상 엔티티 타입 → 한글 라벨. approval-inbox.tsx에 있던 것을 proposal-card.tsx와
- * 공유하기 위해 이 공용 타입 모듈로 추출했다(청사진 §3-#4 "ENTITY_TYPE_LABELS 재사용").
- */
-export const ENTITY_TYPE_LABELS: Record<string, string> = {
-  PARTNER: "거래처",
-  SELLER: "셀러",
-  DEAL: "딜",
-  CAMPAIGN: "캠페인",
-};
-
 export type AssistantToolCallView = {
   toolName: string;
   args: Record<string, unknown>;

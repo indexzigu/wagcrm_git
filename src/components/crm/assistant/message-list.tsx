@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { EvidenceTable } from "./evidence-table";
-import { ProposalCard } from "./proposal-card";
-import { TOOL_RESULT_RENDERERS } from "./tool-result-views";
+import { ProposalCard } from "@/components/crm/approvals/proposal-card";
+import { TOOL_RESULT_RENDERERS } from "@/components/crm/approvals/tool-result-views";
 import type { AssistantMessage } from "./types";
 
 function MessageBubble({

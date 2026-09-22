@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProposalActions } from "@/hooks/useProposalActions";
-import { ENTITY_TYPE_LABELS } from "./types";
+import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 
 /**
