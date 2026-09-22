@@ -5,8 +5,8 @@
 -- (ActionProposal)이 소유한다.
 -- 설계 정본: docs/private/specs/2026-09-22-assistant-renewal-approval-hub-design.md §3-D
 --
--- 드롭 전 프로덕션 백업(읽기 전용, 2026-09-23): AssistantConversation 2행 ·
--- AssistantChatMessage 4행 → docs/private/backups/assistant-chat-20260923.json (모드 L, 미추적).
+-- 드롭 전 프로덕션 백업 완료(읽기 전용, 2026-09-23 — 행 수는 로컬 백업 파일 참조):
+-- docs/private/backups/assistant-chat-20260923.json (모드 L, 미추적).
 --
 -- 자식(FK 보유) 표를 먼저 드롭한다 — AssistantChatMessage.conversationId 가
 -- AssistantConversation 을 참조하므로 순서를 뒤집으면 의존성 오류가 난다.

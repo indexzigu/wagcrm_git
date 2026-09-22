@@ -13,6 +13,12 @@ const EXPECTED_TABLES = [
 const db = new PrismaClient();
 
 async function main() {
+  // `Prisma.join([])` 은 던진다 — 목록이 비면 확인할 것이 없으므로 통과다.
+  if (EXPECTED_TABLES.length === 0) {
+    console.log("확인할 테이블 없음 — 게이트 통과");
+    await db.$disconnect();
+    process.exit(0);
+  }
   const rows = await db.$queryRaw<Array<{ table_name: string }>>`
     SELECT table_name FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name IN (${Prisma.join(EXPECTED_TABLES)})`;

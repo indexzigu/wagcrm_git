@@ -143,8 +143,9 @@ function rowLabel(row: { productName: string | null; optionName: string | null }
 
 /**
  * 슬롯 렌더링 — 대기 줄 / 진행 줄 / 검토 줄 / 성공·실패 줄. 전부 같은 모양
- * (`border-t border-border px-3 py-2.5`)이고 성패는 **아이콘과 글자색**으로만 말한다 —
- * 카드 안이라 틴트 박스를 얹으면 카드 속 카드가 된다.
+ * (`-mx-4 border-t border-border px-4 py-2.5`)이고 성패는 **아이콘과 글자색**으로만 말한다 —
+ * 카드 안이라 틴트 박스를 얹으면 카드 속 카드가 된다. 음수 마진은 카드(`p-4`)와 짝이다 —
+ * 구분선이 카드 폭을 꽉 채우고 줄 내용이 헤더와 같은 선에서 시작하게 한다.
  * 스크린리더 공지를 위해 래퍼가 role="status" aria-live="polite"를 가진다
  * (partners-management 선례, ss-ux a11y P0).
  */
@@ -178,9 +179,9 @@ export function PriceSheetIngestSlot({
   if (state.kind === "idle") return null;
 
   return (
-    <div role="status" aria-live="polite">
+    <div role="status" aria-live="polite" className="mt-3">
       {state.kind === "pending" && (
-        <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+        <div className="flex items-center gap-2 -mx-4 border-t border-border px-4 py-2.5">
           <FileIcon className="size-4 shrink-0 text-muted-foreground" />
           <span className="flex-1 truncate text-xs font-medium text-foreground">
             {state.file.name} · {formatBytes(state.file.size)}
@@ -213,7 +214,7 @@ export function PriceSheetIngestSlot({
       )}
 
       {state.kind === "running" && (
-        <div className="flex items-center gap-2 border-t border-border px-3 py-2.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 -mx-4 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
           <span className="truncate">
             {state.file.name} · {PHASE_LABEL[state.phase]}
@@ -226,14 +227,14 @@ export function PriceSheetIngestSlot({
       )}
 
       {state.kind === "applying" && (
-        <div className="flex items-center gap-2 border-t border-border px-3 py-2.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 -mx-4 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
           <span className="truncate">딜에 반영 중...</span>
         </div>
       )}
 
       {state.kind === "done" && state.result.ok && (
-        <div className="flex items-start gap-2 border-t border-border px-3 py-2.5">
+        <div className="flex items-start gap-2 -mx-4 border-t border-border px-4 py-2.5">
           <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-status-success" />
           <p className="flex-1 text-xs text-status-success">
             {/* 그룹핑 시 딜 수가 행 수보다 클 수 있다(/apply rowCount vs results.length) —
@@ -256,7 +257,7 @@ export function PriceSheetIngestSlot({
       )}
 
       {state.kind === "done" && !state.result.ok && (
-        <div className="flex items-start gap-2 border-t border-border px-3 py-2.5 text-xs text-destructive">
+        <div className="flex items-start gap-2 -mx-4 border-t border-border px-4 py-2.5 text-xs text-destructive">
           <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
           <p className="flex-1">{state.result.error}</p>
           {state.result.priceSheetId ? (
@@ -303,7 +304,7 @@ function ReviewRow({
   const overflow = review.clean.length - previewRows.length;
 
   return (
-    <div className="border-t border-border px-3 py-2.5">
+    <div className="-mx-4 border-t border-border px-4 py-2.5">
       <div className="flex items-start gap-2">
         <FileSpreadsheetIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <p className="flex-1 text-xs font-medium text-foreground">

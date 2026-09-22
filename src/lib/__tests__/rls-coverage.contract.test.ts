@@ -104,15 +104,19 @@ const DROPPED_TABLES = new Set([
   "AssistantChatMessage",
 ]);
 
-/** 전체 마이그레이션 SQL 을 훑어 DROP 된 테이블 집합을 만든다(주석은 세지 않는다). */
+/** SQL 한 덩이에서 DROP 된 테이블명을 뽑는다(주석은 세지 않는다 — 아래 우회로 봉쇄 단언). */
+function collectDroppedTables(sql: string): string[] {
+  const re = /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:(?:"?public"?)\s*\.\s*)?"?([A-Za-z_][\w$]*)"?/gi;
+  return [...stripSqlComments(sql).matchAll(re)].map(([, table]) => table);
+}
+
+/** 전체 마이그레이션 SQL 을 훑어 DROP 된 테이블 집합을 만든다. */
 function readDroppedTables(): Set<string> {
   const dropped = new Set<string>();
-  const re = /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:(?:"?public"?)\s*\.\s*)?"?([A-Za-z_][\w$]*)"?/gi;
   for (const dir of readdirSync(MIGRATIONS_DIR).sort()) {
     const sqlPath = join(MIGRATIONS_DIR, dir, "migration.sql");
     if (!existsSync(sqlPath)) continue;
-    const sql = stripSqlComments(readFileSync(sqlPath, "utf8"));
-    for (const [, table] of sql.matchAll(re)) dropped.add(table);
+    for (const table of collectDroppedTables(readFileSync(sqlPath, "utf8"))) dropped.add(table);
   }
   return dropped;
 }
@@ -207,6 +211,16 @@ describe("RLS 커버리지 계약 — 새 테이블은 RLS 를 함께 켠다", (
         "드롭을 되돌렸다면 모델을 schema.prisma 로 되살리고 이 목록에서 빼라.",
       ].join("\n"),
     ).toEqual([]);
+
+    // ⚠️ 우회로 봉쇄 — 주석 속 DROP TABLE 로 면제를 정당화할 수 없다. 이 방향의 회귀는
+    // fail-open(면제가 근거 없이 통과)이라 조용하므로 ENABLE 쪽과 같이 인라인 픽스처로 고정한다.
+    expect(collectDroppedTables(`-- DROP TABLE "Ghost";`)).toEqual([]);
+    expect(collectDroppedTables(`/* DROP TABLE "Ghost"; */`)).toEqual([]);
+    // 양성 대조군 — 주석 제거가 실문까지 먹어치우지는 않는다.
+    expect(collectDroppedTables(`-- 배경 설명\nDROP TABLE "Real";\nDROP TABLE IF EXISTS public."Q";`)).toEqual([
+      "Real",
+      "Q",
+    ]);
 
     // 면제는 드롭된 표에만 준다 — 살아 있는 모델을 여기 적으면 정방향 커버리지가 무력해진다.
     const stillModeled = [...DROPPED_TABLES].filter((t) => tables.includes(t));
