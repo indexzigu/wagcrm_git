@@ -1316,12 +1316,16 @@ describe("get_settlement_report (spec §3-E)", () => {
     expect(data).toMatchObject({ title: "정산 리포트 2026-09 (2건)", dataSources: ["SalesCampaign", "Deal", "Seller"] });
     // 브리프 원문은 campaigns 를 `[expect.objectContaining({ id: "c1" })]`(길이 1) 로 적었으나,
     // `toMatchObject` 는 배열을 길이까지 정확히 대조한다 — mock 이 2건을 돌려주므로 그 리터럴은
-    // 구현이 맞아도 항상 실패한다(RED 단계에서 실측). 의도(“c1 항목이 들어있는지”)는 그대로 두고
-    // `arrayContaining` 으로 부분집합 대조로 고쳤다.
+    // 구현이 맞아도 항상 실패한다(RED 단계에서 실측). c1·c2 두 항목을 모두 나열해 저장된
+    // 캠페인 건수(2건)까지 다시 고정한다 — 부분집합(arrayContaining)으로 두면 한 건이
+    // 누락돼도 초록으로 남는다.
     expect(data.structuredResult).toMatchObject({
       operation: "get_settlement_report",
       query: { month: "2026-09" },
-      data: { period: "2026-09", campaigns: expect.arrayContaining([expect.objectContaining({ id: "c1" })]) },
+      data: {
+        period: "2026-09",
+        campaigns: [expect.objectContaining({ id: "c1" }), expect.objectContaining({ id: "c2" })],
+      },
     });
   });
 

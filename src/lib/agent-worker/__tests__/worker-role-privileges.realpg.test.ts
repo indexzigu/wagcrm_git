@@ -146,7 +146,7 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
       `INSERT INTO "Deal" ("id","dealName","baseMarginPolicy","partnerId","updatedAt") VALUES ('priv-deal-1','privilege deal','FIXED','priv-partner-1',now()) ON CONFLICT DO NOTHING`,
     );
     await admin.$executeRawUnsafe(
-      `INSERT INTO "SalesCampaign" ("id","dealId","sellerId","startDate","endDate","salesChannel","baseNaverLink","generatedTrackingLink","actualSales","totalMarginRate","sellerMarginRate","updatedAt") VALUES ('priv-camp-1','priv-deal-1','priv-seller-1',now() - interval '3 days',now() + interval '7 days','naver','https://example.invalid/base','https://example.invalid/track',1000000,30,10,now()) ON CONFLICT DO NOTHING`,
+      `INSERT INTO "SalesCampaign" ("id","dealId","sellerId","status","startDate","endDate","salesChannel","baseNaverLink","generatedTrackingLink","actualSales","totalMarginRate","sellerMarginRate","updatedAt") VALUES ('priv-camp-1','priv-deal-1','priv-seller-1','SETTLEMENT_IN_PROGRESS',now() - interval '3 days',now() + interval '7 days','naver','https://example.invalid/base','https://example.invalid/track',1000000,30,10,now()) ON CONFLICT DO NOTHING`,
     );
   }, 180_000);
 
@@ -234,7 +234,7 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     await expectDenied(worker!.$executeRawUnsafe(`CREATE ROLE wag_priv_probe`), "CREATE ROLE");
   });
 
-  it("runs every read operation and a proposal as the worker role", async () => {
+  it("runs the SELECT-backed read operations and a proposal as the worker role", async () => {
     const { executeAgentJob } = await import("@/lib/agent-worker/executor");
 
     const search = await executeAgentJob(jobFor("search_deals", { query: "privilege" }), python);
@@ -257,8 +257,15 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     if (financials.kind !== "terminal") throw new Error("expected terminal");
     expect(financials.result.resultSummary).toMatch(/settlementSales/);
 
-    const settlement = await executeAgentJob(jobFor("get_settlement_report", { year: String(new Date().getFullYear()) }), python);
-    expect(settlement).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED" });
+    // 연도는 픽스처의 endDate(now() + 7 days) 기준이어야 한다 — 12월 말에 실행하면
+    // `new Date().getFullYear()` 는 캠페인의 endDate 가 걸쳐 있는 다음 해를 놓친다.
+    const settlement = await executeAgentJob(
+      jobFor("get_settlement_report", { year: String(new Date(Date.now() + 7 * 86_400_000).getFullYear()) }),
+      python,
+    );
+    if (settlement.kind !== "terminal") throw new Error("expected terminal");
+    expect(settlement.result.resultSummary).toMatch(/^get_settlement_report period=/);
+    expect(settlement.result.evidenceRefs).toContain("priv-camp-1");
 
     const proposal = await executeAgentJob(
       jobFor("create_action_proposal", { action: "change_deal_status", dealId: "priv-deal-1", newStatus: "CONFIRMED" }),
