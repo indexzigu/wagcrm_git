@@ -8,8 +8,6 @@ import { PrismaClient } from "@prisma/client";
 
 const EXPECTED_TABLES = [
   "SellerAiProfile", // 20260710000000_add_seller_ai_profile (타 세션)
-  "AssistantConversation", // 20260711000000_add_assistant_conversations
-  "AssistantChatMessage", // 20260711000000_add_assistant_conversations
 ];
 
 const db = new PrismaClient();
@@ -17,7 +15,7 @@ const db = new PrismaClient();
 async function main() {
   const rows = await db.$queryRaw<Array<{ table_name: string }>>`
     SELECT table_name FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name IN (${EXPECTED_TABLES[0]}, ${EXPECTED_TABLES[1]}, ${EXPECTED_TABLES[2]})`;
+    WHERE table_schema = 'public' AND table_name IN (${EXPECTED_TABLES[0]})`;
 
   const found = new Set(rows.map((r) => r.table_name));
   let missing = 0;

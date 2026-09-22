@@ -1,9 +1,9 @@
 import { ACCEPTED_UPLOAD_EXTENSIONS, MAX_FILE_SIZE_BYTES } from "@/lib/price-sheet/types";
 
 /**
- * 어시스턴트 화면 가격표 인제스트 로직 (1단계 승인 스코프).
+ * 가격표 인제스트 로직 (1단계 승인 스코프).
  *
- * 어시스턴트 LLM 턴(/api/assistant)은 관여하지 않는다 — 기존 가격표 API 2개
+ * LLM 턴은 관여하지 않는다 — 기존 가격표 API 2개
  * (POST /api/price-sheets → POST /api/price-sheets/[id]/extract)를 순차 호출하는
  * 클라이언트 오케스트레이션이다. Vercel 60초 클램프 안에서 LLM 호출(에이전트 턴 +
  * 추출 vision)을 중첩시키지 않기 위한 아키텍처 결정이므로, 이 흐름을 에이전트

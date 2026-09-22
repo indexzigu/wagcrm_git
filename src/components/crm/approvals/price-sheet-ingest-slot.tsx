@@ -43,10 +43,11 @@ export type PriceSheetIngestState =
   | { kind: "done"; result: PriceSheetDoneResult };
 
 /**
- * 어시스턴트 입력줄 위 슬롯의 상태기계. 드롭/클립 → 대기(거래처 확인) → 업로드·추출·매핑
- * 진행 → 검토 카드(깨끗한 건 채팅 적용 / 애매한 건 검토 화면으로) → 반영 완료. 결과는 채팅
- * 메시지 배열에 넣지 않는다 — 이 흐름은 /api/assistant 영속화 경로 밖이라 말풍선으로 만들면
- * 대화 재수화 때 사라진다(ss-ux P0 #2).
+ * 가격표 업로드 슬롯의 상태기계. 클립 → 대기(거래처 확인) → 업로드·추출·매핑 진행 →
+ * 검토 카드(깨끗한 건 바로 반영 / 애매한 건 검토 화면으로) → 반영 완료.
+ *
+ * 종전 서식지는 채팅 입력줄 위였고(채팅 은퇴 전), 그래서 결과를 대화 메시지 배열에 넣지
+ * 않는 설계였다 — 지금은 결재함 카드(`price-sheet-ingest-card.tsx`)가 유일한 소비처다.
  */
 export function usePriceSheetIngest() {
   const [state, setState] = React.useState<PriceSheetIngestState>({ kind: "idle" });

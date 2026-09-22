@@ -19,8 +19,8 @@ export type ChangeDealStatusData = {
 /**
  * 청사진 §0-1: 이 도구는 실제 딜 상태 변경도, ActionProposal 기안 생성도, 딜 조회도
  * 하지 않는다. execute(input)는 userId를 알지 못하므로(AgentTool 계약), 구조화된
- * writeIntent만 반환하고 /api/assistant route가 userId를 채워 단일 지점에서 기안을
- * 생성한다. 딜 상태기계(isValidTransition) 검증은 승인 시점에 write-executor에서
+ * writeIntent만 반환하고 호출자(agent worker 실행기)가 userId를 채워 단일 지점에서
+ * 기안을 생성한다. 딜 상태기계(isValidTransition) 검증은 승인 시점에 write-executor에서
  * 수행된다 — 이 도구는 args 형식(enum) 검증만 한다.
  */
 async function execute(input: ChangeDealStatusInput): Promise<ToolResult<ChangeDealStatusData>> {

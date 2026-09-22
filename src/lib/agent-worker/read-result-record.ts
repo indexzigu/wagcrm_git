@@ -6,10 +6,10 @@ import { serializeJsonFields } from "@/repositories/actionProposalRepository";
  * 봇(agent worker)의 **읽기** 작업 결과를 결재함의 READ 산출물로 남긴다.
  *
  * - 카드 단위 필드(requestType·kind·status·title·resultSummary·dataSources·reviewRequired)는
- *   웹 어시스턴트가 하던 「READ 자동 기록」(`/api/assistant/route.ts`)과 모양이 같다. 다만
- *   `structuredResult`는 이 모듈 전용 봉투 `{ operation, jobId, query, truncated, data }`이고
- *   웹 경로는 toolCalls 배열을 저장한다 — 결재함 상세 렌더(plan 2/3)는 `structuredResult.data`를
- *   풀어서 써야 한다(설계 정본: docs/private/specs/2026-09-22-assistant-renewal-approval-hub-design.md §3-A).
+ *   은퇴한 웹 채팅이 하던 「READ 자동 기록」과 모양이 같다. 다만 `structuredResult`는 이
+ *   모듈 전용 봉투 `{ operation, jobId, query, truncated, data }`이므로, 결재함 상세 렌더는
+ *   `structuredResult.data`를 풀어서 써야 한다
+ *   (설계 정본: docs/private/specs/2026-09-22-assistant-renewal-approval-hub-design.md §3-A).
  * - ⛔ INSERT 만 한다. UPDATE·승인·실행 함수는 여기 없고 들어와서도 안 된다 —
  *   `agent-worker-boundary.contract.test.ts` 가 이 파일을 소스 스캔으로 고정한다.
  * - 실행기(`executor.ts`)에는 `"EXECUTED"` 리터럴을 둘 수 없어(같은 계약) 상태 문자열이

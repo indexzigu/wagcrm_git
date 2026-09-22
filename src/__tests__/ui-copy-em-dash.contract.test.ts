@@ -44,7 +44,6 @@ const EM = "—";
 /** 파일 전체가 모델 입력인 것(프롬프트 정의 파일·도구 스키마). */
 const PROMPT_FILES = new Set([
   "lib/content-guide.ts",
-  "lib/agent/knowledge-loader.ts",
   "lib/seller-analysis/gemini.ts",
   "lib/price-sheet/extract-path-a.ts",
   "lib/price-sheet/extract-path-b.ts",

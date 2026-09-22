@@ -26,8 +26,8 @@ export type ToolEvidence = {
  * WRITE 도구가 반환하는 구조화된 "쓰기 의도" (청사진 §0-1).
  *
  * AgentTool.execute(input)에는 userId가 없으므로, WRITE 도구는 실제 쓰기도
- * ActionProposal 기안 생성도 하지 않고 이 intent만 반환한다. userId를 가진
- * /api/assistant route가 runAgent 반환 후 이 intent를 보고 단일 지점에서
+ * ActionProposal 기안 생성도 하지 않고 이 intent만 반환한다. 호출자(agent worker
+ * 실행기 `src/lib/agent-worker/executor.ts`)가 이 intent를 보고 단일 지점에서
  * ActionProposal(WRITE)을 생성 + PENDING_APPROVAL로 전이시킨다.
  */
 export type WriteIntent = {
@@ -58,7 +58,7 @@ export type AgentTool<TInput = any, TData = unknown> = {
   execute: (input: TInput) => Promise<ToolResult<TData>>;
 };
 
-/** WRITE 도구 이름 레지스트리 — agent-loop가 이 Set으로 도구 결과에서 writeIntent를 걷어낸다. */
+/** WRITE 도구 이름 레지스트리 — 호출자가 이 Set으로 도구 결과에서 writeIntent를 걷어낸다. */
 export const WRITE_TOOL_NAMES = new Set<string>([
   "add_entity_memo",
   "change_deal_status",
