@@ -246,10 +246,14 @@ export function ProposalCard({
           </>
         )}
 
+        {/* ⛔ 「재시도(승인)」로 되돌리지 말 것 — 버튼 하나에 동사 하나다. 이 카드는
+            결재함 상세(`/approvals/[id]`, Plan 2 Task 5)에도 얹히는데, 그 화면에서
+            누르는 일은 「다시 해봐」 하나뿐이다(괄호는 구현 설명이지 사용자의 일이
+            아니다). 실제로 approve(id) 를 부르는 것은 그대로다. */}
         {proposal.status === "FAILED" && (
           <Button size="sm" onClick={handleApprove} disabled={pending}>
             {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
-            재시도(승인)
+            재시도
           </Button>
         )}
       </div>

@@ -124,13 +124,13 @@ describe("ProposalCard", () => {
     await waitFor(() => expect(screen.getByText("반려됨")).toBeInTheDocument());
   });
 
-  it("FAILED: '실패' 칩 + errorMessage + [재시도(승인)] 단독 버튼을 보여준다 (반려 버튼 없음)", async () => {
+  it("FAILED: '실패' 칩 + errorMessage + [재시도] 단독 버튼을 보여준다 (반려 버튼 없음)", async () => {
     stubFetchOk(makeProposal({ status: "FAILED", errorMessage: "대상 딜을 찾을 수 없습니다" }));
     renderCard("proposal-123456789");
 
     await waitFor(() => expect(screen.getByText("실패")).toBeInTheDocument());
     expect(screen.getByText(/대상 딜을 찾을 수 없습니다/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /재시도/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "재시도" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "반려" })).not.toBeInTheDocument();
   });
 
@@ -239,8 +239,8 @@ describe("ProposalCard", () => {
     stubFetchOk(makeProposal({ status: "FAILED", errorMessage: "실행 오류" }));
     renderCard("proposal-123456789", { approve });
 
-    await waitFor(() => expect(screen.getByRole("button", { name: /재시도/ })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /재시도/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "재시도" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "재시도" }));
 
     await waitFor(() => expect(approve).toHaveBeenCalledWith("proposal-123456789"));
   });
