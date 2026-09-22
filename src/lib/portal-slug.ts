@@ -14,6 +14,7 @@ export const RESERVED_PORTAL_SLUGS: ReadonlySet<string> = new Set([
   // src/app 최상위 라우트 (계약 테스트 대상)
   'admin',
   'api',
+  'approvals', // 결재함(Plan 2 Task 4) — 셀러 슬러그로 선점되면 오너 화면이 포털에 가린다
   'assets',
   'assistant',
   'auth',

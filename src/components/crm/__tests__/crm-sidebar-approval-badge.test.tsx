@@ -37,7 +37,7 @@ describe("ApprovalBadge (사이드바 승인대기 배지, §6-2)", () => {
     const { container } = renderWithClient(<ApprovalBadge />);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=PENDING_APPROVAL");
+      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=PENDING_APPROVAL&kind=WRITE");
     });
     // count=0이면 배지 요소 자체가 없어야 한다(빈 문자열 렌더도 아님).
     expect(container.textContent).toBe("");

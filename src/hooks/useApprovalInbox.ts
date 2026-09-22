@@ -1,21 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import type { ApprovalInboxItem } from "@/components/crm/approvals/approval-cards";
-import type { ActionProposalStatus } from "@/repositories/actionProposalRepository";
+import type {
+  ActionProposalKind,
+  ActionProposalStatus,
+} from "@/repositories/actionProposalRepository";
 import { useProposalActions } from "./useProposalActions";
 
 type ApprovalInboxResponse = {
   items: ApprovalInboxItem[];
   count: number;
+  nextBefore: string | null;
 };
 
-async function fetchProposals(status: ActionProposalStatus): Promise<ApprovalInboxResponse> {
-  const res = await fetch(`/api/action-proposals?status=${status}`);
+async function fetchProposals(
+  status: ActionProposalStatus,
+  kind: ActionProposalKind
+): Promise<ApprovalInboxResponse> {
+  const res = await fetch(`/api/action-proposals?status=${status}&kind=${kind}`);
   if (!res.ok) {
     throw new Error("Failed to fetch action proposals");
   }
   const data = await res.json();
-  return { items: data.items ?? [], count: data.count ?? 0 };
+  return { items: data.items ?? [], count: data.count ?? 0, nextBefore: data.nextBefore ?? null };
 }
 
 /**
@@ -33,10 +40,13 @@ async function fetchProposals(status: ActionProposalStatus): Promise<ApprovalInb
  * invalidate는 프리픽스 기반("action-proposals")이라 재시도(승인) 후 실패 탭 캐시가
  * 사라지고 완료/대기 탭 캐시가 갱신되는 정합이 status 무관하게 성립한다.
  */
-export function useApprovalInbox(status: ActionProposalStatus = "PENDING_APPROVAL") {
+export function useApprovalInbox(
+  status: ActionProposalStatus = "PENDING_APPROVAL",
+  kind: ActionProposalKind = "WRITE"
+) {
   const query = useQuery({
-    queryKey: queryKeys.actionProposals(status),
-    queryFn: () => fetchProposals(status),
+    queryKey: queryKeys.actionProposals(status, kind),
+    queryFn: () => fetchProposals(status, kind),
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
     staleTime: 15000,
@@ -49,7 +59,11 @@ export function useApprovalInbox(status: ActionProposalStatus = "PENDING_APPROVA
   return {
     items,
     count: query.data?.count ?? 0,
+    nextBefore: query.data?.nextBefore ?? null,
     isLoading: query.isLoading,
+    // 결재함 허브(/approvals)가 「목록을 불러오지 못했습니다.」 + 다시 불러오기 버튼을
+    // 그리려면 실패를 구분해야 한다 — 빈 목록과 실패가 같은 얼굴이면 운영자가 "없다"로 읽는다.
+    isError: query.isError,
     approve,
     reject,
     refetch: query.refetch,

@@ -40,12 +40,12 @@ describe("useApprovalInbox", () => {
     renderHook(() => useApprovalInbox(), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=PENDING_APPROVAL");
+      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=PENDING_APPROVAL&kind=WRITE");
     });
 
     expect(
       queryClient.getQueryData(queryKeys.actionProposals("PENDING_APPROVAL"))
-    ).toEqual({ items: [], count: 0 });
+    ).toEqual({ items: [], count: 0, nextBefore: null });
   });
 
   it("status='EXECUTED' 호출 시 해당 status로 fetch하고 쿼리키에 EXECUTED가 포함된다", async () => {
@@ -53,12 +53,12 @@ describe("useApprovalInbox", () => {
     renderHook(() => useApprovalInbox("EXECUTED"), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=EXECUTED");
+      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=EXECUTED&kind=WRITE");
     });
 
     expect(
       queryClient.getQueryData(queryKeys.actionProposals("EXECUTED"))
-    ).toEqual({ items: [], count: 0 });
+    ).toEqual({ items: [], count: 0, nextBefore: null });
   });
 
   it("status='FAILED' 호출 시 해당 status로 fetch한다", async () => {
@@ -66,7 +66,7 @@ describe("useApprovalInbox", () => {
     renderHook(() => useApprovalInbox("FAILED"), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=FAILED");
+      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=FAILED&kind=WRITE");
     });
   });
 
@@ -75,7 +75,7 @@ describe("useApprovalInbox", () => {
     renderHook(() => useApprovalInbox("REJECTED"), { wrapper: wrapper(queryClient) });
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=REJECTED");
+      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=REJECTED&kind=WRITE");
     });
   });
 
@@ -93,8 +93,8 @@ describe("useApprovalInbox", () => {
       expect(executedResult.current.isLoading).toBe(false);
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=PENDING_APPROVAL");
-    expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=EXECUTED");
+    expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=PENDING_APPROVAL&kind=WRITE");
+    expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=EXECUTED&kind=WRITE");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -109,6 +109,30 @@ describe("useApprovalInbox", () => {
     // 에러 상태에서도 items/count는 안전한 기본값을 유지한다.
     expect(result.current.items).toEqual([]);
     expect(result.current.count).toBe(0);
+  });
+
+  it("kind='READ' 호출 시 kind 파라미터와 쿼리키가 함께 갈라진다", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderHook(() => useApprovalInbox("EXECUTED", "READ"), { wrapper: wrapper(queryClient) });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals?status=EXECUTED&kind=READ");
+    });
+
+    // 같은 status 라도 kind 가 다르면 별도 캐시다 — 조회 결과(READ) 탭이 기안 완료 탭을
+    // 덮어쓰지 않게 하는 계약.
+    expect(queryClient.getQueryData(queryKeys.actionProposals("EXECUTED", "READ"))).toEqual({
+      items: [],
+      count: 0,
+      nextBefore: null,
+    });
+    expect(queryClient.getQueryData(queryKeys.actionProposals("EXECUTED"))).toBeUndefined();
+  });
+
+  it("무인자 kind 는 WRITE 다 (사이드바 배지 하위호환)", () => {
+    expect(queryKeys.actionProposals("PENDING_APPROVAL")).toEqual(
+      queryKeys.actionProposals("PENDING_APPROVAL", "WRITE")
+    );
   });
 
   it("approve/reject 함수를 반환한다 (useProposalActions 재사용)", async () => {
