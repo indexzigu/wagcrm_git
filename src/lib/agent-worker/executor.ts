@@ -37,6 +37,7 @@ import {
   type AgentJobResult,
   type AgentJobRoute,
 } from "./contracts";
+import { recordReadResult, type ReadResultRecord } from "./read-result-record";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import {
   hasShadowValidator,
@@ -121,6 +122,8 @@ type OperationSuccess = {
   summary: string;
   evidenceRefs: string[];
   actionProposalId: string | null;
+  /** 읽기 작업의 결재함 기록 페이로드 — 있으면 실행기가 성공 직후 READ 산출물로 남긴다(§3-A). */
+  record?: ReadResultRecord;
 };
 type OperationFailure = { status: "FAILED_FINAL"; errorClass: string; summary: string };
 type OperationRetry = { status: "RETRY"; errorClass: string };
@@ -295,13 +298,31 @@ async function searchDeals(input: SearchDealsInput): Promise<OperationOutcome> {
   const truncated = rows.length > SEARCH_TAKE_LIMIT;
   const items = rows.slice(0, SEARCH_TAKE_LIMIT);
   const lines = items.map((row) => `${row.dealName}${row.brandName ? ` / ${row.brandName}` : ""} [${row.status}] id=${row.id}`);
+  const summary = boundSummary(
+    `search_deals: ${items.length} deal(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `search_deals: ${items.length} deal(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence(items.map((row) => row.id)),
     actionProposalId: null,
+    record: {
+      title: `딜 검색 ${items.length}건`,
+      resultSummary: summary,
+      structuredResult: {
+        items: items.map((row) => ({
+          id: row.id,
+          dealName: row.dealName,
+          brandName: row.brandName,
+          status: row.status,
+          partnerId: row.partnerId,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        truncated,
+      },
+      dataSources: ["Deal"],
+      query: { ...input },
+    },
   };
 }
 
@@ -334,13 +355,30 @@ async function searchPartners(input: SearchPartnersInput): Promise<OperationOutc
     (row) =>
       `${row.name} [${row.type}]${row.businessNumber ? ` 사업자번호 ${row.businessNumber}` : ""} id=${row.id}`,
   );
+  const summary = boundSummary(
+    `search_partners: ${items.length} partner(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `search_partners: ${items.length} partner(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence(items.map((row) => row.id)),
     actionProposalId: null,
+    record: {
+      title: `거래처 검색 ${items.length}건`,
+      resultSummary: summary,
+      structuredResult: {
+        items: items.map((row) => ({
+          id: row.id,
+          name: row.name,
+          type: row.type,
+          businessNumber: row.businessNumber,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        truncated,
+      },
+      dataSources: ["Partner"],
+      query: { ...input },
+    },
   };
 }
 
@@ -353,11 +391,19 @@ async function pipelineStatus(): Promise<OperationOutcome> {
       : toolFailure(result);
   }
   const counts = result.data.statusCounts.map((entry) => `${entry.status}=${entry.count}`).join(", ");
+  const summary = boundSummary(`get_pipeline_status: total=${result.data.totalCount}; ${counts}`);
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(`get_pipeline_status: total=${result.data.totalCount}; ${counts}`),
+    summary,
     evidenceRefs: boundEvidence(result.data.campaigns.map((campaign) => campaign.id)),
     actionProposalId: null,
+    record: {
+      title: `파이프라인 현황 총 ${result.data.totalCount}건`,
+      resultSummary: summary,
+      structuredResult: result.data,
+      dataSources: result.evidence.dataSources,
+      query: result.evidence.query,
+    },
   };
 }
 
@@ -398,13 +444,26 @@ async function campaignOrderSnapshot(campaignId: string, now: Date): Promise<Ope
     else uncovered += 1;
   }
   const { detail } = composeSalesDetailFromAggregates(aggregates, window.todayKey, targets);
+  const summary = boundSummary(
+    `get_order_snapshot campaign=${campaign.id} window=${window.startKey}..${window.todayKey} truncated=${window.truncated} uncoveredRows=${uncovered} cumulative=${JSON.stringify(detail.cumulative)} today=${JSON.stringify(detail.today)} days=${detail.daily.length}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `get_order_snapshot campaign=${campaign.id} window=${window.startKey}..${window.todayKey} truncated=${window.truncated} uncoveredRows=${uncovered} cumulative=${JSON.stringify(detail.cumulative)} today=${JSON.stringify(detail.today)} days=${detail.daily.length}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence([campaign.id, ...detail.daily.map((point) => point.date)]),
     actionProposalId: null,
+    record: {
+      title: `캠페인 주문 스냅샷 ${campaign.id}`,
+      resultSummary: summary,
+      structuredResult: {
+        campaignId: campaign.id,
+        window: { startKey: window.startKey, todayKey: window.todayKey, truncated: window.truncated },
+        uncoveredRows: uncovered,
+        detail,
+      },
+      dataSources: ["SalesCampaign", "NaverOrderSnapshot"],
+      query: { campaignId: campaign.id },
+    },
   };
 }
 
@@ -418,21 +477,28 @@ async function orderSnapshot(input: OrderSnapshotInput, now: Date): Promise<Oper
   if (!input.startAt || !input.endAt) {
     return failure("MISSING_PARAM", "startAt and endAt are required without campaignId");
   }
-  const result = await runTool(getOrderSnapshotTool, {
-    startDate: toKstYmd(new Date(input.startAt)),
-    endDate: toKstYmd(new Date(input.endAt)),
-  });
+  const startDate = toKstYmd(new Date(input.startAt));
+  const endDate = toKstYmd(new Date(input.endAt));
+  const result = await runTool(getOrderSnapshotTool, { startDate, endDate });
   if (isOperationFailure(result)) return result;
   if (!result.ok) {
     return result.error.code === "NOT_FOUND"
       ? { status: "SUCCEEDED", summary: "get_order_snapshot: no snapshot rows in window", evidenceRefs: [], actionProposalId: null }
       : toolFailure(result);
   }
+  const summary = boundSummary(`get_order_snapshot days=${result.data.days.length} totals=${JSON.stringify(result.data.totals)}`);
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(`get_order_snapshot days=${result.data.days.length} totals=${JSON.stringify(result.data.totals)}`),
+    summary,
     evidenceRefs: boundEvidence(result.data.days.map((day) => day.snapshotDate)),
     actionProposalId: null,
+    record: {
+      title: `주문 스냅샷 ${startDate}~${endDate}`,
+      resultSummary: summary,
+      structuredResult: result.data,
+      dataSources: result.evidence.dataSources,
+      query: result.evidence.query,
+    },
   };
 }
 
@@ -483,13 +549,30 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
     manualSellerExpense: toNullableNumber(campaign.sellerExpense),
     manualTaxExpense: toNullableNumber(campaign.taxExpense),
   });
+  const summary = boundSummary(
+    `get_campaign_financials campaign=${campaign.id} deal=${campaign.deal?.dealName ?? ""} seller=${campaign.seller?.name ?? ""} status=${campaign.status} actualSales=${toNumber(campaign.actualSales)} derived=${JSON.stringify(derived)} deposit=${campaign.isDepositReceived} payout=${campaign.isPayoutCompleted}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `get_campaign_financials campaign=${campaign.id} deal=${campaign.deal?.dealName ?? ""} seller=${campaign.seller?.name ?? ""} status=${campaign.status} actualSales=${toNumber(campaign.actualSales)} derived=${JSON.stringify(derived)} deposit=${campaign.isDepositReceived} payout=${campaign.isPayoutCompleted}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence([campaign.id]),
     actionProposalId: null,
+    record: {
+      title: `캠페인 재무 ${campaign.deal?.dealName ?? ""} / ${campaign.seller?.name ?? ""}`,
+      resultSummary: summary,
+      structuredResult: {
+        campaignId: campaign.id,
+        dealName: campaign.deal?.dealName ?? null,
+        sellerName: campaign.seller?.name ?? null,
+        status: campaign.status,
+        actualSales: toNumber(campaign.actualSales),
+        isDepositReceived: campaign.isDepositReceived,
+        isPayoutCompleted: campaign.isPayoutCompleted,
+        derived,
+      },
+      dataSources: ["SalesCampaign", "Deal", "Seller", "Partner"],
+      query: { campaignId: input.campaignId },
+    },
   };
 }
 
@@ -725,11 +808,23 @@ export async function executeAgentJob(
       }),
     };
   }
+  // §3-A: 읽기 성공은 결재함 READ 산출물로 남긴다. 기록 실패는 재시도 가능으로 넘긴다 —
+  // 읽기는 멱등이고 값싸며, 조용히 빠뜨리면 봇이 "전체 보기" 링크 없는 답을 하게 된다.
+  let actionProposalId = outcome.actionProposalId;
+  if (outcome.status === "SUCCEEDED" && outcome.record) {
+    try {
+      assertNotAborted(signal);
+      actionProposalId = await recordReadResult(job.payload.operation, outcome.record, now());
+    } catch (error) {
+      if (error instanceof ExecutionAbortedError) throw error;
+      return { kind: "retryable", errorClass: error instanceof Error ? error.name : "UnknownError", route, model };
+    }
+  }
   const result = buildResult(job, route, model, {
     status: outcome.status,
     validationResult: "pass",
     resultSummary: outcome.summary,
-    actionProposalId: outcome.actionProposalId,
+    actionProposalId,
     evidenceRefs: outcome.evidenceRefs,
   });
   if (route !== "local_shadow" || outcome.status !== "SUCCEEDED") {
