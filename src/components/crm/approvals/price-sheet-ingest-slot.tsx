@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import {
+  AlertCircleIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
   FileIcon,
@@ -22,7 +23,7 @@ import {
   type PriceSheetReview,
 } from "./price-sheet-ingest";
 
-/** 슬롯 종료 결과 — 채팅에서 반영 완료(applied) 또는 업로드/추출 실패. */
+/** 슬롯 종료 결과 — 카드에서 바로 반영 완료(applied) 또는 업로드/추출 실패. */
 export type PriceSheetDoneResult =
   | { ok: true; priceSheetId: string; appliedRowCount: number; dealCount: number }
   | { ok: false; error: string; priceSheetId: string | null };
@@ -43,11 +44,12 @@ export type PriceSheetIngestState =
   | { kind: "done"; result: PriceSheetDoneResult };
 
 /**
- * 가격표 업로드 슬롯의 상태기계. 클립 → 대기(거래처 확인) → 업로드·추출·매핑 진행 →
- * 검토 카드(깨끗한 건 바로 반영 / 애매한 건 검토 화면으로) → 반영 완료.
+ * 가격표 업로드 슬롯의 상태기계. 파일 선택 → 대기(거래처 확인) → 업로드·추출·매핑 진행 →
+ * 검토(깨끗한 건 바로 반영 / 애매한 건 검토 화면으로) → 반영 완료.
  *
- * 종전 서식지는 채팅 입력줄 위였고(채팅 은퇴 전), 그래서 결과를 대화 메시지 배열에 넣지
- * 않는 설계였다 — 지금은 결재함 카드(`price-sheet-ingest-card.tsx`)가 유일한 소비처다.
+ * 소비처는 결재함의 가격표 업로드 카드(`price-sheet-ingest-card.tsx`) 하나다 — 상태 표시는
+ * 그 카드 **안쪽**에 줄로 쌓이므로, 각 상태 블록은 스스로 카드가 되지 않는다(테두리·그림자·
+ * 배경 없이 `border-t` 구분선 한 줄만 쓴다. 카드 속 카드 방지).
  */
 export function usePriceSheetIngest() {
   const [state, setState] = React.useState<PriceSheetIngestState>({ kind: "idle" });
@@ -119,9 +121,7 @@ export function usePriceSheetIngest() {
 
   return {
     state,
-    /** 슬롯 점유 여부 — 빈 대화 제안 칩과 상호 배타(ss-ux P0 #4). */
-    isOccupied: state.kind !== "idle",
-    /** 네트워크 진행 중(업로드·추출·매핑·반영) — 클립/전송 버튼 비활성화용. */
+    /** 네트워크 진행 중(업로드·추출·매핑·반영) — 업로드 버튼 비활성화용. */
     isRunning: state.kind === "running" || state.kind === "applying",
     stageFile,
     confirmUpload,
@@ -142,8 +142,11 @@ function rowLabel(row: { productName: string | null; optionName: string | null }
 }
 
 /**
- * 슬롯 렌더링 — 대기 바 / 진행 바 / 성공·실패 카드. 스크린리더 공지를 위해 래퍼가
- * role="status" aria-live="polite"를 가진다(partners-management 선례, ss-ux a11y P0).
+ * 슬롯 렌더링 — 대기 줄 / 진행 줄 / 검토 줄 / 성공·실패 줄. 전부 같은 모양
+ * (`border-t border-border px-3 py-2.5`)이고 성패는 **아이콘과 글자색**으로만 말한다 —
+ * 카드 안이라 틴트 박스를 얹으면 카드 속 카드가 된다.
+ * 스크린리더 공지를 위해 래퍼가 role="status" aria-live="polite"를 가진다
+ * (partners-management 선례, ss-ux a11y P0).
  */
 export function PriceSheetIngestSlot({
   state,
@@ -162,8 +165,8 @@ export function PriceSheetIngestSlot({
   const [selectedPartnerId, setSelectedPartnerId] = React.useState<string>(NONE_PARTNER_OPTION.id);
   const isPending = state.kind === "pending";
 
-  // 거래처 목록은 파일이 대기 상태로 올라온 뒤에만 지연 로드한다 — 어시스턴트 페이지
-  // 진입마다 /api/partners를 때리지 않기 위해서다.
+  // 거래처 목록은 파일이 대기 상태로 올라온 뒤에만 지연 로드한다 — 결재함 진입마다
+  // /api/partners를 때리지 않기 위해서다.
   React.useEffect(() => {
     if (!isPending || partners.length > 0) return;
     fetch("/api/partners")
@@ -219,7 +222,7 @@ export function PriceSheetIngestSlot({
       )}
 
       {state.kind === "reviewing" && (
-        <ReviewCard review={state.review} onApply={onApply} onDismiss={onDismiss} />
+        <ReviewRow review={state.review} onApply={onApply} onDismiss={onDismiss} />
       )}
 
       {state.kind === "applying" && (
@@ -230,7 +233,7 @@ export function PriceSheetIngestSlot({
       )}
 
       {state.kind === "done" && state.result.ok && (
-        <div className="mx-3 mb-2.5 mt-2.5 flex items-start gap-2 rounded-lg border border-status-success/30 bg-status-success-bg px-3 py-2 shadow-soft-sm">
+        <div className="flex items-start gap-2 border-t border-border px-3 py-2.5">
           <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-status-success" />
           <p className="flex-1 text-xs text-status-success">
             {/* 그룹핑 시 딜 수가 행 수보다 클 수 있다(/apply rowCount vs results.length) —
@@ -253,7 +256,8 @@ export function PriceSheetIngestSlot({
       )}
 
       {state.kind === "done" && !state.result.ok && (
-        <div className="mx-3 mb-2.5 mt-2.5 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive shadow-soft-sm">
+        <div className="flex items-start gap-2 border-t border-border px-3 py-2.5 text-xs text-destructive">
+          <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
           <p className="flex-1">{state.result.error}</p>
           {state.result.priceSheetId ? (
             <Link
@@ -277,11 +281,12 @@ export function PriceSheetIngestSlot({
 }
 
 /**
- * 매핑 분석 후 검토 카드. 깨끗한 행(새 딜)만 있으면 채팅에서 바로 적용 버튼을 열고, 애매한
- * 행이 하나라도 있으면 (부분 적용 = APPLIED 잠금 충돌이라) 채팅 적용을 열지 않고 검토 화면으로
- * 통째로 넘긴다. 깨끗+애매가 섞였어도 애매가 있으면 검토 화면 경로만 노출한다(1차 안전판).
+ * 매핑 분석 후 검토 줄. 깨끗한 행(새 딜)만 있으면 카드에서 바로 적용 버튼을 열고, 애매한
+ * 행이 하나라도 있으면 (부분 적용 = APPLIED 잠금 충돌이라) 인라인 적용을 열지 않고 검토
+ * 화면으로 통째로 넘긴다. 깨끗+애매가 섞였어도 애매가 있으면 검토 화면 경로만 노출한다
+ * (1차 안전판).
  */
-function ReviewCard({
+function ReviewRow({
   review,
   onApply,
   onDismiss,
@@ -293,12 +298,12 @@ function ReviewCard({
   const detailHref = `/assets/price-sheets/${review.priceSheetId}`;
   const hasClean = review.clean.length > 0;
   const hasAmbiguous = review.ambiguousCount > 0;
-  const canApplyInChat = hasClean && !hasAmbiguous;
+  const canApplyInline = hasClean && !hasAmbiguous;
   const previewRows = review.clean.slice(0, PREVIEW_ROW_LIMIT);
   const overflow = review.clean.length - previewRows.length;
 
   return (
-    <div className="mx-3 mb-2.5 mt-2.5 rounded-lg border border-border bg-card px-3 py-2.5 shadow-soft-sm">
+    <div className="border-t border-border px-3 py-2.5">
       <div className="flex items-start gap-2">
         <FileSpreadsheetIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <p className="flex-1 text-xs font-medium text-foreground">
@@ -335,7 +340,7 @@ function ReviewCard({
       )}
 
       <div className="mt-2.5 flex items-center gap-3">
-        {canApplyInChat ? (
+        {canApplyInline ? (
           <>
             <Button type="button" size="sm" onClick={onApply}>
               새 딜 {review.clean.length}개 반영
@@ -357,7 +362,7 @@ function ReviewCard({
         )}
       </div>
 
-      {!canApplyInChat && (
+      {!canApplyInline && (
         <p className="mt-1.5 text-xs text-muted-foreground">
           {hasClean
             ? "확인이 필요한 품목이 있어 검토 화면에서 확정 후 함께 반영하세요."

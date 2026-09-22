@@ -15,7 +15,6 @@ const hookState = { isRunning: false };
 vi.mock("../price-sheet-ingest-slot", () => ({
   usePriceSheetIngest: () => ({
     state: { kind: "idle" as const },
-    isOccupied: false,
     isRunning: hookState.isRunning,
     stageFile,
     confirmUpload: vi.fn(),
@@ -38,6 +37,17 @@ beforeEach(() => {
 });
 
 describe("PriceSheetIngestCard", () => {
+  it("제목이 영역 이름이 된다 — 보이는 제목과 스크린리더가 읽는 이름이 같다", () => {
+    render(<PriceSheetIngestCard />);
+
+    const heading = screen.getByRole("heading", { level: 2, name: "가격표 업로드" });
+    // `aria-label` 로 이름을 따로 쓰면 제목을 고칠 때 둘이 갈린다 — id 로 묶는다.
+    expect(screen.getByRole("region", { name: "가격표 업로드" })).toHaveAttribute(
+      "aria-labelledby",
+      heading.id,
+    );
+  });
+
   it("업로드 버튼이 숨은 file input 을 연다", () => {
     render(<PriceSheetIngestCard />);
     const click = vi.spyOn(fileInput(), "click");

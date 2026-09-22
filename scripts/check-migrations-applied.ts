@@ -4,7 +4,7 @@
  *
  * 실행: npx tsx scripts/check-migrations-applied.ts   (.env의 DATABASE_URL 사용)
  */
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const EXPECTED_TABLES = [
   "SellerAiProfile", // 20260710000000_add_seller_ai_profile (타 세션)
@@ -15,7 +15,7 @@ const db = new PrismaClient();
 async function main() {
   const rows = await db.$queryRaw<Array<{ table_name: string }>>`
     SELECT table_name FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name IN (${EXPECTED_TABLES[0]})`;
+    WHERE table_schema = 'public' AND table_name IN (${Prisma.join(EXPECTED_TABLES)})`;
 
   const found = new Set(rows.map((r) => r.table_name));
   let missing = 0;

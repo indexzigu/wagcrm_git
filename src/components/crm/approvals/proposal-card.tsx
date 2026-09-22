@@ -11,12 +11,12 @@ import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 
 /**
- * ProposalCard — 채팅 메시지 안 기안 카드(인라인 승인) (청사진 §1, §3-#4).
+ * ProposalCard — 기안 한 건의 카드(인라인 승인) (청사진 §1, §3-#4).
  *
- * model 메시지의 actionProposalIds 각 id에 대해 렌더된다. 마운트 시 GET
+ * 소비처는 결재함 상세(`/approvals/[id]`)다. 기안 id 로 마운트되면 GET
  * /api/action-proposals/[id]를 react-query로 가져와(§1-1) 상태 칩+인라인
- * 액션을 그린다. refetchOnWindowFocus:true — 다른 탭(인박스)에서 승인한
- * 카드가 이 대화에서 stale PENDING으로 남지 않도록 한다(critic #2).
+ * 액션을 그린다. refetchOnWindowFocus:true — 다른 탭(결재함 목록)에서 승인한
+ * 카드가 이 화면에 stale PENDING으로 남지 않도록 한다(critic #2).
  */
 
 /**

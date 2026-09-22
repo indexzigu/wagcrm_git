@@ -14,18 +14,25 @@ import { PriceSheetIngestSlot, usePriceSheetIngest } from "./price-sheet-ingest-
  * 매핑 → 반영) 화면만 옮기면 그대로 산다. 결재함에 두는 이유는 이 흐름의 종착점이
  * 「딜을 새로 만든다」는 기안이고, 애매한 행은 검토 화면으로 넘어가기 때문이다.
  *
- * 상태기계·문구·검토 카드는 전부 `PriceSheetIngestSlot` 이 소유한다 — 여기서 다시 그리지
+ * 높이는 `shadow-soft-md` — P8 Elevation Ladder 의 md 행(「독립 콘텐츠 패널의 평상시:
+ * 설정 폼, 진단 카드」)이다. 판단 기준은 「화면에 몇 개가 동시에 존재하는가」이고 이 카드는
+ * 결재함에 단 하나뿐이다.
+ *
+ * 상태기계·문구·검토 표시는 전부 `PriceSheetIngestSlot` 이 소유한다 — 여기서 다시 그리지
  * 않는다(슬롯이 스크린리더 공지 `role="status"` 도 함께 들고 있다).
  */
 export function PriceSheetIngestCard() {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const headingId = React.useId();
   const ingest = usePriceSheetIngest();
 
   return (
-    <section className="rounded-lg border border-border p-4 shadow-soft-sm" aria-label="가격표 업로드">
+    <section className="rounded-lg border border-border p-4 shadow-soft-md" aria-labelledby={headingId}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-medium text-foreground">가격표 업로드 → 기안</h2>
+          <h2 id={headingId} className="text-sm font-medium text-foreground">
+            가격표 업로드
+          </h2>
           <p className="text-xs text-muted-foreground">
             거래처가 보낸 가격표를 올리면 품목을 읽어 새 딜 기안으로 만듭니다
           </p>

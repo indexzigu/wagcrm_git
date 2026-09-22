@@ -24,8 +24,9 @@ export default function ApprovalsPage() {
       <div className="px-5 pb-5 pt-5 md:px-8">
         {/*
           가격표 업로드 기안 입구(Plan 3 Task A2) — 종전 서식지는 채팅 입력줄의 클립
-          버튼이었다. ambient 컨테이너는 화면당 정확히 1개라(P8 Elevation Ladder) 이
-          카드는 그 밖에 두고 `shadow-soft-sm` 으로 낮게 얹는다.
+          버튼이었다. ambient 컨테이너(화면당 정확히 1개, P8 Elevation Ladder) 밖에 두는
+          것은 이 카드가 탭 내용이 아니라 **탭과 나란한 별개 입구**이기 때문이다. 높이는
+          카드 자신이 md 로 정한다(그 판단 근거는 카드 파일 주석).
         */}
         <div className="mb-4">
           <PriceSheetIngestCard />

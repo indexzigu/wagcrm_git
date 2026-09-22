@@ -12,7 +12,7 @@ import { ACCEPTED_UPLOAD_EXTENSIONS, MAX_FILE_SIZE_BYTES } from "@/lib/price-she
 
 export const PRICE_SHEET_ACCEPT = ACCEPTED_UPLOAD_EXTENSIONS.map((ext) => `.${ext}`).join(",");
 
-// 추출 다음에 매핑 계산까지 채팅 안에서 이어붙인다(2단계). "mapping"은 /map 호출 + 행 조회.
+// 추출 다음에 매핑 계산까지 같은 흐름에서 이어붙인다(2단계). "mapping"은 /map 호출 + 행 조회.
 export type PriceSheetIngestPhase = "uploading" | "extracting" | "mapping";
 
 export type PriceSheetIngestResult =
@@ -96,17 +96,17 @@ export async function ingestPriceSheetFile(
   }
 }
 
-// ── 2단계: 채팅 안에서 매핑 분석 → (깨끗한 건) 적용까지 ──────────────────────
+// ── 2단계: 결재함 카드 안에서 매핑 분석 → (깨끗한 건) 적용까지 ──────────────────
 //
 // "깨끗함 vs 애매함"의 경계는 새로 발명하지 않는다 — 기존 매핑 시스템이 이미 긋는다.
 //   NEW_DEAL   = 닮은 기존 딜 없음 → 새 딜 생성. 적용 파이프라인이 사람 확인 없이 받음 = 깨끗.
 //   SUGGESTED  = 기존 딜과 유사. 잘못 연결하면 엉뚱한 딜 가격을 덮어씀(돈) → 적용 파이프라인이
 //                의도적으로 거부하고 사람 확인을 요구 = 애매(검토 화면으로 넘김).
-// needsReview 플래그·판매가 누락 행도 애매로 본다(채팅에서 바로 반영하기엔 확인이 필요).
+// needsReview 플래그·판매가 누락 행도 애매로 본다(카드에서 바로 반영하기엔 확인이 필요).
 //
 // 부분 적용은 하지 않는다: 현재 /apply 는 실행 시 가격표 전체를 APPLIED 로 잠그므로(2차 적용
 // 409), "깨끗한 것만 먼저·애매한 건 나중"이 성립하려면 돈 반영 파이프라인 수정이 필요하다.
-// 그래서 애매한 행이 하나라도 있으면 채팅 적용을 열지 않고 검토 화면으로 통째로 넘긴다(1차 안전판).
+// 그래서 애매한 행이 하나라도 있으면 인라인 적용을 열지 않고 검토 화면으로 통째로 넘긴다(1차 안전판).
 
 export type PriceSheetRowSummary = {
   productName: string | null;
@@ -117,7 +117,7 @@ export type PriceSheetRowSummary = {
 export type PriceSheetReview = {
   priceSheetId: string;
   total: number;
-  /** 채팅에서 바로 적용 가능한 신규 딜 행(미리보기용 요약). */
+  /** 카드에서 바로 적용 가능한 신규 딜 행(미리보기용 요약). */
   clean: PriceSheetRowSummary[];
   /** 기존 딜과 겹치거나 확인이 필요해 검토 화면으로 넘길 행 수. */
   ambiguousCount: number;
@@ -135,7 +135,7 @@ type CategorizableRow = {
   flags?: unknown;
 };
 
-// 검토 화면(review-table FlagBadges)이 배지로 경고하는 플래그 전부 — 채팅 원클릭 적용의
+// 검토 화면(review-table FlagBadges)이 배지로 경고하는 플래그 전부 — 원클릭 적용의
 // 안전망이 기존 화면보다 좁으면 안 된다(교차검증 HIGH: 음수마진 행이 무경고 적용될 뻔).
 const RISK_FLAG_KEYS = [
   "needsReview",
@@ -203,8 +203,8 @@ export async function mapAndCategorize(
 
 /**
  * 검수 확정 행(MAPPED/NEW_DEAL)을 딜에 반영한다 — 기존 적용 파이프라인(/apply: 승인 기안 →
- * 트랜잭션 → 딜 생성/수정)을 그대로 호출한다. 채팅에서 돈 건드리는 경로를 새로 짜지 않는다.
- * 채팅 적용은 애매 행이 0일 때만 호출되므로 반영 대상은 전부 깨끗한 NEW_DEAL 이다.
+ * 트랜잭션 → 딜 생성/수정)을 그대로 호출한다. 이 카드를 위해 돈 건드리는 경로를 새로 짜지
+ * 않는다. 인라인 적용은 애매 행이 0일 때만 호출되므로 반영 대상은 전부 깨끗한 NEW_DEAL 이다.
  */
 export async function applyPriceSheetRows(priceSheetId: string): Promise<PriceSheetApplyResult> {
   try {
