@@ -234,7 +234,7 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     await expectDenied(worker!.$executeRawUnsafe(`CREATE ROLE wag_priv_probe`), "CREATE ROLE");
   });
 
-  it("runs the SELECT-backed read operations and a proposal as the worker role", async () => {
+  it("runs five read operations and a proposal as the worker role", async () => {
     const { executeAgentJob } = await import("@/lib/agent-worker/executor");
 
     const search = await executeAgentJob(jobFor("search_deals", { query: "privilege" }), python);

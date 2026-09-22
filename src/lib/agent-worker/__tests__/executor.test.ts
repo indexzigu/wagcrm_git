@@ -1329,11 +1329,13 @@ describe("get_settlement_report (spec §3-E)", () => {
     });
   });
 
-  it("maps the tool's NOT_FOUND (no campaigns) to an empty SUCCEEDED result without a record", async () => {
+  it("maps the tool's NOT_FOUND (no campaigns) to an empty SUCCEEDED result that is still recorded", async () => {
     settlementMock.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "none" }, evidence: { dataSources: [], query: {} } });
     const outcome = await executeAgentJob(job("get_settlement_report", { month: "2026-01" }), deps(accepted("python")));
-    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { resultSummary: "get_settlement_report: no campaigns in period", actionProposalId: null } });
-    expect(proposalCreateMock).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { resultSummary: "get_settlement_report: no campaigns in period", actionProposalId: "read-1" } });
+    expect(proposalCreateMock).toHaveBeenCalledTimes(1);
+    const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data.title).toBe("정산 리포트 2026-01 (0건)");
   });
 
   it("maps MISSING_PARAM to FAILED_FINAL and QUERY_FAILED to retryable", async () => {

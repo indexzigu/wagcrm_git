@@ -623,9 +623,22 @@ async function settlementReport(input: SettlementReportInput): Promise<Operation
   const result = await runTool(getSettlementReportTool, input);
   if (isOperationFailure(result)) return result;
   if (!result.ok) {
-    return result.error.code === "NOT_FOUND"
-      ? { status: "SUCCEEDED", summary: "get_settlement_report: no campaigns in period", evidenceRefs: [], actionProposalId: null }
-      : toolFailure(result);
+    if (result.error.code !== "NOT_FOUND") return toolFailure(result);
+    const periodLabel = input.month ?? input.year ?? "이번 달";
+    const emptySummary = "get_settlement_report: no campaigns in period";
+    return {
+      status: "SUCCEEDED",
+      summary: emptySummary,
+      evidenceRefs: [],
+      actionProposalId: null,
+      record: {
+        title: `정산 리포트 ${periodLabel} (0건)`,
+        resultSummary: emptySummary,
+        structuredResult: { period: periodLabel, campaigns: [], stateCounts: { pending: 0, confirmed: 0, paid: 0 } },
+        dataSources: ["SalesCampaign"],
+        query: { ...input },
+      },
+    };
   }
   const { period, summary: totals, stateCounts, campaigns } = result.data;
   const lines = campaigns.map(
