@@ -318,7 +318,10 @@ async function searchDeals(input: SearchDealsInput): Promise<OperationOutcome> {
           partnerId: row.partnerId,
           updatedAt: row.updatedAt.toISOString(),
         })),
-        truncated,
+        // ⚠️ 이 값은 envelope 의 `truncated`(64KB 상한 초과로 데이터가 통째로 마커로 바뀌었는가)
+        // 와 다른 개념이다 — 이건 "행 목록이 20건 상한에 걸렸는가"다. 이름을 겹치게 두면 결재함
+        // 화면·감사 로그가 어느 절단인지 헷갈린다.
+        rowLimitReached: truncated,
       },
       dataSources: ["Deal"],
       query: { ...input },
@@ -374,7 +377,8 @@ async function searchPartners(input: SearchPartnersInput): Promise<OperationOutc
           businessNumber: row.businessNumber,
           updatedAt: row.updatedAt.toISOString(),
         })),
-        truncated,
+        // envelope 의 `truncated`(64KB 상한)와 다른 개념 — "행 목록이 20건 상한에 걸렸는가".
+        rowLimitReached: truncated,
       },
       dataSources: ["Partner"],
       query: { ...input },
@@ -386,9 +390,21 @@ async function pipelineStatus(): Promise<OperationOutcome> {
   const result = await runTool(getPipelineStatusTool, {});
   if (isOperationFailure(result)) return result;
   if (!result.ok) {
-    return result.error.code === "NOT_FOUND"
-      ? { status: "SUCCEEDED", summary: "get_pipeline_status: no campaigns", evidenceRefs: [], actionProposalId: null }
-      : toolFailure(result);
+    if (result.error.code !== "NOT_FOUND") return toolFailure(result);
+    const emptySummary = "get_pipeline_status: no campaigns";
+    return {
+      status: "SUCCEEDED",
+      summary: emptySummary,
+      evidenceRefs: [],
+      actionProposalId: null,
+      record: {
+        title: "파이프라인 현황 총 0건",
+        resultSummary: emptySummary,
+        structuredResult: { totalCount: 0, statusCounts: [], campaigns: [] },
+        dataSources: ["SalesCampaign"],
+        query: {},
+      },
+    };
   }
   const counts = result.data.statusCounts.map((entry) => `${entry.status}=${entry.count}`).join(", ");
   const summary = boundSummary(`get_pipeline_status: total=${result.data.totalCount}; ${counts}`);
@@ -422,11 +438,19 @@ async function campaignOrderSnapshot(campaignId: string, now: Date): Promise<Ope
   });
   if (!campaign) return failure("NOT_FOUND", "campaign not found");
   if (!campaign.orderCampaignId) {
+    const noLinkSummary = `get_order_snapshot campaign=${campaign.id} source=none (no linked order campaign)`;
     return {
       status: "SUCCEEDED",
-      summary: `get_order_snapshot campaign=${campaign.id} source=none (no linked order campaign)`,
+      summary: noLinkSummary,
       evidenceRefs: boundEvidence([campaign.id]),
       actionProposalId: null,
+      record: {
+        title: `캠페인 주문 스냅샷 ${campaign.id} (주문캠페인 연결 없음)`,
+        resultSummary: noLinkSummary,
+        structuredResult: { campaignId: campaign.id, source: "none" },
+        dataSources: ["SalesCampaign"],
+        query: { campaignId: campaign.id },
+      },
     };
   }
   const window = resolveLiveWindowKeys(new Date(campaign.startDate).getTime(), now, "agent-worker");
@@ -482,9 +506,21 @@ async function orderSnapshot(input: OrderSnapshotInput, now: Date): Promise<Oper
   const result = await runTool(getOrderSnapshotTool, { startDate, endDate });
   if (isOperationFailure(result)) return result;
   if (!result.ok) {
-    return result.error.code === "NOT_FOUND"
-      ? { status: "SUCCEEDED", summary: "get_order_snapshot: no snapshot rows in window", evidenceRefs: [], actionProposalId: null }
-      : toolFailure(result);
+    if (result.error.code !== "NOT_FOUND") return toolFailure(result);
+    const emptySummary = "get_order_snapshot: no snapshot rows in window";
+    return {
+      status: "SUCCEEDED",
+      summary: emptySummary,
+      evidenceRefs: [],
+      actionProposalId: null,
+      record: {
+        title: `주문 스냅샷 ${startDate}~${endDate}`,
+        resultSummary: emptySummary,
+        structuredResult: { days: [], totals: null },
+        dataSources: ["NaverOrderSnapshot"],
+        query: { startDate, endDate },
+      },
+    };
   }
   const summary = boundSummary(`get_order_snapshot days=${result.data.days.length} totals=${JSON.stringify(result.data.totals)}`);
   return {
@@ -808,13 +844,16 @@ export async function executeAgentJob(
       }),
     };
   }
-  // §3-A: 읽기 성공은 결재함 READ 산출물로 남긴다. 기록 실패는 재시도 가능으로 넘긴다 —
-  // 읽기는 멱등이고 값싸며, 조용히 빠뜨리면 봇이 "전체 보기" 링크 없는 답을 하게 된다.
+  // §3-A: 읽기 성공은 결재함 READ 산출물로 남긴다. 조회(READ) 자체는 멱등이지만 이 기록의
+  // INSERT 는 아니다 — 커밋이 끝난 뒤 응답이 유실되면 재시도가 같은 조회를 한 번 더 기록해
+  // 카드가 중복될 수 있다. 그래도 재시도를 허용하는 이유는 조회가 값싸고, 오너 입장에서는
+  // "전체 보기" 링크가 조용히 빠진 답보다는 중복 카드가 낫기 때문이다. 중복이 생기면
+  // structuredResult.jobId 로 같은 작업이 남긴 카드임을 식별할 수 있다.
   let actionProposalId = outcome.actionProposalId;
   if (outcome.status === "SUCCEEDED" && outcome.record) {
     try {
       assertNotAborted(signal);
-      actionProposalId = await recordReadResult(job.payload.operation, outcome.record, now());
+      actionProposalId = await recordReadResult(job.payload.operation, outcome.record, now(), { jobId: job.id });
     } catch (error) {
       if (error instanceof ExecutionAbortedError) throw error;
       return { kind: "retryable", errorClass: error instanceof Error ? error.name : "UnknownError", route, model };

@@ -1132,9 +1132,13 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     expect(data.title).toBe("딜 검색 1건");
     expect(data.structuredResult).toMatchObject({
       operation: "search_deals",
+      jobId: "job-1",
       query: { query: "A" },
-      data: { items: [expect.objectContaining({ id: "d1", dealName: "A", status: "CONFIRMED" })], truncated: false },
+      data: { items: [expect.objectContaining({ id: "d1", dealName: "A", status: "CONFIRMED" })], rowLimitReached: false },
     });
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    // §3-A 계약: 결재함 카드의 resultSummary 는 봇에게 돌아가는 resultSummary 와 같은 글이다.
+    expect(data.resultSummary).toBe(outcome.result.resultSummary);
     expect(proposalEventCreateMock).toHaveBeenCalledWith({ data: expect.objectContaining({ toStatus: "EXECUTED", actor: "AGENT_WORKER" }) });
   });
 
@@ -1194,6 +1198,36 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     expect(data.structuredResult).toMatchObject({ operation: "get_order_snapshot", data: { campaignId: "camp-1", uncoveredRows: 0 } });
   });
 
+  it("get_pipeline_status with no campaigns (NOT_FOUND) is still recorded as an empty result", async () => {
+    pipelineMock.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "no campaigns" } });
+    const outcome = await executeAgentJob(job("get_pipeline_status", {}), deps(accepted("python")));
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { actionProposalId: "read-1" } });
+    const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).toMatchObject({ title: "파이프라인 현황 총 0건", dataSources: ["SalesCampaign"] });
+    expect(data.structuredResult).toMatchObject({ data: { totalCount: 0, statusCounts: [], campaigns: [] } });
+  });
+
+  it("get_order_snapshot (window) with no rows (NOT_FOUND) is still recorded as an empty result", async () => {
+    snapshotMock.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "no rows" } });
+    const outcome = await executeAgentJob(
+      job("get_order_snapshot", { startAt: "2026-09-01T00:00:00+09:00", endAt: "2026-09-02T00:00:00+09:00" }),
+      deps(accepted("python")),
+    );
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { actionProposalId: "read-1" } });
+    const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).toMatchObject({ title: "주문 스냅샷 2026-09-01~2026-09-02", dataSources: ["NaverOrderSnapshot"] });
+    expect(data.structuredResult).toMatchObject({ data: { days: [], totals: null } });
+  });
+
+  it("get_order_snapshot (campaign) with no linked order campaign (source=none) is still recorded", async () => {
+    campaignFindUniqueMock.mockResolvedValue({ id: "camp-2", startDate: new Date("2026-09-01T00:00:00.000Z"), orderCampaignId: null });
+    const outcome = await executeAgentJob(job("get_order_snapshot", { campaignId: "camp-2" }), deps(accepted("python")));
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { actionProposalId: "read-1" } });
+    const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).toMatchObject({ title: "캠페인 주문 스냅샷 camp-2 (주문캠페인 연결 없음)", dataSources: ["SalesCampaign"] });
+    expect(data.structuredResult).toMatchObject({ data: { campaignId: "camp-2", source: "none" } });
+  });
+
   it("get_action_proposal is a status check and is NOT recorded", async () => {
     proposalFindUniqueMock.mockResolvedValue({ id: "proposal-1", status: "PENDING_APPROVAL", title: "t", createdBy: "AGENT_WORKER", executedRefType: null, executedRefId: null, errorMessage: null });
     const outcome = await executeAgentJob(job("get_action_proposal", { proposalId: "proposal-1" }), deps(accepted("python")));
@@ -1232,5 +1266,18 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     });
     await expect(executeAgentJob(job("search_deals", { query: "x" }), deps(accepted("python")), controller.signal)).rejects.toThrow(/aborted/);
     expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("create_action_proposal is a WRITE proposal, not a READ record — its own INSERT is the only proposalCreate call", async () => {
+    dealFindUniqueMock.mockResolvedValue({ id: "deal-1" });
+    proposalCreateMock.mockResolvedValue({ id: "proposal-1", status: "PENDING_APPROVAL" });
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", { action: "change_deal_status", dealId: "deal-1", newStatus: "CONFIRMED" }),
+      deps(accepted("python")),
+    );
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL", result: { actionProposalId: "proposal-1" } });
+    expect(proposalCreateMock).toHaveBeenCalledTimes(1);
+    const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data.kind).toBe("WRITE");
   });
 });

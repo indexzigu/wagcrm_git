@@ -55,6 +55,7 @@ describe("recordReadResult", () => {
     // 원격 DB 이므로 Json 필드는 객체 그대로 저장된다 — 모양을 그대로 단언한다.
     expect(data.structuredResult).toEqual({
       operation: "search_deals",
+      jobId: null,
       query: { query: "vita" },
       truncated: false,
       data: { items: [{ id: "d1" }, { id: "d2" }], truncated: false },
@@ -92,6 +93,25 @@ describe("recordReadResult", () => {
 
   it("keeps a small structuredResult intact", () => {
     expect(boundStructuredResult({ a: 1 })).toEqual({ value: { a: 1 }, truncated: false });
+  });
+
+  it("stores the given jobId, and stores null when it is omitted (duplicate-card identification)", async () => {
+    await recordReadResult(
+      "search_deals",
+      { title: "t", resultSummary: "s", structuredResult: { items: [] }, dataSources: [], query: {} },
+      now,
+      { jobId: "job-1" },
+    );
+    const withJobId = proposalCreateMock.mock.calls[0][0].data as { structuredResult: { jobId: string | null } };
+    expect(withJobId.structuredResult.jobId).toBe("job-1");
+
+    await recordReadResult(
+      "search_deals",
+      { title: "t", resultSummary: "s", structuredResult: { items: [] }, dataSources: [], query: {} },
+      now,
+    );
+    const withoutJobId = proposalCreateMock.mock.calls[1][0].data as { structuredResult: { jobId: string | null } };
+    expect(withoutJobId.structuredResult.jobId).toBeNull();
   });
 
   it("propagates a database failure (no swallowing)", async () => {

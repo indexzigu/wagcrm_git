@@ -38,10 +38,16 @@ export function boundStructuredResult(value: unknown): { value: unknown; truncat
   return { value: { truncated: true, bytes }, truncated: true };
 }
 
-export async function recordReadResult(operation: string, record: ReadResultRecord, now: Date): Promise<string> {
+export async function recordReadResult(
+  operation: string,
+  record: ReadResultRecord,
+  now: Date,
+  options?: { jobId?: string },
+): Promise<string> {
   const bounded = boundStructuredResult(record.structuredResult);
   const structuredResult = {
     operation,
+    jobId: options?.jobId ?? null,
     query: record.query,
     truncated: bounded.truncated,
     data: bounded.value,
