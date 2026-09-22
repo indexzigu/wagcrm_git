@@ -1,7 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { serializeJsonFields } from "@/repositories/actionProposalRepository";
-import { TOOL_CALLS_BYTE_CAP } from "@/repositories/assistantConversationRepository";
 
 /**
  * 봇(agent worker)의 **읽기** 작업 결과를 결재함의 READ 산출물로 남긴다.
@@ -19,8 +18,11 @@ import { TOOL_CALLS_BYTE_CAP } from "@/repositories/assistantConversationReposit
  */
 export const READ_RECORD_ACTOR = "AGENT_WORKER";
 export const READ_RECORD_REQUEST_TYPE = "data_query";
-/** structuredResult 직렬화 상한 — 어시스턴트 채팅의 toolCalls 저장 계약(64KB)과 같은 상수. */
-export const MAX_READ_RESULT_BYTES = TOOL_CALLS_BYTE_CAP;
+/**
+ * structuredResult 직렬화 상한(64KB).
+ * 채팅 저장 상한(TOOL_CALLS_BYTE_CAP)에서 물려받은 값 — 채팅 은퇴(PR 3)로 이 모듈이 정본.
+ */
+export const MAX_READ_RESULT_BYTES = 64 * 1024;
 const MAX_TITLE_CHARS = 200;
 
 export type ReadResultRecord = {
