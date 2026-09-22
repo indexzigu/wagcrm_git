@@ -9,6 +9,7 @@ import {
   CalendarDaysIcon,
   FolderIcon,
   GaugeIcon,
+  InboxIcon,
   MegaphoneIcon,
   PackageIcon,
   Settings2Icon,
@@ -20,7 +21,6 @@ import {
   TrendingUpIcon,
   EyeIcon,
   EyeOffIcon,
-  SparklesIcon,
   WalletIcon,
 } from "lucide-react";
 import {
@@ -133,7 +133,7 @@ export const navSections: {
   {
     label: "도구",
     items: [
-      { href: "/assistant", label: "AI 어시스턴트", icon: SparklesIcon, description: "정산·딜·파이프라인 등 대화형 조회" },
+      { href: "/approvals", label: "결재함", icon: InboxIcon, description: "봇·화면 기안 결재와 봇 조회 결과·작업 기록" },
       { href: "/claim-check", label: "표현 검사", icon: ShieldCheckIcon, description: "브리프·셀러 콘텐츠의 광고 표현 법령 점검" },
     ],
   },
@@ -338,7 +338,7 @@ export function CrmSidebar() {
                           <span className={SIDEBAR_LABEL_CLASS}>
                             {item.label}
                           </span>
-                          {item.href === "/assistant" && <ApprovalBadge />}
+                          {item.href === "/approvals" && <ApprovalBadge />}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
