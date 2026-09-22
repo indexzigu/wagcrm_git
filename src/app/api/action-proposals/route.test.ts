@@ -8,6 +8,7 @@ import { NextRequest } from "next/server";
 
 const requireAuthMock = vi.fn();
 const findManyMock = vi.fn();
+const countMock = vi.fn();
 const resolveEntityLabelMock = vi.fn();
 
 vi.mock("@/lib/api-auth", () => ({
@@ -17,6 +18,7 @@ vi.mock("@/lib/api-auth", () => ({
 vi.mock("@/repositories/actionProposalRepository", () => ({
   ActionProposalRepository: {
     findMany: (...args: unknown[]) => findManyMock(...args),
+    count: (...args: unknown[]) => countMock(...args),
   },
   // 라우트가 payload 역직렬화에 사용 — 문자열이면 파싱, 객체면 그대로(실제 구현과 동일).
   deserializeJsonField: (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v),
@@ -36,9 +38,11 @@ describe("GET /api/action-proposals", () => {
   beforeEach(() => {
     requireAuthMock.mockReset();
     findManyMock.mockReset();
+    countMock.mockReset();
     resolveEntityLabelMock.mockReset();
     requireAuthMock.mockResolvedValue({ authenticated: true, context: { userId: "u1", role: "admin" } });
     resolveEntityLabelMock.mockResolvedValue("락토핏 골드");
+    countMock.mockResolvedValue(0);
   });
 
   it("비인증 시 401을 반환한다", async () => {
@@ -132,5 +136,73 @@ describe("GET /api/action-proposals", () => {
     expect(typeof args.take).toBe("number");
     expect(args.take).toBeGreaterThan(0);
     expect(args.take).toBeLessThanOrEqual(200);
+  });
+});
+
+describe("kind·before·count (결재함 §3-B)", () => {
+  it("kind 기본값은 WRITE 다 — 완료 탭이 READ 산출물을 삼키지 않는다", async () => {
+    findManyMock.mockResolvedValue([]);
+    await GET(makeRequest("?status=EXECUTED"));
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: "EXECUTED", kind: "WRITE" }) })
+    );
+  });
+
+  it("kind=READ 를 화이트리스트로 받는다", async () => {
+    findManyMock.mockResolvedValue([]);
+    await GET(makeRequest("?status=EXECUTED&kind=READ"));
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ kind: "READ" }) })
+    );
+  });
+
+  it("화이트리스트 밖 kind 는 기본값 WRITE 로 좁혀진다", async () => {
+    findManyMock.mockResolvedValue([]);
+    await GET(makeRequest("?kind=ALL"));
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ kind: "WRITE" }) })
+    );
+  });
+
+  it("count 는 items.length 가 아니라 repository.count 로 센다", async () => {
+    findManyMock.mockResolvedValue([]);
+    countMock.mockResolvedValue(137);
+    const res = await GET(makeRequest("?status=EXECUTED&kind=READ"));
+    const body = await res.json();
+    expect(countMock).toHaveBeenCalledWith({ status: "EXECUTED", kind: "READ" });
+    expect(body.count).toBe(137);
+    expect(body.items).toEqual([]);
+  });
+
+  it("before 커서를 createdAt < before 로 적용하고, 페이지가 꽉 차면 nextBefore 를 돌려준다", async () => {
+    const rows = Array.from({ length: 51 }, (_, i) => ({
+      id: `p-${i}`,
+      title: "t",
+      status: "EXECUTED",
+      kind: "READ",
+      targetEntityType: null,
+      targetEntityId: null,
+      payload: null,
+      createdBy: "AGENT_WORKER",
+      createdAt: new Date(Date.UTC(2026, 8, 22, 0, 0, 59 - i)),
+    }));
+    findManyMock.mockResolvedValue(rows);
+    const res = await GET(makeRequest("?status=EXECUTED&kind=READ&before=2026-09-22T01:00:00.000Z"));
+    const body = await res.json();
+    expect(findManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ createdAt: { lt: new Date("2026-09-22T01:00:00.000Z") } }),
+        take: 51,
+      })
+    );
+    expect(body.items).toHaveLength(50);
+    expect(body.nextBefore).toBe(rows[49].createdAt.toISOString());
+  });
+
+  it("잘못된 before 는 무시한다(커서 없음)", async () => {
+    findManyMock.mockResolvedValue([]);
+    await GET(makeRequest("?before=not-a-date"));
+    const call = findManyMock.mock.calls[0][0] as { where: Record<string, unknown> };
+    expect(call.where.createdAt).toBeUndefined();
   });
 });
