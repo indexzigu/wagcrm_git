@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
-import type { ApprovalInboxItem } from "@/components/crm/assistant/approval-inbox";
+import type { ApprovalInboxItem } from "@/components/crm/approvals/approval-cards";
 import type { ActionProposalStatus } from "@/repositories/actionProposalRepository";
 import { useProposalActions } from "./useProposalActions";
 
@@ -19,7 +19,8 @@ async function fetchProposals(status: ActionProposalStatus): Promise<ApprovalInb
 }
 
 /**
- * 승인 대기함 데이터 훅 (청사진 §2 approval-inbox.tsx, G3 / §6-1 v1.2 상태 탭 파라미터화).
+ * 승인 대기함 데이터 훅 (청사진 §2 approval-cards.tsx[구 approval-inbox.tsx], G3 /
+ * §6-1 v1.2 상태 탭 파라미터화).
  * NotificationCenter/useNotifications와 동일한 폴링 패턴 — 목록 API가 이미 지원하는
  * ?status= 화이트리스트(VALID_STATUSES, route.ts)를 그대로 사용한다(백엔드 무변경).
  *

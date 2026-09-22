@@ -108,12 +108,13 @@ describe("ProposalCard", () => {
     expect(screen.getByText("실행 완료")).toHaveAttribute("data-variant", "status-success");
   });
 
-  it("EXECUTED + executedBy==='AGENT': '⚡자동승인·실행됨' 칩을 보여준다", async () => {
+  it("EXECUTED + executedBy==='AGENT': '자동승인·실행됨' 칩을 이모지 없이 아이콘+글자로 보여준다", async () => {
     stubFetchOk(makeProposal({ status: "EXECUTED", executedBy: "AGENT" }));
     renderCard("proposal-123456789");
 
-    await waitFor(() => expect(screen.getByText(/⚡자동승인·실행됨/)).toBeInTheDocument());
-    expect(screen.getByText(/⚡자동승인·실행됨/)).toHaveAttribute("data-variant", "status-success");
+    await waitFor(() => expect(screen.getByText(/자동승인·실행됨/)).toBeInTheDocument());
+    expect(screen.getByText(/자동승인·실행됨/)).toHaveAttribute("data-variant", "status-success");
+    expect(screen.queryByText(/⚡/)).toBeNull();
   });
 
   it("REJECTED: '반려됨' 칩을 보여준다", async () => {
@@ -145,7 +146,7 @@ describe("ProposalCard", () => {
     await waitFor(() => expect(screen.getByText("딜 상태 변경")).toBeInTheDocument());
   });
 
-  it("액션 라벨 매핑: confirm_settlement → '정산 확정' 포함 라벨(강조 표시)", async () => {
+  it("액션 라벨 매핑: confirm_settlement → '정산 확정' (이모지 없이, 강조 보더로만 표시)", async () => {
     stubFetchOk(makeProposal({ payload: { action: "confirm_settlement", args: {} } }));
     renderCard("proposal-123456789");
     await waitFor(() => expect(screen.getByText(/정산 확정/)).toBeInTheDocument());
