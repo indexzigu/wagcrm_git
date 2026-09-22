@@ -35,6 +35,8 @@ export type ReadRecordsHook = () => {
   isError: boolean;
   refetch: () => unknown;
   loadMore: () => unknown;
+  /** 다음 장을 받아오는 중인가 — 「더 보기」 버튼의 비활성 근거. */
+  isLoadingMore: boolean;
   hasMore: boolean;
 };
 
@@ -44,6 +46,7 @@ export type AgentJobsHook = (includeSucceeded: boolean) => {
   isError: boolean;
   refetch: () => unknown;
   loadMore: () => unknown;
+  isLoadingMore: boolean;
   hasMore: boolean;
 };
 

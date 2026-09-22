@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { parseStoredJson } from "@/lib/stored-json";
@@ -63,13 +64,21 @@ export function useReadRecords() {
     staleTime: 15000,
   });
 
+  // 진행 중인 「더 보기」가 있으면 다시 부르지 않는다 — 같은 커서로 두 번 부르면
+  // 같은 페이지가 두 번 쌓인다(연타·엔터 반복이 실제로 그렇게 만든다).
+  const loadMore = React.useCallback(() => {
+    if (query.isFetchingNextPage) return;
+    void query.fetchNextPage();
+  }, [query]);
+
   return {
     items: query.data?.pages.flatMap((page) => page.items) ?? [],
     count: query.data?.pages[0]?.count ?? 0,
     isLoading: query.isLoading,
     isError: query.isError,
     refetch: query.refetch,
-    loadMore: query.fetchNextPage,
+    loadMore,
+    isLoadingMore: query.isFetchingNextPage,
     hasMore: Boolean(query.hasNextPage),
   };
 }

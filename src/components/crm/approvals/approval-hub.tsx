@@ -43,7 +43,9 @@ function TabLink({
       href={`/approvals?tab=${tab.id}`}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "inline-flex items-center gap-1.5 border-b-2 px-2 pb-1.5 text-sm transition-colors",
+        // 포커스 링은 앱 전역 토큰(`ring-focus-ring`)이다 — 링 색에 상태 hue 를 쓰지
+        // 않는다(P8 Focus Ring Standard). 유틸 조합은 order-dashboard 의 PreviewTab 과 같다.
+        "inline-flex items-center gap-1.5 border-b-2 px-2 pb-1.5 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
         active
           ? "border-primary font-medium text-foreground"
           : "border-transparent text-muted-foreground hover:text-foreground"
@@ -89,7 +91,10 @@ export function ApprovalHub({ hooks }: { hooks?: Partial<ApprovalHubHooks> } = {
 
   return (
     <>
-      <nav className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-border/70 px-5 py-3">
+      <nav
+        aria-label="결재함 탭"
+        className="flex flex-wrap items-center gap-x-1 gap-y-2 border-b border-border/70 px-5 py-3"
+      >
         {SEGMENTS.map((segment, index) => (
           <React.Fragment key={segment}>
             {index > 0 && (

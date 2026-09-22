@@ -82,7 +82,8 @@ export function ProposalTabBody({
 
 /** 기록 ① 조회 결과 — 봇이 실행한 READ 기안. */
 export function ReadsTabBody({ useReadRecords }: { useReadRecords: ReadRecordsHook }) {
-  const { items, isLoading, isError, refetch, loadMore, hasMore } = useReadRecords();
+  const { items, isLoading, isError, refetch, loadMore, isLoadingMore, hasMore } =
+    useReadRecords();
 
   if (isLoading) return <CardListSkeleton />;
   if (isError) return <LoadErrorState onRetry={() => refetch()} />;
@@ -95,7 +96,7 @@ export function ReadsTabBody({ useReadRecords }: { useReadRecords: ReadRecordsHo
           <ReadRecordCard key={item.id} item={item} />
         ))}
       </ul>
-      {hasMore && <LoadMoreButton onClick={() => loadMore()} />}
+      {hasMore && <LoadMoreButton onClick={() => loadMore()} disabled={isLoadingMore} />}
     </div>
   );
 }
@@ -104,7 +105,8 @@ export function ReadsTabBody({ useReadRecords }: { useReadRecords: ReadRecordsHo
 export function ActivityTabBody({ useAgentJobs }: { useAgentJobs: AgentJobsHook }) {
   const [includeSucceeded, setIncludeSucceeded] = React.useState(false);
   const toggle = React.useCallback(() => setIncludeSucceeded((prev) => !prev), []);
-  const { items, isLoading, isError, refetch, loadMore, hasMore } = useAgentJobs(includeSucceeded);
+  const { items, isLoading, isError, refetch, loadMore, isLoadingMore, hasMore } =
+    useAgentJobs(includeSucceeded);
 
   if (isLoading) return <TableSkeleton />;
   if (isError) return <LoadErrorState onRetry={() => refetch()} />;
@@ -124,7 +126,7 @@ export function ActivityTabBody({ useAgentJobs }: { useAgentJobs: AgentJobsHook 
         includeSucceeded={includeSucceeded}
         onToggleSucceeded={toggle}
       />
-      {hasMore && <LoadMoreButton onClick={() => loadMore()} />}
+      {hasMore && <LoadMoreButton onClick={() => loadMore()} disabled={isLoadingMore} />}
     </div>
   );
 }
