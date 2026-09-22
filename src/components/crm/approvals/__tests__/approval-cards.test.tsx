@@ -58,6 +58,26 @@ describe("SourceBadge", () => {
     render(<SourceBadge createdBy={createdBy} />);
     expect(screen.getByText(label)).toBeInTheDocument();
   });
+
+  // 어시스턴트와 직접은 둘 다 outline 배지라 글자 말고는 갈라지는 데가 없었다.
+  it("outline 두 종류는 아이콘으로 갈라지고, 아이콘은 화면낭독기에 읽히지 않는다", () => {
+    const agent = render(<SourceBadge createdBy="AGENT" />);
+    const agentIcon = agent.container.querySelector("svg");
+    expect(agentIcon).not.toBeNull();
+    expect(agentIcon).toHaveAttribute("aria-hidden", "true");
+
+    const human = render(<SourceBadge createdBy="3f2a-uuid" />);
+    const humanIcon = human.container.querySelector("svg");
+    expect(humanIcon).not.toBeNull();
+    // 같은 아이콘을 두 출처에 쓰면 구분이 되지 않는다.
+    expect(humanIcon?.getAttribute("class")).not.toEqual(agentIcon?.getAttribute("class"));
+  });
+
+  // 슬랙봇만 채운 배지다 — 셋이 색·아이콘·글자 셋 중 최소 하나로 늘 갈라진다.
+  it("슬랙봇은 채운 배지(secondary)다", () => {
+    render(<SourceBadge createdBy="AGENT_WORKER" />);
+    expect(screen.getByText("슬랙봇")).toHaveAttribute("data-variant", "secondary");
+  });
 });
 
 // 설계 §3-B 「카드 제목 링크」 (Plan 2 Task 5) — 카드에서 상세로 가는 끈.
@@ -78,16 +98,17 @@ describe("카드 → 상세 링크", () => {
     expect(link.className).toContain("focus-visible:ring-focus-ring");
   });
 
-  it("메모 기안처럼 본문을 보여주는 카드도 끈을 따로 단다", () => {
+  // 끈의 글자는 「자세히」 한 마디다 — 링크만 훑는 화면낭독기 사용자에게 그 말은
+  // 어디로 가는지 아무것도 알려주지 않으므로 접근 이름에 기안 제목을 붙인다(WCAG 2.4.4).
+  it("메모 기안처럼 본문을 보여주는 카드도 끈을 따로 달고, 그 끈은 목적지를 말한다", () => {
     render(
       <ul>
         <PendingCard item={makeItem()} onApprove={vi.fn()} onReject={vi.fn()} />
       </ul>
     );
-    expect(screen.getByRole("link", { name: "자세히" })).toHaveAttribute(
-      "href",
-      "/approvals/proposal-1"
-    );
+    const link = screen.getByRole("link", { name: "자세히 보기: 딜(deal-1)에 메모 추가" });
+    expect(link).toHaveAttribute("href", "/approvals/proposal-1");
+    expect(link).toHaveTextContent("자세히");
   });
 
   it("카드 전체를 링크로 감싸지 않는다 — 승인 버튼이 그 안에 있다", () => {
@@ -97,6 +118,33 @@ describe("카드 → 상세 링크", () => {
       </ul>
     );
     expect(container.querySelector("li > a")).toBeNull();
+  });
+});
+
+describe("카드 공통", () => {
+  // 시각 표기는 결재함 전체가 한 포매터(`formatShortDateTime`, KST 고정)를 쓴다 —
+  // 카드마다 손으로 쓰면 TZ 가 환경마다 달라져 같은 행이 다른 시각으로 보인다.
+  it("생성 시각은 KST 고정 `MM-DD HH:mm` 이고 자리수가 흔들리지 않는다", () => {
+    render(
+      <ul>
+        <PendingCard item={makeItem()} onApprove={vi.fn()} onReject={vi.fn()} />
+      </ul>
+    );
+    // 2026-07-06T00:00:00Z = KST 09:00
+    const stamp = screen.getByText("07-06 09:00");
+    expect(stamp).toHaveClass("tabular-nums");
+  });
+
+  // ⛔ hover 그림자를 되살리지 말 것 — 이 카드의 `<li>` 는 링크가 아니다.
+  it("카드 루트는 hover 로 떠오르지 않는다 — 누를 수 있는 것은 안의 링크·버튼뿐이다", () => {
+    const { container } = render(
+      <ul>
+        <PendingCard item={makeItem()} onApprove={vi.fn()} onReject={vi.fn()} />
+      </ul>
+    );
+    const root = container.querySelector("li");
+    expect(root?.className).toContain("shadow-soft-sm");
+    expect(root?.className).not.toContain("hover:shadow");
   });
 });
 
@@ -203,7 +251,8 @@ describe("PendingCard", () => {
       expect(approveButton).not.toBeDisabled();
     });
 
-    expect(screen.getByText(/이미 처리된 기안입니다/)).toBeInTheDocument();
+    // 버튼을 누른 뒤 나타나는 글이라 초점이 옮겨 가지 않는다 — 말해 줘야 한다(WCAG 4.1.3).
+    expect(screen.getByRole("alert")).toHaveTextContent(/이미 처리된 기안입니다/);
 
     // 재클릭이 다시 가능해야 한다 — 두 번째 클릭이 approve를 또 호출한다.
     approveMock.mockResolvedValueOnce({ ok: true });
@@ -229,7 +278,7 @@ describe("PendingCard", () => {
       expect(rejectButton).not.toBeDisabled();
     });
 
-    expect(screen.getByText(/반려 처리 중 서버 오류가 발생했습니다/)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/반려 처리 중 서버 오류가 발생했습니다/);
   });
 });
 

@@ -52,7 +52,14 @@ export function unionColumns(rows: ReadonlyArray<Record<string, unknown>>): stri
   return columns;
 }
 
-export function GenericTable({ rows }: { rows: ReadonlyArray<Record<string, unknown>> }) {
+export function GenericTable({
+  rows,
+  caption,
+}: {
+  rows: ReadonlyArray<Record<string, unknown>>;
+  /** 표의 이름 — 화면낭독기 전용(`sr-only`)이다. 열 이름만으로는 어디에 들어왔는지 모른다. */
+  caption?: string;
+}) {
   const visible = rows.slice(0, MAX_TABLE_ROWS);
   const columns = unionColumns(visible);
 
@@ -60,6 +67,7 @@ export function GenericTable({ rows }: { rows: ReadonlyArray<Record<string, unkn
     <div className="flex flex-col gap-2">
       <div className="overflow-x-auto">
         <table data-slot="generic-table" className="w-full border border-border text-left">
+          {caption && <caption className="sr-only">{caption}</caption>}
           <thead className="bg-muted">
             <tr>
               {columns.map((column) => (

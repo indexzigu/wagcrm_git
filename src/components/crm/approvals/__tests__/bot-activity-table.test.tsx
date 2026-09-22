@@ -95,7 +95,7 @@ describe("BotActivityTable", () => {
         onToggleSucceeded={vi.fn()}
       />
     );
-    expect(screen.getByRole("link", { name: "결과" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "딜 검색 결과 보기" })).toHaveAttribute(
       "href",
       "/approvals/proposal-9"
     );
@@ -107,8 +107,30 @@ describe("BotActivityTable", () => {
         onToggleSucceeded={vi.fn()}
       />
     );
-    expect(screen.queryByRole("link", { name: "결과" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("-")).toBeInTheDocument();
+  });
+
+  // 「결과」 여섯 줄이 같은 이름으로 늘어서면 링크 목록만으로는 어느 작업의 결과인지
+  // 알 수 없다 — 접근 이름에 작업 이름을 넣는다(WCAG 2.4.4).
+  it("결과 링크의 접근 이름은 어느 작업의 결과인지 말한다", () => {
+    render(
+      <BotActivityTable
+        items={[makeJob({ operation: "get_settlement_report", actionProposalId: "p-1" })]}
+        includeSucceeded
+        onToggleSucceeded={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("link", { name: "정산 리포트 결과 보기" })).toBeInTheDocument();
+  });
+
+  it("표에는 sr-only 이름표(caption)가 있다", () => {
+    const { container } = render(
+      <BotActivityTable items={[makeJob()]} includeSucceeded onToggleSucceeded={vi.fn()} />
+    );
+    const caption = container.querySelector("caption");
+    expect(caption).toHaveTextContent("봇 활동 내역");
+    expect(caption).toHaveClass("sr-only");
   });
 
   it("payloadUnreadable 행은 작업을 「알 수 없음」으로 보여준다", () => {
@@ -133,14 +155,23 @@ describe("BotActivityTable", () => {
     expect(screen.getByText("TIMEOUT")).toBeInTheDocument();
   });
 
-  it("「완료 포함」 토글은 aria-pressed 로 현재 상태를 알리고 클릭하면 콜백을 부른다", () => {
+  // ⛔ 이 토글을 다시 평범한 버튼으로 만들지 말 것 — 켜진 상태가 `aria-pressed` 에만
+  // 있으면 눈으로 보는 사람은 필터가 걸린 줄 모른다. `Toggle` 프리미티브가 그 상태를
+  // `data-state=on` + 배경으로도 그린다.
+  it("「완료 포함」 토글은 눌린 상태를 aria-pressed·data-state 로 함께 알린다", () => {
     const onToggle = vi.fn();
-    render(
+    const { rerender } = render(
       <BotActivityTable items={[makeJob()]} includeSucceeded={false} onToggleSucceeded={onToggle} />
     );
-    const toggle = screen.getByRole("button", { name: "완료 포함" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    const toggle = screen.getByRole("button", { name: "완료 포함", pressed: false });
+    expect(toggle).toHaveAttribute("data-state", "off");
     fireEvent.click(toggle);
     expect(onToggle).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <BotActivityTable items={[makeJob()]} includeSucceeded onToggleSucceeded={onToggle} />
+    );
+    const pressed = screen.getByRole("button", { name: "완료 포함", pressed: true });
+    expect(pressed).toHaveAttribute("data-state", "on");
   });
 });

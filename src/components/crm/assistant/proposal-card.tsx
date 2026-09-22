@@ -19,11 +19,19 @@ import { ProposalPayloadPreview } from "./proposal-payload-preview";
  * 카드가 이 대화에서 stale PENDING으로 남지 않도록 한다(critic #2).
  */
 
-// payload.action → 한글 라벨 매핑 (§1-2). 미지 action은 원문 그대로 노출한다.
-const ACTION_LABELS: Record<string, string> = {
+/**
+ * payload.action → 한글 라벨 매핑 (§1-2). 미지 action은 원문 그대로 노출한다.
+ *
+ * ⚠️ **WRITE 도구가 늘면 여기도 늘어야 한다** — 빠진 도구는 배지에 `create_partner`
+ * 같은 영문 식별자로 뜬다(운영자에게는 그냥 읽을 수 없는 글자다). 레지스트리
+ * (`WRITE_TOOL_NAMES`)와의 짝은 `action-labels.contract.test.ts` 가 고정한다.
+ */
+export const ACTION_LABELS: Record<string, string> = {
   add_entity_memo: "메모 추가",
   change_deal_status: "딜 상태 변경",
   confirm_settlement: "정산 확정",
+  create_partner: "거래처 등록",
+  create_deal: "딜 등록",
 };
 
 // confirm_settlement만 승인 시 확인 다이얼로그를 거친다(§1-3, critic Q4 — 금전 최고위험 액션).

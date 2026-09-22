@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ENTITY_TYPE_LABELS } from "@/components/crm/assistant/types";
 import { ProposalPayloadPreview } from "@/components/crm/assistant/proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
+import { formatShortDateTime } from "./format-time";
 
 /** /api/action-proposals GET 응답 항목 형태 (route.ts와 형태를 맞춘다). */
 export type ApprovalInboxItem = {
@@ -31,19 +32,6 @@ export type ApprovalInboxItem = {
 const SETTLEMENT_ACTION = "confirm_settlement";
 const SETTLEMENT_CONFIRM_MESSAGE = "정산 확정은 되돌릴 수 없습니다. 승인하시겠습니까?";
 
-function formatDateTime(value: string): string {
-  try {
-    return new Date(value).toLocaleString("ko-KR", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return value;
-  }
-}
-
 /**
  * 상세(`/approvals/[id]`)로 가는 끈 (Plan 2 Task 5, 설계 §3-B 「카드 제목 링크」).
  *
@@ -51,10 +39,20 @@ function formatDateTime(value: string): string {
  * 버튼이 있다. 링크 안의 버튼은 클릭이 어느 쪽으로 갈지 사람도 브라우저도 헷갈린다
  * (조회 결과 카드는 버튼이 없어서 카드 전체를 링크로 둘 수 있었다 — 여기는 다르다).
  */
-function DetailLink({ id, children }: { id: string; children: React.ReactNode }) {
+function DetailLink({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  /** 링크 글자가 「자세히」처럼 그 자체로는 목적지를 말하지 않을 때 붙이는 접근 이름. */
+  label?: string;
+  children: React.ReactNode;
+}) {
   return (
     <Link
       href={`/approvals/${id}`}
+      aria-label={label}
       className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
     >
       {children}
@@ -70,7 +68,9 @@ function PayloadSummary({ item }: { item: ApprovalInboxItem }) {
       <p className="text-sm text-foreground">
         &quot;{content}&quot;{" "}
         <span className="text-xs text-muted-foreground">
-          <DetailLink id={item.id}>자세히</DetailLink>
+          <DetailLink id={item.id} label={`자세히 보기: ${item.title}`}>
+            자세히
+          </DetailLink>
         </span>
       </p>
     );
@@ -99,9 +99,12 @@ function EntityBadge({ item }: { item: ApprovalInboxItem }) {
 }
 
 // 카드 루트 공통 클래스 — P8: 그림자는 토큰화된 shadow-soft-* 만 쓴다(raw Tailwind
-// shadow-sm/md 금지). hover 시 살짝 떠 보이는 정도로만(transition-shadow).
+// shadow-sm/md 금지).
+// ⛔ hover 그림자를 되돌리지 말 것 — 이 `<li>` 는 링크가 아니라 **버튼을 담은 상자**다.
+// 카드 전체가 떠오르면 카드를 누를 수 있다는 뜻이 되는데, 실제로 누를 수 있는 것은
+// 안의 제목 링크와 버튼뿐이다(조회 결과 카드는 카드 전체가 링크라 hover 를 유지한다).
 const CARD_ROOT_CLASS =
-  "flex flex-col gap-2 rounded-lg border border-border p-4 shadow-soft-sm transition-shadow hover:shadow-soft-md";
+  "flex flex-col gap-2 rounded-lg border border-border p-4 shadow-soft-sm";
 
 /** 대기 카드 — 기존 승인/반려 버튼(M1 pending 처리 무변경). */
 export function PendingCard({
@@ -171,7 +174,9 @@ export function PendingCard({
           <div className="flex flex-wrap items-center gap-2">
             <EntityBadge item={item} />
             <SourceBadge createdBy={item.createdBy} />
-            <span className="text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</span>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {formatShortDateTime(item.createdAt)}
+            </span>
           </div>
           <div className="mt-1.5">
             <PayloadSummary item={item} />
@@ -179,8 +184,13 @@ export function PendingCard({
         </div>
       </div>
 
+      {/* 버튼을 누른 **뒤에** 나타나는 글이라 초점이 옮겨 가지 않는다 — 말해 주지
+          않으면 화면낭독기 사용자는 아무 일도 없었다고 읽는다(WCAG 4.1.3). */}
       {error && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive"
+        >
           {error}
         </p>
       )}
@@ -211,14 +221,16 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
         <EntityBadge item={item} />
         {item.executedBy === "AGENT" ? (
           <Badge variant="status-success">
-            <ZapIcon className="size-3" />
+            <ZapIcon aria-hidden />
             자동승인
           </Badge>
         ) : (
           <Badge variant="status-success">실행 완료</Badge>
         )}
         <SourceBadge createdBy={item.createdBy} />
-        <span className="text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {formatShortDateTime(item.createdAt)}
+        </span>
       </div>
       <PayloadSummary item={item} />
     </li>
@@ -277,18 +289,28 @@ export function FailedCard({
         <EntityBadge item={item} />
         <Badge variant="destructive">실패</Badge>
         <SourceBadge createdBy={item.createdBy} />
-        <span className="text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {formatShortDateTime(item.createdAt)}
+        </span>
       </div>
       <PayloadSummary item={item} />
 
       {item.errorMessage && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive"
+        >
           {item.errorMessage}
         </p>
       )}
 
+      {/* 버튼을 누른 **뒤에** 나타나는 글이라 초점이 옮겨 가지 않는다 — 말해 주지
+          않으면 화면낭독기 사용자는 아무 일도 없었다고 읽는다(WCAG 4.1.3). */}
       {error && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive"
+        >
           {error}
         </p>
       )}
@@ -311,7 +333,9 @@ export function RejectedCard({ item }: { item: ApprovalInboxItem }) {
         <EntityBadge item={item} />
         <Badge variant="outline">반려됨</Badge>
         <SourceBadge createdBy={item.createdBy} />
-        <span className="text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {formatShortDateTime(item.createdAt)}
+        </span>
       </div>
       <PayloadSummary item={item} />
     </li>

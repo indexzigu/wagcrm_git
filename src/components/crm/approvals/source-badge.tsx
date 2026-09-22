@@ -1,4 +1,4 @@
-import { UserRoundIcon } from "lucide-react";
+import { SparklesIcon, UserRoundIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 /**
@@ -11,17 +11,29 @@ import { Badge } from "@/components/ui/badge";
  *
  * 기존 `기안자: {createdBy}` 텍스트(사용자 id 원문 노출)를 대체한다 — 결재함
  * 화면에서 판단에 필요한 것은 "누가"가 아니라 "어디서"이므로, 출처 3종만 구분한다.
+ *
+ * 셋이 **눈으로도** 갈라져야 한다: 슬랙봇은 채운 배지(secondary), 어시스턴트와 직접은
+ * 같은 outline 이라 글자만으로 구분되던 자리에 아이콘을 하나씩 준다. 아이콘은 장식이라
+ * `aria-hidden` 이고 — 뜻은 옆 글자가 전부 말한다.
+ *
+ * ⛔ 아이콘에 `size-*` 를 붙이지 말 것: `Badge` 프리미티브의 `[&>svg]:size-3!` 가
+ * 언제나 이기므로 소비처의 크기 선언은 **읽히지 않는 죽은 클래스**다(P8 §6-2).
  */
 export function SourceBadge({ createdBy }: { createdBy: string }) {
   if (createdBy === "AGENT_WORKER") {
     return <Badge variant="secondary">{sourceLabelOf(createdBy)}</Badge>;
   }
   if (createdBy === "AGENT") {
-    return <Badge variant="outline">{sourceLabelOf(createdBy)}</Badge>;
+    return (
+      <Badge variant="outline">
+        <SparklesIcon aria-hidden />
+        {sourceLabelOf(createdBy)}
+      </Badge>
+    );
   }
   return (
     <Badge variant="outline">
-      <UserRoundIcon className="size-3" />
+      <UserRoundIcon aria-hidden />
       {sourceLabelOf(createdBy)}
     </Badge>
   );

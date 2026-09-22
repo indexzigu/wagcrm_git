@@ -55,6 +55,12 @@ export function ReadResultBody({ envelope }: { envelope: unknown }) {
   const operation = isEnvelope ? envelope.operation : null;
   const payload = isEnvelope ? envelope.data : envelope;
 
+  // 잘린 기록의 `data` 는 결과가 아니라 마커(`{ truncated, bytes }`)다 — 그 두 줄을
+  // key/value 로 펼치면 운영자는 그것을 **조회 결과로 읽는다**(바이트 수가 데이터인
+  // 것처럼 보인다). 무슨 일이 있었는지는 머리의 고지 줄(`TRUNCATED_NOTE`)이 이미
+  // 말하므로, 본문은 아무 말도 하지 않는 편이 정확하다.
+  if (isEnvelope && envelope.truncated === true) return null;
+
   return (
     <div data-slot="read-result-body" className="flex flex-col gap-3">
       {renderPayload(operation, payload)}
@@ -81,7 +87,7 @@ function renderPayload(operation: string | null, payload: unknown) {
       return <p className="text-sm text-muted-foreground">{EMPTY_RESULT_MESSAGE}</p>;
     }
     const rows = toTableRows(items);
-    if (rows) return <GenericTable rows={rows} />;
+    if (rows) return <GenericTable rows={rows} caption="조회 결과 표" />;
   }
 
   if (typeof payload !== "object") {

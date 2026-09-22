@@ -59,9 +59,13 @@ async function fetchApprovalDetail(id: string): Promise<ApprovalDetailData | nul
 }
 
 const useApprovalDetail: ApprovalDetailHook = (id) => {
-  // 기안 카드와 같은 쿼리키다 — 이 화면에서 승인하면 카드도 같은 캐시를 읽는다.
+  // ⛔ 기안 카드(`proposal-card`)의 `["action-proposal", id]` 를 쓰지 말 것 — **같은 키에
+  // 서로 다른 queryFn** 이 걸린다. 카드의 fetcher 는 404 를 던지고 이쪽은 `null` 로
+  // 돌려주므로, 두 컴포넌트가 한 화면에 있으면 먼저 마운트된 쪽의 함수가 캐시를
+  // 채운다 — 없는 기안이 「불러오기 실패」로 보이거나 그 반대가 된다(어느 쪽이 이길지
+  // 마운트 순서가 정한다). 무효화는 `useProposalActions` 가 두 키를 함께 친다.
   const query = useQuery({
-    queryKey: ["action-proposal", id],
+    queryKey: ["approval-detail", id],
     queryFn: () => fetchApprovalDetail(id),
     refetchOnWindowFocus: true,
   });
@@ -79,7 +83,7 @@ function BackLink() {
       href="/approvals"
       className={`${buttonVariants({ variant: "ghost", size: "sm" })} focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring`}
     >
-      <ChevronLeftIcon className="size-4" />
+      <ChevronLeftIcon aria-hidden className="size-4" />
       결재함
     </Link>
   );

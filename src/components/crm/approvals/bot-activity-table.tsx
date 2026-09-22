@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Toggle } from "@/components/ui/toggle";
 import type { AgentJobListItem } from "@/lib/agent-jobs/list-item";
 import { OPERATION_LABELS } from "./approvals-tabs";
 import { formatShortDateTime } from "./format-time";
@@ -38,6 +38,10 @@ const COLUMNS = ["시각", "작업", "상태", "요약", "결과"] as const;
  * 「완료 포함」 토글. 표와 빈 상태가 **같은 토글**을 써야 한다 — 빈 목록일 때 토글이
  * 사라지면 성공만 있는 구간에서 운영자가 필터를 풀 방법이 없어진다(빈 화면을
  * 고장으로 읽는 자리).
+ *
+ * ⛔ 평범한 `Button` 으로 되돌리지 말 것 — `aria-pressed` 만 붙은 ghost 버튼은 켜져
+ * 있어도 **눈에는 꺼진 것과 똑같이** 보인다(화면낭독기만 상태를 안다). `Toggle` 은
+ * 눌린 상태에 배경(`aria-pressed:bg-muted`)을 주므로 켜진 필터가 보인다.
  */
 export function SucceededToggle({
   includeSucceeded,
@@ -48,9 +52,14 @@ export function SucceededToggle({
 }) {
   return (
     <div className="flex items-center justify-end">
-      <Button variant="ghost" size="xs" aria-pressed={includeSucceeded} onClick={onToggle}>
+      <Toggle
+        size="sm"
+        variant="outline"
+        pressed={includeSucceeded}
+        onPressedChange={() => onToggle()}
+      >
         완료 포함
-      </Button>
+      </Toggle>
     </div>
   );
 }
@@ -77,13 +86,15 @@ export function BotActivityTable({
 
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left">
+          {/* 표에 이름을 준다 — 화면낭독기는 표에 들어설 때 이 말로 어디인지 안다. */}
+          <caption className="sr-only">봇 활동 내역</caption>
           <thead>
             <tr className="border-b border-border/70">
               {COLUMNS.map((column) => (
                 <th
                   key={column}
                   scope="col"
-                  className="px-2 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                  className="px-2 py-2 text-[11px] font-medium uppercase tracking-[0.05em] text-slate-500"
                 >
                   {column}
                 </th>
@@ -122,6 +133,7 @@ export function BotActivityTable({
                     {item.actionProposalId ? (
                       <Link
                         href={`/approvals/${item.actionProposalId}`}
+                        aria-label={`${operationLabel} 결과 보기`}
                         className="text-primary underline-offset-4 hover:underline"
                       >
                         결과

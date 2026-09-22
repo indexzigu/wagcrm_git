@@ -31,12 +31,26 @@ function LoadingRegion({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** 카드 목록용 스켈레톤 — 카드 세 장 높이로 자리를 잡는다. */
-export function CardListSkeleton({ rows = 3 }: { rows?: number }) {
+/**
+ * 카드 목록용 스켈레톤 — 카드 세 장 높이로 자리를 잡는다.
+ *
+ * 높이를 호출자가 정하는 이유는 탭마다 카드가 다르게 생겼기 때문이다: 기안 카드는
+ * 배지 줄 + 본문 + 버튼 줄이라 ~144px(`h-36`)이고, 조회 결과 카드는 세 줄짜리라
+ * ~80px(`h-20`)다. 한 값으로 묶으면 로딩에서 실제 목록으로 넘어갈 때 한쪽은 화면이
+ * 위로, 다른 쪽은 아래로 뛴다(P8 Layout Stability — 스켈레톤의 용도가 그것뿐이다).
+ */
+export function CardListSkeleton({
+  rows = 3,
+  height = "h-20",
+}: {
+  rows?: number;
+  /** 카드 한 장의 높이 유틸(`h-20` · `h-36`). */
+  height?: string;
+}) {
   return (
     <LoadingRegion>
       {Array.from({ length: rows }).map((_, index) => (
-        <Skeleton key={index} className="h-20 w-full rounded-lg" />
+        <Skeleton key={index} className={`${height} w-full rounded-lg`} />
       ))}
     </LoadingRegion>
   );
@@ -93,18 +107,22 @@ export function LoadMoreButton({
  * 허브 전체 스켈레톤 — `page.tsx` 의 Suspense fallback 과 `loading.tsx` 가 공유한다.
  * 탭바 자리(한 줄)와 본문 카드 세 장을 그대로 예약해 실제 렌더로 넘어갈 때 높이가
  * 뛰지 않게 한다(P8 Layout Stability).
+ *
+ * 치수는 실제 탭바에서 따온 것이다: 탭 링크가 `text-sm`(20px) + `pb-1.5`(6px) +
+ * `border-b-2`(2px) = 28px 이고 줄 자체가 `py-3`(24px) 이라 52px 이다. 자리표시자를
+ * `h-4` 로 두면 실제 탭바가 뜨는 순간 본문이 12px 아래로 밀린다.
  */
 export function HubSkeleton() {
   return (
     <>
-      <div className="flex items-center gap-3 border-b border-border/70 px-5 py-3">
-        <Skeleton className="h-4 w-8" />
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-4 w-8" />
-        <Skeleton className="h-4 w-28" />
+      <div className="flex min-h-[52px] items-center gap-3 border-b border-border/70 px-5 py-3">
+        <Skeleton className="h-7 w-8" />
+        <Skeleton className="h-7 w-40" />
+        <Skeleton className="h-7 w-8" />
+        <Skeleton className="h-7 w-28" />
       </div>
       <div className="p-5">
-        <CardListSkeleton />
+        <CardListSkeleton height="h-36" />
       </div>
     </>
   );
