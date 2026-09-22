@@ -426,3 +426,24 @@ describe("get_order_snapshot 뷰", () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+// 결재함 상세(Plan 2 Task 5)는 이 뷰들을 **자기 카드 안에** 얹는다 — 뷰가 테두리를
+// 한 겹 더 그리면 카드 속 카드가 된다. `bare` 는 그 한 겹만 끈다(내용은 그대로).
+describe("bare — 상세 화면 안에서는 테두리 한 겹을 끈다", () => {
+  const View = TOOL_RESULT_RENDERERS["get_pipeline_status"];
+  const sampleData: GetPipelineStatusData = {
+    statusCounts: [{ status: "ACTIVE", count: 3 }],
+    totalCount: 3,
+    campaigns: [],
+  };
+
+  it("기본은 테두리가 있고, bare 면 없다", () => {
+    const { container: plain } = render(<View data={sampleData} />);
+    expect((plain.firstElementChild as HTMLElement).className).toContain("border-border");
+
+    const { container: bare } = render(<View data={sampleData} bare />);
+    expect((bare.firstElementChild as HTMLElement).className).not.toContain("border-border");
+    // 내용은 그대로다 — 끄는 것은 테두리 한 겹뿐이다.
+    expect((bare.firstElementChild as HTMLElement).className).toContain("flex-col");
+  });
+});

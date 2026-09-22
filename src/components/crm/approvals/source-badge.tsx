@@ -14,15 +14,25 @@ import { Badge } from "@/components/ui/badge";
  */
 export function SourceBadge({ createdBy }: { createdBy: string }) {
   if (createdBy === "AGENT_WORKER") {
-    return <Badge variant="secondary">슬랙봇</Badge>;
+    return <Badge variant="secondary">{sourceLabelOf(createdBy)}</Badge>;
   }
   if (createdBy === "AGENT") {
-    return <Badge variant="outline">어시스턴트</Badge>;
+    return <Badge variant="outline">{sourceLabelOf(createdBy)}</Badge>;
   }
   return (
     <Badge variant="outline">
       <UserRoundIcon className="size-3" />
-      직접
+      {sourceLabelOf(createdBy)}
     </Badge>
   );
+}
+
+/**
+ * 배지에 적히는 그 말 — 배지를 못 쓰는 자리(페이지 설명 줄 같은 평문)가 쓴다.
+ * ⛔ 라벨을 그쪽에서 다시 쓰지 말 것: 출처 이름이 바뀌면 한쪽만 낡는다.
+ */
+export function sourceLabelOf(createdBy: string): string {
+  if (createdBy === "AGENT_WORKER") return "슬랙봇";
+  if (createdBy === "AGENT") return "어시스턴트";
+  return "직접";
 }

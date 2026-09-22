@@ -2,6 +2,7 @@ import type { FC } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 // ⚠️ 타입은 오직 런타임-프리 모듈(data-types.ts)에서만 import한다(청사진 §2-1/§3-1,
 // 번들 안전 — plan-critic #1). tool 파일(settlement-report.ts 등)에서 직접 import하지
 // 않는다 — 실수로 값-import가 섞이면 prisma가 클라이언트 번들에 들어가는 위험 구조다.
@@ -30,7 +31,19 @@ import { partnerTypeLabels, type PartnerType } from "@/lib/crm-types";
  * 뿐이다 — 다른 4개 뷰는 prop만 통과시키고 무동작(presentational 순수성 유지).
  */
 
-type ToolResultViewProps = { data: unknown; onQuickAction?: (text: string) => void };
+/**
+ * `bare` — 래퍼 테두리 한 겹만 끈다(내용은 그대로).
+ *
+ * 채팅 메시지 안에서는 이 뷰가 **스스로 카드**여야 하지만, 결재함 상세
+ * (`/approvals/[id]`, Plan 2 Task 5)에서는 이미 카드 안에 들어가 있어 테두리를 또
+ * 그리면 카드 속 카드가 된다. 소비처가 두 곳이 된 순간 생긴 차이라 뷰마다 복제하지
+ * 않고 한 플래그로 둔다.
+ */
+type ToolResultViewProps = {
+  data: unknown;
+  onQuickAction?: (text: string) => void;
+  bare?: boolean;
+};
 
 function formatNumber(value: number): string {
   return Math.round(value).toLocaleString();
@@ -62,12 +75,12 @@ const SETTLEMENT_ACTION_LABELS: Partial<Record<SettlementStateLabel, string>> = 
   confirmed: "지급완료",
 };
 
-const SettlementReportView: FC<ToolResultViewProps> = ({ data, onQuickAction }) => {
+const SettlementReportView: FC<ToolResultViewProps> = ({ data, onQuickAction, bare }) => {
   if (!isGetSettlementReportData(data)) return null;
   const { summary, campaigns, stateCounts } = data;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-4 gap-2 text-xs">
         <div>
           <p className="text-muted-foreground">총매출</p>
@@ -151,23 +164,26 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, onQuickAction }) 
 
 // ---- search_deals ----
 
+// ⚠️ `count` 까지 본다 — 봇 워커가 결재함에 남기는 봉투는 `{ items, rowLimitReached }`
+// 라 `count`/`truncated` 가 없다. items 만 보면 이 뷰가 그 봉투도 그릴 수 있다고
+// 대답하고, 화면에는 「undefined건」이 찍힌다(결재함 상세가 이 판정을 쓴다).
 function isSearchDealsData(data: unknown): data is SearchDealsData {
   if (!data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
-  return Array.isArray(d.items);
+  return Array.isArray(d.items) && typeof d.count === "number";
 }
 
 // onQuickAction은 시그니처 통일을 위해 받기만 하고 사용하지 않는다(청사진 §7-3 —
 // SettlementReportView만 행 액션 구현, 나머지는 prop 통과만).
-const SearchDealsView: FC<ToolResultViewProps> = ({ data }) => {
+const SearchDealsView: FC<ToolResultViewProps> = ({ data, bare }) => {
   if (!isSearchDealsData(data)) return null;
   const { items, count, truncated } = data;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{count}건</span>
-        {truncated && <span>상위 20건까지 표시됩니다</span>}
+        {truncated && <span>상위 20건만 표시합니다.</span>}
       </div>
       <ul className="flex flex-col gap-1.5">
         {items.map((item) => (
@@ -184,23 +200,24 @@ const SearchDealsView: FC<ToolResultViewProps> = ({ data }) => {
 
 // ---- search_partners ----
 
+// `search_deals` 와 같은 이유로 `count` 를 함께 본다(워커 봉투 구분).
 function isSearchPartnersData(data: unknown): data is SearchPartnersData {
   if (!data || typeof data !== "object") return false;
   const d = data as Record<string, unknown>;
-  return Array.isArray(d.items);
+  return Array.isArray(d.items) && typeof d.count === "number";
 }
 
 // 동명 거래처를 사람이 가려내야 하므로(도구 설명 참조) 사업자번호를 열로 보여주고,
 // 상호는 그 거래처 상세로 여는 링크다 — 전역 검색과 같은 `/partners?selectedPartner=` 경로.
-const SearchPartnersView: FC<ToolResultViewProps> = ({ data }) => {
+const SearchPartnersView: FC<ToolResultViewProps> = ({ data, bare }) => {
   if (!isSearchPartnersData(data)) return null;
   const { items, count, truncated } = data;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{count}건</span>
-        {truncated && <span>상위 20건까지 표시됩니다</span>}
+        {truncated && <span>상위 20건만 표시합니다.</span>}
       </div>
       <div className="overflow-hidden rounded-md border border-border">
         <table className="w-full text-left text-xs">
@@ -245,12 +262,12 @@ function isGetPipelineStatusData(data: unknown): data is GetPipelineStatusData {
   return Array.isArray(d.statusCounts);
 }
 
-const PipelineStatusView: FC<ToolResultViewProps> = ({ data }) => {
+const PipelineStatusView: FC<ToolResultViewProps> = ({ data, bare }) => {
   if (!isGetPipelineStatusData(data)) return null;
   const { statusCounts, totalCount, campaigns } = data;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         {statusCounts.map((sc) => (
           <Badge key={sc.status} variant="outline">
@@ -282,12 +299,12 @@ function isGetCampaignFinancialsData(data: unknown): data is GetCampaignFinancia
   return typeof d.derived === "object" && d.derived !== null;
 }
 
-const CampaignFinancialsView: FC<ToolResultViewProps> = ({ data }) => {
+const CampaignFinancialsView: FC<ToolResultViewProps> = ({ data, bare }) => {
   if (!isGetCampaignFinancialsData(data)) return null;
   const { actualSales, derived, isDepositReceived, isPayoutCompleted } = data;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-5 gap-2 text-xs">
         <div>
           <p className="text-muted-foreground">실매출</p>
@@ -339,12 +356,12 @@ function isGetOrderSnapshotData(data: unknown): data is GetOrderSnapshotData {
   return typeof d.totals === "object" && d.totals !== null;
 }
 
-const OrderSnapshotView: FC<ToolResultViewProps> = ({ data }) => {
+const OrderSnapshotView: FC<ToolResultViewProps> = ({ data, bare }) => {
   if (!isGetOrderSnapshotData(data)) return null;
   const { days, totals } = data;
 
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className={cn("mt-2 flex flex-col gap-2", !bare && "rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-4 gap-2 text-xs">
         <div>
           <p className="text-muted-foreground">주문</p>
@@ -401,3 +418,26 @@ export const TOOL_RESULT_RENDERERS: Record<string, FC<ToolResultViewProps>> = {
   get_campaign_financials: CampaignFinancialsView,
   get_order_snapshot: OrderSnapshotView,
 };
+
+/**
+ * 이 operation 의 데이터를 리치 뷰가 **실제로** 그릴 수 있는가 (Plan 2 Task 5).
+ *
+ * 결재함 상세는 뷰를 그리기 전에 알아야 한다 — 뷰는 가드에 걸리면 `null` 을 돌려주고
+ * 그러면 화면이 통째로 빈다. 렌더해 보고 판정하는 대신(`renderToStaticMarkup` 은
+ * 클라이언트 번들에 서버 렌더러를 끌어온다) 각 뷰의 가드를 그대로 표로 잇는다 —
+ * ⛔ 여기서 가드를 다시 쓰지 말 것. 두 벌이 되는 순간 「뷰는 못 그리는데 표는 그릴 수
+ * 있다고 대답」하는 어긋남이 조용히 생긴다.
+ */
+const TOOL_RESULT_GUARDS: Record<string, (data: unknown) => boolean> = {
+  get_settlement_report: isGetSettlementReportData,
+  search_deals: isSearchDealsData,
+  search_partners: isSearchPartnersData,
+  get_pipeline_status: isGetPipelineStatusData,
+  get_campaign_financials: isGetCampaignFinancialsData,
+  get_order_snapshot: isGetOrderSnapshotData,
+};
+
+export function hasToolResultRenderer(operation: string, data: unknown): boolean {
+  const guard = TOOL_RESULT_GUARDS[operation];
+  return guard ? guard(data) : false;
+}
