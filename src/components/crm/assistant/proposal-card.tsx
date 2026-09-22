@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -23,7 +23,7 @@ import { ProposalPayloadPreview } from "./proposal-payload-preview";
 const ACTION_LABELS: Record<string, string> = {
   add_entity_memo: "메모 추가",
   change_deal_status: "딜 상태 변경",
-  confirm_settlement: "정산 확정 🔴",
+  confirm_settlement: "정산 확정",
 };
 
 // confirm_settlement만 승인 시 확인 다이얼로그를 거친다(§1-3, critic Q4 — 금전 최고위험 액션).
@@ -58,8 +58,9 @@ async function fetchProposal(id: string): Promise<ProposalDetail> {
  *
  * ⛔ **「완료」는 `status-success` 다 — `status-active`(브랜드 네이비)로 되돌리지 말 것**
  * (오너 승인 2026-08-26). 이 주석이 비서 표면 4개 파일의 **어휘 정본**이다:
- * `approval-inbox`(완료 탭 카드) · `evidence-table`(조회 완료) ·
- * `tool-result-views`(입금/지급 완료) 가 이 표의 관례를 재사용한다 — 값은 여기 한 곳에만 적는다.
+ * `components/crm/approvals/approval-cards`(완료 카드, Plan 2 Task 3에서 이 디렉터리로 이동) ·
+ * `evidence-table`(조회 완료) · `tool-result-views`(입금/지급 완료) 가 이 표의 관례를
+ * 재사용한다 — 값은 여기 한 곳에만 적는다.
  *
  * 근거 두 겹:
  * ① P8 §4 는 브랜드 네이비 틴트를 "5개 의미축의 hue 가 아니라 **중립 태그 캐리어**"로만
@@ -84,7 +85,12 @@ function StatusChip({ proposal }: { proposal: ProposalDetail }) {
   }
   if (proposal.status === "EXECUTED") {
     if (proposal.executedBy === "AGENT") {
-      return <Badge variant="status-success">⚡자동승인·실행됨</Badge>;
+      return (
+        <Badge variant="status-success">
+          <ZapIcon className="size-3" />
+          자동승인·실행됨
+        </Badge>
+      );
     }
     return <Badge variant="status-success">실행 완료</Badge>;
   }

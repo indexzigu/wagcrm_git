@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { SendIcon, Loader2Icon, PaperclipIcon, UploadCloudIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { MessageList } from "@/components/crm/assistant/message-list";
-import { ApprovalInbox } from "@/components/crm/assistant/approval-inbox";
 import { ConversationList } from "@/components/crm/assistant/conversation-list";
 import {
   PriceSheetIngestSlot,
@@ -368,9 +368,11 @@ export function AssistantClient() {
 
   return (
     <div className="flex h-[calc(100vh-2rem)] flex-col gap-3 overflow-hidden">
-      {/* Phase 5 HITL: 승인 대기함 — 사이드바 신규 메뉴 없이 /assistant 페이지 내부
-          섹션으로 배치한다(청사진 §0-8). */}
-      <ApprovalInbox />
+      {/* Plan 2 Task 3: 승인 대기함 패널을 이 페이지에서 제거한다 — 탭 포함 UI는
+          결재함 허브(/approvals, Task 4)로 옮긴다. 여기서는 진입 링크만 남긴다. */}
+      <Link href="/approvals" className="text-xs text-primary underline-offset-4 hover:underline">
+        결재함에서 기안을 확인합니다
+      </Link>
 
       <div className="flex flex-1 gap-3 overflow-hidden">
         {/* 채팅 영속화 §3: 대화 목록 패널 — 최근 30개, 클릭 시 재수화, "새 대화" 버튼. */}

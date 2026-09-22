@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 /**
- * AssistantClient — 승인 대기함(ApprovalInbox) 마운트 회귀 테스트 (청사진 §2 G3).
- * 사이드바 신규 메뉴 없이 /assistant 페이지 내부에 섹션으로 렌더링되어야 한다.
+ * AssistantClient — 결재함 링크 회귀 테스트 (Plan 2 Task 3).
+ *
+ * 승인 대기함 패널(ApprovalInbox, 탭 포함)은 이 페이지에서 제거됐다 — 탭 UI는
+ * 결재함 허브(/approvals, Task 4)가 소유한다. 이 페이지는 그 허브로 가는
+ * 한 줄 링크만 남긴다(청사진 §0-8).
  *
  * 채팅 영속화(§3) 도입 이후 마운트 시 GET /api/assistant/conversations를 호출하므로,
  * 이 회귀 스위트에서도 전역 fetch를 스텁한다(그렇지 않으면 실제 네트워크 호출 시도).
@@ -9,13 +12,15 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/crm/assistant/approval-inbox", () => ({
-  ApprovalInbox: () => <div data-testid="approval-inbox-stub">승인 대기함 스텁</div>,
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 
 import { AssistantClient } from "../assistant-client";
 
-describe("AssistantClient — ApprovalInbox 마운트", () => {
+describe("AssistantClient — 결재함 링크", () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
@@ -31,9 +36,11 @@ describe("AssistantClient — ApprovalInbox 마운트", () => {
     vi.unstubAllGlobals();
   });
 
-  it("승인 대기함 섹션이 어시스턴트 페이지 내부에 렌더링된다", async () => {
+  it("결재함으로 가는 링크가 어시스턴트 페이지 내부에 렌더링된다", async () => {
     render(<AssistantClient />);
-    expect(screen.getByTestId("approval-inbox-stub")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "결재함에서 기안을 확인합니다" });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute("href", "/approvals");
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   });
 

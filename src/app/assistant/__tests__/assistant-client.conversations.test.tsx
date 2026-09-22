@@ -13,8 +13,10 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/components/crm/assistant/approval-inbox", () => ({
-  ApprovalInbox: () => <div data-testid="approval-inbox-stub" />,
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 
 import { AssistantClient } from "../assistant-client";
@@ -24,8 +26,8 @@ function jsonResponse(body: unknown, ok = true) {
 }
 
 // 실제 앱 트리는 루트 layout.tsx의 Providers(QueryClientProvider)로 감싸져 있다
-// (approval-inbox.tsx뿐 아니라 재수화된 기안 카드 ProposalCard도 react-query를 쓴다,
-// 청사진 §1-1/§3-#6). 이 단위 테스트는 AssistantClient만 단독 렌더하므로 동일한
+// (재수화된 기안 카드 ProposalCard가 react-query를 쓴다, 청사진 §1-1/§3-#6). 이
+// 단위 테스트는 AssistantClient만 단독 렌더하므로 동일한
 // 트리를 재현하기 위해 QueryClientProvider로 감싼다(동작 변화 아님 — 테스트 하네스 정합).
 function renderWithQueryClient(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
