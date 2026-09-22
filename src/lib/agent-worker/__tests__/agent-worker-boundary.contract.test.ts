@@ -41,6 +41,25 @@ describe("agent worker boundary contract", () => {
     expect(source).not.toMatch(/"APPROVED"|"EXECUTED"/);
   });
 
+  // §3-A(2026-09-22): READ 산출물 기록은 별도 모듈이 맡는다. 실행기 스캔(위)이 "EXECUTED"
+  // 리터럴을 막는 이유는 **쓰기 기안의 승인·실행**을 실행기에 두지 않기 위해서다 — 그 뜻을
+  // 지키려면 이 모듈도 같은 결로 잠가야 한다: READ 만, INSERT 만, 상태 전이 함수 없음.
+  it("read-result-record inserts READ rows only and never updates or approves", () => {
+    const source = read("src/lib/agent-worker/read-result-record.ts");
+    expect(source).toMatch(/kind: "READ"/);
+    expect(source).toMatch(/reviewRequired: false/);
+    expect(source).not.toMatch(/"WRITE"/);
+    expect(source).not.toMatch(/PENDING_APPROVAL|"APPROVED"/);
+    expect(source).not.toMatch(/\.update\(|\.updateMany\(|\.delete\(|\.deleteMany\(/);
+    expect(source).not.toMatch(/executeWriteAction|applyWriteActionEffects|isAutoApprovable|ActionProposalRepository\.transition/);
+  });
+
+  it("executor delegates READ recording to that module instead of touching proposal status itself", () => {
+    const source = read("src/lib/agent-worker/executor.ts");
+    expect(source).toMatch(/from "\.\/read-result-record"/);
+    expect(source).toMatch(/recordReadResult\(/);
+  });
+
   // ⚠️ 이 테스트의 이름은 한때 "only the frozen five" 였는데, 정작 세던 것은 **다섯 개가
   // 있는가**뿐이었다("only"도, 개수도 검사하지 않았다). 그래서 2026-09-10 에 여섯 번째
   // (`search_partners`)가 들어와도 초록으로 남았고, 이름만 사실과 어긋났다.
