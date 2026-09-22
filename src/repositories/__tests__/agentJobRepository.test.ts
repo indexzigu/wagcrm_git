@@ -4,6 +4,7 @@ import { AgentJobRepository } from "../agentJobRepository";
 const createMock = vi.fn();
 const findFirstMock = vi.fn();
 const findUniqueMock = vi.fn();
+const findManyMock = vi.fn();
 const updateManyMock = vi.fn();
 const eventCreateMock = vi.fn();
 const transactionMock = vi.fn();
@@ -24,6 +25,7 @@ vi.mock("@/lib/prisma", () => ({
     agentJob: {
       create: createMock,
       findUnique: findUniqueMock,
+      findMany: findManyMock,
     },
   }),
 }));
@@ -62,6 +64,7 @@ describe("AgentJobRepository", () => {
     createMock.mockReset();
     findFirstMock.mockReset();
     findUniqueMock.mockReset();
+    findManyMock.mockReset();
     updateManyMock.mockReset();
     eventCreateMock.mockReset();
     transactionMock.mockReset();
@@ -177,5 +180,58 @@ describe("AgentJobRepository", () => {
     expect(eventCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ toStatus: "FAILED_FINAL" }) }),
     );
+  });
+
+  describe("listRecent (결재함 봇 활동 탭)", () => {
+    it("최신순·take·SUCCEEDED 제외를 where 로 만든다", async () => {
+      findManyMock.mockResolvedValue([]);
+
+      await AgentJobRepository.listRecent({
+        includeSucceeded: false,
+        take: 51,
+        before: new Date("2026-09-22T00:00:00Z"),
+      });
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: { status: { not: "SUCCEEDED" }, createdAt: { lt: new Date("2026-09-22T00:00:00Z") } },
+        orderBy: { createdAt: "desc" },
+        take: 51,
+      });
+    });
+
+    it("includeSucceeded=true 면 상태 필터가 없다", async () => {
+      findManyMock.mockResolvedValue([]);
+
+      await AgentJobRepository.listRecent({ includeSucceeded: true, take: 10 });
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {},
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+    });
+
+    it("행을 normalizeAgentJob 으로 정규화해 payload·result 를 파싱한다", async () => {
+      findManyMock.mockResolvedValue([
+        {
+          id: "j1",
+          idempotencyKey: "k",
+          payload: JSON.stringify(payload),
+          status: "FAILED_FINAL",
+          workerId: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          attempt: 3,
+          result: null,
+          failureCode: "NOT_FOUND",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
+      const rows = await AgentJobRepository.listRecent({ includeSucceeded: true, take: 10 });
+
+      expect(rows[0].payload.operation).toBe(payload.operation);
+    });
   });
 });
