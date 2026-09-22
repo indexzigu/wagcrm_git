@@ -26,7 +26,7 @@ export function ReadRecordCard({ item }: { item: ReadRecordItem }) {
     <li>
       <Link
         href={`/approvals/${item.id}`}
-        className="flex items-center gap-3 rounded-lg border border-border p-4 shadow-soft-sm transition-shadow hover:shadow-soft-md"
+        className="flex items-center gap-3 rounded-lg border border-border p-4 shadow-soft-sm transition-shadow hover:shadow-soft-md focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       >
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">

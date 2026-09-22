@@ -9,9 +9,17 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+// 실제 next/link 는 className 등 나머지 props 를 <a> 로 흘린다 — 그것까지 흉내 내야
+// 포커스 링 같은 클래스 계약을 이 스텁 위에서 검증할 수 있다.
 vi.mock("next/link", () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({
+    children,
+    href,
+    ...rest
+  }: { children: React.ReactNode; href: string } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
   ),
 }));
 

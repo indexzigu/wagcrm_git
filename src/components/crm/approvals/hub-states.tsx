@@ -13,31 +13,49 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export const LOAD_ERROR_MESSAGE = "목록을 불러오지 못했습니다.";
 
+/**
+ * 로딩 표시의 공통 껍데기.
+ *
+ * 화면에는 스켈레톤만 보이고 「불러오는 중」 문구는 `sr-only` 로만 존재한다 —
+ * 눈으로 읽는 사람에게는 레이아웃이 뛰지 않는 편이 낫고, 화면낭독기 사용자에게는
+ * 모양이 아니라 **말**이 필요하기 때문이다(스켈레톤은 `aria-hidden` 이라 읽히지 않는다).
+ */
+function LoadingRegion({ children }: { children: React.ReactNode }) {
+  return (
+    <div role="status" aria-live="polite" aria-busy="true" className="flex flex-col gap-2">
+      <span className="sr-only">불러오는 중</span>
+      <div className="flex flex-col gap-2" aria-hidden>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** 카드 목록용 스켈레톤 — 카드 세 장 높이로 자리를 잡는다. */
 export function CardListSkeleton({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="flex flex-col gap-2" aria-hidden>
+    <LoadingRegion>
       {Array.from({ length: rows }).map((_, index) => (
         <Skeleton key={index} className="h-20 w-full rounded-lg" />
       ))}
-    </div>
+    </LoadingRegion>
   );
 }
 
 /** 표(봇 활동)용 스켈레톤 — 행 다섯 줄. */
 export function TableSkeleton({ rows = 5 }: { rows?: number }) {
   return (
-    <div className="flex flex-col gap-2" aria-hidden>
+    <LoadingRegion>
       {Array.from({ length: rows }).map((_, index) => (
         <Skeleton key={index} className="h-8 w-full rounded-md" />
       ))}
-    </div>
+    </LoadingRegion>
   );
 }
 
 export function LoadErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex flex-col items-start gap-2 py-6">
+    <div role="alert" className="flex flex-col items-start gap-2 py-6">
       <p className="text-sm text-muted-foreground">{LOAD_ERROR_MESSAGE}</p>
       <Button variant="outline" size="sm" onClick={onRetry}>
         다시 불러오기
@@ -50,11 +68,21 @@ export function EmptyState({ message }: { message: string }) {
   return <p className="py-10 text-center text-sm text-muted-foreground">{message}</p>;
 }
 
-/** 「더 보기」 — 커서 페이지네이션을 쓰는 기록 탭 두 곳이 공유한다. */
-export function LoadMoreButton({ onClick }: { onClick: () => void }) {
+/**
+ * 「더 보기」 — 커서 페이지네이션을 쓰는 기록 탭 두 곳이 공유한다.
+ * 다음 장을 받아오는 동안 비활성이다(훅에도 같은 가드가 있다 — 버튼은 그 상태를
+ * 눈에 보이게 할 뿐이고, 판정은 훅이 소유한다).
+ */
+export function LoadMoreButton({
+  onClick,
+  disabled = false,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <div className="flex justify-center pt-2">
-      <Button variant="outline" size="sm" onClick={onClick}>
+      <Button variant="outline" size="sm" onClick={onClick} disabled={disabled}>
         더 보기
       </Button>
     </div>

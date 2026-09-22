@@ -110,6 +110,7 @@ function makeHooks(options: StubOptions = {}): ApprovalHubHooks {
       items: options.reads ?? [],
       count: (options.reads ?? []).length,
       loadMore: vi.fn(),
+      isLoadingMore: false,
       hasMore: false,
     }),
     useAgentJobs:
@@ -118,6 +119,7 @@ function makeHooks(options: StubOptions = {}): ApprovalHubHooks {
         ...base,
         items: options.jobs ?? [],
         loadMore: vi.fn(),
+        isLoadingMore: false,
         hasMore: false,
       })),
   };
@@ -166,6 +168,27 @@ describe("ApprovalHub — 탭", () => {
     // 실패 count=0 이면 배지를 숨긴다.
     expect(tabLink(container, "failed").textContent).toBe("실패");
   });
+
+  it("⑥ 배지 색은 대기=status-pending · 실패=destructive 다", () => {
+    const { container } = render(
+      <ApprovalHub hooks={makeHooks({ counts: { PENDING_APPROVAL: 3, FAILED: 2 } })} />
+    );
+    // 「손이 필요하다」는 두 탭이 같은 색이면 급한 쪽(실패)이 묻힌다.
+    expect(within(tabLink(container, "pending")).getByText("3")).toHaveAttribute(
+      "data-variant",
+      "status-pending"
+    );
+    expect(within(tabLink(container, "failed")).getByText("2")).toHaveAttribute(
+      "data-variant",
+      "destructive"
+    );
+  });
+
+  it("탭바에 이름표가 있고 탭 링크에 포커스 링 유틸이 붙는다", () => {
+    const { container } = render(<ApprovalHub hooks={makeHooks()} />);
+    expect(screen.getByRole("navigation", { name: "결재함 탭" })).toBeInTheDocument();
+    expect(tabLink(container, "pending").className).toContain("focus-visible:ring-focus-ring");
+  });
 });
 
 describe("ApprovalHub — 상태", () => {
@@ -177,10 +200,14 @@ describe("ApprovalHub — 상태", () => {
     }
   );
 
-  it("⑤ 로딩이면 스켈레톤을 보여주고 스피너 문구는 쓰지 않는다", () => {
+  it("⑤ 로딩이면 스켈레톤을 보여주고 「불러오는 중」은 화면낭독기에만 읽힌다", () => {
     const { container } = render(<ApprovalHub hooks={makeHooks({ isLoading: true })} />);
     expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/불러오는 중/)).not.toBeInTheDocument();
+    // 눈으로 읽는 사람에게는 스피너 문구를 보이지 않는다(레이아웃이 뛰지 않는 편이 낫다).
+    // 화면낭독기에는 말이 필요하므로 sr-only 로만 둔다 — 스켈레톤은 aria-hidden 이다.
+    const status = screen.getByRole("status");
+    expect(status).toHaveAttribute("aria-busy", "true");
+    expect(within(status).getByText("불러오는 중")).toHaveClass("sr-only");
     // 로딩 중에는 빈 상태 문구를 함께 그리지 않는다.
     expect(screen.queryByText(EMPTY_MESSAGES.pending)).not.toBeInTheDocument();
   });
@@ -188,7 +215,7 @@ describe("ApprovalHub — 상태", () => {
   it("⑥ 오류면 안내 문구와 다시 불러오기 버튼이 뜨고 버튼이 refetch 를 부른다", () => {
     const refetch = vi.fn();
     render(<ApprovalHub hooks={makeHooks({ isError: true, refetch })} />);
-    expect(screen.getByText("목록을 불러오지 못했습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("목록을 불러오지 못했습니다.");
     fireEvent.click(screen.getByRole("button", { name: "다시 불러오기" }));
     expect(refetch).toHaveBeenCalledTimes(1);
   });
@@ -230,6 +257,7 @@ describe("ApprovalHub — 봇 활동", () => {
       isError: false,
       refetch: vi.fn(),
       loadMore: vi.fn(),
+      isLoadingMore: false,
       hasMore: false,
     }));
     render(<ApprovalHub hooks={makeHooks({ tab: "activity", useAgentJobs })} />);
@@ -247,11 +275,31 @@ describe("ApprovalHub — 봇 활동", () => {
       isError: false,
       refetch: vi.fn(),
       loadMore,
+      isLoadingMore: false,
       hasMore: true,
     }));
     render(<ApprovalHub hooks={makeHooks({ tab: "activity", useAgentJobs })} />);
     fireEvent.click(screen.getByRole("button", { name: "더 보기" }));
     expect(loadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("다음 장을 받아오는 중이면 「더 보기」가 비활성이다", () => {
+    const loadMore = vi.fn();
+    const useAgentJobs = vi.fn(() => ({
+      items: [makeJob()],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      loadMore,
+      isLoadingMore: true,
+      hasMore: true,
+    }));
+    render(<ApprovalHub hooks={makeHooks({ tab: "activity", useAgentJobs })} />);
+
+    const button = screen.getByRole("button", { name: "더 보기" });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(loadMore).not.toHaveBeenCalled();
   });
 });
 

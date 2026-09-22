@@ -9,9 +9,17 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+// 실제 next/link 는 className 등 나머지 props 를 <a> 로 흘린다 — 그것까지 흉내 내야
+// 포커스 링 같은 클래스 계약을 이 스텁 위에서 검증할 수 있다.
 vi.mock("next/link", () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({
+    children,
+    href,
+    ...rest
+  }: { children: React.ReactNode; href: string } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
   ),
 }));
 
@@ -48,6 +56,8 @@ describe("ReadRecordCard", () => {
     expect(link).toHaveAttribute("href", "/approvals/proposal-read-1");
     // 카드 안에 별도의 「자세히」 버튼을 두지 않는다 — 카드 자체가 링크다.
     expect(screen.queryByText("자세히")).not.toBeInTheDocument();
+    // 카드가 곧 유일한 초점 대상이므로 포커스 링이 카드에 붙어야 한다(P8 정본 토큰).
+    expect(link.className).toContain("focus-visible:ring-focus-ring");
   });
 
   it("작업 라벨을 한글로 옮기고 출처 배지와 시각(MM-DD HH:mm)을 보여준다", () => {
