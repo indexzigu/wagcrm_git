@@ -184,6 +184,16 @@ describe("ApprovalHub — 탭", () => {
     );
   });
 
+  // 세그먼트 이름표(기안·기록)는 눈으로만 읽힌다 — 탭을 훑는 화면낭독기 사용자에게도
+  // 여섯 개가 두 무리라는 사실이 전해져야 한다.
+  it("각 세그먼트의 탭들이 이름 붙은 그룹으로 묶인다", () => {
+    render(<ApprovalHub hooks={makeHooks()} />);
+    const draft = screen.getByRole("group", { name: "기안" });
+    const record = screen.getByRole("group", { name: "기록" });
+    expect(within(draft).getAllByRole("link")).toHaveLength(4);
+    expect(within(record).getAllByRole("link")).toHaveLength(2);
+  });
+
   it("탭바에 이름표가 있고 탭 링크에 포커스 링 유틸이 붙는다", () => {
     const { container } = render(<ApprovalHub hooks={makeHooks()} />);
     expect(screen.getByRole("navigation", { name: "결재함 탭" })).toBeInTheDocument();
@@ -210,6 +220,21 @@ describe("ApprovalHub — 상태", () => {
     expect(within(status).getByText("불러오는 중")).toHaveClass("sr-only");
     // 로딩 중에는 빈 상태 문구를 함께 그리지 않는다.
     expect(screen.queryByText(EMPTY_MESSAGES.pending)).not.toBeInTheDocument();
+  });
+
+  // 스켈레톤의 용도는 **자리 예약** 하나뿐이다 — 실제 카드와 높이가 다르면 목록이
+  // 뜨는 순간 화면이 뛴다(P8 Layout Stability). 기안 카드(배지+본문+버튼 줄)는
+  // 조회 결과 카드(세 줄)보다 높으므로 두 탭의 스켈레톤 높이도 달라야 한다.
+  it("⑤-b 스켈레톤 높이가 탭별 카드 높이를 따른다 (기안 h-36 · 기록 h-20)", () => {
+    const draft = render(<ApprovalHub hooks={makeHooks({ isLoading: true })} />);
+    const draftSkeletons = [...draft.container.querySelectorAll('[data-slot="skeleton"]')];
+    expect(draftSkeletons.length).toBeGreaterThan(0);
+    expect(draftSkeletons.every((el) => el.className.includes("h-36"))).toBe(true);
+
+    const record = render(<ApprovalHub hooks={makeHooks({ tab: "reads", isLoading: true })} />);
+    const recordSkeletons = [...record.container.querySelectorAll('[data-slot="skeleton"]')];
+    expect(recordSkeletons.length).toBeGreaterThan(0);
+    expect(recordSkeletons.every((el) => el.className.includes("h-20"))).toBe(true);
   });
 
   it("⑥ 오류면 안내 문구와 다시 불러오기 버튼이 뜨고 버튼이 refetch 를 부른다", () => {

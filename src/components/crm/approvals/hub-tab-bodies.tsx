@@ -67,7 +67,8 @@ export function ProposalTabBody({
     def.kind ?? "WRITE"
   );
 
-  if (isLoading) return <CardListSkeleton />;
+  // 기안 카드는 배지 줄 + 본문 + 버튼 줄이라 조회 결과 카드보다 높다(hub-states 주석).
+  if (isLoading) return <CardListSkeleton height="h-36" />;
   if (isError) return <LoadErrorState onRetry={() => refetch()} />;
   if (items.length === 0) return <EmptyState message={EMPTY_MESSAGES[tab]} />;
 
@@ -85,7 +86,7 @@ export function ReadsTabBody({ useReadRecords }: { useReadRecords: ReadRecordsHo
   const { items, isLoading, isError, refetch, loadMore, isLoadingMore, hasMore } =
     useReadRecords();
 
-  if (isLoading) return <CardListSkeleton />;
+  if (isLoading) return <CardListSkeleton height="h-20" />;
   if (isError) return <LoadErrorState onRetry={() => refetch()} />;
   if (items.length === 0) return <EmptyState message={EMPTY_MESSAGES.reads} />;
 

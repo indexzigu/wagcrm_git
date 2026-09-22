@@ -100,17 +100,21 @@ export function ApprovalHub({ hooks }: { hooks?: Partial<ApprovalHubHooks> } = {
             {index > 0 && (
               <span aria-hidden className="mx-2 h-4 border-l border-border/70" />
             )}
-            <span className="mr-1 text-[10px] uppercase tracking-[0.05em] text-slate-500">
-              {segment}
-            </span>
-            {APPROVALS_TABS.filter((def) => def.segment === segment).map((def) => (
-              <TabLink
-                key={def.id}
-                tab={def}
-                active={def.id === tab}
-                count={counts[def.id] ?? 0}
-              />
-            ))}
+            {/* `uppercase` 는 한글에 아무 일도 하지 않는다 — 라틴 글자가 섞여 들어올 때만
+                조용히 모양을 바꾸므로 두지 않는다. */}
+            <span className="mr-1 text-[10px] tracking-[0.05em] text-slate-500">{segment}</span>
+            {/* 이름표는 눈으로만 읽힌다 — 탭을 훑는 화면낭독기 사용자에게 「기안 4개 ·
+                기록 2개」라는 묶음을 알리려면 묶음 자체에 이름이 있어야 한다. */}
+            <div role="group" aria-label={segment} className="flex flex-wrap items-center gap-x-1">
+              {APPROVALS_TABS.filter((def) => def.segment === segment).map((def) => (
+                <TabLink
+                  key={def.id}
+                  tab={def}
+                  active={def.id === tab}
+                  count={counts[def.id] ?? 0}
+                />
+              ))}
+            </div>
           </React.Fragment>
         ))}
       </nav>

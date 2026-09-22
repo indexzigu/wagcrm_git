@@ -89,6 +89,15 @@ describe("ReadResultBody — 갈래 ② 제네릭 표", () => {
     expect(screen.getByText("딜 A")).toBeInTheDocument();
   });
 
+  it("제네릭 표에는 sr-only 이름표(caption)가 붙는다", () => {
+    const { container } = render(
+      <ReadResultBody envelope={envelope("search_deals", workerSearchDeals)} />
+    );
+    const caption = container.querySelector("caption");
+    expect(caption).toHaveTextContent("조회 결과 표");
+    expect(caption).toHaveClass("sr-only");
+  });
+
   it("열 머리는 scope=col 이고 첫 등장 순서로 키 합집합을 만든다", () => {
     render(
       <ReadResultBody
@@ -197,6 +206,37 @@ describe("ReadResultBody — 갈래 ③ key/value 목록", () => {
     expect(screen.getByText("조회 결과가 0건입니다.")).toBeInTheDocument();
     expect(container.querySelector("[data-slot='kv-list']")).toBeNull();
     expect(screen.queryByText("rowLimitReached")).not.toBeInTheDocument();
+  });
+});
+
+// 저장 상한을 넘긴 기록의 `data` 는 `{ truncated, bytes }` 마커뿐이다 — 그 두 줄은
+// 조회 결과가 아니라 저장 사정이고, 그 사정은 머리의 고지 줄이 이미 말한다.
+describe("ReadResultBody — 잘린 기록", () => {
+  it("truncated 봉투의 본문은 아무것도 그리지 않는다", () => {
+    const { container } = render(
+      <ReadResultBody
+        envelope={{
+          operation: "search_deals",
+          jobId: "job-1",
+          query: {},
+          truncated: true,
+          data: { truncated: true, bytes: 120000 },
+        }}
+      />
+    );
+    expect(container.querySelector("dl")).toBeNull();
+    expect(container.querySelector("table")).toBeNull();
+    expect(screen.queryByText(/bytes/)).not.toBeInTheDocument();
+    expect(screen.queryByText("120,000")).not.toBeInTheDocument();
+  });
+
+  it("truncated 가 false 인 봉투는 평소대로 그린다 — 잘림 분기가 삼키지 않는다", () => {
+    render(
+      <ReadResultBody
+        envelope={envelope("search_deals", { items: [{ id: "d1" }], rowLimitReached: false })}
+      />
+    );
+    expect(screen.getByRole("table")).toBeInTheDocument();
   });
 });
 
