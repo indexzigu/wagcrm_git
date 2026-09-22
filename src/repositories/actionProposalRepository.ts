@@ -115,6 +115,10 @@ export class ActionProposalRepository {
     return getPrisma().actionProposal.findMany(args);
   }
 
+  static async count(where: Prisma.ActionProposalWhereInput) {
+    return getPrisma().actionProposal.count({ where });
+  }
+
   static async findPending() {
     return getPrisma().actionProposal.findMany({
       where: { status: "PENDING_APPROVAL" },
