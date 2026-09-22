@@ -86,6 +86,37 @@ function readRlsEnabledTables(): Set<string> {
   return enabled;
 }
 
+/**
+ * **드롭된 표** — 「유령 테이블」 단언에서만 면제한다.
+ *
+ * 왜 면제가 필요한가: RLS 를 켠 마이그레이션은 이미 적용돼 있어 **고칠 수 없다**(Prisma 가
+ * 체크섬을 보므로 한 글자만 바꿔도 배포의 `migrate deploy` 가 멈춘다). 그래서 표를 드롭하면
+ * `schema.prisma` 에는 없는데 옛 마이그레이션의 `ALTER TABLE … ENABLE ROW LEVEL SECURITY`
+ * 줄은 영원히 남는다. 재적용 순서는 ENABLE → DROP 이라 shadow DB 재생 자체는 정상이다.
+ *
+ * ⚠️ 면제는 **눈에 보이고 스스로 만료되어야 한다** — 아래 단언이 각 항목에 대응하는
+ * `DROP TABLE` 문을 마이그레이션에서 실제로 찾는다. 드롭을 되돌리거나 이름을 잘못 적으면
+ * 면제가 먼저 빨개진다(면제가 그 이유보다 오래 사는 것을 막는 장치).
+ */
+const DROPPED_TABLES = new Set([
+  // 2026-09-23 채팅 은퇴(Plan 3) — 20260923120000_drop_assistant_chat_tables.
+  "AssistantConversation",
+  "AssistantChatMessage",
+]);
+
+/** 전체 마이그레이션 SQL 을 훑어 DROP 된 테이블 집합을 만든다(주석은 세지 않는다). */
+function readDroppedTables(): Set<string> {
+  const dropped = new Set<string>();
+  const re = /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:(?:"?public"?)\s*\.\s*)?"?([A-Za-z_][\w$]*)"?/gi;
+  for (const dir of readdirSync(MIGRATIONS_DIR).sort()) {
+    const sqlPath = join(MIGRATIONS_DIR, dir, "migration.sql");
+    if (!existsSync(sqlPath)) continue;
+    const sql = stripSqlComments(readFileSync(sqlPath, "utf8"));
+    for (const [, table] of sql.matchAll(re)) dropped.add(table);
+  }
+  return dropped;
+}
+
 describe("RLS 커버리지 계약 — 새 테이블은 RLS 를 함께 켠다", () => {
   const tables = readTableNames();
   const rlsEnabled = readRlsEnabledTables();
@@ -152,11 +183,36 @@ describe("RLS 커버리지 계약 — 새 테이블은 RLS 를 함께 켠다", (
     // 빈 DB 에 재적용할 때 `relation does not exist` 로 넘어져 **배포의 자동 migrate 가
     // 통째로 막힌다**(Migration Guard 가 shadow DB 에서 잡아주기는 하나, 여기서 먼저
     // 이유까지 붙여 알려주는 편이 싸다). `_prisma_migrations` 는 Prisma 내부 테이블이라 제외.
-    const known = new Set([...tables, "_prisma_migrations"]);
+    // 드롭된 표는 면제다 — 옛 RLS 마이그레이션이 체크섬 때문에 수정 불가라 그 줄이 남는다
+    // (면제의 근거와 만료 장치는 DROPPED_TABLES 주석·아래 단언 참조).
+    const known = new Set([...tables, "_prisma_migrations", ...DROPPED_TABLES]);
     const ghosts = [...rlsEnabled].filter((t) => !known.has(t));
     expect(
       ghosts,
       `모델이 없는 테이블에 RLS 를 켜고 있다: ${ghosts.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("드롭 면제는 실제 DROP TABLE 문을 근거로 한다 (면제가 이유보다 오래 살지 않게)", () => {
+    const dropped = readDroppedTables();
+
+    // ⚠️ 양성 대조군 — 수집기가 아무것도 못 읽으면 아래 단언이 통째로 무의미해진다.
+    expect(dropped.size).toBeGreaterThan(0);
+
+    const unjustified = [...DROPPED_TABLES].filter((t) => !dropped.has(t));
+    expect(
+      unjustified,
+      [
+        `DROPPED_TABLES 에 있으나 DROP TABLE 마이그레이션이 없다: ${unjustified.join(", ")}`,
+        "드롭을 되돌렸다면 모델을 schema.prisma 로 되살리고 이 목록에서 빼라.",
+      ].join("\n"),
+    ).toEqual([]);
+
+    // 면제는 드롭된 표에만 준다 — 살아 있는 모델을 여기 적으면 정방향 커버리지가 무력해진다.
+    const stillModeled = [...DROPPED_TABLES].filter((t) => tables.includes(t));
+    expect(
+      stillModeled,
+      `schema.prisma 에 아직 있는 모델을 드롭 면제에 넣었다: ${stillModeled.join(", ")}`,
     ).toEqual([]);
   });
 });
