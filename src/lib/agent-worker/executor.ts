@@ -21,6 +21,7 @@ import { serializeJsonFields } from "@/repositories/actionProposalRepository";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import { getPipelineStatusTool } from "@/lib/agent/tools/pipeline-status";
 import { getOrderSnapshotTool } from "@/lib/agent/tools/order-snapshot";
+import { getSettlementReportTool } from "@/lib/agent/tools/settlement-report";
 import { addEntityMemoTool } from "@/lib/agent/tools/add-entity-memo";
 import { changeDealStatusTool } from "@/lib/agent/tools/change-deal-status";
 import { confirmSettlementTool } from "@/lib/agent/tools/confirm-settlement";
@@ -37,6 +38,7 @@ import {
   type AgentJobResult,
   type AgentJobRoute,
 } from "./contracts";
+import { recordReadResult, type ReadResultRecord } from "./read-result-record";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import {
   hasShadowValidator,
@@ -121,6 +123,8 @@ type OperationSuccess = {
   summary: string;
   evidenceRefs: string[];
   actionProposalId: string | null;
+  /** 읽기 작업의 결재함 기록 페이로드 — 있으면 실행기가 성공 직후 READ 산출물로 남긴다(§3-A). */
+  record?: ReadResultRecord;
 };
 type OperationFailure = { status: "FAILED_FINAL"; errorClass: string; summary: string };
 type OperationRetry = { status: "RETRY"; errorClass: string };
@@ -140,6 +144,7 @@ type SearchPartnersInput = { name?: string; type?: string };
 type GetActionProposalInput = { proposalId: string };
 type OrderSnapshotInput = { campaignId?: string; startAt?: string; endAt?: string };
 type CampaignFinancialsInput = { campaignId: string };
+type SettlementReportInput = { month?: string; year?: string; sellerName?: string; statusFilter?: "SETTLEMENT_IN_PROGRESS" | "COMPLETED" | "ALL" };
 type ProposalScalar = string | number | boolean | null;
 type ProposalNestedValue = ProposalScalar | Record<string, ProposalScalar>;
 /**
@@ -295,13 +300,34 @@ async function searchDeals(input: SearchDealsInput): Promise<OperationOutcome> {
   const truncated = rows.length > SEARCH_TAKE_LIMIT;
   const items = rows.slice(0, SEARCH_TAKE_LIMIT);
   const lines = items.map((row) => `${row.dealName}${row.brandName ? ` / ${row.brandName}` : ""} [${row.status}] id=${row.id}`);
+  const summary = boundSummary(
+    `search_deals: ${items.length} deal(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `search_deals: ${items.length} deal(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence(items.map((row) => row.id)),
     actionProposalId: null,
+    record: {
+      title: `딜 검색 ${items.length}건`,
+      resultSummary: summary,
+      structuredResult: {
+        items: items.map((row) => ({
+          id: row.id,
+          dealName: row.dealName,
+          brandName: row.brandName,
+          status: row.status,
+          partnerId: row.partnerId,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        // ⚠️ 이 값은 envelope 의 `truncated`(64KB 상한 초과로 데이터가 통째로 마커로 바뀌었는가)
+        // 와 다른 개념이다 — 이건 "행 목록이 20건 상한에 걸렸는가"다. 이름을 겹치게 두면 결재함
+        // 화면·감사 로그가 어느 절단인지 헷갈린다.
+        rowLimitReached: truncated,
+      },
+      dataSources: ["Deal"],
+      query: { ...input },
+    },
   };
 }
 
@@ -334,13 +360,31 @@ async function searchPartners(input: SearchPartnersInput): Promise<OperationOutc
     (row) =>
       `${row.name} [${row.type}]${row.businessNumber ? ` 사업자번호 ${row.businessNumber}` : ""} id=${row.id}`,
   );
+  const summary = boundSummary(
+    `search_partners: ${items.length} partner(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `search_partners: ${items.length} partner(s)${truncated ? " (truncated at 20)" : ""}\n${lines.join("\n")}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence(items.map((row) => row.id)),
     actionProposalId: null,
+    record: {
+      title: `거래처 검색 ${items.length}건`,
+      resultSummary: summary,
+      structuredResult: {
+        items: items.map((row) => ({
+          id: row.id,
+          name: row.name,
+          type: row.type,
+          businessNumber: row.businessNumber,
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        // envelope 의 `truncated`(64KB 상한)와 다른 개념 — "행 목록이 20건 상한에 걸렸는가".
+        rowLimitReached: truncated,
+      },
+      dataSources: ["Partner"],
+      query: { ...input },
+    },
   };
 }
 
@@ -348,16 +392,36 @@ async function pipelineStatus(): Promise<OperationOutcome> {
   const result = await runTool(getPipelineStatusTool, {});
   if (isOperationFailure(result)) return result;
   if (!result.ok) {
-    return result.error.code === "NOT_FOUND"
-      ? { status: "SUCCEEDED", summary: "get_pipeline_status: no campaigns", evidenceRefs: [], actionProposalId: null }
-      : toolFailure(result);
+    if (result.error.code !== "NOT_FOUND") return toolFailure(result);
+    const emptySummary = "get_pipeline_status: no campaigns";
+    return {
+      status: "SUCCEEDED",
+      summary: emptySummary,
+      evidenceRefs: [],
+      actionProposalId: null,
+      record: {
+        title: "파이프라인 현황 총 0건",
+        resultSummary: emptySummary,
+        structuredResult: { totalCount: 0, statusCounts: [], campaigns: [] },
+        dataSources: ["SalesCampaign"],
+        query: {},
+      },
+    };
   }
   const counts = result.data.statusCounts.map((entry) => `${entry.status}=${entry.count}`).join(", ");
+  const summary = boundSummary(`get_pipeline_status: total=${result.data.totalCount}; ${counts}`);
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(`get_pipeline_status: total=${result.data.totalCount}; ${counts}`),
+    summary,
     evidenceRefs: boundEvidence(result.data.campaigns.map((campaign) => campaign.id)),
     actionProposalId: null,
+    record: {
+      title: `파이프라인 현황 총 ${result.data.totalCount}건`,
+      resultSummary: summary,
+      structuredResult: result.data,
+      dataSources: result.evidence.dataSources,
+      query: result.evidence.query,
+    },
   };
 }
 
@@ -376,11 +440,19 @@ async function campaignOrderSnapshot(campaignId: string, now: Date): Promise<Ope
   });
   if (!campaign) return failure("NOT_FOUND", "campaign not found");
   if (!campaign.orderCampaignId) {
+    const noLinkSummary = `get_order_snapshot campaign=${campaign.id} source=none (no linked order campaign)`;
     return {
       status: "SUCCEEDED",
-      summary: `get_order_snapshot campaign=${campaign.id} source=none (no linked order campaign)`,
+      summary: noLinkSummary,
       evidenceRefs: boundEvidence([campaign.id]),
       actionProposalId: null,
+      record: {
+        title: `캠페인 주문 스냅샷 ${campaign.id} (주문캠페인 연결 없음)`,
+        resultSummary: noLinkSummary,
+        structuredResult: { campaignId: campaign.id, source: "none" },
+        dataSources: ["SalesCampaign"],
+        query: { campaignId: campaign.id },
+      },
     };
   }
   const window = resolveLiveWindowKeys(new Date(campaign.startDate).getTime(), now, "agent-worker");
@@ -398,13 +470,26 @@ async function campaignOrderSnapshot(campaignId: string, now: Date): Promise<Ope
     else uncovered += 1;
   }
   const { detail } = composeSalesDetailFromAggregates(aggregates, window.todayKey, targets);
+  const summary = boundSummary(
+    `get_order_snapshot campaign=${campaign.id} window=${window.startKey}..${window.todayKey} truncated=${window.truncated} uncoveredRows=${uncovered} cumulative=${JSON.stringify(detail.cumulative)} today=${JSON.stringify(detail.today)} days=${detail.daily.length}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `get_order_snapshot campaign=${campaign.id} window=${window.startKey}..${window.todayKey} truncated=${window.truncated} uncoveredRows=${uncovered} cumulative=${JSON.stringify(detail.cumulative)} today=${JSON.stringify(detail.today)} days=${detail.daily.length}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence([campaign.id, ...detail.daily.map((point) => point.date)]),
     actionProposalId: null,
+    record: {
+      title: `캠페인 주문 스냅샷 ${campaign.id}`,
+      resultSummary: summary,
+      structuredResult: {
+        campaignId: campaign.id,
+        window: { startKey: window.startKey, todayKey: window.todayKey, truncated: window.truncated },
+        uncoveredRows: uncovered,
+        detail,
+      },
+      dataSources: ["SalesCampaign", "NaverOrderSnapshot"],
+      query: { campaignId: campaign.id },
+    },
   };
 }
 
@@ -418,21 +503,40 @@ async function orderSnapshot(input: OrderSnapshotInput, now: Date): Promise<Oper
   if (!input.startAt || !input.endAt) {
     return failure("MISSING_PARAM", "startAt and endAt are required without campaignId");
   }
-  const result = await runTool(getOrderSnapshotTool, {
-    startDate: toKstYmd(new Date(input.startAt)),
-    endDate: toKstYmd(new Date(input.endAt)),
-  });
+  const startDate = toKstYmd(new Date(input.startAt));
+  const endDate = toKstYmd(new Date(input.endAt));
+  const result = await runTool(getOrderSnapshotTool, { startDate, endDate });
   if (isOperationFailure(result)) return result;
   if (!result.ok) {
-    return result.error.code === "NOT_FOUND"
-      ? { status: "SUCCEEDED", summary: "get_order_snapshot: no snapshot rows in window", evidenceRefs: [], actionProposalId: null }
-      : toolFailure(result);
+    if (result.error.code !== "NOT_FOUND") return toolFailure(result);
+    const emptySummary = "get_order_snapshot: no snapshot rows in window";
+    return {
+      status: "SUCCEEDED",
+      summary: emptySummary,
+      evidenceRefs: [],
+      actionProposalId: null,
+      record: {
+        title: `주문 스냅샷 ${startDate}~${endDate}`,
+        resultSummary: emptySummary,
+        structuredResult: { days: [], totals: null },
+        dataSources: ["NaverOrderSnapshot"],
+        query: { startDate, endDate },
+      },
+    };
   }
+  const summary = boundSummary(`get_order_snapshot days=${result.data.days.length} totals=${JSON.stringify(result.data.totals)}`);
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(`get_order_snapshot days=${result.data.days.length} totals=${JSON.stringify(result.data.totals)}`),
+    summary,
     evidenceRefs: boundEvidence(result.data.days.map((day) => day.snapshotDate)),
     actionProposalId: null,
+    record: {
+      title: `주문 스냅샷 ${startDate}~${endDate}`,
+      resultSummary: summary,
+      structuredResult: result.data,
+      dataSources: result.evidence.dataSources,
+      query: result.evidence.query,
+    },
   };
 }
 
@@ -483,13 +587,79 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
     manualSellerExpense: toNullableNumber(campaign.sellerExpense),
     manualTaxExpense: toNullableNumber(campaign.taxExpense),
   });
+  const summary = boundSummary(
+    `get_campaign_financials campaign=${campaign.id} deal=${campaign.deal?.dealName ?? ""} seller=${campaign.seller?.name ?? ""} status=${campaign.status} actualSales=${toNumber(campaign.actualSales)} derived=${JSON.stringify(derived)} deposit=${campaign.isDepositReceived} payout=${campaign.isPayoutCompleted}`,
+  );
   return {
     status: "SUCCEEDED",
-    summary: boundSummary(
-      `get_campaign_financials campaign=${campaign.id} deal=${campaign.deal?.dealName ?? ""} seller=${campaign.seller?.name ?? ""} status=${campaign.status} actualSales=${toNumber(campaign.actualSales)} derived=${JSON.stringify(derived)} deposit=${campaign.isDepositReceived} payout=${campaign.isPayoutCompleted}`,
-    ),
+    summary,
     evidenceRefs: boundEvidence([campaign.id]),
     actionProposalId: null,
+    record: {
+      title: `캠페인 재무 ${campaign.deal?.dealName ?? ""} / ${campaign.seller?.name ?? ""}`,
+      resultSummary: summary,
+      structuredResult: {
+        campaignId: campaign.id,
+        dealName: campaign.deal?.dealName ?? null,
+        sellerName: campaign.seller?.name ?? null,
+        status: campaign.status,
+        actualSales: toNumber(campaign.actualSales),
+        isDepositReceived: campaign.isDepositReceived,
+        isPayoutCompleted: campaign.isPayoutCompleted,
+        derived,
+      },
+      dataSources: ["SalesCampaign", "Deal", "Seller", "Partner"],
+      query: { campaignId: input.campaignId },
+    },
+  };
+}
+
+/**
+ * 정산 리포트(§3-E). 웹 어시스턴트 도구를 `runTool` 로 그대로 재사용한다 — 도구가 읽는
+ * 표(SalesCampaign·Deal·Seller·Partner(agency)·CampaignGroup)는 전부 워커 역할의 SELECT
+ * 범위 안이라 권한 변경이 없다(`settlementService.ts` `getSettlementReport` 실독).
+ */
+async function settlementReport(input: SettlementReportInput): Promise<OperationOutcome> {
+  const result = await runTool(getSettlementReportTool, input);
+  if (isOperationFailure(result)) return result;
+  if (!result.ok) {
+    if (result.error.code !== "NOT_FOUND") return toolFailure(result);
+    const periodLabel = input.month ?? input.year ?? "이번 달";
+    const emptySummary = "get_settlement_report: no campaigns in period";
+    return {
+      status: "SUCCEEDED",
+      summary: emptySummary,
+      evidenceRefs: [],
+      actionProposalId: null,
+      record: {
+        title: `정산 리포트 ${periodLabel} (0건)`,
+        resultSummary: emptySummary,
+        structuredResult: { period: periodLabel, campaigns: [], stateCounts: { pending: 0, confirmed: 0, paid: 0 } },
+        dataSources: ["SalesCampaign"],
+        query: { ...input },
+      },
+    };
+  }
+  const { period, summary: totals, stateCounts, campaigns } = result.data;
+  const lines = campaigns.map(
+    (campaign) =>
+      `${campaign.dealName} / ${campaign.sellerName} [${campaign.state}] sales=${campaign.actualSales} payout=${campaign.sellerPayoutAmount} id=${campaign.id}`,
+  );
+  const summary = boundSummary(
+    `get_settlement_report period=${period} campaigns=${totals.campaignCount} revenue=${totals.totalRevenue} margin=${totals.totalMargin} payouts=${totals.totalSellerPayouts} states=${JSON.stringify(stateCounts)}\n${lines.join("\n")}`,
+  );
+  return {
+    status: "SUCCEEDED",
+    summary,
+    evidenceRefs: boundEvidence(campaigns.map((campaign) => campaign.id)),
+    actionProposalId: null,
+    record: {
+      title: `정산 리포트 ${period} (${totals.campaignCount}건)`,
+      resultSummary: summary,
+      structuredResult: result.data,
+      dataSources: result.evidence.dataSources,
+      query: result.evidence.query,
+    },
   };
 }
 
@@ -609,6 +779,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   create_action_proposal: (input, context) => createActionProposal(input as CreateActionProposalInput, context),
   search_partners: (input) => searchPartners(input as SearchPartnersInput),
   get_action_proposal: (input) => getActionProposal(input as GetActionProposalInput),
+  get_settlement_report: (input) => settlementReport(input as SettlementReportInput),
 };
 
 function buildResult(
@@ -725,11 +896,26 @@ export async function executeAgentJob(
       }),
     };
   }
+  // §3-A: 읽기 성공은 결재함 READ 산출물로 남긴다. 조회(READ) 자체는 멱등이지만 이 기록의
+  // INSERT 는 아니다 — 커밋이 끝난 뒤 응답이 유실되면 재시도가 같은 조회를 한 번 더 기록해
+  // 카드가 중복될 수 있다. 그래도 재시도를 허용하는 이유는 조회가 값싸고, 오너 입장에서는
+  // "전체 보기" 링크가 조용히 빠진 답보다는 중복 카드가 낫기 때문이다. 중복이 생기면
+  // structuredResult.jobId 로 같은 작업이 남긴 카드임을 식별할 수 있다.
+  let actionProposalId = outcome.actionProposalId;
+  if (outcome.status === "SUCCEEDED" && outcome.record) {
+    try {
+      assertNotAborted(signal);
+      actionProposalId = await recordReadResult(job.payload.operation, outcome.record, now(), { jobId: job.id });
+    } catch (error) {
+      if (error instanceof ExecutionAbortedError) throw error;
+      return { kind: "retryable", errorClass: error instanceof Error ? error.name : "UnknownError", route, model };
+    }
+  }
   const result = buildResult(job, route, model, {
     status: outcome.status,
     validationResult: "pass",
     resultSummary: outcome.summary,
-    actionProposalId: outcome.actionProposalId,
+    actionProposalId,
     evidenceRefs: outcome.evidenceRefs,
   });
   if (route !== "local_shadow" || outcome.status !== "SUCCEEDED") {

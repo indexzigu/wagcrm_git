@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AgentJobOperationSchema,
   AgentJobPayloadSchema,
   AgentJobResultSchema,
   MAX_RESULT_SUMMARY_CHARS,
@@ -106,5 +107,38 @@ describe("AgentJob contracts", () => {
 
   it("uses bounded JSON text for the SQLite mirror without changing the payload shape", () => {
     expect(serializeAgentJobJson(payload, true)).toBe(JSON.stringify(payload));
+  });
+});
+
+describe("get_settlement_report input (spec §3-E)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+
+  it("is the last operation in the enum (python mirror compares literal order)", () => {
+    const options = AgentJobOperationSchema.options;
+    expect(options[options.length - 1]).toBe("get_settlement_report");
+  });
+
+  it.each([
+    [{}],
+    [{ month: "2026-09" }],
+    [{ year: "2026", statusFilter: "COMPLETED" }],
+    [{ sellerName: "홍" }],
+  ])("accepts %j", (input) => {
+    expect(AgentJobPayloadSchema.safeParse({ ...base, operation: "get_settlement_report", input }).success).toBe(true);
+  });
+
+  it.each([
+    [{ month: "2026-9" }],
+    [{ year: "26" }],
+    [{ statusFilter: "PAID" }],
+    [{ extra: "x" }],
+    [{ sellerName: "" }],
+  ])("rejects %j", (input) => {
+    expect(AgentJobPayloadSchema.safeParse({ ...base, operation: "get_settlement_report", input }).success).toBe(false);
   });
 });

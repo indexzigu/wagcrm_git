@@ -45,6 +45,7 @@ export const AgentJobOperationSchema = z.enum([
   "create_action_proposal",
   "search_partners",
   "get_action_proposal",
+  "get_settlement_report",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -292,6 +293,20 @@ const getActionProposalInputSchema = z
   })
   .strict();
 
+/**
+ * 정산 리포트(§3-E, 2026-09-22) — 웹 어시스턴트 도구 `getSettlementReportTool` 의 입력을
+ * 그대로 옮긴 모양. 월·연도 형식은 도구도 다시 검사하지만, 파이썬 미러가 같은 정규식을
+ * 들고 있어야 슬랙에서 잘못된 값이 소켓까지 오지 않는다.
+ */
+const settlementReportInputSchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+    year: z.string().regex(/^\d{4}$/).optional(),
+    sellerName: z.string().trim().min(1).max(80).optional(),
+    statusFilter: z.enum(["SETTLEMENT_IN_PROGRESS", "COMPLETED", "ALL"]).optional(),
+  })
+  .strict();
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -300,6 +315,7 @@ const operationInputSchemas = {
   create_action_proposal: createActionProposalInputSchema,
   search_partners: searchPartnersInputSchema,
   get_action_proposal: getActionProposalInputSchema,
+  get_settlement_report: settlementReportInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;

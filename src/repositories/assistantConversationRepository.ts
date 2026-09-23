@@ -22,7 +22,9 @@ export type AssistantToolCallRecord = {
 };
 
 // §1-2: 메시지당 직렬화 64KB 캡. 초과 시 각 toolCall의 data 필드만 제거한다.
-const TOOL_CALLS_BYTE_CAP = 64 * 1024;
+// agent-worker의 READ 기록 상한(read-result-record.ts MAX_READ_RESULT_BYTES)이
+// 이 상수를 그대로 재사용한다 — 두 곳에 값을 따로 두지 않기 위해 export한다.
+export const TOOL_CALLS_BYTE_CAP = 64 * 1024;
 
 function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf-8");
