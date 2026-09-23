@@ -47,6 +47,7 @@ import { instagramShortcode, isInstagramPermalink } from "@/lib/instagram-embed"
 import { deriveLinkName, normalizeReferenceUrl, postIdentityKey } from "@/lib/reference-url";
 import { InstagramEmbed } from "./instagram-embed";
 import { SellerContentCollectButton } from "./seller-content-collect-button";
+import { toast } from "sonner";
 
 /** 수집·게시 시각 표기(KST, "M/D HH:mm") — formatDate는 날짜만이라 시:분이 필요한 수집시각 전용. */
 function formatCollectedAt(iso: string | null | undefined): string {
@@ -500,8 +501,13 @@ export function AssetManager({
   }
 
   async function archiveAsset(asset: AssetRow) {
+    // 자료 목록(asset-library)의 보관과 같은 확인·실패 안내 — 종전엔 실패를 무음으로 삼켰다.
+    if (!window.confirm(`"${asset.fileName}" 자료를 보관하시겠습니까?\n보관된 자료는 목록에서 제외됩니다.`)) return;
     const response = await fetch(`/api/assets/${asset.id}`, { method: "PATCH" });
-    if (!response.ok) return;
+    if (!response.ok) {
+      toast.error("자료를 보관하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
     const data = await response.json();
     setAssets((previous) =>
       previous.map((item) => (item.id === asset.id ? data.asset : item)),
@@ -884,11 +890,11 @@ export function AssetManager({
                 </div>
               </div>
               <div className="flex shrink-0 gap-1">
-                <Button variant="ghost" size="icon" onClick={() => openAsset(asset)}>
-                  <ExternalLink className="size-4" />
+                <Button variant="ghost" size="icon" onClick={() => openAsset(asset)} aria-label="자료 열기">
+                  <ExternalLink className="size-4" aria-hidden />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => archiveAsset(asset)}>
-                  <Archive className="size-4" />
+                <Button variant="ghost" size="icon" onClick={() => archiveAsset(asset)} aria-label="자료 보관">
+                  <Archive className="size-4" aria-hidden />
                 </Button>
               </div>
             </div>

@@ -6,6 +6,7 @@ import { Loader2Icon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
+import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
 import { formatShortDateTime } from "./format-time";
@@ -200,9 +201,7 @@ export function PendingCard({
           {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
           승인
         </Button>
-        <Button size="sm" variant="outline" onClick={handleReject} disabled={pending}>
-          반려
-        </Button>
+        <RejectConfirmButton onReject={handleReject} disabled={pending} />
       </div>
     </li>
   );

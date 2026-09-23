@@ -44,6 +44,7 @@ import {
 } from "@/components/mobile/mobile-campaign-detail-sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CampaignSidePanel } from "./campaign-side-panel";
+import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { CrmShell } from "./crm-shell";
 import { DataSourceBanner } from "./data-source-banner";
 import { ExecutionKanbanBoard } from "./execution-kanban-board";
@@ -216,12 +217,28 @@ export function CrmDashboard({
     }
   }
 
+  // 카드·표 메뉴의 「삭제」는 확인 창을 거친다 — 상세 패널 삭제와 같은 조작이 여기서만
+  // 즉시 영구 삭제되고 실패도 무음이었다(2026-09-24 interfaces 점검 #8).
+  const [pendingDelete, setPendingDelete] = useState<CampaignRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   async function deleteCampaign(row: CampaignRow) {
-    const response = await fetch(`/api/campaigns/${row.id}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) return;
-    removeCampaignRow(row.id, selected?.id === row.id);
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/campaigns/${row.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        toast.error("캠페인을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+      removeCampaignRow(row.id, selected?.id === row.id);
+      setPendingDelete(null);
+    } catch {
+      toast.error("네트워크 오류로 삭제하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function duplicateCampaign(row: CampaignRow) {
@@ -571,7 +588,7 @@ export function CrmDashboard({
                   <ExecutionKanbanBoard
                     campaigns={executionRows}
                     onRowOpen={openCampaign}
-                    onRowDelete={deleteCampaign}
+                    onRowDelete={setPendingDelete}
                     onRowDuplicate={duplicateCampaign}
                     onStatusChange={handleStatusChange}
                     onAddCampaign={allowCreate ? openCreationSheet : undefined}
@@ -581,7 +598,7 @@ export function CrmDashboard({
                     campaigns={filteredRows}
                     stageFilter={effectiveStageFilter}
                     onRowOpen={openCampaign}
-                    onRowDelete={deleteCampaign}
+                    onRowDelete={setPendingDelete}
                     onRowDuplicate={duplicateCampaign}
                     onStatusChange={handleStatusChange}
                     onAddCampaign={allowCreate ? openCreationSheet : undefined}
@@ -594,7 +611,7 @@ export function CrmDashboard({
                   campaigns={filteredRows}
                   stageFilter={effectiveStageFilter}
                   onRowOpen={openCampaign}
-                  onRowDelete={deleteCampaign}
+                  onRowDelete={setPendingDelete}
                   onRowDuplicate={duplicateCampaign}
                   onStatusChange={(campaignId, status) => {
                     // ℹ️ 이 prop 은 `GroupedTableView` 의 인터페이스에만 있고 아직
@@ -652,6 +669,19 @@ export function CrmDashboard({
           }}
         />
       ) : null}
+
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null);
+        }}
+        entityType="캠페인"
+        entityName={pendingDelete?.campaignName ?? "이름 없는 캠페인"}
+        onConfirm={async () => {
+          if (pendingDelete) await deleteCampaign(pendingDelete);
+        }}
+        loading={deleting}
+      />
 
       <CampaignSidePanel
         campaign={selected}

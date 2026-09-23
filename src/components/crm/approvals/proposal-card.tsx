@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProposalActions } from "@/hooks/useProposalActions";
 import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
+import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 
 /**
@@ -248,9 +249,7 @@ export function ProposalCard({
               {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
               승인
             </Button>
-            <Button size="sm" variant="outline" onClick={handleReject} disabled={pending}>
-              반려
-            </Button>
+            <RejectConfirmButton onReject={handleReject} disabled={pending} />
           </>
         )}
 

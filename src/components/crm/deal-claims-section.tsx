@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 
 /**
  * 딜 상세 "표현 관리" 섹션 (C1 M2b).
@@ -89,6 +90,7 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; text: string } | null>(null);
 
   const [draftKind, setDraftKind] = useState<ClaimKind>("APPROVED_CLAIM");
   const [draftText, setDraftText] = useState("");
@@ -269,17 +271,31 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
         `/api/deals/${dealId}/claims?claimId=${encodeURIComponent(claimId)}`,
         { method: "DELETE" },
       );
-      if (!res.ok) throw new Error("삭제에 실패했습니다");
+      if (!res.ok) throw new Error("표현을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "삭제 실패");
+      setError(err instanceof Error ? err.message : "표현을 삭제하지 못했습니다. 다시 시도해 주세요.");
     } finally {
+      // 실패 문구는 섹션 본문에 뜨므로 확인 창은 결과와 무관하게 닫는다.
+      setPendingDelete(null);
       setBusyId(null);
     }
   }
 
   return (
     <section className="space-y-4">
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && busyId === null) setPendingDelete(null);
+        }}
+        entityType="표현"
+        entityName={pendingDelete?.text ?? ""}
+        onConfirm={async () => {
+          if (pendingDelete) await handleDelete(pendingDelete.id);
+        }}
+        loading={pendingDelete !== null && busyId === pendingDelete.id}
+      />
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-foreground">표현 관리</h3>
@@ -571,7 +587,7 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
                   size="sm"
                   variant="ghost"
                   disabled={busyId === claim.id}
-                  onClick={() => handleDelete(claim.id)}
+                  onClick={() => setPendingDelete({ id: claim.id, text: claim.text.slice(0, 30) })}
                   aria-label="표현 삭제"
                 >
                   <TrashIcon className="size-3.5" aria-hidden />
