@@ -75,7 +75,7 @@ function PostRow({ post, best }: { post: PerfPost; best: boolean }) {
         <div className="text-xs text-slate-600 mt-0.5">{postMetricsLine(post)}</div>
       </div>
       {/* 새 탭 외부 이동 사전 신호(ss 검토) — 링크 행에만 */}
-      {post.externalUrl && <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />}
+      {post.externalUrl && <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />}
     </>
   );
   // 원본 게시물로 새 탭 링크(있을 때만) — 셀러가 어느 게시물인지 바로 확인하는 동선

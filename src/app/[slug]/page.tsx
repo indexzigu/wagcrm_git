@@ -58,20 +58,28 @@ function PasswordGate({
                 비밀번호는 담당 매니저에게 안내받으실 수 있어요.
               </p>
               <form action={loginToPortal.bind(null, slug)} className="mt-5 space-y-3">
+                <label htmlFor="portal-password" className="sr-only">
+                  리포트 비밀번호
+                </label>
                 <input
+                  id="portal-password"
                   type="password"
                   name="password"
+                  aria-invalid={error === "wrong" || error === "locked" ? true : undefined}
+                  aria-describedby={error === "wrong" || error === "locked" ? "portal-password-error" : undefined}
                   required
                   autoFocus
                   autoComplete="current-password"
                   placeholder="비밀번호"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none focus:border-primary focus:bg-white focus-visible:ring-2 focus-visible:ring-focus-ring"
                 />
                 {error === "wrong" && (
-                  <p className="text-[11px] font-medium text-red-500">비밀번호가 올바르지 않습니다.</p>
+                  <p id="portal-password-error" role="alert" className="text-[11px] font-medium text-status-urgent-text">
+                    비밀번호가 올바르지 않습니다. 다시 입력하거나 담당 매니저에게 확인해 주세요.
+                  </p>
                 )}
                 {error === "locked" && (
-                  <p className="text-[11px] font-medium text-red-500">
+                  <p id="portal-password-error" role="alert" className="text-[11px] font-medium text-status-urgent-text">
                     시도 횟수를 초과했습니다. 15분 후 다시 시도해주세요.
                   </p>
                 )}
@@ -91,7 +99,7 @@ function PasswordGate({
             </p>
           )}
         </div>
-        <p className="mt-4 text-center text-[10px] text-slate-300">
+        <p className="mt-4 text-center text-[10px] text-slate-500">
           본 리포트는 와이그라운드가 제공하는 판매 현황 자료입니다.
         </p>
       </div>
