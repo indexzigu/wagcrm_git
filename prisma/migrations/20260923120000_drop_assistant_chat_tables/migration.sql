@@ -1,0 +1,24 @@
+-- 은퇴한 어시스턴트 채팅 표 2개 드롭.
+--
+-- CRM 자체 Gemini 채팅(/assistant · /api/assistant)이 은퇴하면서(선행 커밋에서 코드·화면·
+-- 라우트 제거) 이 두 표를 읽고 쓰는 경로가 0곳이 됐다. 기안 승인과 봇 조회 결과는 결재함
+-- (ActionProposal)이 소유한다.
+-- 설계 정본: docs/private/specs/2026-09-22-assistant-renewal-approval-hub-design.md §3-D
+--
+-- 드롭 전 프로덕션 백업 완료(읽기 전용, 2026-09-23 — 행 수는 로컬 백업 파일 참조):
+-- docs/private/backups/assistant-chat-20260923.json (모드 L, 미추적).
+-- 롤백 주의: 코드 제거와 이 DROP 이 같은 배포에 실린다. 이 배포 이전 체크아웃으로 되돌리면
+-- 채팅 코드가 없는 표를 읽어 /assistant · /api/assistant 가 500 이 난다 — 되돌려야 하면
+-- 위 백업으로 두 표를 먼저 되살린다(스키마는 이 마이그레이션 직전 상태).
+--
+-- 자식(FK 보유) 표를 먼저 드롭한다 — AssistantChatMessage.conversationId 가
+-- AssistantConversation 을 참조하므로 순서를 뒤집으면 의존성 오류가 난다.
+-- (`prisma migrate diff --script` 는 같은 일을 FK 를 먼저 떼고 부모→자식 순으로 적는다.
+--  끝 상태는 같다 — 자식을 먼저 드롭하면 그 FK 제약도 함께 사라지기 때문이다. diff 대조에서
+--  이 두 표와 그 FK 말고는 아무 변경도 나오지 않음을 확인했다.)
+--
+-- ⚠️ 두 표의 RLS 는 20260715120000_enable_rls_public_tables 가 켰고, 그 마이그레이션은
+-- 적용 완료라 편집할 수 없다(Prisma 체크섬). 재적용 순서가 ENABLE → DROP 이라 shadow DB
+-- 재생은 정상이며, rls-coverage 계약의 「유령 테이블」 단언은 DROPPED_TABLES 면제로 처리한다.
+DROP TABLE "AssistantChatMessage";
+DROP TABLE "AssistantConversation";

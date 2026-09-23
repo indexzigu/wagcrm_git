@@ -68,9 +68,6 @@ const nextConfig: NextConfig = {
     // 루트를 메인 저장소로 상향해야 빌드/dev가 동작한다(그 외 환경은 기존 cwd 유지).
     root: process.cwd().match(/^(.*)\/\.claude\/worktrees\/[^/]+$/)?.[1] ?? process.cwd(),
   },
-  // /api/assistant는 knowledge/(에이전트 런타임 지식)를 fs.readFile로 읽는다.
-  // turbopack 트레이싱이 현재는 자동 포함하지만(2026-07-06 nft 트레이스 검증),
-  // 리터럴 경로가 계산식으로 리팩터링되면 조용히 누락될 수 있어 명시적으로 고정한다.
   outputFileTracingIncludes: {
     // 데모 배포(DEMO_MODE=1 빌드): 시드된 sqlite 목업 DB와 생성된 sqlite 클라이언트
     // (쿼리 엔진 바이너리 포함)를 모든 함수 번들에 동봉한다 — 없으면 런타임에서
@@ -83,7 +80,6 @@ const nextConfig: NextConfig = {
           ],
         }
       : {}),
-    "/api/assistant": ["./knowledge/**/*"],
     // 스토리 수집 라우트는 서버에서 헤드리스 크로미움을 띄운다. serverExternalPackages 로
     // 외부화하면 JS는 로드되지만 playwright-core 의 데이터 파일(browsers.json)과
     // @sparticuz/chromium 의 바이너리가 nft 트레이싱에서 누락돼 Lambda 에서

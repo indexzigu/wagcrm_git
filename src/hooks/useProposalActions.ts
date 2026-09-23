@@ -11,7 +11,8 @@ import { queryKeys } from "@/lib/query-keys";
  * (fire-and-forget 금지 — approval-inbox.tsx M1 회귀 방지 주석 참조).
  *
  * 성공/실패 어느 경로든 자기 자신의 상세 쿼리(["action-proposal", id] — proposal-card가
- * 구독)와 인박스 목록 쿼리(actionProposals("PENDING_APPROVAL"))를 함께 invalidate한다.
+ * 구독, ["approval-detail", id] — 결재함 상세가 구독)와 인박스 목록
+ * 쿼리(actionProposals("PENDING_APPROVAL"))를 함께 invalidate한다.
  * 인박스에서 승인한 카드가 채팅 탭에서 stale PENDING으로 남지 않게 하기 위함(§1-1).
  *
  * §6-1 v1.2 추가: 인박스가 상태 탭(대기/완료/실패/반려)으로 파라미터화되며 각 탭이
@@ -28,6 +29,8 @@ export function useProposalActions() {
   const invalidate = React.useCallback(
     (id: string) => {
       queryClient.invalidateQueries({ queryKey: ["action-proposal", id] });
+      // 결재함 상세(`approval-detail`)는 404 처리가 달라 별도 키를 쓴다 — 같이 친다.
+      queryClient.invalidateQueries({ queryKey: ["approval-detail", id] });
       queryClient.invalidateQueries({ queryKey: queryKeys.actionProposals("PENDING_APPROVAL") });
       // 프리픽스 invalidate — status 무관하게 모든 인박스 탭 캐시 정합(§6-1).
       queryClient.invalidateQueries({ queryKey: ["action-proposals"] });

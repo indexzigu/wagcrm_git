@@ -42,6 +42,7 @@ describe("isOperatorAllowedPath — 화이트리스트", () => {
       "/reports/pnl",
       "/settings/operations",
       "/assistant",
+      "/approvals",
       "/order-converter",
       "/assets",
       "/api/sellers",

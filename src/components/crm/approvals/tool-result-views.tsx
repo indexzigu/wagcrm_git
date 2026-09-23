@@ -1,0 +1,417 @@
+import type { FC } from "react";
+import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+// ⚠️ 타입은 오직 런타임-프리 모듈(data-types.ts)에서만 import한다(청사진 §2-1/§3-1,
+// 번들 안전 — plan-critic #1). tool 파일(settlement-report.ts 등)에서 직접 import하지
+// 않는다 — 실수로 값-import가 섞이면 prisma가 클라이언트 번들에 들어가는 위험 구조다.
+import type {
+  GetSettlementReportData,
+  SettlementStateLabel,
+  SearchDealsData,
+  SearchPartnersData,
+  GetPipelineStatusData,
+  GetCampaignFinancialsData,
+  GetOrderSnapshotData,
+} from "@/lib/agent/tools/data-types";
+// 구분 라벨 정본. crm-types.ts 는 type-only import 뿐이라 클라이언트 번들에 안전하다.
+import { partnerTypeLabels, type PartnerType } from "@/lib/crm-types";
+
+/**
+ * tool-result-views — READ 결과 5종 v1 리치 렌더.
+ *
+ * 결재함 상세(`read-result-body.tsx`)와 기안 카드(`proposal-card.tsx`)가 봉투의 `operation`
+ * 으로 `TOOL_RESULT_RENDERERS[name]` 을 찾아 그린다. data는 unknown으로 받아 각 뷰에서
+ * 최소한의 런타임 가드(필수 필드 존재 체크)만 하고, 실패 시 null을 반환해 조용히
+ * 스킵한다 — 리치 렌더는 부가 기능이고, 못 그리면 소비처가 제네릭 표로 폴백한다.
+ */
+
+/**
+ * `bare` — 래퍼 테두리 한 겹만 끈다(내용은 그대로).
+ *
+ * 이 뷰가 **스스로 카드**여야 하는 자리(단독 배치)와, 결재함 상세
+ * (`/approvals/[id]`, Plan 2 Task 5)처럼 이미 카드 안에 들어가 테두리를 또 그리면
+ * 카드 속 카드가 되는 자리가 있다. 소비처가 둘로 갈린 순간 생긴 차이라 뷰마다 복제하지
+ * 않고 한 플래그로 둔다.
+ *
+ * 끄는 것은 **바깥 껍데기뿐**이다 — 테두리·안쪽 여백과 함께 위쪽을 띄우던
+ * `mt-2` 도 끈다(상세에서는 위가 카드 머리라 그 여백이 어긋난 틈으로 보인다).
+ */
+type ToolResultViewProps = {
+  data: unknown;
+  bare?: boolean;
+};
+
+function formatNumber(value: number): string {
+  return Math.round(value).toLocaleString();
+}
+
+// ---- get_settlement_report ----
+
+const SETTLEMENT_STATE_LABELS: Record<SettlementStateLabel, string> = {
+  pending: "예정",
+  confirmed: "확정",
+  paid: "지급완료",
+};
+
+function isGetSettlementReportData(data: unknown): data is GetSettlementReportData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  return (
+    typeof d.summary === "object" &&
+    d.summary !== null &&
+    Array.isArray(d.campaigns) &&
+    typeof d.stateCounts === "object" &&
+    d.stateCounts !== null
+  );
+}
+
+const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
+  if (!isGetSettlementReportData(data)) return null;
+  const { summary, campaigns, stateCounts } = data;
+
+  return (
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
+      <div className="grid grid-cols-4 gap-2 text-xs">
+        <div>
+          <p className="text-muted-foreground">총매출</p>
+          <p className="font-semibold text-foreground">{formatNumber(summary.totalRevenue)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">총마진</p>
+          <p className="font-semibold text-foreground">{formatNumber(summary.totalMargin)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">셀러지급</p>
+          <p className="font-semibold text-foreground">{formatNumber(summary.totalSellerPayouts)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">건수</p>
+          <p className="font-semibold text-foreground">{summary.campaignCount}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {(Object.entries(stateCounts) as [SettlementStateLabel, number][]).map(([state, count]) => (
+          <Badge key={state} variant="outline">
+            {SETTLEMENT_STATE_LABELS[state] ?? state} {count}
+          </Badge>
+        ))}
+      </div>
+
+      <div className="overflow-hidden rounded-md border border-border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">딜명</th>
+              <th className="px-2 py-1.5 font-medium">셀러</th>
+              <th className="px-2 py-1.5 font-medium">매출</th>
+              <th className="px-2 py-1.5 font-medium">정산액</th>
+              <th className="px-2 py-1.5 font-medium">상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {campaigns.map((c) => {
+              return (
+                <tr key={c.id} className="border-t border-border">
+                  <td className="px-2 py-1.5">{c.dealName}</td>
+                  <td className="px-2 py-1.5">{c.sellerName}</td>
+                  <td className="px-2 py-1.5">{formatNumber(c.actualSales)}</td>
+                  <td className="px-2 py-1.5">{formatNumber(c.sellerPayoutAmount)}</td>
+                  <td className="px-2 py-1.5">
+                    <Badge variant="outline">{SETTLEMENT_STATE_LABELS[c.state] ?? c.state}</Badge>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// ---- search_deals ----
+
+// ⚠️ `count` 까지 본다 — 봇 워커가 결재함에 남기는 봉투는 `{ items, rowLimitReached }`
+// 라 `count`/`truncated` 가 없다. items 만 보면 이 뷰가 그 봉투도 그릴 수 있다고
+// 대답하고, 화면에는 「undefined건」이 찍힌다(결재함 상세가 이 판정을 쓴다).
+function isSearchDealsData(data: unknown): data is SearchDealsData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  return Array.isArray(d.items) && typeof d.count === "number";
+}
+
+const SearchDealsView: FC<ToolResultViewProps> = ({ data, bare }) => {
+  if (!isSearchDealsData(data)) return null;
+  const { items, count, truncated } = data;
+
+  return (
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{count}건</span>
+        {truncated && <span>상위 20건만 표시합니다.</span>}
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {items.map((item) => (
+          <li key={item.id} className="flex items-center gap-2 text-xs">
+            <span className="font-medium text-foreground">{item.dealName}</span>
+            <Badge variant="outline">{item.status}</Badge>
+            {item.brandName && <span className="text-muted-foreground">{item.brandName}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+// ---- search_partners ----
+
+// `search_deals` 와 같은 이유로 `count` 를 함께 본다(워커 봉투 구분).
+function isSearchPartnersData(data: unknown): data is SearchPartnersData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  return Array.isArray(d.items) && typeof d.count === "number";
+}
+
+// 동명 거래처를 사람이 가려내야 하므로(도구 설명 참조) 사업자번호를 열로 보여주고,
+// 상호는 그 거래처 상세로 여는 링크다 — 전역 검색과 같은 `/partners?selectedPartner=` 경로.
+const SearchPartnersView: FC<ToolResultViewProps> = ({ data, bare }) => {
+  if (!isSearchPartnersData(data)) return null;
+  const { items, count, truncated } = data;
+
+  return (
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{count}건</span>
+        {truncated && <span>상위 20건만 표시합니다.</span>}
+      </div>
+      <div className="overflow-hidden rounded-md border border-border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">상호</th>
+              <th className="px-2 py-1.5 font-medium">구분</th>
+              <th className="px-2 py-1.5 font-medium">사업자번호</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((p) => (
+              <tr key={p.id} className="border-t border-border">
+                <td className="px-2 py-1.5">
+                  <Link
+                    href={`/partners?selectedPartner=${encodeURIComponent(p.id)}`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {p.name}
+                  </Link>
+                </td>
+                <td className="px-2 py-1.5">
+                  <Badge variant="outline">
+                    {partnerTypeLabels[p.type as PartnerType] ?? p.type}
+                  </Badge>
+                </td>
+                <td className="px-2 py-1.5 text-muted-foreground">{p.businessNumber ?? "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// ---- get_pipeline_status ----
+
+function isGetPipelineStatusData(data: unknown): data is GetPipelineStatusData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  return Array.isArray(d.statusCounts);
+}
+
+const PipelineStatusView: FC<ToolResultViewProps> = ({ data, bare }) => {
+  if (!isGetPipelineStatusData(data)) return null;
+  const { statusCounts, totalCount, campaigns } = data;
+
+  return (
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        {statusCounts.map((sc) => (
+          <Badge key={sc.status} variant="outline">
+            {sc.status} {sc.count}
+          </Badge>
+        ))}
+        <span className="ml-auto text-muted-foreground">총 {totalCount}건</span>
+      </div>
+      {campaigns && campaigns.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {campaigns.map((c) => (
+            <li key={c.id} className="flex items-center gap-2 text-xs">
+              <span className="font-medium text-foreground">{c.dealName}</span>
+              <span className="text-muted-foreground">{c.sellerName}</span>
+              <Badge variant="outline">{c.status}</Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+// ---- get_campaign_financials ----
+
+function isGetCampaignFinancialsData(data: unknown): data is GetCampaignFinancialsData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  return typeof d.derived === "object" && d.derived !== null;
+}
+
+const CampaignFinancialsView: FC<ToolResultViewProps> = ({ data, bare }) => {
+  if (!isGetCampaignFinancialsData(data)) return null;
+  const { actualSales, derived, isDepositReceived, isPayoutCompleted } = data;
+
+  return (
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
+      <div className="grid grid-cols-5 gap-2 text-xs">
+        <div>
+          <p className="text-muted-foreground">실매출</p>
+          <p className="font-semibold text-foreground">{formatNumber(actualSales)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">정산매출</p>
+          <p className="font-semibold text-foreground">{formatNumber(derived.settlementSales)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">셀러지급</p>
+          <p className="font-semibold text-foreground">{formatNumber(derived.sellerExpense)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">세금</p>
+          <p className="font-semibold text-foreground">{formatNumber(derived.taxExpense)}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">영업이익</p>
+          <p className="font-semibold text-foreground">{formatNumber(derived.operatingProfit)}</p>
+        </div>
+      </div>
+
+      {/* 완료 = `status-success`, 대기 = `outline`(무채). ⛔ 완료를 `status-active`(네이비)로
+          되돌리지 말 것 — 근거 정본은 proposal-card `StatusChip` 주석. 이 두 플래그는 아래
+          캡션이 방어하는 파생 계산값이 아니라 **DB 에 기록된 확정 플래그**라(모바일 상세
+          시트·정산 칸과 같은 값) 완료색을 쓰는 것이 과잉 확신이 아니다.
+          ⛔ 대기 쪽을 `status-pending` 으로 올리지 말 것(P8 §2 — 아직 안 일어난 일은 무채). */}
+      <div className="flex flex-wrap gap-1.5">
+        <Badge variant={isDepositReceived ? "status-success" : "outline"}>
+          입금 {isDepositReceived ? "완료" : "대기"}
+        </Badge>
+        <Badge variant={isPayoutCompleted ? "status-success" : "outline"}>
+          지급 {isPayoutCompleted ? "완료" : "대기"}
+        </Badge>
+      </div>
+
+      {/* 3중 방어 유지 — 이 화면 값은 계산된 파생치이며 정산 확정치가 아니다(청사진 §2-2). */}
+      <p className="text-xs text-muted-foreground">파생 계산값, 정산 확정치 아님</p>
+    </div>
+  );
+};
+
+// ---- get_order_snapshot ----
+
+function isGetOrderSnapshotData(data: unknown): data is GetOrderSnapshotData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  return typeof d.totals === "object" && d.totals !== null;
+}
+
+const OrderSnapshotView: FC<ToolResultViewProps> = ({ data, bare }) => {
+  if (!isGetOrderSnapshotData(data)) return null;
+  const { days, totals } = data;
+
+  return (
+    <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
+      <div className="grid grid-cols-4 gap-2 text-xs">
+        <div>
+          <p className="text-muted-foreground">주문</p>
+          <p className="font-semibold text-foreground">{totals.ordersCount}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">신규</p>
+          <p className="font-semibold text-foreground">{totals.newOrdersCount}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">준비</p>
+          <p className="font-semibold text-foreground">{totals.preparingCount}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">배송중</p>
+          <p className="font-semibold text-foreground">{totals.deliveringCount}</p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-md border border-border">
+        <table className="w-full text-left text-xs">
+          <thead className="bg-muted text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">일자</th>
+              <th className="px-2 py-1.5 font-medium">주문</th>
+              <th className="px-2 py-1.5 font-medium">신규</th>
+              <th className="px-2 py-1.5 font-medium">준비</th>
+              <th className="px-2 py-1.5 font-medium">배송중</th>
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((d) => (
+              <tr key={d.snapshotDate} className="border-t border-border">
+                <td className="px-2 py-1.5">{d.snapshotDate}</td>
+                <td className="px-2 py-1.5">{d.ordersCount}</td>
+                <td className="px-2 py-1.5">{d.newOrdersCount}</td>
+                <td className="px-2 py-1.5">{d.preparingCount}</td>
+                <td className="px-2 py-1.5">{d.deliveringCount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+/** 결재함 상세·기안 카드가 봉투의 operation 이름으로 조회하는 리치 렌더 레지스트리. */
+export const TOOL_RESULT_RENDERERS: Record<string, FC<ToolResultViewProps>> = {
+  get_settlement_report: SettlementReportView,
+  search_deals: SearchDealsView,
+  search_partners: SearchPartnersView,
+  get_pipeline_status: PipelineStatusView,
+  get_campaign_financials: CampaignFinancialsView,
+  get_order_snapshot: OrderSnapshotView,
+};
+
+/**
+ * 이 operation 의 데이터를 리치 뷰가 **실제로** 그릴 수 있는가 (Plan 2 Task 5).
+ *
+ * 결재함 상세는 뷰를 그리기 전에 알아야 한다 — 뷰는 가드에 걸리면 `null` 을 돌려주고
+ * 그러면 화면이 통째로 빈다. 렌더해 보고 판정하는 대신(`renderToStaticMarkup` 은
+ * 클라이언트 번들에 서버 렌더러를 끌어온다) 각 뷰의 가드를 그대로 표로 잇는다 —
+ * ⛔ 여기서 가드를 다시 쓰지 말 것. 두 벌이 되는 순간 「뷰는 못 그리는데 표는 그릴 수
+ * 있다고 대답」하는 어긋남이 조용히 생긴다.
+ */
+const TOOL_RESULT_GUARDS: Record<string, (data: unknown) => boolean> = {
+  get_settlement_report: isGetSettlementReportData,
+  search_deals: isSearchDealsData,
+  search_partners: isSearchPartnersData,
+  get_pipeline_status: isGetPipelineStatusData,
+  get_campaign_financials: isGetCampaignFinancialsData,
+  get_order_snapshot: isGetOrderSnapshotData,
+};
+
+/**
+ * 가드가 등록된 operation 목록 — 레지스트리와 **짝이 맞는지** 테스트가 대조한다.
+ * 뷰를 하나 더하고 가드를 빠뜨리면 그 뷰는 영영 안 불린다(화면은 조용히 제네릭 표가
+ * 된다 — 고장처럼 보이지 않아서 더 오래 간다).
+ */
+export const TOOL_RESULT_GUARD_NAMES = Object.keys(TOOL_RESULT_GUARDS);
+
+export function hasToolResultRenderer(operation: string, data: unknown): boolean {
+  const guard = TOOL_RESULT_GUARDS[operation];
+  return guard ? guard(data) : false;
+}

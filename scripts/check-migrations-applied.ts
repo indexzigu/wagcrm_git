@@ -4,20 +4,24 @@
  *
  * 실행: npx tsx scripts/check-migrations-applied.ts   (.env의 DATABASE_URL 사용)
  */
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 const EXPECTED_TABLES = [
   "SellerAiProfile", // 20260710000000_add_seller_ai_profile (타 세션)
-  "AssistantConversation", // 20260711000000_add_assistant_conversations
-  "AssistantChatMessage", // 20260711000000_add_assistant_conversations
 ];
 
 const db = new PrismaClient();
 
 async function main() {
+  // `Prisma.join([])` 은 던진다 — 목록이 비면 확인할 것이 없으므로 통과다.
+  if (EXPECTED_TABLES.length === 0) {
+    console.log("확인할 테이블 없음 — 게이트 통과");
+    await db.$disconnect();
+    process.exit(0);
+  }
   const rows = await db.$queryRaw<Array<{ table_name: string }>>`
     SELECT table_name FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name IN (${EXPECTED_TABLES[0]}, ${EXPECTED_TABLES[1]}, ${EXPECTED_TABLES[2]})`;
+    WHERE table_schema = 'public' AND table_name IN (${Prisma.join(EXPECTED_TABLES)})`;
 
   const found = new Set(rows.map((r) => r.table_name));
   let missing = 0;

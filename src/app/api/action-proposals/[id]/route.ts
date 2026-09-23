@@ -28,10 +28,15 @@ export async function GET(_request: Request, context: Context) {
 
   // payload/executionResult는 SQLite에서 문자열로 저장되므로 UI가 payload.action 등을 읽으려면
   // 역직렬화해야 한다(Postgres 객체엔 no-op). 안 하면 dev:local에서 카드 라벨이 "알 수 없는 액션"이 된다.
+  // structuredResult/dataSources/evidence도 같은 이유로 역직렬화한다 — 결재함 상세(§3-B)가
+  // READ 봉투 `{operation, jobId, query, truncated, data}`를 읽는다.
   return NextResponse.json({
     ...proposal,
     payload: deserializeJsonField(proposal.payload),
     executionResult: deserializeJsonField(proposal.executionResult),
+    structuredResult: deserializeJsonField(proposal.structuredResult),
+    dataSources: deserializeJsonField(proposal.dataSources),
+    evidence: deserializeJsonField(proposal.evidence),
     targetEntityName,
   });
 }

@@ -103,4 +103,39 @@ describe("GET /api/action-proposals/[id]", () => {
     expect(typeof body.payload).toBe("object");
     expect(body.payload.action).toBe("confirm_settlement");
   });
+
+  it("structuredResult·dataSources·evidence 를 역직렬화해 돌려준다(sqlite 문자열 저장 대응)", async () => {
+    findByIdMock.mockResolvedValue({
+      id: "read-1",
+      status: "EXECUTED",
+      kind: "READ",
+      title: "딜 검색 1건",
+      payload: null,
+      executionResult: null,
+      structuredResult: JSON.stringify({
+        operation: "search_deals",
+        jobId: "job-1",
+        query: {},
+        truncated: false,
+        data: { items: [], rowLimitReached: false },
+      }),
+      dataSources: JSON.stringify(["Deal"]),
+      evidence: null,
+      targetEntityType: null,
+      targetEntityId: null,
+      createdBy: "AGENT_WORKER",
+      createdAt: new Date(),
+      events: [],
+    });
+    resolveEntityLabelMock.mockResolvedValue(null);
+
+    const res = await GET(makeRequest("read-1"), makeParams("read-1"));
+    const body = await res.json();
+
+    expect(body.structuredResult).toEqual(
+      expect.objectContaining({ operation: "search_deals", jobId: "job-1" })
+    );
+    expect(body.dataSources).toEqual(["Deal"]);
+    expect(body.evidence).toBeNull();
+  });
 });

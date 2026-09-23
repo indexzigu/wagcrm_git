@@ -53,6 +53,9 @@ describe("useProposalActions", () => {
 
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["action-proposal", "p1"] });
+      // 결재함 상세(`approval-detail`)는 404 를 던지지 않고 null 로 돌려주는 별도
+      // queryFn 이라 키도 따로 쓴다 — 여기서 함께 치지 않으면 상세가 stale 로 남는다.
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["approval-detail", "p1"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.actionProposals("PENDING_APPROVAL") });
     });
   });
@@ -76,6 +79,7 @@ describe("useProposalActions", () => {
     ).rejects.toThrow(/이미 처리된 기안입니다/);
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["action-proposal", "p1"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["approval-detail", "p1"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.actionProposals("PENDING_APPROVAL") });
   });
 
@@ -97,6 +101,9 @@ describe("useProposalActions", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/action-proposals/p1/reject", { method: "POST" });
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["action-proposal", "p1"] });
+      // 결재함 상세(`approval-detail`)는 404 를 던지지 않고 null 로 돌려주는 별도
+      // queryFn 이라 키도 따로 쓴다 — 여기서 함께 치지 않으면 상세가 stale 로 남는다.
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["approval-detail", "p1"] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.actionProposals("PENDING_APPROVAL") });
     });
   });
