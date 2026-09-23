@@ -36,7 +36,9 @@ function viewportKeys(source: string): string[] {
   return keys;
 }
 
-function reducedMotionBlock(css: string): { text: string; depthAtStart: number } {
+function reducedMotionBlock(raw: string): { text: string; depthAtStart: number } {
+  // 주석 속 `{`·`}` 가 중괄호 깊이 계산을 흐리지 않도록 먼저 걷어낸다.
+  const css = raw.replace(/\/\*[\s\S]*?\*\//g, "");
   const start = css.indexOf("@media (prefers-reduced-motion: reduce)");
   expect(start).toBeGreaterThan(-1);
   let depth = 0;
