@@ -129,7 +129,7 @@ export function MobileSettlementView({
               commitSearch(value);
             }}
             placeholder="캠페인, 셀러 검색"
-            className="h-full border-0 text-sm focus-visible:ring-0"
+            className="h-full border-0 text-base focus-visible:ring-0"
           />
         </InputGroup>
         <Button

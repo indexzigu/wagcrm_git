@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
  * 포커스 링은 --focus-ring 토큰(3:1) — 구 outline-ring(약 1.4:1)에서 교정.
  */
 const FIELD_CLASS =
-  "min-h-11 rounded-xl border px-3 text-sm text-foreground placeholder:text-slate-400 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring";
+  "min-h-11 rounded-xl border px-3 text-base text-foreground placeholder:text-slate-400 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring";
 const FIELD_IDLE = "border-slate-200 bg-slate-50";
 const FIELD_SELECTED = "border-primary/25 bg-white font-semibold";
 

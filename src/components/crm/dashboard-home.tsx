@@ -27,6 +27,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useReducedMotion } from "motion/react";
 import { CrmShell } from "./crm-shell";
 import { ScheduleGapBriefingBody } from "./schedule-gap-briefing-card";
 import { UpcomingScheduleBody, UpcomingScheduleCard, CalendarSyncBadge } from "./upcoming-schedule-card";
@@ -648,6 +649,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   // 최저가 점검 데이터를 대시보드 레벨에서 fetch(오너 2026-07-24, 1순위 탭 묶음) — 위반 수를
   // 탭 배지(숨은 탭 알림)로 반응형 반영하려면 데이터가 탭 레벨에서 필요하다.
   const priceOverview = usePriceOverview();
+  // 막대 성장 애니메이션은 OS 「동작 줄이기」면 끈다(recharts 는 CSS 가드 밖이라 JS 로).
+  const reducedMotion = useReducedMotion();
 
   // 핵심 업무 탭(오너 2026-07-24 — 데이터 점검처럼 탭 방식으로 통일). 반쪽 2열은 각 행에
   // ≈200px만 남겨 딜명·셀러명이 말줄임으로 죽었다. 두 목록은 비교가 아니라 하나씩 처리하는
@@ -965,8 +968,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                             <YAxis domain={[0, chartYMax]} tickFormatter={(value) => `${Math.round(value / 10000)}만`} width={58} tickLine={false} axisLine={false} />
                             <ChartTooltip content={<TrendTooltip />} />
                             {/* 마운트 애니메이션 450ms 캡. 점선 목표선은 draw 애니메이션 충돌로 비활성 */}
-                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={32} animationDuration={450} animationEasing="ease-out" />
-                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={20} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={20} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
                             <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
                           </ComposedChart>
                         </ChartContainer>
@@ -988,8 +991,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                             <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
                             <YAxis domain={[0, chartYMax]} tickFormatter={(value) => `${Math.round(value / 10000)}만`} width={58} tickLine={false} axisLine={false} />
                             <ChartTooltip content={<TrendTooltip />} />
-                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={28} animationDuration={450} animationEasing="ease-out" />
-                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={18} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={18} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
                             <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
                           </ComposedChart>
                         </ChartContainer>

@@ -82,7 +82,7 @@ export function MobileSellersView({
             commitSearch(value);
           }}
           placeholder="이름, 핸들, 카테고리 검색"
-          className="h-full border-0 text-sm focus-visible:ring-0"
+          className="h-full border-0 text-base focus-visible:ring-0"
         />
       </InputGroup>
 

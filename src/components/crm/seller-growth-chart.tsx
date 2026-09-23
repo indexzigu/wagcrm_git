@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   Area,
   AreaChart,
@@ -58,46 +58,6 @@ type TrendPoint = DeltaPoint & {
   followersTrend: number;
   postsTrend?: number | null;
 };
-
-// ---------------------------------------------------------------------------
-// Animated Counter Hook
-// ---------------------------------------------------------------------------
-
-function useAnimatedCount(target: number, duration = 600): number {
-  const [display, setDisplay] = useState(target);
-  const rafRef = useRef<number | null>(null);
-  const startRef = useRef<{ value: number; time: number } | null>(null);
-
-  useEffect(() => {
-    const from = display;
-    if (from === target) return;
-
-    startRef.current = { value: from, time: performance.now() };
-
-    function tick(now: number) {
-      if (!startRef.current) return;
-      const elapsed = now - startRef.current.time;
-      const progress = Math.min(elapsed / duration, 1);
-      // ease-out cubic
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const current = Math.round(
-        startRef.current.value + (target - startRef.current.value) * eased,
-      );
-      setDisplay(current);
-      if (progress < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      }
-    }
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, duration]);
-
-  return display;
-}
 
 // ---------------------------------------------------------------------------
 // Custom Tooltip
@@ -304,7 +264,6 @@ export function SellerGrowthChart({ data }: GrowthTrendChartProps) {
 
   // Current total followers (latest data point)
   const currentFollowers = sortedData.length > 0 ? sortedData[sortedData.length - 1].followers : 0;
-  const animatedFollowers = useAnimatedCount(currentFollowers);
 
   // Period net change
   const periodNetChange = useMemo(() => {
@@ -356,7 +315,7 @@ export function SellerGrowthChart({ data }: GrowthTrendChartProps) {
             <div className="flex items-center gap-2">
               <Users className="size-4 text-muted-foreground" />
               <span className="text-sm font-bold tabular-nums tracking-tight text-foreground">
-                {animatedFollowers.toLocaleString()}
+                {currentFollowers.toLocaleString()}
               </span>
               {dynamicGrowthRate !== null && (
                 <span
