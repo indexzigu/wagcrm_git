@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import * as React from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import type { ApprovalInboxItem } from "@/components/crm/approvals/approval-cards";
 import type {
@@ -15,9 +16,12 @@ type ApprovalInboxResponse = {
 
 async function fetchProposals(
   status: ActionProposalStatus,
-  kind: ActionProposalKind
+  kind: ActionProposalKind,
+  before?: string
 ): Promise<ApprovalInboxResponse> {
-  const res = await fetch(`/api/action-proposals?status=${status}&kind=${kind}`);
+  const query = new URLSearchParams({ status, kind });
+  if (before) query.set("before", before);
+  const res = await fetch(`/api/action-proposals?${query.toString()}`);
   if (!res.ok) {
     throw new Error("Failed to fetch action proposals");
   }
@@ -44,9 +48,15 @@ export function useApprovalInbox(
   status: ActionProposalStatus = "PENDING_APPROVAL",
   kind: ActionProposalKind = "WRITE"
 ) {
-  const query = useQuery({
+  // 이어 받기(before 커서) 조회다 — 목록 API 는 한 장에 50건만 주므로 그 이전 기안은
+  // 「더 보기」로 받는다. 사이드바·탭 배지도 이 훅을 거치므로 캐시 모양이 한 가지로
+  // 유지된다(배지는 첫 장만 받는다). 30초 폴링은 받아 둔 장을 전부 다시 받아 장 경계를
+  // 새로 계산하므로, 새 기안이 앞에 끼어도 중복·누락이 생기지 않는다.
+  const query = useInfiniteQuery({
     queryKey: queryKeys.actionProposals(status, kind),
-    queryFn: () => fetchProposals(status, kind),
+    queryFn: ({ pageParam }: { pageParam?: string }) => fetchProposals(status, kind, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage: ApprovalInboxResponse) => lastPage.nextBefore ?? undefined,
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
     staleTime: 15000,
@@ -54,12 +64,20 @@ export function useApprovalInbox(
 
   const { approve, reject } = useProposalActions();
 
-  const items = query.data?.items ?? [];
+  // 진행 중인 「더 보기」가 있으면 다시 부르지 않는다 — 같은 커서로 두 번 부르면
+  // 같은 장이 두 번 쌓인다(useReadRecords 와 같은 방어).
+  const loadMore = React.useCallback(() => {
+    if (query.isFetchingNextPage) return;
+    void query.fetchNextPage();
+  }, [query]);
 
   return {
-    items,
-    count: query.data?.count ?? 0,
-    nextBefore: query.data?.nextBefore ?? null,
+    items: query.data?.pages.flatMap((page) => page.items) ?? [],
+    // count 는 장 크기가 아니라 조건 전체 건수다(라우트 계약) — 첫 장 값을 쓴다.
+    count: query.data?.pages[0]?.count ?? 0,
+    loadMore,
+    isLoadingMore: query.isFetchingNextPage,
+    hasMore: Boolean(query.hasNextPage),
     isLoading: query.isLoading,
     // 결재함 허브(/approvals)가 「목록을 불러오지 못했습니다.」 + 다시 불러오기 버튼을
     // 그리려면 실패를 구분해야 한다 — 빈 목록과 실패가 같은 얼굴이면 운영자가 "없다"로 읽는다.

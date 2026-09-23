@@ -87,6 +87,9 @@ type StubOptions = {
   isError?: boolean;
   refetch?: () => void;
   useAgentJobs?: ApprovalHubHooks["useAgentJobs"];
+  /** 기안 탭(useApprovalInbox) 이어 받기 스텁. */
+  hasMore?: boolean;
+  loadMore?: () => void;
 };
 
 function makeHooks(options: StubOptions = {}): ApprovalHubHooks {
@@ -104,6 +107,9 @@ function makeHooks(options: StubOptions = {}): ApprovalHubHooks {
       count: options.counts?.[status] ?? 0,
       approve: vi.fn().mockResolvedValue({}),
       reject: vi.fn().mockResolvedValue({}),
+      loadMore: options.loadMore ?? vi.fn(),
+      isLoadingMore: false,
+      hasMore: options.hasMore ?? false,
     }),
     useReadRecords: () => ({
       ...base,
@@ -333,6 +339,21 @@ describe("ApprovalHub — 기안 탭", () => {
     render(<ApprovalHub hooks={makeHooks({ proposals: [makeProposal()] })} />);
     expect(screen.getByRole("button", { name: "승인" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "반려" })).toBeInTheDocument();
+  });
+
+  it("50건을 넘는 기안이 있으면(hasMore) 「더 보기」가 loadMore 를 부르고, 없으면 버튼이 없다", () => {
+    const loadMore = vi.fn();
+    const { unmount } = render(
+      <ApprovalHub
+        hooks={makeHooks({ tab: "executed", proposals: [makeProposal()], hasMore: true, loadMore })}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "더 보기" }));
+    expect(loadMore).toHaveBeenCalledTimes(1);
+    unmount();
+
+    render(<ApprovalHub hooks={makeHooks({ tab: "executed", proposals: [makeProposal()] })} />);
+    expect(screen.queryByRole("button", { name: "더 보기" })).not.toBeInTheDocument();
   });
 
   it("실패 탭은 재시도 버튼이 달린 카드를 보여준다", () => {
