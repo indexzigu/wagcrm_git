@@ -1,7 +1,6 @@
 import type { FC } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 // ⚠️ 타입은 오직 런타임-프리 모듈(data-types.ts)에서만 import한다(청사진 §2-1/§3-1,
 // 번들 안전 — plan-critic #1). tool 파일(settlement-report.ts 등)에서 직접 import하지
@@ -19,32 +18,27 @@ import type {
 import { partnerTypeLabels, type PartnerType } from "@/lib/crm-types";
 
 /**
- * tool-result-views — READ 도구 5종 v1 리치 렌더 (청사진 §2-2, §3-#5).
+ * tool-result-views — READ 결과 5종 v1 리치 렌더.
  *
- * message-list.tsx가 각 toolCall(ok && data 존재)에 대해 `TOOL_RESULT_RENDERERS[toolName]`을
- * 찾아 EvidenceTable 위에 렌더한다. data는 unknown으로 받아 각 뷰에서 최소한의 런타임
- * 가드(필수 필드 존재 체크)만 하고, 실패 시 null을 반환해 조용히 스킵한다(리치 렌더는
- * 부가 기능이지 근거 표시의 필수 경로가 아니다 — EvidenceTable은 항상 별도로 유지됨).
- *
- * 청사진 §7-2/§7-3: 정산 리포트 캠페인 행 액션(퀵액션 칩). onQuickAction은 레지스트리
- * 전 뷰가 공통으로 받는 선택적 prop이지만, 실제로 버튼을 그리는 것은 SettlementReportView
- * 뿐이다 — 다른 4개 뷰는 prop만 통과시키고 무동작(presentational 순수성 유지).
+ * 결재함 상세(`read-result-body.tsx`)와 기안 카드(`proposal-card.tsx`)가 봉투의 `operation`
+ * 으로 `TOOL_RESULT_RENDERERS[name]` 을 찾아 그린다. data는 unknown으로 받아 각 뷰에서
+ * 최소한의 런타임 가드(필수 필드 존재 체크)만 하고, 실패 시 null을 반환해 조용히
+ * 스킵한다 — 리치 렌더는 부가 기능이고, 못 그리면 소비처가 제네릭 표로 폴백한다.
  */
 
 /**
  * `bare` — 래퍼 테두리 한 겹만 끈다(내용은 그대로).
  *
- * 채팅 메시지 안에서는 이 뷰가 **스스로 카드**여야 하지만, 결재함 상세
- * (`/approvals/[id]`, Plan 2 Task 5)에서는 이미 카드 안에 들어가 있어 테두리를 또
- * 그리면 카드 속 카드가 된다. 소비처가 두 곳이 된 순간 생긴 차이라 뷰마다 복제하지
+ * 이 뷰가 **스스로 카드**여야 하는 자리(단독 배치)와, 결재함 상세
+ * (`/approvals/[id]`, Plan 2 Task 5)처럼 이미 카드 안에 들어가 테두리를 또 그리면
+ * 카드 속 카드가 되는 자리가 있다. 소비처가 둘로 갈린 순간 생긴 차이라 뷰마다 복제하지
  * 않고 한 플래그로 둔다.
  *
- * 끄는 것은 **바깥 껍데기뿐**이다 — 테두리·안쪽 여백과 함께 앞 메시지와 띄우던
+ * 끄는 것은 **바깥 껍데기뿐**이다 — 테두리·안쪽 여백과 함께 위쪽을 띄우던
  * `mt-2` 도 끈다(상세에서는 위가 카드 머리라 그 여백이 어긋난 틈으로 보인다).
  */
 type ToolResultViewProps = {
   data: unknown;
-  onQuickAction?: (text: string) => void;
   bare?: boolean;
 };
 
@@ -72,13 +66,7 @@ function isGetSettlementReportData(data: unknown): data is GetSettlementReportDa
   );
 }
 
-// 청사진 §7-2: 정산 상태별 행 액션 라벨 + 전송 문장에 쓰는 한글 처리 라벨.
-const SETTLEMENT_ACTION_LABELS: Partial<Record<SettlementStateLabel, string>> = {
-  pending: "입금확정",
-  confirmed: "지급완료",
-};
-
-const SettlementReportView: FC<ToolResultViewProps> = ({ data, onQuickAction, bare }) => {
+const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
   if (!isGetSettlementReportData(data)) return null;
   const { summary, campaigns, stateCounts } = data;
 
@@ -120,13 +108,10 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, onQuickAction, ba
               <th className="px-2 py-1.5 font-medium">매출</th>
               <th className="px-2 py-1.5 font-medium">정산액</th>
               <th className="px-2 py-1.5 font-medium">상태</th>
-              {onQuickAction && <th className="px-2 py-1.5 font-medium">액션</th>}
             </tr>
           </thead>
           <tbody>
             {campaigns.map((c) => {
-              // 청사진 §7-2: pending→입금확정 기안, confirmed→지급완료 기안, paid→버튼 없음.
-              const actionLabel = SETTLEMENT_ACTION_LABELS[c.state];
               return (
                 <tr key={c.id} className="border-t border-border">
                   <td className="px-2 py-1.5">{c.dealName}</td>
@@ -136,25 +121,6 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, onQuickAction, ba
                   <td className="px-2 py-1.5">
                     <Badge variant="outline">{SETTLEMENT_STATE_LABELS[c.state] ?? c.state}</Badge>
                   </td>
-                  {onQuickAction && (
-                    <td className="px-2 py-1.5">
-                      {actionLabel && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={() =>
-                            onQuickAction(
-                              `"${c.dealName}" 캠페인(ID: ${c.id})의 정산 ${actionLabel} 처리를 기안해줘`
-                            )
-                          }
-                        >
-                          {actionLabel} 기안
-                        </Button>
-                      )}
-                    </td>
-                  )}
                 </tr>
               );
             })}
@@ -176,8 +142,6 @@ function isSearchDealsData(data: unknown): data is SearchDealsData {
   return Array.isArray(d.items) && typeof d.count === "number";
 }
 
-// onQuickAction은 시그니처 통일을 위해 받기만 하고 사용하지 않는다(청사진 §7-3 —
-// SettlementReportView만 행 액션 구현, 나머지는 prop 통과만).
 const SearchDealsView: FC<ToolResultViewProps> = ({ data, bare }) => {
   if (!isSearchDealsData(data)) return null;
   const { items, count, truncated } = data;
@@ -412,7 +376,7 @@ const OrderSnapshotView: FC<ToolResultViewProps> = ({ data, bare }) => {
   );
 };
 
-/** message-list.tsx가 toolName으로 조회하는 리치 렌더 레지스트리 (청사진 §2-1/§7-2). */
+/** 결재함 상세·기안 카드가 봉투의 operation 이름으로 조회하는 리치 렌더 레지스트리. */
 export const TOOL_RESULT_RENDERERS: Record<string, FC<ToolResultViewProps>> = {
   get_settlement_report: SettlementReportView,
   search_deals: SearchDealsView,

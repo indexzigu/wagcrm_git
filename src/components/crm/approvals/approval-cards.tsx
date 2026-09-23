@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Loader2Icon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ENTITY_TYPE_LABELS } from "@/components/crm/assistant/types";
-import { ProposalPayloadPreview } from "@/components/crm/assistant/proposal-payload-preview";
+import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
+import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
 import { formatShortDateTime } from "./format-time";
 

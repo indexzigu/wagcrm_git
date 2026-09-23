@@ -1,4 +1,4 @@
-import { TOOL_RESULT_RENDERERS, hasToolResultRenderer } from "@/components/crm/assistant/tool-result-views";
+import { TOOL_RESULT_RENDERERS, hasToolResultRenderer } from "./tool-result-views";
 import { GenericTable, KeyValueList } from "./result-primitives";
 
 /**

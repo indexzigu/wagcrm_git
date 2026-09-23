@@ -26,7 +26,7 @@ const ENTITY_TYPE_LABELS: Record<(typeof ENTITY_TYPES)[number], string> = {
 /**
  * 청사진 §0-1: 이 도구는 실제 메모 쓰기도, ActionProposal 기안 생성도 하지 않는다.
  * execute(input)는 userId를 알지 못하므로(AgentTool 계약), 구조화된 writeIntent만
- * 반환하고 /api/assistant route가 userId를 채워 단일 지점에서 기안을 생성한다.
+ * 반환하고 호출자(agent worker 실행기)가 userId를 채워 단일 지점에서 기안을 생성한다.
  */
 async function execute(input: AddEntityMemoInput): Promise<ToolResult<AddEntityMemoData>> {
   const { entityType, entityId, content } = input;

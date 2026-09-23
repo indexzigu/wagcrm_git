@@ -251,7 +251,7 @@ function toolFailure(result: Extract<ToolResult, { ok: false }>): OperationFailu
 }
 
 /**
- * Runs a reused agent tool exactly like agent-loop does: the tool's own
+ * Runs a reused agent tool through its own contract: the tool's own
  * `inputSchema` gates `execute()` so its guards (date order, 366-day cap, enums)
  * are never bypassed (Task 5 review MEDIUM-4).
  */

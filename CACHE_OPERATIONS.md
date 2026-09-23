@@ -225,9 +225,10 @@ screen on every visit.
 ### Assistant WRITE lane is a writer too (2026-08-27)
 
 The agent lane executes WRITE actions through `executeWriteAction`
-(`src/lib/agent/write-executor.ts`) from two routes: the approval button
-(`POST /api/action-proposals/[id]/approve`) and the auto-approve path inside
-`POST /api/assistant`. Those routes originally committed the database write
+(`src/lib/agent/write-executor.ts`) from the approval button
+(`POST /api/action-proposals/[id]/approve`). (Until the chat retirement on
+2026-09-23 the auto-approve path inside `POST /api/assistant` was a second
+caller.) That route originally committed the database write
 without invalidating any tag, so an approved write stayed invisible on cached
 surfaces until the next expiry.
 

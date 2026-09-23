@@ -854,8 +854,9 @@ stage4_verify_parity() {
 
   # 4c. 소유권 참조(createdBy/userId) 고아 — 계획 문서 Task 8 이 지목한
   # 컬럼(prisma/schema.prisma: Notification.userId, ActionProposal/
-  # PriceSheet/AssistantConversation/ReferenceInboxItem.createdBy). 'AGENT'
-  # 는 시스템 생성 sentinel 값이라 실사용자 ID 가 아니므로 제외한다.
+  # PriceSheet/ReferenceInboxItem.createdBy). 'AGENT' 는 시스템 생성 sentinel
+  # 값이라 실사용자 ID 가 아니므로 제외한다. (AssistantConversation 은 2026-09-23
+  # 채팅 은퇴로 드롭돼 목록에서 뺐다 — 재실행 시 없는 표 조회로 죽지 않게.)
   #
   # ⚠️ 판정 기준은 **절대 0 이 아니라 원본 대비 동수**다. 프로덕션 원본에 이미
   # 고아가 있다(실측 2026-08-13: 176건 = Notification 161 · ActionProposal 7 ·
@@ -869,7 +870,6 @@ stage4_verify_parity() {
     select
       (select count(*) from \"Notification\" where \"userId\" is not null and \"userId\" not in (select id::text from auth.users)) +
       (select count(*) from \"ActionProposal\" where \"createdBy\" is not null and \"createdBy\" <> 'AGENT' and \"createdBy\" not in (select id::text from auth.users)) +
-      (select count(*) from \"AssistantConversation\" where \"createdBy\" is not null and \"createdBy\" not in (select id::text from auth.users)) +
       (select count(*) from \"PriceSheet\" where \"createdBy\" is not null and \"createdBy\" <> 'AGENT' and \"createdBy\" not in (select id::text from auth.users)) +
       (select count(*) from \"ReferenceInboxItem\" where \"createdBy\" is not null and \"createdBy\" not in (select id::text from auth.users));
   "

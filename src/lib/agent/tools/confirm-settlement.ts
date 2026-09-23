@@ -22,8 +22,8 @@ export type ConfirmSettlementData = {
 /**
  * 청사진 §0-1 / §3-a: 이 도구는 실제 정산 확정도, ActionProposal 기안 생성도, 캠페인
  * 조회도 하지 않는다. execute(input)는 userId를 모르므로(AgentTool 계약) 구조화된
- * writeIntent만 반환하고, /api/assistant route가 userId를 채워 단일 지점에서 기안을
- * 생성한다. 정산 상태기계(전진 전용) 검증과 status 자동전이는 승인 시점에
+ * writeIntent만 반환하고, 호출자(agent worker 실행기)가 userId를 채워 단일 지점에서
+ * 기안을 생성한다. 정산 상태기계(전진 전용) 검증과 status 자동전이는 승인 시점에
  * write-executor.handleConfirmSettlement에서 수행된다 — 이 도구는 args 형식만 검증한다.
  *
  * 🔴 금전 영향: approval.rules.json에서 settlement_confirm은 alwaysManual(자동승인 영구

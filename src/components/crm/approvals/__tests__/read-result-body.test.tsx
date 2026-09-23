@@ -23,7 +23,7 @@ vi.mock("next/link", () => ({
 }));
 
 import { ReadResultBody } from "../read-result-body";
-import { hasToolResultRenderer } from "@/components/crm/assistant/tool-result-views";
+import { hasToolResultRenderer } from "../tool-result-views";
 
 function envelope(operation: string, data: unknown, extra: Record<string, unknown> = {}) {
   return { operation, jobId: "job-1", query: {}, truncated: false, data, ...extra };

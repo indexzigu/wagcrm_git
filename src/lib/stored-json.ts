@@ -2,8 +2,8 @@
 //
 // 🪤 **이 레포의 Json 컬럼은 프로바이더에 따라 모양이 다르다.** 리포지토리들이
 // "Postgres 는 객체 그대로, SQLite 는 문자열 직렬화"로 이원화해 저장하기 때문이다
-// (`actionProposalRepository` · `priceSheetRepository` · `priceMonitorSnapshotRepository` ·
-// `assistantConversationRepository`). **리포지토리를 거치지 않고 raw Prisma 로 읽으면
+// (`actionProposalRepository` · `priceSheetRepository` · `priceMonitorSnapshotRepository`).
+// **리포지토리를 거치지 않고 raw Prisma 로 읽으면
 // 그 문자열이 그대로 올라온다** — 역직렬화는 리포지토리 쪽에만 있다.
 //
 // 그래서 raw 읽기 경로에서 `value as SomeType` 로 캐스팅하면 **Postgres 에서는 통하고

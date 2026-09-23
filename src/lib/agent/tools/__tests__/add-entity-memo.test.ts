@@ -3,8 +3,8 @@
  *
  * 핵심 계약: 이 도구는 실제 쓰기도, ActionProposal 기안 생성도 하지 않는다.
  * execute(input)에는 userId가 없으므로(AgentTool 계약), 구조화된 writeIntent만
- * ToolResult.data에 실어 반환한다. assistant route(userId 보유)가 이 intent를 보고
- * 단일 지점에서 WRITE 기안을 생성한다.
+ * ToolResult.data에 실어 반환한다. 호출자(agent worker 실행기, userId 보유)가 이 intent를
+ * 보고 단일 지점에서 WRITE 기안을 생성한다.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

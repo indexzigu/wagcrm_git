@@ -4,9 +4,9 @@ import { join } from "node:path";
 import ts from "typescript";
 
 /**
- * 비서 표면 「완료」 배지의 hue 계약.
+ * 결재함 표면 「완료」 배지의 hue 계약.
  *
- * 배경(오너 승인 2026-08-26): 비서 표면(assistant/ + approvals/)의 완료 배지 7곳이 `status-active`
+ * 배경(오너 승인 2026-08-26): 비서 표면(당시 assistant/ + approvals/)의 완료 배지 7곳이 `status-active`
  * (브랜드 네이비 #0A3D62 틴트)를 쓰고 있었다. P8 §4 는 그 틴트를 "5개 의미축의
  * hue 가 아니라 **중립 태그 캐리어**"로만 허용하고 *"판정·심각도 의미로 쓰는 것은
  * 금지"* 한다 — 「끝났다/안 끝났다」는 그 금지 용법이다. 더 나쁜 것은 의미가
@@ -21,10 +21,9 @@ import ts from "typescript";
  * **아직 없는 5번째 완료 배지**가 네이비로 들어오는 것을 막는 전수 그물이다.
  */
 
-const ASSISTANT_DIR = join(process.cwd(), "src", "components", "crm", "assistant");
-// Plan 2 Task 3: 완료 배지 2곳(approval-inbox.tsx의 ExecutedCard)이 결재함 디렉터리로
-// 옮겨갔다(→ approval-cards.tsx) — 어휘 계약은 파일 위치가 아니라 "비서 표면 전체"에
-// 대한 것이므로 스캔 범위를 여기까지 넓힌다(정본은 여전히 proposal-card StatusChip 주석).
+// Plan 3 Task A2: 채팅 은퇴로 `crm/assistant/` 가 사라졌다 — 완료 배지를 가진 파일은
+// 전부 결재함 디렉터리로 옮겨왔으므로 스캔 범위도 이 한 곳이다(정본은 여전히
+// proposal-card StatusChip 주석).
 const APPROVALS_DIR = join(process.cwd(), "src", "components", "crm", "approvals");
 
 /**
@@ -117,11 +116,11 @@ function scanDir(dirPath: string): Site[] {
     .flatMap((name) => findCompletionBadges(name, readFileSync(join(dirPath, name), "utf8")));
 }
 
-function scanAssistantDir(): Site[] {
-  return [...scanDir(ASSISTANT_DIR), ...scanDir(APPROVALS_DIR)];
+function scanApprovalsDir(): Site[] {
+  return scanDir(APPROVALS_DIR);
 }
 
-describe("비서 표면 완료 배지 hue 계약", () => {
+describe("결재함 완료 배지 hue 계약", () => {
   // ⚠️ 음성 대조군 — 스캐너가 고장 나면 위반이 0건으로 보여 **초록이 곧 무의미**해진다.
   // 실제로 이 레포에서 소스 스캔 계약이 조용히 고장 난 전례가 있다.
   it("[대조군] 네이비 완료 배지를 넣은 픽스처는 확실히 걸린다", () => {
@@ -143,18 +142,18 @@ describe("비서 표면 완료 배지 hue 계약", () => {
     expect(findCompletionBadges("fixture.tsx", fixture)).toEqual([]);
   });
 
-  it("완료 배지를 실제로 찾아낸다 — 4개 파일이 모두 관측된다", () => {
-    const sites = scanAssistantDir();
+  it("완료 배지를 실제로 찾아낸다 — 3개 파일이 모두 관측된다", () => {
+    const sites = scanApprovalsDir();
 
-    expect(sites.length).toBeGreaterThanOrEqual(7);
-    // Plan 2 Task 3: approval-inbox.tsx → approval-cards.tsx(approvals/ 디렉터리로 이동).
+    // Plan 3 Task A2: 채팅 전용 evidence-table.tsx(완료 배지 1곳)가 은퇴해 7 → 6 이 됐다.
+    expect(sites.length).toBeGreaterThanOrEqual(6);
     expect([...new Set(sites.map((s) => s.file))].sort()).toEqual(
-      ["approval-cards.tsx", "evidence-table.tsx", "proposal-card.tsx", "tool-result-views.tsx"].sort()
+      ["approval-cards.tsx", "proposal-card.tsx", "tool-result-views.tsx"].sort()
     );
   });
 
   it("완료 배지는 status-success 를 쓴다 — status-active(네이비) 금지 (P8 §4)", () => {
-    const sites = scanAssistantDir();
+    const sites = scanApprovalsDir();
 
     const navy = sites.filter((s) => s.variants.includes(FORBIDDEN_VARIANT));
     expect(

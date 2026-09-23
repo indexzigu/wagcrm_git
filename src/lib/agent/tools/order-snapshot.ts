@@ -12,8 +12,8 @@ export type { OrderSnapshotDay, GetOrderSnapshotData };
 const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 // m2: 조회 범위 상한 — endDate가 startDate보다 앞서거나 366일을 초과하는 범위 조회를
-// zod refine에서 막는다. 위반 시 MISSING_PARAM 계열 에러로 되묻기를 유도한다 (agent-loop가
-// MISSING_PARAM을 받으면 조기종료하고 사용자에게 되묻는다).
+// zod refine에서 막는다. 위반 시 MISSING_PARAM 계열 에러로 되묻기를 유도한다 (호출자가
+// MISSING_PARAM을 받으면 조기종료한다).
 const MAX_RANGE_DAYS = 366;
 
 const inputSchema = z

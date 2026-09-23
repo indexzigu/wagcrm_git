@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronLeftIcon } from "lucide-react";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { ProposalCard } from "@/components/crm/assistant/proposal-card";
+import { ProposalCard } from "./proposal-card";
 import { CardListSkeleton } from "./hub-states";
 import { ReadDetailHeader } from "./read-detail-header";
 import { ReadResultBody, isReadEnvelope } from "./read-result-body";

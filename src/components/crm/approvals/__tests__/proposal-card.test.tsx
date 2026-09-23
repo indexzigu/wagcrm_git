@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * ProposalCard — 채팅 안 기안 카드(인라인 승인) (청사진 §1, §3-#4).
+ * ProposalCard — 기안 한 건의 카드(인라인 승인) (청사진 §1, §3-#4).
  *
  * useProposalActionsHook을 주입 가능하게 해 실제 fetch 의존 없이 승인/반려
  * 상호작용을 테스트한다(approval-inbox.test.tsx와 동일한 관례). GET fetch는

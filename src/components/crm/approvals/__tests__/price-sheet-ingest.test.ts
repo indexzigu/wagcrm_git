@@ -158,7 +158,7 @@ describe("categorizePriceSheetRows", () => {
   });
 
   it("검토 화면이 경고하는 위험 플래그(음수마진·증정·단독구매불가)는 전부 애매로 분류한다", () => {
-    // 교차검증 HIGH 회귀 가드: 채팅 원클릭 적용의 안전망이 review-table FlagBadges보다 좁으면 안 된다.
+    // 교차검증 HIGH 회귀 가드: 원클릭 적용의 안전망이 review-table FlagBadges보다 좁으면 안 된다.
     const { clean, ambiguousCount } = categorizePriceSheetRows([
       { productName: "역마진", optionName: null, sellingPrice: 5000, mappingStatus: "NEW_DEAL", flags: { negativeMargin: true } },
       { productName: "사은품", optionName: null, sellingPrice: 5000, mappingStatus: "NEW_DEAL", flags: { giftOrBundle: true } },

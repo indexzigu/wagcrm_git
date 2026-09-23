@@ -2,6 +2,7 @@ import * as React from "react";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { ApprovalHub } from "@/components/crm/approvals/approval-hub";
 import { HubSkeleton } from "@/components/crm/approvals/hub-states";
+import { PriceSheetIngestCard } from "@/components/crm/approvals/price-sheet-ingest-card";
 
 /**
  * 결재함 — 봇·화면에서 올라온 기안을 결재하고 봇의 조회 결과·작업 기록을 보는 화면
@@ -21,6 +22,15 @@ export default function ApprovalsPage() {
       description="봇과 화면에서 올린 기안을 결재하고, 봇의 조회 결과와 작업 기록을 봅니다"
     >
       <div className="px-5 pb-5 pt-5 md:px-8">
+        {/*
+          가격표 업로드 기안 입구(Plan 3 Task A2) — 종전 서식지는 채팅 입력줄의 클립
+          버튼이었다. ambient 컨테이너(화면당 정확히 1개, P8 Elevation Ladder) 밖에 두는
+          것은 이 카드가 탭 내용이 아니라 **탭과 나란한 별개 입구**이기 때문이다. 높이는
+          카드 자신이 md 로 정한다(그 판단 근거는 카드 파일 주석).
+        */}
+        <div className="mb-4">
+          <PriceSheetIngestCard />
+        </div>
         <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           <React.Suspense fallback={<HubSkeleton />}>
             <ApprovalHub />
