@@ -219,6 +219,7 @@ export function CrmDashboard({
 
   // 카드·표 메뉴의 「삭제」는 확인 창을 거친다 — 상세 패널 삭제와 같은 조작이 여기서만
   // 즉시 영구 삭제되고 실패도 무음이었다(2026-09-24 interfaces 점검 #8).
+  // 실패하면 확인 창을 유지해 재시도하게 한다(오류는 토스트).
   const [pendingDelete, setPendingDelete] = useState<CampaignRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -676,7 +677,7 @@ export function CrmDashboard({
           if (!open && !deleting) setPendingDelete(null);
         }}
         entityType="캠페인"
-        entityName={pendingDelete?.campaignName ?? "이름 없는 캠페인"}
+        entityName={pendingDelete ? [pendingDelete.dealName, pendingDelete.sellerName].filter(Boolean).join(" - ") || pendingDelete.campaignName || "이름 없는 캠페인" : ""}
         onConfirm={async () => {
           if (pendingDelete) await deleteCampaign(pendingDelete);
         }}

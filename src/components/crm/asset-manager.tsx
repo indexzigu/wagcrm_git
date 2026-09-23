@@ -503,7 +503,13 @@ export function AssetManager({
   async function archiveAsset(asset: AssetRow) {
     // 자료 목록(asset-library)의 보관과 같은 확인·실패 안내 — 종전엔 실패를 무음으로 삼켰다.
     if (!window.confirm(`"${asset.fileName}" 자료를 보관하시겠습니까?\n보관된 자료는 목록에서 제외됩니다.`)) return;
-    const response = await fetch(`/api/assets/${asset.id}`, { method: "PATCH" });
+    let response: Response;
+    try {
+      response = await fetch(`/api/assets/${asset.id}`, { method: "PATCH" });
+    } catch {
+      toast.error("네트워크 오류로 자료를 보관하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.");
+      return;
+    }
     if (!response.ok) {
       toast.error("자료를 보관하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       return;

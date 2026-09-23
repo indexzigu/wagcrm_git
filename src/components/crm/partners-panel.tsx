@@ -1591,6 +1591,7 @@ export function PartnersPanel({
         entityType="담당자"
         entityName={pendingContactDelete?.name ?? ""}
         onConfirm={async () => {
+          // 창을 먼저 닫는다 — handleDeleteContact 가 낙관적 제거 + 실패 시 롤백·토스트를 이미 갖췄다.
           const target = pendingContactDelete;
           setPendingContactDelete(null);
           if (target) await handleDeleteContact(target.id);

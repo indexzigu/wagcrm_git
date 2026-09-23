@@ -15,6 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
+import { previewText } from "./confirm-action-dialog";
 
 /**
  * 딜 상세 "표현 관리" 섹션 (C1 M2b).
@@ -587,7 +588,7 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
                   size="sm"
                   variant="ghost"
                   disabled={busyId === claim.id}
-                  onClick={() => setPendingDelete({ id: claim.id, text: claim.text.slice(0, 30) })}
+                  onClick={() => setPendingDelete({ id: claim.id, text: previewText(claim.text) })}
                   aria-label="표현 삭제"
                 >
                   <TrashIcon className="size-3.5" aria-hidden />
