@@ -182,10 +182,10 @@ export function PriceSheetIngestSlot({
       .catch(() => setPartners([]));
   }, [isPending, partners.length]);
 
-  if (state.kind === "idle") return null;
-
+  // idle 에도 빈 공지 영역은 남겨 둔다 — 공지 영역이 내용과 함께 새로 생기면 스크린리더가
+  // 그 첫 내용(파일 대기 줄)을 변화로 인식하지 못해 읽지 않는다. 영역이 먼저 있어야 한다.
   return (
-    <div role="status" aria-live="polite" className="mt-3">
+    <div role="status" aria-live="polite" className={state.kind === "idle" ? undefined : "mt-3"}>
       {state.kind === "pending" && (
         <div className={cn(SLOT_ROW, "flex items-center gap-2")}>
           <FileIcon className="size-4 shrink-0 text-muted-foreground" />

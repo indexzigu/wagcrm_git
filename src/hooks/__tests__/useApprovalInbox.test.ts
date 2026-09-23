@@ -19,6 +19,12 @@ function wrapper(queryClient: QueryClient) {
   };
 }
 
+/** 이어 받기 조회의 캐시 모양 — 첫 장만 받은 상태(커서 없음). */
+const firstPageOnly = {
+  pages: [{ items: [], count: 0, nextBefore: null }],
+  pageParams: [undefined],
+};
+
 describe("useApprovalInbox", () => {
   const fetchMock = vi.fn();
 
@@ -45,7 +51,7 @@ describe("useApprovalInbox", () => {
 
     expect(
       queryClient.getQueryData(queryKeys.actionProposals("PENDING_APPROVAL"))
-    ).toEqual({ items: [], count: 0, nextBefore: null });
+    ).toEqual(firstPageOnly);
   });
 
   it("status='EXECUTED' 호출 시 해당 status로 fetch하고 쿼리키에 EXECUTED가 포함된다", async () => {
@@ -58,7 +64,7 @@ describe("useApprovalInbox", () => {
 
     expect(
       queryClient.getQueryData(queryKeys.actionProposals("EXECUTED"))
-    ).toEqual({ items: [], count: 0, nextBefore: null });
+    ).toEqual(firstPageOnly);
   });
 
   it("status='FAILED' 호출 시 해당 status로 fetch한다", async () => {
@@ -121,11 +127,9 @@ describe("useApprovalInbox", () => {
 
     // 같은 status 라도 kind 가 다르면 별도 캐시다 — 조회 결과(READ) 탭이 기안 완료 탭을
     // 덮어쓰지 않게 하는 계약.
-    expect(queryClient.getQueryData(queryKeys.actionProposals("EXECUTED", "READ"))).toEqual({
-      items: [],
-      count: 0,
-      nextBefore: null,
-    });
+    expect(queryClient.getQueryData(queryKeys.actionProposals("EXECUTED", "READ"))).toEqual(
+      firstPageOnly
+    );
     expect(queryClient.getQueryData(queryKeys.actionProposals("EXECUTED"))).toBeUndefined();
   });
 
@@ -133,6 +137,30 @@ describe("useApprovalInbox", () => {
     expect(queryKeys.actionProposals("PENDING_APPROVAL")).toEqual(
       queryKeys.actionProposals("PENDING_APPROVAL", "WRITE")
     );
+  });
+
+  it("nextBefore 가 있으면 loadMore 가 그 커서로 다음 장을 받아 이어 붙이고, count 는 첫 장 값이다", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [{ id: "p1" }], count: 51, nextBefore: "2026-09-01T00:00:00.000Z" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [{ id: "p0" }], count: 51, nextBefore: null }),
+      });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useApprovalInbox("EXECUTED"), { wrapper: wrapper(queryClient) });
+
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    result.current.loadMore();
+
+    await waitFor(() => expect(result.current.items.map((item) => item.id)).toEqual(["p1", "p0"]));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/action-proposals?status=EXECUTED&kind=WRITE&before=2026-09-01T00%3A00%3A00.000Z"
+    );
+    expect(result.current.count).toBe(51);
+    expect(result.current.hasMore).toBe(false);
   });
 
   it("approve/reject 함수를 반환한다 (useProposalActions 재사용)", async () => {

@@ -62,22 +62,24 @@ export function ProposalTabBody({
   useApprovalInbox: ApprovalInboxHook;
 }) {
   const def = getTabDef(tab);
-  const { items, isLoading, isError, refetch, approve, reject } = useApprovalInbox(
-    def.status ?? "PENDING_APPROVAL",
-    def.kind ?? "WRITE"
-  );
+  const { items, isLoading, isError, refetch, approve, reject, loadMore, isLoadingMore, hasMore } =
+    useApprovalInbox(def.status ?? "PENDING_APPROVAL", def.kind ?? "WRITE");
 
   // 기안 카드는 배지 줄 + 본문 + 버튼 줄이라 조회 결과 카드보다 높다(hub-states 주석).
   if (isLoading) return <CardListSkeleton height="h-36" />;
   if (isError) return <LoadErrorState onRetry={() => refetch()} />;
   if (items.length === 0) return <EmptyState message={EMPTY_MESSAGES[tab]} />;
 
+  // 목록은 한 장에 50건이다 — 그 이전 기안을 화면에서 찾으려면 이어 받아야 한다.
   return (
-    <ul className="flex flex-col gap-2">
-      {items.map((item) => (
-        <ProposalCard key={item.id} tab={tab} item={item} approve={approve} reject={reject} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2">
+        {items.map((item) => (
+          <ProposalCard key={item.id} tab={tab} item={item} approve={approve} reject={reject} />
+        ))}
+      </ul>
+      {hasMore && <LoadMoreButton onClick={() => loadMore()} disabled={isLoadingMore} />}
+    </div>
   );
 }
 

@@ -26,6 +26,9 @@ export type ApprovalInboxHook = (
   approve: (id: string) => Promise<unknown>;
   reject: (id: string) => Promise<unknown>;
   refetch: () => unknown;
+  loadMore: () => unknown;
+  isLoadingMore: boolean;
+  hasMore: boolean;
 };
 
 export type ReadRecordsHook = () => {
