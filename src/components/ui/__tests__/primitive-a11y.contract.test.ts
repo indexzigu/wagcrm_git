@@ -21,7 +21,15 @@ function stringLiterals(relPath: string): string[] {
   const file = ts.createSourceFile(relPath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const out: string[] = [];
   const visit = (node: ts.Node) => {
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) out.push(node.text);
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    ) {
+      out.push(node.text);
+    }
     if (ts.isJsxText(node) && node.text.trim()) out.push(node.text.trim());
     ts.forEachChild(node, visit);
   };

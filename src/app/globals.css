@@ -191,7 +191,7 @@
   --sidebar-accent: rgba(255, 255, 255, 0.08);   /* hover wash (다크 표면) */
   --sidebar-accent-foreground: #F8FAFC;
   --sidebar-border: rgba(255, 255, 255, 0.10);   /* 헤어라인 (다크 표면) */
-  --sidebar-ring: #E7A567;
+  --sidebar-ring: #E7A567; /* 사이드바 포커스 링: 불투명 골드 on 네이비 #08314E = 6.40:1(hover 워시 위 4.73). 구 50% 알파는 2.60:1 로 3:1 미달 */
   --tertiary: #4F46E5;
   --tertiary-foreground: #FFFFFF;
   /* 사다리 값 재보정(오너 A안 확정 2026-07-15). 앱은 카드 그림자로 Tailwind 원시
@@ -331,7 +331,7 @@
   --sidebar-accent: rgba(255, 255, 255, 0.06);
   --sidebar-accent-foreground: #F1F5F9;
   --sidebar-border: rgba(255, 255, 255, 0.10);
-  --sidebar-ring: #E7A567;
+  --sidebar-ring: #E7A567; /* 사이드바 포커스 링: 불투명 골드 on 네이비 #08314E = 6.40:1(hover 워시 위 4.73). 구 50% 알파는 2.60:1 로 3:1 미달 */
 }
 
 @layer base {
