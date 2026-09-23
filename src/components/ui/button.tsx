@@ -20,7 +20,7 @@ const buttonVariants = cva(
           // 포커스 링은 베이스(ring-focus-ring)를 그대로 상속한다 — 위험 의미는 텍스트·
           // 배경이 이미 전담하므로 링에서 hue 를 이중 인코딩하지 않는다. 구 ring-destructive/40
           // 은 흰 배경 위 약 1.75:1 로 SC 1.4.11(3:1) 크게 미달이었다.
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30",
+          "bg-destructive/10 text-status-urgent-text hover:bg-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

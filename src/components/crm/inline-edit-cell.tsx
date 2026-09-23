@@ -189,7 +189,7 @@ export function InlineEditCell({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => handleSave(draft)}
           onKeyDown={handleKeyDown}
-          className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs shadow-none outline-none focus:border-slate-300 focus:ring-0"
+          className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs shadow-none outline-none focus:border-slate-300 focus-visible:ring-2 focus-visible:ring-focus-ring"
         />
       </div>
     );

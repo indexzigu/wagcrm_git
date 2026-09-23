@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 export const badgeSizeClassName = {
   compact: "h-4 rounded-md px-1.5 py-0 text-[10px] font-medium leading-none",
-  count: "h-4 min-w-4 rounded-full px-1 py-0 text-[9px] font-bold leading-none tabular-nums",
+  count: "h-4 min-w-4 rounded-full px-1 py-0 text-[10px] font-bold leading-none tabular-nums",
 } as const
 
 const badgeVariants = cva(
@@ -25,7 +25,7 @@ const badgeVariants = cva(
         destructive:
           // 포커스 링 오버라이드 제거 — 베이스의 ring-focus-ring 을 상속한다.
           // 구 ring-destructive/20 은 흰 배경 위 약 1.31:1 로 사실상 안 보였다.
-          "bg-destructive/10 text-destructive dark:bg-destructive/20 [a]:hover:bg-destructive/20",
+          "bg-destructive/10 text-status-urgent-text dark:bg-destructive/20 [a]:hover:bg-destructive/20",
         outline:
           "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
         ghost:
