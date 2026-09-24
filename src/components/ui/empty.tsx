@@ -139,7 +139,7 @@ function DataEmpty({
         {title}
       </EmptyTitle>
       {description ? (
-        <EmptyDescription className="text-[10px] leading-relaxed text-muted-foreground/80">
+        <EmptyDescription className="text-[10px] leading-relaxed text-muted-foreground">
           {description}
         </EmptyDescription>
       ) : null}

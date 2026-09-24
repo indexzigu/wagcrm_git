@@ -70,7 +70,7 @@ export function DataIntegrityBody({ issues, showSubtext = true }: { issues: Issu
   return (
     <div className="flex flex-1 flex-col min-h-0">
       {showSubtext && (
-        <p className="mb-2 shrink-0 truncate text-[11px] text-muted-foreground/70" title="정산·매출 처리에서 사람이 확인해야 할 항목입니다.">
+        <p className="mb-2 shrink-0 truncate text-[11px] text-muted-foreground" title="정산·매출 처리에서 사람이 확인해야 할 항목입니다.">
           정산·매출 처리에서 사람이 확인해야 할 항목입니다.
         </p>
       )}
@@ -96,7 +96,7 @@ export function DataIntegrityBody({ issues, showSubtext = true }: { issues: Issu
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    className="inline-block text-[11px] font-medium text-muted-foreground/50 hover:text-muted-foreground transition-colors rounded focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
+                    className="inline-block text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors rounded focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
                   >
                     + {issues.length - 5}건의 무결성 이슈 더보기
                   </button>
@@ -156,7 +156,7 @@ export function DataIntegrityCard({ issues }: { issues: Issue[] }) {
               {issues.length}건 확인 필요
             </Badge>
           )}
-          <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70" title="정산·매출 처리에서 사람이 확인해야 할 항목입니다.">
+          <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title="정산·매출 처리에서 사람이 확인해야 할 항목입니다.">
             정산·매출 처리에서 사람이 확인해야 할 항목입니다.
           </p>
         </div>
