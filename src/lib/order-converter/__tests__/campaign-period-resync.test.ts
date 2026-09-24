@@ -169,6 +169,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
     });
     expect(drift).toEqual({
       scope: 'full',
+      startKeptReason: null,
       storeLabel: '2026.09.14 ~ 2026.09.19',
       windowLabel: '2026.09.14 ~ 2026.09.17',
       storeStartYmd: '2026-09-14',
@@ -265,6 +266,7 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
     });
     expect(drift).toEqual({
       scope: 'end-only',
+      startKeptReason: 'store-closed',
       storeLabel: '2026.09.17', // 기간이 아니라 종료일 하나만 보여준다
       windowLabel: '2026.09.16', // 비교 대상도 같은 해상도(종료일)여야 한다
       storeStartYmd: null, // ⛔ 시작일은 보내지 않는다 — 이 null 이 사고를 막는 지점이다
@@ -341,6 +343,68 @@ describe('resolveStorePeriodDrift — 스토어 기간이 화면 기간과 다�
   it('창이 없으면(판매캠페인 미연결) null — 그땐 salePeriod 가 이미 화면값이다', () => {
     expect(
       resolveStorePeriodDrift({ salePeriod: '2026.09.14 ~ 2026.09.19', windowStartMs: null, windowEndMs: null, productStatus: 'SALE', salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }] }),
+    ).toBeNull();
+  });
+});
+
+describe('resolveStorePeriodDrift — 첫 매출일이 시작일을 지킨다 (오너 결정 2026-09-24)', () => {
+  // 오너 신고 모양: 판매관리 09.14~09.20 에 09.14 부터 매출이 났는데, 스토어가 기간을 09.22~09.27 로
+  // 다시 잡았다. 스토어 기간을 통째로 맞추면 회차 시작일이 09.22 로 밀려 이미 난 매출이 창 밖으로 빠진다.
+  const base = {
+    salePeriod: '2026.09.22 ~ 2026.09.27',
+    windowStartMs: startKst('2026.09.14'),
+    windowEndMs: endKst('2026.09.20'),
+    productStatus: 'SALE',
+    salesCampaigns: [{ id: 'sc-1', status: 'ACTIVE' }],
+  };
+
+  it('스토어 시작일 전에 매출이 있으면 시작일은 그대로, 종료일만 맞춘다', () => {
+    const drift = resolveStorePeriodDrift({ ...base, firstSaleMs: startKst('2026.09.14') + 10 * 3600_000 });
+    expect(drift).toEqual({
+      scope: 'end-only',
+      startKeptReason: 'sales-before-store-start',
+      storeLabel: '2026.09.27',
+      windowLabel: '2026.09.20',
+      storeStartYmd: null,
+      storeEndYmd: '2026-09-27',
+      salesCampaignIds: ['sc-1'],
+    });
+    // 실사고 방어선과 같은 지점 — PATCH 본문에 시작일 키가 없어야 기존 시작일이 보존된다.
+    expect(buildStorePeriodPatchBody(drift!)).toEqual({ endDate: '2026-09-27' });
+  });
+
+  it('매출이 아직 없으면 스토어 기간 전체를 맞춘다(종전 동작)', () => {
+    const drift = resolveStorePeriodDrift({ ...base, firstSaleMs: null });
+    expect(drift?.scope).toBe('full');
+    expect(drift?.startKeptReason).toBeNull();
+    expect(drift?.storeStartYmd).toBe('2026-09-22');
+  });
+
+  it('첫 매출이 스토어 시작일 당일 이후면 시작일을 옮겨도 빠지는 매출이 없다 — 전체를 맞춘다', () => {
+    // 당일 새벽 매출: 창은 그 날 00:00 부터 열리므로 경계는 KST 날짜 단위다.
+    const drift = resolveStorePeriodDrift({ ...base, firstSaleMs: startKst('2026.09.22') + 3600_000 });
+    expect(drift?.scope).toBe('full');
+    expect(drift?.storeStartYmd).toBe('2026-09-22');
+  });
+
+  it('첫 매출이 스토어 시작일 전날 밤이면 시작일을 지킨다', () => {
+    const drift = resolveStorePeriodDrift({ ...base, firstSaleMs: startKst('2026.09.22') - 1 });
+    expect(drift?.startKeptReason).toBe('sales-before-store-start');
+  });
+
+  it('스토어가 시작일을 앞당긴 경우는 매출이 있어도 전체를 맞춘다 — 빠지는 매출이 없다', () => {
+    const drift = resolveStorePeriodDrift({
+      ...base,
+      salePeriod: '2026.09.12 ~ 2026.09.20',
+      firstSaleMs: startKst('2026.09.14'),
+    });
+    expect(drift?.scope).toBe('full');
+    expect(drift?.storeStartYmd).toBe('2026-09-12');
+  });
+
+  it('시작일만 다르고 종료일이 같으면 신호를 내지 않는다 — 눌러도 사라지지 않는 배지 방지', () => {
+    expect(
+      resolveStorePeriodDrift({ ...base, salePeriod: '2026.09.16 ~ 2026.09.20', firstSaleMs: startKst('2026.09.14') }),
     ).toBeNull();
   });
 });

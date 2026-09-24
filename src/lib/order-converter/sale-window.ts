@@ -184,9 +184,16 @@ export type StorePeriodDrift = {
   /**
    * 무엇을 맞출 수 있는가.
    * - `full` 스토어가 판매중 — 시작일·종료일 둘 다.
-   * - `end-only` 판매가 끝난 상태라 시작일은 재작성돼 믿을 수 없다 — **종료일만**.
+   * - `end-only` 시작일은 건드리지 않고 **종료일만**. 이유는 `startKeptReason`.
    */
   scope: 'full' | 'end-only';
+  /**
+   * `end-only` 인 이유. `full` 이면 null.
+   * - `store-closed` 판매가 끝난 상태라 네이버가 시작일을 재작성했다 — 믿을 수 없는 값.
+   * - `sales-before-store-start` 스토어 시작일보다 **앞선 날에 이미 매출이 있다**. 스토어가 기간을
+   *   뒤로 다시 잡았어도 회차는 첫 매출일에 이미 시작한 것이다(오너 결정 2026-09-24).
+   */
+  startKeptReason: 'store-closed' | 'sales-before-store-start' | null;
   /** 화면에 보여줄 스토어 값. `full` 이면 기간 전체, `end-only` 면 종료일 하나. */
   storeLabel: string;
   /**
@@ -226,6 +233,11 @@ export type StorePeriodDrift = {
 export function resolveStorePeriodDrift(camp: {
   salePeriod?: string | null;
   productStatus?: string | null;
+  /**
+   * 이 캠페인에 귀속된 **유효 주문 중 가장 이른 결제 시각**(집계 창 안). 없으면 null.
+   * 스토어 시작일이 이보다 늦으면 시작일을 맞추지 않는다 — 맞추면 이미 난 매출이 창 밖으로 밀린다.
+   */
+  firstSaleMs?: number | null;
   windowStartMs: number | null;
   windowEndMs: number | null;
   salesCampaigns?: Array<{ id: string; status?: string | null }> | null;
@@ -236,8 +248,18 @@ export function resolveStorePeriodDrift(camp: {
   const { startMs, endMs } = parseSalePeriodBounds(camp.salePeriod);
   if (startMs === null) return null; // '기간 미정'·'미등록'·null — 비교할 관측값이 없다
 
-  const scope: StorePeriodDrift['scope'] =
-    camp.productStatus === STORE_PERIOD_TRUSTED_STATUS ? 'full' : 'end-only';
+  // 시작일을 맞추지 않는 이유는 두 가지다. ① 판매가 끝난 상태 — 네이버가 시작일을 재작성한다.
+  // ② 스토어 시작일보다 앞선 날에 이미 매출이 있다(오너 결정 2026-09-24: "9/14 에 실제 매출이
+  // 있으면 시작은 9/14 를 따라가고, 종료일만 스토어 연장을 따라간다"). ②를 빼면 스토어가 기간을
+  // 뒤로 다시 잡은 순간 버튼 하나가 회차 시작일을 밀어 **이미 난 매출을 집계 창 밖으로** 내보낸다.
+  // 비교는 KST 날짜 단위다 — PATCH 가 날짜만 보내므로 창은 그 날 00:00 부터 열린다.
+  const startKeptReason: StorePeriodDrift['startKeptReason'] =
+    camp.productStatus !== STORE_PERIOD_TRUSTED_STATUS
+      ? 'store-closed'
+      : camp.firstSaleMs != null && startOfKstDayMs(startMs) > camp.firstSaleMs
+        ? 'sales-before-store-start'
+        : null;
+  const scope: StorePeriodDrift['scope'] = startKeptReason === null ? 'full' : 'end-only';
 
   // 비교 쌍(스토어 값 / 지금 화면 값)을 **여기서 함께** 만든다 — 해상도가 갈리면 화면에서
   // 서로 다른 단위가 나란히 놓인다.
@@ -276,6 +298,7 @@ export function resolveStorePeriodDrift(camp: {
 
   return {
     scope,
+    startKeptReason,
     storeLabel,
     windowLabel: shownWindowLabel,
     storeStartYmd,

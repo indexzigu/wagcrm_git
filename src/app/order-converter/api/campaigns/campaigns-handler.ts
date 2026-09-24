@@ -625,6 +625,9 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       let oldestShippingDate = 0;
       // 마지막 주문 시각(유효 주문 기준) + 지연 일수별 버킷(카드 라벨 툴팁용: "2일 지연 3건 · 3일 지연 2건")
       let lastOrderAt = 0;
+      // 첫 매출 시각(유효 주문 기준) — 스토어 기간 맞추기가 시작일을 뒤로 밀어 이미 난 매출을
+      // 창 밖으로 내보내지 않게 하는 판정 입력(`resolveStorePeriodDrift`, 오너 결정 2026-09-24).
+      let firstSaleAt = 0;
       const pendingDelayDays: Record<string, number> = {};
       const shippingDelayDays: Record<string, number> = {};
       // 배송대기 버킷 주문 목록(카드 배송대기 클릭 시 팝오버). 카운트만 세고 버리지 않고 같은 순회에서 수집한다.
@@ -726,14 +729,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 2026-09-17). ⛔ 자동 반영으로 바꾸지 말 것 — '종료 후 임시 오픈'까지 회차 창으로 흘러든다.
       // 정산 락(창 동결) 판정도 그 함수가 갖는다 — 여기서 미리 걸러내면 그쪽 필터가 도달 불가
       // 코드가 되고, 그걸 고정한 테스트가 프로덕션에서 발화하지 않는 초록불이 된다.
-      const storeDrift = resolveStorePeriodDrift({
-        salePeriod: camp.salePeriod,
-        // 판매가 끝난 상태의 스토어 기간은 시작일이 재작성돼 종료일만 쓴다(오너 결정 2026-09-17).
-        productStatus: camp.productStatus,
-        windowStartMs: campStartRaw,
-        windowEndMs: campEndRaw,
-        salesCampaigns: camp.salesCampaigns,
-      });
+      // 판정 호출은 주문 순회 **뒤**(응답 조립 직전)에 있다 — 첫 매출 시각이 입력이기 때문이다.
 
       // 교차 귀속 가드용 이웃 목록 — 캠페인당 1회만 만든다(주문 루프 안에서 만들면 주문×캠페인 배).
       const peerCampaigns: PeerCampaignWindow[] = activeCampaigns
@@ -871,6 +867,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
             const _ok = resolveOrderCountKey(order);
             if (_ok) validOrderKeys.add(_ok);
             if (orderTime > lastOrderAt) lastOrderAt = orderTime;
+            if (orderTime > 0 && (firstSaleAt === 0 || orderTime < firstSaleAt)) firstSaleAt = orderTime;
             const qty = Number(order.quantity) || 1;
             totalQuantity += qty;
 
@@ -1046,6 +1043,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
           const _ok = resolveOrderCountKey(order);
           if (_ok) validOrderKeys.add(_ok);
           if (orderTime > lastOrderAt) lastOrderAt = orderTime;
+          if (orderTime > 0 && (firstSaleAt === 0 || orderTime < firstSaleAt)) firstSaleAt = orderTime;
           const qty = Number(order.quantity) || 1;
           totalQuantity += qty;
 
@@ -1199,6 +1197,17 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       if (validOrderKeys.size === 0 && hasFrozenSnapshot(camp)) {
         return buildSnapshotResponse(camp, { isFrozenFallback: true });
       }
+
+      const storeDrift = resolveStorePeriodDrift({
+        salePeriod: camp.salePeriod,
+        // 판매가 끝난 상태의 스토어 기간은 시작일이 재작성돼 종료일만 쓴다(오너 결정 2026-09-17).
+        productStatus: camp.productStatus,
+        // 스토어 시작일 전에 이미 매출이 있으면 시작일은 그대로 두고 종료일만 맞춘다(오너 결정 2026-09-24).
+        firstSaleMs: firstSaleAt || null,
+        windowStartMs: campStartRaw,
+        windowEndMs: campEndRaw,
+        salesCampaigns: camp.salesCampaigns,
+      });
 
       return {
         ...camp,
