@@ -127,7 +127,7 @@ export function SettlementChecklist({
           )}
         </div>
         {campaign.status === "COMPLETED" && (
-          <p className="mt-2 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-md p-2">
+          <p className="mt-2 text-[10px] text-status-success bg-emerald-50 border border-emerald-100 rounded-md p-2">
             💡 모든 정산 체크리스트 완료에 의해 캠페인 상태가 <strong>정산 완료(COMPLETED)</strong>로 자동 전환되었습니다.
           </p>
         )}

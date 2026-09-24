@@ -560,7 +560,7 @@ export function CampaignDealsTable({
                       <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-medium tabular-nums text-rose-600">
                         {formatCurrency(sellerFee)}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-semibold tabular-nums text-emerald-600">
+                      <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-semibold tabular-nums text-money-in-text">
                         {formatCurrency(grossProfit)}
                       </td>
                       <td className="px-2 py-1.5 text-center align-middle">
@@ -585,7 +585,7 @@ export function CampaignDealsTable({
                   <td className="px-1.5 py-2 text-right text-slate-700">{formatCurrency(totals.actualSales)}</td>
                   <td className="px-1.5 py-2 text-right text-slate-700">{formatCurrency(totals.commission)}</td>
                   <td className="px-1.5 py-2 text-right text-rose-600">{formatCurrency(totals.sellerFee)}</td>
-                  <td className="px-1.5 py-2 text-right text-emerald-600">{formatCurrency(totals.grossProfit)}</td>
+                  <td className="px-1.5 py-2 text-right text-money-in-text">{formatCurrency(totals.grossProfit)}</td>
                   <td className="px-2 py-2"></td>
                 </tr>
                   </tbody>
@@ -601,7 +601,7 @@ export function CampaignDealsTable({
             <AlertDialogDescription className="text-xs">
               현재 입력된 매출 데이터 중 아래와 같은 불일치가 감지되었습니다:
               <br /><br />
-              <strong className="text-amber-600">• 주문 수량이 0인데 거래 금액이 등록되었거나, 주문 수량은 있으나 거래 금액이 0원인 품목이 존재합니다.</strong>
+              <strong className="text-status-caution-text">• 주문 수량이 0인데 거래 금액이 등록되었거나, 주문 수량은 있으나 거래 금액이 0원인 품목이 존재합니다.</strong>
               <br /><br />
               이대로 저장하시겠습니까?
             </AlertDialogDescription>

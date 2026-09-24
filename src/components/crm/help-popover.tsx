@@ -38,7 +38,7 @@ export function HelpPopover({
             // ⚠️ `size-6`(24px) 는 취향이 아니라 하한이다 — 이 레포의 고밀도 CRM 예외도
             // **조작 영역 ≥24×24 CSS px** 까지이고(styleseed Golden Rule 8 · WCAG 2.5.8),
             // 아이콘만 14~16px 로 두면 그 아래로 내려간다. 아이콘은 작게, 영역만 넓힌다.
-            "inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring",
+            "inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring",
             className,
           )}
         >
