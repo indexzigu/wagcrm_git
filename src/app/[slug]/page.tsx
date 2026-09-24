@@ -65,7 +65,7 @@ function PasswordGate({
                   autoFocus
                   autoComplete="current-password"
                   placeholder="비밀번호"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500"
                 />
                 {error === "wrong" && (
                   <p className="text-[11px] font-medium text-red-500">비밀번호가 올바르지 않습니다.</p>

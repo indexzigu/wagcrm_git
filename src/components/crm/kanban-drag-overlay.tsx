@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { useReducedMotion } from "motion/react";
 import { DragOverlay } from "@dnd-kit/core";
 import { snapCenterToCursor } from "@dnd-kit/modifiers";
 
@@ -26,10 +27,12 @@ export function KanbanDragOverlay({ children }: { children: React.ReactNode }) {
   // SSR/하이드레이션 안전 — 마운트 전에는 document가 없어 포털을 만들 수 없다.
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
+  // 놓을 때의 되돌아가기 애니메이션은 WAAPI 라 CSS reduce 가드가 닿지 않는다 — 여기서 끈다.
+  const reducedMotion = useReducedMotion();
   if (!mounted) return null;
 
   return createPortal(
-    <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={DROP_ANIMATION}>
+    <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={reducedMotion ? null : DROP_ANIMATION}>
       {children}
     </DragOverlay>,
     document.body,

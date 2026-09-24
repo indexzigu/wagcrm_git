@@ -34,10 +34,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  // 모바일(iOS Safari)에서 입력창 포커스 시 font-size<16px로 인한 자동 확대(줌)를 막아
-  // 화면이 튀지 않고 고정되도록 한다. 설치형 스탠드얼론 CRM이라 앱과 동일한 동작이 자연스럽다.
-  maximumScale: 1,
-  userScalable: false,
+  // ⛔ maximumScale·userScalable 로 확대를 막지 말 것(WCAG 1.4.4) — 셀러 포털까지 이 루트를 쓴다.
+  // iOS 입력 포커스 자동 확대는 입력 글자를 16px 이상으로 두는 것으로 막는다(ui/input·textarea 의
+  // `text-base md:text-sm`, 모바일 전용 입력은 `text-base`).
   viewportFit: "cover",
   themeColor: "#080B11",
 };

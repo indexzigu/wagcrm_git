@@ -747,6 +747,15 @@
     opacity: 1;
     transform: none;
   }
+  /* tw-animate-css(Dialog·Sheet·Popover·Select·Menu·Tooltip 의 animate-in/out)는
+     자체 reduce 가드가 없다. 확대·슬라이드 변수만 0 으로 눌러 페이드만 남긴다 —
+     이 블록은 레이어 밖이라 @layer utilities 의 zoom-in-95·slide-in-from-* 를 이긴다. */
+  [class*="animate-in"], [class*="animate-out"] {
+    --tw-enter-scale: 1; --tw-enter-translate-x: 0; --tw-enter-translate-y: 0; --tw-enter-rotate: 0; --tw-enter-blur: 0;
+    --tw-exit-scale: 1; --tw-exit-translate-x: 0; --tw-exit-translate-y: 0; --tw-exit-rotate: 0; --tw-exit-blur: 0;
+  }
+  /* Tailwind 기본 무한 루프(라이브 점 ping·스켈레톤 pulse)도 멈춘다 — 정지 상태가 곧 기본 모양이다. */
+  [class*="animate-ping"], [class*="animate-pulse"], [class*="animate-bounce"] { animation: none; }
   * { transition-duration: 0.01ms !important; }
 }
 
