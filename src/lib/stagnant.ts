@@ -84,5 +84,5 @@ export function getStagnantClass(campaign: {
   status: CampaignStatus;
   updatedAt: string | Date;
 }): string {
-  return isStagnant(campaign) ? "text-red-400 font-semibold" : "";
+  return isStagnant(campaign) ? "text-status-urgent-text font-semibold" : "";
 }

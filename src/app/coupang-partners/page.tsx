@@ -84,7 +84,7 @@ export default function CoupangPartnersPage() {
 
         {/* 히어로 */}
         <section className="pt-10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-rose-500">
+          <p className="text-xs font-semibold uppercase tracking-widest text-rose-700">
             This Week&apos;s Pick · 테크 액세서리
           </p>
           <h1 className="mt-3 text-3xl font-bold leading-snug text-slate-900 sm:text-4xl">
@@ -111,7 +111,7 @@ export default function CoupangPartnersPage() {
         {/* 추천 이유 3가지 */}
         <section className="mt-12">
           <h2 className="text-lg font-bold text-slate-900">
-            왜 하필 <span className="text-rose-500">그립형</span>이냐면요
+            왜 하필 <span className="text-rose-700">그립형</span>이냐면요
           </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {REASONS.map((r, i) => (
@@ -119,7 +119,7 @@ export default function CoupangPartnersPage() {
                 key={r.title}
                 className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-soft-sm"
               >
-                <p className="text-xs font-bold text-rose-400">0{i + 1}</p>
+                <p className="text-xs font-bold text-rose-700">0{i + 1}</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">{r.title}</p>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">{r.body}</p>
               </div>
@@ -182,7 +182,7 @@ export default function CoupangPartnersPage() {
               </li>
             ))}
           </ul>
-          <p className="mt-5 text-xs leading-relaxed text-slate-500">
+          <p className="mt-5 text-xs leading-relaxed text-slate-400">
             가격과 재고는 자주 바뀌니, 위 카드에서 오늘 가격을 직접 확인해 보세요.
           </p>
         </section>
@@ -194,7 +194,7 @@ export default function CoupangPartnersPage() {
             제공받습니다. 소개된 상품의 가격·재고·배송 정보는 쿠팡 판매 페이지 기준이며
             실제와 다를 수 있습니다.
           </p>
-          <p className="mt-3 text-xs text-slate-300">
+          <p className="mt-3 text-xs text-slate-500">
             © WAG PICK: 직접 쓰는 물건만 소개하는 큐레이션 채널
           </p>
         </footer>
