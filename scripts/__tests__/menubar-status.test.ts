@@ -41,6 +41,8 @@ function stampHoursAgo(hours: number): string {
 interface RunOpts {
   localCode?: string;
   extCode?: string;
+  /** 외부 검사의 호출 순서별 응답(재시도 검증용). 주면 extCode 대신 쓰고, 호출 수는 HOME/ext-calls 에 남는다 */
+  extCodes?: string[];
   /** 개발 서버(3002) 응답 코드. 기본 "000" = 꺼져 있음(정상) */
   devCode?: string;
   /** undefined = running / "" = docker inspect 실패(컨테이너 없음) / 그 외 = 그 상태 문자열 */
@@ -109,7 +111,12 @@ case "$URL" in
   *127.0.0.1:3000*) printf '%s' "${opts.localCode ?? "307"}";;
   *127.0.0.1:3001*) printf '%s' "200";;
   *127.0.0.1:3002*) printf '%s' "${opts.devCode ?? "000"}";;
-  *) printf '%s' "${opts.extCode ?? "200"}";;
+  *) N=$(cat "${home}/ext-calls" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "${home}/ext-calls"
+     ${
+       opts.extCodes
+         ? `case "$N" in ${opts.extCodes.map((c, i) => `${i + 1}) printf '%s' "${c}";;`).join(" ")} *) printf '%s' "${opts.extCodes[opts.extCodes.length - 1]}";; esac`
+         : `printf '%s' "${opts.extCode ?? "200"}"`
+     };;
 esac`,
   );
   const cronJobs = opts.cronJobs ?? ["job-alpha", "job-beta"];
@@ -241,6 +248,7 @@ esac`,
       STATUS_GIT_CMD: `bash ${gitImpl}`,
       STATUS_GH_CMD: `bash ${ghImpl}`,
       STATUS_CRONTAB_FILE: crontabFixture,
+      STATUS_EXT_RETRY_DELAY_S: "0",
     },
     encoding: "utf8",
   });
@@ -323,6 +331,24 @@ describe("status.sh 행위 계약", () => {
     const ext = byKey(r, "prodExternal");
     expect(ext.level).toBe("error");
     expect(ext.detail).toContain("터널");
+  });
+
+  it("외부 첫 검사만 실패하고 재검사가 열리면 → ok (일시 지연으로 빨강 금지)", () => {
+    const r = runStatus({ extCodes: ["000", "307"], dailyAgeH: 5, weeklyAgeH: 24 });
+    expect(byKey(r, "prodExternal").level).toBe("ok");
+    expect(readFileSync(path.join(r.home, "ext-calls"), "utf8").trim()).toBe("2");
+  });
+
+  it("외부 5xx 뒤 재검사도 실패하면 → error, 검사는 정확히 2회", () => {
+    const r = runStatus({ extCodes: ["502", "000"], dailyAgeH: 5, weeklyAgeH: 24 });
+    expect(byKey(r, "prodExternal").level).toBe("error");
+    expect(readFileSync(path.join(r.home, "ext-calls"), "utf8").trim()).toBe("2");
+  });
+
+  it("외부 첫 검사가 열리면 재검사하지 않는다", () => {
+    const r = runStatus({ extCodes: ["307"], dailyAgeH: 5, weeklyAgeH: 24 });
+    expect(byKey(r, "prodExternal").level).toBe("ok");
+    expect(readFileSync(path.join(r.home, "ext-calls"), "utf8").trim()).toBe("1");
   });
 
   it("내부 000 → prodLocal error, 외부 실패 문구에 터널 없음", () => {

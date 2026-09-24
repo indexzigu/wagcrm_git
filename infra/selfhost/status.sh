@@ -188,6 +188,15 @@ fi
 
 if [ "$MODE" = "full" ]; then
   EXT_CODE="$(http_code "$PROD_EXTERNAL_URL")"
+  # 한 번 실패로 빨강을 띄우지 않는다 — 터널 구간이 가끔 3초 가까이 느려져 5초
+  # 문턱을 넘기면, 곧바로 열리는데도 5분 내내 빨강이 남았다(2026-09-25 01:19 실측:
+  # 2분 뒤 25회 연속 정상). 짧게 쉬고 한 번 더 확인해 그래도 실패일 때만 error.
+  # 최악 소요 = 5 + 대기 + 5초 — 메뉴바가 status.sh 에 주는 30초 한도 안이다.
+  case "$EXT_CODE" in
+    ""|000|5??)
+      sleep "${STATUS_EXT_RETRY_DELAY_S:-2}"
+      EXT_CODE="$(http_code "$PROD_EXTERNAL_URL")" ;;
+  esac
   case "$EXT_CODE" in
     ""|000|5??)
       # 내부는 되는데 외부만 안 되면 원인이 다르다(터널) — 구분해서 말해준다.
