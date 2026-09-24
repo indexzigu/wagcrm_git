@@ -63,10 +63,12 @@ export default function ProductSelectModal({
               {isFetchingNaver ? "불러오는 중..." : "새로고침"}
             </button>
             <button 
+              type="button"
               onClick={onClose} 
+              aria-label="닫기"
               className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>

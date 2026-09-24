@@ -433,7 +433,7 @@ export function CampaignDealsTable({
               defaultValue=""
               // ⚠️ `max-w-*` 는 장식이 아니다 — 셀렉트는 **가장 긴 옵션 이름만큼** 늘어나서
               //    헤더를 통째로 밀어냈다(오너 지적 2026-08-28). 폭을 묶어 한 줄에 들어가게 한다.
-              className="h-8 max-w-[168px] min-w-0 rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground shadow-soft-sm focus:border-primary focus:outline-none"
+              className="h-8 max-w-[168px] min-w-0 rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground shadow-soft-sm focus:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
               disabled={loadingOptions}
             >
               <option value="" disabled>
@@ -640,7 +640,13 @@ function MiniNumberField({
   onChange?: (value: string) => void;
 }) {
   return (
-    <label className="flex min-w-0 items-center gap-0.5 rounded bg-slate-100 px-1 py-0.5">
+    // 입력칸이 칩 안에 꽉 차 있어 링은 칩(라벨)이 그린다 — 입력 자체는 outline-none(P8 포커스 링 표준).
+    <label
+      className={cn(
+        "flex min-w-0 items-center gap-0.5 rounded bg-slate-100 px-1 py-0.5",
+        !readOnly && "focus-within:ring-2 focus-within:ring-focus-ring",
+      )}
+    >
       <span className="shrink-0 text-[8px] text-slate-500">{label}</span>
       <input
         type="number"

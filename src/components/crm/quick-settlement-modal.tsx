@@ -231,8 +231,12 @@ export function QuickSettlementModal({
                 <span className="min-w-0 truncate font-mono text-sm text-foreground">
                   {accountNumber}
                 </span>
-                <Button variant="ghost" onClick={handleCopyAccount}>
-                  {copied ? <Check /> : <Copy />}
+                <Button
+                  variant="ghost"
+                  onClick={handleCopyAccount}
+                  aria-label={copied ? "계좌번호 복사됨" : "계좌번호 복사"}
+                >
+                  {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                 </Button>
               </div>
             </Field>
@@ -283,8 +287,8 @@ export function QuickSettlementModal({
                     </p>
                   </div>
                 </div>
-                <Button variant="ghost" onClick={handleRemoveFile}>
-                  <X />
+                <Button variant="ghost" onClick={handleRemoveFile} aria-label="첨부 파일 빼기">
+                  <X aria-hidden="true" />
                 </Button>
               </div>
             )}
