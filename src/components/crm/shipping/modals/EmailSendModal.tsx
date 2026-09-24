@@ -249,7 +249,7 @@ export default function EmailSendModal({
             <span className={step === 'ANALYZING' ? 'text-blue-600' : step !== 'IDLE' ? 'text-slate-700' : ''}>분석/추출</span>
             <span className={step === 'CONVERTING' ? 'text-blue-600' : ['CONVERT_DONE','SENDING','SUCCESS'].includes(step) ? 'text-slate-700' : ''}>변환</span>
             <span className={step === 'SENDING' ? 'text-blue-600' : step === 'SUCCESS' ? 'text-slate-700' : ''}>발송</span>
-            <span className={step === 'SUCCESS' ? 'text-green-600' : ''}>완료</span>
+            <span className={step === 'SUCCESS' ? 'text-status-success' : ''}>완료</span>
           </div>
         </div>
         

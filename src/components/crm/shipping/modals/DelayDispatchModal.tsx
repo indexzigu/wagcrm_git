@@ -606,11 +606,11 @@ export default function DelayDispatchModal({
                 <p className="text-xl font-bold tabular-nums">
                   <span className="text-slate-900">성공 {result.successCount.toLocaleString()}건</span>
                   <span className="text-slate-300 mx-2">/</span>
-                  <span className={result.failCount > 0 ? 'text-destructive' : 'text-slate-300'}>
+                  <span className={result.failCount > 0 ? 'text-destructive' : 'text-slate-500'}>
                     실패 {result.failCount.toLocaleString()}건
                   </span>
                   <span className="text-slate-300 mx-2">/</span>
-                  <span className={result.skipCount > 0 ? 'text-slate-500' : 'text-slate-300'}>
+                  <span className={result.skipCount > 0 ? 'text-slate-700' : 'text-slate-500'}>
                     스킵 {result.skipCount.toLocaleString()}건
                   </span>
                 </p>

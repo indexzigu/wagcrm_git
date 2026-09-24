@@ -551,14 +551,14 @@ function SettledCampaignRow({ camp, isLoading, error, onExpand }: {
       >
         <div className="min-w-0 flex-1">
           <div className="font-bold text-sm text-slate-500 truncate">{camp.name}</div>
-          <div className="text-xs text-slate-400 mt-0.5">정산 완료 · {period}</div>
+          <div className="text-xs text-slate-500 mt-0.5">정산 완료 · {period}</div>
         </div>
         <div className="hidden sm:flex items-center gap-5 shrink-0 text-xs text-slate-500">
           {typeof orderCount === 'number' && (
-            <span><span className="text-slate-400">주문</span> <b className="text-slate-600">{orderCount.toLocaleString()}</b></span>
+            <span><span className="text-slate-500">주문</span> <b className="text-slate-600">{orderCount.toLocaleString()}</b></span>
           )}
           {typeof revenue === 'number' && (
-            <span><span className="text-slate-400">매출</span> <b className="text-slate-600">{revenue.toLocaleString()}원</b></span>
+            <span><span className="text-slate-500">매출</span> <b className="text-slate-600">{revenue.toLocaleString()}원</b></span>
           )}
         </div>
         <span className="shrink-0 text-xs text-slate-500 font-medium flex items-center gap-1">
@@ -2279,7 +2279,7 @@ export default function OrderDashboard() {
                                 const count = s.warn && s.info ? (
                                   <span className={`tabular-nums font-bold text-destructive border-b border-dotted border-destructive ${isTrigger ? '' : 'cursor-help'}`} title={s.info.text}>{s.val.toLocaleString()}</span>
                                 ) : (
-                                  <span className={`tabular-nums font-bold ${s.val === 0 ? 'text-slate-300' : 'text-slate-700'}`}>{s.val.toLocaleString()}</span>
+                                  <span className={`tabular-nums font-bold ${s.val === 0 ? 'text-slate-500' : 'text-slate-700'}`}>{s.val.toLocaleString()}</span>
                                 );
                                 return (
                                 <span key={s.key} className="inline-flex items-center gap-1">
@@ -2337,7 +2337,7 @@ export default function OrderDashboard() {
                                     </Popover>
                                   ) : (
                                     <>
-                                      <span className={`font-medium ${s.val === 0 ? 'text-slate-300' : 'text-slate-500'}`}>{s.label}</span>
+                                      <span className="font-medium text-slate-500">{s.label}</span>
                                       {count}
                                     </>
                                   )}
@@ -2375,7 +2375,7 @@ export default function OrderDashboard() {
                   <div className="flex flex-wrap gap-2 items-center w-full" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => handleDownloadExcel(camp.id)} className="flex items-center gap-1.5 text-xs bg-white text-emerald-700 hover:bg-emerald-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-emerald-200 shadow-soft-sm relative overflow-hidden group">
                       <div className="absolute inset-0 bg-emerald-50/50 translate-y-full group-hover:translate-y-0 transition-transform"></div>
-                      <span className="bg-emerald-500 text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span>
+                      <span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span>
                       <span className="relative z-10">주문확인</span>
                     </button>
                     <button onClick={() => openEmailModal(camp.id)} className="flex items-center gap-1.5 text-xs bg-white text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm">
@@ -2406,7 +2406,7 @@ export default function OrderDashboard() {
                           {uploadBusy ? (
                             <><RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin relative z-10" /><span className="relative z-10">등록 중…</span></>
                           ) : (
-                            <><span className="bg-emerald-500 text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span><span className="relative z-10">송장등록</span></>
+                            <><span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span><span className="relative z-10">송장등록</span></>
                           )}
                           <input type="file" accept=".xlsx, .xls" className="hidden" disabled={uploadBusy} onChange={(e) => handleInvoiceUpload(e, camp)} />
                         </label>
