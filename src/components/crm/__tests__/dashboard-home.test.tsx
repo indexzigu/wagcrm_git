@@ -119,7 +119,8 @@ describe("DashboardHome 스파크라인 기간 정합", () => {
 
     // 앞 3개월(0~2)은 맥락 — bold 금지
     for (const i of [0, 1, 2]) {
-      expect(labels[i].className).toContain("text-muted-foreground/60");
+      // 중립 뮤트는 알파 없이 하한 토큰 그대로(T-214 — /60 은 흰 카드 위 2.30:1).
+      expect(labels[i].className).toMatch(/(^|\s)text-muted-foreground(\s|$)/);
       expect(labels[i].className).not.toContain("font-bold");
     }
     // 최근 3개월(3~5)은 표와 대응 — primary bold
