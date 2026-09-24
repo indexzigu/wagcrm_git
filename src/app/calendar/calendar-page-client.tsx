@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { z } from "zod";
@@ -114,6 +114,7 @@ export function CalendarPageClient({
   // 오판한다(interfaces 점검 #9). 재조회 중에도 안내를 유지해야 「다시 불러오기」가 제자리에서
   // 돌다가 성공 시에만 사라진다 — 그래서 조회 시작에서 끄지 않고 결과에서만 바꾼다.
   const [loadError, setLoadError] = useState(false);
+  const latestLoadRequestRef = useRef(0);
   const [syncing, setSyncing] = useState(false);
 
   // 예비 일정 생성 다이얼로그 — 날짜 셀/헤더 어포던스에서 진입, 클릭일 프리필.
@@ -188,21 +189,27 @@ export function CalendarPageClient({
   }
 
   const loadCampaigns = useCallback(async (targetMonth: string) => {
+    // 달을 빠르게 넘기면 옛 달의 응답이 늦게 올 수 있다 — 마지막 요청만 화면에 반영한다
+    // (옛 달의 실패가 지금 달 위에 「불러오지 못했습니다」를 띄우지 않게).
+    const requestId = ++latestLoadRequestRef.current;
+    const isStale = () => requestId !== latestLoadRequestRef.current;
     setLoading(true);
     try {
       const res = await fetch(`/api/campaigns/calendar?month=${targetMonth}`);
       if (!res.ok) throw new Error(`캘린더 데이터를 불러오지 못했습니다 (${res.status})`);
       const data = calendarResponseSchema.parse(await res.json());
+      if (isStale()) return;
       setCampaigns(data.campaigns);
       setLoadError(false);
     } catch (error) {
+      if (isStale()) return;
       // 토스트 대신 달력 위 제자리 안내로 알린다(아래 `DataLoadError`) — 달을 넘길 때마다
       // 실패하면 닫을 때까지 남는 오류 토스트가 쌓인다.
       console.error("[calendar] 캠페인 로드 실패:", error);
       setCampaigns([]);
       setLoadError(true);
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, []);
 

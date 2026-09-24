@@ -22,8 +22,16 @@ import { toast as sonnerToast, type ExternalToast } from "sonner";
 export const ERROR_TOAST_DURATION = Number.POSITIVE_INFINITY;
 
 function persistentError(message: Parameters<typeof sonnerToast.error>[0], data?: ExternalToast) {
-  // 정책이 호출부 값을 이긴다(뒤에 둔다) — 호출부마다 수명을 다시 고르면 이 모듈을 둔 의미가 없다.
-  return sonnerToast.error(message, { ...data, duration: ERROR_TOAST_DURATION });
+  // 같은 문구의 오류는 한 장으로 합친다 — 저절로 사라지지 않으므로, 인라인 저장처럼 되풀이되는
+  // 실패(네트워크가 잠깐 끊긴 채 칸 여러 개를 고칠 때)가 닫아야 할 토스트를 건수만큼 쌓는다.
+  // 호출부가 `id` 를 주면 그 id 가 이긴다(로딩 토스트를 오류로 바꾸는 흐름).
+  const dedupeId = typeof message === "string" ? `error:${message}` : undefined;
+  // 수명은 정책이 호출부 값을 이긴다(뒤에 둔다) — 호출부마다 다시 고르면 이 모듈을 둔 의미가 없다.
+  return sonnerToast.error(message, {
+    id: dedupeId,
+    ...data,
+    duration: ERROR_TOAST_DURATION,
+  });
 }
 
 export const toast: typeof sonnerToast = new Proxy(sonnerToast, {

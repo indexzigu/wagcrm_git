@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircleIcon, SearchIcon } from "lucide-react";
+import { AlertCircleIcon, RefreshCw, SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -165,7 +165,7 @@ export function MobileSettlementView({
               <AlertCircleIcon className="text-status-urgent-text" />
             </EmptyMedia>
             <EmptyTitle>정산 목록을 불러오지 못했습니다.</EmptyTitle>
-            <EmptyDescription>{LOAD_ERROR_HINT}</EmptyDescription>
+            <EmptyDescription className="text-xs">{LOAD_ERROR_HINT}</EmptyDescription>
           </EmptyHeader>
           <Button
             type="button"
@@ -174,6 +174,7 @@ export function MobileSettlementView({
             onClick={() => void onRefresh()}
             disabled={loading}
           >
+            <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : undefined} />
             다시 불러오기
           </Button>
         </Empty>

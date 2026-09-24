@@ -97,6 +97,9 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   // (`filteredCampaigns`) 리포트가 없으면 전부 0건처럼 보인다.
   const [reportError, setReportError] = useState(false);
   const [reportRetrying, setReportRetrying] = useState(false);
+  // 마지막으로 보낸 리포트 요청의 번호 — 늦게 도착한 옛 응답(특히 실패)이 새 결과를 덮지 않게.
+  // 실패 화면은 표 자리를 통째로 대신하므로 옛 실패 하나가 멀쩡한 표를 가린다.
+  const latestReportRequestRef = useRef(0);
   const [taxFilingOpen, setTaxFilingOpen] = useState(false);
   const [taxFilingMonth, setTaxFilingMonth] = useState(previousMonth);
   const [taxPendingCount, setTaxPendingCount] = useState<number | null>(null);
@@ -189,6 +192,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
 
   /** 성공 여부를 돌려준다 — 새로고침 버튼이 실패한 조회에 「갱신되었습니다」를 띄우지 않게. */
   const refreshReport = useCallback(async (): Promise<boolean> => {
+    const requestId = ++latestReportRequestRef.current;
+    const isStale = () => requestId !== latestReportRequestRef.current;
     try {
       const params = new URLSearchParams();
       if (viewType === "year") {
@@ -204,10 +209,13 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
       }
 
       const nextReport = (await response.json()) as SettlementReportData;
+      // 더 새 요청이 나가 있으면 그 요청이 화면을 정한다 — 이 응답은 버린다.
+      if (isStale()) return false;
       setReportData(nextReport);
       setReportError(false);
       return true;
     } catch (err: unknown) {
+      if (isStale()) return false;
       // 토스트 대신 표 자리에 제자리 복구(「다시 불러오기」)를 그린다 — 캠페인 저장마다
       // 재조회하므로 토스트로 알리면 닫을 때까지 남는 오류 토스트가 저장 횟수만큼 쌓인다.
       console.error("[settlement] 정산 리포트 조회 실패:", err);

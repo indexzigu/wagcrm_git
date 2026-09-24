@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CampaignRow, DashboardData } from "@/lib/crm-types";
 
@@ -52,6 +52,9 @@ beforeEach(() => {
         reportRequestCount += 1;
         return replyToReport();
       }
+      if (String(input).startsWith("/api/campaigns")) {
+        return { ok: true, json: async () => ({ campaigns: INITIAL_DATA.campaigns }) };
+      }
       return { ok: true, json: async () => ({}) };
     }),
   );
@@ -88,6 +91,29 @@ describe("정산 페이지 — 조회 실패는 빈 목록이 아니다", () => 
     await waitFor(() => expect(screen.getByText(EMPTY_TEXT)).toBeTruthy());
     expect(reportRequestCount).toBe(before + 1);
     expect(screen.queryByText(ERROR_TEXT)).toBeNull();
+  });
+
+  it("늦게 도착한 옛 요청의 실패는 새 결과를 덮지 않는다(마지막 요청만 반영)", async () => {
+    let failFirst: (() => void) | null = null;
+    replyToReport = () =>
+      new Promise((resolve) => {
+        failFirst = () => resolve({ ok: false, status: 500, json: async () => ({}) });
+      });
+    render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
+    await waitFor(() => expect(reportRequestCount).toBe(1));
+
+    // 첫 요청이 아직 매달린 사이 새로고침 — 두 번째 요청은 곧바로 성공한다.
+    replyToReport = async () => ({ ok: true, json: async () => REPORT });
+    fireEvent.click(screen.getByRole("button", { name: "새로고침" }));
+    await waitFor(() => expect(screen.getByText(EMPTY_TEXT)).toBeTruthy());
+
+    // 이제 첫 요청이 실패로 늦게 도착한다.
+    await act(async () => {
+      failFirst!();
+    });
+
+    expect(screen.queryByText(ERROR_TEXT)).toBeNull();
+    expect(screen.getByText(EMPTY_TEXT)).toBeTruthy();
   });
 
   it("첫 리포트가 오기 전에는 로딩으로 그린다 — 「없습니다」가 먼저 번쩍이지 않는다", async () => {

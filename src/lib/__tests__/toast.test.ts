@@ -30,13 +30,23 @@ describe("toast.error — 닫을 때까지 유지", () => {
   it("수명을 무한으로 넘긴다", () => {
     toast.error("저장하지 못했습니다.");
     expect(sonner.toast.error).toHaveBeenCalledWith("저장하지 못했습니다.", {
+      id: "error:저장하지 못했습니다.",
       duration: Number.POSITIVE_INFINITY,
     });
     expect(ERROR_TOAST_DURATION).toBe(Number.POSITIVE_INFINITY);
   });
 
+  it("같은 문구의 오류는 같은 id 로 보내 한 장으로 합친다 — 닫아야 할 토스트가 쌓이지 않게", () => {
+    toast.error("저장하지 못했습니다.");
+    toast.error("저장하지 못했습니다.");
+    toast.error("다른 오류");
+    const ids = vi.mocked(sonner.toast.error).mock.calls.map(([, data]) => (data as { id?: string }).id);
+    expect(ids).toEqual(["error:저장하지 못했습니다.", "error:저장하지 못했습니다.", "error:다른 오류"]);
+  });
+
   it("호출부가 수명을 줘도 정책이 이긴다 — 다른 옵션은 그대로 통과한다", () => {
     toast.error("충돌", { duration: 3000, description: "다시 시도하세요.", id: "t1" });
+    // 호출부가 준 id(로딩 토스트 교체 등)는 합치기용 id 보다 우선한다.
     expect(sonner.toast.error).toHaveBeenCalledWith("충돌", {
       duration: Number.POSITIVE_INFINITY,
       description: "다시 시도하세요.",
@@ -78,6 +88,7 @@ describe("notify — 종류 문자열 어댑터(주문 변환 모달 계약)", (
     notify("확인 중");
 
     expect(sonner.toast.error).toHaveBeenCalledWith("발송 실패", {
+      id: "error:발송 실패",
       duration: Number.POSITIVE_INFINITY,
     });
     expect(sonner.toast.success).toHaveBeenCalledWith("발송 완료");
