@@ -31,7 +31,7 @@ import {
   LIST_REFRESH_FAILED_MESSAGE,
   refreshCampaignRows,
 } from "@/lib/campaign-row-refresh";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useStageFilter, type StageFilter } from "@/hooks/use-stage-filter";
 import { useCampaignDeepLink } from "@/hooks/use-campaign-deep-link";
 import { CampaignCreationSheet } from "./campaign-creation-sheet";
@@ -624,7 +624,6 @@ export function CrmDashboard({
                     handleStatusChange(campaignId, status).catch((err: unknown) => {
                       toast.error(
                         err instanceof Error && err.message ? err.message : STATUS_CHANGE_ERROR,
-                        { duration: 5000 },
                       );
                     });
                   }}

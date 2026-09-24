@@ -161,3 +161,41 @@ describe("PriceSheetList — 거래처 선택 검색화 (UX1-D)", () => {
     });
   });
 });
+
+/**
+ * 종전에는 상태코드를 보지 않아 오류 응답의 `priceSheets` 부재가 `[]` 로 떨어졌다 — 조회가
+ * 실패해도 「업로드된 가격표가 없습니다」가 떠서 올린 가격표가 사라진 것으로 읽혔다
+ * (interfaces 점검 #9, 2026-09-24).
+ */
+describe("PriceSheetList — 목록 조회 실패는 빈 목록이 아니다", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("조회가 실패하면 복구 안내를 보이고, 「다시 불러오기」가 성공하면 진짜 빈 목록을 보인다", async () => {
+    let listCalls = 0;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url === "/api/price-sheets") {
+        listCalls += 1;
+        return Promise.resolve(
+          listCalls === 1
+            ? { ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) }
+            : { ok: true, json: () => Promise.resolve({ priceSheets: [] }) },
+        );
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ partners: [] }) });
+    });
+    const user = userEvent.setup();
+    render(<PriceSheetList />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("가격표 목록을 불러오지 못했습니다.");
+    expect(screen.queryByText("업로드된 가격표가 없습니다.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "다시 불러오기" }));
+
+    expect(await screen.findByText("업로드된 가격표가 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(listCalls).toBe(2);
+  });
+});

@@ -123,7 +123,7 @@ describe("DealSellerCandidates", () => {
     await waitFor(() => expect(screen.getByText("별칭")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "기안" }));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("후보가 아닙니다"));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("후보가 아닙니다", expect.objectContaining({ duration: Infinity })));
     expect(screen.getByRole("button", { name: "기안" })).toBeInTheDocument();
     expect(screen.queryByText(/기안됨/)).not.toBeInTheDocument();
   });

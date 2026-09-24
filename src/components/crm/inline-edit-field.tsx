@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronsUpDown, CircleHelp, Pencil } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,
@@ -32,7 +32,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { withMutationFeedback } from "@/lib/use-mutation-feedback";
+import { DEFAULT_MUTATION_ERROR, withMutationFeedback } from "@/lib/use-mutation-feedback";
 import { filterBySearchText } from "@/lib/search-filter";
 
 // ---------------------------------------------------------------------------
@@ -184,7 +184,13 @@ export function InlineEditField({
       const saveValue = fieldType === "number" ? Number(newValue) : newValue;
       const promise = onSave(saveValue);
 
-      withMutationFeedback(promise, undefined, "저장 실패").catch(() => {});
+      // 실패하면 아래에서 낙관값을 걷어 이전 값으로 되돌린다 — 그 사실과 할 일을 함께 알린다.
+      withMutationFeedback(
+        promise,
+        undefined,
+        DEFAULT_MUTATION_ERROR,
+        "이전 값으로 되돌렸습니다. 다시 입력해 주세요.",
+      ).catch(() => {});
 
       try {
         await promise;

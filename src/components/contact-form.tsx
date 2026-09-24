@@ -18,7 +18,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { SendIcon } from "lucide-react"
 
 /**

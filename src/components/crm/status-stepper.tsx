@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import {
   AlertDialog,
@@ -139,9 +139,9 @@ export function StatusStepper({
       );
 
       if (!result.ok) {
-        // 기존 단문("상태 변경에 실패했습니다.")은 3초로 충분하지만, 그룹 충돌 안내는
-        // 원인 + 재시도 2절이라 같은 문형의 보드 토스트와 같은 5초를 준다.
-        toast.error(result.error, { duration: result.conflict ? 5000 : 3000 });
+        // 수명은 호출부가 정하지 않는다 — 오류 토스트는 `@/lib/toast` 가 닫을 때까지 유지한다
+        // (종전 3초/5초 분기는 그룹 충돌 안내가 읽기 전에 사라지던 문제의 임시 처방이었다).
+        toast.error(result.error);
         return;
       }
 

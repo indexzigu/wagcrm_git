@@ -267,7 +267,7 @@ describe("ReferenceInboxClient — 기각/실행 취소", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "기각" })[0]);
 
     await waitFor(() => {
-      expect(mockToast.error).toHaveBeenCalledWith("서버 오류");
+      expect(mockToast.error).toHaveBeenCalledWith("서버 오류", expect.objectContaining({ duration: Infinity }));
     });
     expect(screen.getByText("애엥의 기록")).toBeInTheDocument();
   });

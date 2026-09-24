@@ -2,7 +2,15 @@
 
 import { AlertCircleIcon, SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import {
+  DataLoadError,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import type { CampaignRow } from "@/lib/crm-types";
 import type { SettlementReportData } from "@/lib/settlement-report";
@@ -25,6 +33,17 @@ type MobileSettlementViewProps = {
   onOpenCampaign: (campaign: CampaignRow) => void;
   onRefresh: () => Promise<void>;
   loading: boolean;
+  /**
+   * 정산 리포트 조회가 실패했다. 목록은 리포트로 걸러지므로 실패하면 전부 0건이 되는데,
+   * 그걸 「정산 항목이 없습니다」로 그리면 운영자가 이번 달이 비었다고 오판한다.
+   */
+  loadError?: boolean;
+  /**
+   * 실패 안내의 「다시 불러오기」 — 리포트만 다시 조회한다. `onRefresh` 로 대신하지 말 것:
+   * 그 경로는 캠페인 목록을 먼저 받아서, 그 조회가 실패하면 리포트 재조회까지 못 간다.
+   */
+  onRetryLoad: () => void;
+  retryingLoad?: boolean;
 };
 
 export function MobileSettlementView({
@@ -38,6 +57,9 @@ export function MobileSettlementView({
   onOpenCampaign,
   onRefresh,
   loading,
+  loadError = false,
+  onRetryLoad,
+  retryingLoad = false,
 }: MobileSettlementViewProps) {
   // 섹션 분류는 **채널 슬롯**이 정한다(`resolveCampaignMoneySlots`).
   // ⛔ `!입금` / `입금 && !지급` 으로 되돌리지 말 것 — 자사몰은 입금 칸이 없어 그 식이면
@@ -144,7 +166,22 @@ export function MobileSettlementView({
         </Button>
       </div>
 
-      {sections.length > 0 ? (
+      {loadError ? (
+        <DataLoadError
+          title="정산 목록을 불러오지 못했습니다."
+          onRetry={onRetryLoad}
+          retrying={retryingLoad}
+          touch
+          className="rounded-2xl border-border/70 bg-background"
+        />
+      ) : loading && sections.length === 0 ? (
+        <div role="status" aria-busy="true" className="flex flex-col gap-3">
+          <span className="sr-only">불러오는 중</span>
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Skeleton key={index} aria-hidden="true" className="h-24 w-full rounded-2xl" />
+          ))}
+        </div>
+      ) : sections.length > 0 ? (
         <div className="flex flex-col gap-5">
           {sections.map((section) => (
             <section key={section.key} className="mobile-briefing-section flex flex-col gap-3">

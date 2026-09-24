@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

@@ -3,7 +3,7 @@
 // 그 인라인 fetch/state는 이미 useQuery(queryKeys.outreach())로 전환됐다.
 // 이 파일은 참고용으로만 남겨두고, 다음 정리 라운드(B3)에서 삭제 검토할 것.
 import { useState, useEffect, useCallback } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 import type { OutreachRow } from "@/components/crm/outreach-list";
 import type { OutreachStatus } from "@/lib/validations/outreach";

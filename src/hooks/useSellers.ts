@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SellerSummary } from "@/lib/crm-types";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 import { queryKeys } from "@/lib/query-keys";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export type SellerRow = SellerSummary;
 

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, Equal, ExternalLink, Loader2, RefreshCw, Sparkles, UserCheck } from "lucide-react";
 import { CommentIntent, CommentIntentEmpty, readCommentAnalysis } from "./CommentIntent";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ScoreCard } from "./ScoreCard";
 import { CategoryProfile } from "./CategoryProfile";
 import { deriveSellerAiView, type SellerAiView } from "@/lib/seller-analysis/adapter";

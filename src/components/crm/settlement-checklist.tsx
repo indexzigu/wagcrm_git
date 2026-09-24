@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Loader2, CheckCircle } from "lucide-react";
 import type { CampaignRow } from "@/lib/crm-types";
 

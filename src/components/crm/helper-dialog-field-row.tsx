@@ -15,7 +15,7 @@
  * 채워도 된다"로 오인되어 신고가 누락된 채 접수되고, 홈택스는 그 상태로 반려한다.
  */
 import { Copy } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 
 export function FieldRow({

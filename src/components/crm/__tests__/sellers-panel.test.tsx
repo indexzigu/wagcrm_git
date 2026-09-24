@@ -405,7 +405,7 @@ describe("SellersPanel", () => {
 
       // InlineEditField catches the thrown error and shows error toast
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("저장 실패");
+        expect(mockToast.error).toHaveBeenCalledWith("저장 실패", expect.objectContaining({ duration: Infinity, description: "이전 값으로 되돌렸습니다. 다시 입력해 주세요." }));
       });
     });
   });

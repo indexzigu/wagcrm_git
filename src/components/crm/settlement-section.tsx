@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useMemo, useEffect, useRef } from "react";
 import { CalendarDays, X, ExternalLink } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { patchCampaign } from "@/lib/campaign-patch";
 import { InlineDateField } from "./inline-date-field";

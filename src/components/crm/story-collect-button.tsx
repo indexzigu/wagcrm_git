@@ -5,7 +5,7 @@
 // 브라우저를 띄우므로 1~2분 걸릴 수 있어 진행 상태를 표시한다.
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Loader2, RefreshCw } from "lucide-react";
 
 export function StoryCollectButton() {

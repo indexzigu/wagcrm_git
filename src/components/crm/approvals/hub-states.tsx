@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { DataLoadError } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
@@ -67,15 +68,9 @@ export function TableSkeleton({ rows = 5 }: { rows?: number }) {
   );
 }
 
+/** 앱 공용 조회 실패 부품(`DataLoadError`)의 결재함 제목판 — 사본을 따로 두지 않는다. */
 export function LoadErrorState({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div role="alert" className="flex flex-col items-start gap-2 py-6">
-      <p className="text-sm text-muted-foreground">{LOAD_ERROR_MESSAGE}</p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        다시 불러오기
-      </Button>
-    </div>
-  );
+  return <DataLoadError title={LOAD_ERROR_MESSAGE} onRetry={onRetry} bordered={false} />;
 }
 
 export function EmptyState({ message }: { message: string }) {

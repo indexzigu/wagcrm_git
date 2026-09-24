@@ -5,7 +5,7 @@ import { Loader2, ExternalLink, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { validateChannelUrl } from "@/lib/validations/partner-seller";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { parseChannelUrl } from "@/lib/channel-url";
 import {
   Tooltip,

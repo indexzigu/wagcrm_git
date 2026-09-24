@@ -6,7 +6,7 @@ import type { DealProfitabilityRow } from "@/components/crm/deal-profitability-t
 import type { DealStatus } from "@/lib/crm-types";
 import { parseBaseMarginPolicy } from "@/lib/base-margin-policy";
 import { queryKeys } from "@/lib/query-keys";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 function getSellerCount(candidateSellers: string | null | undefined): number {
   if (!candidateSellers) return 0;

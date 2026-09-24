@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ChevronDown, ChevronRight, LayoutGrid, Table2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -252,7 +252,6 @@ export function ZonedPipelineBoard({
         // 안내 포함) — 여기서 문구를 덮으면 재시도 안내가 다시 사라진다.
         toast.error(
           err instanceof Error && err.message ? err.message : "상태 변경에 실패했습니다. 다시 시도해주세요.",
-          { duration: 5000 },
         );
       }
     },

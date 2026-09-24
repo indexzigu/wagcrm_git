@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link2, Loader2, Trash2, Archive, ExternalLink, FileText, Upload, Building2, Plus, X, Eye, EyeOff } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { DataEmpty } from "@/components/ui/empty";
 

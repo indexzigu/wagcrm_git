@@ -1,7 +1,7 @@
 "use client";
 
 import { Boxes } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { CampaignRow } from "@/lib/crm-types";
 import {
   dismissSuggestion,

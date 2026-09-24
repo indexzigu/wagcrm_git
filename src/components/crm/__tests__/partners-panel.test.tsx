@@ -326,7 +326,7 @@ describe("PartnersPanel", () => {
       fireEvent.blur(input);
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("저장 실패");
+        expect(mockToast.error).toHaveBeenCalledWith("저장 실패", expect.objectContaining({ duration: Infinity, description: "이전 값으로 되돌렸습니다. 다시 입력해 주세요." }));
       });
 
       // Should revert to original value

@@ -35,7 +35,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Copy, Eye, EyeOff } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { WithholdingReport } from "@/lib/withholding-report";
 import { maskResidentNumber, simplifiedStatementDueDate, withholdingDueDate } from "@/lib/withholding-report";
 import {

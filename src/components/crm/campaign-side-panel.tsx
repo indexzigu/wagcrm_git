@@ -54,7 +54,7 @@ import {
   PROFIT_TONE_TEXT,
   PROFIT_TONE_TEXT_DENSE,
 } from "@/lib/profit-tone";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { previewText } from "./confirm-action-dialog";
 import { AssetManager } from "./asset-manager";

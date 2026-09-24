@@ -50,7 +50,7 @@ import { QuickSettlementModal } from "./quick-settlement-modal";
 import { useState, useEffect, useId } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { badgeSizeClassName } from "@/components/ui/badge";
 

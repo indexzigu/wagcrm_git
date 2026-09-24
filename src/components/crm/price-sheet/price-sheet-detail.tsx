@@ -18,7 +18,7 @@ import { ApplyResultCard } from "./apply-result-card";
 import type { ApplySummary } from "@/lib/price-sheet/apply-summary";
 import { ApplyDiffModal } from "./apply-diff-modal";
 import { BundlePolicyControl } from "./bundle-policy-control";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   computeDealGroups,
   matchPartnerByBrand,
