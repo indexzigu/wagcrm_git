@@ -143,7 +143,7 @@ export default function ProductSelectModal({
                       
                       <div className="flex justify-between items-center gap-3">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold whitespace-nowrap border border-slate-200">카테고리</span>
+                          <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold whitespace-nowrap border border-slate-200">카테고리</span>
                           <span className="text-[11px] text-slate-500 truncate leading-none">{categoryName}</span>
                         </div>
                         {getProductStatusBadge(status)}

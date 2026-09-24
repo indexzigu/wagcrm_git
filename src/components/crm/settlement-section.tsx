@@ -865,7 +865,7 @@ function InvoiceSlotBox({
           ) : (
             // ⛔ 값이 있으면 칸을 숨기지 않는다 — 기록이 화면에서 사라지면 오너가 해제할
             //    경로도 없어진다. 프로덕션에 그런 레거시 행이 실재한다.
-            <span className="mt-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+            <span className="mt-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
               {slot.inapplicableReason}
             </span>
           )}
@@ -1012,7 +1012,7 @@ function WithholdingSlotBox({
             </a>
           )}
           {statusNote && (
-            <span className="mt-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+            <span className="mt-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
               {statusNote}
             </span>
           )}

@@ -461,7 +461,7 @@ export function CampaignCreationForm({
                               parts={getDealIdentityParts(deal)}
                               className="min-w-0 flex-1 overflow-hidden"
                             />
-                            <span className="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                            <span className="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-slate-600">
                               {dealStatusLabels[deal.status as DealStatus] ?? deal.status}
                             </span>
                           </div>

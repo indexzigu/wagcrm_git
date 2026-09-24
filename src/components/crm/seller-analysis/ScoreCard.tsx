@@ -40,7 +40,7 @@ function barColor(score: number): string {
  * `slate-500` 은 이 카드의 `bg-slate-50` 위 4.55:1 — AA 턱걸이라 **더 흐리게 내리지 말 것**.
  * 강등은 명도가 아니라 채도 0이 만든다(slate-300 은 1.48:1 로 비텍스트 3:1 도 미달).
  */
-const CONFIDENCE_BADGE_CLASS = 'bg-slate-100 text-slate-500 border-slate-200';
+const CONFIDENCE_BADGE_CLASS = 'bg-slate-100 text-slate-600 border-slate-200';
 
 /**
  * composite와 적합성 경계(reviewMapping SSOT) 사이의 "거리"를 한 줄로 설명한다.

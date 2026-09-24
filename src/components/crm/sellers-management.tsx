@@ -112,7 +112,7 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
                     </span>
                   )}
                   {row.alias && (
-                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-normal shrink-0 truncate max-w-[80px]">
+                    <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-normal shrink-0 truncate max-w-[80px]">
                       {row.name}
                     </span>
                   )}
@@ -262,7 +262,7 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
               "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0",
               verdict.tier === "DORMANT"
                 ? "bg-status-caution-bg text-status-caution"
-                : "border border-slate-200 bg-slate-100 text-slate-500",
+                : "border border-slate-200 bg-slate-100 text-slate-600",
             )}
             title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과 (휴면 ${DORMANT_DAYS}일 · 제외 ${EXCLUDE_DAYS}일 기준)`}
           >
@@ -303,7 +303,7 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
         추천: "bg-status-success-bg text-status-success",
         보류: "bg-status-caution-bg text-status-caution",
         비추천: "bg-status-urgent-bg text-status-urgent-text",
-        미진행: "border border-slate-200 bg-slate-100 text-slate-500",
+        미진행: "border border-slate-200 bg-slate-100 text-slate-600",
       };
 
       return (

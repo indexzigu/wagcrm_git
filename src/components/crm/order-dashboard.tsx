@@ -2105,7 +2105,7 @@ export default function OrderDashboard() {
                               }}
                               aria-expanded={expanded}
                               title={expanded ? '주의 표시 접기' : `다른 주의 표시: ${hidden.map(labelFor).join(' · ')}`}
-                              className={`rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`}
+                              className={`rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-200/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`}
                             >
                               {expanded ? '접기' : `+${hidden.length}`}
                             </button>
@@ -2116,7 +2116,7 @@ export default function OrderDashboard() {
                     {/* 마감취소됐지만 라이브 집계가 비어(조회창 만료) 마감 시점 스냅샷으로 표시 중 — 활성 카드지만
                         수치가 라이브가 아님을 알리는 평문 신호(카드 흐림 없이 메타 톤 유지). */}
                     {camp.isFrozenFallback && (
-                      <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 whitespace-nowrap">
+                      <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 whitespace-nowrap">
                         마감 시점 스냅샷
                       </span>
                     )}

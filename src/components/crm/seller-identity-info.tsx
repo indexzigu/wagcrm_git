@@ -92,7 +92,7 @@ export function SellerIdentityInfo({
     추천: "text-emerald-700 border-emerald-200 bg-emerald-50",
     보류: "text-amber-700 border-amber-200 bg-amber-50",
     비추천: "text-rose-700 border-rose-200 bg-rose-50",
-    미진행: "text-slate-500 border-slate-200 bg-slate-100",
+    미진행: "text-slate-600 border-slate-200 bg-slate-100",
   };
 
   const nameSize = isHeading ? "text-sm font-semibold" : isCompact ? "text-[11px] font-semibold" : "text-sm font-medium";
@@ -123,7 +123,7 @@ export function SellerIdentityInfo({
             variant="outline"
             className={cn(
               "rounded-md font-medium whitespace-nowrap",
-              badgeColors[fitLevel] || "text-slate-500 border-slate-200 bg-slate-100",
+              badgeColors[fitLevel] || "text-slate-600 border-slate-200 bg-slate-100",
               isCompact ? "h-4 px-1.5 text-[9px]" : "h-5 px-2 text-[10px]"
             )}
           >

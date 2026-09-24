@@ -458,7 +458,7 @@ export default function DelayDispatchModal({
                               <span className="text-[11px] text-slate-500 tabular-nums">{row.quantity}개</span>
                               {row.alreadyDelayed && (
                                 <span
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium"
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium"
                                   title="이미 발송지연 안내가 등록된 주문: 다시 등록하면 고객이 알림을 또 받습니다"
                                 >
                                   안내됨 · {fmtMd(row.shippingDueDate)} 예정

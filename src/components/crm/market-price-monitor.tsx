@@ -416,7 +416,7 @@ export function MarketPriceMonitor({
                                 className={`border-b last:border-0 ${isDanger ? 'bg-rose-50' : isExcluded ? 'bg-slate-50/70 opacity-60' : 'hover:bg-slate-50'}`}
                               >
                                 <td className="px-2 py-2.5">
-                                  <Badge variant="secondary" className="bg-slate-100 text-slate-500 font-normal shadow-none px-1.5 py-0 text-[10px] uppercase">
+                                  <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-normal shadow-none px-1.5 py-0 text-[10px] uppercase">
                                     {fetchedItem.channel}
                                   </Badge>
                                 </td>

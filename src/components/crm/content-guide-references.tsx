@@ -98,7 +98,7 @@ export function ContentGuideReferences({
               ) : (
                 // 썸네일 수집 전이거나 실패한 건 — 자리를 비우지 않는다. 목록에서
                 // 빠지면 "모델이 안 썼다"로 오해된다(실제로는 캡션으로 쓰였다).
-                <span className="flex size-full items-center justify-center rounded-md bg-slate-100 px-1 text-center text-[9px] leading-tight text-slate-500">
+                <span className="flex size-full items-center justify-center rounded-md bg-slate-100 px-1 text-center text-[9px] leading-tight text-slate-600">
                   {ref.name}
                 </span>
               )}

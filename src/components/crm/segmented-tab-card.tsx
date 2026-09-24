@@ -19,7 +19,7 @@ const TONE_BADGE: Record<TabCountTone, string> = {
   urgent: "bg-status-urgent-bg text-status-urgent-text",
   success: "bg-status-success-bg text-status-success",
   info: "bg-status-info/10 text-status-info",
-  neutral: "bg-slate-100 text-slate-500",
+  neutral: "bg-slate-100 text-slate-600",
 };
 
 export interface TabMeta {
