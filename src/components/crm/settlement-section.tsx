@@ -848,16 +848,19 @@ function InvoiceSlotBox({
           {slot.applicable ? (
             <label
               className={cn(
-                "flex items-center gap-1 cursor-pointer rounded-md bg-white border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-soft-sm",
+                "flex items-center gap-1 cursor-pointer rounded-md bg-white border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-soft-sm focus-within:ring-2 focus-within:ring-focus-ring",
                 isUploading && "opacity-50 cursor-wait",
               )}
             >
               {/* 아이콘 없이 문구만 둔다(오너 지시 2026-08-15) — 진행 상태도 문구로 말한다. */}
               {isUploading ? "첨부 중" : "첨부"}
+              {/* sr-only(≠ hidden): display:none 이면 탭 순서에서 빠져 키보드로 증빙을 못 붙인다.
+                  눈에는 안 보이되 포커스는 받고, 라벨의 focus-within 링이 위치를 보여 준다
+                  (interfaces 점검 묶음 G2). */}
               <input
                 type="file"
                 accept="image/*,.pdf"
-                className="hidden"
+                className="sr-only"
                 onChange={(e) => onUpload(e, uploadType)}
                 disabled={isUploading}
               />
@@ -1129,7 +1132,7 @@ function DateField({
             type="button"
             onClick={handleClear}
             disabled={isSaving}
-            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-slate-100 hover:text-foreground group-hover/field:opacity-100 disabled:cursor-not-allowed"
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-slate-100 hover:text-foreground group-hover/field:opacity-100 group-focus-within/field:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-not-allowed"
             aria-label={`${ariaLabel ?? label} 삭제`}
           >
             <X className="size-3" />

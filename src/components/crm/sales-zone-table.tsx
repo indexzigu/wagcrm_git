@@ -222,11 +222,19 @@ export function SalesZoneTable({
                   className="border-b border-slate-200/80 bg-white/60 transition-colors duration-150 hover:bg-white cursor-pointer"
                   onClick={() => onRowOpen(campaign)}
                 >
-                  {/* 셀러명 */}
+                  {/* 셀러명 — 행 클릭은 포인터 편의이고, 키보드 도달은 이 칸의 실제 button 이 진다
+                      (interfaces 점검 묶음 G2). stopPropagation — 행 onClick 과 이중 호출 방지. */}
                   <TableCell className="h-11 px-3">
-                    <span className="block truncate text-foreground">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRowOpen(campaign);
+                      }}
+                      className="block w-full truncate rounded-sm text-left text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                    >
                       {campaign.sellerName}
-                    </span>
+                    </button>
                   </TableCell>
 
                   {/* 딜명 */}

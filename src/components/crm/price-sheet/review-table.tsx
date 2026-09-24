@@ -66,6 +66,38 @@ type NumericFieldKey =
   | "commissionRate"
   | "discountRate";
 
+/**
+ * 표시 상태의 편집 가능 칸. 칸(td) 클릭은 포인터 편의(넓은 누를 영역)이고, 키보드 도달은
+ * 이 button 이 진다 — td 에만 onClick 이 있을 때는 탭 순서에 없어 키보드로 고칠 수 없었다
+ * (interfaces 점검 묶음 G2). stopPropagation 은 td onClick 과의 이중 호출 방지.
+ * 접근 이름은 「필드명 편집: 값」 — 값만 읽히면 어느 열인지 모른다(보이는 값은 이름에 포함).
+ */
+function EditableCellTrigger({
+  fieldLabel,
+  onEdit,
+  align = "left",
+  children,
+}: {
+  fieldLabel: string;
+  onEdit: () => void;
+  align?: "left" | "right";
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onEdit();
+      }}
+      className={`w-full cursor-text rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${align === "right" ? "text-right" : "text-left"}`}
+    >
+      <span className="sr-only">{fieldLabel} 편집: </span>
+      {children}
+    </button>
+  );
+}
+
 const NUMERIC_FIELD_LABELS: Array<{ key: NumericFieldKey; label: string }> = [
   { key: "sellingPrice", label: "판매가" },
   { key: "supplyPrice", label: "공급가" },
@@ -287,7 +319,12 @@ export function ReviewTable({
                           }}
                         />
                       ) : (
-                        <span>{row.productName ?? <span className="text-muted-foreground">-</span>}</span>
+                        <EditableCellTrigger
+                          fieldLabel="제품명"
+                          onEdit={() => setEditingCell({ rowId: row.id, field: "productName" })}
+                        >
+                          {row.productName ?? <span className="text-muted-foreground">-</span>}
+                        </EditableCellTrigger>
                       )}
                     </TableCell>
                     <TableCell
@@ -304,7 +341,12 @@ export function ReviewTable({
                           }}
                         />
                       ) : (
-                        <span>{row.optionName ?? <span className="text-muted-foreground">-</span>}</span>
+                        <EditableCellTrigger
+                          fieldLabel="옵션"
+                          onEdit={() => setEditingCell({ rowId: row.id, field: "optionName" })}
+                        >
+                          {row.optionName ?? <span className="text-muted-foreground">-</span>}
+                        </EditableCellTrigger>
                       )}
                     </TableCell>
                     {NUMERIC_FIELD_LABELS.map((f) => (
@@ -333,7 +375,11 @@ export function ReviewTable({
                             }}
                           />
                         ) : (
-                          <span>
+                          <EditableCellTrigger
+                            fieldLabel={f.label}
+                            align="right"
+                            onEdit={() => setEditingCell({ rowId: row.id, field: f.key })}
+                          >
                             {toDisplayNumber(row[f.key], f.key) ? (
                               <>
                                 {toDisplayNumber(row[f.key], f.key)}
@@ -342,7 +388,7 @@ export function ReviewTable({
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
-                          </span>
+                          </EditableCellTrigger>
                         )}
                       </TableCell>
                     ))}

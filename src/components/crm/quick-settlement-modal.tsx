@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, Copy, Check, Banknote, ShieldAlert, UploadCloud, FileText, X } from "lucide-react";
+import { Loader2, Copy, Check, Banknote, ShieldAlert, UploadCloud, FileText, X, Paperclip } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 import { Button } from "@/components/ui/button";
@@ -275,6 +275,22 @@ export function QuickSettlementModal({
                 <p className="text-sm font-medium text-foreground">
                   클릭하거나 파일을 여기로 드래그하세요
                 </p>
+                {/* 드롭존 클릭·드래그는 포인터 경로다 — 키보드로는 이 버튼이 유일한 첨부 경로다
+                    (interfaces 점검 묶음 G2). stopPropagation — 드롭존 onClick 이 파일 창을 한 번
+                    더 부르지 않게. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <Paperclip aria-hidden />
+                  파일 선택
+                </Button>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">

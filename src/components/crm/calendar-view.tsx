@@ -570,10 +570,13 @@ export function CalendarView({
                     const conflictNames = conflicts.get(entity.key) ?? [];
                     const hasConflict = conflictNames.length > 0;
 
+                    // 바는 팝오버 트리거다 — div 였을 때는 포인터로만 열렸다(탭 순서에 없음).
+                    // 실제 button 이라 Tab 으로 도달하고 Enter/Space 로 열린다(interfaces 점검 묶음 G2).
                     const bar = (
-                      <div
+                      <button
+                        type="button"
                         className={cn(
-                          "pointer-events-auto absolute flex cursor-pointer items-center gap-1 overflow-hidden rounded-md px-1.5 text-[11px] font-medium shadow-soft-sm transition-[filter,box-shadow] duration-150 hover:brightness-105 hover:shadow-soft-md",
+                          "pointer-events-auto absolute flex cursor-pointer items-center gap-1 overflow-hidden rounded-md px-1.5 text-left text-[11px] font-medium shadow-soft-sm transition-[filter,box-shadow] duration-150 hover:brightness-105 hover:shadow-soft-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1",
                           statusBarClassName[entity.status],
                           segment.continuesLeft && "rounded-l-none",
                           segment.continuesRight && "rounded-r-none",
@@ -602,7 +605,7 @@ export function CalendarView({
                           </span>
                         )}
                         <span className="truncate">{entity.label}</span>
-                      </div>
+                      </button>
                     );
 
                     const trigger = hasConflict ? (
