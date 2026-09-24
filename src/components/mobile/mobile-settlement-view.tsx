@@ -47,6 +47,7 @@ type MobileSettlementViewProps = {
 };
 
 export function MobileSettlementView({
+  reportData,
   campaigns,
   selectedMonth,
   viewType,
@@ -100,6 +101,11 @@ export function MobileSettlementView({
     )
     .reduce((sum, { campaign }) => sum + (campaign.sellerExpense || 0), 0);
 
+  // 목록은 리포트로 걸러진다(`filteredCampaigns`) — 리포트가 없으면(대기·실패) 합계를 모른다.
+  // 모르는 값을 ₩0 으로 말하면 「이번 달은 받을 돈이 없다」로 읽힌다(데스크톱 요약 줄과 같은 규칙).
+  const formatPendingAmount = (amount: number) =>
+    reportData === null ? "-" : `₩${formatCurrency(amount)}`;
+
   const sections = [
     {
       key: "deposit",
@@ -128,12 +134,12 @@ export function MobileSettlementView({
         <div className="mt-2 flex items-center gap-3 text-xs font-medium text-muted-foreground">
           <span className="flex items-center gap-1">
             <MONEY_DIRECTION_ICON.in aria-hidden="true" className={`size-3.5 ${MONEY_DIRECTION_TEXT.in}`} />
-            입금 대기 <span className="tabular-nums">₩{formatCurrency(pendingDepositAmount)}</span>
+            입금 대기 <span className="tabular-nums">{formatPendingAmount(pendingDepositAmount)}</span>
           </span>
           <span aria-hidden="true" className="text-muted-foreground/60">·</span>
           <span className="flex items-center gap-1">
             <MONEY_DIRECTION_ICON.out aria-hidden="true" className={`size-3.5 ${MONEY_DIRECTION_TEXT.out}`} />
-            지급 대기 <span className="tabular-nums">₩{formatCurrency(pendingPayoutAmount)}</span>
+            지급 대기 <span className="tabular-nums">{formatPendingAmount(pendingPayoutAmount)}</span>
           </span>
         </div>
       </MobileTopBar>

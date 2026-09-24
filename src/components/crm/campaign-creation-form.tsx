@@ -391,7 +391,7 @@ export function CampaignCreationForm({
     <ScrollArea className="min-h-0 flex-1">
       <div className="space-y-5 px-1 py-2">
         {serverError && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-status-urgent-text">
             {serverError}
           </div>
         )}

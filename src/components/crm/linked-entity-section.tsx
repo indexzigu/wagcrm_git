@@ -69,7 +69,7 @@ function ErrorState({
 }) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-4">
-      <div className="flex items-center gap-2 text-sm text-destructive">
+      <div className="flex items-center gap-2 text-sm text-status-urgent-text">
         <AlertCircle className="size-4" />
         <span>{error}</span>
       </div>

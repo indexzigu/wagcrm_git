@@ -157,7 +157,7 @@ export default function ReminderSettingsPage() {
                   </div>
                 </div>
                 {validationError && (
-                  <p className="text-xs text-destructive bg-destructive/5 border border-destructive/10 p-2 rounded-lg font-medium">{validationError}</p>
+                  <p className="text-xs text-status-urgent-text bg-destructive/5 border border-destructive/10 p-2 rounded-lg font-medium">{validationError}</p>
                 )}
               </div>
             ) : (

@@ -1724,8 +1724,8 @@ function SalesTaskDetailPanel({
 
       {task.status !== "DROPPED" && (
         <Button
-          variant="outline"
-          className="w-full text-destructive border-destructive/20 bg-destructive/5 hover:bg-destructive/10 hover:text-destructive h-10 shadow-soft-sm"
+          variant="destructive"
+          className="w-full h-10 shadow-soft-sm"
           onClick={() => {
             const dropReason =
               task.status === "PROPOSED"
@@ -1867,8 +1867,8 @@ function OutreachStageStepper({
         {/* 드랍 배너 */}
         {isDropped ? (
           <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5">
-            <XCircle className="size-4 text-destructive shrink-0" />
-            <span className="text-xs font-medium text-destructive">드랍됨</span>
+            <XCircle className="size-4 text-status-urgent-text shrink-0" />
+            <span className="text-xs font-medium text-status-urgent-text">드랍됨</span>
             {task.dropReason ? (
               <span className="ml-1 text-xs text-muted-foreground">· {task.dropReason}</span>
             ) : null}

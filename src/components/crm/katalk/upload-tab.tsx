@@ -464,7 +464,7 @@ function FileRow({
       )}
 
       {status === "preview-error" && !isKatokAutoBlocked && (
-        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-status-urgent-text">
           <AlertTriangleIcon className="size-3.5 shrink-0" />
           {error}
         </div>
@@ -535,7 +535,7 @@ function FileRow({
       )}
 
       {status === "commit-error" && (
-        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-status-urgent-text">
           <AlertTriangleIcon className="size-3.5 shrink-0" />
           {error}
         </div>

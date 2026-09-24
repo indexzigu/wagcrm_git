@@ -124,6 +124,9 @@ describe("MobileSettlementView — 실패·대기는 빈 목록이 아니다", (
 
     expect(screen.getByRole("alert")).toHaveTextContent("정산 목록을 불러오지 못했습니다.");
     expect(screen.queryByText(EMPTY_TEXT)).not.toBeInTheDocument();
+    // 리포트가 없으면 대기 금액을 모른다 — ₩0 이 아니라 「-」.
+    expect(screen.getByText(/입금 대기/)).toHaveTextContent("입금 대기 -");
+    expect(screen.getByText(/지급 대기/)).toHaveTextContent("지급 대기 -");
     const retry = screen.getByRole("button", { name: "다시 불러오기" });
     expect(retry).toHaveClass("h-11");
     fireEvent.click(retry);
