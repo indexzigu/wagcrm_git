@@ -1,4 +1,9 @@
 import type { ReactNode } from "react";
+import {
+  PORTAL_NOT_FOUND_ACTION,
+  PORTAL_NOT_FOUND_REASON,
+  PORTAL_NOT_FOUND_TITLE,
+} from "@/lib/portal-not-found";
 
 // 셀러 포털의 막다른 화면(없는·만료된 링크, 불러오기 실패) 공용 틀.
 // 외부 셀러가 카톡 링크로 들어와 처음 보는 화면일 수 있으므로 비밀번호 게이트와 같은 모양을 쓰고,
@@ -32,12 +37,12 @@ export function PortalStatusScreen({
 export function PortalNotFound() {
   return (
     <PortalStatusScreen
-      title="리포트를 찾을 수 없어요"
+      title={PORTAL_NOT_FOUND_TITLE}
       description={
         <>
-          링크가 만료되었거나 주소가 잘못 입력되었을 수 있어요.
+          {PORTAL_NOT_FOUND_REASON}
           <br />
-          담당 매니저에게 새 링크를 요청해 주세요.
+          {PORTAL_NOT_FOUND_ACTION}
         </>
       }
     />

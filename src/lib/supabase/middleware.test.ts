@@ -20,6 +20,11 @@ vi.mock("@/lib/portal-slug-existence", () => ({
 
 import { NextRequest } from "next/server";
 import { TRUSTED_USER_HEADER, updateSession } from "./middleware";
+import {
+  PORTAL_NOT_FOUND_ACTION,
+  PORTAL_NOT_FOUND_HTML,
+  PORTAL_NOT_FOUND_TITLE,
+} from "@/lib/portal-not-found";
 
 function makeRequest(path: string, cookies: Record<string, string> = {}): NextRequest {
   const req = new NextRequest(`https://crm.ygrd.kr${path}`);
@@ -145,6 +150,36 @@ describe("updateSession 포털 슬러그 존재 확인 — 형식은 유효하�
     expect(res.status).toBe(404);
     expect(portalSlugExistsMock).toHaveBeenCalledWith("wp-admin-lookalike");
     expect(getUserMock).not.toHaveBeenCalled();
+  });
+
+  it("미등록 슬러그 404 는 흰 화면이 아니라 한국어 안내 HTML — noindex 유지", async () => {
+    portalSlugExistsMock.mockResolvedValue(false);
+
+    const res = await updateSession(makeRequest("/no-such-seller"));
+
+    expect(res.status).toBe(404);
+    expect(res.headers.get("x-robots-tag")).toBe("noindex");
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const body = await res.text();
+    expect(body).toContain('<html lang="ko">');
+    expect(body).toContain('name="viewport"');
+    expect(body).toContain(PORTAL_NOT_FOUND_TITLE);
+    expect(body).toContain(PORTAL_NOT_FOUND_ACTION);
+    // 외부 자원·스크립트 없음(봇 스캔도 받는 자리라 추가 요청을 만들지 않는다)
+    expect(body).not.toMatch(/<script|<link|src=|@import/i);
+  });
+
+  it("요청 슬러그는 안내 HTML 에 반사되지 않는다(주입 차단)", async () => {
+    portalSlugExistsMock.mockResolvedValue(false);
+    const payload = "zq-xss-probe";
+
+    const res = await updateSession(makeRequest(`/${payload}?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E`));
+
+    expect(res.status).toBe(404);
+    const body = await res.text();
+    expect(body).not.toContain(payload);
+    expect(body).not.toContain("alert(1)");
+    expect(body).toBe(PORTAL_NOT_FOUND_HTML);
   });
 
   it("카드 경로도 기본 슬러그로 존재 확인하고, 미등록이면 404", async () => {
