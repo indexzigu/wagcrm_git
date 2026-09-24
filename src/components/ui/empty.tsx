@@ -149,7 +149,7 @@ function DataEmpty({
 }
 
 /** 조회 실패 안내의 기본 할 일 문구 — 원인(제목) 뒤에 붙는 「무엇을 하면 되는가」. */
-export const LOAD_ERROR_HINT = "연결을 확인하고 다시 불러오세요."
+const LOAD_ERROR_HINT = "연결을 확인하고 다시 불러오세요."
 
 /**
  * 조회 실패 — `DataEmpty` 의 짝이다. **실패를 빈 상태와 같은 얼굴로 그리지 말 것**:
@@ -165,6 +165,7 @@ function DataLoadError({
   onRetry,
   retrying = false,
   bordered = true,
+  touch = false,
   className,
 }: {
   /** 무엇을 못 불러왔는가 — 「정산 목록을 불러오지 못했습니다.」 */
@@ -175,6 +176,8 @@ function DataLoadError({
   /** 재조회 중이면 버튼을 잠그고 아이콘을 돌린다(연타 방지). */
   retrying?: boolean
   bordered?: boolean
+  /** 터치 표면(모바일 UA 분기) — 다시 불러오기 버튼을 44px 로 키운다(P3 터치 하한). */
+  touch?: boolean
   className?: string
 }) {
   return (
@@ -190,7 +193,14 @@ function DataLoadError({
       <CircleAlert className="size-5 text-status-urgent-text" aria-hidden="true" />
       <p className="text-sm font-medium text-foreground">{title}</p>
       <p className="text-xs text-muted-foreground">{description}</p>
-      <Button variant="outline" size="sm" className="mt-1.5" onClick={onRetry} disabled={retrying}>
+      <Button
+        type="button"
+        variant="outline"
+        size={touch ? "default" : "sm"}
+        className={cn("mt-1.5", touch && "h-11 rounded-xl")}
+        onClick={onRetry}
+        disabled={retrying}
+      >
         <RefreshCw data-icon="inline-start" className={retrying ? "animate-spin" : undefined} />
         다시 불러오기
       </Button>

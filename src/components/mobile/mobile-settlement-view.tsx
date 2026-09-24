@@ -1,14 +1,14 @@
 "use client";
 
-import { AlertCircleIcon, RefreshCw, SearchIcon } from "lucide-react";
+import { AlertCircleIcon, SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  DataLoadError,
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-  LOAD_ERROR_HINT,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -159,25 +159,13 @@ export function MobileSettlementView({
       </div>
 
       {loadError ? (
-        <Empty role="alert" className="border border-border/70 bg-background py-8">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <AlertCircleIcon className="text-status-urgent-text" />
-            </EmptyMedia>
-            <EmptyTitle>정산 목록을 불러오지 못했습니다.</EmptyTitle>
-            <EmptyDescription className="text-xs">{LOAD_ERROR_HINT}</EmptyDescription>
-          </EmptyHeader>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 rounded-xl"
-            onClick={() => void onRefresh()}
-            disabled={loading}
-          >
-            <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : undefined} />
-            다시 불러오기
-          </Button>
-        </Empty>
+        <DataLoadError
+          title="정산 목록을 불러오지 못했습니다."
+          onRetry={() => void onRefresh()}
+          retrying={loading}
+          touch
+          className="rounded-2xl border-border/70 bg-background"
+        />
       ) : loading && sections.length === 0 ? (
         <div role="status" aria-busy="true" className="flex flex-col gap-3">
           <span className="sr-only">불러오는 중</span>
