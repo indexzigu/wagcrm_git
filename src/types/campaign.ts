@@ -68,6 +68,12 @@ export type Campaign = {
      * (오너 결정 2026-09-17, 실측 근거는 `sale-window.ts` 의 `STORE_PERIOD_TRUSTED_STATUS`).
      */
     scope: 'full' | 'end-only';
+    /**
+     * `end-only` 인 이유(`full` 이면 null) — 팝오버가 왜 종료일만 맞추는지 설명하는 데 쓴다.
+     * `store-closed` 판매 종료 상태 · `sales-before-store-start` 스토어 시작일 전에 이미 매출이 있음
+     * (오너 결정 2026-09-24).
+     */
+    startKeptReason: 'store-closed' | 'sales-before-store-start' | null;
     /** 화면에 보여줄 스토어 값. `full` 이면 기간, `end-only` 면 종료일 하나. */
     storeLabel: string;
     /** 비교 대상인 지금 화면 값 — `storeLabel` 과 같은 해상도(서버가 만든다). */
