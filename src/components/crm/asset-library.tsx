@@ -833,7 +833,7 @@ export function AssetLibrary({
           <div className="flex items-center gap-1.5 shrink-0">
             <FolderOpen className="size-3.5 text-slate-400" />
             <span className="font-medium">Google Drive:</span>
-            <span className={`font-semibold ${initialData.storage.googleDriveConnected ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+            <span className={`font-semibold ${initialData.storage.googleDriveConnected ? "text-status-success dark:text-emerald-400" : "text-status-caution-text dark:text-amber-400"}`}>
               {initialData.storage.googleDriveConnected ? "연결됨" : "미연결"}
             </span>
             {initialData.storage.googleDriveAccount && (

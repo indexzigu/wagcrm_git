@@ -183,7 +183,7 @@ export function SellerPortalLinkSection({
             </button>
           </div>
           {!hasPassword && (
-            <p className="text-[11px] font-medium text-amber-600">
+            <p className="text-[11px] font-medium text-status-caution-text">
               비밀번호가 아직 없어 셀러가 열람할 수 없습니다. 발급 후 주소와 함께 전달하세요.
             </p>
           )}

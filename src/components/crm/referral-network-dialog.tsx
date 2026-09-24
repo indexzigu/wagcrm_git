@@ -76,7 +76,7 @@ export function ReferralNetworkDialog({
               })}
             </div>
             {totalTagged < sellers.length && (
-              <p className="mt-1.5 text-[10px] text-amber-600">
+              <p className="mt-1.5 text-[10px] text-status-caution-text">
                 {sellers.length - totalTagged}명 미분류: 셀러 상세에서 유입 경로를 채우면 정확도가 올라갑니다.
               </p>
             )}
@@ -115,7 +115,7 @@ export function ReferralNetworkDialog({
                 ))}
               </ul>
             )}
-            <p className="mt-2 text-[10px] text-muted-foreground/80">
+            <p className="mt-2 text-[10px] text-muted-foreground">
               소개는 금전 보상 없이 관계로 유지됩니다. 상위 커넥터에게는 좋은 딜 우선 제안·성과 공유로 답하세요.
             </p>
           </section>

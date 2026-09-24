@@ -119,7 +119,7 @@ function DeltaTooltipContent({ active, payload }: { active?: boolean; payload?: 
           <span className="text-muted-foreground">주간 증가</span>
           <span
             className={`font-mono font-semibold tabular-nums ${
-              isPositive ? "text-emerald-600" : "text-rose-500"
+              isPositive ? "text-status-success" : "text-status-urgent-text"
             }`}
           >
             {isPositive ? "+" : ""}
@@ -130,7 +130,7 @@ function DeltaTooltipContent({ active, payload }: { active?: boolean; payload?: 
           <span className="text-muted-foreground">증가율</span>
           <span
             className={`font-mono font-medium tabular-nums ${
-              isPositive ? "text-emerald-600" : "text-rose-500"
+              isPositive ? "text-status-success" : "text-status-urgent-text"
             }`}
           >
             {isPositive ? "+" : ""}

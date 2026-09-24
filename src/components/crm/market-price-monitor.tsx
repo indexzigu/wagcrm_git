@@ -54,10 +54,10 @@ const EXCLUDE_REASON_LABEL: Record<OutlierReason, string> = {
 };
 
 const VERDICT_BADGE: Record<PriceVerdict, { label: string; className: string }> = {
-  OK: { label: "최저가 유지 중", className: "text-emerald-600" },
-  TIE: { label: "동가(±1%)", className: "text-amber-600" },
+  OK: { label: "최저가 유지 중", className: "text-status-success" },
+  TIE: { label: "동가(±1%)", className: "text-status-caution-text" },
   VIOLATED: { label: "최저가 경쟁력 위험", className: "text-rose-600" },
-  REVIEW: { label: "검토 필요 · 일치율 낮음", className: "text-amber-600" },
+  REVIEW: { label: "검토 필요 · 일치율 낮음", className: "text-status-caution-text" },
   NO_DATA: { label: "비교 데이터 없음", className: "text-slate-500" },
 };
 
@@ -333,7 +333,7 @@ export function MarketPriceMonitor({
                     <div className="text-left sm:text-right">
                       <div className="text-[11px] text-slate-500 mb-0.5">시장 유효 최저가</div>
                       {isLoading ? (
-                        <div className="text-sm font-bold text-slate-300">...</div>
+                        <div className="text-sm font-bold text-slate-500">...</div>
                       ) : minItem ? (
                         <div>
                           <div className="text-sm font-bold text-blue-600">{formatCurrency(minItem.totalPrice)}원</div>
@@ -342,7 +342,7 @@ export function MarketPriceMonitor({
                           )}
                         </div>
                       ) : (
-                        <div className="text-sm font-bold text-slate-300">-</div>
+                        <div className="text-sm font-bold text-slate-500">-</div>
                       )}
                     </div>
                     {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
@@ -406,8 +406,8 @@ export function MarketPriceMonitor({
                             const isDanger = isLowest && fetchedItem.totalPrice < ourTotalPrice;
 
                             let scoreColor = "text-slate-500";
-                            if (fetchedItem.matchScore >= 80) scoreColor = "text-emerald-600 font-medium";
-                            else if (fetchedItem.matchScore >= 50) scoreColor = "text-amber-600 font-medium";
+                            if (fetchedItem.matchScore >= 80) scoreColor = "text-status-success font-medium";
+                            else if (fetchedItem.matchScore >= 50) scoreColor = "text-status-caution-text font-medium";
                             else scoreColor = "text-rose-600 font-medium";
 
                             return (

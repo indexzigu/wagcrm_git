@@ -89,13 +89,13 @@ export function PostPreviewCard({
 
         <div className="absolute top-1 left-1 flex gap-1 z-10">
           {p.is_gongu && (
-            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-600/90 text-white backdrop-blur-sm">
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-status-success text-white backdrop-blur-sm">
               <ShoppingBag className="size-2.5" />
               공구
             </span>
           )}
           {p.is_ad && (
-            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/90 text-white backdrop-blur-sm">
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-status-caution text-white backdrop-blur-sm">
               <Megaphone className="size-2.5" />
               광고
             </span>

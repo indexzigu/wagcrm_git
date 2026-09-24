@@ -135,7 +135,7 @@ export function SellerDealCandidates({ sellerId }: { sellerId: string }) {
             </div>
           ))}
           {candidates.length > VISIBLE_LIMIT && (
-            <p className="text-[10px] text-muted-foreground/70">
+            <p className="text-[10px] text-muted-foreground">
               외 {candidates.length - VISIBLE_LIMIT}건
             </p>
           )}

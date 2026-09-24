@@ -81,7 +81,7 @@ export function DealProfitabilityTable({
             label: "총 마진",
             width: 140,
             render: (row) => (
-              <span className="text-xs font-semibold text-emerald-600 tabular-nums">
+              <span className="text-xs font-semibold text-money-in-text tabular-nums">
                 {formatCurrency(row.totalMargin)}원
               </span>
             ),

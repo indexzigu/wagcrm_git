@@ -91,7 +91,7 @@ const partnerColumns: GridColumn<PartnerRow>[] = [
     label: "연결된 딜",
     width: 100,
     render: (row) => (
-      <span className="font-semibold text-amber-600 tabular-nums">
+      <span className="font-semibold text-slate-700 tabular-nums">
         {row.dealCount ?? 0}개
       </span>
     ),

@@ -1047,7 +1047,7 @@ export function SellerDetailContent({
                 <div className="text-[11px] text-muted-foreground">팔로워 성장률</div>
                 <div className="mt-1 font-mono text-xs font-semibold">
                   {scorecard.followerGrowthRate != null ? (
-                    <span className={scorecard.followerGrowthRate >= 0 ? "text-green-600" : "text-red-600"}>
+                    <span className={scorecard.followerGrowthRate >= 0 ? "text-status-success" : "text-status-urgent-text"}>
                       {scorecard.followerGrowthRate >= 0 ? "+" : ""}
                       {formatRate(scorecard.followerGrowthRate)}
                     </span>

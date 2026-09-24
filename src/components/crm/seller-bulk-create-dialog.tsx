@@ -40,9 +40,9 @@ export type SellerBulkCreateDialogProps = {
 };
 
 const STATUS_STYLE: Record<ParsedBulkEntry["status"], string> = {
-  ok: "text-emerald-600",
-  duplicate: "text-amber-600",
-  invalid: "text-rose-600",
+  ok: "text-status-success",
+  duplicate: "text-status-caution-text",
+  invalid: "text-status-urgent-text",
 };
 
 const STATUS_LABEL: Record<ParsedBulkEntry["status"], string> = {
@@ -166,13 +166,13 @@ export function SellerBulkCreateDialog({
                 {result.duplicates.map((d, i) => (
                   <div key={`d-${i}`} className="flex items-center justify-between gap-2 py-0.5">
                     <span className="truncate font-mono text-slate-600">{d.raw}</span>
-                    <span className="shrink-0 text-amber-600">{d.reason}</span>
+                    <span className="shrink-0 text-status-caution-text">{d.reason}</span>
                   </div>
                 ))}
                 {result.invalid.map((v, i) => (
                   <div key={`v-${i}`} className="flex items-center justify-between gap-2 py-0.5">
                     <span className="truncate font-mono text-slate-600">{v.raw}</span>
-                    <span className="shrink-0 text-rose-600">{v.reason}</span>
+                    <span className="shrink-0 text-status-urgent-text">{v.reason}</span>
                   </div>
                 ))}
               </div>
@@ -193,12 +193,12 @@ export function SellerBulkCreateDialog({
 
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                <span className="text-emerald-600">등록 대상 {previewCounts.ok}</span>
+                <span className="text-status-success">등록 대상 {previewCounts.ok}</span>
                 {previewCounts.dup > 0 && (
-                  <span className="text-amber-600">중복 {previewCounts.dup}</span>
+                  <span className="text-status-caution-text">중복 {previewCounts.dup}</span>
                 )}
                 {previewCounts.invalid > 0 && (
-                  <span className="text-rose-600">무효 {previewCounts.invalid}</span>
+                  <span className="text-status-urgent-text">무효 {previewCounts.invalid}</span>
                 )}
               </div>
               <div className="flex items-center gap-2">

@@ -779,7 +779,7 @@ export default function OutreachPage() {
                         <div key={`h-${d.name}`} className="mb-2 last:mb-0">
                           <div className="flex items-center justify-between text-[10px] mb-1">
                             <span className="text-slate-600 truncate min-w-0 mr-2">{d.name}</span>
-                            <span className="shrink-0 font-bold text-emerald-600 tabular-nums">{(d.rate * 100).toFixed(0)}%</span>
+                            <span className="shrink-0 font-bold text-status-success tabular-nums">{(d.rate * 100).toFixed(0)}%</span>
                           </div>
                           <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
                             <div className="h-full bg-emerald-500 rounded-full transition-[width]" style={{ width: `${Math.max(d.rate * 100, 2)}%` }} />
@@ -799,7 +799,7 @@ export default function OutreachPage() {
                         <div key={`l-${d.name}`} className="mb-2 last:mb-0">
                           <div className="flex items-center justify-between text-[10px] mb-1">
                             <span className="text-slate-600 truncate min-w-0 mr-2">{d.name}</span>
-                            <span className="shrink-0 font-bold text-rose-500 tabular-nums">{(d.rate * 100).toFixed(0)}%</span>
+                            <span className="shrink-0 font-bold text-status-urgent-text tabular-nums">{(d.rate * 100).toFixed(0)}%</span>
                           </div>
                           <div className="h-1.5 w-full bg-rose-100 rounded-full overflow-hidden">
                             <div className="h-full bg-rose-500 rounded-full transition-[width]" style={{ width: `${Math.max(d.rate * 100, 2)}%` }} />
@@ -819,7 +819,7 @@ export default function OutreachPage() {
                         <div key={`h-${s.name}`} className="mb-2 last:mb-0">
                           <div className="flex items-center justify-between text-[10px] mb-1">
                             <span className="text-slate-600 truncate min-w-0 mr-2">{s.name}</span>
-                            <span className="shrink-0 font-bold text-emerald-600 tabular-nums">{(s.rate * 100).toFixed(0)}%</span>
+                            <span className="shrink-0 font-bold text-status-success tabular-nums">{(s.rate * 100).toFixed(0)}%</span>
                           </div>
                           <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
                             <div className="h-full bg-emerald-500 rounded-full transition-[width]" style={{ width: `${Math.max(s.rate * 100, 2)}%` }} />
@@ -839,7 +839,7 @@ export default function OutreachPage() {
                         <div key={`l-${s.name}`} className="mb-2 last:mb-0">
                           <div className="flex items-center justify-between text-[10px] mb-1">
                             <span className="text-slate-600 truncate min-w-0 mr-2">{s.name}</span>
-                            <span className="shrink-0 font-bold text-rose-500 tabular-nums">{(s.rate * 100).toFixed(0)}%</span>
+                            <span className="shrink-0 font-bold text-status-urgent-text tabular-nums">{(s.rate * 100).toFixed(0)}%</span>
                           </div>
                           <div className="h-1.5 w-full bg-rose-100 rounded-full overflow-hidden">
                             <div className="h-full bg-rose-500 rounded-full transition-[width]" style={{ width: `${Math.max(s.rate * 100, 2)}%` }} />
