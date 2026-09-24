@@ -486,6 +486,11 @@ CSS 파일은 없다(CSS-in-JS). "MCP 에 없으니 근거 없음"으로 닫지 
   (컬럼 헤더의 `text-[11px] uppercase`는 `InlineDataGrid` 시스템 전반의 확립 관례라 예외).
   데이터 텍스트에 slate-300(1.48:1)류 저대비 색 금지 — "확인된 0"·"미분석" 같은 소극 상태는
   `text-slate-500`이 하한이다.
+  3차 글자(캡션·부연·0값·비활성 탭)는 알파(`text-muted-foreground/NN`)로 흐리지 않는다 —
+  하한은 흰 바탕 `text-muted-foreground`, 회색 칩(slate-100) 위 `text-slate-600`, 짙은 표면
+  (slate-900·설치 게이트 `#080B11`) 위 `text-slate-400`. slate-700 근방 그라디언트는 slate-400 도
+  4.5:1 미달이라 표면별로 대비를 직접 계산한다(§5). 약하게 보이게 하려면 투명도 대신 크기·굵기로
+  (계약: `tertiary-text-contrast.contract.test.ts`).
 
 - **Sheet(드로어) 관례:** 상세·서브뷰는 shadcn `Sheet`(`side="right"`)를 상세 패널
   정본 패턴으로 쓴다(`campaign-side-panel`·`entity-form-sheet` 선례). 목록형 서브뷰는
