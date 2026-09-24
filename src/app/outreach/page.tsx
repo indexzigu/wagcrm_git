@@ -38,7 +38,6 @@ import { OutreachList, OutreachCardContent, type OutreachRow } from "@/component
 import {
   DndContext,
   PointerSensor,
-  KeyboardSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -47,6 +46,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { KanbanDragOverlay } from "@/components/crm/kanban-drag-overlay";
+import { buildKanbanDndAccessibility } from "@/components/crm/kanban-dnd-a11y";
 import { InlineDataGrid, type GridColumn } from "@/components/crm/inline-data-grid";
 import { MobileOutreachView } from "@/components/mobile/mobile-outreach-view";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -311,10 +311,22 @@ export default function OutreachPage() {
   // DragOverlay 카드의 경과일 계산용 기준시각 — 렌더 중 Date.now() 직접 호출(비순수)을 피해 고정.
   const [boardNow] = useState(() => Date.now());
 
-  // 포인터 8px 이동해야 드래그 시작 → 카드 클릭(시트 열기)과 드래그를 구분. 키보드 센서(a11y).
+  // 포인터 8px 이동해야 드래그 시작 → 카드 클릭(시트 열기)과 드래그를 구분.
+  // 키보드 센서는 두지 않는다 — pointerWithin 은 포인터 좌표가 없으면 놓을 칸을 못 찾아 키보드
+  // 드래그가 끝내 아무 데도 놓이지 않았고, Enter 까지 가져가 카드가 열리지도 않았다. 키보드 경로는
+  // 카드 Enter → 상세 시트의 영업 단계 버튼이다(kanban-dnd-a11y.ts).
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor),
+  );
+
+  const dndAccessibility = useMemo(
+    () =>
+      buildKanbanDndAccessibility({
+        instructions: "Enter 키로 영업 테스크 상세를 엽니다. 단계는 상세의 영업 단계 버튼으로 바꿀 수 있습니다.",
+        itemLabel: (id) => tasks.find((t) => t.id === id)?.sellerName ?? "영업 테스크",
+        columnLabel: (id) => OUTREACH_STAGE_LABELS[id as OutreachStatus] ?? "칸",
+      }),
+    [tasks],
   );
 
   const activeTask = useMemo(
@@ -883,6 +895,7 @@ export default function OutreachPage() {
                   // 안정적 id — dnd-kit의 aria-describedby 모듈 카운터가 SSR/클라 하이드레이션
                   // 미스매치를 내는 것을 방지(결정론화). ExecutionKanbanBoard와 동일.
                   id="outreach-kanban-board"
+                  accessibility={dndAccessibility}
                   sensors={sensors}
                   collisionDetection={pointerWithin}
                   onDragStart={handleDragStart}

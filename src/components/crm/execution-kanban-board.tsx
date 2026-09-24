@@ -6,7 +6,6 @@ import { toast } from "@/lib/toast";
 import {
   DndContext,
   PointerSensor,
-  KeyboardSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -17,7 +16,8 @@ import {
 } from "@dnd-kit/core";
 
 import { Button } from "@/components/ui/button";
-import { CampaignCard } from "@/components/crm/campaign-card";
+import { CampaignCard, type CampaignStageMoveTarget } from "@/components/crm/campaign-card";
+import { buildKanbanDndAccessibility } from "@/components/crm/kanban-dnd-a11y";
 import { KanbanDragOverlay } from "@/components/crm/kanban-drag-overlay";
 import type { CampaignRow, CampaignStatus } from "@/lib/crm-types";
 import { getCampaignAction } from "@/lib/campaign-actions";
@@ -30,6 +30,13 @@ const EXECUTION_STATUS_ORDER: CampaignStatus[] = [
   "ACTIVE",
   "CLOSED",
   "SETTLEMENT_WAIT",
+];
+
+/** 「정산 및 종료 캠페인 보기」 뷰의 컬럼. */
+const SETTLED_VIEW_STATUS_ORDER: CampaignStatus[] = [
+  "SETTLEMENT_IN_PROGRESS",
+  "COMPLETED",
+  "DROPPED",
 ];
 
 /**
@@ -114,6 +121,8 @@ interface DraggableExecutionCardProps {
   onRowOpen: (campaign: CampaignRow) => void;
   onRowDelete: (campaign: CampaignRow) => void;
   onRowDuplicate: (campaign: CampaignRow) => void;
+  moveTargets: readonly CampaignStageMoveTarget[];
+  onMove: (campaign: CampaignRow, status: CampaignStatus) => void;
 }
 
 function DraggableExecutionCard({
@@ -121,6 +130,8 @@ function DraggableExecutionCard({
   onRowOpen,
   onRowDelete,
   onRowDuplicate,
+  moveTargets,
+  onMove,
 }: DraggableExecutionCardProps) {
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: campaign.id,
@@ -136,6 +147,8 @@ function DraggableExecutionCard({
       dragListeners={listeners}
       dragAttributes={attributes}
       isDragging={isDragging}
+      moveTargets={moveTargets}
+      onMove={onMove}
     />
   );
 }
@@ -151,6 +164,8 @@ interface ExecutionColumnProps {
   onRowDelete: (campaign: CampaignRow) => void;
   onRowDuplicate: (campaign: CampaignRow) => void;
   onAddCampaign?: (defaultStatus?: CampaignStatus) => void;
+  moveTargets: readonly CampaignStageMoveTarget[];
+  onMove: (campaign: CampaignRow, status: CampaignStatus) => void;
   /**
    * 퀵필터가 걸린 상태 — 세팅 대기의 "시작 대기" 접힘을 강제로 펼친다.
    * 필터를 누른 목적은 매칭 카드를 한눈에 보는 것인데, 매칭 카드가 접힘 뒤에 있으면
@@ -166,6 +181,8 @@ function ExecutionColumn({
   onRowDelete,
   onRowDuplicate,
   onAddCampaign,
+  moveTargets,
+  onMove,
   isFiltered = false,
 }: ExecutionColumnProps) {
   const meta = EXECUTION_COLUMN_META[status];
@@ -293,6 +310,8 @@ function ExecutionColumn({
                 onRowOpen={onRowOpen}
                 onRowDelete={onRowDelete}
                 onRowDuplicate={onRowDuplicate}
+                moveTargets={moveTargets}
+                onMove={onMove}
               />
             ))}
             {/* 세팅 창은 비었는데 시작 대기만 남은 상태 — 컬럼이 통째로 비지 않아
@@ -341,6 +360,8 @@ function ExecutionColumn({
                     onRowOpen={onRowOpen}
                     onRowDelete={onRowDelete}
                     onRowDuplicate={onRowDuplicate}
+                    moveTargets={moveTargets}
+                    onMove={onMove}
                   />
                 ))
               : null}
@@ -380,10 +401,11 @@ export function ExecutionKanbanBoard({
     setLocalCampaigns(campaigns);
   }, [campaigns]);
 
-  // 포인터가 8px 이동해야 드래그 시작 → 탭(카드 열기)과 드래그를 구분. 키보드 센서(a11y).
+  // 포인터가 8px 이동해야 드래그 시작 → 탭(카드 열기)과 드래그를 구분.
+  // 키보드 센서는 두지 않는다 — pointerWithin 은 포인터 좌표가 없으면 놓을 칸을 못 찾아 키보드
+  // 드래그가 끝내 아무 데도 놓이지 않았다. 키보드 경로는 카드 메뉴 「단계 이동」이다(kanban-dnd-a11y.ts).
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor),
   );
 
   const filteredCampaigns = React.useMemo(() => {
@@ -502,6 +524,49 @@ export function ExecutionKanbanBoard({
     [activeId, localCampaigns],
   );
 
+  // 메뉴로 옮긴 카드는 새 컬럼에서 다시 마운트된다 — 메뉴 버튼이 사라져 포커스가 문서 맨 앞으로
+  // 떨어지면 키보드 사용자가 자리를 잃는다. 옮겨진 카드로 포커스를 따라 보낸다.
+  const focusAfterMoveRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    const id = focusAfterMoveRef.current;
+    if (!id) return;
+    focusAfterMoveRef.current = null;
+    const card = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-campaign-card-id]"),
+    ).find((el) => el.dataset.campaignCardId === id);
+    card?.focus();
+  }, [localCampaigns]);
+
+  const handleMove = React.useCallback(
+    (campaign: CampaignRow, targetStatus: CampaignStatus) => {
+      focusAfterMoveRef.current = campaign.id;
+      void handleDrop(campaign.id, targetStatus);
+    },
+    [handleDrop],
+  );
+
+  const visibleStatuses = showDropped ? SETTLED_VIEW_STATUS_ORDER : EXECUTION_STATUS_ORDER;
+
+  // 메뉴 목적지 = 지금 화면에서 드래그로 놓을 수 있는 컬럼(보이고 · 드롭 허용). 드래그와 같은 능력만 준다.
+  const moveTargets = React.useMemo<CampaignStageMoveTarget[]>(
+    () =>
+      visibleStatuses
+        .filter((status) => DROPPABLE_STATUSES.has(status))
+        .map((status) => ({ status, label: EXECUTION_COLUMN_META[status].title })),
+    [visibleStatuses],
+  );
+
+  const dndAccessibility = React.useMemo(
+    () =>
+      buildKanbanDndAccessibility({
+        instructions: "Enter 키로 캠페인 상세를 엽니다. 단계 이동은 카드의 캠페인 메뉴에서 할 수 있습니다.",
+        itemLabel: (id) => localCampaigns.find((c) => c.id === id)?.dealName ?? "캠페인",
+        columnLabel: (id) => EXECUTION_COLUMN_META[id as CampaignStatus]?.title || "칸",
+      }),
+    [localCampaigns],
+  );
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id));
   };
@@ -554,6 +619,7 @@ export function ExecutionKanbanBoard({
         // 안정적 id — dnd-kit이 aria-describedby(DndDescribedBy)를 모듈 카운터로 만들어
         // SSR/클라이언트 하이드레이션 미스매치를 내는 것을 방지(결정론화).
         id="execution-kanban-board"
+        accessibility={dndAccessibility}
         sensors={sensors}
         collisionDetection={pointerWithin}
         onDragStart={handleDragStart}
@@ -561,7 +627,7 @@ export function ExecutionKanbanBoard({
         onDragCancel={() => setActiveId(null)}
       >
         <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto pb-2">
-          {(showDropped ? (["SETTLEMENT_IN_PROGRESS", "COMPLETED", "DROPPED"] as CampaignStatus[]) : EXECUTION_STATUS_ORDER).map((status) => (
+          {visibleStatuses.map((status) => (
             <ExecutionColumn
               key={status}
               status={status}
@@ -570,6 +636,8 @@ export function ExecutionKanbanBoard({
               onRowDelete={onRowDelete}
               onRowDuplicate={onRowDuplicate}
               onAddCampaign={onAddCampaign}
+              moveTargets={moveTargets}
+              onMove={handleMove}
               isFiltered={quickFilter !== "ALL"}
             />
           ))}

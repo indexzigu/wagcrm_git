@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { DialogTitle } from '@/components/ui/dialog';
+import { ShippingDialogFrame } from './ShippingDialogFrame';
 import { Campaign } from '@/types/campaign';
 
 type CampaignInsightsModalProps = {
@@ -34,12 +35,10 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
     { label: '취소·반품율', value: `${insights.claims.ratio.toFixed(1)}%`, sub: `취소 ${insights.claims.canceled} · 반품 ${insights.claims.returned} · 교환 ${insights.claims.exchanged}` },
   ] : [];
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="bg-white rounded-2xl shadow-overlay relative w-full max-w-4xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+  return (
+    <ShippingDialogFrame onClose={onClose} className="sm:max-w-4xl max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl shrink-0">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
@@ -52,8 +51,8 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
                 마감 시점 스냅샷
               </span>
             )}
-          </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
+          </DialogTitle>
+          <button type="button" onClick={onClose} aria-label="닫기" className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -170,8 +169,6 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
             닫기
           </button>
         </div>
-      </div>
-    </div>,
-    document.body
+    </ShippingDialogFrame>
   );
 }
