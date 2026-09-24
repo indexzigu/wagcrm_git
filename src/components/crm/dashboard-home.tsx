@@ -948,7 +948,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
           </section>
 
           {/* 밴드 1: 6개월 차트(좌 2fr, 폭 확보) | 매출 목표 히어로(우 1fr). items-stretch로 높이 균형,
-              분할선 65%가 밴드 2(오늘의 핵심 업무)와 세로 정렬 (오너 결정 A안, 2026-07-10) */}
+              (오너 결정 A안, 2026-07-10). 종전엔 분할선 65%가 바로 아래 트라이어드와 세로로 이어졌으나,
+              2026-09-24 일정 밴드가 사이에 들어오면서 두 밴드가 인접하지 않아 그 정렬 의도는 해제됐다 */}
           <section className="grid gap-4 xl:grid-cols-[2fr_1fr] items-stretch">
             {/* 매출 차트 — 6개월 추이 · 연간 월별을 탭으로 전환(오너 2026-07-24). 좌측 앵커, 카드 높이에
                 맞춰 차트가 채워진다. 두 차트 모두 h-[262px] 고정이라 탭 전환에도 높이가 안 흔들린다. */}
@@ -1118,7 +1119,57 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
 
           </section>
 
-          {/* 밴드 2: 할 일(반응)·기회(셀러 모멘텀)·점검(데이터) 3렌즈 triad — 3등분, 67% seam이 밴드1과 정렬 (오너 결정 2026-07-10) */}
+          {/* 밴드 2: 일정 계열 탭 묶음 — 같은 시간축의 조감(12주 커버리지)·상세(14일). 두 풀폭 밴드를
+              한 프레임에 묶어 세로 한 밴드를 절약한다. 일정 커버리지가 없으면 14일만 단독. 패널 min-h 로
+              탭 전환 시 높이 튐을 억제한다.
+              배치(오너 2026-09-24): 트라이어드(활성 셀러·영업 팔로업·데이터 점검)보다 위 — 일정 공백·
+              다가올 일정이 그날 운영 판단의 선행 정보라 매출 밴드 바로 아래로 올렸다(종전 2026-07-24
+              배치는 트라이어드 아래였다). */}
+          {initialData.scheduleGapBriefing ? (
+            <SegmentedTabCard
+              tabs={[
+                {
+                  key: "coverage",
+                  label: "일정 커버리지",
+                  count: initialData.scheduleGapBriefing.summary.riskyGapCount,
+                  countTone: "urgent",
+                  render: () => (
+                    <div className="min-h-[300px]">
+                      <ScheduleGapBriefingBody data={initialData.scheduleGapBriefing!} />
+                    </div>
+                  ),
+                },
+                {
+                  key: "upcoming",
+                  label: "다가올 14일 일정",
+                  count: initialData.upcomingEvents.length,
+                  countTone: "neutral",
+                  render: () => (
+                    <div className="min-h-[300px]">
+                      <div className="mb-3 flex items-center gap-2 flex-wrap">
+                        <CalendarSyncBadge connected={initialData.googleCalendarConnected} />
+                        <span className="text-[11px] text-muted-foreground">진행 예정인 정산 및 주요 마일스톤</span>
+                      </div>
+                      <UpcomingScheduleBody
+                        events={initialData.upcomingEvents}
+                        thisWeekLabel={thisWeekLabel}
+                        nextWeekLabel={nextWeekLabel}
+                      />
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          ) : (
+            <UpcomingScheduleCard
+              events={initialData.upcomingEvents}
+              thisWeekLabel={thisWeekLabel}
+              nextWeekLabel={nextWeekLabel}
+              googleCalendarConnected={initialData.googleCalendarConnected}
+            />
+          )}
+
+          {/* 밴드 3: 할 일(반응)·기회(셀러 모멘텀)·점검(데이터) 3렌즈 triad — 3등분 (오너 결정 2026-07-10) */}
           {/* 트라이어드 배치(오너 2026-07-24): 스탯 카드(활성 셀러)를 좌측에, 탭 카드 2종(핵심 업무·
               데이터 점검)을 우측에 모아 같은 형태끼리 인접시킨다. xl 데스크톱에서만 order 로 재배치
               (모바일 스택은 DOM 순서 유지). */}
@@ -1406,53 +1457,6 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               />
             </div>
           </section>
-
-          {/* 밴드 3: 일정 계열 탭 묶음(오너 2026-07-24, 2순위) — 같은 시간축의 조감(12주 커버리지)·
-              상세(14일). 두 풀폭 밴드를 한 프레임에 묶어 세로 한 밴드를 절약한다. 일정 커버리지가
-              없으면 14일만 단독. 패널 min-h 로 탭 전환 시 높이 튐을 억제한다. */}
-          {initialData.scheduleGapBriefing ? (
-            <SegmentedTabCard
-              tabs={[
-                {
-                  key: "coverage",
-                  label: "일정 커버리지",
-                  count: initialData.scheduleGapBriefing.summary.riskyGapCount,
-                  countTone: "urgent",
-                  render: () => (
-                    <div className="min-h-[300px]">
-                      <ScheduleGapBriefingBody data={initialData.scheduleGapBriefing!} />
-                    </div>
-                  ),
-                },
-                {
-                  key: "upcoming",
-                  label: "다가올 14일 일정",
-                  count: initialData.upcomingEvents.length,
-                  countTone: "neutral",
-                  render: () => (
-                    <div className="min-h-[300px]">
-                      <div className="mb-3 flex items-center gap-2 flex-wrap">
-                        <CalendarSyncBadge connected={initialData.googleCalendarConnected} />
-                        <span className="text-[11px] text-muted-foreground">진행 예정인 정산 및 주요 마일스톤</span>
-                      </div>
-                      <UpcomingScheduleBody
-                        events={initialData.upcomingEvents}
-                        thisWeekLabel={thisWeekLabel}
-                        nextWeekLabel={nextWeekLabel}
-                      />
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          ) : (
-            <UpcomingScheduleCard
-              events={initialData.upcomingEvents}
-              thisWeekLabel={thisWeekLabel}
-              nextWeekLabel={nextWeekLabel}
-              googleCalendarConnected={initialData.googleCalendarConnected}
-            />
-          )}
 
           {/* 시스템 레이더 — 자동화 스케줄 모니터링. 판단 빈도가 낮은 관제 정보라 최하단 풀폭 스트립으로 배치 */}
           <SystemRadarCard />
