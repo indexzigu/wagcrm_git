@@ -157,6 +157,7 @@ export function MobileSettlementView({
               commitSearch(value);
             }}
             placeholder="캠페인, 셀러 검색"
+            aria-label="정산 캠페인 검색"
             className="h-full border-0 text-base focus-visible:ring-0"
           />
         </InputGroup>

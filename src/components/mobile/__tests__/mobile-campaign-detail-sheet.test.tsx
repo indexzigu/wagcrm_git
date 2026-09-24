@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   campaignRowToDetailData,
   getSlotDisplayLabel,
@@ -834,6 +835,108 @@ describe("당겨서 새로고침 — POST /api/mobile/order-sync 연동", () => 
     // 스로틀에 걸려 추가 POST 없음
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(orderSyncPostCount(fetchMock)).toBe(1);
+  });
+
+  // interfaces 점검 묶음 G2(2026-09-24): 당김은 화면 단서가 없고 키보드·보조기술로 할 수 없는
+  // 제스처라, 「매출 상세 현황」 헤더에 같은 동작의 버튼을 둔다. 제스처는 지름길로 남는다.
+  describe("동기화 버튼 — 제스처 없는 같은 경로", () => {
+    it("헤더 버튼(44px)을 키보드로 누르면 order-sync 를 한 번 부른다", async () => {
+      const fetchMock = stubDualFetch(makeSales(), {
+        payload: { status: "synced", asOf: "2026-07-08T05:00:00.000Z", changed: 0 },
+      });
+      await renderAndWaitInitialSales(fetchMock);
+
+      const card = screen.getByRole("region", { name: "매출상세현황" });
+      const button = within(card).getByRole("button", { name: "매출 동기화" });
+      expect(button.className).toContain("size-11");
+
+      button.focus();
+      await userEvent.keyboard("{Enter}");
+
+      await waitFor(() => expect(orderSyncPostCount(fetchMock)).toBe(1));
+      await waitFor(() => expect(screen.getByText(/이미 최신/)).toBeInTheDocument());
+      // disabled 로 바꾸지 않는다 — 포커스가 body 로 튕기지 않게.
+      expect(button).toHaveFocus();
+    });
+
+    it("버튼으로 시작한 동기화는 상단 당김 인디케이터를 펴지 않는다 — 스피너는 버튼 하나(ss-ux P1)", async () => {
+      // order-sync 응답을 붙잡아 두고 진행 중 상태를 관찰한다.
+      let release: (value: unknown) => void = () => {};
+      const pending = new Promise((resolve) => {
+        release = resolve;
+      });
+      const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/mobile/order-sync") {
+          await pending;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ status: "synced", asOf: "2026-07-08T05:00:00.000Z", changed: 0 }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => makeSales() };
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      await renderAndWaitInitialSales(fetchMock);
+
+      const button = screen.getByRole("button", { name: "매출 동기화" });
+      await userEvent.click(button);
+      await waitFor(() => expect(button).toHaveAttribute("aria-busy", "true"));
+
+      const indicator = screen.getByRole("status", { name: "매출 동기화 중" });
+      expect(indicator.style.height).toBe("0px");
+      expect(indicator.querySelector("svg")).toBeNull();
+      expect(button.querySelector("svg")?.getAttribute("class")).toContain("animate-spin");
+
+      await act(async () => {
+        release(undefined);
+      });
+      await waitFor(() => expect(button).toHaveAttribute("aria-busy", "false"));
+    });
+
+    it("당김으로 시작한 동기화는 종전대로 상단 인디케이터(36px)를 편다", async () => {
+      let release: (value: unknown) => void = () => {};
+      const pending = new Promise((resolve) => {
+        release = resolve;
+      });
+      const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/mobile/order-sync") {
+          await pending;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ status: "synced", asOf: "2026-07-08T05:00:00.000Z", changed: 0 }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => makeSales() };
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      await renderAndWaitInitialSales(fetchMock);
+
+      pullDown(getSheetContainer());
+      const indicator = await screen.findByRole("status", { name: "매출 동기화 중" });
+      expect(indicator.style.height).toBe("36px");
+      expect(indicator.querySelector("svg")).not.toBeNull();
+
+      await act(async () => {
+        release(undefined);
+      });
+    });
+
+    it("제스처와 같은 스로틀을 쓴다 — 당김 직후 버튼은 네트워크 없이 「이미 최신」만 알린다", async () => {
+      const fetchMock = stubDualFetch(makeSales(), {
+        payload: { status: "synced", asOf: "2026-07-08T05:00:00.000Z", changed: 2 },
+      });
+      await renderAndWaitInitialSales(fetchMock);
+
+      pullDown(getSheetContainer());
+      await waitFor(() => expect(salesGetCount(fetchMock)).toBe(2));
+      expect(screen.queryByText(/이미 최신/)).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "매출 동기화" }));
+      await waitFor(() => expect(screen.getByText("이미 최신")).toBeInTheDocument());
+      expect(orderSyncPostCount(fetchMock)).toBe(1);
+    });
   });
 });
 

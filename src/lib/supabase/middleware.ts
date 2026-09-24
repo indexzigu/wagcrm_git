@@ -13,6 +13,7 @@ import { isBotScanPath } from "@/lib/bot-scan-paths";
 import { DEMO_READONLY_MESSAGE, DEMO_USER, isDemoMode } from "@/lib/demo-mode";
 import { extractPortalSlug, isPortalPublicPath } from "@/lib/portal-slug";
 import { portalSlugExists } from "@/lib/portal-slug-existence";
+import { PORTAL_NOT_FOUND_HTML } from "@/lib/portal-not-found";
 import { isSentryTunnelPath } from "@/lib/sentry-tunnel";
 import { getSocialPreviewRewritePath } from "@/lib/social-preview";
 
@@ -114,7 +115,12 @@ export async function updateSession(request: NextRequest) {
   if (portalSlug) {
     const exists = await portalSlugExists(portalSlug);
     if (exists === false) {
-      return new NextResponse(null, { status: 404, headers: { "x-robots-tag": "noindex" } });
+      // 본문 없는 404 는 셀러에게 흰 화면이었다 — 페이지 구간 notFound() 와 같은 문구의 정적 HTML 을
+      // 싣는다. 여전히 렌더·DB 추가 조회는 없다. 본문은 요청 값을 담지 않는 고정 문자열이다(주입 차단).
+      return new NextResponse(PORTAL_NOT_FOUND_HTML, {
+        status: 404,
+        headers: { "x-robots-tag": "noindex", "content-type": "text/html; charset=utf-8" },
+      });
     }
   }
 

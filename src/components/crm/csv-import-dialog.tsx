@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useId } from "react";
 import Papa from "papaparse";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +99,8 @@ export function CSVImportDialog({
     skippedCount: number;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // 매핑 셀렉트 이름 배선용 접두 — CSV 헤더는 공백·특수문자를 담을 수 있어 id 에 쓰지 않고 순번을 쓴다.
+  const mappingIdPrefix = useId();
   const [error, setError] = useState<string | null>(null);
 
   const reset = useCallback(() => {
@@ -301,9 +303,12 @@ export function CSVImportDialog({
 
             {/* Mapping UI */}
             <FieldGroup className="gap-2">
-              {csvHeaders.map((header) => (
+              {csvHeaders.map((header, i) => {
+                const labelId = `${mappingIdPrefix}-col-${i}-label`;
+                const triggerId = `${mappingIdPrefix}-col-${i}`;
+                return (
                 <Field key={header} orientation="horizontal" className="items-center gap-3">
-                  <FieldLabel className="w-40 truncate">
+                  <FieldLabel id={labelId} htmlFor={triggerId} className="w-40 truncate">
                     {header}
                   </FieldLabel>
                   <span className="text-muted-foreground text-xs">→</span>
@@ -316,8 +321,14 @@ export function CSVImportDialog({
                       }))
                     }
                   >
-                    <SelectTrigger className="h-8 w-52 text-sm">
-                      <SelectValue placeholder="건너뛰기" />
+                    {/* 이름 = 「CSV 열 이름 + 현재 매핑」 — 종전엔 셀렉트가 전부 값(「건너뛰기」)으로만
+                        읽혀 어느 열을 고르는지 알 수 없었다. */}
+                    <SelectTrigger
+                      id={triggerId}
+                      aria-labelledby={`${labelId} ${triggerId}-value`}
+                      className="h-8 w-52 text-sm"
+                    >
+                      <SelectValue id={`${triggerId}-value`} placeholder="건너뛰기" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
@@ -331,7 +342,8 @@ export function CSVImportDialog({
                     </SelectContent>
                   </Select>
                 </Field>
-              ))}
+                );
+              })}
             </FieldGroup>
 
             <DialogFooter>

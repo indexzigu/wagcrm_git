@@ -712,8 +712,9 @@ export function CampaignSidePanel({
                   <Info className="size-3" />
                   캠페인명
                 </div>
-                <div className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 text-xs font-semibold text-slate-800">
-                  <span className="truncate">
+                {/* 펼친 상세라 말줄임하지 않고 줄바꿈한다 — 긴 자동 조합명이 잘리면 확인할 길이 없다. */}
+                <div className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs font-semibold text-slate-800">
+                  <span className="min-w-0 break-words">
                     {[campaign.dealName, campaign.sellerName].filter(Boolean).join(" - ") || campaign.campaignName || "이름 없음"}
                   </span>
                   {/* 회차는 범주다(P8 색 원칙 4) — 3차가 1차보다 급하거나 좋을 일이 없다.
@@ -1338,11 +1339,12 @@ export function CampaignSidePanel({
                 className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                 onClick={() => setCampaignDeleteOpen(true)}
                 title="캠페인 삭제"
+                aria-label="캠페인 삭제"
               >
-                <Trash2 className="size-4" />
+                <Trash2 className="size-4" aria-hidden="true" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
-                <X />
+              <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} aria-label="닫기">
+                <X aria-hidden="true" />
               </Button>
             </div>
           </DrawerHeader>
@@ -2727,7 +2729,7 @@ function SettlementInfo({
             <CellValue value={`${recipientName} / ${representativeName}`} />
           </InfoCell>
           <InfoCell label="정산 계좌">
-            <CellValue value={account} copyable={account !== "-"} />
+            <CellValue value={account} copyable={account !== "-"} copyLabel="정산 계좌 복사" />
           </InfoCell>
           <InfoCell label="세무 이메일">
             <CellValue value={email} />
@@ -2746,6 +2748,7 @@ function SettlementInfo({
                 <CellValue
                   value={campaign.partnerBusinessNumber || "-"}
                   copyable={Boolean(campaign.partnerBusinessNumber)}
+                  copyLabel="사업자번호 복사"
                 />
               </InfoCell>
               {/* 배경을 다른 칸의 틴트로 덮지 않는다 — 흰 배경이 "이 칸만 편집 가능"을
@@ -2837,8 +2840,16 @@ function InfoCell({
   );
 }
 
-/** 칸의 읽기 전용 값 + 선택적 복사 버튼. */
-function CellValue({ value, copyable = false }: { value: string; copyable?: boolean }) {
+/** 칸의 읽기 전용 값 + 선택적 복사 버튼. `copyLabel` 은 아이콘만 있는 복사 버튼의 접근 이름. */
+function CellValue({
+  value,
+  copyable = false,
+  copyLabel = "복사",
+}: {
+  value: string;
+  copyable?: boolean;
+  copyLabel?: string;
+}) {
   return (
     <>
       <span className="min-w-0 truncate font-medium text-slate-700" title={value}>
@@ -2855,8 +2866,9 @@ function CellValue({ value, copyable = false }: { value: string; copyable?: bool
             toast.success("클립보드에 복사되었습니다");
           }}
           title="복사"
+          aria-label={copyLabel}
         >
-          <Copy className="size-3.5" />
+          <Copy className="size-3.5" aria-hidden="true" />
         </Button>
       ) : null}
     </>
@@ -2989,8 +3001,9 @@ function EditableAccountCell({
                 toast.success("클립보드에 복사되었습니다");
               }}
               title="복사"
+              aria-label={`${label} 복사`}
             >
-              <Copy className="size-3.5" />
+              <Copy className="size-3.5" aria-hidden="true" />
             </Button>
           ) : null}
         </>

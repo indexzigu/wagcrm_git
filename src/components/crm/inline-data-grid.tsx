@@ -44,6 +44,18 @@ type InlineDataGridProps<T extends { id: string }> = {
 };
 
 
+/** 편집 버튼·행 열기 버튼이 같은 표기를 쓰도록 값 서식을 한 곳에 둔다. */
+function formatGridValue<T extends { id: string }>(
+  column: GridColumn<T>,
+  rawValue: string | number | null | undefined
+): string {
+  if (rawValue == null || rawValue === "") return "-";
+  if (column.type === "currency") return `${formatCurrency(Number(rawValue))}원`;
+  if (column.type === "percent") return formatRate(Number(rawValue));
+  if (column.type === "date") return formatDate(String(rawValue));
+  return String(rawValue);
+}
+
 export function InlineDataGrid<T extends { id: string }>({
   rows,
   columns,
@@ -251,10 +263,46 @@ export function InlineDataGrid<T extends { id: string }>({
                 onClick={() => onRowClick?.(row)}
               >
 
-                {columns.map((column) => {
+                {columns.map((column, columnIndex) => {
                   const isEditing =
                     editing?.id === row.id && editing.key === column.key;
                   const rawValue = row[column.key] as string | number | null | undefined;
+                  // 행 클릭(onRowClick)은 포인터 편의이고, 키보드 도달은 첫 칸의 실제 button 이
+                  // 진다(interfaces 점검 묶음 G2, 선례 inflow-report-client 날짜 셀). 그래서 첫 칸은
+                  // 인라인 편집 대신 「행 열기」 버튼이 된다 — 한 칸에 두 동작을 겹치면 어느 쪽이
+                  // 눌릴지 알 수 없다. stopPropagation 은 tr onClick 과의 이중 호출 방지.
+                  if (onRowClick && columnIndex === 0 && column.type !== "select") {
+                    return (
+                      <td
+                        key={column.key}
+                        className={cn(
+                          "h-11 overflow-hidden px-3",
+                          column.align === "right" && "text-right",
+                          column.align === "center" && "text-center",
+                          (!column.align || column.align === "left") && "text-left"
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRowClick(row);
+                          }}
+                          className={cn(
+                            "flex w-full min-w-0 items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-md px-2 py-1.5 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
+                            column.align === "right" && "justify-end",
+                            column.align === "center" && "justify-center"
+                          )}
+                        >
+                          {column.render ? (
+                            column.render(row)
+                          ) : (
+                            <span className="truncate">{formatGridValue(column, rawValue)}</span>
+                          )}
+                        </button>
+                      </td>
+                    );
+                  }
                   if (column.render && !isEditing) {
                     return (
                       <td
@@ -355,15 +403,7 @@ export function InlineDataGrid<T extends { id: string }>({
                             setEditing({ id: row.id, key: column.key });
                           }}
                         >
-                          {rawValue == null || rawValue === ""
-                            ? "-"
-                            : column.type === "currency"
-                              ? `${formatCurrency(Number(rawValue))}원`
-                              : column.type === "percent"
-                                ? formatRate(Number(rawValue))
-                                : column.type === "date"
-                                  ? formatDate(String(rawValue))
-                                  : String(rawValue)}
+                          {formatGridValue(column, rawValue)}
                         </button>
                       )}
                     </td>

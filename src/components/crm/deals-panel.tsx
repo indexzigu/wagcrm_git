@@ -875,8 +875,9 @@ function DealsPanelContent({
             variant="ghost"
             size="icon"
             onClick={() => onOpenChange(false)}
+            aria-label="닫기"
           >
-            <X />
+            <X aria-hidden="true" />
           </Button>
         </DrawerHeader>
         {body}

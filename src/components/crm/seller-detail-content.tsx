@@ -721,8 +721,10 @@ export function SellerDetailContent({
                 </div>
                 {seller.profileBio && (seller.profileBio.split('\n').length > 4 || seller.profileBio.length > 100) && (
                   <button
+                    type="button"
                     onClick={() => setBioExpanded(!bioExpanded)}
-                    className="text-[10px] text-blue-600 font-medium mt-1.5 hover:underline focus:outline-none self-start"
+                    aria-expanded={bioExpanded}
+                    className="text-[10px] text-blue-600 font-medium mt-1.5 hover:underline rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring self-start"
                   >
                     {bioExpanded ? "접기" : "...더보기"}
                   </button>
@@ -1220,8 +1222,9 @@ export function SellerDetailContent({
                                     size="icon"
                                     className="h-6 w-6 text-muted-foreground hover:text-red-600 hover:bg-red-50 rounded"
                                     onClick={() => handleDeleteHistory(snapshot.id)}
+                                    aria-label={`${formatDate(snapshot.snapshotDate)} 기록 삭제`}
                                   >
-                                    <Trash2 className="h-3 w-3" />
+                                    <Trash2 className="h-3 w-3" aria-hidden="true" />
                                   </Button>
                                 </td>
                               </tr>

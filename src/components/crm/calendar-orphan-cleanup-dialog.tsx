@@ -164,7 +164,8 @@ export function CalendarOrphanCleanupDialog() {
                         onChange={() => toggle(o.id)}
                         className="size-3.5 shrink-0 accent-primary"
                       />
-                      <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+                      {/* 삭제 여부를 이 이름으로 판단하므로 잘리지 않게 줄바꿈한다. */}
+                      <span className="min-w-0 flex-1 break-words text-xs text-foreground">
                         {o.summary}
                       </span>
                       {/* 캘린더 구분은 범주라 색을 받지 않는다(P8 §4) — 회계 캘린더의

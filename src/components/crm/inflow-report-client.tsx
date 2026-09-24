@@ -175,14 +175,24 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
                           className="cursor-pointer"
                         >
                           <TableCell>
-                            <div className="flex flex-col gap-0.5">
+                            {/* 행 클릭은 포인터 편의이고, 키보드 도달은 첫 칸의 실제 button 이 진다
+                                (아래 일자 표의 날짜 셀과 같은 규약 — interfaces 점검 묶음 G2).
+                                stopPropagation — 행 onClick 과 이중 호출 방지. */}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelected(link);
+                              }}
+                              className="flex flex-col items-start gap-0.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                            >
                               <span className="font-medium text-foreground">
                                 {link.campaignName ?? link.label ?? "캠페인 미연결"}
                               </span>
                               <span className="font-mono text-[10px] text-muted-foreground">
                                 {link.code}
                               </span>
-                            </div>
+                            </button>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1.5">

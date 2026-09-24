@@ -70,6 +70,19 @@ export interface UsePullToRefreshResult {
   refreshing: boolean;
   /** prefers-reduced-motion: reduce — 인디케이터 애니메이션 게이트. */
   reducedMotion: boolean;
+  /**
+   * 제스처 없이 같은 새로고침을 실행한다(버튼 경로 — 키보드·보조기술 사용자는 당길 수 없다).
+   * 당김 임계만 건너뛰고 진행 중 무시·성공 후 스로틀은 제스처와 **같은 판정**을 쓴다 —
+   * 두 경로가 따로 돌면 버튼으로 스로틀을 우회해 서버 왕복을 늘리게 된다.
+   * @returns 실행했으면 true, 진행 중·스로틀·비활성으로 무시했으면 false.
+   */
+  triggerRefresh: () => boolean;
+  /**
+   * 진행 중인 새로고침이 **당김 제스처**로 시작됐는가. 상단 당김 인디케이터는 이것일 때만
+   * 펼친다 — 버튼으로 시작한 새로고침까지 펼치면 버튼 아이콘과 스피너가 둘이 되고 본문이
+   * 36px 밀린다(ss-ux 검토 P1). 버튼 경로는 버튼 자신이 진행을 보여 준다.
+   */
+  refreshingByGesture: boolean;
 }
 
 export function usePullToRefresh(
@@ -77,6 +90,7 @@ export function usePullToRefresh(
 ): UsePullToRefreshResult {
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingByGesture, setRefreshingByGesture] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
   // 리스너 안에서 최신 값을 읽기 위한 ref 미러들.
@@ -114,6 +128,47 @@ export function usePullToRefresh(
     pullRef.current = value;
     setPullDistance(value);
   }, []);
+
+  // 제스처·버튼 공용 실행부 — 판정(shouldFireRefresh)을 통과한 뒤에만 부른다.
+  const startRefresh = useCallback((source: "gesture" | "button") => {
+    refreshingRef.current = true;
+    setRefreshing(true);
+    setRefreshingByGesture(source === "gesture");
+    Promise.resolve()
+      .then(() => optionsRef.current.onRefresh())
+      .then(() => {
+        lastSuccessAtRef.current = Date.now();
+      })
+      .catch((error) => {
+        // 실패 시 스로틀을 걸지 않아 즉시 재시도할 수 있다.
+        console.error("pull-to-refresh onRefresh failed:", error);
+      })
+      .finally(() => {
+        refreshingRef.current = false;
+        setRefreshing(false);
+        setRefreshingByGesture(false);
+      });
+  }, []);
+
+  const triggerRefresh = useCallback((): boolean => {
+    if (optionsRef.current.disabled) return false;
+    const thresholdPx = optionsRef.current.thresholdPx ?? PULL_THRESHOLD_PX;
+    if (
+      !shouldFireRefresh({
+        // 버튼은 당김 거리가 없다 — 임계를 그대로 넘겨 거리 조건만 통과시킨다.
+        pullDistance: thresholdPx,
+        refreshing: refreshingRef.current,
+        lastSuccessAt: lastSuccessAtRef.current,
+        now: Date.now(),
+        thresholdPx,
+        throttleMs: optionsRef.current.throttleMs,
+      })
+    ) {
+      return false;
+    }
+    startRefresh("button");
+    return true;
+  }, [startRefresh]);
 
   const containerRef = useCallback(
     (node: HTMLElement | null) => {
@@ -162,21 +217,7 @@ export function usePullToRefresh(
           return;
         }
 
-        refreshingRef.current = true;
-        setRefreshing(true);
-        Promise.resolve()
-          .then(() => optionsRef.current.onRefresh())
-          .then(() => {
-            lastSuccessAtRef.current = Date.now();
-          })
-          .catch((error) => {
-            // 실패 시 스로틀을 걸지 않아 즉시 재시도할 수 있다.
-            console.error("pull-to-refresh onRefresh failed:", error);
-          })
-          .finally(() => {
-            refreshingRef.current = false;
-            setRefreshing(false);
-          });
+        startRefresh("gesture");
       };
 
       const onTouchCancel = () => {
@@ -198,8 +239,8 @@ export function usePullToRefresh(
         node.removeEventListener("touchcancel", onTouchCancel);
       };
     },
-    [setPull],
+    [setPull, startRefresh],
   );
 
-  return { containerRef, pullDistance, refreshing, reducedMotion };
+  return { containerRef, pullDistance, refreshing, reducedMotion, triggerRefresh, refreshingByGesture };
 }

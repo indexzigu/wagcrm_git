@@ -108,8 +108,9 @@ export function SellersPanel({
               variant="ghost"
               size="icon"
               onClick={() => onOpenChange(false)}
+              aria-label="닫기"
             >
-              <X />
+              <X aria-hidden="true" />
             </Button>
           </DrawerHeader>
           <div className="overflow-y-auto">{createBody}</div>
@@ -152,8 +153,8 @@ export function SellersPanel({
               셀러 정보, 성과 요약, 캠페인 이력을 확인합니다.
             </DrawerDescription>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
-            <X />
+          <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)} aria-label="닫기">
+            <X aria-hidden="true" />
           </Button>
         </DrawerHeader>
         <div className="min-h-0 flex-1 overflow-hidden">

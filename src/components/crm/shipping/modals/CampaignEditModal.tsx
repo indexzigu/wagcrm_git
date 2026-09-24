@@ -340,8 +340,8 @@ export default function CampaignEditModal({
                 </div>
               </div>
               <div className="col-span-1">
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">셀러명</label>
-                <input required value={editSellerName} onChange={e => setEditSellerName(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
+                <label htmlFor="campaign-edit-seller" className="block text-[11px] font-bold text-slate-500 mb-1">셀러명</label>
+                <input id="campaign-edit-seller" required value={editSellerName} onChange={e => setEditSellerName(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
               </div>
               <div className="col-span-1">
                 <label htmlFor="campaign-template-edit" className="block text-[11px] font-bold text-slate-500 mb-1">거래처 양식</label>
@@ -357,12 +357,12 @@ export default function CampaignEditModal({
                 </select>
               </div>
               <div className="col-span-1">
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">수신 이메일 주소</label>
-                <input required value={editToEmail} onChange={e => setEditToEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
+                <label htmlFor="campaign-edit-to" className="block text-[11px] font-bold text-slate-500 mb-1">수신 이메일 주소</label>
+                <input id="campaign-edit-to" required value={editToEmail} onChange={e => setEditToEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
               </div>
               <div className="col-span-2">
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">참조 이메일 주소</label>
-                <input value={editCcEmail} onChange={e => setEditCcEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
+                <label htmlFor="campaign-edit-cc" className="block text-[11px] font-bold text-slate-500 mb-1">참조 이메일 주소</label>
+                <input id="campaign-edit-cc" value={editCcEmail} onChange={e => setEditCcEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
               </div>
               <div className="col-span-3">
                 <div className="mb-1 flex items-center justify-between gap-2">
@@ -427,22 +427,22 @@ export default function CampaignEditModal({
                           <td className="px-2 py-1">
                             <input value={m.productName} onChange={(e) => {
                               const newM = [...editMappings]; newM[idx] = { ...newM[idx], productName: e.target.value }; setEditMappings(newM);
-                            }} onPaste={(e) => handleTablePaste(e, idx, 0)} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus:border-blue-400" />
+                            }} onPaste={(e) => handleTablePaste(e, idx, 0)} aria-label={`${idx + 1}행 상품명`} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring" />
                           </td>
                           <td className="px-2 py-1">
                             <input value={m.optionName} onChange={(e) => {
                               const newM = [...editMappings]; newM[idx] = { ...newM[idx], optionName: e.target.value }; setEditMappings(newM);
-                            }} onPaste={(e) => handleTablePaste(e, idx, 1)} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus:border-blue-400" />
+                            }} onPaste={(e) => handleTablePaste(e, idx, 1)} aria-label={`${idx + 1}행 옵션명`} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring" />
                           </td>
                           <td className="px-2 py-1">
                             <input value={m.brandCode} onChange={(e) => {
                               const newM = [...editMappings]; newM[idx] = { ...newM[idx], brandCode: e.target.value }; setEditMappings(newM);
-                            }} onPaste={(e) => handleTablePaste(e, idx, 2)} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus:border-blue-400" />
+                            }} onPaste={(e) => handleTablePaste(e, idx, 2)} aria-label={`${idx + 1}행 상품코드`} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring" />
                           </td>
                           <td className="px-2 py-1">
                             <input type="number" value={m.price} onChange={(e) => {
                               const newM = [...editMappings]; newM[idx] = { ...newM[idx], price: Number(e.target.value) }; setEditMappings(newM);
-                            }} onPaste={(e) => handleTablePaste(e, idx, 3)} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus:border-blue-400" />
+                            }} onPaste={(e) => handleTablePaste(e, idx, 3)} aria-label={`${idx + 1}행 단가`} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring" />
                           </td>
                           <td className="px-2 py-1">
                             {(() => {
@@ -463,8 +463,9 @@ export default function CampaignEditModal({
                                       newM[idx] = { ...newM[idx], campaignDealId: e.target.value || null };
                                       setEditMappings(newM);
                                     }}
+                                    aria-label={`${idx + 1}행 캠페인(딜)`}
                                     aria-describedby={priceMismatch ? `price-check-${idx}` : undefined}
-                                    className={`w-full border rounded-lg pl-1.5 pr-2 py-1 text-[10px] outline-none focus:border-blue-400 text-ellipsis ${m.campaignDealId ? 'border-green-300 bg-green-50 text-green-700 font-bold' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
+                                    className={`w-full border rounded-lg pl-1.5 pr-2 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-ellipsis ${m.campaignDealId ? 'border-green-300 bg-green-50 text-green-700 font-bold' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
                                   >
                                     <option value="">미지정</option>
                                     {availableDeals.length > 0 && (
@@ -499,7 +500,7 @@ export default function CampaignEditModal({
                           <td className="px-2 py-1.5 text-center">
                             <button type="button" onClick={() => {
                               if (editMappings.length > 1) setEditMappings(editMappings.filter((_, i) => i !== idx));
-                            }} className="text-destructive hover:text-red-700 font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            }} aria-label={`${idx + 1}행 삭제`} className="text-destructive hover:text-red-700 font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
                           </td>
                         </tr>
                       ))}

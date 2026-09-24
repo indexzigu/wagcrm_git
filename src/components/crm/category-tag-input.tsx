@@ -239,15 +239,23 @@ export function CategoryTagInput({
   // Display Mode
   if (!isEditing) {
     return (
-      <div
+      // 표시 상태 전체가 「편집 시작」 버튼이다 — div 였을 때는 포인터로만 편집에 들어갔다
+      // (interfaces 점검 묶음 G2). 연필은 hover 와 키보드 포커스 모두에서 보인다.
+      <button
+        type="button"
         className={cn(
           "group/field flex w-full items-center justify-end gap-1.5 rounded-md px-0 py-0 transition-colors min-h-[30px] cursor-pointer",
           "bg-transparent hover:bg-transparent border border-transparent hover:border-transparent",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
         )}
         onClick={startEditing}
       >
-        <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/field:opacity-100 transition-opacity" />
-        <div className="flex flex-wrap gap-1 min-w-0 justify-end">
+        <span className="sr-only">카테고리 편집: </span>
+        <Pencil
+          aria-hidden="true"
+          className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/field:opacity-100 group-focus-visible/field:opacity-100 transition-opacity"
+        />
+        <span className="flex flex-wrap gap-1 min-w-0 justify-end">
           {selectedTags.length > 0 ? (
             selectedTags.map((tag) => (
               <Badge
@@ -261,8 +269,8 @@ export function CategoryTagInput({
           ) : (
             <span className="text-xs text-muted-foreground h-5.5 flex items-center justify-end font-medium px-1">-</span>
           )}
-        </div>
-      </div>
+        </span>
+      </button>
     );
   }
 

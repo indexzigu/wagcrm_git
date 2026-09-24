@@ -729,12 +729,16 @@ export function AssetLibrary({
 
       return (
         <div key={node.id} className="select-none h-full flex items-center">
-          <div
-            className="flex items-center justify-between py-1.5 px-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-[background-color,scale] duration-150 gap-2 border border-transparent active:scale-[0.99] w-full"
+          {/* 폴더 행은 펼침 토글이다 — div 였을 때는 포인터로만 열렸다. 실제 button +
+              aria-expanded 로 키보드 도달·상태 낭독을 준다(interfaces 점검 묶음 G2). */}
+          <button
+            type="button"
+            aria-expanded={node.isOpen}
+            className="flex items-center justify-between py-1.5 px-3 rounded-xl text-left hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-[background-color,scale] duration-150 gap-2 border border-transparent active:scale-[0.99] w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             style={{ marginLeft: `${node.depth * 20}px` }}
             onClick={() => toggleFolder(node.id)}
           >
-            <div className="flex items-center gap-2 min-w-0">
+            <span className="flex items-center gap-2 min-w-0">
               <span className="text-slate-400 shrink-0">
                 {node.isOpen ? (
                   <FolderOpen className="size-4 text-amber-500 fill-amber-500/20" />
@@ -750,11 +754,11 @@ export function AssetLibrary({
                   {labelMap[node.folderType]}
                 </Badge>
               )}
-            </div>
-            <div className="text-slate-400 text-xs shrink-0 flex items-center gap-1.5">
+            </span>
+            <span className="text-slate-400 text-xs shrink-0 flex items-center gap-1.5">
               {node.isOpen ? <ChevronDown className="size-3 text-slate-400" /> : <ChevronRight className="size-3 text-slate-400" />}
-            </div>
-          </div>
+            </span>
+          </button>
         </div>
       );
     } else {
@@ -1069,18 +1073,20 @@ export function AssetLibrary({
                             <div className="mt-0.5 shrink-0">
                               {getFileIcon(asset.mimeType, asset.fileName)}
                             </div>
-                            <p 
-                              className="truncate text-sm font-semibold text-slate-800 group-hover:text-primary transition-colors cursor-pointer" 
+                            {/* 파일명이 곧 「열기」다 — p 였을 때는 포인터로만 열렸다(interfaces 점검 묶음 G2). */}
+                            <button
+                              type="button"
+                              className="min-w-0 truncate rounded-sm text-left text-sm font-semibold text-slate-800 group-hover:text-primary transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                               onClick={() => openAsset(asset)}
                               title={asset.fileName}
                             >
                               {asset.fileName}
-                            </p>
+                            </button>
                           </div>
                           <Button
                             variant="ghost"
                             size="icon-xs"
-                            className="size-5 opacity-0 group-hover/title:opacity-100 transition-opacity rounded-md shrink-0 text-slate-500 hover:text-slate-700"
+                            className="size-5 opacity-0 group-hover/title:opacity-100 group-focus-within/title:opacity-100 focus-visible:opacity-100 transition-opacity rounded-md shrink-0 text-slate-500 hover:text-slate-700"
                             onClick={(e) => {
                               e.stopPropagation();
                               renameAsset(asset);

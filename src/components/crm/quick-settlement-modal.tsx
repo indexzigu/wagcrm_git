@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, Copy, Check, Banknote, ShieldAlert, UploadCloud, FileText, X } from "lucide-react";
+import { Loader2, Copy, Check, Banknote, ShieldAlert, UploadCloud, FileText, X, Paperclip } from "lucide-react";
 import { toast } from "@/lib/toast";
 
 import { Button } from "@/components/ui/button";
@@ -193,8 +193,8 @@ export function QuickSettlementModal({
             <FieldLabel>대상 정보</FieldLabel>
             <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
               <div className="flex items-start justify-between gap-4">
-                <span className="text-muted-foreground">캠페인 / 딜</span>
-                <span className="min-w-0 max-w-[220px] truncate font-medium">{title}</span>
+                <span className="shrink-0 text-muted-foreground">캠페인 / 딜</span>
+                <span className="min-w-0 break-words text-right font-medium">{title}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-muted-foreground">셀러명</span>
@@ -228,11 +228,17 @@ export function QuickSettlementModal({
             <Field>
               <FieldLabel>수취 계좌 정보</FieldLabel>
               <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
-                <span className="min-w-0 truncate font-mono text-sm text-foreground">
+                {/* ⛔ 계좌번호는 절대 말줄임하지 않는다 — 이체 직전 대조 화면이라 잘린 채 맞춰 보면
+                    끝자리 오류를 못 잡는다(이체 실수). 좁으면 어디서든 끊어 전부 보인다. */}
+                <span className="min-w-0 break-all font-mono text-sm text-foreground">
                   {accountNumber}
                 </span>
-                <Button variant="ghost" onClick={handleCopyAccount}>
-                  {copied ? <Check /> : <Copy />}
+                <Button
+                  variant="ghost"
+                  onClick={handleCopyAccount}
+                  aria-label={copied ? "계좌번호 복사됨" : "계좌번호 복사"}
+                >
+                  {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                 </Button>
               </div>
             </Field>
@@ -269,6 +275,22 @@ export function QuickSettlementModal({
                 <p className="text-sm font-medium text-foreground">
                   클릭하거나 파일을 여기로 드래그하세요
                 </p>
+                {/* 드롭존 클릭·드래그는 포인터 경로다 — 키보드로는 이 버튼이 유일한 첨부 경로다
+                    (interfaces 점검 묶음 G2). stopPropagation — 드롭존 onClick 이 파일 창을 한 번
+                    더 부르지 않게. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <Paperclip aria-hidden />
+                  파일 선택
+                </Button>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">
@@ -283,8 +305,8 @@ export function QuickSettlementModal({
                     </p>
                   </div>
                 </div>
-                <Button variant="ghost" onClick={handleRemoveFile}>
-                  <X />
+                <Button variant="ghost" onClick={handleRemoveFile} aria-label="첨부 파일 빼기">
+                  <X aria-hidden="true" />
                 </Button>
               </div>
             )}

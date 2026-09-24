@@ -449,10 +449,27 @@ export function MobileCampaignDetailSheet({
     }
   }, [reloadSales]);
 
-  const { containerRef, pullDistance, refreshing, reducedMotion } = usePullToRefresh({
+  const {
+    containerRef,
+    pullDistance,
+    refreshing,
+    reducedMotion,
+    triggerRefresh,
+    refreshingByGesture,
+  } = usePullToRefresh({
     onRefresh: handleOrderRefresh,
     disabled: !open || !salesEndpoint,
   });
+
+  // 「매출 상세 현황」 헤더의 동기화 버튼 — 당겨서 새로고침은 화면 단서가 없고 키보드·보조기술로는
+  // 할 수 없는 제스처라, 같은 동작을 보이는 버튼으로도 연다(interfaces 점검 묶음 G2). 제스처는
+  // 지름길로 그대로 둔다. 스로틀에 걸려 무시되면 말없이 넘어가지 않고 칩으로 알린다.
+  const gestureRefreshing = refreshing && refreshingByGesture;
+
+  const handleSyncButton = useCallback(() => {
+    if (refreshing) return;
+    if (!triggerRefresh()) setRefreshNotice("이미 최신");
+  }, [refreshing, triggerRefresh]);
 
   if (!campaign) return null;
 
@@ -468,7 +485,10 @@ export function MobileCampaignDetailSheet({
         showCloseButton={false}
         className="mobile-sheet-safe-bottom top-0 gap-0 overflow-y-auto overscroll-y-contain rounded-none border-0 p-0 bg-slate-50/80 backdrop-blur-3xl"
       >
-        {/* ⓪ 당겨서 새로고침 인디케이터 — 과한 모션 금지, reduced-motion 게이트 */}
+        {/* ⓪ 당겨서 새로고침 인디케이터 — 과한 모션 금지, reduced-motion 게이트.
+            높이·스피너는 **당김으로 시작한 새로고침**에만 편다 — 헤더 버튼으로 시작하면 버튼 아이콘이
+            진행을 보여 주므로, 여기까지 펴면 스피너가 둘이 되고 본문이 36px 밀린다(ss-ux 검토 P1).
+            낭독용 상태 문구(aria-label)는 두 경로 모두에 둔다. */}
         <div
           role="status"
           aria-live="polite"
@@ -481,17 +501,17 @@ export function MobileCampaignDetailSheet({
           }
           className="flex items-center justify-center overflow-hidden text-slate-400"
           style={{
-            height: refreshing ? 36 : pullDistance,
+            height: gestureRefreshing ? 36 : pullDistance,
             transition:
               reducedMotion || pullDistance > 0 ? undefined : "height 150ms ease-out",
           }}
         >
-          {refreshing || pullDistance > 0 ? (
+          {gestureRefreshing || pullDistance > 0 ? (
             <RefreshCwIcon
               aria-hidden="true"
-              className={cn("size-4", refreshing && "motion-safe:animate-spin")}
+              className={cn("size-4", gestureRefreshing && "motion-safe:animate-spin")}
               style={
-                !refreshing && !reducedMotion
+                !gestureRefreshing && !reducedMotion
                   ? {
                       transform: `rotate(${Math.min(pullDistance / PULL_THRESHOLD_PX, 1) * 180}deg)`,
                       opacity: Math.min(pullDistance / PULL_THRESHOLD_PX, 1),
@@ -514,12 +534,13 @@ export function MobileCampaignDetailSheet({
           </div>
           <SheetTitle asChild>
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="truncate text-base font-bold text-slate-900 tracking-tight">
+              {/* 상세 시트 제목은 말줄임 대신 줄바꿈 — 터치에는 title 도 없어 잘린 딜·셀러명에 닿을 길이 없다. */}
+              <span className="min-w-0 break-words text-base font-bold text-slate-900 tracking-tight">
                 {campaign.dealName}
               </span>
               <span className="inline-flex min-w-0 items-center gap-1">
                 <UserRoundIcon aria-hidden="true" className="size-3.5 shrink-0 text-slate-400" />
-                <span className="truncate text-[13px] font-medium text-slate-600">
+                <span className="min-w-0 break-words text-[13px] font-medium text-slate-600">
                   {campaign.sellerName}
                 </span>
               </span>
@@ -548,6 +569,27 @@ export function MobileCampaignDetailSheet({
           <MobileSheetCard
             title="매출 상세 현황"
             ariaLabel="매출상세현황"
+            action={
+              salesEndpoint ? (
+                // 아이콘 버튼 = 인터랙티브 라디우스(xl) + ③ bg 틴트 프레스(글래스 카드 위 변형), 44px.
+                // -my/-mr: 헤더 줄 높이·우측 정렬을 그대로 두고 누를 영역만 넓힌다.
+                <button
+                  type="button"
+                  // disabled 대신 aria-disabled — 포커스된 버튼이 disabled 가 되면 포커스가 body 로
+                  // 튕겨 키보드 사용자가 제자리를 잃는다. 진행 중 재입력은 핸들러가 막는다.
+                  onClick={handleSyncButton}
+                  aria-disabled={refreshing}
+                  aria-busy={refreshing}
+                  aria-label="매출 동기화"
+                  className="-my-2.5 -mr-3 flex size-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-slate-900/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:text-slate-400"
+                >
+                  <RefreshCwIcon
+                    aria-hidden="true"
+                    className={cn("size-4", refreshing && "motion-safe:animate-spin")}
+                  />
+                </button>
+              ) : undefined
+            }
             // 칩은 "그 순간 하나의 문자열"이다 — 갱신 알림이 있으면 그것, 없으면 집계 시각.
             chip={
               refreshNotice ??
