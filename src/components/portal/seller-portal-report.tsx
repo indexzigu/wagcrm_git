@@ -89,7 +89,7 @@ function deadlineBadge(salePeriod: string, today: string): TimingBadge | null {
   const days = daysBetweenYmd(today, endYmd);
   if (Number.isNaN(days)) return null;
   if (days < 0)
-    return { kind: "static", label: "판매 종료", className: "bg-slate-100 text-slate-500 border-slate-200" };
+    return { kind: "static", label: "판매 종료", className: "bg-slate-100 text-slate-600 border-slate-200" };
   // 4일 이상 남았으면 아무것도 표기하지 않는다 — 위 ⛔ 참조.
   if (days > 3) return null;
   const targetMs = saleBoundaryMs(endYmd, "close");
@@ -153,25 +153,31 @@ function momentumMeta(
   const yesterdayRevenue = yesterdayStat.revenue;
   if (yesterdayRevenue === 0) {
     if (todayRevenue === 0) return null; // 0→0, 비교 무의미
-    return { label: "신규", className: "text-emerald-600" };
+    return { label: "신규", className: "text-emerald-700" };
   }
   const pct = Math.round(((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100);
   if (pct === 0) return { label: "보합", className: "text-slate-500" };
-  if (pct > 0) return { label: `▲ ${pct}%`, className: "text-emerald-600" };
+  if (pct > 0) return { label: `▲ ${pct}%`, className: "text-emerald-700" };
   return { label: `▼ ${Math.abs(pct)}%`, className: "text-slate-500" };
 }
 
 function HourlyChart({ hourly }: { hourly: { hour: number; orders: number }[] }) {
   const max = Math.max(1, ...hourly.map((h) => h.orders));
+  // 막대는 그림뿐이라 화면낭독기에는 요약 한 줄을 준다(가장 많은 시간대).
+  const peak = hourly.reduce<{ hour: number; orders: number } | null>(
+    (best, h) => (h.orders > 0 && (!best || h.orders > best.orders) ? h : best),
+    null,
+  );
+  const summary = peak ? `시간대별 주문: 가장 많은 시간 ${peak.hour}시, ${peak.orders.toLocaleString()}건` : "시간대별 주문: 아직 주문이 없습니다";
   return (
-    <div className="flex items-end gap-[3px] h-24">
+    <div role="img" aria-label={summary} className="flex items-end gap-[3px] h-24">
       {hourly.map((h) => (
         <div key={h.hour} className="flex-1 h-full flex flex-col items-center justify-end gap-1">
           <div
             className={`w-full rounded-t ${h.orders > 0 ? "bg-blue-400" : "bg-slate-100"}`}
             style={{ height: `${Math.max(h.orders > 0 ? 4 : 2, Math.round((h.orders / max) * 72))}px` }}
           ></div>
-          <span className="text-[9px] text-slate-500 leading-none">{h.hour % 6 === 0 ? h.hour : ""}</span>
+          <span aria-hidden="true" className="text-[10px] text-slate-500 leading-none">{h.hour % 6 === 0 ? h.hour : ""}</span>
         </div>
       ))}
     </div>
@@ -183,7 +189,7 @@ function OptionRow({ o }: { o: { name: string; quantity: number; revenue: number
   return (
     <div>
       <div className="flex justify-between items-baseline gap-2">
-        <span className="text-xs font-medium text-slate-700 truncate">{o.name}</span>
+        <span className="min-w-0 break-words text-xs font-medium text-slate-700">{o.name}</span>
         <span className="text-xs font-bold text-slate-800 shrink-0">
           {o.quantity.toLocaleString()}개 · {fmtWon(o.revenue)}
         </span>
@@ -221,15 +227,16 @@ function ActiveCampaignSection({
   return (
     <section className="bg-white rounded-2xl border border-slate-200 shadow-soft-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
+        <div className="flex items-start gap-2">
+          <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
             판매중
           </span>
-          <h2 className="font-bold text-slate-800 text-sm truncate">{camp.name}</h2>
-          {/* F2 성과 카드 — 캡처·공유용 한 장 뷰 */}
+          <h2 className="min-w-0 break-words font-bold text-slate-800 text-sm">{camp.name}</h2>
+          {/* F2 성과 카드 — 캡처·공유용 한 장 뷰. 누를 영역은 24px(WCAG 2.5.8) — 44px 로 키우면
+              바로 아래 판매기간 줄(mt-1)을 덮어 그 근처 탭이 이 링크로 샌다. */}
           <Link
             href={`${basePath}/card/${camp.id}`}
-            className="ml-auto shrink-0 text-[10px] font-bold text-blue-500"
+            className="-my-0.5 -mr-2 ml-auto inline-flex min-h-6 shrink-0 items-center px-2 text-[10px] font-bold text-blue-600"
           >
             성과 카드 →
           </Link>
@@ -252,7 +259,7 @@ function ActiveCampaignSection({
           </div>
         </div>
         <div className="px-5 py-4">
-          <div className="text-[11px] font-bold text-blue-500 uppercase">오늘 매출</div>
+          <div className="text-[11px] font-bold text-blue-600 uppercase">오늘 매출</div>
           <div className="flex items-baseline gap-1.5 mt-0.5">
             <div className="text-xl font-bold text-blue-600">{fmtWon(todayStat?.revenue || 0)}</div>
             {momentum && (
@@ -387,11 +394,11 @@ function UpcomingCampaignSection({ camp, today }: { camp: PortalCampaign; today:
   const opening = openingBadge(camp.salePeriod, today);
   return (
     <section className="bg-slate-50/60 rounded-2xl border border-slate-200/70 px-5 py-4">
-      <div className="flex items-center gap-2">
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
+      <div className="flex items-start gap-2">
+        <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
           예정
         </span>
-        <h2 className="font-bold text-slate-700 text-sm truncate">{camp.name}</h2>
+        <h2 className="min-w-0 break-words font-bold text-slate-700 text-sm">{camp.name}</h2>
         {opening && (
           <span className="ml-auto shrink-0">
             <TimingBadgeView badge={opening} />
@@ -567,7 +574,7 @@ export async function SellerPortalReport({
           </div>
         )}
 
-        <footer className="mt-8 text-center text-[10px] text-slate-300">
+        <footer className="mt-8 text-center text-[10px] text-slate-500">
           본 리포트는 와이그라운드가 제공하는 판매 현황 자료입니다.
         </footer>
       </div>

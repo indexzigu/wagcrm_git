@@ -114,7 +114,7 @@ export async function SellerPerformanceCard({
         {/* 캡처 대상 카드 — 이 박스 안에 자랑 포인트를 밀도 있게 담는다 */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-soft-md overflow-hidden">
           <div className="px-6 pt-6 pb-4 bg-gradient-to-br from-slate-900 to-slate-700">
-            <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">
+            <p className="text-[10px] font-bold tracking-widest text-slate-300 uppercase">
               WAG Performance Card
             </p>
             <h1 className="text-lg font-bold text-white mt-1.5 leading-snug">{camp.name}</h1>
@@ -193,7 +193,7 @@ export async function SellerPerformanceCard({
           {topOption && (
             <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3">
               <span className="text-[11px] font-bold text-slate-500 shrink-0">베스트 구성</span>
-              <span className="text-xs font-medium text-slate-700 truncate">
+              <span className="min-w-0 break-words text-right text-xs font-medium text-slate-700">
                 {topOption.name} · {topOption.quantity.toLocaleString()}개
               </span>
             </div>
