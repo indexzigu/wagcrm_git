@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { Card } from "@/components/ui/card";
+import { DataLoadError } from "@/components/ui/empty";
 import { SearchableDropdown } from "@/components/crm/searchable-dropdown";
 import { PriceSheetStatusBadge } from "./status-badge";
 import { UploadCloudIcon, FileSpreadsheetIcon, ImageIcon, FileTextIcon, PresentationIcon } from "lucide-react";
@@ -43,14 +44,23 @@ export function PriceSheetList() {
   const [uploading, setUploading] = React.useState(false);
   const [dragActive, setDragActive] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // 목록 조회 실패 — 업로드 오류(`error`)와 별개다. 실패를 「업로드된 가격표가 없습니다」로
+  // 그리면 올린 가격표가 사라진 것으로 오판한다(interfaces 점검 #9).
+  const [loadFailed, setLoadFailed] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const loadSheets = React.useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/price-sheets");
+      // ⚠️ 상태코드를 보지 않으면 오류 응답의 `priceSheets` 부재가 `[]` 로 떨어져 빈 목록이 된다.
+      if (!res.ok) throw new Error(`가격표 목록 조회 실패 (${res.status})`);
       const data = await res.json();
       setSheets(data.priceSheets ?? []);
+      setLoadFailed(false);
+    } catch (loadError) {
+      console.error("[price-sheets] 목록 조회 실패:", loadError);
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -169,7 +179,13 @@ export function PriceSheetList() {
 
         <div className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-foreground">업로드 목록</h2>
-          {loading ? (
+          {loadFailed ? (
+            <DataLoadError
+              title="가격표 목록을 불러오지 못했습니다."
+              onRetry={() => void loadSheets()}
+              retrying={loading}
+            />
+          ) : loading ? (
             <p className="text-sm text-muted-foreground">불러오는 중...</p>
           ) : sheets.length === 0 ? (
             <p className="text-sm text-muted-foreground">업로드된 가격표가 없습니다.</p>

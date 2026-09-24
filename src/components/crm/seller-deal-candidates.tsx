@@ -8,7 +8,7 @@
 // (셀러 × 딜) 기안이다) — 두 표면이 서로 다른 기안을 만들면 dedup 이 갈린다.
 
 import * as React from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import type { DealCandidate } from "@/lib/deal-seller-matching";
 import {

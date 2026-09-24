@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { LinkSearchDialog } from "@/components/crm/link-search-dialog";
 import { EntityLinkSelectField } from "@/components/crm/entity-link-select-field";
 import {

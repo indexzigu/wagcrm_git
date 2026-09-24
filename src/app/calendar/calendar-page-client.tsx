@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { z } from "zod";
 import {
   CalendarDays,
@@ -13,6 +13,7 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DataLoadError } from "@/components/ui/empty";
 import { CalendarView, type CalendarCampaign } from "@/components/crm/calendar-view";
 import {
   CalendarFilterBar,
@@ -109,6 +110,10 @@ export function CalendarPageClient({
   const [month, setMonth] = useState<string>(currentMonthStr);
   const [campaigns, setCampaigns] = useState<CalendarCampaign[]>([]);
   const [loading, setLoading] = useState(false);
+  // 조회 실패는 「이 달에 캠페인이 없다」와 다른 상태다 — 빈 달력으로 그리면 일정이 빈 것으로
+  // 오판한다(interfaces 점검 #9). 재조회 중에도 안내를 유지해야 「다시 불러오기」가 제자리에서
+  // 돌다가 성공 시에만 사라진다 — 그래서 조회 시작에서 끄지 않고 결과에서만 바꾼다.
+  const [loadError, setLoadError] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   // 예비 일정 생성 다이얼로그 — 날짜 셀/헤더 어포던스에서 진입, 클릭일 프리필.
@@ -189,10 +194,13 @@ export function CalendarPageClient({
       if (!res.ok) throw new Error(`캘린더 데이터를 불러오지 못했습니다 (${res.status})`);
       const data = calendarResponseSchema.parse(await res.json());
       setCampaigns(data.campaigns);
+      setLoadError(false);
     } catch (error) {
+      // 토스트 대신 달력 위 제자리 안내로 알린다(아래 `DataLoadError`) — 달을 넘길 때마다
+      // 실패하면 닫을 때까지 남는 오류 토스트가 쌓인다.
       console.error("[calendar] 캠페인 로드 실패:", error);
-      toast.error(error instanceof Error ? error.message : "캘린더 데이터를 불러오지 못했습니다.");
       setCampaigns([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -320,6 +328,15 @@ export function CalendarPageClient({
         </Button>
       </div>
 
+      {loadError && (
+        <DataLoadError
+          title={`${formatMonthLabel(month)} 캠페인을 불러오지 못했습니다.`}
+          description="아래 달력은 비어 보이지만 일정이 없는 것이 아닙니다. 연결을 확인하고 다시 불러오세요."
+          onRetry={() => void loadCampaigns(month)}
+          retrying={loading}
+        />
+      )}
+
       {/* 달력 */}
       <CalendarView
         campaigns={filteredCampaigns}
@@ -330,6 +347,7 @@ export function CalendarPageClient({
 
       {filteredCampaigns.length === 0 &&
         !loading &&
+        !loadError &&
         (campaigns.length > 0 ? (
           <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-4 text-xs text-muted-foreground">
             선택한 필터에 해당하는 캠페인이 없습니다.

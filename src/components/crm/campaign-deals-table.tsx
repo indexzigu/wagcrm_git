@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { ClipboardList, Trash2, Loader2, Info } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import type { CampaignRow, CampaignDealRow } from "@/lib/crm-types";

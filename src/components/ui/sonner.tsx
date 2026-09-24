@@ -11,6 +11,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // 오류 토스트는 닫을 때까지 남으므로(`@/lib/toast`) 닫는 수단이 반드시 보여야 한다.
+      closeButton
+      // sonner 기본 접근 이름은 영어(「Notifications」「Close toast」)다.
+      containerAriaLabel="알림"
       icons={{
         success: (
           <CircleCheckIcon className="size-4" />
@@ -37,6 +41,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         } as React.CSSProperties
       }
       toastOptions={{
+        closeButtonAriaLabel: "알림 닫기",
         classNames: {
           toast: "cn-toast rounded-[12px] shadow-soft-md",
         },

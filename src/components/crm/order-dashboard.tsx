@@ -38,7 +38,7 @@ import { buildStorePeriodPatchBody } from '@/lib/order-converter/sale-window';
 import { rankCampaignCardCautions, type CampaignCardCaution } from '@/lib/order-converter/campaign-card-cautions';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
-import { useToast } from '@/hooks/useToast';
+import { notify } from '@/lib/toast';
 import CampaignCreateModal from './shipping/modals/CampaignCreateModal';
 import CampaignEditModal from './shipping/modals/CampaignEditModal';
 import EmailSendModal from './shipping/modals/EmailSendModal';
@@ -840,7 +840,9 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
 export default function OrderDashboard() {
   const { campaigns: rawCampaigns, isLoading, fetchCampaigns, createCampaign, updateCampaign, deleteCampaign, toggleCampaignStatus, syncMeta, refreshNow, refreshing } = useCampaigns();
   const { naverProducts, isFetchingNaver, fetchNaverProducts } = useNaverProducts();
-  const { toasts, addToast, removeToast } = useToast();
+  // 종전 자체 토스트(3.5초·live region 없음·색으로만 종류 구분)를 앱 공용 sonner 로 흡수했다.
+  // 자식 모달들의 `addToast(msg, type)` 계약은 그대로 둔다(`notify` 가 같은 모양이다).
+  const addToast = notify;
   // 캠페인 카드별 배지 카운트 + 상단 요약 바 카운터에 쓰는 클레임 데이터.
   // claim-list.tsx의 ClaimList가 서브뷰로 열렸을 때 내부에서 별도로 다시 마운트하지만,
   // useClaims는 plain fetch 훅이라 두 번 마운트돼도 상태는 독립적이고 무해하다.
@@ -2583,22 +2585,6 @@ export default function OrderDashboard() {
         <div className="mt-8">{dataPreviewPanel}</div>
       )}
 
-      {/* Toast Notifications */}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
-        {toasts.map(toast => (
-          <div 
-            key={toast.id} 
-            className={`pointer-events-auto max-w-sm w-full p-4 rounded-xl shadow-soft-hover border flex items-start gap-3 animate-in slide-in-from-right-4 fade-in duration-300 ${
-              toast.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' : 
-              toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 
-              'bg-blue-50 border-blue-200 text-blue-800'
-            }`}
-          >
-            <div className="flex-1 text-sm font-medium">{toast.message}</div>
-            <button onClick={() => removeToast(toast.id)} className="opacity-50 hover:opacity-100"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
-          </div>
-        ))}
-      </div>
             </div>
           </div>
         </div>

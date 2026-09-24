@@ -8,7 +8,7 @@
 // 1단계 실패해도 2단계는 독립 시도한다(부분 수집이 0보다 낫다). 이 버튼이 자기 액션의 토스트를
 // 단독 소유한다(P2 Toast Ownership).
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 

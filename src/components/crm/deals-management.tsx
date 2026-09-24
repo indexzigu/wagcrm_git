@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { PlusIcon, SearchIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {

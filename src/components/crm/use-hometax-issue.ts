@@ -16,7 +16,7 @@
  * 설계의 안전장치다(`docs/private/specs/2026-08-05-hometax-local-helper-design.md`).
  */
 import { useCallback, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { TaxInvoiceRow } from "@/lib/tax-invoice-builder";
 import {
   checkHometaxHelperHealth,

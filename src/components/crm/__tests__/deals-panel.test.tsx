@@ -350,7 +350,7 @@ describe("DealsPanel", () => {
       fireEvent.click(screen.getByRole("button", { name: "삭제" }));
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("삭제 권한이 없습니다");
+        expect(mockToast.error).toHaveBeenCalledWith("삭제 권한이 없습니다", expect.objectContaining({ duration: Infinity }));
       });
 
       // Panel should NOT close
@@ -382,7 +382,7 @@ describe("DealsPanel", () => {
       fireEvent.click(screen.getByRole("button", { name: "삭제" }));
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("딜 삭제에 실패했습니다");
+        expect(mockToast.error).toHaveBeenCalledWith("딜 삭제에 실패했습니다", expect.objectContaining({ duration: Infinity }));
       });
     });
 
@@ -407,7 +407,7 @@ describe("DealsPanel", () => {
       fireEvent.click(screen.getByRole("button", { name: "삭제" }));
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("딜 삭제에 실패했습니다");
+        expect(mockToast.error).toHaveBeenCalledWith("딜 삭제에 실패했습니다", expect.objectContaining({ duration: Infinity }));
       });
     });
 

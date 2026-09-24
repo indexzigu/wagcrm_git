@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { Copy, Printer, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { MONEY_DIRECTION_ICON, MONEY_DIRECTION_TEXT } from "@/lib/money-direction";
 import { resolveProfitTone, PROFIT_TONE_TEXT } from "@/lib/profit-tone";
 import { cn } from "@/lib/utils";

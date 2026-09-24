@@ -18,12 +18,13 @@ import { CampaignSidePanel } from "@/components/crm/campaign-side-panel";
 import { TaxFilingDialog, previousMonth } from "@/components/crm/tax-filing-dialog";
 import { formatDDay } from "@/lib/tax-filing-log";
 import { Button } from "@/components/ui/button";
+import { DataLoadError } from "@/components/ui/empty";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { DashboardData, CampaignRow } from "@/lib/crm-types";
 import type {
   SettlementReportData,
@@ -91,6 +92,11 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   }, []);
 
   const [reportData, setReportData] = useState<SettlementReportData | null>(null);
+  // 리포트 조회 실패는 「정산 건이 없다」와 **다른 상태**다 — 실패를 빈 목록으로 그리면
+  // 이번 달 정산이 비었다고 오판하게 된다(interfaces 점검 #9). 두 표는 리포트로 걸러지므로
+  // (`filteredCampaigns`) 리포트가 없으면 전부 0건처럼 보인다.
+  const [reportError, setReportError] = useState(false);
+  const [reportRetrying, setReportRetrying] = useState(false);
   const [taxFilingOpen, setTaxFilingOpen] = useState(false);
   const [taxFilingMonth, setTaxFilingMonth] = useState(previousMonth);
   const [taxPendingCount, setTaxPendingCount] = useState<number | null>(null);
@@ -181,7 +187,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     );
   }, []);
 
-  const refreshReport = useCallback(async () => {
+  /** 성공 여부를 돌려준다 — 새로고침 버튼이 실패한 조회에 「갱신되었습니다」를 띄우지 않게. */
+  const refreshReport = useCallback(async (): Promise<boolean> => {
     try {
       const params = new URLSearchParams();
       if (viewType === "year") {
@@ -198,11 +205,26 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
 
       const nextReport = (await response.json()) as SettlementReportData;
       setReportData(nextReport);
+      setReportError(false);
+      return true;
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "정산 리포트 로딩 오류");
+      // 토스트 대신 표 자리에 제자리 복구(「다시 불러오기」)를 그린다 — 캠페인 저장마다
+      // 재조회하므로 토스트로 알리면 닫을 때까지 남는 오류 토스트가 저장 횟수만큼 쌓인다.
+      console.error("[settlement] 정산 리포트 조회 실패:", err);
       setReportData(null);
+      setReportError(true);
+      return false;
     }
   }, [searchQuery, selectedMonth, selectedYear, viewType]);
+
+  const retryReport = useCallback(async () => {
+    setReportRetrying(true);
+    try {
+      await refreshReport();
+    } finally {
+      setReportRetrying(false);
+    }
+  }, [refreshReport]);
 
   const handleRefresh = useCallback(async () => {
     setLoading(true);
@@ -218,8 +240,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
         ...prev,
         campaigns: campaignsData.campaigns,
       }));
-      await refreshReport();
-      toast.success("정산 데이터가 갱신되었습니다.");
+      const reportOk = await refreshReport();
+      if (reportOk) toast.success("정산 데이터가 갱신되었습니다.");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "데이터 로딩 오류");
     } finally {
@@ -258,6 +280,9 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     },
     [syncUpdatedCampaign, requestReportRefresh],
   );
+
+  // 첫 리포트가 오기 전에는 두 표가 0건으로 보인다 — 로딩으로 그려 「없음」과 가른다.
+  const reportPending = reportData === null && !reportError;
 
   const filteredCampaigns = useMemo(() => {
     const allowedIds = new Set(reportData?.campaigns.map((campaign) => campaign.id) ?? []);
@@ -300,19 +325,24 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     [selectedActiveCampaigns, selectedCompletedCampaigns],
   );
 
+  // 목록이 리포트로 걸러지므로 리포트가 없으면(대기·실패) 합계를 모른다 — 0원이 아니라 「-」다.
   const pendingDepositAmount = useMemo(
     () =>
-      activeCampaigns
-        .filter((campaign) => !campaign.isDepositReceived)
-        .reduce((sum, campaign) => sum + Number(campaign.settlementSales ?? 0), 0),
-    [activeCampaigns],
+      reportData === null
+        ? null
+        : activeCampaigns
+            .filter((campaign) => !campaign.isDepositReceived)
+            .reduce((sum, campaign) => sum + Number(campaign.settlementSales ?? 0), 0),
+    [activeCampaigns, reportData],
   );
   const pendingPayoutAmount = useMemo(
     () =>
-      activeCampaigns
-        .filter((campaign) => !campaign.isPayoutCompleted)
-        .reduce((sum, campaign) => sum + Number(campaign.sellerExpense ?? 0), 0),
-    [activeCampaigns],
+      reportData === null
+        ? null
+        : activeCampaigns
+            .filter((campaign) => !campaign.isPayoutCompleted)
+            .reduce((sum, campaign) => sum + Number(campaign.sellerExpense ?? 0), 0),
+    [activeCampaigns, reportData],
   );
 
 interface CsvRow {
@@ -452,7 +482,8 @@ interface CsvRow {
       commitSearch={debouncedSetFilter}
       onOpenCampaign={handleSelectCampaign}
       onRefresh={handleRefresh}
-      loading={loading}
+      loading={loading || reportPending}
+      loadError={reportError}
     />
   ) : (
     <div className="flex min-h-0 w-full flex-1 flex-col overflow-auto px-5 pb-5 pt-5 md:px-8 [scrollbar-gutter:stable]">
@@ -603,44 +634,56 @@ interface CsvRow {
           </div>
         </div>
 
-        <section className="flex flex-col gap-4 px-5 py-4">
-          <div className="flex items-center gap-2">
-            <ChevronDown className="size-4 text-slate-500" />
-            <h2 className="text-base font-semibold text-slate-800">정산 진행 중 캠페인</h2>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
-              {activeCampaigns.length}건
-            </span>
-          </div>
-          <SettlementTable
-            campaigns={activeCampaigns}
-            onSelectCampaign={handleSelectCampaign}
-            loading={loading}
-            selectedIds={selectedIds}
-            onToggleRow={handleToggleRow}
-            onToggleAll={handleToggleAll}
-          />
-        </section>
+        {reportError ? (
+          <section className="px-5 py-4">
+            <DataLoadError
+              title="정산 목록을 불러오지 못했습니다."
+              onRetry={() => void retryReport()}
+              retrying={reportRetrying}
+            />
+          </section>
+        ) : (
+          <>
+            <section className="flex flex-col gap-4 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <ChevronDown className="size-4 text-slate-500" />
+                <h2 className="text-base font-semibold text-slate-800">정산 진행 중 캠페인</h2>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                  {activeCampaigns.length}건
+                </span>
+              </div>
+              <SettlementTable
+                campaigns={activeCampaigns}
+                onSelectCampaign={handleSelectCampaign}
+                loading={loading || reportPending}
+                selectedIds={selectedIds}
+                onToggleRow={handleToggleRow}
+                onToggleAll={handleToggleAll}
+              />
+            </section>
 
-        <div className="border-t border-slate-200" />
+            <div className="border-t border-slate-200" />
 
-        <section className="flex flex-col gap-4 px-5 py-4">
-          <div className="flex items-center gap-2">
-            <ChevronDown className="size-4 text-slate-500" />
-            <h2 className="text-base font-semibold text-slate-800">정산 완료 캠페인</h2>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
-              {completedCampaigns.length}건
-            </span>
-          </div>
-          <SettlementCompletedTable
-            campaigns={completedCampaigns}
-            reportCampaigns={reportData?.campaigns ?? []}
-            onSelectCampaign={handleSelectCampaign}
-            loading={loading}
-            selectedIds={selectedIds}
-            onToggleRow={handleToggleRow}
-            onToggleAll={handleToggleAll}
-          />
-        </section>
+            <section className="flex flex-col gap-4 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <ChevronDown className="size-4 text-slate-500" />
+                <h2 className="text-base font-semibold text-slate-800">정산 완료 캠페인</h2>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                  {completedCampaigns.length}건
+                </span>
+              </div>
+              <SettlementCompletedTable
+                campaigns={completedCampaigns}
+                reportCampaigns={reportData?.campaigns ?? []}
+                onSelectCampaign={handleSelectCampaign}
+                loading={loading || reportPending}
+                selectedIds={selectedIds}
+                onToggleRow={handleToggleRow}
+                onToggleAll={handleToggleAll}
+              />
+            </section>
+          </>
+        )}
       </div>
 
       <SettlementSelectionBar selectedCampaigns={selectedCampaigns} summary={selectionSummary} />

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { MobileSettlementView } from "../mobile-settlement-view";
@@ -87,5 +87,43 @@ describe("MobileSettlementView", () => {
     expect(screen.queryByText("정산 진행 중 캠페인")).not.toBeInTheDocument();
     expect(screen.queryByText("정산 완료 캠페인")).not.toBeInTheDocument();
     expect(container.firstElementChild).not.toHaveClass("md:hidden");
+  });
+});
+
+/**
+ * 목록은 리포트로 걸러지므로 조회가 실패하거나 아직 안 왔으면 0건이 된다 — 그걸
+ * 「정산 항목이 없습니다」로 그리면 이번 달이 비었다고 오판한다(interfaces 점검 #9).
+ */
+describe("MobileSettlementView — 실패·대기는 빈 목록이 아니다", () => {
+  const baseProps = {
+    reportData: null,
+    campaigns: [] as CampaignRow[],
+    selectedMonth: "2026-05",
+    viewType: "month" as const,
+    selectedYear: "2026",
+    localQuery: "",
+    setLocalQuery: vi.fn(),
+    commitSearch: vi.fn(),
+    onOpenCampaign: vi.fn(),
+  };
+  const EMPTY_TEXT = "조회 조건에 맞는 정산 항목이 없습니다.";
+
+  it("조회 실패면 복구 안내와 44px 「다시 불러오기」를 보이고 빈 문구는 숨긴다", () => {
+    const onRefresh = vi.fn(async () => {});
+    render(<MobileSettlementView {...baseProps} onRefresh={onRefresh} loading={false} loadError />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("정산 목록을 불러오지 못했습니다.");
+    expect(screen.queryByText(EMPTY_TEXT)).not.toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: "다시 불러오기" });
+    expect(retry).toHaveClass("h-11");
+    fireEvent.click(retry);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("불러오는 중이면 빈 문구 대신 로딩 상태를 알린다", () => {
+    render(<MobileSettlementView {...baseProps} onRefresh={vi.fn(async () => {})} loading />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("불러오는 중");
+    expect(screen.queryByText(EMPTY_TEXT)).not.toBeInTheDocument();
   });
 });

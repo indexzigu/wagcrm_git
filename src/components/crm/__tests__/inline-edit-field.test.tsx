@@ -233,7 +233,7 @@ describe("InlineEditField", () => {
       });
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("네트워크 오류");
+        expect(mockToast.error).toHaveBeenCalledWith("네트워크 오류", expect.objectContaining({ duration: Infinity, description: "이전 값으로 되돌렸습니다. 다시 입력해 주세요." }));
       });
 
       // Should revert to original value in display mode
@@ -252,7 +252,7 @@ describe("InlineEditField", () => {
       fireEvent.blur(input);
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("저장 실패");
+        expect(mockToast.error).toHaveBeenCalledWith("저장하지 못했습니다.", expect.objectContaining({ duration: Infinity, description: "이전 값으로 되돌렸습니다. 다시 입력해 주세요." }));
       });
     });
   });
@@ -279,7 +279,7 @@ describe("InlineEditField", () => {
       fireEvent.blur(input);
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("값을 입력해주세요");
+        expect(mockToast.error).toHaveBeenCalledWith("값을 입력해주세요", expect.objectContaining({ duration: Infinity }));
       });
       expect(onSave).not.toHaveBeenCalled();
     });

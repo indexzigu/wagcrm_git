@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckIcon, UserRoundIcon } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { generateCampaignName } from "@/lib/campaign-name";
 import type { DraftCampaignResult } from "@/lib/mobile-draft-campaign";

@@ -309,7 +309,13 @@ export function DealsPageClient({
 
             {/* 탭 콘텐츠 */}
             {activeTab === "deals" ? (
-              <DealsGrid initialDeals={visibleDeals} onSelect={handleSelect} />
+              <DealsGrid
+                initialDeals={visibleDeals}
+                onSelect={handleSelect}
+                isFiltered={deals.length > 0 && Boolean(query.trim() || activeStatus)}
+                filterQuery={query}
+                onClearFilters={clearFilters}
+              />
             ) : profitabilityLoading ? (
               <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
                 로딩 중...

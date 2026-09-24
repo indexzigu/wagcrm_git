@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { UploadCloudIcon, FileTextIcon, AlertTriangleIcon, CheckCircle2Icon, InfoIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/accordion";
 import { SearchableDropdown } from "@/components/crm/searchable-dropdown";
 import { useUserRole } from "@/hooks/use-user-role";
+import { summarizeCommitResult } from "./commit-summary";
 import { buildMappingOptions } from "./mapping-options";
 import type {
   CampaignOption,
@@ -209,6 +210,8 @@ export function KatalkUploadTab() {
     setCommitting(true);
     try {
       const targets = files.filter((f) => f.status === "previewed");
+      let committedCount = 0;
+      let failedCount = 0;
       await runWithConcurrencyLimit(targets, CONCURRENCY_LIMIT, async (target) => {
         setFiles((prev) =>
           prev.map((f) => (f.id === target.id ? { ...f, status: "committing" } : f))
@@ -222,7 +225,9 @@ export function KatalkUploadTab() {
           setFiles((prev) =>
             prev.map((f) => (f.id === target.id ? { ...f, status: "committed", commit } : f))
           );
+          committedCount += 1;
         } catch (error) {
+          failedCount += 1;
           setFiles((prev) =>
             prev.map((f) =>
               f.id === target.id
@@ -236,7 +241,9 @@ export function KatalkUploadTab() {
           );
         }
       });
-      toast.success("업로드 확정이 완료되었습니다.");
+      const summary = summarizeCommitResult(committedCount, failedCount);
+      if (summary.kind === "success") toast.success(summary.message);
+      else toast.error(summary.message, { description: summary.description });
     } finally {
       setCommitting(false);
     }

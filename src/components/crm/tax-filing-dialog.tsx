@@ -53,7 +53,7 @@
  * 축이 아니다. 상한에 걸리면 「기간을 줄여 나눠 보라」가 처방이다.
  */
 import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Dialog,

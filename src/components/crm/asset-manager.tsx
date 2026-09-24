@@ -47,7 +47,7 @@ import { instagramShortcode, isInstagramPermalink } from "@/lib/instagram-embed"
 import { deriveLinkName, normalizeReferenceUrl, postIdentityKey } from "@/lib/reference-url";
 import { InstagramEmbed } from "./instagram-embed";
 import { SellerContentCollectButton } from "./seller-content-collect-button";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 /** 수집·게시 시각 표기(KST, "M/D HH:mm") — formatDate는 날짜만이라 시:분이 필요한 수집시각 전용. */
 function formatCollectedAt(iso: string | null | undefined): string {

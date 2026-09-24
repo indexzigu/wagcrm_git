@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Boxes } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 import { filterBySearchText } from "@/lib/search-filter";
 import { Alert, AlertDescription } from "@/components/ui/alert";

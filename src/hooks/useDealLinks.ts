@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { DealPanelData } from "@/components/crm/deals-panel";
 // 여기서 받는 값은 `useDealPanelData` 가 API 에서 만든 것이다(뷰 모델이 아니다).
 // 계층 구분과 이름을 가른 이유는 그 파일의 타입 주석에 있다.

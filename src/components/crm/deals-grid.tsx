@@ -3,8 +3,9 @@
 import type { DealStatus } from "@/lib/crm-types";
 import type { BaseMarginPolicy } from "@/lib/validations/deal";
 
-import { PackageOpen } from "lucide-react";
+import { PackageOpen, SearchX } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { DataEmpty } from "@/components/ui/empty";
 import {
   Tooltip,
@@ -45,6 +46,15 @@ export type DealRow = {
 export type DealsGridProps = {
   initialDeals: DealRow[];
   onSelect?: (deal: DealRow) => void;
+  /**
+   * 검색어·상태 필터가 걸려 있다 — 0건일 때 「등록된 딜이 없습니다」 대신 「조건에 맞는
+   * 딜이 없습니다」를 보이고 필터를 푸는 길을 준다. 두 경우를 같은 문구로 그리면 검색이
+   * 빗나간 것을 딜이 사라진 것으로 읽는다(interfaces 점검 #9).
+   */
+  isFiltered?: boolean;
+  /** 걸려 있는 검색어 — 빈 상태가 무엇으로 찾았는지 말하게 한다. */
+  filterQuery?: string;
+  onClearFilters?: () => void;
 };
 
 // --- Component ---
@@ -52,7 +62,34 @@ export type DealsGridProps = {
 export function DealsGrid({
   initialDeals,
   onSelect,
+  isFiltered = false,
+  filterQuery = "",
+  onClearFilters,
 }: DealsGridProps) {
+  if (initialDeals.length === 0 && isFiltered) {
+    return (
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="flex h-64 items-center justify-center p-4">
+          <DataEmpty
+            icon={SearchX}
+            title={
+              filterQuery.trim()
+                ? `'${filterQuery.trim()}'에 맞는 딜이 없습니다`
+                : "조건에 맞는 딜이 없습니다"
+            }
+            description="검색어나 상태 필터를 바꿔 보세요."
+          >
+            {onClearFilters ? (
+              <Button variant="outline" size="sm" className="mt-2" onClick={onClearFilters}>
+                필터 초기화
+              </Button>
+            ) : null}
+          </DataEmpty>
+        </div>
+      </div>
+    );
+  }
+
   if (initialDeals.length === 0) {
     return (
       <div className="min-h-0 flex-1 overflow-hidden">

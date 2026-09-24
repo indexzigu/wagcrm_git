@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ArrowUpDownIcon } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
   Empty,

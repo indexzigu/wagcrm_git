@@ -7,7 +7,7 @@
 //  - 재발급하면 기존 비밀번호·셀러의 로그인 세션이 즉시 무효화된다.
 // 과거에 공유한 토큰 링크(/p/<token>)는 계속 동작한다(레거시 표시만).
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Link2, Copy, Loader2, Check, ExternalLink, KeyRound, Pencil } from "lucide-react";
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { CalendarPageClient } from "../calendar-page-client";
 import type { CalendarCampaign } from "@/components/crm/calendar-view";
 
@@ -45,6 +45,7 @@ function stubFetch(payload: unknown) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("CalendarPageClient 응답 파싱 (버그 회귀: 항상 빈 달력)", () => {
@@ -69,11 +70,34 @@ describe("CalendarPageClient 응답 파싱 (버그 회귀: 항상 빈 달력)", 
     expect(await screen.findByText("이 달에 진행되는 캠페인이 없습니다.")).toBeInTheDocument();
   });
 
-  it("campaigns 필드가 없는 비정상 응답이면 빈 배열로 폴백한다", async () => {
+  // ⚠️ 종전 이 자리는 「비정상 응답이면 빈 배열로 폴백」을 고정했다 — 그 폴백이 곧 「조회가
+  // 실패했는데 일정이 없는 달처럼 보이는」 결함이었다(interfaces 점검 #9, 2026-09-24).
+  it("campaigns 필드가 없는 비정상 응답은 빈 달이 아니라 조회 실패로 알린다", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
     stubFetch({});
 
     render(<CalendarPageClient />);
 
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("캠페인을 불러오지 못했습니다.");
+    expect(screen.queryByText("이 달에 진행되는 캠페인이 없습니다.")).not.toBeInTheDocument();
+  });
+
+  it("「다시 불러오기」는 같은 달을 다시 조회하고, 성공하면 안내를 거둔다", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) })
+      .mockResolvedValue({ ok: true, json: async () => ({ campaigns: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CalendarPageClient />);
+    await screen.findByRole("alert");
+
+    fireEvent.click(screen.getByRole("button", { name: "다시 불러오기" }));
+
     expect(await screen.findByText("이 달에 진행되는 캠페인이 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenLastCalledWith(`/api/campaigns/calendar?month=${currentYm()}`);
   });
 });
