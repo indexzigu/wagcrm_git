@@ -260,7 +260,7 @@ export function CrmSidebar() {
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={avatarUrl || "https://lh3.googleusercontent.com/a/default-user=s256-c"}
-                alt="Profile"
+                alt="프로필"
                 className="size-9 shrink-0 rounded-xl object-cover shadow-soft-sm"
                 referrerPolicy="no-referrer"
               />
@@ -282,7 +282,7 @@ export function CrmSidebar() {
               : "text-[15px] font-bold tracking-tight text-sidebar-foreground",
             "group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:h-0 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:pointer-events-none"
           )}>
-            {isPrivacyMode ? (userName || "User") : "WAG CRM"}
+            {isPrivacyMode ? (userName || "사용자") : "WAG CRM"}
           </span>
         </div>
       </SidebarHeader>

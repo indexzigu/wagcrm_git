@@ -306,7 +306,7 @@ export function InlineEditField({
           onBlur={() => handleSave(draft)}
           onKeyDown={handleKeyDown}
           className={cn(
-            "h-7 w-full min-w-0 justify-self-end rounded-md border border-slate-200 bg-white px-2 text-xs text-right shadow-none outline-none focus:border-slate-300 focus:ring-0",
+            "h-7 w-full min-w-0 justify-self-end rounded-md border border-slate-200 bg-white px-2 text-xs text-right shadow-none outline-none focus:border-slate-300 focus-visible:ring-2 focus-visible:ring-focus-ring",
             prioritizeEditorWidth && fieldType === "number"
               ? "max-w-[220px]"
               : "max-w-[200px]",
