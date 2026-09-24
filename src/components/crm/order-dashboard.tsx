@@ -4,7 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { CrmShell } from './crm-shell';
 import { Button } from '@/components/ui/button';
 import { DataEmpty } from '@/components/ui/empty';
-import { PlusIcon, RefreshCw } from 'lucide-react';
+import { BarChart3, Clock, Lock, LockOpen, MoreVertical, PieChart, PlusIcon, RefreshCw, Settings } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type Campaign = {
   id: string;
@@ -961,7 +968,6 @@ export default function OrderDashboard() {
 
   // Accordion State
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
-  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
   // 배송대기·배송중 목록 팝오버가 열린 카드 id(각 버킷당 하나만, 서로 배타).
   const [pendingListCampaignId, setPendingListCampaignId] = useState<string | null>(null);
   const [shippingListCampaignId, setShippingListCampaignId] = useState<string | null>(null);
@@ -1028,16 +1034,6 @@ export default function OrderDashboard() {
     }
   };
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest('.dropdown-container')) {
-        return;
-      }
-      setOpenDropdownId(null);
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
   
   // Naver API Form
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -1897,67 +1893,59 @@ export default function OrderDashboard() {
                 className={`p-6 flex flex-col md:flex-row gap-6 items-start md:items-center cursor-pointer hover:bg-slate-50 transition-colors relative ${expandedCampaignId === camp.id ? 'rounded-t-2xl' : 'rounded-2xl'}`}
                 onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}
               >
-                {/* 더보기(⋮) 드롭다운 */}
-                <div className="absolute top-4 right-4 z-20 dropdown-container" onClick={(e) => e.stopPropagation()}>
-                  <button 
-                    onClick={() => setOpenDropdownId(openDropdownId === camp.id ? null : camp.id)}
-                    className="text-slate-500 hover:text-slate-600 p-1 transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                    </svg>
-                  </button>
-                  
-                  {openDropdownId === camp.id && (
-                    /* w-40: '발송지연 안내'(최장 라벨)가 줄바꿈 없이 들어가는 최소 폭 */
-                    <div className="absolute right-0 mt-2 w-40 bg-white rounded-xl shadow-overlay border border-slate-200 py-1.5 overflow-hidden font-medium text-sm animate-in fade-in slide-in-from-top-2">
-                      <button 
-                        onClick={() => { setSalesReportCampaignId(camp.id); setOpenDropdownId(null); }}
-                        className="w-full text-left px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2 transition-colors"
+                {/* 더보기(⋮) 메뉴 — ui/dropdown-menu(Radix). 종전 손으로 만든 div 메뉴는 키보드로 열리긴 해도
+                    화살표 이동·Esc 닫기·포커스 복귀가 없었다(interfaces 점검 묶음 G1, 2026-09-24).
+                    바깥 div 의 stopPropagation 은 그대로 — 메뉴(포털) 클릭이 React 트리로 올라와 카드
+                    머리의 펼치기/접기를 부르지 않게 막는다. */}
+                <div className="absolute top-4 right-4 z-20" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="rounded-md p-1 text-slate-500 transition-colors hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                       >
-                        <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                        <MoreVertical className="size-5" aria-hidden="true" />
+                        <span className="sr-only">캠페인 메뉴</span>
+                      </button>
+                    </DropdownMenuTrigger>
+                    {/* w-40: '발송지연 안내'(최장 라벨)가 줄바꿈 없이 들어가는 최소 폭 */}
+                    <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuItem onSelect={() => setSalesReportCampaignId(camp.id)}>
+                        <BarChart3 aria-hidden="true" />
                         매출보고
-                      </button>
-                      <button
-                        onClick={() => { setInsightsCampaignId(camp.id); setOpenDropdownId(null); }}
-                        className="w-full text-left px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2 transition-colors"
-                      >
-                        <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setInsightsCampaignId(camp.id)}>
+                        <PieChart aria-hidden="true" />
                         인사이트
-                      </button>
-                      <button
-                        onClick={() => { openEditModal(camp); setOpenDropdownId(null); }}
-                        className="w-full text-left px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2 transition-colors"
-                      >
-                        <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => openEditModal(camp)}>
+                        <Settings aria-hidden="true" />
                         설정
-                      </button>
-                      <button
-                        onClick={() => { setDelayDispatchCampaignId(camp.id); setOpenDropdownId(null); }}
-                        className="w-full text-left px-4 py-2.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2 transition-colors"
-                      >
-                        <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setDelayDispatchCampaignId(camp.id)}>
+                        <Clock aria-hidden="true" />
                         발송지연 안내
-                      </button>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {/* 판매 마감만 색(위험)을 받는다 — 마감 취소는 되돌리기라 무채색(P8 색 원칙 §1·§2). */}
                       {camp.isActive !== false ? (
-                        <button 
-                          onClick={async () => { setOpenDropdownId(null); const res = await toggleCampaignStatus(camp.id, true); if (res?.success) forgetSettledDetail(camp.id); }}
-                          className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors border-t border-slate-100"
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={async () => { const res = await toggleCampaignStatus(camp.id, true); if (res?.success) forgetSettledDetail(camp.id); }}
                         >
-                          <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                          <Lock aria-hidden="true" />
                           판매 마감
-                        </button>
+                        </DropdownMenuItem>
                       ) : (
-                        <button 
-                          onClick={async () => { setOpenDropdownId(null); const res = await toggleCampaignStatus(camp.id, false); if (res?.success) forgetSettledDetail(camp.id); }}
-                          className="w-full text-left px-4 py-2.5 text-emerald-600 hover:bg-emerald-50 flex items-center gap-2 transition-colors border-t border-slate-100"
+                        <DropdownMenuItem
+                          onSelect={async () => { const res = await toggleCampaignStatus(camp.id, false); if (res?.success) forgetSettledDetail(camp.id); }}
                         >
-                          <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                          <LockOpen aria-hidden="true" />
                           마감 취소
-                        </button>
+                        </DropdownMenuItem>
                       )}
-                    </div>
-                  )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 {/* 썸네일 */}
                 <div className="w-24 h-24 bg-slate-100 rounded-xl overflow-hidden flex-shrink-0 border border-slate-200 shadow-soft-sm flex items-center justify-center">

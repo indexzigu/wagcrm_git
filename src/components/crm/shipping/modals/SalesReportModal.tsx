@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { DialogTitle } from '@/components/ui/dialog';
+import { ShippingDialogFrame } from './ShippingDialogFrame';
 import { Campaign } from '@/types/campaign';
 import { toPng } from 'html-to-image';
 
@@ -129,18 +130,16 @@ export default function SalesReportModal({
 
   if (!isMounted) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="bg-white rounded-2xl shadow-overlay relative w-full max-w-4xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+  return (
+    <ShippingDialogFrame onClose={onClose} className="sm:max-w-4xl max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl shrink-0">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             매출 보고
-          </h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
+          </DialogTitle>
+          <button type="button" onClick={onClose} aria-label="닫기" className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -301,8 +300,6 @@ export default function SalesReportModal({
             닫기
           </button>
         </div>
-      </div>
-    </div>,
-    document.body
+    </ShippingDialogFrame>
   );
 }

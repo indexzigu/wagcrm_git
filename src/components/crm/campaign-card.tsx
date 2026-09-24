@@ -17,11 +17,15 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { cn } from "@/lib/utils";
-import { type CampaignRow, salesChannelLabels } from "@/lib/crm-types";
+import { type CampaignRow, type CampaignStatus, salesChannelLabels } from "@/lib/crm-types";
 import {
   formatCampaignActionDate,
   getCampaignAction,
@@ -38,6 +42,12 @@ import { formatDateRange, getDateUrgency, type DateUrgency } from "@/lib/date-ut
 // Types
 // ---------------------------------------------------------------------------
 
+/** 「단계 이동」 메뉴의 목적지 1칸 — 보드가 지금 드래그로 닿을 수 있는 컬럼만 넘긴다. */
+export interface CampaignStageMoveTarget {
+  status: CampaignStatus;
+  label: string;
+}
+
 export interface CampaignCardProps {
   campaign: CampaignRow;
   onOpen: (campaign: CampaignRow) => void;
@@ -51,6 +61,14 @@ export interface CampaignCardProps {
   isDragging?: boolean;
   /** DragOverlay 안에서 렌더되는 들린 카드 → 살짝 떠 보이게. */
   isOverlay?: boolean;
+  /**
+   * 키보드로도 단계를 옮기는 경로(interfaces 점검 묶음 G1, 2026-09-24). 드래그는 포인터 전용이라
+   * 키보드·화면낭독기 사용자는 단계를 옮길 수 없었다 — 카드 메뉴의 「단계 이동」이 그 대체 경로다.
+   * 목적지는 드래그가 지금 닿을 수 있는 컬럼과 같게 보드가 계산해 넘긴다(새 능력이 아니라 같은 능력).
+   * 비었거나 없으면 메뉴 항목을 그리지 않는다.
+   */
+  moveTargets?: readonly CampaignStageMoveTarget[];
+  onMove?: (campaign: CampaignRow, status: CampaignStatus) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +202,10 @@ export function CampaignCard({
   dragAttributes,
   isDragging = false,
   isOverlay = false,
+  moveTargets,
+  onMove,
 }: CampaignCardProps) {
+  const stageTargets = onMove ? (moveTargets ?? []).filter((t) => t.status !== campaign.status) : [];
   const dateRange = formatDateRange(campaign.startDate, campaign.endDate);
   const urgency = getDateUrgency(campaign.endDate);
   const UrgencyIcon = urgencyIcon[urgency];
@@ -217,6 +238,10 @@ export function CampaignCard({
       ref={dragRef}
       {...dragAttributes}
       {...dragListeners}
+      // dnd-kit 이 붙이는 영어 역할 설명 "draggable" 이 role=button 을 덮어 읽힌다 — 「버튼」으로 읽혀야
+      // Enter 로 열린다는 걸 안다. 조작법은 DndContext 의 한국어 안내가 전한다(kanban-dnd-a11y.ts).
+      aria-roledescription={undefined}
+      data-campaign-card-id={campaign.id}
       style={dragListeners ? { touchAction: "none" } : undefined}
       className={cn(
         "group relative rounded-2xl border border-slate-200 bg-white shadow-soft-sm transition-[translate,scale,rotate,opacity,box-shadow,border-color] duration-200",
@@ -235,6 +260,9 @@ export function CampaignCard({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
+        // 카드 **자신**이 포커스일 때만 연다. 메뉴 버튼·메뉴 항목(포털이지만 React 트리로는 카드
+        // 안)에서 누른 Enter 가 여기까지 올라와 상세 패널까지 같이 열던 것을 막는다.
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onOpen(campaign);
@@ -294,14 +322,40 @@ export function CampaignCard({
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  className="-mr-1 shrink-0 rounded-md opacity-0 group-hover:opacity-100"
+                  // hover 로만 보이면 키보드로 도착해도 버튼이 안 보인다 — 포커스·열림 중에도 보인다
+                  // (선례 campaign-group-section 의 제외 버튼).
+                  className="-mr-1 shrink-0 rounded-md opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="size-3.5" />
                   <span className="sr-only">캠페인 메뉴</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-32">
+              <DropdownMenuContent
+                align="end"
+                className="w-32"
+                // 메뉴는 포털이지만 React 이벤트는 카드까지 올라온다 — 항목 클릭이 카드 onClick(상세 열기)을
+                // 함께 부르지 않게 여기서 끊는다.
+                onClick={(e) => e.stopPropagation()}
+              >
+                {stageTargets.length > 0 ? (
+                  <>
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>단계 이동</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent onClick={(e) => e.stopPropagation()}>
+                        {stageTargets.map((target) => (
+                          <DropdownMenuItem
+                            key={target.status}
+                            onSelect={() => onMove?.(campaign, target.status)}
+                          >
+                            {target.label}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
                 <DropdownMenuGroup>
                   <DropdownMenuItem
                     onSelect={(e) => {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { DialogTitle } from '@/components/ui/dialog';
+import { ShippingDialogFrame } from './ShippingDialogFrame';
 import type { UndispatchedOrderRow } from '@/lib/order-converter/undispatched-orders';
 import { buildDelayDispatchLog, type OrderActionLogInput } from '@/lib/order-converter/action-log';
 
@@ -304,22 +305,17 @@ export default function DelayDispatchModal({
 
   if (!isMounted) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-      <div
-        className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
-        onClick={() => !running && onClose()}
-      />
-      <div className="bg-white rounded-2xl shadow-overlay relative w-full max-w-xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
+  return (
+    <ShippingDialogFrame onClose={onClose} canClose={!running} className="sm:max-w-xl max-h-[85vh]">
         {/* 헤더 */}
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl shrink-0">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
               <svg className="w-5 h-5 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               발송지연 안내
-            </h2>
+            </DialogTitle>
             <p className="text-xs text-slate-500 mt-0.5 truncate">{campaign.name}</p>
           </div>
           {!running && (
@@ -658,8 +654,6 @@ export default function DelayDispatchModal({
             </div>
           </>
         )}
-      </div>
-    </div>,
-    document.body,
+    </ShippingDialogFrame>
   );
 }

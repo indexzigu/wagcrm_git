@@ -182,6 +182,11 @@ export function OutreachCardContent({
       ref={dragRef}
       {...dragAttributes}
       {...dragListeners}
+      // 카드는 상세를 여는 버튼이다 — 드래그 컬럼이 아니어도(전환완료·드랍) 키보드로 닿고 열려야 한다.
+      // dnd-kit 의 영어 역할 설명 "draggable" 은 버튼 역할을 덮어 읽히므로 뺀다(판매 관리 카드와 동일).
+      role={onSelectTask ? "button" : dragAttributes?.role}
+      tabIndex={onSelectTask ? 0 : dragAttributes?.tabIndex}
+      aria-roledescription={undefined}
       style={dragListeners ? { touchAction: "none" } : undefined}
       className={cn(
         "rounded-2xl border px-3.5 py-3 transition-[translate,scale,rotate,opacity,box-shadow,border-color,background-color] duration-200",
@@ -199,6 +204,18 @@ export function OutreachCardContent({
         isOverlay && "cursor-grabbing rotate-1 scale-[1.02] shadow-soft-lg border-primary/20",
       )}
       onClick={() => onSelectTask?.(outreach)}
+      onKeyDown={
+        onSelectTask
+          ? (e) => {
+              // 카드 자신이 포커스일 때만 — 안쪽 요소에서 올라온 키는 그 요소 몫이다.
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelectTask(outreach);
+              }
+            }
+          : undefined
+      }
     >
       <div className="flex flex-col gap-1.5">
         {/* 1행: 셀러이름 + 액션배지 | 경과일 */}
