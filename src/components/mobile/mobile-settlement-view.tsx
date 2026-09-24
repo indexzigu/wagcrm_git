@@ -38,6 +38,12 @@ type MobileSettlementViewProps = {
    * 그걸 「정산 항목이 없습니다」로 그리면 운영자가 이번 달이 비었다고 오판한다.
    */
   loadError?: boolean;
+  /**
+   * 실패 안내의 「다시 불러오기」 — 리포트만 다시 조회한다. `onRefresh` 로 대신하지 말 것:
+   * 그 경로는 캠페인 목록을 먼저 받아서, 그 조회가 실패하면 리포트 재조회까지 못 간다.
+   */
+  onRetryLoad: () => void;
+  retryingLoad?: boolean;
 };
 
 export function MobileSettlementView({
@@ -52,6 +58,8 @@ export function MobileSettlementView({
   onRefresh,
   loading,
   loadError = false,
+  onRetryLoad,
+  retryingLoad = false,
 }: MobileSettlementViewProps) {
   // 섹션 분류는 **채널 슬롯**이 정한다(`resolveCampaignMoneySlots`).
   // ⛔ `!입금` / `입금 && !지급` 으로 되돌리지 말 것 — 자사몰은 입금 칸이 없어 그 식이면
@@ -161,8 +169,8 @@ export function MobileSettlementView({
       {loadError ? (
         <DataLoadError
           title="정산 목록을 불러오지 못했습니다."
-          onRetry={() => void onRefresh()}
-          retrying={loading}
+          onRetry={onRetryLoad}
+          retrying={retryingLoad}
           touch
           className="rounded-2xl border-border/70 bg-background"
         />

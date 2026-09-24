@@ -492,6 +492,8 @@ interface CsvRow {
       onRefresh={handleRefresh}
       loading={loading || reportPending}
       loadError={reportError}
+      onRetryLoad={() => void retryReport()}
+      retryingLoad={reportRetrying}
     />
   ) : (
     <div className="flex min-h-0 w-full flex-1 flex-col overflow-auto px-5 pb-5 pt-5 md:px-8 [scrollbar-gutter:stable]">

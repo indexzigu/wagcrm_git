@@ -71,6 +71,7 @@ describe("MobileSettlementView", () => {
         commitSearch={vi.fn()}
         onOpenCampaign={vi.fn()}
         onRefresh={vi.fn(async () => {})}
+        onRetryLoad={vi.fn()}
         loading={false}
       />,
     );
@@ -110,18 +111,36 @@ describe("MobileSettlementView — 실패·대기는 빈 목록이 아니다", (
 
   it("조회 실패면 복구 안내와 44px 「다시 불러오기」를 보이고 빈 문구는 숨긴다", () => {
     const onRefresh = vi.fn(async () => {});
-    render(<MobileSettlementView {...baseProps} onRefresh={onRefresh} loading={false} loadError />);
+    const onRetryLoad = vi.fn();
+    render(
+      <MobileSettlementView
+        {...baseProps}
+        onRefresh={onRefresh}
+        onRetryLoad={onRetryLoad}
+        loading={false}
+        loadError
+      />,
+    );
 
     expect(screen.getByRole("alert")).toHaveTextContent("정산 목록을 불러오지 못했습니다.");
     expect(screen.queryByText(EMPTY_TEXT)).not.toBeInTheDocument();
     const retry = screen.getByRole("button", { name: "다시 불러오기" });
     expect(retry).toHaveClass("h-11");
     fireEvent.click(retry);
-    expect(onRefresh).toHaveBeenCalledTimes(1);
+    // 리포트만 다시 조회한다 — 캠페인 목록 조회(onRefresh)를 거치면 그 실패가 복구를 막는다.
+    expect(onRetryLoad).toHaveBeenCalledTimes(1);
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it("불러오는 중이면 빈 문구 대신 로딩 상태를 알린다", () => {
-    render(<MobileSettlementView {...baseProps} onRefresh={vi.fn(async () => {})} loading />);
+    render(
+      <MobileSettlementView
+        {...baseProps}
+        onRefresh={vi.fn(async () => {})}
+        onRetryLoad={vi.fn()}
+        loading
+      />,
+    );
 
     expect(screen.getByRole("status")).toHaveTextContent("불러오는 중");
     expect(screen.queryByText(EMPTY_TEXT)).not.toBeInTheDocument();
