@@ -266,7 +266,7 @@ export function MobileCalendarHome({
           <button
             type="button"
             onClick={() => void loadMonth(month.year, month.monthIndex)}
-            className="text-left text-[11px] text-destructive underline underline-offset-2 transition-opacity duration-150 active:opacity-60"
+            className="text-left text-[11px] text-status-urgent-text underline underline-offset-2 transition-opacity duration-150 active:opacity-60"
           >
             {monthError}
           </button>

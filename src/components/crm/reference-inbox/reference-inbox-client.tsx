@@ -83,6 +83,9 @@ type BusyAction = "assign" | "dismiss";
 
 type AssignTarget = { kind: "single"; item: InboxItem } | { kind: "bulk" };
 
+/** 기각 실행 취소 알림은 한 장만 둔다 — 같은 id 로 보내면 sonner 가 내용을 갈아 끼운다. */
+const DISMISS_UNDO_TOAST_ID = "reference-inbox-dismiss-undo";
+
 export function ReferenceInboxClient() {
   const [items, setItems] = React.useState<InboxItem[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -308,24 +311,60 @@ export function ReferenceInboxClient() {
   );
 
   const restoreItem = React.useCallback(async (item: InboxItem) => {
-    try {
-      const res = await fetch(`/api/reference-inbox/${item.id}/restore`, { method: "POST" });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.error ?? "복원에 실패했습니다.");
-      }
-      // 서버가 돌려준 최신 행 우선 — 기각~복원 사이 크론 보강분을 잃지 않는다.
-      const restored: InboxItem = data?.item ?? item;
-      setItems((prev) =>
-        [...prev.filter((i) => i.id !== restored.id), restored].sort((a, b) =>
-          b.createdAt.localeCompare(a.createdAt),
-        ),
-      );
-      toast.success("기각을 취소했습니다.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "복원에 실패했습니다.");
+    const res = await fetch(`/api/reference-inbox/${item.id}/restore`, { method: "POST" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.error ?? "복원에 실패했습니다.");
     }
+    // 서버가 돌려준 최신 행 우선 — 기각~복원 사이 크론 보강분을 잃지 않는다.
+    const restored: InboxItem = data?.item ?? item;
+    setItems((prev) =>
+      [...prev.filter((i) => i.id !== restored.id), restored].sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt),
+      ),
+    );
   }, []);
+
+  // 한 건씩 기각한 것을 **한 장의** 실행 취소 알림으로 모은다. 그 알림은 되돌리는 유일한 길이라
+  // 닫을 때까지 남는데(타이머로 사라지면 실행 취소가 없는 것과 같다), 건마다 한 장씩 띄우면
+  // 인박스를 훑으며 여러 건을 기각할 때 닫아야 할 알림이 건수만큼 쌓인다.
+  const pendingUndoRef = React.useRef<InboxItem[]>([]);
+
+  const undoPendingDismissals = React.useCallback(async () => {
+    const targets = pendingUndoRef.current;
+    pendingUndoRef.current = [];
+    const results = await Promise.allSettled(targets.map((item) => restoreItem(item)));
+    const failed = results.filter((result) => result.status === "rejected");
+    if (failed.length === 0) {
+      toast.success(
+        targets.length === 1 ? "기각을 취소했습니다." : `${targets.length}건의 기각을 취소했습니다.`,
+      );
+      return;
+    }
+    const first = (failed[0] as PromiseRejectedResult).reason;
+    toast.error(first instanceof Error ? first.message : "복원에 실패했습니다.", {
+      description:
+        failed.length === targets.length
+          ? undefined
+          : `${targets.length - failed.length}건은 되돌렸고 ${failed.length}건은 되돌리지 못했습니다.`,
+    });
+  }, [restoreItem]);
+
+  const showUndoToast = React.useCallback(() => {
+    const count = pendingUndoRef.current.length;
+    toast(count === 1 ? "기각했습니다." : `${count}건 기각했습니다.`, {
+      id: DISMISS_UNDO_TOAST_ID,
+      duration: Number.POSITIVE_INFINITY,
+      action: {
+        label: count === 1 ? "실행 취소" : "모두 실행 취소",
+        onClick: () => void undoPendingDismissals(),
+      },
+      // 닫으면 되돌릴 목록도 비운다 — 다음 기각은 새 알림으로 시작한다.
+      onDismiss: () => {
+        pendingUndoRef.current = [];
+      },
+    });
+  }, [undoPendingDismissals]);
 
   const handleDismiss = React.useCallback(
     async (item: InboxItem) => {
@@ -338,23 +377,16 @@ export function ReferenceInboxClient() {
         }
         setItems((prev) => prev.filter((i) => i.id !== item.id));
         removeFromSelection([item.id]);
-        // 확인창 대신 실행 취소(소프트 기각이라 상태 복원으로 되돌림).
-        // 되돌리는 유일한 길이 이 토스트의 버튼이므로 타이머로 사라지게 두지 않는다 —
-        // 읽고 누르기 전에 사라지면 실행 취소가 없는 것과 같다(interfaces 점검 후속, 2026-09-24).
-        toast("기각했습니다.", {
-          duration: Number.POSITIVE_INFINITY,
-          action: {
-            label: "실행 취소",
-            onClick: () => void restoreItem(item),
-          },
-        });
+        // 확인창 대신 실행 취소(소프트 기각이라 상태 복원으로 되돌림) — 알림 한 장에 모은다.
+        pendingUndoRef.current = [...pendingUndoRef.current, item];
+        showUndoToast();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "기각에 실패했습니다.");
       } finally {
         setBusy(item.id, null);
       }
     },
-    [removeFromSelection, restoreItem, setBusy],
+    [removeFromSelection, setBusy, showUndoToast],
   );
 
   const handleBulkDismiss = React.useCallback(async () => {

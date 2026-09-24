@@ -13,9 +13,16 @@ import ts from "typescript";
  * `primitive-a11y.contract.test.ts` 가 지킨다. 이 파일은 **소비처**에 남은 사본을 막는다
  * (interfaces 점검 #4 후속, 2026-09-24 — 카톡 업로드 오류 박스 2곳이 마지막 잔존).
  *
- * 판정 범위: 한 문자열 안에 **변형 접두사 없는** `bg-destructive/<N>` 과 `text-destructive` 가
- * 함께 있는 경우. `hover:bg-destructive/10 hover:text-destructive` 같은 상태 변형은 잠깐
- * 나타나는 강조라 이 계약의 대상이 아니다(별도 판단). 주석은 AST 노드가 아니라 잡히지 않는다.
+ * 판정 범위(둘 다 **변형 접두사 없는** 토큰끼리만):
+ * ① 한 클래스 문자열 안에 `bg-destructive/<N>` 과 `text-destructive` 가 함께 있는 경우.
+ * ② JSX 요소의 className 이 `bg-destructive/<N>` 인데, 그 **안쪽 요소**가 자기 배경(`bg-*`) 없이
+ *    `text-destructive` 를 쓰는 경우(틴트 상자 안의 오류 문구 — 리뷰가 ①만으로는 못 잡는다고 짚었다).
+ * `hover:bg-destructive/10 hover:text-destructive` 같은 상태 변형은 잠깐 나타나는 강조라 대상이
+ * 아니다(별도 판단). 주석은 AST 노드가 아니라 잡히지 않는다.
+ *
+ * ⚠️ 이 계약이 **못 보는 것**: 틴트가 다른 컴포넌트 파일에 있거나 prop 으로 전달돼 부모·자식이
+ * 한 파일 JSX 트리로 이어지지 않는 경우. 그리고 틴트 없는 연한 표면(#FAF9F6·slate-50) 위의
+ * `text-destructive`(4.45~4.48:1)도 미달이지만 배경을 정적으로 알 수 없어 여기서 판정하지 않는다.
  */
 
 const SRC = join(__dirname, "..");
@@ -42,12 +49,65 @@ function hasLowContrastPair(classes: string): boolean {
   return tintBg && plainText;
 }
 
-/** 파일의 문자열·템플릿 조각 가운데 금지 조합을 담은 것. */
+const isTintBg = (token: string) => /^bg-destructive\/\d+$/.test(token);
+/** 변형 접두사 없는 배경 토큰 — 안쪽 요소가 자기 표면을 깔면 바깥 틴트는 그 글자의 배경이 아니다. */
+const isOwnSurface = (token: string) => token.startsWith("bg-") && !token.includes(":");
+
+/** JSX 요소의 className 에 들어 있는 모든 문자열 조각(`cn(...)`·삼항 포함)을 토큰으로. */
+function classNameTokens(element: ts.JsxElement | ts.JsxSelfClosingElement): string[] {
+  const attributes = ts.isJsxElement(element) ? element.openingElement.attributes : element.attributes;
+  const attribute = attributes.properties.find(
+    (property): property is ts.JsxAttribute =>
+      ts.isJsxAttribute(property) && property.name.getText() === "className",
+  );
+  if (!attribute?.initializer) return [];
+  const pieces: string[] = [];
+  const collect = (node: ts.Node) => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    ) {
+      pieces.push(node.text);
+    }
+    ts.forEachChild(node, collect);
+  };
+  collect(attribute.initializer);
+  return pieces.join(" ").split(/\s+/).filter(Boolean);
+}
+
+/** ② 틴트 상자 안쪽에서 자기 배경 없이 기본 빨강 글자를 쓰는 요소의 className. */
+function nestedOffenses(source: ts.SourceFile): string[] {
+  const found: string[] = [];
+  const isElement = (node: ts.Node): node is ts.JsxElement | ts.JsxSelfClosingElement =>
+    ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node);
+  // 틴트 상자 안쪽을 내려가며 본다 — 자기 배경을 깐 요소를 만나면 그 아래는 이 틴트와 무관하다.
+  const inspect = (node: ts.Node) => {
+    if (isElement(node)) {
+      const tokens = classNameTokens(node);
+      if (tokens.some(isOwnSurface)) return;
+      if (tokens.includes("text-destructive")) found.push(tokens.join(" "));
+    }
+    ts.forEachChild(node, inspect);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxElement(node) && classNameTokens(node).some(isTintBg)) {
+      node.children.forEach(inspect);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+/** 파일의 문자열·템플릿 조각 가운데 금지 조합을 담은 것(①) + 틴트 상자 안쪽 위반(②). */
 function offendingLiterals(fileName: string, text: string): string[] {
   // 싼 거르기 — 이스케이프(`\u`)로 쓴 클래스는 원문에 이름이 안 보이므로 그 파일도 통과시킨다.
   if (!text.includes("bg-destructive/") && !text.includes("\\u")) return [];
-  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
-  const found: string[] = [];
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const found: string[] = [...nestedOffenses(source)];
   const visit = (node: ts.Node) => {
     if (
       (ts.isStringLiteral(node) ||
@@ -85,6 +145,17 @@ describe("판정기 자체 — 반증 프로브", () => {
       'const c = "bg-\\u0064estructive/10 text-destructive";',
     ].join("\n");
     expect(offendingLiterals("probe.tsx", probe)).toHaveLength(3);
+  });
+
+  it("틴트 상자 안쪽의 기본 빨강 글자를 잡고, 자기 배경을 깐 요소 아래는 건너뛴다", () => {
+    const nested = [
+      'const A = () => <div className="bg-destructive/5"><span className="text-destructive">x</span></div>;',
+      'const B = () => <div className="bg-destructive/5"><div className="bg-white"><span className="text-destructive">x</span></div></div>;',
+      'const C = () => <div className={cn("rounded bg-destructive/10", x)}>{ok ? <p className="text-destructive">y</p> : null}</div>;',
+      'const D = () => <div className="bg-destructive/5"><span className="text-status-urgent-text">x</span></div>;',
+      'const E = () => <div className="hover:bg-destructive/10"><span className="text-destructive">x</span></div>;',
+    ];
+    expect(nested.map((line, index) => offendingLiterals(`n${index}.tsx`, line).length)).toEqual([1, 0, 1, 0, 0]);
   });
 
   it("싼 거르기가 이스케이프만 쓴 파일을 놓치지 않는다(AST 판정과 등가)", () => {

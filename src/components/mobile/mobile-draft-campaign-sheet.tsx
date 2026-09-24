@@ -336,7 +336,7 @@ export function MobileDraftCampaignSheet({
             </div>
           </div>
           {invalidRange ? (
-            <p className="text-[11px] text-destructive">종료일은 시작일보다 빠를 수 없습니다.</p>
+            <p className="text-[11px] text-status-urgent-text">종료일은 시작일보다 빠를 수 없습니다.</p>
           ) : null}
           </MobileSheetCard>
 
@@ -356,7 +356,7 @@ export function MobileDraftCampaignSheet({
             <p className="mt-0.5 text-[10px] text-muted-foreground">(차수는 자동 계산)</p>
           </div>
 
-          {error ? <p className="text-[11px] text-destructive">{error}</p> : null}
+          {error ? <p className="text-[11px] text-status-urgent-text">{error}</p> : null}
 
           <button
             type="button"

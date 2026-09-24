@@ -260,6 +260,37 @@ describe("ReferenceInboxClient — 기각/실행 취소", () => {
     expect(mockToast.success).toHaveBeenCalledWith("기각을 취소했습니다.");
   });
 
+  it("연달아 기각하면 실행 취소 알림 한 장에 모으고, 누르면 모두 되돌린다", async () => {
+    // 알림은 닫을 때까지 남으므로 건마다 한 장씩 띄우면 닫아야 할 알림이 쌓인다.
+    await renderInbox();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "기각" })[0]);
+    await waitFor(() => expect(mockToastFn).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getAllByRole("button", { name: "기각" })[0]);
+    await waitFor(() => expect(mockToastFn).toHaveBeenCalledTimes(2));
+
+    const [firstMessage, firstOptions] = mockToastFn.mock.calls[0] as [string, { id: string }];
+    const [secondMessage, secondOptions] = mockToastFn.mock.calls[1] as [
+      string,
+      { id: string; action: { label: string; onClick: () => void } },
+    ];
+    expect(firstMessage).toBe("기각했습니다.");
+    expect(secondMessage).toBe("2건 기각했습니다.");
+    expect(secondOptions.id).toBe(firstOptions.id);
+    expect(secondOptions.action.label).toBe("모두 실행 취소");
+
+    secondOptions.action.onClick();
+
+    await waitFor(() => {
+      const restores = fetchCalls.filter(
+        (c) => c.url.endsWith("/restore") && c.init?.method === "POST",
+      );
+      expect(restores).toHaveLength(2);
+    });
+    await waitFor(() => expect(mockToast.success).toHaveBeenCalledWith("2건의 기각을 취소했습니다."));
+    expect(mockToast.success).toHaveBeenCalledTimes(1);
+  });
+
   it("기각 실패 시 카드를 유지하고 에러 토스트를 띄운다", async () => {
     installFetchMock({
       onDelete: () => jsonResponse({ error: "서버 오류" }, false, 500),
