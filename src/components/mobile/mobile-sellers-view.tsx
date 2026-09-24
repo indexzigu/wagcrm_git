@@ -82,6 +82,7 @@ export function MobileSellersView({
             commitSearch(value);
           }}
           placeholder="이름, 핸들, 카테고리 검색"
+          aria-label="셀러 검색"
           className="h-full border-0 text-base focus-visible:ring-0"
         />
       </InputGroup>

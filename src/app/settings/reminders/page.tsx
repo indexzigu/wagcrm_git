@@ -110,7 +110,9 @@ export default function ReminderSettingsPage() {
                 제안 후 무응답 시 단계별 리마인드 메시지를 생성합니다
               </p>
             </div>
+            {/* 스위치는 카드 제목을 이름으로 쓴다 — 종전엔 이름 없이 「스위치」로만 읽혀 셋을 구분할 수 없었다. */}
             <Switch
+              aria-label="셀러 무응답 리마인더 사용"
               checked={settings.sellerNoResponse.enabled}
               onCheckedChange={(checked) =>
                 setSettings((prev) => ({
@@ -123,11 +125,12 @@ export default function ReminderSettingsPage() {
           <CardContent className="p-6">
             {settings.sellerNoResponse.enabled ? (
               <div className="space-y-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase">리마인더 간격 (일)</p>
-                <div className="grid grid-cols-3 gap-3">
+                <p id="reminder-interval-heading" className="text-[11px] font-semibold text-muted-foreground uppercase">리마인더 간격 (일)</p>
+                <div role="group" aria-labelledby="reminder-interval-heading" className="grid grid-cols-3 gap-3">
                   <div>
-                    <Label className="text-[10px] text-muted-foreground font-medium">1단계</Label>
+                    <Label htmlFor="reminder-interval-1" className="text-[10px] text-muted-foreground font-medium">1단계</Label>
                     <Input
+                      id="reminder-interval-1"
                       type="number"
                       min="1"
                       value={settings.sellerNoResponse.intervals[0]}
@@ -136,8 +139,9 @@ export default function ReminderSettingsPage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground font-medium">2단계</Label>
+                    <Label htmlFor="reminder-interval-2" className="text-[10px] text-muted-foreground font-medium">2단계</Label>
                     <Input
+                      id="reminder-interval-2"
                       type="number"
                       min="1"
                       value={settings.sellerNoResponse.intervals[1]}
@@ -146,8 +150,9 @@ export default function ReminderSettingsPage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-[10px] text-muted-foreground font-medium">3단계</Label>
+                    <Label htmlFor="reminder-interval-3" className="text-[10px] text-muted-foreground font-medium">3단계</Label>
                     <Input
+                      id="reminder-interval-3"
                       type="number"
                       min="1"
                       value={settings.sellerNoResponse.intervals[2]}
@@ -176,6 +181,7 @@ export default function ReminderSettingsPage() {
               </p>
             </div>
             <Switch
+              aria-label="정산 지연 리마인더 사용"
               checked={settings.settlementOverdue.enabled}
               onCheckedChange={(checked) =>
                 setSettings((prev) => ({
@@ -188,8 +194,9 @@ export default function ReminderSettingsPage() {
           <CardContent className="p-6">
             {settings.settlementOverdue.enabled ? (
               <div className="max-w-[200px] space-y-1">
-                <Label className="text-[10px] text-muted-foreground font-medium">기준 일수</Label>
+                <Label htmlFor="settlement-overdue-days" className="text-[10px] text-muted-foreground font-medium">기준 일수</Label>
                 <Input
+                  id="settlement-overdue-days"
                   type="number"
                   min="1"
                   value={settings.settlementOverdue.thresholdDays}
@@ -221,6 +228,7 @@ export default function ReminderSettingsPage() {
               </p>
             </div>
             <Switch
+              aria-label="상태 정체 리마인더 사용"
               checked={settings.stagnantStatus.enabled}
               onCheckedChange={(checked) =>
                 setSettings((prev) => ({

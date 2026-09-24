@@ -1777,8 +1777,9 @@ export default function OrderDashboard() {
                   className="rounded-lg h-9 px-2.5 text-xs"
                   disabled={refreshing}
                   onClick={() => refreshNow()}
+                  aria-label="주문 현황 새로고침"
                 >
-                  <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
                 </Button>
                 <Button
                   variant="default"
@@ -2283,9 +2284,6 @@ export default function OrderDashboard() {
                                     setConfirmListCampaignId(open ? camp.id : null);
                                   }
                                 };
-                                const triggerRing = s.key === 'shipping' ? 'focus-visible:ring-[var(--pipeline-shipping)]'
-                                  : s.key === 'confirm' ? 'focus-visible:ring-[var(--pipeline-confirm)]'
-                                  : 'focus-visible:ring-[var(--pipeline-pending)]';
                                 const triggerTitle = s.key === 'shipping' ? '배송 지연 목록: 클릭하면 택배사/고객 확인 대상'
                                   : s.key === 'confirm' ? '발주 지연 목록: 주문확인 후 발주요청/송장 미등록 대상'
                                   : '송장 지연 목록: 클릭하면 송장 독촉 대상';
@@ -2311,7 +2309,7 @@ export default function OrderDashboard() {
                                         <button
                                           type="button"
                                           onClick={(e) => e.stopPropagation()}
-                                          className={`inline-flex items-center gap-1 -mx-0.5 px-0.5 rounded hover:bg-slate-100/80 focus-visible:ring-2 ${triggerRing} focus:outline-none cursor-pointer`}
+                                          className={`inline-flex items-center gap-1 -mx-0.5 px-0.5 rounded hover:bg-slate-100/80 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer`}
                                           title={triggerTitle}
                                         >
                                           <span className="font-medium text-slate-500">{s.label}</span>

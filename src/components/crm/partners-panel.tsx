@@ -600,10 +600,12 @@ export function PartnersPanel({
           <FieldSet>
             <FieldLegend>핵심 식별 정보</FieldLegend>
             <Field data-invalid={!!createErrors.name}>
-              <FieldLabel>
+              {/* 등록 폼은 한 번에 하나만 열리므로(데스크톱 Dialog / 모바일 Drawer 택일) 고정 id 로 라벨을 잇는다. */}
+              <FieldLabel htmlFor="partner-create-name">
                 이름 <span className="text-destructive">*</span>
               </FieldLabel>
               <Input
+                id="partner-create-name"
                 value={createForm.name}
                 onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
                 placeholder="거래처 이름 (1~50자)"
@@ -614,7 +616,7 @@ export function PartnersPanel({
             </Field>
 
             <Field data-invalid={!!createErrors.type}>
-              <FieldLabel>
+              <FieldLabel htmlFor="partner-create-type">
                 유형 <span className="text-destructive">*</span>
               </FieldLabel>
               <Select
@@ -623,7 +625,7 @@ export function PartnersPanel({
                   setCreateForm({ ...createForm, type: value as PartnerType })
                 }
               >
-                <SelectTrigger className="w-full" aria-invalid={!!createErrors.type}>
+                <SelectTrigger id="partner-create-type" className="w-full" aria-invalid={!!createErrors.type}>
                   <SelectValue placeholder="유형 선택" />
                 </SelectTrigger>
                 <SelectContent>
@@ -640,7 +642,7 @@ export function PartnersPanel({
             </Field>
 
             <Field>
-              <FieldLabel>
+              <FieldLabel htmlFor="partner-create-status">
                 상태 <span className="text-destructive">*</span>
               </FieldLabel>
               <Select
@@ -649,7 +651,7 @@ export function PartnersPanel({
                   setCreateForm({ ...createForm, status: value as CreateFormState["status"] })
                 }
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="partner-create-status" className="w-full">
                   <SelectValue placeholder="상태 선택" />
                 </SelectTrigger>
                 <SelectContent>
@@ -667,9 +669,10 @@ export function PartnersPanel({
           <FieldSet>
             <FieldLegend>운영 보강 정보</FieldLegend>
             <Field data-invalid={!!createErrors.businessNumber}>
-              <FieldLabel>사업자번호</FieldLabel>
+              <FieldLabel htmlFor="partner-create-business-number">사업자번호</FieldLabel>
               <div className="flex items-center gap-2">
                 <Input
+                  id="partner-create-business-number"
                   value={formatBusinessNumber(createForm.businessNumber)}
                   onChange={(e) => {
                     // Only allow digits, max 10
@@ -689,6 +692,7 @@ export function PartnersPanel({
                   size="sm"
                   className="h-9 shrink-0 text-xs"
                   disabled={createForm.businessNumber.length !== 10 || bizPreviewing}
+                  aria-label={bizPreviewing ? "사업자 정보 조회 중" : undefined}
                   onClick={async () => {
                     const bn = createForm.businessNumber;
                     if (bn.length !== 10) return;
@@ -730,7 +734,7 @@ export function PartnersPanel({
                   }}
                 >
                   {bizPreviewing ? (
-                    <RefreshCw className="size-3.5 animate-spin" />
+                    <RefreshCw className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : (
                     "조회"
                   )}
@@ -758,8 +762,9 @@ export function PartnersPanel({
             </Field>
 
             <Field>
-              <FieldLabel>연락처</FieldLabel>
+              <FieldLabel htmlFor="partner-create-contact">연락처</FieldLabel>
               <Input
+                id="partner-create-contact"
                 value={createForm.contactInfo}
                 onChange={(e) => setCreateForm({ ...createForm, contactInfo: e.target.value })}
                 placeholder="연락처 정보"
@@ -767,8 +772,9 @@ export function PartnersPanel({
             </Field>
 
             <Field>
-              <FieldLabel>대표 이메일</FieldLabel>
+              <FieldLabel htmlFor="partner-create-rep-email">대표 이메일</FieldLabel>
               <Input
+                id="partner-create-rep-email"
                 type="email"
                 value={createForm.representativeEmail}
                 onChange={(e) => setCreateForm({ ...createForm, representativeEmail: e.target.value })}
@@ -780,8 +786,9 @@ export function PartnersPanel({
             </Field>
 
             <Field>
-              <FieldLabel>계좌정보</FieldLabel>
+              <FieldLabel htmlFor="partner-create-bank">계좌정보</FieldLabel>
               <Input
+                id="partner-create-bank"
                 value={createForm.bankAccount}
                 onChange={(e) => setCreateForm({ ...createForm, bankAccount: e.target.value })}
                 placeholder="은행명 계좌번호 (예: 국민 000-000-000)"
@@ -837,8 +844,9 @@ export function PartnersPanel({
               variant="ghost"
               size="icon"
               onClick={() => onOpenChange(false)}
+              aria-label="닫기"
             >
-              <X />
+              <X aria-hidden="true" />
             </Button>
           </DrawerHeader>
           {createBody}
@@ -1135,8 +1143,9 @@ export function PartnersPanel({
                     }
                   }}
                   title="사업자 정보 동기화"
+                  aria-label="사업자 정보 동기화"
                 >
-                  <RefreshCw className={`size-3 text-muted-foreground ${isSyncing ? "animate-spin" : ""}`} />
+                  <RefreshCw className={`size-3 text-muted-foreground ${isSyncing ? "animate-spin" : ""}`} aria-hidden="true" />
                 </Button>
               )
             }
@@ -1149,8 +1158,8 @@ export function PartnersPanel({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button type="button" className="text-muted-foreground hover:text-foreground cursor-pointer select-none">
-                      <HelpCircle className="size-3.5" />
+                    <button type="button" aria-label="사업자등록증 업로드 도움말" className="text-muted-foreground hover:text-foreground cursor-pointer select-none">
+                      <HelpCircle className="size-3.5" aria-hidden="true" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" align="start" className="max-w-[240px] text-[11px] bg-slate-900 text-white border-0 px-2.5 py-1.5 rounded-lg shadow-overlay leading-normal">
@@ -1527,8 +1536,9 @@ export function PartnersPanel({
             variant="ghost"
             size="icon"
             onClick={() => onOpenChange(false)}
+            aria-label="닫기"
           >
-            <X />
+            <X aria-hidden="true" />
           </Button>
         </DrawerHeader>
         {body}

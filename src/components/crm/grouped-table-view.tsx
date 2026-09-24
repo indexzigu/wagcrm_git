@@ -254,6 +254,7 @@ function GroupSection({
                                   event.stopPropagation();
                                   onRowOpen(campaign);
                                 }}
+                                title={campaign.sellerName ?? undefined}
                                 className="block w-full truncate rounded-sm text-left text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                               >
                                 {campaign.sellerName}
@@ -263,7 +264,7 @@ function GroupSection({
                         case "dealName":
                           return (
                             <TableCell key={col.field} className={col.width}>
-                              <span className="block truncate text-sm text-foreground">
+                              <span className="block truncate text-sm text-foreground" title={campaign.dealName ?? undefined}>
                                 {campaign.dealName}
                               </span>
                             </TableCell>

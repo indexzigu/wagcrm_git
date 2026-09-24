@@ -248,6 +248,7 @@ export function MobilePipelineView({
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           placeholder="캠페인명, 셀러, 거래처 검색..."
+          aria-label="캠페인 검색"
           className="h-full border-0 text-base focus-visible:ring-0 bg-transparent placeholder:text-slate-400"
         />
       </InputGroup>

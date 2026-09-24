@@ -105,11 +105,19 @@ export function SellerIdentityInfo({
         <div className="flex flex-col min-w-0 gap-0.5">
           <div className="flex items-center gap-1 min-w-0">
             {!hideSns && renderSnsIcon(snsType, iconSize)}
-            <span className={`truncate text-foreground ${nameSize}`}>
+            {/* 헤딩은 줄바꿈으로 전체를, 목록(default·compact)은 말줄임 + title 로 전체값 접근
+                (entity-identity.tsx 와 같은 정책). */}
+            <span
+              className={`${isHeading ? "min-w-0 break-words" : "truncate"} text-foreground ${nameSize}`}
+              title={isHeading ? undefined : (sellerName ?? undefined)}
+            >
               {sellerName ?? "-"}
             </span>
             {!hideSns && snsHandle && (
-              <span className={`text-slate-500 font-mono leading-none truncate ${handleSize}`}>
+              <span
+                className={`text-slate-500 font-mono leading-none ${isHeading ? "min-w-0 break-all" : "truncate"} ${handleSize}`}
+                title={isHeading ? undefined : `@${snsHandle}`}
+              >
                 @{snsHandle}
               </span>
             )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronsUpDown, CircleHelp, Pencil } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
@@ -100,6 +100,10 @@ export function InlineEditField({
   const [optimisticValue, setOptimisticValue] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 접근 이름 배선용 — 화면의 필드 제목(label)이 편집기·셀렉트의 이름이 되게 잇는다.
+  // (종전엔 편집 입력칸·셀렉트가 이름 없이 「편집 텍스트」「콤보 상자」로만 읽혔다.)
+  const labelId = useId();
+  const controlId = useId();
 
   const displayVal = optimisticValue ?? value;
   const shownText = displayValue ?? getOptionLabel(displayVal, options) ?? (displayVal || "-");
@@ -112,7 +116,7 @@ export function InlineEditField({
             ⚠️ 말줄임(truncate)으로 처리하지 않는다 — 필드 제목은 그 칸이 무슨 값인지
             알려주는 유일한 단서라 "주민등록…"처럼 잘리면 식별이 안 된다. 폭이 모자라면
             줄이는 게 아니라 **레이아웃이 폭을 내줘야 한다**(호출부에서 전체폭 사용). */}
-        <span className="whitespace-nowrap text-xs text-muted-foreground">{label}</span>
+        <span id={labelId} className="whitespace-nowrap text-xs text-muted-foreground">{label}</span>
         {description && descriptionAsTooltip ? (
           <TooltipProvider delayDuration={150}>
             <Tooltip>
@@ -251,7 +255,7 @@ export function InlineEditField({
         className,
       )}>
         <div className="flex flex-col shrink-0">
-          <span className="text-xs text-muted-foreground">{label}</span>
+          <span id={labelId} className="text-xs text-muted-foreground">{label}</span>
           {description && <span className="text-[10px] text-muted-foreground/70">{description}</span>}
         </div>
         <Select
@@ -259,10 +263,13 @@ export function InlineEditField({
           onValueChange={(newVal) => handleSave(newVal)}
           disabled={isSaving}
         >
+          {/* 이름 = 「필드 제목 + 현재 값」 — 값 표시(span)를 함께 가리켜 보이는 값도 이름에 남긴다.
+              (트리거 자신을 가리키면 combobox 는 내용으로 이름을 만들지 않아 값이 빠진다 — jsdom 실측.) */}
           <SelectTrigger
-            className="h-7 w-auto min-w-[80px] max-w-[160px] rounded-md border-transparent bg-transparent pl-2 pr-0 text-xs font-medium text-foreground shadow-none hover:bg-transparent focus:ring-0 transition-colors"
+            aria-labelledby={`${labelId} ${controlId}`}
+            className="h-7 w-auto min-w-[80px] max-w-[160px] rounded-md border-transparent bg-transparent pl-2 pr-0 text-xs font-medium text-foreground shadow-none hover:bg-transparent focus-visible:ring-2 focus-visible:ring-focus-ring transition-colors"
           >
-            <SelectValue>
+            <SelectValue id={controlId}>
               {getOptionLabel(displayVal, options) ?? displayVal}
             </SelectValue>
           </SelectTrigger>
@@ -311,6 +318,7 @@ export function InlineEditField({
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => handleSave(draft)}
           onKeyDown={handleKeyDown}
+          aria-labelledby={labelId}
           className={cn(
             "h-7 w-full min-w-0 justify-self-end rounded-md border border-slate-200 bg-white px-2 text-xs text-right shadow-none outline-none focus:border-slate-300 focus-visible:ring-2 focus-visible:ring-focus-ring",
             prioritizeEditorWidth && fieldType === "number"
@@ -394,6 +402,8 @@ function SearchableSelectField({
 }: SearchableSelectFieldProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const labelId = useId();
+  const triggerId = useId();
 
   const selectedLabel = getOptionLabel(value, options) ?? (value || "-");
 
@@ -418,13 +428,15 @@ function SearchableSelectField({
       "bg-white hover:bg-accent/50 cursor-pointer",
       className,
     )}>
-      <span className="text-xs text-muted-foreground shrink-0">{label}</span>
+      <span id={labelId} className="text-xs text-muted-foreground shrink-0">{label}</span>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
+            id={triggerId}
+            aria-labelledby={`${labelId} ${triggerId}`}
             disabled={isSaving}
-            className="flex items-center gap-1 min-w-0 max-w-[160px] rounded-md pl-2 pr-0 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-transparent"
+            className="flex items-center gap-1 min-w-0 max-w-[160px] rounded-md pl-2 pr-0 py-0.5 text-xs font-medium text-foreground transition-colors hover:bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             <span className="truncate">{selectedLabel}</span>
             <ChevronsUpDown className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/field:opacity-100 transition-opacity" />
@@ -441,6 +453,7 @@ function SearchableSelectField({
           <Command shouldFilter={false}>
             <CommandInput
               placeholder="검색..."
+              aria-label={`${label} 검색`}
               value={search}
               onValueChange={setSearch}
             />

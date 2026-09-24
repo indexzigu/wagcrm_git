@@ -56,13 +56,17 @@ export function ChannelFeesClient({ initialChannels }: { initialChannels: Channe
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur p-6 overflow-y-auto">
           <div className="max-w-2xl space-y-6">
             {channels.map((ch) => (
+              // 채널 카드마다 같은 라벨(스토어 수수료…)이 반복되므로 카드를 채널명 그룹으로 묶고
+              // 각 라벨을 htmlFor 로 입력칸에 잇는다 — 화면낭독기가 「네이버 … 스토어 수수료」로 구분해 읽는다.
               <div
                 key={ch.channel}
+                role="group"
+                aria-labelledby={`channel-fee-${ch.channel}-title`}
                 className="rounded-xl border border-slate-200/60 bg-white/80 p-5 space-y-3 shadow-soft-sm"
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-800">{ch.label}</h3>
+                    <h3 id={`channel-fee-${ch.channel}-title`} className="text-sm font-semibold text-slate-800">{ch.label}</h3>
                     <p className="text-xs text-muted-foreground font-mono">{ch.channel}</p>
                   </div>
                   <div className="text-right">
@@ -73,8 +77,9 @@ export function ChannelFeesClient({ initialChannels }: { initialChannels: Channe
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-muted-foreground font-medium">스토어 수수료 (%)</label>
+                    <label htmlFor={`channel-fee-${ch.channel}-feeRate`} className="text-xs text-muted-foreground font-medium">스토어 수수료 (%)</label>
                     <Input
+                      id={`channel-fee-${ch.channel}-feeRate`}
                       type="number"
                       step="0.01"
                       min="0"
@@ -84,8 +89,9 @@ export function ChannelFeesClient({ initialChannels }: { initialChannels: Channe
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground font-medium">결제 수수료 (%)</label>
+                    <label htmlFor={`channel-fee-${ch.channel}-paymentRate`} className="text-xs text-muted-foreground font-medium">결제 수수료 (%)</label>
                     <Input
+                      id={`channel-fee-${ch.channel}-paymentRate`}
                       type="number"
                       step="0.01"
                       min="0"
@@ -97,8 +103,9 @@ export function ChannelFeesClient({ initialChannels }: { initialChannels: Channe
                 </div>
 
                 <div>
-                  <label className="text-xs text-muted-foreground font-medium">비고</label>
+                  <label htmlFor={`channel-fee-${ch.channel}-notes`} className="text-xs text-muted-foreground font-medium">비고</label>
                   <Input
+                    id={`channel-fee-${ch.channel}-notes`}
                     value={ch.notes || ""}
                     onChange={(e) => updateChannel(ch.channel, "notes", e.target.value)}
                     placeholder="메모"

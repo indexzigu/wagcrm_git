@@ -294,8 +294,9 @@ export default function EmailSendModal({
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5">발주서 파일명</label>
+                <label htmlFor="email-send-filename" className="block text-xs font-bold text-slate-600 mb-1.5">발주서 파일명</label>
                 <input
+                  id="email-send-filename"
                   type="text"
                   value={fileName}
                   onChange={e => { fileNameTouchedRef.current = true; setFileName(e.target.value); }}
@@ -310,8 +311,9 @@ export default function EmailSendModal({
                 </p>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5">수신 이메일 주소</label>
+                <label htmlFor="email-send-to" className="block text-xs font-bold text-slate-600 mb-1.5">수신 이메일 주소</label>
                 <input 
+                  id="email-send-to"
                   required 
                   type="text"
                   value={emailToStr} 
@@ -322,8 +324,9 @@ export default function EmailSendModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5">참조 이메일 주소 (선택)</label>
+                <label htmlFor="email-send-cc" className="block text-xs font-bold text-slate-600 mb-1.5">참조 이메일 주소 (선택)</label>
                 <input 
+                  id="email-send-cc"
                   type="text"
                   value={emailCcStr} 
                   onChange={e => setEmailCcStr(e.target.value)} 
@@ -333,8 +336,9 @@ export default function EmailSendModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5">메일 제목</label>
+                <label htmlFor="email-send-subject" className="block text-xs font-bold text-slate-600 mb-1.5">메일 제목</label>
                 <input 
+                  id="email-send-subject"
                   required 
                   type="text"
                   value={emailSubject} 
@@ -344,8 +348,9 @@ export default function EmailSendModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5">메일 본문</label>
+                <label htmlFor="email-send-body" className="block text-xs font-bold text-slate-600 mb-1.5">메일 본문</label>
                 <textarea 
+                  id="email-send-body"
                   required 
                   rows={4}
                   value={emailMessage} 

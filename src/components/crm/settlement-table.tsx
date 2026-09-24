@@ -345,7 +345,10 @@ export function SettlementTable({
                           <button
                             type="button"
                             onClick={() => onSelectCampaign(campaign)}
-                            className="max-w-full truncate text-left font-medium text-foreground hover:underline"
+                            // 한 줄 말줄임이면 끝의 회차가 먼저 잘려 같은 딜·셀러의 회차끼리 구별이 안 된다 —
+                            // 두 줄까지 보이고 그 너머는 title 로.
+                            className="max-w-full break-words line-clamp-2 text-left font-medium text-foreground hover:underline"
+                            title={`${campaign.dealName} - ${campaign.sellerName}${campaign.roundNumber ? ` (${campaign.roundNumber}차)` : ""}`}
                           >
                             {campaign.dealName} - {campaign.sellerName}
                             {campaign.roundNumber ? (
