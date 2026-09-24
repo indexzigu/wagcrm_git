@@ -141,16 +141,13 @@ export function SettlementCompletedTable({
                   const reportCampaign = reportMap.get(campaign.id);
                   const profitTone = resolveProfitTone(campaign.operatingProfit);
                   const isSelected = selectedIds.includes(campaign.id);
+                  const isIndividual = isIndividualSeller(campaign);
 
                   return (
                     <tr
                       key={campaign.id}
                       className={`transition-colors ${
-                        isSelected
-                          ? "bg-primary/5 hover:bg-primary/5"
-                          : isIndividualSeller(campaign)
-                            ? "bg-amber-50/40 hover:bg-amber-50/60"
-                            : "hover:bg-slate-50/50"
+                        isSelected ? "bg-primary/5 hover:bg-primary/5" : "hover:bg-slate-50/50"
                       }`}
                     >
                       {/* 선택 — 진행 중 표와 같은 체크박스 계약(라벨만 다르다) */}
@@ -181,8 +178,23 @@ export function SettlementCompletedTable({
                               </span>
                             ) : null}
                           </button>
-                          <span className="text-[10px] text-muted-foreground truncate">
-                            {formatDate(campaign.startDate)} ~ {formatDate(campaign.endDate)}
+                          {/* 개인 셀러(원천징수 대상)는 **라벨**로 구분한다. 종전 행 틴트 amber-50 은
+                              좋고 나쁨이 없는 세무 범주에 주의(caution) 계열 hue 를 준 것이었고(P8 §4),
+                              색만으로 전달돼 무엇을 뜻하는지 화면 어디에도 적혀 있지 않았다(WCAG 1.4.1).
+                              칩은 P8 §4 가 허용한 중립 태그 캐리어(브랜드 네이비 틴트 — 셀러 목록 「신규」
+                              마커 선례, ss-ux-designer 판정). 대비 #0A3D62 on primary/10 합성 9.50:1. */}
+                          <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+                            {isIndividual ? (
+                              <span
+                                className="shrink-0 rounded-md bg-primary/10 px-1.5 font-medium text-primary"
+                                title="개인 셀러 · 원천징수 대상"
+                              >
+                                개인
+                              </span>
+                            ) : null}
+                            <span className="truncate">
+                              {formatDate(campaign.startDate)} ~ {formatDate(campaign.endDate)}
+                            </span>
                           </span>
                         </div>
                       </td>

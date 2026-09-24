@@ -1,7 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { MoreHorizontal, Globe, Calendar, Boxes } from "lucide-react";
+import {
+  MoreHorizontal,
+  Globe,
+  Calendar,
+  CalendarClock,
+  CalendarX2,
+  Boxes,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, badgeSizeClassName } from "@/components/ui/badge";
 import {
@@ -59,6 +67,22 @@ const urgencyTextClass: Record<DateUrgency, string> = {
   imminent: "text-status-caution",
   normal: "text-muted-foreground",
   unset: "text-muted-foreground",
+};
+
+// 긴급도를 **색 하나로** 말하지 않는다(WCAG 1.4.1 · interfaces 묶음 F, 2026-09-24). 색을 못 가르는
+// 사용자에게는 모양이 다른 아이콘이, 화면낭독기에는 sr-only 문구가 같은 신호를 전한다. 칸이 좁은
+// 10px 줄이라 보이는 문구는 더하지 않는다(ss-ux-designer 판정). normal·unset 은 "볼 것 없음"
+// 등급이라(P8 §2) 기본 달력 아이콘·문구 없음 그대로다.
+const urgencyIcon: Record<DateUrgency, LucideIcon> = {
+  overdue: CalendarX2,
+  imminent: CalendarClock,
+  normal: Calendar,
+  unset: Calendar,
+};
+
+const urgencySrText: Partial<Record<DateUrgency, string>> = {
+  overdue: "종료일 지남",
+  imminent: "종료 임박",
 };
 
 // StatusBadge(P8 가드레일 2)의 dedicated-tint 짝을 그대로 쓴다 — 각각 DROPPED · SETTLEMENT_WAIT ·
@@ -163,6 +187,7 @@ export function CampaignCard({
 }: CampaignCardProps) {
   const dateRange = formatDateRange(campaign.startDate, campaign.endDate);
   const urgency = getDateUrgency(campaign.endDate);
+  const UrgencyIcon = urgencyIcon[urgency];
   const checklistSummary = campaign.checklistSummary;
   const action = getCampaignAction(campaign);
   const needsActualSales =
@@ -329,7 +354,10 @@ export function CampaignCard({
             )}
             title={dateLabel}
           >
-            <Calendar className="size-3 mr-1 shrink-0" />
+            <UrgencyIcon className="size-3 mr-1 shrink-0" aria-hidden="true" />
+            {urgencySrText[urgency] ? (
+              <span className="sr-only">{urgencySrText[urgency]}: </span>
+            ) : null}
             <span className="truncate">{dateLabel}</span>
           </span>
         </div>
@@ -343,7 +371,12 @@ export function CampaignCard({
                 <span
                   className={cn("shrink-0", badgeSizeClassName.compact, actionToneClass[action.tone])}
                 >
-                  {action.label} {formatCampaignActionDate(action.dueDate)}
+                  {/* 지연·오늘을 틴트 색만으로 말하지 않는다(WCAG 1.4.1) — 문구가 같은 신호를
+                      진다. 오늘이면 날짜 대신 「오늘」, 지났으면 날짜 뒤에 「지연」. 이 카드의
+                      기존 압축 문체(「정체 N일」)를 따른다. */}
+                  {action.label}{" "}
+                  {action.tone === "today" ? "오늘" : formatCampaignActionDate(action.dueDate)}
+                  {action.tone === "overdue" ? " 지연" : null}
                 </span>
               ) : null}
               {/* 세팅 창(D-10) 안의 세팅 대기 카드가 안고 있는 실제 할 일. caution 티어 —

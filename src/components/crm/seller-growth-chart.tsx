@@ -34,6 +34,42 @@ const growthChartConfig = {
   },
 } satisfies ChartConfig;
 
+/** 게시물 선의 점선 패턴 — 차트 선과 범례 표식이 같은 값을 써야 범례가 거짓말하지 않는다. */
+const POSTS_DASH = "4 3";
+
+const GROWTH_LEGEND = [
+  { label: growthChartConfig.followersTrend.label, dash: undefined },
+  { label: growthChartConfig.postsTrend.label, dash: POSTS_DASH },
+] as const;
+
+/**
+ * 실선=팔로워 · 점선=게시물. 선 모양이 곧 구분자라 색 표식이 아니라 선 조각을 그린다.
+ * 게시물 이력이 없는 셀러는 그 선이 그려지지 않으므로 범례에서도 뺀다(없는 선을 가리키지 않게).
+ */
+function GrowthLegend({ showPosts }: { showPosts: boolean }) {
+  const items = showPosts ? GROWTH_LEGEND : GROWTH_LEGEND.slice(0, 1);
+  return (
+    <ul className="flex items-center gap-3 text-[10px] text-muted-foreground" aria-label="차트 범례">
+      {items.map((item) => (
+        <li key={item.label} className="inline-flex items-center gap-1">
+          <svg width="16" height="6" viewBox="0 0 16 6" aria-hidden="true" className="shrink-0">
+            <line
+              x1="0"
+              y1="3"
+              x2="16"
+              y2="3"
+              stroke="var(--chart-growth)"
+              strokeWidth="1.5"
+              strokeDasharray={item.dash}
+            />
+          </svg>
+          {item.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -358,6 +394,7 @@ export function SellerGrowthChart({ data }: GrowthTrendChartProps) {
         </div>
 
         <div className="flex flex-col items-end gap-3">
+          <GrowthLegend showPosts={trendData.some((p) => typeof p.postsTrend === "number")} />
           <div className="flex shrink-0 rounded-lg border border-border/50 bg-muted p-0.5">
             {(["ALL", "7D", "1M", "3M"] as FilterType[]).map((t) => (
               <button
@@ -437,10 +474,16 @@ export function SellerGrowthChart({ data }: GrowthTrendChartProps) {
               }}
               content={<DeltaTooltipContent />}
             />
+            {/* 두 시리즈를 색만으로 가르지 않는다(WCAG 1.4.1 · interfaces 묶음 F, 2026-09-24).
+                게시물 선은 종전 --chart-growth-soft(#6EE7B7, 흰 배경 1.52:1)라 선 자체가 거의 안
+                보였고 팔로워와는 색으로만 갈렸다. 이제 선은 팔로워와 같은 --chart-growth(5.48:1)에
+                **점선**이라는 모양 차이를 싣고, 면 채움은 soft 그라데이션을 그대로 둔다. 헤더의
+                범례(GROWTH_LEGEND)가 실선=팔로워 · 점선=게시물을 적는다 — 둘을 함께 바꿀 것. */}
             <Area
               type="monotone"
               dataKey="postsTrend"
-              stroke="var(--chart-growth-soft)"
+              stroke="var(--chart-growth)"
+              strokeDasharray={POSTS_DASH}
               strokeWidth={1.5}
               fill={`url(#postsGradient-${animKey})`}
               dot={false}

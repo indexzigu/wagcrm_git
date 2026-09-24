@@ -5,6 +5,7 @@ import {
   resolveProfitTone,
   PROFIT_TONE_TEXT,
   PROFIT_TONE_TEXT_DENSE,
+  PROFIT_TONE_FILL,
 } from "../profit-tone";
 import { cn } from "../utils";
 
@@ -112,5 +113,19 @@ describe("globals.css — --money-in-text 토큰 계약 (D1)", () => {
   it("--status-success 를 var() 로 참조하지 않는다 — 값이 같아도 축이 다르다", () => {
     // "성공색 조정" 커밋이 자금색을 함께 끌고 가면 안 된다.
     expect(CSS).not.toMatch(/--money-in-text:\s*var\(--status-success\)/);
+  });
+});
+
+describe("PROFIT_TONE_FILL — 도형 채움 계약", () => {
+  it("흑자는 링용 --money-in, 적자는 --status-urgent (텍스트 -text 변형이 아니다)", () => {
+    expect(PROFIT_TONE_FILL.profit).toBe("var(--money-in)");
+    expect(PROFIT_TONE_FILL.loss).toBe("var(--status-urgent)");
+  });
+
+  it("골드·자금 방향 반대편(money-out)을 쓰지 않는다", () => {
+    for (const v of Object.values(PROFIT_TONE_FILL)) {
+      expect(v).not.toContain("gold");
+      expect(v).not.toContain("money-out");
+    }
   });
 });

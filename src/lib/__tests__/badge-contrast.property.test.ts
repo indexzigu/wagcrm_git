@@ -9,6 +9,8 @@
  * WCAG AA 4.5:1 contrast ratio between text color and background color.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
 
@@ -64,6 +66,16 @@ const TAILWIND_COLOR_HEX: Record<string, string> = {
 // extracted key for e.g. "bg-[var(--status-caution-bg)]" is the whole bracketed
 // string, so we resolve those here. Values MUST mirror :root in src/app/globals.css.
 const STATUS_TOKEN_HEX: Record<string, string> = {
+  // 토큰 유틸 형태(`bg-status-active/10` → "status-active"). 2026-09-24 SSOT 전수 정렬로
+  // badge-config 가 StatusBadge 와 같은 **토큰 유틸**을 쓰게 되면서 추가했다.
+  "status-active": "#0A3D62",
+  "status-info": "#4A6B82",
+  "status-success": "#047857",
+  "status-success-bg": "#ECFDF5",
+  "status-caution": "#B45309",
+  "status-caution-bg": "#FFFBEB",
+  "status-urgent-text": "#8F3C3C",
+  "status-urgent-bg": "#F9EEEE",
   "[var(--status-success-bg)]": "#ECFDF5",
   "[var(--status-success)]": "#047857",
   "[var(--status-caution-bg)]": "#FFFBEB",
@@ -119,22 +131,60 @@ function contrastRatio(hex1: string, hex2: string): number {
 }
 
 /**
- * Extract the color key from a Tailwind class.
+ * Extract the color key (and optional alpha) from a Tailwind class.
  *
- * Handles two shapes:
- * - Default palette classes: "bg-blue-100" / "text-slate-700" → "blue-100" / "slate-700"
+ * Handles three shapes:
+ * - Default palette classes: "bg-slate-100" / "text-slate-700" → "slate-100" / "slate-700"
+ * - Token utilities, optionally with alpha: "bg-status-active/10" → "status-active" · 0.1
  * - Arbitrary-value CSS variable classes: "bg-[var(--status-success-bg)]" →
- *   "--status-success-bg" (the token name, which TAILWIND_COLOR_HEX maps to its
- *   globals.css hex value).
+ *   "--status-success-bg" (kept for backward compatibility).
  */
-function extractColorKey(tailwindClass: string): string {
-  // Remove prefix: "bg-" or "text-"
+function extractColorKey(tailwindClass: string): { key: string; alpha: number } {
   const withoutPrefix = tailwindClass.replace(/^(bg-|text-)/, "");
   const varMatch = withoutPrefix.match(/^\[var\((--[a-z0-9-]+)\)\]$/);
   if (varMatch) {
-    return varMatch[1];
+    return { key: varMatch[1], alpha: 1 };
   }
-  return withoutPrefix;
+  const alphaMatch = withoutPrefix.match(/^(.+)\/(\d+)$/);
+  if (alphaMatch) {
+    return { key: alphaMatch[1], alpha: Number(alphaMatch[2]) / 100 };
+  }
+  return { key: withoutPrefix, alpha: 1 };
+}
+
+function resolveHex(key: string): string | undefined {
+  return TAILWIND_COLOR_HEX[key] ?? STATUS_TOKEN_HEX[key];
+}
+
+/** Source-over composite of `fg` at `alpha` onto an opaque `bg` (sRGB, 8-bit). */
+function composite(fg: string, alpha: number, bg: string): string {
+  const f = hexToRgb(fg);
+  const b = hexToRgb(bg);
+  const ch = (x: number, y: number) =>
+    Math.round(x * alpha + y * (1 - alpha)).toString(16).padStart(2, "0");
+  return `#${ch(f.r, b.r)}${ch(f.g, b.g)}${ch(f.b, b.b)}`;
+}
+
+/**
+ * 알파 틴트 배경은 **뒤 표면에 따라** 대비가 바뀐다(P8 §5 「토큰은 표면 종속」). 이 배지가
+ * 실제로 얹히는 두 표면(흰 카드 · slate-50 목록/박스)에서 모두 재고 **낮은 쪽**을 판정한다.
+ */
+const SURFACES = ["#FFFFFF", "#F8FAFC"] as const;
+
+function worstBadgeContrast(status: CampaignStatus): number {
+  const config = SUB_STAGE_BADGE_CONFIG[status];
+  const bg = extractColorKey(config.bg);
+  const text = extractColorKey(config.text);
+  const bgHex = resolveHex(bg.key);
+  const textHex = resolveHex(text.key);
+  expect(bgHex, `${status} 배경 ${config.bg} 를 hex 로 못 풀었다`).toBeDefined();
+  expect(textHex, `${status} 글자 ${config.text} 를 hex 로 못 풀었다`).toBeDefined();
+  expect(text.alpha, `${status} 글자에 알파가 있다 — 표면 종속이라 금지`).toBe(1);
+  return Math.min(
+    ...SURFACES.map((surface) =>
+      contrastRatio(composite(bgHex!, bg.alpha, surface), textHex!),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -151,18 +201,7 @@ describe("Property 5: Badge color contrast meets WCAG AA", () => {
       fc.property(
         fc.constantFrom(...allStatuses),
         (status) => {
-          const config = SUB_STAGE_BADGE_CONFIG[status];
-          const bgKey = extractColorKey(config.bg);
-          const textKey = extractColorKey(config.text);
-
-          const bgHex = TAILWIND_COLOR_HEX[bgKey] ?? STATUS_TOKEN_HEX[bgKey];
-          const textHex = TAILWIND_COLOR_HEX[textKey] ?? STATUS_TOKEN_HEX[textKey];
-
-          expect(bgHex).toBeDefined();
-          expect(textHex).toBeDefined();
-
-          const ratio = contrastRatio(bgHex, textHex);
-          expect(ratio).toBeGreaterThanOrEqual(4.5);
+          expect(worstBadgeContrast(status)).toBeGreaterThanOrEqual(4.5);
         },
       ),
       { numRuns: 100 },
@@ -173,15 +212,24 @@ describe("Property 5: Badge color contrast meets WCAG AA", () => {
   it.each(allStatuses)(
     "badge for %s has contrast ratio >= 4.5:1",
     (status) => {
-      const config = SUB_STAGE_BADGE_CONFIG[status];
-      const bgKey = extractColorKey(config.bg);
-      const textKey = extractColorKey(config.text);
-
-      const bgHex = TAILWIND_COLOR_HEX[bgKey] ?? STATUS_TOKEN_HEX[bgKey];
-      const textHex = TAILWIND_COLOR_HEX[textKey] ?? STATUS_TOKEN_HEX[textKey];
-
-      const ratio = contrastRatio(bgHex, textHex);
-      expect(ratio).toBeGreaterThanOrEqual(4.5);
+      expect(worstBadgeContrast(status)).toBeGreaterThanOrEqual(4.5);
     },
   );
+});
+
+// 위 hex 표는 손으로 옮긴 사본이다 — globals.css 의 값이 바뀌면 이 게이트가 **옛 값으로**
+// 초록을 낸다. 토큰 유틸 키는 정본 :root 선언과 문자 그대로 대조한다.
+describe("STATUS_TOKEN_HEX 는 globals.css :root 와 같다", () => {
+  const globals = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+  const tokenKeys = Object.keys(STATUS_TOKEN_HEX).filter((k) => k.startsWith("status-"));
+
+  it("대조 대상이 비어 있지 않다(앵커 붕괴 시 공허 통과 방지)", () => {
+    expect(tokenKeys.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it.each(tokenKeys)("--%s", (key) => {
+    const match = globals.match(new RegExp(`--${key}:\\s*(#[0-9A-Fa-f]{6})`));
+    expect(match, `globals.css 에 --${key} 선언이 없다`).not.toBeNull();
+    expect(match![1].toUpperCase()).toBe(STATUS_TOKEN_HEX[key].toUpperCase());
+  });
 });

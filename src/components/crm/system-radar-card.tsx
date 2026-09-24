@@ -230,8 +230,21 @@ function JobDetailPopoverContent({ job, onClose }: { job: KnownJob; onClose: () 
                     className={`mt-1 size-1.5 shrink-0 rounded-full ${log.status === "SUCCESS" ? "bg-[var(--status-success)]" : "bg-[var(--status-urgent)]"}`}
                   />
                   <div className="min-w-0 flex-1">
+                    {/* 성패를 점 색 하나로 말하지 않는다(WCAG 1.4.1) — 위 작업 행의 「지연」·「실패 사유」와
+                        같은 텍스트 캐리어. 실패만 보이는 글자를 얹고(주의가 필요한 소수만 색, P8 §2),
+                        성공은 화면낭독기에만 알린다. 메시지가 빈 실패는 「실패」 한 단어가 종전 「오류 발생」을 대신한다. */}
                     <p className="break-words text-[11px] leading-snug text-slate-700">
-                      {log.message || (log.status === "SUCCESS" ? "정상 완료" : "오류 발생")}
+                      {log.status === "SUCCESS" ? (
+                        <>
+                          <span className="sr-only">성공: </span>
+                          {log.message || "정상 완료"}
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-medium text-[var(--status-urgent-text)]">실패</span>
+                          {log.message ? ` · ${log.message}` : null}
+                        </>
+                      )}
                     </p>
                     <p className="text-[9px] tabular-nums text-slate-500">
                       {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true, locale: ko })}

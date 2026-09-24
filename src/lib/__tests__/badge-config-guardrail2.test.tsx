@@ -17,9 +17,11 @@
 //   **이 PR** SSOT 자체가 두 축이었음을 정정(6개는 채움, 2개는 테두리로 의미를 졌다).
 //   값은 #152 쪽으로 돌아왔지만 **이유가 다르다** — 우회가 아니라 축 정리다.
 //
-// ⚠️ 이 파일은 "이 맵들이 전부 정렬됐다"고 주장하지 않는다. `SUB_STAGE_BADGE_CONFIG` 의
-// blue·amber·green 리터럴과 ACTIVE·SETTLEMENT_IN_PROGRESS 의 **의미축 차이**는 그대로다
-// — 아래가 그 미정렬 사실 자체를 고정한다(고칠 것을 "이미 됐다"로 덮지 않기 위해).
+// ✅ 2026-09-24 (interfaces 점검 묶음 F, 오너 지시): `SUB_STAGE_BADGE_CONFIG` 8개 전부가
+// SSOT 배지 맵과 **문자 그대로 같은 채움·글자 토큰**이 됐다. 종전 이 자리는 blue·amber·green
+// 리터럴과 ACTIVE(=초록)·SETTLEMENT_IN_PROGRESS(=주황)의 **의미축 차이**를 "미정렬 사실"로
+// 고정해 두었다 — 그 단언은 아래 「전수 정렬」 describe 로 대체됐다. CLOSED·PREPARATION 만
+// 보던 종전 단언이 나머지 6개를 방치한 것이 보고서 #11 의 뿌리다.
 //
 // ⚠️ 소스 그렙이라 렌더 도달을 못 본다 → 색 단언과 렌더 도달 단언을 짝으로 둔다
 // (`settlement-channel-color-reclaim` · `deals-panel-ai-affordance-color` 와 같은 규약).
@@ -345,26 +347,41 @@ describe("죽은 레거시 이름색 정리 (소비처 0건 확인 후 제거)",
   });
 });
 
-describe("아직 정렬되지 않은 것 (오너 결정 대기 — '됐다'고 덮지 않는다)", () => {
-  it("blue/amber/green 리터럴이 남아 있다", () => {
-    expect(SUB_STAGE_BADGE_CONFIG.PROPOSAL.bg).toBe("bg-blue-100");
-    expect(SUB_STAGE_BADGE_CONFIG.SETTLEMENT_WAIT.bg).toBe("bg-amber-100");
-    expect(SUB_STAGE_BADGE_CONFIG.COMPLETED.bg).toBe("bg-green-100");
+describe("가드레일 2 전수 정렬 — 8개 상태 전부가 SSOT 배지 맵과 같다", () => {
+  const STATUSES = Object.keys(SUB_STAGE_BADGE_CONFIG) as CampaignStatus[];
+
+  it("대상이 8개다(앵커 붕괴·상태 추가 시 공허 통과 방지)", () => {
+    expect(STATUSES).toHaveLength(8);
   });
 
-  it("ACTIVE·SETTLEMENT_IN_PROGRESS 는 StatusBadge 와 의미축이 다르다", () => {
-    // 여기: ACTIVE=success(초록) · SETTLEMENT_IN_PROGRESS=caution(주황)
-    expect(SUB_STAGE_BADGE_CONFIG.ACTIVE.text).toContain("--status-success");
-    expect(SUB_STAGE_BADGE_CONFIG.SETTLEMENT_IN_PROGRESS.text).toContain(
-      "--status-caution",
-    );
-    // SSOT: ACTIVE=active(네이비) · SETTLEMENT_IN_PROGRESS=info
-    expect(CANONICAL).toContain(
-      "ACTIVE: \"border-transparent bg-status-active/10 text-status-active\"",
-    );
-    expect(CANONICAL).toContain(
-      "SETTLEMENT_IN_PROGRESS: \"border-transparent bg-status-info/10 text-status-info\"",
-    );
-    // 이 불일치는 리터럴 hue 정리가 아니라 **의미 결정**이라 이번 PR 범위 밖이다.
+  it.each(STATUSES)("%s — 채움·글자 토큰이 SSOT statusClassName 과 문자 그대로 같다", (status) => {
+    const cfg = SUB_STAGE_BADGE_CONFIG[status as keyof typeof SUB_STAGE_BADGE_CONFIG];
+    const ssot = ssotBadgeClass(status as keyof typeof SUB_STAGE_BADGE_CONFIG).split(/\s+/);
+    // 테두리(border-transparent)는 소비처 베이스가 한 번 고정하므로 SSOT 쪽에만 있다.
+    // 그 한 토큰을 뺀 나머지가 정확히 [bg, text] 여야 한다 — 하나라도 더 있거나 다르면
+    // 정본에 없는 캐리어가 끼었거나 값이 갈라진 것이다.
+    const ssotColorTokens = ssot.filter((t) => t !== "border-transparent").sort();
+    expect([cfg.bg, cfg.text].sort()).toEqual(ssotColorTokens);
+  });
+
+  it("의미축 회귀 가드 — 정상 진행 단계에 경고·성공 hue 가 없다", () => {
+    // 보고서 #11 의 실증상: 「정산 진행」이 caution(주황)이라 정상 단계가 경고처럼 보였고,
+    // 「판매 진행」이 success(초록)라 StatusBadge(네이비)와 같은 상태가 다른 색이었다.
+    expect(SUB_STAGE_BADGE_CONFIG.SETTLEMENT_IN_PROGRESS.text).toBe("text-status-info");
+    expect(SUB_STAGE_BADGE_CONFIG.ACTIVE.text).toBe("text-status-active");
+    expect(SUB_STAGE_BADGE_CONFIG.PROPOSAL.text).toBe("text-status-active");
+    for (const status of ["PROPOSAL", "ACTIVE", "SETTLEMENT_IN_PROGRESS"] as const) {
+      const cfg = SUB_STAGE_BADGE_CONFIG[status];
+      expect(`${cfg.bg} ${cfg.text}`, `${status} 에 심각도/성공 hue`).not.toMatch(
+        /caution|urgent|success|amber|orange|green|emerald/,
+      );
+    }
+  });
+
+  it("Tailwind 원색 리터럴이 맵 본문에 없다 — 정본이 쓰는 중립 slate 만 허용", () => {
+    const body = code(slice(CONFIG, "export const SUB_STAGE_BADGE_CONFIG", "\n};"));
+    expect(body).not.toMatch(/\b(bg|text)-(blue|amber|green|emerald|orange|rose|red|sky|indigo)-\d{2,3}\b/);
+    // 임의값 var() 표기도 쓰지 않는다 — 정본과 같은 토큰 유틸이어야 문자 대조가 성립한다.
+    expect(body).not.toContain("[var(--");
   });
 });

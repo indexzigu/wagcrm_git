@@ -23,6 +23,7 @@ import {
   resolveProfitTone,
   PROFIT_TONE_TEXT,
   PROFIT_TONE_TEXT_DENSE,
+  PROFIT_TONE_FILL,
 } from "@/lib/profit-tone";
 import { salesChannelLabels } from "@/lib/crm-types";
 import {
@@ -203,6 +204,16 @@ function DetailLine({
 export function PnlReportClient({ report }: PnlReportClientProps) {
   const [selectedCampaign, setSelectedCampaign] = useState<PnlCampaignRow | null>(null);
   const { totals, taxEstimate } = report;
+  // 「순이익(세후)」 세그먼트와 「순이익률」 링이 같은 판정을 공유한다(값이 비유한이면 흑자 색).
+  // ⚠️ 적자면 두 도형 모두 **그려지지 않는다** — 막대는 음수 폭을 0 으로, 링은 음수 비율을 0 으로
+  // 자른다. 그래서 적자 색은 범례 표식에만 남고, 적자 신호는 링 가운데 이익률 숫자가 진다
+  // (아래 `afterTaxProfitLabelTone` — 밀집 맵이라 적자만 칠하고 흑자는 본문 색 그대로).
+  // 음수 전용 도형 표현은 이 묶음 범위 밖이다(codex 리뷰 지적, 2026-09-24).
+  const afterTaxProfitTone = resolveProfitTone(totals.afterTaxOperatingProfit);
+  const afterTaxProfitFill = PROFIT_TONE_FILL[afterTaxProfitTone ?? "profit"];
+  const afterTaxProfitLabelTone = afterTaxProfitTone
+    ? PROFIT_TONE_TEXT_DENSE[afterTaxProfitTone]
+    : undefined;
 
   const bridgeChartData = useMemo(
     () =>
@@ -348,6 +359,15 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_auto]">
+                    {/* 색 배분(interfaces 묶음 F, 2026-09-24): 비용 4항목은 좋고 나쁨이 없는 **범주**라
+                        범주형 차트 팔레트(--chart-*)·무채색만 받는다(P8 §4). 종전 「예상 세금」은
+                        --status-caution(심각도 축 — 세금이 경고처럼 보였다), 「순이익(세후)」은
+                        --accent-gold(가드레일 3 예외 2건 밖 + 흰 배경 2.11:1)였다. 순이익은 판정 축의
+                        초점 값이라 profit-tone 도형 맵을 탄다(흑자 --money-in 3.77 · 적자 --status-urgent
+                        4.69, 비텍스트 3:1). 세금은 --chart-3(골드축 — 이익 골드와 겹쳐 읽힘)·--chart-4
+                        (--status-pending 과 같은 값 — 대기 상태로 오독)가 부적합해 slate-600(흰 배경
+                        7.58:1)으로 둔다 — chart-1 네이비·slate-600·chart-5 slate-500·chart-2 하늘과
+                        명도 단이 겹치지 않는다(ss-ux-designer 판정). */}
                     <CategoryBar
                       total={totals.commissionRevenue}
                       formatValue={(v) => `${formatKRW(v)}`}
@@ -355,19 +375,24 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                         { label: "셀러 지급", value: totals.sellerPayout, color: "var(--chart-5)" },
                         { label: "공제세액", value: totals.deductedTax, color: "var(--chart-2)" },
                         { label: "운영비+기타", value: totals.operatingExpense + totals.miscExpense, color: "var(--chart-1)" },
-                        { label: "예상 세금", value: totals.estimatedTotalTax, color: "var(--status-caution)" },
-                        { label: "순이익(세후)", value: totals.afterTaxOperatingProfit, color: "var(--accent-gold)" },
+                        { label: "예상 세금", value: totals.estimatedTotalTax, color: "var(--color-slate-600)" },
+                        { label: "순이익(세후)", value: totals.afterTaxOperatingProfit, color: afterTaxProfitFill },
                       ]}
                     />
                     <div className="flex flex-col items-center gap-1 md:border-l md:border-border/60 md:pl-6">
                       <ProgressCircle
+                        color={afterTaxProfitFill}
                         value={totals.afterTaxOperatingProfit}
                         max={totals.commissionRevenue}
-                        label={formatPercent(
-                          totals.commissionRevenue > 0
-                            ? (totals.afterTaxOperatingProfit / totals.commissionRevenue) * 100
-                            : 0,
-                        )}
+                        label={
+                          <span className={afterTaxProfitLabelTone}>
+                            {formatPercent(
+                              totals.commissionRevenue > 0
+                                ? (totals.afterTaxOperatingProfit / totals.commissionRevenue) * 100
+                                : 0,
+                            )}
+                          </span>
+                        }
                         caption="순이익률"
                       />
                       <span className="text-[10px] text-muted-foreground">

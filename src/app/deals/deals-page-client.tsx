@@ -228,12 +228,12 @@ export function DealsPageClient({
             <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="font-medium">진행 중:</span>
-              <span className="font-semibold text-emerald-600 dark:text-emerald-400">{dealStats.activeCount}개</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">{dealStats.activeCount}개</span>
             </div>
             <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="font-medium">소싱 중:</span>
-              <span className="font-semibold text-amber-600 dark:text-amber-400">{dealStats.sourcingCount}개</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200">{dealStats.sourcingCount}개</span>
             </div>
             <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
             <div className="flex items-center gap-1.5 shrink-0">

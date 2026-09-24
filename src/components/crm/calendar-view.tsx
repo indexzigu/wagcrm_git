@@ -585,8 +585,14 @@ export function CalendarView({
                           top: `${BARS_PADDING + lane * (BAR_HEIGHT + BAR_GAP)}px`,
                           height: `${BAR_HEIGHT}px`,
                         }}
-                        title={entity.label}
+                        // 상태는 채움색으로만 그려진다(범례가 색↔상태를 잇는다). 색을 못 가르는
+                        // 사용자·화면낭독기에는 상태명이 없으면 8개 상태가 전부 같은 바다 —
+                        // 마우스 제목과 sr-only 로 텍스트 캐리어를 함께 준다(WCAG 1.4.1).
+                        // 칸이 좁아 보이는 약어는 두지 않는다(라벨 truncate 를 더 깎는다). 라벨이 이미 「딜 · 셀러」로
+                        // 가운뎃점을 쓰므로 상태는 괄호로 떼어 셋이 한 줄로 섞이지 않게 한다.
+                        title={`${entity.label} (${campaignStatusLabels[entity.status]})`}
                       >
+                        <span className="sr-only">{campaignStatusLabels[entity.status]}: </span>
                         {entity.kind === "group" && (
                           <span
                             className="inline-flex h-3.5 shrink-0 items-center gap-0.5 rounded-sm bg-current/15 px-0.5 text-[9px] font-semibold leading-none"

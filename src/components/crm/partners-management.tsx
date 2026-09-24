@@ -242,7 +242,7 @@ export function PartnersManagement({
           <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="font-medium">브랜드:</span>
-            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{partnerStats.brandCount}</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">{partnerStats.brandCount}</span>
           </div>
           <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -254,7 +254,7 @@ export function PartnersManagement({
           <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="font-medium">연결된 딜:</span>
-            <span className="font-semibold text-amber-600 dark:text-amber-400">{partnerStats.totalDeals}개</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">{partnerStats.totalDeals}개</span>
           </div>
         </div>
 
