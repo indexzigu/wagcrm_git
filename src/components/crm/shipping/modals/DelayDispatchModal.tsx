@@ -458,7 +458,7 @@ export default function DelayDispatchModal({
                               <span className="text-[11px] text-slate-500 tabular-nums">{row.quantity}개</span>
                               {row.alreadyDelayed && (
                                 <span
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium"
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium"
                                   title="이미 발송지연 안내가 등록된 주문: 다시 등록하면 고객이 알림을 또 받습니다"
                                 >
                                   안내됨 · {fmtMd(row.shippingDueDate)} 예정
@@ -606,11 +606,11 @@ export default function DelayDispatchModal({
                 <p className="text-xl font-bold tabular-nums">
                   <span className="text-slate-900">성공 {result.successCount.toLocaleString()}건</span>
                   <span className="text-slate-300 mx-2">/</span>
-                  <span className={result.failCount > 0 ? 'text-destructive' : 'text-slate-300'}>
+                  <span className={result.failCount > 0 ? 'text-destructive' : 'text-slate-500'}>
                     실패 {result.failCount.toLocaleString()}건
                   </span>
                   <span className="text-slate-300 mx-2">/</span>
-                  <span className={result.skipCount > 0 ? 'text-slate-500' : 'text-slate-300'}>
+                  <span className={result.skipCount > 0 ? 'text-slate-700' : 'text-slate-500'}>
                     스킵 {result.skipCount.toLocaleString()}건
                   </span>
                 </p>

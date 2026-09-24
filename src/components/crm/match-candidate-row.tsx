@@ -47,7 +47,7 @@ export function DormancyBadge({ verdict }: { verdict: DormancyVerdict }) {
         "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0",
         verdict.tier === "DORMANT"
           ? "bg-status-caution-bg text-status-caution"
-          : "border border-slate-200 bg-slate-100 text-slate-500",
+          : "border border-slate-200 bg-slate-100 text-slate-600",
       )}
       title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과`}
     >

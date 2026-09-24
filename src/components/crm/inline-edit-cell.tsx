@@ -169,7 +169,7 @@ export function InlineEditCell({
           </SelectContent>
         </Select>
         {error && flashError && (
-          <span className="absolute -bottom-4 left-2 text-[10px] text-red-500 whitespace-nowrap">
+          <span className="absolute -bottom-4 left-2 text-[10px] text-destructive whitespace-nowrap">
             {error}
           </span>
         )}
@@ -213,7 +213,7 @@ export function InlineEditCell({
         {displayValue || "-"}
       </button>
       {error && flashError && (
-        <span className="absolute -bottom-4 left-2 text-[10px] text-red-500 whitespace-nowrap">
+        <span className="absolute -bottom-4 left-2 text-[10px] text-destructive whitespace-nowrap">
           {error}
         </span>
       )}

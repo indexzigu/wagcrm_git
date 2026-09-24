@@ -128,7 +128,7 @@ function CommentEntry({ comment }: { comment: Comment }) {
       <p className="whitespace-pre-wrap text-xs leading-5 text-foreground">
         {renderContentWithMentions(comment.content)}
       </p>
-      <span className="text-[11px] text-muted-foreground/70">
+      <span className="text-[11px] text-muted-foreground">
         {formatRelativeTime(comment.createdAt)}
       </span>
     </div>
@@ -149,7 +149,7 @@ function ActivityEntry({ entry }: { entry: ActivityLogEntry }) {
     <div className="flex flex-col gap-0.5">
       <span className="text-[11px] font-medium text-foreground/80">{entry.actor}</span>
       <p className="whitespace-pre-wrap text-xs leading-5 text-foreground">{description}</p>
-      <span className="text-[11px] text-muted-foreground/70">
+      <span className="text-[11px] text-muted-foreground">
         {formatRelativeTime(entry.createdAt)}
       </span>
     </div>

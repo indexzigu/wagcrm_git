@@ -124,7 +124,7 @@ export function MobileHomeRiskCard({
           </ul>
         )}
         {issues.length > MAX_ITEMS && (
-          <p className="mt-1.5 text-center text-[11px] text-muted-foreground/60">
+          <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
             + {issues.length - MAX_ITEMS}건 더: 데스크톱 대시보드에서 확인
           </p>
         )}

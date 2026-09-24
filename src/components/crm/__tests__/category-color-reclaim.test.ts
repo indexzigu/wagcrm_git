@@ -127,8 +127,9 @@ describe("D2: 평가 배지 — 리터럴이 아니라 상태 토큰을 가리�
 
   it("미진행은 상태 토큰을 쓰지 않고 원래 모습 그대로다 — '판단 불가'는 의미축의 값이 아니다", () => {
     // 테두리 포함해 목록·상세가 같아야 한다(base 에서 border 를 뺀 부수효과로 목록만 무테가 됐던 걸 되돌림).
-    expect(badge).toContain("미진행: \"border border-slate-200 bg-slate-100 text-slate-500\"");
-    expect(slice(DETAIL_PAGE, "const FIT_BADGE", "};")).toContain("미진행: \"bg-slate-100 text-slate-500 border-slate-200\"");
+    // 글자는 slate-600 — 회색 칩(slate-100) 위 slate-500 은 4.34:1 로 본문 기준 미달(T-214).
+    expect(badge).toContain("미진행: \"border border-slate-200 bg-slate-100 text-slate-600\"");
+    expect(slice(DETAIL_PAGE, "const FIT_BADGE", "};")).toContain("미진행: \"bg-slate-100 text-slate-600 border-slate-200\"");
   });
 
   it("StatusBadge 정본(P8 가드레일 2)과 같은 토큰 짝을 쓴다", () => {

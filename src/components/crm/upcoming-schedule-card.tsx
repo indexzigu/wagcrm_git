@@ -37,7 +37,7 @@ export function UpcomingScheduleBody({
   nextWeekLabel: string;
 }) {
   if (events.length === 0) {
-    return <p className="py-4 text-[11px] text-muted-foreground/70">향후 14일 내 주요 일정이 없습니다.</p>;
+    return <p className="py-4 text-[11px] text-muted-foreground">향후 14일 내 주요 일정이 없습니다.</p>;
   }
 
   const todayStart = new Date();
@@ -58,8 +58,8 @@ export function UpcomingScheduleBody({
     <div>
       {/* 상단 시간축 레일 — 위치감 전용(이벤트 상세는 아래 활성일 카드). 오늘·주 경계·주말만 표시 */}
       <div className="relative h-[30px]">
-        <span className="absolute left-[3%] top-0 text-[10px] font-semibold text-muted-foreground/60">이번 주 · {thisWeekLabel}</span>
-        <span className="absolute top-0 text-[10px] font-semibold text-muted-foreground/60" style={{ left: `${xPct(7)}%` }}>다음 주 · {nextWeekLabel}</span>
+        <span className="absolute left-[3%] top-0 text-[10px] font-semibold text-muted-foreground">이번 주 · {thisWeekLabel}</span>
+        <span className="absolute top-0 text-[10px] font-semibold text-muted-foreground" style={{ left: `${xPct(7)}%` }}>다음 주 · {nextWeekLabel}</span>
         <div className="absolute left-0 right-0 top-[22px] h-px bg-slate-200" />
         {Array.from({ length: 15 }, (_, i) => i).map((i) => {
           const dow = (todayDow + i) % 7;
@@ -116,9 +116,9 @@ export function UpcomingScheduleBody({
             <div key={`card-${offset}`} className="rounded-lg border border-black/5 bg-[#FAF9F6] px-2.5 py-2">
               <div className="mb-1.5 flex items-baseline justify-between gap-1 border-b border-black/5 pb-1.5">
                 <span className={`text-[11px] font-bold tabular-nums ${isToday ? "text-[var(--status-caution-text)]" : "text-[#1F2A30]"}`}>
-                  {dateLabel} <span className="font-medium text-muted-foreground/60">({dow})</span>
+                  {dateLabel} <span className="font-medium text-muted-foreground">({dow})</span>
                 </span>
-                <span className={`text-[9px] font-semibold ${isToday ? "text-[var(--status-caution-text)]" : "text-muted-foreground/50"}`}>
+                <span className={`text-[9px] font-semibold ${isToday ? "text-[var(--status-caution-text)]" : "text-muted-foreground"}`}>
                   {isToday ? "오늘" : `D+${offset}`}
                 </span>
               </div>
@@ -191,7 +191,7 @@ export function UpcomingScheduleCard({
             <p className="text-sm font-semibold tracking-wide text-[var(--primary)]">다가올 14일 일정</p>
             <CalendarSyncBadge connected={googleCalendarConnected} />
           </div>
-          <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">진행 예정인 정산 및 주요 마일스톤</p>
+          <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">진행 예정인 정산 및 주요 마일스톤</p>
         </div>
         <div className="mt-4">
           <UpcomingScheduleBody events={events} thisWeekLabel={thisWeekLabel} nextWeekLabel={nextWeekLabel} />

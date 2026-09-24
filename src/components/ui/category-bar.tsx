@@ -74,7 +74,7 @@ export function CategoryBar({
               <span className="truncate text-muted-foreground">{s.label}</span>
               <span className="ml-auto shrink-0 font-semibold tabular-nums text-foreground">
                 {formatValue(s.value)}
-                <span className="ml-1 text-[10px] font-normal tabular-nums text-muted-foreground/70">
+                <span className="ml-1 text-[10px] font-normal tabular-nums text-muted-foreground">
                   {sum > 0 ? `${Math.round((s.value / sum) * 100)}%` : ""}
                 </span>
               </span>

@@ -52,9 +52,9 @@ export function LivePreviewPanel({
                   {cell.incomplete ? (
                     <span className="text-status-caution">(필드 미선택)</span>
                   ) : cell.value === undefined ? (
-                    <span className="text-muted-foreground/60">(미기입: 조건 불충족)</span>
+                    <span className="text-muted-foreground">(미기입: 조건 불충족)</span>
                   ) : cell.value === "" ? (
-                    <span className="text-muted-foreground/60">(공란)</span>
+                    <span className="text-muted-foreground">(공란)</span>
                   ) : (
                     String(cell.value)
                   )}

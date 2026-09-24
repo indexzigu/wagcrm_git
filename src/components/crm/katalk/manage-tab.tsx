@@ -172,7 +172,7 @@ export function KatalkManageTab() {
                 <TableCell className="max-w-[220px] truncate font-medium text-foreground">
                   {room.roomName ?? room.roomKey}
                   {stale && (
-                    <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-amber-600">
+                    <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-status-caution-text">
                       <AlertTriangleIcon className="size-3" /> 7일 이상 미갱신
                     </span>
                   )}

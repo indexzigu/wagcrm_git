@@ -407,7 +407,7 @@ export default function CampaignEditModal({
                   </div>
                 </div>
                 {loadOptionsError && (
-                  <p className="text-xs text-red-500 font-medium mb-2">{loadOptionsError}</p>
+                  <p className="text-xs text-destructive font-medium mb-2">{loadOptionsError}</p>
                 )}
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full table-fixed text-left text-sm">
@@ -500,7 +500,7 @@ export default function CampaignEditModal({
                           <td className="px-2 py-1.5 text-center">
                             <button type="button" onClick={() => {
                               if (editMappings.length > 1) setEditMappings(editMappings.filter((_, i) => i !== idx));
-                            }} aria-label={`${idx + 1}행 삭제`} className="text-red-400 hover:text-red-600 font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            }} aria-label={`${idx + 1}행 삭제`} className="text-destructive hover:text-red-700 font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
                           </td>
                         </tr>
                       ))}

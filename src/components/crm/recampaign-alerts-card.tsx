@@ -98,7 +98,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
               </Badge>
             )}
           </div>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/70">
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
             셀러별 캠페인 시작 간격(중앙값) 기준 다음 제안 타이밍. 적기 도래 셀러는 &apos;기안&apos;으로 승인함에 올릴 수 있습니다. 가용 일정은 셀러에게 확인한 값만 표시됩니다.
           </p>
         </div>
@@ -153,7 +153,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
           })}
         </div>
         {alerts.length > 8 && (
-          <p className="mt-2 text-[10px] text-muted-foreground/70">
+          <p className="mt-2 text-[10px] text-muted-foreground">
             외 {alerts.length - 8}명: 셀러 목록에서 확인
           </p>
         )}

@@ -551,14 +551,14 @@ function SettledCampaignRow({ camp, isLoading, error, onExpand }: {
       >
         <div className="min-w-0 flex-1">
           <div className="font-bold text-sm text-slate-500 truncate">{camp.name}</div>
-          <div className="text-xs text-slate-400 mt-0.5">정산 완료 · {period}</div>
+          <div className="text-xs text-slate-500 mt-0.5">정산 완료 · {period}</div>
         </div>
         <div className="hidden sm:flex items-center gap-5 shrink-0 text-xs text-slate-500">
           {typeof orderCount === 'number' && (
-            <span><span className="text-slate-400">주문</span> <b className="text-slate-600">{orderCount.toLocaleString()}</b></span>
+            <span><span className="text-slate-500">주문</span> <b className="text-slate-600">{orderCount.toLocaleString()}</b></span>
           )}
           {typeof revenue === 'number' && (
-            <span><span className="text-slate-400">매출</span> <b className="text-slate-600">{revenue.toLocaleString()}원</b></span>
+            <span><span className="text-slate-500">매출</span> <b className="text-slate-600">{revenue.toLocaleString()}원</b></span>
           )}
         </div>
         <span className="shrink-0 text-xs text-slate-500 font-medium flex items-center gap-1">
@@ -2119,7 +2119,7 @@ export default function OrderDashboard() {
                               }}
                               aria-expanded={expanded}
                               title={expanded ? '주의 표시 접기' : `다른 주의 표시: ${hidden.map(labelFor).join(' · ')}`}
-                              className={`rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`}
+                              className={`rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-200/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`}
                             >
                               {expanded ? '접기' : `+${hidden.length}`}
                             </button>
@@ -2130,7 +2130,7 @@ export default function OrderDashboard() {
                     {/* 마감취소됐지만 라이브 집계가 비어(조회창 만료) 마감 시점 스냅샷으로 표시 중 — 활성 카드지만
                         수치가 라이브가 아님을 알리는 평문 신호(카드 흐림 없이 메타 톤 유지). */}
                     {camp.isFrozenFallback && (
-                      <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 whitespace-nowrap">
+                      <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 whitespace-nowrap">
                         마감 시점 스냅샷
                       </span>
                     )}
@@ -2290,7 +2290,7 @@ export default function OrderDashboard() {
                                 const count = s.warn && s.info ? (
                                   <span className={`tabular-nums font-bold text-destructive border-b border-dotted border-destructive ${isTrigger ? '' : 'cursor-help'}`} title={s.info.text}>{s.val.toLocaleString()}</span>
                                 ) : (
-                                  <span className={`tabular-nums font-bold ${s.val === 0 ? 'text-slate-300' : 'text-slate-700'}`}>{s.val.toLocaleString()}</span>
+                                  <span className={`tabular-nums font-bold ${s.val === 0 ? 'text-slate-500' : 'text-slate-700'}`}>{s.val.toLocaleString()}</span>
                                 );
                                 return (
                                 <span key={s.key} className="inline-flex items-center gap-1">
@@ -2348,7 +2348,7 @@ export default function OrderDashboard() {
                                     </Popover>
                                   ) : (
                                     <>
-                                      <span className={`font-medium ${s.val === 0 ? 'text-slate-300' : 'text-slate-500'}`}>{s.label}</span>
+                                      <span className="font-medium text-slate-500">{s.label}</span>
                                       {count}
                                     </>
                                   )}
@@ -2386,7 +2386,7 @@ export default function OrderDashboard() {
                   <div className="flex flex-wrap gap-2 items-center w-full" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => handleDownloadExcel(camp.id)} className="flex items-center gap-1.5 text-xs bg-white text-emerald-700 hover:bg-emerald-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-emerald-200 shadow-soft-sm relative overflow-hidden group">
                       <div className="absolute inset-0 bg-emerald-50/50 translate-y-full group-hover:translate-y-0 transition-transform"></div>
-                      <span className="bg-emerald-500 text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span>
+                      <span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span>
                       <span className="relative z-10">주문확인</span>
                     </button>
                     <button onClick={() => openEmailModal(camp.id)} className="flex items-center gap-1.5 text-xs bg-white text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm">
@@ -2417,7 +2417,7 @@ export default function OrderDashboard() {
                           {uploadBusy ? (
                             <><RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin relative z-10" /><span className="relative z-10">등록 중…</span></>
                           ) : (
-                            <><span className="bg-emerald-500 text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span><span className="relative z-10">송장등록</span></>
+                            <><span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span><span className="relative z-10">송장등록</span></>
                           )}
                           {/* sr-only(≠ hidden): display:none 이면 탭 순서에서 빠져 키보드로 송장을 못 올린다.
                               눈에는 안 보이되 포커스는 받고, 라벨의 focus-within 링이 그 위치를 보여 준다

@@ -148,7 +148,7 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
           // 4주 이상 경과하면 앰버로 강조해 재분석을 유도 (자동 재분석 대신 사람 트리거 — staleness.ts 참조)
           <span
             className={`text-[11px] ${
-              analysisStaleLabel(profile.analyzedAt) ? "font-medium text-amber-600" : "text-slate-500"
+              analysisStaleLabel(profile.analyzedAt) ? "font-medium text-status-caution-text" : "text-slate-500"
             }`}
           >
             {analyzedLabel(profile.analyzedAt)}

@@ -208,7 +208,7 @@ function MoneyRow({
   const label = `${slot.verb}(${slot.counterpartLabel})`;
   if (!date) {
     return (
-      <div className="flex items-center gap-1 text-muted-foreground/70">
+      <div className="flex items-center gap-1 text-muted-foreground">
         <Icon className="size-3.5 shrink-0" aria-hidden="true" />
         {label} 미정
       </div>
@@ -499,7 +499,7 @@ export function CalendarView({
               key={label}
               className={cn(
                 "px-2 py-3 text-center text-xs font-semibold text-muted-foreground",
-                (idx === 0 || idx === 6) && "text-rose-400",
+                (idx === 0 || idx === 6) && "text-rose-700",
               )}
             >
               {label}
@@ -710,10 +710,10 @@ function DateCell({
             isToday
               ? "bg-primary text-primary-foreground"
               : !day.inMonth
-                ? "text-muted-foreground/40"
+                ? "font-normal text-muted-foreground"
                 : isWeekend
-                  ? "text-rose-400"
-                  : "text-muted-foreground",
+                  ? "text-rose-700"
+                  : "text-slate-700",
           )}
         >
           {day.date.getDate()}
@@ -721,7 +721,7 @@ function DateCell({
         {holiday && day.inMonth && (
           <span
             className={cn(
-              "truncate text-right text-[10px] font-medium leading-tight text-rose-400",
+              "truncate text-right text-[10px] font-medium leading-tight text-rose-700",
               // "+"와 우상단 슬롯을 교대 — hover 시 공휴일이 물러나고 "+"가 나온다.
               onCreateDraft && "transition-opacity group-hover/cell:opacity-0",
             )}

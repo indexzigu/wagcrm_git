@@ -47,7 +47,7 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
             <span className="text-sm font-medium text-slate-500 ml-1 truncate max-w-[300px]">{campaign.name}</span>
             {/* 마감/폴백 캠페인은 라이브가 아닌 마감 시점 동결 스냅샷임을 명시(수치 신뢰 맥락). */}
             {(campaign.isFrozenFallback || campaign.isActive === false) && (
-              <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 whitespace-nowrap shrink-0">
+              <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 whitespace-nowrap shrink-0">
                 마감 시점 스냅샷
               </span>
             )}

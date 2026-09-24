@@ -75,7 +75,7 @@ function LegendDot({ statusKey: key, label }: { statusKey: keyof typeof STATUS_M
   return (
     <span className="flex items-center gap-1">
       <span aria-hidden className={`size-1.5 rounded-full ${meta.dotClass}`} />
-      <span className="text-[10px] text-muted-foreground/70">{label ?? meta.label}</span>
+      <span className="text-[10px] text-muted-foreground">{label ?? meta.label}</span>
     </span>
   );
 }
@@ -335,7 +335,7 @@ export function SystemRadarCard() {
           <div className="flex items-center gap-2">
             <Radar className="size-4 text-[var(--primary)]" />
             <h3 className="text-sm font-bold text-[var(--primary)] tracking-tight">시스템 레이더</h3>
-            <p className="text-[10px] text-muted-foreground/70">자동화 스케줄 · 예정(KST) 대비 실제 작동</p>
+            <p className="text-[10px] text-muted-foreground">자동화 스케줄 · 예정(KST) 대비 실제 작동</p>
           </div>
           <div className="flex items-center gap-3">
             <LegendDot statusKey="SUCCESS" />

@@ -170,7 +170,7 @@ function StockTrendIndicator({
   const percent = (change / previous) * 100;
 
   if (change === 0) {
-    return <span className="text-muted-foreground/60 text-[10px]">변동 없음</span>;
+    return <span className="text-muted-foreground text-[10px]">변동 없음</span>;
   }
 
   const isUp = change > 0;
@@ -247,7 +247,7 @@ function Sparkline({ points, months, type }: { points: number[]; months: string[
           <span
             key={m}
             className={`flex-1 text-center text-[8px] leading-none tabular-nums ${
-              isFocus ? "font-bold text-[var(--primary)]" : "text-muted-foreground/60"
+              isFocus ? "font-bold text-[var(--primary)]" : "text-muted-foreground"
             }`}
           >
             {monthLabel(m)}
@@ -400,7 +400,7 @@ function MetricCard({
               {lossMonths.map(monthLabel).join("·")} 적자
             </p>
           ) : (
-            <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70" title={note}>
+            <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={note}>
               {note}
             </p>
           )}
@@ -431,14 +431,14 @@ function MetricCard({
           {/* 전월 행: 동일 크기·medium·뮤트 */}
           {prevValue && (
             <div className="flex items-baseline justify-between gap-2 py-1 border-t border-gray-100">
-              <span className="text-[11px] text-muted-foreground/70 shrink-0">{monthLabel(prevMonthKey)}</span>
+              <span className="text-[11px] text-muted-foreground shrink-0">{monthLabel(prevMonthKey)}</span>
               <span className="text-[13px] font-medium text-muted-foreground tabular-nums">{prevValue}</span>
             </div>
           )}
           {/* 전전월 행: 동일 크기·normal·가장 옅은 뮤트. 증감 화살표는 당월 행에만 두어 과밀 방지 */}
           {prevPrevValue && prevPrevMonthKey && (
             <div className="flex items-baseline justify-between gap-2 py-1 border-t border-gray-100">
-              <span className="text-[11px] text-muted-foreground/70 shrink-0">{monthLabel(prevPrevMonthKey)}</span>
+              <span className="text-[11px] text-muted-foreground shrink-0">{monthLabel(prevPrevMonthKey)}</span>
               <span className="text-[13px] font-normal text-muted-foreground tabular-nums">{prevPrevValue}</span>
             </div>
           )}
@@ -613,7 +613,7 @@ function AgendaMore({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="crm-hit-area-wide inline-block rounded text-[11px] font-medium text-muted-foreground/50 transition-colors hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
+            className="crm-hit-area-wide inline-block rounded text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
           >
             + {moreCount}건 더보기
           </button>
@@ -910,7 +910,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
                   <UsersRound className="size-4 shrink-0 text-[var(--primary)]" />
                   <p className="shrink-0 text-[13px] font-semibold text-[var(--primary)] tracking-tight">최근 90일 영업 전환</p>
-                  <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
+                  <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
                     확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
                   </p>
                 </div>
@@ -922,7 +922,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                     { label: "전환", count: initialData.outreach90d.converted, base: initialData.outreach90d.total, strong: true, showRate: true },
                   ].map((row, i) => (
                     <div key={row.label} className="flex items-center gap-2.5">
-                      <span className="w-[26px] shrink-0 text-[11px] font-medium text-muted-foreground/70">{row.label}</span>
+                      <span className="w-[26px] shrink-0 text-[11px] font-medium text-muted-foreground">{row.label}</span>
                       <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
                         {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
                         <div
@@ -935,7 +935,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                           }}
                         />
                       </div>
-                      <span className="w-[30px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground/60">
+                      <span className="w-[30px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
                         {row.showRate ? ratioText(row.count, row.base) : ""}
                       </span>
                       {/* 값 크기·무게는 형제 MetricCard 당월 값(13px semibold)과 통일(오너 2026-07-24) */}
@@ -960,7 +960,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   label: "최근 6개월",
                   render: () => (
                     <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground/70">매출·예상 순마진 추이 및 목표 대비 달성</p>
+                      <p className="mb-2 text-[11px] text-muted-foreground">매출·예상 순마진 추이 및 목표 대비 달성</p>
                       {/* 오너 피드백 2026-07-10: 하단 안개 제거, 순마진은 나란한 막대, 툴팁은 매출·순마진·마진율만 */}
                       <div className="flex-1 flex items-center justify-center">
                         <ChartContainer config={chartConfig} className="h-[262px] w-full">
@@ -985,7 +985,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   label: "연간 매출",
                   render: () => (
                     <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground/70">{year}년 월별 매출 · 예상 순마진{initialData.yearlyTrend.some((t) => t.goal != null) ? " · 점선 = 월 목표" : ""}</p>
+                      <p className="mb-2 text-[11px] text-muted-foreground">{year}년 월별 매출 · 예상 순마진{initialData.yearlyTrend.some((t) => t.goal != null) ? " · 점선 = 월 목표" : ""}</p>
                       <div className="flex-1 flex items-center justify-center">
                         {/* 6개월 추이와 동일 구성(매출·순마진 막대 + 목표선) + 공통 Y축 domain 으로 틀 고정 */}
                         <ChartContainer config={chartConfig} className="h-[262px] w-full">
@@ -1249,7 +1249,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   <UsersRound className="size-4.5 text-[var(--primary)]" />
                   <h3 className="shrink-0 text-sm font-bold text-[var(--primary)] tracking-tight">활성 셀러 현황</h3>
                   {/* 서브텍스트는 제목 우측에 이어서(오너 2026-07-24) */}
-                  <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">최근 90일 활성 · 직전 90일 대비 순증감</p>
+                  <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">최근 90일 활성 · 직전 90일 대비 순증감</p>
                 </div>
 
                 {/* 대표값은 18px(카드 headline 계층) — 24px는 매출 히어로 전용이라 여기 쓰면
@@ -1271,7 +1271,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                     막대는 HTML flex로 그린다(오너 2026-07-24) — 이전 SVG는 preserveAspectRatio="none"으로
                     카드 폭만큼 가로 확대돼 안에 넣은 <text> 값 라벨의 글자가 늘어나 보였다(스파크라인과 같은 함정). */}
                 <div className="mt-2">
-                  <p className="text-[9px] font-medium text-muted-foreground/70 mb-0.5">월별 활성 셀러 (해당 월 캠페인 보유)</p>
+                  <p className="text-[9px] font-medium text-muted-foreground mb-0.5">월별 활성 셀러 (해당 월 캠페인 보유)</p>
                   {(() => {
                     const pts = initialData.trend.map((t) => t.activeSellers);
                     const max = Math.max(...pts, 1);
@@ -1282,7 +1282,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                           const last = i === pts.length - 1;
                           return (
                             <div key={i} className="flex flex-1 flex-col items-center justify-end">
-                              <span className={`mb-0.5 text-[9px] leading-none tabular-nums ${last ? "font-bold text-[var(--chart-1)]" : "font-medium text-muted-foreground/70"}`}>
+                              <span className={`mb-0.5 text-[9px] leading-none tabular-nums ${last ? "font-bold text-[var(--chart-1)]" : "font-medium text-muted-foreground"}`}>
                                 {Math.round(p)}
                               </span>
                               <div
@@ -1297,18 +1297,18 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   })()}
                   <div className="mt-1 flex gap-1.5">
                     {initialData.trend.map((t) => (
-                      <span key={t.month} className="flex-1 text-center text-[9px] text-muted-foreground/60">{parseInt(t.month.slice(5), 10)}월</span>
+                      <span key={t.month} className="flex-1 text-center text-[9px] text-muted-foreground">{parseInt(t.month.slice(5), 10)}월</span>
                     ))}
                   </div>
                 </div>
 
                 <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 pt-2 border-t border-black/5">
                   <div className="flex justify-between items-baseline border-r border-black/5 pr-1.5">
-                    <span className="text-[10px] text-muted-foreground/70">신규 (이번 달)</span>
+                    <span className="text-[10px] text-muted-foreground">신규 (이번 달)</span>
                     <span className="text-xs font-bold text-[var(--status-success)]">+{initialData.sellerMomentum.newThisMonth}</span>
                   </div>
                   <div className="flex justify-between items-baseline pl-1.5">
-                    <span className="text-[10px] text-muted-foreground/70">휴면</span>
+                    <span className="text-[10px] text-muted-foreground">휴면</span>
                     <span className="text-xs font-bold text-[var(--status-caution-text)]">{initialData.sellerMomentum.dormant}명</span>
                   </div>
                 </div>
@@ -1433,7 +1433,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                     <div className="min-h-[300px]">
                       <div className="mb-3 flex items-center gap-2 flex-wrap">
                         <CalendarSyncBadge connected={initialData.googleCalendarConnected} />
-                        <span className="text-[11px] text-muted-foreground/70">진행 예정인 정산 및 주요 마일스톤</span>
+                        <span className="text-[11px] text-muted-foreground">진행 예정인 정산 및 주요 마일스톤</span>
                       </div>
                       <UpcomingScheduleBody
                         events={initialData.upcomingEvents}

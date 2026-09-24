@@ -131,7 +131,7 @@ export default async function StoryInboxPage({
                     </span>
                   )}
                   {!s.thumbnailUrl && s.sourceImageUrl && (
-                    <span className="absolute left-1.5 top-1.5 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    <span className="absolute left-1.5 top-1.5 rounded bg-status-caution px-1.5 py-0.5 text-[10px] font-bold text-white">
                       원본 URL(만료 가능)
                     </span>
                   )}
@@ -145,7 +145,7 @@ export default async function StoryInboxPage({
                     {s.classification === "UNREVIEWED" ? (
                       <>
                         <form action={classifyStory.bind(null, s.id, "CAMPAIGN")} className="flex-1">
-                          <button className="w-full rounded-md bg-emerald-600 py-1 text-[11px] font-bold text-white hover:bg-emerald-500">
+                          <button className="w-full rounded-md bg-status-success py-1 text-[11px] font-bold text-white hover:bg-emerald-800">
                             캠페인
                           </button>
                         </form>

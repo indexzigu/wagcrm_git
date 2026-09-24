@@ -358,7 +358,7 @@ export function LinkSearchDialog({
         )}
         <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
           {status && (
-            <span className="whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            <span className="whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-slate-600">
               {status}
             </span>
           )}

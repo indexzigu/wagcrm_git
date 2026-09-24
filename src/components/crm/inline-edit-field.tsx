@@ -123,7 +123,7 @@ export function InlineEditField({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 transition-colors hover:text-foreground"
+                  className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground"
                   aria-label={`${label} 설명`}
                 >
                   <CircleHelp className="size-3" />
@@ -141,7 +141,7 @@ export function InlineEditField({
         ) : null}
       </div>
       {description && !descriptionAsTooltip && !(prioritizeEditorWidth && fieldType === "number") ? (
-        <span className="text-[10px] text-muted-foreground/70">{description}</span>
+        <span className="text-[10px] text-muted-foreground">{description}</span>
       ) : null}
     </div>
   );
@@ -256,7 +256,7 @@ export function InlineEditField({
       )}>
         <div className="flex flex-col shrink-0">
           <span id={labelId} className="text-xs text-muted-foreground">{label}</span>
-          {description && <span className="text-[10px] text-muted-foreground/70">{description}</span>}
+          {description && <span className="text-[10px] text-muted-foreground">{description}</span>}
         </div>
         <Select
           value={displayVal}

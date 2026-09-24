@@ -927,7 +927,7 @@ export function AssetManager({
           <div className="flex items-center gap-2">
             {/* 마지막 수집(SellerAiProfile.analyzedAt) — 후보 감지 피드의 신선도. 스토리 헤더와 동일 표기. */}
             {feedCollectedAt ? (
-              <p className="inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground/80">
+              <p className="inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
                 <Clock className="size-2.5" />
                 마지막 수집 {formatCollectedAt(feedCollectedAt)}
               </p>
@@ -1044,7 +1044,7 @@ export function AssetManager({
           </Button>
         </div>
         {sellerPostError ? <p className="text-xs text-rose-600">{sellerPostError}</p> : null}
-        {sellerPostNotice ? <p className="text-xs text-emerald-600">{sellerPostNotice}</p> : null}
+        {sellerPostNotice ? <p className="text-xs text-status-success">{sellerPostNotice}</p> : null}
 
         {/* 검토 기간(마감 +7일)이 지난 캠페인 — 미분류 후보·스토리를 접었다는 사실과 되살리는 길을
             **피드 그리드 바로 위**에서 알린다. 알림이 설명하는 대상 옆에 두어야 정보 지역성이 맞고,
@@ -1267,7 +1267,7 @@ export function AssetManager({
               ) : null}
             </h4>
             {storyCapturedAt ? (
-              <p className="inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground/80">
+              <p className="inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
                 <Clock className="size-2.5" />
                 마지막 수집 {formatCollectedAt(storyCapturedAt)}
               </p>
@@ -1311,7 +1311,7 @@ export function AssetManager({
                             className="absolute inset-0 h-full w-full object-cover object-top"
                           />
                         ) : (
-                          <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground/60">
+                          <div className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground">
                             썸네일 없음
                           </div>
                         )}
@@ -1331,7 +1331,7 @@ export function AssetManager({
                         <p className="truncate text-[10px] tabular-nums text-foreground/80">
                           {formatCollectedAt(story.takenAt)}
                         </p>
-                        <p className="truncate text-[9px] tabular-nums text-muted-foreground/70">
+                        <p className="truncate text-[9px] tabular-nums text-muted-foreground">
                           수집 {formatCollectedAt(story.capturedAt)}
                         </p>
                         <div className="mt-1 flex gap-1">

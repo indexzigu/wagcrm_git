@@ -305,7 +305,7 @@ function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved 
         <Pencil className="ml-auto size-3 text-muted-foreground opacity-0 group-hover/date:opacity-100 transition-opacity" />
       </button>
       {errorMsg && flashError && (
-        <span className="absolute -bottom-4 left-2 text-[10px] text-red-500 whitespace-nowrap">
+        <span className="absolute -bottom-4 left-2 text-[10px] text-destructive whitespace-nowrap">
           {errorMsg}
         </span>
       )}
@@ -1550,7 +1550,7 @@ function SettlementItemEditRow({
         type="button"
         aria-label="부가 항목 삭제"
         onClick={onRemove}
-        className="shrink-0 rounded p-0.5 text-slate-400 transition-colors hover:text-status-urgent-text"
+        className="shrink-0 rounded p-0.5 text-slate-500 transition-colors hover:text-status-urgent-text"
       >
         <Trash2 className="size-3.5" />
       </button>
@@ -2933,7 +2933,7 @@ function EditableAccountCell({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/70 transition-colors hover:text-foreground"
+                className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground"
                 aria-label={`${label} 설명`}
               >
                 <Info className="size-3" />

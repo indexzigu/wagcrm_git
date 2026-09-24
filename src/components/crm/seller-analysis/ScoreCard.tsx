@@ -37,10 +37,11 @@ function barColor(score: number): string {
  * *"종류는 아이콘/라벨로 구분하고 색은 단일 톤으로 통일"*)와 같은 형태 — 함수가 아니라 **상수**다.
  * 덤: 구 high 의 `emerald-600` 계열은 흰 배경 3.77:1 로 AA 미달이었다.
  *
- * `slate-500` 은 이 카드의 `bg-slate-50` 위 4.55:1 — AA 턱걸이라 **더 흐리게 내리지 말 것**.
+ * 글자는 `slate-600` — 배지 자신의 `bg-slate-100` 위 6.90:1(slate-500 은 4.35:1 로 미달, T-214).
+ * **더 흐리게 내리지 말 것**.
  * 강등은 명도가 아니라 채도 0이 만든다(slate-300 은 1.48:1 로 비텍스트 3:1 도 미달).
  */
-const CONFIDENCE_BADGE_CLASS = 'bg-slate-100 text-slate-500 border-slate-200';
+const CONFIDENCE_BADGE_CLASS = 'bg-slate-100 text-slate-600 border-slate-200';
 
 /**
  * composite와 적합성 경계(reviewMapping SSOT) 사이의 "거리"를 한 줄로 설명한다.

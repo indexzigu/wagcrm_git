@@ -54,7 +54,7 @@ const FIT_BADGE: Record<string, string> = {
   추천: "bg-status-success-bg text-status-success border-transparent",
   보류: "bg-status-caution-bg text-status-caution border-transparent",
   비추천: "bg-status-urgent-bg text-status-urgent-text border-transparent",
-  미진행: "bg-slate-100 text-slate-500 border-slate-200",
+  미진행: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
 // 판매 충성도 카드 — aiProfile 유무와 무관하게 재사용(early-return 화면·본문 양쪽). 회차간 재구매(네이버스토어 기준).

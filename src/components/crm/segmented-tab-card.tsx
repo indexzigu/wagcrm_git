@@ -19,7 +19,7 @@ const TONE_BADGE: Record<TabCountTone, string> = {
   urgent: "bg-status-urgent-bg text-status-urgent-text",
   success: "bg-status-success-bg text-status-success",
   info: "bg-status-info/10 text-status-info",
-  neutral: "bg-slate-100 text-slate-500",
+  neutral: "bg-slate-100 text-slate-600",
 };
 
 export interface TabMeta {
@@ -83,7 +83,7 @@ export function SegmentedTabBar({
             tabIndex={isActive ? 0 : -1}
             onClick={() => onSelect(tab.key)}
             className={`group relative flex items-center gap-1.5 px-2 pb-2 pt-0.5 text-sm font-bold tracking-tight transition-colors focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none ${
-              isActive ? "text-[var(--primary)]" : "text-muted-foreground/60 hover:text-muted-foreground"
+              isActive ? "text-[var(--primary)]" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <span>{tab.label}</span>

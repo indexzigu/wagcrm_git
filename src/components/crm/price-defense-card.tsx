@@ -156,7 +156,7 @@ export function PriceDefenseBody({ data, loading, error, refetch }: PriceOvervie
         ✓
       </span>
       전 딜 최저가 이상 없음
-      <span className="text-[11px] text-slate-400">
+      <span className="text-[11px] text-slate-500">
         모니터링 {data?.monitoredCount ?? 0}딜
         {data?.latestSnapshotDate ? ` · ${data.latestSnapshotDate} 스냅샷` : ""}
       </span>

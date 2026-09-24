@@ -74,7 +74,7 @@ const urgencyConfig: Record<
     barBorder: "border-black/5",
     tagBg: "bg-slate-100",
     tagText: "text-muted-foreground",
-    textColor: "text-muted-foreground/60",
+    textColor: "text-muted-foreground",
     weight: "font-bold",
   },
 };
@@ -102,7 +102,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
 
   return (
     <div>
-      <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
         향후 12주 확정 캠페인 현황 - 주간 단위
       </p>
 
@@ -131,7 +131,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
                         className="flex-1 flex flex-col items-center gap-1.5 group cursor-default rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                       >
                         {/* 날짜 레이블 */}
-                        <span className="text-[9px] font-medium text-muted-foreground/50 tracking-tight whitespace-nowrap">
+                        <span className="text-[9px] font-medium text-muted-foreground tracking-tight whitespace-nowrap">
                           {bucket.label}
                         </span>
 
@@ -243,23 +243,23 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
         {/* ── 캠페인 퍼널 ──────── */}
         <div className="mt-4 flex items-center border-t border-black/5 pt-3">
           <div className="flex items-center gap-3 text-[11px]">
-            <span className="font-semibold text-muted-foreground/70 shrink-0">
+            <span className="font-semibold text-muted-foreground shrink-0">
               캠페인
             </span>
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="inline-flex items-center gap-1">
                 <FunnelDot color="var(--primary)" />
-                <span className="text-muted-foreground/80">확정 대기</span>
+                <span className="text-muted-foreground">확정 대기</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.readyDeals}</span>
               </span>
               <span className="inline-flex items-center gap-1">
                 <FunnelDot color="#2E7D9B" />
-                <span className="text-muted-foreground/80">제안</span>
+                <span className="text-muted-foreground">제안</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.proposedTasks}</span>
               </span>
               <span className="inline-flex items-center gap-1">
                 <FunnelDot color="#C97A40" />
-                <span className="text-muted-foreground/80">협의·테스트</span>
+                <span className="text-muted-foreground">협의·테스트</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.negotiatingTasks}</span>
                 {funnel.stagnantTasks > 0 && (
                   // PALETTE_IMPL_SPEC.md (2026-07-09): 지연 경고 = urgent 의미 → urgent 토큰.
@@ -270,7 +270,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
               </span>
               <span className="inline-flex items-center gap-1">
                 <FunnelDot color="#5D9B6E" />
-                <span className="text-muted-foreground/80">승인</span>
+                <span className="text-muted-foreground">승인</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.pendingApproval}</span>
               </span>
             </div>
