@@ -561,6 +561,21 @@ function HourlySection({
   // 동률 피크는 전부 강조하고 캡션도 전부 말한다 — 차트가 3칸을 강조했는데 문구가
   // 1개만 언급하면 시각과 어긋난다(ss-ux 검토 P1).
   const peakHours = max > 0 ? rows.filter((r) => r.clicks === max).map((r) => r.hour) : [];
+  // 막대는 hover title 에만 값을 싣는다 — 키보드·화면낭독기로는 닿지 않는다. 그래서 그림
+  // 전체의 텍스트 대안(role="img" 의 aria-label)이 값을 진다. 24칸을 전부 읽히면 듣기 어려우니
+  // 클릭이 있었던 시간대를 많은 순 상위 5곳까지만 말하고 나머지는 개수로 접는다.
+  const activeRows = rows.filter((r) => r.clicks > 0).sort((a, b) => b.clicks - a.clicks);
+  const chartSummary =
+    activeRows.length === 0
+      ? "시간대별 클릭 분포. 클릭이 없습니다."
+      : [
+          "시간대별 클릭 분포.",
+          `가장 많은 시간대 ${peakHours.map((h) => `${h}시`).join("·")} ${nf.format(max)}회.`,
+          `클릭이 있었던 시간대 ${activeRows.length}곳, 많은 순: ${activeRows
+            .slice(0, 5)
+            .map((r) => `${r.hour}시 ${nf.format(r.clicks)}회`)
+            .join(", ")}${activeRows.length > 5 ? " 외" : ""}.`,
+        ].join(" ");
 
   return (
     <section className="space-y-2">
@@ -579,7 +594,7 @@ function HourlySection({
         </p>
       ) : (
         <div className="rounded-lg border border-border/70 bg-muted/30 px-3 pb-2 pt-3">
-          <div className="flex h-16 items-end gap-[3px]" role="img" aria-label="시간대별 클릭 분포">
+          <div className="flex h-16 items-end gap-[3px]" role="img" aria-label={chartSummary}>
             {rows.map((row) => (
               <div
                 key={row.hour}
@@ -588,21 +603,21 @@ function HourlySection({
                 className="flex h-full flex-1 items-end"
                 title={`${row.hour}시 ${nf.format(row.clicks)}회`}
               >
-                <div
-                  className={cn(
-                    "w-full rounded-sm",
-                    row.clicks === 0
-                      ? "bg-slate-200/70"
-                      : row.clicks === max
-                        ? "bg-slate-600"
-                        : "bg-slate-400",
-                  )}
-                  style={{
-                    // 최소 4% 높이 — 0(연회색)도 소량(중회색)도 자리를 갖는다. 둘의
-                    // 구분은 높이가 아니라 색이 진다.
-                    height: max > 0 ? `${Math.max((row.clicks / max) * 100, 4)}%` : "4%",
-                  }}
-                />
+                {/* 0 과 소량을 **모양**으로 가른다(WCAG 1.4.1 · interfaces 묶음 F). 종전엔 둘 다
+                    최소 4% 높이였고 구분은 색(연회색 vs 중회색)만 졌다. 이제 0 은 채운 막대가 없는
+                    1px 기준선 틱이고, 1회 이상은 최소 10% 높이의 막대라 색을 못 가려도 "있다/없다"가
+                    읽힌다. 명도 단(slate-400 → 피크 slate-600)은 강조 축으로 그대로 둔다. */}
+                {row.clicks === 0 ? (
+                  <div className="h-px w-full bg-slate-300" />
+                ) : (
+                  <div
+                    className={cn(
+                      "w-full rounded-sm",
+                      row.clicks === max ? "bg-slate-600" : "bg-slate-400",
+                    )}
+                    style={{ height: `${Math.max((row.clicks / max) * 100, 10)}%` }}
+                  />
+                )}
               </div>
             ))}
           </div>

@@ -227,7 +227,7 @@ describe("CalendarView 조합 팝오버 대금 금액 (멤버 합산)", () => {
         ]}
       />,
     );
-    await userEvent.click(screen.getByTitle("비타슈넬 외 2 · 가온"));
+    await userEvent.click(screen.getByTitle(/^비타슈넬 외 2 · 가온 \(/));
   }
 
   it("3인 조합의 입금 금액은 멤버 합이다", async () => {
@@ -367,7 +367,7 @@ describe("CalendarView 팝오버 대금 날짜 (완료면 실제일)", () => {
 
   it("캠페인 팝오버가 실제 지급일을 말한다", async () => {
     render(<CalendarView month="2026-07" campaigns={[paidMember("solo")]} />);
-    await userEvent.click(screen.getByTitle("비타슈넬 · 가온"));
+    await userEvent.click(screen.getByTitle(/^비타슈넬 · 가온 \(/));
 
     expect(await screen.findByText("26-07-15")).toBeTruthy();
     expect(screen.queryByText("26-07-20")).toBeNull();
@@ -383,7 +383,7 @@ describe("CalendarView 팝오버 대금 날짜 (완료면 실제일)", () => {
         ]}
       />,
     );
-    await userEvent.click(screen.getByTitle("비타슈넬 외 1 · 가온"));
+    await userEvent.click(screen.getByTitle(/^비타슈넬 외 1 · 가온 \(/));
 
     expect(await screen.findByText("26-07-15")).toBeTruthy();
     expect(screen.queryByText("26-07-20")).toBeNull();

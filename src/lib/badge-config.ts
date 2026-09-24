@@ -29,29 +29,27 @@ export interface BadgeColorConfig {
  * All color combinations are designed to meet WCAG AA contrast ratio (≥ 4.5:1)
  * between text and background colors.
  *
- * Approximate contrast ratios (computed against Tailwind default palette, or the
- * shared status tokens where noted):
- * - PROPOSAL:        blue-800 (#1e40af) on blue-100 (#dbeafe)  → ~7.0:1
- * - PREPARATION:     slate-700 (#334155) on slate-100 (#f1f5f9) → ~7.5:1
- * - ACTIVE:          status-success (#047857) on status-success-bg (#ECFDF5) → ~5.2:1
- * - CLOSED:          slate-800 (#1e293b) on slate-200 (#e2e8f0) → 11.87:1
- * - SETTLEMENT_WAIT: amber-800 (#92400e) on amber-100 (#fef3c7) → ~5.1:1
- * - SETTLEMENT_IN_PROGRESS: status-caution (#B45309) on status-caution-bg (#FFFBEB) → ~4.8:1
- * - COMPLETED:       green-800 (#166534) on green-100 (#dcfce7) → ~6.0:1
- * - DROPPED:         status-urgent-text (#8F3C3C) on status-urgent-bg (#F9EEEE) → ~6.4:1
+ * **8개 전부 SSOT `statusClassName`(status-badge.tsx)의 채움·글자 토큰과 문자 그대로 같다**
+ * (가드레일 2 정렬 완료, interfaces 점검 묶음 F — 2026-09-24 오너 지시). 종전에는 이 맵이
+ * 정본과 **의미축이 달랐다**: 「판매 진행」=초록(success) · 「정산 진행」=주황(caution) ·
+ * 「제안」=blue-100 · 「정산 대기」=amber-100 · 「정산 완료」=green-100 리터럴. 그래서 정상
+ * 진행 단계가 경고처럼 보였고, 같은 상태가 표(이 맵)와 캘린더·패널(StatusBadge)에서
+ * 다른 색이었다. 정렬 계약은 `lib/__tests__/badge-config-guardrail2.test.tsx` 가 **8개 전수**로
+ * 고정한다 — 값을 여기서 따로 고르지 말고 SSOT 를 고친 뒤 여기를 맞출 것.
  *
- * PALETTE_IMPL_SPEC.md (오너 승인, 2026-07-09): ACTIVE/SETTLEMENT_IN_PROGRESS/DROPPED
- * moved off raw emerald/orange/rose Tailwind classes onto the shared status token set
- * ("one meaning = one color" — same tokens the growth charts and schedule-gap card use).
- * SETTLEMENT_WAIT (amber) and COMPLETED (green) are intentionally left on Tailwind
- * palette classes here: the spec names orange/emerald/rose only, and no
- * status-pending-bg/text (or a second success pairing) is defined yet — flagged for
- * the spec owner rather than guessed at.
+ * 대비(글자 on 채움, 흰 카드 위 알파 틴트는 합성값 · 실측 계산):
+ * - PROPOSAL/ACTIVE: status-active #0A3D62 on active/10(#E7ECEF) → 9.50 (slate-50 위 9.06)
+ * - PREPARATION:     slate-700 #334155 on slate-100 → 9.45
+ * - CLOSED:          slate-800 #1E293B on slate-200 → 11.87
+ * - SETTLEMENT_WAIT: status-caution #B45309 on caution-bg #FFFBEB → 4.84
+ * - SETTLEMENT_IN_PROGRESS: status-info #4A6B82 on info/10(#EDF0F3) → 4.94 (slate-50 위 4.75)
+ * - COMPLETED:       status-success #047857 on success-bg #ECFDF5 → 5.21
+ * - DROPPED:         status-urgent-text #8F3C3C on urgent-bg #F9EEEE → 6.42
  *
  * ⚠️ CLOSED: purple 회수 (오너 지시 2026-07-30). P8 가드레일 2 가 이 파일을 이름으로
  * 지목한다 — "상태 배지 색은 StatusBadge 스킴이 유일 정본 — purple 등 신규 hue 도입
  * 금지. 다른 배지 설정(badge-config.ts 등)은 이 스킴에 정렬한다."
- * 위 유보(amber/green)와 달리 purple 은 그 유보 목록에 없었다.
+ * 당시의 유보(amber/green — 2026-09-24 전수 정렬로 해소)와 달리 purple 은 그 유보 목록에 없었다.
  *
  * ⛔ **한 축 규칙**(오너 결정 2026-07-30): 테두리는 8개 전부 같은 값이고 의미는 채움만
  * 진다. 그래서 이 맵에 `border` 값이 없고 소비처 베이스가 `border-transparent` 로 한 번
@@ -76,8 +74,8 @@ export interface BadgeColorConfig {
  */
 export const SUB_STAGE_BADGE_CONFIG: Record<CampaignStatus, BadgeColorConfig> = {
   PROPOSAL: {
-    bg: "bg-blue-100",
-    text: "text-blue-800",
+    bg: "bg-status-active/10",
+    text: "text-status-active",
     label: "셀러 제안 중",
   },
   PREPARATION: {
@@ -86,8 +84,8 @@ export const SUB_STAGE_BADGE_CONFIG: Record<CampaignStatus, BadgeColorConfig> = 
     label: "세팅 대기",
   },
   ACTIVE: {
-    bg: "bg-[var(--status-success-bg)]",
-    text: "text-[var(--status-success)]",
+    bg: "bg-status-active/10",
+    text: "text-status-active",
     label: "판매 진행 중",
   },
   CLOSED: {
@@ -98,23 +96,23 @@ export const SUB_STAGE_BADGE_CONFIG: Record<CampaignStatus, BadgeColorConfig> = 
     label: "판매 마감",
   },
   SETTLEMENT_WAIT: {
-    bg: "bg-amber-100",
-    text: "text-amber-800",
+    bg: "bg-status-caution-bg",
+    text: "text-status-caution",
     label: "정산 대기",
   },
   SETTLEMENT_IN_PROGRESS: {
-    bg: "bg-[var(--status-caution-bg)]",
-    text: "text-[var(--status-caution)]",
+    bg: "bg-status-info/10",
+    text: "text-status-info",
     label: "정산 진행",
   },
   COMPLETED: {
-    bg: "bg-green-100",
-    text: "text-green-800",
+    bg: "bg-status-success-bg",
+    text: "text-status-success",
     label: "정산 완료",
   },
   DROPPED: {
-    bg: "bg-[var(--status-urgent-bg)]",
-    text: "text-[var(--status-urgent-text)]",
+    bg: "bg-status-urgent-bg",
+    text: "text-status-urgent-text",
     label: "드랍",
   },
 };

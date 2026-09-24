@@ -592,14 +592,14 @@ export default function OutreachPage() {
               <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="font-medium">진행 중:</span>
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
                   {negotiationTasks.length + testingTasks.length + pendingApprovalTasks.length}개
                 </span>
               </div>
               <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="font-medium">제안 대기:</span>
-                <span className="font-semibold text-amber-600 dark:text-amber-400">{proposedTasks.length}개</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">{proposedTasks.length}개</span>
               </div>
               <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
               <div className="flex items-center gap-1.5 shrink-0">

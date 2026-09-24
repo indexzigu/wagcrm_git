@@ -23,6 +23,7 @@ import {
   resolveProfitTone,
   PROFIT_TONE_TEXT,
   PROFIT_TONE_TEXT_DENSE,
+  PROFIT_TONE_FILL,
 } from "@/lib/profit-tone";
 import { salesChannelLabels } from "@/lib/crm-types";
 import {
@@ -203,6 +204,10 @@ function DetailLine({
 export function PnlReportClient({ report }: PnlReportClientProps) {
   const [selectedCampaign, setSelectedCampaign] = useState<PnlCampaignRow | null>(null);
   const { totals, taxEstimate } = report;
+  // 「순이익(세후)」 세그먼트와 「순이익률」 링이 같은 판정을 공유한다 — 값이 없으면(비유한)
+  // 흑자 색으로 두되, 적자면 막대 폭이 0 이라 범례 표식·링 색으로만 경고가 남는다.
+  const afterTaxProfitFill =
+    PROFIT_TONE_FILL[resolveProfitTone(totals.afterTaxOperatingProfit) ?? "profit"];
 
   const bridgeChartData = useMemo(
     () =>
@@ -348,6 +353,15 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_auto]">
+                    {/* 색 배분(interfaces 묶음 F, 2026-09-24): 비용 4항목은 좋고 나쁨이 없는 **범주**라
+                        범주형 차트 팔레트(--chart-*)·무채색만 받는다(P8 §4). 종전 「예상 세금」은
+                        --status-caution(심각도 축 — 세금이 경고처럼 보였다), 「순이익(세후)」은
+                        --accent-gold(가드레일 3 예외 2건 밖 + 흰 배경 2.11:1)였다. 순이익은 판정 축의
+                        초점 값이라 profit-tone 도형 맵을 탄다(흑자 --money-in 3.77 · 적자 --status-urgent
+                        4.69, 비텍스트 3:1). 세금은 --chart-3(골드축 — 이익 골드와 겹쳐 읽힘)·--chart-4
+                        (--status-pending 과 같은 값 — 대기 상태로 오독)가 부적합해 slate-600(흰 배경
+                        7.58:1)으로 둔다 — chart-1 네이비·slate-600·chart-5 slate-500·chart-2 하늘과
+                        명도 단이 겹치지 않는다(ss-ux-designer 판정). */}
                     <CategoryBar
                       total={totals.commissionRevenue}
                       formatValue={(v) => `${formatKRW(v)}`}
@@ -355,12 +369,13 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                         { label: "셀러 지급", value: totals.sellerPayout, color: "var(--chart-5)" },
                         { label: "공제세액", value: totals.deductedTax, color: "var(--chart-2)" },
                         { label: "운영비+기타", value: totals.operatingExpense + totals.miscExpense, color: "var(--chart-1)" },
-                        { label: "예상 세금", value: totals.estimatedTotalTax, color: "var(--status-caution)" },
-                        { label: "순이익(세후)", value: totals.afterTaxOperatingProfit, color: "var(--accent-gold)" },
+                        { label: "예상 세금", value: totals.estimatedTotalTax, color: "var(--color-slate-600)" },
+                        { label: "순이익(세후)", value: totals.afterTaxOperatingProfit, color: afterTaxProfitFill },
                       ]}
                     />
                     <div className="flex flex-col items-center gap-1 md:border-l md:border-border/60 md:pl-6">
                       <ProgressCircle
+                        color={afterTaxProfitFill}
                         value={totals.afterTaxOperatingProfit}
                         max={totals.commissionRevenue}
                         label={formatPercent(

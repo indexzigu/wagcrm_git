@@ -91,3 +91,21 @@ export const PROFIT_TONE_TEXT: Record<ProfitTone, string> = {
 export const PROFIT_TONE_TEXT_DENSE: Partial<Record<ProfitTone, string>> = {
   loss: "text-status-urgent-text",
 };
+
+/**
+ * 톤별 **도형 채움**(막대 세그먼트·도넛 링) — 흰 카드 위 비텍스트(3:1) 전용.
+ *
+ * 텍스트 맵과 분리한 이유는 `money-direction.ts` 의 `MONEY_DIRECTION_TEXT` /
+ * `MONEY_DIRECTION_STROKE` 분리와 같다: 대비 기준이 다르다. `--money-in`(#059669)은
+ * 흰 배경 3.77:1 로 **도형에는 적법하지만 텍스트엔 미달**이라 원래 링용으로 잡힌
+ * 토큰이고, 적자 `--status-urgent`(#BF5050)는 4.69:1 이다. 두 맵을 섞지 말 것.
+ *
+ * 도입 계기(interfaces 점검 묶음 F, 2026-09-24): 손익 리포트의 「순이익(세후)」 세그먼트와
+ * 「순이익률」 링이 `--accent-gold` 였다 — 가드레일 3(골드는 장식·액센트 전용, 예외 2건
+ * 밖) 위반이고 흰 배경 2.11:1 로 도형 기준(3:1)에도 못 미쳤다. 순이익은 판정 축(흑자/적자)의
+ * 초점 값이라 이 SSOT 를 탄다.
+ */
+export const PROFIT_TONE_FILL: Record<ProfitTone, string> = {
+  profit: "var(--money-in)",
+  loss: "var(--status-urgent)",
+};
