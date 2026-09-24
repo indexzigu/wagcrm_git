@@ -75,6 +75,8 @@ export function StepMetricCard({
                 <button
                   type="button"
                   onClick={() => handleClick(idx)}
+                  aria-label={`${label}: ${cleanScoreLabel(level)}`}
+                  aria-pressed={idx === activeIndex}
                   className={`h-4 flex-1 rounded-sm transition-colors ${
                     idx <= activeIndex
                       ? STEP_COLORS[activeIndex]

@@ -1064,8 +1064,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href="/settings/operations?section=goals" className="rounded-full bg-white/10 p-1 text-white/80 hover:bg-white/20">
-                          <Settings2 className="size-3" />
+                        <Link href="/settings/operations?section=goals" aria-label="매출 목표 설정" className="rounded-full bg-white/10 p-1 text-white/80 hover:bg-white/20">
+                          <Settings2 className="size-3" aria-hidden="true" />
                         </Link>
                       </TooltipTrigger>
                       <TooltipContent>운영 설정에서 목표 수정 가능</TooltipContent>

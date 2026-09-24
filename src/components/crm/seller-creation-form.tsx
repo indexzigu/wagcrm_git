@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useId } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,9 @@ export function SellerCreationForm({
   onCancel,
   onCreated,
 }: SellerCreationFormProps) {
+  // 라벨↔컨트롤 연결용 접두. 종전엔 FieldLabel 이 떠 있기만 해서 placeholder 가 이름 노릇을 했다
+  // (입력하면 사라져 무슨 칸인지 다시 알 수 없다). 셀렉트는 「라벨 + 현재 값」으로 읽히게 잇는다.
+  const fid = useId();
   const [createForm, setCreateForm] = useState<CreateFormState>(INITIAL_CREATE_FORM);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -242,10 +245,11 @@ export function SellerCreationForm({
         </FieldDescription>
 
         <Field data-invalid={!!createErrors.name}>
-          <FieldLabel>
+          <FieldLabel htmlFor={`${fid}-name`}>
             표시명
           </FieldLabel>
           <Input
+            id={`${fid}-name`}
             name="name"
             value={createForm.name}
             onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
@@ -256,10 +260,11 @@ export function SellerCreationForm({
         </Field>
 
         <Field>
-          <FieldLabel>
+          <FieldLabel htmlFor={`${fid}-alias`}>
             별칭 (선택)
           </FieldLabel>
           <Input
+            id={`${fid}-alias`}
             name="alias"
             value={createForm.alias}
             onChange={(e) => setCreateForm({ ...createForm, alias: e.target.value })}
@@ -269,7 +274,7 @@ export function SellerCreationForm({
         </Field>
 
         <Field data-invalid={!!createErrors.snsType}>
-          <FieldLabel>
+          <FieldLabel id={`${fid}-snsType-label`} htmlFor={`${fid}-snsType`}>
             SNS 유형
           </FieldLabel>
           <Select
@@ -278,8 +283,13 @@ export function SellerCreationForm({
               setCreateForm({ ...createForm, snsType: value as SnsType })
             }
           >
-            <SelectTrigger className="w-full" aria-invalid={!!createErrors.snsType}>
-              <SelectValue placeholder="SNS 유형 선택" />
+            <SelectTrigger
+              id={`${fid}-snsType`}
+              aria-labelledby={`${fid}-snsType-label ${fid}-snsType-value`}
+              className="w-full"
+              aria-invalid={!!createErrors.snsType}
+            >
+              <SelectValue id={`${fid}-snsType-value`} placeholder="SNS 유형 선택" />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -295,10 +305,11 @@ export function SellerCreationForm({
         </Field>
 
         <Field data-invalid={!!createErrors.snsHandle}>
-          <FieldLabel>
+          <FieldLabel htmlFor={`${fid}-snsHandle`}>
             SNS 핸들
           </FieldLabel>
           <Input
+            id={`${fid}-snsHandle`}
             name="snsHandle"
             value={createForm.snsHandle}
             onChange={(e) => setCreateForm({ ...createForm, snsHandle: e.target.value })}
@@ -309,7 +320,7 @@ export function SellerCreationForm({
         </Field>
 
         <Field>
-          <FieldLabel>
+          <FieldLabel id={`${fid}-acq-label`} htmlFor={`${fid}-acq`}>
             유입 경로 (선택)
           </FieldLabel>
           <Select
@@ -323,8 +334,8 @@ export function SellerCreationForm({
               })
             }
           >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="유입 경로 선택" />
+            <SelectTrigger id={`${fid}-acq`} aria-labelledby={`${fid}-acq-label ${fid}-acq-value`} className="w-full">
+              <SelectValue id={`${fid}-acq-value`} placeholder="유입 경로 선택" />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
@@ -341,14 +352,15 @@ export function SellerCreationForm({
         {/* 소개자 필드는 조건부 마운트하지 않고 자리를 예약한다(상시 렌더 + 비활성) —
             중앙 정렬 다이얼로그는 내용 높이가 바뀌면 전체가 재정렬되어 화면이 튄다(오너 지적 2026-07-23). */}
         <Field data-disabled={createForm.acquisitionChannel !== "REFERRAL" || undefined}>
-          <FieldLabel>소개자 (선택)</FieldLabel>
+          <FieldLabel id={`${fid}-referrer-label`} htmlFor={`${fid}-referrer`}>소개자 (선택)</FieldLabel>
           <Select
             value={createForm.referredById}
             onValueChange={(value) => setCreateForm({ ...createForm, referredById: value })}
             disabled={createForm.acquisitionChannel !== "REFERRAL"}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger id={`${fid}-referrer`} aria-labelledby={`${fid}-referrer-label ${fid}-referrer-value`} className="w-full">
               <SelectValue
+                id={`${fid}-referrer-value`}
                 placeholder={
                   createForm.acquisitionChannel === "REFERRAL"
                     ? "소개해준 셀러 선택"

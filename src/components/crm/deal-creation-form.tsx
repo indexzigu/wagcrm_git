@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useId } from "react";
 import { z } from "zod";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -38,6 +38,8 @@ export type DealCreationFormProps = {
 // --- Component ---
 
 export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps) {
+  // 라벨↔입력 연결용 접두 — 종전엔 placeholder 가 이름 노릇을 해 입력하면 무슨 칸인지 사라졌다.
+  const fid = useId();
   // Form state
   const [dealName, setDealName] = useState("");
   const [brandName, setBrandName] = useState("");
@@ -147,10 +149,11 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
       <FieldGroup>
         <FieldSet>
           <Field data-invalid={!!errors.dealName}>
-            <FieldLabel className="text-xs font-medium text-foreground">
+            <FieldLabel htmlFor={`${fid}-dealName`} className="text-xs font-medium text-foreground">
               딜명<span className="ml-0.5 text-destructive">*</span>
             </FieldLabel>
             <Input
+              id={`${fid}-dealName`}
               value={dealName}
               onChange={(e) => {
                 setDealName(e.target.value);
@@ -189,10 +192,11 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
           />
 
           <Field data-invalid={!!errors.brandName}>
-            <FieldLabel className="text-xs font-medium text-foreground">
+            <FieldLabel htmlFor={`${fid}-brandName`} className="text-xs font-medium text-foreground">
               브랜드명<span className="ml-0.5 text-destructive">*</span>
             </FieldLabel>
             <Input
+              id={`${fid}-brandName`}
               value={brandName}
               onChange={(e) => setBrandName(e.target.value)}
               placeholder="브랜드명"

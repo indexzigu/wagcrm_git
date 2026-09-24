@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { FilterIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,8 @@ export function FilterPopover({
   onFilterChange,
   onClearAll,
 }: FilterPopoverProps) {
+  // 필드 라벨 ↔ 컨트롤 연결용 접두 — 종전엔 Label 이 떠 있기만 해서 셀렉트·날짜 입력이 이름 없이 읽혔다.
+  const idPrefix = useId();
   const activeCount = filterConfig.filter(
     (field) => filters[field.key]
   ).length;
@@ -58,9 +61,12 @@ export function FilterPopover({
       </PopoverTrigger>
       <PopoverContent className="w-80 space-y-3 p-4" align="start">
         <div className="space-y-3">
-          {filterConfig.map((field) => (
+          {filterConfig.map((field) => {
+            const labelId = `${idPrefix}-${field.key}-label`;
+            const controlId = `${idPrefix}-${field.key}`;
+            return (
             <div key={field.key} className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
+              <Label id={labelId} htmlFor={controlId} className="text-xs text-muted-foreground">
                 {field.label}
               </Label>
               {field.type === "select" && field.options ? (
@@ -68,8 +74,14 @@ export function FilterPopover({
                   value={filters[field.key] ?? ""}
                   onValueChange={(value) => onFilterChange(field.key, value)}
                 >
-                  <SelectTrigger size="sm" className="w-full">
-                    <SelectValue placeholder={`${field.label} 선택`} />
+                  {/* 이름 = 「필드 라벨 + 현재 값(없으면 placeholder)」 — 값 표시 span 을 함께 가리킨다 */}
+                  <SelectTrigger
+                    id={controlId}
+                    aria-labelledby={`${labelId} ${controlId}-value`}
+                    size="sm"
+                    className="w-full"
+                  >
+                    <SelectValue id={`${controlId}-value`} placeholder={`${field.label} 선택`} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
@@ -83,6 +95,7 @@ export function FilterPopover({
                 </Select>
               ) : field.type === "date" ? (
                 <Input
+                  id={controlId}
                   type="date"
                   value={filters[field.key] ?? ""}
                   onChange={(e) => onFilterChange(field.key, e.target.value)}
@@ -90,7 +103,8 @@ export function FilterPopover({
                 />
               ) : null}
             </div>
-          ))}
+            );
+          })}
         </div>
         {activeCount > 0 && (
           <Button
