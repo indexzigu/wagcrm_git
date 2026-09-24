@@ -246,7 +246,7 @@ function GroupSection({
                         case "sellerName":
                           return (
                             <TableCell key={col.field} className={col.width}>
-                              <span className="block truncate text-sm text-foreground">
+                              <span className="block truncate text-sm text-foreground" title={campaign.sellerName ?? undefined}>
                                 {campaign.sellerName}
                               </span>
                             </TableCell>
@@ -254,7 +254,7 @@ function GroupSection({
                         case "dealName":
                           return (
                             <TableCell key={col.field} className={col.width}>
-                              <span className="block truncate text-sm text-foreground">
+                              <span className="block truncate text-sm text-foreground" title={campaign.dealName ?? undefined}>
                                 {campaign.dealName}
                               </span>
                             </TableCell>

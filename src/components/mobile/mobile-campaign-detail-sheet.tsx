@@ -514,12 +514,13 @@ export function MobileCampaignDetailSheet({
           </div>
           <SheetTitle asChild>
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="truncate text-base font-bold text-slate-900 tracking-tight">
+              {/* 상세 시트 제목은 말줄임 대신 줄바꿈 — 터치에는 title 도 없어 잘린 딜·셀러명에 닿을 길이 없다. */}
+              <span className="min-w-0 break-words text-base font-bold text-slate-900 tracking-tight">
                 {campaign.dealName}
               </span>
               <span className="inline-flex min-w-0 items-center gap-1">
                 <UserRoundIcon aria-hidden="true" className="size-3.5 shrink-0 text-slate-400" />
-                <span className="truncate text-[13px] font-medium text-slate-600">
+                <span className="min-w-0 break-words text-[13px] font-medium text-slate-600">
                   {campaign.sellerName}
                 </span>
               </span>

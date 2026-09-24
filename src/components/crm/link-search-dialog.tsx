@@ -327,7 +327,9 @@ export function LinkSearchDialog({
       <div className="flex items-center justify-between gap-3">
         {simpleDealDisplay && entityType === "deal" ? (
           <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-            <span className="font-bold text-slate-900 text-sm truncate">
+            {/* 비슷한 이름 중 하나를 고르는 자리 — 구별 꼬리(회차 등)가 잘리지 않게 두 줄까지 보이고
+                나머지는 title 로. */}
+            <span className="min-w-0 break-words line-clamp-2 font-bold text-slate-900 text-sm" title={item.label}>
               {item.label}
             </span>
             {item.identityParts?.find(p => p.label === "브랜드") && (
@@ -335,7 +337,10 @@ export function LinkSearchDialog({
                 <span className="inline-flex items-center rounded-sm border px-1 py-0 text-[9px] font-medium text-muted-foreground border-slate-200">
                   브랜드
                 </span>
-                <span className="truncate text-[10px] text-muted-foreground">
+                <span
+                  className="truncate text-[10px] text-muted-foreground"
+                  title={item.identityParts.find(p => p.label === "브랜드")?.value}
+                >
                   {item.identityParts.find(p => p.label === "브랜드")?.value}
                 </span>
               </span>
@@ -404,7 +409,10 @@ export function LinkSearchDialog({
           </div>
 
           <div className="flex min-w-0 flex-1 items-center">
-            <span className="font-bold text-slate-900 text-[13px] truncate leading-tight">
+            <span
+              className="min-w-0 break-words line-clamp-2 font-bold text-slate-900 text-[13px] leading-tight"
+              title={item.label}
+            >
               {item.label}
             </span>
           </div>

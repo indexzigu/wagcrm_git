@@ -393,7 +393,10 @@ function MetricCard({
           <Icon className={`size-4 shrink-0 ${iconTones[tone]}`} />
           <p className="text-[13px] font-semibold text-[var(--primary)] tracking-tight shrink-0">{label}</p>
           {lossMonths.length > 0 ? (
-            <p className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[var(--status-caution-text)]">
+            <p
+              className="min-w-0 flex-1 truncate text-[11px] font-semibold text-[var(--status-caution-text)]"
+              title={`${lossMonths.map(monthLabel).join("·")} 적자`}
+            >
               {lossMonths.map(monthLabel).join("·")} 적자
             </p>
           ) : (

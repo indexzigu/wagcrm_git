@@ -712,8 +712,9 @@ export function CampaignSidePanel({
                   <Info className="size-3" />
                   캠페인명
                 </div>
-                <div className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 text-xs font-semibold text-slate-800">
-                  <span className="truncate">
+                {/* 펼친 상세라 말줄임하지 않고 줄바꿈한다 — 긴 자동 조합명이 잘리면 확인할 길이 없다. */}
+                <div className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs font-semibold text-slate-800">
+                  <span className="min-w-0 break-words">
                     {[campaign.dealName, campaign.sellerName].filter(Boolean).join(" - ") || campaign.campaignName || "이름 없음"}
                   </span>
                   {/* 회차는 범주다(P8 색 원칙 4) — 3차가 1차보다 급하거나 좋을 일이 없다.
