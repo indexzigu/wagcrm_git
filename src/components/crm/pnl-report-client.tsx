@@ -204,10 +204,16 @@ function DetailLine({
 export function PnlReportClient({ report }: PnlReportClientProps) {
   const [selectedCampaign, setSelectedCampaign] = useState<PnlCampaignRow | null>(null);
   const { totals, taxEstimate } = report;
-  // 「순이익(세후)」 세그먼트와 「순이익률」 링이 같은 판정을 공유한다 — 값이 없으면(비유한)
-  // 흑자 색으로 두되, 적자면 막대 폭이 0 이라 범례 표식·링 색으로만 경고가 남는다.
-  const afterTaxProfitFill =
-    PROFIT_TONE_FILL[resolveProfitTone(totals.afterTaxOperatingProfit) ?? "profit"];
+  // 「순이익(세후)」 세그먼트와 「순이익률」 링이 같은 판정을 공유한다(값이 비유한이면 흑자 색).
+  // ⚠️ 적자면 두 도형 모두 **그려지지 않는다** — 막대는 음수 폭을 0 으로, 링은 음수 비율을 0 으로
+  // 자른다. 그래서 적자 색은 범례 표식에만 남고, 적자 신호는 링 가운데 이익률 숫자가 진다
+  // (아래 `afterTaxProfitLabelTone` — 밀집 맵이라 적자만 칠하고 흑자는 본문 색 그대로).
+  // 음수 전용 도형 표현은 이 묶음 범위 밖이다(codex 리뷰 지적, 2026-09-24).
+  const afterTaxProfitTone = resolveProfitTone(totals.afterTaxOperatingProfit);
+  const afterTaxProfitFill = PROFIT_TONE_FILL[afterTaxProfitTone ?? "profit"];
+  const afterTaxProfitLabelTone = afterTaxProfitTone
+    ? PROFIT_TONE_TEXT_DENSE[afterTaxProfitTone]
+    : undefined;
 
   const bridgeChartData = useMemo(
     () =>
@@ -378,11 +384,15 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                         color={afterTaxProfitFill}
                         value={totals.afterTaxOperatingProfit}
                         max={totals.commissionRevenue}
-                        label={formatPercent(
-                          totals.commissionRevenue > 0
-                            ? (totals.afterTaxOperatingProfit / totals.commissionRevenue) * 100
-                            : 0,
-                        )}
+                        label={
+                          <span className={afterTaxProfitLabelTone}>
+                            {formatPercent(
+                              totals.commissionRevenue > 0
+                                ? (totals.afterTaxOperatingProfit / totals.commissionRevenue) * 100
+                                : 0,
+                            )}
+                          </span>
+                        }
                         caption="순이익률"
                       />
                       <span className="text-[10px] text-muted-foreground">

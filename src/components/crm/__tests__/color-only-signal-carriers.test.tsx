@@ -297,4 +297,11 @@ describe("손익 리포트 수익 구성 막대 — 범주는 심각도·골드�
     // 같은 초점 값을 그리는 순이익률 링도 같은 판정을 쓴다(기본값 골드로 떨어지지 않게).
     expect(stripped).toMatch(/<ProgressCircle\s+color=\{afterTaxProfitFill\}/);
   });
+
+  it("적자는 도형이 0 폭으로 사라지므로 링 가운데 이익률 숫자가 적자색을 진다(흑자는 무채색)", () => {
+    expect(stripped).toMatch(
+      /afterTaxProfitLabelTone\s*=\s*afterTaxProfitTone\s*\?\s*PROFIT_TONE_TEXT_DENSE\[afterTaxProfitTone\]/,
+    );
+    expect(stripped).toMatch(/<span className=\{afterTaxProfitLabelTone\}>/);
+  });
 });
