@@ -190,7 +190,7 @@ export function PendingCard({
       {error && (
         <p
           role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-status-urgent-text"
         >
           {error}
         </p>
@@ -297,7 +297,7 @@ export function FailedCard({
       {item.errorMessage && (
         <p
           role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-status-urgent-text"
         >
           {item.errorMessage}
         </p>
@@ -308,7 +308,7 @@ export function FailedCard({
       {error && (
         <p
           role="alert"
-          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-status-urgent-text"
         >
           {error}
         </p>

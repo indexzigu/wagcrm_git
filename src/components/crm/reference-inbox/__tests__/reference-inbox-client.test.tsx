@@ -224,10 +224,12 @@ describe("ReferenceInboxClient — 기각/실행 취소", () => {
       expect(screen.queryByText("애엥의 기록")).not.toBeInTheDocument();
     });
 
-    // 성공 토스트는 실행 취소 액션을 포함한다(확인창 없음)
+    // 성공 토스트는 실행 취소 액션을 포함한다(확인창 없음). 되돌리는 유일한 길이라
+    // 닫을 때까지 남는다 — 타이머로 사라지면 실행 취소가 없는 것과 같다.
     expect(mockToastFn).toHaveBeenCalledWith(
       "기각했습니다.",
       expect.objectContaining({
+        duration: Number.POSITIVE_INFINITY,
         action: expect.objectContaining({ label: "실행 취소" }),
       }),
     );

@@ -339,8 +339,10 @@ export function ReferenceInboxClient() {
         setItems((prev) => prev.filter((i) => i.id !== item.id));
         removeFromSelection([item.id]);
         // 확인창 대신 실행 취소(소프트 기각이라 상태 복원으로 되돌림).
+        // 되돌리는 유일한 길이 이 토스트의 버튼이므로 타이머로 사라지게 두지 않는다 —
+        // 읽고 누르기 전에 사라지면 실행 취소가 없는 것과 같다(interfaces 점검 후속, 2026-09-24).
         toast("기각했습니다.", {
-          duration: 5000,
+          duration: Number.POSITIVE_INFINITY,
           action: {
             label: "실행 취소",
             onClick: () => void restoreItem(item),

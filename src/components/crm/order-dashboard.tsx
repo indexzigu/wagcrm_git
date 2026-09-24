@@ -615,7 +615,7 @@ function CampaignActionLog({ campaignId, refreshKey }: { campaignId: string; ref
   const statusPill = (status: OrderActionStatus) => {
     if (status === 'OK') return { cls: 'border-slate-200 bg-slate-50 text-slate-500', label: '정상' };
     if (status === 'PARTIAL') return { cls: 'border-amber-200 bg-amber-50 text-amber-700', label: '부분 실패' };
-    return { cls: 'border-destructive/25 bg-destructive/5 text-destructive', label: '실패' };
+    return { cls: 'border-destructive/25 bg-destructive/5 text-status-urgent-text', label: '실패' };
   };
 
   return (

@@ -1725,7 +1725,7 @@ function SalesTaskDetailPanel({
       {task.status !== "DROPPED" && (
         <Button
           variant="outline"
-          className="w-full text-destructive border-destructive/20 bg-destructive/5 hover:bg-destructive/10 hover:text-destructive h-10 shadow-soft-sm"
+          className="w-full text-status-urgent-text border-destructive/20 bg-destructive/5 hover:bg-destructive/10 hover:text-status-urgent-text h-10 shadow-soft-sm"
           onClick={() => {
             const dropReason =
               task.status === "PROPOSED"
