@@ -15,6 +15,7 @@ import {
   inferQuantityFromName,
 } from "@/lib/price-monitor/query-builder";
 import { cn } from "@/lib/utils";
+import { resolveProfitTone, PROFIT_TONE_TEXT, PROFIT_TONE_TEXT_DENSE } from "@/lib/profit-tone";
 import { patchCampaign } from "@/lib/campaign-patch";
 import { DataEmpty } from "@/components/ui/empty";
 import {
@@ -392,6 +393,7 @@ export function CampaignDealsTable({
     },
     { quantity: 0, actualSales: 0, commission: 0, sellerFee: 0, grossProfit: 0 }
   );
+  const totalsGrossProfitTone = resolveProfitTone(totals.grossProfit);
 
   // 아직 매출 상세내역에 추가되지 않은 옵션 목록 필터링
   const availableOptions = dealOptions.filter(
@@ -509,6 +511,7 @@ export function CampaignDealsTable({
                   const commission = sales * ((deal.feeRate ?? 0) / 100);
                   const sellerFee = sales * ((deal.sellerMarginRate ?? campaign.sellerMarginRate ?? 0) / 100);
                   const grossProfit = commission - sellerFee;
+                  const grossProfitTone = resolveProfitTone(grossProfit);
 
                   return (
                     <tr key={deal.dealId || idx} className="hover:bg-slate-50/40">
@@ -560,7 +563,16 @@ export function CampaignDealsTable({
                       <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-medium tabular-nums text-rose-600">
                         {formatCurrency(sellerFee)}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-semibold tabular-nums text-money-in-text">
+                      {/* 영업이익 = 영업 수익 − 판매대행비 로 상쇄된 **판정값**이다(P8 §1 판정축).
+                          종전엔 부호와 무관하게 무조건 초록이라 적자 품목도 초록으로 보였다. 품목 행마다
+                          되풀이되는 표 열이라 **밀집 강도** — 흑자는 무색, 적자만 경고색(profit-tone SSOT). */}
+                      <td
+                        className={cn(
+                          // 흑자는 옆 칸과 같은 본문색(slate-700) — 적자 톤이 cn(twMerge)으로 이를 덮는다.
+                          "px-1.5 py-1.5 text-right align-middle text-[10px] font-semibold tabular-nums text-slate-700",
+                          grossProfitTone && PROFIT_TONE_TEXT_DENSE[grossProfitTone],
+                        )}
+                      >
                         {formatCurrency(grossProfit)}
                       </td>
                       <td className="px-2 py-1.5 text-center align-middle">
@@ -585,7 +597,16 @@ export function CampaignDealsTable({
                   <td className="px-1.5 py-2 text-right text-slate-700">{formatCurrency(totals.actualSales)}</td>
                   <td className="px-1.5 py-2 text-right text-slate-700">{formatCurrency(totals.commission)}</td>
                   <td className="px-1.5 py-2 text-right text-rose-600">{formatCurrency(totals.sellerFee)}</td>
-                  <td className="px-1.5 py-2 text-right text-money-in-text">{formatCurrency(totals.grossProfit)}</td>
+                  {/* 합계는 표당 1개뿐인 결론 값이라 **초점 강도**다(흑자 초록·적자 경고) — 품목 행만 밀집.
+                      선례: campaign-side-panel 「헤더 요약값은 패널당 1개라 초점 강도다」. */}
+                  <td
+                    className={cn(
+                      "px-1.5 py-2 text-right",
+                      totalsGrossProfitTone && PROFIT_TONE_TEXT[totalsGrossProfitTone],
+                    )}
+                  >
+                    {formatCurrency(totals.grossProfit)}
+                  </td>
                   <td className="px-2 py-2"></td>
                 </tr>
                   </tbody>

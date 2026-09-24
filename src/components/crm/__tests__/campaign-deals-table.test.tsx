@@ -410,3 +410,96 @@ describe("CampaignDealsTable — 헤더 표기·안내 노출 방식", () => {
     ]);
   });
 });
+
+// 영업이익(= 영업 수익 − 판매대행비)은 상쇄된 **판정값**이다. 종전엔 부호와 무관하게 무조건
+// 초록이라 적자 품목도 초록으로 보였다. 품목 행마다 되풀이되는 표 열이라 profit-tone 의
+// **밀집** 강도를 탄다 — 흑자·0 은 무색, 적자만 경고색. 합계 행은 표당 1개뿐인 결론 값이라
+// **초점** 강도다 — 흑자 초록, 적자 경고색.
+describe("CampaignDealsTable — 영업이익 판정색(밀집 강도)", () => {
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+  });
+
+  // 영업이익 열은 행의 6번째 칸이다(품목·수량·판매액·영업 수익·판매대행비·영업이익·관리).
+  const GROSS_PROFIT_COL = 5;
+
+  async function renderRows(
+    deals: Array<{ id: string; name: string; sales: number; feeRate: number; sellerMarginRate: number }>,
+  ) {
+    const utils = render(
+      <CampaignDealsTable
+        campaign={buildCampaign({
+          campaignDeals: deals.map((d) => ({
+            id: d.id,
+            campaignId: "camp-1",
+            dealId: d.id,
+            dealName: d.name,
+            quantity: 1,
+            actualSales: d.sales,
+            feeRate: d.feeRate,
+            sellerMarginRate: d.sellerMarginRate,
+          })),
+        })}
+        onCampaignUpdated={vi.fn()}
+      />,
+    );
+    await utils.findByText(deals[0].name);
+    const rows = Array.from(utils.container.querySelectorAll("tbody tr"));
+    return {
+      cellOf: (name: string) => {
+        const tr = rows.find((r) => r.querySelector("td")?.textContent?.includes(name));
+        return tr?.querySelectorAll("td")[GROSS_PROFIT_COL] as HTMLElement;
+      },
+      totalsCell: () => rows.at(-1)?.querySelectorAll("td")[GROSS_PROFIT_COL] as HTMLElement,
+    };
+  }
+
+  it("흑자 품목은 초록을 받지 않는다", async () => {
+    // 10,000 × (20% − 10%) = +1,000
+    const { cellOf } = await renderRows([{ id: "p", name: "흑자품목", sales: 10000, feeRate: 20, sellerMarginRate: 10 }]);
+    const cell = cellOf("흑자품목");
+    expect(cell.textContent).toBe("1,000");
+    expect(cell.className).toContain("text-slate-700"); // 옆 칸(판매액·영업 수익)과 같은 본문색
+    expect(cell.className).not.toContain("text-money-in-text");
+    expect(cell.className).not.toContain("text-status-urgent-text");
+  });
+
+  it("0 은 손실이 아니므로 경고색을 띄우지 않는다", async () => {
+    const { cellOf } = await renderRows([{ id: "z", name: "본전품목", sales: 10000, feeRate: 10, sellerMarginRate: 10 }]);
+    const cell = cellOf("본전품목");
+    expect(cell.textContent).toBe("0");
+    expect(cell.className).not.toContain("text-status-urgent-text");
+    expect(cell.className).not.toContain("text-money-in-text");
+  });
+
+  it("적자 품목은 경고색(status-urgent-text)을 받는다", async () => {
+    // 10,000 × (5% − 10%) = −500
+    const { cellOf } = await renderRows([{ id: "n", name: "적자품목", sales: 10000, feeRate: 5, sellerMarginRate: 10 }]);
+    const cell = cellOf("적자품목");
+    expect(cell.textContent).toBe("-500");
+    expect(cell.className).toContain("text-status-urgent-text");
+    expect(cell.className).not.toContain("text-slate-700"); // 본문색은 적자 톤에 밀려난다
+  });
+
+  it("합계 행은 합산 부호로 판정한다 — 흑자 합계는 초점 강도라 초록이다", async () => {
+    // +1,000 + (−500) = +500 → 흑자(초점: money-in-text)
+    const mixed = await renderRows([
+      { id: "p", name: "흑자품목", sales: 10000, feeRate: 20, sellerMarginRate: 10 },
+      { id: "n", name: "적자품목", sales: 10000, feeRate: 5, sellerMarginRate: 10 },
+    ]);
+    expect(mixed.totalsCell().textContent).toBe("500");
+    expect(mixed.totalsCell().className).toContain("text-money-in-text");
+    expect(mixed.totalsCell().className).not.toContain("text-status-urgent-text");
+    // 품목 행은 여전히 밀집 — 흑자 품목은 무색
+    expect(mixed.cellOf("흑자품목").className).not.toContain("text-money-in-text");
+  });
+
+  it("합계가 적자면 합계 칸도 경고색이다", async () => {
+    const { totalsCell } = await renderRows([
+      { id: "n", name: "적자품목", sales: 10000, feeRate: 5, sellerMarginRate: 10 },
+    ]);
+    expect(totalsCell().textContent).toBe("-500");
+    expect(totalsCell().className).toContain("text-status-urgent-text");
+    expect(totalsCell().className).not.toContain("text-money-in-text");
+  });
+});

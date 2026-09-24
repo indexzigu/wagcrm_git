@@ -101,7 +101,7 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
 
       <div className="overflow-hidden rounded-md border border-border">
         <table className="w-full text-left text-xs">
-          <thead className="bg-muted text-muted-foreground">
+          <thead className="bg-muted text-slate-600">
             <tr>
               <th className="px-2 py-1.5 font-medium">딜명</th>
               <th className="px-2 py-1.5 font-medium">셀러</th>
@@ -188,7 +188,7 @@ const SearchPartnersView: FC<ToolResultViewProps> = ({ data, bare }) => {
       </div>
       <div className="overflow-hidden rounded-md border border-border">
         <table className="w-full text-left text-xs">
-          <thead className="bg-muted text-muted-foreground">
+          <thead className="bg-muted text-slate-600">
             <tr>
               <th className="px-2 py-1.5 font-medium">상호</th>
               <th className="px-2 py-1.5 font-medium">구분</th>
@@ -350,7 +350,7 @@ const OrderSnapshotView: FC<ToolResultViewProps> = ({ data, bare }) => {
 
       <div className="overflow-hidden rounded-md border border-border">
         <table className="w-full text-left text-xs">
-          <thead className="bg-muted text-muted-foreground">
+          <thead className="bg-muted text-slate-600">
             <tr>
               <th className="px-2 py-1.5 font-medium">일자</th>
               <th className="px-2 py-1.5 font-medium">주문</th>

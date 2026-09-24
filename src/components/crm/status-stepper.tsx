@@ -199,7 +199,7 @@ export function StatusStepper({
               // Inactive step
               step.state === "inactive" &&
                 step.isInteractive &&
-                "bg-muted text-muted-foreground hover:bg-muted/80 cursor-pointer",
+                "bg-muted text-slate-600 hover:bg-muted/80 cursor-pointer",
               step.state === "inactive" &&
                 !step.isInteractive &&
                 "bg-muted/50 text-muted-foreground/50",

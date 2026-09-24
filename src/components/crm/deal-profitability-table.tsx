@@ -1,6 +1,8 @@
 "use client";
 
 import { formatCurrency } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { resolveProfitTone, PROFIT_TONE_TEXT_DENSE } from "@/lib/profit-tone";
 import { InlineDataGrid } from "./inline-data-grid";
 
 // --- Types ---
@@ -80,11 +82,22 @@ export function DealProfitabilityTable({
             key: "totalMargin",
             label: "총 마진",
             width: 140,
-            render: (row) => (
-              <span className="text-xs font-semibold text-money-in-text tabular-nums">
-                {formatCurrency(row.totalMargin)}원
-              </span>
-            ),
+            // 총 마진은 매출 × 순마진율로 상쇄된 **판정값**이다(P8 §1 판정축). 종전엔 부호와
+            // 무관하게 무조건 초록이었다. 딜마다 되풀이되는 표 열이라 **밀집 강도** — 흑자는
+            // 무색(옆 칸과 같은 본문색), 적자만 경고색(profit-tone SSOT).
+            render: (row) => {
+              const tone = resolveProfitTone(row.totalMargin);
+              return (
+                <span
+                  className={cn(
+                    "text-xs font-semibold text-foreground tabular-nums",
+                    tone && PROFIT_TONE_TEXT_DENSE[tone],
+                  )}
+                >
+                  {formatCurrency(row.totalMargin)}원
+                </span>
+              );
+            },
           },
           {
             key: "campaignCount",
