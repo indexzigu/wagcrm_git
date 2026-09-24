@@ -538,7 +538,7 @@ export function MobileCampaignDetailSheet({
           <SheetDescription className="mt-2 text-xs font-medium text-slate-500 flex items-center gap-2">
             {/* ⛔ 판매 마감 D-day 를 여기 되살리지 말 것(오너 지시 2026-08-26 — 위 🪦).
                 기간 칩만 남는 것이 의도다. */}
-            <span className="bg-slate-100 px-2 py-0.5 rounded-md">{formatMd(campaign.startDate)} ~ {formatMd(campaign.endDate)}</span>
+            <span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-600">{formatMd(campaign.startDate)} ~ {formatMd(campaign.endDate)}</span>
           </SheetDescription>
         </header>
 
@@ -922,7 +922,7 @@ function ItemBreakdown({ items }: { items: CampaignItemSales[] }) {
       >
         <span className="text-xs font-bold text-slate-700">
           품목별 매출 상세
-          <span className="ml-2 bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] tabular-nums font-semibold">{mergedItems.length}</span>
+          <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] tabular-nums font-semibold">{mergedItems.length}</span>
         </span>
         <ChevronDownIcon
           className={cn(
@@ -1104,7 +1104,7 @@ function StatusDistribution({ breakdown }: { breakdown: CampaignStatusBreakdown 
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold text-slate-800 tracking-tight">진행 상태 현황</span>
-        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">총 {total}건</span>
+        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">총 {total}건</span>
       </div>
       <div
         role="group"

@@ -153,7 +153,7 @@ function MobileOutreachCard({
         {task.status === "PROPOSED" ? (
           <div className="mt-1 flex items-center justify-between gap-3 text-[11px] w-full">
             {memo ? (
-              <div className="rounded-md bg-muted border border-border px-2 py-0.5 text-muted-foreground truncate flex-1 max-w-[75%]">
+              <div className="rounded-md bg-muted border border-border px-2 py-0.5 text-slate-600 truncate flex-1 max-w-[75%]">
                 {memo}
               </div>
             ) : (
@@ -166,7 +166,7 @@ function MobileOutreachCard({
         ) : (
           <>
             {memo && (
-              <div className="mt-1.5 w-full rounded-md bg-muted border border-border px-2.5 py-1.5 text-[11px] text-muted-foreground line-clamp-1 leading-relaxed">
+              <div className="mt-1.5 w-full rounded-md bg-muted border border-border px-2.5 py-1.5 text-[11px] text-slate-600 line-clamp-1 leading-relaxed">
                 {memo}
               </div>
             )}
