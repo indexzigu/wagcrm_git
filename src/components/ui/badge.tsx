@@ -26,10 +26,12 @@ const badgeVariants = cva(
           // 포커스 링 오버라이드 제거 — 베이스의 ring-focus-ring 을 상속한다.
           // 구 ring-destructive/20 은 흰 배경 위 약 1.31:1 로 사실상 안 보였다.
           "bg-destructive/10 text-status-urgent-text dark:bg-destructive/20 [a]:hover:bg-destructive/20",
+        // hover 시 회색(`bg-muted`) 위로 글자가 내려앉는다 — 그 표면에서 `text-muted-foreground`
+        // 는 4.34:1 로 미달이라 회색 칩 하한 `text-slate-600`(6.92:1)을 쓴다(P8 3차 글자 하한).
         outline:
-          "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
+          "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-slate-600",
         ghost:
-          "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
+          "hover:bg-muted hover:text-slate-600 dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
         // urgent tint 배경 위 텍스트: 기본 --status-urgent(#BF5050)은 이 /10 틴트 위에서 ~4.11:1로
         // AA(4.5:1) 미달 → 어두운 --status-urgent-text(#8F3C3C)로 ~6.4:1 확보. status-pending과 동일 패턴.

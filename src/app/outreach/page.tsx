@@ -859,7 +859,7 @@ export default function OutreachPage() {
                     className={cn("rounded-lg h-8", stageFilter === "ALL" && "bg-slate-200 text-slate-900 font-semibold")}
                   >
                     전체
-                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "ALL" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-muted-foreground")}>
+                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "ALL" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-slate-600")}>
                       {tasks.length}
                     </span>
                   </Button>
@@ -870,7 +870,7 @@ export default function OutreachPage() {
                     className={cn("rounded-lg h-8", stageFilter === "IN_PROGRESS" && "bg-slate-200 text-slate-900 font-semibold")}
                   >
                     진행중
-                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "IN_PROGRESS" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-muted-foreground")}>
+                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "IN_PROGRESS" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-slate-600")}>
                       {tasks.filter(t => ["PROPOSED", "NEGOTIATION", "TESTING", "PENDING_APPROVAL"].includes(t.status)).length}
                     </span>
                   </Button>
@@ -881,7 +881,7 @@ export default function OutreachPage() {
                     className={cn("rounded-lg h-8", stageFilter === "CLOSED" && "bg-slate-200 text-slate-900 font-semibold")}
                   >
                     종료됨
-                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "CLOSED" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-muted-foreground")}>
+                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "CLOSED" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-slate-600")}>
                       {tasks.filter(t => ["CONVERTED", "DROPPED"].includes(t.status)).length}
                     </span>
                   </Button>
@@ -1909,7 +1909,8 @@ function OutreachStageStepper({
                     "bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer",
                   isFuture &&
                     !isDropped &&
-                    "bg-muted/60 text-muted-foreground hover:bg-muted cursor-pointer",
+                    // hover 시 불투명 bg-muted(#F1F5F9) 위 muted-foreground 는 4.34:1 — 회색 칩 하한 slate-600(6.92).
+                    "bg-muted/60 text-slate-600 hover:bg-muted cursor-pointer",
                   isDropped && !isCurrent && "bg-muted/40 text-muted-foreground/50 cursor-default",
                   isLoading && "opacity-60 cursor-not-allowed",
                 )}

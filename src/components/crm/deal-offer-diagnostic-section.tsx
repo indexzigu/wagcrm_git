@@ -51,7 +51,7 @@ const VERDICT_META: Record<
   },
   UNKNOWN: {
     label: "확인 안 됨",
-    badge: "bg-muted text-muted-foreground",
+    badge: "bg-muted text-slate-600",
     order: 2,
   },
   PASS: {
@@ -61,7 +61,7 @@ const VERDICT_META: Record<
   },
   NA: {
     label: "해당 없음",
-    badge: "bg-muted text-muted-foreground",
+    badge: "bg-muted text-slate-600",
     order: 4,
   },
 };
@@ -73,7 +73,7 @@ function metaOf(verdict: OfferVerdict) {
   return (
     VERDICT_META[verdict] ?? {
       label: String(verdict),
-      badge: "bg-muted text-muted-foreground",
+      badge: "bg-muted text-slate-600",
       order: UNKNOWN_VERDICT_ORDER,
     }
   );

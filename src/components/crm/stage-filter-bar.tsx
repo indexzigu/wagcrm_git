@@ -56,7 +56,7 @@ export function StageFilterBar({
                 "ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums",
                 isActive
                   ? "bg-slate-900/10 text-slate-700"
-                  : "bg-muted text-muted-foreground",
+                  : "bg-muted text-slate-600",
               )}
             >
               {counts[value]}

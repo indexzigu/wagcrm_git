@@ -49,10 +49,10 @@ const EVIDENCE_META = {
 
 /** 상태는 심각도가 아니라 생애주기다 — 승인/거절만 색을 받고 나머지는 무채색. */
 const STATUS_META = {
-  PROPOSED: { label: "검토 대기", chip: "bg-muted text-muted-foreground" },
+  PROPOSED: { label: "검토 대기", chip: "bg-muted text-slate-600" },
   APPROVED: { label: "승인", chip: "bg-primary/10 text-primary" },
-  REJECTED: { label: "거절", chip: "bg-muted text-muted-foreground" },
-  EXPIRED: { label: "만료", chip: "bg-muted text-muted-foreground" },
+  REJECTED: { label: "거절", chip: "bg-muted text-slate-600" },
+  EXPIRED: { label: "만료", chip: "bg-muted text-slate-600" },
 } as const;
 
 const CATEGORY_OPTIONS = [
