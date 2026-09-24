@@ -55,6 +55,8 @@ import {
   PROFIT_TONE_TEXT_DENSE,
 } from "@/lib/profit-tone";
 import { toast } from "sonner";
+import { DeleteConfirmDialog } from "./delete-confirm-dialog";
+import { previewText } from "./confirm-action-dialog";
 import { AssetManager } from "./asset-manager";
 import { ContentOrderTimeline } from "./content-order-timeline";
 import { CampaignTaskChecklist, type CampaignTaskChecklistItem } from "./campaign-task-checklist";
@@ -383,6 +385,10 @@ export function CampaignSidePanel({
   const [isSellerSearchOpen, setIsSellerSearchOpen] = useState(false);
   const [isDealSearchOpen, setIsDealSearchOpen] = useState(false);
   const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+  const [pendingNoteDelete, setPendingNoteDelete] = useState<{ id: string; preview: string } | null>(null);
+  const [isDeletingNote, setIsDeletingNote] = useState(false);
+  const [campaignDeleteOpen, setCampaignDeleteOpen] = useState(false);
+  const [isDeletingCampaign, setIsDeletingCampaign] = useState(false);
   const [localNotesState, setLocalNotesState] = useState<{
     campaignId: string | null;
     notes: CampaignRow["notes"];
@@ -539,13 +545,19 @@ export function CampaignSidePanel({
     setIsSubmittingNote(false);
   }
 
+  // 실패하면 확인 창을 유지해 그 자리에서 재시도하게 한다(오류는 토스트).
   async function deleteNote(noteId: string) {
     if (!campaign) return;
-    const response = await fetch(
-      `/api/campaigns/${campaign.id}/notes?noteId=${noteId}`,
-      { method: "DELETE" },
-    );
-    if (response.ok) {
+    setIsDeletingNote(true);
+    try {
+      const response = await fetch(
+        `/api/campaigns/${campaign.id}/notes?noteId=${noteId}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        toast.error("노트를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
       setLocalNotesState((prev) => ({
         campaignId: campaign.id,
         notes:
@@ -553,6 +565,11 @@ export function CampaignSidePanel({
             ? prev.notes.filter((n) => n.id !== noteId)
             : (campaign.notes ?? []).filter((n) => n.id !== noteId),
       }));
+      setPendingNoteDelete(null);
+    } catch {
+      toast.error("네트워크 오류로 노트를 삭제하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.");
+    } finally {
+      setIsDeletingNote(false);
     }
   }
 
@@ -576,24 +593,29 @@ export function CampaignSidePanel({
     onCampaignUpdated(result.data);
   }
 
+  // 칸반·표 메뉴의 삭제와 같은 확인 창을 쓴다(진입 경로마다 확인 UI 가 갈리지 않게).
+  // 실패하면 창을 유지해 그 자리에서 재시도하게 한다.
   async function handleDeleteCampaign() {
     if (!campaign) return;
-    if (!window.confirm("정말로 이 캠페인을 삭제하시겠습니까?")) return;
+    setIsDeletingCampaign(true);
     try {
       const response = await fetch(`/api/campaigns/${campaign.id}`, {
         method: "DELETE",
       });
       if (response.ok) {
         toast.success("캠페인이 삭제되었습니다");
+        setCampaignDeleteOpen(false);
         onOpenChange(false);
         if (onCampaignDeleted) {
           onCampaignDeleted(campaign.id);
         }
       } else {
-        toast.error("캠페인 삭제에 실패했습니다");
+        toast.error("캠페인을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
     } catch {
-      toast.error("네트워크 오류로 삭제에 실패했습니다");
+      toast.error("네트워크 오류로 삭제하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.");
+    } finally {
+      setIsDeletingCampaign(false);
     }
   }
 
@@ -1058,6 +1080,28 @@ export function CampaignSidePanel({
             <span className="text-[11px] text-muted-foreground">{notes.length}개</span>
           </div>
 
+          <DeleteConfirmDialog
+            open={campaignDeleteOpen}
+            onOpenChange={(open) => {
+              if (!isDeletingCampaign) setCampaignDeleteOpen(open);
+            }}
+            entityType="캠페인"
+            entityName={[campaign.dealName, campaign.sellerName].filter(Boolean).join(" - ") || campaign.campaignName || "이름 없는 캠페인"}
+            onConfirm={handleDeleteCampaign}
+            loading={isDeletingCampaign}
+          />
+          <DeleteConfirmDialog
+            open={pendingNoteDelete !== null}
+            onOpenChange={(open) => {
+              if (!open && !isDeletingNote) setPendingNoteDelete(null);
+            }}
+            entityType="노트"
+            entityName={pendingNoteDelete?.preview ?? ""}
+            onConfirm={async () => {
+              if (pendingNoteDelete) await deleteNote(pendingNoteDelete.id);
+            }}
+            loading={isDeletingNote}
+          />
           {notes.length > 0 ? (
             <div className="space-y-3">
               {notes.map((note) => (
@@ -1087,11 +1131,15 @@ export function CampaignSidePanel({
                       </div>
                     </div>
                     <button
-                      className="ml-1 flex size-7 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-                      onClick={() => deleteNote(note.id)}
+                      type="button"
+                      className="ml-1 flex size-7 items-center justify-center rounded-full text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring hover:text-destructive"
+                      onClick={() =>
+                        setPendingNoteDelete({ id: note.id, preview: previewText(note.content) })
+                      }
+                      aria-label="노트 삭제"
                       title="노트 삭제"
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="size-3.5" aria-hidden />
                     </button>
                   </div>
                   <p className="mt-3 whitespace-pre-wrap text-[13px] leading-6 text-foreground">
@@ -1200,7 +1248,7 @@ export function CampaignSidePanel({
             variant="destructive"
             size="sm"
             className="w-full max-w-xs gap-1.5 rounded-xl h-9"
-            onClick={() => void handleDeleteCampaign()}
+            onClick={() => setCampaignDeleteOpen(true)}
           >
             <Trash2 className="size-4" />
             캠페인 삭제
@@ -1288,7 +1336,7 @@ export function CampaignSidePanel({
                 variant="ghost"
                 size="icon"
                 className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
-                onClick={() => void handleDeleteCampaign()}
+                onClick={() => setCampaignDeleteOpen(true)}
                 title="캠페인 삭제"
               >
                 <Trash2 className="size-4" />

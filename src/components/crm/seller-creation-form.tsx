@@ -126,6 +126,8 @@ export function SellerCreationForm({
             channelUrl:
               "지원하지 않는 채널 URL 형식입니다. Instagram, YouTube 또는 X URL을 입력해주세요.",
           });
+          // 제출 중 상태를 풀지 않고 빠지면 버튼이 「저장 중...」 비활성으로 멈춰 재시도할 수 없다.
+          setCreateSubmitting(false);
           return;
         }
 

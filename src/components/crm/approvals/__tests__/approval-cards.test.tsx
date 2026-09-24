@@ -205,10 +205,25 @@ describe("PendingCard", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "반려" }));
+    // 반려는 종결이라 확인 창을 한 번 더 거친다.
+    fireEvent.click(await screen.findByRole("button", { name: "기안 반려" }));
 
     await waitFor(() => {
       expect(rejectMock).toHaveBeenCalledWith("proposal-1");
     });
+  });
+
+  it("반려 버튼만 눌러서는 실행하지 않는다 — 확인 창의 취소는 아무 일도 하지 않는다", async () => {
+    render(
+      <ul>
+        <PendingCard item={makeItem()} onApprove={approveMock} onReject={rejectMock} />
+      </ul>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "반려" }));
+    fireEvent.click(await screen.findByRole("button", { name: "취소" }));
+
+    expect(rejectMock).not.toHaveBeenCalled();
   });
 
   it("버튼 중복 클릭을 방지한다 (로컬 pending 상태로 두 번째 클릭 무시)", async () => {
@@ -273,6 +288,7 @@ describe("PendingCard", () => {
 
     const rejectButton = screen.getByRole("button", { name: "반려" });
     fireEvent.click(rejectButton);
+    fireEvent.click(await screen.findByRole("button", { name: "기안 반려" }));
 
     await waitFor(() => {
       expect(rejectButton).not.toBeDisabled();

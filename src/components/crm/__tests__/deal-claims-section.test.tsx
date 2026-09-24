@@ -88,6 +88,28 @@ describe("DealClaimsSection", () => {
     expect(list.getByText(/시험성적서 2026-001/)).toBeInTheDocument();
   });
 
+  it("삭제는 확인 창을 거쳐야만 요청한다 — 취소하면 아무것도 지우지 않는다", async () => {
+    const del = vi.fn(() => json({ ok: true }));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        "GET /api/deals/d1/claims": () => json({ category: "FOOD", claims: [CLAIM] }),
+        "DELETE /api/deals/d1/claims": del,
+      }),
+    );
+    const user = userEvent.setup();
+    render(<DealClaimsSection dealId="d1" />);
+    await screen.findByText("국내산 원료 100%");
+
+    await user.click(screen.getByRole("button", { name: "표현 삭제" }));
+    await user.click(await screen.findByRole("button", { name: "취소" }));
+    expect(del).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "표현 삭제" }));
+    await user.click(await screen.findByRole("button", { name: "표현 삭제", hidden: false }));
+    await waitFor(() => expect(del).toHaveBeenCalledTimes(1));
+  });
+
   it("근거 미확보 승인 거부(서버 400)를 화면에 드러낸다", async () => {
     const needsSource = { ...CLAIM, evidenceType: "NEEDS_SOURCE" as const };
     vi.stubGlobal(

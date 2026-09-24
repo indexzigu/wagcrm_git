@@ -226,6 +226,7 @@ export function PartnersPanel({
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [pendingContactDelete, setPendingContactDelete] = useState<{ id: string; name: string } | null>(null);
   const [orderRulesReviewOpen, setOrderRulesReviewOpen] = useState(false); // F4 Phase 2 열 매핑 검수
 
   // --- Linked sellers state ---
@@ -1279,8 +1280,8 @@ export function PartnersPanel({
                 >
                   <button
                     type="button"
-                    className="absolute right-2 top-2 rounded-md p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                    onClick={() => handleDeleteContact(contact.id)}
+                    className="absolute right-1.5 top-1.5 flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                    onClick={() => setPendingContactDelete({ id: contact.id, name: contact.name })}
                     aria-label={`${contact.name} 삭제`}
                   >
                     <X className="size-3.5" />
@@ -1581,6 +1582,20 @@ export function PartnersPanel({
           setPendingLinkTarget(null);
         }}
         loading={confirmLoading}
+      />
+      <DeleteConfirmDialog
+        open={pendingContactDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingContactDelete(null);
+        }}
+        entityType="담당자"
+        entityName={pendingContactDelete?.name ?? ""}
+        onConfirm={async () => {
+          // 창을 먼저 닫는다 — handleDeleteContact 가 낙관적 제거 + 실패 시 롤백·토스트를 이미 갖췄다.
+          const target = pendingContactDelete;
+          setPendingContactDelete(null);
+          if (target) await handleDeleteContact(target.id);
+        }}
       />
       <DeleteConfirmDialog
         open={deleteDialogOpen}

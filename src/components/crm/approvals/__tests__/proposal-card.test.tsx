@@ -230,6 +230,7 @@ describe("ProposalCard", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: "반려" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "반려" }));
+    fireEvent.click(await screen.findByRole("button", { name: "기안 반려" }));
 
     await waitFor(() => expect(reject).toHaveBeenCalledWith("proposal-123456789"));
   });
