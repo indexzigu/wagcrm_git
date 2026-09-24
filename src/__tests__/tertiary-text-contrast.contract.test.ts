@@ -17,9 +17,14 @@ import ts from "typescript";
  * 컨트롤·목록 기호는 WCAG 1.4.3 대상이 아니거나 별도 판단이고, `.dark` 는 앱에서 쓰지 않는다).
  * 주석은 AST 노드가 아니라 잡히지 않는다.
  *
- * ⚠️ 이 계약이 **못 보는 것**: `text-slate-400`(2.63) 은 아이콘에 정당하게 널리 쓰여 토큰만으로
- * 글자·아이콘을 가를 수 없어 여기서 막지 않는다 — 리뷰가 본다. 배경을 정적으로 알 수 없으므로
- * `text-muted-foreground` 자체가 연한 표면(slate-100 4.34)에 얹히는 경우도 판정하지 않는다.
+ * `text-slate-400`(흰 바탕 2.63)은 아이콘에 정당하게 널리 쓰이므로 **아이콘 요소의 className**
+ * (대문자 컴포넌트 — lucide 등 — 와 `svg`·`path`)에 붙은 것은 세지 않고 그 밖에서만 센다.
+ * 어두운 표면(slate-900 위 6.79:1)에서는 오히려 slate-400 이 맞는 하한이라(slate-500 은 3.74:1)
+ * 예외 목록에 표면 이유와 함께 둔다 — 흰 바탕 기준으로 "slate-500 으로 되돌리라"는 교정은 회귀다.
+ *
+ * ⚠️ 이 계약이 **못 보는 것**: 배경을 정적으로 알 수 없으므로 `text-muted-foreground` 자체가 연한
+ * 표면(slate-100 4.34)에 얹히는 경우는 판정하지 않는다. 아이콘을 소문자 래퍼(`<span>`)가 감싸
+ * 색을 물려주는 경우는 글자와 구분되지 않아 예외 목록에 오른다.
  */
 
 const SRC = join(__dirname, "..");
@@ -30,6 +35,8 @@ const SEPARATOR = "구분 기호(·, /, ›) — 정보가 없는 장식 글리�
 const ICON = "아이콘(비텍스트) — 옆 라벨이 뜻을 전하는 장식 아이콘이라 1.4.3 대상이 아니다";
 const DARK = "어두운 표면(slate-700~950·설치 게이트) 위라 slate-300 대비가 충분하다(6.97:1 이상)";
 const DISABLED = "비활성 컨트롤 — WCAG 1.4.3 예외(비활성 UI 구성 요소)";
+const ICON_WRAPPER = "아이콘만 담은 래퍼 — 색을 자식 아이콘에 물려줄 뿐 글자가 없다";
+const DARK_400 = "어두운 표면(slate-900·설치 게이트 #080B11) 위라 slate-400 이 하한이다(6.79:1 이상, slate-500 은 3.74:1)";
 
 /**
  * 정당한 잔존 목록. **개수까지 정확히 일치해야 한다** — 새로 쓰면 개수가 늘어 실패하고, 고쳐서
@@ -60,6 +67,12 @@ const EXEMPTIONS: Exemption[] = [
   { file: "components/crm/schedule-gap-briefing-card.tsx", token: "text-slate-300", count: 2, reason: `${DARK} — slate-950 툴팁` },
   { file: "components/portal/seller-performance-card.tsx", token: "text-slate-300", count: 2, reason: `${DARK} — slate-900→700 헤더` },
   { file: "components/mobile/mobile-standalone-gate.tsx", token: "text-slate-300", count: 1, reason: DARK },
+  { file: "app/coupang-partners/page.tsx", token: "text-slate-400", count: 1, reason: `${DARK_400} — 추천 섹션` },
+  { file: "components/mobile/mobile-standalone-gate.tsx", token: "text-slate-400", count: 1, reason: DARK_400 },
+  { file: "components/crm/asset-library.tsx", token: "text-slate-400", count: 2, reason: ICON_WRAPPER },
+  { file: "components/crm/dashboard-home.tsx", token: "text-slate-400", count: 1, reason: ICON_WRAPPER },
+  { file: "components/mobile/mobile-campaign-detail-sheet.tsx", token: "text-slate-400", count: 1, reason: ICON_WRAPPER },
+  { file: "components/crm/bulk-content-collect-button.tsx", token: "text-slate-400", count: 1, reason: DISABLED },
 ];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
@@ -81,18 +94,35 @@ function forbiddenToken(token: string): string | null {
   const bare = token.startsWith("hover:") ? token.slice("hover:".length) : token;
   if (bare.includes(":")) return null;
   if (/^text-muted-foreground\/\d+$/.test(bare) || bare === "text-slate-300") return bare;
+  if (bare === "text-slate-400" || /^text-slate-400\/\d+$/.test(bare)) return "text-slate-400";
   return null;
 }
+
+/** 아이콘 요소 — 대문자 JSX 컴포넌트(lucide 등)와 인라인 `svg`·`path`. 이들의 className 은 비텍스트다. */
+const isIconTag = (tag: string) => /^[A-Z]/.test(tag) || tag === "svg" || tag === "path";
 
 /** 파일의 문자열·템플릿 조각에서 금지 토큰을 센다(주석 제외 — AST 로 읽는다). */
 function countForbidden(fileName: string, text: string): Map<string, number> {
   const counts = new Map<string, number>();
   // 싼 거르기 — 이스케이프(`\u`)로 쓴 클래스는 원문에 이름이 안 보이므로 그 파일도 AST 로 본다.
-  if (!text.includes("text-muted-foreground/") && !text.includes("text-slate-300") && !text.includes("\\u")) {
+  if (
+    !text.includes("text-muted-foreground/") &&
+    !text.includes("text-slate-300") &&
+    !text.includes("text-slate-400") &&
+    !text.includes("\\u")
+  ) {
     return counts;
   }
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const visit = (node: ts.Node) => {
+  // inIcon: 지금 문자열이 아이콘 요소의 className 안에 있는가 — slate-400 만 이 문맥을 면제받는다.
+  const visit = (node: ts.Node, inIcon: boolean) => {
+    let icon = inIcon;
+    if (ts.isJsxAttribute(node) && node.name.getText() === "className") {
+      const owner = node.parent.parent;
+      if (ts.isJsxOpeningElement(owner) || ts.isJsxSelfClosingElement(owner)) {
+        icon = isIconTag(owner.tagName.getText());
+      }
+    }
     if (
       ts.isStringLiteral(node) ||
       ts.isNoSubstitutionTemplateLiteral(node) ||
@@ -102,12 +132,13 @@ function countForbidden(fileName: string, text: string): Map<string, number> {
     ) {
       for (const token of node.text.split(/\s+/)) {
         const hit = forbiddenToken(token);
-        if (hit) counts.set(hit, (counts.get(hit) ?? 0) + 1);
+        if (!hit || (icon && hit === "text-slate-400")) continue;
+        counts.set(hit, (counts.get(hit) ?? 0) + 1);
       }
     }
-    ts.forEachChild(node, visit);
+    ts.forEachChild(node, (child) => visit(child, icon));
   };
-  visit(source);
+  visit(source, false);
   return counts;
 }
 
@@ -132,6 +163,16 @@ describe("판정기 자체 — 반증 프로브", () => {
     ]) {
       expect(forbiddenToken(token)).toBeNull();
     }
+  });
+
+  it("slate-400 은 글자 요소에서만 센다 — 아이콘 컴포넌트·svg 의 className 은 뺀다", () => {
+    const probe = [
+      'const A = () => <p className="text-xs text-slate-400">x</p>;',
+      'const B = () => <Search className="size-4 text-slate-400" />;',
+      'const C = () => <svg className={cn("size-3", on ? "text-slate-400" : "")} />;',
+      'const D = () => <span className={cn("a", on && "hover:text-slate-400")}>y</span>;',
+    ].join("\n");
+    expect(Object.fromEntries(countForbidden("icons.tsx", probe))).toEqual({ "text-slate-400": 2 });
   });
 
   it("AST 로 문자열만 읽는다 — 주석은 빼고 템플릿·삼항·이스케이프는 센다", () => {
