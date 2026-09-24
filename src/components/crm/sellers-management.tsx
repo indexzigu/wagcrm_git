@@ -91,9 +91,11 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
       return (
         <TooltipProvider>
           <Tooltip>
+            {/* 첫 칸은 InlineDataGrid 의 「행 열기」 button 안에 들어간다 — 구문 콘텐츠(span)만 둔다
+                (button 안 div 금지, interfaces 점검 묶음 G2). */}
             <TooltipTrigger asChild>
-              <div className="flex flex-col justify-center py-0.5 leading-tight max-w-full cursor-help overflow-hidden">
-                <div className="flex items-center gap-1.5 min-w-0 max-w-full">
+              <span className="flex flex-col justify-center py-0.5 leading-tight max-w-full cursor-help overflow-hidden">
+                <span className="flex items-center gap-1.5 min-w-0 max-w-full">
                   {row.isMonitored && (
                     <span className="relative flex h-2 w-2 shrink-0">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -116,8 +118,8 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
                       {row.name}
                     </span>
                   )}
-                </div>
-              </div>
+                </span>
+              </span>
             </TooltipTrigger>
             <TooltipContent side="top" align="start">
               <p className="text-xs font-medium">{fullName}</p>

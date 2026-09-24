@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 export function MobileSheetCard({
   title,
   chip,
+  action,
   ariaLabel,
   children,
   className,
@@ -24,6 +25,8 @@ export function MobileSheetCard({
   title?: string;
   /** 헤더 우측 카운트 칩. 합계는 제목 문장에 섞지 않고 여기로 분리한다 */
   chip?: string;
+  /** 헤더 맨 우측 조작(예: 매출 동기화 버튼). 칩 뒤에 온다 — 칩은 상태, 이것은 조작이다 */
+  action?: React.ReactNode;
   ariaLabel?: string;
   children?: React.ReactNode;
   className?: string;
@@ -39,10 +42,15 @@ export function MobileSheetCard({
       {title ? (
         <div className="flex items-center justify-between gap-2 px-6 pb-2 pt-2.5">
           <h2 className="truncate text-[13px] font-bold text-slate-800">{title}</h2>
-          {chip ? (
-            <span className="shrink-0 rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-500">
-              {chip}
-            </span>
+          {chip || action ? (
+            <div className="flex shrink-0 items-center gap-1">
+              {chip ? (
+                <span className="shrink-0 rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-slate-500">
+                  {chip}
+                </span>
+              ) : null}
+              {action}
+            </div>
           ) : null}
         </div>
       ) : null}

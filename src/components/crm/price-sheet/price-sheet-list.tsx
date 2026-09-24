@@ -4,11 +4,12 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CrmShell } from "@/components/crm/crm-shell";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DataLoadError } from "@/components/ui/empty";
 import { SearchableDropdown } from "@/components/crm/searchable-dropdown";
 import { PriceSheetStatusBadge } from "./status-badge";
-import { UploadCloudIcon, FileSpreadsheetIcon, ImageIcon, FileTextIcon, PresentationIcon } from "lucide-react";
+import { UploadCloudIcon, FileSpreadsheetIcon, ImageIcon, FileTextIcon, PresentationIcon, PaperclipIcon } from "lucide-react";
 
 const NONE_PARTNER_OPTION = { id: "__none__", name: "지정 안 함" };
 
@@ -161,6 +162,22 @@ export function PriceSheetList() {
                 {uploading ? "업로드 중..." : "파일을 드래그하거나 클릭해서 업로드"}
               </p>
               <p className="text-xs text-muted-foreground">xlsx, csv, pptx, pdf, png, jpg (최대 20MB)</p>
+              {/* 드롭존 클릭·드래그는 포인터 경로다 — 키보드로는 이 버튼이 유일한 업로드 경로다
+                  (interfaces 점검 묶음 G2, 선례 approvals/price-sheet-ingest-card). stopPropagation —
+                  드롭존 onClick 이 파일 창을 한 번 더 부르지 않게. */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={uploading}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+              >
+                <PaperclipIcon aria-hidden />
+                파일 선택
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"

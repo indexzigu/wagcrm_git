@@ -290,7 +290,22 @@ export function MarketPriceMonitor({
                   onClick={() => toggleExpand(item.id)}
                 >
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-semibold text-slate-800 truncate" title={item.name}>{item.name}</h4>
+                    {/* 머리 줄 클릭은 포인터 편의이고, 키보드 도달·aria-expanded 계약은 품목명의 실제
+                        button 이 진다(interfaces 점검 묶음 G2). stopPropagation — 머리 줄 onClick 과
+                        겹치면 토글이 두 번 돌아 원위치된다. */}
+                    <h4 className="text-xs font-semibold text-slate-800 truncate" title={item.name}>
+                      <button
+                        type="button"
+                        aria-expanded={Boolean(isExpanded)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleExpand(item.id);
+                        }}
+                        className="max-w-full truncate rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
+                        {item.name}
+                      </button>
+                    </h4>
                     <div className="text-[11px] text-slate-500 mt-0.5">
                       우리 판매가: <span className="font-medium text-slate-700">{formatCurrency(ourTotalPrice)}원</span>
                       {res?.ourUnitPrice != null && (

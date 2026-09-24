@@ -1960,8 +1960,21 @@ export default function OrderDashboard() {
                 <div className="flex-1 pr-8 space-y-3">
                   {/* 1행: 상품 요약 — 배지 대신 평문 메타(카테고리 · 상태 · 기간). 마감은 카드 흐림+평문 "마감" 단일 신호 */}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {/* 카드 머리 클릭은 포인터 편의이고, 키보드 도달·aria-expanded 계약은 제목의 실제
+                        button 이 진다(interfaces 점검 묶음 G2, 선례 inflow-report-client 날짜 셀).
+                        stopPropagation — 머리 div 의 onClick 과 겹치면 토글이 두 번 돌아 원위치된다. */}
                     <h3 className={`font-bold text-base line-clamp-1 ${camp.isActive === false ? "text-slate-500" : "text-slate-800"}`}>
-                      {camp.name}
+                      <button
+                        type="button"
+                        aria-expanded={expandedCampaignId === camp.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id);
+                        }}
+                        className="rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
+                        {camp.name}
+                      </button>
                     </h3>
                     <span className="text-xs text-slate-500 font-medium">
                       카테고리: {camp.category || "미지정"} · {camp.isActive === false ? "마감" : getProductStatusLabel(camp.productStatus)} · {camp.periodLabel || camp.salePeriod || "기간 정보 없음"}
@@ -2400,7 +2413,7 @@ export default function OrderDashboard() {
                       return (
                         <label
                           aria-disabled={uploadBusy}
-                          className={`flex items-center gap-1.5 text-xs bg-white text-emerald-700 font-bold py-1.5 px-3 rounded-lg transition-colors border border-emerald-200 shadow-soft-sm mb-0 relative overflow-hidden group ${uploadBusy ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'hover:bg-emerald-50 cursor-pointer'}`}
+                          className={`flex items-center gap-1.5 text-xs bg-white text-emerald-700 font-bold py-1.5 px-3 rounded-lg transition-colors border border-emerald-200 shadow-soft-sm mb-0 relative overflow-hidden group focus-within:ring-2 focus-within:ring-focus-ring ${uploadBusy ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'hover:bg-emerald-50 cursor-pointer'}`}
                         >
                           {!uploadBusy && <div className="absolute inset-0 bg-emerald-50/50 translate-y-full group-hover:translate-y-0 transition-transform"></div>}
                           {uploadBusy ? (
@@ -2408,7 +2421,10 @@ export default function OrderDashboard() {
                           ) : (
                             <><span className="bg-emerald-500 text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span><span className="relative z-10">송장등록</span></>
                           )}
-                          <input type="file" accept=".xlsx, .xls" className="hidden" disabled={uploadBusy} onChange={(e) => handleInvoiceUpload(e, camp)} />
+                          {/* sr-only(≠ hidden): display:none 이면 탭 순서에서 빠져 키보드로 송장을 못 올린다.
+                              눈에는 안 보이되 포커스는 받고, 라벨의 focus-within 링이 그 위치를 보여 준다
+                              (interfaces 점검 묶음 G2). 접근 이름은 감싼 라벨 문구(「송장등록」)다. */}
+                          <input type="file" accept=".xlsx, .xls" className="sr-only" disabled={uploadBusy} onChange={(e) => handleInvoiceUpload(e, camp)} />
                         </label>
                       );
                     })()}

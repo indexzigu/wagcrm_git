@@ -123,8 +123,13 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
               return (
                 <TooltipProvider key={bucket.startDate} delayDuration={200}>
                   <Tooltip>
+                    {/* 주간 상세(확정 캠페인·액션)는 툴팁에만 있다 — 트리거가 포커스를 받아야
+                        키보드로도 열린다(Radix 툴팁은 포커스 시 열림, interfaces 점검 묶음 G2). */}
                     <TooltipTrigger asChild>
-                      <div className="flex-1 flex flex-col items-center gap-1.5 group cursor-default">
+                      <div
+                        tabIndex={0}
+                        className="flex-1 flex flex-col items-center gap-1.5 group cursor-default rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                      >
                         {/* 날짜 레이블 */}
                         <span className="text-[9px] font-medium text-muted-foreground/50 tracking-tight whitespace-nowrap">
                           {bucket.label}

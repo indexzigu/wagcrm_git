@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "@/lib/toast";
-import { UploadCloudIcon, FileTextIcon, AlertTriangleIcon, CheckCircle2Icon, InfoIcon } from "lucide-react";
+import { UploadCloudIcon, FileTextIcon, AlertTriangleIcon, CheckCircle2Icon, InfoIcon, PaperclipIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -277,6 +277,21 @@ export function KatalkUploadTab() {
             카톡 대화 내보내기 txt 파일을 드래그하거나 클릭해서 업로드
           </p>
           <p className="text-xs text-muted-foreground">여러 파일 선택 가능 · 파일당 최대 4MB</p>
+          {/* 드롭존 클릭·드래그는 포인터 경로다 — 키보드로는 이 버튼이 유일한 업로드 경로다
+              (interfaces 점검 묶음 G2). stopPropagation — 드롭존 onClick 이 파일 창을 한 번 더
+              부르지 않게. */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+          >
+            <PaperclipIcon aria-hidden />
+            파일 선택
+          </Button>
           <input
             ref={fileInputRef}
             type="file"

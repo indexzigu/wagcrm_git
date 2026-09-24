@@ -244,11 +244,20 @@ function GroupSection({
                     {columns.map((col) => {
                       switch (col.field) {
                         case "sellerName":
+                          // 행 클릭은 포인터 편의이고, 키보드 도달은 첫 칸(셀러명)의 실제 button 이
+                          // 진다(interfaces 점검 묶음 G2). stopPropagation — 행 onClick 과 이중 호출 방지.
                           return (
                             <TableCell key={col.field} className={col.width}>
-                              <span className="block truncate text-sm text-foreground">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onRowOpen(campaign);
+                                }}
+                                className="block w-full truncate rounded-sm text-left text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                              >
                                 {campaign.sellerName}
-                              </span>
+                              </button>
                             </TableCell>
                           );
                         case "dealName":

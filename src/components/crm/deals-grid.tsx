@@ -115,8 +115,10 @@ export function DealsGrid({
             width: 240,
             // 리뷰 소스 부재 도트 — 무채색 랭크 마커(ss-ux 판정: 22/30행에 경고색을 칠하면
             // 습관화로 신호가 죽는다). 리스크 카드의 slate 도트 어휘 재사용, 상태 축과 분리.
+            // 첫 칸은 InlineDataGrid 의 「행 열기」 button 안에 들어간다 — 구문 콘텐츠(span)만 둔다
+            // (button 안 div 금지, interfaces 점검 묶음 G2).
             render: (row) => (
-              <div className="flex min-w-0 items-center gap-1.5">
+              <span className="flex min-w-0 items-center gap-1.5">
                 {row.needsReviewSourceLink && (
                   <>
                     <TooltipProvider>
@@ -134,12 +136,15 @@ export function DealsGrid({
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
-                    <span className="sr-only">리뷰 소스 없음 · 캠페인 상품 링크 입력 필요</span>
                   </>
                 )}
                 {/* flex item은 min-width:auto라 min-w-0 없이는 truncate가 실동작하지 않는다(ss-ux P0-2) */}
                 <span className="min-w-0 flex-1 truncate">{row.dealName}</span>
-              </div>
+                {/* 행 열기 버튼의 접근 이름이 딜명으로 시작하도록 보조 문구는 이름 뒤에 둔다. */}
+                {row.needsReviewSourceLink && (
+                  <span className="sr-only"> · 리뷰 소스 없음 · 캠페인 상품 링크 입력 필요</span>
+                )}
+              </span>
             ),
           },
           {
