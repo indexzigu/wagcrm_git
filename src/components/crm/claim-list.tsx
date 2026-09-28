@@ -53,7 +53,7 @@ function MaskedField({ label, value }: { label: string; value: string | null }) 
         onClick={() => setRevealed((v) => !v)}
         aria-pressed={revealed}
         aria-label={revealed ? `${label} 가리기` : `${label} 보기`}
-        className="rounded px-1 font-medium tabular-nums text-slate-700 underline decoration-dotted underline-offset-2 hover:bg-slate-100"
+        className="rounded px-1 text-left font-medium tabular-nums text-slate-700 underline decoration-dotted underline-offset-2 hover:bg-slate-100"
       >
         {revealed ? value : '***'}
       </button>
