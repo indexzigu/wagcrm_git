@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 목표 조회가 당해년도만 보면 그 달들의 목표선이 통째로 사라지므로, where 절의
 // 의미(OR · 완전일치 · startsWith)를 흉내내는 가짜 저장소로 **실제로 걸리는 행**을
 // 검증한다.
-const { goalRows, revenueGoalFindMany, campaignRows } = vi.hoisted(() => {
+const { goalRows, revenueGoalFindMany, campaignRows, salesCampaignFindMany } = vi.hoisted(() => {
   const campaignRows: unknown[] = [];
+  // 가짜 저장소는 where 를 보지 않고 같은 행을 돌려준다 — 과세기준매출 조회의 where 는 호출 인자로 따로 본다.
+  const salesCampaignFindMany = vi.fn(async (_args?: unknown) => campaignRows);
   const goalRows: Array<{ periodKey: string; revenueTarget: number }> = [];
   const revenueGoalFindMany = vi.fn(
     async (args: { where: { OR: Array<{ periodKey: unknown }> } }) =>
@@ -20,12 +22,12 @@ const { goalRows, revenueGoalFindMany, campaignRows } = vi.hoisted(() => {
         }),
       ),
   );
-  return { goalRows, revenueGoalFindMany, campaignRows };
+  return { goalRows, revenueGoalFindMany, campaignRows, salesCampaignFindMany };
 });
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
-    salesCampaign: { findMany: vi.fn(async () => campaignRows) },
+    salesCampaign: { findMany: salesCampaignFindMany },
     revenueGoal: { findMany: revenueGoalFindMany },
     salesTask: { findMany: vi.fn(async () => []) },
     storageIntegration: { findUnique: vi.fn(async () => null) },
@@ -173,5 +175,55 @@ describe("getDesktopDashboardData — 정산 전 상태의 매출·순마진", (
     const data = await getDesktopDashboardData(new Date("2026-09-15T00:00:00.000Z"));
 
     expect(data.profitability.expectedMargin).toBe(0);
+  });
+});
+
+describe("getDesktopDashboardData — 네이버 판매자 등급 과세기준매출 트래커", () => {
+  beforeEach(() => {
+    goalRows.length = 0;
+    campaignRows.length = 0;
+    salesCampaignFindMany.mockClear();
+  });
+
+  it("기준기간·비용 창으로 좁힌 별도 조회를 하고, 제외 상태를 where 로 거른다", async () => {
+    await getDesktopDashboardData(new Date("2026-09-29T03:00:00.000Z"));
+
+    const trackerCall = salesCampaignFindMany.mock.calls
+      .map(([args]) => args as { where?: { status?: unknown; endDate?: { gte: Date } }; select: Record<string, unknown> })
+      .find((args) => args.where?.endDate !== undefined);
+    expect(trackerCall).toBeDefined();
+    expect(trackerCall!.where!.status).toEqual({ notIn: ["PROPOSAL", "DROPPED"] });
+    // 직전 갱신 기준기간(2025년 2기 + 2026년 1기) 첫날의 KST 자정 — 세 창 중 가장 이르다
+    expect(trackerCall!.where!.endDate!.gte.toISOString()).toBe("2025-06-30T15:00:00.000Z");
+    expect(trackerCall!.select).toMatchObject({
+      startDate: true,
+      settlementItems: { select: { invoiceMode: true, counterparty: true, amount: true } },
+    });
+  });
+
+  it("Decimal 을 숫자로 풀어 채널 기준대로 합산한다(브랜드몰 부가 항목 가산 포함)", async () => {
+    const decimal = (value: number) => ({ toString: () => String(value) });
+    campaignRows.push(
+      campaignRow({
+        salesChannel: "BRAND_MALL",
+        endDate: new Date("2026-05-10T03:00:00.000Z"),
+        actualSales: decimal(11_000_000),
+        settlementSales: decimal(2_200_000),
+        settlementItems: [{ invoiceMode: "SALES_ISSUE", counterparty: "BRAND", amount: decimal(110_000) }],
+      }),
+      campaignRow({
+        salesChannel: "SELLER_MALL",
+        endDate: new Date("2026-05-10T03:00:00.000Z"),
+        actualSales: decimal(3_300_000),
+        sellerExpense: decimal(1_100_000),
+      }),
+    );
+
+    const data = await getDesktopDashboardData(new Date("2026-09-29T03:00:00.000Z"));
+
+    expect(data.taxableRevenueTracker.channels.BRAND_MALL.vatIncluded).toBe(2_310_000);
+    expect(data.taxableRevenueTracker.channels.SELLER_MALL.vatIncluded).toBe(2_200_000);
+    expect(data.taxableRevenueTracker.cumulativeSupply).toBe(4_100_000);
+    expect(data.taxableRevenueTracker.nextUpdateYmd).toBe("2027-02-14");
   });
 });
