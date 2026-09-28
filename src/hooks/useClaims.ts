@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { DerivedClaim } from '@/lib/order-converter/claim-derive';
+import type { MaskedDerivedClaim } from '@/lib/order-converter/claim-derive';
 
 // useCampaigns.ts:23 fetchCampaigns의 plain fetch 패턴을 그대로 복제한다.
 // (SWR/react-query 등 별도 라이브러리 없이 useState+fetch로 유지하는 관례)
 
-export interface ClaimWithCompanyName extends DerivedClaim {
+// 서버는 연락처를 뒷 4자리로만 내려준다(maskClaimForClient).
+export type ClaimWithCompanyName = MaskedDerivedClaim & {
   collectDeliveryCompanyName: string | null;
-}
+};
 
 export function useClaims() {
   const [claims, setClaims] = useState<ClaimWithCompanyName[]>([]);

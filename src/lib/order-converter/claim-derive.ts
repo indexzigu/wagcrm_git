@@ -30,8 +30,22 @@ export interface DerivedClaim {
   requestDate: string | null;
   isCompleted: boolean;
   matchedCampaignName?: string | null;
+  /**
+   * 구매자 식별 정보 — 발주서와 같은 기준(구매자명→수취인명, 구매자연락처→수취인연락처1).
+   * 연락처는 원문이므로 서버 밖으로 내보낼 때는 반드시 maskClaimForClient를 거친다(뒷 4자리만).
+   */
+  buyerName: string | null;
+  buyerTel: string | null;
+  claimReason: string | null;
   raw: any;
 }
+
+/** 화면으로 내보내는 클레임 — 이름·사유는 그대로, 연락처는 원문 대신 뒷 4자리만 싣는다(오너 결정 2026-09-28). */
+export interface MaskedBuyerFields {
+  buyerTelLast4: string | null;
+}
+
+export type MaskedDerivedClaim = Omit<DerivedClaim, 'buyerTel'> & MaskedBuyerFields;
 
 /**
  * 캠페인 경량 매칭 후보. 상품명 fuzzy가 아니라 productId + 판매기간으로 귀속하기 위해
@@ -134,6 +148,77 @@ function extractRequestDate(claimObj: any, currentClaim: any): string | null {
   );
 }
 
+/**
+ * 클레임 사유. 상세 사유(자유 입력)를 사유 코드보다 우선한다.
+ * 필드명은 실응답과 대조하지 못했다(머리 TODO R3와 같은 사정) — 없으면 null.
+ */
+function extractClaimReason(claimObj: any): string | null {
+  const reason =
+    claimObj?.returnDetailedReason ??
+    claimObj?.exchangeDetailedReason ??
+    claimObj?.cancelDetailedReason ??
+    claimObj?.claimDetailedReason ??
+    claimObj?.returnReason ??
+    claimObj?.exchangeReason ??
+    claimObj?.cancelReason ??
+    claimObj?.claimReason ??
+    null;
+  return typeof reason === 'string' && reason.trim() ? reason.trim() : null;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+/** 값의 뒷 4글자. 비었으면 null. 한글·이모지가 잘리지 않도록 코드포인트 단위로 자른다. */
+export function lastFour(value: unknown): string | null {
+  const text = nonEmptyString(value);
+  if (!text) return null;
+  return Array.from(text).slice(-4).join('');
+}
+
+/** 연락처 원문을 뒷 4자리로 바꾼다. raw는 호출부가 따로 다룬다. */
+export function maskClaimForClient<T extends DerivedClaim>(claim: T): Omit<T, 'buyerTel'> & MaskedBuyerFields {
+  const { buyerTel, ...rest } = claim;
+  return { ...rest, buyerTelLast4: lastFour(buyerTel) };
+}
+
+// 키 이름으로 개인정보 값을 판정한다. 택배사명·상품명(…CompanyName·productName)은 '이름' 판정에서만 뺀다 —
+// 연락처·주소 계열은 키에 company·product가 섞여 있어도 가린다.
+const CONTACT_KEY = /tel|phone|address|zip|email/i;
+const NAME_KEY = /name/i;
+const NON_PERSONAL_NAME_KEY = /company|product/i;
+const isPersonalKey = (key: string) =>
+  CONTACT_KEY.test(key) || (NAME_KEY.test(key) && !NON_PERSONAL_NAME_KEY.test(key));
+
+/**
+ * 클레임 원본(raw)을 필드명 확인용으로 내보낼 때, 키 구조는 그대로 두고 이름·연락처·주소
+ * 계열 값만 '***'로 바꾼다. 원본은 변경하지 않는다.
+ */
+export function redactPersonalValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactPersonalValues);
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    const personal = isPersonalKey(key);
+    if (personal && child !== null && typeof child !== 'object') out[key] = '***';
+    else if (personal && child && typeof child === 'object') out[key] = redactAllLeaves(child);
+    else out[key] = redactPersonalValues(child);
+  }
+  return out;
+}
+
+/** 개인정보 키 아래의 하위 객체(예: collectAddress)는 잎 값을 모두 가린다. */
+function redactAllLeaves(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactAllLeaves);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactAllLeaves(v)]));
+  }
+  return value === null || value === undefined ? value : '***';
+}
+
 function extractQuantity(claimObj: any, order: any): number | null {
   const raw = claimObj?.claimQuantity ?? claimObj?.quantity ?? order?.quantity ?? null;
   if (raw === null || raw === undefined) return null;
@@ -224,6 +309,9 @@ export function deriveClaimsFromOrder(order: any): DerivedClaim[] {
         quantity: extractQuantity(claimObj, order),
         requestDate: extractRequestDate(claimObj, claimBag.currentClaim),
         isCompleted: isCompletedStatus(claimStatus),
+        buyerName: nonEmptyString(order?.ordererName) ?? nonEmptyString(order?.shippingAddress?.name),
+        buyerTel: nonEmptyString(order?.ordererTel) ?? nonEmptyString(order?.shippingAddress?.tel1),
+        claimReason: extractClaimReason(claimObj),
         raw: claimObj,
       };
     });
@@ -388,6 +476,11 @@ export interface ClaimSourceOrder {
   paymentDate?: unknown;
   orderDate?: unknown;
   orderCreateDate?: unknown;
+  /** 구매자 식별(발주서 기준). v1 봉투에 추가된 선택 필드라 이전에 저장된 행에는 없다. */
+  ordererName?: unknown;
+  ordererTel?: unknown;
+  /** 배송지 중 이름·연락처1만 — 주소는 싣지 않는다. */
+  shippingAddress?: { name?: unknown; tel1?: unknown };
   __claim: unknown;
 }
 
@@ -420,6 +513,11 @@ export function extractClaimSourceOrders(orders: any[]): ClaimSourceOrder[] {
       paymentDate: order.paymentDate,
       orderDate: order.orderDate,
       orderCreateDate: order.orderCreateDate,
+      ordererName: order.ordererName,
+      ordererTel: order.ordererTel,
+      shippingAddress: order.shippingAddress
+        ? { name: order.shippingAddress.name, tel1: order.shippingAddress.tel1 }
+        : undefined,
       __claim: claimBag,
     });
   }
