@@ -623,6 +623,12 @@ describe('구매자명·연락처·사유 파생과 가림', () => {
         makeOrder({ __claim: { ...makeOrder().__claim, return: { claimStatus: 'RETURN_REQUEST', returnReason: reason } } }),
       )[0].claimReason;
     expect(withCode('INTENT_CHANGED')).toBe('구매 의사 취소');
+    // 운영에서 실측된 코드는 전부 한글로 보인다(2026-09-28 실측 6종).
+    expect(withCode('SIMPLE_INTENT_CHANGED')).toBe('단순 변심');
+    expect(withCode('MISTAKE_ORDER')).toBe('주문 실수');
+    expect(withCode('PRODUCT_UNSATISFIED_BY_PURCHASER')).toBe('상품 불만족');
+    expect(withCode('DELAYED_DELIVERY_BY_PURCHASER')).toBe('배송 지연');
+    expect(withCode('BROKEN_AND_BAD')).toBe('상품 파손·불량');
     expect(withCode('SOMETHING_NEW')).toBe('SOMETHING_NEW');
   });
 
