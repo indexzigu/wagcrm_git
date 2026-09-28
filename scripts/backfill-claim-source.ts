@@ -14,11 +14,15 @@
 //   - 기본 dry-run. 실제 쓰기는 --apply 가 있을 때만. prod 대상 --apply 는 소유자 게이트다.
 //   - 출력은 날짜별 건수뿐 — 이름·연락처 등 개인정보 값은 찍지 않는다.
 //   - DATABASE_URL 을 그대로 쓴다(dotenv/config 가 .env 를 읽는다).
+//     ⚠️ 셀프호스트 운영 체크아웃(~/selfhost/wagcrm)에는 루트 .env 가 없다 — 운영 설정은
+//     infra/selfhost/.env 이며 deploy.sh·run-app.sh 처럼 먼저 로드해야 한다(아래 운영 실행).
 //
 // 실행:
 //   npx tsx scripts/backfill-claim-source.ts                (dry-run, 최근 30일)
 //   npx tsx scripts/backfill-claim-source.ts --days 45      (dry-run, 기간 지정)
 //   npx tsx scripts/backfill-claim-source.ts --apply        (실제 쓰기 — 게이트)
+// 운영 실행(셀프호스트):
+//   cd ~/selfhost/wagcrm && (set -a; . infra/selfhost/.env; set +a; npx tsx scripts/backfill-claim-source.ts)
 
 import 'dotenv/config';
 import { prisma } from '../src/lib/order-converter/prisma';

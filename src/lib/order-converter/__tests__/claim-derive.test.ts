@@ -244,6 +244,17 @@ describe('isCollectedStatus / isFinalCompletedStatus', () => {
     expect(isFinalCompletedStatus('RETURNING')).toBe(false);
     expect(isFinalCompletedStatus(null)).toBe(false);
   });
+
+  it('철회·거부(*_REJECT)도 종단으로 판정한다 — 진행 중 클레임으로 남지 않는다', () => {
+    for (const s of ['RETURN_REJECT', 'CANCEL_REJECT', 'EXCHANGE_REJECT', 'ADMIN_CANCEL_REJECT']) {
+      expect(isFinalCompletedStatus(s)).toBe(true);
+    }
+    expect(isFinalCompletedStatus('RETURN_REQUEST')).toBe(false);
+    const [claim] = deriveClaimsFromOrder(
+      makeOrder({ __claim: { ...makeOrder().__claim, cancel: { claimStatus: 'CANCEL_REJECT' } } }),
+    );
+    expect(claim.isCompleted).toBe(true);
+  });
 });
 
 describe('deriveClaims (전체 orders 배열 + 캠페인 매칭)', () => {
