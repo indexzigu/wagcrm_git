@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 목표 조회가 당해년도만 보면 그 달들의 목표선이 통째로 사라지므로, where 절의
 // 의미(OR · 완전일치 · startsWith)를 흉내내는 가짜 저장소로 **실제로 걸리는 행**을
 // 검증한다.
-const { goalRows, revenueGoalFindMany } = vi.hoisted(() => {
+const { goalRows, revenueGoalFindMany, campaignRows } = vi.hoisted(() => {
+  const campaignRows: unknown[] = [];
   const goalRows: Array<{ periodKey: string; revenueTarget: number }> = [];
   const revenueGoalFindMany = vi.fn(
     async (args: { where: { OR: Array<{ periodKey: unknown }> } }) =>
@@ -19,12 +20,12 @@ const { goalRows, revenueGoalFindMany } = vi.hoisted(() => {
         }),
       ),
   );
-  return { goalRows, revenueGoalFindMany };
+  return { goalRows, revenueGoalFindMany, campaignRows };
 });
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
-    salesCampaign: { findMany: vi.fn(async () => []) },
+    salesCampaign: { findMany: vi.fn(async () => campaignRows) },
     revenueGoal: { findMany: revenueGoalFindMany },
     salesTask: { findMany: vi.fn(async () => []) },
     storageIntegration: { findUnique: vi.fn(async () => null) },
@@ -101,5 +102,76 @@ describe("getDesktopDashboardData — 목표 조회의 연도 경계", () => {
     const clauses = revenueGoalFindMany.mock.calls[0]![0].where.OR;
     expect(clauses).toHaveLength(2);
     expect(clauses).toContainEqual({ periodKey: "2026" });
+  });
+});
+
+/** 대시보드 select 모양의 캠페인 1행 — 금액 필드만 케이스마다 바꾼다. */
+function campaignRow(overrides: Record<string, unknown>) {
+  return {
+    id: `c-${campaignRows.length}`,
+    sellerId: `s-${campaignRows.length}`,
+    campaignName: null,
+    startDate: new Date("2026-09-01T00:00:00.000Z"),
+    endDate: new Date("2026-09-10T00:00:00.000Z"),
+    actualSales: 0,
+    totalMarginRate: 0,
+    sellerMarginRate: 0,
+    operatingProfit: null,
+    settlementSales: null,
+    sellerExpense: null,
+    actualPayoutAmount: null,
+    expectedDepositDate: null,
+    expectedPayoutDate: null,
+    expectedSupplierPayoutDate: null,
+    depositReceivedAt: null,
+    payoutCompletedAt: null,
+    supplierPayoutCompletedAt: null,
+    returnPeriodEndDate: null,
+    isDepositReceived: false,
+    isPayoutCompleted: false,
+    isSupplierPayoutCompleted: false,
+    salesChannel: "BRAND_MALL",
+    status: "CLOSED",
+    groupId: null,
+    group: null,
+    deal: { dealName: "딜", partner: null },
+    seller: { name: "셀러", alias: null },
+    ...overrides,
+  };
+}
+
+describe("getDesktopDashboardData — 정산 전 상태의 매출·순마진", () => {
+  beforeEach(() => {
+    goalRows.length = 0;
+    campaignRows.length = 0;
+  });
+
+  it("판매진행·판매마감·정산대기·정산진행중 캠페인의 매출과 순마진을 모두 싣는다", async () => {
+    campaignRows.push(
+      // 조합 캠페인 모양: 캠페인 요율은 0 이고 요율은 품목에만 있다 → 저장된 영업수익·판매대행비가 정본.
+      campaignRow({ status: "CLOSED", actualSales: 1_000_000, settlementSales: 400_000, sellerExpense: 250_000 }),
+      // 저장 파생이 아직 없는 건 → 요율 폴백(1,000,000 × (30 − 20)%).
+      campaignRow({ status: "SETTLEMENT_WAIT", actualSales: 1_000_000, totalMarginRate: 30, sellerMarginRate: 20 }),
+      campaignRow({ status: "ACTIVE", actualSales: 500_000, settlementSales: 200_000, sellerExpense: 150_000 }),
+      campaignRow({ status: "SETTLEMENT_IN_PROGRESS", actualSales: 300_000, settlementSales: 90_000, sellerExpense: 60_000 }),
+    );
+
+    const data = await getDesktopDashboardData(new Date("2026-09-15T00:00:00.000Z"));
+
+    const expectedMargin = 150_000 + 100_000 + 50_000 + 30_000;
+    expect(data.goals.monthActual).toBe(2_800_000);
+    expect(data.profitability.expectedMargin).toBe(expectedMargin);
+    expect(data.trend.at(-1)).toMatchObject({ month: "2026-09", revenue: 2_800_000, expectedMargin });
+    expect(data.yearlyTrend.at(-1)).toMatchObject({ month: "2026-09", revenue: 2_800_000, expectedMargin });
+  });
+
+  it("영업수익 0 은 값이 있는 것으로 본다 — 요율로 되살리지 않는다", async () => {
+    campaignRows.push(
+      campaignRow({ actualSales: 1_000_000, totalMarginRate: 30, sellerMarginRate: 20, settlementSales: 0, sellerExpense: 0 }),
+    );
+
+    const data = await getDesktopDashboardData(new Date("2026-09-15T00:00:00.000Z"));
+
+    expect(data.profitability.expectedMargin).toBe(0);
   });
 });

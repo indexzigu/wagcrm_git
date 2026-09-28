@@ -3,6 +3,7 @@ import { buildEffectiveCampaignPeriods } from "@/lib/campaign-group-count";
 import { findRevenueGoalsSafe } from "@/lib/revenue-goals";
 import { getScheduleGapBriefing } from "./schedule-gap-briefing";
 import { computeDataIntegrityIssues } from "./data-integrity";
+import { resolveCampaignNetMargin } from "./settlement-report";
 import {
   resolveCampaignMoneySlots,
   resolveMoneySlotEffectiveDate,
@@ -16,9 +17,11 @@ type CampaignMetricSource = {
   startDate: Date;
   endDate: Date;
   actualSales: { toString(): string } | number | string | null;
-  netMarginRate: { toString(): string } | number | string;
+  totalMarginRate: { toString(): string } | number | string;
+  sellerMarginRate: { toString(): string } | number | string;
   operatingProfit: { toString(): string } | number | string | null;
   settlementSales: { toString(): string } | number | string | null;
+  sellerExpense: { toString(): string } | number | string | null;
   actualPayoutAmount: { toString(): string } | number | string | null;
   expectedDepositDate: Date | null;
   expectedPayoutDate: Date | null;
@@ -76,6 +79,16 @@ function recentMonthKeys(now: Date, count: number) {
 
 function campaignSales(campaign: CampaignMetricSource) {
   return numberValue(campaign.actualSales);
+}
+
+/**
+ * 순마진은 정산 화면과 같은 판정(`resolveCampaignNetMargin` — 저장된 영업수익 − 판매대행비)을 쓴다.
+ * ⛔ `actualSales × netMarginRate` 로 되돌리지 말 것 — 요율이 품목(campaignDeals)에만 있고 캠페인
+ * 요율이 0 인 건(조합·다품목 캠페인)은 순마진이 0 으로 빠져, 판매진행~정산진행중 캠페인의 순마진이
+ * 대시보드에서 사라지고 정산 화면과 금액이 갈렸다.
+ */
+function campaignNetMargin(campaign: CampaignMetricSource) {
+  return resolveCampaignNetMargin(campaign).netMarginAmount;
 }
 
 export type UpcomingCampaign = {
@@ -299,9 +312,11 @@ export async function getDesktopDashboardData(now = new Date()) {
         startDate: true,
         endDate: true,
         actualSales: true,
-        netMarginRate: true,
+        totalMarginRate: true,
+        sellerMarginRate: true,
         operatingProfit: true,
         settlementSales: true,
+        sellerExpense: true,
         actualPayoutAmount: true,
         expectedDepositDate: true,
         expectedPayoutDate: true,
@@ -483,18 +498,19 @@ export async function getDesktopDashboardData(now = new Date()) {
       dormantList: dormantSellerList,
       netChange: activeSellers - prevActiveSellers,
     },
-    // 확정 손익(정산 완료 후행 지표)은 실시간 현황판에서 제외 — 손익 리포트(/reports/pnl)가 담당
+    // 확정 손익(정산 완료 후행 지표)은 실시간 현황판에서 제외 — 손익 리포트(/reports/pnl)가 담당.
+    // 매출·순마진은 상태를 거르지 않는다: 판매진행·판매마감·정산대기·정산진행중도 포함한다.
     profitability: {
       expectedMargin: selectedCampaigns.reduce(
-        (sum, campaign) => sum + campaignSales(campaign) * numberValue(campaign.netMarginRate) / 100,
+        (sum, campaign) => sum + campaignNetMargin(campaign),
         0,
       ),
       prevExpectedMargin: prevCampaigns.reduce(
-        (sum, campaign) => sum + campaignSales(campaign) * numberValue(campaign.netMarginRate) / 100,
+        (sum, campaign) => sum + campaignNetMargin(campaign),
         0,
       ),
       prevPrevExpectedMargin: prevPrevCampaigns.reduce(
-        (sum, campaign) => sum + campaignSales(campaign) * numberValue(campaign.netMarginRate) / 100,
+        (sum, campaign) => sum + campaignNetMargin(campaign),
         0,
       ),
     },
@@ -524,7 +540,7 @@ export async function getDesktopDashboardData(now = new Date()) {
         month: key,
         revenue: inMonth.reduce((sum, campaign) => sum + campaignSales(campaign), 0),
         expectedMargin: inMonth.reduce(
-          (sum, campaign) => sum + campaignSales(campaign) * numberValue(campaign.netMarginRate) / 100,
+          (sum, campaign) => sum + campaignNetMargin(campaign),
           0,
         ),
         // KPI 스파크라인·모멘텀 미니차트용 — 월 환산 캠페인 수(유효 기준), 해당 월 활성(캠페인 보유) 셀러 수
@@ -539,7 +555,7 @@ export async function getDesktopDashboardData(now = new Date()) {
       };
     }),
     // 연간 월별 매출·순마진(연초~현재) — 대시보드 매출 차트의 "연간 매출" 탭용(오너 2026-07-24).
-    // trend 와 동일 로직(operating-month 멤버십 · campaignSales · netMarginRate · 월 목표)을 미러링해,
+    // trend 와 동일 로직(operating-month 멤버십 · campaignSales · campaignNetMargin · 월 목표)을 미러링해,
     // 두 차트가 같은 정의를 공유하고 Y축을 공통 도메인으로 맞출 수 있게 한다. 순마진도 함께 싣는다.
     yearlyTrend: Array.from({ length: now.getUTCMonth() + 1 }, (_, i) => {
       const key = `${year}-${String(i + 1).padStart(2, "0")}`;
@@ -548,7 +564,7 @@ export async function getDesktopDashboardData(now = new Date()) {
         month: key,
         revenue: inMonth.reduce((sum, campaign) => sum + campaignSales(campaign), 0),
         expectedMargin: inMonth.reduce(
-          (sum, campaign) => sum + campaignSales(campaign) * numberValue(campaign.netMarginRate) / 100,
+          (sum, campaign) => sum + campaignNetMargin(campaign),
           0,
         ),
         goal: goals.find((goal) => goal.periodKey === key)?.revenueTarget
