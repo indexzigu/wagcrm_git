@@ -34,6 +34,33 @@ function getClaimStatusBadge(label: string, isCompleted: boolean) {
   return <span className={`${BADGE_BASE} bg-transparent text-foreground border-border`}>{label}</span>;
 }
 
+// 개인정보 가림 표시: 기본은 ***, 누르면 value 가 보인다(다시 누르면 가림).
+// 연락처는 서버가 애초에 뒷 4자리만 내려주고, 주문번호·이름·사유는 원문을 보여준다(오너 결정 2026-09-28).
+function MaskedField({ label, value }: { label: string; value: string | null }) {
+  const [revealed, setRevealed] = useState(false);
+  if (!value) {
+    return (
+      <span>
+        {label}: <span aria-label={`${label} 정보 없음`}>—</span>
+      </span>
+    );
+  }
+  return (
+    <span>
+      {label}:{' '}
+      <button
+        type="button"
+        onClick={() => setRevealed((v) => !v)}
+        aria-pressed={revealed}
+        aria-label={revealed ? `${label} 가리기` : `${label} 보기`}
+        className="rounded px-1 font-medium tabular-nums text-slate-700 underline decoration-dotted underline-offset-2 hover:bg-slate-100"
+      >
+        {revealed ? value : '***'}
+      </button>
+    </span>
+  );
+}
+
 // 캠페인 카드/요약 바 배지가 재사용하는 클레임 항목 컴포넌트. 화면 전체가 아니라
 // 캠페인 맥락(카드 내 서브뷰) 안에서도 그대로 재사용할 수 있도록 분리했다.
 export function ClaimItemCard({ claim }: { claim: ClaimWithCompanyName }) {
@@ -48,7 +75,6 @@ export function ClaimItemCard({ claim }: { claim: ClaimWithCompanyName }) {
         <div className="flex flex-wrap items-center gap-1.5">
           {getClaimTypeBadge(claim.claimType)}
           {getClaimStatusBadge(claim.claimStatusLabel, claim.isCompleted)}
-          <span className="text-[11px] font-medium text-slate-500">#{claim.productOrderId}</span>
         </div>
         <div className="truncate text-sm font-bold text-slate-800">
           {claim.productName ?? '상품명 미확인'}
@@ -58,6 +84,12 @@ export function ClaimItemCard({ claim }: { claim: ClaimWithCompanyName }) {
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
           {claim.matchedCampaignName && <span>캠페인: {claim.matchedCampaignName}</span>}
           {claim.requestDate && <span>요청일: {new Date(claim.requestDate).toLocaleDateString('ko-KR')}</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+          <MaskedField label="주문번호" value={claim.productOrderId} />
+          <MaskedField label="이름" value={claim.buyerName} />
+          <MaskedField label="연락처" value={claim.buyerTelLast4} />
+          <MaskedField label="사유" value={claim.claimReason} />
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -251,10 +283,17 @@ export default function ClaimList({ campaignNameFilter, orderIdsFilter, unmatche
         <DataEmpty icon={Inbox} title="해당 조건의 반품/교환 건이 없습니다." bordered={false} className="py-8" />
       ) : (
         <div className="flex flex-col gap-2">
-          {filteredClaims.map((claim, idx) => {
-            const key = `${claim.productOrderId}:${claim.claimType}:${idx}`;
-            return <ClaimItemCard key={key} claim={claim} />;
-          })}
+          {(() => {
+            // 목록 순번을 key 에 넣으면 필터·정렬이 바뀔 때 카드가 다시 마운트되어 펼친 *** 가 풀린다.
+            // 같은 주문·유형이 여러 스냅샷에 겹칠 수 있어 그 안에서의 출현 순서만 덧붙인다.
+            const seen = new Map<string, number>();
+            return filteredClaims.map((claim) => {
+              const base = `${claim.productOrderId}:${claim.claimType}`;
+              const nth = seen.get(base) ?? 0;
+              seen.set(base, nth + 1);
+              return <ClaimItemCard key={nth === 0 ? base : `${base}:${nth}`} claim={claim} />;
+            });
+          })()}
         </div>
       )}
     </div>

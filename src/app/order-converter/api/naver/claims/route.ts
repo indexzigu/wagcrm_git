@@ -5,7 +5,9 @@ import { toDateKeyKst } from '@/lib/order-converter/naver-order-sync';
 import {
   deriveClaims,
   extractClaimSourceOrders,
+  maskClaimForClient,
   parseSnapshotClaimSource,
+  redactPersonalValues,
   type DerivedClaim,
   type CampaignMatchInfo,
 } from '@/lib/order-converter/claim-derive';
@@ -93,13 +95,15 @@ async function handleClaimsGet(request: NextRequest) {
         const collectDeliveryCompanyName = claim.collectDeliveryCompanyCode
           ? await resolveCompanyName(claim.collectDeliveryCompanyCode)
           : null;
-        const base = { ...claim, collectDeliveryCompanyName };
+        // 연락처는 원문 대신 뒷 4자리만 내보낸다(화면은 *** 후 클릭 시 공개).
+        const base = { ...maskClaimForClient(claim), collectDeliveryCompanyName };
         if (!debug) {
           const { raw, ...rest } = base;
           void raw;
           return rest;
         }
-        return base;
+        // debug는 실응답 필드명 확정용(R3)이다 — 키 구조는 보이되 이름·연락처·주소 값은 가린다.
+        return { ...base, raw: redactPersonalValues(base.raw) };
       }),
     );
 

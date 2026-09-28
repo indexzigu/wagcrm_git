@@ -186,6 +186,9 @@ describe('claimTransitionKey', () => {
       quantity: null,
       requestDate: null,
       isCompleted: false,
+      buyerName: null,
+      buyerTel: null,
+      claimReason: null,
       raw: {},
     };
     expect(claimTransitionKey(claim)).toBe('P-1001:RETURN:RETURNING');
@@ -205,6 +208,9 @@ describe('claimTransitionKey', () => {
       quantity: null,
       requestDate: null,
       isCompleted: false,
+      buyerName: null,
+      buyerTel: null,
+      claimReason: null,
       raw: {},
     };
     expect(claimTransitionKey(claim)).toBe('P-2:EXCHANGE:UNKNOWN');
@@ -419,6 +425,8 @@ function mixedSnapshotOrders(): any[] {
       productOption: '단품',
       quantity: 1,
       orderDate: '2026-07-10T10:00:00+09:00',
+      ordererName: '김주문자',
+      ordererTel: '010-1111-2222',
       __claim: {
         return: { claimStatus: 'RETURNING', collectDeliveryCompany: 'CJGLS', collectDeliveryInvoiceNo: '111' },
         currentClaim: { claimType: 'RETURN', claimStatus: 'RETURNING' },
@@ -446,6 +454,7 @@ function mixedSnapshotOrders(): any[] {
       originalProductId: '13583224998',
       quantity: 1,
       paymentDate: '2026-07-08T12:00:00+09:00',
+      shippingAddress: { name: '이수취', tel1: '010-3333-4444', baseAddress: '서울시 어딘가', zipCode: '12345' },
       __claim: { exchange: { claimStatus: 'EXCHANGE_REQUEST', claimRequestDate: '2026-07-09T00:00:00.000Z' } },
     },
     // F: productOrderId 없음 + 클레임 있음 — 파생 자체가 빈 배열이므로 프로젝션도 탈락(동치)
@@ -532,5 +541,120 @@ describe('parseSnapshotClaimSource 폴백 강등', () => {
   it('클레임 0건인 날의 정상 저장값은 null이 아니라 빈 배열(블롭 폴백 불필요)', () => {
     const stored = computeSnapshotClaimSource([{ productOrderId: 'P-1', productName: 'x' }]);
     expect(parseSnapshotClaimSource(stored)).toEqual([]);
+  });
+});
+
+// ============================================================================
+// 구매자 식별 정보 가림 (반품/교환 목록: *** → 클릭 시 뒷 4자리)
+// ============================================================================
+
+import { lastFour, maskClaimForClient } from '../claim-derive';
+
+describe('lastFour', () => {
+  it('뒷 4글자만 남기고, 한글은 글자 단위로 자른다', () => {
+    expect(lastFour('010-1234-5678')).toBe('5678');
+    expect(lastFour('2099010112345678')).toBe('5678');
+    expect(lastFour('단순 변심입니다')).toBe('심입니다');
+    expect(lastFour('홍길동')).toBe('홍길동');
+  });
+
+  it('비었거나 공백뿐이면 null', () => {
+    expect(lastFour(null)).toBeNull();
+    expect(lastFour(undefined)).toBeNull();
+    expect(lastFour('   ')).toBeNull();
+  });
+});
+
+describe('구매자명·연락처·사유 파생과 가림', () => {
+  it('발주서 기준으로 구매자명·연락처를 채우고 상세 사유를 사유 코드보다 우선한다', () => {
+    const order = makeOrder({
+      ordererName: '김구매',
+      ordererTel: '010-9876-5432',
+      __claim: {
+        ...makeOrder().__claim,
+        return: { claimStatus: 'RETURN_REQUEST', returnReason: 'INTENT_CHANGED', returnDetailedReason: '색상이 달라요' },
+      },
+    });
+    const [claim] = deriveClaimsFromOrder(order);
+    expect(claim.buyerName).toBe('김구매');
+    expect(claim.buyerTel).toBe('010-9876-5432');
+    expect(claim.claimReason).toBe('색상이 달라요');
+  });
+
+  it('주문자 정보가 없으면 수취인 이름·연락처1로 폴백한다(발주서와 동일)', () => {
+    const order = makeOrder({
+      shippingAddress: { name: '박수취', tel1: '010-5555-6666' },
+      __claim: { ...makeOrder().__claim, cancel: { claimStatus: 'CANCEL_REQUEST', cancelReason: 'SOLD_OUT' } },
+    });
+    const [claim] = deriveClaimsFromOrder(order);
+    expect(claim.buyerName).toBe('박수취');
+    expect(claim.buyerTel).toBe('010-5555-6666');
+    expect(claim.claimReason).toBe('SOLD_OUT');
+  });
+
+  it('화면용 변환은 연락처 원문만 지우고 뒷 4자리를 남긴다 — 이름·사유는 그대로', () => {
+    const order = makeOrder({
+      ordererName: '김구매자님',
+      ordererTel: '010-9876-5432',
+      __claim: { ...makeOrder().__claim, return: { claimStatus: 'RETURN_REQUEST', returnDetailedReason: '사이즈불만족' } },
+    });
+    const masked = maskClaimForClient(deriveClaimsFromOrder(order)[0]);
+    expect(masked).not.toHaveProperty('buyerTel');
+    expect(masked.buyerTelLast4).toBe('5432');
+    expect(masked.buyerName).toBe('김구매자님');
+    expect(masked.claimReason).toBe('사이즈불만족');
+    expect(JSON.stringify(masked)).not.toContain('010-9876');
+  });
+
+  it('프로젝션은 배송지 중 이름·연락처1만 싣고 주소는 버린다', () => {
+    const projected = extractClaimSourceOrders(mixedSnapshotOrders());
+    const e = projected.find((o) => o.productOrderId === 'P-E');
+    expect(e?.shippingAddress).toEqual({ name: '이수취', tel1: '010-3333-4444' });
+    expect(JSON.stringify(projected)).not.toContain('서울시 어딘가');
+  });
+
+  it('구매자 필드를 넣어도 블롭 파생과 프로젝션 파생이 일치한다', () => {
+    const orders = mixedSnapshotOrders();
+    const fromBlob = deriveClaims(orders);
+    const fromProjection = deriveClaims(extractClaimSourceOrders(orders));
+    expect(fromProjection).toEqual(fromBlob);
+    expect(fromBlob.find((c) => c.productOrderId === 'P-A')?.buyerName).toBe('김주문자');
+    expect(fromBlob.find((c) => c.productOrderId === 'P-E')?.buyerTel).toBe('010-3333-4444');
+  });
+
+  it('구매자 필드가 없는 기존 저장 행(v1)도 그대로 읽히고 값은 null이다', () => {
+    const legacy = { v: 1, orders: [{ productOrderId: 'P-OLD', __claim: { return: { claimStatus: 'RETURN_REQUEST' } } }] };
+    const [claim] = deriveClaims(parseSnapshotClaimSource(legacy) ?? []);
+    expect(claim.buyerName).toBeNull();
+    expect(claim.buyerTel).toBeNull();
+  });
+});
+
+import { redactPersonalValues } from '../claim-derive';
+
+describe('redactPersonalValues (?debug=1 원본 가림)', () => {
+  it('키 구조는 남기고 이름·연락처·주소 값만 가린다', () => {
+    const raw = {
+      claimStatus: 'RETURN_REQUEST',
+      collectDeliveryCompany: 'CJGLS',
+      collectTrackingNumber: '123456789',
+      collectAddress: { name: '홍길동', tel1: '010-1234-5678', baseAddress: '서울시', zipCode: '12345' },
+      returnReceiveAddress: { detailedAddress: '101호' },
+      requesterName: '홍길동',
+      collectDeliveryCompanyName: 'CJ대한통운',
+      deliveryCompanyTel: '1588-0000',
+    };
+    const redacted = redactPersonalValues(raw) as any;
+    expect(redacted.claimStatus).toBe('RETURN_REQUEST');
+    expect(redacted.collectTrackingNumber).toBe('123456789');
+    expect(redacted.collectDeliveryCompanyName).toBe('CJ대한통운');
+    expect(redacted.collectAddress).toEqual({ name: '***', tel1: '***', baseAddress: '***', zipCode: '***' });
+    expect(redacted.returnReceiveAddress).toEqual({ detailedAddress: '***' });
+    expect(redacted.requesterName).toBe('***');
+    // company 가 섞여 있어도 연락처 계열은 가린다
+    expect(redacted.deliveryCompanyTel).toBe('***');
+    expect(JSON.stringify(redacted)).not.toContain('010-1234');
+    // 원본 불변
+    expect(raw.collectAddress.name).toBe('홍길동');
   });
 });
