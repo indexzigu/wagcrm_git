@@ -134,7 +134,11 @@ export type CampaignNetMarginSource = {
  * 컬럼이 비어 있는 캠페인(actualSales 미입력 등 저장 파생이 한 번도 돌지 않은 건)만
  * 종전 요율 식으로 폴백한다.
  */
-export function resolveCampaignNetMargin(campaign: CampaignNetMarginSource) {
+export function resolveCampaignNetMargin(campaign: CampaignNetMarginSource): {
+  totalMarginAmount: number;
+  sellerPayoutAmount: number;
+  netMarginAmount: number;
+} {
   const actualSales = numberFromDecimal(campaign.actualSales);
   const totalMarginAmount = hasDecimalValue(campaign.settlementSales)
     ? numberFromDecimal(campaign.settlementSales)
