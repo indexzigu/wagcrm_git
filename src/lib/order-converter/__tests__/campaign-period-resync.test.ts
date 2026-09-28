@@ -15,7 +15,8 @@ import {
   PERIOD_RESYNC_LEAD_MS,
   PERIOD_RESYNC_STALE_GRACE_MS,
   PERIOD_RESYNC_IDLE_INTERVAL_MS,
-  usesIdlePeriodCheckInterval,
+  PERIOD_RESYNC_NEAR_END_INTERVAL_MS,
+  usesPeriodCheckInterval,
   resolveStorePeriodDrift,
   buildStorePeriodPatchBody,
   formatKstYmd,
@@ -58,7 +59,7 @@ describe('shouldResyncCampaignPeriod', () => {
     expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.11' }, now)).toBe(true);
   });
 
-  it('활성 + 종료 임박(리드 창 이내) → 재동기화', () => {
+  it('활성 + 종료 임박(리드 창 이내) + 확인 기록 없음 → 재동기화', () => {
     const soon = endKst('2026.07.13'); // 지금(07.12)로부터 하루 뒤 종료 → 리드(2일) 이내
     expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.13' }, now)).toBe(true);
     expect(soon - now).toBeLessThanOrEqual(PERIOD_RESYNC_LEAD_MS);
@@ -90,13 +91,29 @@ describe('shouldResyncCampaignPeriod', () => {
     ).toBe(true);
   });
 
-  it('종료 임박 구간은 방금 확인했어도 재동기화한다(간격이 임박 구간을 막지 않는다)', () => {
-    // 집계 경계가 실제로 걸리는 구간이라 촘촘히 따라가야 한다 — 유휴 간격은 여기에 적용되지 않는다.
+  it('종료 임박 구간은 30분에 1회 — 방금 확인했으면 안 묻고, 간격이 지났거나 기록이 없으면 묻는다(오너 결정 2026-09-28)', () => {
+    // 종전 규칙("임박은 방금 확인했어도 재동기화")은 화면 사용이 몰린 날의 실측으로 물렸다 — 화면을 열 때마다
+    // 스토어를 물어 월 프록시 한도의 상당 비중을 하루에 썼다(수치는 로컬 핸드오프). 집계 경계 구간이라 유휴(4시간)보다는 촘촘하다.
+    const nearEnd = '2026.07.06 ~ 2026.07.13';
+    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: nearEnd, periodCheckedAt: new Date(now) }, now)).toBe(false);
+    // 간격 이내(29분 전) → 안 묻는다. 유휴 간격 기준이라면 물었을 값이라는 점도 함께 고정한다.
+    const checkedRecently = new Date(now - PERIOD_RESYNC_NEAR_END_INTERVAL_MS + 60_000);
+    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: nearEnd, periodCheckedAt: checkedRecently }, now)).toBe(false);
+    // 31분 전 → 묻는다(유휴 간격 4시간은 아직 안 지났다 — 임박이 유휴 간격을 쓰면 여기서 false 가 난다).
+    const checkedLongAgo = new Date(now - PERIOD_RESYNC_NEAR_END_INTERVAL_MS - 60_000);
+    expect(PERIOD_RESYNC_NEAR_END_INTERVAL_MS + 60_000).toBeLessThan(PERIOD_RESYNC_IDLE_INTERVAL_MS);
+    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: nearEnd, periodCheckedAt: checkedLongAgo }, now)).toBe(true);
+    // 기록이 없거나 읽을 수 없으면 fail-open — 신규·레거시 캠페인이 영영 조회되지 않는 쪽으로 기울지 않는다.
+    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: nearEnd, periodCheckedAt: null }, now)).toBe(true);
+    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: nearEnd, periodCheckedAt: 'not-a-date' }, now)).toBe(true);
+  });
+
+  it('종료 경과(그레이스 안) 구간도 임박과 같은 30분 간격이다', () => {
+    // 07.11 종료·지금 07.12 — 종료가 지났지만 그레이스(7일) 안이라 같은 임박 구간으로 분류된다.
+    const past = '2026.07.06 ~ 2026.07.11';
+    expect(shouldResyncCampaignPeriod({ isActive: true, salePeriod: past, periodCheckedAt: new Date(now - 60_000) }, now)).toBe(false);
     expect(
-      shouldResyncCampaignPeriod(
-        { isActive: true, salePeriod: '2026.07.06 ~ 2026.07.13', periodCheckedAt: new Date(now) },
-        now,
-      ),
+      shouldResyncCampaignPeriod({ isActive: true, salePeriod: past, periodCheckedAt: new Date(now - PERIOD_RESYNC_NEAR_END_INTERVAL_MS) }, now),
     ).toBe(true);
   });
 
@@ -128,22 +145,25 @@ describe('shouldResyncCampaignPeriod', () => {
   });
 });
 
-describe('usesIdlePeriodCheckInterval — 확인 시각을 찍어야 하는 구간인가', () => {
+describe('usesPeriodCheckInterval — 확인 시각을 찍어야 하는 구간인가', () => {
   const now = endKst('2026.07.12');
 
-  it('종료가 먼 활성 캠페인만 true — 그 구간에서만 판정이 periodCheckedAt 을 읽는다', () => {
-    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(true);
+  it('종료가 먼 활성 캠페인(유휴)은 true — 판정이 periodCheckedAt 을 4시간 간격으로 읽는다', () => {
+    expect(usesPeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(true);
   });
 
-  it('종료 임박·경과 구간은 false — 시각과 무관하게 항상 후보라 찍을 이유가 없다', () => {
-    // 매 GET 마다 찍으면 캠페인 수만큼 쓰기가 나간다(P7 egress 규율).
-    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.13' }, now)).toBe(false);
-    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.11' }, now)).toBe(false);
+  it('종료 임박·경과 구간도 true — 30분 간격 판정이 periodCheckedAt 을 읽는다(오너 결정 2026-09-28)', () => {
+    // 종전엔 "시각과 무관하게 항상 후보"라 false 였다. 이제 여기서 안 찍으면 임박 판정이 매번
+    // fail-open(기록 없음 → 참)으로 떨어져 종전 "매 조회"와 같아진다.
+    expect(usesPeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.13' }, now)).toBe(true);
+    expect(usesPeriodCheckInterval({ isActive: true, salePeriod: '2026.07.06 ~ 2026.07.11' }, now)).toBe(true);
   });
 
-  it('기간 미확정·마감은 false', () => {
-    expect(usesIdlePeriodCheckInterval({ isActive: true, salePeriod: '기간 미정' }, now)).toBe(false);
-    expect(usesIdlePeriodCheckInterval({ isActive: false, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(false);
+  it('기간 미확정·마감·그레이스 초과는 false — 그 구간 판정은 시각을 읽지 않는다(찍으면 쓰기만 는다)', () => {
+    expect(usesPeriodCheckInterval({ isActive: true, salePeriod: '기간 미정' }, now)).toBe(false);
+    expect(usesPeriodCheckInterval({ isActive: false, salePeriod: '2026.07.06 ~ 2026.07.20' }, now)).toBe(false);
+    const wellPast = now - PERIOD_RESYNC_STALE_GRACE_MS - 24 * 60 * 60 * 1000;
+    expect(usesPeriodCheckInterval({ isActive: true, endDate: new Date(wellPast) }, now)).toBe(false);
   });
 });
 
