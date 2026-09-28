@@ -321,6 +321,20 @@ export const naverOrderSnapshotRepository = {
     });
   },
 
+  /**
+   * 한 날짜의 claimSource 만 그 행의 orders 블롭으로 다시 계산해 저장한다(일회성 백필용 —
+   * 프로젝션 필드가 늘었을 때 이미 저장된 행을 새 형태로 맞춘다). 계산은 쓰기 경로와 같은
+   * buildClaimSourceValue 다. 읽은 뒤 동기화가 같은 행을 고쳤다면(updatedAt 불일치) 덮지 않고
+   * 0을 돌려준다 — 그 동기화가 이미 새 형태의 claimSource 를 썼다.
+   */
+  async rebuildClaimSource(snapshotDate: string, expectedUpdatedAt: Date, orders: unknown[]): Promise<number> {
+    const result = await prisma.naverOrderSnapshot.updateMany({
+      where: { snapshotDate, updatedAt: expectedUpdatedAt },
+      data: { claimSource: buildClaimSourceValue(orders) as any },
+    });
+    return result.count;
+  },
+
   parseOrders(row: { orders: unknown }): any[] {
     return typeof row.orders === "string" ? JSON.parse(row.orders) : (row.orders as any[]);
   },

@@ -501,3 +501,57 @@ describe("naverOrderSnapshotRepository egress 절감 계약", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 });
+
+// claimSource 재계산 백필(#118 소급) — 쓰기 경로와 같은 계산으로 claimSource 만 바꾸고,
+// 읽은 뒤 동기화가 행을 고쳤으면(updatedAt 불일치) 덮지 않는다.
+describe("naverOrderSnapshotRepository.rebuildClaimSource", () => {
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+
+  afterEach(() => {
+    process.env.DATABASE_URL = originalDatabaseUrl;
+    vi.doUnmock("@/lib/order-converter/prisma");
+    vi.restoreAllMocks();
+  });
+
+  function mockUpdateMany(count: number) {
+    const updateMany = vi.fn().mockResolvedValue({ count });
+    vi.doMock("@/lib/order-converter/prisma", () => ({ prisma: { naverOrderSnapshot: { updateMany } } }));
+    return updateMany;
+  }
+
+  const orders = [
+    {
+      productOrderId: "PO-1",
+      ordererName: "가짜구매자",
+      ordererTel: "010-0000-0000",
+      __claim: { return: { claimStatus: "RETURN_REQUEST" } },
+    },
+    { productOrderId: "PO-2", __claim: { cancel: null } },
+  ];
+
+  it("updatedAt 조건을 걸고 claimSource 만 새 프로젝션으로 쓴다", async () => {
+    process.env.DATABASE_URL = "postgresql://user:pass@localhost:5432/db";
+    const updateMany = mockUpdateMany(1);
+    const { naverOrderSnapshotRepository } = await loadRepository();
+    const at = new Date("2026-09-17T00:00:00.000Z");
+
+    const count = await naverOrderSnapshotRepository.rebuildClaimSource("2026-09-17", at, orders);
+
+    expect(count).toBe(1);
+    const call = updateMany.mock.calls[0][0];
+    expect(call.where).toEqual({ snapshotDate: "2026-09-17", updatedAt: at });
+    expect(Object.keys(call.data)).toEqual(["claimSource"]);
+    expect(call.data.claimSource.v).toBe(1);
+    expect(call.data.claimSource.orders).toHaveLength(1);
+    expect(call.data.claimSource.orders[0].ordererName).toBe("가짜구매자");
+  });
+
+  it("동기화가 먼저 고친 행(조건 불일치)은 0을 돌려준다", async () => {
+    process.env.DATABASE_URL = "postgresql://user:pass@localhost:5432/db";
+    mockUpdateMany(0);
+    const { naverOrderSnapshotRepository } = await loadRepository();
+
+    const count = await naverOrderSnapshotRepository.rebuildClaimSource("2026-09-17", new Date(), orders);
+    expect(count).toBe(0);
+  });
+});
