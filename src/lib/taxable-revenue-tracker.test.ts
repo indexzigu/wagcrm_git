@@ -8,6 +8,7 @@ import {
   computeFeeIncrease,
   countOverlapDays,
   resolveCampaignDayRange,
+  resolveSalesToDateRange,
   resolveCrossingCostWindow,
   resolveNaverSellerGradeIndex,
   resolveNextGradeUpdate,
@@ -424,12 +425,12 @@ describe("자사몰 일수 안분 — 판매일 귀속 근사(나머지 채널�
         campaign({ startDate: kstNoon("2026-03-25"), endDate: kstNoon("2026-04-03"), actualSales: 10_000_000 }),
         // 03-20~03-29 → 창 첫날(03-30) 전에 끝남 → 0
         campaign({ startDate: kstNoon("2026-03-20"), endDate: kstNoon("2026-03-29"), actualSales: 40_000_000 }),
-        // 진행 중 09-25~10-04(10일) 중 오늘까지 5일 → 부분 실적의 절반
+        // 진행 중 09-25~10-04 — 실적은 오늘(09-29)까지의 누적이라 09-25~09-29 로 안분 → 전액 창 안
         campaign({ status: "ACTIVE", startDate: kstNoon("2026-09-25"), endDate: kstNoon("2026-10-04"), actualSales: 2_000_000 }),
       ],
       NOW,
     );
-    expect(tracker.crossingCost?.naverOwnMallSales).toBe(6_000_000);
+    expect(tracker.crossingCost?.naverOwnMallSales).toBe(7_000_000);
   });
 });
 
@@ -526,5 +527,56 @@ describe("현재 등급(CRM 추정) — 직전 갱신 기준기간의 누적으�
     expect(tracker.currentGrade.label).toBe("중소2");
     expect(tracker.cumulativeSupply).toBe(1_000_000_000);
     expect(tracker.estimatedGrade.label).toBe("중소2");
+  });
+});
+
+describe("진행 중 자사몰 — 누적 실적은 오늘까지의 일수로 안분한다", () => {
+  it("안분 구간: 끝난 캠페인은 그대로, 진행 중은 [시작, 오늘], 시작 전은 [시작, 시작]", () => {
+    const ended = resolveCampaignDayRange(kstNoon("2026-09-01"), kstNoon("2026-09-10"));
+    expect(resolveSalesToDateRange(ended, "2026-09-29")).toEqual(ended);
+    expect(
+      resolveSalesToDateRange(resolveCampaignDayRange(kstNoon("2026-09-25"), kstNoon("2026-10-04")), "2026-09-29"),
+    ).toEqual({ startYmd: "2026-09-25", endYmd: "2026-09-29", totalDays: 5 });
+    expect(
+      resolveSalesToDateRange(resolveCampaignDayRange(kstNoon("2026-12-20"), kstNoon("2026-12-31")), "2026-09-29"),
+    ).toEqual({ startYmd: "2026-12-20", endYmd: "2026-12-20", totalDays: 1 });
+  });
+
+  it("10일 캠페인의 5일째 누적 X 는 그 5일을 덮는 기준기간에 X 전액이 들어간다", () => {
+    const tracker = buildTaxableRevenueTracker(
+      [campaign({ status: "ACTIVE", startDate: kstNoon("2026-09-25"), endDate: kstNoon("2026-10-04"), actualSales: 5_000_000 })],
+      NOW,
+    );
+    expect(tracker.channels.OWN_MALL).toMatchObject({ count: 1, vatIncluded: 5_000_000 });
+  });
+
+  it("기준기간 경계를 걸친 진행 중 캠페인은 오늘까지 일수 중 기간 안 비율만 들어간다", () => {
+    // 오늘 2027-01-03(기준 = 2026년). 12-30~01-08(10일) 중 오늘까지 5일, 그중 2026년은 2일 → 2/5
+    const tracker = buildTaxableRevenueTracker(
+      [campaign({ status: "ACTIVE", startDate: kstNoon("2026-12-30"), endDate: kstNoon("2027-01-08"), actualSales: 5_000_000 })],
+      kstNoon("2027-01-03"),
+    );
+    expect(tracker.channels.OWN_MALL.vatIncluded).toBe(2_000_000);
+  });
+
+  it("비용 표본 창에서도 오늘까지로 자른 구간으로 안분한다", () => {
+    // 03-20~10-08 진행 중 → 실적 구간 03-20~09-29(194일), 창 (03-29, 09-29] 안은 184일
+    const tracker = buildTaxableRevenueTracker(
+      [campaign({ status: "ACTIVE", startDate: kstNoon("2026-03-20"), endDate: kstNoon("2026-10-08"), actualSales: 1_940_000 })],
+      NOW,
+    );
+    expect(tracker.crossingCost?.naverOwnMallSales).toBe(1_840_000);
+  });
+
+  it("시작 전인데 금액이 있으면 시작일 하루로 본다 — 기준기간 안이면 들어가고, 비용 창(오늘까지)에는 안 든다", () => {
+    const tracker = buildTaxableRevenueTracker(
+      [
+        campaign({ status: "PREPARATION", startDate: kstNoon("2026-12-20"), endDate: kstNoon("2026-12-31"), actualSales: 1_100_000 }),
+        campaign({ status: "PREPARATION", startDate: kstNoon("2027-01-05"), endDate: kstNoon("2027-01-10"), actualSales: 2_200_000 }),
+      ],
+      NOW,
+    );
+    expect(tracker.channels.OWN_MALL).toMatchObject({ count: 1, vatIncluded: 1_100_000 });
+    expect(tracker.crossingCost?.naverOwnMallSales).toBe(0);
   });
 });

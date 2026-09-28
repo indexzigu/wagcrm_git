@@ -51,7 +51,8 @@
  * - **자사몰 3종**: 소비자 카드·PG 매출이라 과세 시점은 **판매일**이다. 캠페인 종료일로 통째로
  *   귀속하면 12/26~1/1 캠페인의 12월 매출이 전부 다음 해로 넘어가, 기준선 근처라면 판정이
  *   뒤집힐 수 있다. 그래서 `actualSales` 를 [startDate, endDate]
- *   의 **KST 달력 일수**로 안분해 기준기간 안 일수 비율만큼만 넣는다(일별 매출이 균등하다는
+ *   의 **KST 달력 일수**로 안분해 기준기간 안 일수 비율만큼만 넣는다(진행 중이면 `actualSales` 가
+ *   오늘까지의 누적이라 구간 끝을 오늘로 자른다 — `resolveSalesToDateRange`)(일별 매출이 균등하다는
  *   근사 — 실제 일별 매출은 이 로더에 없다). 넘었을 때 비용의 표본 창도 같은 안분을 쓴다.
  * - **브랜드몰·셀러몰·미지정**: 세금계산서 기반이라 `endDate` 의 **KST 날짜**가 속한 반기
  *   (1기=1~6월, 2기=7~12월)에 통째로 귀속한다 — 세금계산서 작성일자 = 캠페인 종료월 관례.
@@ -399,6 +400,20 @@ export function countOverlapDays(range: CampaignDayRange, fromYmd: string, toYmd
   return Math.max(0, to - from + 1);
 }
 
+/**
+ * 자사몰 실적의 **안분 구간** — `actualSales` 가 실제로 쌓인 날들.
+ * - 끝난 캠페인(종료일 ≤ 오늘): 일정 구간 그대로.
+ * - 진행 중(시작일 ≤ 오늘 < 종료일): `actualSales` 는 **오늘까지의 누적**이므로 [시작일, 오늘]로
+ *   자른다. 전체 일정으로 나누면 아직 오지 않은 날에 실적을 흩뿌려 기준기간·비용 표본을 과소 계상한다.
+ * - 시작 전(오늘 < 시작일)인데 금액이 있으면: [시작일, 시작일] 하루로 본다(드문 경우 — 단순하게 둔다).
+ * 일정 구간(`resolveCampaignDayRange`)은 그대로 「끝났는가」 판정과 계산서 채널의 종료일 귀속에 쓴다.
+ */
+export function resolveSalesToDateRange(range: CampaignDayRange, asOfYmd: string): CampaignDayRange {
+  if (range.endYmd <= asOfYmd) return range;
+  const endYmd = range.startYmd > asOfYmd ? range.startYmd : asOfYmd;
+  return { startYmd: range.startYmd, endYmd, totalDays: dayNumber(endYmd) - dayNumber(range.startYmd) + 1 };
+}
+
 /** 일수 안분 — 캠페인 매출 × (겹친 일수 / 전체 일수), 원 단위 반올림. */
 export function prorateByDays(amount: number, overlapDays: number, range: CampaignDayRange): number {
   return Math.round((amount * overlapDays) / range.totalDays);
@@ -529,42 +544,50 @@ function addToSubtotal(
 
 /**
  * 넘었을 때 비용 표본 — 네이버페이 결제분(네이버 자사몰)만, 창 `(after, to]` 안 일수로 안분한다.
+ * `salesRange` 는 실적 안분 구간(`resolveSalesToDateRange` — 진행 중이면 오늘까지).
  * 금액을 모르는 건은 **끝난** 캠페인만 미입력으로 센다(진행 중은 아직 매출이 없는 것이다).
  */
 function addCostSample(
   acc: Accumulated,
   campaign: TaxableRevenueCampaignInput,
-  range: CampaignDayRange,
+  salesRange: CampaignDayRange,
   costWindow: { afterYmd: string; toYmd: string },
   isPending: boolean,
 ): Accumulated {
   if (campaign.salesChannel !== "OWN_MALL_NAVER") return acc;
-  const days = countOverlapDays(range, addDaysYmd(costWindow.afterYmd, 1), costWindow.toYmd);
+  const days = countOverlapDays(salesRange, addDaysYmd(costWindow.afterYmd, 1), costWindow.toYmd);
   if (days === 0) return acc;
   if (campaign.actualSales == null) {
     return isPending ? acc : { ...acc, naverOwnMallMissingCount: acc.naverOwnMallMissingCount + 1 };
   }
-  return { ...acc, naverOwnMallSales: acc.naverOwnMallSales + prorateByDays(Number(campaign.actualSales), days, range) };
+  return {
+    ...acc,
+    naverOwnMallSales: acc.naverOwnMallSales + prorateByDays(Number(campaign.actualSales), days, salesRange),
+  };
 }
 
 /**
  * 기준기간에 귀속되는 이 캠페인의 과세 매출 — 기준기간과 무관하면 null.
- * 자사몰은 일수 안분, 나머지는 종료일 귀속(모듈 헤더 「귀속 기간」).
+ * 자사몰은 실적 안분 구간(`salesRange`, 진행 중이면 오늘까지)으로 일수 안분, 나머지는 일정 구간
+ * (`range`)의 종료일 귀속(모듈 헤더 「귀속 기간」).
  */
 function resolvePeriodAmount(
   group: TaxableChannelGroup,
   campaign: TaxableRevenueCampaignInput,
   range: CampaignDayRange,
+  salesRange: CampaignDayRange,
   referencePeriod: TaxableRevenueReferencePeriod,
 ): CampaignTaxableAmount | null {
   if (group === "OWN_MALL") {
-    const days = countOverlapDays(range, referencePeriod.startYmd, referencePeriod.endYmd);
+    const days = countOverlapDays(salesRange, referencePeriod.startYmd, referencePeriod.endYmd);
     if (days === 0) return null;
     const amount = computeCampaignTaxableAmount(group, campaign);
     return amount.kind === "AMOUNT"
-      ? { kind: "AMOUNT", vatIncluded: prorateByDays(amount.vatIncluded, days, range) }
+      ? { kind: "AMOUNT", vatIncluded: prorateByDays(amount.vatIncluded, days, salesRange) }
       : amount;
   }
+  // 의도: 종료일이 아직 안 온(미래) 계산서 채널 캠페인도 금액이 있으면 기준기간 누적에 넣는다 —
+  // 여유를 보수적으로(작게) 보이기 위한 결정이다(오늘까지로 자르지 말 것).
   if (range.endYmd < referencePeriod.startYmd || range.endYmd > referencePeriod.endYmd) return null;
   return computeCampaignTaxableAmount(group, campaign);
 }
@@ -592,11 +615,12 @@ function accumulateCampaigns(
   return campaigns.reduce<Accumulated>((acc, campaign) => {
     if (isExcludedStatus(campaign.status)) return acc;
     const range = resolveCampaignDayRange(campaign.startDate, campaign.endDate);
+    const salesRange = resolveSalesToDateRange(range, asOfYmd);
     const isPending = range.endYmd > asOfYmd;
-    const next = addCostSample(acc, campaign, range, costWindow, isPending);
+    const next = addCostSample(acc, campaign, salesRange, costWindow, isPending);
 
     const group = resolveTaxableChannelGroup(campaign.salesChannel);
-    const amount = resolvePeriodAmount(group, campaign, range, referencePeriod);
+    const amount = resolvePeriodAmount(group, campaign, range, salesRange, referencePeriod);
     if (amount === null) return next;
     if (group !== "UNSPECIFIED") {
       return {
