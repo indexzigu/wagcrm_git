@@ -111,6 +111,20 @@ describe('deriveClaimsFromOrder', () => {
     expect(claims[0].isCompleted).toBe(true);
   });
 
+  it.each([
+    ['RETURN', 'return', 'RETURN_REJECT', '반품 철회'],
+    ['CANCEL', 'cancel', 'CANCEL_REJECT', '취소 철회'],
+    ['EXCHANGE', 'exchange', 'EXCHANGE_REJECT', '교환 철회'],
+  ])('%s 거부 상태(%s.%s)는 영문 코드 대신 한글 라벨로 표시한다', (claimType, bagKey, status, label) => {
+    const order = makeOrder({
+      __claim: { ...makeOrder().__claim, [bagKey]: { claimStatus: status } },
+    });
+    const claims = deriveClaimsFromOrder(order);
+    expect(claims).toHaveLength(1);
+    expect(claims[0].claimType).toBe(claimType);
+    expect(claims[0].claimStatusLabel).toBe(label);
+  });
+
   it('같은 클레임이 터미널 키(cancel)와 completedClaims에 중복 존재하면 1행으로만 파생한다(이중카운트 방지)', () => {
     // 네이버 실응답: 완료된 취소가 __claim.cancel(터미널)과 completedClaims[] 양쪽에 동시에 실려
     // 같은 취소가 2행으로 파생되던 버그(실측 65/66 주문). 같은 claimType이면 1행으로 접는다.
