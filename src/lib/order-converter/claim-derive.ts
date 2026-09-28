@@ -121,6 +121,8 @@ function extractCollectCompanyCode(claimObj: any): string | null {
 
 function extractCollectInvoiceNo(claimObj: any): string | null {
   return (
+    // 실응답 확정(2026-09-28, 운영 claimSource 필드명 조회): 반품 객체의 수거 송장은 collectTrackingNumber.
+    claimObj?.collectTrackingNumber ??
     claimObj?.collectDeliveryInvoiceNo ??
     claimObj?.returnDeliveryInvoiceNo ??
     claimObj?.collectInvoiceNo ??
@@ -155,18 +157,41 @@ function extractRequestDate(claimObj: any, currentClaim: any): string | null {
  * 클레임 사유. 상세 사유(자유 입력)를 사유 코드보다 우선한다.
  * 필드명은 실응답과 대조하지 못했다(머리 TODO R3와 같은 사정) — 없으면 null.
  */
+// 네이버 클레임 사유 코드 → 한글. 상세 사유(자유 입력)가 없는 건이 많아(실측 2026-09-28: 취소 52건 중
+// 상세 사유 18건, 반품 5건 중 2건) 코드가 영문 그대로 보이지 않게 한다. 표에 없는 코드는 원문 그대로 보인다.
+const CLAIM_REASON_LABELS: Record<string, string> = {
+  // 운영 claimSource 전체 기간에서 실측된 코드(2026-09-28, 코드 값·건수만 조회).
+  SIMPLE_INTENT_CHANGED: '단순 변심',
+  MISTAKE_ORDER: '주문 실수',
+  INTENT_CHANGED: '구매 의사 취소',
+  PRODUCT_UNSATISFIED_BY_PURCHASER: '상품 불만족',
+  DELAYED_DELIVERY_BY_PURCHASER: '배송 지연',
+  BROKEN_AND_BAD: '상품 파손·불량',
+  // 아래는 실측되지 않은 추정 코드 — 맞으면 한글로 보이고, 틀리면 쓰이지 않을 뿐이다.
+  COLOR_AND_SIZE: '색상·사이즈 변경',
+  WRONG_ORDER: '다른 상품 잘못 주문',
+  PRODUCT_UNSATISFIED: '서비스·상품 불만족',
+  DELAYED_DELIVERY: '배송 지연',
+  SOLD_OUT: '상품 품절',
+  DROPPED_DELIVERY: '배송 누락',
+  BROKEN: '상품 파손',
+  INCORRECT_INFO: '상품 정보 상이',
+  WRONG_DELIVERY: '오배송',
+  WRONG_OPTION: '다른 옵션 배송',
+};
+
 function extractClaimReason(claimObj: any): string | null {
-  const reason =
+  const detailed = nonEmptyString(
     claimObj?.returnDetailedReason ??
-    claimObj?.exchangeDetailedReason ??
-    claimObj?.cancelDetailedReason ??
-    claimObj?.claimDetailedReason ??
-    claimObj?.returnReason ??
-    claimObj?.exchangeReason ??
-    claimObj?.cancelReason ??
-    claimObj?.claimReason ??
-    null;
-  return typeof reason === 'string' && reason.trim() ? reason.trim() : null;
+      claimObj?.exchangeDetailedReason ??
+      claimObj?.cancelDetailedReason ??
+      claimObj?.claimDetailedReason,
+  );
+  if (detailed) return detailed;
+  const code = nonEmptyString(
+    claimObj?.returnReason ?? claimObj?.exchangeReason ?? claimObj?.cancelReason ?? claimObj?.claimReason,
+  );
+  return code ? (CLAIM_REASON_LABELS[code] ?? code) : null;
 }
 
 function nonEmptyString(value: unknown): string | null {

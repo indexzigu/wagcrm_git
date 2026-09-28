@@ -614,7 +614,36 @@ describe('구매자명·연락처·사유 파생과 가림', () => {
     const [claim] = deriveClaimsFromOrder(order);
     expect(claim.buyerName).toBe('박수취');
     expect(claim.buyerTel).toBe('010-5555-6666');
-    expect(claim.claimReason).toBe('SOLD_OUT');
+    expect(claim.claimReason).toBe('상품 품절');
+  });
+
+  it('사유 코드는 한글로 바꾸고, 표에 없는 코드는 원문 그대로 둔다', () => {
+    const withCode = (reason: string) =>
+      deriveClaimsFromOrder(
+        makeOrder({ __claim: { ...makeOrder().__claim, return: { claimStatus: 'RETURN_REQUEST', returnReason: reason } } }),
+      )[0].claimReason;
+    expect(withCode('INTENT_CHANGED')).toBe('구매 의사 취소');
+    // 운영에서 실측된 코드는 전부 한글로 보인다(2026-09-28 실측 6종).
+    expect(withCode('SIMPLE_INTENT_CHANGED')).toBe('단순 변심');
+    expect(withCode('MISTAKE_ORDER')).toBe('주문 실수');
+    expect(withCode('PRODUCT_UNSATISFIED_BY_PURCHASER')).toBe('상품 불만족');
+    expect(withCode('DELAYED_DELIVERY_BY_PURCHASER')).toBe('배송 지연');
+    expect(withCode('BROKEN_AND_BAD')).toBe('상품 파손·불량');
+    expect(withCode('SOMETHING_NEW')).toBe('SOMETHING_NEW');
+  });
+
+  it('반품 수거 송장은 실응답 필드 collectTrackingNumber 에서 읽는다', () => {
+    const [claim] = deriveClaimsFromOrder(
+      makeOrder({
+        __claim: {
+          ...makeOrder().__claim,
+          return: { claimStatus: 'RETURN_DONE', collectDeliveryCompany: 'CJGLS', collectTrackingNumber: '999999999' },
+        },
+      }),
+    );
+    expect(claim.collectDeliveryCompanyCode).toBe('CJGLS');
+    expect(claim.collectDeliveryInvoiceNo).toBe('999999999');
+    expect(buildTrackingUrl(claim.collectDeliveryCompanyCode, claim.collectDeliveryInvoiceNo)).toContain('999999999');
   });
 
   it('화면용 변환은 연락처 원문만 지우고 뒷 4자리를 남긴다 — 이름·사유는 그대로', () => {
