@@ -87,7 +87,10 @@ const CLAIM_STATUS_LABELS: Record<string, string> = {
 };
 
 // 종단(완료) 상태로 취급할 claimStatus 후보 — 알림 트리거·접힘 UI 판단에 사용.
-const COMPLETED_STATUS_KEYWORDS = ['DONE', 'COMPLETE', 'COMPLETED'];
+// REJECT: 철회·거부로 끝난 클레임(RETURN_REJECT·CANCEL_REJECT 등)도 더 움직이지 않는다 —
+// post-close-check-window 의 FINISHED_CLAIM_STATUSES 와 같은 판정이다. 빠져 있으면 취소가 거부돼
+// 결국 발송해야 하는 주문이 '클레임 진행 중'으로 발송지연·미발송 판정에서 빠진다.
+const COMPLETED_STATUS_KEYWORDS = ['DONE', 'COMPLETE', 'COMPLETED', 'REJECT'];
 const COLLECTED_STATUS_KEYWORDS = ['COLLECT_DONE', 'COLLECTING_DONE', 'COLLECTED'];
 
 function labelForStatus(status: string | null): string {
