@@ -54,8 +54,22 @@ const CLAIM_STATUS_LABELS: Record<string, string> = {
   EXCHANGE_REQUEST: '교환 요청',
   EXCHANGING: '교환 처리중',
   EXCHANGE_DONE: '교환 완료',
+  EXCHANGE_REDELIVERING: '교환 재배송중',
   CANCEL_REQUEST: '취소 요청',
+  CANCELING: '취소 처리중',
   CANCEL_DONE: '취소 완료',
+  // *_REJECT: 클레임이 철회·거부되어 진행되지 않고 끝난 상태. RETURN_REJECT·CANCEL_REJECT는
+  // 운영 화면에 영문 그대로 노출돼 실존이 관측됐다(2026-09-28). 표기는 네이버 용어 '철회'를 따른다.
+  RETURN_REJECT: '반품 철회',
+  EXCHANGE_REJECT: '교환 철회',
+  CANCEL_REJECT: '취소 철회',
+  ADMIN_CANCELING: '직권 취소중',
+  ADMIN_CANCEL_DONE: '직권 취소 완료',
+  ADMIN_CANCEL_REJECT: '직권 취소 철회',
+  PURCHASE_DECISION_REQUEST: '구매확정 요청',
+  PURCHASE_DECISION_HOLDBACK: '구매확정 보류',
+  PURCHASE_DECISION_HOLDBACK_REDELIVERING: '구매확정 보류(재배송중)',
+  PURCHASE_DECISION_HOLDBACK_RELEASE: '구매확정 보류 해제',
 };
 
 // 종단(완료) 상태로 취급할 claimStatus 후보 — 알림 트리거·접힘 UI 판단에 사용.
