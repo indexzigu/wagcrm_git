@@ -108,6 +108,48 @@ function numberFromDecimal(value: DecimalLike): number {
   return Number(value.toString());
 }
 
+export type CampaignNetMarginSource = {
+  actualSales: DecimalLike;
+  totalMarginRate: DecimalLike;
+  sellerMarginRate: DecimalLike;
+  settlementSales?: DecimalLike | null;
+  sellerExpense?: DecimalLike | null;
+};
+
+/**
+ * 캠페인 1건의 순마진(= 영업수익 − 판매대행비) 판정 SSOT — 정산 리포트와 대시보드가 공유한다.
+ *
+ * 영업수익(settlementSales)·판매대행비(sellerExpense)는 **저장 컬럼이 정본**이다 —
+ * `calculateDerivedCampaignFinancials`·`recalculateSalesCampaignTotals` 가 저장 시점에
+ * 영속시키고, 「정산 진행 중」 표·셀러 명세서·세무 보드가 전부 그 컬럼을 읽는다(오너 승인 설계
+ * `2026-08-07-settlement-money-separation-design.md` §1-2·§1-3). 주문 동기화는 정산 락
+ * (`SETTLEMENT_IN_PROGRESS` 이상) 전까지 이 컬럼을 갱신하므로 판매진행·판매마감·정산대기
+ * 캠페인도 값을 갖는다.
+ * ⛔ 요율로 다시 계산하지 말 것: 그러면 ①수동 오버라이드(`isManualSettlementSales`)
+ * ②품목별 차등 수수료율(campaignDeals) ③개인 셀러의 VAT 제외 기준(sellerBase =
+ * actualSales/1.1)이 전부 무시돼, **같은 캠페인이 「진행 중」 표와 「완료」 표에서 다른
+ * 금액으로 보인다.** 실제로 오너가 정산완료 건의 영업수익을 고쳐도 목록에 반영되지
+ * 않는 결함이었다(T-022). 대시보드도 캠페인 단위 `netMarginRate` 로 계산하다가, 요율이
+ * 품목(campaignDeals)에만 있고 캠페인 요율이 0 인 건의 순마진을 0 으로 빠뜨렸다.
+ * 컬럼이 비어 있는 캠페인(actualSales 미입력 등 저장 파생이 한 번도 돌지 않은 건)만
+ * 종전 요율 식으로 폴백한다.
+ */
+export function resolveCampaignNetMargin(campaign: CampaignNetMarginSource) {
+  const actualSales = numberFromDecimal(campaign.actualSales);
+  const totalMarginAmount = hasDecimalValue(campaign.settlementSales)
+    ? numberFromDecimal(campaign.settlementSales)
+    : (actualSales * numberFromDecimal(campaign.totalMarginRate)) / 100;
+  const sellerPayoutAmount = hasDecimalValue(campaign.sellerExpense)
+    ? numberFromDecimal(campaign.sellerExpense)
+    : (actualSales * numberFromDecimal(campaign.sellerMarginRate)) / 100;
+  // 폴백 경로에서는 종전 식(actualSales × (총요율 − 셀러요율) / 100)과 항등이다.
+  return {
+    totalMarginAmount,
+    sellerPayoutAmount,
+    netMarginAmount: totalMarginAmount - sellerPayoutAmount,
+  };
+}
+
 export function getCurrentMonth(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -211,26 +253,8 @@ export function buildSettlementReportModel(
     const actualSales = numberFromDecimal(campaign.actualSales);
     const totalMarginRate = numberFromDecimal(campaign.totalMarginRate);
     const sellerMarginRate = numberFromDecimal(campaign.sellerMarginRate);
-    // 영업수익(settlementSales)·판매대행비(sellerExpense)는 **저장 컬럼이 정본**이다 —
-    // `calculateDerivedCampaignFinancials` 가 저장 시점에 영속시키고, 「정산 진행 중」 표·
-    // 셀러 명세서·세무 보드가 전부 그 컬럼을 읽는다(오너 승인 설계
-    // `2026-08-07-settlement-money-separation-design.md` §1-2·§1-3).
-    // ⛔ 요율로 다시 계산하지 말 것: 그러면 ①수동 오버라이드(`isManualSettlementSales`)
-    // ②품목별 차등 수수료율(campaignDeals) ③개인 셀러의 VAT 제외 기준(sellerBase =
-    // actualSales/1.1)이 전부 무시돼, **같은 캠페인이 「진행 중」 표와 「완료」 표에서 다른
-    // 금액으로 보인다.** 실제로 오너가 정산완료 건의 영업수익을 고쳐도 목록에 반영되지
-    // 않는 결함이었다(T-022).
-    // 컬럼이 비어 있는 캠페인(actualSales 미입력 등 저장 파생이 한 번도 돌지 않은 건)만
-    // 종전 요율 식으로 폴백한다.
-    const totalMarginAmount = hasDecimalValue(campaign.settlementSales)
-      ? numberFromDecimal(campaign.settlementSales)
-      : (actualSales * totalMarginRate) / 100;
-    const sellerPayoutAmount = hasDecimalValue(campaign.sellerExpense)
-      ? numberFromDecimal(campaign.sellerExpense)
-      : (actualSales * sellerMarginRate) / 100;
-    // 순마진 = 영업수익 − 판매대행비. 폴백 경로에서는 종전 식
-    // (actualSales × (총요율 − 셀러요율) / 100)과 항등이라 값이 바뀌지 않는다.
-    const netMarginAmount = totalMarginAmount - sellerPayoutAmount;
+    const { totalMarginAmount, sellerPayoutAmount, netMarginAmount } =
+      resolveCampaignNetMargin(campaign);
 
     totalRevenue += actualSales;
     totalMargin += netMarginAmount;
