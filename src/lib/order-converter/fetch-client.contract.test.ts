@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * `proxyFetch` 의 프록시 에이전트 재사용 계약.
@@ -94,10 +94,28 @@ class FakeProxyAgent {
   }
 }
 
-vi.mock('undici', () => ({
-  fetch: (...args: unknown[]) => (undiciFetchMock as (...a: unknown[]) => unknown)(...args),
-  ProxyAgent: FakeProxyAgent,
-}));
+/**
+ * `true` 면 아래 목이 **진짜 undici** 로 통과시킨다 — 「터널 재사용 실동작」 describe 전용.
+ * 옵션값을 읽는 계약(위 FakeProxyAgent)과 실제 소켓 동작 계약이 한 파일에 살아야 하는데
+ * `vi.mock` 은 파일 전역이라, 목 안에서 갈아탄다. 기본은 false(대역).
+ */
+let useRealUndici = false;
+
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('undici')>();
+  return {
+    fetch: (...args: unknown[]) =>
+      useRealUndici
+        ? (actual.fetch as (...a: unknown[]) => unknown)(...args)
+        : (undiciFetchMock as (...a: unknown[]) => unknown)(...args),
+    // `new` 로 호출되는 함수가 객체를 반환하면 그 객체가 결과다 — 스위치에 따라 실물/대역.
+    ProxyAgent: function ProxyAgentSwitch(options: Record<string, unknown>) {
+      return useRealUndici
+        ? new actual.ProxyAgent(options as unknown as ConstructorParameters<typeof actual.ProxyAgent>[0])
+        : new FakeProxyAgent(options);
+    },
+  };
+});
 
 // 프록시 요청 집계(proxy-usage.ts)는 DB 에 쓰므로 대역으로 바꾸고, 무엇을 세는지만 본다.
 const { recordProxyRequestMock } = vi.hoisted(() => ({ recordProxyRequestMock: vi.fn() }));
@@ -110,6 +128,7 @@ const PROXY_FALLBACK = 'http://proxy-b.example:8080';
 
 beforeEach(() => {
   vi.resetModules();
+  useRealUndici = false;
   undiciFetchMock.mockClear();
   recordProxyRequestMock.mockClear();
   FakeProxyAgent.instances = [];
@@ -138,15 +157,27 @@ describe('proxyFetch — 에이전트 재사용', () => {
     expect(dispatcherLog).toEqual(Array(3).fill(FakeProxyAgent.instances[0]));
   });
 
-  it('관측된 호출 간격을 덮는 유휴 타임아웃으로 에이전트를 만든다', async () => {
+  it('터널 재사용 창을 넓히고 오리진당 연결을 하나로 묶는 옵션으로 에이전트를 만든다', async () => {
     process.env.PROXY_URLS = PROXY;
     const { proxyFetch } = await import('./fetch-client');
     await proxyFetch('https://example.test/a');
 
-    // 크론 1회 실행 안 호출 간격이 3~4초라 undici 기본값 4초로는 재사용이 깨진다.
-    // ⛔ 키우려면 프록시의 실제 유휴 타임아웃을 먼저 실측할 것(소스 주석 참조).
+    // 네이버는 `keep-alive: timeout=3` 을 보내고 undici 는 (힌트 − threshold) 를 유휴 창으로
+    // 쓴다 — threshold 1초면 창 2초. ⛔ 더 내리지 말 것(서버가 3초에 끊는 경계 앞 여유).
+    // `connections: 1` 은 동시 호출을 터널 하나에 직렬로 싣는다(Fixie 는 터널 수를 센다).
+    // `keepAliveTimeout` 은 힌트 없는 오리진에만 쓰이는 기본값이라 유지만 한다(소스 주석).
+    // 실제 소켓 동작은 아래 「터널 재사용 실동작」 describe 가 로컬 프록시로 증명한다.
+    // `headersTimeout` · `bodyTimeout` 은 `connections: 1` 의 방벽이다 — 호출부가 timeout 을
+    // 안 걸어 undici 기본 300s 면 멎은 응답 하나가 줄 전체를 5분 세운다(소스 주석).
+    // ⚠️ 이 두 값은 **옵션 단언만** 한다: 에이전트가 globalThis 캐시에 고정값으로 살아
+    //    테스트가 상한을 낮출 수 없고, 30초를 실제로 기다리는 실동작 테스트는 스위트에
+    //    못 넣는다. 프로덕션 코드에 테스트용 심을 뚫지 않기로 했다.
     expect(FakeProxyAgent.instances[0].options).toMatchObject({
       uri: PROXY,
+      keepAliveTimeoutThreshold: 1_000,
+      connections: 1,
+      headersTimeout: 30_000,
+      bodyTimeout: 60_000,
       keepAliveTimeout: 15_000,
     });
   });
@@ -379,4 +410,111 @@ describe('proxyFetch — 프록시 요청 집계(proxy-usage.ts)', () => {
 
     expect(recordProxyRequestMock).not.toHaveBeenCalled();
   });
+});
+
+/**
+ * 터널 재사용 **실동작** 계약 — 목이 아니라 진짜 undici + 로컬 소켓으로 증명한다.
+ *
+ * 위 describe 들은 옵션 **값**만 본다. 그런데 이 변경의 핵심 주장은 값이 아니라 동작이다:
+ * 「오리진이 `Keep-Alive: timeout=3` 을 보내면 undici 는 (3s − threshold) 뒤 소켓을 닫고,
+ * threshold 를 1초로 내리면 1.5초 뒤 두 번째 요청이 **같은 CONNECT 터널**을 탄다.」
+ * Fixie 는 CONNECT 터널 1건 = 사용량 1 로 세므로(오너 실측 2026-09-28) 이 CONNECT 개수가
+ * 곧 청구다. 그래서 세는 것은 HTTP 요청이 아니라 **프록시의 `connect` 이벤트**다.
+ *
+ * 구성(전부 127.0.0.1, 외부 네트워크 0):
+ *  - 오리진: Node http 서버, `keepAliveTimeout = 3000` → 네이버와 같은 `Keep-Alive: timeout=3`
+ *    헤더를 내고 실제로 3초에 끊는다.
+ *  - 프록시: `http.createServer().on('connect', …)` — CONNECT 를 세고 오리진으로 파이프.
+ *    undici ProxyAgent 는 `proxyTunnel` 기본 true 라 http 오리진도 CONNECT 로 뚫는다.
+ * 변이 확인(2026-09-28): `keepAliveTimeoutThreshold` 를 빼면(기본 2000 → 창 1초) 1.5초
+ * 케이스가 CONNECT 2개로 빨개진다 — 이 테스트가 그 옵션을 실제로 고정한다.
+ */
+describe('proxyFetch — 터널 재사용 실동작(로컬 CONNECT 계수 프록시)', () => {
+  let origin: import('node:http').Server;
+  let proxy: import('node:http').Server;
+  let connectCount = 0;
+  let originUrl = '';
+
+  beforeEach(async () => {
+    const http = await import('node:http');
+    const net = await import('node:net');
+    connectCount = 0;
+
+    origin = http.createServer((_req, res) => {
+      res.setHeader('Content-Type', 'text/plain');
+      res.end('ok');
+    });
+    // 네이버 실측과 같은 힌트(`keep-alive: timeout=3`)를 내고, 실제로도 3초에 끊는다.
+    origin.keepAliveTimeout = 3_000;
+    await new Promise<void>((r) => origin.listen(0, '127.0.0.1', r));
+    const originPort = (origin.address() as import('node:net').AddressInfo).port;
+    originUrl = `http://127.0.0.1:${originPort}/`;
+
+    proxy = http.createServer();
+    proxy.on('connect', (_req, clientSocket, head) => {
+      connectCount += 1;
+      const upstream = net.connect(originPort, '127.0.0.1', () => {
+        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        if (head.length) upstream.write(head);
+        upstream.pipe(clientSocket);
+        clientSocket.pipe(upstream);
+      });
+      const drop = () => {
+        upstream.destroy();
+        clientSocket.destroy();
+      };
+      upstream.on('error', drop);
+      clientSocket.on('error', drop);
+    });
+    await new Promise<void>((r) => proxy.listen(0, '127.0.0.1', r));
+    const proxyPort = (proxy.address() as import('node:net').AddressInfo).port;
+    process.env.PROXY_URLS = `http://127.0.0.1:${proxyPort}`;
+    useRealUndici = true;
+  });
+
+  afterEach(async () => {
+    // 캐시된 진짜 에이전트가 유휴 소켓을 들고 있으면 서버가 닫히지 않는다 — 먼저 닫는다.
+    const cache = (globalThis as Record<string, unknown>).__wagProxyAgentCache as
+      | Map<string, { close(): Promise<void> }>
+      | undefined;
+    for (const agent of cache?.values() ?? []) await agent.close();
+    delete (globalThis as Record<string, unknown>).__wagProxyAgentCache;
+    proxy.closeAllConnections?.();
+    origin.closeAllConnections?.();
+    await new Promise<void>((r) => proxy.close(() => r()));
+    await new Promise<void>((r) => origin.close(() => r()));
+  });
+
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  it('1.5초 간격의 두 요청은 CONNECT 터널 하나를 공유한다', async () => {
+    const { proxyFetch } = await import('./fetch-client');
+
+    const first = await proxyFetch(originUrl);
+    expect(first.status).toBe(200);
+    await first.text();
+    // 힌트 3s − threshold 1s = 2s 창 안이다. 기본 threshold(2s → 창 1s)였다면 여기서 이미
+    // 소켓이 닫혀 아래가 두 번째 CONNECT 를 뚫는다(변이 실측).
+    await sleep(1_500);
+    const second = await proxyFetch(originUrl);
+    expect(second.status).toBe(200);
+    await second.text();
+
+    expect(connectCount).toBe(1);
+  }, 10_000);
+
+  it('2.5초 간격이면 창(2초)이 끝나 CONNECT 가 2개다 — 창은 유한하다', async () => {
+    // 위 케이스만 있으면 「터널을 영원히 붙잡는 구현」도 초록이다. 창이 힌트에 묶여
+    // 끝난다는 것(= 서버가 끊기 전에 우리가 먼저 놓는다는 것)을 반대편에서 고정한다.
+    const { proxyFetch } = await import('./fetch-client');
+
+    const first = await proxyFetch(originUrl);
+    await first.text();
+    await sleep(2_500);
+    const second = await proxyFetch(originUrl);
+    expect(second.status).toBe(200);
+    await second.text();
+
+    expect(connectCount).toBe(2);
+  }, 10_000);
 });

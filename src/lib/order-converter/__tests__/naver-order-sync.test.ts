@@ -881,3 +881,35 @@ describe('queryOrderDetails 미회신 경고 (T-154)', () => {
     expect(message).not.toContain(ids[20]);
   });
 });
+
+describe('queryOrderDetails 청크 크기', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // 300 은 `src/app/order-converter/api/naver/dispatch/route.ts` 가 같은 엔드포인트에 매일
+  // 프로덕션에서 보내는 청크 크기다(레포 안 유일한 성공 증거). 종전 100 은 query 호출을
+  // 3배로 늘려 프록시 한도(하루 요청 수)를 그만큼 더 태웠다.
+  // ⛔ 300 을 넘기는 방향으로 이 계약을 고치지 말 것 — 그 위는 성공 증거가 없다.
+  it('301 개 id 는 300 + 1 의 2회 호출로 나간다', async () => {
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    const apiRequest = vi
+      .spyOn(clientModule, 'apiRequest')
+      .mockImplementation(async (_method: unknown, _path: unknown, body: unknown) => {
+        const { productOrderIds } = body as { productOrderIds: string[] };
+        return { data: productOrderIds.map((id) => ({ order: {}, productOrder: { productOrderId: id } })) };
+      });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ids = Array.from({ length: 301 }, (_, i) => `3${String(i).padStart(4, '0')}`);
+
+    const result = await queryOrderDetails(ids);
+
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+    const sentSizes = apiRequest.mock.calls.map(
+      ([, , body]) => (body as { productOrderIds: string[] }).productOrderIds.length,
+    );
+    expect(sentSizes).toEqual([300, 1]);
+    expect(result).toHaveLength(301);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

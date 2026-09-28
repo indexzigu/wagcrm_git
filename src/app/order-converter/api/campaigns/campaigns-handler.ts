@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/order-converter/prisma';
 import { searchNaverProducts } from '@/lib/order-converter/naver-commerce-api';
-import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesIdlePeriodCheckInterval, isIdlePeriodResyncDue, isConcretePeriodString, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
+import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesPeriodCheckInterval, isPeriodResyncDue, isConcretePeriodString, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
@@ -137,10 +137,11 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 데모 배포: 네이버 자격증명이 없고 시드가 category/salePeriod/productStatus를 채워 두므로
     // 스토어 조회를 아예 시도하지 않는다(매 GET마다 실패 경고가 쌓이는 것 방지).
     const needsNaver = !isDemoMode() && rawCampaigns.some((c: any) => needsFirstFill(c) || needsResync(c));
-    // 이번 회차의 조회를 **유휴 만기**가 불렀는가. 위상 모으기(아래 stampCheckedAt)는 이때만 한다.
+    // 이번 회차의 조회를 **간격 만기**(유휴 4시간·임박 30분)가 불렀는가. 위상 모으기(아래
+    // stampCheckedAt)는 이때만 한다.
     // ⚠️ 루프 **전에** 한 번 확정한다 — 루프 안에서 재평가하면 앞 캠페인의 확인 시각 쓰기가
     // 뒤 캠페인의 판정을 바꿔(read-after-write) 위상 모으기가 절반만 일어난다.
-    const idleDueThisRound = rawCampaigns.some((c: any) => isIdlePeriodResyncDue(c, nowMs));
+    const intervalDueThisRound = rawCampaigns.some((c: any) => isPeriodResyncDue(c, nowMs));
     let naverProducts: any[] = [];
     // 스토어를 **실제로** 읽었는가. 확인 시각(periodCheckedAt)은 이 값이 참일 때만 찍는다 —
     // 조회가 실패했는데 찍으면 '확인했다'가 거짓이 되어 다음 간격까지 기간 변경을 놓친다.
@@ -160,16 +161,19 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       const camp = rawCamp as any;
       const firstFill = needsFirstFill(camp);
       const resync = needsResync(camp);
-      // 확인 시각은 그 값을 **판정이 읽는 구간**(유휴)에서만, 그리고 **유휴 만기 때문에 조회가
-      // 난 회차**에만 찍는다. 두 조건이 다 필요하다:
-      //  · 유휴 구간만 — 임박 구간 판정은 이 값을 읽지 않으므로 찍어 봐야 쓰기만 는다.
-      //  · 유휴 만기 회차만 — 임박 캠페인이 하나라도 있으면 조회는 매 GET 나는데, 거기에 얹으면
-      //    유휴 캠페인 전원이 **매 GET 마다 쓰기**를 받는다(임박 구간을 뺀 바로 그 이유가 유휴로
-      //    옮겨갈 뿐이다). 그 회차엔 위상을 모을 이유도 없다 — 추가 호출을 만든 주체가 아니다.
+      // 확인 시각은 그 값을 **판정이 읽는 구간**(유휴·임박 = 간격 구간)에서만, 그리고 **간격 만기
+      // 때문에 조회가 난 회차**에만 찍는다. 두 조건이 다 필요하다:
+      //  · 간격 구간만 — 기간 미확정(unset) 판정은 이 값을 읽지 않으므로 찍어 봐야 쓰기만 는다.
+      //  · 간격 만기 회차만 — unset 캠페인이 하나라도 있으면 조회는 매 GET 나는데, 거기에 얹으면
+      //    간격 구간 전원이 **매 GET 마다 쓰기**를 받는다. 그 회차엔 위상을 모을 이유도 없다 —
+      //    추가 호출을 만든 주체가 아니다.
       // 🪤 반대로 만기 캠페인 **하나에만** 찍으면 위상이 영영 어긋나 캠페인 수만큼 조회가 따로
-      // 난다. 그래서 유휴 만기가 하나라도 있으면 그 회차에 유휴 구간 전원을 함께 찍어 모은다
-      // (응답은 이미 손에 있어 추가 호출 0).
-      const stampCheckedAt = didReadStore && idleDueThisRound && usesIdlePeriodCheckInterval(camp, nowMs);
+      // 난다. 그래서 간격 만기가 하나라도 있으면 그 회차에 간격 구간 **전원**(유휴·임박 가리지 않고)을
+      // 함께 찍어 모은다(응답은 이미 손에 있어 추가 호출 0). 임박 만기 회차(≤30분마다)에 유휴도
+      // 찍히므로 유휴는 임박 위상에 흡수돼 자체 4시간 호출을 따로 만들지 않는다 — 임박 캠페인이 하나라도
+      // 있는 동안 전체 상한은 30분에 1회, 쓰기는 그 회차에 간격 구간 캠페인 수만큼(오너 결정 2026-09-28
+      // 이전엔 임박이 매 GET 후보여서 이 합류가 곧 매 GET 쓰기였고, 그래서 유휴만 묶었다).
+      const stampCheckedAt = didReadStore && intervalDueThisRound && usesPeriodCheckInterval(camp, nowMs);
       if (firstFill || resync || stampCheckedAt) {
         // 스토어 상품 매칭은 productId(원상품/채널 어느 쪽이든)가 1순위 — 캠페인 productId는 네이버
         // 원상품번호로 저장되고 채널상품번호와 다르므로 둘 다 비교한다(campaign-match.ts와 같은 신뢰키, PR#106).

@@ -227,12 +227,23 @@ export async function fetchChangedProductOrderIds(fromIso: string): Promise<stri
   return Array.from(new Set(ids));
 }
 
-const QUERY_CHUNK_SIZE = 100;
+/**
+ * `product-orders/query` 한 호출에 실을 productOrderId 개수.
+ *
+ * 종전 100 은 근거 없는 보수값이었다. 300 이 네이버에 받아들여진다는 레포 안 증거는
+ * `src/app/order-converter/api/naver/dispatch/route.ts` — 같은 엔드포인트를 300건 청크로
+ * 보내고("최대 300건 제한") 그 라우트는 프로덕션에서 매일 돈다(ProxyRequestDaily 의
+ * `dispatch` 행). 이 상수를 맞추면 manual-sync · order-execute · dispatch 사후 동기화의
+ * query 호출 수가 **÷3** 이 된다 — 그 호출은 전부 프록시(Fixie) 터널을 타고, 한도는
+ * 하루 요청 수로 센다(`fetch-client.ts`).
+ * ⛔ 300 을 넘기지 말 것 — 그 위는 레포 안에 성공 증거가 없다.
+ */
+const QUERY_CHUNK_SIZE = 300;
 
 /**
  * 미회신 경고 한 줄에 실을 productOrderId 개수 상한.
  *
- * 청크가 통째로 안 돌아오면 100개가 되는데, 그러면 이 한 줄이 로그를 점거해 정작
+ * 청크가 통째로 안 돌아오면 300개(`QUERY_CHUNK_SIZE`)가 되는데, 그러면 이 한 줄이 로그를 점거해 정작
  * 함께 읽어야 할 앞뒤 줄이 묻힌다(`fetch-client.errorChainText` 의 `MAX_PARTS` 와 같은
  * 이유). 사람이 손으로 쫓는 용도라 앞쪽 몇 개면 충분하고, 전체 규모는 함께 찍는
  * **건수**가 말한다.
@@ -257,7 +268,7 @@ export function collectProductOrderIds(
  * 요청한 productOrderId 중 반환 집합에 없는 것을 찾는다 — 「네이버에 물어본 주문이 전부
  * 돌아왔는가」판정의 SSOT(T-155). `queryOrderDetails` 의 미회신 경고(아래)와
  * `syncPostCloseCancellations`(`naver-settlement-sync.ts`)의 확정 게이트가 같은 판정을
- * 각자 구현해 서로 어긋날 수 있었다 — 단위(전자는 100건 청크마다, 후자는 캠페인 전체
+ * 각자 구현해 서로 어긋날 수 있었다 — 단위(전자는 `QUERY_CHUNK_SIZE` 건 청크마다, 후자는 캠페인 전체
  * 누적)는 여전히 다르지만 비교 자체는 이제 이 함수 하나다.
  * ⛔ 개수로 재지 말 것: 중복·잉여 행 하나가 **빠진 id 를 가려 「온전함」으로 읽힌다.**
  * 🪤 `normalizeQueriedOrder` 는 `productOrder` 가 있기만 하면 통과시키므로 **id 없는 행도
@@ -269,7 +280,7 @@ export function findMissingProductOrderIds(requestedIds: Iterable<string>, retur
 }
 
 /**
- * productOrderId 목록의 상세 내역을 100건 청크로 나눠 query API를 호출하고,
+ * productOrderId 목록의 상세 내역을 `QUERY_CHUNK_SIZE` 건 청크로 나눠 query API를 호출하고,
  * 정규화된 평면 주문 객체 배열로 반환한다.
  */
 export async function queryOrderDetails(productOrderIds: string[]): Promise<any[]> {
