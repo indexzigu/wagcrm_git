@@ -35,6 +35,7 @@ import { DataIntegrityBody } from "./data-integrity-card";
 import { usePriceOverview, PriceDefenseBody, PriceDefenseLegend } from "./price-defense-card";
 import { SegmentedTabCard, SegmentedTabBar, type SegmentedTab } from "./segmented-tab-card";
 import { SystemRadarCard } from "./system-radar-card";
+import { TaxableRevenueCard } from "./taxable-revenue-card";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
@@ -1457,6 +1458,11 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               />
             </div>
           </section>
+
+          {/* 밴드 4: 네이버 판매자 등급 과세기준매출 여유(설계 2026-09-29, 항상 표시) — 등급 갱신이 반년
+              단위라 매일의 운영 판단(밴드 0~3)보다 아래, 관제 정보(시스템 레이더)보다 위에 풀폭으로 둔다.
+              세 칸(여유 · 채널 소계 · 넘었을 때 비용)이 가로로 읽혀야 해서 트라이어드 칸에 넣지 않았다. */}
+          <TaxableRevenueCard tracker={initialData.taxableRevenueTracker} />
 
           {/* 시스템 레이더 — 자동화 스케줄 모니터링. 판단 빈도가 낮은 관제 정보라 최하단 풀폭 스트립으로 배치 */}
           <SystemRadarCard />

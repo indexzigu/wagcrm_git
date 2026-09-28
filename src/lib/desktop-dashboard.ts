@@ -9,6 +9,11 @@ import {
   resolveMoneySlotEffectiveDate,
   type MoneySlotDateSource,
 } from "./tax-filing-board";
+import {
+  TAXABLE_REVENUE_EXCLUDED_STATUSES,
+  buildTaxableRevenueTracker,
+  resolveTaxableRevenueQueryFloor,
+} from "./taxable-revenue-tracker";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -303,7 +308,7 @@ export async function getDesktopDashboardData(now = new Date()) {
   const ninetyDaysAgo = new Date(now.getTime() - 90 * DAY_MS);
   const scheduleEnd = new Date(now.getTime() + 14 * DAY_MS);
 
-  const [campaigns, goalResult, outreach, googleCalendar, scheduleGapBriefing] = await Promise.all([
+  const [campaigns, goalResult, outreach, googleCalendar, scheduleGapBriefing, taxableRevenueRows] = await Promise.all([
     prisma.salesCampaign.findMany({
       select: {
         id: true,
@@ -361,6 +366,28 @@ export async function getDesktopDashboardData(now = new Date()) {
     }),
     prisma.storageIntegration.findUnique({ where: { provider: "GOOGLE_CALENDAR" } }),
     getScheduleGapBriefing(now),
+    // 네이버 판매자 등급 과세기준매출 카드 — 위 전량 조회에 부가 항목 join 을 얹지 않고 기준기간·
+    // 비용 창으로 좁힌 별도 경량 조회를 쓴다(egress: 부가 항목은 이 카드만 필요하다). 정밀한
+    // 기간·상태 판정은 순수 함수가 다시 하고, 여기 where 는 행 수만 줄인다. 자사몰은 기간을 일수로
+    // 안분하는데, 창과 겹치려면 종료일이 창 시작 이후여야 하므로 `endDate >= 하한` 이 겹침도 덮는다.
+    prisma.salesCampaign.findMany({
+      where: {
+        status: { notIn: [...TAXABLE_REVENUE_EXCLUDED_STATUSES] },
+        endDate: { gte: resolveTaxableRevenueQueryFloor(now) },
+      },
+      select: {
+        salesChannel: true,
+        status: true,
+        // 자사몰 매출의 일수 안분(판매일 귀속 근사)에 쓴다.
+        startDate: true,
+        endDate: true,
+        actualSales: true,
+        settlementSales: true,
+        sellerExpense: true,
+        // 브랜드몰·셀러몰 계산서 금액의 부가 항목 가산(`computeBaseAmountForBasis`)이 읽는 3필드뿐.
+        settlementItems: { select: { invoiceMode: true, counterparty: true, amount: true } },
+      },
+    }),
   ]);
   const goals = goalResult.goals;
 
@@ -573,6 +600,23 @@ export async function getDesktopDashboardData(now = new Date()) {
       };
     }),
     upcomingEvents: buildUpcomingEvents(campaigns, now, scheduleEnd),
+    taxableRevenueTracker: buildTaxableRevenueTracker(
+      taxableRevenueRows.map((row) => ({
+        salesChannel: row.salesChannel,
+        status: row.status,
+        startDate: row.startDate,
+        endDate: row.endDate,
+        actualSales: row.actualSales == null ? null : numberValue(row.actualSales),
+        settlementSales: row.settlementSales == null ? null : numberValue(row.settlementSales),
+        sellerExpense: row.sellerExpense == null ? null : numberValue(row.sellerExpense),
+        settlementItems: (row.settlementItems ?? []).map((item) => ({
+          invoiceMode: item.invoiceMode,
+          counterparty: item.counterparty,
+          amount: numberValue(item.amount),
+        })),
+      })),
+      now,
+    ),
     googleCalendarConnected: googleCalendar?.status === "CONNECTED",
     revenueGoalSchemaReady: goalResult.schemaReady,
     scheduleGapBriefing,

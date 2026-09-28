@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardHome } from "../dashboard-home";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { buildTaxableRevenueTracker } from "@/lib/taxable-revenue-tracker";
 
 vi.mock("recharts", () => ({
   ComposedChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -81,6 +82,7 @@ function data(overrides: Partial<DesktopDashboardData> = {}): DesktopDashboardDa
       summary: { totalBuckets: 0, emptyBuckets: 0, dangerBuckets: 0, urgentBuckets: 0, gapCount: 0, riskyGapCount: 0 }
     },
     dataIntegrityIssues: [],
+    taxableRevenueTracker: buildTaxableRevenueTracker([], new Date("2026-06-15T03:00:00.000Z")),
     ...overrides,
   };
 }
