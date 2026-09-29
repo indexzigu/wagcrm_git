@@ -373,6 +373,16 @@ describe("CalendarView 팝오버 대금 날짜 (완료면 실제일)", () => {
     expect(screen.queryByText("26-07-20")).toBeNull();
   });
 
+  it("캠페인 팝오버에 보이는 닫기 버튼이 있다", async () => {
+    render(<CalendarView month="2026-07" campaigns={[paidMember("solo")]} />);
+    await userEvent.click(screen.getByTitle(/^비타슈넬 · 가온 \(/));
+
+    const popover = await screen.findByRole("dialog");
+    await userEvent.click(screen.getByRole("button", { name: "닫기" }));
+
+    expect(popover).not.toBeVisible();
+  });
+
   it("조합 팝오버도 같은 규칙이다", async () => {
     render(
       <CalendarView

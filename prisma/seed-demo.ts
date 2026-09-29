@@ -599,7 +599,7 @@ async function seedPartnersSellersDeals() {
         id: partner.id,
         name: partner.name,
         type: partner.type,
-        status: "ACTIVE",
+        status: "거래중",
         contactInfo: partner.contactInfo,
         bankAccount: "데모은행 000-0000-0000",
         businessNumber: partner.businessNumber,

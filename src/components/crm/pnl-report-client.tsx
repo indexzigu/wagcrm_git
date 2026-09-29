@@ -87,7 +87,8 @@ function formatKRW(value: number): string {
 
 function formatFullKRW(value: number): string {
   const rounded = Math.round(value);
-  return `${rounded.toLocaleString()}원`;
+  const normalized = rounded === 0 ? 0 : rounded;
+  return `${normalized.toLocaleString()}원`;
 }
 
 function formatPercent(value: number): string {
@@ -709,19 +710,19 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                     />
                     <DetailLine
                       label="셀러 지급액"
-                      value={`-${formatFullKRW(selectedCampaign.sellerPayout)}`}
+                      value={formatFullKRW(-selectedCampaign.sellerPayout)}
                     />
                     <DetailLine
                       label="공제세액"
-                      value={`-${formatFullKRW(selectedCampaign.deductedTax)}`}
+                      value={formatFullKRW(-selectedCampaign.deductedTax)}
                     />
                     <DetailLine
                       label="운영비"
-                      value={`-${formatFullKRW(selectedCampaign.operatingExpense)}`}
+                      value={formatFullKRW(-selectedCampaign.operatingExpense)}
                     />
                     <DetailLine
                       label="기타비용"
-                      value={`-${formatFullKRW(selectedCampaign.miscExpense)}`}
+                      value={formatFullKRW(-selectedCampaign.miscExpense)}
                     />
                     <DetailLine
                       label="세전 영업순이익"
@@ -731,11 +732,11 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                     />
                     <DetailLine
                       label="예상 소득세"
-                      value={`-${formatFullKRW(selectedCampaign.estimatedIncomeTax)}`}
+                      value={formatFullKRW(-selectedCampaign.estimatedIncomeTax)}
                     />
                     <DetailLine
                       label="예상 지방세"
-                      value={`-${formatFullKRW(selectedCampaign.estimatedLocalIncomeTax)}`}
+                      value={formatFullKRW(-selectedCampaign.estimatedLocalIncomeTax)}
                     />
                     <DetailLine
                       label="세후 예상 영업이익"

@@ -14,6 +14,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import {
+  normalizePartnerStatus,
   partnerTypeLabels,
   type DashboardData,
   type PartnerSummary,
@@ -46,7 +47,7 @@ const partnerColumns: GridColumn<PartnerRow>[] = [
     label: "상태",
     width: 100,
     render: (row) => {
-      const status = row.status;
+      const status = normalizePartnerStatus(row.status);
       if (!status) return <span className="text-muted-foreground">-</span>;
       let badgeStyles = "bg-slate-50 text-slate-700 ring-slate-600/10";
       if (status === "거래중") {
