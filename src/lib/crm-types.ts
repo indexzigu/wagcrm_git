@@ -687,6 +687,10 @@ export const partnerTypeLabels: Record<PartnerType, string> = {
   SELLER: "셀러",
 };
 
+export function normalizePartnerStatus(status: string | null | undefined): string {
+  return status === "ACTIVE" ? "거래중" : status ?? "";
+}
+
 export const snsTypeLabels: Record<SnsType, string> = {
   INSTAGRAM: "Instagram",
   YOUTUBE: "YouTube",

@@ -53,7 +53,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { partnerTypeLabels, type PartnerSummary, type AssetSection, assetSectionLabels } from "@/lib/crm-types";
+import { normalizePartnerStatus, partnerTypeLabels, type PartnerSummary, type AssetSection, assetSectionLabels } from "@/lib/crm-types";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { sortLinkedDealsByCreatedAt } from "@/lib/entity-linking";
@@ -1071,7 +1071,7 @@ export function PartnersPanel({
           />
           <InlineEditField
             label="거래처 상태"
-            value={partner.status ?? ""}
+            value={normalizePartnerStatus(partner.status)}
             fieldType="select"
             options={[
               { value: "거래중", label: "거래중" },

@@ -11,9 +11,11 @@ import {
   ExternalLink,
   Plus,
   UserRound,
+  X,
 } from "lucide-react";
 import {
   Popover,
+  PopoverClose,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
@@ -281,7 +283,15 @@ function CampaignPopoverContent({
             <span className="truncate">{member.sellerName}</span>
           </div>
         </div>
-        <StatusBadge status={member.status} className="shrink-0" />
+        <div className="flex shrink-0 items-center gap-1">
+          <StatusBadge status={member.status} />
+          <PopoverClose
+            aria-label="닫기"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <X className="size-3.5" aria-hidden="true" />
+          </PopoverClose>
+        </div>
       </div>
 
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -345,7 +355,15 @@ function GroupPopoverContent({
             <Boxes className="size-2.5" aria-hidden="true" />조합 {entity.memberCount}건
           </span>
         </div>
-        <StatusBadge status={entity.status} className="shrink-0" />
+        <div className="flex shrink-0 items-center gap-1">
+          <StatusBadge status={entity.status} />
+          <PopoverClose
+            aria-label="닫기"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            <X className="size-3.5" aria-hidden="true" />
+          </PopoverClose>
+        </div>
       </div>
       <p className="text-[10px] text-muted-foreground">
         표시된 상태는 가장 덜 진행된 멤버 기준입니다.
