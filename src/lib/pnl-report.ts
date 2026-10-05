@@ -1,3 +1,5 @@
+import { computeOperatingProfit } from "./campaign-financials";
+
 type DecimalLike = number | string | { toString(): string } | null | undefined;
 
 export type IncomeTaxBracket = {
@@ -286,8 +288,13 @@ function buildBaseCampaignRows(campaigns: PnlCampaignRecord[]): PnlCampaignRow[]
     const deductedTax = roundCurrency(numberFromDecimal(campaign.taxExpense));
     const operatingExpense = roundCurrency(numberFromDecimal(campaign.operatingExpense));
     const miscExpense = roundCurrency(numberFromDecimal(campaign.miscExpense));
-    const calculatedPreTaxProfit =
-      commissionRevenue - sellerPayout - deductedTax - operatingExpense - miscExpense;
+    const calculatedPreTaxProfit = computeOperatingProfit({
+      settlementSales: commissionRevenue,
+      sellerExpense: sellerPayout,
+      taxExpense: deductedTax,
+      operatingExpense,
+      miscExpense,
+    });
     const preTaxOperatingProfit = roundCurrency(
       hasDecimalValue(campaign.operatingProfit)
         ? numberFromDecimal(campaign.operatingProfit)

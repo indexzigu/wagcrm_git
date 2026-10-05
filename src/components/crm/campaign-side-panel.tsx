@@ -88,6 +88,7 @@ import { resolveBrandSettlementTotal } from "@/lib/settlement-brand-total";
 import { fetchGroupDetail } from "@/lib/campaign-group-client";
 import type { CampaignGroupMemberRow } from "@/lib/crm-types";
 import { isIndividualSeller } from "@/lib/seller-tax-utils";
+import { computeOperatingProfit } from "@/lib/campaign-financials";
 import {
   SETTLEMENT_COUNTERPARTIES,
   SETTLEMENT_COUNTERPARTY_LABEL,
@@ -1758,7 +1759,13 @@ function SettlementFinancialSummary({
   const miscExpense = Number(campaign.miscExpense ?? 0);
   const operatingProfit =
     campaign.operatingProfit ??
-    grossProfit - operatingExpense - taxExpense - miscExpense;
+    computeOperatingProfit({
+      settlementSales: grossCommission,
+      sellerExpense: sellerFee,
+      taxExpense,
+      operatingExpense,
+      miscExpense,
+    });
   const netProfitRate = grossSales > 0 ? (operatingProfit / grossSales) * 100 : 0;
 
   // 부가 항목 — 판정·합계는 전부 `settlement-items.ts` SSOT 에 위임한다(화면이
@@ -1839,8 +1846,13 @@ function SettlementFinancialSummary({
   const draftOperatingExpense = toNumber(draft.operatingExpense);
   const draftMiscExpense = toNumber(draft.miscExpense);
   const draftNetCommission = draftSettlementSales - draftSellerExpense;
-  const draftOperatingProfit =
-    draftNetCommission - draftTaxExpense - draftOperatingExpense - draftMiscExpense;
+  const draftOperatingProfit = computeOperatingProfit({
+    settlementSales: draftSettlementSales,
+    sellerExpense: draftSellerExpense,
+    taxExpense: draftTaxExpense,
+    operatingExpense: draftOperatingExpense,
+    miscExpense: draftMiscExpense,
+  });
   // 편집 중에도 같은 규칙 — 입력하다 적자로 넘어가면 즉시 색이 바뀐다(profit-tone SSOT).
   const summaryProfitTone = resolveProfitTone(isEditing ? draftOperatingProfit : operatingProfit);
   const draftNetMarginRate = computeNetMarginRate(

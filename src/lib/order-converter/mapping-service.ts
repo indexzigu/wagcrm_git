@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/order-converter/prisma';
 import fs from 'fs';
 import path from 'path';
-import { calculateDerivedCampaignFinancials } from '@/lib/campaign-financials';
+import { calculateDerivedCampaignFinancials, computeOperatingProfit } from '@/lib/campaign-financials';
 import { isIndividualSeller, getSellerPayoutBase, calcIndividualIncomeTax } from '@/lib/seller-tax-utils';
 import { getDisplayDealName } from '@/lib/deal-display';
 import { countDistinctSellerIds, isCrossSellerSet, CROSS_SELLER_REJECT_MESSAGE } from '@/lib/cross-seller';
@@ -474,8 +474,15 @@ export async function recalculateSalesCampaignTotals(campaignId: string) {
       : Math.round(netCommission - (netCommission / 1.1));
   }
 
-  derivedFinancials.operatingProfit = 
-    nextActualSales - derivedFinancials.sellerExpense - derivedFinancials.taxExpense - nextOperatingExpense - nextMiscExpense;
+  // 손익은 **영업수익 기준** SSOT 로만 낸다(오너 확정 2026-10-05). 종전 이 자리는
+  // 피감수가 총매출(`nextActualSales`)이라 편집 경로와 같은 캠페인에 다른 값을 저장했다.
+  derivedFinancials.operatingProfit = computeOperatingProfit({
+    settlementSales: derivedFinancials.settlementSales,
+    sellerExpense: derivedFinancials.sellerExpense,
+    taxExpense: derivedFinancials.taxExpense,
+    operatingExpense: nextOperatingExpense,
+    miscExpense: nextMiscExpense,
+  });
 
   await prisma.salesCampaign.update({
     where: { id: campaignId },

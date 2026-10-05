@@ -12,7 +12,7 @@ import { googleDriveProvider, GOOGLE_DRIVE_PROVIDER } from "@/lib/asset-storage"
 import type { CampaignStatus, SalesChannel, SnsType } from "@/lib/crm-types";
 import { recalculateCampaignRounds } from "@/services/campaignRounds";
 import { pickShortLink } from "@/lib/order-converter/review-link";
-import { calculateDerivedCampaignFinancials } from "@/lib/campaign-financials";
+import { calculateDerivedCampaignFinancials, computeOperatingProfit } from "@/lib/campaign-financials";
 import {
   isIndividualSeller,
   getSellerPayoutBase,
@@ -658,7 +658,13 @@ export const campaignService = {
               : Math.round(netCommission - (netCommission / 1.1));
           }
 
-          financials.operatingProfit = netCommission - nextOperatingExpense - financials.taxExpense - resolvedMiscExpense;
+          financials.operatingProfit = computeOperatingProfit({
+            settlementSales: financials.settlementSales,
+            sellerExpense: financials.sellerExpense,
+            taxExpense: financials.taxExpense,
+            operatingExpense: nextOperatingExpense,
+            miscExpense: resolvedMiscExpense,
+          });
         }
       }
 
