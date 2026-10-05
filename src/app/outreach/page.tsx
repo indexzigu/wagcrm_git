@@ -162,6 +162,14 @@ export default function OutreachPage() {
   const [stageFilter, setStageFilter] = useState<OutreachStageFilter>("IN_PROGRESS");
   // 상단 「오늘 할 일」 줄에서 고른 거르기(T-226). 단계 탭과 겹쳐 쓰지 않는다 — 탭을 누르면 풀린다.
   const [attentionFilter, setAttentionFilter] = useState<OutreachAttentionKind | null>(null);
+  // 「오늘 할 일」 판정 기준 시각. 이 앱은 탭 복귀 재조회를 끄고 있어(providers
+  // refetchOnWindowFocus:false) 시간만 흐르면 렌더가 없다 — 열어 둔 사이 리마인드 시각·3일
+  // 경계를 넘어도 칩과 목록이 그대로 남지 않도록 1분마다 다시 잰다.
+  const [attentionNowMs, setAttentionNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setAttentionNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const selectStage = useCallback((stage: OutreachStageFilter) => {
     setStageFilter(stage);
     setAttentionFilter(null);
@@ -434,7 +442,7 @@ export default function OutreachPage() {
   }, [tasks, applyTaskUpdate]);
 
   const filteredTasks = useMemo(() => {
-    const now = new Date();
+    const now = new Date(attentionNowMs);
     return tasks.filter((task) => {
       // 1. Search Query
       if (searchQuery.trim()) {
@@ -457,23 +465,24 @@ export default function OutreachPage() {
 
       return true;
     });
-  }, [tasks, searchQuery, stageFilter, attentionFilter]);
+  }, [tasks, searchQuery, stageFilter, attentionFilter, attentionNowMs]);
 
   // 「오늘 할 일」 개수 — 검색·탭과 무관하게 전체에서 센다(모바일 영업 확인과 같은 모수).
-  // ⛔ useMemo([tasks]) 로 감싸지 말 것 — 페이지를 오래 열어 둔 사이 리마인드 시각·3일
-  // 경계를 넘으면 칩 숫자(옛 시각)와 걸러진 목록(새 시각)이 어긋난다. 태스크 수 × 3 판정이라
-  // 렌더마다 새로 세도 비용이 없다.
-  const attentionNow = new Date();
-  const attentionCounts: Record<OutreachAttentionKind, number> = {
-    REMINDER_DUE: 0,
-    PENDING_APPROVAL: 0,
-    RESPONSE_GAP: 0,
-  };
-  for (const task of tasks) {
-    for (const item of OUTREACH_ATTENTION_ITEMS) {
-      if (matchesAttention(task, item.kind, attentionNow)) attentionCounts[item.kind] += 1;
+  // 목록 거르기와 같은 기준 시각(attentionNowMs)을 써야 칩 숫자와 걸러진 카드 수가 맞는다.
+  const attentionCounts = useMemo(() => {
+    const now = new Date(attentionNowMs);
+    const counts: Record<OutreachAttentionKind, number> = {
+      REMINDER_DUE: 0,
+      PENDING_APPROVAL: 0,
+      RESPONSE_GAP: 0,
+    };
+    for (const task of tasks) {
+      for (const item of OUTREACH_ATTENTION_ITEMS) {
+        if (matchesAttention(task, item.kind, now)) counts[item.kind] += 1;
+      }
     }
-  }
+    return counts;
+  }, [tasks, attentionNowMs]);
 
   const proposedTasks = useMemo(() => {
     return filteredTasks.filter((item) => item.status === "PROPOSED");
