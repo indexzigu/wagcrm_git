@@ -59,6 +59,24 @@ beforeEach(() => {
 });
 
 describe('POST /order-converter/api/naver/dispatch', () => {
+  it.each([
+    ['누락', undefined],
+    ['빈 문자열', ''],
+    ['모르는 코드', 'UNKNOWN_COURIER'],
+  ])('택배사 코드 %s 이 한 건이라도 섞이면 400 — 네이버를 한 번도 부르지 않는다', async (_label, code) => {
+    const bad = { ...dispatchReq('p2'), deliveryCompanyCode: code };
+
+    const res = await POST(makeRequest([dispatchReq('p1'), bad]));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toContain('택배사 코드를 인식하지 못해');
+    expect(body.error).toContain('1건');
+    expect(apiRequestMock).not.toHaveBeenCalled();
+    expect(syncOrdersByIdsMock).not.toHaveBeenCalled();
+    expect(runSyncMock).not.toHaveBeenCalled();
+  });
+
   it('전량 이미 배송중이면 발송 API는 건너뛰되 해당 주문을 즉시 스냅샷 재조회한다', async () => {
     apiRequestMock.mockResolvedValue({
       data: [queryItem('p1', 'DELIVERING'), queryItem('p2', 'DELIVERING')],

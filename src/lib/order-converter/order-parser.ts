@@ -336,7 +336,10 @@ export function extractTrackingMapByReply(
         orderId = '';
       }
 
-      let courier = String(cleanRow[normalize('택배사')] || '').trim() || 'CJ대한통운';
+      // 🔴 택배사 칸이 비었으면 **빈 채로 둔다.** 종전에는 여기서 `CJ대한통운` 으로 채워, 뒤의
+      //    발송처리가 「회신에 택배사가 없었다」는 사실을 볼 수 없었다(실제 택배사와 무관하게
+      //    CJ 로 네이버에 등록). 빈 값의 처분은 `courier-code.ts` 가 한다 — 등록 전량 중단.
+      let courier = String(cleanRow[normalize('택배사')] || '').trim();
       // 🔴 **셀 값도 헤더와 같은 축이다.** 헤더만 정규화하면 NFD 로 들어온 `CJ택배` 가
       //    그대로 남아 표기가 갈린다(발주서·송장 조회에서 다른 택배사로 읽힌다).
       //    교차 검증이 「같은 함수에 남은 같은 결함」으로 짚은 자리다(2026-09-02).

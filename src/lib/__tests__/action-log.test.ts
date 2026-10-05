@@ -132,6 +132,26 @@ describe('buildFetchInvoiceLog (송장회신)', () => {
 });
 
 describe('buildRegisterInvoiceLog (송장등록 — 실사고 핵심)', () => {
+  it('운영자가 고른 택배사 내역은 details.courierOverrides 로 남고, 서버 검증을 그대로 통과한다', () => {
+    const log = buildRegisterInvoiceLog({
+      campaign: camp, successCount: 5, failCount: 0, skipCount: 0,
+      courierOverrides: [
+        { raw: '경동택배', code: 'HANJIN', count: 2 },
+        { raw: '택배사 미기재', code: 'EPOST', count: 3 },
+      ],
+    });
+    expect(log.details).toEqual({
+      courierOverrides: [
+        { raw: '경동택배', code: 'HANJIN', count: 2 },
+        { raw: '택배사 미기재', code: 'EPOST', count: 3 },
+      ],
+    });
+    expect(sanitizeActionLogInput(JSON.parse(JSON.stringify(log)))?.details).toEqual(log.details);
+  });
+  it('고른 내역이 없으면(빈 배열·미전달) courierOverrides 키를 만들지 않는다', () => {
+    expect(buildRegisterInvoiceLog({ campaign: camp, successCount: 1, failCount: 0, skipCount: 0, courierOverrides: [] }).details).toBeNull();
+    expect(buildRegisterInvoiceLog({ campaign: camp, successCount: 1, failCount: 0, skipCount: 0 }).details).toBeNull();
+  });
   it('전량 성공 → OK', () => {
     const log = buildRegisterInvoiceLog({ campaign: camp, successCount: 42, failCount: 0, skipCount: 0 });
     expect(log.status).toBe('OK');

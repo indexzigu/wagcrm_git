@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CrmShell } from './crm-shell';
 import { Button } from '@/components/ui/button';
 import { DataEmpty } from '@/components/ui/empty';
@@ -57,6 +57,13 @@ import CampaignInsightsModal from './shipping/modals/CampaignInsightsModal';
 import { downloadExcelBlob } from '@/lib/order-converter/export-utils';
 import type { TrackingData } from '@/lib/order-converter/order-parser';
 import { isNaverProductOrderId } from '@/lib/order-converter/naver-order-id';
+import {
+  buildNaverDispatchRequests,
+  confirmCourierChoices,
+  type CourierChoices,
+  type UnresolvedCourierGroup,
+} from '@/lib/order-converter/courier-code';
+import CourierChoiceDialog from './courier-choice-dialog';
 import { formatLastSyncLabel } from '@/lib/date-utils';
 import {
   buildConfirmOrderLog,
@@ -1067,6 +1074,35 @@ export default function OrderDashboard() {
   // 발송지연 안내 모달 — 드롭다운(⋮) '발송지연 안내' 진입. 실행 가드는 busyActions(delayDispatch:*).
   const [delayDispatchCampaignId, setDelayDispatchCampaignId] = useState<string | null>(null);
 
+  // 택배사 선택 창 — 송장 등록 중 택배사를 못 읽은 송장이 있으면 여기서 멈춰 운영자에게 묻는다.
+  // `resolve` 는 멈춰 있는 submitTrackingData 를 깨운다(선택 = 이어서 등록 / null = 아무것도 안 보냄).
+  // 대기 중인 resolve 는 ref 에 둔다 — 창이 떠 있는 동안 다른 캠페인의 송장 등록이 또 물으면, 먼저
+  // 묻던 쪽을 「취소」로 끝내야 그 흐름의 잠금(submitTracking:*·uploadInvoice:*)이 풀린다. 덮어쓰기만
+  // 하면 앞선 약속이 영영 안 끝나 그 캠페인의 등록 버튼이 잠긴 채 남는다. 화면이 사라질 때도 같다.
+  const [courierPrompt, setCourierPrompt] = useState<{ id: number; groups: UnresolvedCourierGroup[] } | null>(null);
+  const courierResolveRef = useRef<((choices: CourierChoices | null) => void) | null>(null);
+  const courierPromptSeqRef = useRef(0);
+  const askCourierChoices = (groups: UnresolvedCourierGroup[]) =>
+    new Promise<CourierChoices | null>((resolve) => {
+      courierResolveRef.current?.(null);
+      courierResolveRef.current = resolve;
+      courierPromptSeqRef.current += 1;
+      setCourierPrompt({ id: courierPromptSeqRef.current, groups });
+    });
+  const settleCourierPrompt = (choices: CourierChoices | null) => {
+    const resolve = courierResolveRef.current;
+    courierResolveRef.current = null;
+    resolve?.(choices);
+    setCourierPrompt(null);
+  };
+  useEffect(
+    () => () => {
+      courierResolveRef.current?.(null);
+      courierResolveRef.current = null;
+    },
+    [],
+  );
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -1236,17 +1272,20 @@ export default function OrderDashboard() {
 
     setActionBusy(busyKey, true);
     try {
-    const courierMap: Record<string, string> = {
-      'CJ대한통운': 'CJGLS', 'CJ택배': 'CJGLS', '롯데택배': 'HYUNDAI', '우체국택배': 'EPOST', '로젠택배': 'KGB', '한진택배': 'HANJIN'
-    };
-
-    const dispatchRequests = naverRecords.map(r => ({
-      productOrderId: String(r.id).trim(),
-      deliveryMethod: 'DELIVERY',
-      deliveryCompanyCode: courierMap[r.courier.replace(/\s+/g, '')] || 'CJGLS',
-      trackingNumber: String(r.tracking).trim(),
-      dispatchDate: new Date().toISOString()
-    }));
+    // 택배사 이름 → 네이버 코드는 `courier-code.ts` 가 정본이다. 못 읽은 택배사(빈 칸 포함)가
+    // 한 건이라도 있으면 **운영자가 택배사를 고를 때까지 아무것도 네이버로 보내지 않는다**(오너 확정
+    // 2026-10-05) — 종전의 기본값(CJ대한통운)은 실제 고객 주문에 틀린 택배사를 조용히 등록했다.
+    // 엑셀 내려받기·발송처리 API·작업 기록 전부 이 뒤에 있다. 취소하면 무음으로 끝난다(기록도 없음).
+    const courierConfirmed = await confirmCourierChoices(naverRecords, askCourierChoices);
+    if (!courierConfirmed) return;
+    // 고른 택배사는 못 읽은 송장에만 입혀져 있다 — 인식된 송장은 파일 값 그대로다.
+    const sendRecords = courierConfirmed.records;
+    const built = buildNaverDispatchRequests(sendRecords, new Date().toISOString());
+    if (!built.ok) {
+      addToast(built.message, 'error');
+      return;
+    }
+    const dispatchRequests = built.requests;
 
     addToast(`네이버 스토어에 발송 처리를 요청합니다. (${dispatchRequests.length}건)`, 'info');
 
@@ -1255,8 +1294,8 @@ export default function OrderDashboard() {
       try {
         const XLSX = await import('xlsx');
         // 네이버 발송처리 일괄등록 양식이므로 사은품 가상 번호를 넣으면 업로드가 반려된다 —
-        // API 제출과 동일하게 naverRecords만 싣는다.
-        const excelData = naverRecords.map(r => ({
+        // API 제출과 동일하게 naverRecords(택배사 선택 반영본 = sendRecords)만 싣는다.
+        const excelData = sendRecords.map(r => ({
           '상품주문번호': r.id,
           '배송방법': '택배,등기,소포',
           '택배사': r.courier,
@@ -1365,6 +1404,8 @@ export default function OrderDashboard() {
       skipped: [...allSkipped, ...giftSkips],
       firstFailReason: firstFailReason || (hadNetworkError ? '네트워크 오류' : undefined),
       fileName: previewInvoiceFileName || undefined,
+      // 운영자가 택배사 선택 창에서 직접 고른 내역(파일 글자 → 코드 · 건수). 고르지 않았으면 빈 배열.
+      courierOverrides: courierConfirmed.overrides,
     }));
 
     // 송장등록은 네이버 발송처리(→배송중)로 주문상태를 바꾸므로, stale 스냅샷 캐시를
@@ -2557,6 +2598,16 @@ export default function OrderDashboard() {
         />
         );
       })()}
+
+      {/* 택배사 선택 창 — key 로 물음마다 새로 띄워, 앞선 물음에서 고른 값이 다음 물음에 남지 않게 한다. */}
+      {courierPrompt && (
+        <CourierChoiceDialog
+          key={courierPrompt.id}
+          groups={courierPrompt.groups}
+          onCancel={() => settleCourierPrompt(null)}
+          onConfirm={(choices) => settleCourierPrompt(choices)}
+        />
+      )}
 
       {/* 발송지연 안내 모달 — 2단계 확인 후 네이버 /delay 호출(고객 알림 즉시 발송, 취소 불가) */}
       {delayDispatchCampaignId && (() => {

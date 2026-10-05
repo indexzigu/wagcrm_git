@@ -3,6 +3,7 @@ import { withProxySource } from '@/lib/order-converter/proxy-usage';
 import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { runSync, syncOrdersByIds } from '@/lib/order-converter/naver-order-sync';
+import { isKnownNaverCourierCode } from '@/lib/order-converter/courier-code';
 
 const ALREADY_DISPATCHED_STATUSES = new Set(['DELIVERING', 'DELIVERED', 'PURCHASE_DECIDED']);
 
@@ -16,6 +17,17 @@ async function handleDispatchPost(request: NextRequest) {
     
     if (!dispatchRequests || !Array.isArray(dispatchRequests) || dispatchRequests.length === 0) {
       return NextResponse.json({ error: 'dispatchRequests is required and must be a non-empty array' }, { status: 400 });
+    }
+
+    // 택배사 코드가 비었거나 우리가 만들지 않는 값이면 **네이버를 한 번도 부르지 않고** 거절한다.
+    // 여기서 기본 코드를 채우면 틀린 택배사가 실제 주문에 조용히 등록된다(정본: courier-code.ts).
+    const badCourier = dispatchRequests.filter((r: any) => !isKnownNaverCourierCode(r?.deliveryCompanyCode));
+    if (badCourier.length > 0) {
+      const codes = [...new Set(badCourier.map((r: any) => String(r?.deliveryCompanyCode ?? '') || '(없음)'))];
+      return NextResponse.json(
+        { error: `택배사 코드를 인식하지 못해 발송처리를 중단했습니다: ${codes.join(', ')} (${badCourier.length}건)` },
+        { status: 400 },
+      );
     }
 
     // 1. 상태 조회를 위한 productOrderIds 추출
