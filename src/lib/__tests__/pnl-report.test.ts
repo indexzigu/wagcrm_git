@@ -58,12 +58,8 @@ describe("buildPnlReportModel", () => {
     expect(report.totals.commissionRevenue).toBe(3_000_000);
     expect(report.totals.totalCampaignCosts).toBe(1_600_000);
     expect(report.totals.preTaxOperatingProfit).toBe(1_400_000);
-    expect(report.priorYearReference).toMatchObject({
-      incomeYear: 2025,
-      filingYear: 2026,
-      taxableIncome: 22_465_725,
-      finalDeterminedTax: 2_029_858,
-    });
+    // 전년도 신고 기준은 DB 에서 주입받는다 — 안 넘기면 미등록(null)이고 리포트는 그대로 선다.
+    expect(report.priorYearReference).toBeNull();
     expect(report.campaigns[0]).toMatchObject({
       campaignName: "테스트 캠페인",
       preTaxOperatingProfit: 1_400_000,
@@ -121,5 +117,34 @@ describe("buildPnlReportModel", () => {
       campaignName: "딜 B 셀러 B",
       missingCostFields: ["셀러 지급액", "공제세액", "운영비", "기타비용"],
     });
+  });
+
+  it("passes the injected prior-year reference through untouched", () => {
+    // 픽스처는 일부러 가짜임이 드러나는 둥근 수다 — 실제 신고 수치를 테스트에 적지 않는다(P0).
+    const reference = {
+      incomeYear: 2000,
+      filingYear: 2001,
+      businessContext: "테스트 기준",
+      totalIncome: 1_000,
+      deductions: 100,
+      taxableIncome: 900,
+      calculatedTax: 90,
+      finalDeterminedTax: 90,
+      effectiveTaxRate: 10,
+      vatHalfYears: [
+        { periodLabel: "상반기", taxableSales: 600, payableVat: 60 },
+        { periodLabel: "하반기", taxableSales: 400, payableVat: 40 },
+      ],
+      vatAnnualTaxableSales: 1_000,
+      firstHalfSalesRatio: 60,
+      secondHalfSalesRatio: 40,
+      firstHalfMonthlyAverage: 100,
+      secondHalfMonthlyAverage: 50,
+    };
+
+    const report = buildPnlReportModel([], 2026, undefined, reference);
+
+    expect(report.priorYearReference).toBe(reference);
+    expect(report.totals.campaignCount).toBe(0);
   });
 });
