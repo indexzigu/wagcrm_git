@@ -9,7 +9,11 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { CampaignRow } from "../crm-types";
-import { refreshCampaignRows } from "../campaign-row-refresh";
+import {
+  collectGroupSiblingIds,
+  createGroupSiblingRefresher,
+  refreshCampaignRows,
+} from "../campaign-row-refresh";
 
 const ok = (body: unknown) =>
   Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
@@ -95,4 +99,88 @@ describe("refreshCampaignRows", () => {
     expect(order).toEqual(["a", "b", "c", "microtask"]);
   });
 
+});
+
+describe("그룹 형제 재조회 — 저장한 1건만 돌아오는 응답을 메운다", () => {
+  const ROWS = [
+    { id: "a", groupId: "g1" },
+    { id: "b", groupId: "g1" },
+    { id: "c", groupId: "g1" },
+    { id: "x", groupId: "g2" },
+    { id: "solo", groupId: null },
+  ];
+  const flush = async () => {
+    // microtask 판정 → fetch → Promise.all → 흘려보내기까지 비운다.
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  };
+  const stubFetch = () => {
+    const fetchMock = vi.fn((url: unknown) =>
+      ok({ id: String(url).replace("/api/campaigns/", ""), groupId: "g1" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  it("collectGroupSiblingIds — 같은 그룹이면서 함께 오지 않은 행만 고른다", () => {
+    expect(collectGroupSiblingIds(ROWS, [{ id: "a", groupId: "g1" }])).toEqual(["b", "c"]);
+    expect(collectGroupSiblingIds(ROWS, [{ id: "solo", groupId: null }])).toEqual([]);
+    // 멤버십 팬아웃 — 전원이 이미 왔으면 다시 읽을 것이 없다.
+    expect(
+      collectGroupSiblingIds(ROWS, [
+        { id: "a", groupId: "g1" },
+        { id: "b", groupId: "g1" },
+        { id: "c", groupId: "g1" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("그룹 소속 1건이 저장되면 나머지 멤버 전원을 다시 읽어 꽂는다", async () => {
+    const fetchMock = stubFetch();
+    const applied: string[] = [];
+    const notify = createGroupSiblingRefresher({
+      getRows: () => ROWS,
+      applyRow: (row) => applied.push(row.id),
+      onFailed: vi.fn(),
+    });
+
+    notify({ id: "a", groupId: "g1" });
+    await flush();
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/campaigns/b",
+      "/api/campaigns/c",
+    ]);
+    expect(applied).toEqual(["b", "c"]);
+  });
+
+  it("무그룹 저장·한 틱 팬아웃(전원 도착)은 조회를 만들지 않는다", async () => {
+    const fetchMock = stubFetch();
+    const notify = createGroupSiblingRefresher({
+      getRows: () => ROWS,
+      applyRow: vi.fn(),
+      onFailed: vi.fn(),
+    });
+
+    notify({ id: "solo", groupId: null });
+    await flush();
+    for (const id of ["a", "b", "c"]) notify({ id, groupId: "g1" });
+    await flush();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("다시 읽지 못한 건수를 표면에 알린다 — 삼키지 않는다", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: false })));
+    const onFailed = vi.fn();
+    const notify = createGroupSiblingRefresher({
+      getRows: () => ROWS,
+      applyRow: vi.fn(),
+      onFailed,
+    });
+
+    notify({ id: "a", groupId: "g1" });
+    await flush();
+
+    expect(onFailed).toHaveBeenCalledWith(2);
+  });
 });

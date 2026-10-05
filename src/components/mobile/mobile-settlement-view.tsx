@@ -19,6 +19,7 @@ import { formatCurrency } from "@/lib/format";
 import { MONEY_DIRECTION_ICON, MONEY_DIRECTION_TEXT } from "@/lib/money-direction";
 import { resolveCampaignMoneySlots } from "@/lib/tax-filing-board";
 import { MobileCampaignCard } from "./mobile-campaign-card";
+import { buildSettlementPending } from "./mobile-settlement-pending-sheet";
 import { MobileTopBar } from "./mobile-top-bar";
 
 type MobileSettlementViewProps = {
@@ -87,19 +88,16 @@ export function MobileSettlementView({
     )
     .map(({ campaign }) => campaign);
 
-  // 대기 금액도 같은 축으로 센다 — 금액 컬럼이 셀러 축뿐이라 자사몰 공급사 지급은
-  // 합계에 들어가지 않는다(모바일 대기 시트 `slotAmount` 와 같은 규약, 0 으로 접지 않음).
-  const pendingDepositAmount = withSlots
-    .filter(({ campaign, slots }) =>
-      slots.some((slot) => slot.kind === "DEPOSIT" && !campaign[slot.flagField]),
-    )
-    .reduce((sum, { campaign }) => sum + (campaign.settlementSales || 0), 0);
-
-  const pendingPayoutAmount = withSlots
-    .filter(({ campaign, slots }) =>
-      slots.some((slot) => slot.flagField === "isPayoutCompleted" && !campaign[slot.flagField]),
-    )
-    .reduce((sum, { campaign }) => sum + (campaign.sellerExpense || 0), 0);
+  // 대기 금액은 데스크톱 정산 헤더·모바일 정산 대기 시트·홈 자금 칩과 **같은 SSOT**
+  // (`buildSettlementPending`)로 센다 — 칸 구성·금액 근거·조합 캠페인 접기를 그쪽이 소유한다.
+  // ⛔ 여기서 `settlementSales`/`sellerExpense` 를 손으로 더하지 말 것: 종전 사본은 자사몰의
+  // 공급사 지급 다리를 통째로 빼먹었고 셀러몰 입금도 다른 근거를 읽어, 같은 달인데
+  // 데스크톱과 모바일 숫자가 갈렸다. 날짜 인자는 연체 표시에만 쓰여 합계와 무관하다.
+  // ⚠️ SSOT 는 정산 단계 상태만 센다 — 아래 구간 목록은 상태로 거르지 않으므로, 완료
+  // 상태인데 입금·지급 플래그가 비어 있는 행은 목록에는 보이고 합계에는 안 들어간다.
+  const pending = buildSettlementPending(campaigns, "");
+  const pendingDepositAmount = pending.deposit.total;
+  const pendingPayoutAmount = pending.payout.total;
 
   // 목록은 리포트로 걸러진다(`filteredCampaigns`) — 리포트가 없으면(대기·실패) 합계를 모른다.
   // 모르는 값을 ₩0 으로 말하면 「이번 달은 받을 돈이 없다」로 읽힌다(데스크톱 요약 줄과 같은 규칙).

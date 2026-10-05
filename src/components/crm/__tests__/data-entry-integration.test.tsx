@@ -370,13 +370,6 @@ describe("Integration: Inline edit → API → toast feedback", () => {
         });
       }
 
-      if (url.includes("/reminders/recalculate")) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ success: true }),
-        });
-      }
-
       if (url.includes("/api/sellers")) {
         return Promise.resolve({
           ok: true,
@@ -434,6 +427,10 @@ describe("Integration: Inline edit → API → toast feedback", () => {
     await waitFor(() => {
       expect(mockToast.success).toHaveBeenCalledWith("마감일이 변경되었습니다");
     });
+
+    // 마감일 저장은 PATCH 한 번으로 끝난다 — 종전에는 저장 뒤 리마인더 재계산 라우트를
+    // 한 번 더 불렀는데, 그 라우트는 아무것도 저장하지 않았고 응답도 버려졌다(제거됨).
+    expect(fetchCalls.some((c) => c.url.includes("/reminders/"))).toBe(false);
   });
 
   it("inline edit shows error toast and rolls back on API failure", async () => {

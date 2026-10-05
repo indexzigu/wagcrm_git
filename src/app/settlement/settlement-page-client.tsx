@@ -25,6 +25,11 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { toast } from "@/lib/toast";
+import {
+  LIST_REFRESH_FAILED_MESSAGE,
+  createGroupSiblingRefresher,
+} from "@/lib/campaign-row-refresh";
+import { buildSettlementPending } from "@/components/mobile/mobile-settlement-pending-sheet";
 import type { DashboardData, CampaignRow } from "@/lib/crm-types";
 import type {
   SettlementReportData,
@@ -276,17 +281,40 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     void refreshReport();
   }, [refreshReport, reportRefreshNonce]);
 
-  /** 패널에서 캠페인 한 건이 저장·갱신됐다(통지 창구는 `onCampaignUpdated` 하나다). */
-  const handleCampaignSaved = useCallback(
+  /** 행 하나를 목록·열린 패널에 되꽂는다(교체만 — 리포트·형제 재조회는 부르지 않는다). */
+  const applyCampaignRow = useCallback(
     (campaign: CampaignRow) => {
       syncUpdatedCampaign(campaign);
       setData((prev) => ({
         ...prev,
         campaigns: prev.campaigns.map((item) => (item.id === campaign.id ? campaign : item)),
       }));
-      requestReportRefresh();
     },
-    [syncUpdatedCampaign, requestReportRefresh],
+    [syncUpdatedCampaign],
+  );
+
+  // 그룹 소속 캠페인을 저장하면 서버는 형제에도 반영하지만(정산 일정·플래그 = 그룹 스칼라,
+  // 기간 = 팬아웃) 응답은 수정한 1건뿐이다 — 형제 행을 다시 읽어 표가 새 값을 보이게 한다.
+  const campaignRowsRef = useRef(data.campaigns);
+  useEffect(() => {
+    campaignRowsRef.current = data.campaigns;
+  }, [data.campaigns]);
+  // 한 틱의 통지를 모으는 상태를 들고 있어 인스턴스는 하나여야 한다 — 첫 통지 때 만든다.
+  const siblingRefresherRef = useRef<ReturnType<typeof createGroupSiblingRefresher> | null>(null);
+
+  /** 패널에서 캠페인 한 건이 저장·갱신됐다(통지 창구는 `onCampaignUpdated` 하나다). */
+  const handleCampaignSaved = useCallback(
+    (campaign: CampaignRow) => {
+      applyCampaignRow(campaign);
+      requestReportRefresh();
+      siblingRefresherRef.current ??= createGroupSiblingRefresher({
+        getRows: () => campaignRowsRef.current,
+        applyRow: applyCampaignRow,
+        onFailed: () => toast.warning(LIST_REFRESH_FAILED_MESSAGE),
+      });
+      siblingRefresherRef.current(campaign);
+    },
+    [applyCampaignRow, requestReportRefresh],
   );
 
   // 첫 리포트가 오기 전에는 두 표가 0건으로 보인다 — 로딩으로 그려 「없음」과 가른다.
@@ -334,24 +362,16 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   );
 
   // 목록이 리포트로 걸러지므로 리포트가 없으면(대기·실패) 합계를 모른다 — 0원이 아니라 「-」다.
-  const pendingDepositAmount = useMemo(
-    () =>
-      reportData === null
-        ? null
-        : activeCampaigns
-            .filter((campaign) => !campaign.isDepositReceived)
-            .reduce((sum, campaign) => sum + Number(campaign.settlementSales ?? 0), 0),
+  // 합계는 모바일 정산 대기 시트·홈 자금 칩과 **같은 SSOT**(`buildSettlementPending`)로 센다 —
+  // 칸 구성은 채널 슬롯이 정하므로 자사몰의 공급사 지급도 「지급 대기」에 들어간다.
+  // ⛔ `!isPayoutCompleted` × `sellerExpense` 로 되돌리지 말 것: 공급사 지급 다리가 통째로
+  // 빠지고 데스크톱·모바일 숫자가 갈린다. 날짜 인자는 연체 표시에만 쓰여 합계와 무관하다.
+  const settlementPending = useMemo(
+    () => (reportData === null ? null : buildSettlementPending(activeCampaigns, "")),
     [activeCampaigns, reportData],
   );
-  const pendingPayoutAmount = useMemo(
-    () =>
-      reportData === null
-        ? null
-        : activeCampaigns
-            .filter((campaign) => !campaign.isPayoutCompleted)
-            .reduce((sum, campaign) => sum + Number(campaign.sellerExpense ?? 0), 0),
-    [activeCampaigns, reportData],
-  );
+  const pendingDepositAmount = settlementPending?.deposit.total ?? null;
+  const pendingPayoutAmount = settlementPending?.payout.total ?? null;
 
 interface CsvRow {
   "캠페인명": string;

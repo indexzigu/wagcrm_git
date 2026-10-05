@@ -42,6 +42,7 @@ function stripComments(src: string): string {
 const LIST_SURFACES = [
   "src/components/crm/campaign-group-section.tsx",
   "src/components/crm/crm-dashboard.tsx",
+  "src/app/settlement/settlement-page-client.tsx",
 ];
 
 /**

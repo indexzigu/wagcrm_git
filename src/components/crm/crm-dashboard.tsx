@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, cloneElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, cloneElement } from "react";
 import {
   KanbanIcon,
   LayoutListIcon,
@@ -29,6 +29,7 @@ import { applyPipelineFilters } from "@/lib/pipeline-filters";
 import { patchCampaign } from "@/lib/campaign-patch";
 import {
   LIST_REFRESH_FAILED_MESSAGE,
+  createGroupSiblingRefresher,
   refreshCampaignRows,
 } from "@/lib/campaign-row-refresh";
 import { toast } from "@/lib/toast";
@@ -177,13 +178,33 @@ export function CrmDashboard({
     setCreateOpen(true);
   }
 
-  function replaceCampaignRow(nextCampaign: CampaignRow) {
+  /** 행 하나를 목록·열린 패널에 되꽂는다(교체만). */
+  const applyCampaignRow = useCallback((nextCampaign: CampaignRow) => {
     setRows((previous) =>
       previous.map((row) => (row.id === nextCampaign.id ? nextCampaign : row)),
     );
     setSelected((previous) =>
       previous?.id === nextCampaign.id ? nextCampaign : previous,
     );
+  }, []);
+
+  // 그룹 소속 캠페인을 저장하면 서버는 형제에도 반영하지만(정산 일정·플래그 = 그룹 스칼라,
+  // 기간 = 팬아웃) 응답은 수정한 1건뿐이다 — 형제 카드를 다시 읽어 새 값을 보이게 한다.
+  const rowsRef = useRef(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+  // 한 틱의 통지를 모으는 상태를 들고 있어 인스턴스는 하나여야 한다 — 첫 통지 때 만든다.
+  const siblingRefresherRef = useRef<ReturnType<typeof createGroupSiblingRefresher> | null>(null);
+
+  function replaceCampaignRow(nextCampaign: CampaignRow) {
+    applyCampaignRow(nextCampaign);
+    siblingRefresherRef.current ??= createGroupSiblingRefresher({
+      getRows: () => rowsRef.current,
+      applyRow: applyCampaignRow,
+      onFailed: () => toast.warning(LIST_REFRESH_FAILED_MESSAGE),
+    });
+    siblingRefresherRef.current(nextCampaign);
   }
 
   function openCampaign(row: CampaignRow) {

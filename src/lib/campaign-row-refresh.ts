@@ -86,6 +86,63 @@ export async function refreshCampaignRows(
 }
 
 /**
+ * 방금 흘러온 행들과 **같은 그룹인데 함께 오지 않은** 행의 id 를 고른다(순수).
+ *
+ * 그룹 소속 캠페인을 저장하면 서버는 형제에도 값을 반영하는데(정산 일정·플래그는 그룹
+ * 스칼라, 기간·반품기간은 팬아웃) 응답은 **수정한 1건**만 싣는다 — 형제 행은 화면에서
+ * 낡는다. 멤버십 변경처럼 이미 전원이 흘러온 경우는 빈 목록이 된다(재조회 0건).
+ */
+export function collectGroupSiblingIds(
+  currentRows: readonly Pick<CampaignRow, "id" | "groupId">[],
+  deliveredRows: readonly Pick<CampaignRow, "id" | "groupId">[],
+): string[] {
+  const deliveredIds = new Set(deliveredRows.map((row) => row.id));
+  const groupIds = new Set(
+    deliveredRows.map((row) => row.groupId).filter((id): id is string => Boolean(id)),
+  );
+  if (groupIds.size === 0) return [];
+  return currentRows
+    .filter((row) => row.groupId && groupIds.has(row.groupId) && !deliveredIds.has(row.id))
+    .map((row) => row.id);
+}
+
+/**
+ * 「행 하나가 저장됐다」 통지를 받아 **같은 그룹의 형제 행을 다시 읽는** 접기 장치.
+ * 재조회 자체는 `refreshCampaignRows` 가 한다 — 이 함수는 「누구를」만 정한다.
+ *
+ * 한 틱 안의 통지를 모아 한 번만 판정한다(microtask). 상위 콜백은 통지 창구가 하나라
+ * (`onCampaignUpdated`) 멤버십 변경의 팬아웃(N 회 연속 호출)도 같은 길로 들어오는데,
+ * 건마다 형제를 다시 읽으면 N×(N-1) 회 조회가 된다 — 모아서 보면 전원이 이미 와 있어 0 회다.
+ * ⛔ `applyRow` 에 이 통지 함수를 다시 물리지 말 것(재조회된 행이 또 형제를 부른다).
+ */
+export function createGroupSiblingRefresher(options: {
+  /** 지금 화면이 든 행들. 판정 시점에 한 렌더 낡아도 된다(형제 식별에만 쓴다). */
+  getRows: () => readonly Pick<CampaignRow, "id" | "groupId">[];
+  /** 다시 읽은 형제 행을 목록에 꽂는다 — **교체만** 한다. */
+  applyRow: (row: CampaignRow) => void;
+  /** 다시 읽지 못한 건수(>0)를 표면이 알린다. */
+  onFailed: (failed: number) => void;
+}): (savedRow: Pick<CampaignRow, "id" | "groupId">) => void {
+  let delivered: Pick<CampaignRow, "id" | "groupId">[] | null = null;
+  return (savedRow) => {
+    if (delivered) {
+      delivered.push(savedRow);
+      return;
+    }
+    delivered = [savedRow];
+    queueMicrotask(() => {
+      const batch = delivered ?? [];
+      delivered = null;
+      const siblingIds = collectGroupSiblingIds(options.getRows(), batch);
+      if (siblingIds.length === 0) return;
+      void refreshCampaignRows(siblingIds, options.applyRow).then((failed) => {
+        if (failed > 0) options.onFailed(failed);
+      });
+    });
+  };
+}
+
+/**
  * 목록(칸반 보드) 행이 못 따라왔을 때의 공통 문구.
  *
  * 보드 행을 다루는 자리 **넷**(묶기·합류·제외, 그리고 토스트 합류의 대시보드 후처리)이
