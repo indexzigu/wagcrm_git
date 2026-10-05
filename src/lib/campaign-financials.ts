@@ -9,6 +9,38 @@ export type DerivedCampaignFinancials = {
 };
 
 /**
+ * 저장 `SalesCampaign.operatingProfit` 산식의 SSOT — **영업수익(수수료 수익) 기준**
+ * (오너 확정 2026-10-05).
+ *
+ *   operatingProfit = settlementSales − sellerExpense − taxExpense − operatingExpense − miscExpense
+ *
+ * ⛔ 피감수를 총매출(`actualSales`)로 바꾸지 말 것 — 주문 동기화 writer
+ * (`mapping-service.recalculateSalesCampaignTotals`)가 그렇게 써서, 물품대금이
+ * 우리 돈이 아닌 캠페인의 손익이 (총매출 − 영업수익)만큼 부풀어 저장됐다.
+ * ⛔ 이 뺄셈을 호출부에서 다시 적지 말 것 — writer 3곳(편집 PATCH · 주문 동기화 ·
+ * 실매출 입력)과 표시 폴백이 전부 이 함수를 부른다. 재구현·총매출 기준 회귀는
+ * `operating-profit-basis.contract.test.ts` 가 소스 전수 스캔(AST)으로 막는다.
+ *
+ * ℹ️ 각 항(`settlementSales`·`sellerExpense`·`taxExpense`)을 **어떻게 구하는가**는
+ * 이 함수의 소관이 아니다(writer 마다 다르며 별도 미결 사안).
+ */
+export function computeOperatingProfit({
+  settlementSales,
+  sellerExpense,
+  taxExpense,
+  operatingExpense,
+  miscExpense,
+}: {
+  settlementSales: number;
+  sellerExpense: number;
+  taxExpense: number;
+  operatingExpense: number;
+  miscExpense: number;
+}): number {
+  return settlementSales - sellerExpense - taxExpense - operatingExpense - miscExpense;
+}
+
+/**
  * Recalculates campaign financial totals from gross sales and commission rates.
  * The current settlement workspace treats withholding/deducted tax as 10% of
  * net commission, then subtracts campaign costs from commission revenue.
@@ -76,8 +108,13 @@ export function calculateDerivedCampaignFinancials({
     ? manualTaxExpense
     : autoTaxExpense;
 
-  const operatingProfit =
-    settlementSales - sellerExpense - taxExpense - operatingExpense - miscExpense;
+  const operatingProfit = computeOperatingProfit({
+    settlementSales,
+    sellerExpense,
+    taxExpense,
+    operatingExpense,
+    miscExpense,
+  });
 
   return {
     settlementSales,
