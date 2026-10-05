@@ -100,7 +100,8 @@ describe('extractTrackingMapByReply', () => {
     const reply = { orderIdHeaders: ['주문번호'], orderIdPattern: 'lenient' as const };
     const buf = toXlsx('s', [{ '주문번호': 'A1', '택배송장번호': '777', '택배사': '' }]);
     const map = extractTrackingMapByReply(buf, reply);
-    expect(map['A1']).toEqual({ 택배사: 'CJ대한통운', 송장번호: '777' }); // 택배사 빈값 → 기본 CJ대한통운
+    // 택배사 빈값은 빈 채로 — 기본 택배사로 채우면 발송처리가 틀린 택배사를 조용히 등록한다.
+    expect(map['A1']).toEqual({ 택배사: '', 송장번호: '777' });
   });
 });
 
@@ -121,6 +122,6 @@ describe('extractTrackingMap (레거시 시그니처 위임)', () => {
 
   it('기본(뉴트리원 계열)은 lenient', () => {
     const buf = toXlsx('발주서', [{ '주문번호': 'ORD-1', '송장번호': '555' }]);
-    expect(extractTrackingMap(buf, 'nutrione')['ORD-1']).toEqual({ 택배사: 'CJ대한통운', 송장번호: '555' });
+    expect(extractTrackingMap(buf, 'nutrione')['ORD-1']).toEqual({ 택배사: '', 송장번호: '555' }); // 택배사 열 없음 → 빈 값
   });
 });

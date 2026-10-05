@@ -208,6 +208,11 @@ export function buildRegisterInvoiceLog(args: {
   skipped?: Array<{ productOrderId?: string; reason?: string }>;
   firstFailReason?: string | null;
   fileName?: string | null;
+  /**
+   * 운영자가 택배사 선택 창에서 직접 고른 내역 — 파일에 적힌 글자(raw)를 어느 코드로 몇 건 등록했는가.
+   * 파일에는 없던 판단이라 여기 남기지 않으면 「왜 이 택배사로 등록됐나」를 사후에 알 길이 없다.
+   */
+  courierOverrides?: Array<{ raw: string; code: string; count: number }>;
 }): OrderActionLogInput {
   const successCount = clampCount(args.successCount);
   const failCount = clampCount(args.failCount);
@@ -218,6 +223,11 @@ export function buildRegisterInvoiceLog(args: {
   if (failed.length) details.failed = failed;
   if (skipped.length) details.skipped = skipped;
   if (args.fileName) details.fileName = args.fileName;
+  if (args.courierOverrides?.length) {
+    details.courierOverrides = args.courierOverrides
+      .slice(0, DETAIL_LIST_CAP)
+      .map((o) => ({ raw: o.raw, code: o.code, count: clampCount(o.count) }));
+  }
   return {
     campaignId: normId(args.campaign.id),
     campaignName: args.campaign.name,
