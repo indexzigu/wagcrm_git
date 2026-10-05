@@ -44,10 +44,12 @@ describe("TaxableRevenueCard", () => {
     expect(bar).toHaveAttribute("aria-valuenow", "33");
     // 스크린리더에 「33」만이 아니라 금액·기준선을 함께 읽힌다
     expect(bar).toHaveAttribute("aria-valuetext", "누적 100,000,000원, 기준선 3억의 33%");
-    // 빈 구간(= 남은 금액)이 보이는 트랙 — slate-100(흰 카드 대비 1.09:1)으로 되돌리면 다시 사라진다
-    expect(bar.className).toContain("bg-slate-200");
-    expect(bar.className).toContain("shadow-inner");
+    // 빈 구간(= 남은 금액)이 보이는 트랙 — slate-100(흰 카드 대비 1.09:1)으로 되돌리면 다시 사라진다.
+    // shadow-inner 를 얹으면 홈 윗줄에서 urgent 채움 대비가 2.83 으로 3:1 아래가 된다.
+    expect(bar.className).toContain("bg-slate-300");
     expect(bar.className).not.toContain("bg-slate-100");
+    expect(bar.className).not.toContain("bg-slate-200");
+    expect(bar.className).not.toContain("shadow-inner");
     // 잘리는 부제는 title 로 전문을 남긴다
     expect(within(card).getByTitle("다음 갱신 2027.02.14 · 기준기간 2026년 1기+2기")).toBeInTheDocument();
     expect(within(card).getByText("기준선을 VAT 포함 매출로 판정할 경우: 여유 190,000,000원")).toBeInTheDocument();

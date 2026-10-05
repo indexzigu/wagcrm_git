@@ -9,9 +9,10 @@
 // 채널 소계는 좋고 나쁨이 없는 **범주**라 색을 받지 않는다(P8 §4).
 //
 // 막대의 빈 구간 = 기준선까지 남은 금액(주 숫자)이라 **보여야 하는 정보**다. 트랙을 slate-100 으로 두면
-// 흰 카드 대비 1.09:1 로 거의 사라졌다(오너 지적). slate-200(1.22:1) + shadow-inner(오목 홈, P8
-// elevation 사다리 밖 예외)로 빈 구간을 드러내되, 채움 대비는 urgent 3.80 · caution 4.07 · 네이비 9.17 로
-// 3:1 을 지킨다. slate-300 이상은 채움(urgent 3.16)과 경쟁하고 slate-400 은 채움 대비가 2:1 아래로 떨어진다.
+// 흰 카드 대비 1.09:1 로 거의 사라졌다(오너 지적). 오너 결정으로 slate-300(흰 카드 대비 1.47:1)까지
+// 진하게 하고, 채움 대 트랙은 네이비 7.62 · caution 3.38 · **urgent 3.16** 으로 3:1 을 지킨다.
+// ⚠️ urgent 여유는 0.16 뿐이다 — 채움을 더 연하게 하거나 트랙을 더 진하게(slate-400: urgent 1.83) 하지 말 것.
+// shadow-inner 는 붙이지 않는다: 오목 홈의 윗줄(검정 5%)에서 urgent 대비가 2.83 으로 3:1 아래로 떨어진다.
 import type { ReactNode } from "react";
 import { Landmark } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -133,7 +134,7 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
                     ? `누적 ${won(tracker.cumulativeSupply)}, 기준선 ${formatEok(threshold)} 초과`
                     : `누적 ${won(tracker.cumulativeSupply)}, 기준선 ${formatEok(threshold)}의 ${progressPercent}%`
                 }
-                className="h-2.5 overflow-hidden rounded-full bg-slate-200 shadow-inner"
+                className="h-2.5 overflow-hidden rounded-full bg-slate-300"
               >
                 <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${tracker.progressRatio * 100}%` }} />
               </div>
