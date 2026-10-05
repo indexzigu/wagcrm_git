@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pushSqliteTestSchema } from "@/test/sqlite-test-db";
 import { AgentJobPayloadSchema, AgentJobResultSchema } from "@/lib/agent-worker/contracts";
 
 type AgentJobRow = {
@@ -109,15 +109,7 @@ async function createJob(input: {
 beforeAll(async () => {
   temporaryDirectory = mkdtempSync(join(tmpdir(), "wag-crm-agent-job-"));
   databasePath = join(temporaryDirectory, "agent-job.db");
-  execFileSync(
-    "npx",
-    ["prisma", "db", "push", "--schema", "prisma/schema.sqlite.prisma", "--skip-generate", "--accept-data-loss"],
-    {
-      cwd: repositoryRoot,
-      env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
-      stdio: "pipe",
-    },
-  );
+  pushSqliteTestSchema(databasePath, repositoryRoot);
   const generatedClientPath = join(repositoryRoot, "prisma", "generated", "prisma-sqlite", "index.js");
   const { PrismaClient } = await import(/* @vite-ignore */ generatedClientPath);
   realPrisma = new PrismaClient({ datasources: { db: { url: `file:${databasePath}` } } });

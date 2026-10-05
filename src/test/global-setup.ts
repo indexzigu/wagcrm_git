@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pushSqliteTestSchema } from "./sqlite-test-db";
 
 /**
  * Vitest global setup — runs ONCE before the whole suite.
@@ -12,8 +13,10 @@ import { dirname, join } from "node:path";
  * Pushing the sqlite schema here makes `npm test` self-contained. dev.db stays
  * gitignored; this just (re)provisions it locally.
  *
- * Mirrors scripts/sqlite-push.ts (kept in sync intentionally) so the setup has
- * no dependency on npm-script env wiring.
+ * The push itself goes through pushSqliteTestSchema (./sqlite-test-db), shared
+ * with the realdb tests: it pre-creates the file with node like
+ * scripts/sqlite-push.ts does, so the setup needs neither npm-script env wiring
+ * nor the sqlite3 CLI.
  *
  * It also provisions the generated sqlite Prisma Client. That client is
  * gitignored (see scripts/ensure-sqlite-client.mjs for why), and the realdb
@@ -23,8 +26,6 @@ import { dirname, join } from "node:path";
  */
 export default function setup(): void {
   const dbPath = join(process.cwd(), "prisma", "dev.db");
-  const schemaPath = join(process.cwd(), "prisma", "schema.sqlite.prisma");
-  const databaseUrl = "file:./dev.db";
 
   execFileSync(
     process.execPath,
@@ -33,24 +34,5 @@ export default function setup(): void {
   );
 
   mkdirSync(dirname(dbPath), { recursive: true });
-  if (!existsSync(dbPath)) {
-    execFileSync("sqlite3", [dbPath, "VACUUM;"], { stdio: "inherit" });
-  }
-
-  execFileSync(
-    "npx",
-    [
-      "prisma",
-      "db",
-      "push",
-      "--schema",
-      schemaPath,
-      "--skip-generate",
-      "--accept-data-loss",
-    ],
-    {
-      stdio: "inherit",
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-    },
-  );
+  pushSqliteTestSchema(dbPath);
 }

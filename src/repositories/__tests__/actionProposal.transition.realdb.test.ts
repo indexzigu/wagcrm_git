@@ -13,10 +13,10 @@
  * 새 임시 파일을 만들고 테스트 종료 후 삭제한다.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pushSqliteTestSchema } from "@/test/sqlite-test-db";
 
 // vitest.config.ts는 프로젝트 루트에서 실행되므로 process.cwd()가 REPO_ROOT다
 // (import.meta.url은 vite 변환 파이프라인에서 file: 스킴이 아닐 수 있어 사용하지 않는다).
@@ -43,15 +43,7 @@ beforeAll(async () => {
   dbPath = join(tmpDir, "test.db");
 
   // 격리된 SQLite 파일에 스키마를 push한다 (schema.sqlite.prisma — ActionProposal 포함).
-  execFileSync(
-    "npx",
-    ["prisma", "db", "push", "--schema", "prisma/schema.sqlite.prisma", "--skip-generate", "--accept-data-loss"],
-    {
-      cwd: REPO_ROOT,
-      env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-      stdio: "pipe",
-    }
-  );
+  pushSqliteTestSchema(dbPath, REPO_ROOT);
 
   // 실제 생성된 sqlite Prisma 클라이언트로 이 임시 DB에 연결한다.
   const generatedClientPath = join(REPO_ROOT, "prisma", "generated", "prisma-sqlite", "index.js");
