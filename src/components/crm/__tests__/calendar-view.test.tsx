@@ -1,8 +1,31 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { CalendarView, type CalendarCampaign } from "../calendar-view";
+
+// 팝오버는 열릴 때 매출 한 줄을 부른다(T-225). 기본은 「네이버 미연동」 응답 — 매출과
+// 무관한 테스트가 실제 네트워크나 실패 로그에 기대지 않게 한다.
+function salesResponse(over: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      source: "none",
+      cumulative: { orders: 0, quantity: 0, revenue: 0 },
+      ...over,
+    }),
+  };
+}
+const fetchMock = vi.fn();
+beforeEach(() => {
+  fetchMock.mockReset();
+  fetchMock.mockResolvedValue(salesResponse());
+  vi.stubGlobal("fetch", fetchMock);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function campaign(over: Partial<CalendarCampaign> & { id: string }): CalendarCampaign {
   return {
@@ -397,5 +420,80 @@ describe("CalendarView 팝오버 대금 날짜 (완료면 실제일)", () => {
 
     expect(await screen.findByText("26-07-15")).toBeTruthy();
     expect(screen.queryByText("26-07-20")).toBeNull();
+  });
+});
+
+describe("CalendarView 팝오버 매출 한 줄 (T-225 「매출만」)", () => {
+  const solo = () =>
+    campaign({
+      id: "c1",
+      dealName: "비타슈넬",
+      startDate: "2026-07-13T00:00:00.000Z",
+      endDate: "2026-07-17T00:00:00.000Z",
+    });
+
+  it("연동된 캠페인은 누적 매출과 주문 수를 보여준다", async () => {
+    fetchMock.mockResolvedValue(
+      salesResponse({ source: "live", cumulative: { orders: 38, quantity: 41, revenue: 1_240_000 } }),
+    );
+    render(<CalendarView month="2026-07" campaigns={[solo()]} />);
+    await userEvent.click(screen.getByTitle(/^비타슈넬 · 가온 \(/));
+
+    expect(await screen.findByText("₩1,240,000")).toBeTruthy();
+    expect(screen.getByText("38")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith("/api/mobile/campaigns/c1/sales", expect.objectContaining({ cache: "no-store" }));
+  });
+
+  it("네이버 미연동이면 매출 줄을 만들지 않는다 — ₩0 으로 적지 않는다", async () => {
+    render(<CalendarView month="2026-07" campaigns={[solo()]} />);
+    await userEvent.click(screen.getByTitle(/^비타슈넬 · 가온 \(/));
+    await screen.findByRole("dialog");
+
+    await vi.waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(screen.queryByText("매출")).toBeNull();
+  });
+
+  it("불러오기에 실패하면 숨기지 않고 실패를 말한다", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    render(<CalendarView month="2026-07" campaigns={[solo()]} />);
+    await userEvent.click(screen.getByTitle(/^비타슈넬 · 가온 \(/));
+
+    expect(await screen.findByText("매출을 불러오지 못했습니다")).toBeTruthy();
+    spy.mockRestore();
+  });
+
+  it("조회 창이 잘렸으면 초반이 빠진 값임을 밝힌다", async () => {
+    fetchMock.mockResolvedValue(
+      salesResponse({
+        source: "live",
+        cumulative: { orders: 3, quantity: 3, revenue: 90_000 },
+        coverage: { startDate: "2026-07-14", truncated: true },
+      }),
+    );
+    render(<CalendarView month="2026-07" campaigns={[solo()]} />);
+    await userEvent.click(screen.getByTitle(/^비타슈넬 · 가온 \(/));
+
+    expect(await screen.findByText("(초반 일부 미집계)")).toBeTruthy();
+  });
+
+  it("조합 팝오버는 그룹 합계 엔드포인트를 부른다", async () => {
+    fetchMock.mockResolvedValue(
+      salesResponse({ source: "cached", cumulative: { orders: 10, quantity: 12, revenue: 500_000 } }),
+    );
+    render(
+      <CalendarView
+        month="2026-07"
+        campaigns={[
+          { ...solo(), id: "m1", groupId: "g1" },
+          { ...solo(), id: "m2", groupId: "g1", dealName: "딜-m2" },
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByTitle(/^비타슈넬 외 1 · 가온 \(/));
+
+    expect(await screen.findByText("조합 매출")).toBeTruthy();
+    expect(screen.getByText("₩500,000")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith("/api/mobile/campaign-groups/g1/sales", expect.objectContaining({ cache: "no-store" }));
   });
 });

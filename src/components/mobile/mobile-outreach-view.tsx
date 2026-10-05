@@ -12,6 +12,7 @@ import type { OutreachRow } from "@/components/crm/outreach-list";
 import type { OutreachStatus } from "@/lib/validations/outreach";
 import { ActionBadge } from "@/components/crm/action-badge";
 import { calculateFollowUp } from "@/lib/followup-engine";
+import { daysSince, isAwaitingResponse, isReminderDue } from "@/lib/outreach-attention";
 import { MobileTopBar } from "./mobile-top-bar";
 
 type MobileOutreachViewProps = {
@@ -25,20 +26,6 @@ type MobileOutreachViewProps = {
 
 
 
-function daysSince(value: string | null | undefined) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const now = new Date();
-  const from = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const to = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.floor((to.getTime() - from.getTime()) / 86_400_000);
-}
-
-function isReminderDue(task: OutreachRow) {
-  if (task.status !== "PROPOSED" || !task.nextReminderAt) return false;
-  return new Date(task.nextReminderAt).getTime() <= Date.now();
-}
 
 
 
@@ -231,7 +218,7 @@ export function MobileOutreachView({
   onStatusChange,
 }: MobileOutreachViewProps) {
   const reminderDueTasks = tasks
-    .filter(isReminderDue)
+    .filter((task) => isReminderDue(task))
     .sort((left, right) => (left.nextReminderAt ?? "").localeCompare(right.nextReminderAt ?? ""))
     .slice(0, 5);
   const pendingApprovalTasks = tasks
@@ -239,13 +226,7 @@ export function MobileOutreachView({
     .sort((left, right) => (left.updatedAt ?? left.proposedAt).localeCompare(right.updatedAt ?? right.proposedAt))
     .slice(0, 5);
   const responseGapTasks = tasks
-    .filter((task) => {
-      if (task.status !== "PROPOSED" && task.status !== "NEGOTIATION" && task.status !== "TESTING") {
-        return false;
-      }
-      const elapsed = daysSince(task.updatedAt ?? task.proposedAt);
-      return elapsed != null && elapsed >= 3;
-    })
+    .filter((task) => isAwaitingResponse(task))
     .filter((task) => !reminderDueTasks.some((reminderTask) => reminderTask.id === task.id))
     .slice(0, 5);
   const visibleCount = reminderDueTasks.length + pendingApprovalTasks.length + responseGapTasks.length;

@@ -24,6 +24,7 @@ import {
   Target,
   TrendingUp,
   TrendingDown,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CrmShell } from "@/components/crm/crm-shell";
@@ -93,6 +94,11 @@ import type { OutreachStatus } from "@/lib/validations/outreach";
 import type { AssetSection } from "@/lib/crm-types";
 import { assetSectionLabels } from "@/lib/crm-types";
 import { queryKeys } from "@/lib/query-keys";
+import {
+  matchesAttention,
+  RESPONSE_GAP_DAYS,
+  type OutreachAttentionKind,
+} from "@/lib/outreach-attention";
 
 function addDays(date: Date, days: number) {
   const next = new Date(date);
@@ -114,6 +120,21 @@ const DRAG_DROPPABLE_STATUSES: ReadonlySet<OutreachStatus> = new Set<OutreachSta
   "DROPPED",
 ]);
 
+/** 상단 「오늘 할 일」 줄의 순서·문구. 문구는 모바일 영업 확인 화면과 같게 둔다. */
+const OUTREACH_ATTENTION_ITEMS: ReadonlyArray<{
+  kind: OutreachAttentionKind;
+  label: string;
+  description: string;
+}> = [
+  { kind: "REMINDER_DUE", label: "리마인드", description: "제안중인데 다음 리마인드 시각이 지난 건" },
+  { kind: "PENDING_APPROVAL", label: "전환 대기", description: "캠페인 전환 승인을 기다리는 건" },
+  {
+    kind: "RESPONSE_GAP",
+    label: "응답 공백",
+    description: `제안·협의·테스트 중 ${RESPONSE_GAP_DAYS}일 이상 움직임이 없는 건(리마인드 건 제외)`,
+  },
+];
+
 export default function OutreachPage() {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
@@ -134,6 +155,17 @@ export default function OutreachPage() {
   const [searchQuery, setSearchQuery] = useState("");
   type OutreachStageFilter = "ALL" | "IN_PROGRESS" | "CLOSED";
   const [stageFilter, setStageFilter] = useState<OutreachStageFilter>("IN_PROGRESS");
+  // 상단 「오늘 할 일」 줄에서 고른 거르기(T-226). 단계 탭과 겹쳐 쓰지 않는다 — 탭을 누르면 풀린다.
+  const [attentionFilter, setAttentionFilter] = useState<OutreachAttentionKind | null>(null);
+  const selectStage = useCallback((stage: OutreachStageFilter) => {
+    setStageFilter(stage);
+    setAttentionFilter(null);
+  }, []);
+  const toggleAttention = useCallback((kind: OutreachAttentionKind) => {
+    setAttentionFilter((current) => (current === kind ? null : kind));
+    // 세 종류 모두 진행 중 상태라 「종료됨」 탭에 남아 있으면 빈 화면이 된다.
+    setStageFilter("IN_PROGRESS");
+  }, []);
 
   // Collapsed Stages state
   const [collapsedStages, setCollapsedStages] = useState<Record<string, boolean>>(() => {
@@ -397,6 +429,7 @@ export default function OutreachPage() {
   }, [tasks, applyTaskUpdate]);
 
   const filteredTasks = useMemo(() => {
+    const now = new Date();
     return tasks.filter((task) => {
       // 1. Search Query
       if (searchQuery.trim()) {
@@ -413,10 +446,29 @@ export default function OutreachPage() {
       } else if (stageFilter === "CLOSED") {
         if (!["CONVERTED", "DROPPED"].includes(task.status)) return false;
       }
-      
+
+      // 3. 오늘 할 일 거르기
+      if (attentionFilter && !matchesAttention(task, attentionFilter, now)) return false;
+
       return true;
     });
-  }, [tasks, searchQuery, stageFilter]);
+  }, [tasks, searchQuery, stageFilter, attentionFilter]);
+
+  // 「오늘 할 일」 개수 — 검색·탭과 무관하게 전체에서 센다(모바일 영업 확인과 같은 모수).
+  // ⛔ useMemo([tasks]) 로 감싸지 말 것 — 페이지를 오래 열어 둔 사이 리마인드 시각·3일
+  // 경계를 넘으면 칩 숫자(옛 시각)와 걸러진 목록(새 시각)이 어긋난다. 태스크 수 × 3 판정이라
+  // 렌더마다 새로 세도 비용이 없다.
+  const attentionNow = new Date();
+  const attentionCounts: Record<OutreachAttentionKind, number> = {
+    REMINDER_DUE: 0,
+    PENDING_APPROVAL: 0,
+    RESPONSE_GAP: 0,
+  };
+  for (const task of tasks) {
+    for (const item of OUTREACH_ATTENTION_ITEMS) {
+      if (matchesAttention(task, item.kind, attentionNow)) attentionCounts[item.kind] += 1;
+    }
+  }
 
   const proposedTasks = useMemo(() => {
     return filteredTasks.filter((item) => item.status === "PROPOSED");
@@ -595,29 +647,58 @@ export default function OutreachPage() {
           </div>
         ) : (
           <>
-            {/* Summary Bar */}
-            <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0">
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-medium">전체 테스크:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">{tasks.length}개</span>
-              </div>
-              <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-medium">진행 중:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {negotiationTasks.length + testingTasks.length + pendingApprovalTasks.length}개
-                </span>
-              </div>
-              <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-medium">제안 대기:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">{proposedTasks.length}개</span>
-              </div>
-              <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="font-medium">전환 완료:</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">{convertedTasks.length}건</span>
-              </div>
+            {/* 오늘 할 일 (T-226, 오너 결정 2026-10-05) — 단계별 개수는 아래 탭·칸반 열 머리가
+                이미 보여주므로 여기는 「지금 손댈 것」만 센다. 기준은 모바일 영업 확인과 같다
+                (outreach-attention). 색은 지연 심각도 한 축만 쓴다는 팔레트 규칙(2026-07-09)에
+                따라 0 이 아닌 숫자에만 주의색을 준다. */}
+            <div
+              role="group"
+              aria-label="오늘 할 일"
+              className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0"
+            >
+              <span className="px-1 font-medium text-slate-500">오늘 할 일</span>
+              {OUTREACH_ATTENTION_ITEMS.map((item) => {
+                const count = attentionCounts[item.kind];
+                const active = attentionFilter === item.kind;
+                return (
+                  <button
+                    key={item.kind}
+                    type="button"
+                    aria-pressed={active}
+                    title={item.description}
+                    onClick={() => toggleAttention(item.kind)}
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1 rounded-lg px-2 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring dark:hover:bg-slate-800",
+                      active && "bg-slate-200 font-semibold text-slate-900 dark:bg-slate-700 dark:text-white",
+                    )}
+                  >
+                    {item.label}
+                    <span
+                      className={cn(
+                        "tabular-nums",
+                        // 선택된 칩(slate-200 바탕)에선 원색이 12px AA(4.5:1)에 못 미쳐 진한 짝을 쓴다.
+                        count > 0
+                          ? cn("font-semibold", active ? "text-status-caution-text" : "text-status-caution")
+                          : active
+                            ? "text-slate-700"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {count}건
+                    </span>
+                  </button>
+                );
+              })}
+              {attentionFilter ? (
+                <button
+                  type="button"
+                  onClick={() => setAttentionFilter(null)}
+                  className="ml-auto inline-flex h-8 items-center gap-1 rounded-lg px-2 text-muted-foreground hover:bg-slate-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring dark:hover:bg-slate-800"
+                >
+                  <X className="size-3" aria-hidden="true" />
+                  필터 해제
+                </button>
+              ) : null}
             </div>
 
             {/* F1 재캠페인 적기 — 대시보드에서 이관(§F1). 알림이 없으면 스스로 렌더하지 않는다 */}
@@ -855,7 +936,7 @@ export default function OutreachPage() {
                   <Button
                     variant={stageFilter === "ALL" ? "secondary" : "ghost"}
                     size="sm"
-                    onClick={() => setStageFilter("ALL")}
+                    onClick={() => selectStage("ALL")}
                     className={cn("rounded-lg h-8", stageFilter === "ALL" && "bg-slate-200 text-slate-900 font-semibold")}
                   >
                     전체
@@ -866,7 +947,7 @@ export default function OutreachPage() {
                   <Button
                     variant={stageFilter === "IN_PROGRESS" ? "secondary" : "ghost"}
                     size="sm"
-                    onClick={() => setStageFilter("IN_PROGRESS")}
+                    onClick={() => selectStage("IN_PROGRESS")}
                     className={cn("rounded-lg h-8", stageFilter === "IN_PROGRESS" && "bg-slate-200 text-slate-900 font-semibold")}
                   >
                     진행중
@@ -877,7 +958,7 @@ export default function OutreachPage() {
                   <Button
                     variant={stageFilter === "CLOSED" ? "secondary" : "ghost"}
                     size="sm"
-                    onClick={() => setStageFilter("CLOSED")}
+                    onClick={() => selectStage("CLOSED")}
                     className={cn("rounded-lg h-8", stageFilter === "CLOSED" && "bg-slate-200 text-slate-900 font-semibold")}
                   >
                     종료됨
