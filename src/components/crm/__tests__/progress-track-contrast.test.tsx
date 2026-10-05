@@ -4,7 +4,7 @@
  *
  * 트랙이 slate-100 이면 흰 표면 대비 1.10:1 로 사라져 「전체 중 얼마인가」가 안 읽힌다 → slate-300.
  * 트랙을 진하게 하면 채움이 그 위에서 3:1(WCAG 1.4.11)을 잃을 수 있어, 채움도 함께 고정한다:
- * slate-500 3.21 · emerald-700 3.62 · amber-700 3.40 · rose-700 4.08.
+ * slate-500 3.21 · 네이비(bg-primary) 7.62 · emerald-700 3.62 · amber-700 3.40 · rose-700 4.08.
  * ⚠️ 하위(펼침) 막대의 종전 채움 slate-300 은 새 트랙과 **같은 색**이라 막대가 통째로 사라진다 — 되돌리지 말 것.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,10 +20,11 @@ import type { SellerSummary } from "@/lib/crm-types";
 const noop = () => {};
 
 function expectVisibleTrack(track: Element, fillClass: string) {
-  expect(track.className).toContain("bg-slate-300");
+  // 부분 문자열이 아니라 클래스 토큰으로 본다 — `bg-primary/10` 같은 투명 변형이 `bg-primary` 로 통과하지 않게.
+  expect(track.classList.contains("bg-slate-300")).toBe(true);
   expect(track.className).not.toMatch(/bg-slate-100|bg-muted\b/);
   const fill = track.firstElementChild as HTMLElement;
-  expect(fill.className).toContain(fillClass);
+  expect(fill.classList.contains(fillClass)).toBe(true);
 }
 
 function stubFetch(body: unknown) {
@@ -74,7 +75,9 @@ describe("LinkDetailSheet — 유입 경로·기기 막대와 펼친 하위 막�
 });
 
 describe("ReferralNetworkDialog — 유입 경로 분포", () => {
-  it("소개는 emerald-700, 그 외는 slate-500 채움을 slate-300 트랙 위에 그린다", () => {
+  // 유입 경로는 범주라 상태 hue 를 받지 않는다(P8 §4) — 소개만 브랜드 네이비(bg-primary, 트랙 대비 7.62)로 띄운다.
+  // 종전 emerald 는 「들어온 돈」 색과 겹쳐 오너 결정으로 바꿨다(2026-10-06).
+  it("소개는 네이비(bg-primary), 그 외는 slate-500 채움을 slate-300 트랙 위에 그린다", () => {
     const sellers = [
       { id: "a", name: "가", acquisitionChannel: "REFERRAL", campaigns: [] },
       { id: "b", name: "나", acquisitionChannel: "COLD", campaigns: [] },
@@ -82,11 +85,13 @@ describe("ReferralNetworkDialog — 유입 경로 분포", () => {
     render(<ReferralNetworkDialog open onOpenChange={noop} sellers={sellers} />);
     const dialog = screen.getByRole("dialog");
     expect(dialog.querySelectorAll("div.h-1\\.5.rounded-full")).toHaveLength(2);
-    // 행 라벨로 막대를 찾아 「소개 = emerald-700」을 순서와 무관하게 고정한다.
+    // 행 라벨로 막대를 찾아 「소개 = 네이비」를 순서와 무관하게 고정한다.
     const trackOf = (label: string) =>
       within(dialog).getByText(label).parentElement!.nextElementSibling as HTMLElement;
-    expectVisibleTrack(trackOf("소개"), "bg-emerald-700");
+    expectVisibleTrack(trackOf("소개"), "bg-primary");
     expectVisibleTrack(trackOf("콜드"), "bg-slate-500");
+    const referralFill = (trackOf("소개").firstElementChild as HTMLElement).className;
+    expect(referralFill).not.toMatch(/emerald|bg-slate-500/);
   });
 });
 
