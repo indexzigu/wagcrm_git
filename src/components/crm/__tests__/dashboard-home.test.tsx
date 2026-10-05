@@ -246,6 +246,24 @@ describe("DashboardHome", () => {
     expect(await screen.findByText(/오늘 할 일이 모두 완료/)).toBeInTheDocument();
   });
 
+  // 오너 2026-10-06: 퍼널 트랙의 빈 구간이 slate-100(흰 카드 대비 1.09:1)이라 안 보였다 → slate-300.
+  // 약한 행이 --chart-2 @.45 로 남으면 slate-300 위 대비가 1.58 로 묻힌다 — 네이비 농도 사다리(1 / .6)로 고정.
+  it("영업 전환 퍼널은 보이는 트랙(slate-300) 위에 네이비 농도 사다리로 그린다", () => {
+    const { container } = render(
+      <DashboardHome initialData={data({ outreach90d: { total: 40, responded: 18, confirmed: 6, converted: 6 } })} />,
+    );
+    const card = screen.getByText("최근 90일 영업 전환").closest('[data-slot="card"]') ?? container;
+    const tracks = [...card.querySelectorAll("div.h-2\\.5.rounded-full")];
+    expect(tracks).toHaveLength(3);
+    for (const track of tracks) {
+      expect(track.className).toContain("bg-slate-300");
+      expect(track.className).not.toContain("bg-slate-100");
+      const fill = track.firstElementChild as HTMLElement;
+      expect(fill.style.backgroundColor).toBe("var(--chart-1)");
+    }
+    expect(tracks.map((t) => (t.firstElementChild as HTMLElement).style.opacity)).toEqual(["0.6", "0.6", "1"]);
+  });
+
   it("does not render lagging indicators on the realtime board", () => {
     render(<DashboardHome initialData={data()} />);
     expect(screen.queryByText("확정 손익")).not.toBeInTheDocument();

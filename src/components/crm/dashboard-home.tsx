@@ -924,14 +924,20 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   ].map((row, i) => (
                     <div key={row.label} className="flex items-center gap-2.5">
                       <span className="w-[26px] shrink-0 text-[11px] font-medium text-muted-foreground">{row.label}</span>
-                      <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                      {/* 트랙 = 전체폭 기준선이라 빈 구간이 보여야 비율이 읽힌다(오너 2026-10-06: slate-100 은 흰 카드
+                          대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
+                          약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
+                          올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 네이비의 농도 사다리
+                          (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 파랑은 6개월 대형 차트의 계열
+                          구분 의미라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
+                      <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
                         {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
                         <div
                           className="h-full rounded-full animate-grow-x"
                           style={{
                             width: row.base > 0 ? `${Math.max((row.count / row.base) * 100, 2)}%` : "2%",
-                            backgroundColor: row.strong ? "var(--chart-1)" : "var(--chart-2)",
-                            opacity: row.strong ? 1 : 0.45,
+                            backgroundColor: "var(--chart-1)",
+                            opacity: row.strong ? 1 : 0.6,
                             animationDelay: `${i * 60}ms`,
                           }}
                         />

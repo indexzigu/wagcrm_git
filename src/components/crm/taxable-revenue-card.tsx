@@ -4,8 +4,15 @@
 // 「기준선 N원 초과」로 바뀐다. 계산은 전부 `taxable-revenue-tracker.ts`(순수 SSOT)가 했다 —
 // 여기서 금액·등급을 다시 계산하지 말 것(표시 포맷만 한다).
 //
-// 색은 **심각도 축 하나만** 탄다(P8 §1): 여유 충분 = 무채(브랜드 네이비 막대), 근접 = caution,
-// 초과 = urgent. 채널 소계는 좋고 나쁨이 없는 **범주**라 색을 받지 않는다(P8 §4).
+// 색은 **심각도 축 하나만** 탄다(P8 §1): 근접 = caution, 초과 = urgent. 여유 충분은 상태색이 아니라
+// 브랜드 네이비 막대다 — 무채색은 아니지만 상태 hue 와 혼동되지 않는 중립 캐리어로 둔다(P8 §4).
+// 채널 소계는 좋고 나쁨이 없는 **범주**라 색을 받지 않는다(P8 §4).
+//
+// 막대의 빈 구간 = 기준선까지 남은 금액(주 숫자)이라 **보여야 하는 정보**다. 트랙을 slate-100 으로 두면
+// 흰 카드 대비 1.09:1 로 거의 사라졌다(오너 지적). 오너 결정으로 slate-300(흰 카드 대비 1.47:1)까지
+// 진하게 하고, 채움 대 트랙은 네이비 7.62 · caution 3.38 · **urgent 3.16** 으로 3:1 을 지킨다.
+// ⚠️ urgent 여유는 0.16 뿐이다 — 채움을 더 연하게 하거나 트랙을 더 진하게(slate-400: urgent 1.83) 하지 말 것.
+// shadow-inner 는 붙이지 않는다: 오목 홈의 윗줄(검정 5%)에서 urgent 대비가 2.83 으로 3:1 아래로 떨어진다.
 import type { ReactNode } from "react";
 import { Landmark } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -84,6 +91,12 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
             `기준선 ${formatEok(threshold)} 근접 · 남은 금액 (공급가액)`
           : `기준선 ${formatEok(threshold)}까지 남은 금액 (공급가액)`;
   const primaryValue = isOver ? tracker.overSupply : tracker.headroomSupply;
+  // 넘기 전에는 내림 — 99.5% 를 「100%」로 읽어 주면 여유가 남았는데 꽉 찼다고 안내하게 된다.
+  // `+ 1e-9`: 0.29 * 100 = 28.999…96 같은 부동소수점 오차가 내림에서 1%p 를 깎지 않게 한다.
+  const progressPercent = isOver ? 100 : Math.floor(tracker.progressRatio * 100 + 1e-9);
+  const subtitle =
+    `다음 갱신 ${dotted(tracker.nextUpdateYmd)} · 기준기간 ${tracker.referencePeriod.label}` +
+    (tracker.referencePeriod.assumed ? " (8월 갱신 기준기간은 원문 미확인)" : "");
 
   return (
     <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0" data-testid="taxable-revenue-card">
@@ -93,9 +106,9 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
           <p className="shrink-0 text-[13px] font-semibold tracking-tight text-[var(--primary)]">
             네이버 판매자 등급 · 과세기준매출
           </p>
-          <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-            다음 갱신 {dotted(tracker.nextUpdateYmd)} · 기준기간 {tracker.referencePeriod.label}
-            {tracker.referencePeriod.assumed ? " (8월 갱신 기준기간은 원문 미확인)" : ""}
+          {/* 좁은 폭에서 잘리면 끝의 「원문 미확인」 가정 경고부터 사라진다 — title 로 전문을 남긴다(형제 카드 규약). */}
+          <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title={subtitle}>
+            {subtitle}
           </p>
           <span className="shrink-0 text-[11px] text-muted-foreground">
             현재 등급(CRM 추정) {tracker.currentGrade.label} {formatRate(tracker.currentGrade.feeRateMilliPercent)}
@@ -115,8 +128,13 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
                 aria-label="기준선 대비 누적 과세기준매출"
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={Math.round(tracker.progressRatio * 100)}
-                className="h-2 overflow-hidden rounded-full bg-slate-100"
+                aria-valuenow={progressPercent}
+                aria-valuetext={
+                  isOver
+                    ? `누적 ${won(tracker.cumulativeSupply)}, 기준선 ${formatEok(threshold)} 초과`
+                    : `누적 ${won(tracker.cumulativeSupply)}, 기준선 ${formatEok(threshold)}의 ${progressPercent}%`
+                }
+                className="h-2.5 overflow-hidden rounded-full bg-slate-300"
               >
                 <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${tracker.progressRatio * 100}%` }} />
               </div>
@@ -162,7 +180,8 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
                 <p className="text-sm font-semibold tabular-nums text-foreground">
                   반년 약 {won(crossingCost.amount)} 추가 수수료
                 </p>
-                <p className="mt-1 text-[11px] text-muted-foreground">
+                {/* break-keep: 「110,000,000원」의 「원」만 다음 줄로 떨어지지 않게 한글 단어 단위로 끊는다. */}
+                <p className="mt-1 break-keep text-[11px] text-muted-foreground">
                   {crossingCost.from.label} {formatRate(crossingCost.from.feeRateMilliPercent)} → {crossingCost.to.label}{" "}
                   {formatRate(crossingCost.to.feeRateMilliPercent)} · 네이버 자사몰 최근 6개월 {won(crossingCost.naverOwnMallSales)}
                   {crossingCost.naverOwnMallMissingCount > 0 ? ` (금액 미입력 ${crossingCost.naverOwnMallMissingCount}건 제외)` : ""}
