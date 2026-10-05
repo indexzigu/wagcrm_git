@@ -3,6 +3,7 @@ import {
   clusterCampaignEvents,
   computeCrossCampaignRepurchase,
   computeEventReturningBuyers,
+  resolveRepurchaseExcludedCampaignIds,
 } from "../cross-campaign-repurchase";
 import type { PulseOrderLike, PulseSalesCampaignSource } from "../mobile-pulse-data";
 
@@ -198,5 +199,46 @@ describe("computeEventReturningBuyers", () => {
       expect(Object.keys(stat).sort()).toEqual(["buyers", "returningBuyers", "returningRatio"].sort());
     }
     expect(JSON.stringify([...per.entries()])).not.toContain(secret);
+  });
+});
+
+// 수동 정산 기준액 캠페인(오너 확정 2026-10-06) — 그 캠페인의 주문에는 우리가 직접 판 주문이
+// 섞여 있어 「단골 고객」(회차간 재구매) 입력에서 뺀다. 캠페인 자체는 귀속 후보로 남는다.
+describe("단골 고객 — 수동 정산 기준액 캠페인 주문 제외", () => {
+  const buyer = { ordererNo: "900000001" } as Partial<PulseOrderLike>;
+  const orders = [
+    order({ ...buyer, productName: "콜라겐", productId: "P1", ...inEvent0 }),
+    order({ ...buyer, productName: "비타민", productId: "P2", ...inEvent1, productOrderId: "PO2" }),
+  ];
+
+  it("기준 없음: 두 회차에서 산 구매자 = 단골 1명", () => {
+    expect(computeCrossCampaignRepurchase([EVENT0, EVENT1], orders).crossCampaignBuyers).toBe(1);
+  });
+
+  it("한 회차가 수동 기준액 캠페인이면 그 주문을 빼서 단골 0명(지문도 제외)", () => {
+    const excluded = resolveRepurchaseExcludedCampaignIds([
+      { id: "c1", sellerFeeBasisOverride: 1_000_000, sellerMarginRate: 10, campaignDeals: [] },
+      { id: "c2", sellerFeeBasisOverride: null, sellerMarginRate: 10, campaignDeals: [] },
+    ]);
+    expect([...excluded]).toEqual(["c1"]);
+    expect(computeCrossCampaignRepurchase([EVENT0, EVENT1], orders, [], excluded).crossCampaignBuyers).toBe(0);
+    expect(
+      computeCrossCampaignRepurchase(
+        [EVENT0, EVENT1],
+        [],
+        [
+          { salesCampaignId: "c1", buyerHash: "h1" },
+          { salesCampaignId: "c2", buyerHash: "h1" },
+        ],
+        excluded,
+      ).crossCampaignBuyers,
+    ).toBe(0);
+  });
+
+  it("요율이 섞여 적용되지 않는 기준액은 빼지 않는다(writer 와 같은 판정)", () => {
+    const excluded = resolveRepurchaseExcludedCampaignIds([
+      { id: "c1", sellerFeeBasisOverride: 1_000_000, sellerMarginRate: 10, campaignDeals: [{ sellerMarginRate: 10 }, { sellerMarginRate: 20 }] },
+    ]);
+    expect(excluded.size).toBe(0);
   });
 });

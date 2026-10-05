@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { campaignRepository } from "@/repositories/campaignRepository";
-import { calculateDerivedCampaignFinancials } from "@/lib/campaign-financials";
+import { calculateDerivedCampaignFinancials, resolveEffectiveSellerFeeBasis } from "@/lib/campaign-financials";
 import type { AgentTool, ToolResult } from "./types";
 import { missingParam, notFound, ok, queryFailed } from "./types";
 // Data 타입은 런타임-프리 모듈로 이동됐다(청사진 §2-1/§3-1, 번들 안전). 기존 import 경로
@@ -50,6 +50,14 @@ async function execute(input: GetCampaignFinancialsInput): Promise<ToolResult<Ge
       manualSettlementSales: c.settlementSales != null ? Number(c.settlementSales) : null,
       manualSellerExpense: c.sellerExpense != null ? Number(c.sellerExpense) : null,
       manualTaxExpense: c.taxExpense != null ? Number(c.taxExpense) : null,
+      // 수동 정산 기준액 — 넘기지 않으면 이 도구가 저장값과 다른 판매대행비를 말한다. 품목 요율이
+      // 섞여 자격이 없는 기준액은 writer 처럼 무시한다(적용 판정 SSOT).
+      sellerFeeBasisOverride:
+        resolveEffectiveSellerFeeBasis({
+          sellerFeeBasisOverride: c.sellerFeeBasisOverride,
+          deals: c.campaignDeals,
+          campaignSellerMarginRate: c.sellerMarginRate,
+        })?.basis ?? null,
     });
 
     return ok(

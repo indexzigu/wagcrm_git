@@ -71,3 +71,47 @@ describe("get_campaign_financials 도구", () => {
     expect(result.error.code).toBe("QUERY_FAILED");
   });
 });
+
+// 수동 정산 기준액(오너 확정 2026-10-06) — 도구도 writer 와 같은 적용 판정을 쓴다. 금액은 가공(P0).
+describe("get_campaign_financials — 수동 정산 기준액", () => {
+  const row = (overrides: Record<string, unknown>) => ({
+    id: "camp1",
+    status: "SETTLEMENT_WAIT",
+    actualSales: 1_000_000,
+    operatingExpense: 0,
+    miscExpense: 0,
+    totalMarginRate: 30,
+    sellerMarginRate: 10,
+    sellerTaxType: "BUSINESS",
+    isManualSettlementSales: false,
+    isManualSellerExpense: false,
+    isManualTaxExpense: false,
+    settlementSales: null,
+    sellerExpense: null,
+    taxExpense: null,
+    isDepositReceived: false,
+    isPayoutCompleted: false,
+    deal: { dealName: "딜A" },
+    seller: { name: "셀러A", agency: { businessNumber: "000-00-00000" } },
+    campaignDeals: [],
+    ...overrides,
+  });
+
+  beforeEach(() => findByIdMock.mockReset());
+
+  it("적용되는 기준액이면 판매대행비 = round(기준액 × 요율)", async () => {
+    findByIdMock.mockResolvedValue(row({ sellerFeeBasisOverride: 800_000 }));
+    const result = await getCampaignFinancialsTool.execute({ campaignId: "camp1" });
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.data.derived.sellerExpense).toBe(80_000);
+  });
+
+  it("품목 요율이 섞여 적용되지 않는 기준액은 무시한다(writer 와 같은 판정)", async () => {
+    findByIdMock.mockResolvedValue(
+      row({ sellerFeeBasisOverride: 800_000, campaignDeals: [{ sellerMarginRate: 10 }, { sellerMarginRate: 20 }] }),
+    );
+    const result = await getCampaignFinancialsTool.execute({ campaignId: "camp1" });
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.data.derived.sellerExpense).toBe(100_000);
+  });
+});

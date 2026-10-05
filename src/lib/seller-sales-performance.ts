@@ -13,10 +13,19 @@
 // 0이면 평균은 null = 판정 불가이지 0원이 아니다.
 
 import { countEffectiveCampaigns } from './campaign-group-count';
+import { resolveEffectiveSellerFeeBasis } from './campaign-financials';
 
 export interface SellerSalesRow {
   /** Prisma Decimal 이 그대로 들어올 수 있어 number 로 강제 변환한다 */
   actualSales: number | { toString(): string } | null;
+  /**
+   * 수동 정산 기준액(null·미지정 = 자동). 있으면 이 캠페인의 매출로 실매출 대신 이 값을 센다 —
+   * 매출 일부를 우리가 직접 판 캠페인이라 실매출에 셀러 몫이 아닌 매출이 섞여 있다(오너 확정 2026-10-06).
+   */
+  sellerFeeBasisOverride?: number | { toString(): string } | null;
+  /** 기준액 요율 자격 판정용(품목 요율이 섞이면 기준액은 적용되지 않는다 — writer 와 같은 판정). */
+  sellerMarginRate?: number | { toString(): string } | null;
+  campaignDeals?: ReadonlyArray<{ sellerMarginRate?: number | { toString(): string } | null }>;
   groupId: string | null;
 }
 
@@ -46,7 +55,12 @@ export function summarizeSellerSalesPerformance(
   const groupsWithSales = new Set<string>();
   let ungroupedWithSales = 0;
   for (const row of rows) {
-    const sales = toSales(row.actualSales);
+    const effective = resolveEffectiveSellerFeeBasis({
+      sellerFeeBasisOverride: row.sellerFeeBasisOverride,
+      deals: row.campaignDeals,
+      campaignSellerMarginRate: row.sellerMarginRate,
+    });
+    const sales = toSales(effective ? effective.basis : row.actualSales);
     totalSales += sales;
     if (sales > 0) {
       if (row.groupId != null) groupsWithSales.add(row.groupId);

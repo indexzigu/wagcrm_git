@@ -88,7 +88,14 @@ import { resolveBrandSettlementTotal } from "@/lib/settlement-brand-total";
 import { fetchGroupDetail } from "@/lib/campaign-group-client";
 import type { CampaignGroupMemberRow } from "@/lib/crm-types";
 import { isIndividualSeller } from "@/lib/seller-tax-utils";
-import { computeOperatingProfit } from "@/lib/campaign-financials";
+import {
+  SELLER_FEE_BASIS_INPUT_ERROR,
+  SELLER_FEE_BASIS_STALE_MESSAGE,
+  computeOperatingProfit,
+  resolveEffectiveSellerFeeBasis,
+  resolveSellerFeeBasisEligibility,
+  sellerFeeFromBasis,
+} from "@/lib/campaign-financials";
 import {
   SETTLEMENT_COUNTERPARTIES,
   SETTLEMENT_COUNTERPARTY_LABEL,
@@ -100,6 +107,7 @@ import {
   resolveAdjustedOperatingProfit,
   resolveSellerFeeBasis,
   resolveSellerZoneTotals,
+  SELLER_FEE_BASIS_MANUAL_LABEL,
   resolveSettlementItemSignedAmount,
   sumBrandPaidItems,
   sumInternalItems,
@@ -1422,6 +1430,7 @@ function downloadDataUrl(dataUrl: string, filename: string) {
 type SettlementFinancialPatch = {
   settlementSupplyCost?: number | null;
   settlementGoodsCost?: number | null;
+  sellerFeeBasisOverride?: number | null;
   settlementSales?: number | null;
   sellerExpense?: number | null;
   operatingExpense?: number | null;
@@ -1729,6 +1738,12 @@ function SettlementFinancialSummary({
     //   (미입력이면 세무 대조가 공식 폴백을 쓴다. 추정값을 미리 채우면 그것이 관측값처럼
     //   저장되는 사고가 이 필드를 만든 이유와 정확히 반대다).
     settlementGoodsCost: campaign.settlementGoodsCost == null ? "" : String(campaign.settlementGoodsCost),
+    // 수동 정산 기준액 — 물품대금과 같은 「빈칸 = 자동」 패턴(0 은 유효한 수동값).
+    sellerFeeBasisOverride:
+      campaign.sellerFeeBasisOverride == null ? "" : String(campaign.sellerFeeBasisOverride),
+    // 모드는 입력 글자와 **따로** 든다 — 수동 칸을 지우거나("") 입력 도중 값("-"·"1e")이
+    // 비어 보여도 자동으로 튀지 않게 한다.
+    sellerFeeBasisMode: (campaign.sellerFeeBasisOverride == null ? "자동" : "수동") as "자동" | "수동",
     settlementSales: String(campaign.settlementSales ?? 0),
     sellerExpense: String(campaign.sellerExpense ?? 0),
     taxExpense: String(campaign.taxExpense ?? 0),
@@ -1787,7 +1802,27 @@ function SettlementFinancialSummary({
   // 사업자=총 거래액) 금액과 그 이름을 lib SSOT `resolveSellerFeeBasis` 가 함께 낸다.
   // 화면이 그 판정 함수를 직접 부르는 것도 계약(`settlement-statement-text.test.ts`)이
   // 막는다 — 기준·세율 계산은 lib 소관이다.
-  const sellerFeeBasis = resolveSellerFeeBasis(grossSales, isIndividual);
+  // 수동 기준액 자격(품목별 셀러 수수료율이 섞이면 불가) — 서버 PATCH·writer 와 같은 판정 SSOT.
+  const sellerFeeBasisEligibility = resolveSellerFeeBasisEligibility({
+    deals: campaign.campaignDeals,
+    campaignSellerMarginRate: campaign.sellerMarginRate,
+  });
+  // **적용되는** 기준액 — 저장돼 있어도 자격이 없으면 writer 가 자동값으로 저장하므로 화면도
+  // 자동 기준을 보인다(명세서·포털과 같은 판정).
+  const effectiveSellerFeeBasis = resolveEffectiveSellerFeeBasis({
+    sellerFeeBasisOverride: campaign.sellerFeeBasisOverride,
+    deals: campaign.campaignDeals,
+    campaignSellerMarginRate: campaign.sellerMarginRate,
+  });
+  // 기준액이 저장돼 있는데 품목 요율이 섞여 적용되지 않는 상태 — 운영자에게 알린다.
+  const isSellerFeeBasisStale = campaign.sellerFeeBasisOverride != null && effectiveSellerFeeBasis == null;
+  const sellerFeeBasis = resolveSellerFeeBasis(grossSales, isIndividual, effectiveSellerFeeBasis?.basis ?? null);
+  // 자동 기준액(수동 전환 시 입력칸의 시작값) — 수동값과 무관한 자동 기준.
+  const autoSellerFeeBasis = resolveSellerFeeBasis(grossSales, isIndividual);
+  // 「수동」을 고를 수 없는 이유 문단의 id — 버튼이 aria-describedby 로 가리킨다.
+  const sellerFeeBasisReasonId = useId();
+  // 수동 기준액 무효 입력 안내 문단의 id — 입력칸이 aria-describedby 로 가리킨다.
+  const sellerFeeBasisErrorId = useId();
   // 원천세는 판매대행비 + 셀러 지급 부가 항목을 **합산해 한 줄로** 공제한다(오너 확정).
   // 계산은 lib SSOT 가 소유한다 — 화면이 세율을 직접 쓰면 명세서와 갈린다
   // (`settlement-statement-text.test.ts` 가 그 금지를 소스 스캔으로 고정).
@@ -1819,6 +1854,9 @@ function SettlementFinancialSummary({
     setDraft({
       settlementSupplyCost: String(currentSupplyCost ?? ""),
       settlementGoodsCost: campaign.settlementGoodsCost == null ? "" : String(campaign.settlementGoodsCost),
+      sellerFeeBasisOverride:
+        campaign.sellerFeeBasisOverride == null ? "" : String(campaign.sellerFeeBasisOverride),
+      sellerFeeBasisMode: campaign.sellerFeeBasisOverride == null ? "자동" : "수동",
       settlementSales: String(campaign.settlementSales ?? 0),
       sellerExpense: String(campaign.sellerExpense ?? 0),
       taxExpense: String(campaign.taxExpense ?? 0),
@@ -1841,7 +1879,43 @@ function SettlementFinancialSummary({
   };
 
   const draftSettlementSales = toNumber(draft.settlementSales);
-  const draftSellerExpense = toNumber(draft.sellerExpense);
+  // 편집 중 수동 기준액 미리보기 — 판매대행비가 자동이고 기준액이 수동(숫자)이며 자격이 있으면
+  // 판매대행비 = 기준액 × 단일 요율(저장 writer 와 같은 lib 식). 판매대행비·지급 총액·매출총이익·
+  // 영업이익·상단 타일이 입력하는 동안 따라온다.
+  const isDraftBasisManual = draft.sellerFeeBasisMode === "수동";
+  const draftBasisRaw = draft.sellerFeeBasisOverride.trim();
+  const draftBasisParsed = draftBasisRaw === "" ? null : Number(draftBasisRaw);
+  // 수동인데 비었거나 숫자가 아니거나 음수 = 아직 유효하지 않은 값 → 저장을 막고 칸 아래에 알린다.
+  const draftBasisError =
+    isDraftBasisManual &&
+    (draftBasisParsed == null || !Number.isFinite(draftBasisParsed) || draftBasisParsed < 0)
+      ? SELLER_FEE_BASIS_INPUT_ERROR
+      : null;
+  // 미리보기에 쓸 기준액: 수동이면 유효한 입력값, 자동으로 **되돌린** 경우(저장된 기준액이 적용
+  // 중이던 캠페인)면 자동 기준액 — 저장 판매대행비가 기준액 기반이라 그대로 두면 낡은 값이 남는다.
+  // 원래 자동이던 캠페인은 저장 판매대행비(writer 의 품목 합계)가 정확하므로 미리보기를 만들지 않는다.
+  const draftPreviewBasis = isDraftBasisManual
+    ? draftBasisError
+      ? null
+      : draftBasisParsed
+    : effectiveSellerFeeBasis != null
+      ? autoSellerFeeBasis.amount
+      : null;
+  const draftBasisPreviewFee =
+    !draft.isManualSellerExpense && draftPreviewBasis != null && sellerFeeBasisEligibility.eligible
+      ? sellerFeeFromBasis(draftPreviewBasis, sellerFeeBasisEligibility.sellerRate)
+      : null;
+  const draftSellerExpense = draftBasisPreviewFee ?? toNumber(draft.sellerExpense);
+  // 편집 중 셀러 구간 합계 — 판매대행비 미리보기 + 편집 중 부가 항목으로 lib SSOT 가 계산한다.
+  const draftSellerZoneTotals = resolveSellerZoneTotals({
+    sellerBaseAmount: draftSellerExpense,
+    items: itemDrafts.map((item) => ({
+      invoiceMode: item.invoiceMode,
+      counterparty: item.counterparty,
+      amount: Number.isFinite(Number(item.amount)) ? Number(item.amount) : 0,
+    })),
+    isIndividual,
+  });
   const draftTaxExpense = toNumber(draft.taxExpense);
   const draftOperatingExpense = toNumber(draft.operatingExpense);
   const draftMiscExpense = toNumber(draft.miscExpense);
@@ -1954,6 +2028,9 @@ function SettlementFinancialSummary({
   };
 
   const handleSave = async () => {
+    // 수동 기준액이 유효하지 않으면 저장하지 않는다 — 칸 아래 오류 문구가 이미 보인다
+    // (반쪽 값을 조용히 버리거나 저장하지 않는다).
+    if (draftBasisError) return;
     setIsSaving(true);
     try {
       const patch: SettlementFinancialPatch = {};
@@ -1985,6 +2062,12 @@ function SettlementFinancialSummary({
         if (goodsCostParsed !== (campaign.settlementGoodsCost ?? null)) {
           patch.settlementGoodsCost = goodsCostParsed;
         }
+      }
+      // 수동 정산 기준액 — 물품대금과 같은 이유로 sameNumber·toNumber 를 쓰지 않는다
+      // (null=자동과 0=전량 자체 판매가 다른 상태다). 무효 입력은 위에서 저장을 막았다.
+      const nextBasis = isDraftBasisManual ? draftBasisParsed : null;
+      if (nextBasis !== (campaign.sellerFeeBasisOverride ?? null)) {
+        patch.sellerFeeBasisOverride = nextBasis;
       }
       if (!sameNumber(draftOperatingExpense, campaign.operatingExpense)) {
         patch.operatingExpense = draftOperatingExpense;
@@ -2225,17 +2308,81 @@ function SettlementFinancialSummary({
 
           <SettlementZoneHeader icon={UserRound} title="셀러 정산" />
           <FinancialEditInput
+            label="정산 기준액"
+            // 자동 = 자동 기준액을 읽기 전용으로 보인다, 수동 = 입력값(저장 시 null↔숫자로 내려간다).
+            // 모드는 입력 글자와 별도 상태다(칸을 비워도 수동 유지 — F1).
+            value={isDraftBasisManual ? draft.sellerFeeBasisOverride : String(autoSellerFeeBasis.amount)}
+            readOnly={!isDraftBasisManual}
+            mode={draft.sellerFeeBasisMode}
+            invalid={draftBasisError != null}
+            errorId={draftBasisError ? sellerFeeBasisErrorId : undefined}
+            manualDisabled={!sellerFeeBasisEligibility.eligible}
+            manualDescribedBy={sellerFeeBasisEligibility.eligible ? undefined : sellerFeeBasisReasonId}
+            hint={isDraftBasisManual ? SELLER_FEE_BASIS_MANUAL_LABEL : `판매대행비 기준 · ${autoSellerFeeBasis.label}`}
+            onModeChange={(mode) =>
+              setDraft((prev) => ({
+                ...prev,
+                sellerFeeBasisMode: mode,
+                // 수동으로 바꿀 때 칸이 비어 있으면 자동 기준액에서 시작한다. 자동이면 입력값을 비운다.
+                sellerFeeBasisOverride:
+                  mode === "자동"
+                    ? ""
+                    : prev.sellerFeeBasisOverride.trim() === ""
+                      ? String(autoSellerFeeBasis.amount)
+                      : prev.sellerFeeBasisOverride,
+              }))
+            }
+            onChange={(value) => updateDraft("sellerFeeBasisOverride", value)}
+          />
+          {draftBasisError ? (
+            // 무효 입력 — 칸의 aria-invalid·aria-describedby 가 이 문단을 가리킨다.
+            <p id={sellerFeeBasisErrorId} role="alert" className="px-2 text-xs leading-relaxed text-destructive">
+              {draftBasisError}
+            </p>
+          ) : null}
+          {!sellerFeeBasisEligibility.eligible ? (
+            // 저장된 기준액이 자격을 잃은 상태면 「적용되지 않는다」를, 아니면 「입력 불가」를 말한다.
+            <p id={sellerFeeBasisReasonId} className="px-2 text-xs leading-relaxed text-slate-500">
+              {isDraftBasisManual ? SELLER_FEE_BASIS_STALE_MESSAGE : sellerFeeBasisEligibility.reason}
+            </p>
+          ) : isDraftBasisManual && draftBasisPreviewFee != null ? (
+            // 물품대금 도움말과 같은 상시 한 줄 — 입력하는 동안 곱셈 결과를 바로 보인다.
+            <p className="px-2 text-xs leading-relaxed text-slate-500">
+              판매대행비 = 기준액 × {sellerFeeBasisEligibility.sellerRate}% ={" "}
+              {formatSettlementMoney(draftBasisPreviewFee)}
+            </p>
+          ) : null}
+          <FinancialEditInput
             label="판매대행비"
-            value={draft.sellerExpense}
+            value={draft.isManualSellerExpense ? draft.sellerExpense : String(draftSellerExpense)}
             readOnly={!draft.isManualSellerExpense}
             mode={draft.isManualSellerExpense ? "수동" : "자동"}
-            onModeChange={(mode) => updateDraft("isManualSellerExpense", mode === "수동")}
+            onModeChange={(mode) =>
+              // 수동으로 바꾸는 순간의 시작값은 **지금 보이는 값**(기준액 미리보기 포함)이다.
+              setDraft((prev) => ({
+                ...prev,
+                isManualSellerExpense: mode === "수동",
+                ...(mode === "수동" ? { sellerExpense: String(draftSellerExpense) } : {}),
+              }))
+            }
             onChange={(value) => updateDraft("sellerExpense", value)}
           />
           <SettlementItemEditor
             zone="SELLER"
             items={itemDrafts}
             onItemsChange={setItemDrafts}
+          />
+          {isIndividual && (
+            <FinancialEditInput
+              label="원천세 3.3% (판매대행비 + 부가 항목 합산)"
+              value={String(draftSellerZoneTotals.withholdingTax)}
+              readOnly
+            />
+          )}
+          <FinancialEditInput
+            label="셀러 지급 총액"
+            value={String(draftSellerZoneTotals.payoutTotal)}
+            readOnly
           />
 
           <SettlementZoneHeader icon={TrendingUp} title="자사 손익" />
@@ -2309,12 +2456,20 @@ function SettlementFinancialSummary({
           <FinancialLine
             label="정산 기준액"
             value={formatSettlementMoney(sellerFeeBasis.amount)}
-            tag="고정"
+            // 자동 기준(부가 항목 무관)은 「고정」, 운영자가 입력한 기준액은 「수동」(같은 중립 태그).
+            tag={sellerFeeBasis.isManual ? "수동" : "고정"}
             // ⛔ 「기준액 × 수수료율 = 판매대행비」 라고 단정하지 말 것 — 판매대행비는
             //    저장값이라 수동 수정·요율 변경 이력에 따라 곱셈이 딱 안 맞을 수 있다.
             //    이 줄은 **무엇을 기준으로 삼는가**만 말한다.
-            hint={`판매대행비 기준 · ${sellerFeeBasis.label}`}
+            hint={
+              sellerFeeBasis.isManual
+                ? sellerFeeBasis.label
+                : `판매대행비 기준 · ${sellerFeeBasis.label}`
+            }
           />
+          {isSellerFeeBasisStale ? (
+            <p className="px-2 text-xs leading-relaxed text-slate-500">{SELLER_FEE_BASIS_STALE_MESSAGE}</p>
+          ) : null}
           <FinancialLine label="판매대행비" value={formatSettlementMoney(sellerFee)} danger />
           {itemsByZone.SELLER.map((item) => (
             <SettlementItemLine key={item.id} item={item} />
@@ -2434,6 +2589,11 @@ function FinancialEditInput({
   readOnly = false,
   mode,
   onModeChange,
+  manualDisabled = false,
+  manualDescribedBy,
+  hint,
+  invalid = false,
+  errorId,
 }: {
   label: string;
   value: string;
@@ -2441,29 +2601,54 @@ function FinancialEditInput({
   readOnly?: boolean;
   mode?: "자동" | "수동";
   onModeChange?: (mode: "자동" | "수동") => void;
+  /**
+   * 「수동」 선택지를 막는다(이미 수동이면 막지 않는다 — 되돌릴 길은 남긴다). 네이티브 `disabled`
+   * 대신 `aria-disabled` + 클릭 차단이라 키보드 포커스·스크린리더가 버튼을 계속 찾고,
+   * `manualDescribedBy` 가 가리키는 화면의 이유 문단을 함께 읽는다.
+   */
+  manualDisabled?: boolean;
+  manualDescribedBy?: string;
+  /** 값의 근거 설명 — 읽기 모드 `FinancialLine` 과 같은 설명 아이콘(HelpPopover)으로 본다. */
+  hint?: string;
+  /** 유효하지 않은 입력 — `input.tsx` 와 같은 aria-invalid 테두리, 오류 문단은 `errorId` 로 연결. */
+  invalid?: boolean;
+  errorId?: string;
 }) {
   const inputId = useId();
 
   return (
     <div className="grid min-h-8 grid-cols-[minmax(0,1fr)_84px_244px] items-center gap-3 px-2 py-0.5">
-      <label htmlFor={inputId} className="min-w-0 truncate text-xs font-medium text-slate-700">
-        {label}
-      </label>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <label htmlFor={inputId} className="min-w-0 truncate text-xs font-medium text-slate-700">
+          {label}
+        </label>
+        {hint ? <HelpPopover ariaLabel={`${label} 설명`} text={hint} /> : null}
+      </span>
       {mode ? (
         <div className="inline-flex w-[84px] justify-self-end rounded-md bg-slate-100 p-0.5 text-[10px] font-semibold">
-          {(["자동", "수동"] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={cn(
-                "min-w-0 flex-1 whitespace-nowrap rounded px-1 py-0.5 transition-colors",
-                mode === item ? "bg-white text-primary shadow-soft-sm" : "text-slate-500",
-              )}
-              onClick={() => onModeChange?.(item)}
-            >
-              {item}
-            </button>
-          ))}
+          {(["자동", "수동"] as const).map((item) => {
+            const blocked = item === "수동" && manualDisabled && mode !== "수동";
+            return (
+              <button
+                key={item}
+                type="button"
+                aria-pressed={mode === item}
+                aria-disabled={blocked || undefined}
+                aria-describedby={blocked ? manualDescribedBy : undefined}
+                className={cn(
+                  "min-w-0 flex-1 whitespace-nowrap rounded px-1 py-0.5 transition-colors",
+                  mode === item ? "bg-white text-primary shadow-soft-sm" : "text-slate-500",
+                  blocked && "cursor-not-allowed opacity-50",
+                )}
+                onClick={() => {
+                  if (blocked) return;
+                  onModeChange?.(item);
+                }}
+              >
+                {item}
+              </button>
+            );
+          })}
         </div>
       ) : (
         <span aria-hidden="true" />
@@ -2473,12 +2658,16 @@ function FinancialEditInput({
         type="number"
         value={value}
         readOnly={readOnly}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? errorId : undefined}
         onChange={(event) => onChange?.(event.target.value)}
         className={cn(
           "h-7 w-full min-w-0 rounded-lg border px-2 text-right text-xs tabular-nums outline-none transition-colors focus:border-primary focus:ring-1 focus:ring-focus-ring",
           readOnly
             ? "border-slate-100 bg-slate-50 text-slate-500"
             : "border-slate-200 bg-white text-slate-800",
+          // `input.tsx` 의 aria-invalid 표현과 같은 토큰(destructive 테두리·링).
+          "aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/40",
         )}
       />
     </div>

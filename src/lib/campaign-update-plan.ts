@@ -39,6 +39,8 @@ export type CampaignUpdateData = {
   returnPeriodEndDate?: string | null;
   settlementSupplyCost?: number | null;
   settlementGoodsCost?: number | null;
+  /** 수동 정산 기준액 — null = 자동으로 되돌림, 숫자(0 포함) = 수동. 미지정 = 무변경. */
+  sellerFeeBasisOverride?: number | null;
   supplierInvoiceIssuedAt?: string | null;
   sellerInvoiceIssuedAt?: string | null;
   expectedDepositDate?: string | null;
@@ -78,6 +80,8 @@ export type PreviousCampaignForUpdate = {
   campaignName: string | null;
   settlementSupplyCost: DecimalLike;
   settlementGoodsCost: DecimalLike;
+  /** 수동 정산 기준액(null = 자동). 부분 픽스처 호환을 위해 선택 — Prisma 행에는 항상 있다. */
+  sellerFeeBasisOverride?: DecimalLike;
   supplierInvoiceIssuedAt: Date | null;
   sellerInvoiceIssuedAt: Date | null;
   expectedDepositDate: Date | null;
@@ -236,6 +240,22 @@ export function resolveSettlementStates(
  * 둘 다 값=수치 비교 — 이고, 미입력을 `null` 로 정규화하면 세 갈래가 한 비교로 접힌다
  * (`null !== null` 이 거짓, `null !== 0` 이 참이므로 분기를 따로 쓸 필요가 없다).
  */
+/** `diffCampaignChanges` 가 수동 정산 기준액 변경에 붙이는 라벨(다른 라벨과 같은 영문 리터럴 계열). */
+export const SELLER_FEE_BASIS_CHANGE_LABEL = "seller fee basis";
+
+/**
+ * 수동 정산 기준액 변경 이력 문구 — **이전값과 새 값**을 함께 남긴다(금전 근거 필드라
+ * 「바뀌었다」만으로는 사후 대조가 안 된다). null = 자동.
+ * 예: `자동 → 수동 1,000,000원` · `수동 1,000,000원 → 수동 0원` · `수동 0원 → 자동`.
+ */
+export function describeSellerFeeBasisChange(previous: DecimalLike, next: DecimalLike): string {
+  const describe = (value: DecimalLike) =>
+    value === null || value === undefined
+      ? "자동"
+      : `수동 ${Math.round(Number(value.toString())).toLocaleString("ko-KR")}원`;
+  return `${describe(previous)} → ${describe(next)}`;
+}
+
 function numericFieldChanged(next: DecimalLike, previous: DecimalLike): boolean {
   const toNumber = (value: DecimalLike): number | null =>
     value === null || value === undefined ? null : Number(value.toString());
@@ -311,6 +331,9 @@ export function diffCampaignChanges(
     // 마커라 유효값)과 미입력(null)이 그대로 구분된다.
     data.settlementSupplyCost !== undefined && numericFieldChanged(data.settlementSupplyCost, previous.settlementSupplyCost) ? "settlement supply cost" : null,
     data.settlementGoodsCost !== undefined && numericFieldChanged(data.settlementGoodsCost, previous.settlementGoodsCost) ? "settlement goods cost" : null,
+    // 수동 정산 기준액 — 값 변경과 모드 전환(null↔숫자)을 같은 라벨로 잡는다. 0 은 유효값
+    // (「전량 자체 판매」)이라 같은 판정기(null 을 0 으로 접지 않음)를 쓴다.
+    data.sellerFeeBasisOverride !== undefined && numericFieldChanged(data.sellerFeeBasisOverride, previous.sellerFeeBasisOverride) ? SELLER_FEE_BASIS_CHANGE_LABEL : null,
     hasDateFieldChanged(data.supplierInvoiceIssuedAt, resolveSharedSettlementDate(previous, "supplierInvoiceIssuedAt")) ? "supplier invoice date" : null,
     hasDateFieldChanged(data.sellerInvoiceIssuedAt, resolveSharedSettlementDate(previous, "sellerInvoiceIssuedAt")) ? "seller invoice date" : null,
     hasDateFieldChanged(data.expectedDepositDate, resolveSharedSettlementDate(previous, "expectedDepositDate")) ? "expected deposit date" : null,

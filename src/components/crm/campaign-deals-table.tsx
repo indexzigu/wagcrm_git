@@ -15,6 +15,11 @@ import {
   inferQuantityFromName,
 } from "@/lib/price-monitor/query-builder";
 import { cn } from "@/lib/utils";
+import {
+  allocateByWeight,
+  resolveSellerFeeBasisEligibility,
+  sellerFeeFromBasis,
+} from "@/lib/campaign-financials";
 import { resolveProfitTone, PROFIT_TONE_TEXT, PROFIT_TONE_TEXT_DENSE } from "@/lib/profit-tone";
 import { patchCampaign } from "@/lib/campaign-patch";
 import { DataEmpty } from "@/components/ui/empty";
@@ -375,13 +380,31 @@ export function CampaignDealsTable({
     }
   };
 
+  // 수동 정산 기준액 캠페인 — 판매대행비는 품목 매출이 아니라 기준액 × 단일 요율이다
+  // (저장값과 같은 SSOT 식). 품목 행은 그 금액을 품목 매출 비례로 나눠 행 합 = 합계가 되게 한다.
+  const basisEligibility = resolveSellerFeeBasisEligibility({
+    deals: localDeals,
+    campaignSellerMarginRate: campaign.sellerMarginRate,
+  });
+  const basisOverrideSellerFees =
+    campaign.sellerFeeBasisOverride != null && basisEligibility.eligible
+      ? allocateByWeight(
+          sellerFeeFromBasis(campaign.sellerFeeBasisOverride, basisEligibility.sellerRate),
+          localDeals.map((deal) => deal.actualSales ?? 0),
+        )
+      : null;
+  const dealSellerFee = (deal: CampaignDealRow, index: number) =>
+    basisOverrideSellerFees
+      ? basisOverrideSellerFees[index]
+      : (deal.actualSales ?? 0) * ((deal.sellerMarginRate ?? campaign.sellerMarginRate ?? 0) / 100);
+
   // 합계 계산
   const totals = localDeals.reduce(
-    (acc, cur) => {
+    (acc, cur, index) => {
       const sales = cur.actualSales ?? 0;
       const commissionRate = cur.feeRate ?? 0;
       const commission = sales * (commissionRate / 100);
-      const sellerFee = sales * ((cur.sellerMarginRate ?? campaign.sellerMarginRate ?? 0) / 100);
+      const sellerFee = dealSellerFee(cur, index);
 
       return {
         quantity: acc.quantity + (cur.quantity || 0),
@@ -509,7 +532,7 @@ export function CampaignDealsTable({
                 {localDeals.map((deal, idx) => {
                   const sales = deal.actualSales ?? 0;
                   const commission = sales * ((deal.feeRate ?? 0) / 100);
-                  const sellerFee = sales * ((deal.sellerMarginRate ?? campaign.sellerMarginRate ?? 0) / 100);
+                  const sellerFee = dealSellerFee(deal, idx);
                   const grossProfit = commission - sellerFee;
                   const grossProfitTone = resolveProfitTone(grossProfit);
 

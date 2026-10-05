@@ -1,4 +1,5 @@
 import { resolveCampaignMoneySlots, type CampaignMoneySlot } from "./tax-filing-board";
+import { resolveDisplaySellerFee } from "./campaign-financials";
 
 export const SETTLEMENT_REPORT_STATUSES = [
   "SETTLEMENT_IN_PROGRESS",
@@ -114,6 +115,10 @@ export type CampaignNetMarginSource = {
   sellerMarginRate: DecimalLike;
   settlementSales?: DecimalLike | null;
   sellerExpense?: DecimalLike | null;
+  /** 수동 정산 기준액 — 저장 판매대행비가 없을 때의 폴백 식에만 쓰인다. */
+  sellerFeeBasisOverride?: DecimalLike | null;
+  /** 품목별 셀러 요율 — 수동 기준액 자격(요율 단일성) 판정용. 없으면 품목 0개로 본다. */
+  campaignDeals?: ReadonlyArray<{ sellerMarginRate?: DecimalLike | null }> | null;
 };
 
 /**
@@ -145,7 +150,14 @@ export function resolveCampaignNetMargin(campaign: CampaignNetMarginSource): {
     : (actualSales * numberFromDecimal(campaign.totalMarginRate)) / 100;
   const sellerPayoutAmount = hasDecimalValue(campaign.sellerExpense)
     ? numberFromDecimal(campaign.sellerExpense)
-    : (actualSales * numberFromDecimal(campaign.sellerMarginRate)) / 100;
+    : resolveDisplaySellerFee({
+        sellerFeeBasisOverride: hasDecimalValue(campaign.sellerFeeBasisOverride)
+          ? numberFromDecimal(campaign.sellerFeeBasisOverride)
+          : null,
+        deals: campaign.campaignDeals,
+        campaignSellerMarginRate: campaign.sellerMarginRate,
+        autoFee: () => (actualSales * numberFromDecimal(campaign.sellerMarginRate)) / 100,
+      });
   // 폴백 경로에서는 종전 식(actualSales × (총요율 − 셀러요율) / 100)과 항등이다.
   return {
     totalMarginAmount,

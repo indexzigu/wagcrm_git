@@ -7,6 +7,7 @@
 // "셀러가 봐도 되는가"를 확인한 뒤 여기와 테스트에 함께 추가할 것.
 
 import { countDistinctSellerIds } from '@/lib/cross-seller';
+import { resolveEffectiveSellerFeeBasis } from '@/lib/campaign-financials';
 
 type AnyCampaign = Record<string, any>;
 
@@ -41,6 +42,12 @@ export type PortalCampaign = {
   totalRevenue: number;
   dailyStats: PortalDailyStat[];
   insights: PortalInsights | null;
+  /**
+   * 합계만 보여 주는 캠페인인가(오너 확정 2026-10-06). 참이면 `totalRevenue` 외의 주문 파생
+   * 상세(일별·구성별 매출, 수량·주문 수, 유입 지표)가 **비어서** 온다 — 화면은 합계 한 줄짜리
+   * 보기로 그린다. 판정은 아래 `resolvePortalSalesSummary` 한 곳이다.
+   */
+  totalOnly: boolean;
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -142,7 +149,40 @@ export function warnCrossSellerCampaigns(surface: string, blocked: AnyCampaign[]
   );
 }
 
+/**
+ * 셀러에게 보이는 매출 합계와 「합계만 보이기」 판정 — 이 파일의 단일 판정 지점.
+ *
+ * 수동 정산 기준액 캠페인(오너 확정 2026-10-06)은 매출 일부를 우리가 직접 판 캠페인이라
+ * 주문캠페인의 주문 집계(총 매출·일별/구성별 매출·수량·주문 수·유입 지표)가 전부 우리 판매분을
+ * 포함한다. 연결된 판매캠페인 중 하나라도 **적용되는** 기준액이 있으면(요율 자격 포함 —
+ * `resolveEffectiveSellerFeeBasis`, writer 와 같은 판정) 합계는 판매캠페인별 「기준액(없으면 그
+ * 캠페인 실매출)」의 합이고 그 밖의 주문 파생 상세는 싣지 않는다. 그렇지 않으면 종전 그대로다.
+ * ⛔ 기준액·실매출을 별도 필드로 내보내지 말 것 — 합계 하나로 접는다(화이트리스트).
+ */
+function resolvePortalSalesSummary(camp: AnyCampaign): { totalRevenue: number; totalOnly: boolean } {
+  const linked: AnyCampaign[] = Array.isArray(camp?.salesCampaigns) ? camp.salesCampaigns : [];
+  const toNum = (value: unknown) => {
+    const n = Number(value == null ? 0 : String(value));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const effectiveBasis = (sc: AnyCampaign) =>
+    resolveEffectiveSellerFeeBasis({
+      sellerFeeBasisOverride: sc?.sellerFeeBasisOverride,
+      deals: Array.isArray(sc?.campaignDeals) ? sc.campaignDeals : [],
+      campaignSellerMarginRate: sc?.sellerMarginRate,
+    });
+  const bases = linked.map(effectiveBasis);
+  if (!bases.some((b) => b != null)) {
+    return { totalRevenue: Number(camp.totalRevenue) || 0, totalOnly: false };
+  }
+  return {
+    totalRevenue: linked.reduce((sum, sc, i) => sum + (bases[i] ? bases[i]!.basis : toNum(sc?.actualSales)), 0),
+    totalOnly: true,
+  };
+}
+
 export function toPortalCampaign(camp: AnyCampaign): PortalCampaign {
+  const summary = resolvePortalSalesSummary(camp);
   const dailyStats: PortalDailyStat[] = (Array.isArray(camp.dailyStats) ? camp.dailyStats : []).map(
     (d: AnyCampaign) => ({
       date: String(d.date || ''),
@@ -192,13 +232,15 @@ export function toPortalCampaign(camp: AnyCampaign): PortalCampaign {
     salePeriod: String(camp.periodLabel || camp.salePeriod || ''),
     isActive: camp.isActive !== false,
     thumbnailUrl: camp.thumbnailUrl ? String(camp.thumbnailUrl) : null,
-    totalOrders: Number(camp.totalOrders) || 0,
+    // 합계만 보이는 캠페인은 주문 파생 상세를 0·빈 값으로 낸다(화면은 그 경우 합계만 그린다).
+    totalOrders: summary.totalOnly ? 0 : Number(camp.totalOrders) || 0,
     // distinct 우선, 미백필 과거 마감 캠페인은 totalOrders(라인수)로 폴백 — order-dashboard 카드와 동일 규칙.
-    distinctOrderCount: Number(camp.distinctOrderCount ?? camp.totalOrders) || 0,
-    totalQuantity: Number(camp.totalQuantity) || 0,
-    totalRevenue: Number(camp.totalRevenue) || 0,
-    dailyStats,
-    insights,
+    distinctOrderCount: summary.totalOnly ? 0 : Number(camp.distinctOrderCount ?? camp.totalOrders) || 0,
+    totalQuantity: summary.totalOnly ? 0 : Number(camp.totalQuantity) || 0,
+    totalRevenue: summary.totalRevenue,
+    dailyStats: summary.totalOnly ? [] : dailyStats,
+    insights: summary.totalOnly ? null : insights,
+    totalOnly: summary.totalOnly,
   };
 }
 

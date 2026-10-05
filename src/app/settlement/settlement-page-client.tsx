@@ -36,6 +36,11 @@ import type {
 } from "@/lib/settlement-report";
 import { sortDealRowsByName } from "@/lib/deal-sort";
 import {
+  allocateByWeight,
+  resolveSellerFeeBasisEligibility,
+  sellerFeeFromBasis,
+} from "@/lib/campaign-financials";
+import {
   formatSettlementMonth,
   getCurrentMonth,
   getNextMonth,
@@ -413,7 +418,21 @@ interface CsvRow {
             },
           ];
 
-      deals.forEach((deal) => {
+      // 수동 정산 기준액 캠페인 — 셀러정산액은 기준액 × 단일 요율(저장 판매대행비와 같은 식)을
+      // 품목 매출 비례로 나눈 값이고, 순마진은 판매수수료에서 그 몫을 뺀 나머지다.
+      const basisEligibility = resolveSellerFeeBasisEligibility({
+        deals: campaign.campaignDeals,
+        campaignSellerMarginRate: campaign.sellerMarginRate,
+      });
+      const basisOverridePayouts =
+        campaign.sellerFeeBasisOverride != null && basisEligibility.eligible
+          ? allocateByWeight(
+              sellerFeeFromBasis(campaign.sellerFeeBasisOverride, basisEligibility.sellerRate),
+              deals.map((deal) => deal.actualSales ?? 0),
+            )
+          : null;
+
+      deals.forEach((deal, dealIndex) => {
         const quantity = deal.quantity ?? 0;
         const actualSales = deal.actualSales ?? 0;
         const feeRate = deal.feeRate ?? 0;
@@ -427,7 +446,10 @@ interface CsvRow {
         let netMarginAmount = 0;
         let sellerPayoutAmount = 0;
 
-        if (totalMarginRate > 0) {
+        if (basisOverridePayouts) {
+          sellerPayoutAmount = basisOverridePayouts[dealIndex];
+          netMarginAmount = feeAmount - sellerPayoutAmount;
+        } else if (totalMarginRate > 0) {
           netMarginAmount = feeAmount * (netMarginRate / totalMarginRate);
           sellerPayoutAmount = feeAmount * (sellerMarginRate / totalMarginRate);
         }

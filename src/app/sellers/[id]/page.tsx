@@ -185,7 +185,13 @@ async function SellerAnalysisReport({ params }: Params) {
     getCachedSellerRepurchase(id),
     prisma.salesCampaign.findMany({
       where: { sellerId: id },
-      select: { actualSales: true, groupId: true },
+      select: {
+        actualSales: true,
+        sellerFeeBasisOverride: true,
+        sellerMarginRate: true,
+        campaignDeals: { select: { sellerMarginRate: true } },
+        groupId: true,
+      },
     }),
   ]);
 

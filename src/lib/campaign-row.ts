@@ -98,6 +98,7 @@ type CampaignWithRelations = {
   returnPeriodEndDate?: Date | null;
   settlementSupplyCost?: DecimalLike | null;
   settlementGoodsCost?: DecimalLike | null;
+  sellerFeeBasisOverride?: DecimalLike | null;
   settlementItems?: Array<{
     id: string;
     invoiceMode: string;
@@ -366,6 +367,8 @@ export function toCampaignRow(
     returnPeriodEndDate: toKstDateStr(campaign.returnPeriodEndDate),
     settlementSupplyCost: campaign.settlementSupplyCost == null ? null : numberFromDecimal(campaign.settlementSupplyCost),
     settlementGoodsCost: campaign.settlementGoodsCost == null ? null : numberFromDecimal(campaign.settlementGoodsCost),
+    sellerFeeBasisOverride:
+      campaign.sellerFeeBasisOverride == null ? null : numberFromDecimal(campaign.sellerFeeBasisOverride),
     // 부가 항목은 **그룹 폴딩 대상이 아니다** — 정산일 계열(위 group?.x ?? campaign.x)과
     // 달리 그룹 공유 필드가 아니라 멤버 각자의 비용이다. 광고비·반품배송비는 멤버(딜)마다
     // 다르고, 그룹 값으로 덮으면 한 건이 멤버 수만큼 부풀어 지급·손익이 틀어진다.

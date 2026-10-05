@@ -241,3 +241,93 @@ describe('saleBoundaryMs (§B+D 라이브 카운트다운 목표 시각)', () =>
     expect(Number.isFinite(saleBoundaryMs('2026-01-01', 'open'))).toBe(true);
   });
 });
+
+// 수동 정산 기준액(오너 확정 2026-10-06) — 매출 일부를 우리가 직접 판 캠페인은 주문캠페인 총 매출에
+// 셀러 몫이 아닌 매출이 섞여 있다. 셀러에게 보이는 매출 합계는 기준액이고, 실매출·기준액은
+// 별도 필드로 나가지 않는다. 기준액이 없으면 종전 그대로. 금액은 가공이다(P0).
+describe('seller-portal 매출 합계 — 수동 정산 기준액', () => {
+  const withLinked = (salesCampaigns: Array<Record<string, unknown>>) => ({ ...RAW_CAMPAIGN, salesCampaigns });
+
+  it('기준액이 없으면 주문캠페인 총 매출 그대로', () => {
+    const portal = toPortalCampaign(
+      withLinked([{ id: 'sc1', sellerId: 's1', actualSales: 777_000, sellerFeeBasisOverride: null }]),
+    );
+    expect(portal.totalRevenue).toBe(500000);
+  });
+
+  it('기준액이 있으면 그 값을 매출 합계로 싣는다(실매출 비노출)', () => {
+    const portal = toPortalCampaign(
+      withLinked([{ id: 'sc1', sellerId: 's1', actualSales: 500_000, sellerFeeBasisOverride: 480_000 }]),
+    );
+    expect(portal.totalRevenue).toBe(480_000);
+    const serialized = JSON.stringify(portal);
+    expect(serialized).not.toContain('sellerFeeBasisOverride');
+    expect(serialized).not.toContain('actualSales');
+  });
+
+  it('조합 캠페인: 기준액 있는 멤버는 기준액, 없는 멤버는 그 멤버 실매출로 더한다', () => {
+    const portal = toPortalCampaign(
+      withLinked([
+        { id: 'sc1', sellerId: 's1', actualSales: 300_000, sellerFeeBasisOverride: 250_000 },
+        { id: 'sc2', sellerId: 's1', actualSales: 200_000, sellerFeeBasisOverride: null },
+      ]),
+    );
+    expect(portal.totalRevenue).toBe(450_000);
+  });
+
+  it('기준액 0(전량 자체 판매)도 유효값이다', () => {
+    const portal = toPortalCampaign(
+      withLinked([{ id: 'sc1', sellerId: 's1', actualSales: 500_000, sellerFeeBasisOverride: 0 }]),
+    );
+    expect(portal.totalRevenue).toBe(0);
+  });
+});
+
+// 오너 확정 2026-10-06 — 기준액 캠페인은 합계만: 주문 파생 상세를 페이로드에 싣지 않는다.
+describe('seller-portal 페이로드 — 합계만 보이는 캠페인', () => {
+  const withLinked = (salesCampaigns: Array<Record<string, unknown>>) => ({ ...RAW_CAMPAIGN, salesCampaigns });
+
+  it('기준액이 적용되면 일별·구성별 매출, 수량·주문 수, 유입 지표가 비어서 나간다', () => {
+    const portal = toPortalCampaign(
+      withLinked([{ id: 'sc1', sellerId: 's1', actualSales: 500_000, sellerFeeBasisOverride: 480_000, sellerMarginRate: 10 }]),
+    );
+    expect(portal.totalOnly).toBe(true);
+    expect(portal.totalRevenue).toBe(480_000);
+    expect(portal.dailyStats).toEqual([]);
+    expect(portal.insights).toBeNull();
+    expect(portal.totalQuantity).toBe(0);
+    expect(portal.distinctOrderCount).toBe(0);
+    expect(portal.totalOrders).toBe(0);
+    expect(aggregateOptions(portal.dailyStats)).toEqual([]);
+    // 원본 주문 집계 숫자(지문)가 어디에도 없다.
+    const serialized = JSON.stringify(portal);
+    for (const fingerprint of ['200000', '300000', '500000', '120000', '180000']) {
+      expect(serialized).not.toContain(fingerprint);
+    }
+  });
+
+  it('기준액이 없으면 상세가 그대로 나가고 totalOnly=false', () => {
+    const portal = toPortalCampaign(withLinked([{ id: 'sc1', sellerId: 's1' }]));
+    expect(portal.totalOnly).toBe(false);
+    expect(portal.dailyStats).toHaveLength(2);
+    expect(portal.totalQuantity).toBe(12);
+    expect(portal.insights).not.toBeNull();
+  });
+
+  it('품목 요율이 섞여 기준액이 적용되지 않으면 종전 그대로(writer 와 같은 판정)', () => {
+    const portal = toPortalCampaign(
+      withLinked([
+        {
+          id: 'sc1',
+          sellerId: 's1',
+          actualSales: 500_000,
+          sellerFeeBasisOverride: 480_000,
+          sellerMarginRate: 10,
+          campaignDeals: [{ sellerMarginRate: 10 }, { sellerMarginRate: 20 }],
+        },
+      ]),
+    );
+    expect(portal.totalOnly).toBe(false);
+    expect(portal.totalRevenue).toBe(500000);
+  });
+});
