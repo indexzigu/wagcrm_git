@@ -196,7 +196,7 @@ P0~P9 번호는 기존 문서·메모리·대화가 참조하는 안정 식별�
 | 작업 조건 | 필독 모듈 |
 | --- | --- |
 | 세션 첫 코드 수정 전(공통) | `docs/agents/codebase-map.md` — 스택·경로·코드 SSOT 표·문서 신뢰 지도 |
-| 화면·UI·기능 변경(데스크톱/모바일 불문) | `docs/agents/product-ux.md` (P2·P3·P5) **+** `docs/agents/design-system.md` (P8) |
+| 화면·UI·기능 변경(데스크톱/모바일 불문 — 직접 수정뿐 아니라 설계서 작성·하위 에이전트 위임 포함) | `docs/agents/product-ux.md` (P2·P3·P5) **+** `docs/agents/design-system.md` (P8) |
 | 색·토큰·타이포·모션·애니메이션 | `docs/agents/design-system.md` (P8) |
 | 커밋·푸시·PR·배포·마이그레이션·크론·시크릿 | `docs/agents/deployment.md` (P6) |
 | 주문·정산·지표·집계·네이버/인스타 API·수집기·캐시 | `docs/agents/data-contracts.md` (P7) |
