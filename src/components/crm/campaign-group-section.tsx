@@ -143,7 +143,9 @@ export function CampaignGroupSection({
     return () => {
       cancelled = true;
     };
-  }, [groupId, reloadNonce]);
+    // 멤버 목록은 상태 배지·기간을 보여준다 — 현재 캠페인의 그 값이 저장으로 바뀌면
+    // (기간은 형제에도 팬아웃된다) 다시 읽는다. 상세가 이미 있으면 스켈레톤 없이 교체된다.
+  }, [groupId, reloadNonce, campaign.status, campaign.startDate, campaign.endDate]);
 
   // 표면 ⓑ — 날짜 수정 이벤트 직후에만 합류 후보 조회(무그룹 한정, 세션 억제 적용).
   useEffect(() => {

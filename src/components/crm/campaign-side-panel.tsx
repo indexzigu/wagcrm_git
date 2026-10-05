@@ -249,20 +249,6 @@ function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved 
           : baseMessage,
       );
       if (result.data) onSaved(result.data);
-
-      // Recalculate reminders when endDate changes (Requirement 1.1, 1.2, 1.3)
-      if (field === "endDate") {
-        try {
-          await fetch(`/api/campaigns/${campaignId}/reminders/recalculate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-          });
-        } catch {
-          // Reminder recalculation failure is non-blocking (Requirement 1.4)
-          // endDate save already succeeded — user sees success toast
-          console.warn("[CampaignSidePanel] Reminder recalculation failed silently");
-        }
-      }
     },
     [displayValue, field, campaignId, startDate, endDate, onSaved]
   );
@@ -657,13 +643,19 @@ export function CampaignSidePanel({
     setChecklistSummary(checklistSnapshot.summary ?? null);
     setChecklistItems(checklistSnapshot.items ?? []);
 
-    if (data.campaignStatus && data.campaignStatus !== campaign!.status) {
-      try {
-        const refreshed = await refreshCampaignSnapshot(campaign!.id);
-        onCampaignUpdated(refreshed);
-      } catch {
-        onCampaignUpdated({ ...campaign!, status: data.campaignStatus });
-      }
+    // 토글이 성공하면 **매번** 상위에 알린다 — 카드의 진행 막대·다음 항목은 행의
+    // `checklistSummary` 를 읽고, 계산서 발행일·그룹 형제 항목도 토글로 바뀐다.
+    // 종전엔 status 가 전이할 때만 알려서 그 밖의 토글은 카드가 낡은 채 남았다.
+    try {
+      const refreshed = await refreshCampaignSnapshot(campaign!.id);
+      onCampaignUpdated(refreshed);
+    } catch {
+      // 행 재조회가 실패하면 방금 읽은 체크리스트 스냅샷으로 접어 알린다(쓰기는 이미 끝났다).
+      onCampaignUpdated({
+        ...campaign!,
+        status: data.campaignStatus ?? checklistSnapshot.status ?? campaign!.status,
+        checklistSummary: checklistSnapshot.summary ?? campaign!.checklistSummary,
+      });
     }
   }
 

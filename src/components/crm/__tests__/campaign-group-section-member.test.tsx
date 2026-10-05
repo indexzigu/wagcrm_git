@@ -200,3 +200,42 @@ describe("멤버 제외 후 목록 동기화", () => {
     );
   });
 });
+
+describe("멤버 목록 재조회 — 현재 캠페인의 상태·기간 저장", () => {
+  const detailCalls = () =>
+    fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/campaign-groups/g1")).length;
+
+  it("상태나 기간이 저장으로 바뀌면 그룹 상세를 다시 읽어 형제 줄을 갱신한다", async () => {
+    stubDetail([member(), member({ campaignId: "c-sib", dealName: "형제딜" })]);
+    const { rerender } = render(<CampaignGroupSection campaign={groupedCampaign()} />);
+    await screen.findByText("형제딜");
+    expect(detailCalls()).toBe(1);
+
+    // 기간 저장 — 서버는 형제에도 팬아웃한다. 다시 읽은 응답이 화면에 반영돼야 한다.
+    stubDetail([member(), member({ campaignId: "c-sib", dealName: "형제딜-갱신" })]);
+    rerender(
+      <CampaignGroupSection campaign={{ ...groupedCampaign(), endDate: "2026-08-25" }} />,
+    );
+    await screen.findByText("형제딜-갱신");
+    expect(detailCalls()).toBe(2);
+
+    rerender(
+      <CampaignGroupSection
+        campaign={{ ...groupedCampaign(), endDate: "2026-08-25", status: "ACTIVE" }}
+      />,
+    );
+    await waitFor(() => expect(detailCalls()).toBe(3));
+  });
+
+  it("상태·기간이 그대로면 다시 읽지 않는다 — 무관한 저장마다 조회하지 않는다", async () => {
+    stubDetail([member()]);
+    const { rerender } = render(<CampaignGroupSection campaign={groupedCampaign()} />);
+    await waitFor(() => expect(detailCalls()).toBe(1));
+
+    rerender(
+      <CampaignGroupSection campaign={{ ...groupedCampaign(), memo: "메모만 수정" } as never} />,
+    );
+    await Promise.resolve();
+    expect(detailCalls()).toBe(1);
+  });
+});

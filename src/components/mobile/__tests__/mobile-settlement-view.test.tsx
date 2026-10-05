@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { MobileSettlementView } from "../mobile-settlement-view";
+import { buildSettlementPending } from "../mobile-settlement-pending-sheet";
 import type { CampaignRow } from "@/lib/crm-types";
 import type { SettlementReportData } from "@/lib/settlement-report";
 
@@ -147,5 +148,88 @@ describe("MobileSettlementView — 실패·대기는 빈 목록이 아니다", (
 
     expect(screen.getByRole("status")).toHaveTextContent("불러오는 중");
     expect(screen.queryByText(EMPTY_TEXT)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 대기 합계는 데스크톱 정산 헤더·모바일 대기 시트·홈 자금 칩과 **같은 SSOT**
+ * (`buildSettlementPending`)의 결과여야 한다 — 종전에는 이 화면만 `settlementSales`·
+ * `sellerExpense` 를 손으로 더해서, 자사몰의 공급사 지급 다리가 빠지고 셀러몰 입금 근거도
+ * 달라 같은 달인데 데스크톱과 숫자가 갈렸다.
+ */
+describe("MobileSettlementView — 대기 합계는 슬롯 SSOT 와 같다", () => {
+  const row = (id: string, overrides: Partial<CampaignRow>): CampaignRow => ({
+    ...campaign,
+    id,
+    settlementSales: 0,
+    isSupplierPayoutCompleted: false,
+    ...overrides,
+  });
+
+  it("공급사 지급 다리와 조합 캠페인이 섞여도 SSOT 합계를 그대로 적는다", () => {
+    const campaigns = [
+      // 자사몰 = [공급사 지급, 셀러 지급]. 셀러 지급은 끝났고 공급사 지급만 남았다.
+      row("own", {
+        salesChannel: "OWN_MALL",
+        actualSales: 1_000_000,
+        sellerExpense: 100_000,
+        settlementGoodsCost: 600_000,
+        isPayoutCompleted: true,
+      }),
+      // 셀러몰 조합 캠페인(멤버 2건) — 입금 근거가 `settlementSales` 가 아니다.
+      row("grp-a", {
+        salesChannel: "SELLER_MALL",
+        groupId: "grp-1",
+        actualSales: 2_000_000,
+        settlementSales: 300_000,
+        sellerExpense: 50_000,
+        settlementGoodsCost: 1_200_000,
+      }),
+      row("grp-b", {
+        salesChannel: "SELLER_MALL",
+        groupId: "grp-1",
+        actualSales: 1_500_000,
+        settlementSales: 200_000,
+        sellerExpense: 40_000,
+        settlementGoodsCost: 900_000,
+      }),
+    ];
+    const expected = buildSettlementPending(campaigns, "");
+    // 양성 대조 — 픽스처가 옛 손수 식과 실제로 갈려야 이 단언이 회귀를 잡는다.
+    const legacyDeposit = campaigns
+      .filter((c) => c.salesChannel !== "OWN_MALL" && !c.isDepositReceived)
+      .reduce((sum, c) => sum + (c.settlementSales || 0), 0);
+    const legacyPayout = campaigns
+      .filter((c) => !c.isPayoutCompleted)
+      .reduce((sum, c) => sum + (c.sellerExpense || 0), 0);
+    expect(expected.deposit.total).toBeGreaterThan(0);
+    expect(expected.payout.total).toBeGreaterThan(0);
+    expect(expected.deposit.total).not.toBe(legacyDeposit);
+    expect(expected.payout.total).not.toBe(legacyPayout);
+
+    render(
+      <MobileSettlementView
+        reportData={reportData}
+        campaigns={campaigns}
+        selectedMonth="2026-05"
+        viewType="month"
+        selectedYear="2026"
+        localQuery=""
+        setLocalQuery={vi.fn()}
+        commitSearch={vi.fn()}
+        onOpenCampaign={vi.fn()}
+        onRefresh={vi.fn(async () => {})}
+        onRetryLoad={vi.fn()}
+        loading={false}
+      />,
+    );
+
+    const won = (n: number) => `₩${Math.round(n).toLocaleString()}`;
+    expect(screen.getByText(/입금 대기/)).toHaveTextContent(
+      `입금 대기 ${won(expected.deposit.total)}`,
+    );
+    expect(screen.getByText(/지급 대기/)).toHaveTextContent(
+      `지급 대기 ${won(expected.payout.total)}`,
+    );
   });
 });

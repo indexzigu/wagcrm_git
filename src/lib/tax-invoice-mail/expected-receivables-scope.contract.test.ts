@@ -112,6 +112,10 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   "lib/__tests__/campaign-update-plan.test.ts": "위 diff 함수의 단위 테스트 — 값 비교 픽스처만",
   "components/crm/__tests__/campaign-side-panel-settlement-zones.test.tsx":
     "재무 카드 3구간 렌더 계약의 픽스처 — 물품대금 표시값을 넣을 뿐 산술 없음(2026-08-08)",
+  "app/settlement/__tests__/settlement-page-client.group-siblings.test.tsx":
+    "정산 헤더 대기 합계 = 대기 내역 SSOT(buildSettlementPending) 계약의 픽스처 — 공급사 지급 다리 금액을 넣을 뿐 산술 없음",
+  "components/mobile/__tests__/mobile-settlement-view.test.tsx":
+    "모바일 정산 합계 = 같은 SSOT 계약의 픽스처 — 값 통과만",
   "lib/__tests__/settlement-invoice-amounts.contract.test.ts":
     "부가 항목 금액 반영 계약(2-A) — 「수기 물품대금이 있어도 매입 부대비용을 안 더한다」(§9-3)를 단언하는 픽스처. 값 통과만",
 

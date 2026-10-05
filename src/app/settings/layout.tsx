@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { cn } from "@/lib/utils";
-import { Settings2Icon, BellRingIcon, HardDriveIcon, UsersIcon } from "lucide-react";
+import { Settings2Icon, HardDriveIcon, UsersIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const settingsNav = [
@@ -14,12 +14,6 @@ const settingsNav = [
     label: "운영 정책",
     icon: Settings2Icon,
     description: "매출 목표, 채널 수수료, 일정 기준일 관리",
-  },
-  {
-    href: "/settings/reminders",
-    label: "자동화 및 알림",
-    icon: BellRingIcon,
-    description: "무응답 및 정산 지연 리마인더 정책",
   },
   {
     href: "/settings/integrations",

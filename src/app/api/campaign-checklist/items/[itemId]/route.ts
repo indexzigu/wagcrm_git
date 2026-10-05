@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateCampaignCaches } from "@/lib/cache-tags";
 import { setChecklistItemChecked } from "@/lib/campaign-checklist";
 import { getPrisma } from "@/lib/prisma";
 import { updateCampaignChecklistItemSchema } from "@/lib/validations/campaign-checklist";
@@ -24,6 +25,10 @@ export async function PATCH(request: Request, context: Context) {
         itemId,
         parsed.data.isChecked,
       );
+
+      // 체크 토글은 항목만 바꾸지 않는다 — 캠페인 status 자동 전이, 계산서 발행일(그룹이면
+      // 그룹 행), 그룹 형제 항목 동기화까지 쓴다. 다른 캠페인 쓰기와 같은 태그를 깬다.
+      revalidateCampaignCaches();
 
       return NextResponse.json(result);
     }
