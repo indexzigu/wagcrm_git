@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateDerivedCampaignFinancials } from "../campaign-financials";
+import { calculateDerivedCampaignFinancials, resolveIndividualWithholding } from "../campaign-financials";
 
 describe("calculateDerivedCampaignFinancials", () => {
   it("recalculates withholding tax and final operating profit from gross sales", () => {
@@ -39,5 +39,19 @@ describe("calculateDerivedCampaignFinancials", () => {
       taxExpense: 24_218,
       operatingProfit: 131_055,
     });
+  });
+});
+
+describe("resolveIndividualWithholding", () => {
+  it("지급액이 수동이면 그 수동 지급액 × 3.3% 를 쓴다", () => {
+    expect(
+      resolveIndividualWithholding({ isManualSellerExpense: true, sellerExpense: 70_000, autoWithholdingSum: 3_000 }),
+    ).toBe(2_310);
+  });
+
+  it("지급액이 자동이면 품목별 자동 합계를 그대로 쓴다", () => {
+    expect(
+      resolveIndividualWithholding({ isManualSellerExpense: false, sellerExpense: 70_000, autoWithholdingSum: 3_000 }),
+    ).toBe(3_000);
   });
 });
