@@ -25,11 +25,15 @@
  * 그룹 쓰기가 두 번으로 갈라져 원자성만 잃고 얻는 게 없다 — 계약 테스트의 허용 목록에
  * 사유와 함께 등재돼 있다.
  *
- * ⚠️ **status 는 이 규칙의 대상이 아니다.** `SalesCampaign.status` 는 그룹 스칼라가 없는
- * **멤버 고유 값**이라 그룹 소속이어도 멤버 행에 쓴다(정본 라우트가 하던 그대로).
+ * ⚠️ **status 는 그룹 스칼라가 아니라 멤버 행에 쓴다** — 다만 2026-10-05 오너 확정으로
+ * 조합 캠페인의 상태 변경은 **그룹 전체에 적용**된다. 그래서 `campaignUpdates.status` 가
+ * 실리면 멤버 행 쓰기 뒤 같은 tx 에서 `propagateGroupStatus`(SSOT)가 형제 멤버를 맞춘다 —
+ * 형제 선별은 「그 형제 본인 행에서 같은 토글을 했을 때 `computeAutoStatus` 가 같은 답을
+ * 내는가」로 한다(플래그가 그룹 스칼라라 손으로 멤버마다 토글한 결과와 동일해진다).
  */
 import type { CampaignGroup, Prisma, SalesCampaign } from "@prisma/client";
-import type { SettlementCompletionFlags } from "./settlement-status";
+import { computeAutoStatus, type SettlementCompletionFlags } from "./settlement-status";
+import { lockCampaignGroup, propagateGroupStatus } from "@/services/campaignGroupService";
 
 /**
  * 완료 플래그 + 짝 타임스탬프 묶음. 그룹·멤버 어느 행에도 같은 이름으로 존재하므로
@@ -63,8 +67,13 @@ export type SettlementFlagWriteParams = {
   group: CampaignGroup | null;
   /** 완료 플래그 + 타임스탬프. 비어 있으면 플래그 쓰기를 건너뛴다. */
   settlementUpdates: SettlementScalarUpdates;
-  /** 멤버 행 전용 필드(status 등). 그룹 여부와 무관하게 `SalesCampaign` 에 쓴다. */
+  /**
+   * 멤버 행 전용 필드(status 등). 그룹 여부와 무관하게 `SalesCampaign` 에 쓴다.
+   * `status` 가 실리면 그룹 형제에도 전파된다(`propagateGroupStatus`).
+   */
   campaignUpdates: Prisma.SalesCampaignUpdateManyMutationInput;
+  /** 이력 actor — 형제 전파 이력(`ActivityLog` CHANGE status)에 원본과 같은 주체로 남긴다. */
+  actor: string;
   /**
    * 낙관적 선행조건 — **정본 행**(그룹이면 그룹, 아니면 멤버)의 사전 플래그 값.
    * 전진 전용 경로가 "사전 조회 이후 남이 이미 확정했다"를 원자적으로 걸러내는 장치다.
@@ -74,7 +83,13 @@ export type SettlementFlagWriteParams = {
 };
 
 export type SettlementFlagWriteResult =
-  | { ok: true; campaign: SalesCampaign; group: CampaignGroup | null }
+  | {
+      ok: true;
+      campaign: SalesCampaign;
+      group: CampaignGroup | null;
+      /** status 전파를 따라간 형제 멤버 id(원본 제외). 전파가 없으면 빈 배열. */
+      propagatedStatusSiblingIds: string[];
+    }
   /**
    * 쓰기 대상이 사라졌거나(그룹 탈퇴·삭제) 선행조건이 어긋났다(동시 확정).
    * 호출부가 409/재시도 안내로 번역한다 — 이 함수는 예외를 던지지 않는다.
@@ -99,9 +114,17 @@ export async function writeSettlementFlags(
   tx: Prisma.TransactionClient,
   params: SettlementFlagWriteParams,
 ): Promise<SettlementFlagWriteResult> {
-  const { campaign, group, settlementUpdates, campaignUpdates, expect } = params;
+  const { campaign, group, settlementUpdates, campaignUpdates, expect, actor } = params;
   const precondition = expect ?? {};
   const hasSettlementUpdates = Object.keys(settlementUpdates).length > 0;
+  const nextStatus = campaignUpdates.status;
+  const propagatesStatus = typeof nextStatus === "string" && Boolean(campaign.groupId);
+
+  // 🪤 락 순서: 그룹 상태 연동이 있으면 그룹·멤버 행을 쓰기 **전에** 그룹 락부터 잡는다
+  // (`lockCampaignGroup` 주석 — 팬아웃·롤업과 순서가 엇갈리면 교착).
+  if (propagatesStatus && campaign.groupId) {
+    await lockCampaignGroup(tx, campaign.groupId);
+  }
 
   let nextGroup = group;
   if (group && hasSettlementUpdates) {
@@ -134,5 +157,23 @@ export async function writeSettlementFlags(
     nextCampaign = reread;
   }
 
-  return { ok: true, campaign: nextCampaign, group: nextGroup };
+  // 그룹 상태 통합 연동 — 정산 자동전이는 그룹 플래그에서 나온 **그룹 사건**이라 형제도 같은
+  // 답을 받는다. 플래그는 방금 쓴 정본 행(그룹 스칼라)에서 다시 읽는다.
+  let propagatedStatusSiblingIds: string[] = [];
+  if (propagatesStatus && typeof nextStatus === "string" && campaign.groupId) {
+    const nextFlags = resolveSettlementFlagSnapshot(nextCampaign, nextGroup);
+    const propagated = await propagateGroupStatus(tx, {
+      originCampaignId: campaign.id,
+      groupId: campaign.groupId,
+      originPreviousStatus: campaign.status,
+      status: nextStatus,
+      actor,
+      log: { kind: "activity-change" },
+      isSiblingEligible: (sibling) =>
+        computeAutoStatus(sibling.status, sibling.salesChannel, nextFlags) === nextStatus,
+    });
+    propagatedStatusSiblingIds = propagated.map((s) => s.id);
+  }
+
+  return { ok: true, campaign: nextCampaign, group: nextGroup, propagatedStatusSiblingIds };
 }

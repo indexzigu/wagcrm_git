@@ -25,6 +25,9 @@ const groupFindUniqueMock = vi.fn();
 const noteCreateMock = vi.fn();
 const transactionMock = vi.fn();
 const activityMock = vi.fn();
+/** 그룹 상태 연동(`propagateGroupStatus`) — 형제 조회 · 형제 이력. */
+const membersFindManyMock = vi.fn();
+const activityLogCreateManyMock = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
@@ -83,6 +86,8 @@ beforeEach(() => {
     transactionMock,
     activityMock,
     syncCampaignToCalendarMock,
+    membersFindManyMock,
+    activityLogCreateManyMock,
   ].forEach((mock) => mock.mockReset());
   syncCampaignToCalendarMock.mockResolvedValue({ ok: true });
 
@@ -99,6 +104,7 @@ beforeEach(() => {
     campaignNote: { create: typeof noteCreateMock };
   }) => Promise<unknown>) =>
     callback({
+      $executeRaw: async () => 0,
       campaignGroup: {
         update: groupUpdateMock,
         updateMany: groupUpdateManyMock,
@@ -107,10 +113,13 @@ beforeEach(() => {
       salesCampaign: {
         updateMany: campaignUpdateManyMock,
         findUnique: campaignTxFindUniqueMock,
+        findMany: membersFindManyMock,
       },
       campaignNote: { create: noteCreateMock },
-    }),
+      activityLog: { createMany: activityLogCreateManyMock },
+    } as never),
   );
+  membersFindManyMock.mockResolvedValue([]);
   groupUpdateManyMock.mockResolvedValue({ count: 1 });
   wireCampaignWrite(campaignFixture());
 });
@@ -178,7 +187,16 @@ describe("PATCH /api/campaigns/[id]/settlement-status", () => {
     expect(syncCampaignToCalendarMock).toHaveBeenCalledWith("c1");
   });
 
-  it("그룹 공유 상태가 입금+지급 완료가 되면 현재 캠페인 status만 COMPLETED로 전이한다", async () => {
+  // ⚠️ 2026-10-05 의도적 변경: 종전 제목은 「현재 캠페인 status만 COMPLETED로」였다(status 는
+  // 멤버 고유 값). 오너 확정으로 조합 캠페인의 상태 변경은 그룹 전체에 적용된다.
+  it("그룹 공유 상태가 입금+지급 완료가 되면 현재 캠페인과 형제 멤버 status를 COMPLETED로 전이한다(DROPPED·PROPOSAL 형제 제외)", async () => {
+    membersFindManyMock.mockResolvedValue([
+      { id: "c1", status: "COMPLETED", salesChannel: "BRAND_MALL" },
+      { id: "c2", status: "SETTLEMENT_WAIT", salesChannel: "BRAND_MALL" },
+      { id: "c3", status: "DROPPED", salesChannel: "BRAND_MALL" },
+      // 제안 단계 형제는 그룹 정산 자동전이도 따라가지 않는다(오너 확정 2026-10-05).
+      { id: "c4", status: "PROPOSAL", salesChannel: "BRAND_MALL" },
+    ]);
     campaignFindUniqueMock.mockResolvedValue(
       campaignFixture({
         groupId: "g1",
@@ -215,9 +233,29 @@ describe("PATCH /api/campaigns/[id]/settlement-status", () => {
       where: { id: "c1" },
       data: { status: "COMPLETED" },
     });
+    // 형제 전파 — 같은 tx, DROPPED 제외, 이력은 원본과 같은 actor 로.
+    expect(campaignUpdateManyMock).toHaveBeenCalledWith({
+      where: {
+        id: { in: ["c2"] },
+        groupId: "g1",
+        status: { notIn: ["DROPPED", "PROPOSAL", "COMPLETED"] },
+      },
+      data: { status: "COMPLETED" },
+    });
+    expect(activityLogCreateManyMock.mock.calls[0][0].data).toEqual([
+      expect.objectContaining({
+        entityId: "c2",
+        fieldName: "status",
+        previousValue: "SETTLEMENT_WAIT",
+        newValue: "COMPLETED",
+        actor: "ops@example.com",
+      }),
+    ]);
     expect(body).toMatchObject({
       id: "c1",
       status: "COMPLETED",
+      groupId: "g1",
+      groupStatusSyncedIds: ["c2"],
       isDepositReceived: true,
       isPayoutCompleted: true,
     });

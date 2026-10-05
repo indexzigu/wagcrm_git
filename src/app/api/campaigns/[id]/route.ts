@@ -38,7 +38,7 @@ type Context = {
 async function buildCampaignRowResponse(
   prisma: ReturnType<typeof getPrisma>,
   campaign: Parameters<typeof toCampaignRow>[0],
-  opts: { fannedOutSiblings?: number } = {},
+  opts: { fannedOutSiblings?: number; propagatedStatusSiblingIds?: string[] } = {},
 ) {
   const salesTask = await prisma.salesTask.findFirst({
     where: { linkedCampaignId: campaign.id },
@@ -46,6 +46,10 @@ async function buildCampaignRowResponse(
   const row = toCampaignRow(campaign);
   if (opts.fannedOutSiblings && opts.fannedOutSiblings > 0) {
     row.groupScheduleSyncedCount = opts.fannedOutSiblings;
+  }
+  // 그룹 상태 연동 고지 — `groupScheduleSyncedCount` 와 같은 일회성 신호(형제 id 목록).
+  if (opts.propagatedStatusSiblingIds && opts.propagatedStatusSiblingIds.length > 0) {
+    row.groupStatusSyncedIds = opts.propagatedStatusSiblingIds;
   }
   row.salesTask = salesTask
     ? {
@@ -317,6 +321,7 @@ export async function PATCH(request: Request, context: Context) {
       autoStatus,
       isHandoff,
     },
+    actor: authContext?.userId ?? "SYSTEM",
   });
 
   if (!result.ok) {
@@ -328,6 +333,7 @@ export async function PATCH(request: Request, context: Context) {
 
   const campaign = result.campaign;
   const fannedOutSiblings = result.fannedOutSiblings;
+  const propagatedStatusSiblingIds = result.propagatedStatusSiblingIds;
 
   // Campaign name regeneration trigger: when dealId, sellerId, or roundNumber changes
   const dealChanged = data.dealId !== undefined && data.dealId !== previous.dealId;
@@ -389,8 +395,14 @@ export async function PATCH(request: Request, context: Context) {
   }
 
   // Generic checklist auto-generation when a campaign enters a workflow status.
+  // 그룹 상태 연동으로 같은 상태가 된 형제 멤버도 **원본과 같은** 후처리를 받는다 — 손으로
+  // 멤버마다 옮겼을 때와 결과가 같아야 한다(체크리스트 생성은 멱등). 정산 자동전이
+  // (`autoStatus`)는 원본도 이 분기를 타지 않으므로 형제도 타지 않는다.
   if (data.status && data.status !== previous.status) {
     await ensureCampaignChecklistForStatus(prisma, id, data.status);
+    for (const siblingId of propagatedStatusSiblingIds) {
+      await ensureCampaignChecklistForStatus(prisma, siblingId, data.status);
+    }
   }
 
   if (data.status === "DROPPED" && data.status !== previous.status) {
@@ -453,7 +465,10 @@ export async function PATCH(request: Request, context: Context) {
     });
     revalidateCampaignCaches();
 
-    return buildCampaignRowResponse(prisma, refreshed, { fannedOutSiblings });
+    return buildCampaignRowResponse(prisma, refreshed, {
+      fannedOutSiblings,
+      propagatedStatusSiblingIds,
+    });
   }
 
   revalidateCampaignCaches();
@@ -462,7 +477,10 @@ export async function PATCH(request: Request, context: Context) {
     where: { id },
     include: CAMPAIGN_DETAIL_INCLUDE,
   });
-  return buildCampaignRowResponse(prisma, refreshedCampaign, { fannedOutSiblings });
+  return buildCampaignRowResponse(prisma, refreshedCampaign, {
+    fannedOutSiblings,
+    propagatedStatusSiblingIds,
+  });
 }
 
 export async function DELETE(_request: Request, context: Context) {

@@ -18,7 +18,13 @@ import {
   getSellerPayoutBase,
   calcIndividualIncomeTax,
 } from "@/lib/seller-tax-utils";
-import { fanOutMemberSchedule, recomputeGroupRollup } from "@/services/campaignGroupService";
+import {
+  fanOutMemberSchedule,
+  lockCampaignGroup,
+  propagateGroupStatus,
+  recomputeGroupRollup,
+} from "@/services/campaignGroupService";
+import { computeAutoStatus } from "@/lib/settlement-status";
 import { syncCampaignLinkExpiry } from "@/lib/short-link";
 import type { DecimalLike } from "@/lib/campaign-row";
 import {
@@ -166,7 +172,17 @@ export type CampaignUpdatePlan = {
  * 규약이었다. 판별 유니온으로 바꿔 호출부가 분기를 놓치지 못하게 한다.
  */
 export type UpdateCampaignResult =
-  | { ok: true; campaign: CampaignDetail; fannedOutSiblings: number }
+  | {
+      ok: true;
+      campaign: CampaignDetail;
+      fannedOutSiblings: number;
+      /**
+       * 이번 PATCH 의 status 변경을 같은 tx 에서 따라간 **형제 멤버 id**(원본 제외,
+       * `propagateGroupStatus`). 라우트가 체크리스트 생성 등 원본과 같은 후처리를 형제에도
+       * 돌리고 응답(`groupStatusSyncedIds`)으로 고지한다. 전파가 없으면 빈 배열.
+       */
+      propagatedStatusSiblingIds: string[];
+    }
   | { ok: false; reason: "membership-changed" };
 
 export const campaignService = {
@@ -367,16 +383,21 @@ export const campaignService = {
    * 드랍 노트·ActivityLog·캐시 무효화·응답 조립). ⚠️ 외부 IO 는 계속 라우트의 `after()` 가
    * 소유한다(`docs/agents/codebase-map.md`) — 이 메서드에 캘린더·메일을 넣지 말 것.
    *
-   * 실행 순서는 **불변**이다: 그룹 updateMany → fanOutMemberSchedule → salesTask →
-   * campaignDeals → 재무 파생 → 본 update → recomputeGroupRollup.
+   * 실행 순서는 **불변**이다: (상태 연동이면) lockCampaignGroup → 그룹 updateMany →
+   * fanOutMemberSchedule → salesTask →
+   * campaignDeals → 재무 파생 → 본 update → propagateGroupStatus(그룹 상태 연동) →
+   * syncCampaignLinkExpiry → recomputeGroupRollup.
    */
   async updateCampaign(input: {
     id: string;
     data: UpdateCampaignData;
     previous: PreviousCampaignForTransaction;
     plan: CampaignUpdatePlan;
+    /** 이력 actor(그룹 상태 연동의 형제 이력에 쓴다). 생략 시 "SYSTEM". */
+    actor?: string;
   }): Promise<UpdateCampaignResult> {
     const { id, data, previous, plan } = input;
+    const actor = input.actor ?? "SYSTEM";
     const {
       settlementStates,
       changedFields,
@@ -423,8 +444,21 @@ export const campaignService = {
 
     // 이번 요청이 형제 멤버 몇 건에 일정을 함께 반영했는가(응답 고지용 — 영속 아님).
     let fannedOutSiblings = 0;
+    // 이번 요청의 status 변경을 따라간 형제 멤버 id(라우트가 후처리·응답 고지에 쓴다).
+    let propagatedStatusSiblingIds: string[] = [];
+
+    // 이번 PATCH 가 status 를 바꾸는가(수동 변경 또는 정산 자동전이) — 그룹 상태 연동 대상.
+    const manualStatusChanged = Boolean(data.status) && data.status !== previous.status;
+    const nextGroupStatus = manualStatusChanged ? data.status : data.status ? undefined : autoStatus;
 
     const campaign = await prisma.$transaction(async (tx) => {
+      // 🪤 락 순서: 그룹 상태 연동이 있으면 **어떤 행도 쓰기 전에** 그룹 락부터 잡는다 —
+      // 팬아웃·롤업은 「락 → 멤버 행」 순이라, 원본 행을 먼저 쓰면 교착(40P01)이 난다
+      // (`lockCampaignGroup` 주석). 같은 tx 의 이후 재획득은 재진입이다.
+      if (previous.groupId && nextGroupStatus) {
+        await lockCampaignGroup(tx, previous.groupId);
+      }
+
       if (isGrouped && previous.groupId && Object.keys(groupSharedEventUpdates).length > 0) {
         const groupUpdate = await tx.campaignGroup.updateMany({
           where: { id: previous.groupId, members: { some: { id } } },
@@ -741,6 +775,36 @@ export const campaignService = {
         include: CAMPAIGN_DETAIL_INCLUDE,
       });
 
+      // 그룹 상태 통합 연동 — 본 update 가 쓴 status 를 같은 tx 에서 형제 멤버에 복사한다
+      // (규칙 전부는 `propagateGroupStatus` 소유: DROPPED 로/에서는 전파 없음 · DROPPED 형제
+      // 제외 · 멱등). 수동 변경(`data.status`)은 실제로 바뀐 경우에만, 정산 자동전이
+      // (`autoStatus`)는 플래그가 그룹 스칼라라 **그룹 사건**이므로 원본이 이미 그 상태여도
+      // 형제 중 「본인 행에서 같은 토글을 했을 때 같은 답이 나오는」 멤버를 맞춘다.
+      if (previous.groupId) {
+        const nextStatus = nextGroupStatus;
+        if (nextStatus) {
+          const newFlags = {
+            isDepositReceived: settlementStates.newDepositState,
+            isPayoutCompleted: settlementStates.newPayoutState,
+            isSupplierPayoutCompleted: settlementStates.newSupplierPayoutState,
+          };
+          const propagated = await propagateGroupStatus(tx, {
+            originCampaignId: id,
+            groupId: previous.groupId,
+            originPreviousStatus: previous.status,
+            status: nextStatus,
+            actor,
+            // 라우트의 원본 이력(`recordCampaignActivity` UPDATED/"Campaign updated")과 같은 모양.
+            log: { kind: "campaign-activity", action: "UPDATED", label: "Campaign updated" },
+            isSiblingEligible: manualStatusChanged
+              ? undefined
+              : (sibling) =>
+                  computeAutoStatus(sibling.status, sibling.salesChannel, newFlags) === nextStatus,
+          });
+          propagatedStatusSiblingIds = propagated.map((s) => s.id);
+        }
+      }
+
       // 단축링크 만료는 캠페인 종료일을 따라간다 — 종료일이 실제로 바뀐 경우에만 다시 쓴다.
       //
       // ⚠️ 위치가 계약이다. 팬아웃(형제 종료일 복사)과 본 update(원본 종료일 저장)가 **끝난
@@ -775,7 +839,7 @@ export const campaignService = {
 
     if (!campaign) return { ok: false, reason: "membership-changed" };
 
-    return { ok: true, campaign, fannedOutSiblings };
+    return { ok: true, campaign, fannedOutSiblings, propagatedStatusSiblingIds };
   },
 };
 

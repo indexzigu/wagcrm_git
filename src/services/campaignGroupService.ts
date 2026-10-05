@@ -316,6 +316,189 @@ export async function fanOutMemberSchedule(
   return count;
 }
 
+/** 전파되지 않는 상태 — 드랍은 멤버 단위다(조합에서 셀러 한 명을 빼는 행위가 조합을 죽이면 안 된다). */
+export const GROUP_STATUS_NON_PROPAGATING = "DROPPED" as const;
+
+/**
+ * 그룹 상태 변경을 **따라가지 않는 형제** 상태 — 모든 경로 공통이라 이 SSOT 안에서만 거른다.
+ * - DROPPED: 형제가 드랍 멤버를 되살리거나 전진시키지 않는다.
+ * - PROPOSAL: 아직 제안 단계인 멤버는 그룹의 진행을 따라가지 않는다(오너 확정 2026-10-05).
+ *   원본이 PROPOSAL 이어도 그 변경은 PROPOSAL·DROPPED 가 아닌 형제에게 전파된다.
+ */
+export const GROUP_STATUS_NON_FOLLOWING_SIBLINGS: readonly string[] = [
+  GROUP_STATUS_NON_PROPAGATING,
+  "PROPOSAL",
+];
+
+/**
+ * 형제 선별에 쓰이는 멤버 행 조각. 일정 자동전이는 형제 **자신의** 기간으로 다시 판정하므로
+ * 기간도 싣는다(그룹 멤버의 기간은 묶기·합류 시 정렬되지 않아 서로 다를 수 있다).
+ */
+export type GroupStatusSibling = {
+  id: string;
+  status: string;
+  salesChannel: string;
+  startDate: Date;
+  endDate: Date;
+};
+
+/**
+ * 그룹 상태 변경 전 **그룹 락을 먼저** 잡는다 — 원본 멤버 행을 쓰기 **전에** 호출한다.
+ *
+ * 🪤 락 순서가 계약이다(교차 리뷰 지적 2026-10-05). `fanOutMemberSchedule`·
+ * `recomputeGroupRollup` 은 「락 → 멤버 행 쓰기」 순인데, 상태 경로가 「원본 행 쓰기 → 락」
+ * 이면 두 트랜잭션이 서로의 자원을 기다려 Postgres 40P01(교착)이 난다. 그래서 상태 경로 4곳
+ * (캠페인 PATCH · 정산 플래그 쓰기 · 일정 자동전이 · 정산 체크리스트)이 원본 쓰기 전에
+ * 이 함수를 부른다. 락은 `pg_advisory_xact_lock`(트랜잭션 범위)이라 **같은 tx 안에서 재진입**
+ * 된다 — 뒤이은 `propagateGroupStatus` 의 재획득은 즉시 통과한다.
+ *
+ * @returns 그룹이 존재해 락을 잡았으면 true.
+ */
+export async function lockCampaignGroup(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+): Promise<boolean> {
+  const group = await tx.campaignGroup.findUnique({
+    where: { id: groupId },
+    select: { id: true, sellerId: true },
+  });
+  if (!group) return false;
+  await acquireGroupLock(tx, group.sellerId);
+  return true;
+}
+
+/**
+ * 형제 상태 변경을 **원본 경로와 같은 모양으로** 기록하는 방법 — 경로마다 쓰는 이력 테이블이
+ * 다르다(캠페인 PATCH·일정 자동전이 = `CampaignActivity`, 정산 토글 = `ActivityLog` CHANGE).
+ * 두 종류 모두 `details`/`content` 에 「그룹 연동」 표식과 원본 캠페인 id 를 남긴다.
+ */
+export type GroupStatusPropagationLog =
+  | { kind: "campaign-activity"; action: string; label: string }
+  | { kind: "activity-change" };
+
+export type GroupStatusPropagationInput = {
+  /** 상태가 바뀐(바뀌는) 멤버 — 이 행은 호출자가 이미 썼다(또는 같은 tx 에서 쓴다). */
+  originCampaignId: string;
+  /** 원본의 소속 그룹. null/undefined 면 무그룹 — 즉시 no-op. */
+  groupId: string | null | undefined;
+  /** 원본의 변경 **이전** 상태(드랍 복귀 판정에 쓴다). */
+  originPreviousStatus: string;
+  /** 형제가 따라갈 상태. */
+  status: string;
+  /** 이력의 actor — 원본 변경과 같은 주체. */
+  actor: string;
+  log: GroupStatusPropagationLog;
+  /**
+   * 경로별 형제 선별(생략 시 DROPPED 가 아닌 전원). 자동 경로가 「그 경로가 스스로 옮길 수
+   * 있는 상태」로 좁히는 데 쓴다 — 정산 자동전이는 `computeAutoStatus(형제.status)` 가 같은
+   * 답을 내는 형제만, 일정 자동전이는 PREPARATION/ACTIVE 형제만.
+   */
+  isSiblingEligible?: (sibling: GroupStatusSibling) => boolean;
+};
+
+export type PropagatedGroupStatusSibling = { id: string; previousStatus: string };
+
+/** 형제 이력에 남기는 「그룹 연동」 표식 — 두 이력 테이블이 같은 문구를 쓴다. */
+export function describeGroupStatusPropagation(
+  originCampaignId: string,
+  previousStatus: string,
+  status: string,
+): string {
+  return `그룹 연동 · ${previousStatus} → ${status} (원본 캠페인 ${originCampaignId})`;
+}
+
+/**
+ * 그룹 **상태 통합 연동** SSOT — 한 멤버의 `status` 변경을 같은 그룹의 형제 멤버에 복사한다
+ * (오너 확정 2026-10-05: 조합 캠페인의 상태 변경은 그룹 전체에 적용된다).
+ *
+ * 규칙(이 함수가 전부 소유한다 — 호출부가 다시 쓰지 말 것):
+ * ① 무그룹이면 no-op.
+ * ② **DROPPED 로의 변경은 전파하지 않는다** — 드랍은 멤버 단위다.
+ * ③ **DROPPED·PROPOSAL 인 형제는 건드리지 않는다**(`GROUP_STATUS_NON_FOLLOWING_SIBLINGS`) —
+ *    형제가 드랍 멤버를 되살리거나 전진시키지 않고, 제안 단계 멤버는 그룹을 따라가지 않는다.
+ * ④ 원본이 DROPPED **에서** 복귀하는 변경도 전파하지 않는다 — ②의 대칭(복귀도 멤버 단위).
+ *    ⚠️ 이 조항은 위임 지시에 명시되지 않은 보수적 선택이다 — 복귀 한 번이 완료된 형제
+ *    전원을 되돌리는 쪽이 비대칭적으로 크므로 막아 둔다. 뒤집으려면 이 한 줄만 지운다.
+ * ⑤ 이미 `status` 인 형제는 쓰지도 기록하지도 않는다(멱등).
+ * ⑥ 재귀하지 않는다 — 형제 행은 `updateMany` 한 번으로 쓰고 이 함수를 다시 부르지 않는다.
+ * ⑦ 원본이 사전 조회 이후 그룹을 떠났으면(멤버 목록에 없음) 아무것도 쓰지 않는다 — 남의
+ *    그룹을 바꾸지 않는다(`writeSettlementFlags` 의 멤버십 계약과 같은 축).
+ *
+ * 호출자의 트랜잭션 안에서 실행한다(tx 필수) — 원본 쓰기와 같은 tx 라야 「원본만 바뀌고
+ * 형제는 안 바뀐」 커밋이 없다. ⛔ 호출부는 **원본 행을 쓰기 전에** `lockCampaignGroup` 을
+ * 부른다(락 순서 — 그 함수 주석). 여기서의 재획득은 재진입이다.
+ *
+ * 부수효과(체크리스트 생성·캘린더·캐시)는 여기서 하지 않는다 — 호출부가 반환된 형제 id 로
+ * 원본과 **같은** 후처리를 돌린다(원본이 받는 것을 형제도 받는다는 규칙).
+ * 계약은 `campaignGroupStatusPropagation.test.ts` · `campaign-status-group-propagation.contract.test.ts`.
+ *
+ * @returns 실제로 갱신된 형제(원본 제외)와 각자의 이전 상태.
+ */
+export async function propagateGroupStatus(
+  tx: Prisma.TransactionClient,
+  input: GroupStatusPropagationInput,
+): Promise<PropagatedGroupStatusSibling[]> {
+  const { originCampaignId, groupId, originPreviousStatus, status, actor, log } = input;
+  if (!groupId) return [];
+  if (status === GROUP_STATUS_NON_PROPAGATING) return [];
+  if (originPreviousStatus === GROUP_STATUS_NON_PROPAGATING) return [];
+
+  // 호출부가 원본 쓰기 전에 이미 잡았다(`lockCampaignGroup`) — 재진입이라 즉시 통과하며,
+  // 직접 부르는 새 호출부를 위한 안전망이다.
+  if (!(await lockCampaignGroup(tx, groupId))) return [];
+
+  const members = await tx.salesCampaign.findMany({
+    where: { groupId },
+    select: { id: true, status: true, salesChannel: true, startDate: true, endDate: true },
+  });
+  if (!members.some((m) => m.id === originCampaignId)) return [];
+
+  const targets = members.filter(
+    (m) =>
+      m.id !== originCampaignId &&
+      !GROUP_STATUS_NON_FOLLOWING_SIBLINGS.includes(m.status) &&
+      m.status !== status &&
+      (input.isSiblingEligible ? input.isSiblingEligible(m) : true),
+  );
+  if (targets.length === 0) return [];
+
+  await tx.salesCampaign.updateMany({
+    where: {
+      id: { in: targets.map((t) => t.id) },
+      groupId,
+      status: { notIn: [...GROUP_STATUS_NON_FOLLOWING_SIBLINGS, status] },
+    },
+    data: { status },
+  });
+
+  if (log.kind === "campaign-activity") {
+    await tx.campaignActivity.createMany({
+      data: targets.map((t) => ({
+        campaignId: t.id,
+        action: log.action,
+        label: log.label,
+        details: describeGroupStatusPropagation(originCampaignId, t.status, status),
+        actor,
+      })),
+    });
+  } else {
+    await tx.activityLog.createMany({
+      data: targets.map((t) => ({
+        entityType: "CAMPAIGN",
+        entityId: t.id,
+        type: "CHANGE",
+        fieldName: "status",
+        previousValue: t.status,
+        newValue: status,
+        content: describeGroupStatusPropagation(originCampaignId, t.status, status),
+        actor,
+      })),
+    });
+  }
+
+  return targets.map((t) => ({ id: t.id, previousStatus: t.status }));
+}
+
 /**
  * 그룹 형성 시 멤버의 정산 블록(입금/지급)을 그룹으로 1회 승계한다.
  * **오직 createGroup에서만** 호출 — 그룹이 방금 생성돼 확실히 virgin일 때.

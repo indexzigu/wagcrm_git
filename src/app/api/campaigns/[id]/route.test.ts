@@ -23,6 +23,10 @@ const salesTaskFindFirstMock = vi.fn();
 const toCampaignRowMock = vi.fn();
 /** `syncCampaignLinkExpiry` 가 트랜잭션 안에서 부르는 링크 만료 재계산 쓰기. */
 const trackedLinkUpdateManyMock = vi.fn();
+/** 그룹 상태 연동(`propagateGroupStatus`)이 형제 이력을 남기는 경로. */
+const campaignActivityCreateManyMock = vi.fn();
+/** 셀러 단위 그룹 advisory 락(`pg_advisory_xact_lock`) — 락 순서 단언에 쓴다. */
+const executeRawMock = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
@@ -34,6 +38,8 @@ vi.mock("@/lib/prisma", () => ({
     salesTask: {
       findFirst: (...args: unknown[]) => salesTaskFindFirstMock(...args),
     },
+    // 드랍 처리 노트(라우트 후처리) — 그룹 상태 연동의 DROPPED 비전파 테스트가 지난다.
+    campaignNote: { create: vi.fn().mockResolvedValue({}) },
     $transaction: (...args: unknown[]) => transactionMock(...args),
   }),
 }));
@@ -139,13 +145,16 @@ beforeEach(() => {
     toCampaignRowMock,
     campaignUpdateManyMock,
     trackedLinkUpdateManyMock,
+    campaignActivityCreateManyMock,
+    executeRawMock,
   ].forEach((mock) => mock.mockReset());
+  executeRawMock.mockResolvedValue(0);
 
   transactionMock.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
     callback({
       // 그룹 롤업 재계산(recomputeGroupRollup)이 같은 트랜잭션에서 도는 경로 —
       // advisory 락 · 그룹 조회 · 멤버 조회 · 롤업 쓰기를 가짜로 채운다.
-      $executeRaw: async () => 0,
+      $executeRaw: (...args: unknown[]) => executeRawMock(...args),
       campaignGroup: {
         updateMany: groupUpdateMock,
         findUnique: groupFindUniqueMock,
@@ -159,14 +168,18 @@ beforeEach(() => {
       trackedLink: {
         updateMany: trackedLinkUpdateManyMock,
       },
+      campaignActivity: {
+        createMany: campaignActivityCreateManyMock,
+      },
     }),
   );
   campaignUpdateManyMock.mockResolvedValue({ count: 1 });
   trackedLinkUpdateManyMock.mockResolvedValue({ count: 0 });
   groupFindUniqueMock.mockResolvedValue({ id: "g1", sellerId: "s1" });
+  // 롤업(listMembers)과 그룹 상태 연동(형제 status·채널 조회)이 같은 findMany 를 쓴다.
   groupMembersFindManyMock.mockResolvedValue([
-    { id: "c1", startDate: new Date("2026-07-02T00:00:00.000Z"), endDate: new Date("2026-07-16T00:00:00.000Z") },
-    { id: "c2", startDate: new Date("2026-07-05T00:00:00.000Z"), endDate: new Date("2026-07-20T00:00:00.000Z") },
+    { id: "c1", status: "SETTLEMENT_WAIT", salesChannel: "BRAND_MALL", startDate: new Date("2026-07-02T00:00:00.000Z"), endDate: new Date("2026-07-16T00:00:00.000Z") },
+    { id: "c2", status: "SETTLEMENT_WAIT", salesChannel: "BRAND_MALL", startDate: new Date("2026-07-05T00:00:00.000Z"), endDate: new Date("2026-07-20T00:00:00.000Z") },
   ]);
   groupRollupUpdateMock.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
     id: "g1",
@@ -261,6 +274,97 @@ describe("PATCH /api/campaigns/[id]", () => {
       "groupId",
       "notesFromImport",
     ].forEach((field) => expect(campaignUpdateData).not.toHaveProperty(field));
+  });
+
+  describe("그룹 상태 통합 연동(오너 확정 2026-10-05)", () => {
+    function siblingStatusWrites() {
+      return (campaignUpdateManyMock.mock.calls as Array<[{ where: Record<string, unknown>; data: Record<string, unknown> }]>)
+        .map(([args]) => args)
+        .filter((args) => "status" in args.data);
+    }
+
+    it("수동 상태 변경은 같은 tx 에서 형제에 전파되고, 형제도 체크리스트 후처리를 받으며 응답에 형제 id 를 싣는다", async () => {
+      campaignFindUniqueMock.mockResolvedValue(campaignFixture({ status: "ACTIVE" }));
+      groupMembersFindManyMock.mockResolvedValue([
+        { id: "c1", status: "CLOSED", salesChannel: "BRAND_MALL" },
+        { id: "c2", status: "ACTIVE", salesChannel: "BRAND_MALL" },
+        { id: "c3", status: "DROPPED", salesChannel: "BRAND_MALL" },
+        // 제안 단계 형제는 수동 상태 변경도 따라가지 않는다(오너 확정 2026-10-05).
+        { id: "c4", status: "PROPOSAL", salesChannel: "BRAND_MALL" },
+      ]);
+      const { ensureCampaignChecklistForStatus } = await import("@/lib/campaign-checklist");
+      vi.mocked(ensureCampaignChecklistForStatus).mockClear();
+
+      const response = await PATCH(patchRequest({ status: "CLOSED" }), context());
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      const writes = siblingStatusWrites();
+      expect(writes).toHaveLength(1);
+      expect(writes[0].where.id).toEqual({ in: ["c2"] });
+      expect(writes[0].data).toEqual({ status: "CLOSED" });
+      expect(campaignActivityCreateManyMock.mock.calls[0][0].data).toEqual([
+        expect.objectContaining({ campaignId: "c2", action: "UPDATED", label: "Campaign updated" }),
+      ]);
+      expect(vi.mocked(ensureCampaignChecklistForStatus).mock.calls.map((c) => c[1])).toEqual(["c1", "c2"]);
+      expect(body.groupStatusSyncedIds).toEqual(["c2"]);
+    });
+
+    it("🪤 락 순서 — 그룹 락이 원본 행 쓰기보다 먼저다(팬아웃과의 교착 방지)", async () => {
+      const saved = process.env.DATABASE_URL;
+      process.env.DATABASE_URL = "postgresql://user@localhost:5432/db";
+      try {
+        campaignFindUniqueMock.mockResolvedValue(campaignFixture({ status: "ACTIVE" }));
+
+        await PATCH(patchRequest({ status: "CLOSED" }), context());
+
+        expect(executeRawMock).toHaveBeenCalled();
+        expect(executeRawMock.mock.invocationCallOrder[0]).toBeLessThan(
+          campaignUpdateMock.mock.invocationCallOrder[0],
+        );
+      } finally {
+        if (saved === undefined) delete process.env.DATABASE_URL;
+        else process.env.DATABASE_URL = saved;
+      }
+    });
+
+    it("DROPPED 로의 변경은 멤버 단위다 — 형제를 건드리지 않는다", async () => {
+      campaignFindUniqueMock.mockResolvedValue(campaignFixture({ status: "ACTIVE" }));
+
+      const response = await PATCH(
+        patchRequest({ status: "DROPPED", dropReason: "셀러 이탈" }),
+        context(),
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(siblingStatusWrites()).toHaveLength(0);
+      expect(body.groupStatusSyncedIds).toBeUndefined();
+    });
+
+    it("정산 자동전이(COMPLETED)는 원본과 같은 답이 나오는 형제에 전파된다", async () => {
+      campaignFindUniqueMock.mockResolvedValue(campaignFixture({
+        group: { id: "g1", isDepositReceived: true, isPayoutCompleted: false },
+      }));
+
+      await PATCH(patchRequest({ isPayoutCompleted: true }), context());
+
+      const campaignUpdateData = campaignUpdateMock.mock.calls[0][0].data as Record<string, unknown>;
+      expect(campaignUpdateData).toMatchObject({ status: "COMPLETED" });
+      const writes = siblingStatusWrites();
+      expect(writes).toHaveLength(1);
+      expect(writes[0].where.id).toEqual({ in: ["c2"] });
+      expect(writes[0].data).toEqual({ status: "COMPLETED" });
+    });
+
+    it("무그룹 캠페인의 상태 변경은 형제 조회조차 하지 않는다", async () => {
+      campaignFindUniqueMock.mockResolvedValue(campaignFixture({ status: "ACTIVE", groupId: null, group: null }));
+
+      await PATCH(patchRequest({ status: "CLOSED" }), context());
+
+      expect(groupMembersFindManyMock).not.toHaveBeenCalled();
+      expect(siblingStatusWrites()).toHaveLength(0);
+    });
   });
 
   it("기간이 안 바뀐 그룹 PATCH는 롤업을 다시 쓰지 않는다 — 같은 값 재전송도 마찬가지", async () => {

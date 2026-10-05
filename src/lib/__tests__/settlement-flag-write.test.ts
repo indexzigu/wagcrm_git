@@ -60,6 +60,7 @@ describe("writeSettlementFlags", () => {
       group: null,
       settlementUpdates: { isDepositReceived: true },
       campaignUpdates: { status: "COMPLETED" },
+      actor: "tester",
     });
 
     expect(groupUpdateMany).not.toHaveBeenCalled();
@@ -77,6 +78,7 @@ describe("writeSettlementFlags", () => {
       group: GROUP,
       settlementUpdates: { isDepositReceived: true },
       campaignUpdates: { status: "COMPLETED" },
+      actor: "tester",
     });
 
     expect(groupUpdateMany.mock.calls[0][0]).toEqual({
@@ -97,6 +99,7 @@ describe("writeSettlementFlags", () => {
       group: GROUP,
       settlementUpdates: { isPayoutCompleted: true },
       campaignUpdates: { status: "COMPLETED" },
+      actor: "tester",
       expect: { isPayoutCompleted: false },
     });
 
@@ -115,6 +118,7 @@ describe("writeSettlementFlags", () => {
       group: null,
       settlementUpdates: { isDepositReceived: true },
       campaignUpdates: {},
+      actor: "tester",
       expect: { isDepositReceived: false },
     });
 
@@ -132,6 +136,7 @@ describe("writeSettlementFlags", () => {
       group: GROUP,
       settlementUpdates: { isDepositReceived: true },
       campaignUpdates: { status: "COMPLETED" },
+      actor: "tester",
     });
 
     expect(result).toEqual({ ok: false });
@@ -144,10 +149,120 @@ describe("writeSettlementFlags", () => {
       group: GROUP,
       settlementUpdates: {},
       campaignUpdates: {},
+      actor: "tester",
     });
 
     expect(groupUpdateMany).not.toHaveBeenCalled();
     expect(campaignUpdateMany).not.toHaveBeenCalled();
-    expect(result).toEqual({ ok: true, campaign: CAMPAIGN, group: GROUP });
+    expect(result).toEqual({
+      ok: true,
+      campaign: CAMPAIGN,
+      group: GROUP,
+      propagatedStatusSiblingIds: [],
+    });
+  });
+});
+
+describe("writeSettlementFlags × 그룹 상태 연동(오너 확정 2026-10-05)", () => {
+  const membersFindMany = vi.fn();
+  const activityCreateMany = vi.fn();
+  const executeRaw = vi.fn();
+  const groupTx = {
+    $executeRaw: executeRaw,
+    campaignGroup: {
+      updateMany: groupUpdateMany,
+      findUnique: groupFindUnique,
+    },
+    salesCampaign: {
+      updateMany: campaignUpdateMany,
+      findUnique: campaignFindUnique,
+      findMany: membersFindMany,
+    },
+    activityLog: { createMany: activityCreateMany },
+  } as never;
+
+  beforeEach(() => {
+    membersFindMany.mockReset();
+    activityCreateMany.mockReset();
+    executeRaw.mockReset();
+    executeRaw.mockResolvedValue(0);
+    groupFindUnique.mockResolvedValue({
+      id: "g1",
+      sellerId: "s1",
+      isDepositReceived: true,
+      isPayoutCompleted: true,
+      isSupplierPayoutCompleted: false,
+    });
+  });
+
+  it("자동전이 COMPLETED 를 같은 tx 에서 형제에 전파하고 이전 상태를 이력에 남긴다", async () => {
+    membersFindMany.mockResolvedValue([
+      { id: "c1", status: "COMPLETED", salesChannel: "BRAND_MALL" },
+      { id: "c2", status: "SETTLEMENT_WAIT", salesChannel: "BRAND_MALL" },
+      { id: "c3", status: "DROPPED", salesChannel: "BRAND_MALL" },
+      { id: "c4", status: "PROPOSAL", salesChannel: "BRAND_MALL" },
+    ]);
+    const result = await writeSettlementFlags(groupTx, {
+      campaign: { id: "c1", status: "SETTLEMENT_WAIT", groupId: "g1" } as never,
+      group: GROUP,
+      settlementUpdates: { isPayoutCompleted: true },
+      campaignUpdates: { status: "COMPLETED" },
+      actor: "ops@example.com",
+    });
+
+    expect(result).toMatchObject({ ok: true, propagatedStatusSiblingIds: ["c2"] });
+    const siblingWrite = campaignUpdateMany.mock.calls[1][0];
+    expect(siblingWrite.where.id).toEqual({ in: ["c2"] });
+    expect(siblingWrite.data).toEqual({ status: "COMPLETED" });
+    expect(activityCreateMany.mock.calls[0][0].data).toEqual([
+      expect.objectContaining({
+        entityId: "c2",
+        fieldName: "status",
+        previousValue: "SETTLEMENT_WAIT",
+        newValue: "COMPLETED",
+        actor: "ops@example.com",
+      }),
+    ]);
+  });
+
+  it("🪤 락 순서 — 그룹 락이 그룹·멤버 행 쓰기보다 먼저다(팬아웃과의 교착 방지)", async () => {
+    const saved = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://user@localhost:5432/db";
+    try {
+      membersFindMany.mockResolvedValue([{ id: "c1", status: "COMPLETED", salesChannel: "BRAND_MALL" }]);
+      await writeSettlementFlags(groupTx, {
+        campaign: { id: "c1", status: "SETTLEMENT_WAIT", groupId: "g1" } as never,
+        group: GROUP,
+        settlementUpdates: { isPayoutCompleted: true },
+        campaignUpdates: { status: "COMPLETED" },
+        actor: "ops@example.com",
+      });
+
+      const lockAt = executeRaw.mock.invocationCallOrder[0];
+      expect(lockAt).toBeLessThan(groupUpdateMany.mock.invocationCallOrder[0]);
+      expect(lockAt).toBeLessThan(campaignUpdateMany.mock.invocationCallOrder[0]);
+    } finally {
+      if (saved === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = saved;
+    }
+  });
+
+  it("형제 본인 행에서 같은 토글을 했을 때 답이 다른 형제(채널이 요구하는 플래그가 다름)는 건드리지 않는다", async () => {
+    // 자사몰은 [공급사 지급, 셀러 지급] 이 완료 조건 — 그룹 플래그상 공급사 지급이 아직이라
+    // 그 형제는 손으로 토글했어도 COMPLETED 가 되지 않았을 것이다.
+    membersFindMany.mockResolvedValue([
+      { id: "c1", status: "COMPLETED", salesChannel: "BRAND_MALL" },
+      { id: "c2", status: "SETTLEMENT_WAIT", salesChannel: "OWN_MALL" },
+    ]);
+    const result = await writeSettlementFlags(groupTx, {
+      campaign: { id: "c1", status: "SETTLEMENT_WAIT", groupId: "g1" } as never,
+      group: GROUP,
+      settlementUpdates: { isPayoutCompleted: true },
+      campaignUpdates: { status: "COMPLETED" },
+      actor: "ops@example.com",
+    });
+
+    expect(result).toMatchObject({ ok: true, propagatedStatusSiblingIds: [] });
+    expect(campaignUpdateMany).toHaveBeenCalledTimes(1);
   });
 });

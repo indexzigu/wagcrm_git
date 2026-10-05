@@ -45,6 +45,7 @@ vi.mock("@/lib/prisma", () => ({
 const { executeWriteAction, WRITE_ACTIONS } = await import("../write-executor");
 const { createActionProposalInputSchema } = await import("@/lib/agent-worker/contracts");
 
+const activityLogCreateManyMock = vi.fn();
 const fakeTx = {
   deal: { findUnique: dealFindUniqueMock, update: dealUpdateMock, create: dealCreateMock },
   salesCampaign: {
@@ -55,6 +56,9 @@ const fakeTx = {
   campaignGroup: { updateMany: groupUpdateManyMock, findUnique: groupFindUniqueMock },
   partner: { findUnique: partnerFindUniqueMock, create: partnerCreateMock },
   seller: { findUnique: sellerFindUniqueMock },
+  // 그룹 상태 연동(`propagateGroupStatus`) — 셀러 단위 advisory 락 · 형제 이력.
+  $executeRaw: async () => 0,
+  activityLog: { createMany: activityLogCreateManyMock },
 } as any;
 
 describe("write-executor — 화이트리스트 디스패치", () => {
@@ -887,6 +891,39 @@ describe("write-executor — confirm_settlement × 조합 캠페인 (CG-1)", () 
     expect(campaignCall.data).toEqual({ status: "COMPLETED" });
     // 선행조건은 플래그가 사는 행에만 — 멤버 행 플래그는 낡았을 수 있어 걸면 안 된다.
     expect(campaignCall.where).toEqual({ id: "camp-g1" });
+  });
+
+  it("status 자동전이는 같은 tx 에서 그룹 형제에도 전파된다 — DROPPED 형제는 제외(오너 확정 2026-10-05)", async () => {
+    activityLogCreateManyMock.mockReset();
+    campaignFindUniqueMock.mockResolvedValue({
+      ...GROUP_CAMPAIGN,
+      group: groupFixture({ isDepositReceived: true }),
+    });
+    groupFindUniqueMock.mockResolvedValue({ ...groupFixture({ isDepositReceived: true, isPayoutCompleted: true }), sellerId: "s1" });
+    const sibling = { ...GROUP_CAMPAIGN, id: "camp-g2" };
+    const dropped = { ...GROUP_CAMPAIGN, id: "camp-g3", status: "DROPPED" };
+    campaignFindManyMock.mockResolvedValue([GROUP_CAMPAIGN, sibling, dropped]);
+
+    await executeWriteAction(
+      "confirm_settlement",
+      { campaignId: "camp-g1", target: "payout" } as never,
+      "admin@example.com",
+      fakeTx
+    );
+
+    expect(campaignUpdateManyMock).toHaveBeenCalledTimes(2);
+    const siblingCall = campaignUpdateManyMock.mock.calls[1][0];
+    expect(siblingCall.where.id).toEqual({ in: ["camp-g2"] });
+    expect(siblingCall.data).toEqual({ status: "COMPLETED" });
+    const logged = activityLogCreateManyMock.mock.calls[0][0].data;
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      entityId: "camp-g2",
+      fieldName: "status",
+      previousValue: "SETTLEMENT_WAIT",
+      newValue: "COMPLETED",
+      actor: "admin@example.com",
+    });
   });
 
   it("전진 검증이 멤버 행이 아니라 그룹 스칼라를 본다(이미 확정된 그룹은 거부)", async () => {

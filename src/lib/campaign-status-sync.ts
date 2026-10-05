@@ -5,6 +5,7 @@ import { revalidateCampaignCaches } from "./cache-tags";
 import { syncCampaignToCalendar } from "./google-calendar-sync";
 import type { AppPrismaClient } from "./prisma-client";
 import type { CampaignStatus } from "./crm-types";
+import { lockCampaignGroup, propagateGroupStatus } from "@/services/campaignGroupService";
 
 export type CampaignStatusSyncCandidate = {
   id: string;
@@ -16,6 +17,8 @@ export type CampaignStatusSyncCandidate = {
 
 export type CampaignStatusSyncVerdict = {
   campaignId: string;
+  /** 그룹 상태 연동(`propagateGroupStatus`)이 읽는다 — 후보 행의 groupId 를 그대로 싣는다. */
+  groupId: string | null;
   currentStatus: CampaignStatus;
   targetStatus: CampaignStatus | null;
   reason: "EXPIRED_TO_CLOSED" | "STARTED_TO_ACTIVE" | "NONE";
@@ -38,6 +41,7 @@ export function resolveScheduledCampaignStatus(
   now: Date = new Date(),
 ): CampaignStatusSyncVerdict {
   const currentStatus = campaign.status as CampaignStatus;
+  const groupId = campaign.groupId ?? null;
   const todayKst = toKstYmd(now);
   const startKst = toKstYmd(new Date(campaign.startDate));
   const endKst = toKstYmd(new Date(campaign.endDate));
@@ -51,7 +55,7 @@ export function resolveScheduledCampaignStatus(
     "DROPPED",
   ];
   if (TERMINAL_OR_SETTLEMENT_STATUSES.includes(currentStatus)) {
-    return { campaignId: campaign.id, currentStatus, targetStatus: null, reason: "NONE" };
+    return { campaignId: campaign.id, groupId, currentStatus, targetStatus: null, reason: "NONE" };
   }
 
   // 2. 판매 종료일 경과(+1일 도달/초과): ACTIVE 또는 기한 지난 PREPARATION -> CLOSED
@@ -59,6 +63,7 @@ export function resolveScheduledCampaignStatus(
   if (todayKst > endKst) {
     return {
       campaignId: campaign.id,
+      groupId,
       currentStatus,
       targetStatus: "CLOSED",
       reason: "EXPIRED_TO_CLOSED",
@@ -69,13 +74,14 @@ export function resolveScheduledCampaignStatus(
   if (currentStatus === "PREPARATION" && todayKst >= startKst && todayKst <= endKst) {
     return {
       campaignId: campaign.id,
+      groupId,
       currentStatus,
       targetStatus: "ACTIVE",
       reason: "STARTED_TO_ACTIVE",
     };
   }
 
-  return { campaignId: campaign.id, currentStatus, targetStatus: null, reason: "NONE" };
+  return { campaignId: campaign.id, groupId, currentStatus, targetStatus: null, reason: "NONE" };
 }
 
 export type SyncCampaignStatusOptions = {
@@ -87,10 +93,13 @@ export type SyncCampaignStatusesResult = {
   totalChecked: number;
   expiredToClosedCount: number;
   startedToActiveCount: number;
+  /** 직접 전이한 캠페인 + 그룹 연동으로 따라간 형제 전부. */
   updatedCampaignIds: string[];
+  /** 그 중 그룹 상태 연동(`propagateGroupStatus`)으로 바뀐 형제 id. */
+  propagatedSiblingIds: string[];
 };
 
-type SyncCampaignsDb = Pick<AppPrismaClient, "salesCampaign">;
+type SyncCampaignsDb = Pick<AppPrismaClient, "salesCampaign" | "$transaction">;
 
 /**
  * DB의 판매 캠페인들을 조회하여 기간에 맞게 상태를 자동으로 전이한다.
@@ -126,24 +135,56 @@ export async function syncCampaignStatusesBySchedule(
   let expiredToClosedCount = 0;
   let startedToActiveCount = 0;
   const updatedCampaignIds: string[] = [];
+  const propagatedSiblingIds: string[] = [];
+  // 이번 실행에서 그룹 연동으로 이미 목표 상태가 된 형제 — 자기 차례가 와도 다시 쓰지 않는다
+  // (멱등·이력 중복 방지). 형제는 같은 그룹이라 일정이 같아 보통 같은 판정을 받는다.
+  const alreadyPropagated = new Map<string, CampaignStatus>();
 
   for (const verdict of actionable) {
     const targetStatus = verdict.targetStatus!;
+    if (alreadyPropagated.get(verdict.campaignId) === targetStatus) continue;
     if (verdict.reason === "EXPIRED_TO_CLOSED") expiredToClosedCount += 1;
     if (verdict.reason === "STARTED_TO_ACTIVE") startedToActiveCount += 1;
     updatedCampaignIds.push(verdict.campaignId);
 
     if (!dryRun) {
-      await prisma.salesCampaign.update({
-        where: { id: verdict.campaignId },
-        data: { status: targetStatus },
+      const label = targetStatus === "CLOSED" ? "자동 판매마감" : "자동 진행 전환";
+      // 원본 쓰기와 그룹 상태 연동은 한 트랜잭션이다 — 형제만 빠진 커밋이 없어야 한다.
+      const propagated = await prisma.$transaction(async (tx) => {
+        // 🪤 락 순서: 원본 행을 쓰기 전에 그룹 락부터(`lockCampaignGroup` 주석).
+        if (verdict.groupId) await lockCampaignGroup(tx, verdict.groupId);
+        await tx.salesCampaign.update({
+          where: { id: verdict.campaignId },
+          data: { status: targetStatus },
+        });
+        return propagateGroupStatus(tx, {
+          originCampaignId: verdict.campaignId,
+          groupId: verdict.groupId,
+          originPreviousStatus: verdict.currentStatus,
+          status: targetStatus,
+          actor: "SYSTEM",
+          log: { kind: "campaign-activity", action: "STATUS_AUTO_TRANSITION", label },
+          // 형제 **자신의** 기간으로 다시 판정해 같은 답이 나올 때만 옮긴다 — 그룹 멤버의 기간은
+          // 서로 다를 수 있어(묶기·합류가 기간을 맞추지 않는다) 원본 기준으로 옮기면 종료 전
+          // 형제를 미리 마감하거나 시작 전 형제를 진행으로 만든다(교차 리뷰 지적 2026-10-05).
+          // 판정 함수가 마감·정산·완료·드랍 형제를 이미 null 로 거르므로 상태 집합을 따로 두지 않는다.
+          isSiblingEligible: (sibling) =>
+            resolveScheduledCampaignStatus(sibling, now).targetStatus === targetStatus,
+        });
       });
+      for (const sibling of propagated) {
+        alreadyPropagated.set(sibling.id, targetStatus);
+        propagatedSiblingIds.push(sibling.id);
+        updatedCampaignIds.push(sibling.id);
+      }
 
-      // 부수 효과: 새 상태 템플릿 체크리스트 생성
-      try {
-        await ensureCampaignChecklistForStatus(prisma as AppPrismaClient, verdict.campaignId, targetStatus);
-      } catch (err) {
-        console.error(`[campaign-status-sync] 체크리스트 생성 실패 (${verdict.campaignId}):`, err);
+      // 부수 효과: 새 상태 템플릿 체크리스트 생성 — 그룹 연동 형제도 원본과 같은 후처리를 받는다.
+      for (const campaignId of [verdict.campaignId, ...propagated.map((s) => s.id)]) {
+        try {
+          await ensureCampaignChecklistForStatus(prisma as AppPrismaClient, campaignId, targetStatus);
+        } catch (err) {
+          console.error(`[campaign-status-sync] 체크리스트 생성 실패 (${campaignId}):`, err);
+        }
       }
 
       // 활동 이력 기록
@@ -164,7 +205,8 @@ export async function syncCampaignStatusesBySchedule(
         console.error(`[campaign-status-sync] 활동 이력 기록 실패 (${verdict.campaignId}):`, err);
       }
 
-      // 구글 캘린더 동기화 (best-effort)
+      // 구글 캘린더 동기화 (best-effort) — 그룹 소속이면 내부에서 그룹 전체 동기화로 위임하므로
+      // 형제마다 다시 부르지 않는다.
       try {
         await syncCampaignToCalendar(verdict.campaignId);
       } catch (err) {
@@ -186,5 +228,6 @@ export async function syncCampaignStatusesBySchedule(
     expiredToClosedCount,
     startedToActiveCount,
     updatedCampaignIds,
+    propagatedSiblingIds,
   };
 }

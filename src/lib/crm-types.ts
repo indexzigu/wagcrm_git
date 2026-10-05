@@ -258,6 +258,14 @@ export type CampaignRow = {
    * ⛔ 그룹 크기로 읽지 말 것 — 원본을 제외한 **이번에 갱신된 수**다.
    */
   groupScheduleSyncedCount?: number;
+  /**
+   * 이번 쓰기의 **status 변경을 같은 그룹의 어느 형제가 따라갔는가**(원본 제외, id 목록).
+   * `groupScheduleSyncedCount` 와 같은 **일회성 신호**다(`PATCH /api/campaigns/[id]` ·
+   * `PATCH …/settlement-status` 응답에만 실림). 전파가 없으면 미제공.
+   * 클라이언트 형제 행 갱신은 `createGroupSiblingRefresher` 가 `groupId` 로 판정하므로 이
+   * 목록을 반복할 필요는 없다 — 고지·검증용이다.
+   */
+  groupStatusSyncedIds?: string[];
   campaignName: string | null;
   salesCode?: string | null;
   dealName: string;
