@@ -50,6 +50,7 @@ import {
   type MoneySlotAmountDisplay,
 } from "@/lib/tax-filing-board";
 import type { ScheduleGap } from "@/lib/schedule-gap-briefing";
+import type { MobileCampaignSalesResponse } from "@/lib/mobile-campaign-sales";
 import {
   assignMonthLanes,
   getMonthGridWeeks,
@@ -254,6 +255,84 @@ function MoneyRow({
   );
 }
 
+// ── 판매 실적 한 줄 ──────────────────────────────────────────────────
+type PopoverSalesState =
+  | { kind: "loading" }
+  | { kind: "error" }
+  | { kind: "done"; sales: MobileCampaignSalesResponse };
+
+/**
+ * 팝오버의 누적 매출·주문 수 한 줄(T-225, 오너 결정 2026-10-05 「매출만」).
+ *
+ * 숫자는 모바일 상세 시트 「매출상세현황」과 **같은 엔드포인트**에서 읽는다 — 화면마다
+ * 다른 집계를 쓰면 같은 캠페인의 매출이 두 값으로 보인다. 팝오버가 열릴 때(이 컴포넌트가
+ * 마운트될 때) 그 캠페인 하나만 부른다: 달 응답에 싣지 않는 이유는 매출 집계가 스냅샷을
+ * 읽는 무거운 경로라서다(mobile-campaign-sales 의 egress 주석).
+ *
+ * ⛔ 네이버 미연동(`source: "none"`)은 줄을 만들지 않는다 — 「₩0」으로 적으면 「팔린 게
+ * 없다」로 읽힌다. 실패는 숨기지 않고 한 줄로 밝힌다.
+ */
+function PopoverSalesLine({ endpoint, label }: { endpoint: string; label: string }) {
+  const [state, setState] = React.useState<PopoverSalesState>({ kind: "loading" });
+
+  React.useEffect(() => {
+    // 팝오버를 빨리 닫으면 무거운 집계 요청을 끝까지 돌리지 않는다.
+    const controller = new AbortController();
+    setState({ kind: "loading" });
+    fetch(endpoint, { cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`sales ${response.status}`);
+        return response.json() as Promise<MobileCampaignSalesResponse>;
+      })
+      .then((sales) => {
+        if (!controller.signal.aborted) setState({ kind: "done", sales });
+      })
+      .catch((error) => {
+        // 닫혀서 취소한 것은 실패가 아니다.
+        if (controller.signal.aborted) return;
+        console.error("calendar popover sales fetch failed:", error);
+        setState({ kind: "error" });
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [endpoint]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="h-4 w-40 animate-pulse rounded bg-muted" role="status">
+        <span className="sr-only">매출 불러오는 중</span>
+      </div>
+    );
+  }
+  if (state.kind === "error") {
+    return (
+      <p role="alert" className="text-xs font-medium text-status-urgent-text">
+        매출을 불러오지 못했습니다
+      </p>
+    );
+  }
+  const { sales } = state;
+  if (sales.source === "none") return null;
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-muted-foreground">
+      <span>{label}</span>
+      <span className="font-semibold tabular-nums text-foreground">
+        ₩{formatCurrency(sales.cumulative.revenue)}
+      </span>
+      <span aria-hidden="true">·</span>
+      <span>
+        주문 <span className="font-semibold tabular-nums text-foreground">{sales.cumulative.orders}</span>건
+      </span>
+      {/* 조회 창이 판매 시작 전에서 잘렸으면 누적이 모자란 값이다 — 「주문 0건」과
+          「못 읽음」을 구분한다는 오너 원칙(2026-08-03, MobileCampaignSalesResponse.coverage). */}
+      {sales.coverage?.truncated ? (
+        <span className="text-[11px]">(초반 일부 미집계)</span>
+      ) : null}
+    </div>
+  );
+}
+
 // ── 상세 팝오버 ──────────────────────────────────────────────────────
 function CampaignPopoverContent({
   member,
@@ -298,6 +377,8 @@ function CampaignPopoverContent({
         <CalendarRange className="size-3.5 shrink-0" aria-hidden="true" />
         {formatDateRange(member.startDate, member.endDate)}
       </div>
+
+      <PopoverSalesLine endpoint={`/api/mobile/campaigns/${member.id}/sales`} label="매출" />
 
       {/* ⛔ 2열 그리드로 되돌리지 말 것 — 상대 병기 후 한 줄에 필요한 폭이 155px 인데
           w-72 팝오버의 2열은 열당 113px 라 날짜·상태가 두 줄로 감긴다(실측 2026-08-25).
@@ -373,6 +454,14 @@ function GroupPopoverContent({
         <CalendarRange className="size-3.5 shrink-0" aria-hidden="true" />
         {formatDateRange(entity.startDate, entity.endDate)} (롤업)
       </div>
+
+      {/* 조합은 그룹 엔드포인트가 멤버 합계를 낸다 — 모바일 시트와 같은 분기. */}
+      {entity.groupId ? (
+        <PopoverSalesLine
+          endpoint={`/api/mobile/campaign-groups/${entity.groupId}/sales`}
+          label="조합 매출"
+        />
+      ) : null}
 
       <div className="max-h-56 overflow-y-auto rounded-lg border border-border/60">
         {entity.members.map((member) => (
