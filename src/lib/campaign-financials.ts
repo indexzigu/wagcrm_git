@@ -1,5 +1,5 @@
 import { computeRevenue } from "./revenue-calc";
-import { isIndividualSeller } from "./seller-tax-utils";
+import { calcIndividualIncomeTax, isIndividualSeller } from "./seller-tax-utils";
 
 export type DerivedCampaignFinancials = {
   settlementSales: number;
@@ -45,6 +45,23 @@ export function computeOperatingProfit({
  * The current settlement workspace treats withholding/deducted tax as 10% of
  * net commission, then subtracts campaign costs from commission revenue.
  */
+/**
+ * 개인 셀러 원천세(3.3%) — **실제 셀러 지급액**에 건다(오너 확정 2026-10-05).
+ * 지급액을 수동으로 덮어쓴 캠페인(예: 같은 캠페인에서 우리가 별도로 판 매출이 섞여 셀러 몫만 지급)은
+ * 품목별 자동 지급액이 아니라 그 수동 지급액이 원천세의 근거다 — 자동 합계를 쓰면 실제 공제액과 갈린다.
+ */
+export function resolveIndividualWithholding({
+  isManualSellerExpense,
+  sellerExpense,
+  autoWithholdingSum,
+}: {
+  isManualSellerExpense: boolean;
+  sellerExpense: number;
+  autoWithholdingSum: number;
+}): number {
+  return isManualSellerExpense ? calcIndividualIncomeTax(sellerExpense) : autoWithholdingSum;
+}
+
 export function calculateDerivedCampaignFinancials({
   actualSales,
   operatingExpense,
@@ -101,7 +118,8 @@ export function calculateDerivedCampaignFinancials({
   const netCommission = settlementSales - sellerExpense;
   
   const autoTaxExpense = isIndividual
-    ? Math.round((sellerExpense / 1.1) * 0.033) + Math.round(settlementSales - (settlementSales / 1.1))
+    // 원천세 = 셀러 지급액(부가세 제외 매출 × 수수료율) × 3.3% — 오너 확정 2026-10-05. 지급액을 다시 ÷1.1 하지 않는다.
+    ? calcIndividualIncomeTax(sellerExpense) + Math.round(settlementSales - (settlementSales / 1.1))
     : Math.round(netCommission - (netCommission / 1.1));
     
   const taxExpense = isManualTaxExpense && manualTaxExpense != null

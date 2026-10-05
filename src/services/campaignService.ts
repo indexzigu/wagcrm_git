@@ -12,7 +12,7 @@ import { googleDriveProvider, GOOGLE_DRIVE_PROVIDER } from "@/lib/asset-storage"
 import type { CampaignStatus, SalesChannel, SnsType } from "@/lib/crm-types";
 import { recalculateCampaignRounds } from "@/services/campaignRounds";
 import { pickShortLink } from "@/lib/order-converter/review-link";
-import { calculateDerivedCampaignFinancials, computeOperatingProfit } from "@/lib/campaign-financials";
+import { calculateDerivedCampaignFinancials, computeOperatingProfit, resolveIndividualWithholding } from "@/lib/campaign-financials";
 import {
   isIndividualSeller,
   getSellerPayoutBase,
@@ -654,7 +654,11 @@ export const campaignService = {
 
           if (!nextIsManualTaxExpense) {
             financials.taxExpense = isIndividual
-              ? calculatedTaxExpenseSum + Math.round(financials.settlementSales - (financials.settlementSales / 1.1))
+              ? resolveIndividualWithholding({
+                  isManualSellerExpense: Boolean(nextIsManualSellerExpense),
+                  sellerExpense: financials.sellerExpense,
+                  autoWithholdingSum: calculatedTaxExpenseSum,
+                }) + Math.round(financials.settlementSales - (financials.settlementSales / 1.1))
               : Math.round(netCommission - (netCommission / 1.1));
           }
 

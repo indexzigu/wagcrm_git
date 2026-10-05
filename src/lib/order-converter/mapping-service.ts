@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/order-converter/prisma';
 import fs from 'fs';
 import path from 'path';
-import { calculateDerivedCampaignFinancials, computeOperatingProfit } from '@/lib/campaign-financials';
+import { calculateDerivedCampaignFinancials, computeOperatingProfit, resolveIndividualWithholding } from '@/lib/campaign-financials';
 import { isIndividualSeller, getSellerPayoutBase, calcIndividualIncomeTax } from '@/lib/seller-tax-utils';
 import { getDisplayDealName } from '@/lib/deal-display';
 import { countDistinctSellerIds, isCrossSellerSet, CROSS_SELLER_REJECT_MESSAGE } from '@/lib/cross-seller';
@@ -470,7 +470,11 @@ export async function recalculateSalesCampaignTotals(campaignId: string) {
 
   if (!campaign.isManualTaxExpense) {
     derivedFinancials.taxExpense = isIndividual 
-      ? calculatedTaxExpenseSum + Math.round(derivedFinancials.settlementSales - (derivedFinancials.settlementSales / 1.1)) 
+      ? resolveIndividualWithholding({
+          isManualSellerExpense: Boolean(campaign.isManualSellerExpense),
+          sellerExpense: derivedFinancials.sellerExpense,
+          autoWithholdingSum: calculatedTaxExpenseSum,
+        }) + Math.round(derivedFinancials.settlementSales - (derivedFinancials.settlementSales / 1.1)) 
       : Math.round(netCommission - (netCommission / 1.1));
   }
 
