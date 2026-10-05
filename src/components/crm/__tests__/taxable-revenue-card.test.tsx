@@ -40,7 +40,16 @@ describe("TaxableRevenueCard", () => {
     expect(value.className).toContain("text-foreground");
     expect(within(card).getByText(/다음 갱신 2027\.02\.14 · 기준기간 2026년 1기\+2기/)).toBeInTheDocument();
     expect(within(card).queryByText(/원문 미확인/)).not.toBeInTheDocument();
-    expect(within(card).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "33");
+    const bar = within(card).getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "33");
+    // 스크린리더에 「33」만이 아니라 금액·기준선을 함께 읽힌다
+    expect(bar).toHaveAttribute("aria-valuetext", "누적 100,000,000원, 기준선 3억의 33%");
+    // 빈 구간(= 남은 금액)이 보이는 트랙 — slate-100(흰 카드 대비 1.09:1)으로 되돌리면 다시 사라진다
+    expect(bar.className).toContain("bg-slate-200");
+    expect(bar.className).toContain("shadow-inner");
+    expect(bar.className).not.toContain("bg-slate-100");
+    // 잘리는 부제는 title 로 전문을 남긴다
+    expect(within(card).getByTitle("다음 갱신 2027.02.14 · 기준기간 2026년 1기+2기")).toBeInTheDocument();
     expect(within(card).getByText("기준선을 VAT 포함 매출로 판정할 경우: 여유 190,000,000원")).toBeInTheDocument();
     expect(within(card).getByText(/현재 등급\(CRM 추정\) 영세 1\.947%/)).toBeInTheDocument();
     expect(within(card).getByText(/직전 갱신\(2026\.08\.14\) 기준기간 2025년 2기 \+ 2026년 1기의 CRM 누적으로 추정/)).toBeInTheDocument();
@@ -62,6 +71,18 @@ describe("TaxableRevenueCard", () => {
     expect(within(card).getByText("기준선을 VAT 포함 매출로 판정할 경우: 8,000,000원 초과")).toBeInTheDocument();
   });
 
+  it("근접 끝자락 — 넘기 전에는 진행률을 내림해 99.5% 를 「100%」로 읽지 않는다", () => {
+    const card = renderCard([campaign({ actualSales: 328_350_000 })]); // 공급 2.985억 = 99.5%
+    const bar = within(card).getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "99");
+    expect(bar).toHaveAttribute("aria-valuetext", "누적 298,500,000원, 기준선 3억의 99%");
+  });
+
+  it("내림이 부동소수점 오차로 1%p 를 깎지 않는다 — 정확히 29% 는 29 로 읽힌다", () => {
+    const card = renderCard([campaign({ actualSales: 95_700_000 })]); // 공급 8,700만 / 3억 = 정확히 29%
+    expect(within(card).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "29");
+  });
+
   it("초과 — 「기준선 N원 초과」로 전환하고 예상 등급·다음 기준선·이미 넘은 비용을 보인다", () => {
     const card = renderCard([campaign({ actualSales: 352_000_000 })]); // 공급 3.2억
     expect(within(card).getByText("기준선 3억 초과 (공급가액)")).toBeInTheDocument();
@@ -71,6 +92,9 @@ describe("TaxableRevenueCard", () => {
     expect(within(card).getByText("다음 기준선 5억까지 180,000,000원")).toBeInTheDocument();
     expect(within(card).getByText("추정대로 갱신되면")).toBeInTheDocument();
     expect(within(card).getByText(/영세 1\.947% → 중소1 2\.563%/)).toBeInTheDocument();
+    const bar = within(card).getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "100");
+    expect(bar).toHaveAttribute("aria-valuetext", "누적 320,000,000원, 기준선 3억 초과");
   });
 
   it("미지정·미입력 경고 — 분류 필요 건수, 미지정 범위(하한~상한), 합계 제외 건수를 보인다", () => {
@@ -99,6 +123,8 @@ describe("TaxableRevenueCard", () => {
 
   it("8월 갱신 창에서는 기준기간이 원문 미확인 가정임을 표시한다", () => {
     const card = renderCard([], new Date("2027-03-01T12:00:00+09:00"));
-    expect(within(card).getByText(/기준기간 2026년 2기 \+ 2027년 1기 \(8월 갱신 기준기간은 원문 미확인\)/)).toBeInTheDocument();
+    const subtitle = within(card).getByText(/기준기간 2026년 2기 \+ 2027년 1기 \(8월 갱신 기준기간은 원문 미확인\)/);
+    // 가정 경고는 문장 끝이라 truncate 에 가장 먼저 잘린다 — title 에 반드시 남는다
+    expect(subtitle.getAttribute("title")).toContain("(8월 갱신 기준기간은 원문 미확인)");
   });
 });
