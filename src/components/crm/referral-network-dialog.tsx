@@ -65,9 +65,11 @@ export function ReferralNetworkDialog({
                       </span>
                       <span className="text-muted-foreground">{b.count}명</span>
                     </div>
-                    <div className="mt-0.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    {/* 트랙 = 전체 셀러(100%) 기준선 — slate-100(1.10:1)은 사라져 slate-300 으로. 채움은 트랙 대비
+                        3:1 을 지키도록 같은 색조에서 명도만 내렸다: 소개 emerald-700 3.62 · 그 외 slate-500 3.21. */}
+                    <div className="mt-0.5 h-1.5 rounded-full bg-slate-300 overflow-hidden">
                       <div
-                        className={b.channel === "REFERRAL" ? "h-full rounded-full bg-emerald-500" : "h-full rounded-full bg-slate-400"}
+                        className={b.channel === "REFERRAL" ? "h-full rounded-full bg-emerald-700" : "h-full rounded-full bg-slate-500"}
                         style={{ width: `${pct}%` }}
                       />
                     </div>

@@ -697,9 +697,12 @@ function Breakdown({
                     </span>
                   )}
                 </span>
-                <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                {/* 트랙 = 전체 클릭(100%) 기준선이라 빈 구간이 보여야 몫이 읽힌다 — slate-100 은 흰 시트 대비
+                    1.10:1 로 사라져 slate-300(1.48)으로 맞춘다(과세기준매출 카드·홈 퍼널과 같은 처리).
+                    채움은 범주라 무채색 유지(P8 §4)하되 slate-400 은 트랙 대비 1.77 이라 slate-500(3.21)으로. */}
+                <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-300">
                   <span
-                    className="block h-full rounded-full bg-slate-400"
+                    className="block h-full rounded-full bg-slate-500"
                     style={{ width: `${Math.max(ratio * 100, ratio > 0 ? 2 : 0)}%` }}
                   />
                 </span>
@@ -731,9 +734,11 @@ function Breakdown({
                           <span className="w-24 shrink-0 text-[10px] tabular-nums text-slate-500">
                             {day.date.slice(5)}
                           </span>
-                          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                          {/* 펼친 하위 막대도 같은 트랙·채움 — 종전 채움 slate-300 은 새 트랙과 같은 색이라 사라진다.
+                              부모·자식 구분은 채움 명도가 아니라 높이(h-2 / h-1.5)·10px 라벨·들여쓴 박스가 맡는다. */}
+                          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-300">
                             <span
-                              className="block h-full rounded-full bg-slate-300"
+                              className="block h-full rounded-full bg-slate-500"
                               style={{ width: `${Math.max(dayRatio * 100, dayRatio > 0 ? 2 : 0)}%` }}
                             />
                           </span>
@@ -848,9 +853,10 @@ function DailyTable({
                                   <span className="w-12 shrink-0 text-[10px] tabular-nums text-slate-500">
                                     {slot.hour}시
                                   </span>
-                                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                  {/* 유입 경로 하위 막대와 같은 트랙·채움(slate-300 / slate-500, 대비 3.21). */}
+                                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-300">
                                     <span
-                                      className="block h-full rounded-full bg-slate-300"
+                                      className="block h-full rounded-full bg-slate-500"
                                       style={{
                                         width: `${Math.max(ratio * 100, ratio > 0 ? 2 : 0)}%`,
                                       }}

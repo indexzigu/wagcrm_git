@@ -444,7 +444,9 @@ function ReviewSummaryRow({ summary }: { summary: DealVocView["reviewSummaries"]
           <span className="text-xs text-muted-foreground">포토 {summary.photoCount}</span>
         )}
       </div>
-      {/* 평점 분포 — 5점부터 1점까지 중립 막대(색 판단 신호 아님, 비율만) */}
+      {/* 평점 분포 — 5점부터 1점까지 중립 막대(색 판단 신호 아님, 비율만).
+          트랙 = 리뷰 전체(100%) 기준선이라 보여야 한다: bg-muted(흰 카드 대비 1.09)는 사라져 slate-300 으로,
+          채움은 slate-400 이면 트랙 대비 1.77 이라 slate-500(3.21)으로 — 과세기준매출 카드와 같은 처리. */}
       <div className="mt-2 space-y-1">
         {[5, 4, 3, 2, 1].map((star) => {
           const n = summary.ratingCounts[String(star)] ?? 0;
@@ -452,8 +454,8 @@ function ReviewSummaryRow({ summary }: { summary: DealVocView["reviewSummaries"]
           return (
             <div key={star} className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <span className="w-6 shrink-0">{star}점</span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full bg-slate-400" style={{ width: `${pct}%` }} />
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-300">
+                <div className="h-full rounded-full bg-slate-500" style={{ width: `${pct}%` }} />
               </div>
               <span className="w-8 shrink-0 text-right">{n}</span>
             </div>
