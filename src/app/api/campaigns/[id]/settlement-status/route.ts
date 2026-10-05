@@ -121,6 +121,7 @@ export async function PATCH(
       group,
       settlementUpdates,
       campaignUpdates,
+      actor,
     });
     if (!written.ok) return null;
 
@@ -182,7 +183,11 @@ export async function PATCH(
       });
     }
 
-    return { campaign: written.campaign, group: written.group };
+    return {
+      campaign: written.campaign,
+      group: written.group,
+      propagatedStatusSiblingIds: written.propagatedStatusSiblingIds,
+    };
   });
 
   if (!updated) {
@@ -216,6 +221,12 @@ export async function PATCH(
   return NextResponse.json({
     id: effectiveCampaign.id,
     status: effectiveCampaign.status,
+    // 형제 행 갱신 판정(`createGroupSiblingRefresher`)이 `groupId` 를 읽는다 — 그룹 상태
+    // 연동으로 형제 status 가 바뀌므로 캠페인 PATCH 응답과 같은 신호를 싣는다.
+    groupId: effectiveCampaign.groupId,
+    ...(updated.propagatedStatusSiblingIds.length > 0
+      ? { groupStatusSyncedIds: updated.propagatedStatusSiblingIds }
+      : {}),
     isDepositReceived: effectiveGroup ? effectiveGroup.isDepositReceived : effectiveCampaign.isDepositReceived,
     isPayoutCompleted: effectiveGroup ? effectiveGroup.isPayoutCompleted : effectiveCampaign.isPayoutCompleted,
     isSupplierPayoutCompleted: effectiveGroup

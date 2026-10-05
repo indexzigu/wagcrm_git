@@ -214,6 +214,8 @@ async function handleConfirmSettlement(
     settlementUpdates,
     campaignUpdates: autoStatus !== undefined ? { status: autoStatus } : {},
     expect: { [slot.flagField]: false },
+    // 형제 전파 이력도 아래 감사 기록과 같은 주체로 남긴다.
+    actor,
   });
 
   if (!written.ok) {

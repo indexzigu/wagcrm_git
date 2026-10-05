@@ -1,4 +1,6 @@
 import { SettlementRepository } from "@/repositories/settlementRepository";
+import { getPrisma } from "@/lib/prisma";
+import { lockCampaignGroup, propagateGroupStatus } from "@/services/campaignGroupService";
 import { containsSearch } from "@/lib/prisma-search";
 import { DEFAULT_CHECKLIST_ITEMS } from "@/lib/validations/settlement";
 import {
@@ -59,16 +61,13 @@ export class SettlementService {
 
     // If all checked AND campaign status is SETTLEMENT_IN_PROGRESS: auto-transition to COMPLETED
     if (allChecked && campaign.status === "SETTLEMENT_IN_PROGRESS") {
-      await SettlementRepository.updateCampaignStatus(campaign.id, "COMPLETED");
+      await SettlementService.transitionCampaignStatus(campaign, "COMPLETED");
       newCampaignStatus = "COMPLETED";
     }
 
     // If any unchecked AND campaign status is COMPLETED: revert to SETTLEMENT_IN_PROGRESS
     if (!allChecked && campaign.status === "COMPLETED") {
-      await SettlementRepository.updateCampaignStatus(
-        campaign.id,
-        "SETTLEMENT_IN_PROGRESS"
-      );
+      await SettlementService.transitionCampaignStatus(campaign, "SETTLEMENT_IN_PROGRESS");
       newCampaignStatus = "SETTLEMENT_IN_PROGRESS";
     }
 
@@ -76,6 +75,31 @@ export class SettlementService {
       item: updatedItem,
       campaignStatus: newCampaignStatus,
     };
+  }
+
+  /**
+   * 체크리스트 완료/해제에 따른 status 전이 — 원본 쓰기와 그룹 상태 연동(`propagateGroupStatus`)을
+   * 한 트랜잭션으로 묶는다(조합 캠페인의 상태 변경은 그룹 전체에 적용, 오너 확정 2026-10-05).
+   * ⚠️ 이 경로(`/api/settlement-checklist/*`)는 앱 내 호출부가 0건인 레거시 표면이지만 status 를
+   * 쓰는 API 라 같은 규칙을 지킨다.
+   */
+  private static async transitionCampaignStatus(
+    campaign: { id: string; status: string; groupId: string | null },
+    status: "COMPLETED" | "SETTLEMENT_IN_PROGRESS",
+  ) {
+    await getPrisma().$transaction(async (tx) => {
+      // 🪤 락 순서: 원본 행을 쓰기 전에 그룹 락부터(`lockCampaignGroup` 주석).
+      if (campaign.groupId) await lockCampaignGroup(tx, campaign.groupId);
+      await tx.salesCampaign.update({ where: { id: campaign.id }, data: { status } });
+      await propagateGroupStatus(tx, {
+        originCampaignId: campaign.id,
+        groupId: campaign.groupId,
+        originPreviousStatus: campaign.status,
+        status,
+        actor: "SYSTEM",
+        log: { kind: "activity-change" },
+      });
+    });
   }
 
   static async addChecklistItem(checklistId: string, label: string) {

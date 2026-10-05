@@ -65,12 +65,9 @@ export class SettlementRepository {
     });
   }
 
-  static async updateCampaignStatus(campaignId: string, status: string) {
-    return getPrisma().salesCampaign.update({
-      where: { id: campaignId },
-      data: { status },
-    });
-  }
+  // `updateCampaignStatus` 는 2026-10-05 에 제거됐다 — status 쓰기는 그룹 상태 연동
+  // (`propagateGroupStatus`)과 한 트랜잭션이어야 해서 `SettlementService.transitionCampaignStatus`
+  // 가 소유한다(계약: `campaign-status-group-propagation.contract.test.ts`).
 
   static async createChecklistItem<T extends Prisma.SettlementChecklistItemInclude>(
     data: Prisma.SettlementChecklistItemUncheckedCreateInput,
