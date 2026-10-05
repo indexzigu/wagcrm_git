@@ -17,6 +17,13 @@ type AttentionTask = {
 
 export type OutreachAttentionKind = "REMINDER_DUE" | "PENDING_APPROVAL" | "RESPONSE_GAP";
 
+/** 화면 문구 — PC 상단 줄과 모바일 상단 줄이 같은 낱말을 쓰도록 여기 하나만 둔다. */
+export const OUTREACH_ATTENTION_LABELS: Readonly<Record<OutreachAttentionKind, string>> = {
+  REMINDER_DUE: "리마인드",
+  PENDING_APPROVAL: "전환 대기",
+  RESPONSE_GAP: "응답 공백",
+};
+
 /** 마지막 움직임 후 이 일수가 지나면 「응답 공백」이다(모바일 경과일 램프의 주의 문턱과 같다). */
 export const RESPONSE_GAP_DAYS = 3;
 

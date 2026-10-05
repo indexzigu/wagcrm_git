@@ -96,6 +96,7 @@ import { assetSectionLabels } from "@/lib/crm-types";
 import { queryKeys } from "@/lib/query-keys";
 import {
   matchesAttention,
+  OUTREACH_ATTENTION_LABELS,
   RESPONSE_GAP_DAYS,
   type OutreachAttentionKind,
 } from "@/lib/outreach-attention";
@@ -120,17 +121,21 @@ const DRAG_DROPPABLE_STATUSES: ReadonlySet<OutreachStatus> = new Set<OutreachSta
   "DROPPED",
 ]);
 
-/** 상단 「오늘 할 일」 줄의 순서·문구. 문구는 모바일 영업 확인 화면과 같게 둔다. */
+/** 상단 「오늘 할 일」 줄의 순서와 설명(마우스 오버). 낱말은 공용 라벨을 쓴다. */
 const OUTREACH_ATTENTION_ITEMS: ReadonlyArray<{
   kind: OutreachAttentionKind;
   label: string;
   description: string;
 }> = [
-  { kind: "REMINDER_DUE", label: "리마인드", description: "제안중인데 다음 리마인드 시각이 지난 건" },
-  { kind: "PENDING_APPROVAL", label: "전환 대기", description: "캠페인 전환 승인을 기다리는 건" },
+  { kind: "REMINDER_DUE", label: OUTREACH_ATTENTION_LABELS.REMINDER_DUE, description: "제안중인데 다음 리마인드 시각이 지난 건" },
+  {
+    kind: "PENDING_APPROVAL",
+    label: OUTREACH_ATTENTION_LABELS.PENDING_APPROVAL,
+    description: "캠페인 전환 승인을 기다리는 건",
+  },
   {
     kind: "RESPONSE_GAP",
-    label: "응답 공백",
+    label: OUTREACH_ATTENTION_LABELS.RESPONSE_GAP,
     description: `제안·협의·테스트 중 ${RESPONSE_GAP_DAYS}일 이상 움직임이 없는 건(리마인드 건 제외)`,
   },
 ];

@@ -12,7 +12,13 @@ import type { OutreachRow } from "@/components/crm/outreach-list";
 import type { OutreachStatus } from "@/lib/validations/outreach";
 import { ActionBadge } from "@/components/crm/action-badge";
 import { calculateFollowUp } from "@/lib/followup-engine";
-import { daysSince, isAwaitingResponse, isReminderDue } from "@/lib/outreach-attention";
+import {
+  daysSince,
+  isAwaitingResponse,
+  isPendingApproval,
+  isReminderDue,
+  OUTREACH_ATTENTION_LABELS,
+} from "@/lib/outreach-attention";
 import { MobileTopBar } from "./mobile-top-bar";
 
 type MobileOutreachViewProps = {
@@ -23,11 +29,6 @@ type MobileOutreachViewProps = {
   onCreateCampaign: (taskId: string) => Promise<void>;
   onStatusChange: (taskId: string, status: OutreachStatus) => Promise<void>;
 };
-
-
-
-
-
 
 function MobileOutreachCard({
   task,
@@ -222,7 +223,7 @@ export function MobileOutreachView({
     .sort((left, right) => (left.nextReminderAt ?? "").localeCompare(right.nextReminderAt ?? ""))
     .slice(0, 5);
   const pendingApprovalTasks = tasks
-    .filter((task) => task.status === "PENDING_APPROVAL")
+    .filter((task) => isPendingApproval(task))
     .sort((left, right) => (left.updatedAt ?? left.proposedAt).localeCompare(right.updatedAt ?? right.proposedAt))
     .slice(0, 5);
   const responseGapTasks = tasks
@@ -280,9 +281,9 @@ export function MobileOutreachView({
           제안 보드가 아니라 응답·리마인드·전환 판단만 봅니다.
         </p>
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>리마인드 {reminderDueTasks.length}건</span>
-          <span>전환 대기 {pendingApprovalTasks.length}건</span>
-          <span>응답 공백 {responseGapTasks.length}건</span>
+          <span>{OUTREACH_ATTENTION_LABELS.REMINDER_DUE} {reminderDueTasks.length}건</span>
+          <span>{OUTREACH_ATTENTION_LABELS.PENDING_APPROVAL} {pendingApprovalTasks.length}건</span>
+          <span>{OUTREACH_ATTENTION_LABELS.RESPONSE_GAP} {responseGapTasks.length}건</span>
         </div>
       </MobileTopBar>
 
