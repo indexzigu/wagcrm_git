@@ -22,6 +22,7 @@ import {
   SUPABASE_STORAGE_WARNING_BYTES,
 } from "@/lib/asset-storage";
 import { buildPnlReportModel } from "@/lib/pnl-report";
+import { loadPriorYearTaxReference } from "@/lib/prior-year-tax-reference";
 
 type DashboardWorkspace = "pipeline" | "settlement";
 
@@ -366,7 +367,11 @@ export async function getCachedPnlReportData(year: number) {
     orderBy: { startDate: "asc" },
   });
 
-  return buildPnlReportModel(campaigns, year);
+  // 전년도 신고 기준은 DB 에서 읽는다 — 미등록이면 null(리포트는 그대로 그려진다).
+  // 등록·수정은 캐시 태그를 치지 않으므로 report 티어 창(1h) 안에 수렴한다.
+  const priorYearReference = await loadPriorYearTaxReference();
+
+  return buildPnlReportModel(campaigns, year, undefined, priorYearReference);
 }
 
 /**

@@ -150,7 +150,16 @@ export type PnlReportData = {
   year: number;
   taxRules: IncomeTaxRules;
   taxEstimate: EstimatedIncomeTax;
-  priorYearReference: PriorYearTaxReference;
+  /**
+   * 전년도 신고 기준 참고값. **DB 에서 읽어 주입받는다** — 등록된 행이 없거나 모양이
+   * 깨졌으면 `null`(= 기준 자료 미등록)이다.
+   *
+   * ⛔ 이 값을 소스 상수로 되돌리지 말 것. 실제 신고 수치는 DB 에 속하는 데이터이고
+   * 이 레포는 공개다(P0 Public Repo Data Guard). 읽기·검증은
+   * `prior-year-tax-reference.ts`, 재발 방지는
+   * `prior-year-tax-reference.contract.test.ts` 가 소유한다.
+   */
+  priorYearReference: PriorYearTaxReference | null;
   totals: {
     grossSales: number;
     commissionRevenue: number;
@@ -169,35 +178,6 @@ export type PnlReportData = {
   bridge: PnlBridgeRow[];
   monthly: PnlMonthlyRow[];
   campaigns: PnlCampaignRow[];
-};
-
-const PRIOR_YEAR_FILED_REFERENCE_2025: PriorYearTaxReference = {
-  incomeYear: 2025,
-  filingYear: 2026,
-  businessContext: "2025년 상반기 영업활동 비중이 낮았던 실제 신고 기준",
-  totalIncome: 23_965_725,
-  deductions: 1_500_000,
-  taxableIncome: 22_465_725,
-  calculatedTax: 2_109_858,
-  finalDeterminedTax: 2_029_858,
-  effectiveTaxRate: 2_029_858 / 22_465_725 * 100,
-  vatHalfYears: [
-    {
-      periodLabel: "2025 상반기",
-      taxableSales: 25_781_618,
-      payableVat: 1_224_671,
-    },
-    {
-      periodLabel: "2025 하반기",
-      taxableSales: 122_606_294,
-      payableVat: 161_458,
-    },
-  ],
-  vatAnnualTaxableSales: 148_387_912,
-  firstHalfSalesRatio: 25_781_618 / 148_387_912 * 100,
-  secondHalfSalesRatio: 122_606_294 / 148_387_912 * 100,
-  firstHalfMonthlyAverage: 25_781_618 / 6,
-  secondHalfMonthlyAverage: 122_606_294 / 6,
 };
 
 function numberFromDecimal(value: DecimalLike): number {
@@ -388,6 +368,7 @@ export function buildPnlReportModel(
   campaigns: PnlCampaignRecord[],
   year: number,
   taxRules: IncomeTaxRules = PERSONAL_BUSINESS_TAX_RULES_2026,
+  priorYearReference: PriorYearTaxReference | null = null,
 ): PnlReportData {
   const baseRows = buildBaseCampaignRows(campaigns);
   const preTaxOperatingProfit = roundCurrency(
@@ -480,7 +461,7 @@ export function buildPnlReportModel(
     year,
     taxRules,
     taxEstimate,
-    priorYearReference: PRIOR_YEAR_FILED_REFERENCE_2025,
+    priorYearReference,
     totals: roundedTotals,
     bridge: [
       { label: "총 상품매출", amount: roundedTotals.grossSales },
