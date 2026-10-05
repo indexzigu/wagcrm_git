@@ -5,10 +5,10 @@
  * 격리 임시 DB 패턴은 actionProposal.transition.realdb.test.ts와 동일(공유 dev.db 미접촉).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pushSqliteTestSchema } from "@/test/sqlite-test-db";
 
 const REPO_ROOT = process.cwd();
 let tmpDir: string;
@@ -29,11 +29,7 @@ async function get(roomKey: string) {
 beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), "wag-crm-folder-reconcile-"));
   dbPath = join(tmpDir, "test.db");
-  execFileSync(
-    "npx",
-    ["prisma", "db", "push", "--schema", "prisma/schema.sqlite.prisma", "--skip-generate", "--accept-data-loss"],
-    { cwd: REPO_ROOT, env: { ...process.env, DATABASE_URL: `file:${dbPath}` }, stdio: "pipe" }
-  );
+  pushSqliteTestSchema(dbPath, REPO_ROOT);
   const generatedClientPath = join(REPO_ROOT, "prisma", "generated", "prisma-sqlite", "index.js");
   const { PrismaClient } = await import(/* @vite-ignore */ generatedClientPath);
   realPrisma = new PrismaClient({ datasources: { db: { url: `file:${dbPath}` } } });
