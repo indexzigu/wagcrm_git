@@ -39,7 +39,7 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
     <ShippingDialogFrame onClose={onClose} className="sm:max-w-4xl max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl shrink-0">
           <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
             </svg>
@@ -81,11 +81,12 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
                 ))}
               </div>
 
-              {/* 유입 경로 */}
-              <div className="bg-white border border-indigo-200 rounded-xl overflow-hidden shadow-soft-sm ring-1 ring-indigo-50">
-                <div className="bg-indigo-50/50 px-5 py-3 border-b border-indigo-100">
-                  <h3 className="font-bold text-indigo-900">유입 경로별 주문</h3>
-                  <p className="text-[11px] text-indigo-700/70 mt-0.5">네이버 주문 데이터의 inflowPath 기준 · &quot;마케팅링크&quot;는 외부(SNS 등) 링크 유입</p>
+              {/* 유입 경로 — 틀은 형제 패널(시간대별 주문·결제 수단)과 같은 무채색. 종전 indigo 틀은 globals.css 밖
+                  hue 였고 강조할 판정 의미가 없었다(P8 §1·§4). 부제 slate-500 은 slate-50 위 4.55(알파 금지 규칙). */}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-soft-sm">
+                <div className="bg-slate-50 px-5 py-3 border-b border-slate-200">
+                  <h3 className="font-bold text-slate-700">유입 경로별 주문</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">네이버 주문 데이터의 inflowPath 기준 · &quot;마케팅링크&quot;는 외부(SNS 등) 링크 유입</p>
                 </div>
                 <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm whitespace-nowrap min-w-[560px]">
@@ -133,9 +134,11 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
                         <div className="hidden group-hover:block absolute -top-6 text-[10px] font-bold text-slate-600 bg-white border border-slate-200 rounded px-1 whitespace-nowrap z-10">
                           {h.hour}시 · {h.orders}건
                         </div>
-                        {/* 퍼센트 높이는 items-end 부모에서 0으로 해석되므로 픽셀 고정(막대영역 88px) */}
+                        {/* 퍼센트 높이는 items-end 부모에서 0으로 해석되므로 픽셀 고정(막대영역 88px).
+                            단일 계열이라 차트 네이비 60% 단색(흰 표면 3.59) — 위 유입 경로 네이비 100% 막대보다 약하게 둔다.
+                            hover 는 값 툴팁과 함께 100% 로 올린다. 종전 blue-400 은 2.64 로 미달이고 범주 막대를 앞질렀다. */}
                         <div
-                          className={`w-full rounded-t ${h.orders > 0 ? 'bg-blue-400 group-hover:bg-blue-500' : 'bg-slate-100'}`}
+                          className={`w-full rounded-t ${h.orders > 0 ? 'bg-chart-1/60 group-hover:bg-chart-1' : 'bg-slate-100'}`}
                           style={{ height: `${Math.max(h.orders > 0 ? 5 : 2, Math.round((h.orders / hourlyMax) * 88))}px` }}
                         ></div>
                         <span className="text-[9px] text-slate-500 leading-none">{h.hour % 3 === 0 ? h.hour : ''}</span>

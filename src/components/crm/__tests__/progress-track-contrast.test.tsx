@@ -319,5 +319,59 @@ describe("@theme 노출 — 3차에서 새로 쓰는 채움 토큰", () => {
     const theme = css.slice(start, css.indexOf("\n}", start));
     expect(theme).toMatch(/--color-status-success:\s*var\(--status-success\)/);
     expect(theme).toMatch(/--color-primary:\s*var\(--primary\)/);
+    // 4차: 시간대 차트의 bg-chart-1/NN 알파 유틸
+    expect(theme).toMatch(/--color-chart-1:\s*var\(--chart-1\)/);
+  });
+});
+
+// 4차: 같은 화면의 단일 계열 차트(시간대별 주문)가 네이비 범주 막대를 앞지르지 않게 — 차트 네이비 60% 단색
+// (흰 표면 3.59, 종전 blue-400 2.64 미달). 0건 시간대는 2px slate-100 기준선 그대로.
+describe("시간대 차트·인사이트 패널 틀(4차)", () => {
+  it("캠페인 인사이트: 시간대 막대 chart-1/60(hover 100%), 0건은 slate-100, 유입 경로 틀은 무채색", async () => {
+    const campaign = {
+      id: "c1",
+      name: "캠페인",
+      template: "",
+      sellerName: "셀러",
+      tasks: [],
+      distinctOrderCount: 1,
+      insights: {
+        inflow: [{ path: "경로", orders: 1, quantity: 1, revenue: 1000, orderRatio: 100 }],
+        hourly: [
+          { hour: 0, orders: 0, revenue: 0 },
+          { hour: 1, orders: 1, revenue: 1000 },
+        ],
+        device: { mobile: 1, pc: 0, unknown: 0 },
+        paymentMeans: [],
+        membership: { orders: 0, ratio: 0 },
+        buyers: { unique: 1, repeat: 0, repeatRatio: 0 },
+        claims: { canceled: 0, returned: 0, exchanged: 0, total: 0, ratio: 0 },
+      },
+    } as never;
+    render(<CampaignInsightsModal campaign={campaign} onClose={noop} />);
+    const dialog = await screen.findByRole("dialog");
+    const bars = [...dialog.querySelectorAll("div.w-full.rounded-t")];
+    expect(bars).toHaveLength(2);
+    expect(bars[0].classList.contains("bg-slate-100")).toBe(true);
+    expect(bars[1].classList.contains("bg-chart-1/60")).toBe(true);
+    expect(bars[1].classList.contains("group-hover:bg-chart-1")).toBe(true);
+    // 범주(유입 경로) 막대는 100% 네이비 — 시간대 막대보다 진하다.
+    const inflowFill = dialog.querySelector("div.w-20.h-1\\.5.rounded-full")!.firstElementChild as HTMLElement;
+    expect(inflowFill.classList.contains("bg-primary")).toBe(true);
+
+    const title = within(dialog).getByText("유입 경로별 주문");
+    expect(title.className).toContain("text-slate-700");
+    const header = title.parentElement as HTMLElement;
+    expect(header.className).toContain("bg-slate-50");
+    const panel = header.parentElement as HTMLElement;
+    expect(panel.className).toContain("border-slate-200");
+    expect(dialog.innerHTML).not.toMatch(/indigo|blue-/);
+  });
+
+  it("셀러 포털: 시간대 막대 chart-1/60 + 0건 slate-100, 일자별 매출 배경 바 chart-1/10(색만)", () => {
+    const src = sourceOf("portal/seller-portal-report.tsx");
+    expect(src).toContain('className={`w-full rounded-t ${h.orders > 0 ? "bg-chart-1/60" : "bg-slate-100"}`}');
+    expect(src).toContain('className="absolute inset-y-0.5 right-0 bg-chart-1/10 rounded-l-sm"');
+    expect(src).not.toMatch(/bg-blue-400|bg-blue-500\/10/);
   });
 });
