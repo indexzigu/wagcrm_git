@@ -69,8 +69,9 @@
 # UTC "30 21 * * *" (naver-settlement-sync) → KST 06:30 (자정 넘김, 요일 원본부터 *)
 30 6 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh naver-settlement-sync >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
 
-# UTC "0 22 * * *" (naver-order-sync) → KST 07:00 (자정 넘김, 요일 원본부터 *)
-0 7 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh naver-order-sync >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+# UTC "0 22 * * *" (naver-order-sync) → KST 07:00 이었으나 2026-10-06 오너 지시로 09:00 으로 옮겼다 —
+#   발주는 업무 시작 후에 진행하므로 하루 주문 기준 시각을 9시에 맞춘다(발주 자동 준비가 이 스냅샷을 쓴다).
+0 9 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh naver-order-sync >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
 
 # UTC "30 22 * * *" (enrich-references) → KST 07:30 (자정 넘김, 요일 원본부터 *)
 30 7 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh enrich-references >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1

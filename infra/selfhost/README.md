@@ -653,7 +653,7 @@ macOS cron 은 로컬 시간대(KST, UTC+9)로 돈다. `vercel.json` 의 크론
 | enrich-inbox | `0 18 * * *` | `0 3 * * *` |
 | rehost-seller-media | `0 20 * * *` | `0 5 * * *` |
 | naver-settlement-sync | `30 21 * * *` | `30 6 * * *` |
-| naver-order-sync | `0 22 * * *` | `0 7 * * *` |
+| naver-order-sync | `0 22 * * *` | `0 9 * * *` (2026-10-06 오너 지시로 07:00 → 09:00) |
 | enrich-references | `30 22 * * *` | `30 7 * * *` |
 | collect-qnas | `0 23 * * *` (원본 매일) | `0 8 * * 1` (주 1회) |
 | analyze-voc | `30 23 * * *` | `30 8 * * *` |

@@ -63,7 +63,7 @@ export const KNOWN_JOBS: readonly KnownJob[] = [
   { key: "enrich-inbox", name: "인박스 썸네일 수집", cycle: "매일", timeKst: "03:00", lane: "vercel", desc: "발굴 인박스에 등록된 셀러 후보의 프로필 썸네일을 수집·보강합니다." },
   { key: "rehost-seller-media", name: "미디어 재호스팅", cycle: "매일", timeKst: "05:00", lane: "vercel", desc: "셀러 프로필·미디어 이미지를 외부 URL에서 내부 저장소로 재호스팅해 만료를 방지합니다." },
   { key: "naver-settlement-sync", name: "네이버 정산 동기화", cycle: "매일", timeKst: "06:30", lane: "vercel", desc: "네이버페이 정산 내역을 조회해 캠페인 정산 케이스에 반영합니다." },
-  { key: "naver-order-sync", name: "네이버 발주 동기화", cycle: "매일", timeKst: "07:00", lane: "vercel", desc: "네이버 스토어 주문 스냅샷을 수집해 발주·배송 상태를 갱신합니다." },
+  { key: "naver-order-sync", name: "네이버 발주 동기화", cycle: "매일", timeKst: "09:00", lane: "vercel", desc: "네이버 스토어 주문 스냅샷을 수집해 발주·배송 상태를 갱신합니다." },
   { key: "enrich-references", name: "레퍼런스 심층 수집", cycle: "매일", timeKst: "07:30", lane: "vercel", desc: "발굴 레퍼런스의 인스타·유튜브 상세 지표를 심층 수집합니다." },
   { key: "collect-qnas", name: "상품 문의 수집", cycle: "매주 월", timeKst: "08:00", lane: "vercel", desc: "네이버 상품문의·고객문의(VOC)를 수집해 상품·캠페인에 귀속합니다." },
   { key: "analyze-voc", name: "VOC AI 인사이트", cycle: "매일", timeKst: "08:30", lane: "vercel", desc: "신규 문의·리뷰가 임계 이상 쌓인 딜만 골라 AI 요약(소구점·불만·FAQ)을 생성합니다." },
