@@ -21,7 +21,6 @@ import {
   type CampaignRow,
   type CampaignStatus,
 } from "@/lib/crm-types";
-import type { ZoneViewMode } from "@/lib/zone-config";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -106,7 +105,6 @@ export type StatusStepperProps = {
   onDrop?: () => void;
   showDropButton?: boolean;
   visibleStatuses?: CampaignStatus[];
-  viewMode?: ZoneViewMode;
 };
 
 // ---------------------------------------------------------------------------

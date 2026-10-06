@@ -4,10 +4,8 @@ import {
   ZONE_DEFAULT_STATUS,
   ZONE_SUB_STATUS_ORDER,
   getZoneCounts,
-  sortByStartDateDesc,
   groupCampaignsByZone,
   sortCampaignsByStatus,
-  sortCampaignsByZone,
 } from "../zone-config";
 
 // ---------------------------------------------------------------------------
@@ -133,48 +131,6 @@ describe("getZoneCounts", () => {
 });
 
 // ---------------------------------------------------------------------------
-// sortByStartDateDesc
-// ---------------------------------------------------------------------------
-
-describe("sortByStartDateDesc", () => {
-  it("sorts campaigns by startDate descending", () => {
-    const campaigns = [
-      makeCampaign({ id: "1", startDate: "2025-01-01" }),
-      makeCampaign({ id: "2", startDate: "2025-03-15" }),
-      makeCampaign({ id: "3", startDate: "2025-02-10" }),
-    ];
-
-    const sorted = sortByStartDateDesc(campaigns);
-    expect(sorted.map((c) => c.id)).toEqual(["2", "3", "1"]);
-  });
-
-  it("does not mutate the original array", () => {
-    const campaigns = [
-      makeCampaign({ id: "1", startDate: "2025-01-01" }),
-      makeCampaign({ id: "2", startDate: "2025-03-15" }),
-    ];
-    const original = [...campaigns];
-    sortByStartDateDesc(campaigns);
-    expect(campaigns).toEqual(original);
-  });
-
-  it("places campaigns with empty startDate at the end", () => {
-    const campaigns = [
-      makeCampaign({ id: "1", startDate: "" }),
-      makeCampaign({ id: "2", startDate: "2025-03-15" }),
-      makeCampaign({ id: "3", startDate: "2025-01-01" }),
-    ];
-
-    const sorted = sortByStartDateDesc(campaigns);
-    expect(sorted.map((c) => c.id)).toEqual(["2", "3", "1"]);
-  });
-
-  it("returns empty array for empty input", () => {
-    expect(sortByStartDateDesc([])).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // groupCampaignsByZone
 // ---------------------------------------------------------------------------
 
@@ -281,33 +237,5 @@ describe("sortCampaignsByStatus", () => {
 
     const sortedDesc = sortCampaignsByStatus(campaignsDesc, "SETTLEMENT_IN_PROGRESS");
     expect(sortedDesc.map((c) => c.id)).toEqual(["2", "3", "1"]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// sortCampaignsByZone
-// ---------------------------------------------------------------------------
-
-describe("sortCampaignsByZone", () => {
-  it("sorts DEAL_EXECUTION zone campaigns by startDate ascending", () => {
-    const campaigns = [
-      makeCampaign({ id: "1", startDate: "2025-01-01", status: "PREPARATION" }),
-      makeCampaign({ id: "2", startDate: "2025-03-15", status: "ACTIVE" }),
-      makeCampaign({ id: "3", startDate: "2025-02-10", status: "CLOSED" }),
-    ];
-
-    const sorted = sortCampaignsByZone(campaigns, "DEAL_EXECUTION");
-    expect(sorted.map((c) => c.id)).toEqual(["1", "3", "2"]);
-  });
-
-  it("sorts SETTLEMENT zone campaigns by startDate descending", () => {
-    const campaigns = [
-      makeCampaign({ id: "1", startDate: "2025-01-01", status: "SETTLEMENT_IN_PROGRESS" }),
-      makeCampaign({ id: "2", startDate: "2025-03-15", status: "COMPLETED" }),
-      makeCampaign({ id: "3", startDate: "2025-02-10", status: "SETTLEMENT_IN_PROGRESS" }),
-    ];
-
-    const sorted = sortCampaignsByZone(campaigns, "SETTLEMENT");
-    expect(sorted.map((c) => c.id)).toEqual(["2", "3", "1"]);
   });
 });

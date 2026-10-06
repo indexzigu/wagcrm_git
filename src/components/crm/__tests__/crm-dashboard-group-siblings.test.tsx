@@ -25,11 +25,6 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock("@/lib/zone-settings", () => ({
-  loadZoneViewMode: vi.fn(() => "VIEW_B"),
-  saveZoneViewMode: vi.fn(),
-}));
-
 const mockSetStageFilter = vi.fn();
 const mockSetTeamFilter = vi.fn();
 const mockSetSearchQuery = vi.fn();

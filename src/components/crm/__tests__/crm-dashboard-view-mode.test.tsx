@@ -26,11 +26,6 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock("@/lib/zone-settings", () => ({
-  loadZoneViewMode: vi.fn(() => "VIEW_B"),
-  saveZoneViewMode: vi.fn(),
-}));
-
 const mockSetStageFilter = vi.fn();
 const mockSetTeamFilter = vi.fn();
 const mockSetSearchQuery = vi.fn();
@@ -66,7 +61,6 @@ vi.mock("@/components/ui/sidebar", () => ({
 }));
 
 import { CrmDashboard } from "../crm-dashboard";
-import { loadZoneViewMode } from "@/lib/zone-settings";
 
 function makeCampaign(overrides: Partial<CampaignRow> = {}): CampaignRow {
   return {
@@ -148,11 +142,6 @@ describe("CrmDashboard view mode switching", () => {
 
     expect(screen.getByRole("button", { name: "칸반" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "테이블" })).toHaveAttribute("aria-pressed", "false");
-  });
-
-  it("loads initial zone mode from local storage helper", () => {
-    render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
-    expect(loadZoneViewMode).toHaveBeenCalled();
   });
 
   it("calls setViewMode('table') when table button is clicked", async () => {

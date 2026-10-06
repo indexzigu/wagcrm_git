@@ -5,7 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { InlineDataGrid, type GridColumn } from "../inline-data-grid";
 import { GroupedTableView } from "../grouped-table-view";
-import { SalesZoneTable } from "../sales-zone-table";
 import { CategoryTagInput } from "../category-tag-input";
 import { CalendarView, type CalendarCampaign } from "../calendar-view";
 import { ReviewTable, type PriceSheetRowData } from "../price-sheet/review-table";
@@ -150,19 +149,6 @@ describe("판매 관리 표 — 셀러명 칸 버튼", () => {
     await user.keyboard("{Enter}");
     expect(onRowOpen).toHaveBeenCalledTimes(1);
     expect(onRowOpen).toHaveBeenCalledWith(campaign);
-  });
-
-  it("SalesZoneTable: 셀러명 버튼 Enter 로 상세를 한 번만 연다", async () => {
-    const onRowOpen = vi.fn();
-    const user = userEvent.setup();
-    const campaign = makeCampaign();
-    render(
-      <SalesZoneTable campaigns={[campaign]} onRowOpen={onRowOpen} onCampaignUpdate={vi.fn()} />,
-    );
-
-    screen.getByRole("button", { name: "셀러가" }).focus();
-    await user.keyboard("{Enter}");
-    expect(onRowOpen).toHaveBeenCalledTimes(1);
   });
 });
 

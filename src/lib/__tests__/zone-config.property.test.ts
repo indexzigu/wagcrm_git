@@ -15,17 +15,8 @@
  * Validates: Requirements 4.1, 4.6
  *
  * Feature: pipeline-zone-views
- * Property 2: View C excludes all PROPOSAL campaigns
- * Validates: Requirements 1.3, 5.1
- *
- * Property 6: PROPOSAL status transition blocked in View C
- * Validates: Requirements 5.5, 5.6
- *
  * Property 7: Sales Zone table shows only PROPOSAL campaigns
  * Validates: Requirements 4.2
- *
- * Property 8: View C tab list excludes PROPOSAL tab
- * Validates: Requirements 5.3
  *
  * Tests that every CampaignStatus maps to exactly one zone (exhaustive: no
  * status is unmapped; exclusive: no status maps to multiple zones).
@@ -46,11 +37,7 @@ import {
   getZoneForStatus,
   getZoneCounts,
   groupCampaignsByZone,
-  filterCampaignsForViewC,
-  isStatusChangeAllowed,
-  getViewTabs,
   type PipelineZone,
-  type ZoneViewMode,
 } from "../zone-config";
 
 // ---------------------------------------------------------------------------
@@ -525,117 +512,6 @@ describe("Property 9: Table grouping assigns each campaign to exactly one correc
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Property 2: View C excludes all PROPOSAL campaigns
-// **Validates: Requirements 1.3, 5.1**
-// ---------------------------------------------------------------------------
-
-describe("Feature: pipeline-zone-views, Property 2: View C excludes all PROPOSAL campaigns", () => {
-  it("filterCampaignsForViewC never includes campaigns with PROPOSAL status", () => {
-    /**
-     * **Validates: Requirements 1.3**
-     */
-    fc.assert(
-      fc.property(arbCampaignList, (campaigns) => {
-        const filtered = filterCampaignsForViewC(campaigns);
-
-        // No campaign in the result should have PROPOSAL status
-        for (const campaign of filtered) {
-          expect(campaign.status).not.toBe("PROPOSAL");
-        }
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("all non-PROPOSAL campaigns from input are present in the output", () => {
-    /**
-     * **Validates: Requirements 5.1**
-     */
-    fc.assert(
-      fc.property(arbCampaignList, (campaigns) => {
-        const filtered = filterCampaignsForViewC(campaigns);
-        const nonProposalInput = campaigns.filter((c) => c.status !== "PROPOSAL");
-
-        // Every non-PROPOSAL campaign should be in the filtered result
-        expect(filtered).toHaveLength(nonProposalInput.length);
-
-        const filteredIds = filtered.map((c) => c.id);
-        for (const campaign of nonProposalInput) {
-          expect(filteredIds).toContain(campaign.id);
-        }
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("output length equals input length minus PROPOSAL campaign count", () => {
-    fc.assert(
-      fc.property(arbCampaignList, (campaigns) => {
-        const filtered = filterCampaignsForViewC(campaigns);
-        const proposalCount = campaigns.filter((c) => c.status === "PROPOSAL").length;
-
-        expect(filtered.length).toBe(campaigns.length - proposalCount);
-      }),
-      { numRuns: 100 },
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Property 6: PROPOSAL status transition blocked in View C
-// **Validates: Requirements 5.5, 5.6**
-// ---------------------------------------------------------------------------
-
-describe("Feature: pipeline-zone-views, Property 6: PROPOSAL status transition blocked in View C", () => {
-  it("isStatusChangeAllowed returns false for PROPOSAL target in VIEW_C", () => {
-    /**
-     * **Validates: Requirements 5.5**
-     */
-    fc.assert(
-      fc.property(fc.constant("VIEW_C" as ZoneViewMode), () => {
-        const allowed = isStatusChangeAllowed("VIEW_C", "PROPOSAL");
-        expect(allowed).toBe(false);
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("isStatusChangeAllowed returns true for all non-PROPOSAL targets in VIEW_C", () => {
-    /**
-     * **Validates: Requirements 5.6**
-     */
-    const nonProposalStatuses: CampaignStatus[] = [
-      "PREPARATION",
-      "ACTIVE",
-      "CLOSED",
-      "SETTLEMENT_WAIT",
-      "SETTLEMENT_IN_PROGRESS",
-      "COMPLETED",
-      "DROPPED",
-    ];
-    const arbNonProposalStatus = fc.constantFrom(...nonProposalStatuses);
-
-    fc.assert(
-      fc.property(arbNonProposalStatus, (targetStatus) => {
-        const allowed = isStatusChangeAllowed("VIEW_C", targetStatus);
-        expect(allowed).toBe(true);
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("isStatusChangeAllowed returns true for all statuses (including PROPOSAL) in VIEW_B", () => {
-    fc.assert(
-      fc.property(arbCampaignStatus, (targetStatus) => {
-        const allowed = isStatusChangeAllowed("VIEW_B", targetStatus);
-        expect(allowed).toBe(true);
-      }),
-      { numRuns: 100 },
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Property 7: Sales Zone table shows only PROPOSAL campaigns
 // **Validates: Requirements 4.2**
 // ---------------------------------------------------------------------------
@@ -676,100 +552,6 @@ describe("Feature: pipeline-zone-views, Property 7: Sales Zone table shows only 
         for (const campaign of proposalCampaigns) {
           expect(salesIds).toContain(campaign.id);
         }
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("Sales Zone filter and View C filter are complementary for PROPOSAL campaigns", () => {
-    fc.assert(
-      fc.property(arbCampaignList, (campaigns) => {
-        const salesZoneCampaigns = campaigns.filter((c) =>
-          ZONE_STATUSES["SALES"].includes(c.status),
-        );
-        const viewCCampaigns = filterCampaignsForViewC(campaigns);
-
-        // Together they should cover all campaigns
-        expect(salesZoneCampaigns.length + viewCCampaigns.length).toBe(campaigns.length);
-
-        // No overlap between the two sets
-        const salesIds = new Set(salesZoneCampaigns.map((c) => c.id));
-        for (const campaign of viewCCampaigns) {
-          expect(salesIds.has(campaign.id)).toBe(false);
-        }
-      }),
-      { numRuns: 100 },
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Property 8: View C tab list excludes PROPOSAL tab
-// **Validates: Requirements 5.3**
-// ---------------------------------------------------------------------------
-
-describe("Feature: pipeline-zone-views, Property 8: View C tab list excludes PROPOSAL tab", () => {
-  it("getViewTabs('VIEW_C') does not contain PROPOSAL tab", () => {
-    /**
-     * **Validates: Requirements 5.3**
-     */
-    fc.assert(
-      fc.property(fc.constant("VIEW_C" as ZoneViewMode), (viewMode) => {
-        const tabs = getViewTabs(viewMode);
-        const tabValues = tabs.map((t) => t.value);
-
-        expect(tabValues).not.toContain("PROPOSAL");
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("getViewTabs('VIEW_B') contains PROPOSAL tab", () => {
-    fc.assert(
-      fc.property(fc.constant("VIEW_B" as ZoneViewMode), (viewMode) => {
-        const tabs = getViewTabs(viewMode);
-        const tabValues = tabs.map((t) => t.value);
-
-        expect(tabValues).toContain("PROPOSAL");
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("VIEW_C tabs are a strict subset of VIEW_B tabs (only PROPOSAL removed)", () => {
-    fc.assert(
-      fc.property(
-        fc.constantFrom("VIEW_B" as ZoneViewMode, "VIEW_C" as ZoneViewMode),
-        () => {
-          const viewBTabs = getViewTabs("VIEW_B");
-          const viewCTabs = getViewTabs("VIEW_C");
-
-          // VIEW_C should have exactly one fewer tab than VIEW_B
-          expect(viewCTabs.length).toBe(viewBTabs.length - 1);
-
-          // Every VIEW_C tab should exist in VIEW_B
-          const viewBValues = viewBTabs.map((t) => t.value);
-          for (const tab of viewCTabs) {
-            expect(viewBValues).toContain(tab.value);
-          }
-
-          // The missing tab should be PROPOSAL
-          const viewCValues = viewCTabs.map((t) => t.value);
-          const missingTabs = viewBValues.filter((v) => !viewCValues.includes(v));
-          expect(missingTabs).toEqual(["PROPOSAL"]);
-        },
-      ),
-      { numRuns: 100 },
-    );
-  });
-
-  it("VIEW_C tabs always include ALL tab", () => {
-    fc.assert(
-      fc.property(fc.constant("VIEW_C" as ZoneViewMode), (viewMode) => {
-        const tabs = getViewTabs(viewMode);
-        const tabValues = tabs.map((t) => t.value);
-
-        expect(tabValues).toContain("ALL");
       }),
       { numRuns: 100 },
     );

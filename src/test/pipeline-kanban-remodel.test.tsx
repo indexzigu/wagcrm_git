@@ -79,11 +79,6 @@ vi.mock("@/components/crm/data-source-banner", () => ({
   DataSourceBanner: () => null,
 }));
 
-// Mock ZoneViewSelector
-vi.mock("@/components/crm/zone-view-selector", () => ({
-  ZoneViewSelector: () => null,
-}));
-
 // Mock TeamFilter
 vi.mock("@/components/crm/team-filter", () => ({
   TeamFilter: () => null,

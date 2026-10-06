@@ -343,7 +343,7 @@ function ExecutionColumn({
                     </span>
                   ) : null}
                 </span>
-                {/* 펼침 상태는 아이콘으로 — `zone-collapse-control.tsx` 관례. 텍스트
+                {/* 펼침 상태는 셰브론 아이콘으로 표시한다(아래=펼침, 오른쪽=접힘). 텍스트
                     라벨("펼치기/접기")을 slate-400 으로 얹었다가 2.45:1 로 AA 미달이었다. */}
                 {expandWaiting ? (
                   <ChevronDownIcon className="size-3.5 shrink-0 text-slate-500" />

@@ -22,9 +22,7 @@ import {
 
 import type { CampaignRow, DashboardData } from "@/lib/crm-types";
 import { type CampaignStatus } from "@/lib/crm-types";
-import { getZoneForStatus, type ZoneViewMode } from "@/lib/zone-config";
-import { getZoneCounts } from "@/lib/zone-config";
-import { loadZoneViewMode } from "@/lib/zone-settings";
+import { getZoneCounts, getZoneForStatus } from "@/lib/zone-config";
 import { applyPipelineFilters } from "@/lib/pipeline-filters";
 import { patchCampaign } from "@/lib/campaign-patch";
 import {
@@ -149,7 +147,6 @@ export function CrmDashboard({
   const [createOpen, setCreateOpen] = useState(false);
   const [comboOpen, setComboOpen] = useState(false);
   const [createSheetDefaultStatus, setCreateSheetDefaultStatus] = useState<CampaignStatus | undefined>(undefined);
-  const [zoneViewMode] = useState<ZoneViewMode>(() => loadZoneViewMode());
   // Phase 3(모바일 전용): 모바일 UA에서는 데스크탑 SidePanel 대신 조회 전용 상세 시트를 연다.
   // 데스크탑 경로(openCampaign→CampaignSidePanel)는 그대로 — 아래 상태는 모바일 분기만 사용.
   const [mobileDetailCampaign, setMobileDetailCampaign] = useState<CampaignRow | null>(null);
@@ -723,7 +720,6 @@ export function CrmDashboard({
         }}
         onNavigateToCampaign={openCampaignById}
         workspaceFilter={lockedStageFilter}
-        viewMode={zoneViewMode}
         onCampaignDeleted={(campaignId) => {
           removeCampaignRow(campaignId, true);
         }}
