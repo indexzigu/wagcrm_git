@@ -195,7 +195,7 @@ export default function SalesReportModal({
                                 <div className="w-16 h-1.5 bg-slate-300 rounded-full overflow-hidden">
                                   <div className="h-full bg-primary rounded-full" style={{ width: `${opt.ratio}%` }}></div>
                                 </div>
-                                <span className="text-xs font-bold text-slate-500 w-9 text-right">{opt.ratio.toFixed(1)}%</span>
+                                <span className="text-xs font-bold text-slate-500 w-11 text-right tabular-nums">{opt.ratio.toFixed(1)}%</span>
                               </div>
                             </td>
                             <td className="px-5 py-3 text-right text-xs text-slate-800 font-bold">{opt.revenue.toLocaleString()}원</td>
@@ -265,7 +265,7 @@ export default function SalesReportModal({
                                     <div className="w-16 h-1.5 bg-slate-300 rounded-full overflow-hidden">
                                       <div className="h-full bg-primary rounded-full" style={{ width: `${opt.ratio}%` }}></div>
                                     </div>
-                                    <span className="text-xs font-bold text-slate-500 w-9 text-right">{opt.ratio.toFixed(1)}%</span>
+                                    <span className="text-xs font-bold text-slate-500 w-11 text-right tabular-nums">{opt.ratio.toFixed(1)}%</span>
                                   </div>
                                 </td>
                                 <td className="px-5 py-3 text-right text-xs text-slate-800 font-bold">{opt.revenue.toLocaleString()}원</td>

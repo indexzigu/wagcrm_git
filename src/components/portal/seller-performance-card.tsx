@@ -118,7 +118,7 @@ export async function SellerPerformanceCard({
             <p className="text-[10px] font-bold tracking-widest text-slate-300 uppercase">
               WAG Performance Card
             </p>
-            <h1 className="text-lg font-bold text-white mt-1.5 leading-snug">{camp.name}</h1>
+            <h1 className="text-lg font-bold text-white mt-1.5 leading-snug break-keep break-words">{camp.name}</h1>
             <p className="text-[11px] text-slate-300 mt-1">
               {displayName} {camp.salePeriod && <>· {camp.salePeriod}</>}
             </p>
