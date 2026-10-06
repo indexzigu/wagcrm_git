@@ -44,6 +44,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isClientDemoMode } from "@/lib/demo-mode";
 import { Badge } from "@/components/ui/badge";
 import { useApprovalInbox } from "@/hooks/useApprovalInbox";
+import { useOrderWorkSummary } from "@/hooks/useOrderWorkSummary";
 import { useUserRole } from "@/hooks/use-user-role";
 
 // 섹션 그룹핑 — 묶음은 성격(진행 / 리포트 / 기본정보 / 도구), 진행 그룹의
@@ -189,6 +190,23 @@ export function ApprovalBadge() {
   return (
     <Badge variant="status-pending" className="ml-auto">
       {count}
+    </Badge>
+  );
+}
+
+/**
+ * 「주문 관리」 배지 — 오늘 손이 가야 하는 주문 수(발주 대기 + 배송 지연 + 진행 중 클레임).
+ * 홈 「오늘 처리할 주문」 카드와 같은 쿼리키(useOrderWorkSummary)를 공유해 요청을 늘리지 않는다.
+ * 0 이면 렌더하지 않는다. 로딩·오류 중에도 숨긴다 — 오류는 홈 카드가 드러낸다(배지는 보조 신호).
+ * 서버는 네이버를 부르지 않는다(`/api/order-work`).
+ */
+export function OrderWorkBadge() {
+  const { data } = useOrderWorkSummary();
+  const total = data?.total ?? 0;
+  if (total <= 0) return null;
+  return (
+    <Badge variant="status-pending" className="ml-auto" aria-label={`오늘 처리할 주문 ${total}건`}>
+      {total}
     </Badge>
   );
 }
@@ -339,6 +357,7 @@ export function CrmSidebar() {
                             {item.label}
                           </span>
                           {item.href === "/approvals" && <ApprovalBadge />}
+                          {item.href === "/order-converter" && <OrderWorkBadge />}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

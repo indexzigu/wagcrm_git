@@ -64,6 +64,19 @@ export async function getOrderAutoSyncIntervalHoursOrDefault(): Promise<OrderAut
   }
 }
 
+/**
+ * 화면에 띄우는 「마지막 동기화」 시각 — 마지막으로 성공한 변경피드 동기화(커서)가 정본이고, 커서가
+ * 아직 없을 때(최초 FULL 부트스트랩 직후)만 최신 스냅샷의 lastCallTime 으로 대신한다.
+ * lastCallTime 은 배송중 sweep·액션 직후 정밀 갱신도 밀어 올려 새 주문을 안 물었는데도 「방금
+ * 동기화함」으로 보이게 하므로 커서를 우선한다. 주문 관리 툴바·셀러 포털(X-Naver-Last-Sync)과
+ * 홈 「오늘 처리할 주문」 카드의 기준 시각이 같은 값을 쓴다. 둘 다 없으면 null.
+ */
+export function resolveLastOrderSyncIso(lastChangeSyncMs: number | null, lastCallTime: Date | null): string | null {
+  if (lastChangeSyncMs != null) return new Date(lastChangeSyncMs).toISOString();
+  if (lastCallTime) return new Date(lastCallTime).toISOString();
+  return null;
+}
+
 /** 마지막으로 성공한 변경피드 동기화 시각(ms). 모르면 null — isOrderAutoSyncDue 가 「건다」로 읽는다. */
 export async function getLastChangeSyncMs(): Promise<number | null> {
   try {

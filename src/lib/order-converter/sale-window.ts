@@ -470,3 +470,92 @@ export function resolveCampaignQueryStartMs(camp: {
   if (storedStart !== null && salesStart !== null) return Math.min(storedStart, salesStart);
   return storedStart ?? salesStart ?? null;
 }
+
+/**
+ * 활성 주문캠페인의 **라이브 집계 창**(주문 관리 카드가 쓰는 창) — 판매관리 일정이 정본이고
+ * 정산 락이면 저장된 창에 얼린다(오너 확정 2026-07-15).
+ *
+ * 주문 관리 카드(`campaigns-handler.ts`)와 홈 「오늘 처리할 주문」 요약(`order-work-summary.ts`)이
+ * 같은 창으로 주문을 거르도록 한 곳에 둔다. ⛔ 소비처에서 다시 조립하지 말 것.
+ *
+ * - `startDate`/`endDate`: 집계에 쓸 창(판매관리 창이 저장값과 다르고 동결이 아니면 판매관리 값).
+ *   이 값을 `resolveSaleWindowStartMs/EndMs` 에 넣어 컷오프를 얻는다.
+ * - `needsPeriodSync`: 저장값과 달라 DB 에 반영해야 하는 상태(핸들러가 영속한다 — 요약은 쓰지 않는다).
+ * - `periodFrozenDrift`: 동결 때문에 판매관리 변경이 반영되지 않는 상태(무응답을 드러내는 배지 신호).
+ * - `periodMismatch`: 연결된 판매캠페인들의 기간이 서로 다르다(경고만).
+ */
+export function resolveLiveOrderCampaignWindow(camp: {
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+  salesCampaigns?: Array<{ startDate?: Date | string | null; endDate?: Date | string | null; status?: string | null }> | null;
+}): {
+  startDate: Date | string | null | undefined;
+  endDate: Date | string | null | undefined;
+  needsPeriodSync: boolean;
+  periodFrozenDrift: boolean;
+  periodMismatch: boolean;
+} {
+  const salesWindow = resolveSalesCampaignWindow(camp.salesCampaigns);
+  // 딜 하나라도 정산에 들어갔으면 창 전체를 얼린다. 창은 주문캠페인당 하나뿐이라 늘리면 이미 정산 중인
+  // 딜의 귀속 주문까지 바뀌기 때문 — 정산 무결성 쪽으로 보수적으로 잡는다.
+  const periodFrozenBySettlement = isCampaignPeriodFrozen(camp.salesCampaigns);
+  const base = {
+    startDate: camp.startDate,
+    endDate: camp.endDate,
+    needsPeriodSync: false,
+    periodFrozenDrift: false,
+    periodMismatch: salesWindow?.hasPeriodMismatch ?? false,
+  };
+  if (!salesWindow) return base;
+
+  const sameMs = (a: Date | string | null | undefined, b: Date | null) => {
+    const am = a ? new Date(a).getTime() : null;
+    const bm = b ? b.getTime() : null;
+    return am === bm;
+  };
+  const nextStart = new Date(salesWindow.startMs);
+  const nextEnd = salesWindow.endMs === null ? null : new Date(salesWindow.endMs);
+  // salePeriod가 아니라 창(startDate/endDate) 자체를 게이트로 쓴다 — 과거 salePeriod 문자열만
+  // 비교해서, 문자열이 같으면 startDate를 영영 안 쓰던 탓에 prod 전 캠페인의 startDate가 null로
+  // 남아 있었다(실측). 그 결과 컷오프가 문자열 폴백에만 의존했다.
+  const windowDiffers = !sameMs(camp.startDate, nextStart) || !sameMs(camp.endDate, nextEnd);
+  if (windowDiffers && !periodFrozenBySettlement) {
+    return { ...base, startDate: nextStart, endDate: nextEnd, needsPeriodSync: true };
+  }
+  // 동결됐는데 판매관리 일정이 창과 다르다 = 운영자가 판매관리에서 기간을 고쳤지만 정산 확정이라
+  // 반영되지 않는 상태 — 배지로 드러내 운영자가 원인을 알게 한다.
+  return { ...base, periodFrozenDrift: windowDiffers && periodFrozenBySettlement };
+}
+
+/**
+ * 활성 주문캠페인들의 **스냅샷 조회 시작**(ms) — 가장 이른 `resolveCampaignQueryStartMs`.
+ *
+ * - 기여하는 캠페인이 하나도 없으면 「최근 7일」로 떨어지고 `hasValidStart=false` 다. ⚠️ 그 폴백은
+ *   조용히 틀린다(그 이전 주문이 조회되지 않는다) — 호출부가 활성 캠페인이 있는데 false 면 경고를 남긴다.
+ * - 시작이 미래면 전일로 당긴다(조회 창이 비지 않게).
+ *
+ * 이 값은 `resolveLiveWindowKeys`(daily-aggregate SSOT)의 입력이다 — now 상대 하한은 거기서도
+ * 여기서도 두지 않는다(`live-window-floor.contract.test.ts`). 주문 관리 카드(`campaigns-handler`)와
+ * 홈 「오늘 처리할 주문」 요약이 같은 범위를 보도록 한 곳에 둔다.
+ */
+export function resolveActiveCampaignsQueryStart(
+  activeCampaigns: Array<Parameters<typeof resolveCampaignQueryStartMs>[0]>,
+  nowMs: number,
+): { startMs: number; hasValidStart: boolean } {
+  const fallback = new Date(nowMs);
+  // 기간이 없는 경우 최근 7일로 가정
+  fallback.setDate(fallback.getDate() - 7);
+  let earliest = fallback.getTime();
+  let hasValidStart = false;
+  for (const c of activeCampaigns) {
+    const startMs = resolveCampaignQueryStartMs(c);
+    if (startMs === null) continue;
+    if (!hasValidStart || startMs < earliest) {
+      earliest = startMs;
+      hasValidStart = true;
+    }
+  }
+  // 만약 시작이 미래라면 현재 시간 전일로 세팅
+  if (earliest > nowMs) earliest = nowMs - 24 * 60 * 60 * 1000;
+  return { startMs: earliest, hasValidStart };
+}

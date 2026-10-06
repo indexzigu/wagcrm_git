@@ -10,6 +10,9 @@
 // claim-derive.ts의 resolveOrderCampaignName이 동일 비대칭을 이미 이렇게 처리한다 — 여러
 // 집계·발주 경로가 제각각 재구현해 어긋나지 않도록 이 순수 헬퍼로 고립시킨다.
 
+import { pickBestMapping, type MappingLike } from './mapping-match';
+import { isSupplementProduct } from './product-class';
+
 /**
  * 주문이 캠페인의 상품에 productId로 귀속되는지 판정한다.
  * 캠페인 productId가 비어 있으면 false(호출부가 상품명·매핑 폴백으로 처리).
@@ -120,4 +123,116 @@ export function findSharedLinkWindowConflicts(
     }
   }
   return conflicts;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 활성 주문캠페인 ↔ 주문 귀속(주문 관리 카드의 라이브 집계 규칙)
+//
+// 주문 관리 카드(`campaigns-handler.ts`)가 쓰는 귀속 술어를 여기 모았다 — 홈 「오늘 처리할 주문」
+// 요약(`order-work-summary.ts`)이 **같은 주문을 같은 캠페인에** 붙이려면 같은 술어를 타야 한다.
+// ⛔ 술어를 소비처에서 다시 쓰지 말 것. 이 레포에는 이미 귀속 엔진이 여럿이고(undispatched-orders ·
+// claim-derive · mobile-pulse-data) 그것들은 **의도적으로 다른 규칙**을 쓴다 — 여기는 그중
+// 「주문 관리 카드」의 규칙이다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 귀속 판정에 필요한 주문캠페인 최소 형태. */
+export type AttributionCampaign<M extends MappingLike = MappingLike> = {
+  name: string;
+  productId?: string | null;
+  mappings?: readonly M[] | null;
+};
+
+/**
+ * 메인 품목(추가구성상품이 아닌 라인) 1건이 이 캠페인 소속인가.
+ *
+ * ① 캠페인명 매칭 — 캠페인 productId 가 있고 주문에 상품번호가 있으면 productId 일치일 때만
+ *    상품명 포함을 인정한다. ② 아니면 매핑(mapping-match SSOT)이 맞되, 상품명이 **창이 이 결제를
+ *    담을 수 있는** 다른 활성 캠페인을 가리키면 양보한다(`orderBelongsToPeerCampaign`).
+ * 판매 기간(집계창) 필터와 추가구성상품 분리는 호출부 몫이다 — 순서는 `collectCampaignAttributedOrders`.
+ */
+export function resolveMainOrderAttribution<M extends MappingLike>(
+  order: { productName?: string | null; productOption?: string | null; productOptionName?: string | null; productId?: unknown; originalProductId?: unknown },
+  campaign: AttributionCampaign<M> & { mappings: readonly M[] },
+  orderTimeMs: number,
+  peers: PeerCampaignWindow[],
+): { isCampaignOrder: boolean; matchedMapping: M | null } {
+  const pName = order.productName || '';
+  const oName = order.productOption || order.productOptionName || '';
+  const matchedMapping = pickBestMapping<M>(campaign.mappings, pName, oName);
+
+  let matchesCampName = false;
+  if (campaign.productId && (order.productId != null || order.originalProductId != null)) {
+    // 원상품/채널 번호 어느 쪽이든 캠페인 productId와 맞을 때만 캠페인명 매칭 인정
+    if (orderMatchesCampaignProductId(order, campaign.productId)) {
+      matchesCampName = pName.includes(campaign.name) || campaign.name.includes(pName);
+    }
+  } else {
+    matchesCampName = pName.includes(campaign.name) || campaign.name.includes(pName);
+  }
+
+  if (matchesCampName) return { isCampaignOrder: true, matchedMapping };
+  if (matchedMapping && !orderBelongsToPeerCampaign(pName, orderTimeMs, peers)) {
+    return { isCampaignOrder: true, matchedMapping };
+  }
+  return { isCampaignOrder: false, matchedMapping };
+}
+
+/**
+ * 추가구성상품 라인이 이 캠페인 소속인가 — 같은 productId 의 메인 품목이 이 캠페인에 귀속됐을 때만.
+ * (네이버는 추가구성상품을 메인 상품 리스팅 하위 = 동일 productId 로 등록한다.)
+ */
+export function addonBelongsToCampaign(
+  order: { productId?: unknown },
+  campaignProductIds: ReadonlySet<string>,
+): boolean {
+  return !!order.productId && campaignProductIds.has(String(order.productId));
+}
+
+/**
+ * 주문의 결제 시각 — 주문 관리 카드의 집계창 판정과 같은 식(paymentDate → orderDate → orderCreateDate).
+ * 시각이 없으면 0, 파싱 불가면 NaN 이다(둘 다 「창으로 거르지 않는다」로 읽힌다).
+ */
+export function resolveOrderPaymentTime(order: { paymentDate?: unknown; orderDate?: unknown; orderCreateDate?: unknown }): {
+  /** 원문 그대로(없으면 undefined) — 호출부가 표시·인사이트에 그대로 넘긴다. */
+  orderTimeStr: string | undefined;
+  orderTimeMs: number;
+} {
+  const raw = (order.paymentDate || order.orderDate || order.orderCreateDate) as string | undefined;
+  return { orderTimeStr: raw, orderTimeMs: raw ? new Date(raw).getTime() : 0 };
+}
+
+/**
+ * 한 활성 주문캠페인에 귀속되는 주문 라인 전부(메인 → 추가구성 순). 주문 관리 카드의 1·2차 패스와
+ * 같은 순서·같은 술어다: 집계창 밖 제외 → 추가구성상품 보류 → 메인 귀속 → 보류분 2차 귀속.
+ *
+ * @param windowStartMs·windowEndMs `resolveSaleWindowStartMs/EndMs` 결과(미확정이면 0 · MAX 로 폴백한 값)
+ */
+export function collectCampaignAttributedOrders<O extends Record<string, any>, M extends MappingLike>(
+  orders: readonly O[],
+  campaign: AttributionCampaign<M>,
+  windowStartMs: number,
+  windowEndMs: number,
+  peers: PeerCampaignWindow[],
+): Array<{ order: O; orderTimeMs: number }> {
+  const mappings = campaign.mappings;
+  if (!mappings) return [];
+  const main: Array<{ order: O; orderTimeMs: number }> = [];
+  const deferredAddons: Array<{ order: O; orderTimeMs: number }> = [];
+  const campaignProductIds = new Set<string>();
+
+  for (const order of orders) {
+    if (!order) continue;
+    const { orderTimeMs } = resolveOrderPaymentTime(order);
+    if (orderTimeMs > 0 && (orderTimeMs < windowStartMs || orderTimeMs > windowEndMs)) continue;
+    if (isSupplementProduct(order)) {
+      deferredAddons.push({ order, orderTimeMs });
+      continue;
+    }
+    const { isCampaignOrder } = resolveMainOrderAttribution(order, { ...campaign, mappings }, orderTimeMs, peers);
+    if (!isCampaignOrder) continue;
+    if (order.productId) campaignProductIds.add(String(order.productId));
+    main.push({ order, orderTimeMs });
+  }
+
+  return [...main, ...deferredAddons.filter(({ order }) => addonBelongsToCampaign(order, campaignProductIds))];
 }

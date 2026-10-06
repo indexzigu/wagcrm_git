@@ -30,6 +30,8 @@ const WINDOW_RESOLVING_READ_PATHS = [
   "src/lib/mobile-pulse-loader.ts",
   "src/app/order-converter/api/campaigns/campaigns-handler.ts",
   "src/app/order-converter/api/campaigns/[id]/undispatched-orders/route.ts",
+  // 홈 「오늘 처리할 주문」 — 주문 관리 카드와 같은 범위를 L1 에서 읽는다(2026-10-06).
+  "src/lib/order-converter/order-work-summary.ts",
 ];
 
 /**

@@ -36,6 +36,7 @@ import { usePriceOverview, PriceDefenseBody, PriceDefenseLegend } from "./price-
 import { SegmentedTabCard, SegmentedTabBar, type SegmentedTab } from "./segmented-tab-card";
 import { SystemRadarCard } from "./system-radar-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
+import { OrderWorkCard } from "./order-work-card";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
@@ -858,6 +859,10 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
     <CrmShell>
       <main className="min-h-full bg-[radial-gradient(circle_at_top_right,_rgba(10,61,98,0.07),_transparent_30%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] px-5 pb-5 pt-5 md:px-8">
         <div className="space-y-6">
+          {/* 밴드 -1: 오늘 처리할 주문(발주 자동화 1단계, 오너 승인 2026-10-06) — 그날 손이 가야 하는
+              주문 일(발주 대기·배송 지연·진행 중 클레임)이라 매출·일정보다 먼저 읽힌다. 일이 없으면 한 줄로
+              물러나 아래 밴드를 밀어내지 않는다. 네이버 호출 0(저장된 스냅샷만), 사이드바 배지와 한 캐시. */}
+          <OrderWorkCard />
           {/* items-start: 좌측 히어로가 우측 컬럼 높이에 강제로 늘어나며 카드 내부에
               빈 공백이 생기는 것을 방지 — 두 컬럼 높이 차이는 카드 밖 배경으로 흡수한다 */}
           {/* 밴드 0: 실시간 KPI 스트립 (1x3 풀폭) — 소형 지표라 상단 밴드로 분리, 각 지표가 폭 여유 확보 (오너 결정 A안, 2026-07-10) */}
