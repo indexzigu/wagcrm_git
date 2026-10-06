@@ -35,7 +35,7 @@ export function CampaignCountdown({
 }: {
   targetMs: number;
   initialLabel: string; // 서버 정적 라벨(D-N 등) — 마운트 전까지 이 값으로 렌더(hydration 안전)
-  className: string; // amber/blue 톤(서버가 근접도로 결정)
+  className: string; // amber(마감 임박)/브랜드 네이비 틴트(오픈 예정) 톤 — 서버가 결정
   icon: "clock" | "flame";
   mode: Mode;
 }) {

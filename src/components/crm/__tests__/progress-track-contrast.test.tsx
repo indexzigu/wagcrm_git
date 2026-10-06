@@ -375,3 +375,35 @@ describe("시간대 차트·인사이트 패널 틀(4차)", () => {
     expect(src).not.toMatch(/bg-blue-400|bg-blue-500\/10/);
   });
 });
+
+// 5차: 상태 의미가 없는 파랑·보라 잔존을 5개 의미축 밖 무채색(또는 §4 네이비 태그 캐리어)으로.
+describe("남은 파랑·보라(5차)", () => {
+  it("셀러 포털: 오늘 매출은 무채색, 오픈 카운트다운은 네이비 틴트, 단골 수는 slate-900 — 마감 배지 amber 는 유지", () => {
+    const src = sourceOf("portal/seller-portal-report.tsx");
+    expect(src).toContain('<div className="text-[11px] font-bold text-slate-500 uppercase">오늘 매출</div>');
+    expect(src).toContain('<div className="text-xl font-bold text-slate-900">{fmtWon(todayStat?.revenue || 0)}</div>');
+    expect(src).toContain('className: "bg-primary/10 text-primary border-primary/20", icon: "clock", mode: "open"');
+    expect(src).toContain('<div className="text-xl font-bold text-slate-900">{crossCampaignBuyers.toLocaleString()}명</div>');
+    // 마감 임박은 심각도 축(caution) — 그대로 amber.
+    expect(src).toContain('className: "bg-amber-50 text-amber-700 border-amber-200", icon: "clock", mode: "close"');
+    // 「성과 카드 →」 링크의 text-blue-600 은 상호작용 색이라 범위 밖 — 여기서 잡지 않는다.
+    expect(src).not.toMatch(/text-indigo-|bg-blue-50 text-blue-600|text-xl font-bold text-blue-600|text-\[11px\] font-bold text-blue-600/);
+  });
+
+  it("매출 보고 제목 아이콘은 형제 모달과 같은 slate-500", async () => {
+    const campaign = { id: "c1", name: "캠페인", template: "", sellerName: "셀러", tasks: [], dailyStats: [] } as never;
+    render(<SalesReportModal campaign={campaign} onClose={noop} onToast={noop} />);
+    const dialog = await screen.findByRole("dialog");
+    const icon = dialog.querySelector("svg") as SVGElement;
+    expect(icon.getAttribute("class")).toContain("text-slate-500");
+    expect(icon.getAttribute("class")).not.toMatch(/blue|indigo/);
+  });
+
+  it("캠페인 생성 창의 카테고리·판매기간 이름표 칩은 같은 회색 칩", () => {
+    const src = sourceOf("crm/shipping/modals/CampaignCreateModal.tsx");
+    const chip = '<span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">';
+    expect(src).toContain(`${chip}카테고리</span>`);
+    expect(src).toContain(`${chip}판매기간</span>`);
+    expect(src).not.toMatch(/bg-indigo-100|text-indigo-600/);
+  });
+});

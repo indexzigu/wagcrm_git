@@ -100,7 +100,9 @@ function deadlineBadge(salePeriod: string, today: string): TimingBadge | null {
   return { kind: "live", targetMs, initialLabel: `${days}일 --:--:--`, className: "bg-amber-50 text-amber-700 border-amber-200", icon: "clock", mode: "close" };
 }
 
-// 예정 캠페인의 오픈 카운트다운. 4일+ 정적 'D-N 오픈예정', 1~3일·당일 라이브(blue).
+// 예정 캠페인의 오픈 카운트다운. 4일+ 정적 'D-N 오픈예정', 1~3일·당일 라이브(브랜드 네이비 틴트).
+// 오픈은 시작 경계라 주의 의미가 없어 마감(amber) 같은 상태 hue 를 받지 않는다 — P8 §4 의 중립 태그 캐리어
+// (bg-primary/10 text-primary, 셀러 목록 「신규(7일)」 선례)로 정적 D-N(slate)과만 구분한다. 종전 blue 는 축 밖 hue.
 // 시작일이 이미 지났으면(진행중) null — 진행중 분기가 담당한다.
 function openingBadge(salePeriod: string, today: string): TimingBadge | null {
   const startYmd = parseSalePeriodStartYmd(salePeriod);
@@ -111,7 +113,7 @@ function openingBadge(salePeriod: string, today: string): TimingBadge | null {
     return { kind: "static", label: `D-${days} 오픈예정`, className: "bg-slate-50 text-slate-500 border-slate-200" };
   const targetMs = saleBoundaryMs(startYmd, "open");
   const initialLabel = days === 0 ? "오픈까지 --:--:--" : `오픈까지 ${days}일 --:--:--`;
-  return { kind: "live", targetMs, initialLabel, className: "bg-blue-50 text-blue-600 border-blue-200", icon: "clock", mode: "open" };
+  return { kind: "live", targetMs, initialLabel, className: "bg-primary/10 text-primary border-primary/20", icon: "clock", mode: "open" };
 }
 
 // 결정된 배지를 렌더 — 정적은 무JS span, 라이브는 클라이언트 카운트다운 island.
@@ -272,9 +274,11 @@ function ActiveCampaignSection({
           </div>
         </div>
         <div className="px-5 py-4">
-          <div className="text-[11px] font-bold text-blue-600 uppercase">오늘 매출</div>
+          {/* 오늘 매출은 판매 집계지 돈이 오가는 사건(P8 §1 방향축)이 아니라 money-in 색을 받지 않는다.
+              「오늘」은 라벨이, 강조는 크기·굵기가 맡아 옆 누적 매출 칸과 같은 무채색으로 둔다(종전 blue-600 은 축 밖 hue). */}
+          <div className="text-[11px] font-bold text-slate-500 uppercase">오늘 매출</div>
           <div className="flex items-baseline gap-1.5 mt-0.5">
-            <div className="text-xl font-bold text-blue-600">{fmtWon(todayStat?.revenue || 0)}</div>
+            <div className="text-xl font-bold text-slate-900">{fmtWon(todayStat?.revenue || 0)}</div>
             {momentum && (
               <span
                 className={`text-[10px] font-bold ${momentum.className}`}
@@ -580,7 +584,8 @@ export async function SellerPortalReport({
                   <h2 className="text-xs font-bold text-slate-500">단골 고객</h2>
                 </div>
                 <div className="px-5 py-4">
-                  <div className="text-xl font-bold text-indigo-600">{crossCampaignBuyers.toLocaleString()}명</div>
+                  {/* 숫자 강조는 크기·굵기로 — 누적 매출 값과 같은 slate-900(종전 indigo-600 은 globals.css 밖 hue). */}
+                  <div className="text-xl font-bold text-slate-900">{crossCampaignBuyers.toLocaleString()}명</div>
                   <div className="text-[11px] text-slate-500 mt-0.5">여러 캠페인에서 다시 찾아주신 단골 고객이에요</div>
                   <div className="text-[10px] text-slate-500 mt-1">네이버스토어 주문 기준</div>
                 </div>
