@@ -21,6 +21,7 @@ import { shouldSkipDealPush } from '@/lib/order-converter/sales-push';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
 import { resolveOrderBrand } from '@/lib/order-converter/order-brand';
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
+import { resolveInvoiceReplyStatus, type InvoiceReplyDetectionLite } from '@/lib/order-converter/invoice-reply-status';
 
 // 파이프라인 지연 경고 임계값(결제/주문 후 경과일). 카드 라벨의 지연 경고 배지와
 // 팝오버 드릴다운(경고 건만 노출)이 이 단일 기준을 공유한다 — 한쪽만 바뀌어 카드/팝오버가
@@ -623,6 +624,29 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     const buildSnapshotResponse = (camp: any, extra: Record<string, unknown> = {}) =>
       buildCampaignSnapshotResponse(camp, resolveProvider(camp), extra);
 
+    // 송장 회신 도착 감지(크론 scan-invoice-replies)를 활성 캠페인 몫만 한 번에 읽는다 — 카드의
+    // 「회신 도착 · N건 · HH:MM」 줄. 「처리됨」은 저장값이 아니라 아래 배송대기 상태에서 파생한다
+    // (invoice-reply-status.ts). 소형 컬럼만 select 한다. 실패해도 목록은 그대로 낸다(줄만 안 뜬다).
+    const replyDetectionsByCampaign = new Map<string, InvoiceReplyDetectionLite[]>();
+    try {
+      const activeIds = campaigns.filter((c: any) => c.isActive).map((c: any) => c.id);
+      if (activeIds.length > 0) {
+        const rows = await prisma.invoiceReplyDetection.findMany({
+          where: { orderCampaignId: { in: activeIds }, receivedAt: { gte: new Date(Date.now() - 14 * 86400000) } },
+          select: { orderCampaignId: true, receivedAt: true, trackingOrderKeys: true },
+        });
+        for (const row of rows) {
+          const list = replyDetectionsByCampaign.get(row.orderCampaignId) ?? [];
+          let keys: unknown = null;
+          try { keys = row.trackingOrderKeys ? JSON.parse(row.trackingOrderKeys) : null; } catch { keys = null; }
+          list.push({ receivedAt: row.receivedAt, trackingOrderKeys: keys });
+          replyDetectionsByCampaign.set(row.orderCampaignId, list);
+        }
+      }
+    } catch (err) {
+      console.warn('[campaigns] 송장 회신 감지 로드 실패 — 도착 표시 생략:', err);
+    }
+
     const campaignsWithStats = campaigns.map((camp: any) => {
       let newOrderBeforeCount = 0;
       let newOrderAfterCount = 0;
@@ -650,6 +674,10 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 배송대기 버킷 주문 목록(카드 배송대기 클릭 시 팝오버). 카운트만 세고 버리지 않고 같은 순회에서 수집한다.
       // 판단 핵심값은 "발주요청 후 경과일"이라 poRequestedAt을 함께 실어 보낸다.
       const pendingOrders: Array<{ productOrderId: string; ordererName: string; receiverName: string; optionName: string; quantity: number; paymentDate: string | null; poRequestedAt: string | null }> = [];
+      // 송장 회신 도착 표시의 「아직 처리 안 됨」 판정 입력 — 배송대기 주문의 키(상품주문번호·주문번호
+      // 둘 다: 회신 엑셀이 어느 쪽을 쓸지는 브랜드 규칙이 정한다)와 가장 오래된 발주요청 시각.
+      const replyPendingKeys = new Set<string>();
+      let oldestPendingPoAtMs: number | null = null;
       // 배송 지연 경고 주문 목록(카드 배송중 클릭 시 팝오버). 팝오버는 "모든 배송중"이 아니라
       // 파악이 필요한 경고 건(배송 경과 SHIPPING_DELAY_WARN_DAYS일↑)만 담는다 — 그래서 카드 배송중 경고
       // 배지(shippingDelayDays)와 정확히 같은 집합이고, 페이로드도 경고 건수만큼만 실린다.
@@ -967,6 +995,9 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
             // 경고(≥임계값)만 카드 지연 배지 + 팝오버 목록에 함께 담는다(동일 집합, 파악 필요 건만).
             const _poId = String(order.productOrderId || '');
             const _poAt = poRequestedMap.get(_poId) || null;
+            if (_poId) replyPendingKeys.add(_poId);
+            if (order.orderId) replyPendingKeys.add(String(order.orderId));
+            if (_poAt && (oldestPendingPoAtMs === null || _poAt.getTime() < oldestPendingPoAtMs)) oldestPendingPoAtMs = _poAt.getTime();
             if (_poAt) {
               const poDelayDays = Math.floor((nowMs - _poAt.getTime()) / 86400000);
               if (poDelayDays >= PENDING_DELAY_WARN_DAYS) {
@@ -1134,6 +1165,9 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
           // 경고(≥임계값)만 카드 지연 배지 + 팝오버 목록에 함께 담는다(동일 집합, 파악 필요 건만).
           const _poId = String(order.productOrderId || '');
           const _poAt = poRequestedMap.get(_poId) || null;
+          if (_poId) replyPendingKeys.add(_poId);
+          if (order.orderId) replyPendingKeys.add(String(order.orderId));
+          if (_poAt && (oldestPendingPoAtMs === null || _poAt.getTime() < oldestPendingPoAtMs)) oldestPendingPoAtMs = _poAt.getTime();
           if (_poAt) {
             const poDelayDays = Math.floor((nowMs - _poAt.getTime()) / 86400000);
             if (poDelayDays >= PENDING_DELAY_WARN_DAYS) {
@@ -1262,6 +1296,11 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         oldestPendingDate,
         oldestShippingDate,
         lastOrderAt: lastOrderAt || null,
+        // 처리 안 된 송장 회신(크론 감지) — 없으면 null. 카드의 「회신 도착 · N건 · HH:MM」 줄.
+        invoiceReply: resolveInvoiceReplyStatus(replyDetectionsByCampaign.get(camp.id) ?? [], {
+          keys: replyPendingKeys,
+          oldestPoRequestedAtMs: oldestPendingPoAtMs,
+        }),
         pendingDelayDays,
         shippingDelayDays,
         confirmDelayDays,
