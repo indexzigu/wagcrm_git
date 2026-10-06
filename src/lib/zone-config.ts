@@ -212,29 +212,3 @@ export function sortCampaignsByStatus(
     return isAsc ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
   });
 }
-
-/**
- * Sorts campaigns by startDate based on their zone.
- *
- * Rules:
- * - "DEAL_EXECUTION" zone campaigns are sorted by startDate ascending (oldest first).
- * - "SALES", "SETTLEMENT", "DROPPED" zone campaigns are sorted by startDate descending (newest first).
- * Campaigns with empty/null startDate are always placed at the end.
- */
-export function sortCampaignsByZone(
-  campaigns: CampaignRow[],
-  zone: PipelineZone,
-): CampaignRow[] {
-  const isAsc = zone === "DEAL_EXECUTION";
-
-  return [...campaigns].sort((a, b) => {
-    const dateA = a.startDate || "";
-    const dateB = b.startDate || "";
-    if (!dateA && !dateB) return 0;
-    if (!dateA) return 1;
-    if (!dateB) return -1;
-
-    return isAsc ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
-  });
-}
-

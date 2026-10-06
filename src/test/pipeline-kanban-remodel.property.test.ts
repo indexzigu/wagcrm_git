@@ -15,7 +15,6 @@ import {
   ZONE_DEFAULT_STATUS,
   type PipelineZone,
   sortCampaignsByStatus,
-  sortCampaignsByZone,
 } from "@/lib/zone-config";
 import {
   applyPipelineFilters,
@@ -332,57 +331,6 @@ describe("Property 3b: sortCampaignsByStatus sorts dynamically by status", () =>
     );
   });
 });
-
-// ---------------------------------------------------------------------------
-// Property 3c: sortCampaignsByZone sorts dynamically by zone
-// Feature: pipeline-kanban-remodel, Property 3c
-// ---------------------------------------------------------------------------
-
-describe("Property 3c: sortCampaignsByZone sorts dynamically by zone", () => {
-  it("sorts by startDate ascending (oldest first) for DEAL_EXECUTION zone", () => {
-    fc.assert(
-      fc.property(fc.array(campaignRowArb(), { minLength: 0, maxLength: 50 }), (campaigns) => {
-        const sorted = sortCampaignsByZone(campaigns, "DEAL_EXECUTION");
-
-        for (let i = 0; i < sorted.length - 1; i++) {
-          const current = sorted[i].startDate || "";
-          const next = sorted[i + 1].startDate || "";
-
-          if (!current) {
-            expect(next).toBe("");
-          } else if (next) {
-            expect(current <= next).toBe(true);
-          }
-        }
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("sorts by startDate descending (newest first) for other zones", () => {
-    const descZones: PipelineZone[] = ["SALES", "SETTLEMENT", "DROPPED"];
-    const zoneArb = fc.constantFrom(...descZones);
-
-    fc.assert(
-      fc.property(fc.array(campaignRowArb(), { minLength: 0, maxLength: 50 }), zoneArb, (campaigns, zone) => {
-        const sorted = sortCampaignsByZone(campaigns, zone);
-
-        for (let i = 0; i < sorted.length - 1; i++) {
-          const current = sorted[i].startDate || "";
-          const next = sorted[i + 1].startDate || "";
-
-          if (!current) {
-            expect(next).toBe("");
-          } else if (next) {
-            expect(current >= next).toBe(true);
-          }
-        }
-      }),
-      { numRuns: 100 },
-    );
-  });
-});
-
 
 // ---------------------------------------------------------------------------
 // Property 14a: formatDateRange produces "MM.DD ~ MM.DD" format
