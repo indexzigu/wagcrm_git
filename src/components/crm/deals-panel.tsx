@@ -312,7 +312,7 @@ function DealsPanelContent({
             {hasPendingChanges && (
               <Button
                 size="sm"
-                className="h-7 text-xs px-3 shadow-soft-sm bg-blue-600 hover:bg-blue-700 text-white"
+                className="h-7 text-xs px-3 shadow-soft-sm hover:bg-primary/95"
                 onClick={() => void saveNow()}
                 disabled={isDeferredSaving}
               >
@@ -609,7 +609,7 @@ function DealsPanelContent({
                   {deal.partner.type && (
                     <Badge
                       variant="outline"
-                      className="border-blue-100 bg-blue-50/20 text-blue-600 font-semibold text-[9px] px-1 py-0.2 rounded hover:bg-blue-50/20 leading-none shrink-0"
+                      className="border-primary/20 bg-primary/10 text-primary font-semibold text-[9px] px-1 py-0.2 rounded hover:bg-primary/10 leading-none shrink-0"
                     >
                       {partnerTypeLabels[deal.partner.type as PartnerType] ??
                         deal.partner.type}

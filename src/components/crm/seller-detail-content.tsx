@@ -724,7 +724,7 @@ export function SellerDetailContent({
                     type="button"
                     onClick={() => setBioExpanded(!bioExpanded)}
                     aria-expanded={bioExpanded}
-                    className="text-[10px] text-blue-600 font-medium mt-1.5 hover:underline rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring self-start"
+                    className="text-[10px] text-primary font-medium mt-1.5 hover:underline rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring self-start"
                   >
                     {bioExpanded ? "접기" : "...더보기"}
                   </button>
@@ -788,7 +788,7 @@ export function SellerDetailContent({
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Building2 className="size-3.5 text-muted-foreground shrink-0" />
                     <span className="text-xs font-bold text-foreground truncate">{linkedPartner.name}</span>
-                    <Badge variant="outline" className="border-blue-100 bg-blue-50/20 text-blue-600 font-semibold text-[9px] px-1 py-0.2 rounded hover:bg-blue-50/20 leading-none shrink-0">
+                    <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary font-semibold text-[9px] px-1 py-0.2 rounded hover:bg-primary/10 leading-none shrink-0">
                       셀러
                     </Badge>
                   </div>
@@ -1129,7 +1129,7 @@ export function SellerDetailContent({
                               required
                               value={newSnapshotDate}
                               onChange={(e) => setNewSnapshotDate(e.target.value)}
-                              className="w-full rounded border border-border/80 px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none"
+                              className="w-full rounded border border-border/80 px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none"
                             />
                           </div>
                           <div className="space-y-1 col-span-1">
@@ -1141,7 +1141,7 @@ export function SellerDetailContent({
                               placeholder="예: 15000"
                               value={newFollowersCount}
                               onChange={(e) => setNewFollowersCount(e.target.value)}
-                              className="w-full rounded border border-border/80 px-2.5 py-1.5 text-xs font-mono focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none"
+                              className="w-full rounded border border-border/80 px-2.5 py-1.5 text-xs font-mono focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none"
                             />
                           </div>
                           <div className="space-y-1 col-span-1">
@@ -1152,7 +1152,7 @@ export function SellerDetailContent({
                               placeholder="예: 250"
                               value={newPostsCount}
                               onChange={(e) => setNewPostsCount(e.target.value)}
-                              className="w-full rounded border border-border/80 px-2.5 py-1.5 text-xs font-mono focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none"
+                              className="w-full rounded border border-border/80 px-2.5 py-1.5 text-xs font-mono focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none"
                             />
                           </div>
                           <div className="flex justify-end gap-1.5 col-span-1">
@@ -1210,7 +1210,7 @@ export function SellerDetailContent({
                                 </td>
                                 <td className="px-3 py-2 text-center">
                                   {snapshot.source === "MANUAL" ? (
-                                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] text-blue-700 font-semibold border border-blue-200">수동</span>
+                                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary font-semibold border border-primary/20">수동</span>
                                   ) : (
                                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] text-emerald-700 font-semibold border border-emerald-200">자동</span>
                                   )}
@@ -1249,7 +1249,7 @@ export function SellerDetailContent({
                                 {formatDate(history.collectedAt)}
                               </span>
                               {history.source === "MANUAL" ? (
-                                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] text-blue-700 font-semibold border border-blue-200">수동</span>
+                                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary font-semibold border border-primary/20">수동</span>
                               ) : (
                                 <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] text-emerald-700 font-semibold border border-emerald-200">자동</span>
                               )}

@@ -154,15 +154,15 @@ export default function SalesReportModal({
           ) : (
             <div className="space-y-6">
               {/* 전체 누적 성과 */}
-              <div className="bg-white border border-blue-200 rounded-xl overflow-hidden shadow-soft-sm ring-1 ring-blue-50">
-                <div className="bg-blue-50/50 px-5 py-3 border-b border-blue-100 flex justify-between items-center">
-                  <h3 className="font-bold text-blue-900">전체 누적 현황</h3>
-                  <div className="text-sm font-bold text-blue-800 flex gap-4 flex-wrap">
+              <div className="bg-white border border-primary/20 rounded-xl overflow-hidden shadow-soft-sm ring-1 ring-primary/5">
+                <div className="bg-primary/5 px-5 py-3 border-b border-primary/10 flex justify-between items-center">
+                  <h3 className="font-bold text-primary">전체 누적 현황</h3>
+                  <div className="text-sm font-bold text-slate-800 flex gap-4 flex-wrap">
                     <span>총 주문: {totalOverallOrders.toLocaleString()}건</span>
                     <span>총 수량: {totalOverallQuantity.toLocaleString()}개</span>
                     <span>총 매출: {totalOverallRevenue.toLocaleString()}원</span>
                     {cancelReturnQty > 0 && (
-                      <span className="sm:border-l border-blue-200 sm:pl-4 text-slate-600 font-medium">취소·반품 {cancelReturnQty.toLocaleString()}개 · 환불 {cancelReturnAmt.toLocaleString()}원</span>
+                      <span className="sm:border-l border-slate-200 sm:pl-4 text-slate-600 font-medium">취소·반품 {cancelReturnQty.toLocaleString()}개 · 환불 {cancelReturnAmt.toLocaleString()}원</span>
                     )}
                   </div>
                 </div>

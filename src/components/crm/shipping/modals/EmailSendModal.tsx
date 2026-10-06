@@ -240,20 +240,20 @@ export default function EmailSendModal({
         
         <div className="px-5 pt-4 pb-1">
           {/* 트랙 = 발송까지 남은 단계라 보여야 한다: slate-100(흰 표면 1.10:1) → slate-300.
-              진행 채움 blue-500 은 트랙 대비 2.53 이라 blue-600(3.54, 진행 단계 라벨 text-blue-600 과 같은 단계)으로.
+              진행 채움은 범주색 네이비(bg-primary, 트랙 대비 7.62 — 진행 단계 라벨 text-primary 와 같은 색). 종전 blue-500/600 은 P8 축 밖 hue.
               완료(SUCCESS)는 100% 라 트랙이 안 보이므로 기준은 흰 배경 대비다 — green-500 은 2.22 로 3:1 미달이었다.
               바로 아래 「완료」 라벨과 같은 성공 토큰(bg-status-success #047857: 흰 배경 5.48 · 트랙 3.69)으로 맞춘다
               — 오너 결정 2026-10-06. */}
           <div className="relative h-2 w-full bg-slate-300 rounded-full overflow-hidden">
             <div 
-              className={`absolute top-0 left-0 h-full w-full origin-left rounded-full transition-[transform,background-color] duration-500 ${step === 'SUCCESS' ? 'bg-status-success' : 'bg-blue-600'}`}
+              className={`absolute top-0 left-0 h-full w-full origin-left rounded-full transition-[transform,background-color] duration-500 ${step === 'SUCCESS' ? 'bg-status-success' : 'bg-primary'}`}
               style={{ transform: `scaleX(${getStepProgress() / 100})` }}
             />
           </div>
           <div className="flex justify-between mt-2 px-1 text-[10px] font-bold text-slate-500 transition-colors">
-            <span className={step === 'ANALYZING' ? 'text-blue-600' : step !== 'IDLE' ? 'text-slate-700' : ''}>분석/추출</span>
-            <span className={step === 'CONVERTING' ? 'text-blue-600' : ['CONVERT_DONE','SENDING','SUCCESS'].includes(step) ? 'text-slate-700' : ''}>변환</span>
-            <span className={step === 'SENDING' ? 'text-blue-600' : step === 'SUCCESS' ? 'text-slate-700' : ''}>발송</span>
+            <span className={step === 'ANALYZING' ? 'text-primary' : step !== 'IDLE' ? 'text-slate-700' : ''}>분석/추출</span>
+            <span className={step === 'CONVERTING' ? 'text-primary' : ['CONVERT_DONE','SENDING','SUCCESS'].includes(step) ? 'text-slate-700' : ''}>변환</span>
+            <span className={step === 'SENDING' ? 'text-primary' : step === 'SUCCESS' ? 'text-slate-700' : ''}>발송</span>
             <span className={step === 'SUCCESS' ? 'text-status-success' : ''}>완료</span>
           </div>
         </div>
@@ -289,7 +289,7 @@ export default function EmailSendModal({
                   checked={includePending}
                   onChange={e => setIncludePending(e.target.checked)}
                   disabled={isBusy}
-                  className="w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-50"
+                  className="w-4 h-4 accent-primary bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-50"
                 />
                 <label htmlFor="includePending" className="text-xs font-bold text-slate-600 cursor-pointer">
                   배송대기건 포함
@@ -306,7 +306,7 @@ export default function EmailSendModal({
                   value={fileName}
                   onChange={e => { fileNameTouchedRef.current = true; setFileName(e.target.value); }}
                   disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50"
+                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-primary transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50"
                   placeholder="예: 발주서_브랜드_와이그라운드_셀러_250710.xlsx"
                 />
                 <p className="mt-1 px-1 text-[10px] text-slate-500">
@@ -324,7 +324,7 @@ export default function EmailSendModal({
                   value={emailToStr} 
                   onChange={e => setEmailToStr(e.target.value)} 
                   disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
+                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-primary transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
                   placeholder="예: target@domain.com, (여러 명일 경우 쉼표로 구분)"
                 />
               </div>
@@ -336,7 +336,7 @@ export default function EmailSendModal({
                   value={emailCcStr} 
                   onChange={e => setEmailCcStr(e.target.value)} 
                   disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
+                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-primary transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
                   placeholder="예: cc@domain.com"
                 />
               </div>
@@ -349,7 +349,7 @@ export default function EmailSendModal({
                   value={emailSubject} 
                   onChange={e => setEmailSubject(e.target.value)} 
                   disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
+                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-primary transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
                 />
               </div>
               <div>
@@ -361,7 +361,7 @@ export default function EmailSendModal({
                   value={emailMessage} 
                   onChange={e => setEmailMessage(e.target.value)} 
                   disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50 resize-none" 
+                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-primary transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50 resize-none" 
                 />
               </div>
             </div>
@@ -415,7 +415,7 @@ export default function EmailSendModal({
               <button 
                 type="submit" 
                 disabled={isBusy || (mode === 'manual' && !manualFile)} 
-                className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
+                className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
               >
                 {isBusy ? (
                   <>

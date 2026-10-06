@@ -240,22 +240,25 @@ function ActiveCampaignSection({
             판매중
           </span>
           <h2 className="min-w-0 break-words font-bold text-slate-800 text-sm">{camp.name}</h2>
-          {/* F2 성과 카드 — 캡처·공유용 한 장 뷰. 누를 영역은 24px(WCAG 2.5.8) — 44px 로 키우면
-              바로 아래 판매기간 줄(mt-1)을 덮어 그 근처 탭이 이 링크로 샌다. */}
+        </div>
+        {/* F2 성과 카드 링크는 제목 줄이 아니라 기간 줄 우측에 둔다 — 제목 줄에 있으면 좁은 폭(320px)에서
+            긴 제목을 3줄로 밀어 위계가 뒤집힌다(예정 카드 #146 과 같은 구조). 기간·배지 묶음은 안쪽에서만
+            줄바꿈하고(배지가 찌그러지지 않게) 링크는 첫 줄 우측에 고정한다. 누를 영역은 24px(WCAG 2.5.8) —
+            44px 로 키우면 바로 아래 헤드라인 경계를 덮는다. 기간이 없어도 링크는 남는다. */}
+        <div className="mt-1 flex items-start justify-between gap-2">
+          {camp.salePeriod && (
+            <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <p className="text-[11px] text-slate-500">{camp.salePeriod}</p>
+              {deadline && <TimingBadgeView badge={deadline} />}
+            </div>
+          )}
           <Link
             href={`${basePath}/card/${camp.id}`}
-            className="-my-0.5 -mr-2 ml-auto inline-flex min-h-6 shrink-0 items-center px-2 text-[10px] font-bold text-blue-600"
+            className="-my-1 -mr-2 ml-auto inline-flex min-h-6 shrink-0 items-center rounded-sm px-2 text-[10px] font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             성과 카드 →
           </Link>
         </div>
-        {/* 좁은 폭(320px)에서는 배지가 기간 아래 줄로 내려간다 — 한 줄에 우겨 넣어 배지가 찌그러지지 않게. */}
-        {camp.salePeriod && (
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
-            <p className="text-[11px] text-slate-500">{camp.salePeriod}</p>
-            {deadline && <TimingBadgeView badge={deadline} />}
-          </div>
-        )}
       </div>
 
       {/* 헤드라인: 누적 + 오늘. 합계만 보이는 캠페인(`totalOnly`)은 누적 매출 한 칸뿐이다 —
