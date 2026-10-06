@@ -22,6 +22,8 @@ export const queryKeys = {
   },
   campaigns: () => ["campaigns"] as const,
   mobilePulse: () => ["mobile-pulse"] as const,
+  /** 홈 「오늘 처리할 주문」 카드와 사이드바 「주문 관리」 배지가 한 캐시를 나눠 쓴다(요청 1회). */
+  orderWork: () => ["order-work"] as const,
   outreach: () => ["outreach"] as const,
   /**
    * 기안 목록. kind 까지 키에 넣는다 — 같은 EXECUTED 라도 기안 완료(WRITE)와 봇 조회

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/order-converter/prisma';
 import { searchNaverProducts } from '@/lib/order-converter/naver-commerce-api';
-import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesPeriodCheckInterval, isPeriodResyncDue, isConcretePeriodString, isSalesCampaignLocked, isCampaignPeriodFrozen, resolveSaleWindowStartMs, resolveSaleWindowEndMs, resolveCampaignQueryStartMs, resolveSalesCampaignWindow, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
+import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesPeriodCheckInterval, isPeriodResyncDue, isConcretePeriodString, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
+import { resolveLiveOrderCampaignWindow, resolveActiveCampaignsQueryStart } from '@/lib/order-converter/sale-window';
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
+import { getSnapshotL1Cache, hydrateSnapshotL1 } from '@/lib/order-converter/snapshot-l1-cache';
 import { runSync, isSnapshotStale, toDateKeyKst, sweepDeliveringOrders } from '@/lib/order-converter/naver-order-sync';
-import { getLastChangeSyncMs, getOrderAutoSyncIntervalHoursOrDefault, isOrderAutoSyncDue } from '@/lib/order-converter/order-auto-sync';
+import { getLastChangeSyncMs, getOrderAutoSyncIntervalHoursOrDefault, isOrderAutoSyncDue, resolveLastOrderSyncIso } from '@/lib/order-converter/order-auto-sync';
 import { runWithProxySource } from '@/lib/order-converter/proxy-usage';
 import { isDemoMode } from '@/lib/demo-mode';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from '@/lib/order-converter/campaign-insights';
@@ -13,23 +15,19 @@ import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from '@/lib/order-conver
 import { isSupplementProduct } from '@/lib/order-converter/product-class';
 import { collapseSettledCampaigns } from '@/lib/order-converter/settled-campaign-collapse';
 import { buildCampaignSnapshotResponse, hasFrozenSnapshot } from '@/lib/order-converter/campaign-snapshot-response';
-import { deriveOrderPipelineBucket } from '@/lib/order-converter/order-fulfillment';
+import { classifyOrderWork } from '@/lib/order-converter/order-work';
 import { resolveLiveWindowKeys } from '@/lib/order-converter/daily-aggregate';
-import { orderMatchesCampaignProductId, orderBelongsToPeerCampaign, findSharedLinkWindowConflicts, type PeerCampaignWindow } from '@/lib/order-converter/campaign-match';
-import { pickBestMapping, evaluateMappingMatch, normalizeMatchText } from '@/lib/order-converter/mapping-match';
+import { orderMatchesCampaignProductId, findSharedLinkWindowConflicts, resolveMainOrderAttribution, addonBelongsToCampaign, resolveOrderPaymentTime, type PeerCampaignWindow } from '@/lib/order-converter/campaign-match';
+import { evaluateMappingMatch, normalizeMatchText } from '@/lib/order-converter/mapping-match';
 import { shouldSkipDealPush } from '@/lib/order-converter/sales-push';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
 import { resolveOrderBrand } from '@/lib/order-converter/order-brand';
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
 import { resolveInvoiceReplyStatus, type InvoiceReplyDetectionLite } from '@/lib/order-converter/invoice-reply-status';
 
-// 파이프라인 지연 경고 임계값(결제/주문 후 경과일). 카드 라벨의 지연 경고 배지와
-// 팝오버 드릴다운(경고 건만 노출)이 이 단일 기준을 공유한다 — 한쪽만 바뀌어 카드/팝오버가
-// 어긋나지 않도록 상수화. 배송대기=2일(발주요청 후 송장 독촉), 배송중=5일(배송 지연 점검).
-const PENDING_DELAY_WARN_DAYS = 2;
-const SHIPPING_DELAY_WARN_DAYS = 5;
-// 주문확인됐지만 발주요청·송장 전(newAfter)에서 결제 후 이 일수 이상 묵으면 경고(오너 확정 2026-07-12).
-const CONFIRM_DELAY_WARN_DAYS = 2;
+// 파이프라인 지연 경고(임계값 3개 + 경과일 계산)는 `order-work.ts`(classifyOrderWork)가 소유한다 —
+// 카드 라벨의 지연 경고 배지·팝오버 드릴다운과 홈 「오늘 처리할 주문」 카드가 같은 판정을 쓴다.
+// ⛔ 여기서 임계값이나 경과일 계산을 다시 쓰지 말 것(본품·추가구성 두 갈래에 손 사본이 있었다).
 
 // 추가옵션(추가구성상품)의 딜(campaignDealId) 귀속용: 옵션명만으로 매핑을 찾는다.
 // 메인 집계는 상품명+옵션명을 함께 보지만, 추가옵션은 productName이 애드온 자체명("아이보리")이라
@@ -335,20 +333,11 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 판매 시작일 이전 주문이 통째로 미조회) 방지.
     const activeCampaigns = campaigns.filter((c: any) => c.isActive);
 
-    let earliestStart = new Date();
-    // 기간이 없는 경우 최근 7일로 가정
-    earliestStart.setDate(earliestStart.getDate() - 7);
-
-    let hasValidStart = false;
-    activeCampaigns.forEach((c: any) => {
-      const startMs = resolveCampaignQueryStartMs(c);
-      if (startMs === null) return;
-      const startD = new Date(startMs);
-      if (!hasValidStart || startD < earliestStart) {
-        earliestStart = startD;
-        hasValidStart = true;
-      }
-    });
+    // 가장 이른 시작(기간이 없으면 최근 7일 · 미래면 전일) — sale-window SSOT. 홈 「오늘 처리할 주문」
+    // 요약이 같은 날짜 범위를 보도록 한 함수로 둔다.
+    const queryStart = resolveActiveCampaignsQueryStart(activeCampaigns, Date.now());
+    let earliestStart = new Date(queryStart.startMs);
+    const hasValidStart = queryStart.hasValidStart;
 
     // 기본값('오늘-7일') 폴백은 조용히 틀린다 — 화면 판매기간은 멀쩡한데 그 이전 매출만 사라지고,
     // 시작일이 매일 하루씩 밀린다. 활성 캠페인이 있는데도 기간을 하나도 못 얻었으면 반드시 남긴다.
@@ -383,11 +372,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     }
 
     const now = new Date();
-    // 만약 startDate가 미래라면 현재 시간 전일로 세팅
-    if (earliestStart > now) {
-      earliestStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    }
-    
+
     // 조회 창의 시작은 **캠페인 창**이 정한다(P7 Campaign Period SSOT). 절대 상한은 폭주
     // 가드로만 남는다 — 판정은 resolveLiveWindowKeys(daily-aggregate SSOT, 모바일 상세·펄스와 공용).
     //
@@ -407,10 +392,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
 
     const recentOrders: any[] = [];
 
-    if (!(global as any).__naverDailyCache) {
-      (global as any).__naverDailyCache = {};
-    }
-    const dailyCache = (global as any).__naverDailyCache;
+    const dailyCache: Record<string, any> = getSnapshotL1Cache();
 
     let lastSyncIso: string | null = null;
     let isSyncing = false;
@@ -436,40 +418,11 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 낡은 L1을 무기한 서빙했다(2026-07-07 실사고: DB=발주후 248 정합인데 대시보드=151 고정).
       // DB lastCallTime 비교로 신선도를 따라가는 규칙은 유지하되, 종전처럼 전 기간 블롭을
       // 전송한 **뒤** 비교하지 않는다 — 이 폴링 표면이 DB 풀러 egress의 주 원인이었다.
+      // 2단 조회 본체는 snapshot-l1-cache SSOT — 홈 「오늘 처리할 주문」 요약이 같은 L1 을 읽는다.
       let hadAnySnapshot = Object.keys(dailyCache).length > 0;
       try {
-        const metas = await naverOrderSnapshotRepository.findRangeMeta(startDateKey, endDateKey);
-        const datesToFetch = metas
-          .filter((meta) => {
-            const l1Entry = dailyCache[meta.snapshotDate];
-            return !l1Entry || new Date(meta.lastCallTime).getTime() > (l1Entry.lastCallTime || 0);
-          })
-          .map((meta) => meta.snapshotDate);
-        const snapshots = await naverOrderSnapshotRepository.findByDates(datesToFetch);
-        // L3 egress 계측(2026-07-21) — 이 하이드레이션이 DB에서 당긴 블롭 근사 바이트.
-        // 웜 폴링은 보통 rows=0~1이어야 정상이고, 콜드스타트는 전 기간이 실린다.
-        if (snapshots.length > 0) {
-          const hydrateBytes = snapshots.reduce((sum, s) => {
-            const text = typeof s.orders === 'string' ? s.orders : JSON.stringify(s.orders ?? null);
-            return sum + Buffer.byteLength(text ?? '', 'utf8');
-          }, 0);
-          console.log(`[egress] campaigns-handler hydrate: rows=${snapshots.length} bytes=${hydrateBytes}`);
-        }
-        for (const snapshot of snapshots) {
-          const l1Entry = dailyCache[snapshot.snapshotDate];
-          const dbCallTime = new Date(snapshot.lastCallTime).getTime();
-          if (!l1Entry || dbCallTime > (l1Entry.lastCallTime || 0)) {
-            dailyCache[snapshot.snapshotDate] = {
-              lastCallTime: dbCallTime,
-              orders: naverOrderSnapshotRepository.parseOrders(snapshot),
-              newOrdersCount: snapshot.newOrdersCount,
-              preparingCount: snapshot.preparingCount,
-              deliveringCount: snapshot.deliveringCount,
-              isDirty: snapshot.isDirty,
-            };
-          }
-        }
-        hadAnySnapshot = hadAnySnapshot || metas.length > 0;
+        const { metaCount } = await hydrateSnapshotL1(startDateKey, endDateKey, 'campaigns-handler');
+        hadAnySnapshot = hadAnySnapshot || metaCount > 0;
       } catch (hydrateErr) {
         console.warn('Failed to hydrate daily cache from NaverOrderSnapshot:', hydrateErr);
       }
@@ -537,11 +490,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       } else {
         console.warn('Failed to read latestSyncMeta:', metaResult.error);
       }
-      if (lastChangeSyncMs != null) {
-        lastSyncIso = new Date(lastChangeSyncMs).toISOString();
-      } else if (lastCallTime) {
-        lastSyncIso = new Date(lastCallTime).toISOString();
-      }
+      lastSyncIso = resolveLastOrderSyncIso(lastChangeSyncMs, lastCallTime) ?? lastSyncIso;
 
       // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 보정을 건다 (서버판 SWR).
       // ① 변경피드 동기화는 마지막으로 성공한 변경피드 동기화가 설정 간격(1·3·6시간 — order-auto-sync.ts)
@@ -605,14 +554,13 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 배치 로드해, 아래 판정에서 네이버 상태와 합성한다. 조회 실패 시 빈 집합으로 폴백 —
     // 그러면 배송대기는 0으로 보수적으로 잡히고 판정은 네이버 상태만으로 계속 진행된다.
     const allProductOrderIds = recentOrders.map((o: any) => o?.productOrderId).filter(Boolean);
-    // 발주요청 시각까지 로드(맵) — 판정에는 keys() 집합만 쓰므로 무회귀, 배송대기 목록의 "경과일" 계산에 값 사용.
+    // 발주요청 시각까지 로드(맵) — 판정(classifyOrderWork)은 「값이 있는가」로 배송대기를, 값 자체로 경과일을 본다.
     let poRequestedMap = new Map<string, Date>();
     try {
       poRequestedMap = await orderFulfillmentRepository.getPoRequestedMap(allProductOrderIds);
     } catch (err) {
       console.warn('[campaigns] poRequested 맵 로드 실패 — 네이버 상태만으로 판정:', err);
     }
-    const poRequestedSet = new Set<string>(poRequestedMap.keys());
 
     // 마감 시점에 동결한 캐시 컬럼으로 캠페인 응답을 구성한다. 마감(isActive=false) 캠페인과,
     // 마감취소됐지만 라이브 집계가 비어(조회창 만료) 스냅샷으로 폴백하는 활성 캠페인이 공유한다.
@@ -726,37 +674,18 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 동결 기준은 마감(isActive)이 아니라 **정산 락**이다(오너 확정 2026-07-15): 판매마감은 되돌리는
       // 경우가 있고, 반품·구매확정 때문에 판매일정 후 ~10일은 정산대기로 변동 가능하다. 정산이 시작되면
       // 그때부터 확정이므로 창을 얼려 마감 스냅샷·정산 귀속(cachedProductOrderIds)과 어긋나지 않게 한다.
-      const salesWindow = resolveSalesCampaignWindow(camp.salesCampaigns);
-      // 딜 하나라도 정산에 들어갔으면 창 전체를 얼린다. 창은 주문캠페인당 하나뿐이라 늘리면 이미 정산 중인
-      // 딜의 귀속 주문까지 바뀌기 때문 — 정산 무결성 쪽으로 보수적으로 잡는다. 오너도 "정산시작이 들어가면
-      // 판매마감도 확정"이라며 회차 단위로 본다(실측상 한 캠페인의 딜들은 상태가 함께 움직인다).
-      const periodFrozenBySettlement = isCampaignPeriodFrozen(camp.salesCampaigns);
-      camp._periodMismatch = salesWindow?.hasPeriodMismatch ?? false;
-
-      const sameMs = (a: Date | string | null | undefined, b: Date | null) => {
-        const am = a ? new Date(a).getTime() : null;
-        const bm = b ? b.getTime() : null;
-        return am === bm;
-      };
-
-      if (salesWindow) {
-        const nextStart = new Date(salesWindow.startMs);
-        const nextEnd = salesWindow.endMs === null ? null : new Date(salesWindow.endMs);
-        // salePeriod가 아니라 창(startDate/endDate) 자체를 게이트로 쓴다 — 과거 salePeriod 문자열만
-        // 비교해서, 문자열이 같으면 startDate를 영영 안 쓰던 탓에 prod 전 캠페인의 startDate가 null로
-        // 남아 있었다(실측). 그 결과 컷오프가 문자열 폴백에만 의존했다.
-        const windowDiffers = !sameMs(camp.startDate, nextStart) || !sameMs(camp.endDate, nextEnd);
-
-        if (windowDiffers && !periodFrozenBySettlement) {
-          camp.startDate = nextStart;
-          camp.endDate = nextEnd;
-          camp._needsPeriodSyncToDB = true;
-        }
-        // 동결됐는데 판매관리 일정이 창과 다르다 = 운영자가 판매관리에서 기간을 고쳤지만 정산 확정이라
-        // 반영되지 않는 상태. 이걸 조용히 무시하면 "판매관리에서 종료일을 늘리세요" 안내를 따랐는데도
-        // 아무 일이 안 일어나는 최악의 무응답이 된다 — 배지로 드러내 운영자가 원인을 알게 한다.
-        camp._periodFrozenDrift = windowDiffers && periodFrozenBySettlement;
+      // 판정은 sale-window SSOT(`resolveLiveOrderCampaignWindow`) — 홈 「오늘 처리할 주문」 요약과 같은 창이다.
+      // 딜 하나라도 정산에 들어갔으면 창 전체를 얼린다(오너도 "정산시작이 들어가면 판매마감도 확정").
+      // 동결됐는데 판매관리 일정이 창과 다르면 배지(periodFrozenDrift)로 드러낸다 — 조용히 무시하면
+      // "판매관리에서 종료일을 늘리세요" 안내를 따랐는데도 아무 일이 안 일어나는 최악의 무응답이 된다.
+      const liveWindow = resolveLiveOrderCampaignWindow(camp);
+      camp._periodMismatch = liveWindow.periodMismatch;
+      if (liveWindow.needsPeriodSync) {
+        camp.startDate = liveWindow.startDate;
+        camp.endDate = liveWindow.endDate;
+        camp._needsPeriodSyncToDB = true;
       }
+      camp._periodFrozenDrift = liveWindow.periodFrozenDrift;
 
       // 집계 컷오프(SSOT). 종료는 반드시 KST 그 날 끝(23:59:59.999)까지 포함 — 스토어 API가 준 정밀
       // 판매종료시각(시:분 존재)은 그대로 존중하고, 날짜만 저장된 값은 KST 종일로 보정한다.
@@ -789,9 +718,8 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       recentOrders.forEach((order) => {
         if (!order || !camp.mappings) return;
 
-        // 개별 캠페인 판매 기간 내 주문인지 필터링 (결제일시 우선 기준)
-        const orderTimeStr = order.paymentDate || order.orderDate || order.orderCreateDate;
-        const orderTime = orderTimeStr ? new Date(orderTimeStr).getTime() : 0;
+        // 개별 캠페인 판매 기간 내 주문인지 필터링 (결제일시 우선 기준 — campaign-match SSOT)
+        const { orderTimeStr, orderTimeMs: orderTime } = resolveOrderPaymentTime(order);
         
         if (orderTime > 0 && (orderTime < campStart || orderTime > campEnd)) {
           // 판매기간 종료 후 들어온 발주 대상 주문은 별도 카운트(배지 신호). 이 캠페인 소속만
@@ -827,39 +755,14 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         const pName = order.productName || '';
         const oName = order.productOption || order.productOptionName || '';
 
-        // 매칭 판정은 mapping-match.ts SSOT(handler·closed-campaign-cache 공유).
-        // 유사도·정규화 substring·옵션 잡음제거 폴백을 한 표준형으로 수렴한다.
+        // 귀속 판정(캠페인명·productId 매칭 → 매핑 폴백 + 이웃 캠페인 양보)은 campaign-match SSOT
+        // (`resolveMainOrderAttribution`) — 홈 「오늘 처리할 주문」 요약과 같은 술어다. 매핑 매칭
+        // 자체는 mapping-match.ts SSOT(handler·closed-campaign-cache 공유).
+        // 이웃 양보의 창 조건이 핵심 — 한 링크의 상품명을 바꿔가며 셀러를 교체하는 순차 운영에서,
+        // 이름 변경 후 재싱크된 옛 주문은 상품명만 새 셀러 것이 된다. 창을 안 보면 옛 캠페인은 "새
+        // 셀러 것"이라며 양보하고 새 캠페인은 창 밖이라 걸러 **아무도 세지 않는다**(침묵 누락).
         // camp는 any라 매핑 원소 타입(campaignDealId·price 포함)을 보존하려 <any>로 호출한다.
-        const matchedMapping = pickBestMapping<any>(camp.mappings, pName, oName);
-
-        let isCampaignOrder = false;
-        let matchesCampName = false;
-
-        if (camp.productId && (order.productId != null || order.originalProductId != null)) {
-          // 원상품/채널 번호 어느 쪽이든 캠페인 productId와 맞을 때만 캠페인명 매칭 인정
-          if (orderMatchesCampaignProductId(order, camp.productId)) {
-            if (pName.includes(camp.name) || camp.name.includes(pName)) {
-              matchesCampName = true;
-            }
-          }
-        } else {
-          if (pName.includes(camp.name) || camp.name.includes(pName)) {
-            matchesCampName = true;
-          }
-        }
-
-        if (matchesCampName) {
-          isCampaignOrder = true;
-        } else if (matchedMapping) {
-          // 매핑 룰에 맞더라도, 상품명(pName)이 다른 활성 캠페인을 가리키고 **그 캠페인 창이 이
-          // 결제 시각을 담을 수 있으면** 그쪽 주문으로 간주(SSOT=campaign-match).
-          // 창 조건이 핵심 — 한 링크의 상품명을 바꿔가며 셀러를 교체하는 순차 운영에서, 이름 변경
-          // 후 재싱크된 옛 주문은 상품명만 새 셀러 것이 된다. 창을 안 보면 옛 캠페인은 "새 셀러
-          // 것"이라며 양보하고 새 캠페인은 창 밖이라 걸러 **아무도 세지 않는다**(침묵 누락).
-          if (!orderBelongsToPeerCampaign(pName, orderTime, peerCampaigns)) {
-            isCampaignOrder = true;
-          }
-        }
+        const { isCampaignOrder, matchedMapping } = resolveMainOrderAttribution<any>(order, camp, orderTime, peerCampaigns);
 
         if (isCampaignOrder) {
           // 이 캠페인에 귀속된 메인 품목의 productId를 기록 → 동일 productId의 추가구성상품 귀속에 사용
@@ -962,9 +865,18 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
             }
           }
 
-          // 파이프라인 버킷 판정: 네이버 상태 + 우리 발주요청 여부(poRequestedSet) 합성.
+          // 파이프라인 버킷 + 지연 경고 판정(order-work SSOT): 네이버 상태 + 우리 발주요청 여부 합성.
           // 배송대기 = 발주요청 메일 발송됨(order-fulfillment.ts 참조).
-          const bucket = deriveOrderPipelineBucket(status, order.placeOrderStatus, poRequestedSet.has(String(order.productOrderId || '')));
+          const _poId = String(order.productOrderId || '');
+          const _poAt = poRequestedMap.get(_poId) || null;
+          const work = classifyOrderWork({
+            productOrderStatus: status,
+            placeOrderStatus: order.placeOrderStatus,
+            poRequestedAt: _poAt,
+            orderTimeMs: orderTime,
+            nowMs,
+          });
+          const bucket = work.bucket;
           if (bucket === 'newBefore') {
             newOrderBeforeCount++;
             if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].newOrderBefore++;
@@ -972,20 +884,17 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
             newOrderAfterCount++;
             if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].newOrderAfter++;
             // 주문확인됐지만 발주요청·송장 전에서 오래 묵는 건 추적 — 발주요청 타임스탬프가 아직 없으므로
-            // 결제 시각(orderTime) 기준 경과. 경고(≥CONFIRM_DELAY_WARN_DAYS일)만 배지+팝오버(동일 집합).
-            if (orderTime > 0) {
-              const delayDays = Math.floor((nowMs - orderTime) / 86400000);
-              if (delayDays >= CONFIRM_DELAY_WARN_DAYS) {
-                confirmDelayDays[delayDays] = (confirmDelayDays[delayDays] || 0) + 1;
-                confirmOrders.push({
-                  productOrderId: String(order.productOrderId || ''),
-                  ordererName: order.ordererName || '',
-                  receiverName: order.shippingAddress?.name || '',
-                  optionName: resolveSalesReportOptionLabel(pName, oName),
-                  quantity: Number(order.quantity) || 1,
-                  paymentDate: orderTimeStr || null,
-                });
-              }
+            // 결제 시각(orderTime) 기준 경과. 경고(≥임계값)만 배지+팝오버(동일 집합).
+            if (work.delayDays != null) {
+              confirmDelayDays[work.delayDays] = (confirmDelayDays[work.delayDays] || 0) + 1;
+              confirmOrders.push({
+                productOrderId: String(order.productOrderId || ''),
+                ordererName: order.ordererName || '',
+                receiverName: order.shippingAddress?.name || '',
+                optionName: resolveSalesReportOptionLabel(pName, oName),
+                quantity: Number(order.quantity) || 1,
+                paymentDate: orderTimeStr || null,
+              });
             }
           } else if (bucket === 'pending') {
             pendingCount++;
@@ -993,44 +902,36 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
             if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].pending++;
             // 배송대기 지연 = 발주요청 후 경과(poRequestedAt) 기준(팝오버 '발주경과' 표시와 동일 클락).
             // 경고(≥임계값)만 카드 지연 배지 + 팝오버 목록에 함께 담는다(동일 집합, 파악 필요 건만).
-            const _poId = String(order.productOrderId || '');
-            const _poAt = poRequestedMap.get(_poId) || null;
             if (_poId) replyPendingKeys.add(_poId);
             if (order.orderId) replyPendingKeys.add(String(order.orderId));
             if (_poAt && (oldestPendingPoAtMs === null || _poAt.getTime() < oldestPendingPoAtMs)) oldestPendingPoAtMs = _poAt.getTime();
-            if (_poAt) {
-              const poDelayDays = Math.floor((nowMs - _poAt.getTime()) / 86400000);
-              if (poDelayDays >= PENDING_DELAY_WARN_DAYS) {
-                pendingDelayDays[poDelayDays] = (pendingDelayDays[poDelayDays] || 0) + 1;
-                pendingOrders.push({
-                  productOrderId: _poId,
-                  ordererName: order.ordererName || '',
-                  receiverName: order.shippingAddress?.name || '',
-                  optionName: resolveSalesReportOptionLabel(pName, oName),
-                  quantity: Number(order.quantity) || 1,
-                  paymentDate: orderTimeStr || null,
-                  poRequestedAt: _poAt.toISOString(),
-                });
-              }
+            if (work.delayDays != null && _poAt) {
+              pendingDelayDays[work.delayDays] = (pendingDelayDays[work.delayDays] || 0) + 1;
+              pendingOrders.push({
+                productOrderId: _poId,
+                ordererName: order.ordererName || '',
+                receiverName: order.shippingAddress?.name || '',
+                optionName: resolveSalesReportOptionLabel(pName, oName),
+                quantity: Number(order.quantity) || 1,
+                paymentDate: orderTimeStr || null,
+                poRequestedAt: _poAt.toISOString(),
+              });
             }
           } else if (bucket === 'shipping') {
             shippingCount++;
             if (!oldestShippingDate || orderTime < oldestShippingDate) oldestShippingDate = orderTime;
             if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].shipping++;
-            if (orderTime > 0) {
-              const delayDays = Math.floor((nowMs - orderTime) / 86400000);
-              // 배송 지연 경고(≥임계값)만 카드 배지 카운트 + 팝오버 목록에 함께 담는다(동일 집합).
-              if (delayDays >= SHIPPING_DELAY_WARN_DAYS) {
-                shippingDelayDays[delayDays] = (shippingDelayDays[delayDays] || 0) + 1;
-                shippingOrders.push({
-                  productOrderId: String(order.productOrderId || ''),
-                  ordererName: order.ordererName || '',
-                  receiverName: order.shippingAddress?.name || '',
-                  optionName: resolveSalesReportOptionLabel(pName, oName),
-                  quantity: Number(order.quantity) || 1,
-                  paymentDate: orderTimeStr || null,
-                });
-              }
+            // 배송 지연 경고(≥임계값)만 카드 배지 카운트 + 팝오버 목록에 함께 담는다(동일 집합).
+            if (work.delayDays != null) {
+              shippingDelayDays[work.delayDays] = (shippingDelayDays[work.delayDays] || 0) + 1;
+              shippingOrders.push({
+                productOrderId: String(order.productOrderId || ''),
+                ordererName: order.ordererName || '',
+                receiverName: order.shippingAddress?.name || '',
+                optionName: resolveSalesReportOptionLabel(pName, oName),
+                quantity: Number(order.quantity) || 1,
+                paymentDate: orderTimeStr || null,
+              });
             }
           } else if (bucket === 'completed') {
             completedCount++;
@@ -1043,13 +944,12 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 귀속된 경우에 한해 동일 캠페인 매출/집계에 합산한다. 메인 품목 경로는 위에서 그대로 처리되므로
       // 기존 매출 수치에는 영향이 없고(가산만), 그동안 누락되던 추가옵션만 더해진다.
       deferredAddons.forEach((order: any) => {
-        if (!order.productId || !campaignProductIds.has(String(order.productId))) return;
+        if (!addonBelongsToCampaign(order, campaignProductIds)) return;
 
         const status = order.productOrderStatus;
         const pName = order.productName || '';
         const oName = order.productOption || order.productOptionName || '';
-        const orderTimeStr = order.paymentDate || order.orderDate || order.orderCreateDate;
-        const orderTime = orderTimeStr ? new Date(orderTimeStr).getTime() : 0;
+        const { orderTimeStr, orderTimeMs: orderTime } = resolveOrderPaymentTime(order);
 
         // 추가옵션 매칭(딜)은 상태 무관으로 먼저 계산 — 취소 라인도 matchedLines에 세어 본품과 동일하게
         // '전부 취소돼 유효 0'과 '미매칭'을 구분한다. 유효주문 가산은 아래 유효 게이트에서 이 결과를 재사용.
@@ -1135,27 +1035,33 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
           }
         }
 
-        // 파이프라인 버킷 판정(추가구성 2차 패스도 본품과 동일 규칙 적용).
-        const bucket = deriveOrderPipelineBucket(status, order.placeOrderStatus, poRequestedSet.has(String(order.productOrderId || '')));
+        // 파이프라인 버킷 + 지연 경고 판정(추가구성 2차 패스도 본품과 같은 order-work SSOT).
+        const _poId = String(order.productOrderId || '');
+        const _poAt = poRequestedMap.get(_poId) || null;
+        const work = classifyOrderWork({
+          productOrderStatus: status,
+          placeOrderStatus: order.placeOrderStatus,
+          poRequestedAt: _poAt,
+          orderTimeMs: orderTime,
+          nowMs,
+        });
+        const bucket = work.bucket;
         if (bucket === 'newBefore') {
           newOrderBeforeCount++;
           if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].newOrderBefore++;
         } else if (bucket === 'newAfter') {
           newOrderAfterCount++;
           if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].newOrderAfter++;
-          if (orderTime > 0) {
-            const delayDays = Math.floor((nowMs - orderTime) / 86400000);
-            if (delayDays >= CONFIRM_DELAY_WARN_DAYS) {
-              confirmDelayDays[delayDays] = (confirmDelayDays[delayDays] || 0) + 1;
-              confirmOrders.push({
-                productOrderId: String(order.productOrderId || ''),
-                ordererName: order.ordererName || '',
-                receiverName: order.shippingAddress?.name || '',
-                optionName: resolveSalesReportOptionLabel(pName, oName),
-                quantity: Number(order.quantity) || 1,
-                paymentDate: orderTimeStr || null,
-              });
-            }
+          if (work.delayDays != null) {
+            confirmDelayDays[work.delayDays] = (confirmDelayDays[work.delayDays] || 0) + 1;
+            confirmOrders.push({
+              productOrderId: String(order.productOrderId || ''),
+              ordererName: order.ordererName || '',
+              receiverName: order.shippingAddress?.name || '',
+              optionName: resolveSalesReportOptionLabel(pName, oName),
+              quantity: Number(order.quantity) || 1,
+              paymentDate: orderTimeStr || null,
+            });
           }
         } else if (bucket === 'pending') {
           pendingCount++;
@@ -1163,44 +1069,36 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
           if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].pending++;
           // 배송대기 지연 = 발주요청 후 경과(poRequestedAt) 기준(팝오버 '발주경과' 표시와 동일 클락).
           // 경고(≥임계값)만 카드 지연 배지 + 팝오버 목록에 함께 담는다(동일 집합, 파악 필요 건만).
-          const _poId = String(order.productOrderId || '');
-          const _poAt = poRequestedMap.get(_poId) || null;
           if (_poId) replyPendingKeys.add(_poId);
           if (order.orderId) replyPendingKeys.add(String(order.orderId));
           if (_poAt && (oldestPendingPoAtMs === null || _poAt.getTime() < oldestPendingPoAtMs)) oldestPendingPoAtMs = _poAt.getTime();
-          if (_poAt) {
-            const poDelayDays = Math.floor((nowMs - _poAt.getTime()) / 86400000);
-            if (poDelayDays >= PENDING_DELAY_WARN_DAYS) {
-              pendingDelayDays[poDelayDays] = (pendingDelayDays[poDelayDays] || 0) + 1;
-              pendingOrders.push({
-                productOrderId: _poId,
-                ordererName: order.ordererName || '',
-                receiverName: order.shippingAddress?.name || '',
-                optionName: resolveSalesReportOptionLabel(pName, oName),
-                quantity: Number(order.quantity) || 1,
-                paymentDate: orderTimeStr || null,
-                poRequestedAt: _poAt.toISOString(),
-              });
-            }
+          if (work.delayDays != null && _poAt) {
+            pendingDelayDays[work.delayDays] = (pendingDelayDays[work.delayDays] || 0) + 1;
+            pendingOrders.push({
+              productOrderId: _poId,
+              ordererName: order.ordererName || '',
+              receiverName: order.shippingAddress?.name || '',
+              optionName: resolveSalesReportOptionLabel(pName, oName),
+              quantity: Number(order.quantity) || 1,
+              paymentDate: orderTimeStr || null,
+              poRequestedAt: _poAt.toISOString(),
+            });
           }
         } else if (bucket === 'shipping') {
           shippingCount++;
           if (!oldestShippingDate || orderTime < oldestShippingDate) oldestShippingDate = orderTime;
           if (dateStr && dailyMap[dateStr]) dailyMap[dateStr].shipping++;
-          if (orderTime > 0) {
-            const delayDays = Math.floor((nowMs - orderTime) / 86400000);
-            // 배송 지연 경고(≥임계값)만 카드 배지 카운트 + 팝오버 목록에 함께 담는다(동일 집합).
-            if (delayDays >= SHIPPING_DELAY_WARN_DAYS) {
-              shippingDelayDays[delayDays] = (shippingDelayDays[delayDays] || 0) + 1;
-              shippingOrders.push({
-                productOrderId: String(order.productOrderId || ''),
-                ordererName: order.ordererName || '',
-                receiverName: order.shippingAddress?.name || '',
-                optionName: resolveSalesReportOptionLabel(pName, oName),
-                quantity: Number(order.quantity) || 1,
-                paymentDate: orderTimeStr || null,
-              });
-            }
+          // 배송 지연 경고(≥임계값)만 카드 배지 카운트 + 팝오버 목록에 함께 담는다(동일 집합).
+          if (work.delayDays != null) {
+            shippingDelayDays[work.delayDays] = (shippingDelayDays[work.delayDays] || 0) + 1;
+            shippingOrders.push({
+              productOrderId: String(order.productOrderId || ''),
+              ordererName: order.ordererName || '',
+              receiverName: order.shippingAddress?.name || '',
+              optionName: resolveSalesReportOptionLabel(pName, oName),
+              quantity: Number(order.quantity) || 1,
+              paymentDate: orderTimeStr || null,
+            });
           }
         } else if (bucket === 'completed') {
           completedCount++;

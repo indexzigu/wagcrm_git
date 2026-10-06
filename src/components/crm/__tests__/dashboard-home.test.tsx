@@ -21,6 +21,12 @@ vi.mock("@/components/ui/chart", () => ({
   ChartTooltipContent: () => null,
 }));
 
+// 「오늘 처리할 주문」 카드는 자기 데이터를 react-query 로 따로 받는다(사이드바 배지와 공유 캐시) —
+// 카드 자체의 상태 계약은 order-work-card.test.tsx 가 본다. 여기서는 배치만 본다.
+vi.mock("../order-work-card", () => ({
+  OrderWorkCard: () => <section data-testid="order-work-card" />,
+}));
+
 vi.mock("@/components/ui/animated-number", () => ({
   AnimatedNumber: ({ value, format, decimalPlaces = 0, suffix = "" }: any) => {
     let display = String(value);
@@ -275,6 +281,14 @@ describe("DashboardHome", () => {
     render(<DashboardHome initialData={data()} />);
     expect(screen.getByText("활성 셀러 현황")).toBeInTheDocument();
     expect(screen.queryByText("셀러 베이스 모멘텀")).not.toBeInTheDocument();
+  });
+
+  // 발주 자동화 1단계(오너 승인 2026-10-06): 그날 손이 가야 하는 주문 일은 매출·일정보다 먼저 읽힌다.
+  it("「오늘 처리할 주문」 카드를 KPI 밴드보다 위, 첫 줄에 둔다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const card = screen.getByTestId("order-work-card");
+    const stack = container.querySelector("main > div.space-y-6");
+    expect(stack?.firstElementChild).toBe(card);
   });
 
   it("재계약 검토는 페이지 이동 없이 팝업으로 휴면 셀러 목록을 연다", () => {
