@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CampaignSidePanel } from "../campaign-side-panel";
 import type { ApiCallLogRow, AssetRow, CampaignRow, StorageSummary } from "@/lib/crm-types";
 
@@ -235,5 +235,123 @@ describe("부가 항목 — 대상이 곧 구간이다", () => {
     expect(screen.getByText("매입 부대비용 (브랜드사 정산 참조)")).toBeInTheDocument();
     // 반품배송비 −60,000 과 잡이익 +60,000 이 상계돼 조정 후 손익은 영업이익과 같다.
     expect(screen.getByText(/부가 항목 반영 후/)).toBeInTheDocument();
+  });
+});
+
+// 수동 정산 기준액(오너 확정 2026-10-06) — 읽기·편집 두 모드의 「정산 기준액」 줄.
+describe("정산 기준액 — 자동/수동", () => {
+  const MIXED_DEALS: CampaignRow["campaignDeals"] = [
+    { id: "cd-1", campaignId: "camp-1", dealId: "d-1", dealName: "품목 A", quantity: 1, actualSales: 20_000_000, sellerMarginRate: 10 },
+    { id: "cd-2", campaignId: "camp-1", dealId: "d-2", dealName: "품목 B", quantity: 1, actualSales: 18_900_000, sellerMarginRate: 15 },
+  ];
+
+  function modeButton(label: string, mode: "자동" | "수동") {
+    const row = (screen.getByLabelText(label) as HTMLInputElement).closest("div.grid") as HTMLElement;
+    return Array.from(row.querySelectorAll("button")).find((b) => b.textContent === mode)!;
+  }
+
+  it("읽기: 수동 기준액이면 그 값에 「수동」 태그, 설명은 직접 입력 문구다", async () => {
+    renderCard({ sellerFeeBasisOverride: 30_000_000 });
+    const baseRow = screen.getByText("정산 기준액").closest("div.grid");
+    expect(baseRow!.textContent).toContain("30,000,000원");
+    expect(screen.getByText("수동")).toBeInTheDocument();
+    expect(screen.queryByText("고정")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "정산 기준액 설명" }));
+    expect(
+      await screen.findByText("직접 입력한 금액입니다. 판매대행비는 이 금액 × 셀러 수수료율로 계산됩니다."),
+    ).toBeInTheDocument();
+  });
+
+  it("읽기: 저장된 기준액이 요율 혼합으로 적용되지 않으면 자동 기준 + 「고정」 + 안내 한 줄", () => {
+    renderCard({ sellerFeeBasisOverride: 30_000_000, campaignDeals: MIXED_DEALS });
+    const baseRow = screen.getByText("정산 기준액").closest("div.grid");
+    expect(baseRow!.textContent).not.toContain("30,000,000원");
+    expect(screen.getByText("고정")).toBeInTheDocument();
+    expect(
+      screen.getByText("품목별 수수료율이 달라져 이 기준액은 적용되지 않습니다. 자동으로 돌리거나 판매대행비를 수동 입력하세요."),
+    ).toBeInTheDocument();
+  });
+
+  it("편집: 자동이면 자동 기준액을 읽기 전용으로 보이고, 모드 버튼은 aria-pressed 로 상태를 말한다", () => {
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    const input = screen.getByLabelText("정산 기준액") as HTMLInputElement;
+    // 개인 셀러 자동 기준 = 공급가액 round(38,900,000 / 1.1)
+    expect(input.value).toBe(String(Math.round(38_900_000 / 1.1)));
+    expect(input.readOnly).toBe(true);
+    expect(modeButton("정산 기준액", "자동").getAttribute("aria-pressed")).toBe("true");
+    expect(modeButton("정산 기준액", "수동").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("편집: 수동 기준액을 입력하면 판매대행비·지급 총액·매출총이익·상단 타일이 바로 따라오고 곱셈 한 줄이 보인다", () => {
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(modeButton("정산 기준액", "수동"));
+    fireEvent.change(screen.getByLabelText("정산 기준액"), { target: { value: "30000000" } });
+
+    // 판매대행비 = round(30,000,000 × 12%) = 3,600,000
+    expect((screen.getByLabelText("판매대행비") as HTMLInputElement).value).toBe("3600000");
+    expect(screen.getByText(/판매대행비 = 기준액 × 12% =\s*3,600,000원/)).toBeInTheDocument();
+    // 매출총이익 = 영업수익 8,947,000 − 3,600,000
+    expect((screen.getByLabelText("매출총이익") as HTMLInputElement).value).toBe(String(8_947_000 - 3_600_000));
+    // 셀러 지급 총액은 lib SSOT 계산 — 판매대행비가 바뀌면 같이 바뀐다(원천세 합산 공제 후).
+    const payout = Number((screen.getByLabelText("셀러 지급 총액") as HTMLInputElement).value);
+    expect(payout).toBeLessThan(3_600_000 + 550_000);
+    expect(payout).toBeGreaterThan(3_000_000);
+    // 상단 타일
+    expect(screen.getAllByText("3,600,000원").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("편집: 수동 칸을 비워도 수동·편집 가능이 유지되고, 무효 값이면 오류 문구로 저장을 막는다(F1·F3)", async () => {
+    global.fetch = vi.fn();
+    renderCard();
+    // renderCard 가 fetch 를 덮으므로 렌더 뒤 감시용 목을 다시 건다.
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+    global.fetch = fetchSpy;
+    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(modeButton("정산 기준액", "수동"));
+    const input = () => screen.getByLabelText("정산 기준액") as HTMLInputElement;
+    fireEvent.change(input(), { target: { value: "" } });
+    expect(modeButton("정산 기준액", "수동").getAttribute("aria-pressed")).toBe("true");
+    expect(input().readOnly).toBe(false);
+    expect(input().getAttribute("aria-invalid")).toBe("true");
+    const error = screen.getByText("0 이상의 금액을 입력하세요");
+    expect(input().getAttribute("aria-describedby")).toBe(error.id);
+
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fireEvent.change(input(), { target: { value: "-5" } });
+    expect(screen.getByText("0 이상의 금액을 입력하세요")).toBeInTheDocument();
+    fireEvent.change(input(), { target: { value: "0" } });
+    expect(screen.queryByText("0 이상의 금액을 입력하세요")).toBeNull();
+    // 양성 대조: 유효해지면 저장이 실제로 요청된다(위 「미호출」이 목 고장이 아님을 확인).
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body ?? "{}"));
+    expect(body.sellerFeeBasisOverride).toBe(0);
+  });
+
+  it("편집: 적용 중이던 기준액을 자동으로 되돌리면 판매대행비 미리보기가 자동 기준액으로 바로 바뀐다(F2)", () => {
+    // 저장 판매대행비 4,668,000 은 기준액 기반 값이라 자동으로 되돌리면 낡은 값이다.
+    renderCard({ sellerFeeBasisOverride: 30_000_000 });
+    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(modeButton("정산 기준액", "자동"));
+    // 자동 기준(개인 공급가액) round(38,900,000/1.1) × 12%
+    expect((screen.getByLabelText("판매대행비") as HTMLInputElement).value).toBe(
+      String(Math.round((Math.round(38_900_000 / 1.1) * 12) / 100)),
+    );
+  });
+
+  it("편집: 품목별 셀러 수수료율이 다르면 「수동」은 aria-disabled + 이유 문단을 가리키고 클릭이 막힌다", () => {
+    renderCard({ campaignDeals: MIXED_DEALS });
+    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    const manual = modeButton("정산 기준액", "수동");
+    expect(manual.getAttribute("aria-disabled")).toBe("true");
+    expect(manual.hasAttribute("disabled")).toBe(false);
+    const reason = document.getElementById(manual.getAttribute("aria-describedby")!);
+    expect(reason?.textContent).toMatch(/품목마다 셀러 수수료율이 달라 정산 기준액을 직접 입력할 수 없습니다/);
+    fireEvent.click(manual);
+    expect((screen.getByLabelText("정산 기준액") as HTMLInputElement).readOnly).toBe(true);
   });
 });

@@ -12,7 +12,12 @@ import { googleDriveProvider, GOOGLE_DRIVE_PROVIDER } from "@/lib/asset-storage"
 import type { CampaignStatus, SalesChannel, SnsType } from "@/lib/crm-types";
 import { recalculateCampaignRounds } from "@/services/campaignRounds";
 import { pickShortLink } from "@/lib/order-converter/review-link";
-import { calculateDerivedCampaignFinancials, computeOperatingProfit, resolveIndividualWithholding } from "@/lib/campaign-financials";
+import {
+  calculateDerivedCampaignFinancials,
+  computeOperatingProfit,
+  resolveSellerFee,
+  resolveSellerFeeBasisEligibility,
+} from "@/lib/campaign-financials";
 import {
   isIndividualSeller,
   getSellerPayoutBase,
@@ -612,6 +617,13 @@ export const campaignService = {
 
       const resolvedSellerTaxType =
         data.sellerTaxType !== undefined ? data.sellerTaxType : previous.sellerTaxType;
+      // 수동 정산 기준액 — null 이 곧 자동(0 은 유효값이라 `!= null` 로만 판정).
+      const nextSellerFeeBasisOverride =
+        data.sellerFeeBasisOverride !== undefined
+          ? data.sellerFeeBasisOverride
+          : previous.sellerFeeBasisOverride != null
+            ? Number(previous.sellerFeeBasisOverride.toString())
+            : null;
 
       const derivedFinancials =
         nextActualSales == null
@@ -630,6 +642,7 @@ export const campaignService = {
               manualSettlementSales: nextSettlementSales,
               manualSellerExpense: nextSellerExpense,
               manualTaxExpense: nextTaxExpense,
+              sellerFeeBasisOverride: nextSellerFeeBasisOverride,
             });
 
       // 개별 품목(option)별 차등 수수료율 보정 로직 주입
@@ -680,19 +693,27 @@ export const campaignService = {
           if (!nextIsManualSettlementSales) {
             financials.settlementSales = calculatedTotalMarginSum;
           }
-          if (!nextIsManualSellerExpense) {
-            financials.sellerExpense = calculatedSellerExpenseSum;
-          }
+          // 판매대행비·원천세의 수동 층(수동 판매대행비 > 수동 기준액 > 자동)은
+          // `resolveSellerFee` 한 곳이 정한다 — 이 루프는 자동값(품목 합계)만 만든다.
+          const basisEligibility = resolveSellerFeeBasisEligibility({
+            deals: dealsList,
+            campaignSellerMarginRate: nextSellerMarginRate,
+          });
+          const fee = resolveSellerFee({
+            autoSellerExpense: calculatedSellerExpenseSum,
+            autoWithholdingSum: calculatedTaxExpenseSum,
+            sellerFeeBasisOverride: nextSellerFeeBasisOverride,
+            overrideSellerRate: basisEligibility.eligible ? basisEligibility.sellerRate : null,
+            isManualSellerExpense: Boolean(nextIsManualSellerExpense),
+            manualSellerExpense: nextSellerExpense,
+          });
+          financials.sellerExpense = fee.sellerExpense;
 
           const netCommission = financials.settlementSales - financials.sellerExpense;
 
           if (!nextIsManualTaxExpense) {
             financials.taxExpense = isIndividual
-              ? resolveIndividualWithholding({
-                  isManualSellerExpense: Boolean(nextIsManualSellerExpense),
-                  sellerExpense: financials.sellerExpense,
-                  autoWithholdingSum: calculatedTaxExpenseSum,
-                }) + Math.round(financials.settlementSales - (financials.settlementSales / 1.1))
+              ? fee.individualWithholding + Math.round(financials.settlementSales - (financials.settlementSales / 1.1))
               : Math.round(netCommission - (netCommission / 1.1));
           }
 
@@ -733,6 +754,7 @@ export const campaignService = {
           ...(data.isManualSettlementSales !== undefined ? { isManualSettlementSales: data.isManualSettlementSales } : {}),
           ...(data.isManualSellerExpense !== undefined ? { isManualSellerExpense: data.isManualSellerExpense } : {}),
           ...(data.isManualTaxExpense !== undefined ? { isManualTaxExpense: data.isManualTaxExpense } : {}),
+          ...(data.sellerFeeBasisOverride !== undefined ? { sellerFeeBasisOverride: data.sellerFeeBasisOverride } : {}),
           ...(data.startDate ? { startDate: new Date(data.startDate) } : {}),
           ...(data.endDate ? { endDate: new Date(data.endDate) } : {}),
           ...(data.roundNumber !== undefined ? { roundNumber: data.roundNumber } : {}),

@@ -52,6 +52,7 @@ import { ExecutionKanbanBoard } from "./execution-kanban-board";
 import { StageFilterBar } from "./stage-filter-bar";
 import { StageKanbanBoard } from "./stage-kanban-board";
 import { GroupedTableView } from "./grouped-table-view";
+import { resolveDisplaySellerFee } from "@/lib/campaign-financials";
 
 interface ViewSwitcherProps {
   viewMode: "kanban" | "table" | "report";
@@ -379,7 +380,13 @@ export function CrmDashboard({
       if (camp.status === "DROPPED" || camp.status === "SETTLEMENT_IN_PROGRESS" || camp.status === "COMPLETED") return;
       const actual = camp.actualSales || 0;
       const revenue = Math.floor(actual * (camp.totalMarginRate || 0) / 100);
-      const fee = Math.floor(actual * (camp.sellerMarginRate || 0) / 100);
+      // 수동 정산 기준액 캠페인은 기준액 × 단일 요율(저장 판매대행비와 같은 식) — SSOT 위임.
+      const fee = resolveDisplaySellerFee({
+        sellerFeeBasisOverride: camp.sellerFeeBasisOverride,
+        deals: camp.campaignDeals,
+        campaignSellerMarginRate: camp.sellerMarginRate,
+        autoFee: () => Math.floor(actual * (camp.sellerMarginRate || 0) / 100),
+      });
       const profit = revenue - fee;
       
       sumTotal += actual;

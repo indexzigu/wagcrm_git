@@ -363,6 +363,11 @@ export type CampaignRow = {
   /** 수기 물품대금(세무 대조 전용) — 0 = 타 캠페인 계산서에 합산됨 */
   settlementGoodsCost?: number | null;
   /**
+   * 수동 정산 기준액 — null·미지정 = 자동(판매대행비 기준 = 총 거래액 또는 공급가액),
+   * 숫자(0 포함) = 운영자가 입력한 기준액. 판정 SSOT `resolveSellerFee`(campaign-financials.ts).
+   */
+  sellerFeeBasisOverride?: number | null;
+  /**
    * 정산 부가 항목 — 「매출 × 요율」 파생 밖의 돈(부대비용·통과·잡이익).
    * 평소 빈 배열이 정상이다. 판정·합계 SSOT 는 `src/lib/settlement-items.ts`.
    * ⛔ 셀러 정산 기준·저장 손익 파생에 반영하지 않는다(불변식).

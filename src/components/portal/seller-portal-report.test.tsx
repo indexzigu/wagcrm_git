@@ -186,3 +186,80 @@ describe("SellerPortalReport", () => {
     expect(screen.getByText(/\d{2}:\d{2}:\d{2}/)).toBeTruthy();
   });
 });
+
+// 수동 정산 기준액 캠페인(오너 확정 2026-10-06) — 셀러 화면에는 합계(= 기준액) 한 값만 나간다.
+// 우리 판매분이 섞인 주문 파생 상세(일별·구성별 매출, 수량·주문 수, 유입 지표)는 비어서 오고,
+// 화면은 빈 칸·「-」·조정 안내 없이 합계 한 칸만 그린다. 금액은 가공이다(P0).
+describe("SellerPortalReport — 합계만 보이는 캠페인", () => {
+  function activeCampaign(salesCampaigns: Array<Record<string, unknown>>) {
+    const today = kstYmd(0);
+    const end = kstYmd(5).replace(/-/g, ".");
+    return {
+      id: "oc-basis",
+      name: "가을 공구",
+      salePeriod: `2026.07.01 ~ ${end}`,
+      isActive: true,
+      totalOrders: 20,
+      distinctOrderCount: 18,
+      totalQuantity: 25,
+      totalRevenue: 3_000_000,
+      dailyStats: [
+        { date: today, orders: 10, quantity: 12, revenue: 1_234_000, options: [{ name: "구성 A", price: 1, quantity: 12, revenue: 1_234_000 }] },
+      ],
+      insights: {
+        inflow: [{ path: "마케팅링크", orders: 7 }],
+        hourly: [{ hour: 20, orders: 5 }],
+        device: { mobile: 9, pc: 1, unknown: 0 },
+      },
+      salesCampaigns,
+    };
+  }
+
+  async function renderWith(salesCampaigns: Array<Record<string, unknown>>) {
+    mockFetch.mockResolvedValue({ headers: { get: () => null }, json: async () => [activeCampaign(salesCampaigns)] });
+    const ui = await SellerPortalReport({
+      seller: { id: "seller-1", name: "셀러", alias: null, currentFollowers: 1000 },
+      basePath: "/p/token",
+    });
+    return render(ui);
+  }
+
+  it("기준액이 적용되면 누적 매출(기준액) 한 칸만 — 오늘 매출·주문/수량·구성별·일자별·유입 지표 없음", async () => {
+    const { container } = await renderWith([
+      { id: "sc-1", sellerId: "seller-1", actualSales: 3_000_000, sellerFeeBasisOverride: 2_800_000, sellerMarginRate: 10 },
+    ]);
+    const text = container.textContent ?? "";
+    expect(screen.getByText("누적 매출")).toBeTruthy();
+    expect(text).toContain("2,800,000");
+    for (const hidden of ["3,000,000", "1,234,000", "오늘 매출", "주문 18건", "수량", "구성별 판매", "일자별 현황", "링크 유입", "시간대별 주문"]) {
+      expect(text).not.toContain(hidden);
+    }
+    // 머리 칸에는 「누적 매출 + 금액」만 — 자리표시 「-」·빈 칸 없음.
+    expect(screen.getByTestId("portal-headline").textContent).toBe("누적 매출2,800,000원");
+    for (const hint of ["기준액", "조정", "직접 입력", "수동"]) expect(text).not.toContain(hint);
+  });
+
+  it("기준액이 없으면 종전 그대로(오늘 매출·주문/수량·일자별 표시)", async () => {
+    const { container } = await renderWith([{ id: "sc-1", sellerId: "seller-1" }]);
+    const text = container.textContent ?? "";
+    expect(text).toContain("3,000,000");
+    expect(text).toContain("오늘 매출");
+    expect(text).toContain("주문 18건");
+    expect(text).toContain("일자별 현황");
+  });
+
+  it("품목 요율이 섞여 기준액이 적용되지 않으면 종전 그대로(writer 와 같은 판정)", async () => {
+    const { container } = await renderWith([
+      {
+        id: "sc-1",
+        sellerId: "seller-1",
+        actualSales: 3_000_000,
+        sellerFeeBasisOverride: 2_800_000,
+        sellerMarginRate: 10,
+        campaignDeals: [{ sellerMarginRate: 10 }, { sellerMarginRate: 20 }],
+      },
+    ]);
+    expect(container.textContent).toContain("3,000,000");
+    expect(container.textContent).not.toContain("2,800,000");
+  });
+});

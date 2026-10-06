@@ -16,6 +16,8 @@
  *
  * ```
  * 셀러 정산 기준 = actualSales × 셀러수수료율
+ *   (운영자가 수동 정산 기준액을 넣은 캠페인은 그 입력값 × 셀러수수료율 — 2026-10-06,
+ *    판정 SSOT `resolveSellerFee`. 부가 항목이 기준에 들어가지 않는다는 점은 그대로다)
  * ```
  *
  * 부가 항목은 **어떤 조합이라도 이 기준에 들어가지 않는다.** 셀러 대상 항목조차
@@ -217,7 +219,7 @@ export function sumSettlementItems(items: readonly SettlementItemInput[]): numbe
  * 셀러에게 **지급**하는 부가 항목의 세전 합.
  *
  * ⛔ 이 값은 셀러 정산 **기준액**이 아니다 — 기준액은 `actualSales × 셀러수수료율`
- * 하나뿐이고 이 합은 「지급 총액」에만 더해진다(불변식). 원천징수 대상 개인 셀러는
+ * (수동 정산 기준액이 있으면 그 입력값) 하나뿐이고 이 합은 「지급 총액」에만 더해진다(불변식). 원천징수 대상 개인 셀러는
  * 이 합까지 포함해 3.3% 를 **한 줄로 합산 공제**한다(오너 3차: 항목별 세후 표기를
  * 하면 실제 이체할 원천세 합계를 어디서도 못 읽는다).
  *
@@ -241,11 +243,22 @@ export function sumSellerPayoutItems(items: readonly SettlementItemInput[]): num
  * 찍으면서 「총 거래액」이라고 말하는 상태가 다시 만들어진다. 화면은 판정 함수를 직접
  * 부를 수 없다(계약 `settlement-statement-text.test.ts` — 기준·세율 계산은 lib 소관).
  */
+export const SELLER_FEE_BASIS_MANUAL_LABEL = "직접 입력한 금액입니다. 판매대행비는 이 금액 × 셀러 수수료율로 계산됩니다.";
+
 export function resolveSellerFeeBasis(
   actualSales: number,
   isIndividual: boolean,
-): { amount: number; label: string } {
+  /**
+   * 수동 정산 기준액(null·미지정 = 자동). 수동이면 입력값 **그대로**가 기준액이다 — 개인
+   * 셀러도 ÷1.1 하지 않는다(오너 확정 2026-10-06, 판정 SSOT `resolveSellerFee`).
+   */
+  sellerFeeBasisOverride?: number | null,
+): { amount: number; label: string; isManual: boolean } {
+  if (sellerFeeBasisOverride != null) {
+    return { amount: sellerFeeBasisOverride, label: SELLER_FEE_BASIS_MANUAL_LABEL, isManual: true };
+  }
   return {
+    isManual: false,
     amount: getSellerPayoutBase(actualSales, isIndividual),
     // 꼬리의 「부가 항목 무관」은 화면의 「고정」 태그가 무엇에 대해 고정인지를 말한다 —
     // 종전 도움말이 그 설명을 달고 있었고, 빼면 태그가 이유 없이 붙은 것으로 읽힌다

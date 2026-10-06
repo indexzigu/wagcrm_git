@@ -1,6 +1,7 @@
 import type { CampaignDealRow, CampaignRow } from "@/lib/crm-types";
 import { isIndividualSeller, getSellerPayoutBase, calcIndividualIncomeTax, calcBusinessVatBreakdown, computeIndividualWithholding } from "./seller-tax-utils";
-import { sumSellerPayoutItems } from "./settlement-items";
+import { resolveSellerFeeBasis, sumSellerPayoutItems } from "./settlement-items";
+import { resolveEffectiveSellerFeeBasis, sellerFeeFromBasis } from "./campaign-financials";
 import { sortDealRowsByName } from "./deal-sort";
 
 const YGRD_COMPANY = {
@@ -128,6 +129,55 @@ export function getStatementDeals(campaign: CampaignRow): CampaignDealRow[] {
       sellingPrice: campaign.deal?.sellingPrice ?? 0,
     },
   ];
+}
+
+/**
+ * 수동 정산 기준액 캠페인(오너 확정 2026-10-06) — 매출 일부를 우리가 직접 판 캠페인이라
+ * 총 거래액·공급가액(actualSales 파생)에는 **셀러 몫이 아닌 우리 매출이 섞여 있다.**
+ * ⛔ 셀러 문서에 그 총액을 싣지 말 것 — 이 캠페인은 「정산 기준액」 한 값(입력값 그대로)만
+ * 싣고, 판매대행비·원천세·지급액은 저장값에서 낸다. 조정 사실이나 우리 매출 금액을 드러내는
+ * 문구(「직접 입력」 등)도 셀러 문서에 쓰지 않는다.
+ * 기준액이 없는 캠페인은 종전 출력과 바이트 동일해야 한다(분기 전부가 이 함수로 갈린다).
+ *
+ * ⚠️ 「저장된」 기준액이 아니라 **적용되는** 기준액이다(`resolveEffectiveSellerFeeBasis`) —
+ * 품목 요율이 섞여 자격을 잃은 캠페인은 writer 가 자동값으로 저장하므로 명세서도 자동으로 낸다
+ * (기준액만 찍고 지급액은 자동인 불일치 금지).
+ */
+function getEffectiveBasis(campaign: CampaignRow): { basis: number; sellerRate: number } | null {
+  return resolveEffectiveSellerFeeBasis({
+    sellerFeeBasisOverride: campaign.sellerFeeBasisOverride,
+    deals: campaign.campaignDeals,
+    campaignSellerMarginRate: campaign.sellerMarginRate,
+  });
+}
+
+function getBasisOverride(campaign: CampaignRow): number | null {
+  return getEffectiveBasis(campaign)?.basis ?? null;
+}
+
+function getBasisOverrideRate(campaign: CampaignRow): number | null {
+  return getEffectiveBasis(campaign)?.sellerRate ?? null;
+}
+
+/**
+ * 수동 기준액 캠페인의 세전 판매대행비 — 저장값(writer 가 `resolveSellerFee` 로 확정)이
+ * 이기고, 저장값이 없을 때만 기준액 × 단일 요율로 낸다(자격이 없으면 null).
+ */
+function getBasisOverridePayout(campaign: CampaignRow): number | null {
+  if (campaign.sellerExpense != null) return Number(campaign.sellerExpense);
+  const basis = getBasisOverride(campaign);
+  const rate = getBasisOverrideRate(campaign);
+  return basis != null && rate != null ? sellerFeeFromBasis(basis, rate) : null;
+}
+
+/**
+ * 캠페인 1건의 「정산 기준액」 — 수동이면 입력값, 자동이면 세무 유형별 자동 기준
+ * (개인 = 공급가액 · 사업자 = 총 거래액). 명세서 합계의 「정산 기준액」 줄은 이 값의 합이라,
+ * 수동·자동 캠페인이 섞인 명세서에서도 각 캠페인 표의 기준 열 소계를 더한 값과 같다.
+ */
+function getStatementSellerFeeBasis(campaign: CampaignRow, isIndividual: boolean): number {
+  const totalSales = getStatementDeals(campaign).reduce((sum, deal) => sum + Number(deal.actualSales ?? 0), 0);
+  return resolveSellerFeeBasis(totalSales, isIndividual, getBasisOverride(campaign)).amount;
 }
 
 function getFullDealName(campaignName: string, dealName: string) {
@@ -263,7 +313,14 @@ export function preFlightValidateCampaigns(campaigns: CampaignRow[]): { errors: 
     }
     
     const sellerPayoutBase = getSellerPayoutBase(actualSales, isIndividual);
-    const calculatedSellerExpense = sellerPayoutBase * (sellerRate / 100);
+    // 수동 기준액 캠페인은 기준액 × 단일 요율이 계산값이다(writer 와 같은 식) — 총 거래액
+    // 기준으로 대조하면 정상 저장값이 매번 「차이남」 경고로 뜬다.
+    const basisOverride = getBasisOverride(campaign);
+    const basisOverrideRate = basisOverride != null ? getBasisOverrideRate(campaign) : null;
+    const calculatedSellerExpense =
+      basisOverride != null && basisOverrideRate != null
+        ? sellerFeeFromBasis(basisOverride, basisOverrideRate)
+        : sellerPayoutBase * (sellerRate / 100);
     if (campaign.sellerExpense != null && Math.abs(campaign.sellerExpense - calculatedSellerExpense) > 10) {
       warnings.push(`${prefix}판매 대행비 지출액(${formatCurrency(campaign.sellerExpense)})이 계산값(${formatCurrency(calculatedSellerExpense)})과 10원 이상 차이납니다.`);
     }
@@ -304,6 +361,9 @@ function buildRecipientHtml(recipient: SettlementRecipient) {
  * 이라 메일에서 빠져도 무해하다).
  */
 const STMT_COL_WIDTHS = ["34%", "9%", "6%", "12%", "7%", "10%", "10%", "12%"] as const;
+
+/** 수동 기준액 표의 품목명 열(= 위 앞 3열 품목명·판매가·수량 너비의 합 — 나머지 5열 뼈대 유지). */
+const STMT_NAME_SPAN_WIDTH = "49%";
 
 /**
  * 품목명 셀 — **줄바꿈 규칙이 이 티켓의 본체다.**
@@ -428,7 +488,83 @@ function stmtHeadCell(label: string, index: number) {
 const STMT_TOTAL_NUM_CELL =
   "padding: 8px; text-align: right; vertical-align: middle; font-variant-numeric: tabular-nums;";
 
+/**
+ * 수동 기준액 캠페인의 표 — 품목별 판매가·수량·총 거래액(우리 판매분이 섞인 값)을 싣지
+ * 않고 「정산 기준액」 한 줄로 낸다. 열 뼈대(8열)·서식 상수는 일반 표와 같다(표 모양 SSOT).
+ */
+function buildBasisOverrideCampaignHtml(campaign: CampaignRow, isIndividual: boolean, basis: number) {
+  const deals = getStatementDeals(campaign);
+  const rate = getBasisOverrideRate(campaign);
+  const payout = getBasisOverridePayout(campaign) ?? 0;
+  const itemName = deals.map((deal) => getFullDealName(campaign.dealName, deal.dealName)).join(", ");
+  const roundLabel = campaign.roundNumber ? ` (제${campaign.roundNumber}회차)` : "";
+  const rateCell = rate != null ? `${rate}%` : "";
+
+  let cells: string[];
+  if (isIndividual) {
+    const withholding = computeIndividualWithholding({
+      deals,
+      campaignSellerMarginRate: campaign.sellerMarginRate,
+      savedSellerExpense: payout,
+    });
+    cells = [
+      formatCurrency(withholding.preTaxPayout, true),
+      formatCurrency(withholding.withholdingTax, true),
+      formatCurrency(withholding.postTaxPayout, true),
+    ];
+  } else {
+    const { supply, vat } = calcBusinessVatBreakdown(payout);
+    cells = [formatCurrency(supply, true), formatCurrency(vat, true), formatCurrency(payout, true)];
+  }
+  // 판매가·수량 열은 **열 자체를 두지 않는다**(빈 칸·「-」는 무언가 지운 것처럼 보인다) —
+  // 품목명이 그 세 열 폭(colspan 3)을 차지하고 나머지 5열은 일반 표와 같은 뼈대·너비다.
+  const nameHead = `<th colspan="3" style="${STMT_HEAD_CELL_BASE} text-align: center; width: ${STMT_NAME_SPAN_WIDTH};">품목명</th>`;
+  const heads = isIndividual
+    ? ["정산 기준액", "수수료율", "판매대행비", "원천세", "차인지급액"]
+    : ["정산 기준액", "수수료율", "공급가액", "부가세액", "차인지급액"];
+  const sixthColor = isIndividual ? STMT_DEDUCTION_TEXT : "#334155";
+
+  return `
+    <div class="stmt-campaign-block" style="margin-top: 24px; padding-bottom: 8px;">
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 12px;">
+        <tr><td style="padding: 3px 0; color: ${isIndividual ? "#1e293b; font-weight: 700" : "#64748b; font-weight: 600"}; width: 80px;">캠페인명</td><td style="padding: 3px 0; color: #1e293b; font-weight: 700;">${escapeHtml(campaign.dealName)}${escapeHtml(roundLabel)}</td></tr>
+        <tr><td style="padding: 3px 0; color: #64748b; font-weight: 600;">진행 기간</td><td style="padding: 3px 0; color: #475569;">${escapeHtml(formatDate(campaign.startDate))} ~ ${escapeHtml(formatDate(campaign.endDate))}</td></tr>
+      </table>
+      <table style="width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; table-layout: fixed; margin-bottom: 16px;">
+        <thead>
+          <tr style="background-color: #f1f5f9; white-space: nowrap;">
+            ${nameHead}
+            ${heads.map((label, index) => stmtHeadCell(label, index + 3)).join("\n            ")}
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background-color: #ffffff;">
+            <td colspan="3" style="${STMT_NAME_CELL} color: #334155; border: 1px solid #e2e8f0;">${escapeHtml(itemName)}</td>
+            <td style="${STMT_NUM_CELL} color: #334155; border: 1px solid #e2e8f0;">${formatCurrency(basis, true)}</td>
+            <td style="${STMT_RATE_CELL} color: #334155; border: 1px solid #e2e8f0;">${rateCell}</td>
+            <td style="${STMT_NUM_CELL} color: #334155; border: 1px solid #e2e8f0;">${cells[0]}</td>
+            <td style="${STMT_NUM_CELL} color: ${sixthColor}; border: 1px solid #e2e8f0;">${cells[1]}</td>
+            <td style="${STMT_NUM_CELL} color: #1e293b; font-weight: 600; border: 1px solid #e2e8f0;">${cells[2]}</td>
+          </tr>
+          <tr style="background-color: #f8fafc; font-weight: 600;">
+            <td style="padding: 8px; vertical-align: middle; color: #334155; border: 1px solid #cbd5e1;" colspan="3">캠페인 소계</td>
+            <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${formatCurrency(basis, true)}</td>
+            <td style="padding: 8px; border: 1px solid #cbd5e1;"></td>
+            <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${cells[0]}</td>
+            <td style="${STMT_TOTAL_NUM_CELL} color: ${sixthColor}; border: 1px solid #cbd5e1;">${cells[1]}</td>
+            <td style="${STMT_TOTAL_NUM_CELL} color: #1e293b; border: 1px solid #cbd5e1;">${cells[2]}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function buildCampaignHtml(campaign: CampaignRow, isIndividual: boolean) {
+  const basisOverride = getBasisOverride(campaign);
+  if (basisOverride != null) {
+    return buildBasisOverrideCampaignHtml(campaign, isIndividual, basisOverride);
+  }
   const deals = getStatementDeals(campaign);
   const totalOrderCount = deals.reduce((sum, deal) => sum + deal.quantity, 0);
   const totalSales = deals.reduce((sum, deal) => sum + deal.actualSales, 0);
@@ -598,10 +734,23 @@ export type SettlementPayoutTotals = {
   /** 개인일 때만 의미 있음(법인은 0) */
   totalWithholdingTaxOnly: number;
   /**
+   * 수동 정산 기준액 캠페인이 하나라도 있는가 — 있으면 셀러 문서의 합계 첫 줄이
+   * 「총 거래액」 대신 「정산 기준액」(`totalSellerFeeBasis`)이 된다(우리 판매분이 섞인 총액 비노출).
+   */
+  hasSellerFeeBasisOverride: boolean;
+  /** 캠페인별 「정산 기준액」 합(수동 = 입력값, 자동 = 세무 유형별 자동 기준). */
+  totalSellerFeeBasis: number;
+  /**
+   * 수동 기준액 캠페인과 아닌 캠페인이 **섞였는가** — 섞이면 합계 줄 이름이
+   * 「정산 기준액 (캠페인별 기준 합계)」가 된다(자동 캠페인은 총 거래액·공급가액이 기준이라
+   * 한 단어로 부르면 합이 무엇의 합인지 셀러가 맞춰 볼 수 없다).
+   */
+  isMixedSellerFeeBasis: boolean;
+  /**
    * 대상=셀러인 **부가 항목**(광고비·제작비 등)의 세전 합. 0 이면 명세서에 줄을 만들지 않는다.
    *
    * ⛔ 이 값은 셀러 정산 **기준액**이 아니다 — 기준은 `actualSales × 셀러수수료율`
-   * 하나뿐이고(불변식) 이 합은 「지급 총액」에만 더해진다.
+   * (수동 정산 기준액이 있으면 그 입력값) 하나뿐이고(불변식) 이 합은 「지급 총액」에만 더해진다.
    */
   totalSettlementItemPayout: number;
 };
@@ -630,12 +779,24 @@ export function computeSettlementPayoutTotals(campaigns: CampaignRow[]): Settlem
   let totalPostTaxPayout = 0;
   let totalWithholdingTaxOnly = 0;
   let totalSettlementItemPayout = 0;
+  let hasSellerFeeBasisOverride = false;
+  let hasAutoSellerFeeBasis = false;
+  let totalSellerFeeBasis = 0;
 
   for (const campaign of campaigns) {
     const deals = getStatementDeals(campaign);
     totalSales += deals.reduce((sum, deal) => sum + Number(deal.actualSales ?? 0), 0);
+    totalSellerFeeBasis += getStatementSellerFeeBasis(campaign, isIndividual);
+    if (getBasisOverride(campaign) != null) hasSellerFeeBasisOverride = true;
+    else hasAutoSellerFeeBasis = true;
 
-    const savedSellerExpense = campaign.sellerExpense != null ? Number(campaign.sellerExpense) : null;
+    // 수동 기준액 캠페인은 저장값이 없을 때 품목 총액이 아니라 기준액 × 요율로 낸다.
+    const savedSellerExpense =
+      getBasisOverride(campaign) != null
+        ? getBasisOverridePayout(campaign)
+        : campaign.sellerExpense != null
+          ? Number(campaign.sellerExpense)
+          : null;
     const preTaxPayouts =
       savedSellerExpense !== null
         ? [savedSellerExpense]
@@ -678,7 +839,15 @@ export function computeSettlementPayoutTotals(campaigns: CampaignRow[]): Settlem
     totalPostTaxPayout,
     totalWithholdingTaxOnly,
     totalSettlementItemPayout,
+    hasSellerFeeBasisOverride,
+    totalSellerFeeBasis,
+    isMixedSellerFeeBasis: hasSellerFeeBasisOverride && hasAutoSellerFeeBasis,
   };
+}
+
+/** 합계 첫 줄 이름 — 혼합 명세서만 「(캠페인별 기준 합계)」를 붙인다. */
+function sellerFeeBasisSummaryLabel(totals: Pick<SettlementPayoutTotals, "isMixedSellerFeeBasis">) {
+  return totals.isMixedSellerFeeBasis ? "정산 기준액 (캠페인별 기준 합계)" : "정산 기준액";
 }
 
 /**
@@ -717,13 +886,18 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
       ? `\n- 별도 지급 항목 (광고비 등): ${won(totals.totalSettlementItemPayout)}  ※ 수수료 정산과 별개`
       : "";
 
+  // 수동 기준액 캠페인이 섞이면 총 거래액(우리 판매분 포함)을 싣지 않고 정산 기준액 합을 싣는다.
+  const salesLine = totals.hasSellerFeeBasisOverride
+    ? `- ${sellerFeeBasisSummaryLabel(totals)}: ${won(totals.totalSellerFeeBasis)}`
+    : `- 총 거래액: ${won(totals.totalSales)}`;
+
   return `
 [정산 명세서]
 정산 대상: ${recipient.label} (캠페인 ${campaigns.length}건)
 발행일: ${now.toISOString().slice(0, 10)}
 
 ■ 정산 합계
-- 총 거래액: ${won(totals.totalSales)}${itemLine}
+${salesLine}${itemLine}
 - 차인지급액: ${won(totals.totalPostTaxPayout)}
 ${breakdown}
 `.trim();
@@ -944,7 +1118,20 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
     totalPostTaxPayout,
     totalWithholdingTaxOnly,
     totalSettlementItemPayout,
+    hasSellerFeeBasisOverride,
+    totalSellerFeeBasis,
+    isMixedSellerFeeBasis,
   } = computeSettlementPayoutTotals(campaigns);
+
+  /**
+   * 합계 첫 줄 — 수동 기준액 캠페인이 하나라도 있으면 「정산 기준액」 한 줄(캠페인별 기준 열
+   * 소계의 합)로 바꾼다. 총 거래액·공급가액은 우리 판매분이 섞인 값이라 싣지 않는다.
+   * 없으면 아래 종전 줄 그대로(바이트 동일).
+   */
+  const basisSummaryRow = `<tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 8px 4px; color: #475569;">${sellerFeeBasisSummaryLabel({ isMixedSellerFeeBasis })}</td>
+        <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSellerFeeBasis)}</td>
+      </tr>`;
 
   const payoutDates = Array.from(
     new Set(
@@ -976,10 +1163,10 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
         <td style="padding: 8px 4px; color: #475569;">구분</td>
         <td style="padding: 8px 4px; text-align: right; color: #475569;">금액</td>
       </tr>
-      <tr style="border-bottom: 1px solid #e2e8f0;">
+      ${hasSellerFeeBasisOverride ? basisSummaryRow : `<tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 8px 4px; color: #475569;">총 거래액</td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSales)}</td>
-      </tr>
+      </tr>`}
       ${settlementItemRow}
       <tr style="border-bottom: 1px solid #e2e8f0; background-color: #f8fafc; font-weight: 700;">
         <td style="padding: 10px 4px; color: #1e293b; font-size: 13px;">차인지급액 (정산금)</td>
@@ -1002,14 +1189,14 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
         <td style="padding: 8px 4px; color: #475569;">구분</td>
         <td style="padding: 8px 4px; text-align: right; color: #475569;">금액</td>
       </tr>
-      <tr style="border-bottom: 1px solid #e2e8f0;">
+      ${hasSellerFeeBasisOverride ? basisSummaryRow : `<tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 8px 4px; color: #475569;">총 거래액</td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSales)}</td>
       </tr>
       <tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 8px 4px; color: #64748b; padding-left: 12px;">└ 공급가액</td>
         <td style="padding: 8px 4px; text-align: right; color: #475569;">${formatCurrency(Math.round(totalSales / 1.1))}</td>
-      </tr>
+      </tr>`}
       <tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 8px 4px; color: #475569;">판매 대행비 합계</td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalPreTaxPayout)}</td>

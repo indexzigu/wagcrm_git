@@ -1,7 +1,12 @@
 import { prisma } from '@/lib/order-converter/prisma';
 import fs from 'fs';
 import path from 'path';
-import { calculateDerivedCampaignFinancials, computeOperatingProfit, resolveIndividualWithholding } from '@/lib/campaign-financials';
+import {
+  calculateDerivedCampaignFinancials,
+  computeOperatingProfit,
+  resolveSellerFee,
+  resolveSellerFeeBasisEligibility,
+} from '@/lib/campaign-financials';
 import { isIndividualSeller, getSellerPayoutBase, calcIndividualIncomeTax } from '@/lib/seller-tax-utils';
 import { getDisplayDealName } from '@/lib/deal-display';
 import { countDistinctSellerIds, isCrossSellerSet, CROSS_SELLER_REJECT_MESSAGE } from '@/lib/cross-seller';
@@ -424,6 +429,11 @@ export async function recalculateSalesCampaignTotals(campaignId: string) {
   const nextTotalMarginRate = Number(campaign.totalMarginRate ?? 0);
   const nextSellerMarginRate = Number(campaign.sellerMarginRate ?? 0);
 
+  const manualSellerExpense = campaign.sellerExpense != null ? Number(campaign.sellerExpense) : null;
+  // 수동 정산 기준액 — 주문 동기화는 매출만 갱신하고 **운영자가 정한 기준액은 덮지 않는다**.
+  const sellerFeeBasisOverride =
+    campaign.sellerFeeBasisOverride != null ? Number(campaign.sellerFeeBasisOverride) : null;
+
   const derivedFinancials = calculateDerivedCampaignFinancials({
     actualSales: nextActualSales,
     operatingExpense: nextOperatingExpense,
@@ -435,9 +445,11 @@ export async function recalculateSalesCampaignTotals(campaignId: string) {
     isManualSettlementSales: campaign.isManualSettlementSales,
     isManualSellerExpense: campaign.isManualSellerExpense,
     isManualTaxExpense: campaign.isManualTaxExpense,
-    manualSettlementSales: campaign.settlementSales ? Number(campaign.settlementSales) : null,
-    manualSellerExpense: campaign.sellerExpense ? Number(campaign.sellerExpense) : null,
-    manualTaxExpense: campaign.taxExpense ? Number(campaign.taxExpense) : null,
+    // `!= null` 로 판정한다 — 종전 truthy 검사는 수동 0원을 null 로 접어 자동값으로 덮었다.
+    manualSettlementSales: campaign.settlementSales != null ? Number(campaign.settlementSales) : null,
+    manualSellerExpense: manualSellerExpense,
+    manualTaxExpense: campaign.taxExpense != null ? Number(campaign.taxExpense) : null,
+    sellerFeeBasisOverride,
   });
 
   let calculatedSellerExpenseSum = 0;
@@ -464,17 +476,27 @@ export async function recalculateSalesCampaignTotals(campaignId: string) {
   }
 
   if (!campaign.isManualSettlementSales) derivedFinancials.settlementSales = calculatedTotalMarginSum;
-  if (!campaign.isManualSellerExpense) derivedFinancials.sellerExpense = calculatedSellerExpenseSum;
+  // 판매대행비·원천세의 수동 층(수동 판매대행비 > 수동 기준액 > 자동)은 `resolveSellerFee`
+  // 한 곳이 정한다 — 편집 PATCH(campaignService)와 같은 함수다.
+  const basisEligibility = resolveSellerFeeBasisEligibility({
+    deals: dealsList,
+    campaignSellerMarginRate: nextSellerMarginRate,
+  });
+  const fee = resolveSellerFee({
+    autoSellerExpense: calculatedSellerExpenseSum,
+    autoWithholdingSum: calculatedTaxExpenseSum,
+    sellerFeeBasisOverride,
+    overrideSellerRate: basisEligibility.eligible ? basisEligibility.sellerRate : null,
+    isManualSellerExpense: Boolean(campaign.isManualSellerExpense),
+    manualSellerExpense,
+  });
+  derivedFinancials.sellerExpense = fee.sellerExpense;
 
   const netCommission = derivedFinancials.settlementSales - derivedFinancials.sellerExpense;
 
   if (!campaign.isManualTaxExpense) {
-    derivedFinancials.taxExpense = isIndividual 
-      ? resolveIndividualWithholding({
-          isManualSellerExpense: Boolean(campaign.isManualSellerExpense),
-          sellerExpense: derivedFinancials.sellerExpense,
-          autoWithholdingSum: calculatedTaxExpenseSum,
-        }) + Math.round(derivedFinancials.settlementSales - (derivedFinancials.settlementSales / 1.1)) 
+    derivedFinancials.taxExpense = isIndividual
+      ? fee.individualWithholding + Math.round(derivedFinancials.settlementSales - (derivedFinancials.settlementSales / 1.1))
       : Math.round(netCommission - (netCommission / 1.1));
   }
 

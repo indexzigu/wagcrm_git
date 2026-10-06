@@ -120,8 +120,21 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         // 정산 시작 이후엔 창을 얼린다)에 쓴다 — 빼면 sc.status=undefined라 락이 전부 false로 읽혀
         // 정산 중인 캠페인의 창까지 움직인다. startDate/endDate는 창 정본(판매관리)의 원천이다.
         // 넷 다 스칼라라 egress 영향은 무시 가능하다.
+        // actualSales·sellerFeeBasisOverride·요율은 셀러 포털(`toPortalCampaign`)이 수동 정산
+        // 기준액 캠페인을 합계만 보이게 하는 판정에 쓴다(오너 확정 2026-10-06). ⛔ 포털 페이로드로 그대로 내보내지 말 것(화이트리스트가 막는다).
         salesCampaigns: {
-          select: { id: true, sellerId: true, status: true, startDate: true, endDate: true }
+          select: {
+            id: true,
+            sellerId: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+            actualSales: true,
+            sellerFeeBasisOverride: true,
+            // 기준액 요율 자격 판정용(품목 요율이 섞이면 기준액이 적용되지 않는다) — 스칼라만.
+            sellerMarginRate: true,
+            campaignDeals: { select: { sellerMarginRate: true } },
+          }
         }
       }
     });

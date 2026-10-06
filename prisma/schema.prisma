@@ -265,6 +265,9 @@ model SalesCampaign {
   settlementSupplyCost    Decimal?
   /// 수기 물품대금 = 이 캠페인 앞 매입 계산서 합계(VAT 포함). 세무 대조 전용 — 손익 소비 금지.
   settlementGoodsCost     Decimal?
+  /// 수동 정산 기준액(판매대행비를 계산할 때 곱하는 금액) — null=자동, 숫자(0 포함)=수동 입력값 그대로.
+  /// 우선순위·요율 자격 SSOT: resolveSellerFee · resolveSellerFeeBasisEligibility(campaign-financials.ts).
+  sellerFeeBasisOverride  Decimal?
   supplierInvoiceIssuedAt DateTime?
   shippingFee             Decimal?
   freeShippingThreshold   Decimal?

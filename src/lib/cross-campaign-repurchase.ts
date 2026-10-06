@@ -1,6 +1,7 @@
 import { getPrisma } from "@/lib/prisma";
 import { INVALID_ORDER_STATUSES } from "@/lib/order-converter/group-orders";
 import { collectCampaignBuyerHashes, hashedBuyerKeyOf } from "@/lib/buyer-fingerprint";
+import { resolveEffectiveSellerFeeBasis } from "@/lib/campaign-financials";
 import {
   attributeOrders,
   endOfDayKstMs,
@@ -83,15 +84,44 @@ export type BuyerEventCollection = {
   eventsWithOrders: Set<number>;
 };
 
+/**
+ * 집계에서 **주문을 빼는** 판매캠페인 — 수동 정산 기준액이 적용 중인 캠페인(오너 확정 2026-10-06).
+ * 그 캠페인의 주문에는 우리가 직접 판 주문이 섞여 있어 셀러의 단골로 셀 수 없다. 판정은 writer 와
+ * 같은 `resolveEffectiveSellerFeeBasis`(요율이 섞여 적용되지 않는 기준액은 빼지 않는다).
+ * ⚠️ 캠페인 자체는 귀속 후보에 **남긴다** — 빼면 그 주문이 다른 캠페인으로 잘못 귀속될 수 있다.
+ * 귀속된 뒤에 버린다.
+ */
+export function resolveRepurchaseExcludedCampaignIds(
+  campaigns: ReadonlyArray<{
+    id: string;
+    sellerFeeBasisOverride?: number | string | { toString(): string } | null;
+    sellerMarginRate?: number | string | { toString(): string } | null;
+    campaignDeals?: ReadonlyArray<{ sellerMarginRate?: number | string | { toString(): string } | null }>;
+  }>,
+): Set<string> {
+  const excluded = new Set<string>();
+  for (const c of campaigns) {
+    const effective = resolveEffectiveSellerFeeBasis({
+      sellerFeeBasisOverride: c.sellerFeeBasisOverride,
+      deals: c.campaignDeals,
+      campaignSellerMarginRate: c.sellerMarginRate,
+    });
+    if (effective) excluded.add(c.id);
+  }
+  return excluded;
+}
+
 function collectBuyerEvents(
   campaigns: PulseSalesCampaignSource[],
   orders: PulseOrderLike[],
+  excludedCampaignIds: ReadonlySet<string> = new Set(),
 ): BuyerEventCollection {
   const eventOf = clusterCampaignEvents(campaigns);
   const buyerEvents = new Map<string, Set<number>>();
   const eventsWithOrders = new Set<number>();
 
   attributeOrders(campaigns, orders, (order, targetSc) => {
+    if (excludedCampaignIds.has(targetSc.id)) return; // 수동 기준액 캠페인 주문(우리 판매분 섞임)
     const status = order.productOrderStatus ?? "";
     if (INVALID_ORDER_STATUSES.includes(status)) return; // 결제대기·취소·반품·교환 제외
 
@@ -125,8 +155,10 @@ export function mergeFingerprintRows(
   collection: BuyerEventCollection,
   rows: BuyerFingerprintRow[],
   eventOf: Map<string, number>,
+  excludedCampaignIds: ReadonlySet<string> = new Set(),
 ): void {
   for (const row of rows) {
+    if (excludedCampaignIds.has(row.salesCampaignId)) continue; // 수동 기준액 캠페인 지문
     const event = eventOf.get(row.salesCampaignId);
     if (event === undefined) continue; // 집계 대상 캠페인 밖(방어)
     collection.eventsWithOrders.add(event);
@@ -166,10 +198,11 @@ export function computeCrossCampaignRepurchase(
   campaigns: PulseSalesCampaignSource[],
   orders: PulseOrderLike[],
   fingerprints: BuyerFingerprintRow[] = [],
+  excludedCampaignIds: ReadonlySet<string> = new Set(),
 ): CrossCampaignRepurchase {
-  const collection = collectBuyerEvents(campaigns, orders);
+  const collection = collectBuyerEvents(campaigns, orders, excludedCampaignIds);
   if (fingerprints.length > 0) {
-    mergeFingerprintRows(collection, fingerprints, clusterCampaignEvents(campaigns));
+    mergeFingerprintRows(collection, fingerprints, clusterCampaignEvents(campaigns), excludedCampaignIds);
   }
   return summarizeCrossCampaign(collection);
 }
@@ -294,12 +327,14 @@ export async function getSellerCrossCampaignRepurchase(
     include: {
       deal: { select: { dealName: true } },
       seller: { select: { name: true, alias: true } },
-      campaignDeals: { select: { id: true } },
+      // sellerMarginRate 는 수동 기준액 자격 판정용(`resolveRepurchaseExcludedCampaignIds`).
+      campaignDeals: { select: { id: true, sellerMarginRate: true } },
       orderCampaign: { include: { mappings: true } },
     },
   });
 
   const sources = campaigns.map(toCampaignSource);
+  const excludedCampaignIds = resolveRepurchaseExcludedCampaignIds(campaigns);
   const eligibleEvents = countCampaignEvents(sources);
 
   const empty: SellerCrossCampaignRepurchase = {
@@ -339,8 +374,8 @@ export async function getSellerCrossCampaignRepurchase(
 
   // 귀속 1패스를 공유해 셀러 전체 집계와 회차별 재구매 비율을 함께 낸다
   const eventOf = clusterCampaignEvents(sources);
-  const collection = collectBuyerEvents(sources, orders);
-  mergeFingerprintRows(collection, fingerprintRows, eventOf);
+  const collection = collectBuyerEvents(sources, orders, excludedCampaignIds);
+  mergeFingerprintRows(collection, fingerprintRows, eventOf, excludedCampaignIds);
   const core = summarizeCrossCampaign(collection);
   const perEvent = summarizeEventReturning(collection);
 

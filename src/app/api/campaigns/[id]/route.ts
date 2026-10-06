@@ -19,7 +19,10 @@ import {
   SETTLEMENT_COUNTERPARTIES,
   SETTLEMENT_INVOICE_MODES,
 } from "@/lib/settlement-items";
+import { resolveSellerFeeBasisEligibility } from "@/lib/campaign-financials";
 import {
+  SELLER_FEE_BASIS_CHANGE_LABEL,
+  describeSellerFeeBasisChange,
   resolveSettlementStates,
   diffCampaignChanges,
   resolveSettlementSync,
@@ -138,6 +141,8 @@ const updateCampaignSchema = z.object({
   settlementSupplyCost: z.coerce.number().nonnegative().nullable().optional(),
   // 수기 물품대금(세무 대조 전용) — 0 은 「타 캠페인 계산서에 합산됨」 마커라 유효값이다.
   settlementGoodsCost: z.coerce.number().nonnegative().nullable().optional(),
+  // 수동 정산 기준액 — null = 자동으로 되돌림, 0 이상 숫자 = 수동(0 은 「전량 자체 판매」라 유효값).
+  sellerFeeBasisOverride: z.coerce.number().nonnegative().nullable().optional(),
   /**
    * 정산 부가 항목 — **전체 교체**(보낸 배열이 곧 최종 상태, 생략하면 무변경).
    * 행이 몇 개 안 되는 목록이라 부분 패치보다 교체가 단순하고, 편집 모드가 통째로
@@ -223,6 +228,8 @@ export async function PATCH(request: Request, context: Context) {
 
   // Get auth context for authorization and notification logic
   const authContext = await getAuthContext();
+  // 활동 이력(CampaignActivity) 행위자 — 타임라인에 그대로 찍히므로 이메일로 남긴다.
+  const activityActor = authContext?.email ?? "SYSTEM";
 
   // Authorization: only admin role can change assignedTo
   if (data.assignedTo !== undefined) {
@@ -241,6 +248,25 @@ export async function PATCH(request: Request, context: Context) {
   });
   if (!previous) {
     return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+  }
+
+  // 수동 정산 기준액 자격(R4) — 저장 후 상태(이 요청이 바꾸는 품목·요율 반영)로 판정한다.
+  // 기준액을 새로 넣거나, 기준액이 있는 캠페인의 품목·요율을 바꿔 요율이 섞이면 거부한다.
+  // 무관한 저장은 막지 않는다(이미 저장된 상태를 이유로 다른 편집까지 잠그지 않는다).
+  const nextSellerFeeBasisOverride =
+    data.sellerFeeBasisOverride !== undefined ? data.sellerFeeBasisOverride : previous.sellerFeeBasisOverride;
+  const touchesSellerFeeBasis =
+    (data.sellerFeeBasisOverride !== undefined && data.sellerFeeBasisOverride !== null) ||
+    data.campaignDeals !== undefined ||
+    data.sellerMarginRate !== undefined;
+  if (nextSellerFeeBasisOverride != null && touchesSellerFeeBasis) {
+    const eligibility = resolveSellerFeeBasisEligibility({
+      deals: data.campaignDeals ?? previous.campaignDeals,
+      campaignSellerMarginRate: data.sellerMarginRate ?? previous.sellerMarginRate,
+    });
+    if (!eligibility.eligible) {
+      return NextResponse.json({ error: eligibility.reason }, { status: 400 });
+    }
   }
 
   // Determine if this is a handoff operation
@@ -447,14 +473,32 @@ export async function PATCH(request: Request, context: Context) {
     });
   }
 
-  // Handle non-handoff field changes
-  if (changedFields.length > 0) {
+  // 수동 정산 기준액은 금전 근거라 **이전값 → 새 값**을 따로 남긴다(모드 전환 포함).
+  if (changedFields.includes(SELLER_FEE_BASIS_CHANGE_LABEL)) {
     await recordCampaignActivity({
       campaignId: campaign.id,
-      action: "UPDATED",
-      label: "Campaign updated",
-      details: describeChangedFields(changedFields),
+      action: "SELLER_FEE_BASIS_UPDATED",
+      label: "정산 기준액",
+      details: describeSellerFeeBasisChange(previous.sellerFeeBasisOverride, data.sellerFeeBasisOverride),
+      actor: activityActor,
     });
+  }
+
+  // Handle non-handoff field changes
+  if (changedFields.length > 0) {
+    // 한 번의 변경 = 이력 한 건 — 정산 기준액은 위 전용 이력이 이미 남겼으므로 일반 목록에서 뺀다.
+    const genericChangedFields = changedFields.filter((field) => field !== SELLER_FEE_BASIS_CHANGE_LABEL);
+    if (genericChangedFields.length > 0) {
+      await recordCampaignActivity({
+        campaignId: campaign.id,
+        action: "UPDATED",
+        label: "Campaign updated",
+        details: describeChangedFields(genericChangedFields),
+        // 로그인 사용자를 남긴다 — 종전엔 actor 를 안 넘겨 모든 수정 이력이 "SYSTEM" 으로 찍혔다.
+        // 표기 관례는 정산 상태 라우트(`settlement-status`)와 같은 이메일이다.
+        actor: activityActor,
+      });
+    }
 
     // 수정 알림은 만들지 않는다 — 수정 이력의 정본은 위
     // recordCampaignActivity(ActivityLog)다(알림센터 해체, 2026-07-24).

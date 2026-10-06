@@ -61,3 +61,37 @@ describe('summarizeSellerSalesPerformance', () => {
     expect(s.avgSalesPerCampaign).toBe(1500);
   });
 });
+
+// 수동 정산 기준액(오너 확정 2026-10-06) — 기준액이 있는 캠페인은 실매출 대신 기준액을 센다.
+describe('summarizeSellerSalesPerformance — 수동 정산 기준액', () => {
+  it('기준액이 있으면 그 값, 없으면 실매출(Decimal 문자열 포함)', () => {
+    const s = summarizeSellerSalesPerformance([
+      { actualSales: 10_000, sellerFeeBasisOverride: 9_000, groupId: null },
+      { actualSales: 3_000, sellerFeeBasisOverride: null, groupId: null },
+      { actualSales: 5_000, sellerFeeBasisOverride: { toString: () => '4500' }, groupId: null },
+    ]);
+    expect(s.totalSales).toBe(9_000 + 3_000 + 4_500);
+    expect(s.effectiveWithSales).toBe(3);
+  });
+
+  it('기준액 0 이면 그 캠페인은 매출 0(실매출로 되돌아가지 않는다)', () => {
+    const s = summarizeSellerSalesPerformance([{ actualSales: 10_000, sellerFeeBasisOverride: 0, groupId: null }]);
+    expect(s.totalSales).toBe(0);
+    expect(s.avgSalesPerCampaign).toBeNull();
+  });
+});
+
+describe('summarizeSellerSalesPerformance — 적용되지 않는 기준액', () => {
+  it('품목 요율이 섞이면 저장된 기준액을 무시하고 실매출을 센다', () => {
+    const s = summarizeSellerSalesPerformance([
+      {
+        actualSales: 10_000,
+        sellerFeeBasisOverride: 9_000,
+        sellerMarginRate: 10,
+        campaignDeals: [{ sellerMarginRate: 10 }, { sellerMarginRate: 20 }],
+        groupId: null,
+      },
+    ]);
+    expect(s.totalSales).toBe(10_000);
+  });
+});

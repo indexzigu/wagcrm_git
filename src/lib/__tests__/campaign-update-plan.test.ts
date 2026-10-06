@@ -5,6 +5,8 @@ import {
   resolveSettlementSync,
   resolveReturnPeriodEndDate,
   resolveAutoStatus,
+  describeSellerFeeBasisChange,
+  SELLER_FEE_BASIS_CHANGE_LABEL,
   type CampaignUpdateData,
   type PreviousCampaignForUpdate,
 } from "@/lib/campaign-update-plan";
@@ -495,5 +497,27 @@ describe("diffCampaignChanges", () => {
     expect(changed).toContain("start date");
     expect(changed).toContain("end date");
     expect(changed).toContain("settlement goods cost");
+  });
+});
+
+// 수동 정산 기준액(오너 확정 2026-10-06) — 값 변경·모드 전환이 이력 라벨로 잡히고, 이력 문구가
+// 이전값과 새 값을 함께 말한다. 0 은 유효값이라 null(자동)과 구분된다.
+describe("수동 정산 기준액 이력", () => {
+  it("자동→수동·수동 값 변경·수동→자동을 전부 잡고, 같은 값·미전송은 잡지 않는다", () => {
+    const auto = basePrevious();
+    const manual = basePrevious({ sellerFeeBasisOverride: "9600000" });
+    const states = resolveSettlementStates({}, auto);
+    expect(diffCampaignChanges({ sellerFeeBasisOverride: 9_600_000 }, auto, states)).toContain(SELLER_FEE_BASIS_CHANGE_LABEL);
+    expect(diffCampaignChanges({ sellerFeeBasisOverride: 0 }, auto, states)).toContain(SELLER_FEE_BASIS_CHANGE_LABEL);
+    expect(diffCampaignChanges({ sellerFeeBasisOverride: 9_000_000 }, manual, states)).toContain(SELLER_FEE_BASIS_CHANGE_LABEL);
+    expect(diffCampaignChanges({ sellerFeeBasisOverride: null }, manual, states)).toContain(SELLER_FEE_BASIS_CHANGE_LABEL);
+    expect(diffCampaignChanges({ sellerFeeBasisOverride: 9_600_000 }, manual, states)).not.toContain(SELLER_FEE_BASIS_CHANGE_LABEL);
+    expect(diffCampaignChanges({}, manual, states)).not.toContain(SELLER_FEE_BASIS_CHANGE_LABEL);
+  });
+
+  it("이력 문구는 이전값 → 새 값(null = 자동)", () => {
+    expect(describeSellerFeeBasisChange(null, 9_600_000)).toBe("자동 → 수동 9,600,000원");
+    expect(describeSellerFeeBasisChange("9600000", 0)).toBe("수동 9,600,000원 → 수동 0원");
+    expect(describeSellerFeeBasisChange(0, null)).toBe("수동 0원 → 자동");
   });
 });

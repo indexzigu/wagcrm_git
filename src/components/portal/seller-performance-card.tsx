@@ -91,9 +91,10 @@ export async function SellerPerformanceCard({
       : [];
   const contentPerf = computeCampaignPerformance(postAssets, {
     followers: seller.currentFollowers,
-    actualSales: camp.totalRevenue,
-    itemCount: camp.totalQuantity,
-    orderCount: camp.distinctOrderCount, // 객단가(AOV) = 매출 ÷ 주문건수(distinct)
+    // 합계만 보이는 캠페인은 매출·수량·주문 수를 성과 계산에 넣지 않는다 → 객단가(AOV) 없음.
+    actualSales: camp.totalOnly ? null : camp.totalRevenue,
+    itemCount: camp.totalOnly ? null : camp.totalQuantity,
+    orderCount: camp.totalOnly ? null : camp.distinctOrderCount, // 객단가(AOV) = 매출 ÷ 주문건수(distinct)
   });
   const bestPost = contentPerf.posts[0] ?? null;
 
@@ -126,10 +127,13 @@ export async function SellerPerformanceCard({
           <div className="px-6 py-5 border-b border-slate-100 text-center">
             <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
             <div className="text-3xl font-bold text-slate-900 mt-1">{fmtWon(camp.totalRevenue)}</div>
-            <div className="text-xs text-slate-500 mt-1">
-              주문 {camp.distinctOrderCount.toLocaleString()}건 · 수량 {camp.totalQuantity.toLocaleString()}개
-              {soldDays > 0 && <> · {soldDays}일 판매</>}
-            </div>
+            {/* 합계만 보이는 캠페인(`totalOnly`)은 주문·수량 줄이 없다 — 페이로드에 값이 없다. */}
+            {!camp.totalOnly && (
+              <div className="text-xs text-slate-500 mt-1">
+                주문 {camp.distinctOrderCount.toLocaleString()}건 · 수량 {camp.totalQuantity.toLocaleString()}개
+                {soldDays > 0 && <> · {soldDays}일 판매</>}
+              </div>
+            )}
           </div>
 
           {/* 공유 카드 하이라이트 스탯 — 인디고→primary, PALETTE_IMPL_SPEC.md 2026-07-09 */}

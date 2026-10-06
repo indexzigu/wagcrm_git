@@ -249,7 +249,14 @@ function ActiveCampaignSection({
         )}
       </div>
 
-      {/* 헤드라인: 누적 + 오늘 */}
+      {/* 헤드라인: 누적 + 오늘. 합계만 보이는 캠페인(`totalOnly`)은 누적 매출 한 칸뿐이다 —
+          주문 파생 상세가 페이로드에 없으므로 그 자리에 빈 칸·「-」·안내 문구를 두지 않는다. */}
+      {camp.totalOnly ? (
+        <div data-testid="portal-headline" className="px-5 py-4 border-b border-slate-100">
+          <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
+          <div className="text-xl font-bold text-slate-900 mt-0.5">{fmtWon(camp.totalRevenue)}</div>
+        </div>
+      ) : (
       <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
         <div className="px-5 py-4">
           <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
@@ -276,6 +283,7 @@ function ActiveCampaignSection({
           </div>
         </div>
       </div>
+      )}
 
       {/* 강조 스탯: 링크 유입 · 재구매 고객 · 모바일 (인디고→primary, PALETTE_IMPL_SPEC.md 2026-07-09)
           재구매 고객 = 이 셀러의 앞선 회차/다른 캠페인 구매이력자 비율(cross-campaign-repurchase).
@@ -500,9 +508,10 @@ export async function SellerPortalReport({
       c.id,
       computeCampaignPerformance(posts, {
         followers: seller.currentFollowers,
-        actualSales: c.totalRevenue,
-        itemCount: c.totalQuantity,
-        orderCount: c.distinctOrderCount, // 객단가(AOV) = 매출 ÷ 주문건수(distinct)
+        // 합계만 보이는 캠페인은 매출·수량·주문 수를 성과 계산에 넣지 않는다 → 객단가(AOV) 없음.
+        actualSales: c.totalOnly ? null : c.totalRevenue,
+        itemCount: c.totalOnly ? null : c.totalQuantity,
+        orderCount: c.totalOnly ? null : c.distinctOrderCount, // 객단가(AOV) = 매출 ÷ 주문건수(distinct)
       }),
     );
   }

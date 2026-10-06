@@ -250,6 +250,8 @@ model SalesCampaign {
   returnPeriodEndDate     DateTime?
   settlementSupplyCost    Float?
   settlementGoodsCost     Float?
+  // 수동 정산 기준액(schema.prisma와 동기화) — null=자동. SSOT: resolveSellerFee(campaign-financials.ts)
+  sellerFeeBasisOverride  Float?
   supplierInvoiceIssuedAt DateTime?
   sellerInvoiceIssuedAt   DateTime?
   shippingFee             Float?

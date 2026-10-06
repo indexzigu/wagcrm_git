@@ -564,6 +564,7 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
       settlementSales: true,
       sellerExpense: true,
       taxExpense: true,
+      sellerFeeBasisOverride: true,
       isDepositReceived: true,
       isPayoutCompleted: true,
       deal: { select: { dealName: true } },
@@ -586,6 +587,11 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
     manualSettlementSales: toNullableNumber(campaign.settlementSales),
     manualSellerExpense: toNullableNumber(campaign.sellerExpense),
     manualTaxExpense: toNullableNumber(campaign.taxExpense),
+    // 수동 정산 기준액. ⚠️ 품목 요율 자격(`resolveEffectiveSellerFeeBasis`)은 여기서 판정하지 못한다 —
+    // 워커 role(`wag_agent_worker`)에는 CampaignDeal SELECT 권한이 없고(최소권한, AgentJob 마이그레이션
+    // GRANT 블록) 위 select 계약 테스트도 campaignDeals 조회를 금지한다. 요율이 섞인 상태의 기준액은
+    // 캠페인 PATCH 가 400 으로 막아 앱 경로로는 생기지 않으므로 저장값을 그대로 넘긴다.
+    sellerFeeBasisOverride: toNullableNumber(campaign.sellerFeeBasisOverride),
   });
   const summary = boundSummary(
     `get_campaign_financials campaign=${campaign.id} deal=${campaign.deal?.dealName ?? ""} seller=${campaign.seller?.name ?? ""} status=${campaign.status} actualSales=${toNumber(campaign.actualSales)} derived=${JSON.stringify(derived)} deposit=${campaign.isDepositReceived} payout=${campaign.isPayoutCompleted}`,

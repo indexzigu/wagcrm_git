@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSettlementReportModel,
   parseSettlementStatusFilter,
+  resolveCampaignNetMargin,
 } from "@/lib/settlement-report";
 
 describe("settlement-report", () => {
@@ -241,5 +242,37 @@ describe("settlement-report", () => {
       "SETTLEMENT_IN_PROGRESS",
       "COMPLETED",
     ]);
+  });
+});
+
+// 수동 정산 기준액(오너 확정 2026-10-06) — 저장 판매대행비가 없을 때의 폴백도 기준액 × 요율이다.
+describe("resolveCampaignNetMargin — 수동 정산 기준액 폴백", () => {
+  it("저장값이 없고 기준액이 있으면 판매대행비 = round(기준액 × 요율)", () => {
+    expect(
+      resolveCampaignNetMargin({
+        actualSales: 1_000_000,
+        totalMarginRate: 30,
+        sellerMarginRate: 10,
+        sellerFeeBasisOverride: 800_000,
+      }).sellerPayoutAmount,
+    ).toBe(80_000);
+  });
+
+  it("기준액이 없으면 종전 폴백(총 거래액 × 요율)", () => {
+    expect(
+      resolveCampaignNetMargin({ actualSales: 1_000_000, totalMarginRate: 30, sellerMarginRate: 10 }).sellerPayoutAmount,
+    ).toBe(100_000);
+  });
+
+  it("저장 판매대행비가 있으면 그 값이 이긴다", () => {
+    expect(
+      resolveCampaignNetMargin({
+        actualSales: 1_000_000,
+        totalMarginRate: 30,
+        sellerMarginRate: 10,
+        sellerExpense: 55_000,
+        sellerFeeBasisOverride: 800_000,
+      }).sellerPayoutAmount,
+    ).toBe(55_000);
   });
 });
