@@ -189,8 +189,11 @@ export default function SalesReportModal({
                             <td className="px-5 py-3 text-right text-xs text-slate-600 font-semibold">{opt.quantity.toLocaleString()}개</td>
                             <td className="px-5 py-3 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${opt.ratio}%` }}></div>
+                                {/* 트랙 = 전체 수량(100%) 기준선: slate-100(1.10:1) → slate-300. 구성(옵션)은 범주라
+                                    상태 hue 없이 중립 네이비(bg-primary, 트랙 대비 7.62) — 오너 결정 2026-10-06.
+                                    아래 일자별 표의 같은 막대와 함께 맞춘다. */}
+                                <div className="w-16 h-1.5 bg-slate-300 rounded-full overflow-hidden">
+                                  <div className="h-full bg-primary rounded-full" style={{ width: `${opt.ratio}%` }}></div>
                                 </div>
                                 <span className="text-xs font-bold text-slate-500 w-9 text-right">{opt.ratio.toFixed(1)}%</span>
                               </div>
@@ -258,8 +261,9 @@ export default function SalesReportModal({
                                 <td className="px-5 py-3 text-right text-xs text-slate-600 font-semibold">{(opt.quantity || opt.orders || 0).toLocaleString()}개</td>
                                 <td className="px-5 py-3 text-right">
                                   <div className="flex items-center justify-end gap-2">
-                                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${opt.ratio}%` }}></div>
+                                    {/* 위 전체 누적 표와 같은 트랙·채움(slate-300 / bg-primary, 대비 7.62). */}
+                                    <div className="w-16 h-1.5 bg-slate-300 rounded-full overflow-hidden">
+                                      <div className="h-full bg-primary rounded-full" style={{ width: `${opt.ratio}%` }}></div>
                                     </div>
                                     <span className="text-xs font-bold text-slate-500 w-9 text-right">{opt.ratio.toFixed(1)}%</span>
                                   </div>
