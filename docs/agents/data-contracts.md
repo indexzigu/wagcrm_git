@@ -64,7 +64,7 @@
   - **기간후 주문은 회차 성과에 포함한다(오너):** 그 건이 마무리돼야 정산이 시작되기 때문. 포함시키는
     방법은 **운영자가 판매관리에서 종료일을 늘리는 것**이고(자동 귀속 아님), 그 트리거는 기간 후 주문 배지
     (`postPeriodOrderCount`)다 — 배지가 뜨면 판매관리에서 늘린다 → 매출에 포함되고 배지가 사라진다.
-    발주서(`execute`)는 `시작일~now`로 **종료 필터가 없다** — 창을 안 늘리면 "발주엔 있고 매출엔 없는"
+    발주서(발주요청 `purchase-order` · 주문확인 `execute/stream`)는 `시작일~now`로 **종료 필터가 없다** — 창을 안 늘리면 "발주엔 있고 매출엔 없는"
     불일치가 되고 이게 과거 실사고(58 vs 발주 78)의 축이다.
   - **1:N은 표준이다(실측: 주문캠페인 1개에 딜별 판매캠페인 4~5개).** 창은 `min(시작)~max(종료)` 합성이고,
     기간이 서로 다르면 합성 창이 짧게 운영한 딜엔 정확하지 않다 — 오너 결정은 **"합성하되 어긋나면 경고"**
@@ -303,7 +303,8 @@
   INSTAGRAM 35행·YOUTUBE 1행, **NAVER 0행**). 그래서 "주문확인 1클릭이 몇 번 부르는가"를
   코드 상한 계산으로만 말할 수 있었다. SSOT는 `src/lib/order-converter/naver-api-usage.ts`.
   - **남기는 것 2종:** ① **오퍼레이션 요약 1행** — 운영자가 명시적으로 누른 작업
-    (`naver_op_confirm_order`=주문확인 · `naver_op_order_excel`=발주요청) 1회당 1행.
+    (`naver_op_confirm_order`=주문확인 · `naver_op_order_excel`=발주요청) 1회당 1행(발주요청은 2026-10-06부터
+    재수집 2행[preview·commit]·준비본 1행[commit] — `context.phase`).
     metadata 에 `logicalCalls`(조회 청크 수) · `httpAttempts`(401·429 재시도 포함) ·
     `rateLimitRetries` · `tokenRefreshes` · `skipped` · `byEndpoint` · `elapsedMs`.
     **조회 범위 최적화의 전후 비교는 이 행으로 한다.** ② **종국 실패 1행** —
@@ -442,7 +443,7 @@
     `ORDERED_DATETIME`·`PAYED_DATETIME`·`DISPATCHED_DATETIME`(#3551)·
     `CLAIM_COMPLETED_DATETIME`(#3440).
     - **1단계(PR #162): 발주서를 만드는 경로 2곳** — `order-fetch-window` →
-      주문확인(execute/stream)·발주요청(execute). 스냅샷 미접촉이라 집계 영향 0.
+      주문확인(execute/stream)·발주요청(구 execute, 2026-10-06 `purchase-order` 로 대체). 스냅샷 미접촉이라 집계 영향 0.
     - **2단계: 스냅샷 경로 3곳** — `runFullSync`(스냅샷 빌더)·`closed-campaign-cache`·
       `campaign-orders`. 착수 전 우려("귀속 기준이 갈려 재빌드 판단 필요")는 **기본값 실측
       확정으로 소멸**했다 — 같은 값을 명시하는 것이므로 동작 변화가 없다(아래 ✅).
@@ -508,7 +509,7 @@
 
 - **Pending-Order Fetch Window = order-fetch-window SSOT (2026-07-30):** 발주 대상 조회의
   창·청크·생략 판정은 `src/lib/order-converter/order-fetch-window.ts` 하나다. 주문확인
-  (`execute/stream`)·발주요청(`execute`) 두 라우트가 각자 사본을 갖고 있었고 **이미 어긋나
+  (`execute/stream`)·발주요청(구 `execute` → 현 `purchase-order`) 두 라우트가 각자 사본을 갖고 있었고 **이미 어긋나
   있었다**(상태 필터: stream 은 `PRODUCT_READY` 포함, execute 는 미포함 → 같은 캠페인에서
   발주서가 갈릴 수 있었다).
   - **청크는 KST 자정에 정렬한다(불변).** 종전엔 `startDate`(UTC 자정 = **KST 09:00**)에서
