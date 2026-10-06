@@ -467,9 +467,11 @@ export function IntegrationsDiagnostic({
                 </div>
               </div>
 
-              {/* 게이지 바 */}
+              {/* 게이지 바 — 트랙 = 무료 한도(100%)까지 남은 여유라 보여야 한다: slate-100(1.10:1) → slate-300.
+                  종전 테두리(slate-200/40)는 흐린 트랙 윤곽용이었는데 이제 트랙보다 연해 지웠다 — 테두리가 안쪽
+                  높이를 6px 로 줄여 h-2 채움이 잘리던 것도 함께 사라진다. 채움 indigo-600 은 트랙 대비 4.34. */}
               <div className="space-y-1">
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200/40">
+                <div className="w-full bg-slate-300 rounded-full h-2 overflow-hidden">
                   <div
                     className="w-full origin-left bg-indigo-600 h-2 rounded-full transition-transform duration-500"
                     style={{ transform: `scaleX(${Math.min(1, supabaseStats.supabaseEstimatedBytes / supabaseStats.supabaseLimitBytes)})` }}

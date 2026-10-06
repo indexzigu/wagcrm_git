@@ -194,8 +194,10 @@ function OptionRow({ o }: { o: { name: string; quantity: number; revenue: number
           {o.quantity.toLocaleString()}개 · {fmtWon(o.revenue)}
         </span>
       </div>
-      <div className="mt-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${o.ratio}%` }}></div>
+      {/* 트랙 = 이 캠페인 전체 판매(100%) 기준선 — slate-100 은 흰 표면 대비 1.10:1 로 사라져 slate-300 으로.
+          채움 blue-500 은 그 트랙 위 2.53 이라 한 단계 진한 blue-600(3.54)으로(값·데이터 무변경, 색만). */}
+      <div className="mt-1 h-1.5 bg-slate-300 rounded-full overflow-hidden">
+        <div className="h-full bg-blue-600 rounded-full" style={{ width: `${o.ratio}%` }}></div>
       </div>
     </div>
   );

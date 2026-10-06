@@ -588,7 +588,8 @@ export default function DelayDispatchModal({
             <p className="text-sm font-bold text-slate-700 text-center mb-4">
               지연 안내 등록 중… <span className="tabular-nums">{progress.done.toLocaleString()}/{progress.total.toLocaleString()}건</span>
             </p>
-            <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+            {/* 트랙 = 남은 건수: slate-100(흰 표면 1.10:1) → slate-300. 채움 네이비(bg-primary)는 트랙 대비 7.62. */}
+            <div className="relative h-2 w-full bg-slate-300 rounded-full overflow-hidden">
               <div
                 className="absolute top-0 left-0 h-full w-full origin-left rounded-full bg-primary transition-transform duration-300"
                 style={{ transform: `scaleX(${progress.total > 0 ? progress.done / progress.total : 0})` }}
