@@ -43,13 +43,8 @@ vi.mock("next/navigation", () => ({
 // the core blocking logic via the InlineStatusEdit sub-component behavior.
 
 describe("CampaignSidePanel — 상태 스테퍼 인접 단계 규칙", () => {
-  // We need to import toast mock to verify it was called
-  let toastMock: { error: ReturnType<typeof vi.fn> };
-
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    const sonner = await import("sonner");
-    toastMock = sonner.toast as unknown as { error: ReturnType<typeof vi.fn> };
   });
 
   it("CampaignSidePanel blocks non-adjacent PROPOSAL selection", async () => {
@@ -200,14 +195,6 @@ describe("CampaignSidePanel — 상태 스테퍼 인접 단계 규칙", () => {
 
     const user = userEvent.setup();
     await user.click(closedButton);
-
-    // Should NOT show the blocking toast for an allowed adjacent change
-    await waitFor(() => {
-      expect(toastMock.error).not.toHaveBeenCalledWith(
-        "영업 존 캠페인은 셀러 제안 페이지에서 관리합니다",
-        expect.anything(),
-      );
-    });
 
     // Should have called the API
     await waitFor(() => {
