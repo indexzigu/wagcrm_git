@@ -235,20 +235,22 @@ export default function CampaignCreateModal({
 
         <div className="flex-1 overflow-y-auto p-5">
           <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in">
-            <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex gap-4 items-center">
+            {/* 상품 요약은 정보 표면이라 무채색(P8 §1·§4) — 강조는 굵기로. 이 창에서 파랑은 저장 버튼·입력 포커스 같은
+                상호작용 색에만 남는다. 값 줄은 알파 글자 대신 slate-700(3차 글자 규칙). */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-4 items-center">
               {newThumbnailUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={newThumbnailUrl} alt="썸네일" className="w-16 h-16 rounded-lg object-cover border border-blue-200 shadow-soft-sm" />
+                <img src={newThumbnailUrl} alt="썸네일" className="w-16 h-16 rounded-lg object-cover border border-slate-200 shadow-soft-sm" />
               )}
               <div className="flex-1">
-                <p className="text-sm text-blue-900 font-bold mb-1 line-clamp-1">{newName}</p>
+                <p className="text-sm text-slate-900 font-bold mb-1 line-clamp-1">{newName}</p>
                 {/* 카테고리·판매기간 칩은 필드 이름표라 상태 의미가 없다 — 회색 칩(slate-100 위 slate-600, 6.90)으로 둔다
                     (P8 §4). 종전 blue·indigo 두 색은 같은 역할에 서로 다른 hue 였다. */}
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-800/80 mt-2 bg-white/60 p-2 rounded-md">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700 mt-2 bg-white/60 p-2 rounded-md">
                   <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">카테고리</span> {newCategory}</span>
                   <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">판매기간</span> {newSalePeriod}</span>
                   <span className="flex items-center gap-1 font-medium">
-                    <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                    <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
                     재고: <b>{stockQuantity.toLocaleString()}개</b>
                   </span>
                 </div>

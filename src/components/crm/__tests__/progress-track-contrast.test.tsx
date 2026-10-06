@@ -27,6 +27,7 @@ import EmailSendModal from "../shipping/modals/EmailSendModal";
 import type { InflowLinkRow } from "@/lib/inflow-report";
 import type { CampaignRow, SellerSummary } from "@/lib/crm-types";
 import type { SellerScores } from "@/lib/seller-analysis/scores";
+import { CampaignCountdown } from "@/components/portal/campaign-countdown";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -405,5 +406,43 @@ describe("남은 파랑·보라(5차)", () => {
     expect(src).toContain(`${chip}카테고리</span>`);
     expect(src).toContain(`${chip}판매기간</span>`);
     expect(src).not.toMatch(/bg-indigo-100|text-indigo-600/);
+  });
+});
+
+// 6차: 생성 창 상품 요약은 무채색 정보 표면(파랑은 저장 버튼·입력 포커스 같은 상호작용에만),
+// 셀러 포털 예정 카드의 오픈 배지는 판매중 카드처럼 기간 줄로 — 제목 줄에서 제목 폭을 깎지 않게.
+describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
+  it("캠페인 생성 창: 상품 요약 박스·제목·값·아이콘·썸네일 테두리가 무채색, 상호작용 파랑은 그대로", () => {
+    const src = sourceOf("crm/shipping/modals/CampaignCreateModal.tsx");
+    expect(src).toContain('<div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-4 items-center">');
+    expect(src).toContain('className="w-16 h-16 rounded-lg object-cover border border-slate-200 shadow-soft-sm"');
+    expect(src).toContain('<p className="text-sm text-slate-900 font-bold mb-1 line-clamp-1">{newName}</p>');
+    expect(src).toContain("text-xs text-slate-700 mt-2 bg-white/60 p-2 rounded-md");
+    expect(src).toContain('<svg className="w-3.5 h-3.5 text-slate-500" fill="none"');
+    expect(src).not.toMatch(/bg-blue-50|border-blue-100|border-blue-200|text-blue-900|text-blue-800|text-blue-500/);
+    // 상호작용 색(저장 CTA)은 범위 밖으로 유지된다.
+    expect(src).toContain("bg-blue-600");
+  });
+
+  it("셀러 포털 예정 카드: 제목 줄에는 배지가 없고, 오픈 배지는 줄바꿈되는 기간 줄에 있다", () => {
+    const src = sourceOf("portal/seller-portal-report.tsx");
+    const start = src.indexOf("function UpcomingCampaignSection");
+    const body = src.slice(start, src.indexOf("\n}\n", start));
+    const titleRow = body.slice(body.indexOf('<div className="flex items-start gap-2">'), body.indexOf("</h2>"));
+    expect(titleRow).toContain('<h2 className="min-w-0 break-words font-bold text-slate-700 text-sm">');
+    expect(body).not.toContain("ml-auto shrink-0");
+    const periodRow = body.slice(body.indexOf("</h2>"));
+    expect(periodRow).toContain('<div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">');
+    expect(periodRow).toContain("{opening && <TimingBadgeView badge={opening} />}");
+    // 판매중 카드의 기간 줄도 같은 줄바꿈 안전장치.
+    expect(src).toMatch(/<div className="flex flex-wrap items-center gap-x-1\.5 gap-y-1 mt-1">\s*<p className="text-\[11px\] text-slate-500">\{camp\.salePeriod\}<\/p>\s*\{deadline && <TimingBadgeView badge=\{deadline\} \/>\}/);
+    // 정적 배지는 알약 안에서 두 줄로 꺾이지 않는다.
+    expect(src).toContain("inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold border");
+  });
+
+  it("라이브 카운트다운 알약은 줄바꿈하지 않는다", () => {
+    render(<CampaignCountdown targetMs={Date.now() + 3_600_000} initialLabel="오픈까지 --:--:--" className="bg-primary/10" icon="clock" mode="open" />);
+    const pill = screen.getByLabelText(/오픈까지/);
+    expect(pill.className).toContain("whitespace-nowrap");
   });
 });
