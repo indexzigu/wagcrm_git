@@ -173,8 +173,11 @@ function HourlyChart({ hourly }: { hourly: { hour: number; orders: number }[] })
     <div role="img" aria-label={summary} className="flex items-end gap-[3px] h-24">
       {hourly.map((h) => (
         <div key={h.hour} className="flex-1 h-full flex flex-col items-center justify-end gap-1">
+          {/* 단일 계열 분포라 상태 hue 없이 차트 네이비(--chart-1) 60% 단색 — 흰 표면 3.59(1.4.11 통과, 종전
+              blue-400 2.64 미달). 아래 「구성별 판매」 네이비 100% 막대보다 한 단계 약하게 둬 위계를 지킨다
+              (시간대 시안 선례: intraday-hour-heatmap 의 chart-1 알파). 0건 시간대는 2px slate-100 기준선 그대로. */}
           <div
-            className={`w-full rounded-t ${h.orders > 0 ? "bg-blue-400" : "bg-slate-100"}`}
+            className={`w-full rounded-t ${h.orders > 0 ? "bg-chart-1/60" : "bg-slate-100"}`}
             style={{ height: `${Math.max(h.orders > 0 ? 4 : 2, Math.round((h.orders / max) * 72))}px` }}
           ></div>
           <span aria-hidden="true" className="text-[10px] text-slate-500 leading-none">{h.hour % 6 === 0 ? h.hour : ""}</span>
@@ -374,12 +377,13 @@ function ActiveCampaignSection({
                   <td className="py-1.5 text-slate-600">{d.date.slice(5).replace("-", ".")}</td>
                   <td className="py-1.5 text-right text-slate-600">{d.orders.toLocaleString()}</td>
                   <td className="py-1.5 text-right text-slate-600">{d.quantity.toLocaleString()}</td>
-                  {/* 매출 셀: 정확한 숫자는 그대로 읽히고, 배경 바로 매출 흐름이 눈에 보이게(무JS) */}
+                  {/* 매출 셀: 정확한 숫자는 그대로 읽히고, 배경 바로 매출 흐름이 눈에 보이게(무JS).
+                      배경 바는 같은 차트 네이비 10% 단색(폭이 크기) — 숫자 slate-800 이 그 위 12.31. */}
                   <td className="relative py-1.5 text-right font-bold text-slate-800">
                     {maxDailyRevenue > 0 && (
                       <div
                         aria-hidden="true"
-                        className="absolute inset-y-0.5 right-0 bg-blue-500/10 rounded-l-sm"
+                        className="absolute inset-y-0.5 right-0 bg-chart-1/10 rounded-l-sm"
                         style={{ width: `${(d.revenue / maxDailyRevenue) * 100}%` }}
                       ></div>
                     )}
