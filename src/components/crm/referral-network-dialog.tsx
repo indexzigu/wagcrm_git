@@ -65,9 +65,14 @@ export function ReferralNetworkDialog({
                       </span>
                       <span className="text-muted-foreground">{b.count}명</span>
                     </div>
-                    <div className="mt-0.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    {/* 트랙 = 전체 셀러(100%) 기준선 — slate-100(1.10:1)은 사라져 slate-300 으로.
+                        유입 경로는 좋고 나쁨이 없는 범주라 상태 hue 를 받지 않는다(P8 §4). 핵심 채널인 「소개」만
+                        브랜드 네이비(bg-primary — 과세기준매출 카드의 여유 막대와 같은 중립 강조)로 띄우고, 나머지는
+                        slate-500. 트랙 대비 네이비 7.62 · slate-500 3.21. 종전 emerald 는 「들어온 돈」(--money-in-text)
+                        색과 겹쳐 오너 결정(2026-10-06)으로 바꿨다 — emerald 로 되돌리지 말 것. */}
+                    <div className="mt-0.5 h-1.5 rounded-full bg-slate-300 overflow-hidden">
                       <div
-                        className={b.channel === "REFERRAL" ? "h-full rounded-full bg-emerald-500" : "h-full rounded-full bg-slate-400"}
+                        className={b.channel === "REFERRAL" ? "h-full rounded-full bg-primary" : "h-full rounded-full bg-slate-500"}
                         style={{ width: `${pct}%` }}
                       />
                     </div>

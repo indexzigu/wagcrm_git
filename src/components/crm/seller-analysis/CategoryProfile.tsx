@@ -12,11 +12,15 @@ interface CategoryProfileProps {
   affinities: CategoryAffinity[];
 }
 
-/** 점수별 바 색상: ≥70 emerald / ≥40 amber / >0 rose / 0 slate */
+/**
+ * 점수별 바 색상: ≥70 emerald / ≥40 amber / >0 rose / 0 slate.
+ * 트랙(100점까지 남은 구간)이 slate-300 이라 채움은 그 위 3:1 을 지키는 명도로 둔다 —
+ * 500 단계는 1.66 / 1.45 / 2.53 으로 묻혀 700 단계(3.62 / 3.40 / 4.08)로 맞췄다(rose-600 은 3.04 로 여유 없음).
+ */
 function barColor(score: number): string {
-  if (score >= 70) return 'bg-emerald-500';
-  if (score >= 40) return 'bg-amber-500';
-  if (score > 0) return 'bg-rose-500';
+  if (score >= 70) return 'bg-emerald-700';
+  if (score >= 40) return 'bg-amber-700';
+  if (score > 0) return 'bg-rose-700';
   return 'bg-slate-300';
 }
 
@@ -48,7 +52,7 @@ export function CategoryProfile({ affinities }: CategoryProfileProps) {
                 )}
               </span>
               <div
-                className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden"
+                className="flex-1 h-1.5 bg-slate-300 rounded-full overflow-hidden"
                 role="progressbar"
                 aria-valuenow={a.score}
                 aria-valuemin={0}
