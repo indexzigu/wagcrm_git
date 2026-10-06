@@ -19,7 +19,9 @@
 // 진하게 하고, 채움 대 트랙은 네이비 7.62 · caution 3.38 · **urgent 3.16** 으로 3:1 을 지킨다.
 // ⚠️ urgent 여유는 0.16 뿐이다 — 채움을 더 연하게 하거나 트랙을 더 진하게(slate-400: urgent 1.83) 하지 말 것.
 // shadow-inner 는 붙이지 않는다: 오목 홈의 윗줄(검정 5%)에서 urgent 대비가 2.83 으로 3:1 아래로 떨어진다.
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type PointerEvent, type ReactNode } from "react";
 import { Info, Landmark } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -64,28 +66,43 @@ const STATUS_TONE: Record<TaxableRevenueStatus, { value: string; bar: string }> 
  * 숫자 위에 마우스를 올리거나 포커스하면 근거 패널이 뜬다. 트리거가 버튼인 것은 **읽기**라도
  * 키보드로 열 수 있어야 해서다(`settlement-selection-bar` 선례). 점선 밑줄 = 「근거가 숨어 있다」 표지.
  * ⛔ 트리거에 `aria-label` 을 달지 말 것 — 자식 텍스트(실제 숫자)를 덮어써 스크린리더가 금액을 못 듣는다.
+ *
+ * 터치: Radix HoverCard 는 터치의 pointerenter 를 무시하고 touchstart 기본 동작을 막아 click 도 오지 않는다.
+ * 그래서 터치스크린 PC 에서는 근거에 닿을 길이 없었다(GPT 리뷰 지적) — 터치 pointerdown 에서 직접 연다.
+ * 닫기는 패널 밖을 탭하면 Radix 의 바깥 누름 처리가 맡는다.
  */
 function DetailHover({
   srPrefix,
   trigger,
   children,
   testId,
+  variant = "value",
   className,
 }: {
   srPrefix: string;
   trigger: ReactNode;
   children: ReactNode;
   testId: string;
+  /** value = 점선 밑줄 숫자 · icon = 24px 아이콘 버튼(ⓘ) */
+  variant?: "value" | "icon";
   className?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const openOnTouch = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "touch") setOpen(true);
+  };
   return (
-    <HoverCard>
+    <HoverCard open={open} onOpenChange={setOpen}>
       <HoverCardTrigger asChild>
         <button
           type="button"
           data-testid={testId}
+          onPointerDown={openOnTouch}
           className={cn(
-            "min-h-6 cursor-help rounded-sm text-left underline decoration-slate-400 decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring",
+            "cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring",
+            variant === "value"
+              ? "min-h-6 text-left underline decoration-slate-400 decoration-dotted underline-offset-4"
+              : "flex size-6 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground",
             className,
           )}
         >
@@ -200,38 +217,32 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
   return (
     <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0" data-testid="taxable-revenue-card">
       <CardContent className="px-4 py-3">
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+        {/* flex-wrap: 창을 줄여 폭이 모자라면 갱신일·등급이 다음 줄로 내려간다(P5 — 데스크톱은 폭과 무관하게 유지). */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-100 pb-2">
           <Landmark className="size-4 shrink-0 text-[var(--primary)]" aria-hidden />
           <p className="shrink-0 text-[13px] font-semibold tracking-tight text-[var(--primary)]">
             네이버 판매자 등급 · 과세기준매출
           </p>
-          <HoverCard>
-            <HoverCardTrigger asChild>
-              <button
-                type="button"
-                data-testid="taxable-revenue-basis"
-                className="flex size-6 shrink-0 cursor-help items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
-              >
-                <Info className="size-3.5" aria-hidden />
-                <span className="sr-only">추정 근거</span>
-              </button>
-            </HoverCardTrigger>
-            <HoverCardContent className="w-80 p-3">
-              <p className="text-xs font-semibold text-foreground">CRM 캠페인 기준 추정치</p>
-              <DetailRow label="기준기간" value={tracker.referencePeriod.label} />
-              <DetailRow label="현재 등급 근거" value={`${tracker.previousGradeUpdate.referencePeriod.label} 누적`} />
-              <DetailRow label="금액 단위" value="공급가액 (VAT 제외)" />
-              <DetailNote>
-                {assumed ? "8월 갱신 기준기간은 원문 미확인 가정입니다. " : ""}
-                현재 등급은 직전 갱신(
-                {dotted(tracker.previousGradeUpdate.updateYmd)}) 기준기간의 CRM 누적으로 추정했습니다. CRM 밖
-                매출·반품은 반영되지 않습니다.
-                {tracker.pendingCount > 0 ? ` 진행·예정 캠페인은 매출이 들어오면 여유가 더 줄어듭니다.` : ""}
-                {tracker.missingAmountCount > 0 ? ` 금액 미입력 건은 합계에서 빠져 있습니다.` : ""}
-              </DetailNote>
-            </HoverCardContent>
-          </HoverCard>
-          <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+          <DetailHover
+            srPrefix="추정 근거"
+            testId="taxable-revenue-basis"
+            variant="icon"
+            trigger={<Info className="size-3.5" aria-hidden />}
+          >
+            <p className="text-xs font-semibold text-foreground">CRM 캠페인 기준 추정치</p>
+            <DetailRow label="기준기간" value={tracker.referencePeriod.label} />
+            <DetailRow label="현재 등급 근거" value={`${tracker.previousGradeUpdate.referencePeriod.label} 누적`} />
+            <DetailRow label="금액 단위" value="공급가액 (VAT 제외)" />
+            <DetailNote>
+              {assumed ? "8월 갱신 기준기간은 원문 미확인 가정입니다. " : ""}
+              현재 등급은 직전 갱신(
+              {dotted(tracker.previousGradeUpdate.updateYmd)}) 기준기간의 CRM 누적으로 추정했습니다. CRM 밖 매출·반품은
+              반영되지 않습니다.
+              {tracker.pendingCount > 0 ? ` 진행·예정 캠페인은 매출이 들어오면 여유가 더 줄어듭니다.` : ""}
+              {tracker.missingAmountCount > 0 ? ` 금액 미입력 건은 합계에서 빠져 있습니다.` : ""}
+            </DetailNote>
+          </DetailHover>
+          <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-muted-foreground">
             다음 갱신 <span className="font-medium text-foreground">{dotted(tracker.nextUpdateYmd)}</span>
             {assumed ? " (가정)" : ""}
             <span className="mx-2 text-slate-300" aria-hidden>
@@ -250,7 +261,7 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
             <p className="text-xs text-muted-foreground">{primaryLabel}</p>
             {primaryValue !== null && (
               <DetailHover
-                srPrefix="남은 금액 근거"
+                srPrefix={isOver ? "초과 금액 근거" : "남은 금액 근거"}
                 testId="taxable-revenue-primary"
                 className="self-start"
                 trigger={

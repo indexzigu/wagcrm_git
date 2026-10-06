@@ -4,7 +4,7 @@
 // 패널은 포커스로도 열린다 — 키보드 사용자가 근거에 닿는 경로이므로 테스트도 포커스로 연다.
 // 트래커는 손으로 만들지 않고 순수 SSOT(`buildTaxableRevenueTracker`)로 만든다 — 손 픽스처는
 // 계산과 표시가 어긋나도 초록이 된다.
-import { act, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { TaxableRevenueCard } from "../taxable-revenue-card";
 import {
@@ -111,6 +111,13 @@ describe("TaxableRevenueCard", () => {
     expect(within(warning).getByText("VAT 포함 기준이면 14,000,000원 남음 (근접)")).toBeInTheDocument();
   });
 
+  it("터치 — 탭(touch pointerdown)으로도 근거 패널이 열린다", async () => {
+    renderCard([campaign({ actualSales: 110_000_000 })]);
+    // Radix HoverCard 는 터치 hover 를 무시하고 click 도 막는다 — 이 경로가 없으면 터치스크린 PC 에서 근거에 못 닿는다
+    fireEvent.pointerDown(screen.getByTestId("taxable-revenue-cost"), { pointerType: "touch" });
+    expect(await screen.findByText(/네이버페이 결제분만 반영/)).toBeInTheDocument();
+  });
+
   it("근접 끝자락 — 넘기 전에는 진행률을 내림해 99.5% 를 「100%」로 읽지 않는다", () => {
     const card = renderCard([campaign({ actualSales: 328_350_000 })]); // 공급 2.985억 = 99.5%
     const bar = within(card).getByRole("progressbar");
@@ -126,6 +133,8 @@ describe("TaxableRevenueCard", () => {
   it("초과 — 「N 초과한 공급가액」으로 전환하고 예상 등급·다음 기준선·이미 넘은 비용을 보인다", () => {
     const card = renderCard([campaign({ actualSales: 352_000_000 })]); // 공급 3.2억
     expect(within(card).getByText("3억 초과한 공급가액")).toBeInTheDocument();
+    // 초과 상태에서 스크린리더가 「남은 금액」이라고 읽지 않는다
+    expect(within(card).getByTestId("taxable-revenue-primary")).toHaveAccessibleName(expect.stringContaining("초과 금액 근거"));
     const value = within(card).getByText("20,000,000");
     expect(value.parentElement?.className).toContain("text-status-urgent");
     expect(card).toHaveTextContent("예상 중소1");
