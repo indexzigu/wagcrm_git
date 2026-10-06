@@ -245,9 +245,8 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
           <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-muted-foreground">
             다음 갱신 <span className="font-medium text-foreground">{dotted(tracker.nextUpdateYmd)}</span>
             {assumed ? " (가정)" : ""}
-            <span className="mx-2 text-slate-300" aria-hidden>
-              |
-            </span>
+            {/* 구분선은 글자가 아니라 선이다 — 「|」 글자를 연한 색으로 쓰면 흐린 글자 계약(tertiary-text-contrast)에 걸린다. */}
+            <span aria-hidden className="mx-2 inline-block h-3 w-px bg-slate-200 align-middle" />
             {/* 「(추정)」은 지우지 말 것 — 네이버 실제 등급과 대조할 수 있는 값이라 공식 값처럼 읽히면 안 된다. */}
             현재(추정) <span className="font-medium text-foreground">{tracker.currentGrade.label}</span>{" "}
             {formatRate(tracker.currentGrade.feeRateMilliPercent)}
