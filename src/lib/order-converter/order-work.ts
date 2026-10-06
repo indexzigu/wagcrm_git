@@ -72,36 +72,45 @@ export function classifyOrderWork(input: OrderWorkInput): OrderWorkClassificatio
 // 홈 「오늘 처리할 주문」 요약
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 한 주문캠페인에 귀속된 주문들의 판정 결과. */
+/** 한 주문캠페인에 귀속된 주문 라인들의 판정 결과(상품주문번호 포함 — 중복 제거 키). */
 export type CampaignOrderWork = {
   campaignId: string;
-  classifications: OrderWorkClassification[];
+  classifications: Array<OrderWorkClassification & { productOrderId: string | null }>;
 };
 
-/** 진행 중 클레임 1건 — 귀속 캠페인 이름(없으면 미매칭)만 쓴다. */
-export type OpenClaimLike = { matchedCampaignName?: string | null };
+/** 진행 중 클레임 1건 — 귀속은 캠페인 **id** 로 센다(이름은 같은 이름의 회차가 있으면 겹친다). */
+export type OpenClaimLike = {
+  productOrderId: string | null;
+  matchedCampaignId?: string | null;
+  matchedCampaignName?: string | null;
+};
 
+/**
+ * 홈 카드 숫자. 칸 이름은 주문 관리 화면 어휘와 **같은 말이 다른 집합을 가리키지 않게** 정한다:
+ * 주문 관리의 「송장 지연」(배송대기 2일↑)·「배송 지연」(배송중 5일↑)을 홈은 한 칸
+ * 「송장·배송 지연」으로 묶고 세부 줄에서 두 이름을 그대로 쓴다.
+ *
+ * 단위는 **서로 다른 상품주문번호**다. 한 라인이 두 캠페인에 귀속되거나(매핑 폴백) 반품/교환 중인
+ * 라인이 발주 대기에도 있으면, 칸 안과 합계(`total`)에서 한 번만 센다. 캠페인 수는 캠페인별로 센다.
+ */
 export type OrderWorkSummaryCounts = {
-  /**
-   * 발주 대기 = 주문 관리 카드의 「주문확인」 칸(미확인 + 발주확인 후 발주요청 전).
-   * 단위는 상품주문 라인(주문 관리 카드와 같은 단위).
-   */
-  awaitingPo: { lines: number; campaigns: number; /** 그중 결제 후 2일↑ 묵은 라인 */ delayedLines: number };
-  /** 배송 지연 = 송장 미회신(배송대기 2일↑) + 배송중 5일↑. 발주 대기와 서로소다. */
+  /** 발주 대기 = 주문 관리 카드의 「주문확인」 칸(미확인 + 발주확인 후 발주요청 전). */
+  awaitingPo: { lines: number; campaigns: number; /** 그중 결제 후 2일 이상(주문 관리 「발주 지연」) */ delayedLines: number };
+  /** 송장·배송 지연 = 주문 관리 「송장 지연」 + 「배송 지연」. 발주 대기와 서로소다. */
   delayed: { lines: number; campaigns: number; invoiceLines: number; shippingLines: number };
-  /** 진행 중 클레임(반품·교환·취소) — 주문 관리 「반품/교환」 버튼과 같은 판정(`isCompleted` 아닌 것). */
+  /** 반품/교환 진행 중 — 주문 관리 「반품/교환」 버튼과 같은 판정(`isCompleted` 아닌 것). */
   openClaims: { lines: number; campaigns: number; unmatchedLines: number };
-  /** 세 칸의 합 — 사이드바 배지 숫자. 클레임 주문이 발주 대기에도 있으면 양쪽에 센다(카드 숫자와 같은 합). */
+  /** 세 칸의 **합집합** 상품주문 수 — 사이드바 배지 숫자. */
   total: number;
 };
 
 /** `/api/order-work` 응답 — 홈 카드·사이드바 배지가 읽는 모양(client-safe 라 여기 둔다). */
 export type OrderWorkSummary = OrderWorkSummaryCounts & {
-  /** 주문 데이터의 기준 시각(마지막 주문 동기화) — 주문 관리 툴바 「마지막 동기화」와 같은 값. */
+  /** 주문 데이터의 마지막 동기화 시각 — 주문 관리 툴바 「마지막 동기화」와 같은 값. */
   lastSyncAt: string | null;
   /** 활성 주문캠페인 수(0 이면 발주·배송 칸은 볼 대상이 없다). */
   activeCampaignCount: number;
-  /** 조회 범위에 스냅샷 행이 하나라도 있었는가 — false 면 「아직 동기화된 주문이 없음」이지 「할 일 0」이 아니다. */
+  /** 조회 범위에 스냅샷 행이 하나라도 있었는가 — false 면 「동기화 대기 중」이지 「할 일 0」이 아니다. */
   hasSnapshot: boolean;
 };
 
@@ -110,41 +119,79 @@ export function summarizeOrderWork(
   campaigns: CampaignOrderWork[],
   openClaims: OpenClaimLike[],
 ): OrderWorkSummaryCounts {
-  let awaitingLines = 0;
-  let awaitingDelayed = 0;
+  // 상품주문번호가 없는 라인은 서로 다른 것으로 본다(합칠 근거가 없다).
+  let anon = 0;
+  const keyOf = (id: string | null | undefined) => (id ? String(id) : `__anon_${anon++}`);
+
+  const awaiting = new Set<string>();
+  const awaitingDelayed = new Set<string>();
   const awaitingCampaigns = new Set<string>();
-  let invoiceLines = 0;
-  let shippingLines = 0;
+  const invoice = new Set<string>();
+  const shipping = new Set<string>();
   const delayedCampaigns = new Set<string>();
 
   for (const campaign of campaigns) {
     for (const work of campaign.classifications) {
       if (work.bucket === 'newBefore' || work.bucket === 'newAfter') {
-        awaitingLines += 1;
+        const key = keyOf(work.productOrderId);
+        awaiting.add(key);
         awaitingCampaigns.add(campaign.campaignId);
-        if (work.delayDays != null) awaitingDelayed += 1;
+        if (work.delayDays != null) awaitingDelayed.add(key);
       } else if (work.bucket === 'pending' && work.delayDays != null) {
-        invoiceLines += 1;
+        invoice.add(keyOf(work.productOrderId));
         delayedCampaigns.add(campaign.campaignId);
       } else if (work.bucket === 'shipping' && work.delayDays != null) {
-        shippingLines += 1;
+        shipping.add(keyOf(work.productOrderId));
         delayedCampaigns.add(campaign.campaignId);
       }
     }
   }
 
+  const claims = new Set<string>();
+  const unmatched = new Set<string>();
   const claimCampaigns = new Set<string>();
-  let unmatchedClaims = 0;
   for (const claim of openClaims) {
-    if (claim.matchedCampaignName) claimCampaigns.add(claim.matchedCampaignName);
-    else unmatchedClaims += 1;
+    const key = keyOf(claim.productOrderId);
+    claims.add(key);
+    if (claim.matchedCampaignId) claimCampaigns.add(claim.matchedCampaignId);
+    else unmatched.add(key);
   }
 
-  const delayedLines = invoiceLines + shippingLines;
+  const delayedKeys = new Set([...invoice, ...shipping]);
+  const all = new Set([...awaiting, ...delayedKeys, ...claims]);
   return {
-    awaitingPo: { lines: awaitingLines, campaigns: awaitingCampaigns.size, delayedLines: awaitingDelayed },
-    delayed: { lines: delayedLines, campaigns: delayedCampaigns.size, invoiceLines, shippingLines },
-    openClaims: { lines: openClaims.length, campaigns: claimCampaigns.size, unmatchedLines: unmatchedClaims },
-    total: awaitingLines + delayedLines + openClaims.length,
+    awaitingPo: { lines: awaiting.size, campaigns: awaitingCampaigns.size, delayedLines: awaitingDelayed.size },
+    delayed: { lines: delayedKeys.size, campaigns: delayedCampaigns.size, invoiceLines: invoice.size, shippingLines: shipping.size },
+    openClaims: { lines: claims.size, campaigns: claimCampaigns.size, unmatchedLines: unmatched.size },
+    total: all.size,
   };
+}
+
+/**
+ * 배지·카드의 심각도. 평상시 일감(발주 대기만)은 `routine` — 무채색으로 둔다(늘 켜진 주황 배지는
+ * 습관화로 신호를 잃는다, P8 §2). 늦은 것이 있을 때만 색을 받는다.
+ *  · urgent  = 송장·배송 지연 또는 반품/교환(주문 관리의 반품/교환 버튼과 같은 위험색)
+ *  · caution = 발주 대기 중 결제 후 2일 이상
+ */
+export type OrderWorkSeverity = 'none' | 'routine' | 'caution' | 'urgent';
+
+export function resolveOrderWorkSeverity(counts: OrderWorkSummaryCounts): OrderWorkSeverity {
+  if (counts.total <= 0) return 'none';
+  if (counts.delayed.lines > 0 || counts.openClaims.lines > 0) return 'urgent';
+  if (counts.awaitingPo.delayedLines > 0) return 'caution';
+  return 'routine';
+}
+
+/**
+ * 주문 동기화가 평소 주기를 넘겨 낡았는가. 아침 크론이 매일 09:00 KST 에 한 번 돌므로 26시간
+ * (하루 + 여유 2시간)을 넘기면 「0건」을 믿을 수 없다 — 홈 카드가 「처리할 주문 없음」 대신
+ * 「확인 필요」를 말한다.
+ */
+export const ORDER_SYNC_STALE_HOURS = 26;
+
+export function isOrderSyncStale(lastSyncAt: string | null, nowMs: number): boolean {
+  if (!lastSyncAt) return false;
+  const t = Date.parse(lastSyncAt);
+  if (!Number.isFinite(t)) return false;
+  return nowMs - t > ORDER_SYNC_STALE_HOURS * 60 * 60 * 1000;
 }

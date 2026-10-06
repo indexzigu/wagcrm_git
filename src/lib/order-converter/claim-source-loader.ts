@@ -10,7 +10,9 @@
 // ⛔ 30일 orders 블롭 전량을 읽어 파생하지 말 것 — 과거 egress 초과의 최대 지분이었다.
 
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
-import { toDateKeyKst } from '@/lib/order-converter/naver-order-sync';
+// ⛔ naver-order-sync 에서 가져오지 말 것 — 그 모듈은 네이버 클라이언트를 import 해 이 로더를 쓰는
+// 라우트(`/api/order-work`) 번들에 네이버 호출 모듈이 딸려 들어간다. 같은 규칙의 순수 구현을 쓴다.
+import { toDateKeyKst } from '@/lib/mobile-pulse-data';
 import {
   extractClaimSourceOrders,
   parseSnapshotClaimSource,
@@ -75,9 +77,15 @@ export async function loadClaimSourceOrders(
  * productId 없는 캠페인/주문 폴백). 기간은 **저장된** startDate/endDate 다.
  */
 export function toClaimCampaignCandidates(
-  campaigns: Array<{ name: string | null; productId?: string | null; startDate?: Date | string | null; endDate?: Date | string | null }>,
+  campaigns: Array<{ id?: string | null; name: string | null; productId?: string | null; startDate?: Date | string | null; endDate?: Date | string | null }>,
 ): CampaignMatchInfo[] {
   return campaigns
     .filter((c): c is typeof c & { name: string } => !!c.name)
-    .map((c) => ({ name: c.name, productId: c.productId, startDate: c.startDate, endDate: c.endDate }));
+    .map((c) => ({
+      ...(c.id ? { id: c.id } : {}),
+      name: c.name,
+      productId: c.productId,
+      startDate: c.startDate,
+      endDate: c.endDate,
+    }));
 }

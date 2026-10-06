@@ -3,7 +3,10 @@ import {
   CONFIRM_DELAY_WARN_DAYS,
   PENDING_DELAY_WARN_DAYS,
   SHIPPING_DELAY_WARN_DAYS,
+  ORDER_SYNC_STALE_HOURS,
   classifyOrderWork,
+  isOrderSyncStale,
+  resolveOrderWorkSeverity,
   summarizeOrderWork,
   type OrderWorkClassification,
 } from "../order-work";
@@ -74,9 +77,16 @@ describe("classifyOrderWork — 지연 경고 임계값", () => {
 });
 
 describe("summarizeOrderWork", () => {
-  const w = (bucket: OrderWorkClassification["bucket"], delayDays: number | null = null): OrderWorkClassification => ({
+  let seq = 0;
+  const w = (bucket: OrderWorkClassification["bucket"], delayDays: number | null = null, productOrderId?: string) => ({
     bucket,
     delayDays,
+    productOrderId: productOrderId ?? `po-${seq++}`,
+  });
+  const claim = (productOrderId: string, matchedCampaignId: string | null, matchedCampaignName: string | null = matchedCampaignId) => ({
+    productOrderId,
+    matchedCampaignId,
+    matchedCampaignName,
   });
 
   it("전부 0 이면 total 0 — 홈 카드가 조용한 한 줄로 물러나는 조건", () => {
@@ -88,7 +98,7 @@ describe("summarizeOrderWork", () => {
     });
   });
 
-  it("발주 대기 = 주문확인 칸(미확인 + 발주확인 후). 그중 2일 넘은 건을 따로 센다", () => {
+  it("발주 대기 = 주문확인 칸(미확인 + 발주확인 후). 그중 결제 후 2일 이상을 따로 센다", () => {
     const summary = summarizeOrderWork(
       [
         { campaignId: "a", classifications: [w("newBefore"), w("newAfter", 3), w("completed")] },
@@ -101,7 +111,7 @@ describe("summarizeOrderWork", () => {
     expect(summary.total).toBe(3);
   });
 
-  it("배송 지연 = 경고 걸린 배송대기·배송중만. 경고 없는 배송대기·배송중은 일이 아니다", () => {
+  it("송장·배송 지연 = 경고 걸린 배송대기(송장 지연)·배송중(배송 지연)만", () => {
     const summary = summarizeOrderWork(
       [
         { campaignId: "a", classifications: [w("pending", 2), w("pending"), w("shipping")] },
@@ -113,20 +123,66 @@ describe("summarizeOrderWork", () => {
     expect(summary.awaitingPo.lines).toBe(0);
   });
 
-  it("진행 중 클레임 — 캠페인 수는 귀속된 캠페인 이름 기준, 미매칭은 건수에만 들어간다", () => {
+  it("반품/교환 — 캠페인 수는 캠페인 **id** 로 센다(같은 이름의 두 회차는 둘이다), 미매칭은 건수에만", () => {
     const summary = summarizeOrderWork(
       [],
-      [{ matchedCampaignName: "가" }, { matchedCampaignName: "가" }, { matchedCampaignName: "나" }, { matchedCampaignName: null }],
+      [claim("c1", "oc-1", "같은이름"), claim("c2", "oc-2", "같은이름"), claim("c3", "oc-1", "같은이름"), claim("c4", null)],
     );
     expect(summary.openClaims).toEqual({ lines: 4, campaigns: 2, unmatchedLines: 1 });
-    expect(summary.total).toBe(4);
   });
 
-  it("total = 세 칸의 합(배지 숫자)", () => {
+  it("같은 상품주문이 두 캠페인에 귀속돼도 칸·합계에서 한 번만 센다(캠페인 수는 둘)", () => {
     const summary = summarizeOrderWork(
-      [{ campaignId: "a", classifications: [w("newBefore"), w("pending", 4)] }],
-      [{ matchedCampaignName: "가" }],
+      [
+        { campaignId: "a", classifications: [w("newBefore", null, "dup")] },
+        { campaignId: "b", classifications: [w("newBefore", null, "dup")] },
+      ],
+      [],
     );
-    expect(summary.total).toBe(3);
+    expect(summary.awaitingPo).toEqual({ lines: 1, campaigns: 2, delayedLines: 0 });
+    expect(summary.total).toBe(1);
+  });
+
+  it("반품/교환 중인 라인이 발주 대기에도 있으면 배지 합계에서 한 번만 센다", () => {
+    const summary = summarizeOrderWork(
+      [{ campaignId: "a", classifications: [w("newBefore", null, "x"), w("pending", 4, "y")] }],
+      [claim("x", "a")],
+    );
+    expect(summary.awaitingPo.lines).toBe(1);
+    expect(summary.openClaims.lines).toBe(1);
+    expect(summary.total).toBe(2);
+  });
+
+  it("상품주문번호가 없는 라인은 서로 다른 것으로 센다(합칠 근거가 없다)", () => {
+    const summary = summarizeOrderWork(
+      [{ campaignId: "a", classifications: [{ bucket: "newBefore", delayDays: null, productOrderId: null }, { bucket: "newBefore", delayDays: null, productOrderId: null }] }],
+      [],
+    );
+    expect(summary.total).toBe(2);
+  });
+});
+
+describe("resolveOrderWorkSeverity — 배지 색", () => {
+  const base = summarizeOrderWork([], []);
+  it("0 이면 none, 평상시 발주 대기만이면 routine(무채색)", () => {
+    expect(resolveOrderWorkSeverity(base)).toBe("none");
+    expect(resolveOrderWorkSeverity({ ...base, awaitingPo: { lines: 3, campaigns: 1, delayedLines: 0 }, total: 3 })).toBe("routine");
+  });
+  it("결제 후 2일 이상 발주 대기가 있으면 caution", () => {
+    expect(resolveOrderWorkSeverity({ ...base, awaitingPo: { lines: 3, campaigns: 1, delayedLines: 1 }, total: 3 })).toBe("caution");
+  });
+  it("송장·배송 지연이나 반품/교환이 있으면 urgent", () => {
+    expect(resolveOrderWorkSeverity({ ...base, delayed: { lines: 1, campaigns: 1, invoiceLines: 1, shippingLines: 0 }, total: 1 })).toBe("urgent");
+    expect(resolveOrderWorkSeverity({ ...base, openClaims: { lines: 1, campaigns: 0, unmatchedLines: 1 }, total: 1 })).toBe("urgent");
+  });
+});
+
+describe("isOrderSyncStale — 매일 09:00 크론 기준 26시간", () => {
+  it("26시간 이내면 신선, 넘으면 낡음, 기록 없으면 판정하지 않는다", () => {
+    expect(ORDER_SYNC_STALE_HOURS).toBe(26);
+    const hour = 3_600_000;
+    expect(isOrderSyncStale(new Date(NOW - 25 * hour).toISOString(), NOW)).toBe(false);
+    expect(isOrderSyncStale(new Date(NOW - 27 * hour).toISOString(), NOW)).toBe(true);
+    expect(isOrderSyncStale(null, NOW)).toBe(false);
   });
 });

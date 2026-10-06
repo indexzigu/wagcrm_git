@@ -228,7 +228,15 @@ afterEach(() => {
 
 describe("loadOrderWorkSummary — 네이버 호출 0", () => {
   it("저장된 스냅샷·DB 만 읽고 네이버로 가는 어떤 층도 부르지 않는다", async () => {
-    await loadOrderWorkSummary(new Date(NOW));
+    // 마지막 그물 — 어떤 경로로든 HTTP 를 내면 전역 fetch 에 걸린다.
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      await loadOrderWorkSummary(new Date(NOW));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
     for (const [name, spy] of Object.entries(naverSpies)) {
       expect(spy, `${name} 가 불렸다`).not.toHaveBeenCalled();
     }

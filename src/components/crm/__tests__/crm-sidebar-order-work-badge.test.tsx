@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OrderWorkBadge } from "../crm-sidebar";
 import { OrderWorkCard } from "../order-work-card";
 
-function payload(total: number) {
+function payload(total: number, extra: Record<string, unknown> = {}) {
   return {
     awaitingPo: { lines: total, campaigns: total > 0 ? 1 : 0, delayedLines: 0 },
     delayed: { lines: 0, campaigns: 0, invoiceLines: 0, shippingLines: 0 },
@@ -22,6 +22,7 @@ function payload(total: number) {
     lastSyncAt: new Date().toISOString(),
     activeCampaignCount: 1,
     hasSnapshot: true,
+    ...extra,
   };
 }
 
@@ -49,11 +50,34 @@ describe("OrderWorkBadge (사이드바 「주문 관리」 배지)", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("N건이면 N을 표시하고 읽기 이름을 붙인다", async () => {
+  it("N건이면 N을 보이고, 화면 낭독기에는 「오늘 처리할 주문 N건」으로 읽힌다(역할 없는 span 에 aria-label 금지)", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => payload(7) });
-    renderWithClient(<OrderWorkBadge />);
-    const badge = await screen.findByText("7");
-    expect(badge).toHaveAttribute("aria-label", "오늘 처리할 주문 7건");
+    const { container } = renderWithClient(<OrderWorkBadge />);
+    await waitFor(() => expect(container.textContent).toBe("오늘 처리할 주문 7건"));
+    const badge = container.querySelector('[data-slot="badge"]')!;
+    expect(badge).not.toHaveAttribute("aria-label");
+    // 보이는 글자는 숫자뿐(사이드바 승인 배지와 같은 모양) — 나머지는 sr-only.
+    const visible = [...badge.childNodes].filter((n) => !(n instanceof HTMLElement && n.classList.contains("sr-only")));
+    expect(visible.map((n) => n.textContent).join("")).toBe("7");
+  });
+
+  it("평상시 발주 대기만 있으면 무채색(늘 켜진 주황 배지 금지), 늦은 건이 있을 때만 색을 받는다", async () => {
+    const variantOf = async (body: unknown) => {
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => body });
+      const { container, unmount } = renderWithClient(<OrderWorkBadge />);
+      await waitFor(() => expect(container.querySelector('[data-slot="badge"]')).not.toBeNull());
+      const variant = container.querySelector('[data-slot="badge"]')!.getAttribute("data-variant");
+      unmount();
+      return variant;
+    };
+    expect(await variantOf(payload(3))).toBe("secondary");
+    expect(await variantOf(payload(3, { awaitingPo: { lines: 3, campaigns: 1, delayedLines: 1 } }))).toBe("status-caution");
+    expect(
+      await variantOf(payload(2, { awaitingPo: { lines: 0, campaigns: 0, delayedLines: 0 }, delayed: { lines: 2, campaigns: 1, invoiceLines: 2, shippingLines: 0 } })),
+    ).toBe("status-urgent");
+    expect(
+      await variantOf(payload(1, { awaitingPo: { lines: 0, campaigns: 0, delayedLines: 0 }, openClaims: { lines: 1, campaigns: 1, unmatchedLines: 0 } })),
+    ).toBe("status-urgent");
   });
 
   it("집계 실패면 배지를 숨긴다(오류는 홈 카드가 드러낸다)", async () => {
@@ -71,8 +95,8 @@ describe("OrderWorkBadge (사이드바 「주문 관리」 배지)", () => {
         <OrderWorkCard />
       </>,
     );
-    await screen.findByRole("link", { name: /발주 대기 2건/ });
-    expect(screen.getByLabelText("오늘 처리할 주문 2건")).toBeInTheDocument();
+    await screen.findByRole("link", { name: /발주 대기/ });
+    await screen.findByText("오늘 처리할 주문", { selector: ".sr-only" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

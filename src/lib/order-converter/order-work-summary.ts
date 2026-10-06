@@ -127,15 +127,16 @@ export async function loadOrderWorkSummary(now: Date = new Date()): Promise<Orde
       );
       campaignWork.push({
         campaignId: camp.id,
-        classifications: attributed.map(({ order, orderTimeMs }) =>
-          classifyOrderWork({
+        classifications: attributed.map(({ order, orderTimeMs }) => ({
+          ...classifyOrderWork({
             productOrderStatus: order.productOrderStatus,
             placeOrderStatus: order.placeOrderStatus,
             poRequestedAt: poRequestedMap.get(String(order.productOrderId || '')) || null,
             orderTimeMs,
             nowMs,
           }),
-        ),
+          productOrderId: order.productOrderId ? String(order.productOrderId) : null,
+        })),
       });
     }
   }
@@ -143,9 +144,14 @@ export async function loadOrderWorkSummary(now: Date = new Date()): Promise<Orde
   // 진행 중 클레임 — 주문 관리 「반품/교환 N」 버튼과 같은 창·소스·후보·판정.
   const { startDateKey, endDateKey } = resolveClaimWindowKeys(now);
   const claimOrders = await loadClaimSourceOrders(startDateKey, endDateKey, LOG_TAG);
-  const openClaims = deriveClaims(claimOrders, toClaimCampaignCandidates(activeCampaigns)).filter(
-    (claim) => !claim.isCompleted,
-  );
+  // 귀속은 캠페인 id 로 센다(후보에 id 를 실어 matchedCampaignId 가 채워진다).
+  const openClaims = deriveClaims(claimOrders, toClaimCampaignCandidates(activeCampaigns))
+    .filter((claim) => !claim.isCompleted)
+    .map((claim) => ({
+      productOrderId: claim.productOrderId,
+      matchedCampaignId: claim.matchedCampaignId ?? null,
+      matchedCampaignName: claim.matchedCampaignName ?? null,
+    }));
 
   const [lastChangeSyncMs, syncMeta] = await Promise.all([
     getLastChangeSyncMs(),

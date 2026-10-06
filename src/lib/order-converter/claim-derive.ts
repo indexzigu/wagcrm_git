@@ -30,6 +30,8 @@ export interface DerivedClaim {
   requestDate: string | null;
   isCompleted: boolean;
   matchedCampaignName?: string | null;
+  /** 귀속 캠페인 id — 후보에 id 가 있을 때만 채운다(이름은 같은 이름의 회차끼리 겹칠 수 있다). */
+  matchedCampaignId?: string | null;
   /**
    * 구매자 식별 정보 — 발주서와 같은 기준(구매자명→수취인명, 구매자연락처→수취인연락처1).
    * 연락처는 원문이므로 서버 밖으로 내보낼 때는 반드시 maskClaimForClient를 거친다(뒷 4자리만).
@@ -52,6 +54,8 @@ export type MaskedDerivedClaim = Omit<DerivedClaim, 'buyerTel'> & MaskedBuyerFie
  * 서버(campaigns route)와 동일한 신뢰 키(productId)를 claim-derive까지 내려보낸다.
  */
 export interface CampaignMatchInfo {
+  /** 있으면 귀속 결과에 matchedCampaignId 로 실린다. */
+  id?: string | null;
   name: string;
   productId?: string | null;
   startDate?: string | Date | null;
@@ -376,11 +380,14 @@ export function deriveClaims(
     const claims = deriveClaimsFromOrder(order);
     if (claims.length === 0) continue;
 
-    const matchedName =
+    const matched =
       candidates.length > 0 ? resolveOrderCampaignName(order, candidates) : undefined;
 
     for (const claim of claims) {
-      if (matchedName !== undefined) claim.matchedCampaignName = matchedName;
+      if (matched !== undefined) {
+        claim.matchedCampaignName = matched?.name ?? null;
+        if (matched?.id) claim.matchedCampaignId = matched.id;
+      }
       results.push(claim);
     }
   }
@@ -411,7 +418,9 @@ function normalizeCampaignCandidates(
  * `productId`와 `originalProductId`를 **둘 다** 후보키로 삼아 비교한다. 이 비대칭을 놓치면
  * 클레임이 전량 미매칭으로 빠진다(카드는 상품명 매칭이라 정상 귀속돼 화면 간 수치가 어긋났다).
  */
-function resolveOrderCampaignName(order: any, campaigns: CampaignMatchInfo[]): string | null {
+// 반환은 이름이 아니라 **후보 자체**다(id 를 함께 싣기 위해, 2026-10-06). 이름은 P7 문서가 이 함수명을
+// 프로젝션 계약의 기준으로 인용하므로 그대로 둔다.
+function resolveOrderCampaignName(order: any, campaigns: CampaignMatchInfo[]): CampaignMatchInfo | null {
   const orderPids = [order?.productId, order?.originalProductId]
     .filter((v) => v != null)
     .map((v) => String(v));
@@ -432,8 +441,8 @@ function resolveOrderCampaignName(order: any, campaigns: CampaignMatchInfo[]): s
     if (pidMatches.length > 0) {
       const inWindow = pidMatches.filter(inPeriod);
       const pool = inWindow.length > 0 ? inWindow : pidMatches;
-      if (pool.length === 1) return pool[0].name;
-      return pickBestByName(pName, pool) ?? pool[0].name;
+      if (pool.length === 1) return pool[0];
+      return pickBestByName(pName, pool) ?? pool[0];
     }
   }
 
@@ -448,7 +457,7 @@ function resolveOrderCampaignName(order: any, campaigns: CampaignMatchInfo[]): s
   const inWindowContained = contained.filter(inPeriod);
   const containedPool = inWindowContained.length > 0 ? inWindowContained : contained;
   if (containedPool.length > 0) {
-    return pickBestByName(pName, containedPool) ?? containedPool[0].name;
+    return pickBestByName(pName, containedPool) ?? containedPool[0];
   }
 
   return pickBestByName(pName, nameCandidates.filter(inPeriod).length > 0 ? nameCandidates.filter(inPeriod) : nameCandidates);
@@ -460,14 +469,14 @@ function resolveOrderCampaignName(order: any, campaigns: CampaignMatchInfo[]): s
  */
 const CAMPAIGN_MATCH_THRESHOLD = 0.4;
 
-function pickBestByName(productName: string, candidates: CampaignMatchInfo[]): string | null {
+function pickBestByName(productName: string, candidates: CampaignMatchInfo[]): CampaignMatchInfo | null {
   if (!productName) return null;
-  let best: { name: string; score: number } | null = null;
+  let best: { candidate: CampaignMatchInfo; score: number } | null = null;
   for (const c of candidates) {
     const score = computeSimilarityScore(productName, c.name);
-    if (!best || score > best.score) best = { name: c.name, score };
+    if (!best || score > best.score) best = { candidate: c, score };
   }
-  if (best && best.score >= CAMPAIGN_MATCH_THRESHOLD) return best.name;
+  if (best && best.score >= CAMPAIGN_MATCH_THRESHOLD) return best.candidate;
   return null;
 }
 

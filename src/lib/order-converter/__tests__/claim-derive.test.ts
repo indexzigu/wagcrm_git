@@ -712,3 +712,36 @@ describe('redactPersonalValues (?debug=1 원본 가림)', () => {
     expect(raw.collectAddress.name).toBe('홍길동');
   });
 });
+
+// 홈 「오늘 처리할 주문」은 반품/교환 캠페인 수를 **캠페인 id** 로 센다(리뷰 C4) — 같은 이름의 두
+// 회차가 있으면 이름으로는 하나로 뭉친다. 후보에 id 가 있을 때만 matchedCampaignId 를 싣고,
+// 이름 귀속(matchedCampaignName)은 종전 그대로다.
+describe('deriveClaims — matchedCampaignId', () => {
+  const claimOrder = (productOrderId: string, productId: string, paymentDate: string) => ({
+    productOrderId,
+    productName: '같은 이름 상품',
+    productId,
+    paymentDate,
+    __claim: { return: { claimStatus: 'RETURN_REQUEST' } },
+  });
+
+  it('같은 이름의 두 회차를 기간으로 갈라 각자의 id 를 싣는다', () => {
+    const claims = deriveClaims(
+      [claimOrder('a', 'P1', '2026-01-05T00:00:00Z'), claimOrder('b', 'P1', '2026-02-05T00:00:00Z')],
+      [
+        { id: 'oc-jan', name: '같은 이름 상품', productId: 'P1', startDate: '2026-01-01T00:00:00Z', endDate: '2026-01-31T00:00:00Z' },
+        { id: 'oc-feb', name: '같은 이름 상품', productId: 'P1', startDate: '2026-02-01T00:00:00Z', endDate: '2026-02-28T00:00:00Z' },
+      ],
+    );
+    expect(claims.map((c) => [c.productOrderId, c.matchedCampaignName, c.matchedCampaignId])).toEqual([
+      ['a', '같은 이름 상품', 'oc-jan'],
+      ['b', '같은 이름 상품', 'oc-feb'],
+    ]);
+  });
+
+  it('후보에 id 가 없으면 필드를 싣지 않는다(종전 응답 모양 유지)', () => {
+    const [claim] = deriveClaims([claimOrder('a', 'P1', '2026-01-05T00:00:00Z')], [{ name: '같은 이름 상품', productId: 'P1' }]);
+    expect(claim.matchedCampaignName).toBe('같은 이름 상품');
+    expect('matchedCampaignId' in claim).toBe(false);
+  });
+});
