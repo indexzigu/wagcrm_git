@@ -282,10 +282,16 @@ export interface MailboxScanResult {
   detections: DetectedInvoiceReply[];
   mailboxesListed: number;
   mailboxesOpened: number;
+  /**
+   * 검색·본문 받기·판정까지 **끝까지 본** 편지함 수. 열기만 하고 검색에서 실패한 편지함은 세지 않는다 —
+   * 실패 판정은 이 수로 한다(열림 수로 하면 「열리고 검색이 전부 실패」가 성공으로 보인다, 코드 리뷰
+   * 지적 2026-10-06). 빈 편지함(검색할 메일 0통)도 세지 않는다: 볼 것이 없었을 뿐 「봤다」가 아니다.
+   */
+  mailboxesSearched: number;
   headersScanned: number;
   bodiesFetched: number;
   bodyCapHit: boolean;
-  /** 열다가 실패한 편지함 수(나머지는 계속 본다 — 수동 버튼과 같은 처분). */
+  /** 열기·검색·본문 받기 중 하나라도 실패한 편지함 수(나머지는 계속 본다 — 수동 버튼과 같은 처분). */
   mailboxErrors: number;
   /** 끝까지 회신을 못 찾은 대상 수. */
   unresolved: number;
@@ -319,8 +325,13 @@ export function interleaveBodyFetchOrder(candidatesByCampaign: ReadonlyMap<strin
   return order;
 }
 
-/** 저장 키 상한 — 한 회신이 수천 행이어도 행 크기가 폭주하지 않게. */
-const MAX_STORED_ORDER_KEYS = 1_000;
+/**
+ * 저장 키 상한 — 한 회신이 수천 행이어도 행 크기가 폭주하지 않게.
+ * ⚠️ 잘리면 `parsedTrackingCount`(원래 건수) > 저장 키 수가 된다. 화면 판정
+ * (`resolveInvoiceReplyStatus`)은 그 차이로 잘림을 알아보고, 잘린 목록을 「전부 처리됨」 근거로 쓰지
+ * 않는다 — 그래서 `parsedTrackingCount` 에는 반드시 **자르기 전** 건수를 넣는다.
+ */
+export const MAX_STORED_ORDER_KEYS = 1_000;
 
 /**
  * ★ 편지함을 **읽기 전용**으로 연다(EXAMINE). `imap-simple` 의 `openBox` 는 SELECT 라 쓰지 않는다.
@@ -366,6 +377,7 @@ export async function scanInvoiceRepliesReadOnly(
     detections: [],
     mailboxesListed: 0,
     mailboxesOpened: 0,
+    mailboxesSearched: 0,
     headersScanned: 0,
     bodiesFetched: 0,
     bodyCapHit: false,
@@ -451,6 +463,7 @@ export async function scanInvoiceRepliesReadOnly(
           break;
         }
       }
+      result.mailboxesSearched += 1;
     } catch (error) {
       // 한 편지함의 실패가 나머지를 막지 않는다(수동 버튼과 같은 처분). 삼키지 않고 센다 — 전부
       // 실패하면 호출부가 실행 실패로 선언한다. 메시지는 서버 오류 문구뿐이라 주소가 없다.
@@ -475,6 +488,7 @@ export interface InvoiceReplyRunSummary {
   skippedNoTargets: boolean;
   mailboxesListed: number;
   mailboxesOpened: number;
+  mailboxesSearched: number;
   headersScanned: number;
   bodiesFetched: number;
   bodyCapHit: boolean;
@@ -574,6 +588,7 @@ export async function runInvoiceReplyScan(deps: InvoiceReplyRunDeps): Promise<In
     skippedNoTargets: selection.targets.length === 0,
     mailboxesListed: 0,
     mailboxesOpened: 0,
+    mailboxesSearched: 0,
     headersScanned: 0,
     bodiesFetched: 0,
     bodyCapHit: false,
@@ -675,6 +690,7 @@ export async function runInvoiceReplyScan(deps: InvoiceReplyRunDeps): Promise<In
       ...summary,
       mailboxesListed: scan.mailboxesListed,
       mailboxesOpened: scan.mailboxesOpened,
+      mailboxesSearched: scan.mailboxesSearched,
       headersScanned: scan.headersScanned,
       bodiesFetched: scan.bodiesFetched,
       bodyCapHit: scan.bodyCapHit,
@@ -688,9 +704,14 @@ export async function runInvoiceReplyScan(deps: InvoiceReplyRunDeps): Promise<In
       newDetectionCampaignIds: persisted.createdCampaignIds,
     };
 
-    // 실질 실패 선언(레이더 빨강): 편지함을 하나도 못 열었거나, 감지를 하나도 못 남겼다.
+    // 실질 실패 선언(레이더 빨강): 실패한 편지함이 있는데 끝까지 본 편지함이 하나도 없거나, 감지를 하나도
+    // 못 남겼다. 「열림」이 아니라 「끝까지 봄」으로 센다 — 열리고 검색이 전부 실패하면 감지기는 멈춘
+    // 것인데 열림 수로는 성공으로 보인다(`mailboxesSearched` 주석). 실패 없이 전부 빈 편지함이면 성공이다.
     if (scan.mailboxesListed > 0 && scan.mailboxesOpened === 0) {
       return { ...out, failed: true, failureReason: `편지함 ${scan.mailboxErrors}곳을 모두 열지 못했습니다` };
+    }
+    if (scan.mailboxErrors > 0 && scan.mailboxesSearched === 0) {
+      return { ...out, failed: true, failureReason: `편지함 ${scan.mailboxErrors}곳의 메일 조회가 실패해 끝까지 본 편지함이 없습니다` };
     }
     if (persisted.writeFailures > 0 && persisted.created === 0 && persisted.alreadyKnown === 0) {
       return { ...out, failed: true, failureReason: `감지 기록 ${persisted.writeFailures}건 저장 실패` };
