@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   // 판정을 `resolveAccess` 로 옮기고, 이 특권 경로가 요구하는 것을 **admin 으로 명시**한다 —
   // 미들웨어도 `/api/system/*` 을 operator 화이트리스트 밖으로 이미 끊으므로, 2차 방어가
   // 1차 방어와 같은 기준을 갖게 되는 것이지 느슨해지는 것이 아니다.
-  const access = user ? resolveAccess(user.app_metadata, user.email) : null;
+  const access = user ? resolveAccess(user.app_metadata) : null;
   if (!access?.approved || access.role !== "admin") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

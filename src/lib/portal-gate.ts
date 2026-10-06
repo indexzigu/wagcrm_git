@@ -50,7 +50,7 @@ export async function isPortalAuthorized(seller: PortalGateSeller): Promise<bool
     // **admin 으로 좁힌다** — 이 분기는 셀러 포털의 비밀번호 게이트를 건너뛰는 경로이고,
     // operator(카톡 업로드 전담)는 애초에 셀러 데이터를 보면 안 된다.
     if (user) {
-      const access = resolveAccess(user.app_metadata, user.email);
+      const access = resolveAccess(user.app_metadata);
       if (access.approved && access.role === "admin") return true;
     }
   } catch {

@@ -35,7 +35,8 @@ vi.mock("@supabase/ssr", () => ({
 const { updateSession } = await import("@/lib/supabase/middleware");
 const { OPERATOR_HOME, ROLE_COOKIE } = await import("@/lib/auth-roles");
 
-const OWNER_EMAIL = (await import("@/lib/auth-allowlist")).DEFAULT_ADMIN_EMAILS[0];
+const ADMIN_EMAIL = "admin@example.com";
+const APPROVED_ADMIN = { status: "approved", role: "admin" };
 const STAFF_EMAIL = "staff@example.com";
 
 /** admin 이 실제로 쓰는 표면 표본 — operator 차단이 여기까지 번지면 오너가 잠긴다. */
@@ -184,28 +185,25 @@ describe("operator — 화이트리스트 밖은 전부 차단된다", () => {
 });
 
 describe("admin — 기존 접근이 하나도 줄지 않는다", () => {
-  it("역할 미지정 오너 계정은 모든 표면을 그대로 연다", async () => {
-    signInAs(OWNER_EMAIL);
+  it("승인된 admin 계정은 모든 표면을 그대로 연다", async () => {
+    signInAs(ADMIN_EMAIL, APPROVED_ADMIN);
     for (const path of ADMIN_SURFACES) {
       expect(await gateResultFor(path), path).toBeNull();
     }
   });
 
   it("역할 쿠키가 admin 으로 심긴다", async () => {
-    signInAs(OWNER_EMAIL);
+    signInAs(ADMIN_EMAIL, APPROVED_ADMIN);
     const response = await updateSession(requestFor("/pipeline"));
     expect(response.cookies.get(ROLE_COOKIE)?.value).toBe("admin");
   });
 
-  it("app_metadata.role=operator 로도 오너는 강등되지 않는다(오너 바닥은 무조건)", async () => {
-    // 🪤 이 테스트는 종전엔 "명시 강등이 오너도 차단한다"를 검증했다. 허가 게이트가
-    // `resolveAccess` 로 전환되면서 역할도 그 판정을 따르게 됐고(`middleware.ts` 의
-    // `role = access.role`), `resolveAccess` 의 오너 바닥(`DEFAULT_ADMIN_EMAILS`)은
-    // metadata 와 무관하게 무조건 admin 을 반환한다(`auth-allowlist.ts` 주석: "오너가
-    // UI 조작으로 스스로 잠기는 경로를 구조적으로 없앤다"). 즉 오너는 이제 자기 계정의
-    // `app_metadata.role` 을 잘못 건드려도 잠기지 않는다 — 의도된 동작이다.
-    signInAs(OWNER_EMAIL, { role: "operator" });
-    expect(await gateResultFor("/pipeline")).toBeNull();
+  it("app_metadata.role=operator 면 어떤 이메일이든 operator 로 집행된다(이메일 바닥 없음)", async () => {
+    // 종전엔 오너 이메일 바닥이 metadata 와 무관하게 admin 을 줬다. 2026-10-06 이메일을
+    // 소스에서 걷어내며 바닥도 없앴다 — 오너 잠김 방지는 `account-mutation.ts` 의
+    // 자기 변경 금지 + 마지막 관리자 보호가 맡는다.
+    signInAs(ADMIN_EMAIL, { status: "approved", role: "operator" });
+    expect(await gateResultFor("/pipeline")).toBe(OPERATOR_HOME);
   });
 });
 

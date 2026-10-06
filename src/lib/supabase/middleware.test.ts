@@ -62,9 +62,9 @@ describe("updateSession 허가목록 게이트", () => {
     expect(setCookie).not.toContain("sb-cefnwaasfepmbjokzzvz-auth-token");
   });
 
-  it("허가된 계정(운영자) → 통과, 리다이렉트 없음", async () => {
+  it("승인된 계정(app_metadata status·role) → 통과, 리다이렉트 없음", async () => {
     getUserMock.mockResolvedValue({
-      data: { user: { email: "zigoo1218@gmail.com" } },
+      data: { user: { email: "owner@example.com", app_metadata: { status: "approved", role: "admin" } } },
     });
 
     const res = await updateSession(makeRequest("/"));
@@ -72,14 +72,14 @@ describe("updateSession 허가목록 게이트", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("허가 이메일 대소문자/공백 무관하게 통과", async () => {
+  it("이메일만 있고 app_metadata 가 비면 대기 화면으로 간다(이메일 바닥 없음)", async () => {
     getUserMock.mockResolvedValue({
-      data: { user: { email: "  ZiGoo1218@Gmail.com " } },
+      data: { user: { email: "owner@example.com" } },
     });
 
     const res = await updateSession(makeRequest("/"));
 
-    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("location") ?? "").toContain("/pending");
   });
 
   it("비로그인 → /login 리다이렉트(denied 아님)", async () => {
@@ -240,7 +240,7 @@ describe("updateSession 신뢰 헤더 전달(auth 중복호출 제거)", () => {
   it("허가된 사용자 → 다음 단계로 신뢰 헤더가 전달된다(getAuthContext가 재검증 없이 씀)", async () => {
     getUserMock.mockResolvedValue({
       data: {
-        user: { id: "user-1", email: "zigoo1218@gmail.com", user_metadata: { role: "admin" } },
+        user: { id: "user-1", email: "owner@example.com", app_metadata: { status: "approved", role: "admin" }, user_metadata: { role: "admin" } },
       },
     });
 
@@ -249,7 +249,7 @@ describe("updateSession 신뢰 헤더 전달(auth 중복호출 제거)", () => {
     const forwarded = res.headers.get(`x-middleware-request-${TRUSTED_USER_HEADER}`);
     expect(forwarded).not.toBeNull();
     const decoded = JSON.parse(decodeURIComponent(forwarded!));
-    expect(decoded).toEqual({ id: "user-1", email: "zigoo1218@gmail.com", role: "admin" });
+    expect(decoded).toEqual({ id: "user-1", email: "owner@example.com", role: "admin" });
   });
 
   it("비로그인 통과 경로(공개 페이지)는 신뢰 헤더가 없다", async () => {
@@ -279,7 +279,7 @@ describe("updateSession 신뢰 헤더 전달(auth 중복호출 제거)", () => {
   it("클라이언트가 위조한 신뢰 헤더가 있어도 실제 로그인 사용자의 검증된 값으로 덮어써진다", async () => {
     getUserMock.mockResolvedValue({
       data: {
-        user: { id: "real-user", email: "zigoo1218@gmail.com", user_metadata: { role: "admin" } },
+        user: { id: "real-user", email: "owner@example.com", app_metadata: { status: "approved", role: "admin" }, user_metadata: { role: "admin" } },
       },
     });
 

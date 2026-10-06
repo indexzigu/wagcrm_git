@@ -6,7 +6,7 @@ export default async function PendingPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const access = resolveAccess(user?.app_metadata, user?.email);
+  const access = resolveAccess(user?.app_metadata);
   const rejected = access.status === "rejected";
 
   return (
