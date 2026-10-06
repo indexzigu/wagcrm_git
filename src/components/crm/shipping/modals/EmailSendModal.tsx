@@ -239,9 +239,14 @@ export default function EmailSendModal({
         </div>
         
         <div className="px-5 pt-4 pb-1">
-          <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+          {/* 트랙 = 발송까지 남은 단계라 보여야 한다: slate-100(흰 표면 1.10:1) → slate-300.
+              진행 채움 blue-500 은 트랙 대비 2.53 이라 blue-600(3.54, 진행 단계 라벨 text-blue-600 과 같은 단계)으로.
+              완료(SUCCESS)는 100% 라 트랙이 안 보이므로 기준은 흰 배경 대비다 — green-500 은 2.22 로 3:1 미달이었다.
+              바로 아래 「완료」 라벨과 같은 성공 토큰(bg-status-success #047857: 흰 배경 5.48 · 트랙 3.69)으로 맞춘다
+              — 오너 결정 2026-10-06. */}
+          <div className="relative h-2 w-full bg-slate-300 rounded-full overflow-hidden">
             <div 
-              className={`absolute top-0 left-0 h-full w-full origin-left rounded-full transition-[transform,background-color] duration-500 ${step === 'SUCCESS' ? 'bg-green-500' : 'bg-blue-500'}`}
+              className={`absolute top-0 left-0 h-full w-full origin-left rounded-full transition-[transform,background-color] duration-500 ${step === 'SUCCESS' ? 'bg-status-success' : 'bg-blue-600'}`}
               style={{ transform: `scaleX(${getStepProgress() / 100})` }}
             />
           </div>

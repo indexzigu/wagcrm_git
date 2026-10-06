@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import imaps from 'imap-simple';
-import { simpleParser } from 'mailparser';
-import { Readable } from 'stream';
-import { resolveOrderBrand, resolveReplyRule } from '@/lib/order-converter/order-brand';
-import { extractTrackingMapByReply } from '@/lib/order-converter/order-parser';
-import {
-  isOwnSenderAddress,
-  orderMailboxesForScan,
-  resolveImapConfig,
-  resolveMailCredentials,
-  type MailboxDescriptor,
-} from '@/lib/mail-config';
-import { normalizeForCompare } from '@/lib/text-normalize';
+import { resolveOrderBrand } from '@/lib/order-converter/order-brand';
+import { resolveImapConfig, resolveMailCredentials } from '@/lib/mail-config';
 import { fetchBodiesByUid } from '@/lib/tax-invoice-mail/mail-scan';
+import {
+  buildReplyMatchCriteria,
+  isReplyHeaderCandidate,
+  listReplyMailboxes,
+  parseMailBody,
+  parseReplyTracking,
+  pickReplyAttachment,
+  readReplyHeader,
+  replyHeaderFetchOptions,
+  replyHeaderSearchCriteria,
+  replyRefTagPrefix,
+  replyScanSince,
+  replyTagSearchCriteria,
+} from '@/lib/order-converter/invoice-reply-match';
 
 // F4-②: 브랜드별 허용 발신자 도메인은 거래처(Partner) 설정에서 해석 (하드코딩 맵 제거).
 
@@ -47,25 +51,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '메일 서버 연결에 실패했습니다. 계정 정보를 확인해주세요.' }, { status: 500 });
     }
 
-    // 편지함 전수 나열 → 제외·순서는 `mail-config` 가 판정한다.
-    // ⛔ 여기서 이름 목록을 다시 만들지 말 것: 종전 인라인 목록은 다음메일의 **띄어쓴**
-    //    한국어 이름만 알고 있어서 구글의 `휴지통`·`보낸편지함`·`전체보관함` 이 하나도
-    //    안 걸렸다(전체보관함은 전 메일의 사본이라 메일함을 두 번 훑게 된다).
-    const boxesInfo = await connection.getBoxes();
-    const discovered: MailboxDescriptor[] = [];
-
-    const extractBoxes = (boxObj: any, prefix = '') => {
-      for (const key of Object.keys(boxObj)) {
-        const boxName = prefix + key;
-        discovered.push({ name: boxName, attribs: boxObj[key]?.attribs ?? [] });
-        if (boxObj[key].children) {
-          extractBoxes(boxObj[key].children, boxName + boxObj[key].delimiter);
-        }
-      }
-    };
-    extractBoxes(boxesInfo);
-
-    const targetBoxes = orderMailboxesForScan(discovered);
+    // 편지함 나열·제외·순서와 매칭 규칙은 `invoice-reply-match.ts` 가 소유한다 — 크론
+    // `scan-invoice-replies`(감지 전용)가 같은 규칙을 쓴다. ⛔ 여기서 규칙을 다시 적지 말 것.
+    const targetBoxes = await listReplyMailboxes(connection);
 
     console.log(`🔥 [fetch-emails] 스캔 대상 편지함 목록:`, targetBoxes);
 
@@ -74,23 +62,13 @@ export async function POST(req: NextRequest) {
     let foundUid: number | null = null;
 
     const brand = await resolveOrderBrand(template);
-    const allowedDomains: string[] = brand ? [...brand.emailDomains] : [];
-    
-    // 수신 이메일에서 도메인 추출하여 허용 목록에 추가
-    if (toEmail) {
-      const emails = toEmail.split(',').map((e: string) => e.trim());
-      emails.forEach((email: string) => {
-        const parts = email.split('@');
-        if (parts.length === 2) {
-          const domain = '@' + parts[1];
-          if (!allowedDomains.includes(domain)) {
-            allowedDomains.push(domain);
-          }
-        }
-      });
-    }
-    
-    const coreSellerName = sellerName ? sellerName.split('(')[0].trim().replace(/\s+/g, '') : '';
+    const criteria = buildReplyMatchCriteria({
+      campaignId,
+      brandEmailDomains: brand ? brand.emailDomains : [],
+      toEmail,
+      sellerName,
+      sentDates,
+    });
 
     // 편지함을 순회하며 검색 시작
     for (const boxName of targetBoxes) {
@@ -104,18 +82,14 @@ export async function POST(req: NextRequest) {
 
         if (totalMessages === 0) continue;
 
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        
+        const since = replyScanSince();
+
         // 1. IMAP 서버 자체에서 태그(캠페인ID)를 포함한 메일 고속 검색
-        const tagSearchCriteria = [['SINCE', sevenDaysAgo], ['BODY', `[YGRD-REF:${campaignId}`]];
-        const tagMessages = await connection.search(tagSearchCriteria, { bodies: ['HEADER'], markSeen: false, struct: true });
+        const tagMessages = await connection.search(replyTagSearchCriteria(campaignId, since), replyHeaderFetchOptions());
         const tagUids = tagMessages.map((m: any) => m.attributes.uid);
 
         // 2. 제목/보낸사람 매칭용 전체 검색 (최근 7일)
-        const searchCriteria = [['SINCE', sevenDaysAgo]];
-        const fetchOptions = { bodies: ['HEADER'], markSeen: false, struct: true };
-
-        const messages = await connection.search(searchCriteria, fetchOptions);
+        const messages = await connection.search(replyHeaderSearchCriteria(since), replyHeaderFetchOptions());
         console.log(`🔥 [fetch-emails] [${boxName}] 메일 헤더 검색 완료. 가져온 수: ${messages.length}`);
 
         messages.sort((a, b) => (b.attributes.date as Date).getTime() - (a.attributes.date as Date).getTime());
@@ -123,60 +97,11 @@ export async function POST(req: NextRequest) {
         const candidateUids: number[] = [];
 
         for (const msg of messages) {
-          const headerPart = msg.parts.find((part: any) => part.which === 'HEADER');
-          if (!headerPart) continue;
-
-          const id = msg.attributes.uid;
-          let subject = '';
-          let fromAddress = '';
-
-          if (typeof headerPart.body === 'object' && !Buffer.isBuffer(headerPart.body)) {
-            subject = headerPart.body.subject?.[0] || headerPart.body.Subject?.[0] || '';
-            fromAddress = headerPart.body.from?.[0] || headerPart.body.From?.[0] || '';
-          } else {
-            let rawHeader = headerPart.body;
-            if (typeof rawHeader === 'string') {
-              rawHeader = Buffer.from(rawHeader, 'utf8');
-            }
-            const streamHeader = new Readable();
-            streamHeader.push(rawHeader);
-            streamHeader.push(null);
-            const parsedHeader = await simpleParser(streamHeader);
-            fromAddress = parsedHeader.from?.value[0]?.address || '';
-            subject = parsedHeader.subject || '';
-          }
-
-          let domainMatched = allowedDomains.length === 0;
-          if (!domainMatched) {
-            domainMatched = allowedDomains.some((domain) => fromAddress.toLowerCase().includes(domain.toLowerCase()));
-          }
-
-          // ⚠️ 한글은 **비교 전에 정규화한다**(`text-normalize` 주석 참조) — 제목의 형태는
-          //    보낸 사람이 정하므로, 안 맞추면 눈에 같은 글자가 조용히 안 걸린다.
-          const normalizedSubject = normalizeForCompare(subject);
-          const hasOurCompanyName = normalizedSubject.includes('와이그라운드');
-          const hasSeller = coreSellerName && normalizedSubject.includes(normalizeForCompare(coreSellerName));
-          
-          let hasSentDate = false;
-          if (sentDates && sentDates.length > 0) {
-            hasSentDate = sentDates.some((dateStr: string) => {
-              const shortDate = dateStr.length === 6 ? dateStr.substring(2) : dateStr;
-              return normalizedSubject.includes(dateStr) || normalizedSubject.includes(shortDate);
-            });
-          } else {
-            hasSentDate = true; 
-          }
-          
-          const matchScore = (hasOurCompanyName ? 1 : 0) + (hasSeller ? 1 : 0) + (hasSentDate ? 1 : 0);
-          
-          // 내가 발송한 메일(원본)은 제외 처리 — 판정은 `mail-config` 가 소유한다
-          // (자사 도메인 · 로그인 계정 · 옛 사업자 계정 세 갈래. 사유는 그 함수 주석).
-          const isMyOwnMail = isOwnSenderAddress(fromAddress, credentials.user);
-          const subjectMatched = !isMyOwnMail && (domainMatched || matchScore >= 2);
-          const hasTagInImap = tagUids.includes(id) && !isMyOwnMail;
-          
-          if (subjectMatched || hasTagInImap) {
-            console.log(`🔥 [fetch-emails] 후보 메일 발견! 편지함: ${boxName}, UID: ${id}, Subject: ${subject}`);
+          const header = await readReplyHeader(msg as any);
+          if (!header) continue;
+          const id = header.uid;
+          if (isReplyHeaderCandidate(header, criteria, { loginUser: credentials.user, taggedInImap: tagUids.includes(id) })) {
+            console.log(`🔥 [fetch-emails] 후보 메일 발견! 편지함: ${boxName}, UID: ${id}, Subject: ${header.subject}`);
             candidateUids.push(id);
           }
         }
@@ -190,52 +115,19 @@ export async function POST(req: NextRequest) {
         for (const uid of candidateUids) {
           if (!bodyByUid.has(uid)) continue;
 
-          let rawBody = bodyByUid.get(uid);
-          if (typeof rawBody === 'string') {
-            rawBody = Buffer.from(rawBody, 'utf8');
-          }
-          const streamBody = new Readable();
-          streamBody.push(rawBody);
-          streamBody.push(null);
-          const parsed = await simpleParser(streamBody);
-
-          const textBody = parsed.text || '';
-          const htmlBody = parsed.html || '';
-          const refTagPrefix = `[YGRD-REF:${campaignId}`;
-          const containsAnyRefTag = textBody.includes('[YGRD-REF:') || htmlBody.includes('[YGRD-REF:');
-          const hasMyRefTag = textBody.includes(refTagPrefix) || htmlBody.includes(refTagPrefix);
+          const parsed = await parseMailBody(bodyByUid.get(uid));
+          const verdict = pickReplyAttachment(parsed, criteria);
 
           // 만약 이메일 본문에 YGRD-REF 태그가 있는데 현재 조회중인 캠페인 ID가 아니면 다른 상품의 회신이므로 스킵
-          if (containsAnyRefTag && !hasMyRefTag) {
-             console.log(`🔥 [fetch-emails] 다른 캠페인(${refTagPrefix} 아님)의 회신으로 식별됨. 스킵. (UID: ${uid})`);
+          if (verdict.kind === 'other-campaign') {
+             console.log(`🔥 [fetch-emails] 다른 캠페인(${replyRefTagPrefix(campaignId)} 아님)의 회신으로 식별됨. 스킵. (UID: ${uid})`);
              continue;
           }
 
-          let attachmentMatched = false;
-          let targetAttachment = null;
-
-          for (const attachment of parsed.attachments) {
-            const fileName = attachment.filename || '';
-            // ⚠️ 맥에서 온 첨부는 **파일명이 NFD 인 것이 상시 조건**이라 여기가 특히 위험하다.
-            const normalizedFilename = normalizeForCompare(fileName);
-            const isExcelOrCsv = fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv');
-            
-            // 파일명에 셀러명 반드시 포함 (단, 태그 매칭이 되었다면 양식이 달라도 허용)
-            const hasSellerName = coreSellerName
-              ? normalizedFilename.includes(normalizeForCompare(coreSellerName))
-              : true;
-
-            if (isExcelOrCsv && (hasSellerName || hasMyRefTag)) {
-              attachmentMatched = true;
-              targetAttachment = attachment;
-              break;
-            }
-          }
-
-          if (attachmentMatched && targetAttachment) {
-            console.log(`🔥 [fetch-emails] 최종 첨부파일 매칭 성공! 편지함: ${boxName}, 파일명: ${targetAttachment.filename}`);
-            foundAttachmentBuffer = targetAttachment.content;
-            foundFileName = targetAttachment.filename || 'downloaded_order.xlsx';
+          if (verdict.kind === 'match') {
+            console.log(`🔥 [fetch-emails] 최종 첨부파일 매칭 성공! 편지함: ${boxName}, 파일명: ${verdict.attachment.filename}`);
+            foundAttachmentBuffer = verdict.attachment.content;
+            foundFileName = verdict.attachment.filename || 'downloaded_order.xlsx';
             foundUid = uid;
             break;
           }
@@ -255,13 +147,7 @@ export async function POST(req: NextRequest) {
       // (클라이언트가 formatAdapter를 몰라 신규 브랜드 회신을 오파싱하던 문제 해소)
       let trackingMap: Record<string, { 택배사: string; 송장번호: string }> = {};
       try {
-        const reply = resolveReplyRule(brand);
-        // Buffer → ArrayBuffer 뷰. subarray로 정확한 바이트 범위만 전달.
-        const ab = foundAttachmentBuffer.buffer.slice(
-          foundAttachmentBuffer.byteOffset,
-          foundAttachmentBuffer.byteOffset + foundAttachmentBuffer.byteLength
-        ) as ArrayBuffer;
-        trackingMap = extractTrackingMapByReply(ab, reply);
+        trackingMap = parseReplyTracking(foundAttachmentBuffer, brand);
       } catch (parseErr) {
         // 파싱 실패해도 파일 자체는 반환(클라이언트가 원본 저장/수동 확인 가능) — 삼키지 말고 로그
         console.warn('fetch-emails 송장 파싱 실패(파일은 반환):', parseErr);

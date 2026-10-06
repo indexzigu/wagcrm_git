@@ -95,3 +95,8 @@
 
 # UTC "0 1 * * *" (tax-invoice-issue-confirm) → KST 10:00 (자정 넘김, 요일 원본부터 *)
 0 10 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh tax-invoice-issue-confirm >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# scan-invoice-replies → KST 매시 정각 10:00~20:00(매일). **UTC 원본이 없다** — 셀프호스트 이후에
+# 생긴 잡이라 vercel.json 을 거친 적이 없다(capture-stories 와 같은 경우). 표기는 KNOWN_JOBS.timeKst
+# 「10:00~20:00 매시」와 C5 가 대조한다. 메일함을 읽기만 하고 네이버는 부르지 않는다(프록시 요청 0).
+0 10-20 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh scan-invoice-replies >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1

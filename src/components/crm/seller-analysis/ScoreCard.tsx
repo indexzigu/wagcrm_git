@@ -21,11 +21,15 @@ interface ScoreCardProps {
 
 const SUBSCORE_KEYS = Object.keys(SUBSCORE_LABELS) as Array<keyof typeof SUBSCORE_LABELS>;
 
-/** 점수별 바 색상: ≥70 emerald / ≥40 amber / 미만 rose */
+/**
+ * 점수별 바 색상: ≥70 emerald / ≥40 amber / 미만 rose.
+ * 트랙(100점까지 남은 구간)이 slate-300 이라 채움은 그 위 3:1 을 지키는 700 단계로 둔다 —
+ * 500 단계는 1.66 / 1.45 / 2.53 으로 묻힌다(CategoryProfile 과 같은 처리·같은 수치 3.62 / 3.40 / 4.08).
+ */
 function barColor(score: number): string {
-  if (score >= 70) return 'bg-emerald-500';
-  if (score >= 40) return 'bg-amber-500';
-  return 'bg-rose-500';
+  if (score >= 70) return 'bg-emerald-700';
+  if (score >= 40) return 'bg-amber-700';
+  return 'bg-rose-700';
 }
 
 /**
@@ -89,7 +93,7 @@ export function ScoreCard({ scores, compact = false }: ScoreCardProps) {
             return (
               <div
                 key={key}
-                className="w-2 h-5 bg-slate-100 rounded-sm overflow-hidden flex flex-col justify-end"
+                className="w-2 h-5 bg-slate-300 rounded-sm overflow-hidden flex flex-col justify-end"
                 title={`${SUBSCORE_LABELS[key]}: ${sub.score !== null ? `${sub.score}점` : sub.statusLabel ?? '-'}`}
               >
                 {sub.score !== null && (
@@ -160,7 +164,8 @@ export function ScoreCard({ scores, compact = false }: ScoreCardProps) {
                 <span className="text-[11px] text-slate-600 w-20 shrink-0">{SUBSCORE_LABELS[key]}</span>
                 {sub.score !== null ? (
                   <>
-                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    {/* 트랙 = 100점까지 남은 구간 — slate-50 카드 위 slate-100 은 1.05:1 로 사라져 slate-300(1.42)으로. */}
+                    <div className="flex-1 h-1.5 bg-slate-300 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full ${barColor(sub.score)}`}
                         style={{ width: `${sub.score}%` }}

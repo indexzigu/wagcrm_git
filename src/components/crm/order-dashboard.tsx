@@ -43,6 +43,8 @@ import { mergeExpandedCampaignDetails } from '@/lib/order-converter/settled-camp
 import { patchCampaign, type CampaignPatchResult } from '@/lib/campaign-patch';
 import { buildStorePeriodPatchBody } from '@/lib/order-converter/sale-window';
 import { rankCampaignCardCautions, type CampaignCardCaution } from '@/lib/order-converter/campaign-card-cautions';
+import { deriveReplySentDates } from '@/lib/order-converter/invoice-reply-status';
+import { InvoiceReplyLine } from './invoice-reply-line';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { notify } from '@/lib/toast';
@@ -1151,21 +1153,9 @@ export default function OrderDashboard() {
     try {
       addToast('송장 회신 메일을 확인 중입니다...', 'info');
       
-      // 발주를 요청한 날짜(EMAILED 상태 등)를 추적하여 해당 날짜의 회신만 가져오도록 처리
-      const activeTasks = campaign.tasks?.filter(t => t.status === 'EMAILED' || t.status === 'PENDING') || [];
-      let sentDates: string[] = [];
-      if (activeTasks.length > 0) {
-        sentDates = activeTasks.map(t => {
-          const d = new Date(t.date);
-          const yy = String(d.getFullYear()).slice(-2);
-          const mm = String(d.getMonth() + 1).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          return `${yy}${mm}${dd}`;
-        });
-      } else {
-        const today = new Date();
-        sentDates = [`${String(today.getFullYear()).slice(-2)}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`];
-      }
+      // 발주를 요청한 날짜(EMAILED 상태 등)를 추적하여 해당 날짜의 회신만 가져오도록 처리.
+      // 규칙은 크론 `scan-invoice-replies` 와 공유한다(invoice-reply-status.ts) — 여기서 다시 쓰지 말 것.
+      const sentDates = deriveReplySentDates(campaign.tasks);
 
       const res = await fetch('/order-converter/api/fetch-emails', {
         method: 'POST',
@@ -2433,6 +2423,10 @@ export default function OrderDashboard() {
                       </div>
                     );
                   })()}
+
+                  {/* 크론이 감지한 미처리 송장 회신 — 버튼 줄 **위**에 자기 줄로 둔다(버튼 줄 안에 두면 바로 옆
+                      「송장등록」의 상태로 읽힌다 — ss-ux 지적 2026-10-06). 값이 없으면 아무것도 안 그린다. */}
+                  <InvoiceReplyLine reply={(camp as CampaignPayload).invoiceReply} />
 
                   {/* 3행: 실행 조작 버튼 (Action Buttons) */}
                   <div className="flex flex-wrap gap-2 items-center w-full" onClick={(e) => e.stopPropagation()}>

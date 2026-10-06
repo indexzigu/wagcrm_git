@@ -633,6 +633,24 @@ model OrderCampaign {
   cachedPostCloseCancelRevenue  Int?             @default(0)
   cachedPostCloseCancelFinalizedAt DateTime?
   cachedPostCloseAllTerminalAt DateTime?
+  invoiceReplyDetections        InvoiceReplyDetection[]
+}
+
+// 송장 회신 메일 감지 기록 — postgres 스키마의 같은 모델 주석이 정본.
+model InvoiceReplyDetection {
+  id                  String        @id @default(cuid())
+  orderCampaignId     String
+  orderCampaign       OrderCampaign @relation(fields: [orderCampaignId], references: [id], onDelete: Cascade)
+  messageId           String
+  mailbox             String
+  uid                 Int
+  receivedAt          DateTime
+  parsedTrackingCount Int           @default(0)
+  trackingOrderKeys   String?
+  detectedAt          DateTime      @default(now())
+
+  @@unique([orderCampaignId, messageId])
+  @@index([orderCampaignId, receivedAt])
 }
 
 model DailyOrderTask {

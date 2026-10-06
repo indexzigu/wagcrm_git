@@ -1,3 +1,5 @@
+import type { InvoiceReplyStatus } from '@/lib/order-converter/invoice-reply-status';
+
 export type DailyTask = {
   id: string;
   date: string;
@@ -87,6 +89,11 @@ export type Campaign = {
   } | null;
   productId?: string | null; // 네이버 상품번호 (스토어 옵션 자동 로드 시 상품 식별에 사용)
   insights?: CampaignInsights | null;
+  /**
+   * 아직 처리 안 된 송장 회신(크론 `scan-invoice-replies` 감지) — 없으면 null. 카드의
+   * 「송장 회신 도착 · 주문 N건 · HH:MM」 줄. 판정 SSOT 는 `invoice-reply-status.ts`.
+   */
+  invoiceReply?: InvoiceReplyStatus | null;
   // 활성이지만 라이브 집계가 비어(조회창 만료) 마감 시점 스냅샷으로 폴백 중임을 알리는 표식.
   // 마감취소된 캠페인의 기록이 화면에서 사라지지 않게 하는 폴백 경로에서만 true(campaigns-handler).
   isFrozenFallback?: boolean;

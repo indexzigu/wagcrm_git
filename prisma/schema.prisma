@@ -1128,9 +1128,38 @@ model OrderCampaign {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tasks          DailyOrderTask[]
-  mappings       ProductMapping[]
-  salesCampaigns SalesCampaign[]
+  tasks                  DailyOrderTask[]
+  mappings               ProductMapping[]
+  salesCampaigns         SalesCampaign[]
+  invoiceReplyDetections InvoiceReplyDetection[]
+}
+
+// 송장 회신 메일 감지 기록 — 크론 `scan-invoice-replies` 가 쓴다(발주 자동화 1단계 B).
+// **감지만** 한다: 송장 등록·네이버 발송처리·OrderActionLog 와 무관하고, 메일함은 읽기 전용으로 연다.
+// 「처리됨」 칸이 없는 것은 의도다 — 화면이 지금의 배송대기 상태와 대조해 파생한다
+// (`src/lib/order-converter/invoice-reply-status.ts`). 행을 지우지 않는다(감지 이력 보존).
+// ⛔ 송장번호·메일 주소를 이 테이블에 담지 말 것 — 주문번호 키(어느 주문의 회신인가)만 둔다.
+model InvoiceReplyDetection {
+  id                  String        @id @default(cuid())
+  orderCampaignId     String
+  orderCampaign       OrderCampaign @relation(fields: [orderCampaignId], references: [id], onDelete: Cascade)
+  // `Message-ID` 헤더(편지함이 달라도 같은 메일이면 같다). 헤더가 없으면 `편지함#UID`.
+  messageId           String
+  // 다시 열 때 쓰는 좌표(서버 원문 편지함 이름 + 그 편지함의 UID).
+  mailbox             String
+  uid                 Int
+  // 메일 서버가 받은 시각(INTERNALDATE).
+  receivedAt          DateTime
+  // 회신 엑셀에서 브랜드 회신 규칙으로 읽은 송장 수. 첨부 파싱 실패면 0.
+  parsedTrackingCount Int           @default(0)
+  // 회신 엑셀의 주문번호 키 목록(상품주문번호 또는 주문번호)의 JSON 배열 텍스트. 송장번호는 담지 않는다.
+  // String 인 것은 의도다 — sqlite 미러가 Json 을 String 으로 두는 규약이라, 두 클라이언트가 같은
+  // 값을 쓰고 읽게 처음부터 텍스트로 둔다(파싱은 invoice-reply-status.ts).
+  trackingOrderKeys   String?
+  detectedAt          DateTime      @default(now())
+
+  @@unique([orderCampaignId, messageId])
+  @@index([orderCampaignId, receivedAt])
 }
 
 model DailyOrderTask {

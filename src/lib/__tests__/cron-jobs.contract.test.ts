@@ -60,12 +60,28 @@ const crontabByKey = (): Map<string, CronEntry> => {
   return map;
 };
 
-/** crontab 5필드(KST) → 레이더 표기(cycle·timeKst) */
+const hhmm = (h: number, m: number) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+
+/**
+ * crontab 5필드(KST) → 레이더 표기(cycle·timeKst)
+ *
+ * 시 필드는 단일 숫자 또는 **`시작-끝` 범위 하나**만 해석한다(매시 발화 잡 — scan-invoice-replies).
+ * 범위는 `HH:MM~HH:MM 매시` 로 표기한다. 그 밖의 꼴(쉼표 목록·`*`·`/` 간격)은 여전히 실패시킨다 —
+ * 해석 못 하는 스케줄을 통과시키면 레이더 표기와 실제 발화가 조용히 갈린다.
+ */
 const toKstDisplay = (e: CronEntry): { cycle: string; timeKst: string } => {
-  const h = Number(e.hour);
   const m = Number(e.minute);
-  expect(Number.isInteger(h) && Number.isInteger(m), `단순 숫자 필드가 아닌 스케줄: ${e.minute} ${e.hour}`).toBe(true);
-  const timeKst = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const range = /^(\d{1,2})-(\d{1,2})$/.exec(e.hour);
+  let timeKst: string;
+  if (range) {
+    const [from, to] = [Number(range[1]), Number(range[2])];
+    expect(Number.isInteger(m) && from < to && to <= 23, `해석할 수 없는 시 범위: ${e.minute} ${e.hour}`).toBe(true);
+    timeKst = `${hhmm(from, m)}~${hhmm(to, m)} 매시`;
+  } else {
+    const h = Number(e.hour);
+    expect(Number.isInteger(h) && Number.isInteger(m), `단순 숫자 필드가 아닌 스케줄: ${e.minute} ${e.hour}`).toBe(true);
+    timeKst = hhmm(h, m);
+  }
   if (e.dow === "*") return { cycle: "매일", timeKst };
   const dow = Number(e.dow) % 7;
   expect(Number.isInteger(dow), `요일 필드를 해석할 수 없음: ${e.dow}`).toBe(true);
