@@ -121,7 +121,7 @@ function TimingBadgeView({ badge }: { badge: TimingBadge }) {
   if (badge.kind === "static") {
     return (
       <span
-        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.className}`}
+        className={`inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold border ${badge.className}`}
       >
         {badge.label}
       </span>
@@ -249,8 +249,9 @@ function ActiveCampaignSection({
             성과 카드 →
           </Link>
         </div>
+        {/* 좁은 폭(320px)에서는 배지가 기간 아래 줄로 내려간다 — 한 줄에 우겨 넣어 배지가 찌그러지지 않게. */}
         {camp.salePeriod && (
-          <div className="flex items-center gap-1.5 mt-1">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
             <p className="text-[11px] text-slate-500">{camp.salePeriod}</p>
             {deadline && <TimingBadgeView badge={deadline} />}
           </div>
@@ -413,19 +414,19 @@ function UpcomingCampaignSection({ camp, today }: { camp: PortalCampaign; today:
   const opening = openingBadge(camp.salePeriod, today);
   return (
     <section className="bg-slate-50/60 rounded-2xl border border-slate-200/70 px-5 py-4">
+      {/* 오픈 배지는 제목 줄이 아니라 기간 줄에 둔다 — 판매중 카드(마감 배지)와 같은 자리. 제목 줄에 두면
+          라이브 카운트다운(약 150px, shrink-0)이 제목 폭을 깎아 320px 에서 긴 제목이 5줄까지 늘었다. */}
       <div className="flex items-start gap-2">
         <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
           예정
         </span>
         <h2 className="min-w-0 break-words font-bold text-slate-700 text-sm">{camp.name}</h2>
-        {opening && (
-          <span className="ml-auto shrink-0">
-            <TimingBadgeView badge={opening} />
-          </span>
-        )}
       </div>
-      {camp.salePeriod && (
-        <p className="text-[11px] text-slate-500 mt-1">{camp.salePeriod} 오픈 예정</p>
+      {(camp.salePeriod || opening) && (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
+          {camp.salePeriod && <p className="text-[11px] text-slate-500">{camp.salePeriod} 오픈 예정</p>}
+          {opening && <TimingBadgeView badge={opening} />}
+        </div>
       )}
     </section>
   );

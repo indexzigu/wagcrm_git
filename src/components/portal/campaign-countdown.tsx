@@ -50,7 +50,7 @@ export function CampaignCountdown({
   const Icon = icon === "flame" ? Flame : Clock;
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border tabular-nums ${className}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold border tabular-nums ${className}`}
       aria-label={label}
     >
       <Icon className="size-3 shrink-0" aria-hidden="true" />
