@@ -24,7 +24,7 @@ import { isOrderSyncStale, type OrderWorkSummary } from "@/lib/order-converter/o
  * 카드 전체가 링크 **하나**다(탭 정지 1회) — 세 칸과 헤더가 모두 같은 곳(주문 관리)으로 가므로
  * 링크를 나누면 키보드 사용자가 같은 목적지를 네 번 지난다. 이름은 보이는 글자 그대로다.
  * 로딩 중에는 헤더 한 줄만 그린다 — 조용한 날(한 줄)과 높이가 같아 홈이 튀지 않는다.
- * 데이터는 사이드바 「주문 관리」 배지와 한 캐시를 쓴다(요청 1회). 서버는 네이버를 부르지 않는다.
+ * 서버는 네이버를 부르지 않는다.
  */
 
 type BucketTone = "urgent" | "caution" | null;

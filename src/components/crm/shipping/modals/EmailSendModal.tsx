@@ -84,7 +84,7 @@ async function readError(res: Response, fallback: string): Promise<string> {
 }
 
 const inputClass =
-  'w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50';
+  'w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-primary transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50';
 
 export default function EmailSendModal({
   campaignId,
@@ -378,20 +378,20 @@ export default function EmailSendModal({
 
         <div className="px-5 pt-4 pb-1">
           {/* 트랙 = 발송까지 남은 단계라 보여야 한다: slate-100(흰 표면 1.10:1) → slate-300.
-              진행 채움 blue-500 은 트랙 대비 2.53 이라 blue-600(3.54, 진행 단계 라벨 text-blue-600 과 같은 단계)으로.
-              완료(SUCCESS)는 100% 라 트랙이 안 보이므로 기준은 흰 배경 대비다 — green-500 은 2.22 로 3:1 미달이었다.
-              바로 아래 「완료」 라벨과 같은 성공 토큰(bg-status-success #047857: 흰 배경 5.48 · 트랙 3.69)으로 맞춘다
-              — 오너 결정 2026-10-06. */}
+              진행 채움은 범주색 네이비(bg-primary, 트랙 대비 7.62 — 진행 단계 라벨 text-primary 와 같은 색). 종전 blue-500/600 은 P8 축 밖 hue.
+              완료(SUCCESS)는 100% 라 트랙이 안 보이므로 기준은 흰 배경 대비다 — 바로 아래 「완료」 라벨과 같은 성공 토큰
+              (bg-status-success #047857: 흰 배경 5.48 · 트랙 3.69) — 오너 결정 2026-10-06. */}
           <div className="relative h-2 w-full bg-slate-300 rounded-full overflow-hidden">
             <div
-              className={`absolute top-0 left-0 h-full w-full origin-left rounded-full transition-[transform,background-color] duration-500 ${step === 'SUCCESS' ? 'bg-status-success' : 'bg-blue-600'}`}
+              className={`absolute top-0 left-0 h-full w-full origin-left rounded-full transition-[transform,background-color] duration-500 ${step === 'SUCCESS' ? 'bg-status-success' : 'bg-primary'}`}
               style={{ transform: `scaleX(${getStepProgress() / 100})` }}
             />
           </div>
           <div className="flex justify-between mt-2 px-1 text-[10px] font-bold text-slate-500 transition-colors">
-            {stageLabels.map((label, i) => (
-              <span key={label} className={stageIndex === i ? 'text-blue-600' : stageIndex > i ? 'text-slate-700' : ''}>{label}</span>
-            ))}
+            {/* 진행 중 단계는 네이비 + 밑줄 — 완료 단계(slate-700)와 색만으로는 구분되지 않는다(#148). */}
+            <span className={stageIndex === 0 ? 'text-primary underline decoration-2 underline-offset-4' : stageIndex > 0 ? 'text-slate-700' : ''}>{stageLabels[0]}</span>
+            <span className={stageIndex === 1 ? 'text-primary underline decoration-2 underline-offset-4' : stageIndex > 1 ? 'text-slate-700' : ''}>{stageLabels[1]}</span>
+            <span className={stageIndex === 2 ? 'text-primary underline decoration-2 underline-offset-4' : stageIndex > 2 ? 'text-slate-700' : ''}>{stageLabels[2]}</span>
             <span className={step === 'SUCCESS' ? 'text-status-success' : ''}>완료</span>
           </div>
         </div>
@@ -416,7 +416,7 @@ export default function EmailSendModal({
                   ) : (
                     <>
                       <label
-                        className={`flex items-start gap-2 rounded-xl border p-3 focus-within:ring-2 focus-within:ring-focus-ring ${source === 'prepared' ? 'border-blue-600 bg-blue-50/60' : 'border-slate-200'} ${availability?.available ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                        className={`flex items-start gap-2 rounded-xl border p-3 focus-within:ring-2 focus-within:ring-focus-ring ${source === 'prepared' ? 'border-primary bg-primary/[0.04]' : 'border-slate-200'} ${availability?.available ? 'cursor-pointer' : 'cursor-not-allowed'}`}
                       >
                         <input
                           type="radio"
@@ -426,7 +426,7 @@ export default function EmailSendModal({
                           disabled={!availability?.available}
                           onChange={() => setSource('prepared')}
                           aria-describedby="po-source-prepared-desc"
-                          className="mt-0.5 accent-blue-600"
+                          className="mt-0.5 accent-primary"
                         />
                         <span>
                           <span className="block text-sm font-semibold text-slate-800">준비본 사용</span>
@@ -438,7 +438,7 @@ export default function EmailSendModal({
                         </span>
                       </label>
                       <label
-                        className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer focus-within:ring-2 focus-within:ring-focus-ring ${source === 'live' ? 'border-blue-600 bg-blue-50/60' : 'border-slate-200'}`}
+                        className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer focus-within:ring-2 focus-within:ring-focus-ring ${source === 'live' ? 'border-primary bg-primary/[0.04]' : 'border-slate-200'}`}
                       >
                         <input
                           type="radio"
@@ -447,7 +447,7 @@ export default function EmailSendModal({
                           checked={source === 'live'}
                           onChange={() => setSource('live')}
                           aria-describedby="po-source-live-desc"
-                          className="mt-0.5 accent-blue-600"
+                          className="mt-0.5 accent-primary"
                         />
                         <span>
                           <span className="block text-sm font-semibold text-slate-800">지금 다시 수집</span>
@@ -464,7 +464,7 @@ export default function EmailSendModal({
                       id="includePending"
                       checked={includePending}
                       onChange={e => setIncludePending(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-50"
+                      className="w-4 h-4 accent-primary bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-50"
                     />
                     <label htmlFor="includePending" className="text-xs font-bold text-slate-600 cursor-pointer">
                       배송대기건 포함
@@ -576,7 +576,7 @@ export default function EmailSendModal({
                     type="checkbox"
                     checked={missingAck}
                     onChange={e => setMissingAck(e.target.checked)}
-                    id="po-missing-ack" className="mt-0.5 w-4 h-4 accent-blue-600"
+                    id="po-missing-ack" className="mt-0.5 w-4 h-4 accent-primary"
                   />
                   빈 칸이 있는 {preview.summary.missingCount}건을 그대로 보냅니다.
                 </label>
@@ -695,7 +695,7 @@ export default function EmailSendModal({
                   type="button"
                   onClick={mode === 'auto' ? handlePreview : handleManualSend}
                   disabled={isBusy || (mode === 'auto' && availabilityLoading) || (mode === 'manual' && !manualFile)}
-                  className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
+                  className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
                 >
                   {isBusy && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                   <span>
@@ -721,7 +721,7 @@ export default function EmailSendModal({
                   onClick={handleCommit}
                   disabled={commitBlocked}
                   aria-describedby={preview?.empty ? undefined : preview && preview.summary.missingCount > 0 ? 'po-commit-notice po-missing-ack-label' : 'po-commit-notice'}
-                  className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
+                  className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
                 >
                   {isBusy && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                   <span>{needsConfirmCount > 0 ? '발주확인하고 발송' : '발송'}</span>
@@ -734,7 +734,7 @@ export default function EmailSendModal({
                   <button
                     type="button"
                     onClick={() => { setError(null); void sendCommittedMail(pendingMail); }}
-                    className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity]"
+                    className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity]"
                   >
                     메일 다시 보내기
                   </button>

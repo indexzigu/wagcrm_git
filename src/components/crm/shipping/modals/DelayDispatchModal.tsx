@@ -97,7 +97,7 @@ interface ExecResult {
 const EXEC_CHUNK_SIZE = 20;
 
 const inputCls =
-  'w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow] shadow-soft-sm';
+  'w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-primary transition-[border-color,box-shadow] shadow-soft-sm';
 const labelCls = 'block text-xs font-bold text-slate-600 mb-1.5';
 
 export default function DelayDispatchModal({
@@ -436,7 +436,7 @@ export default function DelayDispatchModal({
                             row.claimInProgress
                               ? 'border-slate-100 bg-slate-50/50 cursor-not-allowed'
                               : checked
-                                ? 'border-blue-200 bg-blue-50/40 cursor-pointer'
+                                ? 'border-primary/30 bg-primary/5 cursor-pointer'
                                 : 'border-slate-200 bg-white hover:bg-slate-50 cursor-pointer'
                           }`}
                         >
@@ -445,7 +445,7 @@ export default function DelayDispatchModal({
                             checked={checked}
                             disabled={row.claimInProgress}
                             onChange={() => toggleRow(row)}
-                            className="mt-0.5 w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-40 shrink-0"
+                            className="mt-0.5 w-4 h-4 accent-primary bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-40 shrink-0"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">

@@ -78,7 +78,7 @@ export default function ProductSelectModal({
         <div className="flex-1 overflow-y-auto bg-slate-50 p-5">
           {isFetchingNaver && naverProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
-              <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin"></div>
+              <div className="w-8 h-8 border-4 border-slate-200 border-t-primary rounded-full animate-spin"></div>
               <p className="text-sm font-bold">상품 정보를 불러오는 중입니다...</p>
             </div>
           ) : naverProducts.length === 0 ? (
@@ -121,7 +121,7 @@ export default function ProductSelectModal({
                     case 'SUSPENSION':
                     case 'CLOSE': return 'bg-slate-100/50 border-slate-200/80 hover:border-slate-400';
                     case 'WAIT': return 'bg-status-caution-bg/40 border-slate-200 hover:border-status-caution/40';
-                    default: return 'bg-white border-slate-200 hover:border-blue-400';
+                    default: return 'bg-white border-slate-200 hover:border-primary/50';
                   }
                 };
                 const bgStyle = getCardBgStyle(status);

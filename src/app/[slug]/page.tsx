@@ -44,7 +44,7 @@ function PasswordGate({
           {/* 보안 안심 신호(§5) — 셀러가 카톡 링크로 들어와 "피싱 아닌가" 하는 첫 순간의 우려를
               덜어준다. 자물쇠/방패 하나로 '암호화(안전)'와 '와이그라운드 공식(정품)'을 함께 전달. */}
           <div className="mt-2.5 flex items-center justify-center gap-1.5">
-            <ShieldCheck className="size-3.5 text-blue-500 shrink-0" aria-hidden="true" />
+            <ShieldCheck className="size-3.5 text-primary shrink-0" aria-hidden="true" />
             <span className="text-[10px] font-medium text-slate-500">
               암호화로 안전하게 보호되는 와이그라운드 공식 리포트예요
             </span>
