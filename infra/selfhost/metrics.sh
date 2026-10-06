@@ -124,5 +124,54 @@ if [ -n "$DBDATA_KB" ]; then
   DBDATA_JSON="\"available\":true,\"bytes\":$(awk -v k="$DBDATA_KB" 'BEGIN{printf "%.0f", k * 1024}')"
 fi
 
-printf '{"schemaVersion":1,"generatedAt":"%s","cores":%s,"crm":{%s},"db":{%s},"dbData":{%s}}\n' \
-  "$(date +%Y-%m-%dT%H:%M:%S%z)" "$CORES" "$CRM_JSON" "$DB_JSON" "$DBDATA_JSON"
+# ── 코드 점유량 (wag-crm 저장소 + 워크트리 + 운영 체크아웃) — 캐시 읽기 ──
+# 측정은 repo-footprint.sh 가 소유한다(du 약 18초라 30초 폴링에 못 태운다). 여기서는
+# 캐시만 읽고, 캐시가 없거나 오래됐으면 측정을 **백그라운드로** 띄우고 이번 응답에는
+# 있는 값을 그대로 싣는다(다음 폴링이 새 값을 본다). stdout/stderr 를 끊어야 앱이
+# 이 스크립트의 파이프 EOF 를 기다리다 측정이 끝날 때까지 묶이지 않는다.
+
+FOOTPRINT_CACHE="${METRICS_FOOTPRINT_CACHE:-$HOME/selfhost/logs/repo-footprint.json}"
+FOOTPRINT_REFRESH="${METRICS_FOOTPRINT_REFRESH_CMD:-$(cd "$(dirname "$0")" && pwd)/repo-footprint.sh}"
+FOOTPRINT_MAX_AGE="${METRICS_FOOTPRINT_MAX_AGE:-1800}"
+# 백그라운드 측정의 출력은 /dev/null 이 아니라 캐시 옆 로그로 — 스크립트가 캐시를 쓰기
+# 전에 죽으면 그 흔적이 여기뿐이다(파이프가 아니라 파일이라 앱의 EOF 대기와 무관).
+FOOTPRINT_LOG="${METRICS_FOOTPRINT_LOG:-${FOOTPRINT_CACHE%.json}.err}"
+
+REPODATA_JSON='"available":false'
+FOOTPRINT_STALE=1
+if [ -s "$FOOTPRINT_CACHE" ]; then
+  CACHE_LINE="$(head -1 "$FOOTPRINT_CACHE")"
+  CACHE_EPOCH="$(printf '%s' "$CACHE_LINE" | sed -n 's/.*"measuredAtEpoch":\([0-9][0-9]*\).*/\1/p')"
+  # 따옴표 개수가 홀수면 한 줄이 JSON 으로 깨진 것 — 그대로 끼워 넣으면 이 스크립트의
+  # 출력 전체가 깨져 앱이 metricsUnavailable 로 떨어지고 CPU 과부하 경고까지 죽는다.
+  QUOTE_COUNT="$(printf '%s' "$CACHE_LINE" | tr -cd '"' | wc -c | tr -d ' ')"
+  case "$CACHE_LINE" in
+    '{"available":'*'}')
+      if [ $(( QUOTE_COUNT % 2 )) -eq 0 ]; then
+        # 캐시는 repo-footprint.sh 가 쓴 JSON 한 줄 — 바깥 중괄호만 벗겨 그대로 싣는다.
+        REPODATA_JSON="$(printf '%s' "$CACHE_LINE" | sed -e 's/^{//' -e 's/}$//')"
+        # 미래 시각(시계 점프)은 신선으로 치지 않는다 — 음수 나이는 오래된 것과 같이 다룬다.
+        if [ -n "$CACHE_EPOCH" ]; then
+          CACHE_AGE=$(( $(date +%s) - CACHE_EPOCH ))
+          if [ "$CACHE_AGE" -ge 0 ] && [ "$CACHE_AGE" -le "$FOOTPRINT_MAX_AGE" ]; then
+            FOOTPRINT_STALE=0
+          fi
+        fi
+      else
+        REPODATA_JSON='"available":false,"error":"캐시 손상"'
+      fi
+      ;;
+  esac
+fi
+if [ "$FOOTPRINT_STALE" = 1 ]; then
+  # 첫 단어(실행 파일)가 없으면 띄우지 않고 그 사실을 싣는다 — 조용히 30초마다 실패하는
+  # spawn 은 앱에 "측정 중…"을 영원히 남긴다(옛 프로덕션 체크아웃 + 새 앱 조합 등).
+  if command -v "${FOOTPRINT_REFRESH%% *}" >/dev/null 2>&1; then
+    ( $FOOTPRINT_REFRESH >>"$FOOTPRINT_LOG" 2>&1 </dev/null & )
+  else
+    REPODATA_JSON='"available":false,"error":"측정 스크립트 없음"'
+  fi
+fi
+
+printf '{"schemaVersion":1,"generatedAt":"%s","cores":%s,"crm":{%s},"db":{%s},"dbData":{%s},"repoData":{%s}}\n' \
+  "$(date +%Y-%m-%dT%H:%M:%S%z)" "$CORES" "$CRM_JSON" "$DB_JSON" "$DBDATA_JSON" "$REPODATA_JSON"
