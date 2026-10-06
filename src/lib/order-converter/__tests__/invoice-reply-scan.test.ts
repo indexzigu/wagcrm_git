@@ -10,6 +10,7 @@ import {
   type InvoiceReplyScanDb,
   type InvoiceReplyTarget,
 } from '../invoice-reply-scan';
+import { resolveInvoiceReplyStatus } from '../invoice-reply-status';
 import { createFakeReplyImap, type FakeMail } from './fixtures/fake-reply-imap';
 
 /**
@@ -364,6 +365,47 @@ describe('scanInvoiceRepliesReadOnly — 메일함에 흔적을 남기지 않는
     expect(scan.detections.map((d) => d.uid)).toEqual([4]);
   });
 
+  it('열리기만 하고 검색·본문 받기가 실패한 편지함은 「끝까지 본 편지함」으로 세지 않는다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { connection } = createFakeReplyImap(
+      { INBOX: [reply(1)], 라벨: [reply(2)], 보관: [reply(3)] },
+      { failSearch: ['INBOX'], failBodyFetch: ['라벨'] },
+    );
+    const scan = await scanInvoiceRepliesReadOnly(connection as unknown as ImapSimple, [target('oc-1')], {
+      loginUser: 'me@example.com',
+      now: NOW,
+    });
+    expect(scan.mailboxesOpened).toBe(3);
+    expect(scan.mailboxErrors).toBe(2);
+    expect(scan.mailboxesSearched).toBe(1);
+    expect(scan.detections.map((d) => d.uid)).toEqual([3]);
+    warn.mockRestore();
+  });
+
+  it('주문 키는 저장 상한에서 잘라도 건수는 원래 수로 남긴다(잘림을 알 수 있게)', async () => {
+    const rows = Array.from({ length: 1_001 }, (_, i) => ({
+      orderId: `20261006${String(i).padStart(8, '0')}`,
+      tracking: `6${String(i).padStart(11, '0')}`,
+    }));
+    const { connection } = createFakeReplyImap({ INBOX: [reply(5, { attachmentRows: rows })] });
+    const scan = await scanInvoiceRepliesReadOnly(connection as unknown as ImapSimple, [target('oc-1')], {
+      loginUser: 'me@example.com',
+      now: NOW,
+    });
+    const [found] = scan.detections;
+    expect(found.parsedTrackingCount).toBe(1_001);
+    expect(found.trackingOrderKeys.length).toBeLessThan(found.parsedTrackingCount);
+
+    // 저장 → 화면 판정. 잘려 나간 마지막 주문만 아직 배송대기여도 회신 표시가 사라지면 안 된다.
+    const stored = rows.map((r) => r.orderId);
+    const lastPending = stored.find((key) => !found.trackingOrderKeys.includes(key))!;
+    const status = resolveInvoiceReplyStatus(
+      [{ receivedAt: found.receivedAt, trackingOrderKeys: found.trackingOrderKeys, parsedTrackingCount: found.parsedTrackingCount }],
+      { keys: new Set([lastPending]), oldestPoRequestedAtMs: ago(3).getTime() },
+    );
+    expect(status).not.toBeNull();
+  });
+
   it('첨부를 못 읽어도 감지는 남기되 건수 0', async () => {
     const { connection } = createFakeReplyImap({ INBOX: [reply(9, { attachmentRows: [] })] });
     const scan = await scanInvoiceRepliesReadOnly(connection as unknown as ImapSimple, [target('oc-1')], {
@@ -463,6 +505,82 @@ describe('runInvoiceReplyScan', () => {
     expect(connection.end).toHaveBeenCalled();
     // 종료 뒤 늦게 오는 오류도 리스너가 받는다(throw 하지 않는다).
     expect(() => connection.emit('error', new Error('late'))).not.toThrow();
+    warn.mockRestore();
+  });
+
+  it('편지함은 열렸지만 검색이 전부 실패하면 실행 실패로 기록한다(멈춘 감지기를 성공으로 숨기지 않는다)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { db } = oneTarget();
+    const { connection } = createFakeReplyImap({ INBOX: [reply(1)] }, { failSearch: ['INBOX'] });
+    const summary = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: async () => connection as unknown as ImapSimple,
+      resolveBrand: async () => null,
+    });
+    expect(summary).toMatchObject({ mailboxesOpened: 1, mailboxesSearched: 0, mailboxErrors: 1, detected: 0 });
+    expect(summary.failed).toBe(true);
+    expect(summary.failureReason).toContain('편지함');
+    warn.mockRestore();
+  });
+
+  it('본문 받기가 전부 실패해도 실행 실패로 기록한다', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { db } = oneTarget();
+    const { connection } = createFakeReplyImap({ INBOX: [reply(1)] }, { failBodyFetch: ['INBOX'] });
+    const summary = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: async () => connection as unknown as ImapSimple,
+      resolveBrand: async () => null,
+    });
+    expect(summary.failed).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('실패한 편지함 말고는 빈 편지함뿐이어도 실행 실패다(볼 것이 없던 것은 「끝까지 봄」이 아니다)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { db } = oneTarget();
+    const { connection } = createFakeReplyImap({ INBOX: [reply(1)], 라벨: [] }, { failSearch: ['INBOX'] });
+    const summary = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: async () => connection as unknown as ImapSimple,
+      resolveBrand: async () => null,
+    });
+    expect(summary).toMatchObject({ mailboxesOpened: 2, mailboxesSearched: 0, mailboxErrors: 1 });
+    expect(summary.failed).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('실패 없이 전부 빈 편지함이면 성공이다', async () => {
+    const { db } = oneTarget();
+    const { connection } = createFakeReplyImap({ INBOX: [], 라벨: [] });
+    const summary = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: async () => connection as unknown as ImapSimple,
+      resolveBrand: async () => null,
+    });
+    expect(summary).toMatchObject({ mailboxesOpened: 2, mailboxesSearched: 0, mailboxErrors: 0, detected: 0 });
+    expect(summary.failed).toBeUndefined();
+  });
+
+  it('일부 편지함만 실패하면 성공으로 두되 실패 수를 남긴다(수동 버튼과 같은 처분)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { db } = fakeDb({
+      poGroups: [{ campaignId: 'oc-1', count: 1, first: ago(3), last: ago(3) }],
+      campaigns: [campaign('oc-1', { sellerName: '테스트셀러' })],
+    });
+    const { connection: partial } = createFakeReplyImap({ INBOX: [reply(1)], 라벨: [reply(2)] }, { failSearch: ['INBOX'] });
+    const ok = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: async () => partial as unknown as ImapSimple,
+      resolveBrand: async () => null,
+    });
+    expect(ok.failed).toBeUndefined();
+    expect(ok).toMatchObject({ mailboxErrors: 1, mailboxesSearched: 1, detected: 1 });
     warn.mockRestore();
   });
 

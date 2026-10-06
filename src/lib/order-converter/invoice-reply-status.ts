@@ -15,7 +15,10 @@ import { formatLastSyncLabel, toKstYmd } from '@/lib/date-utils';
 
 /** 화면이 받는 최소 형태(campaigns 응답의 `invoiceReply`). */
 export interface InvoiceReplyStatus {
-  /** 회신 엑셀에 송장이 실린 주문 중 **아직 배송대기에 남은** 주문 수. 파싱을 못 한 회신만 있으면 0. */
+  /**
+   * 회신 엑셀에 송장이 실린 주문 중 **아직 배송대기에 남은** 주문 수. 0 = 건수를 모른다(파싱을 못 한
+   * 회신만 있거나, 저장 상한에 잘린 회신이 섞였다) — 화면은 건수 칸을 뺀다.
+   */
   count: number;
   /** 아직 처리 안 된 회신 중 가장 최근 수신 시각(ISO). */
   receivedAt: string;
@@ -26,6 +29,11 @@ export interface InvoiceReplyDetectionLite {
   receivedAt: Date | string;
   /** 회신 엑셀의 주문번호 키 목록(상품주문번호 또는 주문번호 — 브랜드 회신 규칙이 정한다). */
   trackingOrderKeys: unknown;
+  /**
+   * 회신 엑셀에서 읽은 **원래** 건수. 저장 키는 상한(`MAX_STORED_ORDER_KEYS`)에서 잘리므로, 이 수가
+   * 키 수보다 크면 목록이 불완전하다. 필수인 이유: 빠뜨리면 잘린 목록이 완전한 목록으로 읽힌다.
+   */
+  parsedTrackingCount: number;
 }
 
 /** 캠페인의 지금 배송대기 상태. */
@@ -53,6 +61,11 @@ function toMs(value: Date | string): number {
  * - 주문번호를 읽은 회신은 **그 주문 중 하나라도 아직 배송대기면** 미처리다(정확 판정).
  * - 주문번호를 못 읽은 회신(첨부 파싱 실패·0건)은 「가장 오래된 배송대기의 발주요청 **이후**에
  *   도착했는가」로 본다 — 그보다 이른 회신은 이미 처리된 앞 차수의 회신이다.
+ * - 저장 상한에 **잘린** 회신(원래 건수 > 저장 키 수)은 저장된 키가 하나도 배송대기에 없어도 「전부
+ *   처리됨」으로 읽지 않는다 — 잘려 나간 주문이 남았을 수 있다. 그때는 못 읽은 회신과 같은 시각 규칙을
+ *   쓴다. 잘린 회신이 미처리로 남으면 남은 건수를 알 수 없으므로 `count` 는 0(건수 미표시)이다.
+ *   ⚠️ 감지 행은 다시 쓰이지 않는다(같은 메일은 재스캔에서 건너뛴다) — 여기서 잘못 「처리됨」으로 읽으면
+ *   그 회신의 표시는 영영 돌아오지 않는다.
  */
 export function resolveInvoiceReplyStatus(
   detections: readonly InvoiceReplyDetectionLite[],
@@ -63,25 +76,32 @@ export function resolveInvoiceReplyStatus(
   const covered = new Set<string>();
   let latestMs = 0;
   let unconsumed = false;
+  let countUnknown = false;
+
+  const arrivedAfterOldestPending = (receivedMs: number) =>
+    pending.oldestPoRequestedAtMs !== null && receivedMs >= pending.oldestPoRequestedAtMs;
 
   for (const detection of detections) {
     const receivedMs = toMs(detection.receivedAt);
     if (!Number.isFinite(receivedMs)) continue;
     const keys = toKeyList(detection.trackingOrderKeys);
+    const truncated = keys.length > 0 && Number(detection.parsedTrackingCount) > keys.length;
 
     if (keys.length > 0) {
       const stillPending = keys.filter((key) => pending.keys.has(key));
-      if (stillPending.length === 0) continue;
+      if (stillPending.length === 0 && !(truncated && arrivedAfterOldestPending(receivedMs))) continue;
       for (const key of stillPending) covered.add(key);
+      if (truncated) countUnknown = true;
     } else {
-      if (pending.oldestPoRequestedAtMs === null || receivedMs < pending.oldestPoRequestedAtMs) continue;
+      if (!arrivedAfterOldestPending(receivedMs)) continue;
     }
 
     unconsumed = true;
     if (receivedMs > latestMs) latestMs = receivedMs;
   }
 
-  return unconsumed ? { count: covered.size, receivedAt: new Date(latestMs).toISOString() } : null;
+  if (!unconsumed) return null;
+  return { count: countUnknown ? 0 : covered.size, receivedAt: new Date(latestMs).toISOString() };
 }
 
 /**

@@ -73,6 +73,10 @@ export function createFakeReplyImap(
     hangOnSearch?: boolean;
     /** 헤더 검색 도중 연결 객체가 'error' 이벤트를 내고 응답하지 않는다. */
     emitErrorOnSearch?: boolean;
+    /** 이 편지함은 열리지만 헤더 검색(SEARCH)이 서버 오류로 거절된다. */
+    failSearch?: string[];
+    /** 이 편지함은 열리고 검색도 되지만 본문 받기(UID FETCH)가 서버 오류로 거절된다. */
+    failBodyFetch?: string[];
   } = {},
 ) {
   const log = {
@@ -110,12 +114,14 @@ export function createFakeReplyImap(
       const mails = mailboxes[current] ?? [];
       const first = criteria[0] as [string, ...unknown[]];
       if (first[0] === 'UID') {
+        if (options.failBodyFetch?.includes(current)) throw new Error('fetch failed');
         const uids = first.slice(1) as number[];
         log.bodyFetchUids.push(uids);
         return mails
           .filter((mail) => uids.includes(mail.uid))
           .map((mail) => ({ attributes: { uid: mail.uid, date: mail.date }, parts: [{ which: '', body: rawMime(mail) }] }));
       }
+      if (options.failSearch?.includes(current)) throw new Error('search failed');
       const bodyNeedle = criteria.find((c) => c[0] === 'BODY')?.[1] as string | undefined;
       const hits = bodyNeedle ? mails.filter((mail) => mail.bodyText.includes(bodyNeedle)) : mails;
       return hits.map((mail) => ({

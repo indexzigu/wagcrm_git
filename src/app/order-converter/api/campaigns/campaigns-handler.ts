@@ -633,13 +633,14 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       if (activeIds.length > 0) {
         const rows = await prisma.invoiceReplyDetection.findMany({
           where: { orderCampaignId: { in: activeIds }, receivedAt: { gte: new Date(Date.now() - 14 * 86400000) } },
-          select: { orderCampaignId: true, receivedAt: true, trackingOrderKeys: true },
+          select: { orderCampaignId: true, receivedAt: true, trackingOrderKeys: true, parsedTrackingCount: true },
         });
         for (const row of rows) {
           const list = replyDetectionsByCampaign.get(row.orderCampaignId) ?? [];
           let keys: unknown = null;
           try { keys = row.trackingOrderKeys ? JSON.parse(row.trackingOrderKeys) : null; } catch { keys = null; }
-          list.push({ receivedAt: row.receivedAt, trackingOrderKeys: keys });
+          // parsedTrackingCount 는 잘림 판정에 쓴다(저장 키 수보다 크면 목록이 불완전 — invoice-reply-status.ts).
+          list.push({ receivedAt: row.receivedAt, trackingOrderKeys: keys, parsedTrackingCount: row.parsedTrackingCount });
           replyDetectionsByCampaign.set(row.orderCampaignId, list);
         }
       }

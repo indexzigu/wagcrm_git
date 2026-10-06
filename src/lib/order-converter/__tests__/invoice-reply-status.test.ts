@@ -16,6 +16,7 @@ describe('resolveInvoiceReplyStatus', () => {
   const detection = (receivedAt: string, keys: string[] | null) => ({
     receivedAt: T(receivedAt),
     trackingOrderKeys: keys,
+    parsedTrackingCount: keys?.length ?? 0,
   });
 
   it('회신이 덮는 주문이 아직 배송대기면 미처리로 띄운다(건수 = 아직 배송대기인 키 수)', () => {
@@ -59,6 +60,29 @@ describe('resolveInvoiceReplyStatus', () => {
       count: 0,
       receivedAt: '2026-10-06T04:00:00.000Z',
     });
+  });
+
+  it('저장 상한에 잘린 키 목록은 「전부 처리됨」으로 읽지 않는다 — 잘려 나간 주문이 남았을 수 있다', () => {
+    const keys = Array.from({ length: 1_001 }, (_, i) => `po-${i}`);
+    const truncated = { receivedAt: T('2026-10-06T05:10:00Z'), trackingOrderKeys: keys.slice(0, 1_000), parsedTrackingCount: 1_001 };
+    const pending = { keys: new Set(['po-1000']), oldestPoRequestedAtMs: T('2026-10-06T01:00:00Z').getTime() };
+    // 남은 주문 수는 알 수 없다 — 건수 칸을 빼는 0 으로(「주문 0건」이 아니라 건수 미표시).
+    expect(resolveInvoiceReplyStatus([truncated], pending)).toEqual({ count: 0, receivedAt: '2026-10-06T05:10:00.000Z' });
+    // 잘린 목록도 발주요청보다 이른 회신이면 앞 차수의 것이다.
+    expect(
+      resolveInvoiceReplyStatus([truncated], { keys: pending.keys, oldestPoRequestedAtMs: T('2026-10-06T06:00:00Z').getTime() }),
+    ).toBeNull();
+  });
+
+  it('잘린 회신이 섞이면 건수를 내지 않는다(아는 만큼만 센 하한을 정확한 건수처럼 보이지 않게)', () => {
+    const status = resolveInvoiceReplyStatus(
+      [
+        { receivedAt: T('2026-10-06T02:00:00Z'), trackingOrderKeys: ['po-1', 'po-2'], parsedTrackingCount: 2 },
+        { receivedAt: T('2026-10-06T03:00:00Z'), trackingOrderKeys: ['po-3'], parsedTrackingCount: 5 },
+      ],
+      { keys: new Set(['po-1', 'po-3', 'po-4']), oldestPoRequestedAtMs: 0 },
+    );
+    expect(status).toEqual({ count: 0, receivedAt: '2026-10-06T03:00:00.000Z' });
   });
 
   it('여러 회신이면 가장 최근 수신 시각을, 건수는 중복 없이 합친다', () => {
