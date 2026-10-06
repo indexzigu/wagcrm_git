@@ -15,8 +15,7 @@ async function fetchOrderWorkSummary(): Promise<OrderWorkSummary> {
 }
 
 /**
- * 홈 「오늘 처리할 주문」 카드 + 사이드바 「주문 관리」 배지 공용 훅.
- * 같은 쿼리키를 쓰므로 두 소비처가 동시에 떠 있어도 요청은 1회다(ApprovalBadge 와 같은 캐시 공유 패턴).
+ * 홈 「오늘 처리할 주문」 카드 훅.
  * 서버는 네이버를 부르지 않는다(`/api/order-work` 헤더).
  */
 export function useOrderWorkSummary() {

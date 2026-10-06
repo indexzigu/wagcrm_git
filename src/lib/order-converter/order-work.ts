@@ -2,7 +2,7 @@
 //
 // 두 표면이 같은 판정을 쓴다 — ⛔ 어느 쪽에서도 다시 쓰지 말 것:
 //  · 주문 관리 카드(`campaigns-handler.ts`)의 지연 경고 배지·팝오버(주문확인·배송대기·배송중)
-//  · 홈 「오늘 처리할 주문」 카드 + 사이드바 「주문 관리」 배지(`order-work-summary.ts`)
+//  · 홈 「오늘 처리할 주문」 카드(`order-work-summary.ts`)
 // 종전에는 임계값 3개와 경과일 계산이 핸들러 안에 **본품·추가구성 두 갈래로 손 복사**돼 있었다.
 // 홈 카드가 생기면서 세 번째 사본이 생길 자리였다 — 화면마다 같은 판정을 손으로 다시 쓰다
 // 갈라지는 것이 이 레포의 반복 결함 유형이라(codebase-map 「SSOT 통합 PR 이 새 사본을 만든다」)
@@ -100,11 +100,11 @@ export type OrderWorkSummaryCounts = {
   delayed: { lines: number; campaigns: number; invoiceLines: number; shippingLines: number };
   /** 반품/교환 진행 중 — 주문 관리 「반품/교환」 버튼과 같은 판정(`isCompleted` 아닌 것). */
   openClaims: { lines: number; campaigns: number; unmatchedLines: number };
-  /** 세 칸의 **합집합** 상품주문 수 — 사이드바 배지 숫자. */
+  /** 세 칸의 **합집합** 상품주문 수. */
   total: number;
 };
 
-/** `/api/order-work` 응답 — 홈 카드·사이드바 배지가 읽는 모양(client-safe 라 여기 둔다). */
+/** `/api/order-work` 응답 — 홈 카드가 읽는 모양(client-safe 라 여기 둔다). */
 export type OrderWorkSummary = OrderWorkSummaryCounts & {
   /** 주문 데이터의 마지막 동기화 시각 — 주문 관리 툴바 「마지막 동기화」와 같은 값. */
   lastSyncAt: string | null;
@@ -165,21 +165,6 @@ export function summarizeOrderWork(
     openClaims: { lines: claims.size, campaigns: claimCampaigns.size, unmatchedLines: unmatched.size },
     total: all.size,
   };
-}
-
-/**
- * 배지·카드의 심각도. 평상시 일감(발주 대기만)은 `routine` — 무채색으로 둔다(늘 켜진 주황 배지는
- * 습관화로 신호를 잃는다, P8 §2). 늦은 것이 있을 때만 색을 받는다.
- *  · urgent  = 송장·배송 지연 또는 반품/교환(주문 관리의 반품/교환 버튼과 같은 위험색)
- *  · caution = 발주 대기 중 결제 후 2일 이상
- */
-export type OrderWorkSeverity = 'none' | 'routine' | 'caution' | 'urgent';
-
-export function resolveOrderWorkSeverity(counts: OrderWorkSummaryCounts): OrderWorkSeverity {
-  if (counts.total <= 0) return 'none';
-  if (counts.delayed.lines > 0 || counts.openClaims.lines > 0) return 'urgent';
-  if (counts.awaitingPo.delayedLines > 0) return 'caution';
-  return 'routine';
 }
 
 /**

@@ -22,7 +22,7 @@ export const queryKeys = {
   },
   campaigns: () => ["campaigns"] as const,
   mobilePulse: () => ["mobile-pulse"] as const,
-  /** 홈 「오늘 처리할 주문」 카드와 사이드바 「주문 관리」 배지가 한 캐시를 나눠 쓴다(요청 1회). */
+  /** 홈 「오늘 처리할 주문」 카드. */
   orderWork: () => ["order-work"] as const,
   outreach: () => ["outreach"] as const,
   /**
