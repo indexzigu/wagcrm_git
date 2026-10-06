@@ -21,7 +21,12 @@ export type CampaignInsights = {
 export type Campaign = {
   id: string;
   name: string;
-  template: string;
+  /**
+   * 거래처 양식(공급사 템플릿) 슬러그. DB(`OrderCampaign.template String?`)와 생성 핸들러
+   * (`data.template || null`)가 비울 수 있으므로 null 이 실제로 내려온다 — `string` 으로 선언하면
+   * 가드 없이 서버로 보내 400 을 만든다(T-235). 양식이 필요한 동작(송장 회신 조회 등)은 호출 전에 확인한다.
+   */
+  template: string | null;
   sellerName: string;
   toEmail?: string;
   ccEmail?: string;
