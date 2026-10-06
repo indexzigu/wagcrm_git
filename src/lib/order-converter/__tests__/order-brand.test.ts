@@ -79,17 +79,17 @@ describe('partnerToOrderBrand', () => {
         orderDisplayName: '트리프',
         orderEmailDomains: null,
         orderFormatAdapter: 'tripp',
-        orderToEmail: 'order@tripp.co.kr',
-        orderCcEmail: 'cs@tripp.co.kr',
+        orderToEmail: 'order@example.com',
+        orderCcEmail: 'cs@example.com',
       }),
     ).toEqual({
       slug: 'tripp',
       partnerId: 'p2',
       displayName: '트리프',
-      emailDomains: ['@tripp.co.kr'],
+      emailDomains: ['@example.com'],
       formatAdapter: 'tripp',
-      toEmail: 'order@tripp.co.kr',
-      ccEmail: 'cs@tripp.co.kr',
+      toEmail: 'order@example.com',
+      ccEmail: 'cs@example.com',
       excelRules: null,
     });
   });
