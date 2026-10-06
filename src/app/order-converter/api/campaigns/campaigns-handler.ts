@@ -625,7 +625,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       buildCampaignSnapshotResponse(camp, resolveProvider(camp), extra);
 
     // 송장 회신 도착 감지(크론 scan-invoice-replies)를 활성 캠페인 몫만 한 번에 읽는다 — 카드의
-    // 「회신 도착 · N건 · HH:MM」 줄. 「처리됨」은 저장값이 아니라 아래 배송대기 상태에서 파생한다
+    // 「송장 회신 도착 · 주문 N건 · HH:MM」 줄. 「처리됨」은 저장값이 아니라 아래 배송대기 상태에서 파생한다
     // (invoice-reply-status.ts). 소형 컬럼만 select 한다. 실패해도 목록은 그대로 낸다(줄만 안 뜬다).
     const replyDetectionsByCampaign = new Map<string, InvoiceReplyDetectionLite[]>();
     try {
@@ -1296,7 +1296,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         oldestPendingDate,
         oldestShippingDate,
         lastOrderAt: lastOrderAt || null,
-        // 처리 안 된 송장 회신(크론 감지) — 없으면 null. 카드의 「회신 도착 · N건 · HH:MM」 줄.
+        // 처리 안 된 송장 회신(크론 감지) — 없으면 null. 카드의 「송장 회신 도착 · 주문 N건 · HH:MM」 줄.
         invoiceReply: resolveInvoiceReplyStatus(replyDetectionsByCampaign.get(camp.id) ?? [], {
           keys: replyPendingKeys,
           oldestPoRequestedAtMs: oldestPendingPoAtMs,

@@ -8,7 +8,7 @@ import { runInvoiceReplyScan, type InvoiceReplyScanDb } from "@/lib/order-conver
  * **송장 회신 도착 감지** — 매시 정각 10:00~20:00 KST(매일). 발주 자동화 1단계 B(오너 승인 2026-10-06).
  *
  * 발주요청은 했고 송장 등록이 덜 끝난 주문캠페인마다 메일함을 **읽기 전용**으로 훑어 브랜드사의
- * 송장 회신이 왔는지 기록만 한다. 주문 관리 카드가 그 기록으로 「회신 도착 · N건 · HH:MM」을 띄운다.
+ * 송장 회신이 왔는지 기록만 한다. 주문 관리 카드가 그 기록으로 「송장 회신 도착 · 주문 N건 · HH:MM」을 띄운다.
  *
  * ⛔ 송장 등록 · 네이버 호출 · `OrderActionLog` · 메일 발송 · 메일 읽음 표시를 하지 않는다.
  *    본체와 그 근거는 `src/lib/order-converter/invoice-reply-scan.ts` 머리 주석이 정본이다.

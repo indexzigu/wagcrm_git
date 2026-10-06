@@ -15,7 +15,7 @@ import { formatLastSyncLabel, toKstYmd } from '@/lib/date-utils';
 
 /** 화면이 받는 최소 형태(campaigns 응답의 `invoiceReply`). */
 export interface InvoiceReplyStatus {
-  /** 회신 엑셀에서 읽은 주문 중 **아직 배송대기에 남은** 건수. 파싱을 못 한 회신만 있으면 0. */
+  /** 회신 엑셀에 송장이 실린 주문 중 **아직 배송대기에 남은** 주문 수. 파싱을 못 한 회신만 있으면 0. */
   count: number;
   /** 아직 처리 안 된 회신 중 가장 최근 수신 시각(ISO). */
   receivedAt: string;
@@ -85,14 +85,16 @@ export function resolveInvoiceReplyStatus(
 }
 
 /**
- * 카드 한 줄 문구 — 「회신 도착 · N건 · HH:MM」. 오늘(KST)이 아니면 시각 앞에 MM.DD 를 붙인다
- * (어제 온 회신이 오늘 온 것으로 읽히지 않게 — `formatLastSyncLabel` 과 같은 꼴).
- * 건수를 못 읽은 회신이면 건수 칸을 뺀다(0건이라고 쓰면 「회신에 송장이 없다」로 읽힌다).
+ * 카드 한 줄 문구 — 「송장 회신 도착 · 주문 N건 · HH:MM」. 오늘(KST)이 아니면 시각 앞에 MM.DD 를
+ * 붙인다(어제 온 회신이 오늘 온 것으로 읽히지 않게 — `formatLastSyncLabel` 과 같은 꼴).
+ * N 은 **회신 엑셀에 송장이 실린 주문 중 아직 배송대기인 주문 수**다(`count`) — 무엇을 세는지 문구에
+ * 「주문」으로 밝힌다(ss-ux 검토 2026-10-06). 건수를 못 읽은 회신이면 건수 칸을 뺀다(0건이라고 쓰면
+ * 「회신에 송장이 없다」로 읽힌다).
  */
 export function formatInvoiceReplyLine(status: InvoiceReplyStatus, now: Date = new Date()): string {
   const when = formatLastSyncLabel(status.receivedAt, now);
-  const parts = ['회신 도착'];
-  if (status.count > 0) parts.push(`${status.count.toLocaleString('ko-KR')}건`);
+  const parts = ['송장 회신 도착'];
+  if (status.count > 0) parts.push(`주문 ${status.count.toLocaleString('ko-KR')}건`);
   if (when) parts.push(when);
   return parts.join(' · ');
 }

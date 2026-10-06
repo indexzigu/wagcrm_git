@@ -4,6 +4,7 @@ import {
   MAX_CAMPAIGNS_PER_RUN,
   persistInvoiceReplyDetections,
   runInvoiceReplyScan,
+  interleaveBodyFetchOrder,
   scanInvoiceRepliesReadOnly,
   selectInvoiceReplyTargets,
   type InvoiceReplyScanDb,
@@ -29,20 +30,29 @@ type Campaign = {
 };
 
 function fakeDb(input: {
+  /** 최근 창(14일) 안의 발주요청 묶음. */
   poGroups?: Array<{ campaignId: string; count: number; first: Date; last: Date }>;
+  /** 캠페인 전체 이력의 발주요청 주문 수. 없으면 창 안 수와 같다고 본다. */
+  totals?: Record<string, number>;
   registrations?: Array<{ campaignId: string; createdAt: Date; successCount: number; skipCount: number }>;
   campaigns?: Campaign[];
 }) {
   const rows: Array<Record<string, unknown>> = [];
   const db = {
     orderFulfillmentState: {
-      groupBy: vi.fn(async () =>
-        (input.poGroups ?? []).map((g) => ({
-          campaignId: g.campaignId,
-          _count: { _all: g.count },
-          _min: { poRequestedAt: g.first },
-          _max: { poRequestedAt: g.last },
-        })),
+      groupBy: vi.fn(async (args: { where: { poRequestedAt?: { gte?: Date } } }) =>
+        args.where.poRequestedAt?.gte
+          ? (input.poGroups ?? []).map((g) => ({
+              campaignId: g.campaignId,
+              _count: { _all: g.count },
+              _min: { poRequestedAt: g.first },
+              _max: { poRequestedAt: g.last },
+            }))
+          : // 누적(캠페인 전체 이력) 집계
+            (input.poGroups ?? []).map((g) => ({
+              campaignId: g.campaignId,
+              _count: { _all: input.totals?.[g.campaignId] ?? g.count },
+            })),
       ),
       update: vi.fn(),
       upsert: vi.fn(),
@@ -82,14 +92,14 @@ const campaign = (id: string, over: Partial<Campaign> = {}): Campaign => ({
 });
 
 describe('selectInvoiceReplyTargets — 발주요청은 했고 송장 등록이 덜 끝난 활성 캠페인', () => {
-  it('송장등록 성공+건너뜀이 발주요청 주문 수에 닿은 캠페인은 뺀다', async () => {
+  it('마지막 발주 뒤에 등록이 있고 누적 등록 성공이 누적 발주 수에 닿은 캠페인은 뺀다', async () => {
     const { db } = fakeDb({
       poGroups: [
         { campaignId: 'oc-done', count: 3, first: ago(30), last: ago(30) },
         { campaignId: 'oc-partial', count: 5, first: ago(30), last: ago(20) },
       ],
       registrations: [
-        { campaignId: 'oc-done', createdAt: ago(10), successCount: 2, skipCount: 1 },
+        { campaignId: 'oc-done', createdAt: ago(10), successCount: 3, skipCount: 0 },
         { campaignId: 'oc-partial', createdAt: ago(10), successCount: 2, skipCount: 0 },
       ],
       campaigns: [campaign('oc-done'), campaign('oc-partial')],
@@ -101,7 +111,34 @@ describe('selectInvoiceReplyTargets — 발주요청은 했고 송장 등록이 
     expect(selection.skippedRegistered).toBe(1);
   });
 
-  it('발주요청보다 앞선 등록 기록은 세지 않는다(지난 차수의 등록)', async () => {
+  it('건너뜀(이미 발송됨)은 세지 않는다 — 같은 파일 재등록이 이중으로 세어지지 않게', async () => {
+    const { db } = fakeDb({
+      poGroups: [{ campaignId: 'oc-1', count: 3, first: ago(30), last: ago(30) }],
+      registrations: [
+        { campaignId: 'oc-1', createdAt: ago(20), successCount: 1, skipCount: 0 },
+        { campaignId: 'oc-1', createdAt: ago(10), successCount: 0, skipCount: 1 },
+        { campaignId: 'oc-1', createdAt: ago(5), successCount: 0, skipCount: 1 },
+      ],
+      campaigns: [campaign('oc-1')],
+    });
+    expect((await selectInvoiceReplyTargets(db, NOW)).targets).toHaveLength(1);
+  });
+
+  it('창 밖 옛 주문을 새 주문과 한 파일로 등록해도, 새 주문이 남아 있으면 계속 본다(같은 범위로 센다)', async () => {
+    // 옛 발주 3건(창 밖) + 새 발주 5건(창 안). 등록 1회에 옛 3 + 새 2 = 성공 5. 새 3건은 아직 열려 있다.
+    // 창 안 발주 수(5)와 비교하면 「다 끝났다」로 잘못 읽힌다 — 누적 8 과 비교해야 한다.
+    const { db } = fakeDb({
+      poGroups: [{ campaignId: 'oc-1', count: 5, first: ago(30), last: ago(30) }],
+      totals: { 'oc-1': 8 },
+      registrations: [{ campaignId: 'oc-1', createdAt: ago(10), successCount: 5, skipCount: 0 }],
+      campaigns: [campaign('oc-1')],
+    });
+    const selection = await selectInvoiceReplyTargets(db, NOW);
+    expect(selection.targets.map((t) => t.orderCampaignId)).toEqual(['oc-1']);
+    expect(selection.skippedRegistered).toBe(0);
+  });
+
+  it('마지막 발주요청 뒤에 등록이 없으면 계속 본다(앞 차수의 등록만 있는 경우)', async () => {
     const { db } = fakeDb({
       poGroups: [{ campaignId: 'oc-1', count: 2, first: ago(5), last: ago(5) }],
       registrations: [{ campaignId: 'oc-1', createdAt: ago(50), successCount: 10, skipCount: 0 }],
@@ -280,6 +317,43 @@ describe('scanInvoiceRepliesReadOnly — 메일함에 흔적을 남기지 않는
     expect(log.bodyFetchUids.flat()).toHaveLength(4);
   });
 
+  it('본문 상한은 캠페인을 번갈아 나눈다 — 후보가 많은 캠페인이 뒤 캠페인을 굶기지 않는다', async () => {
+    // oc-wide 는 도메인 설정이 없어 모든 메일이 후보다(수동 버튼과 같은 규칙). oc-tail 의 회신은 가장 오래됐다.
+    const noise = Array.from({ length: 6 }, (_, i) => reply(i + 1, { date: ago(1 + i), attachmentRows: undefined }));
+    const tailReply = reply(50, {
+      date: ago(30),
+      from: 'cs@brand-b.example.com',
+      bodyText: '회신 [YGRD-REF:oc-tail|z]',
+    });
+    const { connection } = createFakeReplyImap({ INBOX: [...noise, tailReply] });
+    const scan = await scanInvoiceRepliesReadOnly(
+      connection as unknown as ImapSimple,
+      [
+        target('oc-wide', { toEmail: null, sellerName: '' }),
+        target('oc-tail', { toEmail: 'orders@brand-b.example.com', sellerName: '꼬리셀러' }),
+      ],
+      { loginUser: 'me@example.com', now: NOW, maxBodies: 4 },
+    );
+    expect(scan.bodyCapHit).toBe(true);
+    expect(scan.detections.map((d) => d.orderCampaignId)).toContain('oc-tail');
+  });
+
+  it('번갈아 뽑기 — 캠페인마다 최신부터 하나씩, 시작 캠페인은 시(時)마다 돈다', () => {
+    const h = (uid: number) => ({ uid, date: null, subject: '', fromAddress: '', messageId: null });
+    const lists = new Map([
+      ['a', [h(1), h(2), h(3)]],
+      ['b', [h(9)]],
+    ]);
+    const hour0 = new Date(Date.UTC(2026, 9, 6, 0));
+    const hour1 = new Date(Date.UTC(2026, 9, 6, 1));
+    const first = interleaveBodyFetchOrder(lists, hour0);
+    const second = interleaveBodyFetchOrder(lists, hour1);
+    expect(first.slice(0, 2).sort()).toEqual([1, 9]);
+    expect(second.slice(0, 2).sort()).toEqual([1, 9]);
+    expect(first[0]).not.toBe(second[0]);
+    expect(new Set(first).size).toBe(4);
+  });
+
   it('편지함 하나가 열리지 않아도 나머지를 본다', async () => {
     const { connection } = createFakeReplyImap({ INBOX: [], 라벨: [reply(4)] }, { failOpen: ['INBOX'] });
     const scan = await scanInvoiceRepliesReadOnly(connection as unknown as ImapSimple, [target('oc-1')], {
@@ -334,6 +408,62 @@ describe('runInvoiceReplyScan', () => {
   });
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  const oneTarget = () =>
+    fakeDb({
+      poGroups: [{ campaignId: 'oc-1', count: 1, first: ago(3), last: ago(3) }],
+      campaigns: [campaign('oc-1')],
+    });
+
+  it('메일 서버가 응답을 멈추면 마감에 끊고 실행 실패로 기록한다(요청이 매달리지 않는다)', async () => {
+    const { db } = oneTarget();
+    const { connection } = createFakeReplyImap({ INBOX: [reply(1)] }, { hangOnSearch: true });
+    const started = Date.now();
+    const summary = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: async () => connection as unknown as ImapSimple,
+      resolveBrand: async () => null,
+      deadlineMs: 50,
+    });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(summary.failed).toBe(true);
+    expect(summary.failureReason).toContain('끝나지 않아 중단했습니다');
+    expect(connection.end).toHaveBeenCalled();
+    expect(db.invoiceReplyDetection.create).not.toHaveBeenCalled();
+  });
+
+  it('접속 자체가 응답하지 않아도 마감에 끊는다', async () => {
+    const { db } = oneTarget();
+    const summary = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: () => new Promise<ImapSimple>(() => {}),
+      resolveBrand: async () => null,
+      deadlineMs: 50,
+    });
+    expect(summary.failed).toBe(true);
+    expect(summary.failureReason).toContain('끝나지 않아 중단했습니다');
+  });
+
+  it("연결이 'error' 를 내면 프로세스로 새지 않고 실행 실패로 기록한다", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { db } = oneTarget();
+    const { connection } = createFakeReplyImap({ INBOX: [reply(1)] }, { emitErrorOnSearch: true });
+    const summary = await runInvoiceReplyScan({
+      db,
+      now: NOW,
+      connect: async () => connection as unknown as ImapSimple,
+      resolveBrand: async () => null,
+      deadlineMs: 60_000,
+    });
+    expect(summary.failed).toBe(true);
+    expect(summary.failureReason).toContain('메일 서버 연결 오류');
+    expect(connection.end).toHaveBeenCalled();
+    // 종료 뒤 늦게 오는 오류도 리스너가 받는다(throw 하지 않는다).
+    expect(() => connection.emit('error', new Error('late'))).not.toThrow();
+    warn.mockRestore();
   });
 
   it('대상이 없으면 메일 서버에 붙지 않는다', async () => {

@@ -91,7 +91,7 @@ export type Campaign = {
   insights?: CampaignInsights | null;
   /**
    * 아직 처리 안 된 송장 회신(크론 `scan-invoice-replies` 감지) — 없으면 null. 카드의
-   * 「회신 도착 · N건 · HH:MM」 줄. 판정 SSOT 는 `invoice-reply-status.ts`.
+   * 「송장 회신 도착 · 주문 N건 · HH:MM」 줄. 판정 SSOT 는 `invoice-reply-status.ts`.
    */
   invoiceReply?: InvoiceReplyStatus | null;
   // 활성이지만 라이브 집계가 비어(조회창 만료) 마감 시점 스냅샷으로 폴백 중임을 알리는 표식.

@@ -3,7 +3,7 @@
  *
  * 하는 일: 발주요청은 했는데 송장 등록이 덜 끝난 주문캠페인마다, 메일함에서 브랜드사의 송장 회신이
  * 왔는지 **보기만** 하고 `InvoiceReplyDetection` 에 한 줄 남긴다. 운영자는 주문 관리 카드의
- * 「회신 도착 · N건 · HH:MM」 줄로 알게 되고, 실제 처리는 여전히 「송장회신」 버튼으로 한다.
+ * 「송장 회신 도착 · 주문 N건 · HH:MM」 줄로 알게 되고, 실제 처리는 여전히 「송장회신」 버튼으로 한다.
  *
  * ## ⛔ 하지 않는 것 (1단계 범위 — 전부 오너 확인이 필요한 쓰기다)
  *
@@ -78,6 +78,13 @@ export const MAX_CAMPAIGNS_PER_RUN = 30;
  */
 export const MAX_BODY_FETCH_PER_RUN = 200;
 
+/**
+ * 한 회차의 메일 서버 작업 마감(접속 + 스캔). 소켓이 조용히 끊기면 node-imap 의 대기 중 요청은
+ * 영영 안 끝날 수 있다 — 그러면 요청이 매달린 채 레이더에는 RUNNING 만 남는다. 러너
+ * (`run-cron.sh`)의 클라이언트 제한 15분보다 **짧게** 잡아 이 라우트가 스스로 ERROR 를 기록하게 한다.
+ */
+export const RUN_DEADLINE_MS = 8 * 60 * 1000;
+
 /** 크론이 쓰는 DB 표면 — 테스트가 이 모양만 흉내 내면 된다. */
 export interface InvoiceReplyScanDb {
   orderFulfillmentState: {
@@ -117,8 +124,14 @@ export interface TargetSelection {
 }
 
 /**
- * 대상 = 최근 {@link TARGET_PO_LOOKBACK_DAYS}일 안에 발주요청이 나갔고(`OrderFulfillmentState.poRequestedAt`),
- * 그 뒤 송장등록 성공 건수가 발주요청 주문 수에 못 미치는 **활성** 주문캠페인.
+ * 대상 = 최근 {@link TARGET_PO_LOOKBACK_DAYS}일 안에 발주요청이 나간(`OrderFulfillmentState.poRequestedAt`)
+ * **활성** 주문캠페인 중, 송장 등록이 끝났다고 볼 수 없는 것.
+ *
+ * 「끝났다」= ① 마지막 발주요청 **뒤에** 송장등록 기록이 있고 ② 그 캠페인의 **누적** 송장등록 성공 수가
+ * **누적** 발주요청 주문 수 이상이다. 두 쪽을 같은 범위(캠페인 전체 이력)로 센다 — 한쪽만 최근 창으로
+ * 세면, 창 밖에서 발주한 옛 주문을 새 주문과 한 파일로 등록했을 때 성공 수가 부풀어 열린 주문이
+ * 남았는데도 「끝났다」로 읽힌다(코드 리뷰 지적 2026-10-06). 건너뜀(skip)은 세지 않는다 — 같은
+ * 파일을 다시 올리면 이미 발송된 주문이 또 건너뜀으로 잡혀 이중으로 세어진다.
  *
  * ⚠️ 「송장 등록 완료」를 DB 만으로 근사한다 — 정확한 판정(주문별 네이버 상태)은 스냅샷 블롭을
  * 읽어야 하는데, 매시간 도는 크론이 그것을 끌고 오지 않게 했다(Snapshot Blob Egress Discipline).
@@ -161,25 +174,39 @@ export async function selectInvoiceReplyTargets(
     return { targets: [], poRequestedCampaigns: 0, skippedRegistered: 0, skippedInactive: 0, droppedByCap: 0 };
   }
 
-  // 발주요청 이후의 송장등록 성공·건너뜀(이미 발송됨) 합계. 읽기만 한다.
-  const registrations: Array<{ campaignId: string | null; createdAt: Date; successCount: number; skipCount: number }> =
-    await db.orderActionLog.findMany({
-      where: { action: 'REGISTER_INVOICE', campaignId: { in: ids }, createdAt: { gte: since } },
-      select: { campaignId: true, createdAt: true, successCount: true, skipCount: true },
+  // 같은 범위로 센다(위 주석) — 누적 발주요청 주문 수 · 누적 송장등록 성공 수 · 마지막 등록 시각.
+  const totalGroups: Array<{ campaignId: string | null; _count: { _all: number } }> =
+    await db.orderFulfillmentState.groupBy({
+      by: ['campaignId'],
+      where: { campaignId: { in: ids }, poRequestedAt: { not: null } },
+      _count: { _all: true },
     });
-  const registeredCount = new Map<string, number>();
+  const totalRequested = new Map<string, number>();
+  for (const group of totalGroups) {
+    if (group.campaignId) totalRequested.set(group.campaignId, group._count._all);
+  }
+
+  const registrations: Array<{ campaignId: string | null; createdAt: Date; successCount: number }> =
+    await db.orderActionLog.findMany({
+      where: { action: 'REGISTER_INVOICE', campaignId: { in: ids } },
+      select: { campaignId: true, createdAt: true, successCount: true },
+    });
+  const registeredTotal = new Map<string, number>();
+  const lastRegisteredAt = new Map<string, number>();
   for (const row of registrations) {
     if (!row.campaignId) continue;
-    const window = requested.get(row.campaignId);
-    if (!window || row.createdAt.getTime() < window.first.getTime()) continue;
-    registeredCount.set(row.campaignId, (registeredCount.get(row.campaignId) ?? 0) + row.successCount + row.skipCount);
+    registeredTotal.set(row.campaignId, (registeredTotal.get(row.campaignId) ?? 0) + row.successCount);
+    const at = row.createdAt.getTime();
+    if (at > (lastRegisteredAt.get(row.campaignId) ?? -Infinity)) lastRegisteredAt.set(row.campaignId, at);
   }
 
   let skippedRegistered = 0;
   const openIds: string[] = [];
   for (const id of ids) {
     const window = requested.get(id)!;
-    if ((registeredCount.get(id) ?? 0) >= window.count) {
+    const registeredAfterLastPo = (lastRegisteredAt.get(id) ?? -Infinity) >= window.last.getTime();
+    const allRegistered = (registeredTotal.get(id) ?? 0) >= (totalRequested.get(id) ?? window.count);
+    if (registeredAfterLastPo && allRegistered) {
       skippedRegistered += 1;
       continue;
     }
@@ -264,6 +291,34 @@ export interface MailboxScanResult {
   unresolved: number;
 }
 
+/**
+ * 본문을 받을 UID 차례 — 캠페인을 **번갈아** 가며 각자의 최신 후보부터 하나씩 뽑는다.
+ *
+ * 🪤 캠페인 순서대로 이어 붙이면, 도메인 조건이 꺼진 캠페인(후보 = 거의 전 메일)이 본문 상한을
+ * 혼자 먹어 뒤쪽 캠페인이 **매시간 같은 자리에서** 굶는다(코드 리뷰 지적 2026-10-06). 시작 캠페인은
+ * 시(時) 단위로 돌려 상한 경계에 걸리는 캠페인도 회차마다 바뀌게 한다. 각 캠페인은 최신 매칭 1통만
+ * 필요하므로 「최신부터 하나씩」이 곧 필요한 순서다.
+ */
+export function interleaveBodyFetchOrder(candidatesByCampaign: ReadonlyMap<string, readonly ReplyHeader[]>, now: Date): number[] {
+  const lists = [...candidatesByCampaign.values()].filter((list) => list.length > 0);
+  if (lists.length === 0) return [];
+  const offset = Math.floor(now.getTime() / (60 * 60 * 1000)) % lists.length;
+  const rotated = [...lists.slice(offset), ...lists.slice(0, offset)];
+  const order: number[] = [];
+  const seen = new Set<number>();
+  const longest = Math.max(...rotated.map((list) => list.length));
+  for (let depth = 0; depth < longest; depth++) {
+    for (const list of rotated) {
+      const header = list[depth];
+      if (header && !seen.has(header.uid)) {
+        seen.add(header.uid);
+        order.push(header.uid);
+      }
+    }
+  }
+  return order;
+}
+
 /** 저장 키 상한 — 한 회신이 수천 행이어도 행 크기가 폭주하지 않게. */
 const MAX_STORED_ORDER_KEYS = 1_000;
 
@@ -344,8 +399,6 @@ export async function scanInvoiceRepliesReadOnly(
       headers.sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
 
       const candidatesByCampaign = new Map<string, ReplyHeader[]>();
-      const wanted: number[] = [];
-      const wantedSet = new Set<number>();
       for (const [campaignId, entry] of pending) {
         const list = headers.filter((header) =>
           isReplyHeaderCandidate(header, entry.criteria, {
@@ -354,13 +407,8 @@ export async function scanInvoiceRepliesReadOnly(
           }),
         );
         candidatesByCampaign.set(campaignId, list);
-        for (const header of list) {
-          if (!wantedSet.has(header.uid)) {
-            wantedSet.add(header.uid);
-            wanted.push(header.uid);
-          }
-        }
       }
+      const wanted = interleaveBodyFetchOrder(candidatesByCampaign, options.now);
 
       const budget = Math.max(0, maxBodies - result.bodiesFetched);
       if (wanted.length > budget) result.bodyCapHit = true;
@@ -492,6 +540,22 @@ export interface InvoiceReplyRunDeps {
   /** 테스트 주입용. 기본은 `imap-simple` 실접속(SSOT 좌표). */
   connect?: () => Promise<ImapSimple>;
   resolveBrand?: (template: string | null) => Promise<OrderBrand | null>;
+  /** 테스트 주입용. 기본 {@link RUN_DEADLINE_MS}. */
+  deadlineMs?: number;
+}
+
+class RunDeadlineError extends Error {
+  constructor(ms: number) {
+    super(`메일 서버 작업이 ${Math.round(ms / 60_000) || 1}분 안에 끝나지 않아 중단했습니다`);
+    this.name = 'RunDeadlineError';
+  }
+}
+
+class SocketError extends Error {
+  constructor(cause: unknown) {
+    super(`메일 서버 연결 오류로 중단했습니다: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = 'SocketError';
+  }
 }
 
 /**
@@ -540,55 +604,108 @@ export async function runInvoiceReplyScan(deps: InvoiceReplyRunDeps): Promise<In
     targets.push({ ...target, brand: brandByTemplate.get(key) ?? null });
   }
 
-  let connection: ImapSimple;
-  try {
-    connection = deps.connect
-      ? await deps.connect()
-      : await imaps.connect({ imap: resolveImapConfig(credentials, { authTimeout: 10_000 }) });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ...summary, failed: true, failureReason: `메일 서버 연결 실패: ${message}` };
-  }
+  // ── 마감과 소켓 오류 감시. 둘 다 진행 중인 작업과 **경주**시켜, 먼저 터지면 연결을 끊고 실패로 기록한다.
+  //    ⚠️ `error` 이벤트에 리스너가 없으면 EventEmitter 가 그 오류를 **프로세스 수준에서 던진다** —
+  //    앱 서버 전체를 흔드는 경로라 연결 직후 반드시 단다(떼지 않는다: 종료 뒤 늦게 오는 오류도 받는다).
+  const deadlineMs = deps.deadlineMs ?? RUN_DEADLINE_MS;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const deadline = new Promise<never>((_, reject) => {
+    deadlineTimer = setTimeout(() => {
+      timedOut = true;
+      reject(new RunDeadlineError(deadlineMs));
+    }, deadlineMs);
+  });
+  let failOnSocketError: (error: Error) => void = () => {};
+  const socketFailure = new Promise<never>((_, reject) => {
+    failOnSocketError = reject;
+  });
+  // 경주에서 진 쪽의 거절이 「처리되지 않은 거절」로 새지 않게 한다.
+  deadline.catch(() => {});
+  socketFailure.catch(() => {});
 
-  let scan: MailboxScanResult;
+  let connection: ImapSimple | null = null;
   try {
-    scan = await scanInvoiceRepliesReadOnly(connection, targets, { loginUser: credentials.user, now });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { ...summary, failed: true, failureReason: `메일함 조회 실패: ${message}` };
-  } finally {
+    const connecting = deps.connect
+      ? deps.connect()
+      : imaps.connect({ imap: resolveImapConfig(credentials, { authTimeout: 10_000 }) });
+    // 마감 뒤에 늦게 붙은 연결은 바로 닫는다(새는 세션 방지).
+    connecting
+      .then((late) => {
+        if (timedOut) safeEnd(late);
+      })
+      .catch(() => {});
     try {
-      connection.end();
-    } catch {
-      // 종료 실패는 결과에 영향이 없다.
+      connection = await Promise.race([connecting, deadline]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ...summary,
+        failed: true,
+        failureReason: error instanceof RunDeadlineError ? message : `메일 서버 연결 실패: ${message}`,
+      };
     }
-  }
+    (connection as unknown as { on?: (event: string, listener: (error: unknown) => void) => void }).on?.(
+      'error',
+      (error: unknown) => {
+        // 주소·자격증명은 서버 오류 문구에 없다 — 메시지만 남긴다.
+        console.warn('[scan-invoice-replies] 메일 서버 연결 오류:', error instanceof Error ? error.message : String(error));
+        failOnSocketError(new SocketError(error));
+      },
+    );
 
-  const persisted = await persistInvoiceReplyDetections(deps.db, scan.detections);
+    let scan: MailboxScanResult;
+    try {
+      const scanning = scanInvoiceRepliesReadOnly(connection, targets, { loginUser: credentials.user, now });
+      scanning.catch(() => {});
+      scan = await Promise.race([scanning, deadline, socketFailure]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const known = error instanceof RunDeadlineError || error instanceof SocketError;
+      return { ...summary, failed: true, failureReason: known ? message : `메일함 조회 실패: ${message}` };
+    }
 
-  const out: InvoiceReplyRunSummary = {
-    ...summary,
-    mailboxesListed: scan.mailboxesListed,
-    mailboxesOpened: scan.mailboxesOpened,
-    headersScanned: scan.headersScanned,
-    bodiesFetched: scan.bodiesFetched,
-    bodyCapHit: scan.bodyCapHit,
-    mailboxErrors: scan.mailboxErrors,
-    detected: scan.detections.length,
-    created: persisted.created,
-    alreadyKnown: persisted.alreadyKnown,
-    parseFailed: scan.detections.filter((d) => d.parseFailed).length,
-    unresolved: scan.unresolved,
-    writeFailures: persisted.writeFailures,
-    newDetectionCampaignIds: persisted.createdCampaignIds,
-  };
+    // 세션은 스캔이 끝나는 대로 닫는다(저장은 DB 만 쓴다).
+    safeEnd(connection);
+    connection = null;
 
-  // 실질 실패 선언(레이더 빨강): 편지함을 하나도 못 열었거나, 감지를 하나도 못 남겼다.
-  if (scan.mailboxesListed > 0 && scan.mailboxesOpened === 0) {
-    return { ...out, failed: true, failureReason: `편지함 ${scan.mailboxErrors}곳을 모두 열지 못했습니다` };
+    const persisted = await persistInvoiceReplyDetections(deps.db, scan.detections);
+
+    const out: InvoiceReplyRunSummary = {
+      ...summary,
+      mailboxesListed: scan.mailboxesListed,
+      mailboxesOpened: scan.mailboxesOpened,
+      headersScanned: scan.headersScanned,
+      bodiesFetched: scan.bodiesFetched,
+      bodyCapHit: scan.bodyCapHit,
+      mailboxErrors: scan.mailboxErrors,
+      detected: scan.detections.length,
+      created: persisted.created,
+      alreadyKnown: persisted.alreadyKnown,
+      parseFailed: scan.detections.filter((d) => d.parseFailed).length,
+      unresolved: scan.unresolved,
+      writeFailures: persisted.writeFailures,
+      newDetectionCampaignIds: persisted.createdCampaignIds,
+    };
+
+    // 실질 실패 선언(레이더 빨강): 편지함을 하나도 못 열었거나, 감지를 하나도 못 남겼다.
+    if (scan.mailboxesListed > 0 && scan.mailboxesOpened === 0) {
+      return { ...out, failed: true, failureReason: `편지함 ${scan.mailboxErrors}곳을 모두 열지 못했습니다` };
+    }
+    if (persisted.writeFailures > 0 && persisted.created === 0 && persisted.alreadyKnown === 0) {
+      return { ...out, failed: true, failureReason: `감지 기록 ${persisted.writeFailures}건 저장 실패` };
+    }
+    return out;
+  } finally {
+    clearTimeout(deadlineTimer);
+    if (connection) safeEnd(connection);
   }
-  if (persisted.writeFailures > 0 && persisted.created === 0 && persisted.alreadyKnown === 0) {
-    return { ...out, failed: true, failureReason: `감지 기록 ${persisted.writeFailures}건 저장 실패` };
+}
+
+function safeEnd(connection: ImapSimple): void {
+  try {
+    connection.end();
+  } catch {
+    // 종료 실패는 결과에 영향이 없다.
   }
-  return out;
 }

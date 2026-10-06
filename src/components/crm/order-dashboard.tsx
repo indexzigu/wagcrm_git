@@ -2424,6 +2424,10 @@ export default function OrderDashboard() {
                     );
                   })()}
 
+                  {/* 크론이 감지한 미처리 송장 회신 — 버튼 줄 **위**에 자기 줄로 둔다(버튼 줄 안에 두면 바로 옆
+                      「송장등록」의 상태로 읽힌다 — ss-ux 지적 2026-10-06). 값이 없으면 아무것도 안 그린다. */}
+                  <InvoiceReplyLine reply={(camp as CampaignPayload).invoiceReply} />
+
                   {/* 3행: 실행 조작 버튼 (Action Buttons) */}
                   <div className="flex flex-wrap gap-2 items-center w-full" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => handleDownloadExcel(camp.id)} className="flex items-center gap-1.5 text-xs bg-white text-emerald-700 hover:bg-emerald-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-emerald-200 shadow-soft-sm relative overflow-hidden group">
@@ -2446,8 +2450,6 @@ export default function OrderDashboard() {
                         <><svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20" /></svg>송장회신</>
                       )}
                     </button>
-                    {/* 크론이 감지한 미처리 송장 회신 — 버튼 옆에 붙여 「무엇을 누를지」와 함께 읽히게 한다. */}
-                    <InvoiceReplyLine reply={(camp as CampaignPayload).invoiceReply} />
                     {(() => {
                       // 라벨은 disabled 속성이 없으므로 업로드/발송처리 진행 중엔 pointer-events로 잠그고
                       // 내부 input도 disabled 처리한다(업로드 파싱~발송처리 전 구간 커버).

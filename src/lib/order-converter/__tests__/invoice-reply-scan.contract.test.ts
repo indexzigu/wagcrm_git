@@ -22,6 +22,38 @@ const ROUTE = 'src/app/api/cron/scan-invoice-replies/route.ts';
 const MATCH = 'src/lib/order-converter/invoice-reply-match.ts';
 const MANUAL = 'src/app/order-converter/api/fetch-emails/route.ts';
 
+/**
+ * 메일함에 흔적을 남기는 IMAP 호출(메서드 호출 꼴)과 `markSeen:true` 를 찾는다.
+ * node-imap·imap-simple 의 쓰기 계열 전부 — 플래그·키워드·라벨(구글)·복사·이동·추가·삭제·영구삭제.
+ * ⚠️ 이 목록을 줄이면 계약이 조용히 약해진다. 아래 양성 프로브가 **이 함수 자체**를 나쁜 입력에
+ * 돌려 탐지가 살아 있는지 본다(프로브가 스캐너를 다시 구현하면 스캐너가 죽어도 초록이다).
+ */
+const IMAP_WRITE_METHODS = [
+  'addFlags',
+  'delFlags',
+  'setFlags',
+  'addKeywords',
+  'delKeywords',
+  'setKeywords',
+  'addLabels',
+  'delLabels',
+  'setLabels',
+  'copy',
+  'move',
+  'moveMessage',
+  'append',
+  'deleteMessage',
+  'expunge',
+] as const;
+
+function findMailboxWrites(source: string): string[] {
+  const found = new Set<string>();
+  const callRe = new RegExp(`\\.\\s*(${IMAP_WRITE_METHODS.join('|')})\\s*\\(`, 'g');
+  for (const m of source.matchAll(callRe)) found.add(m[1]);
+  if (/markSeen\s*:\s*true/.test(source)) found.add('markSeen:true');
+  return [...found].sort();
+}
+
 describe('① 메일함 무흔적(크론)', () => {
   const src = strip(read(SCAN));
 
@@ -39,9 +71,28 @@ describe('① 메일함 무흔적(크론)', () => {
     expect(src).toContain('fetchBodiesByUid(');
   });
 
-  it('쓰기 계열 IMAP 호출이 없다', () => {
-    for (const forbidden of ['addFlags', 'delFlags', 'setFlags', 'moveMessage', 'deleteMessage', 'expunge']) {
-      expect({ forbidden, found: src.includes(forbidden) }).toEqual({ forbidden, found: false });
+  it('양성 프로브 — 실제 탐지 함수가 나쁜 입력을 전부 잡고, 깨끗한 입력은 통과시킨다', () => {
+    const bad = [
+      "connection.addFlags(uid, ['\\\\Seen']);",
+      'connection.imap.addKeywords(uid, "k", cb);',
+      'connection.imap.setLabels(uid, ["x"], cb);',
+      'connection.imap.copy(uid, "Box", cb);',
+      'connection.imap.move(uid, "Box", cb);',
+      'connection.append(raw, { mailbox: "Box" });',
+      'connection.moveMessage(uid, "Box");',
+      'connection.deleteMessage(uid);',
+      'connection.imap.expunge(cb);',
+      'connection.search(c, { bodies: [""], markSeen: true });',
+    ].join('\n');
+    expect(findMailboxWrites(bad)).toEqual(
+      ['addFlags', 'addKeywords', 'append', 'copy', 'deleteMessage', 'expunge', 'markSeen:true', 'move', 'moveMessage', 'setLabels'].sort(),
+    );
+    expect(findMailboxWrites('connection.imap.openBox(boxName, true, cb); connection.search(c, { markSeen: false });')).toEqual([]);
+  });
+
+  it('쓰기 계열 IMAP 호출이 없다(크론 본체·매칭 SSOT·라우트)', () => {
+    for (const path of [SCAN, MATCH, ROUTE]) {
+      expect({ path, writes: findMailboxWrites(strip(read(path))) }).toEqual({ path, writes: [] });
     }
   });
 

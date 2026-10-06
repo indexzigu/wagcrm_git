@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as React from "react";
 import { render, screen } from "@testing-library/react";
 
-// 주문 관리 카드의 「회신 도착 · N건 · HH:MM」 줄 — 실제 화면 컴포넌트를 띄워 배선을 본다.
+// 주문 관리 카드의 「송장 회신 도착 · 주문 N건 · HH:MM」 줄 — 실제 화면 컴포넌트를 띄워 배선을 본다.
 // 판정(처리됨 여부)은 서버가 `invoiceReply` 로 준다(invoice-reply-status.test.ts 가 판정을 고정).
 // 여기서 보는 것: 값이 있으면 송장회신 버튼 옆에 그 줄이 뜨고, null 이면 아무것도 안 뜬다.
 // ⚠️ 외부 호출은 전부 fetch 목이다 — 실제로 나가는 요청은 없다.
@@ -75,16 +75,24 @@ afterEach(() => {
 });
 
 describe("주문 관리 카드 — 송장 회신 도착 줄", () => {
-  it("미처리 회신이 있으면 송장회신 버튼 옆에 「회신 도착 · N건 · HH:MM」", async () => {
+  it("미처리 회신이 있으면 실행 버튼 줄 위 자기 줄에 「송장 회신 도착 · 주문 N건 · HH:MM」", async () => {
     campaignList.current = [
       { ...baseCampaign, invoiceReply: { count: 12, receivedAt: "2026-10-06T05:05:00.000Z" } },
     ];
     render(<OrderDashboard />);
 
     const line = await screen.findByTestId("invoice-reply-line");
-    expect(line).toHaveTextContent("회신 도착 · 12건 · 14:05");
-    // 송장회신 버튼은 그대로 있다(1단계는 감지만).
-    expect(screen.getByRole("button", { name: /송장회신/ })).toBeInTheDocument();
+    expect(line).toHaveTextContent("송장 회신 도착 · 주문 12건 · 14:05");
+    // 스크린리더용 할 일 문장(sr-only) — 실시간 알림 속성은 걸지 않는다.
+    expect(line).toHaveTextContent("송장회신 버튼으로 불러와 발송처리하세요");
+    expect(line.querySelector(".sr-only")).not.toBeNull();
+    expect(line.closest("[aria-live],[role=status]")).toBeNull();
+
+    // 송장회신 버튼은 그대로 있다(1단계는 감지만). 줄은 버튼 줄 **밖**, 그 앞에 온다 —
+    // 버튼 줄 안에 두면 옆 「송장등록」의 상태로 읽힌다.
+    const button = screen.getByRole("button", { name: /송장회신/ });
+    expect(button.parentElement?.contains(line)).toBe(false);
+    expect(line.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("회신이 없으면(null) 줄이 없다", async () => {

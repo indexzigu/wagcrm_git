@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events';
 import { vi } from 'vitest';
 import * as XLSX from 'xlsx';
 
@@ -64,7 +65,16 @@ export function rawMime(mail: FakeMail): string {
   ].join('\r\n');
 }
 
-export function createFakeReplyImap(mailboxes: Record<string, FakeMail[]>, options: { failOpen?: string[] } = {}) {
+export function createFakeReplyImap(
+  mailboxes: Record<string, FakeMail[]>,
+  options: {
+    failOpen?: string[];
+    /** 헤더 검색이 영영 응답하지 않는다(소켓이 조용히 끊긴 상태). */
+    hangOnSearch?: boolean;
+    /** 헤더 검색 도중 연결 객체가 'error' 이벤트를 내고 응답하지 않는다. */
+    emitErrorOnSearch?: boolean;
+  } = {},
+) {
   const log = {
     readOnlyOpens: [] as Array<{ name: string; readOnly: boolean }>,
     searchOptions: [] as Array<Record<string, unknown>>,
@@ -72,7 +82,9 @@ export function createFakeReplyImap(mailboxes: Record<string, FakeMail[]>, optio
   };
   let current = '';
 
-  const connection = {
+  // imap-simple 의 연결 객체는 EventEmitter 다 — 'error' 리스너가 없으면 emit 이 throw 한다(실물과 같다).
+  const emitter = new EventEmitter();
+  const connection = Object.assign(emitter, {
     getBoxes: vi.fn(async () =>
       Object.fromEntries(Object.keys(mailboxes).map((name) => [name, { attribs: [], delimiter: '/', children: null }])),
     ),
@@ -90,6 +102,11 @@ export function createFakeReplyImap(mailboxes: Record<string, FakeMail[]>, optio
     },
     search: vi.fn(async (criteria: unknown[][], fetchOptions: Record<string, unknown>) => {
       log.searchOptions.push(fetchOptions);
+      if (options.hangOnSearch) return new Promise<never>(() => {});
+      if (options.emitErrorOnSearch) {
+        emitter.emit('error', new Error('socket closed'));
+        return new Promise<never>(() => {});
+      }
       const mails = mailboxes[current] ?? [];
       const first = criteria[0] as [string, ...unknown[]];
       if (first[0] === 'UID') {
@@ -121,7 +138,7 @@ export function createFakeReplyImap(mailboxes: Record<string, FakeMail[]>, optio
     moveMessage: vi.fn(),
     deleteMessage: vi.fn(),
     end: vi.fn(),
-  };
+  });
 
   return { connection, log };
 }

@@ -73,16 +73,16 @@ describe('resolveInvoiceReplyStatus', () => {
 describe('formatInvoiceReplyLine', () => {
   const now = T('2026-10-06T08:00:00Z'); // KST 17:00
 
-  it('오늘 회신이면 「회신 도착 · N건 · HH:MM」(KST)', () => {
-    expect(formatInvoiceReplyLine({ count: 12, receivedAt: '2026-10-06T05:05:00Z' }, now)).toBe('회신 도착 · 12건 · 14:05');
+  it('오늘 회신이면 「송장 회신 도착 · 주문 N건 · HH:MM」(KST)', () => {
+    expect(formatInvoiceReplyLine({ count: 12, receivedAt: '2026-10-06T05:05:00Z' }, now)).toBe('송장 회신 도착 · 주문 12건 · 14:05');
   });
 
   it('건수를 못 읽었으면 건수 칸을 뺀다(0건이라고 쓰지 않는다)', () => {
-    expect(formatInvoiceReplyLine({ count: 0, receivedAt: '2026-10-06T05:05:00Z' }, now)).toBe('회신 도착 · 14:05');
+    expect(formatInvoiceReplyLine({ count: 0, receivedAt: '2026-10-06T05:05:00Z' }, now)).toBe('송장 회신 도착 · 14:05');
   });
 
   it('오늘이 아니면 날짜를 붙인다', () => {
-    expect(formatInvoiceReplyLine({ count: 3, receivedAt: '2026-10-04T05:05:00Z' }, now)).toBe('회신 도착 · 3건 · 10.04 14:05');
+    expect(formatInvoiceReplyLine({ count: 3, receivedAt: '2026-10-04T05:05:00Z' }, now)).toBe('송장 회신 도착 · 주문 3건 · 10.04 14:05');
   });
 });
 
