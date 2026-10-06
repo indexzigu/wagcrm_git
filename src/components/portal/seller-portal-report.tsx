@@ -239,7 +239,7 @@ function ActiveCampaignSection({
           <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
             판매중
           </span>
-          <h2 className="min-w-0 break-words font-bold text-slate-800 text-sm">{camp.name}</h2>
+          <h2 className="min-w-0 break-keep break-words font-bold text-slate-800 text-sm">{camp.name}</h2>
         </div>
         {/* F2 성과 카드 링크는 제목 줄이 아니라 기간 줄 우측에 둔다 — 제목 줄에 있으면 좁은 폭(320px)에서
             긴 제목을 3줄로 밀어 위계가 뒤집힌다(예정 카드 #146 과 같은 구조). 기간·배지 묶음은 안쪽에서만
@@ -423,7 +423,7 @@ function UpcomingCampaignSection({ camp, today }: { camp: PortalCampaign; today:
         <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
           예정
         </span>
-        <h2 className="min-w-0 break-words font-bold text-slate-700 text-sm">{camp.name}</h2>
+        <h2 className="min-w-0 break-keep break-words font-bold text-slate-700 text-sm">{camp.name}</h2>
       </div>
       {(camp.salePeriod || opening) && (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">

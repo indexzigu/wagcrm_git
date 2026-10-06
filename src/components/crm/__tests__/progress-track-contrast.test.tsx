@@ -429,7 +429,7 @@ describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
     const start = src.indexOf("function UpcomingCampaignSection");
     const body = src.slice(start, src.indexOf("\n}\n", start));
     const titleRow = body.slice(body.indexOf('<div className="flex items-start gap-2">'), body.indexOf("</h2>"));
-    expect(titleRow).toContain('<h2 className="min-w-0 break-words font-bold text-slate-700 text-sm">');
+    expect(titleRow).toContain('<h2 className="min-w-0 break-keep break-words font-bold text-slate-700 text-sm">');
     expect(body).not.toContain("ml-auto shrink-0");
     const periodRow = body.slice(body.indexOf("</h2>"));
     expect(periodRow).toContain('<div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">');
@@ -494,12 +494,36 @@ describe("남은 파랑 전수(7차)", () => {
 
   it("셀러 포털 판매중 카드: 성과 카드 링크는 제목 줄이 아니라 기간 줄 우측(네이비)", () => {
     const src = sourceOf("portal/seller-portal-report.tsx");
-    const start = src.indexOf("<h2 className=\"min-w-0 break-words font-bold text-slate-800 text-sm\">{camp.name}</h2>");
+    const start = src.indexOf("<h2 className=\"min-w-0 break-keep break-words font-bold text-slate-800 text-sm\">{camp.name}</h2>");
     expect(start).toBeGreaterThan(-1);
     const titleRowEnd = src.indexOf("</div>", start);
     const link = src.indexOf("성과 카드 →", start);
     expect(link).toBeGreaterThan(titleRowEnd);
     expect(src).toContain('<div className="mt-1 flex items-start justify-between gap-2">');
     expect(src).toMatch(/inline-flex min-h-6 shrink-0 items-center rounded-sm px-2 text-\[10px\] font-bold text-primary/);
+  });
+});
+
+// 8차: 남은 후보 — 범주 표시(수동/자동)는 축 밖이라 「자동」을 무채색으로(수동은 §4 네이비 틴트),
+// 셀러가 보는 캠페인 제목은 한글 어절 중간에서 끊지 않고(break-keep), 매출 보고 비중 칸은 100.0% 까지 들어가는 폭.
+describe("남은 후보(8차)", () => {
+  it("셀러 상세: 수집 출처 「자동」은 무채색, 「수동」은 네이비 틴트", () => {
+    const src = sourceOf("crm/seller-detail-content.tsx");
+    const auto = 'rounded-full bg-slate-100 px-2 py-0.5 text-[9px] text-slate-600 font-semibold border border-slate-200">자동</span>';
+    expect(src.split(auto)).toHaveLength(3);
+    expect(src).not.toContain('text-emerald-700 font-semibold border border-emerald-200">자동');
+  });
+
+  it("셀러 포털·성과 카드의 캠페인 제목은 어절 단위로 줄바꿈(break-keep)", () => {
+    const portal = sourceOf("portal/seller-portal-report.tsx");
+    expect(portal.match(/<h2 className="min-w-0 break-keep break-words [^"]*">\{camp\.name\}<\/h2>/g)).toHaveLength(2);
+    expect(sourceOf("portal/seller-performance-card.tsx")).toContain("leading-snug break-keep break-words\">{camp.name}</h1>");
+  });
+
+  it("매출 보고 판매 비중 칸은 w-12 + tabular-nums(100.0% 실측 45px)", () => {
+    const src = sourceOf("crm/shipping/modals/SalesReportModal.tsx");
+    const cell = 'text-xs font-bold text-slate-500 w-12 text-right tabular-nums">{opt.ratio.toFixed(1)}%';
+    expect(src.split(cell)).toHaveLength(3);
+    expect(src).not.toContain("w-9 text-right");
   });
 });

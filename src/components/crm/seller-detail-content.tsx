@@ -1212,7 +1212,7 @@ export function SellerDetailContent({
                                   {snapshot.source === "MANUAL" ? (
                                     <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary font-semibold border border-primary/20">수동</span>
                                   ) : (
-                                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] text-emerald-700 font-semibold border border-emerald-200">자동</span>
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] text-slate-600 font-semibold border border-slate-200">자동</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-2 text-center">
@@ -1251,7 +1251,7 @@ export function SellerDetailContent({
                               {history.source === "MANUAL" ? (
                                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] text-primary font-semibold border border-primary/20">수동</span>
                               ) : (
-                                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] text-emerald-700 font-semibold border border-emerald-200">자동</span>
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] text-slate-600 font-semibold border border-slate-200">자동</span>
                               )}
                             </div>
                             <p className="text-[11px] text-foreground whitespace-pre-wrap bg-white/50 p-2.5 rounded border border-border/20 leading-relaxed font-sans">
