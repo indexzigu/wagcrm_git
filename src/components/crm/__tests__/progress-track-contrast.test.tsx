@@ -520,9 +520,9 @@ describe("남은 후보(8차)", () => {
     expect(sourceOf("portal/seller-performance-card.tsx")).toContain("leading-snug break-keep break-words\">{camp.name}</h1>");
   });
 
-  it("매출 보고 판매 비중 칸은 w-11 + tabular-nums", () => {
+  it("매출 보고 판매 비중 칸은 w-12 + tabular-nums(100.0% 실측 45px)", () => {
     const src = sourceOf("crm/shipping/modals/SalesReportModal.tsx");
-    const cell = 'text-xs font-bold text-slate-500 w-11 text-right tabular-nums">{opt.ratio.toFixed(1)}%';
+    const cell = 'text-xs font-bold text-slate-500 w-12 text-right tabular-nums">{opt.ratio.toFixed(1)}%';
     expect(src.split(cell)).toHaveLength(3);
     expect(src).not.toContain("w-9 text-right");
   });
