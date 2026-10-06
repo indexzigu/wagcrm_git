@@ -251,9 +251,9 @@ export default function EmailSendModal({
             />
           </div>
           <div className="flex justify-between mt-2 px-1 text-[10px] font-bold text-slate-500 transition-colors">
-            <span className={step === 'ANALYZING' ? 'text-primary' : step !== 'IDLE' ? 'text-slate-700' : ''}>분석/추출</span>
-            <span className={step === 'CONVERTING' ? 'text-primary' : ['CONVERT_DONE','SENDING','SUCCESS'].includes(step) ? 'text-slate-700' : ''}>변환</span>
-            <span className={step === 'SENDING' ? 'text-primary' : step === 'SUCCESS' ? 'text-slate-700' : ''}>발송</span>
+            <span className={step === 'ANALYZING' ? 'text-primary underline decoration-2 underline-offset-4' : step !== 'IDLE' ? 'text-slate-700' : ''}>분석/추출</span>
+            <span className={step === 'CONVERTING' ? 'text-primary underline decoration-2 underline-offset-4' : ['CONVERT_DONE','SENDING','SUCCESS'].includes(step) ? 'text-slate-700' : ''}>변환</span>
+            <span className={step === 'SENDING' ? 'text-primary underline decoration-2 underline-offset-4' : step === 'SUCCESS' ? 'text-slate-700' : ''}>발송</span>
             <span className={step === 'SUCCESS' ? 'text-status-success' : ''}>완료</span>
           </div>
         </div>

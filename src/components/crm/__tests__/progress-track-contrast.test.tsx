@@ -474,6 +474,12 @@ describe("남은 파랑 전수(7차)", () => {
     expect(sourceOf("crm/shipping/modals/CampaignCreateModal.tsx")).toContain("focus:border-primary");
   });
 
+  it("발주 메일 진행 단계: 진행 중 단계는 네이비 + 밑줄 — 완료 단계 slate-700 과 색만으로는 구분이 안 된다", () => {
+    const src = sourceOf("crm/shipping/modals/EmailSendModal.tsx");
+    const active = "'text-primary underline decoration-2 underline-offset-4' :";
+    expect(src.split(active)).toHaveLength(4);
+  });
+
   it("체크박스는 죽은 text-* 대신 accent-primary 로 실제 색을 바꾼다", () => {
     for (const rel of ["crm/shipping/modals/EmailSendModal.tsx", "crm/shipping/modals/DelayDispatchModal.tsx"]) {
       expect(sourceOf(rel)).toContain("w-4 h-4 accent-primary bg-white");
