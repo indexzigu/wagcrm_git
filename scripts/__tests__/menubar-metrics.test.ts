@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -41,6 +41,10 @@ interface RunOpts {
   dockerFail?: boolean;
   /** true 면 du 가 exit 1 (DB 데이터 디렉터리 부재) */
   duFail?: boolean;
+  /** 코드 점유량 캐시 한 줄(repo-footprint.sh 출력 형식). 없으면 캐시 파일 부재. */
+  footprintCache?: string;
+  /** 재측정 명령을 통째로 바꾼다(존재하지 않는 스크립트 경로 시나리오용). */
+  footprintRefreshCmd?: string;
 }
 
 interface TargetMetrics {
@@ -59,11 +63,22 @@ interface MetricsPayload {
   crm: TargetMetrics;
   db: TargetMetrics;
   dbData: { available: boolean; bytes?: number };
+  repoData: { available: boolean; totalBytes?: number; measuredAtEpoch?: number; error?: string };
 }
 
 function runMetrics(opts: RunOpts = {}): MetricsPayload {
+  return runMetricsWithMarker(opts).payload;
+}
+
+/** 캐시가 오래되면 metrics.sh 가 repo-footprint.sh 를 백그라운드로 띄운다 — 스텁은
+ *  마커 파일을 남겨 "띄웠는가"를 보이게 한다(비동기라 waitForMarker 로 기다린다). */
+function runMetricsWithMarker(opts: RunOpts = {}): { payload: MetricsPayload; marker: string } {
   const dir = mkdtempSync(path.join(tmp, "run-"));
   mkdirSync(dir, { recursive: true });
+  const marker = path.join(dir, "refresh-called");
+  const refreshImpl = stub(dir, "refresh", `touch ${marker}`);
+  const footprintCache = path.join(dir, "repo-footprint.json");
+  if (opts.footprintCache !== undefined) writeFileSync(footprintCache, `${opts.footprintCache}\n`);
 
   const launchctlImpl = stub(
     dir,
@@ -103,10 +118,26 @@ EOS`,
       METRICS_SYSCTL_CMD: `bash ${sysctlImpl}`,
       METRICS_DOCKER_CMD: `bash ${dockerImpl}`,
       METRICS_DU_CMD: `bash ${duImpl}`,
+      METRICS_FOOTPRINT_CACHE: footprintCache,
+      METRICS_FOOTPRINT_REFRESH_CMD: opts.footprintRefreshCmd ?? `bash ${refreshImpl}`,
     },
     encoding: "utf8",
   });
-  return JSON.parse(out);
+  return { payload: JSON.parse(out), marker };
+}
+
+function waitForMarker(marker: string, timeoutMs = 3000): boolean {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (existsSync(marker)) return true;
+    execFileSync("sleep", ["0.05"]);
+  }
+  return existsSync(marker);
+}
+
+function freshCacheLine(epochOffsetSec = 0): string {
+  const epoch = Math.floor(Date.now() / 1000) + epochOffsetSec;
+  return `{"available":true,"measuredAt":"2026-10-06T16:00:00+0900","measuredAtEpoch":${epoch},"totalBytes":25000000000,"mainBytes":4000000000,"worktreeCount":3,"worktreeBytes":18000000000,"deployBytes":3000000000,"missing":0}`;
 }
 
 describe("metrics.sh 행위 계약", () => {
@@ -166,6 +197,59 @@ describe("metrics.sh 행위 계약", () => {
     const r = runMetrics({ duFail: true });
     expect(r.dbData.available).toBe(false);
     expect(r.db.available).toBe(true);
+  });
+
+  it("코드 점유량: 신선한 캐시는 그대로 싣고 재측정을 띄우지 않는다", () => {
+    const { payload, marker } = runMetricsWithMarker({ footprintCache: freshCacheLine() });
+    expect(payload.repoData.available).toBe(true);
+    expect(payload.repoData.totalBytes).toBe(25000000000);
+    expect(waitForMarker(marker, 500)).toBe(false);
+  });
+
+  it("코드 점유량: 오래된 캐시(30분 초과)는 값은 싣되 재측정을 백그라운드로 띄운다", () => {
+    const { payload, marker } = runMetricsWithMarker({ footprintCache: freshCacheLine(-1801) });
+    expect(payload.repoData.available).toBe(true);
+    expect(payload.repoData.totalBytes).toBe(25000000000);
+    expect(waitForMarker(marker)).toBe(true);
+  });
+
+  it("코드 점유량: 캐시가 없으면 available=false 로 내고 재측정을 띄운다 — 응답은 기다리지 않는다", () => {
+    const { payload, marker } = runMetricsWithMarker();
+    expect(payload.repoData.available).toBe(false);
+    expect(payload.schemaVersion).toBe(1);
+    expect(waitForMarker(marker)).toBe(true);
+  });
+
+  it("코드 점유량: 캐시에 적힌 측정 실패도 그대로 싣는다(침묵 금지)", () => {
+    const epoch = Math.floor(Date.now() / 1000);
+    const { payload } = runMetricsWithMarker({
+      footprintCache: `{"available":false,"measuredAt":"x","measuredAtEpoch":${epoch},"error":"저장소 없음"}`,
+    });
+    expect(payload.repoData.available).toBe(false);
+    expect(payload.repoData.error).toBe("저장소 없음");
+  });
+
+  it("코드 점유량: 손상된 캐시(따옴표 홀수)는 끼워 넣지 않고 전체 JSON 을 지킨다 + 재측정", () => {
+    const epoch = Math.floor(Date.now() / 1000);
+    // JSON.parse 가 성공하는 것 자체가 검증이다 — 그대로 끼웠다면 출력 전체가 깨진다.
+    const { payload, marker } = runMetricsWithMarker({
+      footprintCache: `{"available":false,"measuredAtEpoch":${epoch},"error":"a"b"}`,
+    });
+    expect(payload.repoData.available).toBe(false);
+    expect(payload.repoData.error).toBe("캐시 손상");
+    expect(payload.crm.available).toBe(true);
+    expect(waitForMarker(marker)).toBe(true);
+  });
+
+  it("코드 점유량: 미래 시각 캐시(시계 점프)는 신선으로 치지 않는다", () => {
+    const { marker } = runMetricsWithMarker({ footprintCache: freshCacheLine(999_999) });
+    expect(waitForMarker(marker)).toBe(true);
+  });
+
+  it("코드 점유량: 측정 스크립트가 없으면 '측정 중' 대신 오류를 싣고 띄우지 않는다", () => {
+    const { payload } = runMetricsWithMarker({ footprintRefreshCmd: "/nonexistent/repo-footprint.sh" });
+    expect(payload.repoData.available).toBe(false);
+    expect(payload.repoData.error).toBe("측정 스크립트 없음");
   });
 });
 

@@ -34,6 +34,26 @@ struct MetricsPayload: Decodable {
     let crm: TargetMetrics
     let db: TargetMetrics
     let dbData: DataFootprint
+    /// 코드 점유량(저장소+워크트리+운영본). ⚠️ 옵셔널이 계약이다 — 앱이 읽는
+    /// metrics.sh 는 프로덕션 체크아웃의 사본이라, 새 앱 + 옛 스크립트 조합(재설치
+    /// 직후 배포 전)에서 필드가 없어도 디코드가 깨지면 안 된다(ReleasePayload 와 같은 이유).
+    let repoData: RepoFootprint?
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, cores, crm, db, dbData, repoData
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        cores = try c.decode(Int.self, forKey: .cores)
+        crm = try c.decode(TargetMetrics.self, forKey: .crm)
+        db = try c.decode(TargetMetrics.self, forKey: .db)
+        dbData = try c.decode(DataFootprint.self, forKey: .dbData)
+        // 옵셔널은 "부재"만 막는다 — 필드가 있는데 모양이 틀린 경우에도 보조 줄 하나 때문에
+        // 페이로드 전체(CPU 과부하 경고 포함)가 죽으면 안 되므로 그때는 nil 로 둔다.
+        repoData = try? c.decodeIfPresent(RepoFootprint.self, forKey: .repoData)
+    }
 }
 
 struct TargetMetrics: Decodable {
@@ -50,6 +70,23 @@ struct TargetMetrics: Decodable {
 struct DataFootprint: Decodable {
     let available: Bool
     let bytes: Double?
+}
+
+/// repo-footprint.sh 가 캐시에 적은 것을 metrics.sh 가 그대로 실어 온다
+/// (계약: scripts/__tests__/menubar-repo-footprint.test.ts). 측정·합산은 스크립트 소관.
+struct RepoFootprint: Decodable {
+    let available: Bool
+    let measuredAt: String?
+    let totalBytes: Double?
+    /// 본체 체크아웃(안에 든 워크트리는 뺀 값).
+    let mainBytes: Double?
+    let worktreeCount: Int?
+    let worktreeBytes: Double?
+    /// 운영 체크아웃. 경로가 없으면 null.
+    let deployBytes: Double?
+    /// 워크트리 목록에는 있는데 du 가 재지 못한 경로 수(디렉터리가 사라진 경우 등).
+    let missing: Int?
+    let error: String?
 }
 
 /// release-status.sh 의 JSON 출력(계약: scripts/__tests__/menubar-release.test.ts).
