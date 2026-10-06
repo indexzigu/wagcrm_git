@@ -40,7 +40,6 @@ import {
 } from "@/lib/campaign-actions";
 import { campaignStatusLabels, salesChannelLabels } from "@/lib/crm-types";
 import type { SalesChannel } from "@/lib/crm-types";
-import { type ZoneViewMode } from "@/lib/zone-config";
 import type { ApiCallLogRow, AssetRow, CampaignRow, StorageSummary } from "@/lib/crm-types";
 import { Badge } from "@/components/ui/badge";
 import { CampaignLaunchReadinessSection } from "./campaign-launch-readiness-section";
@@ -352,7 +351,6 @@ type CampaignSidePanelProps = {
   onNavigateToCampaign?: (campaignId: string) => void;
   onCampaignDuplicated?: (campaign: CampaignRow) => void;
   workspaceFilter?: StageFilter;
-  viewMode?: ZoneViewMode;
   onCampaignDeleted?: (campaignId: string) => void;
   title?: string;
   description?: string;
@@ -369,7 +367,6 @@ export function CampaignSidePanel({
   onCampaignUpdated,
   onNavigateToCampaign,
   workspaceFilter,
-  viewMode,
   onCampaignDeleted,
   title = "판매 관리 캠페인 상세 페이지",
   description,
@@ -863,7 +860,6 @@ export function CampaignSidePanel({
             currentStatus={campaign.status}
             campaignId={campaign.id}
             onStatusChanged={onCampaignUpdated}
-            viewMode={viewMode}
             showDropButton={isProgressWorkspace && PROGRESS_WORKSPACE_STATUSES.includes(campaign.status) || campaign.status === "DROPPED"}
             onDrop={isProgressWorkspace ? () => void handleDropCampaign() : undefined}
           />

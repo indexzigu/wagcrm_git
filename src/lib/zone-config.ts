@@ -6,8 +6,6 @@ import type { CampaignStatus, CampaignRow } from "./crm-types";
 
 export type PipelineZone = "SALES" | "DEAL_EXECUTION" | "SETTLEMENT" | "DROPPED";
 
-export type ZoneViewMode = "VIEW_B" | "VIEW_C";
-
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------

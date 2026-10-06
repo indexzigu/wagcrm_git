@@ -2,8 +2,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ColumnVisibilitySettings } from "../column-visibility-settings";
-import { type ColumnSettings, DEFAULT_COLUMN_SETTINGS } from "@/lib/column-settings";
 import type { CampaignRow } from "@/lib/crm-types";
 
 // Polyfill window.matchMedia for jsdom (used by CampaignSidePanel's useDesktop hook)
@@ -37,137 +35,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// ColumnVisibilitySettings — View C PROPOSAL toggle disabled (Requirement 5.2)
-// ---------------------------------------------------------------------------
-
-describe("ColumnVisibilitySettings — View C restrictions", () => {
-  let settings: ColumnSettings;
-  let onChange: (settings: ColumnSettings) => void;
-
-  beforeEach(() => {
-    settings = { ...DEFAULT_COLUMN_SETTINGS };
-    onChange = vi.fn() as unknown as (settings: ColumnSettings) => void;
-  });
-
-  it("disables PROPOSAL toggle when viewMode is VIEW_C", async () => {
-    const user = userEvent.setup();
-    render(
-      <ColumnVisibilitySettings
-        settings={settings}
-        onChange={onChange}
-        viewMode="VIEW_C"
-      />,
-    );
-
-    // Open the popover
-    await user.click(screen.getByRole("button", { name: "컬럼 표시 설정" }));
-
-    // Find the PROPOSAL switch — it should be disabled
-    const proposalSwitch = await screen.findByRole("switch", {
-      name: /셀러 제안 중 컬럼/,
-    });
-    expect(proposalSwitch).toBeDisabled();
-  });
-
-  it("keeps other column toggles enabled in View C", async () => {
-    const user = userEvent.setup();
-    render(
-      <ColumnVisibilitySettings
-        settings={settings}
-        onChange={onChange}
-        viewMode="VIEW_C"
-      />,
-    );
-
-    // Open the popover
-    await user.click(screen.getByRole("button", { name: "컬럼 표시 설정" }));
-
-    // Other switches should NOT be disabled
-    const preparationSwitch = await screen.findByRole("switch", {
-      name: /세팅 대기 컬럼/,
-    });
-    const activeSwitch = await screen.findByRole("switch", {
-      name: /판매 진행 중 컬럼/,
-    });
-    const closedSwitch = await screen.findByRole("switch", {
-      name: /판매 마감 컬럼/,
-    });
-
-    expect(preparationSwitch).not.toBeDisabled();
-    expect(activeSwitch).not.toBeDisabled();
-    expect(closedSwitch).not.toBeDisabled();
-  });
-
-  it("does NOT disable PROPOSAL toggle when viewMode is VIEW_B", async () => {
-    const user = userEvent.setup();
-    render(
-      <ColumnVisibilitySettings
-        settings={settings}
-        onChange={onChange}
-        viewMode="VIEW_B"
-      />,
-    );
-
-    // Open the popover
-    await user.click(screen.getByRole("button", { name: "컬럼 표시 설정" }));
-
-    const proposalSwitch = await screen.findByRole("switch", {
-      name: /셀러 제안 중 컬럼/,
-    });
-    expect(proposalSwitch).not.toBeDisabled();
-  });
-
-  it("does NOT disable PROPOSAL toggle when viewMode is undefined", async () => {
-    const user = userEvent.setup();
-    render(
-      <ColumnVisibilitySettings
-        settings={settings}
-        onChange={onChange}
-      />,
-    );
-
-    // Open the popover
-    await user.click(screen.getByRole("button", { name: "컬럼 표시 설정" }));
-
-    const proposalSwitch = await screen.findByRole("switch", {
-      name: /셀러 제안 중 컬럼/,
-    });
-    expect(proposalSwitch).not.toBeDisabled();
-  });
-
-  it("does not call onChange when PROPOSAL toggle is clicked in View C", async () => {
-    const user = userEvent.setup();
-    render(
-      <ColumnVisibilitySettings
-        settings={settings}
-        onChange={onChange}
-        viewMode="VIEW_C"
-      />,
-    );
-
-    // Open the popover
-    await user.click(screen.getByRole("button", { name: "컬럼 표시 설정" }));
-
-    const proposalSwitch = await screen.findByRole("switch", {
-      name: /셀러 제안 중 컬럼/,
-    });
-
-    // Attempt to click the disabled switch
-    await user.click(proposalSwitch);
-
-    expect(onChange).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// CampaignSidePanel — View C blocks PROPOSAL status change (Requirement 5.6)
+// CampaignSidePanel — 상태 스테퍼: 인접 단계만 선택 가능, 변경은 저장된다
 // ---------------------------------------------------------------------------
 
 // We test the InlineStatusEdit behavior indirectly through CampaignSidePanel.
 // Since CampaignSidePanel is very large and has many dependencies, we test
 // the core blocking logic via the InlineStatusEdit sub-component behavior.
 
-describe("CampaignSidePanel — View C PROPOSAL status block", () => {
+describe("CampaignSidePanel — 상태 스테퍼 인접 단계 규칙", () => {
   // We need to import toast mock to verify it was called
   let toastMock: { error: ReturnType<typeof vi.fn> };
 
@@ -177,7 +52,7 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
     toastMock = sonner.toast as unknown as { error: ReturnType<typeof vi.fn> };
   });
 
-  it("CampaignSidePanel renders with viewMode prop and blocks PROPOSAL selection", async () => {
+  it("CampaignSidePanel blocks non-adjacent PROPOSAL selection", async () => {
     // Mock fetch for the various API calls CampaignSidePanel makes
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -225,7 +100,6 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
         open={true}
         onOpenChange={vi.fn()}
         onCampaignUpdated={vi.fn()}
-        viewMode="VIEW_C"
       />,
     );
 
@@ -235,7 +109,7 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
     expect(proposalButton).toBeDisabled();
   });
 
-  it("CampaignSidePanel allows non-PROPOSAL status change in View C", async () => {
+  it("CampaignSidePanel allows adjacent status change and saves it", async () => {
     // Mock fetch for the various API calls
     const fetchMock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       if (url.includes("/api/campaigns/") && options?.method === "PATCH") {
@@ -317,7 +191,6 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
         open={true}
         onOpenChange={vi.fn()}
         onCampaignUpdated={onCampaignUpdated}
-        viewMode="VIEW_C"
       />,
     );
 
@@ -328,7 +201,7 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
     const user = userEvent.setup();
     await user.click(closedButton);
 
-    // Should NOT show the blocking toast — CLOSED is allowed in View C
+    // Should NOT show the blocking toast for an allowed adjacent change
     await waitFor(() => {
       expect(toastMock.error).not.toHaveBeenCalledWith(
         "영업 존 캠페인은 셀러 제안 페이지에서 관리합니다",

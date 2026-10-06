@@ -22,18 +22,15 @@ import {
   saveColumnSettings,
   toggleColumnVisibility,
 } from "@/lib/column-settings";
-import type { ZoneViewMode } from "@/lib/zone-config";
 
 type ColumnVisibilitySettingsProps = {
   settings: ColumnSettings;
   onChange: (settings: ColumnSettings) => void;
-  viewMode?: ZoneViewMode;
 };
 
 export function ColumnVisibilitySettings({
   settings,
   onChange,
-  viewMode,
 }: ColumnVisibilitySettingsProps) {
   const visibleCount = PIPELINE_STAGE_ORDER.filter(
     (stage) => settings[stage].visible,
@@ -71,9 +68,6 @@ export function ColumnVisibilitySettings({
             {PIPELINE_STAGE_ORDER.map((stage) => {
               const isVisible = settings[stage].visible;
               const isLastVisible = isVisible && visibleCount <= 1;
-              const isViewCProposal =
-                viewMode === "VIEW_C" && stage === "PROPOSAL";
-              const isDisabled = isLastVisible || isViewCProposal;
 
               const switchElement = (
                 <div
@@ -93,22 +87,11 @@ export function ColumnVisibilitySettings({
                     onCheckedChange={(checked) =>
                       handleToggle(stage, checked as boolean)
                     }
-                    disabled={isDisabled}
+                    disabled={isLastVisible}
                     aria-label={`${campaignStatusLabels[stage]} 컬럼 ${isVisible ? "숨기기" : "표시"}`}
                   />
                 </div>
               );
-
-              if (isViewCProposal) {
-                return (
-                  <Tooltip key={stage}>
-                    <TooltipTrigger asChild>{switchElement}</TooltipTrigger>
-                    <TooltipContent side="left">
-                      View C에서는 셀러 제안 컬럼을 변경할 수 없습니다
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              }
 
               if (isLastVisible) {
                 return (
