@@ -39,7 +39,6 @@ describe("정렬 대상이 라이브다 (렌더 도달 — 그렙 계약의 전�
     const boards = [
       "components/crm/stage-column.tsx",
       "components/crm/execution-kanban-board.tsx",
-      "components/crm/zoned-pipeline-board.tsx",
       "components/crm/stage-kanban-board.tsx",
     ].map(read);
     expect(boards.some((b) => b.includes("<CampaignCard"))).toBe(true);

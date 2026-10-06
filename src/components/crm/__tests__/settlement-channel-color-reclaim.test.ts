@@ -72,7 +72,6 @@ describe("D2 후속 — 렌더 도달 (그렙이 못 보는 것)", () => {
   it("CampaignCard 는 앱이 실제로 렌더한다", () => {
     const boards = [
       read("components/crm/stage-column.tsx"),
-      read("components/crm/zoned-pipeline-board.tsx"),
     ];
     expect(boards.some((b) => b.includes("<CampaignCard"))).toBe(true);
   });
