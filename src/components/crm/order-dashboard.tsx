@@ -16,7 +16,7 @@ import {
 type Campaign = {
   id: string;
   name: string;
-  template: string;
+  template: string | null; // 정본 `@/types/campaign` 과 동일 — DB 가 비울 수 있다(T-235)
   sellerName: string;
   toEmail?: string;
   ccEmail?: string;
@@ -1150,6 +1150,19 @@ export default function OrderDashboard() {
   const handleFetchInvoice = async (campaign: Campaign) => {
     const busyKey = `fetchInvoice:${campaign.id}`;
     if (isActionBusy(busyKey)) return; // 이미 이 캠페인 송장회신 진행 중 — 중복 조회 무시(무음)
+    // 거래처 양식이 없는 캠페인은 서버(fetch-emails)가 400 으로 거절한다 — 네트워크를 타기 전에
+    // 이유와 다음 행동을 알린다(T-235). 버튼을 비활성하지 않는 이유: 비활성은 이유를 숨기고
+    // 터치·키보드에서 설명이 열리지 않는다. 라벨 「거래처 양식」·「캠페인 설정」은 카드 ⋮ 메뉴와 설정 모달의 실제 표기와 같다(ss-ux 검토 2026-10-06).
+    if (!campaign.template) {
+      addToast(
+        '거래처 양식이 지정되지 않아 회신 메일을 찾을 수 없습니다. 캠페인 설정에서 거래처 양식을 지정한 뒤 다시 시도하세요.',
+        'error',
+      );
+      logOrderAction(buildFetchInvoiceLog({
+        campaign, trackingCount: 0, hadAttachment: false, error: '거래처 양식 없음',
+      }));
+      return;
+    }
     setActionBusy(busyKey, true);
     try {
       addToast('송장 회신 메일을 확인 중입니다...', 'info');
