@@ -6,7 +6,6 @@ import {
   ORDER_SYNC_STALE_HOURS,
   classifyOrderWork,
   isOrderSyncStale,
-  resolveOrderWorkSeverity,
   summarizeOrderWork,
   type OrderWorkClassification,
 } from "../order-work";
@@ -159,21 +158,6 @@ describe("summarizeOrderWork", () => {
       [],
     );
     expect(summary.total).toBe(2);
-  });
-});
-
-describe("resolveOrderWorkSeverity — 배지 색", () => {
-  const base = summarizeOrderWork([], []);
-  it("0 이면 none, 평상시 발주 대기만이면 routine(무채색)", () => {
-    expect(resolveOrderWorkSeverity(base)).toBe("none");
-    expect(resolveOrderWorkSeverity({ ...base, awaitingPo: { lines: 3, campaigns: 1, delayedLines: 0 }, total: 3 })).toBe("routine");
-  });
-  it("결제 후 2일 이상 발주 대기가 있으면 caution", () => {
-    expect(resolveOrderWorkSeverity({ ...base, awaitingPo: { lines: 3, campaigns: 1, delayedLines: 1 }, total: 3 })).toBe("caution");
-  });
-  it("송장·배송 지연이나 반품/교환이 있으면 urgent", () => {
-    expect(resolveOrderWorkSeverity({ ...base, delayed: { lines: 1, campaigns: 1, invoiceLines: 1, shippingLines: 0 }, total: 1 })).toBe("urgent");
-    expect(resolveOrderWorkSeverity({ ...base, openClaims: { lines: 1, campaigns: 0, unmatchedLines: 1 }, total: 1 })).toBe("urgent");
   });
 });
 

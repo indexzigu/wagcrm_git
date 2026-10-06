@@ -44,8 +44,6 @@ import { createClient } from "@/lib/supabase/client";
 import { isClientDemoMode } from "@/lib/demo-mode";
 import { Badge } from "@/components/ui/badge";
 import { useApprovalInbox } from "@/hooks/useApprovalInbox";
-import { useOrderWorkSummary } from "@/hooks/useOrderWorkSummary";
-import { resolveOrderWorkSeverity } from "@/lib/order-converter/order-work";
 import { useUserRole } from "@/hooks/use-user-role";
 
 // 섹션 그룹핑 — 묶음은 성격(진행 / 리포트 / 기본정보 / 도구), 진행 그룹의
@@ -191,35 +189,6 @@ export function ApprovalBadge() {
   return (
     <Badge variant="status-pending" className="ml-auto">
       {count}
-    </Badge>
-  );
-}
-
-/**
- * 「주문 관리」 배지 — 오늘 손이 가야 하는 주문 수(발주 대기 + 송장·배송 지연 + 반품/교환, 상품주문 합집합).
- * 홈 「오늘 처리할 주문」 카드와 같은 쿼리키(useOrderWorkSummary)를 공유해 요청을 늘리지 않는다.
- * 0 이면 렌더하지 않는다. 로딩·오류 중에도 숨긴다 — 오류는 홈 카드가 드러낸다(배지는 보조 신호).
- *
- * 색은 심각도(`resolveOrderWorkSeverity`)만 탄다 — 평상시 발주 대기만 있으면 무채색이다. 날마다 켜지는
- * 주황 배지는 습관화로 신호를 잃는다(P8 §2). 늦은 건·반품/교환이 있을 때만 caution/urgent.
- * 서버는 네이버를 부르지 않는다(`/api/order-work`).
- */
-const ORDER_WORK_BADGE_VARIANT = {
-  routine: "secondary",
-  caution: "status-caution",
-  urgent: "status-urgent",
-} as const;
-
-export function OrderWorkBadge() {
-  const { data } = useOrderWorkSummary();
-  if (!data) return null;
-  const severity = resolveOrderWorkSeverity(data);
-  if (severity === "none") return null;
-  return (
-    <Badge variant={ORDER_WORK_BADGE_VARIANT[severity]} className="ml-auto" data-severity={severity}>
-      <span className="sr-only">오늘 처리할 주문 </span>
-      {data.total}
-      <span className="sr-only">건</span>
     </Badge>
   );
 }
@@ -370,7 +339,6 @@ export function CrmSidebar() {
                             {item.label}
                           </span>
                           {item.href === "/approvals" && <ApprovalBadge />}
-                          {item.href === "/order-converter" && <OrderWorkBadge />}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
