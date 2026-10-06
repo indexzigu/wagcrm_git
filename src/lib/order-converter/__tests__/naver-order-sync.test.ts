@@ -449,6 +449,8 @@ describe('syncOrdersByIds (발주확인 즉시 반영 — 변경피드 우회)',
     const result = await syncOrdersByIds(['1']);
 
     expect(result.affectedDates).toContain(dateKey);
+    // 재조회한 주문을 그대로 돌려준다 — 발주서 확정 단계가 이 값으로 행을 다시 만든다(추가 호출 0).
+    expect(result.orders.map((o: any) => [o.productOrderId, o.placeOrderStatus])).toEqual([['1', 'OK']]);
 
     // L1 캐시가 OK로 갱신되어야 대시보드 집계가 발주확인전→후로 이동한다.
     const cachedOrder = (global as any).__naverDailyCache[dateKey].orders.find((o: any) => o.productOrderId === '1');
@@ -464,7 +466,7 @@ describe('syncOrdersByIds (발주확인 즉시 반영 — 변경피드 우회)',
     const clientModule = await import('@/lib/order-converter/naver-commerce-client');
     const apiSpy = vi.spyOn(clientModule, 'apiRequest').mockResolvedValue({ data: [] });
     const res = await syncOrdersByIds([]);
-    expect(res).toEqual({ updated: 0, affectedDates: [] });
+    expect(res).toEqual({ updated: 0, affectedDates: [], orders: [] });
     expect(apiSpy).not.toHaveBeenCalled();
   });
 });

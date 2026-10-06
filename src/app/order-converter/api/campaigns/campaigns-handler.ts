@@ -2,7 +2,8 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { prisma } from '@/lib/order-converter/prisma';
 import { searchNaverProducts } from '@/lib/order-converter/naver-commerce-api';
 import { autoMapOrderCampaign, syncOrderCountToCampaignDeal, recalculateSalesCampaignTotals, shouldResyncCampaignPeriod, usesPeriodCheckInterval, isPeriodResyncDue, isConcretePeriodString, isSalesCampaignLocked, resolveSaleWindowStartMs, resolveSaleWindowEndMs, formatKstPeriodLabel, resolveStorePeriodDrift } from '@/lib/order-converter/mapping-service';
-import { resolveLiveOrderCampaignWindow, resolveActiveCampaignsQueryStart } from '@/lib/order-converter/sale-window';
+import { resolveLiveOrderCampaignWindow, resolveActiveCampaignsQueryStart, resolveCampaignQueryStartMs } from '@/lib/order-converter/sale-window';
+import { decidePreparedPoAvailability } from '@/lib/order-converter/prepared-po';
 import { resolveSalesReportOptionLabel } from '@/lib/order-converter/sales-report-options';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { getSnapshotL1Cache, hydrateSnapshotL1 } from '@/lib/order-converter/snapshot-l1-cache';
@@ -397,6 +398,9 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     let lastSyncIso: string | null = null;
     let isSyncing = false;
     let syncTypeHeader: string | null = null;
+    // 준비본 가용성 판정의 기준 시각(변경피드 커서) — 카드의 「발주서 준비됨」 줄이 발주요청 창과 같은
+    // 판정(prepared-po SSOT)을 쓰게 한다. 읽지 못했으면 null → 「동기화 기록 없음」으로 줄을 숨긴다.
+    let changeCursorIso: string | null = null;
 
     try {
       // KST 기준으로 자정부터 시작하도록 earliestStart 조정
@@ -491,6 +495,7 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         console.warn('Failed to read latestSyncMeta:', metaResult.error);
       }
       lastSyncIso = resolveLastOrderSyncIso(lastChangeSyncMs, lastCallTime) ?? lastSyncIso;
+      changeCursorIso = lastChangeSyncMs != null ? new Date(lastChangeSyncMs).toISOString() : null;
 
       // stale한 날짜가 있으면 응답은 그대로 반환하고, 백그라운드로 보정을 건다 (서버판 SWR).
       // ① 변경피드 동기화는 마지막으로 성공한 변경피드 동기화가 설정 간격(1·3·6시간 — order-auto-sync.ts)
@@ -1195,6 +1200,19 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
         oldestPendingDate,
         oldestShippingDate,
         lastOrderAt: lastOrderAt || null,
+        // 발주서 준비본(발주 자동화 2단계) — 스위치가 켜져 있고 발주요청 창이 준비본을 허락할 때만
+        // {asOfIso}, 아니면 null. 판정은 prepared-po SSOT 하나다(카드와 창이 어긋나지 않게).
+        preparedPo: (() => {
+          if (camp.autoPrepEnabled !== true) return null;
+          const nowMs = Date.now();
+          const availability = decidePreparedPoAvailability({
+            autoPrepEnabled: true,
+            cursorIso: changeCursorIso,
+            queryStartMs: resolveCampaignQueryStartMs(camp) ?? nowMs - 14 * 24 * 60 * 60 * 1000,
+            nowMs,
+          });
+          return availability.available ? { asOfIso: availability.asOfIso } : null;
+        })(),
         // 처리 안 된 송장 회신(크론 감지) — 없으면 null. 카드의 「송장 회신 도착 · 주문 N건 · HH:MM」 줄.
         invoiceReply: resolveInvoiceReplyStatus(replyDetectionsByCampaign.get(camp.id) ?? [], {
           keys: replyPendingKeys,

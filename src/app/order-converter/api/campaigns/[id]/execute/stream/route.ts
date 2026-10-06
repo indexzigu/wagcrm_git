@@ -5,9 +5,8 @@ import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { generateOrderExcelBuffer } from '@/lib/order-converter/excel-generator';
 import { loadOrderTemplateBuffer, resolveOrderBrand } from '@/lib/order-converter/order-brand';
 import { syncOrdersByIds } from '@/lib/order-converter/naver-order-sync';
-import { interleaveAddonRows } from '@/lib/order-converter/group-orders';
-import { orderMatchesCampaignProductId } from '@/lib/order-converter/campaign-match';
-import { isSupplementProduct } from '@/lib/order-converter/product-class';
+import { buildPurchaseOrderRows, describeEmptyPurchaseOrder } from '@/lib/order-converter/purchase-order-rows';
+import { confirmPlaceOrders } from '@/lib/order-converter/place-order-confirm';
 import {
   createNaverCallTally,
   noteNaverLogicalCall,
@@ -16,9 +15,8 @@ import {
   runWithNaverCallTally,
   toNaverEndpointLabel,
 } from '@/lib/order-converter/naver-api-usage';
-import { fetchPendingOrderWindow, PENDING_FULFILLMENT_STATUSES } from '@/lib/order-converter/order-fetch-window';
+import { fetchPendingOrderWindow } from '@/lib/order-converter/order-fetch-window';
 import { resolveCampaignQueryStartMs } from '@/lib/order-converter/mapping-service';
-import { resolveShippingMemo } from '@/lib/order-converter/shipping-memo';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 
 // 주문확인 1클릭이 전체기간 재조회→발주확인→스냅샷 반영→엑셀 생성을 한 함수에서 수행 —
@@ -142,160 +140,19 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
 
         sendEvent({ progress: 50, message: `조회 완료: 총 ${detailsData.length}건. 매핑 분석 중...` });
 
-        // 3. 매핑 로직
-        const mainRows: any[] = [];
-        const addonRows: any[] = [];
-        // 추가구성상품(추가옵션) 귀속용: 메인 매칭 productId 집합 + 2차 판단 보류 리스트
-        // (추가구성 주문은 productName이 애드온 자체명이라 캠페인명/매핑 매칭에서 탈락 — 발주서·발주확인 누락 원인)
-        const campaignProductIds = new Set<string>();
-        const deferredAddonWrappers: any[] = [];
-        detailsData.forEach(orderWrapper => {
-          const order = orderWrapper.productOrder;
-          // 발주 대상 상태 판정은 order-fetch-window SSOT 목록을 쓴다 — 종전엔 이 라우트와
-          // execute 라우트가 서로 다른 필터를 갖고 있었다(execute 는 PRODUCT_READY 미포함).
-          if (!order || !(PENDING_FULFILLMENT_STATUSES as readonly string[]).includes(order.productOrderStatus)) return;
-
-          if (isSupplementProduct(order)) {
-            deferredAddonWrappers.push(orderWrapper);
-            return;
-          }
-
-          const pName = order.productName || '';
-          const oName = order.productOption || '';
-          
-          const normalize = (str: string) => (str || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
-          const normPName = normalize(pName);
-          const normOName = normalize(oName);
-
-          const matchedMapping = campaign.mappings.find(m => {
-            const hasProduct = !!m.productName;
-            const hasOption = !!m.optionName;
-            if (!hasProduct && !hasOption) return false;
-
-            let productMatches = false;
-            if (hasProduct) {
-              const normMProd = normalize(m.productName);
-              if (normMProd.length > 0) {
-                productMatches = (normPName.length > 0 && (normPName.includes(normMProd) || normMProd.includes(normPName))) ||
-                                 (normOName.length > 0 && (normOName.includes(normMProd) || normMProd.includes(normOName)));
-              }
-            }
-
-            let optionMatches = false;
-            if (hasOption) {
-              const normMOpt = normalize(m.optionName);
-              if (normMOpt.length > 0) {
-                optionMatches = (normOName.length > 0 && (normOName.includes(normMOpt) || normMOpt.includes(normOName))) ||
-                                (normPName.length > 0 && (normPName.includes(normMOpt) || normMOpt.includes(normPName)));
-              }
-            }
-
-            if (hasOption && optionMatches) return true;
-            if (hasProduct && !hasOption && productMatches) return true;
-            return productMatches || optionMatches;
-          });
-
-          let isCampaignOrder = false;
-          let matchesCampName = false;
-
-          if (campaign.productId && (order.productId != null || order.originalProductId != null)) {
-            if (orderMatchesCampaignProductId(order, campaign.productId)) {
-              if (pName.includes(campaign.name) || campaign.name.includes(pName)) {
-                matchesCampName = true;
-              }
-            }
-          } else {
-            if (pName.includes(campaign.name) || campaign.name.includes(pName)) {
-              matchesCampName = true;
-            }
-          }
-
-          if (matchesCampName) {
-            isCampaignOrder = true;
-          } else if (matchedMapping) {
-            const belongsToOther = activeCampaigns.some((otherCamp: any) => 
-              otherCamp.id !== campaign.id && (pName.includes(otherCamp.name) || otherCamp.name.includes(pName))
-            );
-            if (!belongsToOther) {
-              isCampaignOrder = true;
-            }
-          }
-
-          if (isCampaignOrder) {
-            if (order.productId) campaignProductIds.add(String(order.productId));
-            const rawDate = orderWrapper.order?.orderDate || order.paymentDate || order.orderDate || order.placeOrderStatusDate || '';
-            const formattedDate = rawDate.includes('T') ? rawDate.replace('T', ' ').slice(0, 16) : rawDate;
-
-            mainRows.push({
-              _orderId: orderWrapper.order?.orderId || order.orderId || '',
-              주문일: formattedDate,
-              상품주문번호: order.productOrderId || '',
-              구매자명: orderWrapper.order?.ordererName || order.shippingAddress?.name || '',
-              구매자연락처: orderWrapper.order?.ordererTel || '',
-              수취인명: order.shippingAddress?.name || '',
-              수취인연락처1: order.shippingAddress?.tel1 || '',
-              수취인연락처2: order.shippingAddress?.tel2 || '',
-              우편번호: order.shippingAddress?.zipCode || '',
-              배송지: order.shippingAddress?.baseAddress + ' ' + (order.shippingAddress?.detailedAddress || ''),
-              옵션정보: oName,
-              수량: order.quantity || 1,
-              배송비: order.shippingFee || '0',
-              배송메시지: resolveShippingMemo(order, orderWrapper.order),
-              사은품: '',
-              _placeOrderStatus: order.placeOrderStatus
-            });
-          }
+        // 3. 매핑 — 발주 대상 판정·행 생성은 purchase-order-rows SSOT(발주요청·준비본과 같은 함수).
+        // 주문확인은 배송대기(이미 발주요청한) 건도 빼지 않는다 — 다시 받는 파일이라 전량이 맞다.
+        const { rows: matchedOrders, pendingLineCount } = buildPurchaseOrderRows({
+          wrappers: detailsData,
+          campaign,
+          activeCampaigns,
         });
-
-        // 3-2. 추가구성상품 2차 귀속: 같은 상품(=동일 productId)의 메인 품목이 이 캠페인에
-        // 매칭된 경우 발주 대상에 포함한다. 그래야 발주서에 실리고 발주확인도 함께 처리된다.
-        deferredAddonWrappers.forEach(orderWrapper => {
-          const order = orderWrapper.productOrder;
-          if (!order?.productId || !campaignProductIds.has(String(order.productId))) return;
-
-          const rawDate = orderWrapper.order?.orderDate || order.paymentDate || order.orderDate || order.placeOrderStatusDate || '';
-          const formattedDate = rawDate.includes('T') ? rawDate.replace('T', ' ').slice(0, 16) : rawDate;
-
-          addonRows.push({
-            _orderId: orderWrapper.order?.orderId || order.orderId || '',
-            주문일: formattedDate,
-            상품주문번호: order.productOrderId || '',
-            구매자명: orderWrapper.order?.ordererName || order.shippingAddress?.name || '',
-            구매자연락처: orderWrapper.order?.ordererTel || '',
-            수취인명: order.shippingAddress?.name || '',
-            수취인연락처1: order.shippingAddress?.tel1 || '',
-            수취인연락처2: order.shippingAddress?.tel2 || '',
-            우편번호: order.shippingAddress?.zipCode || '',
-            배송지: order.shippingAddress?.baseAddress + ' ' + (order.shippingAddress?.detailedAddress || ''),
-            옵션정보: order.productOption || '',
-            수량: order.quantity || 1,
-            배송비: order.shippingFee || '0',
-            배송메시지: resolveShippingMemo(order, orderWrapper.order),
-            사은품: '',
-            _placeOrderStatus: order.placeOrderStatus
-          });
-        });
-
-        // 3-3. 브랜드사 전달 목적에 맞게 주문(고객) 단위로 행 그룹핑 — 추가옵션이
-        // 같은 주문의 메인 행 바로 뒤에 붙어야 브랜드사가 합포장 묶음을 인지한다.
-        const matchedOrders = interleaveAddonRows(mainRows, addonRows);
 
         if (matchedOrders.length === 0) {
-          // baseline(2026-07-30)이 드러낸 오해: 발주 대상이 0건이어도 "매핑 룰에 해당하는
-          // 주문이 없습니다"가 떠서 **매핑 설정이 깨진 것처럼** 읽혔다. 두 상황은 처방이
-          // 정반대다 — 앞은 아무 것도 할 게 없는 정상, 뒤는 매핑을 손봐야 하는 문제다.
-          const pendingLineCount = detailsData.filter(
-            (w: any) =>
-              w?.productOrder &&
-              (PENDING_FULFILLMENT_STATUSES as readonly string[]).includes(w.productOrder.productOrderStatus),
-          ).length;
-
-          if (pendingLineCount === 0) {
-            sendEvent({ error: '지금 발주할 주문이 없습니다. 발주 대상(결제완료·상품준비중) 주문이 0건입니다. 매핑 설정 문제가 아닙니다.' });
-            op.outcome = 'no-work';
-          } else {
-            sendEvent({ error: `발주 대상 주문 ${pendingLineCount}건이 있으나 이 캠페인의 매핑 룰에 맞는 건이 없습니다. 매핑 설정을 확인하세요.` });
-          }
+          // 「발주 대상 0건」과 「매핑 불일치」는 처방이 정반대다 — 문구를 가른다(SSOT 쪽 주석 참조).
+          const empty = describeEmptyPurchaseOrder(pendingLineCount);
+          sendEvent({ error: empty.message });
+          if (empty.noWork) op.outcome = 'no-work';
           return;
         }
 
@@ -312,81 +169,21 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
         let confirmDeferredCount = 0;
         let confirmFirstError = '';
         if (initialToConfirm.length > 0) {
-          const CHUNK_SIZE = 30;
-          const succeeded = new Set<string>();
-          const failedHard = new Set<string>(); // 명시적 실패(사유 있음) — 재시도 무의미
-
-          // 한 라운드: ids를 청크로 발주확인하고 성공/명시적실패 id를 집합에 반영한다.
-          // 네이버가 성공·실패 어느 목록에도 안 담고 누락한 id는 두 집합 어디에도 안 들어가
-          // 자동으로 다음 라운드 재시도 대상(pending)에 남는다. 네트워크/서버 오류 청크도
-          // 확정하지 않고(=transient) 다음 라운드에 재시도되게 남긴다.
-          const runConfirmRound = async (ids: string[]) => {
-            for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
-              sendEvent({ progress: 60 + Math.floor((i / ids.length) * 15), message: `발주확인 중... (${Math.min(i + CHUNK_SIZE, ids.length)}/${ids.length})` });
-              const chunk = ids.slice(i, i + CHUNK_SIZE);
-              let attempt = 0;
-              while (attempt < 2) {
-                attempt++;
-                try {
-                  const res: any = await apiRequest('POST', '/v1/pay-order/seller/product-orders/confirm', { productOrderIds: chunk });
-                  const body = res?.data ?? res ?? {};
-                  // 실측 스키마(2026-07-07): { successProductOrderInfos: [{productOrderId, ...}], failProductOrderInfos: [] }
-                  const okInfos: any[] = body.successProductOrderInfos || body.data?.successProductOrderInfos || [];
-                  const failInfos: any[] = body.failProductOrderInfos || body.data?.failProductOrderInfos || [];
-                  if (okInfos.length === 0 && failInfos.length === 0) {
-                    // 목록이 둘 다 비면(스키마 상이) 청크 전체 성공으로 간주 — 무한 재시도 방지
-                    chunk.forEach(id => succeeded.add(id));
-                  } else {
-                    for (const info of okInfos) { if (info?.productOrderId) succeeded.add(String(info.productOrderId)); }
-                    for (const info of failInfos) { if (info?.productOrderId) failedHard.add(String(info.productOrderId)); }
-                    if (failInfos.length > 0 && !confirmFirstError) {
-                      confirmFirstError = `${failInfos[0]?.productOrderId || ''} ${failInfos[0]?.code || ''} ${failInfos[0]?.message || ''}`.trim();
-                      console.warn('[발주확인 부분 실패]', JSON.stringify(failInfos).slice(0, 500));
-                    }
-                  }
-                  break;
-                } catch (err: any) {
-                  const msg = err?.message || String(err);
-                  const isRateLimit = msg.includes('429') || msg.toUpperCase().includes('RATE');
-                  if (isRateLimit && attempt < 2) {
-                    await new Promise(r => setTimeout(r, 1200));
-                    continue;
-                  }
-                  // 확정하지 않음 — 이 청크는 다음 라운드 재시도 대상(pending)에 남는다.
-                  if (!confirmFirstError) confirmFirstError = msg.slice(0, 200);
-                  console.warn(`발주 확인 호출 실패 (chunk ${i}, ${chunk.length}건):`, msg);
-                  break;
-                }
+          // 청크·재시도·예산 규칙은 place-order-confirm SSOT 가 소유한다(실사고 근거도 그쪽 헤더).
+          const confirm = await confirmPlaceOrders(initialToConfirm, {
+            apiRequest: (method, path, body) => apiRequest(method, path, body),
+            onProgress: (p) => {
+              if (p.kind === 'chunk') {
+                sendEvent({ progress: 60 + Math.floor((p.offset / p.total) * 15), message: `발주확인 중... (${p.done}/${p.total})` });
+              } else {
+                sendEvent({ progress: 78, message: `미확인 ${p.pending}건 네이버 확인 대기, 자동 재시도 중 (${p.round}/${p.maxRounds - 1})` });
               }
-              await new Promise(r => setTimeout(r, 300)); // 청크 간 레이트리밋 완화
-            }
-          };
-
-          // 재시도 루프(2026-07-13 실사고): 막 확인 요청한 건 중 일부를 네이버가 이번 호출에선
-          // 확인하지 않고 조용히 누락하는 경우가 있다(제출 17 중 9만 확인·8 누락). 사용자에게
-          // 재클릭을 시키면 주문확인 로그가 중복으로 쌓여 오작동처럼 보이므로, 백엔드에서 잔여분만
-          // 짧게 최대 N회 자동 재시도해 클릭 1회 = 로그 1줄로 수렴시킨다. 잔여가 0이 되면 조기 종료.
-          const MAX_CONFIRM_ROUNDS = 3;
-          const RETRY_DELAY_MS = 2000;
-          // Hobby는 함수 실행을 60초로 클램프한다(maxDuration 선언 무시). 재시도 sleep이 큰
-          // 캠페인(다일 조회+수백 청크 확인)에서 이 예산을 밀어 타임아웃 kill을 유발하지 않도록,
-          // 재시도 단계 총 소요를 이 예산으로 캡한다. 초과 시 잔여는 그대로 표면화(재시도 포기).
-          const RETRY_TIME_BUDGET_MS = 12000;
-          const confirmPhaseStart = Date.now();
-          let pending = [...initialToConfirm];
-          for (let round = 0; round < MAX_CONFIRM_ROUNDS && pending.length > 0; round++) {
-            if (round > 0) {
-              if (Date.now() - confirmPhaseStart > RETRY_TIME_BUDGET_MS) break;
-              sendEvent({ progress: 78, message: `미확인 ${pending.length}건 네이버 확인 대기, 자동 재시도 중 (${round}/${MAX_CONFIRM_ROUNDS - 1})` });
-              await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-            }
-            await runConfirmRound(pending);
-            pending = pending.filter(id => !succeeded.has(id) && !failedHard.has(id));
-          }
-
-          confirmSuccessCount = succeeded.size;
-          confirmFailCount = failedHard.size;
-          confirmDeferredCount = pending.length; // 재시도 후에도 확인 못한 잔여(대개 0)
+            },
+          });
+          confirmSuccessCount = confirm.succeeded.size;
+          confirmFailCount = confirm.failedHard.size;
+          confirmDeferredCount = confirm.pending.length; // 재시도 후에도 확인 못한 잔여(대개 0)
+          confirmFirstError = confirm.firstError;
 
           if (confirmFailCount > 0 || confirmDeferredCount > 0) {
             const parts = [`성공 ${confirmSuccessCount}건`];

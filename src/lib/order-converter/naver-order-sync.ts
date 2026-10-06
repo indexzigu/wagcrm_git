@@ -367,9 +367,15 @@ async function loadExistingOrdersWithDbFallback(dailyCache: Record<string, any>,
   return l1Orders;
 }
 
-export async function syncOrdersByIds(productOrderIds: string[]): Promise<{ updated: number; affectedDates: string[] }> {
+/**
+ * `orders` 는 이번에 재조회한 주문(정규화된 평평한 모양) 그대로다 — 발주서 확정 단계
+ * (`purchase-order` POST)가 발주확인 직후의 최신 상태로 행을 다시 만들 때 쓴다(추가 호출 0).
+ */
+export async function syncOrdersByIds(
+  productOrderIds: string[],
+): Promise<{ updated: number; affectedDates: string[]; orders: any[] }> {
   const uniqueIds = Array.from(new Set((productOrderIds || []).map((id) => String(id).trim()).filter(Boolean)));
-  if (uniqueIds.length === 0) return { updated: 0, affectedDates: [] };
+  if (uniqueIds.length === 0) return { updated: 0, affectedDates: [], orders: [] };
 
   const dailyCache = getDailyCache();
   const now = new Date();
@@ -424,7 +430,7 @@ export async function syncOrdersByIds(productOrderIds: string[]): Promise<{ upda
     }
   }
 
-  return { updated: normalizedOrders.length, affectedDates };
+  return { updated: normalizedOrders.length, affectedDates, orders: normalizedOrders };
 }
 
 // ============================================================================

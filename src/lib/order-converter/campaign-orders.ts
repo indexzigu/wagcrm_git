@@ -1,16 +1,16 @@
 import { prisma } from './prisma';
 import { apiRequest } from './naver-commerce-client';
 import { fetchAllProductOrderPages, PRODUCT_ORDER_RANGE_TYPE_PAYED } from './product-order-paging';
-import { orderMatchesCampaignProductId } from './campaign-match';
+import { orderMatchesCampaign, type CampaignForMatch } from './purchase-order-rows';
 import { isSupplementProduct } from './product-class';
 
 /**
  * 수동 첨부 발송의 "캠페인 대조" 전용 — 이 캠페인에 귀속되는 네이버 상품주문번호 집합을
- * 라이브로 재조회한다. execute 라우트의 fetch+필터와 동일한 귀속 규칙을 쓰되,
+ * 라이브로 재조회한다. 발주서 경로와 **같은 귀속 판정**(`orderMatchesCampaign`, purchase-order-rows SSOT)을 쓰되,
  * 발주확인(confirm) API·엑셀 생성·스냅샷 쓰기는 하지 않는 순수 읽기 경로다
  * (검증이 부작용을 일으키면 안 되므로 — 소유자 결정 2026-07-10).
  *
- * 주의: execute/route.ts와 달리 poRequested(기발송) 필터를 적용하지 않는다.
+ * 주의: 발주요청 발주서와 달리 poRequested(기발송) 필터를 적용하지 않는다.
  * 수동 첨부 파일은 이미 발송한 건을 포함할 수 있으므로, 대조 기준 집합은
  * 캠페인의 "전체 유효 주문(PAYED/PRODUCT_ORDERED)"이어야 오탐(외부 주문)이 없다.
  */
@@ -19,77 +19,6 @@ export interface CampaignOrderResolution {
   /** 이 캠페인에 귀속되는 상품주문번호 전체 집합 */
   orderIds: Set<string>;
   count: number;
-}
-
-const normalize = (str: string) => (str || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
-
-type CampaignForMatch = {
-  id: string;
-  name: string;
-  productId: string | null;
-  mappings: { productName: string; optionName: string }[];
-};
-
-/** execute/route.ts(운영 자동 경로)와 동일한 캠페인 귀속 판정 — 대조 일관성 보장. */
-function orderMatchesCampaign(
-  order: any,
-  campaign: CampaignForMatch,
-  activeCampaigns: { id: string; name: string }[],
-): boolean {
-  const pName = order.productName || '';
-  const oName = order.productOption || '';
-  const normPName = normalize(pName);
-  const normOName = normalize(oName);
-
-  const matchedMapping = campaign.mappings.find((m) => {
-    const hasProduct = !!m.productName;
-    const hasOption = !!m.optionName;
-    if (!hasProduct && !hasOption) return false;
-
-    let productMatches = false;
-    if (hasProduct) {
-      const normMProd = normalize(m.productName);
-      if (normMProd.length > 0) {
-        productMatches =
-          (normPName.length > 0 && (normPName.includes(normMProd) || normMProd.includes(normPName))) ||
-          (normOName.length > 0 && (normOName.includes(normMProd) || normMProd.includes(normOName)));
-      }
-    }
-
-    let optionMatches = false;
-    if (hasOption) {
-      const normMOpt = normalize(m.optionName);
-      if (normMOpt.length > 0) {
-        optionMatches =
-          (normOName.length > 0 && (normOName.includes(normMOpt) || normMOpt.includes(normOName))) ||
-          (normPName.length > 0 && (normPName.includes(normMOpt) || normMOpt.includes(normPName)));
-      }
-    }
-
-    if (hasOption && optionMatches) return true;
-    if (hasProduct && !hasOption && productMatches) return true;
-    return productMatches || optionMatches;
-  });
-
-  let matchesCampName = false;
-  if (campaign.productId && (order.productId != null || order.originalProductId != null)) {
-    if (orderMatchesCampaignProductId(order, campaign.productId)) {
-      if (pName.includes(campaign.name) || campaign.name.includes(pName)) matchesCampName = true;
-    }
-  } else if (pName.includes(campaign.name) || campaign.name.includes(pName)) {
-    matchesCampName = true;
-  }
-
-  if (matchesCampName) return true;
-
-  if (matchedMapping) {
-    const belongsToOther = activeCampaigns.some(
-      (otherCamp) => otherCamp.id !== campaign.id && (pName.includes(otherCamp.name) || otherCamp.name.includes(pName)),
-    );
-    if (!belongsToOther) return true;
-  }
-
-  return false;
 }
 
 export async function resolveCampaignExpectedOrderIds(campaignId: string): Promise<CampaignOrderResolution> {
@@ -105,7 +34,7 @@ export async function resolveCampaignExpectedOrderIds(campaignId: string): Promi
     select: { id: true, name: true },
   });
 
-  // 조회 기간: 캠페인 시작일부터 현재까지 (execute/route.ts와 동일 규칙)
+  // 조회 기간: 캠페인 시작일부터 현재까지 (발주서 경로와 동일 규칙)
   const now = new Date();
   let earliestStart = now.getTime() - 14 * 24 * 60 * 60 * 1000;
   if (campaign.startDate) {
@@ -135,7 +64,7 @@ export async function resolveCampaignExpectedOrderIds(campaignId: string): Promi
         {
           apiRequest: (m, path, body, q) => apiRequest(m, path, body, q),
           // **결제일 기준 명시**(2단계 = 스냅샷 경로, 오너 결정 2026-07-30). 이 경로는 수동
-          // 첨부 발송의 **대조 기준 집합**을 만든다 — execute 라우트(발주서 경로, 1단계에서
+          // 첨부 발송의 **대조 기준 집합**을 만든다 — 발주서 경로(order-fetch-window, 1단계에서
           // 이미 명시)와 같은 술어여야 "발주서엔 있는데 대조엔 없는" 오탐이 생기지 않는다.
           rangeType: PRODUCT_ORDER_RANGE_TYPE_PAYED,
         },

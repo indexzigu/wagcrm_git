@@ -603,6 +603,11 @@ model OrderCampaign {
   // 스토어 판매기간 마지막 확인 시각 — postgres 스키마와 정합(재동기화 간격 판정이 읽는다).
   periodCheckedAt           DateTime?
   isActive                  Boolean   @default(true)
+  // 발주서 자동 준비 스위치(발주 자동화 2단계, 오너 확정 2026-10-06 — 기본 꺼짐: 외부 브랜드사가 얽혀
+  // 소수 예외가 정합성을 깨면 안 된다). 켜면 발주요청 창에서 「준비본 사용」(저장된 주문 사본으로 만든
+  // 발주서 — 네이버 조회 0건)을 고를 수 있고 카드에 준비 상태가 뜬다. 판정 SSOT =
+  // src/lib/order-converter/prepared-po.ts.
+  autoPrepEnabled           Boolean   @default(false)
   cachedNewOrderBeforeCount Int?      @default(0)
   cachedNewOrderAfterCount  Int?      @default(0)
   cachedPendingCount        Int?      @default(0)
