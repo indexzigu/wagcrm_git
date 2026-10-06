@@ -104,10 +104,11 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
                         <td className="px-5 py-3 text-right text-xs text-slate-600 font-semibold">{row.orders.toLocaleString()}건</td>
                         <td className="px-5 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {/* 트랙 = 전체 주문(100%) 기준선: slate-100(1.10:1) → slate-300. 채움 indigo-500 은 트랙 대비
-                                3.08 로 여유가 없어(rose-600 3.04 를 기각한 선례와 같은 판단) 한 단계 진한 indigo-600(4.34). */}
+                            {/* 트랙 = 전체 주문(100%) 기준선: slate-100(1.10:1) → slate-300. 유입 경로는 범주라 상태 hue 를
+                                받지 않고(P8 §4), indigo 는 globals.css 밖 hue 부채라 중립 네이비(bg-primary, 트랙 대비 7.62)로 —
+                                오너 결정 2026-10-06. */}
                             <div className="w-20 h-1.5 bg-slate-300 rounded-full overflow-hidden">
-                              <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${row.orderRatio}%` }}></div>
+                              <div className="h-full bg-primary rounded-full" style={{ width: `${row.orderRatio}%` }}></div>
                             </div>
                             <span className="text-xs font-bold text-slate-500 w-10 text-right">{row.orderRatio.toFixed(1)}%</span>
                           </div>

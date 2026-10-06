@@ -6,8 +6,9 @@
  * 트랙을 진하게 하면 채움이 그 위에서 3:1(WCAG 1.4.11)을 잃을 수 있어, 채움도 함께 고정한다:
  * slate-500 3.21 · 네이비(bg-primary) 7.62 · emerald-700 3.62 · amber-700 3.40 · rose-700 4.08.
  * ⚠️ 하위(펼침) 막대의 종전 채움 slate-300 은 새 트랙과 **같은 색**이라 막대가 통째로 사라진다 — 되돌리지 말 것.
- * 3차: 파랑·남보라 채움은 한 단계 진하게(blue-600 3.54 · indigo-600 4.34). 발주 메일 완료(100%)는 트랙이 안 보여
- * 흰 배경 대비로 본다(green-500 2.22 → green-700 4.94).
+ * 3차: 범주 비중 막대(포털 구성별 판매·매출 보고 판매 비중·인사이트 유입 경로)와 스토리지 게이지는 중립 네이비
+ * (bg-primary 7.62 — 오너 결정 2026-10-06, 종전 blue/indigo 는 P8 §4 위반·hue 부채). 발주 메일 진행은 blue-600(3.54),
+ * 완료(100%)는 트랙이 안 보여 흰 배경 대비로 보고 「완료」 라벨과 같은 bg-status-success(흰 배경 5.48)로 맞춘다.
  * 의도적 유지: CommentIntent 구성 막대(합이 100% 인 구성비라 남은 구간이 아니다) · 모바일 상태 분포(#133).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -197,7 +198,7 @@ describe("CampaignCard — 필수 체크 진행 막대(3차)", () => {
 });
 
 describe("IntegrationsDiagnostic — 스토리지 한도 게이지(3차)", () => {
-  it("트랙 slate-300 + 채움 indigo-600, 트랙보다 연한 테두리는 없다", () => {
+  it("트랙 slate-300 + 채움 네이비(bg-primary), 트랙보다 연한 테두리는 없다", () => {
     const status = { connected: true, status: "CONNECTED" as const, accountEmail: null, lastError: null };
     const { container } = render(
       <IntegrationsDiagnostic
@@ -206,15 +207,16 @@ describe("IntegrationsDiagnostic — 스토리지 한도 게이지(3차)", () =>
         supabaseStats={{ supabaseEstimatedBytes: 300, supabaseLimitBytes: 1000 }}
       />,
     );
-    const fill = container.querySelector("div.bg-indigo-600.origin-left") as HTMLElement;
+    const fill = container.querySelector("div.bg-primary.origin-left") as HTMLElement;
     const track = fill.parentElement as HTMLElement;
-    expectVisibleTrack(track, "bg-indigo-600");
+    expectVisibleTrack(track, "bg-primary");
+    expect(fill.className).not.toMatch(/indigo/);
     expect(track.className).not.toMatch(/\bborder\b/);
   });
 });
 
 describe("주문 관리 모달 — 비중 막대(3차)", () => {
-  it("매출 보고: 전체 누적·일자별 표의 판매 비중 막대가 slate-300 트랙 + blue-600 채움", async () => {
+  it("매출 보고: 전체 누적·일자별 표의 판매 비중 막대가 slate-300 트랙 + 네이비 채움", async () => {
     const campaign = {
       id: "c1",
       name: "캠페인",
@@ -238,10 +240,13 @@ describe("주문 관리 모달 — 비중 막대(3차)", () => {
     const dialog = await screen.findByRole("dialog");
     const tracks = [...dialog.querySelectorAll("div.w-16.h-1\\.5.rounded-full")];
     expect(tracks).toHaveLength(4); // 전체 누적 2행 + 일자별 2행
-    for (const t of tracks) expectVisibleTrack(t, "bg-blue-600");
+    for (const t of tracks) {
+      expectVisibleTrack(t, "bg-primary");
+      expect((t.firstElementChild as HTMLElement).className).not.toMatch(/blue/);
+    }
   });
 
-  it("캠페인 인사이트: 유입 경로 비중 막대가 slate-300 트랙 + indigo-600 채움", async () => {
+  it("캠페인 인사이트: 유입 경로 비중 막대가 slate-300 트랙 + 네이비 채움", async () => {
     const campaign = {
       id: "c1",
       name: "캠페인",
@@ -263,7 +268,8 @@ describe("주문 관리 모달 — 비중 막대(3차)", () => {
     const dialog = await screen.findByRole("dialog");
     const tracks = [...dialog.querySelectorAll("div.w-20.h-1\\.5.rounded-full")];
     expect(tracks).toHaveLength(1);
-    expectVisibleTrack(tracks[0], "bg-indigo-600");
+    expectVisibleTrack(tracks[0], "bg-primary");
+    expect((tracks[0].firstElementChild as HTMLElement).className).not.toMatch(/indigo/);
   });
 
   it("발주 메일: 대기(0%) 상태에서 트랙 slate-300 이 보이고 진행 채움은 blue-600", async () => {
@@ -282,11 +288,12 @@ function sourceOf(rel: string): string {
 }
 
 describe("도달 어려운 막대 — 소스 고정(3차)", () => {
-  it("발주 메일 완료 채움은 green-700(흰 배경 4.94), 진행은 blue-600", () => {
+  it("발주 메일 완료 채움은 「완료」 라벨과 같은 bg-status-success(흰 배경 5.48), 진행은 blue-600", () => {
     const src = sourceOf("crm/shipping/modals/EmailSendModal.tsx");
-    expect(src).toContain("step === 'SUCCESS' ? 'bg-green-700' : 'bg-blue-600'");
+    expect(src).toContain("step === 'SUCCESS' ? 'bg-status-success' : 'bg-blue-600'");
+    expect(src).toContain("step === 'SUCCESS' ? 'text-status-success' : ''");
     expect(src).toContain('className="relative h-2 w-full bg-slate-300 rounded-full overflow-hidden"');
-    expect(src).not.toMatch(/bg-green-500|bg-blue-500/);
+    expect(src).not.toMatch(/bg-green-\d|bg-blue-500/);
   });
 
   it("지연 안내 진행 막대 트랙은 slate-300", () => {
@@ -295,10 +302,22 @@ describe("도달 어려운 막대 — 소스 고정(3차)", () => {
     expect(src).not.toContain("h-2 w-full bg-slate-100 rounded-full");
   });
 
-  it("셀러 포털 구성별 판매 막대는 slate-300 트랙 + blue-600 채움(색만, 데이터 무변경)", () => {
+  it("셀러 포털 구성별 판매 막대는 slate-300 트랙 + 네이비 채움(색만, 데이터 무변경)", () => {
     const src = sourceOf("portal/seller-portal-report.tsx");
     expect(src).toContain('<div className="mt-1 h-1.5 bg-slate-300 rounded-full overflow-hidden">');
-    expect(src).toContain('<div className="h-full bg-blue-600 rounded-full" style={{ width: `${o.ratio}%` }}></div>');
+    expect(src).toContain('<div className="h-full bg-primary rounded-full" style={{ width: `${o.ratio}%` }}></div>');
     expect(src).not.toContain("h-1.5 bg-slate-100 rounded-full");
+  });
+});
+
+// P8 §6: 새로 쓰는 색 유틸이 @theme 에 노출돼 있어야 클래스가 조용히 죽지 않는다(렌더 도달은 실캡처로 확인).
+describe("@theme 노출 — 3차에서 새로 쓰는 채움 토큰", () => {
+  it("--color-status-success · --color-primary 가 @theme inline 에 있다", () => {
+    const css = readFileSync(join(__dirname, "..", "..", "..", "app", "globals.css"), "utf8");
+    // 블록 끝은 0열의 닫는 중괄호로 자른다 — 블록 안에 중괄호가 생겨도 조기 절단되지 않게.
+    const start = css.indexOf("@theme inline");
+    const theme = css.slice(start, css.indexOf("\n}", start));
+    expect(theme).toMatch(/--color-status-success:\s*var\(--status-success\)/);
+    expect(theme).toMatch(/--color-primary:\s*var\(--primary\)/);
   });
 });
