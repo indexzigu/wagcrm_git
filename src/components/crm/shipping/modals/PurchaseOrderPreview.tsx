@@ -18,6 +18,9 @@ export type PurchaseOrderPreviewSummary = {
   missingCount: number;
 };
 
+/** 이보다 많으면 표 높이 상한 아래로 행이 숨을 수 있어 스크롤 안내를 붙인다(1280×1000 실렌더 기준 약 10행). */
+const PREVIEW_VISIBLE_HINT_ROWS = 8;
+
 const MISSING_LABEL: Record<PurchaseOrderMissingField, string> = {
   recipient: '수취인 없음',
   phone: '연락처 없음',
@@ -91,6 +94,10 @@ export function PurchaseOrderPreview({
           </tbody>
         </table>
       </div>
+      {/* 표 높이 상한(40dvh) 아래로 숨은 행이 있을 수 있다 — 스크롤 가능하다는 단서를 글자로 남긴다. */}
+      {rows.length > PREVIEW_VISIBLE_HINT_ROWS && (
+        <p className="text-[11px] text-slate-500">표를 스크롤하면 전체 {rows.length.toLocaleString('ko-KR')}건을 볼 수 있습니다.</p>
+      )}
     </div>
   );
 }

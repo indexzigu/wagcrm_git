@@ -163,6 +163,25 @@ describe('발주요청 창 — 3단계 흐름', () => {
   });
 });
 
+describe('발주요청 창 — 확정 실패 복구', () => {
+  it('확정이 실패하면 메일을 보내지 않고 1단계로 돌아가 다시 미리보기하라고 알린다', async () => {
+    useRoutes();
+    routes = routes.map((r) =>
+      r.match('/purchase-order', 'POST') ? { ...r, reply: () => ({ status: 502, body: { error: '주문 재조회에 실패했습니다.' } }) } : r,
+    );
+    const user = userEvent.setup();
+    const { onResult } = renderModal();
+    await screen.findByRole('radio', { name: /준비본 사용/ });
+    await user.click(await screen.findByRole('button', { name: '미리보기' }));
+    await user.click(await screen.findByRole('checkbox', { name: /빈 칸이 있는/ }));
+    await user.click(screen.getByRole('button', { name: '발주확인하고 발송' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('미리보기를 다시 불러와');
+    expect(screen.getByRole('button', { name: '미리보기' })).toBeInTheDocument();
+    expect(callsTo('/send-email', 'POST')).toHaveLength(0);
+    expect(onResult).toHaveBeenCalledWith(false, '주문 재조회에 실패했습니다.');
+  });
+});
+
 describe('PoReadyLine — 카드의 준비됨 줄', () => {
   it('준비본 가능 + 발주 대기 > 0 일 때만 그린다', () => {
     const asOfIso = new Date().toISOString();

@@ -397,7 +397,7 @@ export default function EmailSendModal({
         </div>
 
         <div className="flex-1 overflow-y-auto [scrollbar-gutter:stable] p-5 space-y-4 min-h-[320px]">
-          {error && (
+          {error && stepKind !== 'result' && (
             <p role="alert" className="whitespace-pre-line rounded-xl border border-destructive/25 bg-white p-3 text-xs font-semibold text-status-urgent-text">
               {error}
             </p>
@@ -416,7 +416,7 @@ export default function EmailSendModal({
                   ) : (
                     <>
                       <label
-                        className={`flex items-start gap-2 rounded-xl border p-3 ${source === 'prepared' ? 'border-primary bg-primary/[0.04]' : 'border-slate-200'} ${availability?.available ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                        className={`flex items-start gap-2 rounded-xl border p-3 focus-within:ring-2 focus-within:ring-focus-ring ${source === 'prepared' ? 'border-blue-600 bg-blue-50/60' : 'border-slate-200'} ${availability?.available ? 'cursor-pointer' : 'cursor-not-allowed'}`}
                       >
                         <input
                           type="radio"
@@ -426,7 +426,7 @@ export default function EmailSendModal({
                           disabled={!availability?.available}
                           onChange={() => setSource('prepared')}
                           aria-describedby="po-source-prepared-desc"
-                          className="mt-0.5 accent-primary"
+                          className="mt-0.5 accent-blue-600"
                         />
                         <span>
                           <span className="block text-sm font-semibold text-slate-800">준비본 사용</span>
@@ -438,7 +438,7 @@ export default function EmailSendModal({
                         </span>
                       </label>
                       <label
-                        className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${source === 'live' ? 'border-primary bg-primary/[0.04]' : 'border-slate-200'}`}
+                        className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer focus-within:ring-2 focus-within:ring-focus-ring ${source === 'live' ? 'border-blue-600 bg-blue-50/60' : 'border-slate-200'}`}
                       >
                         <input
                           type="radio"
@@ -447,7 +447,7 @@ export default function EmailSendModal({
                           checked={source === 'live'}
                           onChange={() => setSource('live')}
                           aria-describedby="po-source-live-desc"
-                          className="mt-0.5 accent-primary"
+                          className="mt-0.5 accent-blue-600"
                         />
                         <span>
                           <span className="block text-sm font-semibold text-slate-800">지금 다시 수집</span>
@@ -571,12 +571,12 @@ export default function EmailSendModal({
                 <PurchaseOrderPreview rows={preview.rows} summary={preview.summary} />
               )}
               {!preview.empty && preview.summary.missingCount > 0 && (
-                <label className="flex items-start gap-2 text-xs font-semibold text-status-caution-text">
+                <label id="po-missing-ack-label" className="flex items-start gap-2 text-xs font-semibold text-status-caution-text">
                   <input
                     type="checkbox"
                     checked={missingAck}
                     onChange={e => setMissingAck(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 accent-primary"
+                    id="po-missing-ack" className="mt-0.5 w-4 h-4 accent-blue-600"
                   />
                   빈 칸이 있는 {preview.summary.missingCount}건을 그대로 보냅니다.
                 </label>
@@ -592,9 +592,11 @@ export default function EmailSendModal({
           )}
 
           {stepKind === 'progress' && (
-            <p role="status" className="text-sm text-slate-700">
-              {step === 'COMMITTING' ? '네이버 발주확인과 발주서 작성 중...' : '메일 발송 중...'}
-            </p>
+            <div role="status">
+              <h3 ref={stepHeadingRef} tabIndex={-1} className="text-sm font-normal text-slate-700 focus:outline-none">
+                {step === 'COMMITTING' ? '네이버 발주확인과 발주서 작성 중...' : '메일 발송 중...'}
+              </h3>
+            </div>
           )}
 
           {stepKind === 'result' && result && (
@@ -609,9 +611,13 @@ export default function EmailSendModal({
                 </p>
               )}
               {step === 'MAIL_FAILED' && (
-                <p className="text-xs font-semibold text-status-urgent-text">
-                  발주서는 만들어졌고 네이버 발주확인도 끝났습니다. 「메일 다시 보내기」를 누르면 같은 파일로 메일만 다시 보냅니다.
-                </p>
+                <div role="alert" className="rounded-xl bg-status-urgent-bg p-3 text-xs text-status-urgent-text">
+                  <p className="font-bold">{error || '메일 발송에 실패했습니다.'}</p>
+                  <p className="mt-1">
+                    발주서는 만들어졌고 네이버 발주확인도 끝났습니다. 「메일 다시 보내기」를 누르면 같은 파일로 메일만 다시 보냅니다.
+                    보내지 않고 닫으면 이 주문들은 다음 발주요청에 다시 잡힙니다.
+                  </p>
+                </div>
               )}
               {result.confirm.failed > 0 && (
                 <p className="rounded-xl bg-status-caution-bg p-3 text-xs font-semibold text-status-caution-text">
@@ -714,7 +720,7 @@ export default function EmailSendModal({
                   type="button"
                   onClick={handleCommit}
                   disabled={commitBlocked}
-                  aria-describedby={preview?.empty ? undefined : 'po-commit-notice'}
+                  aria-describedby={preview?.empty ? undefined : preview && preview.summary.missingCount > 0 ? 'po-commit-notice po-missing-ack-label' : 'po-commit-notice'}
                   className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
                 >
                   {isBusy && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
@@ -738,7 +744,7 @@ export default function EmailSendModal({
                   onClick={handleClose}
                   className="px-5 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-bold transition-[background-color,opacity]"
                 >
-                  닫기
+                  {step === 'MAIL_FAILED' ? '메일 보내지 않고 닫기' : '닫기'}
                 </button>
               </>
             )}

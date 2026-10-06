@@ -378,7 +378,7 @@ export default function CampaignEditModal({
                   className="mt-0.5 w-4 h-4 rounded border-slate-300 accent-primary focus-visible:ring-2 focus-visible:ring-focus-ring"
                 />
                 <div>
-                  <label htmlFor="campaign-edit-auto-prep" className="block text-[11px] font-bold text-slate-500 cursor-pointer">발주서 자동 준비</label>
+                  <label htmlFor="campaign-edit-auto-prep" className="block text-xs font-bold text-slate-700 cursor-pointer">발주서 자동 준비</label>
                   <p id="campaign-edit-auto-prep-help" className="text-xs text-slate-600">
                     켜면 발주요청에서 마지막 주문 동기화 기준 준비본을 바로 쓸 수 있습니다. 발송 전에는 항상 미리보기를 거칩니다.
                   </p>

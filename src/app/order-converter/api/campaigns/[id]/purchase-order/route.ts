@@ -121,15 +121,18 @@ async function recordUsage(
   thrown: unknown,
   context: Record<string, string | number | boolean | null>,
 ) {
+  // 409(미리보기 이후 전부 취소돼 보낼 주문 없음)는 정상 결과다 — 실패율에 「네이버 장애」와 「할 일 없음」이
+  // 섞이면 지표를 신호로 못 쓴다(주문확인 계측의 no-work 와 같은 근거).
+  const noWork = !thrown && status === 409;
   try {
     await recordNaverOperationUsage({
       operation: 'order_excel',
       endpointLabel: toNaverEndpointLabel('/v1/pay-order/seller/product-orders'),
       tally,
-      success: status < 400,
+      success: noWork || status < 400,
       elapsedMs: Date.now() - startedAt,
       errorMessage: thrown ?? undefined,
-      context: { httpStatus: status, ...context },
+      context: { httpStatus: status, outcome: noWork ? 'no-work' : status < 400 && !thrown ? 'success' : 'failure', ...context },
     });
   } catch (usageErr) {
     // 계측이 발주 흐름을 깨면 안 된다(P7) — 기록만 실패로 남긴다.
@@ -169,8 +172,16 @@ async function handlePreview(request: NextRequest, { params }: RouteContext) {
     if (!availability.available) {
       return NextResponse.json({ error: availability.message, availability }, { status: 409 });
     }
-    const wrappers = await loadPreparedWrappers(campaign, nowMs);
-    return buildPreviewResponse({ campaign, activeCampaigns, wrappers, includePending, source, asOfIso: availability.asOfIso, availability });
+    try {
+      const wrappers = await loadPreparedWrappers(campaign, nowMs);
+      return await buildPreviewResponse({ campaign, activeCampaigns, wrappers, includePending, source, asOfIso: availability.asOfIso, availability });
+    } catch (error: unknown) {
+      console.error('[purchase-order] 준비본 미리보기 실패:', error);
+      return NextResponse.json(
+        { error: '준비본을 불러오지 못했습니다. 「지금 다시 수집」으로 진행하세요.' },
+        { status: 500 },
+      );
+    }
   }
 
   // live — 종전 발주요청과 같은 조회(창·청크·생략 판정은 order-fetch-window SSOT). 쓰기는 없다.
@@ -293,6 +304,9 @@ async function handleCommit(request: NextRequest, { params }: RouteContext) {
   const includePending = body.includePending === true;
   const previewSet = new Set(productOrderIds);
   // 발주확인은 미리보기 집합 안에서만 한다 — 그 밖의 id 로 네이버 쓰기가 나가지 않게.
+  // ⚠️ 알려진 한계: 두 목록 모두 클라이언트가 보낸 값이다(서버는 미리보기 집합을 저장하지 않는다). 이 경로는
+  //    오너 세션 게이트(src/proxy.ts) 뒤의 내부 도구이고, 네이버는 우리 스토어의 주문이 아니면 거부하며, 엑셀은
+  //    재조회 결과를 발주 대상 판정에 다시 통과시킨 행만 싣는다 — 그래서 저장소를 늘리지 않았다.
   const confirmIds = confirmIdsRaw.filter((id) => previewSet.has(id));
 
   const { campaign, activeCampaigns } = await loadCampaign(campaignId);
@@ -330,6 +344,10 @@ async function commitPurchaseOrder(args: {
 }): Promise<NextResponse> {
   const { campaign, activeCampaigns, productOrderIds, previewSet, confirmIds, includePending } = args;
 
+  // 0. 배송대기(이미 발주요청한) 집합을 **네이버 쓰기 전에** 읽는다 — 이 조회는 실패하면 던지므로(이중 발주
+  //    방지), 발주확인 뒤에 두면 「네이버는 확인됐는데 발주서는 없는」 상태로 끝나 몇 건이 확인됐는지도 못 알린다.
+  const poRequested = includePending ? null : await loadPoRequestedSet(productOrderIds);
+
   // 1. 네이버 발주확인 — 미리보기에서 「확인 전」이던 주문만(청크·재시도 규칙은 place-order-confirm SSOT).
   const confirm =
     confirmIds.length > 0
@@ -356,7 +374,6 @@ async function commitPurchaseOrder(args: {
 
   // 3. 행 재생성 — 미리보기와 같은 판정(purchase-order-rows SSOT), 같은 배송대기 제외 규칙.
   const wrappers = refreshed.filter((o) => previewSet.has(String(o?.productOrderId ?? ''))).map(wrapFlatOrder);
-  const poRequested = includePending ? null : await loadPoRequestedSet(productOrderIds);
   const { rows } = buildPurchaseOrderRows({
     wrappers,
     campaign,

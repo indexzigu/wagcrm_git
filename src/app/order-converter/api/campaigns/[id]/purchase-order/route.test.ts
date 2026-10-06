@@ -154,6 +154,13 @@ describe('GET 미리보기 — 네이버에 쓰지 않는다', () => {
     expect(recordUsageMock).not.toHaveBeenCalled(); // 네이버 0 이라 계측 행도 만들지 않는다
   });
 
+  it('준비본 로드가 실패하면 「지금 다시 수집」으로 안내하는 JSON 오류를 준다', async () => {
+    getPoRequestedSetMock.mockRejectedValue(new Error('db down'));
+    const res = await GET(new NextRequest(`${BASE}?source=prepared`), { params });
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toContain('지금 다시 수집');
+  });
+
   it('스위치가 꺼져 있으면 준비본 미리보기를 거절하고 사유를 준다', async () => {
     findUniqueMock.mockResolvedValue(campaignFixture({ autoPrepEnabled: false }));
     const res = await GET(new NextRequest(`${BASE}?source=prepared`), { params });
@@ -233,6 +240,33 @@ describe('POST 확정 — 미리보기에서 본 주문 그대로', () => {
     const res = await post({ source: 'prepared', productOrderIds: ['A'], confirmIds: [] });
     expect(res.status).toBe(409);
     expect(generateExcelMock).not.toHaveBeenCalled();
+  });
+
+  it('배송대기 집합을 못 읽으면 **네이버 발주확인 전에** 멈춘다(확인만 되고 발주서는 없는 상태를 만들지 않는다)', async () => {
+    getPoRequestedSetMock.mockRejectedValue(new Error('db down'));
+    const res = await post({ source: 'prepared', productOrderIds: ['A'], confirmIds: ['A'] });
+    expect(res.status).toBe(500);
+    expect(confirmCalls()).toHaveLength(0);
+    expect(syncOrdersByIdsMock).not.toHaveBeenCalled();
+  });
+
+  it('그 사이 다른 발주요청으로 배송대기가 된 주문은 「이미 발주요청됨」으로 뺀다 — 배송대기건 포함이면 싣는다', async () => {
+    syncOrdersByIdsMock.mockResolvedValue({ updated: 2, affectedDates: [], orders: [flatOrder('A'), flatOrder('B')] });
+    getPoRequestedSetMock.mockResolvedValue(new Set(['B']));
+    const body = await (await post({ source: 'live', productOrderIds: ['A', 'B'], confirmIds: [] })).json();
+    expect(body.productOrderIds).toEqual(['A']);
+    expect(body.dropped).toEqual([{ productOrderId: 'B', recipientName: '수령B', reason: 'already-requested' }]);
+
+    getPoRequestedSetMock.mockClear();
+    const withPending = await (await post({ source: 'live', productOrderIds: ['A', 'B'], confirmIds: [], includePending: true })).json();
+    expect(withPending.productOrderIds).toEqual(['A', 'B']);
+    expect(getPoRequestedSetMock).not.toHaveBeenCalled();
+  });
+
+  it('보낼 주문이 없는 409 는 계측에서 실패가 아니라 no-work 다', async () => {
+    syncOrdersByIdsMock.mockResolvedValue({ updated: 1, affectedDates: [], orders: [flatOrder('A', { productOrderStatus: 'CANCELED' })] });
+    await post({ source: 'prepared', productOrderIds: ['A'], confirmIds: [] });
+    expect(recordUsageMock.mock.calls[0][0]).toMatchObject({ success: true, context: { outcome: 'no-work', phase: 'commit' } });
   });
 
   it('주문 목록이나 출처가 없으면 네이버를 부르기 전에 거절한다', async () => {
