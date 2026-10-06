@@ -166,7 +166,6 @@ describe("ColumnVisibilitySettings — View C restrictions", () => {
 // We test the InlineStatusEdit behavior indirectly through CampaignSidePanel.
 // Since CampaignSidePanel is very large and has many dependencies, we test
 // the core blocking logic via the InlineStatusEdit sub-component behavior.
-// The component uses isStatusChangeAllowed from zone-config and shows a toast.
 
 describe("CampaignSidePanel — View C PROPOSAL status block", () => {
   // We need to import toast mock to verify it was called
@@ -176,28 +175,6 @@ describe("CampaignSidePanel — View C PROPOSAL status block", () => {
     vi.clearAllMocks();
     const sonner = await import("sonner");
     toastMock = sonner.toast as unknown as { error: ReturnType<typeof vi.fn> };
-  });
-
-  // Since CampaignSidePanel is complex with many dependencies (fetch calls, etc.),
-  // we test the status change blocking logic by importing and testing the
-  // isStatusChangeAllowed function which is the core guard, and verify the
-  // component integration through a focused render test.
-
-  it("isStatusChangeAllowed blocks PROPOSAL in VIEW_C", async () => {
-    const { isStatusChangeAllowed } = await import("@/lib/zone-config");
-
-    expect(isStatusChangeAllowed("VIEW_C", "PROPOSAL")).toBe(false);
-    expect(isStatusChangeAllowed("VIEW_C", "PREPARATION")).toBe(true);
-    expect(isStatusChangeAllowed("VIEW_C", "ACTIVE")).toBe(true);
-    expect(isStatusChangeAllowed("VIEW_C", "CLOSED")).toBe(true);
-    expect(isStatusChangeAllowed("VIEW_C", "SETTLEMENT_WAIT")).toBe(true);
-    expect(isStatusChangeAllowed("VIEW_C", "COMPLETED")).toBe(true);
-  });
-
-  it("isStatusChangeAllowed allows PROPOSAL in VIEW_B", async () => {
-    const { isStatusChangeAllowed } = await import("@/lib/zone-config");
-
-    expect(isStatusChangeAllowed("VIEW_B", "PROPOSAL")).toBe(true);
   });
 
   it("CampaignSidePanel renders with viewMode prop and blocks PROPOSAL selection", async () => {

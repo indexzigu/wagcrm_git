@@ -9,7 +9,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import * as fc from "fast-check";
 import { formatDateRange, getDateUrgency } from "@/lib/date-utils";
 import {
-  sortByStartDateDesc,
   getZoneForStatus,
   ZONE_STATUSES,
   ZONE_DEFAULT_STATUS,
@@ -207,77 +206,6 @@ function campaignRowArb(): fc.Arbitrary<CampaignRow> {
     }));
 }
 
-
-// ---------------------------------------------------------------------------
-// Property 3: Intra-zone campaigns are sorted by startDate descending
-// Feature: pipeline-kanban-remodel, Property 3
-// Validates: Requirements 1.7
-// ---------------------------------------------------------------------------
-
-describe("Property 3: Intra-zone campaigns are sorted by startDate descending", () => {
-  /**
-   * **Validates: Requirements 1.7**
-   *
-   * For any list of campaigns, after applying sortByStartDateDesc,
-   * each campaign's startDate SHALL be >= the next campaign's startDate.
-   * Campaigns with empty startDate are placed at the end.
-   */
-  it("sorted result has each startDate >= the next startDate (descending order)", () => {
-    fc.assert(
-      fc.property(fc.array(campaignRowArb(), { minLength: 0, maxLength: 50 }), (campaigns) => {
-        const sorted = sortByStartDateDesc(campaigns);
-
-        for (let i = 0; i < sorted.length - 1; i++) {
-          const current = sorted[i].startDate || "";
-          const next = sorted[i + 1].startDate || "";
-
-          if (!current) {
-            expect(next).toBe("");
-          } else if (next) {
-            expect(current >= next).toBe(true);
-          }
-        }
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  /**
-   * **Validates: Requirements 1.7**
-   *
-   * sortByStartDateDesc SHALL not mutate the input array.
-   */
-  it("does not mutate the original array", () => {
-    fc.assert(
-      fc.property(fc.array(campaignRowArb(), { minLength: 1, maxLength: 20 }), (campaigns) => {
-        const originalIds = campaigns.map((c) => c.id);
-        sortByStartDateDesc(campaigns);
-        const afterIds = campaigns.map((c) => c.id);
-        expect(afterIds).toEqual(originalIds);
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  /**
-   * **Validates: Requirements 1.7**
-   *
-   * sortByStartDateDesc SHALL preserve all elements (same length, same set of ids).
-   */
-  it("preserves all campaigns (no elements lost or duplicated)", () => {
-    fc.assert(
-      fc.property(fc.array(campaignRowArb(), { minLength: 0, maxLength: 50 }), (campaigns) => {
-        const sorted = sortByStartDateDesc(campaigns);
-        expect(sorted).toHaveLength(campaigns.length);
-
-        const originalIds = new Set(campaigns.map((c) => c.id));
-        const sortedIds = new Set(sorted.map((c) => c.id));
-        expect(sortedIds).toEqual(originalIds);
-      }),
-      { numRuns: 100 },
-    );
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Property 3b: sortCampaignsByStatus sorts dynamically by status

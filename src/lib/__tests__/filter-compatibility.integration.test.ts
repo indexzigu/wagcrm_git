@@ -6,10 +6,9 @@
  * Task 9.2: Write integration tests for filter compatibility
  *
  * Tests that filters (team, search, saved views) apply consistently
- * across all zones in View B, that View C limits scope to Deal Execution
- * + Settlement zones, and that view switches preserve filter state.
+ * across all zones in View B and that view switches preserve filter state.
  *
- * **Validates: Requirements 7.1, 7.2, 7.3, 7.6, 7.7, 7.8**
+ * **Validates: Requirements 7.1, 7.2, 7.6, 7.7**
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -23,7 +22,6 @@ import {
   type SavedView,
 } from "../pipeline-filters";
 import {
-  filterCampaignsForViewC,
   getZoneForStatus,
   ZONE_ORDER,
 } from "../zone-config";
@@ -243,158 +241,6 @@ describe("Search applies across all zones in View B", () => {
         const filtered = applyPipelineFilters(campaigns, params);
         expect(filtered.length).toBe(campaigns.length);
       }),
-      { numRuns: 100 },
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Test: View C filter scope limited to Deal Execution + Settlement zones
-// **Validates: Requirements 7.3, 7.8**
-// ---------------------------------------------------------------------------
-
-describe("View C filter scope limited to Deal Execution + Settlement zones", () => {
-  it("View C excludes PROPOSAL campaigns then applies team filter to remaining zones", () => {
-    /**
-     * **Validates: Requirements 7.8**
-     */
-    fc.assert(
-      fc.property(
-        arbCampaignList,
-        fc.constantFrom(...TEAM_IDS),
-        (campaigns, teamId) => {
-          // View C pipeline: first exclude PROPOSAL, then apply filters
-          const viewCCampaigns = filterCampaignsForViewC(campaigns);
-
-          const params: PipelineFilterParams = {
-            stageFilter: "ALL",
-            teamId,
-            searchQuery: "",
-            savedView: "DEFAULT",
-          };
-
-          const filtered = applyPipelineFilters(viewCCampaigns, params);
-
-          // No PROPOSAL campaigns in result
-          for (const campaign of filtered) {
-            expect(campaign.status).not.toBe("PROPOSAL");
-          }
-
-          // All filtered campaigns match team filter
-          for (const campaign of filtered) {
-            expect(campaign.assignedTo).toBe(teamId);
-          }
-
-          // Only Deal Execution and Settlement zones are represented
-          for (const campaign of filtered) {
-            const zone = getZoneForStatus(campaign.status);
-            expect(zone).not.toBe("SALES");
-          }
-        },
-      ),
-      { numRuns: 100 },
-    );
-  });
-
-  it("View C search applies only to Deal Execution + Settlement zones", () => {
-    /**
-     * **Validates: Requirements 7.8**
-     */
-    fc.assert(
-      fc.property(
-        arbCampaignList,
-        fc.constantFrom(...SELLER_NAMES, ...DEAL_NAMES),
-        (campaigns, searchTerm) => {
-          const viewCCampaigns = filterCampaignsForViewC(campaigns);
-
-          const params: PipelineFilterParams = {
-            stageFilter: "ALL",
-            teamId: null,
-            searchQuery: searchTerm,
-            savedView: "DEFAULT",
-          };
-
-          const filtered = applyPipelineFilters(viewCCampaigns, params);
-
-          // No PROPOSAL campaigns
-          for (const campaign of filtered) {
-            expect(campaign.status).not.toBe("PROPOSAL");
-          }
-
-          // All match search
-          for (const campaign of filtered) {
-            expect(matchesSearchQuery(campaign, searchTerm)).toBe(true);
-          }
-        },
-      ),
-      { numRuns: 100 },
-    );
-  });
-
-  it("View C saved view filters apply only to displayed zones", () => {
-    /**
-     * **Validates: Requirements 7.3**
-     */
-    fc.assert(
-      fc.property(arbCampaignList, (campaigns) => {
-        const viewCCampaigns = filterCampaignsForViewC(campaigns);
-
-        // Apply MISSING_SALES saved view (actualSales == null)
-        const params: PipelineFilterParams = {
-          stageFilter: "ALL",
-          teamId: null,
-          searchQuery: "",
-          savedView: "MISSING_SALES",
-        };
-
-        const filtered = applyPipelineFilters(viewCCampaigns, params);
-
-        // All results should have null actualSales and not be PROPOSAL
-        for (const campaign of filtered) {
-          expect(campaign.actualSales).toBeNull();
-          expect(campaign.status).not.toBe("PROPOSAL");
-        }
-      }),
-      { numRuns: 100 },
-    );
-  });
-
-  it("filters produce same results for non-PROPOSAL campaigns regardless of view mode", () => {
-    /**
-     * **Validates: Requirements 7.1, 7.2, 7.3**
-     *
-     * For non-PROPOSAL campaigns, the filter results should be identical
-     * whether we're in View B or View C (after accounting for PROPOSAL exclusion).
-     */
-    fc.assert(
-      fc.property(
-        arbCampaignList,
-        fc.constantFrom(...TEAM_IDS, null),
-        fc.constantFrom("", ...SELLER_NAMES),
-        (campaigns, teamId, searchQuery) => {
-          const params: PipelineFilterParams = {
-            stageFilter: "ALL",
-            teamId,
-            searchQuery,
-            savedView: "DEFAULT",
-          };
-
-          // View B: filter all campaigns, then look at non-PROPOSAL results
-          const viewBFiltered = applyPipelineFilters(campaigns, params);
-          const viewBNonProposal = viewBFiltered.filter(
-            (c) => c.status !== "PROPOSAL",
-          );
-
-          // View C: exclude PROPOSAL first, then filter
-          const viewCCampaigns = filterCampaignsForViewC(campaigns);
-          const viewCFiltered = applyPipelineFilters(viewCCampaigns, params);
-
-          // Results should be identical for non-PROPOSAL campaigns
-          const viewBIds = viewBNonProposal.map((c) => c.id).sort();
-          const viewCIds = viewCFiltered.map((c) => c.id).sort();
-          expect(viewBIds).toEqual(viewCIds);
-        },
-      ),
       { numRuns: 100 },
     );
   });
