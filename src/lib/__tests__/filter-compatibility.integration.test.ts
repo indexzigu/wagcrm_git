@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 /**
  * Integration tests for filter compatibility across zones.
  *
@@ -11,7 +10,7 @@
  * **Validates: Requirements 7.1, 7.2**
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
 
 import type { CampaignRow, CampaignStatus } from "../crm-types";
@@ -97,10 +96,6 @@ const arbCampaignList: fc.Arbitrary<CampaignRow[]> = fc.array(
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
-
-beforeEach(() => {
-  localStorage.clear();
-});
 
 // ---------------------------------------------------------------------------
 // Test: Team filter applies across all zones

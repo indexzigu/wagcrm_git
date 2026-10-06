@@ -22,8 +22,7 @@ import {
 
 import type { CampaignRow, DashboardData } from "@/lib/crm-types";
 import { type CampaignStatus } from "@/lib/crm-types";
-import { getZoneForStatus } from "@/lib/zone-config";
-import { getZoneCounts } from "@/lib/zone-config";
+import { getZoneCounts, getZoneForStatus } from "@/lib/zone-config";
 import { applyPipelineFilters } from "@/lib/pipeline-filters";
 import { patchCampaign } from "@/lib/campaign-patch";
 import {
