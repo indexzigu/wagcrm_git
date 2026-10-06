@@ -16,6 +16,9 @@ const CONSUMERS = [
   "src/lib/tax-invoice-mail/mail-scan.ts",
   "src/app/order-converter/api/fetch-emails/route.ts",
   "src/app/order-converter/api/send-email/route.ts",
+  // 송장 회신 매칭 SSOT(수동 버튼·크론 공용)와 감지 크론 본체(2026-10-06).
+  "src/lib/order-converter/invoice-reply-match.ts",
+  "src/lib/order-converter/invoice-reply-scan.ts",
 ] as const;
 
 const SSOT = "src/lib/mail-config.ts";
