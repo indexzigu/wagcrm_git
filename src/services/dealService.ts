@@ -211,6 +211,18 @@ export const dealService = {
         },
         costPrice: true,
         sellingPrice: true,
+        // 딜 그리드(`DealRow`)가 그리는 가격·수수료·메모 열. SSR 캐시(`cached-crm-data.ts`)는
+        // 전 컬럼을 include 하지만 이 select 는 손으로 고르므로, 빠뜨리면 첫 화면엔 보이다가
+        // `useDeals` 재조회(`fetchDealsList`) 순간 열이 비는 값 유실이 난다(T-234 실결함).
+        // 주 소비처 = `src/hooks/useDeals.ts` mapDealResponse — 거기서 읽는 키가 여기 있어야 한다
+        // (계약: `dealService.getDealsList.contract.test.ts`). 같은 응답을 읽는 `price-sheet-detail.tsx`·
+        // `partners-panel.tsx` 는 현재 이 select 안의 키만 쓴다.
+        listPrice: true,
+        floorPrice: true,
+        discountRate: true,
+        totalCommissionRate: true,
+        brokerageCommissionRate: true,
+        sourcingMemo: true,
         candidateSellers: true,
         baseMarginPolicy: true,
         status: true,
