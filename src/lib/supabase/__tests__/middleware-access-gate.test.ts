@@ -29,9 +29,6 @@ vi.mock("@supabase/ssr", () => ({
 
 const { updateSession } = await import("@/lib/supabase/middleware");
 const { PENDING_HOME, OPERATOR_HOME } = await import("@/lib/auth-roles");
-const { DEFAULT_ADMIN_EMAILS } = await import("@/lib/auth-allowlist");
-
-const OWNER_EMAIL = DEFAULT_ADMIN_EMAILS[0];
 const STRANGER_EMAIL = "stranger@example.com";
 
 beforeEach(() => {
@@ -111,9 +108,9 @@ describe("허가 게이트", () => {
     expect(await gateResultFor("/sellers")).toBeNull();
   });
 
-  it("오너는 metadata 가 비어 있어도 통과한다(바닥)", async () => {
-    signInAs(OWNER_EMAIL);
-    expect(await gateResultFor("/sellers")).toBeNull();
+  it("이메일 바닥은 없다 — metadata 가 비면 누구든 대기로 간다", async () => {
+    signInAs("owner@example.com");
+    expect(await gateResultFor("/sellers")).toBe(PENDING_HOME);
   });
 
 });

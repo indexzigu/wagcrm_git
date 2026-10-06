@@ -195,7 +195,7 @@ export async function updateSession(request: NextRequest) {
   // 종전에는 env 허가목록을 읽었으나, 권한 관리를 CRM 화면으로 옮기면서 판정 출처가
   // `app_metadata` 로 바뀌었다(`resolveAccess`). 미승인 사용자는 세션을 유지한 채
   // 대기 화면으로 보낸다 — 세션을 지우면 오너가 승인해도 그 사실을 볼 방법이 없다.
-  const access = user ? resolveAccess(user.app_metadata, user.email) : null;
+  const access = user ? resolveAccess(user.app_metadata) : null;
 
   if (user && access && !access.approved && !isAuthExchangePath && !isPendingAllowedPath(pathname)) {
     if (isApiPath(pathname)) {
@@ -221,7 +221,7 @@ export async function updateSession(request: NextRequest) {
 
   // 🪤 대기 경로는 **역할과 무관하게** 통과시킨다. 이 예외가 없으면 두 게이트가 서로를
   // 되받아 무한 리다이렉트가 된다: 미승인 사용자의 역할은 거의 항상 operator 이므로
-  // (`resolveUserRole` 의 이메일 폴백 — admin 목록 밖은 전부 operator) `/pending` 이
+  // (`resolveUserRole` 은 app_metadata.role 이 없으면 operator) `/pending` 이
   // 역할 게이트에 걸려 `/assets/katalk` 로 가고, 그건 다시 인가 게이트가 `/pending` 으로
   // 되돌린다 → 미승인 사용자 전원이 ERR_TOO_MANY_REDIRECTS 이고 대기 화면을 아무도 못 본다.
   //

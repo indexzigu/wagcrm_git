@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthContext } from "@/lib/auth-context";
 import { planMutation, type MutationRequest } from "@/lib/account-mutation";
-import { getCrmAccounts, resetUserCache } from "@/lib/user-registry";
+import { approvedAdminIds, getCrmAccounts, resetUserCache } from "@/lib/user-registry";
 
 function adminClient() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -35,10 +35,13 @@ export async function PATCH(
       return NextResponse.json({ error: "대상 계정을 찾을 수 없습니다" }, { status: 404 });
     }
 
+    // 마지막 관리자 보호는 「변경 전」 목록으로 판정한다(캐시 없는 조회).
+    const adminIds = approvedAdminIds(await getCrmAccounts());
+
     const verdict = planMutation({
       request: body,
-      targetEmail: targetData.user.email ?? "",
       targetId: userId,
+      approvedAdminIds: adminIds,
       actorEmail: auth.email,
       actorId: auth.userId,
       nowIso: new Date().toISOString(),

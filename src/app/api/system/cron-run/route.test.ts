@@ -14,14 +14,15 @@ vi.mock("@/lib/supabase/server", () => ({
 // ⚠️ 모의 대상 이름이 실제 export 와 어긋나면 vi.mock 이 조용히 무력화되고 라우트가
 // 진짜 판정을 쓰게 된다 — 종전 `isEmailAllowed` 모의가 그 위험을 안고 있었다.
 vi.mock("@/lib/auth-allowlist", () => ({
-  resolveAccess: (appMetadata: unknown, email: string | null | undefined) => {
+  resolveAccess: (appMetadata: unknown) => {
     // ⛔ 첫 인자가 `app_metadata` 인지 여기서 못박는다. 이 단언이 없으면 라우트를
     // `resolveAccess(user.user_metadata, …)` 로 바꿔도 전 케이스가 통과한다 —
     // `user_metadata` 는 사용자 본인이 쓸 수 있어 그 순간 자기 승격이 열린다(P0).
-    if ((appMetadata as { source?: string } | null)?.source !== "app_metadata") {
+    const meta = appMetadata as { source?: string; admin?: boolean } | null;
+    if (meta?.source !== "app_metadata") {
       throw new Error("resolveAccess 는 app_metadata 를 받아야 한다");
     }
-    return email === "owner@example.com"
+    return meta.admin === true
       ? { approved: true, status: "approved", role: "admin" }
       : { approved: false, status: "pending", role: "operator" };
   },
@@ -42,7 +43,8 @@ function loginAs(email: string | null) {
       user: email
         ? {
             email,
-            app_metadata: { source: "app_metadata" },
+            // 승인 판정은 app_metadata 만 본다(이메일 바닥 없음) — 표식으로 승인 여부를 싣는다.
+            app_metadata: { source: "app_metadata", admin: email === "owner@example.com" },
             user_metadata: { source: "user_metadata" },
           }
         : null,

@@ -6,7 +6,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { isOwnerFloorEmail, resolveAccess, resolveUserRole, type AccessStatus } from "@/lib/auth-allowlist";
+import { resolveAccess, resolveUserRole, type AccessStatus } from "@/lib/auth-allowlist";
 import type { UserRole } from "@/lib/auth-roles";
 
 export interface CrmUser {
@@ -22,8 +22,11 @@ export interface CrmAccount {
   displayName: string;
   status: AccessStatus;
   role: UserRole;
-  /** 오너 바닥 계정 — UI 에서 액션을 노출하지 않는다. */
-  isOwnerFloor: boolean;
+  /**
+   * 승인된 관리자가 이 계정 하나뿐이다 — 강등·거절하면 관리자가 0명이 되어 아무도 권한을
+   * 줄 수 없다. 서버(`planMutation`)가 거부하고 UI 는 액션을 노출하지 않는다.
+   */
+  isLastAdmin: boolean;
   grantedBy: string | null;
   grantedAt: string | null;
   lastSignInAt: string | null;
@@ -121,7 +124,7 @@ export async function getCrmUsers(): Promise<CrmUser[]> {
     // 역할 판정은 `resolveUserRole` 하나로 모은다 — 여기 기본값이 미들웨어와 어긋나 있으면
     // (종전: 여기 "operator" / 인증 경로 "admin") 사용자 목록에 뜨는 역할과 실제로 집행되는
     // 역할이 달라진다. 오너가 자기 계정을 operator 로 보는 상태가 그 증상이었다.
-    role: resolveUserRole(user.app_metadata?.role, user.email),
+    role: resolveUserRole(user.app_metadata?.role),
   }));
 
   cachedUsers = users;
@@ -138,10 +141,10 @@ export async function getCrmAccounts(): Promise<CrmAccount[]> {
   const supabase = createAdminClient();
   const users = await listAllAuthUsers(supabase);
 
-  return users.map((user) => {
+  const accounts = users.map((user) => {
     const email = user.email ?? "";
     const appMetadata = (user.app_metadata ?? {}) as Record<string, unknown>;
-    const access = resolveAccess(appMetadata, email);
+    const access = resolveAccess(appMetadata);
     return {
       id: user.id,
       email,
@@ -152,12 +155,23 @@ export async function getCrmAccounts(): Promise<CrmAccount[]> {
         "Unknown",
       status: access.status,
       role: access.role,
-      isOwnerFloor: isOwnerFloorEmail(email),
+      isLastAdmin: false,
       grantedBy: (appMetadata.grantedBy as string) ?? null,
       grantedAt: (appMetadata.grantedAt as string) ?? null,
       lastSignInAt: user.last_sign_in_at ?? null,
     };
   });
+  const adminIds = approvedAdminIds(accounts);
+  return accounts.map((account) =>
+    adminIds.length === 1 && adminIds[0] === account.id ? { ...account, isLastAdmin: true } : account,
+  );
+}
+
+/** 승인된 admin 계정 id — 마지막 관리자 보호(`planMutation`)와 목록 표시가 같은 판정을 쓴다. */
+export function approvedAdminIds(accounts: readonly Pick<CrmAccount, "id" | "status" | "role">[]): string[] {
+  return accounts
+    .filter((account) => account.status === "approved" && account.role === "admin")
+    .map((account) => account.id);
 }
 
 /**

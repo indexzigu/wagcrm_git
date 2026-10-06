@@ -8,9 +8,6 @@ vi.mock("@supabase/supabase-js", () => ({
 
 const { getCrmAccounts } = await import("@/lib/user-registry");
 const { resetUserCache } = await import("@/lib/user-registry");
-const { DEFAULT_ADMIN_EMAILS } = await import("@/lib/auth-allowlist");
-
-const OWNER_EMAIL = DEFAULT_ADMIN_EMAILS[0];
 
 beforeEach(() => {
   vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
@@ -52,7 +49,7 @@ describe("getCrmAccounts", () => {
       displayName: "직원",
       status: "approved",
       role: "operator",
-      isOwnerFloor: false,
+      isLastAdmin: false,
       grantedBy: "owner@example.com",
       lastSignInAt: "2026-08-08T01:00:00.000Z",
     });
@@ -67,13 +64,47 @@ describe("getCrmAccounts", () => {
     expect(accounts[0].status).toBe("pending");
   });
 
-  it("오너 바닥 계정은 isOwnerFloor 로 표시된다", async () => {
+  it("승인된 admin 이 하나뿐이면 그 계정만 isLastAdmin 이다", async () => {
     listUsers.mockResolvedValue({
-      data: { users: [{ id: "3", email: OWNER_EMAIL, app_metadata: {}, user_metadata: {} }] },
+      data: {
+        users: [
+          { id: "3", email: "admin@example.com", app_metadata: { status: "approved", role: "admin" }, user_metadata: {} },
+          { id: "4", email: "staff@example.com", app_metadata: { status: "approved", role: "operator" }, user_metadata: {} },
+          // 거절된 admin 은 관리자 수에 넣지 않는다.
+          { id: "5", email: "gone@example.com", app_metadata: { status: "rejected", role: "admin" }, user_metadata: {} },
+        ],
+      },
       error: null,
     });
     const accounts = await getCrmAccounts();
-    expect(accounts[0]).toMatchObject({ isOwnerFloor: true, status: "approved", role: "admin" });
+    expect(accounts.map((a) => [a.id, a.isLastAdmin])).toEqual([
+      ["3", true],
+      ["4", false],
+      ["5", false],
+    ]);
+  });
+
+  it("승인된 admin 이 둘 이상이면 아무도 isLastAdmin 이 아니다", async () => {
+    listUsers.mockResolvedValue({
+      data: {
+        users: [
+          { id: "6", email: "a@example.com", app_metadata: { status: "approved", role: "admin" }, user_metadata: {} },
+          { id: "7", email: "b@example.com", app_metadata: { status: "approved", role: "admin" }, user_metadata: {} },
+        ],
+      },
+      error: null,
+    });
+    const accounts = await getCrmAccounts();
+    expect(accounts.every((a) => !a.isLastAdmin)).toBe(true);
+  });
+
+  it("app_metadata 가 비어 있으면 이메일과 무관하게 대기·operator 다(이메일 바닥 없음)", async () => {
+    listUsers.mockResolvedValue({
+      data: { users: [{ id: "8", email: "owner@example.com", app_metadata: {}, user_metadata: {} }] },
+      error: null,
+    });
+    const accounts = await getCrmAccounts();
+    expect(accounts[0]).toMatchObject({ status: "pending", role: "operator", isLastAdmin: false });
   });
 
   it("조회 실패는 삼키지 않고 던진다", async () => {

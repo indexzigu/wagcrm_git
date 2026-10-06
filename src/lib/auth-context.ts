@@ -16,8 +16,8 @@ export interface AuthContext {
 /**
  * Get the authenticated user's context from Supabase session.
  * Returns null if not authenticated.
- * 역할은 `resolveUserRole`(auth-allowlist.ts)이 결정한다 — user_metadata.role 이 있으면
- * 그것을, 없으면 admin 이메일 목록으로 판정한다(그 외는 operator).
+ * 역할은 `resolveUserRole`(auth-allowlist.ts)이 결정한다 — app_metadata.role 이 유효하면
+ * 그것을, 없으면 operator 다(이메일로 승격하지 않는다).
  */
 export async function getAuthContext(): Promise<AuthContext | null> {
   // 미들웨어가 이미 supabase.auth.getUser()로 검증해 심어둔 신뢰 헤더가 있으면 그대로 쓴다 —
@@ -35,11 +35,11 @@ export async function getAuthContext(): Promise<AuthContext | null> {
       if (parsed?.id) {
         // 헤더의 role 은 미들웨어가 이미 resolveUserRole 로 확정한 값이다. 그래도 값을
         // 검증하는 이유: 손상·구버전 헤더를 조용히 admin 으로 승격시키지 않기 위해서다
-        // (알 수 없는 값이면 이메일 기준으로 다시 판정한다 — fail-closed).
+        // (알 수 없는 값이면 operator 로 떨어진다 — fail-closed).
         return {
           userId: parsed.id,
           email: parsed.email ?? "",
-          role: parseRole(parsed.role) ?? resolveUserRole(null, parsed.email),
+          role: parseRole(parsed.role) ?? resolveUserRole(null),
         };
       }
     } catch {
@@ -81,7 +81,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     return null;
   }
 
-  const role: UserRole = resolveUserRole(user.app_metadata?.role, user.email);
+  const role: UserRole = resolveUserRole(user.app_metadata?.role);
 
   return {
     userId: user.id,

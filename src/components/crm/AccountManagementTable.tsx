@@ -32,7 +32,7 @@ interface CrmAccount {
   displayName: string;
   status: "approved" | "rejected" | "pending";
   role: "admin" | "operator";
-  isOwnerFloor: boolean;
+  isLastAdmin: boolean;
   grantedBy: string | null;
   grantedAt: string | null;
   lastSignInAt: string | null;
@@ -111,7 +111,7 @@ export function AccountManagementTable({ currentUserId }: { currentUserId: strin
       } catch (err) {
         // load()의 성공 경로가 setError(null)을 호출하므로, 재조회를 먼저 끝낸 뒤
         // 실패 사유를 다시 세팅한다 — 순서가 바뀌면 서버가 준 구체적 거부 사유
-        // (오너 바닥 계정 · 자기 강등 등)가 재조회 성공에 조용히 덮여 사라진다.
+        // (마지막 관리자 · 자기 강등 등)가 재조회 성공에 조용히 덮여 사라진다.
         const message = err instanceof Error ? err.message : "권한 변경에 실패했습니다";
         await load();
         setError(message);
@@ -246,11 +246,11 @@ function AccountRowActions({
   busy: boolean;
   onMutate: (id: string, patch: { status?: "approved" | "rejected"; role?: "admin" | "operator" }) => Promise<void>;
 }) {
-  if (account.isOwnerFloor) {
-    return <span className="block text-right text-xs text-muted-foreground">오너</span>;
+  if (account.isLastAdmin) {
+    return <span className="block text-right text-xs text-muted-foreground">마지막 관리자</span>;
   }
 
-  // 서버(Task 5)가 자기 강등·자기 회수를 거부한다 — 여기서는 오너 바닥 행과 같은 방식으로
+  // 서버(Task 5)가 자기 강등·자기 회수를 거부한다 — 여기서는 마지막 관리자 행과 같은 방식으로
   // "눌러도 무조건 실패하는 버튼"을 아예 보여주지 않는다(설계 문서: UI 비활성 + 서버 거부
   // 두 겹). pending 상태의 자기 행은 이 화면에 실질 도달하지 않으므로(대기 계정은 로그인
   // 자체가 막혀 있다) 별도 분기를 만들지 않는다(YAGNI).
