@@ -98,12 +98,22 @@ describe("주문 관리 카드 — 거래처 양식 없는 캠페인의 송장�
     expect(errorCalls).toHaveLength(1);
     const message = String(errorCalls[0][0]);
     expect(message).toContain("거래처 양식");
-    // 다음 행동의 진입점 이름은 카드 ⋮ 메뉴 「설정」·모달 제목 「캠페인 설정」과 같아야 한다(한 동작 한 라벨).
+    // 다음 행동은 카드 ⋮ 메뉴 「설정」으로 여는 모달 제목 「캠페인 설정」을 그대로 쓴다(한 동작 한 라벨).
     expect(message).toContain("캠페인 설정");
     // UI 문구 규칙: 토스트에 장식용 줄표(—) 없음.
     expect(message).not.toContain("—");
     // 「확인 중」 진행 토스트는 뜨지 않는다(요청을 안 보냈으니).
     expect(notifyMock.mock.calls.some(([m]) => String(m).includes("확인 중"))).toBe(false);
+  });
+
+  it("양식이 빈 문자열이어도 같은 가드가 막는다(서버 조건 `!template` 과 등가)", async () => {
+    campaignList.current = [{ ...baseCampaign, template: "" }];
+    render(<OrderDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /송장회신/ }));
+
+    expect(fetchEmailCalls()).toHaveLength(0);
+    expect(notifyMock.mock.calls.filter(([, type]) => type === "error")).toHaveLength(1);
   });
 
   it("대조군: 양식이 있으면 종전대로 fetch-emails 요청이 나간다", async () => {
@@ -116,6 +126,6 @@ describe("주문 관리 카드 — 거래처 양식 없는 캠페인의 송장�
     await vi.waitFor(() => expect(fetchEmailCalls()).toHaveLength(1));
     const body = JSON.parse((fetchEmailCalls()[0][1] as { body: string }).body);
     expect(body.template).toBe("brand");
-    expect(notifyMock.mock.calls.some(([, type]) => type === "error" && true)).toBe(false);
+    expect(notifyMock.mock.calls.some(([, type]) => type === "error")).toBe(false);
   });
 });
