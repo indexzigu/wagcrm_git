@@ -232,6 +232,12 @@ export type TaxableRevenueTracker = {
    * 기준선을 VAT 포함 매출로 판정한다면」이라는 **대안 가설**의 여유를 보조로 보여 준다.
    */
   vatIncludedMargin: number | null;
+  /**
+   * 같은 대안 가설(VAT 포함 누적)을 **같은 기준선·같은 근접 비율**로 판정한 상태. 기준선 없으면 null.
+   * 화면은 이 값이 본 판정(`status`)보다 나쁠 때만 경고를 올린다 — 공급가액 기준으론 여유인데
+   * VAT 포함 기준으론 이미 근접·초과인 경우를 숨기지 않기 위해서다. 화면에서 근접 비율을 다시 곱하지 말 것.
+   */
+  vatIncludedStatus: TaxableRevenueStatus | null;
   /** 진행 막대 — 누적/기준선, 0~1 로 자른다. */
   progressRatio: number;
   /** 보수적 누적(미지정 = 상한). */
@@ -665,6 +671,14 @@ type ThresholdState = Pick<
   "status" | "thresholdSupply" | "headroomSupply" | "overSupply" | "nextThresholdHeadroomSupply"
 >;
 
+/** VAT 포함 가설의 상태 — `resolveThresholdState` 와 같은 근접 비율(`NEAR_THRESHOLD_RATIO`)을 쓴다. */
+function resolveVatIncludedStatus(thresholdSupply: number | null, cumulativeVatIncluded: number): TaxableRevenueStatus | null {
+  if (thresholdSupply === null) return null;
+  const margin = thresholdSupply - cumulativeVatIncluded;
+  if (margin < 0) return "OVER";
+  return margin <= thresholdSupply * NEAR_THRESHOLD_RATIO ? "NEAR" : "WITHIN";
+}
+
 /**
  * 기준선 판정. 누적이 속한 등급이 현재 등급보다 위면 OVER — 넘은 선은 **현재 등급**의 상한이다.
  * 아니면 누적이 속한 등급의 상한까지의 여유이고, 그 여유가 기준선의 10% 이하면 NEAR.
@@ -780,6 +794,7 @@ export function buildTaxableRevenueTracker(
     estimatedGrade: toGradeView(estimatedGrade),
     ...threshold,
     vatIncludedMargin: thresholdSupply === null ? null : thresholdSupply - cumulativeVatIncluded,
+    vatIncludedStatus: resolveVatIncludedStatus(thresholdSupply, cumulativeVatIncluded),
     progressRatio:
       thresholdSupply === null || thresholdSupply <= 0
         ? 1
