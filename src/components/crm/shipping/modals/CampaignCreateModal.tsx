@@ -242,9 +242,11 @@ export default function CampaignCreateModal({
               )}
               <div className="flex-1">
                 <p className="text-sm text-blue-900 font-bold mb-1 line-clamp-1">{newName}</p>
+                {/* 카테고리·판매기간 칩은 필드 이름표라 상태 의미가 없다 — 회색 칩(slate-100 위 slate-600, 6.90)으로 둔다
+                    (P8 §4). 종전 blue·indigo 두 색은 같은 역할에 서로 다른 hue 였다. */}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-800/80 mt-2 bg-white/60 p-2 rounded-md">
-                  <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded text-blue-600 font-bold">카테고리</span> {newCategory}</span>
-                  <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-indigo-100 px-1.5 py-0.5 rounded text-indigo-600 font-bold">판매기간</span> {newSalePeriod}</span>
+                  <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">카테고리</span> {newCategory}</span>
+                  <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">판매기간</span> {newSalePeriod}</span>
                   <span className="flex items-center gap-1 font-medium">
                     <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
                     재고: <b>{stockQuantity.toLocaleString()}개</b>
