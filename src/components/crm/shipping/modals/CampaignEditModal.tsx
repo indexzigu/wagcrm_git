@@ -341,11 +341,11 @@ export default function CampaignEditModal({
               </div>
               <div className="col-span-1">
                 <label htmlFor="campaign-edit-seller" className="block text-[11px] font-bold text-slate-500 mb-1">셀러명</label>
-                <input id="campaign-edit-seller" required value={editSellerName} onChange={e => setEditSellerName(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
+                <input id="campaign-edit-seller" required value={editSellerName} onChange={e => setEditSellerName(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
               </div>
               <div className="col-span-1">
                 <label htmlFor="campaign-template-edit" className="block text-[11px] font-bold text-slate-500 mb-1">거래처 양식</label>
-                <select id="campaign-template-edit" value={editTemplate} onChange={e => setEditTemplate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]">
+                <select id="campaign-template-edit" value={editTemplate} onChange={e => setEditTemplate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]">
                   <option value="" disabled={templateOptions.length > 0}>
                     {templateOptions.length === 0
                       ? (brandLoadError ? '목록 로드 실패: 새로고침' : '발주 브랜드 없음')
@@ -358,11 +358,11 @@ export default function CampaignEditModal({
               </div>
               <div className="col-span-1">
                 <label htmlFor="campaign-edit-to" className="block text-[11px] font-bold text-slate-500 mb-1">수신 이메일 주소</label>
-                <input id="campaign-edit-to" required value={editToEmail} onChange={e => setEditToEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
+                <input id="campaign-edit-to" required value={editToEmail} onChange={e => setEditToEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
               </div>
               <div className="col-span-2">
                 <label htmlFor="campaign-edit-cc" className="block text-[11px] font-bold text-slate-500 mb-1">참조 이메일 주소</label>
-                <input id="campaign-edit-cc" value={editCcEmail} onChange={e => setEditCcEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
+                <input id="campaign-edit-cc" value={editCcEmail} onChange={e => setEditCcEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
               </div>
               <div className="col-span-3">
                 <div className="mb-1 flex items-center justify-between gap-2">
@@ -372,7 +372,7 @@ export default function CampaignEditModal({
                   {campaign.salesCampaigns && campaign.salesCampaigns.length > 0 ? (
                     <>
                       {campaign.salesCampaigns.map((sc: any) => (
-                        <span key={sc.id} className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-100">
+                        <span key={sc.id} className="inline-flex items-center px-2 py-0.5 rounded bg-primary/10 text-primary text-[11px] font-bold border border-primary/20">
                           <span>{sc.campaignName || sc.name}</span>
                         </span>
                       ))}
@@ -537,7 +537,7 @@ export default function CampaignEditModal({
               </div>
               <div className="flex gap-2">
                 <button type="button" onClick={onClose} className="px-5 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 font-bold transition-colors">취소</button>
-                <button type="submit" disabled={isSubmitting} className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] disabled:opacity-50">{isSubmitting ? '수정 중...' : '수정하기'}</button>
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] disabled:opacity-50">{isSubmitting ? '수정 중...' : '수정하기'}</button>
               </div>
             </div>
           </form>

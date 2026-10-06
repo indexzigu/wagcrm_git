@@ -264,7 +264,7 @@ export default function CampaignCreateModal({
               </div>
               <div>
                 <label htmlFor="campaign-template-create" className="block text-xs font-bold text-slate-600 mb-1.5">거래처 양식</label>
-                <select id="campaign-template-create" value={newTemplate} onChange={e => handleBrandChange(e.target.value)} className="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white text-slate-900 focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm">
+                <select id="campaign-template-create" value={newTemplate} onChange={e => handleBrandChange(e.target.value)} className="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white text-slate-900 focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm">
                   <option value="" disabled={templateOptions.length > 0}>
                     {templateOptions.length === 0
                       ? (brandLoadError ? '목록을 불러오지 못했습니다. 새로고침' : '발주 브랜드 없음 (거래처에서 수신 이메일 설정)')
@@ -277,15 +277,15 @@ export default function CampaignCreateModal({
               </div>
               <div>
                 <label htmlFor="campaign-create-seller" className="block text-xs font-bold text-slate-600 mb-1.5">셀러명 (메일 본문 식별용)</label>
-                <input id="campaign-create-seller" required value={newSellerName} onChange={e => setNewSellerName(e.target.value)} className="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm" placeholder="예: 와이그라운드(김본명)" />
+                <input id="campaign-create-seller" required value={newSellerName} onChange={e => setNewSellerName(e.target.value)} className="w-full border border-slate-200 rounded-xl p-3 text-sm bg-white text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm" placeholder="예: 와이그라운드(김본명)" />
               </div>
               <div className="col-span-1">
                 <label htmlFor="campaign-create-to" className="block text-xs font-bold text-slate-600 mb-1.5">수신 이메일 주소</label>
-                <input id="campaign-create-to" required value={newToEmail} onChange={e => setNewToEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm" placeholder="예: order@example.com" />
+                <input id="campaign-create-to" required value={newToEmail} onChange={e => setNewToEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm" placeholder="예: order@example.com" />
               </div>
               <div className="col-span-1">
                 <label htmlFor="campaign-create-cc" className="block text-xs font-bold text-slate-600 mb-1.5">참조 이메일 주소 (선택)</label>
-                <input id="campaign-create-cc" value={newCcEmail} onChange={e => setNewCcEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm" placeholder="예: cc@example.com" />
+                <input id="campaign-create-cc" value={newCcEmail} onChange={e => setNewCcEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm" placeholder="예: cc@example.com" />
               </div>
               
               <div className="col-span-2 mt-2">
@@ -321,25 +321,25 @@ export default function CampaignCreateModal({
                             <input value={m.productName} onChange={(e) => {
                               const newM = [...mappings]; newM[idx] = { ...newM[idx], productName: e.target.value }; setMappings(newM);
                             }} onPaste={(e) => handleTablePaste(e, idx, 0)} aria-label={`${idx + 1}행 상품명`}
-                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-400 outline-none transition-[border-color,box-shadow]" placeholder="상품명 일부" />
+                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow]" placeholder="상품명 일부" />
                           </td>
                           <td className="px-2 py-1.5">
                             <input value={m.optionName} onChange={(e) => {
                               const newM = [...mappings]; newM[idx] = { ...newM[idx], optionName: e.target.value }; setMappings(newM);
                             }} onPaste={(e) => handleTablePaste(e, idx, 1)} aria-label={`${idx + 1}행 옵션명`}
-                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-400 outline-none transition-[border-color,box-shadow]" placeholder="옵션명 일부" />
+                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow]" placeholder="옵션명 일부" />
                           </td>
                           <td className="px-2 py-1.5">
                             <input value={m.brandCode} onChange={(e) => {
                               const newM = [...mappings]; newM[idx] = { ...newM[idx], brandCode: e.target.value }; setMappings(newM);
                             }} onPaste={(e) => handleTablePaste(e, idx, 2)} aria-label={`${idx + 1}행 상품코드`}
-                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-400 outline-none transition-[border-color,box-shadow]" placeholder="매핑 코드" />
+                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow]" placeholder="매핑 코드" />
                           </td>
                           <td className="px-2 py-1.5">
                             <input type="number" value={m.price} onChange={(e) => {
                               const newM = [...mappings]; newM[idx] = { ...newM[idx], price: Number(e.target.value) }; setMappings(newM);
                             }} onPaste={(e) => handleTablePaste(e, idx, 3)} aria-label={`${idx + 1}행 단가`}
-                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-400 outline-none transition-[border-color,box-shadow]" />
+                            className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow]" />
                           </td>
                           <td className="px-2 py-1.5 text-center">
                             <button type="button" onClick={() => {
@@ -355,7 +355,7 @@ export default function CampaignCreateModal({
             </div>
             <div className="flex gap-2 justify-end mt-6 pt-4 border-t border-slate-100">
               <button type="button" onClick={onClose} className="px-5 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 font-bold transition-colors">취소</button>
-              <button type="submit" disabled={isSubmitting} className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] disabled:opacity-50">{isSubmitting ? '저장 중...' : '저장하기'}</button>
+              <button type="submit" disabled={isSubmitting} className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] disabled:opacity-50">{isSubmitting ? '저장 중...' : '저장하기'}</button>
             </div>
           </form>
         </div>

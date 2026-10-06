@@ -7,7 +7,7 @@
  * slate-500 3.21 · 네이비(bg-primary) 7.62 · emerald-700 3.62 · amber-700 3.40 · rose-700 4.08.
  * ⚠️ 하위(펼침) 막대의 종전 채움 slate-300 은 새 트랙과 **같은 색**이라 막대가 통째로 사라진다 — 되돌리지 말 것.
  * 3차: 범주 비중 막대(포털 구성별 판매·매출 보고 판매 비중·인사이트 유입 경로)와 스토리지 게이지는 중립 네이비
- * (bg-primary 7.62 — 오너 결정 2026-10-06, 종전 blue/indigo 는 P8 §4 위반·hue 부채). 발주 메일 진행은 blue-600(3.54),
+ * (bg-primary 7.62 — 오너 결정 2026-10-06, 종전 blue/indigo 는 P8 §4 위반·hue 부채). 발주 메일 진행은 네이비(bg-primary 7.62 — 7차),
  * 완료(100%)는 트랙이 안 보여 흰 배경 대비로 보고 「완료」 라벨과 같은 bg-status-success(흰 배경 5.48)로 맞춘다.
  * 의도적 유지: CommentIntent 구성 막대(합이 100% 인 구성비라 남은 구간이 아니다) · 모바일 상태 분포(#133).
  */
@@ -273,11 +273,11 @@ describe("주문 관리 모달 — 비중 막대(3차)", () => {
     expect((tracks[0].firstElementChild as HTMLElement).className).not.toMatch(/indigo/);
   });
 
-  it("발주 메일: 대기(0%) 상태에서 트랙 slate-300 이 보이고 진행 채움은 blue-600", async () => {
+  it("발주 메일: 대기(0%) 상태에서 트랙 slate-300 이 보이고 진행 채움은 네이비", async () => {
     render(<EmailSendModal campaignId="c1" onClose={noop} onSuccess={noop} addToast={noop} />);
     const dialog = await screen.findByRole("dialog");
     const fill = dialog.querySelector("div.origin-left.absolute") as HTMLElement;
-    expectVisibleTrack(fill.parentElement as HTMLElement, "bg-blue-600");
+    expectVisibleTrack(fill.parentElement as HTMLElement, "bg-primary");
   });
 });
 
@@ -289,12 +289,12 @@ function sourceOf(rel: string): string {
 }
 
 describe("도달 어려운 막대 — 소스 고정(3차)", () => {
-  it("발주 메일 완료 채움은 「완료」 라벨과 같은 bg-status-success(흰 배경 5.48), 진행은 blue-600", () => {
+  it("발주 메일 완료 채움은 「완료」 라벨과 같은 bg-status-success(흰 배경 5.48), 진행은 네이비", () => {
     const src = sourceOf("crm/shipping/modals/EmailSendModal.tsx");
-    expect(src).toContain("step === 'SUCCESS' ? 'bg-status-success' : 'bg-blue-600'");
+    expect(src).toContain("step === 'SUCCESS' ? 'bg-status-success' : 'bg-primary'");
     expect(src).toContain("step === 'SUCCESS' ? 'text-status-success' : ''");
     expect(src).toContain('className="relative h-2 w-full bg-slate-300 rounded-full overflow-hidden"');
-    expect(src).not.toMatch(/bg-green-\d|bg-blue-500/);
+    expect(src).not.toMatch(/bg-green-\d|bg-blue-\d/);
   });
 
   it("지연 안내 진행 막대 트랙은 slate-300", () => {
@@ -387,7 +387,7 @@ describe("남은 파랑·보라(5차)", () => {
     expect(src).toContain('<div className="text-xl font-bold text-slate-900">{crossCampaignBuyers.toLocaleString()}명</div>');
     // 마감 임박은 심각도 축(caution) — 그대로 amber.
     expect(src).toContain('className: "bg-amber-50 text-amber-700 border-amber-200", icon: "clock", mode: "close"');
-    // 「성과 카드 →」 링크의 text-blue-600 은 상호작용 색이라 범위 밖 — 여기서 잡지 않는다.
+    // 「성과 카드 →」 링크는 7차에서 네이비로 — 아래 7차 테스트가 고정한다.
     expect(src).not.toMatch(/text-indigo-|bg-blue-50 text-blue-600|text-xl font-bold text-blue-600|text-\[11px\] font-bold text-blue-600/);
   });
 
@@ -409,7 +409,7 @@ describe("남은 파랑·보라(5차)", () => {
   });
 });
 
-// 6차: 생성 창 상품 요약은 무채색 정보 표면(파랑은 저장 버튼·입력 포커스 같은 상호작용에만),
+// 6차: 생성 창 상품 요약은 무채색 정보 표면(저장 버튼·입력 포커스는 7차에서 네이비로),
 // 셀러 포털 예정 카드의 오픈 배지는 판매중 카드처럼 기간 줄로 — 제목 줄에서 제목 폭을 깎지 않게.
 describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
   it("캠페인 생성 창: 상품 요약 박스·제목·값·아이콘·썸네일 테두리가 무채색, 상호작용 파랑은 그대로", () => {
@@ -420,8 +420,8 @@ describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
     expect(src).toContain("text-xs text-slate-700 mt-2 bg-white/60 p-2 rounded-md");
     expect(src).toContain('<svg className="w-3.5 h-3.5 text-slate-500" fill="none"');
     expect(src).not.toMatch(/bg-blue-50|border-blue-100|border-blue-200|text-blue-900|text-blue-800|text-blue-500/);
-    // 상호작용 색(저장 CTA)은 범위 밖으로 유지된다.
-    expect(src).toContain("bg-blue-600");
+    // 저장 CTA 는 7차에서 다른 저장 버튼과 같은 네이비로(bg-primary).
+    expect(src).toContain("text-primary-foreground bg-primary rounded-lg hover:bg-primary/95");
   });
 
   it("셀러 포털 예정 카드: 제목 줄에는 배지가 없고, 오픈 배지는 줄바꿈되는 기간 줄에 있다", () => {
@@ -435,7 +435,7 @@ describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
     expect(periodRow).toContain('<div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">');
     expect(periodRow).toContain("{opening && <TimingBadgeView badge={opening} />}");
     // 판매중 카드의 기간 줄도 같은 줄바꿈 안전장치.
-    expect(src).toMatch(/<div className="flex flex-wrap items-center gap-x-1\.5 gap-y-1 mt-1">\s*<p className="text-\[11px\] text-slate-500">\{camp\.salePeriod\}<\/p>\s*\{deadline && <TimingBadgeView badge=\{deadline\} \/>\}/);
+    expect(src).toMatch(/<div className="flex min-w-0 flex-wrap items-center gap-x-1\.5 gap-y-1">\s*<p className="text-\[11px\] text-slate-500">\{camp\.salePeriod\}<\/p>\s*\{deadline && <TimingBadgeView badge=\{deadline\} \/>\}/);
     // 정적 배지는 알약 안에서 두 줄로 꺾이지 않는다.
     expect(src).toContain("inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold border");
   });
@@ -444,5 +444,62 @@ describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
     render(<CampaignCountdown targetMs={Date.now() + 3_600_000} initialLabel="오픈까지 --:--:--" className="bg-primary/10" icon="clock" mode="open" />);
     const pill = screen.getByLabelText(/오픈까지/);
     expect(pill.className).toContain("whitespace-nowrap");
+  });
+});
+
+// 7차: 남은 파랑 전수 — 앱의 상호작용 색 정본은 네이비(Button default bg-primary · link text-primary ·
+// 포커스 링 --focus-ring = primary 60%)다. 저장 버튼·입력 포커스 테두리·선택 탭·범주 칩·진행 채움의
+// blue-* 는 그 정본에서 벗어난 잔재라 네이비/무채색으로 수렴한다(지연 안내 창 저장 버튼이 선례).
+describe("남은 파랑 전수(7차)", () => {
+  const files = [
+    "crm/shipping/modals/CampaignCreateModal.tsx",
+    "crm/shipping/modals/CampaignEditModal.tsx",
+    "crm/shipping/modals/EmailSendModal.tsx",
+    "crm/shipping/modals/DelayDispatchModal.tsx",
+    "crm/shipping/modals/ProductSelectModal.tsx",
+    "crm/shipping/modals/SalesReportModal.tsx",
+    "crm/deals-panel.tsx",
+    "crm/seller-detail-content.tsx",
+    "crm/order-dashboard.tsx",
+    "portal/seller-portal-report.tsx",
+    "../app/[slug]/page.tsx",
+  ];
+  it.each(files)("%s 에 blue-* 클래스가 남지 않는다", (rel) => {
+    expect(sourceOf(rel)).not.toMatch(/blue-\d/);
+  });
+
+  it("저장 버튼은 지연 안내 창과 같은 네이비, 입력 포커스 테두리는 네이비", () => {
+    const save = "text-primary-foreground bg-primary rounded-lg hover:bg-primary/95";
+    for (const rel of files.slice(0, 3)) expect(sourceOf(rel)).toContain(save);
+    expect(sourceOf("crm/shipping/modals/CampaignCreateModal.tsx")).toContain("focus:border-primary");
+  });
+
+  it("발주 메일 진행 단계: 진행 중 단계는 네이비 + 밑줄 — 완료 단계 slate-700 과 색만으로는 구분이 안 된다", () => {
+    const src = sourceOf("crm/shipping/modals/EmailSendModal.tsx");
+    const active = "'text-primary underline decoration-2 underline-offset-4' :";
+    expect(src.split(active)).toHaveLength(4);
+  });
+
+  it("체크박스는 죽은 text-* 대신 accent-primary 로 실제 색을 바꾼다", () => {
+    for (const rel of ["crm/shipping/modals/EmailSendModal.tsx", "crm/shipping/modals/DelayDispatchModal.tsx"]) {
+      expect(sourceOf(rel)).toContain("w-4 h-4 accent-primary bg-white");
+    }
+  });
+
+  it("주문 화면 처리 오버레이: 트랙 slate-300 · 채움 네이비 · 문구 무채색", () => {
+    const src = sourceOf("crm/order-dashboard.tsx");
+    expect(src).toContain('w-full bg-slate-300 h-2 rounded-full overflow-hidden');
+    expect(src).toContain('className="bg-primary h-full rounded-full transition-[width] duration-300"');
+  });
+
+  it("셀러 포털 판매중 카드: 성과 카드 링크는 제목 줄이 아니라 기간 줄 우측(네이비)", () => {
+    const src = sourceOf("portal/seller-portal-report.tsx");
+    const start = src.indexOf("<h2 className=\"min-w-0 break-words font-bold text-slate-800 text-sm\">{camp.name}</h2>");
+    expect(start).toBeGreaterThan(-1);
+    const titleRowEnd = src.indexOf("</div>", start);
+    const link = src.indexOf("성과 카드 →", start);
+    expect(link).toBeGreaterThan(titleRowEnd);
+    expect(src).toContain('<div className="mt-1 flex items-start justify-between gap-2">');
+    expect(src).toMatch(/inline-flex min-h-6 shrink-0 items-center rounded-sm px-2 text-\[10px\] font-bold text-primary/);
   });
 });

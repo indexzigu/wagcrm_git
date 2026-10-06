@@ -520,10 +520,10 @@ function PreviewTab({ id, panelId, label, campaignName, isActive, onSelect }: {
       tabIndex={isActive ? 0 : -1}
       onClick={onSelect}
       className={`px-6 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
-        isActive ? 'bg-white border-b-2 border-blue-600' : 'hover:bg-slate-100/60'
+        isActive ? 'bg-white border-b-2 border-primary' : 'hover:bg-slate-100/60'
       }`}
     >
-      <span className={`block text-sm font-bold ${isActive ? 'text-blue-600' : 'text-slate-500'}`}>
+      <span className={`block text-sm font-bold ${isActive ? 'text-primary' : 'text-slate-500'}`}>
         {label}
       </span>
       <span
@@ -2476,15 +2476,15 @@ export default function OrderDashboard() {
                   
                   {/* 진행률 오버레이 UI */}
                   {activeProgress && activeProgress.campaignId === camp.id && (
-                    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 z-10 border border-blue-100">
+                    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 z-10 border border-slate-200">
                       <div className="w-full max-w-sm">
                         <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs font-bold text-blue-700">{activeProgress.message}</span>
-                          <span className="text-xs font-bold text-blue-700">{activeProgress.progress}%</span>
+                          <span className="text-xs font-bold text-slate-700">{activeProgress.message}</span>
+                          <span className="text-xs font-bold text-slate-900 tabular-nums">{activeProgress.progress}%</span>
                         </div>
-                        <div className="w-full bg-blue-100 h-2 rounded-full overflow-hidden">
+                        <div className="w-full bg-slate-300 h-2 rounded-full overflow-hidden">
                           <div 
-                            className="bg-blue-600 h-full rounded-full transition-[width] duration-300"
+                            className="bg-primary h-full rounded-full transition-[width] duration-300"
                             style={{ width: `${activeProgress.progress}%` }}
                           />
                         </div>
