@@ -282,7 +282,15 @@ describe("등급 · 기준선", () => {
     expect(tracker.thresholdSupply).toBe(300_000_000);
     expect(tracker.headroomSupply).toBe(200_000_000);
     expect(tracker.vatIncludedMargin).toBe(300_000_000 - 110_000_000);
+    expect(tracker.vatIncludedStatus).toBe("WITHIN");
     expect(tracker.progressRatio).toBeCloseTo(100 / 300);
+  });
+
+  it("공급가액 기준은 여유인데 VAT 포함 기준으론 근접이면 그 가설 상태가 NEAR 로 드러난다", () => {
+    const tracker = buildTaxableRevenueTracker([campaign({ actualSales: 286_000_000 })], NOW); // 공급 2.6억
+    expect(tracker.status).toBe("WITHIN"); // 여유 4천만 > 3억의 10%
+    expect(tracker.vatIncludedMargin).toBe(14_000_000);
+    expect(tracker.vatIncludedStatus).toBe("NEAR"); // 같은 10% 비율로 판정
   });
 
   it("여유가 기준선의 10% 이하이면 NEAR", () => {
@@ -291,6 +299,7 @@ describe("등급 · 기준선", () => {
     expect(tracker.headroomSupply).toBe(20_000_000);
     // VAT 포함 기준으로는 이미 넘었다 — 음수로 드러낸다
     expect(tracker.vatIncludedMargin).toBe(300_000_000 - 308_000_000);
+    expect(tracker.vatIncludedStatus).toBe("OVER");
   });
 
   it("직전 기준기간 누적이 없으면 현재 등급(CRM 추정)은 최하위 — 그 기준선을 넘으면 OVER", () => {
