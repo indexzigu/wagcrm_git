@@ -18,7 +18,8 @@ import { join } from 'node:path';
  * (그쪽은 정산 락 동결 게이트라는 **다른 이유**로도 `status` 를 쓴다) — 중복 등재하지 않는다.
  */
 const ROUTES_REQUIRING_STATUS = [
-  'src/app/order-converter/api/campaigns/[id]/execute/route.ts',
+  // 발주요청 미리보기·확정(발주 자동화 2단계 — 구 execute 라우트를 대체, 2026-10-06).
+  'src/app/order-converter/api/campaigns/[id]/purchase-order/route.ts',
   'src/app/order-converter/api/campaigns/[id]/execute/stream/route.ts',
 ];
 

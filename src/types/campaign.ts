@@ -94,6 +94,10 @@ export type Campaign = {
    * 「송장 회신 도착 · 주문 N건 · HH:MM」 줄. 판정 SSOT 는 `invoice-reply-status.ts`.
    */
   invoiceReply?: InvoiceReplyStatus | null;
+  /** 발주서 자동 준비 스위치(발주 자동화 2단계, 기본 꺼짐). */
+  autoPrepEnabled?: boolean;
+  /** 발주요청 창이 준비본을 허락하는 상태면 그 기준 시각(변경피드 커서), 아니면 null — prepared-po SSOT. */
+  preparedPo?: { asOfIso: string } | null;
   // 활성이지만 라이브 집계가 비어(조회창 만료) 마감 시점 스냅샷으로 폴백 중임을 알리는 표식.
   // 마감취소된 캠페인의 기록이 화면에서 사라지지 않게 하는 폴백 경로에서만 true(campaigns-handler).
   isFrozenFallback?: boolean;

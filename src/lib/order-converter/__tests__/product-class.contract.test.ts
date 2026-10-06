@@ -25,8 +25,9 @@ const SSOT = 'src/lib/order-converter/product-class.ts';
 /** 판정을 소비하는 집계·발주 표면. 되돌아가면 그 자리만 조용히 갈린다. */
 const CONSUMERS = [
   'src/app/order-converter/api/campaigns/campaigns-handler.ts',
-  'src/app/order-converter/api/campaigns/[id]/execute/route.ts',
-  'src/app/order-converter/api/campaigns/[id]/execute/stream/route.ts',
+  // 발주서 행 생성 SSOT — 주문확인(execute/stream)·발주요청(purchase-order)이 판정을 여기에 위임한다
+  // (2026-10-06 발주 자동화 2단계에서 두 라우트의 사본을 흡수).
+  'src/lib/order-converter/purchase-order-rows.ts',
   'src/lib/mobile-pulse-data.ts',
   'src/lib/order-converter/closed-campaign-cache.ts',
   'src/lib/order-converter/campaign-orders.ts',
@@ -201,7 +202,7 @@ describe('추가구성상품 판정 단일화', () => {
     //    부분이 조용히 꺼지는데, CONSUMERS 단언은 그 7개 파일의 호출만 보므로
     //    **새로 생긴** 사본은 못 잡는다.
     expect(isTestFile('src/app/order-converter/api/campaigns/campaigns-handler.ts')).toBe(false);
-    expect(isTestFile('src/app/order-converter/api/campaigns/[id]/execute/route.ts')).toBe(false);
+    expect(isTestFile('src/app/order-converter/api/campaigns/[id]/purchase-order/route.ts')).toBe(false);
     // ⛔ `fixtures` 세그먼트를 아무 데서나 빼면 안 된다(시드·데모 데이터가 쓰는 이름이다).
     expect(isTestFile('src/lib/fixtures/seed-data.ts')).toBe(false);
   });

@@ -45,6 +45,7 @@ import { buildStorePeriodPatchBody } from '@/lib/order-converter/sale-window';
 import { rankCampaignCardCautions, type CampaignCardCaution } from '@/lib/order-converter/campaign-card-cautions';
 import { deriveReplySentDates } from '@/lib/order-converter/invoice-reply-status';
 import { InvoiceReplyLine } from './invoice-reply-line';
+import { PoReadyLine } from './po-ready-line';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { notify } from '@/lib/toast';
@@ -2426,6 +2427,11 @@ export default function OrderDashboard() {
 
                   {/* 크론이 감지한 미처리 송장 회신 — 버튼 줄 **위**에 자기 줄로 둔다(버튼 줄 안에 두면 바로 옆
                       「송장등록」의 상태로 읽힌다 — ss-ux 지적 2026-10-06). 값이 없으면 아무것도 안 그린다. */}
+                  {/* 발주서 준비본(발주 자동화 2단계) — 송장 회신 줄 **위**. 같은 자리 규약(자기 줄, 버튼 줄 밖). */}
+                  <PoReadyLine
+                    preparedPo={(camp as CampaignPayload).preparedPo}
+                    pendingCount={((camp as any).newOrderBeforeCount ?? 0) + ((camp as any).newOrderAfterCount ?? 0)}
+                  />
                   <InvoiceReplyLine reply={(camp as CampaignPayload).invoiceReply} />
 
                   {/* 3행: 실행 조작 버튼 (Action Buttons) */}

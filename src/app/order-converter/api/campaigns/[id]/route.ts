@@ -98,6 +98,8 @@ async function handleCampaignPut(request: NextRequest, { params }: { params: Pro
         updateData.toEmail = data.toEmail || null;
         updateData.ccEmail = data.ccEmail || null;
         updateData.thumbnailUrl = data.thumbnailUrl || null;
+        // 발주서 자동 준비 스위치(발주 자동화 2단계) — 불리언일 때만 쓴다. 빠지면 기존 값을 보존한다.
+        if (typeof data.autoPrepEnabled === 'boolean') updateData.autoPrepEnabled = data.autoPrepEnabled;
         if (data.category !== undefined) updateData.category = data.category;
         if (data.productStatus !== undefined) updateData.productStatus = data.productStatus;
         if (data.salePeriod !== undefined) {

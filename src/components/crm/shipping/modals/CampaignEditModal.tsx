@@ -30,6 +30,7 @@ export default function CampaignEditModal({
   const [editCategory, setEditCategory] = useState('');
   const [editProductStatus, setEditProductStatus] = useState('');
   const [editSalePeriod, setEditSalePeriod] = useState('');
+  const [editAutoPrep, setEditAutoPrep] = useState(false);
   const [editMappings, setEditMappings] = useState<any[]>([{ productName: '', optionName: '', brandCode: '', price: 0, campaignDealId: null }]);
   const [isMounted, setIsMounted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -193,6 +194,7 @@ export default function CampaignEditModal({
     setEditCategory(campaign.category || '');
     setEditProductStatus(campaign.productStatus || '');
     setEditSalePeriod(campaign.salePeriod || '');
+    setEditAutoPrep(campaign.autoPrepEnabled === true);
     if (campaign.mappings && campaign.mappings.length > 0) {
       setEditMappings(sortProductMappingsByProductName(campaign.mappings));
     } else {
@@ -224,6 +226,7 @@ export default function CampaignEditModal({
     category: editCategory,
     productStatus: editProductStatus,
     salePeriod: editSalePeriod,
+    autoPrepEnabled: editAutoPrep,
     mappings: sortProductMappingsByProductName(editMappings.map(m => ({ ...m, campaignDealId: m.campaignDealId || null })).filter(m => m.productName || m.optionName || m.brandCode))
   });
 
@@ -363,6 +366,23 @@ export default function CampaignEditModal({
               <div className="col-span-2">
                 <label htmlFor="campaign-edit-cc" className="block text-[11px] font-bold text-slate-500 mb-1">참조 이메일 주소</label>
                 <input id="campaign-edit-cc" value={editCcEmail} onChange={e => setEditCcEmail(e.target.value)} className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-blue-500 outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]" />
+              </div>
+              {/* 발주서 자동 준비(발주 자동화 2단계) — 항상 렌더하고 상태만 바꾼다(조건부 마운트로 창 높이를 흔들지 않는다, P8 Layout Stability). */}
+              <div className="col-span-3 flex items-start gap-2">
+                <input
+                  id="campaign-edit-auto-prep"
+                  type="checkbox"
+                  checked={editAutoPrep}
+                  onChange={e => setEditAutoPrep(e.target.checked)}
+                  aria-describedby="campaign-edit-auto-prep-help"
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 accent-primary focus-visible:ring-2 focus-visible:ring-focus-ring"
+                />
+                <div>
+                  <label htmlFor="campaign-edit-auto-prep" className="block text-[11px] font-bold text-slate-500 cursor-pointer">발주서 자동 준비</label>
+                  <p id="campaign-edit-auto-prep-help" className="text-xs text-slate-600">
+                    켜면 발주요청에서 마지막 주문 동기화 기준 준비본을 바로 쓸 수 있습니다. 발송 전에는 항상 미리보기를 거칩니다.
+                  </p>
+                </div>
               </div>
               <div className="col-span-3">
                 <div className="mb-1 flex items-center justify-between gap-2">

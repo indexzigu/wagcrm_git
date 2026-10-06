@@ -1,8 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DialogTitle } from '@/components/ui/dialog';
 import { ShippingDialogFrame } from './ShippingDialogFrame';
+import { PurchaseOrderPreview, type PurchaseOrderPreviewSummary } from './PurchaseOrderPreview';
+import { formatLastSyncLabel } from '@/lib/date-utils';
+import type { DroppedOrder, PurchaseOrderPreviewRow } from '@/lib/order-converter/purchase-order-rows';
 
-export type StepStatus = 'IDLE' | 'ANALYZING' | 'CONVERTING' | 'CONVERT_DONE' | 'SENDING' | 'SUCCESS';
+/**
+ * 발주요청(발주서 첨부 메일) 창 — 발주 자동화 2단계(오너 승인 2026-10-06).
+ *
+ * 자동 연동은 세 단계다. **네이버 쓰기와 메일은 3단계에서만** 일어난다.
+ *  1. 출처 선택 — 「준비본 사용」(저장된 주문 사본, 네이버 요청 0) 또는 「지금 다시 수집」(종전 조회).
+ *     준비본은 캠페인 스위치·동기화 신선도 판정(prepared-po SSOT)이 허락할 때만 고를 수 있다.
+ *  2. 미리보기 — 실릴 주문을 표로 본다(`purchase-order` GET, 쓰기 없음).
+ *  3. 확정 — 미리보기에서 본 주문 **그대로** 발주확인 → 재조회로 다시 만든 엑셀(`purchase-order` POST)
+ *     → 메일(`send-email`). 메일만 실패하면 파일을 쥔 채 「메일 다시 보내기」로 재시도한다 — 처음부터
+ *     다시 하면 발주확인이 되풀이된다.
+ *
+ * ⛔ 2단계 확정 버튼은 `<form>` 제출로 되돌리지 말 것 — 입력칸의 Enter 한 번이 네이버 발주확인 + 브랜드사
+ *    메일 발송이 된다(되돌릴 수 없다). 이 창에는 form 이 없고 모든 버튼이 `type="button"` 이다.
+ * 수동 첨부는 종전 그대로다(원본 파일을 검증만 하고 보낸다 — 네이버 쓰기 없음).
+ */
+export type StepStatus =
+  | 'IDLE'
+  | 'LOADING_PREVIEW'
+  | 'PREVIEW'
+  | 'ANALYZING'
+  | 'COMMITTING'
+  | 'SENDING'
+  | 'SUCCESS'
+  | 'MAIL_FAILED';
 
 type EmailSendModalProps = {
   campaignId: string;
@@ -19,12 +45,46 @@ type EmailSendModalProps = {
   addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
 };
 
+type Source = 'prepared' | 'live';
+type Availability = { available: boolean; reason?: string; message?: string; asOfIso: string | null };
+type Preview = {
+  source: Source;
+  asOfIso: string;
+  rows: PurchaseOrderPreviewRow[];
+  summary: PurchaseOrderPreviewSummary;
+  empty: { message: string; noWork: boolean } | null;
+};
+type ConfirmSummary = { requested: number; succeeded: number; failed: number; firstError: string };
+type SendResult = { sentCount: number; fileName: string; confirm: ConfirmSummary; dropped: DroppedOrder[] };
+type PendingMail = { file: File; orderIdsCsv: string; result: SendResult };
+
+const DROP_REASON_LABEL: Record<DroppedOrder['reason'], string> = {
+  'status-changed': '취소·변경됨',
+  'not-returned': '네이버 응답 없음',
+  'already-requested': '이미 발주요청됨',
+};
+
 // 사용자가 편집한 파일명에 .xlsx 확장자를 보장한다(빈 값이면 폴백 이름을 그대로 쓰도록 빈 문자열 반환).
 function ensureXlsxName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
   return /\.xlsx$/i.test(trimmed) ? trimmed : `${trimmed}.xlsx`;
 }
+
+function base64ToFile(base64: string, name: string): File {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+async function readError(res: Response, fallback: string): Promise<string> {
+  const data = await res.json().catch(() => ({}));
+  return (data && typeof data.error === 'string' && data.error) || fallback;
+}
+
+const inputClass =
+  'w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50';
 
 export default function EmailSendModal({
   campaignId,
@@ -38,7 +98,6 @@ export default function EmailSendModal({
   onResult,
   addToast
 }: EmailSendModalProps) {
-  const [isMounted, setIsMounted] = useState(false);
   const [emailToStr, setEmailToStr] = useState(defaultTo);
   const [emailCcStr, setEmailCcStr] = useState(defaultCc);
   const [emailSubject, setEmailSubject] = useState(defaultSubject);
@@ -60,173 +119,252 @@ export default function EmailSendModal({
   }, [mode, manualFile, defaultFileName]);
 
   const [step, setStep] = useState<StepStatus>('IDLE');
-  const [convertedFile, setConvertedFile] = useState<File | null>(null);
-  
+  const [error, setError] = useState<string | null>(null);
+
+  // 1단계 — 준비본 가용성(DB 읽기만, 네이버 0)과 출처 선택.
+  const [availability, setAvailability] = useState<Availability | null>(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(true);
+  const [source, setSource] = useState<Source>('live');
+  // 2단계 — 미리보기와 빈 칸 확인.
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [missingAck, setMissingAck] = useState(false);
+  // 3단계 — 결과(성공·메일 실패 재시도).
+  const [result, setResult] = useState<SendResult | null>(null);
+  const [pendingMail, setPendingMail] = useState<PendingMail | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toInputRef = useRef<HTMLInputElement>(null);
+  const subjectInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    setIsMounted(true);
-  }, []);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/order-converter/api/campaigns/${campaignId}/purchase-order`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        const next: Availability | null = res.ok && data?.availability ? data.availability : null;
+        setAvailability(next);
+        if (next?.available) setSource('prepared');
+      } catch (err) {
+        console.error('[EmailSendModal] 준비본 상태 조회 실패:', err);
+        if (!cancelled) setAvailability(null);
+      } finally {
+        if (!cancelled) setAvailabilityLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId]);
+
+  // 단계가 바뀌면 그 단계 제목으로 포커스를 옮긴다 — 스크린리더가 새 단계를 읽고, 발송 버튼이 첫 포커스가 되지 않는다.
+  const stepKind =
+    step === 'PREVIEW'
+      ? 'preview'
+      : step === 'SUCCESS' || step === 'MAIL_FAILED'
+        ? 'result'
+        : mode === 'auto' && (step === 'COMMITTING' || step === 'SENDING')
+          ? 'progress'
+          : 'choose';
+  useEffect(() => {
+    if (stepKind !== 'choose') stepHeadingRef.current?.focus();
+  }, [stepKind]);
+
+  const isBusy = step === 'LOADING_PREVIEW' || step === 'ANALYZING' || step === 'COMMITTING' || step === 'SENDING';
+  const isDone = step === 'SUCCESS' || step === 'MAIL_FAILED';
 
   const getStepProgress = () => {
-    switch(step) {
+    switch (step) {
       case 'IDLE': return 0;
+      case 'LOADING_PREVIEW':
       case 'ANALYZING': return 25;
-      case 'CONVERTING': return 50;
-      case 'CONVERT_DONE': return 75;
-      case 'SENDING': return 90;
+      case 'PREVIEW': return 50;
+      case 'COMMITTING': return 70;
+      case 'SENDING':
+      case 'MAIL_FAILED': return 90;
       case 'SUCCESS': return 100;
       default: return 0;
     }
   };
+  const stageLabels = mode === 'auto' ? ['미리보기', '발주확인·발주서', '메일 발송'] : ['검증', '발주서', '메일 발송'];
+  const stageIndex = step === 'LOADING_PREVIEW' || step === 'PREVIEW' || step === 'ANALYZING' ? 0 : step === 'COMMITTING' ? 1 : step === 'SENDING' || step === 'MAIL_FAILED' ? 2 : step === 'SUCCESS' ? 3 : -1;
 
-  const handleManualFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleClose = () => {
+    // 발주확인이 일어난 뒤(성공·메일 실패)에는 목록을 새로 읽어야 배송 단계가 맞는다 — 상위 onSuccess 가 그 일을 한다.
+    if (isDone) onSuccess();
+    else onClose();
+  };
+
+  const validateMailFields = (): boolean => {
+    const missing: [string, React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>][] = [];
+    if (!emailToStr.trim()) missing.push(['수신 이메일 주소', toInputRef]);
+    if (!emailSubject.trim()) missing.push(['메일 제목', subjectInputRef]);
+    if (!emailMessage.trim()) missing.push(['메일 본문', messageInputRef]);
+    if (missing.length === 0) return true;
+    setError(`${missing.map(([label]) => label).join(', ')}을(를) 입력하세요.`);
+    missing[0][1].current?.focus();
+    return false;
+  };
+
+  const handleManualFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
     setManualFile(file);
-    setConvertedFile(null);
     setManualError(null);
+    setError(null);
     setStep('IDLE');
   };
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (step !== 'IDLE') return;
-    
+  /** 메일 발송(자동·수동 공용). 실패하면 던진다. */
+  const postMail = async (file: File, orderIdsCsv: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('to', emailToStr);
+    if (emailCcStr) formData.append('cc', emailCcStr);
+    formData.append('subject', emailSubject);
+    formData.append('message', emailMessage);
+    formData.append('campaignId', campaignId);
+    // 배송대기 스탬프용 상품주문번호. 서버가 발송 성공 시 사용.
+    if (orderIdsCsv) formData.append('productOrderIds', orderIdsCsv);
+    const res = await fetch('/order-converter/api/send-email', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error(await readError(res, '이메일 발송에 실패했습니다.'));
+  };
+
+  // ── 자동 연동 ────────────────────────────────────────────────────────────
+  const handlePreview = async () => {
+    if (isBusy) return;
+    setError(null);
+    if (!validateMailFields()) return;
+    setStep('LOADING_PREVIEW');
     try {
-      let finalFile: File | null = convertedFile;
-      // 발주서에 실린 상품주문번호(자동 연동 시 execute 응답 헤더로 전달) — 발송 성공 시 배송대기 스탬프용.
-      let orderIdsCsv = '';
-
-      if (mode === 'auto') {
-        setStep('ANALYZING');
-        await new Promise(r => setTimeout(r, 600));
-
-        setStep('CONVERTING');
-        const res = await fetch(`/order-converter/api/campaigns/${campaignId}/execute?action=download&includePending=${includePending}`);
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}));
-          throw new Error(errorData.error || '발주서 추출에 실패했습니다.');
-        }
-
-        orderIdsCsv = res.headers.get('X-YGRD-Order-Ids') || '';
-        const blob = await res.blob();
-        let filename = `발주서_${campaignId}.xlsx`;
-        const contentDisposition = res.headers.get('content-disposition');
-        if (contentDisposition) {
-          const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-          if (filenameStarMatch && filenameStarMatch[1]) {
-            filename = decodeURIComponent(filenameStarMatch[1]);
-          } else {
-            const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
-            if (filenameMatch && filenameMatch[1]) {
-              filename = decodeURIComponent(filenameMatch[1]);
-            }
-          }
-        }
-        finalFile = new File([blob], filename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        
-        setStep('CONVERT_DONE');
-        await new Promise(r => setTimeout(r, 400));
-      } else if (mode === 'manual') {
-        if (!manualFile) throw new Error('첨부된 파일이 없습니다.');
-        // 수동 첨부는 재변환하지 않는다 — 원본 파일을 그대로 발송하되,
-        // 발송 전 데이터 정합성 + 캠페인 대조 검증만 수행한다(하드 차단).
-        setStep('ANALYZING');
-        const formData = new FormData();
-        formData.append('file', manualFile);
-
-        const res = await fetch(`/order-converter/api/campaigns/${campaignId}/validate`, {
-          method: 'POST',
-          body: formData
-        });
-        const result = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(result.error || '검증에 실패했습니다.');
-        }
-        if (!result.ok) {
-          // 검증 실패 → 발송 차단, 모든 사유 표시.
-          throw new Error((result.errors && result.errors.length ? result.errors : ['검증에 실패했습니다.']).join('\n'));
-        }
-
-        setStep('CONVERT_DONE');
-        // 경고(부분 발송/누락 등)는 차단하지 않고 알림만.
-        if (Array.isArray(result.warnings) && result.warnings.length > 0) {
-          addToast(result.warnings[0], 'info');
-        }
-        // 원본 파일 그대로 발송. 배송대기 스탬프 대상은 캠페인에 귀속된 주문번호만.
-        finalFile = manualFile;
-        orderIdsCsv = Array.isArray(result.matchedOrderIds) ? result.matchedOrderIds.join(',') : '';
-        await new Promise(r => setTimeout(r, 400));
-      }
-      
-      if (!finalFile) throw new Error('첨부할 변환된 파일이 없습니다.');
-
-      // 사용자가 지정/편집한 파일명이 있으면 첨부 파일명을 그 값으로 교체(수신자에게 보이는 이름).
-      // 비어 있으면 원본/서버 파일명을 그대로 유지한다.
-      const chosenName = ensureXlsxName(fileName);
-      if (chosenName && chosenName !== finalFile.name) {
-        finalFile = new File([finalFile], chosenName, { type: finalFile.type });
-      }
-
-      setStep('SENDING');
-      const formData = new FormData();
-      formData.append('file', finalFile);
-      formData.append('to', emailToStr);
-      if (emailCcStr) formData.append('cc', emailCcStr);
-      formData.append('subject', emailSubject);
-      formData.append('message', emailMessage);
-      formData.append('campaignId', campaignId);
-      // 배송대기 스탬프용 상품주문번호(자동 연동 경로에서만 채워짐). 서버가 발송 성공 시 사용.
-      if (orderIdsCsv) formData.append('productOrderIds', orderIdsCsv);
-
-      const emailRes = await fetch('/order-converter/api/send-email', { method: 'POST', body: formData });
-      if (!emailRes.ok) {
-        const errData = await emailRes.json().catch(() => ({}));
-        throw new Error(errData.error || '이메일 발송에 실패했습니다.');
-      }
-      
-      setStep('SUCCESS');
-      addToast('이메일 발송이 완료되었습니다!', 'success');
-      // 발주서에 실린 상품주문 수(감사 로그 성공 건수용). 자동=X-YGRD-Order-Ids, 수동=matchedOrderIds 기반.
-      const orderCount = orderIdsCsv ? orderIdsCsv.split(',').filter(Boolean).length : 0;
-      onResult?.(true, undefined, finalFile.name, orderCount);
-
-      setTimeout(() => {
-        onSuccess();
-      }, 1000);
-
-    } catch (error: any) {
-      console.error(error);
-      onResult?.(false, error?.message);
-      if (mode === 'manual') {
-        setManualError(error.message);
-        setManualFile(null);
-      } else {
-        addToast(error.message, 'error');
-      }
+      const res = await fetch(
+        `/order-converter/api/campaigns/${campaignId}/purchase-order?source=${source}&includePending=${includePending}`,
+      );
+      if (!res.ok) throw new Error(await readError(res, '미리보기를 불러오지 못했습니다.'));
+      const data = (await res.json()) as Preview;
+      setPreview(data);
+      setMissingAck(false);
+      setStep('PREVIEW');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '미리보기를 불러오지 못했습니다.');
       setStep('IDLE');
     }
   };
 
-  const isBusy = step !== 'IDLE' && step !== 'CONVERT_DONE' && step !== 'SUCCESS';
+  const sendCommittedMail = async (mail: PendingMail) => {
+    setStep('SENDING');
+    try {
+      await postMail(mail.file, mail.orderIdsCsv);
+      setPendingMail(null);
+      setResult(mail.result);
+      setStep('SUCCESS');
+      onResult?.(true, undefined, mail.file.name, mail.result.sentCount);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '이메일 발송에 실패했습니다.';
+      setPendingMail(mail);
+      setResult(mail.result);
+      setError(`메일 발송에 실패했습니다: ${message}`);
+      setStep('MAIL_FAILED');
+      onResult?.(false, message);
+    }
+  };
 
-  if (!isMounted) return null;
+  const handleCommit = async () => {
+    // 클릭 즉시 단계를 바꿔 중복 클릭을 막는다(이 버튼은 되돌릴 수 없는 외부 효과를 낸다).
+    if (!preview || step !== 'PREVIEW') return;
+    setError(null);
+    setStep('COMMITTING');
+    try {
+      const res = await fetch(`/order-converter/api/campaigns/${campaignId}/purchase-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: preview.source,
+          productOrderIds: preview.rows.map((r) => r.productOrderId),
+          confirmIds: preview.rows.filter((r) => r.needsConfirm).map((r) => r.productOrderId),
+          includePending,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((typeof data?.error === 'string' && data.error) || '발주 확정에 실패했습니다.');
+      }
+      const chosenName = ensureXlsxName(fileName) || data.fileName;
+      const file = base64ToFile(data.fileBase64, chosenName);
+      const ids: string[] = Array.isArray(data.productOrderIds) ? data.productOrderIds : [];
+      await sendCommittedMail({
+        file,
+        orderIdsCsv: ids.join(','),
+        result: { sentCount: ids.length, fileName: file.name, confirm: data.confirm, dropped: data.dropped ?? [] },
+      });
+    } catch (err: unknown) {
+      // 확정 실패 — 발주확인이 일부 일어났을 수 있으니 미리보기부터 다시 받게 한다(상태가 바뀌었을 수 있다).
+      const message = err instanceof Error ? err.message : '발주 확정에 실패했습니다.';
+      setError(`${message} 미리보기를 다시 불러와 확인하세요.`);
+      setPreview(null);
+      setStep('IDLE');
+      onResult?.(false, message);
+    }
+  };
+
+  // ── 수동 첨부(종전 그대로) ────────────────────────────────────────────────
+  const handleManualSend = async () => {
+    if (isBusy || !manualFile) return;
+    setError(null);
+    if (!validateMailFields()) return;
+    try {
+      // 수동 첨부는 재변환하지 않는다 — 원본 파일을 그대로 발송하되,
+      // 발송 전 데이터 정합성 + 캠페인 대조 검증만 수행한다(하드 차단).
+      setStep('ANALYZING');
+      const formData = new FormData();
+      formData.append('file', manualFile);
+      const res = await fetch(`/order-converter/api/campaigns/${campaignId}/validate`, { method: 'POST', body: formData });
+      const validation = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(validation.error || '검증에 실패했습니다.');
+      if (!validation.ok) {
+        throw new Error((validation.errors && validation.errors.length ? validation.errors : ['검증에 실패했습니다.']).join('\n'));
+      }
+      // 경고(부분 발송/누락 등)는 차단하지 않고 알림만.
+      if (Array.isArray(validation.warnings) && validation.warnings.length > 0) addToast(validation.warnings[0], 'info');
+      const orderIdsCsv = Array.isArray(validation.matchedOrderIds) ? validation.matchedOrderIds.join(',') : '';
+      const chosenName = ensureXlsxName(fileName);
+      const file = chosenName && chosenName !== manualFile.name ? new File([manualFile], chosenName, { type: manualFile.type }) : manualFile;
+      setStep('SENDING');
+      await postMail(file, orderIdsCsv);
+      const sentCount = orderIdsCsv ? orderIdsCsv.split(',').filter(Boolean).length : 0;
+      setResult({ sentCount, fileName: file.name, confirm: { requested: 0, succeeded: 0, failed: 0, firstError: '' }, dropped: [] });
+      setStep('SUCCESS');
+      onResult?.(true, undefined, file.name, sentCount);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '발송에 실패했습니다.';
+      console.error(err);
+      onResult?.(false, message);
+      setManualError(message);
+      setManualFile(null);
+      setStep('IDLE');
+    }
+  };
+
+  const needsConfirmCount = preview?.summary.needsConfirmCount ?? 0;
+  const commitBlocked =
+    !preview || preview.rows.length === 0 || (preview.summary.missingCount > 0 && !missingAck) || isBusy;
+  const recipientLabel = emailToStr.trim() || '(수신 주소 없음)';
 
   return (
-    <ShippingDialogFrame onClose={onClose} canClose={!isBusy} className="sm:max-w-md">
-        
+    <ShippingDialogFrame onClose={handleClose} canClose={!isBusy} className="sm:max-w-2xl">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl">
           <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg> 
+            </svg>
             발주서 첨부 발송
           </DialogTitle>
           {!isBusy && (
-            <button 
-              onClick={onClose} 
+            <button
+              onClick={handleClose}
               type="button"
               aria-label="닫기"
               className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors"
@@ -237,7 +375,7 @@ export default function EmailSendModal({
             </button>
           )}
         </div>
-        
+
         <div className="px-5 pt-4 pb-1">
           {/* 트랙 = 발송까지 남은 단계라 보여야 한다: slate-100(흰 표면 1.10:1) → slate-300.
               진행 채움 blue-500 은 트랙 대비 2.53 이라 blue-600(3.54, 진행 단계 라벨 text-blue-600 과 같은 단계)으로.
@@ -245,190 +383,367 @@ export default function EmailSendModal({
               바로 아래 「완료」 라벨과 같은 성공 토큰(bg-status-success #047857: 흰 배경 5.48 · 트랙 3.69)으로 맞춘다
               — 오너 결정 2026-10-06. */}
           <div className="relative h-2 w-full bg-slate-300 rounded-full overflow-hidden">
-            <div 
+            <div
               className={`absolute top-0 left-0 h-full w-full origin-left rounded-full transition-[transform,background-color] duration-500 ${step === 'SUCCESS' ? 'bg-status-success' : 'bg-blue-600'}`}
               style={{ transform: `scaleX(${getStepProgress() / 100})` }}
             />
           </div>
           <div className="flex justify-between mt-2 px-1 text-[10px] font-bold text-slate-500 transition-colors">
-            <span className={step === 'ANALYZING' ? 'text-blue-600' : step !== 'IDLE' ? 'text-slate-700' : ''}>분석/추출</span>
-            <span className={step === 'CONVERTING' ? 'text-blue-600' : ['CONVERT_DONE','SENDING','SUCCESS'].includes(step) ? 'text-slate-700' : ''}>변환</span>
-            <span className={step === 'SENDING' ? 'text-blue-600' : step === 'SUCCESS' ? 'text-slate-700' : ''}>발송</span>
+            {stageLabels.map((label, i) => (
+              <span key={label} className={stageIndex === i ? 'text-blue-600' : stageIndex > i ? 'text-slate-700' : ''}>{label}</span>
+            ))}
             <span className={step === 'SUCCESS' ? 'text-status-success' : ''}>완료</span>
           </div>
         </div>
-        
-        <form onSubmit={handleSend} className="flex-1 overflow-y-auto">
-          <div className="p-5 space-y-4">
-            
-            <div className="flex items-center justify-between bg-slate-50 border border-slate-100 p-3 rounded-xl min-h-[46px]">
-              <span className="text-[11px] text-slate-500 font-medium">
-                {mode === 'auto' ? (
-                  <>API 연동을 통해 스마트스토어 주문 건을 자동으로 추출합니다.</>
-                ) : manualError ? (
-                  <span className="flex items-center gap-1.5 text-red-600 font-bold">
-                    <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    <span>{manualError}</span>
-                  </span>
-                ) : manualFile ? (
-                  <span className="flex items-center gap-1.5 text-slate-700">
-                    <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                    수동 첨부: <span className="font-bold truncate max-w-[150px] inline-block align-bottom">{manualFile.name}</span>
-                  </span>
-                ) : (
-                  <>수동으로 첨부된 파일이 없습니다. 하단 버튼을 통해 첨부해주세요.</>
-                )}
-              </span>
-            </div>
 
-            {mode === 'auto' && (
-              <div className="flex items-center gap-2 mt-2 px-1">
-                <input 
-                  type="checkbox" 
-                  id="includePending" 
-                  checked={includePending}
-                  onChange={e => setIncludePending(e.target.checked)}
-                  disabled={isBusy}
-                  className="w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-50"
-                />
-                <label htmlFor="includePending" className="text-xs font-bold text-slate-600 cursor-pointer">
-                  배송대기건 포함
-                </label>
-              </div>
-            )}
+        <div className="flex-1 overflow-y-auto [scrollbar-gutter:stable] p-5 space-y-4 min-h-[320px]">
+          {error && (
+            <p role="alert" className="whitespace-pre-line rounded-xl border border-destructive/25 bg-white p-3 text-xs font-semibold text-status-urgent-text">
+              {error}
+            </p>
+          )}
 
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="email-send-filename" className="block text-xs font-bold text-slate-600 mb-1.5">발주서 파일명</label>
-                <input
-                  id="email-send-filename"
-                  type="text"
-                  value={fileName}
-                  onChange={e => { fileNameTouchedRef.current = true; setFileName(e.target.value); }}
-                  disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50"
-                  placeholder="예: 발주서_브랜드_와이그라운드_셀러_250710.xlsx"
-                />
-                <p className="mt-1 px-1 text-[10px] text-slate-500">
-                  {mode === 'manual'
-                    ? '첨부한 원본 파일명입니다. 필요하면 수정하세요. (.xlsx 자동 부여)'
-                    : '기본값은 거래처 표기명을 따릅니다. 브랜드명 등으로 바꾸려면 수정하세요. (.xlsx 자동 부여)'}
-                </p>
-              </div>
-              <div>
-                <label htmlFor="email-send-to" className="block text-xs font-bold text-slate-600 mb-1.5">수신 이메일 주소</label>
-                <input 
-                  id="email-send-to"
-                  required 
-                  type="text"
-                  value={emailToStr} 
-                  onChange={e => setEmailToStr(e.target.value)} 
-                  disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
+          {stepKind === 'choose' && (
+            <>
+              {mode === 'auto' ? (
+                <fieldset className="space-y-2" disabled={isBusy}>
+                  <legend className="mb-2 text-sm font-semibold text-slate-800">발주서에 담을 주문</legend>
+                  {availabilityLoading ? (
+                    <div className="space-y-2" aria-hidden="true">
+                      <div className="h-[58px] rounded-xl bg-slate-100" />
+                      <div className="h-[58px] rounded-xl bg-slate-100" />
+                    </div>
+                  ) : (
+                    <>
+                      <label
+                        className={`flex items-start gap-2 rounded-xl border p-3 ${source === 'prepared' ? 'border-primary bg-primary/[0.04]' : 'border-slate-200'} ${availability?.available ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                      >
+                        <input
+                          type="radio"
+                          name="po-source"
+                          value="prepared"
+                          checked={source === 'prepared'}
+                          disabled={!availability?.available}
+                          onChange={() => setSource('prepared')}
+                          aria-describedby="po-source-prepared-desc"
+                          className="mt-0.5 accent-primary"
+                        />
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-800">준비본 사용</span>
+                          <span id="po-source-prepared-desc" className="block text-xs text-slate-600">
+                            {availability?.available && availability.asOfIso
+                              ? `${formatLastSyncLabel(availability.asOfIso)} 기준 저장된 주문으로 만듭니다. 네이버 요청을 쓰지 않습니다.`
+                              : availability?.message || '준비본 상태를 확인하지 못했습니다. 지금 다시 수집으로 진행하세요.'}
+                          </span>
+                        </span>
+                      </label>
+                      <label
+                        className={`flex items-start gap-2 rounded-xl border p-3 cursor-pointer ${source === 'live' ? 'border-primary bg-primary/[0.04]' : 'border-slate-200'}`}
+                      >
+                        <input
+                          type="radio"
+                          name="po-source"
+                          value="live"
+                          checked={source === 'live'}
+                          onChange={() => setSource('live')}
+                          aria-describedby="po-source-live-desc"
+                          className="mt-0.5 accent-primary"
+                        />
+                        <span>
+                          <span className="block text-sm font-semibold text-slate-800">지금 다시 수집</span>
+                          <span id="po-source-live-desc" className="block text-xs text-slate-600">
+                            네이버에서 주문을 지금 다시 불러옵니다(프록시 요청을 씁니다).
+                          </span>
+                        </span>
+                      </label>
+                    </>
+                  )}
+                  <div className="flex items-center gap-2 pt-1 px-1">
+                    <input
+                      type="checkbox"
+                      id="includePending"
+                      checked={includePending}
+                      onChange={e => setIncludePending(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 bg-white border-slate-300 rounded focus:ring-focus-ring focus:ring-2 disabled:opacity-50"
+                    />
+                    <label htmlFor="includePending" className="text-xs font-bold text-slate-600 cursor-pointer">
+                      배송대기건 포함
+                    </label>
+                  </div>
+                </fieldset>
+              ) : (
+                <div className="flex items-center bg-slate-50 border border-slate-100 p-3 rounded-xl min-h-[46px] text-[11px] text-slate-500 font-medium">
+                  {manualError ? (
+                    <span role="alert" className="whitespace-pre-line font-bold text-red-600">{manualError}</span>
+                  ) : manualFile ? (
+                    <span className="text-slate-700">
+                      수동 첨부: <span className="font-bold truncate max-w-[220px] inline-block align-bottom">{manualFile.name}</span>
+                    </span>
+                  ) : (
+                    <>수동으로 첨부된 파일이 없습니다. 하단 버튼을 통해 첨부해주세요.</>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="email-send-filename" className="block text-xs font-bold text-slate-600 mb-1.5">발주서 파일명</label>
+                  <input
+                    id="email-send-filename"
+                    type="text"
+                    value={fileName}
+                    onChange={e => { fileNameTouchedRef.current = true; setFileName(e.target.value); }}
+                    disabled={isBusy}
+                    className={inputClass}
+                    placeholder="예: 발주서_브랜드_와이그라운드_셀러_250710.xlsx"
+                  />
+                  <p className="mt-1 px-1 text-[10px] text-slate-500">
+                    {mode === 'manual'
+                      ? '첨부한 원본 파일명입니다. 필요하면 수정하세요. (.xlsx 자동 부여)'
+                      : '기본값은 거래처 표기명을 따릅니다. 브랜드명 등으로 바꾸려면 수정하세요. (.xlsx 자동 부여)'}
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="email-send-to" className="block text-xs font-bold text-slate-600 mb-1.5">수신 이메일 주소</label>
+                  <input
+                    id="email-send-to"
+                    ref={toInputRef}
+                    type="text"
+                    value={emailToStr}
+                    onChange={e => setEmailToStr(e.target.value)}
+                    disabled={isBusy}
+                    className={inputClass}
                   placeholder="예: target@domain.com, (여러 명일 경우 쉼표로 구분)"
-                />
-              </div>
-              <div>
-                <label htmlFor="email-send-cc" className="block text-xs font-bold text-slate-600 mb-1.5">참조 이메일 주소 (선택)</label>
-                <input 
-                  id="email-send-cc"
-                  type="text"
-                  value={emailCcStr} 
-                  onChange={e => setEmailCcStr(e.target.value)} 
-                  disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
+                  />
+                </div>
+                <div>
+                  <label htmlFor="email-send-cc" className="block text-xs font-bold text-slate-600 mb-1.5">참조 이메일 주소 (선택)</label>
+                  <input
+                    id="email-send-cc"
+                    type="text"
+                    value={emailCcStr}
+                    onChange={e => setEmailCcStr(e.target.value)}
+                    disabled={isBusy}
+                    className={inputClass}
                   placeholder="예: cc@domain.com"
-                />
+                  />
+                </div>
+                <div>
+                  <label htmlFor="email-send-subject" className="block text-xs font-bold text-slate-600 mb-1.5">메일 제목</label>
+                  <input
+                    id="email-send-subject"
+                    ref={subjectInputRef}
+                    type="text"
+                    value={emailSubject}
+                    onChange={e => setEmailSubject(e.target.value)}
+                    disabled={isBusy}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="email-send-body" className="block text-xs font-bold text-slate-600 mb-1.5">메일 본문</label>
+                  <textarea
+                    id="email-send-body"
+                    ref={messageInputRef}
+                    rows={4}
+                    value={emailMessage}
+                    onChange={e => setEmailMessage(e.target.value)}
+                    disabled={isBusy}
+                    className={`${inputClass} resize-none`}
+                  />
+                </div>
               </div>
-              <div>
-                <label htmlFor="email-send-subject" className="block text-xs font-bold text-slate-600 mb-1.5">메일 제목</label>
-                <input 
-                  id="email-send-subject"
-                  required 
-                  type="text"
-                  value={emailSubject} 
-                  onChange={e => setEmailSubject(e.target.value)} 
-                  disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50" 
-                />
-              </div>
-              <div>
-                <label htmlFor="email-send-body" className="block text-xs font-bold text-slate-600 mb-1.5">메일 본문</label>
-                <textarea 
-                  id="email-send-body"
-                  required 
-                  rows={4}
-                  value={emailMessage} 
-                  onChange={e => setEmailMessage(e.target.value)} 
-                  disabled={isBusy}
-                  className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-blue-500 transition-[border-color,box-shadow,opacity] shadow-soft-sm disabled:opacity-50 resize-none" 
-                />
-              </div>
-            </div>
-          </div>
-          
-          <div className="p-5 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-between items-center gap-4">
-            
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              accept=".xlsx, .xls"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.[0]) {
-                  setMode('manual');
-                  handleManualFileUpload(e);
-                }
-                e.target.value = '';
-              }}
-              disabled={isBusy}
-            />
+            </>
+          )}
 
+          {stepKind === 'preview' && preview && (
+            <div className="space-y-3">
+              <h3 ref={stepHeadingRef} tabIndex={-1} className="text-sm font-semibold text-slate-800 focus:outline-none">
+                미리보기 · {preview.source === 'prepared' ? '준비본' : '지금 다시 수집'} ({formatLastSyncLabel(preview.asOfIso)} 기준)
+              </h3>
+              <p className="text-xs text-slate-600 break-all">
+                받는 사람 {recipientLabel}{emailCcStr.trim() ? ` · 참조 ${emailCcStr.trim()}` : ''} · 제목 {emailSubject}
+                <span className="text-slate-500"> (수정하려면 뒤로)</span>
+              </p>
+              {preview.empty ? (
+                <p role="status" className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{preview.empty.message}</p>
+              ) : (
+                <PurchaseOrderPreview rows={preview.rows} summary={preview.summary} />
+              )}
+              {!preview.empty && preview.summary.missingCount > 0 && (
+                <label className="flex items-start gap-2 text-xs font-semibold text-status-caution-text">
+                  <input
+                    type="checkbox"
+                    checked={missingAck}
+                    onChange={e => setMissingAck(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-primary"
+                  />
+                  빈 칸이 있는 {preview.summary.missingCount}건을 그대로 보냅니다.
+                </label>
+              )}
+              {!preview.empty && (
+                <p id="po-commit-notice" className="text-xs text-slate-700">
+                  {needsConfirmCount > 0
+                    ? `누르면 네이버에서 ${needsConfirmCount}건이 발주확인 처리되고, 발주서가 ${recipientLabel}(으)로 메일 발송됩니다. 되돌릴 수 없습니다.`
+                    : `누르면 발주서가 ${recipientLabel}(으)로 메일 발송됩니다. 되돌릴 수 없습니다.`}
+                </p>
+              )}
+            </div>
+          )}
+
+          {stepKind === 'progress' && (
+            <p role="status" className="text-sm text-slate-700">
+              {step === 'COMMITTING' ? '네이버 발주확인과 발주서 작성 중...' : '메일 발송 중...'}
+            </p>
+          )}
+
+          {stepKind === 'result' && result && (
+            <div className="space-y-3">
+              <h3 ref={stepHeadingRef} tabIndex={-1} className="text-sm font-semibold text-slate-800 focus:outline-none">
+                {step === 'SUCCESS' ? `발송 완료 · 상품주문 ${result.sentCount.toLocaleString('ko-KR')}건` : '메일 발송 실패'}
+              </h3>
+              {mode === 'auto' && (
+                <p className="text-xs text-slate-700">
+                  네이버 발주확인 {result.confirm.succeeded.toLocaleString('ko-KR')}건 완료
+                  {result.confirm.requested === 0 ? ' (확인할 주문 없음)' : ''}
+                </p>
+              )}
+              {step === 'MAIL_FAILED' && (
+                <p className="text-xs font-semibold text-status-urgent-text">
+                  발주서는 만들어졌고 네이버 발주확인도 끝났습니다. 「메일 다시 보내기」를 누르면 같은 파일로 메일만 다시 보냅니다.
+                </p>
+              )}
+              {result.confirm.failed > 0 && (
+                <p className="rounded-xl bg-status-caution-bg p-3 text-xs font-semibold text-status-caution-text">
+                  네이버 발주확인에 실패한 주문 {result.confirm.failed}건이 있습니다{result.confirm.firstError ? `: ${result.confirm.firstError}` : ''}.
+                  주문확인 버튼으로 다시 확인하세요.
+                </p>
+              )}
+              {result.dropped.length > 0 && (
+                <div className="rounded-xl border border-slate-200 p-3 text-xs text-slate-700">
+                  <p className="font-semibold">미리보기 이후 바뀐 주문 {result.dropped.length}건은 발주서에서 제외했습니다.</p>
+                  <ul className="mt-1 list-disc pl-4">
+                    {result.dropped.map((d) => (
+                      <li key={d.productOrderId}>
+                        {d.recipientName || d.productOrderId} · {DROP_REASON_LABEL[d.reason]}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="p-5 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-between items-center gap-4">
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept=".xlsx, .xls"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.[0]) {
+                setMode('manual');
+                handleManualFileUpload(e);
+              }
+              e.target.value = '';
+            }}
+            disabled={isBusy}
+          />
+
+          {stepKind === 'choose' ? (
             <div className="flex items-center bg-slate-200/50 p-1 rounded-lg border border-slate-200/50 shrink-0">
-              <button 
-                type="button" 
-                onClick={() => { setMode('auto'); setConvertedFile(null); setManualFile(null); setManualError(null); setStep('IDLE'); }} 
+              <button
+                type="button"
+                onClick={() => { setMode('auto'); setManualFile(null); setManualError(null); setError(null); setStep('IDLE'); }}
                 className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-colors ${mode === 'auto' ? 'bg-white text-slate-800 shadow-soft-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                 disabled={isBusy}
               >
                 자동 연동
               </button>
-              <button 
-                type="button" 
-                onClick={() => fileInputRef.current?.click()} 
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
                 className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-colors ${mode === 'manual' ? 'bg-white text-slate-800 shadow-soft-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                 disabled={isBusy}
               >
                 수동 첨부
               </button>
             </div>
+          ) : (
+            <span />
+          )}
 
-            <div className="flex items-center gap-2">
-              <button 
-                type="button" 
-                disabled={isBusy} 
-                onClick={onClose} 
-                className="px-5 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-bold transition-[background-color,opacity] disabled:opacity-50"
-              >
-                취소
-              </button>
-              <button 
-                type="submit" 
-                disabled={isBusy || (mode === 'manual' && !manualFile)} 
-                className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
-              >
-                {isBusy ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    <span>{step === 'ANALYZING' ? '분석/추출중...' : step === 'CONVERTING' ? '변환중...' : '발송중...'}</span>
-                  </>
-                ) : (
-                  <span>발송</span>
+          <div className="flex items-center gap-2">
+            {stepKind === 'choose' && (
+              <>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={handleClose}
+                  className="px-5 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-bold transition-[background-color,opacity] disabled:opacity-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={mode === 'auto' ? handlePreview : handleManualSend}
+                  disabled={isBusy || (mode === 'auto' && availabilityLoading) || (mode === 'manual' && !manualFile)}
+                  className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isBusy && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  <span>
+                    {mode === 'auto'
+                      ? step === 'LOADING_PREVIEW' ? '불러오는 중...' : '미리보기'
+                      : step === 'ANALYZING' ? '검증 중...' : step === 'SENDING' ? '발송 중...' : '발송'}
+                  </span>
+                </button>
+              </>
+            )}
+            {stepKind === 'preview' && (
+              <>
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => { setPreview(null); setError(null); setStep('IDLE'); }}
+                  className="px-5 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-bold transition-[background-color,opacity] disabled:opacity-50"
+                >
+                  뒤로
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCommit}
+                  disabled={commitBlocked}
+                  aria-describedby={preview?.empty ? undefined : 'po-commit-notice'}
+                  className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isBusy && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  <span>{needsConfirmCount > 0 ? '발주확인하고 발송' : '발송'}</span>
+                </button>
+              </>
+            )}
+            {stepKind === 'result' && (
+              <>
+                {step === 'MAIL_FAILED' && pendingMail && (
+                  <button
+                    type="button"
+                    onClick={() => { setError(null); void sendCommittedMail(pendingMail); }}
+                    className="px-5 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 font-bold shadow-soft-md transition-[background-color,opacity]"
+                  >
+                    메일 다시 보내기
+                  </button>
                 )}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="px-5 py-2 text-sm text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-bold transition-[background-color,opacity]"
+                >
+                  닫기
+                </button>
+              </>
+            )}
           </div>
-        </form>
+        </div>
     </ShippingDialogFrame>
   );
 }

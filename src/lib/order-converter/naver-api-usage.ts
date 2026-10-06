@@ -52,7 +52,11 @@ export const NAVER_OP_SCOPE_PREFIX = 'naver_op_';
 export type NaverOperation =
   /** 주문확인 버튼 = 전 기간 재조회 + 발주확인 + 발주서 다운로드(execute/stream) */
   | 'confirm_order'
-  /** 발주요청(이메일 첨부) 경로의 발주서 생성(execute) */
+  /**
+   * 발주요청(이메일 첨부) 경로 — `purchase-order` 라우트. 2026-10-06 부터 1회 발주요청이 2행이다:
+   * 미리보기(`context.phase='preview'`, 재수집일 때만 — 준비본은 네이버 0이라 남기지 않는다)와
+   * 확정(`phase='commit'` — 발주확인+재조회). `context.source` 가 준비본/재수집을 가른다.
+   */
   | 'order_excel';
 
 export function naverOpScope(operation: NaverOperation): string {
