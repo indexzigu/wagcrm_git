@@ -10,7 +10,12 @@ import type { BrowserContext, Page } from "playwright-core";
 import { raceWithTimeout } from "./mobile-order-refresh";
 
 /** 시도할 뷰어들 — 첫 성공에서 멈춘다(하나 죽어도 다음으로 폴백). storiesig.info 계열이 STORIES 버튼→
- *  /api/v1/instagram/stories POST(서명 포함) 흐름으로 검증됨. selector/흐름이 다르면 여기에 추가. */
+ *  `/api/v{1,2}/instagram/stories` POST(서명 포함) 흐름으로 검증됨. selector/흐름이 다르면 여기에 추가.
+ *
+ *  ⚠️ **API 버전은 뷰어가 예고 없이 올린다(실사고 2026-10-03~06, 나흘 전량 무수집).** 뷰어가 조회를
+ *  `/api/v1/…` 에서 `https://api-wh.storiesig.info/api/v2/…` 로 옮겼는데 아래 정규식이 v1 만 봐서,
+ *  응답이 **실제로 왔는데도** 못 알아보고 "프로필 조회 응답 없음" 으로 보고했다. 그래서 버전 자리를
+ *  `v[12]` 로 둔다 — 또 올라가면 여기와 `parseStoryItems`(응답 모양도 함께 바뀐다) 를 같이 본다. */
 type Viewer = {
   name: string;
   home: string;
@@ -31,9 +36,9 @@ const VIEWERS: Viewer[] = [
     searchInput: "input.search-form__input",
     searchButton: "button.search-form__button",
     storiesButtonText: /^stories$/i,
-    storiesApi: /\/api\/v1\/instagram\/stories/,
+    storiesApi: /\/api\/v[12]\/instagram\/stories/,
     resultsReady: "button.tabs-component__button",
-    profileApi: /\/api\/v1\/instagram\/userInfo/,
+    profileApi: /\/api\/v[12]\/instagram\/userInfo/,
   },
 ];
 
@@ -175,7 +180,9 @@ function stripProfileNoise(value: unknown): unknown {
 }
 
 function describeProfileProbe(probe: { status: number; body: string } | null): string {
-  if (!probe) return "프로필 조회 응답 없음(요청 미발화·네트워크 차단 의심)";
+  // ⚠️ 세 가지 중 어느 것인지 이 자리에서는 가를 수 없다 — 2026-10-03 에는 셋째가 아니라 첫째였는데
+  // 종전 문구("요청 미발화·네트워크 차단 의심")가 네트워크 쪽으로만 눈을 돌리게 했다.
+  if (!probe) return "프로필 조회 응답 없음(감시 패턴 불일치·요청 미발화·네트워크 차단 중 하나. 뷰어 API 경로 변경부터 확인)";
   let body = probe.body;
   try {
     body = JSON.stringify(stripProfileNoise(JSON.parse(body)));
@@ -327,9 +334,26 @@ async function driveViewer(page: Page, viewer: Viewer, handle: string): Promise<
   // storiesig: result = 스토리 배열. 형식이 어긋나면 뷰어 변경 신호 — 드러낸다.
   if (Array.isArray(result)) return result;
   if (result && typeof result === "object" && Array.isArray((result as { items?: unknown[] }).items)) {
-    return (result as { items: unknown[] }).items;
+    const { items, owner } = result as { items: unknown[]; owner?: unknown };
+    return attachOwner(items, owner);
   }
   return [];
+}
+
+/**
+ * v2 응답은 작성자를 항목이 아니라 `result.owner` 에 둔다. 항목만 넘기면 `parseStoryItems` 가
+ * 작성자 불명으로 전부 버리고(저장부 `storeStorySnapshots` 의 핸들 귀속 필터도 username 을 본다),
+ * 그 결과는 "응답은 받았는데 0건" 이라 2026-10-03 사고와 같은 얼굴이 된다. 그래서 작성자가 없는
+ * 항목에만 owner 를 붙인다 — 이미 `user`/`owner` 를 가진 항목(v1 모양)은 손대지 않는다.
+ */
+function attachOwner(items: unknown[], owner: unknown): unknown[] {
+  if (!owner || typeof owner !== "object") return items;
+  return items.map((it) => {
+    if (!it || typeof it !== "object") return it;
+    const rec = it as Record<string, unknown>;
+    if (rec.user != null || rec.owner != null) return it;
+    return { ...rec, owner };
+  });
 }
 
 export type HandleStories = { handle: string; items: unknown[]; error?: string };

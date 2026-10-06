@@ -4,9 +4,11 @@
 //
 // 소스: 무료 익명 스토리 뷰어(storiesig.info 계열)를 실제 브라우저로 조작해 받아온다
 // (story-viewer-fetch.ts). **유료 API키·계정·쿠키 전부 없음**(오너 지시: 외부 API키 의존
-// 최소화 — Apify·RapidAPI 다 배제). 뷰어 응답은 인스타 표준 미디어 포맷(pk·taken_at·
-// image_versions2.candidates·video_versions·user.username)이라 parseStoryItems 가
-// 정규화한다. 뷰어마다 필드명이 다를 수 있어 방어적으로 픽. 비공개 계정은 수집 불가(한계).
+// 최소화 — Apify·RapidAPI 다 배제). 뷰어 응답은 두 모양이 있다 — v1(2026-07~09)은 인스타 표준
+// 미디어 포맷(pk·taken_at·image_versions2.candidates·video_versions·user.username), v2(2026-10-03~)는
+// 뷰어가 정규화한 포맷(id·type·url·thumbnailUrl·takenAt, 작성자는 응답의 result.owner — 뷰어 모듈이
+// 항목에 붙인다). parseStoryItems 가 둘 다 정규화한다. 뷰어마다 필드명이 다를 수 있어 방어적으로 픽.
+// 비공개 계정은 수집 불가(한계).
 //
 // 썸네일은 24시간 내 만료되는 CDN URL이므로 전용 버킷(seller-media)으로 즉시 리호스팅한다.
 // 영상 원본은 용량상 리호스팅하지 않는다 — ponytail: 분류·증빙은 썸네일로 충분, 필요해지면
@@ -72,21 +74,26 @@ export type ParsedStory = {
   caption: string | null;
 };
 
-/** 이미지 썸네일 URL — provider별 필드명(thumbnail_url · image_versions.items · image_versions2.candidates)을 순서대로 시도 */
+/** 이미지 썸네일 URL — provider별 필드명(thumbnail_url · thumbnailUrl · image_versions.items ·
+ *  image_versions2.candidates · v2 이미지 항목의 url)을 순서대로 시도 */
 function pickImageUrl(it: Record<string, any>): string | null {
   if (typeof it.thumbnail_url === "string" && it.thumbnail_url) return it.thumbnail_url;
+  if (typeof it.thumbnailUrl === "string" && it.thumbnailUrl) return it.thumbnailUrl; // storiesig v2
   const itemsUrl = it.image_versions?.items?.[0]?.url; // RapidAPI instagram-scraper-20251
   if (typeof itemsUrl === "string" && itemsUrl) return itemsUrl;
   const candUrl = it.image_versions2?.candidates?.[0]?.url; // 인스타 표준/타 provider
   if (typeof candUrl === "string" && candUrl) return candUrl;
+  // storiesig v2: 이미지 항목은 `url` 이 원본 이미지다. 영상 항목의 `url` 은 mp4 라 여기서 쓰지 않는다.
+  if (it.type === "image" && typeof it.url === "string" && it.url) return it.url;
   return null;
 }
 
-/** 영상 원본 URL — video_versions[0].url 우선, 폴백 video_url */
+/** 영상 원본 URL — video_versions[0].url 우선, 폴백 video_url, v2 는 type:"video" 항목의 url */
 function pickVideoUrl(it: Record<string, any>): string | null {
   const vv = it.video_versions;
   if (Array.isArray(vv) && typeof vv[0]?.url === "string" && vv[0].url) return vv[0].url;
   if (typeof it.video_url === "string" && it.video_url) return it.video_url;
+  if (it.type === "video" && typeof it.url === "string" && it.url) return it.url; // storiesig v2
   return null;
 }
 
@@ -106,10 +113,12 @@ export function parseStoryItems(raw: unknown): ParsedStory[] {
       it.pk != null ? String(it.pk) : it.id != null ? String(it.id) : it.fbid != null ? String(it.fbid) : null;
     if (!username || !storyPk) continue;
 
-    const takenAt = Number(it.taken_at);
+    // v1 `taken_at` / v2 `takenAt` — 둘 다 epoch 초. 뷰어가 모양을 바꾼 2026-10-03 에 이 한 줄이
+    // 전 항목을 버렸다(시각 결손으로 제외) — 그래서 이름 둘을 함께 본다.
+    const takenAt = Number(it.taken_at ?? it.takenAt);
     if (!Number.isFinite(takenAt) || takenAt <= 0) continue;
     const takenAtMs = takenAt * 1000;
-    const expiring = Number(it.expiring_at);
+    const expiring = Number(it.expiring_at ?? it.expiringAt);
 
     const captionRaw = it.caption;
     const caption =
@@ -120,8 +129,8 @@ export function parseStoryItems(raw: unknown): ParsedStory[] {
           : null;
 
     const videoUrl = pickVideoUrl(it);
-    // media_type 을 안 주는 뷰어(storiesig)가 있어 video_versions 유무로 영상 판정
-    const mediaType = Number(it.media_type) === 2 || videoUrl ? 2 : 1;
+    // media_type 을 안 주는 뷰어(storiesig)가 있어 video_versions 유무(v1)·type:"video"(v2)로 영상 판정
+    const mediaType = Number(it.media_type) === 2 || it.type === "video" || videoUrl ? 2 : 1;
 
     out.push({
       username,

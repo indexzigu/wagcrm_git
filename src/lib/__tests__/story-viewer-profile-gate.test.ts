@@ -30,6 +30,10 @@ type Scenario = {
    * - `"hang"`: 읽기가 끝나지 않는 것 — 예외보다 나쁜 실패 모드라 따로 흉내낸다
    */
   pageState?: { title: string; bodyText: string } | null | "hang";
+  /** 뷰어 API 버전 — 2026-10-03 부터 프로덕션은 v2 만 받는다(기본 v1 = 전환 전 회귀 유지) */
+  apiVersion?: "v1" | "v2";
+  /** 스토리 응답 본문(기본은 v1 모양) */
+  storiesBody?: string;
 };
 
 /** driveViewer 가 실제로 쓰는 Page 표면만 흉내낸다. */
@@ -64,7 +68,7 @@ function makeCtx(scenario: Scenario) {
         async click() {
           if (scenario.profileResponse) {
             await onResponse?.({
-              url: () => "https://api-wh.storiesig.info/api/v1/instagram/userInfo",
+              url: () => `https://api-wh.storiesig.info/api/${scenario.apiVersion ?? "v1"}/instagram/userInfo`,
               status: () => scenario.profileResponse!.status,
               text: async () => scenario.profileResponse!.body,
             });
@@ -82,9 +86,9 @@ function makeCtx(scenario: Scenario) {
               if (scenario.storiesRespond === false) return;
               // 탭 클릭이 서명된 스토리 요청을 트리거한다.
               await onResponse?.({
-                url: () => "https://api-wh.storiesig.info/api/v1/instagram/stories",
+                url: () => `https://api-wh.storiesig.info/api/${scenario.apiVersion ?? "v1"}/instagram/stories`,
                 status: () => 200,
-                text: async () => JSON.stringify({ result: [{ pk: "s-1" }] }),
+                text: async () => scenario.storiesBody ?? JSON.stringify({ result: [{ pk: "s-1" }] }),
               });
             },
           }),
@@ -534,5 +538,97 @@ describe("driveViewer — 화면 미렌더의 사유(2026-08-29 회귀)", () => 
     const title = /화면 제목:(가+)/.exec(out[0].error ?? "")?.[1] ?? "";
     // 상한을 지우거나 크게 늘리면 여기서 걸린다(종전엔 500자가 그대로 실렸다).
     expect(title.length).toBe(80);
+  });
+});
+
+/**
+ * 뷰어 API **v2** 경로 회귀.
+ *
+ * **왜 이 테스트가 있나(실사고 2026-10-03~06, 나흘 전량 무수집):** 뷰어가 조회 API 를
+ * `/api/v1/instagram/…` 에서 `https://api-wh.storiesig.info/api/v2/instagram/…` 로 옮겼다.
+ * 감시 정규식이 v1 만 보던 동안 응답은 **실제로 왔는데** 우리가 못 알아봤고, 사유 문구는
+ * "프로필 조회 응답 없음(요청 미발화·네트워크 차단 의심)" 이라 네트워크 쪽을 의심하게 만들었다.
+ * 또 v2 는 작성자를 항목이 아니라 응답의 `result.owner` 에 두므로, 항목만 돌려주면 저장부의
+ * 핸들 귀속 필터(`storeStorySnapshots`)가 전부를 버린다 — 그래서 owner 를 항목에 붙여 넘긴다.
+ */
+describe("driveViewer — 뷰어 API v2 경로(2026-10-03 전환 회귀)", () => {
+  const V2_STORIES = JSON.stringify({
+    result: {
+      items: [{ id: "s-2", type: "image", url: "https://cdn.example.com/a.jpg", takenAt: 1791205766 }],
+      pageInfo: { hasNextPage: false },
+      owner: { username: "someone", fullName: "Some One", isPrivate: false },
+    },
+  });
+
+  it("v2 userInfo·stories 응답을 포착해 항목을 돌려주고 result.owner 를 각 항목에 붙인다", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: true,
+          profileResponse: { status: 200, body: '{"result":{"username":"someone"}}' },
+          apiVersion: "v2",
+          storiesBody: V2_STORIES,
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    expect(out[0].error).toBeUndefined();
+    expect(out[0].items).toHaveLength(1);
+    const item = out[0].items[0] as Record<string, unknown>;
+    expect(item.id).toBe("s-2");
+    expect(item.owner).toEqual({ username: "someone", fullName: "Some One", isPrivate: false });
+  });
+
+  it("v2 에서 결과가 안 떠도 프로필 상태코드가 사유에 실린다('응답 없음'으로 오진하지 않는다)", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: false,
+          profileResponse: { status: 200, body: '{"result":{"username":"someone","isPrivate":true}}' },
+          apiVersion: "v2",
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    expect(out[0].error).toContain("200");
+    expect(out[0].error).toContain("isPrivate");
+    expect(out[0].error).not.toContain("응답 없음");
+  });
+
+  it("항목에 이미 작성자가 있으면 owner 를 덮어쓰지 않는다(v1 모양 보존)", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () =>
+        makeCtx({
+          resultsRender: true,
+          profileResponse: { status: 200, body: "{}" },
+          apiVersion: "v2",
+          storiesBody: JSON.stringify({
+            result: { items: [{ pk: "s-1", user: { username: "other" } }], owner: { username: "someone" } },
+          }),
+        }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    const item = out[0].items[0] as Record<string, unknown>;
+    expect(item.user).toEqual({ username: "other" });
+    expect(item.owner).toBeUndefined();
+  });
+
+  it("'응답 없음' 사유는 감시 패턴 불일치 가능성을 함께 말한다(네트워크만 의심하게 두지 않는다)", async () => {
+    const c = clock();
+    const out = await fetchStoriesForHandles(["someone"], {
+      launch: async () => makeCtx({ resultsRender: false, profileResponse: null }),
+      now: c.now,
+      sleep: c.sleep,
+    });
+
+    expect(out[0].error).toContain("응답 없음");
+    expect(out[0].error).toContain("감시 패턴");
   });
 });
