@@ -113,6 +113,69 @@ describe("parseStoryItems", () => {
   });
 });
 
+// storiesig 뷰어 **v2** 실응답 포맷(2026-10-06 실측 — 2026-10-03 부터는 이 형식만 온다).
+// 인스타 원본이 아니라 뷰어가 **정규화한** 모양이다: id·type("image"|"video")·url·thumbnailUrl·
+// takenAt(초)·duration. 작성자는 항목이 아니라 응답의 `result.owner` 에 있고, 뷰어 모듈
+// (story-viewer-fetch.ts)이 그것을 각 항목의 `owner` 로 붙여 넘긴다. 값은 전부 가짜다.
+const viewerV2ImageStory = {
+  id: "4001000000000000001",
+  type: "image",
+  url: "https://cdn.example.com/v2-full.jpg",
+  thumbnailUrl: "https://cdn.example.com/v2-thumb.jpg",
+  width: 750,
+  height: 1334,
+  takenAt: 1791205766,
+  owner: { username: "gaon" },
+};
+const viewerV2VideoStory = {
+  id: "4001000000000000002",
+  type: "video",
+  url: "https://cdn.example.com/v2-video.mp4",
+  thumbnailUrl: "https://cdn.example.com/v2-poster.jpg",
+  duration: 29.5,
+  hasAudio: true,
+  takenAt: 1791213282,
+  owner: { username: "gaon" },
+};
+
+describe("parseStoryItems — storiesig v2 포맷(2026-10-03 전환 회귀)", () => {
+  // 왜 이 테스트가 있나: 뷰어가 응답 모양을 바꾼 2026-10-03 부터 나흘간 파서가 항목을 전부
+  // 버려(taken_at·user.username·image_versions 부재) 프로덕션 수집이 0건이었다.
+  it("id·takenAt·thumbnailUrl·type 을 정규화하고 owner.username 을 작성자로 쓴다", () => {
+    const out = parseStoryItems([viewerV2ImageStory, viewerV2VideoStory]);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({
+      username: "gaon",
+      storyPk: "4001000000000000001",
+      mediaType: 1,
+      imageUrl: "https://cdn.example.com/v2-thumb.jpg",
+      videoUrl: null,
+    });
+    expect(out[0].takenAtMs).toBe(1791205766 * 1000);
+    // v2 는 만료 시각을 주지 않는다 — 스토리 수명 24h 규칙이 그대로 적용돼야 한다.
+    expect(out[0].expiringAtMs).toBe(1791205766 * 1000 + 24 * 60 * 60 * 1000);
+    expect(out[1]).toMatchObject({
+      username: "gaon",
+      storyPk: "4001000000000000002",
+      mediaType: 2, // media_type·video_versions 없이 type:"video" 로 영상 판정
+      imageUrl: "https://cdn.example.com/v2-poster.jpg",
+      videoUrl: "https://cdn.example.com/v2-video.mp4",
+    });
+  });
+
+  it("v2 이미지 항목에 thumbnailUrl 이 없으면 url 을 이미지로 쓴다 — 영상의 url 은 이미지가 아니다", () => {
+    const [img] = parseStoryItems([{ ...viewerV2ImageStory, thumbnailUrl: undefined }]);
+    expect(img.imageUrl).toBe("https://cdn.example.com/v2-full.jpg");
+    const [vid] = parseStoryItems([{ ...viewerV2VideoStory, thumbnailUrl: undefined }]);
+    expect(vid.imageUrl).toBeNull();
+    expect(vid.videoUrl).toBe("https://cdn.example.com/v2-video.mp4");
+  });
+
+  it("v2 항목에 owner 가 없으면 작성자 불명으로 제외한다(요청 외 계정 귀속 방지선은 username 이다)", () => {
+    expect(parseStoryItems([{ ...viewerV2ImageStory, owner: undefined }])).toEqual([]);
+  });
+});
+
 describe("isWithinCaptureWindow", () => {
   const start = new Date("2026-07-12T00:00:00+09:00");
   const end = new Date("2026-07-19T23:59:59+09:00");
