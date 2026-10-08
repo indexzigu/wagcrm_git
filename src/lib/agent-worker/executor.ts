@@ -162,6 +162,19 @@ const SEARCH_TAKE_LIMIT = 20;
 const PROPOSAL_ERROR_EXCERPT_CHARS = 300;
 // `get_action_proposal` 둘째 줄의 실행자 값 — 읽는 쪽이 한 줄 정규식으로 받을 수 있는 글자만.
 const EXECUTED_BY_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
+// 사람 승인자의 id(로그인 계정 uuid) 모양. 봇에게는 "사람이 승인했다"만 필요하므로 id 자체는
+// 넘기지 않는다 — 봇의 대화 맥락·슬랙 회신으로 계정 식별자가 흘러갈 길을 만들지 않는다.
+const HUMAN_ACTOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * 실행자 값을 봇에게 보낼 한 낱말로 옮긴다: 사람 승인자 id → `HUMAN`, 시스템 actor(토큰 글자)는
+ * 그대로, 그 밖의 값(이메일 등) → `UNKNOWN`. 실행되지 않은 기안(값 없음)은 null — 줄을 싣지 않는다.
+ */
+function executedByLabel(executedBy: string | null): string | null {
+  if (!executedBy) return null;
+  if (HUMAN_ACTOR_ID.test(executedBy)) return "HUMAN";
+  return EXECUTED_BY_TOKEN.test(executedBy) ? executedBy : "UNKNOWN";
+}
 
 function boundSummary(text: string): string {
   const trimmed = text.trim();
@@ -222,12 +235,13 @@ async function getActionProposal(input: GetActionProposalInput): Promise<Operati
       : "";
   const lines = [`get_action_proposal: ${proposal.id} status=${proposal.status}${executedRef}`];
   // 누가 실행했는가(사람 승인 vs 자동 실행)는 **둘째 줄 고정 자리**에 싣는다 — `executedBy` 가
-  // 있을 때만(실행이 끝난 기안). 값은 DB 가 쓴 것(승인자 id 또는 시스템 actor)이고 토큰 글자
-  // (`[A-Za-z0-9_-]`)가 아니면 싣지 않는다. 제목 줄보다 **앞에** 두는 이유: 제목은 줄바꿈이
-  // 눌려 한 줄이라 이 자리를 흉내낼 수 없다. 읽는 쪽은 둘째 줄만 `^executedBy=…$` 로 대조한다
-  // (아래 줄들을 훑어 `executedBy=` 를 찾으면 제목이 그 글자를 담을 수 있다).
-  if (proposal.executedBy && EXECUTED_BY_TOKEN.test(proposal.executedBy)) {
-    lines.push(`executedBy=${proposal.executedBy}`);
+  // 있을 때만(실행이 끝난 기안). 값은 DB 가 쓴 것을 `executedByLabel` 로 옮긴 한 낱말이다.
+  // 제목 줄보다 **앞에** 두는 이유: 제목은 줄바꿈이 눌려 한 줄이라 이 자리를 흉내낼 수 없다.
+  // 읽는 쪽은 둘째 줄만 `^executedBy=…$` 로 대조한다(아래 줄들을 훑어 `executedBy=` 를 찾으면
+  // 제목이 그 글자를 담을 수 있다).
+  const executedBy = executedByLabel(proposal.executedBy);
+  if (executedBy) {
+    lines.push(`executedBy=${executedBy}`);
   }
   lines.push(`title=${flattenLineBreaks(proposal.title)}`);
   if (proposal.status === "FAILED" && proposal.errorMessage) {
