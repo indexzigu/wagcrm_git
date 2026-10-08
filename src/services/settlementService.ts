@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { SettlementRepository } from "@/repositories/settlementRepository";
 import { getPrisma } from "@/lib/prisma";
 import { lockCampaignGroup, propagateGroupStatus } from "@/services/campaignGroupService";
-import { monthlySettlementService } from "@/services/monthlySettlementService";
+import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 import { containsSearch } from "@/lib/prisma-search";
 import { DEFAULT_CHECKLIST_ITEMS } from "@/lib/validations/settlement";
 import {
@@ -62,11 +62,11 @@ export class SettlementService {
     let newCampaignStatus = campaign.status;
 
     // If all checked AND campaign status is SETTLEMENT_IN_PROGRESS: auto-transition to COMPLETED
-    // 월별 정산 완료 게이트(T-240)는 이 레거시 경로에도 건다 — 상태를 쓰는 모든 경로가 같은 답을 내야 한다.
+    // 월정산 계산서 완료 게이트(T-240)는 이 레거시 경로에도 건다 — 상태를 쓰는 모든 경로가 같은 답을 내야 한다.
     if (
       allChecked &&
       campaign.status === "SETTLEMENT_IN_PROGRESS" &&
-      !(await monthlySettlementService.findCompletionBlocker(getPrisma(), campaign.id))
+      !(await campaignInvoiceService.findCompletionBlocker(getPrisma(), campaign.id))
     ) {
       await SettlementService.transitionCampaignStatus(campaign, "COMPLETED");
       newCampaignStatus = "COMPLETED";
@@ -132,17 +132,12 @@ export class SettlementService {
   }
 
   static async getSettlementReport(params: SettlementReportQuery) {
-    const { where, periodLabel, firstDay, lastDay, yearMonthFilter } = buildSettlementReportQuery(params);
+    const { where, periodLabel } = buildSettlementReportQuery(params);
 
     const campaigns = await SettlementRepository.findCampaignsForReport({
       where,
       include: {
-        // 월정산 거래처 여부(T-240) — 월별 줄을 리포트에 싣는 조건이다.
-        deal: { include: { partner: { select: { monthlySettlement: true } } } },
-        // 그 기간의 월별 줄만 — 같은 캠페인이 9월·10월 목록에 각자 자기 달 줄로 뜬다.
-        monthlySettlements: { where: { yearMonth: yearMonthFilter } },
-        // 기간과 무관한 전체 줄 수 — 「줄이 있는 월정산 캠페인」은 줄 없는 달에 캠페인 총액을 대신 세지 않는다.
-        _count: { select: { monthlySettlements: true } },
+        deal: true,
         seller: {
           include: {
             agency: true,
@@ -158,11 +153,6 @@ export class SettlementService {
     const mappedCampaigns = campaigns.map((c) => ({
       ...c,
       sellerCompanyBusinessNumber: c.seller?.agency?.businessNumber ?? null,
-      monthlySettlementEnabled: Boolean(c.deal.partner?.monthlySettlement),
-      monthlyLineCountTotal: c._count.monthlySettlements,
-      // 종료일로 이 기간에 든 캠페인인가 — 아니면 월별 줄로만 들어온 것이라 캠페인 단위 금액
-      // (마진·셀러 정산금)을 이 기간 합계에 더하지 않는다(같은 캠페인의 이중 집계 방지).
-      includedByEndDate: c.endDate >= firstDay && c.endDate <= lastDay,
     }));
 
     return buildSettlementReportModel(mappedCampaigns, periodLabel);
@@ -181,8 +171,8 @@ export type SettlementReportQuery = {
  * 정산 리포트의 조회 조건 SSOT — 화면(`getSettlementReport`)과 어시스턴트 도구
  * (`agent/tools/settlement-report.ts`)가 같은 캠페인 집합을 보게 한다(종전엔 두 곳에 손으로 복사돼 있었다).
  *
- * 기간 소속 = 종료일이 그 기간 **또는**(T-240) 월정산 거래처 캠페인이 그 기간에 월별 줄을 가짐.
- * 그래서 9/28~10/4 캠페인은 9월 목록(9월분 줄)과 10월 목록(종료일·10월분 줄)에 함께 뜬다.
+ * 기간 소속 = 종료일이 그 기간. 월정산 캠페인도 캠페인은 1단위라 종료월 목록에 한 번만 뜬다
+ * (T-240 후속, 오너 확정 2026-10-08 — #159 의 「달마다 목록에 뜨기」는 캠페인을 달로 쪼갠 셈이라 걷어냈다).
  */
 export function buildSettlementReportQuery(params: SettlementReportQuery) {
   const { month, year: yearParam, teamId, searchQuery, statusFilter } = params;
@@ -190,7 +180,6 @@ export function buildSettlementReportQuery(params: SettlementReportQuery) {
   let firstDay: Date;
   let lastDay: Date;
   let periodLabel: string;
-  let yearMonthFilter: Prisma.StringFilter;
 
   if (yearParam) {
     const year = parseInt(yearParam, 10);
@@ -200,7 +189,6 @@ export function buildSettlementReportQuery(params: SettlementReportQuery) {
     firstDay = new Date(year, 0, 1);
     lastDay = new Date(year, 11, 31, 23, 59, 59, 999);
     periodLabel = `${year}`;
-    yearMonthFilter = { startsWith: `${year}-` };
   } else {
     const targetMonth = month || getCurrentMonth();
     if (!isValidMonthString(targetMonth)) {
@@ -210,20 +198,9 @@ export function buildSettlementReportQuery(params: SettlementReportQuery) {
     firstDay = range.firstDay;
     lastDay = range.lastDay;
     periodLabel = targetMonth;
-    yearMonthFilter = { equals: targetMonth };
   }
 
-  const and: Prisma.SalesCampaignWhereInput[] = [
-    {
-      OR: [
-        { endDate: { gte: firstDay, lte: lastDay } },
-        {
-          deal: { partner: { monthlySettlement: true } },
-          monthlySettlements: { some: { yearMonth: yearMonthFilter } },
-        },
-      ],
-    },
-  ];
+  const and: Prisma.SalesCampaignWhereInput[] = [{ endDate: { gte: firstDay, lte: lastDay } }];
   if (searchQuery) {
     and.push({
       OR: [
@@ -240,5 +217,5 @@ export function buildSettlementReportQuery(params: SettlementReportQuery) {
     ...(teamId ? { assignedTo: teamId } : {}),
   };
 
-  return { where, periodLabel, firstDay, lastDay, yearMonthFilter };
+  return { where, periodLabel, firstDay, lastDay };
 }

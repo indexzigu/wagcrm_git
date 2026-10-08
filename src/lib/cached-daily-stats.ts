@@ -1,8 +1,8 @@
 /**
  * 마감 캠페인 일별 캐시(`OrderCampaign.cachedDailyStats` Json) 파서 — 의존성 0 순수 모듈.
  *
- * 소비처: 모바일 매출 상세(`mobile-campaign-sales.ts`) · 월별 정산의 주문일 기준 참고값
- * (`monthlySettlementService`). ⚠️ 이 파서를 `mobile-campaign-sales.ts` 안에 두면 안 된다 — 그 모듈은
+ * 소비처: 모바일 매출 상세(`mobile-campaign-sales.ts`). ⚠️ 이 파서를 `mobile-campaign-sales.ts` 안에
+ * 두면 안 된다 — 그 모듈은
  * import 시점에 DB 클라이언트를 만드는 저장소 체인을 끌고 와서, 서비스 계층이 그 파일을 import 하는
  * 순간 DB 를 목으로 둔 테스트들이 import 단계에서 죽었다(T-240 작업 중 실측).
  */

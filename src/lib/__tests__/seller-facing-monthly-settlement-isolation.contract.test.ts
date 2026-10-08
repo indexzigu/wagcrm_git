@@ -1,10 +1,10 @@
 /**
- * **셀러가 보는 표면은 월별 정산 줄을 모른다** — 계약(T-240, 오너 확정 2026-10-08).
+ * **셀러가 보는 표면은 월정산의 달별 구분을 모른다** — 계약(T-240, 오너 확정 2026-10-08).
  *
- * 월정산 거래처는 브랜드(공급사)와의 정산을 캠페인 안 월별 줄로 나누지만, **셀러에게는 캠페인
- * 합산으로 정산한다.** 그래서 셀러 정산 명세서·셀러 포털(`/<slug>`, `/p/[token]`)에 「9월분」 같은
+ * 월정산 거래처는 브랜드(공급사) 계산서를 캠페인 안에서 달별로 여러 장 기록하지만(`campaign-invoices.ts`,
+ * #159 의 월별 정산 줄을 대체), **셀러에게는 캠페인 합산으로 정산한다.** 그래서 셀러 정산 명세서·셀러 포털(`/<slug>`, `/p/[token]`)에 「9월분」 같은
  * 월 구분이나 월별 금액이 새어 나가면 안 된다(셀러가 받은 명세서와 실제 정산 단위가 달라진다).
- * 월별 줄에는 브랜드 쪽 물품대금·지급액 같은 내부 금액도 있어 P0 Seller-Facing Data Exposure
+ * 달별 계산서에는 브랜드 쪽 수수료·물품대금 같은 내부 금액도 있어 P0 Seller-Facing Data Exposure
  * 와도 맞닿는다.
  *
  * 두 겹으로 본다:
@@ -38,10 +38,10 @@ const SELLER_FACING_MODULES = ["lib/settlement-statement.ts", "lib/seller-portal
  * 정확한 이름 목록이 아니라 계열 패턴인 이유: `monthlyLineCount` 같은 새 변형이나
  * `"campaign.monthlyLines"` 같은 문자열 경로도 잡아야 한다.
  */
-const BANNED_NAME = /monthly(Settlement|Line)|monthlyCompletionBlocked/i;
+const BANNED_NAME = /campaignInvoice|InvoiceMonth|monthly(Settlement|Line)|monthlyCompletionBlocked/i;
 
-/** 월별 정산 모듈(판정·서비스·이전·패널) — 경로에 이 조각이 있으면 월별 정산 코드다. */
-const BANNED_MODULE = /monthly-settlement|monthlySettlementService/;
+/** 달별 계산서 모듈(판정·서비스·칸) — 경로에 이 조각이 있으면 월정산 달별 구분 코드다. `monthly-settlement` 는 #159 잔재 경로를 계속 막는다. */
+const BANNED_MODULE = /campaign-invoice|campaignInvoiceService|monthly-settlement/;
 
 function sourceFilesUnder(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -203,11 +203,14 @@ describe("셀러 대면 표면은 월별 정산 줄을 모른다(T-240)", () => 
       expect(scanSellerFacingSource("probe.ts", "const m = require('@/lib/monthly-settlement');")).toHaveLength(1);
       expect(scanSellerFacingSource("probe.ts", "type T = typeof import('@/lib/monthly-settlement');")).toHaveLength(1);
       expect(scanSellerFacingSource("probe.ts", "// campaign.monthlySettlements 는 셀러에게 안 보낸다\nconst a = 1;")).toEqual([]);
+      // 달별 계산서(#159 대체) — 이름·하이픈 경로 모두 잡는다.
+      expect(scanSellerFacingSource("probe.ts", "const rows = campaign.campaignInvoices;")).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", 'import { x } from "@/lib/campaign-invoices";')).toHaveLength(1);
     });
 
     it("의존 범위 추적은 이름에 금지 조각이 없는 파일에서 시작해도 간접 import 를 따라가 잡는다", () => {
-      // 시작 파일 이름이 이미 금지 조각을 품으면 추적이 고장 나도 통과하므로, 패널을 import 하는
-      // 캠페인 상세 패널에서 시작한다(캠페인 상세 → 월별 정산 패널 → 판정 모듈).
+      // 시작 파일 이름이 이미 금지 조각을 품으면 추적이 고장 나도 통과하므로, 칸을 간접 import 하는
+      // 캠페인 상세 패널에서 시작한다(캠페인 상세 → 정산 칸 → 달별 계산서 칸 → 판정 모듈).
       const { hits } = findBannedImportPaths([join(SRC, "components/crm/campaign-side-panel.tsx")]);
       expect(hits.some((chain) => chain.startsWith("components/crm/campaign-side-panel.tsx → "))).toBe(true);
     });

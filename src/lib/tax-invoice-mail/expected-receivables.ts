@@ -153,6 +153,13 @@ export interface CampaignSettlementFacts {
   /** 공급사(거래처)의 사업자등록번호 */
   partnerBusinessNumber: string | null;
   partnerLabel: string;
+  /**
+   * 공급사(거래처)가 월정산인가(`Partner.monthlySettlement`). 참이면 **공급사 칸 기대 건을 만들지
+   * 않는다** — 그 계산서는 캠페인당 여러 장(달별)이라 `campaign-invoices.ts` 가 소유한다. 이 엔진이
+   * 계속 잡으면 첫 달 계산서 한 장으로 캠페인 날짜를 찍어 「전부 끝」처럼 보이게 만든다
+   * (반대 검토 2026-10-08). 셀러 칸은 월로 나누지 않으므로 그대로다.
+   */
+  partnerMonthlySettlement?: boolean;
   /** 이미 수취 완료로 기록된 시각(ISO). 있으면 판정은 하되 미처리 목록에서 뺄 수 있다. */
   supplierInvoiceIssuedAt: string | null;
   sellerInvoiceIssuedAt: string | null;
@@ -315,8 +322,10 @@ export function buildExpectedReceivables(
   // 수기값 0 = 「다른 캠페인 계산서에 합산됨」 — 물품비 기대 건을 만들지 않는다(위
   // manualGoodsCost 주석). 셀러 수수료 슬롯은 영향받지 않는다 — 합산되는 것은 공급사
   // 물품대금 계산서이지 셀러 수수료 계산서가 아니다.
+  // 월정산 공급사 계산서는 캠페인당 여러 장이라 `campaign-invoices.ts` 가 소유한다
+  // (`partnerMonthlySettlement` 주석) — 물품비 기대 건을 만들지 않는다.
   const goodsRows = (): ExpectedReceivable[] =>
-    goods.consolidatedAway
+    goods.consolidatedAway || facts.partnerMonthlySettlement
       ? []
       : [
           {

@@ -1,40 +1,31 @@
 import { NextResponse } from "next/server";
-import { partnerMonthlySettlementSchema } from "@/lib/validations/monthly-settlement";
+import { z } from "zod";
+import { getPrisma } from "@/lib/prisma";
 import { revalidateCampaignCaches, revalidateMasterDataCaches } from "@/lib/cache-tags";
-import {
-  MonthlySettlementError,
-  monthlySettlementService,
-} from "@/services/monthlySettlementService";
 
 type Context = { params: Promise<{ id: string }> };
 
-/** 월정산을 켜면 줄이 생길 기존 캠페인 수 — 켜기 확인 창 문구용(실제 생성과 같은 조건). */
-export async function GET(_request: Request, context: Context) {
-  const { id } = await context.params;
-  const backfillTargetCount = await monthlySettlementService.countBackfillTargets(id);
-  return NextResponse.json({ backfillTargetCount });
-}
+const bodySchema = z.object({ enabled: z.boolean() });
 
 /**
- * 거래처 월정산 켜기/끄기(T-240). 켜면 그 거래처의 기존 캠페인(드랍 제외, 줄 없는 것)에 월별 줄
- * 1개씩을 같은 트랜잭션에서 만든다 — 이것이 기존 데이터 이전의 유일한 실행 지점이다(배포 시
- * 자동 이전 없음, 명세 「사람 검수 없는 자동 실행 금지」). 끄면 줄은 보관하고 플래그만 내린다.
+ * 거래처 월정산 켜기/끄기(T-240). 켜면 이 거래처 캠페인의 공급사 계산서 칸이 달별 계산서 여러 장으로
+ * 바뀐다(`campaign-invoices.ts`). **플래그만 바꾼다** — 데이터를 만들거나 옮기지 않는다(명세 「사람
+ * 검수 없는 자동 실행 금지」). 이미 계산서 날짜가 있는 캠페인은 그 날짜 칸을 그대로 보인다(레거시 모드).
+ * 끄면 달별 칸이 숨고 단일 날짜 칸으로 돌아간다 — 기록한 계산서는 지우지 않는다.
+ * ⛔ #159 의 「켜는 순간 기존 캠페인마다 월별 줄 만들기」는 캠페인을 달로 쪼갠 셈이라 걷어냈다(2026-10-08).
  */
 export async function PATCH(request: Request, context: Context) {
   const { id } = await context.params;
-  const parsed = partnerMonthlySettlementSchema.safeParse(await request.json());
+  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
   }
-  try {
-    const result = await monthlySettlementService.setPartnerMonthlySettlement(id, parsed.data.enabled);
-    revalidateMasterDataCaches();
-    revalidateCampaignCaches();
-    return NextResponse.json(result);
-  } catch (error) {
-    if (error instanceof MonthlySettlementError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-    throw error;
-  }
+  const { count } = await getPrisma().partner.updateMany({
+    where: { id },
+    data: { monthlySettlement: parsed.data.enabled },
+  });
+  if (count !== 1) return NextResponse.json({ error: "거래처를 찾을 수 없습니다." }, { status: 404 });
+  revalidateMasterDataCaches();
+  revalidateCampaignCaches();
+  return NextResponse.json({ enabled: parsed.data.enabled });
 }

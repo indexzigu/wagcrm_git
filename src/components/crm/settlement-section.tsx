@@ -25,6 +25,7 @@ import {
 import { resolveCampaignWithholdingStatus } from "@/lib/tax-filing-log";
 // 승인 카드는 세무 처리 다이얼로그와 **같은 컴포넌트**를 쓴다(그 파일 헤더의 ⛔).
 import { ReceiptDecisionDialog, ReceiptSuggestionCards, resolveDecisionScopeKeys } from "./receipt-suggestion-cards";
+import { CampaignInvoiceSlot } from "./campaign-invoice-slot";
 
 /**
  * 수취 판정 문구 — 엔진의 어휘를 그대로 옮긴다. 새 어휘를 만들지 않는다.
@@ -169,7 +170,7 @@ async function saveSettlementDate(
   if (!result.ok) {
     return { success: false, error: result.error };
   }
-  // 월별 정산 완료 게이트가 상태 전이를 보류했으면(T-240) 성공 토스트와 별개로 이유를 알린다 —
+  // 월정산 계산서 완료 게이트가 상태 전이를 보류했으면(T-240) 성공 토스트와 별개로 이유를 알린다 —
   // 지급을 눌렀는데 상태만 그대로면 오너가 이유를 알 수 없다.
   if (result.data.monthlyCompletionBlocked) toast.warning(result.data.monthlyCompletionBlocked);
   return { success: true, data: result.data };
@@ -393,6 +394,12 @@ export function SettlementSection({
    * 남는다. 그게 정확히 오너가 신고한 화면이라, 승인 버튼을 눌러도 같은 증상이 한 번 더
    * 재현된다. 그래서 캠페인을 다시 읽어 화면에 되꽂는다.
    */
+  /** 이 캠페인 행을 다시 읽어 화면에 되꽂는다 — 계산서 기록이 레거시 날짜를 같이 바꿀 수 있다. */
+  const refreshThisCampaign = useCallback(async () => {
+    const failed = await refreshCampaignRows([campaign.id], onCampaignUpdated);
+    if (failed > 0) toast.warning("처리는 저장됐지만 화면 갱신에 실패했습니다. 새로고침해 주세요.");
+  }, [campaign.id, onCampaignUpdated]);
+
   const handleReceiptDecided = useCallback(async () => {
     const refreshCampaign = async () => {
       // 읽기·검증·전파는 SSOT 에 맡긴다(`campaign-row-refresh`). ⛔ 문구는 여기가 소유한다 —
@@ -532,15 +539,6 @@ export function SettlementSection({
         </h3>
       </div>
 
-      {campaign.partnerMonthlySettlement ? (
-        // 월정산 거래처(T-240) — 공급사 쪽 계산서·지급의 기준은 위 「월별 정산」이다. 이 카드의 칸은
-        // 세금계산서 보드·홈 「지연된 정산」·캘린더가 아직 캠페인 단위로 읽는 값이라 그대로 둔다
-        // (오너 확정 2026-10-08: 그 화면들의 월별 연동은 후속 작업). 같은 사실을 두 곳이 말하므로 상시 안내한다.
-        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-          이 캠페인의 공급사 계산서와 지급은 위 월별 정산이 기준입니다. 아래 칸은 세금계산서 보드·홈 알림·캘린더에
-          쓰이며, 위 월별 줄과 따로 저장됩니다.
-        </p>
-      ) : null}
 
       <div className="space-y-3.5 pt-2 border-t border-border/50">
         {/* 대금 결제 일정 — 칸 구성(입금/지급 × 상대)은 채널 슬롯에서 파생한다.
@@ -669,7 +667,7 @@ export function SettlementSection({
               // 판정은 `InvoiceSlotBox` 가 쓰는 것과 같은 계산(`Boolean(campaign[field])`)
               // 이다 — 채널·필드명으로 다시 유도하지 않는다.
               const isIssued = Boolean(campaign[slot.field]);
-              return (
+              const box = (
               <InvoiceSlotBox
                 key={slot.field}
                 slot={slot}
@@ -751,6 +749,43 @@ export function SettlementSection({
                 }
               />
               );
+              // 월정산 거래처의 공급사 칸 = 캠페인당 계산서 여러 장(T-240 후속). 조회 결과가
+              // 월정산이 아니거나 레거시 모드면 부품이 위 단일 날짜 칸(`box`)을 그대로 그린다.
+              if (slot.field === "supplierInvoiceIssuedAt" && slot.applicable && campaign.partnerMonthlySettlement) {
+                return (
+                  <CampaignInvoiceSlot
+                    // 캠페인이 바뀌면 칸을 새로 띄운다 — 앞 캠페인의 달별 줄·행 id 가 남지 않게.
+                    key={`${slot.field}:${campaign.id}`}
+                    campaignId={campaign.id}
+                    title={slot.title}
+                    scan={receiptScan}
+                    scanLoading={receiptLoading}
+                    onRequestScan={handleCheckReceipt}
+                    onChanged={refreshThisCampaign}
+                    legacyFallback={box}
+                    attachment={
+                      <>
+                        {invoiceDraft.supplierInvoiceLink ? (
+                          <a
+                            href={invoiceDraft.supplierInvoiceLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] font-medium text-indigo-600 hover:underline flex items-center gap-0.5"
+                          >
+                            <ExternalLink className="size-2.5" />
+                            확인
+                          </a>
+                        ) : null}
+                        <InvoiceAttachButton
+                          isUploading={uploadingType === "supplier"}
+                          onUpload={(e) => handleUploadInvoice(e, "supplier")}
+                        />
+                      </>
+                    }
+                  />
+                );
+              }
+              return box;
             })}
           </div>
 
@@ -768,6 +803,40 @@ export function SettlementSection({
 
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// InvoiceAttachButton — 증빙 첨부(단일 날짜 칸·월정산 계산서 칸 공용)
+// ---------------------------------------------------------------------------
+
+function InvoiceAttachButton({
+  isUploading,
+  onUpload,
+}: {
+  isUploading: boolean;
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex items-center gap-1 cursor-pointer rounded-md bg-white border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-soft-sm focus-within:ring-2 focus-within:ring-focus-ring",
+        isUploading && "opacity-50 cursor-wait",
+      )}
+    >
+      {/* 아이콘 없이 문구만 둔다(오너 지시 2026-08-15) — 진행 상태도 문구로 말한다. */}
+      {isUploading ? "첨부 중" : "첨부"}
+      {/* sr-only(≠ hidden): display:none 이면 탭 순서에서 빠져 키보드로 증빙을 못 붙인다.
+          눈에는 안 보이되 포커스는 받고, 라벨의 focus-within 링이 위치를 보여 준다
+          (interfaces 점검 묶음 G2). */}
+      <input
+        type="file"
+        accept="image/*,.pdf"
+        className="sr-only"
+        onChange={onUpload}
+        disabled={isUploading}
+      />
+    </label>
   );
 }
 
@@ -859,25 +928,7 @@ function InvoiceSlotBox({
             </a>
           )}
           {slot.applicable ? (
-            <label
-              className={cn(
-                "flex items-center gap-1 cursor-pointer rounded-md bg-white border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors shadow-soft-sm focus-within:ring-2 focus-within:ring-focus-ring",
-                isUploading && "opacity-50 cursor-wait",
-              )}
-            >
-              {/* 아이콘 없이 문구만 둔다(오너 지시 2026-08-15) — 진행 상태도 문구로 말한다. */}
-              {isUploading ? "첨부 중" : "첨부"}
-              {/* sr-only(≠ hidden): display:none 이면 탭 순서에서 빠져 키보드로 증빙을 못 붙인다.
-                  눈에는 안 보이되 포커스는 받고, 라벨의 focus-within 링이 위치를 보여 준다
-                  (interfaces 점검 묶음 G2). */}
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                className="sr-only"
-                onChange={(e) => onUpload(e, uploadType)}
-                disabled={isUploading}
-              />
-            </label>
+            <InvoiceAttachButton isUploading={isUploading} onUpload={(e) => onUpload(e, uploadType)} />
           ) : (
             // ⛔ 값이 있으면 칸을 숨기지 않는다 — 기록이 화면에서 사라지면 오너가 해제할
             //    경로도 없어진다. 프로덕션에 그런 레거시 행이 실재한다.

@@ -39,8 +39,8 @@ vi.mock("@/lib/prisma", () => ({
 // 월별 정산 완료 게이트(T-240) — 기본은 통과(월정산 거래처 아님). 막힘 경우는 아래 전용 테스트가 켠다.
 const completionBlockerMock = vi.fn();
 const completionBlockersMock = vi.fn();
-vi.mock("@/services/monthlySettlementService", () => ({
-  monthlySettlementService: {
+vi.mock("@/services/campaignInvoiceService", () => ({
+  campaignInvoiceService: {
     findCompletionBlocker: (...args: unknown[]) => completionBlockerMock(...args),
     // 실제 게이트 모양을 재현한다 — 「정산 완료 자동 전이 + 이전 상태가 완료 아님」일 때만 판정을 묻는다.
     gateAutoCompletion: async (_db: unknown, id: string, prev: string, auto: string | null | undefined) => {

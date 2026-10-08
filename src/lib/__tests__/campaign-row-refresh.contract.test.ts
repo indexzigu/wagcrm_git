@@ -141,6 +141,8 @@ describe("그룹 기간을 쓰는 경로는 리포지토리를 거친다 (T-101)
     "src/lib/campaign-checklist.ts",
     "src/lib/google-calendar-sync.ts",
     "src/lib/settlement-flag-write.ts",
+    // 월정산 계산서가 모든 달 끝났을 때 그룹의 공급사 계산서 날짜만 쓴다(기간 필드 아님, T-240 후속).
+    "src/services/campaignInvoiceService.ts",
     "src/services/campaignService.ts",
     "src/services/taxInvoiceReceiptDecisionService.ts",
   ];

@@ -85,6 +85,7 @@
  * 조인 계층은 이 경우를 별도로 방어하지 않는다 — 발생 시 anchor의 공급사 행이
  * 그룹 합산액을 캠페인 1건 몫으로 잘못 표시할 수 있다(잔여 위험, 보고서에 기록).
  */
+import type { InvoiceMailSummary } from "../campaign-invoices";
 import type { MismatchReason, ReceiptVerdict } from "./receipt-match";
 import type { ReceivableSlot } from "./expected-receivables";
 import type { ReceiptSuggestion } from "./receipt-similarity";
@@ -139,6 +140,11 @@ export interface ReceiptScanApiResponse {
      * ⚠️ 있어도 판정은 그대로 `NEEDS_REVIEW` 다 — 이 값은 근거이지 확정이 아니다.
      */
     suggestion?: ReceiptSuggestion | null;
+    /**
+     * 메일 계산서 요약 — 월정산 캠페인 계산서 칸의 후보 판정 입력(`campaign-invoices.ts`).
+     * 첨부를 못 읽었으면 null, 낡은 응답에는 없다.
+     */
+    invoice?: InvoiceMailSummary | null;
     /** 이미 내려진 결정. 있으면 그 건은 「확인 필요」에서 빠진다. 낡은 응답에는 없다. */
     decision?: {
       decision: string;

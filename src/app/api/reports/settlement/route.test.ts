@@ -31,7 +31,6 @@ describe("GET /api/reports/settlement", () => {
         sellerMarginRate: 10,
         deal: { dealName: "앰플 공구", brandName: "브랜드A" },
         seller: { name: "셀러A" },
-        _count: { monthlySettlements: 0 },
       },
       {
         id: "camp-2",
@@ -44,7 +43,6 @@ describe("GET /api/reports/settlement", () => {
         sellerMarginRate: 8,
         deal: { dealName: "선크림 공구", brandName: null },
         seller: { name: "셀러B" },
-        _count: { monthlySettlements: 0 },
       },
     ]);
   });
@@ -106,22 +104,19 @@ describe("GET /api/reports/settlement", () => {
     expect(callArg.where?.AND?.[1]?.OR).toHaveLength(3);
   });
 
-  it("기간 소속 = 종료일이 그 달이거나, 월정산 캠페인이 그 달 월별 줄을 가짐(T-240)", async () => {
+  it("기간 소속 = 종료일이 그 달 하나뿐이다 — 월정산 캠페인도 캠페인은 1단위라 종료월에 한 번만 뜬다(T-240 후속)", async () => {
     const response = await GET(createRequest("http://localhost:3000/api/reports/settlement?month=2026-09"));
     expect(response.status).toBe(200);
 
     const callArg = findManyMock.mock.calls[0][0] as {
-      where?: { AND?: Array<{ OR?: Array<Record<string, unknown>> }> };
-      include?: { monthlySettlements?: unknown };
+      where?: { AND?: Array<Record<string, unknown>> };
+      include?: Record<string, unknown>;
     };
-    const [byEndDate, byMonthlyLine] = callArg.where?.AND?.[0]?.OR ?? [];
-    expect(byEndDate).toHaveProperty("endDate");
-    expect(byMonthlyLine).toEqual({
-      deal: { partner: { monthlySettlement: true } },
-      monthlySettlements: { some: { yearMonth: { equals: "2026-09" } } },
-    });
-    // 리포트는 그 달의 줄만 싣는다 — 같은 캠페인이 9월·10월 목록에 각자 자기 달 줄로 뜬다.
-    expect(callArg.include?.monthlySettlements).toEqual({ where: { yearMonth: { equals: "2026-09" } } });
+    expect(callArg.where?.AND?.[0]).toEqual({ endDate: expect.any(Object) });
+    expect(Object.keys(callArg.where?.AND?.[0] ?? {})).toEqual(["endDate"]);
+    // #159 의 월별 줄은 리포트가 더는 읽지 않는다(캠페인을 달로 쪼갠 셈이라 걷어냈다).
+    expect(callArg.include).not.toHaveProperty("monthlySettlements");
+    expect(callArg.include).not.toHaveProperty("_count");
   });
 
   it("queries year range when year parameter is provided", async () => {
@@ -135,19 +130,14 @@ describe("GET /api/reports/settlement", () => {
     expect(findManyMock).toHaveBeenCalledTimes(1);
 
     const callArg = findManyMock.mock.calls[0][0] as {
-      where?: {
-        AND?: Array<{
-          OR?: Array<{ endDate?: { gte: Date; lte: Date }; monthlySettlements?: unknown }>;
-        }>;
-      };
+      where?: { AND?: Array<{ endDate?: { gte: Date; lte: Date } }> };
     };
-    const [byEndDate, byMonthlyLine] = callArg.where?.AND?.[0]?.OR ?? [];
+    const byEndDate = callArg.where?.AND?.[0];
 
     expect(byEndDate?.endDate?.gte.getFullYear()).toBe(2026);
     expect(byEndDate?.endDate?.gte.getMonth()).toBe(0);
     expect(byEndDate?.endDate?.lte.getFullYear()).toBe(2026);
     expect(byEndDate?.endDate?.lte.getMonth()).toBe(11);
-    expect(byMonthlyLine?.monthlySettlements).toEqual({ some: { yearMonth: { startsWith: "2026-" } } });
     expect(body.month).toBe("2026");
   });
 });

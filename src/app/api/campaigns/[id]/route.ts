@@ -14,7 +14,7 @@ import {
 } from "@/lib/google-calendar-sync";
 import { recalculateCampaignRounds } from "@/services/campaignRounds";
 import { campaignService, CAMPAIGN_DETAIL_INCLUDE } from "@/services/campaignService";
-import { monthlySettlementService } from "@/services/monthlySettlementService";
+import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 import { dealStoreLinkResetTargets } from "@/lib/order-converter/review-link";
 import {
   SETTLEMENT_COUNTERPARTIES,
@@ -55,7 +55,7 @@ async function buildCampaignRowResponse(
   if (opts.propagatedStatusSiblingIds && opts.propagatedStatusSiblingIds.length > 0) {
     row.groupStatusSyncedIds = opts.propagatedStatusSiblingIds;
   }
-  // 월별 정산 완료 게이트가 자동 전이를 보류했다(T-240) — 일회성 신호, 화면이 이유를 토스트로 알린다.
+  // 월정산 계산서 완료 게이트가 자동 전이를 보류했다(T-240) — 일회성 신호, 화면이 이유를 토스트로 알린다.
   if (opts.monthlyCompletionBlocked) {
     row.monthlyCompletionBlocked = opts.monthlyCompletionBlocked;
   }
@@ -324,17 +324,17 @@ export async function PATCH(request: Request, context: Context) {
   // resolveAutoStatus 가 슬롯 SSOT 에서 파생한다.
   let autoStatus = resolveAutoStatus(settlementStates, previous.status, previous.salesChannel);
 
-  // 월별 정산 완료 게이트(T-240) — 월정산 거래처 캠페인은 모든 월 줄의 체크리스트가 끝나야 완료다.
+  // 월정산 계산서 완료 게이트(T-240) — 월정산 거래처 캠페인은 달별 공급사 계산서가 다 끝나야 완료다.
   // 수동 상태 변경은 409 로 거절하고, 플래그 토글이 부른 자동 전이는 상태만 보류한다(플래그는 저장).
-  // 판정·문구 SSOT 는 monthlySettlementService.findCompletionBlocker.
+  // 판정·문구 SSOT 는 campaignInvoiceService.findCompletionBlocker.
   // ⚠️ 조합 캠페인은 실캠페인 1개라 원본이 막히면 그룹 전이도 함께 보류된다(형제 전파를 부르지 않는다) —
-  // 마지막 달까지 끝난 뒤 오너가 상태를 정산 완료로 바꾸면 그 수동 변경이 그룹에 전파된다.
+  // 마지막 달 계산서까지 끝난 뒤 오너가 상태를 정산 완료로 바꾸면 그 수동 변경이 그룹에 전파된다.
   let monthlyCompletionBlocked: string | null = null;
   if (data.status === "COMPLETED" && previous.status !== "COMPLETED") {
-    const blocker = await monthlySettlementService.findCompletionBlocker(prisma, id);
+    const blocker = await campaignInvoiceService.findCompletionBlocker(prisma, id);
     if (blocker) return NextResponse.json({ error: blocker }, { status: 409 });
   } else if (!data.status) {
-    const gated = await monthlySettlementService.gateAutoCompletion(prisma, id, previous.status, autoStatus);
+    const gated = await campaignInvoiceService.gateAutoCompletion(prisma, id, previous.status, autoStatus);
     autoStatus = gated.status;
     monthlyCompletionBlocked = gated.blockedReason;
   }

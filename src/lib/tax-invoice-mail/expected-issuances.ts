@@ -157,6 +157,9 @@ function buildFor(
   return TRACKING_FIELDS.flatMap((field) => {
     const obligation = obligations[field];
     if (!obligation || obligation.direction !== "ISSUE") return [];
+    // 월정산 공급사 계산서는 캠페인당 여러 장이라 `campaign-invoices.ts` 가 소유한다
+    // (`partnerMonthlySettlement` 주석, expected-receivables.ts).
+    if (field === "supplierInvoiceIssuedAt" && facts.partnerMonthlySettlement) return [];
 
     const { businessNumber, label } = counterpartOf(obligation.counterpart, facts);
     // ⛔ 필드를 **골라 넘기지 말 것**(설계 §9-6-2). 종전에는 3필드만 뽑아 넘겨

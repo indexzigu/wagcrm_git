@@ -12,8 +12,8 @@ import {
 
 // 월별 정산 완료 게이트(T-240) — 기본은 통과(월정산 거래처 아님). 막힘 경우는 전용 테스트가 켠다.
 const completionBlockers = vi.fn();
-vi.mock("@/services/monthlySettlementService", () => ({
-  monthlySettlementService: {
+vi.mock("@/services/campaignInvoiceService", () => ({
+  campaignInvoiceService: {
     gateAutoCompletion: vi.fn(async (_db: unknown, _id: string, _prev: string, auto: string | null | undefined) => ({
       status: auto ?? undefined,
       blockedReason: null,

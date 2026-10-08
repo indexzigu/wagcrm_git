@@ -124,7 +124,12 @@ export async function loadCampaignSettlementFacts(
       groupId: true,
       group: { select: { supplierInvoiceIssuedAt: true, sellerInvoiceIssuedAt: true } },
       seller: { select: { name: true, agency: { select: { name: true, businessNumber: true } } } },
-      deal: { select: { dealName: true, partner: { select: { name: true, businessNumber: true } } } },
+      deal: {
+        select: {
+          dealName: true,
+          partner: { select: { name: true, businessNumber: true, monthlySettlement: true } },
+        },
+      },
     },
   });
 
@@ -164,6 +169,7 @@ export async function loadCampaignSettlementFacts(
       sellerLabel: campaign.seller?.agency?.name ?? campaign.seller?.name ?? "셀러",
       partnerBusinessNumber: campaign.deal?.partner?.businessNumber ?? null,
       partnerLabel: campaign.deal?.partner?.name ?? "거래처 없음",
+      partnerMonthlySettlement: campaign.deal?.partner?.monthlySettlement ?? false,
       supplierInvoiceIssuedAt: foldedInvoiceDate(campaign, "supplierInvoiceIssuedAt"),
       sellerInvoiceIssuedAt: foldedInvoiceDate(campaign, "sellerInvoiceIssuedAt"),
       validWrittenDateFrom: toDateKey(campaign.startDate),

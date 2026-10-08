@@ -171,15 +171,6 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   "components/crm/__tests__/settlement-selection-bar.test.tsx":
     "선택 바 렌더 계약의 픽스처 — 지급·입금 칸이 도달하는지 단언. 값 통과만",
 
-  // ── 2026-10-08: 월별 정산 줄(T-240, 오너 확정) ────────────────────────────────
-  // 월정산 거래처는 물품대금을 월별 줄(goodsAmount)에 적고, 캠페인 필드는 그 합계로 맞춘다.
-  // 손익·리포트로 새지 않는다 — 아래는 **쓰기(롤업)·복사**뿐이고 산술은 「줄 합계」 하나다.
-  "services/monthlySettlementService.ts":
-    "월별 줄 쓰기 후 같은 tx 에서 캠페인 필드 ← Σ 줄 물품대금(rollupMonthlyGoodsCost) — 쓰기, 3-상태 유지(전부 비면 null)",
-  "lib/monthly-settlement-backfill.ts":
-    "월정산 켜기 시 기존 캠페인 값을 줄 1개로 복사 — 값 통과만(3-상태 그대로)",
-  "lib/__tests__/monthly-settlement-backfill.test.ts": "위 이전 매핑의 픽스처 — 3-상태·합계 보존 단언",
-  "services/__tests__/monthlySettlementService.test.ts": "위 롤업·이전의 픽스처 — 값 통과·합계 단언",
 };
 
 describe("manualGoodsCost 소비처 경계 — 세무 대조 전용", () => {
