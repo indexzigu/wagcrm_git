@@ -285,6 +285,24 @@ describe("settlement-report", () => {
       expect(report.summary.totalSellerPayouts).toBe(40_000);
     });
 
+    it("다른 달에만 줄이 있는 월정산 캠페인은 종료월에 캠페인 총액을 대신 세지 않는다(이중 집계 방지)", () => {
+      const report = buildSettlementReportModel(
+        [{ ...monthlyCampaign, includedByEndDate: true, monthlyLineCountTotal: 1, monthlySettlements: [] }],
+        "2026-10",
+      );
+      expect(report.summary.totalRevenue).toBe(0);
+      // 마진·셀러 정산금은 캠페인 단위라 종료월에 그대로 잡힌다.
+      expect(report.summary.totalMargin).toBe(140_000);
+    });
+
+    it("아직 줄이 없는 월정산 캠페인은 종료월에 캠페인 총액으로 센다", () => {
+      const report = buildSettlementReportModel(
+        [{ ...monthlyCampaign, includedByEndDate: true, monthlyLineCountTotal: 0, monthlySettlements: [] }],
+        "2026-10",
+      );
+      expect(report.summary.totalRevenue).toBe(400_000);
+    });
+
     it("월정산이 아니면 월별 줄을 싣지 않는다(기존 행 모양 그대로)", () => {
       const report = buildSettlementReportModel(
         [{ ...monthlyCampaign, monthlySettlementEnabled: false, monthlySettlements: [septemberLine] }],

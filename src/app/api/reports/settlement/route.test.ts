@@ -31,6 +31,7 @@ describe("GET /api/reports/settlement", () => {
         sellerMarginRate: 10,
         deal: { dealName: "앰플 공구", brandName: "브랜드A" },
         seller: { name: "셀러A" },
+        _count: { monthlySettlements: 0 },
       },
       {
         id: "camp-2",
@@ -43,6 +44,7 @@ describe("GET /api/reports/settlement", () => {
         sellerMarginRate: 8,
         deal: { dealName: "선크림 공구", brandName: null },
         seller: { name: "셀러B" },
+        _count: { monthlySettlements: 0 },
       },
     ]);
   });

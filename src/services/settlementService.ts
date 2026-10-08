@@ -141,6 +141,8 @@ export class SettlementService {
         deal: { include: { partner: { select: { monthlySettlement: true } } } },
         // 그 기간의 월별 줄만 — 같은 캠페인이 9월·10월 목록에 각자 자기 달 줄로 뜬다.
         monthlySettlements: { where: { yearMonth: yearMonthFilter } },
+        // 기간과 무관한 전체 줄 수 — 「줄이 있는 월정산 캠페인」은 줄 없는 달에 캠페인 총액을 대신 세지 않는다.
+        _count: { select: { monthlySettlements: true } },
         seller: {
           include: {
             agency: true,
@@ -157,6 +159,7 @@ export class SettlementService {
       ...c,
       sellerCompanyBusinessNumber: c.seller?.agency?.businessNumber ?? null,
       monthlySettlementEnabled: Boolean(c.deal.partner?.monthlySettlement),
+      monthlyLineCountTotal: c._count.monthlySettlements,
       // 종료일로 이 기간에 든 캠페인인가 — 아니면 월별 줄로만 들어온 것이라 캠페인 단위 금액
       // (마진·셀러 정산금)을 이 기간 합계에 더하지 않는다(같은 캠페인의 이중 집계 방지).
       includedByEndDate: c.endDate >= firstDay && c.endDate <= lastDay,
