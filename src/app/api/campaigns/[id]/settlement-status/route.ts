@@ -111,11 +111,9 @@ export async function PATCH(
   // 월별 정산 완료 게이트(T-240) — 월정산 거래처 캠페인은 모든 월 줄 체크가 끝나기 전엔 완료로
   // 넘기지 않는다. 플래그는 그대로 저장하고 상태 전이만 보류하며, 이유를 응답에 싣는다.
   // 조합 캠페인은 실캠페인 1개라 원본이 막히면 그룹 전이도 함께 보류된다(형제 전파 없음).
-  let monthlyCompletionBlocked: string | null = null;
-  if (autoStatus === "COMPLETED" && campaign.status !== "COMPLETED") {
-    monthlyCompletionBlocked = await monthlySettlementService.findCompletionBlocker(prisma, id);
-    if (monthlyCompletionBlocked) autoStatus = null;
-  }
+  const gated = await monthlySettlementService.gateAutoCompletion(prisma, id, campaign.status, autoStatus);
+  autoStatus = gated.status ?? null;
+  const monthlyCompletionBlocked = gated.blockedReason;
   const campaignUpdates: Prisma.SalesCampaignUpdateManyMutationInput = autoStatus
     ? { status: autoStatus }
     : {};

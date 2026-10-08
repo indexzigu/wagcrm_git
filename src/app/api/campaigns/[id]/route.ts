@@ -330,16 +330,13 @@ export async function PATCH(request: Request, context: Context) {
   // ⚠️ 조합 캠페인은 실캠페인 1개라 원본이 막히면 그룹 전이도 함께 보류된다(형제 전파를 부르지 않는다) —
   // 마지막 달까지 끝난 뒤 오너가 상태를 정산 완료로 바꾸면 그 수동 변경이 그룹에 전파된다.
   let monthlyCompletionBlocked: string | null = null;
-  const requestsCompletion = data.status === "COMPLETED" || (!data.status && autoStatus === "COMPLETED");
-  if (requestsCompletion && previous.status !== "COMPLETED") {
+  if (data.status === "COMPLETED" && previous.status !== "COMPLETED") {
     const blocker = await monthlySettlementService.findCompletionBlocker(prisma, id);
-    if (blocker && data.status === "COMPLETED") {
-      return NextResponse.json({ error: blocker }, { status: 409 });
-    }
-    if (blocker) {
-      autoStatus = undefined;
-      monthlyCompletionBlocked = blocker;
-    }
+    if (blocker) return NextResponse.json({ error: blocker }, { status: 409 });
+  } else if (!data.status) {
+    const gated = await monthlySettlementService.gateAutoCompletion(prisma, id, previous.status, autoStatus);
+    autoStatus = gated.status;
+    monthlyCompletionBlocked = gated.blockedReason;
   }
 
   const isOnlyNoOpSettlementToggle =

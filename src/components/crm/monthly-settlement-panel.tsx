@@ -127,8 +127,10 @@ function VerificationFooter({
   const summary = summarizeMonthlySettlements(lines, campaignTransactionAmount);
   const missing = lines.filter((line) => line.transactionAmount == null).length;
   const diff = summary.transactionDiff;
-  // 입력 중(빈 거래액 줄)에는 빨강 대신 중립 — 줄을 막 추가할 때마다 빨강이 뜨면 습관화된다.
-  const state = missing > 0 || diff == null ? "pending" : diff === 0 ? "match" : "mismatch";
+  // 명세: 「차이 0원이면 초록, 다르면 빨강 + 차이 금액」 — 빈 거래액 줄은 0 으로 더한다. 이전된 줄이 총액을
+  // 다 갖고 있어 빈 줄을 막 추가한 순간은 여전히 일치이고, 빨강은 한쪽만 고친 실제 불일치에만 뜬다.
+  // 비교할 캠페인 총액이 없을 때만 중립이다.
+  const state = diff == null ? "pending" : diff === 0 ? "match" : "mismatch";
 
   return (
     <div
@@ -157,13 +159,12 @@ function VerificationFooter({
         </div>
       ) : (
         <div className="text-slate-600">
-          {campaignTransactionAmount == null
-            ? "캠페인 총 거래액이 아직 없어 비교하지 않습니다."
-            : `거래액을 입력하지 않은 줄이 ${missing}개 있어 아직 비교하지 않습니다. 합이 캠페인 총 거래액과 맞게 나눠 입력하세요.`}
+          캠페인 총 거래액이 아직 없어 비교하지 않습니다.
         </div>
       )}
       <div className="tabular-nums text-slate-600">
         지급액 합계 {formatCurrency(summary.paymentTotal)}원
+        {state === "mismatch" && missing > 0 ? ` · 거래액이 빈 줄 ${missing}개` : ""}
         {state === "mismatch" ? " · 이 경고는 참고용이며 정산 완료를 막지 않습니다." : ""}
       </div>
     </div>

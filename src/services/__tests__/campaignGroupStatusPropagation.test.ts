@@ -14,6 +14,10 @@ import {
 const completionBlockers = vi.fn();
 vi.mock("@/services/monthlySettlementService", () => ({
   monthlySettlementService: {
+    gateAutoCompletion: vi.fn(async (_db: unknown, _id: string, _prev: string, auto: string | null | undefined) => ({
+      status: auto ?? undefined,
+      blockedReason: null,
+    })),
     findCompletionBlocker: vi.fn().mockResolvedValue(null),
     findCompletionBlockers: (...args: unknown[]) => completionBlockers(...args),
   },

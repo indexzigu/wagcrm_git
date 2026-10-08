@@ -2,7 +2,7 @@
  * 기존 캠페인 → 월별 정산 줄 1개 이전 매핑(T-240) — 순수 함수, 서버 전용 소비.
  *
  * 언제 도는가: 배포 시 자동으로 돌지 않는다(명세 「사람 검수 없는 자동 실행 금지」). 오너가 거래처의
- * 월정산을 켜는 순간 `monthlySettlementService.enablePartnerMonthlySettlement` 가 그 거래처
+ * 월정산을 켜는 순간 `monthlySettlementService.setPartnerMonthlySettlement` 가 그 거래처
  * 캠페인 중 줄이 없는 것에 이 매핑으로 1줄씩 만든다.
  *
  * 무엇을 옮기나(명세 「기존 물품대금·계산서 수취 체크·수취일자·지급 정보를 그 줄로」):

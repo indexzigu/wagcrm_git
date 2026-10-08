@@ -251,11 +251,6 @@ export function computeCampaignSalesDetail(
   );
 }
 
-/** 마감 캠페인 캐시(cachedDailyStats Json) → CampaignDailyPoint[] — 파서 SSOT 는 `cached-daily-stats.ts`. */
-function parseCachedDaily(raw: unknown): CampaignDailyPoint[] {
-  return parseCachedDailyStats(raw);
-}
-
 function safeJsonParse(value: string): unknown {
   try {
     return JSON.parse(value);
@@ -513,7 +508,7 @@ async function getCachedSalesDetail(
     return { ...noneResponse, source: "none" };
   }
 
-  const daily = parseCachedDaily(oc.cachedDailyStats);
+  const daily = parseCachedDailyStats(oc.cachedDailyStats);
 
   return {
     campaignId: noneResponse.campaignId,
@@ -582,7 +577,7 @@ async function getCachedGroupSalesDetail(
 
   const dailyMap = new Map<string, { orders: number; revenue: number }>();
   for (const campaign of cached) {
-    for (const point of parseCachedDaily(campaign.cachedDailyStats)) {
+    for (const point of parseCachedDailyStats(campaign.cachedDailyStats)) {
       const bucket = dailyMap.get(point.date) ?? { orders: 0, revenue: 0 };
       bucket.orders += point.orders;
       bucket.revenue += point.revenue;
@@ -647,7 +642,7 @@ async function resolveCachedGroupOrderCounts(
   targetCampaignIds: Set<string>,
 ): Promise<{ cumulativeOrders: number; dailyOrders: Map<string, number> } | null> {
   const dateKeys = cached
-    .flatMap((campaign) => parseCachedDaily(campaign.cachedDailyStats).map((point) => point.date))
+    .flatMap((campaign) => parseCachedDailyStats(campaign.cachedDailyStats).map((point) => point.date))
     .sort((a, b) => a.localeCompare(b));
   if (dateKeys.length === 0) return null;
 

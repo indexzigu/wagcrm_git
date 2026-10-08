@@ -204,6 +204,36 @@ describe("완료 게이트", () => {
     expect(campaignFindMany.mock.calls[0][0].where.deal).toEqual({ partner: { monthlySettlement: true } });
   });
 
+  it("자동 전이 게이트 — 정산 완료로 가는 전이만 판정하고, 막히면 상태를 보류하며 사유를 돌려준다", async () => {
+    campaignFindMany.mockResolvedValue([{ id: "c1", monthlySettlements: [lineRow({ yearMonth: "2026-10" })] }]);
+    const held = await monthlySettlementService.gateAutoCompletion(db as never, "c1", "SETTLEMENT_IN_PROGRESS", "COMPLETED");
+    expect(held.status).toBeUndefined();
+    expect(held.blockedReason).toContain("10월분(0/4)");
+
+    campaignFindMany.mockClear();
+    // 강등·완료 아닌 전이·이미 완료는 DB 를 묻지 않고 그대로 통과한다.
+    expect(await monthlySettlementService.gateAutoCompletion(db as never, "c1", "COMPLETED", "SETTLEMENT_WAIT")).toEqual({
+      status: "SETTLEMENT_WAIT",
+      blockedReason: null,
+    });
+    expect(await monthlySettlementService.gateAutoCompletion(db as never, "c1", "COMPLETED", "COMPLETED")).toEqual({
+      status: "COMPLETED",
+      blockedReason: null,
+    });
+    expect(await monthlySettlementService.gateAutoCompletion(db as never, "c1", "SETTLEMENT_WAIT", null)).toEqual({
+      status: undefined,
+      blockedReason: null,
+    });
+    expect(campaignFindMany).not.toHaveBeenCalled();
+  });
+
+  it("자동 전이 게이트 — 월정산이 아니거나 모든 달이 끝났으면 정산 완료로 통과", async () => {
+    campaignFindMany.mockResolvedValue([]);
+    expect(
+      await monthlySettlementService.gateAutoCompletion(db as never, "c1", "SETTLEMENT_IN_PROGRESS", "COMPLETED"),
+    ).toEqual({ status: "COMPLETED", blockedReason: null });
+  });
+
   it("빈 목록이면 DB 를 부르지 않는다", async () => {
     const blocked = await monthlySettlementService.findCompletionBlockers(db as never, []);
     expect(blocked.size).toBe(0);

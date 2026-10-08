@@ -50,6 +50,12 @@ const completionBlockerMock = vi.fn();
 vi.mock("@/services/monthlySettlementService", () => ({
   monthlySettlementService: {
     findCompletionBlocker: (...args: unknown[]) => completionBlockerMock(...args),
+    // 실제 게이트 모양을 재현한다 — 「정산 완료 자동 전이 + 이전 상태가 완료 아님」일 때만 판정을 묻는다.
+    gateAutoCompletion: async (_db: unknown, id: string, prev: string, auto: string | null | undefined) => {
+      if (auto !== "COMPLETED" || prev === "COMPLETED") return { status: auto ?? undefined, blockedReason: null };
+      const blockedReason = (await completionBlockerMock(_db, id)) as string | null;
+      return { status: blockedReason ? undefined : auto, blockedReason };
+    },
     findCompletionBlockers: vi.fn().mockResolvedValue(new Map()),
   },
 }));

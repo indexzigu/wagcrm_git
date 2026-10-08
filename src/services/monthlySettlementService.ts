@@ -195,6 +195,18 @@ function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error != null && (error as { code?: string }).code === "P2002";
 }
 
+/** 같은 캠페인·같은 달 unique 충돌(P2002)을 오너가 읽을 409 로 바꾼다 — 생성·수정 공용. */
+async function translateDuplicateMonth<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new MonthlySettlementError("그 달의 정산 줄이 이미 있습니다.", 409);
+    }
+    throw error;
+  }
+}
+
 export type MonthlySettlementView = {
   enabled: boolean;
   lines: MonthlySettlementLine[];
@@ -221,8 +233,8 @@ export const monthlySettlementService = {
 
   async createLine(campaignId: string, input: MonthlyLineWriteInput & { yearMonth: string }) {
     const prisma = getPrisma();
-    try {
-      return await prisma.$transaction(async (tx) => {
+    return translateDuplicateMonth(() =>
+      prisma.$transaction(async (tx) => {
         const campaign = await requireMonthlyCampaign(tx, campaignId);
         assertMonthInCampaign(campaign, input.yearMonth);
         const row = await tx.campaignMonthlySettlement.create({
@@ -231,19 +243,14 @@ export const monthlySettlementService = {
         // 물품대금이 실릴 때만 롤업한다 — 빈 줄 추가가 캠페인의 기존(수기) 물품대금을 null 로 덮지 않게.
         if (input.goodsAmount !== undefined) await rollupCampaignGoodsCost(tx, campaignId);
         return toMonthlyLineDto(row);
-      });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new MonthlySettlementError("그 달의 정산 줄이 이미 있습니다.", 409);
-      }
-      throw error;
-    }
+      }),
+    );
   },
 
   async updateLine(campaignId: string, lineId: string, input: MonthlyLineWriteInput) {
     const prisma = getPrisma();
-    try {
-      return await prisma.$transaction(async (tx) => {
+    return translateDuplicateMonth(() =>
+      prisma.$transaction(async (tx) => {
         const campaign = await requireMonthlyCampaign(tx, campaignId);
         if (input.yearMonth !== undefined) assertMonthInCampaign(campaign, input.yearMonth);
         // 소유 확인을 where 에 싣는다 — 남의 캠페인 줄 id 로는 아무것도 못 쓴다.
@@ -257,13 +264,8 @@ export const monthlySettlementService = {
         if (input.goodsAmount !== undefined) await rollupCampaignGoodsCost(tx, campaignId);
         const row = await tx.campaignMonthlySettlement.findUniqueOrThrow({ where: { id: lineId } });
         return toMonthlyLineDto(row);
-      });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new MonthlySettlementError("그 달의 정산 줄이 이미 있습니다.", 409);
-      }
-      throw error;
-    }
+      }),
+    );
   },
 
   async deleteLine(campaignId: string, lineId: string) {
@@ -338,6 +340,26 @@ export const monthlySettlementService = {
   async findCompletionBlocker(db: Db, campaignId: string): Promise<string | null> {
     const blocked = await this.findCompletionBlockers(db, [campaignId]);
     return blocked.get(campaignId) ?? null;
+  },
+
+  /**
+   * 자동 전이 게이트 — 입금·지급 플래그가 부른 「정산 완료」 자동 전이를 월별 정산이 막으면 상태 전이만
+   * 보류한다(플래그는 호출부가 그대로 저장). 자동 전이를 계산하는 세 경로(캠페인 PATCH · 정산 토글 ·
+   * 어시스턴트 확정)가 이 한 함수를 지나야 「보류」의 모양이 갈라지지 않는다.
+   * 반환: 실제로 쓸 다음 상태(보류면 undefined)와 오너에게 보일 보류 사유(없으면 null).
+   * ⚠️ 조합 캠페인은 실캠페인 1개라 원본이 보류되면 형제 전파도 일어나지 않는다(그룹 전체 보류).
+   */
+  async gateAutoCompletion(
+    db: Db,
+    campaignId: string,
+    previousStatus: string,
+    autoStatus: string | null | undefined,
+  ): Promise<{ status: string | undefined; blockedReason: string | null }> {
+    if (autoStatus !== "COMPLETED" || previousStatus === "COMPLETED") {
+      return { status: autoStatus ?? undefined, blockedReason: null };
+    }
+    const blockedReason = await this.findCompletionBlocker(db, campaignId);
+    return { status: blockedReason ? undefined : autoStatus, blockedReason };
   },
 
   /** 여러 캠페인(조합 캠페인 형제) 판정 — 막힌 캠페인 id → 문구. */

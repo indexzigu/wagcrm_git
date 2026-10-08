@@ -202,11 +202,9 @@ async function handleConfirmSettlement(
   let autoStatus = computeAutoStatus(campaign.status, campaign.salesChannel, nextFlags);
   // 월별 정산 완료 게이트(T-240) — 버튼 경로와 같은 판정: 플래그는 확정하되, 월정산 거래처
   // 캠페인의 월별 체크가 남아 있으면 상태 전이만 보류하고 그 사유를 결과 요약에 남긴다.
-  let monthlyCompletionBlocked: string | null = null;
-  if (autoStatus === "COMPLETED" && campaign.status !== "COMPLETED") {
-    monthlyCompletionBlocked = await monthlySettlementService.findCompletionBlocker(tx, args.campaignId);
-    if (monthlyCompletionBlocked) autoStatus = undefined;
-  }
+  const gated = await monthlySettlementService.gateAutoCompletion(tx, args.campaignId, campaign.status, autoStatus);
+  autoStatus = gated.status;
+  const monthlyCompletionBlocked = gated.blockedReason;
 
   // 레이스-세이프 조건부 쓰기(§3-b step 4). `expect` 에 사전 플래그 false 를 박아 원자화한다 —
   // 그 조건이 실리는 행은 **플래그의 정본 행**(그룹이면 그룹 스칼라)이고, 그 선택은
