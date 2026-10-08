@@ -25,6 +25,11 @@ vi.mock("@/lib/activity-log", () => ({
 
 // 다른 액션이 끌고 오는 모듈 — 이 파일의 경로에서는 부르지 않는다.
 vi.mock("@/services/campaignInvoiceService", () => ({ campaignInvoiceService: {} }));
+// 파생 함수는 **실물을 그대로 통과**시킨다 — 사후 조건 테스트 한 건만 반환값을 바꿔 끼운다.
+vi.mock("@/services/campaignFinancialDerivation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/campaignFinancialDerivation")>();
+  return { ...actual, deriveCampaignFinancialsForUpdate: vi.fn(actual.deriveCampaignFinancialsForUpdate) };
+});
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => {
     throw new Error("이 테스트는 주입한 tx 만 써야 한다");
@@ -75,10 +80,19 @@ function campaignRow(overrides: Record<string, unknown> = {}) {
 const findUniqueMock = vi.fn();
 const updateManyMock = vi.fn();
 const dealFindManyMock = vi.fn();
+const dealCountMock = vi.fn();
+const groupFindUniqueMock = vi.fn();
+const groupUpdateManyMock = vi.fn();
+const executeRawMock = vi.fn();
 const tx = {
   salesCampaign: { findUnique: findUniqueMock, updateMany: updateManyMock },
-  campaignDeal: { findMany: dealFindManyMock },
+  campaignDeal: { findMany: dealFindManyMock, count: dealCountMock },
+  campaignGroup: { findUnique: groupFindUniqueMock, updateMany: groupUpdateManyMock },
+  // 그룹 락(`acquireGroupLock`)은 sqlite 면 건너뛰고 아니면 advisory 락을 건다 — 어느 쪽이든 통과한다.
+  $executeRaw: executeRawMock,
 } as unknown as Prisma.TransactionClient;
+
+const GROUP = { id: "group-1", sellerId: "seller-1" };
 
 function run(args: Record<string, unknown>) {
   return executeWriteAction("update_settlement_amount", args, "approver-1", tx);
@@ -93,8 +107,16 @@ beforeEach(() => {
   findUniqueMock.mockReset();
   updateManyMock.mockReset();
   dealFindManyMock.mockReset();
+  dealCountMock.mockReset();
+  groupFindUniqueMock.mockReset();
+  groupUpdateManyMock.mockReset();
+  executeRawMock.mockReset();
   recordActivityChangeMock.mockReset();
   dealFindManyMock.mockResolvedValue([]);
+  dealCountMock.mockResolvedValue(0);
+  groupFindUniqueMock.mockResolvedValue(GROUP);
+  groupUpdateManyMock.mockResolvedValue({ count: 1 });
+  executeRawMock.mockResolvedValue(0);
   updateManyMock.mockResolvedValue({ count: 1 });
   recordActivityChangeMock.mockResolvedValue({ id: "log" });
 });
@@ -125,6 +147,20 @@ describe("① 정산 확정 거부", () => {
     expect(updateManyMock).not.toHaveBeenCalled();
   });
 
+  it("캠페인을 묶음·셀러 사업자번호와 함께 읽는다(묶음이 빠지면 낡은 멤버 플래그로 판정하게 된다)", async () => {
+    findUniqueMock.mockResolvedValue(campaignRow());
+
+    await run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 });
+
+    expect(findUniqueMock).toHaveBeenCalledWith({
+      where: { id: "camp-1" },
+      include: {
+        group: true,
+        seller: { select: { agency: { select: { businessNumber: true } } } },
+      },
+    });
+  });
+
   it("묶음이 미확정이면 멤버 행의 낡은 true 는 거부 사유가 아니고, 쓰기 조건은 묶음 쪽에 건다", async () => {
     findUniqueMock.mockResolvedValue(
       campaignRow({
@@ -143,6 +179,39 @@ describe("① 정산 확정 거부", () => {
     expect(where.group).toEqual({ is: slotFlags });
     expect(where.groupId).toBe("group-1");
     expect(where).not.toHaveProperty("isDepositReceived");
+
+    // 묶음 행 자체를 잠그며 다시 확인한다: 그룹 락(셀러 단위) → 묶음 행 조건부 갱신 → 멤버 행 쓰기.
+    expect(groupFindUniqueMock).toHaveBeenCalledWith({ where: { id: "group-1" }, select: { id: true, sellerId: true } });
+    expect(groupUpdateManyMock).toHaveBeenCalledTimes(1);
+    const guard = groupUpdateManyMock.mock.calls[0][0] as { where: Record<string, unknown>; data: Record<string, unknown> };
+    expect(guard.where).toEqual({ id: "group-1", members: { some: { id: "camp-1" } }, ...slotFlags });
+    expect(Object.keys(guard.data)).toEqual(["updatedAt"]);
+    expect(groupUpdateManyMock.mock.invocationCallOrder[0]).toBeLessThan(updateManyMock.mock.invocationCallOrder[0]);
+  });
+
+  it("읽은 뒤 묶음이 먼저 확정됐거나 묶음에서 빠졌으면(묶음 행 갱신 count 0) 멤버 행을 쓰지 않는다", async () => {
+    findUniqueMock.mockResolvedValue(
+      campaignRow({
+        groupId: "group-1",
+        group: { id: "group-1", isDepositReceived: false, isPayoutCompleted: false, isSupplierPayoutCompleted: false },
+      }),
+    );
+    groupUpdateManyMock.mockResolvedValue({ count: 0 });
+
+    await expect(
+      run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 }),
+    ).rejects.toThrow(/묶음 캠페인의 정산이 확정되었거나 묶음 구성이 바뀌었습니다/);
+    expect(updateManyMock).not.toHaveBeenCalled();
+    expect(recordActivityChangeMock).not.toHaveBeenCalled();
+  });
+
+  it("묶음이 아니면 묶음 행·그룹 락을 건드리지 않는다", async () => {
+    findUniqueMock.mockResolvedValue(campaignRow());
+
+    await run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 });
+
+    expect(groupUpdateManyMock).not.toHaveBeenCalled();
+    expect(groupFindUniqueMock).not.toHaveBeenCalled();
   });
 
   it("그 채널에 없는 대금 칸의 플래그는 보지 않는다(판정 축은 채널 슬롯)", async () => {
@@ -317,6 +386,46 @@ describe("파생 재계산 — 정본 PATCH 와 같은 함수", () => {
     });
     expect(writeCall().data).toMatchObject({ actualSales: 2000000, ...expected.derivedFinancials });
     expect(dealFindManyMock).toHaveBeenCalledWith({ where: { campaignId: "camp-1" } });
+  });
+
+  it("품목이 있는 캠페인의 총 거래액은 고치지 않는다 — 품목 합계가 정본이다", async () => {
+    findUniqueMock.mockResolvedValue(campaignRow());
+    dealCountMock.mockResolvedValue(2);
+
+    await expect(
+      run({ campaignId: "camp-1", field: "actualSales", expectedCurrentKrw: 1000000, newAmountKrw: 2000000 }),
+    ).rejects.toThrow(/품목이 2개 있는 캠페인의 총 거래액은 품목 합계에서 정해집니다/);
+    expect(dealCountMock).toHaveBeenCalledWith({ where: { campaignId: "camp-1" } });
+    expect(updateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("재계산 결과가 승인한 값과 다르면(수동 층위 규칙이 바뀐 경우) 쓰지 않는다", async () => {
+    findUniqueMock.mockResolvedValue(campaignRow());
+    vi.mocked(deriveCampaignFinancialsForUpdate).mockResolvedValueOnce({
+      derivedFinancials: { settlementSales: 999, sellerExpense: 100000, taxExpense: 18182, operatingProfit: 1 },
+      nextNetMarginRate: 20,
+    });
+
+    await expect(
+      run({ campaignId: "camp-1", field: "settlementSales", expectedCurrentKrw: 300000, newAmountKrw: 350000 }),
+    ).rejects.toThrow(/재계산 결과\(999원\)가 승인할 영업 수익 350,000원와 다릅니다/);
+    expect(updateManyMock).not.toHaveBeenCalled();
+    expect(recordActivityChangeMock).not.toHaveBeenCalled();
+  });
+
+  it("재계산으로 함께 바뀐 자동 칸도 결과 요약에 적는다", async () => {
+    findUniqueMock.mockResolvedValue(campaignRow());
+    vi.mocked(deriveCampaignFinancialsForUpdate).mockResolvedValueOnce({
+      derivedFinancials: { settlementSales: 310000, sellerExpense: 100000, taxExpense: 19091, operatingProfit: 184909 },
+      nextNetMarginRate: 20,
+    });
+
+    const result = await run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 1000 });
+
+    expect(result.summary).toBe(
+      "정산 금액 수정: 기타 조정 비용 1,000원 → 1,000원 · 영업 수익 300,000원 → 310,000원 · " +
+        "제세공과금 18,182원 → 19,091원 · 영업이익 175,818원 → 184,909원",
+    );
   });
 
   it("캠페인 PATCH 본체도 같은 함수를 부른다(산식 사본이 다시 생기지 않았는지)", () => {

@@ -15,6 +15,7 @@ import {
   deriveCampaignFinancialsForUpdate,
   type FinancialDerivationData,
 } from "@/services/campaignFinancialDerivation";
+import { lockCampaignGroup } from "@/services/campaignGroupService";
 import { assertEntityExists, type WriteActionDefinition, type WriteActionResult } from "./types";
 
 export type UpdateSettlementAmountArgs = z.infer<typeof updateSettlementAmountArgsSchema>;
@@ -97,8 +98,14 @@ function toDerivationData(field: SettlementAmountField, amount: number): Financi
  *     **파생 입력** 보호다 — 다른 칸(예: 총 거래액)이 그 사이에 바뀌었다면 여기서 계산한
  *     영업이익이 낡은 값이라 덮어쓰면 안 된다.
  *
- * ⚠️ 이 경로가 확정 플래그를 직접 쓰지 않으므로 그룹 락(`lockCampaignGroup`)은 잡지 않는다 —
- * 묶음 확정 표시는 ③의 관계 조건(`group.is`)이 쓰기 순간에 다시 본다.
+ * 🪤 **묶음 캠페인은 멤버 행 조건만으로 직렬화되지 않는다.** 확정 표시가 묶음 행에 사는데,
+ * 첫 레그 확정(`writeSettlementFlags`)은 묶음 행만 쓰고 멤버 행(`updatedAt`)을 건드리지 않을 수
+ * 있다 — 멤버 행 `updateMany` 의 관계 조건(`group.is`)은 묶음 행을 잠그지 않으므로, 확정이
+ * 우리 쓰기와 겹쳐 커밋되면 「확정 뒤에 금액이 바뀐」 상태가 남는다. 그래서 묶음이면 쓰기 전에
+ * ⓐ 그룹 락(`lockCampaignGroup` — 상태 연동 경로와 같은 「락 → 행」 순서)을 잡고 ⓑ **묶음 행
+ * 자체를** 「미확정 · 이 캠페인이 아직 멤버」 조건으로 갱신해 행 잠금을 잡는다. 이후의 묶음
+ * 확정은 우리 커밋을 기다리고, 우리보다 먼저 커밋된 확정은 ⓑ의 `count === 0` 으로 걸린다.
+ * 행 잠금 순서(묶음 → 멤버)는 확정 경로·캠페인 PATCH 와 같다(교착 방지).
  */
 async function handleUpdateSettlementAmount(
   args: UpdateSettlementAmountArgs,
@@ -123,6 +130,20 @@ async function handleUpdateSettlementAmount(
     throw new Error(`대상 캠페인(${args.campaignId})를 찾을 수 없습니다. 이미 삭제되었거나 잘못된 대상입니다.`);
   }
   const group = campaign.groupId ? campaign.group : null;
+
+  // 총 거래액은 품목이 있으면 **품목 합계가 정본**이다 — 정본 PATCH 는 품목을 저장할 때 이 칸을
+  // 품목 합으로 덮어쓰고(재무 카드도 이 칸을 읽기 전용으로 보여 준다), 파생 계산의 품목 보정
+  // 루프는 이 칸이 아니라 품목 행을 읽는다. 품목을 그대로 둔 채 이 칸만 바꾸면 총 거래액과
+  // 품목 합이 갈리고 손익은 움직이지 않는 조용한 어긋남이 생기므로 거부한다.
+  if (field === "actualSales") {
+    const dealCount = await tx.campaignDeal.count({ where: { campaignId: campaign.id } });
+    if (dealCount > 0) {
+      throw new Error(
+        `정산 금액 수정 불가: 품목이 ${dealCount}개 있는 캠페인의 총 거래액은 품목 합계에서 정해집니다. ` +
+          "재무 카드에서 품목 금액을 고치세요.",
+      );
+    }
+  }
 
   // ① 정산 확정 거부.
   const slots = resolveCampaignMoneySlots(campaign.salesChannel);
@@ -166,6 +187,20 @@ async function handleUpdateSettlementAmount(
 
   // ③ 조건부 쓰기.
   const unconfirmed = Object.fromEntries(slots.map((slot) => [slot.flagField, false]));
+  if (group) {
+    // ⓐ 그룹 락 → ⓑ 묶음 행 잠금(위 함수 주석 🪤). 데이터는 `updatedAt` 하나뿐이다 — 확정 표시를
+    // 쓰는 것이 아니라 행을 잠그고 그 순간의 표시를 다시 확인하려는 쓰기다.
+    await lockCampaignGroup(tx, group.id);
+    const groupGuard = await tx.campaignGroup.updateMany({
+      where: { id: group.id, members: { some: { id: campaign.id } }, ...unconfirmed },
+      data: { updatedAt: new Date() },
+    });
+    if (groupGuard.count !== 1) {
+      throw new Error(
+        "정산 금액 수정 실패: 확인한 직후 묶음 캠페인의 정산이 확정되었거나 묶음 구성이 바뀌었습니다. 최신 상태를 확인한 뒤 다시 기안하세요.",
+      );
+    }
+  }
   const where = {
     id: campaign.id,
     updatedAt: campaign.updatedAt,
@@ -203,14 +238,28 @@ async function handleUpdateSettlementAmount(
     await recordActivityChange("CAMPAIGN", campaign.id, manualFlag, false, true, actor, tx);
   }
 
-  const previousProfit = toAmount(campaign.operatingProfit);
-  const nextProfit = "operatingProfit" in derivedFinancials ? derivedFinancials.operatingProfit : previousProfit;
+  // 결과 요약 — 고친 칸 외에 **재계산으로 함께 바뀐 칸**도 적는다(정본 PATCH 와 같은 파생이
+  // 자동 칸을 다시 쓰므로, 승인자가 그 사실을 실행 결과에서 볼 수 있어야 한다).
+  const derivedLabels = {
+    settlementSales: SETTLEMENT_AMOUNT_FIELD_LABELS.settlementSales,
+    sellerExpense: SETTLEMENT_AMOUNT_FIELD_LABELS.sellerExpense,
+    taxExpense: SETTLEMENT_AMOUNT_FIELD_LABELS.taxExpense,
+    operatingProfit: "영업이익",
+  } as const;
+  const derivedChanges = (Object.keys(derivedLabels) as (keyof typeof derivedLabels)[])
+    .filter((key) => key !== field && key in derivedFinancials)
+    .map((key) => {
+      const before = toAmount(campaign[key]);
+      const after = (derivedFinancials as Partial<Record<string, number>>)[key] ?? null;
+      return before === after
+        ? null
+        : `${derivedLabels[key]} ${formatSettlementAmountKrw(before)} → ${formatSettlementAmountKrw(after)}`;
+    })
+    .filter((line): line is string => line !== null);
   const parts = [
     `${label} ${formatSettlementAmountKrw(toAmount(current))} → ${formatSettlementAmountKrw(args.newAmountKrw)}`,
     ...(manualFlagTurnedOn ? ["자동 계산 → 수동 고정"] : []),
-    ...(nextProfit !== previousProfit
-      ? [`영업이익 ${formatSettlementAmountKrw(previousProfit)} → ${formatSettlementAmountKrw(nextProfit)}`]
-      : []),
+    ...derivedChanges,
   ];
 
   return {
