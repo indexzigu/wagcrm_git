@@ -345,9 +345,8 @@ async function driveViewer(page: Page, viewer: Viewer, handle: string): Promise<
  * 작성자 불명으로 전부 버리고(저장부 `storeStorySnapshots` 의 핸들 귀속 필터도 username 을 본다),
  * 그 결과는 "응답은 받았는데 0건" 이라 2026-10-03 사고와 같은 얼굴이 된다. 그래서 작성자가 없는
  * 항목에만 owner 를 붙인다 — 이미 `user`/`owner` 를 가진 항목(v1 모양)은 손대지 않는다.
- * 수동 인제스트 라우트(`/api/stories/ingest`)도 같은 규칙을 쓴다 — 두 경로가 갈리지 않게 여기 하나만 둔다.
  */
-export function attachOwner(items: unknown[], owner: unknown): unknown[] {
+function attachOwner(items: unknown[], owner: unknown): unknown[] {
   if (!owner || typeof owner !== "object") return items;
   return items.map((it) => {
     if (!it || typeof it !== "object") return it;

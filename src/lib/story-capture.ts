@@ -266,8 +266,10 @@ export async function listCaptureWindowSellers(
 
 /**
  * 파싱된 스토리들을 한 셀러에 저장한다 — 멱등 dedup + 썸네일 리호스팅 + insert.
- * 브라우저 크론과 ingest 엔드포인트(수동 러너·북마클릿)가 공유하는 저장 코어. result 카운터를
- * 누적 갱신한다. 리호스팅 실패는 스냅샷 저장을 막지 않는다(원본 URL 보존, P0 무음 실패 금지).
+ * 자동 수집(크론·「지금 실행」·화면 수집 버튼·로컬 러너가 모두 captureActiveCampaignStories 를
+ * 거친다)의 저장 코어. result 카운터를 누적 갱신한다. ⛔ 외부에서 items 를 밀어넣던 수동 인제스트
+ * 라우트(/api/stories/ingest)는 호출자 0건 실측으로 2026-10-08 제거했다 — 되살리려면 세션 게이트
+ * 면제(src/lib/supabase/middleware.ts)부터 필요하다(없어서 토큰 호출이 /login 으로 튕겼다). 리호스팅 실패는 스냅샷 저장을 막지 않는다(원본 URL 보존, P0 무음 실패 금지).
  */
 export async function storeStorySnapshots(
   prisma: PrismaClient,
