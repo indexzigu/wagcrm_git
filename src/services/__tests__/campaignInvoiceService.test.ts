@@ -17,7 +17,7 @@ const state = {
   campaigns: [] as Campaign[],
   groups: new Map<string, { supplierInvoiceIssuedAt: Date | null }>(),
   invoices: [] as Invoice[],
-  activity: [] as Array<{ entityId: string; content: string }>,
+  activity: [] as Array<{ entityId: string; content: string; type?: string }>,
   seq: 0,
 };
 
@@ -100,8 +100,8 @@ const db = {
     }),
   },
   activityLog: {
-    create: vi.fn(async ({ data }: { data: { entityId: string; content: string } }) => {
-      state.activity.push({ entityId: data.entityId, content: data.content });
+    create: vi.fn(async ({ data }: { data: { entityId: string; content: string; type?: string } }) => {
+      state.activity.push({ entityId: data.entityId, content: data.content, type: data.type });
     }),
   },
   $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db),
@@ -307,5 +307,46 @@ describe("loadInvoiceProgress — 세무 보드의 「끝」 판정 (T-244)", ()
     expect(progress.get("w")).toEqual({ done: 2, total: 2, openMonths: [] });
     expect(state.campaigns[0].supplierInvoiceIssuedAt).toBeNull();
     expect(await campaignInvoiceService.findCompletionBlocker(db as never, "w")).toBeNull();
+  });
+});
+
+describe("autoRecordMailInvoice — 확인 없는 자동 기록 (T-242)", () => {
+  const AUTO = { campaignId: "c1", yearMonth: "2026-09", mail: MAIL, expectedTotal: 74_250, delta: 0 };
+
+  it("발급 메일 출처(자동)로 기록하고, 보드 「자동 확정」 요약이 세는 type 으로 감사 기록을 남긴다", async () => {
+    const row = await campaignInvoiceService.autoRecordMailInvoice(AUTO);
+    expect(row).toMatchObject({ yearMonth: "2026-09", status: "RECORDED", source: "MAIL_AUTO", approvalNo: "A-1" });
+    expect(state.activity.at(-1)?.type).toBe("TAX_INVOICE_AUTO_CONFIRM");
+    expect(state.activity.at(-1)?.content).toContain("메일 자동 기록");
+  });
+
+  it("허용오차로 흡수한 차이는 type 을 가르고 문장에 싣는다", async () => {
+    await campaignInvoiceService.autoRecordMailInvoice({ ...AUTO, delta: 40 });
+    expect(state.activity.at(-1)?.type).toBe("TAX_INVOICE_AUTO_CONFIRM_TOLERATED");
+    expect(state.activity.at(-1)?.content).toContain("40원 차이를 허용오차로 흡수했습니다");
+  });
+
+  it("그 사이 달이 채워졌거나(오너 확인·「없음」) 같은 계산서가 이미 기록됐으면 아무것도 쓰지 않는다", async () => {
+    await campaignInvoiceService.waiveMonth("c1", "2026-09", null);
+    const before = state.invoices.length;
+    expect(await campaignInvoiceService.autoRecordMailInvoice(AUTO)).toBeNull();
+    expect(state.invoices.length).toBe(before);
+
+    state.invoices = [];
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    expect(await campaignInvoiceService.autoRecordMailInvoice({ ...AUTO })).toBeNull();
+    expect(state.invoices.filter((r) => r.status === "RECORDED")).toHaveLength(1);
+  });
+
+  it("수취(우리몰) 단위는 자동 기록하지 않는다", async () => {
+    state.campaigns = [campaign({ salesChannel: "OWN_MALL" })];
+    expect(await campaignInvoiceService.autoRecordMailInvoice(AUTO)).toBeNull();
+    expect(state.invoices).toEqual([]);
+  });
+
+  it("마지막 달이 채워지면 레거시 날짜를 비어 있을 때만 채운다(다른 단일 날짜 소비처가 「끝」을 안다)", async () => {
+    await campaignInvoiceService.waiveMonth("c1", "2026-10", null);
+    await campaignInvoiceService.autoRecordMailInvoice(AUTO);
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
   });
 });

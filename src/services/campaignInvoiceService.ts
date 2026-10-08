@@ -35,7 +35,12 @@ import {
   type CampaignInvoiceView,
   type InvoiceDirection,
   type InvoiceProgress,
+  type AutoRecordUnit,
 } from "@/lib/campaign-invoices";
+import {
+  TAX_INVOICE_AUTO_CONFIRM_TOLERATED_TYPE,
+  TAX_INVOICE_AUTO_CONFIRM_TYPE,
+} from "@/lib/tax-filing-auto-confirm";
 
 type Db = Prisma.TransactionClient | ReturnType<typeof getPrisma>;
 
@@ -106,7 +111,14 @@ type InvoiceUnit = {
   legacyDate: Date | null;
   counterpartBusinessNumber: string | null;
   counterpartLabel: string;
+  /** 셀러 별칭·이름 — 정산서 대조 키(그룹 멤버는 셀러가 같다 — `CampaignGroup.sellerId`) */
+  sellerLabels: string[];
 };
+
+function sellerLabelsOf(seller: { name: string; alias: string | null } | null | undefined): string[] {
+  if (!seller) return [];
+  return [...new Set([seller.alias, seller.name].filter((v): v is string => Boolean(v && v.trim())).map((v) => v.trim()))];
+}
 
 /** 월정산 단위를 읽는다. 월정산이 아니면 null. */
 async function loadInvoiceUnit(db: Db, campaignId: string): Promise<InvoiceUnit | null> {
@@ -121,6 +133,7 @@ async function loadInvoiceUnit(db: Db, campaignId: string): Promise<InvoiceUnit 
       supplierInvoiceIssuedAt: true,
       group: { select: { supplierInvoiceIssuedAt: true } },
       deal: { select: { partner: { select: { name: true, businessNumber: true, monthlySettlement: true } } } },
+      seller: { select: { name: true, alias: true } },
     },
   });
   if (!campaign) throw new CampaignInvoiceError("캠페인을 찾을 수 없습니다.", 404);
@@ -150,6 +163,7 @@ async function loadInvoiceUnit(db: Db, campaignId: string): Promise<InvoiceUnit 
     legacyDate: campaign.groupId ? (campaign.group?.supplierInvoiceIssuedAt ?? null) : campaign.supplierInvoiceIssuedAt,
     counterpartBusinessNumber: partner.businessNumber,
     counterpartLabel: partner.name,
+    sellerLabels: sellerLabelsOf(campaign.seller),
   };
 }
 
@@ -266,6 +280,7 @@ export const campaignInvoiceService = {
       periodStart: unit.periodStart.toISOString(),
       periodEnd: unit.periodEnd.toISOString(),
       memberCount: unit.memberIds.length,
+      sellerLabels: unit.sellerLabels,
       legacyDate: toYmd(unit.legacyDate),
       legacyMode: isLegacyMode(unit, rows),
       rows: rows.map(toInvoiceRowDto),
@@ -316,6 +331,133 @@ export const campaignInvoiceService = {
       await rollupLegacyDate(tx, unit);
       return toInvoiceRowDto(row);
     }));
+  },
+
+  /**
+   * **확인 없는 자동 기록**(T-242) — 크론이 `planAutoRecords` 로 고른 건만 들어온다. 오너 확인
+   * (`confirmMailInvoice`)과 같은 행을 쓰되 출처는 `MAIL_AUTO` 이고, 감사 기록은 발행 자동 확정과
+   * 같은 type(`TAX_INVOICE_AUTO_CONFIRM[_TOLERATED]`)으로 남겨 세무 보드 「자동 확정」 요약과 캠페인
+   * 타임라인에 드러난다(조용히 흡수하지 않는다 — #303 선례).
+   * 계획과 쓰기 사이에 그 달이 이미 채워졌거나(오너·다른 실행) 같은 계산서가 다른 곳에 기록됐으면
+   * 아무것도 쓰지 않고 `null` 을 준다(멱등). ⛔ 기록을 지우거나 덮지 않는다.
+   */
+  async autoRecordMailInvoice(input: {
+    campaignId: string;
+    yearMonth: string;
+    mail: ConfirmMailInvoiceInput;
+    expectedTotal: number;
+    delta: number;
+  }): Promise<CampaignInvoiceRow | null> {
+    const prisma = getPrisma();
+    return prisma.$transaction(async (tx) => {
+      const unit = await requireUnit(tx, input.campaignId);
+      if (unit.direction !== "ISSUE") return null; // 수취는 언제나 오너 1클릭(오너 확정 2026-08-12)
+      const yearMonth = yearMonthOf(input.mail.writtenDate);
+      if (yearMonth !== input.yearMonth) return null;
+      assertAcceptableMonth(unit, yearMonth);
+      const rows = await loadUnitRows(tx, unit);
+      if (isLegacyMode(unit, rows)) return null;
+      const monthTaken = rows.some(
+        (row) => row.yearMonth === yearMonth && (row.status === "RECORDED" || row.status === "WAIVED"),
+      );
+      if (monthTaken) return null;
+      const recorded = await tx.campaignInvoice.findFirst({
+        where: { approvalNo: input.mail.issueId, status: "RECORDED" },
+        select: { id: true },
+      });
+      if (recorded) return null;
+      if (rows.some((row) => row.approvalNo === input.mail.issueId)) return null; // 이 단위에서 「이 메일이 아님」
+
+      const row = await tx.campaignInvoice.create({
+        data: {
+          campaignId: input.campaignId,
+          direction: unit.direction,
+          yearMonth,
+          status: "RECORDED",
+          writtenAt: fromYmd(input.mail.writtenDate),
+          approvalNo: input.mail.issueId,
+          supplyAmount: input.mail.supplyAmount,
+          taxAmount: input.mail.taxAmount,
+          totalAmount: input.mail.totalAmount,
+          itemName: input.mail.itemName,
+          source: "MAIL_AUTO",
+          mailReceivedAt: input.mail.mailReceivedAt ? new Date(input.mail.mailReceivedAt) : null,
+        },
+      });
+      const tolerated = input.delta !== 0;
+      const content =
+        `메일 자동 기록: ${formatInvoiceMonth(yearMonth)}분 공급사 계산서를 기록했습니다` +
+        `(작성일 ${input.mail.writtenDate}${won(input.mail.totalAmount)} · 승인번호 ${input.mail.issueId}` +
+        ` · 대조 근거 정산서 금액${won(input.expectedTotal)} 일치` +
+        (tolerated ? ` · ⚠️ 정산서와 ${Math.abs(input.delta).toLocaleString("ko-KR")}원 차이를 허용오차로 흡수했습니다` : "") +
+        ").";
+      for (const campaignId of unit.memberIds) {
+        await tx.activityLog.create({
+          data: {
+            entityType: "CAMPAIGN",
+            entityId: campaignId,
+            type: tolerated ? TAX_INVOICE_AUTO_CONFIRM_TOLERATED_TYPE : TAX_INVOICE_AUTO_CONFIRM_TYPE,
+            fieldName: "supplierInvoiceIssuedAt",
+            previousValue: null,
+            newValue: input.mail.writtenDate,
+            content,
+            actor: "SYSTEM",
+          },
+        });
+      }
+      await rollupLegacyDate(tx, unit);
+      return toInvoiceRowDto(row);
+    });
+  },
+
+  /**
+   * 자동 기록 판정 입력 — 비어 있는 달이 있는 월정산 단위 전부(T-242). 레거시 모드 단위는 넣지 않는다.
+   * `sinceDays` 보다 먼저 끝난 캠페인은 메일 조회 창 밖이라 볼 필요가 없다.
+   */
+  async loadAutoRecordUnits(db: Db, options: { sinceDays: number; now?: Date }): Promise<{
+    units: AutoRecordUnit[];
+    recordedIssueIds: Set<string>;
+  }> {
+    const now = options.now ?? new Date();
+    const since = new Date(now.getTime() - options.sinceDays * 24 * 60 * 60 * 1000);
+    const campaigns = await db.salesCampaign.findMany({
+      where: {
+        deal: { partner: { monthlySettlement: true } },
+        status: { notIn: ["DROPPED", "PROPOSAL"] },
+        endDate: { gte: since },
+      },
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    const progress = await evaluateUnits(db, campaigns.map((c) => c.id));
+    const units: AutoRecordUnit[] = [];
+    const seenUnits = new Set<string>();
+    for (const { id } of campaigns) {
+      const summary = progress.get(id);
+      if (!summary || summary.openMonths.length === 0) continue;
+      const unit = await loadInvoiceUnit(db, id);
+      if (!unit) continue;
+      const unitKey = unit.groupId ?? unit.campaignId;
+      if (seenUnits.has(unitKey)) continue;
+      seenUnits.add(unitKey);
+      const rows = await loadUnitRows(db, unit);
+      units.push({
+        unitKey,
+        anchorCampaignId: [...unit.memberIds].sort()[0],
+        direction: unit.direction,
+        counterpartBusinessNumber: unit.counterpartBusinessNumber,
+        openMonths: summary.openMonths,
+        labels: unit.sellerLabels,
+        dismissedIssueIds: rows
+          .filter((row) => row.status === "DISMISSED" && row.approvalNo)
+          .map((row) => row.approvalNo as string),
+      });
+    }
+    const recorded = await db.campaignInvoice.findMany({
+      where: { status: "RECORDED", approvalNo: { not: null } },
+      select: { approvalNo: true },
+    });
+    return { units, recordedIssueIds: new Set(recorded.map((row) => row.approvalNo as string)) };
   },
 
   /** 메일에 없는 계산서를 직접 입력. 작성일은 필수다(오늘 날짜로 대신 찍지 않는다). */

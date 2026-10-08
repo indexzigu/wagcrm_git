@@ -28,13 +28,16 @@ import {
   INVOICE_MONTH_HINT,
   INVOICE_MONTH_LABEL,
   INVOICE_MONTH_TONE,
+  collectStatementExpectations,
   deriveInvoiceMonths,
   findInvoiceCandidates,
   formatInvoiceMonth,
+  matchesExpectedAmount,
   type CampaignInvoiceRow,
   type CampaignInvoiceView,
   type InvoiceMailSummary,
   type InvoiceMonth,
+  type StatementMailSummary,
 } from "@/lib/campaign-invoices";
 import type { ReceiptScanApiResponse } from "@/lib/tax-invoice-mail/board-evidence";
 import { SUPPLIER } from "@/lib/tax-invoice-builder";
@@ -58,6 +61,21 @@ function formatWon(value: number | null): string {
 function formatMonthDay(ymd: string | null): string {
   if (!ymd) return INVOICE_MONTH_EMPTY_MARK;
   return `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`;
+}
+
+const SOURCE_LABEL: Record<CampaignInvoiceRow["source"], string> = {
+  MAIL: "발급 메일",
+  MAIL_AUTO: "발급 메일(자동 기록)",
+  MANUAL: "직접 입력",
+};
+
+/** 정산서 예상(T-242) 한 줄 — 「74,250원 · 지급 10/20」. */
+function formatExpected(month: InvoiceMonth): string | null {
+  const first = month.expected[0];
+  if (!first) return null;
+  const due = first.dueDate ? ` · 지급 ${formatMonthDay(first.dueDate)}` : "";
+  const more = month.expected.length > 1 ? ` 외 ${month.expected.length - 1}건` : "";
+  return `${formatWon(first.totalAmount)}${due}${more}`;
 }
 
 function DetailRow({ label, value }: { label: string; value: ReactNode }) {
@@ -118,7 +136,7 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
             <DetailRow label="합계" value={formatWon(detail.totalAmount)} />
             {detail.itemName ? <DetailRow label="품목명" value={detail.itemName} /> : null}
             {detail.approvalNo ? <DetailRow label="승인번호" value={detail.approvalNo} /> : null}
-            <DetailRow label="출처" value={detail.source === "MAIL" ? "발급 메일" : "직접 입력"} />
+            <DetailRow label="출처" value={SOURCE_LABEL[detail.source]} />
           </div>
         ) : candidate ? (
           <div className="space-y-1 border-t border-border/60 pt-1.5">
@@ -126,6 +144,11 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
             <DetailRow label="합계" value={formatWon(candidate.totalAmount)} />
             {candidate.itemName ? <DetailRow label="품목명" value={candidate.itemName} /> : null}
             {month.candidates.length > 1 ? <DetailRow label="후보" value={`${month.candidates.length}장`} /> : null}
+          </div>
+        ) : null}
+        {formatExpected(month) ? (
+          <div className="border-t border-border/60 pt-1.5">
+            <DetailRow label="정산서 예상" value={formatExpected(month)} />
           </div>
         ) : null}
       </HoverCardContent>
@@ -154,6 +177,7 @@ function CandidateCard({
   onConfirm,
   onDismiss,
   confirmLabel = "확인",
+  matchesStatement = false,
 }: {
   mail: InvoiceMailSummary;
   busy: boolean;
@@ -161,13 +185,23 @@ function CandidateCard({
   /** 없으면 「이 메일이 아님」 버튼을 그리지 않는다(수정세금계산서 카드). */
   onDismiss?: () => void;
   confirmLabel?: string;
+  /** 정산서 예상 금액과 ±99원 안에서 맞는가 — 같은 달 같은 브랜드 계산서가 여러 장일 때 고를 근거(T-242) */
+  matchesStatement?: boolean;
 }) {
   return (
     <div className="space-y-1 rounded-lg border border-border/70 p-2.5">
       <DetailRow label="작성일" value={mail.writtenDate ?? "—"} />
       <DetailRow label="공급가액" value={formatWon(mail.supplyAmount)} />
       <DetailRow label="세액" value={formatWon(mail.taxAmount)} />
-      <DetailRow label="합계" value={formatWon(mail.totalAmount)} />
+      <DetailRow
+        label="합계"
+        value={
+          <>
+            {formatWon(mail.totalAmount)}
+            {matchesStatement ? <span className="ml-1.5 text-muted-foreground">정산서 금액과 같음</span> : null}
+          </>
+        }
+      />
       <DetailRow label="품목명" value={mail.itemName ?? "—"} />
       <DetailRow label="메일" value={mail.receivedAt ? `${toKstYmd(new Date(mail.receivedAt))} 받음` : "—"} />
       {mail.issueId ? (
@@ -200,9 +234,18 @@ function CandidateCard({
   );
 }
 
-function ManualForm({ busy, onSubmit }: { busy: boolean; onSubmit: (input: { writtenDate: string; totalAmount: number | null; approvalNo: string | null }) => void }) {
-  const [writtenDate, setWrittenDate] = useState("");
-  const [total, setTotal] = useState("");
+function ManualForm({
+  busy,
+  onSubmit,
+  prefill,
+}: {
+  busy: boolean;
+  onSubmit: (input: { writtenDate: string; totalAmount: number | null; approvalNo: string | null }) => void;
+  /** 정산서가 그 달 계산서 하나를 예고했으면 작성일·합계를 미리 채운다(T-242) — 오너가 고칠 수 있다. */
+  prefill?: { writtenDate: string; totalAmount: number } | null;
+}) {
+  const [writtenDate, setWrittenDate] = useState(prefill?.writtenDate ?? "");
+  const [total, setTotal] = useState(prefill ? String(prefill.totalAmount) : "");
   const [approvalNo, setApprovalNo] = useState("");
   const amount = total.trim() === "" ? null : Number(total.replace(/[^\d-]/g, ""));
   return (
@@ -216,15 +259,15 @@ function ManualForm({ busy, onSubmit }: { busy: boolean; onSubmit: (input: { wri
     >
       <label className="grid gap-1 text-[10px] text-muted-foreground">
         작성일
-        <input type="date" required value={writtenDate} onChange={(e) => setWrittenDate(e.target.value)} className="h-7 rounded-md border border-border px-1.5 text-xs text-foreground" />
+        <input type="date" required value={writtenDate} onChange={(e) => setWrittenDate(e.target.value)} className="h-7 w-full min-w-0 rounded-md border border-border px-1.5 text-xs text-foreground" />
       </label>
       <label className="grid gap-1 text-[10px] text-muted-foreground">
         합계(원)
-        <input inputMode="numeric" value={total} onChange={(e) => setTotal(e.target.value)} className="h-7 rounded-md border border-border px-1.5 text-right text-xs tabular-nums text-foreground" />
+        <input inputMode="numeric" value={total} onChange={(e) => setTotal(e.target.value)} className="h-7 w-full min-w-0 rounded-md border border-border px-1.5 text-right text-xs tabular-nums text-foreground" />
       </label>
       <label className="grid gap-1 text-[10px] text-muted-foreground">
         승인번호(선택)
-        <input value={approvalNo} onChange={(e) => setApprovalNo(e.target.value)} className="h-7 rounded-md border border-border px-1.5 text-xs tabular-nums text-foreground" />
+        <input value={approvalNo} onChange={(e) => setApprovalNo(e.target.value)} className="h-7 w-full min-w-0 rounded-md border border-border px-1.5 text-xs tabular-nums text-foreground" />
       </label>
       <div className="col-span-3 flex justify-end">
         <button type="submit" disabled={busy || !writtenDate} className="h-7 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">
@@ -265,6 +308,9 @@ function MonthSection({
         <h4 className="text-sm font-semibold">{formatInvoiceMonth(month.yearMonth)}분</h4>
         <span className="text-xs text-muted-foreground">{label ?? (month.state === "RECORDED" ? "기록됨" : INVOICE_MONTH_EMPTY_MARK)}</span>
       </div>
+      {formatExpected(month) ? (
+        <p className="text-xs text-muted-foreground">정산서 예상 {formatExpected(month)}</p>
+      ) : null}
       {month.recorded.map((row: CampaignInvoiceRow) => (
         <div key={row.id} className="space-y-1 rounded-lg bg-slate-50 p-2.5">
           <DetailRow label="작성일" value={row.writtenAt ?? "—"} />
@@ -294,6 +340,7 @@ function MonthSection({
               key={mail.issueId ?? mail.writtenDate}
               mail={mail}
               busy={busy}
+              matchesStatement={matchesExpectedAmount(mail.totalAmount, month.expected)}
               onConfirm={() => void run(confirmBody(mail))}
               onDismiss={() => void run(dismissBody(mail))}
             />
@@ -324,6 +371,11 @@ function MonthSection({
           {manualOpen ? (
             <ManualForm
               busy={busy}
+              prefill={
+                month.expected.length === 1
+                  ? { writtenDate: month.expected[0].writtenDate, totalAmount: month.expected[0].totalAmount }
+                  : null
+              }
               onSubmit={(input) =>
                 void run({ action: "manual", note: null, ...input }).then((ok) => {
                   // 실패하면 입력을 지우지 않는다 — 오너가 다시 칠 필요가 없게.
@@ -357,6 +409,23 @@ function useCampaignInvoices({
   const [scanAttempted, setScanAttempted] = useState(false);
   /** 판정 기준 시각 — 그리는 도중 시계를 읽지 않도록 칸이 열릴 때 한 번 고정한다. */
   const [now] = useState(() => new Date());
+  /** 정산서 메일(T-242) — 메일함 확인과 함께 한 번 읽는다. 실패해도 계산서 기록은 그대로 된다. */
+  const [statements, setStatements] = useState<StatementMailSummary[] | null>(null);
+  const [statementsFailed, setStatementsFailed] = useState(false);
+
+  const loadStatements = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settlement/brand-statements");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { statements: StatementMailSummary[] };
+      setStatements(data.statements);
+      setStatementsFailed(false);
+    } catch (error) {
+      // 삼키지 않는다(P0) — 창 설명에 「정산서 확인 실패」로 드러낸다.
+      console.warn("[campaign-invoice-slot] 정산서 메일 조회 실패", error);
+      setStatementsFailed(true);
+    }
+  }, []);
 
   const load = useCallback(async (): Promise<boolean> => {
     try {
@@ -385,6 +454,15 @@ function useCampaignInvoices({
     void onRequestScan();
   }, [onRequestScan]);
 
+  // 월정산 칸이 처음 그려질 때 정산서를 한 번 읽는다(메일함 스캔과 별개 — 계산서 스캔 결과를 부모가
+  // 이미 들고 있어도 정산서는 이 칸만 쓴다). 실패는 창 설명에 드러난다.
+  const [statementsRequested, setStatementsRequested] = useState(false);
+  useEffect(() => {
+    if (!applicable || statementsRequested) return;
+    setStatementsRequested(true);
+    void loadStatements();
+  }, [applicable, statementsRequested, loadStatements]);
+
   const months = useMemo(() => {
     if (!applicable) return [];
     const mails = (scan?.results ?? [])
@@ -400,6 +478,11 @@ function useCampaignInvoices({
     const scanSinceYmd = scan
       ? toKstYmd(new Date(now.getTime() - scan.scan.sinceDays * 24 * 60 * 60 * 1000))
       : null;
+    const expectationsByMonth = collectStatementExpectations({
+      statements: statements ?? [],
+      direction: applicable.direction,
+      labels: applicable.sellerLabels,
+    });
     return deriveInvoiceMonths({
       periodStart: new Date(applicable.periodStart),
       periodEnd: new Date(applicable.periodEnd),
@@ -408,8 +491,9 @@ function useCampaignInvoices({
       amendmentsByMonth,
       scanSinceYmd,
       today: now,
+      expectationsByMonth,
     });
-  }, [applicable, scan, now]);
+  }, [applicable, scan, now, statements]);
 
   const run = useCallback(
     async (body: Record<string, unknown>): Promise<boolean> => {
@@ -428,7 +512,7 @@ function useCampaignInvoices({
     [busy, campaignId, load, onChanged],
   );
 
-  return { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted };
+  return { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed };
 }
 
 /** 달별 확인·직접 입력·「없음」·취소 창 — 캠페인 상세 칸과 세무 보드가 같은 창을 연다. */
@@ -440,6 +524,7 @@ function InvoiceMonthsDialog({
   months,
   busy,
   scanLoading,
+  statementsFailed,
   run,
 }: {
   open: boolean;
@@ -449,6 +534,7 @@ function InvoiceMonthsDialog({
   months: InvoiceMonth[];
   busy: boolean;
   scanLoading: boolean;
+  statementsFailed: boolean;
   run: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
   return (
@@ -460,6 +546,7 @@ function InvoiceMonthsDialog({
             {applicable.counterpartLabel}
             {applicable.memberCount > 1 ? ` · 그룹 ${applicable.memberCount}개 캠페인 합산 1장` : ""}
             {scanLoading ? " · 메일함 확인 중" : ""}
+            {statementsFailed ? " · 정산서 메일 확인 실패" : ""}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -494,7 +581,7 @@ export function CampaignInvoiceDialog({
   onRequestScan: () => Promise<void> | void;
   onChanged: () => Promise<void> | void;
 }) {
-  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted } = useCampaignInvoices({
+  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed } = useCampaignInvoices({
     campaignId,
     scan,
     onRequestScan,
@@ -541,6 +628,7 @@ export function CampaignInvoiceDialog({
       months={months}
       busy={busy}
       scanLoading={scanLoading}
+      statementsFailed={statementsFailed}
       run={run}
     />
   );
@@ -571,7 +659,7 @@ export function CampaignInvoiceSlot({
   attachment: ReactNode;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted } = useCampaignInvoices({
+  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed } = useCampaignInvoices({
     campaignId,
     scan,
     onRequestScan,
@@ -641,6 +729,7 @@ export function CampaignInvoiceSlot({
         months={months}
         busy={busy}
         scanLoading={scanLoading}
+        statementsFailed={statementsFailed}
         run={run}
       />
     </div>
