@@ -36,10 +36,11 @@ export const REQUEST_TYPE_BY_ACTION: Record<string, string> = {
   // fail-closed 기본값도 같은 값이지만, 빠져서 그렇게 된 것과 그렇게 정한 것은 다르다.
   create_partner: "crm_mutation", // alwaysManual → 수동
   create_deal: "crm_mutation", // alwaysManual → 수동
-  // 정산 금액 칸 정정 — 금전 영향이 있고 브리지(외부 어시스턴트)가 올리는 기안이라 언제나
-  // 사람이 승인한다(오너 결정 2026-10-08: 브리지 쓰기는 자동 실행하지 않는다). 금액·건수
-  // 한도로 자동승인을 여는 안은 이 결정으로 닫혔다 — autoApprove 에 넣지 말 것.
-  update_settlement_amount: "settlement_amount_update", // alwaysManual → 수동(영구)
+  // 정산 금액 칸 정정 — 금전 영향이 있어 이 일반 정책에서는 수동이다(autoApprove 에 넣지 말 것).
+  // 오너 결정 2026-10-09(2026-10-08 「브리지 쓰기는 자동 실행하지 않는다」를 대체): 슬랙 원문으로
+  // Muse 요청임이 확인되고 한도(|변동| 50만 원·하루 10건) 안인 것만 전용 자동 실행기
+  // (`auto-execute/settlement-auto-execute.ts`)가 승인할 수 있다. 그 밖은 사람이 승인한다.
+  update_settlement_amount: "settlement_amount_update", // alwaysManual → 일반 정책상 수동
 };
 
 const FAIL_CLOSED_REQUEST_TYPE = "crm_mutation";

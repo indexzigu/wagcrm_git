@@ -38,8 +38,9 @@ describe("getRequestTypeForAction", () => {
     expect(isAutoApprovable("crm_mutation", "WRITE")).toBe(false);
   });
 
-  it("update_settlement_amount → settlement_amount_update: 명시 등재 + alwaysManual 이라 자동승인 불가", () => {
-    // 브리지(외부 어시스턴트)가 올리는 금전 기안 — 금액이 작아도 사람이 승인한다.
+  it("update_settlement_amount → settlement_amount_update: 명시 등재 + alwaysManual 이라 일반 자동승인 불가", () => {
+    // 일반 정책(isAutoApprovable)에서는 금액이 작아도 수동이다. 한도 안 자동 실행은 슬랙 원문 대조를
+    // 거치는 전용 실행기(auto-execute/settlement-auto-execute.ts)만 한다(오너 결정 2026-10-09).
     expect(REQUEST_TYPE_BY_ACTION.update_settlement_amount).toBe("settlement_amount_update");
     expect(getRequestTypeForAction("update_settlement_amount")).toBe("settlement_amount_update");
     const manual = approvalRulesJson.alwaysManual.map((r) => r.requestType);

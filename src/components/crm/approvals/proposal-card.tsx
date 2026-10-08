@@ -94,6 +94,15 @@ function StatusChip({ proposal }: { proposal: ProposalDetail }) {
     return <Badge variant="status-info">승인됨·실행중</Badge>;
   }
   if (proposal.status === "EXECUTED") {
+    // 정산 금액 수정 자동 실행기(슬랙 원문 대조·한도 안)가 승인한 건 — approval-cards 완료 카드와 같은 낱말.
+    if (proposal.executedBy === "SYSTEM_AUTO") {
+      return (
+        <Badge variant="status-success">
+          <ZapIcon className="size-3" />
+          자동 실행 · 한도 안
+        </Badge>
+      );
+    }
     if (proposal.executedBy === "AGENT") {
       return (
         <Badge variant="status-success">

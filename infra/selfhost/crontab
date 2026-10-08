@@ -100,3 +100,9 @@
 # 생긴 잡이라 vercel.json 을 거친 적이 없다(capture-stories 와 같은 경우). 표기는 KNOWN_JOBS.timeKst
 # 「10:00~20:00 매시」와 C5 가 대조한다. 메일함을 읽기만 하고 네이버는 부르지 않는다(프록시 요청 0).
 0 10-20 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh scan-invoice-replies >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# agent-auto-execute → **2분마다**(상시). **UTC 원본이 없다** — 셀프호스트 이후에 생긴 잡이다.
+# 표기는 KNOWN_JOBS(cycle "상시" · timeKst "2분마다")와 C5 가 대조한다. 스위치 AGENT_AUTO_EXECUTE 가
+# off(기본)면 라우트가 아무것도 하지 않는다. 회차가 겹쳐도 앱의 단일 실행 잠금이 한 회차만 돌린다.
+# 빈 회차는 레이더 상태만 갱신하고 이력(SystemTaskLog)은 남기지 않는다(cron.log 에는 매 회차 한 줄).
+*/2 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh agent-auto-execute >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1

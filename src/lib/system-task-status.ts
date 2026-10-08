@@ -30,6 +30,13 @@ type CronOutcomeBody = {
   failureReason?: string;
   /** 비정상 응답(4xx·5xx) 본문의 오류 메시지. */
   error?: string;
+  /**
+   * true면 **성공 기록에 한해** 상태(SystemTaskStatus)만 갱신하고 이력(SystemTaskLog) 줄을 남기지
+   * 않는다. 몇 분 주기로 도는 잡(`agent-auto-execute`, 2분)이 할 일이 없던 회차를 매번 이력에 쌓으면
+   * 하루 수백 줄이 되어 정작 무언가 한 회차가 묻힌다. 실패(`failed`·비정상 응답)는 이 값과 무관하게
+   * 언제나 남는다.
+   */
+  quiet?: boolean;
 };
 
 /** `SystemTaskLog.details` 직렬화 상한 — 이력 테이블이 페이로드로 비대해지지 않게 한다. */
@@ -578,6 +585,8 @@ export async function recordSystemTaskRun(
   // 핸들러 실행 소요시간(ms) — Vercel Hobby 플랜의 함수 실행 60초 제한 판단 근거(2026-08-06).
   // RUNNING 시작 마커에는 아직 알 수 없으므로 전달하지 않는다.
   durationMs?: number,
+  // true면 종결 상태여도 이력 줄을 남기지 않는다(`CronOutcomeBody.quiet` — 할 일 없던 SUCCESS 회차 전용).
+  options: { skipLog?: boolean } = {},
 ) {
   try {
     const prisma = getPrisma();
@@ -590,7 +599,7 @@ export async function recordSystemTaskRun(
     // 클릭 인박스가 "언제 무엇이 됐나"를 보여줄 소스다(오너 2026-07-13). RUNNING 시작
     // 마커는 append하지 않는다(완주 전 중간 상태라 이력 노이즈). enrich-inbox는 이 래퍼를
     // 쓰지 않고 자체적으로 더 풍부한 details 로그를 남기므로 이중 기록되지 않는다.
-    if (status !== "RUNNING") {
+    if (status !== "RUNNING" && !(options.skipLog && status === "SUCCESS")) {
       // 응답 본문 + durationMs를 함께 남긴다 — 이게 없으면 "SUCCESS인데 산출 0"의 원인을
       // 사후에 알 방법이 없다(11일 무음 실패 때 실제로 단서가 0이었다). durationMs는
       // 본문 형식(JSON 여부)과 무관하게 항상 남는다 — 계측이 응답 파싱에 얹혀가지 않는다.
@@ -675,7 +684,7 @@ export function withSystemTaskStatus(
           durationMs,
         );
       } else {
-        await recordSystemTaskRun(jobKey, "SUCCESS", null, details, durationMs);
+        await recordSystemTaskRun(jobKey, "SUCCESS", null, details, durationMs, { skipLog: body?.quiet === true });
       }
     } else {
       // 시크릿이 일치한 시점 이후의 비정상 응답(401 포함)은 전부 크론 실행 실패로 기록한다

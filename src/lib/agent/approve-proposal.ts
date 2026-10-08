@@ -28,6 +28,7 @@ import { getPrisma } from "@/lib/prisma";
 import { ActionProposalRepository, ConcurrentModificationError } from "@/repositories/actionProposalRepository";
 import { executeWriteAction } from "@/lib/agent/write-executor";
 import { applyWriteActionEffects } from "@/lib/agent/write-action-effects";
+import { parseStoredJson } from "@/lib/stored-json";
 import {
   BULK_APPROVE_MAX_IDS,
   countBulkApproveResults,
@@ -77,7 +78,20 @@ function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export async function approveProposal(id: string, approverId: string): Promise<ApproveProposalOutcome> {
+export type ApproveProposalOptions = {
+  /**
+   * 넘기면 현재 상태가 **이 값일 때만** 승인한다(FAILED 재시도 경로를 닫는다). 자동 실행기
+   * (`auto-execute/settlement-auto-execute.ts`)가 「승인 대기만 집는다」를 이 함수 안에서도
+   * 지키게 하려고 둔다 — 후보를 읽은 뒤 사람이 승인·실패시킨 기안을 자동으로 재시도하면 안 된다.
+   */
+  expectedStatus?: "PENDING_APPROVAL";
+};
+
+export async function approveProposal(
+  id: string,
+  approverId: string,
+  options: ApproveProposalOptions = {},
+): Promise<ApproveProposalOutcome> {
   const proposal = await ActionProposalRepository.findById(id);
   if (!proposal) {
     return { ok: false, code: "NOT_FOUND", httpStatus: 404, error: "해당 기안을 찾을 수 없습니다.", status: null };
@@ -96,7 +110,8 @@ export async function approveProposal(id: string, approverId: string): Promise<A
 
   // 승인 가능한 현재 상태: PENDING_APPROVAL(최초 승인) 또는 FAILED(재시도, TRANSITIONS상 허용).
   const currentStatus = proposal.status;
-  if (currentStatus !== "PENDING_APPROVAL" && currentStatus !== "FAILED") {
+  const outsideExpected = options.expectedStatus !== undefined && currentStatus !== options.expectedStatus;
+  if (outsideExpected || (currentStatus !== "PENDING_APPROVAL" && currentStatus !== "FAILED")) {
     return {
       ok: false,
       code: "INVALID_STATUS",
@@ -108,7 +123,10 @@ export async function approveProposal(id: string, approverId: string): Promise<A
 
   // payload는 승인 전이로 바뀌지 않으므로 최초 조회한 proposal 것을 그대로 쓴다
   // (transition()의 반환값 형태에 의존하지 않아 더 견고하다).
-  const payload = proposal.payload as unknown as ProposalPayload | null;
+  // 🪤 읽기는 `parseStoredJson` 으로 — SQLite 레인은 Json 을 **문자열로** 저장하므로(저장소 이원화)
+  // 그대로 캐스팅하면 `payload.action` 이 undefined 가 되어 승인이 EMPTY_PAYLOAD 로 실패한다
+  // (자동 실행기 실 SQLite 테스트가 잡았다). Postgres 의 객체는 그대로 통과한다.
+  const payload = parseStoredJson<ProposalPayload>(proposal.payload);
 
   // tx1: 조건부 승인 커밋 (§0-5 동시성 — 더블클릭/2인 동시 승인/일괄과 단건의 겹침 방어).
   try {
