@@ -45,9 +45,13 @@ const db = {
         deal: { partner: { name: "브랜드A", businessNumber: "2222222222", monthlySettlement: c.monthly } },
       };
     }),
-    findMany: vi.fn(async ({ where }: { where: { groupId?: string; id?: { in: string[] } } }) => {
-      if (where.groupId) return state.campaigns.filter((c) => c.groupId === where.groupId).sort((a, b) => a.id.localeCompare(b.id));
-      return state.campaigns.filter((c) => where.id?.in.includes(c.id) && c.monthly).map((c) => ({ id: c.id }));
+    findMany: vi.fn(async ({ where }: { where: { groupId?: string | { in: string[] }; id?: { in: string[] } } }) => {
+      const groupId = where.groupId;
+      if (typeof groupId === "string") return state.campaigns.filter((c) => c.groupId === groupId).sort((a, b) => a.id.localeCompare(b.id));
+      if (groupId) return state.campaigns.filter((c) => c.groupId !== null && groupId.in.includes(c.groupId));
+      return state.campaigns
+        .filter((c) => where.id?.in.includes(c.id) && c.monthly)
+        .map((c) => ({ ...c, group: c.groupId ? state.groups.get(c.groupId) ?? null : null }));
     }),
     updateMany: vi.fn(async ({ where, data }: { where: { id: string; supplierInvoiceIssuedAt: Date | null }; data: { supplierInvoiceIssuedAt: Date | null } }) => {
       const c = state.campaigns.find(
@@ -279,5 +283,29 @@ describe("완료 게이트", () => {
     // 레거시 날짜는 그룹 스칼라에 쓴다(CG-1).
     expect(state.groups.get("g1")?.supplierInvoiceIssuedAt?.toISOString()).toBe("2026-10-31T00:00:00.000Z");
     expect(state.activity.filter((a) => a.entityId === "b").length).toBe(2);
+  });
+});
+
+describe("loadInvoiceProgress — 세무 보드의 「끝」 판정 (T-244)", () => {
+  it("완료 게이트와 같은 판정이다 — 진행 n/m, 전부 「없음」이어도 끝, 레거시·비월정산은 결과에 없다", async () => {
+    state.campaigns = [
+      campaign(),
+      campaign({ id: "plain", monthly: false }),
+      campaign({ id: "legacy", supplierInvoiceIssuedAt: new Date("2026-10-31T00:00:00Z") }),
+    ];
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    let progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1", "plain", "legacy"]);
+    expect([...progress.keys()]).toEqual(["c1"]);
+    expect(progress.get("c1")).toEqual({ done: 1, total: 2, openMonths: ["2026-10"] });
+
+    // 전부 「없음」으로 끝난 단위 — 레거시 날짜는 비어 있지만 끝이다(보드에서 빠져야 한다).
+    state.campaigns = [campaign({ id: "w" })];
+    state.invoices = [];
+    await campaignInvoiceService.waiveMonth("w", "2026-09", null);
+    await campaignInvoiceService.waiveMonth("w", "2026-10", null);
+    progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["w"]);
+    expect(progress.get("w")).toEqual({ done: 2, total: 2, openMonths: [] });
+    expect(state.campaigns[0].supplierInvoiceIssuedAt).toBeNull();
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "w")).toBeNull();
   });
 });

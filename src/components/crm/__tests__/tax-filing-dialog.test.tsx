@@ -57,6 +57,15 @@ vi.mock("@/lib/hometax-helper-client", () => ({
 vi.mock("../withholding-filing-cards", () => ({
   WithholdingFilingCards: () => <div data-testid="withholding-cards" />,
 }));
+// 달별 계산서 창(T-244)은 캠페인 상세와 같은 부품이고 그 자체 계약은 그 부품이 진다 — 여기서는
+// 「보드가 어느 캠페인·어떤 제목으로 그 창을 여는가」만 본다.
+vi.mock("../campaign-invoice-slot", () => ({
+  CampaignInvoiceDialog: (props: { campaignId: string; title: string }) => (
+    <div data-testid="campaign-invoice-dialog">
+      {props.campaignId}:{props.title}
+    </div>
+  ),
+}));
 
 const BOARD = {
   month: "2026-07",
@@ -1672,5 +1681,35 @@ describe("TaxFilingDialog — 계산서 유사도 승인 카드", () => {
     await waitFor(() => {
       expect(screen.queryByText(/계산서로 추정됩니다/)).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("세무 처리 다이얼로그 — 월정산 공급사 행 (T-244)", () => {
+  const MONTHLY_BOARD = {
+    ...BOARD,
+    rows: [
+      {
+        ...BOARD.rows[0],
+        campaignId: "m1",
+        campaignIds: ["m1"],
+        campaignLabel: "딜M - 셀러M 1차",
+        direction: "ISSUE" as const,
+        counterpart: "SUPPLIER" as const,
+        checklistItemId: null,
+        monthlyInvoice: { done: 1, total: 2 },
+      },
+    ],
+  };
+
+  it("「완료」 대신 「조회」를 주고 진행을 단위와 함께 적으며, 누르면 그 캠페인의 달별 계산서 창을 연다", async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, json: async () => MONTHLY_BOARD }) as Response) as never;
+    renderDialog();
+    const open = await screen.findByRole("button", { name: "딜M - 셀러M 1차 달별 계산서 조회" });
+    expect(open).toHaveTextContent("조회");
+    expect(screen.getByText("계산서 1/2개월 기록")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "완료" })).toBeNull();
+
+    fireEvent.click(open);
+    expect(await screen.findByTestId("campaign-invoice-dialog")).toHaveTextContent("m1:공급사 계산서 발행");
   });
 });

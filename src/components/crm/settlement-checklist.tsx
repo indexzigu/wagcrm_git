@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChecklistToggleRejected } from "./campaign-task-checklist";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/lib/toast";
 import { Loader2, CheckCircle } from "lucide-react";
@@ -58,7 +59,11 @@ export function SettlementChecklist({
       });
 
       if (!response.ok) {
-        throw new Error("체크 상태 업데이트에 실패했습니다.");
+        // 서버가 준 사유(예: 월정산 공급사 계산서 — T-244)만 그대로 보인다.
+        const payload = await response.json().catch(() => null);
+        throw new ChecklistToggleRejected(
+          typeof payload?.error === "string" ? payload.error : "체크 상태 업데이트에 실패했습니다.",
+        );
       }
 
       const result = await response.json();
@@ -72,7 +77,8 @@ export function SettlementChecklist({
       await onRefreshChecklist();
       await onRefreshCampaign();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "체크리스트 업데이트 실패");
+      // 네트워크 오류(`Failed to fetch`)의 영어 문구를 오너에게 그대로 보이지 않는다.
+      toast.error(err instanceof ChecklistToggleRejected ? err.message : "체크리스트 업데이트 실패");
     } finally {
       setToggleLoadingId(null);
     }

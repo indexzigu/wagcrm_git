@@ -338,33 +338,20 @@ function MonthSection({
   );
 }
 
-export function CampaignInvoiceSlot({
+/** 칸과 세무 보드가 공유하는 계산서 상태 — 조회·메일 대조·쓰기(T-244: 두 표면이 같은 창을 쓴다). */
+function useCampaignInvoices({
   campaignId,
-  title,
   scan,
-  scanLoading,
   onRequestScan,
   onChanged,
-  legacyFallback,
-  attachment,
 }: {
   campaignId: string;
-  /** 칸 제목 — 판정표의 슬롯 제목 그대로(예: 「공급사 계산서 발행」) */
-  title: string;
   scan: ReceiptScanApiResponse | null;
-  scanLoading: boolean;
-  /** 메일함 조회(읽기 전용 IMAP 스캔) — 부모가 결과를 소유한다(수취 칸과 같은 스캔을 재사용). */
   onRequestScan: () => Promise<void> | void;
-  /** 기록이 바뀐 뒤 캠페인 행을 다시 읽는다(레거시 날짜가 같이 바뀔 수 있다). */
   onChanged: () => Promise<void> | void;
-  /** 월정산이 아니거나 레거시 모드면 지금까지의 단일 날짜 칸을 그대로 그린다. */
-  legacyFallback: ReactNode;
-  /** 증빙 첨부 버튼(기존 칸과 같은 것) */
-  attachment: ReactNode;
 }) {
   const [view, setView] = useState<CampaignInvoiceView | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 이 칸이 메일함 확인을 시작했는가 — 시작 전에는 지난 달을 「미발견」으로 단정하지 않는다. */
   const [scanAttempted, setScanAttempted] = useState(false);
@@ -397,12 +384,6 @@ export function CampaignInvoiceSlot({
     setScanAttempted(true);
     void onRequestScan();
   }, [onRequestScan]);
-
-  // 열 때 메일함을 한 번 본다 — 확인 전에는 지난 달을 「미발견」으로 단정할 수 없어서다.
-  useEffect(() => {
-    if (!applicable || scan || scanLoading || scanAttempted) return;
-    requestScan();
-  }, [applicable, scan, scanLoading, scanAttempted, requestScan]);
 
   const months = useMemo(() => {
     if (!applicable) return [];
@@ -446,6 +427,162 @@ export function CampaignInvoiceSlot({
     },
     [busy, campaignId, load, onChanged],
   );
+
+  return { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted };
+}
+
+/** 달별 확인·직접 입력·「없음」·취소 창 — 캠페인 상세 칸과 세무 보드가 같은 창을 연다. */
+function InvoiceMonthsDialog({
+  open,
+  onOpenChange,
+  title,
+  applicable,
+  months,
+  busy,
+  scanLoading,
+  run,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  applicable: ApplicableView;
+  months: InvoiceMonth[];
+  busy: boolean;
+  scanLoading: boolean;
+  run: (body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md" style={{ scrollbarGutter: "stable" }}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {applicable.counterpartLabel}
+            {applicable.memberCount > 1 ? ` · 그룹 ${applicable.memberCount}개 캠페인 합산 1장` : ""}
+            {scanLoading ? " · 메일함 확인 중" : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {months.map((month) => (
+            <MonthSection key={month.yearMonth} month={month} busy={busy || scanLoading} run={run} />
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * 세무 보드의 월정산 공급사 행 「조회」가 여는 창(T-244). 보드는 날짜 한 칸으로 「완료」를 찍지 않는다 —
+ * 캠페인 상세 계산서 칸과 **같은 창**에서 달별로 기록하고, 기록이 바뀌면 보드를 다시 읽는다.
+ * 창을 열 때 메일함을 아직 안 봤으면 한 번 본다(보드의 「메일함 확인」과 같은 스캔).
+ */
+export function CampaignInvoiceDialog({
+  campaignId,
+  title,
+  onOpenChange,
+  scan,
+  scanLoading,
+  onRequestScan,
+  onChanged,
+}: {
+  campaignId: string;
+  title: string;
+  onOpenChange: (open: boolean) => void;
+  scan: ReceiptScanApiResponse | null;
+  scanLoading: boolean;
+  onRequestScan: () => Promise<void> | void;
+  onChanged: () => Promise<void> | void;
+}) {
+  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted } = useCampaignInvoices({
+    campaignId,
+    scan,
+    onRequestScan,
+    onChanged,
+  });
+
+  useEffect(() => {
+    if (!applicable || scan || scanLoading || scanAttempted) return;
+    requestScan();
+  }, [applicable, scan, scanLoading, scanAttempted, requestScan]);
+
+  // 한 번이라도 달별 창을 그렸는가 — 그 뒤의 재조회 실패·모드 변화는 「처음부터 못 연 것」과 다르다.
+  const [wasApplicable, setWasApplicable] = useState(false);
+  useEffect(() => {
+    if (applicable) setWasApplicable(true);
+  }, [applicable]);
+
+  // 처음 읽기에 실패했거나 대상이 아니면(그새 스위치가 꺼짐·레거시 모드) 이유를 알리고 닫는다 —
+  // 조용히 빈 창을 띄우지 않는다. 열린 뒤 저장으로 레거시 모드가 되면(다른 경로의 날짜가 남은 채
+  // 마지막 기록을 취소) 조용히 닫는다 — 보드는 `onChanged` 로 다시 읽어 그 행을 정리한다. 저장 뒤
+  // 재조회만 실패한 경우는 `run` 이 이미 경고했고 마지막 화면을 그대로 둔다(코드 리뷰 2026-10-09).
+  const failedToOpen = !wasApplicable && (loadFailed || (view !== null && !applicable));
+  const leftMonthlyMode = wasApplicable && view !== null && !applicable;
+  useEffect(() => {
+    if (failedToOpen) {
+      toast.error(
+        loadFailed
+          ? "계산서 기록을 읽지 못했습니다. 다시 시도해 주세요."
+          : "이 캠페인은 달별 계산서 대상이 아닙니다. 캠페인 상세에서 확인해 주세요.",
+      );
+      onOpenChange(false);
+    } else if (leftMonthlyMode) {
+      onOpenChange(false);
+    }
+  }, [failedToOpen, leftMonthlyMode, loadFailed, onOpenChange]);
+
+  if (!applicable) return null;
+  return (
+    <InvoiceMonthsDialog
+      open
+      onOpenChange={onOpenChange}
+      title={title}
+      applicable={applicable}
+      months={months}
+      busy={busy}
+      scanLoading={scanLoading}
+      run={run}
+    />
+  );
+}
+
+export function CampaignInvoiceSlot({
+  campaignId,
+  title,
+  scan,
+  scanLoading,
+  onRequestScan,
+  onChanged,
+  legacyFallback,
+  attachment,
+}: {
+  campaignId: string;
+  /** 칸 제목 — 판정표의 슬롯 제목 그대로(예: 「공급사 계산서 발행」) */
+  title: string;
+  scan: ReceiptScanApiResponse | null;
+  scanLoading: boolean;
+  /** 메일함 조회(읽기 전용 IMAP 스캔) — 부모가 결과를 소유한다(수취 칸과 같은 스캔을 재사용). */
+  onRequestScan: () => Promise<void> | void;
+  /** 기록이 바뀐 뒤 캠페인 행을 다시 읽는다(레거시 날짜가 같이 바뀔 수 있다). */
+  onChanged: () => Promise<void> | void;
+  /** 월정산이 아니거나 레거시 모드면 지금까지의 단일 날짜 칸을 그대로 그린다. */
+  legacyFallback: ReactNode;
+  /** 증빙 첨부 버튼(기존 칸과 같은 것) */
+  attachment: ReactNode;
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted } = useCampaignInvoices({
+    campaignId,
+    scan,
+    onRequestScan,
+    onChanged,
+  });
+
+  // 열 때 메일함을 한 번 본다 — 확인 전에는 지난 달을 「미발견」으로 단정할 수 없어서다.
+  useEffect(() => {
+    if (!applicable || scan || scanLoading || scanAttempted) return;
+    requestScan();
+  }, [applicable, scan, scanLoading, scanAttempted, requestScan]);
 
   // 처음 읽기 전에는 옛 단일 날짜 칸을 잠깐이라도 보이지 않는다(그 칸에 날짜를 넣으면 달별 판정을
   // 우회한다). 읽기에 실패했을 때만 옛 칸으로 돌아간다 — 그 실패는 위 load 가 콘솔에 남긴다.
@@ -496,23 +633,16 @@ export function CampaignInvoiceSlot({
           <MonthRow key={month.yearMonth} month={month} scanning={scanning} />
         ))}
       </div>
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md" style={{ scrollbarGutter: "stable" }}>
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>
-              {applicable.counterpartLabel}
-              {applicable.memberCount > 1 ? ` · 그룹 ${applicable.memberCount}개 캠페인 합산 1장` : ""}
-              {scanLoading ? " · 메일함 확인 중" : ""}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            {months.map((month) => (
-              <MonthSection key={month.yearMonth} month={month} busy={busy || scanLoading} run={run} />
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <InvoiceMonthsDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title={title}
+        applicable={applicable}
+        months={months}
+        busy={busy}
+        scanLoading={scanLoading}
+        run={run}
+      />
     </div>
   );
 }

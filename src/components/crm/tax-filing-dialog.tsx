@@ -85,11 +85,12 @@ import {
   AUTO_CONFIRM_SEED_LOOKBACK_LABEL,
   type AutoConfirmedEntry,
 } from "@/lib/tax-filing-auto-confirm";
-import type {
-  TaxInvoiceBoard,
-  TaxInvoiceBoardRow,
-  TaxInvoiceCounterpart,
-  TaxInvoiceDirection,
+import {
+  resolveInvoiceSlotTitle,
+  type TaxInvoiceBoard,
+  type TaxInvoiceBoardRow,
+  type TaxInvoiceCounterpart,
+  type TaxInvoiceDirection,
 } from "@/lib/tax-filing-board";
 import { useHometaxIssue, type TaxInvoiceValidationDetail } from "./use-hometax-issue";
 // 승인 카드는 정산 상세와 **같은 컴포넌트**를 쓴다 — 화면마다 다시 그리면 승인 요청
@@ -97,6 +98,7 @@ import { useHometaxIssue, type TaxInvoiceValidationDetail } from "./use-hometax-
 // 자리라 `campaignIds` 를 주지 않는다(= 전량 표시).
 import { ReceiptSuggestionCards } from "./receipt-suggestion-cards";
 import { StatusDot } from "./status-dot";
+import { CampaignInvoiceDialog } from "./campaign-invoice-slot";
 
 type BoardRow = TaxInvoiceBoardRow & { checklistItemId: string | null };
 type Board = Omit<TaxInvoiceBoard, "rows"> & {
@@ -281,6 +283,7 @@ function DirectionBlock({
   onToggleRow,
   rejectedCampaignIds,
   onComplete,
+  onOpenInvoices,
   onHometax,
   hometaxSendingKey,
 }: {
@@ -317,6 +320,11 @@ function DirectionBlock({
    */
   rejectedCampaignIds?: Set<string>;
   onComplete: (row: BoardRow) => void;
+  /**
+   * 월정산 공급사 행(`row.monthlyInvoice`)의 「조회」 — 날짜 한 칸을 찍는 「완료」 대신 캠페인 상세와
+   * 같은 달별 계산서 창을 연다(T-244). 그 행에는 서버가 `checklistItemId` 를 주지 않는다.
+   */
+  onOpenInvoices: (row: BoardRow) => void;
   /**
    * 「홈택스 발행」 — 로컬 헬퍼로 이 행 1건을 보내 건별발급 폼을 채운다. XLSX
    * 체크박스와 같은 게이트(`row.selectable && row.xlsxEligible`)를 쓴다 — RECEIVE
@@ -404,6 +412,12 @@ function DirectionBlock({
                 <td className="py-2 pr-2 text-muted-foreground">
                   {row.campaignLabel}
                   <SettlementItemNote effect={row.settlementItemEffect} />
+                  {row.monthlyInvoice ? (
+                    // 캠페인 상세 칸의 n/m 과 같은 숫자 — 단위를 붙여 「몇 개월 중 몇 개월」로 읽히게(T-244).
+                    <div className="mt-0.5 text-[10px] tabular-nums">
+                      계산서 {row.monthlyInvoice.done}/{row.monthlyInvoice.total}개월 기록
+                    </div>
+                  ) : null}
                 </td>
                 <td className="py-2 pr-2 text-right tabular-nums">{formatWon(row.amount.supplyAmount)}</td>
                 <td className="py-2 pr-2 text-right tabular-nums">{formatWon(row.amount.taxAmount)}</td>
@@ -427,7 +441,18 @@ function DirectionBlock({
                         {hometaxSendingKey === key ? "전송 중…" : "홈택스 발행"}
                       </Button>
                     ) : null}
-                    {row.checklistItemId ? (
+                    {row.monthlyInvoice ? (
+                      // 「조회」 = 달별 계산서 창 열기(메일함을 아직 안 봤으면 함께 확인) — 캠페인 상세
+                      // 칸과 같은 낱말·같은 동작. 스캔만 하는 버튼은 「메일함에서 확인」이다.
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOpenInvoices(row)}
+                        aria-label={`${row.campaignLabel} 달별 계산서 조회`}
+                      >
+                        조회
+                      </Button>
+                    ) : row.checklistItemId ? (
                       <Button size="sm" variant="outline" onClick={() => onComplete(row)}>
                         완료
                       </Button>
@@ -774,6 +799,8 @@ export function TaxFilingDialog({
   // 수취 메일함 확인 — IMAP 조회라 오너가 버튼을 눌러야만 돈다(다이얼로그 open 트리거에
   // 절대 묶지 않는다). 결과는 증거로만 쓴다 — 「완료」는 여전히 오너가 직접 누른다.
   const [receiptScan, setReceiptScan] = useState<ReceiptScanApiResponse | null>(null);
+  /** 달별 계산서 창이 열린 월정산 공급사 행(T-244). */
+  const [invoiceRow, setInvoiceRow] = useState<BoardRow | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
 
@@ -843,6 +870,7 @@ export function TaxFilingDialog({
     if (!open) {
       setReceiptScan(null);
       setScanError(null);
+      setInvoiceRow(null);
     }
   }, [open]);
 
@@ -864,6 +892,12 @@ export function TaxFilingDialog({
       setScanning(false);
     }
   }, [scanSinceDays]);
+
+  const closeInvoiceDialog = useCallback((next: boolean) => {
+    if (!next) setInvoiceRow(null);
+  }, []);
+  // 기록이 바뀌면 보드를 다시 읽는다 — 달이 다 끝났으면 그 행이 보드에서 빠진다(T-244).
+  const refreshBoardAfterInvoice = useCallback(() => fetchBoard(month), [fetchBoard, month]);
 
   const toggleRow = (key: string) => {
     setSelectedKeys((prev) => {
@@ -1003,7 +1037,17 @@ export function TaxFilingDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isChecked: true }),
       });
-      if (!res.ok) throw new Error("처리 실패");
+      if (!res.ok) {
+        // 서버가 거절 사유를 주면 그대로 보인다(예: 그새 월정산이 된 거래처 — T-244). 낡은 보드일 수
+        // 있으니 다시 읽어 행을 「조회」로 바꾼다.
+        const payload = await res.json().catch(() => null);
+        if (typeof payload?.error === "string") {
+          toast.error(payload.error);
+          await fetchBoard(month);
+          return;
+        }
+        throw new Error("처리 실패");
+      }
       toast.success(`${row.counterpartName} 처리를 완료했습니다.`);
       await fetchBoard(month);
     } catch {
@@ -1171,6 +1215,7 @@ export function TaxFilingDialog({
                       onToggleRow={toggleRow}
                       rejectedCampaignIds={rejectedCampaignIds}
                       onComplete={handleComplete}
+                      onOpenInvoices={setInvoiceRow}
                       onHometax={handleSendToHometax}
                       hometaxSendingKey={hometaxSendingKey}
                     />
@@ -1208,6 +1253,7 @@ export function TaxFilingDialog({
                         </div>
                       }
                       onComplete={handleComplete}
+                      onOpenInvoices={setInvoiceRow}
                     />
                     <ReceiptScanCoverage
                       scan={receiptScan}
@@ -1235,6 +1281,7 @@ export function TaxFilingDialog({
                         onToggleRow={toggleRow}
                         rejectedCampaignIds={rejectedCampaignIds}
                         onComplete={handleComplete}
+                        onOpenInvoices={setInvoiceRow}
                         onHometax={handleSendToHometax}
                         hometaxSendingKey={hometaxSendingKey}
                       />
@@ -1251,6 +1298,7 @@ export function TaxFilingDialog({
                         evidenceByKey={evidenceByKey}
                         groupMembers={groupMembers}
                         onComplete={handleComplete}
+                        onOpenInvoices={setInvoiceRow}
                       />
                     </BacklogSection>
                     {/* board.rows 전체(진행 중 + 밀린 정리) 기준 — 진행 중만 비어 있고
@@ -1318,6 +1366,19 @@ export function TaxFilingDialog({
               <WithholdingFilingCards month={month} />
             </TabsContent>
         </Tabs>
+        {invoiceRow ? (
+          <CampaignInvoiceDialog
+            // 행이 바뀌면 창을 새로 띄운다 — 앞 캠페인의 달별 줄·행 id 가 남지 않게.
+            key={invoiceRow.campaignId}
+            campaignId={invoiceRow.campaignId}
+            title={resolveInvoiceSlotTitle(invoiceRow.counterpart, invoiceRow.direction)}
+            onOpenChange={closeInvoiceDialog}
+            scan={receiptScan}
+            scanLoading={scanning}
+            onRequestScan={runReceiptScan}
+            onChanged={refreshBoardAfterInvoice}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );

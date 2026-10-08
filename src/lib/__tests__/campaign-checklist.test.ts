@@ -7,6 +7,7 @@ import {
   isSupplierInvoiceLabel,
   SETTLEMENT_CHECKLIST_TEMPLATES,
   setChecklistItemChecked,
+  MonthlyInvoiceManagedError,
   summarizeChecklist,
   type CampaignChecklistItemRow,
 } from "../campaign-checklist";
@@ -108,7 +109,7 @@ describe("campaign checklist workflow helpers", () => {
  * 검증과 무관한 코드 경로를 추가로 요구하게 되는 것을 피한다).
  */
 function createFakeChecklistPrisma(options: {
-  campaigns: Array<{ id: string; groupId: string | null; status?: string }>;
+  campaigns: Array<{ id: string; groupId: string | null; status?: string; monthlySettlement?: boolean }>;
   items: Array<{
     id: string;
     campaignId: string;
@@ -140,7 +141,12 @@ function createFakeChecklistPrisma(options: {
   const campaignStates = new Map<string, Record<string, unknown>>(
     options.campaigns.map((c) => [
       c.id,
-      { id: c.id, status: c.status ?? "SETTLEMENT_IN_PROGRESS", groupId: c.groupId },
+      {
+        id: c.id,
+        status: c.status ?? "SETTLEMENT_IN_PROGRESS",
+        groupId: c.groupId,
+        deal: { partner: { monthlySettlement: c.monthlySettlement ?? false } },
+      },
     ]),
   );
   const groupStates = new Map<string, Record<string, unknown>>(
@@ -627,5 +633,55 @@ describe("계산서 라벨 매칭 — 방향 단어를 보지 않는다", () => 
   it("셀러몰 신규 지급 항목은 계산서 라벨이 아니다", () => {
     expect(isSupplierInvoiceLabel("공급사 물품대금 지급 완료")).toBe(false);
     expect(isSellerInvoiceLabel("공급사 물품대금 지급 완료")).toBe(false);
+  });
+});
+
+describe("setChecklistItemChecked — 월정산 공급사 계산서는 체크리스트로 날짜를 찍지 않는다 (T-244)", () => {
+  it("월정산 거래처의 공급사 계산서 항목은 거절하고 항목·날짜 모두 그대로 둔다", async () => {
+    const { prisma, campaignStates } = createFakeChecklistPrisma({
+      campaigns: [{ id: "m", groupId: null, monthlySettlement: true }],
+      items: [
+        { id: "m-invoice", campaignId: "m", label: "공급사 총 수수료 매출 세금계산서 발행" },
+        { id: "m-sibling", campaignId: "m", label: "대금 지급 및 입금 완료" },
+      ],
+    });
+
+    await expect(setChecklistItemChecked(prisma, "m-invoice", true)).rejects.toBeInstanceOf(
+      MonthlyInvoiceManagedError,
+    );
+    // 날짜 쓰기 전에 거절한다(가짜 tx 는 롤백하지 않으므로 「쓰고 나서 던짐」이면 여기 값이 남는다).
+    expect(campaignStates.get("m")).not.toHaveProperty("supplierInvoiceIssuedAt");
+  });
+
+  it("체크 해제도 거절한다 — 달별 기록이 채운 레거시 날짜를 체크리스트가 지우면 안 된다", async () => {
+    const { prisma } = createFakeChecklistPrisma({
+      campaigns: [{ id: "m", groupId: null, monthlySettlement: true }],
+      items: [{ id: "m-invoice", campaignId: "m", label: "공급사 총 수수료 매출 세금계산서 발행", isChecked: true }],
+    });
+    await expect(setChecklistItemChecked(prisma, "m-invoice", false)).rejects.toBeInstanceOf(
+      MonthlyInvoiceManagedError,
+    );
+  });
+
+  it("셀러 계산서 항목·월정산이 아닌 캠페인은 종전대로 날짜를 찍는다(음성 대조군)", async () => {
+    const monthlySeller = createFakeChecklistPrisma({
+      campaigns: [{ id: "m", groupId: null, monthlySettlement: true }],
+      items: [
+        { id: "m-seller", campaignId: "m", label: "셀러 판매대행 수수료 세금계산서 수취" },
+        { id: "m-sibling", campaignId: "m", label: "대금 지급 및 입금 완료" },
+      ],
+    });
+    await setChecklistItemChecked(monthlySeller.prisma, "m-seller", true);
+    expect(monthlySeller.campaignStates.get("m")?.sellerInvoiceIssuedAt).toBeInstanceOf(Date);
+
+    const plain = createFakeChecklistPrisma({
+      campaigns: [{ id: "p", groupId: null }],
+      items: [
+        { id: "p-invoice", campaignId: "p", label: "공급사 총 수수료 매출 세금계산서 발행" },
+        { id: "p-sibling", campaignId: "p", label: "대금 지급 및 입금 완료" },
+      ],
+    });
+    await setChecklistItemChecked(plain.prisma, "p-invoice", true);
+    expect(plain.campaignStates.get("p")?.supplierInvoiceIssuedAt).toBeInstanceOf(Date);
   });
 });
