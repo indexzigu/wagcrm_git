@@ -9,6 +9,7 @@ import { useOrderWorkSummary } from "@/hooks/useOrderWorkSummary";
 import { formatLastSyncLabel } from "@/lib/date-utils";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { StatusDot } from "@/components/crm/status-dot";
 import { isOrderSyncStale, type OrderWorkSummary } from "@/lib/order-converter/order-work";
 
 /**
@@ -144,29 +145,28 @@ export function OrderWorkCard() {
   const quiet = !!data && data.total === 0;
 
   // 왼쪽 상태 한 마디 — 일이 있으면 아래 칸이 말하므로 비운다. 동기화 대기 중이면 오른쪽 한 마디로 충분하다.
+  // 낱말 기준(오너 확정 2026-10-08): 할 일이 없으면 값(「0건」)을 그리고, 동기화가 낡아 0 을 믿을 수 없으면
+  // 「확인불가」(점+낱말). 카드 전체가 링크라 설명창(hint)은 달지 않는다 — 버튼을 링크 안에 넣게 된다.
   let status: { text: string; tone: "caution" | null } | null = null;
-  if (quiet && sync.kind === "stale") status = { text: "확인 필요", tone: "caution" };
-  else if (quiet && sync.kind === "fresh") status = { text: "처리할 주문 없음", tone: null };
+  if (quiet && sync.kind === "stale") status = { text: "확인불가", tone: "caution" };
+  else if (quiet && sync.kind === "fresh") status = { text: "0건", tone: null };
 
   const header = (
     <div className="flex items-center gap-2">
       <PackageIcon className="size-4 shrink-0 text-[var(--primary)]" aria-hidden="true" />
       <h2 className="shrink-0 text-[13px] font-semibold tracking-tight text-[var(--primary)]">오늘 처리할 주문</h2>
       {status ? (
-        <span
-          className={cn(
-            "min-w-0 truncate text-xs",
-            status.tone === "caution" ? "font-semibold text-status-caution-text" : "text-slate-600",
-          )}
-        >
-          {status.text}
-        </span>
+        status.tone === "caution" ? (
+          <StatusDot tone="caution" label={status.text} className="min-w-0 font-semibold" />
+        ) : (
+          <span className="min-w-0 truncate text-xs tabular-nums text-slate-600">{status.text}</span>
+        )
       ) : null}
       <span className="ml-auto shrink-0 text-xs tabular-nums">
         {sync.kind === "loading" ? (
           isError ? null : <Skeleton className="inline-block h-3 w-24 align-middle bg-slate-200" />
         ) : sync.kind === "waiting" ? (
-          <span className="text-muted-foreground">동기화 대기 중</span>
+          <span className="text-muted-foreground">동기화대기</span>
         ) : sync.kind === "stale" ? (
           <span className="font-semibold text-status-caution-text">마지막 동기화 {sync.daysAgo}일 전</span>
         ) : (

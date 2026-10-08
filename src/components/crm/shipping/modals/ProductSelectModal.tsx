@@ -38,7 +38,8 @@ export default function ProductSelectModal({
       case 'WAIT':
         return <span className={`${baseClass} bg-transparent text-foreground border-border`}>대기</span>;
       default:
-        return <span className={`${baseClass} bg-transparent text-foreground border-border`}>{status || '상태없음'}</span>;
+        // 빈 값은 「—」(상태 낱말 기준 C6, 오너 확정 2026-10-08) — 할 일이 없는 값 칸에 낱말을 지어내지 않는다.
+        return <span className={`${baseClass} bg-transparent text-foreground border-border`}>{status || '—'}</span>;
     }
   };
 

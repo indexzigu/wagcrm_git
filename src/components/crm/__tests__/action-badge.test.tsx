@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
 import React from "react";
 import { ActionBadge } from "../action-badge";
 
@@ -51,19 +51,16 @@ describe("ActionBadge Component", () => {
     expect(container).toHaveClass("text-status-info");
   });
 
-  it("클릭 시 onClick 콜백이 호출된다", () => {
+  // 상태 라벨은 누르는 요소가 아니다(상태 표시 기준 ④) — onClick 을 받지 않고 버튼 역할도 없다.
+  it("누르는 요소가 아니다 — 버튼 역할·포인터 커서가 없다", () => {
     const task = {
       status: "PROPOSED",
       proposalSentAt: "2026-06-15T00:00:00",
     };
-    const handleClick = vi.fn();
-    render(
-      <ActionBadge task={task} referenceDate={refDate} onClick={handleClick} />
-    );
-    
-    const badge = screen.getByText("리마인드1차");
-    fireEvent.click(badge);
-    
-    expect(handleClick).toHaveBeenCalledTimes(1);
+    render(<ActionBadge task={task} referenceDate={refDate} />);
+
+    const badge = screen.getByText("리마인드1차").parentElement;
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(badge).not.toHaveClass("cursor-pointer");
   });
 });

@@ -311,14 +311,14 @@ describe("ExecutedCard", () => {
     expect(screen.getByText("자동승인")).toHaveAttribute("data-variant", "status-success");
   });
 
-  it("executedBy가 사람이면 '실행 완료'를 보여준다 (자동승인 아님)", () => {
+  it("executedBy가 사람이면 '실행완료'를 보여준다 (자동승인 아님)", () => {
     render(
       <ul>
         <ExecutedCard item={makeItem({ status: "EXECUTED", executedBy: "user-2" })} />
       </ul>
     );
-    expect(screen.getByText("실행 완료")).toBeInTheDocument();
-    expect(screen.getByText("실행 완료")).toHaveAttribute("data-variant", "status-success");
+    expect(screen.getByText("실행완료")).toBeInTheDocument();
+    expect(screen.getByText("실행완료")).toHaveAttribute("data-variant", "status-success");
     expect(screen.queryByText("자동승인")).not.toBeInTheDocument();
   });
 });

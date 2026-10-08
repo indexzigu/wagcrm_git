@@ -11,6 +11,7 @@ import { getDealIdentityParts } from "@/lib/deal-display";
 import type { OutreachRow } from "@/components/crm/outreach-list";
 import type { OutreachStatus } from "@/lib/validations/outreach";
 import { ActionBadge } from "@/components/crm/action-badge";
+import { StatusDot } from "@/components/crm/status-dot";
 import { calculateFollowUp } from "@/lib/followup-engine";
 import {
   daysSince,
@@ -46,19 +47,24 @@ function MobileOutreachCard({
   onStatusChange: (taskId: string, status: OutreachStatus) => Promise<void>;
 }) {
   const elapsedDays = daysSince(task.updatedAt ?? task.proposedAt);
-  const elapsedLabel = elapsedDays == null ? "경과일 미확인" : `${elapsedDays}일째`;
 
   // 경과일 색 — 단일 에스컬레이션 램프(무채색→주의→위험). 락 팔레트 정합(소유자 승인 2026-07-09):
   // 지연 심각도 1개 의미축만 색으로, 종결 상태(전환·드랍)는 무채색. violet/orange/rose/amber 다색 제거.
   const isTerminalStatus = task.status === "CONVERTED" || task.status === "DROPPED";
-  let elapsedClassName = "text-muted-foreground";
-  if (!isTerminalStatus && elapsedDays != null && elapsedDays >= 7) {
-    // #8F3C3C(--status-urgent-text): 11px 텍스트가 카드/틴트 배경 위에서도 AA(≥4.5:1) 확보.
-    // 기본 --status-urgent(#BF5050)은 흰 배경에서 ~4.5:1 경계라 소형 텍스트엔 -text 변형 사용.
-    elapsedClassName = "text-status-urgent-text font-semibold";
-  } else if (!isTerminalStatus && elapsedDays != null && elapsedDays >= 3) {
-    elapsedClassName = "text-status-caution font-semibold";
-  }
+  // 색만으로 전하지 않는다(상태 표시 기준 ③, 2026-10-08) — 3일↑ 머문 건은 점 + 「정체 N일」 낱말,
+  // 그 아래는 값(「N일째」)만. 데스크톱 영업 목록(`outreach-list.tsx` getElapsedBadge)과 같은 낱말·문턱이다.
+  const elapsedNode =
+    elapsedDays == null ? (
+      <span className="shrink-0 text-[11px] font-medium text-muted-foreground">—</span>
+    ) : !isTerminalStatus && elapsedDays >= 3 ? (
+      <StatusDot
+        tone={elapsedDays >= 7 ? "urgent" : "caution"}
+        label={`정체 ${elapsedDays}일`}
+        className="shrink-0 text-[11px]"
+      />
+    ) : (
+      <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{elapsedDays}일째</span>
+    );
 
   // 메모 내용 가져오기 (JSON 파싱 포함 안전장치)
   const getMemoText = () => {
@@ -131,9 +137,7 @@ function MobileOutreachCard({
               <span className="text-border/60">·</span>
               <span>협의수수료 <span className="font-semibold text-muted-foreground">{task.sellerMarginRate}%</span></span>
             </div>
-            <span className={`shrink-0 text-[11px] font-medium ${elapsedClassName}`}>
-              {elapsedLabel}
-            </span>
+            {elapsedNode}
           </div>
         ) : null}
 
@@ -147,9 +151,7 @@ function MobileOutreachCard({
             ) : (
               <div className="flex-1" />
             )}
-            <span className={`shrink-0 font-medium ${elapsedClassName}`}>
-              {elapsedLabel}
-            </span>
+            {elapsedNode}
           </div>
         ) : (
           <>

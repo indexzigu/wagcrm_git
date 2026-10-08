@@ -107,7 +107,7 @@ function ReviewCard({
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-bold text-slate-700">{title}</h3>
         <Badge variant={ok ? "default" : "secondary"} className="h-5 px-2 text-[10px]">
-          {ok ? "준비됨" : "작업 필요"}
+          {ok ? "준비됨" : "미준비"}
         </Badge>
       </div>
       <p className="text-[11px] font-medium text-muted-foreground">{detail}</p>

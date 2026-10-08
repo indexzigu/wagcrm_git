@@ -41,6 +41,7 @@ import { getStatementDeals } from "@/lib/settlement-statement";
 import { computeIndividualWithholding } from "@/lib/seller-tax-utils";
 import { maskResidentNumber, splitWithholdingTax } from "@/lib/withholding-report";
 import { FieldRow } from "./helper-dialog-field-row";
+import { StatusDot } from "./status-dot";
 
 function formatWon(value: number): string {
   return `${value.toLocaleString("ko-KR")}원`;
@@ -72,9 +73,9 @@ function RealNameRow({ realName, alias }: { realName: string | null; alias: stri
         {realName ? (
           <div className="truncate text-sm font-medium text-slate-800">{realName}</div>
         ) : (
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-status-urgent-text">
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-status-urgent" />
-            <span>입력 필요</span>
+          // 낱말은 「미입력」(상태 표시 기준 ①, 2026-10-08) — 누구인지는 낱말 뒤 보조 문구가 맡는다.
+          <div className="flex items-center gap-1.5">
+            <StatusDot tone="urgent" label="미입력" className="text-sm font-semibold" />
             <span className="text-xs font-normal text-muted-foreground">({alias}: 활동명, 실명 아님)</span>
           </div>
         )}
@@ -120,10 +121,7 @@ function ResidentNumberRow({ residentNumber }: { residentNumber: string | null }
             {revealed ? residentNumber : maskResidentNumber(residentNumber)}
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-status-urgent-text">
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-status-urgent" />
-            입력 필요
-          </div>
+          <StatusDot tone="urgent" label="미입력" className="flex text-sm font-semibold" />
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
@@ -210,10 +208,11 @@ export function WithholdingHelperDialog({
               <h3 className="text-sm font-semibold text-foreground">금액</h3>
               <div className="mt-2 flex flex-col gap-2">
                 <FieldRow label="지급일" value={campaign.payoutCompletedAt ?? null} />
-                <FieldRow label="총 지급액(세전)" value={hasPayout ? formatWon(preTaxPayout) : null} />
-                <FieldRow label="소득세" value={hasPayout ? formatWon(incomeTax) : null} />
-                <FieldRow label="지방소득세" value={hasPayout ? formatWon(localIncomeTax) : null} />
-                <FieldRow label="차인지급액" value={hasPayout ? formatWon(postTaxPayout) : null} />
+                {/* 지급액은 정산이 정하는 계산 금액이다 — 비었으면 「미입력」이 아니라 「금액미확정」 */}
+                <FieldRow label="총 지급액(세전)" value={hasPayout ? formatWon(preTaxPayout) : null} emptyLabel="금액미확정" emptyTone="caution" />
+                <FieldRow label="소득세" value={hasPayout ? formatWon(incomeTax) : null} emptyLabel="금액미확정" emptyTone="caution" />
+                <FieldRow label="지방소득세" value={hasPayout ? formatWon(localIncomeTax) : null} emptyLabel="금액미확정" emptyTone="caution" />
+                <FieldRow label="차인지급액" value={hasPayout ? formatWon(postTaxPayout) : null} emptyLabel="금액미확정" emptyTone="caution" />
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 지방소득세는 실제로 뗀 명세서상 금액입니다. 위택스 신고 세액은 과세표준(소득세)에서

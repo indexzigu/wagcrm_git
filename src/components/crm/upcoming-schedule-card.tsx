@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { Banknote } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusDot } from "@/components/crm/status-dot";
 
 export interface UpcomingEvent {
   date: string;
@@ -155,18 +155,23 @@ export function UpcomingScheduleBody({
   );
 }
 
-// 연동 상태 배지 — 탭 헤더/카드 헤더 공용.
+// 연동 상태 — 탭 헤더/카드 헤더 공용.
+// 상태 표시 기준(2026-10-08): 정상은 색을 받지 않는 흐린 글자 「연동됨」(② 할 일 없음 = 값),
+// 끊김만 점+낱말 「연동실패」(③)이고, 고치는 조작은 낱말이 아니라 옆의 「다시 연결」 링크가
+// 맡는다(④ 상태 라벨은 누르는 요소가 아니다). 두 자리 모두 버튼·링크 안이 아니라 hint 를 단다.
 export function CalendarSyncBadge({ connected }: { connected: boolean }) {
   return connected ? (
-    <Badge variant="outline" className="py-0.5 px-2 text-[10px] font-semibold bg-status-success-bg text-status-success border-status-success/20">
-      연동 정상
-    </Badge>
+    <span className="text-[11px] text-muted-foreground">연동됨</span>
   ) : (
-    <Link href="/settings/integrations">
-      <Badge variant="outline" className="py-0.5 px-2 text-[10px] font-semibold bg-status-caution-bg text-status-caution border-status-caution/20 cursor-pointer hover:border-status-caution/40 transition-colors">
-        연동 실패
-      </Badge>
-    </Link>
+    <span className="inline-flex items-center gap-2">
+      <StatusDot tone="caution" label="연동실패" hint="구글 캘린더 연결이 끊겼습니다." className="text-[11px]" />
+      <Link
+        href="/settings/integrations"
+        className="rounded-sm text-[11px] font-medium text-slate-600 underline underline-offset-2 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+      >
+        다시 연결
+      </Link>
+    </span>
   );
 }
 

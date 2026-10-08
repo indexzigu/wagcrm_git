@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Loader2, Play, Radar } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
@@ -90,7 +89,61 @@ function LegendDot({ statusKey: key, label }: { statusKey: keyof typeof STATUS_M
 // 어느 방향에도 다 안 들어가는 극단은 available-height 캡 + 내부 스크롤로 흡수한다.
 // 설명 섹션은 KNOWN_JOBS.desc를 그대로 쓰고, 작동 로그는 열릴 때마다 /api/system/task-log를
 // fetch한다(빈도 낮은 행 클릭이라 재조회 허용 — Popover는 열림 시에만 마운트되므로 계약 유지).
-function JobDetailPopoverContent({ job, onClose }: { job: KnownJob; onClose: () => void }) {
+/**
+ * 지연·실패 사유 한 줄 — 팝오버 본문 맨 위에 둔다.
+ *
+ * 종전에는 행 버튼 **안에** 툴팁 앵커(「지연」·「실패 사유」)를 두었는데, 그러면 상태 낱말이
+ * 누르는 요소 속의 또 다른 누르는 요소가 된다(중첩 인터랙티브 — 상태 표시 기준 ④, 2026-10-08).
+ * 행 버튼 하나가 「상세 열기」를 맡고, 사유는 그 상세의 첫 줄로 옮겼다.
+ * 실패 메시지는 스택처럼 길 수 있어 3줄로 자르고, 잘렸을 때만 「전체 보기」를 붙인다.
+ */
+function ReasonLine({ kind, text }: { kind: "overdue" | "error"; text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !expanded) setClamped(el.scrollHeight > el.clientHeight + 1);
+  }, [text, expanded]);
+  const isError = kind === "error";
+  return (
+    <div className="shrink-0 border-b border-slate-100 px-3.5 py-2.5">
+      <p
+        ref={ref}
+        title={text}
+        className={`break-words text-[11px] leading-snug text-slate-700${expanded ? "" : " line-clamp-3"}`}
+      >
+        <span className={`font-medium ${isError ? "text-[var(--status-urgent-text)]" : "text-[var(--status-caution-text)]"}`}>
+          {isError ? "실패 사유" : "지연 사유"}:
+        </span>{" "}
+        {text}
+      </p>
+      {(clamped || expanded) && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 rounded-sm text-[10px] font-medium text-slate-500 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+        >
+          {expanded ? "접기" : "전체 보기"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function JobDetailPopoverContent({
+  job,
+  onClose,
+  overdueText,
+  lastErrorMessage,
+}: {
+  job: KnownJob;
+  onClose: () => void;
+  /** 지연 판정 사유(지연이 아니면 null) — 행과 같은 판정 결과를 그대로 받는다. */
+  overdueText?: string | null;
+  /** 마지막 실패 메시지(실패 상태일 때만 넘긴다). */
+  lastErrorMessage?: string | null;
+}) {
   const [logs, setLogs] = useState<TaskLogEntry[] | null>(null);
   const [logError, setLogError] = useState<string | null>(null);
 
@@ -114,7 +167,7 @@ function JobDetailPopoverContent({ job, onClose }: { job: KnownJob; onClose: () 
   }, [job.key]);
 
   /**
-   * 「확인 필요」는 **가장 최근 실행 1건에서만** 읽는다 — 이 섹션은 이력이 아니라 지금 상태다.
+   * 「확인대기」는 **가장 최근 실행 1건에서만** 읽는다 — 이 섹션은 이력이 아니라 지금 상태다.
    * 지난 실행들의 같은 목록을 로그 줄마다 되풀이하면 매일 같은 2건이 20번 쌓여 신호가 죽고,
    * 최신 실행이 실패해 상세가 없을 때 옛 목록을 끌어다 쓰면 "지금 확인할 것"이라고 거짓말한다
    * (그 경우 섹션은 사라지고 로그의 실패 줄이 남는 게 맞다).
@@ -146,24 +199,31 @@ function JobDetailPopoverContent({ job, onClose }: { job: KnownJob; onClose: () 
           </button>
         </div>
 
+        {/* 실패가 지연을 이긴다(statusKey 순위와 같다) — 둘 다 오면 실패 사유만 보인다. */}
+        {lastErrorMessage ? (
+          <ReasonLine kind="error" text={lastErrorMessage} />
+        ) : overdueText ? (
+          <ReasonLine kind="overdue" text={overdueText} />
+        ) : null}
+
         <div className="shrink-0 px-3.5 py-2.5">
           <p className="text-[11px] leading-relaxed text-slate-600">{job.desc}</p>
         </div>
 
         {needsReview.items.length > 0 && (
           <section
-            aria-label="확인 필요"
+            aria-label="확인대기"
             className="min-h-0 shrink-0 border-t border-slate-100 px-3.5 py-2.5"
           >
             <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              확인 필요 {needsReview.total}건
+              확인대기 {needsReview.total}건
             </p>
             {/* 스크롤 영역은 키보드로도 닿아야 한다 — 포커스가 안 가면 마우스 없이는 아래 건을 못 본다. */}
             <ul tabIndex={0} className="max-h-[148px] space-y-2 overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring">
               {needsReview.items.map((item) => (
                 <li key={item.key} className="flex items-start gap-2">
                   {/* 심각도 마커 — 지연·실행중과 같은 caution 토큰(새 hue 금지, P8 가드레일 2).
-                      「확인 필요」는 실패(urgent)가 아니라 사람 판단을 기다리는 상태다. */}
+                      「확인대기」는 실패(urgent)가 아니라 사람 판단을 기다리는 상태다. */}
                   <span
                     aria-hidden
                     className="mt-1 size-1.5 shrink-0 rounded-full bg-[var(--status-caution)]"
@@ -233,7 +293,7 @@ function JobDetailPopoverContent({ job, onClose }: { job: KnownJob; onClose: () 
                     className={`mt-1 size-1.5 shrink-0 rounded-full ${log.status === "SUCCESS" ? "bg-[var(--status-success)]" : "bg-[var(--status-urgent)]"}`}
                   />
                   <div className="min-w-0 flex-1">
-                    {/* 성패를 점 색 하나로 말하지 않는다(WCAG 1.4.1) — 위 작업 행의 「지연」·「실패 사유」와
+                    {/* 성패를 점 색 하나로 말하지 않는다(WCAG 1.4.1) — 작업 행의 「지연」·「실패」 낱말과
                         같은 텍스트 캐리어. 실패만 보이는 글자를 얹고(주의가 필요한 소수만 색, P8 §2),
                         성공은 화면낭독기에만 알린다. 메시지가 빈 실패는 「실패」 한 단어가 종전 「오류 발생」을 대신한다. */}
                     <p className="break-words text-[11px] leading-snug text-slate-700">
@@ -396,56 +456,21 @@ export function SystemRadarCard() {
                           {/* RUNNING만 live-indicator pulse — 종결 상태(SUCCESS/ERROR/NONE)는 정적 유지 */}
                           <span aria-hidden className={`size-2 rounded-full shrink-0 ${meta.dotClass}${key === "RUNNING" ? " pulse-beat-dot" : ""}`} />
                           <span className="text-xs font-semibold text-slate-700">{job.name}</span>
-                          {/* 색만으로 전하지 않는다 — 정상 외에는 낱말을 화면에 보인다. 정상은 낱말이
-                              없으므로 화면 낭독기에만 알린다. 지연은 아래 서브텍스트의 사유 앵커가 같은
-                              낱말을 이미 보이므로 여기서는 생략한다(한 줄에 「지연」 두 번 방지). */}
-                          {key === "SUCCESS" || key === "OVERDUE" ? (
+                          {/* 색만으로 전하지 않는다 — 정상 외에는 지연까지 포함해 낱말을 화면에 보인다.
+                              정상은 낱말이 없으므로 화면 낭독기에만 알린다. 지연과 실행중은 같은 caution
+                              점이라(P8 가드레일 2) 이 낱말이 둘을 가르는 캐리어다. */}
+                          {key === "SUCCESS" ? (
                             <span className="sr-only">{meta.label}</span>
                           ) : (
                             <span className={`shrink-0 text-[10.5px] font-medium ${meta.textClass}`}>{meta.label}</span>
                           )}
                         </span>
-                        {/* 실패 메시지는 행에 인라인으로 펼치지 않는다(오너 2026-07-24 2차 — 옆으로 너무
-                            길어짐). 대신 서브텍스트에 "실패 사유" 앵커만 두고 전문은 hover 툴팁으로,
-                            상세는 기존대로 행 클릭 팝오버로 본다. 행 높이는 상태와 무관하게 균일 유지. */}
+                        {/* 실패·지연 사유는 행에 두지 않는다 — 행 버튼 안에 툴팁 앵커를 두면 누르는 요소
+                            안에 누르는 요소가 생긴다(상태 표시 기준 ④). 사유는 이 행을 눌러 여는 상세
+                            팝오버의 첫 줄에 있다. 행 높이는 상태와 무관하게 균일 유지. */}
                         <span className="mt-0.5 block pl-4 text-[10.5px] text-slate-500 truncate">
                           {job.cycle} {job.timeKst} <span aria-hidden>·</span> 마지막{" "}
                           <span className={key === "NONE" ? "font-normal" : "font-medium text-slate-600"}>{lastRunText}</span>
-                          {/* 지연은 색 하나로 말하지 않는다 — caution 점은 '실행 중'과 같은 토큰이라
-                              (P8 가드레일 2: 새 hue 금지) 텍스트 캐리어를 함께 준다. 사유는 툴팁으로
-                              내려 행 높이를 상태와 무관하게 균일 유지한다(실패 사유 앵커와 같은 형태). */}
-                          {key === "OVERDUE" && overdueText && (
-                            <>
-                              {" "}<span aria-hidden>·</span>{" "}
-                              <TooltipProvider delayDuration={150}>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span title="" className="font-medium text-[var(--status-caution-text)] underline decoration-dotted underline-offset-2 cursor-help">지연</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" align="start" className="max-w-[280px] break-words text-[11px]">
-                                    {overdueText}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </>
-                          )}
-                          {key === "ERROR" && task?.lastErrorMessage && (
-                            <>
-                              {" "}<span aria-hidden>·</span>{" "}
-                              <TooltipProvider delayDuration={150}>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    {/* title="" 로 조상 button 의 네이티브 title 이 이 앵커 hover 시 겹쳐 뜨는 것을
-                                        억제한다(Radix 툴팁만 보이게) — code-reviewer 지적 반영 */}
-                                    <span title="" className="font-medium text-[var(--status-urgent-text)] underline decoration-dotted underline-offset-2 cursor-help">실패 사유</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" align="start" className="max-w-[280px] break-words text-[11px]">
-                                    {task.lastErrorMessage}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            </>
-                          )}
                         </span>
                       </button>
                       </PopoverTrigger>
@@ -470,7 +495,12 @@ export function SystemRadarCard() {
                       </button>
                     </div>
                     {/* Radix가 열림 시에만 마운트 — 마운트 시 로그 fetch 계약 유지 */}
-                    <JobDetailPopoverContent job={job} onClose={() => setOpenJob(null)} />
+                    <JobDetailPopoverContent
+                      job={job}
+                      onClose={() => setOpenJob(null)}
+                      overdueText={key === "OVERDUE" ? overdueText : null}
+                      lastErrorMessage={key === "ERROR" ? task?.lastErrorMessage ?? null : null}
+                    />
                     </div>
                   </Popover>
                 );

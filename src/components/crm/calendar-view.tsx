@@ -8,6 +8,7 @@ import {
   ArrowUp,
   Boxes,
   CalendarRange,
+  CircleAlert,
   ExternalLink,
   Plus,
   UserRound,
@@ -170,12 +171,30 @@ function MoneyMarkerIcon({ event }: { event: MoneyMarkerEvent }) {
     );
   }
   const Icon = MONEY_DIRECTION_ICON[isDeposit ? "in" : "out"];
+  if (event.state === "overdue") {
+    return (
+      <span className="relative inline-flex size-3.5">
+        <Icon className="size-3.5 text-status-urgent" aria-hidden="true" />
+        <OverdueMark className="size-2" />
+      </span>
+    );
+  }
+  return <Icon className="size-3.5 text-status-caution" aria-hidden="true" />;
+}
+
+/**
+ * 「지연」 마커의 **모양 신호** — 색 말고도 지연을 가른다(상태 표시 기준 ③, 2026-10-08).
+ * 예정(caution)과 지연(urgent)은 같은 방향 아이콘이라 종전에는 색만 달랐다. 모서리에
+ * 느낌표 배지를 얹어 색을 못 가르는 눈에도 「이것만 다르다」가 보이게 한다.
+ * - 자리는 아이콘 상자 **안쪽** 오른쪽 아래다 — 마커 행이 `overflow-hidden` 이라 상자 밖으로
+ *   내밀면 잘린다.
+ * - 흰 채움은 배지가 밑의 화살표 획과 섞이지 않게 하는 바탕이다(이웃 hue 를 새로 쓰지 않는다).
+ */
+function OverdueMark({ className }: { className?: string }) {
   return (
-    <Icon
-      className={cn(
-        "size-3.5",
-        event.state === "overdue" ? "text-status-urgent" : "text-status-caution",
-      )}
+    <CircleAlert
+      className={cn("absolute -bottom-px -right-px fill-white text-status-urgent", className)}
+      strokeWidth={3}
       aria-hidden="true"
     />
   );
@@ -542,7 +561,10 @@ function CalendarLegend() {
         {/* ⚠️ 여기만 **방향축이 아니다** — 「지연」은 심각도이고 아래 화살표는 방향을
             말하려는 것이 아니라 범례 마커로 모양을 빌려 쓴 것이다. 그래서 SSOT 를
             거치지 않고 직접 import 한다(그 예외는 계약 테스트에 사유와 함께 등재). */}
-        <ArrowDownCircle className="size-3 text-status-urgent" aria-hidden="true" />
+        <span className="relative inline-flex size-3">
+          <ArrowDownCircle className="size-3 text-status-urgent" aria-hidden="true" />
+          <OverdueMark className="size-[7px]" />
+        </span>
         지연
       </span>
     </div>

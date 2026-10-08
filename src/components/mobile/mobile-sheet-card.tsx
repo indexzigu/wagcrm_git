@@ -178,7 +178,7 @@ export function MobileSheetAmount({
         ? `₩${formatCurrency(amount.amount)}`
         : amount.kind === "STATE"
           ? amount.text
-          : "금액 미정"}
+          : "금액미확정"}
     </span>
   );
 }

@@ -146,7 +146,7 @@ const PHASE_LABEL: Record<PriceSheetIngestPhase, string> = {
 const SLOT_ROW = "-mx-4 border-t border-border px-4 py-2.5";
 
 function rowLabel(row: { productName: string | null; optionName: string | null }): string {
-  return [row.productName, row.optionName].filter(Boolean).join(" · ") || "이름 없음";
+  return [row.productName, row.optionName].filter(Boolean).join(" · ") || "이름없음";
 }
 
 /**

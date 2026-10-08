@@ -46,6 +46,7 @@ import { rankCampaignCardCautions, type CampaignCardCaution } from '@/lib/order-
 import { deriveReplySentDates } from '@/lib/order-converter/invoice-reply-status';
 import { InvoiceReplyLine } from './invoice-reply-line';
 import { PoReadyLine } from './po-ready-line';
+import { StatusDot } from './status-dot';
 import { useCampaigns } from '@/hooks/useCampaigns';
 import { useNaverProducts } from '@/hooks/useNaverProducts';
 import { notify } from '@/lib/toast';
@@ -124,6 +125,9 @@ type ShippingOrderLine = {
 // 카드 1행 주의 배지·+N 칩의 눌림 영역 확장(T-180). 보이는 크기(≈22px)는 그대로 두고 투명 의사요소로
 // 위아래 1px씩 넓혀 고밀도 화면 기준 24px을 채운다 — 같은 줄 배지가 한 개만 커져 어긋나는 것을 막는다.
 const CAUTION_HIT_AREA = 'relative before:absolute before:inset-x-0 before:-inset-y-px';
+// 주의 낱말 옆의 조작 버튼(「맞추기」「내역」). 상태 낱말은 누르는 요소가 아니다 — 조작은 이 버튼이
+// 따로 맡는다(상태 낱말 기준 ④, 오너 확정 2026-10-08). 색은 옆 낱말의 점이 이미 지므로 버튼은 무채색.
+const CAUTION_TRIGGER_CLASS = `inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`;
 
 function PendingOrdersPopover({ campName, orders, onClose }: { campName: string; orders: PendingOrderLine[]; onClose: () => void }) {
     // eslint-disable-next-line react-hooks/purity
@@ -1823,7 +1827,7 @@ export default function OrderDashboard() {
                       {formatLastSyncLabel(syncMeta.lastSync)}
                     </>
                   ) : (
-                    '동기화 대기 중'
+                    '동기화대기'
                   )}
                   {syncMeta.syncing && <span className="text-primary">· 갱신 중</span>}
                 </span>
@@ -2050,10 +2054,11 @@ export default function OrderDashboard() {
                       if (cautions.length === 0) return null;
                       const labelFor = (kind: CampaignCardCaution): string => {
                         switch (kind) {
-                          case 'store-drift': return camp.storePeriodDrift?.scope === 'end-only' ? '스토어 종료일 다름' : '스토어 기간 다름';
-                          case 'post-period': return `판매기간 후 ${(camp as any).postPeriodOrderCount}건`;
-                          case 'frozen-drift': return '정산 확정: 기간 변경 미반영';
-                          case 'period-mismatch': return '판매캠페인 기간 불일치';
+                          // 상태 낱말은 붙여 쓴 한 낱말(상태 낱말 기준 ①, 오너 확정 2026-10-08) — 풀이는 팝오버·설명창이 진다.
+                          case 'store-drift': return camp.storePeriodDrift?.scope === 'end-only' ? '스토어종료차이' : '스토어기간차이';
+                          case 'post-period': return `종료후주문 ${(camp as any).postPeriodOrderCount}건`;
+                          case 'frozen-drift': return '기간미반영';
+                          case 'period-mismatch': return '기간불일치';
                         }
                       };
                       const renderCaution = (kind: CampaignCardCaution) => {
@@ -2071,19 +2076,22 @@ export default function OrderDashboard() {
                               setStorePeriodDriftCampaignId(open ? camp.id : null);
                             }}
                           >
-                            <span className="inline-flex">
+                            <span className="inline-flex items-center gap-1.5">
+                              {/* 낱말(점+낱말)과 조작 버튼을 나눈다 — 풀이는 버튼이 여는 팝오버가 두 기간을 나란히
+                                  보여주므로 낱말에 설명창을 따로 달지 않는다(ss-ux 검토 2026-10-08). 기간 문자열을
+                                  낱말에 넣지 않는 것도 같은 이유 — 같은 줄의 신호들이 다른 무게로 읽힌다. */}
+                              <StatusDot tone="caution" label={labelFor('store-drift')} />
                               <PopoverTrigger asChild>
                                 <button
                                   type="button"
                                   onClick={(e) => e.stopPropagation()}
-                                  className={`inline-flex items-center gap-1 rounded-full border border-status-caution/30 bg-status-caution-bg px-2 py-0.5 text-[11px] font-semibold text-status-caution hover:bg-status-caution-bg/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer ${CAUTION_HIT_AREA}`}
+                                  className={CAUTION_TRIGGER_CLASS}
+                                  aria-label={`${camp.name} 스토어 기간 맞추기`}
                                   title={camp.storePeriodDrift!.scope === 'end-only'
-                                    ? '네이버 스토어의 판매 종료일이 화면 기간과 다릅니다: 클릭해 맞추기'
-                                    : '네이버 스토어의 판매기간이 화면 기간과 다릅니다: 클릭해 맞추기'}
+                                    ? '네이버 스토어의 판매 종료일이 화면 기간과 다릅니다: 눌러 맞추기'
+                                    : '네이버 스토어의 판매기간이 화면 기간과 다릅니다: 눌러 맞추기'}
                                 >
-                                  {/* 기간 문자열은 팝오버가 이미 두 값을 나란히 보여준다 — 배지에 또 넣으면
-                                      형제 배지(10~14자)의 2배가 돼 같은 줄의 신호들이 다른 무게로 읽힌다. */}
-                                  ⚠ {labelFor('store-drift')}
+                                  맞추기
                                   <svg className={`w-2.5 h-2.5 transition-transform ${storePeriodDriftCampaignId === camp.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                                 </button>
                               </PopoverTrigger>
@@ -2112,15 +2120,17 @@ export default function OrderDashboard() {
                               setPostPeriodListCampaignId(open ? camp.id : null);
                             }}
                           >
-                            <span className="inline-flex">
+                            <span className="inline-flex items-center gap-1.5">
+                              <StatusDot tone="caution" label={labelFor('post-period')} />
                               <PopoverTrigger asChild>
                                 <button
                                   type="button"
                                   onClick={(e) => e.stopPropagation()}
-                                  className={`inline-flex items-center gap-1 rounded-full border border-status-caution/30 bg-status-caution-bg px-2 py-0.5 text-[11px] font-semibold text-status-caution hover:bg-status-caution-bg/70 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer ${CAUTION_HIT_AREA}`}
-                                  title="판매기간 종료 후 들어온 발주 대상 주문: 클릭해 내역 보기"
+                                  className={CAUTION_TRIGGER_CLASS}
+                                  aria-label={`${camp.name} 종료 후 주문 내역`}
+                                  title="판매기간 종료 후 들어온 발주 대상 주문: 눌러 내역 보기"
                                 >
-                                  ⚠ {labelFor('post-period')}
+                                  내역
                                   <svg className={`w-2.5 h-2.5 transition-transform ${postPeriodListCampaignId === camp.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                                 </button>
                               </PopoverTrigger>
@@ -2137,23 +2147,24 @@ export default function OrderDashboard() {
                           case 'frozen-drift': return (
                           /* 정산 확정으로 창이 얼었는데 판매관리 일정이 달라진 상태 — 판매관리에서 기간을 고쳐도
                             반영되지 않는다. 조용히 무시하면 운영자가 원인을 알 수 없어 반드시 드러낸다. */
-                          <span
-                            key="frozen-drift"
-                            className="text-[11px] font-semibold text-status-caution bg-status-caution-bg border border-status-caution/30 rounded-full px-2 py-0.5 whitespace-nowrap"
-                            title="정산이 시작돼 집계 기간이 확정된 캠페인입니다. 판매관리에서 기간을 바꿔도 매출 집계에는 반영되지 않습니다(정산 내역과 어긋나지 않게 하기 위함). 기간을 반드시 바꿔야 한다면 정산 상태를 먼저 확인하세요."
-                          >
-                            ⚠ {labelFor('frozen-drift')}
+                          // 설명창 트리거(버튼)의 클릭이 카드 머리 div 로 번지면 아코디언이 함께 토글된다 — 감싼 span 에서 끊는다.
+                          <span key="frozen-drift" className="inline-flex" onClick={(e) => e.stopPropagation()}>
+                            <StatusDot
+                              tone="caution"
+                              label={labelFor('frozen-drift')}
+                              hint="정산이 확정돼 판매 기간 변경을 반영하지 않았습니다. 판매관리에서 기간을 바꿔도 매출 집계에는 반영되지 않습니다(정산 내역과 어긋나지 않게 하기 위함). 기간을 반드시 바꿔야 한다면 정산 상태를 먼저 확인하세요."
+                            />
                           </span>
                           );
                           case 'period-mismatch': return (
                           /* 연결된 판매캠페인들의 기간이 서로 달라 min~max 합성 창을 쓰는 중 — 그 창은 짧게 운영한
                             딜에는 정확하지 않다. 오너 결정(2026-07-15)은 "합성하되 어긋나면 경고". */
-                          <span
-                            key="period-mismatch"
-                            className="text-[11px] font-semibold text-status-caution bg-status-caution-bg border border-status-caution/30 rounded-full px-2 py-0.5 whitespace-nowrap"
-                            title="연결된 판매캠페인들의 기간이 서로 다릅니다. 표시된 기간은 가장 이른 시작 ~ 가장 늦은 종료를 합성한 값이라, 짧게 운영한 딜에는 정확하지 않습니다. 판매관리에서 회차 기간을 확인하세요."
-                          >
-                            ⚠ {labelFor('period-mismatch')}
+                          <span key="period-mismatch" className="inline-flex" onClick={(e) => e.stopPropagation()}>
+                            <StatusDot
+                              tone="caution"
+                              label={labelFor('period-mismatch')}
+                              hint="연결된 판매캠페인들의 기간이 서로 다릅니다. 표시된 기간은 가장 이른 시작 ~ 가장 늦은 종료를 합성한 값이라, 짧게 운영한 딜에는 정확하지 않습니다. 판매관리에서 회차 기간을 확인하세요."
+                            />
                           </span>
                           );
                         }

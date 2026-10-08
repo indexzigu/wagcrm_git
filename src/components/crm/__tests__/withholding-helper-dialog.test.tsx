@@ -4,7 +4,7 @@
 // 세금계산서 도우미(tax-invoice-helper-dialog.test.tsx)의 자매 테스트다. 핵심
 // 불변식: ① 금액은 computeIndividualWithholding + getStatementDeals 그대로다(재계산
 // 금지 — 정산 명세서와 갈리면 안 된다) ② 주민등록번호는 기본 마스킹, 행 단위 펼침만
-// 허용한다 ③ 실명 미등록이어도 활동명으로 대신 채우지 않고 「입력 필요」로 표시한다
+// 허용한다 ③ 실명 미등록이어도 활동명으로 대신 채우지 않고 「미입력」으로 표시한다
 // ④ 하단에 "이 캠페인 1건 자료를 월 합계 신고서에 그대로 옮기면 틀린다"는 경고가
 // 지급월을 명시하며 항상 뜬다.
 import { describe, it, expect, vi } from "vitest";
@@ -71,7 +71,7 @@ describe("원천징수 입력 도우미", () => {
     expect(screen.queryByText("1,100,000원")).not.toBeInTheDocument();
   });
 
-  it("실명 미등록이면 활동명으로 대신 채우지 않고 「입력 필요」로 표시하되, 활동명을 병기해 식별 가능하게 한다", () => {
+  it("실명 미등록이면 활동명으로 대신 채우지 않고 「미입력」으로 표시하되, 활동명을 병기해 식별 가능하게 한다", () => {
     render(
       <WithholdingHelperDialog
         open
@@ -79,7 +79,7 @@ describe("원천징수 입력 도우미", () => {
         onOpenChange={() => {}}
       />,
     );
-    expect(screen.getAllByText(/입력 필요/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("미입력").length).toBeGreaterThan(0);
     expect(screen.getByText(/달콤한하루/)).toBeInTheDocument();
     expect(screen.queryByText("김철수")).not.toBeInTheDocument();
   });
@@ -94,7 +94,7 @@ describe("원천징수 입력 도우미", () => {
     expect(screen.queryByText("900101-9******")).not.toBeInTheDocument();
   });
 
-  it("주민등록번호 미등록이면 「입력 필요」로 표시한다", () => {
+  it("주민등록번호 미등록이면 「미입력」으로 표시한다", () => {
     render(
       <WithholdingHelperDialog
         open
@@ -102,7 +102,7 @@ describe("원천징수 입력 도우미", () => {
         onOpenChange={() => {}}
       />,
     );
-    expect(screen.getAllByText(/입력 필요/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("미입력").length).toBeGreaterThan(0);
   });
 
   it("월 합계 경고가 항상 뜨고 지급월을 명시한다", () => {

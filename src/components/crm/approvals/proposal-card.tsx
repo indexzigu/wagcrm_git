@@ -77,7 +77,7 @@ async function fetchProposal(id: string): Promise<ProposalDetail> {
  *    끝났다"는 판정을 나르므로 그 금지 용법이었다.
  * ② 더 나쁜 것은 **의미가 정반대**였다는 점이다 — 생애주기 SSOT(`StatusBadge`, 가드레일 2)
  *    에서 `status-active` 는 PROPOSAL·ACTIVE(=**진행 중**)이고 COMPLETED 가
- *    `status-success` 다. 「실행 완료」에 네이비를 칠하면 앱 전역 어휘와 충돌한다.
+ *    `status-success` 다. 「실행완료」에 네이비를 칠하면 앱 전역 어휘와 충돌한다.
  *
  * 같은 위반을 모바일 캠페인 상세 시트에서 먼저 고쳤다(PR #486, 오너 승인 2026-08-26).
  * 신규 hue 가 아니라 기존 생애주기축 어휘 재사용이므로 가드레일 2 위반이 아니다.
@@ -101,7 +101,7 @@ function StatusChip({ proposal }: { proposal: ProposalDetail }) {
         </Badge>
       );
     }
-    return <Badge variant="status-success">실행 완료</Badge>;
+    return <Badge variant="status-success">실행완료</Badge>;
   }
   if (proposal.status === "FAILED") {
     return <Badge variant="destructive">실패</Badge>;

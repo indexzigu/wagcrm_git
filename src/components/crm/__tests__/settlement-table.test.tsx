@@ -274,6 +274,28 @@ describe("SettlementTable 계산서 열", () => {
     expect(slotBadge("셀러 지급 미완료").className).toContain("bg-slate-100");
   });
 
+  it("미완료 칸은 점선 테두리로, 날짜가 없으면 날짜 자리에 「미완료」로 보인다(색만으로 전하지 않는다)", () => {
+    // 열 폭을 늘리지 않는 배치다(2026-10-08 ss-ux 판정) — 낱말은 날짜 자리(「-」 대신)에만 들어간다.
+    renderTable([
+      {
+        ...businessCampaign,
+        salesChannel: "OWN_MALL",
+        isSupplierPayoutCompleted: true,
+        supplierPayoutCompletedAt: "2026-08-20",
+        isPayoutCompleted: false,
+        expectedPayoutDate: null,
+        payoutCompletedAt: null,
+      },
+    ]);
+    const doneBadge = slotBadge("공급사 지급 완료");
+    const todoBadge = slotBadge("셀러 지급 미완료");
+    expect(doneBadge.className).not.toContain("outline-dashed");
+    expect(todoBadge.className).toContain("outline-dashed");
+    const dateSlot = (badge: HTMLElement) => badge.parentElement!.lastElementChild!;
+    expect(dateSlot(todoBadge).textContent).toBe("미완료");
+    expect(dateSlot(doneBadge).textContent).toBe("26-08-20");
+  });
+
   it("계산서 열이 정산일정 바로 오른쪽에 온다", () => {
     renderTable([businessCampaign]);
 

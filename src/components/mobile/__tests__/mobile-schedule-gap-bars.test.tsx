@@ -34,7 +34,7 @@ describe("MobileScheduleGapBars (item 10 — 일 단위 빈 구간)", () => {
         onSelectGap={vi.fn()}
       />,
     );
-    expect(screen.getByText(/확보 필요/)).toBeInTheDocument();
+    expect(screen.getByText(/미확보/)).toBeInTheDocument();
     expect(screen.getByText("2구간")).toBeInTheDocument();
     expect(screen.getByText(/7\/18~7\/20/)).toBeInTheDocument();
     // 경고 메시지는 접힘 상태에서 미표시
@@ -46,7 +46,7 @@ describe("MobileScheduleGapBars (item 10 — 일 단위 빈 구간)", () => {
     const danger = gap({});
     render(<MobileScheduleGapBars gaps={[danger]} onSelectGap={onSelect} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /확보 필요 1구간/ }));
+    await userEvent.click(screen.getByRole("button", { name: /미확보 1구간/ }));
     expect(screen.getByText("즉시 일정 확보 필요")).toBeInTheDocument();
     expect(screen.getByText(/3일/)).toBeInTheDocument();
 

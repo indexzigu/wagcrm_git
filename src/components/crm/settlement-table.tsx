@@ -165,6 +165,7 @@ function SlotIconBadge({
         tone === "done"
           ? "bg-status-success-bg text-status-success ring-1 ring-status-success"
           : "bg-slate-100 text-slate-600",
+        tone === "todo" && "outline-1 outline-dashed outline-slate-500 -outline-offset-1",
       )}
     >
       {/* `title` 과 `sr-only` 는 **같은 문자열**이다 — 시각 사용자(호버)와 화면리더가 같은
@@ -275,6 +276,9 @@ export function SettlementTable({
                 <col style={settlementFluidCol(86)} />
                 {/* 정산일정·계산서는 **같은 구조**(아이콘 배지 + 날짜)라 폭도 같다.
                     128 = 여백(8+8) + 배지(40) + 간격(6) + 날짜(61) + 여유 5.
+                    ⛔ 「미완료」 낱말을 위해 넓히지 말 것(2026-10-08 ss-ux 판정) — 캠페인명이 대신 두 줄로
+                    감긴다. 낱말은 날짜가 없을 때 날짜 자리(61px)에 들어가고, 날짜가 있는 미완료는 배지의
+                    점선 테두리가 진다(아래 SlotIconBadge).
                     ⛔ 다시 좁히지 말 것 — 종전 150px 는 콘텐츠 118px 로 날짜가 두 줄로 감겼다
                     (실측 줄 높이 32px, 오너 신고 2026-08-25). 한글 배지(64px) 시절의 170 에서
                     아이콘화(40px)로 42px 를 반환한 값이다.
@@ -414,9 +418,13 @@ export function SettlementTable({
                                     벌어 폭 여유를 3px→5.4px 로 넓힌다. 사용자가 자간을 직접 키우면
                                     그 설정이 이긴다(저자 선언이라 SC 1.4.12 와 충돌하지 않는다). */}
                                 <span className="whitespace-nowrap text-[11px] tracking-tight tabular-nums">
-                                  {formatScheduleDate(
-                                    campaign[slot.expectedField] || campaign[slot.completedAtField],
-                                  )}
+                                  {/* 날짜가 없는 미완료는 「-」 대신 낱말을 날짜 자리에 둔다 — 폭이 늘지 않는다
+                                      (상태 표시 기준 ③, 2026-10-08). 날짜가 있으면 배지의 점선 테두리가 미완료를 진다. */}
+                                  {!completed && !(campaign[slot.expectedField] || campaign[slot.completedAtField])
+                                    ? "미완료"
+                                    : formatScheduleDate(
+                                        campaign[slot.expectedField] || campaign[slot.completedAtField],
+                                      )}
                                 </span>
                               </div>
                             );
@@ -513,7 +521,8 @@ export function SettlementTable({
                                     규칙의 "소극 상태는 slate-500 이 하한"(4.76:1)을 따른다. */}
                                 {slot.applicable || issuedAt ? (
                                   <span className={cn("whitespace-nowrap text-[11px] tracking-tight tabular-nums", !slot.applicable && "text-slate-500")}>
-                                    {formatScheduleDate(issuedAt)}
+                                    {/* 의무가 있는데 아직이면 날짜 자리에 낱말(위 정산일정 칸과 같은 규칙). */}
+                                    {slot.applicable && !issuedAt ? "미완료" : formatScheduleDate(issuedAt)}
                                   </span>
                                 ) : null}
                               </div>

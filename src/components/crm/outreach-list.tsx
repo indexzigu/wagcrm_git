@@ -23,6 +23,7 @@ import { getDealIdentityParts } from "@/lib/deal-display";
 
 
 import { ActionBadge } from "./action-badge";
+import { StatusDot } from "./status-dot";
 import { calculateFollowUp } from "@/lib/followup-engine";
 
 
@@ -114,14 +115,24 @@ function getDaysInStatus(updatedAt: string | null | undefined, proposedAt: strin
  * 모바일(`mobile-outreach-view.tsx`)엔 이 분기가 애초에 없다 — 이제 양쪽이 같은 램프다.
  * ⛔ 상태 분기를 램프 **위**에 다시 얹지 말 것: 위에 놓인 축이 아래 축을 가린다.
  */
-function getElapsedBadge(days: number, status: OutreachStatus): { label: string; className: string } {
-  if (status === "DROPPED") return { label: "종료", className: "text-muted-foreground" };
-  if (status === "CONVERTED") return { label: "전환완료", className: "text-status-success font-semibold" };
-  if (days === 0) return { label: "오늘", className: "text-slate-500" };
-  const label = `${days}일째`;
-  if (days >= 7) return { label, className: "text-status-urgent-text font-semibold" };
-  if (days >= 3) return { label, className: "text-status-caution font-semibold" };
-  return { label, className: "text-slate-500" };
+type ElapsedBadge =
+  | { kind: "text"; label: string; className: string }
+  | { kind: "status"; label: string; tone: "caution" | "urgent" };
+
+/*
+ * 3일 이상 머문 건은 **색만으로 말하지 않는다**(상태 표시 기준 ③, 오너 확정 2026-10-08) — 종전엔
+ * 「N일째」 한 낱말에 색만 바뀌어 3일·7일 문턱이 색으로만 전달됐다. 이제 문턱을 넘으면 점 + 「정체 N일」
+ * 낱말이 같은 신호를 진다. `days` 는 **현재 단계에 머문 일수**(getDaysInStatus)라 「공백」이 아니라
+ * 「정체」다 — 데스크톱 캠페인 카드의 「정체 N일」과 같은 낱말. 카드 전체가 눌리는 요소라 설명창(hint)은
+ * 달지 않는다(StatusDot 의 hint 는 버튼이다 — 중첩 인터랙티브 금지).
+ */
+function getElapsedBadge(days: number, status: OutreachStatus): ElapsedBadge {
+  if (status === "DROPPED") return { kind: "text", label: "종료", className: "text-muted-foreground" };
+  if (status === "CONVERTED") return { kind: "text", label: "전환완료", className: "text-status-success font-semibold" };
+  if (days === 0) return { kind: "text", label: "오늘", className: "text-slate-500" };
+  if (days >= 7) return { kind: "status", label: `정체 ${days}일`, tone: "urgent" };
+  if (days >= 3) return { kind: "status", label: `정체 ${days}일`, tone: "caution" };
+  return { kind: "text", label: `${days}일째`, className: "text-slate-500" };
 }
 
 /** 현재 상태에 해당하는 메모 내용 반환 */
@@ -229,9 +240,13 @@ export function OutreachCardContent({
             />
             <ActionBadge task={outreach} referenceDate={new Date(now)} />
           </div>
-          <span className={`shrink-0 text-[11px] font-semibold ${elapsed.className}`}>
-            {elapsed.label}
-          </span>
+          {elapsed.kind === "status" ? (
+            <StatusDot tone={elapsed.tone} label={elapsed.label} className="shrink-0 text-[11px] font-semibold" />
+          ) : (
+            <span className={`shrink-0 text-[11px] font-semibold ${elapsed.className}`}>
+              {elapsed.label}
+            </span>
+          )}
         </div>
 
         {/* 2행: 딜명 | 브랜드 | 거래처 정보 (충분한 너비 활용) */}

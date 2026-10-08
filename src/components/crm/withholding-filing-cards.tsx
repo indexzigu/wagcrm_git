@@ -59,7 +59,7 @@ type FilingLogResponse = { month: string; completed: { kind: string; completedAt
  *
  *  `highlight`는 이 화면에서 가장 위험한 값(위택스 과세표준) 하나만을 위한 별도
  *  carrier다 — 값 자체에 urgent 톤을 주는 것과는 별개로, 박스 자체를
- *  `bg-status-urgent-bg`로 물들여 "실명 미등록"·"세액 칸이 없습니다" 같은 흔한
+ *  `bg-status-urgent-bg`로 물들여 "실명미등록"·"세액 칸이 없습니다" 같은 흔한
  *  caution/urgent 문구들과 시각적으로 같은 무게로 읽히지 않게 한다(design-system.md
  *  §2 — 위험 색이 흔해지면 습관화로 신호가 희석된다). 총 지급액을 넣으면 세액이
  *  10배가 되는 이 화면 최상위 위험 요소라 카드마다 하나만 쓴다.
@@ -392,7 +392,7 @@ export function WithholdingFilingCards({ month }: { month: string }) {
                       <span className="font-semibold text-foreground">{row.sellerRealName}</span>
                     ) : (
                       <>
-                        <span className="font-semibold text-status-caution-text">실명 미등록</span>
+                        <span className="font-semibold text-status-caution-text">실명미등록</span>
                         {/* 실명으로 대신 채우지 않는다(활동명이 신고서에 실리면 안 된다) — 다만
                             "누가" 미입력인지는 알아야 경고가 실행 가능하므로 표기명(별칭)을
                             괄호로 병기한다(구 WithholdingReportDialog와 동일 원칙). */}

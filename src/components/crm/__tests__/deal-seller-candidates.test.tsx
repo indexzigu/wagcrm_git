@@ -51,7 +51,7 @@ describe("DealSellerCandidates", () => {
     render(<DealSellerCandidates dealId="d1" dealName="딜" onPropose={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("별칭")).toBeInTheDocument());
     expect(screen.getByText("재진행")).toBeInTheDocument();
-    expect(screen.getByText("적극 검토")).toBeInTheDocument();
+    expect(screen.getByText("우선검토")).toBeInTheDocument();
     // 두 축이 나란히 — 하나의 종합 점수로 합치지 않는다(D10)
     expect(screen.getByText("제외")).toBeInTheDocument();
     expect(screen.getByText("· 평가 추천")).toBeInTheDocument();
@@ -62,7 +62,7 @@ describe("DealSellerCandidates", () => {
     render(<DealSellerCandidates dealId="d1" dealName="딜" onPropose={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("별칭")).toBeInTheDocument());
     expect(screen.queryByText(/만원/)).not.toBeInTheDocument();
-    expect(screen.queryByText("적극 검토")).not.toBeInTheDocument();
+    expect(screen.queryByText("우선검토")).not.toBeInTheDocument();
   });
 
   it("판정 불가 셀러는 티어 자리에 대시를 그린다", async () => {
@@ -107,6 +107,8 @@ describe("DealSellerCandidates", () => {
     render(<DealSellerCandidates dealId="d1" dealName="딜" onPropose={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/기안됨/)).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "기안" })).not.toBeInTheDocument();
+    // 상태 낱말은 누르는 요소가 아니고, 승인함 이동은 별도 링크가 맡는다(상태 표시 기준 ④).
+    expect(screen.getByRole("link", { name: "승인함" })).toHaveAttribute("href", "/approvals");
   });
 
   it("기안 실패는 삼키지 않고 버튼을 되돌린다", async () => {

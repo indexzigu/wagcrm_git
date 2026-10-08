@@ -230,7 +230,8 @@ export const MobileScheduleDayList = React.memo(function MobileScheduleDayList({
                   event.done ? MONEY_ROW_SETTLED_MUTED : MONEY_ROW_AMOUNT_NEUTRAL
                 }`}
               >
-                {event.amount == null ? "금액 미정" : `₩${formatCurrency(event.amount)}`}
+                {/* 정산이 정할 금액이 아직이면 「금액미확정」(붙여 쓴 한 낱말, 2026-10-08) */}
+                {event.amount == null ? "금액미확정" : `₩${formatCurrency(event.amount)}`}
               </span>
             </button>
           ))}

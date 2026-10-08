@@ -10,7 +10,7 @@
  *
  * 값이 없는 필드는 절대 빈칸으로 두지 않는다 — 빈칸은 "안 채워도 된다"로 오인되어
  * 신고가 누락된 채 접수되고, 홈택스는 그 상태로 반려한다. 대신 심각도 색(P8
- * status-urgent)으로 「입력 필요」를 표시하고 복사 버튼을 비활성화한다.
+ * status-urgent)으로 「미입력」을 표시하고 복사 버튼을 비활성화한다(계산 금액은 caution 톤 「금액미확정」).
  *
  * ⛔ 도메인을 이 레포에서 세 번째로 잘못 짚었던 지점(2026-08-04 정정): 이 다이얼로그는
  * 원래 "우리가 항상 셀러에게 총매출 세금계산서를 발행한다"는 가정으로 만들어졌다.
@@ -33,6 +33,7 @@ import type { CampaignGroupMemberRow, CampaignRow } from "@/lib/crm-types";
 import { buildInvoiceLineItems, normalizeBusinessNumber } from "@/lib/tax-invoice-builder";
 import { resolveSellerIssueInvoiceObligation } from "@/lib/tax-filing-board";
 import { FieldRow } from "./helper-dialog-field-row";
+import { StatusDot } from "./status-dot";
 
 function formatAmount(value: number): string {
   return value.toLocaleString("ko-KR");
@@ -97,7 +98,7 @@ export function TaxInvoiceHelperDialog({
   // 이 버튼은 채널이 셀러몰일 때만 노출되도록 사이드패널에서 게이트가 걸려 있지만
   // (SellerSettlementInfo의 isSellerMallInvoiceChannel), 그 게이트를 건너뛴 경로가
   // 생겨도 여기서 금액을 추정해 채우지 않는다 — obligation이 null이면(우리몰·
-  // 브랜드몰처럼 셀러 발행 의무 자체가 없는 채널) 그대로 「입력 필요」로 떨어진다.
+  // 브랜드몰처럼 셀러 발행 의무 자체가 없는 채널) 그대로 「금액미확정」으로 떨어진다.
   const obligation = resolveSellerIssueInvoiceObligation(
     campaign,
     // ⚠️ 필드를 **골라 넘기지 말 것** — 여기서 빠뜨린 필드는 오류 없이 조용히 0으로
@@ -177,9 +178,10 @@ export function TaxInvoiceHelperDialog({
               ) : null}
               <div className="mt-2 flex flex-col gap-2">
                 <FieldRow label="작성일자" value={todayYmd(kstDate)} />
-                <FieldRow label="공급가액" value={hasSettledAmount ? formatAmount(supplyAmount) : null} />
-                <FieldRow label="세액" value={hasSettledAmount ? formatAmount(taxAmount) : null} />
-                <FieldRow label="합계" value={hasSettledAmount ? formatAmount(totalAmount) : null} />
+                {/* 금액은 정산이 정하는 계산 금액이다 — 비었으면 「미입력」이 아니라 「금액미확정」 */}
+                <FieldRow label="공급가액" value={hasSettledAmount ? formatAmount(supplyAmount) : null} emptyLabel="금액미확정" emptyTone="caution" />
+                <FieldRow label="세액" value={hasSettledAmount ? formatAmount(taxAmount) : null} emptyLabel="금액미확정" emptyTone="caution" />
+                <FieldRow label="합계" value={hasSettledAmount ? formatAmount(totalAmount) : null} emptyLabel="금액미확정" emptyTone="caution" />
               </div>
             </section>
 
@@ -210,10 +212,11 @@ export function TaxInvoiceHelperDialog({
                 </div>
               ) : (
                 // 금액이 확정되지 않은 상태(정산금 미확정 등)에서는 품목도 만들 수 없다.
-                // 위 금액 필드와 마찬가지로 빈 표를 보여주지 않고 「입력 필요」로 명시한다.
-                <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 text-sm font-semibold text-status-urgent-text">
-                  <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-status-urgent" />
-                  입력 필요: 금액이 확정되지 않아 품목을 만들 수 없습니다
+                // 위 금액 필드와 마찬가지로 빈 표를 보여주지 않고 「금액미확정」으로 명시한다 —
+                // 낱말은 한 낱말, 사유는 그 아래 보이는 보조 문구로(상태 표시 기준 ①, 2026-10-08).
+                <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2">
+                  <StatusDot tone="caution" label="금액미확정" className="flex text-sm font-semibold" />
+                  <p className="mt-0.5 text-xs text-muted-foreground">금액이 확정되지 않아 품목을 만들 수 없습니다.</p>
                 </div>
               )}
             </section>

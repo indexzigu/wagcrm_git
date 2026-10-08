@@ -15,6 +15,7 @@ import {
   DormancyBadge,
   MatchReasonBadge,
   PriorityBadge,
+  ProposalSlot,
   formatElapsed,
   formatPairSales,
 } from "./match-candidate-row";
@@ -135,21 +136,11 @@ export function DealSellerCandidates({
                 <MatchReasonBadge reason={c.reason} />
                 {c.priority && <PriorityBadge />}
                 <span className="ml-auto shrink-0">
-                  {proposed.has(c.sellerId) ? (
-                    <span className="text-[10px] font-semibold text-[var(--primary)]">
-                      기안됨 · 승인함에서 확인
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 px-2 text-[10px]"
-                      disabled={pendingId === c.sellerId}
-                      onClick={() => handlePropose(c.sellerId, c.name)}
-                    >
-                      {pendingId === c.sellerId ? "기안 중..." : "기안"}
-                    </Button>
-                  )}
+                  <ProposalSlot
+                    proposed={proposed.has(c.sellerId)}
+                    pending={pendingId === c.sellerId}
+                    onPropose={() => handlePropose(c.sellerId, c.name)}
+                  />
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">

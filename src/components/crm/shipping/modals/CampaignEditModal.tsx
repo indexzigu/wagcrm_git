@@ -338,8 +338,9 @@ export default function CampaignEditModal({
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-1 min-w-0">
                 <label className="block text-[11px] font-bold text-slate-500 mb-1">주문관리 캠페인명</label>
-                <div className="w-full border border-slate-200 bg-slate-50 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium h-[34px] flex items-center overflow-hidden" title={editName || '이름 없음'}>
-                  <span className="truncate block w-full">{editName || '이름 없음'}</span>
+                {/* 이름표가 붙은 값 칸이라 빈 값은 「—」(상태 낱말 기준 C6, 오너 확정 2026-10-08). */}
+                <div className="w-full border border-slate-200 bg-slate-50 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-medium h-[34px] flex items-center overflow-hidden" title={editName || undefined}>
+                  <span className="truncate block w-full">{editName || '—'}</span>
                 </div>
               </div>
               <div className="col-span-1">
