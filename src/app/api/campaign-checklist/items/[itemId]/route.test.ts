@@ -10,8 +10,17 @@ const setCheckedMock = vi.fn();
 const revalidateMock = vi.fn();
 const itemUpdateMock = vi.fn();
 
+const { FakeMonthlyInvoiceManagedError } = vi.hoisted(() => ({
+  FakeMonthlyInvoiceManagedError: class extends Error {
+    constructor() {
+      super("월정산 거래처의 공급사 계산서는 캠페인 상세 계산서 칸의 「조회」에서 달별로 기록합니다.");
+    }
+  },
+}));
+
 vi.mock("@/lib/campaign-checklist", () => ({
   setChecklistItemChecked: (...a: unknown[]) => setCheckedMock(...a),
+  MonthlyInvoiceManagedError: FakeMonthlyInvoiceManagedError,
 }));
 
 vi.mock("@/lib/cache-tags", () => ({
@@ -64,6 +73,16 @@ describe("PATCH /api/campaign-checklist/items/[itemId] — 체크 토글", () =>
     const response = await patch({ isChecked: true });
 
     expect(response.status).toBe(404);
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("월정산 공급사 계산서 거절은 409 와 사유 문구로 돌려준다(T-244) — 500 이 아니다", async () => {
+    setCheckedMock.mockRejectedValue(new FakeMonthlyInvoiceManagedError());
+
+    const response = await patch({ isChecked: true });
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain("달별로 기록합니다");
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });

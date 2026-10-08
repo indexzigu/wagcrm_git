@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
-import { setChecklistItemChecked } from "@/lib/campaign-checklist";
+import { MonthlyInvoiceManagedError, setChecklistItemChecked } from "@/lib/campaign-checklist";
 import { getPrisma } from "@/lib/prisma";
 import { updateCampaignChecklistItemSchema } from "@/lib/validations/campaign-checklist";
 
@@ -49,6 +49,9 @@ export async function PATCH(request: Request, context: Context) {
 
     return NextResponse.json({ item, transitioned: false });
   } catch (error) {
+    if (error instanceof MonthlyInvoiceManagedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     if (error instanceof Error && error.message === "CHECKLIST_ITEM_NOT_FOUND") {
       return NextResponse.json(
         { error: "체크리스트 항목을 찾을 수 없습니다" },

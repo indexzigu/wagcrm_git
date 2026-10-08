@@ -523,6 +523,20 @@ async function syncGroupSiblingChecklistItems(
   }
 }
 
+/**
+ * 월정산 거래처 캠페인의 공급사 계산서 항목은 체크리스트로 날짜를 찍지 않는다(T-244).
+ * 그 캠페인의 공급사 계산서는 달별 여러 장(`campaignInvoiceService`)이고, 레거시 날짜는 그 서비스가
+ * **모든 달이 끝났을 때만** 채운다. 여기서 오늘 날짜를 찍으면 ①계산서가 0장인 캠페인은 레거시 모드로
+ * 떨어져 달별 기록 없이 정산 완료가 통과되고 ②일부만 기록된 캠페인은 세무 보드에서 사라지는데
+ * 캠페인 상세는 막힌다. 조용히 건너뛰지 않고 거절해 오너를 달별 칸으로 보낸다(P0 No Silent Failure).
+ */
+export class MonthlyInvoiceManagedError extends Error {
+  constructor() {
+    super("월정산 거래처의 공급사 계산서는 캠페인 상세 계산서 칸의 「조회」에서 달별로 기록합니다.");
+    this.name = "MonthlyInvoiceManagedError";
+  }
+}
+
 export async function setChecklistItemChecked(
   prisma: AppPrismaClient,
   itemId: string,
@@ -553,7 +567,12 @@ export async function setChecklistItemChecked(
 
     const campaign = await tx.salesCampaign.findUnique({
       where: { id: item.campaignId },
-      select: { id: true, status: true, groupId: true },
+      select: {
+        id: true,
+        status: true,
+        groupId: true,
+        deal: { select: { partner: { select: { monthlySettlement: true } } } },
+      },
     });
     if (!campaign) {
       throw new Error("CAMPAIGN_NOT_FOUND");
@@ -573,6 +592,10 @@ export async function setChecklistItemChecked(
     if (item.status === "SETTLEMENT_IN_PROGRESS") {
       const isSupplierInvoice = isSupplierInvoiceLabel(item.label);
       const isSellerInvoice = isSellerInvoiceLabel(item.label);
+
+      if (isSupplierInvoice && campaign.deal?.partner?.monthlySettlement) {
+        throw new MonthlyInvoiceManagedError();
+      }
 
       if (isSupplierInvoice || isSellerInvoice) {
         const fieldData = isSupplierInvoice

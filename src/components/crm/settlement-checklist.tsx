@@ -58,7 +58,8 @@ export function SettlementChecklist({
       });
 
       if (!response.ok) {
-        throw new Error("체크 상태 업데이트에 실패했습니다.");
+        const payload = await response.json().catch(() => null);
+        throw new Error(typeof payload?.error === "string" ? payload.error : "체크 상태 업데이트에 실패했습니다.");
       }
 
       const result = await response.json();

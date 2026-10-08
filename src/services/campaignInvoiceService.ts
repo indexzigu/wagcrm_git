@@ -34,6 +34,7 @@ import {
   type CampaignInvoiceRow,
   type CampaignInvoiceView,
   type InvoiceDirection,
+  type InvoiceProgress,
 } from "@/lib/campaign-invoices";
 
 type Db = Prisma.TransactionClient | ReturnType<typeof getPrisma>;
@@ -483,34 +484,55 @@ export const campaignInvoiceService = {
    */
   async findCompletionBlockers(db: Db, campaignIds: readonly string[]): Promise<Map<string, string>> {
     const blocked = new Map<string, string>();
-    if (campaignIds.length === 0) return blocked;
-    const targets = await db.salesCampaign.findMany({
-      where: { id: { in: [...campaignIds] }, deal: { partner: { monthlySettlement: true } } },
-      select: { id: true },
-    });
-    const verdictByUnitKey = new Map<string, string | null>();
-    for (const target of targets) {
-      const unit = await loadInvoiceUnit(db, target.id);
-      if (!unit) continue;
-      const unitKey = unit.groupId ?? unit.campaignId;
-      if (!verdictByUnitKey.has(unitKey)) {
-        const rows = await loadUnitRows(db, unit);
-        if (isLegacyMode(unit, rows)) verdictByUnitKey.set(unitKey, null);
-        else {
-          const summary = summarizeInvoiceRows({
-            periodStart: unit.periodStart,
-            periodEnd: unit.periodEnd,
-            rows: rows.map(toInvoiceRowDto),
-          });
-          verdictByUnitKey.set(
-            unitKey,
-            summary.openMonths.length > 0 ? buildInvoiceIncompleteMessage(summary.openMonths) : null,
-          );
-        }
-      }
-      const message = verdictByUnitKey.get(unitKey);
-      if (message) blocked.set(target.id, message);
+    for (const [campaignId, progress] of await evaluateUnits(db, campaignIds)) {
+      if (progress.openMonths.length > 0) blocked.set(campaignId, buildInvoiceIncompleteMessage(progress.openMonths));
     }
     return blocked;
   },
+
+  /**
+   * 달별 기록 진행(n/m) — 세무 보드가 월정산 공급사 행을 「끝」으로 볼지 「조회 n/m」으로 그릴지
+   * 정한다(T-244). 완료 게이트와 **같은 판정**(`evaluateUnits`)이다 — 둘이 갈라지면 보드에서
+   * 사라진 캠페인의 정산 완료가 막히거나 그 반대가 된다.
+   * 월정산이 아니거나 레거시 모드인 캠페인은 결과에 없다(그 캠페인은 단일 날짜가 정본).
+   */
+  async loadInvoiceProgress(db: Db, campaignIds: readonly string[]): Promise<Map<string, InvoiceProgress>> {
+    return evaluateUnits(db, campaignIds);
+  },
 };
+
+/**
+ * 캠페인별 달별 기록 요약. 그룹은 계산서를 공유하므로 멤버 전원이 같은 값을 받는다.
+ * 월정산이 아닌 캠페인·레거시 모드 단위는 넣지 않는다(기존 단일 날짜 동작 그대로).
+ * ⛔ 달이 0개인 단위는 없다(`listYearMonths` 가 최소 1달) — 「줄 0개 = 끝」 같은 공허 판정 금지.
+ */
+async function evaluateUnits(db: Db, campaignIds: readonly string[]): Promise<Map<string, InvoiceProgress>> {
+  const result = new Map<string, InvoiceProgress>();
+  if (campaignIds.length === 0) return result;
+  const targets = await db.salesCampaign.findMany({
+    where: { id: { in: [...campaignIds] }, deal: { partner: { monthlySettlement: true } } },
+    select: { id: true },
+  });
+  const byUnitKey = new Map<string, InvoiceProgress | null>();
+  for (const target of targets) {
+    const unit = await loadInvoiceUnit(db, target.id);
+    if (!unit) continue;
+    const unitKey = unit.groupId ?? unit.campaignId;
+    if (!byUnitKey.has(unitKey)) {
+      const rows = await loadUnitRows(db, unit);
+      byUnitKey.set(
+        unitKey,
+        isLegacyMode(unit, rows)
+          ? null
+          : summarizeInvoiceRows({
+              periodStart: unit.periodStart,
+              periodEnd: unit.periodEnd,
+              rows: rows.map(toInvoiceRowDto),
+            }),
+      );
+    }
+    const progress = byUnitKey.get(unitKey);
+    if (progress) result.set(target.id, progress);
+  }
+  return result;
+}

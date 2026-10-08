@@ -216,9 +216,10 @@ function ChecklistRow({
 
     try {
       await onToggle(item.id, nextChecked);
-    } catch {
+    } catch (error) {
       setOptimisticChecked(!nextChecked);
-      toast.error("체크리스트 업데이트에 실패했습니다");
+      // 호출부(`onToggle`)가 오너에게 보일 사유를 메시지로 준다(서버 거절 사유 포함 — T-244).
+      toast.error(error instanceof Error ? error.message : "체크리스트 업데이트에 실패했습니다");
     } finally {
       setIsUpdating(false);
     }

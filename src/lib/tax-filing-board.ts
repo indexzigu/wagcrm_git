@@ -54,6 +54,8 @@
  * 버그로 오인해 조사하지 않도록 여기 기록한다.
  */
 import type { CampaignRow } from "./crm-types";
+// 타입만 — campaign-invoices.ts 가 이 파일의 의무표를 값으로 import 하므로 값 import 는 순환이 된다.
+import type { InvoiceProgress } from "./campaign-invoices";
 import { isIndividualSeller } from "./seller-tax-utils";
 import {
   GOODS_COST_CONSOLIDATED_LABEL,
@@ -165,7 +167,36 @@ export type TaxInvoiceBoardRow = {
   /** 비어 있지 않으면 일괄 대상에서 제외된다 */
   blockingReasons: string[];
   selectable: boolean;
+  /**
+   * 월정산 거래처의 공급사 행이면 달별 기록 진행(n/m), 아니면 null(T-244). 이 행의 「끝」은
+   * 날짜 한 칸이 아니라 달별 계산서(`campaignInvoiceService`)가 정한다 — 화면은 이 값이 있으면
+   * 「완료」(날짜 찍기) 대신 달별 계산서 창을 연다. 호출부가 진행을 넘기지 않으면 null 이다.
+   */
+  monthlyInvoice: { done: number; total: number } | null;
 };
+
+/**
+ * 월정산 단위의 달별 기록 진행 — 키는 캠페인 id(그룹이면 멤버 전원이 같은 값).
+ * `campaignInvoiceService.loadInvoiceProgress` 의 결과를 그대로 넘긴다(⛔ 여기서 다시 세지 말 것).
+ */
+export type MonthlyInvoiceProgressMap = ReadonlyMap<string, InvoiceProgress>;
+
+/**
+ * 공급사 칸이 달별 계산서로 관리되는 행인가 — 진행이 있으면 그 진행을, 달이 모두 끝났으면 "DONE".
+ * 전부 「없음」으로 끝난 단위는 레거시 날짜가 비어 있어도 끝난 것이다(T-244 — 날짜만 보면 보드에
+ * 영영 남는다).
+ */
+function resolveMonthlyInvoice(
+  field: "supplierInvoiceIssuedAt" | "sellerInvoiceIssuedAt",
+  campaign: CampaignRow,
+  progress: MonthlyInvoiceProgressMap | undefined,
+): TaxInvoiceBoardRow["monthlyInvoice"] | "DONE" {
+  if (field !== "supplierInvoiceIssuedAt" || !campaign.partnerMonthlySettlement) return null;
+  const found = progress?.get(campaign.id);
+  if (!found) return null;
+  if (found.openMonths.length === 0) return "DONE";
+  return { done: found.done, total: found.total };
+}
 
 /**
  * 방향별 합계 — 발행(우리가 낼 세금계산서)과 수취(상대가 낼 세금계산서)는 반대
@@ -745,7 +776,11 @@ function groupCampaignLabel(sortedMembers: CampaignRow[]): string {
 /** 캠페인 단위로 의무 행을 만든다 — 그룹에 속하지 않은 캠페인, 그리고 그룹 멤버끼리
  * 채널이 갈려 그룹 단위로 합칠 수 없는 캠페인이 이 경로를 탄다(둘 다 "이 캠페인
  * 하나의 의무"라는 뜻은 같다). */
-function emitCampaignRows(campaign: CampaignRow, rows: TaxInvoiceBoardRow[]): void {
+function emitCampaignRows(
+  campaign: CampaignRow,
+  rows: TaxInvoiceBoardRow[],
+  monthlyProgress?: MonthlyInvoiceProgressMap,
+): void {
   const group = resolveTaxFilingChannelGroup(campaign.salesChannel);
   const table = TAX_INVOICE_OBLIGATION_TABLE[group];
 
@@ -760,6 +795,8 @@ function emitCampaignRows(campaign: CampaignRow, rows: TaxInvoiceBoardRow[]): vo
     // 없어 오너가 그 의무 자체를 인지하지 못하는 사고가 났다(2026-08-04 실사고).
     if (obligation.counterpart === "SELLER" && isIndividualSeller(campaign)) continue;
     if (campaign[field]) continue; // 이미 처리됨 — 행을 만들지 않는다
+    const monthlyInvoice = resolveMonthlyInvoice(field, campaign, monthlyProgress);
+    if (monthlyInvoice === "DONE") continue; // 달별 계산서가 다 끝났다(전부 「없음」 포함)
 
     const { amount, blockingReasons: amountReasons } = computeAmountForBasis(
       obligation.amountBasis,
@@ -783,6 +820,7 @@ function emitCampaignRows(campaign: CampaignRow, rows: TaxInvoiceBoardRow[]): vo
       settlementItemEffect: summarizeItemEffect(obligation.amountBasis, [campaign.settlementItems]),
       blockingReasons,
       selectable: blockingReasons.length === 0,
+      monthlyInvoice,
     });
   }
 }
@@ -800,7 +838,12 @@ type EmitGroupRowsResult =
  * 돌려줘 호출부가 `emitCampaignRows`로 캠페인별 행에 후퇴하게 한다 — 여기서 하나를
  * 조용히 고르지 않는다.
  */
-function emitGroupRows(members: CampaignRow[], groupId: string, rows: TaxInvoiceBoardRow[]): EmitGroupRowsResult {
+function emitGroupRows(
+  members: CampaignRow[],
+  groupId: string,
+  rows: TaxInvoiceBoardRow[],
+  monthlyProgress?: MonthlyInvoiceProgressMap,
+): EmitGroupRowsResult {
   // id 오름차순으로 대표(anchor)를 고정한다 — 입력 배열 순서(쿼리 결과 순서)에 기대지
   // 않고 항상 같은 멤버가 대표가 되어야 체크리스트 매칭(route.ts)과 테스트가 안정된다.
   // 채널·공급사 불일치 판정보다 먼저 정렬해 두는 이유는, 두 판정 중 어느 쪽이 실패해도
@@ -852,6 +895,9 @@ function emitGroupRows(members: CampaignRow[], groupId: string, rows: TaxInvoice
     // 그룹 공유 필드다 — `campaign-row.ts`가 그룹 값을 전 멤버에 동일하게 폴딩하므로
     // 대표 하나만 확인하면 전 멤버를 대표한다.
     if (anchor[field]) continue;
+    // 그룹은 계산서를 공유한다 — 진행은 멤버 전원이 같은 값이라 대표 하나로 본다.
+    const monthlyInvoice = resolveMonthlyInvoice(field, anchor, monthlyProgress);
+    if (monthlyInvoice === "DONE") continue;
     // 그룹 멤버는 앱 불변식상 셀러가 전원 동일하다(`CampaignGroup.sellerId`) — 개인/
     // 사업자 판정도 대표로 충분하고, 멤버마다 다시 물을 이유가 없다.
     if (obligation.counterpart === "SELLER" && isIndividualSeller(anchor)) continue;
@@ -923,6 +969,7 @@ function emitGroupRows(members: CampaignRow[], groupId: string, rows: TaxInvoice
       ),
       blockingReasons,
       selectable: blockingReasons.length === 0,
+      monthlyInvoice,
     });
   }
 
@@ -986,7 +1033,10 @@ function findOrphanItems(campaign: CampaignRow): SettlementItemInput[] {
   });
 }
 
-export function buildTaxInvoiceObligationRows(campaigns: CampaignRow[]): {
+export function buildTaxInvoiceObligationRows(
+  campaigns: CampaignRow[],
+  monthlyProgress?: MonthlyInvoiceProgressMap,
+): {
   rows: TaxInvoiceBoardRow[];
   warnings: string[];
 } {
@@ -1009,7 +1059,7 @@ export function buildTaxInvoiceObligationRows(campaigns: CampaignRow[]): {
   const byGroup = new Map<string, CampaignRow[]>();
   for (const campaign of campaigns) {
     if (!campaign.groupId) {
-      emitCampaignRows(campaign, rows);
+      emitCampaignRows(campaign, rows, monthlyProgress);
       continue;
     }
     const members = byGroup.get(campaign.groupId);
@@ -1021,7 +1071,7 @@ export function buildTaxInvoiceObligationRows(campaigns: CampaignRow[]): {
   }
 
   for (const [groupId, members] of byGroup) {
-    const result = emitGroupRows(members, groupId, rows);
+    const result = emitGroupRows(members, groupId, rows, monthlyProgress);
     if (!result.collapsed) {
       // ⚠️ raw groupId(cuid)는 오너가 조치할 수 없는 내부 식별자다(작은 수정
       // 사항, 2026-08-04 재검토 지적) — 오너가 알아볼 수 있는 `campaignLabel`
@@ -1033,7 +1083,7 @@ export function buildTaxInvoiceObligationRows(campaigns: CampaignRow[]): {
           : `정산 그룹(${result.campaignLabel}, id: ${groupId}) 멤버끼리 공급사가 달라 세금계산서 발행 의무를 한 행으로 합치지 못했습니다. ` +
             `캠페인별로 표시합니다. 그룹의 공급사를 통일하거나 그룹에서 분리해 주세요.`;
       warnings.push(message);
-      for (const member of members) emitCampaignRows(member, rows);
+      for (const member of members) emitCampaignRows(member, rows, monthlyProgress);
     }
   }
 
@@ -1050,8 +1100,12 @@ export function buildTaxInvoiceObligationRows(campaigns: CampaignRow[]): {
  * `month` 필드는 응답 호환을 위해 남기되 **필터로 쓰지 않는다** — 원천징수 탭이 같은
  * 응답을 공유하므로 그쪽이 어느 월을 보고 있는지는 여전히 실려야 한다.
  */
-export function buildTaxInvoiceWorkBoard(campaigns: CampaignRow[], month: string = ""): TaxInvoiceBoard {
-  const { rows, warnings } = buildTaxInvoiceObligationRows(campaigns);
+export function buildTaxInvoiceWorkBoard(
+  campaigns: CampaignRow[],
+  month: string = "",
+  monthlyProgress?: MonthlyInvoiceProgressMap,
+): TaxInvoiceBoard {
+  const { rows, warnings } = buildTaxInvoiceObligationRows(campaigns, monthlyProgress);
 
   const totalsByDirection = {
     ISSUE: { supplyAmount: 0, taxAmount: 0 },
@@ -1128,6 +1182,11 @@ const DIRECTION_LABEL: Record<TaxInvoiceDirection, string> = {
   RECEIVE: "수취",
 };
 
+/** 계산서 칸 제목(「공급사 계산서 발행」) — 캠페인 상세 칸과 세무 보드의 달별 계산서 창이 공유한다. */
+export function resolveInvoiceSlotTitle(counterpart: TaxInvoiceCounterpart, direction: TaxInvoiceDirection): string {
+  return `${COUNTERPART_LABEL[counterpart]} 계산서 ${DIRECTION_LABEL[direction]}`;
+}
+
 export function resolveCampaignInvoiceSlots(
   campaign: CampaignInvoiceSlotInput,
 ): CampaignInvoiceSlotView[] {
@@ -1169,7 +1228,7 @@ export function resolveCampaignInvoiceSlots(
       field,
       counterpart: obligation.counterpart,
       direction: obligation.direction,
-      title: `${COUNTERPART_LABEL[obligation.counterpart]} 계산서 ${DIRECTION_LABEL[obligation.direction]}`,
+      title: resolveInvoiceSlotTitle(obligation.counterpart, obligation.direction),
       shortTitle: `${COUNTERPART_LABEL[obligation.counterpart]} ${DIRECTION_LABEL[obligation.direction]}`,
       directionLabel: DIRECTION_LABEL[obligation.direction],
       applicable,

@@ -313,6 +313,9 @@ export function deriveInvoiceMonths(input: {
   });
 }
 
+/** 단위의 달별 기록 진행 — 「끝난 달」 = RECORDED 또는 WAIVED 행이 있는 달. */
+export type InvoiceProgress = { done: number; total: number; openMonths: string[] };
+
 /**
  * 완료 판정에 쓰는 요약 — 메일 후보와 무관하게 **저장된 행만으로** 정해진다(서버 게이트가 메일을
  * 읽지 않아도 같은 답을 내야 한다). 수정세금계산서 확인 여부는 메일을 봐야 알므로 화면 쪽
@@ -322,7 +325,7 @@ export function summarizeInvoiceRows(input: {
   periodStart: Date;
   periodEnd: Date;
   rows: readonly CampaignInvoiceRow[];
-}): { done: number; total: number; openMonths: string[] } {
+}): InvoiceProgress {
   const live = input.rows.filter((row) => row.status !== "DISMISSED");
   const monthSet = new Set(listYearMonths(input.periodStart, input.periodEnd));
   for (const row of live) monthSet.add(row.yearMonth);

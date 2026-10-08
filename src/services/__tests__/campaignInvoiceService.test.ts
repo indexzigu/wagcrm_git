@@ -281,3 +281,27 @@ describe("완료 게이트", () => {
     expect(state.activity.filter((a) => a.entityId === "b").length).toBe(2);
   });
 });
+
+describe("loadInvoiceProgress — 세무 보드의 「끝」 판정 (T-244)", () => {
+  it("완료 게이트와 같은 판정이다 — 진행 n/m, 전부 「없음」이어도 끝, 레거시·비월정산은 결과에 없다", async () => {
+    state.campaigns = [
+      campaign(),
+      campaign({ id: "plain", monthly: false }),
+      campaign({ id: "legacy", supplierInvoiceIssuedAt: new Date("2026-10-31T00:00:00Z") }),
+    ];
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    let progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1", "plain", "legacy"]);
+    expect([...progress.keys()]).toEqual(["c1"]);
+    expect(progress.get("c1")).toEqual({ done: 1, total: 2, openMonths: ["2026-10"] });
+
+    // 전부 「없음」으로 끝난 단위 — 레거시 날짜는 비어 있지만 끝이다(보드에서 빠져야 한다).
+    state.campaigns = [campaign({ id: "w" })];
+    state.invoices = [];
+    await campaignInvoiceService.waiveMonth("w", "2026-09", null);
+    await campaignInvoiceService.waiveMonth("w", "2026-10", null);
+    progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["w"]);
+    expect(progress.get("w")).toEqual({ done: 2, total: 2, openMonths: [] });
+    expect(state.campaigns[0].supplierInvoiceIssuedAt).toBeNull();
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "w")).toBeNull();
+  });
+});

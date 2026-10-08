@@ -1338,3 +1338,60 @@ describe("resolveMoneySlotEffectiveDate — 완료되면 예정일이 아니라 
     expect(result.isActual).toBe(true);
   });
 });
+
+describe("월정산 공급사 행 — 달별 계산서가 「끝」을 정한다 (T-244)", () => {
+  const monthly = (overrides: Partial<CampaignRow> = {}) =>
+    makeCampaign({ salesChannel: "BRAND_MALL", partnerMonthlySettlement: true, ...overrides });
+  const progressOf = (done: number, total: number, openMonths: string[]) =>
+    new Map([["c1", { done, total, openMonths }]]);
+
+  it("달이 남아 있으면 공급사 행에 진행(n/m)을 싣는다 — 셀러 행은 그대로 null", () => {
+    const board = buildTaxInvoiceWorkBoard([monthly()], "2026-10", progressOf(1, 2, ["2026-10"]));
+    expect(rowFor(board.rows, "ISSUE")!.monthlyInvoice).toEqual({ done: 1, total: 2 });
+    expect(rowFor(board.rows, "RECEIVE")!.monthlyInvoice).toBeNull();
+  });
+
+  it("모든 달이 끝났으면(전부 「없음」 포함) 레거시 날짜가 비어도 공급사 행을 만들지 않는다", () => {
+    const board = buildTaxInvoiceWorkBoard([monthly()], "2026-10", progressOf(2, 2, []));
+    expect(rowFor(board.rows, "ISSUE")).toBeUndefined();
+    // 셀러 의무는 달별 계산서와 무관하다 — 남는다.
+    expect(rowFor(board.rows, "RECEIVE")).toBeDefined();
+    expect(board.pendingCount).toBe(1);
+  });
+
+  it("그룹 행도 대표 멤버의 진행을 본다(그룹 = 계산서 1장)", () => {
+    const members = [
+      monthly({ id: "c1", groupId: "g1" }),
+      monthly({ id: "c2", groupId: "g1" }),
+    ];
+    const progress = new Map([
+      ["c1", { done: 0, total: 1, openMonths: ["2026-10"] }],
+      ["c2", { done: 0, total: 1, openMonths: ["2026-10"] }],
+    ]);
+    const issue = rowFor(buildTaxInvoiceWorkBoard(members, "2026-10", progress).rows, "ISSUE")!;
+    expect(issue.campaignIds).toEqual(["c1", "c2"]);
+    expect(issue.monthlyInvoice).toEqual({ done: 0, total: 1 });
+
+    const done = new Map([
+      ["c1", { done: 1, total: 1, openMonths: [] }],
+      ["c2", { done: 1, total: 1, openMonths: [] }],
+    ]);
+    expect(rowFor(buildTaxInvoiceWorkBoard(members, "2026-10", done).rows, "ISSUE")).toBeUndefined();
+  });
+
+  it("월정산이 아닌 캠페인·진행을 안 받은 호출부(XLSX 빌더)는 종전 그대로다", () => {
+    const plain = buildTaxInvoiceWorkBoard([makeCampaign({ salesChannel: "BRAND_MALL" })], "2026-10", progressOf(2, 2, []));
+    expect(rowFor(plain.rows, "ISSUE")!.monthlyInvoice).toBeNull();
+    const noMap = buildTaxInvoiceObligationRows([monthly()]);
+    expect(rowFor(noMap.rows, "ISSUE")!.monthlyInvoice).toBeNull();
+  });
+
+  it("레거시 날짜가 이미 있으면(레거시 모드) 진행과 무관하게 행이 없다", () => {
+    const board = buildTaxInvoiceWorkBoard(
+      [monthly({ supplierInvoiceIssuedAt: "2026-09-30" })],
+      "2026-10",
+      progressOf(0, 2, ["2026-09", "2026-10"]),
+    );
+    expect(rowFor(board.rows, "ISSUE")).toBeUndefined();
+  });
+});

@@ -3,6 +3,7 @@ import { getPrisma } from "@/lib/prisma";
 import { toCampaignRow } from "@/lib/campaign-row";
 import { requireAuth } from "@/lib/api-auth";
 import { buildTaxInvoiceWorkBoard } from "@/lib/tax-filing-board";
+import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 import {
   isSupplierInvoiceLabel,
   isSellerInvoiceLabel,
@@ -85,7 +86,12 @@ export async function GET(request: Request) {
   // ⚠️ 이름을 바꿨다 — 이제 「이 달」이 아니라 「보드가 다루는」 캠페인이다. 자동 확정 표시가
   //    보드와 다른 모집단을 보면 오너가 「기계가 건드린 범위」를 잘못 읽는다.
   const boardCampaignIds = campaignRows.map((row) => row.id);
-  const board = buildTaxInvoiceWorkBoard(campaignRows, month);
+  // 월정산 공급사 칸은 달별 계산서가 「끝」을 정한다(T-244) — 완료 게이트와 같은 판정을 넘긴다.
+  const monthlyProgress = await campaignInvoiceService.loadInvoiceProgress(
+    prisma,
+    campaignRows.filter((row) => row.partnerMonthlySettlement).map((row) => row.id),
+  );
+  const board = buildTaxInvoiceWorkBoard(campaignRows, month, monthlyProgress);
 
   // 진입점 배지는 세금계산서뿐 아니라 원천징수 3절차의 미처리도 함께 세야 한다 —
   // 지급월 원천세 신고를 놓치는 것도 이 배지가 잡아야 할 대상이다(설계 문서 「B. 정산
@@ -160,7 +166,9 @@ export async function GET(request: Request) {
     const match = items.find(
       (item) => row.campaignIds.includes(item.campaignId) && matchesLabel(item.label),
     );
-    return { ...row, checklistItemId: match?.id ?? null };
+    // 월정산 공급사 행에는 「완료」(체크리스트로 날짜 찍기)를 주지 않는다 — 그 경로는 서버가
+    // 거절하고(`MonthlyInvoiceManagedError`), 화면은 달별 계산서 창을 연다(T-244).
+    return { ...row, checklistItemId: row.monthlyInvoice ? null : (match?.id ?? null) };
   });
 
   // 발행 자동 확정 크론이 보드 대상 캠페인에 찍은 건. 찍힌 순간 그 의무는 보드 행에서
