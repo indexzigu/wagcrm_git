@@ -59,6 +59,12 @@ const mutationGroups: readonly MutationGroup[] = [
         path: "src/lib/agent/write-actions/confirm-settlement.ts",
         expectedSource: ["revalidate: CAMPAIGN_INVALIDATION_TAGS"],
       },
+      {
+        // 어시스턴트 레인 라이터 — `update_settlement_amount`(정산 확정 전 금액 칸 정정).
+        // 정본 PATCH 와 같은 캠페인 태그 묶음을 effects 명세로 선언한다(집행은 위와 같은 경로).
+        path: "src/lib/agent/write-actions/update-settlement-amount.ts",
+        expectedSource: ["revalidate: CAMPAIGN_INVALIDATION_TAGS"],
+      },
     ],
   },
   {

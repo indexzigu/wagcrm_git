@@ -721,6 +721,71 @@ describe("create_action_proposal", () => {
     });
   });
 
+  it("update_settlement_amount is proposed against its campaign as an always-manual settlement_amount_update with a readable title", async () => {
+    campaignFindUniqueMock.mockResolvedValue({ id: "camp-1" });
+    proposalCreateMock.mockResolvedValue({ id: "proposal-amount" });
+    proposalEventCreateMock.mockResolvedValue({ id: "event-amount" });
+
+    const input = {
+      action: "update_settlement_amount",
+      campaignId: "camp-1",
+      field: "settlementGoodsCost",
+      expectedCurrentKrw: null,
+      newAmountKrw: 1_350_000,
+      memo: "10월 계산서 반영",
+    } as const;
+    const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+
+    expect(campaignFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "camp-1" } }));
+    const title = "캠페인(camp-1) 정산 금액 수정: 물품대금 비어 있음 → 1,350,000원";
+    expect(proposalCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        requestType: "settlement_amount_update",
+        kind: "WRITE",
+        status: "PENDING_APPROVAL",
+        reviewRequired: true,
+        title,
+        resultSummary: title,
+        payload: {
+          action: "update_settlement_amount",
+          args: {
+            campaignId: "camp-1",
+            field: "settlementGoodsCost",
+            expectedCurrentKrw: null,
+            newAmountKrw: 1_350_000,
+            memo: "10월 계산서 반영",
+          },
+        },
+        targetEntityType: "CAMPAIGN",
+        targetEntityId: "camp-1",
+        campaignId: "camp-1",
+      }),
+    });
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    expect(outcome.result.resultSummary).toBe(
+      `create_action_proposal: ${title} (proposal proposal-amount, PENDING_APPROVAL)`,
+    );
+  });
+
+  it("update_settlement_amount refuses a missing campaign before inserting anything", async () => {
+    campaignFindUniqueMock.mockResolvedValue(null);
+
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", {
+        action: "update_settlement_amount",
+        campaignId: "camp-x",
+        field: "operatingExpense",
+        expectedCurrentKrw: 0,
+        newAmountKrw: -1,
+      }),
+      deps(accepted("python")),
+    );
+
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "TARGET_NOT_FOUND" });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
   it("still refuses a missing target for all three pre-existing actions (regression: nullable targets must not loosen them)", async () => {
     partnerFindUniqueMock.mockResolvedValue(null);
     dealFindUniqueMock.mockResolvedValue(null);

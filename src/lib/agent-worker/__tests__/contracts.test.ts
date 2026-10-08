@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { SETTLEMENT_AMOUNT_FIELD_LABELS } from "@/lib/settlement-amount-fields";
 import {
   AgentJobOperationSchema,
   AgentJobPayloadSchema,
   AgentJobResultSchema,
+  AgentJobSettlementAmountFieldSchema,
   MAX_RESULT_SUMMARY_CHARS,
+  createActionProposalInputSchema,
   createAgentJobIdempotencyKey,
   isAgentJobTransitionAllowed,
   serializeAgentJobJson,
@@ -140,5 +143,65 @@ describe("get_settlement_report input (spec §3-E)", () => {
     [{ sellerName: "" }],
   ])("rejects %j", (input) => {
     expect(AgentJobPayloadSchema.safeParse({ ...base, operation: "get_settlement_report", input }).success).toBe(false);
+  });
+});
+
+describe("create_action_proposal — update_settlement_amount (정산 금액 수정)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    operation: "create_action_proposal",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+  const valid = {
+    action: "update_settlement_amount",
+    campaignId: "camp-1",
+    field: "settlementSales",
+    expectedCurrentKrw: 1_200_000,
+    newAmountKrw: 1_350_000,
+  } as const;
+  const accepts = (input: Record<string, unknown>) =>
+    AgentJobPayloadSchema.safeParse({ ...base, input }).success;
+
+  it("is the last action literal in the union (python mirror compares literal order)", () => {
+    const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
+    expect(actions[actions.length - 1]).toBe("update_settlement_amount");
+  });
+
+  it("field enum matches the screen-label table key for key, in order", () => {
+    expect([...AgentJobSettlementAmountFieldSchema.options]).toEqual(Object.keys(SETTLEMENT_AMOUNT_FIELD_LABELS));
+  });
+
+  it.each([
+    ["기본", valid],
+    ["현재 값이 비어 있음(null)", { ...valid, field: "settlementGoodsCost", expectedCurrentKrw: null, newAmountKrw: 0 }],
+    ["메모 포함", { ...valid, memo: "10월 정산매출 정정" }],
+    ["운영 비용 음수", { ...valid, field: "operatingExpense", expectedCurrentKrw: 0, newAmountKrw: -999_999_999 }],
+    ["기타 비용 음수", { ...valid, field: "miscExpense", expectedCurrentKrw: -5_000, newAmountKrw: -1 }],
+    ["상한 그대로", { ...valid, field: "actualSales", newAmountKrw: 999_999_999_999 }],
+  ])("accepts %s", (_label, input) => {
+    expect(accepts(input)).toBe(true);
+  });
+
+  it.each([
+    ["파생 칸(영업이익)", { ...valid, field: "operatingProfit" }],
+    ["모르는 칸 이름", { ...valid, field: "settlement_sales" }],
+    ["음수 불가 칸의 음수", { ...valid, field: "settlementSales", newAmountKrw: -1 }],
+    ["물품대금 음수", { ...valid, field: "settlementGoodsCost", newAmountKrw: -1 }],
+    ["운영 비용 하한 밖", { ...valid, field: "operatingExpense", newAmountKrw: -1_000_000_000 }],
+    ["기타 비용 상한 밖(±999,999,999)", { ...valid, field: "miscExpense", newAmountKrw: 1_000_000_000 }],
+    ["전체 상한 밖", { ...valid, newAmountKrw: 1_000_000_000_000 }],
+    ["현재 값 범위 밖", { ...valid, expectedCurrentKrw: 1_000_000_000_000 }],
+    ["정수 아님", { ...valid, newAmountKrw: 1.5 }],
+    ["숫자 문자열", { ...valid, newAmountKrw: "1350000" }],
+    ["현재 값 누락", { action: "update_settlement_amount", campaignId: "camp-1", field: "settlementSales", newAmountKrw: 1 }],
+    ["새 값 누락", { action: "update_settlement_amount", campaignId: "camp-1", field: "settlementSales", expectedCurrentKrw: 1 }],
+    ["빈 캠페인 id", { ...valid, campaignId: "  " }],
+    ["모르는 칸 추가", { ...valid, extra: "x" }],
+    ["빈 메모", { ...valid, memo: "   " }],
+    ["메모 500자 초과", { ...valid, memo: "가".repeat(501) }],
+  ])("rejects %s", (_label, input) => {
+    expect(accepts(input as Record<string, unknown>)).toBe(false);
   });
 });

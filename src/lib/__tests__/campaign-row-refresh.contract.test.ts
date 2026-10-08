@@ -138,6 +138,8 @@ describe("그룹 기간을 쓰는 경로는 리포지토리를 거친다 (T-101)
     "scripts/backfill-campaign-group-settlement-dates.ts",
     "scripts/sync-group-return-period.ts",
     "src/app/api/cron/tax-invoice-issue-confirm/route.ts",
+    // 정산 금액 수정이 묶음 행을 잠그려고 `updatedAt` 하나만 쓴다(미확정·멤버 유지 조건부 — 기간 필드 아님).
+    "src/lib/agent/write-actions/update-settlement-amount.ts",
     "src/lib/campaign-checklist.ts",
     "src/lib/google-calendar-sync.ts",
     "src/lib/settlement-flag-write.ts",

@@ -38,6 +38,19 @@ describe("getRequestTypeForAction", () => {
     expect(isAutoApprovable("crm_mutation", "WRITE")).toBe(false);
   });
 
+  it("update_settlement_amount → settlement_amount_update: 명시 등재 + alwaysManual 이라 자동승인 불가", () => {
+    // 브리지(외부 어시스턴트)가 올리는 금전 기안 — 금액이 작아도 사람이 승인한다.
+    expect(REQUEST_TYPE_BY_ACTION.update_settlement_amount).toBe("settlement_amount_update");
+    expect(getRequestTypeForAction("update_settlement_amount")).toBe("settlement_amount_update");
+    const manual = approvalRulesJson.alwaysManual.map((r) => r.requestType);
+    const auto = approvalRulesJson.autoApprove.map((r) => r.requestType);
+    expect(manual).toContain("settlement_amount_update");
+    expect(auto).not.toContain("settlement_amount_update");
+    for (const kind of ["WRITE", "READ"] as const) {
+      expect(isAutoApprovable("settlement_amount_update", kind)).toBe(false);
+    }
+  });
+
   it("미등록 action → fail-closed로 crm_mutation을 반환한다", () => {
     expect(getRequestTypeForAction("delete_everything")).toBe("crm_mutation");
     expect(getRequestTypeForAction("")).toBe("crm_mutation");

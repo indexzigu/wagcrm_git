@@ -42,6 +42,9 @@ const WRITE_ALLOWLIST: Record<string, string> = {
     "범용 저장소 update — 호출부가 generatedTrackingLink 만 넘긴다(campaignService.createCampaign)",
   "src/lib/campaign-checklist.ts:setChecklistItemChecked":
     "fieldData 는 계산서 발행일 2종 중 하나다(status 없음)",
+  "src/lib/agent/write-actions/update-settlement-amount.ts:handleUpdateSettlementAmount":
+    "금액 칸 1개(계약 enum 8칸) + 수동 고정 플래그(3종) + 파생 재무(DerivedCampaignFinancials 4칸) + " +
+    "netMarginRate 만 조립한다 — 정산 확정 플래그도 status 도 쓰지 않는 경로다",
 };
 
 function listSourceFiles(dir: string, out: string[] = []): string[] {

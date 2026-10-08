@@ -26,6 +26,12 @@ export async function recordActivityChange(
   newValue: unknown,
   actor: string = "SYSTEM",
   tx?: Prisma.TransactionClient,
+  /**
+   * 변경 사유(선택). 인수인계 CHANGE 가 `content` 에 메모를 싣는 것과 같은 칸이다 —
+   * 에이전트 정산 금액 수정(`update_settlement_amount`)이 기안 메모를 여기 남긴다.
+   * 생략하면 종전과 같은 행이 써진다(순수 추가 파라미터).
+   */
+  content?: string | null,
 ) {
   const client = tx ?? getPrisma();
   return client.activityLog.create({
@@ -37,6 +43,7 @@ export async function recordActivityChange(
       previousValue: stringifyActivityValue(previousValue),
       newValue: stringifyActivityValue(newValue),
       actor,
+      ...(content ? { content } : {}),
     },
   });
 }

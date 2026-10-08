@@ -46,7 +46,9 @@ const GROSS_NAME = /actualsales|grosssales/i;
 const WRITER_FILES = [
   SSOT_FILE, // `calculateDerivedCampaignFinancials` — 실매출 입력 라우트가 결과를 그대로 저장한다
   "src/lib/order-converter/mapping-service.ts", // 주문 동기화
-  "src/services/campaignService.ts", // 캠페인 편집 PATCH
+  // 캠페인 편집 PATCH(`campaignService.updateCampaign`) + 에이전트 정산 금액 수정
+  // (`update_settlement_amount`) — 두 경로가 이 파생 함수 하나를 부른다(인라인 블록 이관).
+  "src/services/campaignFinancialDerivation.ts",
 ] as const;
 
 /**

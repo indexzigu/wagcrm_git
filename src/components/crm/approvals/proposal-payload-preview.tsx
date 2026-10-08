@@ -13,6 +13,12 @@
  * 감춘 줄에 틀린 값이 있으면 이 화면을 만든 이유가 사라진다.
  */
 
+import {
+  formatSettlementAmountKrw,
+  isSettlementAmountField,
+  SETTLEMENT_AMOUNT_FIELD_LABELS,
+} from "@/lib/settlement-amount-fields";
+
 const MONEY_FIELDS = [
   ["costPrice", "원가"],
   ["supplyPrice", "공급가"],
@@ -206,6 +212,38 @@ function CreateDealPreview({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+/** 정수 금액 또는 null(비어 있음). 그 밖의 값은 「모양이 깨진 기안」이라 표시하지 않는다. */
+function asAmountOrNull(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * 정산 금액 수정 — **무엇을 무엇으로** 바꾸는지가 이 기안의 판단 가치 전부다.
+ *
+ * 「지금 값」은 기안자가 본 값이고 실행기는 실제 값이 이것과 같을 때만 고친다 — 그래서 이
+ * 값을 숨기면 승인자는 무엇 위에 덮어쓰는지 모른다. `null` 은 「비어 있음」으로 적는다
+ * (0원과 다르다 — 물품대금의 0 은 다른 캠페인 계산서에 합산됐다는 표시다).
+ */
+function UpdateSettlementAmountPreview({ args }: { args: Record<string, unknown> }) {
+  const field = args.field;
+  const expected = asAmountOrNull(args.expectedCurrentKrw);
+  const next = asAmountOrNull(args.newAmountKrw);
+  if (!isSettlementAmountField(field) || expected === undefined || next === undefined || next === null) {
+    return null;
+  }
+  return (
+    <Rows
+      rows={[
+        ["항목", SETTLEMENT_AMOUNT_FIELD_LABELS[field]],
+        ["지금 값", formatSettlementAmountKrw(expected)],
+        ["바꿀 값", formatSettlementAmountKrw(next)],
+        ["메모", asText(args.memo)],
+      ]}
+    />
+  );
+}
+
 /**
  * 저장될 값의 미리보기. 미리보기를 가진 action 만 그리고, 나머지는 `null` 을 돌려
  * 기존 표시(제목 한 줄)를 그대로 둔다.
@@ -223,6 +261,8 @@ export function ProposalPayloadPreview({
       <CreatePartnerPreview args={args} />
     ) : action === "create_deal" ? (
       <CreateDealPreview args={args} />
+    ) : action === "update_settlement_amount" ? (
+      <UpdateSettlementAmountPreview args={args} />
     ) : null;
   if (!body) return null;
   return <div className="space-y-3 text-xs">{body}</div>;

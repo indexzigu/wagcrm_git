@@ -86,7 +86,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
     sellerFindUniqueMock.mockReset();
   });
 
-  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal 5종이 등록되어 있다 (Phase 5 확장)", () => {
+  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal, update_settlement_amount 6종이 등록되어 있다", () => {
     expect(Object.keys(WRITE_ACTIONS).sort()).toEqual(
       [
         "add_entity_memo",
@@ -94,6 +94,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
         "confirm_settlement",
         "create_partner",
         "create_deal",
+        "update_settlement_amount",
       ].sort()
     );
   });
@@ -1314,9 +1315,18 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     ],
   };
 
+  const updateSettlementAmountArgs = {
+    campaignId: "camp-1",
+    field: "operatingExpense",
+    expectedCurrentKrw: null,
+    newAmountKrw: -999_999_999,
+    memo: "메모",
+  };
+
   it.each([
     ["create_partner", createPartnerArgs],
     ["create_deal", createDealArgs],
+    ["update_settlement_amount", updateSettlementAmountArgs],
   ])("%s: 계약이 받는 최대 payload를 argsSchema도 그대로 받는다", (action, args) => {
     expect(createActionProposalInputSchema.safeParse({ action, ...args }).success).toBe(true);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(args).success).toBe(true);
@@ -1325,9 +1335,21 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
   it.each([
     ["create_partner", createPartnerArgs],
     ["create_deal", createDealArgs],
+    ["update_settlement_amount", updateSettlementAmountArgs],
   ])("%s: 계약에 없는 칸은 양쪽 모두 거부한다", (action, args) => {
     const withUnknownKey = { ...args, unknownField: "x" };
     expect(createActionProposalInputSchema.safeParse({ action, ...withUnknownKey }).success).toBe(false);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(withUnknownKey).success).toBe(false);
+  });
+});
+
+describe("write-executor — update_settlement_amount 부호 규칙이 계약과 같다", () => {
+  it.each([
+    [{ field: "settlementSales", newAmountKrw: -1 }],
+    [{ field: "miscExpense", newAmountKrw: 1_000_000_000 }],
+  ])("%j 는 계약과 argsSchema 모두 거부한다", (patch) => {
+    const args = { campaignId: "camp-1", expectedCurrentKrw: 0, ...patch };
+    expect(createActionProposalInputSchema.safeParse({ action: "update_settlement_amount", ...args }).success).toBe(false);
+    expect(WRITE_ACTIONS.update_settlement_amount.argsSchema.safeParse(args).success).toBe(false);
   });
 });
