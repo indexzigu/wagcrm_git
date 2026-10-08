@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  buildSettlementStatementHtml,
   buildSettlementStatementText,
   computeSettlementPayoutTotals,
 } from "@/lib/settlement-statement";
@@ -201,5 +202,30 @@ describe("세 표면이 같은 빌더를 쓴다 — 갈라지면 또 새는 쪽�
       expect(codeOnly(source)).not.toContain("html2canvas");
       expect(codeOnly(source)).not.toContain("financialCardRef");
     }
+  });
+});
+
+// 월정산(T-240, 오너 확정 2026-10-08): 브랜드사와는 월별로 나눠 정산하지만 셀러에게는 캠페인 합산으로
+// 정산한다. 그래서 캠페인이 월정산 거래처여도 셀러 명세서(평문·HTML)는 한 글자도 달라지면 안 된다.
+// 소스 스캔 계약(`seller-facing-monthly-settlement-isolation.contract.test.ts`)과 짝을 이루는 결과물 비교다.
+describe("월정산 캠페인도 셀러 명세서는 합산 그대로", () => {
+  const now = new Date("2026-10-08T03:00:00.000Z");
+  const plain = makeCampaign();
+  const monthly = makeCampaign({
+    partnerMonthlySettlement: true,
+    monthlyCompletionBlocked: "월별 정산 중 9월분(0/4)이 끝나지 않아 정산 완료로 바꿀 수 없습니다.",
+  });
+
+  it("평문 명세서가 같다", () => {
+    expect(buildSettlementStatementText([monthly], now)).toBe(buildSettlementStatementText([plain], now));
+  });
+
+  it("HTML 명세서가 같다", () => {
+    expect(buildSettlementStatementHtml([monthly], now)).toBe(buildSettlementStatementHtml([plain], now));
+  });
+
+  it("명세서에 월 구분 표기가 없다", () => {
+    const text = buildSettlementStatementText([monthly], now);
+    expect(text).not.toMatch(/\d{1,2}월분/);
   });
 });

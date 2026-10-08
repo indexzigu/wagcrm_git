@@ -33,18 +33,12 @@ const SELLER_FACING_DIRS = ["app/[slug]", "app/p", "components/portal"];
 /** 디렉터리 밖의 셀러 대면 데이터 모듈 — 명세서 HTML·텍스트 빌더와 포털 페이로드(화이트리스트). */
 const SELLER_FACING_MODULES = ["lib/settlement-statement.ts", "lib/seller-portal.ts"];
 
-/** 월별 정산을 가리키는 이름 — 식별자·속성 이름·문자열 키 어디에 나와도 위반이다. */
-const BANNED_NAMES = new Set([
-  "monthlySettlement",
-  "monthlySettlements",
-  "campaignMonthlySettlement",
-  "CampaignMonthlySettlement",
-  "MonthlySettlementLine",
-  "monthlyLines",
-  "monthlyLineCountTotal",
-  "partnerMonthlySettlement",
-  "monthlyCompletionBlocked",
-]);
+/**
+ * 월별 정산을 가리키는 이름 계열 — 식별자·속성 이름·문자열(일부로 포함돼도) 어디에 나와도 위반이다.
+ * 정확한 이름 목록이 아니라 계열 패턴인 이유: `monthlyLineCount` 같은 새 변형이나
+ * `"campaign.monthlyLines"` 같은 문자열 경로도 잡아야 한다.
+ */
+const BANNED_NAME = /monthly(Settlement|Line)|monthlyCompletionBlocked/i;
 
 /** 월별 정산 모듈(판정·서비스·이전·패널) — 경로에 이 조각이 있으면 월별 정산 코드다. */
 const BANNED_MODULE = /monthly-settlement|monthlySettlementService/;
@@ -74,19 +68,32 @@ function parse(fileName: string, text: string): ts.SourceFile {
   return ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
 }
 
-/** 이 파일이 import 하는 모듈 지정자 전부(정적·재수출·동적 import). */
+/** 이 파일이 import 하는 모듈 지정자 전부(정적·재수출·동적 import·require·import x = require·import 타입). */
 function moduleSpecifiers(source: ts.SourceFile): string[] {
   const specs: string[] = [];
   const visit = (node: ts.Node) => {
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
-      if (ts.isStringLiteral(node.moduleSpecifier)) specs.push(node.moduleSpecifier.text);
+      if (ts.isStringLiteralLike(node.moduleSpecifier)) specs.push(node.moduleSpecifier.text);
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      ts.isStringLiteralLike(node.moduleReference.expression)
+    ) {
+      specs.push(node.moduleReference.expression.text);
     } else if (
       ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
       node.arguments[0] &&
-      ts.isStringLiteral(node.arguments[0])
+      ts.isStringLiteralLike(node.arguments[0])
     ) {
       specs.push(node.arguments[0].text);
+    } else if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteralLike(node.argument.literal)
+    ) {
+      specs.push(node.argument.literal.text);
     }
     ts.forEachChild(node, visit);
   };
@@ -105,7 +112,7 @@ function scanSellerFacingSource(fileName: string, text: string): string[] {
         : ts.isStringLiteralLike(node)
           ? node.text
           : null;
-    if (name && BANNED_NAMES.has(name)) {
+    if (name && BANNED_NAME.test(name)) {
       const { line } = source.getLineAndCharacterOfPosition(node.getStart());
       violations.push(`${fileName}:${line + 1} ${name}`);
     }
@@ -147,7 +154,8 @@ function findBannedImportPaths(entries: string[]): { visited: number; hits: stri
     }
   }
   const hits = [...parentOf.keys()]
-    .filter((file) => BANNED_MODULE.test(file))
+    // 판정은 src 기준 상대경로로 한다 — 체크아웃 경로에 금지 조각이 들어 있으면 전 파일이 걸린다.
+    .filter((file) => BANNED_MODULE.test(relative(SRC, file)))
     .map((file) => {
       const chain: string[] = [];
       for (let cur: string | null | undefined = file; cur; cur = parentOf.get(cur)) {
@@ -184,10 +192,15 @@ describe("셀러 대면 표면은 월별 정산 줄을 모른다(T-240)", () => 
 
   describe("양성 프로브 — 같은 스캐너가 위반을 실제로 잡는다", () => {
     it("속성 접근·문자열 키·import 는 잡고, 주석 속 언급은 잡지 않는다", () => {
-      expect(scanSellerFacingSource("probe.ts", "const n = campaign.monthlySettlements.length;")).toHaveLength(1);
-      expect(scanSellerFacingSource("probe.ts", 'const include = { "monthlyLines": true };')).toHaveLength(1);
-      expect(scanSellerFacingSource("probe.ts", 'import { x } from "@/lib/monthly-settlement";')).toHaveLength(1);
-      expect(scanSellerFacingSource("probe.ts", "const m = await import('@/services/monthlySettlementService');")).toHaveLength(1);
+      // 건수가 아니라 「잡았다」만 단언한다 — 금지 모듈 문자열은 이름 패턴에도 함께 걸려 2건이 되기도 한다.
+      expect(scanSellerFacingSource("probe.ts", "const n = campaign.monthlySettlements.length;")).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", 'const include = { "monthlyLines": true };')).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", 'import { x } from "@/lib/monthly-settlement";')).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", "const m = await import('@/services/monthlySettlementService');")).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", 'const p = "campaign.monthlyLines";')).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", "const { monthlyLineCount } = row;")).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", "const m = require('@/lib/monthly-settlement');")).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", "type T = typeof import('@/lib/monthly-settlement');")).not.toEqual([]);
       expect(scanSellerFacingSource("probe.ts", "// campaign.monthlySettlements 는 셀러에게 안 보낸다\nconst a = 1;")).toEqual([]);
     });
 
