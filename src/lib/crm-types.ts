@@ -296,8 +296,8 @@ export type CampaignRow = {
    */
   partnerBankAccount?: string | null;
   /**
-   * 월정산 거래처인가(T-240, `Partner.monthlySettlement`). 참이면 브랜드 정산을 캠페인 안의 월별 줄로
-   * 기록하고(`monthly-settlement-panel`), 재무 카드의 물품대금은 월별 줄 합계라 읽기 전용이다.
+   * 월정산 거래처인가(T-240, `Partner.monthlySettlement`). 참이면 공급사 계산서 칸이 캠페인당 달별
+   * 계산서 여러 장이다(`campaign-invoice-slot`). 캠페인은 1단위 그대로다.
    */
   partnerMonthlySettlement?: boolean;
   partnerCeoName?: string | null;

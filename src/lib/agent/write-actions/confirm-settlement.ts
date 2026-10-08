@@ -25,7 +25,7 @@ import {
   type CampaignMoneySlot,
   type MoneySlotAmountInput,
 } from "@/lib/tax-filing-board";
-import { monthlySettlementService } from "@/services/monthlySettlementService";
+import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 import { assertEntityExists, type WriteActionDefinition, type WriteActionResult } from "./types";
 
 const confirmSettlementArgsSchema = z.object({
@@ -200,9 +200,9 @@ async function handleConfirmSettlement(
   const nextFlags: SettlementCompletionFlags = { ...flags };
   nextFlags[slot.flagField] = true;
   let autoStatus = computeAutoStatus(campaign.status, campaign.salesChannel, nextFlags);
-  // 월별 정산 완료 게이트(T-240) — 버튼 경로와 같은 판정: 플래그는 확정하되, 월정산 거래처
-  // 캠페인의 월별 체크가 남아 있으면 상태 전이만 보류하고 그 사유를 결과 요약에 남긴다.
-  const gated = await monthlySettlementService.gateAutoCompletion(tx, args.campaignId, campaign.status, autoStatus);
+  // 월정산 계산서 완료 게이트(T-240) — 버튼 경로와 같은 판정: 플래그는 확정하되, 월정산 거래처
+  // 캠페인의 달별 공급사 계산서가 남아 있으면 상태 전이만 보류하고 그 사유를 결과 요약에 남긴다.
+  const gated = await campaignInvoiceService.gateAutoCompletion(tx, args.campaignId, campaign.status, autoStatus);
   autoStatus = gated.status;
   const monthlyCompletionBlocked = gated.blockedReason;
 

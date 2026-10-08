@@ -325,12 +325,6 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   // 첫 리포트가 오기 전에는 두 표가 0건으로 보인다 — 로딩으로 그려 「없음」과 가른다.
   const reportPending = reportData === null && !reportError;
 
-  // 월정산 캠페인의 이 기간 월별 줄(T-240) — 리포트가 기간으로 거른 것을 행 id 로 찾는다.
-  const monthlyLinesById = useMemo(
-    () => new Map((reportData?.campaigns ?? []).map((campaign) => [campaign.id, campaign.monthlyLines])),
-    [reportData],
-  );
-
   const filteredCampaigns = useMemo(() => {
     const allowedIds = new Set(reportData?.campaigns.map((campaign) => campaign.id) ?? []);
     return data.campaigns.filter((c) => allowedIds.has(c.id));
@@ -712,7 +706,6 @@ interface CsvRow {
               </div>
               <SettlementTable
                 campaigns={activeCampaigns}
-                monthlyLinesById={monthlyLinesById}
                 onSelectCampaign={handleSelectCampaign}
                 loading={loading || reportPending}
                 selectedIds={selectedIds}

@@ -5,7 +5,7 @@ import {
   type CampaignGroupRollupUpdate,
 } from "@/repositories/campaignGroupRepository";
 import { generateGroupName } from "@/lib/campaign-group-name";
-import { monthlySettlementService } from "@/services/monthlySettlementService";
+import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 import type { CampaignGroup, Prisma } from "@prisma/client";
 
 /**
@@ -462,11 +462,11 @@ export async function propagateGroupStatus(
       (input.isSiblingEligible ? input.isSiblingEligible(m) : true),
   );
   if (targets.length === 0) return [];
-  // 월별 정산 완료 게이트(T-240) — 원본이 통과했어도 형제는 자기 월 줄로 따로 판정한다
-  // (조합 캠페인의 월 줄은 멤버 단위다). 막힌 형제는 따라가지 않고 제자리에 둔다.
+  // 월정산 계산서 완료 게이트(T-240) — 그룹은 계산서를 공유하므로 형제도 원본과 같은 답을 받는다
+  // (방어적으로 형제별로 다시 판정한다). 막힌 형제는 따라가지 않고 제자리에 둔다.
   const blockedIds =
     status === "COMPLETED"
-      ? await monthlySettlementService.findCompletionBlockers(tx, targets.map((t) => t.id))
+      ? await campaignInvoiceService.findCompletionBlockers(tx, targets.map((t) => t.id))
       : new Map<string, string>();
   const followers = targets.filter((t) => !blockedIds.has(t.id));
   if (followers.length === 0) return [];

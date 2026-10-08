@@ -28,8 +28,8 @@ vi.mock("@/services/campaignGroupService", () => ({
 }));
 
 // 월별 정산 완료 게이트(T-240) — 이 파일은 그룹 전파만 본다(월정산 거래처 아님 = 통과).
-vi.mock("@/services/monthlySettlementService", () => ({
-  monthlySettlementService: {
+vi.mock("@/services/campaignInvoiceService", () => ({
+  campaignInvoiceService: {
     findCompletionBlocker: vi.fn().mockResolvedValue(null),
     gateAutoCompletion: vi.fn(async (_db: unknown, _id: string, _prev: string, auto: string | null | undefined) => ({
       status: auto ?? undefined,
