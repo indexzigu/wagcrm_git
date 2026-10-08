@@ -40,6 +40,12 @@ export type ParsedSettlementStatement = {
   format: StatementFormat;
   /** 프로모션명(표) 또는 제목의 대괄호 라벨(평문) — 캠페인 대조에 쓴다 */
   promotionLabel: string | null;
+  /**
+   * 정산서를 보낸 브랜드(우리 거래 상대) 표기 — 표는 우리 아닌 발행 주체·대금 당사자, 평문은 발행 줄의
+   * 우리 아닌 쪽. 같은 셀러가 다른 브랜드와도 공구하므로 셀러 이름만으로 대조하면 남의 정산서가 붙는다
+   * (코드 리뷰 2026-10-09). 못 읽으면 null — 대조하지 않는다.
+   */
+  counterpartyLabel: string | null;
   subject: string;
   invoices: StatementInvoice[];
 };
@@ -104,9 +110,9 @@ function parseClosingTable(subject: string, text: string, ourName: string): Pars
     const month = Number(row[2]);
     const amount = toAmount(row[3]);
     if (month < 1 || month > 12 || amount === null) continue;
-    // 행의 달이 머리글 달보다 크면 전년도 정산(12월분을 1월에 보냄 등)이 아니라 같은 해다 —
-    // 머리글은 「26년 9월」처럼 그 정산의 달을 말하므로 연도는 머리글을 따른다.
-    const year = header.year;
+    // 머리글은 「26년 9월」처럼 그 정산의 달을 말한다. 행의 달이 머리글 달보다 뒤면 작년 것이다
+    // (「26년 1월」 정산서의 「12월」 행 = 2025-12).
+    const year = month > header.month ? header.year - 1 : header.year;
     const writtenDate = lastDayOfMonth(year, month);
     let dueDate: string | null = null;
     if (payment) {
@@ -125,7 +131,10 @@ function parseClosingTable(subject: string, text: string, ourName: string): Pars
     });
   }
   if (invoices.length === 0) return null;
-  return { format: "CLOSING_TABLE", promotionLabel: promotion, subject, invoices };
+  const counterpartyLabel =
+    invoices.find((invoice) => invoice.direction === "RECEIVE")?.issuerLabel ??
+    (payment ? [payment[1], payment[2]].find((label) => !isOurs(label, ourName)) ?? null : null);
+  return { format: "CLOSING_TABLE", promotionLabel: promotion, counterpartyLabel, subject, invoices };
 }
 
 function parseOwnMallNotice(subject: string, text: string, ourName: string): ParsedSettlementStatement | null {
@@ -154,7 +163,10 @@ function parseOwnMallNotice(subject: string, text: string, ourName: string): Par
   });
   if (invoices.length === 0) return null;
   const promotionLabel = /\[([^\]]+)\]/.exec(subject)?.[1]?.trim() ?? null;
-  return { format: "OWN_MALL_NOTICE", promotionLabel, subject, invoices };
+  // 발행 줄 「<발행자> → <수령자>」에서 브랜드 = 우리가 받으면 발행자, 그 밖(우리·셀러가 발행)엔 수령자.
+  const first = anchors[0];
+  const counterpartyLabel = first ? (isOurs(first[2], ourName) ? first[1] : first[2]) : null;
+  return { format: "OWN_MALL_NOTICE", promotionLabel, counterpartyLabel, subject, invoices };
 }
 
 /**

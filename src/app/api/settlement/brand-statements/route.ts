@@ -12,7 +12,9 @@ export async function GET(request: Request) {
   if (!auth.authenticated) return auth.response;
 
   const url = new URL(request.url);
-  const sinceDays = Math.min(365, Math.max(7, Number(url.searchParams.get("sinceDays") ?? 120)));
+  const requested = Number(url.searchParams.get("sinceDays") ?? 120);
+  // 숫자가 아니면(NaN) 기본값 — 날짜 계산이 깨져 502 가 되지 않게.
+  const sinceDays = Number.isFinite(requested) ? Math.min(365, Math.max(7, requested)) : 120;
   try {
     return NextResponse.json(await scanBrandStatementMails({ sinceDays }));
   } catch (error) {

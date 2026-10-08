@@ -446,6 +446,7 @@ export const campaignInvoiceService = {
         anchorCampaignId: [...unit.memberIds].sort()[0],
         direction: unit.direction,
         counterpartBusinessNumber: unit.counterpartBusinessNumber,
+        counterpartLabel: unit.counterpartLabel,
         openMonths: summary.openMonths,
         labels: unit.sellerLabels,
         dismissedIssueIds: rows
@@ -571,6 +572,22 @@ export const campaignInvoiceService = {
         rows: (await loadUnitRows(tx, unit)).map(toInvoiceRowDto),
       });
       await tx.campaignInvoice.delete({ where: { id: row.id } });
+      // 자동 기록을 오너가 취소했다 = 그 메일은 이 단위 것이 아니다. 지우기만 하면 다음 크론이 같은 조건으로
+      // **같은 메일을 다시 기록**한다(코드 리뷰 2026-10-09) — 「이 메일이 아님」으로 남겨 후보·자동 판정에서 뺀다.
+      // 오너가 그 메일을 직접 고르면 확인 경로가 이 표시를 걷어낸다(`confirmMailInvoice`).
+      const autoRejected = row.source === "MAIL_AUTO" && row.approvalNo !== null;
+      if (autoRejected) {
+        await tx.campaignInvoice.create({
+          data: {
+            campaignId: row.campaignId,
+            direction: row.direction,
+            yearMonth: row.yearMonth,
+            status: "DISMISSED",
+            approvalNo: row.approvalNo,
+            source: "MAIL_AUTO",
+          },
+        });
+      }
       if (rollupBefore && row.status !== "DISMISSED" && toYmd(unit.legacyDate) === rollupBefore) {
         const where = { supplierInvoiceIssuedAt: fromYmd(rollupBefore) };
         if (unit.groupId) {
@@ -585,7 +602,9 @@ export const campaignInvoiceService = {
           unit,
           row.status === "WAIVED"
             ? `${formatInvoiceMonth(row.yearMonth)}분 「계산서 없음」 표시를 취소했습니다.`
-            : `${formatInvoiceMonth(row.yearMonth)}분 공급사 계산서 기록을 취소했습니다.`,
+            : autoRejected
+              ? `${formatInvoiceMonth(row.yearMonth)}분 공급사 계산서 자동 기록을 취소했습니다. 같은 메일은 이 캠페인에 다시 자동 기록하지 않습니다.`
+              : `${formatInvoiceMonth(row.yearMonth)}분 공급사 계산서 기록을 취소했습니다.`,
         );
       }
       return toInvoiceRowDto(row);

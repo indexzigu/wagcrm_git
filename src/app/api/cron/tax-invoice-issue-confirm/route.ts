@@ -122,6 +122,12 @@ function summarizeConfirm(op: {
 const STATEMENT_SCAN_SINCE_DAYS = SCAN_SINCE_DAYS + 31;
 
 type MonthlyAutoRecordReport = {
+  /**
+   * 판정 자체를 하지 않은 이유 — 메일을 다 못 봤으면 「금액이 맞는 장이 한 장뿐」·「정산서가 한 통뿐」이
+   * 거짓일 수 있다(잘린 쪽에 같은 금액이 있을 수 있다, 코드 리뷰 2026-10-09). null = 판정함.
+   */
+  blocked: "INVOICE_SCAN_TRUNCATED" | "STATEMENT_SCAN_TRUNCATED" | null;
+  statementBox: string | null;
   units: number;
   statements: number;
   /** 정산서처럼 보였지만 두 형식 어느 쪽으로도 못 읽은 메일 수 — 형식 변경 신호 */
@@ -144,9 +150,13 @@ type MonthlyAutoRecordReport = {
  */
 async function runMonthlyAutoRecord(input: {
   mails: InvoiceMailSummary[];
+  /** 계산서 스캔이 상한에 걸려 안 읽은 메일 수 */
+  invoiceScanTruncated: number;
   dryRun: boolean;
 }): Promise<MonthlyAutoRecordReport> {
   const report: MonthlyAutoRecordReport = {
+    blocked: null,
+    statementBox: null,
     units: 0,
     statements: 0,
     statementsUnparsed: 0,
@@ -165,9 +175,18 @@ async function runMonthlyAutoRecord(input: {
   // 비어 있는 발행 칸이 없으면 메일함을 한 번 더 열지 않는다.
   if (!units.some((unit) => unit.direction === "ISSUE")) return report;
 
+  if (input.invoiceScanTruncated > 0) {
+    report.blocked = "INVOICE_SCAN_TRUNCATED";
+    return report;
+  }
   const statementScan = await scanBrandStatementMails({ sinceDays: STATEMENT_SCAN_SINCE_DAYS });
+  report.statementBox = statementScan.box;
   report.statements = statementScan.statements.length;
   report.statementsUnparsed = statementScan.unparsed;
+  if (statementScan.truncated > 0) {
+    report.blocked = "STATEMENT_SCAN_TRUNCATED";
+    return report;
+  }
 
   const plan = planAutoRecords({
     units,
@@ -376,6 +395,7 @@ async function handler(request: Request): Promise<Response> {
       mails: scan.mails
         .map((mail) => toInvoiceMailSummary(mail.parsed, mail.receivedAt))
         .filter((mail): mail is InvoiceMailSummary => mail !== null),
+      invoiceScanTruncated: scan.truncated,
       dryRun,
     });
   } catch (error) {
@@ -487,7 +507,7 @@ async function handler(request: Request): Promise<Response> {
           failureReason:
             failures.length > 0
               ? `발행 확정 쓰기 ${failures.length}건 실패`
-              : `월정산 자동 기록 ${monthlyFailures.length}건 실패`,
+              : `월정산 자동 기록 실패: ${monthlyFailures[0].error}${monthlyFailures.length > 1 ? ` 외 ${monthlyFailures.length - 1}건` : ""}`,
         }
       : {}),
   });

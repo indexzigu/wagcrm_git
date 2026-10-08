@@ -247,6 +247,7 @@ describe("완료 판정 · 레거시 날짜 롤업 — 저장된 행만으로", 
 function statement(overrides: Partial<StatementMailSummary> = {}): StatementMailSummary {
   return {
     promotionLabel: "26년 9월 가나다 공구",
+    counterpartyLabel: "브랜드A",
     subject: "[브랜드A] 26년 9월 가나다님 - 마감정산서 검토 요청",
     receivedAt: "2026-10-02T02:00:00.000Z",
     invoices: [
@@ -263,6 +264,7 @@ function unit(overrides: Partial<AutoRecordUnit> = {}): AutoRecordUnit {
     anchorCampaignId: "c1",
     direction: "ISSUE",
     counterpartBusinessNumber: BRAND,
+    counterpartLabel: "브랜드A",
     openMonths: ["2026-09"],
     labels: ["가나다"],
     dismissedIssueIds: [],
@@ -299,8 +301,29 @@ describe("정산서 대조", () => {
       statements: [statement(), statement({ receivedAt: "2026-10-03T00:00:00.000Z" })],
       direction: "ISSUE",
       labels: ["가나다"],
+      counterpartLabel: "브랜드A",
     });
     expect(byMonth.get("2026-09")?.map((e) => e.totalAmount)).toEqual([74_250]);
+  });
+
+  it("같은 셀러라도 다른 브랜드가 보낸 정산서는 이 거래처 것이 아니다 — 브랜드를 못 읽어도 뺀다", () => {
+    const collect = (counterpartyLabel: string | null) =>
+      collectStatementExpectations({
+        statements: [statement({ counterpartyLabel })],
+        direction: "ISSUE",
+        labels: ["가나다"],
+        counterpartLabel: "브랜드A",
+      });
+    expect(collect("브랜드B").size).toBe(0);
+    expect(collect(null).size).toBe(0);
+    // 표기 차이(「주식회사」 등)는 같은 브랜드로 본다.
+    expect(collect("주식회사 브랜드A").get("2026-09")).toHaveLength(1);
+  });
+
+  it("영문 이름은 세 글자부터 대조한다 — 두 글자 핸들은 우연히 겹친다", () => {
+    const latin = statement({ subject: "[브랜드A] Jinro 마감정산서", promotionLabel: null });
+    expect(statementMentionsUnit(latin, ["jin"])).toBe(true);
+    expect(statementMentionsUnit(latin, ["ji"])).toBe(false);
   });
 
   it("다른 단위 이름도 들어 있는 정산서는 어느 쪽 것인지 몰라 뺀다", () => {
@@ -309,6 +332,7 @@ describe("정산서 대조", () => {
       statements: [shared],
       direction: "ISSUE",
       labels: ["가나다"],
+      counterpartLabel: "브랜드A",
       otherUnitsLabels: [["라마바"]],
     });
     expect(byMonth.size).toBe(0);
@@ -382,5 +406,14 @@ describe("planAutoRecords — 확인 없이 기록해도 되는가", () => {
   it("상대 사업자번호가 다른 계산서는 같은 금액이어도 고르지 않는다", () => {
     const { ops } = plan({ mails: [mail({ issueId: "A-2", invoiceeBusinessNumber: OTHER })] });
     expect(ops).toEqual([]);
+  });
+});
+
+describe("planAutoRecords — 다른 브랜드 정산서 (코드 리뷰 2026-10-09)", () => {
+  it("같은 셀러·같은 달 다른 브랜드 정산서의 금액으로는 고르지 않는다", () => {
+    const otherBrand = statement({ counterpartyLabel: "브랜드B" });
+    const { ops, skipped } = plan({ statements: [otherBrand] });
+    expect(ops).toEqual([]);
+    expect(skipped.map((s) => s.reason)).toEqual(["NO_STATEMENT"]);
   });
 });

@@ -67,6 +67,16 @@ describe("① 크론 — 월정산 자동 기록 쓰기는 예행 반환 뒤에�
     expect(Math.min(...guards.map((g) => g.getStart(source)))).toBeLessThan(writeAt);
   });
 
+  it("메일을 다 못 봤으면(계산서·정산서 스캔이 잘림) 판정 전에 멈춘다", () => {
+    const planAt = find(body!, isCall).find((c) => calleeText(c, source) === "planAutoRecords")!.getStart(source);
+    const guardsBefore = (condition: string) =>
+      find(body!, (n): n is ts.IfStatement => ts.isIfStatement(n))
+        .filter((n) => n.expression.getText(source) === condition)
+        .some((n) => n.getStart(source) < planAt);
+    expect(guardsBefore("input.invoiceScanTruncated > 0")).toBe(true);
+    expect(guardsBefore("statementScan.truncated > 0")).toBe(true);
+  });
+
   it("핸들러는 env 게이트로 정해진 `dryRun` 을 그대로 넘긴다", () => {
     const calls = find(source, isCall).filter((c) => calleeText(c, source) === "runMonthlyAutoRecord");
     expect(calls).toHaveLength(1);

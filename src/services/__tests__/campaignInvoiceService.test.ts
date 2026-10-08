@@ -49,6 +49,8 @@ const db = {
       const groupId = where.groupId;
       if (typeof groupId === "string") return state.campaigns.filter((c) => c.groupId === groupId).sort((a, b) => a.id.localeCompare(b.id));
       if (groupId) return state.campaigns.filter((c) => c.groupId !== null && groupId.in.includes(c.groupId));
+      // 자동 기록 대상 조회(id 목록 없이 월정산·상태·기간 조건) — 상태·기간은 픽스처가 모두 해당한다고 본다.
+      if (!where.id) return state.campaigns.filter((c) => c.monthly).map((c) => ({ id: c.id }));
       return state.campaigns
         .filter((c) => where.id?.in.includes(c.id) && c.monthly)
         .map((c) => ({ ...c, group: c.groupId ? state.groups.get(c.groupId) ?? null : null }));
@@ -336,6 +338,21 @@ describe("autoRecordMailInvoice — 확인 없는 자동 기록 (T-242)", () => 
     await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
     expect(await campaignInvoiceService.autoRecordMailInvoice({ ...AUTO })).toBeNull();
     expect(state.invoices.filter((r) => r.status === "RECORDED")).toHaveLength(1);
+  });
+
+  it("오너가 자동 기록을 취소하면 그 메일은 「이 메일이 아님」으로 남아 다음 실행이 다시 붙이지 않는다", async () => {
+    const row = await campaignInvoiceService.autoRecordMailInvoice(AUTO);
+    await campaignInvoiceService.revertRow("c1", row!.id);
+    expect(state.invoices).toMatchObject([{ status: "DISMISSED", approvalNo: "A-1" }]);
+    expect(await campaignInvoiceService.autoRecordMailInvoice(AUTO)).toBeNull();
+    const { units } = await campaignInvoiceService.loadAutoRecordUnits(db as never, {
+      sinceDays: 3650,
+      now: new Date("2026-10-09T00:00:00Z"),
+    });
+    expect(units[0]?.dismissedIssueIds).toEqual(["A-1"]);
+    // 오너가 직접 고르면 다시 기록할 수 있다(확인 경로가 표시를 걷어낸다).
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    expect(state.invoices.map((r) => r.status)).toEqual(["RECORDED"]);
   });
 
   it("수취(우리몰) 단위는 자동 기록하지 않는다", async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isSettlementStatementSubject, parseSettlementStatement } from "./brand-statement";
+import { SUPPLIER } from "../tax-invoice-builder";
 
 // 메일함 실측(2026-10-08) 두 형식의 **구조**를 그대로 옮긴 픽스처 — 이름·금액은 가짜다(P0).
 const OURS = "우리상사";
@@ -59,6 +60,7 @@ describe("parseSettlementStatement — 마감정산서(표)", () => {
     });
     expect(parsed?.format).toBe("CLOSING_TABLE");
     expect(parsed?.promotionLabel).toBe("26년 9월 가나다 공구");
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
     expect(parsed?.invoices).toEqual([
       { direction: "RECEIVE", issuerLabel: "브랜드A", writtenDate: "2026-09-30", yearMonth: "2026-09", totalAmount: 1_000_000, dueDate: "2026-10-20" },
       { direction: "ISSUE", issuerLabel: "우리상사", writtenDate: "2026-09-30", yearMonth: "2026-09", totalAmount: 450_000, dueDate: "2026-10-20" },
@@ -72,6 +74,12 @@ describe("parseSettlementStatement — 마감정산서(표)", () => {
       ["2026-12-31", "2027-01-20"],
       ["2026-12-31", "2027-01-20"],
     ]);
+  });
+
+  it("머리글 달보다 뒤인 행은 작년 것이다(1월 정산서의 12월 행)", () => {
+    const text = CLOSING_TABLE.replace("26년 9월 마감정산서", "27년 1월 마감정산서").replaceAll(" 9월 ", " 12월 ");
+    const parsed = parseSettlementStatement({ subject: "27년 1월 마감정산서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.writtenDate)).toEqual(["2026-12-31", "2026-12-31"]);
   });
 
   it("연·월 머리글이 없으면 고르지 않는다(작성일을 지어내지 않는다)", () => {
@@ -89,6 +97,7 @@ describe("parseSettlementStatement — 자사몰 정산내역서(평문)", () =>
     });
     expect(parsed?.format).toBe("OWN_MALL_NOTICE");
     expect(parsed?.promotionLabel).toBe("우리상사_라마바");
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
     expect(parsed?.invoices).toEqual([
       { direction: "ISSUE", issuerLabel: "우리상사", writtenDate: "2026-08-31", yearMonth: "2026-08", totalAmount: 1_203_150, dueDate: "2026-09-18" },
       { direction: "ISSUE", issuerLabel: "우리상사", writtenDate: "2026-09-03", yearMonth: "2026-09", totalAmount: 805_200, dueDate: "2026-09-18" },
@@ -99,12 +108,14 @@ describe("parseSettlementStatement — 자사몰 정산내역서(평문)", () =>
     const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
     const parsed = parseSettlementStatement({ subject: "[라마바] 정산내역서", text, ourName: OURS });
     expect(parsed?.invoices.map((i) => i.direction)).toEqual([null, null]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
   });
 
   it("브랜드가 우리에게 발행하면 RECEIVE", () => {
     const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 → 브랜드A 세금계산서", "브랜드A → 우리상사 세금계산서");
     const parsed = parseSettlementStatement({ subject: "[x] 정산내역서", text, ourName: OURS });
     expect(parsed?.invoices.map((i) => i.direction)).toEqual(["RECEIVE", "RECEIVE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
   });
 
   it("금액을 못 읽은 블록은 버린다 — 0원·빈 칸을 기대치로 만들지 않는다", () => {
@@ -123,5 +134,13 @@ describe("형식 밖", () => {
     expect(isSettlementStatementSubject("[브랜드A] 26년 9월 마감정산서 검토 요청")).toBe(true);
     expect(isSettlementStatementSubject("자사몰 공구 정산내역서 송부의 건")).toBe(true);
     expect(isSettlementStatementSubject("공구 확정 안내")).toBe(false);
+  });
+});
+
+describe("실제 우리 상호(SUPPLIER.name)", () => {
+  it("정산서에 적힌 우리 상호로 발행 방향을 가른다 — 상수가 바뀌면 여기서 먼저 깨진다", () => {
+    const text = CLOSING_TABLE.replaceAll("우리상사", SUPPLIER.name);
+    const parsed = parseSettlementStatement({ subject: "26년 9월 마감정산서", text, ourName: SUPPLIER.name });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["RECEIVE", "ISSUE"]);
   });
 });

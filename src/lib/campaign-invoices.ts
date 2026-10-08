@@ -390,6 +390,8 @@ export type StatementExpectation = {
 /** 정산서 메일 한 통의 요약 — `/api/settlement/brand-statements` 응답의 `statements[]` 모양. */
 export type StatementMailSummary = {
   promotionLabel: string | null;
+  /** 정산서를 보낸 브랜드 표기(`brand-statement.ts`) — 못 읽었으면 null 이고 그 정산서는 대조하지 않는다 */
+  counterpartyLabel: string | null;
   subject: string;
   receivedAt: string;
   invoices: ReadonlyArray<{
@@ -407,19 +409,34 @@ export type StatementMailSummary = {
  */
 export const INVOICE_AMOUNT_TOLERANCE_WON = SUB_HUNDRED_TRUNCATION_TOLERANCE_WON;
 
-const MIN_LABEL_LENGTH = 2;
+/** 한글 이름은 두 글자부터, 그 밖(영문 핸들 등)은 세 글자부터 대조에 쓴다 — 짧으면 우연히 겹친다. */
+function isUsableLabel(needle: string): boolean {
+  return /[가-힣]/.test(needle) ? needle.length >= 2 : needle.length >= 3;
+}
 
 /**
- * 정산서가 이 단위 것인가 — 프로모션명·제목에 단위의 셀러 이름(별칭)이 들어 있는가.
+ * 정산서가 이 셀러 것인가 — 프로모션명·제목에 단위의 셀러 이름(별칭)이 들어 있는가.
  * 브랜드는 프로모션(= 셀러 × 회차)마다 정산서를 따로 보내고 제목·프로모션명에 셀러 이름을 적는다
- * (메일함 실측 2026-10-08). 두 글자 미만 이름은 우연히 겹치기 쉬워 쓰지 않는다.
+ * (메일함 실측 2026-10-08).
  */
 export function statementMentionsUnit(statement: Pick<StatementMailSummary, "promotionLabel" | "subject">, labels: readonly string[]): boolean {
   const text = normalizeForCompare(`${statement.promotionLabel ?? ""} ${statement.subject}`);
   return labels.some((label) => {
     const needle = normalizeForCompare(label);
-    return needle.length >= MIN_LABEL_LENGTH && text.includes(needle);
+    return isUsableLabel(needle) && text.includes(needle);
   });
+}
+
+/**
+ * 정산서를 보낸 브랜드가 이 단위의 거래처인가. 같은 셀러가 여러 브랜드와 공구하므로 셀러 이름만으로는
+ * 남의 정산서가 붙는다(코드 리뷰 2026-10-09). 표기 차이(「(주)」 등)를 견디게 한쪽이 다른 쪽을 품으면
+ * 같다고 본다. 어느 쪽이든 비면 같지 않다(모르는 브랜드를 이 거래처로 넘기지 않는다).
+ */
+export function statementFromCounterpart(statement: Pick<StatementMailSummary, "counterpartyLabel">, counterpartLabel: string): boolean {
+  const brand = normalizeForCompare(statement.counterpartyLabel ?? "");
+  const partner = normalizeForCompare(counterpartLabel);
+  if (!brand || !partner) return false;
+  return brand.includes(partner) || partner.includes(brand);
 }
 
 /**
@@ -430,11 +447,14 @@ export function collectStatementExpectations(input: {
   statements: readonly StatementMailSummary[];
   direction: InvoiceDirection;
   labels: readonly string[];
+  /** 이 단위의 거래처 이름 — 정산서를 보낸 브랜드와 같아야 한다 */
+  counterpartLabel: string;
   otherUnitsLabels?: ReadonlyArray<readonly string[]>;
 }): Map<string, StatementExpectation[]> {
   const byMonth = new Map<string, StatementExpectation[]>();
   const seen = new Set<string>();
   for (const statement of input.statements) {
+    if (!statementFromCounterpart(statement, input.counterpartLabel)) continue;
     if (!statementMentionsUnit(statement, input.labels)) continue;
     if ((input.otherUnitsLabels ?? []).some((labels) => statementMentionsUnit(statement, labels))) continue;
     for (const invoice of statement.invoices) {
@@ -470,6 +490,8 @@ export type AutoRecordUnit = {
   anchorCampaignId: string;
   direction: InvoiceDirection;
   counterpartBusinessNumber: string | null;
+  /** 거래처 이름 — 정산서 브랜드 대조 키 */
+  counterpartLabel: string;
   /** 아직 기록·「없음」이 없는 달 */
   openMonths: readonly string[];
   /** 셀러 별칭·이름 — 정산서 대조 키 */
@@ -525,6 +547,7 @@ export function planAutoRecords(input: {
       statements: input.statements,
       direction: "ISSUE",
       labels: unit.labels,
+      counterpartLabel: unit.counterpartLabel,
       otherUnitsLabels: sameCounterpart.filter((other) => other.unitKey !== unit.unitKey).map((other) => other.labels),
     });
     const { candidatesByMonth, amendmentsByMonth } = findInvoiceCandidates({

@@ -38,6 +38,8 @@ export type BrandStatementScanResult = {
   candidates: number;
   /** 그중 두 형식 어느 쪽으로도 못 읽은 수 — 형식 변경 신호 */
   unparsed: number;
+  /** 상한(`maxMessages`)에 걸려 읽지 않은 후보 수 — 0 이 아니면 「정산서 한 통뿐」을 믿을 수 없다 */
+  truncated: number;
   statements: ScannedBrandStatement[];
 };
 
@@ -127,7 +129,15 @@ export async function scanBrandStatementMails(options: {
       }
       statements.push({ ...parsed, receivedAt: (mail.date ?? target.date).toISOString() });
     }
-    return { box, sinceDays, headerScanned: headers.length, candidates: candidates.length, unparsed, statements };
+    return {
+      box,
+      sinceDays,
+      headerScanned: headers.length,
+      candidates: candidates.length,
+      unparsed,
+      truncated: candidates.length - targets.length,
+      statements,
+    };
   } finally {
     connection.end();
   }
