@@ -65,7 +65,7 @@ export function DealOptionsSection({ deal, fetchDealDetails }: DealOptionsSectio
           {/* 옵션 목록 */}
           {!deal.options || deal.options.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              등록된 하위 옵션 상품이 없습니다.
+              등록된 하위 옵션 상품 없음
             </p>
           ) : (
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">

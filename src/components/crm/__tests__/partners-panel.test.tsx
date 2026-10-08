@@ -149,7 +149,7 @@ describe("PartnersPanel", () => {
         partner: { ...basePartner, contacts: [] },
       });
 
-      expect(screen.getByText("등록된 담당자가 없습니다.")).toBeInTheDocument();
+      expect(screen.getByText("등록된 담당자 없음")).toBeInTheDocument();
       expect(screen.getAllByRole("button", { name: "담당자 추가" })).toHaveLength(1);
     });
 

@@ -66,7 +66,7 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
             </div>
           ) : orderCount === 0 ? (
             <div className="text-center p-10 text-slate-500 font-medium bg-white rounded-xl border border-slate-200">
-              집계된 유효 주문이 없습니다.
+              집계된 유효 주문 없음
             </div>
           ) : (
             <div className="space-y-6">

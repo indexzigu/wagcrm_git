@@ -214,7 +214,7 @@ export function DealAssetSection({ dealId }: { dealId: string }) {
         </ul>
       ) : (
         <div className="mt-3 rounded-md border border-dashed border-border/50 bg-slate-50/60 py-4 text-center text-xs text-muted-foreground">
-          첨부된 파일이 없습니다.
+          첨부된 파일 없음
         </div>
       )}
 

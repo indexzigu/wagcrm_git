@@ -87,7 +87,7 @@ export function CampaignTaskChecklist({
 
       {currentItems.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-xs text-muted-foreground">
-          현재 단계 체크 항목이 없습니다.
+          현재 단계 체크 항목 없음
         </div>
       ) : (
         <div className="space-y-3">

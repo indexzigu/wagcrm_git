@@ -671,7 +671,7 @@ function DealsPanelContent({
           ) : (
             <div className="border border-border/60 bg-muted/5 rounded-lg p-3 h-[74px] flex items-center justify-center text-center">
               <p className="text-xs text-muted-foreground">
-                연결된 거래처가 없습니다
+                연결된 거래처 없음
               </p>
             </div>
           )}
@@ -693,7 +693,7 @@ function DealsPanelContent({
             }))}
             loading={loadingCampaigns}
             error={campaignsError}
-            emptyMessage="연결된 캠페인이 없습니다"
+            emptyMessage="연결된 캠페인 없음"
             onLinkClick={() => setCampaignLinkSearchOpen(true)}
             onUnlinkClick={handleCampaignUnlink}
             onEntityClick={(entityId) => {
@@ -715,7 +715,7 @@ function DealsPanelContent({
             }))}
             title={`영업 테스크 (${linkedTasks.length}건)`}
             loading={loadingTasks}
-            emptyMessage="연결된 영업 테스크가 없습니다"
+            emptyMessage="연결된 영업 테스크 없음"
             linkButtonLabel="연결"
             onLinkClick={() => onCreateOutreach?.(deal.id, deal.dealName)}
             onUnlinkClick={handleTaskUnlink}
@@ -751,7 +751,7 @@ function DealsPanelContent({
               ],
             }))}
             loading={loadingSellers}
-            emptyMessage="연결된 셀러가 없습니다"
+            emptyMessage="연결된 셀러 없음"
             onLinkSeller={handleSellerLinkSelection}
             onUnlinkClick={handleSellerUnlink}
             excludeIds={linkedSellers.map((s) => s.id)}

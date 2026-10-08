@@ -107,7 +107,7 @@ export default async function StoryInboxPage({
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
           {filter === "unreviewed"
             ? "분류할 스토리가 없습니다. 다음 수집(매일 00:00 KST)을 기다려주세요."
-            : "해당 분류의 스토리가 없습니다."}
+            : "해당 분류의 스토리 없음"}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">

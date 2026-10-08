@@ -37,7 +37,7 @@ export function UpcomingScheduleBody({
   nextWeekLabel: string;
 }) {
   if (events.length === 0) {
-    return <p className="py-4 text-[11px] text-muted-foreground">향후 14일 내 주요 일정이 없습니다.</p>;
+    return <p className="py-4 text-[11px] text-muted-foreground">향후 14일 내 주요 일정 없음</p>;
   }
 
   const todayStart = new Date();

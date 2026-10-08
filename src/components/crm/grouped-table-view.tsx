@@ -231,7 +231,7 @@ function GroupSection({
                     colSpan={columns.length}
                     className="h-20 text-center text-sm text-muted-foreground"
                   >
-                    해당 단계에 캠페인이 없습니다.
+                    해당 단계에 캠페인 없음
                   </TableCell>
                 </TableRow>
               ) : (

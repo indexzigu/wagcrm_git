@@ -464,7 +464,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                       </ChartContainer>
                     ) : (
                       <div className="flex h-[240px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                        표시할 손익 데이터가 없습니다.
+                        표시할 손익 데이터 없음
                       </div>
                     )}
                   </CardContent>
@@ -525,7 +525,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                       </ChartContainer>
                     ) : (
                       <div className="flex h-[240px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
-                        완료된 캠페인이 없습니다.
+                        완료된 캠페인 없음
                       </div>
                     )}
                   </CardContent>

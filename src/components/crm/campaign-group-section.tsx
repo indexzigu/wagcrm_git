@@ -883,7 +883,7 @@ function GroupCombineDialog({
                 <p className="rounded-md border border-dashed border-border/70 px-2 py-4 text-center text-xs text-muted-foreground">
                   {alreadyGroupedCount > 0
                     ? "일정이 가까운 캠페인은 이미 다른 그룹에 속해 있습니다."
-                    : "일정이 가까운 다른 캠페인이 없습니다."}
+                    : "일정이 가까운 다른 캠페인 없음"}
                 </p>
               ) : (
                 <div className="flex max-h-56 flex-col gap-1 overflow-y-auto rounded-md border border-border p-2">

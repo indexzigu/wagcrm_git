@@ -149,7 +149,7 @@ export function CalendarOrphanCleanupDialog() {
 
               {scan.orphanCount === 0 ? (
                 <p className="py-6 text-center text-xs text-muted-foreground">
-                  정리할 일정이 없습니다.
+                  정리할 일정 없음
                 </p>
               ) : (
                 <div className="max-h-[320px] overflow-y-auto rounded-lg border border-border/70 [scrollbar-gutter:stable]">

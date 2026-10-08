@@ -168,7 +168,7 @@ export function ApplyDiffModal({
           )}
 
           {rows.length === 0 && (
-            <p className="text-sm text-muted-foreground">반영할 확정 행이 없습니다.</p>
+            <p className="text-sm text-muted-foreground">반영할 확정 행 없음</p>
           )}
         </div>
 

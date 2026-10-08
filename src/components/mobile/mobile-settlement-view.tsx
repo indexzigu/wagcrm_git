@@ -213,7 +213,7 @@ export function MobileSettlementView({
             <EmptyMedia variant="icon">
               <AlertCircleIcon />
             </EmptyMedia>
-            <EmptyTitle>조회 조건에 맞는 정산 항목이 없습니다.</EmptyTitle>
+            <EmptyTitle>조회 조건에 맞는 정산 항목 없음</EmptyTitle>
             <EmptyDescription>월 또는 검색어를 바꿔 다른 정산 건을 확인할 수 있습니다.</EmptyDescription>
           </EmptyHeader>
         </Empty>

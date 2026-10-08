@@ -540,7 +540,7 @@ export function ReferenceInboxClient() {
             ) : items.length === 0 ? (
               <DataEmpty
                 icon={InboxIcon}
-                title="미분류 레퍼런스가 없습니다."
+                title="미분류 레퍼런스 없음"
                 className="rounded-2xl py-24"
               />
             ) : (

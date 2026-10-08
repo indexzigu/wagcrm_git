@@ -11,12 +11,12 @@ type ProgressStatusSummaryProps = {
 
 /**
  * Displays a summary of linked deal statuses as badges with counts.
- * Shows "연결된 딜이 없습니다" when no deals are linked.
+ * Shows "연결된 딜 없음" when no deals are linked.
  */
 export function ProgressStatusSummary({ deals }: ProgressStatusSummaryProps) {
   if (deals.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground">연결된 딜이 없습니다</p>
+      <p className="text-xs text-muted-foreground">연결된 딜 없음</p>
     );
   }
 

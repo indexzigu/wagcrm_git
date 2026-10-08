@@ -132,7 +132,7 @@ export function KatalkManageTab() {
     return (
       <div className="flex flex-col gap-3">
         <ManageGuideNote />
-        <p className="p-6 text-sm text-muted-foreground">등록된 방이 없습니다.</p>
+        <p className="p-6 text-sm text-muted-foreground">등록된 방 없음</p>
       </div>
     );
   }

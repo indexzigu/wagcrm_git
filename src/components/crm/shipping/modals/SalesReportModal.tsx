@@ -149,7 +149,7 @@ export default function SalesReportModal({
         <div id="sales-report-content" className="p-6 overflow-y-auto flex-1 bg-slate-50/50" style={{ scrollbarGutter: 'stable' }}>
           {dailyStats.length === 0 ? (
             <div className="text-center p-10 text-slate-500 font-medium bg-white rounded-xl border border-slate-200">
-              집계된 매출 내역이 없습니다.
+              집계된 매출 내역 없음
             </div>
           ) : (
             <div className="space-y-6">
@@ -203,7 +203,7 @@ export default function SalesReportModal({
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="px-5 py-4 text-center text-slate-500 text-xs">상세 옵션 데이터가 없습니다.</td>
+                          <td colSpan={5} className="px-5 py-4 text-center text-slate-500 text-xs">상세 옵션 데이터 없음</td>
                         </tr>
                       )}
                     </tbody>
@@ -274,7 +274,7 @@ export default function SalesReportModal({
                           })
                         ) : (
                           <tr>
-                            <td colSpan={5} className="px-5 py-4 text-center text-slate-500 text-xs">상세 옵션 데이터가 없습니다.</td>
+                            <td colSpan={5} className="px-5 py-4 text-center text-slate-500 text-xs">상세 옵션 데이터 없음</td>
                           </tr>
                         )}
                       </tbody>

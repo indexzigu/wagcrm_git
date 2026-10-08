@@ -280,7 +280,7 @@ export default function ClaimList({ campaignNameFilter, orderIdsFilter, unmatche
       {isLoading && claims.length === 0 ? (
         <div className="p-8 text-center text-sm text-slate-500">불러오는 중...</div>
       ) : filteredClaims.length === 0 ? (
-        <DataEmpty icon={Inbox} title="해당 조건의 반품/교환 건이 없습니다." bordered={false} className="py-8" />
+        <DataEmpty icon={Inbox} title="해당 조건의 반품/교환 건 없음" bordered={false} className="py-8" />
       ) : (
         <div className="flex flex-col gap-2">
           {(() => {

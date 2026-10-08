@@ -59,7 +59,7 @@ export function MobileHomePulseCard() {
           </div>
         ) : errorMessage || !data ? (
           <p className="mt-3 text-xs text-muted-foreground">
-            {errorMessage ?? "오늘의 펄스 데이터가 없습니다"}
+            {errorMessage ?? "오늘의 펄스 데이터 없음"}
           </p>
         ) : (
           <>

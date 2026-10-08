@@ -196,7 +196,7 @@ describe("ReadResultBody — 갈래 ③ key/value 목록", () => {
 
   it("데이터가 없으면 그 사실을 문장으로 알린다", () => {
     render(<ReadResultBody envelope={envelope("search_deals", null)} />);
-    expect(screen.getByText("저장된 결과가 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("저장된 결과 없음")).toBeInTheDocument();
   });
 
   it("0건은 key/value 덤프가 아니라 한 문장으로 말한다", () => {

@@ -180,7 +180,7 @@ export function AccountManagementTable({ currentUserId }: { currentUserId: strin
                       <EmptyMedia variant="icon">
                         <span className="text-xs font-medium">0</span>
                       </EmptyMedia>
-                      <EmptyTitle>계정이 없습니다</EmptyTitle>
+                      <EmptyTitle>계정 없음</EmptyTitle>
                       <EmptyDescription>로그인 요청이 들어오면 여기에 표시됩니다.</EmptyDescription>
                     </EmptyHeader>
                   </Empty>

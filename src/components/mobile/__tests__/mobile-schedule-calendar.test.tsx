@@ -512,7 +512,7 @@ describe("MobileScheduleDayList", () => {
         onOpenCampaign={vi.fn()}
       />,
     );
-    expect(screen.getByText("이 날짜에 예정된 일정이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("이 날짜에 예정된 일정 없음")).toBeInTheDocument();
   });
 
   it("renders group members as a single grouped item", () => {

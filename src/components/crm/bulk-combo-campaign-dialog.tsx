@@ -262,7 +262,7 @@ export function BulkComboCampaignDialog({
                 <EntityLinkSelectField
                   label="셀러"
                   selected={!!selectedSeller}
-                  emptyText="선택된 셀러가 없습니다."
+                  emptyText="선택된 셀러 없음"
                   actionLabel="셀러 검색 선택"
                   changeLabel="셀러 변경"
                   onOpen={() => setIsSellerSearchOpen(true)}
@@ -319,11 +319,11 @@ export function BulkComboCampaignDialog({
                     </FieldDescription>
                   ) : dealOptions.length === 0 ? (
                     <FieldDescription className="my-auto py-2 text-center text-xs">
-                      이 셀러로 만들 수 있는 딜이 없습니다
+                      이 셀러로 만들 수 있는 딜 없음
                     </FieldDescription>
                   ) : filteredDealOptions.length === 0 ? (
                     <FieldDescription className="my-auto py-2 text-center text-xs">
-                      검색 결과가 없습니다
+                      검색 결과 없음
                     </FieldDescription>
                   ) : (
                     filteredDealOptions.map((deal) => (

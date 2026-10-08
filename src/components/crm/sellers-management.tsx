@@ -799,7 +799,7 @@ export function SellersManagement({
             <div className="flex h-64 items-center justify-center">
               <DataEmpty
                 icon={Users}
-                title="등록된 셀러가 없습니다"
+                title="등록된 셀러 없음"
                 description="셀러를 추가하여 인플루언서를 관리하세요."
               >
                 <Button

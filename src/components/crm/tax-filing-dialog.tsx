@@ -1152,7 +1152,7 @@ export function TaxFilingDialog({
                   </p>
                 ) : !board ? (
                   <p className="flex h-full min-h-[280px] items-center justify-center text-xs text-muted-foreground">
-                    {loading ? "불러오는 중…" : "표시할 항목이 없습니다."}
+                    {loading ? "불러오는 중…" : "표시할 항목 없음"}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-4">
@@ -1257,7 +1257,7 @@ export function TaxFilingDialog({
                         밀린 정리에 건이 남아 있다면 "처리할 항목이 없다"는 문구는
                         거짓이다(위 BacklogSection이 그 항목을 이미 보여주고 있다). */}
                     {board.rows.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">처리할 항목이 없습니다.</p>
+                      <p className="text-xs text-muted-foreground">처리할 항목 없음</p>
                     ) : null}
                   </div>
                 )}

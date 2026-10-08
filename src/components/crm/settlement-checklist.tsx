@@ -93,7 +93,7 @@ export function SettlementChecklist({
         <div className="flex flex-col gap-2">
           {items.length === 0 ? (
             <div className="text-[11px] text-muted-foreground py-2 text-center">
-              등록된 정산 단계가 없습니다.
+              등록된 정산 단계 없음
             </div>
           ) : (
             items.map((item) => (

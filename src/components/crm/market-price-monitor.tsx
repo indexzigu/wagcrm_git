@@ -485,7 +485,7 @@ export function MarketPriceMonitor({
                           {!isLoading && fetchedItems.length === 0 && isSearched && (
                             <tr>
                               <td colSpan={8} className="px-3 py-6 text-center text-slate-500 text-[11px]">
-                                검색 결과가 없습니다.
+                                검색 결과 없음
                               </td>
                             </tr>
                           )}

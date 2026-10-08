@@ -12,8 +12,8 @@ describe("DealsGrid 빈 상태", () => {
     const onClearFilters = vi.fn();
     render(<DealsGrid initialDeals={[]} isFiltered onClearFilters={onClearFilters} />);
 
-    expect(screen.getByText("조건에 맞는 딜이 없습니다")).toBeInTheDocument();
-    expect(screen.queryByText("등록된 딜이 없습니다")).not.toBeInTheDocument();
+    expect(screen.getByText("조건에 맞는 딜 없음")).toBeInTheDocument();
+    expect(screen.queryByText("등록된 딜 없음")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "필터 초기화" }));
     expect(onClearFilters).toHaveBeenCalledTimes(1);
   });
@@ -21,13 +21,13 @@ describe("DealsGrid 빈 상태", () => {
   it("검색어가 있으면 무엇으로 찾았는지 말한다", () => {
     render(<DealsGrid initialDeals={[]} isFiltered filterQuery="콜라겐" onClearFilters={vi.fn()} />);
 
-    expect(screen.getByText("'콜라겐'에 맞는 딜이 없습니다")).toBeInTheDocument();
+    expect(screen.getByText("'콜라겐'에 맞는 딜 없음")).toBeInTheDocument();
   });
 
   it("필터가 없으면 등록 안내를 보인다", () => {
     render(<DealsGrid initialDeals={[]} />);
 
-    expect(screen.getByText("등록된 딜이 없습니다")).toBeInTheDocument();
-    expect(screen.queryByText("조건에 맞는 딜이 없습니다")).not.toBeInTheDocument();
+    expect(screen.getByText("등록된 딜 없음")).toBeInTheDocument();
+    expect(screen.queryByText("조건에 맞는 딜 없음")).not.toBeInTheDocument();
   });
 });

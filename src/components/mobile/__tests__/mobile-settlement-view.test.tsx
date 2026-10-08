@@ -108,7 +108,7 @@ describe("MobileSettlementView — 실패·대기는 빈 목록이 아니다", (
     commitSearch: vi.fn(),
     onOpenCampaign: vi.fn(),
   };
-  const EMPTY_TEXT = "조회 조건에 맞는 정산 항목이 없습니다.";
+  const EMPTY_TEXT = "조회 조건에 맞는 정산 항목 없음";
 
   it("조회 실패면 복구 안내와 44px 「다시 불러오기」를 보이고 빈 문구는 숨긴다", () => {
     const onRefresh = vi.fn(async () => {});

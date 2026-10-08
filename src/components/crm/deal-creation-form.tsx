@@ -175,7 +175,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
             label="거래처"
             required
             selected={!!partnerId}
-            emptyText="선택된 거래처가 없습니다."
+            emptyText="선택된 거래처 없음"
             actionLabel="거래처 검색 선택"
             changeLabel="거래처 변경"
             error={errors.partnerId}

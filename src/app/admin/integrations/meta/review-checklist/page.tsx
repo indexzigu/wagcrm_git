@@ -63,7 +63,7 @@ export default async function MetaReviewChecklistPage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-2.5 pt-4 px-6 pb-5">
                 {data.apiCallLogs.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-4">최근 API 호출 로그가 없습니다.</p>
+                  <p className="text-xs text-muted-foreground text-center py-4">최근 API 호출 로그 없음</p>
                 ) : (
                   data.apiCallLogs.map((log) => (
                     <div

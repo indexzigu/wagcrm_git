@@ -1279,7 +1279,7 @@ export function PartnersPanel({
           <Separator />
           {contacts.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <p className="text-xs text-muted-foreground">등록된 담당자가 없습니다.</p>
+              <p className="text-xs text-muted-foreground">등록된 담당자 없음</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1345,7 +1345,7 @@ export function PartnersPanel({
               socialNetworks: [{ network: s.snsType ?? "", handle: s.snsHandle ?? "", url: "" }]
             }))}
             loading={false}
-            emptyMessage="연결된 셀러가 없습니다"
+            emptyMessage="연결된 셀러 없음"
             onLinkClick={() => setSellerLinkSearchOpen(true)}
             onEntityClick={(entityId) => {
               router.push(`/sellers?sellerId=${entityId}&from=partners&partnerId=${partner.id}`);
@@ -1365,7 +1365,7 @@ export function PartnersPanel({
             }))}
             loading={loadingDeals}
             error={dealsError}
-            emptyMessage="연결된 딜이 없습니다"
+            emptyMessage="연결된 딜 없음"
             onLinkClick={() => setLinkSearchOpen(true)}
             onUnlinkClick={async (entityId) => {
               try {
@@ -1805,7 +1805,7 @@ function PartnerAssetSection({ partnerId }: { partnerId: string }) {
           ))}
         </ul>
       ) : (
-        <DataEmpty title="첨부된 파일이 없습니다." className="mt-3 py-4" />
+        <DataEmpty title="첨부된 파일 없음" className="mt-3 py-4" />
       )}
     </section>
   );

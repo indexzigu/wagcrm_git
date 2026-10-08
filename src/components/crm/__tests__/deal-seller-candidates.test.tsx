@@ -77,7 +77,7 @@ describe("DealSellerCandidates", () => {
   it("후보가 없으면 섹션이 비어 있음을 알린다", async () => {
     mockCandidates([]);
     render(<DealSellerCandidates dealId="d1" dealName="딜" onPropose={vi.fn()} />);
-    await waitFor(() => expect(screen.getByText("제안 후보가 없습니다")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("제안 후보 없음")).toBeInTheDocument());
   });
 
   // --- 기안 승격 (2단계) ---

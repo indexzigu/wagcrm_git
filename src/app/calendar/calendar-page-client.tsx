@@ -357,7 +357,7 @@ export function CalendarPageClient({
         !loadError &&
         (campaigns.length > 0 ? (
           <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-4 text-xs text-muted-foreground">
-            선택한 필터에 해당하는 캠페인이 없습니다.
+            선택한 필터에 해당하는 캠페인 없음
             <button
               type="button"
               onClick={resetFilters}
@@ -368,7 +368,7 @@ export function CalendarPageClient({
           </div>
         ) : (
           <p className="text-center text-xs text-muted-foreground">
-            이 달에 진행되는 캠페인이 없습니다.
+            이 달에 진행되는 캠페인 없음
           </p>
         ))}
 

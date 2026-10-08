@@ -293,7 +293,7 @@ export function MobilePipelineView({
               <AlertCircleIcon />
             </EmptyMedia>
             <EmptyTitle className="text-sm font-semibold text-slate-700">
-              조회된 캠페인이 없습니다.
+              조회된 캠페인 없음
             </EmptyTitle>
             <EmptyDescription className="text-xs text-slate-500">
               검색어를 변경하거나 등록된 캠페인을 확인해주세요.

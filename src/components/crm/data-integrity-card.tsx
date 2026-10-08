@@ -80,7 +80,7 @@ export function DataIntegrityBody({ issues, showSubtext = true }: { issues: Issu
       {isClean ? (
         <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed border-slate-150 bg-slate-50/30 py-6 text-center">
           <div>
-            <p className="text-xs font-semibold text-slate-700">확인이 필요한 항목이 없습니다.</p>
+            <p className="text-xs font-semibold text-slate-700">확인이 필요한 항목 없음</p>
             <p className="mt-1 text-[10px] leading-relaxed text-slate-500">정산·매출 처리가 모두 정상입니다.</p>
           </div>
         </div>

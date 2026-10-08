@@ -879,7 +879,7 @@ export function AssetManager({
       <div className="space-y-2">
         {visibleAssets.length === 0 ? (
           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            등록된 자료가 없습니다.
+            등록된 자료 없음
           </div>
         ) : (
           visibleAssets.map((asset) => (
@@ -1081,7 +1081,7 @@ export function AssetManager({
                   상태와 동형으로 되살리는 길을 함께 안내한다(ss-ux 지적). */}
               {reviewClosed && !showClosedReview
                 ? "홍보로 등록된 게시물이 없습니다. 미검토 후보는 위에서 펼쳐 볼 수 있습니다."
-                : "등록·추천된 셀러 게시물이 없습니다."}
+                : "등록·추천된 셀러 게시물 없음"}
             </div>
           )
         ) : (

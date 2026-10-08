@@ -205,7 +205,7 @@ export function PriceSheetList() {
           ) : loading ? (
             <p className="text-sm text-muted-foreground">불러오는 중...</p>
           ) : sheets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">업로드된 가격표가 없습니다.</p>
+            <p className="text-sm text-muted-foreground">업로드된 가격표 없음</p>
           ) : (
             <div className="flex flex-col gap-2">
               {sheets.map((sheet) => {

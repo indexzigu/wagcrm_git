@@ -65,39 +65,39 @@ const EXECUTION_COLUMN_META: Record<
     // 열 제목은 상태 배지와 같은 낱말이다 — 같은 상태를 두 이름으로 부르지 않는다(2026-10-08).
     title: campaignStatusLabels.PREPARATION,
     description: "일정 확정, 자료 정리, 운영 시작 전 준비 작업",
-    emptyLabel: "준비 중인 캠페인이 없습니다.",
+    emptyLabel: "세팅대기 캠페인 없음",
   },
   ACTIVE: {
     title: campaignStatusLabels.ACTIVE,
     description: "라이브 운영, 링크 관리, 실매출 확인이 필요한 캠페인",
-    emptyLabel: "현재 진행 중인 캠페인이 없습니다.",
+    emptyLabel: "판매중 캠페인 없음",
   },
   CLOSED: {
     title: campaignStatusLabels.CLOSED,
     description: "행사 종료 후 최종 매출과 운영 이슈를 정리하는 캠페인",
-    emptyLabel: "마감 처리할 캠페인이 없습니다.",
+    emptyLabel: "판매마감 캠페인 없음",
   },
   SETTLEMENT_WAIT: {
     title: campaignStatusLabels.SETTLEMENT_WAIT,
     // 컬럼 설명은 상태 단위(캠페인별이 아님)라 채널을 알 수 없다 — 중립 문구가 유일한
     // 정답이다(오너 확정 2026-08-25, 구 「몰 정산금」은 자사몰 전용 개념이었다).
     description: "반품기간과 정산금 입금을 기다리는 캠페인",
-    emptyLabel: "정산 대기 중인 캠페인이 없습니다.",
+    emptyLabel: "정산대기 캠페인 없음",
   },
   SETTLEMENT_IN_PROGRESS: {
     title: campaignStatusLabels.SETTLEMENT_IN_PROGRESS,
     description: "정산 내역을 확인하고 처리 중인 캠페인",
-    emptyLabel: "정산 진행 중인 캠페인이 없습니다.",
+    emptyLabel: "정산중 캠페인 없음",
   },
   COMPLETED: {
     title: campaignStatusLabels.COMPLETED,
     description: "모든 정산이 완료된 캠페인",
-    emptyLabel: "정산 완료된 캠페인이 없습니다.",
+    emptyLabel: "정산완료 캠페인 없음",
   },
   DROPPED: {
     title: campaignStatusLabels.DROPPED,
     description: "진행 중 예외 사유로 종료된 캠페인",
-    emptyLabel: "드랍 처리된 캠페인이 없습니다.",
+    emptyLabel: "드랍 캠페인 없음",
   },
 };
 
@@ -320,7 +320,7 @@ function ExecutionColumn({
                 읽힌다(ss-ux-designer 적발). 정상 상태임을 명시한다. */}
             {setupCards.length === 0 && waitingCards.length > 0 ? (
               <div className="shrink-0 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-6 text-center text-xs text-muted-foreground">
-                지금 세팅할 캠페인이 없습니다
+                지금 세팅할 캠페인 없음
               </div>
             ) : null}
             {waitingCards.length > 0 ? (

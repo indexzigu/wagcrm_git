@@ -101,7 +101,7 @@ function SalesPerformanceCard({ perf }: { perf: SellerSalesPerformance }) {
         <div className="text-[10px] text-slate-500 uppercase tracking-wider">실판매 성과</div>
       </div>
       {perf.effectiveCount === 0 ? (
-        <div className="text-[11px] text-slate-500 text-center py-2">진행한 캠페인이 없습니다</div>
+        <div className="text-[11px] text-slate-500 text-center py-2">진행한 캠페인 없음</div>
       ) : perf.avgSalesPerCampaign === null ? (
         <div className="text-[11px] text-slate-500 text-center py-2">
           캠페인 {perf.effectiveCount}건 진행, 실매출 입력 전입니다
