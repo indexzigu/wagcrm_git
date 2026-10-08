@@ -329,6 +329,13 @@ export async function PATCH(request: Request, context: Context) {
   // 판정·문구 SSOT 는 campaignInvoiceService.findCompletionBlocker.
   // ⚠️ 조합 캠페인은 실캠페인 1개라 원본이 막히면 그룹 전이도 함께 보류된다(형제 전파를 부르지 않는다) —
   // 마지막 달 계산서까지 끝난 뒤 오너가 상태를 정산 완료로 바꾸면 그 수동 변경이 그룹에 전파된다.
+  // 월정산 공급사 계산서 날짜 직접 쓰기 게이트(T-248) — 달별 계산서가 정본인 단위에 날짜를 바꾸면
+  // 완료 게이트를 우회한다. 값이 실제로 바뀔 때만 묻고(같은 값 재전송은 통과), 막히면 아무것도 쓰지 않는다.
+  if (changedFields.includes("supplier invoice date")) {
+    const blocker = await campaignInvoiceService.findLegacyDateWriteBlocker(prisma, id);
+    if (blocker) return NextResponse.json({ error: blocker }, { status: 409 });
+  }
+
   let monthlyCompletionBlocked: string | null = null;
   if (data.status === "COMPLETED" && previous.status !== "COMPLETED") {
     const blocker = await campaignInvoiceService.findCompletionBlocker(prisma, id);

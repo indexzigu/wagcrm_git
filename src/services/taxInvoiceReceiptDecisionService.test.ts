@@ -32,7 +32,11 @@ interface TxRecorder {
  * 인터랙티브 트랜잭션과 같은 모양이라 서비스 코드를 고치지 않고 검사할 수 있다.
  */
 function fakePrisma(options: {
-  campaign: { id: string; groupId: string | null } | null;
+  campaign: {
+    id: string;
+    groupId: string | null;
+    deal?: { partner: { monthlySettlement: boolean } | null } | null;
+  } | null;
   currentValue?: Date | null;
   decision?: {
     decision: string;
@@ -141,6 +145,26 @@ describe("applyReceiptDecision", () => {
     expect(rec.upserts).toBe(0);
     expect(rec.groupUpdates).toHaveLength(0);
     expect(rec.campaignUpdates).toHaveLength(0);
+  });
+
+  // T-248 — 월정산 거래처의 공급사 계산서는 달별 여러 장이라 한 장으로 단일 날짜를 찍으면 완료 게이트를 우회한다.
+  it("월정산 거래처의 공급사 칸 승인은 거부하고 아무것도 쓰지 않는다", async () => {
+    const monthly = { partner: { monthlySettlement: true } };
+    const { prisma, rec } = fakePrisma({ campaign: { id: "camp1", groupId: null, deal: monthly } });
+
+    const rejected = applyReceiptDecision(prisma, approveInput({ matchedKeys: ["camp1:SUPPLIER_GOODS"] }));
+    await expect(rejected).rejects.toMatchObject({ code: "MONTHLY_INVOICE_MANAGED", detail: ["camp1:SUPPLIER_GOODS"] });
+    expect(rec.campaignUpdates).toHaveLength(0);
+    expect(rec.groupUpdates).toHaveLength(0);
+  });
+
+  it("월정산 거래처여도 셀러 칸은 월로 나누지 않으므로 그대로 쓴다", async () => {
+    const monthly = { partner: { monthlySettlement: true } };
+    const { prisma, rec } = fakePrisma({ campaign: { id: "camp1", groupId: null, deal: monthly } });
+
+    await applyReceiptDecision(prisma, approveInput());
+
+    expect(rec.campaignUpdates).toEqual([{ where: { id: "camp1" }, data: { sellerInvoiceIssuedAt: APPLIED } }]);
   });
 
   it("무관 처리는 어떤 필드도 쓰지 않는다", async () => {

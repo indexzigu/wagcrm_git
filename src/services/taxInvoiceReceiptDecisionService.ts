@@ -22,6 +22,7 @@
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { ReceivableSlot } from "@/lib/tax-invoice-mail/expected-receivables";
+import { MONTHLY_INVOICE_MANAGED_MESSAGE } from "@/lib/campaign-invoices";
 
 /** 결정 종류. 해제는 행 삭제라 "미결정" 상태를 따로 두지 않는다(`TaxFilingLog` 와 같은 규약). */
 export type ReceiptDecisionKind = "APPROVED" | "DISMISSED";
@@ -85,13 +86,15 @@ export interface ApplyReceiptDecisionResult {
  */
 export class ReceiptDecisionRejected extends Error {
   constructor(
-    readonly code: "MISSING_WRITTEN_DATE" | "TARGET_NOT_FOUND",
+    readonly code: "MISSING_WRITTEN_DATE" | "TARGET_NOT_FOUND" | "MONTHLY_INVOICE_MANAGED",
     readonly detail: string[] = [],
   ) {
     super(
       code === "MISSING_WRITTEN_DATE"
         ? "계산서 작성일자를 읽지 못해 수취일시를 기록할 수 없습니다."
-        : "승인 대상 캠페인을 찾지 못했습니다.",
+        : code === "MONTHLY_INVOICE_MANAGED"
+          ? MONTHLY_INVOICE_MANAGED_MESSAGE
+          : "승인 대상 캠페인을 찾지 못했습니다.",
     );
     this.name = "ReceiptDecisionRejected";
   }
@@ -149,12 +152,18 @@ export async function applyReceiptDecision(
 
       const campaign = await tx.salesCampaign.findUnique({
         where: { id: campaignId },
-        select: { id: true, groupId: true },
+        select: { id: true, groupId: true, deal: { select: { partner: { select: { monthlySettlement: true } } } } },
       });
       // ⛔ 하나라도 못 찾으면 **전부 되돌린다.** 찾은 것만 쓰고 넘어가면 「일부만 기록된
       //    승인」이 완료로 보인다(부분 일치를 전체 확인으로 둔갑시키지 않는다는, 이 엔진이
       //    그룹 후퇴 가드에서 이미 세운 원칙과 같다).
       if (!campaign) throw new ReceiptDecisionRejected("TARGET_NOT_FOUND", [target.key]);
+      // 월정산 거래처의 공급사 계산서는 달별 여러 장이라 `campaignInvoiceService` 가 소유한다(T-248).
+      // 한 장으로 단일 날짜를 찍으면 계산서 0장 단위가 레거시 모드로 떨어져 완료 게이트를 통과한다.
+      // 지금은 승인 라우트가 기대 건에서 이 key 를 빼서 먼저 막지만, 쓰기 자리에서도 막아 둔다.
+      if (field === "supplierInvoiceIssuedAt" && campaign.deal?.partner?.monthlySettlement) {
+        throw new ReceiptDecisionRejected("MONTHLY_INVOICE_MANAGED", [target.key]);
+      }
 
       // ⛔ CG-1 — 그룹이면 그룹 스칼라만, 미그룹이면 캠페인 컬럼만. 둘 다 쓰지 않는다(헤더).
       if (campaign.groupId) {

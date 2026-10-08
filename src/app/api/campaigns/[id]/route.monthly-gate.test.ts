@@ -47,6 +47,7 @@ vi.mock("@/lib/user-registry", () => ({ getCrmUsers: vi.fn().mockResolvedValue([
 vi.mock("@/lib/cache-tags", () => ({ revalidateCampaignCaches: vi.fn() }));
 vi.mock("@/lib/google-calendar-sync", () => ({ syncCampaignToCalendar: vi.fn().mockResolvedValue({ ok: true }) }));
 const completionBlockerMock = vi.fn();
+const legacyDateBlockerMock = vi.fn();
 vi.mock("@/services/campaignInvoiceService", () => ({
   campaignInvoiceService: {
     findCompletionBlocker: (...args: unknown[]) => completionBlockerMock(...args),
@@ -57,6 +58,7 @@ vi.mock("@/services/campaignInvoiceService", () => ({
       return { status: blockedReason ? undefined : auto, blockedReason };
     },
     findCompletionBlockers: vi.fn().mockResolvedValue(new Map()),
+    findLegacyDateWriteBlocker: (...args: unknown[]) => legacyDateBlockerMock(...args),
   },
 }));
 
@@ -121,9 +123,16 @@ async function patch(body: unknown) {
 const BLOCKED = "월별 정산 중 10월분(1/4)이 끝나지 않아 정산 완료로 바꿀 수 없습니다.";
 
 beforeEach(() => {
-  [findUniqueMock, findUniqueOrThrowMock, txUpdateMock, txDealFindManyMock, recordActivityMock, completionBlockerMock].forEach(
-    (m) => m.mockReset(),
-  );
+  [
+    findUniqueMock,
+    findUniqueOrThrowMock,
+    txUpdateMock,
+    txDealFindManyMock,
+    recordActivityMock,
+    completionBlockerMock,
+    legacyDateBlockerMock,
+  ].forEach((m) => m.mockReset());
+  legacyDateBlockerMock.mockResolvedValue(null);
   txUpdateMock.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: "c1", group: null, ...data }));
   findUniqueOrThrowMock.mockResolvedValue({ id: "c1" });
   txDealFindManyMock.mockResolvedValue(SAME_RATE_DEALS);
@@ -170,5 +179,44 @@ describe("PATCH — 월별 정산 완료 게이트(T-240)", () => {
     findUniqueMock.mockResolvedValue(previous({ status: "SETTLEMENT_WAIT" }));
     await patch({ status: "SETTLEMENT_IN_PROGRESS" });
     expect(completionBlockerMock).not.toHaveBeenCalled();
+  });
+});
+
+// T-248 — 월정산 단위의 공급사 계산서 날짜는 달별 계산서가 정본이다. 판정 본체는 campaignInvoiceService.test.ts.
+describe("PATCH — 월정산 공급사 계산서 날짜 직접 쓰기 게이트(T-248)", () => {
+  const MANAGED = "월정산 거래처의 공급사 계산서는 캠페인 상세 계산서 칸의 「조회」에서 달별로 기록합니다.";
+
+  it("날짜를 바꾸려 하면 409 + 사유, 아무것도 쓰지 않는다", async () => {
+    findUniqueMock.mockResolvedValue(previous({ status: "SETTLEMENT_IN_PROGRESS", supplierInvoiceIssuedAt: null }));
+    legacyDateBlockerMock.mockResolvedValue(MANAGED);
+
+    const response = await patch({ supplierInvoiceIssuedAt: "2026-07-31" });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: MANAGED });
+    expect(legacyDateBlockerMock).toHaveBeenCalledWith(expect.anything(), "c1");
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("같은 값 재전송은 바뀐 것이 아니므로 묻지 않고 통과한다", async () => {
+    findUniqueMock.mockResolvedValue(
+      previous({ status: "SETTLEMENT_IN_PROGRESS", supplierInvoiceIssuedAt: new Date("2026-07-31T00:00:00.000Z") }),
+    );
+    legacyDateBlockerMock.mockResolvedValue(MANAGED);
+
+    const response = await patch({ supplierInvoiceIssuedAt: "2026-07-31", isPayoutCompleted: true });
+    expect(response.status).toBe(200);
+    expect(legacyDateBlockerMock).not.toHaveBeenCalled();
+  });
+
+  it("게이트가 통과시키면(레거시 모드의 정정·비우기 등) 종전처럼 저장한다", async () => {
+    findUniqueMock.mockResolvedValue(
+      previous({ status: "SETTLEMENT_IN_PROGRESS", supplierInvoiceIssuedAt: new Date("2026-07-31T00:00:00.000Z") }),
+    );
+
+    const response = await patch({ supplierInvoiceIssuedAt: null });
+    expect(response.status).toBe(200);
+    expect(legacyDateBlockerMock).toHaveBeenCalledWith(expect.anything(), "c1");
+    const data = txUpdateMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data.supplierInvoiceIssuedAt).toBeNull();
   });
 });

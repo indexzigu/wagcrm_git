@@ -288,6 +288,40 @@ describe("완료 게이트", () => {
   });
 });
 
+describe("findLegacyDateWriteBlocker — 단일 날짜 직접 쓰기 게이트 (T-248)", () => {
+  const OCT_31 = new Date("2026-10-31T00:00:00Z");
+
+  it("계산서 0장·날짜 없는 단위에 날짜를 찍으면 막는다 — 찍히면 레거시 모드로 떨어져 완료 게이트를 우회한다", async () => {
+    const blocker = await campaignInvoiceService.findLegacyDateWriteBlocker(db as never, "c1");
+    expect(blocker).toContain("달별로 기록");
+  });
+
+  it("계산서가 있는 단위의 날짜(롤업 값)는 바꾸지도 비우지도 못한다", async () => {
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, issueId: "A-2", writtenDate: "2026-10-31" });
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe(OCT_31.toISOString());
+    expect(await campaignInvoiceService.findLegacyDateWriteBlocker(db as never, "c1")).not.toBeNull();
+  });
+
+  it("레거시 모드(날짜 있음·계산서 0장)는 통과 — 화면의 단일 날짜 칸이 정정·달별 전환(비우기) 통로다", async () => {
+    state.campaigns = [campaign({ supplierInvoiceIssuedAt: OCT_31 })];
+    expect(await campaignInvoiceService.findLegacyDateWriteBlocker(db as never, "c1")).toBeNull();
+  });
+
+  it("그룹은 그룹 스칼라로 레거시 모드를 판정한다(CG-1)", async () => {
+    state.groups.set("g1", { supplierInvoiceIssuedAt: OCT_31 });
+    state.campaigns = [campaign({ id: "a", groupId: "g1" })];
+    expect(await campaignInvoiceService.findLegacyDateWriteBlocker(db as never, "a")).toBeNull();
+    state.groups.set("g1", { supplierInvoiceIssuedAt: null });
+    expect(await campaignInvoiceService.findLegacyDateWriteBlocker(db as never, "a")).not.toBeNull();
+  });
+
+  it("월정산이 아니면 언제나 통과(기존 단일 날짜 동작 그대로)", async () => {
+    state.campaigns = [campaign({ monthly: false })];
+    expect(await campaignInvoiceService.findLegacyDateWriteBlocker(db as never, "c1")).toBeNull();
+  });
+});
+
 describe("loadInvoiceProgress — 세무 보드의 「끝」 판정 (T-244)", () => {
   it("완료 게이트와 같은 판정이다 — 진행 n/m, 전부 「없음」이어도 끝, 레거시·비월정산은 결과에 없다", async () => {
     state.campaigns = [
