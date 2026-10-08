@@ -346,6 +346,13 @@ export function summarizeInvoiceRows(input: {
   return { done: months.length - openMonths.length, total: months.length, openMonths };
 }
 
+/**
+ * 월정산 공급사 계산서 날짜를 단일 날짜 경로(체크리스트·캠페인 수정·수취 승인)로 쓰려 할 때의 거절 문구.
+ * 세 경로가 같은 문장을 써야 오너가 어디서 막혀도 같은 곳(달별 계산서 창)으로 간다(T-244·T-248).
+ */
+export const MONTHLY_INVOICE_MANAGED_MESSAGE =
+  "월정산 거래처의 공급사 계산서는 캠페인 상세 계산서 칸의 「조회」에서 달별로 기록합니다.";
+
 /** 완료를 막을 때 오너에게 보일 문구(토스트·409 응답). */
 export function buildInvoiceIncompleteMessage(openMonths: readonly string[]): string {
   const label = openMonths.map(formatInvoiceMonth).join("·");

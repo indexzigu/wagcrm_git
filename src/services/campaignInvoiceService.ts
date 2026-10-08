@@ -27,6 +27,7 @@ import {
   formatInvoiceMonth,
   isValidYearMonth,
   listYearMonths,
+  MONTHLY_INVOICE_MANAGED_MESSAGE,
   nextYearMonth,
   resolveLegacyInvoiceDate,
   resolveSupplierInvoiceDirection,
@@ -618,6 +619,23 @@ export const campaignInvoiceService = {
   async findCompletionBlocker(db: Db, campaignId: string): Promise<string | null> {
     const blocked = await this.findCompletionBlockers(db, [campaignId]);
     return blocked.get(campaignId) ?? null;
+  },
+
+  /**
+   * 단일 날짜 쓰기 게이트(T-248) — 캠페인 수정이 공급사 계산서 날짜(레거시 날짜)를 **바꾸려 할 때**
+   * 막아야 하는가. 막히면 오너에게 보일 문구를 준다. 호출부는 값이 실제로 바뀔 때만 부른다.
+   *
+   * 왜: 계산서 0장인 단위에 날짜가 찍히면 레거시 모드로 떨어져 달별 기록 없이 완료 게이트를 통과하고,
+   * 계산서가 있는 단위의 날짜는 이 서비스의 롤업 값이라(`rollupLegacyDate`·`revertRow`) 손으로 바꾸면
+   * 「취소」가 그 값을 알아보지 못한다. 체크리스트 경로가 같은 이유로 이미 거절한다(T-244).
+   * 허용은 레거시 모드(날짜 있음·계산서 0장)뿐이다 — 그 단위는 화면이 옛 단일 날짜 칸을 그대로 그려
+   * (`campaign-invoice-slot.tsx` 의 `legacyFallback`) 그 칸이 오기 정정 통로이자, **비우기가 달별 모드로
+   * 옮기는 유일한 출구**다. 비우면 완료 게이트가 다시 걸리므로 우회가 아니라 엄격해지는 방향이다.
+   */
+  async findLegacyDateWriteBlocker(db: Db, campaignId: string): Promise<string | null> {
+    const unit = await loadInvoiceUnit(db, campaignId);
+    if (!unit || isLegacyMode(unit, await loadUnitRows(db, unit))) return null;
+    return MONTHLY_INVOICE_MANAGED_MESSAGE;
   },
 
   /**

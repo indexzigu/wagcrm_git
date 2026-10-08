@@ -11,6 +11,7 @@ vi.mock("@/services/campaignInvoiceService", () => ({
     })),
     findCompletionBlocker: vi.fn().mockResolvedValue(null),
     findCompletionBlockers: vi.fn().mockResolvedValue(new Map()),
+    findLegacyDateWriteBlocker: vi.fn().mockResolvedValue(null),
   },
 }));
 

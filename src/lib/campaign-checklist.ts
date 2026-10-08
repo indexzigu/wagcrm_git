@@ -1,5 +1,6 @@
 import type { CampaignStatus } from "./crm-types";
 import type { AppPrismaClient } from "./prisma-client";
+import { MONTHLY_INVOICE_MANAGED_MESSAGE } from "./campaign-invoices";
 
 export type ChecklistStatus = CampaignStatus;
 
@@ -532,7 +533,7 @@ async function syncGroupSiblingChecklistItems(
  */
 export class MonthlyInvoiceManagedError extends Error {
   constructor() {
-    super("월정산 거래처의 공급사 계산서는 캠페인 상세 계산서 칸의 「조회」에서 달별로 기록합니다.");
+    super(MONTHLY_INVOICE_MANAGED_MESSAGE);
     this.name = "MonthlyInvoiceManagedError";
   }
 }
