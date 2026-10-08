@@ -384,6 +384,73 @@ describe("결번(상대 정보 누락) 처리", () => {
   });
 });
 
+describe("월정산 공급사 행 — 합계·일괄 발행에서 뺀다 (T-247)", () => {
+  // 행 금액은 캠페인 총액이라 달별로 끊는 실제 계산서 어느 것과도 같지 않다(오너 확정 2026-10-09).
+  const progress = new Map([["c1", { done: 0, total: 2, openMonths: ["2026-09", "2026-10"] }]]);
+
+  it("브랜드몰 발행 행은 일괄 파일·홈택스 대상이 아니고 발행 합계에서 빠지며 제외 건수로 남는다", () => {
+    const board = buildTaxInvoiceWorkBoard(
+      [makeCampaign({ salesChannel: "BRAND_MALL", partnerMonthlySettlement: true })],
+      "2026-10",
+      progress,
+    );
+    const issue = rowFor(board.rows, "ISSUE")!;
+    expect(issue.monthlyInvoiceManaged).toBe(true);
+    expect(issue.xlsxEligible).toBe(false);
+    // 행은 그대로 보이고(조회 동선) 금액도 남는다 — 합계만 뺀다.
+    expect(issue.amount).toEqual({ supplyAmount: 5_000_000, taxAmount: 500_000 });
+    expect(board.totalsByDirection.ISSUE).toEqual({ supplyAmount: 0, taxAmount: 0 });
+    expect(board.monthlyExcludedCount).toEqual({ ISSUE: 1, RECEIVE: 0 });
+    // 셀러 칸은 월로 나누지 않는다 — 종전대로 수취 합계에 들어간다.
+    expect(rowFor(board.rows, "RECEIVE")!.monthlyInvoiceManaged).toBe(false);
+    expect(board.totalsByDirection.RECEIVE).toEqual({ supplyAmount: 2_000_000, taxAmount: 200_000 });
+    expect(board.pendingCount).toBe(2);
+  });
+
+  it("우리몰 공급사 수취 행도 수취 합계에서 빠진다", () => {
+    const board = buildTaxInvoiceWorkBoard(
+      [makeCampaign({ salesChannel: "OWN_MALL", partnerMonthlySettlement: true, settlementSales: 3_300_000 })],
+      "2026-10",
+      progress,
+    );
+    const supplier = board.rows.find((row) => row.sourceField === "supplierInvoiceIssuedAt")!;
+    expect(supplier.monthlyInvoiceManaged).toBe(true);
+    expect(board.monthlyExcludedCount).toEqual({ ISSUE: 0, RECEIVE: 1 });
+    // 남은 수취 합계 = 셀러 수수료 2,200,000(VAT 포함)뿐.
+    expect(board.totalsByDirection.RECEIVE).toEqual({ supplyAmount: 2_000_000, taxAmount: 200_000 });
+  });
+
+  it("그룹 행도 같다", () => {
+    const members = [
+      makeCampaign({ id: "c1", groupId: "g1", salesChannel: "BRAND_MALL", partnerMonthlySettlement: true }),
+      makeCampaign({ id: "c2", groupId: "g1", salesChannel: "BRAND_MALL", partnerMonthlySettlement: true }),
+    ];
+    const both = new Map([
+      ["c1", { done: 0, total: 1, openMonths: ["2026-10"] }],
+      ["c2", { done: 0, total: 1, openMonths: ["2026-10"] }],
+    ]);
+    const board = buildTaxInvoiceWorkBoard(members, "2026-10", both);
+    const issue = rowFor(board.rows, "ISSUE")!;
+    expect(issue.campaignIds).toEqual(["c1", "c2"]);
+    expect(issue.xlsxEligible).toBe(false);
+    expect(board.monthlyExcludedCount.ISSUE).toBe(1);
+  });
+
+  it("진행 정보 없이 행을 만드는 계산서 생성 경로에서도 발행 대상이 아니다", () => {
+    const { rows } = buildTaxInvoiceObligationRows([
+      makeCampaign({ salesChannel: "BRAND_MALL", partnerMonthlySettlement: true }),
+    ]);
+    expect(rowFor(rows, "ISSUE")!.xlsxEligible).toBe(false);
+  });
+
+  it("월정산이 아니면 종전 그대로 — 발행 대상이고 합계에 들어간다", () => {
+    const board = buildTaxInvoiceWorkBoard([makeCampaign({ salesChannel: "BRAND_MALL" })], "2026-10", progress);
+    expect(rowFor(board.rows, "ISSUE")!.xlsxEligible).toBe(true);
+    expect(board.totalsByDirection.ISSUE).toEqual({ supplyAmount: 5_000_000, taxAmount: 500_000 });
+    expect(board.monthlyExcludedCount).toEqual({ ISSUE: 0, RECEIVE: 0 });
+  });
+});
+
 describe("합계 — 방향별로 분리, 이중 계상하지 않는다", () => {
   it("발행 합계와 수취 합계가 서로 다른 값으로 각각 집계된다(같은 캠페인이 두 번 더해지지 않는다)", () => {
     const board = buildTaxInvoiceWorkBoard(

@@ -419,8 +419,22 @@ function DirectionBlock({
                     </div>
                   ) : null}
                 </td>
-                <td className="py-2 pr-2 text-right tabular-nums">{formatWon(row.amount.supplyAmount)}</td>
-                <td className="py-2 pr-2 text-right tabular-nums">{formatWon(row.amount.taxAmount)}</td>
+                {/* 월정산 공급사 행의 금액은 캠페인 총액이다 — 달별로 끊는 계산서와 다르므로 아래 합계에서 뺐다(T-247).
+                    홈택스에 옮길 숫자로 읽히지 않게 공급가액·세액 둘 다 흐린 색으로 낮추고(투명도 아님, P8),
+                    뺀 사실은 금액 바로 아래에서 말한다. 실제 달별 금액은 「조회」 창에 있다. */}
+                <td
+                  className={`py-2 pr-2 text-right tabular-nums${row.monthlyInvoiceManaged ? " text-muted-foreground" : ""}`}
+                >
+                  {formatWon(row.amount.supplyAmount)}
+                  {row.monthlyInvoiceManaged ? (
+                    <div className="mt-0.5 whitespace-nowrap text-[10px]">캠페인 총액 · 합계 제외</div>
+                  ) : null}
+                </td>
+                <td
+                  className={`py-2 pr-2 text-right tabular-nums${row.monthlyInvoiceManaged ? " text-muted-foreground" : ""}`}
+                >
+                  {formatWon(row.amount.taxAmount)}
+                </td>
                 {showEvidence ? (
                   <td className="py-2 pr-2">
                     <EvidenceCell evidence={evidence} />
@@ -1075,6 +1089,8 @@ export function TaxFilingDialog({
       ISSUE: { supplyAmount: 0, taxAmount: 0 },
       RECEIVE: { supplyAmount: 0, taxAmount: 0 },
     };
+  // 합계에서 뺀 월정산 공급사 행 수(T-247) — 0 이면 병기하지 않는다(상시 노이즈 방지, 「전체 선택」 병기와 같은 규칙).
+  const monthlyExcludedCount = board?.monthlyExcludedCount ?? { ISSUE: 0, RECEIVE: 0 };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1347,6 +1363,12 @@ export function TaxFilingDialog({
                     <span data-testid="tax-filing-total-issue-tax">
                       {formatWon(totalsByDirection.ISSUE.taxAmount)}
                     </span>
+                    {monthlyExcludedCount.ISSUE > 0 ? (
+                      // 「0 · 0」 바로 뒤라 같은 굵기면 「발행할 것 없음」으로 읽힌다 — 일부러 뺀 행이 있다는 사실을 띄운다.
+                      <span data-testid="tax-filing-monthly-excluded-issue" className="font-medium text-foreground">
+                        {` · 월정산 ${monthlyExcludedCount.ISSUE}건 제외`}
+                      </span>
+                    ) : null}
                   </span>
                   <span data-testid="tax-filing-totals-receive">
                     수취 합계(진행 중) · 공급가액{" "}
@@ -1357,6 +1379,12 @@ export function TaxFilingDialog({
                     <span data-testid="tax-filing-total-receive-tax">
                       {formatWon(totalsByDirection.RECEIVE.taxAmount)}
                     </span>
+                    {monthlyExcludedCount.RECEIVE > 0 ? (
+                      // 「0 · 0」 바로 뒤라 같은 굵기면 「발행할 것 없음」으로 읽힌다 — 일부러 뺀 행이 있다는 사실을 띄운다.
+                      <span data-testid="tax-filing-monthly-excluded-receive" className="font-medium text-foreground">
+                        {` · 월정산 ${monthlyExcludedCount.RECEIVE}건 제외`}
+                      </span>
+                    ) : null}
                   </span>
                 </div>
               </div>
