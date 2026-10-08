@@ -433,6 +433,30 @@ function* inputKeyPaths(
   }
 }
 
+/**
+ * 슬랙 원문의 위치 — 브리지가 처리한 요청 메시지 하나를 가리킨다(Phase 2, 2026-10-09).
+ * 기안 INSERT 때 `ActionProposal.sourceRef = { slack: <이 값> }` 로 그대로 복사된다.
+ *
+ * ⚠️ **자기 신고 값이다.** 작업 통로는 같은 계정의 아무 프로그램이나 쓸 수 있으므로 이 값의
+ *    존재 자체는 아무것도 증명하지 않는다. 이 값은 "어느 메시지를 대조하라"는 **좌표**일 뿐이고,
+ *    믿을지는 그 메시지를 슬랙에서 직접 읽어 대조하는 쪽(CRM 앱)이 정한다.
+ * 🔎 글자 규칙은 일부러 ASCII 클래스만 쓴다(`\d` 대신 `[0-9]`) — 파이썬 미러의 `\d` 는
+ *    유니코드 숫자를 받으므로 양쪽 철자를 같은 뜻으로 맞춰 두려는 것이다.
+ *    - channelId: 공개(C)·비공개(G) 채널 id. DM(D)은 받지 않는다 — 브리지는 채널만 듣는다.
+ *    - threadTs·messageTs: 슬랙 ts(`초.마이크로초`). 최상위 글이면 둘이 같다(브리지가 그렇게 채운다).
+ *    - rid: 요청 블록의 ULID — 브리지 `protocol.py` 의 `ULID_PATTERN` 과 같은 규칙.
+ */
+export const AgentJobSlackOriginSchema = z
+  .object({
+    channelId: z.string().regex(/^[CG][A-Z0-9]{8,12}$/),
+    threadTs: z.string().regex(/^[0-9]{10}\.[0-9]{6}$/),
+    messageTs: z.string().regex(/^[0-9]{10}\.[0-9]{6}$/),
+    rid: z.string().regex(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/),
+  })
+  .strict();
+
+export type AgentJobSlackOrigin = z.infer<typeof AgentJobSlackOriginSchema>;
+
 export const AgentJobPayloadSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -446,6 +470,8 @@ export const AgentJobPayloadSchema = z
         correlationId: opaqueIdSchema,
         requesterDigest: z.string().trim().min(1).max(128),
         threadDigest: z.string().trim().min(1).max(128),
+        // 선택 칸 — 없는 작업(Hermes 일반 대화의 도구 호출 등)은 지금처럼 그대로 받는다.
+        slack: AgentJobSlackOriginSchema.optional(),
       })
       .strict(),
   })
@@ -533,17 +559,31 @@ function canonicalize(value: unknown): string {
     .join(",")}}`;
 }
 
+/**
+ * 같은 요청자가 같은 입력을 10분 안에 다시 내면 같은 작업으로 접는다.
+ *
+ * 🔎 `origin.slack` 이 있으면 그 값도 키에 넣는다 — **있을 때만**. 이유:
+ *    - 슬랙 위치가 있는 작업은 메시지 하나(rid)에 묶인다. 넣지 않으면 서로 다른 두 요청이
+ *      입력만 같다는 이유로 한 작업으로 접히고, 둘째 요청의 출처는 어디에도 남지 않은 채
+ *      첫째 기안(첫째 rid 의 `sourceRef`)이 둘째 요청의 답이 된다.
+ *    - 같은 rid 의 재제출(브리지 재시도)은 위치가 같으므로 여전히 한 작업으로 접힌다.
+ *    - 슬랙 위치가 없는 작업은 키 재료가 한 글자도 바뀌지 않는다 — 이 칸을 들이기 전에
+ *      만들어진 키와 그대로 같다(계약 테스트가 고정값으로 지킨다).
+ */
 export function createAgentJobIdempotencyKey(payload: AgentJobPayload, now: Date): string {
   const bucket = Math.floor(now.getTime() / AGENT_JOB_IDEMPOTENCY_BUCKET_MS);
-  const source = [
+  const parts: Array<string | number> = [
     payload.schemaVersion,
     payload.operation,
     canonicalize(payload.input),
     payload.origin.requesterDigest,
     bucket,
-  ].join("|");
+  ];
+  if (payload.origin.slack) {
+    parts.push(`slack:${canonicalize(payload.origin.slack)}`);
+  }
 
-  return createHash("sha256").update(source).digest("hex");
+  return createHash("sha256").update(parts.join("|")).digest("hex");
 }
 
 /** Serializes only Zod-validated payload/result data and enforces the durable queue byte cap. */

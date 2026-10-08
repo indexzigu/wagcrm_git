@@ -205,3 +205,78 @@ describe("create_action_proposal — update_settlement_amount (정산 금액 수
     expect(accepts(input as Record<string, unknown>)).toBe(false);
   });
 });
+
+// Phase 2 묶음 A(2026-10-09): 작업 출처에 슬랙 위치를 선택 칸으로 싣는다. 이 칸은 기안의
+// `sourceRef` 로 복사되고, CRM 이 슬랙 원문을 직접 읽어 대조할 **좌표**가 된다.
+describe("origin.slack — 슬랙 원문 위치(선택 칸)", () => {
+  const slack = {
+    channelId: "C0ABCDEFGHI",
+    threadTs: "1760000000.000100",
+    messageTs: "1760000000.000200",
+    rid: "01JABCDEFGHJKMNPQRSTVWXYZ0",
+  } as const;
+  const withSlack = (value: unknown) => ({ ...payload, origin: { ...payload.origin, slack: value } });
+  const at = new Date("2026-09-02T00:01:00.000Z");
+
+  it("accepts a job without slack exactly as before (backward compatible)", () => {
+    expect(AgentJobPayloadSchema.parse(payload)).toEqual(payload);
+  });
+
+  it("accepts a job carrying a well-formed slack location and keeps it verbatim", () => {
+    const parsed = AgentJobPayloadSchema.parse(withSlack(slack));
+    expect(parsed.origin.slack).toEqual(slack);
+  });
+
+  it("accepts a private-channel id and a top-level message (threadTs = messageTs)", () => {
+    expect(
+      AgentJobPayloadSchema.safeParse(withSlack({ ...slack, channelId: "G01234567", threadTs: slack.messageTs })).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["DM 채널", { ...slack, channelId: "D0ABCDEFGHI" }],
+    ["소문자 채널", { ...slack, channelId: "c0abcdefghi" }],
+    ["짧은 채널", { ...slack, channelId: "C0ABC" }],
+    ["ts 소수점 없음", { ...slack, messageTs: "1760000000000200" }],
+    ["ts 자리수 틀림", { ...slack, threadTs: "1760000000.0001" }],
+    ["ts 전각 숫자", { ...slack, messageTs: "１760000000.000200" }],
+    ["ts 앞뒤 공백", { ...slack, messageTs: " 1760000000.000200" }],
+    ["rid 길이 25", { ...slack, rid: slack.rid.slice(0, 25) }],
+    ["rid 첫 글자 8 이상", { ...slack, rid: `8${slack.rid.slice(1)}` }],
+    ["rid 에 I·L·O·U", { ...slack, rid: `${slack.rid.slice(0, 25)}U` }],
+    ["rid 소문자", { ...slack, rid: slack.rid.toLowerCase() }],
+    ["rid 끝 줄바꿈", { ...slack, rid: `${slack.rid}\n` }],
+    ["칸 누락(rid)", { channelId: slack.channelId, threadTs: slack.threadTs, messageTs: slack.messageTs }],
+    ["모르는 칸 추가", { ...slack, userId: "U0ABCDEFGHI" }],
+    ["숫자 ts", { ...slack, messageTs: 1760000000.0002 }],
+    ["null", null],
+    ["문자열", "C0ABCDEFGHI/1760000000.000200"],
+  ])("rejects a malformed slack location: %s", (_label, value) => {
+    expect(AgentJobPayloadSchema.safeParse(withSlack(value)).success).toBe(false);
+  });
+
+  it("still rejects unknown keys beside slack in origin (.strict() unchanged)", () => {
+    expect(
+      AgentJobPayloadSchema.safeParse({ ...payload, origin: { ...payload.origin, slack, channel: "C0ABCDEFGHI" } }).success,
+    ).toBe(false);
+  });
+
+  // 고정값: 이 칸이 생기기 전 계약(origin/main 258fd346)이 같은 payload·시각에 낸 키다.
+  // 슬랙 위치 없는 작업의 키가 바뀌면 배포 순간 진행 중이던 재제출이 중복 작업이 된다.
+  it("leaves the idempotency key of a job without slack byte-for-byte unchanged", () => {
+    expect(createAgentJobIdempotencyKey(payload, at)).toBe(
+      "098ca58119599c2f7562a3488ca52273473ee304230ed0e9b141ed2c0155e541",
+    );
+  });
+
+  it("separates two different Slack requests with identical input, but folds a resubmit of the same one", () => {
+    const first = AgentJobPayloadSchema.parse(withSlack(slack));
+    const resubmit = AgentJobPayloadSchema.parse(withSlack({ ...slack }));
+    const other = AgentJobPayloadSchema.parse(
+      withSlack({ ...slack, messageTs: "1760000000.000300", rid: "01JABCDEFGHJKMNPQRSTVWXYZ1" }),
+    );
+    expect(createAgentJobIdempotencyKey(first, at)).toBe(createAgentJobIdempotencyKey(resubmit, at));
+    expect(createAgentJobIdempotencyKey(first, at)).not.toBe(createAgentJobIdempotencyKey(other, at));
+    expect(createAgentJobIdempotencyKey(first, at)).not.toBe(createAgentJobIdempotencyKey(payload, at));
+  });
+});
