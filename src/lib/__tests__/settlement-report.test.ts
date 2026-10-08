@@ -229,6 +229,90 @@ describe("settlement-report", () => {
     });
   });
 
+  describe("월정산 캠페인의 기간 몫(T-240)", () => {
+    const monthlyCampaign = {
+      id: "camp-m",
+      status: "SETTLEMENT_IN_PROGRESS",
+      updatedAt: new Date("2026-10-10T00:00:00.000Z"),
+      startDate: new Date("2026-09-28T00:00:00.000Z"),
+      endDate: new Date("2026-10-04T00:00:00.000Z"),
+      actualSales: 400_000,
+      totalMarginRate: 45,
+      sellerMarginRate: 10,
+      settlementSales: 180_000,
+      sellerExpense: 40_000,
+      deal: { dealName: "딜M", brandName: null },
+      seller: { name: "셀러M" },
+      monthlySettlementEnabled: true,
+    };
+    const septemberLine = {
+      yearMonth: "2026-09",
+      transactionAmount: 300_000,
+      goodsAmount: 160_000,
+      paymentAmount: null,
+      salesInvoiceCheckedAt: new Date("2026-10-01T00:00:00.000Z"),
+      purchaseInvoiceCheckedAt: new Date("2026-10-02T00:00:00.000Z"),
+      paymentScheduleCheckedAt: null,
+      paymentCompletedCheckedAt: null,
+    };
+
+    it("월별 줄로만 들어온 달은 그 줄의 거래액만 매출에 더하고 마진·셀러 정산금은 더하지 않는다", () => {
+      const report = buildSettlementReportModel(
+        [{ ...monthlyCampaign, includedByEndDate: false, monthlySettlements: [septemberLine] }],
+        "2026-09",
+      );
+      expect(report.summary.totalRevenue).toBe(300_000);
+      expect(report.summary.totalMargin).toBe(0);
+      expect(report.summary.totalSellerPayouts).toBe(0);
+      expect(report.campaigns[0].monthlyLines).toEqual([
+        { yearMonth: "2026-09", transactionAmount: 300_000, paymentAmount: 160_000, checks: 2, isComplete: false },
+      ]);
+    });
+
+    it("종료일 달에는 캠페인 단위 마진·셀러 정산금을 더하고, 매출은 그 달 줄 거래액이다", () => {
+      const report = buildSettlementReportModel(
+        [
+          {
+            ...monthlyCampaign,
+            includedByEndDate: true,
+            monthlySettlements: [{ ...septemberLine, yearMonth: "2026-10", transactionAmount: 100_000 }],
+          },
+        ],
+        "2026-10",
+      );
+      expect(report.summary.totalRevenue).toBe(100_000);
+      expect(report.summary.totalMargin).toBe(140_000);
+      expect(report.summary.totalSellerPayouts).toBe(40_000);
+    });
+
+    it("다른 달에만 줄이 있는 월정산 캠페인은 종료월에 캠페인 총액을 대신 세지 않는다(이중 집계 방지)", () => {
+      const report = buildSettlementReportModel(
+        [{ ...monthlyCampaign, includedByEndDate: true, monthlyLineCountTotal: 1, monthlySettlements: [] }],
+        "2026-10",
+      );
+      expect(report.summary.totalRevenue).toBe(0);
+      // 마진·셀러 정산금은 캠페인 단위라 종료월에 그대로 잡힌다.
+      expect(report.summary.totalMargin).toBe(140_000);
+    });
+
+    it("아직 줄이 없는 월정산 캠페인은 종료월에 캠페인 총액으로 센다", () => {
+      const report = buildSettlementReportModel(
+        [{ ...monthlyCampaign, includedByEndDate: true, monthlyLineCountTotal: 0, monthlySettlements: [] }],
+        "2026-10",
+      );
+      expect(report.summary.totalRevenue).toBe(400_000);
+    });
+
+    it("월정산이 아니면 월별 줄을 싣지 않는다(기존 행 모양 그대로)", () => {
+      const report = buildSettlementReportModel(
+        [{ ...monthlyCampaign, monthlySettlementEnabled: false, monthlySettlements: [septemberLine] }],
+        "2026-10",
+      );
+      expect(report.campaigns[0].monthlyLines).toBeUndefined();
+      expect(report.summary.totalRevenue).toBe(400_000);
+    });
+  });
+
   it("parses status filters conservatively", () => {
     expect(parseSettlementStatusFilter(null)).toEqual([
       "SETTLEMENT_IN_PROGRESS",

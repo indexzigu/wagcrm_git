@@ -153,6 +153,9 @@ type CampaignWithRelations = {
       businessItem?: string | null;
       representativeEmail?: string | null;
       bankAccount?: string | null;
+      // 월정산 거래처(T-240). `partner: true` 가 아닌 쿼리에선 비어 false 로 떨어진다 — 그
+      // 경로(모바일 투데이)는 정산 워크스페이스를 열지 않는다.
+      monthlySettlement?: boolean;
     } | null;
   };
   seller: {
@@ -294,6 +297,8 @@ export function toCampaignRow(
     partnerName: campaign.deal.partner?.name ?? "거래처 없음",
     partnerId: campaign.deal.partner?.id ?? null,
     partnerBankAccount: campaign.deal.partner?.bankAccount ?? null,
+    // 월정산 거래처(T-240) — 정산 워크스페이스의 월별 정산 패널·물품대금 읽기 전용 판정.
+    partnerMonthlySettlement: campaign.deal.partner?.monthlySettlement ?? false,
     partnerBusinessNumber: campaign.deal.partner?.businessNumber ?? null,
     partnerCeoName: campaign.deal.partner?.ceoName ?? null,
     partnerAddress: campaign.deal.partner?.address ?? null,

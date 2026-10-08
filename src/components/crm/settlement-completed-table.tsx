@@ -12,6 +12,7 @@ import {
   settlementFluidCol,
   settlementTableStyle,
 } from "./settlement-table-layout";
+import { MonthlySettlementRowBadges } from "./monthly-settlement-row-badge";
 
 interface SettlementCompletedTableProps {
   campaigns: CampaignRow[];
@@ -195,6 +196,7 @@ export function SettlementCompletedTable({
                             <span className="truncate">
                               {formatDate(campaign.startDate)} ~ {formatDate(campaign.endDate)}
                             </span>
+                            <MonthlySettlementRowBadges lines={reportMap.get(campaign.id)?.monthlyLines} />
                           </span>
                         </div>
                       </td>

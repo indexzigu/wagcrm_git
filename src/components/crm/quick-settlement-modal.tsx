@@ -154,7 +154,7 @@ export function QuickSettlementModal({
         [overdueSlot.flagField]: true,
       };
 
-      const result = await patchCampaignSettlementStatus(id, payload, {
+      const result = await patchCampaignSettlementStatus<{ monthlyCompletionBlocked?: string }>(id, payload, {
         fallbackError: "정산 상태 업데이트에 실패했습니다.",
         networkError: "정산 상태 업데이트에 실패했습니다.",
       });
@@ -166,6 +166,8 @@ export function QuickSettlementModal({
       // 자사몰은 두 칸이 모두 「지급」이라 상대를 병기해야 방금 처리한 칸이 구분된다
       // (정산 카드 체크박스 토스트의 선례와 같은 문법).
       toast.success(`정산 ${actionLabel} 처리가 완료되었습니다 (${overdueSlot.counterpartLabel}).`);
+      // 월별 정산 체크가 남아 상태 전이만 보류됐다(T-240) — 지급은 저장됐으니 이유만 덧붙인다.
+      if (result.data.monthlyCompletionBlocked) toast.warning(result.data.monthlyCompletionBlocked);
       onSuccess();
       onClose();
     } catch (err: unknown) {

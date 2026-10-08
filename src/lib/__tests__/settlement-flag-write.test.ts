@@ -9,6 +9,19 @@ import {
   writeSettlementFlags,
 } from "@/lib/settlement-flag-write";
 
+// 월별 정산 완료 게이트(T-240) — 이 파일은 상태 전이·그룹 전파만 본다(월정산 거래처 아님 = 통과).
+// 게이트 자체의 판정은 monthlySettlementService.test.ts · route.monthly-gate.test.ts 가 고정한다.
+vi.mock("@/services/monthlySettlementService", () => ({
+  monthlySettlementService: {
+    gateAutoCompletion: vi.fn(async (_db: unknown, _id: string, _prev: string, auto: string | null | undefined) => ({
+      status: auto ?? undefined,
+      blockedReason: null,
+    })),
+    findCompletionBlocker: vi.fn().mockResolvedValue(null),
+    findCompletionBlockers: vi.fn().mockResolvedValue(new Map()),
+  },
+}));
+
 const groupUpdateMany = vi.fn();
 const groupFindUnique = vi.fn();
 const campaignUpdateMany = vi.fn();

@@ -46,6 +46,7 @@ model Partner {
 
   // --- postgres 스키마 동기화(2026-07-21 drift 정리): Json은 String 미러 규약 ---
   orderExcelRules String? // postgres Json? 미러 — 발주서 열 매핑 규칙(JSON 직렬화 텍스트)
+  monthlySettlement Boolean @default(false)
 
   @@index([type])
   @@index([name])
@@ -281,6 +282,7 @@ model SalesCampaign {
   settlementChecklist SettlementChecklist?
   checklistItems      CampaignChecklistItem[]
   settlementItems     CampaignSettlementItem[]
+  monthlySettlements  CampaignMonthlySettlement[]
   actionProposals     ActionProposal[]
   workRecords         WorkRecord[]
   chatRoomMappings    ChatRoomMapping[]
@@ -400,6 +402,46 @@ model CampaignSettlementItem {
   updatedAt DateTime @updatedAt
 
   @@index([campaignId])
+}
+
+model CampaignMonthlySettlement {
+  id         String        @id @default(cuid())
+  campaignId String
+  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  yearMonth   String
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  quantity          Int?
+  transactionAmount Decimal?
+  commissionRate    Decimal?
+  commissionAmount  Decimal?
+  supplyAmount      Decimal?
+  vat               Decimal?
+
+  salesInvoiceIssuedAt DateTime?
+  salesInvoiceNo       String?
+  salesInvoiceItemName String?
+
+  purchaseInvoiceReceivedAt DateTime?
+  goodsAmount               Decimal?
+
+  paymentAmount  Decimal?
+  paymentDueDate DateTime?
+  paymentPaidAt  DateTime?
+
+  salesInvoiceCheckedAt     DateTime?
+  purchaseInvoiceCheckedAt  DateTime?
+  paymentScheduleCheckedAt  DateTime?
+  paymentCompletedCheckedAt DateTime?
+
+  memo      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([campaignId, yearMonth])
+  @@index([yearMonth])
 }
 
 model PartnerContact {

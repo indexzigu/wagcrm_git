@@ -1,13 +1,7 @@
 import { z } from "zod";
-import { SettlementService } from "@/services/settlementService";
+import { SettlementService, buildSettlementReportQuery } from "@/services/settlementService";
 import { SettlementRepository } from "@/repositories/settlementRepository";
-import { containsSearch } from "@/lib/prisma-search";
-import {
-  getCurrentMonth,
-  getMonthDateRange,
-  isValidMonthString,
-  parseSettlementStatusFilter,
-} from "@/lib/settlement-report";
+import { isValidMonthString } from "@/lib/settlement-report";
 import type { AgentTool, ToolResult } from "./types";
 import { missingParam, notFound, ok, queryFailed } from "./types";
 // deriveSettlementState/SettlementStateLabel은 상태기계 모듈로 이동됐다(청사진 §2, plan-critic #5).
@@ -75,34 +69,15 @@ async function execute(input: GetSettlementReportInput): Promise<ToolResult<GetS
       );
     }
 
-    // 화면(getSettlementReport)과 동일한 필터로 원본 캠페인을 다시 조회해 상태 플래그를 얻는다.
-    let firstDay: Date;
-    let lastDay: Date;
-    let periodLabel: string;
-    if (year) {
-      const y = parseInt(year, 10);
-      firstDay = new Date(y, 0, 1);
-      lastDay = new Date(y, 11, 31, 23, 59, 59, 999);
-      periodLabel = `${y}`;
-    } else {
-      const targetMonth = month || getCurrentMonth();
-      const range = getMonthDateRange(targetMonth);
-      firstDay = range.firstDay;
-      lastDay = range.lastDay;
-      periodLabel = targetMonth;
-    }
-
-    const where: Record<string, unknown> = {
-      status: { in: parseSettlementStatusFilter(statusFilter ?? null) },
-      endDate: { gte: firstDay, lte: lastDay },
-    };
-    if (sellerName) {
-      where.OR = [
-        { deal: { dealName: containsSearch(sellerName) } },
-        { seller: { name: containsSearch(sellerName) } },
-        { salesChannel: containsSearch(sellerName) },
-      ];
-    }
+    // 화면(getSettlementReport)과 **같은 조회 조건 함수**로 원본 캠페인을 다시 조회해 상태 플래그를
+    // 얻는다(조건을 여기 다시 적으면 월별 줄로 들어오는 캠페인처럼 한쪽만 바뀐 소속이 갈라진다).
+    const { where, periodLabel } = buildSettlementReportQuery({
+      month: month ?? null,
+      year: year ?? null,
+      teamId: null,
+      searchQuery: sellerName ?? null,
+      statusFilter: statusFilter ?? null,
+    });
 
     const rawCampaigns = await SettlementRepository.findCampaignsForReport({
       where,

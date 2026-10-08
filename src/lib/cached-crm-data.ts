@@ -248,6 +248,7 @@ export async function getCachedPartnersPageData() {
     orderToEmail: partner.orderToEmail ?? null,
     orderCcEmail: partner.orderCcEmail ?? null,
     orderExcelRules: partner.orderExcelRules ?? null,
+    monthlySettlement: partner.monthlySettlement,
     contacts: partner.contacts.map((contact) => ({
       id: contact.id,
       name: contact.name,

@@ -12,6 +12,8 @@ import {
   UserRound,
 } from "lucide-react";
 import { badgeSizeClassName } from "@/components/ui/badge";
+import type { SettlementReportMonthlyLine } from "@/lib/settlement-report";
+import { MonthlySettlementRowBadges } from "./monthly-settlement-row-badge";
 import { DataEmpty } from "@/components/ui/empty";
 import {
   settlementCheckboxCol,
@@ -196,6 +198,8 @@ interface SettlementTableProps {
   selectedIds: string[];
   onToggleRow: (campaignId: string, checked: boolean) => void;
   onToggleAll: (campaignIds: string[], checked: boolean) => void;
+  /** 월정산 캠페인의 이 기간 월별 줄 요약(T-240) — 정산 리포트가 싣는다. 없으면 배지 없음. */
+  monthlyLinesById?: ReadonlyMap<string, SettlementReportMonthlyLine[] | undefined>;
 }
 
 const formatCurrency = (value: number | null | undefined) => {
@@ -216,6 +220,7 @@ export function SettlementTable({
   selectedIds,
   onToggleRow,
   onToggleAll,
+  monthlyLinesById,
 }: SettlementTableProps) {
   const handleSelectAll = (checked: boolean) => {
     onToggleAll(campaigns.map((campaign) => campaign.id), checked);
@@ -360,6 +365,7 @@ export function SettlementTable({
                           <span className="text-[10px] text-muted-foreground">
                             {formatDate(campaign.startDate)} ~ {formatDate(campaign.endDate)}
                           </span>
+                          <MonthlySettlementRowBadges lines={monthlyLinesById?.get(campaign.id)} />
                         </div>
                       </td>
                       <td className="min-w-0 px-4 py-3">
