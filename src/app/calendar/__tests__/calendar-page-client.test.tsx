@@ -58,7 +58,7 @@ describe("CalendarPageClient 응답 파싱 (버그 회귀: 항상 빈 달력)", 
     // 바 라벨은 이제 "딜명 · 셀러명" 조합 — 딜명이 부분 문자열로 포함된다.
     // 캠페인이 여러 주(week)에 걸치면 주마다 바가 렌더되므로 복수 매칭 허용
     expect((await screen.findAllByText(/프리미엄 마린콜라겐/)).length).toBeGreaterThan(0);
-    expect(screen.queryByText("이 달에 진행되는 캠페인이 없습니다.")).not.toBeInTheDocument();
+    expect(screen.queryByText("이 달에 진행되는 캠페인 없음")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(`/api/campaigns/calendar?month=${currentYm()}`);
   });
 
@@ -67,7 +67,7 @@ describe("CalendarPageClient 응답 파싱 (버그 회귀: 항상 빈 달력)", 
 
     render(<CalendarPageClient />);
 
-    expect(await screen.findByText("이 달에 진행되는 캠페인이 없습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("이 달에 진행되는 캠페인 없음")).toBeInTheDocument();
   });
 
   // ⚠️ 종전 이 자리는 「비정상 응답이면 빈 배열로 폴백」을 고정했다 — 그 폴백이 곧 「조회가
@@ -80,7 +80,7 @@ describe("CalendarPageClient 응답 파싱 (버그 회귀: 항상 빈 달력)", 
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("캠페인을 불러오지 못했습니다.");
-    expect(screen.queryByText("이 달에 진행되는 캠페인이 없습니다.")).not.toBeInTheDocument();
+    expect(screen.queryByText("이 달에 진행되는 캠페인 없음")).not.toBeInTheDocument();
   });
 
   it("「다시 불러오기」는 같은 달을 다시 조회하고, 성공하면 안내를 거둔다", async () => {
@@ -96,7 +96,7 @@ describe("CalendarPageClient 응답 파싱 (버그 회귀: 항상 빈 달력)", 
 
     fireEvent.click(screen.getByRole("button", { name: "다시 불러오기" }));
 
-    expect(await screen.findByText("이 달에 진행되는 캠페인이 없습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("이 달에 진행되는 캠페인 없음")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith(`/api/campaigns/calendar?month=${currentYm()}`);
   });

@@ -199,7 +199,7 @@ export function CampaignCreationSheet({
                 <div className="flex flex-col gap-3">
                   <EntityLinkSelectField
                     selected={!!selectedDeal}
-                    emptyText="선택된 딜이 없습니다."
+                    emptyText="선택된 딜 없음"
                     actionLabel="딜 선택"
                     changeLabel="딜 변경"
                     disabled={!!lockedDealId}
@@ -219,7 +219,7 @@ export function CampaignCreationSheet({
 
                   <EntityLinkSelectField
                     selected={!!selectedSeller}
-                    emptyText="선택된 셀러가 없습니다."
+                    emptyText="선택된 셀러 없음"
                     actionLabel="셀러 검색 선택"
                     changeLabel="셀러 변경"
                     onOpen={() => setIsSellerSearchOpen(true)}

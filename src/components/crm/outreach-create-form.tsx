@@ -142,7 +142,7 @@ export function OutreachCreateForm({
             label="딜"
             required
             selected={!!selectedDealId}
-            emptyText="선택된 딜이 없습니다."
+            emptyText="선택된 딜 없음"
             actionLabel="딜 선택"
             changeLabel="딜 변경"
             disabled={!!dealId}
@@ -162,7 +162,7 @@ export function OutreachCreateForm({
             label="셀러"
             required
             selected={!!sellerId}
-            emptyText="선택된 셀러가 없습니다."
+            emptyText="선택된 셀러 없음"
             actionLabel="셀러 검색 선택"
             changeLabel="셀러 변경"
             disabled={!!preSelectedSellerId}

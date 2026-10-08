@@ -1168,7 +1168,7 @@ export function AssetLibrary({
                     </div>
                   ))}
                   {filteredAssets.length === 0 ? (
-                    <DataEmpty title="조건에 맞는 자료가 없습니다." className="col-span-full py-6" />
+                    <DataEmpty title="조건에 맞는 자료 없음" className="col-span-full py-6" />
                   ) : null}
                 </div>
               ) : viewMode === "list" ? (
@@ -1225,7 +1225,7 @@ export function AssetLibrary({
                   ))}
                   {filteredAssets.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-sm text-muted-foreground">
-                      조건에 맞는 자료가 없습니다.
+                      조건에 맞는 자료 없음
                     </div>
                   ) : null}
                 </div>
@@ -1264,7 +1264,7 @@ export function AssetLibrary({
                     </div>
                   ) : (
                     <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 dark:bg-slate-950 p-6 text-sm text-muted-foreground text-center">
-                      계층 구조 내에 표시할 자료가 없습니다.
+                      계층 구조 내에 표시할 자료 없음
                     </div>
                   )}
                 </div>

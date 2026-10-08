@@ -320,7 +320,7 @@ export function PartnersManagement({
             <div className="flex h-64 items-center justify-center">
               <DataEmpty
                 icon={Building2}
-                title="등록된 거래처가 없습니다"
+                title="등록된 거래처 없음"
                 description="거래처를 추가하여 관리하세요."
               >
                 <Button

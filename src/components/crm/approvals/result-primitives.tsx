@@ -109,7 +109,7 @@ export function GenericTable({
 export function KeyValueList({ value }: { value: unknown }) {
   const entries = Object.entries((value ?? {}) as Record<string, unknown>);
   if (entries.length === 0) {
-    return <p className="text-sm text-muted-foreground">저장된 결과가 없습니다.</p>;
+    return <p className="text-sm text-muted-foreground">저장된 결과 없음</p>;
   }
 
   return (

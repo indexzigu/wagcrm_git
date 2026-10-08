@@ -159,7 +159,7 @@ function PendingOrdersPopover({ campName, orders, onClose }: { campName: string;
           </button>
         </div>
         {orders.length === 0 ? (
-          <div className="px-4 py-6 text-center text-[12px] text-slate-500">송장 지연 주문이 없습니다.</div>
+          <div className="px-4 py-6 text-center text-[12px] text-slate-500">송장 지연 주문 없음</div>
         ) : (
           <div className="min-h-0 flex-1 max-h-[320px] overflow-y-auto divide-y divide-slate-100">
             {orders.map((o) => {
@@ -240,7 +240,7 @@ function DelayOrdersPopover({ campName, orders, onClose, heading = '배송 지�
           </button>
         </div>
         {orders.length === 0 ? (
-          <div className="px-4 py-6 text-center text-[12px] text-slate-500">{heading} 주문이 없습니다.</div>
+          <div className="px-4 py-6 text-center text-[12px] text-slate-500">{heading} 주문 없음</div>
         ) : (
           <div className="min-h-0 flex-1 max-h-[320px] overflow-y-auto divide-y divide-slate-100">
             {orders.map((o) => {
@@ -328,7 +328,7 @@ function PostPeriodOrdersPopover({ campName, salePeriod, totalCount, orders, onC
           </div>
         </div>
         {orders.length === 0 ? (
-          <div className="px-4 py-6 text-center text-[12px] text-slate-500">표시할 주문이 없습니다.</div>
+          <div className="px-4 py-6 text-center text-[12px] text-slate-500">표시할 주문 없음</div>
         ) : (
           <div className="min-h-0 flex-1 max-h-[320px] overflow-y-auto divide-y divide-slate-100">
             {orders.map((o) => (
@@ -757,7 +757,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
     return (
       <div className="mt-4">
         <h4 className="text-sm font-bold text-slate-700 mb-4">일자별 주문 현황</h4>
-        <DataEmpty title="집계된 내역이 없습니다." />
+        <DataEmpty title="집계된 내역 없음" />
       </div>
     );
   }

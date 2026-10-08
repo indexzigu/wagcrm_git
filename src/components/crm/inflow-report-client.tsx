@@ -323,7 +323,7 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed bg-slate-50/50 p-10 text-center">
       <Link2Icon className="size-5 text-muted-foreground" />
-      <p className="text-sm font-medium text-foreground">아직 발급된 단축링크가 없습니다</p>
+      <p className="text-sm font-medium text-foreground">아직 발급된 단축링크 없음</p>
       <p className="max-w-md text-xs leading-relaxed text-slate-500">
         판매 관리에서 캠페인을 열고 &ldquo;셀러 배포용 링크&rdquo; 카드에서 발급하면 여기에
         유입이 쌓입니다.
@@ -486,7 +486,7 @@ export function LinkDetailSheet({
                 hint="셀러가 링크 뒤에 ?s= 를 붙인 경우에만 갈립니다."
                 rows={data.bySub.map((r) => ({ ...r, label: r.key }))}
                 total={data.totalClicks}
-                emptyText="콘텐츠 구분자를 쓴 클릭이 없습니다."
+                emptyText="콘텐츠 구분자를 쓴 클릭 없음"
               />
               <DailyTable rows={data.byDay} />
             </>
@@ -600,7 +600,7 @@ function HourlySection({
       </div>
       {total === 0 ? (
         <p className="rounded-lg border border-dashed bg-slate-50/50 px-3 py-4 text-center text-xs text-slate-500">
-          아직 클릭이 없습니다.
+          아직 클릭 없음
         </p>
       ) : (
         <div className="rounded-lg border border-border/70 bg-muted/30 px-3 pb-2 pt-3">
@@ -656,7 +656,7 @@ function Breakdown({
   hint,
   rows,
   total,
-  emptyText = "데이터가 없습니다.",
+  emptyText = "데이터 없음",
 }: {
   title: string;
   hint?: string;
@@ -794,7 +794,7 @@ function DailyTable({
       </div>
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed bg-slate-50/50 px-3 py-4 text-center text-xs text-slate-500">
-          아직 클릭이 없습니다.
+          아직 클릭 없음
         </p>
       ) : (
         <div className="overflow-hidden rounded-lg border border-border/70">

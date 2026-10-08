@@ -83,7 +83,7 @@ export default function ProductSelectModal({
             </div>
           ) : naverProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500">
-              <p className="text-sm font-bold">조회된 상품이 없습니다.</p>
+              <p className="text-sm font-bold">조회된 상품 없음</p>
             </div>
           ) : (
             <div className="space-y-4">

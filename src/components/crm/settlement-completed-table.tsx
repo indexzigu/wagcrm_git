@@ -58,8 +58,8 @@ export function SettlementCompletedTable({
       ) : campaigns.length === 0 ? (
         <DataEmpty
           icon={FileSpreadsheet}
-          title="정산 완료된 캠페인이 없습니다."
-          description="현재 정산 완료 상태의 캠페인 내역이 없습니다."
+          // 빈 목록은 짧은 명사구 한 줄이다(오너 확정 2026-10-08 D5) — 제목을 되풀이하던 설명 줄은 뺐다.
+          title="정산완료 캠페인 없음"
           className="flex-1 justify-center py-16"
         />
       ) : (

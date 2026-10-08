@@ -446,7 +446,7 @@ export function CampaignCreationForm({
                     </div>
                   ) : dealResults.length === 0 && dealQuery.length >= 2 ? (
                     <div className="px-3 py-3 text-sm text-muted-foreground">
-                      검색 결과가 없습니다
+                      검색 결과 없음
                     </div>
                   ) : (
                     <ul className="max-h-48 overflow-y-auto py-1">
@@ -493,7 +493,7 @@ export function CampaignCreationForm({
                 <span className="ml-2 text-xs text-muted-foreground">옵션 정보 로딩 중...</span>
               </div>
             ) : dealOptions.length === 0 ? (
-              <p className="text-xs text-muted-foreground">등록된 상품 구성이 없습니다.</p>
+              <p className="text-xs text-muted-foreground">등록된 상품 구성 없음</p>
             ) : (
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {dealOptions.map((opt) => {
@@ -587,7 +587,7 @@ export function CampaignCreationForm({
                   </div>
                 ) : sellerResults.length === 0 && sellerQuery.length >= 2 ? (
                   <div className="px-3 py-3 text-sm text-muted-foreground">
-                    검색 결과가 없습니다
+                    검색 결과 없음
                   </div>
                 ) : (
                   <ul className="max-h-48 overflow-y-auto py-1">

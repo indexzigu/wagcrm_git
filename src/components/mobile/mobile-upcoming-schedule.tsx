@@ -63,7 +63,7 @@ export const MobileUpcomingSchedule = React.memo(function MobileUpcomingSchedule
       {items.length === 0 ? (
         <Empty className="border-t border-slate-100 py-5">
           <EmptyHeader>
-            <EmptyTitle>다가오는 일정이 없습니다.</EmptyTitle>
+            <EmptyTitle>다가오는 일정 없음</EmptyTitle>
           </EmptyHeader>
         </Empty>
       ) : (

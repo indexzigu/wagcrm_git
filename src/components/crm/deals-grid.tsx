@@ -47,7 +47,7 @@ export type DealsGridProps = {
   initialDeals: DealRow[];
   onSelect?: (deal: DealRow) => void;
   /**
-   * 검색어·상태 필터가 걸려 있다 — 0건일 때 「등록된 딜이 없습니다」 대신 「조건에 맞는
+   * 검색어·상태 필터가 걸려 있다 — 0건일 때 「등록된 딜 없음」 대신 「조건에 맞는
    * 딜이 없습니다」를 보이고 필터를 푸는 길을 준다. 두 경우를 같은 문구로 그리면 검색이
    * 빗나간 것을 딜이 사라진 것으로 읽는다(interfaces 점검 #9).
    */
@@ -74,8 +74,8 @@ export function DealsGrid({
             icon={SearchX}
             title={
               filterQuery.trim()
-                ? `'${filterQuery.trim()}'에 맞는 딜이 없습니다`
-                : "조건에 맞는 딜이 없습니다"
+                ? `'${filterQuery.trim()}'에 맞는 딜 없음`
+                : "조건에 맞는 딜 없음"
             }
             description="검색어나 상태 필터를 바꿔 보세요."
           >
@@ -96,7 +96,7 @@ export function DealsGrid({
         <div className="flex h-64 items-center justify-center p-4">
           <DataEmpty
             icon={PackageOpen}
-            title="등록된 딜이 없습니다"
+            title="등록된 딜 없음"
             description="딜을 추가하여 상품을 관리하세요."
           />
         </div>

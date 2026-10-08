@@ -209,7 +209,7 @@ describe("그룹으로 묶기 다이얼로그", () => {
     await openDialog();
 
     await waitFor(() =>
-      expect(screen.getByText("일정이 가까운 다른 캠페인이 없습니다.")).toBeInTheDocument(),
+      expect(screen.getByText("일정이 가까운 다른 캠페인 없음")).toBeInTheDocument(),
     );
   });
 });

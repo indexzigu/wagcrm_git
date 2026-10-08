@@ -241,7 +241,7 @@ export function SettlementTable({
         </div>
       ) : campaigns.length === 0 ? (
         <div className="flex flex-1 items-center justify-center py-16">
-          <DataEmpty icon={FileSpreadsheet} title="정산 진행 중인 캠페인이 없습니다." bordered={false} />
+          <DataEmpty icon={FileSpreadsheet} title="정산중 캠페인 없음" bordered={false} />
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border/60 bg-white/50 shadow-soft-sm">

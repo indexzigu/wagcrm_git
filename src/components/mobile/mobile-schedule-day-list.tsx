@@ -130,7 +130,7 @@ export const MobileScheduleDayList = React.memo(function MobileScheduleDayList({
       {isEmpty ? (
         <Empty className="border-t border-slate-100 py-5">
           <EmptyHeader>
-            <EmptyTitle>이 날짜에 예정된 일정이 없습니다.</EmptyTitle>
+            <EmptyTitle>이 날짜에 예정된 일정 없음</EmptyTitle>
           </EmptyHeader>
         </Empty>
       ) : (

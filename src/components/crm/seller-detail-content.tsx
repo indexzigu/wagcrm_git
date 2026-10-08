@@ -715,7 +715,7 @@ export function SellerDetailContent({
                   <span className="text-xs text-muted-foreground block mb-1">소개글</span>
                   <div className="relative">
                     <p className={cn("text-foreground whitespace-pre-wrap leading-relaxed text-[11px]", !bioExpanded && "line-clamp-4")}>
-                      {seller.profileBio ? seller.profileBio.trim() : "등록된 소개글이 없습니다."}
+                      {seller.profileBio ? seller.profileBio.trim() : "등록된 소개글 없음"}
                     </p>
                   </div>
                 </div>
@@ -1183,7 +1183,7 @@ export function SellerDetailContent({
                     {loadingSnapshots ? (
                       <p className="text-xs text-muted-foreground text-center py-4">로딩 중...</p>
                     ) : snapshots.length === 0 ? (
-                      <DataEmpty title="수집된 프로필 데이터 내역이 없습니다" className="py-6" />
+                      <DataEmpty title="수집된 프로필 데이터 내역 없음" className="py-6" />
                     ) : (
                       <div className="w-full rounded-lg border border-border/50 bg-white/30 shadow-soft-sm overflow-hidden">
                         <table className="w-full text-left text-xs border-collapse">
@@ -1238,7 +1238,7 @@ export function SellerDetailContent({
                   <AnimatedTabsContent value="bio" className="mt-0">
                     {bioHistories.length === 0 ? (
                       <div className="py-6 text-center text-xs text-muted-foreground border rounded-lg border-border/40 bg-white/30">
-                        소개글 변경 이력이 없습니다
+                        소개글 변경 이력 없음
                       </div>
                     ) : (
                       <div className="space-y-2.5 w-full">
@@ -1277,7 +1277,7 @@ export function SellerDetailContent({
                 <Separator className="mb-4" />
                 {seller.campaigns?.length === 0 ? (
                   <p className="py-4 text-center text-xs text-muted-foreground">
-                    캠페인 이력이 없습니다.
+                    캠페인 이력 없음
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -1588,7 +1588,7 @@ function SellerAssetSection({ sellerId }: { sellerId: string }) {
         </ul>
       ) : (
         <div className="mt-3 rounded-md border border-dashed border-border/50 bg-slate-50/60 py-4 text-center text-xs text-muted-foreground">
-          첨부된 파일이 없습니다.
+          첨부된 파일 없음
         </div>
       )}
     </section>

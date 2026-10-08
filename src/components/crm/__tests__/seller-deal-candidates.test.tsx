@@ -74,7 +74,7 @@ describe("SellerDealCandidates", () => {
   it("후보가 없으면 비어 있음을 알린다", async () => {
     mockCandidates([]);
     render(<SellerDealCandidates sellerId="s1" />);
-    await waitFor(() => expect(screen.getByText("제안 후보 딜이 없습니다")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("제안 후보 딜 없음")).toBeInTheDocument());
   });
 
   // --- 기안 승격 (2단계) — 딜 상세 쪽 섹션과 같은 엔드포인트를 쓴다 ---

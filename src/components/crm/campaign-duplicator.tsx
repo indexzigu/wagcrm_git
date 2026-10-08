@@ -152,7 +152,7 @@ export function CampaignDuplicator({
             </Select>
             {availableSellers.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                선택 가능한 셀러가 없습니다.
+                선택 가능한 셀러 없음
               </p>
             )}
           </div>

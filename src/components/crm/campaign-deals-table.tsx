@@ -506,11 +506,11 @@ export function CampaignDealsTable({
       {localDeals.length === 0 ? (
         <DataEmpty
           icon={Info}
-          title="등록된 매출 품목이 없습니다."
+          title="등록된 매출 품목 없음"
           description={
             availableOptions.length > 0
               ? "우측 상단에서 옵션 품목을 선택하여 추가하세요."
-              : "연결된 딜에 사용할 수 있는 옵션 상품이 없습니다."
+              : "추가할 수 있는 옵션 상품 없음"
           }
         />
       ) : (

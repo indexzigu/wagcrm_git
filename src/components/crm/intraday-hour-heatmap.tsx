@@ -46,7 +46,7 @@ export function IntradayHourHeatmap({ points, viewport }: Props) {
 
   if (total === 0) {
     return (
-      <p className="text-[11px] text-slate-500">이 구간에는 주문이 없습니다.</p>
+      <p className="text-[11px] text-slate-500">이 구간에는 주문 없음</p>
     );
   }
 

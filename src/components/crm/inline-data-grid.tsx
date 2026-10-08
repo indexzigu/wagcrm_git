@@ -244,7 +244,7 @@ export function InlineDataGrid<T extends { id: string }>({
                       <EmptyMedia variant="icon">
                         <span className="text-xs font-medium">0</span>
                       </EmptyMedia>
-                      <EmptyTitle>데이터가 없습니다</EmptyTitle>
+                      <EmptyTitle>데이터 없음</EmptyTitle>
                       <EmptyDescription>
                         검색 조건을 변경하거나 새 데이터를 추가해보세요.
                       </EmptyDescription>

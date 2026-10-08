@@ -93,7 +93,7 @@ export function SellerDealCandidates({ sellerId }: { sellerId: string }) {
 
       {candidates.length === 0 ? (
         <div className="flex items-center justify-center rounded-xl border border-dashed border-slate-200 p-6 bg-slate-50/30">
-          <p className="text-xs text-slate-500">제안 후보 딜이 없습니다</p>
+          <p className="text-xs text-slate-500">제안 후보 딜 없음</p>
         </div>
       ) : (
         <div className="space-y-1">

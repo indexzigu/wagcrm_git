@@ -1223,7 +1223,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                       <div>
                         <p className="text-xs font-semibold text-slate-700">오늘 할 일이 모두 완료되었습니다!</p>
                         <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                          자동 팔로업 제안 리드나 기한이 경과된 정산 내역이 없습니다.
+                          자동 팔로업 제안 리드나 기한이 경과된 정산 내역 없음
                         </p>
                       </div>
                     </div>
@@ -1254,7 +1254,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                         {agendaTab === "tasks" ? (
                           agendaData.tasks.length === 0 ? (
                             <div className="flex-1 flex items-center justify-center text-center text-xs text-slate-500 border border-dashed border-slate-150 rounded-xl bg-slate-50/30">
-                              팔로업할 영업 리드가 없습니다.
+                              팔로업할 영업 리드 없음
                             </div>
                           ) : (
                             <>
@@ -1277,7 +1277,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                           )
                         ) : agendaData.settlements.length === 0 ? (
                           <div className="flex-1 flex items-center justify-center text-center text-xs text-slate-500 border border-dashed border-slate-150 rounded-xl bg-slate-50/30">
-                            지연된 정산 내역이 없습니다.
+                            지연된 정산 내역 없음
                           </div>
                         ) : (
                           <>

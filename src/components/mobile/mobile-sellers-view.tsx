@@ -166,7 +166,7 @@ export function MobileSellersView({
         {!isLoading && sellers.length === 0 ? (
           <Empty className="border border-border/70 bg-background py-8">
             <EmptyHeader>
-              <EmptyTitle>조건에 맞는 셀러가 없습니다.</EmptyTitle>
+              <EmptyTitle>조건에 맞는 셀러 없음</EmptyTitle>
               <EmptyDescription>이름, 핸들, 카테고리로 다시 검색해보세요.</EmptyDescription>
             </EmptyHeader>
           </Empty>

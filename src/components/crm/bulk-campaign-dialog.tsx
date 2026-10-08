@@ -204,7 +204,7 @@ export function BulkCampaignDialog({
                 <div className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-md border border-border p-2">
                   {sellers.length === 0 ? (
                     <FieldDescription className="py-2 text-center text-xs">
-                      등록된 셀러가 없습니다.
+                      등록된 셀러 없음
                     </FieldDescription>
                   ) : (
                     sellers.map((seller) => (

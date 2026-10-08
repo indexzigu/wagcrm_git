@@ -1230,7 +1230,7 @@ export function CampaignSidePanel({
                     ))
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      이 캠페인에 매칭되는 연동 로그가 없습니다.
+                      이 캠페인에 매칭되는 연동 로그 없음
                     </p>
                   )}
                 </AccordionContent>
@@ -3649,7 +3649,7 @@ export function MarketingLinkConverter({
           </>
         ) : (
           <div className="flex flex-col gap-2 rounded-lg border border-dashed bg-slate-50/50 p-4 text-center">
-            <span className="text-xs text-slate-500">아직 변환된 링크가 없습니다.</span>
+            <span className="text-xs text-slate-500">아직 변환된 링크 없음</span>
             <span className="text-[10px] text-slate-500 leading-relaxed">
               마케팅 링크를 입력하고 변환 버튼을 클릭하면<br />
               고객 분석 트래킹 링크가 생성 및 저장됩니다.

@@ -293,7 +293,7 @@ export function MobileOutreachView({
             <EmptyMedia variant="icon">
               <CheckCircle2Icon />
             </EmptyMedia>
-            <EmptyTitle>지금 확인할 영업 큐가 없습니다.</EmptyTitle>
+            <EmptyTitle>지금 확인할 영업 큐 없음</EmptyTitle>
             <EmptyDescription>리마인드나 전환 판단이 필요한 항목이 생기면 표시됩니다.</EmptyDescription>
           </EmptyHeader>
         </Empty>

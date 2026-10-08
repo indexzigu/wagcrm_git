@@ -501,7 +501,7 @@ export function LinkSearchDialog({
           {!loading && !initialLoading && !error && hasSearched && results.length === 0 && (
             <div className="flex items-center justify-center h-full min-h-[200px]">
               <p className="text-sm text-muted-foreground">
-                검색 결과가 없습니다
+                검색 결과 없음
               </p>
             </div>
           )}
@@ -556,7 +556,7 @@ export function LinkSearchDialog({
           {!loading && !initialLoading && !error && !hasSearched && displayItems.length === 0 && (
             <div className="flex items-center justify-center h-full min-h-[200px]">
               <p className="text-sm text-muted-foreground">
-                등록된 항목이 없습니다
+                등록된 항목 없음
               </p>
             </div>
           )}

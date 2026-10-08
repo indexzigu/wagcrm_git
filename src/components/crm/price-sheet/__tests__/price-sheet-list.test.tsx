@@ -190,11 +190,11 @@ describe("PriceSheetList — 목록 조회 실패는 빈 목록이 아니다", (
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("가격표 목록을 불러오지 못했습니다.");
-    expect(screen.queryByText("업로드된 가격표가 없습니다.")).not.toBeInTheDocument();
+    expect(screen.queryByText("업로드된 가격표 없음")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "다시 불러오기" }));
 
-    expect(await screen.findByText("업로드된 가격표가 없습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("업로드된 가격표 없음")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(listCalls).toBe(2);
   });

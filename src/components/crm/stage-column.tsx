@@ -209,7 +209,7 @@ export function StageColumn({
         {campaigns.length === 0 ? (
           /* Empty state */
           <div className="flex flex-1 items-center justify-center py-8">
-            <p className="text-xs text-muted-foreground">캠페인이 없습니다</p>
+            <p className="text-xs text-muted-foreground">캠페인 없음</p>
           </div>
         ) : hasSubGroups ? (
           /* Render with sub-group dividers */

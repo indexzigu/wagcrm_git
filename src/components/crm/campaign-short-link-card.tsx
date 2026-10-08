@@ -243,7 +243,7 @@ export function CampaignShortLinkCard({
           </>
         ) : hasTarget ? (
           <div className="flex flex-col gap-3 rounded-lg border border-dashed bg-slate-50/50 p-4 text-center">
-            <span className="text-xs text-slate-500">아직 발급된 링크가 없습니다.</span>
+            <span className="text-xs text-slate-500">아직 발급된 링크 없음</span>
             <Button size="sm" onClick={() => void handleIssue()} disabled={isIssuing}>
               {isIssuing ? "발급중" : "단축링크 발급"}
             </Button>

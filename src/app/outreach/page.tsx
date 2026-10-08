@@ -1032,7 +1032,7 @@ export default function OutreachPage() {
                         <WorkspaceEmpty
                           icon={<Megaphone className="size-4" />}
                           title="제안 대기열"
-                          description="제안중인 셀러가 없습니다."
+                          description="제안중인 셀러 없음"
                         />
                       )}
                     </div>
@@ -1736,7 +1736,7 @@ function SalesTaskDetailPanel({
             ))
           ) : (
             <div className="text-xs text-muted-foreground">
-              기록된 일정이 없습니다.
+              기록된 일정 없음
             </div>
           )}
         </div>
@@ -2202,7 +2202,7 @@ function TaskAssetSection({ taskId }: { taskId: string }) {
         </ul>
       ) : (
         <div className="mt-3 rounded-xl border border-dashed border-border/60 bg-slate-50/60 py-4 text-center text-xs text-muted-foreground">
-          첨부된 파일이 없습니다.
+          첨부된 파일 없음
         </div>
       )}
     </section>

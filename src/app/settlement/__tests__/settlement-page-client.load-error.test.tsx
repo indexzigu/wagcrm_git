@@ -24,7 +24,7 @@ vi.mock("@/components/crm/campaign-side-panel", () => ({ CampaignSidePanel: () =
 
 import { SettlementPageClient } from "../settlement-page-client";
 
-const EMPTY_TEXT = "정산 진행 중인 캠페인이 없습니다.";
+const EMPTY_TEXT = "정산중 캠페인 없음";
 const ERROR_TEXT = "정산 목록을 불러오지 못했습니다.";
 
 const REPORT = {

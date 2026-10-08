@@ -60,7 +60,7 @@ export function CalendarFilterBar({
           <DropdownMenuSeparator />
           {sellers.length === 0 ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              셀러가 없습니다.
+              등록된 셀러 없음
             </div>
           ) : (
             sellers.map((seller) => (

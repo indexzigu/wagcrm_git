@@ -216,7 +216,7 @@ function JobDetailPopoverContent({ job, onClose }: { job: KnownJob; onClose: () 
               ))}
             </div>
           ) : logs.length === 0 ? (
-            <p className="text-[11px] text-slate-500">아직 기록된 실행 로그가 없습니다.</p>
+            <p className="text-[11px] text-slate-500">아직 기록된 실행 로그 없음</p>
           ) : (
             <div
               tabIndex={0}

@@ -53,7 +53,7 @@ export function SellerLinkSection({
         </div>
         <div className="flex items-center justify-center rounded-lg border border-dashed border-border/70 p-6">
           <p className="text-xs text-muted-foreground">
-            연결된 셀러가 없습니다
+            연결된 셀러 없음
           </p>
         </div>
       </div>

@@ -105,6 +105,6 @@ describe("MobileUpcomingSchedule", () => {
 
   it("다가오는 일정이 없으면 빈 상태를 보여준다", () => {
     render(<MobileUpcomingSchedule items={[]} onOpenCampaign={vi.fn()} />);
-    expect(screen.getByText("다가오는 일정이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("다가오는 일정 없음")).toBeInTheDocument();
   });
 });

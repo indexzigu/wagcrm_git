@@ -585,7 +585,7 @@ export function CrmDashboard({
             {filteredRows.length === 0 && hasActiveFilters ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#f8fafc] px-6 py-16 text-center">
                 <p className="text-sm text-muted-foreground">
-                  필터 조건에 맞는 캠페인이 없습니다.
+                  필터 조건에 맞는 캠페인 없음
                 </p>
                 <Button
                   variant="outline"

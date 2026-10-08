@@ -302,7 +302,7 @@ export function CategoryTagInput({
             </Badge>
           ))
         ) : (
-          <span className="text-xs text-muted-foreground">지정된 카테고리가 없습니다</span>
+          <span className="text-xs text-muted-foreground">지정된 카테고리 없음</span>
         )}
       </div>
 

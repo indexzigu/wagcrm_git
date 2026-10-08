@@ -11,7 +11,6 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-  EmptyDescription,
 } from "@/components/ui/empty";
 import {
   type OutreachStatus,
@@ -312,8 +311,8 @@ export function OutreachList({
           <EmptyMedia variant="icon">
             <Inbox />
           </EmptyMedia>
-          <EmptyTitle>제안 이력이 없습니다</EmptyTitle>
-          <EmptyDescription>이 딜에 대한 영업 테스크 이력이 없습니다.</EmptyDescription>
+          {/* 빈 목록은 짧은 명사구 한 줄(오너 확정 2026-10-08 D5) — 제목을 되풀이하던 설명 줄은 뺐다. */}
+          <EmptyTitle>제안 이력 없음</EmptyTitle>
         </EmptyHeader>
       </Empty>
     );
