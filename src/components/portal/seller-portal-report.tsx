@@ -74,13 +74,13 @@ type TimingBadge =
     };
 
 // 진행중 캠페인의 마감 카운트다운. 1~3일 라이브(amber), 당일 라이브+flame 강조.
-// 열린 기간('계속')·형식불량은 null(미표기), 마감 지난 건은 정적 "판매 종료".
+// 열린 기간('계속')·형식불량은 null(미표기), 마감 지난 건은 정적 "판매종료".
 //
 // ⛔ 4일 이상 남은 건에 정적 `D-N` 을 붙이지 말 것 (오너 지시 2026-08-26).
 // "디데이가 필요한 곳에서는 쓰되 **판매 마감**에는 쓸 필요 없다"는 판단이고, 같은 날
 // 모바일 상세 시트의 판매 마감 D-day 도 같은 기준으로 걷어냈다(formatDeadlineLabel 폐기).
 // 남긴 것과 그 이유: ①1~3일·당일 **라이브 카운트다운**은 D-day 표기가 아니라 임박한
-// 소수에만 켜지는 실시간 신호다(P8 「색은 주의가 필요한 소수에만」) ②"판매 종료"는
+// 소수에만 켜지는 실시간 신호다(P8 「색은 주의가 필요한 소수에만」) ②"판매종료"는
 // 카운트다운이 아니라 상태 라벨이다 ③`openingBadge` 의 오픈 카운트다운은 마감이 아니라
 // 시작 경계라 이 기준의 대상이 아니다.
 function deadlineBadge(salePeriod: string, today: string): TimingBadge | null {
@@ -89,7 +89,7 @@ function deadlineBadge(salePeriod: string, today: string): TimingBadge | null {
   const days = daysBetweenYmd(today, endYmd);
   if (Number.isNaN(days)) return null;
   if (days < 0)
-    return { kind: "static", label: "판매 종료", className: "bg-slate-100 text-slate-600 border-slate-200" };
+    return { kind: "static", label: "판매종료", className: "bg-slate-100 text-slate-600 border-slate-200" };
   // 4일 이상 남았으면 아무것도 표기하지 않는다 — 위 ⛔ 참조.
   if (days > 3) return null;
   const targetMs = saleBoundaryMs(endYmd, "close");
@@ -231,13 +231,20 @@ function ActiveCampaignSection({
   const insights = camp.insights;
   // 마감 카운트다운(§B+D) — 4일+ 정적, 임박·당일 라이브. 열린 기간·형식불량이면 null(미표기).
   const deadline = deadlineBadge(camp.salePeriod, today);
+  // 마감이 지난 카드에 「판매중」 칩과 「판매종료」 배지가 함께 뜨면 셀러에게 서로 모순이다 —
+  // 칩이 「판매종료」를 말하고 같은 말을 되풀이하는 배지는 그리지 않는다(새 데이터 없이 낱말만, 2026-10-08).
+  const isEnded = deadline?.kind === "static" && deadline.label === "판매종료";
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200 shadow-soft-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100">
         <div className="flex items-start gap-2">
-          <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
-            판매중
+          <span
+            className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+              isEnded ? "bg-slate-100 text-slate-600 border-slate-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+            }`}
+          >
+            {isEnded ? "판매종료" : "판매중"}
           </span>
           <h2 className="min-w-0 break-keep break-words font-bold text-slate-800 text-sm">{camp.name}</h2>
         </div>
@@ -249,7 +256,7 @@ function ActiveCampaignSection({
           {camp.salePeriod && (
             <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
               <p className="text-[11px] text-slate-500">{camp.salePeriod}</p>
-              {deadline && <TimingBadgeView badge={deadline} />}
+              {deadline && !isEnded && <TimingBadgeView badge={deadline} />}
             </div>
           )}
           <Link
@@ -421,13 +428,13 @@ function UpcomingCampaignSection({ camp, today }: { camp: PortalCampaign; today:
           라이브 카운트다운(약 150px, shrink-0)이 제목 폭을 깎아 320px 에서 긴 제목이 5줄까지 늘었다. */}
       <div className="flex items-start gap-2">
         <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
-          예정
+          판매예정
         </span>
         <h2 className="min-w-0 break-keep break-words font-bold text-slate-700 text-sm">{camp.name}</h2>
       </div>
       {(camp.salePeriod || opening) && (
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">
-          {camp.salePeriod && <p className="text-[11px] text-slate-500">{camp.salePeriod} 오픈 예정</p>}
+          {camp.salePeriod && <p className="text-[11px] text-slate-500">{camp.salePeriod}</p>}
           {opening && <TimingBadgeView badge={opening} />}
         </div>
       )}
@@ -574,7 +581,7 @@ export async function SellerPortalReport({
               <div className="space-y-2.5">
                 {/* 다른 섹션 제목과 같은 타이포 위계(text-xs font-bold text-slate-500, 비-uppercase) —
                     이전엔 페이지 eyebrow 라벨 스타일을 빌려와 파일 내 제목 관례와 어긋났다(ss-ux-designer 지적). */}
-                <h2 className="text-xs font-bold text-slate-500 px-1">예정 · 곧 오픈하는 캠페인</h2>
+                <h2 className="text-xs font-bold text-slate-500 px-1">판매예정 · 곧 오픈하는 캠페인</h2>
                 {upcoming.map((c) => (
                   <UpcomingCampaignSection key={c.id} camp={c} today={today} />
                 ))}
