@@ -38,7 +38,7 @@ model Partner {
   orderToEmail        String? // 발주서 기본 수신 이메일(To). 값이 있으면 발주 브랜드로 등록됨
   orderCcEmail        String? // 발주서 보조 수신 이메일(CC, 선택)
   orderExcelRules     Json? // F4 Phase 2: 네이버→발주서 열 매핑 규칙(OrderExcelRules v1, excel-rules.ts zod 검증)
-  /// 월정산 거래처 — 계산서를 월별로 끊어 발행·수취한다(T-240). 켜면 이 거래처 캠페인에 월별 정산 줄을 쓴다.
+  /// 월정산 거래처 — 계산서를 월별로 끊어 발행·수취한다(T-240). 켜면 이 거래처 캠페인의 공급사 계산서를 달별 여러 장(CampaignInvoice)으로 기록한다.
   monthlySettlement   Boolean          @default(false)
   deals               Deal[]
   referredBy          Partner?         @relation("PartnerReferral", fields: [referredById], references: [id])
@@ -280,7 +280,6 @@ model SalesCampaign {
   activities              CampaignActivity[]
   checklistItems          CampaignChecklistItem[]
   settlementItems         CampaignSettlementItem[]
-  monthlySettlements      CampaignMonthlySettlement[]
   invoices                CampaignInvoice[]
   campaignDeals           CampaignDeal[]
   notes                   CampaignNote[]
@@ -433,61 +432,6 @@ model CampaignSettlementItem {
   updatedAt DateTime @updatedAt
 
   @@index([campaignId])
-}
-
-/// 월별 정산 줄 — 캠페인 1건 안의 **브랜드(공급사) 정산을 월별로** 쌓는다(T-240, 오너 확정 2026-10-08).
-/// 거래처가 월정산(`Partner.monthlySettlement`)일 때만 쓰인다. 캠페인을 월로 쪼개지 않는다 —
-/// 주문수량·거래액은 셀러 전달 데이터와 연동되므로 캠페인 값은 건드리지 않고, 이 줄은 그 위의 기록이다.
-/// 셀러 정산은 월로 나누지 않는다(캠페인 단위 그대로).
-/// ⛔ 2026-10-08 부터 아무도 읽거나 쓰지 않는다(CampaignInvoice 로 대체, 캠페인을 달로 쪼갠 셈이라 오너가 기각).
-/// 테이블은 남긴다 — 데이터 정리·드롭은 오너 확인 후 별도 마이그레이션으로(파괴적 변경을 이 PR 에 싣지 않는다).
-/// 설계 정본: docs/private/specs/2026-10-08-monthly-settlement-lines-design.md
-model CampaignMonthlySettlement {
-  id         String        @id @default(cuid())
-  campaignId String
-  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  /// 귀속 월 "YYYY-MM"(KST). 귀속 기준은 주문일(오너 확정).
-  yearMonth   String
-  periodStart DateTime?
-  periodEnd   DateTime?
-
-  /// 그 달 주문수량(판매 수량) — P7 Order-Count Vocabulary 의 `quantity` 와 같은 뜻. 주문건수 아님.
-  quantity          Int?
-  transactionAmount Decimal?
-  commissionRate    Decimal?
-  /// 수수료액(VAT 포함) · 공급가액 · 세액 — 분해 식은 vat.ts `splitVatIncluded` 하나.
-  commissionAmount  Decimal?
-  supplyAmount      Decimal?
-  vat               Decimal?
-
-  /// 매출 계산서(우리 → 공급사 수수료 계산서)
-  salesInvoiceIssuedAt DateTime?
-  salesInvoiceNo       String?
-  salesInvoiceItemName String?
-
-  /// 매입 계산서(공급사 → 우리 물품대금 계산서). goodsAmount 는 VAT 포함이며 캠페인
-  /// `settlementGoodsCost` 의 월별 후계다 — 캠페인 값은 이 열의 합으로 맞춰 둔다(서비스 롤업).
-  purchaseInvoiceReceivedAt DateTime?
-  goodsAmount               Decimal?
-
-  /// 지급(우리 → 공급사). 지급액 미입력이면 물품대금을 지급액으로 본다.
-  paymentAmount  Decimal?
-  paymentDueDate DateTime?
-  paymentPaidAt  DateTime?
-
-  /// 월별 체크리스트 4항목 — null = 미완료, 값 = 처리일. 4개 모두 값이 있어야 그 달이 완료다.
-  salesInvoiceCheckedAt     DateTime?
-  purchaseInvoiceCheckedAt  DateTime?
-  paymentScheduleCheckedAt  DateTime?
-  paymentCompletedCheckedAt DateTime?
-
-  memo      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([campaignId, yearMonth])
-  @@index([yearMonth])
 }
 
 /// 캠페인 계산서(T-240 후속) — 월정산 거래처의 공급사 계산서를 **캠페인당 여러 장** 기록한다.

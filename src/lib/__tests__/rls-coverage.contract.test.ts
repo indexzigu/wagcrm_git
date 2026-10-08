@@ -102,6 +102,8 @@ const DROPPED_TABLES = new Set([
   // 2026-09-23 채팅 은퇴(Plan 3) — 20260923120000_drop_assistant_chat_tables.
   "AssistantConversation",
   "AssistantChatMessage",
+  // 2026-10-08 월별 정산 줄(#159) 은퇴 — 20261009090000_drop_campaign_monthly_settlement.
+  "CampaignMonthlySettlement",
 ]);
 
 /** SQL 한 덩이에서 DROP 된 테이블명을 뽑는다(주석은 세지 않는다 — 아래 우회로 봉쇄 단언). */

@@ -282,7 +282,6 @@ model SalesCampaign {
   settlementChecklist SettlementChecklist?
   checklistItems      CampaignChecklistItem[]
   settlementItems     CampaignSettlementItem[]
-  monthlySettlements  CampaignMonthlySettlement[]
   invoices            CampaignInvoice[]
   actionProposals     ActionProposal[]
   workRecords         WorkRecord[]
@@ -403,46 +402,6 @@ model CampaignSettlementItem {
   updatedAt DateTime @updatedAt
 
   @@index([campaignId])
-}
-
-model CampaignMonthlySettlement {
-  id         String        @id @default(cuid())
-  campaignId String
-  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  yearMonth   String
-  periodStart DateTime?
-  periodEnd   DateTime?
-
-  quantity          Int?
-  transactionAmount Decimal?
-  commissionRate    Decimal?
-  commissionAmount  Decimal?
-  supplyAmount      Decimal?
-  vat               Decimal?
-
-  salesInvoiceIssuedAt DateTime?
-  salesInvoiceNo       String?
-  salesInvoiceItemName String?
-
-  purchaseInvoiceReceivedAt DateTime?
-  goodsAmount               Decimal?
-
-  paymentAmount  Decimal?
-  paymentDueDate DateTime?
-  paymentPaidAt  DateTime?
-
-  salesInvoiceCheckedAt     DateTime?
-  purchaseInvoiceCheckedAt  DateTime?
-  paymentScheduleCheckedAt  DateTime?
-  paymentCompletedCheckedAt DateTime?
-
-  memo      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([campaignId, yearMonth])
-  @@index([yearMonth])
 }
 
 /// 캠페인 계산서(T-240 후속) — 월정산 거래처의 공급사 계산서를 **캠페인당 여러 장** 기록한다.
