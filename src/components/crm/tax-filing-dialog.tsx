@@ -96,6 +96,7 @@ import { useHometaxIssue, type TaxInvoiceValidationDetail } from "./use-hometax-
 // 본문과 차단 조건이 갈린다(그 파일 헤더의 ⛔ 참조). 이 화면은 이번 달 전체를 다루는
 // 자리라 `campaignIds` 를 주지 않는다(= 전량 표시).
 import { ReceiptSuggestionCards } from "./receipt-suggestion-cards";
+import { StatusDot } from "./status-dot";
 
 type BoardRow = TaxInvoiceBoardRow & { checklistItemId: string | null };
 type Board = Omit<TaxInvoiceBoard, "rows"> & {
@@ -186,14 +187,18 @@ export function previousMonth(): string {
 }
 
 /**
- * 스캔 증거 1건을 셀 하나로 그린다. `VERIFIED`만 "확인됨"으로 읽혀야 하므로 그 상태에는
- * 색을 쓰지 않는다(매칭 여부 자체는 심각도 축이 아니다) — 색은 심각도 축인
- * `NEEDS_REVIEW`(urgent)·`unseen`/`partial`(caution)에만 쓴다.
+ * 스캔 증거 1건을 셀 하나로 그린다 — 낱말은 회계 일정 계산서 칸(`campaign-invoices.ts`
+ * INVOICE_MONTH_LABEL)과 같다: 확인대기 · 미발견 · 조회불가(상태 낱말 기준 2026-10-08,
+ * 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A5).
+ * 색은 점에만 싣고(P8 §3) 확인대기=info · 일부확인=caution · 나머지=회색으로 계산서 칸과 맞춘다.
  */
 export function EvidenceCell({ evidence }: { evidence: RowEvidence | null }) {
   if (!evidence) return null;
   switch (evidence.kind) {
     case "verified":
+      // 확인된 건은 「확인됨」을 무채색으로 남긴다 — 「메일함에서 확인」을 누른 오너가 기다리는 답이라
+      // 비우지 않는다(상태 낱말 기준 2026-10-08 D1: 오너가 답을 기다리는 단일 판정은 정상도 보인다).
+      // 확인된 건만 이 낱말로 읽힌다(계약 `tax-filing-evidence-states.contract.test.tsx`).
       return (
         <div>
           <span className="font-medium text-foreground">확인됨</span>
@@ -209,15 +214,21 @@ export function EvidenceCell({ evidence }: { evidence: RowEvidence | null }) {
       );
     case "partial":
       return (
-        <span className="text-status-caution-text">
-          일부만 확인 {evidence.verifiedCount}/{evidence.memberCount}건
-        </span>
+        <StatusDot
+          tone="caution"
+          label={`일부확인 ${evidence.verifiedCount}/${evidence.memberCount}`}
+          hint={`묶음 ${evidence.memberCount}건 중 ${evidence.verifiedCount}건만 메일에서 확인됐습니다.`}
+        />
       );
     case "needs_review":
       return (
-        <div className="text-status-urgent-text">
-          <span className="font-medium">확인 필요</span>
-          <ul className="mt-0.5 list-inside list-disc text-[10px]">
+        <div>
+          <StatusDot
+            tone="info"
+            label="확인대기"
+            hint="메일에서 후보를 찾았지만 금액·일자 등이 어긋나 오너 확인이 필요합니다. 아래가 어긋난 이유입니다."
+          />
+          <ul className="mt-0.5 list-inside list-disc text-[10px] text-muted-foreground">
             {evidence.reasons.map((reason) => (
               <li key={reason}>{reason}</li>
             ))}
@@ -229,24 +240,33 @@ export function EvidenceCell({ evidence }: { evidence: RowEvidence | null }) {
       // 오너가 실물 매입 계산서를 제시한 건에 대해, 그 국세청 메일이 편지함 **15개 폴더 전수**
       // 대조에서 발견되지 않았다(발행처가 이메일을 안 보냈거나 다른 주소로 갔거나 삭제됨).
       // 즉 스캔이 확인할 수 있는 사실은 「메일에 없다」까지이고, 「안 받았다」는 추론이다.
-      // 세무 신고 판단에 쓰는 화면에서 그 둘을 같은 말로 쓰면 안 된다.
+      // 세무 신고 판단에 쓰는 화면에서 그 둘을 같은 말로 쓰면 안 된다 — 그 구분은 설명창이 진다.
       return (
-        <div className="text-status-caution-text">
-          <span>메일 없음</span>
-          <div className="mt-0.5 text-[10px] text-muted-foreground">미수취 단정 아님</div>
-        </div>
+        <StatusDot
+          tone="neutral"
+          label="미발견"
+          hint="메일함에서 이 계산서 메일을 찾지 못했습니다. 미수취라는 뜻은 아닙니다(발행처가 메일을 안 보냈거나 다른 주소로 갔을 수 있습니다)."
+        />
       );
     case "unmatchable":
       // ⛔ 「미수취」라고 쓰지 않는다 — 상대 사업자번호가 없으면 계산서가 와 있어도
-      // 영원히 매칭되지 않는다. 오너가 할 일도 다르다(독촉이 아니라 번호 등록).
+      // 영원히 매칭되지 않는다. 오너가 할 일도 다르다(독촉이 아니라 번호 등록) — 그래서 낱말이
+      // 원인(「번호미등록」)이다. 「조회불가」와 한 글자 차이인 「대조불가」는 쓰지 않는다.
       return (
-        <div className="text-status-caution-text">
-          <span>대조 불가</span>
-          <div className="mt-0.5 text-[10px] text-muted-foreground">상대 사업자번호 미등록</div>
-        </div>
+        <StatusDot
+          tone="neutral"
+          label="번호미등록"
+          hint="상대 사업자번호가 등록되지 않아 메일과 맞춰 볼 수 없습니다. 거래처에 번호를 등록하면 풀립니다."
+        />
       );
     case "no_data":
-      return <span className="text-muted-foreground">스캔 대상 아님</span>;
+      return (
+        <StatusDot
+          tone="neutral"
+          label="조회불가"
+          hint="이번 메일 조회의 대상(기간·캠페인)에 들어 있지 않아 판단할 수 없습니다."
+        />
+      );
   }
 }
 

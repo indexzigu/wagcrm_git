@@ -107,16 +107,18 @@ function classifyUrgency(
   return "PREPARE";
 }
 
+// 행동은 짧은 명사구다 — 이 카드의 본업이 행동 안내라 설명창으로 숨기지 않고 본문에 남긴다
+// (상태 낱말 기준 2026-10-08, 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A7).
 function actionForUrgency(urgency: BucketUrgency): string | null {
   switch (urgency) {
     case "DANGER":
-      return "즉시 일정 확보 필요";
+      return "즉시확보";
     case "URGENT":
-      return "이번 주 내 일정 확정";
+      return "이번주확정";
     case "CAUTION":
-      return "셀러 제안 및 협의 가속";
+      return "제안가속";
     case "PREPARE":
-      return "딜 소싱 · 제안 준비";
+      return "소싱준비";
     case "OK":
       return null;
   }

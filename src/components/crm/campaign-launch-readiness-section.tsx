@@ -48,18 +48,21 @@ const LEVEL_META: Record<
   ReadinessLevel,
   { label: string; hint: string; badge: string }
 > = {
+  // 낱말 기준(2026-10-08, 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A11):
+  // 준비됨은 오너가 기다리는 답이라 비우지 않되 무채색이다(정상은 색을 받지 않는다, P8 §2).
+  // 「차단」이 아니라 「위반」인 이유 — CRM 이 실제로 막지 않는다. 풀이는 옆의 hint 가 이미 보인다.
   SHIP: {
     label: "준비됨",
     hint: "걸리는 항목이 없습니다",
-    badge: "bg-status-success-bg text-foreground",
+    badge: "bg-slate-100 text-slate-700",
   },
   FIX: {
-    label: "손볼 것 있음",
+    label: "보완",
     hint: "열 수는 있지만 성과를 깎는 항목이 있습니다",
     badge: "bg-status-caution-bg text-status-caution-text",
   },
   BLOCK: {
-    label: "열기 전 조치 필요",
+    label: "위반",
     hint: "법령·계정 리스크가 있는 항목입니다",
     badge: "bg-status-urgent-bg text-status-urgent-text",
   },
@@ -202,7 +205,7 @@ export function CampaignLaunchReadinessSection({
                           : "bg-status-caution-bg text-status-caution-text",
                       )}
                     >
-                      {item.level === "BLOCK" ? "조치 필요" : "손볼 것"}
+                      {item.level === "BLOCK" ? "위반" : "보완"}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {item.message}

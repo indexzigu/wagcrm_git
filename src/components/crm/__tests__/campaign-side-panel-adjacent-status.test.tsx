@@ -100,7 +100,7 @@ describe("CampaignSidePanel — 상태 스테퍼 인접 단계 규칙", () => {
 
     // The StatusStepper renders buttons for each status step.
     // For ACTIVE (index 2), PROPOSAL (index 0) is NOT adjacent (distance = 2), so it should be disabled.
-    const proposalButton = screen.getByRole("button", { name: /셀러 제안 중 \(1\/7\)/ });
+    const proposalButton = screen.getByRole("button", { name: /제안중 \(1\/7\)/ });
     expect(proposalButton).toBeDisabled();
   });
 
@@ -190,7 +190,7 @@ describe("CampaignSidePanel — 상태 스테퍼 인접 단계 규칙", () => {
     );
 
     // The StatusStepper renders buttons. For ACTIVE (index 2), CLOSED (index 3) is adjacent forward.
-    const closedButton = screen.getByRole("button", { name: /판매 마감 \(4\/7\)/ });
+    const closedButton = screen.getByRole("button", { name: /판매마감 \(4\/7\)/ });
     expect(closedButton).not.toBeDisabled();
 
     const user = userEvent.setup();

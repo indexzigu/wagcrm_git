@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  ACTION_TONE_WORD,
   formatCampaignActionDate,
   getCampaignAction,
 } from "@/lib/campaign-actions";
@@ -478,9 +479,10 @@ export function CampaignSidePanel({
           {
             label: action.label,
             value: formatCampaignActionDate(action.dueDate) ?? action.dueDate,
+            // 영문 판정 코드(overdue·today·upcoming)를 그대로 찍던 자리 — 카드와 같은 낱말로 옮긴다.
             detail: action.isStagnant
-              ? `${action.stagnantDays}d stagnant`
-              : action.tone,
+              ? `정체 ${action.stagnantDays}일`
+              : ACTION_TONE_WORD[action.tone],
           },
         ]
       : []),

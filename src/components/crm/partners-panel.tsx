@@ -660,7 +660,7 @@ export function PartnersPanel({
                     <SelectItem value="거래중">거래중</SelectItem>
                     <SelectItem value="거래중단">거래중단</SelectItem>
                     <SelectItem value="거래보류">거래보류</SelectItem>
-                    <SelectItem value="응답없음">응답없음</SelectItem>
+                    <SelectItem value="응답없음">무응답</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
@@ -1078,7 +1078,7 @@ export function PartnersPanel({
               { value: "거래중", label: "거래중" },
               { value: "거래중단", label: "거래중단" },
               { value: "거래보류", label: "거래보류" },
-              { value: "응답없음", label: "응답없음" },
+              { value: "응답없음", label: "무응답" },
             ]}
             onSave={(v) => patchPartner("status", v)}
           />

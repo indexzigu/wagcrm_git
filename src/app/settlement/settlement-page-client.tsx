@@ -473,7 +473,7 @@ interface CsvRow {
           "판매수수료": roundedFeeAmount,
           "순마진액": roundedNetMargin,
           "셀러정산액": roundedSellerPayout,
-          "상태": campaign.status === "COMPLETED" ? "정산 완료" : "정산 진행중",
+          "상태": campaign.status === "COMPLETED" ? "정산완료" : "정산중",
         });
 
         totalOrderCount += quantity;

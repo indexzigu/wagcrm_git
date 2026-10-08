@@ -137,7 +137,7 @@ describe("CampaignSidePanel workspace separation", () => {
     });
 
     expect(screen.getByText("단계 체크리스트")).toBeInTheDocument();
-    expect(screen.getAllByText("판매 진행 중").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("판매중").length).toBeGreaterThan(0);
     expect(screen.queryByText("연동 로그")).not.toBeInTheDocument();
     expect(screen.queryByText("정산 기초 정보")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "미입금" })).not.toBeInTheDocument();
@@ -152,7 +152,7 @@ describe("CampaignSidePanel workspace separation", () => {
     });
 
     expect(screen.getByText("단계 체크리스트")).toBeInTheDocument();
-    expect(screen.getAllByText("정산 대기").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("정산대기").length).toBeGreaterThan(0);
     expect(screen.queryByText("세금계산서 발행일")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "미입금" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "미지급" })).not.toBeInTheDocument();

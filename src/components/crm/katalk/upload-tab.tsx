@@ -569,7 +569,7 @@ function StatusBadge({
   if (isKatokAutoBlocked) {
     return (
       <Badge variant="outline" className="border-transparent bg-status-urgent-bg text-status-urgent-text text-[11px]">
-        자동 수집 방
+        자동수집방
       </Badge>
     );
   }
@@ -583,19 +583,19 @@ function StatusBadge({
     case "previewing":
       return (
         <Badge variant="status-info" className="text-[11px]">
-          미리보기 중
+          미리보기중
         </Badge>
       );
     case "previewed":
       return (
         <Badge variant="status-info" className="text-[11px]">
-          확정 대기
+          확정대기
         </Badge>
       );
     case "committing":
       return (
         <Badge variant="status-caution" className="text-[11px]">
-          업로드 중
+          업로드중
         </Badge>
       );
     case "committed":

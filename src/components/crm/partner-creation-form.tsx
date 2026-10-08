@@ -25,7 +25,7 @@ import {
   PARTNER_TYPES,
 } from "@/lib/validations/partner";
 import type { PartnerType } from "@/lib/validations/partner";
-import { partnerTypeLabels } from "@/lib/crm-types";
+import { partnerStatusLabel, partnerTypeLabels } from "@/lib/crm-types";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 import { formatBusinessNumber } from "@/lib/format";
 
@@ -186,9 +186,10 @@ export function PartnerCreationForm({
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
+                {/* value 는 저장값(한글 그대로), 보이는 낱말만 `partnerStatusLabel`(응답없음 → 무응답). */}
                 {["거래중", "거래보류", "응답없음", "거래중단"].map((status) => (
                   <SelectItem key={status} value={status}>
-                    {status}
+                    {partnerStatusLabel(status)}
                   </SelectItem>
                 ))}
               </SelectGroup>

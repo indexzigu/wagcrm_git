@@ -46,8 +46,8 @@ describe("MobileHomeRiskCard (홈 재구성 안 C — 오너 승인 2026-07-15)"
     expect(screen.getByText("리스크 신호")).toBeInTheDocument();
     expect(screen.getByText("2건")).toBeInTheDocument();
     // 유형별 칩
-    expect(screen.getByText("매출 음수 1")).toBeInTheDocument();
-    expect(screen.getByText("실매출 미입력 1")).toBeInTheDocument();
+    expect(screen.getByText("매출음수 1")).toBeInTheDocument();
+    expect(screen.getByText("실매출미입력 1")).toBeInTheDocument();
     // 상위 항목(캠페인명 + 문제 설명)
     expect(screen.getByText("비타민C 앰플 - 하늘맘")).toBeInTheDocument();
     expect(screen.getByText("매출이 음수로 입력됨")).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe("MobileHomeRiskCard (홈 재구성 안 C — 오너 승인 2026-07-15)"
     expect(screen.getByText("리스크 신호")).toBeInTheDocument();
     expect(screen.getByText("4건")).toBeInTheDocument();
     expect(screen.getByText("리마인더 지연 3")).toBeInTheDocument();
-    expect(screen.getByText("승인 대기 1")).toBeInTheDocument();
+    expect(screen.getByText("승인대기 1")).toBeInTheDocument();
   });
 
   it("상위 3건 초과분은 목록에 나열하지 않고 더보기 문구로 접는다", () => {

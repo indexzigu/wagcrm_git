@@ -7,6 +7,7 @@ import {
 } from "./linked-entity-section";
 import { Building2 } from "lucide-react";
 import { LinkSearchDialog } from "./link-search-dialog";
+import { partnerStatusLabel } from "@/lib/crm-types";
 
 // --- Types ---
 
@@ -35,12 +36,6 @@ export const partnerTypeLabels: Record<string, string> = {
   OTHER: "기타",
 };
 
-export const partnerStatusLabels: Record<string, string> = {
-  ACTIVE: "활성",
-  INACTIVE: "비활성",
-  PENDING: "대기중",
-};
-
 // --- Component ---
 
 export function LinkedPartnersList({
@@ -55,7 +50,8 @@ export function LinkedPartnersList({
 
   const linkedPartnerItems: LinkedEntityItem[] = partners.map((partner) => {
     const pType = partner.type ? partnerTypeLabels[partner.type] || partner.type : "";
-    const pStatus = partner.status ? partnerStatusLabels[partner.status] || partner.status : "";
+    // 거래처 목록과 같은 낱말(종전 「활성/비활성/대기중」은 같은 상태의 두 번째 어휘였다).
+    const pStatus = partnerStatusLabel(partner.status);
     
     return {
       id: partner.id,

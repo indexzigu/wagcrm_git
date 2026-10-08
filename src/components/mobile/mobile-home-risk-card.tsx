@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { INTEGRITY_ISSUE_WORD } from "@/lib/data-integrity-words";
 
 /**
  * 홈 "리스크 신호" 카드 — 모바일 홈 재구성 안 C (오너 승인 2026-07-15).
@@ -34,13 +35,14 @@ const INTEGRITY_META: Record<
   IntegrityIssue["type"],
   { chipLabel: string; variant: "status-urgent" | "status-caution" | "outline"; dot: string }
 > = {
-  NEGATIVE_SALES: { chipLabel: "매출 음수", variant: "status-urgent", dot: "bg-status-urgent" },
-  SETTLEMENT_INCOMPLETE: { chipLabel: "정산 불일치", variant: "status-caution", dot: "bg-status-caution" },
+  // 낱말은 데스크톱 데이터 점검 카드와 같은 표(`data-integrity-words.ts`)에서 온다.
+  NEGATIVE_SALES: { chipLabel: INTEGRITY_ISSUE_WORD.NEGATIVE_SALES, variant: "status-urgent", dot: "bg-status-urgent" },
+  SETTLEMENT_INCOMPLETE: { chipLabel: INTEGRITY_ISSUE_WORD.SETTLEMENT_INCOMPLETE, variant: "status-caution", dot: "bg-status-caution" },
   // 「반품기간까지 끝났는데 정산을 시작 안 함」(T-062). 데스크톱 데이터 점검 카드와 같은
   // 판정·같은 색을 쓴다 — 판정은 `computeDataIntegrityIssues` 한 곳이므로 두 화면이 갈릴 수 없다.
-  SETTLEMENT_NOT_STARTED: { chipLabel: "정산 미착수", variant: "status-caution", dot: "bg-status-caution" },
+  SETTLEMENT_NOT_STARTED: { chipLabel: INTEGRITY_ISSUE_WORD.SETTLEMENT_NOT_STARTED, variant: "status-caution", dot: "bg-status-caution" },
   // 최저 심각도(입력 누락)는 데스크톱 정본과 동일하게 뉴트럴 슬레이트로 낮춰 표기
-  MISSING_SALES: { chipLabel: "실매출 미입력", variant: "outline", dot: "bg-slate-400" },
+  MISSING_SALES: { chipLabel: INTEGRITY_ISSUE_WORD.MISSING_SALES, variant: "outline", dot: "bg-slate-400" },
 };
 
 /** 상위 항목 노출 수 — 얇은 경고 카드 유지(전량 나열 금지) */
@@ -55,7 +57,7 @@ export function MobileHomeRiskCard({
 }) {
   const outreachSignals = [
     { key: "overdueReminders", label: "리마인더 지연", count: exceptions.overdueReminders, variant: "status-caution" as const },
-    { key: "pendingApprovals", label: "승인 대기", count: exceptions.pendingApprovals, variant: "status-pending" as const },
+    { key: "pendingApprovals", label: "승인대기", count: exceptions.pendingApprovals, variant: "status-pending" as const },
   ].filter((signal) => signal.count > 0);
 
   const totalCount = issues.length + outreachSignals.reduce((sum, s) => sum + s.count, 0);

@@ -7,6 +7,7 @@ import {
 } from "./linked-entity-section";
 import { UserCircle2 } from "lucide-react";
 import { LinkSearchDialog } from "./link-search-dialog";
+import { taskStatusLabels } from "@/lib/crm-types";
 
 // --- Types ---
 
@@ -27,18 +28,6 @@ type LinkedTasksListProps = Omit<
   excludeIds?: string[];
 };
 
-const taskStatusLabels: Record<string, string> = {
-  TODO: "할 일",
-  IN_PROGRESS: "진행 중",
-  DONE: "완료",
-  ON_HOLD: "보류",
-  PROPOSED: "제안됨",
-  NEGOTIATION: "협의 중",
-  TESTING: "테스트 중",
-  PENDING_APPROVAL: "승인 대기",
-  CONVERTED: "캠페인 전환",
-  DROPPED: "종료",
-};
 
 // --- Component ---
 

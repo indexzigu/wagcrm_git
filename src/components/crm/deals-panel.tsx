@@ -503,7 +503,7 @@ function DealsPanelContent({
                   {[
                     { value: "SOURCING", label: "발굴" },
                     { value: "NEGOTIATING", label: "협의" },
-                    { value: "SAMPLE_TESTING", label: "샘플 테스트" },
+                    { value: "SAMPLE_TESTING", label: "샘플테스트" },
                     { value: "CONFIRMED", label: "확정" },
                   ].map((step) => {
                     const isCurrentStep = deal.status === step.value;
@@ -553,7 +553,8 @@ function DealsPanelContent({
                       : "text-muted-foreground hover:text-red-500 hover:bg-red-50/50",
                   )}
                 >
-                  보류
+                  {/* DROPPED 의 낱말은 「드랍」이다(오너 확정 2026-10-08) — 배지와 같은 말. */}
+                  드랍
                 </button>
               </div>
             </div>

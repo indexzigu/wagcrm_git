@@ -255,10 +255,10 @@ describe("ApprovalHub — 상태", () => {
 describe("ApprovalHub — 봇 활동", () => {
   const STATUS_CASES: Array<[string, string]> = [
     ["SUCCEEDED", "완료"],
-    ["RUNNING", "진행 중"],
+    ["RUNNING", "진행중"],
     ["RESOURCE_DEFERRED", "보류"],
-    ["NEEDS_APPROVAL", "승인 대기"],
-    ["FAILED_RETRYABLE", "재시도 중"],
+    ["NEEDS_APPROVAL", "승인대기"],
+    ["FAILED_RETRYABLE", "재시도중"],
     ["FAILED_FINAL", "실패"],
     ["FAILED_SECURITY", "차단됨"],
   ];

@@ -44,7 +44,7 @@ const CATEGORY_OPTIONS = [
 /** 심각도 → 표면별 토큰. tint 배경 위에서는 `-text` 짝을 쓴다(P8 §5). */
 const SEVERITY_STYLE = {
   BLOCK: {
-    label: "사용 불가",
+    label: "사용불가",
     chip: "bg-status-urgent-bg text-status-urgent-text",
     bar: "bg-status-urgent",
     // 본문 하이라이트에서 BLOCK/WARN이 색조로만 갈리면 색각 이상 사용자는
@@ -52,7 +52,7 @@ const SEVERITY_STYLE = {
     mark: "bg-status-urgent-bg text-status-urgent-text underline decoration-status-urgent decoration-2 underline-offset-2",
   },
   WARN: {
-    label: "확인 필요",
+    label: "주의",
     chip: "bg-status-caution-bg text-status-caution-text",
     bar: "bg-status-caution",
     mark: "bg-status-caution-bg text-status-caution-text",

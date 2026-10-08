@@ -59,9 +59,11 @@ export function MobileCampaignCard({
   const nextMoneySlot = resolveCampaignMoneySlots(campaign.salesChannel).find(
     (slot) => !campaign[slot.flagField],
   );
+  // 상대는 남긴다(「셀러 지급대기」) — 자사몰은 공급사·셀러 두 칸이 같은 「지급」이라 상대 없이는
+  // 구분이 안 된다(#453). 지시문 「~ 필요」는 쓰지 않는다(상태 낱말 기준 2026-10-08).
   const settlementState = nextMoneySlot
-    ? `${nextMoneySlot.counterpartLabel} ${nextMoneySlot.verb} 필요`
-    : "정산 완료";
+    ? `${nextMoneySlot.counterpartLabel} ${nextMoneySlot.verb}대기`
+    : "정산완료";
   // ₩ 프리픽스 — 홈 펄스·정산 카드·시트 금액 표기(₩1,234,567)와 동일 규약으로 통일.
   // null 은 프리픽스 전에 가드한다(안 하면 "₩-" 가 렌더된다) — mobile-sheet-card 등
   // 같은 규약을 쓰는 표면들의 "금액 미정" 관례를 그대로 따른다.
@@ -114,9 +116,12 @@ export function MobileCampaignCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={toneVariant(action.tone)} className="text-[10px] px-2 py-0.5 h-5">
-            {actionLabel}
-          </Badge>
+          {/* 할 일이 끝난 단계(정산완료·드랍)는 낱말이 없다 — 빈 배지를 그리지 않는다. */}
+          {actionLabel ? (
+            <Badge variant={toneVariant(action.tone)} className="text-[10px] px-2 py-0.5 h-5">
+              {actionLabel}
+            </Badge>
+          ) : null}
           {/* 세팅 대기의 "업데이트 지연"은 SSOT 에서 제거됐다(updatedAt = 배치 나이라
               구조적 오탐). 그 자리를 대신하는 실제 할 일 — 데스크톱 카드와 같은 판정
               (`campaign-setup.ts`)을 쓴다. 모바일은 오너가 현장에서 보는 표면이라

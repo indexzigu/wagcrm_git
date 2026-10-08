@@ -37,7 +37,7 @@ const SHEET_CASES: Array<[status: string, label: string, variant: string]> = [
   ["MAPPED", "매핑완료", "status-info"],
   // 「완료」 어휘지만 종착점이 아니다 — 검수는 끝났고 아직 딜에 반영 안 됨.
   ["REVIEWED", "검수완료", "status-info"],
-  ["APPLYING", "반영 중", "status-pending"],
+  ["APPLYING", "반영중", "status-pending"],
   ["APPLIED", "반영완료", "status-success"],
   ["EXTRACT_FAILED", "추출실패", "status-urgent"],
 ];
@@ -47,7 +47,7 @@ const MAPPING_CASES: Array<[status: string, label: string, variant: string]> = [
   ["UNMAPPED", "미매핑", "outline"],
   ["SUGGESTED", "제안됨", "status-pending"],
   ["MAPPED", "매핑확정", "status-info"],
-  ["NEW_DEAL", "신규 딜", "status-info"],
+  ["NEW_DEAL", "신규딜", "status-info"],
   ["APPLIED", "반영완료", "status-success"],
 ];
 
@@ -140,7 +140,7 @@ describe("반영 결과 카드와 시트 배지의 어휘 정합", () => {
     unmount();
 
     const { container: badge } = render(<PriceSheetStatusBadge status="APPLYING" />);
-    expect(cardBadge).toEqual({ label: "반영 중", variant: "status-pending" });
+    expect(cardBadge).toEqual({ label: "반영중", variant: "status-pending" });
     expect(renderedBadge(badge)).toEqual(cardBadge);
   });
 

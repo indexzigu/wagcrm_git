@@ -400,13 +400,23 @@ export function sketchFrameLabel(
   return hit ? SKETCH_FAILURE_LABEL[hit.reason] : SKETCH_STATUS_LABEL.failed;
 }
 
+// 프레임 안 낱말은 한 낱말이고, 종전 문장은 설명창(`SKETCH_STATUS_HINT`)으로 옮겼다(상태 낱말 기준
+// 2026-10-08, 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A18).
+// 이유를 아는 실패의 처방 문구(`SKETCH_FAILURE_LABEL`)는 낱말로 줄이지 않는다 — 오너가 할 일이 이유마다
+// 달라서 프레임에 그대로 보인다(오너 지적 2026-08-01).
 export const SKETCH_STATUS_LABEL: Record<SketchFrameStatus, string | null> = {
   ready: null,
   loading: null,
   idle: null,
-  failed: "시안 생성 실패",
-  skipped: `시안은 컷 ${MAX_SKETCHES_PER_GUIDE}개까지만 그립니다`,
-  unavailable: "이미지 저장소가 설정되지 않았습니다",
+  failed: "생성실패",
+  skipped: "생략",
+  unavailable: "미설정",
+};
+
+export const SKETCH_STATUS_HINT: Partial<Record<SketchFrameStatus, string>> = {
+  failed: "시안을 만들지 못했습니다.",
+  skipped: `시안은 컷 ${MAX_SKETCHES_PER_GUIDE}개까지만 그립니다.`,
+  unavailable: "이미지 저장소가 설정되지 않았습니다.",
 };
 
 /**

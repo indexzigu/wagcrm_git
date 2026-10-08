@@ -180,8 +180,10 @@ describe("get_pipeline_status 뷰", () => {
 
   it("단계별 카운트 뱃지와 totalCount, campaigns 목록을 렌더한다", () => {
     render(<View data={sampleData} />);
-    expect(screen.getAllByText(/ACTIVE/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/CLOSED/)).toBeInTheDocument();
+    // 영문 상태 코드를 그대로 찍지 않는다 — 캠페인 상태 낱말로 보인다(2026-10-08).
+    expect(screen.getAllByText(/판매중/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/판매마감/)).toBeInTheDocument();
+    expect(screen.queryByText(/ACTIVE|CLOSED/)).toBeNull();
     expect(screen.getByText(/총 4건/)).toBeInTheDocument();
     expect(screen.getByText("락토핏 골드")).toBeInTheDocument();
   });

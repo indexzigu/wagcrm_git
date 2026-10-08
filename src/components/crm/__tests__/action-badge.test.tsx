@@ -27,7 +27,7 @@ describe("ActionBadge Component", () => {
     };
     render(<ActionBadge task={task} referenceDate={refDate} />);
 
-    const badge = screen.getByText("1차 리마인드 권장");
+    const badge = screen.getByText("리마인드1차");
     expect(badge).toBeInTheDocument();
 
     const container = badge.parentElement;
@@ -43,7 +43,7 @@ describe("ActionBadge Component", () => {
     };
     render(<ActionBadge task={task} referenceDate={refDate} />);
 
-    const badge = screen.getByText("지정일 팔로업 필요");
+    const badge = screen.getByText("팔로업");
     expect(badge).toBeInTheDocument();
 
     const container = badge.parentElement;
@@ -61,7 +61,7 @@ describe("ActionBadge Component", () => {
       <ActionBadge task={task} referenceDate={refDate} onClick={handleClick} />
     );
     
-    const badge = screen.getByText("1차 리마인드 권장");
+    const badge = screen.getByText("리마인드1차");
     fireEvent.click(badge);
     
     expect(handleClick).toHaveBeenCalledTimes(1);

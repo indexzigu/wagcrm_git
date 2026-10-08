@@ -3,6 +3,14 @@ import { isStagnantAfterDays } from "./stagnant";
 
 export type CampaignActionTone = "overdue" | "today" | "upcoming" | "done";
 
+/** 기한 판정의 화면 낱말 — 판정 코드를 그대로 찍지 않는다. */
+export const ACTION_TONE_WORD: Record<CampaignActionTone, string> = {
+  overdue: "지연",
+  today: "오늘",
+  upcoming: "예정",
+  done: "—",
+};
+
 type CampaignAction = {
   label: string;
   dueDate: string | null;
@@ -11,15 +19,18 @@ type CampaignAction = {
   stagnantDays: number | null;
 };
 
+// 「다음 할 일」은 **명사 + 기한**으로 읽힌다(「셀러확정 10.12」) — 지시문(「~ 필요」)을 쓰지 않는다
+// (오너 확정 2026-10-08, 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A3).
+// 할 일이 끝난 단계(COMPLETED·DROPPED)는 낱말이 없다 — 기한도 없어 표면이 그리지 않는다.
 const ACTION_COPY: Record<CampaignStatus, { label: string; offsetDays: number | null }> = {
-  PROPOSAL: { label: "셀러 확정 필요", offsetDays: -3 },
-  PREPARATION: { label: "캠페인 오픈 준비", offsetDays: -1 },
-  ACTIVE: { label: "캠페인 마감일", offsetDays: 0 },
-  CLOSED: { label: "최종 매출 수집", offsetDays: 1 },
-  SETTLEMENT_WAIT: { label: "정산 대기 확인", offsetDays: 10 },
-  SETTLEMENT_IN_PROGRESS: { label: "정산 처리", offsetDays: 14 },
-  COMPLETED: { label: "완료", offsetDays: null },
-  DROPPED: { label: "드랍 처리 완료", offsetDays: null },
+  PROPOSAL: { label: "셀러확정", offsetDays: -3 },
+  PREPARATION: { label: "오픈준비", offsetDays: -1 },
+  ACTIVE: { label: "판매마감", offsetDays: 0 },
+  CLOSED: { label: "매출수집", offsetDays: 1 },
+  SETTLEMENT_WAIT: { label: "정산확인", offsetDays: 10 },
+  SETTLEMENT_IN_PROGRESS: { label: "정산처리", offsetDays: 14 },
+  COMPLETED: { label: "", offsetDays: null },
+  DROPPED: { label: "", offsetDays: null },
 };
 
 // 정체 임계는 `stagnant.ts`(SSOT)가 소유한다 — 여기 있던 두 번째 표는 크론과 값이

@@ -662,14 +662,17 @@ export type DashboardData = {
   partners?: PartnerSummary[];
 };
 
+// 상태 낱말은 붙여 쓴 한 낱말이다 — 문장·지시문을 쓰지 않는다(오너 확정 2026-10-08, 설계 정본:
+// docs/private/specs/2026-10-08-status-wording-proposal.md). 같은 상태를 다른 말로 부르지 않도록
+// 칸반 열 제목·부단계 배지(`badge-config.ts`)도 이 낱말을 그대로 쓴다.
 export const campaignStatusLabels: Record<CampaignStatus, string> = {
-  PROPOSAL: "셀러 제안 중",
-  PREPARATION: "세팅 대기",
-  ACTIVE: "판매 진행 중",
-  CLOSED: "판매 마감",
-  SETTLEMENT_WAIT: "정산 대기",
-  SETTLEMENT_IN_PROGRESS: "정산 진행",
-  COMPLETED: "정산 완료",
+  PROPOSAL: "제안중",
+  PREPARATION: "세팅대기",
+  ACTIVE: "판매중",
+  CLOSED: "판매마감",
+  SETTLEMENT_WAIT: "정산대기",
+  SETTLEMENT_IN_PROGRESS: "정산중",
+  COMPLETED: "정산완료",
   DROPPED: "드랍",
 };
 
@@ -677,9 +680,27 @@ export const dealStatusLabels: Record<DealStatus, string> = {
   SOURCING: "발굴",
   NEGOTIATING: "협의",
   CONFIRMED: "확정",
-  SAMPLE_TESTING: "샘플 테스트",
-  ARCHIVED: "완료",
-  DROPPED: "보류",
+  SAMPLE_TESTING: "샘플테스트",
+  // 오너 확정(2026-10-08): 딜의 DROPPED 는 「접음」이라 캠페인과 같은 「드랍」이고, ARCHIVED 는
+  // 캠페인 「정산완료」와 헷갈리지 않게 「종료」다. ⚠️ 영문 이름으로 뜻을 짐작하지 말 것 —
+  // 매칭(`deal-seller-matching.ts`)은 ARCHIVED 를 재진행 모집단으로 쓴다(낱말만 바뀌었다).
+  ARCHIVED: "종료",
+  DROPPED: "드랍",
+};
+
+// 업무(영업 태스크) 상태 낱말. 영업 단계(PROPOSED~DROPPED)는 영업 관리 화면(`app/outreach/page.tsx` OUTREACH_STAGE_LABELS)과 같은
+// 낱말이다 — 같은 단계를 두 화면이 다른 말로 부르지 않는다(상태 낱말 기준 2026-10-08).
+export const taskStatusLabels: Record<string, string> = {
+  TODO: "할일",
+  IN_PROGRESS: "진행중",
+  DONE: "완료",
+  ON_HOLD: "보류",
+  PROPOSED: "제안중",
+  NEGOTIATION: "협의중",
+  TESTING: "테스트중",
+  PENDING_APPROVAL: "승인대기",
+  CONVERTED: "전환완료",
+  DROPPED: "드랍",
 };
 
 export const salesChannelLabels: Record<SalesChannel, string> = {
@@ -714,6 +735,23 @@ export const partnerTypeLabels: Record<PartnerType, string> = {
 
 export function normalizePartnerStatus(status: string | null | undefined): string {
   return status === "ACTIVE" ? "거래중" : status ?? "";
+}
+
+/**
+ * 거래처 상태의 **화면 낱말**. 저장값이 두 벌이다 — 영문 코드(ACTIVE·INACTIVE·PENDING)와 등록 폼이
+ * 그대로 저장하는 한글(거래중·거래보류·응답없음·거래중단). ⛔ 저장값을 바꾸지 말 것: 선택 상자의
+ * value 는 `normalizePartnerStatus` 가 맡고, 이 함수는 표시만 한다(영문 코드가 화면에 새던 결함 수정).
+ */
+const PARTNER_STATUS_DISPLAY: Record<string, string> = {
+  ACTIVE: "거래중",
+  INACTIVE: "거래중단",
+  PENDING: "거래보류",
+  응답없음: "무응답",
+};
+
+export function partnerStatusLabel(status: string | null | undefined): string {
+  if (!status) return "";
+  return PARTNER_STATUS_DISPLAY[status] ?? status;
 }
 
 export const snsTypeLabels: Record<SnsType, string> = {

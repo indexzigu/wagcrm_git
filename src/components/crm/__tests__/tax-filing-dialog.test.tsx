@@ -1013,7 +1013,7 @@ describe("세무 처리 다이얼로그 — 수취 메일함 확인", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "메일함에서 확인" }));
 
-    expect(await screen.findByText("확인 필요")).toBeInTheDocument();
+    expect(await screen.findByText("확인대기")).toBeInTheDocument();
     expect(
       screen.getByText("금액이 다릅니다. 계산서 150,000원 vs 정산 200,000원 (차이 -50,000원)."),
     ).toBeInTheDocument();
@@ -1110,8 +1110,8 @@ describe("세무 처리 다이얼로그 — 수취 메일함 확인", () => {
     await screen.findByText("확인됨공급사");
     fireEvent.click(screen.getByRole("button", { name: "메일함에서 확인" }));
 
-    expect(await screen.findByText("메일 없음")).toBeInTheDocument();
-    expect(screen.getByText("미수취 단정 아님")).toBeInTheDocument();
+    // 「미수취가 아니다」라는 풀이는 설명창으로 옮겼다(상태 낱말 기준 2026-10-08) — 칸에는 「미발견」 한 낱말.
+    expect(await screen.findByText("미발견")).toBeInTheDocument();
     // 음성 대조군 — 단정형 문구가 되살아나면 실패한다.
     expect(screen.queryByText("미수취(스캔에 없음)")).not.toBeInTheDocument();
   });

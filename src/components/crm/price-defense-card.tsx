@@ -40,10 +40,11 @@ export type PriceOverview = {
 // 도트로만 표현한다(텍스트는 전부 무채색 — 색은 도트 캐리어에만).
 const LEGEND: Array<{ key: keyof PriceOverview["counts"]; label: string; dotClass: string }> = [
   { key: "ok", label: "정상", dotClass: "bg-emerald-600" },
-  { key: "tie", label: "동가", dotClass: "bg-slate-400" },
+  // 점 색은 감시 표의 행(`market-price-monitor.tsx` VERDICT_BADGE)과 같아야 한다 — 같은 값은 같은 색(P8 §1).
+  { key: "tie", label: "동가", dotClass: "bg-status-caution" },
   { key: "violated", label: "위반", dotClass: "bg-status-urgent" },
   { key: "review", label: "검토", dotClass: "bg-status-caution" },
-  { key: "noData", label: "데이터 없음", dotClass: "bg-slate-300" },
+  { key: "noData", label: "비교불가", dotClass: "bg-slate-400" },
 ];
 
 function formatWon(value: number): string {

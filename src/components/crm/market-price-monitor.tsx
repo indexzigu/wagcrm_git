@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Loader2, Search, ExternalLink, RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Search, ExternalLink, RefreshCw, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import {
   Dialog,
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusDot, type StatusTone } from "./status-dot";
 import { evaluateMarketPrice, type EvaluatedCandidate } from "@/lib/price-monitor/pipeline";
 import type { PriceVerdict } from "@/lib/price-monitor/verdict";
 import type { OutlierReason } from "@/lib/price-monitor/outlier";
@@ -53,12 +54,19 @@ const EXCLUDE_REASON_LABEL: Record<OutlierReason, string> = {
   QUANTITY_MISMATCH: "수량 불일치",
 };
 
-const VERDICT_BADGE: Record<PriceVerdict, { label: string; className: string }> = {
-  OK: { label: "최저가 유지 중", className: "text-status-success" },
-  TIE: { label: "동가(±1%)", className: "text-status-caution-text" },
-  VIOLATED: { label: "최저가 경쟁력 위험", className: "text-rose-600" },
-  REVIEW: { label: "검토 필요 · 일치율 낮음", className: "text-status-caution-text" },
-  NO_DATA: { label: "비교 데이터 없음", className: "text-slate-500" },
+// 판정 낱말은 범례(`price-defense-card.tsx` LEGEND)와 같은 한 낱말이다(상태 낱말 기준 2026-10-08,
+// 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A10). 유지(OK)는 할 일이 없어
+// 낱말 대신 「—」. 종전 라벨에 붙어 있던 풀이(±1%·일치율 낮음)는 `hint` 설명창으로 옮겼다.
+// 위반 색은 원시 rose-600 대신 상태 토큰(P8 가드레일 2).
+const VERDICT_BADGE: Record<
+  PriceVerdict,
+  { label: string; className: string; tone: StatusTone | null; hint?: string }
+> = {
+  OK: { label: "—", className: "text-slate-500", tone: null },
+  TIE: { label: "동가", className: "text-status-caution-text", tone: "caution", hint: "최저가와 ±1% 이내입니다." },
+  VIOLATED: { label: "위반", className: "text-status-urgent-text", tone: "urgent", hint: "우리 판매가보다 싼 곳이 있습니다." },
+  REVIEW: { label: "검토", className: "text-status-caution-text", tone: "caution", hint: "상품명 일치율이 낮아 자동 판정을 보류했습니다." },
+  NO_DATA: { label: "비교불가", className: "text-slate-500", tone: "neutral", hint: "비교할 수 있는 유효 후보가 없습니다." },
 };
 
 export function MarketPriceMonitor({
@@ -321,17 +329,19 @@ export function MarketPriceMonitor({
                       </div>
                     ) : isSearched ? (
                       <div>
-                        <div className={`text-xs font-bold flex items-center gap-1 ${VERDICT_BADGE[verdict].className}`}>
-                          {verdict === "OK" && <CheckCircle2 className="w-3.5 h-3.5" />}
-                          {verdict === "VIOLATED" && <AlertTriangle className="w-3.5 h-3.5" />}
-                          {verdict === "REVIEW" && <AlertTriangle className="w-3.5 h-3.5" />}
-                          <Badge
-                            variant="secondary"
-                            className={`shadow-none px-1.5 py-0 text-[10px] font-semibold bg-transparent ${VERDICT_BADGE[verdict].className}`}
-                          >
-                            {VERDICT_BADGE[verdict].label}
-                          </Badge>
-                        </div>
+                        {VERDICT_BADGE[verdict].tone ? (
+                          // 머리 줄 전체가 펼치기 클릭 영역이라 설명창 트리거의 클릭이 줄을 접고 펴지 않게 막는다
+                          // (트리거가 있을 때만 — 「—」 주변 클릭은 그대로 줄을 편다).
+                          <div className="flex items-center" onClick={(event) => event.stopPropagation()}>
+                            <StatusDot
+                              tone={VERDICT_BADGE[verdict].tone}
+                              label={VERDICT_BADGE[verdict].label}
+                              hint={VERDICT_BADGE[verdict].hint}
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-500">{VERDICT_BADGE[verdict].label}</span>
+                        )}
                         {diffText && <div className={`text-[9px] mt-0.5 ${VERDICT_BADGE[verdict].className}`}>{diffText}</div>}
                         {verdict === "NO_DATA" && (
                           <div className="text-[9px] mt-0.5 text-slate-500">

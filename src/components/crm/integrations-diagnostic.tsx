@@ -4,9 +4,7 @@ import { useState } from "react";
 import {
   FolderOpen,
   Calendar,
-  CheckCircle2,
   AlertTriangle,
-  XCircle,
   Play,
   CloudLightning,
   ExternalLink,
@@ -18,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CalendarOrphanCleanupDialog } from "@/components/crm/calendar-orphan-cleanup-dialog";
-import { Badge } from "@/components/ui/badge";
+import { StatusDot, type StatusTone } from "@/components/crm/status-dot";
 
 type IntegrationStatus = {
   connected: boolean;
@@ -177,22 +175,22 @@ export function IntegrationsDiagnostic({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const statusMap = {
-    CONNECTED: {
-      label: "정상 연동됨",
-      color: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30",
-      icon: <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />,
-    },
-    DISCONNECTED: {
-      label: "연결 해제됨",
-      color: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
-      icon: <AlertTriangle className="size-4 text-slate-400 shrink-0" />,
-    },
-    ERROR: {
-      label: "인증 에러",
-      color: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/30",
-      icon: <XCircle className="size-4 text-rose-500 shrink-0" />,
-    },
+  // 낱말 기준(2026-10-08, 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A14):
+  // 연동 목록은 항목마다 연결 여부가 곧 내용이라 정상도 보이되 **무채색 글자**로만, 손이 필요한
+  // 상태만 점 + 낱말이다. 색은 원시 emerald/rose 대신 상태 토큰(P8 가드레일 2).
+  const statusMap: Record<string, { label: string; tone: StatusTone | null; hint?: string }> = {
+    CONNECTED: { label: "연동됨", tone: null },
+    DISCONNECTED: { label: "해제됨", tone: "caution", hint: "연결이 끊겨 있습니다. 「연결」로 다시 이으세요." },
+    ERROR: { label: "인증오류", tone: "urgent", hint: "토큰 만료 등으로 인증이 실패했습니다. 다시 연결해야 합니다." },
+  };
+  const renderStatus = (status: string) => {
+    const meta = statusMap[status];
+    if (!meta) return <span className="text-[11px] font-medium text-slate-600">{status}</span>;
+    return meta.tone ? (
+      <StatusDot tone={meta.tone} label={meta.label} hint={meta.hint} />
+    ) : (
+      <span className="text-xs font-medium text-slate-600">{meta.label}</span>
+    );
   };
 
   return (
@@ -225,12 +223,7 @@ export function IntegrationsDiagnostic({
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                       구글 드라이브 (Google Drive)
-                      <Badge variant="outline" className={`py-0.5 px-2 text-[10px] font-semibold border ${statusMap[drive.status].color}`}>
-                        <span className="flex items-center gap-1">
-                          {statusMap[drive.status].icon}
-                          {statusMap[drive.status].label}
-                        </span>
-                      </Badge>
+                      {renderStatus(drive.status)}
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">대용량 마케팅 에셋 및 아카이빙 영구 보존 스토리지</p>
                   </div>
@@ -300,12 +293,7 @@ export function IntegrationsDiagnostic({
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                       구글 캘린더 (Google Calendar)
-                      <Badge variant="outline" className={`py-0.5 px-2 text-[10px] font-semibold border ${statusMap[calendar.status].color}`}>
-                        <span className="flex items-center gap-1">
-                          {statusMap[calendar.status].icon}
-                          {statusMap[calendar.status].label}
-                        </span>
-                      </Badge>
+                      {renderStatus(calendar.status)}
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">캠페인 일정 및 입금/출금 예정일 자동 캘린더 등록</p>
                   </div>

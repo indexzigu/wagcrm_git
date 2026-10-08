@@ -14,6 +14,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { INTEGRITY_ISSUE_WORD } from "@/lib/data-integrity-words";
+import { StatusDot } from "./status-dot";
 
 type Issue = DesktopDashboardData["dataIntegrityIssues"][number];
 
@@ -51,10 +53,11 @@ function IssueRow({ issue }: { issue: Issue }) {
           `정산완료 처리됐으나 공급사 지급 미확인` 이 169px 를 차지해 이름에 50px 만 남겼고,
           T-062 의 묶음 라벨은 205px 로 이름을 13px 까지 밀어냈다(사실상 소실). 진단이 신원을
           밀어내는 구조였다. 지금은 flex 가 둘로 나누고, 잘린 쪽은 `title` 로 복구된다. */}
-      <div className="flex min-w-0 items-center gap-3 text-[11px] tabular-nums ml-2">
-        <span className={`truncate ${s.tagText}`} title={issue.label}>
-          {issue.label}
-        </span>
+      {/* 라벨은 유형 낱말(모바일 리스크 카드와 같은 말)이고, 종전 문장(멤버 수·미확인 칸·지연 일수)은
+          설명창으로 옮겼다(상태 낱말 기준 2026-10-08). 심각도 색은 왼쪽 점 한 캐리어에만 있으므로
+          여기서는 점을 끄고 무채색 낱말로 둔다. */}
+      <div className="flex min-w-0 items-center gap-3 tabular-nums ml-2">
+        <StatusDot tone="neutral" showDot={false} label={INTEGRITY_ISSUE_WORD[issue.type]} hint={issue.label} className={`text-[11px] ${s.tagText}`} />
       </div>
     </li>
   );
@@ -140,20 +143,17 @@ export function DataIntegrityCard({ issues }: { issues: Issue[] }) {
           <h3 className="shrink-0 text-sm font-bold text-[var(--primary)] tracking-tight">데이터 점검</h3>
           {/* 배지는 caution 토큰으로 수렴(오너 2026-07-24). 0건이면 success "이상 없음" */}
           {isClean ? (
-            <Badge
-              variant="outline"
-              size="compact"
-              className="shrink-0 font-bold bg-status-success-bg text-status-success border-status-success/20"
-            >
-              이상 없음
-            </Badge>
+            // 이상이 없으면 할 일이 없다 — 낱말 대신 「—」(상태 낱말 기준 2026-10-08).
+            <span className="shrink-0 text-xs text-muted-foreground">
+              —<span className="sr-only">이상 없음</span>
+            </span>
           ) : (
             <Badge
               variant="outline"
               size="compact"
               className="shrink-0 font-bold bg-[var(--status-caution-bg)] text-[var(--status-caution-text)] border-[var(--status-caution-text)]/15"
             >
-              {issues.length}건 확인 필요
+              점검 {issues.length}
             </Badge>
           )}
           <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground" title="정산·매출 처리에서 사람이 확인해야 할 항목입니다.">

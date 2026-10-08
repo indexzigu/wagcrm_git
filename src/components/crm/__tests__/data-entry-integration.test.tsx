@@ -338,8 +338,8 @@ describe("Integration: Inline edit → API → toast feedback", () => {
     );
 
     // The StatusStepper renders buttons for each status step.
-    // For ACTIVE status, the adjacent forward step "판매 마감" (CLOSED) is clickable.
-    const closedStepButton = screen.getByRole("button", { name: /판매 마감 \(4\/7\)/ });
+    // For ACTIVE status, the adjacent forward step "판매마감" (CLOSED) is clickable.
+    const closedStepButton = screen.getByRole("button", { name: /판매마감 \(4\/7\)/ });
     expect(closedStepButton).not.toBeDisabled();
     fireEvent.click(closedStepButton);
 

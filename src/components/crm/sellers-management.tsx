@@ -246,12 +246,9 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
         // 진행 횟수는 그래도 보여준다: 이미 아는 값이고, 다른 티어와 2단 레이아웃이 맞는다.
         return (
           <span className="inline-flex flex-col items-center leading-tight">
-            <span
-              aria-label="휴면 판정 불가"
-              className="text-xs text-slate-500"
-              title="판정에 필요한 과거 진행 기록이 없습니다"
-            >
-              —
+            {/* 「—」는 건강(할 일 없음)에 쓰므로 판정불가는 낱말로 구분한다(같은 열에서 둘이 같아 보이지 않게). */}
+            <span className="text-[10px] text-slate-500" title="판정에 필요한 과거 진행 기록이 없습니다">
+              {DORMANCY_TIER_LABEL.UNKNOWN}
             </span>
             <span className="text-[10px] text-slate-500 tabular-nums">진행 {row.runCount}회</span>
           </span>
@@ -259,6 +256,10 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
       }
       return (
         <span className="inline-flex flex-col items-center leading-tight">
+          {verdict.tier === "HEALTHY" ? (
+            // 건강은 할 일이 없다 — 낱말 대신 「—」(상태 낱말 기준 2026-10-08). 휴면만 손이 필요하다.
+            <span className="text-xs text-slate-500" title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과`}>—</span>
+          ) : (
           <span
             className={cn(
               "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0",
@@ -270,6 +271,7 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
           >
             {DORMANCY_TIER_LABEL[verdict.tier]}
           </span>
+          )}
           {/* 진행 횟수를 함께 노출한다 — "재접촉으로 되살릴 휴면"과 "첫 거래 후 이탈"은
               개입이 다른데, 횟수가 없으면 둘이 구분되지 않는다. 제외 구간의 상당수가
               진행 1회뿐이라 이 구분이 실제로 갈린다.
@@ -285,7 +287,10 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
     width: 90,
     align: "center",
     render: (row) => {
-      const fit = row.fitLevel || "비추천";
+      // 값이 없으면 「—」다. ⛔ 종전 `|| "비추천"` 은 아직 평가하지 않은 셀러를 비추천으로 보였다
+      // (미입력을 낙제로 — `seller-fit.ts` 가 고친 것과 같은 부류, 2026-10-08).
+      const fit = row.fitLevel;
+      if (!fit) return <span className="text-xs text-slate-500" title="아직 평가하지 않음">—</span>;
       // 리터럴 → 상태 토큰 정렬(D2 곁다리). 이 배지는 **회수 대상이 아니다** — 평가는 판단이라 색이
       // 맞다. 바꾼 건 색의 유무가 아니라 "표준을 가리키지 않고 직접 적어둔 것"이다.
       //
@@ -309,7 +314,7 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
       };
 
       return (
-        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeColors[fit] || badgeColors.비추천} shrink-0`}>
+        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${badgeColors[fit] ?? badgeColors.미진행} shrink-0`}>
           {fit}
         </span>
       );

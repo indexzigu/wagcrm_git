@@ -254,7 +254,7 @@ function Money({ value, tone = false }: { value: number | null; tone?: boolean }
     // 대비 하한 준수 — P8 데이터 그리드 3단 사다리가 소극 상태의 하한을 slate-500 으로
     // 못박았고, 같은 표의 보조 셀(기간·마지막 클릭)이 이미 이 처리를 쓴다. slate-400 은
     // 흰 카드에서 2.57:1 로 AA 미달이다.
-    return <span className="text-xs text-muted-foreground">정산 대기</span>;
+    return <span className="text-xs text-muted-foreground">정산대기</span>;
   }
   // ⚠️ 손익 판정색은 **부호가 뒤집힐 수 있는 값**에만 얹는다(P8: 색은 주의가 필요한
   // 소수에만). 매출은 항상 양수라 색을 주면 늘 초록이고, 그건 정보가 없는 장식이 된다.

@@ -86,7 +86,7 @@ describe("ClaimCheckerPanel", () => {
     await user.click(screen.getByRole("option", { name: "화장품" }));
 
     expect(screen.getByText(/표현 1건/)).toBeInTheDocument();
-    expect(screen.getByText("사용 불가")).toBeInTheDocument();
+    expect(screen.getByText("사용불가")).toBeInTheDocument();
     expect(screen.getByText("화장품법 §13")).toBeInTheDocument();
   });
 
@@ -180,7 +180,7 @@ describe("ClaimCheckerPanel", () => {
     );
 
     // 승인된 것만 걸린다 — PROPOSED("한정 수량")는 하이라이트되지 않는다.
-    expect(screen.getByText("사용 불가")).toBeInTheDocument();
+    expect(screen.getByText("사용불가")).toBeInTheDocument();
     const marks = screen
       .getByLabelText("검사 결과 본문")
       .querySelectorAll("mark");

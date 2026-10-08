@@ -41,9 +41,9 @@ function makeCampaign(overrides: Partial<CampaignRow> = {}): CampaignRow {
 }
 
 const TARGETS = [
-  { status: "PREPARATION", label: "판매 대기" },
-  { status: "ACTIVE", label: "판매 진행" },
-  { status: "CLOSED", label: "판매 마감" },
+  { status: "PREPARATION", label: "세팅대기" },
+  { status: "ACTIVE", label: "판매중" },
+  { status: "CLOSED", label: "판매마감" },
 ] as const;
 
 async function openStageSubmenu(user: ReturnType<typeof userEvent.setup>, trigger: HTMLElement) {
@@ -73,10 +73,10 @@ describe("CampaignCard — 단계 이동 메뉴(키보드 경로)", () => {
 
     const sub = await openStageSubmenu(user, screen.getByRole("button", { name: "캠페인 메뉴" }));
     const labels = within(sub).getAllByRole("menuitem").map((el) => el.textContent);
-    expect(labels).toEqual(["판매 대기", "판매 마감"]);
+    expect(labels).toEqual(["세팅대기", "판매마감"]);
 
     await user.keyboard("{ArrowDown}");
-    const closedItem = within(sub).getByRole("menuitem", { name: "판매 마감" });
+    const closedItem = within(sub).getByRole("menuitem", { name: "판매마감" });
     closedItem.focus();
     await user.keyboard("{Enter}");
 
@@ -187,9 +187,9 @@ describe("ExecutionKanbanBoard — 메뉴로 단계 이동", () => {
     renderBoard();
     const sub = await openStageSubmenu(user, menuTriggerOf("진행 딜"));
     expect(within(sub).getAllByRole("menuitem").map((el) => el.textContent)).toEqual([
-      "판매 대기",
-      "판매 마감",
-      "정산 대기",
+      "세팅대기",
+      "판매마감",
+      "정산대기",
     ]);
   });
 
@@ -197,7 +197,7 @@ describe("ExecutionKanbanBoard — 메뉴로 단계 이동", () => {
     const user = userEvent.setup();
     const onStatusChange = renderBoard();
     const sub = await openStageSubmenu(user, menuTriggerOf("진행 딜"));
-    const target = within(sub).getByRole("menuitem", { name: "판매 마감" });
+    const target = within(sub).getByRole("menuitem", { name: "판매마감" });
     target.focus();
     await user.keyboard("{Enter}");
 
@@ -205,7 +205,7 @@ describe("ExecutionKanbanBoard — 메뉴로 단계 이동", () => {
     await waitFor(() => {
       expect((document.activeElement as HTMLElement | null)?.dataset.campaignCardId).toBe("camp-live");
     });
-    const closedColumn = screen.getByRole("heading", { name: "판매 마감" }).closest("div.crm-horizontal-accent")!;
+    const closedColumn = screen.getByRole("heading", { name: "판매마감" }).closest("div.crm-horizontal-accent")!;
     expect(within(closedColumn as HTMLElement).getByText("진행 딜")).toBeTruthy();
   });
 
@@ -213,13 +213,13 @@ describe("ExecutionKanbanBoard — 메뉴로 단계 이동", () => {
     const user = userEvent.setup();
     const onStatusChange = renderBoard(vi.fn().mockRejectedValue(new Error("그룹 충돌")));
     const sub = await openStageSubmenu(user, menuTriggerOf("진행 딜"));
-    const target = within(sub).getByRole("menuitem", { name: "판매 마감" });
+    const target = within(sub).getByRole("menuitem", { name: "판매마감" });
     target.focus();
     await user.keyboard("{Enter}");
 
     expect(onStatusChange).toHaveBeenCalledWith("camp-live", "CLOSED");
     await waitFor(() => {
-      const liveColumn = screen.getByRole("heading", { name: "판매 진행" }).closest("div.crm-horizontal-accent")!;
+      const liveColumn = screen.getByRole("heading", { name: "판매중" }).closest("div.crm-horizontal-accent")!;
       expect(within(liveColumn as HTMLElement).getByText("진행 딜")).toBeTruthy();
     });
   });

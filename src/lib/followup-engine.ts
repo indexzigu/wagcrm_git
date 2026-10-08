@@ -12,6 +12,7 @@ export interface FollowUpBadgeColor {
 
 export interface FollowUpAction {
   type: FollowUpType;
+  /** 명사 낱말(「리마인드2차」) — 지시문(「~ 필요」「~ 권장」)을 쓰지 않는다(상태 낱말 기준 2026-10-08). */
   label: string;
   badgeColor: FollowUpBadgeColor;
   elapsedDays: number;
@@ -79,7 +80,7 @@ export function calculateFollowUp(
     if (diff >= 0) {
       return {
         type: "MANUAL_REMINDER",
-        label: "지정일 팔로업 필요",
+        label: "팔로업",
         badgeColor: BADGE_COLORS.MANUAL_REMINDER,
         elapsedDays: diff,
       };
@@ -98,14 +99,14 @@ export function calculateFollowUp(
     if (diff >= 28) {
       return {
         type: "2ND_REMINDER",
-        label: "2차 리마인드 권장",
+        label: "리마인드2차",
         badgeColor: BADGE_COLORS["2ND_REMINDER"],
         elapsedDays: diff,
       };
     } else if (diff >= 14) {
       return {
         type: "1ST_REMINDER",
-        label: "1차 리마인드 권장",
+        label: "리마인드1차",
         badgeColor: BADGE_COLORS["1ST_REMINDER"],
         elapsedDays: diff,
       };
@@ -118,7 +119,7 @@ export function calculateFollowUp(
     if (diff >= 14) {
       return {
         type: "SAMPLE_CHECK",
-        label: "샘플 진행상황 체크 요망",
+        label: "샘플확인",
         badgeColor: BADGE_COLORS.SAMPLE_CHECK,
         elapsedDays: diff,
       };

@@ -55,13 +55,13 @@ describe("BotActivityTable", () => {
 
   it.each([
     ["SUCCEEDED", "완료"],
-    ["QUEUED", "진행 중"],
-    ["CLAIMED", "진행 중"],
-    ["RUNNING", "진행 중"],
+    ["QUEUED", "진행중"],
+    ["CLAIMED", "진행중"],
+    ["RUNNING", "진행중"],
     ["NEEDS_EXTERNAL_EXECUTOR", "보류"],
     ["RESOURCE_DEFERRED", "보류"],
-    ["NEEDS_APPROVAL", "승인 대기"],
-    ["FAILED_RETRYABLE", "재시도 중"],
+    ["NEEDS_APPROVAL", "승인대기"],
+    ["FAILED_RETRYABLE", "재시도중"],
     ["FAILED_FINAL", "실패"],
     ["FAILED_SECURITY", "차단됨"],
   ])("상태 %s 는 %s 로 보여준다", (status, label) => {

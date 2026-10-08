@@ -16,13 +16,13 @@ type BadgeVariant = React.ComponentProps<typeof Badge>["variant"];
  */
 export const STATUS_BADGE: Record<string, { label: string; variant: BadgeVariant }> = {
   SUCCEEDED: { label: "완료", variant: "status-success" },
-  QUEUED: { label: "진행 중", variant: "outline" },
-  CLAIMED: { label: "진행 중", variant: "outline" },
-  RUNNING: { label: "진행 중", variant: "outline" },
+  QUEUED: { label: "진행중", variant: "outline" },
+  CLAIMED: { label: "진행중", variant: "outline" },
+  RUNNING: { label: "진행중", variant: "outline" },
   NEEDS_EXTERNAL_EXECUTOR: { label: "보류", variant: "outline" },
   RESOURCE_DEFERRED: { label: "보류", variant: "outline" },
-  NEEDS_APPROVAL: { label: "승인 대기", variant: "status-pending" },
-  FAILED_RETRYABLE: { label: "재시도 중", variant: "status-caution" },
+  NEEDS_APPROVAL: { label: "승인대기", variant: "status-pending" },
+  FAILED_RETRYABLE: { label: "재시도중", variant: "status-caution" },
   FAILED_FINAL: { label: "실패", variant: "destructive" },
   FAILED_SECURITY: { label: "차단됨", variant: "destructive" },
 };

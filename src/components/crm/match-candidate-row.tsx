@@ -33,11 +33,19 @@ export function PriorityBadge() {
 }
 
 export function DormancyBadge({ verdict }: { verdict: DormancyVerdict }) {
+  // 건강은 할 일이 없다 — 낱말 대신 「—」(상태 낱말 기준 2026-10-08, 셀러 목록 「거래 리듬」 열과 같다).
+  if (verdict.tier === "HEALTHY") {
+    return (
+      <span className="text-[10px] text-slate-500" title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과`}>
+        —
+      </span>
+    );
+  }
   if (verdict.tier === "UNKNOWN") {
     // 과거 진행 0건은 '판정 불가'다 — 0일(=건강)로 그리지 않는다.
     return (
       <span className="text-[10px] text-slate-500" title="판정에 필요한 과거 진행 기록이 없습니다">
-        —
+        {DORMANCY_TIER_LABEL.UNKNOWN}
       </span>
     );
   }
