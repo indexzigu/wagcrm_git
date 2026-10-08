@@ -434,8 +434,8 @@ describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
     const periodRow = body.slice(body.indexOf("</h2>"));
     expect(periodRow).toContain('<div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 mt-1">');
     expect(periodRow).toContain("{opening && <TimingBadgeView badge={opening} />}");
-    // 판매중 카드의 기간 줄도 같은 줄바꿈 안전장치.
-    expect(src).toMatch(/<div className="flex min-w-0 flex-wrap items-center gap-x-1\.5 gap-y-1">\s*<p className="text-\[11px\] text-slate-500">\{camp\.salePeriod\}<\/p>\s*\{deadline && <TimingBadgeView badge=\{deadline\} \/>\}/);
+    // 판매중 카드의 기간 줄도 같은 줄바꿈 안전장치. 만료 카드는 칩이 「판매종료」를 말해 배지를 숨긴다(2026-10-08).
+    expect(src).toMatch(/<div className="flex min-w-0 flex-wrap items-center gap-x-1\.5 gap-y-1">\s*<p className="text-\[11px\] text-slate-500">\{camp\.salePeriod\}<\/p>\s*\{deadline && !isEnded && <TimingBadgeView badge=\{deadline\} \/>\}/);
     // 정적 배지는 알약 안에서 두 줄로 꺾이지 않는다.
     expect(src).toContain("inline-flex items-center whitespace-nowrap px-2 py-0.5 rounded-full text-[10px] font-bold border");
   });
