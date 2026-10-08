@@ -211,6 +211,87 @@ export const optionDealInputSchema = z
   })
   .strict();
 
+/**
+ * 「정산 금액 수정」이 고칠 수 있는 캠페인 금액 칸 — 사람이 재무 카드에서 직접 고치는 8칸뿐이다.
+ * 영업이익(`operatingProfit`) 같은 **파생 칸은 넣지 않는다** — 실행기가 정본 PATCH 와 같은
+ * 함수로 다시 계산해 쓰므로, 받으면 그 계산을 덮어쓰는 길이 된다.
+ *
+ * ⚠️ 글자를 펼쳐 둔 이유는 위 `AgentJobPartnerTypeSchema` 와 같다(파이썬 미러가 이 파일의
+ * 글자를 읽는다). 화면 이름 표(`src/lib/settlement-amount-fields.ts`)와의 짝은 테스트가 고정한다.
+ */
+export const AgentJobSettlementAmountFieldSchema = z.enum([
+  "actualSales",
+  "settlementSales",
+  "sellerExpense",
+  "taxExpense",
+  "operatingExpense",
+  "miscExpense",
+  "settlementSupplyCost",
+  "settlementGoodsCost",
+]);
+
+/** 금액 칸 하나의 상한(원). 브리지 쪽 JSON Schema 의 `maximum` 과 같은 값이다. */
+export const MAX_SETTLEMENT_AMOUNT_KRW = 999_999_999_999;
+/**
+ * 음수가 허용되는 두 칸(공동 운영 비용·기타 조정 비용)의 절댓값 상한 — 정본 PATCH
+ * (`updateCampaignSchema` 의 `operatingExpense`·`miscExpense`)와 같은 값이다. 모든 칸의
+ * 하한(음수 쪽)도 이 값이고, 그 안에서 음수를 받는 칸은 아래 부호 검사가 둘로 좁힌다.
+ */
+export const SIGNED_SETTLEMENT_AMOUNT_LIMIT_KRW = 999_999_999;
+
+/** 음수를 받을 수 있는 칸. 나머지는 정본 PATCH 가 `nonnegative()` 로 받는 칸이다. */
+export const SIGNED_SETTLEMENT_AMOUNT_FIELDS: ReadonlySet<string> = new Set([
+  "operatingExpense",
+  "miscExpense",
+]);
+
+const settlementAmountKrwSchema = z
+  .number()
+  .int()
+  .min(-SIGNED_SETTLEMENT_AMOUNT_LIMIT_KRW)
+  .max(MAX_SETTLEMENT_AMOUNT_KRW);
+
+/**
+ * 정산 금액 수정의 칸 모양(액션 이름 제외). `expectedCurrentKrw` 는 **기안자가 본 현재 값**이고
+ * 실행기는 실제 값이 이것과 같을 때만 고친다(낙관적 동시성). ⚠️ `null` 과 `0` 은 다른 값이다 —
+ * 물품대금의 0 은 「다른 캠페인 계산서에 합산됨」 표시이고 null 은 미입력이다.
+ */
+const updateSettlementAmountInputSchema = z
+  .object({
+    campaignId: opaqueIdSchema,
+    field: AgentJobSettlementAmountFieldSchema,
+    expectedCurrentKrw: settlementAmountKrwSchema.nullable(),
+    newAmountKrw: settlementAmountKrwSchema,
+    memo: z.string().trim().min(1).max(500).optional(),
+  });
+
+/** 칸마다 다른 부호 규칙. 계약(기안 시점)과 실행기(승인 시점)가 같은 함수로 거른다. */
+function refineSettlementAmountSign(
+  value: { field: string; newAmountKrw: number },
+  context: z.RefinementCtx,
+): void {
+  const signed = SIGNED_SETTLEMENT_AMOUNT_FIELDS.has(value.field);
+  if (!signed && value.newAmountKrw < 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["newAmountKrw"],
+      message: `${value.field} 는 음수가 될 수 없다. 음수는 operatingExpense·miscExpense 만 받는다.`,
+    });
+  }
+  if (signed && Math.abs(value.newAmountKrw) > SIGNED_SETTLEMENT_AMOUNT_LIMIT_KRW) {
+    context.addIssue({
+      code: "custom",
+      path: ["newAmountKrw"],
+      message: `${value.field} 는 ±${SIGNED_SETTLEMENT_AMOUNT_LIMIT_KRW.toLocaleString("en-US")} 범위 안이어야 한다.`,
+    });
+  }
+}
+
+/** 실행기(`write-actions/update-settlement-amount.ts`)의 argsSchema — 아래 계약 변형에서 `action` 만 뺀 것. */
+export const updateSettlementAmountArgsSchema = updateSettlementAmountInputSchema
+  .strict()
+  .superRefine(refineSettlementAmountSign);
+
 export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -276,6 +357,14 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
         });
       }
     }),
+  // ⚠️ 새 액션은 **끝에 붙인다** — 파이썬 미러가 `action: z.literal(...)` 의 글자 순서를 대조한다.
+  z
+    .object({
+      action: z.literal("update_settlement_amount"),
+      ...updateSettlementAmountInputSchema.shape,
+    })
+    .strict()
+    .superRefine(refineSettlementAmountSign),
 ]);
 
 /**

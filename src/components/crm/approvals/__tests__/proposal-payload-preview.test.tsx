@@ -117,6 +117,50 @@ describe("ProposalPayloadPreview", () => {
     expect(screen.queryByText(/담당자/)).toBeNull();
   });
 
+  it("정산 금액 수정은 칸 이름·지금 값·바꿀 값·메모를 보여준다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="update_settlement_amount"
+        args={{
+          campaignId: "camp-1",
+          field: "settlementSales",
+          expectedCurrentKrw: 1_200_000,
+          newAmountKrw: 1_350_000,
+          memo: "10월 정산 정정",
+        }}
+      />,
+    );
+    expect(screen.getByText("영업 수익")).toBeTruthy();
+    expect(screen.getByText("1,200,000원")).toBeTruthy();
+    expect(screen.getByText("1,350,000원")).toBeTruthy();
+    expect(screen.getByText("10월 정산 정정")).toBeTruthy();
+  });
+
+  it("정산 금액 수정의 비어 있는 현재 값은 0원이 아니라 「비어 있음」으로 적는다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="update_settlement_amount"
+        args={{ campaignId: "camp-1", field: "settlementGoodsCost", expectedCurrentKrw: null, newAmountKrw: 0 }}
+      />,
+    );
+    expect(screen.getByText("물품대금")).toBeTruthy();
+    expect(screen.getByText("비어 있음")).toBeTruthy();
+    expect(screen.getByText("0원")).toBeTruthy();
+    expect(screen.queryByText("메모")).toBeNull();
+  });
+
+  it("정산 금액 수정의 모양이 깨진 기안(모르는 칸)은 그리지 않는다", () => {
+    const { container } = render(
+      <ProposalPayloadPreview
+        action="update_settlement_amount"
+        args={{ campaignId: "camp-1", field: "operatingProfit", expectedCurrentKrw: 0, newAmountKrw: 1 }}
+      />,
+    );
+    // 다른 미리보기와 같은 규약 — 감싸는 상자는 남아도 칸은 하나도 그리지 않는다.
+    expect(container.textContent).toBe("");
+    expect(screen.queryByText("1원")).toBeNull();
+  });
+
   it("미리보기가 없는 action 은 아무것도 그리지 않는다(기존 표시 유지)", () => {
     const { container } = render(
       <ProposalPayloadPreview

@@ -12,17 +12,7 @@ import { googleDriveProvider, GOOGLE_DRIVE_PROVIDER } from "@/lib/asset-storage"
 import type { CampaignStatus, SalesChannel, SnsType } from "@/lib/crm-types";
 import { recalculateCampaignRounds } from "@/services/campaignRounds";
 import { pickShortLink } from "@/lib/order-converter/review-link";
-import {
-  calculateDerivedCampaignFinancials,
-  computeOperatingProfit,
-  resolveSellerFee,
-  resolveSellerFeeBasisEligibility,
-} from "@/lib/campaign-financials";
-import {
-  isIndividualSeller,
-  getSellerPayoutBase,
-  calcIndividualIncomeTax,
-} from "@/lib/seller-tax-utils";
+import { deriveCampaignFinancialsForUpdate } from "@/services/campaignFinancialDerivation";
 import {
   fanOutMemberSchedule,
   lockCampaignGroup,
@@ -566,166 +556,15 @@ export const campaignService = {
         data.itemCount = data.campaignDeals.length;
       }
 
-      const nextActualSales =
-        data.actualSales !== undefined
-          ? data.actualSales
-          : previous.actualSales == null
-            ? null
-            : Number(previous.actualSales.toString());
-      const nextOperatingExpense =
-        data.operatingExpense !== undefined
-          ? Number(data.operatingExpense ?? 0)
-          : Number(previous.operatingExpense?.toString() ?? 0);
-      const nextMiscExpense = Number(previous.miscExpense?.toString() ?? 0);
-      const resolvedMiscExpense =
-        data.miscExpense !== undefined ? Number(data.miscExpense ?? 0) : nextMiscExpense;
-      const nextTotalMarginRate =
-        data.totalMarginRate !== undefined
-          ? data.totalMarginRate
-          : Number(previous.totalMarginRate?.toString() ?? 0);
-      const nextSellerMarginRate =
-        data.sellerMarginRate !== undefined
-          ? data.sellerMarginRate
-          : Number(previous.sellerMarginRate?.toString() ?? 0);
-      const nextNetMarginRate = Number((nextTotalMarginRate - nextSellerMarginRate).toFixed(2));
-
-      const nextIsManualSettlementSales =
-        data.isManualSettlementSales !== undefined
-          ? data.isManualSettlementSales
-          : previous.isManualSettlementSales;
-      const nextIsManualSellerExpense =
-        data.isManualSellerExpense !== undefined
-          ? data.isManualSellerExpense
-          : previous.isManualSellerExpense;
-      const nextIsManualTaxExpense =
-        data.isManualTaxExpense !== undefined
-          ? data.isManualTaxExpense
-          : previous.isManualTaxExpense;
-
-      const nextSettlementSales =
-        data.settlementSales !== undefined
-          ? (data.settlementSales != null ? Number(data.settlementSales) : null)
-          : (previous.settlementSales != null ? Number(previous.settlementSales.toString()) : null);
-      const nextSellerExpense =
-        data.sellerExpense !== undefined
-          ? (data.sellerExpense != null ? Number(data.sellerExpense) : null)
-          : (previous.sellerExpense != null ? Number(previous.sellerExpense.toString()) : null);
-      const nextTaxExpense =
-        data.taxExpense !== undefined
-          ? (data.taxExpense != null ? Number(data.taxExpense) : null)
-          : (previous.taxExpense != null ? Number(previous.taxExpense.toString()) : null);
-
-      const resolvedSellerTaxType =
-        data.sellerTaxType !== undefined ? data.sellerTaxType : previous.sellerTaxType;
-      // 수동 정산 기준액 — null 이 곧 자동(0 은 유효값이라 `!= null` 로만 판정).
-      const nextSellerFeeBasisOverride =
-        data.sellerFeeBasisOverride !== undefined
-          ? data.sellerFeeBasisOverride
-          : previous.sellerFeeBasisOverride != null
-            ? Number(previous.sellerFeeBasisOverride.toString())
-            : null;
-
-      const derivedFinancials =
-        nextActualSales == null
-          ? {}
-          : calculateDerivedCampaignFinancials({
-              actualSales: nextActualSales,
-              operatingExpense: nextOperatingExpense,
-              miscExpense: resolvedMiscExpense,
-              totalMarginRate: nextTotalMarginRate,
-              sellerMarginRate: nextSellerMarginRate,
-              sellerTaxType: resolvedSellerTaxType,
-              sellerCompanyBusinessNumber: previous.seller?.agency?.businessNumber ?? null,
-              isManualSettlementSales: nextIsManualSettlementSales,
-              isManualSellerExpense: nextIsManualSellerExpense,
-              isManualTaxExpense: nextIsManualTaxExpense,
-              manualSettlementSales: nextSettlementSales,
-              manualSellerExpense: nextSellerExpense,
-              manualTaxExpense: nextTaxExpense,
-              sellerFeeBasisOverride: nextSellerFeeBasisOverride,
-            });
-
-      // 개별 품목(option)별 차등 수수료율 보정 로직 주입
-      if (nextActualSales != null && "sellerExpense" in derivedFinancials) {
-        let dealsList = [];
-        if (data.campaignDeals !== undefined) {
-          dealsList = data.campaignDeals;
-        } else {
-          dealsList = await tx.campaignDeal.findMany({ where: { campaignId: id } });
-        }
-
-        if (dealsList.length > 0) {
-          let calculatedSellerExpenseSum = 0;
-          let calculatedTotalMarginSum = 0;
-          let calculatedTaxExpenseSum = 0;
-
-          const isIndividual = isIndividualSeller({
-            sellerTaxType: resolvedSellerTaxType,
-            sellerCompanyBusinessNumber: previous.seller?.agency?.businessNumber ?? null,
-          });
-
-          for (const cd of dealsList) {
-            const sRate = cd.sellerMarginRate != null ? Number(cd.sellerMarginRate) : nextSellerMarginRate;
-            const tRate = cd.feeRate != null ? Number(cd.feeRate) : nextTotalMarginRate;
-            const salesVal = cd.actualSales != null ? Number(cd.actualSales.toString()) : 0;
-
-            calculatedTotalMarginSum += Math.round(salesVal * (tRate / 100));
-
-            const sellerBase = getSellerPayoutBase(salesVal, isIndividual);
-            const preTaxPayout = Math.round(sellerBase * (sRate / 100));
-
-            if (isIndividual) {
-              const tax = calcIndividualIncomeTax(preTaxPayout);
-              calculatedTaxExpenseSum += tax;
-              calculatedSellerExpenseSum += preTaxPayout;
-            } else {
-              calculatedSellerExpenseSum += preTaxPayout;
-            }
-          }
-
-          const financials = derivedFinancials as {
-            settlementSales: number;
-            sellerExpense: number;
-            taxExpense: number;
-            operatingProfit: number;
-          };
-
-          if (!nextIsManualSettlementSales) {
-            financials.settlementSales = calculatedTotalMarginSum;
-          }
-          // 판매대행비·원천세의 수동 층(수동 판매대행비 > 수동 기준액 > 자동)은
-          // `resolveSellerFee` 한 곳이 정한다 — 이 루프는 자동값(품목 합계)만 만든다.
-          const basisEligibility = resolveSellerFeeBasisEligibility({
-            deals: dealsList,
-            campaignSellerMarginRate: nextSellerMarginRate,
-          });
-          const fee = resolveSellerFee({
-            autoSellerExpense: calculatedSellerExpenseSum,
-            autoWithholdingSum: calculatedTaxExpenseSum,
-            sellerFeeBasisOverride: nextSellerFeeBasisOverride,
-            overrideSellerRate: basisEligibility.eligible ? basisEligibility.sellerRate : null,
-            isManualSellerExpense: Boolean(nextIsManualSellerExpense),
-            manualSellerExpense: nextSellerExpense,
-          });
-          financials.sellerExpense = fee.sellerExpense;
-
-          const netCommission = financials.settlementSales - financials.sellerExpense;
-
-          if (!nextIsManualTaxExpense) {
-            financials.taxExpense = isIndividual
-              ? fee.individualWithholding + Math.round(financials.settlementSales - (financials.settlementSales / 1.1))
-              : Math.round(netCommission - (netCommission / 1.1));
-          }
-
-          financials.operatingProfit = computeOperatingProfit({
-            settlementSales: financials.settlementSales,
-            sellerExpense: financials.sellerExpense,
-            taxExpense: financials.taxExpense,
-            operatingExpense: nextOperatingExpense,
-            miscExpense: resolvedMiscExpense,
-          });
-        }
-      }
+      // 재무 파생(영업수익·판매대행비·제세공과금·영업이익) — 산식은 `deriveCampaignFinancialsForUpdate`
+      // 한 곳이 소유한다. 에이전트 `update_settlement_amount` 가 같은 함수를 부르므로 여기서
+      // 다시 인라인하지 말 것(두 경로의 손익이 갈린다). ⚠️ 위 `campaignDeals` 블록이 `data` 를
+      // 변이시킨 **뒤에** 불러야 한다 — 파생이 그 변이된 실매출·품목을 읽는다.
+      const { derivedFinancials, nextNetMarginRate } = await deriveCampaignFinancialsForUpdate(tx, {
+        id,
+        data,
+        previous,
+      });
 
       const updated = await tx.salesCampaign.update({
         where: { id },

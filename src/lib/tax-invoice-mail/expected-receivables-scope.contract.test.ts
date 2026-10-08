@@ -171,6 +171,22 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   "components/crm/__tests__/settlement-selection-bar.test.tsx":
     "선택 바 렌더 계약의 픽스처 — 지급·입금 칸이 도달하는지 단언. 값 통과만",
 
+  // ── 2026-10-09: 에이전트 「정산 금액 수정」(`update_settlement_amount`) ──────────
+  // 오너 결정(2026-10-08 「캠페인 정산 금액 칸」 8칸 — 물품대금 포함)으로 브리지가 올리는
+  // 금액 정정 기안이 이 칸을 **정본 PATCH 와 같은 방식으로** 쓴다(재무 카드 수동 입력의 대행).
+  // ⚠️ 전부 **값 통과**다 — 칸 이름 열거·화면 이름·저장(현재 값과의 동등 비교 + 새 값 쓰기)뿐이고
+  // 산술은 없다. 이 값은 파생 계산(`campaignFinancialDerivation.ts`)의 입력으로 넘기지 않으므로
+  // `operatingProfit`·「조정 후 손익」에 들어가지 않는다 — 손익 소비 금지는 그대로다.
+  "lib/agent-worker/contracts.ts": "정산 금액 수정 계약의 칸 이름 열거(값 통과만, 파이썬 미러가 글자를 대조)",
+  "lib/settlement-amount-fields.ts": "정산 금액 수정 칸의 화면 이름 표(값 통과만)",
+  "lib/agent/write-actions/update-settlement-amount.ts":
+    "정산 금액 수정 실행기 — 현재 값 동등 비교(null≠0) + 새 값 저장. 파생 계산 입력에서 제외(손익 불반영)",
+  "lib/agent/__tests__/update-settlement-amount.test.ts": "위 실행기의 null≠0 계약 픽스처. 값 통과만",
+  "lib/agent-worker/__tests__/contracts.test.ts": "위 계약의 칸 이름·부호 규칙 픽스처. 값 통과만",
+  "lib/agent-worker/__tests__/executor.test.ts": "정산 금액 수정 기안 생성의 픽스처. 값 통과만",
+  "components/crm/approvals/__tests__/proposal-payload-preview.test.tsx":
+    "결재함 미리보기의 「비어 있음 ≠ 0원」 표기 픽스처. 값 통과만",
+
 };
 
 describe("manualGoodsCost 소비처 경계 — 세무 대조 전용", () => {

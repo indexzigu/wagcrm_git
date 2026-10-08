@@ -33,6 +33,7 @@ export const ACTION_LABELS: Record<string, string> = {
   confirm_settlement: "정산 확정",
   create_partner: "거래처 등록",
   create_deal: "딜 등록",
+  update_settlement_amount: "정산 금액 수정",
 };
 
 // confirm_settlement만 승인 시 확인 다이얼로그를 거친다(§1-3, critic Q4 — 금전 최고위험 액션).
