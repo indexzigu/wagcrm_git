@@ -70,6 +70,7 @@ import {
   diffSettlementParams,
   fetchSlackSourceMessage,
   parseMuseRequestBlock,
+  parseRequestExpiry,
   slackTsToMs,
   type FetchLike,
 } from "./slack-source";
@@ -121,6 +122,7 @@ export type Verdict =
   | "action_mismatch"
   | "params_mismatch"
   | "outside_window"
+  | "not_live_request"
   | "daily_limit";
 
 export type AutoExecutePassResult = {
@@ -294,6 +296,15 @@ async function judgeCandidate(
   if (request.action !== MUSE_SETTLEMENT_ACTION) {
     return { verdict: "action_mismatch", detail: "메시지의 action 이 정산 금액 수정이 아닙니다" };
   }
+  // 실행 의도가 있는 살아 있는 요청만 — 미리보기(dry_run)나 만료된 요청이 실행 열쇠가 되면 안 된다
+  // (보안 리뷰 2026-10-09: 브리지가 만료로 거절한 요청을 같은 계정 코드가 대신 기안하는 경로).
+  if (request.dryRun !== false) {
+    return { verdict: "not_live_request", detail: "미리보기(dry_run) 요청입니다" };
+  }
+  const expiresMs = parseRequestExpiry(request.expiresAt);
+  if (expiresMs === null || row.createdAt.getTime() > expiresMs) {
+    return { verdict: "not_live_request", detail: "요청 유효 시각(expires_at)이 없거나 기안 전에 지났습니다" };
+  }
   const differing = diffSettlementParams(request.params, payload.raw);
   if (differing !== null) {
     return { verdict: "params_mismatch", detail: `메시지와 기안의 칸이 다릅니다(${differing.slice(0, 40)})` };
@@ -455,13 +466,17 @@ async function runLockedPass(
 
   // 슬랙 출처가 없는 기안은 후보가 아니다(사람 몫 — 판정 기록도 남기지 않는다).
   // 이 모드에서 확정 판정이 이미 있는 기안도 다시 보지 않는다.
-  const pending = rows.filter((row) => {
-    if (!hasSlackRef(row.sourceRef)) return false;
-    return !row.events.some((event) => {
-      const verdict = readVerdict(event.note);
-      return verdict !== null && !TRANSIENT_VERDICTS.has(verdict);
-    });
-  });
+  // 보류 판정을 이미 받은 기안은 뒤로 미룬다 — 계속 보류되는 기안이 회차 상한을 채워 새 기안이
+  // 굶지 않게(보안 리뷰 2026-10-09). 같은 묶음 안에서는 만든 순서를 지킨다(안정 정렬).
+  const pending = rows
+    .filter((row) => {
+      if (!hasSlackRef(row.sourceRef)) return false;
+      return !row.events.some((event) => {
+        const verdict = readVerdict(event.note);
+        return verdict !== null && !TRANSIENT_VERDICTS.has(verdict);
+      });
+    })
+    .sort((a, b) => Number(a.events.length > 0) - Number(b.events.length > 0));
   result.candidates = pending.length;
 
   if (pending.length > 0) {
@@ -519,7 +534,9 @@ async function runLockedPass(
     }
   }
 
+  // 못 본 후보(deferred)가 남으면 조용한 회차가 아니다 — 굶김이 이력에 드러나게 한다.
   result.quiet =
+    result.deferred === 0 &&
     result.recorded === 0 &&
     result.executed === 0 &&
     result.executionFailed === 0 &&

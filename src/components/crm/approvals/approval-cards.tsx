@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2Icon, ZapIcon } from "lucide-react";
+import { Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -247,7 +247,7 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
         <EntityBadge item={item} />
         {item.executedBy === "SYSTEM_AUTO" ? (
           <Badge variant="status-success">
-            <ZapIcon aria-hidden />
+            <ShieldCheckIcon aria-hidden />
             자동 실행 · 한도 안
           </Badge>
         ) : item.executedBy === "AGENT" ? (

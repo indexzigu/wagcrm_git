@@ -119,7 +119,13 @@ async function createProposal(
   return { id: created.id, rid, ts, args };
 }
 
-type SlackMsgOverrides = Record<string, unknown> & { params?: unknown; rid?: string; action?: string };
+type SlackMsgOverrides = Record<string, unknown> & {
+  params?: unknown;
+  rid?: string;
+  action?: string;
+  dryRun?: unknown;
+  expiresAt?: string;
+};
 
 /** 슬랙 메시지 사전(ts → 메시지)으로 conversations.history 를 흉내 내는 가짜 fetch. */
 function slackFake(messages: Map<string, Record<string, unknown>>) {
@@ -132,7 +138,8 @@ function slackFake(messages: Map<string, Record<string, unknown>>) {
 }
 
 function museMessageFor(fixture: Fixture, over: SlackMsgOverrides = {}): Record<string, unknown> {
-  const { params, rid, action, ...rest } = over;
+  const { params, rid, action, dryRun, expiresAt, ...rest } = over;
+  // ⏰ 시각은 상대값으로 만든다(고정 날짜 픽스처 금지 — dev-qa P9).
   const block = {
     v: 1,
     rid: rid ?? fixture.rid,
@@ -140,9 +147,9 @@ function museMessageFor(fixture: Fixture, over: SlackMsgOverrides = {}): Record<
     params: params ?? fixture.args,
     reason: "정산 정정",
     reply: "thread",
-    dry_run: false,
-    created_at: "2026-10-09T01:00:00+09:00",
-    expires_at: "2026-10-09T03:00:00+09:00",
+    dry_run: dryRun === undefined ? false : dryRun,
+    created_at: new Date(Date.now() - 60_000).toISOString(),
+    expires_at: expiresAt ?? new Date(Date.now() + 2 * 60 * 60_000).toISOString(),
   };
   // 슬랙이 본문의 & < > 를 바꿔 보내는 것까지 흉내 낸다.
   const json = JSON.stringify(block).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -263,6 +270,22 @@ describe("§7 시험 — 하나라도 어긋나면 PENDING 그대로", () => {
     const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl });
     expect(result.verdicts).toEqual({ has_subtype: 1, rid_mismatch: 1, action_mismatch: 1, outside_window: 1 });
     expect(result.executed).toBe(0);
+  });
+
+  it("미리보기(dry_run)·만료된 요청은 실행 열쇠가 되지 않는다 → PENDING (not_live_request)", async () => {
+    const preview = await createProposal();
+    const expired = await createProposal();
+    const fetchImpl = slackFake(
+      new Map([
+        [preview.ts, museMessageFor(preview, { dryRun: true })],
+        [expired.ts, museMessageFor(expired, { expiresAt: new Date(Date.now() - 60_000).toISOString() })],
+      ]),
+    );
+    const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl });
+    expect(result.verdicts).toEqual({ not_live_request: 2 });
+    expect(result.executed).toBe(0);
+    expect(await statusOf(preview.id)).toBe("PENDING_APPROVAL");
+    expect(await statusOf(expired.id)).toBe("PENDING_APPROVAL");
   });
 
   it("§7 한도(|변동| 50만 원) 밖 → PENDING (over_delta), 슬랙을 부르지도 않는다", async () => {
@@ -409,6 +432,30 @@ describe("보류 판정 — 다음 회차에 다시 본다", () => {
       fetchImpl: slackFake(new Map([[p.ts, museMessageFor(p)]])),
     });
     expect(second.executed).toBe(1);
+  });
+
+  it("보류된 기안은 뒤로 미뤄 새 기안이 굶지 않는다(회차 상한 10)", async () => {
+    // 오래된 순으로 10건이 슬랙 오류로 보류된 상태에서, 새 기안 1건이 들어온다.
+    const stuck: Fixture[] = [];
+    for (let i = 0; i < 10; i += 1) stuck.push(await createProposal({ createdAt: new Date(Date.now() - (20 - i) * 1000) }));
+    const broken = vi.fn(async () => new Response("", { status: 500 }));
+    await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl: broken });
+    const fresh = await createProposal();
+    const messages = new Map([[fresh.ts, museMessageFor(fresh)]]);
+    const next = await runSettlementAutoExecutePass({
+      env: BASE_ENV,
+      fetchImpl: vi.fn(async (input: string) => {
+        const url = new URL(input);
+        const message = messages.get(url.searchParams.get("latest") ?? "");
+        return message
+          ? new Response(JSON.stringify({ ok: true, messages: [message] }), { status: 200 })
+          : new Response("", { status: 500 });
+      }),
+    });
+    expect(next.executed).toBe(1);
+    expect(next.deferred).toBe(1);
+    expect(next.quiet).toBe(false);
+    expect(await statusOf(fresh.id)).toBe("EXECUTED");
   });
 
   it("대조 기준(채널·Muse 신원)이 비었거나 한도 값이 숫자가 아니면 not_configured — 기본값으로 넓히지 않는다", async () => {

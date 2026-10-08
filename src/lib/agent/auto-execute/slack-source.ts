@@ -130,8 +130,9 @@ export async function fetchSlackSourceMessage(input: {
     if (typeof next !== "string" || next === "") return { kind: "not_found" };
     cursor = next;
   }
-  // 쪽 상한을 넘겼다 — 없다고 단정하지 않는다(재시도할 오류로 둔다).
-  return { kind: "error", code: "reply_page_limit" };
+  // 쪽 상한 안에서 못 찾았다 — 확정 판정(없음)으로 둔다. 재시도 오류로 두면 아주 긴 스레드를 가리키는
+  // 기안이 매 회차 후보 자리를 차지해 뒤의 기안이 굶는다(보안 리뷰 2026-10-09). 사람 승인으로 간다.
+  return { kind: "not_found" };
 }
 
 export type MuseIdentity = { botId: string; appId: string; userId: string };
@@ -183,7 +184,14 @@ export function unescapeSlackText(text: string): string {
   return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
-export type MuseRequestBlock = { v: unknown; rid: unknown; action: unknown; params: unknown };
+export type MuseRequestBlock = {
+  v: unknown;
+  rid: unknown;
+  action: unknown;
+  params: unknown;
+  dryRun: unknown;
+  expiresAt: unknown;
+};
 
 /** 메시지 본문에서 `muse-req` 블록 **정확히 1개**를 꺼내 JSON 으로 읽는다. */
 export function parseMuseRequestBlock(text: unknown): { ok: true; request: MuseRequestBlock } | { ok: false; detail: string } {
@@ -204,7 +212,27 @@ export function parseMuseRequestBlock(text: unknown): { ok: true; request: MuseR
     return { ok: false, detail: "muse-req 블록이 객체가 아닙니다" };
   }
   const obj = raw as Record<string, unknown>;
-  return { ok: true, request: { v: obj.v, rid: obj.rid, action: obj.action, params: obj.params } };
+  return {
+    ok: true,
+    request: {
+      v: obj.v,
+      rid: obj.rid,
+      action: obj.action,
+      params: obj.params,
+      dryRun: obj.dry_run,
+      expiresAt: obj.expires_at,
+    },
+  };
+}
+
+/**
+ * `expires_at` → epoch ms. Hermes 브리지와 같이 **시간대가 있어야** 한다(없거나 못 읽으면 null).
+ */
+export function parseRequestExpiry(value: unknown): number | null {
+  if (typeof value !== "string" || value.length > 40) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(value)) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 /** 정산 금액 수정 기안 payload 의 args 로 허용되는 칸. 이 밖의 칸이 있으면 불일치다. */

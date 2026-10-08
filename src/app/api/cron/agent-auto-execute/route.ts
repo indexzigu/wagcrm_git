@@ -7,7 +7,7 @@ import { runSettlementAutoExecutePass } from "@/lib/agent/auto-execute/settlemen
 // 무엇을 판정·실행하는지는 `settlement-auto-execute.ts` 헤더가 정본이다.
 //
 // 스위치 `AGENT_AUTO_EXECUTE`(off 기본 | shadow | on), `AUTO_APPROVE_DISABLED` 가 있으면 off.
-// off 면 아무것도 하지 않는다(DB 조회도 없다).
+// off 면 회차는 아무것도 하지 않는다(회차 자체는 DB 조회도 없다 — 관측 래퍼의 상태 갱신만 남는다).
 //
 // 관측: 판정을 새로 남겼거나 실행·정리한 회차만 이력(SystemTaskLog) 1줄을 남긴다. 빈 회차는
 // `quiet: true` 로 상태(SystemTaskStatus)만 갱신한다 — 2분 주기라 매 회차 남기면 하루 720줄이다.

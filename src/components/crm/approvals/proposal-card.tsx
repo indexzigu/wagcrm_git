@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2Icon, ZapIcon } from "lucide-react";
+import { Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -98,7 +98,7 @@ function StatusChip({ proposal }: { proposal: ProposalDetail }) {
     if (proposal.executedBy === "SYSTEM_AUTO") {
       return (
         <Badge variant="status-success">
-          <ZapIcon className="size-3" />
+          <ShieldCheckIcon className="size-3" aria-hidden />
           자동 실행 · 한도 안
         </Badge>
       );

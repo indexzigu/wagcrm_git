@@ -8,6 +8,7 @@ import {
   diffSettlementParams,
   fetchSlackSourceMessage,
   parseMuseRequestBlock,
+  parseRequestExpiry,
   slackTsToMs,
   unescapeSlackText,
   type FetchLike,
@@ -119,6 +120,16 @@ describe("diffSettlementParams", () => {
   });
 });
 
+describe("parseRequestExpiry", () => {
+  it("시간대가 있는 ISO 만 읽는다(브리지와 같은 규칙)", () => {
+    expect(parseRequestExpiry("2026-10-09T03:00:00+09:00")).toBe(Date.parse("2026-10-08T18:00:00Z"));
+    expect(parseRequestExpiry("2026-10-08T18:00:00Z")).toBe(Date.parse("2026-10-08T18:00:00Z"));
+    expect(parseRequestExpiry("2026-10-09T03:00:00")).toBeNull();
+    expect(parseRequestExpiry("내일")).toBeNull();
+    expect(parseRequestExpiry(undefined)).toBeNull();
+  });
+});
+
 describe("slackTsToMs", () => {
   it("초.마이크로초 → ms", () => {
     expect(slackTsToMs("1791476048.261769")).toBe(1791476048261);
@@ -171,6 +182,16 @@ describe("fetchSlackSourceMessage", () => {
     expect(second.pathname).toBe("/api/conversations.replies");
     expect(second.searchParams.get("ts")).toBe(thread);
     expect(second.searchParams.get("cursor")).toBe("c2");
+  });
+
+  it("답글 쪽 상한(3쪽) 안에서 못 찾으면 not_found(확정) — 긴 스레드가 후보 자리를 계속 차지하지 않게", async () => {
+    const thread = "1791470000.000001";
+    const fetchImpl = vi.fn<FetchLike>(async () =>
+      jsonResponse({ ok: true, messages: [museMessage({ ts: thread })], response_metadata: { next_cursor: "more" } }),
+    );
+    const result = await fetchSlackSourceMessage({ ...base, fetchImpl, threadTs: thread, messageTs: TS });
+    expect(result.kind).toBe("not_found");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("HTTP 오류·ok:false·네트워크 예외는 error(재시도), thread_not_found 는 not_found", async () => {
