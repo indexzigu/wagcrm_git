@@ -460,7 +460,7 @@ export function CampaignCard({
                   기준은 충족). info 는 전용 -bg 가 없어 알파 틴트를 쓰는 유일한 자리다. */}
               {needsActualSales ? (
                 <span className={cn("shrink-0", badgeSizeClassName.compact, "text-status-info bg-status-info/10")}>
-                  실매출 미입력
+                  실매출미입력
                 </span>
               ) : null}
               <div className="min-w-0 flex-1">

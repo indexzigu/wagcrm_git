@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
  * 추출·매핑·검수 세 단계가 같은 파랑을 공유하는 것은 회귀가 아니라 그 SSOT 와 같은
  * 설계다(배지는 작아서 구간은 색이, 단계는 라벨이 나른다).
  *
- * 어휘는 `apply-result-card.tsx`(반영 중=pending / 반영 완료=success / 반영 실패=urgent)에
+ * 어휘는 `apply-result-card.tsx`(반영중=pending / 반영완료=success / 반영실패=urgent)에
  * 맞춘다 — 종전에는 같은 화면에서 「반영완료」가 카드는 초록, 배지는 네이비였다.
  */
 const STATUS_LABEL: Record<string, string> = {
@@ -27,7 +27,7 @@ const STATUS_LABEL: Record<string, string> = {
   // APPLYING 은 반영 API 가 CAS 선점에 쓰는 실제 런타임 값이다
   // (`app/api/price-sheets/[id]/apply/route.ts`). 표에 없어서 화면에 영문
   // "APPLYING" 이 그대로 노출됐다 — ⛔ 다시 빼지 말 것.
-  APPLYING: "반영 중",
+  APPLYING: "반영중",
   APPLIED: "반영완료",
   EXTRACT_FAILED: "추출실패",
 };
@@ -69,7 +69,7 @@ const MAPPING_LABEL: Record<string, string> = {
   UNMAPPED: "미매핑",
   SUGGESTED: "제안됨",
   MAPPED: "매핑확정",
-  NEW_DEAL: "신규 딜",
+  NEW_DEAL: "신규딜",
   // 반영 API 가 반영된 행을 이 값으로 전이시킨다(같은 라우트) — 표에 없어서 화면에
   // 영문 "APPLIED" 가 그대로 노출됐다. 시트 단위 종착점과 같은 색 어휘를 쓴다.
   APPLIED: "반영완료",

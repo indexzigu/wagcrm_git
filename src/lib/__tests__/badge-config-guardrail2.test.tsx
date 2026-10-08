@@ -293,7 +293,7 @@ describe("테두리 상수의 실제 고정 지점 (소비처)", () => {
 describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", () => {
   it("CLOSED 배지가 중립 채움으로 렌더되고 purple 이 없다", () => {
     render(<SubStageBadge status="CLOSED" />);
-    const el = screen.getByText("판매 마감");
+    const el = screen.getByText("판매마감");
     expect(el.className).toContain("bg-slate-200");
     expect(el.className).toContain("text-slate-800");
     expect(el.className).not.toMatch(/purple/);
@@ -326,7 +326,7 @@ describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", ()
       </>,
     );
     const [prep, closed] = Array.from(container.querySelectorAll("span,div"))
-      .filter((n) => /세팅 대기|판매 마감/.test(n.textContent ?? ""))
+      .filter((n) => /세팅대기|판매마감/.test(n.textContent ?? ""))
       .slice(-2);
     expect(prep.className).toContain("bg-slate-100");
     expect(closed.className).toContain("bg-slate-200");

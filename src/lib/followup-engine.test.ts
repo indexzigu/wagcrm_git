@@ -35,7 +35,7 @@ describe("followup-engine", () => {
         const result = calculateFollowUp(task, refDate);
         expect(result).not.toBeNull();
         expect(result?.type).toBe("MANUAL_REMINDER");
-        expect(result?.label).toBe("지정일 팔로업 필요");
+        expect(result?.label).toBe("팔로업");
       });
 
       it("nextReminderAt이 과거 일자이면 경과 일수와 함께 MANUAL_REMINDER 뱃지를 반환한다", () => {
@@ -79,7 +79,7 @@ describe("followup-engine", () => {
         const result = calculateFollowUp(task, refDate);
         expect(result).not.toBeNull();
         expect(result?.type).toBe("1ST_REMINDER");
-        expect(result?.label).toBe("1차 리마인드 권장");
+        expect(result?.label).toBe("리마인드1차");
       });
 
       it("발송일 기준 28일 이상이면 2차 리마인드 권장 뱃지를 반환한다", () => {
@@ -90,7 +90,7 @@ describe("followup-engine", () => {
         const result = calculateFollowUp(task, refDate);
         expect(result).not.toBeNull();
         expect(result?.type).toBe("2ND_REMINDER");
-        expect(result?.label).toBe("2차 리마인드 권장");
+        expect(result?.label).toBe("리마인드2차");
       });
     });
 
@@ -112,7 +112,7 @@ describe("followup-engine", () => {
         const result = calculateFollowUp(task, refDate);
         expect(result).not.toBeNull();
         expect(result?.type).toBe("SAMPLE_CHECK");
-        expect(result?.label).toBe("샘플 진행상황 체크 요망");
+        expect(result?.label).toBe("샘플확인");
       });
 
       it("SAMPLE_TESTING 상태 명칭도 호환되어 뱃지를 반환한다", () => {

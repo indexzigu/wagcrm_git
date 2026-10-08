@@ -5,7 +5,20 @@ import { Search, Loader2, AlertCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDealContextLabel, getDealIdentityParts } from "@/lib/deal-display";
-import { dealStatusLabels, type DealStatus } from "@/lib/crm-types";
+import {
+  campaignStatusLabels,
+  dealStatusLabels,
+  partnerStatusLabel,
+  taskStatusLabels,
+  type CampaignStatus,
+  type DealStatus,
+} from "@/lib/crm-types";
+
+/** 영문 상태 코드를 화면에 그대로 찍지 않는다 — 표에 없으면 원문(새 코드가 생겨도 빈칸이 되지 않게). */
+function labelOf(table: Record<string, string>, value: unknown): string {
+  const raw = String(value ?? "");
+  return table[raw] ?? raw;
+}
 import {
   EntityIdentity,
   type EntityIdentityPart,
@@ -97,7 +110,7 @@ export function normalizeSearchResults(
         label: String(item.sellerName ?? ""),
         sublabel: [item.dealName, item.salesChannel].filter(Boolean).join(" - ") || undefined,
         metadata: {
-          status: String(item.status ?? ""),
+          status: labelOf(campaignStatusLabels as Record<CampaignStatus, string>, item.status),
         },
       }));
     case "partner":
@@ -107,7 +120,7 @@ export function normalizeSearchResults(
         sublabel: String(item.type ?? "") || undefined,
         metadata: {
           type: String(item.type ?? ""),
-          status: String(item.status ?? ""),
+          status: partnerStatusLabel(typeof item.status === "string" ? item.status : null),
           companyRole: String(item.companyRole ?? ""),
           deals: JSON.stringify(item.deals ?? []),
         },
@@ -135,9 +148,9 @@ export function normalizeSearchResults(
       return rawResults.map((item) => ({
         id: String(item.id),
         label: String(item.title ?? item.sellerName ?? ""),
-        sublabel: String(item.status ?? "") || undefined,
+        sublabel: labelOf(taskStatusLabels, item.status) || undefined,
         metadata: {
-          status: String(item.status ?? ""),
+          status: labelOf(taskStatusLabels, item.status),
         },
       }));
     default:

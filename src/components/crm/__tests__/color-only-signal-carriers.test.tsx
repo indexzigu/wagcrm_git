@@ -81,20 +81,20 @@ describe("CampaignCard — 긴급도·할 일 배지가 색 말고 문구로도 
 
   it("기한이 지나면 배지에 「지연」, 날짜 줄에 sr-only 「종료일 지남」", () => {
     renderAt("2026-09-27T03:00:00Z");
-    expect(screen.getByText(/캠페인 마감일\s*09\.26\s*지연/)).toBeTruthy();
+    expect(screen.getByText(/판매마감\s*09\.26\s*지연/)).toBeTruthy();
     expect(screen.getByText(/종료일 지남/).className).toContain("sr-only");
   });
 
   it("기한이 오늘이면 날짜 대신 「오늘」, 날짜 줄에 sr-only 「종료 임박」", () => {
     renderAt("2026-09-26T03:00:00Z");
-    expect(screen.getByText(/캠페인 마감일\s*오늘/)).toBeTruthy();
+    expect(screen.getByText(/판매마감\s*오늘/)).toBeTruthy();
     expect(screen.queryByText(/지연$/)).toBeNull();
     expect(screen.getByText(/종료 임박/).className).toContain("sr-only");
   });
 
   it("여유가 있으면 추가 문구가 없다(볼 것 없음 등급 — P8 §2)", () => {
     renderAt("2026-09-10T03:00:00Z");
-    expect(screen.getByText(/캠페인 마감일\s*09\.26/).textContent).not.toMatch(/지연|오늘/);
+    expect(screen.getByText(/판매마감\s*09\.26/).textContent).not.toMatch(/지연|오늘/);
     expect(screen.queryByText(/종료일 지남|종료 임박/)).toBeNull();
   });
 });

@@ -37,11 +37,13 @@ export type DormancyVerdict = {
   daysSinceLastRun: number | null;
 };
 
+// ⚠️ HEALTHY 는 할 일이 없어 화면에 낱말을 그리지 않는다(「—」, 상태 낱말 기준 2026-10-08) —
+// 표의 값은 필터·정렬·테스트 같은 비화면 소비처를 위해 남긴다.
 export const DORMANCY_TIER_LABEL: Record<DormancyTier, string> = {
   HEALTHY: "건강",
   DORMANT: "휴면",
   EXCLUDED: "제외",
-  UNKNOWN: "판정 불가",
+  UNKNOWN: "판정불가",
 };
 
 /**

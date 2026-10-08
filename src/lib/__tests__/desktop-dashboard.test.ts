@@ -143,7 +143,7 @@ describe("buildUpcomingEvents — 대금 이벤트는 채널 슬롯에서 파생
       now,
       scheduleEnd,
     );
-    expect(moneyTypes(events)).toEqual(["입금 예정 (공급사)", "지급 예정 (셀러)"]);
+    expect(moneyTypes(events)).toEqual(["공급사 입금예정", "셀러 지급예정"]);
   });
 
   it("자사몰: 지급(공급사) + 지급(셀러)이고 입금 줄이 없다", () => {
@@ -160,7 +160,7 @@ describe("buildUpcomingEvents — 대금 이벤트는 채널 슬롯에서 파생
       now,
       scheduleEnd,
     );
-    expect(moneyTypes(events)).toEqual(["지급 예정 (공급사)", "지급 예정 (셀러)"]);
+    expect(moneyTypes(events)).toEqual(["공급사 지급예정", "셀러 지급예정"]);
   });
 
   it("자사몰 그룹: 그룹 스칼라가 null이면 멤버 공급사 예정일 최솟값으로 폴백한다", () => {
@@ -183,7 +183,7 @@ describe("buildUpcomingEvents — 대금 이벤트는 채널 슬롯에서 파생
       now,
       scheduleEnd,
     );
-    const supplier = events.filter((e) => e.type === "지급 예정 (공급사)");
+    const supplier = events.filter((e) => e.type === "공급사 지급예정");
     expect(supplier).toHaveLength(1);
     expect(supplier[0].date).toBe(new Date("2026-07-17T00:00:00.000Z").toISOString());
   });
@@ -193,7 +193,8 @@ describe("buildUpcomingEvents — 완료된 대금은 예정으로 뜨지 않는
   const now = new Date("2026-07-14T00:00:00.000Z");
   const scheduleEnd = new Date("2026-07-28T00:00:00.000Z");
   const moneyOf = (events: { date: string; type: string; label: string }[]) =>
-    events.filter((e) => e.type.startsWith("지급") || e.type.startsWith("입금"));
+    // 문구는 「셀러 지급예정」처럼 상대가 앞에 온다 — 시작이 아니라 포함으로 고른다(2026-10-08).
+    events.filter((e) => e.type.includes("지급") || e.type.includes("입금"));
 
   /**
    * 오너 지적 2026-07-15 — 이미 지급한 건이 예정일이 되면 「지급 예정」으로 다시 뜬다.
@@ -225,7 +226,7 @@ describe("buildUpcomingEvents — 완료된 대금은 예정으로 뜨지 않는
       ),
     );
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("지급 예정 (셀러)");
+    expect(events[0].type).toBe("셀러 지급예정");
   });
 
   it("완료일이 창 안이면 「지급 완료」로 그 날에 뜬다", () => {
@@ -243,7 +244,7 @@ describe("buildUpcomingEvents — 완료된 대금은 예정으로 뜨지 않는
       ),
     );
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("지급 완료 (셀러)");
+    expect(events[0].type).toBe("셀러 지급완료");
     expect(events[0].date).toBe(new Date("2026-07-18T00:00:00.000Z").toISOString());
   });
 
@@ -274,7 +275,7 @@ describe("buildUpcomingEvents — 완료된 대금은 예정으로 뜨지 않는
     // 완료일이 없으므로 예정일에 남는다(=「완료」로 부르지 않는다) — 멤버의 7/16 을 쓰지 않는다.
     expect(events).toHaveLength(1);
     expect(events[0].date).toBe(new Date("2026-07-20T00:00:00.000Z").toISOString());
-    expect(events[0].type).toBe("지급 예정 (셀러)");
+    expect(events[0].type).toBe("셀러 지급예정");
   });
 
   it("그룹은 그룹 완료일이 정본이다 — 멤버 잔존 완료일을 쓰지 않는다", () => {

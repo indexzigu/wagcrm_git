@@ -14,7 +14,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import {
-  normalizePartnerStatus,
+  partnerStatusLabel,
   partnerTypeLabels,
   type DashboardData,
   type PartnerSummary,
@@ -25,6 +25,7 @@ import { CrmShell } from "./crm-shell";
 import { DataSourceBanner } from "./data-source-banner";
 import { InlineDataGrid, type GridColumn } from "./inline-data-grid";
 import { PartnersPanel } from "./partners-panel";
+import { StatusDot } from "./status-dot";
 
 type PartnerRow = PartnerSummary;
 
@@ -47,23 +48,14 @@ const partnerColumns: GridColumn<PartnerRow>[] = [
     label: "상태",
     width: 100,
     render: (row) => {
-      const status = normalizePartnerStatus(row.status);
-      if (!status) return <span className="text-muted-foreground">-</span>;
-      let badgeStyles = "bg-slate-50 text-slate-700 ring-slate-600/10";
-      if (status === "거래중") {
-        badgeStyles = "bg-emerald-50 text-emerald-700 ring-emerald-600/20";
-      } else if (status === "거래중단") {
-        badgeStyles = "bg-red-50 text-red-700 ring-red-600/10";
-      } else if (status === "거래보류") {
-        badgeStyles = "bg-amber-50 text-amber-700 ring-amber-600/15";
-      }
-      return (
-        <span
-          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${badgeStyles}`}
-        >
-          {status}
-        </span>
-      );
+      // 화면 낱말은 `partnerStatusLabel` 한 곳에서 온다(저장값 두 벌 — 영문 코드·한글 — 을 한 벌로).
+      // 거래중은 할 일이 없어 점·색 없이 글자만, 손이 필요한 상태만 점 + 낱말(상태 낱말 기준 2026-10-08).
+      // 색은 원시 emerald/red/amber 가 아니라 상태 토큰(P8 가드레일 2).
+      const label = partnerStatusLabel(row.status);
+      if (!label) return <span className="text-muted-foreground">-</span>;
+      if (label === "거래중") return <span className="text-xs text-foreground">{label}</span>;
+      const tone = label === "거래중단" ? "urgent" : label === "거래보류" ? "caution" : "neutral";
+      return <StatusDot tone={tone} label={label} />;
     },
   },
   {

@@ -87,10 +87,10 @@ async function fetchProposal(id: string): Promise<ProposalDetail> {
  */
 function StatusChip({ proposal }: { proposal: ProposalDetail }) {
   if (proposal.status === "PENDING_APPROVAL") {
-    return <Badge variant="status-pending">승인 대기</Badge>;
+    return <Badge variant="status-pending">승인대기</Badge>;
   }
   if (proposal.status === "APPROVED") {
-    return <Badge variant="status-info">승인됨·실행 중</Badge>;
+    return <Badge variant="status-info">승인됨·실행중</Badge>;
   }
   if (proposal.status === "EXECUTED") {
     if (proposal.executedBy === "AGENT") {

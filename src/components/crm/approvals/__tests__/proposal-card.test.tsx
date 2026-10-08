@@ -80,22 +80,22 @@ describe("ProposalCard", () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => proposal });
   }
 
-  it("PENDING_APPROVAL: '승인 대기' 칩과 [승인][반려] 버튼을 보여준다", async () => {
+  it("PENDING_APPROVAL: '승인대기' 칩과 [승인][반려] 버튼을 보여준다", async () => {
     stubFetchOk(makeProposal({ status: "PENDING_APPROVAL" }));
     renderCard("proposal-123456789");
 
-    await waitFor(() => expect(screen.getByText("승인 대기")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("승인대기")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "승인" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "반려" })).toBeInTheDocument();
   });
 
-  it("APPROVED: '승인됨·실행 중' 칩을 보여주고 액션 버튼이 없다", async () => {
+  it("APPROVED: '승인됨·실행중' 칩을 보여주고 액션 버튼이 없다", async () => {
     stubFetchOk(makeProposal({ status: "APPROVED" }));
     renderCard("proposal-123456789");
 
-    await waitFor(() => expect(screen.getByText("승인됨·실행 중")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("승인됨·실행중")).toBeInTheDocument());
     // 진행 상태는 이번 교체 대상이 아니다 — 오너 승인 범위는 「완료」뿐이었다.
-    expect(screen.getByText("승인됨·실행 중")).toHaveAttribute("data-variant", "status-info");
+    expect(screen.getByText("승인됨·실행중")).toHaveAttribute("data-variant", "status-info");
     expect(screen.queryByRole("button", { name: "승인" })).not.toBeInTheDocument();
   });
 

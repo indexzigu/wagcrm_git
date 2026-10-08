@@ -53,7 +53,8 @@ afterEach(() => {
 describe("CampaignLaunchReadinessSection", () => {
   it("등급과 항목을 보여준다", async () => {
     render(<CampaignLaunchReadinessSection campaignId="c1" />);
-    expect(await screen.findByText("손볼 것 있음")).toBeInTheDocument();
+    // 머리 등급과 항목 칩이 같은 낱말이다(2026-10-08) — 하나 이상이면 된다.
+    expect((await screen.findAllByText("보완")).length).toBeGreaterThan(0);
     expect(screen.getByText("오퍼 미충족 1건 — 구성 차별")).toBeInTheDocument();
     expect(screen.getByText("→ 주문관리에서 등록하세요")).toBeInTheDocument();
   });
@@ -87,7 +88,7 @@ describe("CampaignLaunchReadinessSection", () => {
     it("검사가 돌았으면 안내를 띄우지 않는다 (소음 금지)", async () => {
       withGateSource({ claimGateSource: "ASSET_DRAFT" });
       render(<CampaignLaunchReadinessSection campaignId="c1" />);
-      await screen.findByText("손볼 것 있음");
+      await screen.findAllByText("보완");
       expect(
         screen.queryByText(/표현 검사는 아직 돌지 않았습니다/),
       ).not.toBeInTheDocument();
@@ -116,7 +117,7 @@ describe("CampaignLaunchReadinessSection", () => {
         brandClaimGateSource: "ASSET_DRAFT",
       });
       render(<CampaignLaunchReadinessSection campaignId="c1" />);
-      await screen.findByText("손볼 것 있음");
+      await screen.findAllByText("보완");
       expect(
         screen.queryByText(/브랜드용 자료는 아직 표현 검사를/),
       ).not.toBeInTheDocument();
@@ -146,7 +147,7 @@ describe("CampaignLaunchReadinessSection", () => {
     it("필드가 없는 옛 응답에는 아무 안내도 띄우지 않는다", async () => {
       // 배포 중 구버전 응답이 섞여도 없는 사실을 지어내지 않는다.
       render(<CampaignLaunchReadinessSection campaignId="c1" />);
-      await screen.findByText("손볼 것 있음");
+      await screen.findAllByText("보완");
       expect(
         screen.queryByText(/표현 검사는 아직 돌지 않았습니다/),
       ).not.toBeInTheDocument();
@@ -206,11 +207,11 @@ describe("CampaignLaunchReadinessSection", () => {
       ),
     );
     render(<CampaignLaunchReadinessSection campaignId="c1" />);
-    await screen.findByText("열기 전 조치 필요");
+    await screen.findAllByText("위반");
 
     const items = screen.getAllByRole("listitem");
     expect(items[0]).toHaveTextContent("금지 표현 2건");
-    expect(items[0]).toHaveTextContent("조치 필요");
+    expect(items[0]).toHaveTextContent("위반");
   });
 
   it("걸리는 것이 없으면 준비됨만 보여주고 목록을 만들지 않는다", async () => {
@@ -231,7 +232,7 @@ describe("CampaignLaunchReadinessSection", () => {
 
   it("오픈을 막는 버튼을 두지 않는다 (판정만 보여준다)", async () => {
     render(<CampaignLaunchReadinessSection campaignId="c1" />);
-    await screen.findByText("손볼 것 있음");
+    await screen.findAllByText("보완");
     // 존재하는 버튼은 '다시 확인' 하나뿐이어야 한다
     const buttons = screen.getAllByRole("button");
     expect(buttons).toHaveLength(1);
@@ -267,7 +268,7 @@ describe("CampaignLaunchReadinessSection", () => {
 
   it("다시 확인 버튼이 재조회한다", async () => {
     render(<CampaignLaunchReadinessSection campaignId="c1" />);
-    await screen.findByText("손볼 것 있음");
+    await screen.findAllByText("보완");
 
     const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
     const before = fetchMock.mock.calls.length;

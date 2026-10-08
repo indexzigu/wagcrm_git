@@ -1,4 +1,4 @@
-import type { CampaignStatus } from "./crm-types";
+import { campaignStatusLabels, type CampaignStatus } from "./crm-types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,43 +76,43 @@ export const SUB_STAGE_BADGE_CONFIG: Record<CampaignStatus, BadgeColorConfig> = 
   PROPOSAL: {
     bg: "bg-status-active/10",
     text: "text-status-active",
-    label: "셀러 제안 중",
+    label: campaignStatusLabels.PROPOSAL,
   },
   PREPARATION: {
     bg: "bg-slate-100",
     text: "text-slate-700",
-    label: "세팅 대기",
+    label: campaignStatusLabels.PREPARATION,
   },
   ACTIVE: {
     bg: "bg-status-active/10",
     text: "text-status-active",
-    label: "판매 진행 중",
+    label: campaignStatusLabels.ACTIVE,
   },
   CLOSED: {
     // SSOT statusClassName.CLOSED 그대로. PREPARATION(slate-100)과 채움 2단으로 갈린다 —
     // 칸반 DEAL_EXECUTION 컬럼이 둘을 인접 배치하기 때문.
     bg: "bg-slate-200",
     text: "text-slate-800",
-    label: "판매 마감",
+    label: campaignStatusLabels.CLOSED,
   },
   SETTLEMENT_WAIT: {
     bg: "bg-status-caution-bg",
     text: "text-status-caution",
-    label: "정산 대기",
+    label: campaignStatusLabels.SETTLEMENT_WAIT,
   },
   SETTLEMENT_IN_PROGRESS: {
     bg: "bg-status-info/10",
     text: "text-status-info",
-    label: "정산 진행",
+    label: campaignStatusLabels.SETTLEMENT_IN_PROGRESS,
   },
   COMPLETED: {
     bg: "bg-status-success-bg",
     text: "text-status-success",
-    label: "정산 완료",
+    label: campaignStatusLabels.COMPLETED,
   },
   DROPPED: {
     bg: "bg-status-urgent-bg",
     text: "text-status-urgent-text",
-    label: "드랍",
+    label: campaignStatusLabels.DROPPED,
   },
 };

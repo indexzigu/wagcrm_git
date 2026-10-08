@@ -45,12 +45,12 @@ const VERDICT_META: Record<
     order: 0,
   },
   PARTIAL: {
-    label: "부분 충족",
+    label: "부분충족",
     badge: "bg-status-caution-bg text-status-caution-text",
     order: 1,
   },
   UNKNOWN: {
-    label: "확인 안 됨",
+    label: "미확인",
     badge: "bg-muted text-slate-600",
     order: 2,
   },
@@ -59,9 +59,10 @@ const VERDICT_META: Record<
     badge: "bg-status-success-bg text-foreground",
     order: 3,
   },
+  // 해당 없음은 할 일이 없다 — 낱말 대신 「—」(상태 낱말 기준 2026-10-08).
   NA: {
-    label: "해당 없음",
-    badge: "bg-muted text-slate-600",
+    label: "—",
+    badge: "text-slate-500",
     order: 4,
   },
 };

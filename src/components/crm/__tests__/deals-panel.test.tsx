@@ -236,7 +236,7 @@ describe("DealsPanel", () => {
     it("renders status steps in the actual pipeline order", () => {
       renderDealsPanel({ deal: { ...baseDeal, status: "NEGOTIATING" } });
 
-      const stepButtons = ["발굴", "협의", "샘플 테스트", "확정"].map((name) =>
+      const stepButtons = ["발굴", "협의", "샘플테스트", "확정"].map((name) =>
         screen.getByRole("button", { name })
       );
 
@@ -252,7 +252,7 @@ describe("DealsPanel", () => {
     it("allows moving from sample testing to confirmed while keeping earlier steps disabled", () => {
       renderDealsPanel({ deal: { ...baseDeal, status: "SAMPLE_TESTING" } });
 
-      expect(screen.getByRole("button", { name: "샘플 테스트" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "샘플테스트" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "발굴" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "협의" })).toBeDisabled();
       expect(screen.getByRole("button", { name: "확정" })).not.toBeDisabled();
@@ -1308,7 +1308,7 @@ describe("DealsPanel", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText("판매 진행 중")).toBeInTheDocument();
+        expect(screen.getByText("판매중")).toBeInTheDocument();
       });
     });
 

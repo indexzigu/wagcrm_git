@@ -185,7 +185,7 @@ describe("컷 프레임 상태 표시 — 빈 프레임의 세 가지 의미", (
         sketchProgress={progress({ requestError: "FAILED" })}
       />,
     );
-    expect(screen.getAllByText("시안 생성 실패")).toHaveLength(2);
+    expect(screen.getAllByText("생성실패")).toHaveLength(2);
   });
 
   it("저장소 미설정은 실패와 다른 문구다 — 운영자가 할 일이 다르다", () => {
@@ -195,8 +195,8 @@ describe("컷 프레임 상태 표시 — 빈 프레임의 세 가지 의미", (
         sketchProgress={progress({ requestError: "UNAVAILABLE" })}
       />,
     );
-    expect(screen.getAllByText(/저장소가 설정되지 않았습니다/)).toHaveLength(2);
-    expect(screen.queryByText("시안 생성 실패")).toBeNull();
+    expect(screen.getAllByText("미설정")).toHaveLength(2);
+    expect(screen.queryByText("생성실패")).toBeNull();
   });
 
   it("실패 이유를 알면 처방까지 화면에 쓴다 — 디버깅 가능해야 한다", () => {
@@ -216,7 +216,7 @@ describe("컷 프레임 상태 표시 — 빈 프레임의 세 가지 의미", (
   it("진행 정보가 없으면 지금까지의 빈 프레임 그대로다", () => {
     const { container } = render(<ContentGuideView guide={GUIDE} />);
     expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0);
-    expect(screen.queryByText("시안 생성 실패")).toBeNull();
+    expect(screen.queryByText("생성실패")).toBeNull();
   });
 
   it("컷 글자는 어느 상태에서도 남는다 — 무엇을 그리는 중인지 읽혀야 한다", () => {

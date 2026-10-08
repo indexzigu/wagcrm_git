@@ -96,8 +96,8 @@ describe("MobileUpcomingSchedule", () => {
     expect(screen.getByText("하늘언니")).toBeInTheDocument();
     expect(screen.getByText("7.20 – 7.26")).toBeInTheDocument();
     // StatusBadge 정본 라벨(status-badge.tsx 스킴)
-    expect(screen.getByText("세팅 대기")).toBeInTheDocument();
-    expect(screen.getByText("판매 진행 중")).toBeInTheDocument();
+    expect(screen.getByText("세팅대기")).toBeInTheDocument();
+    expect(screen.getByText("판매중")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("마린콜라겐 그룹"));
     expect(onOpenCampaign).toHaveBeenCalledWith("group:group-1");

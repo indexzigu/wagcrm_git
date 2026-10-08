@@ -156,12 +156,12 @@ function latest(dates: (Date | null)[]): Date | null {
 }
 
 /**
- * 대금 일정 이벤트를 **채널 슬롯에서 파생**한다 — 브랜드몰 `입금 예정 (공급사)` ·
- * 셀러몰 `입금 예정 (셀러)` · 자사몰 `지급 예정 (공급사)` + `지급 예정 (셀러)`.
+ * 대금 일정 이벤트를 **채널 슬롯에서 파생**한다 — 브랜드몰 `공급사 입금예정` ·
+ * 셀러몰 `셀러 입금예정` · 자사몰 `공급사 지급예정` + `셀러 지급예정`.
  *
  * ⛔ `"입금 예정"`/`"지급 예정"` 을 손으로 적지 말 것 — 종전이 그랬고, 자사몰이 지급 두
  * 레그로 갈라진 뒤로는 ①공급사 지급 예정일이 타임라인에 **아예 안 뜨고** ②남은 한 줄이
- * 어느 상대인지 말하지 못했다. 상대 병기는 정산 카드(`지급 예정 (공급사)`)와 같은 문법이다.
+ * 어느 상대인지 말하지 못했다. 상대 병기는 정산 목록 배지(`공급사 지급`)와 같은 문법이다.
  *
  * `dateOf` 는 그룹 폴백을 호출부가 주입하는 자리다 — 미그룹은 캠페인 컬럼, 그룹은
  * 「그룹 스칼라 우선, null 이면 멤버 최솟값」(`buildUpcomingEvents` 의 기존 규칙).
@@ -173,7 +173,9 @@ function moneyEvents(salesChannel: string, label: string, source: MoneySlotDateS
     const { date, isActual } = resolveMoneySlotEffectiveDate(slot, source);
     return {
       date,
-      type: `${slot.verb} ${isActual ? "완료" : "예정"} (${slot.counterpartLabel})`,
+      // 「셀러 지급완료」·「공급사 입금예정」 — 상대 + 붙여 쓴 낱말(상태 낱말 기준 2026-10-08).
+      // ⚠️ `upcoming-schedule-card.tsx` 의 isMoney·isSettled 가 「입금·지급·완료」 포함 여부로 읽는다.
+      type: `${slot.counterpartLabel} ${slot.verb}${isActual ? "완료" : "예정"}`,
       label,
     };
   });

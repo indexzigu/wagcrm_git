@@ -38,12 +38,15 @@ interface TaskLogEntry {
   createdAt: string;
 }
 
+// 낱말 기준(2026-10-08, 설계 정본 docs/private/specs/2026-10-08-status-wording-proposal.md A6):
+// 정상은 낱말 없이 「마지막 실행 시각」 값으로 읽히고, 손이 필요한 상태만 행에 낱말이 보인다.
+// 「기록 없음」은 비우지 않고 「미실행」이다 — 비우면 한 번도 안 돈 잡이 정상처럼 숨는다.
 const STATUS_META = {
-  SUCCESS: { dotClass: "bg-[var(--status-success)]", label: "정상" },
-  ERROR: { dotClass: "bg-[var(--status-urgent)]", label: "실패" },
-  OVERDUE: { dotClass: "bg-[var(--status-caution)]", label: "지연" },
-  RUNNING: { dotClass: "bg-[var(--status-caution)]", label: "실행 중" },
-  NONE: { dotClass: "bg-slate-300", label: "기록 없음" },
+  SUCCESS: { dotClass: "bg-[var(--status-success)]", label: "정상", textClass: "" },
+  ERROR: { dotClass: "bg-[var(--status-urgent)]", label: "실패", textClass: "text-[var(--status-urgent-text)]" },
+  OVERDUE: { dotClass: "bg-[var(--status-caution)]", label: "지연", textClass: "text-[var(--status-caution-text)]" },
+  RUNNING: { dotClass: "bg-[var(--status-caution)]", label: "실행중", textClass: "text-[var(--status-caution-text)]" },
+  NONE: { dotClass: "bg-slate-300", label: "미실행", textClass: "text-slate-600" },
 } as const;
 
 /**
@@ -340,13 +343,13 @@ export function SystemRadarCard() {
           <div className="flex items-center gap-3">
             <LegendDot statusKey="SUCCESS" />
             <LegendDot statusKey="ERROR" />
-            <LegendDot statusKey="RUNNING" label="실행 중 · 지연" />
+            <LegendDot statusKey="RUNNING" label="실행중 · 지연" />
             <LegendDot statusKey="NONE" />
           </div>
         </div>
 
         {error && (
-          <p className="mt-2 text-[11px] text-[var(--status-urgent)]">{error} 상태 점은 기록 없음으로 표시됩니다.</p>
+          <p className="mt-2 text-[11px] text-[var(--status-urgent)]">{error} 상태는 미실행으로 표시됩니다.</p>
         )}
         {runError && <p className="mt-2 text-[11px] text-[var(--status-urgent)]">{runError}</p>}
 
@@ -373,7 +376,7 @@ export function SystemRadarCard() {
                 const meta = STATUS_META[key];
                 const lastRunText = task?.lastRunAt
                   ? formatDistanceToNow(new Date(task.lastRunAt), { addSuffix: true, locale: ko })
-                  : "기록 없음";
+                  : "—";
                 const isRunningThis = runningJob === job.key;
                 const isOpen = openJob === job.key;
                 return (
@@ -392,8 +395,15 @@ export function SystemRadarCard() {
                         <span className="flex items-center gap-2 min-w-0">
                           {/* RUNNING만 live-indicator pulse — 종결 상태(SUCCESS/ERROR/NONE)는 정적 유지 */}
                           <span aria-hidden className={`size-2 rounded-full shrink-0 ${meta.dotClass}${key === "RUNNING" ? " pulse-beat-dot" : ""}`} />
-                          <span className="sr-only">{meta.label}</span>
                           <span className="text-xs font-semibold text-slate-700">{job.name}</span>
+                          {/* 색만으로 전하지 않는다 — 정상 외에는 낱말을 화면에 보인다. 정상은 낱말이
+                              없으므로 화면 낭독기에만 알린다. 지연은 아래 서브텍스트의 사유 앵커가 같은
+                              낱말을 이미 보이므로 여기서는 생략한다(한 줄에 「지연」 두 번 방지). */}
+                          {key === "SUCCESS" || key === "OVERDUE" ? (
+                            <span className="sr-only">{meta.label}</span>
+                          ) : (
+                            <span className={`shrink-0 text-[10.5px] font-medium ${meta.textClass}`}>{meta.label}</span>
+                          )}
                         </span>
                         {/* 실패 메시지는 행에 인라인으로 펼치지 않는다(오너 2026-07-24 2차 — 옆으로 너무
                             길어짐). 대신 서브텍스트에 "실패 사유" 앵커만 두고 전문은 hover 툴팁으로,

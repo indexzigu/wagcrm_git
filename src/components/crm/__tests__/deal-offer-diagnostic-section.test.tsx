@@ -85,7 +85,7 @@ describe("DealOfferDiagnosticSection", () => {
     expect(items[0]).toHaveTextContent("가격 우위");
     expect(items[0]).toHaveTextContent("미충족");
     // PASS 는 맨 아래로 밀린다
-    expect(items[items.length - 1]).toHaveTextContent("해당 없음");
+    expect(items[items.length - 1]).toHaveTextContent("—");
   });
 
   it("미충족 행은 구체 수정을 함께 보여준다", async () => {
@@ -95,9 +95,9 @@ describe("DealOfferDiagnosticSection", () => {
     ).toBeInTheDocument();
   });
 
-  it("UNKNOWN 은 실패가 아니라 '확인 안 됨'으로 표시한다", async () => {
+  it("UNKNOWN 은 실패가 아니라 '미확인'으로 표시한다", async () => {
     render(<DealOfferDiagnosticSection dealId="d1" />);
-    expect(await screen.findByText("확인 안 됨")).toBeInTheDocument();
+    expect(await screen.findByText("미확인")).toBeInTheDocument();
   });
 
   it("옵션 딜이면 본품 기준 판정임을 밝힌다", async () => {
@@ -223,7 +223,7 @@ describe("수동 행 응답 (M3)", () => {
     ).not.toBeInTheDocument();
     // PARTIAL 은 의도적으로 없다
     expect(within(group).getAllByRole("button")).toHaveLength(3);
-    expect(within(group).queryByText("부분 충족")).not.toBeInTheDocument();
+    expect(within(group).queryByText("부분충족")).not.toBeInTheDocument();
   });
 
   it("판정을 누르면 저장하고 재조회한다", async () => {

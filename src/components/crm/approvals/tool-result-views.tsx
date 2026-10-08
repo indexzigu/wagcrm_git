@@ -15,7 +15,16 @@ import type {
   GetOrderSnapshotData,
 } from "@/lib/agent/tools/data-types";
 // 구분 라벨 정본. crm-types.ts 는 type-only import 뿐이라 클라이언트 번들에 안전하다.
-import { partnerTypeLabels, type PartnerType } from "@/lib/crm-types";
+import {
+  campaignStatusLabels,
+  dealStatusLabels,
+  partnerTypeLabels,
+  type PartnerType,
+} from "@/lib/crm-types";
+
+/** 도구가 돌려준 영문 상태 코드를 화면 낱말로 — 표에 없는 코드는 원문(빈칸이 되지 않게). */
+const dealStatusWord = (status: string) => (dealStatusLabels as Record<string, string>)[status] ?? status;
+const campaignStatusWord = (status: string) => (campaignStatusLabels as Record<string, string>)[status] ?? status;
 
 /**
  * tool-result-views — READ 결과 5종 v1 리치 렌더.
@@ -156,7 +165,7 @@ const SearchDealsView: FC<ToolResultViewProps> = ({ data, bare }) => {
         {items.map((item) => (
           <li key={item.id} className="flex items-center gap-2 text-xs">
             <span className="font-medium text-foreground">{item.dealName}</span>
-            <Badge variant="outline">{item.status}</Badge>
+            <Badge variant="outline">{dealStatusWord(item.status)}</Badge>
             {item.brandName && <span className="text-muted-foreground">{item.brandName}</span>}
           </li>
         ))}
@@ -238,7 +247,7 @@ const PipelineStatusView: FC<ToolResultViewProps> = ({ data, bare }) => {
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         {statusCounts.map((sc) => (
           <Badge key={sc.status} variant="outline">
-            {sc.status} {sc.count}
+            {campaignStatusWord(sc.status)} {sc.count}
           </Badge>
         ))}
         <span className="ml-auto text-muted-foreground">총 {totalCount}건</span>
@@ -249,7 +258,7 @@ const PipelineStatusView: FC<ToolResultViewProps> = ({ data, bare }) => {
             <li key={c.id} className="flex items-center gap-2 text-xs">
               <span className="font-medium text-foreground">{c.dealName}</span>
               <span className="text-muted-foreground">{c.sellerName}</span>
-              <Badge variant="outline">{c.status}</Badge>
+              <Badge variant="outline">{campaignStatusWord(c.status)}</Badge>
             </li>
           ))}
         </ul>

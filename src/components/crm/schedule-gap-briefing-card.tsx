@@ -29,8 +29,9 @@ const urgencyConfig: Record<
     weight: string;
   }
 > = {
+  // 확보된 구간은 할 일이 없다 — 낱말 대신 「—」(상태 낱말 기준 2026-10-08).
   OK: {
-    label: "확보",
+    label: "—",
     barBg: "bg-primary",
     barBorder: "border-transparent",
     tagBg: "bg-primary/8",
@@ -175,7 +176,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
                           </span>
                         ) : (
                           <span className="text-[9px] font-medium text-muted-foreground">
-                            확보
+                            —
                           </span>
                         )}
                       </div>
@@ -249,7 +250,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="inline-flex items-center gap-1">
                 <FunnelDot color="var(--primary)" />
-                <span className="text-muted-foreground">확정 대기</span>
+                <span className="text-muted-foreground">확정대기</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.readyDeals}</span>
               </span>
               <span className="inline-flex items-center gap-1">

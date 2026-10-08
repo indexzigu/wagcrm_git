@@ -43,19 +43,19 @@ export function ApplyResultCard({ summary }: { summary: ApplySummary | null }) {
     RUNNING: {
       icon: ClockIcon,
       badge: "status-pending" as const,
-      label: "반영 중",
+      label: "반영중",
       description: "딜에 반영하는 중입니다. 잠시 후 새로고침하면 결과가 표시됩니다.",
     },
     SUCCEEDED: {
       icon: CheckCircle2Icon,
       badge: "status-success" as const,
-      label: "반영 완료",
+      label: "반영완료",
       description: null,
     },
     FAILED: {
       icon: AlertTriangleIcon,
       badge: "status-urgent" as const,
-      label: "반영 실패",
+      label: "반영실패",
       description: "딜은 하나도 변경되지 않았습니다. 원인을 고친 뒤 다시 반영할 수 있습니다.",
     },
   }[summary.outcome];

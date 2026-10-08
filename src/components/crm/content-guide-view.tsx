@@ -13,10 +13,13 @@ import {
   cutSketchKey,
   sketchFrameStatus,
   sketchFrameLabel,
+  SKETCH_STATUS_HINT,
+  SKETCH_STATUS_LABEL,
   type GuideSketch,
   type SketchProgress,
 } from "@/lib/guide-sketch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusDot } from "./status-dot";
 
 /** `## 근거 카드` 에서 헤더 기호를 뗀 제목 — 파서가 돌려주는 형태와 맞춘다. */
 const PROOF_CARD_TITLE = PROOF_CARD_HEADER.replace(/^#{2,3}\s+/, "");
@@ -124,7 +127,12 @@ function CutFrames({
                     검수를 막는 문제가 아니다. */}
                 {label ? (
                   <p className="relative mt-auto text-[10px] leading-snug text-muted-foreground">
-                    {label}
+                    {/* 낱말(생성실패·생략·미설정)은 설명창으로 풀고, 이유를 아는 실패의 처방 문장은 그대로 보인다. */}
+                    {label === SKETCH_STATUS_LABEL[status] && SKETCH_STATUS_HINT[status] ? (
+                      <StatusDot tone="neutral" showDot={false} label={label} hint={SKETCH_STATUS_HINT[status]} className="text-[10px] font-normal text-muted-foreground" />
+                    ) : (
+                      label
+                    )}
                   </p>
                 ) : null}
               </>
