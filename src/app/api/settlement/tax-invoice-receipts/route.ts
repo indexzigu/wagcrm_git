@@ -15,8 +15,7 @@ import {
 import { scanTaxInvoiceMails } from "@/lib/tax-invoice-mail/mail-scan";
 import { suggestReceiptMatch } from "@/lib/tax-invoice-mail/receipt-similarity";
 import { parseStoredJson } from "@/lib/stored-json";
-import type { ParsedEtaxInvoice } from "@/lib/tax-invoice-mail/etax-xml";
-import type { InvoiceMailSummary } from "@/lib/campaign-invoices";
+import { toInvoiceMailSummary } from "@/lib/tax-invoice-mail/invoice-mail-summary";
 
 /**
  * 수취 세금계산서 **조회 전용** 엔드포인트.
@@ -35,31 +34,6 @@ import type { InvoiceMailSummary } from "@/lib/campaign-invoices";
  * 결정 기록을 **읽어서** 결과에 얹기만 한다.
  */
 
-/**
- * 파싱된 계산서 → 화면 후보 판정용 요약. 품목명은 줄 이름을 이어 붙인다(셀러 실명이 들어갈 수
- * 있다 — 오너 전용 응답이고 로그로 남기지 않는다, P0).
- */
-function toInvoiceMailSummary(
-  parsed: ParsedEtaxInvoice | null,
-  receivedAt: string,
-): InvoiceMailSummary | null {
-  if (!parsed) return null;
-  const names = parsed.lineItems
-    .map((line) => line.name?.trim())
-    .filter((name): name is string => Boolean(name));
-  return {
-    issueId: parsed.issueId,
-    typeCode: parsed.typeCode,
-    writtenDate: parsed.writtenDate,
-    invoicerBusinessNumber: parsed.invoicerBusinessNumber,
-    invoiceeBusinessNumber: parsed.invoiceeBusinessNumber,
-    supplyAmount: parsed.amounts.supplyAmount,
-    taxAmount: parsed.amounts.taxAmount,
-    totalAmount: parsed.amounts.totalAmount,
-    itemName: names.length > 0 ? names.join(" · ") : null,
-    receivedAt,
-  };
-}
 
 export async function GET(request: Request) {
   const auth = await requireAuth();

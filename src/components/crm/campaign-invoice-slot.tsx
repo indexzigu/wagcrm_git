@@ -12,7 +12,7 @@
  * - 줄은 처음부터 달 수만큼 있고 내용만 바뀐다. 줄 높이는 고정이다(상태가 바뀌어도 칸이 흔들리지 않게).
  * 낱말·풀이·색의 정본은 `campaign-invoices.ts` 의 표다 — 여기서 문구를 새로 쓰지 말 것.
  */
-import { useCallback, useEffect, useMemo, useState, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -28,13 +28,18 @@ import {
   INVOICE_MONTH_HINT,
   INVOICE_MONTH_LABEL,
   INVOICE_MONTH_TONE,
+  collectStatementExpectations,
   deriveInvoiceMonths,
   findInvoiceCandidates,
   formatInvoiceMonth,
+  matchesExpectedAmount,
+  summarizeInvoiceRows,
+  INVOICE_AMOUNT_TOLERANCE_WON,
   type CampaignInvoiceRow,
   type CampaignInvoiceView,
   type InvoiceMailSummary,
   type InvoiceMonth,
+  type StatementMailSummary,
 } from "@/lib/campaign-invoices";
 import type { ReceiptScanApiResponse } from "@/lib/tax-invoice-mail/board-evidence";
 import { SUPPLIER } from "@/lib/tax-invoice-builder";
@@ -58,6 +63,29 @@ function formatWon(value: number | null): string {
 function formatMonthDay(ymd: string | null): string {
   if (!ymd) return INVOICE_MONTH_EMPTY_MARK;
   return `${Number(ymd.slice(5, 7))}/${Number(ymd.slice(8, 10))}`;
+}
+
+const SOURCE_LABEL: Record<CampaignInvoiceRow["source"], string> = {
+  MAIL: "발급 메일",
+  MAIL_AUTO: "발급 메일(자동 기록)",
+  MANUAL: "직접 입력",
+};
+
+/** 정산서 금액(T-242) 한 줄 — 「74,250원 · 지급일 10/20」(정산서는 브랜드가 보낸 확정 문서라 「예상」이라 부르지 않는다). */
+function formatExpected(month: InvoiceMonth): string | null {
+  const first = month.expected[0];
+  if (!first) return null;
+  const more = month.expected.length > 1 ? ` 외 ${month.expected.length - 1}건` : "";
+  const due = first.dueDate ? ` · 지급일 ${formatMonthDay(first.dueDate)}` : "";
+  return `${formatWon(first.totalAmount)}${more}${due}`;
+}
+
+/** 메일 후보 금액 − 가장 가까운 정산서 금액. 정산서가 없으면 null. */
+function statementDelta(totalAmount: number | null, month: InvoiceMonth): number | null {
+  if (totalAmount === null || month.expected.length === 0) return null;
+  return month.expected
+    .map((item) => totalAmount - item.totalAmount)
+    .reduce((best, delta) => (Math.abs(delta) < Math.abs(best) ? delta : best));
 }
 
 function DetailRow({ label, value }: { label: string; value: ReactNode }) {
@@ -118,7 +146,7 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
             <DetailRow label="합계" value={formatWon(detail.totalAmount)} />
             {detail.itemName ? <DetailRow label="품목명" value={detail.itemName} /> : null}
             {detail.approvalNo ? <DetailRow label="승인번호" value={detail.approvalNo} /> : null}
-            <DetailRow label="출처" value={detail.source === "MAIL" ? "발급 메일" : "직접 입력"} />
+            <DetailRow label="출처" value={SOURCE_LABEL[detail.source]} />
           </div>
         ) : candidate ? (
           <div className="space-y-1 border-t border-border/60 pt-1.5">
@@ -126,6 +154,11 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
             <DetailRow label="합계" value={formatWon(candidate.totalAmount)} />
             {candidate.itemName ? <DetailRow label="품목명" value={candidate.itemName} /> : null}
             {month.candidates.length > 1 ? <DetailRow label="후보" value={`${month.candidates.length}장`} /> : null}
+          </div>
+        ) : null}
+        {formatExpected(month) ? (
+          <div className="border-t border-border/60 pt-1.5">
+            <DetailRow label="정산서 금액" value={formatExpected(month)} />
           </div>
         ) : null}
       </HoverCardContent>
@@ -154,6 +187,7 @@ function CandidateCard({
   onConfirm,
   onDismiss,
   confirmLabel = "확인",
+  statementDelta = null,
 }: {
   mail: InvoiceMailSummary;
   busy: boolean;
@@ -161,13 +195,33 @@ function CandidateCard({
   /** 없으면 「이 메일이 아님」 버튼을 그리지 않는다(수정세금계산서 카드). */
   onDismiss?: () => void;
   confirmLabel?: string;
+  /**
+   * 메일 금액 − 정산서 금액(가장 가까운 것). null = 그 달 정산서 없음. 같은 달 같은 브랜드 계산서가
+   * 여러 장일 때 고를 근거다(T-242) — 맞으면 회색 한마디, 다르면 차이를 글자로 진하게(색 추가 없음).
+   */
+  statementDelta?: number | null;
 }) {
+  const matches = statementDelta !== null && Math.abs(statementDelta) <= INVOICE_AMOUNT_TOLERANCE_WON;
   return (
     <div className="space-y-1 rounded-lg border border-border/70 p-2.5">
       <DetailRow label="작성일" value={mail.writtenDate ?? "—"} />
       <DetailRow label="공급가액" value={formatWon(mail.supplyAmount)} />
       <DetailRow label="세액" value={formatWon(mail.taxAmount)} />
-      <DetailRow label="합계" value={formatWon(mail.totalAmount)} />
+      <DetailRow
+        label="합계"
+        value={
+          <>
+            {formatWon(mail.totalAmount)}
+            {statementDelta === null ? null : matches ? (
+              <span className="ml-1.5 text-muted-foreground">정산서 금액과 같음</span>
+            ) : (
+              <span className="ml-1.5 font-medium text-foreground">
+                정산서보다 {Math.abs(statementDelta).toLocaleString("ko-KR")}원 {statementDelta > 0 ? "많음" : "적음"}
+              </span>
+            )}
+          </>
+        }
+      />
       <DetailRow label="품목명" value={mail.itemName ?? "—"} />
       <DetailRow label="메일" value={mail.receivedAt ? `${toKstYmd(new Date(mail.receivedAt))} 받음` : "—"} />
       {mail.issueId ? (
@@ -200,34 +254,70 @@ function CandidateCard({
   );
 }
 
-function ManualForm({ busy, onSubmit }: { busy: boolean; onSubmit: (input: { writtenDate: string; totalAmount: number | null; approvalNo: string | null }) => void }) {
-  const [writtenDate, setWrittenDate] = useState("");
-  const [total, setTotal] = useState("");
+function ManualForm({
+  busy,
+  onSubmit,
+  prefill,
+}: {
+  busy: boolean;
+  onSubmit: (input: {
+    writtenDate: string;
+    totalAmount: number | null;
+    approvalNo: string | null;
+    /** 정산서 값을 고치지 않고 그대로 기록하는가 — 나중에 직접 친 값과 가를 수 있게 메모로 남긴다 */
+    fromStatement: boolean;
+  }) => void;
+  /** 정산서가 그 달 계산서 하나를 예고했으면 작성일·합계를 미리 채운다(T-242) — 오너가 고칠 수 있다. */
+  prefill?: { writtenDate: string; totalAmount: number } | null;
+}) {
+  const [writtenDate, setWrittenDate] = useState(prefill?.writtenDate ?? "");
+  const [total, setTotal] = useState(prefill ? String(prefill.totalAmount) : "");
   const [approvalNo, setApprovalNo] = useState("");
+  // 정산서가 폼을 연 뒤에 도착해도 **비어 있을 때만** 채운다 — 오너가 친 값은 건드리지 않는다.
+  const prefillDate = prefill?.writtenDate ?? null;
+  const prefillTotal = prefill?.totalAmount ?? null;
+  useEffect(() => {
+    if (prefillDate === null || prefillTotal === null) return;
+    setWrittenDate((current) => current || prefillDate);
+    setTotal((current) => current || String(prefillTotal));
+  }, [prefillDate, prefillTotal]);
   const amount = total.trim() === "" ? null : Number(total.replace(/[^\d-]/g, ""));
+  const fromStatement = prefill != null && writtenDate === prefill.writtenDate && amount === prefill.totalAmount;
+  // 정산서가 예고한 작성일(월말)이 아직 오지 않았을 수 있다 — 발행 전 값을 「기록됨」으로 만들지 않는다.
+  const isFuture = writtenDate !== "" && writtenDate > toKstYmd(new Date());
   return (
     <form
       className="grid grid-cols-3 gap-2 rounded-lg border border-dashed border-border p-2.5"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!writtenDate) return;
-        onSubmit({ writtenDate, totalAmount: amount !== null && Number.isFinite(amount) ? amount : null, approvalNo: approvalNo.trim() || null });
+        if (!writtenDate || isFuture) return;
+        onSubmit({
+          writtenDate,
+          totalAmount: amount !== null && Number.isFinite(amount) ? amount : null,
+          approvalNo: approvalNo.trim() || null,
+          fromStatement,
+        });
       }}
     >
       <label className="grid gap-1 text-[10px] text-muted-foreground">
         작성일
-        <input type="date" required value={writtenDate} onChange={(e) => setWrittenDate(e.target.value)} className="h-7 rounded-md border border-border px-1.5 text-xs text-foreground" />
+        <input type="date" required value={writtenDate} onChange={(e) => setWrittenDate(e.target.value)} className="h-7 w-full min-w-0 rounded-md border border-border px-1.5 text-xs text-foreground" />
       </label>
       <label className="grid gap-1 text-[10px] text-muted-foreground">
         합계(원)
-        <input inputMode="numeric" value={total} onChange={(e) => setTotal(e.target.value)} className="h-7 rounded-md border border-border px-1.5 text-right text-xs tabular-nums text-foreground" />
+        <input inputMode="numeric" value={total} onChange={(e) => setTotal(e.target.value)} className="h-7 w-full min-w-0 rounded-md border border-border px-1.5 text-right text-xs tabular-nums text-foreground" />
       </label>
       <label className="grid gap-1 text-[10px] text-muted-foreground">
         승인번호(선택)
-        <input value={approvalNo} onChange={(e) => setApprovalNo(e.target.value)} className="h-7 rounded-md border border-border px-1.5 text-xs tabular-nums text-foreground" />
+        <input value={approvalNo} onChange={(e) => setApprovalNo(e.target.value)} className="h-7 w-full min-w-0 rounded-md border border-border px-1.5 text-xs tabular-nums text-foreground" />
       </label>
-      <div className="col-span-3 flex justify-end">
-        <button type="submit" disabled={busy || !writtenDate} className="h-7 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">
+      <div className="col-span-3 flex items-center justify-end gap-2">
+        {isFuture ? (
+          <span className="mr-auto text-[10px] text-muted-foreground">작성일이 아직 오지 않았습니다.</span>
+        ) : fromStatement ? (
+          <span className="mr-auto text-[10px] text-muted-foreground">정산서 값입니다. 실제 계산서와 다르면 고쳐 주세요.</span>
+        ) : null}
+        <button type="submit" disabled={busy || !writtenDate || isFuture} className="h-7 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground disabled:opacity-50">
           기록
         </button>
       </div>
@@ -265,6 +355,9 @@ function MonthSection({
         <h4 className="text-sm font-semibold">{formatInvoiceMonth(month.yearMonth)}분</h4>
         <span className="text-xs text-muted-foreground">{label ?? (month.state === "RECORDED" ? "기록됨" : INVOICE_MONTH_EMPTY_MARK)}</span>
       </div>
+      {formatExpected(month) ? (
+        <p className="text-xs text-muted-foreground">정산서 금액 {formatExpected(month)}</p>
+      ) : null}
       {month.recorded.map((row: CampaignInvoiceRow) => (
         <div key={row.id} className="space-y-1 rounded-lg bg-slate-50 p-2.5">
           <DetailRow label="작성일" value={row.writtenAt ?? "—"} />
@@ -289,11 +382,19 @@ function MonthSection({
         />
       ))}
       {month.state === "PENDING"
-        ? month.candidates.map((mail) => (
+        ? // 정산서 금액과 맞는 후보를 위로 — 첫 카드만 보고 확인해도 덜 틀리게(순서 외에는 그대로).
+          [...month.candidates]
+            .sort(
+              (a, b) =>
+                Number(matchesExpectedAmount(b.totalAmount, month.expected)) -
+                Number(matchesExpectedAmount(a.totalAmount, month.expected)),
+            )
+            .map((mail) => (
             <CandidateCard
               key={mail.issueId ?? mail.writtenDate}
               mail={mail}
               busy={busy}
+              statementDelta={statementDelta(mail.totalAmount, month)}
               onConfirm={() => void run(confirmBody(mail))}
               onDismiss={() => void run(dismissBody(mail))}
             />
@@ -324,8 +425,13 @@ function MonthSection({
           {manualOpen ? (
             <ManualForm
               busy={busy}
-              onSubmit={(input) =>
-                void run({ action: "manual", note: null, ...input }).then((ok) => {
+              prefill={
+                month.expected.length === 1
+                  ? { writtenDate: month.expected[0].writtenDate, totalAmount: month.expected[0].totalAmount }
+                  : null
+              }
+              onSubmit={({ fromStatement, ...input }) =>
+                void run({ action: "manual", note: fromStatement ? "정산서 값 그대로 입력" : null, ...input }).then((ok) => {
                   // 실패하면 입력을 지우지 않는다 — 오너가 다시 칠 필요가 없게.
                   if (ok) setManualOpen(false);
                 })
@@ -357,6 +463,27 @@ function useCampaignInvoices({
   const [scanAttempted, setScanAttempted] = useState(false);
   /** 판정 기준 시각 — 그리는 도중 시계를 읽지 않도록 칸이 열릴 때 한 번 고정한다. */
   const [now] = useState(() => new Date());
+  /** 정산서 메일(T-242) — 메일함 확인과 함께 한 번 읽는다. 실패해도 계산서 기록은 그대로 된다. */
+  const [statements, setStatements] = useState<StatementMailSummary[] | null>(null);
+  const [statementsFailed, setStatementsFailed] = useState(false);
+  const [statementsLoading, setStatementsLoading] = useState(false);
+
+  const loadStatements = useCallback(async () => {
+    setStatementsLoading(true);
+    try {
+      const res = await fetch("/api/settlement/brand-statements");
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { statements: StatementMailSummary[] };
+      setStatements(data.statements);
+      setStatementsFailed(false);
+    } catch (error) {
+      // 삼키지 않는다(P0) — 창 설명에 「정산서 확인 실패」로 드러낸다.
+      console.warn("[campaign-invoice-slot] 정산서 메일 조회 실패", error);
+      setStatementsFailed(true);
+    } finally {
+      setStatementsLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async (): Promise<boolean> => {
     try {
@@ -385,6 +512,24 @@ function useCampaignInvoices({
     void onRequestScan();
   }, [onRequestScan]);
 
+  // 월정산 칸에 **비어 있는 달이 있을 때만** 정산서를 한 번 읽는다(메일함 스캔과 별개 — 전체보관함을
+  // 훑는 비싼 조회라 다 끝난 캠페인에서는 돌리지 않는다). 실패는 창 설명에 드러난다. ref 로 막는 이유:
+  // 개발 모드에서 효과가 두 번 돌아도 한 번만 부르게(상태 갱신은 그 사이에 반영되지 않는다).
+  const statementsRequested = useRef(false);
+  const hasOpenMonth = useMemo(() => {
+    if (!applicable) return false;
+    return summarizeInvoiceRows({
+      periodStart: new Date(applicable.periodStart),
+      periodEnd: new Date(applicable.periodEnd),
+      rows: applicable.rows,
+    }).openMonths.length > 0;
+  }, [applicable]);
+  useEffect(() => {
+    if (!hasOpenMonth || statementsRequested.current) return;
+    statementsRequested.current = true;
+    void loadStatements();
+  }, [hasOpenMonth, loadStatements]);
+
   const months = useMemo(() => {
     if (!applicable) return [];
     const mails = (scan?.results ?? [])
@@ -400,6 +545,12 @@ function useCampaignInvoices({
     const scanSinceYmd = scan
       ? toKstYmd(new Date(now.getTime() - scan.scan.sinceDays * 24 * 60 * 60 * 1000))
       : null;
+    const expectationsByMonth = collectStatementExpectations({
+      statements: statements ?? [],
+      direction: applicable.direction,
+      labels: applicable.sellerLabels,
+      counterpartLabel: applicable.counterpartLabel,
+    });
     return deriveInvoiceMonths({
       periodStart: new Date(applicable.periodStart),
       periodEnd: new Date(applicable.periodEnd),
@@ -408,8 +559,9 @@ function useCampaignInvoices({
       amendmentsByMonth,
       scanSinceYmd,
       today: now,
+      expectationsByMonth,
     });
-  }, [applicable, scan, now]);
+  }, [applicable, scan, now, statements]);
 
   const run = useCallback(
     async (body: Record<string, unknown>): Promise<boolean> => {
@@ -428,7 +580,7 @@ function useCampaignInvoices({
     [busy, campaignId, load, onChanged],
   );
 
-  return { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted };
+  return { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading };
 }
 
 /** 달별 확인·직접 입력·「없음」·취소 창 — 캠페인 상세 칸과 세무 보드가 같은 창을 연다. */
@@ -440,6 +592,8 @@ function InvoiceMonthsDialog({
   months,
   busy,
   scanLoading,
+  statementsFailed,
+  statementsLoading,
   run,
 }: {
   open: boolean;
@@ -449,6 +603,8 @@ function InvoiceMonthsDialog({
   months: InvoiceMonth[];
   busy: boolean;
   scanLoading: boolean;
+  statementsFailed: boolean;
+  statementsLoading: boolean;
   run: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
   return (
@@ -460,6 +616,7 @@ function InvoiceMonthsDialog({
             {applicable.counterpartLabel}
             {applicable.memberCount > 1 ? ` · 그룹 ${applicable.memberCount}개 캠페인 합산 1장` : ""}
             {scanLoading ? " · 메일함 확인 중" : ""}
+            {statementsLoading ? " · 정산서 확인 중" : statementsFailed ? " · 정산서 메일 확인 실패" : ""}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -494,7 +651,7 @@ export function CampaignInvoiceDialog({
   onRequestScan: () => Promise<void> | void;
   onChanged: () => Promise<void> | void;
 }) {
-  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted } = useCampaignInvoices({
+  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
     campaignId,
     scan,
     onRequestScan,
@@ -541,6 +698,8 @@ export function CampaignInvoiceDialog({
       months={months}
       busy={busy}
       scanLoading={scanLoading}
+      statementsFailed={statementsFailed}
+      statementsLoading={statementsLoading}
       run={run}
     />
   );
@@ -571,7 +730,7 @@ export function CampaignInvoiceSlot({
   attachment: ReactNode;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted } = useCampaignInvoices({
+  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
     campaignId,
     scan,
     onRequestScan,
@@ -641,6 +800,8 @@ export function CampaignInvoiceSlot({
         months={months}
         busy={busy}
         scanLoading={scanLoading}
+        statementsFailed={statementsFailed}
+      statementsLoading={statementsLoading}
         run={run}
       />
     </div>

@@ -19,6 +19,10 @@ import { scanTaxInvoiceMails } from "@/lib/tax-invoice-mail/mail-scan";
 // 소비한다) — 이 route 가 사본을 따로 들고 있다가 2026-08-07 정정 때 한쪽만 고쳐져
 // 갈렸다(FIX 3). route 가 lib 를 import 하는 방향이 자연스러워 여기서 정리한다.
 import { FIELD_LABEL } from "@/lib/tax-filing-auto-confirm";
+import { planAutoRecords, type AutoRecordSkipReason, type InvoiceMailSummary } from "@/lib/campaign-invoices";
+import { toInvoiceMailSummary } from "@/lib/tax-invoice-mail/invoice-mail-summary";
+import { scanBrandStatementMails } from "@/lib/tax-invoice-mail/brand-statement-scan";
+import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 
 /**
  * **발행(우리가 끊는) 세금계산서 자동 확정** — 하루 한 번.
@@ -110,6 +114,124 @@ function summarizeConfirm(op: {
       : ` · ⚠️ 정산액과 ${op.evidence.toleratedDelta.toLocaleString("ko-KR")}원 차이를 허용오차로 흡수했습니다`;
   const fieldLabel = (FIELD_LABEL as Record<string, string>)[op.field] ?? op.field;
   return `메일 자동 확정: ${fieldLabel}을 ${op.writtenDate}로 기록했습니다(계산서 ${op.evidence.invoiceCount}장${amount}${ids} · 대조 근거 ${basis}${tolerated}).`;
+}
+
+/**
+ * 정산서는 계산서보다 먼저 온다(월말 작성 · 다음 달 초 발급) — 계산서 조회 창보다 한 달 더 본다.
+ */
+const STATEMENT_SCAN_SINCE_DAYS = SCAN_SINCE_DAYS + 31;
+
+type MonthlyAutoRecordReport = {
+  /**
+   * 판정 자체를 하지 않은 이유 — 메일을 다 못 봤으면 「금액이 맞는 장이 한 장뿐」·「정산서가 한 통뿐」이
+   * 거짓일 수 있다(잘린 쪽에 같은 금액이 있을 수 있다, 코드 리뷰 2026-10-09). null = 판정함.
+   */
+  blocked: "INVOICE_SCAN_TRUNCATED" | "STATEMENT_SCAN_TRUNCATED" | null;
+  statementBox: string | null;
+  units: number;
+  statements: number;
+  /** 정산서처럼 보였지만 두 형식 어느 쪽으로도 못 읽은 메일 수 — 형식 변경 신호 */
+  statementsUnparsed: number;
+  planned: number;
+  applied: number;
+  noop: number;
+  droppedByCap: number;
+  skipped: Partial<Record<AutoRecordSkipReason, number>>;
+  /** 계획된 건 — 캠페인 id·달·금액만(실명 없음). 예행(dryRun)에서 「무엇이 붙을지」를 보는 창이다. */
+  plannedDetail: Array<{ campaignId: string; yearMonth: string; totalAmount: number | null; delta: number }>;
+  failures: Array<{ key: string; error: string }>;
+};
+
+/**
+ * 월정산 공급사 계산서 **확인 없는 자동 기록**(T-242) — 발행(ISSUE)만, `planAutoRecords` 의 네 조건
+ * (단일 칸 · 정산서 1건 · 금액 ±99원 1장 · 수정계산서 없음)을 모두 만족할 때만. 쓰기는 위 단일 날짜
+ * 확정과 **같은 env 게이트**(`TAX_INVOICE_AUTO_CONFIRM=1`) 뒤에 있다 — 꺼져 있으면 예행만 한다.
+ * 정산서 스캔이 실패하면 이 단계만 실패로 보고하고(조용히 0건으로 보이지 않게) 위 단계 결과는 둔다.
+ */
+async function runMonthlyAutoRecord(input: {
+  mails: InvoiceMailSummary[];
+  /** 계산서 스캔이 상한에 걸려 안 읽은 메일 수 */
+  invoiceScanTruncated: number;
+  dryRun: boolean;
+}): Promise<MonthlyAutoRecordReport> {
+  const report: MonthlyAutoRecordReport = {
+    blocked: null,
+    statementBox: null,
+    units: 0,
+    statements: 0,
+    statementsUnparsed: 0,
+    planned: 0,
+    applied: 0,
+    noop: 0,
+    droppedByCap: 0,
+    skipped: {},
+    plannedDetail: [],
+    failures: [],
+  };
+  const { units, recordedIssueIds } = await campaignInvoiceService.loadAutoRecordUnits(getPrisma(), {
+    sinceDays: SCAN_SINCE_DAYS,
+  });
+  report.units = units.length;
+  // 비어 있는 발행 칸이 없으면 메일함을 한 번 더 열지 않는다.
+  if (!units.some((unit) => unit.direction === "ISSUE")) return report;
+
+  if (input.invoiceScanTruncated > 0) {
+    report.blocked = "INVOICE_SCAN_TRUNCATED";
+    return report;
+  }
+  const statementScan = await scanBrandStatementMails({ sinceDays: STATEMENT_SCAN_SINCE_DAYS });
+  report.statementBox = statementScan.box;
+  report.statements = statementScan.statements.length;
+  report.statementsUnparsed = statementScan.unparsed;
+  if (statementScan.truncated > 0) {
+    report.blocked = "STATEMENT_SCAN_TRUNCATED";
+    return report;
+  }
+
+  const plan = planAutoRecords({
+    units,
+    mails: input.mails,
+    statements: statementScan.statements,
+    ourBusinessNumber: SUPPLIER.businessNumber,
+    recordedIssueIds,
+  });
+  for (const item of plan.skipped) report.skipped[item.reason] = (report.skipped[item.reason] ?? 0) + 1;
+  report.planned = plan.ops.length;
+  const capped = plan.ops.slice(0, MAX_CONFIRMS_PER_RUN);
+  report.droppedByCap = plan.ops.length - capped.length;
+  report.plannedDetail = capped.map((op) => ({
+    campaignId: op.campaignId,
+    yearMonth: op.yearMonth,
+    totalAmount: op.mail.totalAmount,
+    delta: op.delta,
+  }));
+  if (input.dryRun) return report;
+
+  for (const op of capped) {
+    const key = `${op.unitKey}:${op.yearMonth}`;
+    try {
+      const row = await campaignInvoiceService.autoRecordMailInvoice({
+        campaignId: op.campaignId,
+        yearMonth: op.yearMonth,
+        mail: {
+          issueId: op.mail.issueId as string,
+          writtenDate: op.mail.writtenDate as string,
+          supplyAmount: op.mail.supplyAmount,
+          taxAmount: op.mail.taxAmount,
+          totalAmount: op.mail.totalAmount,
+          itemName: op.mail.itemName,
+          mailReceivedAt: op.mail.receivedAt,
+        },
+        expectedTotal: op.expected.totalAmount,
+        delta: op.delta,
+      });
+      if (row) report.applied += 1;
+      else report.noop += 1;
+    } catch (error) {
+      report.failures.push({ key, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return report;
 }
 
 async function handler(request: Request): Promise<Response> {
@@ -266,6 +388,25 @@ async function handler(request: Request): Promise<Response> {
     }
   }
 
+  // ── 월정산 공급사 계산서 자동 기록(T-242). 단일 날짜 확정과 같은 스캔 결과를 쓴다.
+  let monthlyAutoRecord: MonthlyAutoRecordReport | { failed: true; error: string };
+  try {
+    monthlyAutoRecord = await runMonthlyAutoRecord({
+      mails: scan.mails
+        .map((mail) => toInvoiceMailSummary(mail.parsed, mail.receivedAt))
+        .filter((mail): mail is InvoiceMailSummary => mail !== null),
+      invoiceScanTruncated: scan.truncated,
+      dryRun,
+    });
+  } catch (error) {
+    monthlyAutoRecord = { failed: true, error: error instanceof Error ? error.message : String(error) };
+  }
+  const monthlyFailures =
+    "failed" in monthlyAutoRecord
+      ? [{ key: "monthly-auto-record", error: monthlyAutoRecord.error }]
+      : monthlyAutoRecord.failures;
+  const allFailures = [...failures, ...monthlyFailures];
+
   const byStatus = {
     confirmed: verdicts.filter((v) => v.status === "CONFIRMED").length,
     needsReview: verdicts.filter((v) => v.status === "NEEDS_REVIEW").length,
@@ -358,9 +499,16 @@ async function handler(request: Request): Promise<Response> {
     failures,
     /** 어느 기대 건에도 붙지 못한 계산서 — 사유별로 갈라 둔다(사유 코드만, 실명 없음). */
     unassigned: unassigned.map((item) => ({ mailUid: item.mailUid, code: item.code })),
+    monthlyAutoRecord,
     // 쓰기가 한 건이라도 터졌으면 레이더를 빨강으로 — HTTP 200 을 성공으로 읽지 않는다.
-    ...(failures.length > 0
-      ? { failed: true, failureReason: `발행 확정 쓰기 ${failures.length}건 실패` }
+    ...(allFailures.length > 0
+      ? {
+          failed: true,
+          failureReason:
+            failures.length > 0
+              ? `발행 확정 쓰기 ${failures.length}건 실패`
+              : `월정산 자동 기록 실패: ${monthlyFailures[0].error}${monthlyFailures.length > 1 ? ` 외 ${monthlyFailures.length - 1}건` : ""}`,
+        }
       : {}),
   });
 }

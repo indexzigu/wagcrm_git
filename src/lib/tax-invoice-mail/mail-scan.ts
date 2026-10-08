@@ -220,7 +220,8 @@ function toBuffer(body: unknown): Buffer {
   return Buffer.from(String(body ?? ""), "utf8");
 }
 
-async function parseMime(body: unknown) {
+/** 메일 원문 → mailparser 결과. 정산서 스캔(`brand-statement-scan.ts`)도 같은 해석을 쓴다. */
+export async function parseMime(body: unknown) {
   const stream = new Readable();
   stream.push(toBuffer(body));
   stream.push(null);

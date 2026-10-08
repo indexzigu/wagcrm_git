@@ -18,6 +18,8 @@
  * 설계 정본: docs/private/specs/2026-10-08-invoice-autofill-flow.md (+ -design-critique.md)
  */
 import { toKstYmd } from "./date-utils";
+import { normalizeForCompare } from "./text-normalize";
+import { SUB_HUNDRED_TRUNCATION_TOLERANCE_WON } from "./tax-invoice-mail/receipt-match";
 import {
   TAX_INVOICE_OBLIGATION_TABLE,
   resolveTaxFilingChannelGroup,
@@ -25,7 +27,8 @@ import {
 
 export type InvoiceDirection = "ISSUE" | "RECEIVE";
 export type InvoiceRowStatus = "RECORDED" | "WAIVED" | "DISMISSED";
-export type InvoiceRowSource = "MAIL" | "MANUAL";
+/** MAIL = 오너가 메일 계산서를 확인해 기록 · MAIL_AUTO = 크론이 확인 없이 기록(T-242) · MANUAL = 직접 입력 */
+export type InvoiceRowSource = "MAIL" | "MAIL_AUTO" | "MANUAL";
 
 /** 저장된 계산서 행(화면·판정용 직렬형 — 날짜는 KST "YYYY-MM-DD"). */
 export type CampaignInvoiceRow = {
@@ -121,6 +124,8 @@ export type CampaignInvoiceView =
       periodEnd: string;
       /** 그룹이면 멤버 수, 아니면 1 */
       memberCount: number;
+      /** 셀러 별칭·이름 — 정산서 메일을 이 단위 것으로 고르는 키(T-242) */
+      sellerLabels: string[];
       /** 레거시 단일 날짜(KST) — 레거시 모드 판정·표시용 */
       legacyDate: string | null;
       legacyMode: boolean;
@@ -154,6 +159,8 @@ export type InvoiceMonth = {
   candidates: InvoiceMailSummary[];
   /** 아직 처리되지 않은 수정세금계산서(0201) */
   amendments: InvoiceMailSummary[];
+  /** 정산서가 예고한 이 달 계산서(T-242) — 미리 보기용, 기록의 근거는 아니다 */
+  expected: StatementExpectation[];
 };
 
 const YEAR_MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -283,6 +290,8 @@ export function deriveInvoiceMonths(input: {
   /** 메일함 조회 시작일(KST "YYYY-MM-DD"). null = 메일함을 못 읽었다. */
   scanSinceYmd: string | null;
   today: Date;
+  /** 정산서 예상(T-242). 없으면 빈 목록 */
+  expectationsByMonth?: ReadonlyMap<string, readonly StatementExpectation[]>;
 }): InvoiceMonth[] {
   const live = input.rows.filter((row) => row.status !== "DISMISSED");
   const monthSet = new Set(listYearMonths(input.periodStart, input.periodEnd));
@@ -309,7 +318,8 @@ export function deriveInvoiceMonths(input: {
       state = "OUT_OF_SCAN";
     else state = "NOT_FOUND";
 
-    return { yearMonth, state, recorded, waived, candidates, amendments };
+    const expected = [...(input.expectationsByMonth?.get(yearMonth) ?? [])];
+    return { yearMonth, state, recorded, waived, candidates, amendments, expected };
   });
 }
 
@@ -359,4 +369,235 @@ export function resolveLegacyInvoiceDate(input: {
     .map((row) => row.writtenAt as string)
     .sort();
   return dates.at(-1) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// 정산서 대조 · 자동 기록 판정 (T-242)
+// ---------------------------------------------------------------------------
+
+/**
+ * 정산서가 이 단위·이 달에 예고한 계산서 — 화면은 「예상 금액」으로 미리 보이고, 자동 기록은
+ * 메일 계산서의 금액이 이것과 맞을 때만 쓴다. ⛔ 기록의 근거는 아니다(근거는 발급 메일의 승인번호).
+ */
+export type StatementExpectation = {
+  totalAmount: number;
+  writtenDate: string;
+  dueDate: string | null;
+  promotionLabel: string | null;
+  receivedAt: string;
+};
+
+/** 정산서 메일 한 통의 요약 — `/api/settlement/brand-statements` 응답의 `statements[]` 모양. */
+export type StatementMailSummary = {
+  promotionLabel: string | null;
+  /** 정산서를 보낸 브랜드 표기(`brand-statement.ts`) — 못 읽었으면 null 이고 그 정산서는 대조하지 않는다 */
+  counterpartyLabel: string | null;
+  subject: string;
+  receivedAt: string;
+  invoices: ReadonlyArray<{
+    direction: InvoiceDirection | null;
+    writtenDate: string;
+    yearMonth: string;
+    totalAmount: number;
+    dueDate: string | null;
+  }>;
+};
+
+/**
+ * 「정산 원 단위 절사」 허용오차(오너 확정 99원). 수취 판정과 같은 숫자를 쓴다 —
+ * 정본은 `tax-invoice-mail/receipt-match.ts` 의 `SUB_HUNDRED_TRUNCATION_TOLERANCE_WON`.
+ */
+export const INVOICE_AMOUNT_TOLERANCE_WON = SUB_HUNDRED_TRUNCATION_TOLERANCE_WON;
+
+/** 한글 이름은 두 글자부터, 그 밖(영문 핸들 등)은 세 글자부터 대조에 쓴다 — 짧으면 우연히 겹친다. */
+function isUsableLabel(needle: string): boolean {
+  return /[가-힣]/.test(needle) ? needle.length >= 2 : needle.length >= 3;
+}
+
+/**
+ * 정산서가 이 셀러 것인가 — 프로모션명·제목에 단위의 셀러 이름(별칭)이 들어 있는가.
+ * 브랜드는 프로모션(= 셀러 × 회차)마다 정산서를 따로 보내고 제목·프로모션명에 셀러 이름을 적는다
+ * (메일함 실측 2026-10-08).
+ */
+export function statementMentionsUnit(statement: Pick<StatementMailSummary, "promotionLabel" | "subject">, labels: readonly string[]): boolean {
+  const text = normalizeForCompare(`${statement.promotionLabel ?? ""} ${statement.subject}`);
+  return labels.some((label) => {
+    const needle = normalizeForCompare(label);
+    return isUsableLabel(needle) && text.includes(needle);
+  });
+}
+
+/**
+ * 정산서를 보낸 브랜드가 이 단위의 거래처인가. 같은 셀러가 여러 브랜드와 공구하므로 셀러 이름만으로는
+ * 남의 정산서가 붙는다(코드 리뷰 2026-10-09). 표기 차이(「(주)」 등)를 견디게 한쪽이 다른 쪽을 품으면
+ * 같다고 본다. 어느 쪽이든 비면 같지 않다(모르는 브랜드를 이 거래처로 넘기지 않는다).
+ */
+export function statementFromCounterpart(statement: Pick<StatementMailSummary, "counterpartyLabel">, counterpartLabel: string): boolean {
+  const brand = normalizeForCompare(statement.counterpartyLabel ?? "");
+  const partner = normalizeForCompare(counterpartLabel);
+  if (!brand || !partner) return false;
+  return brand.includes(partner) || partner.includes(brand);
+}
+
+/**
+ * 이 단위의 달별 예상 계산서. 같은 정산서가 두 번 와도(재발송) 한 번만 센다.
+ * `otherUnitsLabels` 를 주면 **다른 단위에도 해당하는 정산서는 뺀다**(어느 쪽 것인지 모르므로).
+ */
+export function collectStatementExpectations(input: {
+  statements: readonly StatementMailSummary[];
+  direction: InvoiceDirection;
+  labels: readonly string[];
+  /** 이 단위의 거래처 이름 — 정산서를 보낸 브랜드와 같아야 한다 */
+  counterpartLabel: string;
+  otherUnitsLabels?: ReadonlyArray<readonly string[]>;
+}): Map<string, StatementExpectation[]> {
+  const byMonth = new Map<string, StatementExpectation[]>();
+  const seen = new Set<string>();
+  for (const statement of input.statements) {
+    if (!statementFromCounterpart(statement, input.counterpartLabel)) continue;
+    if (!statementMentionsUnit(statement, input.labels)) continue;
+    if ((input.otherUnitsLabels ?? []).some((labels) => statementMentionsUnit(statement, labels))) continue;
+    for (const invoice of statement.invoices) {
+      if (invoice.direction !== input.direction || !isValidYearMonth(invoice.yearMonth)) continue;
+      const key = `${invoice.yearMonth}|${invoice.writtenDate}|${invoice.totalAmount}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const list = byMonth.get(invoice.yearMonth) ?? [];
+      list.push({
+        totalAmount: invoice.totalAmount,
+        writtenDate: invoice.writtenDate,
+        dueDate: invoice.dueDate,
+        promotionLabel: statement.promotionLabel,
+        receivedAt: statement.receivedAt,
+      });
+      byMonth.set(invoice.yearMonth, list);
+    }
+  }
+  return byMonth;
+}
+
+/** 메일 계산서 금액이 정산서 예상 금액 중 하나와 허용오차 안에서 맞는가. */
+export function matchesExpectedAmount(totalAmount: number | null, expected: readonly StatementExpectation[]): boolean {
+  if (totalAmount === null) return false;
+  return expected.some((item) => Math.abs(item.totalAmount - totalAmount) <= INVOICE_AMOUNT_TOLERANCE_WON);
+}
+
+/** 자동 기록 판정에 넣는 월정산 단위 하나(서버가 DB 에서 만든다). */
+export type AutoRecordUnit = {
+  /** 그룹 id 또는 캠페인 id */
+  unitKey: string;
+  /** 기록을 붙일 캠페인(그룹이면 id 오름차순 첫 멤버) */
+  anchorCampaignId: string;
+  direction: InvoiceDirection;
+  counterpartBusinessNumber: string | null;
+  /** 거래처 이름 — 정산서 브랜드 대조 키 */
+  counterpartLabel: string;
+  /** 아직 기록·「없음」이 없는 달 */
+  openMonths: readonly string[];
+  /** 셀러 별칭·이름 — 정산서 대조 키 */
+  labels: readonly string[];
+  /** 이 단위에서 「이 메일이 아님」으로 뺀 승인번호 */
+  dismissedIssueIds: readonly string[];
+};
+
+export type AutoRecordSkipReason =
+  | "MULTIPLE_OPEN_SLOTS"
+  | "NO_STATEMENT"
+  | "MULTIPLE_STATEMENTS"
+  | "AMENDMENT_PENDING"
+  | "NO_AMOUNT_MATCH"
+  | "AMBIGUOUS_AMOUNT";
+
+export type AutoRecordOp = {
+  unitKey: string;
+  campaignId: string;
+  yearMonth: string;
+  mail: InvoiceMailSummary;
+  expected: StatementExpectation;
+  /** 메일 금액 − 정산서 금액(허용오차로 흡수한 차이). 0 이면 정확히 같다. */
+  delta: number;
+};
+
+/**
+ * **확인 없이 기록해도 되는가** — 발행(ISSUE) 방향만, 아래가 전부 성립할 때만 고른다(T-242,
+ * 반대 검토 2026-10-08 3번 「자동 채움은 단일 칸 + 금액 ±99 만」).
+ * ① 단일 칸: 같은 상대·같은 달에 비어 있는 월정산 칸이 이 단위 하나뿐이다.
+ * ② 정산서: 이 단위에만 해당하는 정산서가 그 달 예상 금액을 정확히 한 개 말한다.
+ * ③ 금액: 그 달 메일 계산서(일반 0101) 중 예상 금액 ±99원인 것이 정확히 한 장이다.
+ * ④ 수정세금계산서(0201)가 그 달에 따라와 있지 않다.
+ * 수취(RECEIVE)는 언제나 오너 1클릭이다(오너 확정 2026-08-12) — 여기서 고르지 않는다.
+ * 같은 상대에게 같은 달 계산서가 여러 장 가는 것이 정상이라(프로모션마다 1장) ③이 핵심이다.
+ */
+export function planAutoRecords(input: {
+  units: readonly AutoRecordUnit[];
+  mails: readonly InvoiceMailSummary[];
+  statements: readonly StatementMailSummary[];
+  ourBusinessNumber: string;
+  /** 어느 캠페인에든 이미 기록된 승인번호 */
+  recordedIssueIds: ReadonlySet<string>;
+}): { ops: AutoRecordOp[]; skipped: Array<{ unitKey: string; yearMonth: string; reason: AutoRecordSkipReason }> } {
+  const ops: AutoRecordOp[] = [];
+  const skipped: Array<{ unitKey: string; yearMonth: string; reason: AutoRecordSkipReason }> = [];
+  const issueUnits = input.units.filter((unit) => unit.direction === "ISSUE");
+
+  for (const unit of issueUnits) {
+    const counterpart = digits(unit.counterpartBusinessNumber);
+    const sameCounterpart = issueUnits.filter((other) => digits(other.counterpartBusinessNumber) === counterpart);
+    const expectations = collectStatementExpectations({
+      statements: input.statements,
+      direction: "ISSUE",
+      labels: unit.labels,
+      counterpartLabel: unit.counterpartLabel,
+      otherUnitsLabels: sameCounterpart.filter((other) => other.unitKey !== unit.unitKey).map((other) => other.labels),
+    });
+    const { candidatesByMonth, amendmentsByMonth } = findInvoiceCandidates({
+      mails: input.mails,
+      direction: "ISSUE",
+      ourBusinessNumber: input.ourBusinessNumber,
+      counterpartBusinessNumber: unit.counterpartBusinessNumber,
+      excludedIssueIds: new Set([...input.recordedIssueIds, ...unit.dismissedIssueIds]),
+    });
+
+    for (const yearMonth of unit.openMonths) {
+      const skip = (reason: AutoRecordSkipReason) => skipped.push({ unitKey: unit.unitKey, yearMonth, reason });
+      if (sameCounterpart.filter((other) => other.openMonths.includes(yearMonth)).length !== 1) {
+        skip("MULTIPLE_OPEN_SLOTS");
+        continue;
+      }
+      const expected = expectations.get(yearMonth) ?? [];
+      if (expected.length === 0) {
+        skip("NO_STATEMENT");
+        continue;
+      }
+      if (expected.length > 1) {
+        skip("MULTIPLE_STATEMENTS");
+        continue;
+      }
+      if ((amendmentsByMonth.get(yearMonth) ?? []).length > 0) {
+        skip("AMENDMENT_PENDING");
+        continue;
+      }
+      const matching = (candidatesByMonth.get(yearMonth) ?? []).filter(
+        (mail) => mail.issueId && mail.writtenDate && matchesExpectedAmount(mail.totalAmount, expected),
+      );
+      if (matching.length === 0) {
+        skip("NO_AMOUNT_MATCH");
+        continue;
+      }
+      if (matching.length > 1) {
+        skip("AMBIGUOUS_AMOUNT");
+        continue;
+      }
+      const mail = matching[0];
+      ops.push({
+        unitKey: unit.unitKey,
+        campaignId: unit.anchorCampaignId,
+        yearMonth,
+        mail,
+        expected: expected[0],
+        delta: (mail.totalAmount as number) - expected[0].totalAmount,
+      });
+    }
+  }
+  return { ops, skipped };
 }
