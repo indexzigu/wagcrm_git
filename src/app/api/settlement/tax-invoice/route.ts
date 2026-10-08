@@ -106,6 +106,20 @@ export async function POST(request: Request) {
     );
   }
 
+  // 월정산 공급사 행은 금액이 캠페인 총액이라 이 경로로 만들면 달별 여러 장이어야 할 계산서가 총액 1장이
+  // 된다(T-247). 보드는 체크박스·버튼을 숨기지만 이 라우트는 campaignIds 만 받으므로 여기서도 막는다.
+  const monthlyRows = issueRows.filter((row) => !row.xlsxEligible);
+  if (monthlyRows.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          "월정산 거래처의 공급사 계산서는 달별로 발행합니다. 캠페인 상세 계산서 칸의 「조회」에서 기록하세요.",
+        campaignIds: monthlyRows.flatMap((row) => row.campaignIds),
+      },
+      { status: 400 },
+    );
+  }
+
   const blockedRows = issueRows.filter((row) => !row.selectable);
   if (blockedRows.length > 0) {
     return NextResponse.json(

@@ -224,6 +224,12 @@ export const SELFHOST_ENV_CONTRACT: readonly EnvContractEntry[] = [
     reason:
       "수취 계산서 스캔 대상 메일함 이름. 비면 호출부가 넘긴 값이나 기본 동작으로 떨어져 의도한 메일함을 못 볼 수 있다",
   },
+  {
+    envName: "TAX_INVOICE_AUTO_CONFIRM",
+    disposition: "optional",
+    reason:
+      "발행 계산서 자동 확정 크론(tax-invoice-issue-confirm)의 쓰기 스위치. \"1\" 일 때만 단일 날짜 확정과 월정산 계산서 자동 기록을 실제로 쓰고, 비거나 다른 값이면 예행만 한다(fail-safe). 비어 있는 것이 정상 상태 중 하나라 경고하지 않는다",
+  },
 
   // ── 수집(인스타·유튜브·유료 폴백) ───────────────────────────────────────────
   {

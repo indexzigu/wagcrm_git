@@ -151,6 +151,8 @@ export type TaxInvoiceBoardRow = {
    * 유도하지 않고 이 필드를 그대로 믿는다. RECEIVE는 상대가 이미 발행하므로 이
    * 값이 항상 false다 — 이 게이트가 깨지면 상대의 계산서를 우리가 중복 발행하는
    * 사고가 난다. 이 필드는 그래서 지우지 않는다.
+   * 월정산 공급사 행(`monthlyInvoiceManaged`)도 ISSUE 여도 false 다 — 금액이 캠페인 총액이라 이 경로로
+   * 만들면 달별 여러 장이어야 할 계산서가 총액 1장이 된다(T-247).
    */
   xlsxEligible: boolean;
   /**
@@ -173,6 +175,13 @@ export type TaxInvoiceBoardRow = {
    * 「완료」(날짜 찍기) 대신 달별 계산서 창을 연다. 호출부가 진행을 넘기지 않으면 null 이다.
    */
   monthlyInvoice: { done: number; total: number } | null;
+  /**
+   * 월정산 거래처의 공급사 행인가(T-247) — 진행 정보(`monthlyInvoice`)와 무관하게 캠페인에서 정한다.
+   * 참이면 `amount` 는 **캠페인 총액**이라 실제로 끊을 달별 계산서 어느 것과도 같지 않다. 그래서
+   * 방향별 합계(오너가 홈택스에 옮기는 숫자)에 넣지 않고, 일괄 파일·홈택스 발행 대상(`xlsxEligible`)에서
+   * 뺀다 — 총액짜리 계산서 1장을 만드는 길을 닫는다. 기록은 달별 계산서 창이 한다.
+   */
+  monthlyInvoiceManaged: boolean;
 };
 
 /**
@@ -196,6 +205,14 @@ function resolveMonthlyInvoice(
   if (!found) return null;
   if (found.openMonths.length === 0) return "DONE";
   return { done: found.done, total: found.total };
+}
+
+/** 공급사 칸이 월정산(달별 여러 장)으로 관리되는가 — 행의 `monthlyInvoiceManaged` 정본. */
+function isMonthlyInvoiceManaged(
+  field: "supplierInvoiceIssuedAt" | "sellerInvoiceIssuedAt",
+  campaign: CampaignRow,
+): boolean {
+  return field === "supplierInvoiceIssuedAt" && campaign.partnerMonthlySettlement === true;
 }
 
 /**
@@ -226,6 +243,11 @@ export type TaxInvoiceBoard = {
     ISSUE: TaxInvoiceDirectionTotals;
     RECEIVE: TaxInvoiceDirectionTotals;
   };
+  /**
+   * 합계 조건(진행 중·선택 가능)을 만족하지만 월정산 공급사 행이라 `totalsByDirection` 에서 뺀 행 수(T-247).
+   * 화면이 「월정산 n건 제외」로 병기한다 — 빼기만 하면 보드에 보이는 행 금액과 합계가 말없이 어긋난다.
+   */
+  monthlyExcludedCount: { ISSUE: number; RECEIVE: number };
   /**
    * 이 순수 함수는 DB 접근이 없다 — 그래서 DB 조회가 필요한 경고(그룹 지급일
    * 마스킹 등)는 여기서 만들지 않고 `WithholdingReport.warnings` 와 같은 이유로
@@ -807,6 +829,7 @@ function emitCampaignRows(
     const identityReasons = counterpartBlockingReasons(obligation.counterpart, campaign);
     const blockingReasons = [...new Set([...identityReasons, ...amountReasons])];
 
+    const monthlyInvoiceManaged = isMonthlyInvoiceManaged(field, campaign);
     rows.push({
       campaignId: campaign.id,
       groupId: campaign.groupId ?? null,
@@ -817,12 +840,13 @@ function emitCampaignRows(
       counterpartName: counterpartName(obligation.counterpart, campaign),
       campaignLabel: campaign.campaignName ?? campaign.dealName,
       amount,
-      xlsxEligible: obligation.direction === "ISSUE",
+      xlsxEligible: obligation.direction === "ISSUE" && !monthlyInvoiceManaged,
       section: resolveBoardSection([campaign.status]),
       settlementItemEffect: summarizeItemEffect(obligation.amountBasis, [campaign.settlementItems]),
       blockingReasons,
       selectable: blockingReasons.length === 0,
       monthlyInvoice,
+      monthlyInvoiceManaged,
     });
   }
 }
@@ -951,6 +975,7 @@ function emitGroupRows(
       }
     }
     const blockingReasons = [...identityReasons, ...amountReasons];
+    const monthlyInvoiceManaged = isMonthlyInvoiceManaged(field, anchor);
 
     rows.push({
       campaignId: anchor.id,
@@ -962,7 +987,7 @@ function emitGroupRows(
       counterpartName: counterpartName(obligation.counterpart, anchor),
       campaignLabel: groupCampaignLabel(sortedMembers),
       amount: toSupplyAndTax(baseAmountSum),
-      xlsxEligible: obligation.direction === "ISSUE",
+      xlsxEligible: obligation.direction === "ISSUE" && !monthlyInvoiceManaged,
       section: resolveBoardSection(sortedMembers.map((m) => m.status)),
       // ⚠️ 부가 항목은 **그룹 폴딩 대상이 아니다**(멤버 각자의 비용 — `campaign-row.ts`
       //    의 `settlementItems` 주석). 그래서 멤버 전원의 목록을 이어 붙여 센다.
@@ -973,6 +998,7 @@ function emitGroupRows(
       blockingReasons,
       selectable: blockingReasons.length === 0,
       monthlyInvoice,
+      monthlyInvoiceManaged,
     });
   }
 
@@ -1114,11 +1140,17 @@ export function buildTaxInvoiceWorkBoard(
     ISSUE: { supplyAmount: 0, taxAmount: 0 },
     RECEIVE: { supplyAmount: 0, taxAmount: 0 },
   };
+  const monthlyExcludedCount = { ISSUE: 0, RECEIVE: 0 };
   for (const row of rows) {
     // 결번은 확정치가 아니라 합계에 넣지 않는다(기존 규칙 유지).
     if (!row.selectable) continue;
     // ⛔ BACKLOG 금액은 「이번에 발행할 총액」이 아니다 — 섞으면 오너가 그 숫자로 대사한다.
     if (row.section !== "IN_PROGRESS") continue;
+    // 월정산 공급사 행의 금액은 캠페인 총액이다 — 달별로 끊는 실제 계산서와 다르므로 같은 이유로 뺀다.
+    if (row.monthlyInvoiceManaged) {
+      monthlyExcludedCount[row.direction] += 1;
+      continue;
+    }
     totalsByDirection[row.direction].supplyAmount += row.amount.supplyAmount;
     totalsByDirection[row.direction].taxAmount += row.amount.taxAmount;
   }
@@ -1130,6 +1162,7 @@ export function buildTaxInvoiceWorkBoard(
     backlogCount: rows.filter((row) => row.section === "BACKLOG").length,
     blockedCount: rows.filter((row) => !row.selectable).length,
     totalsByDirection,
+    monthlyExcludedCount,
     warnings,
   };
 }

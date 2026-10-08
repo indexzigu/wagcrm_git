@@ -73,6 +73,13 @@ const GROUP_MEMBERS: FakeCampaign[] = [
   createCampaign({ id: "m1", groupId: "g1", actualSales: 5_000_000, sellerExpense: 1_000_000 }),
   createCampaign({ id: "m2", groupId: "g1", actualSales: 3_000_000, sellerExpense: 600_000 }),
   createCampaign({ id: "m3", groupId: "g1", actualSales: 2_000_000, sellerExpense: 400_000 }),
+  // 월정산 거래처의 브랜드몰 캠페인(T-247) — 그룹과 무관한 단독 캠페인이다.
+  createCampaign({
+    id: "monthly-1",
+    salesChannel: "BRAND_MALL",
+    settlementSales: 1_100_000,
+    deal: { dealName: "딜", costPrice: 0, sellingPrice: 10_000, brandName: "브랜드", partner: { name: "공급사", monthlySettlement: true } },
+  }),
 ];
 
 let capturedRows: Array<{ totalSupplyAmount: number; lineItems: Array<{ name: string }> }> = [];
@@ -182,6 +189,24 @@ describe("POST /api/settlement/tax-invoice — format: json (홈택스 로컬 �
     expect(body.rows[0].supplierBusinessNumber).toBe("6866800667");
 
     // JSON 모드는 XLSX 를 만들지 않는다.
+    expect(capturedRows).toHaveLength(0);
+  });
+});
+
+// T-247 — 월정산 공급사 계산서는 달별 여러 장이다. 보드가 체크박스·버튼을 숨겨도 이 라우트는 campaignIds 만
+// 받으므로, 캠페인 총액짜리 계산서 1장이 만들어지지 않게 여기서도 막는다.
+describe("POST /api/settlement/tax-invoice — 월정산 공급사 발행 거절", () => {
+  beforeEach(() => {
+    capturedRows = [];
+    findManyMock.mockClear();
+  });
+
+  it("월정산 캠페인이 섞이면 400 + 캠페인 id, 파일·행을 만들지 않는다", async () => {
+    const res = await POST(makeRequest(["monthly-1"]));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; campaignIds: string[] };
+    expect(body.error).toContain("달별로 발행");
+    expect(body.campaignIds).toEqual(["monthly-1"]);
     expect(capturedRows).toHaveLength(0);
   });
 });

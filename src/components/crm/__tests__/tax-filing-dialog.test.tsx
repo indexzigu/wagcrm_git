@@ -1713,3 +1713,53 @@ describe("세무 처리 다이얼로그 — 월정산 공급사 행 (T-244)", ()
     expect(await screen.findByTestId("campaign-invoice-dialog")).toHaveTextContent("m1:공급사 계산서 발행");
   });
 });
+
+// T-247 — 월정산 공급사 행의 금액은 캠페인 총액이다. 달별로 끊는 계산서와 다르므로 합계·일괄 발행에서 빼고,
+// 뺐다는 사실을 금액 아래와 합계 옆에서 말한다(오너 확정 2026-10-09). 판정은 tax-filing-board.test.ts 가 진다.
+describe("세무 처리 다이얼로그 — 월정산 공급사 행의 금액·합계 (T-247)", () => {
+  const MANAGED_BOARD = {
+    ...BOARD,
+    totalsByDirection: {
+      ISSUE: { supplyAmount: 0, taxAmount: 0 },
+      RECEIVE: { supplyAmount: 0, taxAmount: 0 },
+    },
+    monthlyExcludedCount: { ISSUE: 1, RECEIVE: 0 },
+    rows: [
+      {
+        ...BOARD.rows[0],
+        campaignId: "m1",
+        campaignIds: ["m1"],
+        campaignLabel: "딜M - 셀러M 1차",
+        sourceField: "supplierInvoiceIssuedAt" as const,
+        direction: "ISSUE" as const,
+        counterpart: "SUPPLIER" as const,
+        counterpartName: "□□브랜드",
+        xlsxEligible: false,
+        checklistItemId: null,
+        monthlyInvoice: { done: 0, total: 2 },
+        monthlyInvoiceManaged: true,
+      },
+    ],
+  };
+
+  it("금액 아래에 「캠페인 총액 · 합계 제외」, 발행 합계 옆에 제외 건수를 적고 체크박스·홈택스 발행을 주지 않는다", async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, json: async () => MANAGED_BOARD }) as Response) as never;
+    renderDialog();
+    await screen.findByText("□□브랜드");
+    expect(screen.getByText("캠페인 총액 · 합계 제외")).toBeInTheDocument();
+    expect(screen.getByTestId("tax-filing-totals-issue")).toHaveTextContent("월정산 1건 제외");
+    expect(screen.getByTestId("tax-filing-monthly-excluded-issue")).toHaveTextContent("월정산 1건 제외");
+    expect(screen.queryByTestId("tax-filing-monthly-excluded-receive")).toBeNull();
+    expect(screen.getByTestId("tax-filing-totals-receive")).not.toHaveTextContent("제외");
+    expect(screen.queryByRole("checkbox", { name: "□□브랜드 · 딜M - 셀러M 1차 선택" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "홈택스 발행" })).toBeNull();
+    expect(screen.getByRole("button", { name: "딜M - 셀러M 1차 달별 계산서 조회" })).toBeInTheDocument();
+  });
+
+  it("제외한 행이 없으면(낡은 응답 포함) 합계 옆에 아무것도 덧붙이지 않는다", async () => {
+    renderDialog();
+    await screen.findByText("○○커머스");
+    expect(screen.getByTestId("tax-filing-totals-issue")).not.toHaveTextContent("제외");
+    expect(screen.queryByText("캠페인 총액 · 합계 제외")).toBeNull();
+  });
+});
