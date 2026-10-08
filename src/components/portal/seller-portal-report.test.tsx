@@ -148,8 +148,47 @@ describe("SellerPortalReport", () => {
 
     expect(screen.getByText("예정 캠페인")).toBeTruthy();
     expect(screen.getByText("D-5 오픈예정")).toBeTruthy(); // 오픈까지 정적 배지
+    // 상태 낱말은 붙여 쓴 한 낱말(오너 확정 2026-10-08) — 칩 「판매예정」, 기간 줄은 값만(상태 낱말 중복 없음).
+    expect(screen.getByText("판매예정")).toBeTruthy();
+    expect(screen.getByText(`${start} ~ ${end}`)).toBeTruthy();
+    expect(screen.queryByText(/오픈 예정/)).toBeNull();
     expect(screen.queryByText("판매중")).toBeNull(); // 오픈 전인데 판매중으로 잘못 뜨지 않음
     expect(screen.queryByText("현재 공유 중인 캠페인 리포트가 없습니다.")).toBeNull();
+  });
+
+  // 마감이 지난 활성 캠페인 — 정적 상태 배지 「판매종료」(붙여 쓴 한 낱말, 오너 확정 2026-10-08).
+  it("마감이 지난 캠페인은 칩이 「판매종료」를 말하고 「판매중」과 겹쳐 보이지 않는다", async () => {
+    const start = kstYmd(-10).replace(/-/g, ".");
+    const end = kstYmd(-1).replace(/-/g, ".");
+    mockFetch.mockResolvedValue({
+      headers: { get: () => null },
+      json: async () => [
+        {
+          id: "oc-ended",
+          name: "종료 캠페인",
+          salePeriod: `${start} ~ ${end}`,
+          isActive: true,
+          totalOrders: 1,
+          distinctOrderCount: 1,
+          totalQuantity: 1,
+          totalRevenue: 10000,
+          dailyStats: [],
+          insights: null,
+          salesCampaigns: [{ id: "sc-ended", sellerId: "seller-1" }],
+        },
+      ],
+    });
+
+    const ui = await SellerPortalReport({
+      seller: { id: "seller-1", name: "셀러", alias: null, currentFollowers: 1000 },
+      basePath: "/p/token",
+    });
+    render(ui);
+
+    // 칩 하나만 「판매종료」를 말한다 — 같은 말을 되풀이하던 배지는 그리지 않는다(모순·중복 제거).
+    expect(screen.getAllByText("판매종료")).toHaveLength(1);
+    expect(screen.queryByText("판매중")).toBeNull();
+    expect(screen.queryByText("판매 종료")).toBeNull();
   });
 
   // §B+D — 마감 임박(≤3일)이면 라이브 카운트다운 클라이언트 island가 마운트돼 시:분:초로 렌더된다.
