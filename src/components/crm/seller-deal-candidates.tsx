@@ -9,11 +9,11 @@
 
 import * as React from "react";
 import { toast } from "@/lib/toast";
-import { Button } from "@/components/ui/button";
 import type { DealCandidate } from "@/lib/deal-seller-matching";
 import {
   MatchReasonBadge,
   PriorityBadge,
+  ProposalSlot,
   formatElapsed,
   formatPairSales,
 } from "./match-candidate-row";
@@ -106,21 +106,11 @@ export function SellerDealCandidates({ sellerId }: { sellerId: string }) {
                 <MatchReasonBadge reason={c.reason} />
                 {c.priority && <PriorityBadge />}
                 <span className="ml-auto shrink-0">
-                  {proposed.has(c.dealId) ? (
-                    <span className="text-[10px] font-semibold text-[var(--primary)]">
-                      기안됨 · 승인함에서 확인
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-6 px-2 text-[10px]"
-                      disabled={pendingId === c.dealId}
-                      onClick={() => handlePropose(c.dealId, c.dealName)}
-                    >
-                      {pendingId === c.dealId ? "기안 중..." : "기안"}
-                    </Button>
-                  )}
+                  <ProposalSlot
+                    proposed={proposed.has(c.dealId)}
+                    pending={pendingId === c.dealId}
+                    onPropose={() => handlePropose(c.dealId, c.dealName)}
+                  />
                 </span>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">

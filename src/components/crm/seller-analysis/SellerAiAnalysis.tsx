@@ -4,13 +4,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Equal, ExternalLink, Loader2, RefreshCw, Sparkles, UserCheck } from "lucide-react";
+import { ArrowRight, Equal, ExternalLink, Loader2, RefreshCw, Sparkles, UserCheck } from "lucide-react";
 import { CommentIntent, CommentIntentEmpty, readCommentAnalysis } from "./CommentIntent";
 import { toast } from "@/lib/toast";
 import { ScoreCard } from "./ScoreCard";
 import { CategoryProfile } from "./CategoryProfile";
 import { deriveSellerAiView, type SellerAiView } from "@/lib/seller-analysis/adapter";
-import { analysisStaleLabel } from "@/lib/seller-analysis/staleness";
+import { analysisAgeDays, analysisStaleLabel } from "@/lib/seller-analysis/staleness";
+import { StatusDot } from "@/components/crm/status-dot";
 import {
   buildFieldSuggestions,
   type ReviewCurrentFields,
@@ -145,14 +146,19 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
 
       <div className="flex items-center gap-2">
         {profile?.analyzedAt && (
-          // 4주 이상 경과하면 앰버로 강조해 재분석을 유도 (자동 재분석 대신 사람 트리거 — staleness.ts 참조)
-          <span
-            className={`text-[11px] ${
-              analysisStaleLabel(profile.analyzedAt) ? "font-medium text-status-caution-text" : "text-slate-500"
-            }`}
-          >
+          // 4주 이상 경과하면 「오래됨」 상태 낱말로 재분석을 유도 (자동 재분석 대신 사람 트리거 — staleness.ts 참조).
+          // 지시문(「재분석 권장」) 대신 상태 낱말 + 설명창(상태 표시 기준 ①⑤, 오너 확정 2026-10-08) —
+          // 조작은 옆의 「재분석」 버튼이 맡는다.
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
             {analyzedLabel(profile.analyzedAt)}
-            {analysisStaleLabel(profile.analyzedAt) && " · 재분석 권장"}
+            {analysisStaleLabel(profile.analyzedAt) && (
+              <StatusDot
+                tone="caution"
+                label="오래됨"
+                hint={`분석한 지 ${Math.floor((analysisAgeDays(profile.analyzedAt) ?? 0) / 7)}주가 지났습니다. 재분석을 권합니다.`}
+                className="text-[11px]"
+              />
+            )}
           </span>
         )}
         {profile?.sourceTier && <span className="text-[10px] text-slate-500">· {profile.sourceTier}</span>}
@@ -178,22 +184,18 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
 
       {view && (
         <div className="space-y-3">
-          {/* 리스크 플래그 (스펙 §9) — 능동 경고, 근거 툴팁 */}
+          {/* 리스크 플래그 (스펙 §9) — 능동 경고. 근거는 설명창(hint)으로 — 종전 `title` 은 마우스로만
+              열려 키보드·터치에선 근거가 안 보였다(상태 표시 기준 ⑤, 2026-10-08). 심각도는 리터럴
+              rose/amber 필 대신 StatusDot 심각도 톤(danger→urgent, warn→caution)으로 점 + 낱말. */}
           {view.riskFlags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
               {view.riskFlags.map((f) => (
-                <span
+                <StatusDot
                   key={f.key}
-                  title={f.reason}
-                  className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full border cursor-help ${
-                    f.severity === "danger"
-                      ? "bg-rose-50 text-rose-700 border-rose-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200"
-                  }`}
-                >
-                  <AlertTriangle className="size-3" />
-                  {f.label}
-                </span>
+                  tone={f.severity === "danger" ? "urgent" : "caution"}
+                  label={f.label}
+                  hint={f.reason}
+                />
               ))}
             </div>
           )}

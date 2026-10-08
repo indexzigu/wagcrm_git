@@ -1,5 +1,6 @@
 import React from 'react';
 import type { PurchaseOrderMissingField, PurchaseOrderPreviewRow } from '@/lib/order-converter/purchase-order-rows';
+import { StatusDot } from '@/components/crm/status-dot';
 
 /**
  * 발주요청 창 2단계의 미리보기 표(발주 자동화 2단계, ss-ux 검토 2026-10-06 반영).
@@ -39,8 +40,19 @@ export function PurchaseOrderPreview({
       <p className="text-xs text-slate-700 tabular-nums" data-testid="po-preview-summary">
         상품주문 {summary.lineCount.toLocaleString('ko-KR')}건 · 수량 합계 {summary.quantityTotal.toLocaleString('ko-KR')}개 ·
         발주확인 {summary.needsConfirmCount.toLocaleString('ko-KR')}건
+        {/* 상태는 붙여 쓴 한 낱말 + 점(상태 낱말 기준 ①③, 오너 확정 2026-10-08). 무엇을 확인하는지는
+            설명창이 말한다 — 이 요약 줄은 버튼·링크 안이 아니라 설명창 트리거를 둘 수 있다. */}
         {summary.missingCount > 0 && (
-          <span className="font-semibold text-status-caution-text"> · 확인 필요 {summary.missingCount.toLocaleString('ko-KR')}건</span>
+          <>
+            {' · '}
+            <StatusDot
+              tone="caution"
+              label={`확인대기 ${summary.missingCount.toLocaleString('ko-KR')}건`}
+              hint="수취인·연락처·주소 중 빈 칸이 있는 줄입니다. 아래 표에서 주의 표시된 줄을 확인하세요."
+              className="align-middle font-semibold"
+              testId="po-preview-missing"
+            />
+          </>
         )}
       </p>
       <div

@@ -48,7 +48,7 @@ describe("MobileCampaignCard — 최저가 위반 배지 (UX1-C)", () => {
         onOpen={noop}
       />,
     );
-    expect(screen.getByText("최저가 위반")).toBeInTheDocument();
+    expect(screen.getByText("최저가위반")).toBeInTheDocument();
   });
 
   it("위반 딜 개수를 hover 안내(title)로 노출한다", () => {
@@ -58,7 +58,7 @@ describe("MobileCampaignCard — 최저가 위반 배지 (UX1-C)", () => {
         onOpen={noop}
       />,
     );
-    const badge = screen.getByText("최저가 위반");
+    const badge = screen.getByText("최저가위반");
     expect(badge.closest("[title]")).toHaveAttribute("title", expect.stringContaining("4"));
   });
 
@@ -69,12 +69,12 @@ describe("MobileCampaignCard — 최저가 위반 배지 (UX1-C)", () => {
         onOpen={noop}
       />,
     );
-    expect(screen.queryByText("최저가 위반")).not.toBeInTheDocument();
+    expect(screen.queryByText("최저가위반")).not.toBeInTheDocument();
   });
 
   it("hasPriceViolation 필드 자체가 없는(스냅샷 無) 기존 캠페인은 배지가 없다 (기본 상태와 동일)", () => {
     render(<MobileCampaignCard campaign={makeCampaign()} onOpen={noop} />);
-    expect(screen.queryByText("최저가 위반")).not.toBeInTheDocument();
+    expect(screen.queryByText("최저가위반")).not.toBeInTheDocument();
   });
 
   it("groupMemberCount가 2 이상이면 N개 딜 배지를 렌더하고 마진(개별 멤버 값)은 숨긴다", () => {
@@ -164,9 +164,9 @@ describe("MobileCampaignCard — 적자 표시", () => {
     expect(screen.getByText("₩4,820,000")).toHaveClass("text-slate-700");
   });
 
-  it("실매출 null 은 ₩ 프리픽스 없이 '금액 미정'으로 렌더한다 — '₩-' 방지", () => {
+  it("실매출 null 은 ₩ 프리픽스 없이 「미입력」으로 렌더한다 — '₩-' 방지(실매출은 오너가 넣는 값)", () => {
     render(<MobileCampaignCard campaign={makeCampaign({ actualSales: null })} onOpen={noop} />);
-    expect(screen.getByText("금액 미정")).toBeInTheDocument();
+    expect(screen.getByText("미입력")).toBeInTheDocument();
     expect(screen.queryByText("₩-")).not.toBeInTheDocument();
   });
 });
@@ -181,7 +181,7 @@ describe("MobileCampaignCard — 위험색 단일화", () => {
         onOpen={noop}
       />,
     );
-    const badge = screen.getByText("최저가 위반");
+    const badge = screen.getByText("최저가위반");
     expect(badge).toHaveClass("text-status-urgent-text");
     expect(badge.className).not.toMatch(/text-red-|bg-red-/);
   });

@@ -68,6 +68,7 @@ import { LinkSearchDialog } from "./link-search-dialog";
 import { CampaignDealsTable } from "./campaign-deals-table";
 import { SettlementSection } from "./settlement-section";
 import { HelpPopover } from "./help-popover";
+import { StatusDot } from "./status-dot";
 import { TaxInvoiceHelperDialog } from "./tax-invoice-helper-dialog";
 import { WithholdingHelperDialog } from "./withholding-helper-dialog";
 import { resolveTaxFilingChannelGroup } from "@/lib/tax-filing-board";
@@ -715,7 +716,7 @@ export function CampaignSidePanel({
                 {/* 펼친 상세라 말줄임하지 않고 줄바꿈한다 — 긴 자동 조합명이 잘리면 확인할 길이 없다. */}
                 <div className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs font-semibold text-slate-800">
                   <span className="min-w-0 break-words">
-                    {[campaign.dealName, campaign.sellerName].filter(Boolean).join(" - ") || campaign.campaignName || "이름 없음"}
+                    {[campaign.dealName, campaign.sellerName].filter(Boolean).join(" - ") || campaign.campaignName || "이름없음"}
                   </span>
                   {/* 회차는 범주다(P8 색 원칙 4) — 3차가 1차보다 급하거나 좋을 일이 없다.
                       자매 표면인 `campaign-card.tsx` 의 회차 배지가 이미 이 무채색 형태이고
@@ -3333,12 +3334,30 @@ function SettlementWaitPanel({
         </div>
         <div className="rounded-lg bg-white/80 px-3 py-2">
           <div className="text-muted-foreground">정산 확인 상태</div>
-          <div className="mt-1 font-medium">
-            {isTransferReady
-              ? "정산 진행 시작 가능"
-              : isCheckRequired
-                ? "정산금 확인 필요"
-                : "반품기간 대기"}
+          {/* 붙여 쓴 상태 낱말 + 설명창(상태 표시 기준 ①⑤, 오너 확정 2026-10-08). 「시작가능」은 아래
+              「정산 진행 시작」 버튼과 짝이다 — 조작은 그 버튼이 맡고 낱말은 누르는 요소가 아니다(④).
+              반품기간대기는 할 일이 없는 기다림이라 점 없이 낱말만(②) — 풀이는 설명창이 맡는다. */}
+          <div className="mt-1">
+            {isTransferReady ? (
+              <StatusDot
+                tone="info"
+                label="시작가능"
+                hint="반품기간이 지나 정산을 시작할 수 있습니다. 아래 「정산 진행 시작」을 누르세요."
+              />
+            ) : isCheckRequired ? (
+              <StatusDot
+                tone="caution"
+                label="정산금미확인"
+                hint={`종료 후 ${SETTLEMENT_CHECK_DAYS}일이 지났습니다. 정산금 입금을 확인하세요.`}
+              />
+            ) : (
+              <StatusDot
+                tone="neutral"
+                showDot={false}
+                label="반품기간대기"
+                hint="반품기간이 끝나야 정산을 시작할 수 있습니다."
+              />
+            )}
           </div>
         </div>
       </div>

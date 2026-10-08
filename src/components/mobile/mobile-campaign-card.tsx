@@ -66,13 +66,18 @@ export function MobileCampaignCard({
     : "정산완료";
   // ₩ 프리픽스 — 홈 펄스·정산 카드·시트 금액 표기(₩1,234,567)와 동일 규약으로 통일.
   // null 은 프리픽스 전에 가드한다(안 하면 "₩-" 가 렌더된다) — mobile-sheet-card 등
-  // 같은 규약을 쓰는 표면들의 "금액 미정" 관례를 그대로 따른다.
+  // 같은 규약을 쓰는 표면들의 「금액미확정」 관례를 그대로 따른다(붙여 쓴 한 낱말, 2026-10-08 —
+  // 오너가 칸에 직접 넣는 값이 비었을 때만 「미입력」, 계산·정산이 정하는 금액이 아직이면 「금액미확정」).
   const primaryMetricAmount =
     variant === "settlement"
       ? (campaign.actualPayoutAmount ?? campaign.sellerExpense)
       : campaign.actualSales;
   const primaryMetric =
-    primaryMetricAmount == null ? "금액 미정" : `₩${formatCurrency(primaryMetricAmount)}`;
+    primaryMetricAmount == null
+      ? variant === "settlement"
+        ? "금액미확정"
+        : "미입력" // 실매출은 오너가 넣는 값 — 데스크톱 「실매출미입력」과 같은 뜻
+      : `₩${formatCurrency(primaryMetricAmount)}`;
   const primaryMetricLabel = variant === "settlement" ? settlementState : "실매출";
   // 마진은 그룹(첫 멤버 값이라 오독)·정산 변형에서 숨긴다 — 적자 배지도 마진의 캐리어라
   // 마진이 안 보이는 카드에는 함께 숨긴다(근거 없는 배지 방지).
@@ -125,18 +130,20 @@ export function MobileCampaignCard({
           {/* 세팅 대기의 "업데이트 지연"은 SSOT 에서 제거됐다(updatedAt = 배치 나이라
               구조적 오탐). 그 자리를 대신하는 실제 할 일 — 데스크톱 카드와 같은 판정
               (`campaign-setup.ts`)을 쓴다. 모바일은 오너가 현장에서 보는 표면이라
-              데스크톱에만 신호를 두면 여기만 조용해진다(P3 리스크 감지). */}
+              데스크톱에만 신호를 두면 여기만 조용해진다(P3 리스크 감지).
+              낱말도 데스크톱 카드와 같다 — 붙여 쓴 상태 명사(「채널미지정」·「주문관리미등록」·
+              「정체 N일」, 상태 표시 기준 ①, 2026-10-08). 카드 전체가 버튼이라 설명창(hint)은 달지 않는다. */}
           {needsChannelSetup ? (
             <Badge variant="status-caution" className="text-[10px] px-2 py-0.5 h-5">
-              판매채널 지정 필요
+              채널미지정
             </Badge>
           ) : needsOrderSetup ? (
             <Badge variant="status-caution" className="text-[10px] px-2 py-0.5 h-5">
-              주문관리 등록 필요
+              주문관리미등록
             </Badge>
           ) : action.isStagnant ? (
-            <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 bg-slate-50 text-slate-500 border-slate-200">
-              업데이트 지연 {action.stagnantDays}일
+            <Badge variant="status-caution" className="text-[10px] px-2 py-0.5 h-5">
+              정체 {action.stagnantDays}일
             </Badge>
           ) : null}
           {campaign.hasPriceViolation ? (
@@ -144,7 +151,7 @@ export function MobileCampaignCard({
               {/* 리터럴 red-600 → status-urgent 토큰. 같은 카드의 지연 배지(toneVariant)가 이미
                   --status-urgent 를 쓰고 있어 같은 "위험" 의미에 빨강 두 개가 공존했다. */}
               <Badge variant="status-urgent" className="text-[10px] px-2 py-0.5 h-5">
-                최저가 위반
+                최저가위반
               </Badge>
             </span>
           ) : null}

@@ -183,13 +183,17 @@ describe('발주요청 창 — 확정 실패 복구', () => {
 });
 
 describe('PoReadyLine — 카드의 준비됨 줄', () => {
-  it('준비본 가능 + 발주 대기 > 0 일 때만 그린다', () => {
+  it('준비본 가능일 때만 줄을 그리고, 발주 대기 0 이면 같은 자리에 흐린 「발주 대기 없음」', () => {
     const asOfIso = new Date().toISOString();
     const { rerender } = render(<PoReadyLine preparedPo={{ asOfIso }} pendingCount={3} />);
     expect(screen.getByTestId('po-ready-line')).toHaveTextContent('발주서 준비됨 · 발주 대기 3건');
     rerender(<PoReadyLine preparedPo={null} pendingCount={3} />);
     expect(screen.queryByTestId('po-ready-line')).toBeNull();
+    // 0 건이어도 줄을 비우지 않는다 — 주문이 들고 날 때 버튼 줄이 튀지 않게(상태 낱말 기준 ⑥, 2026-10-08).
     rerender(<PoReadyLine preparedPo={{ asOfIso }} pendingCount={0} />);
-    expect(screen.queryByTestId('po-ready-line')).toBeNull();
+    const empty = screen.getByTestId('po-ready-line');
+    expect(empty).toHaveTextContent('발주 대기 없음');
+    expect(empty).not.toHaveTextContent('발주서 준비됨');
+    expect(empty).toHaveClass('text-slate-500');
   });
 });

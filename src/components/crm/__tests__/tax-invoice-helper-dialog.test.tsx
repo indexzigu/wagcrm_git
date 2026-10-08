@@ -68,7 +68,7 @@ describe("세금계산서 입력 도우미", () => {
     expect(screen.queryByText("13,200,000")).not.toBeInTheDocument();
   });
 
-  it("셀러몰이 아닌 채널(우리몰)에서는 발행 의무가 없어 금액이 「입력 필요」로 뜬다", () => {
+  it("셀러몰이 아닌 채널(우리몰)에서는 발행 의무가 없어 금액이 「금액미확정」으로 뜬다", () => {
     render(
       <TaxInvoiceHelperDialog
         open
@@ -79,10 +79,11 @@ describe("세금계산서 입력 도우미", () => {
     // 우리몰은 우리가 셀러에게 발행하는 계산서가 없다(스펙 확정) — 숫자를 추정해
     // 채우지 않고 결번으로 표시해야 한다.
     expect(screen.queryByText("10,000,000")).not.toBeInTheDocument();
-    expect(screen.getAllByText(/입력 필요/).length).toBeGreaterThan(0);
+    // 계산 금액은 오너가 채울 칸이 아니다 — 「미입력」이 아니라 「금액미확정」(2026-10-08).
+    expect(screen.getAllByText("금액미확정").length).toBeGreaterThan(0);
   });
 
-  it("실매출(actualSales) 미확정 시 금액과 품목 모두 「입력 필요」로 표시한다", () => {
+  it("실매출(actualSales) 미확정 시 금액과 품목 모두 「금액미확정」으로 표시한다", () => {
     render(
       <TaxInvoiceHelperDialog
         open
@@ -92,6 +93,8 @@ describe("세금계산서 입력 도우미", () => {
     );
     expect(screen.queryByText("10,000,000")).not.toBeInTheDocument();
     expect(screen.getByText(/품목을 만들 수 없습니다/)).toBeInTheDocument();
+    // 금액 3칸(공급가액·세액·합계) + 품목 1칸
+    expect(screen.getAllByText("금액미확정")).toHaveLength(4);
   });
 
   it("누락 필드를 빈칸이 아니라 경고로 표시한다", () => {
@@ -102,7 +105,7 @@ describe("세금계산서 입력 도우미", () => {
         onOpenChange={() => {}}
       />,
     );
-    expect(screen.getAllByText(/입력 필요/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("미입력").length).toBeGreaterThan(0);
   });
 
   it("각 필드에 복사 버튼이 있다", () => {

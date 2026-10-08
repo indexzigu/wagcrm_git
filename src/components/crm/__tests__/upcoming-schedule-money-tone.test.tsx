@@ -6,7 +6,7 @@
 // 일이 아직 할 일과 같은 무게로 읽혔다(P8 §1 — 색은 의미축을 탄다: 심각도 vs 완료).
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { UpcomingScheduleBody } from "../upcoming-schedule-card";
+import { CalendarSyncBadge, UpcomingScheduleBody } from "../upcoming-schedule-card";
 
 const event = (type: string) => ({
   date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
@@ -38,5 +38,23 @@ describe("UpcomingScheduleBody — 대금 줄의 색", () => {
     const style = toneOf("지급 완료 (셀러)");
     expect(style).toContain("var(--status-success)");
     expect(style).not.toContain("caution");
+  });
+});
+
+// 연동 상태 — 상태 낱말은 누르는 요소가 아니다(상태 표시 기준 ④, 2026-10-08).
+describe("CalendarSyncBadge", () => {
+  it("정상은 색 없는 「연동됨」 글자다", () => {
+    render(<CalendarSyncBadge connected />);
+    const word = screen.getByText("연동됨");
+    expect(word.closest("a")).toBeNull();
+    expect(word.className).not.toMatch(/status-/);
+  });
+
+  it("끊김은 「연동실패」 낱말과 별도의 「다시 연결」 링크로 갈린다", () => {
+    render(<CalendarSyncBadge connected={false} />);
+    expect(screen.getByText("연동실패").closest("a")).toBeNull();
+    const link = screen.getByRole("link", { name: "다시 연결" });
+    expect(link.getAttribute("href")).toBe("/settings/integrations");
+    expect(link.textContent).not.toContain("연동실패");
   });
 });

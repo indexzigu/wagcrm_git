@@ -28,7 +28,7 @@ type MobileScheduleGapBarsProps = {
 
 /**
  * 확보 필요 날짜 구간 경고 (item 10 — 일 단위 빈 구간 기반, 2026-07-09).
- * 접힘: 한 줄 요약(`확보 필요 2구간 · 7/18~7/20 · 7/27~7/31`) — 시각 높이 최소.
+ * 접힘: 한 줄 요약(`미확보 2구간 · 7/18~7/20 · 7/27~7/31`) — 시각 높이 최소.
  * 펼침: 구간별 상세(기간 일수·actionLabel), 행 탭 → 캘린더 해당 구간 시작일 선택 후 자동 접힘.
  * 위험(DANGER/URGENT) 0건이면 아무것도 렌더하지 않는다.
  * 라벨은 gap-briefing 의 gap.label("7/18~7/20")을 그대로 재사용 — 주 일부만 빈 구간도 정확히
@@ -50,7 +50,7 @@ export const MobileScheduleGapBars = React.memo(function MobileScheduleGapBars({
       <button
         type="button"
         aria-expanded={expanded}
-        aria-label={`확보 필요 ${risky.length}구간: 상세 ${expanded ? "접기" : "펼치기"}`}
+        aria-label={`미확보 ${risky.length}구간: 상세 ${expanded ? "접기" : "펼치기"}`}
         onClick={() => setExpanded((previous) => !previous)}
         className="flex min-h-11 w-full items-center gap-2 py-2 px-6 text-left transition-colors duration-150 active:bg-slate-50/70"
       >
@@ -59,7 +59,7 @@ export const MobileScheduleGapBars = React.memo(function MobileScheduleGapBars({
             성분값일 때만 성립한다 — 이 레포에서는 --cal-primary 계열이 그쪽이다. */}
         <div className="size-2 rounded-full shrink-0 shadow-soft-sm" style={{ backgroundColor: accentColor }} />
         <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">
-          확보 필요 <span className="font-semibold">{risky.length}구간</span>
+          미확보 <span className="font-semibold">{risky.length}구간</span>
           {summaryLabels.map((label) => (
             <span key={label} className="text-muted-foreground">
               {" "}

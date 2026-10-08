@@ -99,13 +99,13 @@ describe("ProposalCard", () => {
     expect(screen.queryByRole("button", { name: "승인" })).not.toBeInTheDocument();
   });
 
-  it("EXECUTED + executedBy!=='AGENT': '실행 완료' 칩을 보여준다", async () => {
+  it("EXECUTED + executedBy!=='AGENT': '실행완료' 칩을 보여준다", async () => {
     stubFetchOk(makeProposal({ status: "EXECUTED", executedBy: "user-2" }));
     renderCard("proposal-123456789");
 
     // 완료 hue 계약(P8 §4) — ⛔ status-active(네이비)로 되돌리면 여기서 빨강.
-    await waitFor(() => expect(screen.getByText("실행 완료")).toBeInTheDocument());
-    expect(screen.getByText("실행 완료")).toHaveAttribute("data-variant", "status-success");
+    await waitFor(() => expect(screen.getByText("실행완료")).toBeInTheDocument());
+    expect(screen.getByText("실행완료")).toHaveAttribute("data-variant", "status-success");
   });
 
   it("EXECUTED + executedBy==='AGENT': '자동승인·실행됨' 칩을 이모지 없이 아이콘+글자로 보여준다", async () => {

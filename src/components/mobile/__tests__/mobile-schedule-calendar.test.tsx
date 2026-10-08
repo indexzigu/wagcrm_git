@@ -351,13 +351,13 @@ describe("MobileScheduleDayList", () => {
     // 배지는 상대를 병기한다 — 자사몰의 두 지급을 가르는 유일한 표기라 전 채널 공통
     // 규칙으로 둔다(오너 확정 2026-08-25). 픽스처는 셀러몰이라 지급 상대가 공급사다.
     expect(screen.getByText("지급 예정 (공급사)")).toBeInTheDocument();
-    // ⚠️ **공급사 지급은 「금액 미정」이 정답이다**(오너 확정 2026-08-26). 그 칸의 금액은
+    // ⚠️ **공급사 지급은 「금액미확정」이 정답이다**(오너 확정 2026-08-26, 낱말은 2026-10-08 붙여쓰기). 그 칸의 금액은
     // 물품대금인데, 그 값은 「캠페인의 원가」가 아니라 **그 캠페인 앞으로 온 매입 계산서
     // 총액**이라 여러 캠페인·여러 셀러가 한 장에 묶인다 — 캠페인 단위 칸에 끌어오면 남의
     // 금액이 뜬다(`expected-receivables-scope.contract.test.ts` 가 그 경계를 지킨다).
     // 종전에는 이 자리에 **셀러 실지급액**이 찍혀 상대(공급사)와 금액(셀러 몫)이 어긋나
     // 있었다. 0 으로 접지도 않는다 — 금전 대조에서 ₩0 은 확인된 0으로 읽힌다.
-    expect(screen.getByText("금액 미정")).toBeInTheDocument();
+    expect(screen.getByText("금액미확정")).toBeInTheDocument();
     expect(screen.queryByText(/^입금 예정/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("프리미엄 마린콜라겐"));

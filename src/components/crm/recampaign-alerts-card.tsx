@@ -2,16 +2,17 @@
 
 // F1 재캠페인 적기 카드 (GROWTH_FLYWHEEL_PLAN.md §F1) — 읽기 전용 알림 + 승인함 기안(Phase B).
 // DUE 셀러는 "기안" 버튼으로 ActionProposal(add_entity_memo)을 승인 대기함에 올린다. 승인 시
-// 셀러에 재접촉 결정이 메모로 기록되고, 이미 열린 기안이 있으면 버튼 대신 "기안됨"으로 표시한다.
+// 셀러에 재접촉 결정이 메모로 기록되고, 이미 열린 기안이 있으면 버튼 대신 "기안됨"으로 표시한다
+// (버튼↔상태 자리는 후보 목록과 같은 `ProposalSlot` — 같은 폭, 승인함 링크는 별도).
 // 대시보드에서 영업 관리(/outreach)로 이관되며 GET /api/recampaign-alerts에서 스스로 데이터를 조회한다.
 
 import * as React from "react";
 import { RotateCcw } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RecampaignAlert } from "@/lib/recampaign-timing";
+import { ProposalSlot } from "./match-candidate-row";
 
 export function RecampaignAlertsCard({ className }: { className?: string }) {
   const [alerts, setAlerts] = React.useState<RecampaignAlert[]>([]);
@@ -131,21 +132,12 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
                 )}
                 {alert.state === "DUE" && (
                   <div className="mt-2">
-                    {isProposed ? (
-                      <span className="inline-flex items-center text-[10px] font-semibold text-[var(--primary)]">
-                        기안됨 · 승인함에서 확인
-                      </span>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 px-2 text-[10px]"
-                        disabled={pendingId === alert.sellerId}
-                        onClick={() => handlePropose(alert.sellerId, alert.sellerName)}
-                      >
-                        {pendingId === alert.sellerId ? "기안 중..." : "기안"}
-                      </Button>
-                    )}
+                    <ProposalSlot
+                      align="start"
+                      proposed={isProposed}
+                      pending={pendingId === alert.sellerId}
+                      onPropose={() => handlePropose(alert.sellerId, alert.sellerName)}
+                    />
                   </div>
                 )}
               </div>

@@ -225,7 +225,7 @@ export function KatalkManageTab() {
                     </div>
                   ) : (
                     <Badge variant="outline" className="text-[11px] text-muted-foreground">
-                      미매핑(미등록)
+                      미매핑
                     </Badge>
                   )}
                 </TableCell>

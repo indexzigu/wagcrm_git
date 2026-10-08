@@ -397,7 +397,7 @@ export function CampaignCard({
                 size="compact"
                 className="shrink-0"
               >
-                최저가 위반
+                최저가위반
               </Badge>
             </span>
           ) : null}
@@ -437,14 +437,16 @@ export function CampaignCard({
                   status-badge.tsx(가드레일 2)의 SETTLEMENT_WAIT 와 같은 토큰 쌍이고, slate-50
                   체크리스트 박스 위라 알파 틴트가 아니라 불투명 -bg 를 쓴다(위 actionToneClass
                   주석과 같은 근거). 채널 미지정이면 등록 판정 자체가 불가능하므로 채널 지정이 선행 —
-                  둘은 상호배타지만 순서를 명시한다. 판정 SSOT·실측 근거는 campaign-setup.ts. */}
+                  둘은 상호배타지만 순서를 명시한다. 판정 SSOT·실측 근거는 campaign-setup.ts.
+                  낱말은 지시문(「~ 지정 필요」) 대신 붙여 쓴 상태 명사(상태 표시 기준 ①, 2026-10-08) —
+                  조작은 카드 자체(눌러서 패널 열기)가 맡는다. 카드가 눌리는 요소라 설명창(hint)은 달지 않는다. */}
               {needsChannelSetup ? (
                 <span className={cn("shrink-0", badgeSizeClassName.compact, "text-status-caution bg-status-caution-bg")}>
-                  판매채널 지정 필요
+                  채널미지정
                 </span>
               ) : needsOrderSetup ? (
                 <span className={cn("shrink-0", badgeSizeClassName.compact, "text-status-caution bg-status-caution-bg")}>
-                  주문관리 등록 필요
+                  주문관리미등록
                 </span>
               ) : action.isStagnant && action.stagnantDays ? (
                 /* 정체 = 같은 caution 티어. 일정 앵커가 없는 단계(PROPOSAL 등)에만 남은 약한

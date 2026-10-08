@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SystemRadarCard } from "../system-radar-card";
 import { KNOWN_JOBS } from "@/lib/cron-jobs";
 
@@ -52,6 +52,22 @@ describe("시스템 레이더 — 지연 표시", () => {
 
     // 상태값은 SUCCESS 인데도 지연이 드러나야 한다 — 이게 이 테스트의 전부다.
     await waitFor(() => expect(screen.getAllByText("지연").length).toBeGreaterThan(0));
+  });
+
+  it("지연 사유는 행 버튼 안이 아니라 행을 눌러 여는 상세의 첫 줄에 있다(중첩 인터랙티브 금지)", async () => {
+    vi.setSystemTime(new Date("2026-08-04T00:00:00Z"));
+    mockRadar(new Date(Date.now() - 3 * DAY).toISOString(), "SUCCESS");
+
+    render(<SystemRadarCard />);
+
+    const word = await screen.findByText("지연");
+    const rowButton = word.closest("button")!;
+    // 행 버튼 안에 또 다른 상호작용 요소(툴팁 앵커·버튼)가 없다.
+    expect(rowButton.querySelector("button, a, [data-state]")).toBeNull();
+    expect(screen.queryByText(/지연 사유/)).toBeNull();
+
+    fireEvent.click(rowButton);
+    expect(await screen.findByText(/지연 사유/)).toBeInTheDocument();
   });
 
   it("정상 주기 안이면 지연을 띄우지 않는다(오탐 금지 — 매일 빨강이면 신호를 잃는다)", async () => {

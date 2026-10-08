@@ -113,7 +113,7 @@ function ContactList({ contacts }: { contacts: Record<string, unknown>[] }) {
           const reach = [asText(contact.phoneNumber), asText(contact.email)].filter(Boolean);
           return (
             <li key={index} className="text-foreground">
-              {asText(contact.name) ?? "이름 없음"}
+              {asText(contact.name) ?? "이름없음"}
               {role ? <span className="text-muted-foreground"> ({role})</span> : null}
               {reach.length > 0 ? (
                 <span className="text-muted-foreground"> · {reach.join(" · ")}</span>
@@ -142,7 +142,7 @@ function OptionList({ options }: { options: Record<string, unknown>[] }) {
           return (
             <li key={index} className="space-y-0.5">
               <p className="text-foreground">
-                {asText(option.dealName) ?? "이름 없음"}
+                {asText(option.dealName) ?? "이름없음"}
                 {unit ? <span className="text-muted-foreground"> · {unit}</span> : null}
               </p>
               {/* 가격은 흐리게 두지 않는다 — 사진에서 잘못 읽히는 값이 바로 이것이라

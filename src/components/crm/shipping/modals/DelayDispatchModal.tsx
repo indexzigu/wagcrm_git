@@ -476,16 +476,16 @@ export default function DelayDispatchModal({
                           </div>
                           <div className="shrink-0 text-right text-[11px] leading-5">
                             <div className="text-slate-500 tabular-nums">결제 {fmtMd(row.paymentDate)}</div>
+                            {/* 색만으로 전하지 않는다 — 경과·임박을 낱말로 함께 쓴다(상태 낱말 기준 ③, 오너 확정
+                                2026-10-08). 종전엔 경과 일수가 마우스 올림 title 에만 있었다. 이 행은 체크박스
+                                label 이라 설명창(버튼)을 넣지 않고 낱말을 바로 보인다. */}
                             {g.group === 0 ? (
-                              <div
-                                className="font-bold tabular-nums text-[var(--status-urgent-text)] border-b border-dotted border-[var(--status-urgent-text)] cursor-help inline-block"
-                                title={`기한 ${g.overdueDays}일 경과`}
-                              >
-                                기한 {fmtMd(row.shippingDueDate)}
+                              <div className="font-bold tabular-nums text-[var(--status-urgent-text)]">
+                                기한 {fmtMd(row.shippingDueDate)} · 지연 {g.overdueDays}일
                               </div>
                             ) : g.group === 1 ? (
                               <div className="font-semibold tabular-nums text-[var(--status-caution-text)]">
-                                기한 {fmtMd(row.shippingDueDate)}
+                                기한 {fmtMd(row.shippingDueDate)} · 임박
                               </div>
                             ) : (
                               <div className="text-slate-500 tabular-nums">기한 {fmtMd(row.shippingDueDate)}</div>

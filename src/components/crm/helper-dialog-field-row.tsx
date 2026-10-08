@@ -11,23 +11,33 @@
  * 컴포넌트로 빼서 다음 도우미가 또 갈라지는 것을 막는다 — 새 도우미를 만들 때도
  * 이 컴포넌트를 다시 복제하지 말 것.
  *
- * 값이 없으면 빈칸이 아니라 「입력 필요」로 표시하고 복사를 막는다 — 빈칸은 "안
+ * 값이 없으면 빈칸이 아니라 「미입력」으로 표시하고 복사를 막는다 — 빈칸은 "안
  * 채워도 된다"로 오인되어 신고가 누락된 채 접수되고, 홈택스는 그 상태로 반려한다.
+ *
+ * 빈 값의 낱말은 붙여 쓴 상태 명사다(상태 표시 기준 ①, 오너 확정 2026-10-08 — 지시문 「입력 필요」
+ * 폐기). 오너가 직접 넣는 값이 비면 「미입력」(urgent), 정산·계산이 정하는 금액이 아직이면 호출부가
+ * `emptyLabel="금액미확정"`·`emptyTone="caution"` 을 넘긴다 — 오너가 칸을 채워서 풀리는 일이 아니다.
  */
 import { Copy } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import { StatusDot, type StatusTone } from "@/components/crm/status-dot";
 
 export function FieldRow({
   label,
   value,
   wrap = false,
+  emptyLabel = "미입력",
+  emptyTone = "urgent",
 }: {
   label: string;
   value: string | null | undefined;
   /** 사업장주소처럼 오너가 화면에서 직접 대조·확인해야 하는 값은 잘리면 확인 자체가
    *  안 되므로 줄바꿈으로 전체를 보여준다(기본은 한 줄 말줄임 유지). */
   wrap?: boolean;
+  /** 값이 없을 때의 상태 낱말(기본 「미입력」). 계산 금액이 아직이면 「금액미확정」. */
+  emptyLabel?: string;
+  emptyTone?: Extract<StatusTone, "urgent" | "caution">;
 }) {
   const hasValue = value != null && value !== "";
 
@@ -50,10 +60,7 @@ export function FieldRow({
             {value}
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 text-sm font-semibold text-status-urgent-text">
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-status-urgent" />
-            입력 필요
-          </div>
+          <StatusDot tone={emptyTone} label={emptyLabel} className="flex text-sm font-semibold" />
         )}
       </div>
       <Button

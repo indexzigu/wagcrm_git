@@ -7,7 +7,10 @@
 // hue 를 상시로 얹으면 D2 가 회수한 "행당 무지개"가 재발한다.
 // ⛔ `fitLevel` 과 거래 리듬을 하나의 점수로 합치지 않는다(D10) — 나란히 둔다.
 
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { StatusDot } from "@/components/crm/status-dot";
 import { cn } from "@/lib/utils";
 import { MATCH_REASON_LABEL, type MatchReason } from "@/lib/deal-seller-matching";
 import { DORMANCY_TIER_LABEL, type DormancyVerdict } from "@/lib/seller-dormancy";
@@ -27,7 +30,60 @@ export function MatchReasonBadge({ reason }: { reason: MatchReason }) {
 export function PriorityBadge() {
   return (
     <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-status-caution-bg text-status-caution shrink-0">
-      적극 검토
+      우선검토
+    </span>
+  );
+}
+
+/**
+ * 「기안」 버튼 ↔ 「기안됨」 상태 자리 — 딜→셀러 후보·셀러→딜 후보·재캠페인 적기 카드 공용.
+ *
+ * 상태 표시 기준(오너 확정 2026-10-08):
+ * - 두 상태가 **같은 고정 폭·높이의 자리**를 쓴다(⑥) — 종전엔 버튼이 「기안됨 · 승인함에서 확인」
+ *   문장으로 바뀌며 폭이 두 배가 돼 같은 줄의 이름이 잘려 나갔다.
+ * - 「기안됨」은 정상 진행이라 무채색 점 + 낱말(성공색 금지, P8 §2).
+ * - 승인함 이동은 상태 낱말이 아니라 옆의 별도 링크 「승인함」이 맡는다(④).
+ */
+export function ProposalSlot({
+  proposed,
+  pending,
+  onPropose,
+  align = "end",
+}: {
+  proposed: boolean;
+  pending: boolean;
+  onPropose: () => void;
+  align?: "start" | "end";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 w-24 shrink-0 items-center",
+        align === "end" ? "justify-end" : "justify-start",
+      )}
+    >
+      {proposed ? (
+        <span className="inline-flex items-center gap-1.5">
+          <StatusDot tone="neutral" label="기안됨" className="text-[10px]" />
+          <Link
+            href="/approvals"
+            // 누를 면적 24px(WCAG 2.5.8) — 10px 글자만으로는 14px 남짓이다.
+            className="inline-flex h-6 items-center rounded-sm px-1 text-[10px] font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+          >
+            승인함
+          </Link>
+        </span>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-[10px]"
+          disabled={pending}
+          onClick={onPropose}
+        >
+          {pending ? "기안 중..." : "기안"}
+        </Button>
+      )}
     </span>
   );
 }

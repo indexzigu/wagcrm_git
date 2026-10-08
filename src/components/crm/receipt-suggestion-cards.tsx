@@ -415,7 +415,7 @@ export function ReceiptSuggestionCards({
   keys?: readonly string[];
 }) {
   // ⚠️ **섹션의 표시 판정에도 `keys` 를 건다.** 목록만 거르고 여기서 안 거르면, 이미 다른
-  //    자리가 집어간 건을 두고 「승인 대기 N건」 머리글이 붙은 **빈 상자**가 뜬다(실측).
+  //    자리가 집어간 건을 두고 「승인대기 N건」 머리글이 붙은 **빈 상자**가 뜬다(실측).
   const rows = (scan?.results ?? []).filter(
     (row) =>
       (resolveApprovalKey(row) || row.decision) &&
@@ -425,7 +425,7 @@ export function ReceiptSuggestionCards({
   return (
     <section className="flex flex-col gap-1 rounded-lg border border-border px-3 py-1">
       <p className="pt-1 text-xs font-semibold text-foreground">
-        승인 대기 {rows.filter((row) => !row.decision).length}건
+        승인대기 {rows.filter((row) => !row.decision).length}건
       </p>
       <ReceiptDecisionList scan={scan} onDecided={onDecided} keys={keys} />
     </section>

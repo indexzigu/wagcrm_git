@@ -224,7 +224,7 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
             자동승인
           </Badge>
         ) : (
-          <Badge variant="status-success">실행 완료</Badge>
+          <Badge variant="status-success">실행완료</Badge>
         )}
         <SourceBadge createdBy={item.createdBy} />
         <span className="text-xs tabular-nums text-muted-foreground">

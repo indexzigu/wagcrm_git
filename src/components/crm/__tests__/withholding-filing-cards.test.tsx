@@ -92,7 +92,7 @@ describe("원천징수 절차 3카드", () => {
   });
 
   it("과세표준 필드는 흔한 caution 문구들과 다른 강조 박스(bg-status-urgent-bg)를 쓴다", async () => {
-    // §2 습관화 방지 — 이 화면은 이미 「실명 미등록」·「세액 칸이 없습니다」 같은 caution/
+    // §2 습관화 방지 — 이 화면은 이미 「실명미등록」·「세액 칸이 없습니다」 같은 caution/
     // urgent 문구를 여러 개 보여준다. 가장 위험한 값(과세표준)은 같은 회색 상자가 아니라
     // 별도 톤 박스로 눈에 띄어야 한다.
     render(<WithholdingFilingCards month="2026-07" />);
@@ -189,7 +189,7 @@ describe("원천징수 절차 3카드", () => {
   });
 
   it("실명 미등록 행도 표기명(별칭)을 괄호로 보여줘 누군지 알 수 있게 한다", async () => {
-    // 활동명으로 성명 칸을 대신 채우진 않지만("실명 미등록"은 그대로 유지), 경고가
+    // 활동명으로 성명 칸을 대신 채우진 않지만("실명미등록"은 그대로 유지), 경고가
     // "누구를 고쳐야 하는지"를 말해줘야 실행 가능하다 — 구 WithholdingReportDialog가
     // 지키던 계약을 카드로 옮겨서도 지킨다.
     global.fetch = vi.fn(async (input: string | URL | Request) => {
@@ -208,7 +208,7 @@ describe("원천징수 절차 3카드", () => {
     }) as never;
 
     render(<WithholdingFilingCards month="2026-07" />);
-    await screen.findByText("실명 미등록");
+    await screen.findByText("실명미등록");
     expect(screen.getByText("(닉네임셀러)")).toBeInTheDocument();
   });
 

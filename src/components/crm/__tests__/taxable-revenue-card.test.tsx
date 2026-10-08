@@ -155,7 +155,10 @@ describe("TaxableRevenueCard", () => {
       campaign({ salesChannel: "SELLER_MALL", actualSales: 2_200_000, sellerExpense: null }),
     ]);
     const warnings = within(card).getByRole("list", { name: "확인 필요" });
-    expect(within(warnings).getByText("채널 미지정 1건 분류 필요")).toBeInTheDocument();
+    // 상태는 붙여 쓴 한 낱말 — 지시(「분류 필요」)는 낱말의 설명창으로 내려갔다.
+    const unspecified = within(warnings).getByText("채널미지정 1건");
+    expect(unspecified.closest("button")).not.toBeNull();
+    expect(within(warnings).queryByText(/분류 필요/)).toBeNull();
     expect(within(warnings).getByText("금액 미입력 1건")).toBeInTheDocument();
     expect(within(card).getByText("1,000,000원 ~ 5,000,000원")).toBeInTheDocument();
     // 범위인 이유와 주 숫자가 상한으로 계산됐다는 사실은 범위의 근거 패널에 있다

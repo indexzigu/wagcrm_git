@@ -194,7 +194,7 @@ describe("CampaignCard — 최저가 위반 배지 (UX1-C)", () => {
         onDuplicate={noop}
       />,
     );
-    expect(screen.getByText("최저가 위반")).toBeInTheDocument();
+    expect(screen.getByText("최저가위반")).toBeInTheDocument();
   });
 
   it("위반 딜 개수를 hover 안내(title)로 노출한다", () => {
@@ -206,7 +206,7 @@ describe("CampaignCard — 최저가 위반 배지 (UX1-C)", () => {
         onDuplicate={noop}
       />,
     );
-    const badge = screen.getByText("최저가 위반");
+    const badge = screen.getByText("최저가위반");
     expect(badge.closest("[title]")).toHaveAttribute("title", expect.stringContaining("3"));
   });
 
@@ -219,7 +219,7 @@ describe("CampaignCard — 최저가 위반 배지 (UX1-C)", () => {
         onDuplicate={noop}
       />,
     );
-    expect(screen.queryByText("최저가 위반")).not.toBeInTheDocument();
+    expect(screen.queryByText("최저가위반")).not.toBeInTheDocument();
   });
 
   it("hasPriceViolation 필드 자체가 없는(스냅샷 無) 기존 캠페인은 배지가 없다 (기본 상태와 동일)", () => {
@@ -231,7 +231,7 @@ describe("CampaignCard — 최저가 위반 배지 (UX1-C)", () => {
         onDuplicate={noop}
       />,
     );
-    expect(screen.queryByText("최저가 위반")).not.toBeInTheDocument();
+    expect(screen.queryByText("최저가위반")).not.toBeInTheDocument();
   });
 });
 

@@ -332,7 +332,7 @@ export function DealGroupPreview({
                       className="flex flex-wrap items-center gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-xs"
                     >
                       <span className="text-muted-foreground">
-                        {row.optionName ?? row.productName ?? "(이름 없음)"}
+                        {row.optionName ?? row.productName ?? "이름없음"}
                       </span>
                       <span aria-hidden className="text-muted-foreground">
                         →

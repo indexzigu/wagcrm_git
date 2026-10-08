@@ -497,3 +497,27 @@ describe("CalendarView 팝오버 매출 한 줄 (T-225 「매출만」)", () => 
     expect(fetchMock).toHaveBeenCalledWith("/api/mobile/campaign-groups/g1/sales", expect.objectContaining({ cache: "no-store" }));
   });
 });
+
+describe("CalendarView 자금 마커 — 지연은 색 말고 모양으로도 갈린다", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("지연 마커에만 느낌표 배지가 붙고, 예정 마커에는 없다", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-20T03:00:00.000Z"));
+    render(
+      <CalendarView
+        month="2026-07"
+        campaigns={[
+          campaign({ id: "late", expectedDepositDate: "2026-07-10T00:00:00.000Z" }),
+          campaign({ id: "soon", expectedDepositDate: "2026-07-25T00:00:00.000Z" }),
+        ]}
+      />,
+    );
+    const overdue = screen.getAllByLabelText(/지연/).filter((el) => el.tagName === "BUTTON");
+    const pending = screen.getAllByLabelText(/예정/).filter((el) => el.tagName === "BUTTON");
+    expect(overdue.length).toBeGreaterThan(0);
+    expect(pending.length).toBeGreaterThan(0);
+    for (const marker of overdue) expect(marker.querySelector(".lucide-circle-alert")).not.toBeNull();
+    for (const marker of pending) expect(marker.querySelector(".lucide-circle-alert")).toBeNull();
+  });
+});

@@ -44,7 +44,7 @@ describe("SellerDealCandidates", () => {
     await waitFor(() => expect(screen.getByText("딜 이름")).toBeInTheDocument());
     expect(screen.getByText("브랜드")).toBeInTheDocument();
     expect(screen.getByText("재진행")).toBeInTheDocument();
-    expect(screen.getByText("적극 검토")).toBeInTheDocument();
+    expect(screen.getByText("우선검토")).toBeInTheDocument();
   });
 
   it("매출 미입력이면 금액을 그리지 않는다", async () => {
@@ -102,6 +102,8 @@ describe("SellerDealCandidates", () => {
     render(<SellerDealCandidates sellerId="s1" />);
     await waitFor(() => expect(screen.getByText(/기안됨/)).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "기안" })).not.toBeInTheDocument();
+    // 상태 낱말은 누르는 요소가 아니고, 승인함 이동은 별도 링크가 맡는다(상태 표시 기준 ④).
+    expect(screen.getByRole("link", { name: "승인함" })).toHaveAttribute("href", "/approvals");
   });
 
   it("조회 실패는 삼키지 않고 표면에 남긴다", async () => {

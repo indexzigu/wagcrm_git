@@ -27,6 +27,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { StatusDot } from "@/components/crm/status-dot";
 import type {
   TaxableChannelSubtotal,
   TaxableRevenueStatus,
@@ -154,14 +155,28 @@ function ChannelRow({
   );
 }
 
-function StatusRow({ tone, children }: { tone: "caution" | "neutral"; children: ReactNode }) {
+function StatusRow({
+  tone,
+  children,
+  hint,
+}: {
+  tone: "caution" | "neutral";
+  children: ReactNode;
+  /** 낱말 풀이 — 있으면 낱말에 설명창을 단다(StatusDot). 점은 이 줄이 이미 그리므로 끈다. */
+  hint?: string;
+}) {
   return (
     <li className="flex items-center gap-2 text-xs text-muted-foreground">
       <span
         aria-hidden
         className={cn("size-1.5 shrink-0 rounded-full", tone === "caution" ? "bg-status-caution" : "bg-slate-400")}
       />
-      <span className={tone === "caution" ? "font-medium" : undefined}>{children}</span>
+      {hint && typeof children === "string" ? (
+        // 글자색은 이웃 줄과 같은 흐린 색으로 맞춘다 — 같은 목록에서 한 줄만 주의색이면 위계가 갈린다.
+        <StatusDot tone={tone} label={children} hint={hint} showDot={false} className="text-muted-foreground" />
+      ) : (
+        <span className={tone === "caution" ? "font-medium" : undefined}>{children}</span>
+      )}
     </li>
   );
 }
@@ -338,7 +353,10 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
                 {needsAction && (
                   <ul className="flex flex-col gap-1" aria-label="확인 필요">
                     {tracker.unspecifiedCount > 0 && (
-                      <StatusRow tone="caution">채널 미지정 {tracker.unspecifiedCount}건 분류 필요</StatusRow>
+                      // 상태는 붙여 쓴 한 낱말(상태 표시 기준 ①) — 「분류 필요」 같은 지시는 풀이(hint)로 내린다.
+                      <StatusRow tone="caution" hint="판매채널을 지정해야 과세매출 채널별 합계에 들어갑니다.">
+                        {`채널미지정 ${tracker.unspecifiedCount}건`}
+                      </StatusRow>
                     )}
                     {tracker.missingAmountCount > 0 && (
                       <StatusRow tone="caution">금액 미입력 {tracker.missingAmountCount}건</StatusRow>

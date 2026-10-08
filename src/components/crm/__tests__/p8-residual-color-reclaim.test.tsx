@@ -320,8 +320,9 @@ describe("④ 후보 4 — outreach-list 경과일 램프: 리터럴 4색 → --
   it("각 분기가 지정된 SSOT 토큰을 쓴다", () => {
     expect(ramp).toContain('status === "CONVERTED"');
     expect(ramp).toContain("text-status-success font-semibold");
-    expect(ramp).toContain("text-status-urgent-text font-semibold");
-    expect(ramp).toContain("text-status-caution font-semibold");
+    // 3일·7일 문턱은 StatusDot 톤으로 간다(색만으로 말하지 않기 — 점 + 「정체 N일」, 2026-10-08).
+    expect(ramp).toContain('tone: "urgent"');
+    expect(ramp).toContain('tone: "caution"');
   });
 
   it("⛔ PENDING_APPROVAL 전용 분기가 없다 — 일 램프가 흡수한다 (오너 결정 2026-07-30)", () => {
@@ -351,7 +352,8 @@ describe("④ 후보 4 — outreach-list 경과일 램프: 리터럴 4색 → --
     // 이 단언은 그 분기(divergence)가 살아 있음을 고정한다.
     expect(ramp).toContain("text-status-success");
     expect(stripComments(MOBILE_OUTREACH)).toContain("const isTerminalStatus");
-    expect(stripComments(MOBILE_OUTREACH)).toContain('let elapsedClassName = "text-muted-foreground"');
+    // 모바일 경과일은 점 + 「정체 N일」(StatusDot)이고 3일 미만은 무채색 값이다(2026-10-08).
+    expect(stripComments(MOBILE_OUTREACH)).toContain("const elapsedNode");
     // 모바일은 이 PR 이 건드리지 않았다 — 전환에 생애주기색이 번지지 않았는지 확인한다.
     const mobileRamp = slice(
       stripComments(MOBILE_OUTREACH),
@@ -367,8 +369,8 @@ describe("④ 후보 4 — outreach-list 경과일 램프: 리터럴 4색 → --
       "const isTerminalStatus",
       "const getMemoText",
     );
-    expect(mobileRamp).toContain("text-status-urgent-text font-semibold");
-    expect(mobileRamp).toContain("text-status-caution font-semibold");
+    // 2026-10-08 부터 두 화면 모두 StatusDot 톤으로 같은 문턱을 말한다(데스크톱 `tone: "urgent"`).
+    expect(mobileRamp).toContain('tone={elapsedDays >= 7 ? "urgent" : "caution"}');
   });
 
   it("죽은 코드 2건이 되돌아오지 않았다 (오너 결정 2026-07-30)", () => {
@@ -563,10 +565,10 @@ describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", ()
     ["CONVERTED", 1, "전환완료", "text-status-success"],
     ["DROPPED", 1, "종료", "text-muted-foreground"],
     ["PENDING_APPROVAL", 1, "1일째", "text-slate-500"],
-    ["PENDING_APPROVAL", 4, "4일째", "text-status-caution"],
-    ["PENDING_APPROVAL", 9, "9일째", "text-status-urgent-text"],
-    ["NEGOTIATION", 9, "9일째", "text-status-urgent-text"],
-    ["NEGOTIATION", 4, "4일째", "text-status-caution"],
+    ["PENDING_APPROVAL", 4, "정체 4일", "text-status-caution-text"],
+    ["PENDING_APPROVAL", 9, "정체 9일", "text-status-urgent-text"],
+    ["NEGOTIATION", 9, "정체 9일", "text-status-urgent-text"],
+    ["NEGOTIATION", 4, "정체 4일", "text-status-caution-text"],
     ["NEGOTIATION", 1, "1일째", "text-slate-500"],
   ] as const)(
     "경과일 램프: %s(%s일) 배지가 %s 로 렌더되고 토큰 %s 를 쓴다",
@@ -577,7 +579,9 @@ describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", ()
           now={NOW}
         />,
       );
-      const el = screen.getByText(label);
+      // 문턱을 넘은 건은 StatusDot(점 + 낱말) — 낱말 span 의 부모가 색 캐리어다.
+      const text = screen.getByText(label);
+      const el = text.className ? text : (text.parentElement as HTMLElement);
       expect(el.className).toContain(token);
       expect(el.className).not.toMatch(/violet|orange-|rose-|amber-/);
     },
