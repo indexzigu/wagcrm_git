@@ -73,6 +73,10 @@ export type ApproveProposalOutcome =
       status: string | null;
     };
 
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function approveProposal(id: string, approverId: string): Promise<ApproveProposalOutcome> {
   const proposal = await ActionProposalRepository.findById(id);
   if (!proposal) {
@@ -175,7 +179,7 @@ export async function approveProposal(id: string, approverId: string): Promise<A
       return { executed, result };
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = describeError(err);
     // tx2가 실패했으므로 실행(쓰기)과 EXECUTED 전이 모두 롤백된 상태다. 별도의(정상 동작하는)
     // 트랜잭션으로 APPROVED->FAILED를 기록해 재시도 가능하게 만든다(TRANSITIONS: FAILED->APPROVED).
     await ActionProposalRepository.transition(id, "FAILED", {
@@ -205,20 +209,21 @@ export async function approveProposal(id: string, approverId: string): Promise<A
 /**
  * 일괄 승인에서 「이미 처리됐거나 승인할 상태가 아님」은 실패가 아니라 건너뜀이다 —
  * 운영자가 할 일이 없다. self-approval 거부는 정책 거부라 운영자가 알아야 하므로 실패로 센다.
+ * 없는 id 도 실패로 센다 — 건너뜀으로 접으면 잘못 보낸 id 가 조용히 묻힌다.
  */
-const SKIPPED_CODES: ReadonlySet<ApproveProposalFailureCode> = new Set([
-  "NOT_FOUND",
-  "INVALID_STATUS",
-  "CONFLICT",
-]);
+const SKIPPED_CODES: ReadonlySet<ApproveProposalFailureCode> = new Set(["INVALID_STATUS", "CONFLICT"]);
 
-/** 운영자가 읽는 상태 이름 — 결과 창에 `EXECUTED` 같은 식별자를 내보내지 않는다. */
+/**
+ * 운영자가 읽는 상태 이름 — 결과 창에 `EXECUTED` 같은 식별자를 내보내지 않는다. 낱말은 결재함
+ * 탭 이름(`approvals-tabs.ts` 대기·완료·실패·반려)과 같게 둔다(상태 낱말 기준 2026-10-08 —
+ * 같은 상태를 두 화면이 다른 말로 부르지 않는다).
+ */
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "초안",
-  PENDING_APPROVAL: "승인 대기",
-  APPROVED: "승인됨",
-  EXECUTED: "실행 완료",
-  REJECTED: "반려됨",
+  PENDING_APPROVAL: "대기",
+  APPROVED: "승인",
+  EXECUTED: "완료",
+  REJECTED: "반려",
   FAILED: "실패",
 };
 
@@ -254,10 +259,6 @@ async function readStatus(id: string): Promise<string | null> {
     console.error(`[bulkApproveProposals ${id}] 상태 재조회 실패:`, err);
     return null;
   }
-}
-
-function describeError(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 /**

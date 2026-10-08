@@ -48,9 +48,10 @@ export function countBulkApproveResults(results: readonly BulkApproveItemResult[
 
 /**
  * 화면이 한 번에 보내는 묶음 크기. 서버 상한(50)보다 작게 잘라 보내는 이유는 **진행률**이다 —
- * 요청 하나에 다 실으면 끝날 때까지 「몇 건 남았는지」를 알릴 방법이 없다.
+ * 요청 하나에 다 실으면 끝날 때까지 「몇 건 남았는지」를 알릴 방법이 없다. 더 잘게(1건씩)
+ * 자르면 요청마다 붙는 인증 왕복이 건수만큼 늘어 하루치 결재가 눈에 띄게 느려진다.
  */
-export const BULK_APPROVE_CHUNK_SIZE = 10;
+export const BULK_APPROVE_CHUNK_SIZE = 5;
 
 export type RunBulkApproveOptions = {
   /** 묶음 하나가 끝날 때마다 (처리한 건수, 전체 건수)로 불린다. */

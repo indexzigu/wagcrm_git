@@ -88,7 +88,7 @@ function SelectAllCheckbox({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-4 cursor-pointer rounded border-slate-300 text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+        className="size-4 cursor-pointer accent-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
       />
       현재 페이지 전체 선택
       <span className="tabular-nums text-muted-foreground">
@@ -108,7 +108,8 @@ function ResultList({
   if (rows.length === 0) return null;
   return (
     <div className="space-y-1">
-      <p className="text-xs font-medium text-foreground">{title}</p>
+      {/* 창 안 섹션 제목 — 폼·다이얼로그 타이포 사다리의 「섹션 제목」 단(P8). */}
+      <p className="text-sm font-semibold text-foreground">{title}</p>
       <ul className="space-y-1">
         {rows.map((row) => (
           <li key={row.id} className="text-xs">

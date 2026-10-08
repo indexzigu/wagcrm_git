@@ -214,7 +214,7 @@ describe("POST /api/action-proposals/bulk-approve", () => {
     expect(json.results[0]).toMatchObject({ outcome: "executed", status: "EXECUTED" });
   });
 
-  it("승인 대기가 아닌 기안·없는 기안은 오류가 아니라 건너뜀이다", async () => {
+  it("승인 대기가 아닌 기안은 오류가 아니라 건너뜀이고, 없는 id 는 실패로 드러난다", async () => {
     seed("done", { status: "EXECUTED" });
     seed("rejected", { status: "REJECTED" });
     seed("ok");
@@ -223,11 +223,11 @@ describe("POST /api/action-proposals/bulk-approve", () => {
 
     expect(json.results.map((item: { outcome: string }) => item.outcome)).toEqual([
       "skipped",
-      "skipped",
+      "failed",
       "skipped",
       "executed",
     ]);
-    expect(json.counts).toEqual({ total: 4, executed: 1, failed: 0, skipped: 3 });
+    expect(json.counts).toEqual({ total: 4, executed: 1, failed: 1, skipped: 2 });
   });
 
   it("기안자 본인이 고른 기안은 실패(self-approval 금지)로 돌려주고 나머지는 계속한다", async () => {

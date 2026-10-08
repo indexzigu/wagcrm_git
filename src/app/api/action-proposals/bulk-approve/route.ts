@@ -28,7 +28,7 @@ const BulkApproveBodySchema = z.object(
 
 /**
  * 최대 50건을 순차 실행한다. 실행 도중 플랫폼 시간 제한에 잘리면 tx1(APPROVED) 커밋 뒤
- * tx2·FAILED 기록 전에 멈춘 기안이 APPROVED 에 남을 수 있어 넉넉히 둔다(화면은 10건씩 보낸다).
+ * tx2·FAILED 기록 전에 멈춘 기안이 APPROVED 에 남을 수 있어 넉넉히 둔다(화면은 5건씩 보낸다).
  */
 export const maxDuration = 300;
 

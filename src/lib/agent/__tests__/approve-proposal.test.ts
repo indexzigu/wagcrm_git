@@ -190,7 +190,7 @@ describe("bulkApproveProposals", () => {
     expect(transitionMock.mock.calls.some((call) => call[0] === "b" && call[1] === "FAILED")).toBe(true);
   });
 
-  it("승인 대기가 아닌 기안·없는 기안·CAS 충돌은 건너뜀으로 센다(실패가 아니다)", async () => {
+  it("승인 대기가 아닌 기안·CAS 충돌은 건너뜀, 없는 기안은 실패로 센다", async () => {
     findByIdMock.mockImplementation(async (id: string) => {
       if (id === "done") return makeProposal({ id, status: "EXECUTED" });
       if (id === "rejected") return makeProposal({ id, status: "REJECTED" });
@@ -201,12 +201,13 @@ describe("bulkApproveProposals", () => {
 
     const response = await bulkApproveProposals(["done", "rejected", "missing", "raced"], APPROVER);
 
-    expect(response.results.map((item) => item.outcome)).toEqual(["skipped", "skipped", "skipped", "skipped"]);
+    expect(response.results.map((item) => item.outcome)).toEqual(["skipped", "skipped", "failed", "skipped"]);
     expect(response.results.every((item) => item.ok === false && typeof item.error === "string")).toBe(true);
     // 결과 창에 상태 식별자(EXECUTED)를 그대로 내보내지 않는다.
-    expect(response.results[0].error).toBe("승인 대기 상태가 아닙니다 (현재: 실행 완료).");
+    expect(response.results[0].error).toBe("승인 대기 상태가 아닙니다 (현재: 완료).");
     expect(response.results[3].error).toBe("이미 다른 곳에서 처리된 기안입니다.");
-    expect(response.counts).toEqual({ total: 4, executed: 0, failed: 0, skipped: 4 });
+    expect(response.counts).toEqual({ total: 4, executed: 0, failed: 1, skipped: 3 });
+    expect(response.results[2].error).toMatch(/찾을 수 없습니다/);
     expect(executeWriteActionMock).not.toHaveBeenCalled();
   });
 

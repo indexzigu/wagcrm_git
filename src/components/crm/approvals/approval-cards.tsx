@@ -192,7 +192,7 @@ export function PendingCard({
               checked={selection.checked}
               onChange={(event) => selection.onCheckedChange(event.target.checked)}
               aria-label={`${item.title} 선택`}
-              className="size-4 cursor-pointer rounded border-slate-300 text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              className="size-4 cursor-pointer accent-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             />
           </label>
         )}
