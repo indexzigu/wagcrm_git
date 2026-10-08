@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  buildSettlementStatementFileName,
   buildSettlementStatementHtml,
   buildSettlementStatementText,
   computeSettlementPayoutTotals,
@@ -222,6 +223,10 @@ describe("월정산 캠페인도 셀러 명세서는 합산 그대로", () => {
 
   it("HTML 명세서가 같다", () => {
     expect(buildSettlementStatementHtml([monthly], now)).toBe(buildSettlementStatementHtml([plain], now));
+  });
+
+  it("이미지 파일명이 같다(인쇄본·PNG 는 같은 HTML 에서 파생된다)", () => {
+    expect(buildSettlementStatementFileName([monthly], now)).toBe(buildSettlementStatementFileName([plain], now));
   });
 
   it("명세서에 월 구분 표기가 없다", () => {

@@ -195,12 +195,13 @@ describe("셀러 대면 표면은 월별 정산 줄을 모른다(T-240)", () => 
       // 건수가 아니라 「잡았다」만 단언한다 — 금지 모듈 문자열은 이름 패턴에도 함께 걸려 2건이 되기도 한다.
       expect(scanSellerFacingSource("probe.ts", "const n = campaign.monthlySettlements.length;")).not.toEqual([]);
       expect(scanSellerFacingSource("probe.ts", 'const include = { "monthlyLines": true };')).not.toEqual([]);
-      expect(scanSellerFacingSource("probe.ts", 'import { x } from "@/lib/monthly-settlement";')).not.toEqual([]);
-      expect(scanSellerFacingSource("probe.ts", "const m = await import('@/services/monthlySettlementService');")).not.toEqual([]);
+      // 하이픈 경로는 이름 패턴에 안 걸리므로 건수 1 = 모듈 추적이 잡은 것이다(추적이 고장 나면 0 이 된다).
+      expect(scanSellerFacingSource("probe.ts", 'import { x } from "@/lib/monthly-settlement";')).toHaveLength(1);
+      expect(scanSellerFacingSource("probe.ts", "const m = await import('@/lib/monthly-settlement');")).toHaveLength(1);
       expect(scanSellerFacingSource("probe.ts", 'const p = "campaign.monthlyLines";')).not.toEqual([]);
       expect(scanSellerFacingSource("probe.ts", "const { monthlyLineCount } = row;")).not.toEqual([]);
-      expect(scanSellerFacingSource("probe.ts", "const m = require('@/lib/monthly-settlement');")).not.toEqual([]);
-      expect(scanSellerFacingSource("probe.ts", "type T = typeof import('@/lib/monthly-settlement');")).not.toEqual([]);
+      expect(scanSellerFacingSource("probe.ts", "const m = require('@/lib/monthly-settlement');")).toHaveLength(1);
+      expect(scanSellerFacingSource("probe.ts", "type T = typeof import('@/lib/monthly-settlement');")).toHaveLength(1);
       expect(scanSellerFacingSource("probe.ts", "// campaign.monthlySettlements 는 셀러에게 안 보낸다\nconst a = 1;")).toEqual([]);
     });
 
