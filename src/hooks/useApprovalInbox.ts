@@ -7,6 +7,7 @@ import type {
   ActionProposalStatus,
 } from "@/repositories/actionProposalRepository";
 import { useProposalActions } from "./useProposalActions";
+import { useBulkApproveProposals } from "./useBulkApproveProposals";
 
 type ApprovalInboxResponse = {
   items: ApprovalInboxItem[];
@@ -63,6 +64,7 @@ export function useApprovalInbox(
   });
 
   const { approve, reject } = useProposalActions();
+  const approveMany = useBulkApproveProposals();
 
   // 진행 중인 「더 보기」가 있으면 다시 부르지 않는다 — 같은 커서로 두 번 부르면
   // 같은 장이 두 번 쌓인다(useReadRecords 와 같은 방어).
@@ -84,6 +86,7 @@ export function useApprovalInbox(
     isError: query.isError,
     approve,
     reject,
+    approveMany,
     refetch: query.refetch,
   };
 }
