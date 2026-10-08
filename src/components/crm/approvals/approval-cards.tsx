@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Loader2Icon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
@@ -107,15 +108,26 @@ function EntityBadge({ item }: { item: ApprovalInboxItem }) {
 const CARD_ROOT_CLASS =
   "flex flex-col gap-2 rounded-lg border border-border p-4 shadow-soft-sm";
 
-/** 대기 카드 — 기존 승인/반려 버튼(M1 pending 처리 무변경). */
+/** 일괄 승인용 행 선택 — 대기 탭 목록(`pending-bulk-list.tsx`)만 넘긴다. */
+export type PendingCardSelection = {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+};
+
+/**
+ * 대기 카드 — 기존 승인/반려 버튼(M1 pending 처리 무변경).
+ * `selection` 이 있으면 카드 머리에 선택 체크박스를 단다(일괄 승인). 없으면 종전 그대로다.
+ */
 export function PendingCard({
   item,
   onApprove,
   onReject,
+  selection,
 }: {
   item: ApprovalInboxItem;
   onApprove: (id: string) => Promise<unknown>;
   onReject: (id: string) => Promise<unknown>;
+  selection?: PendingCardSelection;
 }) {
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(item.errorMessage ?? null);
@@ -169,8 +181,21 @@ export function PendingCard({
   };
 
   return (
-    <li className={CARD_ROOT_CLASS}>
+    <li className={cn(CARD_ROOT_CLASS, selection?.checked && "bg-primary/5")}>
       <div className="flex items-start justify-between gap-2">
+        {selection && (
+          // 체크박스 자체는 16px 이지만 감싼 label 이 24px 클릭 영역을 만든다(고밀도 CRM 표면
+          // 하한 — styleseed Golden Rule 8). 배지 줄과 높이를 맞추려고 위로 2px 당긴다.
+          <label className="-mt-0.5 flex size-6 shrink-0 cursor-pointer items-center justify-center">
+            <input
+              type="checkbox"
+              checked={selection.checked}
+              onChange={(event) => selection.onCheckedChange(event.target.checked)}
+              aria-label={`${item.title} 선택`}
+              className="size-4 cursor-pointer accent-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            />
+          </label>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <EntityBadge item={item} />

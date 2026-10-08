@@ -9,6 +9,7 @@ import {
 } from "./approval-cards";
 import type { ApprovalInboxItem } from "./approval-cards";
 import { ReadRecordCard } from "./read-record-card";
+import { PendingBulkList } from "./pending-bulk-list";
 import { BotActivityTable, SucceededToggle } from "./bot-activity-table";
 import { EMPTY_MESSAGES, getTabDef } from "./approvals-tabs";
 import type { ApprovalsTab } from "./approvals-tabs";
@@ -62,11 +63,42 @@ export function ProposalTabBody({
   useApprovalInbox: ApprovalInboxHook;
 }) {
   const def = getTabDef(tab);
-  const { items, isLoading, isError, refetch, approve, reject, loadMore, isLoadingMore, hasMore } =
-    useApprovalInbox(def.status ?? "PENDING_APPROVAL", def.kind ?? "WRITE");
+  const {
+    items,
+    isLoading,
+    isError,
+    refetch,
+    approve,
+    reject,
+    approveMany,
+    loadMore,
+    isLoadingMore,
+    hasMore,
+  } = useApprovalInbox(def.status ?? "PENDING_APPROVAL", def.kind ?? "WRITE");
 
   // 기안 카드는 배지 줄 + 본문 + 버튼 줄이라 조회 결과 카드보다 높다(hub-states 주석).
   if (isLoading) return <CardListSkeleton height="h-36" />;
+
+  // 대기 탭만 일괄 승인을 단다 — 하루치 기안을 한 번에 결재하는 탭이다. ⚠️ 오류·빈 목록
+  // 분기보다 **앞에** 둔다: 승인이 끝나 목록이 비어도 결과 창이 떠 있어야 한다(빈 화면은
+  // 일괄 목록이 스스로 그린다 — `pending-bulk-list.tsx` 본문 주석).
+  if (tab === "pending" && approveMany) {
+    return (
+      <PendingBulkList
+        items={items}
+        approve={approve}
+        reject={reject}
+        approveMany={approveMany}
+        hasMore={hasMore}
+        loadMore={loadMore}
+        isLoadingMore={isLoadingMore}
+        isError={isError}
+        onRetry={() => refetch()}
+        emptyMessage={EMPTY_MESSAGES[tab]}
+      />
+    );
+  }
+
   if (isError) return <LoadErrorState onRetry={() => refetch()} />;
   if (items.length === 0) return <EmptyState message={EMPTY_MESSAGES[tab]} />;
 

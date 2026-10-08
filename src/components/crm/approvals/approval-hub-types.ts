@@ -1,6 +1,7 @@
 import type { ApprovalInboxItem } from "./approval-cards";
 import type { ReadRecordItem } from "@/hooks/useReadRecords";
 import type { AgentJobListItem } from "@/lib/agent-jobs/list-item";
+import type { BulkApproveResponse } from "@/lib/action-proposal-bulk";
 import type {
   ActionProposalKind,
   ActionProposalStatus,
@@ -25,11 +26,21 @@ export type ApprovalInboxHook = (
   isError: boolean;
   approve: (id: string) => Promise<unknown>;
   reject: (id: string) => Promise<unknown>;
+  /**
+   * 일괄 승인(대기 탭의 선택 승인). 선택적인 이유: 이 필드가 없는 스텁(기존 허브 테스트)은
+   * 일괄 승인 도구 없이 종전 화면을 그린다 — 실제 훅은 항상 준다.
+   */
+  approveMany?: BulkApproveFn;
   refetch: () => unknown;
   loadMore: () => unknown;
   isLoadingMore: boolean;
   hasMore: boolean;
 };
+
+export type BulkApproveFn = (
+  ids: readonly string[],
+  options?: { onProgress?: (done: number, total: number) => void }
+) => Promise<BulkApproveResponse>;
 
 export type ReadRecordsHook = () => {
   items: ReadRecordItem[];
