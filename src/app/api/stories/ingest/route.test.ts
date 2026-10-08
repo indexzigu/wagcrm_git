@@ -82,4 +82,31 @@ describe("POST /api/stories/ingest — storiesig v2 항목", () => {
     expect(body.storiesSeen).toBe(1);
     expect(body.storiesNew).toBe(0);
   });
+
+  it("v2 응답을 통째로(items 자리에 {items, owner}) 보내도 받는다", async () => {
+    const res = await POST(
+      post({ handle: "someone", items: { items: [v2Item("s-1")], owner: { username: "someone" } } }),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.storiesNew).toBe(1);
+  });
+
+  it("v2 응답을 result 필드로 보내도 받고, 그 안의 owner 가 다른 계정이면 저장하지 않는다", async () => {
+    const ok = await (await POST(post({ handle: "someone", result: { items: [v2Item("s-1")] } }))).json();
+    expect(ok.storiesNew).toBe(1);
+
+    createMock.mockReset();
+    const foreign = await (
+      await POST(post({ handle: "someone", result: { items: [v2Item("s-2")], owner: { username: "other" } } }))
+    ).json();
+    expect(foreign.storiesNew).toBe(0);
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it("items 도 result 도 배열을 담지 않으면 400 으로 거절한다", async () => {
+    const res = await POST(post({ handle: "someone", items: { nope: true } }));
+    expect(res.status).toBe(400);
+  });
 });
