@@ -506,18 +506,30 @@ export function CampaignInvoiceDialog({
     requestScan();
   }, [applicable, scan, scanLoading, scanAttempted, requestScan]);
 
-  // 읽기 실패·월정산 아님(그새 스위치가 꺼짐)·레거시 모드면 창 대신 이유를 알리고 닫는다 — 조용히
-  // 빈 창을 띄우지 않는다.
-  const unavailable = loadFailed || (view !== null && !applicable);
+  // 한 번이라도 달별 창을 그렸는가 — 그 뒤의 재조회 실패·모드 변화는 「처음부터 못 연 것」과 다르다.
+  const [wasApplicable, setWasApplicable] = useState(false);
   useEffect(() => {
-    if (!unavailable) return;
-    toast.error(
-      loadFailed
-        ? "계산서 기록을 읽지 못했습니다. 다시 시도해 주세요."
-        : "이 캠페인은 달별 계산서 대상이 아닙니다. 캠페인 상세에서 확인해 주세요.",
-    );
-    onOpenChange(false);
-  }, [unavailable, loadFailed, onOpenChange]);
+    if (applicable) setWasApplicable(true);
+  }, [applicable]);
+
+  // 처음 읽기에 실패했거나 대상이 아니면(그새 스위치가 꺼짐·레거시 모드) 이유를 알리고 닫는다 —
+  // 조용히 빈 창을 띄우지 않는다. 열린 뒤 저장으로 레거시 모드가 되면(다른 경로의 날짜가 남은 채
+  // 마지막 기록을 취소) 조용히 닫는다 — 보드는 `onChanged` 로 다시 읽어 그 행을 정리한다. 저장 뒤
+  // 재조회만 실패한 경우는 `run` 이 이미 경고했고 마지막 화면을 그대로 둔다(코드 리뷰 2026-10-09).
+  const failedToOpen = !wasApplicable && (loadFailed || (view !== null && !applicable));
+  const leftMonthlyMode = wasApplicable && view !== null && !applicable;
+  useEffect(() => {
+    if (failedToOpen) {
+      toast.error(
+        loadFailed
+          ? "계산서 기록을 읽지 못했습니다. 다시 시도해 주세요."
+          : "이 캠페인은 달별 계산서 대상이 아닙니다. 캠페인 상세에서 확인해 주세요.",
+      );
+      onOpenChange(false);
+    } else if (leftMonthlyMode) {
+      onOpenChange(false);
+    }
+  }, [failedToOpen, leftMonthlyMode, loadFailed, onOpenChange]);
 
   if (!applicable) return null;
   return (

@@ -505,29 +505,71 @@ export const campaignInvoiceService = {
  * 캠페인별 달별 기록 요약. 그룹은 계산서를 공유하므로 멤버 전원이 같은 값을 받는다.
  * 월정산이 아닌 캠페인·레거시 모드 단위는 넣지 않는다(기존 단일 날짜 동작 그대로).
  * ⛔ 달이 0개인 단위는 없다(`listYearMonths` 가 최소 1달) — 「줄 0개 = 끝」 같은 공허 판정 금지.
+ *
+ * 세무 보드가 열릴 때마다 정산 단계의 월정산 캠페인 전부를 본다 — 캠페인마다 조회하면 쌓이는
+ * 만큼 느려지므로 **조회 3번**(대상·그룹 멤버·계산서 행)으로 묶는다(코드 리뷰 2026-10-09).
+ * 단위 판정 규칙은 `loadInvoiceUnit`·`isLegacyMode` 와 같다 — 여기서 규칙을 바꾸면 그쪽도 바꿀 것.
  */
 async function evaluateUnits(db: Db, campaignIds: readonly string[]): Promise<Map<string, InvoiceProgress>> {
   const result = new Map<string, InvoiceProgress>();
   if (campaignIds.length === 0) return result;
   const targets = await db.salesCampaign.findMany({
     where: { id: { in: [...campaignIds] }, deal: { partner: { monthlySettlement: true } } },
-    select: { id: true },
+    select: {
+      id: true,
+      groupId: true,
+      startDate: true,
+      endDate: true,
+      salesChannel: true,
+      supplierInvoiceIssuedAt: true,
+      group: { select: { supplierInvoiceIssuedAt: true } },
+    },
   });
+  if (targets.length === 0) return result;
+
+  const groupIds = [...new Set(targets.map((t) => t.groupId).filter((id): id is string => id !== null))];
+  const groupMembers = groupIds.length
+    ? await db.salesCampaign.findMany({
+        where: { groupId: { in: groupIds } },
+        select: { id: true, groupId: true, startDate: true, endDate: true },
+      })
+    : [];
+
+  type Member = { id: string; startDate: Date; endDate: Date };
+  const membersByUnit = new Map<string, Member[]>();
+  for (const member of groupMembers) {
+    const list = membersByUnit.get(member.groupId as string) ?? [];
+    list.push(member);
+    membersByUnit.set(member.groupId as string, list);
+  }
+  for (const target of targets) if (!target.groupId) membersByUnit.set(target.id, [target]);
+
+  const allMemberIds = [...membersByUnit.values()].flat().map((m) => m.id);
+  const rows = await db.campaignInvoice.findMany({
+    where: { campaignId: { in: allMemberIds } },
+    orderBy: [{ yearMonth: "asc" }, { createdAt: "asc" }],
+  });
+
   const byUnitKey = new Map<string, InvoiceProgress | null>();
   for (const target of targets) {
-    const unit = await loadInvoiceUnit(db, target.id);
-    if (!unit) continue;
-    const unitKey = unit.groupId ?? unit.campaignId;
+    const unitKey = target.groupId ?? target.id;
     if (!byUnitKey.has(unitKey)) {
-      const rows = await loadUnitRows(db, unit);
+      const members = membersByUnit.get(unitKey) ?? [target];
+      const memberIds = new Set(members.map((m) => m.id));
+      const direction = resolveSupplierInvoiceDirection(target.salesChannel);
+      const unitRows = rows.filter((row) => memberIds.has(row.campaignId) && row.direction === direction);
+      // CG-1: 그룹 소속이면 그룹 값이 정본이다.
+      const legacyDate = target.groupId ? (target.group?.supplierInvoiceIssuedAt ?? null) : target.supplierInvoiceIssuedAt;
+      const legacy = legacyDate !== null && !unitRows.some((row) => row.status !== "DISMISSED");
       byUnitKey.set(
         unitKey,
-        isLegacyMode(unit, rows)
+        legacy
           ? null
           : summarizeInvoiceRows({
-              periodStart: unit.periodStart,
-              periodEnd: unit.periodEnd,
-              rows: rows.map(toInvoiceRowDto),
+              // 그룹 기간은 멤버 기간의 포락선이다(그룹 스칼라 복사본은 정본이 아니다).
+              periodStart: new Date(Math.min(...members.map((m) => m.startDate.getTime()))),
+              periodEnd: new Date(Math.max(...members.map((m) => m.endDate.getTime()))),
+              rows: unitRows.map(toInvoiceRowDto),
             }),
       );
     }

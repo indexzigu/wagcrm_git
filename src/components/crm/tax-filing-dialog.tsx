@@ -412,6 +412,12 @@ function DirectionBlock({
                 <td className="py-2 pr-2 text-muted-foreground">
                   {row.campaignLabel}
                   <SettlementItemNote effect={row.settlementItemEffect} />
+                  {row.monthlyInvoice ? (
+                    // 캠페인 상세 칸의 n/m 과 같은 숫자 — 단위를 붙여 「몇 개월 중 몇 개월」로 읽히게(T-244).
+                    <div className="mt-0.5 text-[10px] tabular-nums">
+                      계산서 {row.monthlyInvoice.done}/{row.monthlyInvoice.total}개월 기록
+                    </div>
+                  ) : null}
                 </td>
                 <td className="py-2 pr-2 text-right tabular-nums">{formatWon(row.amount.supplyAmount)}</td>
                 <td className="py-2 pr-2 text-right tabular-nums">{formatWon(row.amount.taxAmount)}</td>
@@ -436,16 +442,15 @@ function DirectionBlock({
                       </Button>
                     ) : null}
                     {row.monthlyInvoice ? (
+                      // 「조회」 = 달별 계산서 창 열기(메일함을 아직 안 봤으면 함께 확인) — 캠페인 상세
+                      // 칸과 같은 낱말·같은 동작. 스캔만 하는 버튼은 「메일함에서 확인」이다.
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => onOpenInvoices(row)}
-                        aria-label={`${row.campaignLabel} 달별 계산서 조회, ${row.monthlyInvoice.total}개월 중 ${row.monthlyInvoice.done}개월 기록`}
+                        aria-label={`${row.campaignLabel} 달별 계산서 조회`}
                       >
                         조회
-                        <span className="tabular-nums text-muted-foreground">
-                          {row.monthlyInvoice.done}/{row.monthlyInvoice.total}
-                        </span>
                       </Button>
                     ) : row.checklistItemId ? (
                       <Button size="sm" variant="outline" onClick={() => onComplete(row)}>
@@ -1032,7 +1037,17 @@ export function TaxFilingDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isChecked: true }),
       });
-      if (!res.ok) throw new Error("처리 실패");
+      if (!res.ok) {
+        // 서버가 거절 사유를 주면 그대로 보인다(예: 그새 월정산이 된 거래처 — T-244). 낡은 보드일 수
+        // 있으니 다시 읽어 행을 「조회」로 바꾼다.
+        const payload = await res.json().catch(() => null);
+        if (typeof payload?.error === "string") {
+          toast.error(payload.error);
+          await fetchBoard(month);
+          return;
+        }
+        throw new Error("처리 실패");
+      }
       toast.success(`${row.counterpartName} 처리를 완료했습니다.`);
       await fetchBoard(month);
     } catch {

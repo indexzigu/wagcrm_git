@@ -1386,12 +1386,17 @@ describe("월정산 공급사 행 — 달별 계산서가 「끝」을 정한다
     expect(rowFor(noMap.rows, "ISSUE")!.monthlyInvoice).toBeNull();
   });
 
-  it("레거시 날짜가 이미 있으면(레거시 모드) 진행과 무관하게 행이 없다", () => {
+  it("레거시 모드(날짜 있음·계산서 0장 → 진행이 결과에 없음)는 종전대로 날짜가 「끝」이다", () => {
+    const board = buildTaxInvoiceWorkBoard([monthly({ supplierInvoiceIssuedAt: "2026-09-30" })], "2026-10", new Map());
+    expect(rowFor(board.rows, "ISSUE")).toBeUndefined();
+  });
+
+  it("날짜가 찍혔어도 달별 기록에 남은 달이 있으면 행을 남긴다 — 완료 게이트가 막고 있는 단위를 숨기지 않는다", () => {
     const board = buildTaxInvoiceWorkBoard(
       [monthly({ supplierInvoiceIssuedAt: "2026-09-30" })],
       "2026-10",
-      progressOf(0, 2, ["2026-09", "2026-10"]),
+      progressOf(1, 2, ["2026-10"]),
     );
-    expect(rowFor(board.rows, "ISSUE")).toBeUndefined();
+    expect(rowFor(board.rows, "ISSUE")!.monthlyInvoice).toEqual({ done: 1, total: 2 });
   });
 });

@@ -794,9 +794,11 @@ function emitCampaignRows(
     // 「공급사 총 수수료 매출 세금계산서 발행」 항목이 생기는데 보드에는 대응 행이
     // 없어 오너가 그 의무 자체를 인지하지 못하는 사고가 났다(2026-08-04 실사고).
     if (obligation.counterpart === "SELLER" && isIndividualSeller(campaign)) continue;
-    if (campaign[field]) continue; // 이미 처리됨 — 행을 만들지 않는다
+    // 월정산 단위는 날짜 한 칸이 아니라 달별 계산서가 「끝」을 정한다 — 그래서 날짜보다 먼저 본다.
+    // 옛 「완료」 버튼이 날짜를 찍었어도 남은 달이 있으면 행을 남긴다(완료 게이트는 막고 있으므로).
     const monthlyInvoice = resolveMonthlyInvoice(field, campaign, monthlyProgress);
     if (monthlyInvoice === "DONE") continue; // 달별 계산서가 다 끝났다(전부 「없음」 포함)
+    if (!monthlyInvoice && campaign[field]) continue; // 이미 처리됨 — 행을 만들지 않는다
 
     const { amount, blockingReasons: amountReasons } = computeAmountForBasis(
       obligation.amountBasis,
@@ -894,10 +896,11 @@ function emitGroupRows(
     if (!obligation) continue;
     // 그룹 공유 필드다 — `campaign-row.ts`가 그룹 값을 전 멤버에 동일하게 폴딩하므로
     // 대표 하나만 확인하면 전 멤버를 대표한다.
-    if (anchor[field]) continue;
-    // 그룹은 계산서를 공유한다 — 진행은 멤버 전원이 같은 값이라 대표 하나로 본다.
+    // 그룹은 계산서를 공유한다 — 진행은 멤버 전원이 같은 값이라 대표 하나로 본다. 날짜보다 먼저 보는
+    // 이유는 `emitCampaignRows` 와 같다.
     const monthlyInvoice = resolveMonthlyInvoice(field, anchor, monthlyProgress);
     if (monthlyInvoice === "DONE") continue;
+    if (!monthlyInvoice && anchor[field]) continue;
     // 그룹 멤버는 앱 불변식상 셀러가 전원 동일하다(`CampaignGroup.sellerId`) — 개인/
     // 사업자 판정도 대표로 충분하고, 멤버마다 다시 물을 이유가 없다.
     if (obligation.counterpart === "SELLER" && isIndividualSeller(anchor)) continue;

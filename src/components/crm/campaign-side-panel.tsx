@@ -59,7 +59,7 @@ import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { previewText } from "./confirm-action-dialog";
 import { AssetManager } from "./asset-manager";
 import { ContentOrderTimeline } from "./content-order-timeline";
-import { CampaignTaskChecklist, type CampaignTaskChecklistItem } from "./campaign-task-checklist";
+import { ChecklistToggleRejected, CampaignTaskChecklist, type CampaignTaskChecklistItem } from "./campaign-task-checklist";
 import { StatusStepper } from "./status-stepper";
 import { CampaignGroupSection } from "./campaign-group-section";
 import { DealLinkSection } from "./deal-link-section";
@@ -509,7 +509,7 @@ export function CampaignSidePanel({
   async function refreshChecklistSnapshot(campaignId: string) {
     const response = await fetch(`/api/campaigns/${campaignId}/checklist`);
     if (!response.ok) {
-      throw new Error("체크리스트를 다시 읽지 못했습니다. 새로고침해 주세요.");
+      throw new Error("Checklist refresh failed");
     }
     return await response.json();
   }
@@ -645,7 +645,8 @@ export function CampaignSidePanel({
     if (!response.ok) {
       // 서버가 거절 사유를 주면 그대로 올린다(예: 월정산 공급사 계산서는 계산서 칸에서 — T-244).
       const payload = await response.json().catch(() => null);
-      throw new Error(typeof payload?.error === "string" ? payload.error : "체크리스트 업데이트에 실패했습니다");
+      if (typeof payload?.error === "string") throw new ChecklistToggleRejected(payload.error);
+      throw new Error("Toggle failed");
     }
 
     const data = await response.json();

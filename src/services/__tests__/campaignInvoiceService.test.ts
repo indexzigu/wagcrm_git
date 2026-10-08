@@ -45,9 +45,13 @@ const db = {
         deal: { partner: { name: "브랜드A", businessNumber: "2222222222", monthlySettlement: c.monthly } },
       };
     }),
-    findMany: vi.fn(async ({ where }: { where: { groupId?: string; id?: { in: string[] } } }) => {
-      if (where.groupId) return state.campaigns.filter((c) => c.groupId === where.groupId).sort((a, b) => a.id.localeCompare(b.id));
-      return state.campaigns.filter((c) => where.id?.in.includes(c.id) && c.monthly).map((c) => ({ id: c.id }));
+    findMany: vi.fn(async ({ where }: { where: { groupId?: string | { in: string[] }; id?: { in: string[] } } }) => {
+      const groupId = where.groupId;
+      if (typeof groupId === "string") return state.campaigns.filter((c) => c.groupId === groupId).sort((a, b) => a.id.localeCompare(b.id));
+      if (groupId) return state.campaigns.filter((c) => c.groupId !== null && groupId.in.includes(c.groupId));
+      return state.campaigns
+        .filter((c) => where.id?.in.includes(c.id) && c.monthly)
+        .map((c) => ({ ...c, group: c.groupId ? state.groups.get(c.groupId) ?? null : null }));
     }),
     updateMany: vi.fn(async ({ where, data }: { where: { id: string; supplierInvoiceIssuedAt: Date | null }; data: { supplierInvoiceIssuedAt: Date | null } }) => {
       const c = state.campaigns.find(

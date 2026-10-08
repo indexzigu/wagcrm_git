@@ -10,6 +10,12 @@ import { EXECUTION_CHECKLIST_GROUPS } from "@/lib/campaign-checklist";
 import { campaignStatusLabels, type CampaignStatus } from "@/lib/crm-types";
 import { formatDate } from "@/lib/format";
 
+/**
+ * 서버가 준 **오너에게 보일 거절 사유** — 이 오류만 토스트에 문구를 그대로 올린다(T-244: 월정산
+ * 공급사 계산서는 계산서 칸에서 기록). 네트워크 오류(`Failed to fetch`) 같은 나머지는 고정 문구다.
+ */
+export class ChecklistToggleRejected extends Error {}
+
 export type CampaignTaskChecklistItem = {
   id: string;
   status: string;
@@ -218,8 +224,7 @@ function ChecklistRow({
       await onToggle(item.id, nextChecked);
     } catch (error) {
       setOptimisticChecked(!nextChecked);
-      // 호출부(`onToggle`)가 오너에게 보일 사유를 메시지로 준다(서버 거절 사유 포함 — T-244).
-      toast.error(error instanceof Error ? error.message : "체크리스트 업데이트에 실패했습니다");
+      toast.error(error instanceof ChecklistToggleRejected ? error.message : "체크리스트 업데이트에 실패했습니다");
     } finally {
       setIsUpdating(false);
     }

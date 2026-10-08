@@ -1701,11 +1701,12 @@ describe("세무 처리 다이얼로그 — 월정산 공급사 행 (T-244)", ()
     ],
   };
 
-  it("「완료」 대신 진행(n/m)이 붙은 「조회」를 주고, 누르면 그 캠페인의 달별 계산서 창을 연다", async () => {
+  it("「완료」 대신 「조회」를 주고 진행을 단위와 함께 적으며, 누르면 그 캠페인의 달별 계산서 창을 연다", async () => {
     global.fetch = vi.fn(async () => ({ ok: true, json: async () => MONTHLY_BOARD }) as Response) as never;
     renderDialog();
-    const open = await screen.findByRole("button", { name: /딜M - 셀러M 1차 달별 계산서 조회, 2개월 중 1개월 기록/ });
-    expect(open).toHaveTextContent("조회1/2");
+    const open = await screen.findByRole("button", { name: "딜M - 셀러M 1차 달별 계산서 조회" });
+    expect(open).toHaveTextContent("조회");
+    expect(screen.getByText("계산서 1/2개월 기록")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "완료" })).toBeNull();
 
     fireEvent.click(open);
