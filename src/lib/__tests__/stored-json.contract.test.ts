@@ -65,6 +65,7 @@ const DUAL_MODE_JSON_FIELDS = [
   "flags",
   "rawResults",
   "toolCalls",
+  "sourceRef",
 ] as const;
 
 /**

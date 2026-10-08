@@ -131,7 +131,7 @@ type OperationFailure = { status: "FAILED_FINAL"; errorClass: string; summary: s
 type OperationRetry = { status: "RETRY"; errorClass: string };
 type OperationOutcome = OperationSuccess | OperationFailure | OperationRetry;
 
-type OperationContext = { now: Date; signal: AbortSignal };
+type OperationContext = { now: Date; signal: AbortSignal; origin: AgentJobPayload["origin"] };
 type OperationHandler = (input: AgentJobPayload["input"], context: OperationContext) => Promise<OperationOutcome>;
 
 /**
@@ -160,6 +160,21 @@ const ACTOR = "AGENT_WORKER";
 const SEARCH_TAKE_LIMIT = 20;
 // 실패한 기안의 오류 문구는 봇이 오너에게 그대로 옮기므로 앞부분만 싣는다.
 const PROPOSAL_ERROR_EXCERPT_CHARS = 300;
+// `get_action_proposal` 둘째 줄의 실행자 값 — 읽는 쪽이 한 줄 정규식으로 받을 수 있는 글자만.
+const EXECUTED_BY_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
+// 사람 승인자의 id(로그인 계정 uuid) 모양. 봇에게는 "사람이 승인했다"만 필요하므로 id 자체는
+// 넘기지 않는다 — 봇의 대화 맥락·슬랙 회신으로 계정 식별자가 흘러갈 길을 만들지 않는다.
+const HUMAN_ACTOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * 실행자 값을 봇에게 보낼 한 낱말로 옮긴다: 사람 승인자 id → `HUMAN`, 시스템 actor(토큰 글자)는
+ * 그대로, 그 밖의 값(이메일 등) → `UNKNOWN`. 실행되지 않은 기안(값 없음)은 null — 줄을 싣지 않는다.
+ */
+function executedByLabel(executedBy: string | null): string | null {
+  if (!executedBy) return null;
+  if (HUMAN_ACTOR_ID.test(executedBy)) return "HUMAN";
+  return EXECUTED_BY_TOKEN.test(executedBy) ? executedBy : "UNKNOWN";
+}
 
 function boundSummary(text: string): string {
   const trimmed = text.trim();
@@ -200,6 +215,7 @@ async function getActionProposal(input: GetActionProposalInput): Promise<Operati
       createdBy: true,
       executedRefType: true,
       executedRefId: true,
+      executedBy: true,
       errorMessage: true,
     },
   });
@@ -210,14 +226,24 @@ async function getActionProposal(input: GetActionProposalInput): Promise<Operati
   //    읽은 글로 만들어져, 제목 속 줄바꿈 뒤의 "executedRef=PARTNER:<남의 id>" 가 진짜 줄보다
   //    앞에 서면 딜이 엉뚱한 거래처에 붙는다. 첫 줄은 DB 가 만든 값만으로 이뤄지고, 사람이
   //    읽는 둘째 줄 이후는 줄바꿈을 눌러 한 줄씩으로 둔다.
+  // ⛔ 첫 줄 끝에 무엇도 덧붙이지 말 것 — 읽는 쪽 두 곳(hermes `gateway/bridge/worker.py`
+  //    `_PROPOSAL_LINE` · `plugins/wag-operator/approval_watch.py` `_RESULT_LINE`)이 그 줄을
+  //    `$` 로 닫힌 정규식으로 통째 대조하므로, 칸 하나만 늘어도 모든 결정이 "읽을 수 없음"이 된다.
   const executedRef =
     proposal.executedRefType && proposal.executedRefId
       ? ` executedRef=${proposal.executedRefType}:${proposal.executedRefId}`
       : "";
-  const lines = [
-    `get_action_proposal: ${proposal.id} status=${proposal.status}${executedRef}`,
-    `title=${flattenLineBreaks(proposal.title)}`,
-  ];
+  const lines = [`get_action_proposal: ${proposal.id} status=${proposal.status}${executedRef}`];
+  // 누가 실행했는가(사람 승인 vs 자동 실행)는 **둘째 줄 고정 자리**에 싣는다 — `executedBy` 가
+  // 있을 때만(실행이 끝난 기안). 값은 DB 가 쓴 것을 `executedByLabel` 로 옮긴 한 낱말이다.
+  // 제목 줄보다 **앞에** 두는 이유: 제목은 줄바꿈이 눌려 한 줄이라 이 자리를 흉내낼 수 없다.
+  // 읽는 쪽은 둘째 줄만 `^executedBy=…$` 로 대조한다(아래 줄들을 훑어 `executedBy=` 를 찾으면
+  // 제목이 그 글자를 담을 수 있다).
+  const executedBy = executedByLabel(proposal.executedBy);
+  if (executedBy) {
+    lines.push(`executedBy=${executedBy}`);
+  }
+  lines.push(`title=${flattenLineBreaks(proposal.title)}`);
   if (proposal.status === "FAILED" && proposal.errorMessage) {
     lines.push(`error=${flattenLineBreaks(proposal.errorMessage.slice(0, PROPOSAL_ERROR_EXCERPT_CHARS))}`);
   }
@@ -717,9 +743,23 @@ function assertNotAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new ExecutionAbortedError();
 }
 
+/**
+ * 기안의 출처 칸(`ActionProposal.sourceRef`). 작업에 슬랙 위치가 있을 때만 만든다 — 없으면
+ * 칸을 아예 넘기지 않아 DB 기본값 NULL 로 남는다(출처 없는 기안은 지금과 같다).
+ * 계약이 이미 `.strict()` 로 모양을 검사했지만 네 칸만 골라 **새 객체로** 옮긴다 — 받은 객체를
+ * 그대로 넘기면 계약이 넓어질 때 그 칸이 검토 없이 DB 까지 따라 들어간다.
+ */
+function proposalSourceRef(
+  origin: AgentJobPayload["origin"],
+): { sourceRef: Prisma.InputJsonValue } | Record<string, never> {
+  if (!origin.slack) return {};
+  const { channelId, threadTs, messageTs, rid } = origin.slack;
+  return { sourceRef: { slack: { channelId, threadTs, messageTs, rid } } };
+}
+
 async function createActionProposal(
   input: CreateActionProposalInput,
-  { signal }: OperationContext,
+  { signal, origin }: OperationContext,
 ): Promise<OperationOutcome> {
   const { action, ...args } = input;
   // Own-property lookups only: prototype members ("constructor", "toString") are not actions.
@@ -755,6 +795,7 @@ async function createActionProposal(
         campaignId: intent.targetEntityType === "CAMPAIGN" ? intent.targetEntityId : null,
         reviewRequired: true,
         createdBy: ACTOR,
+        ...proposalSourceRef(origin),
       }),
     });
     await tx.actionProposalEvent.create({
@@ -873,7 +914,11 @@ export async function executeAgentJob(
   let outcome: OperationOutcome;
   try {
     assertNotAborted(signal);
-    outcome = await OPERATION_REGISTRY[job.payload.operation](job.payload.input, { now: now(), signal });
+    outcome = await OPERATION_REGISTRY[job.payload.operation](job.payload.input, {
+      now: now(),
+      signal,
+      origin: job.payload.origin,
+    });
   } catch (error) {
     if (error instanceof ExecutionAbortedError) throw error;
     return {

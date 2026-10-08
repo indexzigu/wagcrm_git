@@ -1065,6 +1065,9 @@ model ActionProposal {
   executionResult  String?
   executedRefType  String?
   executedRefId    String?
+  // 기안 출처(브리지가 올린 기안만): { slack: { channelId, threadTs, messageTs, rid } }. 모양 정본은
+  // src/lib/agent-worker/contracts.ts 의 AgentJobSlackOriginSchema. 자기 신고 값이라 대조 전에는 신뢰하지 않는다.
+  sourceRef        String?
   createdBy        String                @default("AGENT")
   approvedBy       String?
   executedBy       String?

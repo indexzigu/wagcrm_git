@@ -78,6 +78,7 @@ const JSON_FIELDS = [
   "nextActions",
   "payload",
   "executionResult",
+  "sourceRef",
 ] as const;
 
 type JsonFieldName = (typeof JSON_FIELDS)[number];
