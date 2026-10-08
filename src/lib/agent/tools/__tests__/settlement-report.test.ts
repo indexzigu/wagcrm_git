@@ -3,11 +3,16 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const getSettlementReportMock = vi.fn();
 const findCampaignsForReportMock = vi.fn();
 
-vi.mock("@/services/settlementService", () => ({
-  SettlementService: {
-    getSettlementReport: (...args: unknown[]) => getSettlementReportMock(...args),
-  },
-}));
+// 조회 조건 함수(`buildSettlementReportQuery`)는 진짜를 쓴다 — 화면과 같은 조건을 보는 것이 이 도구의 계약이다.
+vi.mock("@/services/settlementService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/settlementService")>();
+  return {
+    buildSettlementReportQuery: actual.buildSettlementReportQuery,
+    SettlementService: {
+      getSettlementReport: (...args: unknown[]) => getSettlementReportMock(...args),
+    },
+  };
+});
 
 vi.mock("@/repositories/settlementRepository", () => ({
   SettlementRepository: {

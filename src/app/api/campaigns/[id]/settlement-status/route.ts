@@ -7,6 +7,7 @@ import { getAuthContext } from "@/lib/auth-context";
 import { computeAutoStatus } from "@/lib/settlement-status";
 import { syncCampaignToCalendar } from "@/lib/google-calendar-sync";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
+import { monthlySettlementService } from "@/services/monthlySettlementService";
 import {
   resolveSettlementFlagSnapshot,
   writeSettlementFlags,
@@ -100,13 +101,21 @@ export async function PATCH(
     newDepositState !== previousDepositState ||
     newPayoutState !== previousPayoutState ||
     newSupplierPayoutState !== previousSupplierPayoutState;
-  const autoStatus = settlementStateChanged
+  let autoStatus = settlementStateChanged
     ? computeAutoStatus(campaign.status, campaign.salesChannel, {
         isDepositReceived: newDepositState,
         isPayoutCompleted: newPayoutState,
         isSupplierPayoutCompleted: newSupplierPayoutState,
       })
     : null;
+  // 월별 정산 완료 게이트(T-240) — 월정산 거래처 캠페인은 모든 월 줄 체크가 끝나기 전엔 완료로
+  // 넘기지 않는다. 플래그는 그대로 저장하고 상태 전이만 보류하며, 이유를 응답에 싣는다.
+  // 조합 캠페인은 실캠페인 1개라 원본이 막히면 그룹 전이도 함께 보류된다(형제 전파 없음).
+  let monthlyCompletionBlocked: string | null = null;
+  if (autoStatus === "COMPLETED" && campaign.status !== "COMPLETED") {
+    monthlyCompletionBlocked = await monthlySettlementService.findCompletionBlocker(prisma, id);
+    if (monthlyCompletionBlocked) autoStatus = null;
+  }
   const campaignUpdates: Prisma.SalesCampaignUpdateManyMutationInput = autoStatus
     ? { status: autoStatus }
     : {};
@@ -227,6 +236,7 @@ export async function PATCH(
     ...(updated.propagatedStatusSiblingIds.length > 0
       ? { groupStatusSyncedIds: updated.propagatedStatusSiblingIds }
       : {}),
+    ...(monthlyCompletionBlocked ? { monthlyCompletionBlocked } : {}),
     isDepositReceived: effectiveGroup ? effectiveGroup.isDepositReceived : effectiveCampaign.isDepositReceived,
     isPayoutCompleted: effectiveGroup ? effectiveGroup.isPayoutCompleted : effectiveCampaign.isPayoutCompleted,
     isSupplierPayoutCompleted: effectiveGroup

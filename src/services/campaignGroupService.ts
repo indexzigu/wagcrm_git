@@ -5,6 +5,7 @@ import {
   type CampaignGroupRollupUpdate,
 } from "@/repositories/campaignGroupRepository";
 import { generateGroupName } from "@/lib/campaign-group-name";
+import { monthlySettlementService } from "@/services/monthlySettlementService";
 import type { CampaignGroup, Prisma } from "@prisma/client";
 
 /**
@@ -461,10 +462,18 @@ export async function propagateGroupStatus(
       (input.isSiblingEligible ? input.isSiblingEligible(m) : true),
   );
   if (targets.length === 0) return [];
+  // 월별 정산 완료 게이트(T-240) — 원본이 통과했어도 형제는 자기 월 줄로 따로 판정한다
+  // (조합 캠페인의 월 줄은 멤버 단위다). 막힌 형제는 따라가지 않고 제자리에 둔다.
+  const blockedIds =
+    status === "COMPLETED"
+      ? await monthlySettlementService.findCompletionBlockers(tx, targets.map((t) => t.id))
+      : new Map<string, string>();
+  const followers = targets.filter((t) => !blockedIds.has(t.id));
+  if (followers.length === 0) return [];
 
   await tx.salesCampaign.updateMany({
     where: {
-      id: { in: targets.map((t) => t.id) },
+      id: { in: followers.map((t) => t.id) },
       groupId,
       status: { notIn: [...GROUP_STATUS_NON_FOLLOWING_SIBLINGS, status] },
     },
@@ -473,7 +482,7 @@ export async function propagateGroupStatus(
 
   if (log.kind === "campaign-activity") {
     await tx.campaignActivity.createMany({
-      data: targets.map((t) => ({
+      data: followers.map((t) => ({
         campaignId: t.id,
         action: log.action,
         label: log.label,
@@ -483,7 +492,7 @@ export async function propagateGroupStatus(
     });
   } else {
     await tx.activityLog.createMany({
-      data: targets.map((t) => ({
+      data: followers.map((t) => ({
         entityType: "CAMPAIGN",
         entityId: t.id,
         type: "CHANGE",
@@ -496,7 +505,7 @@ export async function propagateGroupStatus(
     });
   }
 
-  return targets.map((t) => ({ id: t.id, previousStatus: t.status }));
+  return followers.map((t) => ({ id: t.id, previousStatus: t.status }));
 }
 
 /**

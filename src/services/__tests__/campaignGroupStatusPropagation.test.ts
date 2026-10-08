@@ -10,6 +10,15 @@ import {
   propagateGroupStatus,
 } from "@/services/campaignGroupService";
 
+// 월별 정산 완료 게이트(T-240) — 기본은 통과(월정산 거래처 아님). 막힘 경우는 전용 테스트가 켠다.
+const completionBlockers = vi.fn();
+vi.mock("@/services/monthlySettlementService", () => ({
+  monthlySettlementService: {
+    findCompletionBlocker: vi.fn().mockResolvedValue(null),
+    findCompletionBlockers: (...args: unknown[]) => completionBlockers(...args),
+  },
+}));
+
 type Member = { id: string; status: string; salesChannel: string };
 
 const lockCalls: unknown[] = [];
@@ -49,12 +58,36 @@ beforeEach(() => {
     (m) => m.mockReset(),
   );
   groupFindUnique.mockResolvedValue({ id: "g1", sellerId: "s1" });
+  completionBlockers.mockReset().mockResolvedValue(new Map());
   campaignUpdateMany.mockResolvedValue({ count: 1 });
   activityCreateMany.mockResolvedValue({ count: 1 });
   activityLogCreateMany.mockResolvedValue({ count: 1 });
 });
 
 describe("propagateGroupStatus", () => {
+  it("정산 완료 전파는 월별 정산 체크가 남은 형제를 빼고 나머지만 따라가게 한다(T-240)", async () => {
+    membersFindMany.mockResolvedValue(
+      members(["c1", "COMPLETED"], ["c2", "SETTLEMENT_IN_PROGRESS"], ["c3", "SETTLEMENT_IN_PROGRESS"]),
+    );
+    completionBlockers.mockResolvedValue(new Map([["c3", "월별 정산 중 10월분(1/4)이 끝나지 않아…"]]));
+
+    const result = await propagateGroupStatus(tx, {
+      ...BASE,
+      originPreviousStatus: "SETTLEMENT_IN_PROGRESS",
+      status: "COMPLETED",
+    });
+
+    expect(completionBlockers).toHaveBeenCalledWith(tx, ["c2", "c3"]);
+    expect(result).toEqual([{ id: "c2", previousStatus: "SETTLEMENT_IN_PROGRESS" }]);
+    expect(campaignUpdateMany.mock.calls[0][0].where.id).toEqual({ in: ["c2"] });
+  });
+
+  it("정산 완료가 아닌 전파에는 게이트를 부르지 않는다", async () => {
+    membersFindMany.mockResolvedValue(members(["c1", "CLOSED"], ["c2", "ACTIVE"]));
+    await propagateGroupStatus(tx, BASE);
+    expect(completionBlockers).not.toHaveBeenCalled();
+  });
+
   it("형제 멤버에 같은 상태를 한 번의 updateMany 로 쓰고, 원본과 같은 actor 로 이력을 남긴다", async () => {
     membersFindMany.mockResolvedValue(members(["c1", "CLOSED"], ["c2", "ACTIVE"], ["c3", "PREPARATION"]));
 

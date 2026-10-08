@@ -74,6 +74,7 @@ import { LinkConfirmDialog } from "./link-confirm-dialog";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { LinkedSellersList } from "./linked-sellers-list";
 import { LinkedDealsList } from "./linked-deals-list";
+import { PartnerMonthlySettlementToggle } from "./partner-monthly-settlement-toggle";
 
 // --- Types ---
 
@@ -1460,6 +1461,18 @@ export function PartnersPanel({
               onRulesSaved={(rules) => onUpdated?.({ ...partner, orderExcelRules: rules })}
             />
 
+            <Separator />
+          </>
+        )}
+
+        {/* 월정산(T-240) — 공급사(BRAND/VENDOR) 또는 이미 켜진 거래처에만 노출. */}
+        {(partner.type === "BRAND" || partner.type === "VENDOR" || partner.monthlySettlement) && (
+          <>
+            <PartnerMonthlySettlementToggle
+              partnerId={partner.id}
+              enabled={Boolean(partner.monthlySettlement)}
+              onChanged={(enabled) => onUpdated?.({ ...partner, monthlySettlement: enabled })}
+            />
             <Separator />
           </>
         )}

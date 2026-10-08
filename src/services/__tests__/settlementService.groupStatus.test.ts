@@ -27,6 +27,11 @@ vi.mock("@/services/campaignGroupService", () => ({
   lockCampaignGroup: hoisted.lock,
 }));
 
+// 월별 정산 완료 게이트(T-240) — 이 파일은 그룹 전파만 본다(월정산 거래처 아님 = 통과).
+vi.mock("@/services/monthlySettlementService", () => ({
+  monthlySettlementService: { findCompletionBlocker: vi.fn().mockResolvedValue(null) },
+}));
+
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({ $transaction: hoisted.transaction }),
 }));

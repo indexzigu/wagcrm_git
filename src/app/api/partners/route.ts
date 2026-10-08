@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
       orderToEmail: true,
       orderCcEmail: true,
       orderExcelRules: true,
+      monthlySettlement: true,
       bizSyncedAt: true,
       referredById: true,
       referredBy: {

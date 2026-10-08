@@ -22,6 +22,15 @@ const dealCreateMock = vi.fn();
 const recordActivityCreateMock = vi.fn();
 const sellerFindUniqueMock = vi.fn();
 
+// 월별 정산 완료 게이트(T-240) — 이 파일은 상태 전이·그룹 전파만 본다(월정산 거래처 아님 = 통과).
+// 게이트 자체의 판정은 monthlySettlementService.test.ts · route.monthly-gate.test.ts 가 고정한다.
+vi.mock("@/services/monthlySettlementService", () => ({
+  monthlySettlementService: {
+    findCompletionBlocker: vi.fn().mockResolvedValue(null),
+    findCompletionBlockers: vi.fn().mockResolvedValue(new Map()),
+  },
+}));
+
 vi.mock("@/lib/activity-log", () => ({
   recordActivityMemo: (...args: unknown[]) => recordActivityMemoMock(...args),
   recordActivityChange: (...args: unknown[]) => recordActivityChangeMock(...args),

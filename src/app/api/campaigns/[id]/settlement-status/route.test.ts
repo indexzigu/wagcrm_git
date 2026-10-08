@@ -36,6 +36,16 @@ vi.mock("@/lib/prisma", () => ({
   }),
 }));
 
+// 월별 정산 완료 게이트(T-240) — 기본은 통과(월정산 거래처 아님). 막힘 경우는 아래 전용 테스트가 켠다.
+const completionBlockerMock = vi.fn();
+const completionBlockersMock = vi.fn();
+vi.mock("@/services/monthlySettlementService", () => ({
+  monthlySettlementService: {
+    findCompletionBlocker: (...args: unknown[]) => completionBlockerMock(...args),
+    findCompletionBlockers: (...args: unknown[]) => completionBlockersMock(...args),
+  },
+}));
+
 vi.mock("@/lib/activity-log", () => ({
   recordActivityChange: (...args: unknown[]) => activityMock(...args),
 }));
@@ -75,6 +85,8 @@ function campaignFixture(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+    completionBlockerMock.mockReset().mockResolvedValue(null);
+    completionBlockersMock.mockReset().mockResolvedValue(new Map());
   [
     campaignFindUniqueMock,
     campaignUpdateManyMock,
@@ -342,6 +354,24 @@ describe("PATCH /api/campaigns/[id]/settlement-status", () => {
     );
     // 대금 상태가 바뀌었으므로 캘린더 재동기화 훅도 함께 발화한다(입금/지급과 동일).
     expect(syncCampaignToCalendarMock).toHaveBeenCalledWith("c1");
+  });
+
+  it("월별 정산 체크가 남은 월정산 캠페인은 플래그만 저장하고 COMPLETED 로 넘기지 않는다(T-240)", async () => {
+    campaignFindUniqueMock.mockResolvedValue(
+      campaignFixture({ salesChannel: "OWN_MALL_NAVER", isPayoutCompleted: true }),
+    );
+    wireCampaignWrite(campaignFixture({ salesChannel: "OWN_MALL_NAVER", isPayoutCompleted: true }));
+    completionBlockerMock.mockResolvedValue("월별 정산 중 10월분(2/4)이 끝나지 않아 정산 완료로 바꿀 수 없습니다.");
+
+    const response = await PATCH(patchRequest({ isSupplierPayoutCompleted: true }), context());
+    expect(response.status).toBe(200);
+
+    const data = lastCampaignWrite();
+    expect(data.isSupplierPayoutCompleted).toBe(true);
+    expect(data.status).toBeUndefined();
+    const body = await response.json();
+    expect(body.monthlyCompletionBlocked).toContain("10월분(2/4)");
+    expect(completionBlockerMock).toHaveBeenCalledWith(expect.anything(), "c1");
   });
 
   it("공급사 지급 해제는 타임스탬프를 null 로 되돌린다", async () => {

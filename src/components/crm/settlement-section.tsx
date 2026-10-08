@@ -169,6 +169,9 @@ async function saveSettlementDate(
   if (!result.ok) {
     return { success: false, error: result.error };
   }
+  // 월별 정산 완료 게이트가 상태 전이를 보류했으면(T-240) 성공 토스트와 별개로 이유를 알린다 —
+  // 지급을 눌렀는데 상태만 그대로면 오너가 이유를 알 수 없다.
+  if (result.data.monthlyCompletionBlocked) toast.warning(result.data.monthlyCompletionBlocked);
   return { success: true, data: result.data };
 }
 
@@ -528,6 +531,16 @@ export function SettlementSection({
           {title}
         </h3>
       </div>
+
+      {campaign.partnerMonthlySettlement ? (
+        // 월정산 거래처(T-240) — 공급사 쪽 계산서·지급의 기준은 위 「월별 정산」이다. 이 카드의 칸은
+        // 세금계산서 보드·홈 「지연된 정산」·캘린더가 아직 캠페인 단위로 읽는 값이라 그대로 둔다
+        // (오너 확정 2026-10-08: 그 화면들의 월별 연동은 후속 작업). 같은 사실을 두 곳이 말하므로 상시 안내한다.
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+          이 캠페인의 공급사 계산서와 지급은 위 월별 정산이 기준입니다. 아래 칸은 세금계산서 보드·홈 알림·캘린더에
+          쓰이며, 위 월별 줄과 따로 저장됩니다.
+        </p>
+      ) : null}
 
       <div className="space-y-3.5 pt-2 border-t border-border/50">
         {/* 대금 결제 일정 — 칸 구성(입금/지급 × 상대)은 채널 슬롯에서 파생한다.

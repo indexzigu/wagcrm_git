@@ -1,5 +1,11 @@
 import { resolveCampaignMoneySlots, type CampaignMoneySlot } from "./tax-filing-board";
 import { resolveDisplaySellerFee } from "./campaign-financials";
+import {
+  countMonthlyChecks,
+  MONTHLY_CHECKLIST_ITEMS,
+  resolveMonthlyPaymentAmount,
+  sortMonthlyLines,
+} from "./monthly-settlement";
 
 export const SETTLEMENT_REPORT_STATUSES = [
   "SETTLEMENT_IN_PROGRESS",
@@ -54,6 +60,35 @@ type SettlementCampaignRecord = {
     expectedPayoutDate?: Date | string | null;
     expectedSupplierPayoutDate?: Date | string | null;
   } | null;
+  /** 월정산 거래처 캠페인인가(T-240). 없으면 false. */
+  monthlySettlementEnabled?: boolean;
+  /**
+   * 종료일로 이 기간에 들었는가. false = 월별 줄로만 들어온 캠페인 — 캠페인 단위 금액(마진·셀러
+   * 정산금)을 이 기간 합계에 더하지 않는다. 없으면 true(종전 호출부 그대로).
+   */
+  includedByEndDate?: boolean;
+  /** 이 기간의 월별 줄(조회가 이미 기간으로 거른 것). */
+  monthlySettlements?: ReadonlyArray<MonthlyReportLineRecord>;
+};
+
+type MonthlyReportLineRecord = {
+  yearMonth: string;
+  transactionAmount: DecimalLike;
+  goodsAmount: DecimalLike;
+  paymentAmount: DecimalLike;
+  salesInvoiceCheckedAt: Date | null;
+  purchaseInvoiceCheckedAt: Date | null;
+  paymentScheduleCheckedAt: Date | null;
+  paymentCompletedCheckedAt: Date | null;
+};
+
+/** 정산 목록 행의 「그 달 줄」 요약(T-240) — 같은 캠페인이 달마다 자기 줄로 보인다. */
+export type SettlementReportMonthlyLine = {
+  yearMonth: string;
+  transactionAmount: number | null;
+  paymentAmount: number | null;
+  checks: number;
+  isComplete: boolean;
 };
 
 export type SettlementReportCampaign = {
@@ -76,6 +111,8 @@ export type SettlementReportCampaign = {
   miscExpense: number;
   operatingProfit: number;
   schedule: string;
+  /** 월정산 캠페인만 — 이 기간의 월별 줄 요약(귀속 월 오름차순). */
+  monthlyLines?: SettlementReportMonthlyLine[];
 };
 
 export type SettlementReportData = {
@@ -272,9 +309,23 @@ export function buildSettlementReportModel(
     const { totalMarginAmount, sellerPayoutAmount, netMarginAmount } =
       resolveCampaignNetMargin(campaign);
 
-    totalRevenue += actualSales;
-    totalMargin += netMarginAmount;
-    totalSellerPayouts += sellerPayoutAmount;
+    const monthlyLines = campaign.monthlySettlementEnabled
+      ? toMonthlyReportLines(campaign.monthlySettlements ?? [])
+      : undefined;
+    const includedByEndDate = campaign.includedByEndDate ?? true;
+    // 매출: 월정산 캠페인은 이 기간 월별 줄의 거래액 합이 그 기간의 몫이다(명세 「해당 월 줄 기준」).
+    // 줄이 없으면 종전대로 캠페인 총액. 마진·셀러 정산금은 캠페인 단위라(셀러 정산은 월로 나누지
+    // 않는다) 종료일 기간에만 더한다 — 줄로만 들어온 기간에 더하면 같은 캠페인이 두 번 잡힌다.
+    totalRevenue +=
+      monthlyLines && monthlyLines.length > 0
+        ? monthlyLines.reduce((sum, line) => sum + (line.transactionAmount ?? 0), 0)
+        : includedByEndDate
+          ? actualSales
+          : 0;
+    if (includedByEndDate) {
+      totalMargin += netMarginAmount;
+      totalSellerPayouts += sellerPayoutAmount;
+    }
 
     return {
       id: campaign.id,
@@ -295,6 +346,7 @@ export function buildSettlementReportModel(
       taxExpense: numberFromDecimal(campaign.taxExpense),
       miscExpense: numberFromDecimal(campaign.miscExpense),
       operatingProfit: numberFromDecimal(campaign.operatingProfit),
+      ...(monthlyLines ? { monthlyLines } : {}),
       schedule: campaign.rawSchedule
         ? campaign.rawSchedule
         : buildScheduleText(campaign.salesChannel ?? "", {
@@ -315,4 +367,23 @@ export function buildSettlementReportModel(
     },
     campaigns: campaignBreakdown,
   };
+}
+
+function toMonthlyReportLines(
+  lines: ReadonlyArray<MonthlyReportLineRecord>,
+): SettlementReportMonthlyLine[] {
+  return sortMonthlyLines(lines).map((line) => {
+    const checks = countMonthlyChecks(line);
+    const goodsAmount = hasDecimalValue(line.goodsAmount) ? numberFromDecimal(line.goodsAmount) : null;
+    const paymentAmount = hasDecimalValue(line.paymentAmount) ? numberFromDecimal(line.paymentAmount) : null;
+    return {
+      yearMonth: line.yearMonth,
+      transactionAmount: hasDecimalValue(line.transactionAmount)
+        ? numberFromDecimal(line.transactionAmount)
+        : null,
+      paymentAmount: resolveMonthlyPaymentAmount({ paymentAmount, goodsAmount }),
+      checks,
+      isComplete: checks === MONTHLY_CHECKLIST_ITEMS.length,
+    };
+  });
 }

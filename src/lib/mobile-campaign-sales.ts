@@ -1,4 +1,5 @@
 import { getPrisma } from "@/lib/prisma";
+import { parseCachedDailyStats } from "@/lib/cached-daily-stats";
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from "@/lib/order-converter/group-orders";
 import { deriveOrderPipelineBucket } from "@/lib/order-converter/order-fulfillment";
 import { orderFulfillmentRepository } from "@/repositories/orderFulfillmentRepository";
@@ -250,23 +251,9 @@ export function computeCampaignSalesDetail(
   );
 }
 
-/** 마감 캠페인 캐시(cachedDailyStats Json) → CampaignDailyPoint[]. 형식 방어적으로 파싱. */
+/** 마감 캠페인 캐시(cachedDailyStats Json) → CampaignDailyPoint[] — 파서 SSOT 는 `cached-daily-stats.ts`. */
 function parseCachedDaily(raw: unknown): CampaignDailyPoint[] {
-  const parsed = typeof raw === "string" ? safeJsonParse(raw) : raw;
-  if (!Array.isArray(parsed)) return [];
-  return parsed
-    .map((row) => {
-      const r = row as { date?: unknown; orders?: unknown; revenue?: unknown };
-      const date = typeof r.date === "string" ? r.date.slice(0, 10) : null;
-      if (!date) return null;
-      return {
-        date,
-        orders: Number(r.orders) || 0,
-        revenue: Number(r.revenue) || 0,
-      };
-    })
-    .filter((point): point is CampaignDailyPoint => point !== null)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  return parseCachedDailyStats(raw);
 }
 
 function safeJsonParse(value: string): unknown {

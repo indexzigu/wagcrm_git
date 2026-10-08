@@ -81,6 +81,8 @@ export type PartnerSummary = {
   orderCcEmail?: string | null;
   // F4 Phase 2: 열 매핑 규칙(OrderExcelRules JSON). UI는 존재 여부·요약만 판단, 검증은 excel-rules zod
   orderExcelRules?: unknown;
+  /** 월정산 거래처(T-240) — 켜면 이 거래처 캠페인의 브랜드 정산을 월별 줄로 기록한다. */
+  monthlySettlement?: boolean;
   bizSyncedAt?: string | null;
   lastContactAt?: string | null;
   notes?: string | null;
@@ -266,6 +268,11 @@ export type CampaignRow = {
    * 목록을 반복할 필요는 없다 — 고지·검증용이다.
    */
   groupStatusSyncedIds?: string[];
+  /**
+   * 일회성 신호(T-240) — 입금·지급이 다 찼지만 월별 정산 체크가 남아 정산 완료 전이를 보류한 이유.
+   * PATCH 응답에만 실린다(영속 아님). 화면이 경고 토스트로 알린다.
+   */
+  monthlyCompletionBlocked?: string;
   campaignName: string | null;
   salesCode?: string | null;
   dealName: string;
@@ -288,6 +295,11 @@ export type CampaignRow = {
    * 다른 캠페인·구글 캘린더 대금 이벤트(`google-calendar-sync`)와 출처가 하나다.
    */
   partnerBankAccount?: string | null;
+  /**
+   * 월정산 거래처인가(T-240, `Partner.monthlySettlement`). 참이면 브랜드 정산을 캠페인 안의 월별 줄로
+   * 기록하고(`monthly-settlement-panel`), 재무 카드의 물품대금은 월별 줄 합계라 읽기 전용이다.
+   */
+  partnerMonthlySettlement?: boolean;
   partnerCeoName?: string | null;
   partnerAddress?: string | null;
   partnerBusinessType?: string | null;

@@ -46,6 +46,7 @@ import { CampaignLaunchReadinessSection } from "./campaign-launch-readiness-sect
 import { CampaignShortLinkCard } from "./campaign-short-link-card";
 import { resolveCampaignLinkSurface } from "@/lib/campaign-link-surface";
 import { patchCampaign } from "@/lib/campaign-patch";
+import { MonthlySettlementPanel } from "./monthly-settlement-panel";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -889,6 +890,8 @@ export function CampaignSidePanel({
               onCampaignUpdated={onCampaignUpdated}
             />
             <SettlementFinancialSummary campaign={campaign} onCampaignUpdated={onCampaignUpdated} />
+            {/* 월정산 거래처만 그린다(T-240) — 그 외 캠페인은 null 이라 화면 무변화. */}
+            <MonthlySettlementPanel campaign={campaign} onCampaignUpdated={onCampaignUpdated} />
             <SettlementInfo campaign={campaign} onCampaignUpdated={onCampaignUpdated} />
             <SettlementSection
               campaign={campaign}
@@ -1723,6 +1726,7 @@ function SettlementFinancialSummary({
   campaign: CampaignRow;
   onCampaignUpdated: (campaign: CampaignRow) => void;
 }) {
+  const isMonthlySettlement = Boolean(campaign.partnerMonthlySettlement);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState(() => ({
@@ -2054,7 +2058,8 @@ function SettlementFinancialSummary({
       //   조용히 억제 마커가 박힌다. 숫자로 못 읽는 값은 패치에서 제외한다(기존값 유지).
       const goodsCostRaw = draft.settlementGoodsCost.trim();
       const goodsCostParsed = goodsCostRaw === "" ? null : Number(goodsCostRaw);
-      if (goodsCostParsed === null || Number.isFinite(goodsCostParsed)) {
+      // 월정산 캠페인의 물품대금은 월별 줄 롤업이 소유한다(T-240) — 재무 카드 저장이 덮지 않는다.
+      if (!isMonthlySettlement && (goodsCostParsed === null || Number.isFinite(goodsCostParsed))) {
         if (goodsCostParsed !== (campaign.settlementGoodsCost ?? null)) {
           patch.settlementGoodsCost = goodsCostParsed;
         }
@@ -2267,27 +2272,43 @@ function SettlementFinancialSummary({
             value={draft.settlementSupplyCost}
             onChange={(value) => updateDraft("settlementSupplyCost", value)}
           />
-          <FinancialEditInput
-            label="물품대금 (계산서 대조)"
-            value={draft.settlementGoodsCost}
-            mode={draft.settlementGoodsCost.trim() === "" ? "자동" : "수동"}
-            // 자동 = RS 기반 공식 폴백(필드 null), 수동 = 실물 계산서 총액 직접 입력.
-            // 새 플래그를 만들지 않고 **null 여부가 곧 모드**다 — 세무 대조 엔진의
-            // 기존 3-상태 계약(미입력=공식 / 0=합산 이관 / 양수=그 금액)과 그대로 맞물린다.
-            onModeChange={(mode) =>
-              updateDraft(
-                "settlementGoodsCost",
-                mode === "자동" ? "" : String(Math.max(grossSales - grossCommission, 0)),
-              )
-            }
-            onChange={(value) => updateDraft("settlementGoodsCost", value)}
-          />
+          {isMonthlySettlement ? (
+            // 월정산 거래처(T-240) — 물품대금은 월별 줄의 합계다. 여기서 고치면 월별 합과 갈라진다.
+            <FinancialEditInput
+              label="물품대금 (월별 합)"
+              value={draft.settlementGoodsCost}
+              readOnly
+              hint="월별 정산에서 입력"
+            />
+          ) : (
+            <FinancialEditInput
+              label="물품대금 (계산서 대조)"
+              value={draft.settlementGoodsCost}
+              mode={draft.settlementGoodsCost.trim() === "" ? "자동" : "수동"}
+              // 자동 = RS 기반 공식 폴백(필드 null), 수동 = 실물 계산서 총액 직접 입력.
+              // 새 플래그를 만들지 않고 **null 여부가 곧 모드**다 — 세무 대조 엔진의
+              // 기존 3-상태 계약(미입력=공식 / 0=합산 이관 / 양수=그 금액)과 그대로 맞물린다.
+              onModeChange={(mode) =>
+                updateDraft(
+                  "settlementGoodsCost",
+                  mode === "자동" ? "" : String(Math.max(grossSales - grossCommission, 0)),
+                )
+              }
+              onChange={(value) => updateDraft("settlementGoodsCost", value)}
+            />
+          )}
           {/* text-xs = P8 폼 타이포 4단 사다리의 도움말 티어(ss-ux 검토 반영 — 10px 신설 금지) */}
+          {isMonthlySettlement ? (
+            <p className="px-2 text-xs leading-relaxed text-slate-500">
+              월정산 거래처는 물품대금을 월별 정산에서 입력합니다. 이 값은 월별 줄의 합계(VAT 포함)입니다.
+            </p>
+          ) : (
           <p className="px-2 text-xs leading-relaxed text-slate-500">
             자동은 요율 기반 공식(총 거래액 − 영업 수익) 추정이고, 수동은 이 캠페인 앞으로 온
             매입 계산서 합계(VAT 포함)입니다. <span className="font-semibold">0</span>은 다른
             캠페인 계산서에 합산된 건이라는 표시입니다. 손익 계산에는 쓰이지 않습니다.
           </p>
+          )}
           <FinancialEditInput
             label="영업 수익"
             value={draft.settlementSales}
@@ -2437,6 +2458,7 @@ function SettlementFinancialSummary({
                 : formatSettlementMoney(goodsCostForTotal)
             }
             muted
+            {...(isMonthlySettlement ? { tag: "월별 합", hint: "월별 정산에서 입력" } : {})}
           />
           <FinancialLine label="영업 수익" value={formatSettlementMoney(grossCommission)} />
           {itemsByZone.BRAND.map((item) => (
