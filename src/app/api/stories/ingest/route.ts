@@ -3,6 +3,7 @@ import { verifyIngestAuth } from "@/lib/kakao/ingest-auth";
 import { ingestLaneGuard } from "@/lib/kakao/ingest-lane";
 import { getPrisma } from "@/lib/prisma";
 import { normalizeHandle, parseStoryItems, storeStorySnapshots, type StoryCaptureResult } from "@/lib/story-capture";
+import { attachOwner } from "@/lib/story-viewer-fetch";
 
 // 스토리 원시 items 인제스트 — 브라우저 없는 경로(로컬 러너·북마클릿)가 뷰어에서 긁은 스토리를
 // 밀어넣는 입구. 서버는 브라우저를 안 띄우고 파싱+리호스팅+저장만 한다(Vercel 자동 경로가 IP
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
   const lane = ingestLaneGuard(request);
   if (lane.rejection) return lane.rejection;
 
-  let body: { handle?: unknown; items?: unknown };
+  let body: { handle?: unknown; items?: unknown; owner?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -41,7 +42,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `해당 핸들의 셀러 없음: ${handle}` }, { status: 404 });
   }
 
-  const stories = parseStoryItems(body.items);
+  // storiesig v2(2026-10-03~)는 작성자를 항목이 아니라 응답의 `result.owner` 에 둔다. 호출자가 그
+  // owner 를 함께 보내면 그것을, 안 보내면 요청에 적힌 핸들을 작성자 없는 항목에 붙인다(이 경로는 한
+  // 핸들의 응답만 싣는 입구라 그 핸들이 곧 작성자다). 이미 작성자가 있는 항목(v1 모양)은 손대지 않아,
+  // 남의 계정이 섞여 오면 storeStorySnapshots 의 귀속 필터가 그대로 거른다.
+  const owner = body.owner && typeof body.owner === "object" ? body.owner : { username: handle };
+  const stories = parseStoryItems(attachOwner(body.items, owner));
   const result: StoryCaptureResult = {
     activeSellers: 1,
     handles: [handle],
