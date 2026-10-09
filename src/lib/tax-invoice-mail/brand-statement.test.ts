@@ -160,6 +160,12 @@ describe("parseSettlementStatement — 자사몰 정산내역서(평문)", () =>
     const parsed = parseSettlementStatement({ subject: "[우리상사_라마바]브랜드A 자사몰 공구 정산내역서", text, ourName: OURS });
     expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
   });
+  it("제목 대괄호 뒤 첫 낱말이 브랜드면 발행자가 모르는 이름이어도 우리다 — 회사X → 브랜드A 는 ISSUE", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 →", "회사X →").replaceAll("→ 우리상사", "→ 회사X");
+    const parsed = parseSettlementStatement({ subject: "[라마바] 브랜드A 자사몰 공구 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
   it("인사말이 「브랜드A님 담당자입니다」여도 브랜드는 우리 별칭이 되지 않는다 — 라마바 → 브랜드A 는 ISSUE", () => {
     const text = `브랜드A님 담당자입니다. ${OWN_MALL_TWO_BLOCKS}`.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
     const parsed = parseSettlementStatement({ subject: "[라마바] 정산내역서", text, ourName: OURS });
@@ -171,6 +177,16 @@ describe("parseSettlementStatement — 자사몰 정산내역서(평문)", () =>
     const parsed = parseSettlementStatement({ subject: "[브랜드A_라마바] 정산내역서", text, ourName: OURS });
     expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
     expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("제목이 「[라마바] 라마바 공구 …」처럼 공구 이름을 되풀이해도 라마바는 브랜드가 아니다 — ISSUE", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[라마바] 라마바 공구 정산내역서 송부의 건", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+  });
+  it("셀러를 「○○ 담당자」라 쓴 드문 글에서는 「○○님」 표기가 취소돼 브랜드 조각과 동점 — 뒤집지 않고 null", () => {
+    const text = `라마바 담당자입니다. ${OWN_MALL_TWO_BLOCKS}`.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[브랜드A_라마바] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual([null, null]);
   });
   it("발행자·수령자가 같은 등급의 별칭(둘 다 대괄호 조각)이면 지어내지 않는다(null)", () => {
     const text = OWN_MALL_TWO_BLOCKS.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 → 브랜드A 세금계산서", "라마바 → 가나다 세금계산서");

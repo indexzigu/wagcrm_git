@@ -97,11 +97,13 @@ function isOurs(label: string, ourName: string): boolean {
  * 종전에는 그런 줄을 「셀러 직접 발행 = 우리 계산서 아님(direction null)」으로 버렸고, 운영에서 9월분
  * 정산서 한 통이 그렇게 버려져 예상 금액·자동 기록 대상에서 빠진 채 달이 열려 있었다.
  *
- * - sellerMarks: 「○○님」(「○○님 담당자」 제외) — 브랜드가 셀러를 부르는 표기.
+ * - sellerMarks: 「○○님」 — 브랜드가 셀러를 부르는 표기. 같은 이름이 「○○ 담당자」로도 나오면(브랜드 담당자)
+ *   셀러 표기로 치지 않는다.
  * - bracketPieces: 제목 대괄호 라벨과 `_` 조각(`[우리상사_라마바]`) — 평문 형식의 공구 라벨. 브랜드 이름이
  *   섞여 올 수 있어(`[브랜드_라마바]`) 등급이 낮다.
- * - brandMarks: 「○○ 담당자」·제목 대괄호 뒤 첫 낱말(`[총약사] 뉴트리원 자사몰 …`) — 브랜드 자신의 표기.
- *   별칭에 섞여도 우리로 읽지 않는다(스펙 리뷰 2026-10-09: 이 제외가 없으면 양쪽이 별칭이 되어 다시 null).
+ * - brandMarks: 제목 대괄호 뒤 첫 낱말(`[총약사] 뉴트리원 자사몰 …`) — 브랜드 자신의 표기. 대괄호 안
+ *   이름과 같으면(「[라마바] 라마바 공구 …」) 브랜드가 아니다. 별칭에 섞여도 우리로 읽지 않는다
+ *   (스펙 리뷰 2026-10-09: 이 제외가 없으면 양쪽이 별칭이 되어 다시 null).
  */
 type AliasEvidence = {
   ourName: string;
@@ -117,13 +119,15 @@ function collectAliasEvidence(input: { subject: string; text: string; ourName: s
   const brandMarks = new Set<string>();
   const bracketPieces = new Set<string>();
   const both = `${input.subject} ${input.text}`;
-  for (const match of both.matchAll(new RegExp(`(${LABEL_CHARS})님(?!\\s*담당자)`, "g"))) {
-    const label = normalizeForCompare(match[1]);
-    if (label) sellerMarks.add(label);
+  const staff = new Set<string>();
+  for (const match of both.matchAll(new RegExp(`(${LABEL_CHARS})\\s*담당자`, "g"))) {
+    // 「브랜드A님 담당자」는 「님」까지 잡히므로 떼어 낸다.
+    const label = normalizeForCompare(match[1].replace(/님$/, ""));
+    if (label) staff.add(label);
   }
-  for (const match of both.matchAll(new RegExp(`(${LABEL_CHARS})님?\\s*담당자`, "g"))) {
+  for (const match of both.matchAll(new RegExp(`(${LABEL_CHARS})님`, "g"))) {
     const label = normalizeForCompare(match[1]);
-    if (label) brandMarks.add(label);
+    if (label && !staff.has(label)) sellerMarks.add(label);
   }
   const bracket = /\[([^\]]+)\]\s*([^\s[\]()「」_→▶*]+)?/.exec(input.subject);
   if (bracket) {
@@ -131,13 +135,14 @@ function collectAliasEvidence(input: { subject: string; text: string; ourName: s
       const label = normalizeForCompare(piece.trim());
       if (label) bracketPieces.add(label);
     }
+    // 대괄호 뒤 첫 낱말 = 브랜드. 단 대괄호 안 이름과 같으면(「[라마바] 라마바 공구 …」) 브랜드가 아니다.
     const afterBracket = normalizeForCompare(bracket[2] ?? "");
-    if (afterBracket) brandMarks.add(afterBracket);
+    if (afterBracket && !bracketPieces.has(afterBracket)) brandMarks.add(afterBracket);
   }
   return { ourName: input.ourName, sellerMarks, bracketPieces, brandMarks };
 }
 
-/** 이 이름이 우리일 증거 등급 — 3 상호 · 2 「○○님」 · 1 대괄호 조각 · 0 모름 · -1 브랜드 표기. */
+/** 이 이름이 우리일 증거 등급 — 3 상호 · 2 「○○님」 · 1 대괄호 조각 · 0 모름 · -1 브랜드 표기(제목 대괄호 뒤 첫 낱말). */
 function usScore(label: string, ev: AliasEvidence): number {
   if (isOurs(label, ev.ourName)) return 3;
   const key = normalizeForCompare(label);
@@ -148,15 +153,16 @@ function usScore(label: string, ev: AliasEvidence): number {
 }
 
 /**
- * 「<발행자> → <수령자>」 한 줄의 방향 — 우리일 증거가 더 강한 쪽이 우리다. 같으면(둘 다 모르는 이름,
- * 둘 다 같은 등급의 별칭) 지어내지 않는다(null). 우리 상호가 적힌 쪽은 어떤 별칭보다 먼저다(코드 리뷰
- * 2026-10-09: 제목 대괄호에 브랜드 이름이 섞여도 「브랜드 → 우리상사」가 뒤집히지 않게).
+ * 「<발행자> → <수령자>」 한 줄의 방향 — 우리일 증거가 더 강한 쪽이 우리다. 브랜드로 특정된 쪽(-1)이 있으면
+ * 나머지 쪽이 우리다(오너 규칙 그대로 — 모르는 이름(0)이어도). 같으면(둘 다 모르는 이름, 둘 다 같은 등급의
+ * 별칭) 지어내지 않는다(null). 우리 상호가 적힌 쪽은 어떤 별칭보다 먼저다(코드 리뷰 2026-10-09: 제목
+ * 대괄호에 브랜드 이름이 섞여도 「브랜드 → 우리상사」가 뒤집히지 않게).
  */
 function resolveDirection(issuer: string, recipient: string, ev: AliasEvidence): InvoiceDirection | null {
   const issuerScore = usScore(issuer, ev);
   const recipientScore = usScore(recipient, ev);
-  if (issuerScore > recipientScore && issuerScore > 0) return "ISSUE";
-  if (recipientScore > issuerScore && recipientScore > 0) return "RECEIVE";
+  if (issuerScore > recipientScore && issuerScore >= 0) return "ISSUE";
+  if (recipientScore > issuerScore && recipientScore >= 0) return "RECEIVE";
   return null;
 }
 
