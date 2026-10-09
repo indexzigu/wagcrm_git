@@ -67,6 +67,27 @@ describe("parseSettlementStatement — 마감정산서(표)", () => {
     ]);
   });
 
+  it("표의 발행주체가 우리 상호 대신 「○○님」의 공구 이름으로 적혀도 판매 수수료 행은 우리 발행이다", () => {
+    const text = CLOSING_TABLE.replace("450,000 우리상사", "450,000 가나다");
+    const parsed = parseSettlementStatement({
+      subject: "[브랜드A] 26년 9월 가나다님(우리상사) - 마감정산서 검토 요청",
+      text,
+      ourName: OURS,
+    });
+    expect(parsed?.invoices.map((i) => [i.direction, i.issuerLabel])).toEqual([
+      ["RECEIVE", "브랜드A"],
+      ["ISSUE", "가나다"],
+    ]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+
+  it("인사말에 「브랜드A님」이 있어도 총 매출 행의 브랜드는 별칭이 되지 않는다(RECEIVE 유지)", () => {
+    const text = CLOSING_TABLE.replace("브랜드A 담당자입니다.", "브랜드A님 담당자입니다.").replace("450,000 우리상사", "450,000 가나다");
+    const parsed = parseSettlementStatement({ subject: "26년 9월 가나다님 마감정산서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["RECEIVE", "ISSUE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+
   it("12월 정산의 대금이 다음 해 1월이면 지급일 연도를 넘긴다", () => {
     const text = CLOSING_TABLE.replaceAll("9월", "12월").replace("550,000 10월 20일(화)", "550,000 1월 20일(화)");
     const parsed = parseSettlementStatement({ subject: "26년 12월 마감정산서", text, ourName: OURS });
@@ -104,11 +125,78 @@ describe("parseSettlementStatement — 자사몰 정산내역서(평문)", () =>
     ]);
   });
 
-  it("셀러가 브랜드에 직접 발행하는 정산서는 우리 계산서가 아니다(direction null)", () => {
+  // 브랜드는 셀러와 직접 계산서를 주고받지 않는다 — 브랜드가 보낸 글에서 우리 상호도 브랜드도 아닌
+  // 이름(공구·셀러 이름)은 우리를 가리킨다(오너 확정 2026-10-09, T-250). 종전 「direction null = 셀러 직접
+  // 발행」 해석은 운영 실례(9월분 정산서가 버려져 달이 열린 채 남음)에서 틀린 것으로 확인됐다.
+  it("우리 상호 대신 제목 대괄호의 공구 이름이 발행자로 적혀도 우리 발행(ISSUE)이다", () => {
     const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[라마바] 브랜드A 자사몰 공구 정산내역서 송부의 건", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+    expect(parsed?.invoices.map((i) => i.issuerLabel)).toEqual(["라마바", "라마바"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("브랜드 → 공구 이름이면 우리가 받는 것(RECEIVE)이고 상대는 브랜드다", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 → 브랜드A 세금계산서", "브랜드A → 라마바 세금계산서").replaceAll(
+      "브랜드A → 우리상사 대금",
+      "라마바 → 브랜드A 대금",
+    );
+    const parsed = parseSettlementStatement({ subject: "[라마바] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["RECEIVE", "RECEIVE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("제목에 대괄호가 없어도 본문의 「○○님」이 공구 이름이면 우리로 읽는다", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "브랜드A 자사몰 공구 정산내역서 송부의 건", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+  });
+  it("제목 대괄호에 브랜드 이름이 섞여도(「[브랜드A_라마바]」) 우리 상호가 적힌 줄은 그대로 읽는다 — 브랜드A → 우리상사 는 RECEIVE", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 → 브랜드A 세금계산서", "브랜드A → 우리상사 세금계산서");
+    const parsed = parseSettlementStatement({ subject: "[브랜드A_라마바] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["RECEIVE", "RECEIVE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("대괄호 「우리상사_라마바」의 조각 「라마바」가 발행자로 적혀도 우리 발행이다(본문에 「님」 없이)", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[우리상사_라마바]브랜드A 자사몰 공구 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+  });
+  it("제목 대괄호 뒤 첫 낱말이 브랜드면 발행자가 모르는 이름이어도 우리다 — 회사X → 브랜드A 는 ISSUE", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 →", "회사X →").replaceAll("→ 우리상사", "→ 회사X");
+    const parsed = parseSettlementStatement({ subject: "[라마바] 브랜드A 자사몰 공구 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("인사말이 「브랜드A님 담당자입니다」여도 브랜드는 우리 별칭이 되지 않는다 — 라마바 → 브랜드A 는 ISSUE", () => {
+    const text = `브랜드A님 담당자입니다. ${OWN_MALL_TWO_BLOCKS}`.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[라마바] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("제목 대괄호가 「[브랜드A_라마바]」로 브랜드를 품어도 라마바 → 브랜드A 는 ISSUE(「라마바님」 표기가 더 강한 증거)", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[브랜드A_라마바] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("제목이 「[라마바] 라마바 공구 …」처럼 공구 이름을 되풀이해도 라마바는 브랜드가 아니다 — ISSUE", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[라마바] 라마바 공구 정산내역서 송부의 건", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+  });
+  it("셀러를 「○○ 담당자」라 쓴 드문 글에서는 「○○님」 표기가 취소돼 브랜드 조각과 동점 — 뒤집지 않고 null", () => {
+    const text = `라마바 담당자입니다. ${OWN_MALL_TWO_BLOCKS}`.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[브랜드A_라마바] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual([null, null]);
+  });
+  it("발행자·수령자가 같은 등급의 별칭(둘 다 대괄호 조각)이면 지어내지 않는다(null)", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 → 브랜드A 세금계산서", "라마바 → 가나다 세금계산서");
+    const parsed = parseSettlementStatement({ subject: "[라마바_가나다] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual([null, null]);
+  });
+  it("우리도 공구 이름도 아닌 두 이름이면 방향을 지어내지 않는다(null)", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "회사X →").replaceAll("→ 우리상사", "→ 회사X");
     const parsed = parseSettlementStatement({ subject: "[라마바] 정산내역서", text, ourName: OURS });
     expect(parsed?.invoices.map((i) => i.direction)).toEqual([null, null]);
-    expect(parsed?.counterpartyLabel).toBe("브랜드A");
   });
 
   it("브랜드가 우리에게 발행하면 RECEIVE", () => {
