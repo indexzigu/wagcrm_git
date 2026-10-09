@@ -92,47 +92,71 @@ function isOurs(label: string, ourName: string): boolean {
 }
 
 /**
- * 브랜드가 우리 상호 대신 쓰는 다른 표기 — 공구·셀러 이름. 본문·제목의 「○○님」과(평문 형식은) 제목
- * 대괄호 라벨(`[우리상사_라마바]` 처럼 `_` 로 이어진 조각 포함)에서 모은다.
+ * 브랜드 글에서 각 이름이 「우리」일 증거. 브랜드는 셀러와 직접 계산서를 주고받지 않으므로, 브랜드가 보낸
+ * 글에서 우리 상호도 브랜드도 아닌 이름(공구·셀러 이름)은 우리를 가리킨다(오너 확정 2026-10-09, T-250).
+ * 종전에는 그런 줄을 「셀러 직접 발행 = 우리 계산서 아님(direction null)」으로 버렸고, 운영에서 9월분
+ * 정산서 한 통이 그렇게 버려져 예상 금액·자동 기록 대상에서 빠진 채 달이 열려 있었다.
  *
- * 왜: 브랜드는 셀러와 직접 계산서를 주고받지 않는다 — 브랜드가 보낸 글에서 우리 상호도 브랜드도
- * 아닌 이름은 우리를 가리킨다(오너 확정 2026-10-09, T-250). 종전에는 그런 줄을 「셀러 직접 발행 =
- * 우리 계산서 아님(direction null)」으로 버렸고, 운영에서 9월분 정산서 한 통이 그렇게 버려져 예상
- * 금액·자동 기록 대상에서 빠진 채 달이 열려 있었다.
+ * - sellerMarks: 「○○님」(「○○님 담당자」 제외) — 브랜드가 셀러를 부르는 표기.
+ * - bracketPieces: 제목 대괄호 라벨과 `_` 조각(`[우리상사_라마바]`) — 평문 형식의 공구 라벨. 브랜드 이름이
+ *   섞여 올 수 있어(`[브랜드_라마바]`) 등급이 낮다.
+ * - brandMarks: 「○○ 담당자」·제목 대괄호 뒤 첫 낱말(`[총약사] 뉴트리원 자사몰 …`) — 브랜드 자신의 표기.
+ *   별칭에 섞여도 우리로 읽지 않는다(스펙 리뷰 2026-10-09: 이 제외가 없으면 양쪽이 별칭이 되어 다시 null).
  */
-function collectAliasLabels(input: { subject: string; text: string; includeSubjectBracket: boolean }): Set<string> {
-  const labels = new Set<string>();
-  for (const match of `${input.subject} ${input.text}`.matchAll(/([^\s[\]()「」_→▶*]+)님/g)) {
+type AliasEvidence = {
+  ourName: string;
+  sellerMarks: ReadonlySet<string>;
+  bracketPieces: ReadonlySet<string>;
+  brandMarks: ReadonlySet<string>;
+};
+
+const LABEL_CHARS = "[^\\s[\\]()「」_→▶*]+";
+
+function collectAliasEvidence(input: { subject: string; text: string; ourName: string }): AliasEvidence {
+  const sellerMarks = new Set<string>();
+  const brandMarks = new Set<string>();
+  const bracketPieces = new Set<string>();
+  const both = `${input.subject} ${input.text}`;
+  for (const match of both.matchAll(new RegExp(`(${LABEL_CHARS})님(?!\\s*담당자)`, "g"))) {
     const label = normalizeForCompare(match[1]);
-    if (label) labels.add(label);
+    if (label) sellerMarks.add(label);
   }
-  if (input.includeSubjectBracket) {
-    const bracket = /\[([^\]]+)\]/.exec(input.subject)?.[1] ?? "";
-    for (const piece of [bracket, ...bracket.split("_")]) {
+  for (const match of both.matchAll(new RegExp(`(${LABEL_CHARS})님?\\s*담당자`, "g"))) {
+    const label = normalizeForCompare(match[1]);
+    if (label) brandMarks.add(label);
+  }
+  const bracket = /\[([^\]]+)\]\s*([^\s[\]()「」_→▶*]+)?/.exec(input.subject);
+  if (bracket) {
+    for (const piece of [bracket[1], ...bracket[1].split("_")]) {
       const label = normalizeForCompare(piece.trim());
-      if (label) labels.add(label);
+      if (label) bracketPieces.add(label);
     }
+    const afterBracket = normalizeForCompare(bracket[2] ?? "");
+    if (afterBracket) brandMarks.add(afterBracket);
   }
-  return labels;
+  return { ourName: input.ourName, sellerMarks, bracketPieces, brandMarks };
 }
 
-/** 이 이름이 우리를 가리키는가 — 우리 상호이거나, 브랜드가 우리 대신 쓴 공구·셀러 이름이거나. */
-function standsForUs(label: string, ourName: string, aliases: ReadonlySet<string>): boolean {
-  return isOurs(label, ourName) || aliases.has(normalizeForCompare(label));
+/** 이 이름이 우리일 증거 등급 — 3 상호 · 2 「○○님」 · 1 대괄호 조각 · 0 모름 · -1 브랜드 표기. */
+function usScore(label: string, ev: AliasEvidence): number {
+  if (isOurs(label, ev.ourName)) return 3;
+  const key = normalizeForCompare(label);
+  if (ev.brandMarks.has(key)) return -1;
+  if (ev.sellerMarks.has(key)) return 2;
+  if (ev.bracketPieces.has(key)) return 1;
+  return 0;
 }
 
 /**
- * 「<발행자> → <수령자>」 한 줄의 방향. 우리 상호가 적힌 쪽이 먼저다 — 별칭은 상호가 어느 쪽에도 없을 때만
- * 쓴다(제목 대괄호에 브랜드 이름이 섞여 별칭에 들어와도 「브랜드 → 우리상사」가 뒤집히지 않게; 코드 리뷰
- * 2026-10-09). 둘 다 별칭이거나 둘 다 모르는 이름이면 지어내지 않는다(null).
+ * 「<발행자> → <수령자>」 한 줄의 방향 — 우리일 증거가 더 강한 쪽이 우리다. 같으면(둘 다 모르는 이름,
+ * 둘 다 같은 등급의 별칭) 지어내지 않는다(null). 우리 상호가 적힌 쪽은 어떤 별칭보다 먼저다(코드 리뷰
+ * 2026-10-09: 제목 대괄호에 브랜드 이름이 섞여도 「브랜드 → 우리상사」가 뒤집히지 않게).
  */
-function resolveDirection(issuer: string, recipient: string, ourName: string, aliases: ReadonlySet<string>): InvoiceDirection | null {
-  if (isOurs(issuer, ourName)) return "ISSUE";
-  if (isOurs(recipient, ourName)) return "RECEIVE";
-  const issuerAlias = aliases.has(normalizeForCompare(issuer));
-  const recipientAlias = aliases.has(normalizeForCompare(recipient));
-  if (issuerAlias && !recipientAlias) return "ISSUE";
-  if (recipientAlias && !issuerAlias) return "RECEIVE";
+function resolveDirection(issuer: string, recipient: string, ev: AliasEvidence): InvoiceDirection | null {
+  const issuerScore = usScore(issuer, ev);
+  const recipientScore = usScore(recipient, ev);
+  if (issuerScore > recipientScore && issuerScore > 0) return "ISSUE";
+  if (recipientScore > issuerScore && recipientScore > 0) return "RECEIVE";
   return null;
 }
 
@@ -155,14 +179,16 @@ function parseClosingTable(subject: string, text: string, ourName: string): Pars
   // 대금 행: 「<지급자> ▶<수령자> 686,235 10월 20일」
   const payment = /([^\s▶]+)\s*▶\s*([^\s▶]+)\s+([\d,]+)\s+(\d{1,2})월\s*(\d{1,2})일/.exec(text);
 
-  const aliases = collectAliasLabels({ subject, text, includeSubjectBracket: false });
   const rowRe = /(총\s*매출|판매\s*수수료)\s+(\d{1,2})월\s+([\d,]+)\s+([^\s]+)/g;
-  // 「총 매출」 행의 발행주체는 브랜드다 — 인사말 「브랜드A님」이 브랜드를 별칭으로 만들지 않게 뺀다(코드 리뷰 2026-10-09).
-  for (const row of text.matchAll(rowRe)) {
-    if (/총\s*매출/.test(row[1]) && !isOurs(row[4], ourName)) aliases.delete(normalizeForCompare(row[4]));
-  }
+  const rows = [...text.matchAll(rowRe)];
+  // 이 형식의 별칭은 「○○님」뿐이다(제목 대괄호는 브랜드). 「총 매출」 행의 발행주체는 브랜드이므로 인사말
+  // 「브랜드A님」이 브랜드를 별칭으로 만들지 않게 뺀다.
+  const evidence = collectAliasEvidence({ subject, text, ourName });
+  const brandRows = rows.filter((row) => /총\s*매출/.test(row[1]) && !isOurs(row[4], ourName)).map((row) => normalizeForCompare(row[4]));
+  const aliases = new Set([...evidence.sellerMarks].filter((label) => !brandRows.includes(label)));
+  const oursOrAlias = (label: string) => isOurs(label, ourName) || aliases.has(normalizeForCompare(label));
   const invoices: StatementInvoice[] = [];
-  for (const row of text.matchAll(rowRe)) {
+  for (const row of rows) {
     const month = Number(row[2]);
     const amount = toAmount(row[3]);
     if (month < 1 || month > 12 || amount === null) continue;
@@ -178,7 +204,7 @@ function parseClosingTable(subject: string, text: string, ourName: string): Pars
       dueDate = isValidYmd(candidate) ? candidate : null;
     }
     invoices.push({
-      direction: standsForUs(row[4], ourName, aliases) ? "ISSUE" : "RECEIVE",
+      direction: oursOrAlias(row[4]) ? "ISSUE" : "RECEIVE",
       issuerLabel: row[4],
       writtenDate,
       yearMonth: writtenDate.slice(0, 7),
@@ -189,7 +215,7 @@ function parseClosingTable(subject: string, text: string, ourName: string): Pars
   if (invoices.length === 0) return null;
   const counterpartyLabel =
     invoices.find((invoice) => invoice.direction === "RECEIVE")?.issuerLabel ??
-    (payment ? [payment[1], payment[2]].find((label) => !standsForUs(label, ourName, aliases)) ?? null : null);
+    (payment ? [payment[1], payment[2]].find((label) => !oursOrAlias(label)) ?? null : null);
   return { format: "CLOSING_TABLE", promotionLabel: promotion, counterpartyLabel, subject, invoices };
 }
 
@@ -197,8 +223,8 @@ function parseOwnMallNotice(subject: string, text: string, ourName: string): Par
   const issueRe = /([^\s*→]+)\s*→\s*([^\s*→]+)\s*세금계산서\s*발행\s*일자\s*:\s*(\d{4}-\d{2}-\d{2})/g;
   const anchors = [...text.matchAll(issueRe)];
   // 이 형식은 제목 대괄호가 공구·셀러 라벨이다(브랜드 템플릿) — 우리 대신 그 이름이 발행자로 적혀 온다.
-  const aliases = collectAliasLabels({ subject, text, includeSubjectBracket: true });
-  const directionOf = (issuer: string, recipient: string) => resolveDirection(issuer, recipient, ourName, aliases);
+  const evidence = collectAliasEvidence({ subject, text, ourName });
+  const directionOf = (issuer: string, recipient: string) => resolveDirection(issuer, recipient, evidence);
   const invoices: StatementInvoice[] = [];
   anchors.forEach((anchor, index) => {
     const start = anchor.index ?? 0;
@@ -232,7 +258,7 @@ function parseOwnMallNotice(subject: string, text: string, ourName: string): Par
 /**
  * 정산서 메일 한 통을 읽는다. 두 형식 어느 쪽도 아니면 null(조용히 고르지 않는다).
  * `ourName` 은 우리 상호(`SUPPLIER.name`) — 발행자 판정의 1차 키. 상호가 없으면 공구·셀러 이름(별칭,
- * `collectAliasLabels`)으로 우리를 가린다.
+ * `collectAliasEvidence`)으로 우리를 가린다.
  */
 export function parseSettlementStatement(input: {
   subject: string;
