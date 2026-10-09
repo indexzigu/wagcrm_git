@@ -32,7 +32,11 @@ import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { deriveClaims } from "@/lib/order-converter/claim-derive";
-import { loadClaimSourceOrders, resolveClaimWindowKeys } from "@/lib/order-converter/claim-source-loader";
+import {
+  CLAIM_WINDOW_DAYS,
+  loadClaimSourceOrders,
+  resolveClaimWindowKeys,
+} from "@/lib/order-converter/claim-source-loader";
 import { getLastChangeSyncMs, resolveLastOrderSyncIso } from "@/lib/order-converter/order-auto-sync";
 import { toDateKeyKst } from "@/lib/mobile-pulse-data";
 import { naverOrderSnapshotRepository } from "@/repositories/naverOrderSnapshotRepository";
@@ -41,6 +45,7 @@ import {
   DEFAULT_STORE_STATUS_CLAIMS,
   DEFAULT_WORK_RECORDS_LIMIT,
   MAX_EVIDENCE_REFS,
+  ROOM_KEY_PATTERN,
   MAX_RESULT_SUMMARY_CHARS,
   type AgentJobPayload,
   type AgentJobResult,
@@ -49,6 +54,7 @@ import {
 import { recordReadResult, type ReadResultRecord } from "./read-result-record";
 import {
   boundWorkRecords,
+  assignSpeakerAliases,
   buildBoundedSummary,
   collectKnownNamesByOrder,
   countClaimsByType,
@@ -717,8 +723,6 @@ async function settlementReport(input: SettlementReportInput): Promise<Operation
 // `read-projections.ts` 가 정한다 — 여기서 행을 그대로 넘기지 않는다.
 // ---------------------------------------------------------------------------
 
-/** `get_store_status` 의 `since` 를 비웠을 때 보는 기간(일). */
-export const STORE_STATUS_DEFAULT_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * 화이트리스트 = 카톡 자동 수집(katok)이 실제로 훑는 방. 러너 게이트
@@ -737,14 +741,16 @@ const MAX_WORK_RECORD_ROOMS = 200;
  * - 클레임: 주문 관리 「반품/교환」과 같은 소스·같은 파생(`loadClaimSourceOrders` → `deriveClaims`),
  *   진행 중 = `!isCompleted`. 캠페인 귀속은 하지 않는다(워커 role 은 OrderCampaign 을 못 읽고, 스토어
  *   전체 질문에는 필요 없다).
- * - 창: 스냅샷 날짜(KST 주문일) 기준 `since` ~ 오늘. 스냅샷은 30일만 남으므로 그보다 앞은 30일로 당기고
- *   `clamped` 로 알린다.
+ * - 창이 둘이다. 클레임은 **언제나** 주문 관리 「반품/교환」과 같은 30일 창(`resolveClaimWindowKeys`) —
+ *   클레임은 주문일 스냅샷에 실리므로, 창을 좁히면 오래된 주문에 새로 들어온 반품이 빠진다.
+ *   `since` 는 주문 건수의 창(스냅샷 KST 주문일 `since` ~ 오늘)에만 걸리고, 비우면 같은 30일이다.
+ *   스냅샷은 30일만 남으므로 그보다 앞은 30일로 당기고 `clamped` 로 알린다.
  */
 async function storeStatus(input: StoreStatusInput, now: Date): Promise<OperationOutcome> {
   const claimsLimit = input.claimsLimit ?? DEFAULT_STORE_STATUS_CLAIMS;
   const requestedSince = input.since
     ? new Date(input.since)
-    : new Date(now.getTime() - STORE_STATUS_DEFAULT_DAYS * DAY_MS);
+    : new Date(now.getTime() - CLAIM_WINDOW_DAYS * DAY_MS);
   if (requestedSince.getTime() > now.getTime()) {
     return failure("INVALID_INPUT", "since must not be in the future");
   }
@@ -756,7 +762,7 @@ async function storeStatus(input: StoreStatusInput, now: Date): Promise<Operatio
 
   const [countRows, claimOrders, syncMeta, lastChangeSyncMs] = await Promise.all([
     naverOrderSnapshotRepository.findRangeCounts(startKey, endKey),
-    loadClaimSourceOrders(startKey, endKey, "agent-worker-store-status"),
+    loadClaimSourceOrders(claimWindow.startDateKey, claimWindow.endDateKey, "agent-worker-store-status"),
     naverOrderSnapshotRepository.latestSyncMeta(),
     getLastChangeSyncMs(),
   ]);
@@ -780,7 +786,7 @@ async function storeStatus(input: StoreStatusInput, now: Date): Promise<Operatio
 
   const { summary } = buildBoundedSummary(
     (shown) =>
-      `get_store_status window=${startKey}..${endKey}${clamped ? " clamped=true" : ""} syncedAt=${syncedAt ?? "unknown"} realtime=false snapshotDays=${countRows.length} newOrders=${orders.newOrders} awaitingShipment=${orders.awaitingShipment} delivering=${orders.delivering} openCancel=${claimCounts.CANCEL.open} openReturn=${claimCounts.RETURN.open} openExchange=${claimCounts.EXCHANGE.open} claimsShown=${shown}/${openTotal}`,
+      `get_store_status ordersWindow=${startKey}..${endKey}${clamped ? " clamped=true" : ""} claimsWindow=${claimWindow.startDateKey}..${claimWindow.endDateKey} syncedAt=${syncedAt ?? "unknown"} realtime=false snapshotDays=${countRows.length} newOrders=${orders.newOrders} awaitingShipment=${orders.awaitingShipment} delivering=${orders.delivering} openCancel=${claimCounts.CANCEL.open} openReturn=${claimCounts.RETURN.open} openExchange=${claimCounts.EXCHANGE.open} claimsShown=${shown}/${openTotal}`,
     listed.map(formatStoreClaimLine),
   );
   return {
@@ -792,7 +798,10 @@ async function storeStatus(input: StoreStatusInput, now: Date): Promise<Operatio
       title: `스토어 현황 ${startKey}~${endKey}`,
       resultSummary: boundSummary(summary),
       structuredResult: {
-        window: { startKey, endKey, clamped },
+        window: {
+          orders: { startKey, endKey, clamped },
+          claims: { startKey: claimWindow.startDateKey, endKey: claimWindow.endDateKey },
+        },
         freshness: { syncedAt, latestSnapshotDate, realtime: false },
         orders,
         claims: { counts: claimCounts, openTotal, items: listed },
@@ -820,7 +829,9 @@ async function listWorkRecordRooms(): Promise<OperationOutcome> {
     take: MAX_WORK_RECORD_ROOMS + 1,
   });
   const rowLimitReached = rows.length > MAX_WORK_RECORD_ROOMS;
-  const rooms = rows.slice(0, MAX_WORK_RECORD_ROOMS);
+  // 계약의 방 키 규칙에 맞지 않는 행은 내보내지 않는다 — 그 키로는 `get_work_records` 를 부를 수도 없고,
+  // 요약 줄에 그대로 끼우면 줄바꿈 등으로 머리 줄을 흉내낼 수 있다.
+  const rooms = rows.slice(0, MAX_WORK_RECORD_ROOMS).filter((room) => ROOM_KEY_PATTERN.test(room.roomKey));
   const idsOf = (type: string) =>
     Array.from(new Set(rooms.filter((room) => room.entityType === type && room.entityId).map((room) => room.entityId as string)));
   const partnerIds = idsOf("PARTNER");
@@ -841,9 +852,9 @@ async function listWorkRecordRooms(): Promise<OperationOutcome> {
     const label = room.entityType && room.entityId ? labels.get(`${room.entityType}:${room.entityId}`) : undefined;
     return {
       roomKey: room.roomKey,
-      roomType: room.roomType,
-      entityType: room.entityType,
-      entityId: room.entityId,
+      roomType: room.roomType === null ? null : flattenLineBreaks(room.roomType),
+      entityType: room.entityType === null ? null : flattenLineBreaks(room.entityType),
+      entityId: room.entityId === null ? null : flattenLineBreaks(room.entityId),
       entityLabel: label ? flattenLineBreaks(label) : null,
       campaignId: room.campaignId,
       lastCollectedAt: room.lastSyncedAt?.toISOString() ?? null,
@@ -923,11 +934,13 @@ async function getWorkRecords(input: WorkRecordsInput, now: Date): Promise<Opera
         : null;
   const collectedThrough = mapping.lastSyncedAt?.toISOString() ?? null;
   const remaskedCount = records.filter((record) => record.remasked).length;
+  // 요약 글(슬랙·Muse 행)은 화자 번호로, 결재함 기록(records[].sender)은 진짜 보낸 사람으로.
+  const speakerAliases = assignSpeakerAliases(records);
 
   const { summary } = buildBoundedSummary((shown) => {
     const summaryNext = shown < records.length ? records[shown].sentAt : nextSince;
-    return `get_work_records room=${mapping.roomKey} window=${since.toISOString()}..${until.toISOString()} collectedThrough=${collectedThrough ?? "unknown"} realtime=false records=${records.length} shown=${shown} more=${summaryNext !== null} nextSince=${summaryNext ?? "none"}`;
-  }, records.map(formatWorkRecordLine));
+    return `get_work_records room=${flattenLineBreaks(mapping.roomKey)} speakers=pseudonymized window=${since.toISOString()}..${until.toISOString()} collectedThrough=${collectedThrough ?? "unknown"} realtime=false records=${records.length} shown=${shown} more=${summaryNext !== null} nextSince=${summaryNext ?? "none"}`;
+  }, records.map((record) => formatWorkRecordLine(record, speakerAliases)));
   return {
     status: "SUCCEEDED",
     summary: boundSummary(summary),
@@ -1139,6 +1152,39 @@ function routerUnavailable(job: AgentJobRecord, errorClass: RouterUnavailableCla
   return externalExecutor(job, ROUTER_UNAVAILABLE_ROUTE, errorClass.toLowerCase(), errorClass);
 }
 
+/**
+ * DB 가 「권한 없음」(SQLSTATE 42501)으로 거절한 오류인가. 워커 role 은 칸·행 단위로 좁게 열려 있어
+ * (20261009150000 마이그레이션) 실행기가 허용 밖 칸을 읽으려 하면 여기로 온다. 이것은 다시 해도
+ * 같은 결과라 **재시도 대상이 아니다** — 재시도로 돌리면 같은 실패를 세 번 반복하고 원인이 흐려진다.
+ * 오류 문구는 접속 대상·표 이름을 담을 수 있어 결과에 싣지 않고 분류만 남긴다.
+ */
+export function isPermissionDeniedError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { code?: unknown; meta?: { code?: unknown } | null; message?: unknown };
+  if (candidate.code === "42501" || candidate.meta?.code === "42501") return true;
+  return typeof candidate.message === "string" && /permission denied|\b42501\b/i.test(candidate.message);
+}
+
+export const DB_PERMISSION_DENIED = "DB_PERMISSION_DENIED";
+
+function finalFailure(job: AgentJobRecord, route: AgentJobRoute, model: string, errorClass: string): ExecutionOutcome {
+  return {
+    kind: "terminal",
+    toStatus: "FAILED_FINAL",
+    route,
+    model,
+    escalationReason: null,
+    errorClass,
+    result: buildResult(job, route, model, {
+      status: "FAILED_FINAL",
+      validationResult: "fail",
+      resultSummary: boundSummary(`${job.payload.operation} failed: ${errorClass}`),
+      actionProposalId: null,
+      evidenceRefs: [],
+    }),
+  };
+}
+
 export async function executeAgentJob(
   job: AgentJobRecord,
   deps: ExecutionDeps,
@@ -1182,6 +1228,7 @@ export async function executeAgentJob(
     });
   } catch (error) {
     if (error instanceof ExecutionAbortedError) throw error;
+    if (isPermissionDeniedError(error)) return finalFailure(job, route, model, DB_PERMISSION_DENIED);
     return {
       kind: "retryable",
       errorClass: error instanceof Error ? error.name : "UnknownError",
@@ -1194,21 +1241,7 @@ export async function executeAgentJob(
     return { kind: "retryable", errorClass: outcome.errorClass, route, model };
   }
   if (outcome.status === "FAILED_FINAL") {
-    return {
-      kind: "terminal",
-      toStatus: "FAILED_FINAL",
-      route,
-      model,
-      escalationReason: null,
-      errorClass: outcome.errorClass,
-      result: buildResult(job, route, model, {
-        status: "FAILED_FINAL",
-        validationResult: "fail",
-        resultSummary: boundSummary(`${job.payload.operation} failed: ${outcome.errorClass}`),
-        actionProposalId: null,
-        evidenceRefs: [],
-      }),
-    };
+    return finalFailure(job, route, model, outcome.errorClass);
   }
   // §3-A: 읽기 성공은 결재함 READ 산출물로 남긴다. 조회(READ) 자체는 멱등이지만 이 기록의
   // INSERT 는 아니다 — 커밋이 끝난 뒤 응답이 유실되면 재시도가 같은 조회를 한 번 더 기록해
@@ -1222,6 +1255,7 @@ export async function executeAgentJob(
       actionProposalId = await recordReadResult(job.payload.operation, outcome.record, now(), { jobId: job.id });
     } catch (error) {
       if (error instanceof ExecutionAbortedError) throw error;
+      if (isPermissionDeniedError(error)) return finalFailure(job, route, model, DB_PERMISSION_DENIED);
       return { kind: "retryable", errorClass: error instanceof Error ? error.name : "UnknownError", route, model };
     }
   }

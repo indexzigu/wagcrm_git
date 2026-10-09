@@ -344,7 +344,7 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     // the RLS test above; an empty store still has to answer, with an unknown sync time).
     const store = await executeAgentJob(jobFor("get_store_status", {}), python);
     if (store.kind !== "terminal") throw new Error("expected terminal");
-    expect(store.result.resultSummary).toMatch(/^get_store_status window=.* realtime=false /);
+    expect(store.result.resultSummary).toMatch(/^get_store_status ordersWindow=.* claimsWindow=.* realtime=false /);
 
     const rooms = await executeAgentJob(jobFor("list_work_record_rooms", {}), python);
     if (rooms.kind !== "terminal") throw new Error("expected terminal");

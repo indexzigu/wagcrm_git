@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { maskPii } from "@/lib/kakao/pii-mask";
+import { maskPiiForExport } from "@/lib/kakao/pii-mask";
 import type { ClaimType, DerivedClaim } from "@/lib/order-converter/claim-derive";
 import { MAX_RESULT_SUMMARY_CHARS } from "./contracts";
 
@@ -54,7 +54,7 @@ function escapeRegExp(text: string): string {
 }
 
 /**
- * 글 속에서 **이미 아는 이름**(그 주문의 구매자·수취인)을 가린다. `maskPii` 는 전화·이메일·계좌만
+ * 글 속에서 **이미 아는 이름**(그 주문의 구매자·수취인)을 가린다. `maskPiiForExport` 는 전화·이메일·계좌·주소·송장만
  * 가리고 이름은 못 가리는데, 클레임 상세 사유는 구매자가 직접 쓰는 칸이라 자기 이름을 적는 일이 있다.
  * 세 글자 한글 이름은 이름 부분(뒤 두 글자)만 적는 경우도 함께 가린다 — 지나치게 가리는 쪽이 낫다.
  * ⚠️ 모르는 이름(제3자)은 가리지 못한다. 그래서 사유는 길이도 묶는다(`MAX_CLAIM_REASON_CHARS`).
@@ -84,7 +84,7 @@ function maskedLine(
   if (value === null || value === undefined) return null;
   const flat = flattenLineBreaks(String(value));
   if (!flat) return null;
-  return truncateChars(maskPii(maskKnownNames(flat, knownNames)).text, max).text;
+  return truncateChars(maskPiiForExport(maskKnownNames(flat, knownNames)).text, max).text;
 }
 
 /**
@@ -162,11 +162,13 @@ export function selectOpenClaims(
     .map((claim) => toStoreClaimView(claim, namesByOrder.get(claim.productOrderId) ?? []));
 }
 
+/** 요약 한 줄. 끼워 넣는 칸은 **전부** 한 줄로 누른다 — 네이버가 준 상태 라벨·날짜도 예외가 아니다. */
 export function formatStoreClaimLine(claim: StoreClaimView): string {
   const quantity = claim.quantity === null ? "" : ` x${claim.quantity}`;
-  const reason = claim.reason ? ` 사유=${claim.reason}` : "";
-  const requested = claim.requestDate ? ` requested=${claim.requestDate}` : "";
-  return `${claim.claimType} [${claim.claimStatusLabel}] ${claim.productName ?? "(상품명 없음)"}${quantity}${reason}${requested}`;
+  const reason = claim.reason ? ` 사유=${flattenLineBreaks(claim.reason)}` : "";
+  const requested = claim.requestDate ? ` requested=${flattenLineBreaks(claim.requestDate)}` : "";
+  const product = claim.productName ? flattenLineBreaks(claim.productName) : "(상품명 없음)";
+  return `${flattenLineBreaks(claim.claimType)} [${flattenLineBreaks(claim.claimStatusLabel)}] ${product}${quantity}${reason}${requested}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,14 +213,15 @@ export type WorkRecordView = {
 
 /**
  * 기록 하나를 허용 칸만 담은 새 객체로 옮긴다. 본문은 수집 때(`ingest-mapper`) 이미 가려졌지만
- * 같은 가림(`maskPii`)을 **다시** 건다 — 가림은 멱등이라 이미 가린 글은 그대로이고, 수집 경로가
+ * 같은 가림을 **다시**, 더 넓게(`maskPiiForExport` — 주소·송장 추가) 건다 — 가림은 멱등이라 이미 가린 글은 그대로이고, 수집 경로가
  * 바뀌거나(직원 txt 업로드 등) 가림 규칙이 넓어진 뒤의 옛 기록이 그대로 나가는 것을 막는다.
  * 보낸 사람은 수집 때 가리지 않는 칸(카톡 닉네임 원문)이라 같은 가림을 처음으로 건다.
- * ⚠️ `maskPii` 는 전화·이메일·계좌·주민번호만 가린다 — **사람 이름은 가리지 못한다.**
+ * ⚠️ 가림은 전화·이메일·계좌·주민번호·도로명 주소·송장만이다 — **사람 이름은 가리지 못한다.** 그래서
+ *    봇에게 가는 요약 글에서는 보낸 사람을 화자 번호로 바꾼다(`assignSpeakerAliases`).
  */
 export function toWorkRecordView(row: WorkRecordRow): WorkRecordView {
-  const text = maskPii(row.rawText ?? "");
-  const sender = row.sender === null ? null : maskPii(row.sender);
+  const text = maskPiiForExport(row.rawText ?? "");
+  const sender = row.sender === null ? null : maskPiiForExport(row.sender);
   const bounded = truncateChars(text.text, MAX_WORK_RECORD_TEXT_CHARS);
   return {
     sentAt: row.sentAt.toISOString(),
@@ -276,9 +279,28 @@ export function formatKstMinute(iso: string): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-export function formatWorkRecordLine(view: WorkRecordView): string {
+/**
+ * 보낸 사람 → 그 조회 안에서만 쓰는 화자 번호(처음 나온 순서대로 화자1, 화자2, …).
+ *
+ * 🔒 봇에게 가는 **요약 글**(슬랙·클라우드 모델 Muse 로 간다)에는 카톡 닉네임 대신 이 번호를 싣는다 —
+ *    닉네임은 대개 실명이고 가림 규칙(`maskPiiForExport`)은 이름을 못 가린다. 진짜 보낸 사람은 오너만
+ *    보는 결재함 기록(structuredResult.records[].sender)에만 남는다. 번호는 **조회마다 새로 매긴다**
+ *    — 조회를 넘어 같은 번호가 같은 사람이라는 보장은 없다(그 보장을 주면 번호가 곧 식별자가 된다).
+ *    보낸 사람이 비어 있는 기록은 번호를 받지 않는다.
+ */
+export function assignSpeakerAliases(views: readonly WorkRecordView[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const view of views) {
+    if (view.sender === null || aliases.has(view.sender)) continue;
+    aliases.set(view.sender, `화자${aliases.size + 1}`);
+  }
+  return aliases;
+}
+
+export function formatWorkRecordLine(view: WorkRecordView, speakerAliases: ReadonlyMap<string, string>): string {
   const text = truncateChars(flattenLineBreaks(view.text), MAX_WORK_RECORD_SUMMARY_LINE_CHARS).text;
-  return `${formatKstMinute(view.sentAt)} ${view.sender ?? "(보낸 사람 없음)"}: ${text}`;
+  const speaker = view.sender === null ? "(보낸 사람 없음)" : (speakerAliases.get(view.sender) ?? "화자?");
+  return `${formatKstMinute(view.sentAt)} ${speaker}: ${text}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -416,7 +416,9 @@ export const DEFAULT_STORE_STATUS_CLAIMS = 20;
 /**
  * 네이버 스토어 전체 현황(Phase 3 ②, 2026-10-09). 신규·발송대기 건수와 진행 중 취소·반품·교환
  * 클레임을 **저장된 스냅샷**에서 읽는다 — 네이버를 부르지 않으므로 실시간이 아니다(결과에 마지막
- * 동기화 시각이 실린다). `since` 를 비우면 실행기가 최근 14일로 잡는다.
+ * 동기화 시각이 실린다). `since` 는 **주문 건수의 창에만** 걸린다(비우면 30일). 클레임은 언제나
+ * 주문 관리 「반품/교환」과 같은 30일 창(`CLAIM_WINDOW_DAYS`)이다 — 오래된 주문의 새 클레임이
+ * `since` 때문에 빠지지 않게 하려는 것이다.
  */
 const storeStatusInputSchema = z
   .object({
@@ -428,6 +430,9 @@ const storeStatusInputSchema = z
 /** 수집이 켜진(화이트리스트) 카톡 방 목록(Phase 3 ⑧). 입력은 없다. */
 const listWorkRecordRoomsInputSchema = z.object({}).strict();
 
+/** 카톡 방 키의 글자 규칙(카톡 내부 방 번호, 또는 `TXT:` + 해시). 실행기도 같은 규칙으로 거른다. */
+export const ROOM_KEY_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
+
 /** `get_work_records` 의 행 상한·기본값. */
 export const MAX_WORK_RECORDS_LIMIT = 200;
 export const DEFAULT_WORK_RECORDS_LIMIT = 100;
@@ -436,10 +441,13 @@ export const DEFAULT_WORK_RECORDS_LIMIT = 100;
  * 카톡 방 하나의 업무 기록(Phase 3 ⑧). `roomKey` 는 `list_work_record_rooms` 가 돌려준 값이어야
  * 하고, 화이트리스트(수집 중인 방) 밖이면 실행기가 거부한다 — 여기 글자 규칙은 그 앞의 모양
  * 검사일 뿐이다(카톡 내부 방 번호, 또는 `TXT:` + 해시).
+ *
+ * 📄 페이지 넘김: 결과의 `nextSince` 를 다음 조회의 `since` 로 넣는다. `since` 는 **포함** 비교라
+ *    보낸 시각이 똑같은 기록은 두 페이지에 걸쳐 다시 나올 수 있다 — 받는 쪽이 (시각+본문) 으로 중복을 거른다.
  */
 const workRecordsInputSchema = z
   .object({
-    roomKey: z.string().trim().regex(/^[A-Za-z0-9:_-]{1,128}$/),
+    roomKey: z.string().trim().regex(ROOM_KEY_PATTERN),
     since: isoDateSchema,
     until: isoDateSchema.optional(),
     limit: z.number().int().min(1).max(MAX_WORK_RECORDS_LIMIT).optional(),
