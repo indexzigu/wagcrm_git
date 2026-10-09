@@ -235,6 +235,7 @@ async function judgeCandidate(
   config: AutoExecuteConfig,
   earliestByRid: Map<string, string>,
   fetchImpl: FetchLike,
+  now: Date,
 ): Promise<Judgement> {
   const payload = readSettlementPayload(row.payload);
   if (!payload) return { verdict: "bad_payload", detail: "정산 금액 수정 payload 모양이 아닙니다" };
@@ -304,6 +305,11 @@ async function judgeCandidate(
   const expiresMs = parseRequestExpiry(request.expiresAt);
   if (expiresMs === null || row.createdAt.getTime() > expiresMs) {
     return { verdict: "not_live_request", detail: "요청 유효 시각(expires_at)이 없거나 기안 전에 지났습니다" };
+  }
+  // 기안 때는 유효했어도 회차가 늦게 돌아 그 사이 만료됐으면 실행하지 않는다(GPT 리뷰 P1 2026-10-09 —
+  // 맥이 잠들었다 깨는 등 회차가 밀리면 만료된 요청이 실행될 수 있었다).
+  if (now.getTime() >= expiresMs) {
+    return { verdict: "not_live_request", detail: "요청 유효 시각(expires_at)이 이번 회차 전에 지났습니다" };
   }
   const differing = diffSettlementParams(request.params, payload.raw);
   if (differing !== null) {
@@ -489,7 +495,7 @@ async function runLockedPass(
         break;
       }
       try {
-        let judgement = await judgeCandidate(row, config, earliestByRid, fetchImpl);
+        let judgement = await judgeCandidate(row, config, earliestByRid, fetchImpl, now);
         if (judgement.verdict === "eligible" && todayCount >= (config.maxPerDay as number)) {
           judgement = {
             verdict: "daily_limit",

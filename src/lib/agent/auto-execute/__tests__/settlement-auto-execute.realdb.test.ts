@@ -288,6 +288,35 @@ describe("§7 시험 — 하나라도 어긋나면 PENDING 그대로", () => {
     expect(await statusOf(expired.id)).toBe("PENDING_APPROVAL");
   });
 
+  it("기안 때는 유효했지만 회차가 늦게 돌아 그 사이 만료된 요청 → PENDING (not_live_request), on·shadow 모두", async () => {
+    const p = await createProposal();
+    const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString(); // 기안 시점엔 아직 유효
+    const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p, { expiresAt })]]));
+    const lateNow = new Date(Date.now() + 10 * 60_000); // 회차는 만료 5분 뒤에 돈다
+
+    const on = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl, now: lateNow });
+    expect(on.verdicts).toEqual({ not_live_request: 1 });
+    expect(on.executed).toBe(0);
+    expect(executeCalls).toHaveLength(0);
+    expect(await statusOf(p.id)).toBe("PENDING_APPROVAL");
+    const onEvents = await eventsOf(p.id, "SYSTEM_AUTO");
+    expect(onEvents.map((e: { note: string }) => e.note)).toEqual([
+      expect.stringContaining("이번 회차 전에 지났습니다"),
+    ]);
+
+    const shadow = await runSettlementAutoExecutePass({
+      env: { ...BASE_ENV, AGENT_AUTO_EXECUTE: "shadow" },
+      fetchImpl,
+      now: lateNow,
+    });
+    expect(shadow.verdicts).toEqual({ not_live_request: 1 });
+    const shadowEvents = await eventsOf(p.id, "SYSTEM_AUTO_SHADOW");
+    expect(shadowEvents).toHaveLength(1);
+    expect(shadowEvents[0].note).toContain("verdict=not_live_request");
+    expect(shadowEvents[0].note).not.toContain("would_execute");
+    expect(executeCalls).toHaveLength(0);
+  });
+
   it("§7 한도(|변동| 50만 원) 밖 → PENDING (over_delta), 슬랙을 부르지도 않는다", async () => {
     const p = await createProposal({ args: defaultArgs({ expectedCurrentKrw: 1_000_000, newAmountKrw: 1_500_001 }) });
     const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p)]]));
