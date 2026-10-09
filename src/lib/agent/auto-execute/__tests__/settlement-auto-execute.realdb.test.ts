@@ -317,6 +317,15 @@ describe("§7 시험 — 하나라도 어긋나면 PENDING 그대로", () => {
     expect(executeCalls).toHaveLength(0);
   });
 
+  it("만료 시각과 회차 시각이 정확히 같아도 만료로 본다(>=)", async () => {
+    const p = await createProposal();
+    const boundary = new Date(Date.now() + 5 * 60_000);
+    const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p, { expiresAt: boundary.toISOString() })]]));
+    const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl, now: boundary });
+    expect(result).toMatchObject({ executed: 0, verdicts: { not_live_request: 1 } });
+    expect(executeCalls).toHaveLength(0);
+  });
+
   it("§7 한도(|변동| 50만 원) 밖 → PENDING (over_delta), 슬랙을 부르지도 않는다", async () => {
     const p = await createProposal({ args: defaultArgs({ expectedCurrentKrw: 1_000_000, newAmountKrw: 1_500_001 }) });
     const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p)]]));

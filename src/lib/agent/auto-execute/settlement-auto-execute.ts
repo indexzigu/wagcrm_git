@@ -308,7 +308,8 @@ async function judgeCandidate(
   }
   // 기안 때는 유효했어도 회차가 늦게 돌아 그 사이 만료됐으면 실행하지 않는다(GPT 리뷰 P1 2026-10-09 —
   // 맥이 잠들었다 깨는 등 회차가 밀리면 만료된 요청이 실행될 수 있었다).
-  if (now.getTime() >= expiresMs) {
+  // 회차 시작 시각(now)만 보면 회차 도중(최대 1분여) 만료된 요청이 빠져나간다 — 지금 시계와 큰 쪽을 쓴다.
+  if (Math.max(now.getTime(), Date.now()) >= expiresMs) {
     return { verdict: "not_live_request", detail: "요청 유효 시각(expires_at)이 이번 회차 전에 지났습니다" };
   }
   const differing = diffSettlementParams(request.params, payload.raw);
