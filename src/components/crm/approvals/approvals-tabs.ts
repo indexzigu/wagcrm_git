@@ -66,4 +66,7 @@ export const OPERATION_LABELS: Record<string, string> = {
   get_settlement_report: "정산 리포트",
   create_action_proposal: "기안 올리기",
   get_action_proposal: "기안 조회",
+  get_store_status: "스토어 현황",
+  list_work_record_rooms: "카톡 수집 방",
+  get_work_records: "카톡 업무기록",
 };

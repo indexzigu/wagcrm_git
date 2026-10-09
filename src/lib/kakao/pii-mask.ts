@@ -122,3 +122,72 @@ export function maskPii(text: string): PiiMaskResult {
 
   return { text: result, masked };
 }
+
+// ---------------------------------------------------------------------------
+// 내보내기용 확장 가림 — 봇(agent worker)이 슬랙·클라우드 모델로 내보내는 글에만 쓴다(2026-10-09).
+//
+// ⛔ `maskPii` 자체를 넓히지 말 것. 수집(`ingest-mapper.ts`)이 **가린 뒤의 글로 sourceHash 를
+//    계산**하므로, 규칙이 바뀌면 같은 청크가 다른 해시를 받아 재수집 때 WorkRecord 가 중복된다.
+//    그래서 수집은 지금 규칙 그대로 두고, 읽어서 내보내는 쪽에서만 아래 두 가지를 더 가린다.
+// ---------------------------------------------------------------------------
+
+// 송장번호: 하이픈 없는 9~14자리 숫자열은 날짜·금액과 구분되지 않으므로, 계좌와 같은 방식으로
+// 같은 줄에서 ±20자 안에 송장 관련 낱말이 있을 때만 가린다(하이픈 꼴은 maskPii 가 이미 가린다).
+const BARE_TRACKING_CANDIDATE_PATTERN = /\b\d{9,14}\b/g;
+const TRACKING_KEYWORDS = ["운송장", "송장", "택배"];
+
+// 도로명 주소(보수적): 행정구역 낱말(…시·군·구) 하나 이상 + 도로명(…로·길) + 건물번호.
+// 건물번호 바로 뒤에 한글·숫자가 붙으면(「택배로 3개」) 주소로 보지 않는다. 지번 주소·행정구역 없이
+// 도로명만 쓴 주소는 잡지 못한다 — 지나치게 넓히면 일상 대화를 지운다. 수량자는 모두 상한이 있다.
+const ROAD_ADDRESS_PATTERN =
+  /(?:[가-힣]{1,10}(?:특별시|광역시|특별자치시|특별자치도|시|도)\s+)?(?:[가-힣]{1,10}(?:시|군|구)\s+){1,2}[가-힣0-9]{1,20}(?:로|길)\s?\d{1,5}(?:-\d{1,5})?(?:\s?번길\s?\d{1,5}(?:-\d{1,5})?)?(?![0-9가-힣])/g;
+
+const EXPORT_MASK_TOKENS = {
+  tracking: "[TRACKING_MASKED]",
+  address: "[ADDRESS_MASKED]",
+} as const;
+
+function maskBareTrackingNearKeywords(text: string): { text: string; masked: boolean } {
+  let masked = false;
+  let result = "";
+  let lastIndex = 0;
+
+  BARE_TRACKING_CANDIDATE_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = BARE_TRACKING_CANDIDATE_PATTERN.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    const lineStart = text.lastIndexOf("\n", start) + 1;
+    const nextNewline = text.indexOf("\n", end);
+    const lineEnd = nextNewline === -1 ? text.length : nextNewline;
+    const window = text.slice(
+      Math.max(lineStart, start - KEYWORD_PROXIMITY_CHARS),
+      Math.min(lineEnd, end + KEYWORD_PROXIMITY_CHARS),
+    );
+    if (TRACKING_KEYWORDS.some((keyword) => window.includes(keyword))) {
+      result += text.slice(lastIndex, start) + EXPORT_MASK_TOKENS.tracking;
+      lastIndex = end;
+      masked = true;
+    }
+  }
+  result += text.slice(lastIndex);
+  return { text: result, masked };
+}
+
+/**
+ * `maskPii` + 도로명 주소 + 송장번호(낱말 근접 시). 결정적·멱등(가림 토큰은 어느 규칙에도 다시
+ * 걸리지 않는다). 내보내기 전용 — 수집 경로에서 쓰지 말 것(위 주석).
+ */
+export function maskPiiForExport(text: string): PiiMaskResult {
+  const base = maskPii(text);
+  let result = base.text;
+  let masked = base.masked;
+
+  ROAD_ADDRESS_PATTERN.lastIndex = 0;
+  if (ROAD_ADDRESS_PATTERN.test(result)) masked = true;
+  ROAD_ADDRESS_PATTERN.lastIndex = 0;
+  result = result.replace(ROAD_ADDRESS_PATTERN, EXPORT_MASK_TOKENS.address);
+
+  const tracking = maskBareTrackingNearKeywords(result);
+  return { text: tracking.text, masked: masked || tracking.masked };
+}

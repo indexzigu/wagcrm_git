@@ -1,6 +1,6 @@
 /**
  * Ephemeral PostgreSQL privilege check for the `wag_agent_worker` role (plan contract 5)
- * plus an end-to-end run of all five executor operations AS the worker role.
+ * plus an end-to-end run of the executor operations AS the worker role.
  *
  * Opt-in: set AGENT_WORKER_PRIVILEGE_TEST_ADMIN_URL to a superuser URL of a
  * disposable local PostgreSQL (for example a throw-away `postgres:17` container on a
@@ -220,11 +220,66 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
   });
 
   it("cannot read tables outside the granted scope", async () => {
-    await expectDenied(worker!.$queryRawUnsafe(`SELECT count(*) FROM "WorkRecord"`), "SELECT WorkRecord");
     await expectDenied(worker!.$queryRawUnsafe(`SELECT count(*) FROM "_prisma_migrations"`), "SELECT _prisma_migrations");
     for (const table of ["CampaignDeal", "CampaignChecklistItem", "CampaignNote", "CampaignActivity", "SellersHistory", "OrderCampaign"]) {
       await expectDenied(worker!.$queryRawUnsafe(`SELECT count(*) FROM "${table}"`), `SELECT ${table}`);
     }
+  });
+
+  // Phase 3 ⑧(2026-10-09, migration 20261009150000): the two Kakao tables are opened column by
+  // column and row by row. A regression here is silent in production — a missing policy returns
+  // zero rows, a table-level grant hands out room names — so both edges are probed.
+  it("reads the Kakao tables only through the granted columns", async () => {
+    await expect(
+      worker!.$queryRawUnsafe(`SELECT "roomKey","roomType","entityType","entityId","collectorType","excluded","campaignId","lastSyncedAt" FROM "ChatRoomMapping"`),
+    ).resolves.toBeDefined();
+    await expect(
+      worker!.$queryRawUnsafe(`SELECT "id","sentAt","sender","rawText","isMasked","entityType","entityId","campaignId" FROM "WorkRecord"`),
+    ).resolves.toBeDefined();
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT "roomName" FROM "ChatRoomMapping"`), "SELECT ChatRoomMapping.roomName");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT "sourceFolderId" FROM "ChatRoomMapping"`), "SELECT ChatRoomMapping.sourceFolderId");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT * FROM "ChatRoomMapping"`), "SELECT * ChatRoomMapping");
+    for (const column of ["ingestedBy", "summary", "actionItems", "sourceHash", "attributedBy"]) {
+      await expectDenied(worker!.$queryRawUnsafe(`SELECT "${column}" FROM "WorkRecord"`), `SELECT WorkRecord.${column}`);
+    }
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT * FROM "WorkRecord"`), "SELECT * WorkRecord");
+  });
+
+  it("cannot write the Kakao tables", async () => {
+    await expectDenied(
+      worker!.$executeRawUnsafe(`INSERT INTO "WorkRecord" ("id","source","sourceHash","sentAt","rawText","updatedAt") VALUES ('priv-wr-x','KAKAO','h',now(),'x',now())`),
+      "INSERT WorkRecord",
+    );
+    await expectDenied(worker!.$executeRawUnsafe(`UPDATE "WorkRecord" SET "rawText" = 'x' WHERE false`), "UPDATE WorkRecord");
+    await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "WorkRecord" WHERE false`), "DELETE WorkRecord");
+    await expectDenied(worker!.$executeRawUnsafe(`UPDATE "ChatRoomMapping" SET "excluded" = false WHERE false`), "UPDATE ChatRoomMapping");
+    await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "ChatRoomMapping" WHERE false`), "DELETE ChatRoomMapping");
+  });
+
+  it("sees only whitelisted rooms and their records (RLS mirrors the runner gate)", async () => {
+    await admin.$executeRawUnsafe(
+      `INSERT INTO "ChatRoomMapping" ("id","source","roomKey","roomName","collectorType","excluded","updatedAt") VALUES
+        ('priv-room-on','KAKAO','priv-1001','probe room','KATOK_AUTO',false,now()),
+        ('priv-room-paused','KAKAO','priv-1002','probe room','KATOK_AUTO',true,now()),
+        ('priv-room-txt','KAKAO_TXT','priv-1001','probe room','TXT_UPLOAD',false,now())
+       ON CONFLICT DO NOTHING`,
+    );
+    await admin.$executeRawUnsafe(
+      `INSERT INTO "WorkRecord" ("id","source","sourceHash","roomKey","sender","sentAt","rawText","isMasked","updatedAt") VALUES
+        ('priv-wr-on','KAKAO','priv-h1','priv-1001','probe sender',now() - interval '1 hour','visible probe',true,now()),
+        ('priv-wr-paused','KAKAO','priv-h2','priv-1002','probe sender',now() - interval '1 hour','hidden probe',true,now()),
+        ('priv-wr-txt','KAKAO_TXT','priv-h3','priv-1001','probe sender',now() - interval '1 hour','hidden txt probe',true,now()),
+        ('priv-wr-unmapped','KAKAO','priv-h4','priv-9999','probe sender',now() - interval '1 hour','hidden unmapped probe',true,now())
+       ON CONFLICT DO NOTHING`,
+    );
+    const rooms = await worker!.$queryRawUnsafe<Array<{ roomKey: string }>>(
+      `SELECT "roomKey" FROM "ChatRoomMapping" WHERE "roomKey" LIKE 'priv-%' ORDER BY "roomKey"`,
+    );
+    expect(rooms).toEqual([{ roomKey: "priv-1001" }]);
+    const records = await worker!.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id" FROM "WorkRecord" WHERE "id" LIKE 'priv-wr-%' ORDER BY "id"`,
+    );
+    expect(records).toEqual([{ id: "priv-wr-on" }]);
   });
 
   it("cannot run schema DDL", async () => {
@@ -234,7 +289,7 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     await expectDenied(worker!.$executeRawUnsafe(`CREATE ROLE wag_priv_probe`), "CREATE ROLE");
   });
 
-  it("runs five read operations and a proposal as the worker role", async () => {
+  it("runs the read operations and a proposal as the worker role", async () => {
     const { executeAgentJob } = await import("@/lib/agent-worker/executor");
 
     const search = await executeAgentJob(jobFor("search_deals", { query: "privilege" }), python);
@@ -284,5 +339,31 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
       `SELECT "fromStatus","toStatus","actor" FROM "ActionProposalEvent" WHERE "proposalId" = '${proposalId}'`,
     );
     expect(events).toEqual([{ fromStatus: "DRAFT", toStatus: "PENDING_APPROVAL", actor: "AGENT_WORKER" }]);
+
+    // Phase 3 ②⑧: the three new reads run end to end as the worker role (the Kakao rows come from
+    // the RLS test above; an empty store still has to answer, with an unknown sync time).
+    const store = await executeAgentJob(jobFor("get_store_status", {}), python);
+    if (store.kind !== "terminal") throw new Error("expected terminal");
+    expect(store.result.resultSummary).toMatch(/^get_store_status ordersWindow=.* claimsWindow=.* realtime=false /);
+
+    const rooms = await executeAgentJob(jobFor("list_work_record_rooms", {}), python);
+    if (rooms.kind !== "terminal") throw new Error("expected terminal");
+    expect(rooms.result.evidenceRefs).toContain("priv-1001");
+    expect(rooms.result.evidenceRefs).not.toContain("priv-1002");
+
+    const records = await executeAgentJob(
+      jobFor("get_work_records", { roomKey: "priv-1001", since: new Date(Date.now() - 86_400_000).toISOString() }),
+      python,
+    );
+    if (records.kind !== "terminal") throw new Error("expected terminal");
+    expect(records.toStatus).toBe("SUCCEEDED");
+    expect(records.result.resultSummary).toContain("visible probe");
+    expect(records.result.resultSummary).not.toContain("hidden");
+
+    const paused = await executeAgentJob(
+      jobFor("get_work_records", { roomKey: "priv-1002", since: new Date(Date.now() - 86_400_000).toISOString() }),
+      python,
+    );
+    expect(paused).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "ROOM_NOT_WHITELISTED" });
   }, 60_000);
 });

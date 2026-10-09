@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maskPii } from "../pii-mask";
+import { maskPii, maskPiiForExport } from "../pii-mask";
 
 // 합성 데이터만 사용 — 실 archive 원문은 절대 사용하지 않는다.
 
@@ -119,5 +119,39 @@ describe("maskPii — 리뷰 유출 케이스 보강(M1)", () => {
     const result = maskPii("2026년 07월 04일 오후 3시에 뵙겠습니다.");
     expect(result.masked).toBe(false);
     expect(result.text).toBe("2026년 07월 04일 오후 3시에 뵙겠습니다.");
+  });
+});
+
+describe("maskPiiForExport (봇 내보내기 전용 확장 가림)", () => {
+  it("송장 낱말 근처의 하이픈 없는 9~14자리 숫자를 [TRACKING_MASKED] 로 가린다", () => {
+    expect(maskPiiForExport("택배 송장번호 612345678901 입니다").text).toBe("택배 송장번호 [TRACKING_MASKED] 입니다");
+    expect(maskPiiForExport("운송장 123456789").text).toBe("운송장 [TRACKING_MASKED]");
+  });
+
+  it("송장 낱말이 없으면 같은 숫자를 그대로 둔다(금액·코드 오탐 방지)", () => {
+    expect(maskPiiForExport("주문 수량 612345678901 개").text).toBe("주문 수량 612345678901 개");
+  });
+
+  it("행정구역 + 도로명 + 건물번호 꼴의 도로명 주소를 [ADDRESS_MASKED] 로 가린다", () => {
+    expect(maskPiiForExport("테스트시 비밀구 가짜로 77 로 보내 주세요").text).toBe("[ADDRESS_MASKED] 로 보내 주세요");
+    expect(maskPiiForExport("가상도 예시시 샘플구 연습로12번길 5-3, 2층").text).toBe("[ADDRESS_MASKED], 2층");
+  });
+
+  it("주소처럼 보이는 일상 표현은 가리지 않는다(보수적)", () => {
+    expect(maskPiiForExport("택배로 3개 보냈어요").text).toBe("택배로 3개 보냈어요");
+    expect(maskPiiForExport("가짜로 77 이라고 적혀 있었어요").text).toBe("가짜로 77 이라고 적혀 있었어요");
+  });
+
+  it("기존 maskPii 가림도 그대로 포함하고, 두 번 걸어도 결과가 같다(멱등)", () => {
+    const input = "010-1234-5678 / 테스트시 비밀구 가짜로 77 / 택배 612345678901";
+    const once = maskPiiForExport(input);
+    expect(once.masked).toBe(true);
+    expect(once.text).toBe("[PHONE_MASKED] / [ADDRESS_MASKED] / 택배 [TRACKING_MASKED]");
+    expect(maskPiiForExport(once.text).text).toBe(once.text);
+  });
+
+  it("수집용 maskPii 는 넓어지지 않았다 — 수집 sourceHash 멱등 보존", () => {
+    const input = "테스트시 비밀구 가짜로 77 택배 612345678901";
+    expect(maskPii(input)).toEqual({ text: input, masked: false });
   });
 });
