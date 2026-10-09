@@ -66,10 +66,21 @@ const hhmm = (h: number, m: number) => `${String(h).padStart(2, "0")}:${String(m
  * crontab 5필드(KST) → 레이더 표기(cycle·timeKst)
  *
  * 시 필드는 단일 숫자 또는 **`시작-끝` 범위 하나**만 해석한다(매시 발화 잡 — scan-invoice-replies).
- * 범위는 `HH:MM~HH:MM 매시` 로 표기한다. 그 밖의 꼴(쉼표 목록·`*`·`/` 간격)은 여전히 실패시킨다 —
+ * 범위는 `HH:MM~HH:MM 매시` 로 표기한다.
+ * 분 단위 주기는 **`*\/N * * * *` 한 꼴만** 해석해 `상시` · `N분마다` 로 표기한다(agent-auto-execute).
+ * 그 밖의 꼴(쉼표 목록·시 필드의 `*`·다른 `/` 간격)은 여전히 실패시킨다 —
  * 해석 못 하는 스케줄을 통과시키면 레이더 표기와 실제 발화가 조용히 갈린다.
  */
 const toKstDisplay = (e: CronEntry): { cycle: string; timeKst: string } => {
+  const every = /^\*\/(\d{1,2})$/.exec(e.minute);
+  if (every) {
+    const n = Number(every[1]);
+    expect(
+      e.hour === "*" && e.dow === "*" && n >= 1 && n <= 59,
+      `분 간격 스케줄은 '*/N * * * *' 꼴만 해석한다: ${e.minute} ${e.hour} ${e.dow}`,
+    ).toBe(true);
+    return { cycle: "상시", timeKst: `${n}분마다` };
+  }
   const m = Number(e.minute);
   const range = /^(\d{1,2})-(\d{1,2})$/.exec(e.hour);
   let timeKst: string;

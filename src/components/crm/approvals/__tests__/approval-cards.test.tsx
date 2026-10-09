@@ -299,6 +299,17 @@ describe("PendingCard", () => {
 });
 
 describe("ExecutedCard", () => {
+  it("자동 실행기(SYSTEM_AUTO)가 실행한 건은 「자동 실행 · 한도 안」으로 사람 승인과 구분한다", () => {
+    render(
+      <ul>
+        <ExecutedCard item={makeItem({ status: "EXECUTED", executedBy: "SYSTEM_AUTO" })} />
+      </ul>
+    );
+    expect(screen.getByText("자동 실행 · 한도 안")).toHaveAttribute("data-variant", "status-success");
+    expect(screen.queryByText("실행완료")).toBeNull();
+    expect(screen.queryByText("자동승인")).toBeNull();
+  });
+
   it("완료 카드의 자동승인 표기는 이모지 없이 아이콘+글자다", () => {
     render(
       <ul>

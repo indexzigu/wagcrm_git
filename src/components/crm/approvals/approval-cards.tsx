@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2Icon, ZapIcon } from "lucide-react";
+import { Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -237,13 +237,20 @@ export function PendingCard({
  * 색도 그 관례를 따른다: 완료 = `status-success`. ⛔ `status-active`(네이비)로 되돌리지
  * 말 것 — 근거 정본은 proposal-card `StatusChip` 주석(P8 §4 · 생애주기 SSOT).
  * 자동승인 표기는 이모지가 아니라 `ZapIcon`(P8 — 이모지는 UI 아이콘으로 쓰지 않는다).
+ * executedBy==="SYSTEM_AUTO" = 정산 금액 수정 자동 실행기가 슬랙 원문 대조·한도 확인 뒤 승인한 건
+ * (`lib/agent/auto-execute/settlement-auto-execute.ts`) — 사람 승인과 구분해 「한도 안」을 밝힌다.
  */
 export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
   return (
     <li className={CARD_ROOT_CLASS}>
       <div className="flex flex-wrap items-center gap-2">
         <EntityBadge item={item} />
-        {item.executedBy === "AGENT" ? (
+        {item.executedBy === "SYSTEM_AUTO" ? (
+          <Badge variant="status-success">
+            <ShieldCheckIcon aria-hidden />
+            자동 실행 · 한도 안
+          </Badge>
+        ) : item.executedBy === "AGENT" ? (
           <Badge variant="status-success">
             <ZapIcon aria-hidden />
             자동승인

@@ -161,6 +161,27 @@ describe("withSystemTaskStatus 기록", () => {
     expect(loggedRuns()[0].message).toBe("정상 완료");
   });
 
+  it("quiet:true 성공 회차는 상태만 갱신하고 이력 줄을 남기지 않는다(분 단위 잡의 빈 회차)", async () => {
+    const wrapped = withSystemTaskStatus("job-a", vi.fn(async () => Response.json({ ok: true, quiet: true })));
+
+    await wrapped(makeRequest(`Bearer ${SECRET}`));
+
+    expect(recordedStatuses()).toEqual(["RUNNING", "SUCCESS"]);
+    expect(logCreate).not.toHaveBeenCalled();
+  });
+
+  it("quiet 이어도 실패 선언은 언제나 이력에 남는다", async () => {
+    const wrapped = withSystemTaskStatus(
+      "job-a",
+      vi.fn(async () => Response.json({ ok: false, quiet: true, failed: true, failureReason: "전부 오류" })),
+    );
+
+    await wrapped(makeRequest(`Bearer ${SECRET}`));
+
+    expect(recordedStatuses()).toEqual(["RUNNING", "ERROR"]);
+    expect(loggedRuns()).toHaveLength(1);
+  });
+
   it("failureReason 이 없으면 기본 문구로 기록한다", async () => {
     const handler = vi.fn(async () => Response.json({ ok: true, failed: true }));
     const wrapped = withSystemTaskStatus("job-a", handler);

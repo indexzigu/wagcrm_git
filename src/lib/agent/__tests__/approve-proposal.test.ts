@@ -80,6 +80,28 @@ describe("approveProposal", () => {
     expect(applyWriteActionEffectsMock).toHaveBeenCalledWith("add_entity_memo", EXEC_RESULT);
   });
 
+  it("expectedStatus:PENDING_APPROVAL 이면 FAILED 기안을 재시도하지 않는다(자동 실행기 전용 문)", async () => {
+    findByIdMock.mockResolvedValue(makeProposal({ status: "FAILED" }));
+
+    const outcome = await approveProposal("p1", "SYSTEM_AUTO", { expectedStatus: "PENDING_APPROVAL" });
+
+    expect(outcome).toMatchObject({ ok: false, code: "INVALID_STATUS", status: "FAILED" });
+    expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it("문자열로 저장된 payload(SQLite 레인)도 읽어 실행한다", async () => {
+    findByIdMock.mockResolvedValue(
+      makeProposal({ payload: JSON.stringify({ action: "add_entity_memo", args: { entityType: "DEAL" } }) }),
+    );
+    transitionMock.mockResolvedValue({ id: "p1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue(EXEC_RESULT);
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: true, action: "add_entity_memo" });
+    expect(executeWriteActionMock.mock.calls[0][0]).toBe("add_entity_memo");
+  });
+
   it("self-approval(기안자===승인자)은 거부하고 어떤 전이도 하지 않는다", async () => {
     findByIdMock.mockResolvedValue(makeProposal({ createdBy: APPROVER }));
 

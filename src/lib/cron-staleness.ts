@@ -11,9 +11,10 @@
 // ①유예를 두고 ②주기별로 다르게 재고 ③모르면 판정하지 않는다.
 
 /** 판정에 필요한 최소 형태 — `KNOWN_JOBS` 항목이 그대로 들어맞는다(전체를 요구하지 않아 테스트가 가볍다). */
-export type OverdueJobSpec = { cycle: string };
+export type OverdueJobSpec = { cycle: string; timeKst?: string };
 
-const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /**
@@ -23,11 +24,19 @@ const DAY = 24 * HOUR;
 export const STALE_GRACE_MS = {
   매일: 6 * HOUR,
   매주: 24 * HOUR,
+  // 분 단위 주기(`cycle: "상시"`, `timeKst: "N분마다"` — agent-auto-execute). 몇 회차 밀림은 흡수하되
+  // 반나절씩 늦게 알리지는 않는다.
+  상시: 30 * MINUTE,
 } as const;
 
 /** 표기(`cycle`)에서 기대 간격과 유예를 읽는다. 해석 불가면 null — 모르면 판정하지 않는다. */
-function resolveCadence(cycle: string): { intervalMs: number; graceMs: number } | null {
+function resolveCadence(cycle: string, timeKst?: string): { intervalMs: number; graceMs: number } | null {
   const trimmed = cycle.trim();
+  if (trimmed === "상시") {
+    // 분 단위 주기 — 간격은 timeKst("2분마다")에서 읽는다. 못 읽으면 판정하지 않는다.
+    const m = /^(\d{1,2})분마다$/.exec(timeKst?.trim() ?? "");
+    return m ? { intervalMs: Number(m[1]) * MINUTE, graceMs: STALE_GRACE_MS.상시 } : null;
+  }
   if (trimmed === "매일") return { intervalMs: DAY, graceMs: STALE_GRACE_MS.매일 };
   // "매주 월"처럼 요일이 붙는다 — 요일 자체는 판정에 쓰지 않는다(간격만 본다).
   if (trimmed.startsWith("매주")) return { intervalMs: 7 * DAY, graceMs: STALE_GRACE_MS.매주 };
@@ -46,7 +55,7 @@ export function isJobOverdue(
   now: Date = new Date(),
 ): boolean {
   if (!lastRunAt) return false;
-  const cadence = resolveCadence(job.cycle);
+  const cadence = resolveCadence(job.cycle, job.timeKst);
   if (!cadence) return false;
 
   const last = lastRunAt instanceof Date ? lastRunAt : new Date(lastRunAt);

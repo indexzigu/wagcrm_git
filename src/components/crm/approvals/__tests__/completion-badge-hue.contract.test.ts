@@ -39,7 +39,8 @@ const APPROVALS_DIR = join(process.cwd(), "src", "components", "crm", "approvals
  * ⚠️ 스캔 범위도 **JSX 의 `<Badge variant=…>` 인라인 선언뿐**이다 — variant 를
  * `Record<string, …>` 표에 담아 쓰는 형태(price-sheet 계열)는 이 그물 밖이다.
  */
-const COMPLETION_TEXT = /완료|실행됨|자동승인/;
+// 「자동 실행 · 한도 안」(정산 금액 수정 자동 실행기, 2026-10-09)도 완료 배지라 ①놓침 방향으로 넓혔다.
+const COMPLETION_TEXT = /완료|실행됨|자동승인|자동 실행/;
 
 /** ⛔ 판정 의미로 쓰면 안 되는 브랜드 네이비 틴트(P8 §4). */
 const FORBIDDEN_VARIANT = "status-active";

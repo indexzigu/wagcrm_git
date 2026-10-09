@@ -60,6 +60,24 @@ describe("isJobOverdue — 매주 잡", () => {
   });
 });
 
+describe("isJobOverdue — 분 단위 주기(상시 N분마다)", () => {
+  const MINUTE = 60 * 1000;
+  const everyTwo = { cycle: "상시", timeKst: "2분마다" } as const;
+
+  it("몇 회차 밀린 정도는 유예 안이다", () => {
+    expect(isJobOverdue(everyTwo, ago(10 * MINUTE), NOW)).toBe(false);
+  });
+
+  it("간격 + 유예(30분)를 넘기면 지연이다", () => {
+    expect(isJobOverdue(everyTwo, ago(2 * MINUTE + STALE_GRACE_MS.상시 + MINUTE), NOW)).toBe(true);
+  });
+
+  it("간격을 읽을 수 없는 표기는 판정하지 않는다(오탐 금지)", () => {
+    expect(isJobOverdue({ cycle: "상시", timeKst: "가끔" }, ago(3 * DAY), NOW)).toBe(false);
+    expect(isJobOverdue({ cycle: "상시" }, ago(3 * DAY), NOW)).toBe(false);
+  });
+});
+
 describe("isJobOverdue — 승격하지 않는 경우", () => {
   it("실행 기록이 아예 없으면 지연이 아니다(그건 '기록 없음' 상태가 이미 말한다)", () => {
     expect(isJobOverdue({ cycle: "매일" }, null, NOW)).toBe(false);
