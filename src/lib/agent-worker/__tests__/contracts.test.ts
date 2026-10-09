@@ -6,6 +6,8 @@ import {
   AgentJobResultSchema,
   AgentJobSettlementAmountFieldSchema,
   MAX_RESULT_SUMMARY_CHARS,
+  MAX_STORE_STATUS_CLAIMS,
+  MAX_WORK_RECORDS_LIMIT,
   createActionProposalInputSchema,
   createAgentJobIdempotencyKey,
   isAgentJobTransitionAllowed,
@@ -121,9 +123,16 @@ describe("get_settlement_report input (spec §3-E)", () => {
     origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
   } as const;
 
-  it("is the last operation in the enum (python mirror compares literal order)", () => {
+  // 파이썬 미러가 글자 순서를 대조하므로 새 operation 은 끝에만 붙는다 — 정산 리포트 **뒤**에는
+  // Phase 3 ②⑧(2026-10-09)의 세 읽기만 있어야 한다.
+  it("keeps its place in the enum; only later operations are appended after it (python mirror compares literal order)", () => {
     const options = AgentJobOperationSchema.options;
-    expect(options[options.length - 1]).toBe("get_settlement_report");
+    expect(options.slice(options.indexOf("get_settlement_report"))).toEqual([
+      "get_settlement_report",
+      "get_store_status",
+      "list_work_record_rooms",
+      "get_work_records",
+    ]);
   });
 
   it.each([
@@ -278,5 +287,74 @@ describe("origin.slack — 슬랙 원문 위치(선택 칸)", () => {
     expect(createAgentJobIdempotencyKey(first, at)).toBe(createAgentJobIdempotencyKey(resubmit, at));
     expect(createAgentJobIdempotencyKey(first, at)).not.toBe(createAgentJobIdempotencyKey(other, at));
     expect(createAgentJobIdempotencyKey(first, at)).not.toBe(createAgentJobIdempotencyKey(payload, at));
+  });
+});
+
+describe("Phase 3 store / Kakao read inputs (get_store_status · list_work_record_rooms · get_work_records)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+  const parse = (operation: string, input: unknown) =>
+    AgentJobPayloadSchema.safeParse({ ...base, operation, input }).success;
+
+  it.each([
+    [{}],
+    [{ claimsLimit: 1 }],
+    [{ claimsLimit: MAX_STORE_STATUS_CLAIMS }],
+    [{ since: "2026-10-01T00:00:00+09:00" }],
+    [{ since: "2026-10-01T00:00:00.000Z", claimsLimit: 20 }],
+  ])("get_store_status accepts %j", (input) => {
+    expect(parse("get_store_status", input)).toBe(true);
+  });
+
+  it.each([
+    [{ claimsLimit: 0 }],
+    [{ claimsLimit: MAX_STORE_STATUS_CLAIMS + 1 }],
+    [{ claimsLimit: 2.5 }],
+    [{ claimsLimit: "20" }],
+    [{ since: "2026-10-01" }],
+    [{ since: "yesterday" }],
+    [{ storeId: "x" }],
+  ])("get_store_status rejects %j", (input) => {
+    expect(parse("get_store_status", input)).toBe(false);
+  });
+
+  it("list_work_record_rooms takes no input at all", () => {
+    expect(parse("list_work_record_rooms", {})).toBe(true);
+    expect(parse("list_work_record_rooms", { roomKey: "123" })).toBe(false);
+    expect(parse("list_work_record_rooms", { includeExcluded: true })).toBe(false);
+  });
+
+  const valid = { roomKey: "18273645", since: "2026-10-01T00:00:00+09:00" };
+
+  it.each([
+    [valid],
+    [{ ...valid, roomKey: "TXT:0123456789abcdef" }],
+    [{ ...valid, until: "2026-10-09T00:00:00+09:00", limit: 1 }],
+    [{ ...valid, limit: MAX_WORK_RECORDS_LIMIT }],
+    // 오프셋이 달라도 **시각**으로 비교한다: 문자열로는 since 가 더 늦어 보이지만 실제로는 같은 순간이다.
+    [{ roomKey: "1", since: "2026-10-01T09:00:00+09:00", until: "2026-10-01T00:00:00Z" }],
+  ])("get_work_records accepts %j", (input) => {
+    expect(parse("get_work_records", input)).toBe(true);
+  });
+
+  it.each([
+    ["no since", { roomKey: "1" }],
+    ["no roomKey", { since: valid.since }],
+    ["empty roomKey", { ...valid, roomKey: "" }],
+    ["roomKey with a space", { ...valid, roomKey: "a b" }],
+    ["roomKey with a quote", { ...valid, roomKey: "1'--" }],
+    ["roomKey over 128", { ...valid, roomKey: "1".repeat(129) }],
+    ["date-only since", { ...valid, since: "2026-10-01" }],
+    ["since after until", { ...valid, until: "2026-09-30T00:00:00+09:00" }],
+    ["limit 0", { ...valid, limit: 0 }],
+    ["limit over max", { ...valid, limit: MAX_WORK_RECORDS_LIMIT + 1 }],
+    ["fractional limit", { ...valid, limit: 1.5 }],
+    ["unknown key", { ...valid, roomName: "x" }],
+  ])("get_work_records rejects %s", (_label, input) => {
+    expect(parse("get_work_records", input)).toBe(false);
   });
 });

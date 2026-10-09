@@ -31,8 +31,15 @@ import { updateSettlementAmountTool } from "@/lib/agent/tools/update-settlement-
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
+import { deriveClaims } from "@/lib/order-converter/claim-derive";
+import { loadClaimSourceOrders, resolveClaimWindowKeys } from "@/lib/order-converter/claim-source-loader";
+import { getLastChangeSyncMs, resolveLastOrderSyncIso } from "@/lib/order-converter/order-auto-sync";
+import { toDateKeyKst } from "@/lib/mobile-pulse-data";
+import { naverOrderSnapshotRepository } from "@/repositories/naverOrderSnapshotRepository";
 import {
   AgentJobResultSchema,
+  DEFAULT_STORE_STATUS_CLAIMS,
+  DEFAULT_WORK_RECORDS_LIMIT,
   MAX_EVIDENCE_REFS,
   MAX_RESULT_SUMMARY_CHARS,
   type AgentJobPayload,
@@ -40,6 +47,17 @@ import {
   type AgentJobRoute,
 } from "./contracts";
 import { recordReadResult, type ReadResultRecord } from "./read-result-record";
+import {
+  boundWorkRecords,
+  buildBoundedSummary,
+  collectKnownNamesByOrder,
+  countClaimsByType,
+  flattenLineBreaks,
+  formatStoreClaimLine,
+  formatWorkRecordLine,
+  selectOpenClaims,
+  toWorkRecordView,
+} from "./read-projections";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import {
   hasShadowValidator,
@@ -55,9 +73,10 @@ import {
  *
  * - exact operation registry for the frozen operations the contract declares
  * - every read stays inside the worker role's SELECT scope (SalesCampaign, Deal,
- *   Partner, Seller, NaverOrderSnapshot, CampaignGroup, and ActionProposal rows this
- *   worker created) by reusing existing pure calculations over narrow projections;
- *   no business formula is copied here
+ *   Partner, Seller, NaverOrderSnapshot, CampaignGroup, ActionProposal rows this
+ *   worker created, and — column- and row-limited to whitelisted Kakao rooms —
+ *   ChatRoomMapping and WorkRecord) by reusing existing pure calculations over narrow
+ *   projections; no business formula is copied here
  * - `create_action_proposal` validates WRITE_ACTIONS + Zod args + target existence,
  *   then INSERTs the proposal as PENDING_APPROVAL plus its initial event in one
  *   transaction — never an UPDATE, never an approval/execution function
@@ -146,6 +165,8 @@ type GetActionProposalInput = { proposalId: string };
 type OrderSnapshotInput = { campaignId?: string; startAt?: string; endAt?: string };
 type CampaignFinancialsInput = { campaignId: string };
 type SettlementReportInput = { month?: string; year?: string; sellerName?: string; statusFilter?: "SETTLEMENT_IN_PROGRESS" | "COMPLETED" | "ALL" };
+type StoreStatusInput = { claimsLimit?: number; since?: string };
+type WorkRecordsInput = { roomKey: string; since: string; until?: string; limit?: number };
 type ProposalScalar = string | number | boolean | null;
 type ProposalNestedValue = ProposalScalar | Record<string, ProposalScalar>;
 /**
@@ -255,14 +276,6 @@ async function getActionProposal(input: GetActionProposalInput): Promise<Operati
     ),
     actionProposalId: null,
   };
-}
-
-/**
- * 줄을 나누는 문자를 공백 하나로 누른다. JS `\s` 에 없는 \u0085·\u001c-\u001e 도 넣는다 —
- * 결과를 읽는 쪽(hermes, Python `splitlines`)은 그것들도 줄바꿈으로 친다.
- */
-function flattenLineBreaks(text: string): string {
-  return text.replace(/[\s\u0085\u001c-\u001e]+/g, " ").trim();
 }
 
 /** Maps a tool error onto the queue contract without copying its raw message. */
@@ -697,6 +710,251 @@ async function settlementReport(input: SettlementReportInput): Promise<Operation
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3 ②⑧ (2026-10-09) — 스토어 현황 · 카톡 업무기록 읽기
+//
+// 셋 다 **저장된 값만** 읽는다(네이버·카톡을 부르지 않는다). 그래서 실시간이 아니고, 결과마다
+// 기준 시각(주문 동기화 시각 · 방의 마지막 수집 시각)을 싣는다. 밖으로 나가는 모양과 가림은
+// `read-projections.ts` 가 정한다 — 여기서 행을 그대로 넘기지 않는다.
+// ---------------------------------------------------------------------------
+
+/** `get_store_status` 의 `since` 를 비웠을 때 보는 기간(일). */
+export const STORE_STATUS_DEFAULT_DAYS = 14;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * 화이트리스트 = 카톡 자동 수집(katok)이 실제로 훑는 방. 러너 게이트
+ * (`ChatRoomMappingRepository.listWithCursors`)와 같은 조건이다 — 수집이 꺼진 방(excluded)·직원
+ * txt 업로드 방(KAKAO_TXT 네임스페이스)은 여기 들지 않는다.
+ */
+const WORK_RECORD_SOURCE = "KAKAO";
+const WORK_RECORD_COLLECTOR = "KATOK_AUTO";
+const MAX_WORK_RECORD_ROOMS = 200;
+
+/**
+ * 네이버 스토어 전체의 신규·발송대기·배송중 건수와 진행 중 취소·반품·교환.
+ *
+ * - 건수: 스냅샷의 일별 카운트 칸(`findRangeCounts`) 합 — orders 블롭을 읽지 않는다(P7 egress 계약).
+ *   신규 = 결제완료·발주 전(`countStatuses` 의 newOrdersCount), 발송대기 = DISPATCH_WAIT.
+ * - 클레임: 주문 관리 「반품/교환」과 같은 소스·같은 파생(`loadClaimSourceOrders` → `deriveClaims`),
+ *   진행 중 = `!isCompleted`. 캠페인 귀속은 하지 않는다(워커 role 은 OrderCampaign 을 못 읽고, 스토어
+ *   전체 질문에는 필요 없다).
+ * - 창: 스냅샷 날짜(KST 주문일) 기준 `since` ~ 오늘. 스냅샷은 30일만 남으므로 그보다 앞은 30일로 당기고
+ *   `clamped` 로 알린다.
+ */
+async function storeStatus(input: StoreStatusInput, now: Date): Promise<OperationOutcome> {
+  const claimsLimit = input.claimsLimit ?? DEFAULT_STORE_STATUS_CLAIMS;
+  const requestedSince = input.since
+    ? new Date(input.since)
+    : new Date(now.getTime() - STORE_STATUS_DEFAULT_DAYS * DAY_MS);
+  if (requestedSince.getTime() > now.getTime()) {
+    return failure("INVALID_INPUT", "since must not be in the future");
+  }
+  const claimWindow = resolveClaimWindowKeys(now);
+  const requestedStartKey = toDateKeyKst(requestedSince);
+  const clamped = requestedStartKey < claimWindow.startDateKey;
+  const startKey = clamped ? claimWindow.startDateKey : requestedStartKey;
+  const endKey = claimWindow.endDateKey;
+
+  const [countRows, claimOrders, syncMeta, lastChangeSyncMs] = await Promise.all([
+    naverOrderSnapshotRepository.findRangeCounts(startKey, endKey),
+    loadClaimSourceOrders(startKey, endKey, "agent-worker-store-status"),
+    naverOrderSnapshotRepository.latestSyncMeta(),
+    getLastChangeSyncMs(),
+  ]);
+
+  const orders = countRows.reduce(
+    (acc, row) => ({
+      ordersCount: acc.ordersCount + row.ordersCount,
+      newOrders: acc.newOrders + row.newOrdersCount,
+      awaitingShipment: acc.awaitingShipment + row.preparingCount,
+      delivering: acc.delivering + row.deliveringCount,
+    }),
+    { ordersCount: 0, newOrders: 0, awaitingShipment: 0, delivering: 0 },
+  );
+  const claims = deriveClaims(claimOrders);
+  const claimCounts = countClaimsByType(claims);
+  const openTotal = claimCounts.CANCEL.open + claimCounts.RETURN.open + claimCounts.EXCHANGE.open;
+  const listed = selectOpenClaims(claims, claimsLimit, collectKnownNamesByOrder(claimOrders));
+  // 주문 관리 툴바 「마지막 동기화」와 같은 값(변경피드 커서 우선, 없으면 마지막 호출 시각).
+  const syncedAt = resolveLastOrderSyncIso(lastChangeSyncMs, syncMeta?.lastCallTime ?? null);
+  const latestSnapshotDate = countRows.length > 0 ? countRows[countRows.length - 1].snapshotDate : null;
+
+  const { summary } = buildBoundedSummary(
+    (shown) =>
+      `get_store_status window=${startKey}..${endKey}${clamped ? " clamped=true" : ""} syncedAt=${syncedAt ?? "unknown"} realtime=false snapshotDays=${countRows.length} newOrders=${orders.newOrders} awaitingShipment=${orders.awaitingShipment} delivering=${orders.delivering} openCancel=${claimCounts.CANCEL.open} openReturn=${claimCounts.RETURN.open} openExchange=${claimCounts.EXCHANGE.open} claimsShown=${shown}/${openTotal}`,
+    listed.map(formatStoreClaimLine),
+  );
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(summary),
+    evidenceRefs: boundEvidence([startKey, endKey]),
+    actionProposalId: null,
+    record: {
+      title: `스토어 현황 ${startKey}~${endKey}`,
+      resultSummary: boundSummary(summary),
+      structuredResult: {
+        window: { startKey, endKey, clamped },
+        freshness: { syncedAt, latestSnapshotDate, realtime: false },
+        orders,
+        claims: { counts: claimCounts, openTotal, items: listed },
+      },
+      dataSources: ["NaverOrderSnapshot"],
+      query: { since: input.since ?? null, claimsLimit },
+    },
+  };
+}
+
+/**
+ * 수집 중(화이트리스트)인 카톡 방 목록.
+ *
+ * ⛔ `roomName` 은 싣지 않는다 — 카톡 방 이름은 사람이 붙인 글이고, 1:1 방은 대개 상대의 이름이다.
+ *    방을 가리키는 표지는 매핑된 거래처·셀러의 이름(셀러는 별칭 우선 — P2)으로 대신한다. 그 둘은 이
+ *    워커가 이미 다른 조회(`search_partners`·`get_settlement_report`)로 내보내는 값이다.
+ *    DB 권한도 같은 결이다 — 워커 role 에는 `roomName` 칸의 SELECT 가 없다(20261009150000 마이그레이션).
+ */
+async function listWorkRecordRooms(): Promise<OperationOutcome> {
+  const prisma = getPrisma();
+  const rows = await prisma.chatRoomMapping.findMany({
+    where: { source: WORK_RECORD_SOURCE, collectorType: WORK_RECORD_COLLECTOR, excluded: false },
+    select: { roomKey: true, roomType: true, entityType: true, entityId: true, campaignId: true, lastSyncedAt: true },
+    orderBy: { roomKey: "asc" },
+    take: MAX_WORK_RECORD_ROOMS + 1,
+  });
+  const rowLimitReached = rows.length > MAX_WORK_RECORD_ROOMS;
+  const rooms = rows.slice(0, MAX_WORK_RECORD_ROOMS);
+  const idsOf = (type: string) =>
+    Array.from(new Set(rooms.filter((room) => room.entityType === type && room.entityId).map((room) => room.entityId as string)));
+  const partnerIds = idsOf("PARTNER");
+  const sellerIds = idsOf("SELLER");
+  const [partners, sellers] = await Promise.all([
+    partnerIds.length > 0
+      ? prisma.partner.findMany({ where: { id: { in: partnerIds } }, select: { id: true, name: true } })
+      : Promise.resolve([] as Array<{ id: string; name: string }>),
+    sellerIds.length > 0
+      ? prisma.seller.findMany({ where: { id: { in: sellerIds } }, select: { id: true, name: true, alias: true } })
+      : Promise.resolve([] as Array<{ id: string; name: string; alias: string | null }>),
+  ]);
+  const labels = new Map<string, string>();
+  for (const partner of partners) labels.set(`PARTNER:${partner.id}`, partner.name);
+  for (const seller of sellers) labels.set(`SELLER:${seller.id}`, seller.alias?.trim() || seller.name);
+
+  const items = rooms.map((room) => {
+    const label = room.entityType && room.entityId ? labels.get(`${room.entityType}:${room.entityId}`) : undefined;
+    return {
+      roomKey: room.roomKey,
+      roomType: room.roomType,
+      entityType: room.entityType,
+      entityId: room.entityId,
+      entityLabel: label ? flattenLineBreaks(label) : null,
+      campaignId: room.campaignId,
+      lastCollectedAt: room.lastSyncedAt?.toISOString() ?? null,
+    };
+  });
+  const lines = items.map((item) => {
+    const entity = item.entityType
+      ? `${item.entityType} ${item.entityLabel ?? "(이름 없음)"} id=${item.entityId ?? ""}`
+      : "미매핑";
+    return `${item.roomKey} [${item.roomType ?? "?"}] ${entity} lastCollected=${item.lastCollectedAt ?? "none"}`;
+  });
+  const { summary } = buildBoundedSummary(
+    (shown) =>
+      `list_work_record_rooms: ${items.length} room(s)${rowLimitReached ? ` (truncated at ${MAX_WORK_RECORD_ROOMS})` : ""} shown=${shown}`,
+    lines,
+  );
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(summary),
+    evidenceRefs: boundEvidence(items.map((item) => item.roomKey)),
+    actionProposalId: null,
+    record: {
+      title: `카톡 수집 방 ${items.length}개`,
+      resultSummary: boundSummary(summary),
+      structuredResult: { items, rowLimitReached },
+      dataSources: ["ChatRoomMapping", "Partner", "Seller"],
+      query: {},
+    },
+  };
+}
+
+/**
+ * 화이트리스트 방 하나의 업무기록을 보낸 시각 순으로. 요약은 Muse(봇)가 한다 — 여기는 원문 줄만.
+ *
+ * ⛔ 화이트리스트 밖(없는 방·수집이 꺼진 방·txt 방)은 **같은 답**으로 거부한다. 다르게 답하면 방
+ *    번호를 넣어 보는 것만으로 등록 여부를 알아낼 수 있다.
+ * 🔎 넘침은 두 겹이다: 행 상한(`limit`)과 본문 상한(30k 글자 · 결재함 64KB 아래). 넘치면 다음
+ *    조회의 시작점 `nextSince`(싣지 못한 첫 기록의 시각, `since` 는 포함 비교)를 준다. 요약 글은
+ *    2,000자라 그보다 더 일찍 끊기며, 머리 줄의 `nextSince` 는 **요약에 안 들어간** 첫 기록이다.
+ */
+async function getWorkRecords(input: WorkRecordsInput, now: Date): Promise<OperationOutcome> {
+  const prisma = getPrisma();
+  const mapping = await prisma.chatRoomMapping.findUnique({
+    where: { source_roomKey: { source: WORK_RECORD_SOURCE, roomKey: input.roomKey } },
+    select: { roomKey: true, collectorType: true, excluded: true, lastSyncedAt: true },
+  });
+  if (!mapping || mapping.collectorType !== WORK_RECORD_COLLECTOR || mapping.excluded) {
+    return failure("ROOM_NOT_WHITELISTED", "room is not an active whitelisted room");
+  }
+
+  const limit = input.limit ?? DEFAULT_WORK_RECORDS_LIMIT;
+  const since = new Date(input.since);
+  const until = input.until ? new Date(input.until) : now;
+  const rows = await prisma.workRecord.findMany({
+    where: { source: WORK_RECORD_SOURCE, roomKey: mapping.roomKey, sentAt: { gte: since, lte: until } },
+    select: {
+      sentAt: true,
+      sender: true,
+      rawText: true,
+      isMasked: true,
+      entityType: true,
+      entityId: true,
+      campaignId: true,
+    },
+    orderBy: [{ sentAt: "asc" }, { id: "asc" }],
+    take: limit + 1,
+  });
+  const rowLimitReached = rows.length > limit;
+  const views = rows.slice(0, limit).map(toWorkRecordView);
+  const bounded = boundWorkRecords(views);
+  const records = bounded.records;
+  const nextSince =
+    records.length < views.length
+      ? views[records.length].sentAt
+      : rowLimitReached
+        ? rows[limit].sentAt.toISOString()
+        : null;
+  const collectedThrough = mapping.lastSyncedAt?.toISOString() ?? null;
+  const remaskedCount = records.filter((record) => record.remasked).length;
+
+  const { summary } = buildBoundedSummary((shown) => {
+    const summaryNext = shown < records.length ? records[shown].sentAt : nextSince;
+    return `get_work_records room=${mapping.roomKey} window=${since.toISOString()}..${until.toISOString()} collectedThrough=${collectedThrough ?? "unknown"} realtime=false records=${records.length} shown=${shown} more=${summaryNext !== null} nextSince=${summaryNext ?? "none"}`;
+  }, records.map(formatWorkRecordLine));
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(summary),
+    evidenceRefs: boundEvidence([mapping.roomKey]),
+    actionProposalId: null,
+    record: {
+      title: `카톡 업무기록 ${mapping.roomKey} ${records.length}건`,
+      resultSummary: boundSummary(summary),
+      structuredResult: {
+        roomKey: mapping.roomKey,
+        window: { since: since.toISOString(), until: until.toISOString() },
+        freshness: { collectedThrough, realtime: false },
+        records,
+        rowLimitReached,
+        textCapReached: bounded.textCapReached,
+        truncated: nextSince !== null,
+        nextSince,
+        totalTextChars: bounded.totalTextChars,
+        remaskedCount,
+      },
+      dataSources: ["ChatRoomMapping", "WorkRecord"],
+      query: { roomKey: mapping.roomKey, since: input.since, until: input.until ?? null, limit },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // create_action_proposal — INSERT only (contract 5)
 // ---------------------------------------------------------------------------
 
@@ -829,6 +1087,9 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   search_partners: (input) => searchPartners(input as SearchPartnersInput),
   get_action_proposal: (input) => getActionProposal(input as GetActionProposalInput),
   get_settlement_report: (input) => settlementReport(input as SettlementReportInput),
+  get_store_status: (input, context) => storeStatus(input as StoreStatusInput, context.now),
+  list_work_record_rooms: () => listWorkRecordRooms(),
+  get_work_records: (input, context) => getWorkRecords(input as WorkRecordsInput, context.now),
 };
 
 function buildResult(

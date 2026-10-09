@@ -46,6 +46,9 @@ export const AgentJobOperationSchema = z.enum([
   "search_partners",
   "get_action_proposal",
   "get_settlement_report",
+  "get_store_status",
+  "list_work_record_rooms",
+  "get_work_records",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -396,6 +399,54 @@ const settlementReportInputSchema = z
   })
   .strict();
 
+/** 두 ISO 시각의 선후를 **시각으로** 비교한다 — 문자열 비교는 오프셋이 다르면 틀린다. */
+function refineSinceBeforeUntil(
+  value: { since?: string; until?: string },
+  context: z.RefinementCtx,
+): void {
+  if (value.since && value.until && Date.parse(value.since) > Date.parse(value.until)) {
+    context.addIssue({ code: "custom", path: ["until"], message: "since must not be later than until" });
+  }
+}
+
+/** `get_store_status` 클레임 목록의 상한·기본값. 파이썬 미러가 같은 숫자를 들고 있어야 한다. */
+export const MAX_STORE_STATUS_CLAIMS = 50;
+export const DEFAULT_STORE_STATUS_CLAIMS = 20;
+
+/**
+ * 네이버 스토어 전체 현황(Phase 3 ②, 2026-10-09). 신규·발송대기 건수와 진행 중 취소·반품·교환
+ * 클레임을 **저장된 스냅샷**에서 읽는다 — 네이버를 부르지 않으므로 실시간이 아니다(결과에 마지막
+ * 동기화 시각이 실린다). `since` 를 비우면 실행기가 최근 14일로 잡는다.
+ */
+const storeStatusInputSchema = z
+  .object({
+    claimsLimit: z.number().int().min(1).max(MAX_STORE_STATUS_CLAIMS).optional(),
+    since: isoDateSchema.optional(),
+  })
+  .strict();
+
+/** 수집이 켜진(화이트리스트) 카톡 방 목록(Phase 3 ⑧). 입력은 없다. */
+const listWorkRecordRoomsInputSchema = z.object({}).strict();
+
+/** `get_work_records` 의 행 상한·기본값. */
+export const MAX_WORK_RECORDS_LIMIT = 200;
+export const DEFAULT_WORK_RECORDS_LIMIT = 100;
+
+/**
+ * 카톡 방 하나의 업무 기록(Phase 3 ⑧). `roomKey` 는 `list_work_record_rooms` 가 돌려준 값이어야
+ * 하고, 화이트리스트(수집 중인 방) 밖이면 실행기가 거부한다 — 여기 글자 규칙은 그 앞의 모양
+ * 검사일 뿐이다(카톡 내부 방 번호, 또는 `TXT:` + 해시).
+ */
+const workRecordsInputSchema = z
+  .object({
+    roomKey: z.string().trim().regex(/^[A-Za-z0-9:_-]{1,128}$/),
+    since: isoDateSchema,
+    until: isoDateSchema.optional(),
+    limit: z.number().int().min(1).max(MAX_WORK_RECORDS_LIMIT).optional(),
+  })
+  .strict()
+  .superRefine(refineSinceBeforeUntil);
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -405,6 +456,9 @@ const operationInputSchemas = {
   search_partners: searchPartnersInputSchema,
   get_action_proposal: getActionProposalInputSchema,
   get_settlement_report: settlementReportInputSchema,
+  get_store_status: storeStatusInputSchema,
+  list_work_record_rooms: listWorkRecordRoomsInputSchema,
+  get_work_records: workRecordsInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;
