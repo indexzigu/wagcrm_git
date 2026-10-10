@@ -28,3 +28,11 @@
 - 함정/제약: <다음 세션이 걸려 넘어질 것>
 - 미결(오너): <오너만 결정할 수 있는 것>
 ```
+
+## `owner/` 하위 폴더 — 오너용 변경 안내서 (2026-10-09)
+
+- `docs/handoff/owner/<슬러그>.html`(+png). 독자는 오너. 내용·시점은 CORE.md P4 「변경 안내서」,
+  이 레포 적용면은 AGENTS.md DoD 7-b.
+- 파일명은 슬러그 고정(PR 번호는 파일 안에) — 착수 때 보낸 링크가 깨지지 않게.
+- 캡처는 가공 데이터만(`dev:demo`/`dev:local`). 이 폴더는 `docs/handoff/*` 규칙으로 git 미추적.
+- 수명주기: 상위 핸드오프를 `docs/archive/handoff/`로 옮길 때 `docs/archive/handoff/owner/`로 함께 이동.
