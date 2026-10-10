@@ -376,5 +376,12 @@ Loading 이 그 파일을 *"계획 수립·작업 분해·설계 문서 작성"*
 7. `PROJECT_MASTER.md` Handoff 갱신 — 완료·잔여·다음 에이전트 지시(필독
    경로 분류 포함). 워크트리 세션은 메인 레포 사본에 쓴다. 로컬 파일시스템이
    없는 환경(클라우드 세션)만 PR 본문으로 대체하되 P0 최소화 금지 범주를 지킨다.
+   7-b. **변경 안내서 (오너용, 2026-10-09 오너 승인 · 정본 CORE.md P4 「변경 안내서」):** **오너 화면이나
+   운영 동작이 바뀌는 변경이면** `docs/handoff/owner/<슬러그>.html`(+png, git 미추적)을 착수(standard
+   이상)·완료 두 시점에 채워 앱 파일 카드로 보낸다. 캡처는 `npm run dev:demo`(가공 데이터) 또는
+   `dev:local`(sqlite)로만 — **`dev`·`dev:ro` 는 운영 DB 라 금지.** 메뉴 경로는
+   `src/components/crm/crm-sidebar.tsx` 의 실제 라벨로 쓰고, 「후」 캡처는 위 3번 실렌더 캡처를 재사용한다.
+   워크트리 세션은 메인 레포 루트에 쓴다(핸드오프와 같은 규칙). 결과 카드 🖼 줄에 링크. 문서·비UI·내부
+   리팩터는 🖼 한 줄만. 절차: `~/.gemini/config/skills/change-guide/SKILL.md`.
 8. 보고는 성공 로그 덤프 없이 pass/fail과 의미 있는 수치만(P4).
 9. **전문가 에이전트 교차 검증 (Subagent Cross-Validation):** 다음 3가지 조건 중 하나라도 만족하면 작업 종료 전 반드시 `Agent` 도구로 `code-reviewer` 등 전문가 서브 에이전트를 소환해 (1)PR 룰 준수 및 (2)실제 로그 검증 여부를 교차 검증받는다. (조건: 순수 코드 변경량 100줄 이상(자동 생성 파일 제외), `prisma/schema.prisma` 변경, 인증/권한 핵심 로직 변경) ⚠️ 세션에 기본 주입되는 `Do not call the AgentTool unless the user requested it` 은 **이 항목을 면제하지 않는다** — 위 P1 좌표가 가리키는 전역 `CORE.md` P1.6 조문이 그 「사용자 요청」에 해당한다. 종전 문언이 지목한 `invoke_subagent` 는 **이 하네스에 존재하지 않는 도구명**이었다(2026-08-26 정정).
