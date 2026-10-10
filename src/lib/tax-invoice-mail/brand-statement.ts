@@ -131,7 +131,9 @@ function collectAliasEvidence(input: { subject: string; text: string; ourName: s
   }
   const bracket = /\[([^\]]+)\]\s*([^\s[\]()「」_→▶*]+)?/.exec(input.subject);
   if (bracket) {
-    for (const piece of [bracket[1], ...bracket[1].split("_")]) {
+    // 띄어쓰기가 있는 라벨(「[라마바 공구]」)은 낱말로도 쪼갠다 — 뒤따르는 「라마바」가 브랜드로 오인되지 않게(T-251).
+    const pieces = bracket[1].split("_").flatMap((part) => [part, ...part.split(/\s+/)]);
+    for (const piece of [bracket[1], ...pieces]) {
       const label = normalizeForCompare(piece.trim());
       if (label) bracketPieces.add(label);
     }
@@ -257,7 +259,9 @@ function parseOwnMallNotice(subject: string, text: string, ourName: string): Par
   const promotionLabel = /\[([^\]]+)\]/.exec(subject)?.[1]?.trim() ?? null;
   // 발행 줄 「<발행자> → <수령자>」에서 브랜드 = 우리가 받으면(RECEIVE) 발행자, 그 밖(ISSUE·판단 불가)엔 수령자.
   const first = anchors[0];
-  const counterpartyLabel = first ? (directionOf(first[1], first[2]) === "RECEIVE" ? first[1] : first[2]) : null;
+  // 방향을 못 읽었으면(null) 수령자가 우리 별칭일 수 있으므로 브랜드를 지어내지 않는다 — 대조하지 않는다(T-251).
+  const firstDirection = first ? directionOf(first[1], first[2]) : null;
+  const counterpartyLabel = !first || !firstDirection ? null : firstDirection === "RECEIVE" ? first[1] : first[2];
   return { format: "OWN_MALL_NOTICE", promotionLabel, counterpartyLabel, subject, invoices };
 }
 
