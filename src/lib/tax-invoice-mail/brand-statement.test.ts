@@ -183,6 +183,18 @@ describe("parseSettlementStatement — 자사몰 정산내역서(평문)", () =>
     const parsed = parseSettlementStatement({ subject: "[라마바] 라마바 공구 정산내역서 송부의 건", text, ourName: OURS });
     expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
   });
+  it("대괄호 안 이름에 띄어쓰기가 있어도(「[라마바 공구] 라마바 …」) 뒤따르는 라마바는 브랜드가 아니다 — 라마바 → 브랜드A 는 ISSUE (T-251)", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
+    const parsed = parseSettlementStatement({ subject: "[라마바 공구] 라마바 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual(["ISSUE", "ISSUE"]);
+    expect(parsed?.counterpartyLabel).toBe("브랜드A");
+  });
+  it("방향을 못 읽은 줄이면 수령자(별칭일 수 있음)를 브랜드로 대지 않는다 — counterpartyLabel null (T-251)", () => {
+    const text = OWN_MALL_TWO_BLOCKS.replaceAll("우리상사 →", "회사X →").replaceAll("→ 브랜드A 세금계산서", "→ 회사Y 세금계산서");
+    const parsed = parseSettlementStatement({ subject: "[라마바] 정산내역서", text, ourName: OURS });
+    expect(parsed?.invoices.map((i) => i.direction)).toEqual([null, null]);
+    expect(parsed?.counterpartyLabel).toBeNull();
+  });
   it("셀러를 「○○ 담당자」라 쓴 드문 글에서는 「○○님」 표기가 취소돼 브랜드 조각과 동점 — 뒤집지 않고 null", () => {
     const text = `라마바 담당자입니다. ${OWN_MALL_TWO_BLOCKS}`.replace("라마바님의 자사몰", "자사몰").replaceAll("우리상사 →", "라마바 →").replaceAll("→ 우리상사", "→ 라마바");
     const parsed = parseSettlementStatement({ subject: "[브랜드A_라마바] 정산내역서", text, ourName: OURS });
