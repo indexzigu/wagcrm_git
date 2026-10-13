@@ -109,7 +109,7 @@ describe("campaign-patch — 409 그룹 충돌 안내", () => {
     expect(result.error).toBe(CAMPAIGN_GROUP_CONFLICT_MESSAGE);
   });
 
-  it("재무 값 충돌(W1, code 동반 409)은 그룹 문구가 아니라 stale 로 갈라진다 — 다시 누르면 안 된다", async () => {
+  it("재무 값 충돌(code 동반 409)은 그룹 문구가 아니라 stale 로 갈라진다 — 다시 누르면 안 된다", async () => {
     stubFetch({
       ok: false,
       status: 409,

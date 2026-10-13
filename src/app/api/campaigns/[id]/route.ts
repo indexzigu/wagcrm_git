@@ -208,7 +208,7 @@ const updateCampaignSchema = z.object({
     sellingPrice: z.coerce.number().nonnegative().nullable().optional(),
   })).optional(),
   /**
-   * W1 낙관적 동시성 — 화면이 본 재무 필드 이전 값(`campaign-financial-guard.ts`).
+   * 낙관적 동시성 — 화면이 본 재무 필드·부가 항목·품목의 이전 값(`campaign-financial-guard.ts`).
    * 저장 필드가 아니라 **조건**이다: 아래에서 `data` 와 분리해 서비스에만 넘긴다.
    */
   expectedFinancials: financialExpectationSchema.optional(),

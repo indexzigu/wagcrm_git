@@ -1,10 +1,11 @@
 /**
- * 정산 재무 카드 저장의 낙관적 동시성 가드(W1) — 「낡은 화면이 새 값을 덮어쓰지 못하게」.
+ * 캠페인 재무 저장의 낙관적 동시성 가드 — 「낡은 화면이 새 값을 덮어쓰지 못하게」.
+ * 적용 화면: 정산 재무 카드(재무 칸·부가 항목) · 매출 품목 표(품목 목록).
  *
  * 배경(2026-10-13 운영 관찰): 정산 화면 패널이 캐시된 옛 행을 보여 주는 동안 재무 카드를
  * 저장하면, 클라이언트가 계산한 diff 의 **기준선**이 옛 값이다. 특히 정산 부가 항목은
  * 저장 시 **전체 교체**(campaignService deleteMany + create)라, 옛 목록으로 저장하면 그사이
- * 다른 화면에서 추가된 항목이 **실제로 삭제**된다.
+ * 다른 화면에서 추가된 항목이 **실제로 삭제**된다. 매출 품목 표도 품목 목록을 통째로 보낸다.
  *
  * 계약: 클라이언트는 **이번에 쓰는 필드만** "내가 화면에서 본 이전 값"을 함께 보낸다
  * (`buildFinancialExpectation`). 서버는 같은 트랜잭션 안에서 현재 DB 값과 대조하고
@@ -51,6 +52,14 @@ export type SettlementItemComparable = {
   note: string | null | undefined;
 };
 
+/**
+ * 품목 대조 단위 — 품목 구성(dealId)·수량·실판매액만 본다.
+ * ⚠️ 수수료율·판매가·공급가는 대조하지 않는다: 화면 행은 스냅샷이 비면 **딜 기본값으로 채워**
+ * 보여 주므로(`campaign-row.ts` resolveSnapshotNumber) 원본 컬럼과 비교하면 바뀐 게 없어도
+ * 충돌이 난다. 그 값들의 동시 수정은 이 가드 밖이다.
+ */
+export type DealComparable = { dealId: string; quantity: unknown; actualSales: unknown };
+
 export type FinancialExpectation = {
   fields?: Partial<Record<GuardedFinancialField, GuardScalar>>;
   /** 부가 항목을 교체할 때만 — 화면에서 본 목록(정렬 순서 그대로). */
@@ -60,6 +69,8 @@ export type FinancialExpectation = {
     amount: number;
     note: string | null;
   }>;
+  /** 품목 목록을 교체할 때만 — 화면이 본 품목(순서 무관). */
+  campaignDeals?: Array<{ dealId: string; quantity: number; actualSales: number }>;
 };
 
 const guardScalarSchema = z.union([z.number(), z.boolean(), z.null()]);
@@ -84,6 +95,10 @@ export const financialExpectationSchema = z
         }),
       )
       .max(50)
+      .optional(),
+    campaignDeals: z
+      .array(z.object({ dealId: z.string(), quantity: z.number(), actualSales: z.number() }))
+      .max(200)
       .optional(),
   })
   .strict();
@@ -113,6 +128,16 @@ function normalizeItems(items: readonly SettlementItemComparable[]) {
     }));
 }
 
+function normalizeDeals(deals: readonly DealComparable[]) {
+  return deals
+    .map((deal) => ({
+      dealId: deal.dealId,
+      quantity: normalizeGuardValue(deal.quantity),
+      actualSales: normalizeGuardValue(deal.actualSales),
+    }))
+    .sort((a, b) => a.dealId.localeCompare(b.dealId));
+}
+
 /**
  * 클라이언트 — 패치에 실린 가드 대상 필드마다 「화면이 본 이전 값」을 담는다.
  * 패치가 가드 대상을 하나도 안 쓰면 undefined(대조 없음).
@@ -120,6 +145,7 @@ function normalizeItems(items: readonly SettlementItemComparable[]) {
 export function buildFinancialExpectation(
   baseline: Partial<Record<GuardedFinancialField, unknown>> & {
     settlementItems?: readonly SettlementItemComparable[] | null;
+    campaignDeals?: readonly DealComparable[] | null;
   },
   patch: Record<string, unknown>,
 ): FinancialExpectation | undefined {
@@ -135,16 +161,24 @@ export function buildFinancialExpectation(
       amount: typeof item.amount === "number" ? item.amount : 0,
     }));
   }
+  if (patch.campaignDeals !== undefined) {
+    expectation.campaignDeals = normalizeDeals(baseline.campaignDeals ?? []).map((deal) => ({
+      dealId: deal.dealId,
+      quantity: deal.quantity === null || typeof deal.quantity === "boolean" ? 0 : deal.quantity,
+      actualSales: deal.actualSales === null || typeof deal.actualSales === "boolean" ? 0 : deal.actualSales,
+    }));
+  }
   return Object.keys(expectation).length > 0 ? expectation : undefined;
 }
 
 /**
  * 서버 — 현재 DB 값과 기대값을 대조해 어긋난 필드 이름을 돌려준다(빈 배열 = 통과).
- * 부가 항목 목록이 어긋나면 `"settlementItems"` 한 개로 보고한다.
+ * 부가 항목·품목 목록이 어긋나면 `"settlementItems"`·`"campaignDeals"` 한 개로 보고한다.
  */
 export function findFinancialConflicts(
   current: Partial<Record<GuardedFinancialField, unknown>> & {
     settlementItems?: readonly SettlementItemComparable[] | null;
+    campaignDeals?: readonly DealComparable[] | null;
   },
   expectation: FinancialExpectation,
 ): string[] {
@@ -159,6 +193,13 @@ export function findFinancialConflicts(
     const expectedItems = normalizeItems(expectation.settlementItems);
     if (JSON.stringify(actualItems) !== JSON.stringify(expectedItems)) {
       conflicts.push("settlementItems");
+    }
+  }
+  if (expectation.campaignDeals !== undefined) {
+    const actualDeals = normalizeDeals(current.campaignDeals ?? []);
+    const expectedDeals = normalizeDeals(expectation.campaignDeals);
+    if (JSON.stringify(actualDeals) !== JSON.stringify(expectedDeals)) {
+      conflicts.push("campaignDeals");
     }
   }
   return conflicts;

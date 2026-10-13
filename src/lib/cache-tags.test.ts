@@ -14,7 +14,7 @@ import {
   revalidateCrmTags,
 } from "./cache-tags";
 
-// F1 — 정산 태그는 즉시 만료한다. "max"(stale-while-revalidate)는 무효화 뒤 첫 요청에 옛 값을
+// 정산 태그는 즉시 만료한다. "max"(stale-while-revalidate)는 무효화 뒤 첫 요청에 옛 값을
 // 내주고, 정산 패널은 그 캐시 행을 편집 기준선으로 쓴다(실사고 2026-10-13, cache-tags.ts 주석).
 
 function profileFor(tag: string) {

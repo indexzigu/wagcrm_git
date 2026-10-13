@@ -48,6 +48,11 @@ import { CampaignShortLinkCard } from "./campaign-short-link-card";
 import { resolveCampaignLinkSurface } from "@/lib/campaign-link-surface";
 import { patchCampaign } from "@/lib/campaign-patch";
 import { buildFinancialExpectation } from "@/lib/campaign-financial-guard";
+import {
+  campaignFreshnessKey,
+  fetchLatestCampaignRow,
+  mergeListOnlyFields,
+} from "@/lib/campaign-latest-row";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -455,12 +460,12 @@ export function CampaignSidePanel({
     };
   }, [campaign, open]);
 
-  // F2 — 패널을 열 때(형제 이동 포함) 그 캠페인 한 건을 서버에서 다시 읽는다.
+  // 열 때 재조회 — 패널을 열 때(형제 이동 포함) 그 캠페인 한 건을 서버에서 다시 읽는다.
   // 부모가 넘긴 행은 페이지 캐시에서 온 것이라 저장 직후엔 **옛 값**일 수 있다
   // (정산 화면 실사고 2026-10-13 — `cache-tags.ts` IMMEDIATE_EXPIRY_TAGS 주석). 캐시 쪽을
   // 고쳐도 브라우저 화면 이동 캐시·다른 탭의 저장은 남으므로, 편집 기준선은 여기서 확정한다.
   // 다를 때만 `onCampaignUpdated` 로 흘려보낸다 — 같은데도 부르면 열 때마다 리포트·형제
-  // 재조회가 돈다. 재조회가 실패하면 잠금을 풀고 쓰기 가드(W1)에 맡긴다(영구 잠금은 작업 중단).
+  // 재조회가 돈다. 재조회가 실패하면 잠금을 풀고 저장 쪽 낙관적 동시성 가드(`campaign-financial-guard.ts`)에 맡긴다(영구 잠금은 작업 중단).
   const campaignId = campaign?.id ?? null;
   const latestCampaignRef = useRef(campaign);
   const onCampaignUpdatedRef = useRef(onCampaignUpdated);
@@ -475,9 +480,7 @@ export function CampaignSidePanel({
     setFreshCheck({ id: campaignId, pending: true });
     void (async () => {
       try {
-        const response = await fetch(`/api/campaigns/${campaignId}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const fresh = (await response.json()) as CampaignRow;
+        const fresh = await fetchLatestCampaignRow(campaignId);
         if (cancelled) return;
         const current = latestCampaignRef.current;
         // 단조성 — 재조회 사이 다른 섹션 저장으로 화면 행이 더 새로워졌으면 옛 응답을 버린다.
@@ -939,6 +942,7 @@ export function CampaignSidePanel({
             <CampaignDealsTable
               campaign={campaign}
               onCampaignUpdated={onCampaignUpdated}
+              isFreshnessPending={isFreshnessPending}
             />
             <SettlementFinancialSummary
               campaign={campaign}
@@ -959,6 +963,7 @@ export function CampaignSidePanel({
             <CampaignDealsTable
               campaign={campaign}
               onCampaignUpdated={onCampaignUpdated}
+              isFreshnessPending={isFreshnessPending}
             />
 
             {/* 배송비 설정 (카드 스타일) */}
@@ -1756,30 +1761,7 @@ function SettlementItemEditor({
   );
 }
 
-/**
- * 패널 재조회(F2)의 변경 판정 키. 단건 GET 응답에는 목록 행에 없는 필드(`salesTask`)가
- * 붙어 통째 비교는 항상 「다름」이 된다 — 행 수정 시각과, 그 시각을 안 올릴 수 있는
- * 자식 행(부가 항목·품목)만 본다.
- */
-function campaignFreshnessKey(row: CampaignRow) {
-  return JSON.stringify([row.updatedAt, row.settlementItems ?? [], row.campaignDeals ?? []]);
-}
-
-/**
- * 단건 GET 은 목록 조회만 계산하는 필드(가격 위반 요약·셀러 캠페인 수)를 기본값(없음·0)으로
- * 돌려준다 — 그대로 갈아끼우면 패널을 **열기만 해도** 카드의 위반 배지가 사라진다. 그 필드는
- * 목록 행 값을 유지한다.
- */
-function mergeListOnlyFields(listRow: CampaignRow, fresh: CampaignRow): CampaignRow {
-  return {
-    ...fresh,
-    hasPriceViolation: listRow.hasPriceViolation,
-    violatedDealCount: listRow.violatedDealCount,
-    campaignCount: listRow.campaignCount,
-  };
-}
-
-/** W1 재무 값 충돌 — 저장은 버려졌고, 화면은 최신 행으로 바꿔야 한다. */
+/** 재무 값 충돌(409) — 저장은 버려졌고, 화면은 최신 행으로 바꿔야 한다. */
 class SettlementFinancialStaleError extends Error {}
 
 async function saveSettlementFinancialFields(
@@ -1787,7 +1769,7 @@ async function saveSettlementFinancialFields(
   editBaseline: CampaignRow,
   patch: SettlementFinancialPatch,
 ): Promise<CampaignRow> {
-  // W1 — 이번에 쓰는 필드마다 「화면이 본 이전 값」을 함께 보낸다. 서버가 같은 트랜잭션
+  // 낙관적 동시성 — 이번에 쓰는 필드마다 「화면이 본 이전 값」을 함께 보낸다. 서버가 같은 트랜잭션
   // 안에서 대조해 어긋나면 409 로 저장 전체를 버린다(`campaign-financial-guard.ts`).
   // 기준은 **편집을 연 순간의 행**이다 — 초안이 그 값으로 채워졌으므로, 편집 도중 패널 행이
   // 바뀌어(다른 섹션 저장) 초안과 어긋난 칸이 패치에 실리면 그 칸도 409 로 걸려야 한다.
@@ -1816,12 +1798,12 @@ function SettlementFinancialSummary({
 }: {
   campaign: CampaignRow;
   onCampaignUpdated: (campaign: CampaignRow) => void;
-  /** F2 — 패널이 최신 행을 확인하는 중이면 편집을 열지 않는다(옛 값이 기준선이 되지 않게). */
+  /** 패널이 열 때 최신 행을 확인하는 중이면 편집을 열지 않는다(옛 값이 기준선이 되지 않게). */
   isFreshnessPending: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  // W1 — 초안을 채운 그 행(편집 시작 시점). 저장 기대값의 기준선이다(`saveSettlementFinancialFields`).
+  // 초안을 채운 그 행(편집 시작 시점). 저장 기대값의 기준선이다(`saveSettlementFinancialFields`).
   const editBaselineRef = useRef<CampaignRow | null>(null);
   const [draft, setDraft] = useState(() => ({
     settlementSupplyCost: String(
@@ -2239,9 +2221,7 @@ function SettlementFinancialSummary({
         // 저장은 서버가 버렸다 — 입력은 옛 기준선 위의 값이라 그대로 다시 보낼 수 없다.
         // 최신 행으로 화면을 바꾸고 편집을 닫는다(문구가 「불러왔으니」라 실패 시 다른 문구).
         try {
-          const response = await fetch(`/api/campaigns/${campaign.id}`, { cache: "no-store" });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          onCampaignUpdated((await response.json()) as CampaignRow);
+          onCampaignUpdated(mergeListOnlyFields(campaign, await fetchLatestCampaignRow(campaign.id)));
           setIsEditing(false);
           toast.error(err.message);
         } catch (refreshError) {

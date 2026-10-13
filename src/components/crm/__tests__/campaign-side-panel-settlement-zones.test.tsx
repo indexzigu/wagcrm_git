@@ -91,7 +91,7 @@ const campaign: CampaignRow = {
   ],
 };
 
-/** 패널은 열 때 최신 행을 확인하는 동안 편집을 잠근다(F2) — 열릴 때까지 기다린다. */
+/** 패널은 열 때 최신 행을 확인하는 동안 편집을 잠근다 — 열릴 때까지 기다린다. */
 async function enabledEditButton() {
   const button = await screen.findByRole("button", { name: "편집" });
   await waitFor(() => expect(button).toBeEnabled());
@@ -365,7 +365,7 @@ describe("정산 기준액 — 자동/수동", () => {
   });
 });
 
-// F2·W1(2026-10-13) — 부모가 넘긴 행은 페이지 캐시에서 와 옛 값일 수 있다. 패널은 열 때 한 건을
+// 열 때 재조회·낙관적 동시성(2026-10-13) — 부모가 넘긴 행은 페이지 캐시에서 와 옛 값일 수 있다. 패널은 열 때 한 건을
 // 다시 읽고 그 전엔 재무 편집을 잠그며, 저장이 「값이 바뀜」 409 로 버려지면 최신 행으로 바꾼다.
 describe("최신 값 확인 — 옛 화면이 편집 기준선이 되지 않는다", () => {
   type Handler = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;

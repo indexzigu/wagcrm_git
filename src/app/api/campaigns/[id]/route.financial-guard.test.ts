@@ -3,7 +3,7 @@ import { PATCH } from "./route";
 import { CAMPAIGN_FINANCIAL_STALE_CODE } from "@/lib/campaign-financial-guard";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
 
-// W1 — 정산 재무 카드의 낙관적 동시성 가드. 화면이 본 이전 값(`expectedFinancials`)이 tx 안의
+// 재무 저장의 낙관적 동시성 가드. 화면이 본 이전 값(`expectedFinancials`)이 tx 안의
 // 현재 DB 값과 다르면 409 + `code` 로 저장 전체를 버린다(`campaign-financial-guard.ts`).
 // 실제 서비스 경로(campaignService.updateCampaign)를 탄다. 금액은 전부 가공이다(P0).
 
@@ -136,13 +136,14 @@ function currentInDb(overrides: Record<string, unknown> = {}) {
     settlementItems: [
       { invoiceMode: "SALES_ISSUE", counterparty: "BRAND", amount: "50000", note: "광고비" },
     ],
+    campaignDeals: [{ dealId: "d-1", quantity: 6, actualSales: "6000000" }],
     ...overrides,
   };
 }
 
 const SEEN_ITEMS = [{ invoiceMode: "SALES_ISSUE", counterparty: "BRAND", amount: 50_000, note: "광고비" }];
 
-describe("PATCH expectedFinancials — 낡은 화면이 새 값을 덮어쓰지 못한다(W1)", () => {
+describe("PATCH expectedFinancials — 낡은 화면이 새 값을 덮어쓰지 못한다", () => {
   it("화면이 본 값이 DB 와 다르면 409 + code + 어긋난 필드, 아무것도 쓰지 않고 캐시도 안 깬다", async () => {
     txFindUniqueMock.mockResolvedValue(currentInDb({ operatingExpense: "120000" }));
 
@@ -198,6 +199,19 @@ describe("PATCH expectedFinancials — 낡은 화면이 새 값을 덮어쓰지 
 
     expect(response.status).toBe(200);
     expect(writtenData().settlementItems).toBeDefined();
+  });
+
+  it("품목 교체 — 그사이 수량이 바뀌었으면 옛 품목 목록으로 덮지 않고 409", async () => {
+    txFindUniqueMock.mockResolvedValue(currentInDb({ campaignDeals: [{ dealId: "d-1", quantity: 9, actualSales: "6000000" }] }));
+
+    const response = await patch({
+      campaignDeals: [{ dealId: "d-1", quantity: 7, actualSales: 7_000_000 }],
+      expectedFinancials: { campaignDeals: [{ dealId: "d-1", quantity: 6, actualSales: 6_000_000 }] },
+    });
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).fields).toEqual(["campaignDeals"]);
+    expect(txUpdateMock).not.toHaveBeenCalled();
   });
 
   it("기대값이 없으면(다른 화면의 저장) 대조 없이 종전대로 저장한다", async () => {

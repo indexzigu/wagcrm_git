@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildFinancialExpectation, findFinancialConflicts } from "./campaign-financial-guard";
 
-// W1 판정 함수 — 클라이언트(화면 행)와 서버(DB Decimal)가 같은 값을 같다고 봐야 거짓 409 가 없다.
+// 낙관적 동시성 판정 함수 — 클라이언트(화면 행)와 서버(DB Decimal)가 같은 값을 같다고 봐야 거짓 409 가 없다.
 // 금액은 전부 가공이다(P0).
 
 const ITEM = { invoiceMode: "SALES_ISSUE", counterparty: "BRAND", amount: 50_000, note: "광고비" };
@@ -60,5 +60,35 @@ describe("findFinancialConflicts — 서버 대조", () => {
     expect(
       findFinancialConflicts({ operatingExpense: "0", miscExpense: "999" }, { fields: { operatingExpense: 0 } }),
     ).toEqual([]);
+  });
+});
+
+describe("품목 목록 대조 — 매출 품목 표는 목록을 통째로 교체한다", () => {
+  const DEAL_A = { dealId: "d-a", quantity: 3, actualSales: 90_000 };
+  const DEAL_B = { dealId: "d-b", quantity: 1, actualSales: 20_000 };
+
+  it("품목을 보낼 때만 화면이 본 품목(구성·수량·실판매액)을 싣는다 — 수수료율·판매가는 싣지 않는다", () => {
+    const expectation = buildFinancialExpectation(
+      { campaignDeals: [{ ...DEAL_B, feeRate: 30 } as typeof DEAL_B, DEAL_A] },
+      { campaignDeals: [] },
+    );
+    expect(expectation).toEqual({ campaignDeals: [DEAL_A, DEAL_B] });
+  });
+
+  it("순서가 달라도 같은 품목이면 통과, Decimal 문자열도 같은 값으로 본다", () => {
+    expect(
+      findFinancialConflicts(
+        { campaignDeals: [{ ...DEAL_B, actualSales: "20000" }, DEAL_A] },
+        { campaignDeals: [DEAL_A, DEAL_B] },
+      ),
+    ).toEqual([]);
+  });
+
+  it("그사이 수량이 바뀌었거나 품목이 추가됐으면 campaignDeals 하나로 보고한다", () => {
+    const expectation = { campaignDeals: [DEAL_A] };
+    expect(findFinancialConflicts({ campaignDeals: [{ ...DEAL_A, quantity: 4 }] }, expectation)).toEqual([
+      "campaignDeals",
+    ]);
+    expect(findFinancialConflicts({ campaignDeals: [DEAL_A, DEAL_B] }, expectation)).toEqual(["campaignDeals"]);
   });
 });
