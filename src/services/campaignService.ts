@@ -21,7 +21,16 @@ import {
 } from "@/services/campaignGroupService";
 import { computeAutoStatus } from "@/lib/settlement-status";
 import { syncCampaignLinkExpiry } from "@/lib/short-link";
-import type { DecimalLike } from "@/lib/campaign-row";
+import {
+  resolveCampaignDealPrices,
+  type CampaignDealPriceSource,
+  type DecimalLike,
+} from "@/lib/campaign-row";
+import {
+  findFinancialConflicts,
+  GUARDED_FINANCIAL_FIELDS,
+  type FinancialExpectation,
+} from "@/lib/campaign-financial-guard";
 import {
   normalizeSettlementItemMode,
   type SettlementCounterparty,
@@ -178,7 +187,12 @@ export type UpdateCampaignResult =
        */
       propagatedStatusSiblingIds: string[];
     }
-  | { ok: false; reason: "membership-changed" };
+  | { ok: false; reason: "membership-changed" }
+  /**
+   * 재무 저장의 낙관적 동시성 가드 — 화면이 본 이전 값과 현재 DB 값이 달라
+   * 트랜잭션 전체를 버렸다. `fields` 는 어긋난 필드 이름(`campaign-financial-guard.ts`).
+   */
+  | { ok: false; reason: "financial-stale"; fields: string[] };
 
 export const campaignService = {
   async getCampaignsList(params: {
@@ -390,6 +404,8 @@ export const campaignService = {
     plan: CampaignUpdatePlan;
     /** 이력 actor(그룹 상태 연동의 형제 이력에 쓴다). 생략 시 "SYSTEM". */
     actor?: string;
+    /** 낙관적 동시성 — 화면이 본 재무 필드·부가 항목·품목의 이전 값. 있으면 쓰기 전에 같은 tx 에서 대조한다. */
+    expectedFinancials?: FinancialExpectation;
   }): Promise<UpdateCampaignResult> {
     const { id, data, previous, plan } = input;
     const actor = input.actor ?? "SYSTEM";
@@ -446,12 +462,68 @@ export const campaignService = {
     const manualStatusChanged = Boolean(data.status) && data.status !== previous.status;
     const nextGroupStatus = manualStatusChanged ? data.status : data.status ? undefined : autoStatus;
 
+    // 낙관적 동시성 대조가 어긋나면 tx 가 null 을 돌려주고 이 값이 채워진다(멤버십 409 와 가르기 위해).
+    let staleFinancialFields: string[] | null = null;
+
     const campaign = await prisma.$transaction(async (tx) => {
       // 🪤 락 순서: 그룹 상태 연동이 있으면 **어떤 행도 쓰기 전에** 그룹 락부터 잡는다 —
       // 팬아웃·롤업은 「락 → 멤버 행」 순이라, 원본 행을 먼저 쓰면 교착(40P01)이 난다
       // (`lockCampaignGroup` 주석). 같은 tx 의 이후 재획득은 재진입이다.
       if (previous.groupId && nextGroupStatus) {
         await lockCampaignGroup(tx, previous.groupId);
+      }
+
+      // 낙관적 동시성 — **어떤 행도 쓰기 전에** 대조한다(여기서 버리면 부수효과가 없다). 라우트의
+      // `previous` 가 아니라 tx 안에서 다시 읽는다 — 라우트 조회와 이 지점 사이의 쓰기도 잡는다.
+      // ⚠️ 행 잠금(FOR UPDATE)은 걸지 않는다: sqlite(dev:local·test:ci)에 없는 구문이고,
+      // 막으려는 사고는 「몇 분~몇 시간 낡은 화면」이지 밀리초 경합이 아니다.
+      if (input.expectedFinancials) {
+        const current = await tx.salesCampaign.findUnique({
+          where: { id },
+          select: {
+            ...Object.fromEntries(GUARDED_FINANCIAL_FIELDS.map((field) => [field, true])),
+            settlementItems: {
+              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              select: { invoiceMode: true, counterparty: true, amount: true, note: true },
+            },
+            campaignDeals: {
+              select: {
+                dealId: true,
+                quantity: true,
+                actualSales: true,
+                feeRate: true,
+                sellerMarginRate: true,
+                costPrice: true,
+                sellingPrice: true,
+                deal: {
+                  select: { totalCommissionRate: true, brokerageCommissionRate: true, costPrice: true, sellingPrice: true },
+                },
+              },
+            },
+          },
+        });
+        // 품목은 화면 행과 같은 채움 규칙을 거친 값으로 대조한다(`resolveCampaignDealPrices`).
+        const currentDeals = (current?.campaignDeals ?? []) as Array<
+          { dealId: string; quantity: number; actualSales: DecimalLike } & CampaignDealPriceSource
+        >;
+        const conflicts = current
+          ? findFinancialConflicts(
+              {
+                ...(current as Parameters<typeof findFinancialConflicts>[0]),
+                campaignDeals: currentDeals.map((cd) => ({
+                  dealId: cd.dealId,
+                  quantity: cd.quantity,
+                  actualSales: cd.actualSales,
+                  ...resolveCampaignDealPrices(cd),
+                })),
+              },
+              input.expectedFinancials,
+            )
+          : ["campaign"];
+        if (conflicts.length > 0) {
+          staleFinancialFields = conflicts;
+          return null;
+        }
       }
 
       if (isGrouped && previous.groupId && Object.keys(groupSharedEventUpdates).length > 0) {
@@ -702,6 +774,7 @@ export const campaignService = {
       return updated;
     });
 
+    if (staleFinancialFields) return { ok: false, reason: "financial-stale", fields: staleFinancialFields };
     if (!campaign) return { ok: false, reason: "membership-changed" };
 
     return { ok: true, campaign, fannedOutSiblings, propagatedStatusSiblingIds };

@@ -5,6 +5,8 @@
  * 저장 도중 그룹 멤버 구성이 바뀌면 **409** 를 반환한다(낙관적 동시성 제어 —
  * 라우트가 멤버십 스냅샷을 재확인하고 어긋나면 트랜잭션을 통째로 버린다).
  * 이 409 는 "저장 실패"가 아니라 **"다시 누르면 되는 상태"**다.
+ * ⚠️ 예외: 본문 `code` 가 `CAMPAIGN_FINANCIAL_STALE` 인 409(재무 값 충돌)는 화면 값이 낡았다는
+ *    뜻이라 **다시 누르면 안 된다** — 결과의 `stale` 로 갈라지고 호출처가 최신 행을 다시 읽는다.
  *
  * ⛔ 호출처에서 `fetch("/api/campaigns/...", { method: "PATCH" })` 를 직접 쓰지 말 것.
  * 실사고(2026-08-07 전수조사): 8개 파일 17개 호출처가 전부 `if (!response.ok)` 만
@@ -12,6 +14,8 @@
  * 않았다. 분기를 호출처마다 복사하면 같은 상태가 다시 갈라진다.
  * 재유입은 `campaign-patch.contract.test.ts` 의 소스 전수 스캔이 막는다.
  */
+
+import { CAMPAIGN_FINANCIAL_STALE_CODE } from "@/lib/campaign-financial-guard";
 
 /**
  * 그룹 멤버십 충돌(409) 안내 — 문구 정본. 호출처에서 다시 적지 말 것.
@@ -27,6 +31,14 @@
  */
 export const CAMPAIGN_GROUP_CONFLICT_MESSAGE =
   "그룹 구성이 방금 바뀌었습니다. 다시 시도해주세요.";
+
+/**
+ * 재무 값 충돌(409) 안내 — 문구 정본. 화면이 본 값이 저장 전에 이미 바뀌어 서버가
+ * 저장을 통째로 버린 상태다. 위 그룹 문구와 같은 이유로 주체를 특정하지 않고(「다른 곳에서」
+ * 금지) `toast.error` 로 띄운다. 호출처는 이 안내 뒤에 최신 값을 다시 불러온다.
+ */
+export const CAMPAIGN_FINANCIAL_STALE_MESSAGE =
+  "정산 값이 방금 바뀌어 저장하지 않았습니다. 최신 값을 불러왔으니 확인 후 다시 입력해주세요.";
 
 /** 응답 본문의 error 를 못 읽었을 때 쓰는 기본 문구. */
 const DEFAULT_FALLBACK_ERROR = "저장 실패";
@@ -44,6 +56,11 @@ export type CampaignPatchResult<T> =
       status: number;
       /** 그룹 멤버십 충돌 여부 — 재시도 안내를 다르게 붙이고 싶을 때만 본다. */
       conflict: boolean;
+      /**
+       * 재무 값 충돌 여부 — 화면 값이 낡았다는 뜻이라 **다시 누르면 안 된다**.
+       * 호출처는 최신 행을 다시 읽어 화면을 바꿔야 한다.
+       */
+      stale?: boolean;
     };
 
 export type CampaignPatchOptions = {
@@ -86,6 +103,16 @@ async function requestCampaignPatch<T>(
     // 409 는 라우트 본문의 영문 문구("Campaign group membership changed; retry the
     // update")를 그대로 쓰면 안 된다 — 오너 대면 문구는 한국어 상수가 정본이다.
     if (response.status === 409) {
+      const payload = (await response.json().catch(() => ({}))) as { code?: unknown };
+      if (payload.code === CAMPAIGN_FINANCIAL_STALE_CODE) {
+        return {
+          ok: false,
+          error: CAMPAIGN_FINANCIAL_STALE_MESSAGE,
+          status: 409,
+          conflict: false,
+          stale: true,
+        };
+      }
       return {
         ok: false,
         error: CAMPAIGN_GROUP_CONFLICT_MESSAGE,

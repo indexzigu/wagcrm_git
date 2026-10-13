@@ -75,11 +75,25 @@ export const SELLER_METRICS_INVALIDATION_TAGS = [
 ] as const satisfies readonly CrmCacheTag[];
 
 /**
+ * 무효화 직후 **옛 값을 한 번도 내주면 안 되는** 태그 — 즉시 만료(`{ expire: 0 }`)한다.
+ *
+ * 나머지 태그는 `"max"`(stale-while-revalidate)다: 무효화 뒤 **첫 요청은 옛 값**을 받고
+ * 그 사이 새 값을 만든다(Next 16 `revalidateTag` 문서 · `cache-handlers/default.js` 의
+ * `had stale tag` → revalidate=-1). 요약 화면엔 무해하지만, 정산 화면은 캐시된 행이 곧
+ * 패널의 **편집 기준선**이다. 실사고(2026-10-13 운영 관찰): 저장 직후 연 정산 패널이 옛
+ * 수량·실판매액·부가 항목을 보여 줬고, 그 화면에서 재무 카드를 저장하면 새 값이 옛 값으로
+ * 덮일 수 있었다(쓰기 쪽 방어는 `campaign-financial-guard.ts`).
+ * 대가: 무효화 뒤 첫 방문이 재생성을 기다린다(셀프호스트 단일 프로세스라 ISR 쓰기 과금 없음).
+ * ⛔ 이 집합을 비우지 말 것 — 비우면 위 사고가 그대로 돌아온다(`cache-tags.test.ts`).
+ */
+export const IMMEDIATE_EXPIRY_TAGS: ReadonlySet<CrmCacheTag> = new Set([CRM_CACHE_TAGS.settlement]);
+
+/**
  * Marks shared CRM read caches stale after a successful database mutation.
  */
 export function revalidateCrmTags(tags: Iterable<CrmCacheTag>) {
   for (const tag of new Set(tags)) {
-    revalidateTag(tag, "max");
+    revalidateTag(tag, IMMEDIATE_EXPIRY_TAGS.has(tag) ? { expire: 0 } : "max");
   }
 }
 

@@ -22,6 +22,8 @@ import {
 } from "@/lib/campaign-financials";
 import { resolveProfitTone, PROFIT_TONE_TEXT, PROFIT_TONE_TEXT_DENSE } from "@/lib/profit-tone";
 import { patchCampaign } from "@/lib/campaign-patch";
+import { buildFinancialExpectation } from "@/lib/campaign-financial-guard";
+import { fetchLatestCampaignRow, mergeListOnlyFields } from "@/lib/campaign-latest-row";
 import { DataEmpty } from "@/components/ui/empty";
 import {
   AlertDialog,
@@ -39,6 +41,8 @@ import { HelpPopover } from "./help-popover";
 type CampaignDealsTableProps = {
   campaign: CampaignRow;
   onCampaignUpdated: (campaign: CampaignRow) => void;
+  /** 패널이 열 때 최신 행을 확인하는 중이면 저장을 잠근다(옛 품목이 기준선이 되지 않게). */
+  isFreshnessPending?: boolean;
 };
 
 type DealOption = {
@@ -74,6 +78,7 @@ const SETTLEMENT_BASIS_NOTICE =
 export function CampaignDealsTable({
   campaign,
   onCampaignUpdated,
+  isFreshnessPending = false,
 }: CampaignDealsTableProps) {
   const [dealOptions, setDealOptions] = useState<DealOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
@@ -335,9 +340,7 @@ export function CampaignDealsTable({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const result = await patchCampaign<CampaignRow>(
-        campaign.id,
-        {
+      const body = {
           campaignDeals: localDeals.map((ld) => ({
             dealId: ld.dealId,
             quantity: ld.quantity,
@@ -350,11 +353,28 @@ export function CampaignDealsTable({
             ) ?? 0,
             sellingPrice: ld.sellingPrice,
           })),
-        },
+      };
+      // 낙관적 동시성 — 품목 목록은 통째로 교체되므로 「이 표가 본 품목」을 함께 보낸다. 그사이
+      // 다른 화면에서 품목·수량이 바뀌었으면 서버가 409 로 저장 전체를 버린다(`campaign-financial-guard.ts`).
+      // 기준선은 지금의 `campaign` 이다 — 위 동기화 effect 가 행이 바뀔 때마다 표를 그 값으로 다시 채운다.
+      const expectedFinancials = buildFinancialExpectation(campaign, body);
+      const result = await patchCampaign<CampaignRow>(
+        campaign.id,
+        expectedFinancials ? { ...body, expectedFinancials } : body,
         { fallbackError: "매출 내역 저장 실패", preferServerError: true },
       );
 
       if (!result.ok) {
+        if (result.stale) {
+          try {
+            onCampaignUpdated(mergeListOnlyFields(campaign, await fetchLatestCampaignRow(campaign.id)));
+            toast.error(result.error);
+          } catch (refreshError) {
+            console.error("[campaign-deals] 충돌 후 최신 값 재조회 실패:", refreshError);
+            toast.error("정산 값이 방금 바뀌어 저장하지 않았습니다. 패널을 닫았다 다시 열어 최신 값을 확인해주세요.");
+          }
+          return;
+        }
         throw new Error(result.error);
       }
 
@@ -492,7 +512,8 @@ export function CampaignDealsTable({
               <Button
                 size="sm"
                 onClick={handleSaveClick}
-                disabled={saving}
+                disabled={saving || isFreshnessPending}
+                title={isFreshnessPending ? "최신 값을 확인하는 중입니다" : undefined}
                 className="h-8 rounded-lg px-4 text-xs font-semibold shadow-soft-sm bg-primary text-primary-foreground hover:bg-primary/95 transition-colors"
               >
                 {saving && <Loader2 className="mr-1.5 size-3 animate-spin" />}
