@@ -64,12 +64,13 @@ describe("findFinancialConflicts — 서버 대조", () => {
 });
 
 describe("품목 목록 대조 — 매출 품목 표는 목록을 통째로 교체한다", () => {
-  const DEAL_A = { dealId: "d-a", quantity: 3, actualSales: 90_000 };
-  const DEAL_B = { dealId: "d-b", quantity: 1, actualSales: 20_000 };
+  const PRICES = { feeRate: 30, sellerMarginRate: 10, costPrice: 7_000, sellingPrice: 10_000 };
+  const DEAL_A = { dealId: "d-a", quantity: 3, actualSales: 90_000, ...PRICES };
+  const DEAL_B = { dealId: "d-b", quantity: 1, actualSales: 20_000, ...PRICES, sellerMarginRate: null };
 
-  it("품목을 보낼 때만 화면이 본 품목(구성·수량·실판매액)을 싣는다 — 수수료율·판매가는 싣지 않는다", () => {
+  it("품목을 보낼 때만 화면이 본 품목(저장이 덮어쓰는 값 전부)을 dealId 순으로 싣는다", () => {
     const expectation = buildFinancialExpectation(
-      { campaignDeals: [{ ...DEAL_B, feeRate: 30 } as typeof DEAL_B, DEAL_A] },
+      { campaignDeals: [{ ...DEAL_B, dealName: "B" } as typeof DEAL_B, DEAL_A] },
       { campaignDeals: [] },
     );
     expect(expectation).toEqual({ campaignDeals: [DEAL_A, DEAL_B] });
@@ -90,5 +91,8 @@ describe("품목 목록 대조 — 매출 품목 표는 목록을 통째로 교�
       "campaignDeals",
     ]);
     expect(findFinancialConflicts({ campaignDeals: [DEAL_A, DEAL_B] }, expectation)).toEqual(["campaignDeals"]);
+    expect(findFinancialConflicts({ campaignDeals: [{ ...DEAL_A, feeRate: 25 }] }, expectation)).toEqual([
+      "campaignDeals",
+    ]);
   });
 });

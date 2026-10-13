@@ -33,7 +33,12 @@ vi.mock("@/lib/prisma", () => ({
           update: (...args: unknown[]) => txUpdateMock(...args),
           findUnique: (...args: unknown[]) => txFindUniqueMock(...args),
         },
-        campaignDeal: { findMany: (...args: unknown[]) => txDealFindManyMock(...args) },
+        campaignDeal: {
+          findMany: (...args: unknown[]) => txDealFindManyMock(...args),
+          deleteMany: vi.fn(),
+          update: vi.fn(),
+          create: vi.fn(),
+        },
       }),
   }),
 }));
@@ -42,7 +47,9 @@ vi.mock("@/lib/campaign-activity", () => ({
   recordCampaignActivity: (...args: unknown[]) => recordActivityMock(...args),
 }));
 vi.mock("@/lib/campaign-checklist", () => ({ ensureCampaignChecklistForStatus: vi.fn() }));
-vi.mock("@/lib/campaign-row", () => ({
+vi.mock("@/lib/campaign-row", async (importOriginal) => ({
+  // 품목 대조는 화면 행과 같은 채움 함수를 써야 하므로 그것만은 진짜를 쓴다.
+  resolveCampaignDealPrices: (await importOriginal<typeof import("@/lib/campaign-row")>()).resolveCampaignDealPrices,
   toCampaignRow: (row: { id: string }) => ({ id: row.id }),
   toKstDateStr: (value: Date | null) => value?.toISOString().slice(0, 10) ?? null,
 }));
@@ -127,6 +134,23 @@ beforeEach(() => {
   txDealFindManyMock.mockResolvedValue(SAME_RATE_DEALS);
 });
 
+/** DB 품목 행 — 스냅샷 수수료율이 비어 있어 화면은 딜 기본값(30)으로 보여 준다. */
+function dbDeal(overrides: Record<string, unknown> = {}) {
+  return {
+    dealId: "d-1",
+    quantity: 6,
+    actualSales: "6000000",
+    feeRate: null,
+    sellerMarginRate: "10",
+    costPrice: "700000",
+    sellingPrice: "1000000",
+    deal: { totalCommissionRate: "30", brokerageCommissionRate: null, costPrice: "700000", sellingPrice: "1000000" },
+    ...overrides,
+  };
+}
+/** 위 DB 행을 화면이 본 모양(채움 적용) */
+const SEEN_DEAL = { dealId: "d-1", quantity: 6, actualSales: 6_000_000, feeRate: 30, sellerMarginRate: 10, costPrice: 700_000, sellingPrice: 1_000_000 };
+
 /** tx 안에서 다시 읽는 「지금 DB 값」 — Prisma 는 Decimal 을 돌려주므로 문자열로 흉내 낸다. */
 function currentInDb(overrides: Record<string, unknown> = {}) {
   return {
@@ -136,7 +160,7 @@ function currentInDb(overrides: Record<string, unknown> = {}) {
     settlementItems: [
       { invoiceMode: "SALES_ISSUE", counterparty: "BRAND", amount: "50000", note: "광고비" },
     ],
-    campaignDeals: [{ dealId: "d-1", quantity: 6, actualSales: "6000000" }],
+    campaignDeals: [dbDeal()],
     ...overrides,
   };
 }
@@ -202,16 +226,39 @@ describe("PATCH expectedFinancials — 낡은 화면이 새 값을 덮어쓰지 
   });
 
   it("품목 교체 — 그사이 수량이 바뀌었으면 옛 품목 목록으로 덮지 않고 409", async () => {
-    txFindUniqueMock.mockResolvedValue(currentInDb({ campaignDeals: [{ dealId: "d-1", quantity: 9, actualSales: "6000000" }] }));
+    txFindUniqueMock.mockResolvedValue(currentInDb({ campaignDeals: [dbDeal({ quantity: 9 })] }));
 
     const response = await patch({
       campaignDeals: [{ dealId: "d-1", quantity: 7, actualSales: 7_000_000 }],
-      expectedFinancials: { campaignDeals: [{ dealId: "d-1", quantity: 6, actualSales: 6_000_000 }] },
+      expectedFinancials: { campaignDeals: [SEEN_DEAL] },
     });
 
     expect(response.status).toBe(409);
     expect((await response.json()).fields).toEqual(["campaignDeals"]);
     expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("품목 교체 — 그사이 판매가만 바뀌어도 409(저장이 그 값도 덮어쓰므로)", async () => {
+    txFindUniqueMock.mockResolvedValue(currentInDb({ campaignDeals: [dbDeal({ sellingPrice: "1200000" })] }));
+
+    const response = await patch({
+      campaignDeals: [{ dealId: "d-1", quantity: 7, actualSales: 7_000_000 }],
+      expectedFinancials: { campaignDeals: [SEEN_DEAL] },
+    });
+
+    expect(response.status).toBe(409);
+    expect(txUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("품목 교체 — 스냅샷이 비어 화면이 딜 기본값을 본 경우에도 같으면 통과한다(거짓 충돌 없음)", async () => {
+    txFindUniqueMock.mockResolvedValue(currentInDb());
+
+    const response = await patch({
+      campaignDeals: [{ dealId: "d-1", quantity: 7, actualSales: 7_000_000 }],
+      expectedFinancials: { campaignDeals: [SEEN_DEAL] },
+    });
+
+    expect(response.status).toBe(200);
   });
 
   it("기대값이 없으면(다른 화면의 저장) 대조 없이 종전대로 저장한다", async () => {

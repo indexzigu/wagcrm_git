@@ -38,6 +38,35 @@ function resolveSnapshotNumber(
   return valueNumber;
 }
 
+/** 품목 값 채움에 필요한 최소 모양 — 행 변환과 서버 낙관적 동시성 대조가 같은 규칙을 쓰게 한다. */
+export type CampaignDealPriceSource = {
+  feeRate: DecimalLike;
+  sellerMarginRate: DecimalLike;
+  costPrice: DecimalLike;
+  sellingPrice: DecimalLike;
+  deal: {
+    totalCommissionRate?: DecimalLike;
+    brokerageCommissionRate?: DecimalLike;
+    costPrice?: DecimalLike;
+    sellingPrice?: DecimalLike;
+  };
+};
+
+/**
+ * 품목 행의 수수료율·셀러 수수료율·공급가·판매가 — 스냅샷이 비면 딜 기본값으로 채운다.
+ * ⚠️ 화면 행(`toCampaignRow`)과 저장 대조(`campaignService` → `campaign-financial-guard.ts`)가
+ * **반드시 같은 함수**를 써야 한다 — 따로 쓰면 바뀐 게 없는데도 409 가 난다.
+ */
+export function resolveCampaignDealPrices(cd: CampaignDealPriceSource) {
+  const fallbackFeeRate = cd.deal.totalCommissionRate ?? cd.deal.brokerageCommissionRate ?? null;
+  return {
+    feeRate: resolveSnapshotNumber(cd.feeRate, fallbackFeeRate),
+    sellerMarginRate: cd.sellerMarginRate == null ? null : numberFromDecimal(cd.sellerMarginRate),
+    costPrice: resolveSnapshotNumber(cd.costPrice, cd.deal.costPrice),
+    sellingPrice: resolveSnapshotNumber(cd.sellingPrice, cd.deal.sellingPrice),
+  };
+}
+
 type CampaignWithRelations = {
   id: string;
   dealId: string;
@@ -436,23 +465,15 @@ export function toCampaignRow(
         createdAt: note.createdAt.toISOString(),
       })) ?? [],
     campaignDeals:
-      campaign.campaignDeals?.map((cd) => {
-        const fallbackFeeRate =
-          cd.deal.totalCommissionRate ?? cd.deal.brokerageCommissionRate ?? null;
-
-        return {
-          id: cd.id,
-          campaignId: cd.campaignId,
-          dealId: cd.dealId,
-          dealName: getDisplayDealName(cd.deal),
-          quantity: cd.quantity,
-          actualSales: numberFromDecimal(cd.actualSales),
-          feeRate: resolveSnapshotNumber(cd.feeRate, fallbackFeeRate),
-          sellerMarginRate: cd.sellerMarginRate == null ? null : numberFromDecimal(cd.sellerMarginRate),
-          costPrice: resolveSnapshotNumber(cd.costPrice, cd.deal.costPrice),
-          sellingPrice: resolveSnapshotNumber(cd.sellingPrice, cd.deal.sellingPrice),
-        };
-      }) ?? [],
+      campaign.campaignDeals?.map((cd) => ({
+        id: cd.id,
+        campaignId: cd.campaignId,
+        dealId: cd.dealId,
+        dealName: getDisplayDealName(cd.deal),
+        quantity: cd.quantity,
+        actualSales: numberFromDecimal(cd.actualSales),
+        ...resolveCampaignDealPrices(cd),
+      })) ?? [],
     hasPriceViolation: violationSummary != null,
     violatedDealCount: violationSummary?.violatedDealCount ?? 0,
   };

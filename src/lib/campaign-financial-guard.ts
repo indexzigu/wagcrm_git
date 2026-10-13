@@ -53,12 +53,30 @@ export type SettlementItemComparable = {
 };
 
 /**
- * 품목 대조 단위 — 품목 구성(dealId)·수량·실판매액만 본다.
- * ⚠️ 수수료율·판매가·공급가는 대조하지 않는다: 화면 행은 스냅샷이 비면 **딜 기본값으로 채워**
- * 보여 주므로(`campaign-row.ts` resolveSnapshotNumber) 원본 컬럼과 비교하면 바뀐 게 없어도
- * 충돌이 난다. 그 값들의 동시 수정은 이 가드 밖이다.
+ * 품목 대조 단위 — 품목 표 저장이 덮어쓰는 값 전부(구성·수량·실판매액·수수료율·셀러 수수료율·
+ * 공급가·판매가). ⚠️ 화면 행은 스냅샷이 비면 **딜 기본값으로 채워** 보여 주므로, 서버는 원본
+ * 컬럼이 아니라 같은 채움 함수(`campaign-row.ts` resolveCampaignDealPrices)를 거친 값을 넘겨야
+ * 한다 — 아니면 바뀐 게 없어도 409 가 난다.
  */
-export type DealComparable = { dealId: string; quantity: unknown; actualSales: unknown };
+export type DealComparable = {
+  dealId: string;
+  quantity: unknown;
+  actualSales: unknown;
+  feeRate?: unknown;
+  sellerMarginRate?: unknown;
+  costPrice?: unknown;
+  sellingPrice?: unknown;
+};
+
+type ExpectedDeal = {
+  dealId: string;
+  quantity: number;
+  actualSales: number;
+  feeRate: number | null;
+  sellerMarginRate: number | null;
+  costPrice: number | null;
+  sellingPrice: number | null;
+};
 
 export type FinancialExpectation = {
   fields?: Partial<Record<GuardedFinancialField, GuardScalar>>;
@@ -70,7 +88,7 @@ export type FinancialExpectation = {
     note: string | null;
   }>;
   /** 품목 목록을 교체할 때만 — 화면이 본 품목(순서 무관). */
-  campaignDeals?: Array<{ dealId: string; quantity: number; actualSales: number }>;
+  campaignDeals?: ExpectedDeal[];
 };
 
 const guardScalarSchema = z.union([z.number(), z.boolean(), z.null()]);
@@ -97,7 +115,17 @@ export const financialExpectationSchema = z
       .max(50)
       .optional(),
     campaignDeals: z
-      .array(z.object({ dealId: z.string(), quantity: z.number(), actualSales: z.number() }))
+      .array(
+        z.object({
+          dealId: z.string(),
+          quantity: z.number(),
+          actualSales: z.number(),
+          feeRate: z.number().nullable(),
+          sellerMarginRate: z.number().nullable(),
+          costPrice: z.number().nullable(),
+          sellingPrice: z.number().nullable(),
+        }),
+      )
       .max(200)
       .optional(),
   })
@@ -134,8 +162,13 @@ function normalizeDeals(deals: readonly DealComparable[]) {
       dealId: deal.dealId,
       quantity: normalizeGuardValue(deal.quantity),
       actualSales: normalizeGuardValue(deal.actualSales),
+      feeRate: normalizeGuardValue(deal.feeRate),
+      sellerMarginRate: normalizeGuardValue(deal.sellerMarginRate),
+      costPrice: normalizeGuardValue(deal.costPrice),
+      sellingPrice: normalizeGuardValue(deal.sellingPrice),
     }))
-    .sort((a, b) => a.dealId.localeCompare(b.dealId));
+    // dealId 는 ASCII cuid 라 코드포인트 비교로 충분하다(로캘 비교는 환경마다 다를 수 있다).
+    .sort((a, b) => (a.dealId < b.dealId ? -1 : a.dealId > b.dealId ? 1 : 0));
 }
 
 /**
@@ -162,10 +195,15 @@ export function buildFinancialExpectation(
     }));
   }
   if (patch.campaignDeals !== undefined) {
+    const numberOrNull = (value: GuardScalar) => (typeof value === "number" ? value : null);
     expectation.campaignDeals = normalizeDeals(baseline.campaignDeals ?? []).map((deal) => ({
       dealId: deal.dealId,
-      quantity: deal.quantity === null || typeof deal.quantity === "boolean" ? 0 : deal.quantity,
-      actualSales: deal.actualSales === null || typeof deal.actualSales === "boolean" ? 0 : deal.actualSales,
+      quantity: numberOrNull(deal.quantity) ?? 0,
+      actualSales: numberOrNull(deal.actualSales) ?? 0,
+      feeRate: numberOrNull(deal.feeRate),
+      sellerMarginRate: numberOrNull(deal.sellerMarginRate),
+      costPrice: numberOrNull(deal.costPrice),
+      sellingPrice: numberOrNull(deal.sellingPrice),
     }));
   }
   return Object.keys(expectation).length > 0 ? expectation : undefined;

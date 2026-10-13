@@ -21,7 +21,11 @@ import {
 } from "@/services/campaignGroupService";
 import { computeAutoStatus } from "@/lib/settlement-status";
 import { syncCampaignLinkExpiry } from "@/lib/short-link";
-import type { DecimalLike } from "@/lib/campaign-row";
+import {
+  resolveCampaignDealPrices,
+  type CampaignDealPriceSource,
+  type DecimalLike,
+} from "@/lib/campaign-row";
 import {
   findFinancialConflicts,
   GUARDED_FINANCIAL_FIELDS,
@@ -482,11 +486,39 @@ export const campaignService = {
               orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
               select: { invoiceMode: true, counterparty: true, amount: true, note: true },
             },
-            campaignDeals: { select: { dealId: true, quantity: true, actualSales: true } },
+            campaignDeals: {
+              select: {
+                dealId: true,
+                quantity: true,
+                actualSales: true,
+                feeRate: true,
+                sellerMarginRate: true,
+                costPrice: true,
+                sellingPrice: true,
+                deal: {
+                  select: { totalCommissionRate: true, brokerageCommissionRate: true, costPrice: true, sellingPrice: true },
+                },
+              },
+            },
           },
         });
+        // 품목은 화면 행과 같은 채움 규칙을 거친 값으로 대조한다(`resolveCampaignDealPrices`).
+        const currentDeals = (current?.campaignDeals ?? []) as Array<
+          { dealId: string; quantity: number; actualSales: DecimalLike } & CampaignDealPriceSource
+        >;
         const conflicts = current
-          ? findFinancialConflicts(current as Parameters<typeof findFinancialConflicts>[0], input.expectedFinancials)
+          ? findFinancialConflicts(
+              {
+                ...(current as Parameters<typeof findFinancialConflicts>[0]),
+                campaignDeals: currentDeals.map((cd) => ({
+                  dealId: cd.dealId,
+                  quantity: cd.quantity,
+                  actualSales: cd.actualSales,
+                  ...resolveCampaignDealPrices(cd),
+                })),
+              },
+              input.expectedFinancials,
+            )
           : ["campaign"];
         if (conflicts.length > 0) {
           staleFinancialFields = conflicts;
