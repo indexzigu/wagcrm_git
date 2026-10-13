@@ -12,6 +12,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CampaignSidePanel } from "../campaign-side-panel";
+import { toast } from "sonner";
+import { CAMPAIGN_FINANCIAL_STALE_MESSAGE } from "@/lib/campaign-patch";
 import type { ApiCallLogRow, AssetRow, CampaignRow, StorageSummary } from "@/lib/crm-types";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -88,6 +90,13 @@ const campaign: CampaignRow = {
     { id: "i4", invoiceMode: "NO_INVOICE", counterparty: "INTERNAL", amount: 60_000, note: "반품배송비 현금 수취", sortOrder: 3 },
   ],
 };
+
+/** 패널은 열 때 최신 행을 확인하는 동안 편집을 잠근다(F2) — 열릴 때까지 기다린다. */
+async function enabledEditButton() {
+  const button = await screen.findByRole("button", { name: "편집" });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+}
 
 function renderCard(overrides: Partial<CampaignRow> = {}) {
   global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) });
@@ -272,9 +281,9 @@ describe("정산 기준액 — 자동/수동", () => {
     ).toBeInTheDocument();
   });
 
-  it("편집: 자동이면 자동 기준액을 읽기 전용으로 보이고, 모드 버튼은 aria-pressed 로 상태를 말한다", () => {
+  it("편집: 자동이면 자동 기준액을 읽기 전용으로 보이고, 모드 버튼은 aria-pressed 로 상태를 말한다", async () => {
     renderCard();
-    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(await enabledEditButton());
     const input = screen.getByLabelText("정산 기준액") as HTMLInputElement;
     // 개인 셀러 자동 기준 = 공급가액 round(38,900,000 / 1.1)
     expect(input.value).toBe(String(Math.round(38_900_000 / 1.1)));
@@ -283,9 +292,9 @@ describe("정산 기준액 — 자동/수동", () => {
     expect(modeButton("정산 기준액", "수동").getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("편집: 수동 기준액을 입력하면 판매대행비·지급 총액·매출총이익·상단 타일이 바로 따라오고 곱셈 한 줄이 보인다", () => {
+  it("편집: 수동 기준액을 입력하면 판매대행비·지급 총액·매출총이익·상단 타일이 바로 따라오고 곱셈 한 줄이 보인다", async () => {
     renderCard();
-    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(await enabledEditButton());
     fireEvent.click(modeButton("정산 기준액", "수동"));
     fireEvent.change(screen.getByLabelText("정산 기준액"), { target: { value: "30000000" } });
 
@@ -308,7 +317,7 @@ describe("정산 기준액 — 자동/수동", () => {
     // renderCard 가 fetch 를 덮으므로 렌더 뒤 감시용 목을 다시 건다.
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
     global.fetch = fetchSpy;
-    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(await enabledEditButton());
     fireEvent.click(modeButton("정산 기준액", "수동"));
     const input = () => screen.getByLabelText("정산 기준액") as HTMLInputElement;
     fireEvent.change(input(), { target: { value: "" } });
@@ -332,10 +341,10 @@ describe("정산 기준액 — 자동/수동", () => {
     expect(body.sellerFeeBasisOverride).toBe(0);
   });
 
-  it("편집: 적용 중이던 기준액을 자동으로 되돌리면 판매대행비 미리보기가 자동 기준액으로 바로 바뀐다(F2)", () => {
+  it("편집: 적용 중이던 기준액을 자동으로 되돌리면 판매대행비 미리보기가 자동 기준액으로 바로 바뀐다(F2)", async () => {
     // 저장 판매대행비 4,668,000 은 기준액 기반 값이라 자동으로 되돌리면 낡은 값이다.
     renderCard({ sellerFeeBasisOverride: 30_000_000 });
-    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(await enabledEditButton());
     fireEvent.click(modeButton("정산 기준액", "자동"));
     // 자동 기준(개인 공급가액) round(38,900,000/1.1) × 12%
     expect((screen.getByLabelText("판매대행비") as HTMLInputElement).value).toBe(
@@ -343,9 +352,9 @@ describe("정산 기준액 — 자동/수동", () => {
     );
   });
 
-  it("편집: 품목별 셀러 수수료율이 다르면 「수동」은 aria-disabled + 이유 문단을 가리키고 클릭이 막힌다", () => {
+  it("편집: 품목별 셀러 수수료율이 다르면 「수동」은 aria-disabled + 이유 문단을 가리키고 클릭이 막힌다", async () => {
     renderCard({ campaignDeals: MIXED_DEALS });
-    fireEvent.click(screen.getByRole("button", { name: "편집" }));
+    fireEvent.click(await enabledEditButton());
     const manual = modeButton("정산 기준액", "수동");
     expect(manual.getAttribute("aria-disabled")).toBe("true");
     expect(manual.hasAttribute("disabled")).toBe(false);
@@ -353,5 +362,127 @@ describe("정산 기준액 — 자동/수동", () => {
     expect(reason?.textContent).toMatch(/품목마다 셀러 수수료율이 달라 정산 기준액을 직접 입력할 수 없습니다/);
     fireEvent.click(manual);
     expect((screen.getByLabelText("정산 기준액") as HTMLInputElement).readOnly).toBe(true);
+  });
+});
+
+// F2·W1(2026-10-13) — 부모가 넘긴 행은 페이지 캐시에서 와 옛 값일 수 있다. 패널은 열 때 한 건을
+// 다시 읽고 그 전엔 재무 편집을 잠그며, 저장이 「값이 바뀜」 409 로 버려지면 최신 행으로 바꾼다.
+describe("최신 값 확인 — 옛 화면이 편집 기준선이 되지 않는다", () => {
+  type Handler = (url: string, init?: RequestInit) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+  function respond(status: number, body: unknown) {
+    return Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) });
+  }
+  function renderWith(onCampaignUpdated = vi.fn()) {
+    render(
+      <CampaignSidePanel
+        campaign={campaign}
+        logs={[] as ApiCallLogRow[]}
+        assets={[] as AssetRow[]}
+        storage={storage}
+        open
+        settlementWorkspace
+        onOpenChange={vi.fn()}
+        onCampaignUpdated={onCampaignUpdated}
+      />,
+    );
+    return onCampaignUpdated;
+  }
+  function installFetch(handler: Handler) {
+    const spy = vi.fn((url: string, init?: RequestInit) => handler(String(url), init));
+    global.fetch = spy as unknown as typeof fetch;
+    return spy;
+  }
+  const isRowGet = (url: string, init?: RequestInit) =>
+    url === `/api/campaigns/${campaign.id}` && (init?.method ?? "GET") === "GET";
+
+  it("확인이 끝나기 전엔 편집이 잠기고, 서버 행이 다르면 그 행으로 바꾼 뒤 연다", async () => {
+    let release!: () => void;
+    const fresh = { ...campaign, updatedAt: "2026-08-02T00:00:00Z", miscExpense: 7_000 };
+    installFetch((url, init) =>
+      isRowGet(url, init)
+        ? new Promise((resolve) => {
+            release = () => resolve({ ok: true, status: 200, json: () => Promise.resolve(fresh) });
+          })
+        : respond(200, { items: [] }),
+    );
+    renderWith();
+
+    const pending = screen.getByRole("button", { name: "편집" });
+    expect(pending).toBeDisabled();
+    expect(pending.getAttribute("aria-busy")).toBe("true");
+    release();
+    expect(await enabledEditButton()).toBeEnabled();
+  });
+
+  it("서버 행이 화면과 같으면 갱신 통지를 보내지 않는다(열 때마다 리포트를 다시 읽지 않게)", async () => {
+    installFetch((url, init) => (isRowGet(url, init) ? respond(200, { ...campaign, salesTask: null }) : respond(200, { items: [] })));
+    const onCampaignUpdated = vi.fn();
+    renderWith(onCampaignUpdated);
+    await enabledEditButton();
+    expect(onCampaignUpdated).not.toHaveBeenCalled();
+  });
+
+  it("서버 행이 다르면 갱신 통지로 흘려보낸다", async () => {
+    const fresh = { ...campaign, updatedAt: "2026-08-02T00:00:00Z" };
+    installFetch((url, init) => (isRowGet(url, init) ? respond(200, fresh) : respond(200, { items: [] })));
+    const onCampaignUpdated = vi.fn();
+    renderWith(onCampaignUpdated);
+    await waitFor(() => expect(onCampaignUpdated).toHaveBeenCalledWith(fresh));
+  });
+
+  it("편집 도중 패널 행이 바뀌어도 기대값은 편집을 연 시점 값이다 — 그사이 바뀐 칸이 옛 초안으로 덮이지 않게", async () => {
+    const spy = installFetch((url, init) =>
+      isRowGet(url, init) ? respond(200, campaign) : init?.method === "PATCH" ? respond(200, campaign) : respond(200, { items: [] }),
+    );
+    const props = {
+      logs: [] as ApiCallLogRow[],
+      assets: [] as AssetRow[],
+      storage,
+      open: true,
+      settlementWorkspace: true,
+      onOpenChange: vi.fn(),
+      onCampaignUpdated: vi.fn(),
+    };
+    const { rerender } = render(<CampaignSidePanel campaign={campaign} {...props} />);
+    fireEvent.click(await enabledEditButton());
+    // 편집 중 다른 섹션 저장 등으로 행이 갱신됐다(운영비가 바뀜).
+    const before = Number(campaign.operatingExpense ?? 0);
+    rerender(<CampaignSidePanel campaign={{ ...campaign, operatingExpense: before + 99_000 }} {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(spy.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true));
+    const patchCall = spy.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+    const body = JSON.parse(String(patchCall[1]?.body));
+    // 초안(편집 시작 값)이 새 행과 달라 운영비가 실린다 — 그 기대값은 편집 시작 값이라 서버가 409 로 막는다.
+    expect(body.operatingExpense).toBe(before);
+    expect(body.expectedFinancials.fields.operatingExpense).toBe(before);
+  });
+
+  it("저장이 「값이 바뀜」 409 면 기대값을 보냈고, 최신 행을 다시 읽어 바꾸고 편집을 닫는다", async () => {
+    const fresh = { ...campaign, updatedAt: "2026-08-03T00:00:00Z", sellerFeeBasisOverride: 1_000 };
+    let rowGets = 0;
+    const spy = installFetch((url, init) => {
+      if (isRowGet(url, init)) {
+        rowGets += 1;
+        return respond(200, rowGets === 1 ? campaign : fresh);
+      }
+      if (init?.method === "PATCH") return respond(409, { code: "CAMPAIGN_FINANCIAL_STALE", fields: ["sellerFeeBasisOverride"] });
+      return respond(200, { items: [] });
+    });
+    const onCampaignUpdated = vi.fn();
+    renderWith(onCampaignUpdated);
+
+    fireEvent.click(await enabledEditButton());
+    const row = (screen.getByLabelText("정산 기준액") as HTMLInputElement).closest("div.grid") as HTMLElement;
+    fireEvent.click(Array.from(row.querySelectorAll("button")).find((b) => b.textContent === "수동")!);
+    fireEvent.change(screen.getByLabelText("정산 기준액"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(onCampaignUpdated).toHaveBeenCalledWith(fresh));
+    const patchCall = spy.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+    const body = JSON.parse(String(patchCall[1]?.body));
+    expect(body.expectedFinancials).toEqual({ fields: { sellerFeeBasisOverride: null } });
+    expect(vi.mocked(toast.error).mock.calls.at(-1)?.[0]).toBe(CAMPAIGN_FINANCIAL_STALE_MESSAGE);
+    expect(screen.queryByRole("button", { name: "저장" })).toBeNull();
   });
 });

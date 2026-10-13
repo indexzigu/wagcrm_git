@@ -108,6 +108,9 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   "app/api/campaigns/[id]/route.ts": "PATCH 입력 스키마 선언(값 통과만 — update 스프레드는 services/campaignService.ts 로 이관)",
   "services/campaignService.ts": "PATCH 트랜잭션 본체의 update 스프레드(값 통과만, 산술 없음 — 3계층 이관 3단계)",
   "app/api/campaigns/[id]/route.test.ts": "위 저장 경로의 계약",
+  "lib/campaign-financial-guard.ts":
+    "재무 카드 저장의 낙관적 동시성 가드 — 화면이 본 값과 DB 값의 **같음 비교**만(산술 없음, 2026-10-13)",
+  "lib/campaign-financial-guard.test.ts": "위 가드의 비교 계약 픽스처 — null 과 0 을 다른 상태로 단언할 뿐 산술 없음",
   "lib/campaign-update-plan.ts": "PATCH 변경 감지 diff — settlementGoodsCost 는 값 비교(변경 여부 판정)만, 산술 없음(3계층 이관 2단계)",
   "lib/__tests__/campaign-update-plan.test.ts": "위 diff 함수의 단위 테스트 — 값 비교 픽스처만",
   "components/crm/__tests__/campaign-side-panel-settlement-zones.test.tsx":

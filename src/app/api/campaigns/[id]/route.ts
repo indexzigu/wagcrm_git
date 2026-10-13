@@ -9,6 +9,10 @@ import { getAuthContext } from "@/lib/auth-context";
 import { getCrmUsers } from "@/lib/user-registry";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
 import {
+  CAMPAIGN_FINANCIAL_STALE_CODE,
+  financialExpectationSchema,
+} from "@/lib/campaign-financial-guard";
+import {
   deleteCampaignCalendarEvents,
   syncCampaignToCalendar,
 } from "@/lib/google-calendar-sync";
@@ -203,6 +207,11 @@ const updateCampaignSchema = z.object({
     costPrice: z.coerce.number().nonnegative().nullable().optional(),
     sellingPrice: z.coerce.number().nonnegative().nullable().optional(),
   })).optional(),
+  /**
+   * W1 낙관적 동시성 — 화면이 본 재무 필드 이전 값(`campaign-financial-guard.ts`).
+   * 저장 필드가 아니라 **조건**이다: 아래에서 `data` 와 분리해 서비스에만 넘긴다.
+   */
+  expectedFinancials: financialExpectationSchema.optional(),
 });
 
 export async function PATCH(request: Request, context: Context) {
@@ -212,7 +221,9 @@ export async function PATCH(request: Request, context: Context) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const data = parsed.data;
+  // `expectedFinancials` 는 쓰기 필드가 아니므로 `data` 에서 뺀다 — 남겨 두면 변경 필드 판정·
+  // no-op 단락(`Object.keys(data)`)이 그것을 「바뀐 필드」로 센다.
+  const { expectedFinancials, ...data } = parsed.data;
 
   // Validation: if assignedTo is provided, handoffMemo must be non-empty
   if (data.assignedTo !== undefined) {
@@ -375,7 +386,20 @@ export async function PATCH(request: Request, context: Context) {
       isHandoff,
     },
     actor: authContext?.userId ?? "SYSTEM",
+    expectedFinancials,
   });
+
+  if (!result.ok && result.reason === "financial-stale") {
+    // 클라이언트 헬퍼(`campaign-patch.ts`)가 `code` 로 멤버십 409 와 가른다.
+    return NextResponse.json(
+      {
+        error: "Campaign financial values changed since they were loaded",
+        code: CAMPAIGN_FINANCIAL_STALE_CODE,
+        fields: result.fields,
+      },
+      { status: 409 },
+    );
+  }
 
   if (!result.ok) {
     return NextResponse.json(

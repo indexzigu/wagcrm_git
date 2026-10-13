@@ -222,6 +222,30 @@ screen on every visit.
   Fired by `collect-instagram` / `collect-youtube` / `rehost-seller-media` —
   refreshes seller directory/detail and dashboard momentum cards.
 
+### Invalidation mode: `"max"` vs immediate expiry (2026-10-13)
+
+`revalidateCrmTags` calls `revalidateTag(tag, "max")` by default. In Next 16 that
+is stale-while-revalidate: the tag is marked stale and the **first request after
+the write still receives the pre-write value** while a fresh one is generated
+(`node_modules/next/dist/docs/.../revalidateTag.md`; the default in-memory
+handler returns a stale-tagged entry with `revalidate = -1`).
+
+That is harmless for summary surfaces but not for `/settlement`: its side panel
+renders the cached campaign row and the financial edit form diffs against it.
+Observed 2026-10-13: right after saving, the panel showed old quantity /
+actual sales / missing settlement items. Tags in `IMMEDIATE_EXPIRY_TAGS`
+(currently `crm:settlement`) are therefore expired with `{ expire: 0 }` — the
+next visit blocks on regeneration instead of serving the old value. This
+applies to every writer of the tag (campaign routes, assistant WRITE lane,
+order/settlement sync crons) because the mode is decided per tag.
+
+Two further guards sit outside the cache layer (client router cache and other
+tabs can still hold old rows): `CampaignSidePanel` refetches the campaign on
+open and keeps the financial edit button disabled until it has, and
+`PATCH /api/campaigns/[id]` accepts `expectedFinancials` and returns 409
+(`code: CAMPAIGN_FINANCIAL_STALE`) when the values the form was based on no
+longer match the database (`src/lib/campaign-financial-guard.ts`).
+
 ### Assistant WRITE lane is a writer too (2026-08-27)
 
 The agent lane executes WRITE actions through `executeWriteAction`
