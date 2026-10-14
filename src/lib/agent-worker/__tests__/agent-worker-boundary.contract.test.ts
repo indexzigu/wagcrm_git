@@ -17,6 +17,7 @@ const WORKER_SOURCES = [
   "src/lib/agent-worker/shadow.ts",
   "src/lib/agent-worker/promotion.ts",
   "src/lib/agent-worker/read-projections.ts",
+  "src/lib/agent-worker/tax-invoice-status.ts",
 ];
 
 describe("agent worker boundary contract", () => {

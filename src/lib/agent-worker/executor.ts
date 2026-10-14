@@ -40,6 +40,9 @@ import {
 import { getLastChangeSyncMs, resolveLastOrderSyncIso } from "@/lib/order-converter/order-auto-sync";
 import { toDateKeyKst } from "@/lib/mobile-pulse-data";
 import { naverOrderSnapshotRepository } from "@/repositories/naverOrderSnapshotRepository";
+import { toKstYearMonth } from "@/lib/campaign-invoices";
+import { AUTO_CONFIRM_SEED_LOOKBACK_DAYS } from "@/lib/tax-filing-auto-confirm";
+import { loadTaxInvoiceAutoConfirmed, loadTaxInvoiceWorkBoard } from "@/lib/tax-invoice-board-data";
 import {
   AgentJobResultSchema,
   DEFAULT_STORE_STATUS_CLAIMS,
@@ -64,6 +67,13 @@ import {
   selectOpenClaims,
   toWorkRecordView,
 } from "./read-projections";
+import {
+  buildTaxInvoiceStatus,
+  ISSUE_CONFIRM_JOB_KEY,
+  toIssueConfirmRunView,
+  toTaxInvoiceAutoConfirmedViews,
+  toTaxInvoicePendingViews,
+} from "./tax-invoice-status";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import {
   hasShadowValidator,
@@ -81,7 +91,9 @@ import {
  * - every read stays inside the worker role's SELECT scope (SalesCampaign, Deal,
  *   Partner, Seller, NaverOrderSnapshot, CampaignGroup, ActionProposal rows this
  *   worker created, and — column- and row-limited to whitelisted Kakao rooms —
- *   ChatRoomMapping and WorkRecord) by reusing existing pure calculations over narrow
+ *   ChatRoomMapping and WorkRecord; for the tax-invoice status read also
+ *   CampaignSettlementItem, CampaignInvoice and — column- and row-limited — ActivityLog
+ *   and SystemTaskLog) by reusing existing pure calculations over narrow
  *   projections; no business formula is copied here
  * - `create_action_proposal` validates WRITE_ACTIONS + Zod args + target existence,
  *   then INSERTs the proposal as PENDING_APPROVAL plus its initial event in one
@@ -173,6 +185,7 @@ type CampaignFinancialsInput = { campaignId: string };
 type SettlementReportInput = { month?: string; year?: string; sellerName?: string; statusFilter?: "SETTLEMENT_IN_PROGRESS" | "COMPLETED" | "ALL" };
 type StoreStatusInput = { claimsLimit?: number; since?: string };
 type WorkRecordsInput = { roomKey: string; since: string; until?: string; limit?: number };
+type TaxInvoiceStatusInput = { month?: string };
 type ProposalScalar = string | number | boolean | null;
 type ProposalNestedValue = ProposalScalar | Record<string, ProposalScalar>;
 /**
@@ -968,6 +981,64 @@ async function getWorkRecords(input: WorkRecordsInput, now: Date): Promise<Opera
 }
 
 // ---------------------------------------------------------------------------
+// get_tax_invoice_status (2026-10-14) — 세금계산서 발행 대조 현황 읽기
+// ---------------------------------------------------------------------------
+
+/**
+ * 오너가 정산 「세무 처리」 보드와 시스템 레이더에서 보는 그림을 봇에게 그대로 준다.
+ *
+ * - lastRun: 발행 자동 확정 크론의 마지막 `SystemTaskLog`(이 잡의 줄만 — DB 정책도 같은 선이다).
+ * - pending · autoConfirmed: 오너 화면과 **같은 함수**(`@/lib/tax-invoice-board-data`)로 만든다 —
+ *   의무 판정을 여기서 다시 쓰지 않는다. 보드 라우트가 덧붙이는 원천징수 경고(지급일 미기록 등)는
+ *   지급월 축이라 싣지 않는다.
+ * - 밖으로 나가는 칸은 `tax-invoice-status.ts` 가 정한다(사업자번호·대표자·연락처·승인번호 없음).
+ */
+async function taxInvoiceStatus(input: TaxInvoiceStatusInput, now: Date): Promise<OperationOutcome> {
+  const prisma = getPrisma();
+  const month = input.month ?? toKstYearMonth(now);
+  const [lastRunRow, boardData] = await Promise.all([
+    prisma.systemTaskLog.findFirst({
+      where: { jobKey: ISSUE_CONFIRM_JOB_KEY },
+      orderBy: { createdAt: "desc" },
+      select: { status: true, details: true, createdAt: true },
+    }),
+    loadTaxInvoiceWorkBoard(prisma, month),
+  ]);
+  const autoConfirmed = await loadTaxInvoiceAutoConfirmed(prisma, boardData.campaignRows, now);
+  const { summary, structuredResult, evidenceCampaignIds } = buildTaxInvoiceStatus({
+    month,
+    lastRun: toIssueConfirmRunView(lastRunRow, now),
+    board: boardData.board,
+    pending: toTaxInvoicePendingViews(boardData.board.rows, boardData.campaignRows),
+    autoConfirmed: toTaxInvoiceAutoConfirmedViews(autoConfirmed),
+    autoConfirmWindowDays: AUTO_CONFIRM_SEED_LOOKBACK_DAYS,
+  });
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(summary),
+    evidenceRefs: boundEvidence(evidenceCampaignIds),
+    actionProposalId: null,
+    record: {
+      title: `세금계산서 발행 대조 ${month}`,
+      resultSummary: boundSummary(summary),
+      structuredResult,
+      dataSources: [
+        "SystemTaskLog",
+        "SalesCampaign",
+        "Deal",
+        "Partner",
+        "Seller",
+        "CampaignGroup",
+        "CampaignSettlementItem",
+        "CampaignInvoice",
+        "ActivityLog",
+      ],
+      query: { month: input.month ?? null },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // create_action_proposal — INSERT only (contract 5)
 // ---------------------------------------------------------------------------
 
@@ -1103,6 +1174,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   get_store_status: (input, context) => storeStatus(input as StoreStatusInput, context.now),
   list_work_record_rooms: () => listWorkRecordRooms(),
   get_work_records: (input, context) => getWorkRecords(input as WorkRecordsInput, context.now),
+  get_tax_invoice_status: (input, context) => taxInvoiceStatus(input as TaxInvoiceStatusInput, context.now),
 };
 
 function buildResult(

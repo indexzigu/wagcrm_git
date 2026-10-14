@@ -482,6 +482,8 @@ describe("§9-6-3 DB 배선 — select 누락은 침묵형 실패다", () => {
    */
   const WIRED_FILES = [
     "app/api/settlement/tax-filing-board/route.ts",
+    // 보드 쿼리는 2026-10-14 부터 이 공유 모듈에 산다(봇 읽기 동작과 공유) — 라우트의 include 는 원천징수 축이다.
+    "lib/tax-invoice-board-data.ts",
     "app/api/settlement/tax-invoice/route.ts",
     "lib/tax-invoice-mail/campaign-facts.ts",
     "repositories/campaignGroupRepository.ts",

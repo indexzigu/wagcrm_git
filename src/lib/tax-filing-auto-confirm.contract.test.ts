@@ -27,7 +27,14 @@ import {
 
 const ROOT = join(__dirname, "..", "..");
 const CRON = join(ROOT, "src/app/api/cron/tax-invoice-issue-confirm/route.ts");
-const BOARD_ROUTE = join(ROOT, "src/app/api/settlement/tax-filing-board/route.ts");
+const BOARD_ROUTE_FILE = join(ROOT, "src/app/api/settlement/tax-filing-board/route.ts");
+/**
+ * 보드의 자동 확정 조회는 2026-10-14 에 라우트에서 공유 모듈로 옮겨졌다 — 오너 화면과 봇의 읽기
+ * 동작(`get_tax_invoice_status`)이 같은 쿼리를 쓰게 하려는 것이다. 아래 계약은 그 쿼리가 **사는 곳**을
+ * 본다. 라우트가 그 모듈을 실제로 부르는지는 바로 아래 단언이 따로 고정한다(안 부르면 이 계약이
+ * 엉뚱한 파일을 지키게 된다).
+ */
+const BOARD_ROUTE = join(ROOT, "src/lib/tax-invoice-board-data.ts");
 
 function read(path: string): string {
   const source = readFileSync(path, "utf8");
@@ -35,6 +42,15 @@ function read(path: string): string {
   expect(source.length).toBeGreaterThan(500);
   return source;
 }
+
+describe("자동 확정 조회의 위치", () => {
+  it("보드 라우트는 자동 확정 조회를 공유 모듈에 맡기고, 스스로 ActivityLog 를 읽지 않는다", () => {
+    const route = read(BOARD_ROUTE_FILE);
+    expect(route).toMatch(/from "@\/lib\/tax-invoice-board-data"/);
+    expect(route).toMatch(/loadTaxInvoiceAutoConfirmed\(prisma,\s*campaignRows/);
+    expect(route).not.toMatch(/activityLog\.findMany/);
+  });
+});
 
 describe("자동 확정 로그의 type 문자열", () => {
   it("크론이 쓰는 type 은 전부 이 접두사로 시작한다 — 하나라도 벗어나면 화면에서 사라진다", () => {
@@ -77,7 +93,7 @@ describe("자동 확정 로그의 type 문자열", () => {
   });
 
   it("⛔ 흡수 여부를 `content` 문장 파싱으로 세지 않는다 — 문구를 다듬으면 조용히 0건이 된다", () => {
-    const source = read(BOARD_ROUTE) + read(join(ROOT, "src/lib/tax-filing-auto-confirm.ts"));
+    const source = read(BOARD_ROUTE) + read(BOARD_ROUTE_FILE) + read(join(ROOT, "src/lib/tax-filing-auto-confirm.ts"));
 
     // 「허용오차」·「흡수」 같은 한국어 낱말로 content 를 검사하는 코드가 들어오는 것을 막는다.
     expect(source).not.toMatch(/content[^\n]{0,40}(includes|match|indexOf)[^\n]{0,20}허용오차/);

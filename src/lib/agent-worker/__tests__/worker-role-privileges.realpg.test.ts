@@ -282,6 +282,57 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     expect(records).toEqual([{ id: "priv-wr-on" }]);
   });
 
+  // get_tax_invoice_status(2026-10-14, migration 20261014120000): two tables opened whole, two log
+  // tables opened column by column and row by row (RLS). Both edges are probed for the same reason as
+  // the Kakao tables — a missing policy is silent (zero rows), a table-level grant hands out text.
+  it("reads the tax-invoice tables only through the granted columns and rows", async () => {
+    for (const table of ["CampaignSettlementItem", "CampaignInvoice"]) {
+      await expect(worker!.$queryRawUnsafe(`SELECT count(*) FROM "${table}"`), table).resolves.toBeDefined();
+    }
+    await expect(
+      worker!.$queryRawUnsafe(`SELECT "id","entityType","entityId","type","fieldName","newValue","content","createdAt" FROM "ActivityLog"`),
+    ).resolves.toBeDefined();
+    await expect(worker!.$queryRawUnsafe(`SELECT "id","jobKey","status","details","createdAt" FROM "SystemTaskLog"`)).resolves.toBeDefined();
+    for (const column of ["previousValue", "actor"]) {
+      await expectDenied(worker!.$queryRawUnsafe(`SELECT "${column}" FROM "ActivityLog"`), `SELECT ActivityLog.${column}`);
+    }
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT * FROM "ActivityLog"`), "SELECT * ActivityLog");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT "message" FROM "SystemTaskLog"`), "SELECT SystemTaskLog.message");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT * FROM "SystemTaskLog"`), "SELECT * SystemTaskLog");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT count(*) FROM "SystemTaskStatus"`), "SELECT SystemTaskStatus");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT count(*) FROM "TaxFilingLog"`), "SELECT TaxFilingLog");
+
+    await admin.$executeRawUnsafe(
+      `INSERT INTO "ActivityLog" ("id","entityType","entityId","type","fieldName","newValue","content","actor","createdAt") VALUES
+        ('priv-al-auto','CAMPAIGN','priv-camp-1','TAX_INVOICE_AUTO_CONFIRM','sellerInvoiceIssuedAt','2026-10-01','probe op','SYSTEM',now()),
+        ('priv-al-like','CAMPAIGN','priv-camp-1','TAXxINVOICE_AUTO_CONFIRM','sellerInvoiceIssuedAt','2026-10-01','probe like','SYSTEM',now()),
+        ('priv-al-change','CAMPAIGN','priv-camp-1','CHANGE','status','x','probe change','owner',now()),
+        ('priv-al-deal','DEAL','priv-deal-1','TAX_INVOICE_AUTO_CONFIRM','sellerInvoiceIssuedAt','2026-10-01','probe deal','SYSTEM',now())
+       ON CONFLICT DO NOTHING`,
+    );
+    const logs = await worker!.$queryRawUnsafe<Array<{ id: string }>>(`SELECT "id" FROM "ActivityLog" WHERE "id" LIKE 'priv-al-%' ORDER BY "id"`);
+    expect(logs).toEqual([{ id: "priv-al-auto" }]);
+
+    await admin.$executeRawUnsafe(
+      `INSERT INTO "SystemTaskLog" ("id","jobKey","status","message","details","createdAt") VALUES
+        ('priv-stl-issue','tax-invoice-issue-confirm','SUCCESS','정상 완료','{"dryRun":true,"confirmed":1}'::jsonb,now()),
+        ('priv-stl-other','enrich-inbox','SUCCESS','정상 완료','{}'::jsonb,now())
+       ON CONFLICT DO NOTHING`,
+    );
+    const runs = await worker!.$queryRawUnsafe<Array<{ id: string }>>(`SELECT "id" FROM "SystemTaskLog" WHERE "id" LIKE 'priv-stl-%' ORDER BY "id"`);
+    expect(runs).toEqual([{ id: "priv-stl-issue" }]);
+  });
+
+  it("cannot write the tax-invoice tables", async () => {
+    await expectDenied(worker!.$executeRawUnsafe(`UPDATE "CampaignInvoice" SET "status" = 'RECORDED' WHERE false`), "UPDATE CampaignInvoice");
+    await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "CampaignSettlementItem" WHERE false`), "DELETE CampaignSettlementItem");
+    await expectDenied(
+      worker!.$executeRawUnsafe(`INSERT INTO "ActivityLog" ("id","entityType","entityId","type") VALUES ('priv-al-x','CAMPAIGN','x','TAX_INVOICE_AUTO_CONFIRM')`),
+      "INSERT ActivityLog",
+    );
+    await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "SystemTaskLog" WHERE false`), "DELETE SystemTaskLog");
+  });
+
   it("cannot run schema DDL", async () => {
     await expectDenied(worker!.$executeRawUnsafe(`CREATE TABLE "wag_priv_probe" ("id" integer)`), "CREATE TABLE");
     await expectDenied(worker!.$executeRawUnsafe(`ALTER TABLE "Deal" ADD COLUMN "privProbe" text`), "ALTER TABLE Deal");
@@ -365,5 +416,14 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
       python,
     );
     expect(paused).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "ROOM_NOT_WHITELISTED" });
+
+    // get_tax_invoice_status: the shared board query, the auto-confirm logs and the cron log all read
+    // as the worker role (rows come from the RLS test above).
+    const taxInvoice = await executeAgentJob(jobFor("get_tax_invoice_status", {}), python);
+    expect(taxInvoice).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED" });
+    if (taxInvoice.kind !== "terminal") throw new Error("expected terminal");
+    expect(taxInvoice.result.resultSummary).toMatch(/^get_tax_invoice_status month=\d{4}-\d{2} lastRun=\S+ runStatus=OK stale=false /);
+    expect(taxInvoice.result.resultSummary).toContain("autoConfirmed=1 ");
+    expect(taxInvoice.result.evidenceRefs).toContain("priv-camp-1");
   }, 60_000);
 });
