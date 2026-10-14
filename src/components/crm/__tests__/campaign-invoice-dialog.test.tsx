@@ -3,7 +3,7 @@
 // 이름·금액은 가공이다(P0).
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { CampaignInvoiceDialog } from "../campaign-invoice-slot";
+import { CampaignInvoiceDialog, CampaignInvoiceSlot } from "../campaign-invoice-slot";
 import { SUPPLIER } from "@/lib/tax-invoice-builder";
 import type { ReceiptScanApiResponse } from "@/lib/tax-invoice-mail/board-evidence";
 
@@ -23,6 +23,8 @@ const VIEW = {
   sellerLabels: ["가나다"],
   legacyDate: null,
   legacyMode: false,
+  expectedTotalAmount: null,
+  expectedFromManual: false,
   rows: [],
   excludedIssueIds: [],
 };
@@ -116,5 +118,66 @@ describe("CampaignInvoiceDialog — 정산서 금액 (T-242)", () => {
     fireEvent.change(sep.getByLabelText("작성일"), { target: { value: "2099-12-31" } });
     expect(sep.getByText("작성일이 아직 오지 않았습니다.")).toBeInTheDocument();
     expect(sep.getByRole("button", { name: "기록" })).toBeDisabled();
+  });
+});
+
+// 기록은 됐는데 합계가 전액과 어긋난 한 달짜리 캠페인(실렌더 지적 R0, 2026-10-14) — 9/10~9/16, 전액 200만, 기록 194만.
+const MISMATCH_VIEW = {
+  ...VIEW,
+  periodStart: "2026-09-09T15:00:00.000Z",
+  periodEnd: "2026-09-20T14:59:59.000Z",
+  expectedTotalAmount: 2_000_000,
+  expectedFromManual: true,
+  rows: [
+    {
+      id: "r1",
+      campaignId: "c1",
+      direction: "ISSUE",
+      yearMonth: "2026-09",
+      status: "RECORDED",
+      writtenAt: "2026-09-30",
+      approvalNo: "X-9",
+      supplyAmount: null,
+      taxAmount: null,
+      totalAmount: 1_940_000,
+      itemName: null,
+      source: "MAIL",
+      mailReceivedAt: null,
+      note: null,
+    },
+  ],
+};
+
+describe("CampaignInvoiceSlot — 기록한 합계가 전액과 어긋난 달 (R0)", () => {
+  it("칸은 작성일을 두고 「오류 가능성」을 덧붙이며, 머리글 1/1 옆에 「확인 필요」를 보이고 풀이에 수동 입력 안내가 붙는다", async () => {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const body = url.includes("/brand-statements") ? { statements: [] } : MISMATCH_VIEW;
+      return { ok: true, json: async () => body } as Response;
+    }) as never;
+    render(
+      <CampaignInvoiceSlot
+        campaignId="c1"
+        title="공급사 계산서 발행"
+        scan={{ scan: { sinceDays: 90 }, results: [] } as unknown as ReceiptScanApiResponse}
+        scanLoading={false}
+        onRequestScan={() => {}}
+        onChanged={() => {}}
+        legacyFallback={null}
+        attachment={null}
+      />,
+    );
+    const cell = await screen.findByTestId("invoice-month-2026-09");
+    expect(cell).toHaveTextContent("9월9/30 · 오류 가능성");
+    const slot = screen.getByTestId("campaign-invoice-slot");
+    expect(slot).toHaveTextContent("1/1");
+    const review = screen.getByTestId("campaign-invoice-review");
+    expect(review).toHaveTextContent("확인 필요");
+    expect(review).toHaveAttribute("title", expect.stringContaining("정산 오류 가능성 · 원인 확인 필요"));
+    // 풀이 창(마우스 올림) — 어긋남 풀이 + 수동 입력 안내 + 기록 세부
+    fireEvent.pointerDown(cell, { pointerType: "touch" });
+    expect(await screen.findByText(/정산 오류 가능성 · 원인 확인 필요/)).toBeInTheDocument();
+    expect(screen.getByText("기대액이 수동 입력값에서 계산됨 · CRM 금액 재확인")).toBeInTheDocument();
+    expect(screen.getByText("1,940,000원")).toBeInTheDocument();
   });
 });

@@ -416,6 +416,14 @@ function DirectionBlock({
                     // 캠페인 상세 칸의 n/m 과 같은 숫자 — 단위를 붙여 「몇 개월 중 몇 개월」로 읽히게(T-244).
                     <div className="mt-0.5 text-[10px] tabular-nums">
                       계산서 {row.monthlyInvoice.done}/{row.monthlyInvoice.total}개월 기록
+                      {row.monthlyInvoice.review ? (
+                        // 달은 다 끝났는데 기록한 금액이 캠페인 전액과 어긋난다 — 행이 남은 이유(2026-10-14).
+                        // 낱말은 캠페인 상세 칸과 같다(정본 AUTO_RECORD_REVIEW_LABEL). 색은 점에만(P8).
+                        <span className="ml-1.5 inline-flex items-center gap-1 text-foreground">
+                          <span className="size-1.5 rounded-full bg-status-caution" aria-hidden="true" />
+                          {row.monthlyInvoice.review.label}
+                        </span>
+                      ) : null}
                     </div>
                   ) : null}
                 </td>

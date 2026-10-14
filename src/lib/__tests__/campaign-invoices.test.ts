@@ -207,7 +207,7 @@ describe("deriveInvoiceMonths — 줄은 기간의 달마다 있고 내용만 �
 
 describe("완료 판정 · 레거시 날짜 롤업 — 저장된 행만으로", () => {
   it("모든 달이 기록 또는 「없음」이어야 끝이다", () => {
-    expect(summarizeInvoiceRows({ ...PERIOD, rows: [row()] })).toEqual({ done: 1, total: 2, openMonths: ["2026-10"] });
+    expect(summarizeInvoiceRows({ ...PERIOD, rows: [row()] })).toEqual({ done: 1, total: 2, openMonths: ["2026-10"], review: null });
     expect(
       summarizeInvoiceRows({
         ...PERIOD,
@@ -268,6 +268,12 @@ function unit(overrides: Partial<AutoRecordUnit> = {}): AutoRecordUnit {
     openMonths: ["2026-09"],
     labels: ["가나다"],
     dismissedIssueIds: [],
+    expectedTotalAmount: null,
+    expectedFromManual: false,
+    recordedTotalAmount: 0,
+    periodMonths: ["2026-09", "2026-10"],
+    closedMonths: [],
+    recordedMismatch: null,
     ...overrides,
   };
 }

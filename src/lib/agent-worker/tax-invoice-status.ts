@@ -16,6 +16,7 @@
  *    `issuance-match.ts` 의 `IssuanceVerdict.observed` 로 숫자와 작성일자뿐이고 승인번호가 없다. 금액 불일치
  *    건을 봇이 "○원 차이"까지 말하게 하려는 오너 승인(2026-10-14). 작성일자 등 다른 칸은 옮기지 않는다.
  */
+import { AUTO_RECORD_REVIEW_LABEL } from "@/lib/campaign-invoices";
 import type { CampaignRow } from "@/lib/crm-types";
 import type { AutoConfirmedEntry } from "@/lib/tax-filing-auto-confirm";
 import type { TaxInvoiceBoard, TaxInvoiceBoardRow } from "@/lib/tax-filing-board";
@@ -123,9 +124,30 @@ export type IssueConfirmRunView = {
   needsReviewDetailCapped: boolean;
   /** 저장부(`capDetailsForLog`)가 기록을 줄였다 — 빠진 칸이 있을 수 있다. */
   detailsTrimmed: boolean;
+  /**
+   * 월정산 계산서 자동 기록이 오너 확인으로 넘긴 건(2026-10-14) — 이유 코드별 개수와 고정 라벨만
+   * (크론 `monthlyAutoRecord.needsReviewDetail`). 캠페인 id·금액은 옮기지 않는다.
+   */
+  monthlyReview: Array<{ code: string; label: string; count: number }>;
   /** 기록에 없어서 null 로 둔 칸 — 0 으로 지어내지 않는다. */
   missingFields: string[];
 };
+
+function parseMonthlyReview(value: unknown): IssueConfirmRunView["monthlyReview"] {
+  const detail = asRecord(value)?.needsReviewDetail;
+  if (!Array.isArray(detail)) return [];
+  const counts = new Map<string, number>();
+  for (const raw of detail) {
+    const reason = code(asRecord(raw)?.reason);
+    if (!reason || !(reason in AUTO_RECORD_REVIEW_LABEL)) continue;
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  return [...counts].map(([reason, count]) => ({
+    code: reason,
+    label: AUTO_RECORD_REVIEW_LABEL[reason as keyof typeof AUTO_RECORD_REVIEW_LABEL],
+    count,
+  }));
+}
 
 const COUNT_KEYS = [
   "expectedTotal",
@@ -216,6 +238,7 @@ export function toIssueConfirmRunView(row: IssueConfirmRunRow | null, now: Date)
     needsReviewDetail: review.items,
     needsReviewDetailCapped: details.needsReviewDetailCapped === true || review.overflow,
     detailsTrimmed: details.detailsTrimmed != null,
+    monthlyReview: parseMonthlyReview(details.monthlyAutoRecord),
     missingFields,
   };
 }
@@ -239,7 +262,7 @@ export type TaxInvoicePendingView = {
   selectable: boolean;
   blockingReasons: string[];
   /** 월정산 공급사 행의 달별 기록 진행(n/m). 아니면 null. */
-  monthlyInvoice: { done: number; total: number } | null;
+  monthlyInvoice: { done: number; total: number; review: { code: string; label: string } | null } | null;
   /** 참이면 금액이 캠페인 총액이라 실제 달별 계산서와 다르다(보드 합계에서도 뺀다). */
   monthlyInvoiceManaged: boolean;
   campaignId: string;
@@ -277,7 +300,16 @@ export function toTaxInvoicePendingViews(
         blockingReasons: row.blockingReasons
           .slice(0, MAX_BLOCKING_REASONS)
           .flatMap((reason) => label(reason) ?? []),
-        monthlyInvoice: row.monthlyInvoice ? { done: row.monthlyInvoice.done, total: row.monthlyInvoice.total } : null,
+        monthlyInvoice: row.monthlyInvoice
+          ? {
+              done: row.monthlyInvoice.done,
+              total: row.monthlyInvoice.total,
+              // 코드와 고정 라벨만 — 금액·승인번호는 없다(라벨 정본 `AUTO_RECORD_REVIEW_LABEL`).
+              review: row.monthlyInvoice.review
+                ? { code: row.monthlyInvoice.review.reason, label: row.monthlyInvoice.review.label }
+                : null,
+            }
+          : null,
         monthlyInvoiceManaged: row.monthlyInvoiceManaged,
         campaignId: row.campaignId,
         campaignIds: [...row.campaignIds],
@@ -338,7 +370,11 @@ function formatReviewLine(item: NeedsReviewView): string {
 
 function formatPendingLine(row: TaxInvoicePendingView): string {
   const blocked = row.selectable ? "" : ` blocked=${row.blockingReasons.join("·") || "?"}`;
-  const monthly = row.monthlyInvoice ? ` monthly=${row.monthlyInvoice.done}/${row.monthlyInvoice.total}` : row.monthlyInvoiceManaged ? " monthly=managed" : "";
+  const monthly = row.monthlyInvoice
+    ? ` monthly=${row.monthlyInvoice.done}/${row.monthlyInvoice.total}${row.monthlyInvoice.review ? ` monthlyReview=${row.monthlyInvoice.review.code}` : ""}`
+    : row.monthlyInvoiceManaged
+      ? " monthly=managed"
+      : "";
   return `PENDING ${row.directionLabel} ${row.counterpart} [${row.section}] ${row.campaignLabel ?? "(이름 없음)"} deal=${row.dealName ?? "?"} seller=${row.sellerName ?? "?"} partner=${row.partnerName ?? "?"} supply=${row.amount.supply} vat=${row.amount.vat} total=${row.amount.total} selectable=${row.selectable ? "yes" : "no"}${blocked}${monthly}`;
 }
 
@@ -371,6 +407,7 @@ function formatRunHeader(run: IssueConfirmRunView | null): string {
     `failures=${n(run.failuresCount)}`,
     `failed=${run.failed}`,
     `detailsTrimmed=${run.detailsTrimmed}`,
+    `monthlyReview=${run.monthlyReview.length > 0 ? run.monthlyReview.map((item) => `${item.code}:${item.count}`).join(",") : "none"}`,
     `missing=${run.missingFields.length > 0 ? run.missingFields.join(",") : "none"}`,
   ].join(" ");
 }

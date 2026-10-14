@@ -19,7 +19,14 @@ import { scanTaxInvoiceMails } from "@/lib/tax-invoice-mail/mail-scan";
 // 소비한다) — 이 route 가 사본을 따로 들고 있다가 2026-08-07 정정 때 한쪽만 고쳐져
 // 갈렸다(FIX 3). route 가 lib 를 import 하는 방향이 자연스러워 여기서 정리한다.
 import { FIELD_LABEL } from "@/lib/tax-filing-auto-confirm";
-import { planAutoRecords, type AutoRecordSkipReason, type InvoiceMailSummary } from "@/lib/campaign-invoices";
+import {
+  AUTO_RECORD_REVIEW_LABEL,
+  planAutoRecords,
+  type AutoRecordReviewReason,
+  type AutoRecordSkipReason,
+  type InvoiceMailSummary,
+  type InvoiceMonthNote,
+} from "@/lib/campaign-invoices";
 import { toInvoiceMailSummary } from "@/lib/tax-invoice-mail/invoice-mail-summary";
 import { scanBrandStatementMails } from "@/lib/tax-invoice-mail/brand-statement-scan";
 import { campaignInvoiceService } from "@/services/campaignInvoiceService";
@@ -137,14 +144,32 @@ type MonthlyAutoRecordReport = {
   noop: number;
   droppedByCap: number;
   skipped: Partial<Record<AutoRecordSkipReason, number>>;
-  /** 계획된 건 — 캠페인 id·달·금액만(실명 없음). 예행(dryRun)에서 「무엇이 붙을지」를 보는 창이다. */
-  plannedDetail: Array<{ campaignId: string; yearMonth: string; totalAmount: number | null; delta: number }>;
+  /** 계획된 건 — 캠페인 id·달·금액·근거만(실명 없음). 예행(dryRun)에서 「무엇이 붙을지」를 보는 창이다. */
+  plannedDetail: Array<{
+    campaignId: string;
+    yearMonth: string;
+    totalAmount: number | null;
+    delta: number;
+    basis: "STATEMENT" | "FULL_AMOUNT";
+  }>;
+  /**
+   * 계산서만으로 본 판정이 오너 확인을 요구한 건(2026-10-14) — 이유 코드·고정 낱말·풀이 코드와 캠페인·달만
+   * (금액·이름 없음). 자동 기록하지 않은 이유가 「정산서 없음」 숫자에 묻히지 않게 따로 싣는다.
+   */
+  needsReviewDetail: Array<{
+    campaignId: string;
+    yearMonth: string;
+    reason: AutoRecordReviewReason;
+    label: string;
+    notes: InvoiceMonthNote[];
+  }>;
   failures: Array<{ key: string; error: string }>;
 };
 
 /**
  * 월정산 공급사 계산서 **확인 없는 자동 기록**(T-242) — 발행(ISSUE)만, `planAutoRecords` 의 네 조건
- * (단일 칸 · 정산서 1건 · 금액 ±99원 1장 · 수정계산서 없음)을 모두 만족할 때만. 쓰기는 위 단일 날짜
+ * (단일 칸 · 정산서 1건 · 금액 ±99원 1장 · 수정계산서 없음)을 모두 만족할 때만. 정산서가 없는 단위는
+ * 계산서 합계가 캠페인 전액과 맞을 때만 기록하고(2026-10-14), 어긋나면 `needsReviewDetail` 로 넘긴다. 쓰기는 위 단일 날짜
  * 확정과 **같은 env 게이트**(`TAX_INVOICE_AUTO_CONFIRM=1`) 뒤에 있다 — 꺼져 있으면 예행만 한다.
  * 정산서 스캔이 실패하면 이 단계만 실패로 보고하고(조용히 0건으로 보이지 않게) 위 단계 결과는 둔다.
  */
@@ -166,6 +191,7 @@ async function runMonthlyAutoRecord(input: {
     droppedByCap: 0,
     skipped: {},
     plannedDetail: [],
+    needsReviewDetail: [],
     failures: [],
   };
   const { units, recordedIssueIds } = await campaignInvoiceService.loadAutoRecordUnits(getPrisma(), {
@@ -204,6 +230,14 @@ async function runMonthlyAutoRecord(input: {
     yearMonth: op.yearMonth,
     totalAmount: op.mail.totalAmount,
     delta: op.delta,
+    basis: op.basis,
+  }));
+  report.needsReviewDetail = plan.needsReview.map((item) => ({
+    campaignId: item.campaignId,
+    yearMonth: item.yearMonth,
+    reason: item.reason,
+    label: AUTO_RECORD_REVIEW_LABEL[item.reason],
+    notes: item.notes,
   }));
   if (input.dryRun) return report;
 
@@ -222,8 +256,10 @@ async function runMonthlyAutoRecord(input: {
           itemName: op.mail.itemName,
           mailReceivedAt: op.mail.receivedAt,
         },
-        expectedTotal: op.expected.totalAmount,
+        basis: op.basis,
+        expectedTotal: op.expectedTotal,
         delta: op.delta,
+        split: op.split,
       });
       if (row) report.applied += 1;
       else report.noop += 1;

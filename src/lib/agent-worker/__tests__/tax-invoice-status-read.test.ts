@@ -333,3 +333,30 @@ describe("toIssueConfirmRunView — missing or trimmed details are reported, not
     ]);
   });
 });
+
+describe("toIssueConfirmRunView — 월정산 자동 기록의 오너 확인 건은 코드·고정 라벨·개수만", () => {
+  it("monthlyAutoRecord.needsReviewDetail 을 이유 코드별로 세고, 모르는 코드와 캠페인 id 는 옮기지 않는다", () => {
+    const view = toIssueConfirmRunView(
+      {
+        status: "SUCCESS",
+        details: {
+          monthlyAutoRecord: {
+            needsReviewDetail: [
+              { campaignId: "c1", yearMonth: "2026-09", reason: "MINOR_MISMATCH", label: "x", notes: ["EXPECTED_FROM_MANUAL"] },
+              { campaignId: "c2", yearMonth: "2026-09", reason: "MINOR_MISMATCH", label: "x", notes: [] },
+              { campaignId: "c3", yearMonth: "2026-10", reason: "POSSIBLE_SPLIT", label: "x", notes: [] },
+              { campaignId: "c4", yearMonth: "2026-10", reason: "NOT_A_CODE", label: "x", notes: [] },
+            ],
+          },
+        },
+        createdAt: NOW,
+      },
+      NOW,
+    );
+    expect(view!.monthlyReview).toEqual([
+      { code: "MINOR_MISMATCH", label: "정산 오류 가능성 · 원인 확인 필요", count: 2 },
+      { code: "POSSIBLE_SPLIT", label: "분할 발행 가능성 · 정산 메일 미확인", count: 1 },
+    ]);
+    expect(JSON.stringify(view!.monthlyReview)).not.toContain("c1");
+  });
+});

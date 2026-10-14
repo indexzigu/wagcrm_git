@@ -115,6 +115,13 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   "lib/campaign-financial-guard.test.ts": "위 가드의 비교 계약 픽스처 — null 과 0 을 다른 상태로 단언할 뿐 산술 없음",
   "lib/campaign-update-plan.ts": "PATCH 변경 감지 diff — settlementGoodsCost 는 값 비교(변경 여부 판정)만, 산술 없음(3계층 이관 2단계)",
   "lib/__tests__/campaign-update-plan.test.ts": "위 diff 함수의 단위 테스트 — 값 비교 픽스처만",
+  // 2026-10-14(오너 확정 「계산서에 기입된 내역으로 상태를 판단한다」): 월정산 단위의 「캠페인 전액」은 세무 보드와
+  // **같은 SSOT**(`tax-filing-board.resolveSupplierInvoiceUnitTotal`)로 계산해야 한다 — 서비스는 DB 값을 그 함수에
+  // 그대로 넘길 뿐이다(산술은 보드 SSOT 가 한다).
+  "services/campaignInvoiceService.ts":
+    "월정산 계산서 전액 판정 — DB → `resolveSupplierInvoiceUnitTotal` 값 통과만(Decimal → number), 산술 없음(2026-10-14)",
+  "lib/__tests__/campaign-invoices-full-amount.test.ts":
+    "위 전액 SSOT 의 계약 픽스처 — 수기 물품대금이 「수동 입력값」 표시를 켜는지만 단언, 산술 없음",
   "components/crm/__tests__/campaign-side-panel-settlement-zones.test.tsx":
     "재무 카드 3구간 렌더 계약의 픽스처 — 물품대금 표시값을 넣을 뿐 산술 없음(2026-08-08)",
   "app/settlement/__tests__/settlement-page-client.group-siblings.test.tsx":

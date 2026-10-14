@@ -174,7 +174,16 @@ export type TaxInvoiceBoardRow = {
    * 날짜 한 칸이 아니라 달별 계산서(`campaignInvoiceService`)가 정한다 — 화면은 이 값이 있으면
    * 「완료」(날짜 찍기) 대신 달별 계산서 창을 연다. 호출부가 진행을 넘기지 않으면 null 이다.
    */
-  monthlyInvoice: { done: number; total: number } | null;
+  monthlyInvoice: {
+    done: number;
+    total: number;
+    /**
+     * 달은 다 끝났는데 기록한 계산서 합계가 전액과 어긋난다(`InvoiceProgress.review`, 2026-10-14) — 행을 보드에
+     * 남기고 사유를 보인다. 완료 게이트는 막지 않는다(검토 신호 — 오너). 사유 낱말은 `campaign-invoices.ts` 의
+     * `AUTO_RECORD_REVIEW_LABEL` 이 정본이라 여기서 다시 쓰지 않고 그대로 싣는다.
+     */
+    review: { reason: string; label: string } | null;
+  } | null;
   /**
    * 월정산 거래처의 공급사 행인가(T-247) — 진행 정보(`monthlyInvoice`)와 무관하게 캠페인에서 정한다.
    * 참이면 `amount` 는 **캠페인 총액**이라 실제로 끊을 달별 계산서 어느 것과도 같지 않다. 그래서
@@ -203,8 +212,9 @@ function resolveMonthlyInvoice(
   if (field !== "supplierInvoiceIssuedAt" || !campaign.partnerMonthlySettlement) return null;
   const found = progress?.get(campaign.id);
   if (!found) return null;
-  if (found.openMonths.length === 0) return "DONE";
-  return { done: found.done, total: found.total };
+  // 어긋남이 있으면 다 끝났어도 행을 남긴다 — 오너가 원인을 볼 자리가 보드에도 있어야 한다(R0).
+  if (found.openMonths.length === 0 && !found.review) return "DONE";
+  return { done: found.done, total: found.total, review: found.review };
 }
 
 /** 공급사 칸이 월정산(달별 여러 장)으로 관리되는가 — 행의 `monthlyInvoiceManaged` 정본. */
@@ -851,6 +861,132 @@ function emitCampaignRows(
   }
 }
 
+/**
+ * 그룹 멤버의 공급사(거래처)가 서로 다른가 — `emitGroupRows` 의 Finding 1 판정(아래 주석).
+ * 전 멤버가 사업자등록번호를 가지면 정규화한 번호로, 한 명이라도 없으면 이름으로 가른다.
+ */
+function hasSupplierIdentityMismatch(
+  members: ReadonlyArray<{ partnerBusinessNumber?: string | null; partnerName: string | null }>,
+): boolean {
+  const allHaveBusinessNumber = members.every((m) => !!m.partnerBusinessNumber);
+  const identities = new Set(
+    members.map((m) => (allHaveBusinessNumber ? normalizeBusinessNumber(m.partnerBusinessNumber ?? "") : m.partnerName)),
+  );
+  return identities.size > 1;
+}
+
+/**
+ * 그룹(계산서 1장)의 VAT 포함 원금 합계와 결번 사유 — `emitGroupRows` 의 금액 규칙 그 자체다.
+ *
+ * 금액은 멤버별 VAT 포함 원금을 먼저 합산한 뒤, 호출부가 그 합계에 변환을 한 번만 적용한다
+ * (파일 상단 주석 참조 — 멤버별로 각각 반올림해 합치면 실제 통합 계산서 금액과
+ * 갈릴 수 있다). 결번 사유는 멤버 각자의 원금 계산 기준으로 모은다 — 그룹 총액이
+ * 양수로 보여도 그중 한 멤버의 데이터가 없으면 "합쳐진 숫자가 사실 일부만 반영된
+ * 것"이라 못 미더우므로, 한 멤버라도 결번이면 행 전체를 선택 불가로 막는다(기존
+ * 캠페인 단위 결번 정책과 동일 — 확신 없는 숫자를 확정치처럼 보여주지 않는다).
+ */
+function sumGroupBaseAmount(
+  basis: AmountBasis,
+  members: readonly InvoiceBaseAmountInput[],
+): { baseAmount: number; blockingReasons: string[] } {
+  const amountReasons = new Set<string>();
+  // 물품대금은 **그룹 단위로 먼저 판정**한다 — 멤버별로 각자 수기/공식을 고르면
+  // 「일부만 반영된 합계」가 실물 계산서 총액인 것처럼 보이는 그럴듯한 오답이 된다
+  // (그룹은 계산서 한 장이라 그 오답이 곧 영구 금액 불일치이거나, 더 나쁘게는 우연히
+  // 근사해 오확정이 된다). 수취 대조 엔진의 `buildGroupExpectedReceivables` 가 이미
+  // 같은 규칙(부분 합산 금지)을 쓰므로 두 모듈이 같은 답을 내야 한다.
+  const groupGoodsCost = basis === "SALES_MINUS_SETTLEMENT" ? sumGroupManualGoodsCost(members) : null;
+  if (groupGoodsCost !== null) {
+    if (groupGoodsCost === 0) amountReasons.add(GOODS_COST_CONSOLIDATED_REASON);
+    else if (groupGoodsCost < 0) amountReasons.add("수기 물품대금이 0 이하");
+    return { baseAmount: Math.max(groupGoodsCost, 0), blockingReasons: [...amountReasons] };
+  }
+  let baseAmount = 0;
+  for (const member of members) {
+    // ⚠️ 물품대금 기준인데 여기 왔다는 것은 **멤버 하나 이상이 수기값 미입력**이라는
+    // 뜻이다 — 그러면 그룹 전체가 공식으로 간다. 입력된 멤버의 수기값만 섞어 더하면
+    // 그게 바로 위에서 막으려던 부분 합산이므로, 그 필드를 벗겨 공식을 강제한다.
+    const input = basis === "SALES_MINUS_SETTLEMENT" ? { ...member, settlementGoodsCost: null } : member;
+    const result = computeBaseAmountForBasis(basis, input);
+    baseAmount += result.baseAmount;
+    result.blockingReasons.forEach((r) => amountReasons.add(r));
+  }
+  return { baseAmount, blockingReasons: [...amountReasons] };
+}
+
+/** 월정산 단위(캠페인 1건 또는 그룹 전원)의 공급사 계산서 「전액」 입력 — 멤버마다 하나. */
+export type SupplierInvoiceUnitMember = InvoiceBaseAmountInput & {
+  salesChannel: string;
+  partnerName: string | null;
+  partnerBusinessNumber?: string | null;
+  /** 영업수익을 손으로 고정했는가(`CampaignRow.isManualSettlementSales`) */
+  isManualSettlementSales?: boolean;
+  /** 셀러 정산금을 손으로 고정했는가(`CampaignRow.isManualSellerExpense`) */
+  isManualSellerExpense?: boolean;
+};
+
+/** 단위 전액과 그 금액이 수동 입력값에서 왔는가. */
+export type SupplierInvoiceUnitTotal = {
+  /** 공급가액 + 세액(원) */
+  totalAmount: number;
+  /**
+   * 금액 계산에 실제로 쓰인 입력 중 손으로 고정한 값이 있는가 — 영업수익 수동 고정, 수기 물품대금,
+   * 셀러 정산금 수동 고정(기준이 쓰는 것만). 판정은 바꾸지 않고, 어긋남을 오너에게 보일 때
+   * 「CRM 금액 재확인」 풀이를 붙이는 근거다(오너 확정 2026-10-14).
+   */
+  fromManualInput: boolean;
+};
+
+/** 기준이 실제로 읽은 입력 중 수동 값이 있었는가 — `sumGroupBaseAmount`·`computeBaseAmountForBasis` 의 분기와 같다. */
+function amountUsedManualInput(
+  basis: AmountBasis,
+  members: readonly SupplierInvoiceUnitMember[],
+  grouped: boolean,
+): boolean {
+  if (basis === "SETTLEMENT_SALES") return members.some((m) => m.isManualSettlementSales === true);
+  if (basis === "SALES_MINUS_SETTLEMENT") {
+    const goodsManual = grouped
+      ? sumGroupManualGoodsCost(members) !== null
+      : members[0].settlementGoodsCost != null;
+    return goodsManual || members.some((m) => m.isManualSettlementSales === true);
+  }
+  return members.some((m) => m.isManualSellerExpense === true);
+}
+
+/**
+ * 월정산 단위의 공급사 계산서 **전액**(공급가액 + 세액, 원) — 세무 보드가 그 의무 행에 보이는 금액과
+ * **같은 규칙**이다(단독 캠페인 = `emitCampaignRows`, 그룹 = `emitGroupRows`). 발행된 계산서들의 합계가
+ * 이 값과 맞으면 「한 번에 다 끊었다」로 본다(`campaign-invoices.ts` 의 `summarizeInvoiceRows`, 오너 확정
+ * 2026-10-14 「계산서에 기입된 내역을 바탕으로 상태를 판단한다」).
+ *
+ * null = 모른다 — 결번(매출·영업수익 미입력 등), 그룹 멤버끼리 채널·공급사가 갈림(보드도 한 행으로
+ * 합치지 못한다), 공급사 의무 없음. ⛔ 모르는 금액을 0 으로 접지 말 것 — 0 과 맞는 계산서가 없어도
+ * 「모름」과 「0원」은 다른 사실이다.
+ */
+export function resolveSupplierInvoiceUnitTotal(input: {
+  members: readonly SupplierInvoiceUnitMember[];
+  /** 그룹 단위인가(멤버 1명 그룹도 그룹 규칙을 탄다 — 보드가 groupId 로 가른다) */
+  grouped: boolean;
+}): SupplierInvoiceUnitTotal | null {
+  const { members } = input;
+  if (members.length === 0) return null;
+  const channelGroups = new Set(members.map((m) => resolveTaxFilingChannelGroup(m.salesChannel)));
+  if (channelGroups.size > 1) return null;
+  const obligation = TAX_INVOICE_OBLIGATION_TABLE[[...channelGroups][0]].supplierInvoiceIssuedAt;
+  if (!obligation) return null;
+  if (input.grouped && obligation.counterpart === "SUPPLIER" && hasSupplierIdentityMismatch(members)) return null;
+  const grouped = input.grouped || members.length > 1;
+  const { baseAmount, blockingReasons } = grouped
+    ? sumGroupBaseAmount(obligation.amountBasis, members)
+    : computeBaseAmountForBasis(obligation.amountBasis, members[0]);
+  if (blockingReasons.length > 0 || baseAmount <= 0) return null;
+  const { supplyAmount, taxAmount } = toSupplyAndTax(baseAmount);
+  return {
+    totalAmount: supplyAmount + taxAmount,
+    fromManualInput: amountUsedManualInput(obligation.amountBasis, members, grouped),
+  };
+}
+
 /** `emitGroupRows`가 합치기를 포기한 이유 — 호출부가 사유별로 다른 경고 문구를 낸다. */
 type GroupCollapseMismatch = "CHANNEL_MISMATCH" | "SUPPLIER_MISMATCH";
 
@@ -907,12 +1043,8 @@ function emitGroupRows(
   // 캠페인별 행으로 후퇴시키는 것보다, 기존처럼 이름 비교로 판정하는 쪽이 더
   // 관용적이다.
   const supplierObligation = table.supplierInvoiceIssuedAt;
-  if (supplierObligation?.counterpart === "SUPPLIER") {
-    const allHaveBusinessNumber = sortedMembers.every((m) => !!m.partnerBusinessNumber);
-    const partnerIdentityKey = (m: CampaignRow) =>
-      allHaveBusinessNumber ? normalizeBusinessNumber(m.partnerBusinessNumber ?? "") : m.partnerName;
-    const partnerIdentities = new Set(sortedMembers.map(partnerIdentityKey));
-    if (partnerIdentities.size > 1) return { collapsed: false, reason: "SUPPLIER_MISMATCH", campaignLabel };
+  if (supplierObligation?.counterpart === "SUPPLIER" && hasSupplierIdentityMismatch(sortedMembers)) {
+    return { collapsed: false, reason: "SUPPLIER_MISMATCH", campaignLabel };
   }
 
   for (const field of ["supplierInvoiceIssuedAt", "sellerInvoiceIssuedAt"] as const) {
@@ -929,50 +1061,15 @@ function emitGroupRows(
     // 사업자 판정도 대표로 충분하고, 멤버마다 다시 물을 이유가 없다.
     if (obligation.counterpart === "SELLER" && isIndividualSeller(anchor)) continue;
 
-    // 금액은 멤버별 VAT 포함 원금을 먼저 합산한 뒤, 그 합계에 변환을 한 번만 적용한다
-    // (파일 상단 주석 참조 — 멤버별로 각각 반올림해 합치면 실제 통합 계산서 금액과
-    // 갈릴 수 있다). 결번 사유는 멤버 각자의 원금 계산 기준으로 모은다 — 그룹 총액이
-    // 양수로 보여도 그중 한 멤버의 데이터가 없으면 "합쳐진 숫자가 사실 일부만 반영된
-    // 것"이라 못 미더우므로, 한 멤버라도 결번이면 행 전체를 선택 불가로 막는다(기존
-    // 캠페인 단위 결번 정책과 동일 — 확신 없는 숫자를 확정치처럼 보여주지 않는다).
-    let baseAmountSum = 0;
+    // 금액은 `sumGroupBaseAmount`(아래)가 정한다 — 월정산 계산서의 「캠페인 전액」 판정
+    // (`resolveSupplierInvoiceUnitTotal`)도 같은 함수를 쓴다(두 표면이 같은 그룹 금액을 말해야 한다).
+    const { baseAmount: baseAmountSum, blockingReasons: amountReasons } = sumGroupBaseAmount(
+      obligation.amountBasis,
+      sortedMembers,
+    );
     const identityReasons = new Set<string>();
-    const amountReasons = new Set<string>();
-
-    // 물품대금은 **그룹 단위로 먼저 판정**한다 — 멤버별로 각자 수기/공식을 고르면
-    // 「일부만 반영된 합계」가 실물 계산서 총액인 것처럼 보이는 그럴듯한 오답이 된다
-    // (그룹은 계산서 한 장이라 그 오답이 곧 영구 금액 불일치이거나, 더 나쁘게는 우연히
-    // 근사해 오확정이 된다). 수취 대조 엔진의 `buildGroupExpectedReceivables` 가 이미
-    // 같은 규칙(부분 합산 금지)을 쓰므로 두 모듈이 같은 답을 내야 한다.
-    const groupGoodsCost =
-      obligation.amountBasis === "SALES_MINUS_SETTLEMENT"
-        ? sumGroupManualGoodsCost(sortedMembers)
-        : null;
-
-    if (groupGoodsCost !== null) {
-      if (groupGoodsCost === 0) {
-        amountReasons.add(GOODS_COST_CONSOLIDATED_REASON);
-      } else if (groupGoodsCost < 0) {
-        amountReasons.add("수기 물품대금이 0 이하");
-      }
-      baseAmountSum = Math.max(groupGoodsCost, 0);
-      for (const member of sortedMembers) {
-        counterpartBlockingReasons(obligation.counterpart, member).forEach((r) => identityReasons.add(r));
-      }
-    } else {
-      for (const member of sortedMembers) {
-        // ⚠️ 물품대금 기준인데 여기 왔다는 것은 **멤버 하나 이상이 수기값 미입력**이라는
-        // 뜻이다 — 그러면 그룹 전체가 공식으로 간다. 입력된 멤버의 수기값만 섞어 더하면
-        // 그게 바로 위에서 막으려던 부분 합산이므로, 그 필드를 벗겨 공식을 강제한다.
-        const input =
-          obligation.amountBasis === "SALES_MINUS_SETTLEMENT"
-            ? { ...member, settlementGoodsCost: null }
-            : member;
-        const { baseAmount, blockingReasons } = computeBaseAmountForBasis(obligation.amountBasis, input);
-        baseAmountSum += baseAmount;
-        blockingReasons.forEach((r) => amountReasons.add(r));
-        counterpartBlockingReasons(obligation.counterpart, member).forEach((r) => identityReasons.add(r));
-      }
+    for (const member of sortedMembers) {
+      counterpartBlockingReasons(obligation.counterpart, member).forEach((r) => identityReasons.add(r));
     }
     const blockingReasons = [...identityReasons, ...amountReasons];
     const monthlyInvoiceManaged = isMonthlyInvoiceManaged(field, anchor);
