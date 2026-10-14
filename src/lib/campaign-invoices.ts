@@ -843,6 +843,14 @@ export function matchesExpectedAmount(totalAmount: number | null, expected: read
   return expected.some((item) => Math.abs(item.totalAmount - totalAmount) <= INVOICE_AMOUNT_TOLERANCE_WON);
 }
 
+/**
+ * 단위의 기준 캠페인 — 그룹이면 id 오름차순 첫 멤버. 자동 기록이 행을 붙이는 곳과 「확인함」을 저장하는
+ * 곳이 이 한 함수를 쓴다(두 곳이 갈리면 쓰기와 읽기가 다른 캠페인을 본다).
+ */
+export function unitAnchorCampaignId(memberIds: readonly string[]): string {
+  return [...memberIds].sort()[0];
+}
+
 /** 자동 기록 판정에 넣는 월정산 단위 하나(서버가 DB 에서 만든다). */
 export type AutoRecordUnit = {
   /** 그룹 id 또는 캠페인 id */

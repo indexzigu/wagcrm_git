@@ -39,6 +39,7 @@ import {
   sumRecordedInvoiceTotal,
   resolveSupplierInvoiceDirection,
   summarizeInvoiceRows,
+  unitAnchorCampaignId,
   type CampaignInvoiceRow,
   type CampaignInvoiceView,
   type InvoiceDirection,
@@ -637,7 +638,7 @@ export const campaignInvoiceService = {
       if (mismatch.fingerprint !== input.fingerprint) {
         throw new CampaignInvoiceError("금액이 바뀌었습니다. 창을 닫았다 다시 열어 확인해 주세요.", 409);
       }
-      const anchorCampaignId = [...unit.memberIds].sort()[0];
+      const anchorCampaignId = unitAnchorCampaignId(unit.memberIds);
       await tx.campaignInvoiceReviewAck.deleteMany({
         where: { campaignId: { in: unit.memberIds }, direction: unit.direction, NOT: { campaignId: anchorCampaignId } },
       });
@@ -851,7 +852,7 @@ export const campaignInvoiceService = {
       const live = rows.filter((row) => row.status !== "DISMISSED");
       units.push({
         unitKey,
-        anchorCampaignId: [...unit.memberIds].sort()[0],
+        anchorCampaignId: unitAnchorCampaignId(unit.memberIds),
         direction: unit.direction,
         counterpartBusinessNumber: unit.counterpartBusinessNumber,
         counterpartLabel: unit.counterpartLabel,
