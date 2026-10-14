@@ -158,6 +158,7 @@ const RUN_DETAILS = {
   expectedTotal: 5,
   confirmed: 2,
   needsReview: 1,
+  alreadyMatched: 3,
   unseen: 1,
   unmatchable: 0,
   outOfScanRange: 1,
@@ -212,11 +213,13 @@ describe("get_tax_invoice_status", () => {
     const [header, ...lines] = summary.split("\n");
     expect(header).toMatch(/^get_tax_invoice_status month=2026-10 lastRun=2026-10-13T00:00:00.000Z runStatus=OK stale=false /);
     expect(header).toContain("dryRun=true dryRunReason=TAX_INVOICE_AUTO_CONFIRM_NOT_SET");
-    expect(header).toContain("scanParsed=12 scanTruncated=0 scanFrom=2026-07-15 expected=5 confirmed=2 needsReview=1 unseen=1 unmatchable=0 outOfScanRange=1 applied=0 noop=0 failures=0 failed=false");
+    expect(header).toContain("scanParsed=12 scanTruncated=0 scanFrom=2026-07-15 expected=5 confirmed=2 needsReview=1 alreadyMatched=3 unseen=1 unmatchable=0 outOfScanRange=1 applied=0 noop=0 failures=0 failed=false");
+    // 금액 불일치 건은 차이 금액까지 싣는다(숫자만 — 사유 문장의 승인번호는 아래 개인정보 테스트가 막는다).
+    expect(outcome.result.resultSummary).toContain("invoiceTotal=1234567 expectedTotal=1234000 delta=567");
     expect(header).toContain("missing=none");
     expect(header).toContain("pending=4 inProgress=2 backlog=2 blocked=2 pendingListed=4/4 autoConfirmed=1 autoListed=1/1 autoWindowDays=90");
 
-    expect(lines[0]).toBe("REVIEW 가짜크림 - 가짜셀러 1차 / 가짜공급사 [BRAND_MALL] reasons=AMOUNT_MISMATCH(금액 불일치),NOT_A_KNOWN_CODE");
+    expect(lines[0]).toBe("REVIEW 가짜크림 - 가짜셀러 1차 / 가짜공급사 [BRAND_MALL] reasons=AMOUNT_MISMATCH(금액 불일치),NOT_A_KNOWN_CODE invoiceTotal=1234567 expectedTotal=1234000 delta=567");
     // 진행 중이 먼저, 밀린 정리가 뒤.
     const pending = lines.filter((line) => line.startsWith("PENDING"));
     expect(pending).toHaveLength(4);
@@ -320,7 +323,13 @@ describe("toIssueConfirmRunView — missing or trimmed details are reported, not
     );
     expect(view!.status).toBe("UNKNOWN");
     expect(view!.needsReviewDetail).toEqual([
-      { campaignLabel: "가짜 캠페인", counterpartLabel: null, channel: null, reasons: [{ code: "DUPLICATE_ISSUE", label: "같은 승인번호 중복 관측" }] },
+      {
+        campaignLabel: "가짜 캠페인",
+        counterpartLabel: null,
+        channel: null,
+        reasons: [{ code: "DUPLICATE_ISSUE", label: "같은 승인번호 중복 관측" }],
+        amount: { invoiceTotal: null, expectedTotal: null, delta: null },
+      },
     ]);
   });
 });

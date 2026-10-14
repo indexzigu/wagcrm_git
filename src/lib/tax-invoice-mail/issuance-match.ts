@@ -49,6 +49,16 @@ export type IssuanceStatus =
   | "CONFIRMED"
   /** 대조는 됐지만 확정 조건이 어긋남 — 사람이 봐야 한다 */
   | "NEEDS_REVIEW"
+  /**
+   * 계산서가 기대 건과 **다른 사유 없이 맞는데** 이미 발행일이 찍혀 있다 — 할 일이 없다.
+   *
+   * 종전엔 `ALREADY_MARKED` 하나만으로 `NEEDS_REVIEW` 에 들어가, 오너가 손으로 먼저 완료를
+   * 누른 건이 메일과 정확히 맞아도 「확인 필요」 숫자를 채웠다(2026-10-14 실측: 6건 중 4건).
+   * 진짜 볼 건이 그 숫자에 묻혀 신호가 죽는 실패라 오너 승인으로 갈랐다.
+   * ⛔ 쓰기 경로에서는 여전히 확정이 아니다 — 이미 찍힌 칸을 다시 찍지 않는다(`issuance-confirm`).
+   * 다른 차단 사유가 하나라도 붙으면(금액 불일치 등) 그대로 `NEEDS_REVIEW` 다.
+   */
+  | "ALREADY_MATCHED"
   /** 이 기대 건에 대응하는 계산서를 이번 스캔에서 못 봤다 */
   | "UNSEEN"
   /**
@@ -564,7 +574,12 @@ function judgeExpectedIssuance(
    */
   const NON_BLOCKING: readonly IssuanceMismatchCode[] = ["AMOUNT_TOLERATED"];
   const blocking = reasons.filter((reason) => !NON_BLOCKING.includes(reason.code));
-  const status: IssuanceStatus = blocking.length === 0 ? "CONFIRMED" : "NEEDS_REVIEW";
+  const status: IssuanceStatus =
+    blocking.length === 0
+      ? "CONFIRMED"
+      : blocking.every((reason) => reason.code === "ALREADY_MARKED")
+        ? "ALREADY_MATCHED"
+        : "NEEDS_REVIEW";
 
   return {
     key: item.key,

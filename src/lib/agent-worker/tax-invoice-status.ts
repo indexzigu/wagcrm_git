@@ -10,8 +10,11 @@
  *
  * ⛔ 행을 펼쳐(`...row`) 넘기지 말 것 — 원본에 칸이 늘면 검토 없이 슬랙·클라우드 모델로 따라간다.
  * ⛔ 싣지 않는 것: 사업자등록번호·대표자명·이메일·주소·연락처·계좌(캠페인 행에 있어도), 계산서
- *    승인번호와 금액이 든 문장(크론 사유 `message` · 자동 확정 `detail` · `observed`), 크론의 오류 문구
+ *    승인번호와 금액이 든 문장(크론 사유 `message` · 자동 확정 `detail`), 크론의 오류 문구
  *    (`SystemTaskLog.message` · `failureReason` — 접속 대상이 섞일 수 있다). 사유는 **코드와 고정 라벨**만.
+ * ✅ 「확인 필요」 건의 `observed` 에서는 **금액 숫자 셋**(계산서 합계·정산 기대액·차이)만 옮긴다 — 그 객체는
+ *    `issuance-match.ts` 의 `IssuanceVerdict.observed` 로 숫자와 작성일자뿐이고 승인번호가 없다. 금액 불일치
+ *    건을 봇이 "○원 차이"까지 말하게 하려는 오너 승인(2026-10-14). 작성일자 등 다른 칸은 옮기지 않는다.
  */
 import type { CampaignRow } from "@/lib/crm-types";
 import type { AutoConfirmedEntry } from "@/lib/tax-filing-auto-confirm";
@@ -83,6 +86,8 @@ export type NeedsReviewView = {
   counterpartLabel: string | null;
   channel: string | null;
   reasons: Array<{ code: string; label: string | null }>;
+  /** 크론 `observed` 의 금액 숫자만. 셋 중 하나라도 숫자가 아니면 그 칸은 null. */
+  amount: { invoiceTotal: number | null; expectedTotal: number | null; delta: number | null };
 };
 
 export type IssueConfirmRunView = {
@@ -99,6 +104,8 @@ export type IssueConfirmRunView = {
     expectedTotal: number | null;
     confirmed: number | null;
     needsReview: number | null;
+    /** 메일과 맞고 이미 발행일이 찍힌 건(할 일 없음). 이 칸이 생기기 전 실행 기록에는 없다. */
+    alreadyMatched: number | null;
     unseen: number | null;
     unmatchable: number | null;
     outOfScanRange: number | null;
@@ -124,6 +131,7 @@ const COUNT_KEYS = [
   "expectedTotal",
   "confirmed",
   "needsReview",
+  "alreadyMatched",
   "unseen",
   "unmatchable",
   "outOfScanRange",
@@ -150,11 +158,18 @@ function parseNeedsReview(value: unknown): { items: NeedsReviewView[]; overflow:
       if (!reasonCode) return [];
       return [{ code: reasonCode, label: (REASON_LABEL as Record<string, string>)[reasonCode] ?? null }];
     });
+    const observed = asRecord(row.observed);
+    const won = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
     items.push({
       campaignLabel: label(row.campaignLabel),
       counterpartLabel: label(row.counterpartLabel),
       channel: code(row.channel),
       reasons,
+      amount: {
+        invoiceTotal: won(observed?.totalAmount),
+        expectedTotal: won(observed?.expectedTotalAmount),
+        delta: won(observed?.amountDelta),
+      },
     });
   }
   return { items: items.slice(0, MAX_NEEDS_REVIEW_ITEMS), overflow: items.length > MAX_NEEDS_REVIEW_ITEMS };
@@ -315,7 +330,10 @@ const n = (value: number | null) => (value === null ? "?" : String(value));
 
 function formatReviewLine(item: NeedsReviewView): string {
   const reasons = item.reasons.map((reason) => (reason.label ? `${reason.code}(${reason.label})` : reason.code)).join(",");
-  return `REVIEW ${item.campaignLabel ?? "(이름 없음)"} / ${item.counterpartLabel ?? "?"} [${item.channel ?? "?"}] reasons=${reasons || "none"}`;
+  const { invoiceTotal, expectedTotal, delta } = item.amount;
+  const amount =
+    delta !== null ? ` invoiceTotal=${n(invoiceTotal)} expectedTotal=${n(expectedTotal)} delta=${delta}` : "";
+  return `REVIEW ${item.campaignLabel ?? "(이름 없음)"} / ${item.counterpartLabel ?? "?"} [${item.channel ?? "?"}] reasons=${reasons || "none"}${amount}`;
 }
 
 function formatPendingLine(row: TaxInvoicePendingView): string {
@@ -344,6 +362,7 @@ function formatRunHeader(run: IssueConfirmRunView | null): string {
     `expected=${n(c.expectedTotal)}`,
     `confirmed=${n(c.confirmed)}`,
     `needsReview=${n(c.needsReview)}`,
+    `alreadyMatched=${n(c.alreadyMatched)}`,
     `unseen=${n(c.unseen)}`,
     `unmatchable=${n(c.unmatchable)}`,
     `outOfScanRange=${n(c.outOfScanRange)}`,

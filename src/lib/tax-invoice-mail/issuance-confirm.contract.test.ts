@@ -69,6 +69,11 @@ describe("buildIssuanceWritePlan", () => {
     expect(ops[0].evidence.issueIds).toEqual(["A"]);
   });
 
+  it("ALREADY_MATCHED(메일과 맞고 이미 찍힘)는 쓰기를 만들지 않는다", () => {
+    const { ops } = buildIssuanceWritePlan([verdict({ status: "ALREADY_MATCHED" })], [expectation()]);
+    expect(ops).toHaveLength(0);
+  });
+
   it("그룹 확정은 멤버 전원을 감사 로그 대상으로 싣는다", () => {
     const { ops } = buildIssuanceWritePlan(
       [verdict()],
