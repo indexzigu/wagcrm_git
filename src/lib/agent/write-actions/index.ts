@@ -18,7 +18,7 @@ import type { WriteActionDefinition, WriteActionEffectSpec, WriteActionResult } 
 /**
  * WRITE 액션 화이트리스트. Phase 5 HITL은 add_entity_memo, change_deal_status,
  * confirm_settlement 3종으로 시작했고(청사진 확정 설계), 에이전트가 거래처·딜을
- * 등록할 수 있도록 create_partner, create_deal 2종을 더했고, 정산 확정 전 금액 칸 정정용
+ * 등록할 수 있도록 create_partner, create_deal 2종을 더했고, 금액 칸 정정용(확정된 정산은 사람 승인만)
  * update_settlement_amount 를 더한 6종이다(승인은 언제나 수동 — `approval-policy.ts`).
  */
 export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {

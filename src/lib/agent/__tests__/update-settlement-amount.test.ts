@@ -40,6 +40,8 @@ const { executeWriteAction, resolveWriteActionEffects } = await import("../write
 const { deriveCampaignFinancialsForUpdate } = await import("@/services/campaignFinancialDerivation");
 const { resolveCampaignMoneySlots } = await import("@/lib/tax-filing-board");
 const { CAMPAIGN_INVALIDATION_TAGS } = await import("@/lib/cache-tags");
+const { isAutomatedActor } = await import("../write-actions/update-settlement-amount");
+const { AUTO_EXECUTE_ACTOR, AUTO_EXECUTE_SHADOW_ACTOR } = await import("../auto-execute/settlement-auto-execute");
 
 const dec = (value: string | number) => new Prisma.Decimal(value);
 const UPDATED_AT = new Date("2026-10-01T00:00:00.000Z");
@@ -94,8 +96,8 @@ const tx = {
 
 const GROUP = { id: "group-1", sellerId: "seller-1" };
 
-function run(args: Record<string, unknown>) {
-  return executeWriteAction("update_settlement_amount", args, "approver-1", tx);
+function run(args: Record<string, unknown>, actor = "approver-1") {
+  return executeWriteAction("update_settlement_amount", args, actor, tx);
 }
 
 function writeCall() {
@@ -122,18 +124,18 @@ beforeEach(() => {
 });
 
 describe("① 정산 확정 거부", () => {
-  it("채널의 대금 칸 하나라도 확정이면 쓰지 않는다", async () => {
+  it("자동 실행자는 채널의 대금 칸 하나라도 확정이면 쓰지 않는다", async () => {
     findUniqueMock.mockResolvedValue(campaignRow({ isDepositReceived: true }));
 
     await expect(
-      run({ campaignId: "camp-1", field: "operatingExpense", expectedCurrentKrw: 5000, newAmountKrw: 7000 }),
+      run({ campaignId: "camp-1", field: "operatingExpense", expectedCurrentKrw: 5000, newAmountKrw: 7000 }, "SYSTEM_AUTO"),
     ).rejects.toThrow(/정산 금액 수정 불가: 이미 정산이 확정된 캠페인/);
 
     expect(updateManyMock).not.toHaveBeenCalled();
     expect(recordActivityChangeMock).not.toHaveBeenCalled();
   });
 
-  it("묶음 캠페인은 묶음 스칼라가 정본이다 — 멤버 행이 false 여도 묶음이 확정이면 거부한다", async () => {
+  it("묶음 캠페인은 묶음 스칼라가 정본이다 — 멤버 행이 false 여도 묶음이 확정이면 자동 실행자를 거부한다", async () => {
     findUniqueMock.mockResolvedValue(
       campaignRow({
         groupId: "group-1",
@@ -142,9 +144,62 @@ describe("① 정산 확정 거부", () => {
     );
 
     await expect(
-      run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 }),
+      run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 }, "SYSTEM_AUTO_SHADOW"),
     ).rejects.toThrow(/묶음 캠페인 기준/);
     expect(updateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("사람이 승인했으면 확정된 캠페인도 고치고, 쓰기 조건은 읽은 확정 표시 그대로이며 결과에 「정산 확정 후 수정」을 남긴다", async () => {
+    findUniqueMock.mockResolvedValue(
+      campaignRow({
+        groupId: "group-1",
+        group: { id: "group-1", isDepositReceived: false, isPayoutCompleted: true, isSupplierPayoutCompleted: false },
+      }),
+    );
+
+    const result = await run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 });
+
+    expect(result.summary).toMatch(/정산 확정 후 수정\(.*묶음 캠페인 기준\)/);
+    const { where } = writeCall();
+    const snapshot = Object.fromEntries(
+      resolveCampaignMoneySlots("BRAND_MALL").map((slot) => [
+        slot.flagField,
+        ({ isDepositReceived: false, isPayoutCompleted: true, isSupplierPayoutCompleted: false } as Record<string, boolean>)[slot.flagField],
+      ]),
+    );
+    // 확정이 그 사이 풀리거나 바뀌면 count 0 으로 실패하도록, 미확정(false)이 아니라 읽은 값을 건다.
+    expect(where.group).toEqual({ is: snapshot });
+    expect(recordActivityChangeMock).toHaveBeenCalled();
+  });
+
+  it("묶음이 아닌 확정 캠페인도 사람이 승인하면 고치고, 멤버 행 쓰기 조건에 읽은 확정 표시를 그대로 건다", async () => {
+    findUniqueMock.mockResolvedValue(campaignRow({ isDepositReceived: true }));
+
+    await run({ campaignId: "camp-1", field: "operatingExpense", expectedCurrentKrw: 5000, newAmountKrw: 7000 });
+
+    const { where } = writeCall();
+    expect(where.isDepositReceived).toBe(true);
+    expect(groupUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("묶음 행 잠금 갱신도 읽은 확정 표시로 조건을 건다", async () => {
+    findUniqueMock.mockResolvedValue(
+      campaignRow({
+        groupId: "group-1",
+        group: { id: "group-1", isDepositReceived: false, isPayoutCompleted: true, isSupplierPayoutCompleted: false },
+      }),
+    );
+
+    await run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 });
+
+    const groupWhere = groupUpdateManyMock.mock.calls[0][0].where as Record<string, unknown>;
+    expect(groupWhere.isPayoutCompleted).toBe(true);
+  });
+
+  it("자동 실행기의 실행자 이름은 시스템 실행자로 판정된다(이름이 바뀌면 확정 정산 잠금이 조용히 열린다)", () => {
+    expect(isAutomatedActor(AUTO_EXECUTE_ACTOR)).toBe(true);
+    expect(isAutomatedActor(AUTO_EXECUTE_SHADOW_ACTOR)).toBe(true);
+    expect(isAutomatedActor("approver-1")).toBe(false);
   });
 
   it("캠페인을 묶음·셀러 사업자번호와 함께 읽는다(묶음이 빠지면 낡은 멤버 플래그로 판정하게 된다)", async () => {
@@ -200,7 +255,7 @@ describe("① 정산 확정 거부", () => {
 
     await expect(
       run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 0 }),
-    ).rejects.toThrow(/묶음 캠페인의 정산이 확정되었거나 묶음 구성이 바뀌었습니다/);
+    ).rejects.toThrow(/묶음 캠페인의 정산 확정 상태나 묶음 구성이 바뀌었습니다/);
     expect(updateManyMock).not.toHaveBeenCalled();
     expect(recordActivityChangeMock).not.toHaveBeenCalled();
   });
@@ -294,7 +349,7 @@ describe("③ 조건부 쓰기", () => {
 
     await expect(
       run({ campaignId: "camp-1", field: "operatingExpense", expectedCurrentKrw: 5000, newAmountKrw: 7000 }),
-    ).rejects.toThrow(/다른 수정이나 정산 확정이 먼저 반영/);
+    ).rejects.toThrow(/다른 수정이나 정산 확정 상태 변경이 먼저 반영/);
     expect(recordActivityChangeMock).not.toHaveBeenCalled();
   });
 
