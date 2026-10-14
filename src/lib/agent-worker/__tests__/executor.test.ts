@@ -83,6 +83,8 @@ import {
   type ExecutionDeps,
 } from "../executor";
 import { EMPTY_SHADOW_VALIDATORS, type LocalModelClient, type LocalModelRequest, type ShadowValidator } from "../shadow";
+import { calculateDerivedCampaignFinancials } from "@/lib/campaign-financials";
+import { SETTLEMENT_AMOUNT_FIELD_LABELS } from "@/lib/settlement-amount-fields";
 
 type Operation = AgentJobPayload["operation"];
 
@@ -144,25 +146,30 @@ function fakeLocalModel(output = "SENTINEL_LOCAL_RAW_OUTPUT_3c9d") {
   return { client, calls };
 }
 
+/**
+ * 손익 조회 픽스처 = 워커 select 가 돌려주는 모양(저장 컬럼 그대로, Decimal 은 숫자로 흉내).
+ * 금액은 가공값이다 — 실데이터 아님.
+ */
 const financialCampaignRow = {
   id: "camp-1",
   status: "ACTIVE",
   actualSales: 1000000,
+  settlementSales: 272727,
+  sellerExpense: 90909,
+  taxExpense: 16529,
   operatingExpense: 0,
   miscExpense: 0,
-  totalMarginRate: 30,
-  sellerMarginRate: 10,
-  sellerTaxType: null,
+  settlementSupplyCost: null,
+  settlementGoodsCost: null,
+  operatingProfit: 165289,
   isManualSettlementSales: false,
   isManualSellerExpense: false,
   isManualTaxExpense: false,
-  settlementSales: null,
-  sellerExpense: null,
-  taxExpense: null,
+  sellerFeeBasisOverride: null,
   isDepositReceived: false,
   isPayoutCompleted: false,
   deal: { dealName: "D" },
-  seller: { name: "S", agency: { businessNumber: "123-45-67890" } },
+  seller: { name: "S" },
 };
 
 beforeEach(() => {
@@ -319,7 +326,7 @@ describe("route behavior (plan contract 7)", () => {
 });
 
 describe("read operations reuse existing calculations inside the granted read scope", () => {
-  it("get_campaign_financials projects granted columns only and reuses calculateDerivedCampaignFinancials", async () => {
+  it("get_campaign_financials projects granted SalesCampaign columns only — exact select shape (no CampaignDeal, no Partner)", async () => {
     campaignFindUniqueMock.mockResolvedValue(financialCampaignRow);
 
     const outcome = await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-1" }), deps(accepted("python")));
@@ -327,15 +334,175 @@ describe("read operations reuse existing calculations inside the granted read sc
     const args = campaignFindUniqueMock.mock.calls[0][0] as { where: unknown; select: Record<string, unknown>; include?: unknown };
     expect(args.where).toEqual({ id: "camp-1" });
     expect(args.include).toBeUndefined();
-    expect(args.select.deal).toEqual({ select: { dealName: true } });
-    expect(args.select.seller).toEqual({ select: { name: true, agency: { select: { businessNumber: true } } } });
-    for (const forbidden of ["campaignDeals", "activities", "notes", "checklistItems", "histories", "orderCampaign"]) {
+    // 저장값 조회로 바뀌며(품목 요율 재계산 제거) 이 모양을 의식적으로 다시 고정했다 — 칸을 늘리면
+    // 워커 role 의 GRANT 범위(SalesCampaign·Deal·Seller 테이블 SELECT) 안인지 먼저 확인할 것.
+    expect(args.select).toEqual({
+      id: true,
+      status: true,
+      actualSales: true,
+      settlementSales: true,
+      sellerExpense: true,
+      taxExpense: true,
+      operatingExpense: true,
+      miscExpense: true,
+      settlementSupplyCost: true,
+      settlementGoodsCost: true,
+      operatingProfit: true,
+      isManualSettlementSales: true,
+      isManualSellerExpense: true,
+      isManualTaxExpense: true,
+      sellerFeeBasisOverride: true,
+      isDepositReceived: true,
+      isPayoutCompleted: true,
+      deal: { select: { dealName: true } },
+      seller: { select: { name: true } },
+    });
+    for (const forbidden of ["campaignDeals", "agency", "activities", "notes", "checklistItems", "histories", "orderCampaign"]) {
       expect(JSON.stringify(args.select)).not.toContain(forbidden);
     }
     expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { evidenceRefs: ["camp-1"] } });
     if (outcome.kind !== "terminal") throw new Error("expected terminal");
     expect(outcome.result.resultSummary).toMatch(/settlementSales/);
     expect(outcome.result.resultSummary).toContain("deal=D");
+    // 첫 줄 = 슬랙 쪽이 늘 싣는 줄 — 가장 자주 대조하는 세 칸이 여기 있어야 한다.
+    expect(outcome.result.resultSummary.split("\n")[0]).toBe("stored settlementSales=272727 sellerExpense=90909 taxExpense=16529");
+  });
+
+  it("get_campaign_financials shows the STORED amounts for a multi-item campaign, not a campaign-rate recompute", async () => {
+    // 품목마다 요율이 다른 캠페인: writer 가 품목 루프로 확정해 저장한 값과, 캠페인 단위 요율 하나로
+    // 다시 계산한 값이 다르다(가공 숫자). 워커는 CampaignDeal 을 못 읽으므로 저장값만이 정답이다.
+    const multiItemRow = {
+      ...financialCampaignRow,
+      id: "camp-multi",
+      actualSales: 40_000_000,
+      totalMarginRate: 25,
+      sellerMarginRate: 10,
+      settlementSales: 9_876_500,
+      sellerExpense: 3_210_000,
+      taxExpense: 606_045,
+      operatingProfit: 6_060_455,
+      settlementSupplyCost: 35_910_000,
+      settlementGoodsCost: 0,
+    };
+    const naive = calculateDerivedCampaignFinancials({
+      actualSales: multiItemRow.actualSales,
+      operatingExpense: 0,
+      miscExpense: 0,
+      totalMarginRate: multiItemRow.totalMarginRate,
+      sellerMarginRate: multiItemRow.sellerMarginRate,
+    });
+    // 전제 확인 — 이 픽스처가 「저장값 ≠ 단순 재계산」인 사례여야 테스트가 의미가 있다.
+    expect(naive.settlementSales).not.toBe(multiItemRow.settlementSales);
+    expect(naive.sellerExpense).not.toBe(multiItemRow.sellerExpense);
+    campaignFindUniqueMock.mockResolvedValue(multiItemRow);
+
+    const outcome = await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-multi" }), deps(accepted("python")));
+
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    const summary = outcome.result.resultSummary;
+    expect(summary).toContain(`settlementSales=${multiItemRow.settlementSales} `);
+    expect(summary).toContain(`sellerExpense=${multiItemRow.sellerExpense} `);
+    expect(summary).toContain("settlementGoodsCost=0\n");
+    expect(summary).toContain(`operatingProfit=${multiItemRow.operatingProfit}(stored)`);
+    // `=값 ` 으로 묶어 단언한다 — 맨 숫자로 찾으면 다른 칸(예: 40000000)의 부분 문자열에 걸린다.
+    expect(summary).not.toContain(`settlementSales=${naive.settlementSales} `);
+    expect(summary).not.toContain(`sellerExpense=${naive.sellerExpense} `);
+    expect(summary).not.toMatch(/derived/);
+
+    const data = proposalCreateMock.mock.calls[0][0].data as { structuredResult: { data: Record<string, unknown> } };
+    expect(data.structuredResult.data).toMatchObject({
+      source: "stored",
+      actualSales: 40_000_000,
+      settlementSales: 9_876_500,
+      sellerExpense: 3_210_000,
+      taxExpense: 606_045,
+      operatingExpense: 0,
+      miscExpense: 0,
+      settlementSupplyCost: 35_910_000,
+      settlementGoodsCost: 0,
+      operatingProfit: 6_060_455,
+      operatingProfitSource: "stored",
+    });
+    expect(data.structuredResult.data).not.toHaveProperty("derived");
+  });
+
+  it("get_campaign_financials on a single-rate campaign reports the same numbers the writer formula stored", async () => {
+    // 단일 요율 캠페인은 writer 가 `calculateDerivedCampaignFinancials` 결과를 그대로 저장한다 —
+    // 저장값을 내는 지금도 예전(재계산) 출력과 같은 숫자여야 한다(회귀 없음).
+    const written = calculateDerivedCampaignFinancials({
+      actualSales: 1_000_000,
+      operatingExpense: 50_000,
+      miscExpense: 10_000,
+      totalMarginRate: 30,
+      sellerMarginRate: 10,
+      sellerTaxType: null,
+      sellerCompanyBusinessNumber: "000-00-00000",
+    });
+    campaignFindUniqueMock.mockResolvedValue({
+      ...financialCampaignRow,
+      actualSales: 1_000_000,
+      operatingExpense: 50_000,
+      miscExpense: 10_000,
+      settlementSales: written.settlementSales,
+      sellerExpense: written.sellerExpense,
+      taxExpense: written.taxExpense,
+      operatingProfit: written.operatingProfit,
+    });
+
+    await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-1" }), deps(accepted("python")));
+
+    const data = proposalCreateMock.mock.calls[0][0].data as { structuredResult: { data: Record<string, unknown> } };
+    expect(data.structuredResult.data).toMatchObject({
+      settlementSales: written.settlementSales,
+      sellerExpense: written.sellerExpense,
+      taxExpense: written.taxExpense,
+      operatingProfit: written.operatingProfit,
+      operatingProfitSource: "stored",
+    });
+  });
+
+  it("get_campaign_financials keeps empty (null) amounts distinct from 0 and falls back like the finance card for a missing operatingProfit", async () => {
+    campaignFindUniqueMock.mockResolvedValue({
+      ...financialCampaignRow,
+      settlementSales: 300_000,
+      sellerExpense: 100_000,
+      taxExpense: 20_000,
+      operatingExpense: null,
+      miscExpense: 5_000,
+      settlementSupplyCost: null,
+      settlementGoodsCost: 0,
+      operatingProfit: null,
+      isManualSellerExpense: true,
+      sellerFeeBasisOverride: 800_000,
+    });
+
+    const outcome = await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-1" }), deps(accepted("python")));
+
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    const data = proposalCreateMock.mock.calls[0][0].data as { structuredResult: { data: Record<string, unknown> } };
+    const result = data.structuredResult.data;
+    // 승인 시점 대조는 null ≠ 0 — 비어 있는 칸은 null 로, 0 원은 0 으로 나가야 기안의 expectedCurrentKrw 가 맞는다.
+    expect(result.operatingExpense).toBeNull();
+    expect(result.settlementSupplyCost).toBeNull();
+    expect(result.settlementGoodsCost).toBe(0);
+    // 재무 카드와 같은 폴백: 저장 영업이익이 없으면 저장된 칸들로 computeOperatingProfit.
+    expect(result.operatingProfit).toBe(300_000 - 100_000 - 20_000 - 0 - 5_000);
+    expect(result.operatingProfitSource).toBe("computed_from_stored");
+    expect(result).toMatchObject({ isManualSellerExpense: true, isManualSettlementSales: false, sellerFeeBasisOverride: 800_000 });
+    expect(outcome.result.resultSummary).toContain("operatingExpense=null ");
+    expect(outcome.result.resultSummary).toContain("settlementSupplyCost=null ");
+    expect(outcome.result.resultSummary).toContain("(computed_from_stored)");
+  });
+
+  it("get_campaign_financials exposes exactly the amount fields update_settlement_amount can edit", async () => {
+    campaignFindUniqueMock.mockResolvedValue(financialCampaignRow);
+
+    await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-1" }), deps(accepted("python")));
+
+    const data = proposalCreateMock.mock.calls[0][0].data as { structuredResult: { data: Record<string, unknown> } };
+    for (const field of Object.keys(SETTLEMENT_AMOUNT_FIELD_LABELS)) {
+      expect(data.structuredResult.data).toHaveProperty(field);
+    }
   });
 
   it("get_campaign_financials maps a missing campaign to FAILED_FINAL/NOT_FOUND", async () => {
@@ -1313,13 +1480,17 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     expect((data.structuredResult as { data: unknown }).data).toEqual(pipelineData);
   });
 
-  it("get_campaign_financials records the projected campaign and derived numbers", async () => {
+  it("get_campaign_financials records the projected campaign and its stored amounts", async () => {
     campaignFindUniqueMock.mockResolvedValue(financialCampaignRow);
     const outcome = await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-1" }), deps(accepted("python")));
     expect(outcome).toMatchObject({ kind: "terminal", result: { actionProposalId: "read-1" } });
     const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
-    expect(data).toMatchObject({ title: "캠페인 재무 D / S", dataSources: ["SalesCampaign", "Deal", "Seller", "Partner"] });
-    expect(data.structuredResult).toMatchObject({ operation: "get_campaign_financials", query: { campaignId: "camp-1" }, data: { campaignId: "camp-1", derived: expect.any(Object) } });
+    expect(data).toMatchObject({ title: "캠페인 재무 D / S", dataSources: ["SalesCampaign", "Deal", "Seller"] });
+    expect(data.structuredResult).toMatchObject({
+      operation: "get_campaign_financials",
+      query: { campaignId: "camp-1" },
+      data: { campaignId: "camp-1", source: "stored", settlementSales: 272727, operatingProfit: 165289 },
+    });
   });
 
   it("get_order_snapshot (window) records the tool data", async () => {
