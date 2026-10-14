@@ -227,7 +227,7 @@ describe("get_tax_invoice_status", () => {
     );
     expect(pending.some((line) => line.includes("seller=가짜별칭B") && line.includes("selectable=no blocked="))).toBe(true);
     expect(lines.at(-1)).toBe("AUTO 2026-10-05 셀러 계산서 발행일 가짜크림 - 가짜셀러 1차 tolerated=yes at=2026-10-06T00:00:00.000Z");
-    expect(outcome.result.evidenceRefs).toEqual(["c1", "c1", "c2", "c2"]);
+    expect(outcome.result.evidenceRefs).toEqual(["c1", "c2"]);
   });
 
   it("never exports business numbers, representative names, approval numbers or cron error text", async () => {

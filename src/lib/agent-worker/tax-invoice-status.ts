@@ -396,6 +396,7 @@ export function buildTaxInvoiceStatus(input: TaxInvoiceStatusInput): {
         truncated: input.autoConfirmed.length - autoListed.length,
       },
     },
-    evidenceCampaignIds: pendingListed.map((row) => row.campaignId),
+    // 한 캠페인이 공급사·셀러 두 의무로 두 줄이 될 수 있다 — 겹치면 10칸 상한을 헛되이 먹는다.
+    evidenceCampaignIds: [...new Set(pendingListed.map((row) => row.campaignId))],
   };
 }
