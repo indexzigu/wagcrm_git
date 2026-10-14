@@ -297,6 +297,23 @@ describe("딜·거래처·셀러 — 각 화면 저장 본체", () => {
     expect((await realPrisma.seller.findUniqueOrThrow({ where: { id: s.id } })).notes).toBe("연락 완료");
   });
 
+  it("셀러 기안이 낡아 실패하면 실패 문구에 지금 값을 싣지 않는다(봇·슬랙으로 연락처가 새지 않게)", async () => {
+    const s = await seller();
+    await realPrisma.seller.update({ where: { id: s.id }, data: { phoneNumber: "010-0000-1234" } });
+    const id = await propose({
+      entityType: "SELLER",
+      entityId: s.id,
+      changes: { phoneNumber: "010-0000-5678" },
+      expected: { phoneNumber: null },
+    });
+
+    expect((await approveProposal(id, APPROVER)).ok).toBe(false);
+    const failed = await proposal(id);
+    expect(failed.errorMessage).toMatch(/지금 값이 기안 때와 다릅니다/);
+    expect(failed.errorMessage).not.toContain("010-0000-1234");
+    expect(failed.errorMessage).not.toContain("현재:");
+  });
+
   it("딜 상태는 화면과 같은 전이 규칙으로 막고, 거절되면 함께 보낸 칸도 쓰지 않는다(SOURCING → ARCHIVED 불가)", async () => {
     const p = await partner();
     const target = await deal(p.id);

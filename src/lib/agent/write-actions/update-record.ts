@@ -84,12 +84,18 @@ async function handleUpdateRecord(
     (field) => !sameComparable(currentValueOf(args.entityType, snapshot, field), args.expected[field]),
   );
   if (stale.length > 0) {
+    // 🔒 셀러·거래처는 지금 값을 싣지 않는다 — 이 문구는 FAILED 사유로 저장되고 봇 조회(`get_action_proposal`)를
+    //    거쳐 슬랙에 나갈 수 있다. 틀린 기대값으로 기안해 실패시키면 실제 연락처·주소를 캐낼 수 있는 길이었다
+    //    (코드 리뷰 2026-10-14). 캠페인·딜은 사업 수치라 대조에 도움이 되도록 그대로 싣는다.
+    const revealCurrent = args.entityType === "CAMPAIGN" || args.entityType === "DEAL";
     const detail = stale
-      .map(
-        (field) =>
-          `${recordFieldLabel(args.entityType, field)}(기안: ${formatRecordValue(args.entityType, field, args.expected[field])} · ` +
-          `현재: ${formatRecordValue(args.entityType, field, toComparableValue(currentValueOf(args.entityType, snapshot, field)))})`,
-      )
+      .map((field) => {
+        const proposed = formatRecordValue(args.entityType, field, args.expected[field]);
+        const current = revealCurrent
+          ? ` · 현재: ${formatRecordValue(args.entityType, field, toComparableValue(currentValueOf(args.entityType, snapshot, field)))}`
+          : "";
+        return `${recordFieldLabel(args.entityType, field)}(기안: ${proposed}${current})`;
+      })
       .join(", ");
     throw new Error(`기록 수정 불가: 지금 값이 기안 때와 다릅니다: ${detail}. 최신 값을 확인한 뒤 다시 기안하세요.`);
   }
