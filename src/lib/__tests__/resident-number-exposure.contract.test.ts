@@ -20,6 +20,11 @@ const ALLOWED_FILES = [
   "src/app/api/sellers/[id]/settlement-info/route.ts",
   // 셀러 단건 PATCH — 저장 시 암호화, 응답에 복호화
   "src/app/api/sellers/[id]/route.ts",
+  // 셀러 단건 PATCH 본체(2026-10-14 라우트에서 옮김 — 저장 시 암호화·감사 기록. 라우트는 응답 복호화만)
+  "src/services/sellerPatchService.ts",
+  // 에이전트 기록 수정(`update_record`) — **값을 다루지 않는다.** 칸 이름이 「기안으로 받지 않는 칸」
+  // 목록에만 등장한다(주민등록번호를 기안 payload 로 받으면 결재함·작업 기록에 평문으로 남기 때문).
+  "src/lib/agent/record-update-entities.ts",
   // 원천징수 신고(오너 인증 뒤) — 캠페인 행 → 리포트
   "src/lib/campaign-row.ts",
   "src/lib/withholding-report.ts",

@@ -66,6 +66,7 @@ export const WRITE_TOOL_NAMES = new Set<string>([
   "create_partner",
   "create_deal",
   "update_settlement_amount",
+  "update_record",
 ]);
 
 export function missingParam(message: string, query: Record<string, unknown> = {}): ToolResult<never> {

@@ -18,6 +18,12 @@ import {
   isSettlementAmountField,
   SETTLEMENT_AMOUNT_FIELD_LABELS,
 } from "@/lib/settlement-amount-fields";
+import {
+  RECORD_ENTITY_LABELS,
+  formatRecordValue,
+  isRecordEntityType,
+  recordFieldLabel,
+} from "@/lib/record-update-labels";
 
 const MONEY_FIELDS = [
   ["costPrice", "원가"],
@@ -244,6 +250,55 @@ function UpdateSettlementAmountPreview({ args }: { args: Record<string, unknown>
   );
 }
 
+/** 기록 수정의 값 한 칸 — 계약이 받는 스칼라만. 그 밖은 「모양이 깨진 기안」이다. */
+function isRecordScalar(value: unknown): boolean {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  );
+}
+
+/**
+ * 기록 수정 — 칸마다 **지금 값 → 바꿀 값**. 「지금 값」은 기안자가 본 값이고 실행기는 실제 값이 이것과
+ * 같을 때만 고친다. 칸 이름은 화면 이름 표에서, 표에 없으면 칸 이름 그대로 보인다.
+ * 칸을 접거나 개수로 줄이지 않는다(머리 주석 — 감춘 줄에 틀린 값이 있으면 이 화면의 의미가 사라진다).
+ */
+function UpdateRecordPreview({ args }: { args: Record<string, unknown> }) {
+  const entityType = args.entityType;
+  const changes = asRecord(args.changes);
+  const expected = asRecord(args.expected);
+  if (!isRecordEntityType(entityType) || !changes || !expected) return null;
+  const fields = Object.keys(changes);
+  if (
+    fields.length === 0 ||
+    fields.some((field) => !Object.hasOwn(expected, field) || !isRecordScalar(changes[field]) || !isRecordScalar(expected[field]))
+  ) {
+    return null;
+  }
+  return (
+    <>
+      <Rows
+        rows={[
+          ["대상", RECORD_ENTITY_LABELS[entityType]],
+          ["메모", asText(args.memo)],
+        ]}
+      />
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        {fields.map((field) => (
+          <div key={field} className="contents">
+            <dt className="text-muted-foreground">{recordFieldLabel(entityType, field)}</dt>
+            <dd className="min-w-0 break-words text-foreground tabular-nums">
+              {formatRecordValue(entityType, field, expected[field])} → {formatRecordValue(entityType, field, changes[field])}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </>
+  );
+}
+
 /**
  * 저장될 값의 미리보기. 미리보기를 가진 action 만 그리고, 나머지는 `null` 을 돌려
  * 기존 표시(제목 한 줄)를 그대로 둔다.
@@ -263,6 +318,8 @@ export function ProposalPayloadPreview({
       <CreateDealPreview args={args} />
     ) : action === "update_settlement_amount" ? (
       <UpdateSettlementAmountPreview args={args} />
+    ) : action === "update_record" ? (
+      <UpdateRecordPreview args={args} />
     ) : null;
   if (!body) return null;
   return <div className="space-y-3 text-xs">{body}</div>;

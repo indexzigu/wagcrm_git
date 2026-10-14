@@ -23,6 +23,7 @@ export type { ConfirmSettlementArgs } from "./write-actions/confirm-settlement";
 export type { CreatePartnerArgs } from "./write-actions/create-partner";
 export type { CreateDealArgs } from "./write-actions/create-deal";
 export type { UpdateSettlementAmountArgs } from "./write-actions/update-settlement-amount";
+export type { UpdateRecordArgs } from "./write-actions/update-record";
 export type { WriteActionResult, WriteActionEffectSpec } from "./write-actions/types";
 export {
   WRITE_ACTIONS,

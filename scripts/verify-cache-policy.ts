@@ -65,6 +65,12 @@ const mutationGroups: readonly MutationGroup[] = [
         path: "src/lib/agent/write-actions/update-settlement-amount.ts",
         expectedSource: ["revalidate: CAMPAIGN_INVALIDATION_TAGS"],
       },
+      {
+        // 어시스턴트 레인 라이터 — `update_record`(화면 저장과 같은 본체로 기록 수정). 엔티티별 태그 판정은
+        // `recordUpdateEffects` 에 있다(캠페인 = 이 묶음, 딜·거래처·셀러 = masterData 묶음).
+        path: "src/lib/agent/record-update-entities.ts",
+        expectedSource: ["revalidate: CAMPAIGN_INVALIDATION_TAGS"],
+      },
     ],
   },
   {
@@ -104,6 +110,11 @@ const mutationGroups: readonly MutationGroup[] = [
         // 같은 이유로 태그 판정이 있는 파일(effects 명세)을 건다.
         // T-151(2026-09-11)에서 write-executor.ts 핸들러 분할 시 이 파일로 이동.
         path: "src/lib/agent/write-actions/change-deal-status.ts",
+        expectedSource: ["revalidate: MASTER_DATA_INVALIDATION_TAGS"],
+      },
+      {
+        // 어시스턴트 레인 라이터 — `update_record` 의 딜·거래처·셀러 갈래(위 campaigns 그룹과 같은 파일).
+        path: "src/lib/agent/record-update-entities.ts",
         expectedSource: ["revalidate: MASTER_DATA_INVALIDATION_TAGS"],
       },
     ],

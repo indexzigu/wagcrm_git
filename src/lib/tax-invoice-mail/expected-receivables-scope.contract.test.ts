@@ -105,7 +105,9 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   "components/crm/campaign-side-panel.tsx": "오너 입력 칸·읽기 표시(값 통과만)",
   // 3계층 이관 3단계(2026-08-07)로 저장 경로가 둘로 나뉘었다 — 라우트는 zod 스키마에
   // 필드를 선언(파싱)만 하고, 실제 update 스프레드는 서비스가 소유한다. 둘 다 값 통과만이다.
-  "app/api/campaigns/[id]/route.ts": "PATCH 입력 스키마 선언(값 통과만 — update 스프레드는 services/campaignService.ts 로 이관)",
+  // 2026-10-14: PATCH 입력 스키마를 라우트 밖으로 옮겼다 — 화면 저장과 에이전트 `update_record` 가 같은 스키마를 쓴다.
+  "lib/validations/campaign-update.ts":
+    "PATCH 입력 스키마 선언(값 통과만, 라우트에서 옮김 — update 스프레드는 services/campaignService.ts)",
   "services/campaignService.ts": "PATCH 트랜잭션 본체의 update 스프레드(값 통과만, 산술 없음 — 3계층 이관 3단계)",
   "app/api/campaigns/[id]/route.test.ts": "위 저장 경로의 계약",
   "lib/campaign-financial-guard.ts":

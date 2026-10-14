@@ -271,10 +271,16 @@ describe("캠페인 PATCH 트랜잭션 본체의 팬아웃 배선", () => {
   });
 
   it("라우트는 트랜잭션 본체를 서비스에 위임한다 — 두 벌이 생기면 순서 계약이 갈린다", () => {
+    // 2026-10-14: 라우트 → `applyCampaignPatch`(PATCH 본체, 에이전트 `update_record` 와 공유) →
+    // `campaignService.updateCampaign`(트랜잭션 본체). 위임 사슬의 두 고리를 함께 고정한다.
     const routeSrc = read("src/app/api/campaigns/[id]/route.ts");
-    expect(routeSrc).toContain("campaignService.updateCampaign(");
-    // 팬아웃·롤업 호출이 라우트에 되살아나면 위 순서 스캔이 대상 파일을 잘못 보게 된다.
-    expect(routeSrc).not.toContain("await fanOutMemberSchedule(");
-    expect(routeSrc).not.toContain("await recomputeGroupRollup(");
+    const patchSrc = read("src/services/campaignPatchService.ts");
+    expect(routeSrc).toContain("applyCampaignPatch(");
+    expect(patchSrc).toContain("campaignService.updateCampaign(");
+    // 팬아웃·롤업 호출이 라우트·PATCH 본체에 되살아나면 위 순서 스캔이 대상 파일을 잘못 보게 된다.
+    for (const src of [routeSrc, patchSrc]) {
+      expect(src).not.toContain("await fanOutMemberSchedule(");
+      expect(src).not.toContain("await recomputeGroupRollup(");
+    }
   });
 });

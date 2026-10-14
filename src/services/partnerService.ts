@@ -202,8 +202,18 @@ export class PartnerService {
     return partner;
   }
 
-  static async updatePartner(id: string, data: Prisma.PartnerUpdateInput, actor: string) {
-    const current = await PartnerRepository.findByIdOrThrow(id);
+  /**
+   * @param tx 호출부 트랜잭션(선택). 에이전트 `update_record` 승인 실행이 기안 EXECUTED 전이와 한
+   *           트랜잭션으로 묶으려고 넘긴다. 넘기면 캐시 무효화는 하지 않는다 — 커밋 전에 깨면 롤백된
+   *           쓰기의 반쪽 반영이 되므로 호출부가 커밋 뒤 effects 명세로 한다. 생략하면 종전과 같다.
+   */
+  static async updatePartner(id: string, data: Prisma.PartnerUpdateInput, actor: string, tx?: Prisma.TransactionClient) {
+    const current = tx
+      ? await tx.partner.findUnique({ where: { id } })
+      : await PartnerRepository.findByIdOrThrow(id);
+    if (!current) {
+      throw new Error("해당 거래처를 찾을 수 없습니다.");
+    }
 
     // F4-②: 발주 코드(orderTemplateSlug)는 자동 부여 — UI에 수동 필드가 없다.
     // 기본 수신 이메일(orderToEmail)이 채워지면 이 거래처를 발주 브랜드로 등록(슬러그=거래처 id, 아직 없을 때만),
@@ -222,18 +232,20 @@ export class PartnerService {
       }
     }
 
-    const updated = await PartnerRepository.update(id, data);
+    const updated = tx
+      ? await tx.partner.update({ where: { id }, data })
+      : await PartnerRepository.update(id, data);
 
     for (const key of Object.keys(data)) {
       const val = (data as Record<string, unknown>)[key];
       const curVal = (current as Record<string, unknown>)[key];
       if (getCompareValue(curVal) !== getCompareValue(val)) {
         const fieldLabel = FIELD_LABELS[key] || key;
-        await recordActivityChange("PARTNER", id, fieldLabel, curVal, val, actor);
+        await recordActivityChange("PARTNER", id, fieldLabel, curVal, val, actor, tx);
       }
     }
 
-    revalidateMasterDataCaches();
+    if (!tx) revalidateMasterDataCaches();
     return updated;
   }
 

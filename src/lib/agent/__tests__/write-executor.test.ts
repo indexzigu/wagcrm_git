@@ -86,7 +86,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
     sellerFindUniqueMock.mockReset();
   });
 
-  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal, update_settlement_amount 6종이 등록되어 있다", () => {
+  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal, update_settlement_amount, update_record 7종이 등록되어 있다", () => {
     expect(Object.keys(WRITE_ACTIONS).sort()).toEqual(
       [
         "add_entity_memo",
@@ -95,6 +95,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
         "create_partner",
         "create_deal",
         "update_settlement_amount",
+        "update_record",
       ].sort()
     );
   });
@@ -1323,10 +1324,19 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     memo: "메모",
   };
 
+  const updateRecordArgs = {
+    entityType: "CAMPAIGN",
+    entityId: "camp-1",
+    changes: { salesChannel: "BRAND_MALL", depositReceivedAt: "2026-04-28" },
+    expected: { salesChannel: "UNSPECIFIED", depositReceivedAt: null },
+    memo: "메모",
+  };
+
   it.each([
     ["create_partner", createPartnerArgs],
     ["create_deal", createDealArgs],
     ["update_settlement_amount", updateSettlementAmountArgs],
+    ["update_record", updateRecordArgs],
   ])("%s: 계약이 받는 최대 payload를 argsSchema도 그대로 받는다", (action, args) => {
     expect(createActionProposalInputSchema.safeParse({ action, ...args }).success).toBe(true);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(args).success).toBe(true);
@@ -1336,6 +1346,7 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     ["create_partner", createPartnerArgs],
     ["create_deal", createDealArgs],
     ["update_settlement_amount", updateSettlementAmountArgs],
+    ["update_record", updateRecordArgs],
   ])("%s: 계약에 없는 칸은 양쪽 모두 거부한다", (action, args) => {
     const withUnknownKey = { ...args, unknownField: "x" };
     expect(createActionProposalInputSchema.safeParse({ action, ...withUnknownKey }).success).toBe(false);
