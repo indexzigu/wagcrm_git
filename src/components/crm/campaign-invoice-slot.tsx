@@ -27,11 +27,13 @@ import {
   INVOICE_MONTH_EMPTY_MARK,
   INVOICE_MONTH_HINT,
   INVOICE_MONTH_LABEL,
+  INVOICE_MONTH_NOTE_HINT,
   INVOICE_MONTH_TONE,
   collectStatementExpectations,
   deriveInvoiceMonths,
   findInvoiceCandidates,
   formatInvoiceMonth,
+  isInvoiceMonthDone,
   matchesExpectedAmount,
   summarizeInvoiceRows,
   INVOICE_AMOUNT_TOLERANCE_WON,
@@ -112,7 +114,11 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
   const lastRecorded = month.recorded.at(-1) ?? null;
   const shown = month.state === "RECORDED" ? formatMonthDay(lastRecorded?.writtenAt ?? null) : label ?? INVOICE_MONTH_EMPTY_MARK;
   const detail = lastRecorded ?? null;
-  const candidate = month.state === "PENDING" ? month.candidates[0] : null;
+  // 어긋남 상태도 메일 후보 한 장이 근거다 — 금액을 같은 자리에서 보인다.
+  const candidate =
+    month.state === "PENDING" || month.state === "MINOR_MISMATCH" || month.state === "OVER_EXPECTED" || month.state === "POSSIBLE_SPLIT"
+      ? month.candidates[0]
+      : null;
 
   return (
     <HoverCard open={open} onOpenChange={setOpen}>
@@ -138,6 +144,11 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
       </HoverCardTrigger>
       <HoverCardContent className="w-80 space-y-1.5 p-3">
         <p className="text-xs text-slate-600">{hint}</p>
+        {month.notes.map((note) => (
+          <p key={note} className="text-xs font-medium text-foreground">
+            {INVOICE_MONTH_NOTE_HINT[note]}
+          </p>
+        ))}
         {detail ? (
           <div className="space-y-1 border-t border-border/60 pt-1.5">
             <DetailRow label="작성일" value={detail.writtenAt ?? "—"} />
@@ -381,7 +392,12 @@ function MonthSection({
           onConfirm={() => void run(dismissBody(mail))}
         />
       ))}
-      {month.state === "PENDING"
+      {month.notes.map((note) => (
+        <p key={note} className="text-xs font-medium text-foreground">
+          {INVOICE_MONTH_NOTE_HINT[note]}
+        </p>
+      ))}
+      {month.candidates.length > 0 && !month.recorded.length && !month.waived && month.state !== "COVERED"
         ? // 정산서 금액과 맞는 후보를 위로 — 첫 카드만 보고 확인해도 덜 틀리게(순서 외에는 그대로).
           [...month.candidates]
             .sort(
@@ -522,6 +538,7 @@ function useCampaignInvoices({
       periodStart: new Date(applicable.periodStart),
       periodEnd: new Date(applicable.periodEnd),
       rows: applicable.rows,
+      expectedTotalAmount: applicable.expectedTotalAmount,
     }).openMonths.length > 0;
   }, [applicable]);
   useEffect(() => {
@@ -560,6 +577,8 @@ function useCampaignInvoices({
       scanSinceYmd,
       today: now,
       expectationsByMonth,
+      expectedTotalAmount: applicable.expectedTotalAmount,
+      expectedFromManual: applicable.expectedFromManual,
     });
   }, [applicable, scan, now, statements]);
 
@@ -756,7 +775,7 @@ export function CampaignInvoiceSlot({
   }
   if (!applicable) return <>{legacyFallback}</>;
 
-  const done = months.filter((m) => m.state === "RECORDED" || m.state === "WAIVED").length;
+  const done = months.filter((m) => isInvoiceMonthDone(m.state)).length;
   const scanning = scanLoading || (!scan && !scanAttempted);
 
   return (

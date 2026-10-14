@@ -268,6 +268,11 @@ function unit(overrides: Partial<AutoRecordUnit> = {}): AutoRecordUnit {
     openMonths: ["2026-09"],
     labels: ["가나다"],
     dismissedIssueIds: [],
+    expectedTotalAmount: null,
+    expectedFromManual: false,
+    recordedTotalAmount: 0,
+    periodMonths: ["2026-09", "2026-10"],
+    closedMonths: [],
     ...overrides,
   };
 }

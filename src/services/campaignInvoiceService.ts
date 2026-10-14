@@ -25,11 +25,13 @@ import { getPrisma } from "@/lib/prisma";
 import {
   buildInvoiceIncompleteMessage,
   formatInvoiceMonth,
+  isAcceptableInvoiceMonth,
+  isFullAmountCovered,
   isValidYearMonth,
   listYearMonths,
   MONTHLY_INVOICE_MANAGED_MESSAGE,
-  nextYearMonth,
   resolveLegacyInvoiceDate,
+  sumRecordedInvoiceTotal,
   resolveSupplierInvoiceDirection,
   summarizeInvoiceRows,
   type CampaignInvoiceRow,
@@ -42,6 +44,11 @@ import {
   TAX_INVOICE_AUTO_CONFIRM_TOLERATED_TYPE,
   TAX_INVOICE_AUTO_CONFIRM_TYPE,
 } from "@/lib/tax-filing-auto-confirm";
+import {
+  resolveSupplierInvoiceUnitTotal,
+  type SupplierInvoiceUnitMember,
+  type SupplierInvoiceUnitTotal,
+} from "@/lib/tax-filing-board";
 
 type Db = Prisma.TransactionClient | ReturnType<typeof getPrisma>;
 
@@ -61,6 +68,63 @@ async function translateDuplicate<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 type InvoiceRecord = Prisma.CampaignInvoiceGetPayload<object>;
+
+/**
+ * 단위 전액(`resolveSupplierInvoiceUnitTotal`)을 계산하는 데 읽는 캠페인 필드 — 단위 읽기(`loadInvoiceUnit`)와
+ * 일괄 판정(`evaluateUnits`)이 **같은 select** 를 써야 화면·완료 게이트·세무 보드·크론이 같은 전액을 본다.
+ */
+const UNIT_MONEY_SELECT = {
+  salesChannel: true,
+  actualSales: true,
+  sellerExpense: true,
+  settlementSales: true,
+  settlementGoodsCost: true,
+  isManualSettlementSales: true,
+  isManualSellerExpense: true,
+  settlementItems: { select: { invoiceMode: true, counterparty: true, amount: true } },
+  deal: { select: { partner: { select: { name: true, businessNumber: true } } } },
+} as const;
+
+type DecimalValue = { toString(): string } | number | string | null | undefined;
+type UnitMoneyRecord = {
+  salesChannel: string;
+  actualSales?: DecimalValue;
+  sellerExpense?: DecimalValue;
+  settlementSales?: DecimalValue;
+  settlementGoodsCost?: DecimalValue;
+  isManualSettlementSales?: boolean | null;
+  isManualSellerExpense?: boolean | null;
+  settlementItems?: Array<{ invoiceMode: string; counterparty: string; amount: DecimalValue }> | null;
+  deal?: { partner: { name: string; businessNumber: string | null } | null } | null;
+};
+
+function decimalOrNull(value: DecimalValue): number | null {
+  return value == null ? null : Number(value.toString());
+}
+
+function toUnitMember(record: UnitMoneyRecord): SupplierInvoiceUnitMember {
+  return {
+    salesChannel: record.salesChannel,
+    actualSales: decimalOrNull(record.actualSales),
+    sellerExpense: decimalOrNull(record.sellerExpense),
+    settlementSales: decimalOrNull(record.settlementSales),
+    settlementGoodsCost: decimalOrNull(record.settlementGoodsCost),
+    settlementItems: (record.settlementItems ?? []).map((item) => ({
+      invoiceMode: item.invoiceMode,
+      counterparty: item.counterparty,
+      amount: decimalOrNull(item.amount) ?? 0,
+    })),
+    partnerName: record.deal?.partner?.name ?? null,
+    partnerBusinessNumber: record.deal?.partner?.businessNumber ?? null,
+    isManualSettlementSales: record.isManualSettlementSales === true,
+    isManualSellerExpense: record.isManualSellerExpense === true,
+  };
+}
+
+/** 단위 공급사 계산서 전액 — 세무 보드와 같은 금액(SSOT `resolveSupplierInvoiceUnitTotal`). null = 모름. */
+function unitExpectedTotal(members: readonly UnitMoneyRecord[], grouped: boolean): SupplierInvoiceUnitTotal | null {
+  return resolveSupplierInvoiceUnitTotal({ members: members.map(toUnitMember), grouped });
+}
 
 export class CampaignInvoiceError extends Error {
   constructor(
@@ -114,6 +178,10 @@ type InvoiceUnit = {
   counterpartLabel: string;
   /** 셀러 별칭·이름 — 정산서 대조 키(그룹 멤버는 셀러가 같다 — `CampaignGroup.sellerId`) */
   sellerLabels: string[];
+  /** 단위 공급사 계산서 전액(`unitExpectedTotal`). null = 모름 */
+  expectedTotalAmount: number | null;
+  /** 전액이 수동 입력값에서 계산됐는가 */
+  expectedFromManual: boolean;
 };
 
 function sellerLabelsOf(seller: { name: string; alias: string | null } | null | undefined): string[] {
@@ -135,21 +203,29 @@ async function loadInvoiceUnit(db: Db, campaignId: string): Promise<InvoiceUnit 
       group: { select: { supplierInvoiceIssuedAt: true } },
       deal: { select: { partner: { select: { name: true, businessNumber: true, monthlySettlement: true } } } },
       seller: { select: { name: true, alias: true } },
+      actualSales: true,
+      sellerExpense: true,
+      settlementSales: true,
+      settlementGoodsCost: true,
+      isManualSettlementSales: true,
+      isManualSellerExpense: true,
+      settlementItems: UNIT_MONEY_SELECT.settlementItems,
     },
   });
   if (!campaign) throw new CampaignInvoiceError("캠페인을 찾을 수 없습니다.", 404);
   const partner = campaign.deal?.partner;
   if (!partner?.monthlySettlement) return null;
 
-  const members = campaign.groupId
+  const members: Array<UnitMoneyRecord & { id: string; startDate: Date; endDate: Date }> = campaign.groupId
     ? await db.salesCampaign.findMany({
         where: { groupId: campaign.groupId },
-        select: { id: true, startDate: true, endDate: true },
+        select: { id: true, startDate: true, endDate: true, ...UNIT_MONEY_SELECT },
         orderBy: { id: "asc" },
       })
-    : [{ id: campaign.id, startDate: campaign.startDate, endDate: campaign.endDate }];
+    : [campaign];
 
   // 그룹 기간은 멤버 기간의 포락선이다(그룹 스칼라 복사본은 정본이 아니다 — schema.prisma 주석).
+  const expectedTotal = unitExpectedTotal(members, campaign.groupId !== null);
   const periodStart = new Date(Math.min(...members.map((m) => m.startDate.getTime())));
   const periodEnd = new Date(Math.max(...members.map((m) => m.endDate.getTime())));
 
@@ -165,6 +241,8 @@ async function loadInvoiceUnit(db: Db, campaignId: string): Promise<InvoiceUnit 
     counterpartBusinessNumber: partner.businessNumber,
     counterpartLabel: partner.name,
     sellerLabels: sellerLabelsOf(campaign.seller),
+    expectedTotalAmount: expectedTotal?.totalAmount ?? null,
+    expectedFromManual: expectedTotal?.fromManualInput ?? false,
   };
 }
 
@@ -185,8 +263,7 @@ function isLegacyMode(unit: InvoiceUnit, rows: readonly InvoiceRecord[]): boolea
  */
 function assertAcceptableMonth(unit: InvoiceUnit, yearMonth: string) {
   const months = listYearMonths(unit.periodStart, unit.periodEnd);
-  const last = nextYearMonth(nextYearMonth(months[months.length - 1]));
-  if (yearMonth < months[0] || yearMonth > last) {
+  if (!isAcceptableInvoiceMonth(months, yearMonth)) {
     throw new CampaignInvoiceError(
       `${formatInvoiceMonth(yearMonth)}분은 이 캠페인 기간(${formatInvoiceMonth(months[0])}~${formatInvoiceMonth(months[months.length - 1])})과 맞지 않습니다.`,
       409,
@@ -215,7 +292,12 @@ async function requireUnit(tx: Prisma.TransactionClient, campaignId: string): Pr
 async function rollupLegacyDate(tx: Prisma.TransactionClient, unit: InvoiceUnit) {
   if (unit.legacyDate) return;
   const rows = (await loadUnitRows(tx, unit)).map(toInvoiceRowDto);
-  const value = resolveLegacyInvoiceDate({ periodStart: unit.periodStart, periodEnd: unit.periodEnd, rows });
+  const value = resolveLegacyInvoiceDate({
+    periodStart: unit.periodStart,
+    periodEnd: unit.periodEnd,
+    rows,
+    expectedTotalAmount: unit.expectedTotalAmount,
+  });
   if (!value) return;
   if (unit.groupId) {
     await tx.campaignGroup.updateMany({
@@ -235,6 +317,56 @@ async function logActivity(tx: Prisma.TransactionClient, unit: InvoiceUnit, cont
   for (const campaignId of unit.memberIds) {
     await tx.activityLog.create({
       data: { entityType: "CAMPAIGN", entityId: campaignId, type: "CAMPAIGN_INVOICE", content },
+    });
+  }
+}
+
+/** 한 번 발행 완료 감사 기록의 규칙 코드 — 계산서 한 장이 전액 · 여러 장의 합계가 전액. */
+export type FullAmountCompletionRule = "FULL_AMOUNT_SINGLE" | "SUM_OF_INVOICES";
+
+/**
+ * 기록 하나로 단위가 「전액 일치」로 끝났으면(`isFullAmountCovered` 가 거짓 → 참) 멤버마다 감사 기록을
+ * 남긴다(오너 확정 2026-10-14 H8). 계산서 없이 닫힌 달이 생기는 유일한 경로라 조용히 흡수하지 않는다 —
+ * 발행 자동 확정과 같은 type(`TAX_INVOICE_AUTO_CONFIRM[_TOLERATED]`)이라 세무 보드 「자동 확정됨」에 뜬다.
+ * 승인번호는 크론 자동 확정과 같은 규칙으로 content 에만 싣는다(봇 투영은 content 를 옮기지 않는다).
+ */
+async function logFullAmountCompletion(
+  tx: Prisma.TransactionClient,
+  unit: InvoiceUnit,
+  rowsBefore: readonly CampaignInvoiceRow[],
+) {
+  if (unit.expectedTotalAmount === null) return;
+  const liveBefore = rowsBefore.filter((row) => row.status !== "DISMISSED");
+  if (isFullAmountCovered(liveBefore, unit.expectedTotalAmount)) return;
+  const liveAfter = (await loadUnitRows(tx, unit)).map(toInvoiceRowDto).filter((row) => row.status !== "DISMISSED");
+  if (!isFullAmountCovered(liveAfter, unit.expectedTotalAmount)) return;
+
+  const recorded = liveAfter.filter((row) => row.status === "RECORDED");
+  const invoiceTotal = recorded.reduce((sum, row) => sum + (row.totalAmount ?? 0), 0);
+  const delta = invoiceTotal - unit.expectedTotalAmount;
+  const rule: FullAmountCompletionRule = recorded.length === 1 ? "FULL_AMOUNT_SINGLE" : "SUM_OF_INVOICES";
+  const months = new Set(listYearMonths(unit.periodStart, unit.periodEnd));
+  for (const row of liveAfter) months.add(row.yearMonth);
+  const closedWithoutInvoice = [...months].sort().filter((ym) => !liveAfter.some((row) => row.yearMonth === ym));
+  const issueIds = recorded.map((row) => row.approvalNo ?? "번호 없음").join(", ");
+  const latestWritten = recorded.map((row) => row.writtenAt).filter((v): v is string => Boolean(v)).sort().at(-1) ?? null;
+  const content =
+    `월정산 한 번 발행 완료(${rule}): 계산서 합계${won(invoiceTotal)}가 캠페인 전액${won(unit.expectedTotalAmount)}과 맞아 남은 달을 닫았습니다` +
+    `(승인번호 ${issueIds} · 차이 ${delta.toLocaleString("ko-KR")}원 · 계산서 없이 닫은 달 ${
+      closedWithoutInvoice.length > 0 ? closedWithoutInvoice.map(formatInvoiceMonth).join("·") : "없음"
+    }).`;
+  for (const campaignId of unit.memberIds) {
+    await tx.activityLog.create({
+      data: {
+        entityType: "CAMPAIGN",
+        entityId: campaignId,
+        type: delta === 0 ? TAX_INVOICE_AUTO_CONFIRM_TYPE : TAX_INVOICE_AUTO_CONFIRM_TOLERATED_TYPE,
+        fieldName: "supplierInvoiceIssuedAt",
+        previousValue: null,
+        newValue: latestWritten,
+        content,
+        actor: "SYSTEM",
+      },
     });
   }
 }
@@ -284,6 +416,8 @@ export const campaignInvoiceService = {
       sellerLabels: unit.sellerLabels,
       legacyDate: toYmd(unit.legacyDate),
       legacyMode: isLegacyMode(unit, rows),
+      expectedTotalAmount: unit.expectedTotalAmount,
+      expectedFromManual: unit.expectedFromManual,
       rows: rows.map(toInvoiceRowDto),
       excludedIssueIds: [...new Set(excluded.map((row) => row.approvalNo as string))],
     };
@@ -308,6 +442,7 @@ export const campaignInvoiceService = {
           409,
         );
       }
+      const rowsBefore = (await loadUnitRows(tx, unit)).map(toInvoiceRowDto);
       // 「이 메일이 아님」으로 뺐던 계산서를 다시 고른 경우 — 제외 행을 걷어낸다(같은 승인번호 유일 제약).
       await tx.campaignInvoice.deleteMany({
         where: { campaignId: { in: unit.memberIds }, approvalNo: input.issueId, status: "DISMISSED" },
@@ -329,6 +464,7 @@ export const campaignInvoiceService = {
         },
       });
       await logActivity(tx, unit, `${formatInvoiceMonth(yearMonth)}분 공급사 계산서를 메일에서 확인해 기록했습니다(작성일 ${input.writtenDate}${won(input.totalAmount)}).`);
+      await logFullAmountCompletion(tx, unit, rowsBefore);
       await rollupLegacyDate(tx, unit);
       return toInvoiceRowDto(row);
     }));
@@ -346,6 +482,8 @@ export const campaignInvoiceService = {
     campaignId: string;
     yearMonth: string;
     mail: ConfirmMailInvoiceInput;
+    /** STATEMENT = 정산서 금액과 맞음 · FULL_AMOUNT = 계산서 합계가 캠페인 전액과 맞음(`AutoRecordOp.basis`) */
+    basis: "STATEMENT" | "FULL_AMOUNT";
     expectedTotal: number;
     delta: number;
   }): Promise<CampaignInvoiceRow | null> {
@@ -389,8 +527,12 @@ export const campaignInvoiceService = {
       const content =
         `메일 자동 기록: ${formatInvoiceMonth(yearMonth)}분 공급사 계산서를 기록했습니다` +
         `(작성일 ${input.mail.writtenDate}${won(input.mail.totalAmount)} · 승인번호 ${input.mail.issueId}` +
-        ` · 대조 근거 정산서 금액${won(input.expectedTotal)} 일치` +
-        (tolerated ? ` · ⚠️ 정산서와 ${Math.abs(input.delta).toLocaleString("ko-KR")}원 차이를 허용오차로 흡수했습니다` : "") +
+        (input.basis === "FULL_AMOUNT"
+          ? ` · 대조 근거 캠페인 전액${won(input.expectedTotal)} 일치(정산서 없음, 계산서 합계로 판단)`
+          : ` · 대조 근거 정산서 금액${won(input.expectedTotal)} 일치`) +
+        (tolerated
+          ? ` · ⚠️ ${input.basis === "FULL_AMOUNT" ? "캠페인 전액" : "정산서"}과 ${Math.abs(input.delta).toLocaleString("ko-KR")}원 차이를 허용오차로 흡수했습니다`
+          : "") +
         ").";
       for (const campaignId of unit.memberIds) {
         await tx.activityLog.create({
@@ -406,6 +548,7 @@ export const campaignInvoiceService = {
           },
         });
       }
+      await logFullAmountCompletion(tx, unit, rows.map(toInvoiceRowDto));
       await rollupLegacyDate(tx, unit);
       return toInvoiceRowDto(row);
     });
@@ -441,7 +584,8 @@ export const campaignInvoiceService = {
       const unitKey = unit.groupId ?? unit.campaignId;
       if (seenUnits.has(unitKey)) continue;
       seenUnits.add(unitKey);
-      const rows = await loadUnitRows(db, unit);
+      const rows = (await loadUnitRows(db, unit)).map(toInvoiceRowDto);
+      const live = rows.filter((row) => row.status !== "DISMISSED");
       units.push({
         unitKey,
         anchorCampaignId: [...unit.memberIds].sort()[0],
@@ -453,6 +597,11 @@ export const campaignInvoiceService = {
         dismissedIssueIds: rows
           .filter((row) => row.status === "DISMISSED" && row.approvalNo)
           .map((row) => row.approvalNo as string),
+        expectedTotalAmount: unit.expectedTotalAmount,
+        expectedFromManual: unit.expectedFromManual,
+        recordedTotalAmount: sumRecordedInvoiceTotal(live),
+        periodMonths: listYearMonths(unit.periodStart, unit.periodEnd),
+        closedMonths: [...new Set(live.map((row) => row.yearMonth))],
       });
     }
     const recorded = await db.campaignInvoice.findMany({
@@ -470,6 +619,7 @@ export const campaignInvoiceService = {
       const yearMonth = yearMonthOf(input.writtenDate);
       assertAcceptableMonth(unit, yearMonth);
       const approvalNo = input.approvalNo?.trim() || null;
+      const rowsBefore = (await loadUnitRows(tx, unit)).map(toInvoiceRowDto);
       if (approvalNo) {
         const duplicate = await tx.campaignInvoice.findFirst({
           where: { approvalNo, status: "RECORDED" },
@@ -495,6 +645,7 @@ export const campaignInvoiceService = {
         },
       });
       await logActivity(tx, unit, `${formatInvoiceMonth(yearMonth)}분 공급사 계산서를 직접 입력했습니다(작성일 ${input.writtenDate}${won(input.totalAmount)}).`);
+      await logFullAmountCompletion(tx, unit, rowsBefore);
       await rollupLegacyDate(tx, unit);
       return toInvoiceRowDto(row);
     }));
@@ -571,6 +722,7 @@ export const campaignInvoiceService = {
         periodStart: unit.periodStart,
         periodEnd: unit.periodEnd,
         rows: (await loadUnitRows(tx, unit)).map(toInvoiceRowDto),
+        expectedTotalAmount: unit.expectedTotalAmount,
       });
       await tx.campaignInvoice.delete({ where: { id: row.id } });
       // 자동 기록을 오너가 취소했다 = 그 메일은 이 단위 것이 아니다. 지우기만 하면 다음 크론이 같은 조건으로
@@ -699,9 +851,9 @@ async function evaluateUnits(db: Db, campaignIds: readonly string[]): Promise<Ma
       groupId: true,
       startDate: true,
       endDate: true,
-      salesChannel: true,
       supplierInvoiceIssuedAt: true,
       group: { select: { supplierInvoiceIssuedAt: true } },
+      ...UNIT_MONEY_SELECT,
     },
   });
   if (targets.length === 0) return result;
@@ -710,11 +862,11 @@ async function evaluateUnits(db: Db, campaignIds: readonly string[]): Promise<Ma
   const groupMembers = groupIds.length
     ? await db.salesCampaign.findMany({
         where: { groupId: { in: groupIds } },
-        select: { id: true, groupId: true, startDate: true, endDate: true },
+        select: { id: true, groupId: true, startDate: true, endDate: true, ...UNIT_MONEY_SELECT },
       })
     : [];
 
-  type Member = { id: string; startDate: Date; endDate: Date };
+  type Member = UnitMoneyRecord & { id: string; startDate: Date; endDate: Date };
   const membersByUnit = new Map<string, Member[]>();
   for (const member of groupMembers) {
     const list = membersByUnit.get(member.groupId as string) ?? [];
@@ -749,6 +901,7 @@ async function evaluateUnits(db: Db, campaignIds: readonly string[]): Promise<Ma
               periodStart: new Date(Math.min(...members.map((m) => m.startDate.getTime()))),
               periodEnd: new Date(Math.max(...members.map((m) => m.endDate.getTime()))),
               rows: unitRows.map(toInvoiceRowDto),
+              expectedTotalAmount: unitExpectedTotal(members, target.groupId !== null)?.totalAmount ?? null,
             }),
       );
     }

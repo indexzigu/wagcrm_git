@@ -10,6 +10,9 @@ type Campaign = {
   groupId: string | null;
   supplierInvoiceIssuedAt: Date | null;
   monthly: boolean;
+  /** 단위 전액 계산 입력(브랜드몰 = 영업수익 기준). 없으면 전액을 모른다 → 종전 동작 */
+  settlementSales?: number | null;
+  isManualSettlementSales?: boolean;
 };
 type Invoice = Record<string, unknown> & { id: string; campaignId: string; status: string; approvalNo: string | null };
 
@@ -347,7 +350,7 @@ describe("loadInvoiceProgress — 세무 보드의 「끝」 판정 (T-244)", ()
 });
 
 describe("autoRecordMailInvoice — 확인 없는 자동 기록 (T-242)", () => {
-  const AUTO = { campaignId: "c1", yearMonth: "2026-09", mail: MAIL, expectedTotal: 74_250, delta: 0 };
+  const AUTO = { campaignId: "c1", yearMonth: "2026-09", mail: MAIL, basis: "STATEMENT" as const, expectedTotal: 74_250, delta: 0 };
 
   it("발급 메일 출처(자동)로 기록하고, 보드 「자동 확정」 요약이 세는 type 으로 감사 기록을 남긴다", async () => {
     const row = await campaignInvoiceService.autoRecordMailInvoice(AUTO);
@@ -399,5 +402,87 @@ describe("autoRecordMailInvoice — 확인 없는 자동 기록 (T-242)", () => 
     await campaignInvoiceService.waiveMonth("c1", "2026-10", null);
     await campaignInvoiceService.autoRecordMailInvoice(AUTO);
     expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+  });
+});
+
+describe("한 번에 끊은 월정산 — 계산서 합계가 캠페인 전액과 맞으면 끝 (2026-10-14)", () => {
+  // 브랜드몰 영업수익 74,250원 → 보드 금액 67,500 + 6,750 = 74,250원(가공).
+  beforeEach(() => {
+    state.campaigns = [campaign({ settlementSales: 74_250 })];
+  });
+
+  it("9월 계산서 한 장이 전액이면 화면·세무 보드·완료 게이트가 같은 답(2/2 · 막힘 없음)이고 레거시 날짜가 롤업된다", async () => {
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    const view = await campaignInvoiceService.getView("c1");
+    expect(view).toMatchObject({ applicable: true, expectedTotalAmount: 74_250, expectedFromManual: false });
+    const progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1"]);
+    expect(progress.get("c1")).toEqual({ done: 2, total: 2, openMonths: [] });
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "c1")).toBeNull();
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+  });
+
+  it("전액을 모르면 종전 그대로 — 10월이 남아 막힌다", async () => {
+    state.campaigns = [campaign()];
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "c1")).toContain("10월분");
+  });
+
+  it("H8 — 전액 일치로 남은 달을 닫으면 자동 확정 type 으로 규칙·승인번호·합계·전액·차이·닫은 달을 남긴다", async () => {
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    const audit = state.activity.filter((a) => a.type === "TAX_INVOICE_AUTO_CONFIRM");
+    expect(audit).toHaveLength(1);
+    expect(audit[0].entityId).toBe("c1");
+    expect(audit[0].content).toContain("FULL_AMOUNT_SINGLE");
+    expect(audit[0].content).toContain("A-1");
+    expect(audit[0].content).toContain("74,250원");
+    expect(audit[0].content).toContain("차이 0원");
+    expect(audit[0].content).toContain("계산서 없이 닫은 달 10월");
+  });
+
+  it("H8 — 여러 장의 합계로 끝나면 SUM_OF_INVOICES, 허용오차 흡수면 TOLERATED type · 이미 끝난 단위엔 다시 남기지 않는다", async () => {
+    await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, totalAmount: 40_000 });
+    expect(state.activity.some((a) => a.type?.startsWith("TAX_INVOICE_AUTO_CONFIRM"))).toBe(false);
+    await campaignInvoiceService.recordManualInvoice("c1", {
+      writtenDate: "2026-10-31",
+      totalAmount: 34_200,
+      approvalNo: "A-2",
+      note: null,
+    });
+    const audit = state.activity.filter((a) => a.type?.startsWith("TAX_INVOICE_AUTO_CONFIRM"));
+    expect(audit).toHaveLength(1);
+    expect(audit[0].type).toBe("TAX_INVOICE_AUTO_CONFIRM_TOLERATED");
+    expect(audit[0].content).toContain("SUM_OF_INVOICES");
+    expect(audit[0].content).toContain("차이 -50원");
+    expect(audit[0].content).toContain("계산서 없이 닫은 달 없음");
+  });
+
+  it("전액 근거 자동 기록은 감사 문장에 「캠페인 전액」 근거를 싣고 단위를 끝낸다", async () => {
+    const row = await campaignInvoiceService.autoRecordMailInvoice({
+      campaignId: "c1",
+      yearMonth: "2026-09",
+      mail: MAIL,
+      basis: "FULL_AMOUNT",
+      expectedTotal: 74_250,
+      delta: 0,
+    });
+    expect(row).toMatchObject({ source: "MAIL_AUTO" });
+    expect(state.activity.some((a) => a.content.includes("대조 근거 캠페인 전액"))).toBe(true);
+    expect(state.activity.some((a) => a.content.includes("FULL_AMOUNT_SINGLE"))).toBe(true);
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "c1")).toBeNull();
+  });
+
+  it("자동 기록 입력에 전액·수동 여부·기간 달·닫힌 달이 실린다", async () => {
+    state.campaigns = [campaign({ settlementSales: 74_250, isManualSettlementSales: true })];
+    const { units } = await campaignInvoiceService.loadAutoRecordUnits(db as never, {
+      sinceDays: 3650,
+      now: new Date("2026-10-09T00:00:00Z"),
+    });
+    expect(units[0]).toMatchObject({
+      expectedTotalAmount: 74_250,
+      expectedFromManual: true,
+      recordedTotalAmount: 0,
+      periodMonths: ["2026-09", "2026-10"],
+      closedMonths: [],
+    });
   });
 });
