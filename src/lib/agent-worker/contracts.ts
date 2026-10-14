@@ -49,6 +49,7 @@ export const AgentJobOperationSchema = z.enum([
   "get_store_status",
   "list_work_record_rooms",
   "get_work_records",
+  "get_tax_invoice_status",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -455,6 +456,22 @@ const workRecordsInputSchema = z
   .strict()
   .superRefine(refineSinceBeforeUntil);
 
+/** `get_tax_invoice_status` 목록 상한 — 파이썬 미러가 같은 숫자를 들 필요는 없다(입력이 아니라 출력 상한). */
+export const MAX_TAX_INVOICE_PENDING_ROWS = 30;
+export const MAX_TAX_INVOICE_AUTO_CONFIRMED_ROWS = 20;
+
+/**
+ * 세금계산서 발행 대조 현황(2026-10-14). 세 가지를 한 번에 돌려준다 — 발행 자동 확정 크론
+ * (`tax-invoice-issue-confirm`)의 마지막 실행 결과, 정산 「세무 처리」 보드의 남은 의무, 보드가
+ * 보여 주는 최근 자동 확정. `month` 는 보드 응답의 `month` 칸에만 실린다 — 세금계산서 보드는
+ * 캠페인 **상태 축**이라 달로 거르지 않는다(`buildTaxInvoiceWorkBoard`). 비우면 이번 KST 달.
+ */
+const taxInvoiceStatusInputSchema = z
+  .object({
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+  })
+  .strict();
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -467,6 +484,7 @@ const operationInputSchemas = {
   get_store_status: storeStatusInputSchema,
   list_work_record_rooms: listWorkRecordRoomsInputSchema,
   get_work_records: workRecordsInputSchema,
+  get_tax_invoice_status: taxInvoiceStatusInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;

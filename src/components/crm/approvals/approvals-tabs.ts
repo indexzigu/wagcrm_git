@@ -69,4 +69,5 @@ export const OPERATION_LABELS: Record<string, string> = {
   get_store_status: "스토어 현황",
   list_work_record_rooms: "카톡 수집 방",
   get_work_records: "카톡 업무기록",
+  get_tax_invoice_status: "세금계산서 대조",
 };

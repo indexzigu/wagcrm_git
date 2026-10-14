@@ -124,7 +124,7 @@ describe("get_settlement_report input (spec §3-E)", () => {
   } as const;
 
   // 파이썬 미러가 글자 순서를 대조하므로 새 operation 은 끝에만 붙는다 — 정산 리포트 **뒤**에는
-  // Phase 3 ②⑧(2026-10-09)의 세 읽기만 있어야 한다.
+  // Phase 3 ②⑧(2026-10-09)의 세 읽기와 세금계산서 대조(2026-10-14)만 있어야 한다.
   it("keeps its place in the enum; only later operations are appended after it (python mirror compares literal order)", () => {
     const options = AgentJobOperationSchema.options;
     expect(options.slice(options.indexOf("get_settlement_report"))).toEqual([
@@ -132,6 +132,7 @@ describe("get_settlement_report input (spec §3-E)", () => {
       "get_store_status",
       "list_work_record_rooms",
       "get_work_records",
+      "get_tax_invoice_status",
     ]);
   });
 
@@ -356,5 +357,37 @@ describe("Phase 3 store / Kakao read inputs (get_store_status · list_work_recor
     ["unknown key", { ...valid, roomName: "x" }],
   ])("get_work_records rejects %s", (_label, input) => {
     expect(parse("get_work_records", input)).toBe(false);
+  });
+});
+
+describe("get_tax_invoice_status input (2026-10-14)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+  const parse = (input: unknown) =>
+    AgentJobPayloadSchema.safeParse({ ...base, operation: "get_tax_invoice_status", input }).success;
+
+  it("is the last operation in the enum", () => {
+    const options = AgentJobOperationSchema.options;
+    expect(options[options.length - 1]).toBe("get_tax_invoice_status");
+  });
+
+  it.each([[{}], [{ month: "2026-10" }], [{ month: "2026-01" }], [{ month: "2025-12" }]])("accepts %j", (input) => {
+    expect(parse(input)).toBe(true);
+  });
+
+  it.each([
+    ["month 13", { month: "2026-13" }],
+    ["month 00", { month: "2026-00" }],
+    ["date instead of month", { month: "2026-10-01" }],
+    ["single-digit month", { month: "2026-1" }],
+    ["numeric month", { month: 202610 }],
+    ["unknown key", { month: "2026-10", sellerName: "x" }],
+    ["year key", { year: "2026" }],
+  ])("rejects %s", (_label, input) => {
+    expect(parse(input)).toBe(false);
   });
 });
