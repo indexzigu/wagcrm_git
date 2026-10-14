@@ -7,12 +7,15 @@ import {
   INVOICE_MONTH_TONE,
   MINOR_DELTA_RATIO,
   deriveInvoiceMonths,
+  buildReviewFingerprint,
+  collectRecordedMismatchReviews,
   dropContestedOps,
   findInvoiceCandidates,
   isFullAmountCovered,
   isInvoiceMonthDone,
   isPlausibleMonthlyWrittenMonth,
   judgeFullAmount,
+  judgeRecordedMismatch,
   planAutoRecords,
   resolveLegacyInvoiceDate,
   summarizeInvoiceRows,
@@ -419,14 +422,19 @@ describe("planAutoRecords — 정산서 없는 전액 판정", () => {
     ]);
   });
 
-  it("R0 — 기록한 합계가 어긋나는 단위(열린 달 없음)는 기록 없이 오너 확인 건으로만 나온다", () => {
-    const { ops, skipped, needsReview } = plan({
-      units: [unit({ openMonths: [], closedMonths: ["2026-09", "2026-10"], recordedTotalAmount: EXPECTED - 1_000, recordedMismatch: "MINOR_MISMATCH", expectedFromManual: true })],
-      mails: [],
-    });
+  it("R0 — 기록한 합계가 어긋나는 단위(열린 달 없음)는 기록 없이 오너 확인 건으로만 나온다 — 메일과 무관한 별도 함수가 낸다(#4)", () => {
+    const reviewOnly = unit({ openMonths: [], closedMonths: ["2026-09", "2026-10"], recordedTotalAmount: EXPECTED - 1_000, recordedMismatch: "MINOR_MISMATCH", expectedFromManual: true });
+    const { ops, skipped, needsReview } = plan({ units: [reviewOnly], mails: [] });
     expect(ops).toEqual([]);
     expect(skipped).toEqual([]);
-    expect(needsReview).toEqual([{ unitKey: "c1", campaignId: "c1", yearMonth: "2026-10", reason: "MINOR_MISMATCH", notes: ["EXPECTED_FROM_MANUAL"] }]);
+    // planAutoRecords 는 그 단위를 건너뛴다 — 크론이 메일 스캔 전에 부르는 함수와 두 번 세지 않게.
+    expect(needsReview).toEqual([]);
+    expect(collectRecordedMismatchReviews([reviewOnly])).toEqual([
+      { unitKey: "c1", campaignId: "c1", yearMonth: "2026-10", reason: "MINOR_MISMATCH", notes: ["EXPECTED_FROM_MANUAL"] },
+    ]);
+    // 분할 가능성에는 수동 입력 풀이를 붙이지 않는다 · 수취(RECEIVE)·어긋남 없는 단위는 내지 않는다
+    expect(collectRecordedMismatchReviews([{ ...reviewOnly, recordedMismatch: "POSSIBLE_SPLIT" }])[0].notes).toEqual([]);
+    expect(collectRecordedMismatchReviews([{ ...reviewOnly, direction: "RECEIVE" }, unit()])).toEqual([]);
   });
 
   it("M1 — 같은 상대 다른 단위의 **남은 금액**(전액 − 기록)이 이 계산서와 맞으면 고르지 않는다", () => {
@@ -542,5 +550,46 @@ describe("resolveSupplierInvoiceUnitTotal — 세무 보드와 같은 전액", (
         grouped: false,
       })?.fromManualInput,
     ).toBe(true);
+  });
+});
+
+describe("「확인함」 — 어긋남의 지문과 오너 확인 (오너 승인 2026-10-15)", () => {
+  const rows = [row({ totalAmount: 1_940_000 })];
+  const base = { ...SINGLE, rows, expectedTotalAmount: 2_000_000 };
+  const FP = "v1|MINOR_MISMATCH|1940000|2000000";
+
+  it("지문 = 이유 코드 · 기록 합계 · 전액 — 셋 중 하나만 달라도 다른 지문이다", () => {
+    const mismatch = judgeRecordedMismatch({ periodMonths: ["2026-09"], rows, expectedTotalAmount: 2_000_000 });
+    expect(mismatch).toEqual({ kind: "MINOR_MISMATCH", delta: -60_000, recordedTotal: 1_940_000, expectedTotal: 2_000_000, fingerprint: FP });
+    const fp = (kind: "MINOR_MISMATCH" | "OVER_EXPECTED", recordedTotal: number, expectedTotal: number) =>
+      buildReviewFingerprint({ kind, recordedTotal, expectedTotal });
+    expect(new Set([fp("MINOR_MISMATCH", 1, 2), fp("OVER_EXPECTED", 1, 2), fp("MINOR_MISMATCH", 3, 2), fp("MINOR_MISMATCH", 1, 3)]).size).toBe(4);
+  });
+
+  it("지문이 같은 확인이 있으면 요약 review 는 null — 다르면 그대로(금액이 바뀌면 다시 뜬다)", () => {
+    expect(summarizeInvoiceRows({ ...base, reviewAcks: [{ fingerprint: FP }] }).review).toBeNull();
+    expect(summarizeInvoiceRows({ ...base, reviewAcks: [{ fingerprint: "v1|MINOR_MISMATCH|1940000|2100000" }] }).review?.reason).toBe(
+      "MINOR_MISMATCH",
+    );
+    // 기록 금액이 바뀌면 같은 확인이 더는 맞지 않는다
+    const changed = summarizeInvoiceRows({ ...base, rows: [row({ totalAmount: 1_950_000 })], reviewAcks: [{ fingerprint: FP }] });
+    expect(changed.review?.reason).toBe("MINOR_MISMATCH");
+    // 여럿 중 하나라도 맞으면 본 것이다 · 확인은 끝난 달 수(완료 게이트 입력)를 바꾸지 않는다
+    const acked = summarizeInvoiceRows({ ...base, reviewAcks: [{ fingerprint: "v1|x" }, { fingerprint: FP }] });
+    expect(acked).toEqual({ done: 1, total: 1, openMonths: [], review: null });
+  });
+
+  it("달 줄: 확인한 어긋남은 mismatch 에서 빠지고 reviewedMismatch 로 옮겨 간다(상태는 RECORDED 그대로)", () => {
+    const derive = (reviewAcks: { fingerprint: string }[]) =>
+      deriveInvoiceMonths({
+        ...base,
+        ...candidates([]),
+        scanSinceYmd: "2026-08-15",
+        today: new Date("2026-10-20T00:00:00Z"),
+        expectedFromManual: true,
+        reviewAcks,
+      }).map((m) => [m.state, m.mismatch, m.reviewedMismatch, m.notes]);
+    expect(derive([])).toEqual([["RECORDED", "MINOR_MISMATCH", null, ["EXPECTED_FROM_MANUAL"]]]);
+    expect(derive([{ fingerprint: FP }])).toEqual([["RECORDED", null, "MINOR_MISMATCH", []]]);
   });
 });

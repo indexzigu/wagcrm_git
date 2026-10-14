@@ -323,6 +323,25 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     expect(runs).toEqual([{ id: "priv-stl-issue" }]);
   });
 
+  // 월정산 「확인함」(2026-10-15, migration 20261015120000): the board's monthly progress reads the
+  // acknowledgement fingerprint, so the worker gets four columns and a USING (true) policy. Who acknowledged
+  // (acknowledgedBy) and when stay closed — the judgement only needs the fingerprint.
+  it("reads the review-ack table only through the fingerprint columns", async () => {
+    await expect(
+      worker!.$queryRawUnsafe(`SELECT "id","campaignId","direction","fingerprint" FROM "CampaignInvoiceReviewAck"`),
+    ).resolves.toBeDefined();
+    for (const column of ["acknowledgedBy", "acknowledgedAt"]) {
+      await expectDenied(
+        worker!.$queryRawUnsafe(`SELECT "${column}" FROM "CampaignInvoiceReviewAck"`),
+        `SELECT CampaignInvoiceReviewAck.${column}`,
+      );
+    }
+    await expectDenied(
+      worker!.$executeRawUnsafe(`DELETE FROM "CampaignInvoiceReviewAck" WHERE false`),
+      "DELETE CampaignInvoiceReviewAck",
+    );
+  });
+
   it("cannot write the tax-invoice tables", async () => {
     await expectDenied(worker!.$executeRawUnsafe(`UPDATE "CampaignInvoice" SET "status" = 'RECORDED' WHERE false`), "UPDATE CampaignInvoice");
     await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "CampaignSettlementItem" WHERE false`), "DELETE CampaignSettlementItem");

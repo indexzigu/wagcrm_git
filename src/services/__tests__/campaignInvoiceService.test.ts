@@ -22,9 +22,30 @@ const state = {
   campaigns: [] as Campaign[],
   groups: new Map<string, { supplierInvoiceIssuedAt: Date | null }>(),
   invoices: [] as Invoice[],
-  activity: [] as Array<{ entityId: string; content: string; type?: string }>,
+  activity: [] as Activity[],
+  acks: [] as Ack[],
   seq: 0,
 };
+
+type Activity = {
+  entityId: string;
+  content: string;
+  type?: string;
+  fieldName?: string | null;
+  previousValue?: string | null;
+  newValue?: string | null;
+  actor?: string;
+};
+type Ack = { id: string; campaignId: string; direction: string; fingerprint: string; acknowledgedBy: string; acknowledgedAt: Date };
+
+/** `{ campaignId: { in }, direction, NOT: { campaignId } }` 정도만 — 확인 기록 목 전용 */
+function matchesAck(ack: Ack, where: { campaignId?: { in: string[] } | string; direction?: string; NOT?: { campaignId: string } }): boolean {
+  if (typeof where.campaignId === "string" && ack.campaignId !== where.campaignId) return false;
+  if (where.campaignId && typeof where.campaignId === "object" && !where.campaignId.in.includes(ack.campaignId)) return false;
+  if (where.direction && ack.direction !== where.direction) return false;
+  if (where.NOT && ack.campaignId === where.NOT.campaignId) return false;
+  return true;
+}
 
 function matches(row: Invoice, where: Record<string, unknown>): boolean {
   return Object.entries(where).every(([key, cond]) => {
@@ -107,9 +128,50 @@ const db = {
     }),
   },
   activityLog: {
-    create: vi.fn(async ({ data }: { data: { entityId: string; content: string; type?: string } }) => {
-      state.activity.push({ entityId: data.entityId, content: data.content, type: data.type });
+    create: vi.fn(async ({ data }: { data: Activity }) => {
+      state.activity.push({ ...data });
     }),
+    // 출처 표지 조회 — 가장 최근(마지막으로 넣은) 것. where 는 entityId in · fieldName · type in 만 본다.
+    findFirst: vi.fn(
+      async ({ where }: { where: { entityId: { in: string[] }; fieldName: string; type: { in: string[] } } }) => {
+        const hits = state.activity.filter(
+          (a) => where.entityId.in.includes(a.entityId) && a.fieldName === where.fieldName && where.type.in.includes(a.type ?? ""),
+        );
+        const last = hits.at(-1);
+        return last ? { type: last.type, newValue: last.newValue ?? null } : null;
+      },
+    ),
+  },
+  campaignInvoiceReviewAck: {
+    findMany: vi.fn(async ({ where }: { where: Parameters<typeof matchesAck>[1] }) =>
+      state.acks.filter((a) => matchesAck(a, where)).sort((a, b) => b.acknowledgedAt.getTime() - a.acknowledgedAt.getTime()),
+    ),
+    deleteMany: vi.fn(async ({ where }: { where: Parameters<typeof matchesAck>[1] }) => {
+      const before = state.acks.length;
+      state.acks = state.acks.filter((a) => !matchesAck(a, where));
+      return { count: before - state.acks.length };
+    }),
+    upsert: vi.fn(
+      async ({
+        where,
+        create,
+        update,
+      }: {
+        where: { campaignId_direction: { campaignId: string; direction: string } };
+        create: Omit<Ack, "id" | "acknowledgedAt">;
+        update: Partial<Ack>;
+      }) => {
+        const key = where.campaignId_direction;
+        const found = state.acks.find((a) => a.campaignId === key.campaignId && a.direction === key.direction);
+        if (found) {
+          Object.assign(found, update);
+          return found;
+        }
+        const ack = { id: `ack-${++state.seq}`, acknowledgedAt: new Date(), ...create };
+        state.acks.push(ack);
+        return ack;
+      },
+    ),
   },
   $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback(db),
 };
@@ -147,6 +209,7 @@ beforeEach(() => {
   state.groups = new Map();
   state.invoices = [];
   state.activity = [];
+  state.acks = [];
   state.seq = 0;
 });
 
@@ -289,7 +352,14 @@ describe("완료 게이트", () => {
     expect(blocked.size).toBe(0);
     // 레거시 날짜는 그룹 스칼라에 쓴다(CG-1).
     expect(state.groups.get("g1")?.supplierInvoiceIssuedAt?.toISOString()).toBe("2026-10-31T00:00:00.000Z");
-    expect(state.activity.filter((a) => a.entityId === "b").length).toBe(2);
+    expect(state.activity.filter((a) => a.entityId === "b" && a.type === "CAMPAIGN_INVOICE").length).toBe(2);
+    // 롤업은 멤버마다 출처 표지를 남긴다(취소가 「이 기능이 채운 값」인지 가를 근거 — #3).
+    expect(
+      state.activity.filter((a) => a.type === "CAMPAIGN_INVOICE_LEGACY_ROLLUP").map((a) => [a.entityId, a.newValue]),
+    ).toEqual([
+      ["a", "2026-10-31"],
+      ["b", "2026-10-31"],
+    ]);
   });
 });
 
@@ -554,5 +624,142 @@ describe("한 번에 끊은 월정산 — 계산서 합계가 캠페인 전액�
       periodMonths: ["2026-09", "2026-10"],
       closedMonths: [],
     });
+  });
+});
+
+describe("레거시 날짜 출처 표지 — 취소는 이 기능이 채운 날짜만 비운다 (리뷰 2026-10-15 #3)", () => {
+  const OCT_31 = new Date("2026-10-31T00:00:00Z");
+
+  it("레거시 모드에서 들어 있던 날짜는 같은 작성일의 계산서를 기록했다 취소해도 지우지 않는다", async () => {
+    // 오너가 레거시 칸에 실제 작성일(10/31)을 넣어 둔 단위 — 뒤에 같은 날짜의 계산서를 기록한다.
+    state.campaigns = [campaign({ supplierInvoiceIssuedAt: OCT_31 })];
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    const oct = await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, issueId: "A-2", writtenDate: "2026-10-31" });
+    const kept = state.activity.filter((a) => a.type === "CAMPAIGN_INVOICE_LEGACY_KEPT");
+    expect(kept.map((a) => a.newValue)).toEqual(["2026-10-31"]); // 첫 행에서 한 번만
+    await campaignInvoiceService.revertRow("c1", oct.id);
+    // 종전 규칙(날짜 == 취소 전 최신 작성일)이면 여기서 오너의 날짜가 지워졌다.
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe(OCT_31.toISOString());
+  });
+
+  it("「없음」으로 레거시 모드를 벗어나도 들어 있던 날짜를 표지로 남긴다", async () => {
+    state.campaigns = [campaign({ supplierInvoiceIssuedAt: OCT_31 })];
+    await campaignInvoiceService.waiveMonth("c1", "2026-09", null);
+    expect(state.activity.filter((a) => a.type === "CAMPAIGN_INVOICE_LEGACY_KEPT")).toHaveLength(1);
+  });
+
+  it("이 기능이 채운 날짜는 비우고, 남은 기록만으로 다 끝났으면 남은 최신 작성일로 다시 채운다", async () => {
+    // 한 달짜리 캠페인에 9월 계산서 두 장 — 첫 장(9/15)으로 달이 닫혀 9/15 가 롤업된다.
+    state.campaigns = [campaign({ startDate: new Date("2026-09-10T00:00:00Z"), endDate: new Date("2026-09-16T00:00:00Z") })];
+    const first = await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, writtenDate: "2026-09-15" });
+    await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, issueId: "A-2", writtenDate: "2026-09-30" });
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-15T00:00:00.000Z");
+    await campaignInvoiceService.revertRow("c1", first.id);
+    // 종전 규칙은 9/15 ≠ 취소 전 최신(9/30)이라 지워진 계산서의 날짜를 그대로 남겼다.
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+    const markers = state.activity.filter((a) => a.type === "CAMPAIGN_INVOICE_LEGACY_ROLLUP").map((a) => a.newValue);
+    expect(markers).toEqual(["2026-09-15", null, "2026-09-30"]);
+  });
+
+  it("롤업 뒤 다른 경로가 바꾼 날짜(표지 값과 다름)는 지우지 않는다", async () => {
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    const oct = await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, issueId: "A-2", writtenDate: "2026-10-31" });
+    state.campaigns[0].supplierInvoiceIssuedAt = new Date("2026-11-02T00:00:00Z");
+    await campaignInvoiceService.revertRow("c1", oct.id);
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-11-02T00:00:00.000Z");
+  });
+
+  it("표지가 없는 옛 데이터(표지 도입 이전 롤업)는 종전 규칙 — 취소 전 최신 작성일과 같으면 비운다", async () => {
+    state.campaigns = [
+      campaign({ startDate: new Date("2026-09-10T00:00:00Z"), endDate: new Date("2026-09-16T00:00:00Z"), supplierInvoiceIssuedAt: new Date("2026-09-30T00:00:00Z") }),
+    ];
+    state.invoices = [
+      { id: "old-1", campaignId: "c1", direction: "ISSUE", yearMonth: "2026-09", status: "RECORDED", writtenAt: new Date("2026-09-30T00:00:00Z"), approvalNo: "A-1", source: "MAIL", totalAmount: 74_250, supplyAmount: null, taxAmount: null, itemName: null, mailReceivedAt: null, note: null, createdAt: new Date(), updatedAt: new Date() },
+    ];
+    await campaignInvoiceService.revertRow("c1", "old-1");
+    expect(state.campaigns[0].supplierInvoiceIssuedAt).toBeNull();
+  });
+});
+
+describe("「확인함」 — 기록 합계 어긋남을 오너가 확인 (오너 승인 2026-10-15)", () => {
+  // 한 달짜리 캠페인(9/10~9/20 KST), 전액 74,250원인데 기록 72,000원 → 정산 오류 가능성.
+  const FINGERPRINT = "v1|MINOR_MISMATCH|72000|74250";
+  beforeEach(async () => {
+    state.campaigns = [campaign({ settlementSales: 74_250, startDate: new Date("2026-09-09T15:00:00Z"), endDate: new Date("2026-09-20T14:59:59Z") })];
+    await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, totalAmount: 72_000 });
+  });
+  const progressOf = async () => (await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1"])).get("c1");
+  const unitsNow = async () =>
+    (await campaignInvoiceService.loadAutoRecordUnits(db as never, { sinceDays: 3650, now: new Date("2026-10-09T00:00:00Z") })).units;
+
+  it("지문이 같으면 기록하고, 세무 보드 진행·크론 단위에서 빠지며 완료 게이트는 그대로 통과다", async () => {
+    expect((await progressOf())?.review?.reason).toBe("MINOR_MISMATCH");
+    expect(await unitsNow()).toHaveLength(1);
+    const ack = await campaignInvoiceService.acknowledgeReview("c1", { fingerprint: FINGERPRINT, actor: "owner-1" });
+    expect(ack).toMatchObject({ fingerprint: FINGERPRINT, acknowledgedBy: "owner-1" });
+    expect(await progressOf()).toEqual({ done: 1, total: 1, openMonths: [], review: null });
+    expect(await unitsNow()).toEqual([]);
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "c1")).toBeNull();
+    const view = await campaignInvoiceService.getView("c1");
+    expect(view).toMatchObject({ reviewAcks: [{ fingerprint: FINGERPRINT, acknowledgedBy: "owner-1" }] });
+    const log = state.activity.filter((a) => a.type === "CAMPAIGN_INVOICE").at(-1);
+    expect(log).toMatchObject({ actor: "owner-1" });
+    expect(log?.content).toContain("금액 차이를 확인했습니다");
+    expect(log?.content).toContain("72,000원");
+  });
+
+  it("금액이 바뀌면(지문이 달라지면) 「확인 필요」가 저절로 다시 뜨고 크론 단위에도 돌아온다", async () => {
+    await campaignInvoiceService.acknowledgeReview("c1", { fingerprint: FINGERPRINT, actor: "owner-1" });
+    // 같은 달에 1,000원짜리 계산서가 더 기록됐다 → 합계 73,000원(여전히 오류 가능성이지만 다른 차이다).
+    await campaignInvoiceService.recordManualInvoice("c1", { writtenDate: "2026-09-30", totalAmount: 1_000, approvalNo: "A-9", note: null });
+    expect((await progressOf())?.review?.reason).toBe("MINOR_MISMATCH");
+    expect(await unitsNow()).toHaveLength(1);
+    // 전액이 바뀌어도 마찬가지다.
+    state.acks = [];
+    await campaignInvoiceService.acknowledgeReview("c1", { fingerprint: "v1|MINOR_MISMATCH|73000|74250", actor: "owner-1" });
+    expect((await progressOf())?.review).toBeNull();
+    state.campaigns[0].settlementSales = 75_000;
+    expect((await progressOf())?.review?.reason).toBe("MINOR_MISMATCH");
+  });
+
+  it("화면이 본 지문이 지금 차이와 다르면 409 — 오너가 보지 않은 차이를 확인한 것으로 만들지 않는다", async () => {
+    await expect(
+      campaignInvoiceService.acknowledgeReview("c1", { fingerprint: "v1|MINOR_MISMATCH|70000|74250", actor: "owner-1" }),
+    ).rejects.toMatchObject({ status: 409, message: expect.stringContaining("금액이 바뀌었습니다") });
+    expect(state.acks).toEqual([]);
+  });
+
+  it("확인할 차이가 없으면 409", async () => {
+    state.invoices = [];
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL); // 74,250원 — 전액과 맞다
+    await expect(
+      campaignInvoiceService.acknowledgeReview("c1", { fingerprint: FINGERPRINT, actor: "owner-1" }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("「확인 취소」는 확인을 걷어내 「확인 필요」를 되살리고, 확인이 없으면 아무것도 하지 않는다", async () => {
+    await campaignInvoiceService.acknowledgeReview("c1", { fingerprint: FINGERPRINT, actor: "owner-1" });
+    expect(await campaignInvoiceService.revokeReviewAck("c1", { actor: "owner-1" })).toEqual({ removed: 1 });
+    expect((await progressOf())?.review?.reason).toBe("MINOR_MISMATCH");
+    expect(state.activity.filter((a) => a.type === "CAMPAIGN_INVOICE").at(-1)?.content).toContain("확인을 취소했습니다");
+    const logsBefore = state.activity.length;
+    expect(await campaignInvoiceService.revokeReviewAck("c1", { actor: "owner-1" })).toBeNull();
+    expect(state.activity.length).toBe(logsBefore);
+  });
+
+  it("그룹은 기준 캠페인(멤버 id 오름차순 첫째) 한 줄에 쓰고 멤버 전원이 같은 답을 받는다", async () => {
+    state.groups.set("g1", { supplierInvoiceIssuedAt: null });
+    state.campaigns = [
+      campaign({ id: "b", groupId: "g1", settlementSales: 40_000, startDate: new Date("2026-09-09T15:00:00Z"), endDate: new Date("2026-09-20T14:59:59Z") }),
+      campaign({ id: "a", groupId: "g1", settlementSales: 34_250, startDate: new Date("2026-09-09T15:00:00Z"), endDate: new Date("2026-09-20T14:59:59Z") }),
+    ];
+    state.invoices = [];
+    await campaignInvoiceService.confirmMailInvoice("b", { ...MAIL, totalAmount: 72_000 });
+    // 옛 확인이 다른 멤버에 남아 있어도 걷어낸다.
+    state.acks = [{ id: "old", campaignId: "b", direction: "ISSUE", fingerprint: "v1|x", acknowledgedBy: "x", acknowledgedAt: new Date(0) }];
+    await campaignInvoiceService.acknowledgeReview("b", { fingerprint: FINGERPRINT, actor: "owner-1" });
+    expect(state.acks.map((a) => a.campaignId)).toEqual(["a"]);
+    const progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["a", "b"]);
+    expect([progress.get("a")?.review, progress.get("b")?.review]).toEqual([null, null]);
   });
 });

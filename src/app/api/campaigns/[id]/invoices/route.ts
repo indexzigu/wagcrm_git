@@ -66,6 +66,14 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("revert"),
     rowId: z.string().min(1),
   }),
+  // 「확인함」 — 화면이 본 차이의 지문. 서버가 다시 계산한 지문과 다르면 409(그 사이 금액이 바뀌었다).
+  z.object({
+    action: z.literal("acknowledgeReview"),
+    fingerprint: z.string().trim().min(1).max(200),
+  }),
+  z.object({
+    action: z.literal("revokeReviewAck"),
+  }),
 ]);
 
 export async function POST(request: Request, context: Context) {
@@ -77,6 +85,8 @@ export async function POST(request: Request, context: Context) {
     return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
   }
   const body = parsed.data;
+  // 「확인함」은 누가 봤는지가 기록의 요점이다 — 로그인 이메일(없으면 사용자 id).
+  const actor = auth.context.email || auth.context.userId;
   try {
     let row;
     switch (body.action) {
@@ -94,6 +104,12 @@ export async function POST(request: Request, context: Context) {
         break;
       case "revert":
         row = await campaignInvoiceService.revertRow(id, body.rowId);
+        break;
+      case "acknowledgeReview":
+        row = await campaignInvoiceService.acknowledgeReview(id, { fingerprint: body.fingerprint, actor });
+        break;
+      case "revokeReviewAck":
+        row = await campaignInvoiceService.revokeReviewAck(id, { actor });
         break;
     }
     revalidateCampaignCaches();
