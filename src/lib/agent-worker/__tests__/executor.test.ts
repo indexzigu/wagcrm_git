@@ -787,6 +787,77 @@ describe("create_action_proposal", () => {
     expect(proposalCreateMock).not.toHaveBeenCalled();
   });
 
+  it("update_record is proposed against its target as an always-manual record_update with a per-field title", async () => {
+    campaignFindUniqueMock.mockResolvedValue({ id: "camp-1" });
+    proposalCreateMock.mockResolvedValue({ id: "proposal-record" });
+    proposalEventCreateMock.mockResolvedValue({ id: "event-record" });
+
+    const input = {
+      action: "update_record",
+      entityType: "CAMPAIGN",
+      entityId: "camp-1",
+      changes: { salesChannel: "BRAND_MALL", supplierInvoiceIssuedAt: "2026-04-23" },
+      expected: { salesChannel: "UNSPECIFIED", supplierInvoiceIssuedAt: null },
+      memo: "오너 확인",
+    } as const;
+    const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+
+    const title = "캠페인(camp-1) 기록 수정: 판매 채널 미지정 → 브랜드몰 · 공급사 계산서일 비어 있음 → 2026-04-23";
+    expect(proposalCreateMock).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        requestType: "record_update",
+        kind: "WRITE",
+        status: "PENDING_APPROVAL",
+        title,
+        payload: {
+          action: "update_record",
+          args: {
+            entityType: "CAMPAIGN",
+            entityId: "camp-1",
+            changes: { salesChannel: "BRAND_MALL", supplierInvoiceIssuedAt: "2026-04-23" },
+            expected: { salesChannel: "UNSPECIFIED", supplierInvoiceIssuedAt: null },
+            memo: "오너 확인",
+          },
+        },
+        targetEntityType: "CAMPAIGN",
+        targetEntityId: "camp-1",
+        campaignId: "camp-1",
+      }),
+    });
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
+  });
+
+  it.each([
+    ["화면 스키마에 없는 칸", { changes: { operatingProfit: 1 }, expected: { operatingProfit: null } }],
+    ["화면 스키마가 받지 않는 값", { changes: { salesChannel: "NAVER" }, expected: { salesChannel: "UNSPECIFIED" } }],
+    ["제외 칸(인수인계)", { changes: { assignedTo: "u-2" }, expected: { assignedTo: "u-1" } }],
+  ])("update_record refuses %s before inserting anything", async (_label, patch) => {
+    campaignFindUniqueMock.mockResolvedValue({ id: "camp-1" });
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", { action: "update_record", entityType: "CAMPAIGN", entityId: "camp-1", ...patch }),
+      deps(accepted("python")),
+    );
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL" });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("update_record against a deal checks the deal exists (not the campaign table)", async () => {
+    dealFindUniqueMock.mockResolvedValue(null);
+    const outcome = await executeAgentJob(
+      job("create_action_proposal", {
+        action: "update_record",
+        entityType: "DEAL",
+        entityId: "deal-x",
+        changes: { sellingPrice: 12000 },
+        expected: { sellingPrice: 10000 },
+      }),
+      deps(accepted("python")),
+    );
+    expect(dealFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "deal-x" } }));
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "TARGET_NOT_FOUND" });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
   it("still refuses a missing target for all three pre-existing actions (regression: nullable targets must not loosen them)", async () => {
     partnerFindUniqueMock.mockResolvedValue(null);
     dealFindUniqueMock.mockResolvedValue(null);

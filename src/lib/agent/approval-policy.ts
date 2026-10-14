@@ -41,6 +41,10 @@ export const REQUEST_TYPE_BY_ACTION: Record<string, string> = {
   // Muse 요청임이 확인되고 한도(|변동| 50만 원·하루 10건) 안인 것만 전용 자동 실행기
   // (`auto-execute/settlement-auto-execute.ts`)가 승인할 수 있다. 그 밖은 사람이 승인한다.
   update_settlement_amount: "settlement_amount_update", // alwaysManual → 일반 정책상 수동
+  // 화면에서 고칠 수 있는 칸을 화면 저장과 같은 본체로 고치는 기안 — 오너 결정(2026-10-14): 범위를 칸
+  // 목록으로 좁히지 않는 대신 **언제나 오너가 승인**한다. 자동 실행기를 두지 않는다(정산 자동 실행기는
+  // 이 requestType 을 집지 않는다). autoApprove 에 넣지 말 것.
+  update_record: "record_update", // alwaysManual → 수동(영구)
 };
 
 const FAIL_CLOSED_REQUEST_TYPE = "crm_mutation";

@@ -52,6 +52,18 @@ describe("getRequestTypeForAction", () => {
     }
   });
 
+  it("update_record → record_update: 명시 등재 + alwaysManual 이라 자동승인 불가(오너 결정 2026-10-14)", () => {
+    expect(REQUEST_TYPE_BY_ACTION.update_record).toBe("record_update");
+    expect(getRequestTypeForAction("update_record")).toBe("record_update");
+    const manual = approvalRulesJson.alwaysManual.map((r) => r.requestType);
+    const auto = approvalRulesJson.autoApprove.map((r) => r.requestType);
+    expect(manual).toContain("record_update");
+    expect(auto).not.toContain("record_update");
+    for (const kind of ["WRITE", "READ"] as const) {
+      expect(isAutoApprovable("record_update", kind)).toBe(false);
+    }
+  });
+
   it("미등록 action → fail-closed로 crm_mutation을 반환한다", () => {
     expect(getRequestTypeForAction("delete_everything")).toBe("crm_mutation");
     expect(getRequestTypeForAction("")).toBe("crm_mutation");

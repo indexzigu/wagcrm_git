@@ -161,6 +161,55 @@ describe("ProposalPayloadPreview", () => {
     expect(screen.queryByText("1원")).toBeNull();
   });
 
+  it("기록 수정은 대상·칸마다 지금 값 → 바꿀 값·메모를 화면 이름으로 보여준다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="update_record"
+        args={{
+          entityType: "CAMPAIGN",
+          entityId: "camp-1",
+          changes: { salesChannel: "BRAND_MALL", depositReceivedAt: "2026-04-28" },
+          expected: { salesChannel: "UNSPECIFIED", depositReceivedAt: null },
+          memo: "오너 확인",
+        }}
+      />,
+    );
+    expect(screen.getByText("캠페인")).toBeTruthy();
+    expect(screen.getByText("판매 채널")).toBeTruthy();
+    expect(screen.getByText("미지정 → 브랜드몰")).toBeTruthy();
+    expect(screen.getByText("입금일")).toBeTruthy();
+    expect(screen.getByText("비어 있음 → 2026-04-28")).toBeTruthy();
+    expect(screen.getByText("오너 확인")).toBeTruthy();
+  });
+
+  it("기록 수정의 표에 없는 칸은 칸 이름 그대로 보인다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="update_record"
+        args={{ entityType: "SELLER", entityId: "s-1", changes: { reviewer: "가상담당" }, expected: { reviewer: null } }}
+      />,
+    );
+    expect(screen.getByText("reviewer")).toBeTruthy();
+    expect(screen.getByText("비어 있음 → 가상담당")).toBeTruthy();
+  });
+
+  it("기록 수정의 모양이 깨진 기안(지금 값 빠짐·모르는 대상)은 그리지 않는다", () => {
+    const { container: missing } = render(
+      <ProposalPayloadPreview
+        action="update_record"
+        args={{ entityType: "CAMPAIGN", entityId: "c", changes: { salesChannel: "BRAND_MALL" }, expected: {} }}
+      />,
+    );
+    expect(missing.textContent).toBe("");
+    const { container: unknown } = render(
+      <ProposalPayloadPreview
+        action="update_record"
+        args={{ entityType: "ORDER", entityId: "c", changes: { a: 1 }, expected: { a: 2 } }}
+      />,
+    );
+    expect(unknown.textContent).toBe("");
+  });
+
   it("미리보기가 없는 action 은 아무것도 그리지 않는다(기존 표시 유지)", () => {
     const { container } = render(
       <ProposalPayloadPreview

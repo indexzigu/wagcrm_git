@@ -218,7 +218,8 @@ function auditLoopTarget(src: string): string | null {
 describe("계약: fitLevel 재계산 대입 대상 == 감사 루프 대상", () => {
   const cases: Array<[string, string]> = [
     ["서비스", "src/services/sellerService.ts"],
-    ["라우트", "src/app/api/sellers/[id]/route.ts"],
+    // 셀러 PATCH 본체 — 2026-10-14 라우트에서 옮겼다(화면 저장과 에이전트 `update_record` 가 공유).
+    ["PATCH 본체", "src/services/sellerPatchService.ts"],
   ];
 
   for (const [label, rel] of cases) {

@@ -28,6 +28,7 @@ import { confirmSettlementTool } from "@/lib/agent/tools/confirm-settlement";
 import { createPartnerTool } from "@/lib/agent/tools/create-partner";
 import { createDealTool } from "@/lib/agent/tools/create-deal";
 import { updateSettlementAmountTool } from "@/lib/agent/tools/update-settlement-amount";
+import { updateRecordTool } from "@/lib/agent/tools/update-record";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
@@ -1051,6 +1052,7 @@ const WRITE_INTENT_TOOLS = {
   create_partner: createPartnerTool,
   create_deal: createDealTool,
   update_settlement_amount: updateSettlementAmountTool,
+  update_record: updateRecordTool,
 } as const;
 
 async function targetExists(entityType: string, entityId: string, client: ProposalTx): Promise<boolean> {

@@ -296,6 +296,86 @@ export const updateSettlementAmountArgsSchema = updateSettlementAmountInputSchem
   .strict()
   .superRefine(refineSettlementAmountSign);
 
+/**
+ * 「기록 수정」(`update_record`)이 고칠 수 있는 엔티티 — 화면 수정(PATCH) 라우트가 있는 넷이다.
+ * ⚠️ 글자를 펼쳐 둔 이유는 위 `AgentJobPartnerTypeSchema` 와 같다(파이썬 미러가 이 파일의 글자를 읽는다).
+ * 화면 이름 표(`src/lib/record-update-labels.ts`)와의 짝은 테스트가 고정한다.
+ */
+export const AgentJobRecordEntityTypeSchema = z.enum(["CAMPAIGN", "DEAL", "PARTNER", "SELLER"]);
+
+/** 기안 하나가 한 번에 바꿀 수 있는 칸 수의 상한. */
+export const MAX_RECORD_UPDATE_FIELDS = 20;
+
+/**
+ * 칸 이름 — 화면 PATCH 스키마의 키 모양(영문 camelCase)만 받는다. **어떤 칸인지는 여기서 정하지
+ * 않는다** — 실행기가 그 엔티티의 PATCH 스키마로 거른다(`src/lib/agent/record-update-entities.ts`).
+ * 계약에 칸 목록을 두면 화면에서 고칠 수 있는 칸과 기안할 수 있는 칸이 갈린다.
+ */
+const recordFieldNameSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9]{0,63}$/);
+
+/**
+ * 칸 값 — 스칼라 하나. 표·객체(캠페인 품목·부가 항목, 딜 마진 정책)는 작업 입력 봉투의 깊이 2
+ * 상한(`jobInputValueSchema`)에 들어가지 않으므로 이 동작으로는 고치지 않는다.
+ * 날짜는 PATCH 와 같은 `YYYY-MM-DD` 글자로 보낸다.
+ */
+const recordFieldValueSchema = z.union([z.string().max(2_000), z.number().finite(), z.boolean(), z.null()]);
+
+/**
+ * 기록 수정의 칸 모양(액션 이름 제외). `expected` 는 **기안자가 본 현재 값**(칸마다, 비어 있으면 null)이고
+ * 실행기는 실제 값이 이것과 같을 때만 고친다(낙관적 동시성 — `update_settlement_amount` 의
+ * `expectedCurrentKrw` 와 같은 계약).
+ */
+const updateRecordInputSchema = z.object({
+  entityType: AgentJobRecordEntityTypeSchema,
+  entityId: opaqueIdSchema,
+  changes: z.record(recordFieldNameSchema, recordFieldValueSchema),
+  expected: z.record(recordFieldNameSchema, recordFieldValueSchema),
+  memo: z.string().trim().min(1).max(500).optional(),
+});
+
+/** `changes` 와 `expected` 는 같은 칸을 가리켜야 하고, 바꿀 값이 지금 값과 같으면 기안이 아니다. */
+function refineRecordUpdate(
+  value: { changes: Record<string, unknown>; expected: Record<string, unknown> },
+  context: z.RefinementCtx,
+): void {
+  const changeKeys = Object.keys(value.changes);
+  if (changeKeys.length === 0) {
+    context.addIssue({ code: "custom", path: ["changes"], message: "바꿀 칸이 하나 이상 있어야 한다." });
+  }
+  if (changeKeys.length > MAX_RECORD_UPDATE_FIELDS) {
+    context.addIssue({
+      code: "custom",
+      path: ["changes"],
+      message: `한 기안은 칸 ${MAX_RECORD_UPDATE_FIELDS}개까지 바꿀 수 있다.`,
+    });
+  }
+  const expectedKeys = Object.keys(value.expected);
+  const missing = changeKeys.filter((key) => !Object.hasOwn(value.expected, key));
+  const extra = expectedKeys.filter((key) => !Object.hasOwn(value.changes, key));
+  if (missing.length > 0 || extra.length > 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["expected"],
+      message: `expected 는 changes 와 같은 칸을 가져야 한다(빠짐: ${missing.join(",") || "없음"} · 남음: ${extra.join(",") || "없음"}).`,
+    });
+  }
+  for (const key of changeKeys) {
+    if (Object.hasOwn(value.expected, key) && value.expected[key] === value.changes[key]) {
+      context.addIssue({
+        code: "custom",
+        path: ["changes", key],
+        message: `${key} 의 바꿀 값이 지금 값과 같다.`,
+      });
+    }
+  }
+}
+
+/**
+ * 계약 단계의 기록 수정 args(액션 이름 제외). 실행기(`write-actions/update-record.ts`)는 이 위에
+ * 엔티티별 PATCH 스키마 검사를 더 얹는다.
+ */
+export const updateRecordArgsSchema = updateRecordInputSchema.strict().superRefine(refineRecordUpdate);
+
 export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -369,6 +449,13 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     })
     .strict()
     .superRefine(refineSettlementAmountSign),
+  z
+    .object({
+      action: z.literal("update_record"),
+      ...updateRecordInputSchema.shape,
+    })
+    .strict()
+    .superRefine(refineRecordUpdate),
 ]);
 
 /**

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { SETTLEMENT_AMOUNT_FIELD_LABELS } from "@/lib/settlement-amount-fields";
+import { RECORD_ENTITY_LABELS } from "@/lib/record-update-labels";
 import {
   AgentJobOperationSchema,
   AgentJobPayloadSchema,
+  AgentJobRecordEntityTypeSchema,
   AgentJobResultSchema,
+  MAX_RECORD_UPDATE_FIELDS,
   AgentJobSettlementAmountFieldSchema,
   MAX_RESULT_SUMMARY_CHARS,
   MAX_STORE_STATUS_CLAIMS,
@@ -174,9 +177,9 @@ describe("create_action_proposal — update_settlement_amount (정산 금액 수
   const accepts = (input: Record<string, unknown>) =>
     AgentJobPayloadSchema.safeParse({ ...base, input }).success;
 
-  it("is the last action literal in the union (python mirror compares literal order)", () => {
+  it("sits right before update_record in the union (new actions are appended at the end)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions[actions.length - 1]).toBe("update_settlement_amount");
+    expect(actions.slice(-2)).toEqual(["update_settlement_amount", "update_record"]);
   });
 
   it("field enum matches the screen-label table key for key, in order", () => {
@@ -389,5 +392,74 @@ describe("get_tax_invoice_status input (2026-10-14)", () => {
     ["year key", { year: "2026" }],
   ])("rejects %s", (_label, input) => {
     expect(parse(input)).toBe(false);
+  });
+});
+
+describe("create_action_proposal — update_record (기록 수정)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    operation: "create_action_proposal",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+  const valid = {
+    action: "update_record",
+    entityType: "CAMPAIGN",
+    entityId: "camp-1",
+    changes: { salesChannel: "BRAND_MALL", supplierInvoiceIssuedAt: "2026-04-23" },
+    expected: { salesChannel: "UNSPECIFIED", supplierInvoiceIssuedAt: null },
+  } as const;
+  const accepts = (input: Record<string, unknown>) => AgentJobPayloadSchema.safeParse({ ...base, input }).success;
+
+  it("is the last action literal in the union (python mirror compares literal order)", () => {
+    const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
+    expect(actions[actions.length - 1]).toBe("update_record");
+  });
+
+  it("entity enum matches the screen-label table key for key, in order", () => {
+    expect([...AgentJobRecordEntityTypeSchema.options]).toEqual(Object.keys(RECORD_ENTITY_LABELS));
+  });
+
+  it.each([
+    ["기본(채널·계산서일)", valid],
+    ["메모 포함", { ...valid, memo: "오너 확인 후 반영" }],
+    ["숫자·참거짓 값", { ...valid, changes: { quantity: 3, isManualMargin: true }, expected: { quantity: 1, isManualMargin: false } }],
+    ["비우기(null)", { ...valid, changes: { expectedDepositDate: null }, expected: { expectedDepositDate: "2026-05-01" } }],
+    ["딜", { action: "update_record", entityType: "DEAL", entityId: "d-1", changes: { sellingPrice: 1 }, expected: { sellingPrice: 2 } }],
+    [
+      "상한 그대로",
+      {
+        ...valid,
+        changes: Object.fromEntries(Array.from({ length: MAX_RECORD_UPDATE_FIELDS }, (_, i) => [`f${i}`, i])),
+        expected: Object.fromEntries(Array.from({ length: MAX_RECORD_UPDATE_FIELDS }, (_, i) => [`f${i}`, null])),
+      },
+    ],
+  ])("accepts %s (the envelope fits: an object of scalars is depth 1)", (_label, input) => {
+    expect(accepts(input as Record<string, unknown>)).toBe(true);
+  });
+
+  it.each([
+    ["모르는 엔티티", { ...valid, entityType: "ORDER" }],
+    ["빈 changes", { ...valid, changes: {}, expected: {} }],
+    ["expected 칸 빠짐", { ...valid, expected: { salesChannel: "UNSPECIFIED" } }],
+    ["expected 칸 남음", { ...valid, expected: { ...valid.expected, startDate: null } }],
+    ["바꿀 값 = 지금 값", { ...valid, changes: { salesChannel: "BRAND_MALL" }, expected: { salesChannel: "BRAND_MALL" } }],
+    ["객체 값", { ...valid, changes: { salesTask: { a: 1 } }, expected: { salesTask: null } }],
+    ["배열 값", { ...valid, changes: { campaignDeals: [1] }, expected: { campaignDeals: null } }],
+    ["칸 이름 모양(밑줄)", { ...valid, changes: { sales_channel: "X" }, expected: { sales_channel: null } }],
+    [
+      "상한 초과",
+      {
+        ...valid,
+        changes: Object.fromEntries(Array.from({ length: MAX_RECORD_UPDATE_FIELDS + 1 }, (_, i) => [`f${i}`, i])),
+        expected: Object.fromEntries(Array.from({ length: MAX_RECORD_UPDATE_FIELDS + 1 }, (_, i) => [`f${i}`, null])),
+      },
+    ],
+    ["빈 대상 id", { ...valid, entityId: "  " }],
+    ["모르는 칸 추가", { ...valid, extra: "x" }],
+    ["빈 메모", { ...valid, memo: "   " }],
+  ])("rejects %s", (_label, input) => {
+    expect(accepts(input as Record<string, unknown>)).toBe(false);
   });
 });

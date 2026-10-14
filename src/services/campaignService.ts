@@ -406,6 +406,12 @@ export const campaignService = {
     actor?: string;
     /** 낙관적 동시성 — 화면이 본 재무 필드·부가 항목·품목의 이전 값. 있으면 쓰기 전에 같은 tx 에서 대조한다. */
     expectedFinancials?: FinancialExpectation;
+    /**
+     * 호출부가 이미 연 트랜잭션. 있으면 새 트랜잭션을 열지 않고 **같은 본체**를 그 안에서 돈다 —
+     * 에이전트 `update_record` 승인 실행(`write-actions/update-record.ts`)이 기안 EXECUTED 전이와
+     * 이 저장을 한 트랜잭션으로 묶으려고 쓴다. 생략하면 종전과 같다(화면 PATCH).
+     */
+    tx?: Prisma.TransactionClient;
   }): Promise<UpdateCampaignResult> {
     const { id, data, previous, plan } = input;
     const actor = input.actor ?? "SYSTEM";
@@ -465,7 +471,7 @@ export const campaignService = {
     // 낙관적 동시성 대조가 어긋나면 tx 가 null 을 돌려주고 이 값이 채워진다(멤버십 409 와 가르기 위해).
     let staleFinancialFields: string[] | null = null;
 
-    const campaign = await prisma.$transaction(async (tx) => {
+    const runInTransaction = async (tx: Prisma.TransactionClient) => {
       // 🪤 락 순서: 그룹 상태 연동이 있으면 **어떤 행도 쓰기 전에** 그룹 락부터 잡는다 —
       // 팬아웃·롤업은 「락 → 멤버 행」 순이라, 원본 행을 먼저 쓰면 교착(40P01)이 난다
       // (`lockCampaignGroup` 주석). 같은 tx 의 이후 재획득은 재진입이다.
@@ -772,7 +778,8 @@ export const campaignService = {
       }
 
       return updated;
-    });
+    };
+    const campaign = input.tx ? await runInTransaction(input.tx) : await prisma.$transaction(runInTransaction);
 
     if (staleFinancialFields) return { ok: false, reason: "financial-stale", fields: staleFinancialFields };
     if (!campaign) return { ok: false, reason: "membership-changed" };

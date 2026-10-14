@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { dealRepository } from "@/repositories/dealRepository";
 import { normalizeDealBrandName, extractOptionLabel, formatOptionDealName, getDisplayDealName } from "@/lib/deal-display";
 import { isValidTransition } from "@/lib/deal-status";
@@ -415,13 +416,19 @@ export const dealService = {
       unitQuantity?: number | null;
       supplementaryInfo?: string | null;
     },
-    actor: string
+    actor: string,
+    /**
+     * 호출부 트랜잭션(선택). 에이전트 `update_record` 승인 실행이 이 저장을 기안 EXECUTED 전이와
+     * 한 트랜잭션으로 묶으려고 넘긴다. 생략하면 종전과 같다(화면 PATCH).
+     */
+    tx?: Prisma.TransactionClient
   ) {
     // Fetch current deal to compare changes
-    const currentDeal = await dealRepository.findUnique({ 
+    const findArgs = {
       where: { id },
       include: { options: true }
-    });
+    } as const;
+    const currentDeal = tx ? await tx.deal.findUnique(findArgs) : await dealRepository.findUnique(findArgs);
     if (!currentDeal) {
       throw new DealNotFoundError();
     }
@@ -443,7 +450,7 @@ export const dealService = {
       updateData.baseMarginPolicy = JSON.stringify(data.baseMarginPolicy);
     }
 
-    const updatedDeal = await dealRepository.update({
+    const updateArgs = {
       where: { id },
       data: updateData as any,
       include: {
@@ -469,14 +476,15 @@ export const dealService = {
           orderBy: [{ optionSortOrder: "asc" }, { createdAt: "asc" }],
         },
       },
-    });
+    } satisfies Prisma.DealUpdateArgs;
+    const updatedDeal = tx ? await tx.deal.update(updateArgs) : await dealRepository.update(updateArgs);
 
     // Update child options if parent's name or unit changed
     const isNameChanged = data.dealName && data.dealName !== currentDeal.dealName;
     const isUnitChanged = ('unit' in data) && data.unit !== currentDeal.unit;
 
     if (currentDeal.options && currentDeal.options.length > 0 && (isNameChanged || isUnitChanged)) {
-      const prisma = getPrisma();
+      const prisma = tx ?? getPrisma();
       const newDealName = data.dealName !== undefined ? data.dealName : currentDeal.dealName;
       const newUnit = data.unit !== undefined ? data.unit : currentDeal.unit;
 
@@ -517,7 +525,7 @@ export const dealService = {
       const curVal = (currentDeal as Record<string, unknown>)[key];
       if (getCompareValue(curVal) !== getCompareValue(val)) {
         const fieldLabel = FIELD_LABELS[key] || key;
-        await recordActivityChange("DEAL", id, fieldLabel, curVal, val, actor);
+        await recordActivityChange("DEAL", id, fieldLabel, curVal, val, actor, tx);
       }
     }
 
