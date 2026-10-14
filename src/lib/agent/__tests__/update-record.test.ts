@@ -3,6 +3,8 @@
  *  - 잠금 실패(읽은 뒤 다른 저장이 먼저 커밋됨) → 반영하지 않는다.
  *  - 칸 검사: 화면 PATCH 스키마 · 제외 칸 사유 문구.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Prisma } from "@prisma/client";
 
@@ -80,6 +82,22 @@ describe("update_record 실행기", () => {
 });
 
 describe("validateRecordChanges — 화면 PATCH 스키마 그대로", () => {
+  it("화면 스키마의 강제 변환이 값을 바꾸면 거절한다(보인 값과 저장값이 갈리지 않게)", () => {
+    expect(validateRecordChanges("CAMPAIGN", { miscExpense: "5" }).ok).toBe(false);
+    expect(validateRecordChanges("CAMPAIGN", { miscExpense: true }).ok).toBe(false);
+    expect(validateRecordChanges("CAMPAIGN", { miscExpense: "" }).ok).toBe(false);
+    expect(validateRecordChanges("CAMPAIGN", { miscExpense: 5 }).ok).toBe(true);
+  });
+
+  it("묶음 캠페인 잠금은 그룹 락을 묶음 행 갱신보다 먼저 잡는다(화면 저장과 같은 순서 — 교착 방지)", () => {
+    const src = readFileSync(join(process.cwd(), "src/lib/agent/record-update-entities.ts"), "utf8");
+    const body = src.slice(src.indexOf("export async function lockRecordRows"));
+    const lock = body.indexOf("lockCampaignGroup(tx");
+    const groupWrite = body.indexOf("campaignGroup.updateMany");
+    expect(lock).toBeGreaterThan(-1);
+    expect(groupWrite).toBeGreaterThan(lock);
+  });
+
   it("화면 스키마가 받는 칸·값은 통과한다", () => {
     expect(validateRecordChanges("CAMPAIGN", { salesChannel: "BRAND_MALL", sellerInvoiceIssuedAt: "2026-05-22" }).ok).toBe(true);
     expect(validateRecordChanges("PARTNER", { notes: "메모" }).ok).toBe(true);

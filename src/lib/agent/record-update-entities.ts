@@ -24,6 +24,7 @@ import { applyCampaignPatch, type CampaignPatchData } from "@/services/campaignP
 import { dealService } from "@/services/dealService";
 import { PartnerService } from "@/services/partnerService";
 import { applySellerPatch } from "@/services/sellerPatchService";
+import { lockCampaignGroup } from "@/services/campaignGroupService";
 import type { WriteActionEffectSpec } from "./write-actions/types";
 
 /**
@@ -118,7 +119,19 @@ export function validateRecordChanges(
       message: parsed.error.issues.map((issue) => `${issue.path.join(".") || "(칸)"}: ${issue.message}`).join("; "),
     };
   }
-  return { ok: true, data: parsed.data as Record<string, unknown> };
+  // 화면 스키마의 강제 변환(`z.coerce.*`·trim 등)이 값을 바꾸면 거절한다 — 기안·결재함에 보인 값과 실제
+  // 저장값이 갈리면 승인자가 본 것이 반영되지 않는다(코드 리뷰 2026-10-14: `"5"`·`true` 가 숫자로 바뀌던 길).
+  const data = parsed.data as Record<string, unknown>;
+  const altered = Object.keys(changes).filter((field) => !sameComparable(data[field], changes[field]));
+  if (altered.length > 0) {
+    return {
+      ok: false,
+      message: altered
+        .map((field) => `${field}: 값 형식이 화면 저장과 다르게 해석됩니다(숫자는 숫자로, 날짜는 YYYY-MM-DD 로 보내세요)`)
+        .join(" / "),
+    };
+  }
+  return { ok: true, data };
 }
 
 /**
@@ -195,8 +208,10 @@ export function currentValueOf(entityType: RecordEntityType, snapshot: RecordSna
 
 /**
  * 읽은 뒤 쓰기 전에 남이 먼저 고쳤으면 실패시키고, 우리 커밋까지 다른 쓰기를 기다리게 하는 잠금 쓰기.
- * 데이터는 `updatedAt` 하나뿐이다(어차피 저장이 다시 찍는다). 묶음 캠페인은 묶음 행 → 멤버 행 순서로
- * 잠근다 — 확정 경로·캠페인 PATCH 와 같은 순서(교착 방지, `update-settlement-amount.ts` 와 같은 규약).
+ * 데이터는 `updatedAt` 하나뿐이다(어차피 저장이 다시 찍는다). 묶음 캠페인은 **그룹 락(`lockCampaignGroup`,
+ * 셀러 단위 advisory) → 묶음 행 → 멤버 행** 순서로 잠근다 — 확정 경로·캠페인 PATCH·`update-settlement-amount.ts`
+ * 와 같은 순서다. 그룹 락을 건너뛰고 묶음 행부터 잡으면, 그룹 락을 먼저 쥔 화면 저장과 서로를 기다려
+ * Postgres 가 한쪽을 교착(40P01)으로 죽인다(코드 리뷰 2026-10-14 — sqlite 테스트에서는 락이 없어 안 보인다).
  * `count !== 1` 이면 false.
  */
 export async function lockRecordRows(
@@ -210,6 +225,7 @@ export async function lockRecordRows(
   switch (entityType) {
     case "CAMPAIGN": {
       if (snapshot.group) {
+        await lockCampaignGroup(tx, snapshot.group.id);
         const groupGuard = await tx.campaignGroup.updateMany({
           where: { id: snapshot.group.id, updatedAt: snapshot.group.updatedAt, members: { some: { id: entityId } } },
           data: { updatedAt: now },
