@@ -22,6 +22,7 @@
  */
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
+import { endOfKstDayMs } from "@/lib/order-converter/sale-window";
 import {
   buildInvoiceIncompleteMessage,
   formatInvoiceMonth,
@@ -133,7 +134,9 @@ function toUnitMember(record: UnitMoneyRecord): SupplierInvoiceUnitMember {
  */
 function isUnitMature(members: ReadonlyArray<Pick<UnitMoneyRecord, "status" | "endDate">>, now: Date): boolean {
   const settlement: readonly string[] = WORKSPACE_STATUS_GROUPS.settlement;
-  return members.every((m) => settlement.includes(m.status) || m.endDate.getTime() < now.getTime());
+  // 종료일은 「그 날 하루 전체」다(KST). 자정 순간과 비교하면 마감일 당일(매출이 아직 움직이는 날)에
+  // 끝난 것으로 보아 부분 매출로 전액을 굳힌다(코드 리뷰 2026-10-15, `sale-window.ts` 선례와 같은 함정).
+  return members.every((m) => settlement.includes(m.status) || endOfKstDayMs(m.endDate.getTime()) < now.getTime());
 }
 
 /**
@@ -214,7 +217,7 @@ function sellerLabelsOf(seller: { name: string; alias: string | null } | null | 
 }
 
 /** 월정산 단위를 읽는다. 월정산이 아니면 null. */
-async function loadInvoiceUnit(db: Db, campaignId: string): Promise<InvoiceUnit | null> {
+async function loadInvoiceUnit(db: Db, campaignId: string, now: Date = new Date()): Promise<InvoiceUnit | null> {
   const campaign = await db.salesCampaign.findUnique({
     where: { id: campaignId },
     select: {
@@ -250,7 +253,7 @@ async function loadInvoiceUnit(db: Db, campaignId: string): Promise<InvoiceUnit 
     : [campaign];
 
   // 그룹 기간은 멤버 기간의 포락선이다(그룹 스칼라 복사본은 정본이 아니다 — schema.prisma 주석).
-  const expectedTotal = unitExpectedTotal(members, campaign.groupId !== null);
+  const expectedTotal = unitExpectedTotal(members, campaign.groupId !== null, now);
   const periodStart = new Date(Math.min(...members.map((m) => m.startDate.getTime())));
   const periodEnd = new Date(Math.max(...members.map((m) => m.endDate.getTime())));
 
@@ -641,14 +644,14 @@ export const campaignInvoiceService = {
       select: { id: true },
       orderBy: { id: "asc" },
     });
-    const progress = await evaluateUnits(db, campaigns.map((c) => c.id));
+    const progress = await evaluateUnits(db, campaigns.map((c) => c.id), now);
     const units: AutoRecordUnit[] = [];
     const seenUnits = new Set<string>();
     for (const { id } of campaigns) {
       const summary = progress.get(id);
       // 열린 달이 없어도 기록한 합계가 어긋나는 단위는 넣는다 — 기록할 것은 없고 오너 확인 보고만(R0).
       if (!summary || (summary.openMonths.length === 0 && !summary.review)) continue;
-      const unit = await loadInvoiceUnit(db, id);
+      const unit = await loadInvoiceUnit(db, id, now);
       if (!unit) continue;
       const unitKey = unit.groupId ?? unit.campaignId;
       if (seenUnits.has(unitKey)) continue;
@@ -914,7 +917,7 @@ export const campaignInvoiceService = {
  * 나오므로 세무 보드·완료 게이트·크론이 같은 값을 본다.
  * 단위 판정 규칙은 `loadInvoiceUnit`·`isLegacyMode`·`isUnitMature` 와 같다 — 여기서 규칙을 바꾸면 그쪽도 바꿀 것.
  */
-async function evaluateUnits(db: Db, campaignIds: readonly string[]): Promise<Map<string, InvoiceProgress>> {
+async function evaluateUnits(db: Db, campaignIds: readonly string[], now: Date = new Date()): Promise<Map<string, InvoiceProgress>> {
   const result = new Map<string, InvoiceProgress>();
   if (campaignIds.length === 0) return result;
   const targets = await db.salesCampaign.findMany({
@@ -973,7 +976,7 @@ async function evaluateUnits(db: Db, campaignIds: readonly string[]): Promise<Ma
               periodStart: new Date(Math.min(...members.map((m) => m.startDate.getTime()))),
               periodEnd: new Date(Math.max(...members.map((m) => m.endDate.getTime()))),
               rows: unitRows.map(toInvoiceRowDto),
-              expectedTotalAmount: unitExpectedTotal(members, target.groupId !== null)?.totalAmount ?? null,
+              expectedTotalAmount: unitExpectedTotal(members, target.groupId !== null, now)?.totalAmount ?? null,
             }),
       );
     }

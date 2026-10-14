@@ -505,6 +505,17 @@ describe("한 번에 끊은 월정산 — 계산서 합계가 캠페인 전액�
     expect(await campaignInvoiceService.getView("c1")).toMatchObject({ expectedTotalAmount: 74_250 });
   });
 
+  it("M2 — 종료일은 그 날 KST 하루 전체다: 마감일 당일에는 아직 판매 중(전액 모름), 다음 날 0시(KST)부터 성숙", async () => {
+    // 종료일 9/16 = KST 9/16 하루 전체 → UTC 9/16 14:59:59.999 까지가 판매 중이다.
+    state.campaigns = [campaign({ settlementSales: 74_250, status: "ACTIVE", endDate: new Date("2026-09-16T00:00:00Z") })];
+    const duringLastDay = new Date("2026-09-16T10:00:00Z"); // KST 9/16 19:00 — 아직 그 날
+    const afterLastDay = new Date("2026-09-16T15:00:01Z"); // KST 9/17 00:00:01
+    const during = await campaignInvoiceService.loadAutoRecordUnits(db as never, { sinceDays: 3650, now: duringLastDay });
+    expect(during.units[0]?.expectedTotalAmount).toBeNull();
+    const after = await campaignInvoiceService.loadAutoRecordUnits(db as never, { sinceDays: 3650, now: afterLastDay });
+    expect(after.units[0]?.expectedTotalAmount).toBe(74_250);
+  });
+
   it("M2 — 전액이 바뀌어 「한 번에 끝」이 거짓이 된 뒤 취소해도 이 기능이 채운 날짜는 비워져 레거시 모드로 떨어지지 않는다", async () => {
     const row = await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
     expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
