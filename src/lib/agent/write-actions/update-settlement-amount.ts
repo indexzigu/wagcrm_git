@@ -21,6 +21,34 @@ import { assertEntityExists, type WriteActionDefinition, type WriteActionResult 
 export type UpdateSettlementAmountArgs = z.infer<typeof updateSettlementAmountArgsSchema>;
 
 /**
+ * 사람이 아니라 시스템이 승인·실행하는 실행자인가 — 자동 실행기(`SYSTEM_AUTO`)·그림자(`SYSTEM_AUTO_SHADOW`) 등.
+ * 정산이 확정된 캠페인은 **사람이 결재함에서 승인한 기안만** 고칠 수 있다(오너 확정 2026-10-14 — 오너는 화면에서
+ * 확정 뒤에도 고칠 수 있는데, 같은 사람이 승인한 기안만 막을 이유가 없다). 시스템 실행자는 여전히 막는다 —
+ * 오너가 보기 전에 확정된 정산을 바꾸면 안 된다. 자동 실행기는 이 판정 전에 「오너 결재 필요」로 남긴다
+ * (`settlement-auto-execute.ts` 의 `settlement_confirmed` 판정).
+ */
+export function isAutomatedActor(actor: string): boolean {
+  return actor.startsWith("SYSTEM_");
+}
+
+type SettlementConfirmationInput = Parameters<typeof resolveSettlementFlagSnapshot>[0] & { salesChannel: Parameters<typeof resolveCampaignMoneySlots>[0] };
+
+/**
+ * 그 채널의 대금 칸 중 확정 표시가 켜진 것을 사람이 읽는 글로. 없으면 null.
+ * 플래그 정본은 묶음이면 **묶음 스칼라**다(`resolveSettlementFlagSnapshot`, CG-1). 실행부와 자동 실행기가 같은 판정을 쓴다.
+ */
+export function describeConfirmedSettlement(
+  campaign: SettlementConfirmationInput,
+  group: Parameters<typeof resolveSettlementFlagSnapshot>[1],
+): string | null {
+  const slots = resolveCampaignMoneySlots(campaign.salesChannel);
+  const flags = resolveSettlementFlagSnapshot(campaign, group);
+  const confirmed = slots.filter((slot) => flags[slot.flagField]);
+  if (confirmed.length === 0) return null;
+  return `${confirmed.map((slot) => `${slot.counterpartLabel} ${slot.verb}`).join("·")} 완료${group ? ", 묶음 캠페인 기준" : ""}`;
+}
+
+/**
  * 저장 시 자동 재계산이 값을 **덮어쓰는** 세 칸과 그 수동 고정 플래그.
  *
  * 재무 카드에서 이 칸들은 「자동/수동」 토글이 붙어 있고, 자동이면 저장할 때마다
@@ -85,12 +113,13 @@ function toDerivationData(field: SettlementAmountField, amount: number): Financi
 }
 
 /**
- * 캠페인 정산 금액 칸 하나를 고친다 — 정산이 확정되기 **전**에만, 기안자가 본 값이 그대로일
- * 때만. 승인 라우트(`POST /api/action-proposals/[id]/approve`)가 연 tx 안에서 돈다.
+ * 캠페인 정산 금액 칸 하나를 고친다 — 기안자가 본 값이 그대로일 때만. 정산이 확정된 캠페인은
+ * **사람이 승인한 경우에만**(`isAutomatedActor`). 승인 라우트(`POST /api/action-proposals/[id]/approve`)가
+ * 연 tx 안에서 돈다.
  *
  * 가드 순서:
- *  ① 정산 확정 거부 — 그 채널의 대금 칸(`resolveCampaignMoneySlots`) 중 하나라도 확정
- *     표시가 켜져 있으면 고치지 않는다. 플래그의 정본은 묶음이면 **묶음 스칼라**다
+ *  ① 정산 확정 거부(시스템 실행자만) — 그 채널의 대금 칸(`resolveCampaignMoneySlots`) 중 하나라도 확정
+ *     표시가 켜져 있으면 자동 실행으로는 고치지 않는다. 사람이 승인했으면 고치되, 결과 요약에 「정산 확정 후 수정」을 남긴다. 플래그의 정본은 묶음이면 **묶음 스칼라**다
  *     (`resolveSettlementFlagSnapshot`, CG-1) — 멤버 행 값은 낡을 수 있다.
  *  ② 현재 값 대조 — 저장값 = `expectedCurrentKrw`(Decimal 비교, null ≠ 0).
  *  ③ 조건부 쓰기 — ①②를 읽은 뒤 쓰기 전에 남이 먼저 고쳤으면 `count === 0` 으로 실패한다.
@@ -145,15 +174,14 @@ async function handleUpdateSettlementAmount(
     }
   }
 
-  // ① 정산 확정 거부.
+  // ① 정산 확정 거부 — 시스템 실행자만.
   const slots = resolveCampaignMoneySlots(campaign.salesChannel);
   const flags = resolveSettlementFlagSnapshot(campaign, group);
-  const confirmed = slots.filter((slot) => flags[slot.flagField]);
-  if (confirmed.length > 0) {
-    const what = confirmed.map((slot) => `${slot.counterpartLabel} ${slot.verb}`).join("·");
+  const confirmedNote = describeConfirmedSettlement(campaign, group);
+  if (confirmedNote && isAutomatedActor(actor)) {
     throw new Error(
-      `정산 금액 수정 불가: 이미 정산이 확정된 캠페인입니다(${what} 완료${group ? ", 묶음 캠페인 기준" : ""}). ` +
-        "확정을 되돌린 뒤 다시 기안하세요.",
+      `정산 금액 수정 불가: 이미 정산이 확정된 캠페인입니다(${confirmedNote}). ` +
+        "자동 실행은 확정된 정산을 고치지 않습니다. 결재함에서 직접 승인하세요.",
     );
   }
 
@@ -185,19 +213,20 @@ async function handleUpdateSettlementAmount(
     );
   }
 
-  // ③ 조건부 쓰기.
-  const unconfirmed = Object.fromEntries(slots.map((slot) => [slot.flagField, false]));
+  // ③ 조건부 쓰기. 확정 표시는 ①에서 **읽은 그대로**여야 쓴다 — 미확정이었으면 그 사이 확정이 끼면 실패하고,
+  //    (사람 승인으로) 확정 상태에서 고치는 중이면 그 사이 확정이 풀리거나 바뀌어도 실패한다.
+  const flagsAsRead = Object.fromEntries(slots.map((slot) => [slot.flagField, flags[slot.flagField]]));
   if (group) {
     // ⓐ 그룹 락 → ⓑ 묶음 행 잠금(위 함수 주석 🪤). 데이터는 `updatedAt` 하나뿐이다 — 확정 표시를
     // 쓰는 것이 아니라 행을 잠그고 그 순간의 표시를 다시 확인하려는 쓰기다.
     await lockCampaignGroup(tx, group.id);
     const groupGuard = await tx.campaignGroup.updateMany({
-      where: { id: group.id, members: { some: { id: campaign.id } }, ...unconfirmed },
+      where: { id: group.id, members: { some: { id: campaign.id } }, ...flagsAsRead },
       data: { updatedAt: new Date() },
     });
     if (groupGuard.count !== 1) {
       throw new Error(
-        "정산 금액 수정 실패: 확인한 직후 묶음 캠페인의 정산이 확정되었거나 묶음 구성이 바뀌었습니다. 최신 상태를 확인한 뒤 다시 기안하세요.",
+        "정산 금액 수정 실패: 확인한 직후 묶음 캠페인의 정산 확정 상태나 묶음 구성이 바뀌었습니다. 최신 상태를 확인한 뒤 다시 기안하세요.",
       );
     }
   }
@@ -206,7 +235,7 @@ async function handleUpdateSettlementAmount(
     updatedAt: campaign.updatedAt,
     groupId: campaign.groupId,
     [field]: args.expectedCurrentKrw,
-    ...(group ? { group: { is: unconfirmed } } : unconfirmed),
+    ...(group ? { group: { is: flagsAsRead } } : flagsAsRead),
   } as Prisma.SalesCampaignWhereInput;
   const data = {
     ...derivedFinancials,
@@ -218,7 +247,7 @@ async function handleUpdateSettlementAmount(
   const { count } = await tx.salesCampaign.updateMany({ where, data });
   if (count !== 1) {
     throw new Error(
-      "정산 금액 수정 실패: 확인한 직후 다른 수정이나 정산 확정이 먼저 반영되었습니다. 최신 값을 확인한 뒤 다시 기안하세요.",
+      "정산 금액 수정 실패: 확인한 직후 다른 수정이나 정산 확정 상태 변경이 먼저 반영되었습니다. 최신 값을 확인한 뒤 다시 기안하세요.",
     );
   }
 
@@ -259,6 +288,7 @@ async function handleUpdateSettlementAmount(
   const parts = [
     `${label} ${formatSettlementAmountKrw(toAmount(current))} → ${formatSettlementAmountKrw(args.newAmountKrw)}`,
     ...(manualFlagTurnedOn ? ["자동 계산 → 수동 고정"] : []),
+    ...(confirmedNote ? [`정산 확정 후 수정(${confirmedNote})`] : []),
     ...derivedChanges,
   ];
 

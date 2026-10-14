@@ -13,7 +13,7 @@
  * - 같은 rid 의 기안이 둘 이상이면 **가장 먼저 만든 1건**만 후보, 나머지는 `duplicate_rid` 로 남긴다.
  *
  * ## 판정 순서 (하나라도 어긋나면 PENDING 그대로 — 자동 반려 없음)
- * payload 모양 → rid 중복 → |변동| 한도 → 채널 → 슬랙 원문(작성자 3중 일치 · 수정·subtype 없음 ·
+ * payload 모양 → rid 중복 → |변동| 한도 → 정산 확정 여부 → 채널 → 슬랙 원문(작성자 3중 일치 · 수정·subtype 없음 ·
  * `muse-req` 의 rid·action·params 정확 일치 · 메시지 시각이 기안 생성 전 N분 안) → 하루 건수.
  * 한도·모양처럼 슬랙 없이 가를 수 있는 것을 먼저 봐서 슬랙 호출을 줄인다.
  *
@@ -47,7 +47,7 @@
  *
  * ## 실행
  * `approveProposal(id, "SYSTEM_AUTO", { expectedStatus: "PENDING_APPROVAL" })` — 승인 로직을 여기서
- * 다시 만들지 않는다. 실행 순간의 가드(현재 값 = expectedCurrentKrw · 정산 확정 전 · 품목 있는
+ * 다시 만들지 않는다. 실행 순간의 가드(현재 값 = expectedCurrentKrw · 시스템 실행자는 정산 확정 전만 · 품목 있는
  * 총 거래액 거부)는 실행 동작(`update-settlement-amount.ts`)이 그대로 건다 — 현재 값을 속인 요청은
  * 변동이 넓어지는 대신 실행이 실패한다(FAILED).
  */
@@ -55,6 +55,7 @@ import { getPrisma } from "@/lib/prisma";
 import { isSqliteDatabaseUrl } from "@/lib/prisma-client";
 import { AgentJobSlackOriginSchema, updateSettlementAmountArgsSchema } from "@/lib/agent-worker/contracts";
 import { approveProposal } from "@/lib/agent/approve-proposal";
+import { describeConfirmedSettlement } from "@/lib/agent/write-actions/update-settlement-amount";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { startOfKstDayMs } from "@/lib/order-converter/sale-window";
 import { ActionProposalRepository, ConcurrentModificationError } from "@/repositories/actionProposalRepository";
@@ -123,7 +124,13 @@ export type Verdict =
   | "params_mismatch"
   | "outside_window"
   | "not_live_request"
-  | "daily_limit";
+  | "daily_limit"
+  /**
+   * 정산이 확정된 캠페인 — 자동으로 고치지 않고 오너 결재로 남긴다(오너 확정 2026-10-14). 실행부도 시스템
+   * 실행자에게는 같은 이유로 거부하지만, 여기서 먼저 걸러야 「자동 승인 → 실행 실패(FAILED)」로 끝나 오너가
+   * 승인할 기회조차 사라지는 일이 없다(2026-10-14 실측: 오너가 보기 전에 FAILED 로 닫혔다).
+   */
+  | "settlement_confirmed";
 
 export type AutoExecutePassResult = {
   mode: AutoExecuteMode;
@@ -259,6 +266,26 @@ async function judgeCandidate(
     return {
       verdict: "over_delta",
       detail: `변동 ${delta.toLocaleString("ko-KR")}원이 한도 ${maxDelta.toLocaleString("ko-KR")}원을 넘습니다`,
+    };
+  }
+
+  // 🪤 `group` 을 빼지 말 것 — 확정 표시의 정본이 묶음 스칼라다(실행부와 같은 판정 함수).
+  // 캠페인이 없으면 여기서 판정하지 않는다 — 실행부의 존재 확인이 사유를 남긴다.
+  const campaign = await getPrisma().salesCampaign.findUnique({
+    where: { id: payload.args.campaignId },
+    select: {
+      salesChannel: true,
+      isDepositReceived: true,
+      isPayoutCompleted: true,
+      isSupplierPayoutCompleted: true,
+      group: { select: { isDepositReceived: true, isPayoutCompleted: true, isSupplierPayoutCompleted: true } },
+    },
+  });
+  const confirmedNote = campaign ? describeConfirmedSettlement(campaign, campaign.group) : null;
+  if (confirmedNote) {
+    return {
+      verdict: "settlement_confirmed",
+      detail: `정산이 확정된 캠페인입니다(${confirmedNote}). 자동 실행하지 않고, 결재함에서 오너가 승인하면 반영됩니다`,
     };
   }
 

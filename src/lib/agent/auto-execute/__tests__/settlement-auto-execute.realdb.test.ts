@@ -335,6 +335,47 @@ describe("§7 시험 — 하나라도 어긋나면 PENDING 그대로", () => {
     expect(await statusOf(p.id)).toBe("PENDING_APPROVAL");
   });
 
+  /** 실제 캠페인 행(묶음 소속). 확정 표시는 묶음 스칼라가 정본이다. */
+  async function createGroupedCampaign(groupPayoutCompleted: boolean): Promise<string> {
+    const seller = await realPrisma.seller.create({ data: { name: "가짜셀러", snsType: "INSTAGRAM", snsHandle: `fake_${Date.now()}_${Math.random()}` } });
+    const partner = await realPrisma.partner.create({ data: { name: "가짜브랜드", type: "BRAND" } });
+    const deal = await realPrisma.deal.create({ data: { dealName: "가짜딜", baseMarginPolicy: "NONE", partnerId: partner.id } });
+    const group = await realPrisma.campaignGroup.create({ data: { sellerId: seller.id, isPayoutCompleted: groupPayoutCompleted } });
+    const campaign = await realPrisma.salesCampaign.create({
+      data: {
+        dealId: deal.id,
+        sellerId: seller.id,
+        groupId: group.id,
+        startDate: new Date("2026-08-01T00:00:00Z"),
+        endDate: new Date("2026-08-07T00:00:00Z"),
+        salesChannel: "BRAND_MALL",
+        baseNaverLink: "https://example.invalid/a",
+        generatedTrackingLink: "https://example.invalid/b",
+      },
+    });
+    return campaign.id;
+  }
+
+  it("정산이 확정된(묶음 지급 완료) 캠페인은 자동 실행하지 않고 오너 결재로 남긴다 — 슬랙도 부르지 않는다", async () => {
+    const campaignId = await createGroupedCampaign(true);
+    const p = await createProposal({ args: defaultArgs({ campaignId }) });
+    const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p)]]));
+    const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl });
+    expect(result.verdicts).toEqual({ settlement_confirmed: 1 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(executeCalls).toHaveLength(0);
+    expect(await statusOf(p.id)).toBe("PENDING_APPROVAL");
+  });
+
+  it("같은 구성이라도 정산이 미확정이면 평소대로 실행한다(확정 판정이 실행을 막지 않는다)", async () => {
+    const campaignId = await createGroupedCampaign(false);
+    const p = await createProposal({ args: defaultArgs({ campaignId }) });
+    const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p)]]));
+    const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl });
+    expect(result.executed).toBe(1);
+    expect(await statusOf(p.id)).toBe("EXECUTED");
+  });
+
   it("현재 값이 비어 있으면(null) 변동은 새 값 그대로 — 한도를 넘으면 PENDING", async () => {
     const p = await createProposal({ args: defaultArgs({ expectedCurrentKrw: null, newAmountKrw: 600_000 }) });
     const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl: slackFake(new Map()) });
