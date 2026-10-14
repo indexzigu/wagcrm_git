@@ -31,6 +31,7 @@ import { createDealTool } from "@/lib/agent/tools/create-deal";
 import { updateSettlementAmountTool } from "@/lib/agent/tools/update-settlement-amount";
 import { updateRecordTool } from "@/lib/agent/tools/update-record";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
+import type { GetCampaignFinancialsStoredData } from "@/lib/agent/tools/data-types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { deriveClaims } from "@/lib/order-converter/claim-derive";
@@ -704,7 +705,8 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
         sellerFeeBasisOverride,
         isDepositReceived: campaign.isDepositReceived,
         isPayoutCompleted: campaign.isPayoutCompleted,
-      },
+        // 결재함 카드(`tool-result-views.tsx`)가 이 모양을 읽는다 — 생산자·소비자가 같은 타입을 본다.
+      } satisfies GetCampaignFinancialsStoredData,
       dataSources: ["SalesCampaign", "Deal", "Seller"],
       query: { campaignId: input.campaignId },
     },

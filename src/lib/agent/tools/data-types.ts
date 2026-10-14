@@ -13,6 +13,7 @@
 // re-export한다 — settlement-report.ts가 `export type { SettlementStateLabel }`로 기존
 // 소비처(예: tool-result-views.tsx)에 노출해야 하므로 이 모듈에서도 이름을 통과시킨다.
 import type { SettlementStateLabel } from "@/lib/settlement-status";
+import type { SettlementAmountField } from "@/lib/settlement-amount-fields";
 export type { SettlementStateLabel };
 
 // ---- get_settlement_report ----
@@ -124,6 +125,30 @@ export type GetCampaignFinancialsData = {
   isDepositReceived: boolean;
   isPayoutCompleted: boolean;
 };
+
+/**
+ * 봇(Agent Worker)의 `get_campaign_financials` 기록 모양 — **저장된 금액** 그대로다
+ * (`agent-worker/executor.ts` `campaignFinancials`). 웹 도구의 `derived`(재계산) 모양과 갈라져
+ * 있어 결재함 카드가 두 모양을 다 그린다(옛 기록은 `derived`).
+ * 금액 칸은 정산 금액 수정 기안이 고칠 수 있는 칸(`SETTLEMENT_AMOUNT_FIELD_LABELS`)과 같고,
+ * `null` 은 「비어 있음」이다(0 과 다르다).
+ */
+export type GetCampaignFinancialsStoredData = {
+  campaignId: string;
+  dealName: string | null;
+  sellerName: string | null;
+  status: string;
+  source: "stored";
+  operatingProfit: number;
+  /** 저장 영업이익이 없으면 저장된 칸들로 계산(재무 카드와 같은 폴백) */
+  operatingProfitSource: "stored" | "computed_from_stored";
+  isManualSettlementSales: boolean;
+  isManualSellerExpense: boolean;
+  isManualTaxExpense: boolean;
+  sellerFeeBasisOverride: number | null;
+  isDepositReceived: boolean;
+  isPayoutCompleted: boolean;
+} & Record<SettlementAmountField, number | null>;
 
 // ---- get_order_snapshot ----
 

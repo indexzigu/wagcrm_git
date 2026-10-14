@@ -12,8 +12,15 @@ import type {
   SearchPartnersData,
   GetPipelineStatusData,
   GetCampaignFinancialsData,
+  GetCampaignFinancialsStoredData,
   GetOrderSnapshotData,
 } from "@/lib/agent/tools/data-types";
+// 정산 금액 칸의 화면 이름·표기 정본(클라이언트 안전 모듈 — 서버 전용 계약을 끌어오지 않는다).
+import {
+  SETTLEMENT_AMOUNT_FIELD_LABELS,
+  formatSettlementAmountKrw,
+  type SettlementAmountField,
+} from "@/lib/settlement-amount-fields";
 // 구분 라벨 정본. crm-types.ts 는 type-only import 뿐이라 클라이언트 번들에 안전하다.
 import {
   campaignStatusLabels,
@@ -275,33 +282,78 @@ function isGetCampaignFinancialsData(data: unknown): data is GetCampaignFinancia
   return typeof d.derived === "object" && d.derived !== null;
 }
 
+/** 금액 칸 순서 = 정산 금액 수정 기안의 칸 표 순서(재무 카드 칸 제목과 같은 이름). */
+const SETTLEMENT_AMOUNT_FIELDS = Object.keys(SETTLEMENT_AMOUNT_FIELD_LABELS) as SettlementAmountField[];
+
+/**
+ * 봇(Agent Worker) 기록의 **저장값** 모양(`source: "stored"`). 금액 칸은 숫자 또는 null(비어 있음)이어야
+ * 한다 — 하나라도 다른 타입이면 그리지 않고 key/value 폴백에 맡긴다(없는 값을 「비어 있음」으로 지어내지 않게).
+ */
+function isGetCampaignFinancialsStoredData(data: unknown): data is GetCampaignFinancialsStoredData {
+  if (!data || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  if (d.source !== "stored" || typeof d.operatingProfit !== "number") return false;
+  return SETTLEMENT_AMOUNT_FIELDS.every((field) => d[field] === null || typeof d[field] === "number");
+}
+
+/** 두 모양(옛 `derived` · 새 저장값) 중 하나라도 그릴 수 있는가 — 결재함 상세의 가드 표가 이 함수를 쓴다. */
+function isCampaignFinancialsRenderable(
+  data: unknown
+): data is GetCampaignFinancialsData | GetCampaignFinancialsStoredData {
+  return isGetCampaignFinancialsStoredData(data) || isGetCampaignFinancialsData(data);
+}
+
+type FinancialsCell = { label: string; value: string };
+
+/**
+ * 카드에 그릴 칸과 캡션. 옛 기록(`derived`, 웹 도구의 재계산값)은 예전 칸·표기를 그대로 두고, 봇의 저장값
+ * 기록은 정산 금액 수정 기안과 같은 칸 이름·같은 표기(「비어 있음」 · 「0원」)를 쓴다 — 승인자가 기안에서 본
+ * 「지금 값」과 이 카드의 숫자를 같은 글자로 맞춰 볼 수 있어야 한다.
+ */
+function campaignFinancialsCells(data: GetCampaignFinancialsData | GetCampaignFinancialsStoredData): {
+  cells: FinancialsCell[];
+  caption: string;
+} {
+  if (isGetCampaignFinancialsStoredData(data)) {
+    const cells: FinancialsCell[] = SETTLEMENT_AMOUNT_FIELDS.map((field) => ({
+      label: SETTLEMENT_AMOUNT_FIELD_LABELS[field],
+      value: formatSettlementAmountKrw(data[field]),
+    }));
+    cells.push({ label: "영업이익", value: formatSettlementAmountKrw(data.operatingProfit) });
+    const caption =
+      data.operatingProfitSource === "computed_from_stored"
+        ? "캠페인에 저장된 금액, 정산 확정치 아님. 영업이익은 저장값이 없어 저장된 칸으로 계산"
+        : "캠페인에 저장된 금액, 정산 확정치 아님";
+    return { cells, caption };
+  }
+  const { actualSales, derived } = data;
+  return {
+    cells: [
+      { label: "실매출", value: formatNumber(actualSales) },
+      { label: "정산매출", value: formatNumber(derived.settlementSales) },
+      { label: "셀러지급", value: formatNumber(derived.sellerExpense) },
+      { label: "세금", value: formatNumber(derived.taxExpense) },
+      { label: "영업이익", value: formatNumber(derived.operatingProfit) },
+    ],
+    // 3중 방어 유지 — 이 값은 계산된 파생치이며 정산 확정치가 아니다(청사진 §2-2).
+    caption: "파생 계산값, 정산 확정치 아님",
+  };
+}
+
 const CampaignFinancialsView: FC<ToolResultViewProps> = ({ data, bare }) => {
-  if (!isGetCampaignFinancialsData(data)) return null;
-  const { actualSales, derived, isDepositReceived, isPayoutCompleted } = data;
+  if (!isCampaignFinancialsRenderable(data)) return null;
+  const { isDepositReceived, isPayoutCompleted } = data;
+  const { cells, caption } = campaignFinancialsCells(data);
 
   return (
     <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-5 gap-2 text-xs">
-        <div>
-          <p className="text-muted-foreground">실매출</p>
-          <p className="font-semibold text-foreground">{formatNumber(actualSales)}</p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">정산매출</p>
-          <p className="font-semibold text-foreground">{formatNumber(derived.settlementSales)}</p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">셀러지급</p>
-          <p className="font-semibold text-foreground">{formatNumber(derived.sellerExpense)}</p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">세금</p>
-          <p className="font-semibold text-foreground">{formatNumber(derived.taxExpense)}</p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">영업이익</p>
-          <p className="font-semibold text-foreground">{formatNumber(derived.operatingProfit)}</p>
-        </div>
+        {cells.map((cell) => (
+          <div key={cell.label}>
+            <p className="text-muted-foreground">{cell.label}</p>
+            <p className="font-semibold text-foreground">{cell.value}</p>
+          </div>
+        ))}
       </div>
 
       {/* 완료 = `status-success`, 대기 = `outline`(무채). ⛔ 완료를 `status-active`(네이비)로
@@ -318,8 +370,8 @@ const CampaignFinancialsView: FC<ToolResultViewProps> = ({ data, bare }) => {
         </Badge>
       </div>
 
-      {/* 3중 방어 유지 — 이 화면 값은 계산된 파생치이며 정산 확정치가 아니다(청사진 §2-2). */}
-      <p className="text-xs text-muted-foreground">파생 계산값, 정산 확정치 아님</p>
+      {/* 3중 방어 유지 — 어느 모양이든 「정산 확정치 아님」을 캡션에 남긴다(청사진 §2-2). */}
+      <p className="text-xs text-muted-foreground">{caption}</p>
     </div>
   );
 };
@@ -409,7 +461,7 @@ const TOOL_RESULT_GUARDS: Record<string, (data: unknown) => boolean> = {
   search_deals: isSearchDealsData,
   search_partners: isSearchPartnersData,
   get_pipeline_status: isGetPipelineStatusData,
-  get_campaign_financials: isGetCampaignFinancialsData,
+  get_campaign_financials: isCampaignFinancialsRenderable,
   get_order_snapshot: isGetOrderSnapshotData,
 };
 

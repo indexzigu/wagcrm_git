@@ -71,6 +71,40 @@ describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
     const wrapper = container.querySelector("[data-slot='read-result-body'] > div");
     expect(wrapper?.className ?? "").not.toContain("border-border");
   });
+
+  it("봇의 캠페인 재무 기록(저장값 모양)도 key/value 가 아니라 재무 카드로 그린다", () => {
+    // 가공값. 봇 기록은 `derived` 없이 저장된 금액을 그대로 싣는다(agent-worker executor).
+    const data = {
+      campaignId: "camp2",
+      dealName: "딜 B",
+      sellerName: "셀러 B",
+      status: "ACTIVE",
+      source: "stored",
+      actualSales: 2000000,
+      settlementSales: 500000,
+      sellerExpense: 150000,
+      taxExpense: 30000,
+      operatingExpense: null,
+      miscExpense: 0,
+      settlementSupplyCost: null,
+      settlementGoodsCost: null,
+      operatingProfit: 320000,
+      operatingProfitSource: "computed_from_stored",
+      isManualSettlementSales: false,
+      isManualSellerExpense: false,
+      isManualTaxExpense: false,
+      sellerFeeBasisOverride: null,
+      isDepositReceived: false,
+      isPayoutCompleted: false,
+    };
+    const { container } = render(
+      <ReadResultBody envelope={envelope("get_campaign_financials", data)} />
+    );
+    expect(container.querySelector("[data-slot='kv-list']")).toBeNull();
+    expect(screen.getByText("영업 수익")).toBeInTheDocument();
+    expect(screen.getByText("500,000원")).toBeInTheDocument();
+    expect(screen.getAllByText("비어 있음")).toHaveLength(3);
+  });
 });
 
 describe("ReadResultBody — 갈래 ② 제네릭 표", () => {
