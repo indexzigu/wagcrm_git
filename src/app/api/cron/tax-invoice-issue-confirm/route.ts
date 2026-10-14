@@ -259,6 +259,7 @@ async function runMonthlyAutoRecord(input: {
         basis: op.basis,
         expectedTotal: op.expectedTotal,
         delta: op.delta,
+        split: op.split,
       });
       if (row) report.applied += 1;
       else report.noop += 1;

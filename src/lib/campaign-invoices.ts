@@ -210,6 +210,11 @@ export type InvoiceMonth = {
   expected: StatementExpectation[];
   /** 덧붙는 고정 풀이 코드(`INVOICE_MONTH_NOTE_HINT`) — 대개 빈 목록 */
   notes: InvoiceMonthNote[];
+  /**
+   * 기록한 계산서 합계가 전액과 어긋난다(`judgeRecordedMismatch`) — 달은 끝났지만(작성일을 그대로 보인다)
+   * 오너가 원인을 봐야 한다. 기록이 있는 달에만 붙고, 끝난 달 수(n/m)는 그대로 세되 「확인 필요」를 함께 보인다.
+   */
+  mismatch: RecordedMismatchKind | null;
 };
 
 const YEAR_MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -379,6 +384,49 @@ export function sumRecordedInvoiceTotal(rows: readonly CampaignInvoiceRow[]): nu
  */
 export const MINOR_DELTA_RATIO = 0.05;
 
+/** 전액과 어긋난 계산서의 세 모양 — 달 상태 이름과 같다. */
+export type RecordedMismatchKind = "MINOR_MISMATCH" | "OVER_EXPECTED" | "POSSIBLE_SPLIT";
+
+/**
+ * 차이(계산서 − 전액, 허용오차 밖)를 세 모양으로 가른다. 비율 이내면 오류 가능성, 크면 부호로 —
+ * 많으면 다른 건이 섞였거나 기대액 오류, 적으면(달을 넘는 캠페인만) 나눠 끊었을 수 있다.
+ * 한 달짜리 캠페인은 나눠 끊을 달이 없어 적어도 오류 가능성이다.
+ */
+export function classifyAmountDelta(delta: number, expected: number, crossesMonth: boolean): RecordedMismatchKind {
+  if (Math.abs(delta) <= expected * MINOR_DELTA_RATIO) return "MINOR_MISMATCH";
+  if (delta > 0) return "OVER_EXPECTED";
+  return crossesMonth ? "POSSIBLE_SPLIT" : "MINOR_MISMATCH";
+}
+
+export type RecordedMismatch = { kind: RecordedMismatchKind; delta: number };
+
+/**
+ * 달은 전부 끝났는데(기록 또는 「없음」) 기록한 계산서 합계가 전액과 허용오차 밖으로 어긋나는가(오너 규칙
+ * 2026-10-14 「원인 확인 필요」 — 실렌더 지적 R0: 기록된 장이 어긋나면 n/m 이 깨끗한 완료로 읽혔다).
+ * 완료 게이트는 막지 않는다(검토 신호이지 잠금이 아니다 — 오너). 열린 달이 남아 있으면 그 달의 상태가
+ * 신호를 나르므로 여기서는 null. 기록이 한 장도 없으면(전부 「없음」) 어긋남이 아니다.
+ */
+export function judgeRecordedMismatch(input: {
+  periodMonths: readonly string[];
+  rows: readonly CampaignInvoiceRow[];
+  expectedTotalAmount: number | null | undefined;
+}): RecordedMismatch | null {
+  const expected = input.expectedTotalAmount;
+  if (expected == null || !(expected > 0)) return null;
+  const live = input.rows.filter((row) => row.status !== "DISMISSED");
+  const recorded = live.filter((row) => row.status === "RECORDED");
+  if (recorded.length === 0) return null;
+  const sum = sumRecordedInvoiceTotal(live);
+  if (sum === null) return null;
+  const months = new Set(input.periodMonths);
+  for (const row of live) months.add(row.yearMonth);
+  const allClosed = [...months].every((ym) => live.some((row) => row.yearMonth === ym));
+  if (!allClosed) return null;
+  const delta = sum - expected;
+  if (Math.abs(delta) <= INVOICE_AMOUNT_TOLERANCE_WON) return null;
+  return { kind: classifyAmountDelta(delta, expected, input.periodMonths.length > 1), delta };
+}
+
 /**
  * 정산서 없이 계산서만으로 본 단위 판정(오너 확정 2026-10-14 「계산서 발행 여부를 먼저 파악하고 계산서에
  * 기입된 내역으로 상태를 판단한다」).
@@ -435,11 +483,7 @@ export function judgeFullAmount(input: {
     }
   }
   if (pool.length > 1) return { kind: "AMBIGUOUS" };
-  const crossesMonth = input.periodMonths.length > 1;
-  const minor = Math.abs(delta) <= expected * MINOR_DELTA_RATIO;
-  // 큰 차이는 부호로 가른다: 많으면 다른 건이 섞였거나 기대액 오류, 적으면(달을 넘을 때만) 나눠 끊었을 수 있다.
-  const kind = minor ? "MINOR_MISMATCH" : delta > 0 ? "OVER_EXPECTED" : crossesMonth ? "POSSIBLE_SPLIT" : "MINOR_MISMATCH";
-  return { kind, mail: pool[0], delta };
+  return { kind: classifyAmountDelta(delta, expected, input.periodMonths.length > 1), mail: pool[0], delta };
 }
 
 /**
@@ -483,6 +527,8 @@ export function deriveInvoiceMonths(input: {
     verdict.kind === "MINOR_MISMATCH" || verdict.kind === "OVER_EXPECTED" || verdict.kind === "POSSIBLE_SPLIT"
       ? { yearMonth: (verdict.mail.writtenDate as string).slice(0, 7), state: verdict.kind }
       : null;
+  // 달은 다 끝났는데 기록한 금액이 어긋난다 — 기록이 있는 달마다 표시(작성일은 그대로, 낱말·색만 바뀐다).
+  const recordedMismatch = judgeRecordedMismatch({ periodMonths, rows: live, expectedTotalAmount: input.expectedTotalAmount });
   const handledIssueIds = new Set(
     input.rows.map((row) => row.approvalNo).filter((value): value is string => Boolean(value)),
   );
@@ -498,7 +544,8 @@ export function deriveInvoiceMonths(input: {
     let state: InvoiceMonthState;
     if (recorded.length > 0) state = amendments.length > 0 ? "AMENDED" : "RECORDED";
     else if (waived) state = "WAIVED";
-    else if (covered) state = "COVERED";
+    // 한 번에 끊어 닫힌 달에 수정세금계산서가 따라왔으면 끝으로 두지 않는다(화면 전용 — 게이트는 메일을 모른다).
+    else if (covered) state = amendments.length > 0 ? "AMENDED" : "COVERED";
     else if (reviewMonth?.yearMonth === yearMonth) state = reviewMonth.state;
     else if (candidates.length > 0) state = "PENDING";
     else if (yearMonth >= currentMonth) state = "NOT_DUE";
@@ -507,9 +554,11 @@ export function deriveInvoiceMonths(input: {
     else state = "NOT_FOUND";
 
     const expected = [...(input.expectationsByMonth?.get(yearMonth) ?? [])];
+    const mismatch = recorded.length > 0 && recordedMismatch ? recordedMismatch.kind : null;
+    const reviewKind = mismatch ?? (state === "MINOR_MISMATCH" || state === "OVER_EXPECTED" ? state : null);
     const notes: InvoiceMonthNote[] =
-      input.expectedFromManual && (state === "MINOR_MISMATCH" || state === "OVER_EXPECTED") ? ["EXPECTED_FROM_MANUAL"] : [];
-    return { yearMonth, state, recorded, waived, candidates, amendments, expected, notes };
+      input.expectedFromManual && (reviewKind === "MINOR_MISMATCH" || reviewKind === "OVER_EXPECTED") ? ["EXPECTED_FROM_MANUAL"] : [];
+    return { yearMonth, state, recorded, waived, candidates, amendments, expected, notes, mismatch };
   });
 }
 
@@ -517,7 +566,16 @@ export function deriveInvoiceMonths(input: {
  * 단위의 달별 기록 진행 — 「끝난 달」 = RECORDED 또는 WAIVED 행이 있는 달, 그리고 기록한 계산서 합계가
  * 단위 전액과 맞으면(`isFullAmountCovered`) 나머지 달 전부.
  */
-export type InvoiceProgress = { done: number; total: number; openMonths: string[] };
+export type InvoiceProgress = {
+  done: number;
+  total: number;
+  openMonths: string[];
+  /**
+   * 달은 다 끝났는데 기록한 계산서 합계가 전액과 어긋난다(`judgeRecordedMismatch`) — 세무 보드 행은 남기고
+   * 봇·크론은 이유 코드로 보인다. 완료 게이트는 이 값을 보지 않는다(검토 신호 — 오너).
+   */
+  review: { reason: RecordedMismatchKind; label: string } | null;
+};
 
 /**
  * 완료 판정에 쓰는 요약 — 메일 후보와 무관하게 **저장된 행만으로** 정해진다(서버 게이트가 메일을
@@ -541,7 +599,13 @@ export function summarizeInvoiceRows(input: {
     : months.filter(
         (ym) => !live.some((row) => row.yearMonth === ym && (row.status === "RECORDED" || row.status === "WAIVED")),
       );
-  return { done: months.length - openMonths.length, total: months.length, openMonths };
+  const mismatch = judgeRecordedMismatch({ periodMonths: listYearMonths(input.periodStart, input.periodEnd), rows: live, expectedTotalAmount: input.expectedTotalAmount });
+  return {
+    done: months.length - openMonths.length,
+    total: months.length,
+    openMonths,
+    review: mismatch ? { reason: mismatch.kind, label: AUTO_RECORD_REVIEW_LABEL[mismatch.kind] } : null,
+  };
 }
 
 /**
@@ -715,6 +779,8 @@ export type AutoRecordUnit = {
   periodMonths: readonly string[];
   /** 이미 기록·「없음」인 달 */
   closedMonths: readonly string[];
+  /** 달은 다 끝났는데 기록한 합계가 전액과 어긋난다(`InvoiceProgress.review`) — 기록할 것은 없고 오너 확인만 */
+  recordedMismatch: RecordedMismatchKind | null;
 };
 
 export type AutoRecordSkipReason =
@@ -782,6 +848,8 @@ export type AutoRecordOp = {
   expected: StatementExpectation | null;
   /** 메일 금액(전액 판정이면 기록+후보 합계) − 기준 금액(허용오차로 흡수한 차이). 0 이면 정확히 같다. */
   delta: number;
+  /** 전액 판정이 여러 장의 합계로 맞았을 때 이 장의 순번(1부터)과 장수 — 한 장이면 null */
+  split: { index: number; count: number } | null;
 };
 
 /**
@@ -817,6 +885,18 @@ export function planAutoRecords(input: {
   const issueUnits = input.units.filter((unit) => unit.direction === "ISSUE");
 
   for (const unit of issueUnits) {
+    // 달은 다 끝났는데 기록한 합계가 어긋나는 단위 — 기록할 것은 없고 오너가 원인을 본다(R0).
+    if (unit.recordedMismatch) {
+      needsReview.push({
+        unitKey: unit.unitKey,
+        campaignId: unit.anchorCampaignId,
+        yearMonth: [...unit.closedMonths].sort().at(-1) ?? unit.periodMonths[unit.periodMonths.length - 1],
+        reason: unit.recordedMismatch,
+        notes:
+          unit.expectedFromManual && unit.recordedMismatch !== "POSSIBLE_SPLIT" ? ["EXPECTED_FROM_MANUAL"] : [],
+      });
+      continue;
+    }
     const counterpart = digits(unit.counterpartBusinessNumber);
     const sameCounterpart = issueUnits.filter((other) => digits(other.counterpartBusinessNumber) === counterpart);
     const expectations = collectStatementExpectations({
@@ -874,6 +954,7 @@ export function planAutoRecords(input: {
         expectedTotal: expected[0].totalAmount,
         expected: expected[0],
         delta: (mail.totalAmount as number) - expected[0].totalAmount,
+        split: null,
       });
     }
 
@@ -907,7 +988,32 @@ export function planAutoRecords(input: {
       });
     }
   }
-  return { ops, skipped, needsReview };
+  const resolved = dropContestedOps(ops);
+  skipped.push(...resolved.skipped);
+  return { ops: resolved.ops, skipped, needsReview };
+}
+
+/**
+ * 같은 승인번호를 두 단위가 집었으면 둘 다 놓는다 — 어느 쪽 것인지 모른다(계획 단계 충돌, M1).
+ * 단위별 판정(쌍둥이 전액·남은 금액·품목명)이 대부분 먼저 거르지만, 그 판정은 단위 하나의 시야라
+ * 계획 전체를 한 번 더 본다. 놓은 단위는 `AMBIGUOUS_FULL_AMOUNT` 로 센다.
+ */
+export function dropContestedOps(ops: readonly AutoRecordOp[]): {
+  ops: AutoRecordOp[];
+  skipped: Array<{ unitKey: string; yearMonth: string; reason: AutoRecordSkipReason }>;
+} {
+  const claimants = new Map<string, Set<string>>();
+  for (const op of ops) {
+    const key = op.mail.issueId as string;
+    claimants.set(key, (claimants.get(key) ?? new Set()).add(op.unitKey));
+  }
+  const contested = new Set(ops.filter((op) => (claimants.get(op.mail.issueId as string)?.size ?? 0) > 1).map((op) => op.unitKey));
+  const skipped: Array<{ unitKey: string; yearMonth: string; reason: AutoRecordSkipReason }> = [];
+  for (const unitKey of contested) {
+    const first = ops.find((op) => op.unitKey === unitKey) as AutoRecordOp;
+    skipped.push({ unitKey, yearMonth: first.yearMonth, reason: "AMBIGUOUS_FULL_AMOUNT" });
+  }
+  return { ops: ops.filter((op) => !contested.has(op.unitKey)), skipped };
 }
 
 /** 오너 확인 건 한 줄 — 이유 코드·고정 풀이 코드와 캠페인·달만(금액·이름 없음). */
@@ -958,9 +1064,9 @@ function planFullAmount(input: {
     return { kind: "skip", yearMonth: (verdict.mail.writtenDate as string).slice(0, 7), reason: verdict.kind };
   }
 
+  // 수정세금계산서는 **닫힌 달 것도** 본다 — 기록한 장을 고치는 수정분이 있으면 합계 자체가 바뀔 수 있다(M4).
   const amendmentPending = [...input.amendmentsByMonth].some(
-    ([yearMonth, mails]) =>
-      mails.length > 0 && !closedMonths.has(yearMonth) && isAcceptableInvoiceMonth(unit.periodMonths, yearMonth),
+    ([yearMonth, mails]) => mails.length > 0 && isAcceptableInvoiceMonth(unit.periodMonths, yearMonth),
   );
   if (amendmentPending) return { kind: "skip", yearMonth: firstOpen, reason: "AMENDMENT_PENDING" };
   const expected = unit.expectedTotalAmount as number;
@@ -973,12 +1079,17 @@ function planFullAmount(input: {
   );
   const contradicted = picks.findIndex((pick) => pick !== null && pick.unitKey !== unit.unitKey);
   if (contradicted >= 0) return { kind: "skip", yearMonth: months[contradicted], reason: "LINE_ITEM_CONTRADICTS" };
-  const twin = input.sameCounterpart.some(
-    (other) =>
-      other.unitKey !== unit.unitKey &&
-      other.expectedTotalAmount !== null &&
-      Math.abs(other.expectedTotalAmount - expected) <= INVOICE_AMOUNT_TOLERANCE_WON,
-  );
+  // 같은 상대의 다른 단위가 같은 전액이거나, 그 단위의 **남은 금액**(전액 − 기록)이 이 계산서들의 합계와
+  // 같으면 어느 쪽 것인지 모른다(M1) — 품목명이 이 단위를 지목할 때만 고른다.
+  const poolTotal = verdict.mails.reduce((sum, mail) => sum + (mail.totalAmount as number), 0);
+  const twin = input.sameCounterpart.some((other) => {
+    if (other.unitKey === unit.unitKey || other.expectedTotalAmount === null) return false;
+    const remaining = other.expectedTotalAmount - (other.recordedTotalAmount ?? 0);
+    return (
+      Math.abs(other.expectedTotalAmount - expected) <= INVOICE_AMOUNT_TOLERANCE_WON ||
+      Math.abs(remaining - poolTotal) <= INVOICE_AMOUNT_TOLERANCE_WON
+    );
+  });
   const lineItemsNameThisUnit = picks.every((pick) => pick?.unitKey === unit.unitKey);
   if ((twin && !lineItemsNameThisUnit) || new Set(months).size !== months.length) {
     return { kind: "skip", yearMonth: months[0], reason: "AMBIGUOUS_FULL_AMOUNT" };
@@ -994,6 +1105,7 @@ function planFullAmount(input: {
       expectedTotal: expected,
       expected: null,
       delta: verdict.delta,
+      split: verdict.mails.length > 1 ? { index: index + 1, count: verdict.mails.length } : null,
     })),
   };
 }

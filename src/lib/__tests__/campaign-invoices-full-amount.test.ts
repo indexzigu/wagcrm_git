@@ -7,6 +7,7 @@ import {
   INVOICE_MONTH_TONE,
   MINOR_DELTA_RATIO,
   deriveInvoiceMonths,
+  dropContestedOps,
   findInvoiceCandidates,
   isFullAmountCovered,
   isInvoiceMonthDone,
@@ -111,6 +112,7 @@ describe("요약 · 달 줄 · 레거시 롤업 — 한 번에 끊은 단위는 
       done: 2,
       total: 2,
       openMonths: [],
+      review: null,
     });
     expect(resolveLegacyInvoiceDate({ ...CROSSING, rows, expectedTotalAmount: EXPECTED })).toBe("2026-09-30");
     const months = deriveInvoiceMonths({
@@ -134,6 +136,52 @@ describe("요약 · 달 줄 · 레거시 롤업 — 한 번에 끊은 단위는 
     expect(
       summarizeInvoiceRows({ ...CROSSING, rows: [row({ totalAmount: 600_000 })], expectedTotalAmount: EXPECTED }).openMonths,
     ).toEqual(["2026-10"]);
+  });
+
+  it("R0 — 달은 다 끝났는데 기록한 합계가 어긋나면 기록한 달에 어긋남을 붙이고 요약은 끝(검토 신호)으로 센다", () => {
+    const rows = [row({ totalAmount: 1_940_000 })];
+    const single = summarizeInvoiceRows({ ...SINGLE, rows, expectedTotalAmount: 2_000_000 });
+    expect(single).toEqual({
+      done: 1,
+      total: 1,
+      openMonths: [],
+      review: { reason: "MINOR_MISMATCH", label: "정산 오류 가능성 · 원인 확인 필요" },
+    });
+    const months = deriveInvoiceMonths({
+      ...SINGLE,
+      rows,
+      ...candidates([]),
+      scanSinceYmd: "2026-08-15",
+      today: new Date("2026-10-20T00:00:00Z"),
+      expectedTotalAmount: 2_000_000,
+      expectedFromManual: true,
+    });
+    expect(months.map((m) => [m.state, m.mismatch, m.notes])).toEqual([["RECORDED", "MINOR_MISMATCH", ["EXPECTED_FROM_MANUAL"]]]);
+    // 부호·비율로 세 모양 — 달을 넘는 캠페인에서 크게 모자라면 분할 가능성, 많으면 기대액 초과
+    const crossing = (total: number, extra: CampaignInvoiceRow[] = []) =>
+      summarizeInvoiceRows({ ...CROSSING, rows: [row({ totalAmount: total }), ...extra], expectedTotalAmount: EXPECTED }).review?.reason ?? null;
+    const waivedOct = row({ id: "w", yearMonth: "2026-10", status: "WAIVED", totalAmount: null, approvalNo: null });
+    expect(crossing(600_000, [waivedOct])).toBe("POSSIBLE_SPLIT");
+    expect(crossing(EXPECTED * 2, [waivedOct])).toBe("OVER_EXPECTED");
+    // 열린 달이 남아 있으면 그 달이 신호를 나른다 — 요약 review 는 없다
+    expect(crossing(600_000)).toBeNull();
+    // 전부 「없음」이면 기록이 없으니 어긋남이 아니다 · 전액을 모르면 판단하지 않는다
+    expect(summarizeInvoiceRows({ ...SINGLE, rows: [row({ status: "WAIVED", totalAmount: null })], expectedTotalAmount: EXPECTED }).review).toBeNull();
+    expect(summarizeInvoiceRows({ ...SINGLE, rows, expectedTotalAmount: null }).review).toBeNull();
+  });
+
+  it("M4 — 한 번에 끊어 닫힌 달에 수정세금계산서가 따라오면 그 달은 「수정됨」(끝으로 세지 않는다)", () => {
+    const amendment = mail({ issueId: "B-1", typeCode: "0201", writtenDate: "2026-10-31", totalAmount: -100_000 });
+    const months = deriveInvoiceMonths({
+      ...CROSSING,
+      rows: [row()],
+      ...candidates([amendment]),
+      scanSinceYmd: "2026-08-15",
+      today: new Date("2026-11-20T00:00:00Z"),
+      expectedTotalAmount: EXPECTED,
+    });
+    expect(months.map((m) => m.state)).toEqual(["RECORDED", "AMENDED"]);
+    expect(months.filter((m) => isInvoiceMonthDone(m.state))).toHaveLength(1);
   });
 
   it("새 상태의 낱말·풀이·색이 표에 있고 풀이에 em-dash 가 없다", () => {
@@ -252,6 +300,7 @@ function unit(overrides: Partial<AutoRecordUnit> = {}): AutoRecordUnit {
     recordedTotalAmount: 0,
     periodMonths: ["2026-09", "2026-10"],
     closedMonths: [],
+    recordedMismatch: null,
     ...overrides,
   };
 }
@@ -368,6 +417,59 @@ describe("planAutoRecords — 정산서 없는 전액 판정", () => {
       ["c1", "LINE_ITEM_CONTRADICTS"],
       ["c2", "OVER_EXPECTED"],
     ]);
+  });
+
+  it("R0 — 기록한 합계가 어긋나는 단위(열린 달 없음)는 기록 없이 오너 확인 건으로만 나온다", () => {
+    const { ops, skipped, needsReview } = plan({
+      units: [unit({ openMonths: [], closedMonths: ["2026-09", "2026-10"], recordedTotalAmount: EXPECTED - 1_000, recordedMismatch: "MINOR_MISMATCH", expectedFromManual: true })],
+      mails: [],
+    });
+    expect(ops).toEqual([]);
+    expect(skipped).toEqual([]);
+    expect(needsReview).toEqual([{ unitKey: "c1", campaignId: "c1", yearMonth: "2026-10", reason: "MINOR_MISMATCH", notes: ["EXPECTED_FROM_MANUAL"] }]);
+  });
+
+  it("M1 — 같은 상대 다른 단위의 **남은 금액**(전액 − 기록)이 이 계산서와 맞으면 고르지 않는다", () => {
+    // c2 는 전액이 달라 전액 쌍둥이는 아니지만, 50만을 기록한 뒤 남은 110만이 같은 계산서 한 장과 맞는다.
+    const other = unit({ unitKey: "c2", anchorCampaignId: "c2", labels: ["라마바"], expectedTotalAmount: 1_600_000, recordedTotalAmount: 500_000, closedMonths: ["2026-09"], openMonths: ["2026-10"] });
+    const { ops, skipped } = plan({ units: [unit(), other] });
+    expect(ops).toEqual([]);
+    expect(skipped.filter((s) => s.unitKey === "c1").map((s) => s.reason)).toEqual(["AMBIGUOUS_FULL_AMOUNT"]);
+  });
+
+  it("M1 — 계획 단계에서 같은 승인번호를 두 단위가 집었으면 둘 다 놓는다", () => {
+    const base = plan().ops[0];
+    const contested = [
+      base,
+      { ...base, unitKey: "c2", campaignId: "c2" },
+      { ...base, unitKey: "c3", campaignId: "c3", mail: mail({ issueId: "M-7" }) },
+    ];
+    const { ops, skipped } = dropContestedOps(contested);
+    expect(ops.map((op) => op.unitKey)).toEqual(["c3"]);
+    expect(skipped).toEqual([
+      { unitKey: "c1", yearMonth: "2026-09", reason: "AMBIGUOUS_FULL_AMOUNT" },
+      { unitKey: "c2", yearMonth: "2026-09", reason: "AMBIGUOUS_FULL_AMOUNT" },
+    ]);
+  });
+
+  it("M4 — 닫힌 달의 수정세금계산서도 자동 기록을 막는다", () => {
+    const { ops, skipped } = plan({
+      units: [unit({ recordedTotalAmount: 600_000, closedMonths: ["2026-09"], openMonths: ["2026-10"] })],
+      mails: [
+        mail({ issueId: "M-10", writtenDate: "2026-10-31", totalAmount: 500_000 }),
+        mail({ issueId: "B-9", typeCode: "0201", writtenDate: "2026-09-30", totalAmount: -600_000 }),
+      ],
+    });
+    expect(ops).toEqual([]);
+    expect(skipped.map((s) => s.reason)).toEqual(["AMENDMENT_PENDING"]);
+  });
+
+  it("L1 — 여러 장의 합계로 맞으면 장마다 순번·장수를 싣는다, 한 장이면 null", () => {
+    const split = plan({
+      mails: [mail({ issueId: "M-9", totalAmount: 600_000 }), mail({ issueId: "M-10", writtenDate: "2026-10-31", totalAmount: 500_000 })],
+    });
+    expect(split.ops.map((op) => op.split)).toEqual([{ index: 1, count: 2 }, { index: 2, count: 2 }]);
+    expect(plan().ops[0].split).toBeNull();
   });
 
   it("이미 기록한 계산서가 있으면 나머지 금액으로 맞춘다(기록 + 후보 합계)", () => {

@@ -262,7 +262,7 @@ export type TaxInvoicePendingView = {
   selectable: boolean;
   blockingReasons: string[];
   /** 월정산 공급사 행의 달별 기록 진행(n/m). 아니면 null. */
-  monthlyInvoice: { done: number; total: number } | null;
+  monthlyInvoice: { done: number; total: number; review: { code: string; label: string } | null } | null;
   /** 참이면 금액이 캠페인 총액이라 실제 달별 계산서와 다르다(보드 합계에서도 뺀다). */
   monthlyInvoiceManaged: boolean;
   campaignId: string;
@@ -300,7 +300,16 @@ export function toTaxInvoicePendingViews(
         blockingReasons: row.blockingReasons
           .slice(0, MAX_BLOCKING_REASONS)
           .flatMap((reason) => label(reason) ?? []),
-        monthlyInvoice: row.monthlyInvoice ? { done: row.monthlyInvoice.done, total: row.monthlyInvoice.total } : null,
+        monthlyInvoice: row.monthlyInvoice
+          ? {
+              done: row.monthlyInvoice.done,
+              total: row.monthlyInvoice.total,
+              // 코드와 고정 라벨만 — 금액·승인번호는 없다(라벨 정본 `AUTO_RECORD_REVIEW_LABEL`).
+              review: row.monthlyInvoice.review
+                ? { code: row.monthlyInvoice.review.reason, label: row.monthlyInvoice.review.label }
+                : null,
+            }
+          : null,
         monthlyInvoiceManaged: row.monthlyInvoiceManaged,
         campaignId: row.campaignId,
         campaignIds: [...row.campaignIds],
@@ -361,7 +370,11 @@ function formatReviewLine(item: NeedsReviewView): string {
 
 function formatPendingLine(row: TaxInvoicePendingView): string {
   const blocked = row.selectable ? "" : ` blocked=${row.blockingReasons.join("·") || "?"}`;
-  const monthly = row.monthlyInvoice ? ` monthly=${row.monthlyInvoice.done}/${row.monthlyInvoice.total}` : row.monthlyInvoiceManaged ? " monthly=managed" : "";
+  const monthly = row.monthlyInvoice
+    ? ` monthly=${row.monthlyInvoice.done}/${row.monthlyInvoice.total}${row.monthlyInvoice.review ? ` monthlyReview=${row.monthlyInvoice.review.code}` : ""}`
+    : row.monthlyInvoiceManaged
+      ? " monthly=managed"
+      : "";
   return `PENDING ${row.directionLabel} ${row.counterpart} [${row.section}] ${row.campaignLabel ?? "(이름 없음)"} deal=${row.dealName ?? "?"} seller=${row.sellerName ?? "?"} partner=${row.partnerName ?? "?"} supply=${row.amount.supply} vat=${row.amount.vat} total=${row.amount.total} selectable=${row.selectable ? "yes" : "no"}${blocked}${monthly}`;
 }
 

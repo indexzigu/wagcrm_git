@@ -13,6 +13,8 @@ type Campaign = {
   /** 단위 전액 계산 입력(브랜드몰 = 영업수익 기준). 없으면 전액을 모른다 → 종전 동작 */
   settlementSales?: number | null;
   isManualSettlementSales?: boolean;
+  /** 성숙 판정(M2) — 없으면 종료일만 본다(픽스처 종료일은 과거) */
+  status?: string;
 };
 type Invoice = Record<string, unknown> & { id: string; campaignId: string; status: string; approvalNo: string | null };
 
@@ -335,7 +337,7 @@ describe("loadInvoiceProgress — 세무 보드의 「끝」 판정 (T-244)", ()
     await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
     let progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1", "plain", "legacy"]);
     expect([...progress.keys()]).toEqual(["c1"]);
-    expect(progress.get("c1")).toEqual({ done: 1, total: 2, openMonths: ["2026-10"] });
+    expect(progress.get("c1")).toEqual({ done: 1, total: 2, openMonths: ["2026-10"], review: null });
 
     // 전부 「없음」으로 끝난 단위 — 레거시 날짜는 비어 있지만 끝이다(보드에서 빠져야 한다).
     state.campaigns = [campaign({ id: "w" })];
@@ -343,7 +345,7 @@ describe("loadInvoiceProgress — 세무 보드의 「끝」 판정 (T-244)", ()
     await campaignInvoiceService.waiveMonth("w", "2026-09", null);
     await campaignInvoiceService.waiveMonth("w", "2026-10", null);
     progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["w"]);
-    expect(progress.get("w")).toEqual({ done: 2, total: 2, openMonths: [] });
+    expect(progress.get("w")).toEqual({ done: 2, total: 2, openMonths: [], review: null });
     expect(state.campaigns[0].supplierInvoiceIssuedAt).toBeNull();
     expect(await campaignInvoiceService.findCompletionBlocker(db as never, "w")).toBeNull();
   });
@@ -416,7 +418,7 @@ describe("한 번에 끊은 월정산 — 계산서 합계가 캠페인 전액�
     const view = await campaignInvoiceService.getView("c1");
     expect(view).toMatchObject({ applicable: true, expectedTotalAmount: 74_250, expectedFromManual: false });
     const progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1"]);
-    expect(progress.get("c1")).toEqual({ done: 2, total: 2, openMonths: [] });
+    expect(progress.get("c1")).toEqual({ done: 2, total: 2, openMonths: [], review: null });
     expect(await campaignInvoiceService.findCompletionBlocker(db as never, "c1")).toBeNull();
     expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
   });
@@ -439,21 +441,78 @@ describe("한 번에 끊은 월정산 — 계산서 합계가 캠페인 전액�
     expect(audit[0].content).toContain("계산서 없이 닫은 달 10월");
   });
 
-  it("H8 — 여러 장의 합계로 끝나면 SUM_OF_INVOICES, 허용오차 흡수면 TOLERATED type · 이미 끝난 단위엔 다시 남기지 않는다", async () => {
+  it("M3 — 달마다 자기 계산서가 있는 오너 클릭 완료에는 SYSTEM 기록이 없다(규칙이 한 일이 없다)", async () => {
     await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, totalAmount: 40_000 });
+    await campaignInvoiceService.recordManualInvoice("c1", { writtenDate: "2026-10-31", totalAmount: 34_200, approvalNo: "A-2", note: null });
     expect(state.activity.some((a) => a.type?.startsWith("TAX_INVOICE_AUTO_CONFIRM"))).toBe(false);
-    await campaignInvoiceService.recordManualInvoice("c1", {
-      writtenDate: "2026-10-31",
-      totalAmount: 34_200,
-      approvalNo: "A-2",
-      note: null,
-    });
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "c1")).toBeNull();
+  });
+
+  it("H8 — 여러 장의 합계가 계산서 없는 달을 닫으면 SUM_OF_INVOICES, 허용오차 흡수면 TOLERATED type", async () => {
+    // 9/28~11/3 세 달 캠페인 — 9·10월 두 장의 합계가 전액이라 11월이 계산서 없이 닫힌다.
+    state.campaigns = [campaign({ settlementSales: 74_250, status: "SETTLEMENT_IN_PROGRESS", endDate: new Date("2026-11-03T14:59:59Z") })];
+    await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, totalAmount: 40_000 });
+    await campaignInvoiceService.recordManualInvoice("c1", { writtenDate: "2026-10-31", totalAmount: 34_200, approvalNo: "A-2", note: null });
     const audit = state.activity.filter((a) => a.type?.startsWith("TAX_INVOICE_AUTO_CONFIRM"));
     expect(audit).toHaveLength(1);
     expect(audit[0].type).toBe("TAX_INVOICE_AUTO_CONFIRM_TOLERATED");
     expect(audit[0].content).toContain("SUM_OF_INVOICES");
     expect(audit[0].content).toContain("차이 -50원");
-    expect(audit[0].content).toContain("계산서 없이 닫은 달 없음");
+    expect(audit[0].content).toContain("계산서 없이 닫은 달 11월");
+  });
+
+  it("M3 — 크론 자동 기록이 달을 닫으면 자기 기록 문장에 붙이고 SYSTEM 줄은 하나다 · L1 분할 순번 문장", async () => {
+    await campaignInvoiceService.autoRecordMailInvoice({
+      campaignId: "c1", yearMonth: "2026-09", mail: MAIL, basis: "FULL_AMOUNT", expectedTotal: 74_250, delta: 0, split: null,
+    });
+    const system = state.activity.filter((a) => a.type?.startsWith("TAX_INVOICE_AUTO_CONFIRM"));
+    expect(system).toHaveLength(1);
+    expect(system[0].content).toContain("메일 자동 기록");
+    expect(system[0].content).toContain("월정산 한 번 발행 완료(FULL_AMOUNT_SINGLE)");
+    expect(system[0].content).toContain("계산서 없이 닫은 달 10월");
+
+    state.invoices = []; state.activity = []; state.campaigns = [campaign({ settlementSales: 74_250 })];
+    await campaignInvoiceService.autoRecordMailInvoice({
+      campaignId: "c1", yearMonth: "2026-09", mail: { ...MAIL, totalAmount: 40_000 }, basis: "FULL_AMOUNT", expectedTotal: 74_250, delta: 0, split: { index: 1, count: 2 },
+    });
+    expect(state.activity.at(-1)?.content).toContain("분할 2장 중 1번째");
+    expect(state.activity.at(-1)?.content).not.toContain("전액 74,250원 일치");
+  });
+
+  it("R0 — 기록한 합계가 어긋나면 진행에 review 가 실리고 게이트는 막지 않으며 크론 단위에도 들어간다", async () => {
+    state.campaigns = [campaign({ settlementSales: 74_250, startDate: new Date("2026-09-09T15:00:00Z"), endDate: new Date("2026-09-20T14:59:59Z") })];
+    await campaignInvoiceService.confirmMailInvoice("c1", { ...MAIL, totalAmount: 72_000 });
+    const progress = await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1"]);
+    expect(progress.get("c1")).toEqual({ done: 1, total: 1, openMonths: [], review: { reason: "MINOR_MISMATCH", label: "정산 오류 가능성 · 원인 확인 필요" } });
+    expect(await campaignInvoiceService.findCompletionBlocker(db as never, "c1")).toBeNull();
+    const { units } = await campaignInvoiceService.loadAutoRecordUnits(db as never, { sinceDays: 3650, now: new Date("2026-10-09T00:00:00Z") });
+    expect(units[0]).toMatchObject({ openMonths: [], recordedMismatch: "MINOR_MISMATCH" });
+    // 어긋난 채로는 레거시 날짜를 채우지 않는다(전액 일치가 아니다) — 열린 달이 없으니 종전 롤업 규칙으로는 채운다
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+  });
+
+  it("M2 — 판매 중(정산 단계 아님·종료일 미래)이면 전액을 모르는 것으로 다룬다: 한 번에 끝 판정·롤업·자동 기록 전액 경로가 꺼진다", async () => {
+    const future = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    state.campaigns = [campaign({ settlementSales: 74_250, status: "ACTIVE", endDate: future })];
+    expect(await campaignInvoiceService.getView("c1")).toMatchObject({ expectedTotalAmount: null });
+    await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    expect((await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1"])).get("c1")?.openMonths.length).toBeGreaterThan(0);
+    expect(state.campaigns[0].supplierInvoiceIssuedAt).toBeNull();
+    const { units } = await campaignInvoiceService.loadAutoRecordUnits(db as never, { sinceDays: 3650, now: new Date() });
+    expect(units[0]?.expectedTotalAmount).toBeNull();
+    // 정산 단계면 종료일이 미래여도 성숙이다
+    state.campaigns = [campaign({ settlementSales: 74_250, status: "SETTLEMENT_IN_PROGRESS", endDate: future })];
+    expect(await campaignInvoiceService.getView("c1")).toMatchObject({ expectedTotalAmount: 74_250 });
+  });
+
+  it("M2 — 전액이 바뀌어 「한 번에 끝」이 거짓이 된 뒤 취소해도 이 기능이 채운 날짜는 비워져 레거시 모드로 떨어지지 않는다", async () => {
+    const row = await campaignInvoiceService.confirmMailInvoice("c1", MAIL);
+    expect(state.campaigns[0].supplierInvoiceIssuedAt?.toISOString()).toBe("2026-09-30T00:00:00.000Z");
+    state.campaigns[0].settlementSales = 99_000; // 오너가 영업수익을 고쳤다 → 전액이 바뀐다
+    expect((await campaignInvoiceService.loadInvoiceProgress(db as never, ["c1"])).get("c1")?.openMonths).toEqual(["2026-10"]);
+    await campaignInvoiceService.revertRow("c1", row.id);
+    expect(state.campaigns[0].supplierInvoiceIssuedAt).toBeNull();
+    expect(await campaignInvoiceService.getView("c1")).toMatchObject({ legacyMode: false });
   });
 
   it("전액 근거 자동 기록은 감사 문장에 「캠페인 전액」 근거를 싣고 단위를 끝낸다", async () => {

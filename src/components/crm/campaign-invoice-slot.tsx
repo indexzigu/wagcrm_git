@@ -108,11 +108,17 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
   // 메일함 확인 전에는 「미발견」·「조회불가」를 단정하지 않는다 — 판정이 메일에 기대는 상태는 「—」.
   const awaitingScan =
     scanning && (month.state === "NOT_FOUND" || month.state === "OUT_OF_SCAN");
-  const label = awaitingScan ? null : INVOICE_MONTH_LABEL[month.state];
-  const tone = awaitingScan ? "none" : INVOICE_MONTH_TONE[month.state];
-  const hint = awaitingScan ? SCANNING_HINT : INVOICE_MONTH_HINT[month.state];
+  // 기록은 됐는데 합계가 전액과 어긋난 달(R0) — 작성일은 그대로 두고 낱말·색·풀이만 어긋남 상태 것을 쓴다.
+  // 칸: 「9/30 · 오류 가능성」(점은 caution). 끝난 달 수(n/m)에는 그대로 센다 — 머리글이 「확인 필요」를 따로 보인다.
+  const mismatch = month.recorded.length > 0 ? month.mismatch : null;
+  const label = awaitingScan ? null : INVOICE_MONTH_LABEL[mismatch ?? month.state];
+  const tone = awaitingScan ? "none" : INVOICE_MONTH_TONE[mismatch ?? month.state];
+  const hint = awaitingScan ? SCANNING_HINT : INVOICE_MONTH_HINT[mismatch ?? month.state];
   const lastRecorded = month.recorded.at(-1) ?? null;
-  const shown = month.state === "RECORDED" ? formatMonthDay(lastRecorded?.writtenAt ?? null) : label ?? INVOICE_MONTH_EMPTY_MARK;
+  const shown =
+    month.state === "RECORDED"
+      ? `${formatMonthDay(lastRecorded?.writtenAt ?? null)}${mismatch ? ` · ${label}` : ""}`
+      : label ?? INVOICE_MONTH_EMPTY_MARK;
   const detail = lastRecorded ?? null;
   // 어긋남 상태도 메일 후보 한 장이 근거다 — 금액을 같은 자리에서 보인다.
   const candidate =
@@ -364,8 +370,14 @@ function MonthSection({
     <section className="space-y-2 border-t border-border/60 pt-3 first:border-t-0 first:pt-0" aria-label={`${formatInvoiceMonth(month.yearMonth)}분`}>
       <div className="flex items-baseline justify-between gap-2">
         <h4 className="text-sm font-semibold">{formatInvoiceMonth(month.yearMonth)}분</h4>
-        <span className="text-xs text-muted-foreground">{label ?? (month.state === "RECORDED" ? "기록됨" : INVOICE_MONTH_EMPTY_MARK)}</span>
+        <span className="text-xs text-muted-foreground">
+          {label ?? (month.state === "RECORDED" ? "기록됨" : INVOICE_MONTH_EMPTY_MARK)}
+          {month.recorded.length > 0 && month.mismatch ? ` · ${INVOICE_MONTH_LABEL[month.mismatch]}` : ""}
+        </span>
       </div>
+      {month.recorded.length > 0 && month.mismatch ? (
+        <p className="text-xs text-slate-600">{INVOICE_MONTH_HINT[month.mismatch]}</p>
+      ) : null}
       {formatExpected(month) ? (
         <p className="text-xs text-muted-foreground">정산서 금액 {formatExpected(month)}</p>
       ) : null}
@@ -776,6 +788,8 @@ export function CampaignInvoiceSlot({
   if (!applicable) return <>{legacyFallback}</>;
 
   const done = months.filter((m) => isInvoiceMonthDone(m.state)).length;
+  // 달은 다 끝났는데 기록한 합계가 전액과 어긋난다(R0) — n/m 이 깨끗한 완료로 읽히지 않게 머리글에 함께 보인다.
+  const mismatch = months.find((m) => m.recorded.length > 0 && m.mismatch)?.mismatch ?? null;
   const scanning = scanLoading || (!scan && !scanAttempted);
 
   return (
@@ -786,6 +800,16 @@ export function CampaignInvoiceSlot({
           <span className="font-normal tabular-nums text-muted-foreground">
             {done}/{months.length}
           </span>
+          {mismatch ? (
+            <span
+              className="inline-flex items-center gap-1 font-normal text-slate-700"
+              title={INVOICE_MONTH_HINT[mismatch]}
+              data-testid="campaign-invoice-review"
+            >
+              <span className="size-1.5 rounded-full bg-status-caution" aria-hidden="true" />
+              확인 필요
+            </span>
+          ) : null}
         </span>
         <div className="flex items-center gap-1.5">
           <button

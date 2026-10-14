@@ -386,7 +386,7 @@ describe("결번(상대 정보 누락) 처리", () => {
 
 describe("월정산 공급사 행 — 합계·일괄 발행에서 뺀다 (T-247)", () => {
   // 행 금액은 캠페인 총액이라 달별로 끊는 실제 계산서 어느 것과도 같지 않다(오너 확정 2026-10-09).
-  const progress = new Map([["c1", { done: 0, total: 2, openMonths: ["2026-09", "2026-10"] }]]);
+  const progress = new Map([["c1", { done: 0, total: 2, openMonths: ["2026-09", "2026-10"], review: null }]]);
 
   it("브랜드몰 발행 행은 일괄 파일·홈택스 대상이 아니고 발행 합계에서 빠지며 제외 건수로 남는다", () => {
     const board = buildTaxInvoiceWorkBoard(
@@ -426,8 +426,8 @@ describe("월정산 공급사 행 — 합계·일괄 발행에서 뺀다 (T-247)
       makeCampaign({ id: "c2", groupId: "g1", salesChannel: "BRAND_MALL", partnerMonthlySettlement: true }),
     ];
     const both = new Map([
-      ["c1", { done: 0, total: 1, openMonths: ["2026-10"] }],
-      ["c2", { done: 0, total: 1, openMonths: ["2026-10"] }],
+      ["c1", { done: 0, total: 1, openMonths: ["2026-10"], review: null }],
+      ["c2", { done: 0, total: 1, openMonths: ["2026-10"], review: null }],
     ]);
     const board = buildTaxInvoiceWorkBoard(members, "2026-10", both);
     const issue = rowFor(board.rows, "ISSUE")!;
@@ -1410,11 +1410,11 @@ describe("월정산 공급사 행 — 달별 계산서가 「끝」을 정한다
   const monthly = (overrides: Partial<CampaignRow> = {}) =>
     makeCampaign({ salesChannel: "BRAND_MALL", partnerMonthlySettlement: true, ...overrides });
   const progressOf = (done: number, total: number, openMonths: string[]) =>
-    new Map([["c1", { done, total, openMonths }]]);
+    new Map([["c1", { done, total, openMonths, review: null }]]);
 
   it("달이 남아 있으면 공급사 행에 진행(n/m)을 싣는다 — 셀러 행은 그대로 null", () => {
     const board = buildTaxInvoiceWorkBoard([monthly()], "2026-10", progressOf(1, 2, ["2026-10"]));
-    expect(rowFor(board.rows, "ISSUE")!.monthlyInvoice).toEqual({ done: 1, total: 2 });
+    expect(rowFor(board.rows, "ISSUE")!.monthlyInvoice).toEqual({ done: 1, total: 2, review: null });
     expect(rowFor(board.rows, "RECEIVE")!.monthlyInvoice).toBeNull();
   });
 
@@ -1432,16 +1432,16 @@ describe("월정산 공급사 행 — 달별 계산서가 「끝」을 정한다
       monthly({ id: "c2", groupId: "g1" }),
     ];
     const progress = new Map([
-      ["c1", { done: 0, total: 1, openMonths: ["2026-10"] }],
-      ["c2", { done: 0, total: 1, openMonths: ["2026-10"] }],
+      ["c1", { done: 0, total: 1, openMonths: ["2026-10"], review: null }],
+      ["c2", { done: 0, total: 1, openMonths: ["2026-10"], review: null }],
     ]);
     const issue = rowFor(buildTaxInvoiceWorkBoard(members, "2026-10", progress).rows, "ISSUE")!;
     expect(issue.campaignIds).toEqual(["c1", "c2"]);
-    expect(issue.monthlyInvoice).toEqual({ done: 0, total: 1 });
+    expect(issue.monthlyInvoice).toEqual({ done: 0, total: 1, review: null });
 
     const done = new Map([
-      ["c1", { done: 1, total: 1, openMonths: [] }],
-      ["c2", { done: 1, total: 1, openMonths: [] }],
+      ["c1", { done: 1, total: 1, openMonths: [], review: null }],
+      ["c2", { done: 1, total: 1, openMonths: [], review: null }],
     ]);
     expect(rowFor(buildTaxInvoiceWorkBoard(members, "2026-10", done).rows, "ISSUE")).toBeUndefined();
   });
@@ -1464,6 +1464,6 @@ describe("월정산 공급사 행 — 달별 계산서가 「끝」을 정한다
       "2026-10",
       progressOf(1, 2, ["2026-10"]),
     );
-    expect(rowFor(board.rows, "ISSUE")!.monthlyInvoice).toEqual({ done: 1, total: 2 });
+    expect(rowFor(board.rows, "ISSUE")!.monthlyInvoice).toEqual({ done: 1, total: 2, review: null });
   });
 });

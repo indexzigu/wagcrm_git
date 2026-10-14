@@ -174,7 +174,16 @@ export type TaxInvoiceBoardRow = {
    * 날짜 한 칸이 아니라 달별 계산서(`campaignInvoiceService`)가 정한다 — 화면은 이 값이 있으면
    * 「완료」(날짜 찍기) 대신 달별 계산서 창을 연다. 호출부가 진행을 넘기지 않으면 null 이다.
    */
-  monthlyInvoice: { done: number; total: number } | null;
+  monthlyInvoice: {
+    done: number;
+    total: number;
+    /**
+     * 달은 다 끝났는데 기록한 계산서 합계가 전액과 어긋난다(`InvoiceProgress.review`, 2026-10-14) — 행을 보드에
+     * 남기고 사유를 보인다. 완료 게이트는 막지 않는다(검토 신호 — 오너). 사유 낱말은 `campaign-invoices.ts` 의
+     * `AUTO_RECORD_REVIEW_LABEL` 이 정본이라 여기서 다시 쓰지 않고 그대로 싣는다.
+     */
+    review: { reason: string; label: string } | null;
+  } | null;
   /**
    * 월정산 거래처의 공급사 행인가(T-247) — 진행 정보(`monthlyInvoice`)와 무관하게 캠페인에서 정한다.
    * 참이면 `amount` 는 **캠페인 총액**이라 실제로 끊을 달별 계산서 어느 것과도 같지 않다. 그래서
@@ -203,8 +212,9 @@ function resolveMonthlyInvoice(
   if (field !== "supplierInvoiceIssuedAt" || !campaign.partnerMonthlySettlement) return null;
   const found = progress?.get(campaign.id);
   if (!found) return null;
-  if (found.openMonths.length === 0) return "DONE";
-  return { done: found.done, total: found.total };
+  // 어긋남이 있으면 다 끝났어도 행을 남긴다 — 오너가 원인을 볼 자리가 보드에도 있어야 한다(R0).
+  if (found.openMonths.length === 0 && !found.review) return "DONE";
+  return { done: found.done, total: found.total, review: found.review };
 }
 
 /** 공급사 칸이 월정산(달별 여러 장)으로 관리되는가 — 행의 `monthlyInvoiceManaged` 정본. */
