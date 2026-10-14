@@ -410,6 +410,8 @@ async function handler(request: Request): Promise<Response> {
   const byStatus = {
     confirmed: verdicts.filter((v) => v.status === "CONFIRMED").length,
     needsReview: verdicts.filter((v) => v.status === "NEEDS_REVIEW").length,
+    /** 메일과 맞고 이미 발행일이 찍혀 있는 건 — 할 일 없음. `needsReview` 에 섞지 않는다. */
+    alreadyMatched: verdicts.filter((v) => v.status === "ALREADY_MATCHED").length,
     unseen: verdicts.filter((v) => v.status === "UNSEEN").length,
     unmatchable: verdicts.filter((v) => v.status === "UNMATCHABLE").length,
     /**

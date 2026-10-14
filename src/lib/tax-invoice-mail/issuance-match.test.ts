@@ -155,13 +155,27 @@ describe("matchIssuedInvoices — 확정되면 안 되는 경로 (음성 대조�
     expect(verdicts[0].reasons.map((r) => r.code)).toContain("GROUP_FELL_BACK");
   });
 
-  it("이미 발행 완료로 기록된 건은 다시 확정하지 않는다", () => {
+  it("이미 발행 완료로 기록된 건은 다시 확정하지 않고, 다른 사유가 없으면 「이미 일치」로 가른다", () => {
     const { verdicts } = run(
       [scanned(invoice())],
       [expectation({ alreadyMarkedAt: "2026-08-01T00:00:00.000Z" })],
     );
+    expect(verdicts[0].status).toBe("ALREADY_MATCHED");
+    expect(verdicts[0].reasons.map((r) => r.code)).toEqual(["ALREADY_MARKED"]);
+  });
+
+  it("이미 기록된 건이라도 금액이 어긋나면 계속 「확인 필요」다", () => {
+    const { verdicts } = run(
+      [scanned(invoice({ amounts: { supplyAmount: 400_000, taxAmount: 40_000, totalAmount: 440_000 } }))],
+      [expectation({ alreadyMarkedAt: "2026-08-01T00:00:00.000Z" })],
+    );
     expect(verdicts[0].status).toBe("NEEDS_REVIEW");
-    expect(verdicts[0].reasons.map((r) => r.code)).toContain("ALREADY_MARKED");
+    expect(verdicts[0].reasons.map((r) => r.code)).toEqual(expect.arrayContaining(["AMOUNT_MISMATCH", "ALREADY_MARKED"]));
+  });
+
+  it("메일을 못 본 기록 완료 건은 「이미 일치」가 아니다(대조한 적이 없다)", () => {
+    const { verdicts } = run([], [expectation({ alreadyMarkedAt: "2026-08-01T00:00:00.000Z" })]);
+    expect(verdicts[0].status).not.toBe("ALREADY_MATCHED");
   });
 
   it("기대 금액이 모름이면 확정하지 않는다(추측한 숫자로 대사하게 두지 않는다)", () => {
@@ -338,6 +352,17 @@ describe("matchIssuedInvoices — 허용오차는 호출부가 명시할 때만 
     expect(verdicts[0].status).toBe("CONFIRMED");
     expect(verdicts[0].reasons.map((r) => r.code)).toContain("AMOUNT_TOLERATED");
     expect(verdicts[0].observed.amountDelta).toBe(-50);
+  });
+
+  it("허용오차 흡수와 이미 기록됨만 붙으면 「이미 일치」다(흡수는 비차단)", () => {
+    const { verdicts } = matchIssuedInvoices({
+      invoices: withDelta(-50),
+      expected: [expectation({ alreadyMarkedAt: "2026-08-01T00:00:00.000Z" })],
+      ourBusinessNumber: OURS,
+      amountToleranceWon: SUB_HUNDRED_TRUNCATION_TOLERANCE_WON,
+    });
+    expect(verdicts[0].reasons.map((r) => r.code)).toEqual(expect.arrayContaining(["AMOUNT_TOLERATED", "ALREADY_MARKED"]));
+    expect(verdicts[0].status).toBe("ALREADY_MATCHED");
   });
 
   it("완전 일치면 AMOUNT_TOLERATED 를 붙이지 않는다(사유가 노이즈가 되지 않게)", () => {
