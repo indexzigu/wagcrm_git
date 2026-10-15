@@ -88,6 +88,7 @@
 | `resolveOrderBrand` | `src/lib/order-converter/order-brand.ts` | 발주 브랜드 = 거래처 설정 |
 | `RESERVED_PORTAL_SLUGS` | `src/lib/portal-slug.ts` | 최상위 라우트 예약(P7) |
 | `StatusBadge` | `src/components/crm/status-badge.tsx` | 상태 색 정본(P8) — `ui/`가 아니라 `crm/`에 있다 |
+| `STATUS_WORD_SPACING` · `DEV_WORDS` · `UI_LABEL_TABLES` | `src/lib/ui-glossary.ts` | 화면 문구 용어집 정본(P2 「화면 문구 기준」). 기계 검사 `ui-copy-terms.contract.test.ts` 가 이 파일을 읽는다 — 낱말을 테스트에 다시 적지 말 것 |
 | `useIsMobile` | `src/hooks/use-mobile.ts` | UA 기반 모바일 분기(P5) |
 | `resolveImapHost` · `resolveSmtpConfig` · `orderMailboxesForScan` · `isOwnSenderAddress` | `src/lib/mail-config.ts` | 메일 서버 **좌표·발신인·편지함 순회 정책** SSOT. 소비처 셋(수취 계산서 스캔 · 송장 회신 · 발주 발송)이 같은 계정 자격증명을 공유하는데 호스트만 각자 리터럴로 박혀 있어, 계정을 옮기면 **한 곳을 빠뜨려도 타입도 테스트도 못 잡는** 상태였다(2026-09-01 구글 전환의 계기). ⚠️ 이 모듈에는 구글에서만 터지는 함정이 여럿이라 **표 아래 「메일 경로의 함정」 절을 반드시 함께 읽는다** — SNI · 자모 분리 이름 · 발신인 침묵 치환 · 편지함 제외 판정. 계약은 `mail-config.contract.test.ts`, 오너 절차는 `docs/runbooks/gmail-mail-cutover.md` |
 | `toNfc` · `normalizeForCompare` | `src/lib/text-normalize.ts` | 외부에서 온 한국어 문자열을 **비교 전에** 맞추는 정규화 SSOT(메일 밖에서도 쓴다 — 회신 엑셀 파서). ⛔ 세 단계(NFC·공백 제거·소문자화)를 호출부에서 다시 적지 말 것. 사유는 아래 함정 절 ②. |

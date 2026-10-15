@@ -1,0 +1,437 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import ts from "typescript";
+import {
+  ALLOWED_UPPERCASE_WORDS,
+  DEV_WORDS,
+  RAW_CODE_FIELDS,
+  STATUS_WORD_SPACING,
+} from "@/lib/ui-glossary";
+
+/**
+ * **화면 문구 기준 기계 검사** — `docs/agents/product-ux.md` P2 「화면 문구 기준」의 집행면.
+ *
+ * 새 버튼·카드·배지를 넣을 때 아래 다섯 부류가 오너 화면까지 가지 않게 막는다.
+ * - `spaced`   : 띄어 쓴 상태 낱말(「승인 대기」 → 「승인대기」, 오너 확정 2026-10-08)
+ * - `fallback` : 라벨 표에 없으면 코드값으로 되돌려 보이는 코드(`라벨표[x] ?? x`)
+ * - `rawField` : 코드값 필드(`status`·`type`…)를 라벨 표 없이 화면에 그리는 코드
+ * - `rawCode`  : 화면 글자 자체가 대문자 코드값(`PENDING`)
+ * - `devWord`  : 화면 글자에 개발 용어(null·payload·레코드·파라미터…)
+ *
+ * 낱말 목록은 용어집(`src/lib/ui-glossary.ts`)이 정본이다 — 여기에 다시 적지 않는다.
+ *
+ * ## 기준 목록(BASELINE)은 줄이기만 한다
+ * 도입 시점(2026-10-15)에 이미 있던 위반은 `BASELINE` 에 묶었다 — 이 검사의 목적은 **새로 생기는
+ * 것**을 막는 것이고, 기존 화면 정리는 별도 작업이다. 그래서 두 방향으로 실패한다.
+ * - 기준 목록에 없는 위반이 생기면 실패 → 새 문구를 고친다.
+ * - 기준 목록의 항목이 코드에서 사라졌으면 실패 → 그 줄을 지운다(고친 것을 영구히 고정한다).
+ * 줄 번호를 키에 넣지 않는다 — 위에 한 줄만 끼워도 전부 「새 위반」이 되면 아무도 안 믿는다.
+ *
+ * ## 대상이 아닌 것(일부러)
+ * - 주석·`console.*` 인자·비교식(`status === "PENDING"`)·`className` 같은 비표시 속성.
+ * - 문장 속 띄어쓰기(「진행 중인 캠페인이 없습니다」) — 맞춤법대로 띄우는 것이 맞다.
+ * - 같은 뜻 다른 이름(「인플루언서」/「셀러」)·말투·은유 — 기계가 판정할 수 없다. P8 Design
+ *   Capability Routing 3번 검토가 판정한다.
+ * - 🪤 알려진 사각 ①: `rawCode`·`devWord` 는 JSX 글자·보이는 속성(`VISIBLE_ATTRS`)에 **직접 쓴**
+ *   문자열만 본다. 변수·`.ts` 상수·토스트 인자(`toast.error("…")`)·임의 prop(`message=`)으로 건너간
+ *   문구는 못 본다 — 어디서 그려지는지 정적으로 따라갈 수 없어서다. 그 부분은 P8 3번 검토 몫이다.
+ * - 🪤 알려진 사각 ②: 라벨 표 이름에 `label` 이 없으면(`STATUS_MAP[x] ?? x`) `fallback` 이 못 본다.
+ * - 🪤 알려진 사각 ③: 라벨 표를 거치지 않은 값을 **변수에 담았다가** 그리면(`const s = row.status;
+ *   … {s}`) `rawField` 가 못 본다. 식별자만으로는 한국어가 담겼는지 알 수 없어서다(오탐 실측).
+ *
+ * TS AST 로 판정한다 — 정규식이 놓치고 오탐한 실측은 `ui-copy-em-dash.contract.test.ts` 머리말.
+ */
+
+const ROOT = join(__dirname, "..");
+
+export type CopyRule = "spaced" | "fallback" | "rawField" | "rawCode" | "devWord";
+
+export interface CopyIssue {
+  rule: CopyRule;
+  file: string;
+  line: number;
+  text: string;
+}
+
+/** 화면에 글자로 보이는 JSX 속성. `className`·`href`·`key` 같은 것은 화면 글자가 아니다. */
+const VISIBLE_ATTRS = new Set(["title", "placeholder", "aria-label", "alt", "label", "description", "hint"]);
+
+const DEV_WORD_PATTERN = buildDevWordPattern(Object.keys(DEV_WORDS));
+const UPPERCASE_CODE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
+const MIN_CODE_LENGTH = 3;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** 영문 낱말은 경계로(「annulled」 속 null 을 잡지 않게), 한글·기호는 부분 일치로. */
+function buildDevWordPattern(words: readonly string[]): RegExp {
+  const alts = words.map((w) =>
+    /^[A-Za-z]+$/.test(w) ? `\\b${escapeRegExp(w)}\\b` : escapeRegExp(w),
+  );
+  return new RegExp(alts.join("|"));
+}
+
+function unwrap(e: ts.Expression): ts.Expression {
+  let cur = e;
+  while (ts.isParenthesizedExpression(cur) || ts.isAsExpression(cur) || ts.isNonNullExpression(cur)) {
+    cur = cur.expression;
+  }
+  return cur;
+}
+
+function isFallbackOperator(e: ts.Node): e is ts.BinaryExpression {
+  return (
+    ts.isBinaryExpression(e) &&
+    (e.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+      e.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+  );
+}
+
+function rawCodeFieldName(e: ts.Expression): string | null {
+  const x = unwrap(e);
+  return ts.isPropertyAccessExpression(x) && RAW_CODE_FIELDS.has(x.name.text) ? x.name.text : null;
+}
+
+/**
+ * `라벨표[키] ?? 키` · `라벨표[x.status] || x.status` 인가. 라벨 표에 없는 값이 오면 코드값이
+ * 그대로 화면에 간다 — 2026-10-15 실측 49곳의 형태.
+ */
+function isLabelFallback(e: ts.BinaryExpression, sf: ts.SourceFile): boolean {
+  const left = unwrap(e.left);
+  if (!ts.isElementAccessExpression(left)) return false;
+  if (!/label/i.test(left.expression.getText(sf))) return false;
+  const key = unwrap(left.argumentExpression).getText(sf);
+  return unwrap(e.right).getText(sf) === key || rawCodeFieldName(e.right) !== null;
+}
+
+/**
+ * 글자 노드에서 그 글자를 **그대로 그리는** 갈래를 거슬러 오른다 — 괄호·삼항 갈래·`?? || &&` 의
+ * 피연산자는 값이 그대로 화면에 간다(`{ok ? "PENDING" : "—"}`). 비교식·함수 인자는 여기서 멈춘다.
+ */
+function climbRenderedOperands(node: ts.Node): ts.Node {
+  let cur = node;
+  for (let p = cur.parent; p; cur = p, p = p.parent) {
+    const passes =
+      ts.isParenthesizedExpression(p) ||
+      (ts.isConditionalExpression(p) && p.condition !== cur) ||
+      isFallbackOperator(p) ||
+      (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken);
+    if (!passes) return cur;
+  }
+  return cur;
+}
+
+/** 이 글자 노드가 화면에 보이는 위치에 있는가 — JSX 텍스트·JSX 자식 식·보이는 속성. */
+function isVisibleText(node: ts.Node): boolean {
+  if (ts.isJsxText(node)) return true;
+  const p = climbRenderedOperands(node).parent;
+  if (ts.isJsxAttribute(p)) return VISIBLE_ATTRS.has(p.name.getText());
+  if (ts.isJsxExpression(p)) {
+    return ts.isJsxAttribute(p.parent) ? VISIBLE_ATTRS.has(p.parent.name.getText()) : true;
+  }
+  return false;
+}
+
+function insideConsoleCall(node: ts.Node): boolean {
+  for (let p = node.parent; p; p = p.parent) {
+    if (!ts.isCallExpression(p)) continue;
+    const callee = p.expression;
+    if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "console") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * JSX 자식 식에서 **실제로 그려지는 갈래**들. 삼항은 양쪽, `a ?? b` 는 b 까지 본다.
+ * 라벨 표 되돌림(`라벨표[x] ?? x`)은 `fallback` 이 따로 잡으므로 들어가지 않는다(이중 보고 방지).
+ */
+function renderedBranches(e: ts.Expression, sf: ts.SourceFile, out: ts.Expression[] = []): ts.Expression[] {
+  const x = unwrap(e);
+  if (ts.isConditionalExpression(x)) {
+    renderedBranches(x.whenTrue, sf, out);
+    renderedBranches(x.whenFalse, sf, out);
+  } else if (isFallbackOperator(x)) {
+    if (isLabelFallback(x, sf)) return out;
+    renderedBranches(x.left, sf, out);
+    renderedBranches(x.right, sf, out);
+  } else if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+    renderedBranches(x.right, sf, out); // `cond && p.status` — 그려지는 것은 오른쪽이다
+  } else {
+    out.push(x);
+  }
+  return out;
+}
+
+function oneLine(s: string): string {
+  return s.replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+/** 한 파일의 소스에서 문구 위반을 뽑는다. 테스트가 스캐너 자체를 검증할 수 있게 export 한다. */
+export function findCopyIssues(source: string, fileName = "x.tsx"): CopyIssue[] {
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const isTsx = fileName.endsWith(".tsx");
+  const found: CopyIssue[] = [];
+  const add = (rule: CopyRule, node: ts.Node, text: string) => {
+    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    found.push({ rule, file: fileName, line: line + 1, text: oneLine(text) });
+  };
+
+  const checkText = (node: ts.Node, raw: string) => {
+    const text = raw.trim();
+    if (!text || insideConsoleCall(node)) return;
+    // 상태 낱말은 라벨 표(.ts)에 정의되는 일이 많아 표시 위치와 무관하게 「전체 일치」로 본다.
+    if (Object.hasOwn(STATUS_WORD_SPACING, text)) add("spaced", node, text);
+    if (!isTsx || !isVisibleText(node)) return;
+    if (UPPERCASE_CODE.test(text) && text.length >= MIN_CODE_LENGTH && !ALLOWED_UPPERCASE_WORDS.has(text)) {
+      add("rawCode", node, text);
+    }
+    if (DEV_WORD_PATTERN.test(text)) add("devWord", node, text);
+  };
+
+  const walk = (node: ts.Node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isJsxText(node)) {
+      checkText(node, node.text);
+    } else if (isTsx && ts.isTemplateExpression(node) && isVisibleText(node)) {
+      // 변수를 끼운 문구(`${n}건 payload`)는 글자 조각을 이어 개발 용어만 본다 — 전체 일치 규칙
+      // (`spaced`·`rawCode`)은 끼운 값 때문에 성립하지 않는다.
+      const text = [node.head.text, ...node.templateSpans.map((s) => s.literal.text)].join(" ");
+      if (DEV_WORD_PATTERN.test(text)) add("devWord", node, text);
+    } else if (isFallbackOperator(node) && isLabelFallback(node, sf) && !insideConsoleCall(node)) {
+      add("fallback", node, node.getText(sf));
+    } else if (isTsx && ts.isJsxExpression(node) && node.expression && !ts.isJsxAttribute(node.parent)) {
+      const expr = unwrap(node.expression);
+      if (renderedBranches(expr, sf).some((b) => rawCodeFieldName(b) !== null)) {
+        add("rawField", node, `{${expr.getText(sf)}}`);
+      }
+    }
+    ts.forEachChild(node, walk);
+  };
+
+  walk(sf);
+  return found;
+}
+
+/**
+ * 오너 화면이 아니라 **모델에게 주는 지시문**인 파일 — `ui-copy-em-dash.contract.test.ts` 의 제외
+ * 기준 중 디렉터리 하나만 옮겼다 — 그쪽의 파일·문구 앵커 제외는 `.ts` 프롬프트용인데 여기의
+ * `rawCode`·`devWord` 는 `.tsx` 화면 위치만 보므로 필요 없다(고치면 모델 출력이 바뀐다). 이유 없이 늘리지 말 것.
+ */
+const PROMPT_DIRS = ["lib/agent/tools/"];
+
+/** 용어집 자체 — 띄어 쓴 형태를 「잡을 낱말」로 담고 있는 사전이라 스캔하면 전부 걸린다. */
+const GLOSSARY_FILE = "lib/ui-glossary.ts";
+
+function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      if (name === "__tests__" || name === "node_modules" || name === "generated") continue;
+      sourceFiles(full, out);
+      continue;
+    }
+    if (!/\.tsx?$/.test(name) || /\.test\.tsx?$/.test(name)) continue;
+    out.push(full);
+  }
+  return out;
+}
+
+const issueKey = (i: Pick<CopyIssue, "rule" | "file" | "text">) => `${i.rule} | ${i.file} | ${i.text}`;
+
+/**
+ * 도입 시점(2026-10-15)에 이미 있던 위반. **줄이기만 한다** — 고쳤으면 그 줄을 지운다(남겨 두면
+ * 실패한다). 새 위반을 여기 더하지 말 것: 고치는 것이 원칙이고, 고치면 뜻이 바뀌는 예외(저장값·
+ * 고유명사)는 사유와 함께 `EXCEPTIONS` 에 둔다.
+ */
+const BASELINE: readonly string[] = [
+  "devWord | components/crm/campaign-side-panel.tsx | 마케팅 URL을 입력하면 nt_source · nt_medium · nt_detail 트래킹 파라미터가 자동으로 추가됩니다.",
+  "fallback | app/api/cron/tax-invoice-issue-confirm/route.ts | (FIELD_LABEL as Record<string, string>)[op.field] ?? op.field",
+  "fallback | app/api/cron/tax-invoice-issue-confirm/route.ts | BASIS_LABEL[b] ?? b",
+  "fallback | components/crm/approvals/approval-cards.tsx | ENTITY_TYPE_LABELS[item.targetEntityType] ?? item.targetEntityType",
+  "fallback | components/crm/approvals/bot-activity-table.tsx | OPERATION_LABELS[item.operation] ?? item.operation",
+  "fallback | components/crm/approvals/pending-bulk-list.tsx | ACTION_LABELS[action] ?? action",
+  "fallback | components/crm/approvals/proposal-card.tsx | ACTION_LABELS[action] ?? action",
+  "fallback | components/crm/approvals/proposal-card.tsx | ENTITY_TYPE_LABELS[proposal.targetEntityType] ?? proposal.targetEntityType",
+  "fallback | components/crm/approvals/proposal-payload-preview.tsx | PARTNER_TYPE_LABELS[type] ?? type",
+  "fallback | components/crm/approvals/read-detail-header.tsx | OPERATION_LABELS[operation] ?? operation",
+  "fallback | components/crm/approvals/read-record-card.tsx | OPERATION_LABELS[operation] ?? operation",
+  "fallback | components/crm/approvals/tool-result-views.tsx | (campaignStatusLabels as Record<string, string>)[status] ?? status",
+  "fallback | components/crm/approvals/tool-result-views.tsx | (dealStatusLabels as Record<string, string>)[status] ?? status",
+  "fallback | components/crm/approvals/tool-result-views.tsx | SETTLEMENT_STATE_LABELS[c.state] ?? c.state",
+  "fallback | components/crm/approvals/tool-result-views.tsx | SETTLEMENT_STATE_LABELS[state] ?? state",
+  "fallback | components/crm/approvals/tool-result-views.tsx | partnerTypeLabels[p.type as PartnerType] ?? p.type",
+  "fallback | components/crm/asset-library.tsx | assetSectionLabels[section] || section",
+  "fallback | components/crm/campaign-creation-form.tsx | dealStatusLabels[deal.status as DealStatus] ?? deal.status",
+  "fallback | components/crm/campaign-launch-readiness-section.tsx | SOURCE_LABEL[item.source] ?? item.source",
+  "fallback | components/crm/campaign-side-panel.tsx | SELLER_TAX_TYPE_LABELS[campaign.sellerTaxType] ?? campaign.sellerTaxType",
+  "fallback | components/crm/deal-link-section.tsx | dealStatusLabels[dealStatus as DealStatus] ?? dealStatus",
+  "fallback | components/crm/deal-link-section.tsx | dealStatusLabels[dealStatus as DealStatus] ?? dealStatus",
+  "fallback | components/crm/deal-voc-section.tsx | SEVERITY_LABEL[c.severity] ?? c.severity",
+  "fallback | components/crm/deals-panel.tsx | partnerTypeLabels[deal.partner.type as PartnerType] ?? deal.partner.type",
+  "fallback | components/crm/global-search.tsx | campaignStatusLabels[campaign.status as CampaignStatus] || campaign.status",
+  "fallback | components/crm/global-search.tsx | dealStatusLabels[deal.status as DealStatus] || deal.status",
+  "fallback | components/crm/global-search.tsx | partnerTypeLabels[partner.type as PartnerType] || partner.type",
+  "fallback | components/crm/linked-campaigns-list.tsx | campaignStatusLabels[campaign.status as CampaignStatus] || campaign.status",
+  "fallback | components/crm/linked-deals-list.tsx | dealStatusLabels[deal.status as DealStatus] || deal.status",
+  "fallback | components/crm/linked-partners-list.tsx | partnerTypeLabels[partner.type] || partner.type",
+  "fallback | components/crm/linked-tasks-list.tsx | taskStatusLabels[task.status] || task.status",
+  "fallback | components/crm/order-dashboard.tsx | ORDER_ACTION_LABELS[log.action] ?? log.action",
+  "fallback | components/crm/partners-management.tsx | partnerTypeLabels[row.type] || row.type",
+  "fallback | components/crm/pnl-report-client.tsx | (salesChannelLabels as Record<string, string>)[channel] ?? channel",
+  "fallback | components/crm/price-sheet/status-badge.tsx | MAPPING_LABEL[status] ?? status",
+  "fallback | components/crm/price-sheet/status-badge.tsx | STATUS_LABEL[status] ?? status",
+  "fallback | components/crm/progress-status-summary.tsx | dealStatusLabels[status as DealStatus] ?? status",
+  "fallback | components/crm/receipt-suggestion-cards.tsx | SIGNAL_LABEL[signal.kind] ?? signal.kind",
+  "fallback | components/crm/seller-detail-content.tsx | acquisitionChannelLabels[seller.acquisitionChannel] ?? seller.acquisitionChannel",
+  "fallback | components/crm/seller-detail-content.tsx | campaignStatusLabels[c.status as CampaignStatus] ?? c.status",
+  "fallback | components/crm/shipping/modals/DelayDispatchModal.tsx | SKIP_REASON_LABELS[reason] ?? reason",
+  "fallback | lib/content-guide.ts | EVIDENCE_LABEL[claim.evidenceType] ?? claim.evidenceType",
+  "fallback | lib/content-guide.ts | SNS_LABEL[seller.snsType] ?? seller.snsType",
+  "fallback | lib/order-converter/claim-derive.ts | CLAIM_REASON_LABELS[code] ?? code",
+  "fallback | lib/order-converter/claim-derive.ts | CLAIM_STATUS_LABELS[status] ?? status",
+  "fallback | lib/referral-analytics.ts | acquisitionChannelLabels[channel] ?? channel",
+  "fallback | lib/system-task-needs-review.ts | salesChannelLabels[channel as SalesChannel] ?? channel",
+  "fallback | services/dealService.ts | FIELD_LABELS[key] || key",
+  "fallback | services/partnerService.ts | FIELD_LABELS[key] || key",
+  "fallback | services/sellerPatchService.ts | FIELD_LABELS[key] || key",
+  "fallback | services/sellerService.ts | FIELD_LABELS[key] || key",
+  "rawField | app/admin/integrations/meta/review-checklist/page.tsx | {log.provider}",
+  "rawField | components/crm/approvals/proposal-card.tsx | {proposal.status}",
+  "rawField | components/crm/campaign-side-panel.tsx | {log.provider}",
+  "rawField | components/crm/channel-fees-client.tsx | {ch.channel}",
+  "rawField | components/crm/link-search-dialog.tsx | {meta.status}",
+  "rawField | components/crm/linked-entity-section.tsx | {entity.status}",
+  "rawField | components/crm/market-price-monitor.tsx | {fetchedItem.channel}",
+  "rawField | components/crm/upcoming-schedule-card.tsx | {event.type}",
+  "spaced | components/crm/order-dashboard.tsx | 판매 마감",
+  "spaced | components/crm/outreach-message-generator.tsx | 생성 실패",
+  "spaced | components/crm/settlement-checklist.tsx | 정산 완료",
+  "spaced | components/mobile/mobile-home-settlement-card.tsx | 정산 대기",
+  "spaced | components/mobile/mobile-home-settlement-card.tsx | 지급 대기",
+  "spaced | components/mobile/mobile-pipeline-view.tsx | 판매 중",
+  "spaced | components/mobile/mobile-settlement-pending-sheet.tsx | 정산 대기",
+  "spaced | components/mobile/mobile-settlement-pending-sheet.tsx | 지급 대기",
+  "spaced | components/mobile/mobile-settlement-view.tsx | 지급 대기",
+  "spaced | lib/partner-seller-display.ts | 진행 중",
+  "spaced | lib/partner-seller-display.ts | 진행 중",
+  "spaced | lib/record-update-labels.ts | 입금 완료",
+  "spaced | lib/record-update-labels.ts | 지급 완료",
+  "spaced | lib/settlement-status.ts | 입금 확정",
+  "spaced | lib/settlement-status.ts | 입금 확정",
+  "spaced | lib/settlement-status.ts | 지급 완료",
+  "spaced | lib/settlement-status.ts | 지급 완료",
+  "spaced | lib/validations/settlement.ts | 정산 진행",
+  "spaced | services/sellerService.ts | 생성 실패",
+];
+
+/**
+ * 고치면 동작·뜻이 바뀌어서 고치지 않는 것. **사유 없이 늘리지 말 것.**
+ * 키 형식은 `BASELINE` 과 같다.
+ */
+const EXCEPTIONS: Readonly<Record<string, string>> = {
+  "rawCode | app/coupang-partners/page.tsx | PICK":
+    "서비스 상표 「WAGPICK」 로고의 뒷글자다(코드값이 아니다).",
+  "rawField | components/crm/partners-panel.tsx | {createErrors.type}":
+    "폼 오류 객체의 type 칸이라 값이 한국어 오류 문장이다(코드값이 아니다).",
+  "devWord | app/privacy/page.tsx | 캠페인 운영을 위해 거래처, 셀러 SNS 핸들, 공개 팔로워 지표, 마케팅 링크 파라미터, 전환 이벤트 및 관리자 운영 로그를 저장합니다.":
+    "개인정보 처리방침(법정 고지문)의 수집 항목 명칭이다 — 문구 변경은 고지 개정 사안이다.",
+};
+
+describe("화면 문구 기준 (AST 전역 스캔)", () => {
+  // ── 양성 대조군: 스캐너가 실제로 잡는가 — 진짜 `findCopyIssues` 를 태운다.
+  it("양성 — 띄어 쓴 상태 낱말(JSX·라벨 표 값)을 잡는다", () => {
+    const hits = findCopyIssues(`const T = { A: "승인 대기" }; const C = () => <span>정산 대기</span>;`, "a.tsx");
+    expect(hits.map((h) => [h.rule, h.text])).toEqual([["spaced", "승인 대기"], ["spaced", "정산 대기"]]);
+  });
+
+  it("양성 — 라벨 표에 없으면 코드값으로 되돌리는 코드를 잡는다", () => {
+    const src = `const a = LABELS[k] ?? k; const b = <b>{statusLabels[x.status] || x.status}</b>;`;
+    expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["fallback", "fallback"]);
+  });
+
+  it("양성 — 코드값 필드를 화면에 바로 그리면 잡는다(삼항 갈래 포함)", () => {
+    const src = `const C = ({ p }: any) => <Badge>{ok ? "정상" : p.status}</Badge>;`;
+    expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["rawField"]);
+  });
+
+  it("양성 — 화면 글자가 대문자 코드값이거나 개발 용어면 잡는다", () => {
+    const src = `const C = () => <><b>PENDING</b><i title="payload 없음">x</i><p>레코드를 저장했습니다</p></>;`;
+    expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["rawCode", "devWord", "devWord"]);
+  });
+
+  // ── 음성 대조군: 잡으면 안 되는 것. 여기가 무너지면 아무도 이 검사를 믿지 않는다.
+  it("음성 — 문장 속 띄어쓰기·비교식·비표시 속성·주석·console 은 잡지 않는다", () => {
+    const src = [
+      `// 승인 대기 상태면 PENDING 이다`,
+      `const busy = s === "PENDING";`,
+      `console.warn("payload 없음");`,
+      `const C = () => <div className="SOME_CLASS" data-x="null">진행 중인 캠페인이 없습니다</div>;`,
+    ].join("\n");
+    expect(findCopyIssues(src, "a.tsx")).toEqual([]);
+  });
+
+  it("음성 — 허용된 약어·한국어 라벨을 거친 값·reason 필드는 잡지 않는다", () => {
+    const src = `const C = ({ r }: any) => <><b>NAVER</b><b>{LABELS[r.status] ?? "—"}</b><b>{r.reason}</b></>;`;
+    expect(findCopyIssues(src, "a.tsx")).toEqual([]);
+  });
+
+  it("음성 — `annulled` 처럼 개발 용어를 품은 다른 낱말은 잡지 않는다", () => {
+    expect(findCopyIssues(`const C = () => <p>annulled · enumerate</p>;`, "a.tsx")).toEqual([]);
+  });
+
+  it("양성 — 삼항 안의 라벨 표 되돌림은 `fallback` 한 번만 보고한다", () => {
+    const src = `const C = ({ x }: any) => <b>{x ? STATUS_LABELS[x.status] ?? x.status : "—"}</b>;`;
+    expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["fallback"]);
+  });
+
+  it("양성 — 삼항·`&&` 갈래와 변수를 끼운 문구 안의 코드값·개발 용어도 잡는다", () => {
+    const src = [
+      "const A = ({ ok, p }: any) => <p title={ok ? \"payload 없음\" : \"x\"}>{ok ? \"PENDING\" : \"—\"}</p>;",
+      "const B = ({ p }: any) => <p>{p.ok && p.status}</p>;",
+      "const C = ({ n }: any) => <p>{`${n}건 레코드`}</p>;",
+    ].join("\n");
+    expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["devWord", "rawCode", "rawField", "devWord"]);
+  });
+
+  it("음성 — 비교식·함수 인자의 갈래는 화면 글자가 아니다", () => {
+    const src = `const C = ({ s }: any) => <p>{s === "PENDING" ? "대기" : f("payload")}</p>;`;
+    expect(findCopyIssues(src, "a.tsx")).toEqual([]);
+  });
+
+  it("허용 목록의 모든 항목에 사유가 있다", () => {
+    const blank = Object.entries(EXCEPTIONS).filter(([, why]) => why.trim().length === 0);
+    expect(blank.map(([k]) => k)).toEqual([]);
+  });
+
+  // ── 본 계약
+  // ⏱️ 600여 파일을 TS 파서에 태운다 — 부하 시 vitest 기본 5초를 넘으므로 여유를 명시한다
+  //    (em-dash 계약과 같은 이유).
+  it("새로 생긴 화면 문구 위반이 없고, 기준 목록이 낡지 않았다", { timeout: 60_000 }, () => {
+    const files = sourceFiles(ROOT);
+    expect(files.length).toBeGreaterThan(300); // 0건 스캔이면 늘 초록이다
+
+    const remaining = new Map<string, number>();
+    for (const k of BASELINE) remaining.set(k, (remaining.get(k) ?? 0) + 1);
+
+    const fresh: string[] = [];
+    for (const full of files) {
+      const rel = relative(ROOT, full).replace(/\\/g, "/");
+      if (rel === GLOSSARY_FILE || PROMPT_DIRS.some((d) => rel.startsWith(d))) continue;
+      for (const issue of findCopyIssues(readFileSync(full, "utf8"), rel)) {
+        const key = issueKey(issue);
+        if (Object.hasOwn(EXCEPTIONS, key)) continue;
+        const left = remaining.get(key) ?? 0;
+        if (left > 0) remaining.set(key, left - 1);
+        else fresh.push(`${rel}:${issue.line} [${issue.rule}] ${issue.text}`);
+      }
+    }
+    const stale = [...remaining].filter(([, n]) => n > 0).map(([k]) => k);
+
+    // 실패하면: fresh = 새 위반(문구를 고친다 — 기준은 product-ux.md 「화면 문구 기준」),
+    //          stale = 이미 고쳐진 기준 목록 줄(BASELINE 에서 지운다).
+    expect({ fresh, stale }).toEqual({ fresh: [], stale: [] });
+  });
+});
