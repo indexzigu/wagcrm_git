@@ -21,6 +21,7 @@ import {
   LoadMoreButton,
   TableSkeleton,
 } from "./hub-states";
+import type { ApproveOptions } from "@/hooks/useProposalActions";
 
 /**
  * 결재함 본문 3종 (Plan 2 Task 4).
@@ -38,7 +39,7 @@ function ProposalCard({
 }: {
   tab: ApprovalsTab;
   item: ApprovalInboxItem;
-  approve: (id: string) => Promise<unknown>;
+  approve: (id: string, options?: ApproveOptions) => Promise<unknown>;
   reject: (id: string) => Promise<unknown>;
 }) {
   switch (tab) {

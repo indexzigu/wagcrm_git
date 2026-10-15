@@ -171,6 +171,10 @@ export const newPartnerInputSchema = z
     ceoName: z.string().trim().min(1).max(120).optional(),
     representativeEmail: z.string().trim().min(1).max(200).optional(),
     address: z.string().trim().min(1).max(300).optional(),
+    // 업태·종목 — 결재함에서 승인할 때 계산서로 채우는 칸(`lib/agent/partner-enrichment.ts`)이라
+    // 저장 경로(`createPartnerRow`)가 받을 수 있어야 한다. 봇이 직접 채워도 된다.
+    businessType: z.string().trim().min(1).max(100).optional(),
+    businessItem: z.string().trim().min(1).max(100).optional(),
     notes: z.string().trim().min(1).max(2_000).optional(),
   })
   .strict();

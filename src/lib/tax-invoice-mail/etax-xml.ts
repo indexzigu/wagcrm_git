@@ -18,6 +18,20 @@
  * | 세액 | `…/SpecifiedMonetarySummation/TaxTotalAmount` |
  * | 합계 | `…/SpecifiedMonetarySummation/GrandTotalAmount` |
  *
+ * 거래처 등록 보강용 당사자 상세(같은 샘플로 확인, 2026-10-15 — `EtaxPartyDetail`):
+ *
+ * | 값 | 경로(`InvoicerParty`·`InvoiceeParty` 공통 아래) |
+ * | --- | --- |
+ * | 대표자명 | `SpecifiedPerson/NameText` |
+ * | 업태 | `TypeCode` |
+ * | 종목 | `ClassificationCode` |
+ * | 주소 | `SpecifiedAddress/LineOneText` |
+ * | 이메일 | 공급자 `DefinedContact/URICommunication` · 공급받는자 `PrimaryDefinedContact/URICommunication` |
+ *
+ * ⚠️ 이메일만 두 당사자의 부모 태그 이름이 다르다(공급받는자는 담당자를 둘까지 둘 수 있어
+ * `Primary…`·`Secondary…` 로 나뉜다). 실계산서 첨부로는 아직 대조하지 않았다 — 칸이 비면
+ * 화면은 「계산서에 없음」으로 두고 다른 칸은 그대로 쓴다.
+ *
  * ## ⛔ 정규식으로 뽑지 말 것 — 같은 태그명이 여러 스코프에 있다
  *
  * - `IssueDateTime` 은 `ExchangedDocument`(**전송일시**, 14자리)에도 있다. 첫 매치를 집으면
@@ -45,6 +59,35 @@ export interface EtaxAmounts {
   /** 합계(공급가액 + 세액) */
   totalAmount: number | null;
 }
+
+/**
+ * 계산서 당사자 한 쪽의 사업자 정보. **거래처 등록 보강**(`partner-invoice-lookup.ts`)만 쓴다 —
+ * 수취·발행 판정은 사업자번호와 금액으로 끝나며 이 칸을 보지 않는다.
+ *
+ * ⛔ 대표자명·주소·이메일은 개인정보다 — 로그·추적 파일·커밋·PR 본문·봇 응답에 남기지 말 것
+ * (P0, `agent-worker/tax-invoice-status.ts` 가 같은 칸을 일부러 빼는 이유와 같다).
+ */
+export interface EtaxPartyDetail {
+  /** 대표자명. 인코딩을 신뢰할 수 없으면 null. */
+  ceoName: string | null;
+  /** 주소(`LineOneText`). 인코딩을 신뢰할 수 없으면 null. */
+  address: string | null;
+  /** 업태. 인코딩을 신뢰할 수 없으면 null. */
+  businessType: string | null;
+  /** 종목. 인코딩을 신뢰할 수 없으면 null. */
+  businessItem: string | null;
+  /** 이메일. `@` 가 없는 값은 null(전화번호·이름이 잘못 들어간 경우). */
+  email: string | null;
+}
+
+/** 당사자 상세가 하나도 없는 값 — 테스트 픽스처와 「계산서에 없음」의 공용 기준. */
+export const EMPTY_ETAX_PARTY_DETAIL: EtaxPartyDetail = Object.freeze({
+  ceoName: null,
+  address: null,
+  businessType: null,
+  businessItem: null,
+  email: null,
+});
 
 /**
  * 계산서 1줄(품목). **금액만으로는 대조가 끝나지 않는다**는 실측에서 나왔다(2026-08-05).
@@ -87,6 +130,10 @@ export interface ParsedEtaxInvoice {
   /** 공급받는자 = **우리**여야 하는 사업자등록번호(숫자 10자리) */
   invoiceeBusinessNumber: string | null;
   invoiceeName: string | null;
+  /** 공급자 상세(대표자·주소·업태·종목·이메일). 판정에 쓰지 않는다 — 거래처 등록 보강 전용. */
+  invoicerDetail: EtaxPartyDetail;
+  /** 공급받는자 상세. 우리가 발행한 계산서면 여기가 거래 상대다. */
+  invoiceeDetail: EtaxPartyDetail;
   amounts: EtaxAmounts;
   /** 품목 줄. 없으면 빈 배열(= 줄이 없다)이고 null 을 쓰지 않는다. */
   lineItems: EtaxLineItem[];
@@ -281,6 +328,43 @@ function readDeclaredEncoding(source: string): string | null {
   return match ? match[1].toUpperCase() : null;
 }
 
+/** `@` 가 있는 값만 이메일로 받는다 — 담당자 칸에 전화번호·이름이 들어온 계산서가 있다. */
+function normalizeEtaxEmail(raw: string | null): string | null {
+  if (!raw) return null;
+  const value = raw.trim();
+  return /^[^\s@]+@[^\s@]+$/.test(value) ? value : null;
+}
+
+/**
+ * 당사자 한 쪽의 상세를 읽는다. 경로는 파일 머리의 표가 정본이다.
+ *
+ * `contactTags` 는 앞에서부터 처음 값이 있는 것을 쓴다 — 공급받는자는 `PrimaryDefinedContact`
+ * 가 표준이지만 발행처가 공급자와 같은 `DefinedContact` 로 적는 경우를 막지 않는다.
+ * 한글 칸은 이름 칸과 같은 규칙(`trustNames`)을 따르고, 이메일은 ASCII 라 인코딩과 무관하게 읽는다.
+ */
+function pickPartyDetail(
+  invoice: XmlNode,
+  partyTag: "InvoicerParty" | "InvoiceeParty",
+  contactTags: readonly string[],
+  trustNames: boolean,
+): EtaxPartyDetail {
+  const party = pickNode(invoice, [SETTLEMENT, partyTag]);
+  if (!party) return { ...EMPTY_ETAX_PARTY_DETAIL };
+  const text = (path: readonly string[]) => (trustNames ? pickText(party, path) : null);
+  let email: string | null = null;
+  for (const tag of contactTags) {
+    email = normalizeEtaxEmail(pickText(party, [tag, "URICommunication"]));
+    if (email) break;
+  }
+  return {
+    ceoName: text(["SpecifiedPerson", "NameText"]),
+    address: text(["SpecifiedAddress", "LineOneText"]),
+    businessType: text(["TypeCode"]),
+    businessItem: text(["ClassificationCode"]),
+    email,
+  };
+}
+
 /**
  * 표준 전자세금계산서 XML 을 파싱한다.
  *
@@ -313,6 +397,13 @@ export function parseEtaxInvoiceXml(input: string | Buffer): ParsedEtaxInvoice |
       pickText(invoice, [SETTLEMENT, "InvoiceeParty", "ID"]),
     ),
     invoiceeName: trustNames ? pickText(invoice, [SETTLEMENT, "InvoiceeParty", "NameText"]) : null,
+    invoicerDetail: pickPartyDetail(invoice, "InvoicerParty", ["DefinedContact"], trustNames),
+    invoiceeDetail: pickPartyDetail(
+      invoice,
+      "InvoiceeParty",
+      ["PrimaryDefinedContact", "DefinedContact"],
+      trustNames,
+    ),
     amounts: {
       supplyAmount: parseAmount(
         pickText(invoice, [SETTLEMENT, "SpecifiedMonetarySummation", "ChargeTotalAmount"]),

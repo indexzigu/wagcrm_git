@@ -24,11 +24,18 @@
  * 실패할 때 ②커밋 뒤 후속 처리(`applyWriteActionEffects`)가 던질 때. 단건 라우트는 그대로
  * 500 이 되고, 일괄 라우트는 그 건만 잡아 상태를 다시 읽는다(`bulkApproveProposals`).
  */
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { ActionProposalRepository, ConcurrentModificationError } from "@/repositories/actionProposalRepository";
 import { executeWriteAction } from "@/lib/agent/write-executor";
 import { applyWriteActionEffects } from "@/lib/agent/write-action-effects";
 import { parseStoredJson } from "@/lib/stored-json";
+import { partnerEnrichmentSchema } from "@/lib/agent/partner-enrichment-schema";
+import {
+  PARTNER_ENRICHMENT_LABELS,
+  applyPartnerEnrichment,
+  type PartnerEnrichment,
+} from "@/lib/agent/partner-enrichment";
 import {
   BULK_APPROVE_MAX_IDS,
   countBulkApproveResults,
@@ -51,6 +58,7 @@ export type ApproveProposalFailureCode =
   | "CONFLICT"
   | "APPROVE_ERROR"
   | "EMPTY_PAYLOAD"
+  | "INVALID_ENRICHMENT"
   | "EXECUTION_FAILED";
 
 export type ApproveProposalOutcome =
@@ -85,7 +93,38 @@ export type ApproveProposalOptions = {
    * 지키게 하려고 둔다 — 후보를 읽은 뒤 사람이 승인·실패시킨 기안을 자동으로 재시도하면 안 된다.
    */
   expectedStatus?: "PENDING_APPROVAL";
+  /**
+   * 「거래처 등록」 기안을 승인하면서 계산서에서 찾은 사업자 정보로 **빈 칸만** 채운다
+   * (`partner-enrichment.ts`, 결재 카드가 보낸다). 다른 기안에 오면 승인하지 않고 거부한다.
+   * 채운 결과는 tx1 에서 기안의 payload 에 함께 저장된다 — 실행이 실패해도 재시도가 같은
+   * 값으로 돌고, 무엇을 승인했는지가 기안 기록에 남는다.
+   */
+  partnerEnrichment?: unknown;
 };
+
+type EnrichmentResult =
+  | { ok: true; payload: ProposalPayload | null; filledLabels: string[] }
+  | { ok: false; error: string };
+
+/** 승인 전에 보강 값을 검사하고 기안 payload 에 합친다. 보강 값이 없으면 payload 그대로. */
+function enrichPayload(payload: ProposalPayload | null, raw: unknown): EnrichmentResult {
+  if (raw === undefined) return { ok: true, payload, filledLabels: [] };
+  const partner = payload?.args?.partner;
+  if (payload?.action !== "create_partner" || typeof partner !== "object" || partner === null) {
+    return { ok: false, error: "계산서 정보 채우기는 거래처 등록 기안에만 쓸 수 있습니다." };
+  }
+  const parsed = partnerEnrichmentSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: "계산서에서 가져온 값의 형식이 올바르지 않습니다. 다시 찾아 주세요." };
+  }
+  const applied = applyPartnerEnrichment(partner as Record<string, unknown>, parsed.data as PartnerEnrichment);
+  if (applied.filled.length === 0) return { ok: true, payload, filledLabels: [] };
+  return {
+    ok: true,
+    payload: { ...payload, args: { ...payload.args, partner: applied.partner } },
+    filledLabels: applied.filled.map((field) => PARTNER_ENRICHMENT_LABELS[field]),
+  };
+}
 
 export async function approveProposal(
   id: string,
@@ -121,19 +160,38 @@ export async function approveProposal(
     };
   }
 
-  // payload는 승인 전이로 바뀌지 않으므로 최초 조회한 proposal 것을 그대로 쓴다
-  // (transition()의 반환값 형태에 의존하지 않아 더 견고하다).
+  // payload는 최초 조회한 proposal 것을 쓴다(transition()의 반환값 형태에 의존하지 않아 더 견고하다).
+  // 승인 전이가 payload 를 바꾸는 경우는 계산서 보강 하나뿐이고, 그때는 tx1 에 저장하는 값과
+  // tx2 가 실행하는 값이 같은 변수(`payload`)다.
   // 🪤 읽기는 `parseStoredJson` 으로 — SQLite 레인은 Json 을 **문자열로** 저장하므로(저장소 이원화)
   // 그대로 캐스팅하면 `payload.action` 이 undefined 가 되어 승인이 EMPTY_PAYLOAD 로 실패한다
   // (자동 실행기 실 SQLite 테스트가 잡았다). Postgres 의 객체는 그대로 통과한다.
-  const payload = parseStoredJson<ProposalPayload>(proposal.payload);
+  const storedPayload = parseStoredJson<ProposalPayload>(proposal.payload);
+
+  // 보강 값은 승인을 확정하기 **전에** 검사한다 — tx1 뒤에 거부하면 승인만 남고 실행할 길이 없다.
+  const enrichment = enrichPayload(storedPayload, options.partnerEnrichment);
+  if (!enrichment.ok) {
+    return {
+      ok: false,
+      code: "INVALID_ENRICHMENT",
+      httpStatus: 400,
+      error: enrichment.error,
+      status: currentStatus,
+    };
+  }
+  const payload = enrichment.payload;
+  const enriched = enrichment.filledLabels.length > 0;
+  const baseNote = currentStatus === "FAILED" ? "재시도 승인" : "관리자 승인";
 
   // tx1: 조건부 승인 커밋 (§0-5 동시성 — 더블클릭/2인 동시 승인/일괄과 단건의 겹침 방어).
+  // 보강했으면 합친 payload 를 같은 조건부 쓰기로 저장한다 — 승인과 「무엇을 승인했나」가 한 번에 굳는다.
   try {
     await ActionProposalRepository.transition(id, "APPROVED", {
       actor: approverId,
-      note: currentStatus === "FAILED" ? "재시도 승인" : "관리자 승인",
+      note: enriched ? `${baseNote} · 계산서로 채움: ${enrichment.filledLabels.join("·")}` : baseNote,
       expectedFrom: currentStatus,
+      // ProposalPayload 는 JSON 으로 왕복한 값(`parseStoredJson`)이라 JSON 입력으로 넘겨도 안전하다.
+      ...(enriched && payload ? { data: { payload: payload as unknown as Prisma.InputJsonObject } } : {}),
     });
   } catch (err) {
     if (err instanceof ConcurrentModificationError) {
@@ -262,6 +320,8 @@ function bulkReason(outcome: Extract<ApproveProposalOutcome, { ok: false }>, sta
       return "본인이 올린 기안은 본인이 승인할 수 없습니다.";
     case "EMPTY_PAYLOAD":
       return "기안에 실행할 내용이 없어 실패로 기록했습니다.";
+    case "INVALID_ENRICHMENT":
+      return outcome.error;
     case "APPROVE_ERROR":
       return "승인을 기록하지 못했습니다. 잠시 후 다시 시도해 주세요.";
     case "EXECUTION_FAILED":

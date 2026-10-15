@@ -4,7 +4,7 @@ import path from "path";
 import { judgeReceipt, SUB_HUNDRED_TRUNCATION_TOLERANCE_WON } from "./receipt-match";
 import type { ExpectedReceivable } from "./expected-receivables";
 import { buildExpectedReceivables } from "./expected-receivables";
-import type { ParsedEtaxInvoice } from "./etax-xml";
+import { EMPTY_ETAX_PARTY_DETAIL, type ParsedEtaxInvoice } from "./etax-xml";
 
 /**
  * 수취 판정 계약 테스트.
@@ -33,6 +33,8 @@ function parsed(overrides: Partial<ParsedEtaxInvoice> = {}): ParsedEtaxInvoice {
     amounts: { supplyAmount: 1000000, taxAmount: 100000, totalAmount: 1100000 },
     lineItems: [],
     declaredEncoding: "UTF-8",
+    invoicerDetail: EMPTY_ETAX_PARTY_DETAIL,
+    invoiceeDetail: EMPTY_ETAX_PARTY_DETAIL,
     ...overrides,
   };
 }

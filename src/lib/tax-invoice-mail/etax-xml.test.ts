@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  EMPTY_ETAX_PARTY_DETAIL,
   parseEtaxInvoiceXml,
   normalizeEtaxBusinessNumber,
   normalizeEtaxDate,
@@ -215,5 +216,86 @@ describe("정규화 헬퍼", () => {
     expect(normalizeEtaxDate("2026-07-31")).toBe("2026-07-31");
     expect(normalizeEtaxDate("20261331")).toBeNull();
     expect(normalizeEtaxDate("abc")).toBeNull();
+  });
+});
+
+/**
+ * 당사자 상세 — 경로는 국세청 표준 샘플(`etax-xml.ts` 머리 표)과 같은 모양으로 둔다. 값은 전부 가짜다.
+ * 공급자는 `DefinedContact`, 공급받는자는 `PrimaryDefinedContact` 아래에 이메일이 있다(샘플 그대로).
+ */
+const SAMPLE_WITH_PARTY_DETAIL = `<?xml version="1.0" encoding="UTF-8"?>
+<TaxInvoice>
+  <TaxInvoiceDocument><IssueID>A1</IssueID><IssueDateTime>20260930</IssueDateTime></TaxInvoiceDocument>
+  <TaxInvoiceTradeSettlement>
+    <InvoicerParty>
+      <ID>1112233333</ID>
+      <TypeCode>도소매</TypeCode>
+      <NameText>테스트공급사</NameText>
+      <ClassificationCode>화장품</ClassificationCode>
+      <SpecifiedOrganization><TaxRegistrationID>0001</TaxRegistrationID></SpecifiedOrganization>
+      <SpecifiedPerson><NameText>공급대표</NameText></SpecifiedPerson>
+      <DefinedContact>
+        <PersonNameText>공급담당</PersonNameText>
+        <TelephoneCommunication>0200000000</TelephoneCommunication>
+        <URICommunication>supplier-tax@example.com</URICommunication>
+      </DefinedContact>
+      <SpecifiedAddress><LineOneText>서울 가상구 가상로 1</LineOneText></SpecifiedAddress>
+    </InvoicerParty>
+    <InvoiceeParty>
+      <ID>2223344444</ID>
+      <TypeCode>서비스</TypeCode>
+      <NameText>테스트수취사</NameText>
+      <ClassificationCode>광고대행</ClassificationCode>
+      <SpecifiedPerson><NameText>수취대표</NameText></SpecifiedPerson>
+      <PrimaryDefinedContact><URICommunication>receiver-buyer@example.com</URICommunication></PrimaryDefinedContact>
+      <SpecifiedAddress><LineOneText>부산 가상구 가상로 2</LineOneText></SpecifiedAddress>
+    </InvoiceeParty>
+  </TaxInvoiceTradeSettlement>
+</TaxInvoice>`;
+
+describe("parseEtaxInvoiceXml — 당사자 상세(거래처 등록 보강)", () => {
+  it("공급자의 대표자·주소·업태·종목·이메일을 공급자 스코프에서 읽는다", () => {
+    const parsed = parseEtaxInvoiceXml(SAMPLE_WITH_PARTY_DETAIL);
+    expect(parsed?.invoicerDetail).toEqual({
+      ceoName: "공급대표",
+      address: "서울 가상구 가상로 1",
+      businessType: "도소매",
+      businessItem: "화장품",
+      email: "supplier-tax@example.com",
+    });
+    // 상호 `NameText` 가 대표자명 칸으로 새지 않는다(같은 태그명이 두 깊이에 있다).
+    expect(parsed?.invoicerName).toBe("테스트공급사");
+  });
+
+  it("공급받는자는 PrimaryDefinedContact 의 이메일을 읽고 공급자 값과 섞지 않는다", () => {
+    const parsed = parseEtaxInvoiceXml(SAMPLE_WITH_PARTY_DETAIL);
+    expect(parsed?.invoiceeDetail).toEqual({
+      ceoName: "수취대표",
+      address: "부산 가상구 가상로 2",
+      businessType: "서비스",
+      businessItem: "광고대행",
+      email: "receiver-buyer@example.com",
+    });
+  });
+
+  it("상세 칸이 없는 계산서는 전부 null 이다(빈 문자열로 만들지 않는다)", () => {
+    const parsed = parseEtaxInvoiceXml(SAMPLE);
+    expect(parsed?.invoicerDetail).toEqual(EMPTY_ETAX_PARTY_DETAIL);
+    expect(parsed?.invoiceeDetail).toEqual(EMPTY_ETAX_PARTY_DETAIL);
+  });
+
+  it("UTF-8 이 아닌 선언이면 한글 칸은 비우고 이메일은 유지한다", () => {
+    const parsed = parseEtaxInvoiceXml(SAMPLE_WITH_PARTY_DETAIL.replace('encoding="UTF-8"', 'encoding="EUC-KR"'));
+    expect(parsed?.invoicerDetail).toEqual({
+      ...EMPTY_ETAX_PARTY_DETAIL,
+      email: "supplier-tax@example.com",
+    });
+  });
+
+  it("이메일 칸에 @ 가 없는 값이 오면 null 로 둔다", () => {
+    const parsed = parseEtaxInvoiceXml(
+      SAMPLE_WITH_PARTY_DETAIL.replace("supplier-tax@example.com", "0200000000"),
+    );
+    expect(parsed?.invoicerDetail.email).toBeNull();
   });
 });

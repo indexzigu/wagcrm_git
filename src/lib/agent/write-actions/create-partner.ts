@@ -41,6 +41,8 @@ export async function createPartnerRow(
       ceoName: partner.ceoName ?? null,
       representativeEmail: partner.representativeEmail ?? null,
       address: partner.address ?? null,
+      businessType: partner.businessType ?? null,
+      businessItem: partner.businessItem ?? null,
       notes: partner.notes ?? null,
       ...(contacts.length > 0
         ? {
