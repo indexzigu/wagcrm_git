@@ -14,15 +14,15 @@ import {
   salesChannelLabels,
   snsTypeLabels,
 } from "@/lib/crm-types";
-import { displayLabel } from "@/lib/display-label";
+import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
 
 /**
- * 영문 상태 코드를 화면에 그대로 찍지 않는다 — 표에 없는 코드는 「—」(공용 규칙 `displayLabel`). 값이 아예
- * 없으면 빈 문자열이라 호출부가 칸을 숨긴다(`|| undefined`·`meta.status &&`).
+ * 영문 상태 코드를 화면에 그대로 찍지 않는다 — 상태 칸이라 표에 없는 코드는 「알 수 없음」(P2 ③, 공용 규칙
+ * `displayLabel`). 값이 아예 없으면 빈 문자열이라 호출부가 칸을 숨긴다(`|| undefined`·`meta.status &&`).
  */
 function labelOf(table: Readonly<Record<string, string>>, value: unknown): string {
   const raw = String(value ?? "");
-  return raw ? displayLabel(table, raw) : "";
+  return raw ? displayLabel(table, raw, UNKNOWN_NAME) : "";
 }
 import {
   EntityIdentity,

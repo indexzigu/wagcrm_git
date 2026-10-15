@@ -74,7 +74,7 @@ export const FIELD_LABELS: Record<string, string> = {
   partnerCompanyName: "파트너 회사명",
   costPrice: "공급가",
   sellingPrice: "판매가",
-  listPrice: "정가",
+  listPrice: "정상가", // 딜 화면·딜 목록·가격표 검수의 칸 이름과 같게(종전 「정가」)
   floorPrice: "최저가",
   // 딜 화면 「공급가」는 판매가×총수수료율로 계산되는 칸이다 — 원가 칸(costPrice)도 「공급가」로 불려 이력에서 구분한다.
   supplyPrice: "공급가(계산값)",

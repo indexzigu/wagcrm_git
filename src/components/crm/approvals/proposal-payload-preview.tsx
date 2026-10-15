@@ -26,6 +26,7 @@ import {
 } from "@/lib/record-update-labels";
 import { displayLabel } from "@/lib/display-label";
 import { partnerTypeLabels } from "@/lib/crm-types";
+import { FIELD_LABELS } from "@/lib/field-labels";
 
 // 직접 넣는 공급가(costPrice)와 자동 계산 공급가(supplyPrice)는 운영상 같은 돈이다(오너 확정 2026-10-15) — 둘 다
 // 「공급가」. 한 줄에 둘이 **함께** 있을 때만 계산 칸을 「공급가(계산값)」로 가른다(활동 기록 FIELD_LABELS 와 같은 이름).
@@ -85,7 +86,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function moneyRows(source: Record<string, unknown>): readonly (readonly [string, string | null])[] {
   const bothSupplyPrices = asMoney(source.costPrice) !== null && asMoney(source.supplyPrice) !== null;
   return MONEY_FIELDS.map(([key, label]) =>
-    [key === "supplyPrice" && bothSupplyPrices ? "공급가(계산값)" : label, asMoney(source[key])] as const,
+    [key === "supplyPrice" && bothSupplyPrices ? FIELD_LABELS.supplyPrice : label, asMoney(source[key])] as const,
   );
 }
 
