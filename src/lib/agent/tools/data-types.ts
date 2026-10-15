@@ -108,6 +108,11 @@ export type GetPipelineStatusData = {
 
 // ---- get_campaign_financials ----
 
+/**
+ * 옛 `get_campaign_financials` 기록 모양(`derived` = 캠페인 단위 요율 재계산값). 2026-10-15 부터 도구는
+ * 이 모양을 내지 않고 `GetCampaignFinancialsStoredData` 를 낸다 — 이미 쌓인 옛 결재함 기록을 그리려고만
+ * 남겨 둔 타입이다.
+ */
 export type GetCampaignFinancialsData = {
   campaignId: string;
   dealName: string;
@@ -127,9 +132,9 @@ export type GetCampaignFinancialsData = {
 };
 
 /**
- * 봇(Agent Worker)의 `get_campaign_financials` 기록 모양 — **저장된 금액** 그대로다
- * (`agent-worker/executor.ts` `campaignFinancials`). 웹 도구의 `derived`(재계산) 모양과 갈라져
- * 있어 결재함 카드가 두 모양을 다 그린다(옛 기록은 `derived`).
+ * `get_campaign_financials` 결과 모양 — **저장된 금액** 그대로다(`agent/tools/campaign-financials.ts`,
+ * 봇 `agent-worker/executor.ts` `campaignFinancials` 도 `runTool` 로 같은 도구를 부른다). 옛 기록은
+ * `derived`(재계산) 모양이라 결재함 카드가 두 모양을 다 그린다.
  * 금액 칸은 정산 금액 수정 기안이 고칠 수 있는 칸(`SETTLEMENT_AMOUNT_FIELD_LABELS`)과 같고,
  * `null` 은 「비어 있음」이다(0 과 다르다).
  */

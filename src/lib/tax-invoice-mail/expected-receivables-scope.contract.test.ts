@@ -199,8 +199,13 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   // 봇 손익 조회(`get_campaign_financials`)는 재계산 대신 저장값을 그대로 낸다 — 정산 금액 수정 기안이
   // 대조하는 칸과 같은 칸·같은 값(null≠0)이어야 해서 이 칸도 select 해 넘긴다. 영업이익 폴백
   // (`computeOperatingProfit`)의 입력에는 넣지 않는다(손익 불반영 그대로).
+  // 2026-10-15: 저장값 조회는 도구(`agent/tools/campaign-financials.ts`) 한 곳으로 모았고 봇은 `runTool` 로 그 도구를 부른다 — select 는
+  // 도구에, 요약 줄 표시는 executor 에 남는다.
+  "lib/agent/tools/campaign-financials.ts":
+    "손익 조회 도구(봇이 runTool 로 재사용)의 저장값 select·통과 — 물품대금은 Decimal → number|null 통과만, 산술 없음(영업이익 폴백은 SSOT computeOperatingProfit 이고 물품대금을 쓰지 않는다)",
+  "lib/agent/tools/__tests__/campaign-financials.test.ts": "위 도구의 저장값·null≠0 픽스처. 값 통과만",
   "lib/agent-worker/executor.ts":
-    "봇 손익 조회의 저장값 select·표시 — 물품대금은 Decimal → number|null 통과만, 산술 없음(영업이익 폴백은 SSOT computeOperatingProfit 이고 물품대금을 쓰지 않는다)",
+    "봇 손익 조회의 요약 줄 표시 — 도구가 낸 물품대금을 `field=값` 글자로 옮길 뿐, 산술 없음",
   "components/crm/approvals/__tests__/tool-result-views.test.tsx":
     "결재함 재무 카드의 저장값 모양 렌더 픽스처(「비어 있음」·「0원」 표기). 값 통과만",
   "components/crm/approvals/__tests__/read-result-body.test.tsx":
