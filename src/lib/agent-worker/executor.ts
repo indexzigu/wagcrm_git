@@ -53,7 +53,9 @@ import {
   DEFAULT_WORK_RECORDS_LIMIT,
   MAX_EVIDENCE_REFS,
   ROOM_KEY_PATTERN,
+  MAX_AGENT_JOB_JSON_BYTES,
   MAX_RESULT_SUMMARY_CHARS,
+  MAX_STRUCTURED_DATA_BYTES,
   normalizeMappingOptionName,
   sameOrderCampaignName,
   upsertProductMappingsArgsSchema,
@@ -61,6 +63,7 @@ import {
   type AgentJobPayload,
   type AgentJobResult,
   type AgentJobRoute,
+  type OrderCampaignMappingsStructuredData,
 } from "./contracts";
 import { recordReadResult, type ReadResultRecord } from "./read-result-record";
 import {
@@ -82,7 +85,11 @@ import {
   toTaxInvoiceAutoConfirmedViews,
   toTaxInvoicePendingViews,
 } from "./tax-invoice-status";
-import { buildOrderCampaignMappingsSummary, readOrderCampaignMappings } from "./order-campaign-mappings";
+import {
+  buildOrderCampaignMappingsStructuredData,
+  buildOrderCampaignMappingsSummary,
+  readOrderCampaignMappings,
+} from "./order-campaign-mappings";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import {
   hasShadowValidator,
@@ -173,6 +180,11 @@ type OperationSuccess = {
   actionProposalId: string | null;
   /** 읽기 작업의 결재함 기록 페이로드 — 있으면 실행기가 성공 직후 READ 산출물로 남긴다(§3-A). */
   record?: ReadResultRecord;
+  /**
+   * 봇이 읽는 구조화 결과(`AgentJobResult.structuredData`, get_order_campaign_mappings 만). 바이트 예산을 받아
+   * 그 안에 맞춘 값을 돌려준다 — 예산은 실행기가 결과 전체 상한(`MAX_AGENT_JOB_JSON_BYTES`)의 남은 자리로 정한다.
+   */
+  structuredData?: (maxBytes: number) => OrderCampaignMappingsStructuredData | null;
 };
 type OperationFailure = {
   status: "FAILED_FINAL";
@@ -1031,6 +1043,7 @@ async function orderCampaignMappings(input: OrderCampaignMappingsInput, now: Dat
     summary: boundSummary(summary),
     evidenceRefs: boundEvidence(result.campaigns.map((campaign) => campaign.id)),
     actionProposalId: null,
+    structuredData: (maxBytes) => buildOrderCampaignMappingsStructuredData(result, maxBytes),
     record: {
       title: `주문캠페인 ${result.campaigns.length}건 · 매핑 ${mappingCount}줄`,
       resultSummary: boundSummary(summary),
@@ -1305,11 +1318,14 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   get_order_campaign_mappings: (input, context) => orderCampaignMappings(input as OrderCampaignMappingsInput, context.now),
 };
 
+/** 결과 JSON 에 structuredData 칸이 붙을 때 더해지는 글자(앞 쉼표 + 키 + 콜론). */
+const STRUCTURED_DATA_KEY = ',"structuredData":';
+
 function buildResult(
   job: AgentJobRecord,
   route: AgentJobRoute,
   modelUsed: string,
-  fields: Pick<AgentJobResult, "status" | "validationResult" | "resultSummary" | "actionProposalId" | "evidenceRefs">,
+  fields: Pick<AgentJobResult, "status" | "validationResult" | "resultSummary" | "actionProposalId" | "evidenceRefs" | "structuredData">,
 ): AgentJobResult {
   return AgentJobResultSchema.parse({
     schemaVersion: 1,
@@ -1454,13 +1470,24 @@ export async function executeAgentJob(
       return { kind: "retryable", errorClass: error instanceof Error ? error.name : "UnknownError", route, model };
     }
   }
-  const result = buildResult(job, route, model, {
+  const baseFields = {
     status: outcome.status,
-    validationResult: "pass",
+    validationResult: "pass" as const,
     resultSummary: outcome.summary,
     actionProposalId,
     evidenceRefs: outcome.evidenceRefs,
-  });
+  };
+  let result = buildResult(job, route, model, baseFields);
+  if (outcome.structuredData) {
+    // 결과 전체가 큐 상한(16KB) 안이어야 한다 — 요약(최대 2000자, 한글이면 ~6KB)이 쓰고 남은 자리와
+    // MAX_STRUCTURED_DATA_BYTES 중 작은 쪽에 맞춘다. 맞출 수 없으면(null) 칸 없이 낸다.
+    const remaining =
+      MAX_AGENT_JOB_JSON_BYTES -
+      Buffer.byteLength(JSON.stringify(result), "utf8") -
+      Buffer.byteLength(STRUCTURED_DATA_KEY, "utf8");
+    const structuredData = outcome.structuredData(Math.min(MAX_STRUCTURED_DATA_BYTES, remaining));
+    if (structuredData) result = buildResult(job, route, model, { ...baseFields, structuredData });
+  }
   if (route !== "local_shadow" || outcome.status !== "SUCCEEDED") {
     return { kind: "terminal", toStatus: outcome.status, route, model, escalationReason: null, errorClass: null, result };
   }

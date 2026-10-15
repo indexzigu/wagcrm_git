@@ -321,6 +321,8 @@ describe("route behavior (plan contract 7)", () => {
     if (outcome.kind !== "terminal") throw new Error("expected terminal");
     expect(outcome.result.resultSummary).toContain("ACTIVE");
     expect(outcome.result.resultSummary.length).toBeLessThanOrEqual(2000);
+    // structuredData 는 get_order_campaign_mappings 만 싣는다 — 다른 조회는 칸 자체가 없다.
+    expect("structuredData" in outcome.result).toBe(false);
   });
 
   it("gemini route also runs only the deterministic registry: route kept, modelUsed is the sentinel", async () => {

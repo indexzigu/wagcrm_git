@@ -43,8 +43,21 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/lib/prisma-client", () => ({ isSqliteDatabaseUrl: () => false }));
 
 import { executeAgentJob, type ExecutionDeps } from "../executor";
-import { MAX_ORDER_CAMPAIGN_MATCHES, MAX_RESULT_SUMMARY_CHARS } from "../contracts";
-import { MAX_STORE_OPTIONS_PER_CAMPAIGN, readOrderCampaignMappings } from "../order-campaign-mappings";
+import {
+  MAX_AGENT_JOB_JSON_BYTES,
+  MAX_ORDER_CAMPAIGN_MATCHES,
+  MAX_RESULT_SUMMARY_CHARS,
+  MAX_STRUCTURED_DATA_BYTES,
+  orderCampaignMappingsStructuredDataSchema,
+  serializeAgentJobJson,
+} from "../contracts";
+import {
+  MAX_STORE_OPTIONS_PER_CAMPAIGN,
+  buildOrderCampaignMappingsStructuredData,
+  readOrderCampaignMappings,
+  type OrderCampaignMappingsResult,
+} from "../order-campaign-mappings";
+import { MAX_FRAME_BYTES } from "../socket-server";
 
 const client = fakeClient as unknown as PrismaClient;
 const NOW = new Date("2026-10-15T03:00:00.000Z");
@@ -439,6 +452,119 @@ describe("readOrderCampaignMappings — storeOptions", () => {
 });
 
 // ---------------------------------------------------------------------------
+// structuredData — 봇이 읽는 바이트 상한 안의 구조화 결과(2026-10-16)
+// ---------------------------------------------------------------------------
+
+function heavyResult(): OrderCampaignMappingsResult {
+  return {
+    truncated: false,
+    campaigns: ["oc-1", "oc-2"].map((id) => ({
+      id,
+      name: `[샘플 공구] 테스트 기획전 ${id}`,
+      sellerName: "샘플셀러",
+      isActive: true,
+      startDate: null,
+      endDate: null,
+      salesCampaignIds: [`sc-${id}`],
+      mappings: Array.from({ length: 10 }, (_, index) => ({
+        productName: "샘플 상품",
+        optionName: `옵션 ${index}`,
+        brandCode: `TC0001${String(index).padStart(2, "0")}`,
+        price: 10_000 + index,
+        linkedToDeal: false,
+      })),
+      storeOptions: Array.from({ length: 20 }, (_, index) => ({
+        label: `샘플 상품 · 스토어 옵션 ${index}`,
+        productName: "샘플 상품",
+        optionName: `스토어 옵션 ${index}`,
+        split: "single" as const,
+        quantity: 100 - index,
+        mappingIndex: null,
+      })),
+      storeOptionsTruncated: false,
+    })),
+  };
+}
+const bytesOf = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+
+describe("buildOrderCampaignMappingsStructuredData", () => {
+  it("keeps a small result whole, with every truncation flag off", () => {
+    const result = heavyResult();
+    const structured = buildOrderCampaignMappingsStructuredData(result);
+    expect(structured).toEqual({
+      kind: "order_campaign_mappings",
+      version: 1,
+      truncated: false,
+      campaigns: result.campaigns.map((row) => ({ ...row, mappingsTruncated: false })),
+    });
+    expect(orderCampaignMappingsStructuredDataSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("drops store options from the tail first (last campaign's last options), flagging the cut", () => {
+    const full = buildOrderCampaignMappingsStructuredData(heavyResult())!;
+    const limit = bytesOf(full) - 200;
+    const structured = buildOrderCampaignMappingsStructuredData(heavyResult(), limit)!;
+    expect(bytesOf(structured)).toBeLessThanOrEqual(limit);
+    expect(structured.truncated).toBe(true);
+    const [first, second] = structured.campaigns;
+    expect(first.storeOptions).toHaveLength(20);
+    expect(first.storeOptionsTruncated).toBe(false);
+    expect(second.storeOptions.length).toBeLessThan(20);
+    expect(second.storeOptions.length).toBeGreaterThan(0);
+    expect(second.storeOptions.at(-1)?.label).toBe(`샘플 상품 · 스토어 옵션 ${second.storeOptions.length - 1}`);
+    expect(second.storeOptionsTruncated).toBe(true);
+    expect(second.mappings).toHaveLength(10);
+    expect(second.mappingsTruncated).toBe(false);
+  });
+
+  it("drops mappings from the tail only after every store option is gone", () => {
+    const withoutOptions = heavyResult();
+    for (const row of withoutOptions.campaigns) row.storeOptions = [];
+    const limit = bytesOf(buildOrderCampaignMappingsStructuredData(withoutOptions)!) - 150;
+    const structured = buildOrderCampaignMappingsStructuredData(heavyResult(), limit)!;
+    expect(bytesOf(structured)).toBeLessThanOrEqual(limit);
+    for (const row of structured.campaigns) {
+      expect(row.storeOptions).toEqual([]);
+      expect(row.storeOptionsTruncated).toBe(true);
+    }
+    expect(structured.campaigns[0].mappings).toHaveLength(10);
+    expect(structured.campaigns[0].mappingsTruncated).toBe(false);
+    expect(structured.campaigns[1].mappings.length).toBeLessThan(10);
+    expect(structured.campaigns[1].mappingsTruncated).toBe(true);
+    expect(structured.truncated).toBe(true);
+  });
+
+  it("drops whole campaigns from the tail as the last resort, and gives up (null) only when nothing fits", () => {
+    const structured = buildOrderCampaignMappingsStructuredData(heavyResult(), 120)!;
+    expect(bytesOf(structured)).toBeLessThanOrEqual(120);
+    expect(structured).toEqual({ kind: "order_campaign_mappings", version: 1, campaigns: [], truncated: true });
+    expect(buildOrderCampaignMappingsStructuredData(heavyResult(), 10)).toBeNull();
+  });
+
+  it("never exceeds the default 12KB cap", () => {
+    const result = heavyResult();
+    for (const row of result.campaigns) {
+      row.storeOptions = Array.from({ length: MAX_STORE_OPTIONS_PER_CAMPAIGN }, (_, index) => ({
+        label: `${"가".repeat(40)} · ${index}`,
+        productName: "가".repeat(40),
+        optionName: String(index),
+        split: "single" as const,
+        quantity: 1,
+        mappingIndex: null,
+      }));
+    }
+    const structured = buildOrderCampaignMappingsStructuredData(result)!;
+    expect(bytesOf(structured)).toBeLessThanOrEqual(MAX_STRUCTURED_DATA_BYTES);
+    expect(orderCampaignMappingsStructuredDataSchema.safeParse(structured).success).toBe(true);
+  });
+
+  it("carries the campaign-match truncation through", () => {
+    const structured = buildOrderCampaignMappingsStructuredData({ ...heavyResult(), truncated: true })!;
+    expect(structured.truncated).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // executor — 봇에게 가는 글과 결재함 기록
 // ---------------------------------------------------------------------------
 
@@ -493,7 +619,9 @@ describe("get_order_campaign_mappings through the executor", () => {
 
     expect(outcome.toStatus).toBe("SUCCEEDED");
     const summary = outcome.result.resultSummary;
-    expect(summary).toMatch(/^get_order_campaign_mappings campaigns=2 mappings=3 truncated=false shownLines=5\/5\n/);
+    expect(summary).toMatch(
+      /^get_order_campaign_mappings campaigns=2 first=oc-1 name=가짜셀러\(김가짜\) - 가짜크림 캠페인\nget_order_campaign_mappings campaigns=2 mappings=3 truncated=false shownLines=5\/5\n/,
+    );
     expect(summary).toContain("CAMPAIGN #1 id=oc-1 name=가짜셀러(김가짜) - 가짜크림 캠페인 seller=가짜셀러(김가짜) active=yes");
     expect(summary).toContain("salesCampaignIds=sc-1 mappings=2");
     expect(summary).toContain("  #1 가짜크림 | 1개 | code=FAKE-001 | price=19900 | linkedToDeal=yes");
@@ -516,8 +644,10 @@ describe("get_order_campaign_mappings through the executor", () => {
     const outcome = await run({ orderCampaignId: "missing" });
     expect(outcome.toStatus).toBe("SUCCEEDED");
     expect(outcome.result.resultSummary).toBe(
-      "get_order_campaign_mappings campaigns=0 mappings=0 truncated=false shownLines=0/0",
+      "get_order_campaign_mappings campaigns=0 first=none name=none\n" +
+        "get_order_campaign_mappings campaigns=0 mappings=0 truncated=false shownLines=0/0",
     );
+    expect(outcome.result.structuredData).toEqual({ kind: "order_campaign_mappings", version: 1, campaigns: [], truncated: false });
     expect(outcome.result.evidenceRefs).toEqual([]);
   });
 
@@ -528,7 +658,109 @@ describe("get_order_campaign_mappings through the executor", () => {
     );
     const outcome = await run({ orderCampaignId: "oc-1" });
     expect(outcome.result.resultSummary.length).toBeLessThanOrEqual(MAX_RESULT_SUMMARY_CHARS);
-    expect(outcome.result.resultSummary).toMatch(/^get_order_campaign_mappings campaigns=1 mappings=200 truncated=false shownLines=\d+\/201\n/);
+    expect(outcome.result.resultSummary).toMatch(
+      /^get_order_campaign_mappings campaigns=1 first=oc-1 name=[^\n]+\nget_order_campaign_mappings campaigns=1 mappings=200 truncated=false shownLines=\d+\/201\n/,
+    );
+  });
+
+  it("carries the read result as typed structuredData and keeps the first summary line short for the router", async () => {
+    m.orderCampaignFindMany.mockResolvedValue([campaign()]);
+    m.productMappingFindMany.mockResolvedValue([mapping()]);
+    m.salesCampaignFindMany.mockResolvedValue([{ id: "sc-1", orderCampaignId: "oc-1", startDate: SALES_START }]);
+    m.snapshotFindMany.mockResolvedValue([aggregateRow("2026-10-02", { "sc-1": [{ name: "가짜크림 · 1개", quantity: 2 }] })]);
+
+    const outcome = await run({ orderCampaignId: "oc-1" });
+
+    const structured = orderCampaignMappingsStructuredDataSchema.parse(outcome.result.structuredData);
+    expect(structured).toEqual({
+      kind: "order_campaign_mappings",
+      version: 1,
+      truncated: false,
+      campaigns: [
+        {
+          id: "oc-1",
+          name: "가짜셀러(김가짜) - 가짜크림 캠페인",
+          sellerName: "가짜셀러(김가짜)",
+          isActive: true,
+          startDate: "2026-10-01T00:00:00.000Z",
+          endDate: "2026-10-31T00:00:00.000Z",
+          salesCampaignIds: ["sc-1"],
+          mappings: [{ productName: "가짜크림", optionName: "1개", brandCode: "FAKE-001", price: 19_900, linkedToDeal: false }],
+          mappingsTruncated: false,
+          storeOptions: [
+            { label: "가짜크림 · 1개", productName: "가짜크림", optionName: "1개", split: "single", quantity: 2, mappingIndex: 0 },
+          ],
+          storeOptionsTruncated: false,
+        },
+      ],
+    });
+    const firstLine = outcome.result.resultSummary.split("\n")[0];
+    expect(firstLine).toBe("get_order_campaign_mappings campaigns=1 first=oc-1 name=가짜셀러(김가짜) - 가짜크림 캠페인");
+  });
+
+  it("truncates the first-line name to 60 characters and the whole first line to 200", async () => {
+    const longName = `${"가".repeat(70)}\n둘째 줄`;
+    m.orderCampaignFindMany.mockResolvedValue([campaign({ id: `oc-${"x".repeat(120)}`, name: longName })]);
+    const outcome = await run({ query: "가" });
+    const firstLine = outcome.result.resultSummary.split("\n")[0];
+    expect(firstLine.length).toBeLessThanOrEqual(200);
+    expect(firstLine).toContain(`name=${"가".repeat(60)}`.slice(0, 200 - firstLine.indexOf("name=")));
+    expect(firstLine).not.toContain("가".repeat(61));
+  });
+
+  it("never lets the durable result or the RPC frame overflow, even for ten heavy campaigns", async () => {
+    const campaigns = Array.from({ length: MAX_ORDER_CAMPAIGN_MATCHES }, (_, index) =>
+      campaign({ id: `oc-${index}`, name: `${"가짜".repeat(40)} ${index}` }),
+    );
+    m.orderCampaignFindMany.mockResolvedValue(campaigns);
+    m.productMappingFindMany.mockResolvedValue(
+      campaigns.flatMap((row) =>
+        Array.from({ length: 60 }, (_, index) =>
+          mapping({ id: `${row.id}-pm-${index}`, campaignId: row.id, productName: "가짜크림 대용량 세트", optionName: `옵션 ${"나".repeat(30)} ${index}` }),
+        ),
+      ),
+    );
+    m.salesCampaignFindMany.mockResolvedValue(
+      campaigns.map((row) => ({ id: `sc-${row.id}`, orderCampaignId: row.id, startDate: SALES_START })),
+    );
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow(
+        "2026-10-02",
+        Object.fromEntries(
+          campaigns.map((row) => [
+            `sc-${row.id}`,
+            Array.from({ length: 120 }, (_, index) => ({ name: `가짜크림 대용량 · 옵션 ${"다".repeat(20)} ${index}`, quantity: index + 1 })),
+          ]),
+        ),
+      ),
+    ]);
+
+    const outcome = await run({ query: "가짜" });
+
+    expect(outcome.toStatus).toBe("SUCCEEDED");
+    const structuredBytes = Buffer.byteLength(JSON.stringify(outcome.result.structuredData), "utf8");
+    expect(structuredBytes).toBeLessThanOrEqual(MAX_STRUCTURED_DATA_BYTES);
+    expect(() => serializeAgentJobJson(outcome.result, false)).not.toThrow();
+    expect(Buffer.byteLength(JSON.stringify(outcome.result), "utf8")).toBeLessThanOrEqual(MAX_AGENT_JOB_JSON_BYTES);
+    const structured = orderCampaignMappingsStructuredDataSchema.parse(outcome.result.structuredData);
+    expect(structured.truncated).toBe(true);
+    // 앞 캠페인이 뒤 캠페인보다 먼저 남는다(뒤에서부터 덜어 낸다).
+    expect(structured.campaigns[0].id).toBe("oc-0");
+    // RPC 응답(toView 모양 + 봉투)도 소켓 프레임 상한 안이다.
+    const frame = JSON.stringify({
+      id: "rpc-1",
+      result: {
+        jobId: "job-ocm",
+        status: "SUCCEEDED",
+        attempt: 0,
+        failureCode: null,
+        result: outcome.result,
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+        settled: true,
+      },
+    });
+    expect(Buffer.byteLength(frame, "utf8")).toBeLessThan(MAX_FRAME_BYTES);
   });
 
   it("reports a denied column as DB_PERMISSION_DENIED instead of an empty answer", async () => {

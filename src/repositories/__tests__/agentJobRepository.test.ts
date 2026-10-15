@@ -182,6 +182,69 @@ describe("AgentJobRepository", () => {
     );
   });
 
+  describe("structuredData round trip (get_order_campaign_mappings, 2026-10-16)", () => {
+    const structuredData = {
+      kind: "order_campaign_mappings",
+      version: 1,
+      truncated: false,
+      campaigns: [
+        {
+          id: "oc-1",
+          name: "[샘플 공구] 테스트 기획전",
+          sellerName: "샘플셀러",
+          isActive: true,
+          startDate: null,
+          endDate: null,
+          salesCampaignIds: [],
+          mappings: [{ productName: "샘플 상품", optionName: "1개", brandCode: "TC000101", price: 15000, linkedToDeal: false }],
+          mappingsTruncated: false,
+          storeOptions: [],
+          storeOptionsTruncated: false,
+        },
+      ],
+    } as const;
+    const result = {
+      schemaVersion: 1,
+      jobId: "job-1",
+      status: "SUCCEEDED",
+      route: "python",
+      modelUsed: "none",
+      validationResult: "pass",
+      resultSummary: "get_order_campaign_mappings campaigns=1 first=oc-1 name=[샘플 공구] 테스트 기획전",
+      actionProposalId: null,
+      evidenceRefs: ["oc-1"],
+      structuredData,
+    } as const;
+
+    it("writes the result with structuredData on a terminal transition", async () => {
+      const now = new Date("2026-09-02T00:00:00.000Z");
+      updateManyMock.mockResolvedValue({ count: 1 });
+      eventCreateMock.mockResolvedValue({});
+      await AgentJobRepository.transition({
+        jobId: "job-1",
+        fromStatus: "RUNNING",
+        toStatus: "SUCCEEDED",
+        actor: "worker-1",
+        eventCode: "SUCCEEDED",
+        workerId: "worker-1",
+        attempt: 0,
+        now,
+        result,
+      });
+      const data = (updateManyMock.mock.calls[0][0] as { data: { result: unknown } }).data;
+      const stored = typeof data.result === "string" ? JSON.parse(data.result) : data.result;
+      expect(stored).toEqual(result);
+    });
+
+    it("reads it back unchanged (JSON text and object storage)", async () => {
+      for (const stored of [JSON.stringify(result), result]) {
+        findUniqueMock.mockResolvedValueOnce({ ...persistedJob, status: "SUCCEEDED", result: stored });
+        const job = await AgentJobRepository.findById("job-1");
+        expect(job?.result?.structuredData).toEqual(structuredData);
+      }
+    });
+  });
+
   describe("listRecent (결재함 봇 활동 탭)", () => {
     it("최신순·take·SUCCEEDED 제외를 where 로 만든다", async () => {
       findManyMock.mockResolvedValue([]);

@@ -20,7 +20,12 @@ import {
   resolveLiveWindowKeys,
   type SnapshotDailyAggregate,
 } from "@/lib/order-converter/daily-aggregate";
-import { MAX_ORDER_CAMPAIGN_MATCHES, normalizeMappingOptionName } from "./contracts";
+import {
+  MAX_ORDER_CAMPAIGN_MATCHES,
+  MAX_STRUCTURED_DATA_BYTES,
+  normalizeMappingOptionName,
+  type OrderCampaignMappingsStructuredData,
+} from "./contracts";
 import { buildBoundedSummary, flattenLineBreaks } from "./read-projections";
 
 export type OrderCampaignMappingsInput = { orderCampaignId?: string; query?: string };
@@ -254,6 +259,24 @@ export async function readOrderCampaignMappings(
 
 const text = (value: string) => flattenLineBreaks(value) || "(비어 있음)";
 
+/** 첫 줄에 싣는 캠페인 이름 글자 수 · 첫 줄 전체 글자 수 — 봇 라우터는 결과 요약의 앞 200자 정도만 본다. */
+const FIRST_LINE_NAME_CHARS = 60;
+const FIRST_LINE_MAX_CHARS = 200;
+
+/** 코드포인트 단위로 자른다(한글·이모지가 반으로 갈리지 않게). */
+function takeChars(value: string, max: number): string {
+  return Array.from(value).slice(0, max).join("");
+}
+
+/** 봇 라우터용 첫 줄 — `get_order_campaign_mappings campaigns=N first=<id> name=<이름 60자>`, 200자 이내. */
+function buildFirstLine(result: OrderCampaignMappingsResult): string {
+  const first = result.campaigns[0];
+  const line =
+    `get_order_campaign_mappings campaigns=${result.campaigns.length} ` +
+    (first ? `first=${first.id} name=${takeChars(text(first.name), FIRST_LINE_NAME_CHARS)}` : "first=none name=none");
+  return takeChars(line, FIRST_LINE_MAX_CHARS);
+}
+
 /**
  * 머리줄 하나 + 캠페인마다 `CAMPAIGN #n …` 한 줄과 그 매핑 `  #n 상품 | 옵션 | code= | price= | linkedToDeal=`
  * 줄들. 결과 글자 상한을 넘으면 뒤에서부터 줄을 덜어 내고 머리줄의 `shownLines=보인 줄/전체 줄` 로 알린다.
@@ -279,10 +302,88 @@ export function buildOrderCampaignMappingsSummary(result: OrderCampaignMappingsR
     }
   });
   const mappingCount = result.campaigns.reduce((sum, campaign) => sum + campaign.mappings.length, 0);
+  const firstLine = buildFirstLine(result);
   const { summary } = buildBoundedSummary(
     (shown) =>
+      `${firstLine}\n` +
       `get_order_campaign_mappings campaigns=${result.campaigns.length} mappings=${mappingCount} truncated=${result.truncated} shownLines=${shown}/${lines.length}`,
     lines,
   );
   return { summary, mappingCount };
+}
+
+// ---------------------------------------------------------------------------
+// 봇이 읽는 구조화 결과(AgentJobResult.structuredData, 2026-10-16)
+// ---------------------------------------------------------------------------
+
+const utf8Bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+/** 배열에서 원소 하나를 뺄 때 줄어드는 바이트 — 원소 + 남은 원소가 있으면 쉼표 하나. */
+const removedBytes = (value: unknown, remaining: number) => utf8Bytes(value) + (remaining > 0 ? 1 : 0);
+
+/**
+ * 읽기 결과를 `maxBytes`(최대 `MAX_STRUCTURED_DATA_BYTES`) 안의 구조화 데이터로 옮긴다. 넘치면 뒤에서부터
+ * ① 스토어 옵션(마지막 캠페인의 마지막 옵션부터) ② 매핑 ③ 캠페인 순으로 덜어 내고, 덜어 낸 캠페인의
+ * `storeOptionsTruncated` / `mappingsTruncated` 와 최상위 `truncated` 를 켠다. 캠페인을 다 덜어도 안 들어가면 null.
+ * 칸은 하나씩 골라 옮긴다 — 읽기 결과에 칸이 늘어도 검토 없이 봇에게 따라가지 않게.
+ */
+export function buildOrderCampaignMappingsStructuredData(
+  result: OrderCampaignMappingsResult,
+  maxBytes: number = MAX_STRUCTURED_DATA_BYTES,
+): OrderCampaignMappingsStructuredData | null {
+  const limit = Math.min(maxBytes, MAX_STRUCTURED_DATA_BYTES);
+  const data: OrderCampaignMappingsStructuredData = {
+    kind: "order_campaign_mappings",
+    version: 1,
+    campaigns: result.campaigns.map((row) => ({
+      id: row.id,
+      name: row.name,
+      sellerName: row.sellerName,
+      isActive: row.isActive,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      salesCampaignIds: [...row.salesCampaignIds],
+      mappings: row.mappings.map((mapping) => ({
+        productName: mapping.productName,
+        optionName: mapping.optionName,
+        brandCode: mapping.brandCode,
+        price: mapping.price,
+        linkedToDeal: mapping.linkedToDeal,
+      })),
+      mappingsTruncated: false,
+      storeOptions: row.storeOptions.map((option) => ({
+        label: option.label,
+        productName: option.productName,
+        optionName: option.optionName,
+        split: option.split,
+        quantity: option.quantity,
+        mappingIndex: option.mappingIndex,
+      })),
+      storeOptionsTruncated: row.storeOptionsTruncated,
+    })),
+    truncated: result.truncated,
+  };
+  // 어림셈: 덜어 낸 원소의 바이트만 뺀다. 플래그가 false → true 로 바뀌면 1바이트씩 줄 뿐이라 어림이 실제보다
+  // 작아지지 않는다(덜 덜어 내는 일은 없다). 마지막에 실제 바이트로 한 번 더 확인한다.
+  let bytes = utf8Bytes(data);
+  if (bytes <= limit) return data;
+  data.truncated = true;
+  const campaigns = data.campaigns;
+  for (let index = campaigns.length - 1; index >= 0 && bytes > limit; index -= 1) {
+    const row = campaigns[index];
+    while (row.storeOptions.length > 0 && bytes > limit) {
+      const removed = row.storeOptions.pop();
+      bytes -= removedBytes(removed, row.storeOptions.length);
+      row.storeOptionsTruncated = true;
+    }
+  }
+  for (let index = campaigns.length - 1; index >= 0 && bytes > limit; index -= 1) {
+    const row = campaigns[index];
+    while (row.mappings.length > 0 && bytes > limit) {
+      const removed = row.mappings.pop();
+      bytes -= removedBytes(removed, row.mappings.length);
+      row.mappingsTruncated = true;
+    }
+  }
+  while (campaigns.length > 0 && utf8Bytes(data) > limit) campaigns.pop();
+  return utf8Bytes(data) <= limit ? data : null;
 }

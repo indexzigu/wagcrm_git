@@ -834,6 +834,68 @@ export const AgentJobPayloadSchema = z
 
 export type AgentJobPayload = z.infer<typeof AgentJobPayloadSchema>;
 
+/**
+ * 작업 결과의 구조화 데이터 바이트 상한(UTF-8 JSON, 2026-10-16). 봇은 결과 요약(≤2000자, 라우터는 앞 200자)만으로는
+ * 매핑 지금 값·스토어 옵션명을 옮겨 적을 수 없어, 조회 결과를 이 상한 안의 구조로 함께 받는다. 작업 결과 전체는
+ * 여전히 `MAX_AGENT_JOB_JSON_BYTES` 안이어야 한다 — 실행기가 그 남은 자리와 이 상한 중 작은 쪽에 맞춘다.
+ */
+export const MAX_STRUCTURED_DATA_BYTES = 12 * 1024;
+
+const structuredStoreOptionSchema = z
+  .object({
+    label: z.string(),
+    productName: z.string().nullable(),
+    optionName: z.string().nullable(),
+    split: z.enum(["single", "none", "ambiguous"]),
+    quantity: z.number(),
+    mappingIndex: z.number().int().min(0).nullable(),
+  })
+  .strict();
+
+const structuredMappingSchema = z
+  .object({
+    productName: z.string(),
+    optionName: z.string(),
+    brandCode: z.string(),
+    price: z.number(),
+    linkedToDeal: z.boolean(),
+  })
+  .strict();
+
+/**
+ * `get_order_campaign_mappings` 결과의 구조화 데이터 — 읽기 결과와 같은 모양에 캠페인별 `mappingsTruncated` 를 더했다.
+ * 바이트 상한에 걸리면 뒤에서부터 스토어 옵션 → 매핑 → 캠페인 순으로 덜어 내고 해당 플래그와 최상위 `truncated` 를 켠다.
+ */
+export const orderCampaignMappingsStructuredDataSchema = z
+  .object({
+    kind: z.literal("order_campaign_mappings"),
+    version: z.literal(1),
+    campaigns: z.array(
+      z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          sellerName: z.string(),
+          isActive: z.boolean(),
+          startDate: z.string().nullable(),
+          endDate: z.string().nullable(),
+          salesCampaignIds: z.array(z.string()),
+          mappings: z.array(structuredMappingSchema),
+          mappingsTruncated: z.boolean(),
+          storeOptions: z.array(structuredStoreOptionSchema),
+          storeOptionsTruncated: z.boolean(),
+        })
+        .strict(),
+    ),
+    truncated: z.boolean(),
+  })
+  .strict()
+  .refine((value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= MAX_STRUCTURED_DATA_BYTES, {
+    message: `structuredData exceeds ${MAX_STRUCTURED_DATA_BYTES} bytes`,
+  });
+
+export type OrderCampaignMappingsStructuredData = z.infer<typeof orderCampaignMappingsStructuredDataSchema>;
+
 export const AgentJobResultSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -845,6 +907,8 @@ export const AgentJobResultSchema = z
     resultSummary: z.string().trim().min(1).max(MAX_RESULT_SUMMARY_CHARS),
     actionProposalId: opaqueIdSchema.nullable(),
     evidenceRefs: z.array(z.string().trim().min(1).max(256)).max(MAX_EVIDENCE_REFS),
+    // 선택 칸 — get_order_campaign_mappings 만 싣는다(2026-10-16). 다른 작업은 칸 자체가 없다.
+    structuredData: orderCampaignMappingsStructuredDataSchema.optional(),
   })
   .strict();
 
