@@ -54,6 +54,10 @@
    않는다 — 설계와 구현 코드 모두 디자인 서브에이전트(ss-ux-designer)를 `Agent`
    도구로 소환해 검토를 거친다(오너 지침). 자매 화면과의 일관성은 검토 항목이지
    창의성의 상한이 아니다.
+   **문구 판정 포함 (2026-10-15):** 화면 문구가 새로 생기거나 바뀐 작업은 검토 지시에
+   그 문구 목록과 `product-ux.md` 「화면 문구 기준」·`src/lib/ui-glossary.ts` 포인터를
+   넣고, 같은 뜻 다른 이름·개발자 말투·풀이 없는 은유를 판정 항목으로 요구한다
+   (기계 검사가 못 보는 부분).
    ⚠️ Opus 5 세션에 기본 주입되는 `Do not call the AgentTool unless the user
    requested it` 은 **이 검토를 면제하지 않는다** — 전역 `CORE.md` P1.6 「Injected
    Self-Restraint vs. Routing Rule 5」(오너 확정 2026-08-26)가 정본이고 `AGENTS.md`
