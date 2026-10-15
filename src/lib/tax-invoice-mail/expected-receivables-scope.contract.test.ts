@@ -195,7 +195,16 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
     "정산 금액 수정 실행기 — 현재 값 동등 비교(null≠0) + 새 값 저장. 파생 계산 입력에서 제외(손익 불반영)",
   "lib/agent/__tests__/update-settlement-amount.test.ts": "위 실행기의 null≠0 계약 픽스처. 값 통과만",
   "lib/agent-worker/__tests__/contracts.test.ts": "위 계약의 칸 이름·부호 규칙 픽스처. 값 통과만",
-  "lib/agent-worker/__tests__/executor.test.ts": "정산 금액 수정 기안 생성의 픽스처. 값 통과만",
+  "lib/agent-worker/__tests__/executor.test.ts": "정산 금액 수정 기안 생성·손익 조회 저장값 픽스처. 값 통과만",
+  // 봇 손익 조회(`get_campaign_financials`)는 재계산 대신 저장값을 그대로 낸다 — 정산 금액 수정 기안이
+  // 대조하는 칸과 같은 칸·같은 값(null≠0)이어야 해서 이 칸도 select 해 넘긴다. 영업이익 폴백
+  // (`computeOperatingProfit`)의 입력에는 넣지 않는다(손익 불반영 그대로).
+  "lib/agent-worker/executor.ts":
+    "봇 손익 조회의 저장값 select·표시 — 물품대금은 Decimal → number|null 통과만, 산술 없음(영업이익 폴백은 SSOT computeOperatingProfit 이고 물품대금을 쓰지 않는다)",
+  "components/crm/approvals/__tests__/tool-result-views.test.tsx":
+    "결재함 재무 카드의 저장값 모양 렌더 픽스처(「비어 있음」·「0원」 표기). 값 통과만",
+  "components/crm/approvals/__tests__/read-result-body.test.tsx":
+    "결재함 상세가 저장값 모양을 재무 카드로 그리는지 단언하는 픽스처. 값 통과만",
   "components/crm/approvals/__tests__/proposal-payload-preview.test.tsx":
     "결재함 미리보기의 「비어 있음 ≠ 0원」 표기 픽스처. 값 통과만",
 

@@ -7,7 +7,8 @@ import { getPrisma } from "@/lib/prisma";
 import { containsSearch } from "@/lib/prisma-search";
 import { DEAL_STATUSES } from "@/lib/deal-status";
 import { toKstYmd } from "@/lib/date-utils";
-import { calculateDerivedCampaignFinancials } from "@/lib/campaign-financials";
+import { computeOperatingProfit } from "@/lib/campaign-financials";
+import { SETTLEMENT_AMOUNT_FIELD_LABELS, type SettlementAmountField } from "@/lib/settlement-amount-fields";
 import {
   aggregateCoversCampaigns,
   composeSalesDetailFromAggregates,
@@ -30,6 +31,7 @@ import { createDealTool } from "@/lib/agent/tools/create-deal";
 import { updateSettlementAmountTool } from "@/lib/agent/tools/update-settlement-amount";
 import { updateRecordTool } from "@/lib/agent/tools/update-record";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
+import type { GetCampaignFinancialsStoredData } from "@/lib/agent/tools/data-types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { deriveClaims } from "@/lib/order-converter/claim-derive";
@@ -183,6 +185,8 @@ type SearchPartnersInput = { name?: string; type?: string };
 type GetActionProposalInput = { proposalId: string };
 type OrderSnapshotInput = { campaignId?: string; startAt?: string; endAt?: string };
 type CampaignFinancialsInput = { campaignId: string };
+/** 정산 금액 수정 기안이 고칠 수 있는 칸 = 손익 조회가 저장값으로 내는 칸(같은 목록). */
+const STORED_AMOUNT_FIELDS = Object.keys(SETTLEMENT_AMOUNT_FIELD_LABELS) as SettlementAmountField[];
 type SettlementReportInput = { month?: string; year?: string; sellerName?: string; statusFilter?: "SETTLEMENT_IN_PROGRESS" | "COMPLETED" | "ALL" };
 type StoreStatusInput = { claimsLimit?: number; since?: string };
 type WorkRecordsInput = { roomKey: string; since: string; until?: string; limit?: number };
@@ -326,10 +330,6 @@ async function runTool<TInput, TData>(
 
 function isOperationFailure(value: unknown): value is OperationFailure {
   return typeof value === "object" && value !== null && (value as { status?: unknown }).status === "FAILED_FINAL";
-}
-
-function toNumber(value: unknown): number {
-  return Number(value ?? 0);
 }
 
 function toNullableNumber(value: unknown): number | null {
@@ -601,10 +601,25 @@ async function orderSnapshot(input: OrderSnapshotInput, now: Date): Promise<Oper
 }
 
 /**
- * Narrow projection over granted tables only (SalesCampaign scalars, Deal.dealName,
- * Seller.name, Seller.agency -> Partner.businessNumber) feeding the pure
- * `calculateDerivedCampaignFinancials` — the same mapping the agent tool uses, minus
- * its `campaignRepository.findById` include of non-granted tables (review HIGH-2).
+ * 캠페인 손익 조회 — **저장된 금액을 그대로** 돌려준다(재계산하지 않는다).
+ *
+ * ⛔ 여기서 `calculateDerivedCampaignFinancials` 로 다시 계산하지 말 것. 그 함수는 캠페인 단위
+ * 요율(`totalMarginRate`·`sellerMarginRate`) 하나로 곱하는데, 품목(CampaignDeal)마다 요율이 다른
+ * 캠페인은 writer(캠페인 저장·주문 동기화·실매출 입력)가 **품목 루프로** 확정한 값을 저장한다.
+ * 워커 role(`wag_agent_worker`)에는 CampaignDeal SELECT 권한이 없어(최소권한 — 이 select 계약
+ * 테스트도 campaignDeals 조회를 금지한다) 품목 요율을 반영할 수 없고, 그 결과 다품목 캠페인에서
+ * 「총 거래액 × 캠페인 요율」이 저장된 영업 수익과 다른 숫자로 나갔다. 봇이 그 숫자를
+ * `update_settlement_amount` 의 `expectedCurrentKrw` 로 쓰면 승인 시점 대조(저장값 = 기대값)에서
+ * 막히거나, 틀린 「지금 값」으로 기안이 올라간다.
+ * → 권한을 넓혀 재계산을 맞추는 대신(최소권한 유지) 재무 카드(`campaign-side-panel.tsx`)가 보여 주는
+ *   저장값을 1차 수치로 낸다. 금액 칸 목록은 `SETTLEMENT_AMOUNT_FIELD_LABELS`(정산 금액 수정 기안이
+ *   고칠 수 있는 칸) 그대로라 두 동작이 같은 칸·같은 값을 본다.
+ *
+ * ⚠️ `null` 은 「비어 있음」이다 — 0 으로 접지 말 것. 승인 시점 대조는 null ≠ 0 이다
+ * (`write-actions/update-settlement-amount.ts` `matchesExpected`, 물품대금의 0 은 「다른 캠페인
+ * 계산서에 합산됨」).
+ * 영업이익만 재무 카드와 같은 폴백을 쓴다: 저장값이 있으면 그것, 없으면 저장된 칸들로
+ * `computeOperatingProfit`(SSOT) — 품목 요율과 무관한 뺄셈이라 이 폴백은 카드와 같은 값이다.
  */
 async function campaignFinancials(input: CampaignFinancialsInput): Promise<OperationOutcome> {
   const campaign = await getPrisma().salesCampaign.findUnique({
@@ -613,48 +628,61 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
       id: true,
       status: true,
       actualSales: true,
-      operatingExpense: true,
-      miscExpense: true,
-      totalMarginRate: true,
-      sellerMarginRate: true,
-      sellerTaxType: true,
-      isManualSettlementSales: true,
-      isManualSellerExpense: true,
-      isManualTaxExpense: true,
       settlementSales: true,
       sellerExpense: true,
       taxExpense: true,
+      operatingExpense: true,
+      miscExpense: true,
+      settlementSupplyCost: true,
+      settlementGoodsCost: true,
+      operatingProfit: true,
+      isManualSettlementSales: true,
+      isManualSellerExpense: true,
+      isManualTaxExpense: true,
       sellerFeeBasisOverride: true,
       isDepositReceived: true,
       isPayoutCompleted: true,
       deal: { select: { dealName: true } },
-      seller: { select: { name: true, agency: { select: { businessNumber: true } } } },
+      seller: { select: { name: true } },
     },
   });
   if (!campaign) return failure("NOT_FOUND", "campaign not found");
 
-  const derived = calculateDerivedCampaignFinancials({
-    actualSales: toNumber(campaign.actualSales),
-    operatingExpense: toNumber(campaign.operatingExpense),
-    miscExpense: toNumber(campaign.miscExpense),
-    totalMarginRate: toNumber(campaign.totalMarginRate),
-    sellerMarginRate: toNumber(campaign.sellerMarginRate),
-    sellerTaxType: campaign.sellerTaxType ?? null,
-    sellerCompanyBusinessNumber: campaign.seller?.agency?.businessNumber ?? null,
+  const amounts = Object.fromEntries(
+    STORED_AMOUNT_FIELDS.map((field) => [field, toNullableNumber(campaign[field])]),
+  ) as Record<SettlementAmountField, number | null>;
+  const storedOperatingProfit = toNullableNumber(campaign.operatingProfit);
+  const operatingProfit =
+    storedOperatingProfit ??
+    computeOperatingProfit({
+      settlementSales: amounts.settlementSales ?? 0,
+      sellerExpense: amounts.sellerExpense ?? 0,
+      taxExpense: amounts.taxExpense ?? 0,
+      operatingExpense: amounts.operatingExpense ?? 0,
+      miscExpense: amounts.miscExpense ?? 0,
+    });
+  const operatingProfitSource = storedOperatingProfit === null ? "computed_from_stored" : "stored";
+  const manualFlags = {
     isManualSettlementSales: campaign.isManualSettlementSales ?? false,
     isManualSellerExpense: campaign.isManualSellerExpense ?? false,
     isManualTaxExpense: campaign.isManualTaxExpense ?? false,
-    manualSettlementSales: toNullableNumber(campaign.settlementSales),
-    manualSellerExpense: toNullableNumber(campaign.sellerExpense),
-    manualTaxExpense: toNullableNumber(campaign.taxExpense),
-    // 수동 정산 기준액. ⚠️ 품목 요율 자격(`resolveEffectiveSellerFeeBasis`)은 여기서 판정하지 못한다 —
-    // 워커 role(`wag_agent_worker`)에는 CampaignDeal SELECT 권한이 없고(최소권한, AgentJob 마이그레이션
-    // GRANT 블록) 위 select 계약 테스트도 campaignDeals 조회를 금지한다. 요율이 섞인 상태의 기준액은
-    // 캠페인 PATCH 가 400 으로 막아 앱 경로로는 생기지 않으므로 저장값을 그대로 넘긴다.
-    sellerFeeBasisOverride: toNullableNumber(campaign.sellerFeeBasisOverride),
-  });
+  };
+  const sellerFeeBasisOverride = toNullableNumber(campaign.sellerFeeBasisOverride);
+
+  // 줄 순서가 곧 우선순위다 — 슬랙 쪽(hermes)은 요약을 한 줄 ~200자로 접으며 첫 줄을 늘 싣고,
+  // 뒤 줄은 들어가는 만큼만 싣되 빠진 줄 수를 적는다. 그래서 정산 금액 수정에서 가장 자주
+  // 대조하는 칸을 첫 줄에, 식별·플래그·안내를 뒤에 둔다. 값 표기는 `field=값`(필드 키 그대로 —
+  // 기안의 `field` 인자와 같은 글자), 빈 칸은 `null`(0 과 다르다).
+  const amountText = (field: SettlementAmountField) => `${field}=${amounts[field] ?? "null"}`;
   const summary = boundSummary(
-    `get_campaign_financials campaign=${campaign.id} deal=${campaign.deal?.dealName ?? ""} seller=${campaign.seller?.name ?? ""} status=${campaign.status} actualSales=${toNumber(campaign.actualSales)} derived=${JSON.stringify(derived)} deposit=${campaign.isDepositReceived} payout=${campaign.isPayoutCompleted}`,
+    [
+      `stored ${amountText("settlementSales")} ${amountText("sellerExpense")} ${amountText("taxExpense")}`,
+      `operatingProfit=${operatingProfit}(${operatingProfitSource}) ${amountText("operatingExpense")} ${amountText("miscExpense")}`,
+      `${amountText("actualSales")} ${amountText("settlementSupplyCost")} ${amountText("settlementGoodsCost")}`,
+      `campaign=${campaign.id} deal=${campaign.deal?.dealName ?? ""} seller=${campaign.seller?.name ?? ""} status=${campaign.status} deposit=${campaign.isDepositReceived} payout=${campaign.isPayoutCompleted}`,
+      `manual: settlementSales=${manualFlags.isManualSettlementSales} sellerExpense=${manualFlags.isManualSellerExpense} taxExpense=${manualFlags.isManualTaxExpense} sellerFeeBasisOverride=${sellerFeeBasisOverride ?? "null"}`,
+      "note: saved values = what update_settlement_amount compares as expectedCurrentKrw; null=empty (not 0); not recomputed",
+    ].join("\n"),
   );
   return {
     status: "SUCCEEDED",
@@ -669,12 +697,17 @@ async function campaignFinancials(input: CampaignFinancialsInput): Promise<Opera
         dealName: campaign.deal?.dealName ?? null,
         sellerName: campaign.seller?.name ?? null,
         status: campaign.status,
-        actualSales: toNumber(campaign.actualSales),
+        source: "stored",
+        ...amounts,
+        operatingProfit,
+        operatingProfitSource,
+        ...manualFlags,
+        sellerFeeBasisOverride,
         isDepositReceived: campaign.isDepositReceived,
         isPayoutCompleted: campaign.isPayoutCompleted,
-        derived,
-      },
-      dataSources: ["SalesCampaign", "Deal", "Seller", "Partner"],
+        // 결재함 카드(`tool-result-views.tsx`)가 이 모양을 읽는다 — 생산자·소비자가 같은 타입을 본다.
+      } satisfies GetCampaignFinancialsStoredData,
+      dataSources: ["SalesCampaign", "Deal", "Seller"],
       query: { campaignId: input.campaignId },
     },
   };

@@ -8,15 +8,17 @@
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { TOOL_RESULT_RENDERERS, TOOL_RESULT_GUARD_NAMES } from "../tool-result-views";
+import { TOOL_RESULT_RENDERERS, TOOL_RESULT_GUARD_NAMES, hasToolResultRenderer } from "../tool-result-views";
 import type {
   GetSettlementReportData,
   SearchDealsData,
   SearchPartnersData,
   GetPipelineStatusData,
   GetCampaignFinancialsData,
+  GetCampaignFinancialsStoredData,
   GetOrderSnapshotData,
 } from "@/lib/agent/tools/data-types";
+import { SETTLEMENT_AMOUNT_FIELD_LABELS } from "@/lib/settlement-amount-fields";
 
 describe("TOOL_RESULT_RENDERERS 레지스트리", () => {
   it("6개 도구명이 모두 등록되어 있다", () => {
@@ -267,6 +269,101 @@ describe("get_campaign_financials 뷰", () => {
   it("필수 필드(derived)가 없으면 렌더하지 않는다", () => {
     const { container } = render(<View data={{ campaignId: "camp1" }} />);
     expect(container.firstChild).toBeNull();
+  });
+
+  // ---- 봇 기록의 저장값 모양(source: "stored") ----
+  // 금액은 가공값이다. 칸 이름·표기는 정산 금액 수정 기안과 같은 정본(SETTLEMENT_AMOUNT_FIELD_LABELS ·
+  // formatSettlementAmountKrw)을 쓴다 — 기안의 「지금 값」과 이 카드가 같은 글자여야 맞춰 볼 수 있다.
+  const storedData: GetCampaignFinancialsStoredData = {
+    campaignId: "camp2",
+    dealName: "테스트 딜",
+    sellerName: "셀러B",
+    status: "SETTLEMENT_IN_PROGRESS",
+    source: "stored",
+    actualSales: 40_000_000,
+    settlementSales: 9_876_500,
+    sellerExpense: 3_210_000,
+    taxExpense: 606_045,
+    operatingExpense: 0,
+    miscExpense: 0,
+    settlementSupplyCost: null,
+    settlementGoodsCost: 0,
+    operatingProfit: 6_060_455,
+    operatingProfitSource: "stored",
+    isManualSettlementSales: false,
+    isManualSellerExpense: false,
+    isManualTaxExpense: false,
+    sellerFeeBasisOverride: null,
+    isDepositReceived: true,
+    isPayoutCompleted: false,
+  };
+
+  function cellTexts(container: HTMLElement): Array<[string, string]> {
+    const grid = container.querySelector(".grid");
+    if (!grid) throw new Error("grid not rendered");
+    return Array.from(grid.children).map((cell) => {
+      const [label, value] = Array.from(cell.querySelectorAll("p")).map((p) => p.textContent ?? "");
+      return [label, value];
+    });
+  }
+
+  it("저장값 모양은 금액 칸 8개 + 영업이익을 기안과 같은 칸 이름·표기로 그린다", () => {
+    const { container } = render(<View data={storedData} />);
+    expect(cellTexts(container)).toEqual([
+      ["총 거래액", "40,000,000원"],
+      ["영업 수익", "9,876,500원"],
+      ["판매대행비", "3,210,000원"],
+      ["제세공과금", "606,045원"],
+      ["공동 운영 비용", "0원"],
+      ["기타 조정 비용", "0원"],
+      ["공급가액", "비어 있음"],
+      ["물품대금", "0원"],
+      ["영업이익", "6,060,455원"],
+    ]);
+    // 칸 이름은 정본 표에서 온다(손으로 다시 적은 사본이 아님).
+    for (const label of Object.values(SETTLEMENT_AMOUNT_FIELD_LABELS)) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("저장값 모양의 캡션은 「저장된 금액, 정산 확정치 아님」이고 파생 계산값이라고 하지 않는다", () => {
+    render(<View data={storedData} />);
+    expect(screen.getByText("캠페인에 저장된 금액, 정산 확정치 아님")).toBeInTheDocument();
+    expect(screen.queryByText(/파생 계산값/)).not.toBeInTheDocument();
+  });
+
+  it("저장 영업이익이 없어 계산한 경우 캡션이 그 사실을 적는다", () => {
+    render(<View data={{ ...storedData, operatingProfitSource: "computed_from_stored" }} />);
+    expect(
+      screen.getByText("캠페인에 저장된 금액, 정산 확정치 아님. 영업이익은 저장값이 없어 저장된 칸으로 계산")
+    ).toBeInTheDocument();
+  });
+
+  it("저장값 모양도 입금·지급 배지를 같은 규칙으로 그린다", () => {
+    const { container } = render(<View data={storedData} />);
+    const variants = badgeVariantsByText(container);
+    expect(variants.get("입금 완료")).toBe("status-success");
+    expect(variants.get("지급 대기")).toBe("outline");
+  });
+
+  it("두 모양 모두 같은 카드 레이아웃(5열 그리드)을 쓴다", () => {
+    const stored = render(<View data={storedData} />);
+    const storedGrid = stored.container.querySelector(".grid")?.className;
+    stored.unmount();
+    const derived = render(<View data={sampleData} />);
+    expect(storedGrid).toBeDefined();
+    expect(derived.container.querySelector(".grid")?.className).toBe(storedGrid);
+  });
+
+  it("저장값 모양인데 금액 칸 타입이 어긋나면 그리지 않는다(값을 지어내지 않는다)", () => {
+    const { container } = render(<View data={{ ...storedData, settlementSales: "9876500" }} />);
+    expect(container.firstChild).toBeNull();
+    expect(hasToolResultRenderer("get_campaign_financials", { ...storedData, settlementSales: undefined })).toBe(false);
+  });
+
+  it("가드 표는 두 모양을 모두 그릴 수 있다고 답한다", () => {
+    expect(hasToolResultRenderer("get_campaign_financials", storedData)).toBe(true);
+    expect(hasToolResultRenderer("get_campaign_financials", sampleData)).toBe(true);
   });
 });
 
