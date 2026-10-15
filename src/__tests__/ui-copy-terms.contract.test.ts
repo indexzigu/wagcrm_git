@@ -160,6 +160,13 @@ function renderedBranches(e: ts.Expression, sf: ts.SourceFile, out: ts.Expressio
     renderedBranches(x.right, sf, out);
   } else if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
     renderedBranches(x.right, sf, out); // `cond && p.status` — 그려지는 것은 오른쪽이다
+  } else if (ts.isBinaryExpression(x) && x.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    // `"상태: " + row.status` — 이어 붙인 양쪽이 모두 화면에 간다(GPT 검수 지적 2026-10-15)
+    renderedBranches(x.left, sf, out);
+    renderedBranches(x.right, sf, out);
+  } else if (ts.isTemplateExpression(x)) {
+    // `` `상태 ${row.status}` `` — 끼워 넣은 값이 그대로 화면에 간다
+    for (const span of x.templateSpans) renderedBranches(span.expression, sf, out);
   } else {
     out.push(x);
   }
@@ -394,6 +401,11 @@ describe("화면 문구 기준 (AST 전역 스캔)", () => {
       "const C = ({ n }: any) => <p>{`${n}건 레코드`}</p>;",
     ].join("\n");
     expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["devWord", "rawCode", "rawField", "devWord"]);
+  });
+
+  it("양성 — 문자열에 끼워 넣거나 이어 붙인 코드값 필드도 잡는다", () => {
+    const src = "const C = ({ r }: any) => <><p>{`상태 ${r.status}`}</p><p>{\"유형: \" + r.type}</p></>;";
+    expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["rawField", "rawField"]);
   });
 
   it("음성 — 비교식·함수 인자의 갈래는 화면 글자가 아니다", () => {
