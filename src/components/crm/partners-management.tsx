@@ -28,6 +28,11 @@ import { PartnersPanel } from "./partners-panel";
 import { StatusDot } from "./status-dot";
 import { displayLabel } from "@/lib/display-label";
 
+/** 거래처 요약의 「브랜드 외」 합계에 들어가는 유형 이름(그 합계 식과 같은 네 유형). */
+const NON_BRAND_TYPE_NAMES = (["VENDOR", "AGENCY", "AGENT", "SELLER"] as const)
+  .map((type) => partnerTypeLabels[type])
+  .join(" / ");
+
 type PartnerRow = PartnerSummary;
 
 type PartnersManagementProps = {
@@ -240,7 +245,8 @@ export function PartnersManagement({
           </div>
           <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="font-medium">벤더 / 대행사 / 셀러:</span>
+            {/* 아래 합계는 브랜드 외 네 유형을 모두 센다 — 이름표도 같은 네 유형을 라벨 표에서 그대로 쓴다(종전엔 에이전트가 빠져 있었다). */}
+            <span className="font-medium">{NON_BRAND_TYPE_NAMES}:</span>
             <span className="font-semibold text-slate-800 dark:text-slate-200">
               {partnerStats.vendorCount + partnerStats.agencyCount + partnerStats.agentCount + partnerStats.sellerCount}
             </span>

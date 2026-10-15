@@ -76,7 +76,7 @@ describe("BotActivityTable", () => {
     expect(within(row).getByText(label)).toBeInTheDocument();
   });
 
-  it("모르는 상태는 원문을 그대로 보여준다", () => {
+  it("모르는 상태는 영문 코드 대신 「알 수 없음」으로 보여준다(빈 칸이 되지도 않는다)", () => {
     render(
       <BotActivityTable
         items={[makeJob({ status: "SOMETHING_NEW" })]}
@@ -84,7 +84,8 @@ describe("BotActivityTable", () => {
         onToggleSucceeded={vi.fn()}
       />
     );
-    expect(screen.getByText("SOMETHING_NEW")).toBeInTheDocument();
+    expect(screen.queryByText("SOMETHING_NEW")).not.toBeInTheDocument();
+    expect(screen.getAllByText("알 수 없음").length).toBeGreaterThan(0);
   });
 
   it("actionProposalId 가 있으면 결과 링크를, 없으면 하이픈을 보여준다", () => {

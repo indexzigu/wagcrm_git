@@ -102,7 +102,21 @@ describe("ProposalPayloadPreview", () => {
     );
     expect(screen.getByText("거래처도 새로 등록됩니다")).toBeTruthy();
     expect(screen.getByText("새거래처")).toBeTruthy();
-    expect(screen.getByText("공급사")).toBeTruthy();
+    // 거래처 유형은 crm-types 라벨 표 한 곳에서 — VENDOR 는 「벤더」(「공급사」는 브랜드·벤더를 아우르는 다른 역할 이름).
+    expect(screen.getByText("벤더")).toBeTruthy();
+    expect(screen.queryByText("공급사")).toBeNull();
+  });
+
+  it("두 공급가(직접 입력·자동 계산)가 함께 있을 때만 계산 칸을 「공급가(계산값)」로 가른다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_deal"
+        args={{ partner: { id: "p-1" }, mainDeal: { dealName: "딜A", costPrice: 9_000, supplyPrice: 8_500 } }}
+      />,
+    );
+    expect(screen.getByText("공급가")).toBeTruthy();
+    expect(screen.getByText("공급가(계산값)")).toBeTruthy();
+    expect(screen.queryByText("원가")).toBeNull();
   });
 
   it("값이 없는 칸은 빈칸으로 남기지 않고 뺀다", () => {

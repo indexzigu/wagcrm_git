@@ -729,7 +729,9 @@ export const partnerTypeLabels: Record<PartnerType, string> = {
   BRAND: "브랜드",
   VENDOR: "벤더",
   AGENCY: "대행사",
-  AGENT: "에이전시",
+  // AGENCY 「대행사」와 겹쳐 읽히지 않게 「에이전트」(오너 확정 2026-10-15). ⛔ VENDOR 를 「공급사」로 적지 말 것 —
+  // 「공급사」는 상품을 대는 쪽 전체(BRAND·VENDOR)를 부르는 역할 이름이고 벤더와 다르다(오너 정정).
+  AGENT: "에이전트",
   SELLER: "셀러",
 };
 

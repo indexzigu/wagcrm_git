@@ -25,22 +25,18 @@ import {
   recordFieldLabel,
 } from "@/lib/record-update-labels";
 import { displayLabel } from "@/lib/display-label";
+import { partnerTypeLabels } from "@/lib/crm-types";
+import { FIELD_LABELS } from "@/lib/field-labels";
 
+// 직접 넣는 공급가(costPrice)와 자동 계산 공급가(supplyPrice)는 운영상 같은 돈이다(오너 확정 2026-10-15) — 둘 다
+// 「공급가」. 한 줄에 둘이 **함께** 있을 때만 계산 칸을 「공급가(계산값)」로 가른다(활동 기록 FIELD_LABELS 와 같은 이름).
 const MONEY_FIELDS = [
-  ["costPrice", "원가"],
+  ["costPrice", "공급가"],
   ["supplyPrice", "공급가"],
   ["sellingPrice", "판매가"],
   ["listPrice", "정상가"],
   ["shippingFee", "배송비"],
 ] as const;
-
-const PARTNER_TYPE_LABELS: Record<string, string> = {
-  BRAND: "브랜드",
-  VENDOR: "공급사",
-  AGENCY: "대행사",
-  AGENT: "에이전트",
-  SELLER: "셀러",
-};
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -88,7 +84,10 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // 반환 타입을 적어 라벨을 `string` 으로 넓힌다. `as const` 가 만든 리터럴 유니온을
 // 그대로 두면 아래 걸러내기의 타입 술어가 원소 타입에 안 맞는다.
 function moneyRows(source: Record<string, unknown>): readonly (readonly [string, string | null])[] {
-  return MONEY_FIELDS.map(([key, label]) => [label, asMoney(source[key])] as const);
+  const bothSupplyPrices = asMoney(source.costPrice) !== null && asMoney(source.supplyPrice) !== null;
+  return MONEY_FIELDS.map(([key, label]) =>
+    [key === "supplyPrice" && bothSupplyPrices ? FIELD_LABELS.supplyPrice : label, asMoney(source[key])] as const,
+  );
 }
 
 function unitLabel(source: Record<string, unknown>): string | null {
@@ -104,7 +103,7 @@ function PartnerBlock({ partner }: { partner: Record<string, unknown> }) {
     <Rows
       rows={[
         ["거래처명", asText(partner.name)],
-        ["구분", type ? (displayLabel(PARTNER_TYPE_LABELS, type)) : null],
+        ["구분", type ? (displayLabel(partnerTypeLabels, type)) : null],
         ["사업자번호", asText(partner.businessNumber)],
         ["대표자", asText(partner.ceoName)],
         ["업태", asText(partner.businessType)],

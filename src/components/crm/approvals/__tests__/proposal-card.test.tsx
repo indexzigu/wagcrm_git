@@ -152,10 +152,10 @@ describe("ProposalCard", () => {
     await waitFor(() => expect(screen.getByText(/정산 확정/)).toBeInTheDocument());
   });
 
-  it("미지 action은 영문 원문 대신 「알 수 없는 액션」으로 보여준다", async () => {
+  it("미지 action은 영문 원문 대신 「알 수 없음」으로 보여준다", async () => {
     stubFetchOk(makeProposal({ payload: { action: "unknown_future_action", args: {} } }));
     renderCard("proposal-123456789");
-    await waitFor(() => expect(screen.getByText("알 수 없는 액션")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("알 수 없음")).toBeInTheDocument());
     expect(screen.queryByText("unknown_future_action")).not.toBeInTheDocument();
   });
 

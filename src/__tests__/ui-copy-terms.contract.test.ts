@@ -284,7 +284,7 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
   "fallback | lib/content-guide.ts | EVIDENCE_LABEL[claim.evidenceType] ?? claim.evidenceType":
     "이 근거 카드는 콘텐츠 가이드 본문에 붙어 **저장**된다 — 「—」로 바꾸면 무엇이었는지 영구히 잃는다. 지금 오는 값(MEASURED·USER_PROVIDED)은 표에 다 있고 NEEDS_SOURCE 는 앞에서 걸러진다.",
   "rawField | components/crm/link-search-dialog.tsx | {meta.status}":
-    "값이 이미 라벨이다 — 상류에서 `labelOf`(표에 없으면 원문: 새 코드가 생겨도 빈칸이 되지 않게)·`partnerStatusLabel`(폼이 저장한 한글 거래처 상태는 그대로 보여야 함)을 거친다. 둘 다 의도된 폴백이다.",
+    "값이 이미 라벨이다 — 상류에서 `labelOf`(=`displayLabel`, 표에 없는 코드는 「알 수 없음」)와 `partnerStatusLabel`(폼이 저장한 한글 거래처 상태는 그대로 보여야 하는 의도된 폴백)을 거친다.",
   "rawField | components/crm/linked-entity-section.tsx | {entity.status}":
     "`LinkedEntityItem.status` 는 호출부가 라벨 표를 거쳐 넘기는 한글 낱말이다(코드값이 아니다).",
   "rawField | components/crm/upcoming-schedule-card.tsx | {event.type}":
