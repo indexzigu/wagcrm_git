@@ -505,6 +505,23 @@ describe("read operations reuse existing calculations inside the granted read sc
     }
   });
 
+  it("get_campaign_financials ends a permission-denied read as non-retryable DB_PERMISSION_DENIED (the reused tool must not wrap it)", async () => {
+    campaignFindUniqueMock.mockRejectedValue(Object.assign(new Error("Raw query failed"), { code: "P2010", meta: { code: "42501" } }));
+
+    const outcome = await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-1" }), deps(accepted("python")));
+
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "DB_PERMISSION_DENIED" });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("get_campaign_financials retries an ordinary DB error", async () => {
+    campaignFindUniqueMock.mockRejectedValue(new Error("connection reset"));
+
+    const outcome = await executeAgentJob(job("get_campaign_financials", { campaignId: "camp-1" }), deps(accepted("python")));
+
+    expect(outcome).toMatchObject({ kind: "retryable", errorClass: "QUERY_FAILED" });
+  });
+
   it("get_campaign_financials maps a missing campaign to FAILED_FINAL/NOT_FOUND", async () => {
     campaignFindUniqueMock.mockResolvedValue(null);
 

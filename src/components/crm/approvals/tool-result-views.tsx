@@ -286,7 +286,7 @@ function isGetCampaignFinancialsData(data: unknown): data is GetCampaignFinancia
 const SETTLEMENT_AMOUNT_FIELDS = Object.keys(SETTLEMENT_AMOUNT_FIELD_LABELS) as SettlementAmountField[];
 
 /**
- * 봇(Agent Worker) 기록의 **저장값** 모양(`source: "stored"`). 금액 칸은 숫자 또는 null(비어 있음)이어야
+ * `get_campaign_financials` 기록의 **저장값** 모양(`source: "stored"`). 금액 칸은 숫자 또는 null(비어 있음)이어야
  * 한다 — 하나라도 다른 타입이면 그리지 않고 key/value 폴백에 맡긴다(없는 값을 「비어 있음」으로 지어내지 않게).
  */
 function isGetCampaignFinancialsStoredData(data: unknown): data is GetCampaignFinancialsStoredData {
@@ -306,8 +306,8 @@ function isCampaignFinancialsRenderable(
 type FinancialsCell = { label: string; value: string };
 
 /**
- * 카드에 그릴 칸과 캡션. 옛 기록(`derived`, 웹 도구의 재계산값)은 예전 칸·표기를 그대로 두고, 봇의 저장값
- * 기록은 정산 금액 수정 기안과 같은 칸 이름·같은 표기(「비어 있음」 · 「0원」)를 쓴다 — 승인자가 기안에서 본
+ * 카드에 그릴 칸과 캡션. 옛 기록(`derived`, 2026-10-15 전 도구의 재계산값)은 예전 칸·표기를 그대로 두고, 저장값
+ * 기록(지금 도구가 내는 모양)은 정산 금액 수정 기안과 같은 칸 이름·같은 표기(「비어 있음」 · 「0원」)를 쓴다 — 승인자가 기안에서 본
  * 「지금 값」과 이 카드의 숫자를 같은 글자로 맞춰 볼 수 있어야 한다.
  */
 function campaignFinancialsCells(data: GetCampaignFinancialsData | GetCampaignFinancialsStoredData): {
