@@ -50,6 +50,7 @@ export const AgentJobOperationSchema = z.enum([
   "list_work_record_rooms",
   "get_work_records",
   "get_tax_invoice_status",
+  "get_order_campaign_mappings",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -380,6 +381,90 @@ function refineRecordUpdate(
  */
 export const updateRecordArgsSchema = updateRecordInputSchema.strict().superRefine(refineRecordUpdate);
 
+/**
+ * 「상품 매핑 등록·수정」(`upsert_product_mappings`, 2026-10-15) — 봇이 주문캠페인 하나의 상품 매핑
+ * (옵션명 → 상품코드·가격) 여러 줄을 새로 넣거나 고치는 기안. 지우기는 하지 않는다(화면에서 한다).
+ */
+export const MAX_PRODUCT_MAPPING_ROWS = 50;
+// 상한은 16KB 봉투 안에 현실적 길이 50줄이 들어가도록 잡았다(한글 3바이트/자). 상한 × 50줄은
+// 안 들어간다 — 그 경우는 봇이 바이트 예산으로 나눠 올린다(hermes wag_payload 분할 규칙).
+// 화면은 길이 제한이 없어 100자를 넘는 기존 옵션명 줄은 기안으로 못 고친다(화면에서 고침).
+export const MAX_MAPPING_OPTION_NAME_CHARS = 100;
+export const MAX_MAPPING_PRODUCT_NAME_CHARS = 60;
+export const MAX_MAPPING_BRAND_CODE_CHARS = 32;
+export const MAX_MAPPING_PRICE = 100_000_000;
+
+export const productMappingRowInputSchema = z
+  .object({
+    optionName: z.string().trim().min(1).max(MAX_MAPPING_OPTION_NAME_CHARS),
+    productName: z.string().trim().max(MAX_MAPPING_PRODUCT_NAME_CHARS).optional(),
+    brandCode: z.string().trim().min(1).max(MAX_MAPPING_BRAND_CODE_CHARS),
+    price: z.number().int().min(0).max(MAX_MAPPING_PRICE),
+    // 지금 값. 둘 다 null = 새 줄(지금 없어야 한다). 둘 다 값 = 고칠 줄(지금 값과 같아야 한다).
+    // 빈 문자열 "" 도 **값**이다 — 화면은 빈 상품코드를 허용하므로 그런 기존 줄을 고칠 때 쓴다(.min(1) 금지).
+    expectedBrandCode: z.string().max(MAX_MAPPING_BRAND_CODE_CHARS).nullable(),
+    expectedPrice: z.number().int().min(0).max(MAX_MAPPING_PRICE).nullable(),
+  })
+  .strict();
+
+export type ProductMappingRowInput = z.infer<typeof productMappingRowInputSchema>;
+
+export const upsertProductMappingsInputSchema = z.object({
+  orderCampaignId: opaqueIdSchema,
+  // 승인자가 결재함 제목·미리보기에서 어느 캠페인인지 바로 보게 한다(target 이 null 이라
+  // resolveEntityLabel 이 이름을 못 풀어 준다). 기안 시점·승인 시점에 DB 이름과 대조한다.
+  orderCampaignName: z.string().trim().min(1).max(200),
+  mappings: z.array(productMappingRowInputSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
+  memo: z.string().trim().min(1).max(500).optional(),
+});
+
+/**
+ * 옵션명 비교 키 — 유니코드 NFC 로 맞춘 뒤 앞뒤 공백을 떼고 안쪽 연속 공백을 하나로 접는다. 계약·계획
+ * 함수가 같은 키를 쓴다. NFC: 맥에서 붙여 넣은 한글은 자모가 풀린 NFD 로 올 수 있어, 눈에는 같은 옵션명이
+ * 다른 키가 되면 이미 있는 줄을 「새 줄」로 읽거나 기안 안 중복을 놓친다. 비교 키일 뿐 저장값은 그대로다.
+ */
+export function normalizeMappingOptionName(value: string): string {
+  return value.normalize("NFC").trim().replace(/\s+/g, " ");
+}
+
+/**
+ * 주문캠페인 이름 대조 — 양쪽을 NFC 로 맞추고 앞뒤 공백을 뗀 뒤 같은지 본다. 맥 입력 한글(NFD)로 저장된
+ * 이름과 봇이 되읽어 보낸 NFC 이름이 눈에는 같은데 영원히 어긋나는 것을 막는다. 비교만 하고 저장값은 건드리지 않는다.
+ */
+export function sameOrderCampaignName(stored: string, proposed: string): boolean {
+  return stored.normalize("NFC").trim() === proposed.normalize("NFC").trim();
+}
+
+export function refineProductMappingRows(
+  value: z.infer<typeof upsertProductMappingsInputSchema>,
+  context: z.RefinementCtx,
+): void {
+  const seen = new Set<string>();
+  value.mappings.forEach((row, index) => {
+    const key = normalizeMappingOptionName(row.optionName);
+    if (seen.has(key)) {
+      context.addIssue({
+        code: "custom",
+        path: ["mappings", index, "optionName"],
+        message: `같은 옵션명이 기안 안에 두 번 있다: ${key}`,
+      });
+    }
+    seen.add(key);
+    if ((row.expectedBrandCode === null) !== (row.expectedPrice === null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["mappings", index, "expectedPrice"],
+        message: "expectedBrandCode 와 expectedPrice 는 둘 다 null(새 줄)이거나 둘 다 값(고칠 줄)이어야 한다.",
+      });
+    }
+  });
+}
+
+/** 실행기(`write-actions/upsert-product-mappings.ts`)의 argsSchema — 아래 계약 변형에서 `action` 만 뺀 것. */
+export const upsertProductMappingsArgsSchema = upsertProductMappingsInputSchema
+  .strict()
+  .superRefine(refineProductMappingRows);
+
 export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -460,6 +545,13 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     })
     .strict()
     .superRefine(refineRecordUpdate),
+  z
+    .object({
+      action: z.literal("upsert_product_mappings"),
+      ...upsertProductMappingsInputSchema.shape,
+    })
+    .strict()
+    .superRefine(refineProductMappingRows),
 ]);
 
 /**
@@ -563,6 +655,30 @@ const taxInvoiceStatusInputSchema = z
   })
   .strict();
 
+/** `get_order_campaign_mappings` 의 이름 검색 상한 — 출력 상한이라 파이썬 미러가 같은 숫자를 들 필요는 없다. */
+export const MAX_ORDER_CAMPAIGN_MATCHES = 10;
+
+/**
+ * 주문캠페인 하나(또는 이름 검색 결과)와 그 상품 매핑을 읽는다(2026-10-15). 봇이 매핑 변경 기안을
+ * 올리기 전에 지금 값을 보는 조회다. `orderCampaignId` 와 `query`(이름 부분 일치) 중 **정확히
+ * 하나**만 받는다 — 둘 다 주면 어느 쪽을 믿었는지 결과로 알 수 없다.
+ */
+const orderCampaignMappingsInputSchema = z
+  .object({
+    orderCampaignId: opaqueIdSchema.optional(),
+    query: z.string().trim().min(1).max(160).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (Boolean(value.orderCampaignId) === Boolean(value.query)) {
+      context.addIssue({
+        code: "custom",
+        path: ["orderCampaignId"],
+        message: "orderCampaignId 와 query 중 정확히 하나를 넣어야 한다.",
+      });
+    }
+  });
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -576,6 +692,7 @@ const operationInputSchemas = {
   list_work_record_rooms: listWorkRecordRoomsInputSchema,
   get_work_records: workRecordsInputSchema,
   get_tax_invoice_status: taxInvoiceStatusInputSchema,
+  get_order_campaign_mappings: orderCampaignMappingsInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;

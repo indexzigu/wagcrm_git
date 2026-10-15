@@ -224,6 +224,118 @@ describe("ProposalPayloadPreview", () => {
     expect(unknown.textContent).toBe("");
   });
 
+  describe("상품 매핑 등록(upsert_product_mappings)", () => {
+    const base = {
+      orderCampaignId: "oc-1",
+      orderCampaignName: "10월 공구 캠페인",
+      mappings: [
+        { optionName: "새 옵션 A", productName: "새 상품", brandCode: "TC000202", price: 11_000, expectedBrandCode: null, expectedPrice: null },
+        { optionName: "고칠 옵션 B", brandCode: "TC000203", price: 30_000, expectedBrandCode: "TC000201", expectedPrice: 15_000 },
+      ],
+    };
+
+    function bodyRows(container: HTMLElement) {
+      return Array.from(container.querySelectorAll("tbody tr")).map((tr) =>
+        Array.from(tr.querySelectorAll("td")).map((td) => td.textContent),
+      );
+    }
+
+    it("주문캠페인 한 줄 + 표: 새 줄은 「없음(새로 추가)」, 고칠 줄은 지금 → 바꿀 값", () => {
+      const { container } = render(<ProposalPayloadPreview action="upsert_product_mappings" args={base} />);
+      expect(screen.getByText("주문캠페인: 10월 공구 캠페인")).toBeTruthy();
+      expect(Array.from(container.querySelectorAll("th")).map((th) => th.textContent)).toEqual([
+        "옵션명", "상품명", "지금(코드 / 가격)", "바꿀(코드 / 가격)",
+      ]);
+      const rows = bodyRows(container);
+      expect(rows).toEqual([
+        ["새 옵션 A", "새 상품", "없음(새로 추가)", "TC000202 / 11,000원"],
+        ["고칠 옵션 B", "(그대로)", "TC000201 / 15,000원", "TC000203 / 30,000원"],
+      ]);
+    });
+
+    it("상품명을 비우는 줄은 「(비움)」으로 적는다", () => {
+      const { container } = render(
+        <ProposalPayloadPreview
+          action="upsert_product_mappings"
+          args={{
+            ...base,
+            mappings: [{ optionName: "옵션", productName: "", brandCode: "TC1", price: 1_000, expectedBrandCode: "TC0", expectedPrice: 900 }],
+          }}
+        />,
+      );
+      expect(bodyRows(container)[0][1]).toBe("(비움)");
+    });
+
+    it("지금 코드가 빈 문자열이면 「(빈 코드) / 가격」으로 적는다", () => {
+      const { container } = render(
+        <ProposalPayloadPreview
+          action="upsert_product_mappings"
+          args={{
+            ...base,
+            mappings: [{ optionName: "옵션", brandCode: "TC1", price: 1_000, expectedBrandCode: "", expectedPrice: 900 }],
+          }}
+        />,
+      );
+      expect(bodyRows(container)[0][2]).toBe("(빈 코드) / 900원");
+    });
+
+    const AUTO_LINK_NOTICE =
+      "승인하면 화면 저장과 같이 이 캠페인 전체의 판매 딜 자동 연결이 다시 돕니다(기존 연결이 바뀔 수 있음).";
+
+    it("새 줄이 하나라도 있으면 표 위에 「전체 자동 연결이 다시 돈다」 한 줄을 보인다", () => {
+      const { container } = render(<ProposalPayloadPreview action="upsert_product_mappings" args={base} />);
+      const notice = screen.getByText(AUTO_LINK_NOTICE);
+      // 표보다 위에 있다(승인자가 표를 읽기 전에 본다).
+      const table = container.querySelector("table");
+      expect(table).not.toBeNull();
+      expect(notice.compareDocumentPosition(table as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("고칠 줄만 있으면(새 줄 없음) 자동 연결 안내를 보이지 않는다", () => {
+      render(
+        <ProposalPayloadPreview
+          action="upsert_product_mappings"
+          args={{ ...base, mappings: [base.mappings[1]] }}
+        />,
+      );
+      expect(screen.queryByText(AUTO_LINK_NOTICE)).toBeNull();
+    });
+
+    it("메모가 있으면 표 위 한 줄로 보인다", () => {
+      render(<ProposalPayloadPreview action="upsert_product_mappings" args={{ ...base, memo: "제안서 3쪽 기준" }} />);
+      expect(screen.getByText("메모: 제안서 3쪽 기준")).toBeTruthy();
+    });
+
+    it("50줄을 접거나 줄이지 않고 모두 그린다", () => {
+      const mappings = Array.from({ length: 50 }, (_, i) => ({
+        optionName: `옵션 ${i + 1}`,
+        brandCode: `TC${String(i).padStart(6, "0")}`,
+        price: 1_000 + i,
+        expectedBrandCode: null,
+        expectedPrice: null,
+      }));
+      const { container } = render(
+        <ProposalPayloadPreview action="upsert_product_mappings" args={{ ...base, mappings }} />,
+      );
+      expect(container.querySelectorAll("tbody tr")).toHaveLength(50);
+      expect(screen.getByText("옵션 50")).toBeTruthy();
+      expect(container.textContent).not.toMatch(/외 \d+줄/);
+    });
+
+    it("모양이 깨진 기안(줄이 없음·줄이 객체가 아님)은 그리지 않고 죽지도 않는다", () => {
+      for (const args of [
+        { ...base, mappings: [] },
+        { ...base, mappings: "x" },
+        { ...base, mappings: [null] },
+        { ...base, mappings: [{ optionName: "옵션" }] },
+      ]) {
+        const { container, unmount } = render(<ProposalPayloadPreview action="upsert_product_mappings" args={args} />);
+        expect(container.textContent).toBe("");
+        unmount();
+      }
+    });
+  });
+
   it("미리보기가 없는 action 은 아무것도 그리지 않는다(기존 표시 유지)", () => {
     const { container } = render(
       <ProposalPayloadPreview

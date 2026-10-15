@@ -6,6 +6,10 @@ import {
   AgentJobPayloadSchema,
   AgentJobRecordEntityTypeSchema,
   AgentJobResultSchema,
+  MAX_AGENT_JOB_JSON_BYTES,
+  MAX_MAPPING_OPTION_NAME_CHARS,
+  MAX_MAPPING_PRODUCT_NAME_CHARS,
+  MAX_PRODUCT_MAPPING_ROWS,
   MAX_RECORD_UPDATE_FIELDS,
   AgentJobSettlementAmountFieldSchema,
   MAX_RESULT_SUMMARY_CHARS,
@@ -15,6 +19,7 @@ import {
   createAgentJobIdempotencyKey,
   isAgentJobTransitionAllowed,
   serializeAgentJobJson,
+  type AgentJobPayload,
 } from "../contracts";
 
 const payload = {
@@ -127,7 +132,7 @@ describe("get_settlement_report input (spec §3-E)", () => {
   } as const;
 
   // 파이썬 미러가 글자 순서를 대조하므로 새 operation 은 끝에만 붙는다 — 정산 리포트 **뒤**에는
-  // Phase 3 ②⑧(2026-10-09)의 세 읽기와 세금계산서 대조(2026-10-14)만 있어야 한다.
+  // Phase 3 ②⑧(2026-10-09)의 세 읽기, 세금계산서 대조(2026-10-14), 주문캠페인 매핑 조회(2026-10-15)만 있어야 한다.
   it("keeps its place in the enum; only later operations are appended after it (python mirror compares literal order)", () => {
     const options = AgentJobOperationSchema.options;
     expect(options.slice(options.indexOf("get_settlement_report"))).toEqual([
@@ -136,6 +141,7 @@ describe("get_settlement_report input (spec §3-E)", () => {
       "list_work_record_rooms",
       "get_work_records",
       "get_tax_invoice_status",
+      "get_order_campaign_mappings",
     ]);
   });
 
@@ -179,7 +185,7 @@ describe("create_action_proposal — update_settlement_amount (정산 금액 수
 
   it("sits right before update_record in the union (new actions are appended at the end)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-2)).toEqual(["update_settlement_amount", "update_record"]);
+    expect(actions.slice(-3)).toEqual(["update_settlement_amount", "update_record", "upsert_product_mappings"]);
   });
 
   it("field enum matches the screen-label table key for key, in order", () => {
@@ -373,9 +379,10 @@ describe("get_tax_invoice_status input (2026-10-14)", () => {
   const parse = (input: unknown) =>
     AgentJobPayloadSchema.safeParse({ ...base, operation: "get_tax_invoice_status", input }).success;
 
-  it("is the last operation in the enum", () => {
+  // 2026-10-15 부터 끝자리는 get_order_campaign_mappings 다 — 이 자리는 그 바로 앞으로 고정된다.
+  it("keeps its place right after get_work_records", () => {
     const options = AgentJobOperationSchema.options;
-    expect(options[options.length - 1]).toBe("get_tax_invoice_status");
+    expect(options.indexOf("get_tax_invoice_status")).toBe(options.indexOf("get_work_records") + 1);
   });
 
   it.each([[{}], [{ month: "2026-10" }], [{ month: "2026-01" }], [{ month: "2025-12" }]])("accepts %j", (input) => {
@@ -412,9 +419,9 @@ describe("create_action_proposal — update_record (기록 수정)", () => {
   } as const;
   const accepts = (input: Record<string, unknown>) => AgentJobPayloadSchema.safeParse({ ...base, input }).success;
 
-  it("is the last action literal in the union (python mirror compares literal order)", () => {
+  it("keeps its place in the union; only upsert_product_mappings is appended after it (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions[actions.length - 1]).toBe("update_record");
+    expect(actions.slice(actions.indexOf("update_record"))).toEqual(["update_record", "upsert_product_mappings"]);
   });
 
   it("entity enum matches the screen-label table key for key, in order", () => {
@@ -461,5 +468,152 @@ describe("create_action_proposal — update_record (기록 수정)", () => {
     ["빈 메모", { ...valid, memo: "   " }],
   ])("rejects %s", (_label, input) => {
     expect(accepts(input as Record<string, unknown>)).toBe(false);
+  });
+});
+
+describe("get_order_campaign_mappings input (2026-10-15)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+  const parse = (input: unknown) =>
+    AgentJobPayloadSchema.safeParse({ ...base, operation: "get_order_campaign_mappings", input }).success;
+
+  it("appends get_order_campaign_mappings at the end of the operation enum", () => {
+    expect(AgentJobOperationSchema.options.at(-1)).toBe("get_order_campaign_mappings");
+  });
+
+  it("requires exactly one of orderCampaignId / query", () => {
+    expect(parse({})).toBe(false);
+    expect(parse({ orderCampaignId: "c1", query: "샘플 공구" })).toBe(false);
+    expect(parse({ query: "샘플 공구" })).toBe(true);
+    expect(parse({ orderCampaignId: "c1" })).toBe(true);
+  });
+
+  it.each([
+    ["blank query", { query: "   " }],
+    ["query over 160 chars", { query: "가".repeat(161) }],
+    ["blank id", { orderCampaignId: "  " }],
+    ["id over 128 chars", { orderCampaignId: "x".repeat(129) }],
+    ["numeric id", { orderCampaignId: 1 }],
+    ["unknown key", { query: "샘플 공구", sellerName: "x" }],
+  ])("rejects %s", (_label, input) => {
+    expect(parse(input)).toBe(false);
+  });
+
+  it("accepts a query of exactly 160 chars", () => {
+    expect(parse({ query: "가".repeat(160) })).toBe(true);
+  });
+});
+
+describe("create_action_proposal — upsert_product_mappings (상품 매핑 등록·수정, 2026-10-15)", () => {
+  const row = {
+    optionName: "샘플 상품 A 3개",
+    brandCode: "TC000102",
+    price: 20000,
+    expectedBrandCode: null,
+    expectedPrice: null,
+  };
+  const base = {
+    action: "upsert_product_mappings",
+    orderCampaignId: "cmtestordercampaign000000001",
+    orderCampaignName: "[샘플 공구] 테스트 기획전",
+    mappings: [row],
+  };
+  // 이 파일에는 봉투 헬퍼가 없어서 위 describe 들이 쓰는 봉투 리터럴을 함수로 뽑았다.
+  const makeEnvelope = (operation: AgentJobPayload["operation"], input: unknown) => ({
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    operation,
+    input,
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  });
+  const envelopeBytes = (input: unknown) =>
+    Buffer.byteLength(JSON.stringify(makeEnvelope("create_action_proposal", input)), "utf8");
+  const accepts = (input: unknown) => createActionProposalInputSchema.safeParse(input).success;
+
+  it("is the last action literal in the union (python mirror compares literal order)", () => {
+    const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
+    expect(actions.at(-1)).toBe("upsert_product_mappings");
+  });
+
+  it("accepts a new row (also through the AgentJob envelope: an array of scalar objects is depth 2)", () => {
+    expect(accepts(base)).toBe(true);
+    expect(AgentJobPayloadSchema.safeParse(makeEnvelope("create_action_proposal", base)).success).toBe(true);
+  });
+
+  it("accepts an update row whose expected brandCode is an empty string (the screen allows blank codes)", () => {
+    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "", expectedPrice: 0 }] })).toBe(true);
+  });
+
+  it("rejects duplicate optionName within one proposal (after trim + inner-space collapse)", () => {
+    const dup = { ...base, mappings: [row, { ...row, optionName: " 샘플 상품 A  3개 " }] };
+    expect(accepts(dup)).toBe(false);
+  });
+
+  it("rejects an NFC/NFD pair of the same optionName within one proposal as a duplicate", () => {
+    const nfc = { ...row, optionName: "샘플 상품 B 1개".normalize("NFC") };
+    const nfd = { ...row, optionName: "샘플 상품 B 1개".normalize("NFD") };
+    expect(nfc.optionName).not.toBe(nfd.optionName);
+    expect(accepts({ ...base, mappings: [nfc, nfd] })).toBe(false);
+  });
+
+  it("rejects half-null expected", () => {
+    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "TC0" }] })).toBe(false);
+    expect(accepts({ ...base, mappings: [{ ...row, expectedPrice: 100 }] })).toBe(false);
+  });
+
+  it.each([
+    ["빈 상품코드", { ...base, mappings: [{ ...row, brandCode: "  " }] }],
+    ["음수 가격", { ...base, mappings: [{ ...row, price: -1 }] }],
+    ["소수 가격", { ...base, mappings: [{ ...row, price: 1.5 }] }],
+    [
+      `${MAX_PRODUCT_MAPPING_ROWS + 1}줄`,
+      {
+        ...base,
+        mappings: Array.from({ length: MAX_PRODUCT_MAPPING_ROWS + 1 }, (_, i) => ({ ...row, optionName: `옵션 ${i}` })),
+      },
+    ],
+    ["빈 줄 목록", { ...base, mappings: [] }],
+    ["빈 캠페인 이름", { ...base, orderCampaignName: "   " }],
+    ["모르는 줄 칸", { ...base, mappings: [{ ...row, campaignDealId: "cd-1" }] }],
+    ["모르는 칸", { ...base, extra: "x" }],
+  ])("rejects %s", (_label, input) => {
+    expect(accepts(input)).toBe(false);
+  });
+
+  it("fits 50 realistic rows (22-char option, 12-char product, expected filled) in the 16KB envelope", () => {
+    const real = {
+      ...base,
+      mappings: Array.from({ length: 50 }, (_, i) => ({
+        optionName: `샘플 상품 A 3개 3개월분 옵션 ${String(i).padStart(2, "0")}`.slice(0, 22),
+        productName: "샘플 공구 상품 A 세트",
+        brandCode: "TC000102",
+        price: 20000,
+        expectedBrandCode: "TC000101",
+        expectedPrice: 15000,
+      })),
+    };
+    expect(accepts(real)).toBe(true);
+    expect(envelopeBytes(real)).toBeLessThan(MAX_AGENT_JOB_JSON_BYTES);
+  });
+
+  // 계약 스키마는 바이트를 재지 않는다 — 16KB 상한은 큐 저장 직전 `serializeAgentJobJson` 이 건다
+  // (`agentJobRepository`). 그래서 스키마는 통과하고 저장이 거절되는 것을 함께 고정한다.
+  it("rejects 50 max-length rows at the byte cap (the bot must split)", () => {
+    const big = {
+      ...base,
+      mappings: Array.from({ length: 50 }, (_, i) => ({
+        ...row,
+        optionName: `${"가".repeat(MAX_MAPPING_OPTION_NAME_CHARS - 3)}${String(i).padStart(3, "0")}`,
+        productName: "나".repeat(MAX_MAPPING_PRODUCT_NAME_CHARS),
+      })),
+    };
+    expect(envelopeBytes(big)).toBeGreaterThan(MAX_AGENT_JOB_JSON_BYTES);
+    const parsed = AgentJobPayloadSchema.parse(makeEnvelope("create_action_proposal", big));
+    expect(() => serializeAgentJobJson(parsed, false)).toThrow(/exceeds/);
   });
 });

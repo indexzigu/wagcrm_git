@@ -1,5 +1,7 @@
 /**
- * WRITE 액션 **커밋 이후** 후속 처리 집행기 — 캐시 무효화 + 구글 캘린더 재동기화.
+ * WRITE 액션 **커밋 이후** 후속 처리 집행기 — 캐시 무효화 + 구글 캘린더 재동기화 + 주문캠페인 판매 딜
+ * 자동 연결(`autoMapOrderCampaign`, 명세가 `autoMapOrderCampaignId` 를 줄 때만 · 지금은 새 줄을 만든 상품
+ * 매핑 기안뿐). 자동 연결은 캠페인 편집 화면 저장과 같은 전체 재채점이라 기존 줄의 연결도 바꿀 수 있다.
  *
  * ## 왜 별도 모듈인가
  *
@@ -32,6 +34,23 @@ export function applyWriteActionEffects(action: string, result: WriteActionResul
     // 무효화는 응답 전에 동기로 — 정본 경로(`revalidateCampaignCaches()`)와 같은 시점이다.
     if (spec.revalidate.length > 0) {
       revalidateCrmTags(spec.revalidate);
+    }
+
+    // 주문캠페인 매핑 저장 뒤 판매 딜 자동 연결 — 화면 저장(캠페인 PUT 라우트)과 같은 호출·같은
+    // fire-and-forget·같은 로그다. 실패해도 이미 커밋된 쓰기를 실패로 만들지 않는다.
+    // ⚠️ 두 모듈은 **동적 import** 다 — `order-converter/prisma` 가 import 시점에 `getPrisma()` 를
+    // 실행하므로 정적으로 걸면 이 집행기를 import 하는 모든 곳(승인 라우트·크론·테스트)이 이 액션과
+    // 무관하게 Prisma 클라이언트를 즉시 만든다. 이 액션이 실제로 돌 때만 로드한다.
+    const orderCampaignId = spec.autoMapOrderCampaignId;
+    if (orderCampaignId) {
+      Promise.all([
+        import("@/lib/order-converter/mapping-service"),
+        import("@/app/order-converter/api/campaigns/campaigns-handler"),
+      ])
+        .then(([{ autoMapOrderCampaign }, { fetchAndSyncCampaigns }]) =>
+          autoMapOrderCampaign(orderCampaignId).then(() => fetchAndSyncCampaigns(false))
+        )
+        .catch(e => console.error("Auto-mapping or sync failed:", e));
     }
 
     // 캘린더는 외부 IO 라 `after()` 로 응답 밖으로 뺀다. 실패해도 쓰기를 막지 않는다.

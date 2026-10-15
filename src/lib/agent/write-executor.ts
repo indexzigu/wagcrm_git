@@ -24,6 +24,7 @@ export type { CreatePartnerArgs } from "./write-actions/create-partner";
 export type { CreateDealArgs } from "./write-actions/create-deal";
 export type { UpdateSettlementAmountArgs } from "./write-actions/update-settlement-amount";
 export type { UpdateRecordArgs } from "./write-actions/update-record";
+export type { UpsertProductMappingsArgs } from "./write-actions/upsert-product-mappings";
 export type { WriteActionResult, WriteActionEffectSpec } from "./write-actions/types";
 export {
   WRITE_ACTIONS,

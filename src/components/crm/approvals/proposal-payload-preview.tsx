@@ -301,6 +301,105 @@ function UpdateRecordPreview({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+/** 코드 한 칸. 빈 문자열은 「코드가 비어 있다」는 값이라 빈칸으로 두지 않고 말로 적는다. */
+function mappingCodeText(code: string): string {
+  return code === "" ? "(빈 코드)" : code;
+}
+
+interface MappingRow {
+  optionName: string;
+  productName: string | null;
+  nextCode: string;
+  nextPrice: number;
+  /** 새 줄이면 null. 고칠 줄이면 기안자가 본 지금 값. */
+  current: { code: string | null; price: number | null } | null;
+}
+
+/** 줄 하나를 읽는다. 모양이 깨졌으면 null — 하나라도 깨지면 표 전체를 그리지 않는다(아래). */
+function readMappingRow(raw: unknown): MappingRow | null {
+  const row = asRecord(raw);
+  if (!row) return null;
+  const optionName = asText(row.optionName);
+  const nextCode = typeof row.brandCode === "string" ? row.brandCode : null;
+  const nextPrice = typeof row.price === "number" && Number.isFinite(row.price) ? row.price : null;
+  if (optionName === null || nextCode === null || nextPrice === null) return null;
+  const expectedCode = typeof row.expectedBrandCode === "string" ? row.expectedBrandCode : null;
+  const expectedPrice =
+    typeof row.expectedPrice === "number" && Number.isFinite(row.expectedPrice) ? row.expectedPrice : null;
+  return {
+    optionName,
+    // 빈 문자열은 「비운다」는 값이라 asText 로 걸러 버리지 않는다.
+    productName: typeof row.productName === "string" ? row.productName : null,
+    nextCode,
+    nextPrice,
+    current: expectedCode === null && expectedPrice === null ? null : { code: expectedCode, price: expectedPrice },
+  };
+}
+
+function mappingProductNameText(row: MappingRow): string {
+  if (row.current === null) {
+    // 새 줄: 지금 값이 없으니 비움/그대로 구분이 의미 없다.
+    return row.productName !== null && row.productName.trim() !== "" ? row.productName : "(없음)";
+  }
+  // 고칠 줄: 기안에는 지금 상품명이 없다. 새 값만 적고, 비우는 것과 그대로 두는 것은 말로 가른다.
+  if (row.productName === null) return "(그대로)";
+  return row.productName === "" ? "(비움)" : row.productName;
+}
+
+/**
+ * 상품 매핑 등록·수정 — 옵션 줄마다 **지금 → 바꿀** 코드·가격. 코드(`brandCode`)가 틀리면 주문 변환이
+ * 잘못된 상품으로 나가므로 모든 줄을 접지 않고 그린다(머리 주석). 상품명은 기안에 「지금 값」이 없어
+ * 새 값만 보인다.
+ */
+function UpsertProductMappingsPreview({ args }: { args: Record<string, unknown> }) {
+  if (!Array.isArray(args.mappings) || args.mappings.length === 0) return null;
+  const rows = args.mappings.map(readMappingRow);
+  if (rows.some((row) => row === null)) return null;
+  const mappings = rows as MappingRow[];
+  const campaign = asText(args.orderCampaignName) ?? asText(args.orderCampaignId);
+  const memo = asText(args.memo);
+  // 새 줄이 있으면 승인 뒤 캠페인 전체 자동 연결이 돈다(실행기 effects · 화면 저장과 같은 재채점) —
+  // 새 줄만이 아니라 기존 줄 연결도 바뀔 수 있으니 승인 전에 알린다. 고치기만 하면 돌지 않는다.
+  const hasNewRow = mappings.some((row) => row.current === null);
+  return (
+    <>
+      {campaign && <p className="font-medium text-foreground">주문캠페인: {campaign}</p>}
+      {memo && <p className="text-muted-foreground">메모: {memo}</p>}
+      {hasNewRow && (
+        <p className="text-muted-foreground">
+          승인하면 화면 저장과 같이 이 캠페인 전체의 판매 딜 자동 연결이 다시 돕니다(기존 연결이 바뀔 수 있음).
+        </p>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left tabular-nums">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="py-1 pr-3 font-normal">옵션명</th>
+              <th className="py-1 pr-3 font-normal">상품명</th>
+              <th className="py-1 pr-3 font-normal">지금(코드 / 가격)</th>
+              <th className="py-1 font-normal">바꿀(코드 / 가격)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {mappings.map((row, index) => (
+              <tr key={index} className="align-top text-foreground">
+                <td className="py-1 pr-3 break-words">{row.optionName}</td>
+                <td className="py-1 pr-3 break-words">{mappingProductNameText(row)}</td>
+                <td className="py-1 pr-3 break-words">
+                  {row.current === null
+                    ? "없음(새로 추가)"
+                    : `${row.current.code === null ? "—" : mappingCodeText(row.current.code)} / ${asMoney(row.current.price) ?? "—"}`}
+                </td>
+                <td className="py-1 break-words">{`${mappingCodeText(row.nextCode)} / ${asMoney(row.nextPrice)}`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 /**
  * 저장될 값의 미리보기. 미리보기를 가진 action 만 그리고, 나머지는 `null` 을 돌려
  * 기존 표시(제목 한 줄)를 그대로 둔다.
@@ -322,6 +421,8 @@ export function ProposalPayloadPreview({
       <UpdateSettlementAmountPreview args={args} />
     ) : action === "update_record" ? (
       <UpdateRecordPreview args={args} />
+    ) : action === "upsert_product_mappings" ? (
+      <UpsertProductMappingsPreview args={args} />
     ) : null;
   if (!body) return null;
   return <div className="space-y-3 text-xs">{body}</div>;

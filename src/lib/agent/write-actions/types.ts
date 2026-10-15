@@ -15,6 +15,12 @@ export type WriteActionResult = {
   refType: string;
   refId: string;
   summary: string;
+  /**
+   * 이 실행이 **새로 만든** 행 수. 후속 처리(`effects`)가 「새 행이 있을 때만」 할 일을 고를 때 읽는다
+   * (지금은 `upsert_product_mappings` 의 판매 딜 자동 연결). 선택 칸이라 이를 안 쓰는 액션은 싣지 않는다 —
+   * 그 액션들의 `executionResult` 모양은 그대로다.
+   */
+  createdCount?: number;
 };
 
 export type WriteActionHandler<TArgs> = (
@@ -41,6 +47,12 @@ export type WriteActionEffectSpec = {
   readonly revalidate: readonly CrmCacheTag[];
   /** 구글 캘린더를 재동기화할 캠페인 id. null = 캘린더에 실리는 값이 바뀌지 않는다. */
   readonly calendarCampaignId: string | null;
+  /**
+   * 커밋 뒤 판매 딜 자동 연결(`autoMapOrderCampaign`)을 돌릴 **주문캠페인** id. 없으면 하지 않는다.
+   * 선택 칸이라 이 기능이 필요 없는 기존 액션은 건드리지 않는다. 집행은 화면 저장(캠페인 PUT
+   * 라우트)과 같은 fire-and-forget — `write-action-effects.ts`.
+   */
+  readonly autoMapOrderCampaignId?: string;
 };
 
 export type WriteActionDefinition<TArgs = any> = {

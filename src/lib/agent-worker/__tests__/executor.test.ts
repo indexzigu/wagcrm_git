@@ -17,6 +17,7 @@ const dealFindUniqueMock = vi.fn();
 const campaignFindUniqueMock = vi.fn();
 const partnerFindUniqueMock = vi.fn();
 const sellerFindUniqueMock = vi.fn();
+const orderCampaignFindUniqueMock = vi.fn();
 const snapshotFindManyMock = vi.fn();
 const transactionMock = vi.fn();
 const settlementMock = vi.fn();
@@ -28,6 +29,7 @@ const tx = {
   salesCampaign: { findUnique: campaignFindUniqueMock },
   partner: { findUnique: partnerFindUniqueMock },
   seller: { findUnique: sellerFindUniqueMock },
+  orderCampaign: { findUnique: orderCampaignFindUniqueMock },
 };
 
 vi.mock("@/lib/agent/tools/pipeline-status", async (importOriginal) => {
@@ -184,6 +186,7 @@ beforeEach(() => {
     campaignFindUniqueMock,
     partnerFindUniqueMock,
     sellerFindUniqueMock,
+    orderCampaignFindUniqueMock,
     snapshotFindManyMock,
     transactionMock,
     settlementMock,
@@ -1065,6 +1068,94 @@ describe("create_action_proposal", () => {
     expect(dealFindUniqueMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "deal-x" } }));
     expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "TARGET_NOT_FOUND" });
     expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  describe("upsert_product_mappings (주문캠페인 상품 매핑, 2026-10-15)", () => {
+    const CAMPAIGN_ID = "cmtestordercampaign000000001";
+    const CAMPAIGN_NAME = "[샘플 공구] 테스트 기획전";
+    const rows = [
+      { optionName: "샘플 상품 A 3개", brandCode: "TC000102", price: 20000, expectedBrandCode: "TC000101", expectedPrice: 15000 },
+      { optionName: "샘플 상품 B 1개", brandCode: "TC000103", price: 12000, expectedBrandCode: null, expectedPrice: null },
+      { optionName: "샘플 상품 C 2개", brandCode: "TC0099", price: 8000, expectedBrandCode: null, expectedPrice: null },
+      { optionName: "샘플 상품 D 1개", brandCode: "TC0100", price: 13000, expectedBrandCode: null, expectedPrice: null },
+      { optionName: "샘플 상품 D 2개", brandCode: "TC0101", price: 21000, expectedBrandCode: null, expectedPrice: null },
+    ];
+    const input = {
+      action: "upsert_product_mappings",
+      orderCampaignId: CAMPAIGN_ID,
+      orderCampaignName: CAMPAIGN_NAME,
+      mappings: rows,
+    } as const;
+
+    it("does not create a proposal for an order campaign id that does not exist", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue(null);
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(orderCampaignFindUniqueMock).toHaveBeenCalledWith({ where: { id: CAMPAIGN_ID }, select: { id: true, name: true } });
+      expect(outcome).toMatchObject({
+        kind: "terminal",
+        toStatus: "FAILED_FINAL",
+        errorClass: "TARGET_NOT_FOUND",
+        result: { resultSummary: "create_action_proposal failed: TARGET_NOT_FOUND" },
+      });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
+    });
+
+    it("does not create a proposal when the campaign name differs, and tells the bot it is a name mismatch (not a missing campaign)", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: "[샘플 공구] 다른 기획전" });
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({
+        kind: "terminal",
+        toStatus: "FAILED_FINAL",
+        errorClass: "TARGET_NOT_FOUND",
+        result: {
+          resultSummary:
+            "create_action_proposal failed: TARGET_NOT_FOUND (주문캠페인 이름이 지금 이름과 다릅니다. 조회로 이름을 다시 읽어 주세요.)",
+        },
+      });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
+    });
+
+    it("creates the proposal when the stored campaign name is NFD (Mac input) and the proposed name is NFC", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME.normalize("NFD") });
+      proposalCreateMock.mockResolvedValue({ id: "proposal-mapping-nfd" });
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL", result: { actionProposalId: "proposal-mapping-nfd" } });
+      expect(proposalCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("still reports a name mismatch for a genuinely different name even when it is NFD", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: "[샘플 공구] 다른 기획전".normalize("NFD") });
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "TARGET_NOT_FOUND" });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
+    });
+
+    it("creates a PENDING_APPROVAL crm_mutation proposal with no target and the campaign name in the title", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      proposalCreateMock.mockResolvedValue({ id: "proposal-mapping" });
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+
+      const title =
+        `주문캠페인 "${CAMPAIGN_NAME}" 상품 매핑 5줄: ` +
+        "「샘플 상품 A 3개」→TC000102/20,000원 · 「샘플 상품 B 1개」→TC000103/12,000원 · 「샘플 상품 C 2개」→TC0099/8,000원 외 2줄";
+      expect(proposalCreateMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          requestType: "crm_mutation",
+          kind: "WRITE",
+          status: "PENDING_APPROVAL",
+          reviewRequired: true,
+          title,
+          payload: {
+            action: "upsert_product_mappings",
+            args: { orderCampaignId: CAMPAIGN_ID, orderCampaignName: CAMPAIGN_NAME, mappings: rows },
+          },
+          targetEntityType: null,
+          targetEntityId: null,
+          campaignId: null,
+        }),
+      });
+      expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL", result: { actionProposalId: "proposal-mapping" } });
+    });
   });
 
   it("still refuses a missing target for all three pre-existing actions (regression: nullable targets must not loosen them)", async () => {

@@ -38,6 +38,7 @@ export const ACTION_LABELS: Record<string, string> = {
   create_deal: "딜 등록",
   update_settlement_amount: "정산 금액 수정",
   update_record: "기록 수정",
+  upsert_product_mappings: "상품 매핑 등록",
 };
 
 // confirm_settlement만 승인 시 확인 다이얼로그를 거친다(§1-3, critic Q4 — 금전 최고위험 액션).
