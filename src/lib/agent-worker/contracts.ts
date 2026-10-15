@@ -427,6 +427,14 @@ export function normalizeMappingOptionName(value: string): string {
   return value.normalize("NFC").trim().replace(/\s+/g, " ");
 }
 
+/**
+ * 주문캠페인 이름 대조 — 양쪽을 NFC 로 맞추고 앞뒤 공백을 뗀 뒤 같은지 본다. 맥 입력 한글(NFD)로 저장된
+ * 이름과 봇이 되읽어 보낸 NFC 이름이 눈에는 같은데 영원히 어긋나는 것을 막는다. 비교만 하고 저장값은 건드리지 않는다.
+ */
+export function sameOrderCampaignName(stored: string, proposed: string): boolean {
+  return stored.normalize("NFC").trim() === proposed.normalize("NFC").trim();
+}
+
 export function refineProductMappingRows(
   value: z.infer<typeof upsertProductMappingsInputSchema>,
   context: z.RefinementCtx,

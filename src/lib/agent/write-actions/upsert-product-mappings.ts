@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { normalizeMappingOptionName, upsertProductMappingsArgsSchema } from "@/lib/agent-worker/contracts";
+import { normalizeMappingOptionName, sameOrderCampaignName, upsertProductMappingsArgsSchema } from "@/lib/agent-worker/contracts";
 import { planProductMappingUpsert } from "@/lib/order-converter/product-mapping-upsert";
 import { isSqliteDatabaseUrl } from "@/lib/prisma-client";
 import { isAutomatedActor } from "./update-settlement-amount";
@@ -70,7 +70,7 @@ async function handleUpsertProductMappings(
   if (!campaign) {
     throw new Error(`주문캠페인(${args.orderCampaignId})을 찾을 수 없습니다. 이미 삭제되었거나 잘못된 대상입니다.`);
   }
-  if (campaign.name.trim() !== args.orderCampaignName) {
+  if (!sameOrderCampaignName(campaign.name, args.orderCampaignName)) {
     throw new Error(`주문캠페인 이름이 기안 때와 다릅니다(지금 「${campaign.name}」)`);
   }
 

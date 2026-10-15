@@ -137,6 +137,19 @@ describe("upsert_product_mappings 실행기", () => {
     expectNoWrites();
   });
 
+  it("does not refuse when the stored campaign name is NFD and the proposed name is NFC", async () => {
+    campaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME.normalize("NFD") });
+    await expect(executeWriteAction("upsert_product_mappings", args, "owner", tx)).resolves.toBeDefined();
+  });
+
+  it("still refuses a genuinely different name even when it is NFD", async () => {
+    campaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: "[샘플 공구] 다른 기획전".normalize("NFD") });
+    await expect(executeWriteAction("upsert_product_mappings", args, "owner", tx)).rejects.toThrow(
+      /주문캠페인 이름이 기안 때와 다릅니다/,
+    );
+    expectNoWrites();
+  });
+
   it("fails cleanly when the order campaign is gone", async () => {
     campaignFindUniqueMock.mockResolvedValue(null);
     await expect(executeWriteAction("upsert_product_mappings", args, "owner", tx)).rejects.toThrow(

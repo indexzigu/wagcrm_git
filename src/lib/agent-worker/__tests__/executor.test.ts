@@ -1115,6 +1115,21 @@ describe("create_action_proposal", () => {
       expect(proposalCreateMock).not.toHaveBeenCalled();
     });
 
+    it("creates the proposal when the stored campaign name is NFD (Mac input) and the proposed name is NFC", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME.normalize("NFD") });
+      proposalCreateMock.mockResolvedValue({ id: "proposal-mapping-nfd" });
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL", result: { actionProposalId: "proposal-mapping-nfd" } });
+      expect(proposalCreateMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("still reports a name mismatch for a genuinely different name even when it is NFD", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: "[샘플 공구] 다른 기획전".normalize("NFD") });
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "TARGET_NOT_FOUND" });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
+    });
+
     it("creates a PENDING_APPROVAL crm_mutation proposal with no target and the campaign name in the title", async () => {
       orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
       proposalCreateMock.mockResolvedValue({ id: "proposal-mapping" });

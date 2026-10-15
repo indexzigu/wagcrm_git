@@ -54,6 +54,7 @@ import {
   MAX_EVIDENCE_REFS,
   ROOM_KEY_PATTERN,
   MAX_RESULT_SUMMARY_CHARS,
+  sameOrderCampaignName,
   type AgentJobPayload,
   type AgentJobResult,
   type AgentJobRoute,
@@ -1103,7 +1104,7 @@ async function proposalSubjectResolves(intent: WriteIntent, client: ProposalTx):
     select: { id: true, name: true },
   });
   if (campaign === null) return "NOT_FOUND";
-  return campaign.name.trim() === orderCampaignName ? "RESOLVES" : "NAME_MISMATCH";
+  return sameOrderCampaignName(campaign.name, orderCampaignName) ? "RESOLVES" : "NAME_MISMATCH";
 }
 
 function assertNotAborted(signal: AbortSignal): void {
