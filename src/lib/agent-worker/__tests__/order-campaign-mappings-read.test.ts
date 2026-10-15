@@ -17,6 +17,7 @@ const { m, fakeClient } = vi.hoisted(() => {
     orderCampaignFindMany: vi.fn(),
     productMappingFindMany: vi.fn(),
     salesCampaignFindMany: vi.fn(),
+    snapshotFindMany: vi.fn(),
     proposalCreate: vi.fn(),
     proposalEventCreate: vi.fn(),
   };
@@ -24,6 +25,7 @@ const { m, fakeClient } = vi.hoisted(() => {
     orderCampaign: { findMany: (args: unknown) => m.orderCampaignFindMany(args) },
     productMapping: { findMany: (args: unknown) => m.productMappingFindMany(args) },
     salesCampaign: { findMany: (args: unknown) => m.salesCampaignFindMany(args) },
+    naverOrderSnapshot: { findMany: (args: unknown) => m.snapshotFindMany(args) },
   };
   return { m, fakeClient };
 });
@@ -42,7 +44,7 @@ vi.mock("@/lib/prisma-client", () => ({ isSqliteDatabaseUrl: () => false }));
 
 import { executeAgentJob, type ExecutionDeps } from "../executor";
 import { MAX_ORDER_CAMPAIGN_MATCHES, MAX_RESULT_SUMMARY_CHARS } from "../contracts";
-import { readOrderCampaignMappings } from "../order-campaign-mappings";
+import { MAX_STORE_OPTIONS_PER_CAMPAIGN, readOrderCampaignMappings } from "../order-campaign-mappings";
 
 const client = fakeClient as unknown as PrismaClient;
 const NOW = new Date("2026-10-15T03:00:00.000Z");
@@ -115,11 +117,13 @@ beforeEach(() => {
   m.orderCampaignFindMany.mockReset();
   m.productMappingFindMany.mockReset();
   m.salesCampaignFindMany.mockReset();
+  m.snapshotFindMany.mockReset();
   m.proposalCreate.mockReset();
   m.proposalEventCreate.mockReset();
   m.orderCampaignFindMany.mockResolvedValue([]);
   m.productMappingFindMany.mockResolvedValue([]);
   m.salesCampaignFindMany.mockResolvedValue([]);
+  m.snapshotFindMany.mockResolvedValue([]);
   m.proposalCreate.mockResolvedValue({ id: "read-1" });
   m.proposalEventCreate.mockResolvedValue({});
 });
@@ -154,6 +158,8 @@ describe("readOrderCampaignMappings", () => {
           startDate: "2026-10-01T00:00:00.000Z",
           endDate: "2026-10-31T00:00:00.000Z",
           salesCampaignIds: [],
+          storeOptions: [],
+          storeOptionsTruncated: false,
           mappings: [
             { productName: "가짜크림", optionName: "1개", brandCode: "FAKE-001", price: 19_900, linkedToDeal: false },
             { productName: "가짜크림", optionName: "2개", brandCode: "FAKE-002", price: 35_000, linkedToDeal: false },
@@ -232,9 +238,9 @@ describe("readOrderCampaignMappings", () => {
       mapping({ id: "pm-2", campaignId: "oc-2", productName: "둘째크림" }),
     ]);
     m.salesCampaignFindMany.mockResolvedValue([
-      { id: "sc-2", orderCampaignId: "oc-1" },
-      { id: "sc-9", orderCampaignId: "oc-2" },
-      { id: "sc-1", orderCampaignId: "oc-1" },
+      { id: "sc-2", orderCampaignId: "oc-1", startDate: new Date("2026-10-01T00:00:00.000Z") },
+      { id: "sc-9", orderCampaignId: "oc-2", startDate: new Date("2026-10-01T00:00:00.000Z") },
+      { id: "sc-1", orderCampaignId: "oc-1", startDate: new Date("2026-10-01T00:00:00.000Z") },
     ]);
 
     const result = await readOrderCampaignMappings({ query: "가짜" }, client);
@@ -265,13 +271,170 @@ describe("readOrderCampaignMappings", () => {
     expect(grantedColumns("OrderCampaign")).toEqual(expect.arrayContaining(campaignColumns));
     expect(grantedColumns("ProductMapping")).toEqual(expect.arrayContaining(mappingColumns));
     expect(campaignColumns).not.toContain("toEmail");
-    expect(salesColumns.sort()).toEqual(["id", "orderCampaignId"]);
+    expect(salesColumns.sort()).toEqual(["id", "orderCampaignId", "startDate"]);
   });
 
   it("refuses an input with neither or both selectors (the contract already does; this is the second gate)", async () => {
     await expect(readOrderCampaignMappings({}, client)).rejects.toThrow();
     await expect(readOrderCampaignMappings({ orderCampaignId: "oc-1", query: "가짜" }, client)).rejects.toThrow();
     expect(m.orderCampaignFindMany).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// storeOptions — 스토어 실제 옵션명(NaverOrderSnapshot.dailyAggregate 품목, 2026-10-16)
+// ---------------------------------------------------------------------------
+
+type ItemFixture = { name: string; quantity: number };
+/** dailyAggregate v1 한 행 — 리프의 품목만 의미 있게 채운다. 이름은 전부 가짜다. */
+function aggregateRow(
+  snapshotDate: string,
+  leaves: Record<string, ItemFixture[]>,
+  campaignIds: string[] = Object.keys(leaves),
+) {
+  const day: Record<string, unknown> = {};
+  for (const [salesCampaignId, items] of Object.entries(leaves)) {
+    day[salesCampaignId] = {
+      orderKeys: [],
+      validLines: items.length,
+      quantity: items.reduce((sum, item) => sum + item.quantity, 0),
+      revenue: 0,
+      statusBreakdown: { newOrderBefore: 0, newOrderAfter: 0, pending: 0, shipping: 0, completed: 0 },
+      poCandidates: { newBefore: [], newAfter: [], other: [] },
+      claims: { canceled: 0, returned: 0, exchanged: 0 },
+      items: items.map((item) => ({ name: item.name, orderKeys: [], quantity: item.quantity, revenue: 0 })),
+    };
+  }
+  return { snapshotDate, dailyAggregate: { v: 1, campaignIds, days: { [snapshotDate]: day } } };
+}
+
+const SALES_START = new Date("2026-10-01T00:00:00.000Z");
+
+describe("readOrderCampaignMappings — storeOptions", () => {
+  beforeEach(() => {
+    m.orderCampaignFindMany.mockResolvedValue([campaign()]);
+    m.salesCampaignFindMany.mockResolvedValue([{ id: "sc-1", orderCampaignId: "oc-1", startDate: SALES_START }]);
+    m.productMappingFindMany.mockResolvedValue([mapping()]); // 「가짜크림 / 1개」 하나
+  });
+
+  it("reads only dailyAggregate (never the orders blob) over the sales campaign window, with an explicit select", async () => {
+    await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    expect(m.snapshotFindMany).toHaveBeenCalledTimes(1);
+    expect(m.snapshotFindMany).toHaveBeenCalledWith({
+      where: { snapshotDate: { gte: "2026-10-01", lte: "2026-10-15" } },
+      orderBy: { snapshotDate: "asc" },
+      select: { snapshotDate: true, dailyAggregate: true },
+    });
+  });
+
+  it("splits labels: one separator = single, none = option only, more = ambiguous; skips 「기타」", async () => {
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow("2026-10-02", {
+        "sc-1": [
+          { name: "샘플 공구 상품 · 1개", quantity: 5 },
+          { name: "단독 옵션", quantity: 4 },
+          { name: "가짜 · 세트 · 2개", quantity: 3 },
+          { name: "기타", quantity: 9 },
+        ],
+      }),
+    ]);
+    const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    expect(result.campaigns[0].storeOptions).toEqual([
+      { label: "샘플 공구 상품 · 1개", productName: "샘플 공구 상품", optionName: "1개", split: "single", quantity: 5, mappingIndex: 0 },
+      { label: "단독 옵션", productName: null, optionName: "단독 옵션", split: "none", quantity: 4, mappingIndex: null },
+      { label: "가짜 · 세트 · 2개", productName: null, optionName: null, split: "ambiguous", quantity: 3, mappingIndex: null },
+    ]);
+    expect(result.campaigns[0].storeOptionsTruncated).toBe(false);
+  });
+
+  it("merges one label across days and sales campaigns, sums quantity, sorts by quantity desc", async () => {
+    m.salesCampaignFindMany.mockResolvedValue([
+      { id: "sc-1", orderCampaignId: "oc-1", startDate: SALES_START },
+      { id: "sc-2", orderCampaignId: "oc-1", startDate: new Date("2026-10-05T00:00:00.000Z") },
+    ]);
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow("2026-10-02", { "sc-1": [{ name: "샘플 상품 · A", quantity: 2 }, { name: "샘플 상품 · B", quantity: 5 }] }, ["sc-1", "sc-2"]),
+      aggregateRow("2026-10-06", { "sc-1": [{ name: "샘플 상품 · A", quantity: 3 }], "sc-2": [{ name: "샘플 상품 · A", quantity: 4 }] }),
+    ]);
+    const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    expect(result.campaigns[0].storeOptions.map((option) => [option.label, option.quantity])).toEqual([
+      ["샘플 상품 · A", 9],
+      ["샘플 상품 · B", 5],
+    ]);
+  });
+
+  it("skips aggregate rows that do not cover the campaign's sales campaigns (no blob fallback)", async () => {
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow("2026-10-02", { "sc-1": [{ name: "샘플 상품 · A", quantity: 2 }] }),
+      aggregateRow("2026-10-03", { "sc-other": [{ name: "샘플 상품 · Z", quantity: 7 }] }),
+      { snapshotDate: "2026-10-04", dailyAggregate: { v: 0 } },
+    ]);
+    const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    expect(result.campaigns[0].storeOptions.map((option) => option.label)).toEqual(["샘플 상품 · A"]);
+  });
+
+  it("points mappingIndex at the mapping whose normalized option name matches (NFD / extra spaces)", async () => {
+    m.productMappingFindMany.mockResolvedValue([
+      mapping({ id: "pm-1", productName: "가짜크림", optionName: "1개" }),
+      mapping({ id: "pm-2", productName: "가짜크림", optionName: " 샘플  2개 ".normalize("NFD") }),
+    ]);
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow("2026-10-02", {
+        "sc-1": [
+          { name: "가짜크림 · 샘플 2개", quantity: 3 },
+          { name: "가짜크림 · 3개", quantity: 1 },
+        ],
+      }),
+    ]);
+    const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    const [first] = result.campaigns;
+    expect(first.storeOptions.map((option) => [option.optionName, option.mappingIndex])).toEqual([
+      ["샘플 2개", 1],
+      ["3개", null],
+    ]);
+    expect(first.mappings[1].optionName).toBe(" 샘플  2개 ".normalize("NFD"));
+  });
+
+  it(`caps at ${MAX_STORE_OPTIONS_PER_CAMPAIGN} options per campaign and flags the cut`, async () => {
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow("2026-10-02", {
+        "sc-1": Array.from({ length: MAX_STORE_OPTIONS_PER_CAMPAIGN + 5 }, (_, index) => ({
+          name: `샘플 상품 · 옵션 ${String(index).padStart(3, "0")}`,
+          quantity: index + 1,
+        })),
+      }),
+    ]);
+    const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    const options = result.campaigns[0].storeOptions;
+    expect(MAX_STORE_OPTIONS_PER_CAMPAIGN).toBe(100);
+    expect(options).toHaveLength(MAX_STORE_OPTIONS_PER_CAMPAIGN);
+    expect(options[0].quantity).toBe(MAX_STORE_OPTIONS_PER_CAMPAIGN + 5);
+    expect(result.campaigns[0].storeOptionsTruncated).toBe(true);
+  });
+
+  it("does not read snapshots when no campaign has a linked sales campaign", async () => {
+    m.salesCampaignFindMany.mockResolvedValue([]);
+    const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    expect(m.snapshotFindMany).not.toHaveBeenCalled();
+    expect(result.campaigns[0]).toMatchObject({ storeOptions: [], storeOptionsTruncated: false });
+  });
+
+  it("keeps each campaign's options to its own sales campaigns and window", async () => {
+    m.orderCampaignFindMany.mockResolvedValue([campaign({ id: "oc-1" }), campaign({ id: "oc-2" })]);
+    m.salesCampaignFindMany.mockResolvedValue([
+      { id: "sc-1", orderCampaignId: "oc-1", startDate: SALES_START },
+      { id: "sc-2", orderCampaignId: "oc-2", startDate: new Date("2026-10-10T00:00:00.000Z") },
+    ]);
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow("2026-10-02", { "sc-1": [{ name: "첫째 · 옵션", quantity: 1 }], "sc-2": [{ name: "둘째 · 이른 옵션", quantity: 1 }] }),
+      aggregateRow("2026-10-11", { "sc-1": [], "sc-2": [{ name: "둘째 · 옵션", quantity: 2 }] }),
+    ]);
+    const result = await readOrderCampaignMappings({ query: "가짜" }, client, NOW);
+    expect(m.snapshotFindMany.mock.calls[0][0]).toMatchObject({ where: { snapshotDate: { gte: "2026-10-01", lte: "2026-10-15" } } });
+    expect(result.campaigns.map((row) => row.storeOptions.map((option) => option.label))).toEqual([
+      ["첫째 · 옵션"],
+      ["둘째 · 옵션"],
+    ]);
   });
 });
 
@@ -322,7 +485,9 @@ describe("get_order_campaign_mappings through the executor", () => {
       mapping({ id: "pm-2", optionName: "2개", brandCode: "FAKE-002", price: 35_000 }),
       mapping({ id: "pm-3", campaignId: "oc-2", productName: "둘째크림" }),
     ]);
-    m.salesCampaignFindMany.mockResolvedValue([{ id: "sc-1", orderCampaignId: "oc-1" }]);
+    m.salesCampaignFindMany.mockResolvedValue([
+      { id: "sc-1", orderCampaignId: "oc-1", startDate: new Date("2026-10-01T00:00:00.000Z") },
+    ]);
 
     const outcome = await run({ query: "가짜" });
 

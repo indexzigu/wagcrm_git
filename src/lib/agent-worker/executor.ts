@@ -1023,8 +1023,8 @@ async function taxInvoiceStatus(input: TaxInvoiceStatusInput, now: Date): Promis
  * 봇이 매핑 변경 기안을 올리기 전에 지금 값을 본다. 읽기·내보낼 칸은 `order-campaign-mappings.ts` 가
  * 정한다(칸 단위 GRANT 라 모든 호출이 명시 select). 없는 id 는 오류가 아니라 0건이다.
  */
-async function orderCampaignMappings(input: OrderCampaignMappingsInput): Promise<OperationOutcome> {
-  const result = await readOrderCampaignMappings(input, getPrisma());
+async function orderCampaignMappings(input: OrderCampaignMappingsInput, now: Date): Promise<OperationOutcome> {
+  const result = await readOrderCampaignMappings(input, getPrisma(), now);
   const { summary, mappingCount } = buildOrderCampaignMappingsSummary(result);
   return {
     status: "SUCCEEDED",
@@ -1035,7 +1035,7 @@ async function orderCampaignMappings(input: OrderCampaignMappingsInput): Promise
       title: `주문캠페인 ${result.campaigns.length}건 · 매핑 ${mappingCount}줄`,
       resultSummary: boundSummary(summary),
       structuredResult: result,
-      dataSources: ["OrderCampaign", "ProductMapping", "SalesCampaign"],
+      dataSources: ["OrderCampaign", "ProductMapping", "SalesCampaign", "NaverOrderSnapshot"],
       query: { orderCampaignId: input.orderCampaignId ?? null, query: input.query ?? null },
     },
   };
@@ -1302,7 +1302,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   list_work_record_rooms: () => listWorkRecordRooms(),
   get_work_records: (input, context) => getWorkRecords(input as WorkRecordsInput, context.now),
   get_tax_invoice_status: (input, context) => taxInvoiceStatus(input as TaxInvoiceStatusInput, context.now),
-  get_order_campaign_mappings: (input) => orderCampaignMappings(input as OrderCampaignMappingsInput),
+  get_order_campaign_mappings: (input, context) => orderCampaignMappings(input as OrderCampaignMappingsInput, context.now),
 };
 
 function buildResult(
