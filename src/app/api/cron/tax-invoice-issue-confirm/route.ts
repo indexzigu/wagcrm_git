@@ -21,7 +21,9 @@ import { scanTaxInvoiceMails } from "@/lib/tax-invoice-mail/mail-scan";
 import { FIELD_LABEL } from "@/lib/tax-filing-auto-confirm";
 import {
   AUTO_RECORD_REVIEW_LABEL,
+  collectRecordedMismatchReviews,
   planAutoRecords,
+  type AutoRecordReviewItem,
   type AutoRecordReviewReason,
   type AutoRecordSkipReason,
   type InvoiceMailSummary,
@@ -166,6 +168,17 @@ type MonthlyAutoRecordReport = {
   failures: Array<{ key: string; error: string }>;
 };
 
+/** 오너 확인 건을 보고 칸으로 — 이유 코드·고정 낱말·풀이 코드와 캠페인·달만(금액·이름 없음). */
+function toNeedsReviewDetail(items: readonly AutoRecordReviewItem[]): MonthlyAutoRecordReport["needsReviewDetail"] {
+  return items.map((item) => ({
+    campaignId: item.campaignId,
+    yearMonth: item.yearMonth,
+    reason: item.reason,
+    label: AUTO_RECORD_REVIEW_LABEL[item.reason],
+    notes: item.notes,
+  }));
+}
+
 /**
  * 월정산 공급사 계산서 **확인 없는 자동 기록**(T-242) — 발행(ISSUE)만, `planAutoRecords` 의 네 조건
  * (단일 칸 · 정산서 1건 · 금액 ±99원 1장 · 수정계산서 없음)을 모두 만족할 때만. 정산서가 없는 단위는
@@ -198,8 +211,12 @@ async function runMonthlyAutoRecord(input: {
     sinceDays: SCAN_SINCE_DAYS,
   });
   report.units = units.length;
-  // 비어 있는 발행 칸이 없으면 메일함을 한 번 더 열지 않는다.
-  if (!units.some((unit) => unit.direction === "ISSUE")) return report;
+  // 기록한 합계가 전액과 어긋나는 단위(R0)의 오너 확인 건 — **저장된 행만으로** 정해져 메일과 무관하다. 그래서
+  // 아래 스캔 잘림 멈춤·정산서 메일함 생략과 상관없이 늘 낸다(리뷰 2026-10-15 #4). 오너가 「확인함」으로 본
+  // 차이는 단위 목록에서 이미 빠져 있다. `planAutoRecords` 는 이 단위를 건너뛰므로 두 번 세지 않는다.
+  report.needsReviewDetail = toNeedsReviewDetail(collectRecordedMismatchReviews(units));
+  // 비어 있는 발행 달이 없으면(확인 건만 남은 단위뿐) 정산서 메일함을 열지 않는다 — 기록할 것이 없다.
+  if (!units.some((unit) => unit.direction === "ISSUE" && unit.openMonths.length > 0)) return report;
 
   if (input.invoiceScanTruncated > 0) {
     report.blocked = "INVOICE_SCAN_TRUNCATED";
@@ -232,13 +249,7 @@ async function runMonthlyAutoRecord(input: {
     delta: op.delta,
     basis: op.basis,
   }));
-  report.needsReviewDetail = plan.needsReview.map((item) => ({
-    campaignId: item.campaignId,
-    yearMonth: item.yearMonth,
-    reason: item.reason,
-    label: AUTO_RECORD_REVIEW_LABEL[item.reason],
-    notes: item.notes,
-  }));
+  report.needsReviewDetail.push(...toNeedsReviewDetail(plan.needsReview));
   if (input.dryRun) return report;
 
   for (const op of capped) {

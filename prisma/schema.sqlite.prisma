@@ -283,6 +283,7 @@ model SalesCampaign {
   checklistItems      CampaignChecklistItem[]
   settlementItems     CampaignSettlementItem[]
   invoices            CampaignInvoice[]
+  invoiceReviewAcks   CampaignInvoiceReviewAck[]
   actionProposals     ActionProposal[]
   workRecords         WorkRecord[]
   chatRoomMappings    ChatRoomMapping[]
@@ -438,6 +439,29 @@ model CampaignInvoice {
 
   @@unique([campaignId, approvalNo])
   @@index([campaignId, yearMonth])
+}
+
+/// 월정산 공급사 계산서의 「확인함」(오너 승인 2026-10-15) — 기록한 계산서 합계가 단위 전액과 어긋나
+/// 「확인 필요」가 뜬 단위를 오너가 원인을 보고 표시한 기록. **그 차이의 지문**(`fingerprint` — 이유 코드·
+/// 기록 합계·전액, `buildReviewFingerprint`)에만 묶인다: 금액이 바뀌어 지문이 달라지면 확인은 효력을 잃고
+/// 「확인 필요」가 저절로 다시 뜬다. 완료 게이트와는 무관하다(검토 신호는 원래 잠금이 아니다).
+/// 단위 = 그룹이면 멤버 전원(계산서 행과 같다) — 쓰기는 기준 캠페인(멤버 id 오름차순 첫째) 한 줄, 읽기는 멤버 전원.
+/// ⚠️ 봇 워커 롤은 id·campaignId·direction·fingerprint 칸만 읽는다(마이그레이션 20261015120000).
+/// 판정 SSOT: src/lib/campaign-invoices.ts · 쓰기 SSOT: src/services/campaignInvoiceService.ts
+model CampaignInvoiceReviewAck {
+  id         String        @id @default(cuid())
+  campaignId String
+  campaign   SalesCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  /// ISSUE · RECEIVE — 계산서 행의 방향과 같다
+  direction      String
+  /// 확인한 차이의 지문 — `v1|이유코드|기록합계|전액`
+  fingerprint    String
+  /// 확인한 사람(로그인 이메일) — 오너 화면 풀이 전용
+  acknowledgedBy String
+  acknowledgedAt DateTime @default(now())
+
+  @@unique([campaignId, direction])
 }
 
 model PartnerContact {

@@ -77,6 +77,28 @@ describe("① 크론 — 월정산 자동 기록 쓰기는 예행 반환 뒤에�
     expect(guardsBefore("statementScan.truncated > 0")).toBe(true);
   });
 
+  // 리뷰 2026-10-15 #4 — 기록 합계 어긋남(R0) 확인 건은 저장된 행만으로 정해진다. 메일 스캔이 잘려 멈추거나 열린 달이
+  // 없어 정산서 메일함을 열지 않아도 나가야 한다 → 별도 순수 함수가 **모든 멈춤보다 앞에서** 낸다.
+  it("R0 확인 건은 스캔 잘림 멈춤·정산서 메일함 생략보다 앞에서 낸다", () => {
+    const calls = find(body!, isCall);
+    const at = (callee: string) => calls.find((c) => calleeText(c, source) === callee)?.getStart(source);
+    const reviewsAt = at("collectRecordedMismatchReviews");
+    const statementScanAt = at("scanBrandStatementMails");
+    expect(reviewsAt).toBeDefined();
+    expect(statementScanAt).toBeDefined();
+    const ifs = find(body!, (n): n is ts.IfStatement => ts.isIfStatement(n));
+    const truncatedGuard = ifs.find((n) => n.expression.getText(source) === "input.invoiceScanTruncated > 0");
+    expect(truncatedGuard).toBeDefined();
+    expect(reviewsAt!).toBeLessThan(truncatedGuard!.getStart(source));
+    // 열린 발행 달이 없으면 정산서 메일함을 열기 전에 돌아간다(확인 건만 남은 단위뿐).
+    const openMonthsGuard = ifs.find(
+      (n) => n.expression.getText(source).includes("openMonths.length > 0") && ts.isReturnStatement(n.thenStatement),
+    );
+    expect(openMonthsGuard).toBeDefined();
+    expect(reviewsAt!).toBeLessThan(openMonthsGuard!.getStart(source));
+    expect(openMonthsGuard!.getStart(source)).toBeLessThan(statementScanAt!);
+  });
+
   it("핸들러는 env 게이트로 정해진 `dryRun` 을 그대로 넘긴다", () => {
     const calls = find(source, isCall).filter((c) => calleeText(c, source) === "runMonthlyAutoRecord");
     expect(calls).toHaveLength(1);

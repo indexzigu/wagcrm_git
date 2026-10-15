@@ -158,6 +158,8 @@ export type CampaignInvoiceView =
       rows: CampaignInvoiceRow[];
       /** 메일 후보에서 뺄 승인번호 — 어느 캠페인에든 기록된 것 + 이 단위에서 「이 메일이 아님」 */
       excludedIssueIds: string[];
+      /** 오너의 「확인함」 기록(최근 것부터) — 지문이 지금 차이와 같을 때만 효력이 있다 */
+      reviewAcks: InvoiceReviewAck[];
     };
 
 /** 「—」 처럼 낱말이 없는 상태에서 칸에 그리는 값. */
@@ -213,8 +215,11 @@ export type InvoiceMonth = {
   /**
    * 기록한 계산서 합계가 전액과 어긋난다(`judgeRecordedMismatch`) — 달은 끝났지만(작성일을 그대로 보인다)
    * 오너가 원인을 봐야 한다. 기록이 있는 달에만 붙고, 끝난 달 수(n/m)는 그대로 세되 「확인 필요」를 함께 보인다.
+   * 오너가 이 차이를 「확인함」으로 표시했으면(지문 일치) null 이고 아래 `reviewedMismatch` 로 옮겨 간다.
    */
   mismatch: RecordedMismatchKind | null;
+  /** 오너가 이미 확인한 어긋남(지문 일치) — 화면은 조용히 「확인됨」만 보인다. 기록이 있는 달에만 붙는다. */
+  reviewedMismatch: RecordedMismatchKind | null;
 };
 
 const YEAR_MONTH_RE = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -398,7 +403,49 @@ export function classifyAmountDelta(delta: number, expected: number, crossesMont
   return crossesMonth ? "POSSIBLE_SPLIT" : "MINOR_MISMATCH";
 }
 
-export type RecordedMismatch = { kind: RecordedMismatchKind; delta: number };
+export type RecordedMismatch = {
+  kind: RecordedMismatchKind;
+  delta: number;
+  /** 기록한 계산서 합계(원) */
+  recordedTotal: number;
+  /** 단위 전액(원) */
+  expectedTotal: number;
+  /** 이 차이의 지문(`buildReviewFingerprint`) — 오너의 「확인함」이 묶이는 키 */
+  fingerprint: string;
+};
+
+/**
+ * 기록 합계 어긋남의 지문 — 이유 코드 · 기록 합계 · 단위 전액. 셋 중 하나라도 바뀌면 다른 차이다.
+ * 오너의 「확인함」(`CampaignInvoiceReviewAck`)은 이 지문에만 묶인다 — 금액이 바뀌면 지문이 달라져
+ * 「확인 필요」가 저절로 다시 뜬다(오너 승인 2026-10-15). 앞의 `v1` 은 식을 바꿀 때 옛 확인을 무효로
+ * 만들 수 있게 둔 판(版) 표시다. ⛔ 화면이 보낸 지문을 믿지 말고 서버가 다시 계산해 대조한다.
+ */
+export function buildReviewFingerprint(input: Pick<RecordedMismatch, "kind" | "recordedTotal" | "expectedTotal">): string {
+  return `v1|${input.kind}|${input.recordedTotal}|${input.expectedTotal}`;
+}
+
+/**
+ * 오너가 「확인함」을 누른 기록(직렬형) — 단위(캠페인 또는 그룹 전원) 기준. 판정에는 지문만 쓴다.
+ * 누가·언제는 화면의 「확인됨」 풀이 전용이다(봇·크론은 읽지 않는다 — 워커 권한도 지문까지만 열려 있다).
+ */
+export type InvoiceReviewAck = {
+  fingerprint: string;
+  acknowledgedBy?: string | null;
+  /** ISO 시각 */
+  acknowledgedAt?: string | null;
+};
+
+/**
+ * 이 차이를 오너가 이미 확인했는가 — 확인 기록 중 하나라도 **지금 차이의 지문**과 같으면 참.
+ * 같은 단위에 확인이 여럿일 수 있다(그룹 합류 등) — 하나라도 맞으면 그 차이는 본 것이다.
+ */
+export function findMatchingReviewAck<T extends Pick<InvoiceReviewAck, "fingerprint">>(
+  mismatch: Pick<RecordedMismatch, "fingerprint"> | null,
+  acks: readonly T[] | null | undefined,
+): T | null {
+  if (!mismatch || !acks) return null;
+  return acks.find((ack) => ack.fingerprint === mismatch.fingerprint) ?? null;
+}
 
 /**
  * 달은 전부 끝났는데(기록 또는 「없음」) 기록한 계산서 합계가 전액과 허용오차 밖으로 어긋나는가(오너 규칙
@@ -424,7 +471,29 @@ export function judgeRecordedMismatch(input: {
   if (!allClosed) return null;
   const delta = sum - expected;
   if (Math.abs(delta) <= INVOICE_AMOUNT_TOLERANCE_WON) return null;
-  return { kind: classifyAmountDelta(delta, expected, input.periodMonths.length > 1), delta };
+  const kind = classifyAmountDelta(delta, expected, input.periodMonths.length > 1);
+  return {
+    kind,
+    delta,
+    recordedTotal: sum,
+    expectedTotal: expected,
+    fingerprint: buildReviewFingerprint({ kind, recordedTotal: sum, expectedTotal: expected }),
+  };
+}
+
+/**
+ * 단위의 「확인 필요」 판정 — 기록 합계 어긋남(`judgeRecordedMismatch`)과 오너 확인을 한 곳에서 합친다.
+ * 화면 머리글·달 줄(`deriveInvoiceMonths`)·완료 요약(`summarizeInvoiceRows`)이 같은 답을 내도록
+ * 셋 다 이 함수를 지난다. `acknowledged` 가 있으면 그 차이는 오너가 본 것이라 「확인 필요」가 아니다.
+ */
+export function resolveInvoiceReview<T extends Pick<InvoiceReviewAck, "fingerprint">>(input: {
+  periodMonths: readonly string[];
+  rows: readonly CampaignInvoiceRow[];
+  expectedTotalAmount: number | null | undefined;
+  reviewAcks?: readonly T[] | null;
+}): { mismatch: RecordedMismatch | null; acknowledged: T | null } {
+  const mismatch = judgeRecordedMismatch(input);
+  return { mismatch, acknowledged: findMatchingReviewAck(mismatch, input.reviewAcks) };
 }
 
 /**
@@ -505,6 +574,8 @@ export function deriveInvoiceMonths(input: {
   expectedTotalAmount?: number | null;
   /** 전액이 수동 입력값에서 계산됐는가(`resolveSupplierInvoiceUnitTotal`) — 어긋남 달에 고정 풀이를 붙인다 */
   expectedFromManual?: boolean;
+  /** 오너의 「확인함」 기록(`CampaignInvoiceReviewAck`) — 지문이 맞으면 어긋남을 조용히 둔다 */
+  reviewAcks?: readonly Pick<InvoiceReviewAck, "fingerprint">[] | null;
 }): InvoiceMonth[] {
   const live = input.rows.filter((row) => row.status !== "DISMISSED");
   const covered = isFullAmountCovered(live, input.expectedTotalAmount);
@@ -528,7 +599,15 @@ export function deriveInvoiceMonths(input: {
       ? { yearMonth: (verdict.mail.writtenDate as string).slice(0, 7), state: verdict.kind }
       : null;
   // 달은 다 끝났는데 기록한 금액이 어긋난다 — 기록이 있는 달마다 표시(작성일은 그대로, 낱말·색만 바뀐다).
-  const recordedMismatch = judgeRecordedMismatch({ periodMonths, rows: live, expectedTotalAmount: input.expectedTotalAmount });
+  // 오너가 그 차이(같은 지문)를 이미 확인했으면 「확인 필요」 대신 조용한 「확인됨」으로 옮긴다.
+  const review = resolveInvoiceReview({
+    periodMonths,
+    rows: live,
+    expectedTotalAmount: input.expectedTotalAmount,
+    reviewAcks: input.reviewAcks,
+  });
+  const recordedMismatch = review.acknowledged ? null : review.mismatch;
+  const reviewedMismatch = review.acknowledged ? review.mismatch : null;
   const handledIssueIds = new Set(
     input.rows.map((row) => row.approvalNo).filter((value): value is string => Boolean(value)),
   );
@@ -558,7 +637,8 @@ export function deriveInvoiceMonths(input: {
     const reviewKind = mismatch ?? (state === "MINOR_MISMATCH" || state === "OVER_EXPECTED" ? state : null);
     const notes: InvoiceMonthNote[] =
       input.expectedFromManual && (reviewKind === "MINOR_MISMATCH" || reviewKind === "OVER_EXPECTED") ? ["EXPECTED_FROM_MANUAL"] : [];
-    return { yearMonth, state, recorded, waived, candidates, amendments, expected, notes, mismatch };
+    const reviewed = recorded.length > 0 && reviewedMismatch ? reviewedMismatch.kind : null;
+    return { yearMonth, state, recorded, waived, candidates, amendments, expected, notes, mismatch, reviewedMismatch: reviewed };
   });
 }
 
@@ -588,6 +668,11 @@ export function summarizeInvoiceRows(input: {
   rows: readonly CampaignInvoiceRow[];
   /** 단위 공급사 계산서 전액(원). null·생략 = 모름 → 전액 판정 안 함 */
   expectedTotalAmount?: number | null;
+  /**
+   * 오너의 「확인함」 기록 — 지금 차이와 지문이 같으면 `review` 를 null 로 둔다(세무 보드 행이 끝나고
+   * 크론·봇이 더는 세지 않는다). 완료 게이트(`openMonths`)는 이 값과 무관하다 — 검토 신호는 원래 잠금이 아니다.
+   */
+  reviewAcks?: readonly Pick<InvoiceReviewAck, "fingerprint">[] | null;
 }): InvoiceProgress {
   const live = input.rows.filter((row) => row.status !== "DISMISSED");
   const monthSet = new Set(listYearMonths(input.periodStart, input.periodEnd));
@@ -599,12 +684,17 @@ export function summarizeInvoiceRows(input: {
     : months.filter(
         (ym) => !live.some((row) => row.yearMonth === ym && (row.status === "RECORDED" || row.status === "WAIVED")),
       );
-  const mismatch = judgeRecordedMismatch({ periodMonths: listYearMonths(input.periodStart, input.periodEnd), rows: live, expectedTotalAmount: input.expectedTotalAmount });
+  const { mismatch, acknowledged } = resolveInvoiceReview({
+    periodMonths: listYearMonths(input.periodStart, input.periodEnd),
+    rows: live,
+    expectedTotalAmount: input.expectedTotalAmount,
+    reviewAcks: input.reviewAcks,
+  });
   return {
     done: months.length - openMonths.length,
     total: months.length,
     openMonths,
-    review: mismatch ? { reason: mismatch.kind, label: AUTO_RECORD_REVIEW_LABEL[mismatch.kind] } : null,
+    review: mismatch && !acknowledged ? { reason: mismatch.kind, label: AUTO_RECORD_REVIEW_LABEL[mismatch.kind] } : null,
   };
 }
 
@@ -753,6 +843,14 @@ export function matchesExpectedAmount(totalAmount: number | null, expected: read
   return expected.some((item) => Math.abs(item.totalAmount - totalAmount) <= INVOICE_AMOUNT_TOLERANCE_WON);
 }
 
+/**
+ * 단위의 기준 캠페인 — 그룹이면 id 오름차순 첫 멤버. 자동 기록이 행을 붙이는 곳과 「확인함」을 저장하는
+ * 곳이 이 한 함수를 쓴다(두 곳이 갈리면 쓰기와 읽기가 다른 캠페인을 본다).
+ */
+export function unitAnchorCampaignId(memberIds: readonly string[]): string {
+  return [...memberIds].sort()[0];
+}
+
 /** 자동 기록 판정에 넣는 월정산 단위 하나(서버가 DB 에서 만든다). */
 export type AutoRecordUnit = {
   /** 그룹 id 또는 캠페인 id */
@@ -885,18 +983,9 @@ export function planAutoRecords(input: {
   const issueUnits = input.units.filter((unit) => unit.direction === "ISSUE");
 
   for (const unit of issueUnits) {
-    // 달은 다 끝났는데 기록한 합계가 어긋나는 단위 — 기록할 것은 없고 오너가 원인을 본다(R0).
-    if (unit.recordedMismatch) {
-      needsReview.push({
-        unitKey: unit.unitKey,
-        campaignId: unit.anchorCampaignId,
-        yearMonth: [...unit.closedMonths].sort().at(-1) ?? unit.periodMonths[unit.periodMonths.length - 1],
-        reason: unit.recordedMismatch,
-        notes:
-          unit.expectedFromManual && unit.recordedMismatch !== "POSSIBLE_SPLIT" ? ["EXPECTED_FROM_MANUAL"] : [],
-      });
-      continue;
-    }
+    // 달은 다 끝났는데 기록한 합계가 어긋나는 단위 — 기록할 것은 없다. 오너 확인 건은 메일과 무관하게
+    // `collectRecordedMismatchReviews` 가 따로 낸다(크론이 메일 스캔 전에 부른다 — 여기서 다시 세지 않는다).
+    if (unit.recordedMismatch) continue;
     const counterpart = digits(unit.counterpartBusinessNumber);
     const sameCounterpart = issueUnits.filter((other) => digits(other.counterpartBusinessNumber) === counterpart);
     const expectations = collectStatementExpectations({
@@ -994,6 +1083,27 @@ export function planAutoRecords(input: {
 }
 
 /**
+ * 기록한 합계가 전액과 어긋나는 발행(ISSUE) 단위의 오너 확인 건(R0) — **저장된 행만으로** 정해진다
+ * (`AutoRecordUnit.recordedMismatch` = `InvoiceProgress.review`, 오너가 「확인함」으로 본 차이는 이미 빠져 있다).
+ * 메일·정산서를 읽지 않으므로 크론은 메일 스캔이 잘렸거나 열린 달이 없어 정산서 메일함을 열지 않을 때도
+ * 이 목록을 낸다. `planAutoRecords` 는 이 단위를 건너뛴다(같은 건을 두 번 세지 않는다).
+ */
+export function collectRecordedMismatchReviews(units: readonly AutoRecordUnit[]): AutoRecordReviewItem[] {
+  return units
+    .filter((unit) => unit.direction === "ISSUE" && unit.recordedMismatch !== null)
+    .map((unit) => {
+      const reason = unit.recordedMismatch as RecordedMismatchKind;
+      return {
+        unitKey: unit.unitKey,
+        campaignId: unit.anchorCampaignId,
+        yearMonth: [...unit.closedMonths].sort().at(-1) ?? unit.periodMonths[unit.periodMonths.length - 1],
+        reason,
+        notes: unit.expectedFromManual && reason !== "POSSIBLE_SPLIT" ? ["EXPECTED_FROM_MANUAL"] : [],
+      };
+    });
+}
+
+/**
  * 같은 승인번호를 두 단위가 집었으면 둘 다 놓는다 — 어느 쪽 것인지 모른다(계획 단계 충돌, M1).
  * 단위별 판정(쌍둥이 전액·남은 금액·품목명)이 대부분 먼저 거르지만, 그 판정은 단위 하나의 시야라
  * 계획 전체를 한 번 더 본다. 놓은 단위는 `AMBIGUOUS_FULL_AMOUNT` 로 센다.
@@ -1065,6 +1175,12 @@ function planFullAmount(input: {
   }
 
   // 수정세금계산서는 **닫힌 달 것도** 본다 — 기록한 장을 고치는 수정분이 있으면 합계 자체가 바뀔 수 있다(M4).
+  // ⚠️ 이 판정은 **단위가 아니라 상대(거래처) 단위로 넓다**: `amendmentsByMonth` 는 `findInvoiceCandidates` 가
+  // 상대 사업자번호로만 고른 것이라, 같은 상대의 **다른 단위(다른 셀러·회차)** 를 고치는 수정세금계산서도
+  // 이 단위의 전액 자동 기록을 막는다. 수정분은 원본을 가리킬 승인번호·금액 관계가 확인되지 않아 어느 단위
+  // 것인지 가를 수 없다(`receipt-match` 의 CORRECTIVE_DOCUMENT 주석). 막히면 자동 기록 대신 오너 1클릭으로
+  // 가므로 **안전한 방향의 과잉 차단**이고 의도적으로 둔다(리뷰 2026-10-15 #6) — 좁히려면 수정분을 원본
+  // 승인번호에 잇는 근거부터 확보할 것.
   const amendmentPending = [...input.amendmentsByMonth].some(
     ([yearMonth, mails]) => mails.length > 0 && isAcceptableInvoiceMonth(unit.periodMonths, yearMonth),
   );

@@ -14,8 +14,9 @@
  * - 레거시 날짜(캠페인/그룹 `supplierInvoiceIssuedAt`)는 **모든 달이 끝났고 비어 있을 때만**
  *   기록한다. ⛔ 다른 경로(체크리스트·수취 승인·크론·직접 입력)가 넣은 값은 지우지 않는다 — 이 기능이
  *   그 값을 밀어내면 세무 보드에 「미완」이 되살아난다(반대 검토 2026-10-08 BLOCKER 2). 유일한 예외는
- *   「취소」로 달이 다시 열릴 때 **이 기능이 채운 값과 같은 날짜**를 비우는 것이다(아래 `revertRow`) —
+ *   「취소」로 달이 다시 열릴 때 **이 기능이 채운 값**을 비우는 것이다(아래 `revertRow`) —
  *   남겨 두면 행이 0개가 된 단위가 레거시 모드로 떨어져 계산서 없이 완료가 통과된다(코드 리뷰 2026-10-08).
+ *   「이 기능이 채웠는가」는 값이 같은지로 추측하지 않고 활동 기록의 출처 표지로 가른다(`LEGACY_DATE_*`).
  *   전부 「없음」인 단위는 기록할 작성일이 없어 레거시 날짜를 쓰지 않는다(완료 게이트는 통과).
  * - 레거시 모드: 레거시 날짜가 이미 있고 계산서 행이 0개면 지금까지의 단일 날짜 칸을 그대로 보인다
  *   (이 기능 이전에 끝난 캠페인을 「미발견」으로 되살리지 않는다). 완료 게이트도 통과다.
@@ -24,8 +25,11 @@ import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { endOfKstDayMs } from "@/lib/order-converter/sale-window";
 import {
+  AUTO_RECORD_REVIEW_LABEL,
   buildInvoiceIncompleteMessage,
   formatInvoiceMonth,
+  resolveInvoiceReview,
+  type InvoiceReviewAck,
   isAcceptableInvoiceMonth,
   isFullAmountCovered,
   isValidYearMonth,
@@ -35,6 +39,7 @@ import {
   sumRecordedInvoiceTotal,
   resolveSupplierInvoiceDirection,
   summarizeInvoiceRows,
+  unitAnchorCampaignId,
   type CampaignInvoiceRow,
   type CampaignInvoiceView,
   type InvoiceDirection,
@@ -151,6 +156,118 @@ function unitExpectedTotal(members: readonly UnitMoneyRecord[], grouped: boolean
 /** 이 기능이 레거시 날짜에 쓰는 값 — 기록한 계산서 중 가장 늦은 작성일(`resolveLegacyInvoiceDate` 와 같은 식). */
 function latestRecordedWrittenAt(rows: readonly CampaignInvoiceRow[]): string | null {
   return rows.filter((row) => row.status === "RECORDED" && row.writtenAt).map((row) => row.writtenAt as string).sort().at(-1) ?? null;
+}
+
+/**
+ * 레거시 날짜의 **출처 표지**(리뷰 2026-10-15 #3) — 활동 기록(`ActivityLog`, fieldName = supplierInvoiceIssuedAt)에 남긴다.
+ * - ROLLUP: 이 기능이 날짜를 채웠다(newValue = 그 날짜) · 비웠다(newValue = null)
+ * - KEPT: 단위가 레거시 모드(날짜 있음·계산서 0장)에서 첫 행을 받으며 **오너·다른 경로가 넣은 날짜를 그대로 두고**
+ *   달별 기록을 시작했다(newValue = 그 날짜)
+ * 왜 필요한가: 종전 `revertRow` 는 「레거시 날짜 == 취소 전 최신 작성일」이면 이 기능의 값이라고 보았다. 그런데
+ * 레거시 모드에서는 오너가 날짜를 손으로 넣을 수 있고(`findLegacyDateWriteBlocker` 의 허용 칸), 그 날짜는 보통
+ * 실제 계산서 작성일이라 나중에 기록한 계산서의 작성일과 **같다** — 그 계산서를 취소하면 오너의 날짜가 지워졌다.
+ * 표지는 타임라인에 그대로 보인다(타임라인은 모르는 type 의 content 를 그린다) — 사람이 읽는 문장으로 쓴다.
+ */
+export const LEGACY_DATE_ROLLUP_LOG_TYPE = "CAMPAIGN_INVOICE_LEGACY_ROLLUP";
+export const LEGACY_DATE_KEPT_LOG_TYPE = "CAMPAIGN_INVOICE_LEGACY_KEPT";
+const LEGACY_DATE_FIELD = "supplierInvoiceIssuedAt";
+
+/**
+ * 취소가 레거시 날짜를 비워도 되는가 — 지금 날짜가 **이 기능이 채운 값**일 때만(순수 판정, 테스트용으로 내보낸다).
+ * - 표지가 있으면 가장 최근 표지가 정한다: ROLLUP 이고 그 값이 지금 날짜와 같을 때만 참. KEPT 이거나 값이 다르면
+ *   (그 뒤 다른 경로가 바꿨다) 거짓.
+ * - 표지가 하나도 없으면 표지 도입(2026-10-15) 이전에 채운 값일 수 있어 종전 규칙(취소 전 최신 작성일과 같다)을
+ *   그대로 쓴다 — 그러지 않으면 이미 롤업된 단위가 취소 뒤 레거시 모드로 떨어져 완료 게이트가 풀린다. ⚠️ 그 대가로
+ *   표지 이전에 레거시 모드를 벗어난 단위의 손입력 날짜는 이 규칙에서 여전히 같은 값이면 비워질 수 있다(알려진 잔여).
+ */
+export function mayClearRolledUpLegacyDate(input: {
+  legacyDate: string | null;
+  latestMarker: { type: string; newValue: string | null } | null;
+  rollupBefore: string | null;
+}): boolean {
+  if (!input.legacyDate) return false;
+  if (input.latestMarker) {
+    return input.latestMarker.type === LEGACY_DATE_ROLLUP_LOG_TYPE && input.latestMarker.newValue === input.legacyDate;
+  }
+  return input.rollupBefore === input.legacyDate;
+}
+
+async function writeLegacyDateMarker(
+  tx: Prisma.TransactionClient,
+  unit: InvoiceUnit,
+  marker: { type: string; previousValue: string | null; newValue: string | null; content: string },
+) {
+  for (const campaignId of unit.memberIds) {
+    await tx.activityLog.create({
+      data: {
+        entityType: "CAMPAIGN",
+        entityId: campaignId,
+        type: marker.type,
+        fieldName: LEGACY_DATE_FIELD,
+        previousValue: marker.previousValue,
+        newValue: marker.newValue,
+        content: marker.content,
+        actor: "SYSTEM",
+      },
+    });
+  }
+}
+
+async function findLatestLegacyDateMarker(
+  tx: Prisma.TransactionClient,
+  unit: InvoiceUnit,
+): Promise<{ type: string; newValue: string | null } | null> {
+  return tx.activityLog.findFirst({
+    where: {
+      entityType: "CAMPAIGN",
+      entityId: { in: unit.memberIds },
+      fieldName: LEGACY_DATE_FIELD,
+      type: { in: [LEGACY_DATE_ROLLUP_LOG_TYPE, LEGACY_DATE_KEPT_LOG_TYPE] },
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { type: true, newValue: true },
+  });
+}
+
+/**
+ * 레거시 모드 단위가 첫 행을 받으려는 참이면(날짜 있음·살아 있는 행 0개) 그 날짜는 이 기능의 값이 아니다 —
+ * KEPT 표지를 남겨 뒤의 취소가 지우지 않게 한다. 쓰기 경로(확인·직접 입력·「없음」)가 행을 만들기 **전에** 부른다.
+ */
+async function markLegacyDateKeptIfLeavingLegacyMode(
+  tx: Prisma.TransactionClient,
+  unit: InvoiceUnit,
+  rowsBefore: readonly CampaignInvoiceRow[],
+) {
+  if (!unit.legacyDate || rowsBefore.some((row) => row.status !== "DISMISSED")) return;
+  const value = toYmd(unit.legacyDate);
+  await writeLegacyDateMarker(tx, unit, {
+    type: LEGACY_DATE_KEPT_LOG_TYPE,
+    previousValue: value,
+    newValue: value,
+    content: `이미 들어 있던 공급사 계산서일(${value})을 그대로 두고 달별 계산서 기록을 시작했습니다.`,
+  });
+}
+
+const NO_REVIEW_MESSAGE = "확인할 금액 차이가 없습니다. 창을 닫았다 다시 열어 주세요.";
+
+type ReviewAckRecord = { fingerprint: string; acknowledgedBy: string; acknowledgedAt: Date };
+
+function toReviewAckDto(record: ReviewAckRecord): InvoiceReviewAck {
+  return {
+    fingerprint: record.fingerprint,
+    acknowledgedBy: record.acknowledgedBy,
+    acknowledgedAt: record.acknowledgedAt.toISOString(),
+  };
+}
+
+/** 단위의 「확인함」 기록 — 최근 것부터(화면 풀이용 누가·언제 포함). */
+async function loadUnitReviewAcks(db: Db, unit: InvoiceUnit): Promise<InvoiceReviewAck[]> {
+  const acks = await db.campaignInvoiceReviewAck.findMany({
+    where: { campaignId: { in: unit.memberIds }, direction: unit.direction },
+    select: { fingerprint: true, acknowledgedBy: true, acknowledgedAt: true },
+    orderBy: { acknowledgedAt: "desc" },
+  });
+  return acks.map(toReviewAckDto);
 }
 
 export class CampaignInvoiceError extends Error {
@@ -327,24 +444,36 @@ async function rollupLegacyDate(tx: Prisma.TransactionClient, unit: InvoiceUnit)
     expectedTotalAmount: unit.expectedTotalAmount,
   });
   if (!value) return;
-  if (unit.groupId) {
-    await tx.campaignGroup.updateMany({
-      where: { id: unit.groupId, supplierInvoiceIssuedAt: null },
-      data: { supplierInvoiceIssuedAt: fromYmd(value) },
-    });
-  } else {
-    await tx.salesCampaign.updateMany({
-      where: { id: unit.campaignId, supplierInvoiceIssuedAt: null },
-      data: { supplierInvoiceIssuedAt: fromYmd(value) },
-    });
-  }
+  const written = unit.groupId
+    ? await tx.campaignGroup.updateMany({
+        where: { id: unit.groupId, supplierInvoiceIssuedAt: null },
+        data: { supplierInvoiceIssuedAt: fromYmd(value) },
+      })
+    : await tx.salesCampaign.updateMany({
+        where: { id: unit.campaignId, supplierInvoiceIssuedAt: null },
+        data: { supplierInvoiceIssuedAt: fromYmd(value) },
+      });
+  // 실제로 채웠을 때만 출처 표지를 남긴다 — 그 사이 다른 경로가 넣었으면(0건) 그 값은 이 기능의 것이 아니다.
+  if (written.count === 0) return;
+  await writeLegacyDateMarker(tx, unit, {
+    type: LEGACY_DATE_ROLLUP_LOG_TYPE,
+    previousValue: null,
+    newValue: value,
+    content: `모든 달의 공급사 계산서가 끝나 계산서일을 ${value}로 채웠습니다.`,
+  });
 }
 
-async function logActivity(tx: Prisma.TransactionClient, unit: InvoiceUnit, content: string) {
+async function logActivity(tx: Prisma.TransactionClient, unit: InvoiceUnit, content: string, actor?: string) {
   // ⚠️ `content` 는 사람이 읽는 문장이다 — 타임라인은 모르는 type 의 content 를 그대로 그린다.
   for (const campaignId of unit.memberIds) {
     await tx.activityLog.create({
-      data: { entityType: "CAMPAIGN", entityId: campaignId, type: "CAMPAIGN_INVOICE", content },
+      data: {
+        entityType: "CAMPAIGN",
+        entityId: campaignId,
+        type: "CAMPAIGN_INVOICE",
+        content,
+        ...(actor ? { actor } : {}),
+      },
     });
   }
 }
@@ -483,7 +612,68 @@ export const campaignInvoiceService = {
       expectedFromManual: unit.expectedFromManual,
       rows: rows.map(toInvoiceRowDto),
       excludedIssueIds: [...new Set(excluded.map((row) => row.approvalNo as string))],
+      reviewAcks: await loadUnitReviewAcks(prisma, unit),
     };
+  },
+
+  /**
+   * 「확인함」(오너 승인 2026-10-15) — 기록 합계가 전액과 어긋난 단위의 **지금 차이**를 오너가 봤다고 남긴다.
+   * 화면이 본 지문(`fingerprint`)과 서버가 다시 계산한 지문이 같을 때만 쓴다 — 창을 연 사이 금액이 바뀌었으면
+   * 오너가 보지 않은 차이를 확인한 것이 되므로 409 로 돌려보낸다. 단위당 한 줄(기준 캠페인 = 멤버 id 오름차순
+   * 첫째, 자동 기록 단위와 같은 규칙)만 남기고 같은 단위의 옛 확인은 걷어낸다.
+   * 완료 게이트는 건드리지 않는다(검토 신호는 원래 잠금이 아니다). 금액이 바뀌면 지문이 달라져 저절로 다시 뜬다.
+   */
+  async acknowledgeReview(campaignId: string, input: { fingerprint: string; actor: string }) {
+    const prisma = getPrisma();
+    return prisma.$transaction(async (tx) => {
+      const unit = await requireUnit(tx, campaignId);
+      const rows = await loadUnitRows(tx, unit);
+      if (isLegacyMode(unit, rows)) throw new CampaignInvoiceError(NO_REVIEW_MESSAGE, 409);
+      const { mismatch } = resolveInvoiceReview({
+        periodMonths: listYearMonths(unit.periodStart, unit.periodEnd),
+        rows: rows.map(toInvoiceRowDto).filter((row) => row.status !== "DISMISSED"),
+        expectedTotalAmount: unit.expectedTotalAmount,
+      });
+      if (!mismatch) throw new CampaignInvoiceError(NO_REVIEW_MESSAGE, 409);
+      if (mismatch.fingerprint !== input.fingerprint) {
+        throw new CampaignInvoiceError("금액이 바뀌었습니다. 창을 닫았다 다시 열어 확인해 주세요.", 409);
+      }
+      const anchorCampaignId = unitAnchorCampaignId(unit.memberIds);
+      await tx.campaignInvoiceReviewAck.deleteMany({
+        where: { campaignId: { in: unit.memberIds }, direction: unit.direction, NOT: { campaignId: anchorCampaignId } },
+      });
+      const ack = await tx.campaignInvoiceReviewAck.upsert({
+        where: { campaignId_direction: { campaignId: anchorCampaignId, direction: unit.direction } },
+        create: {
+          campaignId: anchorCampaignId,
+          direction: unit.direction,
+          fingerprint: mismatch.fingerprint,
+          acknowledgedBy: input.actor,
+        },
+        update: { fingerprint: mismatch.fingerprint, acknowledgedBy: input.actor, acknowledgedAt: new Date() },
+      });
+      await logActivity(
+        tx,
+        unit,
+        `공급사 계산서 금액 차이를 확인했습니다(${AUTO_RECORD_REVIEW_LABEL[mismatch.kind]} · 기록 합계${won(mismatch.recordedTotal)} · 캠페인 전액${won(mismatch.expectedTotal)}).`,
+        input.actor,
+      );
+      return toReviewAckDto(ack);
+    });
+  },
+
+  /** 「확인 취소」 — 이 단위의 확인 기록을 걷어낸다. 지금 차이가 남아 있으면 「확인 필요」가 다시 뜬다. 없으면 아무것도 안 한다. */
+  async revokeReviewAck(campaignId: string, input: { actor: string }) {
+    const prisma = getPrisma();
+    return prisma.$transaction(async (tx) => {
+      const unit = await requireUnit(tx, campaignId);
+      const removed = await tx.campaignInvoiceReviewAck.deleteMany({
+        where: { campaignId: { in: unit.memberIds }, direction: unit.direction },
+      });
+      if (removed.count === 0) return null;
+      await logActivity(tx, unit, "공급사 계산서 금액 차이 확인을 취소했습니다.", input.actor);
+      return { removed: removed.count };
+    });
   },
 
   /** 메일에서 찾은 계산서를 오너가 확인 — 이 단위의 그 달 계산서로 기록한다. */
@@ -506,6 +696,7 @@ export const campaignInvoiceService = {
         );
       }
       const rowsBefore = (await loadUnitRows(tx, unit)).map(toInvoiceRowDto);
+      await markLegacyDateKeptIfLeavingLegacyMode(tx, unit, rowsBefore);
       // 「이 메일이 아님」으로 뺐던 계산서를 다시 고른 경우 — 제외 행을 걷어낸다(같은 승인번호 유일 제약).
       await tx.campaignInvoice.deleteMany({
         where: { campaignId: { in: unit.memberIds }, approvalNo: input.issueId, status: "DISMISSED" },
@@ -650,6 +841,7 @@ export const campaignInvoiceService = {
     for (const { id } of campaigns) {
       const summary = progress.get(id);
       // 열린 달이 없어도 기록한 합계가 어긋나는 단위는 넣는다 — 기록할 것은 없고 오너 확인 보고만(R0).
+      // 오너가 그 차이를 「확인함」으로 봤으면 review 가 null 이라 여기서 빠진다(크론·봇이 더는 세지 않는다).
       if (!summary || (summary.openMonths.length === 0 && !summary.review)) continue;
       const unit = await loadInvoiceUnit(db, id, now);
       if (!unit) continue;
@@ -660,7 +852,7 @@ export const campaignInvoiceService = {
       const live = rows.filter((row) => row.status !== "DISMISSED");
       units.push({
         unitKey,
-        anchorCampaignId: [...unit.memberIds].sort()[0],
+        anchorCampaignId: unitAnchorCampaignId(unit.memberIds),
         direction: unit.direction,
         counterpartBusinessNumber: unit.counterpartBusinessNumber,
         counterpartLabel: unit.counterpartLabel,
@@ -704,6 +896,7 @@ export const campaignInvoiceService = {
           where: { campaignId: { in: unit.memberIds }, approvalNo, status: "DISMISSED" },
         });
       }
+      await markLegacyDateKeptIfLeavingLegacyMode(tx, unit, rowsBefore);
       const row = await tx.campaignInvoice.create({
         data: {
           campaignId,
@@ -744,6 +937,7 @@ export const campaignInvoiceService = {
         throw new CampaignInvoiceError("이 달에는 이미 기록한 계산서가 있습니다. 먼저 기록을 취소해 주세요.", 409);
       }
       if (existing?.status === "WAIVED") throw new CampaignInvoiceError("이미 「없음」으로 표시한 달입니다.", 409);
+      await markLegacyDateKeptIfLeavingLegacyMode(tx, unit, (await loadUnitRows(tx, unit)).map(toInvoiceRowDto));
       const row = await tx.campaignInvoice.create({
         data: {
           campaignId,
@@ -780,13 +974,16 @@ export const campaignInvoiceService = {
 
   /**
    * 기록·「없음」·제외를 취소한다. 모든 달이 끝나 이 기능이 레거시 날짜를 채운 뒤 한 달을 취소하면,
-   * 레거시 날짜가 **이 기능이 채웠을 값과 같을 때만** 비운다(헤더 규칙의 유일한 예외) — 그러지 않으면
+   * 레거시 날짜가 **이 기능이 채운 값일 때만** 비운다(헤더 규칙의 유일한 예외) — 그러지 않으면
    * 한 달짜리 캠페인은 행이 0개가 되어 레거시 모드로 떨어지고 계산서 없이 완료가 통과된다.
-   * 「채웠을 값」 = 취소 전 기록 중 가장 늦은 작성일(`rollupLegacyDate` 가 쓰는 식 그대로). 종전처럼 「지금도
-   * 다 끝났는가」를 다시 묻지 않는 이유(M2): 전액이 바뀌어(매출 정정·판매 중 전환) 「한 번에 끝」이 거짓이
-   * 됐어도 날짜는 남아 있는데, 그 상태에서 취소하면 종전 판정은 null 이라 날짜를 못 비우고 레거시 모드로
-   * 떨어진다. 월정산 단위의 그 날짜는 이 기능 말고는 쓸 수 없으므로(`findLegacyDateWriteBlocker`) 식이 같으면
-   * 이 기능의 값이다.
+   * 「이 기능이 채운 값」은 출처 표지로 가른다(`mayClearRolledUpLegacyDate`). ⛔ 종전 주석의 전제 「월정산 단위의
+   * 그 날짜는 이 기능 말고는 쓸 수 없다」는 **틀렸다**(리뷰 2026-10-15 #3): 레거시 모드(날짜 있음·계산서 0장)에서는
+   * 오너가 날짜를 직접 넣을 수 있고(`findLegacyDateWriteBlocker` 의 허용 칸), 그 날짜는 대개 실제 작성일이라 뒤에
+   * 기록한 계산서의 작성일과 같다 — 값이 같다는 것만으로 비우면 오너의 날짜가 지워진다.
+   * 종전처럼 「지금도 다 끝났는가」를 다시 묻지 않는 이유(M2): 전액이 바뀌어(매출 정정·판매 중 전환) 「한 번에
+   * 끝」이 거짓이 됐어도 날짜는 남아 있는데, 그 상태에서 취소하면 그 판정은 null 이라 날짜를 못 비우고 레거시
+   * 모드로 떨어진다. 비운 뒤에는 롤업을 한 번 더 돌린다 — 같은 달에 계산서가 더 남아 여전히 다 끝났으면 남은
+   * 기록의 최신 작성일로 다시 채운다(비운 채 두면 단일 날짜 소비처가 끝난 단위를 「미완」으로 본다).
    */
   async revertRow(campaignId: string, rowId: string) {
     const prisma = getPrisma();
@@ -797,6 +994,15 @@ export const campaignInvoiceService = {
       });
       if (!row) throw new CampaignInvoiceError("취소할 기록을 찾을 수 없습니다.", 404);
       const rollupBefore = latestRecordedWrittenAt((await loadUnitRows(tx, unit)).map(toInvoiceRowDto));
+      const legacyBefore = toYmd(unit.legacyDate);
+      const clearLegacy =
+        row.status !== "DISMISSED" &&
+        legacyBefore !== null &&
+        mayClearRolledUpLegacyDate({
+          legacyDate: legacyBefore,
+          latestMarker: await findLatestLegacyDateMarker(tx, unit),
+          rollupBefore,
+        });
       await tx.campaignInvoice.delete({ where: { id: row.id } });
       // 자동 기록을 오너가 취소했다 = 그 메일은 이 단위 것이 아니다. 지우기만 하면 다음 크론이 같은 조건으로
       // **같은 메일을 다시 기록**한다(코드 리뷰 2026-10-09) — 「이 메일이 아님」으로 남겨 후보·자동 판정에서 뺀다.
@@ -814,12 +1020,20 @@ export const campaignInvoiceService = {
           },
         });
       }
-      if (rollupBefore && row.status !== "DISMISSED" && toYmd(unit.legacyDate) === rollupBefore) {
-        const where = { supplierInvoiceIssuedAt: fromYmd(rollupBefore) };
-        if (unit.groupId) {
-          await tx.campaignGroup.updateMany({ where: { id: unit.groupId, ...where }, data: { supplierInvoiceIssuedAt: null } });
-        } else {
-          await tx.salesCampaign.updateMany({ where: { id: unit.campaignId, ...where }, data: { supplierInvoiceIssuedAt: null } });
+      if (clearLegacy && legacyBefore !== null) {
+        const where = { supplierInvoiceIssuedAt: fromYmd(legacyBefore) };
+        const cleared = unit.groupId
+          ? await tx.campaignGroup.updateMany({ where: { id: unit.groupId, ...where }, data: { supplierInvoiceIssuedAt: null } })
+          : await tx.salesCampaign.updateMany({ where: { id: unit.campaignId, ...where }, data: { supplierInvoiceIssuedAt: null } });
+        if (cleared.count > 0) {
+          await writeLegacyDateMarker(tx, unit, {
+            type: LEGACY_DATE_ROLLUP_LOG_TYPE,
+            previousValue: legacyBefore,
+            newValue: null,
+            content: `기록 취소로 달이 다시 열려 자동으로 채웠던 계산서일(${legacyBefore})을 비웠습니다.`,
+          });
+          // 남은 기록만으로도 다 끝났으면 다시 채운다(그때 새 ROLLUP 표지가 남는다).
+          await rollupLegacyDate(tx, { ...unit, legacyDate: null });
         }
       }
       if (row.status !== "DISMISSED") {
@@ -911,9 +1125,9 @@ export const campaignInvoiceService = {
  * ⛔ 달이 0개인 단위는 없다(`listYearMonths` 가 최소 1달) — 「줄 0개 = 끝」 같은 공허 판정 금지.
  *
  * 세무 보드가 열릴 때마다 정산 단계의 월정산 캠페인 전부를 본다 — 캠페인마다 조회하면 쌓이는
- * 만큼 느려지므로 **조회 3번**(대상·그룹 멤버·계산서 행)으로 묶는다(코드 리뷰 2026-10-09). 2026-10-14 부터
- * 대상·그룹 멤버 조회가 전액 계산 입력(`UNIT_MONEY_SELECT` — 매출·영업수익·부가 항목·거래처·상태)까지 함께
- * 읽는다 — 조회 수는 그대로 3번이고 행당 폭만 늘었다. 전액(`unitExpectedTotal`)과 어긋남(`review`)이 여기서
+ * 만큼 느려지므로 **조회 4번**(대상·그룹 멤버·계산서 행·확인 기록)으로 묶는다(코드 리뷰 2026-10-09 · 확인 기록은
+ * 2026-10-15). 2026-10-14 부터 대상·그룹 멤버 조회가 전액 계산 입력(`UNIT_MONEY_SELECT` — 매출·영업수익·부가 항목·
+ * 거래처·상태)까지 함께 읽는다 — 행당 폭만 늘었다. 전액(`unitExpectedTotal`)과 어긋남(`review`)이 여기서
  * 나오므로 세무 보드·완료 게이트·크론이 같은 값을 본다.
  * 단위 판정 규칙은 `loadInvoiceUnit`·`isLegacyMode`·`isUnitMature` 와 같다 — 여기서 규칙을 바꾸면 그쪽도 바꿀 것.
  */
@@ -955,6 +1169,12 @@ async function evaluateUnits(db: Db, campaignIds: readonly string[], now: Date =
     where: { campaignId: { in: allMemberIds } },
     orderBy: [{ yearMonth: "asc" }, { createdAt: "asc" }],
   });
+  // 오너의 「확인함」 — 지문만 읽는다. ⚠️ 봇 워커 롤은 이 표의 id·campaignId·direction·fingerprint 칸만 열려
+  // 있다(마이그레이션 20261015120000) — 누가(acknowledgedBy) 같은 칸을 여기 select 에 넣으면 봇 조회가 권한 오류로 죽는다.
+  const acks = await db.campaignInvoiceReviewAck.findMany({
+    where: { campaignId: { in: allMemberIds } },
+    select: { campaignId: true, direction: true, fingerprint: true },
+  });
 
   const byUnitKey = new Map<string, InvoiceProgress | null>();
   for (const target of targets) {
@@ -964,6 +1184,7 @@ async function evaluateUnits(db: Db, campaignIds: readonly string[], now: Date =
       const memberIds = new Set(members.map((m) => m.id));
       const direction = resolveSupplierInvoiceDirection(target.salesChannel);
       const unitRows = rows.filter((row) => memberIds.has(row.campaignId) && row.direction === direction);
+      const unitAcks = acks.filter((ack) => memberIds.has(ack.campaignId) && ack.direction === direction);
       // CG-1: 그룹 소속이면 그룹 값이 정본이다.
       const legacyDate = target.groupId ? (target.group?.supplierInvoiceIssuedAt ?? null) : target.supplierInvoiceIssuedAt;
       const legacy = legacyDate !== null && !unitRows.some((row) => row.status !== "DISMISSED");
@@ -977,6 +1198,7 @@ async function evaluateUnits(db: Db, campaignIds: readonly string[], now: Date =
               periodEnd: new Date(Math.max(...members.map((m) => m.endDate.getTime()))),
               rows: unitRows.map(toInvoiceRowDto),
               expectedTotalAmount: unitExpectedTotal(members, target.groupId !== null, now)?.totalAmount ?? null,
+              reviewAcks: unitAcks,
             }),
       );
     }

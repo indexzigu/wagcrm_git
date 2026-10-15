@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AUTO_RECORD_REVIEW_LABEL,
   INVOICE_MONTH_EMPTY_MARK,
   INVOICE_MONTH_HINT,
   INVOICE_MONTH_LABEL,
@@ -34,13 +35,17 @@ import {
   findInvoiceCandidates,
   formatInvoiceMonth,
   isInvoiceMonthDone,
+  listYearMonths,
   matchesExpectedAmount,
+  resolveInvoiceReview,
   summarizeInvoiceRows,
   INVOICE_AMOUNT_TOLERANCE_WON,
   type CampaignInvoiceRow,
   type CampaignInvoiceView,
   type InvoiceMailSummary,
   type InvoiceMonth,
+  type InvoiceReviewAck,
+  type RecordedMismatch,
   type StatementMailSummary,
 } from "@/lib/campaign-invoices";
 import type { ReceiptScanApiResponse } from "@/lib/tax-invoice-mail/board-evidence";
@@ -113,12 +118,19 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
   const mismatch = month.recorded.length > 0 ? month.mismatch : null;
   const label = awaitingScan ? null : INVOICE_MONTH_LABEL[mismatch ?? month.state];
   const tone = awaitingScan ? "none" : INVOICE_MONTH_TONE[mismatch ?? month.state];
-  const hint = awaitingScan ? SCANNING_HINT : INVOICE_MONTH_HINT[mismatch ?? month.state];
+  // 수정세금계산서가 따라온 기록 달이 어긋남까지 겹치면(리뷰 2026-10-15 #5) 작성일과 어긋남 낱말을 함께 보이고,
+  // 「수정됨」은 풀이에 덧붙인다 — 한쪽 신호가 다른 쪽을 덮어 작성일까지 사라지지 않게.
+  const amendedAndMismatched = month.state === "AMENDED" && mismatch !== null;
+  const hint = awaitingScan
+    ? SCANNING_HINT
+    : amendedAndMismatched
+      ? `${INVOICE_MONTH_HINT[mismatch ?? month.state]} ${INVOICE_MONTH_HINT.AMENDED}`
+      : INVOICE_MONTH_HINT[mismatch ?? month.state];
   const lastRecorded = month.recorded.at(-1) ?? null;
-  const shown =
-    month.state === "RECORDED"
-      ? `${formatMonthDay(lastRecorded?.writtenAt ?? null)}${mismatch ? ` · ${label}` : ""}`
-      : label ?? INVOICE_MONTH_EMPTY_MARK;
+  const showsDate = month.state === "RECORDED" || amendedAndMismatched;
+  const shown = showsDate
+    ? `${formatMonthDay(lastRecorded?.writtenAt ?? null)}${mismatch ? ` · ${label}` : ""}`
+    : label ?? INVOICE_MONTH_EMPTY_MARK;
   const detail = lastRecorded ?? null;
   // 어긋남 상태도 메일 후보 한 장이 근거다 — 금액을 같은 자리에서 보인다.
   const candidate =
@@ -139,7 +151,7 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
           <span
             className={cn(
               "flex min-w-0 items-center gap-1.5 truncate",
-              month.state === "RECORDED" ? "tabular-nums text-foreground" : label ? "text-slate-700" : "text-muted-foreground",
+              showsDate ? "tabular-nums text-foreground" : label ? "text-slate-700" : "text-muted-foreground",
             )}
           >
             {tone !== "none" ? <span className={cn("size-1.5 shrink-0 rounded-full", DOT_CLASS[tone])} aria-hidden="true" /> : null}
@@ -150,6 +162,9 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
       </HoverCardTrigger>
       <HoverCardContent className="w-80 space-y-1.5 p-3">
         <p className="text-xs text-slate-600">{hint}</p>
+        {month.reviewedMismatch ? (
+          <p className="text-xs text-muted-foreground">금액 차이({INVOICE_MONTH_LABEL[month.reviewedMismatch]})는 확인했습니다.</p>
+        ) : null}
         {month.notes.map((note) => (
           <p key={note} className="text-xs font-medium text-foreground">
             {INVOICE_MONTH_NOTE_HINT[note]}
@@ -591,8 +606,23 @@ function useCampaignInvoices({
       expectationsByMonth,
       expectedTotalAmount: applicable.expectedTotalAmount,
       expectedFromManual: applicable.expectedFromManual,
+      reviewAcks: applicable.reviewAcks,
     });
   }, [applicable, scan, now, statements]);
+
+  // 단위의 「확인 필요」 — 달 줄과 같은 판정(`resolveInvoiceReview`)이다. 창의 「확인함」이 이 지문을 보낸다.
+  const review = useMemo(() => {
+    if (!applicable) return null;
+    const { mismatch, acknowledged } = resolveInvoiceReview({
+      periodMonths: listYearMonths(new Date(applicable.periodStart), new Date(applicable.periodEnd)),
+      rows: applicable.rows.filter((row) => row.status !== "DISMISSED"),
+      expectedTotalAmount: applicable.expectedTotalAmount,
+      reviewAcks: applicable.reviewAcks,
+    });
+    if (!mismatch) return null;
+    // 확인한 적은 있는데 지문이 다르다 = 그 뒤 금액이 바뀌었다(다시 뜬 이유를 한 줄로 알린다).
+    return { mismatch, acknowledged, staleAck: !acknowledged && applicable.reviewAcks.length > 0 };
+  }, [applicable]);
 
   const run = useCallback(
     async (body: Record<string, unknown>): Promise<boolean> => {
@@ -611,7 +641,103 @@ function useCampaignInvoices({
     [busy, campaignId, load, onChanged],
   );
 
-  return { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading };
+  return { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading };
+}
+
+type UnitReview = { mismatch: RecordedMismatch; acknowledged: InvoiceReviewAck | null; staleAck: boolean };
+
+function formatAckWhen(ack: InvoiceReviewAck): string {
+  return ack.acknowledgedAt ? toKstYmd(new Date(ack.acknowledgedAt)) : INVOICE_MONTH_EMPTY_MARK;
+}
+
+function formatSignedWon(value: number): string {
+  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${Math.abs(value).toLocaleString("ko-KR")}원`;
+}
+
+/**
+ * 창 맨 위의 금액 차이 블록 — 「확인 필요」면 「확인함」, 확인했으면 조용한 「확인됨」과 「확인 취소」.
+ * 확인은 이 차이(지문)에만 묶인다 — 금액이 바뀌면 블록이 다시 「확인 필요」로 돌아온다(오너 승인 2026-10-15).
+ */
+function ReviewBlock({
+  review,
+  busy,
+  run,
+}: {
+  review: UnitReview;
+  busy: boolean;
+  run: (body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const { mismatch, acknowledged } = review;
+  return (
+    <section aria-label="금액 차이" className="space-y-1.5 rounded-lg border border-border/70 p-2.5" data-testid="invoice-review-block">
+      <div className="flex items-center justify-between gap-2">
+        {acknowledged ? (
+          <span className="text-xs text-muted-foreground">
+            확인됨 · {acknowledged.acknowledgedBy ?? INVOICE_MONTH_EMPTY_MARK} · {formatAckWhen(acknowledged)}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
+            <span className="size-1.5 rounded-full bg-status-caution" aria-hidden="true" />
+            확인 필요
+          </span>
+        )}
+        {acknowledged ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run({ action: "revokeReviewAck" })}
+            className="h-7 rounded-md px-2 text-xs text-muted-foreground hover:bg-slate-50 disabled:opacity-50"
+          >
+            확인 취소
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run({ action: "acknowledgeReview", fingerprint: mismatch.fingerprint })}
+            className="h-7 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            확인함
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-slate-600">{AUTO_RECORD_REVIEW_LABEL[mismatch.kind]}</p>
+      <DetailRow label="기록 합계" value={formatWon(mismatch.recordedTotal)} />
+      <DetailRow label="캠페인 전액" value={formatWon(mismatch.expectedTotal)} />
+      <DetailRow label="차이" value={formatSignedWon(mismatch.delta)} />
+      {review.staleAck ? <p className="text-xs text-muted-foreground">확인한 뒤 금액이 바뀌어 다시 확인이 필요합니다.</p> : null}
+    </section>
+  );
+}
+
+/** 머리글의 조용한 「확인됨」 — 누가·언제는 마우스를 올리면(키보드 포커스·터치 포함) 뜨는 작은 창에. */
+function ReviewAckMarker({ ack, kind }: { ack: InvoiceReviewAck; kind: RecordedMismatch["kind"] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <HoverCard open={open} onOpenChange={setOpen}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          onPointerDown={(event) => {
+            if (event.pointerType === "touch") setOpen(true);
+          }}
+          data-testid="campaign-invoice-review-ack"
+          className="rounded-sm font-normal text-muted-foreground underline decoration-slate-300 decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+        >
+          확인됨
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-72 space-y-1.5 p-3">
+        <p className="text-xs text-slate-600">
+          금액 차이({AUTO_RECORD_REVIEW_LABEL[kind]})를 확인했습니다. 금액이 바뀌면 다시 확인 필요로 돌아옵니다.
+        </p>
+        <div className="space-y-1 border-t border-border/60 pt-1.5">
+          <DetailRow label="확인" value={ack.acknowledgedBy ?? INVOICE_MONTH_EMPTY_MARK} />
+          <DetailRow label="날짜" value={formatAckWhen(ack)} />
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  );
 }
 
 /** 달별 확인·직접 입력·「없음」·취소 창 — 캠페인 상세 칸과 세무 보드가 같은 창을 연다. */
@@ -626,12 +752,15 @@ function InvoiceMonthsDialog({
   statementsFailed,
   statementsLoading,
   run,
+  review,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   applicable: ApplicableView;
   months: InvoiceMonth[];
+  /** 단위의 금액 차이(`resolveInvoiceReview`) — 없으면 블록을 그리지 않는다 */
+  review: UnitReview | null;
   busy: boolean;
   scanLoading: boolean;
   statementsFailed: boolean;
@@ -651,6 +780,7 @@ function InvoiceMonthsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          {review ? <ReviewBlock review={review} busy={busy || scanLoading} run={run} /> : null}
           {months.map((month) => (
             <MonthSection key={month.yearMonth} month={month} busy={busy || scanLoading} run={run} />
           ))}
@@ -682,7 +812,7 @@ export function CampaignInvoiceDialog({
   onRequestScan: () => Promise<void> | void;
   onChanged: () => Promise<void> | void;
 }) {
-  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
+  const { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
     campaignId,
     scan,
     onRequestScan,
@@ -727,6 +857,7 @@ export function CampaignInvoiceDialog({
       title={title}
       applicable={applicable}
       months={months}
+      review={review}
       busy={busy}
       scanLoading={scanLoading}
       statementsFailed={statementsFailed}
@@ -761,7 +892,7 @@ export function CampaignInvoiceSlot({
   attachment: ReactNode;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { view, loadFailed, applicable, months, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
+  const { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
     campaignId,
     scan,
     onRequestScan,
@@ -809,6 +940,9 @@ export function CampaignInvoiceSlot({
               <span className="size-1.5 rounded-full bg-status-caution" aria-hidden="true" />
               확인 필요
             </span>
+          ) : review?.acknowledged ? (
+            // 오너가 이 차이를 확인했다 — 색 없이 낱말 하나만(P8 「정상 상태는 안 튄다」), 누가·언제는 풀이 창에.
+            <ReviewAckMarker ack={review.acknowledged} kind={review.mismatch.kind} />
           ) : null}
         </span>
         <div className="flex items-center gap-1.5">
@@ -841,10 +975,11 @@ export function CampaignInvoiceSlot({
         title={title}
         applicable={applicable}
         months={months}
+        review={review}
         busy={busy}
         scanLoading={scanLoading}
         statementsFailed={statementsFailed}
-      statementsLoading={statementsLoading}
+        statementsLoading={statementsLoading}
         run={run}
       />
     </div>

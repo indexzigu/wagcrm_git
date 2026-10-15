@@ -27,6 +27,7 @@ const VIEW = {
   expectedFromManual: false,
   rows: [],
   excludedIssueIds: [],
+  reviewAcks: [] as Array<{ fingerprint: string; acknowledgedBy: string | null; acknowledgedAt: string | null }>,
 };
 
 const STATEMENTS = {
@@ -179,5 +180,110 @@ describe("CampaignInvoiceSlot — 기록한 합계가 전액과 어긋난 달 (R
     expect(await screen.findByText(/정산 오류 가능성 · 원인 확인 필요/)).toBeInTheDocument();
     expect(screen.getByText("기대액이 수동 입력값에서 계산됨 · CRM 금액 재확인")).toBeInTheDocument();
     expect(screen.getByText("1,940,000원")).toBeInTheDocument();
+  });
+});
+
+// 「확인함」(오너 승인 2026-10-15) — 확인은 그 차이의 지문에만 묶인다. 지문 = 이유 코드 · 기록 합계 · 전액.
+const FINGERPRINT = "v1|MINOR_MISMATCH|1940000|2000000";
+const ACK = { fingerprint: FINGERPRINT, acknowledgedBy: "owner-1", acknowledgedAt: "2026-10-15T03:00:00.000Z" };
+
+function mockFetch(view: unknown) {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST") {
+      calls.push({ url, body: JSON.parse(String(init.body)) });
+      return { ok: true, json: async () => ({ ok: true }) } as Response;
+    }
+    const body = url.includes("/brand-statements") ? { statements: [] } : view;
+    return { ok: true, json: async () => body } as Response;
+  }) as never;
+  return calls;
+}
+
+function renderSlot(scan: ReceiptScanApiResponse = { scan: { sinceDays: 90 }, results: [] } as unknown as ReceiptScanApiResponse) {
+  return render(
+    <CampaignInvoiceSlot
+      campaignId="c1"
+      title="공급사 계산서 발행"
+      scan={scan}
+      scanLoading={false}
+      onRequestScan={() => {}}
+      onChanged={() => {}}
+      legacyFallback={null}
+      attachment={null}
+    />,
+  );
+}
+
+describe("「확인함」 — 금액 차이 확인", () => {
+  it("창 맨 위에 차이와 「확인함」을 보이고, 누르면 화면이 본 지문을 보낸다", async () => {
+    const calls = mockFetch(MISMATCH_VIEW);
+    renderDialog();
+    const block = within(await screen.findByTestId("invoice-review-block"));
+    expect(block.getByText("확인 필요")).toBeInTheDocument();
+    expect(block.getByText("정산 오류 가능성 · 원인 확인 필요")).toBeInTheDocument();
+    expect(block.getByText("1,940,000원")).toBeInTheDocument();
+    expect(block.getByText("2,000,000원")).toBeInTheDocument();
+    expect(block.getByText("-60,000원")).toBeInTheDocument();
+    fireEvent.click(block.getByRole("button", { name: "확인함" }));
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ url: "/api/campaigns/c1/invoices", body: { action: "acknowledgeReview", fingerprint: FINGERPRINT } });
+  });
+
+  it("확인한 차이는 칸이 조용하다 — 「확인 필요」·어긋남 낱말 없이 작성일과 「확인됨」(누가·언제는 풀이 창)", async () => {
+    mockFetch({ ...MISMATCH_VIEW, reviewAcks: [ACK] });
+    renderSlot();
+    const cell = await screen.findByTestId("invoice-month-2026-09");
+    expect(cell).toHaveTextContent("9월9/30");
+    expect(cell).not.toHaveTextContent("오류 가능성");
+    expect(screen.queryByTestId("campaign-invoice-review")).toBeNull();
+    const marker = screen.getByTestId("campaign-invoice-review-ack");
+    expect(marker).toHaveTextContent("확인됨");
+    fireEvent.pointerDown(marker, { pointerType: "touch" });
+    expect(await screen.findByText("owner-1")).toBeInTheDocument();
+    expect(screen.getByText("2026-10-15")).toBeInTheDocument();
+  });
+
+  it("확인한 창에서는 「확인됨 · 누가 · 언제」와 「확인 취소」 — 누르면 확인을 걷어낸다", async () => {
+    const calls = mockFetch({ ...MISMATCH_VIEW, reviewAcks: [ACK] });
+    renderDialog();
+    const block = within(await screen.findByTestId("invoice-review-block"));
+    expect(block.getByText("확인됨 · owner-1 · 2026-10-15")).toBeInTheDocument();
+    expect(block.queryByRole("button", { name: "확인함" })).toBeNull();
+    fireEvent.click(block.getByRole("button", { name: "확인 취소" }));
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0].body).toEqual({ action: "revokeReviewAck" });
+  });
+
+  it("확인한 뒤 금액이 바뀌었으면(지문이 다름) 다시 「확인 필요」이고 그 이유를 한 줄로 알린다", async () => {
+    mockFetch({ ...MISMATCH_VIEW, reviewAcks: [{ ...ACK, fingerprint: "v1|MINOR_MISMATCH|1930000|2000000" }] });
+    renderSlot();
+    expect(await screen.findByTestId("campaign-invoice-review")).toHaveTextContent("확인 필요");
+    expect(screen.queryByTestId("campaign-invoice-review-ack")).toBeNull();
+    renderDialog();
+    const block = within(await screen.findByTestId("invoice-review-block"));
+    expect(block.getByText("확인한 뒤 금액이 바뀌어 다시 확인이 필요합니다.")).toBeInTheDocument();
+    expect(block.getByRole("button", { name: "확인함" })).toBeInTheDocument();
+  });
+
+  it("차이가 없으면 블록을 그리지 않는다", async () => {
+    mockFetch(VIEW);
+    renderDialog();
+    await september();
+    expect(screen.queryByTestId("invoice-review-block")).toBeNull();
+  });
+});
+
+describe("CampaignInvoiceSlot — 수정세금계산서가 따라온 달이 금액도 어긋날 때 (리뷰 2026-10-15 #5)", () => {
+  it("작성일과 어긋남 낱말을 함께 보이고 풀이에 「수정됨」 안내를 덧붙인다", async () => {
+    mockFetch(MISMATCH_VIEW);
+    const amendment = { ...invoice("B-1", -10_000), typeCode: "0201", writtenDate: "2026-09-30" };
+    renderSlot({ scan: { sinceDays: 90 }, results: [{ invoice: amendment }] } as unknown as ReceiptScanApiResponse);
+    const cell = await screen.findByTestId("invoice-month-2026-09");
+    await vi.waitFor(() => expect(cell).toHaveTextContent("9월9/30 · 오류 가능성"));
+    fireEvent.pointerDown(cell, { pointerType: "touch" });
+    expect(await screen.findByText(/수정세금계산서가 따라왔습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/정산 오류 가능성 · 원인 확인 필요/)).toBeInTheDocument();
   });
 });
