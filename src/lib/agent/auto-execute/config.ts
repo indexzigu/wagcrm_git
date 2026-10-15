@@ -16,6 +16,12 @@
  * ## 한도
  * 숫자가 아닌 값(쉼표·음수 등)은 기본값으로 대체하지 않고 `not_configured` 로 막는다 —
  * "100,000" 처럼 **더 좁히려던** 오타가 기본값(더 넓음)으로 조용히 바뀌면 안 된다.
+ *
+ * ## 되돌리기 가림 창 (`AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS`, 기본 168 = 7일)
+ * 같은 캠페인·칸을 이 시간 안에 자동 실행한 적이 있으면 그 칸의 새 기안은 자동 실행하지 않고 오너
+ * 승인으로 남긴다(오너 결정 2026-10-15, T-257 — 되돌리기는 사람 승인, 계획서 §6). 되돌리기 기안은
+ * 겉모양이 보통 수정과 같아 「같은 칸을 최근 자동으로 바꿨다」로 가린다. 7일 = 다음 날 아침 일일 요약을
+ * 보고 되돌리기를 요청하는 흐름을 넉넉히 덮는 값(세션 가정 — 오너가 숫자를 정하지 않았다). 0 이면 끔.
  */
 
 export type AutoExecuteMode = "off" | "shadow" | "on";
@@ -23,6 +29,7 @@ export type AutoExecuteMode = "off" | "shadow" | "on";
 export const DEFAULT_MAX_ABS_DELTA_KRW = 500_000;
 export const DEFAULT_MAX_PER_DAY = 10;
 export const DEFAULT_MESSAGE_WINDOW_MINUTES = 60;
+export const DEFAULT_RECENT_AUTO_HOURS = 168;
 
 export type AutoExecuteConfig = {
   mode: AutoExecuteMode;
@@ -36,6 +43,8 @@ export type AutoExecuteConfig = {
   maxAbsDeltaKrw: number | null;
   maxPerDay: number | null;
   messageWindowMinutes: number | null;
+  /** 되돌리기 가림 창(시간). 0 = 가리지 않음. */
+  recentAutoHours: number | null;
 };
 
 function readTrimmed(env: NodeJS.ProcessEnv, key: string): string | null {
@@ -75,6 +84,7 @@ export function readAutoExecuteConfig(env: NodeJS.ProcessEnv = process.env): Aut
       "AGENT_AUTO_EXECUTE_MESSAGE_WINDOW_MINUTES",
       DEFAULT_MESSAGE_WINDOW_MINUTES,
     ),
+    recentAutoHours: readNonNegativeInt(env, "AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS", DEFAULT_RECENT_AUTO_HOURS),
   };
 }
 
@@ -88,5 +98,6 @@ export function missingVerificationSettings(config: AutoExecuteConfig): string[]
   if (config.maxAbsDeltaKrw === null) missing.push("AGENT_AUTO_EXECUTE_MAX_ABS_DELTA_KRW");
   if (config.maxPerDay === null) missing.push("AGENT_AUTO_EXECUTE_MAX_PER_DAY");
   if (config.messageWindowMinutes === null) missing.push("AGENT_AUTO_EXECUTE_MESSAGE_WINDOW_MINUTES");
+  if (config.recentAutoHours === null) missing.push("AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS");
   return missing;
 }

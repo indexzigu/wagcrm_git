@@ -707,3 +707,169 @@ describe("묵은 기안", () => {
     expect(await statusOf(p.id)).toBe("PENDING_APPROVAL");
   });
 });
+
+describe("되돌리기는 사람 승인 — 같은 캠페인·칸을 최근 자동 실행했으면 PENDING (T-257)", () => {
+  const HOUR_MS = 60 * 60 * 1000;
+
+  /** 이전에 처리된 같은 칸 기안 1건 + 승인 이벤트(⏰ 상대 시각). */
+  async function createPriorChange(
+    args: Args,
+    opts: { status?: string; actor?: string; agoMs?: number; note?: string; toStatus?: string } = {},
+  ) {
+    const prior = await realPrisma.actionProposal.create({
+      data: {
+        requestType: "settlement_amount_update",
+        kind: "WRITE",
+        status: opts.status ?? "EXECUTED",
+        title: "이전 정산 금액 수정",
+        createdBy: "AGENT_WORKER",
+        payload: JSON.stringify({ action: "update_settlement_amount", args }),
+      },
+    });
+    await realPrisma.actionProposalEvent.create({
+      data: {
+        proposalId: prior.id,
+        fromStatus: "PENDING_APPROVAL",
+        toStatus: opts.toStatus ?? "APPROVED",
+        actor: opts.actor ?? "SYSTEM_AUTO",
+        note: opts.note ?? null,
+        createdAt: new Date(Date.now() - (opts.agoMs ?? HOUR_MS)),
+      },
+    });
+    return prior;
+  }
+
+  /** 앞선 자동 변경(1,200,000 → 1,350,000)을 되돌리는 기안. */
+  function revertArgs(prior: Args): Args {
+    return { ...prior, expectedCurrentKrw: prior.newAmountKrw, newAmountKrw: prior.expectedCurrentKrw as number };
+  }
+
+  it("최근 자동 실행한 칸을 맞바꾸는 기안 → PENDING (recent_auto_change), 슬랙도 부르지 않는다", async () => {
+    const changed = defaultArgs();
+    await createPriorChange(changed);
+    const p = await createProposal({ args: revertArgs(changed) });
+    const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p)]]));
+
+    const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl });
+
+    expect(result.verdicts).toEqual({ recent_auto_change: 1 });
+    expect(result.executed).toBe(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(executeCalls).toHaveLength(0);
+    expect(await statusOf(p.id)).toBe("PENDING_APPROVAL");
+    const events = await eventsOf(p.id, "SYSTEM_AUTO");
+    expect(events).toHaveLength(1);
+    expect(events[0].note).toContain("verdict=recent_auto_change");
+    // 확정 판정 — 다음 회차에 다시 보지 않는다(일일 승인으로 간다).
+    const next = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl });
+    expect(next).toMatchObject({ candidates: 0, recorded: 0 });
+  });
+
+  it("되돌리기가 아니어도 같은 칸이면 가린다 — 같은 캠페인의 다른 칸은 평소대로 실행", async () => {
+    const changed = defaultArgs();
+    await createPriorChange(changed);
+    const sameField = await createProposal({ args: { ...changed, expectedCurrentKrw: 1_350_000, newAmountKrw: 1_400_000 } });
+    const otherField = await createProposal({ args: { ...changed, field: "miscExpense", expectedCurrentKrw: 0, newAmountKrw: 10_000 } });
+    const fetchImpl = slackFake(
+      new Map([
+        [sameField.ts, museMessageFor(sameField)],
+        [otherField.ts, museMessageFor(otherField)],
+      ]),
+    );
+    // 가짜 실행 저장소는 캠페인당 값 하나다 — 실행될 다른 칸(miscExpense)의 현재 값 0 에 맞춘다.
+    campaignValues.set(changed.campaignId, 0);
+
+    const result = await runSettlementAutoExecutePass({ env: BASE_ENV, fetchImpl });
+
+    expect(result.verdicts).toEqual({ recent_auto_change: 1 });
+    expect(await statusOf(sameField.id)).toBe("PENDING_APPROVAL");
+    expect(await statusOf(otherField.id)).toBe("EXECUTED");
+  });
+
+  it("창(기본 7일) 밖의 자동 실행은 가리지 않는다", async () => {
+    const changed = defaultArgs();
+    await createPriorChange(changed, { agoMs: 8 * 24 * HOUR_MS });
+    const p = await createProposal({ args: revertArgs(changed) });
+    campaignValues.set(changed.campaignId, changed.newAmountKrw);
+    const result = await runSettlementAutoExecutePass({
+      env: BASE_ENV,
+      fetchImpl: slackFake(new Map([[p.ts, museMessageFor(p)]])),
+    });
+    expect(result.executed).toBe(1);
+    expect(await statusOf(p.id)).toBe("EXECUTED");
+  });
+
+  it("사람이 승인한 변경·실패로 끝난 자동 시도는 세지 않는다", async () => {
+    const byOwner = defaultArgs();
+    await createPriorChange(byOwner, { actor: "OWNER" });
+    const failedAuto = defaultArgs();
+    await createPriorChange(failedAuto, { status: "FAILED" });
+    const a = await createProposal({ args: revertArgs(byOwner) });
+    const b = await createProposal({ args: revertArgs(failedAuto) });
+    campaignValues.set(byOwner.campaignId, byOwner.newAmountKrw);
+    campaignValues.set(failedAuto.campaignId, failedAuto.newAmountKrw);
+    const result = await runSettlementAutoExecutePass({
+      env: BASE_ENV,
+      fetchImpl: slackFake(new Map([[a.ts, museMessageFor(a)], [b.ts, museMessageFor(b)]])),
+    });
+    expect(result.executed).toBe(2);
+    expect(result.verdicts).toEqual({});
+  });
+
+  it("같은 회차 안에서 바꾸고 곧바로 맞바꾸는 두 기안 → 앞의 것만 실행, 뒤의 것은 PENDING", async () => {
+    const change = defaultArgs();
+    const first = await createProposal({ args: change, createdAt: new Date(Date.now() - 2_000) });
+    const revert = await createProposal({ args: revertArgs(change) });
+    const result = await runSettlementAutoExecutePass({
+      env: BASE_ENV,
+      fetchImpl: slackFake(new Map([[first.ts, museMessageFor(first)], [revert.ts, museMessageFor(revert)]])),
+    });
+    expect(result.executed).toBe(1);
+    expect(result.verdicts).toEqual({ recent_auto_change: 1 });
+    expect(await statusOf(first.id)).toBe("EXECUTED");
+    expect(await statusOf(revert.id)).toBe("PENDING_APPROVAL");
+    expect(campaignValues.get(change.campaignId)).toBe(change.newAmountKrw);
+  });
+
+  it("창 0 = 끔, 숫자가 아닌 창 값 = not_configured(기본값으로 넓히지 않는다)", async () => {
+    const changed = defaultArgs();
+    await createPriorChange(changed);
+    const p = await createProposal({ args: revertArgs(changed) });
+    campaignValues.set(changed.campaignId, changed.newAmountKrw);
+    const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p)]]));
+
+    const bad = await runSettlementAutoExecutePass({
+      env: { ...BASE_ENV, AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS: "7d" },
+      fetchImpl,
+    });
+    expect(bad.verdicts).toEqual({ not_configured: 1 });
+    expect(await statusOf(p.id)).toBe("PENDING_APPROVAL");
+
+    const off = await runSettlementAutoExecutePass({
+      env: { ...BASE_ENV, AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS: "0" },
+      fetchImpl,
+    });
+    expect(off.executed).toBe(1);
+    expect(await statusOf(p.id)).toBe("EXECUTED");
+  });
+
+  it("그림자 모드: 창 안의 would_execute 판정이 있는 칸은 recent_auto_change 로 기록", async () => {
+    const changed = defaultArgs();
+    await createPriorChange(changed, {
+      status: "PENDING_APPROVAL",
+      actor: "SYSTEM_AUTO_SHADOW",
+      toStatus: "PENDING_APPROVAL",
+      note: "[auto-execute] verdict=would_execute; 그림자 모드",
+    });
+    const p = await createProposal({ args: revertArgs(changed) });
+    const fetchImpl = slackFake(new Map([[p.ts, museMessageFor(p)]]));
+    const result = await runSettlementAutoExecutePass({
+      env: { ...BASE_ENV, AGENT_AUTO_EXECUTE: "shadow" },
+      fetchImpl,
+    });
+    expect(result.verdicts).toEqual({ recent_auto_change: 1 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const shadow = await eventsOf(p.id, "SYSTEM_AUTO_SHADOW");
+    expect(shadow[0].note).toContain("verdict=recent_auto_change");
+  });
+});
