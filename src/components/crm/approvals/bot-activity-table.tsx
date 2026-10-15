@@ -4,7 +4,7 @@ import { Toggle } from "@/components/ui/toggle";
 import type { AgentJobListItem } from "@/lib/agent-jobs/list-item";
 import { OPERATION_LABELS } from "./approvals-tabs";
 import { formatShortDateTime } from "./format-time";
-import { displayLabel } from "@/lib/display-label";
+import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
 
 type BadgeVariant = React.ComponentProps<typeof Badge>["variant"];
 
@@ -28,9 +28,12 @@ export const STATUS_BADGE: Record<string, { label: string; variant: BadgeVariant
   FAILED_SECURITY: { label: "차단됨", variant: "destructive" },
 };
 
-/** 모르는 상태는 원문을 그대로 보여준다 — 조용히 빈 칸이 되면 무슨 일인지 알 수 없다. */
+/**
+ * 모르는 상태는 빈 칸 대신 「알 수 없음」 — 영문 코드를 그대로 내지 않는다(P2 화면 문구 기준 ③). 상태가
+ * 새로 생기면 위 표에 등록하는 것이 수정이다. (이름에 label 이 없어 화면 문구 검사가 못 보는 자리다.)
+ */
 function resolveStatus(status: string): { label: string; variant: BadgeVariant } {
-  return STATUS_BADGE[status] ?? { label: status, variant: "outline" };
+  return STATUS_BADGE[status] ?? { label: UNKNOWN_NAME, variant: "outline" };
 }
 
 const COLUMNS = ["시각", "작업", "상태", "요약", "결과"] as const;
@@ -106,8 +109,8 @@ export function BotActivityTable({
             {items.map((item) => {
               const status = resolveStatus(item.status);
               const operationLabel = item.payloadUnreadable
-                ? "알 수 없음"
-                : displayLabel(OPERATION_LABELS, item.operation, "알 수 없음");
+                ? UNKNOWN_NAME
+                : displayLabel(OPERATION_LABELS, item.operation, UNKNOWN_NAME);
               const summary = item.resultSummary ?? item.failureCode;
 
               return (

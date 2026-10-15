@@ -236,7 +236,7 @@ describe("결재함 대기 탭 — 일괄 승인", () => {
 });
 
 describe("summarizeByAction", () => {
-  it("많은 순(같으면 라벨 가나다순)으로, 모르는 액션 코드와 payload 없는 기안은 둘 다 「알 수 없는 액션」으로 센다(영문 코드를 내지 않는다)", () => {
+  it("많은 순(같으면 라벨 가나다순)으로, 모르는 액션 코드와 payload 없는 기안은 둘 다 「알 수 없음」으로 센다(영문 코드를 내지 않는다)", () => {
     expect(
       summarizeByAction([
         makeProposal({ id: "1", payload: { action: "create_deal" } }),
@@ -246,7 +246,7 @@ describe("summarizeByAction", () => {
       ])
     ).toEqual([
       { label: "딜 등록", count: 2 },
-      { label: "알 수 없는 액션", count: 2 },
+      { label: "알 수 없음", count: 2 },
     ]);
   });
 });

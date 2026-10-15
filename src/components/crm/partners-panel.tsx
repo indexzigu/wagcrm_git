@@ -107,13 +107,11 @@ type PartnersPanelProps = {
 
 // --- Constants ---
 
-const PARTNER_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "BRAND", label: "브랜드" },
-  { value: "VENDOR", label: "벤더" },
-  { value: "AGENCY", label: "대행사" },
-  { value: "AGENT", label: "에이전시" },
-  { value: "SELLER", label: "셀러" },
-];
+// 이름은 라벨 표 한 곳(crm-types `partnerTypeLabels`)에서 — 종전엔 여기와 결재함 미리보기가 각자 사본을 들고 갈라졌다.
+const PARTNER_TYPE_OPTIONS: { value: string; label: string }[] = PARTNER_TYPES.map((value) => ({
+  value,
+  label: partnerTypeLabels[value],
+}));
 
 // --- Hooks ---
 
