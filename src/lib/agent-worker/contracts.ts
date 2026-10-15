@@ -884,6 +884,7 @@ export const orderCampaignMappingsStructuredDataSchema = z
           mappingsTruncated: z.boolean(),
           storeOptions: z.array(structuredStoreOptionSchema),
           storeOptionsTruncated: z.boolean(),
+          storeOptionsWindowTruncated: z.boolean(),
         })
         .strict(),
     ),

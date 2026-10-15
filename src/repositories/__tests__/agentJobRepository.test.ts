@@ -200,6 +200,7 @@ describe("AgentJobRepository", () => {
           mappingsTruncated: false,
           storeOptions: [],
           storeOptionsTruncated: false,
+          storeOptionsWindowTruncated: false,
         },
       ],
     } as const;

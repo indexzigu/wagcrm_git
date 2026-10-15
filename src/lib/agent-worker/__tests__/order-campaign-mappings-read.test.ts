@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import type { AgentJobRecord } from "@/repositories/agentJobRepository";
 import type { AgentJobPayload } from "../contracts";
@@ -58,6 +58,7 @@ import {
   type OrderCampaignMappingsResult,
 } from "../order-campaign-mappings";
 import { MAX_FRAME_BYTES } from "../socket-server";
+import { MAX_READ_RESULT_BYTES } from "../read-result-record";
 
 const client = fakeClient as unknown as PrismaClient;
 const NOW = new Date("2026-10-15T03:00:00.000Z");
@@ -173,6 +174,7 @@ describe("readOrderCampaignMappings", () => {
           salesCampaignIds: [],
           storeOptions: [],
           storeOptionsTruncated: false,
+          storeOptionsWindowTruncated: false,
           mappings: [
             { productName: "가짜크림", optionName: "1개", brandCode: "FAKE-001", price: 19_900, linkedToDeal: false },
             { productName: "가짜크림", optionName: "2개", brandCode: "FAKE-002", price: 35_000, linkedToDeal: false },
@@ -425,11 +427,51 @@ describe("readOrderCampaignMappings — storeOptions", () => {
     expect(result.campaigns[0].storeOptionsTruncated).toBe(true);
   });
 
+  describe("90-day window guard", () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      warn.mockRestore();
+    });
+
+    it("flags storeOptionsWindowTruncated per campaign and warns at most once per read", async () => {
+      m.orderCampaignFindMany.mockResolvedValue([campaign({ id: "oc-1" }), campaign({ id: "oc-2" }), campaign({ id: "oc-3" })]);
+      m.salesCampaignFindMany.mockResolvedValue([
+        { id: "sc-1", orderCampaignId: "oc-1", startDate: new Date("2026-04-01T00:00:00.000Z") },
+        { id: "sc-2", orderCampaignId: "oc-2", startDate: new Date("2026-05-01T00:00:00.000Z") },
+        { id: "sc-3", orderCampaignId: "oc-3", startDate: SALES_START },
+      ]);
+      const result = await readOrderCampaignMappings({ query: "가짜" }, client, NOW);
+      expect(result.campaigns.map((row) => [row.id, row.storeOptionsWindowTruncated])).toEqual([
+        ["oc-1", true],
+        ["oc-2", true],
+        ["oc-3", false],
+      ]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain("2");
+    });
+
+    it("does not warn when no campaign hits the guard", async () => {
+      await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("carries the flag into structuredData", () => {
+      const result = heavyResult();
+      result.campaigns[1].storeOptionsWindowTruncated = true;
+      const structured = buildOrderCampaignMappingsStructuredData(result)!;
+      expect(structured.campaigns.map((row) => row.storeOptionsWindowTruncated)).toEqual([false, true]);
+      expect(orderCampaignMappingsStructuredDataSchema.safeParse(structured).success).toBe(true);
+    });
+  });
+
   it("does not read snapshots when no campaign has a linked sales campaign", async () => {
     m.salesCampaignFindMany.mockResolvedValue([]);
     const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
     expect(m.snapshotFindMany).not.toHaveBeenCalled();
-    expect(result.campaigns[0]).toMatchObject({ storeOptions: [], storeOptionsTruncated: false });
+    expect(result.campaigns[0]).toMatchObject({ storeOptions: [], storeOptionsTruncated: false, storeOptionsWindowTruncated: false });
   });
 
   it("keeps each campaign's options to its own sales campaigns and window", async () => {
@@ -482,6 +524,7 @@ function heavyResult(): OrderCampaignMappingsResult {
         mappingIndex: null,
       })),
       storeOptionsTruncated: false,
+      storeOptionsWindowTruncated: false,
     })),
   };
 }
@@ -691,6 +734,7 @@ describe("get_order_campaign_mappings through the executor", () => {
             { label: "가짜크림 · 1개", productName: "가짜크림", optionName: "1개", split: "single", quantity: 2, mappingIndex: 0 },
           ],
           storeOptionsTruncated: false,
+          storeOptionsWindowTruncated: false,
         },
       ],
     });
@@ -761,6 +805,50 @@ describe("get_order_campaign_mappings through the executor", () => {
       },
     });
     expect(Buffer.byteLength(frame, "utf8")).toBeLessThan(MAX_FRAME_BYTES);
+  });
+
+  it("keeps the READ record's mapping table when store options push it past 64KB (options are trimmed first)", async () => {
+    const campaigns = Array.from({ length: MAX_ORDER_CAMPAIGN_MATCHES }, (_, index) => campaign({ id: `oc-${index}` }));
+    m.orderCampaignFindMany.mockResolvedValue(campaigns);
+    m.productMappingFindMany.mockResolvedValue(
+      campaigns.flatMap((row) =>
+        Array.from({ length: 20 }, (_, index) =>
+          mapping({ id: `${row.id}-pm-${index}`, campaignId: row.id, optionName: `옵션 ${index}` }),
+        ),
+      ),
+    );
+    m.salesCampaignFindMany.mockResolvedValue(
+      campaigns.map((row) => ({ id: `sc-${row.id}`, orderCampaignId: row.id, startDate: SALES_START })),
+    );
+    m.snapshotFindMany.mockResolvedValue([
+      aggregateRow(
+        "2026-10-02",
+        Object.fromEntries(
+          campaigns.map((row) => [
+            `sc-${row.id}`,
+            Array.from({ length: MAX_STORE_OPTIONS_PER_CAMPAIGN }, (_, index) => ({
+              name: `가짜크림 대용량 · 옵션 ${"라".repeat(30)} ${index}`,
+              quantity: index + 1,
+            })),
+          ]),
+        ),
+      ),
+    ]);
+
+    const outcome = await run({ query: "가짜" });
+    expect(outcome.toStatus).toBe("SUCCEEDED");
+
+    const recorded = m.proposalCreate.mock.calls[0][0] as {
+      data: { structuredResult: { truncated: boolean; data: OrderCampaignMappingsResult & { truncated: boolean } } };
+    };
+    const { structuredResult } = recorded.data;
+    // 마커({truncated, bytes})로 통째로 바뀌지 않았다 — 표가 남는다.
+    expect(structuredResult.truncated).toBe(false);
+    expect(Buffer.byteLength(JSON.stringify(structuredResult.data), "utf8")).toBeLessThanOrEqual(MAX_READ_RESULT_BYTES);
+    expect(structuredResult.data.truncated).toBe(true);
+    for (const row of structuredResult.data.campaigns) expect(row.mappings).toHaveLength(20);
+    expect(structuredResult.data.campaigns.at(-1)?.storeOptionsTruncated).toBe(true);
+    expect(structuredResult.data.campaigns[0].storeOptions.length).toBeGreaterThan(0);
   });
 
   it("reports a denied column as DB_PERMISSION_DENIED instead of an empty answer", async () => {

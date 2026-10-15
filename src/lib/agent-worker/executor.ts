@@ -65,7 +65,7 @@ import {
   type AgentJobRoute,
   type OrderCampaignMappingsStructuredData,
 } from "./contracts";
-import { recordReadResult, type ReadResultRecord } from "./read-result-record";
+import { MAX_READ_RESULT_BYTES, recordReadResult, type ReadResultRecord } from "./read-result-record";
 import {
   boundWorkRecords,
   assignSpeakerAliases,
@@ -86,6 +86,7 @@ import {
   toTaxInvoicePendingViews,
 } from "./tax-invoice-status";
 import {
+  buildOrderCampaignMappingsRecordPayload,
   buildOrderCampaignMappingsStructuredData,
   buildOrderCampaignMappingsSummary,
   readOrderCampaignMappings,
@@ -1047,7 +1048,8 @@ async function orderCampaignMappings(input: OrderCampaignMappingsInput, now: Dat
     record: {
       title: `주문캠페인 ${result.campaigns.length}건 · 매핑 ${mappingCount}줄`,
       resultSummary: boundSummary(summary),
-      structuredResult: result,
+      // 기록 상한(64KB)을 넘으면 기록 모듈이 표 전체를 마커로 바꾼다 — 스토어 옵션부터 덜어 매핑 표를 남긴다.
+      structuredResult: buildOrderCampaignMappingsRecordPayload(result, MAX_READ_RESULT_BYTES) ?? result,
       dataSources: ["OrderCampaign", "ProductMapping", "SalesCampaign", "NaverOrderSnapshot"],
       query: { orderCampaignId: input.orderCampaignId ?? null, query: input.query ?? null },
     },
@@ -1107,6 +1109,14 @@ function duplicateMappingDetail(optionName: string, count: number): string {
   return `「${optionName}」 매핑이 이미 ${count}줄 있습니다. CRM 화면에서 중복을 먼저 정리하세요.`;
 }
 
+/**
+ * 지금 값이 저장 스키마 범위(상품코드 32자·가격 0~1억원) 밖일 때 봇에게 주는 한 문장. 화면은 길이·범위 제한 없이
+ * 저장하므로(campaigns-handler) 그런 줄이 있을 수 있다 — 범위를 넓히지 않고 화면에서 고치게 한다.
+ */
+function outOfRangeMappingDetail(optionName: string): string {
+  return `「${optionName}」 지금 값이 봇이 다룰 수 있는 범위를 벗어났습니다(상품코드 32자·가격 0~1억원). CRM 화면에서 고쳐 주세요.`;
+}
+
 /** 기안 시점 확인 결과: 통과, 대상 없음, 또는 대상은 있으나 이름이 다름. */
 type ProposalSubjectCheck = "RESOLVES" | "NOT_FOUND" | "NAME_MISMATCH";
 
@@ -1143,10 +1153,14 @@ type UpsertProductMappingsStoredArgs = ReturnType<typeof upsertProductMappingsAr
 async function snapshotProductMappingExpected(
   args: UpsertProductMappingsRequestArgs,
   client: ProposalTx,
-): Promise<{ kind: "READY"; args: UpsertProductMappingsStoredArgs } | { kind: "DUPLICATE"; detail: string }> {
+): Promise<
+  | { kind: "READY"; args: UpsertProductMappingsStoredArgs }
+  | { kind: "DUPLICATE"; detail: string }
+  | { kind: "OUT_OF_RANGE"; detail: string }
+> {
   const existing = await client.productMapping.findMany({
     where: { campaignId: args.orderCampaignId },
-    select: { id: true, optionName: true, brandCode: true, price: true, productName: true },
+    select: { id: true, optionName: true, brandCode: true, price: true },
   });
   const byKey = new Map<string, Array<(typeof existing)[number]>>();
   for (const row of existing) {
@@ -1166,7 +1180,17 @@ async function snapshotProductMappingExpected(
       expectedPrice: current ? current.price : null,
     });
   }
-  return { kind: "READY", args: upsertProductMappingsArgsSchema.parse({ ...args, mappings }) };
+  // 봇 줄은 이미 계약을 통과했으므로 여기서 걸리는 것은 DB 에서 채운 지금 값뿐이다. parse 로 던지면 재시도
+  // 대상 오류가 되어 같은 실패를 세 번 되풀이하고 이유도 남지 않는다 — 최종 실패 + 이유로 끝낸다.
+  const stored = upsertProductMappingsArgsSchema.safeParse({ ...args, mappings });
+  if (!stored.success) {
+    const rowIndex = stored.error.issues
+      .map((issue) => (issue.path[0] === "mappings" && typeof issue.path[1] === "number" ? issue.path[1] : null))
+      .find((index): index is number => index !== null);
+    const optionName = args.mappings[rowIndex ?? 0]?.optionName ?? "";
+    return { kind: "OUT_OF_RANGE", detail: outOfRangeMappingDetail(optionName) };
+  }
+  return { kind: "READY", args: stored.data };
 }
 
 function assertNotAborted(signal: AbortSignal): void {
@@ -1192,7 +1216,8 @@ type ProposalTxOutcome =
   | { kind: "CREATED"; proposalId: string; intent: WriteIntent }
   | { kind: "NOT_FOUND" }
   | { kind: "NAME_MISMATCH" }
-  | { kind: "DUPLICATE_MAPPING"; detail: string }
+  // 지금 값을 채울 수 없는 줄(같은 옵션 여러 줄 · 범위 밖 지금 값) — 기안을 만들지 않고 이유를 돌려준다.
+  | { kind: "UNUSABLE_MAPPING"; detail: string }
   | { kind: "INTENT_FAILED"; result: Extract<ToolResult, { ok: false }> };
 
 type IntentTool = (typeof WRITE_INTENT_TOOLS)[keyof typeof WRITE_INTENT_TOOLS];
@@ -1244,7 +1269,7 @@ async function createActionProposal(
       const subject = await orderCampaignSubjectResolves(requestArgs, tx);
       if (subject !== "RESOLVES") return { kind: subject };
       const snapshot = await snapshotProductMappingExpected(requestArgs, tx);
-      if (snapshot.kind === "DUPLICATE") return { kind: "DUPLICATE_MAPPING", detail: snapshot.detail };
+      if (snapshot.kind !== "READY") return { kind: "UNUSABLE_MAPPING", detail: snapshot.detail };
       storedArgs = snapshot.args;
       const built = await buildWriteIntent(intentTool, storedArgs);
       if (!built.ok) return { kind: "INTENT_FAILED", result: built.result };
@@ -1284,8 +1309,8 @@ async function createActionProposal(
       return failure("TARGET_NOT_FOUND", "proposal target does not exist");
     case "NAME_MISMATCH":
       return failure("TARGET_NOT_FOUND", "order campaign name differs from the proposal", ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL);
-    case "DUPLICATE_MAPPING":
-      return failure("TARGET_NOT_FOUND", "order campaign has duplicate mapping rows for one option", outcome.detail);
+    case "UNUSABLE_MAPPING":
+      return failure("TARGET_NOT_FOUND", "current mapping value cannot be snapshotted", outcome.detail);
     case "INTENT_FAILED":
       return toolFailure(outcome.result);
     case "CREATED":

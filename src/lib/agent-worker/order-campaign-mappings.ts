@@ -14,6 +14,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { containsSearch, normalizedForms } from "@/lib/prisma-search";
 import { sortProductMappingsByProductName } from "@/lib/order-converter/product-mapping-sort";
 import {
+  MAX_LIVE_WINDOW_DAYS,
   aggregateCoversCampaigns,
   composeSalesDetailFromAggregates,
   parseSnapshotDailyAggregate,
@@ -78,6 +79,9 @@ export type OrderCampaignMappingsResult = {
     // 스토어 실제 옵션(수량 내림차순, 최대 MAX_STORE_OPTIONS_PER_CAMPAIGN). 판매캠페인이 없으면 빈 배열.
     storeOptions: OrderCampaignStoreOption[];
     storeOptionsTruncated: boolean;
+    // 조회 창이 절대 상한(MAX_LIVE_WINDOW_DAYS)에 걸려 판매캠페인 시작 이후 일부 날짜를 못 읽었는가.
+    // true 면 빠진 옵션은 「주문 없음」이 아니라 「읽지 않음」이다.
+    storeOptionsWindowTruncated: boolean;
   }>;
   truncated: boolean; // query 일치가 MAX_ORDER_CAMPAIGN_MATCHES 를 넘었으면 true
 };
@@ -203,9 +207,18 @@ export async function readOrderCampaignMappings(
 
   // 조회 창 = get_order_snapshot(campaignId) 와 같은 규칙(판매캠페인 시작일 ~ 오늘, 절대 상한 MAX_LIVE_WINDOW_DAYS).
   // 캠페인이 여럿이면 가장 이른 창부터 한 번만 읽고 캠페인마다 자기 창으로 거른다.
-  const windows = new Map<string, { startKey: string; todayKey: string }>();
+  const windows = new Map<string, { startKey: string; todayKey: string; truncated: boolean }>();
   for (const [orderCampaignId, startMs] of earliestSalesStartMs) {
-    windows.set(orderCampaignId, resolveLiveWindowKeys(startMs, now, "agent-worker"));
+    windows.set(orderCampaignId, resolveLiveWindowKeys(startMs, now, "agent-worker", { silent: true }));
+  }
+  // 창 잘림은 캠페인마다 결과 칸(storeOptionsWindowTruncated)으로 알리고, 로그는 조회 한 번에 한 줄만 남긴다
+  // (오래 열린 캠페인은 매 조회마다 잘리므로 캠페인마다 남기면 로그가 같은 경고로 덮인다).
+  const windowTruncatedCount = [...windows.values()].filter((window) => window.truncated).length;
+  if (windowTruncatedCount > 0) {
+    console.warn(
+      `[agent-worker] get_order_campaign_mappings: 주문캠페인 ${windowTruncatedCount}건의 스토어 옵션 조회 창이 ` +
+        `절대 상한(${MAX_LIVE_WINDOW_DAYS}일)에 걸려 잘렸습니다 — 그 이전 주문의 옵션은 읽지 않았습니다.`,
+    );
   }
   let snapshotRows: Array<{ snapshotDate: string; aggregate: SnapshotDailyAggregate | null }> = [];
   if (windows.size > 0) {
@@ -236,8 +249,11 @@ export async function readOrderCampaignMappings(
       }));
       const window = windows.get(row.id);
       const store = window
-        ? buildStoreOptions(snapshotRows, salesCampaignIds, window, mappings)
-        : { storeOptions: [], storeOptionsTruncated: false };
+        ? {
+            ...buildStoreOptions(snapshotRows, salesCampaignIds, window, mappings),
+            storeOptionsWindowTruncated: window.truncated,
+          }
+        : { storeOptions: [], storeOptionsTruncated: false, storeOptionsWindowTruncated: false };
       return {
         id: row.id,
         name: row.name,
@@ -320,48 +336,19 @@ const utf8Bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "
 /** 배열에서 원소 하나를 뺄 때 줄어드는 바이트 — 원소 + 남은 원소가 있으면 쉼표 하나. */
 const removedBytes = (value: unknown, remaining: number) => utf8Bytes(value) + (remaining > 0 ? 1 : 0);
 
+type TrimmableCampaign = {
+  mappings: unknown[];
+  mappingsTruncated: boolean;
+  storeOptions: unknown[];
+  storeOptionsTruncated: boolean;
+};
+
 /**
- * 읽기 결과를 `maxBytes`(최대 `MAX_STRUCTURED_DATA_BYTES`) 안의 구조화 데이터로 옮긴다. 넘치면 뒤에서부터
- * ① 스토어 옵션(마지막 캠페인의 마지막 옵션부터) ② 매핑 ③ 캠페인 순으로 덜어 내고, 덜어 낸 캠페인의
- * `storeOptionsTruncated` / `mappingsTruncated` 와 최상위 `truncated` 를 켠다. 캠페인을 다 덜어도 안 들어가면 null.
- * 칸은 하나씩 골라 옮긴다 — 읽기 결과에 칸이 늘어도 검토 없이 봇에게 따라가지 않게.
+ * 캠페인 목록을 `limit` 바이트(UTF-8 JSON) 안에 맞춘다(제자리 수정). 넘치면 뒤에서부터 ① 스토어 옵션(마지막 캠페인의
+ * 마지막 옵션부터) ② 매핑 ③ 캠페인 순으로 덜어 내고, 덜어 낸 캠페인의 `storeOptionsTruncated` /
+ * `mappingsTruncated` 와 최상위 `truncated` 를 켠다. 캠페인을 다 덜어도 안 들어가면 null.
  */
-export function buildOrderCampaignMappingsStructuredData(
-  result: OrderCampaignMappingsResult,
-  maxBytes: number = MAX_STRUCTURED_DATA_BYTES,
-): OrderCampaignMappingsStructuredData | null {
-  const limit = Math.min(maxBytes, MAX_STRUCTURED_DATA_BYTES);
-  const data: OrderCampaignMappingsStructuredData = {
-    kind: "order_campaign_mappings",
-    version: 1,
-    campaigns: result.campaigns.map((row) => ({
-      id: row.id,
-      name: row.name,
-      sellerName: row.sellerName,
-      isActive: row.isActive,
-      startDate: row.startDate,
-      endDate: row.endDate,
-      salesCampaignIds: [...row.salesCampaignIds],
-      mappings: row.mappings.map((mapping) => ({
-        productName: mapping.productName,
-        optionName: mapping.optionName,
-        brandCode: mapping.brandCode,
-        price: mapping.price,
-        linkedToDeal: mapping.linkedToDeal,
-      })),
-      mappingsTruncated: false,
-      storeOptions: row.storeOptions.map((option) => ({
-        label: option.label,
-        productName: option.productName,
-        optionName: option.optionName,
-        split: option.split,
-        quantity: option.quantity,
-        mappingIndex: option.mappingIndex,
-      })),
-      storeOptionsTruncated: row.storeOptionsTruncated,
-    })),
-    truncated: result.truncated,
-  };
+function trimCampaignPayload<T extends { campaigns: TrimmableCampaign[]; truncated: boolean }>(data: T, limit: number): T | null {
   // 어림셈: 덜어 낸 원소의 바이트만 뺀다. 플래그가 false → true 로 바뀌면 1바이트씩 줄 뿐이라 어림이 실제보다
   // 작아지지 않는다(덜 덜어 내는 일은 없다). 마지막에 실제 바이트로 한 번 더 확인한다.
   let bytes = utf8Bytes(data);
@@ -386,4 +373,63 @@ export function buildOrderCampaignMappingsStructuredData(
   }
   while (campaigns.length > 0 && utf8Bytes(data) > limit) campaigns.pop();
   return utf8Bytes(data) <= limit ? data : null;
+}
+
+/** 캠페인 칸을 하나씩 골라 새 객체로 옮긴다 — 읽기 결과에 칸이 늘어도 검토 없이 따라가지 않게. */
+function copyCampaignsForPayload(result: OrderCampaignMappingsResult): OrderCampaignMappingsStructuredData["campaigns"] {
+  return result.campaigns.map((row) => ({
+    id: row.id,
+    name: row.name,
+    sellerName: row.sellerName,
+    isActive: row.isActive,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    salesCampaignIds: [...row.salesCampaignIds],
+    mappings: row.mappings.map((mapping) => ({
+      productName: mapping.productName,
+      optionName: mapping.optionName,
+      brandCode: mapping.brandCode,
+      price: mapping.price,
+      linkedToDeal: mapping.linkedToDeal,
+    })),
+    mappingsTruncated: false,
+    storeOptions: row.storeOptions.map((option) => ({
+      label: option.label,
+      productName: option.productName,
+      optionName: option.optionName,
+      split: option.split,
+      quantity: option.quantity,
+      mappingIndex: option.mappingIndex,
+    })),
+    storeOptionsTruncated: row.storeOptionsTruncated,
+    storeOptionsWindowTruncated: row.storeOptionsWindowTruncated,
+  }));
+}
+
+/** 읽기 결과를 `maxBytes`(최대 `MAX_STRUCTURED_DATA_BYTES`) 안의 구조화 데이터(봇용)로 옮긴다. 못 맞추면 null. */
+export function buildOrderCampaignMappingsStructuredData(
+  result: OrderCampaignMappingsResult,
+  maxBytes: number = MAX_STRUCTURED_DATA_BYTES,
+): OrderCampaignMappingsStructuredData | null {
+  return trimCampaignPayload(
+    {
+      kind: "order_campaign_mappings" as const,
+      version: 1 as const,
+      campaigns: copyCampaignsForPayload(result),
+      truncated: result.truncated,
+    },
+    Math.min(maxBytes, MAX_STRUCTURED_DATA_BYTES),
+  );
+}
+
+/**
+ * 결재함 READ 기록의 표 데이터 — 읽기 결과 모양(+ 캠페인별 `mappingsTruncated`)을 `maxBytes` 안에 맞춘다.
+ * 기록 상한(MAX_READ_RESULT_BYTES)을 넘기면 기록 모듈이 데이터 전체를 마커로 바꿔 매핑 표까지 사라지므로,
+ * 여기서 스토어 옵션부터 덜어 매핑 표를 남긴다. 못 맞추면 null.
+ */
+export function buildOrderCampaignMappingsRecordPayload(
+  result: OrderCampaignMappingsResult,
+  maxBytes: number,
+): { campaigns: OrderCampaignMappingsStructuredData["campaigns"]; truncated: boolean } | null {
+  return trimCampaignPayload({ campaigns: copyCampaignsForPayload(result), truncated: result.truncated }, maxBytes);
 }

@@ -1188,7 +1188,7 @@ describe("create_action_proposal", () => {
       expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
       expect(productMappingFindManyMock).toHaveBeenCalledWith({
         where: { campaignId: CAMPAIGN_ID },
-        select: { id: true, optionName: true, brandCode: true, price: true, productName: true },
+        select: { id: true, optionName: true, brandCode: true, price: true },
       });
       // 트랜잭션 안에서 읽는다 — 이 테스트의 tx 만 productMapping 을 가진다.
       expect(transactionMock).toHaveBeenCalledTimes(1);
@@ -1245,6 +1245,27 @@ describe("create_action_proposal", () => {
         result: {
           resultSummary:
             "create_action_proposal failed: TARGET_NOT_FOUND (「샘플 상품 D 1개」 매핑이 이미 2줄 있습니다. CRM 화면에서 중복을 먼저 정리하세요.)",
+        },
+      });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
+      expect(proposalEventCreateMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a brandCode longer than 32 chars", { brandCode: `TC${"9".repeat(40)}`, price: 15000 }],
+      ["a negative price", { brandCode: "TC000101", price: -1 }],
+      ["a price over 100,000,000", { brandCode: "TC000101", price: 100_000_001 }],
+    ])("fails finally (no retry, no proposal) when the stored row has %s, and says which option", async (_label, current) => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      productMappingFindManyMock.mockResolvedValue([dbRow("샘플 상품 C 2개", current.brandCode, current.price)]);
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({
+        kind: "terminal",
+        toStatus: "FAILED_FINAL",
+        errorClass: "TARGET_NOT_FOUND",
+        result: {
+          resultSummary:
+            "create_action_proposal failed: TARGET_NOT_FOUND (「샘플 상품 C 2개」 지금 값이 봇이 다룰 수 있는 범위를 벗어났습니다(상품코드 32자·가격 0~1억원). CRM 화면에서 고쳐 주세요.)",
         },
       });
       expect(proposalCreateMock).not.toHaveBeenCalled();

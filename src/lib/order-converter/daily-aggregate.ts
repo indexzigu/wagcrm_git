@@ -842,6 +842,13 @@ export function resolveLiveWindowKeys(
   earliestStartMs: number,
   now: Date,
   logTag = "daily-aggregate",
+  options: {
+    /**
+     * true 면 잘림 경고를 남기지 않는다 — 한 번에 여러 캠페인 창을 정하는 호출자가 `truncated` 를 모아
+     * 호출당 한 번만 경고할 때 쓴다(결손을 숨기라는 뜻이 아니다: `truncated` 는 그대로 돌려준다).
+     */
+    silent?: boolean;
+  } = {},
 ): LiveWindowKeys {
   const todayKey = toDateKeyKst(now);
   const guardMs = now.getTime() - MAX_LIVE_WINDOW_DAYS * KST_DAY_MS;
@@ -849,7 +856,7 @@ export function resolveLiveWindowKeys(
   const truncated = hasStart && earliestStartMs < guardMs;
   const startMs = hasStart ? Math.max(earliestStartMs, guardMs) : guardMs;
 
-  if (truncated) {
+  if (truncated && !options.silent) {
     // 폴백·결손은 조용히 넘어가지 않는다(loadWindowAggregates 의 블롭 폴백 경고와 같은 규율).
     console.warn(
       `[${logTag}] 조회 창이 절대 상한(${MAX_LIVE_WINDOW_DAYS}일)에 걸려 잘렸습니다 — ` +

@@ -139,6 +139,7 @@ describe("AgentJob contracts", () => {
         { label: "단독 옵션", productName: null, optionName: "단독 옵션", split: "none", quantity: 1, mappingIndex: null },
       ],
       storeOptionsTruncated: false,
+      storeOptionsWindowTruncated: false,
     };
     const structured = { kind: "order_campaign_mappings", version: 1, campaigns: [campaign], truncated: false };
 
