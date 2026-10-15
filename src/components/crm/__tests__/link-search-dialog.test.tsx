@@ -74,6 +74,17 @@ describe("link-search-dialog deal labels", () => {
     ]);
   });
 
+  it("표에 없는 상태 코드는 영문 대신 「알 수 없음」, 상태가 없으면 칸을 비운다(P2 ③ 상태 칸)", () => {
+    const [unknown, empty] = normalizeSearchResults("campaign", [
+      { id: "c-1", sellerName: "셀러A", dealName: "딜A", status: "FUTURE_STATUS" },
+      { id: "c-2", sellerName: "셀러B", dealName: "딜B" },
+    ]);
+    expect(unknown.metadata?.status).toBe("알 수 없음");
+    expect(empty.metadata?.status).toBe("");
+    const [partner] = normalizeSearchResults("partner", [{ id: "p-1", name: "거래처A", type: "AGENT" }]);
+    expect(partner.sublabel).toBe("에이전트");
+  });
+
   it("renders an entity-specific dialog description", async () => {
     render(
       <LinkSearchDialog
