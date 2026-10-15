@@ -3,6 +3,7 @@ import { SettlementService, buildSettlementReportQuery } from "@/services/settle
 import { SettlementRepository } from "@/repositories/settlementRepository";
 import { isValidMonthString } from "@/lib/settlement-report";
 import type { AgentTool, ToolResult } from "./types";
+import { isPermissionDeniedError } from "@/lib/db-permission-denied";
 import { missingParam, notFound, ok, queryFailed } from "./types";
 // deriveSettlementState/SettlementStateLabel은 상태기계 모듈로 이동됐다(청사진 §2, plan-critic #5).
 // write-executor(confirm_settlement)와 동일한 판정 함수를 공유하기 위함. 기존 import 경로
@@ -159,6 +160,9 @@ async function execute(input: GetSettlementReportInput): Promise<ToolResult<GetS
       { month, year, sellerName, statusFilter, mergeMisses }
     );
   } catch (err) {
+    // 권한 거부(42501)는 감싸지 않는다 — 봇 실행기가 이 예외로 「재시도 불가(DB_PERMISSION_DENIED)」를
+    // 판정한다. `queryFailed` 로 감싸면 재시도로 바뀌어 워커 role GRANT 회귀가 반복 재시도에 묻힌다.
+    if (isPermissionDeniedError(err)) throw err;
     return queryFailed(
       err instanceof Error ? err.message : "정산 리포트 조회 중 오류가 발생했습니다.",
       ["SalesCampaign"],

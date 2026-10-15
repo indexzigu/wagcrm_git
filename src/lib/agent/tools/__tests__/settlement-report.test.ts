@@ -117,6 +117,14 @@ describe("get_settlement_report 도구", () => {
     expect(result.error.code).toBe("QUERY_FAILED");
   });
 
+  it.each([
+    ["Prisma 원시 쿼리 모양", Object.assign(new Error("Raw query failed"), { code: "P2010", meta: { code: "42501" } })],
+    ["드라이버 문구만", new Error('permission denied for table "SalesCampaign"')],
+  ])("권한 거부(42501)는 감싸지 않고 그대로 던진다 — 봇이 재시도 불가로 판정해야 한다 (%s)", async (_label, error) => {
+    getSettlementReportMock.mockRejectedValue(error);
+    await expect(getSettlementReportTool.execute({ month: "2026-07" })).rejects.toBe(error);
+  });
+
   it("셀러 이름 필터가 searchQuery로 전달된다", async () => {
     getSettlementReportMock.mockResolvedValue({
       month: "2026-07",

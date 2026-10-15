@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { naverOrderSnapshotRepository } from "@/repositories/naverOrderSnapshotRepository";
 import type { AgentTool, ToolResult } from "./types";
+import { isPermissionDeniedError } from "@/lib/db-permission-denied";
 import { missingParam, notFound, ok, queryFailed } from "./types";
 // Data 타입(+구성 타입)은 런타임-프리 모듈로 이동됐다(청사진 §2-1/§3-1, 번들 안전).
 // 기존 import 경로(`./order-snapshot`) 호환을 위해 여기서 type re-export한다 —
@@ -101,6 +102,9 @@ async function execute(input: GetOrderSnapshotInput): Promise<ToolResult<GetOrde
 
     return ok({ days, totals }, ["NaverOrderSnapshot"], { startDate, endDate });
   } catch (err) {
+    // 권한 거부(42501)는 감싸지 않는다 — 봇 실행기가 이 예외로 「재시도 불가(DB_PERMISSION_DENIED)」를
+    // 판정한다. `queryFailed` 로 감싸면 재시도로 바뀌어 워커 role GRANT 회귀가 반복 재시도에 묻힌다.
+    if (isPermissionDeniedError(err)) throw err;
     return queryFailed(
       err instanceof Error ? err.message : "주문 스냅샷 조회 중 오류가 발생했습니다.",
       ["NaverOrderSnapshot"],

@@ -548,6 +548,31 @@ describe("read operations reuse existing calculations inside the granted read sc
     expect(outcome).toEqual({ kind: "retryable", errorClass: "PrismaClientInitializationError", route: "python", model: "none" });
   });
 
+  // 봇이 `runTool` 로 재사용하는 조회 도구들 — 도구가 권한 거부를 감싸지 않고 던지면(도구 테스트가 고정)
+  // 실행기가 재시도 불가 최종 실패로 끝내고, 도구가 감싼 일반 오류(QUERY_FAILED)는 재시도로 남는다.
+  const reusedReadTools = [
+    ["get_pipeline_status", pipelineMock, {}],
+    ["get_order_snapshot", snapshotMock, { startAt: "2026-09-01T00:00:00+09:00", endAt: "2026-09-02T00:00:00+09:00" }],
+    ["get_settlement_report", settlementMock, { month: "2026-09" }],
+  ] as const;
+
+  it.each(reusedReadTools)("%s ends a permission-denied read as non-retryable DB_PERMISSION_DENIED", async (operation, toolMock, input) => {
+    toolMock.mockRejectedValue(Object.assign(new Error("Raw query failed"), { code: "P2010", meta: { code: "42501" } }));
+
+    const outcome = await executeAgentJob(job(operation, input), deps(accepted("python")));
+
+    expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "DB_PERMISSION_DENIED" });
+    expect(proposalCreateMock).not.toHaveBeenCalled();
+  });
+
+  it.each(reusedReadTools)("%s retries an ordinary DB error the tool wrapped as QUERY_FAILED", async (operation, toolMock, input) => {
+    toolMock.mockResolvedValue({ ok: false, error: { code: "QUERY_FAILED", message: "connection reset" }, evidence: { dataSources: [], query: {} } });
+
+    const outcome = await executeAgentJob(job(operation, input), deps(accepted("python")));
+
+    expect(outcome).toMatchObject({ kind: "retryable", errorClass: "QUERY_FAILED" });
+  });
+
   it("search_deals uses a narrower repository projection with the frozen partnerId/query/status input", async () => {
     dealFindManyMock.mockResolvedValue(
       Array.from({ length: 21 }, (_, index) => ({ id: `deal-${index}`, dealName: `Deal ${index}`, brandName: null, status: "CONFIRMED", partnerId: "partner-1", updatedAt: new Date("2026-09-01T00:00:00.000Z") })),
