@@ -14,11 +14,14 @@ import {
   AgentJobSettlementAmountFieldSchema,
   MAX_RESULT_SUMMARY_CHARS,
   MAX_STORE_STATUS_CLAIMS,
+  MAX_STRUCTURED_DATA_BYTES,
+  orderCampaignMappingsStructuredDataSchema,
   MAX_WORK_RECORDS_LIMIT,
   createActionProposalInputSchema,
   createAgentJobIdempotencyKey,
   isAgentJobTransitionAllowed,
   serializeAgentJobJson,
+  upsertProductMappingsArgsSchema,
   type AgentJobPayload,
 } from "../contracts";
 
@@ -107,6 +110,83 @@ describe("AgentJob contracts", () => {
         evidenceRefs: Array.from({ length: 11 }, (_, index) => `evidence-${index}`),
       }).success,
     ).toBe(false);
+  });
+
+  describe("structuredData (get_order_campaign_mappings only, 2026-10-16)", () => {
+    const baseResult = {
+      schemaVersion: 1,
+      jobId: "job-1",
+      status: "SUCCEEDED",
+      route: "python",
+      modelUsed: "none",
+      validationResult: "pass",
+      resultSummary: "get_order_campaign_mappings campaigns=1 first=oc-1 name=[샘플 공구] 테스트 기획전",
+      actionProposalId: null,
+      evidenceRefs: ["oc-1"],
+    } as const;
+    const campaign = {
+      id: "oc-1",
+      name: "[샘플 공구] 테스트 기획전",
+      sellerName: "샘플셀러",
+      isActive: true,
+      startDate: "2026-10-01T00:00:00.000Z",
+      endDate: null,
+      salesCampaignIds: ["sc-1"],
+      mappings: [{ productName: "샘플 상품", optionName: "1개", brandCode: "TC000101", price: 15000, linkedToDeal: false }],
+      mappingsTruncated: false,
+      storeOptions: [
+        { label: "샘플 상품 · 1개", productName: "샘플 상품", optionName: "1개", split: "single", quantity: 3, mappingIndex: 0 },
+        { label: "단독 옵션", productName: null, optionName: "단독 옵션", split: "none", quantity: 1, mappingIndex: null },
+      ],
+      storeOptionsTruncated: false,
+      storeOptionsWindowTruncated: false,
+    };
+    const structured = { kind: "order_campaign_mappings", version: 1, campaigns: [campaign], truncated: false };
+
+    it("caps structuredData at 12KB of UTF-8 JSON", () => {
+      expect(MAX_STRUCTURED_DATA_BYTES).toBe(12 * 1024);
+    });
+
+    it("keeps results without structuredData valid (every other operation)", () => {
+      expect(AgentJobResultSchema.safeParse(baseResult).success).toBe(true);
+    });
+
+    it("accepts the typed order_campaign_mappings shape and round-trips it unchanged", () => {
+      const parsed = AgentJobResultSchema.parse({ ...baseResult, structuredData: structured });
+      expect(parsed.structuredData).toEqual(structured);
+      expect(orderCampaignMappingsStructuredDataSchema.safeParse(structured).success).toBe(true);
+    });
+
+    it.each([
+      ["unknown kind", { ...structured, kind: "something_else" }],
+      ["other version", { ...structured, version: 2 }],
+      ["unknown key", { ...structured, extra: 1 }],
+      ["bad split", { ...structured, campaigns: [{ ...campaign, storeOptions: [{ ...campaign.storeOptions[0], split: "maybe" }] }] }],
+      ["free-form value", { anything: "goes" }],
+    ])("rejects %s", (_label, value) => {
+      expect(AgentJobResultSchema.safeParse({ ...baseResult, structuredData: value }).success).toBe(false);
+    });
+
+    it("rejects structuredData over the byte cap", () => {
+      const big = {
+        ...structured,
+        campaigns: [
+          {
+            ...campaign,
+            storeOptions: Array.from({ length: 100 }, (_, index) => ({
+              label: `${"가".repeat(40)} · ${index}`,
+              productName: "가".repeat(40),
+              optionName: String(index),
+              split: "single",
+              quantity: 1,
+              mappingIndex: null,
+            })),
+          },
+        ],
+      };
+      expect(Buffer.byteLength(JSON.stringify(big), "utf8")).toBeGreaterThan(MAX_STRUCTURED_DATA_BYTES);
+      expect(AgentJobResultSchema.safeParse({ ...baseResult, structuredData: big }).success).toBe(false);
+    });
   });
 
   it("allows only the locked AgentJob state transitions", () => {
@@ -509,12 +589,11 @@ describe("get_order_campaign_mappings input (2026-10-15)", () => {
 });
 
 describe("create_action_proposal — upsert_product_mappings (상품 매핑 등록·수정, 2026-10-15)", () => {
+  // 봇이 보내는 줄에는 지금 값(expected)이 없다 — 기안 시점에 CRM 이 DB 에서 채운다(2026-10-16).
   const row = {
     optionName: "샘플 상품 A 3개",
     brandCode: "TC000102",
     price: 20000,
-    expectedBrandCode: null,
-    expectedPrice: null,
   };
   const base = {
     action: "upsert_product_mappings",
@@ -545,8 +624,14 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     expect(AgentJobPayloadSchema.safeParse(makeEnvelope("create_action_proposal", base)).success).toBe(true);
   });
 
-  it("accepts an update row whose expected brandCode is an empty string (the screen allows blank codes)", () => {
-    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "", expectedPrice: 0 }] })).toBe(true);
+  it("rejects bot rows that carry expected keys (the worker snapshots them; strict row)", () => {
+    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: null, expectedPrice: null }] })).toBe(false);
+    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "TC000101", expectedPrice: 15000 }] })).toBe(false);
+    expect(accepts({ ...base, mappings: [{ ...row, expectedPrice: 0 }] })).toBe(false);
+  });
+
+  it("accepts a bot row with an optional productName", () => {
+    expect(accepts({ ...base, mappings: [{ ...row, productName: "샘플 공구 상품 A" }] })).toBe(true);
   });
 
   it("rejects duplicate optionName within one proposal (after trim + inner-space collapse)", () => {
@@ -561,9 +646,29 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     expect(accepts({ ...base, mappings: [nfc, nfd] })).toBe(false);
   });
 
-  it("rejects half-null expected", () => {
-    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "TC0" }] })).toBe(false);
-    expect(accepts({ ...base, mappings: [{ ...row, expectedPrice: 100 }] })).toBe(false);
+  describe("stored args (ActionProposal.payload.args — expected snapshotted by the worker)", () => {
+    const { action: _action, ...storedBase } = base;
+    const storedRow = { ...row, expectedBrandCode: null, expectedPrice: null };
+    const storedAccepts = (args: unknown) => upsertProductMappingsArgsSchema.safeParse(args).success;
+
+    it("accepts new (null/null) and update rows, including an empty stored brandCode", () => {
+      expect(storedAccepts({ ...storedBase, mappings: [storedRow] })).toBe(true);
+      expect(storedAccepts({ ...storedBase, mappings: [{ ...storedRow, expectedBrandCode: "", expectedPrice: 0 }] })).toBe(true);
+    });
+
+    it("requires the expected keys", () => {
+      expect(storedAccepts({ ...storedBase, mappings: [row] })).toBe(false);
+    });
+
+    it("rejects half-null expected", () => {
+      expect(storedAccepts({ ...storedBase, mappings: [{ ...storedRow, expectedBrandCode: "TC0" }] })).toBe(false);
+      expect(storedAccepts({ ...storedBase, mappings: [{ ...storedRow, expectedPrice: 100 }] })).toBe(false);
+    });
+
+    it("still rejects duplicate optionName", () => {
+      const dup = { ...storedBase, mappings: [storedRow, { ...storedRow, optionName: " 샘플 상품 A  3개 " }] };
+      expect(storedAccepts(dup)).toBe(false);
+    });
   });
 
   it.each([
@@ -585,7 +690,7 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     expect(accepts(input)).toBe(false);
   });
 
-  it("fits 50 realistic rows (22-char option, 12-char product, expected filled) in the 16KB envelope", () => {
+  it("fits 50 realistic rows (22-char option, 12-char product) in the 16KB envelope", () => {
     const real = {
       ...base,
       mappings: Array.from({ length: 50 }, (_, i) => ({
@@ -593,8 +698,6 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
         productName: "샘플 공구 상품 A 세트",
         brandCode: "TC000102",
         price: 20000,
-        expectedBrandCode: "TC000101",
-        expectedPrice: 15000,
       })),
     };
     expect(accepts(real)).toBe(true);

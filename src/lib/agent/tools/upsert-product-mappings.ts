@@ -68,8 +68,9 @@ export const upsertProductMappingsTool: AgentTool<UpsertProductMappingsArgs, Ups
   name: "upsert_product_mappings",
   description:
     "주문캠페인 하나의 상품 매핑(옵션명 → 상품코드·가격)을 새로 넣거나 고치는 기안을 올립니다. " +
-    "orderCampaignName 에 그 캠페인의 지금 이름을, 줄마다 expectedBrandCode·expectedPrice 에 지금 값(새 줄이면 " +
-    "둘 다 null)을 넣어야 하며, 승인 시점의 실제 값이 다르면 실행되지 않습니다. 지우기는 하지 않습니다. " +
+    "orderCampaignName 에 그 캠페인의 지금 이름을 넣어야 합니다. 줄마다의 expectedBrandCode·expectedPrice(지금 값, " +
+    "새 줄이면 둘 다 null)는 기안 시점에 작업 실행기가 DB 에서 채우며, 승인 시점의 실제 값이 다르면 실행되지 않습니다. " +
+    "지우기는 하지 않습니다. " +
     "실제로 바꾸지 않고 승인 대기 기안만 만들며, 관리자가 직접 승인한 뒤에만 반영됩니다(자동 실행 없음).",
   inputSchema: upsertProductMappingsArgsSchema,
   execute,

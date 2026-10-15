@@ -53,13 +53,19 @@ import {
   DEFAULT_WORK_RECORDS_LIMIT,
   MAX_EVIDENCE_REFS,
   ROOM_KEY_PATTERN,
+  MAX_AGENT_JOB_JSON_BYTES,
   MAX_RESULT_SUMMARY_CHARS,
+  MAX_STRUCTURED_DATA_BYTES,
+  normalizeMappingOptionName,
   sameOrderCampaignName,
+  upsertProductMappingsArgsSchema,
+  upsertProductMappingsRequestArgsSchema,
   type AgentJobPayload,
   type AgentJobResult,
   type AgentJobRoute,
+  type OrderCampaignMappingsStructuredData,
 } from "./contracts";
-import { recordReadResult, type ReadResultRecord } from "./read-result-record";
+import { MAX_READ_RESULT_BYTES, recordReadResult, type ReadResultRecord } from "./read-result-record";
 import {
   boundWorkRecords,
   assignSpeakerAliases,
@@ -79,7 +85,12 @@ import {
   toTaxInvoiceAutoConfirmedViews,
   toTaxInvoicePendingViews,
 } from "./tax-invoice-status";
-import { buildOrderCampaignMappingsSummary, readOrderCampaignMappings } from "./order-campaign-mappings";
+import {
+  buildOrderCampaignMappingsRecordPayload,
+  buildOrderCampaignMappingsStructuredData,
+  buildOrderCampaignMappingsSummary,
+  readOrderCampaignMappings,
+} from "./order-campaign-mappings";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import {
   hasShadowValidator,
@@ -170,6 +181,11 @@ type OperationSuccess = {
   actionProposalId: string | null;
   /** 읽기 작업의 결재함 기록 페이로드 — 있으면 실행기가 성공 직후 READ 산출물로 남긴다(§3-A). */
   record?: ReadResultRecord;
+  /**
+   * 봇이 읽는 구조화 결과(`AgentJobResult.structuredData`, get_order_campaign_mappings 만). 바이트 예산을 받아
+   * 그 안에 맞춘 값을 돌려준다 — 예산은 실행기가 결과 전체 상한(`MAX_AGENT_JOB_JSON_BYTES`)의 남은 자리로 정한다.
+   */
+  structuredData?: (maxBytes: number) => OrderCampaignMappingsStructuredData | null;
 };
 type OperationFailure = {
   status: "FAILED_FINAL";
@@ -1020,19 +1036,21 @@ async function taxInvoiceStatus(input: TaxInvoiceStatusInput, now: Date): Promis
  * 봇이 매핑 변경 기안을 올리기 전에 지금 값을 본다. 읽기·내보낼 칸은 `order-campaign-mappings.ts` 가
  * 정한다(칸 단위 GRANT 라 모든 호출이 명시 select). 없는 id 는 오류가 아니라 0건이다.
  */
-async function orderCampaignMappings(input: OrderCampaignMappingsInput): Promise<OperationOutcome> {
-  const result = await readOrderCampaignMappings(input, getPrisma());
+async function orderCampaignMappings(input: OrderCampaignMappingsInput, now: Date): Promise<OperationOutcome> {
+  const result = await readOrderCampaignMappings(input, getPrisma(), now);
   const { summary, mappingCount } = buildOrderCampaignMappingsSummary(result);
   return {
     status: "SUCCEEDED",
     summary: boundSummary(summary),
     evidenceRefs: boundEvidence(result.campaigns.map((campaign) => campaign.id)),
     actionProposalId: null,
+    structuredData: (maxBytes) => buildOrderCampaignMappingsStructuredData(result, maxBytes),
     record: {
       title: `주문캠페인 ${result.campaigns.length}건 · 매핑 ${mappingCount}줄`,
       resultSummary: boundSummary(summary),
-      structuredResult: result,
-      dataSources: ["OrderCampaign", "ProductMapping", "SalesCampaign"],
+      // 기록 상한(64KB)을 넘으면 기록 모듈이 표 전체를 마커로 바꾼다 — 스토어 옵션부터 덜어 매핑 표를 남긴다.
+      structuredResult: buildOrderCampaignMappingsRecordPayload(result, MAX_READ_RESULT_BYTES) ?? result,
+      dataSources: ["OrderCampaign", "ProductMapping", "SalesCampaign", "NaverOrderSnapshot"],
       query: { orderCampaignId: input.orderCampaignId ?? null, query: input.query ?? null },
     },
   };
@@ -1086,6 +1104,19 @@ async function targetResolves(intent: WriteIntent, client: ProposalTx): Promise<
 /** 기안 시점 이름 대조가 어긋났을 때 봇에게 주는 한 문장 — 캠페인이 없을 때와 갈라 다시 조회하게 한다. */
 const ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL = "주문캠페인 이름이 지금 이름과 다릅니다. 조회로 이름을 다시 읽어 주세요.";
 
+/** 같은 옵션명 매핑이 DB 에 이미 여러 줄일 때 봇에게 주는 한 문장 — 어느 줄을 고칠지 정할 수 없다. */
+function duplicateMappingDetail(optionName: string, count: number): string {
+  return `「${optionName}」 매핑이 이미 ${count}줄 있습니다. CRM 화면에서 중복을 먼저 정리하세요.`;
+}
+
+/**
+ * 지금 값이 저장 스키마 범위(상품코드 32자·가격 0~1억원) 밖일 때 봇에게 주는 한 문장. 화면은 길이·범위 제한 없이
+ * 저장하므로(campaigns-handler) 그런 줄이 있을 수 있다 — 범위를 넓히지 않고 화면에서 고치게 한다.
+ */
+function outOfRangeMappingDetail(optionName: string): string {
+  return `「${optionName}」 지금 값이 봇이 다룰 수 있는 범위를 벗어났습니다(상품코드 32자·가격 0~1억원). CRM 화면에서 고쳐 주세요.`;
+}
+
 /** 기안 시점 확인 결과: 통과, 대상 없음, 또는 대상은 있으나 이름이 다름. */
 type ProposalSubjectCheck = "RESOLVES" | "NOT_FOUND" | "NAME_MISMATCH";
 
@@ -1096,15 +1127,70 @@ type ProposalSubjectCheck = "RESOLVES" | "NOT_FOUND" | "NAME_MISMATCH";
  * 이름만 다를 때는 결과 요약에 `ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL` 을 붙여 봇이 「없음」과 가를 수 있게 한다.
  * 실행 역할은 봇 작업 역할이라 GRANT 된 칸(id·name)만 고른다(마이그레이션 20261016120000).
  */
-async function proposalSubjectResolves(intent: WriteIntent, client: ProposalTx): Promise<ProposalSubjectCheck> {
-  if (intent.action !== "upsert_product_mappings") return "RESOLVES";
-  const { orderCampaignId, orderCampaignName } = intent.args as { orderCampaignId: string; orderCampaignName: string };
+async function orderCampaignSubjectResolves(
+  args: { orderCampaignId: string; orderCampaignName: string },
+  client: ProposalTx,
+): Promise<ProposalSubjectCheck> {
   const campaign = await client.orderCampaign.findUnique({
-    where: { id: orderCampaignId },
+    where: { id: args.orderCampaignId },
     select: { id: true, name: true },
   });
   if (campaign === null) return "NOT_FOUND";
-  return sameOrderCampaignName(campaign.name, orderCampaignName) ? "RESOLVES" : "NAME_MISMATCH";
+  return sameOrderCampaignName(campaign.name, args.orderCampaignName) ? "RESOLVES" : "NAME_MISMATCH";
+}
+
+type UpsertProductMappingsRequestArgs = ReturnType<typeof upsertProductMappingsRequestArgsSchema.parse>;
+type UpsertProductMappingsStoredArgs = ReturnType<typeof upsertProductMappingsArgsSchema.parse>;
+
+/**
+ * 상품 매핑 기안의 지금 값 스냅샷(2026-10-16). 봇은 결과 요약만 받아 지금 값을 옮겨 적을 수 없으므로,
+ * 기안을 만드는 트랜잭션 안에서 캠페인의 매핑 줄을 읽어 줄마다 `expectedBrandCode`/`expectedPrice` 를 채운다.
+ * 옵션명은 `normalizeMappingOptionName` 키로 맞춘다(NFD·공백 차이 흡수): 0줄 → null/null(새 줄),
+ * 1줄 → 그 줄의 값, 2줄 이상 → 어느 줄을 고칠지 정할 수 없어 기안을 만들지 않는다.
+ * 승인 시점 실행기는 이 스냅샷과 그때의 DB 를 다시 대조한다(기안 뒤 화면에서 바뀌면 실행되지 않는다).
+ * ⛔ 워커 역할은 ProductMapping 에 칸 단위 GRANT 만 있다 — 명시 select 로 GRANT 된 칸만 고른다.
+ */
+async function snapshotProductMappingExpected(
+  args: UpsertProductMappingsRequestArgs,
+  client: ProposalTx,
+): Promise<
+  | { kind: "READY"; args: UpsertProductMappingsStoredArgs }
+  | { kind: "DUPLICATE"; detail: string }
+  | { kind: "OUT_OF_RANGE"; detail: string }
+> {
+  const existing = await client.productMapping.findMany({
+    where: { campaignId: args.orderCampaignId },
+    select: { id: true, optionName: true, brandCode: true, price: true },
+  });
+  const byKey = new Map<string, Array<(typeof existing)[number]>>();
+  for (const row of existing) {
+    const key = normalizeMappingOptionName(row.optionName);
+    byKey.set(key, [...(byKey.get(key) ?? []), row]);
+  }
+  const mappings: UpsertProductMappingsStoredArgs["mappings"] = [];
+  for (const row of args.mappings) {
+    const matches = byKey.get(normalizeMappingOptionName(row.optionName)) ?? [];
+    if (matches.length >= 2) {
+      return { kind: "DUPLICATE", detail: duplicateMappingDetail(row.optionName, matches.length) };
+    }
+    const current = matches[0];
+    mappings.push({
+      ...row,
+      expectedBrandCode: current ? current.brandCode : null,
+      expectedPrice: current ? current.price : null,
+    });
+  }
+  // 봇 줄은 이미 계약을 통과했으므로 여기서 걸리는 것은 DB 에서 채운 지금 값뿐이다. parse 로 던지면 재시도
+  // 대상 오류가 되어 같은 실패를 세 번 되풀이하고 이유도 남지 않는다 — 최종 실패 + 이유로 끝낸다.
+  const stored = upsertProductMappingsArgsSchema.safeParse({ ...args, mappings });
+  if (!stored.success) {
+    const rowIndex = stored.error.issues
+      .map((issue) => (issue.path[0] === "mappings" && typeof issue.path[1] === "number" ? issue.path[1] : null))
+      .find((index): index is number => index !== null);
+    const optionName = args.mappings[rowIndex ?? 0]?.optionName ?? "";
+    return { kind: "OUT_OF_RANGE", detail: outOfRangeMappingDetail(optionName) };
+  }
+  return { kind: "READY", args: stored.data };
 }
 
 function assertNotAborted(signal: AbortSignal): void {
@@ -1125,6 +1211,25 @@ function proposalSourceRef(
   return { sourceRef: { slack: { channelId, threadTs, messageTs, rid } } };
 }
 
+/** 기안 트랜잭션의 결과 — 만든 기안 id, 또는 만들지 않은 이유. */
+type ProposalTxOutcome =
+  | { kind: "CREATED"; proposalId: string; intent: WriteIntent }
+  | { kind: "NOT_FOUND" }
+  | { kind: "NAME_MISMATCH" }
+  // 지금 값을 채울 수 없는 줄(같은 옵션 여러 줄 · 범위 밖 지금 값) — 기안을 만들지 않고 이유를 돌려준다.
+  | { kind: "UNUSABLE_MAPPING"; detail: string }
+  | { kind: "INTENT_FAILED"; result: Extract<ToolResult, { ok: false }> };
+
+type IntentTool = (typeof WRITE_INTENT_TOOLS)[keyof typeof WRITE_INTENT_TOOLS];
+
+async function buildWriteIntent(
+  intentTool: IntentTool,
+  args: unknown,
+): Promise<{ ok: true; intent: WriteIntent } | { ok: false; result: Extract<ToolResult, { ok: false }> }> {
+  const intentResult = (await intentTool.execute(args as never)) as ToolResult<{ writeIntent: WriteIntent }>;
+  return intentResult.ok ? { ok: true, intent: intentResult.data.writeIntent } : { ok: false, result: intentResult };
+}
+
 async function createActionProposal(
   input: CreateActionProposalInput,
   { signal, origin }: OperationContext,
@@ -1136,21 +1241,41 @@ async function createActionProposal(
   }
   const definition = WRITE_ACTIONS[action];
   const intentTool = WRITE_INTENT_TOOLS[action as keyof typeof WRITE_INTENT_TOOLS];
-  const parsedArgs = definition.argsSchema.safeParse(args);
+  // 상품 매핑 기안은 봇 입력에 지금 값이 없다 — 봇 입력 스키마로 받고, 트랜잭션 안에서 지금 값을 채운 뒤
+  // 저장 스키마(`definition.argsSchema`)로 다시 잰다. 나머지 액션은 봇 입력 = 저장 args 다.
+  const snapshotsMappings = action === "upsert_product_mappings";
+  const parsedArgs = (snapshotsMappings ? upsertProductMappingsRequestArgsSchema : definition.argsSchema).safeParse(args);
   if (!parsedArgs.success) {
     return failure("INVALID_INPUT", "action args failed validation");
   }
-  const intentResult = (await intentTool.execute(parsedArgs.data as never)) as ToolResult<{ writeIntent: WriteIntent }>;
-  if (!intentResult.ok) return toolFailure(intentResult);
-  const intent = intentResult.data.writeIntent;
+  let preparedIntent: WriteIntent | null = null;
+  if (!snapshotsMappings) {
+    const built = await buildWriteIntent(intentTool, parsedArgs.data);
+    if (!built.ok) return toolFailure(built.result);
+    preparedIntent = built.intent;
+  }
 
   // No commit after lease loss / timeout / shutdown (review MEDIUM-2).
   assertNotAborted(signal);
   const prisma = getPrisma();
-  const proposalId = await prisma.$transaction(async (tx): Promise<string | Exclude<ProposalSubjectCheck, "RESOLVES">> => {
-    if (!(await targetResolves(intent, tx))) return "NOT_FOUND";
-    const subject = await proposalSubjectResolves(intent, tx);
-    if (subject !== "RESOLVES") return subject;
+  const outcome = await prisma.$transaction(async (tx): Promise<ProposalTxOutcome> => {
+    let intent: WriteIntent;
+    let storedArgs: unknown = parsedArgs.data;
+    if (preparedIntent !== null) {
+      intent = preparedIntent;
+      if (!(await targetResolves(intent, tx))) return { kind: "NOT_FOUND" };
+    } else {
+      const requestArgs = parsedArgs.data as UpsertProductMappingsRequestArgs;
+      const subject = await orderCampaignSubjectResolves(requestArgs, tx);
+      if (subject !== "RESOLVES") return { kind: subject };
+      const snapshot = await snapshotProductMappingExpected(requestArgs, tx);
+      if (snapshot.kind !== "READY") return { kind: "UNUSABLE_MAPPING", detail: snapshot.detail };
+      storedArgs = snapshot.args;
+      const built = await buildWriteIntent(intentTool, storedArgs);
+      if (!built.ok) return { kind: "INTENT_FAILED", result: built.result };
+      intent = built.intent;
+      if (!(await targetResolves(intent, tx))) return { kind: "NOT_FOUND" };
+    }
     assertNotAborted(signal);
     const created = await tx.actionProposal.create({
       data: serializeJsonFields({
@@ -1159,7 +1284,7 @@ async function createActionProposal(
         status: "PENDING_APPROVAL",
         title: intent.summary.slice(0, 200),
         resultSummary: intent.summary,
-        payload: { action: intent.action, args: parsedArgs.data as Prisma.InputJsonValue },
+        payload: { action: intent.action, args: storedArgs as Prisma.InputJsonValue },
         targetEntityType: intent.targetEntityType,
         targetEntityId: intent.targetEntityId,
         campaignId: intent.targetEntityType === "CAMPAIGN" ? intent.targetEntityId : null,
@@ -1177,12 +1302,21 @@ async function createActionProposal(
         note: "agent worker 기안 상신, 관리자 승인 대기",
       },
     });
-    return created.id;
+    return { kind: "CREATED", proposalId: created.id, intent };
   });
-  if (proposalId === "NOT_FOUND") return failure("TARGET_NOT_FOUND", "proposal target does not exist");
-  if (proposalId === "NAME_MISMATCH") {
-    return failure("TARGET_NOT_FOUND", "order campaign name differs from the proposal", ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL);
+  switch (outcome.kind) {
+    case "NOT_FOUND":
+      return failure("TARGET_NOT_FOUND", "proposal target does not exist");
+    case "NAME_MISMATCH":
+      return failure("TARGET_NOT_FOUND", "order campaign name differs from the proposal", ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL);
+    case "UNUSABLE_MAPPING":
+      return failure("TARGET_NOT_FOUND", "current mapping value cannot be snapshotted", outcome.detail);
+    case "INTENT_FAILED":
+      return toolFailure(outcome.result);
+    case "CREATED":
+      break;
   }
+  const { proposalId, intent } = outcome;
 
   return {
     status: "NEEDS_APPROVAL",
@@ -1206,14 +1340,17 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   list_work_record_rooms: () => listWorkRecordRooms(),
   get_work_records: (input, context) => getWorkRecords(input as WorkRecordsInput, context.now),
   get_tax_invoice_status: (input, context) => taxInvoiceStatus(input as TaxInvoiceStatusInput, context.now),
-  get_order_campaign_mappings: (input) => orderCampaignMappings(input as OrderCampaignMappingsInput),
+  get_order_campaign_mappings: (input, context) => orderCampaignMappings(input as OrderCampaignMappingsInput, context.now),
 };
+
+/** 결과 JSON 에 structuredData 칸이 붙을 때 더해지는 글자(앞 쉼표 + 키 + 콜론). */
+const STRUCTURED_DATA_KEY = ',"structuredData":';
 
 function buildResult(
   job: AgentJobRecord,
   route: AgentJobRoute,
   modelUsed: string,
-  fields: Pick<AgentJobResult, "status" | "validationResult" | "resultSummary" | "actionProposalId" | "evidenceRefs">,
+  fields: Pick<AgentJobResult, "status" | "validationResult" | "resultSummary" | "actionProposalId" | "evidenceRefs" | "structuredData">,
 ): AgentJobResult {
   return AgentJobResultSchema.parse({
     schemaVersion: 1,
@@ -1358,13 +1495,24 @@ export async function executeAgentJob(
       return { kind: "retryable", errorClass: error instanceof Error ? error.name : "UnknownError", route, model };
     }
   }
-  const result = buildResult(job, route, model, {
+  const baseFields = {
     status: outcome.status,
-    validationResult: "pass",
+    validationResult: "pass" as const,
     resultSummary: outcome.summary,
     actionProposalId,
     evidenceRefs: outcome.evidenceRefs,
-  });
+  };
+  let result = buildResult(job, route, model, baseFields);
+  if (outcome.structuredData) {
+    // 결과 전체가 큐 상한(16KB) 안이어야 한다 — 요약(최대 2000자, 한글이면 ~6KB)이 쓰고 남은 자리와
+    // MAX_STRUCTURED_DATA_BYTES 중 작은 쪽에 맞춘다. 맞출 수 없으면(null) 칸 없이 낸다.
+    const remaining =
+      MAX_AGENT_JOB_JSON_BYTES -
+      Buffer.byteLength(JSON.stringify(result), "utf8") -
+      Buffer.byteLength(STRUCTURED_DATA_KEY, "utf8");
+    const structuredData = outcome.structuredData(Math.min(MAX_STRUCTURED_DATA_BYTES, remaining));
+    if (structuredData) result = buildResult(job, route, model, { ...baseFields, structuredData });
+  }
   if (route !== "local_shadow" || outcome.status !== "SUCCEEDED") {
     return { kind: "terminal", toStatus: outcome.status, route, model, escalationReason: null, errorClass: null, result };
   }

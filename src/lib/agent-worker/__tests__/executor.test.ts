@@ -18,6 +18,7 @@ const campaignFindUniqueMock = vi.fn();
 const partnerFindUniqueMock = vi.fn();
 const sellerFindUniqueMock = vi.fn();
 const orderCampaignFindUniqueMock = vi.fn();
+const productMappingFindManyMock = vi.fn();
 const snapshotFindManyMock = vi.fn();
 const transactionMock = vi.fn();
 const settlementMock = vi.fn();
@@ -30,6 +31,7 @@ const tx = {
   partner: { findUnique: partnerFindUniqueMock },
   seller: { findUnique: sellerFindUniqueMock },
   orderCampaign: { findUnique: orderCampaignFindUniqueMock },
+  productMapping: { findMany: productMappingFindManyMock },
 };
 
 vi.mock("@/lib/agent/tools/pipeline-status", async (importOriginal) => {
@@ -187,6 +189,7 @@ beforeEach(() => {
     partnerFindUniqueMock,
     sellerFindUniqueMock,
     orderCampaignFindUniqueMock,
+    productMappingFindManyMock,
     snapshotFindManyMock,
     transactionMock,
     settlementMock,
@@ -196,6 +199,7 @@ beforeEach(() => {
   transactionMock.mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
   proposalCreateMock.mockResolvedValue({ id: "read-1" });
   proposalEventCreateMock.mockResolvedValue({ id: "event-1" });
+  productMappingFindManyMock.mockResolvedValue([]);
 });
 
 describe("route behavior (plan contract 7)", () => {
@@ -317,6 +321,8 @@ describe("route behavior (plan contract 7)", () => {
     if (outcome.kind !== "terminal") throw new Error("expected terminal");
     expect(outcome.result.resultSummary).toContain("ACTIVE");
     expect(outcome.result.resultSummary.length).toBeLessThanOrEqual(2000);
+    // structuredData 는 get_order_campaign_mappings 만 싣는다 — 다른 조회는 칸 자체가 없다.
+    expect("structuredData" in outcome.result).toBe(false);
   });
 
   it("gemini route also runs only the deterministic registry: route kept, modelUsed is the sentinel", async () => {
@@ -1073,12 +1079,13 @@ describe("create_action_proposal", () => {
   describe("upsert_product_mappings (주문캠페인 상품 매핑, 2026-10-15)", () => {
     const CAMPAIGN_ID = "cmtestordercampaign000000001";
     const CAMPAIGN_NAME = "[샘플 공구] 테스트 기획전";
+    // 봇이 보내는 줄 — 지금 값(expected)은 없다. 기안 시점에 실행기가 DB 에서 채운다(2026-10-16).
     const rows = [
-      { optionName: "샘플 상품 A 3개", brandCode: "TC000102", price: 20000, expectedBrandCode: "TC000101", expectedPrice: 15000 },
-      { optionName: "샘플 상품 B 1개", brandCode: "TC000103", price: 12000, expectedBrandCode: null, expectedPrice: null },
-      { optionName: "샘플 상품 C 2개", brandCode: "TC0099", price: 8000, expectedBrandCode: null, expectedPrice: null },
-      { optionName: "샘플 상품 D 1개", brandCode: "TC0100", price: 13000, expectedBrandCode: null, expectedPrice: null },
-      { optionName: "샘플 상품 D 2개", brandCode: "TC0101", price: 21000, expectedBrandCode: null, expectedPrice: null },
+      { optionName: "샘플 상품 A 3개", brandCode: "TC000102", price: 20000 },
+      { optionName: "샘플 상품 B 1개", brandCode: "TC000103", price: 12000 },
+      { optionName: "샘플 상품 C 2개", brandCode: "TC0099", price: 8000 },
+      { optionName: "샘플 상품 D 1개", brandCode: "TC0100", price: 13000 },
+      { optionName: "샘플 상품 D 2개", brandCode: "TC0101", price: 21000 },
     ];
     const input = {
       action: "upsert_product_mappings",
@@ -1086,6 +1093,16 @@ describe("create_action_proposal", () => {
       orderCampaignName: CAMPAIGN_NAME,
       mappings: rows,
     } as const;
+    /** DB 의 ProductMapping 한 줄(워커 select 모양). 이름·코드는 전부 가짜다. */
+    const dbRow = (optionName: string, brandCode: string, price: number, id = `pm-${optionName}`) => ({
+      id,
+      optionName,
+      brandCode,
+      price,
+      productName: "샘플 공구 상품",
+    });
+    const storedRows = () =>
+      (proposalCreateMock.mock.calls[0][0] as { data: { payload: { args: { mappings: unknown[] } } } }).data.payload.args.mappings;
 
     it("does not create a proposal for an order campaign id that does not exist", async () => {
       orderCampaignFindUniqueMock.mockResolvedValue(null);
@@ -1147,7 +1164,11 @@ describe("create_action_proposal", () => {
           title,
           payload: {
             action: "upsert_product_mappings",
-            args: { orderCampaignId: CAMPAIGN_ID, orderCampaignName: CAMPAIGN_NAME, mappings: rows },
+            args: {
+              orderCampaignId: CAMPAIGN_ID,
+              orderCampaignName: CAMPAIGN_NAME,
+              mappings: rows.map((row) => ({ ...row, expectedBrandCode: null, expectedPrice: null })),
+            },
           },
           targetEntityType: null,
           targetEntityId: null,
@@ -1155,6 +1176,114 @@ describe("create_action_proposal", () => {
         }),
       });
       expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL", result: { actionProposalId: "proposal-mapping" } });
+    });
+
+    it("snapshots expected from the campaign's ProductMapping rows inside the proposal transaction (explicit granted select)", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      productMappingFindManyMock.mockResolvedValue([dbRow("샘플 상품 A 3개", "TC000101", 15000)]);
+      proposalCreateMock.mockResolvedValue({ id: "proposal-snapshot" });
+
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+
+      expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
+      expect(productMappingFindManyMock).toHaveBeenCalledWith({
+        where: { campaignId: CAMPAIGN_ID },
+        select: { id: true, optionName: true, brandCode: true, price: true },
+      });
+      // 트랜잭션 안에서 읽는다 — 이 테스트의 tx 만 productMapping 을 가진다.
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(storedRows()).toEqual([
+        { optionName: "샘플 상품 A 3개", brandCode: "TC000102", price: 20000, expectedBrandCode: "TC000101", expectedPrice: 15000 },
+        ...rows.slice(1).map((row) => ({ ...row, expectedBrandCode: null, expectedPrice: null })),
+      ]);
+    });
+
+    it("stores expected null/null for a row the campaign does not have yet", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      productMappingFindManyMock.mockResolvedValue([dbRow("다른 옵션", "TC000999", 1000)]);
+      proposalCreateMock.mockResolvedValue({ id: "proposal-new-rows" });
+      await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      for (const stored of storedRows()) {
+        expect(stored).toMatchObject({ expectedBrandCode: null, expectedPrice: null });
+      }
+    });
+
+    it("keeps an empty stored brandCode as an expected value (not a new row)", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      productMappingFindManyMock.mockResolvedValue([dbRow("샘플 상품 B 1개", "", 0)]);
+      proposalCreateMock.mockResolvedValue({ id: "proposal-empty-code" });
+      await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(storedRows()[1]).toMatchObject({ optionName: "샘플 상품 B 1개", expectedBrandCode: "", expectedPrice: 0 });
+    });
+
+    it("matches an option stored decomposed (NFD) with extra spaces to the bot's NFC option name", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      productMappingFindManyMock.mockResolvedValue([dbRow(" 샘플 상품  C 2개 ".normalize("NFD"), "TC000098", 7000)]);
+      proposalCreateMock.mockResolvedValue({ id: "proposal-nfd-option" });
+      await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      // 저장 옵션명은 봇이 보낸 그대로다(비교 키만 맞춘다).
+      expect(storedRows()[2]).toEqual({
+        optionName: "샘플 상품 C 2개",
+        brandCode: "TC0099",
+        price: 8000,
+        expectedBrandCode: "TC000098",
+        expectedPrice: 7000,
+      });
+    });
+
+    it("does not create a proposal when the campaign already has two rows for one option, and tells the bot to clean up on screen", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      productMappingFindManyMock.mockResolvedValue([
+        dbRow("샘플 상품 D 1개", "TC000201", 13000, "pm-d1"),
+        dbRow("샘플 상품 D 1개".normalize("NFD"), "TC000202", 14000, "pm-d2"),
+      ]);
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({
+        kind: "terminal",
+        toStatus: "FAILED_FINAL",
+        errorClass: "TARGET_NOT_FOUND",
+        result: {
+          resultSummary:
+            "create_action_proposal failed: TARGET_NOT_FOUND (「샘플 상품 D 1개」 매핑이 이미 2줄 있습니다. CRM 화면에서 중복을 먼저 정리하세요.)",
+        },
+      });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
+      expect(proposalEventCreateMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a brandCode longer than 32 chars", { brandCode: `TC${"9".repeat(40)}`, price: 15000 }],
+      ["a negative price", { brandCode: "TC000101", price: -1 }],
+      ["a price over 100,000,000", { brandCode: "TC000101", price: 100_000_001 }],
+    ])("fails finally (no retry, no proposal) when the stored row has %s, and says which option", async (_label, current) => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      productMappingFindManyMock.mockResolvedValue([dbRow("샘플 상품 C 2개", current.brandCode, current.price)]);
+      const outcome = await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(outcome).toMatchObject({
+        kind: "terminal",
+        toStatus: "FAILED_FINAL",
+        errorClass: "TARGET_NOT_FOUND",
+        result: {
+          resultSummary:
+            "create_action_proposal failed: TARGET_NOT_FOUND (「샘플 상품 C 2개」 지금 값이 봇이 다룰 수 있는 범위를 벗어났습니다(상품코드 32자·가격 0~1억원). CRM 화면에서 고쳐 주세요.)",
+        },
+      });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
+      expect(proposalEventCreateMock).not.toHaveBeenCalled();
+    });
+
+    it("does not read mappings when the campaign does not exist", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue(null);
+      await executeAgentJob(job("create_action_proposal", input), deps(accepted("python")));
+      expect(productMappingFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it("refuses bot rows that still carry expected keys (contract is strict)", async () => {
+      orderCampaignFindUniqueMock.mockResolvedValue({ id: CAMPAIGN_ID, name: CAMPAIGN_NAME });
+      const legacy = { ...input, mappings: [{ ...rows[0], expectedBrandCode: null, expectedPrice: null }] };
+      const outcome = await executeAgentJob(job("create_action_proposal", legacy), deps(accepted("python")));
+      expect(outcome).toMatchObject({ kind: "terminal", toStatus: "FAILED_FINAL", errorClass: "INVALID_INPUT" });
+      expect(proposalCreateMock).not.toHaveBeenCalled();
     });
   });
 

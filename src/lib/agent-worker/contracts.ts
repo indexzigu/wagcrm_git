@@ -394,12 +394,28 @@ export const MAX_MAPPING_PRODUCT_NAME_CHARS = 60;
 export const MAX_MAPPING_BRAND_CODE_CHARS = 32;
 export const MAX_MAPPING_PRICE = 100_000_000;
 
-export const productMappingRowInputSchema = z
+/**
+ * 봇이 보내는 줄(2026-10-16) — 바꿀 값만 싣는다. 지금 값(`expectedBrandCode`/`expectedPrice`)은 봇이 보내지
+ * 않고, 기안 시점에 CRM 작업 실행기가 DB 에서 읽어 채운다(`executor.ts` 의 기안 생성). 봇은 결과 요약만
+ * 받아 지금 값을 옮겨 적을 수 없었다. `.strict()` 라 expected 칸을 실어 보내면 거절한다.
+ */
+export const productMappingRowRequestSchema = z
   .object({
     optionName: z.string().trim().min(1).max(MAX_MAPPING_OPTION_NAME_CHARS),
     productName: z.string().trim().max(MAX_MAPPING_PRODUCT_NAME_CHARS).optional(),
     brandCode: z.string().trim().min(1).max(MAX_MAPPING_BRAND_CODE_CHARS),
     price: z.number().int().min(0).max(MAX_MAPPING_PRICE),
+  })
+  .strict();
+
+export type ProductMappingRowRequest = z.infer<typeof productMappingRowRequestSchema>;
+
+/**
+ * 저장되는 줄(`ActionProposal.payload.args.mappings[]`) — 봇의 줄 + 기안 시점에 DB 에서 읽은 지금 값.
+ * 승인 시점 실행기·결재함 미리보기가 이 모양을 읽는다.
+ */
+export const productMappingRowInputSchema = productMappingRowRequestSchema
+  .extend({
     // 지금 값. 둘 다 null = 새 줄(지금 없어야 한다). 둘 다 값 = 고칠 줄(지금 값과 같아야 한다).
     // 빈 문자열 "" 도 **값**이다 — 화면은 빈 상품코드를 허용하므로 그런 기존 줄을 고칠 때 쓴다(.min(1) 금지).
     expectedBrandCode: z.string().max(MAX_MAPPING_BRAND_CODE_CHARS).nullable(),
@@ -409,13 +425,24 @@ export const productMappingRowInputSchema = z
 
 export type ProductMappingRowInput = z.infer<typeof productMappingRowInputSchema>;
 
-export const upsertProductMappingsInputSchema = z.object({
+const upsertProductMappingsBaseShape = {
   orderCampaignId: opaqueIdSchema,
   // 승인자가 결재함 제목·미리보기에서 어느 캠페인인지 바로 보게 한다(target 이 null 이라
   // resolveEntityLabel 이 이름을 못 풀어 준다). 기안 시점·승인 시점에 DB 이름과 대조한다.
   orderCampaignName: z.string().trim().min(1).max(200),
-  mappings: z.array(productMappingRowInputSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
   memo: z.string().trim().min(1).max(500).optional(),
+};
+
+/** 봇이 보내는 기안 입력(액션 이름 제외) — 줄에 지금 값이 없다. */
+export const upsertProductMappingsRequestSchema = z.object({
+  ...upsertProductMappingsBaseShape,
+  mappings: z.array(productMappingRowRequestSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
+});
+
+/** 저장되는 기안 args 의 모양 — 줄마다 지금 값이 있다. */
+export const upsertProductMappingsInputSchema = z.object({
+  ...upsertProductMappingsBaseShape,
+  mappings: z.array(productMappingRowInputSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
 });
 
 /**
@@ -435,8 +462,9 @@ export function sameOrderCampaignName(stored: string, proposed: string): boolean
   return stored.normalize("NFC").trim() === proposed.normalize("NFC").trim();
 }
 
-export function refineProductMappingRows(
-  value: z.infer<typeof upsertProductMappingsInputSchema>,
+/** 같은 옵션명(비교 키 기준)이 기안 안에 두 번 있으면 막는다 — 봇 입력·저장 args 둘 다. */
+function refineDistinctMappingOptionNames(
+  value: { mappings: ReadonlyArray<{ optionName: string }> },
   context: z.RefinementCtx,
 ): void {
   const seen = new Set<string>();
@@ -450,6 +478,16 @@ export function refineProductMappingRows(
       });
     }
     seen.add(key);
+  });
+}
+
+/** 저장 args 검사 — 옵션명 중복 + 지금 값 두 칸이 함께 null 이거나 함께 값인지. */
+export function refineProductMappingRows(
+  value: z.infer<typeof upsertProductMappingsInputSchema>,
+  context: z.RefinementCtx,
+): void {
+  refineDistinctMappingOptionNames(value, context);
+  value.mappings.forEach((row, index) => {
     if ((row.expectedBrandCode === null) !== (row.expectedPrice === null)) {
       context.addIssue({
         code: "custom",
@@ -460,7 +498,15 @@ export function refineProductMappingRows(
   });
 }
 
-/** 실행기(`write-actions/upsert-product-mappings.ts`)의 argsSchema — 아래 계약 변형에서 `action` 만 뺀 것. */
+/** 봇 입력(액션 이름 제외) 검사 — 기안 생성이 이 스키마로 받은 뒤 지금 값을 채워 아래 저장 스키마로 다시 잰다. */
+export const upsertProductMappingsRequestArgsSchema = upsertProductMappingsRequestSchema
+  .strict()
+  .superRefine(refineDistinctMappingOptionNames);
+
+/**
+ * 저장 args 스키마 — 실행기(`write-actions/upsert-product-mappings.ts`)의 argsSchema, 기안 의도 도구의 입력,
+ * 결재함 미리보기가 읽는 모양. 봇 입력은 이것이 아니라 위 `upsertProductMappingsRequestArgsSchema` 다.
+ */
 export const upsertProductMappingsArgsSchema = upsertProductMappingsInputSchema
   .strict()
   .superRefine(refineProductMappingRows);
@@ -548,10 +594,10 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("upsert_product_mappings"),
-      ...upsertProductMappingsInputSchema.shape,
+      ...upsertProductMappingsRequestSchema.shape,
     })
     .strict()
-    .superRefine(refineProductMappingRows),
+    .superRefine(refineDistinctMappingOptionNames),
 ]);
 
 /**
@@ -788,6 +834,69 @@ export const AgentJobPayloadSchema = z
 
 export type AgentJobPayload = z.infer<typeof AgentJobPayloadSchema>;
 
+/**
+ * 작업 결과의 구조화 데이터 바이트 상한(UTF-8 JSON, 2026-10-16). 봇은 결과 요약(≤2000자, 라우터는 앞 200자)만으로는
+ * 매핑 지금 값·스토어 옵션명을 옮겨 적을 수 없어, 조회 결과를 이 상한 안의 구조로 함께 받는다. 작업 결과 전체는
+ * 여전히 `MAX_AGENT_JOB_JSON_BYTES` 안이어야 한다 — 실행기가 그 남은 자리와 이 상한 중 작은 쪽에 맞춘다.
+ */
+export const MAX_STRUCTURED_DATA_BYTES = 12 * 1024;
+
+const structuredStoreOptionSchema = z
+  .object({
+    label: z.string(),
+    productName: z.string().nullable(),
+    optionName: z.string().nullable(),
+    split: z.enum(["single", "none", "ambiguous"]),
+    quantity: z.number(),
+    mappingIndex: z.number().int().min(0).nullable(),
+  })
+  .strict();
+
+const structuredMappingSchema = z
+  .object({
+    productName: z.string(),
+    optionName: z.string(),
+    brandCode: z.string(),
+    price: z.number(),
+    linkedToDeal: z.boolean(),
+  })
+  .strict();
+
+/**
+ * `get_order_campaign_mappings` 결과의 구조화 데이터 — 읽기 결과와 같은 모양에 캠페인별 `mappingsTruncated` 를 더했다.
+ * 바이트 상한에 걸리면 뒤에서부터 스토어 옵션 → 매핑 → 캠페인 순으로 덜어 내고 해당 플래그와 최상위 `truncated` 를 켠다.
+ */
+export const orderCampaignMappingsStructuredDataSchema = z
+  .object({
+    kind: z.literal("order_campaign_mappings"),
+    version: z.literal(1),
+    campaigns: z.array(
+      z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          sellerName: z.string(),
+          isActive: z.boolean(),
+          startDate: z.string().nullable(),
+          endDate: z.string().nullable(),
+          salesCampaignIds: z.array(z.string()),
+          mappings: z.array(structuredMappingSchema),
+          mappingsTruncated: z.boolean(),
+          storeOptions: z.array(structuredStoreOptionSchema),
+          storeOptionsTruncated: z.boolean(),
+          storeOptionsWindowTruncated: z.boolean(),
+        })
+        .strict(),
+    ),
+    truncated: z.boolean(),
+  })
+  .strict()
+  .refine((value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= MAX_STRUCTURED_DATA_BYTES, {
+    message: `structuredData exceeds ${MAX_STRUCTURED_DATA_BYTES} bytes`,
+  });
+
+export type OrderCampaignMappingsStructuredData = z.infer<typeof orderCampaignMappingsStructuredDataSchema>;
+
 export const AgentJobResultSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -799,6 +908,8 @@ export const AgentJobResultSchema = z
     resultSummary: z.string().trim().min(1).max(MAX_RESULT_SUMMARY_CHARS),
     actionProposalId: opaqueIdSchema.nullable(),
     evidenceRefs: z.array(z.string().trim().min(1).max(256)).max(MAX_EVIDENCE_REFS),
+    // 선택 칸 — get_order_campaign_mappings 만 싣는다(2026-10-16). 다른 작업은 칸 자체가 없다.
+    structuredData: orderCampaignMappingsStructuredDataSchema.optional(),
   })
   .strict();
 

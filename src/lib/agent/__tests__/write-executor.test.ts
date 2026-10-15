@@ -1365,7 +1365,6 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     ["create_deal", createDealArgs],
     ["update_settlement_amount", updateSettlementAmountArgs],
     ["update_record", updateRecordArgs],
-    ["upsert_product_mappings", upsertProductMappingsArgs],
   ])("%s: 계약이 받는 최대 payload를 argsSchema도 그대로 받는다", (action, args) => {
     expect(createActionProposalInputSchema.safeParse({ action, ...args }).success).toBe(true);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(args).success).toBe(true);
@@ -1376,11 +1375,33 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     ["create_deal", createDealArgs],
     ["update_settlement_amount", updateSettlementAmountArgs],
     ["update_record", updateRecordArgs],
-    ["upsert_product_mappings", upsertProductMappingsArgs],
   ])("%s: 계약에 없는 칸은 양쪽 모두 거부한다", (action, args) => {
     const withUnknownKey = { ...args, unknownField: "x" };
     expect(createActionProposalInputSchema.safeParse({ action, ...withUnknownKey }).success).toBe(false);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(withUnknownKey).success).toBe(false);
+  });
+
+  // 상품 매핑은 2026-10-16 부터 두 모양이다: 봇 계약은 지금 값(expected) 없는 줄, 저장 args(argsSchema)는
+  // 기안 시점에 작업 실행기가 지금 값을 채운 줄. 봇 줄 + expected 두 칸 = 저장 줄이어야 한다.
+  it("upsert_product_mappings: 계약은 봇 줄을, argsSchema 는 같은 줄에 지금 값을 채운 저장 줄을 받는다", () => {
+    const botArgs = {
+      ...upsertProductMappingsArgs,
+      mappings: upsertProductMappingsArgs.mappings.map(
+        ({ expectedBrandCode: _brand, expectedPrice: _price, ...row }) => row,
+      ),
+    };
+    expect(createActionProposalInputSchema.safeParse({ action: "upsert_product_mappings", ...botArgs }).success).toBe(true);
+    expect(WRITE_ACTIONS.upsert_product_mappings.argsSchema.safeParse(upsertProductMappingsArgs).success).toBe(true);
+    expect(
+      createActionProposalInputSchema.safeParse({ action: "upsert_product_mappings", ...upsertProductMappingsArgs }).success,
+    ).toBe(false);
+    expect(WRITE_ACTIONS.upsert_product_mappings.argsSchema.safeParse(botArgs).success).toBe(false);
+    expect(
+      createActionProposalInputSchema.safeParse({ action: "upsert_product_mappings", ...botArgs, unknownField: "x" }).success,
+    ).toBe(false);
+    expect(
+      WRITE_ACTIONS.upsert_product_mappings.argsSchema.safeParse({ ...upsertProductMappingsArgs, unknownField: "x" }).success,
+    ).toBe(false);
   });
 });
 
