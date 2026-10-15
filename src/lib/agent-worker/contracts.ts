@@ -394,12 +394,28 @@ export const MAX_MAPPING_PRODUCT_NAME_CHARS = 60;
 export const MAX_MAPPING_BRAND_CODE_CHARS = 32;
 export const MAX_MAPPING_PRICE = 100_000_000;
 
-export const productMappingRowInputSchema = z
+/**
+ * 봇이 보내는 줄(2026-10-16) — 바꿀 값만 싣는다. 지금 값(`expectedBrandCode`/`expectedPrice`)은 봇이 보내지
+ * 않고, 기안 시점에 CRM 작업 실행기가 DB 에서 읽어 채운다(`executor.ts` 의 기안 생성). 봇은 결과 요약만
+ * 받아 지금 값을 옮겨 적을 수 없었다. `.strict()` 라 expected 칸을 실어 보내면 거절한다.
+ */
+export const productMappingRowRequestSchema = z
   .object({
     optionName: z.string().trim().min(1).max(MAX_MAPPING_OPTION_NAME_CHARS),
     productName: z.string().trim().max(MAX_MAPPING_PRODUCT_NAME_CHARS).optional(),
     brandCode: z.string().trim().min(1).max(MAX_MAPPING_BRAND_CODE_CHARS),
     price: z.number().int().min(0).max(MAX_MAPPING_PRICE),
+  })
+  .strict();
+
+export type ProductMappingRowRequest = z.infer<typeof productMappingRowRequestSchema>;
+
+/**
+ * 저장되는 줄(`ActionProposal.payload.args.mappings[]`) — 봇의 줄 + 기안 시점에 DB 에서 읽은 지금 값.
+ * 승인 시점 실행기·결재함 미리보기가 이 모양을 읽는다.
+ */
+export const productMappingRowInputSchema = productMappingRowRequestSchema
+  .extend({
     // 지금 값. 둘 다 null = 새 줄(지금 없어야 한다). 둘 다 값 = 고칠 줄(지금 값과 같아야 한다).
     // 빈 문자열 "" 도 **값**이다 — 화면은 빈 상품코드를 허용하므로 그런 기존 줄을 고칠 때 쓴다(.min(1) 금지).
     expectedBrandCode: z.string().max(MAX_MAPPING_BRAND_CODE_CHARS).nullable(),
@@ -409,13 +425,24 @@ export const productMappingRowInputSchema = z
 
 export type ProductMappingRowInput = z.infer<typeof productMappingRowInputSchema>;
 
-export const upsertProductMappingsInputSchema = z.object({
+const upsertProductMappingsBaseShape = {
   orderCampaignId: opaqueIdSchema,
   // 승인자가 결재함 제목·미리보기에서 어느 캠페인인지 바로 보게 한다(target 이 null 이라
   // resolveEntityLabel 이 이름을 못 풀어 준다). 기안 시점·승인 시점에 DB 이름과 대조한다.
   orderCampaignName: z.string().trim().min(1).max(200),
-  mappings: z.array(productMappingRowInputSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
   memo: z.string().trim().min(1).max(500).optional(),
+};
+
+/** 봇이 보내는 기안 입력(액션 이름 제외) — 줄에 지금 값이 없다. */
+export const upsertProductMappingsRequestSchema = z.object({
+  ...upsertProductMappingsBaseShape,
+  mappings: z.array(productMappingRowRequestSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
+});
+
+/** 저장되는 기안 args 의 모양 — 줄마다 지금 값이 있다. */
+export const upsertProductMappingsInputSchema = z.object({
+  ...upsertProductMappingsBaseShape,
+  mappings: z.array(productMappingRowInputSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
 });
 
 /**
@@ -435,8 +462,9 @@ export function sameOrderCampaignName(stored: string, proposed: string): boolean
   return stored.normalize("NFC").trim() === proposed.normalize("NFC").trim();
 }
 
-export function refineProductMappingRows(
-  value: z.infer<typeof upsertProductMappingsInputSchema>,
+/** 같은 옵션명(비교 키 기준)이 기안 안에 두 번 있으면 막는다 — 봇 입력·저장 args 둘 다. */
+function refineDistinctMappingOptionNames(
+  value: { mappings: ReadonlyArray<{ optionName: string }> },
   context: z.RefinementCtx,
 ): void {
   const seen = new Set<string>();
@@ -450,6 +478,16 @@ export function refineProductMappingRows(
       });
     }
     seen.add(key);
+  });
+}
+
+/** 저장 args 검사 — 옵션명 중복 + 지금 값 두 칸이 함께 null 이거나 함께 값인지. */
+export function refineProductMappingRows(
+  value: z.infer<typeof upsertProductMappingsInputSchema>,
+  context: z.RefinementCtx,
+): void {
+  refineDistinctMappingOptionNames(value, context);
+  value.mappings.forEach((row, index) => {
     if ((row.expectedBrandCode === null) !== (row.expectedPrice === null)) {
       context.addIssue({
         code: "custom",
@@ -460,7 +498,15 @@ export function refineProductMappingRows(
   });
 }
 
-/** 실행기(`write-actions/upsert-product-mappings.ts`)의 argsSchema — 아래 계약 변형에서 `action` 만 뺀 것. */
+/** 봇 입력(액션 이름 제외) 검사 — 기안 생성이 이 스키마로 받은 뒤 지금 값을 채워 아래 저장 스키마로 다시 잰다. */
+export const upsertProductMappingsRequestArgsSchema = upsertProductMappingsRequestSchema
+  .strict()
+  .superRefine(refineDistinctMappingOptionNames);
+
+/**
+ * 저장 args 스키마 — 실행기(`write-actions/upsert-product-mappings.ts`)의 argsSchema, 기안 의도 도구의 입력,
+ * 결재함 미리보기가 읽는 모양. 봇 입력은 이것이 아니라 위 `upsertProductMappingsRequestArgsSchema` 다.
+ */
 export const upsertProductMappingsArgsSchema = upsertProductMappingsInputSchema
   .strict()
   .superRefine(refineProductMappingRows);
@@ -548,10 +594,10 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("upsert_product_mappings"),
-      ...upsertProductMappingsInputSchema.shape,
+      ...upsertProductMappingsRequestSchema.shape,
     })
     .strict()
-    .superRefine(refineProductMappingRows),
+    .superRefine(refineDistinctMappingOptionNames),
 ]);
 
 /**

@@ -19,6 +19,7 @@ import {
   createAgentJobIdempotencyKey,
   isAgentJobTransitionAllowed,
   serializeAgentJobJson,
+  upsertProductMappingsArgsSchema,
   type AgentJobPayload,
 } from "../contracts";
 
@@ -509,12 +510,11 @@ describe("get_order_campaign_mappings input (2026-10-15)", () => {
 });
 
 describe("create_action_proposal — upsert_product_mappings (상품 매핑 등록·수정, 2026-10-15)", () => {
+  // 봇이 보내는 줄에는 지금 값(expected)이 없다 — 기안 시점에 CRM 이 DB 에서 채운다(2026-10-16).
   const row = {
     optionName: "샘플 상품 A 3개",
     brandCode: "TC000102",
     price: 20000,
-    expectedBrandCode: null,
-    expectedPrice: null,
   };
   const base = {
     action: "upsert_product_mappings",
@@ -545,8 +545,14 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     expect(AgentJobPayloadSchema.safeParse(makeEnvelope("create_action_proposal", base)).success).toBe(true);
   });
 
-  it("accepts an update row whose expected brandCode is an empty string (the screen allows blank codes)", () => {
-    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "", expectedPrice: 0 }] })).toBe(true);
+  it("rejects bot rows that carry expected keys (the worker snapshots them; strict row)", () => {
+    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: null, expectedPrice: null }] })).toBe(false);
+    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "TC000101", expectedPrice: 15000 }] })).toBe(false);
+    expect(accepts({ ...base, mappings: [{ ...row, expectedPrice: 0 }] })).toBe(false);
+  });
+
+  it("accepts a bot row with an optional productName", () => {
+    expect(accepts({ ...base, mappings: [{ ...row, productName: "샘플 공구 상품 A" }] })).toBe(true);
   });
 
   it("rejects duplicate optionName within one proposal (after trim + inner-space collapse)", () => {
@@ -561,9 +567,29 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     expect(accepts({ ...base, mappings: [nfc, nfd] })).toBe(false);
   });
 
-  it("rejects half-null expected", () => {
-    expect(accepts({ ...base, mappings: [{ ...row, expectedBrandCode: "TC0" }] })).toBe(false);
-    expect(accepts({ ...base, mappings: [{ ...row, expectedPrice: 100 }] })).toBe(false);
+  describe("stored args (ActionProposal.payload.args — expected snapshotted by the worker)", () => {
+    const { action: _action, ...storedBase } = base;
+    const storedRow = { ...row, expectedBrandCode: null, expectedPrice: null };
+    const storedAccepts = (args: unknown) => upsertProductMappingsArgsSchema.safeParse(args).success;
+
+    it("accepts new (null/null) and update rows, including an empty stored brandCode", () => {
+      expect(storedAccepts({ ...storedBase, mappings: [storedRow] })).toBe(true);
+      expect(storedAccepts({ ...storedBase, mappings: [{ ...storedRow, expectedBrandCode: "", expectedPrice: 0 }] })).toBe(true);
+    });
+
+    it("requires the expected keys", () => {
+      expect(storedAccepts({ ...storedBase, mappings: [row] })).toBe(false);
+    });
+
+    it("rejects half-null expected", () => {
+      expect(storedAccepts({ ...storedBase, mappings: [{ ...storedRow, expectedBrandCode: "TC0" }] })).toBe(false);
+      expect(storedAccepts({ ...storedBase, mappings: [{ ...storedRow, expectedPrice: 100 }] })).toBe(false);
+    });
+
+    it("still rejects duplicate optionName", () => {
+      const dup = { ...storedBase, mappings: [storedRow, { ...storedRow, optionName: " 샘플 상품 A  3개 " }] };
+      expect(storedAccepts(dup)).toBe(false);
+    });
   });
 
   it.each([
@@ -585,7 +611,7 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     expect(accepts(input)).toBe(false);
   });
 
-  it("fits 50 realistic rows (22-char option, 12-char product, expected filled) in the 16KB envelope", () => {
+  it("fits 50 realistic rows (22-char option, 12-char product) in the 16KB envelope", () => {
     const real = {
       ...base,
       mappings: Array.from({ length: 50 }, (_, i) => ({
@@ -593,8 +619,6 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
         productName: "샘플 공구 상품 A 세트",
         brandCode: "TC000102",
         price: 20000,
-        expectedBrandCode: "TC000101",
-        expectedPrice: 15000,
       })),
     };
     expect(accepts(real)).toBe(true);
