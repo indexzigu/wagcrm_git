@@ -754,6 +754,18 @@ export function partnerStatusLabel(status: string | null | undefined): string {
   return PARTNER_STATUS_DISPLAY[status] ?? status;
 }
 
+/**
+ * API 호출 기록(`ApiCallLog.provider`)의 출처 → 화면 낱말. 캠페인 연동 로그는 셀러 채널(`snsType`)로
+ * 거르므로 X 도 올 수 있다. 종전엔 표가 없어 영문 코드가 그대로 보였다.
+ */
+export const apiProviderLabels: Record<ApiProvider | SnsType, string> = {
+  INSTAGRAM: "Instagram",
+  YOUTUBE: "YouTube",
+  X: "X(Twitter)",
+  NAVER: "네이버",
+  INTERNAL: "내부",
+};
+
 export const snsTypeLabels: Record<SnsType, string> = {
   INSTAGRAM: "Instagram",
   YOUTUBE: "YouTube",

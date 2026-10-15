@@ -800,7 +800,7 @@ export function SellersManagement({
               <DataEmpty
                 icon={Users}
                 title="등록된 셀러 없음"
-                description="셀러를 추가하여 인플루언서를 관리하세요."
+                description="셀러를 추가해 관리를 시작하세요."
               >
                 <Button
                   size="sm"

@@ -59,6 +59,7 @@ import { ProgressCircle } from "@/components/ui/progress-circle";
 import { cn } from "@/lib/utils";
 import { computeChartLeftMargin, formatYAxisLabel } from "@/lib/y-axis-format";
 import type { PnlCampaignRow, PnlReportData } from "@/lib/pnl-report";
+import { displayLabel } from "@/lib/display-label";
 
 const BRIDGE_CHART_CONFIG: ChartConfig = {
   amount: { label: "금액", color: "var(--chart-1)" },
@@ -109,7 +110,7 @@ function formatDateRange(row: PnlCampaignRow): string {
  * 미지의 값은 원문으로 폴백한다 — 정본 키를 늘리는 것이 그때의 조치다.
  */
 function channelLabel(channel: string): string {
-  return (salesChannelLabels as Record<string, string>)[channel] ?? channel;
+  return displayLabel(salesChannelLabels, channel);
 }
 
 /**

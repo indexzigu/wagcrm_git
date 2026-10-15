@@ -8,6 +8,7 @@
 // 순수 함수 — 셀러 목록(이미 로드된 데이터)만 입력받아 클라이언트에서 계산한다. 신규 쿼리 없음.
 
 import { acquisitionChannelLabels } from "./crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 type SellerLike = {
   id: string;
@@ -50,7 +51,7 @@ export function computeAcquisitionBreakdown(sellers: SellerLike[]): AcquisitionB
   return Array.from(counts.entries())
     .map(([channel, count]) => ({
       channel,
-      label: channel === "UNKNOWN" ? "미분류" : acquisitionChannelLabels[channel] ?? channel,
+      label: channel === "UNKNOWN" ? "미분류" : displayLabel(acquisitionChannelLabels, channel),
       count,
     }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "ko"));

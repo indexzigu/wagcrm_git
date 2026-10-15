@@ -3,7 +3,8 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Link2 } from "lucide-react";
-import { dealStatusLabels, type DealStatus } from "@/lib/crm-types";
+import { dealStatusLabels } from "@/lib/crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,7 +42,7 @@ export function DealLinkSection({
           </h3>
           {dealStatus && (
             <Badge className="bg-slate-100 text-slate-700 text-[10px] font-medium px-2 py-0 h-5">
-              {dealStatusLabels[dealStatus as DealStatus] ?? dealStatus}
+              {displayLabel(dealStatusLabels, dealStatus)}
             </Badge>
           )}
         </div>
@@ -85,7 +86,7 @@ export function DealLinkSection({
           </div>
           {dealStatus && (
             <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100 text-[11px] font-semibold px-2.5 py-1 rounded-md shrink-0 border-0 shadow-none">
-              {dealStatusLabels[dealStatus as DealStatus] ?? dealStatus}
+              {displayLabel(dealStatusLabels, dealStatus)}
             </Badge>
           )}
         </div>

@@ -151,8 +151,8 @@ describe("MobileSettlementPendingSheet 렌더", () => {
     );
     // 합계는 제목 문장이 아니라 카드 헤더 우측 칩이 소유한다(UI 통일 목업 §2).
     // 카드(section)로 스코프해야 입금/지급 칩을 서로 구분할 수 있다.
-    const depositCard = screen.getByRole("region", { name: "입금 대기" });
-    const payoutCard = screen.getByRole("region", { name: "지급 대기" });
+    const depositCard = screen.getByRole("region", { name: "입금대기" });
+    const payoutCard = screen.getByRole("region", { name: "지급대기" });
     expect(within(depositCard).getByText("1건 · ₩4,820,000")).toBeInTheDocument();
     expect(within(payoutCard).getByText("1건 · ₩3,150,000")).toBeInTheDocument();
   });
@@ -222,7 +222,7 @@ describe("MobileSettlementPendingSheet 렌더", () => {
     );
     // 캡션 슬롯은 제거됐다(오너 지시 2026-08-26) — 재유입 방지용 역단언.
     expect(screen.queryByText("WAG CRM")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "정산 대기" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "정산대기" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "대기 목록 닫기" })).toBeInTheDocument();
   });
 

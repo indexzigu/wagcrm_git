@@ -18,7 +18,8 @@ import { scanTaxInvoiceMails } from "@/lib/tax-invoice-mail/mail-scan";
 // 필드 라벨 정본은 lib 쪽이다(`api/settlement/tax-filing-board/route.ts` 도 같은 맵을
 // 소비한다) — 이 route 가 사본을 따로 들고 있다가 2026-08-07 정정 때 한쪽만 고쳐져
 // 갈렸다(FIX 3). route 가 lib 를 import 하는 방향이 자연스러워 여기서 정리한다.
-import { FIELD_LABEL } from "@/lib/tax-filing-auto-confirm";
+import { FIELD_LABEL, type AutoConfirmField } from "@/lib/tax-filing-auto-confirm";
+import type { IssuanceMatchBasis } from "@/lib/tax-invoice-mail/issuance-match";
 import {
   AUTO_RECORD_REVIEW_LABEL,
   collectRecordedMismatchReviews,
@@ -92,20 +93,22 @@ const SCAN_SINCE_DAYS = 90;
  */
 const MAX_CONFIRMS_PER_RUN = 30;
 
-const BASIS_LABEL: Record<string, string> = {
+// 표가 유니온을 다 덮도록 타입으로 묶는다 — 이 문장은 활동 기록에 **저장**되므로 「—」 폴백을 쓰지
+// 않고, 새 근거·칸이 생기면 컴파일이 먼저 실패하게 한다(P2 화면 문구 기준 ③).
+const BASIS_LABEL: Record<IssuanceMatchBasis, string> = {
   LINE_ITEM: "품목명 일치",
   SOLE_COUNTERPART: "해당 상대의 유일한 건",
 };
 
 /** 캠페인 타임라인에 그대로 렌더되는 한 줄. 숫자·승인번호는 담되 문장으로 쓴다. */
 function summarizeConfirm(op: {
-  field: string;
+  field: AutoConfirmField;
   writtenDate: string;
   evidence: {
     issueIds: string[];
     invoiceCount: number;
     totalAmount: number | null;
-    basis: string[];
+    basis: IssuanceMatchBasis[];
     toleratedDelta: number | null;
   };
 }): string {
@@ -114,14 +117,14 @@ function summarizeConfirm(op: {
       ? ""
       : ` · 합계 ${op.evidence.totalAmount.toLocaleString("ko-KR")}원`;
   const ids = op.evidence.issueIds.length > 0 ? ` · 승인번호 ${op.evidence.issueIds.join(", ")}` : "";
-  const basis = op.evidence.basis.map((b) => BASIS_LABEL[b] ?? b).join("/");
+  const basis = op.evidence.basis.map((b) => BASIS_LABEL[b]).join("/");
   // ⚠️ 흡수한 차액은 **반드시** 문장에 남긴다 — 조용히 흡수하면 절삭인지 입력 오류인지
   //    사후에 구분할 수단이 사라진다(오너 요구). 응답이 아니라 여기가 영속 기록이다.
   const tolerated =
     op.evidence.toleratedDelta === null || op.evidence.toleratedDelta === 0
       ? ""
       : ` · ⚠️ 정산액과 ${op.evidence.toleratedDelta.toLocaleString("ko-KR")}원 차이를 허용오차로 흡수했습니다`;
-  const fieldLabel = (FIELD_LABEL as Record<string, string>)[op.field] ?? op.field;
+  const fieldLabel = FIELD_LABEL[op.field];
   return `메일 자동 확정: ${fieldLabel}을 ${op.writtenDate}로 기록했습니다(계산서 ${op.evidence.invoiceCount}장${amount}${ids} · 대조 근거 ${basis}${tolerated}).`;
 }
 

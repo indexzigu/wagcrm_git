@@ -15,12 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  dealStatusLabels,
-  salesChannelLabels,
-  type DealStatus,
-  type SalesChannel,
-} from "@/lib/crm-types";
+import { dealStatusLabels, salesChannelLabels, type SalesChannel } from "@/lib/crm-types";
 import {
   EntityIdentity,
   type EntityIdentityPart,
@@ -29,6 +24,7 @@ import { getDealContextParts, getDealIdentityParts } from "@/lib/deal-display";
 import { campaignFormSchema, SALES_CHANNELS } from "@/lib/validations/campaign";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 import { filterBySearchText } from "@/lib/search-filter";
+import { displayLabel } from "@/lib/display-label";
 
 // --- Types ---
 
@@ -462,7 +458,7 @@ export function CampaignCreationForm({
                               className="min-w-0 flex-1 overflow-hidden"
                             />
                             <span className="shrink-0 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-slate-600">
-                              {dealStatusLabels[deal.status as DealStatus] ?? deal.status}
+                              {displayLabel(dealStatusLabels, deal.status)}
                             </span>
                           </div>
                         </li>

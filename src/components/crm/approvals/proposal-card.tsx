@@ -12,6 +12,7 @@ import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * ProposalCard — 기안 한 건의 카드(인라인 승인) (청사진 §1, §3-#4).
@@ -122,7 +123,13 @@ function StatusChip({ proposal }: { proposal: ProposalDetail }) {
   if (proposal.status === "REJECTED") {
     return <Badge variant="outline">반려됨</Badge>;
   }
-  return <Badge variant="outline">{proposal.status}</Badge>;
+  if (proposal.status === "DRAFT") {
+    // 가격표 반영 기안이 승인대기로 넘어가기 전 잠깐 머무는 상태(장애 시 남는다).
+    return <Badge variant="outline">작성중</Badge>;
+  }
+  // 모르는 상태 코드는 영문으로 내지 않는다(P2 화면 문구 기준 ③) — 위 분기에 등록하는 것이 수정이다.
+  // 승인 여부를 가늠하는 칸이라 빈 표시(—)보다 낱말이 되묻기를 줄인다(ss-ux 검토 2026-10-15).
+  return <Badge variant="outline">알 수 없음</Badge>;
 }
 
 export function ProposalCard({
@@ -215,10 +222,10 @@ export function ProposalCard({
 
   const proposal = query.data;
   const action = proposal.payload?.action;
-  const actionLabel = action ? ACTION_LABELS[action] ?? action : "알 수 없는 액션";
+  const actionLabel = displayLabel(ACTION_LABELS, action, "알 수 없는 액션");
   const isSettlement = action === SETTLEMENT_ACTION;
   const entityLabel = proposal.targetEntityType
-    ? ENTITY_TYPE_LABELS[proposal.targetEntityType] ?? proposal.targetEntityType
+    ? displayLabel(ENTITY_TYPE_LABELS, proposal.targetEntityType, "") || null
     : null;
 
   return (

@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { dealStatusLabels } from "@/lib/deal-status";
 import { summarizeDealStatuses } from "@/lib/deal-status";
-import type { DealStatus } from "@/lib/deal-status";
+import { displayLabel } from "@/lib/display-label";
 
 type ProgressStatusSummaryProps = {
   deals: Array<{ status: string }>;
@@ -26,7 +26,7 @@ export function ProgressStatusSummary({ deals }: ProgressStatusSummaryProps) {
     <div className="flex flex-wrap gap-2">
       {Object.entries(statusCounts).map(([status, count]) => {
         const label =
-          dealStatusLabels[status as DealStatus] ?? status;
+          displayLabel(dealStatusLabels, status);
         return (
           <Badge
             key={status}

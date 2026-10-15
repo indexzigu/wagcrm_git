@@ -10,4 +10,6 @@ export const ENTITY_TYPE_LABELS: Record<string, string> = {
   SELLER: "셀러",
   DEAL: "딜",
   CAMPAIGN: "캠페인",
+  // 가격표 반영 기안(lib/price-sheet/apply-executor.ts)의 대상 — 종전엔 표에 없어 영문 코드가 배지에 떴다.
+  PRICE_SHEET: "가격표",
 };

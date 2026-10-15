@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { getDealIdentityParts } from "@/lib/deal-display";
 import { EntityIdentity } from "@/components/crm/entity-identity";
-import { dealStatusLabels, type DealStatus } from "@/lib/crm-types";
+import { dealStatusLabels } from "@/lib/crm-types";
 import {
   LinkedEntitySection,
   type LinkedEntityItem,
   type LinkedEntitySectionProps,
 } from "./linked-entity-section";
 import { LinkSearchDialog } from "./link-search-dialog";
+import { displayLabel } from "@/lib/display-label";
 
 // --- Types ---
 
@@ -62,7 +63,7 @@ export function LinkedDealsList({
           )}
         </div>
       ),
-      status: dealStatusLabels[deal.status as DealStatus] || deal.status,
+      status: displayLabel(dealStatusLabels, deal.status),
       date: deal.createdAt,
     };
   });

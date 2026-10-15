@@ -4,6 +4,7 @@ import { OPERATION_LABELS } from "./approvals-tabs";
 import { SourceBadge } from "./source-badge";
 import { formatShortDateTime } from "./format-time";
 import type { ReadEnvelope } from "./read-result-body";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * 조회 결과 상세의 머리 — **이 표를 믿어도 되는가**에 답하는 자리 (Plan 2 Task 5).
@@ -67,7 +68,7 @@ export function ReadDetailHeader({
   resultSummary?: string | null;
 }) {
   const operation = envelope?.operation;
-  const operationLabel = operation ? OPERATION_LABELS[operation] ?? operation : "조회";
+  const operationLabel = displayLabel(OPERATION_LABELS, operation, "조회");
   const chips = conditionChips(envelope?.query);
 
   return (

@@ -67,7 +67,6 @@ export function ChannelFeesClient({ initialChannels }: { initialChannels: Channe
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 id={`channel-fee-${ch.channel}-title`} className="text-sm font-semibold text-slate-800">{ch.label}</h3>
-                    <p className="text-xs text-muted-foreground font-mono">{ch.channel}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-slate-900">{(ch.feeRate + ch.paymentRate).toFixed(2)}%</p>

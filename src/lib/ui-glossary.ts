@@ -110,6 +110,8 @@ export const RAW_CODE_FIELDS: ReadonlySet<string> = new Set([
 /**
  * 재사용할 라벨 표(코드값 → 화면 낱말). 새 화면에서 같은 값을 그릴 때 새 표를 만들지 말고
  * 여기서 찾는다. 표에 없는 영문 코드가 보이면 그 표에 낱말을 등록한다(P2 「화면 문구 기준」 ③).
+ * 화면에서 표를 조회할 때는 `표[x] ?? x` 대신 `displayLabel(표, x)`(src/lib/display-label.ts)를 쓴다 —
+ * 표에 없는 영문 코드는 「—」, 한글 저장값은 그대로 보인다.
  */
 export const UI_LABEL_TABLES = {
   "캠페인 상태": "campaignStatusLabels (src/lib/crm-types.ts)",
@@ -117,6 +119,7 @@ export const UI_LABEL_TABLES = {
   "업무 상태": "taskStatusLabels (src/lib/crm-types.ts)",
   "판매 채널": "salesChannelLabels (src/lib/crm-types.ts)",
   "거래처 유형": "partnerTypeLabels (src/lib/crm-types.ts)",
+  "API 기록 출처": "apiProviderLabels (src/lib/crm-types.ts)",
   "대상 종류(거래처·셀러·딜·캠페인)": "ENTITY_TYPE_LABELS (src/components/crm/approvals/entity-type-labels.ts)",
   "필드 이름": "FIELD_LABELS (src/lib/field-labels.ts)",
   "결재함 작업 이름": "ACTION_LABELS (src/components/crm/approvals/proposal-card.tsx)",

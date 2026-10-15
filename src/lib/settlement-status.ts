@@ -114,11 +114,17 @@ export function isValidSettlementAction(
   if (index < 0) {
     return {
       ok: false,
-      reason: `이 판매채널에는 ${target === "deposit" ? "입금 확정" : "지급 완료"} 절차가 없습니다.`,
+      reason:
+        target === "deposit"
+          ? "이 판매채널에는 입금 확정 절차가 없습니다."
+          : "이 판매채널에는 지급 완료 절차가 없습니다.",
     };
   }
   if (campaign[targetFlag]) {
-    return { ok: false, reason: `이미 ${target === "deposit" ? "입금 확정" : "지급 완료"}된 정산입니다.` };
+    return {
+      ok: false,
+      reason: target === "deposit" ? "이미 입금 확정된 정산입니다." : "이미 지급 완료된 정산입니다.",
+    };
   }
 
   const blocking = legs.slice(0, index).filter((flag) => !campaign[flag]);

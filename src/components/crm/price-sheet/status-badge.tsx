@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * 가격표 처리 파이프라인의 상태 배지.
@@ -48,7 +49,7 @@ const STATUS_VARIANT: Record<
 export function PriceSheetStatusBadge({ status }: { status: string }) {
   return (
     <Badge variant={STATUS_VARIANT[status] ?? "status-pending"}>
-      {STATUS_LABEL[status] ?? status}
+      {displayLabel(STATUS_LABEL, status)}
     </Badge>
   );
 }
@@ -89,7 +90,7 @@ const MAPPING_VARIANT: Record<
 export function MappingStatusBadge({ status }: { status: string }) {
   return (
     <Badge variant={MAPPING_VARIANT[status] ?? "outline"}>
-      {MAPPING_LABEL[status] ?? status}
+      {displayLabel(MAPPING_LABEL, status)}
     </Badge>
   );
 }

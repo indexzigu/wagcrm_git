@@ -53,6 +53,7 @@ import {
 } from "@/lib/crm-types";
 import { formatBytes } from "@/lib/format";
 import { DataSourceBanner } from "./data-source-banner";
+import { displayLabel } from "@/lib/display-label";
 
 const sectionValues = Object.keys(assetSectionLabels) as AssetSection[];
 
@@ -464,7 +465,7 @@ export function AssetLibrary({
 
     // 7. 섹션 폴더 생성 자동화 함수
     const getOrCreateSectionFolder = (parent: TreeNode, section: AssetSection): TreeNode => {
-      const sectionName = assetSectionLabels[section] || section;
+      const sectionName = displayLabel(assetSectionLabels, section);
       const sectionId = `${parent.id}:section:${section}`;
       let sectionNode = parent.children.find((child) => child.id === sectionId);
       if (!sectionNode) {

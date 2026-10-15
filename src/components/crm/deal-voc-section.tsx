@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { DealVocView, VocInsightPayload } from "@/lib/order-converter/voc-store";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * 딜 상세 "고객 반응" v2 — AI 요약 카드가 1급, 원문은 드릴다운(PR B, 계획 §6-6).
@@ -305,7 +306,7 @@ export function DealVocSection({ dealId }: { dealId: string }) {
                             {c.label} <span className="text-muted-foreground">({c.count}건)</span>
                           </span>
                           <Badge variant={severityBadgeVariant(c.severity)} className="shrink-0">
-                            {SEVERITY_LABEL[c.severity] ?? c.severity}
+                            {displayLabel(SEVERITY_LABEL, c.severity)}
                           </Badge>
                         </div>
                         {c.quotes[0] && (

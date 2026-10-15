@@ -54,12 +54,12 @@ export function MobileHomeSettlementCard({ campaigns }: { campaigns: MobileSettl
         <CardContent className="px-4 py-4">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
             <Wallet className="size-4 shrink-0 text-[var(--primary)]" />
-            <p className="text-sm font-semibold text-[var(--primary)] tracking-tight">정산 대기</p>
+            <p className="text-sm font-semibold text-[var(--primary)] tracking-tight">정산대기</p>
           </div>
           {pending == null ? (
             <div
               aria-busy="true"
-              aria-label="정산 대기 불러오는 중"
+              aria-label="정산대기 불러오는 중"
               className="mt-3 grid grid-cols-2 gap-2"
             >
               <div className="h-16 animate-pulse rounded-xl bg-slate-100" />
@@ -70,7 +70,7 @@ export function MobileHomeSettlementCard({ campaigns }: { campaigns: MobileSettl
               <button
                 type="button"
                 onClick={() => setPendingOpen(true)}
-                aria-label="입금 대기 목록 열기"
+                aria-label="입금대기 목록 열기"
                 className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-left transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
               >
                 {/* 방향 아이콘 + 색 한 쌍(규칙 SSOT: lib/money-direction). 이 카드는 5개 표면
@@ -81,7 +81,7 @@ export function MobileHomeSettlementCard({ campaigns }: { campaigns: MobileSettl
                     aria-hidden="true"
                     className={`size-3.5 shrink-0 ${MONEY_DIRECTION_TEXT.in}`}
                   />
-                  입금 대기 <span className="tabular-nums">{pending.deposit.count}건</span>
+                  입금대기 <span className="tabular-nums">{pending.deposit.count}건</span>
                 </span>
                 <span className={`text-[15px] font-bold tabular-nums tracking-tight ${MONEY_DIRECTION_TEXT.in}`}>
                   ₩{formatCurrency(pending.deposit.total)}
@@ -90,7 +90,7 @@ export function MobileHomeSettlementCard({ campaigns }: { campaigns: MobileSettl
               <button
                 type="button"
                 onClick={() => setPendingOpen(true)}
-                aria-label="지급 대기 목록 열기"
+                aria-label="지급대기 목록 열기"
                 className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-left transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
               >
                 <span className="flex items-center gap-1 text-[11px] font-medium text-slate-500">
@@ -98,7 +98,7 @@ export function MobileHomeSettlementCard({ campaigns }: { campaigns: MobileSettl
                     aria-hidden="true"
                     className={`size-3.5 shrink-0 ${MONEY_DIRECTION_TEXT.out}`}
                   />
-                  지급 대기 <span className="tabular-nums">{pending.payout.count}건</span>
+                  지급대기 <span className="tabular-nums">{pending.payout.count}건</span>
                 </span>
                 <span className={`text-[15px] font-bold tabular-nums tracking-tight ${MONEY_DIRECTION_TEXT.out}`}>
                   ₩{formatCurrency(pending.payout.total)}

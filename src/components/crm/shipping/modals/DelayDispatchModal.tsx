@@ -3,6 +3,7 @@ import { DialogTitle } from '@/components/ui/dialog';
 import { ShippingDialogFrame } from './ShippingDialogFrame';
 import type { UndispatchedOrderRow } from '@/lib/order-converter/undispatched-orders';
 import { buildDelayDispatchLog, type OrderActionLogInput } from '@/lib/order-converter/action-log';
+import { displayLabel } from "@/lib/display-label";
 
 // 발송지연 안내 모달 — 확정 UX 스펙(2단계 확인) 구현.
 //
@@ -50,7 +51,7 @@ const SKIP_REASON_LABELS: Record<string, string> = {
 };
 
 const skipReasonLabel = (reason?: string) =>
-  reason ? SKIP_REASON_LABELS[reason] ?? reason : '사유 미상';
+  reason ? displayLabel(SKIP_REASON_LABELS, reason) : '사유 미상';
 
 // ---- KST 날짜 헬퍼 (스냅샷 필드가 +09:00 ISO라 KST 달력일 기준으로 계산) ----
 const KST_MS = 9 * 60 * 60 * 1000;

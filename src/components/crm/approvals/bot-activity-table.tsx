@@ -4,6 +4,7 @@ import { Toggle } from "@/components/ui/toggle";
 import type { AgentJobListItem } from "@/lib/agent-jobs/list-item";
 import { OPERATION_LABELS } from "./approvals-tabs";
 import { formatShortDateTime } from "./format-time";
+import { displayLabel } from "@/lib/display-label";
 
 type BadgeVariant = React.ComponentProps<typeof Badge>["variant"];
 
@@ -106,7 +107,7 @@ export function BotActivityTable({
               const status = resolveStatus(item.status);
               const operationLabel = item.payloadUnreadable
                 ? "알 수 없음"
-                : OPERATION_LABELS[item.operation] ?? item.operation;
+                : displayLabel(OPERATION_LABELS, item.operation, "알 수 없음");
               const summary = item.resultSummary ?? item.failureCode;
 
               return (

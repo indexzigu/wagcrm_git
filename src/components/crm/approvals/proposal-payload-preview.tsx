@@ -24,6 +24,7 @@ import {
   isRecordEntityType,
   recordFieldLabel,
 } from "@/lib/record-update-labels";
+import { displayLabel } from "@/lib/display-label";
 
 const MONEY_FIELDS = [
   ["costPrice", "원가"],
@@ -103,7 +104,7 @@ function PartnerBlock({ partner }: { partner: Record<string, unknown> }) {
     <Rows
       rows={[
         ["거래처명", asText(partner.name)],
-        ["구분", type ? (PARTNER_TYPE_LABELS[type] ?? type) : null],
+        ["구분", type ? (displayLabel(PARTNER_TYPE_LABELS, type)) : null],
         ["사업자번호", asText(partner.businessNumber)],
         ["대표자", asText(partner.ceoName)],
         ["업태", asText(partner.businessType)],
