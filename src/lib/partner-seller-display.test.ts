@@ -153,7 +153,7 @@ describe("campaignRecency", () => {
         ],
         NOW,
       ),
-    ).toEqual({ kind: "active", label: "진행 중" });
+    ).toEqual({ kind: "active", label: "진행중" });
   });
 
   it("미래 시작 캠페인이 있으면 시작 예정 — 과거 종료 경과보다 우선한다", () => {
@@ -165,7 +165,7 @@ describe("campaignRecency", () => {
         ],
         NOW,
       ),
-    ).toEqual({ kind: "upcoming", label: "시작 예정" });
+    ).toEqual({ kind: "upcoming", label: "시작예정" });
   });
 
   it("과거만 있으면 가장 최근 종료 기준 경과 라벨 (일/개월/년 버킷)", () => {
@@ -238,7 +238,7 @@ describe("campaignRecency", () => {
     it("신호의 진행 중이 캡 배열의 '종료' 판정을 이긴다", () => {
       expect(campaignRecency(cappedPastOnly, NOW, { hasActiveCampaign: true })).toEqual({
         kind: "active",
-        label: "진행 중",
+        label: "진행중",
       });
     });
 
@@ -248,7 +248,7 @@ describe("campaignRecency", () => {
           hasActiveCampaign: false,
           hasUpcomingCampaign: true,
         }),
-      ).toEqual({ kind: "upcoming", label: "시작 예정" });
+      ).toEqual({ kind: "upcoming", label: "시작예정" });
     });
 
     it("신호의 lastCampaignEndAt이 캡 배열의 더 오래된 종료보다 우선한다", () => {
@@ -287,7 +287,7 @@ describe("campaignRecency", () => {
     it("신호만 있고 배열이 비어도 판정한다 (배열은 판정의 전제조건이 아니다)", () => {
       expect(campaignRecency([], NOW, { hasActiveCampaign: true })).toEqual({
         kind: "active",
-        label: "진행 중",
+        label: "진행중",
       });
       expect(
         campaignRecency(null, NOW, { lastCampaignEndAt: daysAgo(90) }),

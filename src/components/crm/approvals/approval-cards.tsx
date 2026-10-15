@@ -14,6 +14,7 @@ import { formatShortDateTime } from "./format-time";
 import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
 import type { ApproveOptions } from "@/hooks/useProposalActions";
+import { displayLabel } from "@/lib/display-label";
 
 /** /api/action-proposals GET 응답 항목 형태 (route.ts와 형태를 맞춘다). */
 export type ApprovalInboxItem = {
@@ -93,7 +94,7 @@ function PayloadSummary({ item }: { item: ApprovalInboxItem }) {
 }
 
 function EntityBadge({ item }: { item: ApprovalInboxItem }) {
-  const entityLabel = item.targetEntityType ? ENTITY_TYPE_LABELS[item.targetEntityType] ?? item.targetEntityType : null;
+  const entityLabel = item.targetEntityType ? displayLabel(ENTITY_TYPE_LABELS, item.targetEntityType, "") || null : null;
   if (!entityLabel) return null;
   return (
     <Badge variant="outline">

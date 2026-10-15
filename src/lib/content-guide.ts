@@ -93,10 +93,14 @@ export type GuideSellerChannel = {
 const SELLER_BLOCK_START = "--- 이 딜에 붙은 셀러 채널 ---";
 const SELLER_BLOCK_END = "--- 셀러 채널 끝 ---";
 
-/** 채널 표기 — DB enum 을 사람이 읽는 말로. 모르는 값은 원문 유지. */
+/**
+ * 채널 표기 — DB enum 을 사람이 읽는 말로. 모르는 값은 원문 유지(모델 지시문 입력이라 「—」보다
+ * 원문이 낫다 — 화면 문구 검사의 허용 목록에 사유가 있다).
+ */
 const SNS_LABEL: Record<string, string> = {
   INSTAGRAM: "인스타그램",
   YOUTUBE: "유튜브",
+  X: "X(Twitter)",
   TIKTOK: "틱톡",
   BLOG: "블로그",
   NAVER_BLOG: "네이버 블로그",

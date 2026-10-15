@@ -254,84 +254,6 @@ const issueKey = (i: Pick<CopyIssue, "rule" | "file" | "text">) => `${i.rule} | 
  * 고유명사)는 사유와 함께 `EXCEPTIONS` 에 둔다.
  */
 const BASELINE: readonly string[] = [
-  "devWord | components/crm/campaign-side-panel.tsx | 마케팅 URL을 입력하면 nt_source · nt_medium · nt_detail 트래킹 파라미터가 자동으로 추가됩니다.",
-  "fallback | app/api/cron/tax-invoice-issue-confirm/route.ts | (FIELD_LABEL as Record<string, string>)[op.field] ?? op.field",
-  "fallback | app/api/cron/tax-invoice-issue-confirm/route.ts | BASIS_LABEL[b] ?? b",
-  "fallback | components/crm/approvals/approval-cards.tsx | ENTITY_TYPE_LABELS[item.targetEntityType] ?? item.targetEntityType",
-  "fallback | components/crm/approvals/bot-activity-table.tsx | OPERATION_LABELS[item.operation] ?? item.operation",
-  "fallback | components/crm/approvals/pending-bulk-list.tsx | ACTION_LABELS[action] ?? action",
-  "fallback | components/crm/approvals/proposal-card.tsx | ACTION_LABELS[action] ?? action",
-  "fallback | components/crm/approvals/proposal-card.tsx | ENTITY_TYPE_LABELS[proposal.targetEntityType] ?? proposal.targetEntityType",
-  "fallback | components/crm/approvals/proposal-payload-preview.tsx | PARTNER_TYPE_LABELS[type] ?? type",
-  "fallback | components/crm/approvals/read-detail-header.tsx | OPERATION_LABELS[operation] ?? operation",
-  "fallback | components/crm/approvals/read-record-card.tsx | OPERATION_LABELS[operation] ?? operation",
-  "fallback | components/crm/approvals/tool-result-views.tsx | (campaignStatusLabels as Record<string, string>)[status] ?? status",
-  "fallback | components/crm/approvals/tool-result-views.tsx | (dealStatusLabels as Record<string, string>)[status] ?? status",
-  "fallback | components/crm/approvals/tool-result-views.tsx | SETTLEMENT_STATE_LABELS[c.state] ?? c.state",
-  "fallback | components/crm/approvals/tool-result-views.tsx | SETTLEMENT_STATE_LABELS[state] ?? state",
-  "fallback | components/crm/approvals/tool-result-views.tsx | partnerTypeLabels[p.type as PartnerType] ?? p.type",
-  "fallback | components/crm/asset-library.tsx | assetSectionLabels[section] || section",
-  "fallback | components/crm/campaign-creation-form.tsx | dealStatusLabels[deal.status as DealStatus] ?? deal.status",
-  "fallback | components/crm/campaign-launch-readiness-section.tsx | SOURCE_LABEL[item.source] ?? item.source",
-  "fallback | components/crm/campaign-side-panel.tsx | SELLER_TAX_TYPE_LABELS[campaign.sellerTaxType] ?? campaign.sellerTaxType",
-  "fallback | components/crm/deal-link-section.tsx | dealStatusLabels[dealStatus as DealStatus] ?? dealStatus",
-  "fallback | components/crm/deal-link-section.tsx | dealStatusLabels[dealStatus as DealStatus] ?? dealStatus",
-  "fallback | components/crm/deal-voc-section.tsx | SEVERITY_LABEL[c.severity] ?? c.severity",
-  "fallback | components/crm/deals-panel.tsx | partnerTypeLabels[deal.partner.type as PartnerType] ?? deal.partner.type",
-  "fallback | components/crm/global-search.tsx | campaignStatusLabels[campaign.status as CampaignStatus] || campaign.status",
-  "fallback | components/crm/global-search.tsx | dealStatusLabels[deal.status as DealStatus] || deal.status",
-  "fallback | components/crm/global-search.tsx | partnerTypeLabels[partner.type as PartnerType] || partner.type",
-  "fallback | components/crm/linked-campaigns-list.tsx | campaignStatusLabels[campaign.status as CampaignStatus] || campaign.status",
-  "fallback | components/crm/linked-deals-list.tsx | dealStatusLabels[deal.status as DealStatus] || deal.status",
-  "fallback | components/crm/linked-partners-list.tsx | partnerTypeLabels[partner.type] || partner.type",
-  "fallback | components/crm/linked-tasks-list.tsx | taskStatusLabels[task.status] || task.status",
-  "fallback | components/crm/order-dashboard.tsx | ORDER_ACTION_LABELS[log.action] ?? log.action",
-  "fallback | components/crm/partners-management.tsx | partnerTypeLabels[row.type] || row.type",
-  "fallback | components/crm/pnl-report-client.tsx | (salesChannelLabels as Record<string, string>)[channel] ?? channel",
-  "fallback | components/crm/price-sheet/status-badge.tsx | MAPPING_LABEL[status] ?? status",
-  "fallback | components/crm/price-sheet/status-badge.tsx | STATUS_LABEL[status] ?? status",
-  "fallback | components/crm/progress-status-summary.tsx | dealStatusLabels[status as DealStatus] ?? status",
-  "fallback | components/crm/receipt-suggestion-cards.tsx | SIGNAL_LABEL[signal.kind] ?? signal.kind",
-  "fallback | components/crm/seller-detail-content.tsx | acquisitionChannelLabels[seller.acquisitionChannel] ?? seller.acquisitionChannel",
-  "fallback | components/crm/seller-detail-content.tsx | campaignStatusLabels[c.status as CampaignStatus] ?? c.status",
-  "fallback | components/crm/shipping/modals/DelayDispatchModal.tsx | SKIP_REASON_LABELS[reason] ?? reason",
-  "fallback | lib/content-guide.ts | EVIDENCE_LABEL[claim.evidenceType] ?? claim.evidenceType",
-  "fallback | lib/content-guide.ts | SNS_LABEL[seller.snsType] ?? seller.snsType",
-  "fallback | lib/order-converter/claim-derive.ts | CLAIM_REASON_LABELS[code] ?? code",
-  "fallback | lib/order-converter/claim-derive.ts | CLAIM_STATUS_LABELS[status] ?? status",
-  "fallback | lib/referral-analytics.ts | acquisitionChannelLabels[channel] ?? channel",
-  "fallback | lib/system-task-needs-review.ts | salesChannelLabels[channel as SalesChannel] ?? channel",
-  "fallback | services/dealService.ts | FIELD_LABELS[key] || key",
-  "fallback | services/partnerService.ts | FIELD_LABELS[key] || key",
-  "fallback | services/sellerPatchService.ts | FIELD_LABELS[key] || key",
-  "fallback | services/sellerService.ts | FIELD_LABELS[key] || key",
-  "rawField | app/admin/integrations/meta/review-checklist/page.tsx | {log.provider}",
-  "rawField | components/crm/approvals/proposal-card.tsx | {proposal.status}",
-  "rawField | components/crm/campaign-side-panel.tsx | {log.provider}",
-  "rawField | components/crm/channel-fees-client.tsx | {ch.channel}",
-  "rawField | components/crm/link-search-dialog.tsx | {meta.status}",
-  "rawField | components/crm/linked-entity-section.tsx | {entity.status}",
-  "rawField | components/crm/market-price-monitor.tsx | {fetchedItem.channel}",
-  "rawField | components/crm/upcoming-schedule-card.tsx | {event.type}",
-  "spaced | components/crm/order-dashboard.tsx | 판매 마감",
-  "spaced | components/crm/outreach-message-generator.tsx | 생성 실패",
-  "spaced | components/crm/settlement-checklist.tsx | 정산 완료",
-  "spaced | components/mobile/mobile-home-settlement-card.tsx | 정산 대기",
-  "spaced | components/mobile/mobile-home-settlement-card.tsx | 지급 대기",
-  "spaced | components/mobile/mobile-pipeline-view.tsx | 판매 중",
-  "spaced | components/mobile/mobile-settlement-pending-sheet.tsx | 정산 대기",
-  "spaced | components/mobile/mobile-settlement-pending-sheet.tsx | 지급 대기",
-  "spaced | components/mobile/mobile-settlement-view.tsx | 지급 대기",
-  "spaced | lib/partner-seller-display.ts | 진행 중",
-  "spaced | lib/partner-seller-display.ts | 진행 중",
-  "spaced | lib/record-update-labels.ts | 입금 완료",
-  "spaced | lib/record-update-labels.ts | 지급 완료",
-  "spaced | lib/settlement-status.ts | 입금 확정",
-  "spaced | lib/settlement-status.ts | 입금 확정",
-  "spaced | lib/settlement-status.ts | 지급 완료",
-  "spaced | lib/settlement-status.ts | 지급 완료",
-  "spaced | lib/validations/settlement.ts | 정산 진행",
-  "spaced | services/sellerService.ts | 생성 실패",
 ];
 
 /**
@@ -343,6 +265,30 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
     "서비스 상표 「WAGPICK」 로고의 뒷글자다(코드값이 아니다).",
   "rawField | components/crm/partners-panel.tsx | {createErrors.type}":
     "폼 오류 객체의 type 칸이라 값이 한국어 오류 문장이다(코드값이 아니다).",
+  "spaced | lib/validations/settlement.ts | 정산 진행":
+    "정산 체크리스트의 할 일 이름(정산을 진행한다)이지 상태 낱말이 아니다. 만들어진 체크리스트 행에 이 글자가 저장돼 있어 바꾸면 새 캠페인만 달라진다(오너 확정 2026-10-15: 그대로 둔다).",
+  "fallback | services/dealService.ts | FIELD_LABELS[key] || key":
+    "활동 기록에 **저장되는** 칸 이름이라 「—」로 바꾸면 어느 칸이 바뀌었는지 영구히 잃는다. 대신 빠진 칸 이름을 표에 등록했고 `field-labels-coverage.contract.test.ts` 가 수정 스키마의 모든 칸이 표에 있는지 강제한다.",
+  "fallback | services/partnerService.ts | FIELD_LABELS[key] || key":
+    "위 dealService 와 같은 사유(저장 시점 칸 이름 · 표 등록 + 커버리지 계약).",
+  "fallback | services/sellerPatchService.ts | FIELD_LABELS[key] || key":
+    "위 dealService 와 같은 사유(저장 시점 칸 이름 · 표 등록 + 커버리지 계약).",
+  "fallback | services/sellerService.ts | FIELD_LABELS[key] || key":
+    "위 dealService 와 같은 사유(저장 시점 칸 이름 · 표 등록 + 커버리지 계약).",
+  "fallback | lib/content-guide.ts | SNS_LABEL[seller.snsType] ?? seller.snsType":
+    "화면이 아니라 콘텐츠 가이드 생성 모델에 주는 지시문 입력이다 — 모르는 채널이면 「—」보다 원문이 모델에게 낫다(쓰는 값 INSTAGRAM·YOUTUBE·X 는 표에 등록함).",
+  "fallback | lib/order-converter/claim-derive.ts | CLAIM_STATUS_LABELS[status] ?? status":
+    "네이버 클레임 상태(외부 API 코드)다. 표가 실측으로 계속 채워지는 중이라, 처음 보는 코드는 원문이 「무엇을 표에 더할지」의 단서다 — 「—」로 덮으면 사라진다. 같은 값이 봇 조회 입력으로도 간다(코드 검토 2026-10-15).",
+  "fallback | lib/order-converter/claim-derive.ts | CLAIM_REASON_LABELS[code] ?? code":
+    "네이버 클레임 사유 코드 — 위 클레임 상태와 같은 사유(표의 다수가 추정 코드라 미등록 코드가 실제로 온다).",
+  "fallback | lib/content-guide.ts | EVIDENCE_LABEL[claim.evidenceType] ?? claim.evidenceType":
+    "이 근거 카드는 콘텐츠 가이드 본문에 붙어 **저장**된다 — 「—」로 바꾸면 무엇이었는지 영구히 잃는다. 지금 오는 값(MEASURED·USER_PROVIDED)은 표에 다 있고 NEEDS_SOURCE 는 앞에서 걸러진다.",
+  "rawField | components/crm/link-search-dialog.tsx | {meta.status}":
+    "값이 이미 라벨이다 — 상류에서 `labelOf`(표에 없으면 원문: 새 코드가 생겨도 빈칸이 되지 않게)·`partnerStatusLabel`(폼이 저장한 한글 거래처 상태는 그대로 보여야 함)을 거친다. 둘 다 의도된 폴백이다.",
+  "rawField | components/crm/linked-entity-section.tsx | {entity.status}":
+    "`LinkedEntityItem.status` 는 호출부가 라벨 표를 거쳐 넘기는 한글 낱말이다(코드값이 아니다).",
+  "rawField | components/crm/upcoming-schedule-card.tsx | {event.type}":
+    "`UpcomingEvent.type` 은 「캠페인 시작」·「입금 예정 (공급사)」 같은 한글 문장이다(lib/desktop-dashboard.ts 가 만든다) — 필드 이름만 type 이다.",
   "devWord | app/privacy/page.tsx | 캠페인 운영을 위해 거래처, 셀러 SNS 핸들, 공개 팔로워 지표, 마케팅 링크 파라미터, 전환 이벤트 및 관리자 운영 로그를 저장합니다.":
     "개인정보 처리방침(법정 고지문)의 수집 항목 명칭이다 — 문구 변경은 고지 개정 사안이다.",
 };

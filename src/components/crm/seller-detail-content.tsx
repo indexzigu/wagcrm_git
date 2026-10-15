@@ -9,7 +9,7 @@ import { DataEmpty } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { campaignStatusLabels, type CampaignStatus, type SnsType, type SellerSummary, type AssetSection, assetSectionLabels, acquisitionChannelLabels } from "@/lib/crm-types";
+import { campaignStatusLabels, type SnsType, type SellerSummary, type AssetSection, assetSectionLabels, acquisitionChannelLabels } from "@/lib/crm-types";
 import { formatCurrency, formatDate, formatRate, formatBytes, formatBusinessNumber } from "@/lib/format";
 import { filterNotionTemp } from "@/lib/notion-temp-filter";
 import { applyChannelInfo } from "@/lib/partner-seller-display";
@@ -43,6 +43,7 @@ import { LEVELS } from "@/lib/seller-analysis/reviewMapping";
 import { cn } from "@/lib/utils";
 import { Image as ImageIcon } from "lucide-react";
 import { decodeExternalUrls, encodeExternalUrls } from "@/lib/instagram-profile";
+import { displayLabel } from "@/lib/display-label";
 
 
 export type SellerDetailContentProps = {
@@ -929,7 +930,7 @@ export function SellerDetailContent({
                 value={seller.acquisitionChannel ?? ""}
                 displayValue={
                   seller.acquisitionChannel
-                    ? acquisitionChannelLabels[seller.acquisitionChannel] ?? seller.acquisitionChannel
+                    ? displayLabel(acquisitionChannelLabels, seller.acquisitionChannel)
                     : "-"
                 }
                 fieldType="select"
@@ -1311,7 +1312,7 @@ export function SellerDetailContent({
                                   : "bg-slate-100 text-slate-600 hover:bg-slate-100 border-transparent"
                               )}
                             >
-                              {campaignStatusLabels[c.status as CampaignStatus] ?? c.status}
+                              {displayLabel(campaignStatusLabels, c.status)}
                             </Badge>
                           </div>
                         </div>

@@ -77,9 +77,9 @@ describe("PriceSheetStatusBadge", () => {
     expect(green).toEqual(["APPLIED"]);
   });
 
-  it("모르는 상태는 원문 그대로 + 대기색으로 떨어진다 (폴백)", () => {
+  it("모르는 상태 코드는 「—」 + 대기색으로 떨어진다 (폴백 — 영문 코드를 내지 않는다)", () => {
     const { container } = render(<PriceSheetStatusBadge status="WAT" />);
-    expect(renderedBadge(container)).toEqual({ label: "WAT", variant: "status-pending" });
+    expect(renderedBadge(container)).toEqual({ label: "—", variant: "status-pending" });
   });
 });
 

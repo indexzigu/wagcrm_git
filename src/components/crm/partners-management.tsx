@@ -26,6 +26,7 @@ import { DataSourceBanner } from "./data-source-banner";
 import { InlineDataGrid, type GridColumn } from "./inline-data-grid";
 import { PartnersPanel } from "./partners-panel";
 import { StatusDot } from "./status-dot";
+import { displayLabel } from "@/lib/display-label";
 
 type PartnerRow = PartnerSummary;
 
@@ -41,7 +42,7 @@ const partnerColumns: GridColumn<PartnerRow>[] = [
     key: "type",
     label: "유형",
     width: 100,
-    render: (row) => <span>{partnerTypeLabels[row.type] || row.type}</span>,
+    render: (row) => <span>{displayLabel(partnerTypeLabels, row.type)}</span>,
   },
   {
     key: "status",

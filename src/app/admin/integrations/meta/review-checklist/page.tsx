@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getCachedMetaReviewChecklistData } from "@/lib/cached-crm-data";
+import { apiProviderLabels } from "@/lib/crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 export default async function MetaReviewChecklistPage() {
   const { data, thirtyDaysAgoStr, instagramSuccessLogs } = await getCachedMetaReviewChecklistData();
@@ -72,7 +74,7 @@ export default async function MetaReviewChecklistPage() {
                     >
                       <div className="min-w-0 pr-4">
                         <div className="truncate font-semibold text-slate-800">
-                          {log.provider} · <span className="font-mono text-[10px] text-muted-foreground">{log.permissionScope ?? "internal"}</span>
+                          {displayLabel(apiProviderLabels, log.provider)} · <span className="font-mono text-[10px] text-muted-foreground">{log.permissionScope ?? "internal"}</span>
                         </div>
                         <div className="truncate text-[10px] text-slate-500 font-mono mt-0.5">
                           {log.endpoint} · {new Date(log.calledAt).toLocaleString("ko-KR")}

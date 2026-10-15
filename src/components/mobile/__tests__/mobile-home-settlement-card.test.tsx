@@ -39,8 +39,8 @@ const base: MobileSettlementCampaign = {
 /** 타일은 aria-label 로 연다 — 시각 텍스트가 아니라 의미로 집는다. */
 function tiles() {
   return {
-    deposit: screen.getByLabelText("입금 대기 목록 열기"),
-    payout: screen.getByLabelText("지급 대기 목록 열기"),
+    deposit: screen.getByLabelText("입금대기 목록 열기"),
+    payout: screen.getByLabelText("지급대기 목록 열기"),
   };
 }
 

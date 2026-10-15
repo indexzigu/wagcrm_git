@@ -198,7 +198,7 @@ export const sellerService = {
             reason: "이미 등록된 셀러",
           });
         } else {
-          const message = error instanceof Error ? error.message : "생성 실패";
+          const message = error instanceof Error ? error.message : "생성실패";
           invalid.push({ raw: entry.raw, reason: message });
         }
       }

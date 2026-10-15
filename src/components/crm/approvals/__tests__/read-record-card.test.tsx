@@ -72,13 +72,14 @@ describe("ReadRecordCard", () => {
     expect(screen.getByText("09-22 14:30")).toBeInTheDocument();
   });
 
-  it("모르는 operation 은 원문을 그대로 보여준다", () => {
+  it("모르는 operation 은 영문 원문 대신 일반 낱말 「조회」로 보여준다", () => {
     render(
       <ul>
         <ReadRecordCard item={makeItem({ structuredResult: { operation: "brand_new_op" } })} />
       </ul>
     );
-    expect(screen.getByText("brand_new_op")).toBeInTheDocument();
+    expect(screen.queryByText("brand_new_op")).not.toBeInTheDocument();
+    expect(screen.getByText(/조회/)).toBeInTheDocument();
   });
 
   it("제목과 요약 첫 줄을 보여준다", () => {

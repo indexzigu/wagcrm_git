@@ -141,18 +141,18 @@ type Section = {
   items: MobilePipelineEntity[];
 };
 
-/** 섹션(판매 중/준비 중/완료) 귀속은 그룹 대표 상태 기준. */
+/** 섹션(판매중/세팅대기/완료) — 머리는 그 섹션 카드 배지(campaignStatusLabels)와 같은 낱말. 귀속은 그룹 대표 상태 기준. */
 function buildActiveSections(entities: MobilePipelineEntity[]): Section[] {
   return [
     {
       key: "selling",
-      title: "판매 중",
+      title: "판매중",
       description: "현재 판매가 진행되고 있는 캠페인",
       items: entities.filter((entity) => entity.status === "ACTIVE"),
     },
     {
       key: "preparation",
-      title: "준비 중",
+      title: "세팅대기",
       description: "오픈 대기 및 준비 단계 캠페인",
       items: entities.filter((entity) => entity.status === "PREPARATION"),
     },

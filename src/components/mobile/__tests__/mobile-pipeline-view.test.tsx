@@ -204,7 +204,8 @@ describe("MobilePipelineView — 그룹 카드 렌더", () => {
         {...viewProps}
       />,
     );
-    expect(screen.getByText("판매 중")).toBeInTheDocument();
+    // 섹션 머리와 캠페인 상태 배지가 같은 낱말(「판매중」)이라 머리(heading)로 좁힌다.
+    expect(screen.getByRole("heading", { name: /^판매중/ })).toBeInTheDocument();
     expect(screen.queryByText("완료 / 정산대기")).not.toBeInTheDocument();
   });
 });

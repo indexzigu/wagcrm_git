@@ -5,7 +5,7 @@ import { ChecklistToggleRejected } from "./campaign-task-checklist";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/lib/toast";
 import { Loader2, CheckCircle } from "lucide-react";
-import type { CampaignRow } from "@/lib/crm-types";
+import { campaignStatusLabels, type CampaignRow } from "@/lib/crm-types";
 
 interface SettlementChecklistItem {
   id: string;
@@ -71,7 +71,12 @@ export function SettlementChecklist({
       
       // 상태 전환이 일어난 경우 토스트 메시지
       if (result.transitioned) {
-        toast.info(`캠페인 상태가 "${result.campaignStatus === "COMPLETED" ? "정산 완료" : "정산 진행중"}"으로 변경되었습니다.`);
+        // 상태 낱말은 라벨 표 한 곳에서 — 종전에는 손으로 쓴 「정산 완료」·「정산 진행중」이 배지(「정산완료」·「정산중」)와 달랐다.
+        const statusLabel =
+          result.campaignStatus === "COMPLETED"
+            ? campaignStatusLabels.COMPLETED
+            : campaignStatusLabels.SETTLEMENT_IN_PROGRESS;
+        toast.info(`캠페인 상태가 「${statusLabel}」 단계로 바뀌었습니다.`);
       }
 
       await onRefreshChecklist();

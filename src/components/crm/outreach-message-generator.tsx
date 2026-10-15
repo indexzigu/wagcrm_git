@@ -29,7 +29,7 @@ export function OutreachMessageGenerator({ dealId, sellerId, onGenerated }: Outr
       });
 
       if (!res.ok) {
-        throw new Error("생성 실패");
+        throw new Error("생성실패");
       }
 
       const data = await res.json();

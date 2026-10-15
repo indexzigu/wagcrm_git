@@ -58,12 +58,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import {
-  type DealStatus,
-  type BaseMarginPolicy,
-  partnerTypeLabels,
-  type PartnerType,
-} from "@/lib/crm-types";
+import { type DealStatus, type BaseMarginPolicy, partnerTypeLabels } from "@/lib/crm-types";
 import { getValidNextStatuses } from "@/lib/deal-status";
 import { ActivityTimeline } from "./activity-timeline";
 import { MarginPolicyForm } from "./margin-policy-form";
@@ -82,6 +77,7 @@ import { LinkedCampaignsList } from "./linked-campaigns-list";
 import { LinkedTasksList } from "./linked-tasks-list";
 
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
+import { displayLabel } from "@/lib/display-label";
 
 // --- Types ---
 
@@ -612,8 +608,7 @@ function DealsPanelContent({
                       variant="outline"
                       className="border-primary/20 bg-primary/10 text-primary font-semibold text-[9px] px-1 py-0.2 rounded hover:bg-primary/10 leading-none shrink-0"
                     >
-                      {partnerTypeLabels[deal.partner.type as PartnerType] ??
-                        deal.partner.type}
+                      {displayLabel(partnerTypeLabels, deal.partner.type)}
                     </Badge>
                   )}
                 </div>

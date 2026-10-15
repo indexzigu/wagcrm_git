@@ -114,7 +114,7 @@ describe("updateSeller — 자동 재계산된 fitLevel 도 감사 로그에 남
     expect(updateMock.mock.calls[0][0].data.fitLevel).toBe("추천");
 
     expect(auditedChanges()).toContainEqual({
-      field: "fitLevel",
+      field: "적합성",
       prev: "비추천",
       next: "추천",
     });
@@ -134,7 +134,7 @@ describe("updateSeller — 자동 재계산된 fitLevel 도 감사 로그에 남
       "AI 분석 자동반영",
     );
 
-    expect(auditedChanges().map((c) => c.field)).not.toContain("fitLevel");
+    expect(auditedChanges().map((c) => c.field)).not.toContain("적합성");
   });
 
   it("평가 4필드가 전부 미입력이면 fitLevel 을 건드리지도 기록하지도 않는다 (미입력 ≠ 낙제)", async () => {
@@ -147,7 +147,7 @@ describe("updateSeller — 자동 재계산된 fitLevel 도 감사 로그에 남
     );
 
     expect(updateMock.mock.calls[0][0].data.fitLevel).toBeUndefined();
-    expect(auditedChanges().map((c) => c.field)).not.toContain("fitLevel");
+    expect(auditedChanges().map((c) => c.field)).not.toContain("적합성");
   });
 
   it("수동 지정 fitLevel 은 재계산을 우회하고 그대로 기록된다 (기존 동작 회귀 가드)", async () => {
@@ -161,7 +161,7 @@ describe("updateSeller — 자동 재계산된 fitLevel 도 감사 로그에 남
 
     expect(updateMock.mock.calls[0][0].data.fitLevel).toBe("추천");
     expect(auditedChanges()).toContainEqual({
-      field: "fitLevel",
+      field: "적합성",
       prev: "비추천",
       next: "추천",
     });

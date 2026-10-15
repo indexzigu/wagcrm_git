@@ -1,5 +1,5 @@
-import type { SalesChannel } from "@/lib/crm-types";
 import { salesChannelLabels } from "@/lib/crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * `SystemTaskLog.details` 안의 「확인 필요」 상세를 화면이 쓸 형태로 좁힌다.
@@ -71,7 +71,7 @@ function parseReasons(value: unknown): NeedsReviewReason[] {
 function toChannelLabel(value: unknown): string | null {
   const channel = asNonEmptyString(value);
   if (!channel) return null;
-  return salesChannelLabels[channel as SalesChannel] ?? channel;
+  return displayLabel(salesChannelLabels, channel);
 }
 
 export function parseNeedsReviewDetail(details: unknown): NeedsReviewDetail {

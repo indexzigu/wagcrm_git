@@ -83,6 +83,7 @@ import ClaimList from './claim-list';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useClaims } from '@/hooks/useClaims';
+import { displayLabel } from "@/lib/display-label";
 
 type DailyTask = {
   id: string;
@@ -687,7 +688,7 @@ function CampaignActionLog({ campaignId, refreshKey }: { campaignId: string; ref
               >
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-[11px] text-slate-500 tabular-nums w-[78px] shrink-0">{fmtTime(log.createdAt)}</span>
-                  <span className="text-[13px] font-medium text-slate-700 w-[72px] shrink-0">{ORDER_ACTION_LABELS[log.action] ?? log.action}</span>
+                  <span className="text-[13px] font-medium text-slate-700 w-[72px] shrink-0">{displayLabel(ORDER_ACTION_LABELS, log.action)}</span>
                   <span className={`text-[11px] px-2 py-0.5 rounded border ${log.status === 'OK' ? 'font-medium' : 'font-bold'} ${pill.cls}`}>{pill.label}</span>
                   <div className="flex items-center gap-3 text-[12px] tabular-nums ml-auto">
                     {log.successCount > 0 && <span className="text-slate-600">성공 {log.successCount.toLocaleString()}</span>}
@@ -1995,7 +1996,7 @@ export default function OrderDashboard() {
                           onSelect={async () => { const res = await toggleCampaignStatus(camp.id, true); if (res?.success) forgetSettledDetail(camp.id); }}
                         >
                           <Lock aria-hidden="true" />
-                          판매 마감
+                          판매마감
                         </DropdownMenuItem>
                       ) : (
                         <DropdownMenuItem

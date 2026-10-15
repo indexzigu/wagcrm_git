@@ -186,10 +186,10 @@ describe("ProposalPayloadPreview", () => {
     render(
       <ProposalPayloadPreview
         action="update_record"
-        args={{ entityType: "SELLER", entityId: "s-1", changes: { reviewer: "가상담당" }, expected: { reviewer: null } }}
+        args={{ entityType: "SELLER", entityId: "s-1", changes: { legacyMemo: "가상담당" }, expected: { legacyMemo: null } }}
       />,
     );
-    expect(screen.getByText("reviewer")).toBeTruthy();
+    expect(screen.getByText("legacyMemo")).toBeTruthy();
     expect(screen.getByText("비어 있음 → 가상담당")).toBeTruthy();
   });
 

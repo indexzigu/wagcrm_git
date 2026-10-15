@@ -16,7 +16,8 @@ import { StatusDot, type StatusTone } from "./status-dot";
 import { evaluateMarketPrice, type EvaluatedCandidate } from "@/lib/price-monitor/pipeline";
 import type { PriceVerdict } from "@/lib/price-monitor/verdict";
 import type { OutlierReason } from "@/lib/price-monitor/outlier";
-import { summarizeSourceFailures, type MarketSourceErrors } from "@/lib/price-monitor/source-errors";
+import { MARKET_SOURCE_LABEL, summarizeSourceFailures, type MarketSourceErrors } from "@/lib/price-monitor/source-errors";
+import { displayLabel } from "@/lib/display-label";
 
 export type MonitorItem = {
   id: string;
@@ -441,8 +442,8 @@ export function MarketPriceMonitor({
                                 className={`border-b last:border-0 ${isDanger ? 'bg-rose-50' : isExcluded ? 'bg-slate-50/70 opacity-60' : 'hover:bg-slate-50'}`}
                               >
                                 <td className="px-2 py-2.5">
-                                  <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-normal shadow-none px-1.5 py-0 text-[10px] uppercase">
-                                    {fetchedItem.channel}
+                                  <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-normal shadow-none px-1.5 py-0 text-[10px]">
+                                    {displayLabel(MARKET_SOURCE_LABEL, fetchedItem.channel)}
                                   </Badge>
                                 </td>
                                 <td className="px-2 py-2.5 truncate max-w-[100px]">{fetchedItem.mall}</td>

@@ -78,8 +78,8 @@ describe("MobileSettlementView", () => {
     );
 
     expect(screen.getByText("정산 확인")).toBeInTheDocument();
-    expect(screen.getByText(/입금 대기/)).toBeInTheDocument();
-    expect(screen.getByText(/지급 대기/)).toBeInTheDocument();
+    expect(screen.getByText(/^입금대기/)).toBeInTheDocument();
+    expect(screen.getByText(/^지급대기/)).toBeInTheDocument();
     // 이 픽스처는 **자사몰**(OWN_MALL)이다 — 슬롯이 [공급사 지급, 셀러 지급]이라 입금
     // 칸이 없다. 종전에는 `!isDepositReceived` 하나로 갈라서 자사몰 전건이 「몰 정산금
     // 입금 확인 필요」에 **영구 상주**했고, 선행 조건인 입금 플래그가 켜질 경로가 없어
@@ -126,8 +126,8 @@ describe("MobileSettlementView — 실패·대기는 빈 목록이 아니다", (
     expect(screen.getByRole("alert")).toHaveTextContent("정산 목록을 불러오지 못했습니다.");
     expect(screen.queryByText(EMPTY_TEXT)).not.toBeInTheDocument();
     // 리포트가 없으면 대기 금액을 모른다 — ₩0 이 아니라 「-」.
-    expect(screen.getByText(/입금 대기/)).toHaveTextContent("입금 대기 -");
-    expect(screen.getByText(/지급 대기/)).toHaveTextContent("지급 대기 -");
+    expect(screen.getByText(/^입금대기/)).toHaveTextContent("입금대기 -");
+    expect(screen.getByText(/^지급대기/)).toHaveTextContent("지급대기 -");
     const retry = screen.getByRole("button", { name: "다시 불러오기" });
     expect(retry).toHaveClass("h-11");
     fireEvent.click(retry);
@@ -225,11 +225,11 @@ describe("MobileSettlementView — 대기 합계는 슬롯 SSOT 와 같다", () 
     );
 
     const won = (n: number) => `₩${Math.round(n).toLocaleString()}`;
-    expect(screen.getByText(/입금 대기/)).toHaveTextContent(
-      `입금 대기 ${won(expected.deposit.total)}`,
+    expect(screen.getByText(/^입금대기/)).toHaveTextContent(
+      `입금대기 ${won(expected.deposit.total)}`,
     );
-    expect(screen.getByText(/지급 대기/)).toHaveTextContent(
-      `지급 대기 ${won(expected.payout.total)}`,
+    expect(screen.getByText(/^지급대기/)).toHaveTextContent(
+      `지급대기 ${won(expected.payout.total)}`,
     );
   });
 });

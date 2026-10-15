@@ -132,12 +132,12 @@ export function MobileSettlementView({
         <div className="mt-2 flex items-center gap-3 text-xs font-medium text-muted-foreground">
           <span className="flex items-center gap-1">
             <MONEY_DIRECTION_ICON.in aria-hidden="true" className={`size-3.5 ${MONEY_DIRECTION_TEXT.in}`} />
-            입금 대기 <span className="tabular-nums">{formatPendingAmount(pendingDepositAmount)}</span>
+            입금대기 <span className="tabular-nums">{formatPendingAmount(pendingDepositAmount)}</span>
           </span>
           <span aria-hidden="true" className="text-muted-foreground/60">·</span>
           <span className="flex items-center gap-1">
             <MONEY_DIRECTION_ICON.out aria-hidden="true" className={`size-3.5 ${MONEY_DIRECTION_TEXT.out}`} />
-            지급 대기 <span className="tabular-nums">{formatPendingAmount(pendingPayoutAmount)}</span>
+            지급대기 <span className="tabular-nums">{formatPendingAmount(pendingPayoutAmount)}</span>
           </span>
         </div>
       </MobileTopBar>

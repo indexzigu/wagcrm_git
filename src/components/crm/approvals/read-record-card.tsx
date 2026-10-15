@@ -5,6 +5,7 @@ import type { ReadRecordItem } from "@/hooks/useReadRecords";
 import { SourceBadge } from "./source-badge";
 import { OPERATION_LABELS } from "./approvals-tabs";
 import { formatShortDateTime } from "./format-time";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * ReadRecordCard — 결재함 「조회 결과」 한 건 (Plan 2 Task 4).
@@ -18,7 +19,7 @@ import { formatShortDateTime } from "./format-time";
  */
 export function ReadRecordCard({ item }: { item: ReadRecordItem }) {
   const operation = item.structuredResult?.operation;
-  const operationLabel = operation ? OPERATION_LABELS[operation] ?? operation : "조회";
+  const operationLabel = displayLabel(OPERATION_LABELS, operation, "조회");
   // 요약은 여러 줄일 수 있다 — 목록에서는 첫 줄만 쓴다(나머지는 상세에서 본다).
   const summaryFirstLine = item.resultSummary?.split("\n").find((line) => line.trim().length > 0);
 

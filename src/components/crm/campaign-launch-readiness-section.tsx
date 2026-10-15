@@ -9,6 +9,7 @@ import type {
   ReadinessAudit,
   ReadinessLevel,
 } from "@/lib/offer/launch-readiness";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * 캠페인 상세 "오픈 준비" 섹션 (C2 M4b).
@@ -195,7 +196,7 @@ export function CampaignLaunchReadinessSection({
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-foreground">
-                      {SOURCE_LABEL[item.source] ?? item.source}
+                      {displayLabel(SOURCE_LABEL, item.source)}
                     </span>
                     <span
                       className={cn(

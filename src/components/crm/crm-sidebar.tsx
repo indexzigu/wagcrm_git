@@ -125,7 +125,7 @@ export const navSections: {
     label: "기본정보",
     items: [
       { href: "/partners", label: "거래처", icon: Building2Icon, description: "협력사 및 거래처 관리" },
-      { href: "/sellers", label: "셀러", icon: UserRoundIcon, description: "셀러 인플루언서 관리" },
+      { href: "/sellers", label: "셀러", icon: UserRoundIcon, description: "셀러 관리" },
       { href: "/deals", label: "판매 조건 관리", icon: BriefcaseIcon, description: "진행 중인 딜 리스트" },
       { href: "/assets", label: "자료 목록", icon: FolderIcon, description: "에셋 및 문서 아카이브" },
     ],

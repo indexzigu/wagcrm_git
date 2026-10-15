@@ -116,8 +116,8 @@ export function campaignRecency(
   // 아무 판정도 못 내면(전부 false/null = non-DROPPED 캠페인 없음) 배열로 계속 진행한다 —
   // 그 경우 배열도 비어 있거나 DROPPED뿐이라 결과가 같고, 집계·본조회 사이 레이스만 자기치유한다.
   if (signals) {
-    if (signals.hasActiveCampaign) return { kind: "active", label: "진행 중" };
-    if (signals.hasUpcomingCampaign) return { kind: "upcoming", label: "시작 예정" };
+    if (signals.hasActiveCampaign) return { kind: "active", label: "진행중" };
+    if (signals.hasUpcomingCampaign) return { kind: "upcoming", label: "시작예정" };
     const lastEndMs = signals.lastCampaignEndAt ? Date.parse(signals.lastCampaignEndAt) : NaN;
     if (Number.isFinite(lastEndMs)) return pastRecency(lastEndMs, nowMs);
   }
@@ -129,14 +129,14 @@ export function campaignRecency(
     const start = Date.parse(c.startDate);
     const end = Date.parse(c.endDate);
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
-    if (start <= nowMs && nowMs <= end) return { kind: "active", label: "진행 중" };
+    if (start <= nowMs && nowMs <= end) return { kind: "active", label: "진행중" };
     if (start > nowMs) {
       hasUpcoming = true;
       continue;
     }
     if (latestEndMs === null || end > latestEndMs) latestEndMs = end;
   }
-  if (hasUpcoming) return { kind: "upcoming", label: "시작 예정" };
+  if (hasUpcoming) return { kind: "upcoming", label: "시작예정" };
   if (latestEndMs === null) return null;
   return pastRecency(latestEndMs, nowMs);
 }

@@ -42,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { ReceiptScanApiResponse } from "@/lib/tax-invoice-mail/board-evidence";
+import { displayLabel } from "@/lib/display-label";
 
 /** 신호 한 줄의 표시 기호. 판정 불가는 X 가 아니라 `-` 다 — 불일치와 같은 칸에 두지 않는다. */
 const SIGNAL_MARK: Record<string, string> = { MATCH: "O", MISS: "X", UNKNOWN: "-" };
@@ -293,7 +294,7 @@ function ReceiptDecisionList({
         const evidenceLines = [
           ...(suggestion?.signals ?? []).map((signal) => ({
             id: signal.kind,
-            text: `${SIGNAL_LABEL[signal.kind] ?? signal.kind} ${SIGNAL_MARK[signal.result] ?? "?"} · ${signal.detail}`,
+            text: `${displayLabel(SIGNAL_LABEL, signal.kind)} ${SIGNAL_MARK[signal.result] ?? "?"} · ${signal.detail}`,
           })),
           ...row.verdict.reasons.map((reason) => ({ id: reason.code, text: reason.message })),
         ];

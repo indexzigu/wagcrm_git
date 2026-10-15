@@ -8,6 +8,7 @@ import {
 import { UserCircle2 } from "lucide-react";
 import { LinkSearchDialog } from "./link-search-dialog";
 import { taskStatusLabels } from "@/lib/crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 // --- Types ---
 
@@ -66,7 +67,7 @@ export function LinkedTasksList({
           )}
         </div>
       ),
-      status: taskStatusLabels[task.status] || task.status,
+      status: displayLabel(taskStatusLabels, task.status),
     };
   });
 

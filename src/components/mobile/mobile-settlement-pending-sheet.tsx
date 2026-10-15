@@ -237,20 +237,20 @@ export function MobileSettlementPendingSheet({
         className="mobile-sheet-safe-bottom top-0 gap-0 overflow-y-auto rounded-none border-0 bg-slate-50 p-0"
       >
         <MobileSheetHeader
-          title="정산 대기"
+          title="정산대기"
           description="조회 전용 · 입금·지급 처리는 PC에서"
           closeLabel="대기 목록 닫기"
         />
 
         <div className="flex flex-col gap-2.5 px-3 py-3">
           <PendingSection
-            title="입금 대기"
+            title="입금대기"
             kind="deposit"
             section={pending.deposit}
             onOpenCampaign={onOpenCampaign}
           />
           <PendingSection
-            title="지급 대기"
+            title="지급대기"
             kind="payout"
             section={pending.payout}
             onOpenCampaign={onOpenCampaign}

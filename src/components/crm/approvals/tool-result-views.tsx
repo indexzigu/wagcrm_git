@@ -22,16 +22,12 @@ import {
   type SettlementAmountField,
 } from "@/lib/settlement-amount-fields";
 // 구분 라벨 정본. crm-types.ts 는 type-only import 뿐이라 클라이언트 번들에 안전하다.
-import {
-  campaignStatusLabels,
-  dealStatusLabels,
-  partnerTypeLabels,
-  type PartnerType,
-} from "@/lib/crm-types";
+import { campaignStatusLabels, dealStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 /** 도구가 돌려준 영문 상태 코드를 화면 낱말로 — 표에 없는 코드는 원문(빈칸이 되지 않게). */
-const dealStatusWord = (status: string) => (dealStatusLabels as Record<string, string>)[status] ?? status;
-const campaignStatusWord = (status: string) => (campaignStatusLabels as Record<string, string>)[status] ?? status;
+const dealStatusWord = (status: string) => displayLabel(dealStatusLabels, status);
+const campaignStatusWord = (status: string) => displayLabel(campaignStatusLabels, status);
 
 /**
  * tool-result-views — READ 결과 5종 v1 리치 렌더.
@@ -110,7 +106,7 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
       <div className="flex flex-wrap gap-1.5">
         {(Object.entries(stateCounts) as [SettlementStateLabel, number][]).map(([state, count]) => (
           <Badge key={state} variant="outline">
-            {SETTLEMENT_STATE_LABELS[state] ?? state} {count}
+            {displayLabel(SETTLEMENT_STATE_LABELS, state)} {count}
           </Badge>
         ))}
       </div>
@@ -135,7 +131,7 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
                   <td className="px-2 py-1.5">{formatNumber(c.actualSales)}</td>
                   <td className="px-2 py-1.5">{formatNumber(c.sellerPayoutAmount)}</td>
                   <td className="px-2 py-1.5">
-                    <Badge variant="outline">{SETTLEMENT_STATE_LABELS[c.state] ?? c.state}</Badge>
+                    <Badge variant="outline">{displayLabel(SETTLEMENT_STATE_LABELS, c.state)}</Badge>
                   </td>
                 </tr>
               );
@@ -224,7 +220,7 @@ const SearchPartnersView: FC<ToolResultViewProps> = ({ data, bare }) => {
                 </td>
                 <td className="px-2 py-1.5">
                   <Badge variant="outline">
-                    {partnerTypeLabels[p.type as PartnerType] ?? p.type}
+                    {displayLabel(partnerTypeLabels, p.type)}
                   </Badge>
                 </td>
                 <td className="px-2 py-1.5 text-muted-foreground">{p.businessNumber ?? "-"}</td>

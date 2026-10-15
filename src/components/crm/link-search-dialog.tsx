@@ -10,9 +10,13 @@ import {
   dealStatusLabels,
   partnerStatusLabel,
   taskStatusLabels,
+  partnerTypeLabels,
+  salesChannelLabels,
+  snsTypeLabels,
   type CampaignStatus,
   type DealStatus,
 } from "@/lib/crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 /** 영문 상태 코드를 화면에 그대로 찍지 않는다 — 표에 없으면 원문(새 코드가 생겨도 빈칸이 되지 않게). */
 function labelOf(table: Record<string, string>, value: unknown): string {
@@ -108,7 +112,11 @@ export function normalizeSearchResults(
       return rawResults.map((item) => ({
         id: String(item.id),
         label: String(item.sellerName ?? ""),
-        sublabel: [item.dealName, item.salesChannel].filter(Boolean).join(" - ") || undefined,
+        // 판매채널·거래처 유형·SNS 는 코드값이라 라벨 표를 거친다(종전엔 OWN_MALL 등이 그대로 보였다).
+        sublabel:
+          [item.dealName, item.salesChannel ? displayLabel(salesChannelLabels, String(item.salesChannel)) : null]
+            .filter(Boolean)
+            .join(" - ") || undefined,
         metadata: {
           status: labelOf(campaignStatusLabels as Record<CampaignStatus, string>, item.status),
         },
@@ -117,7 +125,7 @@ export function normalizeSearchResults(
       return rawResults.map((item) => ({
         id: String(item.id),
         label: String(item.name ?? ""),
-        sublabel: String(item.type ?? "") || undefined,
+        sublabel: item.type ? displayLabel(partnerTypeLabels, String(item.type)) : undefined,
         metadata: {
           type: String(item.type ?? ""),
           status: partnerStatusLabel(typeof item.status === "string" ? item.status : null),
@@ -132,7 +140,10 @@ export function normalizeSearchResults(
         return {
           id: String(item.id),
           label: aliasStr ? aliasStr : nameStr,
-          sublabel: [item.snsType, item.snsHandle].filter(Boolean).join(" - ") || undefined,
+          sublabel:
+            [item.snsType ? displayLabel(snsTypeLabels, String(item.snsType)) : null, item.snsHandle]
+              .filter(Boolean)
+              .join(" - ") || undefined,
           metadata: {
             snsType: String(item.snsType ?? ""),
             snsHandle: String(item.snsHandle ?? ""),

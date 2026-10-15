@@ -39,7 +39,7 @@ import {
   formatCampaignActionDate,
   getCampaignAction,
 } from "@/lib/campaign-actions";
-import { campaignStatusLabels, salesChannelLabels } from "@/lib/crm-types";
+import { apiProviderLabels, campaignStatusLabels, salesChannelLabels } from "@/lib/crm-types";
 import type { SalesChannel } from "@/lib/crm-types";
 import type { ApiCallLogRow, AssetRow, CampaignRow, StorageSummary } from "@/lib/crm-types";
 import { Badge } from "@/components/ui/badge";
@@ -134,6 +134,7 @@ import {
 } from "@/lib/settlement-statement";
 import type { CampaignStatus } from "@/lib/crm-types";
 import type { StageFilter } from "@/hooks/use-stage-filter";
+import { displayLabel } from "@/lib/display-label";
 
 // --- Inline Edit Helpers for CampaignSidePanel ---
 
@@ -1272,7 +1273,7 @@ export function CampaignSidePanel({
                     providerLogs.map((log) => (
                       <div key={log.id} className="rounded-lg border p-3 text-xs">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="font-medium">{log.provider}</span>
+                          <span className="font-medium">{displayLabel(apiProviderLabels, log.provider)}</span>
                           <span
                             className={
                               log.success ? "text-foreground" : "font-bold text-destructive"
@@ -2880,7 +2881,7 @@ function SettlementInfo({
   }, [helperOpen, groupId]);
 
   const taxTypeLabel = campaign.sellerTaxType
-    ? SELLER_TAX_TYPE_LABELS[campaign.sellerTaxType] ?? campaign.sellerTaxType
+    ? displayLabel(SELLER_TAX_TYPE_LABELS, campaign.sellerTaxType)
     : "-";
   const recipientName =
     campaign.sellerCompanyName ||
@@ -3706,7 +3707,7 @@ export function MarketingLinkConverter({
         <h3 className="text-sm font-semibold text-foreground">고객 분석 링크 변환</h3>
       </div>
       <p className="text-xs text-muted-foreground leading-5">
-        마케팅 URL을 입력하면 nt_source · nt_medium · nt_detail 트래킹 파라미터가 자동으로 추가됩니다.
+        링크를 넣으면 네이버 고객 분석에서 유입 경로를 구분할 수 있도록 링크 뒤에 추적 표시를 자동으로 붙입니다.
       </p>
 
       {/* 입력 + 변환 버튼 */}

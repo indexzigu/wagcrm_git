@@ -39,11 +39,12 @@ describe("parseNeedsReviewDetail", () => {
     expect(parsed.items[0].channelLabel).not.toBe("BRAND_MALL");
   });
 
-  it("모르는 채널 값은 버리지 않고 원문 그대로 남긴다", () => {
+  it("모르는 채널 값이어도 행은 버리지 않고, 영문 코드 대신 「—」로 남긴다", () => {
     const parsed = parseNeedsReviewDetail({
       needsReviewDetail: [realShapedItem({ channel: "FUTURE_CHANNEL" })],
     });
-    expect(parsed.items[0].channelLabel).toBe("FUTURE_CHANNEL");
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0].channelLabel).toBe("—");
   });
 
   it("capped 를 그대로 전달한다 — 화면이 '이게 전부'라고 말하지 않게", () => {

@@ -8,6 +8,7 @@ import {
   type LinkedEntitySectionProps,
 } from "./linked-entity-section";
 import { LinkSearchDialog } from "./link-search-dialog";
+import { displayLabel } from "@/lib/display-label";
 
 // --- Types ---
 
@@ -78,7 +79,7 @@ export function LinkedCampaignsList({
           className="max-w-[80px] truncate text-[9px] px-1 h-4 font-semibold"
         />
       ),
-      status: campaignStatusLabels[campaign.status as CampaignStatus] || campaign.status,
+      status: displayLabel(campaignStatusLabels, campaign.status),
     };
   });
 

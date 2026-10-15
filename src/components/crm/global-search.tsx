@@ -14,14 +14,8 @@ import { cn } from "@/lib/utils";
 import { EntityIdentity } from "@/components/crm/entity-identity";
 import { SellerIdentityInfo } from "@/components/crm/seller-identity-info";
 import { getDealIdentityParts } from "@/lib/deal-display";
-import {
-  dealStatusLabels,
-  campaignStatusLabels,
-  partnerTypeLabels,
-  type DealStatus,
-  type CampaignStatus,
-  type PartnerType,
-} from "@/lib/crm-types";
+import { dealStatusLabels, campaignStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
+import { displayLabel } from "@/lib/display-label";
 
 interface SearchResults {
   partners: Array<{ id: string; name: string; type: string }>;
@@ -181,7 +175,7 @@ export function GlobalSearch() {
                       <UsersIcon className="size-4 text-muted-foreground shrink-0" />
                       <span className="truncate">{partner.name}</span>
                       <span className="ml-auto text-xs text-muted-foreground shrink-0 pl-2">
-                        {partnerTypeLabels[partner.type as PartnerType] || partner.type}
+                        {displayLabel(partnerTypeLabels, partner.type)}
                       </span>
                     </CommandItem>
                   ))}
@@ -228,7 +222,7 @@ export function GlobalSearch() {
                         className="max-w-[75%] truncate"
                       />
                       <span className="ml-auto text-xs text-muted-foreground shrink-0 pl-2">
-                        {dealStatusLabels[deal.status as DealStatus] || deal.status}
+                        {displayLabel(dealStatusLabels, deal.status)}
                       </span>
                     </CommandItem>
                   ))}
@@ -258,7 +252,7 @@ export function GlobalSearch() {
                         </div>
                       </div>
                       <span className="ml-auto text-xs text-muted-foreground shrink-0 pl-2">
-                        {campaignStatusLabels[campaign.status as CampaignStatus] || campaign.status}
+                        {displayLabel(campaignStatusLabels, campaign.status)}
                       </span>
                     </CommandItem>
                   ))}

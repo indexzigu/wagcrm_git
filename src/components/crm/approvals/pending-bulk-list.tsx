@@ -20,6 +20,7 @@ import type { BulkApproveFn } from "./approval-hub-types";
 import { ACTION_LABELS } from "./proposal-card";
 import { EmptyState, LoadErrorState, LoadMoreButton } from "./hub-states";
 import type { ApproveOptions } from "@/hooks/useProposalActions";
+import { displayLabel } from "@/lib/display-label";
 
 /**
  * 결재함 대기 탭 — 선택한 기안을 한 번에 승인한다.
@@ -48,7 +49,7 @@ type Phase =
 function actionLabel(item: ApprovalInboxItem): string {
   const action = item.payload?.action;
   if (!action) return "알 수 없는 액션";
-  return ACTION_LABELS[action] ?? action;
+  return displayLabel(ACTION_LABELS, action, "알 수 없는 액션");
 }
 
 /** 확인 창의 「무엇이 몇 건」 — 많은 순, 같으면 라벨 순. */
