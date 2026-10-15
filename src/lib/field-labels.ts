@@ -39,7 +39,8 @@ export const FIELD_LABELS: Record<string, string> = {
   snsHandle: "SNS 핸들",
   currentFollowers: "팔로워 수",
   category: "카테고리",
-  agencyId: "소속 에이전시 ID",
+  // 셀러가 연결된 거래처 — 셀러 거래처·대행사·에이전트 어느 유형이든 될 수 있다(오너 확인 2026-10-15). 화면도 「거래처」로 부른다.
+  agencyId: "소속 거래처",
   channelUrl: "채널 URL",
   email: "이메일",
   phoneNumber: "전화번호",
