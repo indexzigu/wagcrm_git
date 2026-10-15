@@ -13,7 +13,7 @@
  * - 같은 rid 의 기안이 둘 이상이면 **가장 먼저 만든 1건**만 후보, 나머지는 `duplicate_rid` 로 남긴다.
  *
  * ## 판정 순서 (하나라도 어긋나면 PENDING 그대로 — 자동 반려 없음)
- * payload 모양 → rid 중복 → |변동| 한도 → 정산 확정 여부 → 채널 → 슬랙 원문(작성자 3중 일치 · 수정·subtype 없음 ·
+ * payload 모양 → rid 중복 → |변동| 한도 → 최근 자동 변경(같은 캠페인·칸) → 정산 확정 여부 → 채널 → 슬랙 원문(작성자 3중 일치 · 수정·subtype 없음 ·
  * `muse-req` 의 rid·action·params 정확 일치 · 메시지 시각이 기안 생성 전 N분 안) → 하루 건수.
  * 한도·모양처럼 슬랙 없이 가를 수 있는 것을 먼저 봐서 슬랙 호출을 줄인다.
  *
@@ -24,6 +24,15 @@
  *   (일일 승인으로 간다). 그림자 모드의 확정 판정(`would_execute` 포함)이 곧 「기안당 1회 그림자 기록」이다.
  * - **보류 판정**(`not_configured` · `no_token` · `slack_error`)은 다음 회차에 다시 본다. 같은 보류
  *   판정은 기안당 1건만 남긴다(2분마다 쌓이지 않게 — 기록 상한).
+ *
+ * ## 되돌리기는 사람 승인 (오너 결정 2026-10-15, T-257 · 계획서 §6)
+ * 같은 캠페인·칸을 `AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS`(기본 7일) 안에 자동 실행한 적이 있으면 그 칸의 새 기안은
+ * `recent_auto_change` 로 PENDING 에 남긴다. 되돌리기(이전 값으로 맞바꾼 새 기안)는 겉모양이 보통 수정과 같아
+ * 「같은 칸을 최근 자동으로 바꿨다」로 가린다 — 두 번의 자동 변경이 서로 상쇄·증폭되지 않게.
+ * - on: 그 칸의 기안에 `SYSTEM_AUTO` 승인 이벤트가 창 안에 있고 상태가 APPROVED·EXECUTED(실패한 자동 시도는
+ *   값을 바꾸지 않았으므로 세지 않는다). 사람이 승인한 변경은 세지 않는다 — 오너 결정이 「자동 실행한 적」이다.
+ * - shadow: 창 안의 `would_execute` 그림자 판정 — 그림자 중에도 이 판정이 실제로 걸리는지 본다.
+ * - 같은 회차 안에서 앞서 실행(그림자면 would_execute)한 칸도 바로 센다.
  *
  * ## 하루 건수 (Asia/Seoul 자정 기준, CRM DB 가 정본)
  * - on: 오늘 `SYSTEM_AUTO` 가 이 requestType 기안을 APPROVED 로 옮긴 이벤트 수. 그 뒤 EXECUTED 든
@@ -125,6 +134,8 @@ export type Verdict =
   | "outside_window"
   | "not_live_request"
   | "daily_limit"
+  /** 같은 캠페인·칸을 최근 자동 실행했다 — 되돌리기일 수 있어 오너 승인으로 남긴다(T-257, 위 헤더). */
+  | "recent_auto_change"
   /**
    * 정산이 확정된 캠페인 — 자동으로 고치지 않고 오너 결재로 남긴다(오너 확정 2026-10-14). 실행부도 시스템
    * 실행자에게는 같은 이유로 거부하지만, 여기서 먼저 걸러야 「자동 승인 → 실행 실패(FAILED)」로 끝나 오너가
@@ -213,6 +224,49 @@ async function loadEarliestByRid(): Promise<Map<string, string>> {
   return earliest;
 }
 
+/** 캠페인·칸 키 — 되돌리기 가림(헤더 「되돌리기는 사람 승인」). */
+function slotKey(args: Pick<SettlementArgs, "campaignId" | "field">): string {
+  return `${args.campaignId}\u0000${args.field}`;
+}
+
+/** 창 안에 자동 실행(그림자면 would_execute)한 캠페인·칸. 창이 0·미설정이면 빈 집합. */
+async function loadRecentAutoSlots(mode: "shadow" | "on", now: Date, hours: number | null): Promise<Set<string>> {
+  const slots = new Set<string>();
+  if (!hours) return slots;
+  const since = new Date(now.getTime() - hours * 60 * 60 * 1000);
+  // 자동 승인·그림자 판정은 만든 지 `CANDIDATE_MAX_AGE_MS` 안의 기안에만 일어난다 — 기안 생성 시각으로도 좁혀
+  // 오래된 이력 전체를 훑지 않는다(`[status, createdAt]` 인덱스).
+  const createdSince = new Date(since.getTime() - CANDIDATE_MAX_AGE_MS);
+  const rows = await getPrisma().actionProposal.findMany({
+    where:
+      mode === "on"
+        ? {
+            requestType: SETTLEMENT_REQUEST_TYPE,
+            createdAt: { gte: createdSince },
+            status: { in: ["APPROVED", "EXECUTED"] },
+            events: { some: { actor: AUTO_EXECUTE_ACTOR, toStatus: "APPROVED", createdAt: { gte: since } } },
+          }
+        : {
+            requestType: SETTLEMENT_REQUEST_TYPE,
+            createdAt: { gte: createdSince },
+            events: {
+              some: {
+                actor: AUTO_EXECUTE_SHADOW_ACTOR,
+                note: { startsWith: `${VERDICT_NOTE_PREFIX}would_execute` },
+                createdAt: { gte: since },
+              },
+            },
+          },
+    select: { id: true, payload: true },
+  });
+  for (const row of rows) {
+    const payload = readSettlementPayload(row.payload);
+    if (payload) slots.add(slotKey(payload.args));
+    else console.warn(`[agent-auto-execute] 최근 자동 변경 판정: 기안 ${row.id} payload 를 읽지 못해 건너뜀`);
+  }
+  return slots;
+}
+
 async function countToday(mode: "shadow" | "on", now: Date): Promise<number> {
   const dayStart = new Date(startOfKstDayMs(now.getTime()));
   const prisma = getPrisma();
@@ -241,6 +295,7 @@ async function judgeCandidate(
   row: CandidateRow,
   config: AutoExecuteConfig,
   earliestByRid: Map<string, string>,
+  recentAutoSlots: Set<string>,
   fetchImpl: FetchLike,
   now: Date,
 ): Promise<Judgement> {
@@ -266,6 +321,13 @@ async function judgeCandidate(
     return {
       verdict: "over_delta",
       detail: `변동 ${delta.toLocaleString("ko-KR")}원이 한도 ${maxDelta.toLocaleString("ko-KR")}원을 넘습니다`,
+    };
+  }
+
+  if (recentAutoSlots.has(slotKey(payload.args))) {
+    return {
+      verdict: "recent_auto_change",
+      detail: `같은 캠페인·칸을 최근 ${config.recentAutoHours}시간 안에 자동 실행했습니다. 되돌리기일 수 있어 결재함에서 오너가 승인하면 반영됩니다`,
     };
   }
 
@@ -410,6 +472,12 @@ async function sweepStuckApproved(now: Date): Promise<{ swept: number; errors: n
   return { swept, errors };
 }
 
+/** 이번 회차에 자동 실행(그림자면 would_execute)한 칸을 가림 집합에 더한다. */
+function markRecentAutoSlot(slots: Set<string>, payload: unknown): void {
+  const parsed = readSettlementPayload(payload);
+  if (parsed) slots.add(slotKey(parsed.args));
+}
+
 let inProcessBusy = false;
 
 /** 회차 단일 실행 — 위 헤더 「단일 실행」. 잠금을 못 잡으면 `{ acquired: false }`. */
@@ -515,6 +583,7 @@ async function runLockedPass(
 
   if (pending.length > 0) {
     const earliestByRid = await loadEarliestByRid();
+    const recentAutoSlots = await loadRecentAutoSlots(mode, now, config.recentAutoHours);
     let todayCount = await countToday(mode, now);
 
     for (const [index, row] of pending.entries()) {
@@ -523,7 +592,7 @@ async function runLockedPass(
         break;
       }
       try {
-        let judgement = await judgeCandidate(row, config, earliestByRid, fetchImpl, now);
+        let judgement = await judgeCandidate(row, config, earliestByRid, recentAutoSlots, fetchImpl, now);
         if (judgement.verdict === "eligible" && todayCount >= (config.maxPerDay as number)) {
           judgement = {
             verdict: "daily_limit",
@@ -542,7 +611,10 @@ async function runLockedPass(
             await recordVerdict(row.id, actor, judgement.verdict, judgement.detail);
             result.recorded += 1;
           }
-          if (judgement.verdict === "would_execute") todayCount += 1;
+          if (judgement.verdict === "would_execute") {
+            todayCount += 1;
+            markRecentAutoSlot(recentAutoSlots, row.payload);
+          }
           continue;
         }
 
@@ -551,6 +623,7 @@ async function runLockedPass(
         if (outcome.ok) {
           result.executed += 1;
           todayCount += 1;
+          markRecentAutoSlot(recentAutoSlots, row.payload);
         } else if (outcome.code === "EXECUTION_FAILED" || outcome.code === "EMPTY_PAYLOAD") {
           // 승인은 기록됐고 실행 가드가 거부했다(FAILED) — 승인 시도이므로 하루 건수에 든다.
           result.executionFailed += 1;
