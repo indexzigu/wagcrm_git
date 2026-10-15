@@ -21,7 +21,8 @@
  * 같은 캠페인·칸을 이 시간 안에 자동 실행한 적이 있으면 그 칸의 새 기안은 자동 실행하지 않고 오너
  * 승인으로 남긴다(오너 결정 2026-10-15, T-257 — 되돌리기는 사람 승인, 계획서 §6). 되돌리기 기안은
  * 겉모양이 보통 수정과 같아 「같은 칸을 최근 자동으로 바꿨다」로 가린다. 7일 = 다음 날 아침 일일 요약을
- * 보고 되돌리기를 요청하는 흐름을 넉넉히 덮는 값(세션 가정 — 오너가 숫자를 정하지 않았다). 0 이면 끔.
+ * 보고 되돌리기를 요청하는 흐름을 넉넉히 덮는 값. 0 이면 끔. 상한 `MAX_RECENT_AUTO_HOURS`(1년) — 넘으면
+ * 창 시작 시각이 유효하지 않은 날짜가 되어 회차 전체가 실패하므로 `not_configured` 로 막는다.
  */
 
 export type AutoExecuteMode = "off" | "shadow" | "on";
@@ -30,6 +31,7 @@ export const DEFAULT_MAX_ABS_DELTA_KRW = 500_000;
 export const DEFAULT_MAX_PER_DAY = 10;
 export const DEFAULT_MESSAGE_WINDOW_MINUTES = 60;
 export const DEFAULT_RECENT_AUTO_HOURS = 168;
+export const MAX_RECENT_AUTO_HOURS = 8_760;
 
 export type AutoExecuteConfig = {
   mode: AutoExecuteMode;
@@ -61,6 +63,11 @@ function readNonNegativeInt(env: NodeJS.ProcessEnv, key: string, fallback: numbe
   return Number.isSafeInteger(value) ? value : null;
 }
 
+function readRecentAutoHours(env: NodeJS.ProcessEnv): number | null {
+  const hours = readNonNegativeInt(env, "AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS", DEFAULT_RECENT_AUTO_HOURS);
+  return hours !== null && hours <= MAX_RECENT_AUTO_HOURS ? hours : null;
+}
+
 export function resolveAutoExecuteMode(env: NodeJS.ProcessEnv = process.env): AutoExecuteMode {
   // 긴급 잠금 — 값과 무관하게 존재하면 off("0"/"false" 도 잠금). 해제는 변수 삭제.
   if (env.AUTO_APPROVE_DISABLED !== undefined) return "off";
@@ -84,7 +91,7 @@ export function readAutoExecuteConfig(env: NodeJS.ProcessEnv = process.env): Aut
       "AGENT_AUTO_EXECUTE_MESSAGE_WINDOW_MINUTES",
       DEFAULT_MESSAGE_WINDOW_MINUTES,
     ),
-    recentAutoHours: readNonNegativeInt(env, "AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS", DEFAULT_RECENT_AUTO_HOURS),
+    recentAutoHours: readRecentAutoHours(env),
   };
 }
 

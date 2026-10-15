@@ -844,6 +844,12 @@ describe("되돌리기는 사람 승인 — 같은 캠페인·칸을 최근 자�
     });
     expect(bad.verdicts).toEqual({ not_configured: 1 });
     expect(await statusOf(p.id)).toBe("PENDING_APPROVAL");
+    // 상한(1년) 초과도 막는다 — 창 시작 시각이 유효하지 않은 날짜가 되지 않게.
+    const huge = await runSettlementAutoExecutePass({
+      env: { ...BASE_ENV, AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS: "999999999999" },
+      fetchImpl,
+    });
+    expect(huge).toMatchObject({ errors: 0, verdicts: { not_configured: 1 } });
 
     const off = await runSettlementAutoExecutePass({
       env: { ...BASE_ENV, AGENT_AUTO_EXECUTE_RECENT_AUTO_HOURS: "0" },

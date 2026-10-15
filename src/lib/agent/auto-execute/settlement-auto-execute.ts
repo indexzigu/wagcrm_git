@@ -234,16 +234,21 @@ async function loadRecentAutoSlots(mode: "shadow" | "on", now: Date, hours: numb
   const slots = new Set<string>();
   if (!hours) return slots;
   const since = new Date(now.getTime() - hours * 60 * 60 * 1000);
+  // 자동 승인·그림자 판정은 만든 지 `CANDIDATE_MAX_AGE_MS` 안의 기안에만 일어난다 — 기안 생성 시각으로도 좁혀
+  // 오래된 이력 전체를 훑지 않는다(`[status, createdAt]` 인덱스).
+  const createdSince = new Date(since.getTime() - CANDIDATE_MAX_AGE_MS);
   const rows = await getPrisma().actionProposal.findMany({
     where:
       mode === "on"
         ? {
             requestType: SETTLEMENT_REQUEST_TYPE,
+            createdAt: { gte: createdSince },
             status: { in: ["APPROVED", "EXECUTED"] },
             events: { some: { actor: AUTO_EXECUTE_ACTOR, toStatus: "APPROVED", createdAt: { gte: since } } },
           }
         : {
             requestType: SETTLEMENT_REQUEST_TYPE,
+            createdAt: { gte: createdSince },
             events: {
               some: {
                 actor: AUTO_EXECUTE_SHADOW_ACTOR,
@@ -252,11 +257,12 @@ async function loadRecentAutoSlots(mode: "shadow" | "on", now: Date, hours: numb
               },
             },
           },
-    select: { payload: true },
+    select: { id: true, payload: true },
   });
   for (const row of rows) {
     const payload = readSettlementPayload(row.payload);
     if (payload) slots.add(slotKey(payload.args));
+    else console.warn(`[agent-auto-execute] 최근 자동 변경 판정: 기안 ${row.id} payload 를 읽지 못해 건너뜀`);
   }
   return slots;
 }
@@ -321,7 +327,7 @@ async function judgeCandidate(
   if (recentAutoSlots.has(slotKey(payload.args))) {
     return {
       verdict: "recent_auto_change",
-      detail: `같은 캠페인·칸을 최근 ${config.recentAutoHours}시간 안에 자동 실행했습니다 — 되돌리기일 수 있어 결재함에서 오너가 승인하면 반영됩니다`,
+      detail: `같은 캠페인·칸을 최근 ${config.recentAutoHours}시간 안에 자동 실행했습니다. 되돌리기일 수 있어 결재함에서 오너가 승인하면 반영됩니다`,
     };
   }
 
