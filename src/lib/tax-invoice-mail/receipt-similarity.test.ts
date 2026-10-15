@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { suggestReceiptMatch, tokenizeName } from "./receipt-similarity";
 import type { ExpectedReceivable } from "./expected-receivables";
-import type { ParsedEtaxInvoice } from "./etax-xml";
+import { EMPTY_ETAX_PARTY_DETAIL, type ParsedEtaxInvoice } from "./etax-xml";
 import type { ReceiptVerdict } from "./receipt-match";
 
 /**
@@ -33,6 +33,8 @@ function parsed(overrides: Partial<ParsedEtaxInvoice> = {}): ParsedEtaxInvoice {
     amounts: { supplyAmount: 4990000, taxAmount: 499000, totalAmount: 5489000 },
     lineItems: [{ sequence: 1, name: "블루버드 여름기획 수수료", quantity: 1, unitPrice: null, supplyAmount: 4990000, taxAmount: 499000 }],
     declaredEncoding: "UTF-8",
+    invoicerDetail: EMPTY_ETAX_PARTY_DETAIL,
+    invoiceeDetail: EMPTY_ETAX_PARTY_DETAIL,
     ...overrides,
   };
 }

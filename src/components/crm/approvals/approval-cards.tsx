@@ -11,6 +11,9 @@ import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
 import { formatShortDateTime } from "./format-time";
+import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
+import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
+import type { ApproveOptions } from "@/hooks/useProposalActions";
 
 /** /api/action-proposals GET 응답 항목 형태 (route.ts와 형태를 맞춘다). */
 export type ApprovalInboxItem = {
@@ -125,11 +128,19 @@ export function PendingCard({
   selection,
 }: {
   item: ApprovalInboxItem;
-  onApprove: (id: string) => Promise<unknown>;
+  onApprove: (id: string, options?: ApproveOptions) => Promise<unknown>;
   onReject: (id: string) => Promise<unknown>;
   selection?: PendingCardSelection;
 }) {
   const [pending, setPending] = React.useState(false);
+  // 거래처 등록 기안에서 「계산서에서 채우기」로 고른 값 — 승인 요청에 함께 싣는다.
+  const [partnerEnrichment, setPartnerEnrichment] = React.useState<PartnerEnrichment | undefined>();
+  // 일괄 승인은 보강 값을 싣지 않는다 — 계산서 값을 저장하기로 한 카드는 일괄 선택에서 빼야
+  // 「승인은 됐는데 대표자·주소가 빠진」 거래처가 조용히 생기지 않는다(교차 검토 2026-10-15).
+  const excludedFromBulk = selection !== undefined && partnerEnrichment !== undefined;
+  React.useEffect(() => {
+    if (excludedFromBulk && selection?.checked) selection.onCheckedChange(false);
+  }, [excludedFromBulk, selection]);
   const [error, setError] = React.useState<string | null>(item.errorMessage ?? null);
   // 언마운트된 뒤(성공 시 목록에서 빠짐) setState를 호출하지 않기 위한 가드.
   const mountedRef = React.useRef(true);
@@ -151,7 +162,7 @@ export function PendingCard({
     setPending(true);
     setError(null);
     try {
-      await onApprove(item.id);
+      await (partnerEnrichment ? onApprove(item.id, { partnerEnrichment }) : onApprove(item.id));
     } catch (err) {
       if (mountedRef.current) {
         setError(err instanceof Error ? err.message : "승인 처리 중 오류가 발생했습니다.");
@@ -190,9 +201,11 @@ export function PendingCard({
             <input
               type="checkbox"
               checked={selection.checked}
+              disabled={excludedFromBulk}
+              title={excludedFromBulk ? "계산서 값을 함께 저장하는 기안은 이 카드에서 승인하세요" : undefined}
               onChange={(event) => selection.onCheckedChange(event.target.checked)}
               aria-label={`${item.title} 선택`}
-              className="size-4 cursor-pointer accent-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+              className="size-4 cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
             />
           </label>
         )}
@@ -207,6 +220,15 @@ export function PendingCard({
           <div className="mt-1.5">
             <PayloadSummary item={item} />
           </div>
+          {item.payload?.action === "create_partner" && (
+            <div className="mt-2">
+              <PartnerInvoiceEnrichment
+                proposalId={item.id}
+                onSelectedChange={setPartnerEnrichment}
+                bulkSelectable={selection !== undefined}
+              />
+            </div>
+          )}
         </div>
       </div>
 

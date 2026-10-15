@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { ParsedEtaxInvoice } from "./etax-xml";
+import { EMPTY_ETAX_PARTY_DETAIL, type ParsedEtaxInvoice } from "./etax-xml";
 import type { ExpectedIssuance } from "./expected-issuances";
 import { matchIssuedInvoices, type ScannedIssuedInvoice } from "./issuance-match";
 import { SUB_HUNDRED_TRUNCATION_TOLERANCE_WON } from "./receipt-match";
@@ -28,6 +28,8 @@ function invoice(over: Partial<ParsedEtaxInvoice> = {}): ParsedEtaxInvoice {
     amounts: { supplyAmount: 300_000, taxAmount: 30_000, totalAmount: 330_000 },
     lineItems: [],
     declaredEncoding: "UTF-8",
+    invoicerDetail: EMPTY_ETAX_PARTY_DETAIL,
+    invoiceeDetail: EMPTY_ETAX_PARTY_DETAIL,
     ...over,
   };
 }

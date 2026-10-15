@@ -106,6 +106,8 @@ function PartnerBlock({ partner }: { partner: Record<string, unknown> }) {
         ["구분", type ? (PARTNER_TYPE_LABELS[type] ?? type) : null],
         ["사업자번호", asText(partner.businessNumber)],
         ["대표자", asText(partner.ceoName)],
+        ["업태", asText(partner.businessType)],
+        ["종목", asText(partner.businessItem)],
         ["대표 이메일", asText(partner.representativeEmail)],
         ["주소", asText(partner.address)],
         ["메모", asText(partner.notes)],

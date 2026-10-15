@@ -10,6 +10,8 @@ import { useProposalActions } from "@/hooks/useProposalActions";
 import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
+import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
+import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
 
 /**
  * ProposalCard — 기안 한 건의 카드(인라인 승인) (청사진 §1, §3-#4).
@@ -138,6 +140,8 @@ export function ProposalCard({
 
   const { approve, reject } = useProposalActionsHook();
   const [pending, setPending] = React.useState(false);
+  // 거래처 등록 기안에서 「계산서에서 채우기」로 고른 값 — 승인 요청에 함께 싣는다.
+  const [partnerEnrichment, setPartnerEnrichment] = React.useState<PartnerEnrichment | undefined>();
   const [error, setError] = React.useState<string | null>(null);
   const mountedRef = React.useRef(true);
   React.useEffect(() => {
@@ -157,7 +161,7 @@ export function ProposalCard({
     setPending(true);
     setError(null);
     try {
-      await approve(id);
+      await (partnerEnrichment ? approve(id, { partnerEnrichment }) : approve(id));
     } catch (err) {
       if (mountedRef.current) {
         setError(err instanceof Error ? err.message : "승인 처리 중 오류가 발생했습니다.");
@@ -240,6 +244,11 @@ export function ProposalCard({
 
       {/* 제목은 무엇을 만드는지만 말한다. 승인 판단에 필요한 값(가격·옵션·담당자)은 여기 있다. */}
       <ProposalPayloadPreview action={proposal.payload?.action} args={proposal.payload?.args} />
+
+      {/* 실패(FAILED) 재시도에는 붙이지 않는다 — 첫 승인 때 채운 값은 이미 기안에 저장돼 있다. */}
+      {action === "create_partner" && proposal.status === "PENDING_APPROVAL" && (
+        <PartnerInvoiceEnrichment proposalId={id} onSelectedChange={setPartnerEnrichment} />
+      )}
 
       {proposal.status === "FAILED" && proposal.errorMessage && (
         <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-status-urgent-text">

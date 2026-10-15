@@ -6,6 +6,7 @@ import type {
   ActionProposalKind,
   ActionProposalStatus,
 } from "@/repositories/actionProposalRepository";
+import type { ApproveOptions } from "@/hooks/useProposalActions";
 
 /**
  * 결재함 허브가 **실제로 쓰는 만큼만** 적은 훅 모양 (Plan 2 Task 4).
@@ -24,7 +25,7 @@ export type ApprovalInboxHook = (
   count: number;
   isLoading: boolean;
   isError: boolean;
-  approve: (id: string) => Promise<unknown>;
+  approve: (id: string, options?: ApproveOptions) => Promise<unknown>;
   reject: (id: string) => Promise<unknown>;
   /**
    * 일괄 승인(대기 탭의 선택 승인). 선택적인 이유: 이 필드가 없는 스텁(기존 허브 테스트)은

@@ -1092,6 +1092,23 @@ describe("write-executor — create_partner (거래처 등록)", () => {
     );
   });
 
+  it("업태·종목(결재함 계산서 채우기로 들어오는 칸)을 거래처 행에 저장한다", async () => {
+    partnerCreateMock.mockResolvedValue({ id: "partner-biz", name: "업태거래처" });
+
+    await executeWriteAction(
+      "create_partner",
+      { partner: { name: "업태거래처", type: "VENDOR", businessType: "도소매", businessItem: "화장품" } } as never,
+      "approver@example.com",
+      fakeTx
+    );
+
+    expect(partnerCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ businessType: "도소매", businessItem: "화장품" }),
+      })
+    );
+  });
+
   it("거래처 종류가 계약 밖 값이면 args 검증에서 거부하고 아무것도 쓰지 않는다", async () => {
     await expect(
       executeWriteAction(

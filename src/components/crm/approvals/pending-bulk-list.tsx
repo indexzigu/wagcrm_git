@@ -19,6 +19,7 @@ import type { ApprovalInboxItem } from "./approval-cards";
 import type { BulkApproveFn } from "./approval-hub-types";
 import { ACTION_LABELS } from "./proposal-card";
 import { EmptyState, LoadErrorState, LoadMoreButton } from "./hub-states";
+import type { ApproveOptions } from "@/hooks/useProposalActions";
 
 /**
  * 결재함 대기 탭 — 선택한 기안을 한 번에 승인한다.
@@ -352,7 +353,7 @@ export function PendingBulkList({
   emptyMessage,
 }: {
   items: ApprovalInboxItem[];
-  approve: (id: string) => Promise<unknown>;
+  approve: (id: string, options?: ApproveOptions) => Promise<unknown>;
   reject: (id: string) => Promise<unknown>;
   approveMany: BulkApproveFn;
   hasMore: boolean;

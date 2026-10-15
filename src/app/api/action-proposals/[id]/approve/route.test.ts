@@ -255,3 +255,100 @@ describe("POST /api/action-proposals/[id]/approve", () => {
     expect(transitionMock.mock.calls.some((call) => call[1] === "FAILED")).toBe(false);
   });
 });
+
+describe("POST /api/action-proposals/[id]/approve — 계산서로 거래처 빈 칸 채우기", () => {
+  const partnerProposal = {
+    ...baseProposal,
+    payload: {
+      action: "create_partner",
+      args: { partner: { name: "테스트공급", type: "VENDOR", ceoName: "대화대표" } },
+    },
+    targetEntityType: null,
+    targetEntityId: null,
+  };
+
+  function requestWith(body: unknown) {
+    return new NextRequest("http://localhost/api/action-proposals/proposal-1/approve", {
+      method: "POST",
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
+  beforeEach(() => {
+    requireRoleMock.mockReset().mockResolvedValue({
+      authenticated: true,
+      context: { userId: "approver@example.com", role: "admin" },
+    });
+    findByIdMock.mockReset();
+    transitionMock.mockReset();
+    executeWriteActionMock.mockReset();
+    applyWriteActionEffectsMock.mockReset();
+    transactionMock.mockReset().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({}));
+    getPrismaMock.mockReset().mockReturnValue({ $transaction: transactionMock });
+    transitionMock
+      .mockResolvedValueOnce({ id: "proposal-1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "proposal-1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue({ refType: "PARTNER", refId: "partner-new", summary: "등록" });
+  });
+
+  it("빈 칸만 채워 실행하고, 채운 payload 를 승인(tx1)과 함께 저장한다", async () => {
+    findByIdMock.mockResolvedValue(partnerProposal);
+
+    const res = await POST(
+      requestWith({
+        partnerEnrichment: { ceoName: "계산서대표", businessNumber: "1112233333", address: "서울 가상로 1" },
+      }),
+      makeParams("proposal-1"),
+    );
+
+    expect(res.status).toBe(200);
+    const mergedPartner = {
+      name: "테스트공급",
+      type: "VENDOR",
+      ceoName: "대화대표", // 기안 값 유지 — 덮어쓰지 않는다
+      businessNumber: "1112233333",
+      address: "서울 가상로 1",
+    };
+    expect(executeWriteActionMock).toHaveBeenCalledWith(
+      "create_partner",
+      { partner: mergedPartner },
+      "approver@example.com",
+      expect.anything(),
+    );
+    const tx1Options = transitionMock.mock.calls[0][2];
+    expect(tx1Options.data).toEqual({ payload: { action: "create_partner", args: { partner: mergedPartner } } });
+    expect(tx1Options.note).toBe("관리자 승인 · 계산서로 채움: 사업자번호·주소");
+  });
+
+  it("본문이 없으면 종전 그대로 승인하고 payload 를 다시 쓰지 않는다", async () => {
+    findByIdMock.mockResolvedValue(partnerProposal);
+    const res = await POST(makeRequest(), makeParams("proposal-1"));
+    expect(res.status).toBe(200);
+    expect(transitionMock.mock.calls[0][2]).not.toHaveProperty("data");
+    expect(transitionMock.mock.calls[0][2].note).toBe("관리자 승인");
+  });
+
+  it("거래처 등록이 아닌 기안에 보강 값이 오면 승인하지 않고 400", async () => {
+    findByIdMock.mockResolvedValue(baseProposal);
+    const res = await POST(requestWith({ partnerEnrichment: { ceoName: "x" } }), makeParams("proposal-1"));
+    expect(res.status).toBe(400);
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
+  it("형식이 틀린 보강 값(사업자번호 자리수·모르는 칸)은 승인하지 않고 400", async () => {
+    findByIdMock.mockResolvedValue(partnerProposal);
+    for (const partnerEnrichment of [{ businessNumber: "123" }, { name: "상호 바꾸기" }]) {
+      const res = await POST(requestWith({ partnerEnrichment }), makeParams("proposal-1"));
+      expect(res.status).toBe(400);
+    }
+    expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it("본문이 JSON 이 아니면 400", async () => {
+    findByIdMock.mockResolvedValue(partnerProposal);
+    const res = await POST(requestWith("{not json"), makeParams("proposal-1"));
+    expect(res.status).toBe(400);
+    expect(transitionMock).not.toHaveBeenCalled();
+  });
+});

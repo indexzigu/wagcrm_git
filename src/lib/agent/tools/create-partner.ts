@@ -16,7 +16,7 @@ const inputSchema = z
   .object({
     partner: newPartnerInputSchema.describe(
       "새로 등록할 거래처 정보. name(상호)과 type(BRAND/VENDOR/AGENCY/AGENT/SELLER)은 필수, " +
-        "businessNumber(사업자등록번호 숫자 10자리)·ceoName·representativeEmail·address·notes는 선택"
+        "businessNumber(사업자등록번호 숫자 10자리)·ceoName·representativeEmail·address·businessType(업태)·businessItem(종목)·notes는 선택"
     ),
     contacts: z
       .array(partnerContactInputSchema)

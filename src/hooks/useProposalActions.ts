@@ -1,6 +1,12 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
+
+/** 승인에 덧붙이는 선택 값. 거래처 등록 기안의 계산서 채우기만 쓴다(`partner-invoice-enrichment.tsx`). */
+export type ApproveOptions = {
+  partnerEnrichment?: PartnerEnrichment;
+};
 
 /**
  * ActionProposal 승인/반려 공용 훅 (청사진 §3-#3).
@@ -39,8 +45,16 @@ export function useProposalActions() {
   );
 
   const approve = React.useCallback(
-    async (id: string) => {
-      const res = await fetch(`/api/action-proposals/${id}/approve`, { method: "POST" });
+    async (id: string, options: ApproveOptions = {}) => {
+      // 본문은 보강 값이 있을 때만 싣는다 — 없으면 종전과 같은 빈 POST 다.
+      const init: RequestInit = options.partnerEnrichment
+        ? {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ partnerEnrichment: options.partnerEnrichment }),
+          }
+        : { method: "POST" };
+      const res = await fetch(`/api/action-proposals/${id}/approve`, init);
       const body = await res.json().catch(() => ({}));
       invalidate(id);
       if (!res.ok) {
