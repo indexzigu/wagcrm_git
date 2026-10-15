@@ -53,7 +53,8 @@ function toNullableNumber(value: unknown): number | null {
 
 /**
  * 캠페인 손익 조회 — **저장된 금액을 그대로** 돌려준다(재계산하지 않는다). 봇(`agent-worker/executor.ts`
- * `campaignFinancials`)이 `runTool` 로 이 도구를 부르므로 웹·봇이 같은 칸·같은 값을 본다.
+ * `campaignFinancials`)이 `runTool` 로 이 도구를 부른다(웹 어시스턴트 채팅은 #94 에서 은퇴해 지금 호출자는
+ * 봇뿐이다). 재무 카드와 같은 저장값을 낸다.
  *
  * ⛔ 여기서 `calculateDerivedCampaignFinancials` 로 다시 계산하지 말 것. 그 함수는 캠페인 단위
  * 요율(`totalMarginRate`·`sellerMarginRate`) 하나로 곱하는데, 품목(CampaignDeal)마다 요율이 다른

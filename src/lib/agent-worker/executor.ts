@@ -1183,8 +1183,7 @@ function routerUnavailable(job: AgentJobRecord, errorClass: RouterUnavailableCla
   return externalExecutor(job, ROUTER_UNAVAILABLE_ROUTE, errorClass.toLowerCase(), errorClass);
 }
 
-// 권한 거부(42501) 판정은 재사용 도구(`agent/tools/*`)도 써야 해서 중립 모듈로 옮겼다 — 여기서는 다시 내보낸다.
-export { isPermissionDeniedError };
+// 권한 거부(42501) 판정은 재사용 도구(`agent/tools/*`)도 써야 해서 중립 모듈(`@/lib/db-permission-denied`)로 옮겼다.
 
 export const DB_PERMISSION_DENIED = "DB_PERMISSION_DENIED";
 
