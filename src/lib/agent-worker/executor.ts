@@ -31,6 +31,7 @@ import { createPartnerTool } from "@/lib/agent/tools/create-partner";
 import { createDealTool } from "@/lib/agent/tools/create-deal";
 import { updateSettlementAmountTool } from "@/lib/agent/tools/update-settlement-amount";
 import { updateRecordTool } from "@/lib/agent/tools/update-record";
+import { upsertProductMappingsTool } from "@/lib/agent/tools/upsert-product-mappings";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
@@ -77,6 +78,7 @@ import {
   toTaxInvoiceAutoConfirmedViews,
   toTaxInvoicePendingViews,
 } from "./tax-invoice-status";
+import { buildOrderCampaignMappingsSummary, readOrderCampaignMappings } from "./order-campaign-mappings";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import {
   hasShadowValidator,
@@ -96,7 +98,8 @@ import {
  *   worker created, and — column- and row-limited to whitelisted Kakao rooms —
  *   ChatRoomMapping and WorkRecord; for the tax-invoice status read also
  *   CampaignSettlementItem, CampaignInvoice and — column- and row-limited — ActivityLog
- *   and SystemTaskLog) by reusing existing pure calculations over narrow
+ *   and SystemTaskLog; for the order-campaign mapping read — column-limited —
+ *   OrderCampaign and ProductMapping) by reusing existing pure calculations over narrow
  *   projections; no business formula is copied here
  * - `create_action_proposal` validates WRITE_ACTIONS + Zod args + target existence,
  *   then INSERTs the proposal as PENDING_APPROVAL plus its initial event in one
@@ -167,7 +170,16 @@ type OperationSuccess = {
   /** 읽기 작업의 결재함 기록 페이로드 — 있으면 실행기가 성공 직후 READ 산출물로 남긴다(§3-A). */
   record?: ReadResultRecord;
 };
-type OperationFailure = { status: "FAILED_FINAL"; errorClass: string; summary: string };
+type OperationFailure = {
+  status: "FAILED_FINAL";
+  errorClass: string;
+  summary: string;
+  /**
+   * 봇이 받는 결과 요약(`… failed: <errorClass>`) 뒤에 괄호로 붙일 한 문장. 같은 실패 코드 안에서 봇이 다음
+   * 행동을 갈라야 할 때만 싣는다(예: 주문캠페인 이름 불일치 — 다시 조회하면 풀린다). 없으면 요약은 그대로다.
+   */
+  detail?: string;
+};
 type OperationRetry = { status: "RETRY"; errorClass: string };
 type OperationOutcome = OperationSuccess | OperationFailure | OperationRetry;
 
@@ -189,6 +201,7 @@ type SettlementReportInput = { month?: string; year?: string; sellerName?: strin
 type StoreStatusInput = { claimsLimit?: number; since?: string };
 type WorkRecordsInput = { roomKey: string; since: string; until?: string; limit?: number };
 type TaxInvoiceStatusInput = { month?: string };
+type OrderCampaignMappingsInput = { orderCampaignId?: string; query?: string };
 type ProposalScalar = string | number | boolean | null;
 type ProposalNestedValue = ProposalScalar | Record<string, ProposalScalar>;
 /**
@@ -234,8 +247,10 @@ function boundEvidence(refs: Array<string | null | undefined>): string[] {
     .slice(0, MAX_EVIDENCE_REFS);
 }
 
-function failure(errorClass: string, summary: string): OperationFailure {
-  return { status: "FAILED_FINAL", errorClass, summary };
+function failure(errorClass: string, summary: string, detail?: string): OperationFailure {
+  return detail === undefined
+    ? { status: "FAILED_FINAL", errorClass, summary }
+    : { status: "FAILED_FINAL", errorClass, summary, detail };
 }
 
 /**
@@ -997,6 +1012,32 @@ async function taxInvoiceStatus(input: TaxInvoiceStatusInput, now: Date): Promis
 }
 
 // ---------------------------------------------------------------------------
+// get_order_campaign_mappings (2026-10-15) — 주문캠페인과 그 상품 매핑 읽기
+// ---------------------------------------------------------------------------
+
+/**
+ * 봇이 매핑 변경 기안을 올리기 전에 지금 값을 본다. 읽기·내보낼 칸은 `order-campaign-mappings.ts` 가
+ * 정한다(칸 단위 GRANT 라 모든 호출이 명시 select). 없는 id 는 오류가 아니라 0건이다.
+ */
+async function orderCampaignMappings(input: OrderCampaignMappingsInput): Promise<OperationOutcome> {
+  const result = await readOrderCampaignMappings(input, getPrisma());
+  const { summary, mappingCount } = buildOrderCampaignMappingsSummary(result);
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(summary),
+    evidenceRefs: boundEvidence(result.campaigns.map((campaign) => campaign.id)),
+    actionProposalId: null,
+    record: {
+      title: `주문캠페인 ${result.campaigns.length}건 · 매핑 ${mappingCount}줄`,
+      resultSummary: boundSummary(summary),
+      structuredResult: result,
+      dataSources: ["OrderCampaign", "ProductMapping", "SalesCampaign"],
+      query: { orderCampaignId: input.orderCampaignId ?? null, query: input.query ?? null },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // create_action_proposal — INSERT only (contract 5)
 // ---------------------------------------------------------------------------
 
@@ -1010,6 +1051,7 @@ const WRITE_INTENT_TOOLS = {
   create_deal: createDealTool,
   update_settlement_amount: updateSettlementAmountTool,
   update_record: updateRecordTool,
+  upsert_product_mappings: upsertProductMappingsTool,
 } as const;
 
 async function targetExists(entityType: string, entityId: string, client: ProposalTx): Promise<boolean> {
@@ -1038,6 +1080,30 @@ async function targetResolves(intent: WriteIntent, client: ProposalTx): Promise<
   if (targetEntityType === null && targetEntityId === null) return true;
   if (targetEntityType === null || targetEntityId === null) return false;
   return targetExists(targetEntityType, targetEntityId, client);
+}
+
+/** 기안 시점 이름 대조가 어긋났을 때 봇에게 주는 한 문장 — 캠페인이 없을 때와 갈라 다시 조회하게 한다. */
+const ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL = "주문캠페인 이름이 지금 이름과 다릅니다. 조회로 이름을 다시 읽어 주세요.";
+
+/** 기안 시점 확인 결과: 통과, 대상 없음, 또는 대상은 있으나 이름이 다름. */
+type ProposalSubjectCheck = "RESOLVES" | "NOT_FOUND" | "NAME_MISMATCH";
+
+/**
+ * 대상 칸(`targetEntityType`)으로 가리킬 수 없는 기안의 기안 시점 확인. 상품 매핑 기안은 주문캠페인을
+ * 고치지만 대상 칸이 null 이라(`targetResolves` 는 통과) 여기서 그 캠페인이 있는지, 기안이 적은 이름이
+ * 지금 이름과 같은지 본다 — 없거나 다르면 기존 「대상 없음」 실패(TARGET_NOT_FOUND)로 기안을 만들지 않는다.
+ * 이름만 다를 때는 결과 요약에 `ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL` 을 붙여 봇이 「없음」과 가를 수 있게 한다.
+ * 실행 역할은 봇 작업 역할이라 GRANT 된 칸(id·name)만 고른다(마이그레이션 20261016120000).
+ */
+async function proposalSubjectResolves(intent: WriteIntent, client: ProposalTx): Promise<ProposalSubjectCheck> {
+  if (intent.action !== "upsert_product_mappings") return "RESOLVES";
+  const { orderCampaignId, orderCampaignName } = intent.args as { orderCampaignId: string; orderCampaignName: string };
+  const campaign = await client.orderCampaign.findUnique({
+    where: { id: orderCampaignId },
+    select: { id: true, name: true },
+  });
+  if (campaign === null) return "NOT_FOUND";
+  return campaign.name.trim() === orderCampaignName ? "RESOLVES" : "NAME_MISMATCH";
 }
 
 function assertNotAborted(signal: AbortSignal): void {
@@ -1080,8 +1146,10 @@ async function createActionProposal(
   // No commit after lease loss / timeout / shutdown (review MEDIUM-2).
   assertNotAborted(signal);
   const prisma = getPrisma();
-  const proposalId = await prisma.$transaction(async (tx) => {
-    if (!(await targetResolves(intent, tx))) return null;
+  const proposalId = await prisma.$transaction(async (tx): Promise<string | Exclude<ProposalSubjectCheck, "RESOLVES">> => {
+    if (!(await targetResolves(intent, tx))) return "NOT_FOUND";
+    const subject = await proposalSubjectResolves(intent, tx);
+    if (subject !== "RESOLVES") return subject;
     assertNotAborted(signal);
     const created = await tx.actionProposal.create({
       data: serializeJsonFields({
@@ -1110,7 +1178,10 @@ async function createActionProposal(
     });
     return created.id;
   });
-  if (proposalId === null) return failure("TARGET_NOT_FOUND", "proposal target does not exist");
+  if (proposalId === "NOT_FOUND") return failure("TARGET_NOT_FOUND", "proposal target does not exist");
+  if (proposalId === "NAME_MISMATCH") {
+    return failure("TARGET_NOT_FOUND", "order campaign name differs from the proposal", ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL);
+  }
 
   return {
     status: "NEEDS_APPROVAL",
@@ -1134,6 +1205,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   list_work_record_rooms: () => listWorkRecordRooms(),
   get_work_records: (input, context) => getWorkRecords(input as WorkRecordsInput, context.now),
   get_tax_invoice_status: (input, context) => taxInvoiceStatus(input as TaxInvoiceStatusInput, context.now),
+  get_order_campaign_mappings: (input) => orderCampaignMappings(input as OrderCampaignMappingsInput),
 };
 
 function buildResult(
@@ -1187,7 +1259,13 @@ function routerUnavailable(job: AgentJobRecord, errorClass: RouterUnavailableCla
 
 export const DB_PERMISSION_DENIED = "DB_PERMISSION_DENIED";
 
-function finalFailure(job: AgentJobRecord, route: AgentJobRoute, model: string, errorClass: string): ExecutionOutcome {
+function finalFailure(
+  job: AgentJobRecord,
+  route: AgentJobRoute,
+  model: string,
+  errorClass: string,
+  detail?: string,
+): ExecutionOutcome {
   return {
     kind: "terminal",
     toStatus: "FAILED_FINAL",
@@ -1198,7 +1276,7 @@ function finalFailure(job: AgentJobRecord, route: AgentJobRoute, model: string, 
     result: buildResult(job, route, model, {
       status: "FAILED_FINAL",
       validationResult: "fail",
-      resultSummary: boundSummary(`${job.payload.operation} failed: ${errorClass}`),
+      resultSummary: boundSummary(`${job.payload.operation} failed: ${errorClass}${detail ? ` (${detail})` : ""}`),
       actionProposalId: null,
       evidenceRefs: [],
     }),
@@ -1261,7 +1339,7 @@ export async function executeAgentJob(
     return { kind: "retryable", errorClass: outcome.errorClass, route, model };
   }
   if (outcome.status === "FAILED_FINAL") {
-    return finalFailure(job, route, model, outcome.errorClass);
+    return finalFailure(job, route, model, outcome.errorClass, outcome.detail);
   }
   // §3-A: 읽기 성공은 결재함 READ 산출물로 남긴다. 조회(READ) 자체는 멱등이지만 이 기록의
   // INSERT 는 아니다 — 커밋이 끝난 뒤 응답이 유실되면 재시도가 같은 조회를 한 번 더 기록해

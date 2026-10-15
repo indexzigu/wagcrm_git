@@ -221,7 +221,7 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
 
   it("cannot read tables outside the granted scope", async () => {
     await expectDenied(worker!.$queryRawUnsafe(`SELECT count(*) FROM "_prisma_migrations"`), "SELECT _prisma_migrations");
-    for (const table of ["CampaignDeal", "CampaignChecklistItem", "CampaignNote", "CampaignActivity", "SellersHistory", "OrderCampaign"]) {
+    for (const table of ["CampaignDeal", "CampaignChecklistItem", "CampaignNote", "CampaignActivity", "SellersHistory"]) {
       await expectDenied(worker!.$queryRawUnsafe(`SELECT count(*) FROM "${table}"`), `SELECT ${table}`);
     }
   });
@@ -352,6 +352,51 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "SystemTaskLog" WHERE false`), "DELETE SystemTaskLog");
   });
 
+  // get_order_campaign_mappings(2026-10-15, migration 20261016120000): both tables opened column by column
+  // with a USING (true) policy. Positive control first — a GRANT without its policy reads zero rows silently.
+  it("reads exactly the seeded order campaign and mapping through the granted columns", async () => {
+    await admin.$executeRawUnsafe(
+      `INSERT INTO "OrderCampaign" ("id","name","sellerName","toEmail","isActive","startDate","updatedAt") VALUES ('priv-oc-1','privilege order campaign','privilege seller','priv-closed-email-value',true,now(),now()) ON CONFLICT DO NOTHING`,
+    );
+    await admin.$executeRawUnsafe(
+      `INSERT INTO "ProductMapping" ("id","campaignId","productName","optionName","brandCode","price") VALUES ('priv-pm-1','priv-oc-1','privilege product','1 unit','PRIV-001',19900) ON CONFLICT DO NOTHING`,
+    );
+    const campaigns = await worker!.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id","name","sellerName","isActive","startDate","endDate" FROM "OrderCampaign" WHERE "id" LIKE 'priv-oc-%'`,
+    );
+    expect(campaigns.map((row) => row.id)).toEqual(["priv-oc-1"]);
+    const mappings = await worker!.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id","campaignId","productName","optionName","brandCode","price","campaignDealId" FROM "ProductMapping" WHERE "id" LIKE 'priv-pm-%'`,
+    );
+    expect(mappings.map((row) => row.id)).toEqual(["priv-pm-1"]);
+  });
+
+  it("cannot read the closed order-campaign columns", async () => {
+    for (const column of ["toEmail", "ccEmail", "thumbnailUrl", "productId", "cachedTotalRevenue"]) {
+      await expectDenied(worker!.$queryRawUnsafe(`SELECT "${column}" FROM "OrderCampaign"`), `SELECT OrderCampaign.${column}`);
+    }
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT * FROM "OrderCampaign"`), "SELECT * OrderCampaign");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT "createdAt" FROM "ProductMapping"`), "SELECT ProductMapping.createdAt");
+    await expectDenied(worker!.$queryRawUnsafe(`SELECT * FROM "ProductMapping"`), "SELECT * ProductMapping");
+  });
+
+  it("cannot write the order-campaign tables", async () => {
+    await expectDenied(
+      worker!.$executeRawUnsafe(`INSERT INTO "OrderCampaign" ("id","name","sellerName","updatedAt") VALUES ('priv-oc-x','x','x',now())`),
+      "INSERT OrderCampaign",
+    );
+    await expectDenied(worker!.$executeRawUnsafe(`UPDATE "OrderCampaign" SET "name" = 'x' WHERE false`), "UPDATE OrderCampaign");
+    await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "OrderCampaign" WHERE false`), "DELETE OrderCampaign");
+    await expectDenied(
+      worker!.$executeRawUnsafe(
+        `INSERT INTO "ProductMapping" ("id","campaignId","productName","optionName","brandCode","price") VALUES ('priv-pm-x','priv-oc-1','x','x','x',1)`,
+      ),
+      "INSERT ProductMapping",
+    );
+    await expectDenied(worker!.$executeRawUnsafe(`UPDATE "ProductMapping" SET "price" = 1 WHERE false`), "UPDATE ProductMapping");
+    await expectDenied(worker!.$executeRawUnsafe(`DELETE FROM "ProductMapping" WHERE false`), "DELETE ProductMapping");
+  });
+
   it("cannot run schema DDL", async () => {
     await expectDenied(worker!.$executeRawUnsafe(`CREATE TABLE "wag_priv_probe" ("id" integer)`), "CREATE TABLE");
     await expectDenied(worker!.$executeRawUnsafe(`ALTER TABLE "Deal" ADD COLUMN "privProbe" text`), "ALTER TABLE Deal");
@@ -444,5 +489,22 @@ describe.skipIf(!enabled)("wag_agent_worker least-privilege (ephemeral PostgreSQ
     expect(taxInvoice.result.resultSummary).toMatch(/^get_tax_invoice_status month=\d{4}-\d{2} lastRun=\S+ runStatus=OK stale=false /);
     expect(taxInvoice.result.resultSummary).toContain("autoConfirmed=1 ");
     expect(taxInvoice.result.evidenceRefs).toContain("priv-camp-1");
+
+    // get_order_campaign_mappings: the explicit selects stay inside the column grants (a default select
+    // would touch toEmail and fail as DB_PERMISSION_DENIED). The linked sales campaign is seeded last so
+    // the reads above keep their fixtures.
+    await admin.$executeRawUnsafe(
+      `INSERT INTO "SalesCampaign" ("id","dealId","sellerId","status","startDate","endDate","salesChannel","baseNaverLink","generatedTrackingLink","actualSales","totalMarginRate","sellerMarginRate","orderCampaignId","updatedAt") VALUES ('priv-camp-oc','priv-deal-1','priv-seller-1','PROPOSAL',now(),now() + interval '7 days','naver','https://example.invalid/base','https://example.invalid/track',0,30,10,'priv-oc-1',now()) ON CONFLICT DO NOTHING`,
+    );
+    const byId = await executeAgentJob(jobFor("get_order_campaign_mappings", { orderCampaignId: "priv-oc-1" }), python);
+    expect(byId).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { evidenceRefs: ["priv-oc-1"] } });
+    if (byId.kind !== "terminal") throw new Error("expected terminal");
+    expect(byId.result.resultSummary).toMatch(/^get_order_campaign_mappings campaigns=1 mappings=1 truncated=false /);
+    expect(byId.result.resultSummary).toContain("salesCampaignIds=priv-camp-oc mappings=1");
+    expect(byId.result.resultSummary).toContain("privilege product | 1 unit | code=PRIV-001 | price=19900 | linkedToDeal=no");
+    expect(byId.result.resultSummary).not.toContain("priv-closed-email-value");
+
+    const byName = await executeAgentJob(jobFor("get_order_campaign_mappings", { query: "PRIVILEGE ORDER" }), python);
+    expect(byName).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { evidenceRefs: ["priv-oc-1"] } });
   }, 60_000);
 });

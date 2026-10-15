@@ -45,6 +45,10 @@ export const REQUEST_TYPE_BY_ACTION: Record<string, string> = {
   // 목록으로 좁히지 않는 대신 **언제나 오너가 승인**한다. 자동 실행기를 두지 않는다(정산 자동 실행기는
   // 이 requestType 을 집지 않는다). autoApprove 에 넣지 말 것.
   update_record: "record_update", // alwaysManual → 수동(영구)
+  // 주문캠페인 상품 매핑 등록·수정(2026-10-15) — 발주서 상품코드·가격을 정하는 값이라 사람이 승인한다.
+  // crm_mutation 은 이미 alwaysManual 이라 approval.rules.json 은 건드리지 않는다. 전용 requestType 을
+  // 두지 않은 이유: 이 기안만 다르게 다룰 정책이 없다.
+  upsert_product_mappings: "crm_mutation", // alwaysManual → 수동
 };
 
 const FAIL_CLOSED_REQUEST_TYPE = "crm_mutation";

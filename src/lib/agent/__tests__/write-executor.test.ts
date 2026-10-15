@@ -86,7 +86,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
     sellerFindUniqueMock.mockReset();
   });
 
-  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal, update_settlement_amount, update_record 7종이 등록되어 있다", () => {
+  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal, update_settlement_amount, update_record, upsert_product_mappings 8종이 등록되어 있다", () => {
     expect(Object.keys(WRITE_ACTIONS).sort()).toEqual(
       [
         "add_entity_memo",
@@ -96,6 +96,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
         "create_deal",
         "update_settlement_amount",
         "update_record",
+        "upsert_product_mappings",
       ].sort()
     );
   });
@@ -1349,11 +1350,22 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     memo: "메모",
   };
 
+  const upsertProductMappingsArgs = {
+    orderCampaignId: "oc-1",
+    orderCampaignName: "주문캠페인",
+    mappings: [
+      { optionName: "옵션 A", productName: "상품", brandCode: "TC1", price: 1000, expectedBrandCode: "", expectedPrice: 0 },
+      { optionName: "옵션 B", brandCode: "TC2", price: 0, expectedBrandCode: null, expectedPrice: null },
+    ],
+    memo: "메모",
+  };
+
   it.each([
     ["create_partner", createPartnerArgs],
     ["create_deal", createDealArgs],
     ["update_settlement_amount", updateSettlementAmountArgs],
     ["update_record", updateRecordArgs],
+    ["upsert_product_mappings", upsertProductMappingsArgs],
   ])("%s: 계약이 받는 최대 payload를 argsSchema도 그대로 받는다", (action, args) => {
     expect(createActionProposalInputSchema.safeParse({ action, ...args }).success).toBe(true);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(args).success).toBe(true);
@@ -1364,6 +1376,7 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     ["create_deal", createDealArgs],
     ["update_settlement_amount", updateSettlementAmountArgs],
     ["update_record", updateRecordArgs],
+    ["upsert_product_mappings", upsertProductMappingsArgs],
   ])("%s: 계약에 없는 칸은 양쪽 모두 거부한다", (action, args) => {
     const withUnknownKey = { ...args, unknownField: "x" };
     expect(createActionProposalInputSchema.safeParse({ action, ...withUnknownKey }).success).toBe(false);

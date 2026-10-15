@@ -64,6 +64,19 @@ describe("getRequestTypeForAction", () => {
     }
   });
 
+  it("upsert_product_mappings → crm_mutation: 명시 등재 + alwaysManual 이라 자동승인 불가(2026-10-15)", () => {
+    // fail-closed 기본값과 값은 같지만 명시 등재까지 본다 — 빠져서 그렇게 된 것과 그렇게 정한 것은 다르다.
+    expect(REQUEST_TYPE_BY_ACTION.upsert_product_mappings).toBe("crm_mutation");
+    expect(getRequestTypeForAction("upsert_product_mappings")).toBe("crm_mutation");
+    const manual = approvalRulesJson.alwaysManual.map((r) => r.requestType);
+    const auto = approvalRulesJson.autoApprove.map((r) => r.requestType);
+    expect(manual).toContain("crm_mutation");
+    expect(auto).not.toContain("crm_mutation");
+    for (const kind of ["WRITE", "READ"] as const) {
+      expect(isAutoApprovable("crm_mutation", kind)).toBe(false);
+    }
+  });
+
   it("미등록 action → fail-closed로 crm_mutation을 반환한다", () => {
     expect(getRequestTypeForAction("delete_everything")).toBe("crm_mutation");
     expect(getRequestTypeForAction("")).toBe("crm_mutation");
