@@ -388,6 +388,28 @@ describe("readOrderCampaignMappings — storeOptions", () => {
     expect(result.campaigns[0].storeOptions.map((option) => option.label)).toEqual(["샘플 상품 · A"]);
   });
 
+  it("keeps an earlier sales campaign's days when a later-linked one is missing from that day's aggregate (per sales campaign)", async () => {
+    m.salesCampaignFindMany.mockResolvedValue([
+      { id: "sc-a", orderCampaignId: "oc-1", startDate: SALES_START },
+      { id: "sc-b", orderCampaignId: "oc-1", startDate: new Date("2026-10-05T00:00:00.000Z") },
+    ]);
+    m.snapshotFindMany.mockResolvedValue([
+      // 1일째: B 가 연결되기 전에 쓴 집계 — campaignIds 에 A 만 있다.
+      aggregateRow("2026-10-02", { "sc-a": [{ name: "샘플 상품 · A 옵션", quantity: 2 }, { name: "샘플 상품 · 1일째만", quantity: 1 }] }),
+      // 2일째: A·B 둘 다 덮는다.
+      aggregateRow("2026-10-06", {
+        "sc-a": [{ name: "샘플 상품 · A 옵션", quantity: 3 }],
+        "sc-b": [{ name: "샘플 상품 · A 옵션", quantity: 1 }, { name: "샘플 상품 · B 옵션", quantity: 4 }],
+      }),
+    ]);
+    const result = await readOrderCampaignMappings({ orderCampaignId: "oc-1" }, client, NOW);
+    expect(result.campaigns[0].storeOptions.map((option) => [option.label, option.quantity])).toEqual([
+      ["샘플 상품 · A 옵션", 6], // 2 (A, 1일째) + 3 (A, 2일째) + 1 (B, 2일째) — 한 번씩만
+      ["샘플 상품 · B 옵션", 4],
+      ["샘플 상품 · 1일째만", 1],
+    ]);
+  });
+
   it("points mappingIndex at the mapping whose normalized option name matches (NFD / extra spaces)", async () => {
     m.productMappingFindMany.mockResolvedValue([
       mapping({ id: "pm-1", productName: "가짜크림", optionName: "1개" }),

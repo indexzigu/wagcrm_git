@@ -121,7 +121,15 @@ function splitStoreOptionLabel(label: string): Pick<OrderCampaignStoreOption, "p
 
 /**
  * 한 주문캠페인의 스토어 옵션 — 그 캠페인에 걸린 판매캠페인들의 품목 집계를 이름별로 합쳐 수량 내림차순으로 싣는다.
- * 집계가 판매캠페인 전부를 덮지 않는 행은 건너뛴다(`campaignOrderSnapshot` 과 같은 규칙 — 블롭 폴백 없음).
+ *
+ * 판매캠페인 **하나씩** 집계한다: 집계 행이 그 판매캠페인을 덮을 때만 그 판매캠페인 몫으로 쓴다(블롭 폴백 없음).
+ * 묶음 전체로 덮기를 따지면, 나중에 연결된 판매캠페인이 없는 날(그 집계를 쓸 때 아직 없던 캠페인)의 행이 통째로
+ * 빠져 먼저 있던 판매캠페인의 옵션까지 사라진다.
+ *
+ * 수량은 판매캠페인별 합을 그대로 더한다 — `composeSalesDetailFromAggregates` 가 여러 대상을 한 번에 합칠 때와 같은
+ * 셈이다. 품목 리프는 주문키(orderKeys)는 갖지만 줄별 수량은 갖지 않아 수량을 주문키로 중복 제거할 수 없다:
+ * 한 상품주문 줄이 두 판매캠페인에 함께 귀속되는 경우(조합 캠페인)에는 그 줄 수량이 두 번 들어간다. 이 잔여는
+ * 모바일 매출 상세의 품목 수량과 같은 성질이다.
  */
 function buildStoreOptions(
   rows: ReadonlyArray<{ snapshotDate: string; aggregate: SnapshotDailyAggregate | null }>,
@@ -129,20 +137,26 @@ function buildStoreOptions(
   window: { startKey: string; todayKey: string },
   mappings: ReadonlyArray<{ optionName: string }>,
 ): { storeOptions: OrderCampaignStoreOption[]; storeOptionsTruncated: boolean } {
-  const targets = new Set(salesCampaignIds);
-  const aggregates: SnapshotDailyAggregate[] = [];
-  for (const row of rows) {
-    if (row.snapshotDate < window.startKey || row.snapshotDate > window.todayKey) continue;
-    if (row.aggregate && aggregateCoversCampaigns(row.aggregate, targets)) aggregates.push(row.aggregate);
+  const inWindow = rows.filter((row) => row.snapshotDate >= window.startKey && row.snapshotDate <= window.todayKey);
+  const quantityByLabel = new Map<string, number>();
+  for (const salesCampaignId of salesCampaignIds) {
+    const target = new Set([salesCampaignId]);
+    const aggregates: SnapshotDailyAggregate[] = [];
+    for (const row of inWindow) {
+      if (row.aggregate && aggregateCoversCampaigns(row.aggregate, target)) aggregates.push(row.aggregate);
+    }
+    const { detail } = composeSalesDetailFromAggregates(aggregates, window.todayKey, target);
+    for (const item of detail.items) {
+      quantityByLabel.set(item.name, (quantityByLabel.get(item.name) ?? 0) + item.quantity);
+    }
   }
-  const { detail } = composeSalesDetailFromAggregates(aggregates, window.todayKey, targets);
   const mappingKeys = mappings.map((mapping) => normalizeMappingOptionName(mapping.optionName));
-  const options = detail.items
-    .filter((item) => item.name !== UNNAMED_ITEM_LABEL)
-    .map((item): OrderCampaignStoreOption => {
-      const split = splitStoreOptionLabel(item.name);
+  const options = [...quantityByLabel]
+    .filter(([label]) => label !== UNNAMED_ITEM_LABEL)
+    .map(([label, quantity]): OrderCampaignStoreOption => {
+      const split = splitStoreOptionLabel(label);
       const index = split.optionName === null ? -1 : mappingKeys.indexOf(normalizeMappingOptionName(split.optionName));
-      return { label: item.name, ...split, quantity: item.quantity, mappingIndex: index >= 0 ? index : null };
+      return { label, ...split, quantity, mappingIndex: index >= 0 ? index : null };
     })
     .sort((a, b) => b.quantity - a.quantity || a.label.localeCompare(b.label, "ko"));
   return {
