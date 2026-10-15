@@ -100,7 +100,7 @@ const SELLER_BLOCK_END = "--- 셀러 채널 끝 ---";
 const SNS_LABEL: Record<string, string> = {
   INSTAGRAM: "인스타그램",
   YOUTUBE: "유튜브",
-  X: "X(트위터)",
+  X: "X(Twitter)",
   TIKTOK: "틱톡",
   BLOG: "블로그",
   NAVER_BLOG: "네이버 블로그",
