@@ -59,4 +59,12 @@ describe("get_pipeline_status 도구", () => {
     if (result.ok) throw new Error("expected error");
     expect(result.error.code).toBe("QUERY_FAILED");
   });
+
+  it.each([
+    ["Prisma 원시 쿼리 모양", Object.assign(new Error("Raw query failed"), { code: "P2010", meta: { code: "42501" } })],
+    ["드라이버 문구만", new Error('permission denied for table "SalesCampaign"')],
+  ])("권한 거부(42501)는 감싸지 않고 그대로 던진다 — 봇이 재시도 불가로 판정해야 한다 (%s)", async (_label, error) => {
+    findManyMock.mockRejectedValue(error);
+    await expect(getPipelineStatusTool.execute({})).rejects.toBe(error);
+  });
 });
