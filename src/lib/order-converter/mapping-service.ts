@@ -72,16 +72,19 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
 
   log(`Found ${candidateSalesCamps.length} candidate SalesCampaigns (>= 3 months)`);
 
-  const sellerIdBySalesCampId = new Map<string, string | null | undefined>(
-    candidateSalesCamps.map((sc) => [sc.id, sc.sellerId]),
-  );
+  // 딜(CampaignDeal) → 소속 판매캠페인·셀러. 후보 창 밖(3개월 이전 시작) 딜은 아래 3.2 에서 DB 로 보충한다.
+  type DealOwner = { salesCampaignId: string; sellerId: string | null | undefined; orderCampaignId: string | null };
+  const ownerByDealId = new Map<string, DealOwner>();
+  for (const sc of candidateSalesCamps) {
+    for (const cd of sc.campaignDeals) {
+      ownerByDealId.set(cd.id, { salesCampaignId: sc.id, sellerId: sc.sellerId, orderCampaignId: sc.orderCampaignId });
+    }
+  }
 
-  const matchedSalesCampaignIds = new Set<string>();
   // 결정과 쓰기를 분리한다 — 셀러 단일성 게이트(아래 3.5)가 "전체 거부"이려면 검사 시점에
   // 아직 아무것도 쓰여 있지 않아야 한다. 종전에는 루프 안에서 곧바로 update 를 날려, 거부
   // 판정을 넣더라도 이미 절반이 반영된 상태가 됐을 것이다.
   const pendingLinks: { mappingId: string; dealId: string }[] = [];
-  const winningSellerIds: (string | null | undefined)[] = [];
 
   for (const mapping of orderCamp.mappings) {
     log(`\n--- Evaluating Option: "${mapping.optionName}" (Price: ${mapping.price}) ---`);
@@ -146,14 +149,63 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
       log(` => Best Match for "${mapping.optionName}": CampaignDeal(${bestDealId}) in SalesCampaign(${bestSalesCampId}) with score: ${highestScore}`);
       // ⚠️ 여기서 **쓰지 않는다** — 아래 셀러 단일성 검사를 통과한 뒤 일괄 반영한다(전체 거부).
       pendingLinks.push({ mappingId: mapping.id, dealId: bestDealId });
-      matchedSalesCampaignIds.add(bestSalesCampId);
-      winningSellerIds.push(sellerIdBySalesCampId.get(bestSalesCampId));
     } else {
       log(` => No valid match found for Option "${mapping.optionName}"`);
     }
   }
 
-  // 3.5 셀러 단일성 게이트 — 옵션별 승자가 서로 다른 셀러를 가리키면 **전체 거부**한다.
+  // 3.2 최종 딜 연결 = 옵션별 승자 ?? 이미 저장된 연결(운영자가 화면에서 고른 것 포함).
+  //
+  // 판매캠페인 연결(SalesCampaign.orderCampaignId)은 이 최종 연결에서 유도한다 — 수동 저장 라우트
+  // (PUT /campaigns/[id])와 같은 규칙이다. 종전에는 "이번 실행의 승자"만 남기고 나머지를 전부 풀었는데,
+  // 승자 후보가 최근 3개월 시작분뿐이라 오래된 주문캠페인을 화면에서 저장하면 PUT 이 막 붙인 연결을
+  // 이 함수(저장 직후 백그라운드 실행)가 곧바로 전부 떼었다(T-258). 연결이 풀린 판매캠페인은 일별 주문
+  // 집계·매출 상세·주문 등록 표시에서 빠진다. 승자가 없는 옵션의 기존 연결도 같은 이유로 지킨다.
+  // ⛔ 연결 해제 기준을 다시 "이번 승자 집합"으로 되돌리지 말 것 — 후보 창(3개월)이 곧 해제 기준이 된다.
+  const winnerByMappingId = new Map(pendingLinks.map((l) => [l.mappingId, l.dealId]));
+  const finalDealIds = Array.from(
+    new Set(
+      orderCamp.mappings
+        .map((m) => winnerByMappingId.get(m.id) ?? m.campaignDealId)
+        .filter((dealId): dealId is string => !!dealId),
+    ),
+  );
+  const outsideWindowDealIds = finalDealIds.filter((dealId) => !ownerByDealId.has(dealId));
+  if (outsideWindowDealIds.length > 0) {
+    const rows = await prisma.campaignDeal.findMany({
+      where: { id: { in: outsideWindowDealIds } },
+      select: { id: true, campaignId: true, campaign: { select: { sellerId: true, orderCampaignId: true } } },
+    });
+    for (const row of rows) {
+      ownerByDealId.set(row.id, {
+        salesCampaignId: row.campaignId,
+        sellerId: row.campaign?.sellerId,
+        orderCampaignId: row.campaign?.orderCampaignId ?? null,
+      });
+    }
+    log(`Resolved ${rows.length} existing deal link(s) outside the 3-month candidate window.`);
+  }
+  // 유지분(이번 승자가 아닌 기존 연결)은 판매캠페인이 이미 **다른** 주문캠페인에 붙어 있으면 가져오지 않는다.
+  // 낡은 딜 연결이 자동 연결이 돌 때마다 연결을 되찾아, 두 주문캠페인 사이에서 판매캠페인이 오가는 것을 막는다.
+  // 다른 주문캠페인으로 옮기는 것은 운영자의 화면 저장(PUT)이나 이번 실행의 승자만 한다(종전과 같다).
+  const winnerDealIds = new Set(pendingLinks.map((l) => l.dealId));
+  const finalOwners: DealOwner[] = [];
+  for (const dealId of finalDealIds) {
+    const owner = ownerByDealId.get(dealId);
+    if (!owner) continue;
+    const ownedElsewhere = owner.orderCampaignId !== null && owner.orderCampaignId !== orderCamp.id;
+    if (ownedElsewhere && !winnerDealIds.has(dealId)) {
+      log(`    Skip kept link CampaignDeal(${dealId}): SalesCampaign(${owner.salesCampaignId}) belongs to another OrderCampaign.`);
+      continue;
+    }
+    finalOwners.push(owner);
+  }
+  const linkedSalesCampaignIds = Array.from(new Set(finalOwners.map((owner) => owner.salesCampaignId)));
+  const finalSellerIds = finalOwners.map((owner) => owner.sellerId);
+
+  // 3.5 셀러 단일성 게이트 — 최종 딜 연결(옵션별 승자 + 유지되는 기존 연결)이 서로 다른 셀러를
+  // 가리키면 **전체 거부**한다. 유지분까지 보는 이유: 승자가 셀러 A 인데 다른 옵션의 기존 연결이
+  // 셀러 B 면, 위 3.2 대로 둘 다 붙이는 순간 한 주문캠페인에 두 셀러가 생긴다.
   //
   // 왜 부분 반영이 아니라 전체 거부인가(오너 결정 2026-08-05): 옵션 승자가 셀러별로 갈렸다는
   // 것은 이 주문캠페인의 이름·옵션명이 여러 셀러의 딜과 비슷하게 읽힌다는 뜻이고, 그 상태에서
@@ -164,9 +216,9 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
   // ⛔ 이 게이트를 완화해 자동매핑을 "통과시키는" 방향으로 고치지 말 것 — 걸렸다는 건 매핑이
   // 잘못됐다는 뜻이고, 해소는 딜 연결을 한 셀러로 정리하거나 주문캠페인을 나누는 것이다.
   // 판정 규칙은 `@/lib/cross-seller` 가 SSOT 다(포털 표시 제외 게이트와 같은 규칙을 쓴다).
-  if (isCrossSellerSet(winningSellerIds)) {
-    const sellerCount = countDistinctSellerIds(winningSellerIds);
-    log(`\n⛔ REJECTED: 옵션별 승자가 서로 다른 셀러 ${sellerCount}곳을 가리킵니다. 전체 거부(쓰기 0건).`);
+  if (isCrossSellerSet(finalSellerIds)) {
+    const sellerCount = countDistinctSellerIds(finalSellerIds);
+    log(`\n⛔ REJECTED: 최종 딜 연결이 서로 다른 셀러 ${sellerCount}곳을 가리킵니다. 전체 거부(쓰기 0건).`);
     log(`   ${CROSS_SELLER_REJECT_MESSAGE}`);
     log(`\n=== [AUTO-MAP DEBUG] Finished (rejected). ===\n`);
     appendMappingDebugLog(debugLines);
@@ -175,7 +227,7 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
     // ⚠️ 셀러 실명·캠페인명을 싣지 않는다(P0, 레포 public) — 식별자만.
     console.warn(
       `[auto-map] OrderCampaign(${orderCamp.id}) 자동 매핑을 전체 거부했습니다: ` +
-        `옵션별 승자가 서로 다른 셀러 ${sellerCount}곳을 가리킵니다. ${CROSS_SELLER_REJECT_MESSAGE}`,
+        `최종 딜 연결이 서로 다른 셀러 ${sellerCount}곳을 가리킵니다. ${CROSS_SELLER_REJECT_MESSAGE}`,
     );
     return [];
   }
@@ -191,34 +243,32 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
     log(`    Linked ProductMapping(${link.mappingId}) to CampaignDeal(${link.dealId})`);
   }
 
-  // 4. SalesCampaign에 orderCampaignId 연동 (1:N 처리)
-  const matchedList = Array.from(matchedSalesCampaignIds);
-  
+  // 4. SalesCampaign에 orderCampaignId 연동 (1:N 처리) — 기준은 3.2 의 최종 딜 연결이다.
   log(`\nSyncing OrderCampaign to SalesCampaigns...`);
-  
-  // 기존에 이 주문캠페인에 묶여있었으나 이번 자동매핑으로 제외된 캠페인들의 연결 해제
+
+  // 이 주문캠페인에 묶여 있었으나 최종 딜 연결 어디에도 없는 판매캠페인만 연결 해제
   await prisma.salesCampaign.updateMany({
     where: {
       orderCampaignId: orderCamp.id,
-      ...(matchedList.length > 0 && { id: { notIn: matchedList } })
+      ...(linkedSalesCampaignIds.length > 0 && { id: { notIn: linkedSalesCampaignIds } })
     },
     data: { orderCampaignId: null }
   });
 
-  if (matchedList.length > 0) {
+  if (linkedSalesCampaignIds.length > 0) {
     await prisma.salesCampaign.updateMany({
-      where: { id: { in: matchedList } },
+      where: { id: { in: linkedSalesCampaignIds } },
       data: { orderCampaignId: orderCamp.id }
     });
-    log(`Updated ${matchedList.length} SalesCampaigns with orderCampaignId.`);
+    log(`Updated ${linkedSalesCampaignIds.length} SalesCampaigns with orderCampaignId.`);
   }
 
   log(`\n=== [AUTO-MAP DEBUG] Finished. ===\n`);
   appendMappingDebugLog(debugLines);
 
-  // 반환값: 매칭된 SalesCampaign 배열
+  // 반환값: 연결된 SalesCampaign 배열
   return prisma.salesCampaign.findMany({
-    where: { id: { in: matchedList } },
+    where: { id: { in: linkedSalesCampaignIds } },
     include: { seller: true, deal: true }
   });
 }
