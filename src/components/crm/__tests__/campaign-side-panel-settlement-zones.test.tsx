@@ -248,6 +248,50 @@ describe("부가 항목 — 대상이 곧 구간이다", () => {
 });
 
 // 수동 정산 기준액(오너 확정 2026-10-06) — 읽기·편집 두 모드의 「정산 기준액」 줄.
+// 오너 확정 2026-10-16: 「공제세액」은 세금 묶음의 이름이다. 자사 손익에서 빠지는 세금은
+// 부가세 하나뿐이고(예수금을 걷어내는 줄이라 비용색이 아니다), 개인 셀러 원천세는 셀러 몫이라
+// 차감 없이 참고 줄로만 보인다 — 셀러 구간의 원천세 줄과 같은 조건·같은 값.
+// 설계 정본: docs/private/specs/2026-10-16-settlement-tax-split-design.md §4·§7 ②
+describe("자사 손익 — 공제세액 묶음(부가세 차감 · 원천세 참고)", () => {
+  function lineOf(label: string) {
+    const row = screen.getByText(label).closest("div.grid");
+    expect(row).toBeTruthy();
+    return row as HTMLElement;
+  }
+
+  it("「공제세액 · 부가세」 줄은 비용색(money-out)이 아니라 회색이다", () => {
+    renderCard({ taxExpense: 800_000 });
+    const row = lineOf("공제세액 · 부가세");
+    expect(row.className).toContain("text-slate-500");
+    expect(row.querySelector(".text-money-out")).toBeNull();
+    expect(row.textContent).toContain("800,000원");
+  });
+
+  it("개인 셀러면 「공제세액 · 원천세」 참고 줄이 뜨고 값은 셀러 구간 원천세와 같다", () => {
+    renderCard();
+    const row = lineOf("공제세액 · 원천세");
+    expect(row.textContent).toContain("참고");
+    expect(row.querySelector(".text-money-out")).toBeNull();
+    const sellerZoneRow = lineOf("원천세 3.3% (판매대행비 + 부가 항목 합산)");
+    const amount = (el: HTMLElement) => el.textContent!.match(/[\d,]+원/)![0];
+    expect(amount(row)).toBe(amount(sellerZoneRow));
+  });
+
+  it("사업자 셀러면 원천세 참고 줄이 없다", () => {
+    renderCard({ sellerTaxType: "BUSINESS", sellerCompanyBusinessNumber: "123-45-67890" });
+    expect(screen.getByText("공제세액 · 부가세")).toBeInTheDocument();
+    expect(screen.queryByText("공제세액 · 원천세")).not.toBeInTheDocument();
+  });
+
+  it("편집 모드 라벨도 「공제세액 · 부가세」 다 — 옛 「제세공과금 (부가세 + 원천세)」은 없다", async () => {
+    renderCard();
+    fireEvent.click(await enabledEditButton());
+    expect(screen.getByLabelText("공제세액 · 부가세")).toBeInTheDocument();
+    expect(screen.queryByText(/제세공과금/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/부가세 \+ 원천세/)).not.toBeInTheDocument();
+  });
+});
+
 describe("정산 기준액 — 자동/수동", () => {
   const MIXED_DEALS: CampaignRow["campaignDeals"] = [
     { id: "cd-1", campaignId: "camp-1", dealId: "d-1", dealName: "품목 A", quantity: 1, actualSales: 20_000_000, sellerMarginRate: 10 },
