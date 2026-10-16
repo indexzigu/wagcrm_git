@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 
@@ -22,6 +22,27 @@ export function valueImportSpecifiers(source: string): string[] {
   return out;
 }
 
+/** 첫 문장이 "use client" 지시문인가. */
+export function isUseClient(source: string): boolean {
+  const sf = ts.createSourceFile("x.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const first = sf.statements[0];
+  return !!first && ts.isExpressionStatement(first) && ts.isStringLiteral(first.expression) && first.expression.text === "use client";
+}
+
+/** "use client" 파일이 desktop-dashboard(절대·상대 경로 모두)를 값으로 import 하면 true. */
+export function clientImportsDesktopDashboard(source: string): boolean {
+  return isUseClient(source) && valueImportSpecifiers(source).some((m) => /(^|\/)desktop-dashboard$/.test(m));
+}
+
+function walk(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) walk(full, out);
+    else if (/\.tsx?$/.test(name)) out.push(full);
+  }
+  return out;
+}
+
 const SERVER_ONLY = /prisma|^node:|^fs$|desktop-dashboard/;
 
 describe("dashboard-scope 클라이언트 안전", () => {
@@ -30,6 +51,19 @@ describe("dashboard-scope 클라이언트 안전", () => {
     expect(valueImportSpecifiers('import { A, type B } from "@/lib/desktop-dashboard";')).toEqual(["@/lib/desktop-dashboard"]);
     expect(valueImportSpecifiers('import type { B } from "@/lib/desktop-dashboard";')).toEqual([]);
     expect(valueImportSpecifiers('import { type B } from "@/lib/desktop-dashboard";')).toEqual([]);
+  });
+
+  it("probe: use client 파일만 잡고 서버 파일은 통과시킨다", () => {
+    const imp = 'import { getDesktopDashboardData } from "@/lib/desktop-dashboard";\n';
+    expect(clientImportsDesktopDashboard('"use client";\n' + imp)).toBe(true);
+    expect(clientImportsDesktopDashboard('"use client";\nimport { x } from "./desktop-dashboard";\n')).toBe(true);
+    expect(clientImportsDesktopDashboard(imp)).toBe(false);
+    expect(clientImportsDesktopDashboard('"use client";\nimport type { T } from "@/lib/desktop-dashboard";\n')).toBe(false);
+  });
+
+  it("src 의 모든 use client 파일이 desktop-dashboard 를 값으로 import 하지 않는다", () => {
+    const offenders = walk(join(ROOT, "src")).filter((f) => !/\.test\.tsx?$/.test(f) && clientImportsDesktopDashboard(readFileSync(f, "utf8")));
+    expect(offenders).toEqual([]);
   });
 
   it("dashboard-scope.ts 는 서버 모듈을 import 하지 않는다", () => {
