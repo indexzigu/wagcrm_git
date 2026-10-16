@@ -1378,8 +1378,7 @@ export function SellerDetailContent({
         onOpenChange={setPartnerLinkSearchOpen}
         entityType="partner"
         searchEndpoint="/api/search/partners"
-        title="연결할 거래처 검색"
-        placeholder="거래처명 검색"
+        mode="link"
         onSelect={async (item) => {
           try {
             const res = await fetch("/api/links/seller-partner", {

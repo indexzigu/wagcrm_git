@@ -83,8 +83,7 @@ export function LinkedDealsList({
           entityType="deal"
           searchEndpoint="/api/search/deals"
           excludeIds={excludeIds}
-          title="연결할 딜 검색"
-          placeholder="딜명 또는 브랜드명 검색"
+          mode="link"
           onSelect={async (item) => {
             await onLinkDeal(item.id);
             setSearchOpen(false);

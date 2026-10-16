@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LinkSearchDialog, normalizeSearchResults } from "../link-search-dialog";
 import { formatDealContextLabel } from "@/lib/deal-display";
@@ -85,7 +85,7 @@ describe("link-search-dialog deal labels", () => {
     expect(partner.sublabel).toBe("에이전트");
   });
 
-  it("renders an entity-specific dialog description", async () => {
+  it("제목·검색 안내·확인 버튼은 mode 와 대상에서 만든다(선택 = 칸 채우기·바꾸기)", async () => {
     render(
       <LinkSearchDialog
         open
@@ -93,14 +93,13 @@ describe("link-search-dialog deal labels", () => {
         entityType="seller"
         searchEndpoint="/api/search/sellers"
         onSelect={() => {}}
-        title="셀러 검색 선택"
       />,
     );
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(
-      screen.getByText("연결할 셀러를 검색하고 선택합니다."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("셀러 선택")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("셀러 이름으로 검색")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "선택" })).toBeDisabled();
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -108,5 +107,76 @@ describe("link-search-dialog deal labels", () => {
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
     });
+  });
+
+  it("목록에 하나 더 잇는 창은 「○○ 연결」 / 「연결」 이다", () => {
+    render(
+      <LinkSearchDialog
+        open
+        mode="link"
+        onOpenChange={() => {}}
+        entityType="deal"
+        searchEndpoint="/api/search/deals"
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("딜 연결")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("딜 또는 거래처 이름으로 검색")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "연결" })).toBeDisabled();
+  });
+
+  it("지금 연결된 항목은 「현재」로 표시하고, 그것을 골라도 확인할 수 없다", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { id: "s-cur", name: "지금 셀러", snsType: "INSTAGRAM", snsHandle: "cur" },
+          { id: "s-new", name: "다른 셀러", snsType: "INSTAGRAM", snsHandle: "new" },
+        ],
+      }),
+    });
+    const onSelect = vi.fn();
+    render(
+      <LinkSearchDialog
+        open
+        currentId="s-cur"
+        onOpenChange={() => {}}
+        entityType="seller"
+        searchEndpoint="/api/search/sellers"
+        onSelect={onSelect}
+      />,
+    );
+
+    const currentRow = await screen.findByRole("button", { name: /지금 셀러/ });
+    expect(currentRow).toHaveTextContent("현재");
+    fireEvent.click(currentRow);
+    expect(currentRow).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "선택" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /다른 셀러/ }));
+    fireEvent.click(screen.getByRole("button", { name: "선택" }));
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "s-new" }));
+  });
+
+  it("고른 행을 더블클릭해도 바로 확정하지 않는다(연결·변경은 즉시 저장이라 확인 버튼으로만)", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [{ id: "d1", dealName: "딜 하나", status: "CONFIRMED" }] }),
+    });
+    const onSelect = vi.fn();
+    render(
+      <LinkSearchDialog
+        open
+        mode="link"
+        onOpenChange={() => {}}
+        entityType="deal"
+        searchEndpoint="/api/search/deals"
+        onSelect={onSelect}
+      />,
+    );
+
+    fireEvent.doubleClick(await screen.findByRole("button", { name: /딜 하나/ }));
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

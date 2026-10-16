@@ -10,16 +10,11 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import {
   type CampaignRow,
   type CampaignStatus,
@@ -29,6 +24,7 @@ import {
 } from "@/lib/crm-types";
 import { EntityIdentity } from "./entity-identity";
 import { EntityLinkSelectField } from "./entity-link-select-field";
+import { FormDialogFrame } from "./form-dialog-frame";
 import { LinkSearchDialog } from "./link-search-dialog";
 import { SellerIdentityInfo } from "./seller-identity-info";
 
@@ -72,11 +68,10 @@ export function CampaignCreationSheet({
   defaultStatus,
   lockedDealId,
 }: CampaignCreationSheetProps) {
-  const firstDeal = lockedDealId ?? data.deals[0]?.id ?? "";
-  const firstSeller = data.sellers[0]?.id ?? "";
-
-  const [dealId, setDealId] = useState(firstDeal);
-  const [sellerId, setSellerId] = useState(firstSeller);
+  // ⛔ 목록 첫 항목(updatedAt 최신 = 수집 잡이 마지막에 건드린 셀러·딜)을 미리 고르지 말 것 —
+  // 오너가 그것을 「추천」이나 「이전 기록」으로 읽었다(2026-10-16). 딜 화면에서 그 딜로 만들 때만 고정한다.
+  const [dealId, setDealId] = useState(lockedDealId ?? "");
+  const [sellerId, setSellerId] = useState("");
   const [salesChannel, setSalesChannel] = useState<SalesChannel>("UNSPECIFIED");
   const [status, setStatus] = useState<CampaignStatus>(defaultStatus ?? "PROPOSAL");
   const [startDate, setStartDate] = useState(today());
@@ -95,11 +90,9 @@ export function CampaignCreationSheet({
   // Reset form state when sheet opens
   useEffect(() => {
     if (open) {
-      const initialDeal = lockedDealId ?? data.deals[0]?.id ?? "";
-      const initialSeller = data.sellers[0]?.id ?? "";
       // Intentional reset when the sheet is reopened or preset inputs change.
-      setDealId(initialDeal);
-      setSellerId(initialSeller);
+      setDealId(lockedDealId ?? "");
+      setSellerId("");
       setSalesChannel("UNSPECIFIED");
       setStatus(defaultStatus ?? "PROPOSAL");
       setStartDate(today());
@@ -179,121 +172,115 @@ export function CampaignCreationSheet({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0 overflow-hidden flex flex-col max-h-[85vh]">
-          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
-            <DialogTitle>새 캠페인 추가</DialogTitle>
-            <DialogDescription>
-              영업 테스크 승인 전 예외적으로 캠페인을 직접 생성합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Radix ScrollArea 대신 네이티브 스크롤 — Radix 는 네이티브 스크롤바를 숨겨
-              Windows(비오버레이 스크롤바)에서 "잘렸는데 스크롤바가 없는" 상태가 된다
-              (PR #57 과 동일 원인). 내용이 정적 폼이라 고정 높이는 과잉 — max-h 를
-              유지하고 스크롤 수단만 네이티브로 바꾼다. scrollbar-gutter 는 스크롤바
-              등장 시 폭 흔들림 방지. */}
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5 [scrollbar-gutter:stable]">
-            <FieldGroup className="gap-4">
-              <div className="rounded-xl border border-border bg-card p-5 shadow-soft-sm flex flex-col gap-4">
-                <div className="text-sm font-semibold text-foreground">핵심 연결 정보</div>
-                <div className="flex flex-col gap-3">
-                  <EntityLinkSelectField
-                    selected={!!selectedDeal}
-                    emptyText="선택된 딜 없음"
-                    actionLabel="딜 선택"
-                    changeLabel="딜 변경"
-                    disabled={!!lockedDealId}
-                    onOpen={() => setIsDealSearchOpen(true)}
-                    selectedContent={
-                      <EntityIdentity
-                        variant="heading"
-                        parts={[
-                          { label: "딜", value: selectedDeal?.dealName ?? "로딩 중..." },
-                          ...(selectedDeal?.partner?.name
-                            ? [{ label: "거래처", value: selectedDeal.partner.name }]
-                            : []),
-                        ]}
-                      />
-                    }
-                  />
-
-                  <EntityLinkSelectField
-                    selected={!!selectedSeller}
-                    emptyText="선택된 셀러 없음"
-                    actionLabel="셀러 검색 선택"
-                    changeLabel="셀러 변경"
-                    onOpen={() => setIsSellerSearchOpen(true)}
-                    selectedContent={
-                      <SellerIdentityInfo
-                        sellerName={selectedSeller?.alias || selectedSeller?.name || "로딩 중..."}
-                        snsHandle={selectedSeller?.snsHandle ?? null}
-                        snsType={selectedSeller?.snsType ?? null}
-                        variant="heading"
-                      />
-                    }
-                  />
-                </div>
-
-                <Field>
-                  <div className="flex w-full items-center justify-between mb-1.5">
-                    <FieldLabel className="mb-0">캠페인명</FieldLabel>
-                    <Badge variant="secondary" className="h-5 px-1.5 py-0 font-medium text-[10px] bg-slate-100 text-slate-600">자동조합</Badge>
-                  </div>
-                  <Input
-                    value={defaultCampaignName}
-                    disabled
-                    placeholder="딜과 셀러 선택 시 자동으로 조합됩니다."
-                    className="cursor-not-allowed bg-slate-50"
-                  />
-                  <FieldDescription className="text-xs">
-                    셀러 별칭이 있으면 캠페인명에도 별칭을 우선 사용합니다.
-                  </FieldDescription>
-                </Field>
-              </div>
-
-              <div className="rounded-xl border border-border bg-card p-5 shadow-soft-sm flex flex-col gap-4">
-                <div className="text-sm font-semibold text-foreground">운영 기간</div>
-                <div className="grid gap-3 grid-cols-2">
-                  <Field>
-                    <FieldLabel>시작일</FieldLabel>
-                    <Input
-                      type="date"
-                      value={startDate}
-                      onChange={(event) => setStartDate(event.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>마감일</FieldLabel>
-                    <Input
-                      type="date"
-                      value={endDate}
-                      onChange={(event) => setEndDate(event.target.value)}
-                    />
-                  </Field>
-                </div>
-              </div>
-            </FieldGroup>
-
-          </div>
-
-          {/* 오류는 스크롤 영역 밖 고정 스트립 — 본문을 내려봐도 실패 사유가 항상 보인다(PR #57 관례). */}
-          {error && (
-            <Alert variant="destructive" className="mx-6 shrink-0">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <DialogFooter className="shrink-0 border-t border-border/70 p-6 bg-slate-50/50 mx-0 mb-0">
-            <div className="flex w-full items-center justify-end gap-3">
+        <FormDialogFrame
+          title="신규 캠페인 등록"
+          description="영업 테스크 승인 전 예외적으로 캠페인을 직접 생성합니다."
+          error={
+            error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null
+          }
+          footer={
+            <>
+              {!saving && (!dealId || !sellerId) ? (
+                <span className="mr-auto text-xs text-muted-foreground">
+                  딜과 셀러를 골라야 등록할 수 있습니다.
+                </span>
+              ) : null}
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 취소
               </Button>
               <Button size="sm" onClick={createCampaign} disabled={isSubmitDisabled}>
-                {saving ? "저장 중..." : "캠페인 생성"}
+                {saving ? "등록 중..." : "등록"}
               </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
+            </>
+          }
+        >
+          <FieldGroup className="gap-7">
+            <FieldSet>
+              <FieldLegend>딜과 셀러</FieldLegend>
+              <EntityLinkSelectField
+                label="딜"
+                required
+                selected={!!selectedDeal}
+                emptyText="선택된 딜 없음"
+                actionLabel="딜 선택"
+                changeLabel="딜 변경"
+                disabled={!!lockedDealId}
+                onOpen={() => setIsDealSearchOpen(true)}
+                selectedContent={
+                  <EntityIdentity
+                    variant="heading"
+                    parts={[
+                      { label: "딜", value: selectedDeal?.dealName ?? "로딩 중..." },
+                      ...(selectedDeal?.partner?.name
+                        ? [{ label: "거래처", value: selectedDeal.partner.name }]
+                        : []),
+                    ]}
+                  />
+                }
+              />
+
+              <EntityLinkSelectField
+                label="셀러"
+                required
+                selected={!!selectedSeller}
+                emptyText="선택된 셀러 없음"
+                actionLabel="셀러 선택"
+                changeLabel="셀러 변경"
+                onOpen={() => setIsSellerSearchOpen(true)}
+                selectedContent={
+                  <SellerIdentityInfo
+                    sellerName={selectedSeller?.alias || selectedSeller?.name || "로딩 중..."}
+                    snsHandle={selectedSeller?.snsHandle ?? null}
+                    snsType={selectedSeller?.snsType ?? null}
+                    variant="heading"
+                  />
+                }
+              />
+
+              <Field>
+                <div className="flex w-full items-center justify-between">
+                  <FieldLabel>캠페인명</FieldLabel>
+                  <Badge variant="secondary" className="h-5 px-1.5 py-0 font-medium text-[10px] bg-slate-100 text-slate-600">자동 생성</Badge>
+                </div>
+                <Input
+                  value={defaultCampaignName}
+                  disabled
+                  placeholder="딜과 셀러를 고르면 자동으로 조합됩니다."
+                  className="cursor-not-allowed bg-slate-50"
+                />
+                <FieldDescription>
+                  셀러 별칭이 있으면 캠페인명에도 별칭을 우선 사용합니다.
+                </FieldDescription>
+              </Field>
+            </FieldSet>
+
+            <FieldSet>
+              <FieldLegend>운영 기간</FieldLegend>
+              <div className="grid grid-cols-2 gap-3">
+                <Field>
+                  <FieldLabel>시작일</FieldLabel>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>마감일</FieldLabel>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                  />
+                </Field>
+              </div>
+            </FieldSet>
+          </FieldGroup>
+        </FormDialogFrame>
       </Dialog>
     <LinkSearchDialog
       open={isDealSearchOpen}
@@ -325,8 +312,7 @@ export function CampaignCreationSheet({
           ]);
         }
       }}
-      title="딜 선택"
-      placeholder="검색할 딜 또는 거래처 이름을 입력하세요"
+      currentId={dealId || undefined}
     />
     <LinkSearchDialog
       open={isSellerSearchOpen}
@@ -349,8 +335,7 @@ export function CampaignCreationSheet({
           ]);
         }
       }}
-      title="셀러 검색 선택"
-      placeholder="검색할 셀러 이름을 입력하세요"
+      currentId={sellerId || undefined}
     />
     </>
   );

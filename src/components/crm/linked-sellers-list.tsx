@@ -75,8 +75,7 @@ export function LinkedSellersList({
           entityType="seller"
           searchEndpoint="/api/search/sellers"
           excludeIds={excludeIds}
-          title="연결할 셀러 검색"
-          placeholder="셀러명 검색"
+          mode="link"
           onSelect={async (item) => {
             await onLinkSeller(item.id);
             setSearchOpen(false);

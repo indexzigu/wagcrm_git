@@ -78,9 +78,9 @@ describe("BulkComboCampaignDialog — 검증 게이트", () => {
     render(
       <BulkComboCampaignDialog data={makeData()} open onOpenChange={noop} onCreated={noop} />,
     );
-    expect(screen.getByText("조합 캠페인 만들기")).toBeInTheDocument();
+    expect(screen.getByText("조합 캠페인 등록")).toBeInTheDocument();
     expect(screen.getByText("먼저 셀러를 선택하세요")).toBeInTheDocument();
-    const submit = screen.getByRole("button", { name: "0개 캠페인 만들기" });
+    const submit = screen.getByRole("button", { name: "캠페인 등록" });
     expect(submit).toBeDisabled();
   });
 
@@ -88,17 +88,17 @@ describe("BulkComboCampaignDialog — 검증 게이트", () => {
     render(
       <BulkComboCampaignDialog data={makeData()} open onOpenChange={noop} onCreated={noop} />,
     );
-    fireEvent.click(screen.getByText("셀러 검색 선택"));
+    fireEvent.click(screen.getByText("셀러 선택"));
     fireEvent.click(screen.getByText("MOCK_PICK_SELLER"));
 
     // 셀러 선택 → 딜 체크박스 노출
     const checkboxes = screen.getAllByRole("checkbox");
     expect(checkboxes).toHaveLength(3);
-    expect(screen.getByText("조합은 딜 2개 이상이 필요합니다")).toBeInTheDocument();
+    expect(screen.getByText("셀러와 딜 2개 이상을 골라야 등록할 수 있습니다.")).toBeInTheDocument();
 
     // 딜 1개만 선택 → 여전히 비활성
     fireEvent.click(checkboxes[0]);
-    expect(screen.getByRole("button", { name: "1개 캠페인 만들기" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "캠페인 등록" })).toBeDisabled();
   });
 
   it("딜 2개 이상 선택 시 제출이 활성화되고 bulk-combo로 원자 제출한다", async () => {
@@ -121,14 +121,14 @@ describe("BulkComboCampaignDialog — 검증 게이트", () => {
         onCreated={onCreated}
       />,
     );
-    fireEvent.click(screen.getByText("셀러 검색 선택"));
+    fireEvent.click(screen.getByText("셀러 선택"));
     fireEvent.click(screen.getByText("MOCK_PICK_SELLER"));
 
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[0]);
     fireEvent.click(checkboxes[1]);
 
-    const submit = screen.getByRole("button", { name: "2개 캠페인 만들기" });
+    const submit = screen.getByRole("button", { name: "2개 캠페인 등록" });
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
 

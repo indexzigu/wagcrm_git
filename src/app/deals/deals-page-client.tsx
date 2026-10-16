@@ -25,13 +25,8 @@ import type { DealStatus } from "@/lib/crm-types";
 import { FilterPopover, type FilterFieldConfig } from "@/components/crm/filter-popover";
 import { CSVImportDialog } from "@/components/crm/csv-import-dialog";
 import { DealCreationForm } from "@/components/crm/deal-creation-form";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { FormDialogFrame } from "@/components/crm/form-dialog-frame";
+import { Dialog } from "@/components/ui/dialog";
 import { dealStatusLabels } from "@/lib/crm-types";
 
 // Filter config for deals (lifted from DealsGrid)
@@ -365,18 +360,15 @@ export function DealsPageClient({
 
         {/* New Deal Registration Dialog */}
         <Dialog open={newDealDialogOpen} onOpenChange={setNewDealDialogOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>신규 딜 등록</DialogTitle>
-              <DialogDescription>
-                거래처 제안에 대한 딜을 빠르게 등록합니다.
-              </DialogDescription>
-            </DialogHeader>
-              <DealCreationForm
-                onSuccess={handleNewDealSuccess}
-                onCancel={() => setNewDealDialogOpen(false)}
-              />
-          </DialogContent>
+          <FormDialogFrame
+            title="신규 딜 등록"
+            description="거래처 제안에 대한 딜을 빠르게 등록합니다."
+          >
+            <DealCreationForm
+              onSuccess={handleNewDealSuccess}
+              onCancel={() => setNewDealDialogOpen(false)}
+            />
+          </FormDialogFrame>
         </Dialog>
 
         {/* CSV Import Dialog */}

@@ -1,5 +1,6 @@
 "use client";
 
+import { FormDialogActions, FormDialogFrame } from "./form-dialog-frame";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, RefreshCw, Trash2, X, HelpCircle, Archive, ExternalLink, FileText, Upload } from "lucide-react";
@@ -40,13 +41,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import {
   Accordion,
   AccordionContent,
@@ -597,7 +592,7 @@ export function PartnersPanel({
       <div className="flex flex-col gap-5">
         <FieldGroup>
           <FieldSet>
-            <FieldLegend>핵심 식별 정보</FieldLegend>
+            <FieldLegend>기본 정보</FieldLegend>
             <Field data-invalid={!!createErrors.name}>
               {/* 등록 폼은 한 번에 하나만 열리므로(데스크톱 Dialog / 모바일 Drawer 택일) 고정 id 로 라벨을 잇는다. */}
               <FieldLabel htmlFor="partner-create-name">
@@ -666,7 +661,7 @@ export function PartnersPanel({
           </FieldSet>
 
           <FieldSet>
-            <FieldLegend>운영 보강 정보</FieldLegend>
+            <FieldLegend>추가 정보</FieldLegend>
             <Field data-invalid={!!createErrors.businessNumber}>
               <FieldLabel htmlFor="partner-create-business-number">사업자번호</FieldLabel>
               <div className="flex items-center gap-2">
@@ -796,7 +791,7 @@ export function PartnersPanel({
           </FieldSet>
         </FieldGroup>
 
-        <div className="flex items-center justify-end gap-3 border-t border-border/70 pt-4">
+        <FormDialogActions className="mt-1">
           <Button
             variant="outline"
             size="sm"
@@ -810,24 +805,20 @@ export function PartnersPanel({
             onClick={() => void handleCreateSubmit()}
             disabled={createSubmitting}
           >
-            {createSubmitting ? "저장 중..." : "저장"}
+            {createSubmitting ? "등록 중..." : "등록"}
           </Button>
-        </div>
+        </FormDialogActions>
       </div>
     );
 
     const createPanel = isDesktop ? (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0 overflow-hidden flex flex-col max-h-[85vh]">
-          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
-            <DialogTitle>신규 거래처 등록</DialogTitle>
-            <DialogDescription>
-              영업과 정산에서 사용할 거래처 식별 정보를 등록합니다.
-            </DialogDescription>
-          </DialogHeader>
-          {/* scrollbar-gutter: 내용이 85vh를 넘겨 스크롤바가 등장할 때 폭 흔들림 방지(PR #57 관례). */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-7 [scrollbar-gutter:stable]">{createBody}</div>
-        </DialogContent>
+        <FormDialogFrame
+          title="신규 거래처 등록"
+          description="영업과 정산에서 사용할 거래처 식별 정보를 등록합니다."
+        >
+          {createBody}
+        </FormDialogFrame>
       </Dialog>
     ) : (
       <Drawer open={open} onOpenChange={onOpenChange}>
@@ -1566,8 +1557,7 @@ export function PartnersPanel({
         entityType="deal"
         searchEndpoint="/api/search/deals"
         searchParams={{ excludePartnerId: partner.id }}
-        title="연결할 딜 검색"
-        placeholder="딜명 또는 브랜드명 검색"
+        mode="link"
         onSelect={(item) => {
           void handleLinkDealSelection(item);
         }}
@@ -1583,8 +1573,6 @@ export function PartnersPanel({
         entityType="partner"
         searchEndpoint="/api/search/partners"
         excludeIds={[partner.id]}
-        title="다른 거래처 검색"
-        placeholder="거래처명 검색"
         onSelect={(item) => {
           void handleChangeDealPartner(item);
         }}
@@ -1632,8 +1620,7 @@ export function PartnersPanel({
         entityType="seller"
         searchEndpoint="/api/search/sellers"
         excludeIds={linkedSellers.map((s) => s.id)}
-        title="연결할 셀러 검색"
-        placeholder="셀러명 또는 SNS 핸들 검색"
+        mode="link"
         onSelect={(item) => {
           void handleSellerLinkSelection(item);
         }}

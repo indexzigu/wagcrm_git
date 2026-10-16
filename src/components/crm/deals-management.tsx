@@ -21,13 +21,8 @@ import { CrmShell } from "./crm-shell";
 import { DataSourceBanner } from "./data-source-banner";
 import { InlineDataGrid, type GridColumn } from "./inline-data-grid";
 import { DealCreationForm } from "./deal-creation-form";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { FormDialogFrame } from "./form-dialog-frame";
+import { Dialog } from "@/components/ui/dialog";
 
 type PartnerOption = {
   id: string;
@@ -256,18 +251,15 @@ export function DealsManagement({
 
     {/* New Deal Registration Dialog */}
     <Dialog open={newDealSheetOpen} onOpenChange={setNewDealSheetOpen}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>신규 딜 등록</DialogTitle>
-          <DialogDescription>
-            거래처 제안에 대한 딜을 빠르게 등록합니다.
-          </DialogDescription>
-        </DialogHeader>
-          <DealCreationForm
-            onSuccess={handleNewDealSuccess}
-            onCancel={() => setNewDealSheetOpen(false)}
-          />
-      </DialogContent>
+      <FormDialogFrame
+        title="신규 딜 등록"
+        description="거래처 제안에 대한 딜을 빠르게 등록합니다."
+      >
+        <DealCreationForm
+          onSuccess={handleNewDealSuccess}
+          onCancel={() => setNewDealSheetOpen(false)}
+        />
+      </FormDialogFrame>
     </Dialog>
     </>
   );
