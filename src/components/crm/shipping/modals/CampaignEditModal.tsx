@@ -133,7 +133,8 @@ export default function CampaignEditModal({
   ) || [];
 
   // 딜 등록가 조회표 — 옵션가(스토어 실판매가)와의 교차검증(가격 확인 배지)용.
-  // campaigns-handler 는 egress 절감으로 campaignDeals 를 싣지 않으므로(#137·#151)
+  // campaigns-handler 는 egress 절감으로 campaignDeals 에 딜 정보(deal)를 싣지 않으므로(#137·#151 —
+  // #136 부터는 요율 스칼라만 싣는다, 위 availableDeals 주석)
   // 추천 응답(recommended-deals)의 dealPrice 가 모달이 딜 가격을 아는 유일한 경로다.
   // ⚠️ 이 맵은 최근 추천 후보(3개월 창·기간 게이트 통과·top-10+기간일치 보강)에 한정된다 —
   // 연결 딜이 그 밖(예: 3개월 창 밖 회차)이면 가격이 달라도 배지가 안 뜬다. 배지 부재를
