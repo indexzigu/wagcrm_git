@@ -163,6 +163,45 @@ describe("사이드바 peek — 호버와 포커스는 하나의 합성 조건�
     });
   });
 
+  /**
+   * ⛔ 마우스로 메뉴를 누르면 그 항목에 포커스가 **남는다**(클라이언트 이동은 포커스를
+   * 옮기지 않는다). 그 포커스까지 "키보드로 읽는 중"으로 세면, 메뉴를 한 번 누른 뒤로는
+   * 마우스가 나가도 사이드바가 영영 안 접힌다(오너 보고 2026-10-16).
+   */
+  it("⛔ 마우스로 눌러 생긴 포커스는 접힘을 막지 않는다", () => {
+    withFakeTimers(() => {
+      const { root, bar } = renderHarness();
+      const item = screen.getByRole("button", { name: "대시보드" });
+      fireEvent.mouseEnter(bar);
+      fireEvent.pointerDown(item);
+      fireEvent.focus(item);
+      fireEvent.mouseLeave(bar);
+      act(() => {
+        vi.advanceTimersByTime(SIDEBAR_PEEK_CLOSE_DELAY_MS + 1);
+      });
+      expect(stateOf(root)).toBe("collapsed");
+    });
+  });
+
+  it("마우스로 누른 뒤 Tab 으로 옮긴 포커스는 다시 접힘을 막는다", () => {
+    withFakeTimers(() => {
+      const { root, bar } = renderHarness();
+      const item = screen.getByRole("button", { name: "대시보드" });
+      fireEvent.mouseEnter(bar);
+      fireEvent.pointerDown(item);
+      fireEvent.focus(item);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      fireEvent.focus(item); // 포인터 없이 온 포커스 = 키보드
+      fireEvent.mouseLeave(bar);
+      act(() => {
+        vi.advanceTimersByTime(SIDEBAR_PEEK_CLOSE_DELAY_MS * 4);
+      });
+      expect(stateOf(root)).toBe("expanded");
+    });
+  });
+
   it("마우스 없이 포커스만으로도 펼쳐진다 (키보드 전용 사용자)", () => {
     const { root } = renderHarness();
     fireEvent.focus(screen.getByRole("button", { name: "대시보드" }));

@@ -80,6 +80,12 @@ function useSidebar() {
  * 마우스만 치웠을 때 **키보드로 라벨을 읽는 도중 패널이 닫힌다**(ss-ux 검토 P0,
  * 계약 `sidebar-peek.test.tsx`).
  *
+ * ⛔ **마우스로 눌러 생긴 포커스는 "포커스가 안에 있음"으로 세지 않는다.** 메뉴를
+ * 클릭하면 그 항목에 포커스가 남는데(클라이언트 이동은 포커스를 옮기지 않는다), 그것까지
+ * 세면 메뉴를 한 번 누른 뒤로는 마우스가 나가도 영영 안 접힌다(2026-10-16 오너 보고).
+ * 포인터가 눌린 직후 같은 작업 안에서 온 포커스만 마우스발로 보고, 이후 Tab 으로 온
+ * 포커스는 다시 키보드 보호 대상이 된다.
+ *
  * 두 조건을 ref 로 드는 것은 의도다 — 렌더에 직접 쓰이지 않고(렌더는 provider 의
  * `open` 이 소유한다) 타이머 콜백이 **최신 값**을 봐야 하므로, state 로 두면 클로저가
  * 낡은 값을 잡는다.
@@ -88,6 +94,7 @@ function useSidebarPeek() {
   const { setOpen } = useSidebar()
   const hovering = React.useRef(false)
   const focusInside = React.useRef(false)
+  const pointerPressed = React.useRef(false)
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clear = React.useCallback(() => {
@@ -122,8 +129,15 @@ function useSidebarPeek() {
         hovering.current = false
         sync()
       },
+      onPointerDownCapture: () => {
+        pointerPressed.current = true
+        // 포커스는 pointerdown 과 같은 작업 안에서 온다 — 다음 작업에선 표식을 지운다.
+        setTimeout(() => {
+          pointerPressed.current = false
+        }, 0)
+      },
       onFocusCapture: () => {
-        focusInside.current = true
+        focusInside.current = !pointerPressed.current
         sync()
       },
       onBlurCapture: (event: React.FocusEvent<HTMLElement>) => {
