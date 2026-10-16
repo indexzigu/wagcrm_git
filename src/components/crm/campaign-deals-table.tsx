@@ -542,7 +542,7 @@ export function CampaignDealsTable({
                     <tr className="border-b border-border/70 bg-slate-50/60 text-[10px] font-semibold text-muted-foreground">
                       <th className="w-[34%] whitespace-nowrap px-3 py-2">구성</th>
                       <th className="w-[9%] whitespace-nowrap pl-2 pr-[15px] py-2 text-right">주문수량</th>
-                      <th className="w-[12%] whitespace-nowrap px-2 py-2 text-right">거래금액</th>
+                      <th className="w-[12%] whitespace-nowrap px-2 py-2 text-right">총거래액</th>
                       <th className="w-[12%] whitespace-nowrap px-2 py-2 text-right">수수료매출</th>
                       <th className="w-[12%] whitespace-nowrap px-2 py-2 text-right">셀러지급액</th>
                       <th className="w-[12%] whitespace-nowrap px-2 py-2 text-right">영업이익</th>

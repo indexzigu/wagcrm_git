@@ -137,7 +137,7 @@ const DEFAULT_COLUMNS: { field: SortField; label: string; width: string }[] = [
   { field: "startDate", label: "시작일", width: "w-[100px]" },
   { field: "endDate", label: "종료일", width: "w-[100px]" },
   { field: "actualSales", label: "총거래액", width: "w-[120px]" },
-  { field: "netMarginRate", label: "마진율", width: "w-[90px]" },
+  { field: "netMarginRate", label: "순수수료율", width: "w-[90px]" },
 ];
 
 const SETTLEMENT_COLUMNS: { field: SortField; label: string; width: string }[] = [

@@ -293,7 +293,9 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
   "fallback | lib/content-guide.ts | EVIDENCE_LABEL[claim.evidenceType] ?? claim.evidenceType":
     "이 근거 카드는 콘텐츠 가이드 본문에 붙어 **저장**된다 — 「—」로 바꾸면 무엇이었는지 영구히 잃는다. 지금 오는 값(MEASURED·USER_PROVIDED)은 표에 다 있고 NEEDS_SOURCE 는 앞에서 걸러진다.",
   "oldMoneyTerm | lib/settlement-statement.ts | 판매대행비":
-    "셀러에게 나가는 정산서(개인 셀러 지급 서식)의 항목명이다 — 오너 화면이 아니라 셀러가 받는 문서의 용어라 오너 확정 없이 바꾸지 않는다(돈 낱말 통일은 오너 화면 대상).",
+    "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후. 키가 낱말 단위라 이 파일의 다른 옛 이름은 여전히 잡힌다.",
+  "oldMoneyTerm | lib/settlement-statement.ts | 총 거래액":
+    "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후(위 판매대행비와 같은 사유).",
   "oldMoneyTerm | lib/tax-invoice-mail/receipt-similarity.ts | 매출":
     "화면 라벨이 아니라 영수증 품목명 유사도 판정용 키워드다(바꾸면 판정이 달라진다).",
   "rawField | components/crm/link-search-dialog.tsx | {meta.status}":

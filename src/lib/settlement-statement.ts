@@ -682,7 +682,7 @@ function buildCampaignHtml(campaign: CampaignRow, isIndividual: boolean) {
             ${stmtHeadCell("품목명", 0)}
             ${stmtHeadCell("판매가", 1)}
             ${stmtHeadCell("수량", 2)}
-            ${stmtHeadCell("총거래액", 3)}
+            ${stmtHeadCell("총 거래액", 3)}
             ${stmtHeadCell("수수료율", 4)}
             ${stmtHeadCell("공급가액", 5)}
             ${stmtHeadCell("부가세액", 6)}
