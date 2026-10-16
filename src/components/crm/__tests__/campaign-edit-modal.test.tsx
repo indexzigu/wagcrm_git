@@ -214,3 +214,45 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
     expect(screen.queryByText(/가격 확인/)).not.toBeInTheDocument();
   });
 });
+
+// 실사고 회귀: 주문관리 목록 응답(campaigns-handler)은 egress 절감으로 campaignDeals 를
+// 요율 스칼라만 싣는다(`{ sellerMarginRate }` — `deal`·`id` 없음). 모달이 그 항목마다 딜 이름을
+// 만들다 `undefined.parentDealId` 로 죽어 수정 창이 열리지 않았다. 딜 정보가 없는 항목은 건너뛴다.
+describe("CampaignEditModal 연결 딜 정보가 없는 목록 응답", () => {
+  it("campaignDeals 에 deal 이 없어도 수정 창이 열리고, 연결 딜 묶음은 만들지 않는다", async () => {
+    render(
+      <CampaignEditModal
+        campaign={campaign({
+          salesCampaigns: [{ id: "sales-1", campaignDeals: [{ sellerMarginRate: 0.1 }] }],
+        })}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "매출전송" })).toBeInTheDocument();
+    expect(document.querySelector('optgroup[label="연결된 캠페인"]')).toBeNull();
+  });
+
+  it("딜 정보가 있는 항목은 그대로 연결 딜 묶음에 이름으로 남는다", async () => {
+    render(
+      <CampaignEditModal
+        campaign={campaign({
+          salesCampaigns: [
+            { id: "sales-1", campaignDeals: [{ sellerMarginRate: 0.1 }, { id: "deal-1", deal: { dealName: "테스트 딜" } }] },
+          ],
+        })}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    const group = await waitFor(() => {
+      const el = document.querySelector('optgroup[label="연결된 캠페인"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    const options = [...group.querySelectorAll("option")].map((o) => [o.getAttribute("value"), o.textContent]);
+    expect(options).toEqual([["deal-1", "테스트 딜"]]);
+  });
+});

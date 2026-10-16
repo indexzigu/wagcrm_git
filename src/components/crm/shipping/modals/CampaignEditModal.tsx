@@ -120,14 +120,16 @@ export default function CampaignEditModal({
     }
   };
 
+  // ⚠️ 주문관리 목록 응답(campaigns-handler)의 campaignDeals 는 egress 절감으로 요율 스칼라만
+  // 싣는다(`{ sellerMarginRate }` — deal·id 없음, #136). 딜 정보가 없는 항목은 건너뛴다 —
+  // 그대로 이름을 만들면 `undefined.parentDealId` 로 수정 창 전체가 죽는다(회귀 테스트로 고정).
   const availableDeals = campaign.salesCampaigns?.flatMap((sc: any) =>
-    sc.campaignDeals?.map((cd: any) => {
-      const finalName = getDisplayDealName(cd.deal) || '이름없음';
-      return {
+    (sc.campaignDeals || [])
+      .filter((cd: any) => cd?.deal)
+      .map((cd: any) => ({
         id: cd.id,
-        name: finalName
-      };
-    }) || []
+        name: getDisplayDealName(cd.deal) || '이름없음',
+      }))
   ) || [];
 
   // 딜 등록가 조회표 — 옵션가(스토어 실판매가)와의 교차검증(가격 확인 배지)용.
