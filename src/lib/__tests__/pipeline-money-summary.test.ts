@@ -56,4 +56,12 @@ describe("summarizePipelineMoney", () => {
       grossProfit: 0,
     });
   });
+
+  it("폴백 합계가 소수 원이면 원 단위로 반올림한다", () => {
+    const s = summarizePipelineMoney([
+      row({ actualSales: 1_111_111, totalMarginRate: 30, sellerMarginRate: 20 }),
+    ]);
+    for (const v of Object.values(s)) expect(Number.isInteger(v)).toBe(true);
+    expect(s.commissionRevenue).toBe(333_333);
+  });
 });

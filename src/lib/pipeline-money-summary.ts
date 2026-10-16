@@ -47,5 +47,11 @@ export function summarizePipelineMoney(rows: PipelineMoneyRow[]): PipelineMoneyS
     sum.sellerPayout += m.sellerPayoutAmount;
     sum.grossProfit += m.netMarginAmount;
   }
-  return sum;
+  // 폴백 행은 소수 원이 나올 수 있다 — 합계는 한 번만 반올림해 화면에 소수가 안 보이게 한다.
+  return {
+    grossMerchandise: Math.round(sum.grossMerchandise),
+    commissionRevenue: Math.round(sum.commissionRevenue),
+    sellerPayout: Math.round(sum.sellerPayout),
+    grossProfit: Math.round(sum.grossProfit),
+  };
 }
