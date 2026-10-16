@@ -19,7 +19,7 @@ export default function manifest(): MetadataRoute.Manifest {
     // hex 하드코딩은 P8 "hex 금지, 토큰 사용" 의 예외가 아니라 그 규칙이 닿지 않는
     // 표면이다: manifest 는 빌드 시 JSON 으로 직렬화되어 CSS 컨텍스트 밖에서 OS 가
     // 읽으므로 var(--primary) 를 해석할 주체가 없다(파비콘 SVG 와 같은 이유).
-    background_color: "#0A3D62",
+    background_color: "#0F5F67",
     // theme_color 는 브라우저/OS 크롬 색이라 background_color 와 역할이 다르다 —
     // 의도적으로 #080B11 을 유지한다. 이 값은 mobile-standalone-gate.tsx 의
     // bg-[#080B11] 과 맞물려 있어(설치 전 안내 화면), 네이비로 바꾸면 그 화면에서
