@@ -1348,6 +1348,7 @@ export function CampaignSidePanel({
           open={isDealSearchOpen}
           onOpenChange={setIsDealSearchOpen}
           entityType="deal"
+          currentId={campaign?.dealId}
           searchEndpoint="/api/search/deals"
           onSelect={async (item) => {
             const result = await saveCampaignField(campaign.id, "dealId", item.id);
@@ -1358,12 +1359,12 @@ export function CampaignSidePanel({
               if (result.data) onCampaignUpdated(result.data);
             }
           }}
-          title="딜 검색"
         />
         <LinkSearchDialog
           open={isSellerSearchOpen}
           onOpenChange={setIsSellerSearchOpen}
           entityType="seller"
+          currentId={campaign?.sellerId}
           searchEndpoint="/api/search/sellers"
           onSelect={async (item) => {
             const result = await saveCampaignField(campaign.id, "sellerId", item.id);
@@ -1374,7 +1375,6 @@ export function CampaignSidePanel({
               if (result.data) onCampaignUpdated(result.data);
             }
           }}
-          title="셀러 검색"
         />
       </>
     );
@@ -1414,6 +1414,7 @@ export function CampaignSidePanel({
         open={isDealSearchOpen}
         onOpenChange={setIsDealSearchOpen}
         entityType="deal"
+        currentId={campaign?.dealId}
         searchEndpoint="/api/search/deals"
         onSelect={async (item) => {
           const result = await saveCampaignField(campaign.id, "dealId", item.id);
@@ -1424,12 +1425,12 @@ export function CampaignSidePanel({
             if (result.data) onCampaignUpdated(result.data);
           }
         }}
-        title="딜 검색"
       />
       <LinkSearchDialog
         open={isSellerSearchOpen}
         onOpenChange={setIsSellerSearchOpen}
         entityType="seller"
+        currentId={campaign?.sellerId}
         searchEndpoint="/api/search/sellers"
         onSelect={async (item) => {
           const result = await saveCampaignField(campaign.id, "sellerId", item.id);
@@ -1440,7 +1441,6 @@ export function CampaignSidePanel({
             if (result.data) onCampaignUpdated(result.data);
           }
         }}
-        title="셀러 검색"
       />
     </>
   );

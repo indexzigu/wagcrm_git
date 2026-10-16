@@ -11,6 +11,21 @@ import { containsSearch } from "@/lib/prisma-search";
  *
  * Requirements: 1.3, 9.6
  */
+const PARTNER_SEARCH_SELECT = {
+  id: true,
+  name: true,
+  type: true,
+  status: true,
+  companyRole: true,
+  createdAt: true,
+  deals: {
+    where: { parentDealId: null },
+    select: { id: true, dealName: true },
+    take: 3,
+    orderBy: { createdAt: "desc" },
+  },
+} as const;
+
 export async function GET(request: Request) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
@@ -23,6 +38,18 @@ export async function GET(request: Request) {
     .filter(Boolean);
 
   const prisma = getPrisma();
+
+  // sort=created — 고르는 창(LinkSearchDialog)이 「최근 등록순」을 요청한다(오너 요청 2026-10-16).
+  // 생략하면 종전대로 최근 캠페인 진행 거래처 우선.
+  if (!query && searchParams.get("sort") === "created") {
+    const partners = await prisma.partner.findMany({
+      where: excludeIds.length > 0 ? { id: { notIn: excludeIds } } : undefined,
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: PARTNER_SEARCH_SELECT,
+    });
+    return NextResponse.json({ results: partners });
+  }
 
   // When no query: return recent partners (최근 캠페인 진행 기준 우선)
   if (!query) {
@@ -55,19 +82,7 @@ export async function GET(request: Request) {
 
     const partners = await prisma.partner.findMany({
       where: { id: { in: Array.from(partnerIds) } },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        status: true,
-        companyRole: true,
-        deals: {
-          where: { parentDealId: null },
-          select: { id: true, dealName: true },
-          take: 3,
-          orderBy: { createdAt: "desc" },
-        },
-      },
+      select: PARTNER_SEARCH_SELECT,
     });
 
     // 유지: partnerIds에 추가된 순서대로 정렬 (최근 캠페인 우선)
@@ -92,19 +107,7 @@ export async function GET(request: Request) {
     },
     take: 20,
     orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      type: true,
-      status: true,
-      companyRole: true,
-      deals: {
-        where: { parentDealId: null },
-        select: { id: true, dealName: true },
-        take: 3,
-        orderBy: { createdAt: "desc" },
-      },
-    },
+    select: PARTNER_SEARCH_SELECT,
   });
 
   return NextResponse.json({ results: partners });

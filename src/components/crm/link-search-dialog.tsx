@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Search, Loader2, AlertCircle } from "lucide-react";
+import { Search, AlertCircle, Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { formatDealContextLabel, getDealIdentityParts } from "@/lib/deal-display";
+import {
+  formatDealContextLabel,
+  getDealIdentityParts,
+} from "@/lib/deal-display";
 import {
   campaignStatusLabels,
   dealStatusLabels,
@@ -15,30 +18,31 @@ import {
   snsTypeLabels,
 } from "@/lib/crm-types";
 import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
+import { formatDate } from "@/lib/format";
 
 /**
  * 영문 상태 코드를 화면에 그대로 찍지 않는다 — 상태 칸이라 표에 없는 코드는 「알 수 없음」(P2 ③, 공용 규칙
  * `displayLabel`). 값이 아예 없으면 빈 문자열이라 호출부가 칸을 숨긴다(`|| undefined`·`meta.status &&`).
  */
-function labelOf(table: Readonly<Record<string, string>>, value: unknown): string {
+function labelOf(
+  table: Readonly<Record<string, string>>,
+  value: unknown,
+): string {
   const raw = String(value ?? "");
   return raw ? displayLabel(table, raw, UNKNOWN_NAME) : "";
 }
+import { type EntityIdentityPart } from "@/components/crm/entity-identity";
+import { SnsIcon } from "@/components/crm/seller-identity-info";
 import {
-  EntityIdentity,
-  type EntityIdentityPart,
-} from "@/components/crm/entity-identity";
-import { SellerIdentityInfo } from "@/components/crm/seller-identity-info";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Dialog } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { FormDialogFrame } from "@/components/crm/form-dialog-frame";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -57,10 +61,20 @@ export type SearchResultItem = {
   metadata?: Record<string, string>;
 };
 
+export type LinkSearchMode = "select" | "link";
+
 export type LinkSearchDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entityType: "deal" | "campaign" | "partner" | "seller" | "task";
+  /**
+   * select = 한 칸을 채우거나 바꾸는 창(제목 「딜 선택」, 확인 「선택」) · link = 목록에 하나 더 잇는 창
+   * (「딜 연결」/「연결」). 제목·설명·검색 안내는 이 값과 entityType 에서 만든다 — 호출처마다 제목을
+   * 따로 적던 시절 같은 창이 12가지 이름으로 불렸다(2026-10-16).
+   */
+  mode?: LinkSearchMode;
+  /** 지금 연결돼 있는 항목 — 「현재」로 표시하고 그 항목으로는 확인을 막는다. */
+  currentId?: string;
   /** 검색 결과에서 제외할 엔티티 ID 목록 */
   excludeIds?: string[];
   /** 검색 API 엔드포인트 */
@@ -69,20 +83,9 @@ export type LinkSearchDialogProps = {
   searchParams?: Record<string, string | undefined>;
   /** 선택 완료 콜백 */
   onSelect: (entity: SearchResultItem) => void;
+  /** 기본값은 mode·entityType 에서 만든다 — 특별한 이유가 없으면 넘기지 않는다. */
   title?: string;
   placeholder?: string;
-  simpleDealDisplay?: boolean;
-};
-
-const entityTypeDescriptions: Record<
-  LinkSearchDialogProps["entityType"],
-  string
-> = {
-  deal: "연결할 딜을 검색하고 선택합니다.",
-  campaign: "연결할 캠페인을 검색하고 선택합니다.",
-  partner: "연결할 거래처를 검색하고 선택합니다.",
-  seller: "연결할 셀러를 검색하고 선택합니다.",
-  task: "연결할 테스크를 검색하고 선택합니다.",
 };
 
 export function normalizeSearchResults(
@@ -96,15 +99,18 @@ export function normalizeSearchResults(
         label: String(item.dealName ?? ""),
         sublabel: formatDealContextLabel({
           brandName: typeof item.brandName === "string" ? item.brandName : null,
-          partnerName: typeof item.partnerName === "string" ? item.partnerName : null,
+          partnerName:
+            typeof item.partnerName === "string" ? item.partnerName : null,
         }),
         identityParts: getDealIdentityParts({
           dealName: typeof item.dealName === "string" ? item.dealName : null,
           brandName: typeof item.brandName === "string" ? item.brandName : null,
-          partnerName: typeof item.partnerName === "string" ? item.partnerName : null,
+          partnerName:
+            typeof item.partnerName === "string" ? item.partnerName : null,
         }),
         metadata: {
           status: labelOf(dealStatusLabels, item.status),
+          createdAt: typeof item.createdAt === "string" ? item.createdAt : "",
         },
       }));
     case "campaign":
@@ -113,43 +119,68 @@ export function normalizeSearchResults(
         label: String(item.sellerName ?? ""),
         // 판매채널·거래처 유형·SNS 는 코드값이라 라벨 표를 거친다(종전엔 OWN_MALL 등이 그대로 보였다).
         sublabel:
-          [item.dealName, item.salesChannel ? displayLabel(salesChannelLabels, String(item.salesChannel)) : null]
+          [
+            item.dealName,
+            item.salesChannel
+              ? displayLabel(salesChannelLabels, String(item.salesChannel))
+              : null,
+          ]
             .filter(Boolean)
-            .join(" - ") || undefined,
+            .join(" · ") || undefined,
         metadata: {
           status: labelOf(campaignStatusLabels, item.status),
+          startDate: typeof item.startDate === "string" ? item.startDate : "",
         },
       }));
     case "partner":
       return rawResults.map((item) => ({
         id: String(item.id),
         label: String(item.name ?? ""),
-        sublabel: item.type ? displayLabel(partnerTypeLabels, String(item.type)) : undefined,
+        sublabel: item.type
+          ? displayLabel(partnerTypeLabels, String(item.type))
+          : undefined,
         metadata: {
           type: String(item.type ?? ""),
-          status: partnerStatusLabel(typeof item.status === "string" ? item.status : null),
+          status: partnerStatusLabel(
+            typeof item.status === "string" ? item.status : null,
+          ),
           companyRole: String(item.companyRole ?? ""),
+          createdAt: typeof item.createdAt === "string" ? item.createdAt : "",
           deals: JSON.stringify(item.deals ?? []),
         },
       }));
     case "seller":
       return rawResults.map((item) => {
         const nameStr = String(item.name ?? "");
-        const aliasStr = item.alias && typeof item.alias === "string" ? item.alias : null;
+        const aliasStr =
+          item.alias && typeof item.alias === "string" ? item.alias : null;
         return {
           id: String(item.id),
           label: aliasStr ? aliasStr : nameStr,
           sublabel:
-            [item.snsType ? displayLabel(snsTypeLabels, String(item.snsType)) : null, item.snsHandle]
+            [
+              item.snsType
+                ? displayLabel(snsTypeLabels, String(item.snsType))
+                : null,
+              item.snsHandle,
+            ]
               .filter(Boolean)
               .join(" - ") || undefined,
           metadata: {
             snsType: String(item.snsType ?? ""),
             snsHandle: String(item.snsHandle ?? ""),
-            ...(typeof item.fitLevel === "string" ? { fitLevel: item.fitLevel } : {}),
+            ...(typeof item.fitLevel === "string"
+              ? { fitLevel: item.fitLevel }
+              : {}),
             ...(aliasStr ? { alias: aliasStr } : {}),
-            ...(item.agency && typeof item.agency === "object" && (item.agency as Record<string, unknown>).name
-              ? { agencyName: String((item.agency as Record<string, unknown>).name) }
+            ...(item.agency &&
+            typeof item.agency === "object" &&
+            (item.agency as Record<string, unknown>).name
+              ? {
+                  agencyName: String(
+                    (item.agency as Record<string, unknown>).name,
+                  ),
+                }
               : {}),
           },
         };
@@ -161,6 +192,7 @@ export function normalizeSearchResults(
         sublabel: labelOf(taskStatusLabels, item.status) || undefined,
         metadata: {
           status: labelOf(taskStatusLabels, item.status),
+          createdAt: typeof item.createdAt === "string" ? item.createdAt : "",
         },
       }));
     default:
@@ -168,25 +200,76 @@ export function normalizeSearchResults(
   }
 }
 
+const ENTITY_NOUN: Record<LinkSearchDialogProps["entityType"], string> = {
+  deal: "딜",
+  campaign: "캠페인",
+  partner: "거래처",
+  seller: "셀러",
+  task: "테스크",
+};
+
+/** 한 칸을 채우거나 바꾸는 창 = 「○○ 선택」, 목록에 하나 더 잇는 창 = 「○○ 연결」(2026-10-16 문구 통일). */
+function dialogCopy(
+  entityType: LinkSearchDialogProps["entityType"],
+  mode: LinkSearchMode,
+) {
+  const noun = ENTITY_NOUN[entityType];
+  const verb = mode === "link" ? "연결" : "선택";
+  // 설명문은 두지 않는다 — 제목·검색 안내·힌트와 같은 말의 되풀이였다(ss-ux 검토 2026-10-16).
+  return {
+    title: `${noun} ${verb}`,
+    // 딜 검색 API 는 딜 이름·브랜드명으로 찾는다(/api/search/deals — 거래처 이름은 대상 아님).
+    placeholder:
+      entityType === "deal"
+        ? "딜 또는 브랜드 이름으로 검색"
+        : `${noun} 이름으로 검색`,
+    confirmLabel: verb,
+  };
+}
+
+const INITIAL_LIMIT = 20;
+/** 딜·거래처는 고를 때 최근 등록순이 도움이 된다(오너 요청 2026-10-16) — 행에도 등록일을 보인다. */
+const SORT_BY_CREATED = new Set<LinkSearchDialogProps["entityType"]>([
+  "deal",
+  "partner",
+]);
+/**
+ * 처음 목록의 순서를 안내문이 말한다(P8 「고르는 창 행 표기 기준」 ④ — 정렬 기준이 행과 안내에서 같은 말).
+ * 셀러는 「거래 셀러(모니터링 중) 먼저」라 오른쪽 정렬값이 없고 안내문만 순서를 설명한다(오너 2026-10-16).
+ */
+const INITIAL_ORDER_LABEL: Record<LinkSearchDialogProps["entityType"], string> =
+  {
+    deal: "최근 등록",
+    partner: "최근 등록",
+    campaign: "최근 시작순",
+    seller: "거래 셀러 먼저 · 최근",
+    task: "최근",
+  };
+
 export function LinkSearchDialog({
   open,
   onOpenChange,
   entityType,
+  mode = "select",
+  currentId,
   excludeIds = [],
   searchEndpoint,
   searchParams,
   onSelect,
-  title = "엔티티 검색",
-  placeholder = "검색어를 입력하세요 (2자 이상)",
-  simpleDealDisplay = false,
+  title,
+  placeholder,
 }: LinkSearchDialogProps) {
+  const copy = dialogCopy(entityType, mode);
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResultItem[]>([]);
-  const [selectedItem, setSelectedItem] = React.useState<SearchResultItem | null>(null);
+  const [selectedItem, setSelectedItem] =
+    React.useState<SearchResultItem | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [hasSearched, setHasSearched] = React.useState(false);
-  const [initialResults, setInitialResults] = React.useState<SearchResultItem[]>([]);
+  const [initialResults, setInitialResults] = React.useState<
+    SearchResultItem[]
+  >([]);
   const [initialLoading, setInitialLoading] = React.useState(false);
 
   const excludeIdsKey = React.useMemo(() => excludeIds.join(","), [excludeIds]);
@@ -214,7 +297,7 @@ export function LinkSearchDialog({
     setInitialLoading(false);
   }, []);
 
-  // Fetch initial list (최근 등록순) when dialog opens
+  // Fetch initial list (최근순) when dialog opens
   React.useEffect(() => {
     if (!open) return;
 
@@ -229,14 +312,14 @@ export function LinkSearchDialog({
         searchParamEntries.forEach(([key, value]) => {
           params.set(key, value);
         });
+        if (SORT_BY_CREATED.has(entityType)) params.set("sort", "created");
         if (excludeIdsKey) {
           params.set("excludeIds", excludeIdsKey);
         }
 
-        const response = await fetch(
-          `${searchEndpoint}?${params.toString()}`,
-          { signal: controller.signal },
-        );
+        const response = await fetch(`${searchEndpoint}?${params.toString()}`, {
+          signal: controller.signal,
+        });
 
         if (!response.ok) throw new Error("목록을 불러오지 못했습니다.");
 
@@ -244,7 +327,10 @@ export function LinkSearchDialog({
         if (!cancelled) {
           const items = normalizeSearchResults(
             entityType,
-            ((data.results ?? []) as Array<Record<string, unknown>>).slice(0, 20),
+            ((data.results ?? []) as Array<Record<string, unknown>>).slice(
+              0,
+              INITIAL_LIMIT,
+            ),
           );
           setInitialResults(items);
         }
@@ -267,339 +353,426 @@ export function LinkSearchDialog({
     };
   }, [open, searchEndpoint, excludeIdsKey, entityType, searchParamEntries]);
 
-  const triggerSearch = React.useCallback((nextQuery: string) => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-      debounceRef.current = null;
-    }
-
-    if (nextQuery.length < 2) return;
-
-    debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams({ q: nextQuery });
-        searchParamEntries.forEach(([key, value]) => {
-          params.set(key, value);
-        });
-        if (excludeIdsKey) {
-          params.set("excludeIds", excludeIdsKey);
-        }
-
-        const response = await fetch(`${searchEndpoint}?${params.toString()}`);
-
-        if (!response.ok) {
-          throw new Error("검색에 실패했습니다.");
-        }
-
-        const data = await response.json();
-        const items = normalizeSearchResults(
-          entityType,
-          ((data.results ?? []) as Array<Record<string, unknown>>).slice(0, 20),
-        );
-        setResults(items);
-        setHasSearched(true);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "검색에 실패했습니다."
-        );
-        setResults([]);
-        setHasSearched(true);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-
-    return () => {
+  const triggerSearch = React.useCallback(
+    (nextQuery: string) => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
-    };
-  }, [searchEndpoint, excludeIdsKey, entityType, searchParamEntries]);
+
+      if (nextQuery.length < 2) return;
+
+      debounceRef.current = setTimeout(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const params = new URLSearchParams({ q: nextQuery });
+          searchParamEntries.forEach(([key, value]) => {
+            params.set(key, value);
+          });
+          if (SORT_BY_CREATED.has(entityType)) params.set("sort", "created");
+          if (excludeIdsKey) {
+            params.set("excludeIds", excludeIdsKey);
+          }
+
+          const response = await fetch(
+            `${searchEndpoint}?${params.toString()}`,
+          );
+
+          if (!response.ok) {
+            throw new Error("검색에 실패했습니다.");
+          }
+
+          const data = await response.json();
+          const items = normalizeSearchResults(
+            entityType,
+            ((data.results ?? []) as Array<Record<string, unknown>>).slice(
+              0,
+              INITIAL_LIMIT,
+            ),
+          );
+          setResults(items);
+          setHasSearched(true);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "검색에 실패했습니다.");
+          setResults([]);
+          setHasSearched(true);
+        } finally {
+          setLoading(false);
+        }
+      }, 300);
+
+      return () => {
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+      };
+    },
+    [searchEndpoint, excludeIdsKey, entityType, searchParamEntries],
+  );
+
+  // 닫을 때 비운다 — 부모가 open 을 제어하므로 「열릴 때」 분기는 닿지 않아, 확인 뒤 다시 열면
+  // 이전 선택·검색어가 남아 있었다(코드 리뷰 2026-10-16).
+  const close = () => {
+    abortRef.current?.abort();
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    resetState();
+    onOpenChange(false);
+  };
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
-    if (nextOpen && !open) {
-      resetState();
+    if (nextOpen) {
+      onOpenChange(true);
+      return;
     }
-    if (!nextOpen && abortRef.current) {
-      abortRef.current.abort();
-    }
-    onOpenChange(nextOpen);
+    close();
   };
 
   // Determine which items to display
   const displayItems = hasSearched ? results : initialResults;
+  const isBusy = loading || initialLoading;
+  // 이미 연결된 항목을 다시 고르는 것은 아무것도 바꾸지 않는다 — 확인 버튼을 막아 「바뀐 줄」 착각을 없앤다.
+  const selectedIsCurrent = !!selectedItem && selectedItem.id === currentId;
 
+  // 더블클릭 확정은 두지 않는다 — 이 창의 다수 호출처가 고르는 즉시 저장(연결·딜 변경)하므로
+  // 밀집 목록에서의 오조작을 확인 버튼 한 번으로 막는다(ss-ux 검토 P1, 2026-10-16).
   const handleConfirm = () => {
-    if (selectedItem) {
-      onSelect(selectedItem);
-      onOpenChange(false);
-    }
+    if (!selectedItem || selectedItem.id === currentId) return;
+    onSelect(selectedItem);
+    close();
   };
 
-  const handleItemClick = (item: SearchResultItem) => {
-    setSelectedItem(item);
-  };
+  const hint = isBusy
+    ? " "
+    : hasSearched
+      ? results.length === 0
+        ? "\u00a0" // 가운데 「검색 결과 없음」과 같은 말을 되풀이하지 않는다
+        : results.length >= INITIAL_LIMIT
+          ? `상위 ${INITIAL_LIMIT}건 · 더 좁혀 입력하면 정확해집니다`
+          : `검색 결과 ${results.length}건`
+      : `${INITIAL_ORDER_LABEL[entityType]} ${INITIAL_LIMIT}건 · 2글자 이상 입력하면 전체에서 찾습니다`;
 
-  const renderDealItem = (item: SearchResultItem) => {
-    const status = item.metadata?.status;
+  // 모든 행은 한 줄이다(P8 「고르는 창 행 표기 기준」 ①) — 이름(말줄임) · 구별 보조(흐린 글) · 오른쪽 끝 정렬 기준 값.
+  // 상태 칩은 두지 않는다(③ — 고를 때 판단에 쓰이지 않는다, 오너 2026-10-16). 넘친 글의 전체는 행 툴팁(⑤ — PickRow).
+  const renderOneLine = (
+    item: SearchResultItem,
+    currentChip: React.ReactNode,
+    middle: React.ReactNode,
+    trailing?: { value: string; label: string },
+  ) => (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <span
+        data-truncate
+        className="min-w-0 shrink truncate text-sm font-semibold text-foreground"
+      >
+        {item.label}
+      </span>
+      {currentChip}
+      <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+        {middle}
+      </span>
+      {trailing ? (
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          <span className="sr-only">{trailing.label} </span>
+          {trailing.value}
+        </span>
+      ) : null}
+    </div>
+  );
 
-    return (
-      <div className="flex items-center justify-between gap-3">
-        {simpleDealDisplay && entityType === "deal" ? (
-          <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-            {/* 비슷한 이름 중 하나를 고르는 자리 — 구별 꼬리(회차 등)가 잘리지 않게 두 줄까지 보이고
-                나머지는 title 로. */}
-            <span className="min-w-0 break-words line-clamp-2 font-bold text-slate-900 text-sm" title={item.label}>
-              {item.label}
-            </span>
-            {item.identityParts?.find(p => p.label === "브랜드") && (
-              <span className="inline-flex min-w-0 items-center gap-1 shrink-0">
-                <span className="inline-flex items-center rounded-sm border px-1 py-0 text-[9px] font-medium text-muted-foreground border-slate-200">
-                  브랜드
-                </span>
-                <span
-                  className="truncate text-[10px] text-muted-foreground"
-                  title={item.identityParts.find(p => p.label === "브랜드")?.value}
-                >
-                  {item.identityParts.find(p => p.label === "브랜드")?.value}
-                </span>
-              </span>
-            )}
-          </div>
-        ) : simpleDealDisplay ? (
-          <div className="min-w-0 flex-1 overflow-hidden font-bold text-slate-900 text-sm">
-            {item.label}
-          </div>
-        ) : (
-          <EntityIdentity
-            parts={item.identityParts ?? [{ label: "딜", value: item.label }]}
-            className="min-w-0 flex-1 overflow-hidden"
-          />
-        )}
-        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          {status && (
-            <span className="whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs text-slate-600">
-              {status}
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  };
+  const createdAtOf = (item: SearchResultItem) => ({
+    value: formatDate(item.metadata?.createdAt),
+    label: "등록일",
+  });
 
-  const renderSellerItem = (item: SearchResultItem) => {
-    const snsType = item.metadata?.snsType;
-    const snsHandle = item.metadata?.snsHandle;
-    const fitLevel = item.metadata?.fitLevel;
+  const subText = (text?: string) =>
+    text ? (
+      <span data-truncate className="truncate text-xs text-muted-foreground">
+        {text}
+      </span>
+    ) : null;
 
-    return (
-      <SellerIdentityInfo
-        sellerName={item.label}
-        snsType={snsType || ""}
-        snsHandle={snsHandle || ""}
-        fitLevel={fitLevel}
-        variant="compact"
-      />
-    );
-  };
+  const renderDealItem = (
+    item: SearchResultItem,
+    currentChip: React.ReactNode,
+  ) =>
+    renderOneLine(item, currentChip, subText(item.sublabel), createdAtOf(item));
 
-  const renderPartnerItem = (item: SearchResultItem) => {
-    const meta = item.metadata || {};
-    
-    // 영업/운영 관점에서 필요한 정보: 역할, 상태, 연동된 딜
+  // 셀러: 채널 아이콘 · 이름(별칭 우선 — normalize 가 label 에 넣는다) · 핸들. 평가(적합도)는 싣지 않는다(오너 2026-10-16).
+  const renderSellerItem = (
+    item: SearchResultItem,
+    currentChip: React.ReactNode,
+  ) => (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <SnsIcon snsType={item.metadata?.snsType} className="size-3.5 shrink-0" />
+      <span
+        data-truncate
+        className="min-w-0 shrink truncate text-sm font-semibold text-foreground"
+      >
+        {item.label}
+      </span>
+      {currentChip}
+      {item.metadata?.snsHandle ? (
+        <span
+          data-truncate
+          className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground"
+        >
+          @{item.metadata.snsHandle}
+        </span>
+      ) : null}
+    </div>
+  );
+
+  const renderPartnerItem = (
+    item: SearchResultItem,
+    currentChip: React.ReactNode,
+  ) => {
     let deals: Array<{ id: string; dealName: string }> = [];
-    if (meta.deals) {
+    if (item.metadata?.deals) {
       try {
-        deals = JSON.parse(meta.deals);
+        deals = JSON.parse(item.metadata.deals);
       } catch {
-        // ignore
+        // metadata.deals 는 normalizeSearchResults 가 JSON.stringify 로 만든다 — 깨질 경로가 없다.
       }
     }
-
-    const roleBadge = item.sublabel || meta.companyRole || "기타";
-
-    return (
-      <div className="flex flex-col gap-1.5 w-full py-0.5">
-        {/* 1행: 유형, 이름, 상태 */}
-        <div className="flex items-center gap-3 w-full">
-          <div className="w-[55px] shrink-0 text-left">
-            <span className="text-[10px] font-bold text-slate-500">
-              {roleBadge.toUpperCase()}
-            </span>
-          </div>
-
-          <div className="flex min-w-0 flex-1 items-center">
-            <span
-              className="min-w-0 break-words line-clamp-2 font-bold text-slate-900 text-[13px] leading-tight"
-              title={item.label}
-            >
-              {item.label}
-            </span>
-          </div>
-          
-          {meta.status && (
-            <div className="shrink-0 text-right ml-2">
-              <span className="rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500">
-                {meta.status}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* 2행: 연동된 딜 */}
-        {deals.length > 0 && (
-          <div className="flex flex-wrap gap-1 pl-[67px]">
-            {deals.map(d => (
-              <span key={d.id} className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
-                {d.dealName}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+    return renderOneLine(
+      item,
+      currentChip,
+      <>
+        {item.sublabel ? (
+          <ResultChip size="sm">{item.sublabel}</ResultChip>
+        ) : null}
+        {subText(deals.map((d) => d.dealName).join(", "))}
+      </>,
+      createdAtOf(item),
     );
+  };
+
+  // 캠페인: 셀러 · 딜 · 채널, 오른쪽은 시작일(API 가 시작일 최근순으로 준다).
+  const renderCampaignItem = (
+    item: SearchResultItem,
+    currentChip: React.ReactNode,
+  ) =>
+    renderOneLine(item, currentChip, subText(item.sublabel), {
+      value: formatDate(item.metadata?.startDate),
+      label: "시작일",
+    });
+
+  const renderTaskItem = (
+    item: SearchResultItem,
+    currentChip: React.ReactNode,
+  ) => renderOneLine(item, currentChip, null, createdAtOf(item));
+
+  const renderItem = (item: SearchResultItem) => {
+    // 「현재」는 이름 바로 옆 — 오른쪽 정렬값 열을 밀지 않는다.
+    const currentChip =
+      item.id === currentId ? <ResultChip>현재</ResultChip> : null;
+    switch (entityType) {
+      case "deal":
+        return renderDealItem(item, currentChip);
+      case "seller":
+        return renderSellerItem(item, currentChip);
+      case "partner":
+        return renderPartnerItem(item, currentChip);
+      case "campaign":
+        return renderCampaignItem(item, currentChip);
+      case "task":
+        return renderTaskItem(item, currentChip);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="sm:max-w-md flex flex-col max-h-[90vh]">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            {entityTypeDescriptions[entityType]}
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* Search Input */}
-        <div className="relative shrink-0">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              setQuery(nextValue);
-              setSelectedItem(null);
-              if (nextValue.length < 2) {
-                setResults([]);
-                setHasSearched(false);
-                setError(null);
-                setLoading(false);
-                return;
-              }
-              triggerSearch(nextValue);
-            }}
-            placeholder={placeholder}
-            className="pl-8"
-          />
-        </div>
-
-        {/* Results Area — 이 flex-1 래퍼 자신이 스크롤러다. Radix ScrollArea 대신
-            네이티브 스크롤로 바꾸는 것인데, 안쪽 자식에 h-full 을 주면 flex 로 잡힌
-            부모 높이에 대해 height:100% 가 해소되지 않아 콘텐츠 높이로 부풀고
-            overflow-hidden 이 그걸 잘라 "잘렸는데 스크롤바 없는" 상태가 된다(PR #57
-            근본원인 재현). flex 자식 자신에 overflow-y-auto 를 얹으면 flex 가 높이를
-            캡하고 네이티브 스크롤이 그 안에서 동작한다. scrollbar-gutter 는 입력마다
-            결과 수가 바뀔 때 스크롤바 등장으로 인한 폭 흔들림을 막는다. */}
-        <div className="flex-1 overflow-y-auto min-h-[200px] [scrollbar-gutter:stable]">
-          {(loading || initialLoading) && (
-            <div className="flex items-center justify-center h-full min-h-[200px]">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">
-                {loading ? "검색 중..." : "불러오는 중..."}
-              </span>
+      <FormDialogFrame
+        title={title ?? copy.title}
+        aria-describedby={undefined}
+        heightClassName="h-[min(36rem,85vh)]"
+        bodyClassName="px-4 py-3"
+        toolbar={
+          <div className="flex flex-col gap-1.5">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setQuery(nextValue);
+                  setSelectedItem(null);
+                  if (nextValue.length < 2) {
+                    setResults([]);
+                    setHasSearched(false);
+                    setError(null);
+                    setLoading(false);
+                    return;
+                  }
+                  triggerSearch(nextValue);
+                }}
+                placeholder={placeholder ?? copy.placeholder}
+                className="pl-8"
+              />
             </div>
-          )}
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {hint}
+            </p>
+          </div>
+        }
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={close}>
+              취소
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleConfirm}
+              disabled={!selectedItem || selectedIsCurrent}
+            >
+              {copy.confirmLabel}
+            </Button>
+          </>
+        }
+      >
+        {/* 창 높이가 고정이라 불러오는 중·빈 목록·결과가 바뀌어도 중앙 정렬된 창이 움직이지 않는다
+            (P8 Layout Stability). 불러오는 중은 결과 행 모양의 뼈대로 보인다(styleseed 3). */}
+        {isBusy && (
+          <div
+            className="flex flex-col gap-1.5"
+            role="status"
+            aria-busy="true"
+            aria-label={loading ? "검색 중" : "불러오는 중"}
+          >
+            {Array.from({ length: 5 }, (_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-lg" />
+            ))}
+          </div>
+        )}
 
-          {error && !loading && !initialLoading && (
-            <div className="flex flex-col items-center justify-center h-[200px] gap-2">
-              <AlertCircle className="size-5 text-destructive" />
-              <p className="text-sm text-destructive">{error}</p>
-            </div>
-          )}
+        {error && !isBusy && (
+          <div className="flex h-full flex-col items-center justify-center gap-2">
+            <AlertCircle className="size-5 text-destructive" />
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
 
-          {!loading && !initialLoading && !error && hasSearched && results.length === 0 && (
-            <div className="flex items-center justify-center h-full min-h-[200px]">
-              <p className="text-sm text-muted-foreground">
-                검색 결과 없음
-              </p>
-            </div>
-          )}
+        {!isBusy && !error && displayItems.length === 0 && (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-muted-foreground">
+              {hasSearched ? "검색 결과 없음" : "등록된 항목 없음"}
+            </p>
+          </div>
+        )}
 
-          {!loading && !initialLoading && !error && displayItems.length > 0 && (
-            <div className="flex flex-col gap-1 p-1">
+        {!isBusy && !error && displayItems.length > 0 && (
+          <TooltipProvider delayDuration={400}>
+            <div className="flex flex-col gap-1.5">
               {displayItems.map((item) => (
-                <button
+                <PickRow
                   key={item.id}
-                  type="button"
-                  onClick={() => handleItemClick(item)}
-                  className={cn(
-                    "w-full px-3 py-2 text-left text-sm transition-colors",
-                    "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
-                    selectedItem?.id === item.id
-                      ? "bg-primary/10 border border-primary/30 ring-1 ring-primary/20 rounded-md"
-                      : entityType === "partner"
-                      ? "border-b border-transparent border-b-slate-200 last:border-b-transparent rounded-none"
-                      : "border border-transparent rounded-md"
-                  )}
+                  selected={selectedItem?.id === item.id}
+                  onPick={() => setSelectedItem(item)}
                 >
-                  {entityType === "deal" ? (
-                    renderDealItem(item)
-                  ) : entityType === "seller" ? (
-                    renderSellerItem(item)
-                  ) : entityType === "partner" ? (
-                    renderPartnerItem(item)
-                  ) : (
-                    <>
-                      <div className="font-medium">{item.label}</div>
-                      {item.sublabel && (
-                        <div className="mt-0.5 text-xs text-muted-foreground">
-                          {item.sublabel}
-                        </div>
-                      )}
-                      {item.metadata && Object.keys(item.metadata).length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {Object.entries(item.metadata).map(([key, value]) => (
-                            <Badge key={key} variant="secondary">
-                              {value}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </button>
+                  {renderItem(item)}
+                </PickRow>
               ))}
             </div>
-          )}
-
-          {!loading && !initialLoading && !error && !hasSearched && displayItems.length === 0 && (
-            <div className="flex items-center justify-center h-full min-h-[200px]">
-              <p className="text-sm text-muted-foreground">
-                등록된 항목 없음
-              </p>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="shrink-0">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            취소
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={!selectedItem}
-          >
-            선택 확인
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+          </TooltipProvider>
+        )}
+      </FormDialogFrame>
     </Dialog>
+  );
+}
+
+/**
+ * 고르는 창의 한 행. 이름·보조 글이 잘렸을 때만(`[data-truncate]` 의 scrollWidth > clientWidth) 툴팁이 열린다 —
+ * 마우스뿐 아니라 키보드 포커스로도 전체 글이 보인다(IBM Carbon · P8 기준 ⑤). 안 잘린 행에는 열지 않는다(모든
+ * 행에 뜨면 소음). 잘림 판정은 Radix 가 열려고 하는 순간에 한다 — 마운트 시점 측정은 웹폰트가 늦게 실리면 틀린다.
+ */
+function PickRow({
+  selected,
+  onPick,
+  children,
+}: {
+  selected: boolean;
+  onPick: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = React.useRef<HTMLButtonElement>(null);
+  const [tip, setTip] = React.useState<string | null>(null);
+
+  // 잘린 글이 하나라도 있으면 행의 글 전부(이름·보조)를 순서대로 이어 툴팁 본문으로 쓴다.
+  const fullTextIfTruncated = () => {
+    const spans = Array.from(
+      ref.current?.querySelectorAll<HTMLElement>("[data-truncate]") ?? [],
+    );
+    if (!spans.some((span) => span.scrollWidth > span.clientWidth + 1))
+      return null;
+    return spans
+      .map((span) => span.textContent?.trim())
+      .filter(Boolean)
+      .join(" · ");
+  };
+
+  return (
+    <Tooltip
+      open={tip !== null}
+      onOpenChange={(next) => setTip(next ? fullTextIfTruncated() : null)}
+    >
+      <TooltipTrigger asChild>
+        <button
+          ref={ref}
+          type="button"
+          aria-pressed={selected}
+          onClick={onPick}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
+            selected
+              ? "border-primary/40 bg-primary/[0.06]"
+              : "border-transparent hover:bg-muted",
+          )}
+        >
+          {children}
+          <Check
+            aria-hidden="true"
+            className={cn(
+              "size-4 shrink-0 text-primary",
+              selected ? "opacity-100" : "opacity-0",
+            )}
+          />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        align="start"
+        sideOffset={6}
+        className="max-w-md whitespace-normal"
+      >
+        {tip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** 행 오른쪽·이름 옆의 중립 칩(상태·유형·「현재」) — 판단 hue 를 싣지 않는다(P8 §4 범주는 무채색). */
+function ResultChip({
+  children,
+  size = "xs",
+}: {
+  children: React.ReactNode;
+  size?: "xs" | "sm";
+}) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600",
+        size === "sm" ? "text-xs" : "text-[10px]",
+      )}
+    >
+      {children}
+    </span>
   );
 }

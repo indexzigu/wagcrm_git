@@ -120,6 +120,35 @@ const emptyStorage: StorageSummary = {
 
 // --- Integration Tests ---
 
+/**
+ * 새 캠페인 창은 딜·셀러를 미리 고르지 않는다(2026-10-16 — 목록 첫 항목 자동 선택을 오너가
+ * 「추천」으로 읽었다). 검색 창에서 직접 고르는 흐름을 그대로 밟는다.
+ */
+const SEARCH_RESULTS: Record<string, unknown[]> = {
+  "/api/search/deals": [{ id: "deal-1", dealName: "테스트 딜", partnerName: "테스트 파트너", status: "CONFIRMED" }],
+  "/api/search/sellers": [{ id: "seller-1", name: "테스트 셀러", snsType: "INSTAGRAM", snsHandle: "test" }],
+};
+
+function searchResponse(url: string) {
+  const path = url.split("?")[0];
+  if (!(path in SEARCH_RESULTS)) return null;
+  return Promise.resolve({ ok: true, json: () => Promise.resolve({ results: SEARCH_RESULTS[path] }) });
+}
+
+async function pickFromSearch(triggerName: string, rowText: string) {
+  fireEvent.click(screen.getByRole("button", { name: triggerName }));
+  const row = await screen.findByRole("button", { name: new RegExp(rowText) });
+  fireEvent.click(row);
+  fireEvent.click(screen.getByRole("button", { name: "선택" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "선택" })).not.toBeInTheDocument());
+}
+
+async function pickDealAndSeller() {
+  expect(screen.getByRole("button", { name: "등록" })).toBeDisabled();
+  await pickFromSearch("딜 선택", "테스트 딜");
+  await pickFromSearch("셀러 선택", "테스트 셀러");
+}
+
 describe("Integration: Campaign creation flow (form submit → API → kanban update)", () => {
   /**
    * Validates: Requirements 1.5
@@ -143,6 +172,8 @@ describe("Integration: Campaign creation flow (form submit → API → kanban up
 
     global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       fetchCalls.push({ url, options });
+      const search = searchResponse(url);
+      if (search) return search;
 
       if (url === "/api/campaigns" && options?.method === "POST") {
         return Promise.resolve({
@@ -170,9 +201,8 @@ describe("Integration: Campaign creation flow (form submit → API → kanban up
       />,
     );
 
-    // The form should have deal and seller pre-selected (first items from data)
-    // Click the submit button
-    const submitButton = screen.getByRole("button", { name: /캠페인 생성/i });
+    await pickDealAndSeller();
+    const submitButton = screen.getByRole("button", { name: "등록" });
     expect(submitButton).not.toBeDisabled();
 
     fireEvent.click(submitButton);
@@ -204,6 +234,8 @@ describe("Integration: Campaign creation flow (form submit → API → kanban up
   it("keeps sheet open and shows error when API fails", async () => {
     global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       fetchCalls.push({ url, options });
+      const search = searchResponse(url);
+      if (search) return search;
 
       if (url === "/api/campaigns" && options?.method === "POST") {
         return Promise.resolve({
@@ -230,7 +262,8 @@ describe("Integration: Campaign creation flow (form submit → API → kanban up
       />,
     );
 
-    const submitButton = screen.getByRole("button", { name: /캠페인 생성/i });
+    await pickDealAndSeller();
+    const submitButton = screen.getByRole("button", { name: "등록" });
     fireEvent.click(submitButton);
 
     // Wait for error message to appear
@@ -247,6 +280,8 @@ describe("Integration: Campaign creation flow (form submit → API → kanban up
   it("shows network error message when fetch throws", async () => {
     global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       fetchCalls.push({ url, options });
+      const search = searchResponse(url);
+      if (search) return search;
 
       if (url === "/api/campaigns" && options?.method === "POST") {
         return Promise.reject(new Error("Network error"));
@@ -270,7 +305,8 @@ describe("Integration: Campaign creation flow (form submit → API → kanban up
       />,
     );
 
-    const submitButton = screen.getByRole("button", { name: /캠페인 생성/i });
+    await pickDealAndSeller();
+    const submitButton = screen.getByRole("button", { name: "등록" });
     fireEvent.click(submitButton);
 
     await waitFor(() => {

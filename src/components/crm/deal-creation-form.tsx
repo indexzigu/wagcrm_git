@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { EntityIdentity } from "@/components/crm/entity-identity";
 import { EntityLinkSelectField } from "@/components/crm/entity-link-select-field";
 import { LinkSearchDialog } from "@/components/crm/link-search-dialog";
+import { FormDialogActions } from "@/components/crm/form-dialog-frame";
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 
 // --- Validation Schema ---
@@ -145,7 +146,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
   }, [brandName, dealName, partnerId, resetForm, duplicateConfirmed, onSuccess]);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col">
       <FieldGroup>
         <FieldSet>
           <Field data-invalid={!!errors.dealName}>
@@ -176,7 +177,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
             required
             selected={!!partnerId}
             emptyText="선택된 거래처 없음"
-            actionLabel="거래처 검색 선택"
+            actionLabel="거래처 선택"
             changeLabel="거래처 변경"
             error={errors.partnerId}
             onOpen={() => setIsPartnerSearchOpen(true)}
@@ -212,7 +213,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
 
       {/* 중복 딜 이름 경고 */}
       {duplicateWarning && duplicateWarning.length > 0 && (
-        <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+        <Alert className="mt-5 border-amber-200 bg-amber-50 text-amber-900">
           <AlertDescription className="text-xs">
             <p className="font-medium mb-1">유사한 딜이 이미 존재합니다:</p>
             <ul className="list-disc pl-4 mb-2 space-y-0.5">
@@ -225,8 +226,8 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
         </Alert>
       )}
 
-      {/* 버튼 영역 */}
-      <div className="flex items-center justify-end gap-3 border-t border-border/70 pt-4">
+      {/* 버튼 영역 — 창 안에서는 바닥에 붙는 띠(FormDialogActions) */}
+      <FormDialogActions>
         {onCancel && (
           <Button
             variant="outline"
@@ -251,10 +252,10 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
           </Button>
         ) : (
           <Button size="sm" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "저장 중..." : "저장"}
+            {submitting ? "등록 중..." : "등록"}
           </Button>
         )}
-      </div>
+      </FormDialogActions>
       <LinkSearchDialog
         open={isPartnerSearchOpen}
         onOpenChange={setIsPartnerSearchOpen}
@@ -273,8 +274,6 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
             return next;
           });
         }}
-        title="거래처 검색 선택"
-        placeholder="검색할 거래처 이름을 입력하세요"
       />
     </div>
   );

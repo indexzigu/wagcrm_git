@@ -29,11 +29,45 @@ export async function GET(request: Request) {
     .map((value) => value.trim())
     .filter(Boolean);
 
+  const prisma = getPrisma();
+
+  const include = {
+    seller: { select: { name: true, alias: true } },
+    deal: { select: { id: true, dealName: true } },
+  } as const;
+  const toResult = (c: {
+    id: string; salesChannel: string; status: string; startDate: Date; endDate: Date;
+    seller: { name: string; alias: string | null }; deal: { id: string; dealName: string };
+  }) => ({
+    id: c.id,
+    sellerName: c.seller.alias || c.seller.name,
+    salesChannel: c.salesChannel,
+    status: c.status,
+    dealId: c.deal.id,
+    dealName: c.deal.dealName,
+    startDate: c.startDate.toISOString(),
+    endDate: c.endDate.toISOString(),
+  });
+
+  // 빈 입력 = 최근 시작순 20건 — 다른 고르는 창(딜·거래처·셀러)과 같이 열자마자 목록이 보인다(2026-10-16).
+  if (!query) {
+    const recent = await prisma.salesCampaign.findMany({
+      where: {
+        AND: [
+          ...(excludeDealId ? [{ dealId: { not: excludeDealId } }] : []),
+          ...(excludeIds.length > 0 ? [{ id: { notIn: excludeIds } }] : []),
+        ],
+      },
+      take: 20,
+      include,
+      orderBy: { startDate: "desc" },
+    });
+    return NextResponse.json({ results: recent.map(toResult) });
+  }
+
   if (query.length < 2) {
     return NextResponse.json({ results: [] });
   }
-
-  const prisma = getPrisma();
 
   const campaigns = await prisma.salesCampaign.findMany({
     where: {
@@ -52,23 +86,9 @@ export async function GET(request: Request) {
       ],
     },
     take: 20,
-    include: {
-      seller: { select: { name: true, alias: true } },
-      deal: { select: { id: true, dealName: true } },
-    },
+    include,
     orderBy: { startDate: "desc" },
   });
 
-  const results = campaigns.map((c) => ({
-    id: c.id,
-    sellerName: c.seller.alias || c.seller.name,
-    salesChannel: c.salesChannel,
-    status: c.status,
-    dealId: c.deal.id,
-    dealName: c.deal.dealName,
-    startDate: c.startDate.toISOString(),
-    endDate: c.endDate.toISOString(),
-  }));
-
-  return NextResponse.json({ results });
+  return NextResponse.json({ results: campaigns.map(toResult) });
 }

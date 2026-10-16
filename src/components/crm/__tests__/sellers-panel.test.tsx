@@ -301,7 +301,7 @@ describe("SellersPanel", () => {
       fireEvent.change(screen.getByLabelText("채널 URL"), {
         target: { value: "https://instagram.com/test_user" },
       });
-      fireEvent.click(screen.getByRole("button", { name: "저장" }));
+      fireEvent.click(screen.getByRole("button", { name: "등록" }));
 
       await waitFor(() => {
         expect(fetchMock).toHaveBeenCalledWith(
@@ -344,7 +344,7 @@ describe("SellersPanel", () => {
       fireEvent.change(screen.getByLabelText("채널 URL"), {
         target: { value: "https://example.com/test_user" },
       });
-      fireEvent.click(screen.getByRole("button", { name: "저장" }));
+      fireEvent.click(screen.getByRole("button", { name: "등록" }));
 
       expect(
         await screen.findByText(

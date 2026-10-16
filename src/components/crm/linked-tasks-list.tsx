@@ -86,8 +86,7 @@ export function LinkedTasksList({
           entityType="task"
           searchEndpoint="/api/search/tasks"
           excludeIds={excludeIds}
-          title="테스크 검색"
-          placeholder="테스크명 검색"
+          mode="link"
           onSelect={async (item) => {
             await onLinkTask(item.id);
             setSearchOpen(false);

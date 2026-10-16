@@ -163,7 +163,7 @@ export function OutreachCreateForm({
             required
             selected={!!sellerId}
             emptyText="선택된 셀러 없음"
-            actionLabel="셀러 검색 선택"
+            actionLabel="셀러 선택"
             changeLabel="셀러 변경"
             disabled={!!preSelectedSellerId}
             onOpen={() => setIsSellerSearchOpen(true)}
@@ -237,7 +237,6 @@ export function OutreachCreateForm({
         onOpenChange={setIsDealSearchOpen}
         entityType="deal"
         searchEndpoint="/api/search/deals"
-        simpleDealDisplay
         onSelect={(deal) => {
           setSelectedDealId(deal.id);
           setSelectedDealName(deal.label);
@@ -245,8 +244,6 @@ export function OutreachCreateForm({
             deal.identityParts?.filter((part) => part.label !== "딜") ?? [],
           );
         }}
-        title="딜 선택"
-        placeholder="검색할 딜 또는 거래처 이름을 입력하세요"
       />
 
       <LinkSearchDialog
@@ -261,8 +258,6 @@ export function OutreachCreateForm({
           setSellerSnsType(item.metadata?.snsType || item.sublabel?.split(" · ")[0] || null);
           setIsSellerSearchOpen(false);
         }}
-        title="셀러 검색 선택"
-        placeholder="검색할 셀러 이름을 입력하세요"
       />
     </>
   );

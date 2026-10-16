@@ -42,11 +42,16 @@ export function EntityLinkSelectField({
       {label && (
         <FieldLabel>
           {label}
-          {required && <span className="text-destructive">*</span>}
+          {required && (
+            <>
+              <span className="ml-0.5 text-destructive" aria-hidden="true">*</span>
+              <span className="sr-only">(필수)</span>
+            </>
+          )}
         </FieldLabel>
       )}
       {selected ? (
-        <div className="flex min-h-14 items-center justify-between gap-3 rounded-xl border border-border bg-card p-3.5 shadow-soft-sm">
+        <div className="flex min-h-14 items-center justify-between gap-3 rounded-xl border border-border bg-card p-3.5">
           <div className="min-w-0 flex-1 pr-2">{selectedContent}</div>
           {!disabled && (
             <Button

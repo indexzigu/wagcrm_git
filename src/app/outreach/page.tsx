@@ -1815,8 +1815,6 @@ function SalesTaskDetailPanel({
         onSelect={(seller) => {
           void onSaveField(task.id, "sellerId", seller.id);
         }}
-        title="셀러 변경"
-        placeholder="변경할 셀러 이름을 입력하세요"
       />
       <LinkSearchDialog
         open={isDealSearchOpen}
@@ -1826,8 +1824,6 @@ function SalesTaskDetailPanel({
         onSelect={(deal) => {
           void onSaveField(task.id, "dealId", deal.id);
         }}
-        title="딜 변경"
-        placeholder="변경할 딜 또는 거래처 이름을 입력하세요"
       />
 
       {task.status !== "DROPPED" && (

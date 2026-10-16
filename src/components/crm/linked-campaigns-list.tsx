@@ -98,8 +98,7 @@ export function LinkedCampaignsList({
           entityType="campaign"
           searchEndpoint="/api/search/campaigns"
           searchParams={excludeDealId ? { excludeDealId } : undefined}
-          title="연결할 캠페인 검색"
-          placeholder="셀러명 또는 판매채널 검색"
+          mode="link"
           onSelect={async (item) => {
             await onLinkCampaign(item.id);
             setSearchOpen(false);

@@ -1,5 +1,6 @@
 "use client";
 
+import { FormDialogActions } from "./form-dialog-frame";
 import { useState, useCallback, useEffect, useId } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -129,7 +130,7 @@ export function SellerCreationForm({
             channelUrl:
               "지원하지 않는 채널 URL 형식입니다. Instagram, YouTube 또는 X URL을 입력해주세요.",
           });
-          // 제출 중 상태를 풀지 않고 빠지면 버튼이 「저장 중...」 비활성으로 멈춰 재시도할 수 없다.
+          // 제출 중 상태를 풀지 않고 빠지면 버튼이 「등록 중...」 비활성으로 멈춰 재시도할 수 없다.
           setCreateSubmitting(false);
           return;
         }
@@ -391,8 +392,11 @@ export function SellerCreationForm({
       </p>
       </FieldGroup>
 
-      {/* 저장 버튼 */}
-      <div className="flex items-center justify-end gap-3 border-t border-border/70 pt-4">
+      {/* 등록 버튼 — 창 안에서는 바닥에 붙는 띠(FormDialogActions) */}
+      <FormDialogActions className="mt-1">
+        <span className="mr-auto text-xs text-muted-foreground">
+          채널 URL만 넣어도 등록됩니다.
+        </span>
         <Button
           variant="outline"
           size="sm"
@@ -406,9 +410,9 @@ export function SellerCreationForm({
           onClick={() => void handleCreateSubmit()}
           disabled={createSubmitting}
         >
-          {createSubmitting ? "저장 중..." : "저장"}
+          {createSubmitting ? "등록 중..." : "등록"}
         </Button>
-      </div>
+      </FormDialogActions>
     </div>
   );
 }

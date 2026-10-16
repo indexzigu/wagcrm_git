@@ -13,6 +13,8 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,14 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import {
   salesChannelLabels,
   type CampaignStatus,
@@ -40,6 +35,7 @@ import {
   type SnsType,
 } from "@/lib/crm-types";
 import { EntityLinkSelectField } from "./entity-link-select-field";
+import { FormDialogFrame } from "./form-dialog-frame";
 import { LinkSearchDialog } from "./link-search-dialog";
 import { SellerIdentityInfo } from "./seller-identity-info";
 
@@ -240,30 +236,54 @@ export function BulkComboCampaignDialog({
             내부 행 수가 바뀌어도 다이얼로그 프레임은 움직이지 않는다(흔들림 방지).
             90dvh 하한 덕에 낮은 노트북 해상도에서도 푸터가 항상 화면 안에 있다.
             54rem 은 실측 최소 구성(섹션 합 858px)이 바깥 스크롤 없이 들어가는 값. */}
-        <DialogContent className="sm:max-w-xl bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0 overflow-hidden flex flex-col gap-0 h-[min(54rem,90dvh)]">
-          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
-            <DialogTitle className="flex items-center gap-2">
-              <Boxes className="size-4 text-primary" aria-hidden="true" />
-              조합 캠페인 만들기
-            </DialogTitle>
-            <DialogDescription>
-              한 셀러에게 여러 딜을 같은 기간으로 한 번에 올립니다.
-            </DialogDescription>
-          </DialogHeader>
+        <FormDialogFrame
+          size="xl"
+          heightClassName="h-[min(54rem,90dvh)]"
+          bodyClassName="flex flex-col"
+          title="조합 캠페인 등록"
+          description="한 셀러에게 여러 딜을 같은 기간으로 한 번에 올립니다."
+          error={
+            error ? (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null
+          }
+          footer={
+            <>
+              {!saving && !hasEnoughDeals ? (
+                <span className="mr-auto text-xs text-muted-foreground">
+                  셀러와 딜 2개 이상을 골라야 등록할 수 있습니다.
+                </span>
+              ) : null}
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+                취소
+              </Button>
+              <Button
+                size="sm"
+                onClick={submit}
+                disabled={isSubmitDisabled}
+                aria-describedby="combo-deal-hint"
+              >
+                {saving ? "등록 중…" : hasEnoughDeals ? `${selectedCount}개 캠페인 등록` : "캠페인 등록"}
+              </Button>
+            </>
+          }
+        >
 
-          {/* Radix ScrollArea 대신 네이티브 스크롤 — Radix 는 네이티브 스크롤바를 숨기고
-              hover 시에만 자체 바를 그려, Windows(비오버레이 스크롤바)에서 "잘렸는데
-              스크롤바가 없는" 상태가 된다. 평상시엔 딜 목록(flex-1)이 남는 높이를 모두
-              흡수해 이 바깥 스크롤은 등장하지 않고, 최소 높이가 안 나오는 아주 작은
-              창에서만 폴백으로 나타난다. scrollbar-gutter 는 등장 시 폭 흔들림 방지. */}
-          <FieldGroup className="min-h-0 flex-1 gap-4 overflow-y-auto px-6 py-5 [scrollbar-gutter:stable]">
+          {/* 바깥 스크롤은 FormDialogFrame 본문(네이티브)이 맡는다. 평상시엔 딜 목록(flex-1)이 남는
+              높이를 모두 흡수해 바깥 스크롤은 등장하지 않고, 최소 높이가 안 나오는 아주 작은 창에서만
+              폴백으로 나타난다 — FieldGroup 에 min-h-0 을 주지 않는 이유(내용 최소 높이 아래로 줄지 않아야
+              본문이 스크롤한다). */}
+          <FieldGroup className="flex-1 gap-6">
               {/* [S1] 셀러(단일) */}
               <div className="flex shrink-0 flex-col gap-2">
                 <EntityLinkSelectField
                   label="셀러"
+                  required
                   selected={!!selectedSeller}
                   emptyText="선택된 셀러 없음"
-                  actionLabel="셀러 검색 선택"
+                  actionLabel="셀러 선택"
                   changeLabel="셀러 변경"
                   onOpen={() => setIsSellerSearchOpen(true)}
                   selectedContent={
@@ -285,46 +305,46 @@ export function BulkComboCampaignDialog({
                   높이를 전부 받아 내부 스크롤로 소화한다. min-h-48 은 작은 창 폴백
                   스크롤이 켜질 때도 목록이 3~4행은 보이게 하는 바닥이다. */}
               <fieldset
-                className={
-                  sellerSelected
-                    ? "flex min-h-48 flex-1 flex-col gap-2"
-                    : "flex min-h-48 flex-1 flex-col gap-2 opacity-50 pointer-events-none"
-                }
+                // 셀러를 고르기 전에는 검색·목록만 흐리게 — 제목·개수까지 흐리면 무엇을 할 자리인지 안 읽힌다.
+                className="group/combo flex min-h-48 flex-1 flex-col gap-2"
                 disabled={!sellerSelected}
                 aria-describedby="combo-deal-hint"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <legend className="flex items-center gap-2 text-sm font-medium">
-                    딜 조합
+                  <legend className="flex items-center gap-2 text-sm font-semibold">
+                    <span>
+                      딜 조합<span className="ml-0.5 text-destructive" aria-hidden="true">*</span>
+                      <span className="sr-only">(필수)</span>
+                    </span>
                     <Badge variant="secondary">{selectedCount}개</Badge>
                   </legend>
                   {showDealFilter ? (
                     <Input
+                      className="h-8 w-36 text-xs group-disabled/combo:opacity-50"
                       value={dealFilter}
                       onChange={(event) => setDealFilter(event.target.value)}
                       placeholder="딜 검색"
                       aria-label="딜 검색 필터"
-                      className="h-8 w-36 text-xs"
                     />
                   ) : null}
                 </div>
                 <div
                   role="group"
                   aria-label="딜 조합 선택"
-                  className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded-md border border-border p-2 [scrollbar-gutter:stable]"
+                  className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded-md border border-border p-2 [scrollbar-gutter:stable] group-disabled/combo:pointer-events-none group-disabled/combo:opacity-50"
                 >
                   {!sellerSelected ? (
-                    <FieldDescription className="my-auto py-2 text-center text-xs">
+                    <p className="m-auto py-2 text-center text-xs text-muted-foreground">
                       먼저 셀러를 선택하세요
-                    </FieldDescription>
+                    </p>
                   ) : dealOptions.length === 0 ? (
-                    <FieldDescription className="my-auto py-2 text-center text-xs">
+                    <p className="m-auto py-2 text-center text-xs text-muted-foreground">
                       이 셀러로 만들 수 있는 딜 없음
-                    </FieldDescription>
+                    </p>
                   ) : filteredDealOptions.length === 0 ? (
-                    <FieldDescription className="my-auto py-2 text-center text-xs">
+                    <p className="m-auto py-2 text-center text-xs text-muted-foreground">
                       검색 결과 없음
-                    </FieldDescription>
+                    </p>
                   ) : (
                     filteredDealOptions.map((deal) => (
                       <label
@@ -352,17 +372,19 @@ export function BulkComboCampaignDialog({
                     ))
                   )}
                 </div>
+                {/* 딜이 모자랄 때의 안내는 바닥 띠 한 곳에서만 한다(같은 말 되풀이 방지). */}
                 <FieldDescription id="combo-deal-hint" className="text-xs">
                   {hasEnoughDeals
                     ? "선택한 딜마다 캠페인 1건이 만들어집니다."
-                    : "조합은 딜 2개 이상이 필요합니다"}
+                    : "\u00a0"}
                 </FieldDescription>
               </fieldset>
 
               {/* [S3] 공통 기간·채널 */}
-              <div className="shrink-0 rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col gap-3">
-                <div className="text-sm font-semibold text-foreground">
-                  공통 운영 기간 · 채널 (선택한 딜 전체에 적용)
+              <FieldSet className="shrink-0 gap-3">
+                <div className="flex flex-col gap-1">
+                  <FieldLegend className="mb-0">운영 기간·채널</FieldLegend>
+                  <FieldDescription>선택한 딜 모두에 같이 적용됩니다.</FieldDescription>
                 </div>
                 {/* 한 줄 3열 — 세로 공간을 아껴 고정 높이 안에서 딜 목록 몫을 키운다.
                     채널 열은 최소 8.5rem 보장 — "자사몰(네이버)/자사몰(카카오)"가 닫힌
@@ -409,7 +431,7 @@ export function BulkComboCampaignDialog({
                     </Select>
                   </Field>
                 </div>
-              </div>
+              </FieldSet>
 
               {/* 큰 조합 경고(차단 아님) */}
               {isBigCombo ? (
@@ -428,7 +450,7 @@ export function BulkComboCampaignDialog({
               {/* [S4] 미리보기 — 선택 딜이 많아도 캡(max-h) 안에서 내부 스크롤.
                   미리보기가 자라며 딜 목록을 무한정 밀어내지 않게 한다. */}
               <div className="flex shrink-0 flex-col gap-2">
-                <div className="text-sm font-medium">미리보기</div>
+                <div className="text-sm font-semibold text-foreground">미리보기</div>
                 <div
                   className="max-h-36 overflow-y-auto rounded-lg border border-border bg-slate-50/60 p-3 [scrollbar-gutter:stable]"
                   aria-live="polite"
@@ -474,30 +496,7 @@ export function BulkComboCampaignDialog({
               </div>
 
           </FieldGroup>
-
-          {/* 오류는 스크롤 영역 밖 고정 스트립 — 본문이 길어도 실패 사유가 항상 보인다. */}
-          {error ? (
-            <Alert variant="destructive" className="mx-6 mb-4 shrink-0">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-
-          <DialogFooter className="shrink-0 border-t border-border/70 p-6 bg-slate-50/50 mx-0 mb-0">
-            <div className="flex w-full items-center justify-end gap-3">
-              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-                취소
-              </Button>
-              <Button
-                size="sm"
-                onClick={submit}
-                disabled={isSubmitDisabled}
-                aria-describedby="combo-deal-hint"
-              >
-                {saving ? "생성 중…" : `${selectedCount}개 캠페인 만들기`}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
+        </FormDialogFrame>
       </Dialog>
 
       <LinkSearchDialog
@@ -521,8 +520,6 @@ export function BulkComboCampaignDialog({
             ]);
           }
         }}
-        title="셀러 검색 선택"
-        placeholder="검색할 셀러 이름을 입력하세요"
       />
     </>
   );

@@ -890,8 +890,7 @@ function DealsPanelContent({
         entityType="campaign"
         searchEndpoint="/api/search/campaigns"
         searchParams={{ excludeDealId: deal.id }}
-        title="연결할 캠페인 검색"
-        placeholder="셀러명 또는 판매채널 검색"
+        mode="link"
         onSelect={(item) => {
           void handleCampaignLinkSelection(item);
         }}
@@ -901,8 +900,7 @@ function DealsPanelContent({
         onOpenChange={setPartnerLinkSearchOpen}
         entityType="partner"
         searchEndpoint="/api/search/partners"
-        title="연결할 거래처 검색"
-        placeholder="거래처명 검색"
+        mode="link"
         onSelect={async (item) => {
           await handleLinkPartner(item.id);
           setPartnerLinkSearchOpen(false);

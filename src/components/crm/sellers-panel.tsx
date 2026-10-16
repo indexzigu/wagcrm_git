@@ -1,5 +1,6 @@
 "use client";
 
+import { FormDialogFrame } from "./form-dialog-frame";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,13 +18,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import type { SellerSummary } from "@/lib/crm-types";
 import { SellerCreationForm } from "./seller-creation-form";
 import { SellerDetailContent } from "./seller-detail-content";
@@ -83,16 +78,12 @@ export function SellersPanel({
 
     return isDesktop ? (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0 overflow-hidden flex flex-col max-h-[85vh]">
-          <DialogHeader className="shrink-0 border-b border-border/70 px-6 py-5">
-            <DialogTitle>신규 셀러 등록</DialogTitle>
-            <DialogDescription>
-              캠페인명과 영업 큐에서 사용할 셀러 식별 정보를 등록합니다.
-            </DialogDescription>
-          </DialogHeader>
-          {/* scrollbar-gutter: 내용이 85vh를 넘겨 스크롤바가 등장할 때 폭 흔들림 방지(PR #57 관례). */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-7 [scrollbar-gutter:stable]">{createBody}</div>
-        </DialogContent>
+        <FormDialogFrame
+          title="신규 셀러 등록"
+          description="캠페인명과 영업 큐에서 사용할 셀러 식별 정보를 등록합니다."
+        >
+          {createBody}
+        </FormDialogFrame>
       </Dialog>
     ) : (
       <Drawer open={open} onOpenChange={onOpenChange}>
