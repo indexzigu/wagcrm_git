@@ -4,6 +4,7 @@ import {
   SELLER_FEE_BASIS_MIXED_RATE_MESSAGE,
   allocateByWeight,
   calculateDerivedCampaignFinancials,
+  computeVatExpense,
   resolveIndividualWithholding,
   resolveDisplaySellerFee,
   resolveEffectiveSellerFeeBasis,
@@ -43,10 +44,10 @@ describe("calculateDerivedCampaignFinancials", () => {
     ).toEqual({
       settlementSales: 240_000,
       sellerExpense: 72_727,
-      // 원천세 = 셀러 지급액 × 3.3% = round(72,727 × 0.033) = 2,400 (오너 확정 2026-10-05 — 지급액을
-      // 다시 ÷1.1 하면 2,182 가 되던 종전 식은 틀렸다) + 수수료 부가세 round(240,000 − 240,000/1.1) = 21,818
-      taxExpense: 24_218,
-      operatingProfit: 131_055,
+      // 공제세액 = 수수료 부가세 round(240,000 − 240,000/1.1) = 21,818 뿐이다. 원천세(72,727 × 3.3%)는
+      // 셀러 몫이라 공제세액에 넣지 않는다(오너 확정 2026-10-16) — 셀러지급액 72,727 안에 이미 들어 있다.
+      taxExpense: 21_818,
+      operatingProfit: 133_455,
     });
   });
 });
@@ -192,8 +193,8 @@ describe("calculateDerivedCampaignFinancials — 수동 기준액(품목 없는 
       sellerFeeBasisOverride: 9_600_000,
     });
     expect(derived.sellerExpense).toBe(960_000);
-    // 원천세 = 960,000 × 3.3% = 31,680 + 수수료 부가세 round(3,000,000 − 3,000,000/1.1) = 272,727
-    expect(derived.taxExpense).toBe(31_680 + 272_727);
+    // 공제세액 = 수수료 부가세 round(3,000,000 − 3,000,000/1.1) = 272,727 (원천세 31,680 은 셀러 몫 — 2026-10-16)
+    expect(derived.taxExpense).toBe(272_727);
   });
 
   it("기준액 미지정이면 종전 값과 같다(동작 변화 0)", () => {
@@ -244,5 +245,51 @@ describe("resolveEffectiveSellerFeeBasis — 표시·셀러 대면 표면이 wri
     expect(
       resolveDisplaySellerFee({ sellerFeeBasisOverride: 9_600_000, deals, campaignSellerMarginRate: 10, autoFee: () => 123 }),
     ).toBe(123);
+  });
+});
+
+describe("computeVatExpense", () => {
+  it("개인 셀러: 수수료매출 전액의 부가세분이다(매입세액 없음, 원천세 미포함)", () => {
+    expect(computeVatExpense({ isIndividual: true, settlementSales: 3_000_000, sellerExpense: 1_818_181 })).toBe(272_727);
+  });
+
+  it("사업자 셀러: (수수료매출 − 셀러지급액)의 부가세분이다", () => {
+    expect(computeVatExpense({ isIndividual: false, settlementSales: 3_000_000, sellerExpense: 2_000_000 })).toBe(90_909);
+  });
+
+  // 설계서 §1-2 검산표(총거래액 10,000,000 · 총수수료율 30% · 셀러수수료율 20% · 비용 0).
+  // 두 유형 모두 회계 영업이익(수수료매출 공급가액 − 셀러지급액 공급가액)과 같아야 한다.
+  it("사업자 캠페인 영업이익 = 909,091 (현행과 1원도 다르지 않다)", () => {
+    const derived = calculateDerivedCampaignFinancials({
+      actualSales: 10_000_000,
+      operatingExpense: 0,
+      miscExpense: 0,
+      totalMarginRate: 30,
+      sellerMarginRate: 20,
+      sellerTaxType: "BUSINESS",
+    });
+    expect(derived).toEqual({
+      settlementSales: 3_000_000,
+      sellerExpense: 2_000_000,
+      taxExpense: 90_909,
+      operatingProfit: 909_091,
+    });
+  });
+
+  it("개인 캠페인 영업이익 = 909,092 (원천세를 두 번 빼지 않는다)", () => {
+    const derived = calculateDerivedCampaignFinancials({
+      actualSales: 10_000_000,
+      operatingExpense: 0,
+      miscExpense: 0,
+      totalMarginRate: 30,
+      sellerMarginRate: 20,
+      sellerTaxType: "INDIVIDUAL",
+    });
+    expect(derived).toEqual({
+      settlementSales: 3_000_000,
+      sellerExpense: 1_818_181,
+      taxExpense: 272_727,
+      operatingProfit: 909_092,
+    });
   });
 });

@@ -41,6 +41,35 @@ export function computeOperatingProfit({
 }
 
 /**
+ * 저장 `SalesCampaign.taxExpense`(화면 「공제세액 · 부가세」) 자동값의 SSOT (오너 확정 2026-10-16).
+ *
+ * 부가세는 나중에 납부할 예수금이라 원래 손익 항목이 아니지만, 수수료매출(`settlementSales`)이
+ * 부가세 포함 금액이라 영업이익에서 그 부가세분을 걷어낸다.
+ *   - 사업자 셀러: (수수료매출 − 셀러지급액)의 부가세분 — 셀러 세금계산서의 매입세액을 뺀 납부액.
+ *   - 개인 셀러: 수수료매출 전액의 부가세분 — 매입세액이 없다.
+ *
+ * ⛔ 개인 셀러 원천세(3.3%)를 여기에 더하지 말 것. 원천세는 셀러지급액에서 떼어 대신 납부하는
+ * **셀러 몫**이고 `sellerExpense` 안에 이미 들어 있어, 더하면 영업이익에서 두 번 빠진다
+ * (2026-10-05 ~ 10-16 의 저장값이 그 상태였다). 원천세 금액의 화면 표시는 셀러 구간
+ * (`resolveSellerZoneTotals().withholdingTax`)과 명세서가 따로 계산한다.
+ * ⛔ 이 식을 writer 에서 다시 적지 말 것 — writer 3곳이 전부 이 함수를 부른다
+ * (`operating-profit-basis.contract.test.ts` 가 호출을 고정).
+ * 설계 정본: docs/private/specs/2026-10-16-settlement-tax-split-design.md
+ */
+export function computeVatExpense({
+  isIndividual,
+  settlementSales,
+  sellerExpense,
+}: {
+  isIndividual: boolean;
+  settlementSales: number;
+  sellerExpense: number;
+}): number {
+  const vatInclusiveBase = isIndividual ? settlementSales : settlementSales - sellerExpense;
+  return Math.round(vatInclusiveBase - vatInclusiveBase / 1.1);
+}
+
+/**
  * Recalculates campaign financial totals from gross sales and commission rates.
  * The current settlement workspace treats withholding/deducted tax as 10% of
  * net commission, then subtracts campaign costs from commission revenue.
@@ -136,6 +165,10 @@ export type SellerFeeSource = "MANUAL_SELLER_EXPENSE" | "BASIS_OVERRIDE" | "AUTO
 /**
  * 판매대행비·개인 원천세(3.3% 몫만) 확정 SSOT — 저장 writer 3곳(편집 PATCH · 주문 동기화 ·
  * 실매출 입력)과 표시 폴백이 전부 이 함수를 부른다.
+ *
+ * ℹ️ 반환의 `individualWithholding` 은 2026-10-16 부터 writer 가 읽지 않는다 — 공제세액이 부가세만
+ * 담게 되면서(`computeVatExpense`) 원천세가 저장 손익에서 빠졌다. 수동 지급액 기준 원천세 규칙의
+ * 기록으로 남겨 둔다(테스트가 고정).
  *
  * `autoSellerExpense`/`autoWithholdingSum` 은 호출부의 **자동** 계산값(품목 합계 또는 캠페인
  * 단위)이다 — 이 함수는 그 위에 수동 층(R3 우선순위)만 얹는다. 수동 기준액이 저장돼 있어도
@@ -300,12 +333,7 @@ export function calculateDerivedCampaignFinancials({
     manualSellerExpense,
   });
 
-  const netCommission = settlementSales - sellerExpense;
-  
-  const autoTaxExpense = isIndividual
-    // 원천세 = 셀러 지급액(부가세 제외 매출 × 수수료율) × 3.3% — 오너 확정 2026-10-05. 지급액을 다시 ÷1.1 하지 않는다.
-    ? calcIndividualIncomeTax(sellerExpense) + Math.round(settlementSales - (settlementSales / 1.1))
-    : Math.round(netCommission - (netCommission / 1.1));
+  const autoTaxExpense = computeVatExpense({ isIndividual, settlementSales, sellerExpense });
     
   const taxExpense = isManualTaxExpense && manualTaxExpense != null
     ? manualTaxExpense

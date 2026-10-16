@@ -121,7 +121,7 @@ describe("recalculateSalesCampaignTotals — 저장 operatingProfit 은 영업�
     expect(data.operatingProfit).toBe(250_000 - 80_000 - 15_000 - 5_000 - 1_000);
   });
 
-  it("개인 셀러가 지급액만 수동이면 원천세는 그 수동 지급액 × 3.3% 다(품목 자동 지급액이 아니다)", async () => {
+  it("개인 셀러가 지급액만 수동이어도 공제세액은 수수료 부가세뿐이다(원천세 미포함)", async () => {
     // 같은 캠페인에 우리가 별도로 판 매출이 섞여 셀러 몫만 지급한 경우 — 지급액만 수동, 세금은 자동.
     prismaMock.salesCampaign.findUnique.mockResolvedValue(
       makeCampaign({
@@ -137,8 +137,10 @@ describe("recalculateSalesCampaignTotals — 저장 operatingProfit 은 영업�
 
     const data = writtenData();
     expect(data.sellerExpense).toBe(70_000);
-    // 원천세 round(70,000 × 0.033) = 2,310 (품목 자동 지급액 기준이면 3,000) + 수수료 부가세 27,273
-    expect(data.taxExpense).toBe(2_310 + 27_273);
+    // 공제세액 = 수수료 부가세 27,273 뿐 — 원천세(수동 지급액 70,000 × 3.3% = 2,310)는 셀러 몫이라
+    // 넣지 않는다(오너 확정 2026-10-16). 원천세 자체의 근거가 수동 지급액이라는 규칙은
+    // `resolveIndividualWithholding` 테스트가 고정한다.
+    expect(data.taxExpense).toBe(27_273);
   });
 
   it("정산 락 상태면 쓰지 않는다(기존 값 보존)", async () => {
