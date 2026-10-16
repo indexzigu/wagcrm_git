@@ -4,6 +4,7 @@ import { ShippingDialogFrame } from './ShippingDialogFrame';
 import { Campaign } from '@/types/campaign';
 import { getDisplayDealName } from '@/lib/deal-display';
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
+import { findCampaignChannelProduct } from '@/lib/order-converter/store-channel-product';
 
 /** 옵션명 정규화 키 — 스토어 옵션 재조회 시 기존 줄의 상품코드·단가·딜 연결을 이어받는 데 쓴다(공백·기호 표기 흔들림 흡수). */
 const normOptionKey = (s: string | null | undefined) => (s || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
@@ -87,11 +88,9 @@ export default function CampaignEditModal({
         (p.channelProducts || []).map((cp: any) => ({ ...cp, _originProductNo: p.originProductNo }))
       );
 
-      // 1순위: 캠페인에 저장된 productId(origin/channel 어느 쪽이든)와 일치
-      let target = channelProducts.find((cp: any) =>
-        campaign.productId && (String(cp.channelProductNo) === String(campaign.productId) || String(cp._originProductNo) === String(campaign.productId))
-      );
-      // 2순위: 상품명 정규화 매칭
+      // 1순위: 캠페인에 저장된 productId(origin/channel 어느 쪽이든)와 일치 — 봇 내부 창구와 같은 판정(SSOT).
+      let target: any = findCampaignChannelProduct(listData.products || [], campaign.productId);
+      // 2순위: 상품명 정규화 매칭(사람이 결과를 보고 고치는 화면이라 둔다 — 봇 창구에는 없다)
       if (!target) target = channelProducts.find((cp: any) => norm(cp.name) === campNorm);
       if (!target) target = channelProducts.find((cp: any) => norm(cp.name).includes(campNorm) || campNorm.includes(norm(cp.name)));
       if (!target) throw new Error('캠페인과 일치하는 스토어 상품을 찾지 못했습니다. 상품명이 바뀌었는지 확인하세요.');

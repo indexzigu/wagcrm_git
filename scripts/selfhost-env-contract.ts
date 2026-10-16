@@ -133,6 +133,12 @@ export const SELFHOST_ENV_CONTRACT: readonly EnvContractEntry[] = [
       "크론·웹훅 공유 시크릿. verifyCronAuth 가 fail-closed 라 비면 **모든 예약 작업이 401** 로 멈춘다",
   },
   {
+    envName: "AGENT_INTERNAL_API_SECRET",
+    disposition: "degrades",
+    reason:
+      "봇 내부 창구(`/api/internal/agent/*` — 슬랙 봇의 스토어 옵션 조회·상품 매핑 즉시 저장) 비밀값. 워커 env 에도 같은 값이 있어야 한다. 비면 창구가 404 로 닫혀 봇 매핑만 「창구가 닫혀 있습니다」로 실패하고 앱의 다른 기능은 영향이 없다 — required 가 아니라 degrades 다",
+  },
+  {
     envName: "INGEST_TOKEN",
     disposition: "required",
     reason:

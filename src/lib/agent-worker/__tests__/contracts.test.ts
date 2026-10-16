@@ -212,7 +212,8 @@ describe("get_settlement_report input (spec §3-E)", () => {
   } as const;
 
   // 파이썬 미러가 글자 순서를 대조하므로 새 operation 은 끝에만 붙는다 — 정산 리포트 **뒤**에는
-  // Phase 3 ②⑧(2026-10-09)의 세 읽기, 세금계산서 대조(2026-10-14), 주문캠페인 매핑 조회(2026-10-15)만 있어야 한다.
+  // Phase 3 ②⑧(2026-10-09)의 세 읽기, 세금계산서 대조(2026-10-14), 주문캠페인 매핑 조회(2026-10-15),
+  // 봇 상품 매핑 2종(2026-10-16)만 있어야 한다.
   it("keeps its place in the enum; only later operations are appended after it (python mirror compares literal order)", () => {
     const options = AgentJobOperationSchema.options;
     expect(options.slice(options.indexOf("get_settlement_report"))).toEqual([
@@ -222,6 +223,8 @@ describe("get_settlement_report input (spec §3-E)", () => {
       "get_work_records",
       "get_tax_invoice_status",
       "get_order_campaign_mappings",
+      "get_store_product_options",
+      "apply_product_mappings",
     ]);
   });
 
@@ -561,8 +564,12 @@ describe("get_order_campaign_mappings input (2026-10-15)", () => {
   const parse = (input: unknown) =>
     AgentJobPayloadSchema.safeParse({ ...base, operation: "get_order_campaign_mappings", input }).success;
 
-  it("appends get_order_campaign_mappings at the end of the operation enum", () => {
-    expect(AgentJobOperationSchema.options.at(-1)).toBe("get_order_campaign_mappings");
+  it("keeps get_order_campaign_mappings right before the 2026-10-16 mapping operations", () => {
+    expect(AgentJobOperationSchema.options.slice(-3)).toEqual([
+      "get_order_campaign_mappings",
+      "get_store_product_options",
+      "apply_product_mappings",
+    ]);
   });
 
   it("requires exactly one of orderCampaignId / query", () => {
@@ -718,5 +725,39 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     expect(envelopeBytes(big)).toBeGreaterThan(MAX_AGENT_JOB_JSON_BYTES);
     const parsed = AgentJobPayloadSchema.parse(makeEnvelope("create_action_proposal", big));
     expect(() => serializeAgentJobJson(parsed, false)).toThrow(/exceeds/);
+  });
+});
+
+describe("봇 상품 매핑 작업 입력 (2026-10-16)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+  const parse = (operation: "get_store_product_options" | "apply_product_mappings", input: unknown) =>
+    AgentJobPayloadSchema.safeParse({ ...base, operation, input }).success;
+  const row = { optionName: "구성: 1박스", brandCode: "TC-001", price: 10000 };
+
+  it("get_store_product_options 는 orderCampaignId 하나만 받는다", () => {
+    expect(parse("get_store_product_options", { orderCampaignId: "c1" })).toBe(true);
+    expect(parse("get_store_product_options", {})).toBe(false);
+    expect(parse("get_store_product_options", { orderCampaignId: "c1", query: "x" })).toBe(false);
+  });
+
+  it("apply_product_mappings 는 옵션명·상품코드·가격 줄만 받는다 — 상품명 칸은 거절한다", () => {
+    expect(parse("apply_product_mappings", { orderCampaignId: "c1", mappings: [row] })).toBe(true);
+    expect(parse("apply_product_mappings", { orderCampaignId: "c1", mappings: [{ ...row, productName: "코드표 이름" }] })).toBe(false);
+    expect(parse("apply_product_mappings", { orderCampaignId: "c1", mappings: [{ ...row, expectedBrandCode: null }] })).toBe(false);
+  });
+
+  it.each([
+    ["빈 줄 목록", { orderCampaignId: "c1", mappings: [] }],
+    ["51줄", { orderCampaignId: "c1", mappings: Array.from({ length: 51 }, (_, i) => ({ ...row, optionName: `옵션 ${i}` })) }],
+    ["비교 키가 같은 옵션 두 줄", { orderCampaignId: "c1", mappings: [row, { ...row, optionName: ` ${row.optionName}  ` }] }],
+    ["음수 가격", { orderCampaignId: "c1", mappings: [{ ...row, price: -1 }] }],
+    ["빈 상품코드", { orderCampaignId: "c1", mappings: [{ ...row, brandCode: " " }] }],
+  ])("apply_product_mappings 는 %s 를 거절한다", (_label, input) => {
+    expect(parse("apply_product_mappings", input)).toBe(false);
   });
 });

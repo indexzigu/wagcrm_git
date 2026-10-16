@@ -255,6 +255,10 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname !== "/api/chat-room-mappings" &&
     request.nextUrl.pathname !== "/api/chat-room-mappings/unmapped" &&
     request.nextUrl.pathname !== "/api/chat-room-mappings/reconcile" &&
+    // 봇 내부 창구 2개(봇 작업 실행기가 루프백으로 부른다, 세션 없음) — 정확 경로로만 제외한다. 인증은 핸들러의
+    // `verifyAgentInternalRequest`(전용 비밀값 + 터널 경유 거부, 실패 시 404)가 유일하다(`agent-internal/auth.ts`).
+    request.nextUrl.pathname !== "/api/internal/agent/store-product-options" &&
+    request.nextUrl.pathname !== "/api/internal/agent/apply-product-mappings" &&
     !request.nextUrl.pathname.startsWith("/login") &&
     !request.nextUrl.pathname.startsWith("/auth") &&
     // Sentry 터널(next.config.ts `tunnelRoute`) — 브라우저가 광고차단기를 우회해 에러를 보내는

@@ -92,6 +92,8 @@ const EXEMPT_EXACT = [
   "/api/chat-room-mappings",
   "/api/chat-room-mappings/unmapped",
   "/api/chat-room-mappings/reconcile",
+  "/api/internal/agent/store-product-options",
+  "/api/internal/agent/apply-product-mappings",
 ] as const;
 
 function isSessionExempt(pathname: string): boolean {
@@ -116,6 +118,10 @@ const GUARD_RULES: GuardRule[] = [
   {
     pattern: /verifyIngestAuth\s*\(/,
     reason: "@/lib/kakao/ingest-auth 의 INGEST_TOKEN 검증",
+  },
+  {
+    pattern: /verifyAgentInternalRequest\s*\(/,
+    reason: "@/lib/agent-internal/auth 의 봇 내부 창구 비밀값 검증(터널 경유 거부 포함)",
   },
   {
     pattern: /requireAuth\s*\(|requireRole\s*\(/,

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
+import { CheckCheckIcon, Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
 import type { ApproveOptions } from "@/hooks/useProposalActions";
 import { displayLabel } from "@/lib/display-label";
+import { AGENT_MAPPING_APPLY_ACTOR } from "@/lib/agent-internal/actors";
 
 /** /api/action-proposals GET 응답 항목 형태 (route.ts와 형태를 맞춘다). */
 export type ApprovalInboxItem = {
@@ -262,6 +263,8 @@ export function PendingCard({
  * 자동승인 표기는 이모지가 아니라 `ZapIcon`(P8 — 이모지는 UI 아이콘으로 쓰지 않는다).
  * executedBy==="SYSTEM_AUTO" = 정산 금액 수정 자동 실행기가 슬랙 원문 대조·한도 확인 뒤 승인한 건
  * (`lib/agent/auto-execute/settlement-auto-execute.ts`) — 사람 승인과 구분해 「한도 안」을 밝힌다.
+ * executedBy==="AGENT_MAPPING_APPLY" = 봇이 슬랙 짝 확인(「응」) 직후 바로 저장한 상품 매핑
+ * (`lib/agent-internal/apply-product-mappings.ts`, 오너 결정 2026-10-16 — 결재함 승인 없이 기록만 남는다).
  */
 export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
   return (
@@ -272,6 +275,11 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
           <Badge variant="status-success">
             <ShieldCheckIcon aria-hidden />
             자동 실행 · 한도 안
+          </Badge>
+        ) : item.executedBy === AGENT_MAPPING_APPLY_ACTOR ? (
+          <Badge variant="status-success">
+            <CheckCheckIcon aria-hidden />
+            즉시저장
           </Badge>
         ) : item.executedBy === "AGENT" ? (
           <Badge variant="status-success">

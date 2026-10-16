@@ -42,8 +42,11 @@ import { timingSafeEqual } from "node:crypto";
  * 사본 재발은 `api-route-auth-coverage.contract.test.ts` 가 소스 스캔으로 막는다.
  */
 
-/** 길이 노출을 제외하면 내용에 대해 상수 시간인 비교. */
-function safeEqual(a: string, b: string): boolean {
+/**
+ * 길이 노출을 제외하면 내용에 대해 상수 시간인 비교. 봇 내부 창구 인증(`agent-internal/auth.ts`)도
+ * 같은 비교를 쓴다 — 비교를 두 곳에 손으로 두지 않으려고 내보낸다.
+ */
+export function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a, "utf8");
   const right = Buffer.from(b, "utf8");
   // timingSafeEqual 은 길이가 다르면 던진다 — 길이는 애초에 응답 크기로도 새므로 여기서 거른다.
