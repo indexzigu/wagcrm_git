@@ -244,6 +244,86 @@ describe("즉시 저장 — 「응」 한 번이 승인이다", () => {
   });
 });
 
+describe("리뷰 보강(2026-10-16)", () => {
+  it("같은 요청이 동시에 두 번 와도(「응」 두 번) 하나는 저장, 하나는 「그대로」 — 실패·FAILED 기록이 없다", async () => {
+    const request = { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] };
+    const [first, second] = await Promise.all([
+      applyProductMappings(request, { storeOptions: storeDeps }),
+      applyProductMappings(request, { storeOptions: storeDeps }),
+    ]);
+    expect(first).toMatchObject({ ok: true, data: { created: 1 } });
+    expect(second).toMatchObject({ ok: true, data: { created: 0, unchanged: 1, proposalId: null } });
+    expect(await realPrisma.actionProposal.count({ where: { status: "FAILED" } })).toBe(0);
+    expect(await mappings()).toHaveLength(1);
+  });
+
+  it("승인 실행이 시작도 못 하면 남은 승인대기 기록을 반려로 닫는다(오너가 낡은 줄을 나중에 승인하지 않게)", async () => {
+    const result = await applyProductMappings(
+      { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] },
+      {
+        storeOptions: storeDeps,
+        approve: async () => ({ ok: false, code: "APPROVE_ERROR", httpStatus: 500, error: "승인 처리 중 오류", status: "PENDING_APPROVAL" }),
+      },
+    );
+    expect(result).toMatchObject({ ok: false, code: "APPLY_FAILED" });
+    const proposals = await realPrisma.actionProposal.findMany();
+    expect(proposals.map((proposal: { status: string }) => proposal.status)).toEqual(["REJECTED"]);
+    expect(await mappings()).toEqual([]);
+  });
+
+  it("승인 함수가 던져도 승인대기 기록을 닫고 실패를 돌려준다", async () => {
+    const result = await applyProductMappings(
+      { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] },
+      {
+        storeOptions: storeDeps,
+        approve: async () => {
+          throw new Error("boom");
+        },
+      },
+    );
+    expect(result).toMatchObject({ ok: false, code: "APPLY_FAILED" });
+    expect((await realPrisma.actionProposal.findFirst()).status).toBe("REJECTED");
+  });
+
+  it("원문이 매핑 상한(100자)을 넘는 스토어 옵션은 그 줄만 OPTION_NAME_TOO_LONG, 나머지는 저장한다", async () => {
+    // 비교 키(공백 접기)로는 100자 안이라 봇 줄과 짝이 맞지만, 저장 글자(스토어 원문)는 공백 때문에 100자를 넘는다.
+    const spaced = `구성: ${"가 ".repeat(30)}${" ".repeat(60)}끝`;
+    storeOptionNames = [OPTION_A, spaced];
+    const botText = spaced.replace(/\s+/g, " ");
+    expect(botText.length).toBeLessThanOrEqual(100);
+    expect(spaced.length).toBeGreaterThan(100);
+    const result = await applyProductMappings(
+      {
+        orderCampaignId: CAMPAIGN_ID,
+        mappings: [
+          { optionName: OPTION_A, brandCode: "TC-001", price: 30000 },
+          { optionName: botText, brandCode: "TC-LONG", price: 1 },
+        ],
+      },
+      { storeOptions: storeDeps },
+    );
+    expect(result).toMatchObject({ ok: true, data: { created: 1 } });
+    expect(result.ok && result.data.rejected.map((row) => row.code)).toEqual(["OPTION_NAME_TOO_LONG"]);
+  });
+
+  it("거절 줄의 옵션명은 결과 상한 안에 들도록 잘라 돌려준다(50줄 × 100자 거절)", async () => {
+    const result = await applyProductMappings(
+      {
+        orderCampaignId: CAMPAIGN_ID,
+        mappings: Array.from({ length: 50 }, (_, index) => ({
+          optionName: `코드표 이름 ${index} ${"나".repeat(90)}`,
+          brandCode: "TC-X",
+          price: 1,
+        })),
+      },
+      { storeOptions: storeDeps },
+    );
+    expect(result).toMatchObject({ ok: true, data: { created: 0 } });
+    expect(result.ok && result.data.rejected).toHaveLength(50);
+    expect(result.ok && result.data.rejected.every((row) => row.optionName.length <= 40)).toBe(true);
+  });
+});
+
 describe("스토어 옵션 대조 자료 — Fixie 요청 수", () => {
   it("조회 뒤 10분 안 저장은 네이버를 다시 부르지 않는다", async () => {
     const { loadStoreOptionsFresh } = await import("../store-product-options");

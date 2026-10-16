@@ -19,7 +19,11 @@ const SECRET = "k".repeat(64);
 const original = process.env.AGENT_INTERNAL_API_SECRET;
 
 function post(path: string, body: unknown, headers: Record<string, string> = { "x-agent-internal-secret": SECRET }) {
-  return new Request(`http://127.0.0.1:3000${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+  return new Request(`http://127.0.0.1:3000${path}`, {
+    method: "POST",
+    headers: { host: "127.0.0.1:3000", ...headers },
+    body: JSON.stringify(body),
+  });
 }
 
 beforeEach(() => {

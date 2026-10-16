@@ -8,8 +8,11 @@ import { AGENT_INTERNAL_SECRET_HEADER } from "../api-contract";
 const SECRET = "a".repeat(64);
 const original = process.env.AGENT_INTERNAL_API_SECRET;
 
-function request(headers: Record<string, string>): Request {
-  return new Request("http://127.0.0.1:3000/api/internal/agent/store-product-options", { method: "POST", headers });
+function request(headers: Record<string, string>, host = "127.0.0.1:3000"): Request {
+  return new Request("http://127.0.0.1:3000/api/internal/agent/store-product-options", {
+    method: "POST",
+    headers: { host, ...headers },
+  });
 }
 
 afterEach(() => {
@@ -42,6 +45,18 @@ describe("verifyAgentInternalRequest", () => {
         verifyAgentInternalRequest(request({ [AGENT_INTERNAL_SECRET_HEADER]: SECRET, [tunnelHeader]: "x" })),
       ).toBe(false);
     }
+  });
+
+  it("받는 주소(Host)가 루프백이 아니면 비밀값이 맞아도 거절한다", () => {
+    process.env.AGENT_INTERNAL_API_SECRET = SECRET;
+    expect(verifyAgentInternalRequest(request({ [AGENT_INTERNAL_SECRET_HEADER]: SECRET }, "crm.example.com"))).toBe(false);
+    expect(verifyAgentInternalRequest(request({ [AGENT_INTERNAL_SECRET_HEADER]: SECRET }, "localhost:3000"))).toBe(true);
+    expect(verifyAgentInternalRequest(request({ [AGENT_INTERNAL_SECRET_HEADER]: SECRET }, "[::1]:3000"))).toBe(true);
+  });
+
+  it("앱 비밀값의 앞뒤 공백(붙여넣기 줄 끝)은 걷고 잰다", () => {
+    process.env.AGENT_INTERNAL_API_SECRET = `${SECRET} \r`;
+    expect(verifyAgentInternalRequest(request({ [AGENT_INTERNAL_SECRET_HEADER]: SECRET }))).toBe(true);
   });
 
   it("비밀값이 없거나 다르면 거절한다", () => {

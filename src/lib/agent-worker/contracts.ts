@@ -968,8 +968,15 @@ export const storeProductOptionsStructuredDataSchema = z
 
 export type StoreProductOptionsStructuredData = z.infer<typeof storeProductOptionsStructuredDataSchema>;
 
-/** 줄 단위 거절 사유 — 지금은 「네이버 등록 옵션이 아님」 하나뿐이다. */
-export const APPLY_ROW_REJECTION_CODES = ["NOT_A_STORE_OPTION"] as const;
+/**
+ * 줄 단위 거절 사유. `NOT_A_STORE_OPTION` = 네이버 등록 옵션이 아님(코드표 이름 등).
+ * `OPTION_NAME_TOO_LONG` = 스토어 옵션이지만 글자가 매핑 상한(`MAX_MAPPING_OPTION_NAME_CHARS`)을 넘어 봇이 저장할 수
+ * 없음 — 그 줄은 캠페인 설정 창에서 넣는다(화면은 길이 제한이 없다).
+ */
+export const APPLY_ROW_REJECTION_CODES = ["NOT_A_STORE_OPTION", "OPTION_NAME_TOO_LONG"] as const;
+
+/** 결과의 거절 줄 옵션명 상한 — 봇이 보낸 글자를 그대로 되돌리면 50줄 × 100자가 결과 상한(12KB)을 넘는다. */
+export const MAX_REJECTED_OPTION_NAME_CHARS = 40;
 
 /**
  * `apply_product_mappings` 결과. `proposalId` = 결재함에 남긴 EXECUTED 기록(바뀐 줄이 없으면 기록하지 않아 null).
