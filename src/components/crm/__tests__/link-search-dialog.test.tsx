@@ -207,4 +207,38 @@ describe("link-search-dialog deal labels", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
+
+  it("셀러 행은 평가 칩 없이 한 줄(아이콘·이름·핸들)이고 안내는 「거래 셀러 먼저」를 말한다", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ id: "s1", name: "셀러 하나", alias: null, snsType: "INSTAGRAM", snsHandle: "one", fitLevel: "추천" }],
+      }),
+    });
+    render(
+      <LinkSearchDialog open onOpenChange={() => {}} entityType="seller" searchEndpoint="/api/search/sellers" onSelect={() => {}} />,
+    );
+    const row = await screen.findByRole("button", { name: /셀러 하나/ });
+    expect(row).toHaveTextContent("@one");
+    expect(row).not.toHaveTextContent("추천");
+    expect(screen.getByText(/거래 셀러 먼저 · 최근 20건/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/search/sellers?", expect.anything());
+  });
+
+  it("캠페인 행은 셀러 · 딜 · 채널 한 줄에 시작일을 보이고 상태 칩은 없다", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ id: "c1", sellerName: "셀러 하나", dealName: "딜 하나", salesChannel: "OWN_MALL", status: "SELLING", startDate: "2026-10-01T00:00:00.000Z" }],
+      }),
+    });
+    render(
+      <LinkSearchDialog open mode="link" onOpenChange={() => {}} entityType="campaign" searchEndpoint="/api/search/campaigns" onSelect={() => {}} />,
+    );
+    const row = await screen.findByRole("button", { name: /셀러 하나/ });
+    expect(row).toHaveTextContent("딜 하나");
+    expect(row).toHaveTextContent("26-10-01");
+    expect(row).not.toHaveTextContent("판매중");
+    expect(screen.getByText(/최근 시작순 20건/)).toBeInTheDocument();
+  });
 });

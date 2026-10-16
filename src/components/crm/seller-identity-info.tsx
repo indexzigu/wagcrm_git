@@ -51,6 +51,11 @@ const renderSnsIcon = (snsType?: string | null, className?: string) => {
   return <Globe className={cn("text-slate-400/80 shrink-0", className)} />;
 };
 
+/** 채널 아이콘만 — 고르는 창 행처럼 이름·핸들을 호출처가 직접 배치할 때. */
+export function SnsIcon({ snsType, className }: { snsType?: string | null; className?: string }) {
+  return <>{renderSnsIcon(snsType, className)}</>;
+}
+
 export type SellerIdentityInfoProps = {
   sellerName: string | null;
   snsType?: string | null;
