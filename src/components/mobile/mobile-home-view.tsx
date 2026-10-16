@@ -62,7 +62,7 @@ export function MobileHomeView({
                 <p className="text-2xl font-bold tabular-nums tracking-tight text-white/90">
                   ₩<AnimatedNumber value={initialData.goals.ytdActual} format="currency" />
                 </p>
-                <p className="text-[10px] tabular-nums text-white/50 mt-0.5">
+                <p className="text-[10px] tabular-nums text-white/60 mt-0.5">
                   목표 {initialData.goals.annualTarget == null ? "미설정" : `₩${formatCurrency(initialData.goals.annualTarget)}`}
                 </p>
               </div>
@@ -88,7 +88,7 @@ export function MobileHomeView({
                 <p className="text-2xl font-bold tabular-nums tracking-tight">
                   ₩<AnimatedNumber value={initialData.goals.monthActual} format="currency" />
                 </p>
-                <p className="text-[10px] tabular-nums text-white/50 mt-0.5">
+                <p className="text-[10px] tabular-nums text-white/60 mt-0.5">
                   목표 {initialData.goals.monthTarget == null ? "미설정" : `₩${formatCurrency(initialData.goals.monthTarget)}`}
                 </p>
               </div>

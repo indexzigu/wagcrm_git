@@ -78,8 +78,9 @@ export const GOAL_BAND_FILL_ON_NAVY: Record<GoalBand, string> = {
 
 /**
  * 밴드 산출 불가(목표 미설정) 시 숫자 색 — "정상"(white/70)보다 더 조용한 최하위 톤
- * (딥 청록 위 white/60 = 4.81:1, AA. white/50 은 3.85:1 로 미달이라 올렸다). 같은 줄의 "목표 미설정" 캡션과 동급으로 앉힌다 — 데이터가 없는
- * 상태이므로 실제 값을 담은 "정상"보다 흐린 게 맞다.
+ * (딥 청록 위 white/60 = 4.81:1, AA. white/50 은 3.85:1 로 미달이라 올렸다). 히어로의 보조
+ * 캡션(목표 라벨 등, 역시 white/60)과 같은 톤이다 — 데이터가 없는 상태이므로 실제 값을 담은
+ * "정상"(white/70)보다 흐린 게 맞다.
  */
 export const GOAL_BAND_TEXT_UNSET_ON_NAVY = "text-white/60";
 

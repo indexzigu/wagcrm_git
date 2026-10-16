@@ -1037,7 +1037,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                         <p className="text-2xl font-bold tracking-tight text-white/90">
                           <AnimatedNumber value={currentYtd} format="currency" />
                         </p>
-                        <p className="text-[10px] text-white/50">
+                        <p className="text-[10px] text-white/60">
                           연 목표 {initialData.goals.annualTarget == null ? "미설정" : formatCurrency(initialData.goals.annualTarget)}
                         </p>
                       </div>
@@ -1094,7 +1094,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                       <p className="text-2xl font-bold tracking-tight">
                         <AnimatedNumber value={initialData.goals.monthActual} format="currency" />
                       </p>
-                      <p className="text-[10px] text-white/50">목표 {initialData.goals.monthTarget == null ? "미설정" : formatCurrency(initialData.goals.monthTarget)}</p>
+                      <p className="text-[10px] text-white/60">목표 {initialData.goals.monthTarget == null ? "미설정" : formatCurrency(initialData.goals.monthTarget)}</p>
                     </div>
                   </div>
                   <p className={`text-2xl font-bold ${monthBandClass}`}>

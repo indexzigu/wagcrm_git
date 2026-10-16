@@ -336,15 +336,15 @@
      새로 유추하지 않고 라이트 값을 그대로 상속시켜 "신규 토큰 정의 누락"을 피한다. 다크모드 도입 시 재검토. */
   --chart-growth: var(--status-success);
   --chart-growth-soft: #6EE7B7;
-  /* 다크 사이드바 — 현재 앱에 다크 토글 없음(비활성). Option B 다크 대응: 슬레이트 표면 + 달성 액센트 */
+  /* 다크 사이드바 — 현재 앱에 다크 토글 없음(비활성). Option B 다크 대응: 슬레이트 표면 + 연청록 마크색 액센트(모래색은 달성 전용) */
   --sidebar: #0F172A;
   --sidebar-foreground: #F1F5F9;
-  --sidebar-primary: var(--accent-achieve);
+  --sidebar-primary: var(--brand-mark);
   --sidebar-primary-foreground: var(--hero-deep);
   --sidebar-accent: rgba(255, 255, 255, 0.06);
   --sidebar-accent-foreground: #F1F5F9;
   --sidebar-border: rgba(255, 255, 255, 0.10);
-  --sidebar-ring: var(--accent-achieve);
+  --sidebar-ring: var(--brand-mark);
 }
 
 @layer base {
@@ -486,7 +486,7 @@
     position: absolute;
     inset: -2px;
     border-radius: 9999px;
-    border: 2px solid var(--accent-achieve);
+    border: 2px solid var(--status-pending);
     opacity: 0;
     animation: today-ping 900ms ease-out 2;
   }
@@ -585,7 +585,7 @@
   }
 
   .today-section-chart::before {
-    background: linear-gradient(90deg, rgba(2, 132, 199, 0.82), rgba(56, 189, 248, 0.55), rgba(2, 132, 199, 0));
+    background: linear-gradient(90deg, rgba(15, 95, 103, 0.82), rgba(52, 177, 188, 0.55), rgba(15, 95, 103, 0));
   }
 
   .today-section-status::before {
@@ -615,7 +615,7 @@
   }
 
   .crm-horizontal-accent-settlement::before {
-    background: linear-gradient(90deg, rgba(0, 169, 127, 0.78), rgba(2, 132, 199, 0.48), rgba(0, 169, 127, 0));
+    background: linear-gradient(90deg, rgba(0, 169, 127, 0.78), rgba(52, 177, 188, 0.48), rgba(0, 169, 127, 0));
   }
 
   .crm-horizontal-accent-outreach::before {
