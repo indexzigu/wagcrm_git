@@ -340,7 +340,7 @@ describe("CampaignEditModal 스토어 옵션 다시 불러오기", () => {
 
     await user.click(await screen.findByRole("button", { name: "N스토어 동기화" }));
 
-    expect(await screen.findByText("같은 옵션이 위에 있음")).toBeInTheDocument();
+    expect(await screen.findByText("중복 옵션")).toBeInTheDocument();
     expect(screen.getByDisplayValue("CODE-A")).toBeInTheDocument();
     expect(screen.getByDisplayValue("CODE-A2")).toBeInTheDocument();
     expect(screen.queryByText("스토어에 없는 옵션")).not.toBeInTheDocument();

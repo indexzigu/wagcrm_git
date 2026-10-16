@@ -5,8 +5,11 @@ import { Campaign } from '@/types/campaign';
 import { getDisplayDealName } from '@/lib/deal-display';
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
 
-/** 옵션명 정규화 키 — 스토어 옵션 재조회 시 기존 딜 연결을 이어붙이는 데 쓴다(공백·기호 표기 흔들림 흡수). */
+/** 옵션명 정규화 키 — 스토어 옵션 재조회 시 기존 줄의 상품코드·단가·딜 연결을 이어받는 데 쓴다(공백·기호 표기 흔들림 흡수). */
 const normOptionKey = (s: string | null | undefined) => (s || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
+
+/** 매핑 표의 줄에 운영자가 적은 내용이 있는가 — 스토어 동기화의 확인창·기존 줄 보존 판정이 같은 기준을 쓴다. */
+const hasRowContent = (m: any) => Boolean(m.productName || m.optionName || m.brandCode || (m.price || 0) > 0);
 
 type CampaignEditModalProps = {
   campaign: Campaign;
@@ -69,8 +72,7 @@ export default function CampaignEditModal({
   // 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드. 새 옵션의 상품코드는 비워두고(미기입 운영),
   // 이미 있던 옵션 줄은 상품코드·단가·딜 연결을 이어받는다(아래 setEditMappings 주석).
   const handleLoadStoreOptions = async () => {
-    const hasContent = editMappings.some(m => m.optionName || m.brandCode || (m.price || 0) > 0);
-    if (hasContent && !window.confirm('스토어 옵션으로 매핑 표를 다시 맞출까요? 옵션명이 같은 줄의 상품코드·단가·딜 연결은 그대로 남고, 스토어에 없는 옵션 줄은 지우지 않고 표시합니다.')) return;
+    if (editMappings.some(hasRowContent) && !window.confirm('스토어 옵션으로 매핑 표를 다시 맞출까요? 옵션명이 같은 줄의 상품코드·단가·딜 연결은 그대로 남고, 스토어에 없는 옵션 줄은 지우지 않고 표시합니다.')) return;
 
     setIsLoadingOptions(true);
     setLoadOptionsError(null);
@@ -106,7 +108,6 @@ export default function CampaignEditModal({
       // 상품명은 스토어 값을 쓴다 — 주문 매칭이 대조하는 글자가 스토어 상품명이기 때문.
       // 스토어에 없는(사라졌거나 이름이 바뀐) 옵션 줄은 지우지 않고 뒤에 남겨 표시한다 — 삭제는 운영자 판단.
       setEditMappings((prev) => {
-        const hasRowContent = (m: any) => Boolean(m.productName || m.optionName || m.brandCode || (m.price || 0) > 0);
         const prevByOption = new Map<string, any>();
         for (const m of prev) {
           const key = normOptionKey(m.optionName);
@@ -118,7 +119,7 @@ export default function CampaignEditModal({
           const key = normOptionKey(r.optionName);
           storeKeys.add(key);
           const before = prevByOption.get(key);
-          if (!before || consumed.has(before)) return { ...r, campaignDealId: null };
+          if (!before || consumed.has(before)) return { ...r, brandCode: '', campaignDealId: null };
           consumed.add(before);
           return {
             ...r,
@@ -484,7 +485,7 @@ export default function CampaignEditModal({
                                 <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                   <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />
                                 </svg>
-                                {m.storeSyncNote === 'duplicate' ? '같은 옵션이 위에 있음' : '스토어에 없는 옵션'}
+                                {m.storeSyncNote === 'duplicate' ? '중복 옵션' : '스토어에 없는 옵션'}
                               </p>
                             )}
                           </td>
