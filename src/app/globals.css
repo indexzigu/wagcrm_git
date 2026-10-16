@@ -58,7 +58,7 @@
      electric-teal·deep-navy·cloud-dancer)는 소비처 0건이라 제거했다(2026-07-30).
      이름색은 5개 의미축(P8 §1) 밖이라 되살리지 말 것 — 새 색이 필요하면 토큰을 만든다.
      neon-gold 만 남는 이유는 소비처가 실재하기 때문이다: inline-data-grid 의 행 hover
-     (`hover:bg-neon-gold/5`). 승인 팔레트의 --accent-gold(#E7A567)와는 다른 값이다. */
+     (`hover:bg-neon-gold/5`). 승인 팔레트의 --accent-achieve 와는 다른 값이다. */
   --color-neon-gold: #D4AF37;
   --color-status-urgent: var(--status-urgent);
   --color-status-active: var(--status-active);
@@ -73,11 +73,17 @@
   --color-status-pending-text: var(--status-pending-text);
   --color-status-success: var(--status-success);
   --color-status-success-bg: var(--status-success-bg);
-  /* 골드 액센트를 status-* 와 같은 방식으로 유틸에 노출(2026-07-15). 새 색이 아니라
-     기존 --accent-gold/-soft 를 그대로 태우는 것 — 노출이 없어서 소비처가 리터럴 hex
-     (#E7A567/#F2C79C)를 직접 박고 있었다(모바일 홈 히어로). 값 변경 없음. */
-  --color-accent-gold: var(--accent-gold);
-  --color-accent-gold-soft: var(--accent-gold-soft);
+  /* 2026-10-16 청록 팔레트 교체(Apple UI 갱신): 구 골드 액센트는 「달성」 모래색으로,
+     구 히어로 네이비는 딥 청록으로 바뀌었다. 유틸 노출은 :root 정의와 짝이어야 한다
+     (한쪽만 있으면 클래스는 붙고 색만 조용히 죽는다 — P8 §6). */
+  --color-accent-achieve: var(--accent-achieve);
+  --color-accent-achieve-soft: var(--accent-achieve-soft);
+  --color-hero-deep: var(--hero-deep);
+  --color-fill-teal-1: var(--fill-teal-1);
+  --color-fill-teal-2: var(--fill-teal-2);
+  --color-fill-teal-3: var(--fill-teal-3);
+  --color-primary-tint: var(--primary-tint);
+  --color-brand-mark: var(--brand-mark);
   /* 자금 방향(입금/지급) 전용 축 — 상태 배지 스킴과 별개다(가드레일 2 위반 아님).
      지급은 "위험"이 아니라서 --status-urgent 에 흡수할 수 없다. 값은 캘린더가 이미
      리터럴로 쓰던 것 그대로(시각 변화 0) — 이름이 없어서 리터럴이 박혀 있었다. */
@@ -115,29 +121,36 @@
   --grid-padding-x: 14px;
   --grid-padding-y: 8px;
   --font-size-data: 13px;
-  --pipeline-won: #0A3D62;
-  --pipeline-active: #0A3D62;
+  --pipeline-won: var(--primary);
+  --pipeline-active: var(--primary);
   --pipeline-progress: rgba(15, 23, 42, 0.4);
   --pipeline-lost: #BF5050;
   /* 주문 배송진행 분포 바(order-dashboard) 4단. 진행 3단(주문확인→배송대기→배송중)은 네이비 단일 hue 램프(opaque
      고정, 반투명 /70·/40 비결정 합성 제거). 완료는 골드로 질적 전환 = "다 차면 미션완료" 달성 종착점.
-     오너 결정 2026-07-10: 골드(--accent-gold)를 상태축에 승격(기존 '장식 전용' 원칙 해제). 지연은 색 아닌 라벨 빨간 텍스트로. */
+     오너 결정 2026-07-10: 달성색(--accent-achieve, 구 골드)을 상태축에 승격(기존 '장식 전용' 원칙 해제). 지연은 색 아닌 라벨 빨간 텍스트로. */
   --pipeline-unconfirmed: #94A3B8;          /* 미확인(발주확인 대기 큐) = slate-400. 경보 아닌 '아직 손 안 댄 대기'라 회색, 빨강은 지연 전용 보존 */
-  --pipeline-confirm: #0A3D62;              /* 주문확인(발주완료) — --primary 그대로 */
+  --pipeline-confirm: var(--primary);       /* 주문확인(발주완료) — --primary 그대로 */
   --pipeline-pending: #276B9B;              /* 배송대기 */
   --pipeline-shipping: #649CC4;             /* 배송중 */
-  --pipeline-completed: var(--accent-gold); /* 배송완료 = 미션완료(달성 종착점) #E7A567 */
+  --pipeline-completed: var(--accent-achieve); /* 배송완료 = 미션완료(달성 종착점) — 달성 모래색 */
   --transition-smooth: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --card: #FFFFFF;
   --card-foreground: #0F172A;
   --popover: #FFFFFF;
   --popover-foreground: #0F172A;
-  --primary: #0A3D62;
+  --primary: #0F5F67;
   --primary-foreground: #FFFFFF;
-  /* 승인 팔레트 신규 — 히어로 네이비 + 골드 액센트. 단일 액센트 원칙(네이비=일하는 색, 골드=강조·장식 전용) (오너 승인, 2026-07-09) */
-  --hero-navy: #08314E; /* --primary(락) 파생값: oklch(from var(--primary) calc(l*0.8) c h), 브라우저 호환 위해 정적 hex로 고정 */
-  --accent-gold: #E7A567;
-  --accent-gold-soft: #F2C79C;
+  /* 2026-10-16 청록 팔레트(Apple UI 갱신, 오너 확정): 앵커 청록 + 딥 청록 표면 + 달성 모래색.
+     단일 액센트 원칙: 청록=일하는 색, 모래색=목표 달성·완료 전용. 구 네이비/골드 값은 이력 주석으로만 남긴다
+     (잔존 계약 brand-token-residue 가 옛 이름·옛 hex 를 막는다). 면색(fill-teal)은 면 전용 — 글자 금지. */
+  --hero-deep: #0B474D; /* 히어로·딥 표면. 구 히어로 네이비 자리(2026-10-16 교체) */
+  --accent-achieve: #E3C27A; /* 달성 모래색 — 달성 밴드·파이프라인 완료 전용. 딥 표면 위 6.06:1 (구 골드, 2026-10-16 교체) */
+  --accent-achieve-soft: #F0DCA6; /* 딥 표면 위 7.66:1 */
+  --fill-teal-1: #34b1bc; /* 면색 — 채움 전용, 글자 금지 */
+  --fill-teal-2: #69c5cf;
+  --fill-teal-3: #70cdca;
+  --primary-tint: #DDF0F1; /* 앵커 틴트 배경 — 위 --primary 글자 6.24:1 */
+  --brand-mark: #A7DCE2; /* 브랜드 마크 연청록 — 앵커 타일·딥 표면 위 마크 전용(모래색 금지) */
   /* 자금 방향 축(2026-07-15 등록) — 입금=들어오는 돈, 지급=나가는 돈. 상태 배지
      스킴과 의미축이 다르다: 지급은 위험 신호가 아니다. 캘린더 링·시트 방향 아이콘이
      쓰던 리터럴 값 그대로다. */
@@ -146,12 +159,12 @@
   /* 위 두 값은 SVG 링·아이콘(비텍스트 3:1)용이다. 흰 배경 본문 텍스트에는 --money-in-text 를
      쓴다 — --money-in 은 3.77:1 로 AA 미달이다(@theme 블록 주석에 근거). */
   --money-in-text: #047857;
-  /* 목표 달성 축 "심각 미달"(<80%) — 히어로 네이비 위 5.00:1(AA). rose-400.
-     오너 확정 D3 2026-07-15: amber-400 은 8.07 로 대비는 좋으나 네이비 위에서 달성
-     골드(#F2C79C, 8.61)와 뭉개져 달성/미달이 구분되지 않는다. **흰 배경 금지** — 2.69:1
-     로 텍스트 AA(4.5)는 물론 비텍스트 3:1 도 못 넘는다(emerald-500 2.54 와 같은 함정).
-     이 토큰은 네이비 표면 전용이고, 흰 카드의 위험색은 --status-urgent 계열이 담당한다. */
-  --goal-miss: #FB7185;
+  /* 목표 달성 축 "심각 미달"(<80%) — 딥 청록 히어로 위 5.49:1(AA). rose-300.
+     2026-10-16 재선정: 표면이 딥 청록(#0B474D)으로 바뀌며 종전 rose-400 이 3.86:1 로 미달해
+     한 단계 밝혔다. 달성 모래색과는 색상 계열이 달라(장미 vs 모래) 구분이 유지된다.
+     **흰 배경 금지** — 흰 위에선 비텍스트 3:1 도 못 넘는다. 이 토큰은 딥 표면 전용이고,
+     흰 카드의 위험색은 --status-urgent 계열이 담당한다. */
+  --goal-miss: #FDA4AF;
   --secondary: #F1F5F9;
   --secondary-foreground: #0F172A;
   --muted: #F1F5F9;
@@ -161,14 +174,14 @@
   --destructive: #BF5050;
   --border: rgba(15, 23, 42, 0.08);
   --input: rgba(15, 23, 42, 0.08);
-  --ring: rgba(10, 61, 98, 0.2);
-  /* focus-visible 포커스 링 정본(앱 전역 표준). --primary(#0A3D62) 60% 알파 — 신규 hue 아님.
+  --ring: rgba(15, 95, 103, 0.2);
+  /* focus-visible 포커스 링 정본(앱 전역 표준). --primary(#0F5F67) 60% 알파 — 신규 hue 아님.
      반투명 링을 배경에 합성한 실효 대비: 흰 카드 3.60:1 / 페이지배경(#F8FAFC) 3.53:1 / 뮤트(#F1F5F9) 3.47:1
      로 세 표면 모두 WCAG 2.2 SC 1.4.11(Non-text Contrast) AA 3:1을 안정 마진으로 충족(최악=뮤트).
      기존 /45는 2.43~2.47:1로 미달이었음. 조정은 이 토큰 한 곳만. .dark는 미사용이라 :root값 상속. */
-  --focus-ring: rgba(10, 61, 98, 0.6);
-  --chart-1: #0A3D62;
-  --chart-2: #0284C7;
+  --focus-ring: rgba(15, 95, 103, 0.6);
+  --chart-1: #0F5F67;
+  --chart-2: #1F7F88;
   --chart-3: #9F8329;   /* was #38BDF8 — 약한 3번째 파랑 대신 색맹 안전 골드축. 승인 팔레트 2026-07-09 */
   --chart-4: #F59E0B;   /* --status-pending 과 값이 같지만 var() 로 묶지 않는다:
      차트 계열은 P8 5축(방향·판정·심각도·생애주기·달성) 밖의 계열 구분 팔레트라
@@ -184,14 +197,14 @@
   --radius-dashboard: 14px;   /* was 24px — 오너 각진(squarish) 취향. 승인 팔레트 2026-07-09 */
   --crm-panel: rgba(255, 255, 255, 0.95);
   --crm-surface: #F8FAFC;
-  --sidebar: #08314E;   /* 히어로 네이비 통일 — 오너 결정 2026-07-10(밝은 뮤트 슬레이트 #F1F5F9에서 전환). 다크 표면이라 아래 토큰 동반 재조정. 다크모드 사이드바(#0F172A) 처리 미러링 */
-  --sidebar-foreground: #E2E8F0;   /* 네이비 위 라이트 텍스트 (대비 ~13:1) */
-  --sidebar-primary: #E7A567;   /* 액티브/브랜드 액센트 = 골드 (네이비+골드 락, 네이비 위 골드 대비 ~6:1) */
-  --sidebar-primary-foreground: #08314E;   /* 골드 solid 위 네이비 텍스트 (로고 칩) */
-  --sidebar-accent: rgba(255, 255, 255, 0.08);   /* hover wash (다크 표면) */
-  --sidebar-accent-foreground: #F8FAFC;
-  --sidebar-border: rgba(255, 255, 255, 0.10);   /* 헤어라인 (다크 표면) */
-  --sidebar-ring: #E7A567; /* 사이드바 포커스 링: 불투명 골드 on 네이비 #08314E = 6.40:1(hover 워시 위 4.73). 구 50% 알파는 2.60:1 로 3:1 미달 */
+  --sidebar: #F5F7F8;   /* 밝은 사이드바(2026-10-16 Apple UI 갱신, 오너 확정 — 딥 표면에서 전환). 현재 메뉴 글자 --primary 6.85:1 */
+  --sidebar-foreground: #334155;
+  --sidebar-primary: #0F5F67;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: rgba(15, 95, 103, 0.08);
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: rgba(15, 23, 42, 0.08);
+  --sidebar-ring: var(--focus-ring);
   --tertiary: #4F46E5;
   --tertiary-foreground: #FFFFFF;
   /* 사다리 값 재보정(오너 A안 확정 2026-07-15). 앱은 카드 그림자로 Tailwind 원시
@@ -229,7 +242,7 @@
   --glass-blur: 16px;
   --glass-border: rgba(15, 23, 42, 0.06);
   --status-urgent: #BF5050;
-  --status-active: #0A3D62;
+  --status-active: #0F5F67;
   --status-pending: #F59E0B;
   --status-info: #4A6B82;
   /* 승인 팔레트 신규 — 상태 3계열 확장, "1의미=1색" 원칙 (오너 승인, 2026-07-09) */
@@ -248,8 +261,8 @@
   --cal-border: 214 32% 91%;       
   
   /* Primary Accent */
-  --cal-primary: 207 89% 21%;      
-  --cal-primary-soft: 207 89% 95%; 
+  --cal-primary: 185 74% 23%;      
+  --cal-primary-soft: 185 60% 94%; 
   
   --spacing-card-sm: 16px;
   --spacing-section: 24px;
@@ -323,15 +336,15 @@
      새로 유추하지 않고 라이트 값을 그대로 상속시켜 "신규 토큰 정의 누락"을 피한다. 다크모드 도입 시 재검토. */
   --chart-growth: var(--status-success);
   --chart-growth-soft: #6EE7B7;
-  /* 다크 사이드바 — 현재 앱에 다크 토글 없음(비활성). Option B 다크 대응: 슬레이트 표면 + 골드 액센트 */
+  /* 다크 사이드바 — 현재 앱에 다크 토글 없음(비활성). Option B 다크 대응: 슬레이트 표면 + 달성 액센트 */
   --sidebar: #0F172A;
   --sidebar-foreground: #F1F5F9;
-  --sidebar-primary: #E7A567;
-  --sidebar-primary-foreground: #08314E;
+  --sidebar-primary: var(--accent-achieve);
+  --sidebar-primary-foreground: var(--hero-deep);
   --sidebar-accent: rgba(255, 255, 255, 0.06);
   --sidebar-accent-foreground: #F1F5F9;
   --sidebar-border: rgba(255, 255, 255, 0.10);
-  --sidebar-ring: #E7A567; /* 사이드바 포커스 링: 불투명 골드 on 네이비 #08314E = 6.40:1(hover 워시 위 4.73). 구 50% 알파는 2.60:1 로 3:1 미달 */
+  --sidebar-ring: var(--accent-achieve);
 }
 
 @layer base {
@@ -473,7 +486,7 @@
     position: absolute;
     inset: -2px;
     border-radius: 9999px;
-    border: 2px solid var(--accent-gold);
+    border: 2px solid var(--accent-achieve);
     opacity: 0;
     animation: today-ping 900ms ease-out 2;
   }
@@ -551,7 +564,7 @@
 
   .mobile-briefing-section {
     position: relative;
-    border-left: 4px solid rgba(10, 61, 98, 0.72);
+    border-left: 4px solid rgba(15, 95, 103, 0.72);
     padding-block: 0.15rem 0.85rem;
     padding-left: 0.75rem;
   }
@@ -568,7 +581,7 @@
     right: 0;
     height: 9px;
     border-radius: 999px;
-    background: linear-gradient(90deg, rgba(10, 61, 98, 0.82), rgba(212, 175, 55, 0.62), rgba(10, 61, 98, 0));
+    background: linear-gradient(90deg, rgba(15, 95, 103, 0.82), rgba(212, 175, 55, 0.62), rgba(15, 95, 103, 0));
   }
 
   .today-section-chart::before {
@@ -584,7 +597,7 @@
   }
 
   .today-section-calendar::before {
-    background: linear-gradient(90deg, rgba(0, 169, 127, 0.78), rgba(10, 61, 98, 0.5), rgba(0, 169, 127, 0));
+    background: linear-gradient(90deg, rgba(0, 169, 127, 0.78), rgba(15, 95, 103, 0.5), rgba(0, 169, 127, 0));
   }
 
   .crm-horizontal-accent {
@@ -598,7 +611,7 @@
     left: 0;
     right: 0;
     height: 5px;
-    background: linear-gradient(90deg, rgba(10, 61, 98, 0.82), rgba(212, 175, 55, 0.48), rgba(10, 61, 98, 0));
+    background: linear-gradient(90deg, rgba(15, 95, 103, 0.82), rgba(212, 175, 55, 0.48), rgba(15, 95, 103, 0));
   }
 
   .crm-horizontal-accent-settlement::before {
@@ -606,12 +619,12 @@
   }
 
   .crm-horizontal-accent-outreach::before {
-    background: linear-gradient(90deg, rgba(212, 175, 55, 0.86), rgba(10, 61, 98, 0.45), rgba(212, 175, 55, 0));
+    background: linear-gradient(90deg, rgba(212, 175, 55, 0.86), rgba(15, 95, 103, 0.45), rgba(212, 175, 55, 0));
   }
 
   .pearl-hover:hover {
     box-shadow: var(--shadow-soft-hover);
-    border-color: rgba(10, 61, 98, 0.15);
+    border-color: rgba(15, 95, 103, 0.15);
   }
 
   .dashboard-grid {
