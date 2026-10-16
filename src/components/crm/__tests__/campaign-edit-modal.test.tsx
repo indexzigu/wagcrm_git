@@ -256,3 +256,93 @@ describe("CampaignEditModal 연결 딜 정보가 없는 목록 응답", () => {
     expect(options).toEqual([["deal-1", "테스트 딜"]]);
   });
 });
+
+// 회귀(2026-10-16): 「N스토어 동기화」가 스토어 응답 행(상품코드 빈 값)으로 표를 통째로 바꿔
+// 기존 매핑의 상품코드·단가가 지워졌다. 발주서 양식은 스토어 옵션 글자로 상품코드를 찾으므로
+// 코드가 지워지면 발주서가 깨진다. 옵션명이 같은 줄은 상품코드·단가·딜 연결을 이어받고,
+// 스토어에서 사라진 옵션은 지우지 않고 표에 남겨 표시한다(삭제는 운영자 판단).
+describe("CampaignEditModal 스토어 옵션 다시 불러오기", () => {
+  function storeFetch(rows: unknown[]) {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/order-converter/api/brands")) return jsonResponse({ brands: [] });
+      if (url.includes("/recommended-deals")) return jsonResponse({ recommendations: {} });
+      if (url.endsWith("/order-converter/api/naver/products")) {
+        return jsonResponse({
+          success: true,
+          products: [{ originProductNo: 900, channelProducts: [{ channelProductNo: 901, name: "테스트 주문 캠페인" }] }],
+        });
+      }
+      if (url.includes("/naver/products/901/options")) return jsonResponse({ success: true, rows });
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  }
+
+  const existing = [
+    { id: "m-a", productName: "상품", optionName: "구성: 1개월분", brandCode: "CODE-A", price: 12000, campaignDealId: "deal-1" },
+    { id: "m-b", productName: "상품", optionName: "구성: 단종 옵션", brandCode: "CODE-B", price: 9000, campaignDealId: null },
+  ];
+
+  it("옵션명이 같은 줄은 상품코드·단가·딜 연결을 이어받고, 새 옵션만 빈 상품코드로 더한다", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    storeFetch([
+      // 표기 흔들림(공백)이 있어도 같은 옵션으로 본다.
+      { productName: "상품", optionName: "구성 : 1개월분", brandCode: "", price: 13000 },
+      { productName: "상품", optionName: "구성: 3개월분", brandCode: "", price: 30000 },
+    ]);
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<CampaignEditModal campaign={campaign({ mappings: existing })} onClose={vi.fn()} onSubmit={onSubmit} />);
+
+    await user.click(await screen.findByRole("button", { name: "N스토어 동기화" }));
+
+    await screen.findByDisplayValue("구성: 3개월분");
+    expect(screen.getByDisplayValue("CODE-A")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("12000")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("13000")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "수정하기" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const mappings = onSubmit.mock.calls[0][1].mappings;
+    expect(mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ optionName: "구성 : 1개월분", brandCode: "CODE-A", price: 12000, campaignDealId: "deal-1" }),
+      expect.objectContaining({ optionName: "구성: 3개월분", brandCode: "", price: 30000, campaignDealId: null }),
+    ]));
+  });
+
+  it("스토어에서 사라진 옵션은 지우지 않고 표에 남겨 표시한다", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    storeFetch([{ productName: "상품", optionName: "구성: 1개월분", brandCode: "", price: 12000 }]);
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<CampaignEditModal campaign={campaign({ mappings: existing })} onClose={vi.fn()} onSubmit={onSubmit} />);
+
+    await user.click(await screen.findByRole("button", { name: "N스토어 동기화" }));
+
+    expect(await screen.findByText("스토어에 없는 옵션")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("CODE-B")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "수정하기" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][1].mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ optionName: "구성: 단종 옵션", brandCode: "CODE-B", price: 9000 }),
+    ]));
+    // 화면 표시용 값은 저장 데이터에 싣지 않는다.
+    for (const m of onSubmit.mock.calls[0][1].mappings) expect(m).not.toHaveProperty("storeSyncNote");
+  });
+
+  it("같은 옵션 줄이 둘이면 첫 줄만 이어받고, 나머지는 지우지 않고 중복으로 표시한다", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    storeFetch([{ productName: "상품", optionName: "구성: 1개월분", brandCode: "", price: 12000 }]);
+    const dup = [existing[0], { ...existing[0], id: "m-a2", brandCode: "CODE-A2" }];
+    render(<CampaignEditModal campaign={campaign({ mappings: dup })} onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "N스토어 동기화" }));
+
+    expect(await screen.findByText("중복 옵션")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("CODE-A")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("CODE-A2")).toBeInTheDocument();
+    expect(screen.queryByText("스토어에 없는 옵션")).not.toBeInTheDocument();
+  });
+});

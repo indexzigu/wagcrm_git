@@ -5,8 +5,11 @@ import { Campaign } from '@/types/campaign';
 import { getDisplayDealName } from '@/lib/deal-display';
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
 
-/** 옵션명 정규화 키 — 스토어 옵션 재조회 시 기존 딜 연결을 이어붙이는 데 쓴다(공백·기호 표기 흔들림 흡수). */
+/** 옵션명 정규화 키 — 스토어 옵션 재조회 시 기존 줄의 상품코드·단가·딜 연결을 이어받는 데 쓴다(공백·기호 표기 흔들림 흡수). */
 const normOptionKey = (s: string | null | undefined) => (s || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
+
+/** 매핑 표의 줄에 운영자가 적은 내용이 있는가 — 스토어 동기화의 확인창·기존 줄 보존 판정이 같은 기준을 쓴다. */
+const hasRowContent = (m: any) => Boolean(m.productName || m.optionName || m.brandCode || (m.price || 0) > 0);
 
 type CampaignEditModalProps = {
   campaign: Campaign;
@@ -66,10 +69,10 @@ export default function CampaignEditModal({
   }, [brandOptions, editTemplate, brandsLoaded]);
 
   // 코드표 없는 거래처용: 이 캠페인의 스토어 상품을 찾아(productId 우선, 이름 매칭 폴백)
-  // 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드. 상품코드는 비워둔다(미기입 운영).
+  // 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드. 새 옵션의 상품코드는 비워두고(미기입 운영),
+  // 이미 있던 옵션 줄은 상품코드·단가·딜 연결을 이어받는다(아래 setEditMappings 주석).
   const handleLoadStoreOptions = async () => {
-    const hasContent = editMappings.some(m => m.optionName || m.brandCode || (m.price || 0) > 0);
-    if (hasContent && !window.confirm('현재 매핑 표 내용을 스토어 옵션으로 대체할까요? (딜 연결은 저장 전 다시 확인하세요)')) return;
+    if (editMappings.some(hasRowContent) && !window.confirm('스토어 옵션으로 매핑 표를 다시 맞출까요? 옵션명이 같은 줄의 상품코드·단가·딜 연결은 그대로 남고, 스토어에 없는 옵션 줄은 지우지 않고 표시합니다.')) return;
 
     setIsLoadingOptions(true);
     setLoadOptionsError(null);
@@ -96,22 +99,40 @@ export default function CampaignEditModal({
       const res = await fetch(`/order-converter/api/naver/products/${target.channelProductNo}/options`);
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || '옵션 조회에 실패했습니다.');
-      // 스토어 옵션을 다시 불러와도 기존 딜 연결(campaignDealId)은 옵션명 기준으로 이어받는다.
-      // 과거 전 행을 null로 리셋해서, 저장 시 PUT이 매핑을 재생성하며 연결이 전멸하고
-      // 딜이 하나도 안 붙으면 판매캠페인 연결까지 해제된다(2026-07-15 점검에서 발견).
-      // 신규/이름이 바뀐 옵션만 null로 남아 운영자가 채우면 된다.
+      // 스토어 옵션을 다시 불러와도 옵션명이 같은 기존 줄의 상품코드·단가·딜 연결을 이어받는다.
+      // 매핑 한 줄 = 스토어 옵션 글자 ↔ 상품코드 ↔ 딜의 1:1 묶음이고(오너 확정 2026-10-16),
+      // 발주서 양식은 스토어 옵션 글자로 상품코드를 찾는다. 스토어 응답은 상품코드가 늘 빈 값이라
+      // 그대로 덮으면 코드가 전부 지워져 발주서가 깨진다(2026-10-16 발견).
+      // 딜 연결도 같은 이유로 이어받는다 — 전 행을 null 로 리셋하면 저장 시 PUT 이 매핑을 재생성하며
+      // 연결이 전멸하고 판매캠페인 연결까지 해제된다(2026-07-15 점검에서 발견).
+      // 상품명은 스토어 값을 쓴다 — 주문 매칭이 대조하는 글자가 스토어 상품명이기 때문.
+      // 스토어에 없는(사라졌거나 이름이 바뀐) 옵션 줄은 지우지 않고 뒤에 남겨 표시한다 — 삭제는 운영자 판단.
       setEditMappings((prev) => {
-        const linkedByOption = new Map<string, string>();
+        const prevByOption = new Map<string, any>();
         for (const m of prev) {
           const key = normOptionKey(m.optionName);
-          if (m.campaignDealId && key && !linkedByOption.has(key)) linkedByOption.set(key, m.campaignDealId);
+          if (hasRowContent(m) && !prevByOption.has(key)) prevByOption.set(key, m);
         }
-        return sortProductMappingsByProductName(
-          data.rows.map((r: any) => ({
+        const storeKeys = new Set<string>();
+        const consumed = new Set<any>();
+        const merged = data.rows.map((r: any) => {
+          const key = normOptionKey(r.optionName);
+          storeKeys.add(key);
+          const before = prevByOption.get(key);
+          if (!before || consumed.has(before)) return { ...r, brandCode: '', campaignDealId: null };
+          consumed.add(before);
+          return {
             ...r,
-            campaignDealId: linkedByOption.get(normOptionKey(r.optionName)) ?? null,
-          })),
-        );
+            id: before.id,
+            brandCode: before.brandCode || r.brandCode || '',
+            price: Number(before.price) > 0 ? Number(before.price) : r.price,
+            campaignDealId: before.campaignDealId ?? null,
+          };
+        });
+        const leftover = prev
+          .filter((m) => hasRowContent(m) && !consumed.has(m))
+          .map((m) => ({ ...m, storeSyncNote: storeKeys.has(normOptionKey(m.optionName)) ? 'duplicate' : 'missing' }));
+        return [...sortProductMappingsByProductName(merged), ...leftover];
       });
     } catch (err: any) {
       setLoadOptionsError(err?.message || '옵션 조회 중 오류가 발생했습니다.');
@@ -230,7 +251,7 @@ export default function CampaignEditModal({
     productStatus: editProductStatus,
     salePeriod: editSalePeriod,
     autoPrepEnabled: editAutoPrep,
-    mappings: sortProductMappingsByProductName(editMappings.map(m => ({ ...m, campaignDealId: m.campaignDealId || null })).filter(m => m.productName || m.optionName || m.brandCode))
+    mappings: sortProductMappingsByProductName(editMappings.map(({ storeSyncNote, ...m }) => ({ ...m, campaignDealId: m.campaignDealId || null })).filter(m => m.productName || m.optionName || m.brandCode))
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -456,7 +477,17 @@ export default function CampaignEditModal({
                           <td className="px-2 py-1">
                             <input value={m.optionName} onChange={(e) => {
                               const newM = [...editMappings]; newM[idx] = { ...newM[idx], optionName: e.target.value }; setEditMappings(newM);
-                            }} onPaste={(e) => handleTablePaste(e, idx, 1)} aria-label={`${idx + 1}행 옵션명`} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring" />
+                            }} onPaste={(e) => handleTablePaste(e, idx, 1)} aria-label={`${idx + 1}행 옵션명`} aria-describedby={m.storeSyncNote ? `store-sync-note-${idx}` : undefined} className="w-full border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring" />
+                            {m.storeSyncNote && (
+                              // 스토어 동기화 뒤 스토어 옵션과 짝이 안 맞는 기존 줄 — 지우지 않고 남겨 둔 것을 알린다.
+                              // 가격 확인 배지와 같은 "배경 없는 텍스트+아이콘" 어휘.
+                              <p id={`store-sync-note-${idx}`} className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-[var(--status-caution-text)]">
+                                <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />
+                                </svg>
+                                {m.storeSyncNote === 'duplicate' ? '중복 옵션' : '스토어에 없는 옵션'}
+                              </p>
+                            )}
                           </td>
                           <td className="px-2 py-1">
                             <input value={m.brandCode} onChange={(e) => {
