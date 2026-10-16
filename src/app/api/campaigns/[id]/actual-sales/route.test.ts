@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PATCH } from "./route";
 
-// 실매출 입력 라우트가 운영자의 수동값(수동 영업수익·판매대행비·제세공과금·정산 기준액)과
+// 실매출 입력 라우트가 운영자의 수동값(수동 영업수익·판매대행비·공제세액·정산 기준액)과
 // 세무 유형을 계산에 넘기는지 고정한다. 종전엔 하나도 넘기지 않아 실매출을 고칠 때마다 수동값이
 // 자동값으로 덮였다. 금액은 전부 가공이다(P0).
 
@@ -66,7 +66,7 @@ beforeEach(() => {
 });
 
 describe("PATCH /api/campaigns/[id]/actual-sales — 수동값을 덮지 않는다", () => {
-  it("수동 영업수익·판매대행비·제세공과금이 그대로 남는다", async () => {
+  it("수동 영업수익·판매대행비·공제세액이 그대로 남는다", async () => {
     findUniqueMock.mockResolvedValue(
       campaign({
         isManualSettlementSales: true,

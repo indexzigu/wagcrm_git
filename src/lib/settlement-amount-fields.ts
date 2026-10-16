@@ -16,7 +16,7 @@ export const SETTLEMENT_AMOUNT_FIELD_LABELS = {
   actualSales: "총 거래액",
   settlementSales: "영업 수익",
   sellerExpense: "판매대행비",
-  taxExpense: "제세공과금",
+  taxExpense: "공제세액 · 부가세",
   operatingExpense: "공동 운영 비용",
   miscExpense: "기타 조정 비용",
   settlementSupplyCost: "공급가액",

@@ -55,7 +55,7 @@ async function execute(input: UpdateSettlementAmountInput): Promise<ToolResult<U
 export const updateSettlementAmountTool: AgentTool<UpdateSettlementAmountInput, UpdateSettlementAmountData> = {
   name: "update_settlement_amount",
   description:
-    "캠페인의 금액 칸 하나(총 거래액·영업 수익·판매대행비·제세공과금·공동 운영 비용·" +
+    "캠페인의 금액 칸 하나(총 거래액·영업 수익·판매대행비·공제세액(부가세)·공동 운영 비용·" +
     "기타 조정 비용·공급가액·물품대금)를 고치는 기안을 올립니다. expectedCurrentKrw 에는 지금 보이는 값" +
     "(비어 있으면 null, 0 과 다릅니다)을 넣어야 하며, 승인 시점의 실제 값이 다르면 실행되지 않습니다. " +
     "금전 관련이라 실제로 바꾸지 않고 승인 대기 기안만 만듭니다. 관리자 승인 후에만 반영됩니다. " +

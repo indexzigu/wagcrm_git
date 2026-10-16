@@ -634,7 +634,7 @@ export const campaignService = {
         data.itemCount = data.campaignDeals.length;
       }
 
-      // 재무 파생(영업수익·판매대행비·제세공과금·영업이익) — 산식은 `deriveCampaignFinancialsForUpdate`
+      // 재무 파생(영업수익·판매대행비·공제세액·영업이익) — 산식은 `deriveCampaignFinancialsForUpdate`
       // 한 곳이 소유한다. 에이전트 `update_settlement_amount` 가 같은 함수를 부르므로 여기서
       // 다시 인라인하지 말 것(두 경로의 손익이 갈린다). ⚠️ 위 `campaignDeals` 블록이 `data` 를
       // 변이시킨 **뒤에** 불러야 한다 — 파생이 그 변이된 실매출·품목을 읽는다.

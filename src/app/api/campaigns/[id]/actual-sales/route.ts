@@ -20,7 +20,7 @@ type DecimalInput = { toString(): string } | number | null | undefined;
 const toNullableNumber = (value: DecimalInput) => (value == null ? null : Number(value.toString()));
 
 /**
- * 운영자가 수동으로 정한 값(수동 영업수익·판매대행비·제세공과금·정산 기준액)과 세무 유형을
+ * 운영자가 수동으로 정한 값(수동 영업수익·판매대행비·공제세액·정산 기준액)과 세무 유형을
  * 계산 입력으로 옮긴다. ⛔ 빼먹지 말 것 — 종전 이 라우트는 이 입력을 하나도 넘기지 않아
  * 실매출을 고칠 때마다 수동값을 전부 자동값으로 덮었다(세무 유형도 안 넘겨 사업자 셀러를
  * 개인으로 계산했다).

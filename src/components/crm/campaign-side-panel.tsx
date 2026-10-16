@@ -1467,7 +1467,7 @@ function formatSettlementExpense(value: number | null | undefined) {
 
 // 이 자리에 있던 `escapeSvgText` · `buildSettlementSummarySvg` · `renderSettlementSummaryPng` 은
 // 제거했다 — 명세서를 SVG 로 **손수 다시 그리던** 코드이고, 그 SVG 는 내부 문서였다
-// (영업 수익·영업이익 ×2·제세공과금·운영비 + 하단에 `총 수수료율 · 셀러 수수료율 · 영업이익율`).
+// (영업 수익·영업이익 ×2·공제세액·운영비 + 하단에 `총 수수료율 · 셀러 수수료율 · 영업이익율`).
 // 오너 확정(2026-07-16): 이미지도 **셀러에게 보낸다** → P0 Seller-Facing Data Exposure 였다.
 //
 // 더 깊은 문제는 그게 명세서의 **세 번째 표현**(html·text·svg)이었다는 것이다. 표현이
