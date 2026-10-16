@@ -34,7 +34,8 @@ const tokens = readRootTokens(readFileSync(CSS_PATH, "utf8"));
 const PAIRS: Array<[fg: string, bg: string, min: number, why: string]> = [
   ["--primary-foreground", "--primary", 4.5, "앵커 버튼 흰 글자"],
   ["--primary", "--sidebar", 4.5, "밝은 사이드바 위 현재 메뉴 글자"],
-  ["--sidebar-foreground", "--sidebar", 4.5, "사이드바 기본 글자"],
+  ["--sidebar-foreground", "--sidebar", 4.5, "사이드바 기본 글자(비활성 메뉴 라벨)"],
+  ["--sidebar-muted-foreground", "--sidebar", 4.5, "사이드바 그룹 라벨·보조 글자"],
   ["--primary", "--primary-tint", 4.5, "틴트 배지 글자"],
   ["--accent-achieve", "--hero-deep", 4.5, "달성 밴드 글자"],
   ["--accent-achieve-soft", "--hero-deep", 4.5, "달성 soft 글자"],
@@ -60,6 +61,31 @@ describe("palette contrast contract", () => {
   it("알려진 한계: status-urgent on sidebar 는 비텍스트 3:1 이상(텍스트 4.5 미달)", () => {
     const c = contrast(tokens["--status-urgent"], tokens["--sidebar"]);
     expect(c).toBeGreaterThanOrEqual(3);
+  });
+});
+
+/** rgba(r, g, b, a) 토큰을 파싱한다. */
+function readRgba(css: string, name: string): [number, number, number, number] {
+  const m = css.match(new RegExp(`${name}:\\s*rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*([\\d.]+)\\)`));
+  if (!m) throw new Error(`${name} rgba 토큰 없음`);
+  return [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+}
+function blendOver([r, g, b, a]: [number, number, number, number], bgHex: string): string {
+  const h = bgHex.replace("#", "");
+  const out = [r, g, b].map((v, i) => {
+    const bg = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+    return Math.round(v * a + bg * (1 - a)).toString(16).padStart(2, "0");
+  });
+  return `#${out.join("")}`;
+}
+
+describe("--focus-ring 합성 대비 (WCAG 1.4.11, 알파를 표면에 블렌드한 뒤 3:1)", () => {
+  const css = readFileSync(CSS_PATH, "utf8");
+  it.each(["--card", "--background", "--muted", "--sidebar"])("focus-ring over %s >= 3", (surface) => {
+    const bg = tokens[surface];
+    expect(bg, `${surface} 토큰 없음`).toBeTruthy();
+    const ring = blendOver(readRgba(css, "--focus-ring"), bg);
+    expect(contrast(ring, bg)).toBeGreaterThanOrEqual(3);
   });
 });
 
