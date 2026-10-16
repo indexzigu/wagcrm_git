@@ -74,6 +74,12 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
             // campaigns-handler 는 egress 절감으로 campaignDeals 를 싣지 않으므로(#137·#151)
             // 모달이 딜 가격을 아는 유일한 경로가 이 응답이다.
             dealPrice,
+            // 이 딜의 판매캠페인이 이미 **다른** 주문캠페인에 붙어 있는가(T-260). 드롭다운에는 그대로
+            // 보여 준다(운영자가 직접 골라 옮기는 것은 허용) — 모달 자동채움만 이 후보를 건너뛴다.
+            // 자동 경로가 남의 판매캠페인을 고르지 않는다는 규칙은 autoMap(scoringSalesCamps)과 같다:
+            // 자동채움된 딜대로 저장(PUT)하면 그 판매캠페인이 다른 주문캠페인에서 떨어져 옮겨 온다.
+            linkedToOtherOrderCampaign:
+              salesCamp.orderCampaignId != null && salesCamp.orderCampaignId !== orderCamp.id,
           });
         }
       }

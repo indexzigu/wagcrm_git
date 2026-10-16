@@ -136,3 +136,23 @@ describe("recommended-deals — 기간(개월분) 완전일치 게이트 (실사
     expect(recs.length).toBeGreaterThan(10);
   });
 });
+
+describe("recommended-deals — 다른 주문캠페인 소속 표시 (T-260)", () => {
+  afterEach(() => vi.doUnmock("@/lib/order-converter/prisma"));
+
+  it("판매캠페인이 다른 주문캠페인에 붙어 있으면 표시하고, 미연결·이 주문캠페인 소속이면 표시하지 않는다", async () => {
+    const owned = (orderCampaignId: string | null, id: string) => ({
+      ...makeSalesCamp(id, `${id} 캠페인`, makeCampaignDeal(`cd-${id}`, DEAL_3M, 228800)),
+      orderCampaignId,
+    });
+    const recs = (await runRoute(OPTION_3M, [
+      owned("oc-2", "other"),
+      owned(null, "free"),
+      owned("oc-1", "own"),
+    ])) as unknown as Array<{ id: string; linkedToOtherOrderCampaign: boolean }>;
+
+    const flagById = Object.fromEntries(recs.map((r) => [r.id, r.linkedToOtherOrderCampaign]));
+    // 드롭다운에서는 빠지지 않는다 — 셋 다 추천 목록에 남는다.
+    expect(flagById).toEqual({ "cd-other": true, "cd-free": false, "cd-own": false });
+  });
+});

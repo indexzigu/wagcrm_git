@@ -81,6 +81,20 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
     }
   }
 
+  // 승자 후보에서 **다른 주문캠페인에 이미 붙은 판매캠페인**을 뺀다(T-260). 같은 셀러·같은 상품으로
+  // 회차를 다시 돌리면 새 회차 판매캠페인이 최근 3개월 창에 들어와 옛 주문캠페인의 옵션과 점수가 높게
+  // 겹친다. 종전에는 그 딜이 승자가 되어, 옛 주문캠페인을 화면에서 저장하기만 해도 ①매핑의 딜 선택이
+  // 새 회차 딜로 덮이고 ②새 회차 판매캠페인이 새 주문캠페인에서 떨어져 옛 주문캠페인으로 넘어왔다 —
+  // 두 주문캠페인의 매출 상세가 함께 깨진다. 다른 주문캠페인으로 옮기는 일은 운영자가 화면에서 그 딜을
+  // 직접 골라 저장할 때(PUT)만 한다. ownerByDealId 에는 그대로 남긴다 — 아래 3.2 의 유지분 판정이 쓴다.
+  // ⛔ 이 제외를 후보 조회(where)로 옮기지 말 것 — 유지분 판정용 소유 정보까지 함께 사라진다.
+  const isOwnedElsewhere = (salesCampOrderCampaignId: string | null | undefined) =>
+    salesCampOrderCampaignId != null && salesCampOrderCampaignId !== orderCamp.id;
+  const scoringSalesCamps = candidateSalesCamps.filter((sc) => !isOwnedElsewhere(sc.orderCampaignId));
+  if (scoringSalesCamps.length !== candidateSalesCamps.length) {
+    log(`Excluded ${candidateSalesCamps.length - scoringSalesCamps.length} candidate SalesCampaign(s) already linked to another OrderCampaign.`);
+  }
+
   // 결정과 쓰기를 분리한다 — 셀러 단일성 게이트(아래 3.5)가 "전체 거부"이려면 검사 시점에
   // 아직 아무것도 쓰여 있지 않아야 한다. 종전에는 루프 안에서 곧바로 update 를 날려, 거부
   // 판정을 넣더라도 이미 절반이 반영된 상태가 됐을 것이다.
@@ -100,7 +114,7 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
     const optionMonths =
       extractSupplyMonths(mapping.optionName) ?? extractSupplyMonths(mapping.productName);
 
-    for (const salesCamp of candidateSalesCamps) {
+    for (const salesCamp of scoringSalesCamps) {
       // 1. Seller Match Score (SSOT: computeSellerScore)
       const storeStr = `${orderCamp.name || ''} ${orderCamp.sellerName || ''}`;
       const sellerScore = computeSellerScore(salesCamp.seller.alias, salesCamp.seller.name, storeStr);
@@ -187,14 +201,14 @@ export async function autoMapOrderCampaign(orderCampaignId: string) {
   }
   // 유지분(이번 승자가 아닌 기존 연결)은 판매캠페인이 이미 **다른** 주문캠페인에 붙어 있으면 가져오지 않는다.
   // 낡은 딜 연결이 자동 연결이 돌 때마다 연결을 되찾아, 두 주문캠페인 사이에서 판매캠페인이 오가는 것을 막는다.
-  // 다른 주문캠페인으로 옮기는 것은 운영자의 화면 저장(PUT)이나 이번 실행의 승자만 한다(종전과 같다).
+  // 다른 주문캠페인으로 옮기는 것은 운영자의 화면 저장(PUT)만 한다 — 승자 후보에서 이미 뺐으므로(위
+  // scoringSalesCamps) 승자가 다른 주문캠페인 소속인 경우는 없다. 아래 `!winnerDealIds.has` 는 그 불변식의 방어선이다.
   const winnerDealIds = new Set(pendingLinks.map((l) => l.dealId));
   const finalOwners: DealOwner[] = [];
   for (const dealId of finalDealIds) {
     const owner = ownerByDealId.get(dealId);
     if (!owner) continue;
-    const ownedElsewhere = owner.orderCampaignId !== null && owner.orderCampaignId !== orderCamp.id;
-    if (ownedElsewhere && !winnerDealIds.has(dealId)) {
+    if (isOwnedElsewhere(owner.orderCampaignId) && !winnerDealIds.has(dealId)) {
       log(`    Skip kept link CampaignDeal(${dealId}): SalesCampaign(${owner.salesCampaignId}) belongs to another OrderCampaign.`);
       continue;
     }

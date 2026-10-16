@@ -186,11 +186,13 @@ export default function CampaignEditModal({
           //     가 정본, 옵션가는 할인율 따라 흔들림 — 3개월분 옵션이 가격 불일치로 50점에 머물러
           //     "미지정"으로 남던 실사고). 기간 일치 후보가 둘 이상이면 오채움 위험이 있어 자동
           //     선택하지 않는다(운영자 수동 선택 유도 — 가격 확인 배지가 교차검증을 돕는다).
+          //  두 규칙 모두 **다른 주문캠페인에 이미 붙은 판매캠페인의 딜**은 후보에서 뺀 뒤 적용한다(T-260) —
+          //  그 딜로 채운 채 저장하면 판매캠페인이 다른 주문캠페인에서 떨어져 옮겨 온다. 드롭다운에는 남는다.
           setEditMappings(prev => {
             let hasChanges = false;
             const newMappings = prev.map(m => {
               if (!m.campaignDealId && data.recommendations[m.id]) {
-                const recs = data.recommendations[m.id];
+                const recs = data.recommendations[m.id].filter((r: any) => !r.linkedToOtherOrderCampaign);
                 const periodExactRecs = recs.filter((r: any) => r.periodExact);
                 const bestRec = recs.find((r: any) => r.score >= 100)
                   ?? (periodExactRecs.length === 1 && periodExactRecs[0].score >= 30 ? periodExactRecs[0] : undefined);

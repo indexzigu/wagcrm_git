@@ -193,6 +193,51 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
     expect(await screen.findByRole("button", { name: "매출전송" })).toBeDisabled();
   });
 
+  // T-260: 자동채움된 딜대로 저장하면 그 판매캠페인이 다른 주문캠페인에서 떨어져 옮겨 온다.
+  it("다른 주문캠페인에 붙은 판매캠페인의 딜은 100점이어도 자동 선택하지 않는다 (T-260)", async () => {
+    withRecs({
+      "mapping-1": [
+        { id: "deal-other", name: "다른 회차 딜", score: 120, periodExact: true, dealPrice: 12000, linkedToOtherOrderCampaign: true },
+      ],
+    });
+    render(
+      <CampaignEditModal
+        campaign={campaign({
+          mappings: [{ id: "mapping-1", productName: "상품", optionName: "옵션", price: 12000, campaignDealId: null }],
+          salesCampaigns: [],
+        })}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/recommended-deals")));
+    // 드롭다운 후보로는 남는다(운영자가 직접 고를 수 있다) — 추천이 반영된 뒤에 판정한다.
+    expect(await screen.findByRole("option", { name: /다른 회차 딜/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "매출전송" })).toBeDisabled();
+  });
+
+  it("기간 정확일치 후보 둘 중 하나가 다른 주문캠페인 소속이면 나머지 하나를 자동 선택한다 (T-260)", async () => {
+    withRecs({
+      "mapping-1": [
+        { id: "deal-3m-other", name: "딜 3개월분 다른 회차", score: 50, periodExact: true, dealPrice: 228800, linkedToOtherOrderCampaign: true },
+        { id: "deal-3m-own", name: "딜 3개월분 이번 회차", score: 50, periodExact: true, dealPrice: 228800, linkedToOtherOrderCampaign: false },
+      ],
+    });
+    render(
+      <CampaignEditModal
+        campaign={campaign({
+          mappings: [{ id: "mapping-1", productName: "상품", optionName: "옵션 (3개월분)", price: 212200, campaignDealId: null }],
+          salesCampaigns: [],
+        })}
+        onClose={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByDisplayValue(/딜 3개월분 이번 회차/)).toBeInTheDocument();
+  });
+
   it("옵션가와 딜 등록가가 같으면 배지를 띄우지 않는다", async () => {
     withRecs({
       "mapping-1": [
