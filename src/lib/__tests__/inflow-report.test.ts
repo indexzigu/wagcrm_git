@@ -199,15 +199,35 @@ describe("정산 조인 — 리포트는 시차를 담는다", () => {
     expect(report.attention.awaitingSettlementLinks).toBe(0);
   });
 
-  it("정산 매출이 없으면 실매출로 내려간다", async () => {
+  it("수수료매출이 없으면 실매출이 있어도 sales·revenuePerClick 은 null 이다", async () => {
     const { prisma } = prismaWith(
       [link({ salesCampaign: campaign({ settlementSales: null, actualSales: 500_000 }) })],
       [humanRow("aaaa1111", "v1", 50)],
     );
     const report = await getInflowReport(prisma, NOW);
 
-    expect(report.links[0].salesSource).toBe("actual");
-    expect(report.links[0].revenuePerClick).toBe(10_000);
+    expect(report.links[0].sales).toBeNull();
+    expect(report.links[0].salesSource).toBeNull();
+    expect(report.links[0].revenuePerClick).toBeNull();
+    expect(report.attention.awaitingSettlementLinks).toBe(1);
+  });
+
+  it("행마다 수수료매출 유무가 갈려도 NaN 없이 값·null 이 그대로 나온다 (정렬·합계가 건너뛸 수 있는 형태)", async () => {
+    const { prisma } = prismaWith(
+      [
+        link({ code: "aaaa1111", salesCampaign: campaign({ settlementSales: 200_000 }) }),
+        link({ code: "bbbb2222", salesCampaign: campaign({ settlementSales: null, actualSales: 900_000 }) }),
+      ],
+      [humanRow("aaaa1111", "v1", 20), humanRow("bbbb2222", "v2", 20)],
+    );
+    const { links } = await getInflowReport(prisma, NOW);
+    const byCode = Object.fromEntries(links.map((l) => [l.code, l]));
+
+    expect(byCode.aaaa1111.revenuePerClick).toBe(10_000);
+    expect(byCode.bbbb2222.revenuePerClick).toBeNull();
+    const sum = links.reduce((acc, l) => acc + (l.sales ?? 0), 0);
+    expect(sum).toBe(200_000);
+    expect(links.some((l) => Number.isNaN(l.revenuePerClick as number))).toBe(false);
   });
 
   it("클릭이 0 이면 비율을 만들지 않는다", async () => {

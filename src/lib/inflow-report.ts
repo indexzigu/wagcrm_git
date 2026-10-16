@@ -56,7 +56,7 @@ export type InflowLinkRow = {
   // 확정되면 매출·순이익이 같은 행에 붙는다. 값이 없는 것은 결함이 아니라 단계다.
   /** 확정 매출. 정산 전이면 null */
   sales: number | null;
-  salesSource: "settlement" | "actual" | null;
+  salesSource: "settlement" | null;
   /** 셀러 지급액(`SalesCampaign.sellerExpense`) */
   sellerExpense: number | null;
   /**
@@ -160,7 +160,6 @@ export async function getInflowReport(
           endDate: true,
           // 정산 조인 — 값이 없는 것은 결함이 아니라 "아직 그 단계" 다.
           settlementSales: true,
-          actualSales: true,
           sellerExpense: true,
           operatingProfit: true,
           quantity: true,
@@ -226,9 +225,9 @@ export async function getInflowReport(
     const campaign = link.salesCampaign;
     const clicks = bucket?.clicks ?? 0;
 
-    const settlement = toNumber(campaign?.settlementSales);
-    const actual = toNumber(campaign?.actualSales);
-    const sales = settlement ?? actual;
+    // 매출 칸은 수수료매출(settlementSales) 하나로 고정한다. 정산 전이면 null — 상품 판매액
+    // (actualSales)으로 내려가면 "수수료매출" 라벨 아래 다른 종류의 돈이 섞인다.
+    const sales = toNumber(campaign?.settlementSales);
     const sellerExpense = toNumber(campaign?.sellerExpense);
     const operatingProfit = toNumber(campaign?.operatingProfit);
 
@@ -260,12 +259,12 @@ export async function getInflowReport(
       lastClickAt: bucket?.last ?? null,
 
       sales,
-      salesSource: settlement !== null ? "settlement" : actual !== null ? "actual" : null,
+      salesSource: sales !== null ? "settlement" : null,
       sellerExpense,
       operatingProfit,
       quantity: campaign?.quantity ?? null,
 
-      revenuePerClick: perClick(sales, clicks),
+      revenuePerClick: sales === null ? null : perClick(sales, clicks),
       costPerClick: perClick(sellerExpense, clicks),
       profitPerClick: perClick(operatingProfit, clicks),
 
