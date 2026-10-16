@@ -34,8 +34,8 @@ import { AGENT_MAPPING_APPLY_ACTOR } from "./actors";
  *     실행자 `AGENT_MAPPING_APPLY_ACTOR` 로 즉시 부른다. 실행 순간의 가드(행 잠금·이름 대조·조건부 쓰기·
  *     자동 연결 후속 처리)는 결재함 승인과 **같은 코드**가 건다 — 여기서 쓰기를 다시 만들지 않는다.
  *
- * ⚠️ 새 줄의 상품명은 스토어 상품명으로 채운다(설정 창 「스토어 옵션 불러오기」와 같다 — 상품명이 있으면 주문
- *    대조가 상품명·옵션명 둘 다 본다). 계약 상한(`MAX_MAPPING_PRODUCT_NAME_CHARS`)을 넘는 상품명은 빈칸으로
+ * ⚠️ 새 줄의 상품명은 그 스토어 옵션 줄의 상품명으로 채운다(설정 창 「스토어 옵션 불러오기」와 같다 — 상품명이
+ *    있으면 주문 대조가 상품명·옵션명 둘 다 본다). 추가구성상품 줄은 스토어 쪽에서 이미 빈칸이라 빈칸 그대로 둔다. 계약 상한(`MAX_MAPPING_PRODUCT_NAME_CHARS`)을 넘는 상품명은 빈칸으로
  *    둔다 — 빈칸이면 옵션명만으로 대조된다(봇 기안 경로와 같은 기본값). 고칠 줄의 상품명은 건드리지 않는다.
  */
 
@@ -146,8 +146,15 @@ async function applyInQueue(request: ApplyProductMappingsRequest, deps: ApplyDep
     return finalize({ ok: true, data: { ...base, proposalId: null, created: 0, updated: 0, unchanged: 0, rejected } });
   }
 
-  const productNameForNewRows =
-    snapshot.productName.length <= MAX_MAPPING_PRODUCT_NAME_CHARS ? snapshot.productName : undefined;
+  // 새 줄의 상품명 = 그 스토어 옵션 줄의 상품명(`buildStoreMappingRows` 가 정한 값). 추가구성상품 줄은 거기서 이미
+  // 빈칸이다 — 추가구성 주문의 상품명은 애드온 자체 이름이라 주상품명을 채우면 주문 대조가 실패한다(GPT 검수 2026-10-16).
+  const productNameByKey = new Map(
+    snapshot.rows.map((row) => [normalizeMappingOptionName(row.optionName), row.productName] as const),
+  );
+  const productNameForNewRow = (optionName: string): string | undefined => {
+    const name = productNameByKey.get(normalizeMappingOptionName(optionName)) ?? "";
+    return name !== "" && name.length <= MAX_MAPPING_PRODUCT_NAME_CHARS ? name : undefined;
+  };
   const requestArgs: UpsertProductMappingsRequestArgs = {
     orderCampaignId: snapshot.orderCampaign.id,
     orderCampaignName: snapshot.orderCampaign.name,
@@ -162,9 +169,10 @@ async function applyInQueue(request: ApplyProductMappingsRequest, deps: ApplyDep
 
     const storedArgs = {
       ...snap.args,
-      mappings: snap.args.mappings.map((row) =>
-        row.expectedBrandCode === null && productNameForNewRows ? { ...row, productName: productNameForNewRows } : row,
-      ),
+      mappings: snap.args.mappings.map((row) => {
+        const productName = row.expectedBrandCode === null ? productNameForNewRow(row.optionName) : undefined;
+        return productName ? { ...row, productName } : row;
+      }),
     };
     const existing = await tx.productMapping.findMany({
       where: { campaignId: storedArgs.orderCampaignId },

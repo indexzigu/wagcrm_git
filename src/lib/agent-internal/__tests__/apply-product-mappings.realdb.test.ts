@@ -48,12 +48,15 @@ let now = 1_800_000_000_000;
 let listCalls = 0;
 let detailCalls = 0;
 
+const SUPPLEMENT_OPTION = "사은품: 샘플 쇼핑백";
+
 function detailBody(optionNames: string[]) {
   return {
     smartstoreChannelProduct: { name: STORE_PRODUCT_NAME },
     originProduct: {
       salePrice: 30000,
       detailAttribute: {
+        supplementProductInfo: { supplementProducts: [{ groupName: "사은품", name: "샘플 쇼핑백", price: 1000 }] },
         optionInfo: {
           optionCombinationGroupNames: { optionGroupName1: "구성" },
           optionCombinations: optionNames.map((name, index) => ({
@@ -322,6 +325,26 @@ describe("리뷰 보강(2026-10-16)", () => {
     expect(result).toMatchObject({ ok: true, data: { created: 0 } });
     expect(result.ok && result.data.rejected).toHaveLength(50);
     expect(result.ok && result.data.rejected.every((row) => row.optionName.length <= 40)).toBe(true);
+  });
+});
+
+describe("추가구성상품 줄(GPT 검수 2026-10-16)", () => {
+  it("추가구성상품 옵션의 새 줄은 상품명을 빈칸으로 둔다(애드온 주문은 상품명이 애드온 이름이다)", async () => {
+    const result = await applyProductMappings(
+      {
+        orderCampaignId: CAMPAIGN_ID,
+        mappings: [
+          { optionName: OPTION_A, brandCode: "TC-001", price: 30000 },
+          { optionName: SUPPLEMENT_OPTION, brandCode: "TC-GIFT", price: 1000 },
+        ],
+      },
+      { storeOptions: storeDeps },
+    );
+    expect(result).toMatchObject({ ok: true, data: { created: 2 } });
+    const byOption = Object.fromEntries(
+      (await mappings()).map((row: { optionName: string; productName: string }) => [row.optionName, row.productName]),
+    );
+    expect(byOption).toEqual({ [OPTION_A]: STORE_PRODUCT_NAME, [SUPPLEMENT_OPTION]: "" });
   });
 });
 
