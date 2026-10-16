@@ -2594,7 +2594,7 @@ function SettlementFinancialSummary({
             label="공제세액 · 부가세"
             value={formatSettlementExpense(taxExpense)}
             muted
-            hint="수수료매출에 든 부가세(납부 예정). 예수금이라 손익 항목이 아니지만 수수료매출이 부가세 포함 금액이라 여기서 걷어냅니다"
+            hint="수수료매출에 든 부가세(나중에 납부할 세금)입니다. 회사 비용은 아니지만 수수료매출이 부가세 포함 금액이라 영업이익에서 뺍니다"
           />
           {isIndividual && (
             <FinancialLine
@@ -3325,7 +3325,8 @@ function EditableAccountCell({
 /**
  * 재무 정산 내역의 한 줄.
  *
- * `danger` = 실제로 나가는 돈(판매대행비·부가세·운영비) → 자금 방향축(`--money-out`).
+ * `danger` = 실제로 나가는 돈(판매대행비·운영비) → 자금 방향축(`--money-out`). 부가세 줄은 회사 비용이
+ * 아니라 수수료매출에 든 세금이라 `muted` 다(2026-10-16).
  * 값은 기존 `rose-600` 과 동일한 #E11D48 이라 시각 변화가 없다 — 리터럴을 토큰으로 옮긴 것.
  *
  * `amount` 를 주면 손익 줄로 취급해 **부호를 따른다**(profit-tone SSOT). 이전엔 `accent` 가

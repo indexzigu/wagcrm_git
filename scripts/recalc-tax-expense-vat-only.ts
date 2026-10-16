@@ -10,7 +10,7 @@
  *   검산이 안 맞는 행(REVIEW)은 ⛔ 쓰지 않고 사유만 찍는다 — 오너가 보고 판단한다.
  *
  * 쓰기는 `taxExpense`·`operatingProfit` 두 칸뿐이고, 읽은 뒤 계산에 쓴 금액(수수료매출·셀러지급액·
- *   공제세액·영업이익)이 바뀌었거나 수동으로 돌아섰으면 쓰지 않는다(조건부 updateMany — 건수 0 이면 「건너뜀」).
+ *   공제세액·영업이익·운영비·기타비용)이 바뀌었거나 수동으로 돌아섰으면 쓰지 않는다(조건부 updateMany — 건수 0 이면 「건너뜀」).
  *
  * 사용(레포 .env 는 **프로덕션 DB** 다 — P0. 실행은 오너 몫):
  *   set -a; source .env; set +a; npx tsx scripts/recalc-tax-expense-vat-only.ts              # 예행(기본, 쓰기 없음)
@@ -65,7 +65,14 @@ async function main() {
   };
   const applyTargets: Array<{
     id: string;
-    prev: { taxExpense: number; settlementSales: number; sellerExpense: number; operatingProfit: number };
+    prev: {
+      taxExpense: number;
+      settlementSales: number;
+      sellerExpense: number;
+      operatingProfit: number;
+      operatingExpense: number | null;
+      miscExpense: number | null;
+    };
     nextTaxExpense: number;
     nextOperatingProfit: number;
   }> = [];
@@ -110,6 +117,8 @@ async function main() {
           settlementSales: row.settlementSales!,
           sellerExpense: row.sellerExpense!,
           operatingProfit: row.operatingProfit!,
+          operatingExpense: row.operatingExpense,
+          miscExpense: row.miscExpense,
         },
         nextTaxExpense: plan.nextTaxExpense!,
         nextOperatingProfit: plan.nextOperatingProfit!,

@@ -71,8 +71,8 @@ export function computeVatExpense({
 
 /**
  * Recalculates campaign financial totals from gross sales and commission rates.
- * The current settlement workspace treats withholding/deducted tax as 10% of
- * net commission, then subtracts campaign costs from commission revenue.
+ * taxExpense = VAT only (`computeVatExpense`); campaign costs are then subtracted
+ * from commission revenue (`computeOperatingProfit`).
  */
 /**
  * 개인 셀러 원천세(3.3%) — **실제 셀러 지급액**에 건다(오너 확정 2026-10-05).
