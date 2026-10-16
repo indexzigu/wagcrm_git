@@ -96,12 +96,14 @@ export function UpcomingScheduleBody({
                 left: `${xPct(offset)}%`,
                 backgroundColor: isEnd ? undefined : money ? "var(--status-pending)" : "var(--primary)",
                 borderColor: isEnd ? "var(--primary)" : undefined,
+                // 앰버 채움은 흰 배경 대비 2.15:1(비텍스트 3:1 미달) — 같은 축 진한 앰버 1px 테두리로 윤곽을 보강
+                ...(money && !isEnd ? { boxShadow: "0 0 0 1px var(--status-pending-text)" } : {}),
               }}
             />
           );
         })}
         <div className="absolute top-[22px] -translate-y-1/2 -translate-x-1/2" style={{ left: `${xPct(0)}%` }}>
-          <span className="today-marker-ping relative block size-3 rounded-full border-2 border-[var(--status-pending)] bg-white" />
+          <span className="today-marker-ping relative block size-3 rounded-full border-2 border-[var(--status-pending)] bg-white ring-1 ring-[var(--status-pending-text)]" />
         </div>
         <span className="absolute top-[26px] -translate-x-1/2 text-[9px] font-bold text-[var(--status-caution-text)]" style={{ left: `${xPct(0)}%` }}>오늘</span>
       </div>
@@ -136,6 +138,8 @@ export function UpcomingScheduleBody({
                             ? "var(--status-success)"
                             : "var(--status-pending)"
                           : "var(--primary)",
+                        // 남은 대금 앰버(흰 배경 2.15:1)는 진한 앰버 1px 테두리로 윤곽 보강
+                        ...(isMoney(event.type) && !isSettled(event.type) ? { boxShadow: "0 0 0 1px var(--status-pending-text)" } : {}),
                       }}
                     />
                     <div className="min-w-0">

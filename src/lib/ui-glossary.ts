@@ -156,6 +156,11 @@ export const MONEY_TERMS: Readonly<Record<string, { label: string; definition: s
     definition: "오늘 유효 주문의 실결제 + 플랫폼 부담 할인(취소·반품 제외). 총거래액과 다른 돈",
     column: "orders",
   },
+  orderSales: {
+    label: "판매금액",
+    definition: "주문 건별 실결제 + 플랫폼 부담 할인 합(취소·반품 제외) — 총거래액과 다른 돈. 오늘 것은 「오늘 판매금액」",
+    column: "orders",
+  },
   endDate: { label: "판매종료일", definition: "표 열 머리글에서는 「종료일」", column: "SalesCampaign.endDate" },
 };
 

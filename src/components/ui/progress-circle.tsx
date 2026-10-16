@@ -12,13 +12,16 @@ import { cn } from "@/lib/utils";
  * 걸린 값은 호출부가 `PROFIT_TONE_FILL`(profit-tone.ts)을 넘긴다(손익 리포트 선례). 골드는
  * 가드레일 3 의 예외 2건(배송완료 · 목표 달성 밴드) 밖으로 의미를 싣지 않는다.
  */
+const DEFAULT_COLOR = "var(--status-pending)";
+
 export function ProgressCircle({
   value,
   max = 1,
   size = 116,
   strokeWidth = 12,
-  color = "var(--status-pending)",
+  color = DEFAULT_COLOR,
   trackColor = "var(--border)",
+  outlineColor,
   label,
   caption,
   className,
@@ -30,6 +33,8 @@ export function ProgressCircle({
   strokeWidth?: number;
   color?: string;
   trackColor?: string;
+  /** 호 윤곽선(1px) 색. 기본 앰버 채움일 때만 같은 축 진한 앰버(`--status-pending-text`)가 자동 적용된다. */
+  outlineColor?: string;
   /** 중앙 큰 텍스트(예: "28%"). */
   label?: ReactNode;
   /** 중앙 작은 텍스트(예: "순이익률"). */
@@ -41,6 +46,7 @@ export function ProgressCircle({
   const fraction = max > 0 ? Math.min(Math.max(value / max, 0), 1) : 0;
   const dashOffset = circumference * (1 - fraction);
   const center = size / 2;
+  const outline = outlineColor ?? (color === DEFAULT_COLOR ? "var(--status-pending-text)" : undefined);
 
   return (
     <div
@@ -56,13 +62,27 @@ export function ProgressCircle({
           stroke={trackColor}
           strokeWidth={strokeWidth}
         />
+        {outline ? (
+          <circle
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="none"
+            stroke={outline}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            transform={`rotate(-90 ${center} ${center})`}
+          />
+        ) : null}
         <circle
           cx={center}
           cy={center}
           r={radius}
           fill="none"
           stroke={color}
-          strokeWidth={strokeWidth}
+          strokeWidth={outline ? strokeWidth - 2 : strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={dashOffset}

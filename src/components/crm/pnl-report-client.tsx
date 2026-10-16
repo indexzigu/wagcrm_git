@@ -36,6 +36,8 @@ import {
 import {
   ChartContainer,
   type ChartConfig,
+  ChartLegend,
+  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
@@ -368,7 +370,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                         초점 값이라 profit-tone 도형 맵을 탄다(흑자 --money-in 3.77 · 적자 --status-urgent
                         4.69, 비텍스트 3:1). 세금은 --chart-3(골드축 — 이익 골드와 겹쳐 읽힘)·--chart-4
                         (--status-pending 과 같은 값 — 대기 상태로 오독)가 부적합해 slate-600(흰 배경
-                        7.58:1)으로 둔다 — chart-1 네이비·slate-600·chart-5 slate-500·chart-2 하늘과
+                        7.58:1)으로 둔다 — chart-1 앵커 틸(#0F5F67)·slate-600·chart-5 slate-500·chart-2 중간 틸과
                         명도 단이 겹치지 않는다(ss-ux-designer 판정). */}
                     <CategoryBar
                       total={totals.commissionRevenue}
@@ -507,6 +509,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                             tick={{ fontSize: 11 }}
                           />
                           <ChartTooltip content={<ChartTooltipContent />} />
+                          <ChartLegend content={<ChartLegendContent />} />
                           <Bar
                             dataKey="preTaxOperatingProfit"
                             name="영업이익"

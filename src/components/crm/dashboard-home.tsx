@@ -38,7 +38,7 @@ import { SystemRadarCard } from "./system-radar-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
 import { OrderWorkCard } from "./order-work-card";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
-import { DASHBOARD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
+import { DASHBOARD_SCOPE_CAPTION, DASHBOARD_YTD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
   resolveGoalBand,
@@ -106,7 +106,7 @@ function TrendTooltip({
       )}
       {marginRate != null && (
         <div className="flex items-center justify-between gap-4 py-0.5 mt-0.5 border-t border-slate-100 pt-1">
-          <span className="text-muted-foreground">마진율</span>
+          <span className="text-muted-foreground">매출총이익률</span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{marginRate.toFixed(1)}%</span>
         </div>
       )}
@@ -204,8 +204,8 @@ const SPARK_FOCUS_MONTHS = 3;
 // "6개월 중 최근 3개월을 위 표로 펼친 것"이라는 관계를 화면에 명시한다(오너 결정 2026-07-15, B안).
 //
 // 가드레일 두 가지:
-// 1. 색은 2단계뿐 — 중립 회색(--chart-5, 맥락) + 네이비(--chart-1, 강조는 불투명도로만 2단).
-//    --chart-2는 쓰지 않는다: 같은 화면의 6개월 대형 차트에서 그 파랑은 이미 "매출 vs 순마진"의
+// 1. 색은 2단계뿐 — 중립 회색(--chart-5, 맥락) + 앵커 틸(--chart-1, 강조는 불투명도로만 2단).
+//    --chart-2는 쓰지 않는다: 같은 화면의 6개월 대형 차트에서 그 중간 틸은 이미 "매출 vs 순마진"의
 //    계열 구분 의미를 갖고 있어, 여기서 "시간적 근접"에 재사용하면 한 스와치가 두 의미를 갖는다.
 // 2. Y축 눈금·그리드라인 금지 — max가 카드마다 독립 정규화라 카드 간 막대 높이 비교는 무의미하다.
 //    눈금이 붙는 순간 "정밀 판독 가능한 계기판"으로 보여 그 비교를 유도한다. 이건 계기판이 아니라
@@ -933,8 +933,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                       {/* 트랙 = 전체폭 기준선이라 빈 구간이 보여야 비율이 읽힌다(오너 2026-10-06: slate-100 은 흰 카드
                           대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
                           약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
-                          올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 네이비의 농도 사다리
-                          (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 파랑은 6개월 대형 차트의 계열
+                          올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 앵커 틸의 농도 사다리
+                          (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 6개월 대형 차트의 계열
                           구분 의미라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
                       <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
                         {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
@@ -1069,6 +1069,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   })}
                 </div>
                 <p className="text-[10px] text-white/80 leading-none">{annualActionHint(annualRate, initialData.goals.annualTarget != null)}</p>
+                <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_YTD_SCOPE_CAPTION}</p>
               </div>
 
               {/* 구분선 및 이번 달 매출 (아래) */}
@@ -1112,7 +1113,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 </div>
                 <p className="text-[10px] text-white/80 leading-none">{monthlyActionHint(monthRate, initialData.goals.monthTarget != null)}</p>
 
-                <p className="text-[10px] text-white/60 leading-none">{DASHBOARD_SCOPE_CAPTION}</p>
+                <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_SCOPE_CAPTION}</p>
 
                 {/* 이전 누적 추이 행 (5월, 4월) */}
                 <div className="space-y-2.5 pt-1">
