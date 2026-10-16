@@ -2487,7 +2487,7 @@ function SettlementFinancialSummary({
           <SettlementZoneHeader icon={TrendingUp} title="자사 손익" />
           <FinancialEditInput label="매출총이익" value={String(draftNetCommission)} readOnly />
           <FinancialEditInput
-            label="제세공과금 (부가세 + 원천세)"
+            label="공제세액 · 부가세"
             value={draft.taxExpense}
             readOnly={!draft.isManualTaxExpense}
             mode={draft.isManualTaxExpense ? "수동" : "자동"}
@@ -2586,7 +2586,25 @@ function SettlementFinancialSummary({
 
           <SettlementZoneHeader icon={TrendingUp} title="자사 손익" />
           <FinancialLine label="매출총이익" value={formatSettlementMoney(grossProfit)} accent strong amount={grossProfit} />
-          <FinancialLine label="부가세" value={formatSettlementExpense(taxExpense)} danger />
+          {/* 「공제세액」은 세금 묶음 이름이다(오너 확정 2026-10-16). 손익에서 빠지는 것은 부가세뿐이고,
+              예수금을 걷어내는 줄이라 비용색(money-out)이 아니라 회색이다. 개인 셀러 원천세는 셀러 구간에서
+              이미 뺀 셀러 몫이라 차감 없이 참고로만 보인다 — 셀러 구간 원천세 줄과 같은 조건·같은 값.
+              설계 정본: docs/private/specs/2026-10-16-settlement-tax-split-design.md §4·§7 ② */}
+          <FinancialLine
+            label="공제세액 · 부가세"
+            value={formatSettlementExpense(taxExpense)}
+            muted
+            hint="수수료매출에 든 부가세(납부 예정). 예수금이라 손익 항목이 아니지만 수수료매출이 부가세 포함 금액이라 여기서 걷어냅니다"
+          />
+          {isIndividual && (
+            <FinancialLine
+              label="공제세액 · 원천세"
+              value={formatSettlementMoney(sellerWithholdingTax)}
+              muted
+              tag="참고"
+              hint="셀러지급액에서 떼어 대신 납부하는 셀러 몫입니다. 위 셀러 구간에서 이미 뺐으므로 영업이익에서 다시 빼지 않습니다"
+            />
+          )}
           <FinancialLine label="공동 운영 비용" value={formatSettlementExpense(operatingExpense)} danger />
           <FinancialLine label="기타 조정 비용" value={formatSettlementExpense(miscExpense)} danger />
           {itemsByZone.INTERNAL.map((item) => (
