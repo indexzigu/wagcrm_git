@@ -1,4 +1,5 @@
-import { DASHBOARD_SCOPE_CAPTION, type DesktopDashboardData } from "@/lib/desktop-dashboard";
+import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { DASHBOARD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 // #152: 홈 정산 카드는 파이프라인 스냅샷이 아닌 전용 경량 스냅샷을 소비한다.
 import type { MobileSettlementCampaign } from "@/lib/mobile-settlement-data";
 import { Card } from "@/components/ui/card";

@@ -37,7 +37,8 @@ import { SegmentedTabCard, SegmentedTabBar, type SegmentedTab } from "./segmente
 import { SystemRadarCard } from "./system-radar-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
 import { OrderWorkCard } from "./order-work-card";
-import { DASHBOARD_SCOPE_CAPTION, type DesktopDashboardData } from "@/lib/desktop-dashboard";
+import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { DASHBOARD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
   resolveGoalBand,
