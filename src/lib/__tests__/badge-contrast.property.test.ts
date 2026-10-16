@@ -68,7 +68,7 @@ const TAILWIND_COLOR_HEX: Record<string, string> = {
 const STATUS_TOKEN_HEX: Record<string, string> = {
   // 토큰 유틸 형태(`bg-status-active/10` → "status-active"). 2026-09-24 SSOT 전수 정렬로
   // badge-config 가 StatusBadge 와 같은 **토큰 유틸**을 쓰게 되면서 추가했다.
-  "status-active": "#0A3D62",
+  "status-active": "#0F5F67",
   "status-info": "#4A6B82",
   "status-success": "#047857",
   "status-success-bg": "#ECFDF5",

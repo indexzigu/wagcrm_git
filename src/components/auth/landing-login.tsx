@@ -198,20 +198,20 @@ export async function LandingLogin({
             aria-hidden="true"
             className="absolute inset-0 opacity-[0.06] [background-image:radial-gradient(circle,var(--primary)_0.75px,transparent_0.75px)] [background-size:26px_26px]"
           />
-          {/* 은은한 네이비 그라디언트 헤이즈 */}
+          {/* 은은한 청록 그라디언트 헤이즈 */}
           <div
             aria-hidden="true"
             className="absolute -top-32 right-0 h-[420px] w-[420px] rounded-full bg-primary/[0.06] blur-[110px]"
           />
           <div
             aria-hidden="true"
-            className="absolute bottom-0 left-1/4 h-[320px] w-[320px] rounded-full bg-[#0284C7]/[0.05] blur-[100px]"
+            className="absolute bottom-0 left-1/4 h-[320px] w-[320px] rounded-full bg-fill-teal-1/[0.06] blur-[100px]"
           />
 
           {/* 우측 상단 보안 배지 — 중립 문구 */}
           <div className="absolute top-10 right-12 z-10">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 backdrop-blur-sm">
-              <span className="size-1.5 rounded-full bg-[#0284C7]" aria-hidden="true" />
+              <span className="size-1.5 rounded-full bg-fill-teal-1" aria-hidden="true" />
               Secure Access
             </span>
           </div>

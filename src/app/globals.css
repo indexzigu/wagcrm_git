@@ -581,7 +581,7 @@
     right: 0;
     height: 9px;
     border-radius: 999px;
-    background: linear-gradient(90deg, rgba(15, 95, 103, 0.82), rgba(212, 175, 55, 0.62), rgba(15, 95, 103, 0));
+    background: linear-gradient(90deg, rgba(15, 95, 103, 0.82), rgba(105, 197, 207, 0.62), rgba(15, 95, 103, 0));
   }
 
   .today-section-chart::before {
@@ -593,7 +593,7 @@
   }
 
   .today-section-performance::before {
-    background: linear-gradient(90deg, rgba(212, 175, 55, 0.86), rgba(245, 158, 11, 0.54), rgba(212, 175, 55, 0));
+    background: linear-gradient(90deg, rgba(15, 95, 103, 0.86), rgba(52, 177, 188, 0.54), rgba(15, 95, 103, 0));
   }
 
   .today-section-calendar::before {
@@ -611,7 +611,7 @@
     left: 0;
     right: 0;
     height: 5px;
-    background: linear-gradient(90deg, rgba(15, 95, 103, 0.82), rgba(212, 175, 55, 0.48), rgba(15, 95, 103, 0));
+    background: linear-gradient(90deg, rgba(15, 95, 103, 0.82), rgba(105, 197, 207, 0.48), rgba(15, 95, 103, 0));
   }
 
   .crm-horizontal-accent-settlement::before {
@@ -619,7 +619,7 @@
   }
 
   .crm-horizontal-accent-outreach::before {
-    background: linear-gradient(90deg, rgba(212, 175, 55, 0.86), rgba(15, 95, 103, 0.45), rgba(212, 175, 55, 0));
+    background: linear-gradient(90deg, rgba(52, 177, 188, 0.86), rgba(15, 95, 103, 0.45), rgba(52, 177, 188, 0));
   }
 
   .pearl-hover:hover {

@@ -94,14 +94,14 @@ export function UpcomingScheduleBody({
               className={`absolute top-[22px] -translate-y-1/2 -translate-x-1/2 block size-2.5 rounded-full ${isEnd ? "border-2 bg-white" : ""}`}
               style={{
                 left: `${xPct(offset)}%`,
-                backgroundColor: isEnd ? undefined : money ? "var(--accent-gold)" : "var(--primary)",
+                backgroundColor: isEnd ? undefined : money ? "var(--status-pending)" : "var(--primary)",
                 borderColor: isEnd ? "var(--primary)" : undefined,
               }}
             />
           );
         })}
         <div className="absolute top-[22px] -translate-y-1/2 -translate-x-1/2" style={{ left: `${xPct(0)}%` }}>
-          <span className="today-marker-ping relative block size-3 rounded-full border-2 border-[var(--accent-gold)] bg-white" />
+          <span className="today-marker-ping relative block size-3 rounded-full border-2 border-[var(--status-pending)] bg-white" />
         </div>
         <span className="absolute top-[26px] -translate-x-1/2 text-[9px] font-bold text-[var(--status-caution-text)]" style={{ left: `${xPct(0)}%` }}>오늘</span>
       </div>
@@ -128,13 +128,13 @@ export function UpcomingScheduleBody({
                     <span
                       aria-hidden="true"
                       className="mt-1 inline-block size-1.5 shrink-0 rounded-full"
-                      // 완료된 대금은 캘린더 완료 도트와 같은 성공색을 쓴다 — 골드는
-                      // 「아직 남은 대금」 쪽에만 남는다(가드레일 3: 골드 사용을 넓히지 않는다).
+                      // 완료된 대금은 캘린더 완료 도트와 같은 성공색을 쓴다. 남은 대금 = 대기 앰버
+                      // (`--status-pending`, 오너 2026-10-16).
                       style={{
                         backgroundColor: isMoney(event.type)
                           ? isSettled(event.type)
                             ? "var(--status-success)"
-                            : "var(--accent-gold)"
+                            : "var(--status-pending)"
                           : "var(--primary)",
                       }}
                     />

@@ -27,10 +27,12 @@ export function formatManwon(revenue: number, hasOrders = false): string {
  * 0 은 완전 투명 — 주문 없는 시간대가 옅은 색으로 남으면 "적게 팔렸다"로 오독된다.
  *
  * ⚠️ **상한 0.42 는 대비 때문이다**(P8 §5 표면 종속, 직접 계산):
- * 셀 배경은 `--chart-1`(#0A3D62)를 흰 카드 위에 알파로 얹은 값이라 알파가 오를수록 어두워진다.
- * - 본문색 `--primary`(네이비) 텍스트: α=0.42 에서 4.87:1 ✅ · α=0.5 에서 4.04:1 ❌
- * - 흰 텍스트로 뒤집어도 α≈0.70 이상에서야 4.5:1 을 넘는다
- * → **0.45~0.70 은 두 색 모두 미달인 사각지대**다. 그래서 색을 뒤집는 대신 **사각지대에
+ * 셀 배경은 `--chart-1`(#0F5F67)를 흰 카드 위에 알파로 얹은 값이라 알파가 오를수록 어두워진다.
+ * - 청록 앵커(`--primary` 와 같은 hue)는 같은 hue 의 틴트 위에서 α=0.30 부터 4.5:1 아래로
+ *   떨어진다(α=0.42 에서 3.62:1 ❌). 그래서 글자는 `--foreground`(#0F172A)로 두었다:
+ *   α=0.42 에서 8.77:1 ✅ · α=0.30 에서 10.93:1
+ * - 흰 텍스트로 뒤집어도 α≈0.80 이상에서야 4.5:1 을 넘는다
+ * → **0.45~0.80 은 어떤 글자색도 미달인 사각지대**다. 그래서 색을 뒤집는 대신 **사각지대에
  * 들어가지 않게 상한을 자른다**. 종전 0.12~0.80 램프는 중간 농도 전 구간이 미달이었다
  * (slate-500 은 α=0.12 에서 이미 3.84:1). 상한을 올리고 싶으면 대비를 다시 계산할 것.
  */
@@ -65,9 +67,9 @@ export function IntradayHourHeatmap({ points, viewport }: Props) {
                 className="flex h-9 items-center justify-center rounded-md text-[10px] font-semibold tabular-nums"
                 style={{
                   backgroundColor: `color-mix(in srgb, var(--chart-1) ${resolveCellAlpha(cell.orders, maxOrders) * 100}%, transparent)`,
-                  // 알파 상한이 0.42 라 전 구간에서 네이비 텍스트가 4.5:1 을 넘는다
+                  // 알파 상한이 0.42 라 전 구간에서 foreground 텍스트가 4.5:1 을 넘는다
                   // (위 resolveCellAlpha 주석의 실측). 색 전환 분기는 두지 않는다.
-                  color: "var(--primary)",
+                  color: "var(--foreground)",
                 }}
                 title={`${cell.hour}시 · 주문 ${cell.orders}건 · 매출 ${cell.revenue.toLocaleString()}원`}
               >

@@ -1234,7 +1234,7 @@ function DailyTrend({ daily, todayYmd }: { daily: CampaignDailyPoint[]; todayYmd
                   "min-w-0 flex-1 rounded-t-md transition-all",
                   isToday
                     // rgba(var(--primary),0.3) 은 무효였다 — --primary 는 RGB 트리플렛이
-                    // 아니라 hex(#0A3D62)라 rgba(#0A3D62,0.3) 로 파싱 실패해 글로우가
+                    // 아니라 hex(#0F5F67)라 rgba(#0F5F67,0.3) 로 파싱 실패해 글로우가
                     // 렌더되지 않았다. Tailwind 컬러 섀도우로 토큰을 참조한다.
                     ? "bg-primary shadow-[0_0_10px] shadow-primary/30"
                     : "bg-slate-200"

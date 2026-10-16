@@ -38,7 +38,7 @@ export interface BadgeColorConfig {
  * 고정한다 — 값을 여기서 따로 고르지 말고 SSOT 를 고친 뒤 여기를 맞출 것.
  *
  * 대비(글자 on 채움, 흰 카드 위 알파 틴트는 합성값 · 실측 계산):
- * - PROPOSAL/ACTIVE: status-active #0A3D62 on active/10(#E7ECEF) → 9.50 (slate-50 위 9.06)
+ * - PROPOSAL/ACTIVE: status-active #0F5F67 on active/10(#E7EFF0) → 6.31 (slate-50 위 6.07)
  * - PREPARATION:     slate-700 #334155 on slate-100 → 9.45
  * - CLOSED:          slate-800 #1E293B on slate-200 → 11.87
  * - SETTLEMENT_WAIT: status-caution #B45309 on caution-bg #FFFBEB → 4.84

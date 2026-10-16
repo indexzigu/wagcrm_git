@@ -1019,8 +1019,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               ]}
             />
 
-            {/* 매출 목표 히어로 — 우측 (A안 수직 스택). WAG 팔레트: --hero-navy 토큰, 공유 elevation(shadow-soft-lg) */}
-            <Card className="overflow-hidden border-0 bg-[var(--hero-navy)] text-white shadow-soft-lg px-6 py-3 flex flex-col h-full min-h-[312px]">
+            {/* 매출 목표 히어로 — 우측 (A안 수직 스택). WAG 팔레트: --hero-deep 토큰, 공유 elevation(shadow-soft-lg) */}
+            <Card className="overflow-hidden border-0 bg-[var(--hero-deep)] text-white shadow-soft-lg px-6 py-3 flex flex-col h-full min-h-[312px]">
               {/* 1. 연간 누적 (위) */}
               <div className="space-y-3">
                 <div className="flex items-start justify-between">

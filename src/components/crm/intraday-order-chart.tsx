@@ -296,7 +296,7 @@ export function IntradayOrderChart({
     ctx.clearRect(0, 0, size.width, size.height);
 
     const styles = getComputedStyle(canvas);
-    const cumulativeColor = styles.getPropertyValue("--chart-1").trim() || "#0A3D62";
+    const cumulativeColor = styles.getPropertyValue("--chart-1").trim() || "#0F5F67";
     const rateColor = styles.getPropertyValue("--chart-4").trim() || "#F59E0B";
     const gridColor = "rgba(100, 116, 139, 0.18)";
     const tickColor = "rgba(100, 116, 139, 0.9)";

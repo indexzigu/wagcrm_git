@@ -16,12 +16,12 @@ export function MobileStandaloneGate({ children }: { children: React.ReactNode }
       <section className="mx-auto flex w-full max-w-sm flex-col gap-8">
         <div className="space-y-4">
           {/* 이 화면은 "홈 화면에 추가"를 안내한다 — 배지가 실제 앱 아이콘과 같은 모습이어야
-              사용자가 추가 후 찾을 아이콘과 눈으로 이어진다. 그래서 타일(--primary 네이비)까지
-              아이콘 파일과 같은 값으로 맞춘다. 네이비 위 골드 5.37:1(3:1 통과).
+              사용자가 추가 후 찾을 아이콘과 눈으로 이어진다. 그래서 타일(--primary 청록)까지
+              아이콘 파일과 같은 값으로 맞춘다. 청록 타일 위 연청록 마크 4.90:1(3:1 통과).
               라디우스는 #69 형태 사다리의 rounded-2xl 을 따른다 — 아이콘 파일의 rx(22/100)와
               정확히 같지는 않지만, 앱 안 형태 규율이 우선이다. */}
           <div className="inline-flex size-12 items-center justify-center rounded-2xl bg-primary">
-            <BrandMark title="WAG CRM" className="size-10 text-accent-gold" />
+            <BrandMark title="WAG CRM" className="size-10 text-brand-mark" />
           </div>
           <div className="space-y-2">
             <h1 className="text-2xl font-bold tracking-tight">WAG CRM 앱으로 실행해 주세요</h1>

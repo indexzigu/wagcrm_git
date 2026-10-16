@@ -51,7 +51,7 @@ export function MobileHomeView({
           <p className="mt-0.5 text-xs text-slate-500">주요 운영 지표 및 달성 현황</p>
         </MobileTopBar>
         {/* 매출 목표 히어로 (Mobile Optimized) */}
-        <Card className="overflow-hidden border-0 bg-[var(--hero-navy,#0f172a)] text-white shadow-soft-lg p-5 flex flex-col">
+        <Card className="overflow-hidden border-0 bg-[var(--hero-deep)] text-white shadow-soft-lg p-5 flex flex-col">
           <div className="space-y-3">
             <div className="flex items-start justify-between">
               <h2 className="text-base font-bold text-white/90">연간 누적</h2>

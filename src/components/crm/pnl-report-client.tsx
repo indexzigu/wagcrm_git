@@ -364,7 +364,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                     {/* 색 배분(interfaces 묶음 F, 2026-09-24): 비용 4항목은 좋고 나쁨이 없는 **범주**라
                         범주형 차트 팔레트(--chart-*)·무채색만 받는다(P8 §4). 종전 「예상 세금」은
                         --status-caution(심각도 축 — 세금이 경고처럼 보였다), 「순이익(세후)」은
-                        --accent-gold(가드레일 3 예외 2건 밖 + 흰 배경 2.11:1)였다. 순이익은 판정 축의
+                        구 골드(가드레일 3 예외 2건 밖 + 흰 배경 2.11:1)였다. 순이익은 판정 축의
                         초점 값이라 profit-tone 도형 맵을 탄다(흑자 --money-in 3.77 · 적자 --status-urgent
                         4.69, 비텍스트 3:1). 세금은 --chart-3(골드축 — 이익 골드와 겹쳐 읽힘)·--chart-4
                         (--status-pending 과 같은 값 — 대기 상태로 오독)가 부적합해 slate-600(흰 배경

@@ -11,7 +11,7 @@ import {
  * 데스크톱 홈 히어로가 달성률 색을 **goal-band SSOT 로만** 칠하는지 고정한다.
  *
  * 고친 버그 2종(둘 다 이 파일 안에 공존했다):
- * - 연간·이번달 달성률: 값과 무관하게 **항상 골드**(`text-[#F2C79C]`) — 모바일과 같은 고장.
+ * - 연간·이번달 달성률: 값과 무관하게 **항상 구 골드 리터럴**(hex 직접 지정) — 모바일과 같은 고장.
  * - `ShortageGridRow`: `isUp ? 골드 : white/60` 이라 **방향이 거꾸로**. 초과(방치 가능)가
  *   미달(조치 필요)보다 밝고, 달성률 자체는 `text-white/50` 로 그 줄에서 가장 흐렸다.
  *
@@ -24,8 +24,8 @@ const SOURCE = readFileSync(
   "utf8",
 );
 
-/** 히어로 리터럴 골드 — 밴드를 우회해 값과 무관하게 칠하던 통로 */
-const HERO_GOLD_LITERALS = ["#F2C79C", "#E7A567"];
+/** 히어로 리터럴 달성색 hex(모래색) — 밴드를 우회해 값과 무관하게 칠하던 통로 */
+const HERO_GOLD_LITERALS = ["#E3C27A", "#F0DCA6"];
 
 describe("데스크톱 홈 히어로 — 달성 밴드 SSOT 소비", () => {
   it("goal-band SSOT 를 임포트한다", () => {
@@ -36,7 +36,7 @@ describe("데스크톱 홈 히어로 — 달성 밴드 SSOT 소비", () => {
 
   it("히어로가 리터럴 골드 hex 를 직접 칠하지 않는다", () => {
     for (const hex of HERO_GOLD_LITERALS) {
-      // 캘린더 마커 등은 var(--accent-gold) 토큰을 쓰므로 hex 리터럴은 히어로 잔재뿐이다.
+      // 캘린더 마커 등은 var(--accent-achieve) 토큰을 쓰므로 hex 리터럴은 히어로 잔재뿐이다.
       expect(SOURCE).not.toContain(`text-[${hex}]`);
       expect(SOURCE).not.toContain(`bg-[${hex}]`);
       expect(SOURCE).not.toContain(`text-[${hex}]/70`);
@@ -53,7 +53,7 @@ describe("데스크톱 홈 히어로 — 달성 밴드 SSOT 소비", () => {
 
   it("ShortageGridRow 의 증감·달성률이 한 밴드에서 색을 받는다", () => {
     // 역전의 원인이던 두 규칙(isUp 삼항 색 · 달성률 고정 white/50)이 사라졌는지
-    expect(SOURCE).not.toContain('const colorClass = isUp ? "text-[#F2C79C]" : "text-white/60"');
+    expect(SOURCE).not.toContain('const colorClass = isUp ? "text-[#E3C27A]" : "text-white/60"');
     expect(SOURCE).not.toContain('<p className="text-xs font-medium text-white/50">{displayRate(rateVal)}</p>');
     expect(SOURCE).toContain("const bandClass = band");
   });

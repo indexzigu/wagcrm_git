@@ -181,8 +181,8 @@ export function SettlementCompletedTable({
                           {/* 개인 셀러(원천징수 대상)는 **라벨**로 구분한다. 종전 행 틴트 amber-50 은
                               좋고 나쁨이 없는 세무 범주에 주의(caution) 계열 hue 를 준 것이었고(P8 §4),
                               색만으로 전달돼 무엇을 뜻하는지 화면 어디에도 적혀 있지 않았다(WCAG 1.4.1).
-                              칩은 P8 §4 가 허용한 중립 태그 캐리어(브랜드 네이비 틴트 — 셀러 목록 「신규」
-                              마커 선례, ss-ux-designer 판정). 대비 #0A3D62 on primary/10 합성 9.50:1. */}
+                              칩은 P8 §4 가 허용한 중립 태그 캐리어(브랜드 청록 틴트 — 셀러 목록 「신규」
+                              마커 선례, ss-ux-designer 판정). 대비 #0F5F67 on primary/10 합성 6.31:1. */}
                           <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
                             {isIndividual ? (
                               <span

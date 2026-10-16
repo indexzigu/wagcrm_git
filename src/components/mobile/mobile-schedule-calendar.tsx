@@ -215,7 +215,7 @@ const DayCell = React.memo(function DayCell({
             "z-10 transition-all duration-300",
             !day.inMonth && "text-[10px] text-slate-500",
             day.inMonth && !isSelected && !isToday && "text-[10px] font-semibold text-slate-700",
-            isSelected && "flex size-7 items-center justify-center rounded-full bg-gradient-to-br from-[hsl(var(--cal-primary))] to-blue-800 text-white font-semibold shadow-md shadow-blue-900/20 ring-1 ring-white/20 text-xs",
+            isSelected && "flex size-7 items-center justify-center rounded-full bg-gradient-to-br from-[hsl(var(--cal-primary))] to-hero-deep text-white font-semibold shadow-md shadow-hero-deep/20 ring-1 ring-white/20 text-xs",
             // 오늘 라벨은 --cal-primary(진네이비) — 채도 상향된 스팬바 배경 위에서도
             // 13px bold 기준 4.5:1(AA)을 충족한다(blue-600은 3.9:1 미달, ss 검토 P1).
             !isSelected && isToday && "text-[13px] font-bold text-[hsl(var(--cal-primary))] tracking-tight"

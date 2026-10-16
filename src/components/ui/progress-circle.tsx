@@ -17,7 +17,7 @@ export function ProgressCircle({
   max = 1,
   size = 116,
   strokeWidth = 12,
-  color = "var(--accent-gold)",
+  color = "var(--status-pending)",
   trackColor = "var(--border)",
   label,
   caption,
