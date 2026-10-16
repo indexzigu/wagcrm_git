@@ -121,6 +121,7 @@ export const UI_LABEL_TABLES = {
   "업무 상태": "taskStatusLabels (src/lib/crm-types.ts)",
   "판매 채널": "salesChannelLabels (src/lib/crm-types.ts)",
   "거래처 유형": "partnerTypeLabels (src/lib/crm-types.ts)",
+  "거래처 상태": "partnerStatusLabel (src/lib/crm-types.ts)",
   "API 기록 출처": "apiProviderLabels (src/lib/crm-types.ts)",
   "대상 종류(거래처·셀러·딜·캠페인)": "ENTITY_TYPE_LABELS (src/components/crm/approvals/entity-type-labels.ts)",
   "필드 이름": "FIELD_LABELS (src/lib/field-labels.ts)",
