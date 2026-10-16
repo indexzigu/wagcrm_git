@@ -34,8 +34,9 @@
  *
  * 마크 도형 = 말풍선 + 막대 3개. 현행 마크는 2026-07-22 로고 교체로 정해졌다
  * (`docs/agents/design-system.md` §7). 도형 path 는 `src/components/brand/brand-mark.tsx` 와
- * 글자 단위로 같아야 한다 — `brand-mark-contract.test.ts` 가 강제한다. 도형을 바꾸면 그 파일과
- * 계약 테스트를 함께 고칠 것.
+ * 글자 단위로 같아야 한다 — `brand-mark-contract.test.ts` 는 brand-mark.tsx 와 생성물
+ * src/app/icon.svg 만 비교한다(이 스크립트의 path 는 보지 않는다). 그래서 여기 도형을 바꾸면
+ * 스크립트를 돌려 icon.svg 를 재생성해야 계약이 드리프트를 잡는다.
  */
 import sharp from "sharp";
 import { writeFileSync } from "node:fs";

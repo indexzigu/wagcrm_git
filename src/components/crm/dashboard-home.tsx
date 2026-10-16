@@ -858,7 +858,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
 
   return (
     <CrmShell>
-      <main className="min-h-full bg-[radial-gradient(circle_at_top_right,_rgba(10,61,98,0.07),_transparent_30%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] px-5 pb-5 pt-5 md:px-8">
+      <main className="min-h-full bg-[radial-gradient(circle_at_top_right,_rgba(15,95,103,0.07),_transparent_30%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] px-5 pb-5 pt-5 md:px-8">
         <div className="space-y-6">
           {/* 밴드 -1: 오늘 처리할 주문(발주 자동화 1단계, 오너 승인 2026-10-06) — 그날 손이 가야 하는
               주문 일(발주 대기·배송 지연·진행 중 클레임)이라 매출·일정보다 먼저 읽힌다. 일이 없으면 한 줄로
