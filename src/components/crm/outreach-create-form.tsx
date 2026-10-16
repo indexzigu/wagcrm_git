@@ -237,7 +237,6 @@ export function OutreachCreateForm({
         onOpenChange={setIsDealSearchOpen}
         entityType="deal"
         searchEndpoint="/api/search/deals"
-        simpleDealDisplay
         onSelect={(deal) => {
           setSelectedDealId(deal.id);
           setSelectedDealName(deal.label);

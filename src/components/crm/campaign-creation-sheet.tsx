@@ -287,7 +287,6 @@ export function CampaignCreationSheet({
       onOpenChange={setIsDealSearchOpen}
       entityType="deal"
       searchEndpoint="/api/search/deals"
-      simpleDealDisplay
       onSelect={(deal) => {
         setDealId(deal.id);
         if (!localDeals.some((item) => item.id === deal.id)) {

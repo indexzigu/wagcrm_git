@@ -15,7 +15,7 @@ import { containsSearch } from "@/lib/prisma-search";
  *   - excludePartnerId: exclude deals already linked to this partner
  *   - status: filter by deal status (additive — 미전달 시 기존 동작 그대로)
  *
- * Returns: { results: Array<{ id, dealName, brandName, status, partnerId, partnerName }> }
+ * Returns: { results: Array<{ id, dealName, brandName, status, createdAt, partnerId, partnerName }> }
  *
  * Requirements: 5.3, 10.3
  */
@@ -27,6 +27,12 @@ export async function GET(request: NextRequest) {
   const q = searchParams.get("q")?.trim() ?? "";
   const excludePartnerId = searchParams.get("excludePartnerId");
   const status = searchParams.get("status")?.trim() || null;
+  // sort=created — 고르는 창(LinkSearchDialog)이 「최근 등록순」을 요청한다(오너 요청 2026-10-16).
+  // 생략하면 종전대로 최근 수정순(예비 일정·자료함 자동완성은 그대로).
+  const orderBy =
+    searchParams.get("sort") === "created"
+      ? ({ createdAt: "desc" } as const)
+      : ({ updatedAt: "desc" } as const);
   const excludeIds = (searchParams.get("excludeIds") ?? "")
     .split(",")
     .map((value) => value.trim())
@@ -53,12 +59,13 @@ export async function GET(request: NextRequest) {
       const deals = await prisma.deal.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
         take: 20,
-        orderBy: { updatedAt: "desc" },
+        orderBy,
         select: {
           id: true,
           dealName: true,
           brandName: true,
           status: true,
+          createdAt: true,
           partnerId: true,
           partner: {
             select: { name: true, type: true },
@@ -71,6 +78,7 @@ export async function GET(request: NextRequest) {
         dealName: deal.dealName,
         brandName: normalizeDealBrandName(deal.brandName, deal.partner) ?? undefined,
         status: deal.status,
+        createdAt: deal.createdAt.toISOString(),
         partnerId: deal.partnerId,
         partnerName: deal.partner?.name ?? "거래처 없음",
       }));
@@ -107,12 +115,13 @@ export async function GET(request: NextRequest) {
     const deals = await prisma.deal.findMany({
       where,
       take: 20,
-      orderBy: { updatedAt: "desc" },
+      orderBy,
       select: {
         id: true,
         dealName: true,
         brandName: true,
         status: true,
+        createdAt: true,
         partnerId: true,
         partner: {
           select: { name: true, type: true },
@@ -125,6 +134,7 @@ export async function GET(request: NextRequest) {
       dealName: deal.dealName,
       brandName: normalizeDealBrandName(deal.brandName, deal.partner) ?? undefined,
       status: deal.status,
+      createdAt: deal.createdAt.toISOString(),
       partnerId: deal.partnerId,
       partnerName: deal.partner?.name ?? "거래처 없음",
     }));

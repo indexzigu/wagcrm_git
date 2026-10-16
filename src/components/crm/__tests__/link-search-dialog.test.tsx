@@ -69,6 +69,7 @@ describe("link-search-dialog deal labels", () => {
         ],
         metadata: {
           status: "협의",
+          createdAt: "",
         },
       },
     ]);
@@ -122,7 +123,7 @@ describe("link-search-dialog deal labels", () => {
     );
 
     expect(screen.getByText("딜 연결")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("딜 또는 거래처 이름으로 검색")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("딜 또는 브랜드 이름으로 검색")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "연결" })).toBeDisabled();
   });
 
@@ -178,5 +179,32 @@ describe("link-search-dialog deal labels", () => {
 
     fireEvent.doubleClick(await screen.findByRole("button", { name: /딜 하나/ }));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("딜·거래처는 최근 등록순을 요청하고, 행에 상태 대신 등록일을 한 줄로 보인다", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ id: "d1", dealName: "딜 하나", status: "CONFIRMED", createdAt: "2026-10-16T03:00:00.000Z" }],
+      }),
+    });
+    render(
+      <LinkSearchDialog
+        open
+        onOpenChange={() => {}}
+        entityType="deal"
+        searchEndpoint="/api/search/deals"
+        onSelect={() => {}}
+      />,
+    );
+
+    const row = await screen.findByRole("button", { name: /딜 하나/ });
+    expect(row).toHaveTextContent("26-10-16");
+    expect(row).not.toHaveTextContent("확정");
+    expect(screen.getByText(/최근 등록 20건/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/search/deals?sort=created",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

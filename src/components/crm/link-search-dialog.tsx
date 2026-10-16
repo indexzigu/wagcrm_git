@@ -15,6 +15,7 @@ import {
   snsTypeLabels,
 } from "@/lib/crm-types";
 import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
+import { formatDate } from "@/lib/format";
 
 /**
  * 영문 상태 코드를 화면에 그대로 찍지 않는다 — 상태 칸이라 표에 없는 코드는 「알 수 없음」(P2 ③, 공용 규칙
@@ -24,10 +25,7 @@ function labelOf(table: Readonly<Record<string, string>>, value: unknown): strin
   const raw = String(value ?? "");
   return raw ? displayLabel(table, raw, UNKNOWN_NAME) : "";
 }
-import {
-  EntityIdentity,
-  type EntityIdentityPart,
-} from "@/components/crm/entity-identity";
+import { type EntityIdentityPart } from "@/components/crm/entity-identity";
 import { SellerIdentityInfo } from "@/components/crm/seller-identity-info";
 import { Dialog } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -76,7 +74,6 @@ export type LinkSearchDialogProps = {
   /** 기본값은 mode·entityType 에서 만든다 — 특별한 이유가 없으면 넘기지 않는다. */
   title?: string;
   placeholder?: string;
-  simpleDealDisplay?: boolean;
 };
 
 export function normalizeSearchResults(
@@ -99,6 +96,7 @@ export function normalizeSearchResults(
         }),
         metadata: {
           status: labelOf(dealStatusLabels, item.status),
+          createdAt: typeof item.createdAt === "string" ? item.createdAt : "",
         },
       }));
     case "campaign":
@@ -123,6 +121,7 @@ export function normalizeSearchResults(
           type: String(item.type ?? ""),
           status: partnerStatusLabel(typeof item.status === "string" ? item.status : null),
           companyRole: String(item.companyRole ?? ""),
+          createdAt: typeof item.createdAt === "string" ? item.createdAt : "",
           deals: JSON.stringify(item.deals ?? []),
         },
       }));
@@ -177,13 +176,15 @@ function dialogCopy(entityType: LinkSearchDialogProps["entityType"], mode: LinkS
   // 설명문은 두지 않는다 — 제목·검색 안내·힌트와 같은 말의 되풀이였다(ss-ux 검토 2026-10-16).
   return {
     title: `${noun} ${verb}`,
-    // 딜 검색 API 는 거래처 이름으로도 찾는다(/api/search/deals).
-    placeholder: entityType === "deal" ? "딜 또는 거래처 이름으로 검색" : `${noun} 이름으로 검색`,
+    // 딜 검색 API 는 딜 이름·브랜드명으로 찾는다(/api/search/deals — 거래처 이름은 대상 아님).
+    placeholder: entityType === "deal" ? "딜 또는 브랜드 이름으로 검색" : `${noun} 이름으로 검색`,
     confirmLabel: verb,
   };
 }
 
 const INITIAL_LIMIT = 20;
+/** 딜·거래처는 고를 때 최근 등록순이 도움이 된다(오너 요청 2026-10-16) — 행에도 등록일을 보인다. */
+const SORT_BY_CREATED = new Set<LinkSearchDialogProps["entityType"]>(["deal", "partner"]);
 
 export function LinkSearchDialog({
   open,
@@ -197,7 +198,6 @@ export function LinkSearchDialog({
   onSelect,
   title,
   placeholder,
-  simpleDealDisplay = false,
 }: LinkSearchDialogProps) {
   const copy = dialogCopy(entityType, mode);
   const [query, setQuery] = React.useState("");
@@ -249,6 +249,7 @@ export function LinkSearchDialog({
         searchParamEntries.forEach(([key, value]) => {
           params.set(key, value);
         });
+        if (SORT_BY_CREATED.has(entityType)) params.set("sort", "created");
         if (excludeIdsKey) {
           params.set("excludeIds", excludeIdsKey);
         }
@@ -303,6 +304,7 @@ export function LinkSearchDialog({
         searchParamEntries.forEach(([key, value]) => {
           params.set(key, value);
         });
+        if (SORT_BY_CREATED.has(entityType)) params.set("sort", "created");
         if (excludeIdsKey) {
           params.set("excludeIds", excludeIdsKey);
         }
@@ -381,42 +383,37 @@ export function LinkSearchDialog({
         : results.length >= INITIAL_LIMIT
         ? `상위 ${INITIAL_LIMIT}건 · 더 좁혀 입력하면 정확해집니다`
         : `검색 결과 ${results.length}건`
-      : `최근 ${INITIAL_LIMIT}건 · 2글자 이상 입력하면 전체에서 찾습니다`;
+      : `${SORT_BY_CREATED.has(entityType) ? "최근 등록" : "최근"} ${INITIAL_LIMIT}건 · 2글자 이상 입력하면 전체에서 찾습니다`;
 
-  const renderDealItem = (item: SearchResultItem, currentChip: React.ReactNode) => {
-    const status = item.metadata?.status;
-    const name = (
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 break-words line-clamp-2 text-sm font-semibold text-foreground" title={item.label}>
-          {item.label}
+  // 딜·거래처 행은 한 줄이다 — 줄바꿈 없이 이름(말줄임) · 보조 정보 · 등록일. 상태 칩은 두지 않는다
+  // (고를 때 판단에 쓰이지 않는다 — 오너 2026-10-16). 넘친 이름은 마우스를 올리면 전체가 보인다.
+  const renderOneLine = (
+    item: SearchResultItem,
+    currentChip: React.ReactNode,
+    middle: React.ReactNode,
+  ) => (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="min-w-0 shrink truncate text-sm font-semibold text-foreground" title={item.label}>
+        {item.label}
+      </span>
+      {currentChip}
+      <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">{middle}</span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground" title="등록일">
+        {formatDate(item.metadata?.createdAt)}
+      </span>
+    </div>
+  );
+
+  const renderDealItem = (item: SearchResultItem, currentChip: React.ReactNode) =>
+    renderOneLine(
+      item,
+      currentChip,
+      item.sublabel ? (
+        <span className="truncate text-xs text-muted-foreground" title={item.sublabel}>
+          {item.sublabel}
         </span>
-        {currentChip}
-      </div>
+      ) : null,
     );
-    return (
-      <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {simpleDealDisplay ? (
-            name
-          ) : (
-            <div className="flex min-w-0 items-center gap-2">
-              <EntityIdentity
-                parts={item.identityParts ?? [{ label: "딜", value: item.label }]}
-                className="min-w-0 overflow-hidden"
-              />
-              {currentChip}
-            </div>
-          )}
-          {/* 비슷한 딜 이름 중 하나를 고르는 자리라 구별 꼬리(회차 등)가 잘리지 않게 이름은 두 줄까지,
-              거래처·브랜드는 보조줄로(종전 9px 「브랜드」 칩은 딜 이름 앞부분을 되풀이할 뿐이었다). */}
-          {simpleDealDisplay && item.sublabel ? (
-            <span className="truncate text-xs text-muted-foreground">{item.sublabel}</span>
-          ) : null}
-        </div>
-        {status ? <ResultChip>{status}</ResultChip> : null}
-      </div>
-    );
-  };
 
   const renderSellerItem = (item: SearchResultItem, currentChip: React.ReactNode) => (
     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -432,34 +429,26 @@ export function LinkSearchDialog({
   );
 
   const renderPartnerItem = (item: SearchResultItem, currentChip: React.ReactNode) => {
-    const meta = item.metadata || {};
     let deals: Array<{ id: string; dealName: string }> = [];
-    if (meta.deals) {
+    if (item.metadata?.deals) {
       try {
-        deals = JSON.parse(meta.deals);
+        deals = JSON.parse(item.metadata.deals);
       } catch {
         // metadata.deals 는 normalizeSearchResults 가 JSON.stringify 로 만든다 — 깨질 경로가 없다.
       }
     }
-    // 평상시 상태(거래중)는 모든 행에 같은 칩을 찍을 뿐이라 숨기고, 판단이 필요한 예외만 보인다.
-    const status = meta.status && meta.status !== partnerStatusLabel("ACTIVE") ? meta.status : "";
-
-    return (
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 break-words line-clamp-2 text-sm font-semibold text-foreground" title={item.label}>
-            {item.label}
-          </span>
-          {item.sublabel ? <ResultChip size="sm">{item.sublabel}</ResultChip> : null}
-          {status ? <ResultChip size="sm">{status}</ResultChip> : null}
-          {currentChip}
-        </div>
-        {deals.length > 0 ? (
-          <span className="truncate text-xs text-muted-foreground">
-            딜 {deals.map((d) => d.dealName).join(", ")}
+    const dealText = deals.map((d) => d.dealName).join(", ");
+    return renderOneLine(
+      item,
+      currentChip,
+      <>
+        {item.sublabel ? <ResultChip size="sm">{item.sublabel}</ResultChip> : null}
+        {dealText ? (
+          <span className="truncate text-xs text-muted-foreground" title={dealText}>
+            {dealText}
           </span>
         ) : null}
-      </div>
+      </>,
     );
   };
 

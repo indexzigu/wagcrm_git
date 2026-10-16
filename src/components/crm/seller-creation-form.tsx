@@ -395,7 +395,7 @@ export function SellerCreationForm({
       {/* 등록 버튼 — 창 안에서는 바닥에 붙는 띠(FormDialogActions) */}
       <FormDialogActions className="mt-1">
         <span className="mr-auto text-xs text-muted-foreground">
-          채널 URL 또는 표시명·SNS 유형·SNS 핸들이 있어야 등록할 수 있습니다.
+          채널 URL만 넣어도 등록됩니다.
         </span>
         <Button
           variant="outline"
