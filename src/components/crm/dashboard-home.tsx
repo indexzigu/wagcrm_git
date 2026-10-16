@@ -37,7 +37,7 @@ import { SegmentedTabCard, SegmentedTabBar, type SegmentedTab } from "./segmente
 import { SystemRadarCard } from "./system-radar-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
 import { OrderWorkCard } from "./order-work-card";
-import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { DASHBOARD_SCOPE_CAPTION, type DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
   resolveGoalBand,
@@ -1110,6 +1110,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   <div className={`h-full rounded-full animate-grow-x ${monthFillClass}`} style={{ width: `${goalBarWidth(monthRate)}%` }} />
                 </div>
                 <p className="text-[10px] text-white/80 leading-none">{monthlyActionHint(monthRate, initialData.goals.monthTarget != null)}</p>
+
+                <p className="text-[10px] text-white/60 leading-none">{DASHBOARD_SCOPE_CAPTION}</p>
 
                 {/* 이전 누적 추이 행 (5월, 4월) */}
                 <div className="space-y-2.5 pt-1">

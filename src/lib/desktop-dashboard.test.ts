@@ -167,6 +167,21 @@ describe("getDesktopDashboardData — 정산 전 상태의 매출·순마진", (
     expect(data.yearlyTrend.at(-1)).toMatchObject({ month: "2026-09", revenue: 2_800_000, expectedMargin });
   });
 
+  it("드랍 캠페인은 거래액·매출총이익·연간 누적·추이에서 빠지고 활성 셀러 수에는 남는다", async () => {
+    campaignRows.push(
+      campaignRow({ status: "DROPPED", actualSales: 700_000, settlementSales: 300_000, sellerExpense: 100_000 }),
+      campaignRow({ sellerId: "s-active", status: "ACTIVE", actualSales: 500_000, settlementSales: 200_000, sellerExpense: 150_000 }),
+    );
+
+    const data = await getDesktopDashboardData(new Date("2026-09-15T00:00:00.000Z"));
+
+    expect(data.goals.monthActual).toBe(500_000);
+    expect(data.goals.ytdActual).toBe(500_000);
+    expect(data.profitability.expectedMargin).toBe(50_000);
+    expect(data.trend.at(-1)).toMatchObject({ month: "2026-09", revenue: 500_000, expectedMargin: 50_000, activeSellers: 2 });
+    expect(data.yearlyTrend.at(-1)).toMatchObject({ month: "2026-09", revenue: 500_000, expectedMargin: 50_000 });
+  });
+
   it("영업수익 0 은 값이 있는 것으로 본다 — 요율로 되살리지 않는다", async () => {
     campaignRows.push(
       campaignRow({ actualSales: 1_000_000, totalMarginRate: 30, sellerMarginRate: 20, settlementSales: 0, sellerExpense: 0 }),

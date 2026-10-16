@@ -1,4 +1,4 @@
-import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { DASHBOARD_SCOPE_CAPTION, type DesktopDashboardData } from "@/lib/desktop-dashboard";
 // #152: 홈 정산 카드는 파이프라인 스냅샷이 아닌 전용 경량 스냅샷을 소비한다.
 import type { MobileSettlementCampaign } from "@/lib/mobile-settlement-data";
 import { Card } from "@/components/ui/card";
@@ -102,6 +102,7 @@ export function MobileHomeView({
                 style={{ width: `${goalBarWidth(monthRate)}%` }}
               />
             </div>
+            <p className="text-[10px] text-white/60 leading-none">{DASHBOARD_SCOPE_CAPTION}</p>
           </div>
         </Card>
 
