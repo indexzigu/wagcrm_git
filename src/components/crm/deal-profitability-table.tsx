@@ -80,7 +80,7 @@ export function DealProfitabilityTable({
           },
           {
             key: "totalMargin",
-            label: "총 마진",
+            label: "매출총이익",
             width: 140,
             // 총 마진은 매출 × 순마진율로 상쇄된 **판정값**이다(P8 §1 판정축). 종전엔 부호와
             // 무관하게 무조건 초록이었다. 딜마다 되풀이되는 표 열이라 **밀집 강도** — 흑자는

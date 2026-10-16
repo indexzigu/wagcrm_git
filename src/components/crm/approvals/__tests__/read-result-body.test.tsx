@@ -101,7 +101,7 @@ describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
       <ReadResultBody envelope={envelope("get_campaign_financials", data)} />
     );
     expect(container.querySelector("[data-slot='kv-list']")).toBeNull();
-    expect(screen.getByText("영업 수익")).toBeInTheDocument();
+    expect(screen.getByText("수수료매출")).toBeInTheDocument();
     expect(screen.getByText("500,000원")).toBeInTheDocument();
     expect(screen.getAllByText("비어 있음")).toHaveLength(3);
   });

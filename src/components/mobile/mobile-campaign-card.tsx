@@ -78,7 +78,7 @@ export function MobileCampaignCard({
         ? "금액미확정"
         : "미입력" // 실매출은 오너가 넣는 값 — 데스크톱 「실매출미입력」과 같은 뜻
       : `₩${formatCurrency(primaryMetricAmount)}`;
-  const primaryMetricLabel = variant === "settlement" ? settlementState : "실매출";
+  const primaryMetricLabel = variant === "settlement" ? settlementState : "총거래액";
   // 마진은 그룹(첫 멤버 값이라 오독)·정산 변형에서 숨긴다 — 적자 배지도 마진의 캐리어라
   // 마진이 안 보이는 카드에는 함께 숨긴다(근거 없는 배지 방지).
   const showMargin = variant !== "settlement" && !isGroup;

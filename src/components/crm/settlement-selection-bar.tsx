@@ -289,13 +289,13 @@ export function SettlementSelectionBar({
                 </span>
               </span>
               <span className="flex items-baseline gap-1.5">
-                <span className="text-muted-foreground">영업수익</span>
+                <span className="text-muted-foreground">수수료매출</span>
                 <span className="font-semibold tabular-nums text-slate-600">
                   {formatCurrency(summary.settlementSales)}
                 </span>
               </span>
               <span className="flex items-baseline gap-1.5">
-                <span className="text-muted-foreground">판매대행비</span>
+                <span className="text-muted-foreground">셀러지급액</span>
                 <span className="font-semibold tabular-nums text-money-out">
                   {formatCurrency(summary.sellerExpense)}
                 </span>

@@ -168,7 +168,7 @@ async function handleUpdateSettlementAmount(
     const dealCount = await tx.campaignDeal.count({ where: { campaignId: campaign.id } });
     if (dealCount > 0) {
       throw new Error(
-        `정산 금액 수정 불가: 품목이 ${dealCount}개 있는 캠페인의 총 거래액은 품목 합계에서 정해집니다. ` +
+        `정산 금액 수정 불가: 품목이 ${dealCount}개 있는 캠페인의 총거래액은 품목 합계에서 정해집니다. ` +
           "재무 카드에서 품목 금액을 고치세요.",
       );
     }

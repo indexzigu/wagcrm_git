@@ -267,7 +267,7 @@ export function OutreachCardContent({
           <div className="mt-0.5 flex items-center text-[11px] text-muted-foreground">
             <span>총수수료 <span className="font-semibold text-slate-600">{outreach.totalMarginRate}%</span></span>
             <span className="mx-1.5 text-border/60">·</span>
-            <span>협의수수료 <span className="font-semibold text-slate-600">{outreach.sellerMarginRate}%</span></span>
+            <span>셀러수수료율(협의) <span className="font-semibold text-slate-600">{outreach.sellerMarginRate}%</span></span>
           </div>
         )}
       </div>

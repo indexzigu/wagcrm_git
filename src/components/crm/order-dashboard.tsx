@@ -584,7 +584,7 @@ function SettledCampaignRow({ camp, isLoading, error, onExpand }: {
             <span><span className="text-slate-500">주문</span> <b className="text-slate-600">{orderCount.toLocaleString()}</b></span>
           )}
           {typeof revenue === 'number' && (
-            <span><span className="text-slate-500">매출</span> <b className="text-slate-600">{revenue.toLocaleString()}원</b></span>
+            <span><span className="text-slate-500">판매금액</span> <b className="text-slate-600">{revenue.toLocaleString()}원</b></span>
           )}
         </div>
         <span className="shrink-0 text-xs text-slate-500 font-medium flex items-center gap-1">
@@ -822,7 +822,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
                 <div className="w-px h-4 bg-slate-200 shrink-0"></div>
                 
                 <div className="flex items-center w-[130px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-[1.4]">
-                  <span className="text-[11px] text-slate-500 font-normal">매출</span>
+                  <span className="text-[11px] text-slate-500 font-normal">판매금액</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.revenue ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">원</span>
                   </div>

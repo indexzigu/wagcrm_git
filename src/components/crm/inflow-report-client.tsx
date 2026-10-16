@@ -117,7 +117,7 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
                 )}
               </div>
               <p className="text-sm text-muted-foreground">
-                셀러에게 준 단축링크의 유입을 봅니다. 정산이 확정되면 매출과 순이익이 같은 표에
+                셀러에게 준 단축링크의 유입을 봅니다. 정산이 확정되면 수수료매출과 영업이익이 같은 표에
                 붙습니다.
               </p>
             </div>
@@ -162,8 +162,8 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
                         <TableHead>기간</TableHead>
                         <TableHead className="text-right">클릭</TableHead>
                         <TableHead className="text-right">직전 회차 대비</TableHead>
-                        <TableHead className="text-right">클릭당 매출</TableHead>
-                        <TableHead className="text-right">클릭당 순이익</TableHead>
+                        <TableHead className="text-right">클릭당 수수료매출</TableHead>
+                        <TableHead className="text-right">클릭당 영업이익</TableHead>
                         <TableHead className="text-right">마지막 클릭</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -512,16 +512,16 @@ function SettlementSection({ link }: { link: InflowLinkRow | null }) {
       <h3 className="text-sm font-semibold text-foreground">정산</h3>
       {link.sales === null ? (
         <p className="rounded-lg border border-dashed bg-slate-50/50 px-3 py-4 text-center text-xs text-muted-foreground">
-          아직 정산 전입니다. 확정되면 매출과 순이익이 여기 붙습니다.
+          아직 정산 전입니다. 확정되면 수수료매출과 영업이익이 여기 붙습니다.
         </p>
       ) : (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-3 text-xs">
-          <SettlementRow label="확정 매출" value={link.sales} />
-          <SettlementRow label="클릭당 매출" value={link.revenuePerClick} />
-          <SettlementRow label="셀러 지급액" value={link.sellerExpense} />
+          <SettlementRow label="수수료매출" value={link.sales} />
+          <SettlementRow label="클릭당 수수료매출" value={link.revenuePerClick} />
+          <SettlementRow label="셀러지급액" value={link.sellerExpense} />
           <SettlementRow label="클릭당 셀러비용" value={link.costPerClick} />
           <SettlementRow label="영업이익" value={link.operatingProfit} tone />
-          <SettlementRow label="클릭당 순이익" value={link.profitPerClick} tone />
+          <SettlementRow label="클릭당 영업이익" value={link.profitPerClick} tone />
         </dl>
       )}
       {link.quantity !== null && (

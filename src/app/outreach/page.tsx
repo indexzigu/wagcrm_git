@@ -1708,7 +1708,7 @@ function SalesTaskDetailPanel({
             </div>
           </div>
           <div className="flex items-center justify-between text-[11px] border-t border-slate-100 pt-3">
-            <span className="text-muted-foreground">예상 영업이익율</span>
+            <span className="text-muted-foreground">예상 순수수료율</span>
             <span className="font-bold text-foreground text-xs">
               {expectedProfitRate}%
             </span>

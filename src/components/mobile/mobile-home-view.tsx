@@ -80,7 +80,7 @@ export function MobileHomeView({
 
           <div className="border-t border-white/10 mt-4 pt-4 space-y-3">
             <div className="flex items-start justify-between">
-              <h2 className="text-base font-bold text-white/90">이번 달 매출 ({monthLabel(currentMonthKey)})</h2>
+              <h2 className="text-base font-bold text-white/90">이번 달 거래액 ({monthLabel(currentMonthKey)})</h2>
               <Wallet className="size-4 text-white/30" />
             </div>
             <div className="flex items-baseline justify-between gap-2 pt-1">

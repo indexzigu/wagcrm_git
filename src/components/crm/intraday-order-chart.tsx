@@ -710,7 +710,7 @@ export function IntradayOrderChart({
                   </p>
                 )}
                 <p className="text-muted-foreground">
-                  매출{" "}
+                  판매금액{" "}
                   {(hoveredColumnIsAggregate && hoveredColumn
                     ? hoveredColumn.revenue
                     : hoveredPoint.revenue

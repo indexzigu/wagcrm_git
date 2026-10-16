@@ -95,7 +95,7 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
                       <th className="px-5 py-3 font-bold">경로</th>
                       <th className="w-[90px] px-5 py-3 font-bold text-right">주문</th>
                       <th className="w-[170px] px-5 py-3 font-bold text-right">비중</th>
-                      <th className="w-[130px] px-5 py-3 font-bold text-right">매출</th>
+                      <th className="w-[130px] px-5 py-3 font-bold text-right">판매금액</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">

@@ -126,13 +126,13 @@ export function SettlementCompletedTable({
                   <th className="px-4 py-3">캠페인명</th>
                   <th className="px-4 py-3">브랜드</th>
                   <th className="px-4 py-3">거래처</th>
-                  <th className="px-2 py-3 text-right">총 거래액</th>
-                  <th className="px-2 py-3 text-right">영업 수익</th>
-                  <th className="px-2 py-3 text-right">판매 대행비</th>
+                  <th className="px-2 py-3 text-right">총거래액</th>
+                  <th className="px-2 py-3 text-right">수수료매출</th>
+                  <th className="px-2 py-3 text-right">셀러지급액</th>
                   <th className="px-2 py-3 text-right">운영비</th>
                   <th className="px-2 py-3 text-right">공제세액</th>
                   <th className="px-2 py-3 text-right">기타비용</th>
-                  <th className="px-2 py-3 text-right">영업이익율</th>
+                  <th className="px-2 py-3 text-right">영업이익률</th>
                   <th className="px-2 py-3 text-right">영업이익</th>
                 </tr>
               </thead>

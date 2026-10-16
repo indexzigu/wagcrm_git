@@ -59,9 +59,9 @@ import { badgeSizeClassName } from "@/components/ui/badge";
 
 // WAG CRM 팔레트 스펙(오너 승인, 2026-07-09) — 차트라인/기준선 하드코딩 색 → 토큰 수렴
 const chartConfig = {
-  revenue: { label: "실제 매출", color: "var(--chart-1)" },
-  expectedMargin: { label: "예상 순마진", color: "var(--chart-4)" },
-  goal: { label: "월 목표", color: "var(--muted-foreground)" },
+  revenue: { label: "총거래액", color: "var(--chart-1)" },
+  expectedMargin: { label: "매출총이익", color: "var(--chart-4)" },
+  goal: { label: "거래액 목표", color: "var(--muted-foreground)" },
 } satisfies ChartConfig;
 
 // 6개월 차트 전용 툴팁 — 목표 매출 제외(오너 피드백 2026-07-10), 매출·순마진 + 파생 마진율만.
@@ -89,7 +89,7 @@ function TrendTooltip({
         <div className="flex items-center justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--chart-1)" }} />
-            매출
+            총거래액
           </span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{formatCurrency(revenue)}</span>
         </div>
@@ -98,7 +98,7 @@ function TrendTooltip({
         <div className="flex items-center justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--chart-4)" }} />
-            순마진
+            매출총이익
           </span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{formatCurrency(margin)}</span>
         </div>
@@ -888,7 +888,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               }}
             />
             <MetricCard
-              label="예상 순마진"
+              label="매출총이익"
               value={formatCurrency(initialData.profitability.expectedMargin)}
               prevValue={formatCurrency(initialData.profitability.prevExpectedMargin)}
               prevPrevValue={formatCurrency(initialData.profitability.prevPrevExpectedMargin)}
@@ -973,7 +973,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   label: "최근 6개월",
                   render: () => (
                     <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground">매출·예상 순마진 추이 및 목표 대비 달성</p>
+                      <p className="mb-2 text-[11px] text-muted-foreground">총거래액·매출총이익 추이 및 목표 대비 달성</p>
                       {/* 오너 피드백 2026-07-10: 하단 안개 제거, 순마진은 나란한 막대, 툴팁은 매출·순마진·마진율만 */}
                       <div className="flex-1 flex items-center justify-center">
                         <ChartContainer config={chartConfig} className="h-[262px] w-full">
@@ -995,10 +995,10 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 },
                 {
                   key: "annual",
-                  label: "연간 매출",
+                  label: "연간 거래액",
                   render: () => (
                     <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground">{year}년 월별 매출 · 예상 순마진{initialData.yearlyTrend.some((t) => t.goal != null) ? " · 점선 = 월 목표" : ""}</p>
+                      <p className="mb-2 text-[11px] text-muted-foreground">{year}년 월별 총거래액 · 매출총이익{initialData.yearlyTrend.some((t) => t.goal != null) ? " · 점선 = 거래액 목표" : ""}</p>
                       <div className="flex-1 flex items-center justify-center">
                         {/* 6개월 추이와 동일 구성(매출·순마진 막대 + 목표선) + 공통 Y축 domain 으로 틀 고정 */}
                         <ChartContainer config={chartConfig} className="h-[262px] w-full">
@@ -1073,11 +1073,11 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               {/* 구분선 및 이번 달 매출 (아래) */}
               <div className="border-t border-white/10 mt-4 pt-4 space-y-3">
                 <div className="flex items-start justify-between">
-                  <h2 className="text-lg font-bold">이번 달 매출</h2>
+                  <h2 className="text-lg font-bold">이번 달 거래액</h2>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href="/settings/operations?section=goals" aria-label="매출 목표 설정" className="rounded-full bg-white/10 p-1 text-white/80 hover:bg-white/20">
+                        <Link href="/settings/operations?section=goals" aria-label="거래액 목표 설정" className="rounded-full bg-white/10 p-1 text-white/80 hover:bg-white/20">
                           <Settings2 className="size-3" aria-hidden="true" />
                         </Link>
                       </TooltipTrigger>

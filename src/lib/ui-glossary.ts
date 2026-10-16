@@ -10,6 +10,7 @@
  * 2. 표에 없는 새 상태 낱말이면 **붙여 쓴 한 낱말**로 짓는다(「승인대기」). 띄어 쓴 형태가
  *    다른 화면에 이미 있으면 `STATUS_WORD_SPACING` 에 한 줄 더한다.
  * 3. 설명문에 `DEV_WORDS` 의 낱말이 들어가면 오너의 업무 말로 바꾼다.
+ * 4. 돈 이름은 `MONEY_TERMS` 의 label 만 쓴다(옛 이름은 `MONEY_TERM_ALIASES` 가 기계로 막는다).
  */
 
 /**
@@ -126,4 +127,51 @@ export const UI_LABEL_TABLES = {
   "결재함 작업 이름": "ACTION_LABELS (src/components/crm/approvals/proposal-card.tsx)",
   "주문 작업 기록": "ORDER_ACTION_LABELS (src/lib/order-converter/action-log.ts)",
   "사이드바 메뉴": "src/components/crm/crm-sidebar.tsx",
+  "돈 이름": "MONEY_TERMS (src/lib/ui-glossary.ts)",
 } as const;
+
+/**
+ * **돈 낱말 정본** (오너 확정 2026-10-16, 설계 §12). 오너 화면의 돈 이름은 여기 label 만 쓴다.
+ * 셀러 포털(`/<slug>`·`/p/[token]`)은 셀러 본인의 「매출」을 보는 표면이라 이 표의 대상이 아니다.
+ * `column` = 그 돈이 저장되는 곳(또는 계산식).
+ */
+export const MONEY_TERMS: Readonly<Record<string, { label: string; definition: string; column: string }>> = {
+  grossMerchandise: {
+    label: "총거래액",
+    definition: "셀러가 판 물건값 전체(딜별 판매가 × 주문수량의 합, 직접 수정 가능). 배송비·별도 할인 차감은 반영하지 않는다",
+    column: "SalesCampaign.actualSales",
+  },
+  commissionRevenue: { label: "수수료매출", definition: "총거래액 × 총수수료율(수동 덮어쓰기 가능)", column: "SalesCampaign.settlementSales" },
+  sellerPayout: { label: "셀러지급액", definition: "셀러에게 지급하는 몫", column: "SalesCampaign.sellerExpense" },
+  grossProfit: { label: "매출총이익", definition: "수수료매출 − 셀러지급액(세금·비용 차감 전)", column: "settlementSales − sellerExpense" },
+  operatingProfit: {
+    label: "영업이익",
+    definition: "매출총이익 − 공제세액 − 운영비 − 기타비용(산식 불변, 별도 작업 참조)",
+    column: "SalesCampaign.operatingProfit",
+  },
+  netIncomeEstimate: { label: "당기순이익(추정)", definition: "영업이익 − 추정 소득세", column: "pnl-report preTax − estimatedIncomeTax" },
+  todaySales: {
+    label: "오늘 판매금액",
+    definition: "오늘 유효 주문의 실결제 + 플랫폼 부담 할인(취소·반품 제외). 총거래액과 다른 돈",
+    column: "orders",
+  },
+  endDate: { label: "판매종료일", definition: "표 열 머리글에서는 「종료일」", column: "SalesCampaign.endDate" },
+};
+
+/** 요율 이름. 모수는 모두 총거래액이다. */
+export const MONEY_TERM_RATES = { total: "총수수료율", seller: "셀러수수료율", net: "순수수료율" } as const;
+
+/**
+ * 옛 라벨 → 정본 키. 검사(`ui-copy-terms`)가 **문자열 전체가** 이 키와 같을 때만 잡는다(문장 속 「매출」은 대상이 아니다).
+ * 「공제세액」은 세금 묶음의 상위 이름으로 유지(오너 확정 2026-10-17)라 여기 없다.
+ */
+export const MONEY_TERM_ALIASES: Readonly<Record<string, keyof typeof MONEY_TERMS | "rate.net" | "rate.seller">> = {
+  "매출": "grossMerchandise", "이번 달 매출": "grossMerchandise", "총 매출액": "grossMerchandise", "총 상품매출": "grossMerchandise", "실매출": "grossMerchandise", "총 거래액": "grossMerchandise",
+  "영업수익": "commissionRevenue", "영업 수익": "commissionRevenue", "수수료 매출": "commissionRevenue", "확정 매출": "commissionRevenue",
+  "판매대행비": "sellerPayout", "판매 대행비": "sellerPayout", "판매대행비 (셀러 정산금)": "sellerPayout", "셀러 정산금": "sellerPayout", "셀러 지급액": "sellerPayout",
+  "예상 순마진": "grossProfit", "순마진": "grossProfit", "총 마진": "grossProfit",
+  "영업이익 (자사 순수익)": "operatingProfit", "세전 영업순이익": "operatingProfit", "영업이익율": "operatingProfit",
+  "세후 예상 영업이익": "netIncomeEstimate",
+  "오늘 매출": "todaySales", "마감일": "endDate",
+  "영업이익율 (%)": "rate.net", "협의수수료": "rate.seller",
+};

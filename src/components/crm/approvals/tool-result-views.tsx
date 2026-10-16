@@ -117,7 +117,7 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
             <tr>
               <th className="px-2 py-1.5 font-medium">딜명</th>
               <th className="px-2 py-1.5 font-medium">셀러</th>
-              <th className="px-2 py-1.5 font-medium">매출</th>
+              <th className="px-2 py-1.5 font-medium">총거래액</th>
               <th className="px-2 py-1.5 font-medium">정산액</th>
               <th className="px-2 py-1.5 font-medium">상태</th>
             </tr>
@@ -325,7 +325,7 @@ function campaignFinancialsCells(data: GetCampaignFinancialsData | GetCampaignFi
   const { actualSales, derived } = data;
   return {
     cells: [
-      { label: "실매출", value: formatNumber(actualSales) },
+      { label: "총거래액", value: formatNumber(actualSales) },
       { label: "정산매출", value: formatNumber(derived.settlementSales) },
       { label: "셀러지급", value: formatNumber(derived.sellerExpense) },
       { label: "세금", value: formatNumber(derived.taxExpense) },

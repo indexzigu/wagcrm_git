@@ -387,11 +387,11 @@ interface CsvRow {
   "품목명": string;
   "품목 단가": number | string;
   "주문수량": number;
-  "거래금액": number;
+  "총거래액": number;
   "수수료율(%)": number | string;
-  "판매수수료": number;
-  "순마진액": number;
-  "셀러정산액": number;
+  "수수료매출": number;
+  "매출총이익": number;
+  "셀러지급액": number;
   "상태": string;
 }
 
@@ -468,11 +468,11 @@ interface CsvRow {
           "품목명": deal.dealName,
           "품목 단가": deal.sellingPrice ?? 0,
           "주문수량": quantity,
-          "거래금액": actualSales,
+          "총거래액": actualSales,
           "수수료율(%)": feeRate,
-          "판매수수료": roundedFeeAmount,
-          "순마진액": roundedNetMargin,
-          "셀러정산액": roundedSellerPayout,
+          "수수료매출": roundedFeeAmount,
+          "매출총이익": roundedNetMargin,
+          "셀러지급액": roundedSellerPayout,
           "상태": campaign.status === "COMPLETED" ? "정산완료" : "정산중",
         });
 
@@ -494,11 +494,11 @@ interface CsvRow {
       "품목명": "",
       "품목 단가": "",
       "주문수량": totalOrderCount,
-      "거래금액": totalActualSales,
+      "총거래액": totalActualSales,
       "수수료율(%)": "",
-      "판매수수료": Math.round(totalFeeAmount * 100) / 100,
-      "순마진액": Math.round(totalNetMargin * 100) / 100,
-      "셀러정산액": Math.round(totalSellerPayout * 100) / 100,
+      "수수료매출": Math.round(totalFeeAmount * 100) / 100,
+      "매출총이익": Math.round(totalNetMargin * 100) / 100,
+      "셀러지급액": Math.round(totalSellerPayout * 100) / 100,
       "상태": "",
     });
 
@@ -542,19 +542,19 @@ interface CsvRow {
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
         <div className="flex shrink-0 items-center gap-1.5">
           <TrendingUp className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">총 매출액:</span>
+          <span className="font-medium">총거래액:</span>
           <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalRevenue)}</span>
         </div>
         <span className="hidden text-slate-200 md:inline">|</span>
         <div className="flex shrink-0 items-center gap-1.5">
           <Wallet className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">총 마진:</span>
+          <span className="font-medium">매출총이익:</span>
           <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalMargin)}</span>
         </div>
         <span className="hidden text-slate-200 md:inline">|</span>
         <div className="flex shrink-0 items-center gap-1.5">
           <Download className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">셀러 정산금:</span>
+          <span className="font-medium">셀러지급액:</span>
           <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalSellerPayouts)}</span>
         </div>
         <span className="hidden text-slate-200 md:inline">|</span>

@@ -441,19 +441,19 @@ export function CrmDashboard({
               <span className="hidden text-slate-200 md:inline">|</span>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Wallet className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">영업수익:</span>
+                <span className="font-medium">수수료매출:</span>
                 <span className="font-semibold text-slate-800">{kanbanSummary.sumRevenue.toLocaleString()}원</span>
               </div>
               <span className="hidden text-slate-200 md:inline">|</span>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Download className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">판매대행비:</span>
+                <span className="font-medium">셀러지급액:</span>
                 <span className="font-semibold text-slate-800">{kanbanSummary.sumFee.toLocaleString()}원</span>
               </div>
               <span className="hidden text-slate-200 md:inline">|</span>
               <div className="flex shrink-0 items-center gap-1.5">
                 <PiggyBank className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">영업이익:</span>
+                <span className="font-medium">매출총이익:</span>
                 <span className="font-semibold text-slate-800">{kanbanSummary.sumProfit.toLocaleString()}원</span>
               </div>
             </div>

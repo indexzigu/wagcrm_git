@@ -13,9 +13,9 @@
  * 이 숫자를 본 사람이고, 다른 이름을 쓰면 「어느 칸 얘기인가」를 다시 맞춰 봐야 한다.
  */
 export const SETTLEMENT_AMOUNT_FIELD_LABELS = {
-  actualSales: "총 거래액",
-  settlementSales: "영업 수익",
-  sellerExpense: "판매대행비",
+  actualSales: "총거래액",
+  settlementSales: "수수료매출",
+  sellerExpense: "셀러지급액",
   taxExpense: "제세공과금",
   operatingExpense: "공동 운영 비용",
   miscExpense: "기타 조정 비용",

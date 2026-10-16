@@ -243,7 +243,7 @@ export function sumSellerPayoutItems(items: readonly SettlementItemInput[]): num
  * 찍으면서 「총 거래액」이라고 말하는 상태가 다시 만들어진다. 화면은 판정 함수를 직접
  * 부를 수 없다(계약 `settlement-statement-text.test.ts` — 기준·세율 계산은 lib 소관).
  */
-export const SELLER_FEE_BASIS_MANUAL_LABEL = "직접 입력한 금액입니다. 판매대행비는 이 금액 × 셀러 수수료율로 계산됩니다.";
+export const SELLER_FEE_BASIS_MANUAL_LABEL = "직접 입력한 금액입니다. 셀러지급액은 이 금액 × 셀러수수료율로 계산됩니다.";
 
 export function resolveSellerFeeBasis(
   actualSales: number,
@@ -266,8 +266,8 @@ export function resolveSellerFeeBasis(
     // ⚠️ 길이도 계약이다 — 이 문구가 들어가는 자리(`FinancialLine` 의 hint)는 한 줄
     // 말줄임이고 데스크톱 실측 폭이 272px 다. 늘리기 전에 실렌더로 재보라(현재 약 229px).
     label: isIndividual
-      ? "공급가액(총 거래액 ÷ 1.1) · 부가 항목 무관"
-      : "총 거래액 · 부가 항목 무관",
+      ? "공급가액(총거래액 ÷ 1.1) · 부가 항목 무관"
+      : "총거래액 · 부가 항목 무관",
   };
 }
 
