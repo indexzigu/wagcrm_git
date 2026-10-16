@@ -425,3 +425,13 @@ describe("화면 문구 기준 (AST 전역 스캔)", () => {
     expect({ fresh, stale }).toEqual({ fresh: [], stale: [] });
   });
 });
+
+describe("MONEY_TERM_ALIASES 타입 가드", () => {
+  it("별칭 값에 없는 키는 컴파일 단계에서 거부된다(typecheck 가 판정)", () => {
+    // @ts-expect-error — "notAKey" 는 MONEY_TERMS 의 키가 아니다. 이 줄이 에러가 아니게 되면 키 타입이 string 으로 퍼진 것이다.
+    const bad: (typeof MONEY_TERM_ALIASES)[string] = "notAKey";
+    expect(bad).toBe("notAKey");
+    const good: (typeof MONEY_TERM_ALIASES)[string] = "grossMerchandise";
+    expect(good).toBe("grossMerchandise");
+  });
+});

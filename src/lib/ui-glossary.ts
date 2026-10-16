@@ -136,7 +136,7 @@ export const UI_LABEL_TABLES = {
  * 셀러 포털(`/<slug>`·`/p/[token]`)은 셀러 본인의 「매출」을 보는 표면이라 이 표의 대상이 아니다.
  * `column` = 그 돈이 저장되는 곳(또는 계산식).
  */
-export const MONEY_TERMS: Readonly<Record<string, { label: string; definition: string; column: string }>> = {
+export const MONEY_TERMS = {
   grossMerchandise: {
     label: "총거래액",
     definition: "셀러가 판 물건값 전체(딜별 판매가 × 주문수량의 합, 직접 수정 가능). 배송비·별도 할인 차감은 반영하지 않는다",
@@ -162,7 +162,7 @@ export const MONEY_TERMS: Readonly<Record<string, { label: string; definition: s
     column: "orders",
   },
   endDate: { label: "판매종료일", definition: "표 열 머리글에서는 「종료일」", column: "SalesCampaign.endDate" },
-};
+} as const satisfies Readonly<Record<string, { label: string; definition: string; column: string }>>;
 
 /** 요율 이름. 모수는 모두 총거래액이다. */
 export const MONEY_TERM_RATES = { total: "총수수료율", seller: "셀러수수료율", net: "순수수료율" } as const;
