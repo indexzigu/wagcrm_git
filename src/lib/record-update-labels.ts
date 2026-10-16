@@ -50,7 +50,7 @@ const CAMPAIGN_FIELD_LABELS: Record<string, string> = {
   isManualMargin: "수수료율 수동",
   isManualSettlementSales: "수수료매출 수동",
   isManualSellerExpense: "셀러지급액 수동",
-  isManualTaxExpense: "제세공과금 수동",
+  isManualTaxExpense: "공제세액 수동",
   isDepositReceived: "입금완료",
   depositReceivedAt: "입금일",
   isPayoutCompleted: "지급완료",

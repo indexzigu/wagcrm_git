@@ -4,6 +4,7 @@ import path from 'path';
 import {
   calculateDerivedCampaignFinancials,
   computeOperatingProfit,
+  computeVatExpense,
   resolveSellerFee,
   resolveSellerFeeBasisEligibility,
 } from '@/lib/campaign-financials';
@@ -556,12 +557,13 @@ export async function recalculateSalesCampaignTotals(campaignId: string) {
   });
   derivedFinancials.sellerExpense = fee.sellerExpense;
 
-  const netCommission = derivedFinancials.settlementSales - derivedFinancials.sellerExpense;
-
   if (!campaign.isManualTaxExpense) {
-    derivedFinancials.taxExpense = isIndividual
-      ? fee.individualWithholding + Math.round(derivedFinancials.settlementSales - (derivedFinancials.settlementSales / 1.1))
-      : Math.round(netCommission - (netCommission / 1.1));
+    // 공제세액 = 부가세뿐 — 개인 셀러 원천세는 셀러 몫이라 넣지 않는다(오너 확정 2026-10-16).
+    derivedFinancials.taxExpense = computeVatExpense({
+      isIndividual,
+      settlementSales: derivedFinancials.settlementSales,
+      sellerExpense: derivedFinancials.sellerExpense,
+    });
   }
 
   // 손익은 **영업수익 기준** SSOT 로만 낸다(오너 확정 2026-10-05). 종전 이 자리는

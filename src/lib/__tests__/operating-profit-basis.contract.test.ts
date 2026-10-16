@@ -296,6 +296,12 @@ describe("operatingProfit 산식 계약 — 영업수익 기준, 뺄셈은 SSOT 
     expect(countCalls(file, read(file), SSOT_FN)).toBeGreaterThanOrEqual(1);
   });
 
+  // 공제세액(부가세) 식도 한 곳에 모은다(2026-10-16) — 같은 식이 writer 마다 손으로 적혀
+  // 있어 개인 셀러 원천세 이중 차감이 세 곳에 똑같이 들어가 있었다.
+  it.each(WRITER_FILES)("%s 는 computeVatExpense 를 호출한다", (file) => {
+    expect(countCalls(file, read(file), "computeVatExpense")).toBeGreaterThanOrEqual(1);
+  });
+
   it("예외 목록은 살아 있는 예외만 담는다(고쳐졌으면 목록에서 지운다)", () => {
     for (const file of Object.keys(KNOWN_UNPERSISTED)) {
       expect(ALL_HITS.filter((hit) => hit.file === file).length).toBeGreaterThanOrEqual(1);

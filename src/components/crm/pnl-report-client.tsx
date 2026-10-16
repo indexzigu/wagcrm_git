@@ -335,7 +335,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                 <MetricCard
                   label="공제세액"
                   value={`${formatKRW(totals.deductedTax)}원`}
-                  description="원천세, VAT 등 캠페인 공제 항목"
+                  description="수수료매출에 든 부가세(납부 예정). 개인 셀러 원천세는 셀러 몫이라 손익에 넣지 않습니다"
                   emphasis="cost"
                 />
                 <MetricCard

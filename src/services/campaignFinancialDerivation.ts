@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import {
   calculateDerivedCampaignFinancials,
   computeOperatingProfit,
+  computeVatExpense,
   resolveSellerFee,
   resolveSellerFeeBasisEligibility,
   type DerivedCampaignFinancials,
@@ -222,12 +223,13 @@ export async function deriveCampaignFinancialsForUpdate(
       });
       financials.sellerExpense = fee.sellerExpense;
 
-      const netCommission = financials.settlementSales - financials.sellerExpense;
-
       if (!nextIsManualTaxExpense) {
-        financials.taxExpense = isIndividual
-          ? fee.individualWithholding + Math.round(financials.settlementSales - (financials.settlementSales / 1.1))
-          : Math.round(netCommission - (netCommission / 1.1));
+        // 공제세액 = 부가세뿐 — 개인 셀러 원천세는 셀러 몫이라 넣지 않는다(오너 확정 2026-10-16).
+        financials.taxExpense = computeVatExpense({
+          isIndividual,
+          settlementSales: financials.settlementSales,
+          sellerExpense: financials.sellerExpense,
+        });
       }
 
       financials.operatingProfit = computeOperatingProfit({

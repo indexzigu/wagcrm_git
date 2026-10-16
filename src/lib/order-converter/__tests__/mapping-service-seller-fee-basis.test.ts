@@ -64,8 +64,9 @@ describe("recalculateSalesCampaignTotals — 수동 정산 기준액을 존중�
     const data = written();
     expect(data.actualSales).toBe(10_000_000);
     expect(data.sellerExpense).toBe(960_000);
-    // 원천세는 그 판매대행비 × 3.3% (31,680) + 수수료 부가세 round(3,000,000 − 3,000,000/1.1)
-    expect(data.taxExpense).toBe(31_680 + 272_727);
+    // 공제세액 = 수수료 부가세 round(3,000,000 − 3,000,000/1.1) 뿐 — 원천세(960,000 × 3.3% = 31,680)는
+    // 셀러 몫이라 넣지 않는다(오너 확정 2026-10-16).
+    expect(data.taxExpense).toBe(272_727);
     // 기준액 컬럼 자체는 이 writer 가 쓰지 않는다(덮어쓰기 0).
     expect(data).not.toHaveProperty("sellerFeeBasisOverride");
   });

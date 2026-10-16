@@ -328,7 +328,7 @@ function campaignFinancialsCells(data: GetCampaignFinancialsData | GetCampaignFi
       { label: "총거래액", value: formatNumber(actualSales) },
       { label: "정산매출", value: formatNumber(derived.settlementSales) },
       { label: "셀러지급", value: formatNumber(derived.sellerExpense) },
-      { label: "세금", value: formatNumber(derived.taxExpense) },
+      { label: "공제세액", value: formatNumber(derived.taxExpense) },
       { label: "영업이익", value: formatNumber(derived.operatingProfit) },
     ],
     // 3중 방어 유지 — 이 값은 계산된 파생치이며 정산 확정치가 아니다(청사진 §2-2).
