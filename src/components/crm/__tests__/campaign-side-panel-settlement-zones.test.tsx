@@ -260,11 +260,11 @@ describe("자사 손익 — 공제세액 묶음(부가세 차감 · 원천세 �
   }
 
   it("「공제세액 · 부가세」 줄은 비용색(money-out)이 아니라 회색이다", () => {
-    renderCard({ taxExpense: 813_364 });
+    renderCard({ taxExpense: 800_000 });
     const row = lineOf("공제세액 · 부가세");
     expect(row.className).toContain("text-slate-500");
     expect(row.querySelector(".text-money-out")).toBeNull();
-    expect(row.textContent).toContain("813,364원");
+    expect(row.textContent).toContain("800,000원");
   });
 
   it("개인 셀러면 「공제세액 · 원천세」 참고 줄이 뜨고 값은 셀러 구간 원천세와 같다", () => {

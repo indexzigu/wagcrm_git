@@ -9,8 +9,8 @@
  *   사업자·수동 공제세액·금액 빈 행은 건너뛰고, 「저장값 − 새 값 = 원천세」 검산이 맞는 행만 쓴다.
  *   검산이 안 맞는 행(REVIEW)은 ⛔ 쓰지 않고 사유만 찍는다 — 오너가 보고 판단한다.
  *
- * 쓰기는 `taxExpense`·`operatingProfit` 두 칸뿐이고, 읽은 뒤 그 행의 공제세액이 바뀌었거나 수동으로
- *   돌아섰으면 쓰지 않는다(조건부 updateMany — 건수 0 이면 「건너뜀」으로 보고).
+ * 쓰기는 `taxExpense`·`operatingProfit` 두 칸뿐이고, 읽은 뒤 계산에 쓴 금액(수수료매출·셀러지급액·
+ *   공제세액·영업이익)이 바뀌었거나 수동으로 돌아섰으면 쓰지 않는다(조건부 updateMany — 건수 0 이면 「건너뜀」).
  *
  * 사용(레포 .env 는 **프로덕션 DB** 다 — P0. 실행은 오너 몫):
  *   set -a; source .env; set +a; npx tsx scripts/recalc-tax-expense-vat-only.ts              # 예행(기본, 쓰기 없음)
@@ -63,7 +63,12 @@ async function main() {
     APPLY: 0,
     REVIEW: 0,
   };
-  const applyTargets: Array<{ id: string; prevTaxExpense: number; nextTaxExpense: number; nextOperatingProfit: number }> = [];
+  const applyTargets: Array<{
+    id: string;
+    prev: { taxExpense: number; settlementSales: number; sellerExpense: number; operatingProfit: number };
+    nextTaxExpense: number;
+    nextOperatingProfit: number;
+  }> = [];
 
   for (const campaign of campaigns) {
     const row: TaxExpenseRecalcRow = {
@@ -100,7 +105,12 @@ async function main() {
     if (plan.kind === "APPLY") {
       applyTargets.push({
         id: campaign.id,
-        prevTaxExpense: row.taxExpense!,
+        prev: {
+          taxExpense: row.taxExpense!,
+          settlementSales: row.settlementSales!,
+          sellerExpense: row.sellerExpense!,
+          operatingProfit: row.operatingProfit!,
+        },
         nextTaxExpense: plan.nextTaxExpense!,
         nextOperatingProfit: plan.nextOperatingProfit!,
       });
@@ -120,9 +130,9 @@ async function main() {
   let written = 0;
   let skippedChanged = 0;
   for (const target of applyTargets) {
-    // 읽은 뒤 값이 바뀌었거나 수동으로 돌아선 행은 쓰지 않는다.
+    // 읽은 뒤 계산에 쓴 금액이 하나라도 바뀌었거나 수동으로 돌아선 행은 쓰지 않는다.
     const result = await prisma.salesCampaign.updateMany({
-      where: { id: target.id, isManualTaxExpense: false, taxExpense: target.prevTaxExpense },
+      where: { id: target.id, isManualTaxExpense: false, ...target.prev },
       data: { taxExpense: target.nextTaxExpense, operatingProfit: target.nextOperatingProfit },
     });
     if (result.count === 1) written += 1;
