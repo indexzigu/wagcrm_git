@@ -5,11 +5,11 @@ import { planProductMappingUpsert } from "@/lib/order-converter/product-mapping-
 import { isSqliteDatabaseUrl } from "@/lib/prisma-client";
 import { isAutomatedActor } from "./update-settlement-amount";
 import type { WriteActionDefinition, WriteActionResult } from "./types";
+// 봇(작업 실행기)이 기안을 만들 때 쓰는 실행자 이름 — 기안자가 스스로 승인·실행하는 길을 막는다.
+import { AGENT_WORKER_ACTOR } from "@/lib/agent/agent-worker-proposal";
 
 export type UpsertProductMappingsArgs = z.infer<typeof upsertProductMappingsArgsSchema>;
 
-/** 봇(작업 실행기)이 기안을 만들 때 쓰는 실행자 이름 — 기안자가 스스로 승인·실행하는 길을 막는다. */
-const AGENT_WORKER_ACTOR = "AGENT_WORKER";
 
 /**
  * 주문캠페인 하나의 상품 매핑(옵션명 → 상품코드·가격)을 새로 넣거나 고친다 — 기안자가 본 값이 그대로일
@@ -18,6 +18,9 @@ const AGENT_WORKER_ACTOR = "AGENT_WORKER";
  * 가드 순서:
  *  ① 사람 승인만 — 시스템 실행자(`SYSTEM_*`)와 봇 실행자(`AGENT_WORKER`)는 DB 를 읽기 전에 거부한다
  *     (`update-record.ts` 와 같은 경계 · 승인 경로는 승인자 id 를 actor 로 넘긴다).
+ *     예외 1건(오너 결정 2026-10-16): 봇 내부 창구의 즉시 저장 실행자 `AGENT_MAPPING_APPLY`
+ *     (`agent-internal/apply-product-mappings.ts`)는 통과한다 — 오너가 슬랙 짝 확인에 「응」 한 번 한 것이 승인이다.
+ *     그 창구는 네이버 등록 옵션 글자인 줄만 넘기고, 2분 자동 실행기(`SYSTEM_AUTO`)는 여전히 여기서 막힌다.
  *  ② 잠금 — 주문캠페인 행을 `SELECT … FOR UPDATE` 로 잠근다(아래 동시성 절). sqlite(dev:local·test:ci)는
  *     구문이 없어 건너뛴다(`acquireGroupLock` 과 같은 분기).
  *  ③ 캠페인 확인 — 없으면 실패, 이름이 기안 때(`orderCampaignName`)와 다르면 실패. 승인자는 결재함에서

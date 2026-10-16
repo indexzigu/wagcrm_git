@@ -51,6 +51,8 @@ export const AgentJobOperationSchema = z.enum([
   "get_work_records",
   "get_tax_invoice_status",
   "get_order_campaign_mappings",
+  "get_store_product_options",
+  "apply_product_mappings",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -463,7 +465,7 @@ export function sameOrderCampaignName(stored: string, proposed: string): boolean
 }
 
 /** 같은 옵션명(비교 키 기준)이 기안 안에 두 번 있으면 막는다 — 봇 입력·저장 args 둘 다. */
-function refineDistinctMappingOptionNames(
+export function refineDistinctMappingOptionNames(
   value: { mappings: ReadonlyArray<{ optionName: string }> },
   context: z.RefinementCtx,
 ): void {
@@ -725,6 +727,36 @@ const orderCampaignMappingsInputSchema = z
     }
   });
 
+/**
+ * 봇 상품 매핑 — 손 작업 그대로(오너 확정 2026-10-16, 설계 정본 `docs/private/plans/2026-10-16-bot-product-mapping-simplify.md`).
+ * 오너의 손 작업은 「캠페인 설정 창의 스토어 옵션 줄(네이버 등록 옵션)에 코드표의 상품코드를 붙여넣기」이고, 봇은
+ * 그것을 대신한다. 두 작업 모두 **CRM 앱의 봇 내부 창구**가 앱 권한으로 실행한다(`src/lib/agent-internal/`) —
+ * 봇 작업 실행기는 네이버 열쇠도 매핑 쓰기 권한도 없다(오너 결정 2026-10-16 방식 A).
+ *
+ * - `get_store_product_options`: 그 캠페인의 네이버 등록 옵션 + 옵션별 지금 매핑 값.
+ * - `apply_product_mappings`: 옵션 줄의 상품코드·가격을 **바로 저장**한다(짝 확인 「응」 한 번이 승인이다 —
+ *   결재함 승인 없음, 결재함에는 EXECUTED 기록 1건만 남는다). `optionName` 은 반드시 네이버 등록 옵션 글자여야
+ *   하고, 아닌 줄은 창구가 그 줄만 `NOT_A_STORE_OPTION` 으로 돌려준다(코드표 이름이 매핑 줄의 키가 되는 길을
+ *   서버가 막는다 — 봇을 믿지 않는다). 상품명 칸은 받지 않는다: 새 줄의 상품명은 창구가 스토어 값으로 채운다.
+ */
+const storeProductOptionsInputSchema = z
+  .object({
+    orderCampaignId: opaqueIdSchema,
+  })
+  .strict();
+
+export const applyProductMappingRowSchema = productMappingRowRequestSchema.omit({ productName: true }).strict();
+
+export type ApplyProductMappingRow = z.infer<typeof applyProductMappingRowSchema>;
+
+export const applyProductMappingsInputSchema = z
+  .object({
+    orderCampaignId: opaqueIdSchema,
+    mappings: z.array(applyProductMappingRowSchema).min(1).max(MAX_PRODUCT_MAPPING_ROWS),
+  })
+  .strict()
+  .superRefine(refineDistinctMappingOptionNames);
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -739,6 +771,8 @@ const operationInputSchemas = {
   get_work_records: workRecordsInputSchema,
   get_tax_invoice_status: taxInvoiceStatusInputSchema,
   get_order_campaign_mappings: orderCampaignMappingsInputSchema,
+  get_store_product_options: storeProductOptionsInputSchema,
+  apply_product_mappings: applyProductMappingsInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;
@@ -897,6 +931,80 @@ export const orderCampaignMappingsStructuredDataSchema = z
 
 export type OrderCampaignMappingsStructuredData = z.infer<typeof orderCampaignMappingsStructuredDataSchema>;
 
+function fitsStructuredDataBytes(value: unknown): boolean {
+  return Buffer.byteLength(JSON.stringify(value), "utf8") <= MAX_STRUCTURED_DATA_BYTES;
+}
+
+const structuredOrderCampaignRefSchema = z.object({ id: z.string(), name: z.string() }).strict();
+
+/**
+ * `get_store_product_options` 결과 — 네이버 등록 옵션 줄마다 지금 매핑 값을 붙였다(옵션명 비교 키
+ * `normalizeMappingOptionName`). 지금 매핑이 같은 옵션에 두 줄 이상이면 값 대신 `duplicateMappings` 를 켠다
+ * (어느 줄인지 정할 수 없다 — 그 옵션은 저장이 거절된다). `mappingsNotInStore` = 지금 매핑 중 스토어 옵션에 없는 줄 수.
+ * 잘라 내지 않는다 — 상한을 넘으면 작업이 실패한다(잘린 표로 짝짓기 금지).
+ */
+export const storeProductOptionsStructuredDataSchema = z
+  .object({
+    kind: z.literal("store_product_options"),
+    version: z.literal(1),
+    orderCampaign: structuredOrderCampaignRefSchema,
+    channelProductNo: z.string(),
+    productName: z.string(),
+    options: z.array(
+      z
+        .object({
+          optionName: z.string(),
+          price: z.number(),
+          currentBrandCode: z.string().nullable(),
+          currentPrice: z.number().nullable(),
+          duplicateMappings: z.boolean(),
+        })
+        .strict(),
+    ),
+    mappingsNotInStore: z.number().int().min(0),
+  })
+  .strict()
+  .refine(fitsStructuredDataBytes, { message: `structuredData exceeds ${MAX_STRUCTURED_DATA_BYTES} bytes` });
+
+export type StoreProductOptionsStructuredData = z.infer<typeof storeProductOptionsStructuredDataSchema>;
+
+/**
+ * 줄 단위 거절 사유. `NOT_A_STORE_OPTION` = 네이버 등록 옵션이 아님(코드표 이름 등).
+ * `OPTION_NAME_TOO_LONG` = 스토어 옵션이지만 글자가 매핑 상한(`MAX_MAPPING_OPTION_NAME_CHARS`)을 넘어 봇이 저장할 수
+ * 없음 — 그 줄은 캠페인 설정 창에서 넣는다(화면은 길이 제한이 없다).
+ */
+export const APPLY_ROW_REJECTION_CODES = ["NOT_A_STORE_OPTION", "OPTION_NAME_TOO_LONG"] as const;
+
+/** 결과의 거절 줄 옵션명 상한 — 봇이 보낸 글자를 그대로 되돌리면 50줄 × 100자가 결과 상한(12KB)을 넘는다. */
+export const MAX_REJECTED_OPTION_NAME_CHARS = 40;
+
+/**
+ * `apply_product_mappings` 결과. `proposalId` = 결재함에 남긴 EXECUTED 기록(바뀐 줄이 없으면 기록하지 않아 null).
+ * `created`+`updated` = 저장한 줄, `unchanged` = 이미 같은 값이라 그대로 둔 줄, `rejected` = 저장하지 않은 줄.
+ */
+export const productMappingsAppliedStructuredDataSchema = z
+  .object({
+    kind: z.literal("product_mappings_applied"),
+    version: z.literal(1),
+    orderCampaign: structuredOrderCampaignRefSchema,
+    proposalId: z.string().nullable(),
+    created: z.number().int().min(0),
+    updated: z.number().int().min(0),
+    unchanged: z.number().int().min(0),
+    rejected: z.array(
+      z.object({ optionName: z.string(), code: z.enum(APPLY_ROW_REJECTION_CODES) }).strict(),
+    ),
+  })
+  .strict()
+  .refine(fitsStructuredDataBytes, { message: `structuredData exceeds ${MAX_STRUCTURED_DATA_BYTES} bytes` });
+
+export type ProductMappingsAppliedStructuredData = z.infer<typeof productMappingsAppliedStructuredDataSchema>;
+
+export type AgentJobStructuredData =
+  | OrderCampaignMappingsStructuredData
+  | StoreProductOptionsStructuredData
+  | ProductMappingsAppliedStructuredData;
+
 export const AgentJobResultSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -908,8 +1016,15 @@ export const AgentJobResultSchema = z
     resultSummary: z.string().trim().min(1).max(MAX_RESULT_SUMMARY_CHARS),
     actionProposalId: opaqueIdSchema.nullable(),
     evidenceRefs: z.array(z.string().trim().min(1).max(256)).max(MAX_EVIDENCE_REFS),
-    // 선택 칸 — get_order_campaign_mappings 만 싣는다(2026-10-16). 다른 작업은 칸 자체가 없다.
-    structuredData: orderCampaignMappingsStructuredDataSchema.optional(),
+    // 선택 칸 — get_order_campaign_mappings · get_store_product_options · apply_product_mappings 만 싣는다
+    // (2026-10-16). 다른 작업은 칸 자체가 없다. 모양은 `kind` 로 가른다.
+    structuredData: z
+      .union([
+        orderCampaignMappingsStructuredDataSchema,
+        storeProductOptionsStructuredDataSchema,
+        productMappingsAppliedStructuredDataSchema,
+      ])
+      .optional(),
   })
   .strict();
 

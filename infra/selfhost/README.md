@@ -696,6 +696,13 @@ DB 접속도 최소권한 역할(`wag_agent_worker`)로 앱과 분리된다 — 
    직접 `current_user`/`session_user` 를 물어 `wag_agent_worker` 가 아니면
    멈춘다(`src/lib/agent-worker/db-identity.ts`). 이 role 로 붙지 않았다면
    `agent-worker.err.log` 에 어떤 role 로 붙었는지가 남는다.
+   **봇 내부 창구 비밀값(2026-10-16 추가):** 봇의 스토어 옵션 조회·상품 매핑 즉시 저장은 워커가 아니라
+   앱이 실행하고, 워커는 앱의 내부 창구(`/api/internal/agent/*`)를 루프백으로 부른다. 그래서 워커 env 에
+   `AGENT_INTERNAL_API_SECRET`(앱 `.env` 와 **같은 값**) 한 줄이 더 들어간다. 선택으로
+   `AGENT_INTERNAL_API_URL`(기본 `http://127.0.0.1:3000`, 루프백 http 만 받는다). 앱 `.env` 에도 같은
+   키 한 줄이 있어야 창구가 열린다 — 어느 쪽이든 비면 창구는 404 로 닫혀 봇 매핑만 실패한다. 값 생성:
+   `openssl rand -hex 32`(64자). 이 키는 네이버 열쇠나 DB 쓰기 권한이 아니다 — 창구 두 개만 부를 수 있고,
+   창구는 Cloudflare 터널을 거쳐 온 요청을 비밀값과 무관하게 거절한다(`src/lib/agent-internal/auth.ts`).
 2. **네이티브 addon 을 빌드한다**(레포 루트에서):
    ```bash
    npm run agent-worker:build-native
