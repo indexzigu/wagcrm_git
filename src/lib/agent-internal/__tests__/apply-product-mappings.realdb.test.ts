@@ -30,7 +30,8 @@ vi.mock("@/lib/agent/write-action-effects", () => ({
   },
 }));
 
-const { applyProductMappings, AGENT_MAPPING_APPLY_ACTOR } = await import("../apply-product-mappings");
+const { applyProductMappings } = await import("../apply-product-mappings");
+const { AGENT_MAPPING_APPLY_ACTOR } = await import("../actors");
 const { resetStoreOptionsCacheForTest, STORE_OPTIONS_REUSE_MS } = await import("../store-product-options");
 type StoreOptionsDeps = import("../store-product-options").StoreOptionsDeps;
 

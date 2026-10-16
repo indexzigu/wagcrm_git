@@ -16,6 +16,9 @@ import {
 /** 비밀값을 싣는 헤더 — 창구 인증(`agent-internal/auth.ts`)과 부르는 쪽(`agent-worker/internal-api-client.ts`)이 함께 쓴다. */
 export const AGENT_INTERNAL_SECRET_HEADER = "x-agent-internal-secret";
 
+/** 루프백 호스트 이름 — 창구의 Host 검사(`auth.ts`)와 워커 클라이언트의 주소 검사가 같은 목록을 쓴다. */
+export const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
 export const AGENT_INTERNAL_PATHS = {
   storeProductOptions: "/api/internal/agent/store-product-options",
   applyProductMappings: "/api/internal/agent/apply-product-mappings",
@@ -96,7 +99,6 @@ export function httpStatusForFailure(code: AgentInternalFailureCode): number {
   switch (code) {
     // CAMPAIGN_NOT_FOUND 도 422 다 — 404 는 인증 실패(본문 없음)가 쓰므로 겹치지 않게 한다.
     case "STORE_FETCH_FAILED":
-      return 502;
     case "APPLY_FAILED":
       return 502;
     case "INVALID_INPUT":

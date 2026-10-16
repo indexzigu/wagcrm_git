@@ -5,11 +5,11 @@ import { planProductMappingUpsert } from "@/lib/order-converter/product-mapping-
 import { isSqliteDatabaseUrl } from "@/lib/prisma-client";
 import { isAutomatedActor } from "./update-settlement-amount";
 import type { WriteActionDefinition, WriteActionResult } from "./types";
+// 봇(작업 실행기)이 기안을 만들 때 쓰는 실행자 이름 — 기안자가 스스로 승인·실행하는 길을 막는다.
+import { AGENT_WORKER_ACTOR } from "@/lib/agent/agent-worker-proposal";
 
 export type UpsertProductMappingsArgs = z.infer<typeof upsertProductMappingsArgsSchema>;
 
-/** 봇(작업 실행기)이 기안을 만들 때 쓰는 실행자 이름 — 기안자가 스스로 승인·실행하는 길을 막는다. */
-const AGENT_WORKER_ACTOR = "AGENT_WORKER";
 
 /**
  * 주문캠페인 하나의 상품 매핑(옵션명 → 상품코드·가격)을 새로 넣거나 고친다 — 기안자가 본 값이 그대로일

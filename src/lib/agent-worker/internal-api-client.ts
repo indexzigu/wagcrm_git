@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { AGENT_INTERNAL_SECRET_HEADER } from "@/lib/agent-internal/api-contract";
+import { AGENT_INTERNAL_SECRET_HEADER, LOOPBACK_HOSTNAMES } from "@/lib/agent-internal/api-contract";
 
 /**
  * 봇 작업 실행기 → CRM 앱 봇 내부 창구(`/api/internal/agent/*`) 호출 클라이언트(2026-10-16, 오너 결정 방식 A).
@@ -16,8 +16,6 @@ import { AGENT_INTERNAL_SECRET_HEADER } from "@/lib/agent-internal/api-contract"
  */
 export const DEFAULT_AGENT_INTERNAL_API_URL = "http://127.0.0.1:3000";
 export const AGENT_INTERNAL_TIMEOUT_MS = 60_000;
-
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 export type InternalApiFailureClass =
   /** 워커 env 에 비밀값이 없거나 주소가 루프백이 아님. */
@@ -52,7 +50,7 @@ function resolveBaseUrl(raw: string | undefined): URL | null {
   } catch {
     return null;
   }
-  if (url.protocol !== "http:" || !LOOPBACK_HOSTS.has(url.hostname)) return null;
+  if (url.protocol !== "http:" || !LOOPBACK_HOSTNAMES.has(url.hostname)) return null;
   return url;
 }
 

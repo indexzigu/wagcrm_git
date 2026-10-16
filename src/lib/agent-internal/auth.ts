@@ -1,5 +1,5 @@
 import { safeEqual } from "@/lib/cron-auth";
-import { AGENT_INTERNAL_SECRET_HEADER } from "./api-contract";
+import { AGENT_INTERNAL_SECRET_HEADER, LOOPBACK_HOSTNAMES } from "./api-contract";
 
 /**
  * 봇 내부 창구(`/api/internal/agent/*`) 인증 — 봇 작업 실행기만 부를 수 있게 한다(오너 결정 2026-10-16 방식 A).
@@ -24,8 +24,6 @@ export const MIN_SECRET_CHARS = 32;
 
 /** Cloudflare 터널이 원 요청에 붙이는 헤더 — 있으면 바깥에서 온 요청이다. */
 const TUNNEL_HEADERS = ["cf-ray", "cf-connecting-ip"] as const;
-
-const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /** Host 헤더(`host:port`)가 루프백인가. 없거나 읽을 수 없으면 아니다. */
 function isLoopbackHost(hostHeader: string | null): boolean {

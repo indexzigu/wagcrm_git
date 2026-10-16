@@ -39,7 +39,6 @@ import { AGENT_MAPPING_APPLY_ACTOR } from "./actors";
  *    둔다 — 빈칸이면 옵션명만으로 대조된다(봇 기안 경로와 같은 기본값). 고칠 줄의 상품명은 건드리지 않는다.
  */
 
-export { AGENT_MAPPING_APPLY_ACTOR };
 
 type AppliedResult = { ok: true; data: ProductMappingsAppliedStructuredData } | AgentInternalFailure;
 
