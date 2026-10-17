@@ -8,7 +8,7 @@ import { useSyncExternalStore, useCallback, useMemo } from "react";
 
 export type StageFilter = "ALL" | "SALES" | "PROGRESS" | "SETTLEMENT";
 
-export type ViewMode = "kanban" | "table" | "report";
+export type ViewMode = "kanban" | "table";
 
 export type SavedView =
   | "DEFAULT"
@@ -43,7 +43,7 @@ export interface UseStageFilterReturn {
 // ---------------------------------------------------------------------------
 
 const VALID_STAGE_FILTERS: StageFilter[] = ["ALL", "SALES", "PROGRESS", "SETTLEMENT"];
-const VALID_VIEW_MODES: ViewMode[] = ["kanban", "table", "report"];
+const VALID_VIEW_MODES: ViewMode[] = ["kanban", "table"];
 const VALID_SAVED_VIEWS: SavedView[] = [
   "DEFAULT",
   "URGENT",

@@ -53,8 +53,8 @@ import { GroupedTableView } from "./grouped-table-view";
 import { summarizePipelineMoney } from "@/lib/pipeline-money-summary";
 
 interface ViewSwitcherProps {
-  viewMode: "kanban" | "table" | "report";
-  onViewModeChange: (mode: "kanban" | "table" | "report") => void;
+  viewMode: "kanban" | "table";
+  onViewModeChange: (mode: "kanban" | "table") => void;
 }
 
 function ViewSwitcher({ viewMode, onViewModeChange }: ViewSwitcherProps) {

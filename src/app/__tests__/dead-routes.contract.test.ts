@@ -74,4 +74,27 @@ describe("죽은 라우트 · 중복 입구 정리", () => {
     // 다른 기능(리뷰 임포트 안내 주석)의 같은 낱말은 대상이 아니다 — 정산 화면 파일만 본다.
     expect(read("app/settlement/settlement-page-client.tsx")).not.toContain("CSV 내보내기");
   });
+
+  it("가격표 업로드 카드·슬롯·헬퍼 파일이 없다 — 입구는 /assets/price-sheets", () => {
+    for (const f of ["price-sheet-ingest-card.tsx", "price-sheet-ingest-slot.tsx", "price-sheet-ingest.ts"]) {
+      expect(existsSync(path.join(SRC, "components/crm/approvals", f)), f).toBe(false);
+    }
+    expect(filesContaining("PriceSheetIngestSlot")).toEqual([]);
+  });
+
+  it("리포트 뷰 모드가 타입·유효 목록에 없다", () => {
+    expect(read("hooks/use-stage-filter.ts")).not.toContain('"report"');
+    expect(read("components/crm/crm-dashboard.tsx")).not.toContain('"report"');
+  });
+
+  it("getCachedChannelFeeConfig 와 모바일 mode prop 이 없다", () => {
+    expect(filesContaining("getCachedChannelFeeConfig")).toEqual([]);
+    expect(read("components/mobile/mobile-pipeline-view.tsx")).not.toMatch(/\bmode\?:/);
+  });
+
+  it("고정 이동은 next.config redirects 가 서버에서 처리한다", () => {
+    const cfg = readFileSync(path.join(SRC, "..", "next.config.ts"), "utf8");
+    expect(cfg).toContain('source: "/assets", destination: "/assets/archive"');
+    expect(cfg).toContain('source: "/pipeline/tasks", destination: "/pipeline"');
+  });
 });

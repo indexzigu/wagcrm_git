@@ -163,7 +163,7 @@ export function PriceSheetList() {
               </p>
               <p className="text-xs text-muted-foreground">xlsx, csv, pptx, pdf, png, jpg (최대 20MB)</p>
               {/* 드롭존 클릭·드래그는 포인터 경로다 — 키보드로는 이 버튼이 유일한 업로드 경로다
-                  (interfaces 점검 묶음 G2, 선례 approvals/price-sheet-ingest-card). stopPropagation —
+                  (interfaces 점검 묶음 G2). stopPropagation —
                   드롭존 onClick 이 파일 창을 한 번 더 부르지 않게. */}
               <Button
                 type="button"
