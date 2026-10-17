@@ -1803,64 +1803,59 @@ export default function OrderDashboard() {
     <CrmShell
       variant="focus"
       title="주문 관리"
-      description="캠페인별 발주서 변환, 송장 등록 및 배송 상태를 통합적으로 모니터링합니다."
+      description="발주서 변환·송장 등록·배송 상태를 캠페인별로 봅니다."
+      // 동기화 상태·새로고침·캠페인 등록은 머리 오른쪽에 둔다 — 카드 안에 조작만 담긴 줄이 남지 않게.
+      actions={
+        <>
+          {/* 반품/교환 처리 큐 입구 — 별도 행이 아니라 툴바 동급 버튼(h-9 규약, 위험색만 유지) */}
+          {inProgressClaimCount > 0 && (
+            <button
+              onClick={() => setClaimFilter({ kind: 'all-in-progress' })}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-destructive/25 bg-white px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/5 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
+              title="진행 중인 반품/교환 전체 보기"
+            >
+              반품/교환 {inProgressClaimCount}
+            </button>
+          )}
+          <span className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-medium text-slate-500">
+            {syncMeta.lastSync ? (
+              <>
+                마지막 동기화{' '}
+                {formatLastSyncLabel(syncMeta.lastSync)}
+              </>
+            ) : (
+              '동기화대기'
+            )}
+            {syncMeta.syncing && <span className="text-primary">· 갱신 중</span>}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-lg h-9 px-2.5 text-xs"
+            disabled={refreshing}
+            onClick={() => refreshNow()}
+            aria-label="주문 현황 새로고침"
+          >
+            <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            className="rounded-lg bg-primary px-3.5 text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95 h-9 text-xs"
+            onClick={() => {
+              setIsSidebarOpen(true);
+              setIsCreating(false);
+              if (naverProducts.length === 0) fetchNaverProducts();
+            }}
+          >
+            <PlusIcon className="size-3.5 mr-1" />
+            캠페인 등록
+          </Button>
+        </>
+      }
     >
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
-          
-          <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
-            {/* 제목·설명은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목) — 이 줄은 조작만 오른쪽에 둔다 */}
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
-              <div className="flex flex-wrap items-center gap-2">
-                {/* 반품/교환 처리 큐 입구 — 별도 행이 아니라 툴바 동급 버튼(h-9 규약, 위험색만 유지) */}
-                {inProgressClaimCount > 0 && (
-                  <button
-                    onClick={() => setClaimFilter({ kind: 'all-in-progress' })}
-                    className="flex h-9 items-center gap-1.5 rounded-lg border border-destructive/25 bg-white px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/5 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
-                    title="진행 중인 반품/교환 전체 보기"
-                  >
-                    반품/교환 {inProgressClaimCount}
-                  </button>
-                )}
-                <span className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-medium text-slate-500">
-                  {syncMeta.lastSync ? (
-                    <>
-                      마지막 동기화{' '}
-                      {formatLastSyncLabel(syncMeta.lastSync)}
-                    </>
-                  ) : (
-                    '동기화대기'
-                  )}
-                  {syncMeta.syncing && <span className="text-primary">· 갱신 중</span>}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-lg h-9 px-2.5 text-xs"
-                  disabled={refreshing}
-                  onClick={() => refreshNow()}
-                  aria-label="주문 현황 새로고침"
-                >
-                  <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                </Button>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="rounded-lg bg-primary px-3.5 text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95 h-9 text-xs"
-                  onClick={() => {
-                    setIsSidebarOpen(true);
-                    setIsCreating(false);
-                    if (naverProducts.length === 0) fetchNaverProducts();
-                  }}
-                >
-                  <PlusIcon className="size-3.5 mr-1" />
-                  캠페인 등록
-                </Button>
-              </div>
-            </div>
-
-          </div>
-
           {/* scrollbar-gutter: 지금은 넘침을 셸 스크롤러가 받지만(실측), 내용·높이 조건이
               바뀌어 이 div 가 스크롤러가 되는 순간 스크롤바 등장으로 카드 폭이 흔들린다.
               P8 Layout Stability 관례대로 자리를 미리 예약해 그 경로를 원천 차단한다. */}

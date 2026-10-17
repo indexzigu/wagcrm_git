@@ -49,10 +49,32 @@ vi.mock("sonner", () => ({
 }));
 
 // Mock CrmShell to avoid SidebarProvider dependency
-vi.mock("@/components/crm/crm-shell", () => ({
-  CrmShell: ({ children, actions }: { children: React.ReactNode; actions?: React.ReactNode }) =>
-    React.createElement("div", { "data-testid": "crm-shell" }, actions, children),
-}));
+// 보기 전환(칸반/테이블)은 셸 머리의 segments 로 올라갔다 — 목에서도 실제 SegmentToggle 로 그린다.
+vi.mock("@/components/crm/crm-shell", async () => {
+  const { SegmentToggle } = await vi.importActual<typeof import("@/components/crm/segment-toggle")>(
+    "@/components/crm/segment-toggle",
+  );
+  return {
+    CrmShell: ({
+      children,
+      actions,
+      segments,
+    }: {
+      children: React.ReactNode;
+      actions?: React.ReactNode;
+      segments?: React.ComponentProps<typeof SegmentToggle<string>> & { ariaLabel?: string };
+    }) =>
+      React.createElement(
+        "div",
+        { "data-testid": "crm-shell" },
+        segments
+          ? React.createElement(SegmentToggle, { ...segments, ariaLabel: segments.ariaLabel ?? "보기 전환" })
+          : null,
+        actions,
+        children,
+      ),
+  };
+});
 
 // Mock CampaignSidePanel to avoid complex dependencies
 vi.mock("@/components/crm/campaign-side-panel", () => ({
@@ -208,11 +230,11 @@ describe("CrmDashboard Integration Tests", () => {
       render(<CrmDashboard initialData={data} />);
 
       // ViewSwitcher should show kanban as active
-      const kanbanButton = screen.getByTitle("칸반 뷰");
-      expect(kanbanButton).toHaveAttribute("aria-pressed", "true");
+      const kanbanButton = screen.getByRole("radio", { name: "칸반" });
+      expect(kanbanButton).toHaveAttribute("aria-checked", "true");
 
-      const tableButton = screen.getByTitle("테이블 뷰");
-      expect(tableButton).toHaveAttribute("aria-pressed", "false");
+      const tableButton = screen.getByRole("radio", { name: "테이블" });
+      expect(tableButton).toHaveAttribute("aria-checked", "false");
     });
 
     it("renders '전체' filter as default selected in StageFilterBar", () => {
@@ -269,11 +291,11 @@ describe("CrmDashboard Integration Tests", () => {
       render(<CrmDashboard initialData={data} />);
 
       // Table view should be active
-      const tableButton = screen.getByTitle("테이블 뷰");
-      expect(tableButton).toHaveAttribute("aria-pressed", "true");
+      const tableButton = screen.getByRole("radio", { name: "테이블" });
+      expect(tableButton).toHaveAttribute("aria-checked", "true");
 
-      const kanbanButton = screen.getByTitle("칸반 뷰");
-      expect(kanbanButton).toHaveAttribute("aria-pressed", "false");
+      const kanbanButton = screen.getByRole("radio", { name: "칸반" });
+      expect(kanbanButton).toHaveAttribute("aria-checked", "false");
     });
 
     it("applies combined URL params ?stage=SETTLEMENT&viewMode=table", () => {
@@ -282,8 +304,8 @@ describe("CrmDashboard Integration Tests", () => {
       render(<CrmDashboard initialData={data} />);
 
       // Table view active
-      const tableButton = screen.getByTitle("테이블 뷰");
-      expect(tableButton).toHaveAttribute("aria-pressed", "true");
+      const tableButton = screen.getByRole("radio", { name: "테이블" });
+      expect(tableButton).toHaveAttribute("aria-checked", "true");
 
       // "정산" filter active
       const filterGroup = screen.getByRole("group", { name: "단계 필터" });
@@ -297,8 +319,8 @@ describe("CrmDashboard Integration Tests", () => {
       render(<CrmDashboard initialData={data} />);
 
       // Should fall back to kanban view
-      const kanbanButton = screen.getByTitle("칸반 뷰");
-      expect(kanbanButton).toHaveAttribute("aria-pressed", "true");
+      const kanbanButton = screen.getByRole("radio", { name: "칸반" });
+      expect(kanbanButton).toHaveAttribute("aria-checked", "true");
 
       // Should fall back to "전체" filter
       const filterGroup = screen.getByRole("group", { name: "단계 필터" });
@@ -332,12 +354,12 @@ describe("CrmDashboard Integration Tests", () => {
       });
 
       // Switch to table view
-      const tableButton = screen.getByTitle("테이블 뷰");
+      const tableButton = screen.getByRole("radio", { name: "테이블" });
       fireEvent.click(tableButton);
 
       // Verify table view is active
       await waitFor(() => {
-        expect(tableButton).toHaveAttribute("aria-pressed", "true");
+        expect(tableButton).toHaveAttribute("aria-checked", "true");
       });
 
       // Verify "진행" filter is still active
@@ -351,20 +373,20 @@ describe("CrmDashboard Integration Tests", () => {
       render(<CrmDashboard initialData={data} />);
 
       // Verify initial state: table view + "정산" filter
-      const tableButton = screen.getByTitle("테이블 뷰");
-      expect(tableButton).toHaveAttribute("aria-pressed", "true");
+      const tableButton = screen.getByRole("radio", { name: "테이블" });
+      expect(tableButton).toHaveAttribute("aria-checked", "true");
 
       const filterGroup = screen.getByRole("group", { name: "단계 필터" });
       let activeFilter = filterGroup.querySelector('[aria-pressed="true"]');
       expect(activeFilter?.textContent).toContain("정산");
 
       // Switch to kanban view
-      const kanbanButton = screen.getByTitle("칸반 뷰");
+      const kanbanButton = screen.getByRole("radio", { name: "칸반" });
       fireEvent.click(kanbanButton);
 
       // Verify kanban view is active
       await waitFor(() => {
-        expect(kanbanButton).toHaveAttribute("aria-pressed", "true");
+        expect(kanbanButton).toHaveAttribute("aria-checked", "true");
       });
 
       // Verify "정산" filter is still active

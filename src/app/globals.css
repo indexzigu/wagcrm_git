@@ -420,13 +420,15 @@
 }
 
 @layer utilities {
-  /* CrmShell 머리 — 투명도 줄이기 설정이면 불투명 배경으로(블러 제거).
-     bg-background/72·backdrop-blur-xl 유틸과 특이성이 같고 생성 순서가 보장되지 않아 !important 로 고정. */
+  /* CrmShell 머리 — 투명도 줄이기 설정이면 불투명 배경으로(블러 제거)하고, 내용이 비쳐 보이지 않으니
+     머리와 본문의 경계를 아래 선으로 늘 그린다(평소엔 스크롤됐을 때만 보이는 선).
+     bg-background/85·backdrop-blur-xl·border-transparent 유틸과 특이성이 같고 생성 순서가 보장되지 않아 !important 로 고정. */
   @media (prefers-reduced-transparency: reduce) {
     .crm-shell-header {
       background-color: var(--background) !important;
       -webkit-backdrop-filter: none !important;
       backdrop-filter: none !important;
+      border-bottom-color: var(--border) !important;
     }
   }
   .crm-hit-area,

@@ -3,10 +3,7 @@ import { CrmShell } from "@/components/crm/crm-shell";
 
 export default function SettlementLoading() {
   return (
-    <CrmShell
-      title={<Skeleton className="h-6 w-32" />}
-      description=""
-    >
+    <CrmShell title="정산 관리">
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         {/* Statistics Summary Bar Skeleton */}
         <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 shadow-soft-sm backdrop-blur-sm shrink-0">

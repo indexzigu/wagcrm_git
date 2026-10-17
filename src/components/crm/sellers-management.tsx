@@ -666,7 +666,22 @@ export function SellersManagement({
   }
 
   return (
-    <CrmShell title="셀러">
+    <CrmShell
+      title="셀러"
+      actions={
+        <Button
+          size="sm"
+          className="shrink-0 rounded-lg h-9 text-xs"
+          onClick={() => {
+            setSelectedSeller(null);
+            setSellerPanelMode("create");
+          }}
+        >
+          <PlusIcon aria-hidden="true" data-icon="inline-start" />
+          신규 셀러
+        </Button>
+      }
+    >
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치)
 
@@ -715,9 +730,8 @@ export function SellersManagement({
               <DataSourceBanner message={dataSourceMessage} />
             </div>
           ) : null}
+          {/* 제목·신규 셀러는 CrmShell 머리로 올렸다. 보기 토글은 왼쪽, 검색·보조 버튼은 오른쪽(빈 칸 없음). */}
           <section className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/70 px-5 py-3">
-            {/* 제목은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목) — 빈 칸이 조작을 오른쪽에 붙든다 */}
-            <div className="flex-1" />
             {/* 파생 세그먼트 토글 (§12-3) — 공용 SegmentToggle(radiogroup a11y·h-9 정렬) */}
             <SegmentToggle<SellerSegment>
               ariaLabel="셀러 목록 보기"
@@ -730,7 +744,7 @@ export function SellersManagement({
                 { value: "unanalyzed", label: "미분석" },
               ]}
             />
-            <InputGroup className="w-48 shrink-0 border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">
+            <InputGroup className="ml-auto w-48 shrink-0 border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">
               <InputGroupAddon>
                 {localQuery !== query ? (
                   <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -780,17 +794,6 @@ export function SellersManagement({
               onClick={() => setBulkOpen(true)}
             >
               발굴 대량등록
-            </Button>
-            <Button
-              size="sm"
-              className="shrink-0 rounded-lg h-9 text-xs"
-              onClick={() => {
-                setSelectedSeller(null);
-                setSellerPanelMode("create");
-              }}
-            >
-              <PlusIcon aria-hidden="true" data-icon="inline-start" />
-              신규 셀러
             </Button>
           </section>
 

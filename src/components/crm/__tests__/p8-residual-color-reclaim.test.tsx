@@ -121,8 +121,9 @@ describe("렌더 도달 (그렙이 못 보는 것 — 색 단언의 전제)", ()
 
   it("outreach 지표 타일은 라우트 페이지 본문 안에 있다 — CrmShell 이 감싼다", () => {
     // 이 표면만 실렌더가 없다(서버 데이터 의존). 최소한 죽은 분기가 아님은 여기서 고정한다.
-    expect(CODE.outreach).toContain('<CrmShell title="영업 관리"');
-    expect(slice(CODE.outreach, '<CrmShell title="영업 관리"', "</CrmShell>")).toContain("평균 전환일");
+    // 셸 여는 태그가 segments·actions 로 여러 줄이 됐다 — 제목 속성을 앵커로 쓴다(페이지에 하나뿐).
+    expect(CODE.outreach).toMatch(/<CrmShell\s+title="영업 관리"/);
+    expect(slice(CODE.outreach, 'title="영업 관리"', "</CrmShell>")).toContain("평균 전환일");
   });
 });
 
