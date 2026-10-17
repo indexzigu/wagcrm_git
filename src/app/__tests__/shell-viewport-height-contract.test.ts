@@ -67,12 +67,19 @@ describe("데스크톱 셸 뷰포트 높이 계약", () => {
   it.each([
     ["CrmShell 안쪽 스크롤러", "src/components/crm/crm-shell.tsx", /className="[^"]*overflow-y-auto[^"]*"/],
     ["주문관리 목록 스크롤러", "src/components/crm/order-dashboard.tsx", /className="[^"]*overflow-auto bg-\[#f8fafc\][^"]*"/],
-    ["정산 화면 루트", "src/app/settlement/settlement-page-client.tsx", /className="flex min-h-0 w-full flex-1 flex-col overflow-auto[^"]*"/],
   ])("%s — 스크롤바 자리를 예약한다", (_label, file, pattern) => {
     const scroller = read(file).match(pattern)?.[0];
     expect(scroller, `스크롤러를 찾지 못했다 — 클래스가 바뀌었다면 이 계약도 함께 고칠 것 (${file})`).toBeDefined();
     expect(scroller, "[scrollbar-gutter:stable] 이 없다 — 스크롤바 등장 순간 폭이 흔들린다").toContain(
       "[scrollbar-gutter:stable]",
     );
+  });
+
+  // 정산 화면은 종전에 자기 루트를 스크롤러로 삼았다(T-178). 애플 UI 묶음 1부터 CrmShell 안에 들어가
+  // 위 첫 줄(CrmShell 안쪽 스크롤러)이 자리 예약을 맡는다 — 루트가 두 번째 세로 스크롤러가 되면 안 된다.
+  it("정산 화면 — CrmShell 스크롤러를 쓰고 루트에 두 번째 스크롤러를 두지 않는다", () => {
+    const src = read("src/app/settlement/settlement-page-client.tsx");
+    expect(src).toContain('<CrmShell title="정산 관리">');
+    expect(src).not.toMatch(/className="[^"]*\bflex-1 flex-col overflow-auto[^"]*"/);
   });
 });

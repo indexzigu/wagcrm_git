@@ -100,13 +100,16 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
   const [selected, setSelected] = useState<InflowLinkRow | null>(null);
 
   return (
-    <CrmShell>
+    <CrmShell
+      title="유입 리포트"
+      description="셀러에게 준 단축링크의 유입을 봅니다. 정산이 확정되면 수수료매출과 영업이익이 같은 표에 붙습니다."
+    >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/70 bg-background/70 shadow-ambient backdrop-blur md:rounded-[24px]">
           <div className="crm-topbar flex shrink-0 flex-col gap-3 border-b border-border/70 bg-background/60 px-4 py-4 md:flex-row md:items-start md:justify-between md:px-5">
+            {/* 제목·설명은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목) — 범위 배지만 남긴다 */}
             <div className="flex flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-bold text-foreground">유입 리포트</h2>
                 <Badge variant="outline">링크 {nf.format(report.links.length)}개</Badge>
                 {report.attention.activeNoClickLinks > 0 && (
                   // 판매 기간인데 클릭이 0 — 아직 안 뿌렸거나 셀러가 게시를 안 했다.
@@ -116,10 +119,6 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
                   </Badge>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">
-                셀러에게 준 단축링크의 유입을 봅니다. 정산이 확정되면 수수료매출과 영업이익이 같은 표에
-                붙습니다.
-              </p>
             </div>
           </div>
 

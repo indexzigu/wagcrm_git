@@ -35,6 +35,7 @@ import type {
   SettlementReportData,
 } from "@/lib/settlement-report";
 import { sortDealRowsByName } from "@/lib/deal-sort";
+import { CrmShell } from "@/components/crm/crm-shell";
 import {
   allocateByWeight,
   resolveSellerFeeBasisEligibility,
@@ -538,7 +539,9 @@ interface CsvRow {
       retryingLoad={reportRetrying}
     />
   ) : (
-    <div className="flex min-h-0 w-full flex-1 flex-col overflow-auto px-5 pb-5 pt-5 md:px-8 [scrollbar-gutter:stable]">
+    // 세로 스크롤러는 CrmShell 이 소유한다(스크롤바 자리 예약 포함) — 안쪽에 두 번째 스크롤러를 두지 않는다.
+    <CrmShell title="정산 관리">
+    <div className="flex w-full flex-col px-5 pb-5 pt-5 md:px-8">
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
         <div className="flex shrink-0 items-center gap-1.5">
           <TrendingUp className="size-3.5 text-muted-foreground" />
@@ -761,5 +764,6 @@ interface CsvRow {
         onMonthChange={setTaxFilingMonth}
       />
     </div>
+    </CrmShell>
   );
 }

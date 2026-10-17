@@ -5,6 +5,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getPrisma } from "@/lib/prisma";
+import { CrmShell } from "@/components/crm/crm-shell";
 import { StoryCollectButton } from "@/components/crm/story-collect-button";
 import { BulkContentCollectButton } from "@/components/crm/bulk-content-collect-button";
 import { listCaptureWindowSellers } from "@/lib/story-capture";
@@ -64,21 +65,19 @@ export default async function StoryInboxPage({
   const countOf = (c: string) => counts.find((x) => x.classification === c)?._count ?? 0;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">스토리 분류함</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            행사 기간(시작 7일 전~마감 1일 후) 중 셀러의 모든 스토리를 매일 자정에 수집합니다. 캠페인 홍보
-            스토리만 골라 분류하면 홍보 이력·성과 근거로 남습니다.
-          </p>
-        </div>
+    // 제목·설명·수집 버튼은 CrmShell 머리로 올렸다(메뉴 이름 = 페이지 제목) — 세로 스크롤러도 CrmShell 이 소유한다.
+    <CrmShell
+      title="스토리 분류함"
+      description="행사 기간(시작 7일 전~마감 1일 후) 중 셀러의 모든 스토리를 매일 자정에 수집합니다. 캠페인 홍보 스토리만 골라 분류하면 홍보 이력·성과 근거로 남습니다."
+      actions={
         <div className="flex shrink-0 items-center gap-2">
           {/* 전체 수집(게시물+스토리, 고비용·순차) vs 스토리만(저비용·1콜) — 두 옵션 분리 제공 */}
           <BulkContentCollectButton targets={bulkTargets} />
           <StoryCollectButton />
         </div>
-      </header>
+      }
+    >
+    <div className="mx-auto max-w-6xl px-6 py-8">
 
       <nav className="mb-5 flex items-center gap-1.5">
         {FILTERS.map((tab) => {
@@ -170,5 +169,6 @@ export default async function StoryInboxPage({
         </div>
       )}
     </div>
+    </CrmShell>
   );
 }

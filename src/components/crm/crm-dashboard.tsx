@@ -393,7 +393,12 @@ export function CrmDashboard({
 
   return (
     <>
-      <CrmShell variant="focus">
+      {/* 모바일 표면은 자체 머리를 쓴다(P5 UA 분기 유지) — 제목은 데스크톱에서만 CrmShell 머리에 올린다 */}
+      <CrmShell
+        variant="focus"
+        title={isMobile ? undefined : "판매 관리"}
+        description={isMobile ? undefined : "캠페인의 실제 판매 진행 상황과 지표를 관리합니다."}
+      >
         {isMobile ? (
           <MobilePipelineView
             campaigns={filteredRows}
@@ -448,13 +453,8 @@ export function CrmDashboard({
             ) : null}
             <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
               <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h2 className="text-[15px] font-bold text-slate-900">판매 관리</h2>
-                    <p className="mt-0.5 text-xs font-medium text-slate-500">
-                      캠페인의 실제 판매 진행 상황과 지표를 관리합니다.
-                    </p>
-                  </div>
+                {/* 제목·설명은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목) — 이 줄은 조작만 오른쪽에 둔다 */}
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex w-full items-center gap-2 md:w-auto">
                       <InputGroup className="h-9 w-full rounded-lg border border-slate-200 bg-white shadow-soft-sm md:w-64">

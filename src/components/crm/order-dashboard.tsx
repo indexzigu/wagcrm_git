@@ -1800,16 +1800,17 @@ export default function OrderDashboard() {
   const anchorSlot = (campaignId: string): React.ReactElement[] =>
     previewAnchorCampaignId === campaignId && dataPreviewPanel ? [dataPreviewPanel] : [];
   return (
-    <CrmShell variant="focus">
+    <CrmShell
+      variant="focus"
+      title="주문 관리"
+      description="캠페인별 발주서 변환, 송장 등록 및 배송 상태를 통합적으로 모니터링합니다."
+    >
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           
           <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-[15px] font-bold text-slate-900">주문 관리</h2>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">캠페인별 발주서 변환, 송장 등록 및 배송 상태를 통합적으로 모니터링합니다.</p>
-              </div>
+            {/* 제목·설명은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목) — 이 줄은 조작만 오른쪽에 둔다 */}
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
               <div className="flex flex-wrap items-center gap-2">
                 {/* 반품/교환 처리 큐 입구 — 별도 행이 아니라 툴바 동급 버튼(h-9 규약, 위험색만 유지) */}
                 {inProgressClaimCount > 0 && (

@@ -653,7 +653,7 @@ export default function OutreachPage() {
           onStatusChange={handleStatusChange}
         />
       ) : (
-        <CrmShell>
+        <CrmShell title="영업 관리" description="셀러별 영업 진행 상태와 리마인드 일정을 관리합니다.">
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
           {loading ? (
           <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
@@ -722,13 +722,8 @@ export default function OutreachPage() {
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
               <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
                 {/* Header Title & Controls */}
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h2 className="text-[15px] font-bold text-slate-900 dark:text-white">영업 관리</h2>
-                    <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                      셀러별 영업 진행 상태와 리마인드 일정을 관리합니다.
-                    </p>
-                  </div>
+                {/* 제목·설명은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목) — 이 줄은 조작만 오른쪽에 둔다 */}
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex w-full items-center gap-2 md:w-auto">
                       <div className="relative w-full sm:w-64">

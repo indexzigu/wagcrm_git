@@ -666,7 +666,7 @@ export function SellersManagement({
   }
 
   return (
-    <CrmShell>
+    <CrmShell title="셀러">
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치)
 
@@ -716,9 +716,8 @@ export function SellersManagement({
             </div>
           ) : null}
           <section className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/70 px-5 py-3">
-            <div className="flex-1">
-              <h2 className="text-sm font-bold text-foreground">셀러 목록</h2>
-            </div>
+            {/* 제목은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목) — 빈 칸이 조작을 오른쪽에 붙든다 */}
+            <div className="flex-1" />
             {/* 파생 세그먼트 토글 (§12-3) — 공용 SegmentToggle(radiogroup a11y·h-9 정렬) */}
             <SegmentToggle<SellerSegment>
               ariaLabel="셀러 목록 보기"
