@@ -857,7 +857,7 @@ export function AssetLibrary({
           {/* 탑바 (타 워크스페이스와 일관성 확보) */}
           <section className="flex min-h-12 shrink-0 items-center justify-between border-b border-border/70 px-5 py-3 bg-white/40 gap-3">
             <div className="flex-1">
-              <h2 className="text-sm font-bold text-foreground">자료 목록</h2>
+              <h2 className="text-sm font-bold text-foreground">자료 아카이브</h2>
             </div>
             
             <div className="flex items-center gap-3">

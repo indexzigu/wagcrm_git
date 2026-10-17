@@ -111,6 +111,55 @@ describe("CrmSidebar 행 형태 계약 — 클래스 정본은 한 곳뿐이다"
 });
 
 /**
+ * 하위 항목(자료 목록 아래 5개)은 **접힌 레일에서 DOM 에 아예 없어야** 한다.
+ * `SidebarMenuSub` 프리미티브의 `group-data-[collapsible=icon]:hidden` 는 숨길 뿐 렌더는
+ * 하므로(접근성 트리·탭 순서에 남는다) 쓰지 않고, 펼침 상태(`state === "expanded"`,
+ * 호버 오버레이 포함)에서만 렌더하도록 조건 자체로 막는다.
+ */
+describe("CrmSidebar 하위 항목 — 접힌 레일에서는 렌더하지 않는다", () => {
+  const source = parse(SIDEBAR);
+
+  function isGuardedByExpanded(node: ts.Node): boolean {
+    for (let cur: ts.Node | undefined = node.parent; cur; cur = cur.parent) {
+      // `expanded && x ? <Sub/> : null` — 조건식의 참 가지 안에 있는 경우.
+      if (
+        ts.isConditionalExpression(cur) &&
+        cur.condition.getText().includes("expanded") &&
+        node.pos >= cur.whenTrue.pos &&
+        node.end <= cur.whenTrue.end
+      ) {
+        return true;
+      }
+      if (
+        ts.isBinaryExpression(cur) &&
+        cur.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+        cur.left.getText().includes("expanded")
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  it("SidebarMenuSub 을 실제로 렌더한다 (스캐너 양성 대조군)", () => {
+    expect(jsxElementsNamed(source, "SidebarMenuSub").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("모든 SidebarMenuSub 이 펼침 조건(expanded) 아래에서만 렌더된다", () => {
+    const unguarded = jsxElementsNamed(source, "SidebarMenuSub").filter((el) => !isGuardedByExpanded(el));
+    expect(unguarded.map((el) => el.getText().slice(0, 60))).toEqual([]);
+  });
+
+  it("펼침 여부를 provider 상태(useSidebar)에서 읽는다", () => {
+    const identifiers = new Set<string>();
+    walk(source, (node) => {
+      if (ts.isIdentifier(node)) identifiers.add(node.text);
+    });
+    expect(identifiers.has("useSidebar")).toBe(true);
+  });
+});
+
+/**
  * **호버 오버레이 불변식** 계약(2026-08-28).
  *
  * 종전 이 자리에는 「쿠키 상수 1개 ↔ 소비자 3종(writer·서버 리더·프리페인트)」 짝

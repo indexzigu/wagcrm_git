@@ -473,7 +473,7 @@ export function ReferenceInboxClient() {
         title={
           <div className="flex flex-col gap-1">
             <Link
-              href="/assets"
+              href="/assets/archive"
               className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               <ArrowLeftIcon className="size-3.5" />
