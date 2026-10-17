@@ -1,21 +1,31 @@
 import * as React from "react";
+import { SegmentToggle, type SegmentOption } from "./segment-toggle";
 
 type CrmShellProps = {
   title?: React.ReactNode;
   description?: string;
   actions?: React.ReactNode;
   variant?: "default" | "focus";
+  /** 머리 가운데에 놓는 분할 버튼(보기 전환). 없으면 렌더하지 않는다. */
+  segments?: {
+    options: ReadonlyArray<SegmentOption<string>>;
+    value: string;
+    onValueChange: (value: string) => void;
+    ariaLabel?: string;
+  };
   children: React.ReactNode;
 };
 
-export function CrmShell({ title, description, actions, children }: CrmShellProps) {
+export function CrmShell({ title, description, actions, segments, children }: CrmShellProps) {
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#FAF9F6]">
-      {(title || actions) && (
-        <header className="flex shrink-0 items-center justify-between border-b border-border/40 bg-white/50 px-6 py-4 backdrop-blur-sm md:px-8">
-          <div className="flex flex-col gap-0.5">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background">
+      {(title || actions || segments) && (
+        // 머리는 스크롤러 위 형제로 둔다(스크롤러가 유일한 세로 스크롤러여야 하고
+        // flex-1 min-h-0 자식이 높이를 채우는 페이지를 깨지 않기 위함). 반투명 블러는 배경 위에 얹힌다.
+        <header className="crm-shell-header flex shrink-0 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 py-4 backdrop-blur-xl supports-[backdrop-filter]:bg-background/72 md:px-8">
+          <div className="flex min-w-0 flex-col gap-0.5">
             {title && (
-              <h1 className="text-lg font-bold tracking-tight text-foreground md:text-xl">
+              <h1 className="text-[28px] font-bold leading-[1.1] tracking-[-0.02em] text-foreground">
                 {title}
               </h1>
             )}
@@ -25,6 +35,14 @@ export function CrmShell({ title, description, actions, children }: CrmShellProp
               </p>
             )}
           </div>
+          {segments && (
+            <SegmentToggle
+              options={segments.options}
+              value={segments.value}
+              onValueChange={segments.onValueChange}
+              ariaLabel={segments.ariaLabel ?? "보기 전환"}
+            />
+          )}
           {actions && (
             <div className="flex items-center gap-2">
               {actions}

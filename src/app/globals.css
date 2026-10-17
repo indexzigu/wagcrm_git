@@ -420,6 +420,14 @@
 }
 
 @layer utilities {
+  /* CrmShell 머리 — 투명도 줄이기 설정이면 불투명 배경으로(블러 제거). */
+  @media (prefers-reduced-transparency: reduce) {
+    .crm-shell-header {
+      background-color: var(--background);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
   .crm-hit-area,
   .crm-hit-area-wide {
     position: relative;
