@@ -135,6 +135,15 @@ const nextConfig: NextConfig = {
   },
   // self-host Docker 빌드 전용 — Vercel 빌드는 BUILD_STANDALONE 미설정이라 기존 경로 유지
   ...(process.env.BUILD_STANDALONE === "1" ? { output: "standalone" as const } : {}),
+  // 고정 주소 이동은 서버가 렌더 전에 답한다 — 페이지 파일의 redirect() 는 loading 경계 아래에서
+  // 200 + 메타 태그 이동(스켈레톤 깜빡임)이 된다. 페이지 파일은 폴백으로 남긴다.
+  // /schedule 은 UA 에 따라 갈리므로 여기 두지 않는다.
+  async redirects() {
+    return [
+      { source: "/assets", destination: "/assets/archive", permanent: false },
+      { source: "/pipeline/tasks", destination: "/pipeline", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

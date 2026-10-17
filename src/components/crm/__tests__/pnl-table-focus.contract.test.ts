@@ -24,7 +24,7 @@ const PNL = stripComments(
 describe("손익 리포트 표 — 앵커 (스트리퍼·경로 고장 검출)", () => {
   it("스캔 대상이 실제 손익 표다", () => {
     expect(PNL).toContain("campaignsByMonth.map");
-    expect(PNL).toContain("캠페인별 순수익");
+    expect(PNL).toContain("캠페인별 손익");
   });
 });
 

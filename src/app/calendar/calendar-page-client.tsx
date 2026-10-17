@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
 import { z } from "zod";
 import {
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   CloudUpload,
@@ -13,6 +12,7 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CrmShell } from "@/components/crm/crm-shell";
 import { DataLoadError } from "@/components/ui/empty";
 import { CalendarView, type CalendarCampaign } from "@/components/crm/calendar-view";
 import {
@@ -242,21 +242,11 @@ export function CalendarPageClient({
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-6 sm:px-6">
-      {/* 헤더 */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="rounded-xl border border-blue-100 bg-blue-50 p-2 dark:border-blue-900/20 dark:bg-blue-950/10">
-            <CalendarDays className="size-5 text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-50">캠페인 캘린더</h1>
-            <p className="text-xs text-muted-foreground">
-              캠페인 기간과 입금/지급 예정일을 한눈에 확인하고 구글 캘린더로 동기화합니다.
-            </p>
-          </div>
-        </div>
-
+    // 제목·설명·동기화 버튼은 CrmShell 머리로 올렸다(메뉴 이름 = 페이지 제목 — 옛 「캠페인 캘린더」).
+    <CrmShell
+      title="캘린더"
+      description="캠페인 기간과 입금/지급 예정일을 확인하고 구글 캘린더로 동기화합니다."
+      actions={
         <Button
           onClick={handleFullSync}
           disabled={syncing}
@@ -269,8 +259,9 @@ export function CalendarPageClient({
           )}
           {syncing ? "동기화 중..." : "구글 캘린더 전체 동기화"}
         </Button>
-      </div>
-
+      }
+    >
+    <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-6 sm:px-6">
       {/* 매출 공백 요약 스트립 (오늘부터 롤링 — 월 이동 무관) */}
       {briefing && (
         <ScheduleGapSummaryStrip briefing={briefing} onJumpToMonth={setMonth} />
@@ -380,5 +371,6 @@ export function CalendarPageClient({
         onCreated={handleDraftCreated}
       />
     </div>
+    </CrmShell>
   );
 }

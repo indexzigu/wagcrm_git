@@ -33,8 +33,7 @@ type MobilePipelineViewProps = {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   onOpenCampaign: (campaign: CampaignRow) => void;
-  // Deprecated props, keeping them optional for type safety if used elsewhere
-  mode?: "active" | "tasks";
+  // Deprecated prop, keeping it optional for type safety if used elsewhere
   overdueReminders?: number;
 };
 

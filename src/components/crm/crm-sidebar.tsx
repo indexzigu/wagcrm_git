@@ -34,7 +34,11 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
+  useSidebar,
   useSidebarPeek,
 } from "@/components/ui/sidebar";
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -95,9 +99,21 @@ import { useUserRole } from "@/hooks/use-user-role";
 // 섹션 라벨 행은 접힘/펼침 양쪽에서 같은 h-8 슬롯을 차지한다(접힘=가운데
 // 구분선) — shadcn 기본값(-mt-8·opacity-0)은 투명 라벨이 위 항목의 클릭을
 // 가로채고 아이콘 위치도 상태 간에 밀리게 해서 쓰지 않는다.
+//
+// 하위 항목(`children`)은 글자만 있는 들여쓴 행이다(아이콘 없음). 접힌 레일에서는 렌더하지
+// 않고 펼침(호버 오버레이 포함)에서만 보인다. 부모를 누르면 첫 하위 항목으로 간다 —
+// 자료 목록 허브 화면은 없어졌다(오너 2026-10-17).
+type NavChild = { href: string; label: string };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  description: string;
+  children?: NavChild[];
+};
 export const navSections: {
   label?: string;
-  items: { href: string; label: string; icon: React.ComponentType<{ className?: string }>; description: string }[];
+  items: NavItem[];
 }[] = [
   {
     items: [
@@ -127,7 +143,19 @@ export const navSections: {
       { href: "/partners", label: "거래처", icon: Building2Icon, description: "협력사 및 거래처 관리" },
       { href: "/sellers", label: "셀러", icon: UserRoundIcon, description: "셀러 관리" },
       { href: "/deals", label: "판매 조건 관리", icon: BriefcaseIcon, description: "진행 중인 딜 리스트" },
-      { href: "/assets", label: "자료 목록", icon: FolderIcon, description: "에셋 및 문서 아카이브" },
+      {
+        href: "/assets",
+        label: "자료 목록",
+        icon: FolderIcon,
+        description: "에셋 및 문서 아카이브",
+        children: [
+          { href: "/assets/archive", label: "자료 아카이브" },
+          { href: "/assets/price-sheets", label: "가격표" },
+          { href: "/assets/katalk", label: "카톡 기록" },
+          { href: "/assets/inbox", label: "미분류 레퍼런스" },
+          { href: "/admin/stories", label: "스토리 분류함" },
+        ],
+      },
     ],
   },
   {
@@ -166,6 +194,10 @@ const SIDEBAR_ROW_CLASS =
 const SIDEBAR_ROW_ACTIVE_CLASS =
   "!bg-sidebar-primary/[0.08] !text-sidebar-primary !font-semibold shadow-soft-sm hover:!bg-sidebar-primary/[0.12]";
 
+/** 하위 행의 active 는 부모 행과 같은 색 규칙(`!` 유지)이되 배경 칩·그림자는 얹지 않는다. */
+const SIDEBAR_SUB_ACTIVE_CLASS =
+  "!text-sidebar-primary !font-semibold data-active:!bg-transparent hover:!bg-sidebar-accent";
+
 /** `asChild` 안쪽에서 아이콘·라벨을 품는 flex 컨테이너. */
 const SIDEBAR_ROW_INNER_CLASS =
   "flex w-full items-center justify-start gap-3 group-data-[collapsible=icon]:gap-0";
@@ -201,6 +233,10 @@ export function CrmSidebar() {
   const isOperator = useUserRole() === "operator";
   // 상시 레일 + 호버·포커스로 임시 펼침. 핸들러는 `Sidebar` 의 패널 요소로 퍼진다.
   const peekHandlers = useSidebarPeek();
+  // 하위 항목은 펼침 상태에서만 렌더한다(접힌 레일엔 DOM 자체가 없다). 호버 오버레이는
+  // provider 의 open 을 켜므로 여기서 expanded 로 읽힌다.
+  const { state: sidebarState } = useSidebar();
+  const expanded = sidebarState === "expanded";
   const { isPrivacyMode, togglePrivacyMode } = usePrivacyMode();
   const PrivacyIcon = isPrivacyMode ? EyeIcon : EyeOffIcon;
   const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
@@ -324,16 +360,26 @@ export function CrmSidebar() {
               <SidebarMenu className="gap-0.5">
                 {section.items.map((item) => {
                   const Icon = item.icon;
-                  const active = isActivePath(pathname, item.href);
+                  const childActive = item.children?.some((child) => isActivePath(pathname, child.href)) ?? false;
+                  const active = isActivePath(pathname, item.href) || childActive;
                   return (
-                    <SidebarMenuItem key={item.href} className="w-full flex justify-center">
+                    <SidebarMenuItem
+                      key={item.href}
+                      // 하위 목록이 부모 행 옆이 아니라 **아래**에 놓이도록 하위가 있는 항목만 세로 배치.
+                      className={cn("w-full flex", item.children ? "flex-col" : "justify-center")}
+                    >
                       <SidebarMenuButton
                         asChild
                         isActive={active}
                         tooltip={`${item.label}: ${item.description}`}
                         className={cn(SIDEBAR_ROW_CLASS, active && SIDEBAR_ROW_ACTIVE_CLASS)}
                       >
-                        <Link href={item.href} className={SIDEBAR_ROW_INNER_CLASS}>
+                        <Link
+                          href={item.children?.[0]?.href ?? item.href}
+                          className={SIDEBAR_ROW_INNER_CLASS}
+                          // 하위 목록이 펼쳐져 있으면 「현재 화면」은 하위 행이 말한다 — 부모는 현재 위치의 묶음("true")만.
+                          aria-current={active ? (expanded && childActive ? "true" : "page") : undefined}
+                        >
                           <Icon />
                           <span className={SIDEBAR_LABEL_CLASS}>
                             {item.label}
@@ -341,6 +387,30 @@ export function CrmSidebar() {
                           {item.href === "/approvals" && <ApprovalBadge />}
                         </Link>
                       </SidebarMenuButton>
+                      {expanded && item.children ? (
+                        <SidebarMenuSub>
+                          {item.children.map((child) => {
+                            const childIsActive = isActivePath(pathname, child.href);
+                            return (
+                              <SidebarMenuSubItem key={child.href}>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  size="sm"
+                                  isActive={childIsActive}
+                                  className={cn(
+                                    "text-[12px] text-sidebar-foreground/80",
+                                    childIsActive && SIDEBAR_SUB_ACTIVE_CLASS,
+                                  )}
+                                >
+                                  <Link href={child.href} aria-current={childIsActive ? "page" : undefined}>
+                                    <span>{child.label}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
+                        </SidebarMenuSub>
+                      ) : null}
                     </SidebarMenuItem>
                   );
                 })}
@@ -365,7 +435,11 @@ export function CrmSidebar() {
                   isActivePath(pathname, "/settings") && SIDEBAR_ROW_ACTIVE_CLASS,
                 )}
               >
-                <Link href="/settings/operations" className={SIDEBAR_ROW_INNER_CLASS}>
+                <Link
+                  href="/settings/operations"
+                  className={SIDEBAR_ROW_INNER_CLASS}
+                  aria-current={isActivePath(pathname, "/settings") ? "page" : undefined}
+                >
                   <Settings2Icon />
                   <span className={SIDEBAR_LABEL_CLASS}>
                     설정

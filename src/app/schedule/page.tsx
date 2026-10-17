@@ -2,6 +2,7 @@ import { MobileCalendarHome } from "@/components/mobile/mobile-calendar-home";
 import { getScheduleGapBriefing } from "@/lib/schedule-gap-briefing";
 import { getCalendarMonthCampaigns } from "@/lib/mobile-calendar-data";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/auth-context";
 import { LandingLogin } from "@/components/auth/landing-login";
 
@@ -22,7 +23,7 @@ export default async function SchedulePage() {
   
   // Mobile Is Not Desktop Parity: /schedule is specifically for the mobile calendar tab.
   if (!isMobileRequest) {
-    return <div>Desktop users should use the sidebar calendar instead.</div>;
+    redirect("/calendar");
   }
 
   // #149 리뷰 후속: 파이프라인 스냅샷 읽기 제거 — 자금 칩은 #149에서 홈 정산 카드로

@@ -109,9 +109,10 @@ const RECLAIMED_HUES = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe("렌더 도달 (그렙이 못 보는 것 — 색 단언의 전제)", () => {
-  it("AssetLibrary 를 /assets/archive 라우트가 렌더하고, /assets 허브가 그 경로를 건다", () => {
+  it("AssetLibrary 를 /assets/archive 라우트가 렌더하고, /assets 가 그 경로로 넘긴다", () => {
     expect(read("app/assets/archive/page.tsx")).toContain("<AssetLibrary");
-    expect(read("app/assets/page.tsx")).toContain('href: "/assets/archive"');
+    // 허브 화면은 없어졌다(사이드바 하위 항목이 입구) — /assets 는 이 경로로 넘긴다.
+    expect(read("app/assets/page.tsx")).toContain('redirect("/assets/archive")');
   });
 
   it("SettlementTable 을 정산 라우트가 렌더한다", () => {
@@ -120,8 +121,9 @@ describe("렌더 도달 (그렙이 못 보는 것 — 색 단언의 전제)", ()
 
   it("outreach 지표 타일은 라우트 페이지 본문 안에 있다 — CrmShell 이 감싼다", () => {
     // 이 표면만 실렌더가 없다(서버 데이터 의존). 최소한 죽은 분기가 아님은 여기서 고정한다.
-    expect(CODE.outreach).toContain("<CrmShell>");
-    expect(slice(CODE.outreach, "<CrmShell>", "</CrmShell>")).toContain("평균 전환일");
+    // 셸 여는 태그가 segments·actions 로 여러 줄이 됐다 — 제목 속성을 앵커로 쓴다(페이지에 하나뿐).
+    expect(CODE.outreach).toMatch(/<CrmShell\s+title="영업 관리"/);
+    expect(slice(CODE.outreach, 'title="영업 관리"', "</CrmShell>")).toContain("평균 전환일");
   });
 });
 

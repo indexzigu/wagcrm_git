@@ -3,10 +3,8 @@ import { CrmShell } from "@/components/crm/crm-shell";
 
 export default function ReportsLoading() {
   return (
-    <CrmShell
-      title={<Skeleton className="h-6 w-32" />}
-      description=""
-    >
+    // /reports/pnl·/reports/inflow 공용 — 제목을 특정할 수 없어 자리표시만. 머리 높이는 CrmShell 이 고정한다.
+    <CrmShell title={<Skeleton className="h-6 w-32" />}>
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           {/* Top Bar Skeleton */}

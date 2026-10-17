@@ -99,13 +99,6 @@ export const CRM_CACHE_SURFACES: readonly CrmCacheSurface[] = [
       "Annual report from completed campaigns. dashboard tag dropped 2026-07-10: campaign writes (reportsPnl) refresh it; unrelated master-data changes (e.g. partner rename) converge within the report window.",
   },
   {
-    id: "admin-channel-fees",
-    path: "/admin/channel-fees",
-    cacheLife: "static",
-    tags: [CRM_CACHE_TAGS.channelFees],
-    notes: "Low-churn admin config page: static tier; channel-fee writes invalidate the tag immediately.",
-  },
-  {
     id: "admin-meta-review-checklist",
     path: "/admin/integrations/meta/review-checklist",
     cacheLife: "report",
@@ -118,7 +111,7 @@ export const CRM_CACHE_SURFACES: readonly CrmCacheSurface[] = [
 export const CRM_DYNAMIC_SURFACES: readonly CrmDynamicSurface[] = [
   {
     id: "pipeline",
-    path: "/pipeline · /pipeline/tasks",
+    path: "/pipeline",
     tags: [CRM_CACHE_TAGS.dashboard, CRM_CACHE_TAGS.pipeline],
     notes:
       "판매 관리 실행 보드. 운영자가 카드 드래그(=campaign status write)로 자기 캐시를 자기가 깨는 고빈도 mutation 표면이라, 서버 ISR 캐시가 read 로 상각되기 전에 재생성만 반복돼 순손실이었다(write:read 역전). getDashboardData 를 use cache 없이 직접 호출하는 PPR(loading.tsx 정적 셸 + 요청당 스트리밍)로 전환: 이 표면의 ISR write 를 제거하고 총 렌더 수도 줄여 Fluid CPU 도 함께 절감. 신선도는 클라 TanStack Query(useCampaigns)가 담당. dashboard/pipeline 태그는 인접 무효화 그룹 추적용(홈·셀러 등 캐시 표면이 pipeline 태그를 소비). 이 표면 자체는 서버 캐시가 아니다.",

@@ -43,7 +43,8 @@ and TTL profiles.
   Used for `/reports/pnl`, `/admin/integrations/meta/review-checklist`,
   and the default-settlement-month helper
 - `static`: `stale=5m`, `revalidate=30d`, `expire=1y`
-  Used for `/admin/channel-fees` (low-churn config; writes invalidate the tag)
+  Reserved for low-churn config surfaces; no surface in `src/lib/cache-policy.ts`
+  uses it at present (writes would invalidate the tag)
 
 ### Hybrid surfaces (dynamic shell + cached data layer)
 
@@ -58,7 +59,7 @@ next lever if portal traffic grows.
 
 Dynamic exceptions are also declared there.
 
-- `/pipeline` and `/pipeline/tasks` (dynamic since 2026-07-12)
+- `/pipeline` (dynamic since 2026-07-12)
   Demoted from the `hot` cached surface to a dynamic (uncached) surface after
   observability showed the page was overwhelmingly write churn — it accounted
   for the majority of ISR writes with an inverted write:read ratio. The cause is
@@ -66,7 +67,7 @@ Dynamic exceptions are also declared there.
   was tag-driven): `/pipeline` is the operator's live execution board, so every
   card drag is a `campaign` write that invalidates `crm:pipeline`, regenerating
   the page the operator is actively viewing — the cache never amortizes a read
-  before the next mutation. The pages now call `getDashboardData({ workspace:
+  before the next mutation. The page now calls `getDashboardData({ workspace:
   "pipeline" })` directly (no `use cache`); `loading.tsx` provides the Suspense
   boundary so the route is PPR (static loading shell + per-request streamed
   board). ISR writes for this surface drop to zero; freshness is carried by the

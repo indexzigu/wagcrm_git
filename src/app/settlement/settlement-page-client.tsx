@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useFilterParams } from "@/hooks/use-filter-params";
 import { ChevronDown, ChevronLeft, ChevronRight, Download, FileText, RefreshCw, Search, TrendingUp, Wallet } from "lucide-react";
 import { MONEY_DIRECTION_ICON } from "@/lib/money-direction";
-import { unparse } from "papaparse";
 import { SettlementTable } from "@/components/crm/settlement-table";
 import { SettlementCompletedTable } from "@/components/crm/settlement-completed-table";
 import { SettlementSelectionBar } from "@/components/crm/settlement-selection-bar";
@@ -34,12 +33,7 @@ import type { DashboardData, CampaignRow } from "@/lib/crm-types";
 import type {
   SettlementReportData,
 } from "@/lib/settlement-report";
-import { sortDealRowsByName } from "@/lib/deal-sort";
-import {
-  allocateByWeight,
-  resolveSellerFeeBasisEligibility,
-  sellerFeeFromBasis,
-} from "@/lib/campaign-financials";
+import { CrmShell } from "@/components/crm/crm-shell";
 import {
   formatSettlementMonth,
   getCurrentMonth,
@@ -378,142 +372,6 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   const pendingDepositAmount = settlementPending?.deposit.total ?? null;
   const pendingPayoutAmount = settlementPending?.payout.total ?? null;
 
-interface CsvRow {
-  "캠페인명": string;
-  "브랜드": string;
-  "셀러": string;
-  "시작일": string;
-  "종료일": string;
-  "품목명": string;
-  "품목 단가": number | string;
-  "주문수량": number;
-  "총거래액": number;
-  "수수료율(%)": number | string;
-  "수수료매출": number;
-  "매출총이익": number;
-  "셀러지급액": number;
-  "상태": string;
-}
-
-  const handleExportCsv = useCallback(() => {
-    if (!filteredCampaigns || filteredCampaigns.length === 0) return;
-
-    const rows: CsvRow[] = [];
-    let totalOrderCount = 0;
-    let totalActualSales = 0;
-    let totalFeeAmount = 0;
-    let totalNetMargin = 0;
-    let totalSellerPayout = 0;
-
-    filteredCampaigns.forEach((campaign) => {
-      const deals = campaign.campaignDeals && campaign.campaignDeals.length > 0
-        ? sortDealRowsByName(campaign.campaignDeals)
-        : [
-            {
-              dealName: campaign.dealName,
-              sellingPrice: campaign.deal?.sellingPrice ?? 0,
-              quantity: campaign.quantity ?? 0,
-              actualSales: campaign.actualSales ?? 0,
-              feeRate: campaign.totalMarginRate,
-            },
-          ];
-
-      // 수동 정산 기준액 캠페인 — 셀러정산액은 기준액 × 단일 요율(저장 판매대행비와 같은 식)을
-      // 품목 매출 비례로 나눈 값이고, 순마진은 판매수수료에서 그 몫을 뺀 나머지다.
-      const basisEligibility = resolveSellerFeeBasisEligibility({
-        deals: campaign.campaignDeals,
-        campaignSellerMarginRate: campaign.sellerMarginRate,
-      });
-      const basisOverridePayouts =
-        campaign.sellerFeeBasisOverride != null && basisEligibility.eligible
-          ? allocateByWeight(
-              sellerFeeFromBasis(campaign.sellerFeeBasisOverride, basisEligibility.sellerRate),
-              deals.map((deal) => deal.actualSales ?? 0),
-            )
-          : null;
-
-      deals.forEach((deal, dealIndex) => {
-        const quantity = deal.quantity ?? 0;
-        const actualSales = deal.actualSales ?? 0;
-        const feeRate = deal.feeRate ?? 0;
-        const feeAmount = actualSales * (feeRate / 100);
-
-        // 마스터 마진율 기준 분배 계산
-        const totalMarginRate = campaign.totalMarginRate;
-        const sellerMarginRate = campaign.sellerMarginRate;
-        const netMarginRate = campaign.netMarginRate;
-
-        let netMarginAmount = 0;
-        let sellerPayoutAmount = 0;
-
-        if (basisOverridePayouts) {
-          sellerPayoutAmount = basisOverridePayouts[dealIndex];
-          netMarginAmount = feeAmount - sellerPayoutAmount;
-        } else if (totalMarginRate > 0) {
-          netMarginAmount = feeAmount * (netMarginRate / totalMarginRate);
-          sellerPayoutAmount = feeAmount * (sellerMarginRate / totalMarginRate);
-        }
-
-        // 반올림 처리
-        const roundedFeeAmount = Math.round(feeAmount * 100) / 100;
-        const roundedNetMargin = Math.round(netMarginAmount * 100) / 100;
-        const roundedSellerPayout = Math.round(sellerPayoutAmount * 100) / 100;
-
-        rows.push({
-          "캠페인명": campaign.dealName,
-          "브랜드": campaign.deal?.brandName ?? campaign.partnerName ?? "",
-          "셀러": campaign.sellerName,
-          "시작일": campaign.startDate,
-          "종료일": campaign.endDate,
-          "품목명": deal.dealName,
-          "품목 단가": deal.sellingPrice ?? 0,
-          "주문수량": quantity,
-          "총거래액": actualSales,
-          "수수료율(%)": feeRate,
-          "수수료매출": roundedFeeAmount,
-          "매출총이익": roundedNetMargin,
-          "셀러지급액": roundedSellerPayout,
-          "상태": campaign.status === "COMPLETED" ? "정산완료" : "정산중",
-        });
-
-        totalOrderCount += quantity;
-        totalActualSales += actualSales;
-        totalFeeAmount += feeAmount;
-        totalNetMargin += netMarginAmount;
-        totalSellerPayout += sellerPayoutAmount;
-      });
-    });
-
-    // 합계 행 추가
-    rows.push({
-      "캠페인명": "합계",
-      "브랜드": "",
-      "셀러": "",
-      "시작일": "",
-      "종료일": "",
-      "품목명": "",
-      "품목 단가": "",
-      "주문수량": totalOrderCount,
-      "총거래액": totalActualSales,
-      "수수료율(%)": "",
-      "수수료매출": Math.round(totalFeeAmount * 100) / 100,
-      "매출총이익": Math.round(totalNetMargin * 100) / 100,
-      "셀러지급액": Math.round(totalSellerPayout * 100) / 100,
-      "상태": "",
-    });
-
-    const csv = unparse(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `settlement-workspace-${selectedMonth}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, [filteredCampaigns, selectedMonth]);
-
   const handleSelectCampaign = (campaign: CampaignRow) => {
     selectCampaign(campaign);
     setPanelOpen(true);
@@ -538,7 +396,9 @@ interface CsvRow {
       retryingLoad={reportRetrying}
     />
   ) : (
-    <div className="flex min-h-0 w-full flex-1 flex-col overflow-auto px-5 pb-5 pt-5 md:px-8 [scrollbar-gutter:stable]">
+    // 세로 스크롤러는 CrmShell 이 소유한다(스크롤바 자리 예약 포함) — 안쪽에 두 번째 스크롤러를 두지 않는다.
+    <CrmShell title="정산 관리">
+    <div className="flex w-full flex-col px-5 pb-5 pt-5 md:px-8">
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
         <div className="flex shrink-0 items-center gap-1.5">
           <TrendingUp className="size-3.5 text-muted-foreground" />
@@ -655,15 +515,6 @@ interface CsvRow {
                 className="h-full text-xs"
               />
             </InputGroup>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExportCsv}
-              disabled={!reportData || reportData.campaigns.length === 0}
-            >
-              <Download data-icon="inline-start" />
-              CSV 내보내기
-            </Button>
             <Button size="sm" variant="outline" onClick={() => setTaxFilingOpen(true)}>
               <FileText data-icon="inline-start" />
               세무 처리
@@ -761,5 +612,6 @@ interface CsvRow {
         onMonthChange={setTaxFilingMonth}
       />
     </div>
+    </CrmShell>
   );
 }

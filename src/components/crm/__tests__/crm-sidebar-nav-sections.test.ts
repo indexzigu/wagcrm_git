@@ -72,6 +72,25 @@ describe("CrmSidebar 섹션 구조 계약", () => {
     }
   });
 
+  it("자료 목록(/assets)은 하위 항목 5개를 갖는다 — 허브 화면을 대신하는 입구다", () => {
+    const assets = allItems.find((item) => item.href === "/assets");
+    expect(assets?.children?.map((child) => [child.href, child.label])).toEqual([
+      ["/assets/archive", "자료 아카이브"],
+      ["/assets/price-sheets", "가격표"],
+      ["/assets/katalk", "카톡 기록"],
+      ["/assets/inbox", "미분류 레퍼런스"],
+      ["/admin/stories", "스토리 분류함"],
+    ]);
+  });
+
+  it("하위 항목 링크도 전체 메뉴에서 중복되지 않는다", () => {
+    const hrefs = [
+      ...allItems.map((item) => item.href),
+      ...allItems.flatMap((item) => item.children?.map((child) => child.href) ?? []),
+    ];
+    expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
+
   it("링크는 앱 내부 절대경로다", () => {
     for (const item of allItems) {
       expect(item.href.startsWith("/")).toBe(true);

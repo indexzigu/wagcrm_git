@@ -30,7 +30,7 @@ function envelope(operation: string, data: unknown, extra: Record<string, unknow
 }
 
 describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
-  it("정산 리포트 봉투는 기존 정산 뷰(총매출 스탯 + 딜명 표)로 그린다", () => {
+  it("정산 리포트 봉투는 기존 정산 뷰(총거래액 스탯 + 딜명 표)로 그린다", () => {
     const data = {
       period: "2026-07",
       summary: {
@@ -58,7 +58,8 @@ describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
       stateCounts: { pending: 0, confirmed: 1, paid: 0 },
     };
     render(<ReadResultBody envelope={envelope("get_settlement_report", data)} />);
-    expect(screen.getByText("총매출")).toBeInTheDocument();
+    // 「총거래액」은 요약 스탯과 표 머리 두 곳에 나온다.
+    expect(screen.getAllByText("총거래액").length).toBeGreaterThan(0);
     expect(screen.getByText("딜명")).toBeInTheDocument();
     expect(screen.getByText("딜 A")).toBeInTheDocument();
   });

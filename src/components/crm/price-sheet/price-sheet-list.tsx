@@ -112,17 +112,17 @@ export function PriceSheetList() {
   );
 
   return (
+    // 제목은 메뉴 이름과 같은 문자열 하나(메뉴 이름 = 페이지 제목). 옛 제목 위 되돌아가기 링크는
+    // 머리 오른쪽 조작 자리로 옮겼다 — 28px 제목 위에 얹으면 머리 높이가 화면마다 달라진다.
     <CrmShell
-      title={
-        <div className="flex flex-col gap-1">
-          <Link
-            href="/assets"
-            className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            ← 자료 목록
-          </Link>
-          <span>가격표 인제스트</span>
-        </div>
+      title="가격표"
+      actions={
+        <Link
+          href="/assets/archive"
+          className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          ← 자료 아카이브
+        </Link>
       }
       description="브랜드사 가격표(xlsx/이미지/pdf/pptx)를 업로드해 구조화 추출하고 딜에 반영합니다."
     >
@@ -163,7 +163,7 @@ export function PriceSheetList() {
               </p>
               <p className="text-xs text-muted-foreground">xlsx, csv, pptx, pdf, png, jpg (최대 20MB)</p>
               {/* 드롭존 클릭·드래그는 포인터 경로다 — 키보드로는 이 버튼이 유일한 업로드 경로다
-                  (interfaces 점검 묶음 G2, 선례 approvals/price-sheet-ingest-card). stopPropagation —
+                  (interfaces 점검 묶음 G2). stopPropagation —
                   드롭존 onClick 이 파일 창을 한 번 더 부르지 않게. */}
               <Button
                 type="button"

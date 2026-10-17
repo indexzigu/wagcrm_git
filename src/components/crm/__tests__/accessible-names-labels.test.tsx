@@ -22,7 +22,7 @@ vi.mock("papaparse", () => ({
   },
 }));
 
-// 채널 수수료 화면은 앱 셸 안에 산다 — 셸(사이드바·세션)은 이 테스트의 관심 밖이다.
+// 셸(사이드바·세션)은 이 테스트의 관심 밖이다.
 vi.mock("../crm-shell", () => ({
   CrmShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -32,7 +32,7 @@ import { FilterPopover } from "../filter-popover";
 import { CSVImportDialog } from "../csv-import-dialog";
 import { SellerCreationForm } from "../seller-creation-form";
 import { DealCreationForm } from "../deal-creation-form";
-import { ChannelFeesClient } from "../channel-fees-client";
+import { OperationsSettingsClient } from "../operations-settings-client";
 import { StepMetricCard } from "../step-metric-card";
 import CampaignEditModal from "../shipping/modals/CampaignEditModal";
 import CampaignCreateModal from "../shipping/modals/CampaignCreateModal";
@@ -139,20 +139,32 @@ describe("등록 폼 — placeholder 대신 라벨이 이름이 된다", () => {
   });
 });
 
-describe("ChannelFeesClient — 채널마다 반복되는 라벨을 채널 그룹으로 구분한다", () => {
-  it("각 입력이 자기 라벨로 읽히고 채널명 그룹 안에 있다", () => {
-    render(
-      <ChannelFeesClient
-        initialChannels={[
-          { id: "1", channel: "CH_A", label: "채널 A", feeRate: 1, paymentRate: 2, notes: null },
-          { id: "2", channel: "CH_B", label: "채널 B", feeRate: 3, paymentRate: 4, notes: null },
-        ]}
-      />,
+describe("OperationsSettingsClient 채널 수수료 — 채널마다 반복되는 라벨을 채널 그룹으로 구분한다", () => {
+  it("각 입력이 자기 라벨로 읽히고 채널명 그룹 안에 있다", async () => {
+    const channels = [
+      { id: "1", channel: "CH_A", label: "채널 A", feeRate: "1", paymentRate: "2", notes: null },
+      { id: "2", channel: "CH_B", label: "채널 B", feeRate: "3", paymentRate: "4", notes: null },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const body = url.includes("channel-fees")
+          ? { channels }
+          : url.includes("reminders")
+            ? { scheduleThresholds: { idealDays: 7, minDays: 3, deadlineDays: 1 } }
+            : url.includes("order-sync")
+              ? { intervalHours: 1, options: [1], canEdit: false }
+              : { year: "2026", annualTarget: null, monthlyTargets: Array(12).fill(null), canEdit: false, schemaReady: true };
+        return { ok: true, json: async () => body } as Response;
+      }),
     );
-    const groupB = screen.getByRole("group", { name: "채널 B" });
+    render(<OperationsSettingsClient />);
+    const groupB = await screen.findByRole("group", { name: "채널 B" });
     expect(within(groupB).getByLabelText("스토어 수수료 (%)")).toHaveValue(3);
     expect(within(groupB).getByLabelText("결제 수수료 (%)")).toHaveValue(4);
     expect(within(groupB).getByLabelText("비고")).toBeInTheDocument();
+    expect(within(groupB).getByText("7.00%")).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });
 
