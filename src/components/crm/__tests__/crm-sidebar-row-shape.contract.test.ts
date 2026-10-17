@@ -119,27 +119,60 @@ describe("CrmSidebar 행 형태 계약 — 클래스 정본은 한 곳뿐이다"
 describe("CrmSidebar 하위 항목 — 접힌 레일에서는 렌더하지 않는다", () => {
   const source = parse(SIDEBAR);
 
+  /** 조건식이 「펼침일 때 참」인가 — `expanded` 식별자 또는 `state === "expanded"` (&& 로 이어진 항 포함). */
+  function isExpandedTruthy(expr: ts.Expression): boolean {
+    if (ts.isParenthesizedExpression(expr)) return isExpandedTruthy(expr.expression);
+    if (ts.isIdentifier(expr)) return expr.text === "expanded";
+    if (ts.isBinaryExpression(expr)) {
+      const op = expr.operatorToken.kind;
+      if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
+        return isExpandedTruthy(expr.left) || isExpandedTruthy(expr.right);
+      }
+      if (op === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+        const texts = [expr.left.getText(), expr.right.getText()];
+        return texts.some((t) => /state$/i.test(t)) && texts.includes('"expanded"');
+      }
+    }
+    return false; // `!expanded`, `collapsed` 등은 거부
+  }
+
   function isGuardedByExpanded(node: ts.Node): boolean {
     for (let cur: ts.Node | undefined = node.parent; cur; cur = cur.parent) {
-      // `expanded && x ? <Sub/> : null` — 조건식의 참 가지 안에 있는 경우.
+      // `expanded && x ? <Sub/> : null` — 조건식의 참 가지 안.
       if (
         ts.isConditionalExpression(cur) &&
-        cur.condition.getText().includes("expanded") &&
+        isExpandedTruthy(cur.condition) &&
         node.pos >= cur.whenTrue.pos &&
         node.end <= cur.whenTrue.end
       ) {
         return true;
       }
+      // `expanded && <Sub/>` — 오른쪽 항.
       if (
         ts.isBinaryExpression(cur) &&
         cur.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
-        cur.left.getText().includes("expanded")
+        isExpandedTruthy(cur.left) &&
+        node.pos >= cur.right.pos
       ) {
         return true;
       }
     }
     return false;
   }
+
+  function unguardedIn(code: string) {
+    const src = ts.createSourceFile("probe.tsx", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    return jsxElementsNamed(src, "SidebarMenuSub").filter((el) => !isGuardedByExpanded(el));
+  }
+
+  it("반례 프로브: 올바른 가드는 통과, 반대·무관 가드는 거부한다", () => {
+    expect(unguardedIn("const a = <>{expanded && <SidebarMenuSub />}</>;")).toHaveLength(0);
+    expect(unguardedIn('const a = <>{state === "expanded" ? <SidebarMenuSub /> : null}</>;')).toHaveLength(0);
+    expect(unguardedIn("const a = <>{!expanded ? <SidebarMenuSub /> : null}</>;")).toHaveLength(1);
+    expect(unguardedIn("const a = <>{expanded ? null : <SidebarMenuSub />}</>;")).toHaveLength(1);
+    expect(unguardedIn("const a = <>{x && <SidebarMenuSub />}</>;")).toHaveLength(1);
+    expect(unguardedIn("const a = <SidebarMenuSub />;")).toHaveLength(1);
+  });
 
   it("SidebarMenuSub 을 실제로 렌더한다 (스캐너 양성 대조군)", () => {
     expect(jsxElementsNamed(source, "SidebarMenuSub").length).toBeGreaterThanOrEqual(1);

@@ -195,7 +195,8 @@ const SIDEBAR_ROW_ACTIVE_CLASS =
   "!bg-sidebar-primary/[0.08] !text-sidebar-primary !font-semibold shadow-soft-sm hover:!bg-sidebar-primary/[0.12]";
 
 /** 하위 행의 active 는 부모 행과 같은 색 규칙(`!` 유지)이되 배경 칩·그림자는 얹지 않는다. */
-const SIDEBAR_SUB_ACTIVE_CLASS = "!text-sidebar-primary !font-semibold";
+const SIDEBAR_SUB_ACTIVE_CLASS =
+  "!text-sidebar-primary !font-semibold data-active:!bg-transparent hover:!bg-sidebar-accent";
 
 /** `asChild` 안쪽에서 아이콘·라벨을 품는 flex 컨테이너. */
 const SIDEBAR_ROW_INNER_CLASS =
@@ -362,7 +363,11 @@ export function CrmSidebar() {
                   const childActive = item.children?.some((child) => isActivePath(pathname, child.href)) ?? false;
                   const active = isActivePath(pathname, item.href) || childActive;
                   return (
-                    <SidebarMenuItem key={item.href} className="w-full flex justify-center">
+                    <SidebarMenuItem
+                      key={item.href}
+                      // 하위 목록이 부모 행 옆이 아니라 **아래**에 놓이도록 하위가 있는 항목만 세로 배치.
+                      className={cn("w-full flex", item.children ? "flex-col" : "justify-center")}
+                    >
                       <SidebarMenuButton
                         asChild
                         isActive={active}
@@ -385,6 +390,7 @@ export function CrmSidebar() {
                               <SidebarMenuSubItem key={child.href}>
                                 <SidebarMenuSubButton
                                   asChild
+                                  size="sm"
                                   isActive={childIsActive}
                                   className={cn(
                                     "text-[12px] text-sidebar-foreground/80",
