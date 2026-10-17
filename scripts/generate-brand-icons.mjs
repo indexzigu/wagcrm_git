@@ -47,14 +47,16 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // ── 아트 파라미터 (여기만 고친다) ────────────────────────────────────────────
 /**
- * 청록 앵커 타일 + 밝은 청록 마크 (Apple UI 갱신 번들 0, 2026-10-17).
+ * 청록 앵커 타일 + 흰 마크·굵은 선 (Apple UI 갱신 번들 0, 오너 선택 2026-10-17 — 연청록 마크는 대비 4.90 이라 작은 크기에서 흐렸다).
  *
  * 타일 색은 `globals.css` `--primary`(청록 앵커)와 같고, manifest `background_color` 와도
  * 같아야 한다(두 곳이 어긋나면 PWA 스플래시 솔기가 생긴다). 마크 색은 `--brand-mark` 토큰과
  * 같은 값이다. 값을 바꾸면 세 곳(이 파일 · manifest.ts · globals.css)을 함께 맞출 것.
  */
 const BG = "#0F5F67"; // --primary (청록 앵커)
-const INK = "#A7DCE2"; // --brand-mark (밝은 청록 마크)
+const INK = "#FFFFFF"; // --brand-mark (흰 마크 — 타일 위 7.36:1)
+/** 말풍선 선 굵기(viewBox 100 기준). brand-mark.tsx 의 strokeWidth 와 같아야 한다 — 16px 탭 아이콘 가독성 때문에 6.5 → 8. */
+const STROKE = 8;
 const SCALE = 1; // any 계열 심볼 배율 (1 = 현행 마크 크기 그대로)
 /** maskable 배율 보정 = 크롭 후 광학 크기를 any 와 맞추는 계수 (안전영역 지름 410/512). */
 const SAFE_ZONE_RATIO = 410 / 512;
@@ -67,7 +69,7 @@ const BUBBLE =
 const symbol = (scale, ink) => `
   <g transform="translate(50 50) scale(${scale}) translate(-50 -50)">
     <g transform="translate(5 6) scale(0.9)">
-      <path d="${BUBBLE}" fill="none" stroke="${ink}" stroke-width="6.5" stroke-linejoin="round"/>
+      <path d="${BUBBLE}" fill="none" stroke="${ink}" stroke-width="${STROKE}" stroke-linejoin="round"/>
       <g fill="${ink}">
         <rect x="35" y="44" width="7" height="10" rx="2"/>
         <rect x="46" y="37" width="7" height="17" rx="2"/>

@@ -44,8 +44,8 @@ export function LandingBrandMark() {
         {neutral ? (
           <span className="text-[10px] font-extrabold tracking-[0.08em] text-white">W</span>
         ) : (
-          // 마크를 청록 칩 **안에** 넣는다 — 연청록 마크(brand-mark)는 흰 배경 위에서 안 보이므로
-          // 타일 없이 밝은 화면에 얹을 수 없다(P8 §5 표면 종속). 칩(#0F5F67) 안에서는 4.90:1.
+          // 마크를 청록 칩 **안에** 넣는다 — 흰 마크(brand-mark)는 흰 배경 위에서 안 보이므로
+          // 타일 없이 밝은 화면에 얹을 수 없다(P8 §5 표면 종속). 칩(#0F5F67) 안에서는 7.36:1.
           // 부수 효과로 이 배지가 실제 파비콘·홈화면 아이콘과 같은 모습이 된다.
           <BrandMark title="WAG CRM" className="size-7 text-brand-mark" />
         )}

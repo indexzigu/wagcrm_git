@@ -17,7 +17,7 @@ export function MobileStandaloneGate({ children }: { children: React.ReactNode }
         <div className="space-y-4">
           {/* 이 화면은 "홈 화면에 추가"를 안내한다 — 배지가 실제 앱 아이콘과 같은 모습이어야
               사용자가 추가 후 찾을 아이콘과 눈으로 이어진다. 그래서 타일(--primary 청록)까지
-              아이콘 파일과 같은 값으로 맞춘다. 청록 타일 위 연청록 마크 4.90:1(3:1 통과).
+              아이콘 파일과 같은 값으로 맞춘다. 청록 타일 위 흰 마크 7.36:1(4.5:1 통과).
               라디우스는 #69 형태 사다리의 rounded-2xl 을 따른다 — 아이콘 파일의 rx(22/100)와
               정확히 같지는 않지만, 앱 안 형태 규율이 우선이다. */}
           <div className="inline-flex size-12 items-center justify-center rounded-2xl bg-primary">

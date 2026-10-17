@@ -268,7 +268,7 @@ export function CrmSidebar() {
               <BrandMark
                 title="WAG CRM"
                 // 마크는 단색(currentColor)이라 text-* 가 곧 마크 색이다. 사이드바가 밝은
-                // 면(#F5F7F8)으로 바뀌어 연청록 brand-mark(1.40:1)는 못 얹는다 — 앵커 청록
+                // 면(#F5F7F8)으로 바뀌어 흰 brand-mark(1.07:1)는 못 얹는다 — 앵커 청록
                 // (--sidebar-primary #0F5F67)을 쓴다. 밝은 사이드바 위 6.85:1(3:1 통과).
                 className="size-9 text-sidebar-primary"
               />
