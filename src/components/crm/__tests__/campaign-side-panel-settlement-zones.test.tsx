@@ -531,3 +531,25 @@ describe("최신 값 확인 — 옛 화면이 편집 기준선이 되지 않는�
     expect(screen.queryByRole("button", { name: "저장" })).toBeNull();
   });
 });
+
+describe("순수수료율 풀이", () => {
+  it("title 속성이 아니라 키보드로도 열리는 설명 버튼으로 푼다", async () => {
+    // 수수료율 칸은 정산 작업면이 아닌 일반 상세에서 그린다.
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) });
+    render(
+      <CampaignSidePanel
+        campaign={campaign}
+        logs={[] as ApiCallLogRow[]}
+        assets={[] as AssetRow[]}
+        storage={storage}
+        open
+        onOpenChange={vi.fn()}
+        onCampaignUpdated={vi.fn()}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "순수수료율 풀이" });
+    expect(screen.getByText("순수수료율 (%)").closest("[title]")).toBeNull();
+    fireEvent.focus(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("총수수료율 − 셀러수수료율. 셀러 몫을 뺀 우리 몫");
+  });
+});

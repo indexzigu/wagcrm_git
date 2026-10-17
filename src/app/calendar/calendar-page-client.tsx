@@ -245,7 +245,7 @@ export function CalendarPageClient({
     // 제목·설명·동기화 버튼은 CrmShell 머리로 올렸다(메뉴 이름 = 페이지 제목 — 옛 「캠페인 캘린더」).
     <CrmShell
       title="캘린더"
-      description="캠페인 기간과 입금/지급 예정일을 한눈에 확인하고 구글 캘린더로 동기화합니다."
+      description="캠페인 기간과 입금/지급 예정일을 확인하고 구글 캘린더로 동기화합니다."
       actions={
         <Button
           onClick={handleFullSync}
