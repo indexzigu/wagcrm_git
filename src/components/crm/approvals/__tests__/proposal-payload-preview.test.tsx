@@ -144,7 +144,7 @@ describe("ProposalPayloadPreview", () => {
         }}
       />,
     );
-    expect(screen.getByText("영업 수익")).toBeTruthy();
+    expect(screen.getByText("수수료매출")).toBeTruthy();
     expect(screen.getByText("1,200,000원")).toBeTruthy();
     expect(screen.getByText("1,350,000원")).toBeTruthy();
     expect(screen.getByText("10월 정산 정정")).toBeTruthy();

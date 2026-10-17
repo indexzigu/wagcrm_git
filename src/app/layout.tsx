@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import { Providers } from "./providers";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShellFrame } from "@/components/crm/app-shell-frame";
@@ -12,11 +11,6 @@ import { DemoModeBanner } from "@/components/crm/demo-mode-banner";
 import { MobileBottomNav } from "@/components/mobile/mobile-bottom-nav";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
 export const metadata: Metadata = {
   title: "WAG CRM",
   description: "Next-Gen commerce brokerage and sales tracking CRM",
@@ -47,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={`h-full ${inter.variable}`}>
+    <html lang="ko" className="h-full">
       <body className="flex min-h-full flex-col antialiased">
         <Providers>
           <TooltipProvider>

@@ -1,4 +1,5 @@
 import { getPrisma } from "@/lib/prisma";
+import { DASHBOARD_SCOPE_CAPTION, isCountedForDashboard } from "./dashboard-scope";
 import { buildEffectiveCampaignPeriods } from "@/lib/campaign-group-count";
 import { findRevenueGoalsSafe } from "@/lib/revenue-goals";
 import { getScheduleGapBriefing } from "./schedule-gap-briefing";
@@ -81,6 +82,8 @@ function recentMonthKeys(now: Date, count: number) {
     return monthKey(date);
   });
 }
+
+export { DASHBOARD_SCOPE_CAPTION, isCountedForDashboard };
 
 function campaignSales(campaign: CampaignMetricSource) {
   return numberValue(campaign.actualSales);
@@ -404,11 +407,13 @@ export async function getDesktopDashboardData(now = new Date()) {
   const prevPrevMonthlyGoal = goals.find((goal) => goal.periodKey === prevPrevMonth);
   const annualGoal = goals.find((goal) => goal.periodKey === year);
 
-  const selectedCampaigns = campaigns.filter((campaign) => allocateCampaignToMonth(campaign, selectedMonth).operatingDays > 0);
-  const prevCampaigns = campaigns.filter((campaign) => allocateCampaignToMonth(campaign, prevMonth).operatingDays > 0);
-  const prevPrevCampaigns = campaigns.filter((campaign) => allocateCampaignToMonth(campaign, prevPrevMonth).operatingDays > 0);
+  // 금액 합산 대상 — 드랍 제외(개수 지표는 아래에서 전량 `campaigns` 를 그대로 쓴다).
+  const countedCampaigns = campaigns.filter((campaign) => isCountedForDashboard(campaign.status));
+  const selectedCampaigns = countedCampaigns.filter((campaign) => allocateCampaignToMonth(campaign, selectedMonth).operatingDays > 0);
+  const prevCampaigns = countedCampaigns.filter((campaign) => allocateCampaignToMonth(campaign, prevMonth).operatingDays > 0);
+  const prevPrevCampaigns = countedCampaigns.filter((campaign) => allocateCampaignToMonth(campaign, prevPrevMonth).operatingDays > 0);
 
-  const ytdCampaigns = campaigns.filter((campaign) => campaign.startDate.getUTCFullYear() === Number(year));
+  const ytdCampaigns = countedCampaigns.filter((campaign) => campaign.startDate.getUTCFullYear() === Number(year));
   const monthActual = selectedCampaigns.reduce((sum, campaign) => sum + campaignSales(campaign), 0);
   const prevMonthActual = prevCampaigns.reduce((sum, campaign) => sum + campaignSales(campaign), 0);
   const prevPrevMonthActual = prevPrevCampaigns.reduce((sum, campaign) => sum + campaignSales(campaign), 0);
@@ -564,7 +569,8 @@ export async function getDesktopDashboardData(now = new Date()) {
     // 같으면서 그룹을 접지 않아 멤버 수만큼 부풀었고, missingGoals 는 위 goals.monthTarget/
     // annualTarget 의 null 여부로 그대로 파생된다.
     trend: trendMonths.map((key) => {
-      const inMonth = campaigns.filter((campaign) => allocateCampaignToMonth(campaign, key).operatingDays > 0);
+      const inMonthAll = campaigns.filter((campaign) => allocateCampaignToMonth(campaign, key).operatingDays > 0);
+      const inMonth = inMonthAll.filter((campaign) => isCountedForDashboard(campaign.status));
       return {
         month: key,
         revenue: inMonth.reduce((sum, campaign) => sum + campaignSales(campaign), 0),
@@ -577,7 +583,7 @@ export async function getDesktopDashboardData(now = new Date()) {
           (sum, period) => sum + allocateCampaignToMonth(period, key).weightedCampaignCount,
           0,
         ),
-        activeSellers: new Set(inMonth.map((campaign) => campaign.sellerId).filter(Boolean)).size,
+        activeSellers: new Set(inMonthAll.map((campaign) => campaign.sellerId).filter(Boolean)).size,
         goal: goals.find((goal) => goal.periodKey === key)?.revenueTarget
           ? numberValue(goals.find((goal) => goal.periodKey === key)?.revenueTarget)
           : null,
@@ -588,7 +594,8 @@ export async function getDesktopDashboardData(now = new Date()) {
     // 두 차트가 같은 정의를 공유하고 Y축을 공통 도메인으로 맞출 수 있게 한다. 순마진도 함께 싣는다.
     yearlyTrend: Array.from({ length: now.getUTCMonth() + 1 }, (_, i) => {
       const key = `${year}-${String(i + 1).padStart(2, "0")}`;
-      const inMonth = campaigns.filter((campaign) => allocateCampaignToMonth(campaign, key).operatingDays > 0);
+      const inMonthAll = campaigns.filter((campaign) => allocateCampaignToMonth(campaign, key).operatingDays > 0);
+      const inMonth = inMonthAll.filter((campaign) => isCountedForDashboard(campaign.status));
       return {
         month: key,
         revenue: inMonth.reduce((sum, campaign) => sum + campaignSales(campaign), 0),

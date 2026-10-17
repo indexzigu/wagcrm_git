@@ -303,7 +303,7 @@ describe("SettlementTable 계산서 열", () => {
       (th) => th.textContent?.trim() ?? "",
     );
     expect(headers.indexOf("계산서")).toBe(headers.indexOf("정산일정") + 1);
-    expect(headers.indexOf("총 거래액")).toBe(headers.indexOf("계산서") + 1);
+    expect(headers.indexOf("총거래액")).toBe(headers.indexOf("계산서") + 1);
 
     // table-fixed 라 colgroup 개수가 열 개수와 어긋나면 폭이 통째로 밀린다.
     expect(document.querySelectorAll("colgroup col")).toHaveLength(headers.length);

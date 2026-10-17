@@ -274,9 +274,9 @@ export function CampaignCard({
         <div className="flex min-w-0 items-center justify-between gap-1 pb-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-1 text-[12px] font-semibold leading-snug text-foreground">
             {/* 라이브 도트의 초록은 **오너 확정 예외다(2026-07-16) — 토큰으로 정렬하지 말 것.**
-                정본의 ACTIVE 는 네이비(--status-active #0A3D62)라 얼핏 "리터럴이 정본에서 갈라진 것"
+                정본의 ACTIVE 는 청록(--status-active #0F5F67)라 얼핏 "리터럴이 정본에서 갈라진 것"
                 처럼 보이지만 아니다: 이 도트가 말하는 건 생애주기 등급이 아니라 **"지금 살아 움직인다"**
-                이고, "초록=라이브"는 앱 밖에서 온 관용이다. 네이비로 바꾸면 카드 제목 옆에서 상태 배지와
+                이고, "초록=라이브"는 앱 밖에서 온 관용이다. 청록으로 바꾸면 카드 제목 옆에서 상태 배지와
                 같은 색이 되어 도트가 배지의 중복이 된다. 심각도 배지 리터럴 정렬(2026-07-16)에서 이 2줄만
                 의도적으로 제외했다 — "일관성"을 이유로 회수하지 말 것. */}
             {campaign.status === "ACTIVE" && (

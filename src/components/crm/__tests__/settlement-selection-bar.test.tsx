@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // 정산 선택 액션 바 계약(#439·#440 에서 도입, 2026-08-24 완료 표 선택 확장).
 //  ① 선택 0건이면 바 자체가 없다.
-//  ② 합계 4종(거래액·영업수익·판매대행비·영업이익)을 라벨과 함께 렌더한다.
+//  ② 합계 4종(거래액·수수료매출·셀러지급액·영업이익)을 라벨과 함께 렌더한다.
 //  ③ ⛔ 바는 **하나뿐**이다 — 진행 중·완료 두 표가 각자 바를 띄우면 둘 다 fixed 라
 //     겹친다. 그래서 선택 상태는 페이지가 소유하고 두 표는 제어형 prop 을 받는다.
 import { describe, it, expect, vi } from "vitest";
@@ -67,7 +67,7 @@ describe("SettlementSelectionBar", () => {
     expect(summary.getByText("180,000")).toBeInTheDocument();
     // 음수 영업이익도 그대로 표시된다(미입력 0 과 구분되는 실제 값)
     expect(summary.getByText("-40,000")).toBeInTheDocument();
-    for (const label of ["거래액", "영업수익", "판매대행비", "영업이익"]) {
+    for (const label of ["거래액", "수수료매출", "셀러지급액", "영업이익"]) {
       expect(summary.getByText(label)).toBeInTheDocument();
     }
   });
@@ -203,7 +203,7 @@ describe("거래처 지급·입금 금액", () => {
         selectedCampaigns={[
           // 우리몰 = 물품대금을 지급하는 쪽. 1,000,000 − 200,000 = 800,000 지급.
           makeCampaign({ id: "c1", partnerId: "p1", partnerName: "가거래처" }),
-          // 브랜드몰 = 영업수익을 받는 쪽. 350,000 입금.
+          // 브랜드몰 = 수수료매출을 받는 쪽. 350,000 입금.
           makeCampaign({
             id: "c2",
             partnerId: "p2",

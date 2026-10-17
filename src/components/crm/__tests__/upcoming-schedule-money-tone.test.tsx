@@ -25,7 +25,7 @@ describe("UpcomingScheduleBody — 대금 줄의 색", () => {
       .map((el) => el.getAttribute("style") ?? "")
       .filter((style) => style.includes("background-color"));
     expect(dots.some((style) => style.includes("var(--status-success)"))).toBe(true);
-    expect(dots.some((style) => style.includes("var(--accent-gold)"))).toBe(false);
+    expect(dots.some((style) => style.includes("var(--accent-achieve)"))).toBe(false);
   });
 
   it("예정 줄은 주의색을 유지한다", () => {

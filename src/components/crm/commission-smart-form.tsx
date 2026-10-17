@@ -144,34 +144,34 @@ export function CommissionSmartForm({
       {/* Margin Rate Fields */}
       <div className="grid gap-3 md:grid-cols-3">
         <div className="space-y-1.5">
-          <Label className="text-xs">총 마진율 (%)</Label>
+          <Label className="text-xs">총수수료율 (%)</Label>
           <Input
             type="number"
             step="0.1"
             value={manualOverride ? manualTotal : String(policyRates?.totalMarginRate ?? 0)}
             onChange={(e) => handleTotalChange(e.target.value)}
             disabled={!manualOverride}
-            aria-label="총 마진율"
+            aria-label="총수수료율"
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">셀러 마진율 (%)</Label>
+          <Label className="text-xs">셀러수수료율 (%)</Label>
           <Input
             type="number"
             step="0.1"
             value={manualOverride ? manualSeller : String(policyRates?.sellerMarginRate ?? 0)}
             onChange={(e) => handleSellerChange(e.target.value)}
             disabled={!manualOverride}
-            aria-label="셀러 마진율"
+            aria-label="셀러수수료율"
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">영업이익율 (%)</Label>
+          <Label className="text-xs">순수수료율 (%)</Label>
           <Input
             type="number"
             value={String(netMarginRate)}
             disabled
-            aria-label="영업이익율"
+            aria-label="순수수료율"
           />
         </div>
       </div>

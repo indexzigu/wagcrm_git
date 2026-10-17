@@ -397,7 +397,7 @@ function CampaignPopoverContent({
         {formatDateRange(member.startDate, member.endDate)}
       </div>
 
-      <PopoverSalesLine endpoint={`/api/mobile/campaigns/${member.id}/sales`} label="매출" />
+      <PopoverSalesLine endpoint={`/api/mobile/campaigns/${member.id}/sales`} label="판매금액" />
 
       {/* ⛔ 2열 그리드로 되돌리지 말 것 — 상대 병기 후 한 줄에 필요한 폭이 155px 인데
           w-72 팝오버의 2열은 열당 113px 라 날짜·상태가 두 줄로 감긴다(실측 2026-08-25).

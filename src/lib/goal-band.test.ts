@@ -47,18 +47,18 @@ describe("밴드 색 계약", () => {
   });
 
   it("정상 밴드는 무채색이다 — 늘 있는 상태를 칠하면 심각 미달이 안 튄다", () => {
-    // hue 토큰(accent-gold·goal-miss)이 들어오면 "무채색=랭크" 설계가 깨진다.
+    // hue 토큰(accent-achieve·goal-miss)이 들어오면 "무채색=랭크" 설계가 깨진다.
     expect(GOAL_BAND_TEXT_ON_NAVY.normal).toMatch(/white\//);
     expect(GOAL_BAND_FILL_ON_NAVY.normal).toMatch(/white\//);
   });
 
-  it("정상 밴드 fill 은 white/45 미만으로 내리지 않는다 — 트랙 대비 3:1 요건", () => {
-    // fill 은 트랙(bg-white/10) 위에 얹히므로 기준은 네이비가 아니라 트랙 대비다.
-    // white/35 = 2.65:1 로 비텍스트 3:1 미달 → 바가 얼마나 찼는지 자체가 안 읽혔다(적발 이력).
-    // white/40 = 3.00(경계) · white/45 = 3.39(채택).
+  it("정상 밴드 fill 은 white/50 미만으로 내리지 않는다 — 트랙 대비 3:1 요건", () => {
+    // fill 은 트랙(bg-white/10) 위에 얹히므로 기준은 딥 표면이 아니라 트랙 대비다.
+    // 딥 청록(#0B474D) 위 트랙 기준: white/45 = 2.96:1 ❌ · white/50 = 3.27:1(채택).
+    // (구 네이비 시절 white/35 = 2.65:1 로 미달 → 바가 얼마나 찼는지 안 읽힌 적발 이력.)
     const alpha = Number(GOAL_BAND_FILL_ON_NAVY.normal.match(/white\/(\d+)/)?.[1]);
     expect(alpha, "정상 밴드 fill 알파를 읽지 못했다").toBeGreaterThan(0);
-    expect(alpha, "트랙 대비 3:1 미달 — 진행바 길이가 안 읽힌다").toBeGreaterThanOrEqual(45);
+    expect(alpha, "트랙 대비 3:1 미달 — 진행바 길이가 안 읽힌다").toBeGreaterThanOrEqual(50);
   });
 
   it("심각 미달은 --goal-miss 토큰을 쓴다 — 흰 배경용 status-urgent 재사용 금지", () => {
@@ -77,8 +77,8 @@ describe("밴드 색 계약", () => {
 describe("--goal-miss 토큰 — 정의와 @theme 노출이 둘 다 있어야 색이 나온다", () => {
   const css = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf8");
 
-  it("값이 정의돼 있다 (D3 오너 확정: rose-400)", () => {
-    expect(css, "--goal-miss 정의 누락").toMatch(/--goal-miss:\s*#FB7185/i);
+  it("값이 정의돼 있다 (오너 확정 2026-10-16: 연분홍 #FDA4AF)", () => {
+    expect(css, "--goal-miss 정의 누락").toMatch(/--goal-miss:\s*#FDA4AF/i);
   });
 
   it("@theme 에 노출돼 있다 — 빠지면 text-goal-miss 가 무효 클래스가 된다", () => {
@@ -87,8 +87,8 @@ describe("--goal-miss 토큰 — 정의와 @theme 노출이 둘 다 있어야 �
     );
   });
 
-  it("밴드가 의존하는 골드 토큰도 노출돼 있다", () => {
-    expect(css).toMatch(/--color-accent-gold-soft:\s*var\(--accent-gold-soft\)/);
-    expect(css).toMatch(/--color-accent-gold:\s*var\(--accent-gold\)/);
+  it("밴드가 의존하는 달성 토큰도 노출돼 있다", () => {
+    expect(css).toMatch(/--color-accent-achieve-soft:\s*var\(--accent-achieve-soft\)/);
+    expect(css).toMatch(/--color-accent-achieve:\s*var\(--accent-achieve\)/);
   });
 });

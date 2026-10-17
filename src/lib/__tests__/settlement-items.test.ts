@@ -161,8 +161,8 @@ describe("조정 후 손익 — 상계는 양쪽 다리가 다 있어야 성립�
 });
 
 describe("resolveSellerFeeBasis — 정산 기준액(오너 정정 2026-08-27)", () => {
-  // 「정산 기준액」은 판매대행비 자체가 아니라 그것을 계산할 때 곱하는 매출액이다.
-  // 기준은 세무 유형이 가른다 — 그래서 종전 화면 문구 「총 거래액 × 셀러수수료율」은
+  // 「정산 기준액」은 셀러지급액 자체가 아니라 그것을 계산할 때 곱하는 매출액이다.
+  // 기준은 세무 유형이 가른다 — 그래서 종전 화면 문구 「총거래액 × 셀러수수료율」은
   // 개인 셀러에게 사실이 아니었다.
   it("개인 셀러의 기준은 공급가액(부가세 제외)이다", () => {
     const basis = resolveSellerFeeBasis(38_900_000, true);
@@ -170,14 +170,14 @@ describe("resolveSellerFeeBasis — 정산 기준액(오너 정정 2026-08-27)",
     expect(basis.label).toContain("공급가액");
   });
 
-  it("사업자 셀러의 기준은 총 거래액이다", () => {
+  it("사업자 셀러의 기준은 총거래액이다", () => {
     const basis = resolveSellerFeeBasis(38_900_000, false);
     expect(basis.amount).toBe(38_900_000);
-    expect(basis.label).toContain("총 거래액");
+    expect(basis.label).toContain("총거래액");
     expect(basis.label).not.toContain("공급가액");
   });
 
-  // 금액과 이름이 한 함수에서 나와야 "공급가액을 찍으면서 총 거래액이라고 말하는" 상태가
+  // 금액과 이름이 한 함수에서 나와야 "공급가액을 찍으면서 총거래액이라고 말하는" 상태가
   // 만들어지지 않는다 — 이름만 따로 만드는 호출부가 생기면 이 단언이 먼저 깨진다.
   it("이름은 「고정」 태그가 무엇에 대한 것인지까지 말한다", () => {
     expect(resolveSellerFeeBasis(1_000_000, true).label).toContain("부가 항목 무관");

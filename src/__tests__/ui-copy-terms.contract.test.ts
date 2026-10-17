@@ -5,6 +5,7 @@ import ts from "typescript";
 import {
   ALLOWED_UPPERCASE_WORDS,
   DEV_WORDS,
+  MONEY_TERM_ALIASES,
   RAW_CODE_FIELDS,
   STATUS_WORD_SPACING,
 } from "@/lib/ui-glossary";
@@ -12,12 +13,13 @@ import {
 /**
  * **화면 문구 기준 기계 검사** — `docs/agents/product-ux.md` P2 「화면 문구 기준」의 집행면.
  *
- * 새 버튼·카드·배지를 넣을 때 아래 다섯 부류가 오너 화면까지 가지 않게 막는다.
+ * 새 버튼·카드·배지를 넣을 때 아래 여섯 부류가 오너 화면까지 가지 않게 막는다.
  * - `spaced`   : 띄어 쓴 상태 낱말(「승인 대기」 → 「승인대기」, 오너 확정 2026-10-08)
  * - `fallback` : 라벨 표에 없으면 코드값으로 되돌려 보이는 코드(`라벨표[x] ?? x`)
  * - `rawField` : 코드값 필드(`status`·`type`…)를 라벨 표 없이 화면에 그리는 코드
  * - `rawCode`  : 화면 글자 자체가 대문자 코드값(`PENDING`)
  * - `devWord`  : 화면 글자에 개발 용어(null·payload·레코드·파라미터…)
+ * - `oldMoneyTerm` : 옛 돈 이름(「총 마진」·「영업수익」…) — 문자열 **전체가** `MONEY_TERM_ALIASES` 키일 때만
  *
  * 낱말 목록은 용어집(`src/lib/ui-glossary.ts`)이 정본이다 — 여기에 다시 적지 않는다.
  *
@@ -45,7 +47,7 @@ import {
 
 const ROOT = join(__dirname, "..");
 
-export type CopyRule = "spaced" | "fallback" | "rawField" | "rawCode" | "devWord";
+export type CopyRule = "spaced" | "fallback" | "rawField" | "rawCode" | "devWord" | "oldMoneyTerm";
 
 export interface CopyIssue {
   rule: CopyRule;
@@ -56,6 +58,9 @@ export interface CopyIssue {
 
 /** 화면에 글자로 보이는 JSX 속성. `className`·`href`·`key` 같은 것은 화면 글자가 아니다. */
 const VISIBLE_ATTRS = new Set(["title", "placeholder", "aria-label", "alt", "label", "description", "hint"]);
+
+/** 셀러 포털은 셀러 본인의 「매출」을 보는 표면이라 돈 낱말 통일 대상이 아니다(오너 확정 2026-10-16). */
+const MONEY_EXEMPT_PATHS = ["components/portal/", "app/[slug]/", "app/p/"];
 
 const DEV_WORD_PATTERN = buildDevWordPattern(Object.keys(DEV_WORDS));
 const UPPERCASE_CODE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
@@ -192,6 +197,10 @@ export function findCopyIssues(source: string, fileName = "x.tsx"): CopyIssue[] 
     if (!text || insideConsoleCall(node)) return;
     // 상태 낱말은 라벨 표(.ts)에 정의되는 일이 많아 표시 위치와 무관하게 「전체 일치」로 본다.
     if (Object.hasOwn(STATUS_WORD_SPACING, text)) add("spaced", node, text);
+    // 돈 이름도 라벨 표·CSV 머리글(.ts)에 정의되는 일이 많아 표시 위치와 무관하게 「전체 일치」로 본다.
+    if (Object.hasOwn(MONEY_TERM_ALIASES, text) && !MONEY_EXEMPT_PATHS.some((d) => fileName.startsWith(d))) {
+      add("oldMoneyTerm", node, text);
+    }
     if (!isTsx || !isVisibleText(node)) return;
     if (UPPERCASE_CODE.test(text) && text.length >= MIN_CODE_LENGTH && !ALLOWED_UPPERCASE_WORDS.has(text)) {
       add("rawCode", node, text);
@@ -283,6 +292,12 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
     "네이버 클레임 사유 코드 — 위 클레임 상태와 같은 사유(표의 다수가 추정 코드라 미등록 코드가 실제로 온다).",
   "fallback | lib/content-guide.ts | EVIDENCE_LABEL[claim.evidenceType] ?? claim.evidenceType":
     "이 근거 카드는 콘텐츠 가이드 본문에 붙어 **저장**된다 — 「—」로 바꾸면 무엇이었는지 영구히 잃는다. 지금 오는 값(MEASURED·USER_PROVIDED)은 표에 다 있고 NEEDS_SOURCE 는 앞에서 걸러진다.",
+  "oldMoneyTerm | lib/settlement-statement.ts | 판매대행비":
+    "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후. 키가 낱말 단위라 이 파일의 다른 옛 이름은 여전히 잡힌다.",
+  "oldMoneyTerm | lib/settlement-statement.ts | 총 거래액":
+    "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후(위 판매대행비와 같은 사유).",
+  "oldMoneyTerm | lib/tax-invoice-mail/receipt-similarity.ts | 매출":
+    "화면 라벨이 아니라 영수증 품목명 유사도 판정용 키워드다(바꾸면 판정이 달라진다).",
   "rawField | components/crm/link-search-dialog.tsx | {meta.status}":
     "값이 이미 라벨이다 — 상류에서 `labelOf`(=`displayLabel`, 표에 없는 코드는 「알 수 없음」)와 `partnerStatusLabel`(폼이 저장한 한글 거래처 상태는 그대로 보여야 하는 의도된 폴백)을 거친다.",
   "rawField | components/crm/linked-entity-section.tsx | {entity.status}":
@@ -313,6 +328,23 @@ describe("화면 문구 기준 (AST 전역 스캔)", () => {
   it("양성 — 화면 글자가 대문자 코드값이거나 개발 용어면 잡는다", () => {
     const src = `const C = () => <><b>PENDING</b><i title="payload 없음">x</i><p>레코드를 저장했습니다</p></>;`;
     expect(findCopyIssues(src, "a.tsx").map((h) => h.rule)).toEqual(["rawCode", "devWord", "devWord"]);
+  });
+
+  it("양성 — 옛 돈 이름 라벨을 잡는다", () => {
+    const hits = findCopyIssues(`const C = () => <span>총 마진</span>; const T = { a: "영업수익" };`, "a.tsx");
+    expect(hits.map((h) => [h.rule, h.text])).toEqual([["oldMoneyTerm", "총 마진"], ["oldMoneyTerm", "영업수익"]]);
+  });
+
+  it("음성 — 문장 속 '매출'은 잡지 않는다", () => {
+    expect(findCopyIssues(`const C = () => <p>매출 목표를 설정하세요</p>;`, "a.tsx")).toEqual([]);
+  });
+
+  it("음성 — 셀러 포털 경로의 '매출'은 잡지 않는다", () => {
+    const src = `const C = () => <span>매출</span>;`;
+    expect(findCopyIssues(src, "components/portal/x.tsx")).toEqual([]);
+    expect(findCopyIssues(src, "app/[slug]/page.tsx")).toEqual([]);
+    expect(findCopyIssues(src, "app/p/[token]/page.tsx")).toEqual([]);
+    expect(findCopyIssues(src, "components/crm/x.tsx").map((h) => h.rule)).toEqual(["oldMoneyTerm"]);
   });
 
   // ── 음성 대조군: 잡으면 안 되는 것. 여기가 무너지면 아무도 이 검사를 믿지 않는다.
@@ -391,5 +423,15 @@ describe("화면 문구 기준 (AST 전역 스캔)", () => {
     // 실패하면: fresh = 새 위반(문구를 고친다 — 기준은 product-ux.md 「화면 문구 기준」),
     //          stale = 이미 고쳐진 기준 목록 줄(BASELINE 에서 지운다).
     expect({ fresh, stale }).toEqual({ fresh: [], stale: [] });
+  });
+});
+
+describe("MONEY_TERM_ALIASES 타입 가드", () => {
+  it("별칭 값에 없는 키는 컴파일 단계에서 거부된다(typecheck 가 판정)", () => {
+    // @ts-expect-error — "notAKey" 는 MONEY_TERMS 의 키가 아니다. 이 줄이 에러가 아니게 되면 키 타입이 string 으로 퍼진 것이다.
+    const bad: (typeof MONEY_TERM_ALIASES)[string] = "notAKey";
+    expect(bad).toBe("notAKey");
+    const good: (typeof MONEY_TERM_ALIASES)[string] = "grossMerchandise";
+    expect(good).toBe("grossMerchandise");
   });
 });

@@ -159,7 +159,7 @@ function isActivePath(pathname: string, href: string) {
  * 아이콘·라벨을 품는다. 둘 다 상수라 갈라질 수 없다.
  */
 const SIDEBAR_ROW_CLASS =
-  "h-10 gap-3 rounded-lg pl-[15px] pr-3 text-[13px] text-sidebar-foreground/65 transition-[color,background-color,box-shadow,padding] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground " +
+  "h-10 gap-3 rounded-lg pl-[15px] pr-3 text-[13px] text-sidebar-foreground transition-[color,background-color,box-shadow,padding] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground " +
   "group-data-[collapsible=icon]:!w-full group-data-[collapsible=icon]:!h-10 group-data-[collapsible=icon]:!px-0 group-data-[collapsible=icon]:!pl-[15px] group-data-[collapsible=icon]:gap-0";
 
 /** active 오버라이드의 `!` 는 Tailwind v4 `:where()` 특이성 0 의 의도적 해법이다(P8 가드레일 5) — 지우지 말 것. */
@@ -267,9 +267,9 @@ export function CrmSidebar() {
             ) : (
               <BrandMark
                 title="WAG CRM"
-                // 마크는 단색(currentColor)이라 text-* 가 곧 마크 색이다. 골드를 쓰는 건
-                // 이 자리가 원래 골드 solid 칩이었기 때문이다 — 사이드바의 브랜드 앵커
-                // 색을 유지한다. 사이드바 네이비 #08314E 위 골드 6.40:1(3:1 통과).
+                // 마크는 단색(currentColor)이라 text-* 가 곧 마크 색이다. 사이드바가 밝은
+                // 면(#F5F7F8)으로 바뀌어 흰 brand-mark(1.07:1)는 못 얹는다 — 앵커 청록
+                // (--sidebar-primary #0F5F67)을 쓴다. 밝은 사이드바 위 6.85:1(3:1 통과).
                 className="size-9 text-sidebar-primary"
               />
             )}
@@ -278,7 +278,7 @@ export function CrmSidebar() {
             // 8(left) + 36(아이콘) + 8(간격). 아이콘 슬롯 폭과 함께 움직여야 한다.
             "pl-[52px] truncate transition-[opacity,width,height,color,font-size,font-weight,letter-spacing] duration-150 ease-in-out whitespace-nowrap inline-block",
             isPrivacyMode 
-              ? "text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/50"
+              ? "text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground"
               : "text-[15px] font-bold tracking-tight text-sidebar-foreground",
             "group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:h-0 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:pointer-events-none"
           )}>
@@ -295,7 +295,7 @@ export function CrmSidebar() {
             {section.label ? (
             <SidebarGroupLabel
               className={cn(
-                "pointer-events-none relative px-[15px] text-[10px] font-semibold tracking-normal text-sidebar-foreground/60",
+                "pointer-events-none relative px-[15px] text-[10px] font-semibold tracking-normal text-sidebar-muted-foreground",
                 // 접힘 모드: 기본 -mt-8/opacity-0(투명 오버레이가 위 항목 클릭 차단)을
                 // 해제하고 같은 h-8 슬롯에 가운데 구분선 렌더 — 아이콘 위치 불변.
                 "group-data-[collapsible=icon]:mt-0 group-data-[collapsible=icon]:opacity-100 group-data-[collapsible=icon]:px-0",

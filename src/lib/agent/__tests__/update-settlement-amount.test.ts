@@ -428,7 +428,7 @@ describe("파생 재계산 — 정본 PATCH 와 같은 함수", () => {
     expect(result.summary).toMatch(/영업이익 175,818원 → /);
   });
 
-  it("총 거래액을 바꾸면 그 값으로 파생이 다시 돈다(품목 행도 같은 tx 에서 읽는다)", async () => {
+  it("총거래액을 바꾸면 그 값으로 파생이 다시 돈다(품목 행도 같은 tx 에서 읽는다)", async () => {
     const row = campaignRow();
     findUniqueMock.mockResolvedValue(row);
 
@@ -443,13 +443,13 @@ describe("파생 재계산 — 정본 PATCH 와 같은 함수", () => {
     expect(dealFindManyMock).toHaveBeenCalledWith({ where: { campaignId: "camp-1" } });
   });
 
-  it("품목이 있는 캠페인의 총 거래액은 고치지 않는다 — 품목 합계가 정본이다", async () => {
+  it("품목이 있는 캠페인의 총거래액은 고치지 않는다 — 품목 합계가 정본이다", async () => {
     findUniqueMock.mockResolvedValue(campaignRow());
     dealCountMock.mockResolvedValue(2);
 
     await expect(
       run({ campaignId: "camp-1", field: "actualSales", expectedCurrentKrw: 1000000, newAmountKrw: 2000000 }),
-    ).rejects.toThrow(/품목이 2개 있는 캠페인의 총 거래액은 품목 합계에서 정해집니다/);
+    ).rejects.toThrow(/품목이 2개 있는 캠페인의 총거래액은 품목 합계에서 정해집니다/);
     expect(dealCountMock).toHaveBeenCalledWith({ where: { campaignId: "camp-1" } });
     expect(updateManyMock).not.toHaveBeenCalled();
   });
@@ -463,7 +463,7 @@ describe("파생 재계산 — 정본 PATCH 와 같은 함수", () => {
 
     await expect(
       run({ campaignId: "camp-1", field: "settlementSales", expectedCurrentKrw: 300000, newAmountKrw: 350000 }),
-    ).rejects.toThrow(/재계산 결과\(999원\)가 승인할 영업 수익 350,000원와 다릅니다/);
+    ).rejects.toThrow(/재계산 결과\(999원\)가 승인할 수수료매출 350,000원와 다릅니다/);
     expect(updateManyMock).not.toHaveBeenCalled();
     expect(recordActivityChangeMock).not.toHaveBeenCalled();
   });
@@ -478,7 +478,7 @@ describe("파생 재계산 — 정본 PATCH 와 같은 함수", () => {
     const result = await run({ campaignId: "camp-1", field: "miscExpense", expectedCurrentKrw: 1000, newAmountKrw: 1000 });
 
     expect(result.summary).toBe(
-      "정산 금액 수정: 기타 조정 비용 1,000원 → 1,000원 · 영업 수익 300,000원 → 310,000원 · " +
+      "정산 금액 수정: 기타 조정 비용 1,000원 → 1,000원 · 수수료매출 300,000원 → 310,000원 · " +
         "공제세액 · 부가세 18,182원 → 19,091원 · 영업이익 175,818원 → 184,909원",
     );
   });

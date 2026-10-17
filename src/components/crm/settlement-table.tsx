@@ -312,9 +312,9 @@ export function SettlementTable({
                       (금액 열 = text-right 헤더 + 우측 정렬 값). 종전 text-center 는
                       좌측 정렬된 배지 위에 헤더만 가운데 떠 있어 이탈값이었다. */}
                   <th className="px-2 py-3">계산서</th>
-                  <th className="px-2 py-3 text-right">총 거래액</th>
-                  <th className="px-2 py-3 text-right">영업 수익</th>
-                  <th className="px-2 py-3 text-right">판매 대행비</th>
+                  <th className="px-2 py-3 text-right">총거래액</th>
+                  <th className="px-2 py-3 text-right">수수료매출</th>
+                  <th className="px-2 py-3 text-right">셀러지급액</th>
                   <th className="px-2 py-3 text-right">영업이익</th>
                 </tr>
               </thead>

@@ -1,4 +1,5 @@
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { DASHBOARD_SCOPE_CAPTION, DASHBOARD_YTD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 // #152: 홈 정산 카드는 파이프라인 스냅샷이 아닌 전용 경량 스냅샷을 소비한다.
 import type { MobileSettlementCampaign } from "@/lib/mobile-settlement-data";
 import { Card } from "@/components/ui/card";
@@ -51,7 +52,7 @@ export function MobileHomeView({
           <p className="mt-0.5 text-xs text-slate-500">주요 운영 지표 및 달성 현황</p>
         </MobileTopBar>
         {/* 매출 목표 히어로 (Mobile Optimized) */}
-        <Card className="overflow-hidden border-0 bg-[var(--hero-navy,#0f172a)] text-white shadow-soft-lg p-5 flex flex-col">
+        <Card className="overflow-hidden border-0 bg-[var(--hero-deep)] text-white shadow-soft-lg p-5 flex flex-col">
           <div className="space-y-3">
             <div className="flex items-start justify-between">
               <h2 className="text-base font-bold text-white/90">연간 누적</h2>
@@ -62,7 +63,7 @@ export function MobileHomeView({
                 <p className="text-2xl font-bold tabular-nums tracking-tight text-white/90">
                   ₩<AnimatedNumber value={initialData.goals.ytdActual} format="currency" />
                 </p>
-                <p className="text-[10px] tabular-nums text-white/50 mt-0.5">
+                <p className="text-[10px] tabular-nums text-white/60 mt-0.5">
                   목표 {initialData.goals.annualTarget == null ? "미설정" : `₩${formatCurrency(initialData.goals.annualTarget)}`}
                 </p>
               </div>
@@ -76,11 +77,12 @@ export function MobileHomeView({
                 style={{ width: `${goalBarWidth(annualRate)}%` }}
               />
             </div>
+            <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_YTD_SCOPE_CAPTION}</p>
           </div>
 
           <div className="border-t border-white/10 mt-4 pt-4 space-y-3">
             <div className="flex items-start justify-between">
-              <h2 className="text-base font-bold text-white/90">이번 달 매출 ({monthLabel(currentMonthKey)})</h2>
+              <h2 className="text-base font-bold text-white/90">이번 달 거래액 ({monthLabel(currentMonthKey)})</h2>
               <Wallet className="size-4 text-white/30" />
             </div>
             <div className="flex items-baseline justify-between gap-2 pt-1">
@@ -88,7 +90,7 @@ export function MobileHomeView({
                 <p className="text-2xl font-bold tabular-nums tracking-tight">
                   ₩<AnimatedNumber value={initialData.goals.monthActual} format="currency" />
                 </p>
-                <p className="text-[10px] tabular-nums text-white/50 mt-0.5">
+                <p className="text-[10px] tabular-nums text-white/60 mt-0.5">
                   목표 {initialData.goals.monthTarget == null ? "미설정" : `₩${formatCurrency(initialData.goals.monthTarget)}`}
                 </p>
               </div>
@@ -102,6 +104,7 @@ export function MobileHomeView({
                 style={{ width: `${goalBarWidth(monthRate)}%` }}
               />
             </div>
+            <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_SCOPE_CAPTION}</p>
           </div>
         </Card>
 

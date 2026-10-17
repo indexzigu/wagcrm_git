@@ -135,7 +135,7 @@ function MobileOutreachCard({
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <span>총수수료 <span className="font-semibold text-muted-foreground">{task.totalMarginRate}%</span></span>
               <span className="text-border/60">·</span>
-              <span>협의수수료 <span className="font-semibold text-muted-foreground">{task.sellerMarginRate}%</span></span>
+              <span>셀러수수료율(협의) <span className="font-semibold text-muted-foreground">{task.sellerMarginRate}%</span></span>
             </div>
             {elapsedNode}
           </div>

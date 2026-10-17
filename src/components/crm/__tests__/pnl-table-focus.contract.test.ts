@@ -72,6 +72,6 @@ describe("숫자 초점", () => {
   });
 
   it("구성요소와 결과를 헤어라인으로 가른다", () => {
-    expect(PNL).toContain('<TableHead className="border-l text-right">세전 순이익</TableHead>');
+    expect(PNL).toContain('<TableHead className="border-l text-right">영업이익</TableHead>');
   });
 });

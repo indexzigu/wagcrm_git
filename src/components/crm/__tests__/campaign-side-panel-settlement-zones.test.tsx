@@ -140,38 +140,38 @@ describe("재무 카드 — 3구간 재편", () => {
     expect(screen.getByText("셀러 지급 총액")).toBeInTheDocument();
   });
 
-  // 오너 정정 2026-08-27: 「정산 기준액」은 **판매대행비를 계산할 때 곱하는 매출액**을
-  // 가리키는 말인데, 종전 화면은 그 자리에 판매대행비(=곱한 결과)를 그대로 넣어 두 줄이
+  // 오너 정정 2026-08-27: 「정산 기준액」은 **셀러지급액을 계산할 때 곱하는 매출액**을
+  // 가리키는 말인데, 종전 화면은 그 자리에 셀러지급액(=곱한 결과)를 그대로 넣어 두 줄이
   // 같은 숫자였다. 기준은 세무 유형이 가른다(`getSellerPayoutBase`) — 개인은 공급가액,
-  // 사업자는 총 거래액이라, 종전 도움말 「총 거래액 × 셀러수수료율」은 개인 셀러에게
+  // 사업자는 총거래액이라, 종전 도움말 「총거래액 × 셀러수수료율」은 개인 셀러에게
   // 사실이 아니었다.
-  it("정산 기준액은 판매대행비가 아니라 그 계산의 기준 매출액이다 — 개인은 공급가액", () => {
+  it("정산 기준액은 셀러지급액이 아니라 그 계산의 기준 매출액이다 — 개인은 공급가액", () => {
     renderCard();
     const baseRow = screen.getByText("정산 기준액").closest("div.grid");
     expect(baseRow).toBeTruthy();
     // 38,900,000 ÷ 1.1 = 35,363,636 (개인 셀러 = 공급가액 기준)
     expect(baseRow!.textContent).toContain("35,363,636원");
-    // ⛔ 판매대행비(4,668,000)를 다시 보여주지 않는다 — 두 줄이 같은 숫자이던 것이 결함이었다.
+    // ⛔ 셀러지급액(4,668,000)를 다시 보여주지 않는다 — 두 줄이 같은 숫자이던 것이 결함이었다.
     expect(baseRow!.textContent).not.toContain("4,668,000원");
     // 오너 지시 2026-08-28: 설명 서브텍스트는 줄 아래 상시 표시가 아니라 눌러서 본다.
     expect(baseRow!.textContent).not.toContain("공급가액");
-    expect(baseRow!.textContent).not.toContain("총 거래액 × 셀러수수료율");
+    expect(baseRow!.textContent).not.toContain("총거래액 × 셀러수수료율");
     expect(screen.getByRole("button", { name: "정산 기준액 설명" })).toBeInTheDocument();
   });
 
   it("설명을 누르면 기준의 이름과 「고정」의 뜻이 나온다", async () => {
     renderCard();
     fireEvent.click(screen.getByRole("button", { name: "정산 기준액 설명" }));
-    expect(await screen.findByText(/공급가액\(총 거래액 ÷ 1\.1\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/공급가액\(총거래액 ÷ 1\.1\)/)).toBeInTheDocument();
     expect(screen.getByText(/부가 항목 무관/)).toBeInTheDocument();
   });
 
-  it("사업자 셀러의 기준 매출액은 총 거래액이다", () => {
+  it("사업자 셀러의 기준 매출액은 총거래액이다", () => {
     renderCard({ sellerTaxType: "BUSINESS", sellerCompanyBusinessNumber: "123-45-67890" });
     const baseRow = screen.getByText("정산 기준액").closest("div.grid");
     expect(baseRow!.textContent).toContain("38,900,000원");
-    // 기준의 이름(총 거래액/공급가액)은 설명 팝업 안에 있고 줄에는 금액만 남는다.
-    expect(baseRow!.textContent).not.toContain("총 거래액");
+    // 기준의 이름(총거래액/공급가액)은 설명 팝업 안에 있고 줄에는 금액만 남는다.
+    expect(baseRow!.textContent).not.toContain("총거래액");
   });
 
   // 오너 지시 2026-08-27: 「주고받을」은 방향을 뭉갠다 — 돈이 나가는지 들어오는지를
@@ -184,7 +184,7 @@ describe("재무 카드 — 3구간 재편", () => {
   });
 
   it("브랜드몰은 받는 쪽이라 라벨이 뒤집힌다", () => {
-    // 브랜드몰은 우리가 브랜드사에 청구서를 발행하고 영업수익을 받는다.
+    // 브랜드몰은 우리가 브랜드사에 청구서를 발행하고 수수료매출을 받는다.
     renderCard({ salesChannel: "BRAND_MALL", settlementItems: [] });
     expect(screen.getByText("브랜드사에서 받을 총액")).toBeInTheDocument();
     expect(screen.queryByText("브랜드사에 지급할 총액")).not.toBeInTheDocument();
@@ -193,8 +193,9 @@ describe("재무 카드 — 3구간 재편", () => {
   it("영업이익 라벨 충돌이 해소됐다 — 중간값은 매출총이익이다", () => {
     renderCard();
     expect(screen.getByText("매출총이익")).toBeInTheDocument();
-    // 최종 영업이익은 그대로 하나만 남는다(같은 이름의 다른 숫자가 둘이면 오독한다).
-    expect(screen.getAllByText("영업이익")).toHaveLength(1);
+    // 「영업이익」은 상단 타일과 하단 합계 줄 둘뿐이고 같은 숫자다(2026-10-17 타일 이름 「영업이익 (자사 순수익)」
+    // → 「영업이익」 통일). 같은 이름의 **다른** 숫자가 생기면 오독하니 개수를 고정한다.
+    expect(screen.getAllByText("영업이익")).toHaveLength(2);
   });
 });
 
@@ -272,7 +273,7 @@ describe("자사 손익 — 공제세액 묶음(부가세 차감 · 원천세 �
     const row = lineOf("공제세액 · 원천세");
     expect(row.textContent).toContain("참고");
     expect(row.querySelector(".text-money-out")).toBeNull();
-    const sellerZoneRow = lineOf("원천세 3.3% (판매대행비 + 부가 항목 합산)");
+    const sellerZoneRow = lineOf("원천세 3.3% (셀러지급액 + 부가 항목 합산)");
     const amount = (el: HTMLElement) => el.textContent!.match(/[\d,]+원/)![0];
     expect(amount(row)).toBe(amount(sellerZoneRow));
   });
@@ -311,7 +312,7 @@ describe("정산 기준액 — 자동/수동", () => {
     expect(screen.queryByText("고정")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "정산 기준액 설명" }));
     expect(
-      await screen.findByText("직접 입력한 금액입니다. 판매대행비는 이 금액 × 셀러 수수료율로 계산됩니다."),
+      await screen.findByText("직접 입력한 금액입니다. 셀러지급액은 이 금액 × 셀러수수료율로 계산됩니다."),
     ).toBeInTheDocument();
   });
 
@@ -321,7 +322,7 @@ describe("정산 기준액 — 자동/수동", () => {
     expect(baseRow!.textContent).not.toContain("30,000,000원");
     expect(screen.getByText("고정")).toBeInTheDocument();
     expect(
-      screen.getByText("품목별 수수료율이 달라져 이 기준액은 적용되지 않습니다. 자동으로 돌리거나 판매대행비를 수동 입력하세요."),
+      screen.getByText("품목별 수수료율이 달라져 이 기준액은 적용되지 않습니다. 자동으로 돌리거나 셀러지급액을 수동 입력하세요."),
     ).toBeInTheDocument();
   });
 
@@ -336,18 +337,18 @@ describe("정산 기준액 — 자동/수동", () => {
     expect(modeButton("정산 기준액", "수동").getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("편집: 수동 기준액을 입력하면 판매대행비·지급 총액·매출총이익·상단 타일이 바로 따라오고 곱셈 한 줄이 보인다", async () => {
+  it("편집: 수동 기준액을 입력하면 셀러지급액·지급 총액·매출총이익·상단 타일이 바로 따라오고 곱셈 한 줄이 보인다", async () => {
     renderCard();
     fireEvent.click(await enabledEditButton());
     fireEvent.click(modeButton("정산 기준액", "수동"));
     fireEvent.change(screen.getByLabelText("정산 기준액"), { target: { value: "30000000" } });
 
-    // 판매대행비 = round(30,000,000 × 12%) = 3,600,000
-    expect((screen.getByLabelText("판매대행비") as HTMLInputElement).value).toBe("3600000");
-    expect(screen.getByText(/판매대행비 = 기준액 × 12% =\s*3,600,000원/)).toBeInTheDocument();
-    // 매출총이익 = 영업수익 8,947,000 − 3,600,000
+    // 셀러지급액 = round(30,000,000 × 12%) = 3,600,000
+    expect((screen.getByLabelText("셀러지급액") as HTMLInputElement).value).toBe("3600000");
+    expect(screen.getByText(/셀러지급액 = 기준액 × 12% =\s*3,600,000원/)).toBeInTheDocument();
+    // 매출총이익 = 수수료매출 8,947,000 − 3,600,000
     expect((screen.getByLabelText("매출총이익") as HTMLInputElement).value).toBe(String(8_947_000 - 3_600_000));
-    // 셀러 지급 총액은 lib SSOT 계산 — 판매대행비가 바뀌면 같이 바뀐다(원천세 합산 공제 후).
+    // 셀러 지급 총액은 lib SSOT 계산 — 셀러지급액이 바뀌면 같이 바뀐다(원천세 합산 공제 후).
     const payout = Number((screen.getByLabelText("셀러 지급 총액") as HTMLInputElement).value);
     expect(payout).toBeLessThan(3_600_000 + 550_000);
     expect(payout).toBeGreaterThan(3_000_000);
@@ -385,25 +386,25 @@ describe("정산 기준액 — 자동/수동", () => {
     expect(body.sellerFeeBasisOverride).toBe(0);
   });
 
-  it("편집: 적용 중이던 기준액을 자동으로 되돌리면 판매대행비 미리보기가 자동 기준액으로 바로 바뀐다(F2)", async () => {
-    // 저장 판매대행비 4,668,000 은 기준액 기반 값이라 자동으로 되돌리면 낡은 값이다.
+  it("편집: 적용 중이던 기준액을 자동으로 되돌리면 셀러지급액 미리보기가 자동 기준액으로 바로 바뀐다(F2)", async () => {
+    // 저장 셀러지급액 4,668,000 은 기준액 기반 값이라 자동으로 되돌리면 낡은 값이다.
     renderCard({ sellerFeeBasisOverride: 30_000_000 });
     fireEvent.click(await enabledEditButton());
     fireEvent.click(modeButton("정산 기준액", "자동"));
     // 자동 기준(개인 공급가액) round(38,900,000/1.1) × 12%
-    expect((screen.getByLabelText("판매대행비") as HTMLInputElement).value).toBe(
+    expect((screen.getByLabelText("셀러지급액") as HTMLInputElement).value).toBe(
       String(Math.round((Math.round(38_900_000 / 1.1) * 12) / 100)),
     );
   });
 
-  it("편집: 품목별 셀러 수수료율이 다르면 「수동」은 aria-disabled + 이유 문단을 가리키고 클릭이 막힌다", async () => {
+  it("편집: 품목별 셀러수수료율이 다르면 「수동」은 aria-disabled + 이유 문단을 가리키고 클릭이 막힌다", async () => {
     renderCard({ campaignDeals: MIXED_DEALS });
     fireEvent.click(await enabledEditButton());
     const manual = modeButton("정산 기준액", "수동");
     expect(manual.getAttribute("aria-disabled")).toBe("true");
     expect(manual.hasAttribute("disabled")).toBe(false);
     const reason = document.getElementById(manual.getAttribute("aria-describedby")!);
-    expect(reason?.textContent).toMatch(/품목마다 셀러 수수료율이 달라 정산 기준액을 직접 입력할 수 없습니다/);
+    expect(reason?.textContent).toMatch(/품목마다 셀러수수료율이 달라 정산 기준액을 직접 입력할 수 없습니다/);
     fireEvent.click(manual);
     expect((screen.getByLabelText("정산 기준액") as HTMLInputElement).readOnly).toBe(true);
   });

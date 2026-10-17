@@ -38,6 +38,7 @@ import { SystemRadarCard } from "./system-radar-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
 import { OrderWorkCard } from "./order-work-card";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
+import { DASHBOARD_SCOPE_CAPTION, DASHBOARD_YTD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
   resolveGoalBand,
@@ -59,9 +60,9 @@ import { badgeSizeClassName } from "@/components/ui/badge";
 
 // WAG CRM 팔레트 스펙(오너 승인, 2026-07-09) — 차트라인/기준선 하드코딩 색 → 토큰 수렴
 const chartConfig = {
-  revenue: { label: "실제 매출", color: "var(--chart-1)" },
-  expectedMargin: { label: "예상 순마진", color: "var(--chart-4)" },
-  goal: { label: "월 목표", color: "var(--muted-foreground)" },
+  revenue: { label: "총거래액", color: "var(--chart-1)" },
+  expectedMargin: { label: "매출총이익", color: "var(--chart-4)" },
+  goal: { label: "거래액 목표", color: "var(--muted-foreground)" },
 } satisfies ChartConfig;
 
 // 6개월 차트 전용 툴팁 — 목표 매출 제외(오너 피드백 2026-07-10), 매출·순마진 + 파생 마진율만.
@@ -89,7 +90,7 @@ function TrendTooltip({
         <div className="flex items-center justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--chart-1)" }} />
-            매출
+            총거래액
           </span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{formatCurrency(revenue)}</span>
         </div>
@@ -98,14 +99,14 @@ function TrendTooltip({
         <div className="flex items-center justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--chart-4)" }} />
-            순마진
+            매출총이익
           </span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{formatCurrency(margin)}</span>
         </div>
       )}
       {marginRate != null && (
         <div className="flex items-center justify-between gap-4 py-0.5 mt-0.5 border-t border-slate-100 pt-1">
-          <span className="text-muted-foreground">마진율</span>
+          <span className="text-muted-foreground">매출총이익률</span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{marginRate.toFixed(1)}%</span>
         </div>
       )}
@@ -203,8 +204,8 @@ const SPARK_FOCUS_MONTHS = 3;
 // "6개월 중 최근 3개월을 위 표로 펼친 것"이라는 관계를 화면에 명시한다(오너 결정 2026-07-15, B안).
 //
 // 가드레일 두 가지:
-// 1. 색은 2단계뿐 — 중립 회색(--chart-5, 맥락) + 네이비(--chart-1, 강조는 불투명도로만 2단).
-//    --chart-2는 쓰지 않는다: 같은 화면의 6개월 대형 차트에서 그 파랑은 이미 "매출 vs 순마진"의
+// 1. 색은 2단계뿐 — 중립 회색(--chart-5, 맥락) + 앵커 틸(--chart-1, 강조는 불투명도로만 2단).
+//    --chart-2는 쓰지 않는다: 같은 화면의 6개월 대형 차트에서 그 중간 틸은 이미 "매출 vs 순마진"의
 //    계열 구분 의미를 갖고 있어, 여기서 "시간적 근접"에 재사용하면 한 스와치가 두 의미를 갖는다.
 // 2. Y축 눈금·그리드라인 금지 — max가 카드마다 독립 정규화라 카드 간 막대 높이 비교는 무의미하다.
 //    눈금이 붙는 순간 "정밀 판독 가능한 계기판"으로 보여 그 비교를 유도한다. 이건 계기판이 아니라
@@ -857,7 +858,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
 
   return (
     <CrmShell>
-      <main className="min-h-full bg-[radial-gradient(circle_at_top_right,_rgba(10,61,98,0.07),_transparent_30%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] px-5 pb-5 pt-5 md:px-8">
+      <main className="min-h-full bg-[radial-gradient(circle_at_top_right,_rgba(15,95,103,0.07),_transparent_30%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] px-5 pb-5 pt-5 md:px-8">
         <div className="space-y-6">
           {/* 밴드 -1: 오늘 처리할 주문(발주 자동화 1단계, 오너 승인 2026-10-06) — 그날 손이 가야 하는
               주문 일(발주 대기·배송 지연·진행 중 클레임)이라 매출·일정보다 먼저 읽힌다. 일이 없으면 한 줄로
@@ -888,7 +889,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               }}
             />
             <MetricCard
-              label="예상 순마진"
+              label="매출총이익"
               value={formatCurrency(initialData.profitability.expectedMargin)}
               prevValue={formatCurrency(initialData.profitability.prevExpectedMargin)}
               prevPrevValue={formatCurrency(initialData.profitability.prevPrevExpectedMargin)}
@@ -932,8 +933,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                       {/* 트랙 = 전체폭 기준선이라 빈 구간이 보여야 비율이 읽힌다(오너 2026-10-06: slate-100 은 흰 카드
                           대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
                           약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
-                          올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 네이비의 농도 사다리
-                          (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 파랑은 6개월 대형 차트의 계열
+                          올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 앵커 틸의 농도 사다리
+                          (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 6개월 대형 차트의 계열
                           구분 의미라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
                       <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
                         {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
@@ -973,7 +974,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   label: "최근 6개월",
                   render: () => (
                     <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground">매출·예상 순마진 추이 및 목표 대비 달성</p>
+                      <p className="mb-2 text-[11px] text-muted-foreground">총거래액·매출총이익 추이 및 목표 대비 달성</p>
                       {/* 오너 피드백 2026-07-10: 하단 안개 제거, 순마진은 나란한 막대, 툴팁은 매출·순마진·마진율만 */}
                       <div className="flex-1 flex items-center justify-center">
                         <ChartContainer config={chartConfig} className="h-[262px] w-full">
@@ -995,10 +996,10 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 },
                 {
                   key: "annual",
-                  label: "연간 매출",
+                  label: "연간 거래액",
                   render: () => (
                     <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground">{year}년 월별 매출 · 예상 순마진{initialData.yearlyTrend.some((t) => t.goal != null) ? " · 점선 = 월 목표" : ""}</p>
+                      <p className="mb-2 text-[11px] text-muted-foreground">{year}년 월별 총거래액 · 매출총이익{initialData.yearlyTrend.some((t) => t.goal != null) ? " · 점선 = 거래액 목표" : ""}</p>
                       <div className="flex-1 flex items-center justify-center">
                         {/* 6개월 추이와 동일 구성(매출·순마진 막대 + 목표선) + 공통 Y축 domain 으로 틀 고정 */}
                         <ChartContainer config={chartConfig} className="h-[262px] w-full">
@@ -1019,8 +1020,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               ]}
             />
 
-            {/* 매출 목표 히어로 — 우측 (A안 수직 스택). WAG 팔레트: --hero-navy 토큰, 공유 elevation(shadow-soft-lg) */}
-            <Card className="overflow-hidden border-0 bg-[var(--hero-navy)] text-white shadow-soft-lg px-6 py-3 flex flex-col h-full min-h-[312px]">
+            {/* 매출 목표 히어로 — 우측 (A안 수직 스택). WAG 팔레트: --hero-deep 토큰, 공유 elevation(shadow-soft-lg) */}
+            <Card className="overflow-hidden border-0 bg-[var(--hero-deep)] text-white shadow-soft-lg px-6 py-3 flex flex-col h-full min-h-[312px]">
               {/* 1. 연간 누적 (위) */}
               <div className="space-y-3">
                 <div className="flex items-start justify-between">
@@ -1037,7 +1038,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                         <p className="text-2xl font-bold tracking-tight text-white/90">
                           <AnimatedNumber value={currentYtd} format="currency" />
                         </p>
-                        <p className="text-[10px] text-white/50">
+                        <p className="text-[10px] text-white/60">
                           연 목표 {initialData.goals.annualTarget == null ? "미설정" : formatCurrency(initialData.goals.annualTarget)}
                         </p>
                       </div>
@@ -1068,16 +1069,17 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   })}
                 </div>
                 <p className="text-[10px] text-white/80 leading-none">{annualActionHint(annualRate, initialData.goals.annualTarget != null)}</p>
+                <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_YTD_SCOPE_CAPTION}</p>
               </div>
 
               {/* 구분선 및 이번 달 매출 (아래) */}
               <div className="border-t border-white/10 mt-4 pt-4 space-y-3">
                 <div className="flex items-start justify-between">
-                  <h2 className="text-lg font-bold">이번 달 매출</h2>
+                  <h2 className="text-lg font-bold">이번 달 거래액</h2>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Link href="/settings/operations?section=goals" aria-label="매출 목표 설정" className="rounded-full bg-white/10 p-1 text-white/80 hover:bg-white/20">
+                        <Link href="/settings/operations?section=goals" aria-label="거래액 목표 설정" className="rounded-full bg-white/10 p-1 text-white/80 hover:bg-white/20">
                           <Settings2 className="size-3" aria-hidden="true" />
                         </Link>
                       </TooltipTrigger>
@@ -1094,7 +1096,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                       <p className="text-2xl font-bold tracking-tight">
                         <AnimatedNumber value={initialData.goals.monthActual} format="currency" />
                       </p>
-                      <p className="text-[10px] text-white/50">목표 {initialData.goals.monthTarget == null ? "미설정" : formatCurrency(initialData.goals.monthTarget)}</p>
+                      <p className="text-[10px] text-white/60">목표 {initialData.goals.monthTarget == null ? "미설정" : formatCurrency(initialData.goals.monthTarget)}</p>
                     </div>
                   </div>
                   <p className={`text-2xl font-bold ${monthBandClass}`}>
@@ -1110,6 +1112,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   <div className={`h-full rounded-full animate-grow-x ${monthFillClass}`} style={{ width: `${goalBarWidth(monthRate)}%` }} />
                 </div>
                 <p className="text-[10px] text-white/80 leading-none">{monthlyActionHint(monthRate, initialData.goals.monthTarget != null)}</p>
+
+                <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_SCOPE_CAPTION}</p>
 
                 {/* 이전 누적 추이 행 (5월, 4월) */}
                 <div className="space-y-2.5 pt-1">

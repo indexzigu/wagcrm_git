@@ -10,7 +10,7 @@ describe("record-update-labels", () => {
 
   it("칸 이름 — 캠페인은 캠페인 표, 나머지는 감사 기록 표, 없으면 칸 이름 그대로", () => {
     expect(recordFieldLabel("CAMPAIGN", "salesChannel")).toBe("판매 채널");
-    expect(recordFieldLabel("CAMPAIGN", "settlementSales")).toBe("영업 수익");
+    expect(recordFieldLabel("CAMPAIGN", "settlementSales")).toBe("수수료매출");
     expect(recordFieldLabel("DEAL", "sellingPrice")).toBe("판매가");
     expect(recordFieldLabel("SELLER", "unknownFieldX")).toBe("unknownFieldX");
   });

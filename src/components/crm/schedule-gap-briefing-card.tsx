@@ -11,7 +11,7 @@ import type { ScheduleGapBriefing, BucketUrgency } from "@/lib/schedule-gap-brie
 
 // ── 스타일 매핑 ─────────────────────────────────────────────
 // PALETTE_IMPL_SPEC.md (오너 승인, 2026-07-09): DANGER/URGENT/CAUTION은 원래 서로 다른
-// 3개 주황(#B8662D/#C97A40/#E7A567)이 뒤섞여 있었고(예: CAUTION의 tagText가 DANGER의
+// 3개 주황(#B8662D/#C97A40 와 구 골드)이 뒤섞여 있었고(예: CAUTION의 tagText가 DANGER의
 // 원색을, textColor가 URGENT의 원색을 빌려 씀) — "3개의 무관한 주황"을 하나의
 // amber/red 상태 그라데이션으로 수렴: DANGER→urgent, URGENT→pending, CAUTION→caution.
 // 각 티어는 이제 자기 자신의 토큰 하나만 사용(하위 5개 속성 전부).

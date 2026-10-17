@@ -32,8 +32,11 @@
  *    잘린 창 안에서 심볼이 더 크게 보인다. SAFE_ZONE_RATIO 로 배율을 낮춰 광학 크기를 맞춘다.
  *    "같은 그림 두 개"로 보고 통합하면 조용히 깨진다.
  *
- * ⚠️ 꼬리 밑변 비율: 아래 path 의 꼬리 밑변(244~316 = 72)이 본체 폭(140~372 = 232)의 31.0% 다.
- *    31% 미만이면 말풍선이 아니라 지도핀으로 읽힌다 — path 를 만지면 이 비율부터 확인할 것.
+ * 마크 도형 = 말풍선 + 막대 3개. 현행 마크는 2026-07-22 로고 교체로 정해졌다
+ * (`docs/agents/design-system.md` §7). 도형 path 는 `src/components/brand/brand-mark.tsx` 와
+ * 글자 단위로 같아야 한다 — `brand-mark-contract.test.ts` 는 brand-mark.tsx 와 생성물
+ * src/app/icon.svg 만 비교한다(이 스크립트의 path 는 보지 않는다). 그래서 여기 도형을 바꾸면
+ * 스크립트를 돌려 icon.svg 를 재생성해야 계약이 드리프트를 잡는다.
  */
 import sharp from "sharp";
 import { writeFileSync } from "node:fs";
@@ -44,34 +47,40 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // ── 아트 파라미터 (여기만 고친다) ────────────────────────────────────────────
 /**
- * 오너 확정 2026-07-15 "C · 네이비 반전".
+ * 청록 앵커 타일 + 흰 마크·굵은 선 (Apple UI 갱신 번들 0, 오너 선택 2026-10-17 — 연청록 마크는 대비 4.90 이라 작은 크기에서 흐렸다).
  *
- * 이전(#179)은 오프화이트 배경 + ink 심볼이었다. 실기기에서 "뿌옇게 보인다"는 지적이 나왔고
- * 실측으로 원인이 확인됐다: 타일의 83% 가 거의 흰 빈 면이라 **밝은 배경화면 위에서 타일 경계가
- * 사라진다**(파일 자체는 선명했다 — 엣지 전이폭 2.00px, 알파 완전 불투명). 심볼만 키우는 안(B)은
- * 잉크 부족만 고치고 창백한 배경은 그대로라 근본 해결이 아니었다. 배경을 브랜드 네이비로
- * 반전해 타일이 배경과 분리되게 한다.
- *
- * 부수 효과(의도): 다크 탭에서 흰 블록이 번쩍이던 기존 트레이드오프(오너가 고지받고 채택했던 것)가
- * 같이 해소된다 — 이제 다크 탭에선 네이비 블록이 가라앉고 밝은 심볼이 형태를 만든다.
+ * 타일 색은 `globals.css` `--primary`(청록 앵커)와 같고, manifest `background_color` 와도
+ * 같아야 한다(두 곳이 어긋나면 PWA 스플래시 솔기가 생긴다). 마크 색은 `--brand-mark` 토큰과
+ * 같은 값이다. 값을 바꾸면 세 곳(이 파일 · manifest.ts · globals.css)을 함께 맞출 것.
  */
-const BG = "#0A3D62"; // --primary (브랜드 네이비)
-const INK = "#F2F1ED"; // 오프화이트 — 레퍼런스 로고의 그 색을 심볼로 이전
-const SCALE = 1.35; // any 계열 심볼 배율 (#179 는 1.25 — 잉크 17% 로 존재감 부족)
+const BG = "#0F5F67"; // --primary (청록 앵커)
+const INK = "#FFFFFF"; // --brand-mark (흰 마크 — 타일 위 7.36:1)
+/** 말풍선 선 굵기(viewBox 100 기준). brand-mark.tsx 의 strokeWidth 와 같아야 한다 — 16px 탭 아이콘 가독성 때문에 6.5 → 8. */
+const STROKE = 8;
+const SCALE = 1; // any 계열 심볼 배율 (1 = 현행 마크 크기 그대로)
 /** maskable 배율 보정 = 크롭 후 광학 크기를 any 와 맞추는 계수 (안전영역 지름 410/512). */
 const SAFE_ZONE_RATIO = 410 / 512;
+const CORNER_RX = 22; // any 타일 모서리 (viewBox 100 기준). maskable 은 전면 채움이라 0.
 
-/** 말풍선 + 눈 2 + 꼬리. viewBox 512, translate(-256 -265) 는 광학 중심 보정(기하 중심 아님). */
+/** 말풍선 + 막대 3개. brand-mark.tsx 와 같은 path 문자열이어야 한다(계약 테스트). */
+const BUBBLE =
+  "M28 20 H72 A12 12 0 0 1 84 32 V52 A12 12 0 0 1 72 64 H42 L26 78 V64 A12 12 0 0 1 16 52 V32 A12 12 0 0 1 28 20 Z";
+
 const symbol = (scale, ink) => `
-  <g transform="translate(256 256) scale(${scale}) translate(-256 -265)">
-    <path d="M 196 152 H 316 A 56 56 0 0 1 372 208 V 256 A 56 56 0 0 1 316 312 L 298 384 L 244 312 H 196 A 56 56 0 0 1 140 256 V 208 A 56 56 0 0 1 196 152 Z" fill="none" stroke="${ink}" stroke-width="32" stroke-linejoin="miter" stroke-miterlimit="4"/>
-    <circle cx="214" cy="224" r="22" fill="${ink}"/>
-    <circle cx="298" cy="224" r="22" fill="${ink}"/>
+  <g transform="translate(50 50) scale(${scale}) translate(-50 -50)">
+    <g transform="translate(5 6) scale(0.9)">
+      <path d="${BUBBLE}" fill="none" stroke="${ink}" stroke-width="${STROKE}" stroke-linejoin="round"/>
+      <g fill="${ink}">
+        <rect x="35" y="44" width="7" height="10" rx="2"/>
+        <rect x="46" y="37" width="7" height="17" rx="2"/>
+        <rect x="57" y="30" width="7" height="24" rx="2"/>
+      </g>
+    </g>
   </g>`;
 
-const svgFor = (scale) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" fill="${BG}"/>${symbol(scale, INK)}
+const svgFor = (scale, rx = CORNER_RX) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="${rx}" fill="${BG}"/>${symbol(scale, INK)}
 </svg>
 `;
 
@@ -105,8 +114,8 @@ function buildIco(pngs) {
 }
 
 // ── 생성 ─────────────────────────────────────────────────────────────────────
-const raster = (scale, size) =>
-  sharp(Buffer.from(svgFor(scale))).resize(size, size).png({ compressionLevel: 9 }).toBuffer();
+const raster = (scale, size, rx) =>
+  sharp(Buffer.from(svgFor(scale, rx))).resize(size, size).png({ compressionLevel: 9 }).toBuffer();
 
 const out = [];
 async function emit(relPath, buf) {
@@ -122,7 +131,7 @@ out.push(`  src/app/icon.svg${" ".repeat(17)}${String(Buffer.byteLength(anySvg))
 await emit("src/app/apple-icon.png", await raster(SCALE, 180));
 await emit("public/icon-192.png", await raster(SCALE, 192));
 await emit("public/icon-512.png", await raster(SCALE, 512));
-await emit("public/icon-maskable-512.png", await raster(SCALE * SAFE_ZONE_RATIO, 512));
+await emit("public/icon-maskable-512.png", await raster(SCALE * SAFE_ZONE_RATIO, 512, 0));
 
 const icoSizes = [16, 32, 48];
 const icoPngs = [];

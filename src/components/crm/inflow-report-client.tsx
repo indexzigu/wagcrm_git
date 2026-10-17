@@ -117,7 +117,7 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
                 )}
               </div>
               <p className="text-sm text-muted-foreground">
-                셀러에게 준 단축링크의 유입을 봅니다. 정산이 확정되면 매출과 순이익이 같은 표에
+                셀러에게 준 단축링크의 유입을 봅니다. 정산이 확정되면 수수료매출과 영업이익이 같은 표에
                 붙습니다.
               </p>
             </div>
@@ -162,8 +162,8 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
                         <TableHead>기간</TableHead>
                         <TableHead className="text-right">클릭</TableHead>
                         <TableHead className="text-right">직전 회차 대비</TableHead>
-                        <TableHead className="text-right">클릭당 매출</TableHead>
-                        <TableHead className="text-right">클릭당 순이익</TableHead>
+                        <TableHead className="text-right">클릭당 수수료매출</TableHead>
+                        <TableHead className="text-right">클릭당 영업이익</TableHead>
                         <TableHead className="text-right">마지막 클릭</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -244,7 +244,7 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
 }
 
 /**
- * 원 단위 금액 — 값이 없으면 **"정산 대기"**로 표기한다.
+ * 원 단위 금액 — 값이 없으면 **"—"**로 표기한다.
  *
  * 0 으로 접지 말 것. 리포트는 시차를 담는 물건이라(오너 2026-07-31) "아직 정산 전"과
  * "정산했는데 0원"은 전혀 다른 상태이고, 0 으로 뭉개면 그 구분이 사라진다.
@@ -254,7 +254,7 @@ function Money({ value, tone = false }: { value: number | null; tone?: boolean }
     // 대비 하한 준수 — P8 데이터 그리드 3단 사다리가 소극 상태의 하한을 slate-500 으로
     // 못박았고, 같은 표의 보조 셀(기간·마지막 클릭)이 이미 이 처리를 쓴다. slate-400 은
     // 흰 카드에서 2.57:1 로 AA 미달이다.
-    return <span className="text-xs text-muted-foreground">정산대기</span>;
+    return <span className="text-xs text-muted-foreground">—</span>;
   }
   // ⚠️ 손익 판정색은 **부호가 뒤집힐 수 있는 값**에만 얹는다(P8: 색은 주의가 필요한
   // 소수에만). 매출은 항상 양수라 색을 주면 늘 초록이고, 그건 정보가 없는 장식이 된다.
@@ -512,16 +512,16 @@ function SettlementSection({ link }: { link: InflowLinkRow | null }) {
       <h3 className="text-sm font-semibold text-foreground">정산</h3>
       {link.sales === null ? (
         <p className="rounded-lg border border-dashed bg-slate-50/50 px-3 py-4 text-center text-xs text-muted-foreground">
-          아직 정산 전입니다. 확정되면 매출과 순이익이 여기 붙습니다.
+          아직 정산 전입니다. 확정되면 수수료매출과 영업이익이 여기 붙습니다.
         </p>
       ) : (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-3 text-xs">
-          <SettlementRow label="확정 매출" value={link.sales} />
-          <SettlementRow label="클릭당 매출" value={link.revenuePerClick} />
-          <SettlementRow label="셀러 지급액" value={link.sellerExpense} />
+          <SettlementRow label="수수료매출" value={link.sales} />
+          <SettlementRow label="클릭당 수수료매출" value={link.revenuePerClick} />
+          <SettlementRow label="셀러지급액" value={link.sellerExpense} />
           <SettlementRow label="클릭당 셀러비용" value={link.costPerClick} />
           <SettlementRow label="영업이익" value={link.operatingProfit} tone />
-          <SettlementRow label="클릭당 순이익" value={link.profitPerClick} tone />
+          <SettlementRow label="클릭당 영업이익" value={link.profitPerClick} tone />
         </dl>
       )}
       {link.quantity !== null && (

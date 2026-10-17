@@ -244,7 +244,7 @@ function getCampaignDisplayName(campaign: PnlCampaignRecord): string {
 
 function getMissingCostFields(campaign: PnlCampaignRecord): string[] {
   const fields: Array<[string, DecimalLike]> = [
-    ["셀러 지급액", campaign.sellerExpense],
+    ["셀러지급액", campaign.sellerExpense],
     ["공제세액", campaign.taxExpense],
     ["운영비", campaign.operatingExpense],
     ["기타비용", campaign.miscExpense],
@@ -464,17 +464,17 @@ export function buildPnlReportModel(
     priorYearReference,
     totals: roundedTotals,
     bridge: [
-      { label: "총 상품매출", amount: roundedTotals.grossSales },
-      { label: "수수료 매출", amount: roundedTotals.commissionRevenue },
-      { label: "셀러 지급", amount: -roundedTotals.sellerPayout },
+      { label: "총거래액", amount: roundedTotals.grossSales },
+      { label: "수수료매출", amount: roundedTotals.commissionRevenue },
+      { label: "셀러지급액", amount: -roundedTotals.sellerPayout },
       { label: "공제세액", amount: -roundedTotals.deductedTax },
       {
         label: "운영/기타비용",
         amount: -(roundedTotals.operatingExpense + roundedTotals.miscExpense),
       },
-      { label: "세전 이익", amount: roundedTotals.preTaxOperatingProfit },
+      { label: "영업이익", amount: roundedTotals.preTaxOperatingProfit },
       { label: "예상 세금", amount: -roundedTotals.estimatedTotalTax },
-      { label: "세후 이익", amount: roundedTotals.afterTaxOperatingProfit },
+      { label: "당기순이익(추정)", amount: roundedTotals.afterTaxOperatingProfit },
     ],
     monthly: buildMonthlyRows(campaignRows),
     campaigns: campaignRows,

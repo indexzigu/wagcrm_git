@@ -119,14 +119,14 @@ function rateToNumber(value: RateLike): number | null {
 }
 
 export const SELLER_FEE_BASIS_MIXED_RATE_MESSAGE =
-  "품목마다 셀러 수수료율이 달라 정산 기준액을 직접 입력할 수 없습니다. 판매대행비를 수동으로 입력하세요.";
+  "품목마다 셀러수수료율이 달라 정산 기준액을 직접 입력할 수 없습니다. 셀러지급액을 수동으로 입력하세요.";
 
 /** 수동 기준액 입력이 비었거나 숫자가 아니거나 음수일 때(저장 차단). */
 export const SELLER_FEE_BASIS_INPUT_ERROR = "0 이상의 금액을 입력하세요";
 
 /** 기준액이 저장된 뒤 품목 요율이 섞여 자격을 잃은 상태(화면 안내 문구 — 운영자 전용). */
 export const SELLER_FEE_BASIS_STALE_MESSAGE =
-  "품목별 수수료율이 달라져 이 기준액은 적용되지 않습니다. 자동으로 돌리거나 판매대행비를 수동 입력하세요.";
+  "품목별 수수료율이 달라져 이 기준액은 적용되지 않습니다. 자동으로 돌리거나 셀러지급액을 수동 입력하세요.";
 
 export type SellerFeeBasisEligibility =
   | { eligible: true; sellerRate: number }

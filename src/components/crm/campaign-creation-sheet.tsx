@@ -270,7 +270,7 @@ export function CampaignCreationSheet({
                   />
                 </Field>
                 <Field>
-                  <FieldLabel>마감일</FieldLabel>
+                  <FieldLabel>판매종료일</FieldLabel>
                   <Input
                     type="date"
                     value={endDate}

@@ -289,10 +289,10 @@ describe("손익 리포트 수익 구성 막대 — 범주는 심각도·골드�
     expect(end).toBeGreaterThan(start);
   });
 
-  it("세그먼트에 --status-* · --accent-gold 가 없고, 순이익은 PROFIT_TONE_FILL 을 탄다", () => {
+  it("세그먼트에 --status-* · --accent-achieve 가 없고, 순이익은 PROFIT_TONE_FILL 을 탄다", () => {
     const bar = stripped.slice(start, end);
-    expect(bar).not.toMatch(/--status-|--accent-gold/);
-    expect(bar).toMatch(/label: "순이익\(세후\)"[^}]*color: afterTaxProfitFill/);
+    expect(bar).not.toMatch(/--status-|--accent-achieve/);
+    expect(bar).toMatch(/label: "당기순이익\(추정\)"[^}]*color: afterTaxProfitFill/);
     expect(stripped).toMatch(/afterTaxProfitFill\s*=\s*PROFIT_TONE_FILL\[/);
     // 같은 초점 값을 그리는 순이익률 링도 같은 판정을 쓴다(기본값 골드로 떨어지지 않게).
     expect(stripped).toMatch(/<ProgressCircle\s+color=\{afterTaxProfitFill\}/);

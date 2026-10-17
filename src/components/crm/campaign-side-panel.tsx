@@ -865,7 +865,7 @@ export function CampaignSidePanel({
                   </div>
                 </div>
                 <div className="group/date flex items-center justify-between gap-2 rounded-md bg-white border border-slate-100 hover:bg-accent/30 px-3 py-1.5 shadow-soft-sm">
-                  <span className="text-xs font-medium text-slate-600 shrink-0">마감일</span>
+                  <span className="text-xs font-medium text-slate-600 shrink-0">판매종료일</span>
                   <div className="w-28 shrink-0">
                     <InlineDateEdit
                       value={campaign.endDate}
@@ -1027,7 +1027,7 @@ export function CampaignSidePanel({
               <div className="mb-3 text-sm font-semibold text-foreground">정산 및 수수료 설정</div>
               <div className="grid min-h-9 grid-cols-3 gap-3">
                 <label className="grid h-10 min-w-0 grid-cols-[minmax(0,1fr)_72px] items-center gap-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-1 shadow-soft-sm">
-                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">총 수수료율 (%)</div>
+                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">총수수료율 (%)</div>
                   <input
                     type="number"
                     defaultValue={campaign.totalMarginRate ?? 0}
@@ -1039,8 +1039,8 @@ export function CampaignSidePanel({
                         campaign.id,
                         { totalMarginRate: newTotal, netMarginRate: newNet },
                         {
-                          fallbackError: "총 수수료율 저장에 실패했습니다",
-                          networkError: "총 수수료율 저장에 실패했습니다",
+                          fallbackError: "총수수료율 저장에 실패했습니다",
+                          networkError: "총수수료율 저장에 실패했습니다",
                         },
                       );
                       if (!result.ok) {
@@ -1054,7 +1054,7 @@ export function CampaignSidePanel({
                 </label>
 
                 <label className="grid h-10 min-w-0 grid-cols-[minmax(0,1fr)_72px] items-center gap-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-1 shadow-soft-sm">
-                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">셀러 수수료율 (%)</div>
+                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">셀러수수료율 (%)</div>
                   <input
                     type="number"
                     defaultValue={campaign.sellerMarginRate ?? 0}
@@ -1066,8 +1066,8 @@ export function CampaignSidePanel({
                         campaign.id,
                         { sellerMarginRate: newSeller, netMarginRate: newNet },
                         {
-                          fallbackError: "셀러 수수료율 저장에 실패했습니다",
-                          networkError: "셀러 수수료율 저장에 실패했습니다",
+                          fallbackError: "셀러수수료율 저장에 실패했습니다",
+                          networkError: "셀러수수료율 저장에 실패했습니다",
                         },
                       );
                       if (!result.ok) {
@@ -1081,7 +1081,7 @@ export function CampaignSidePanel({
                 </label>
 
                 <div className="grid h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-1 shadow-soft-sm">
-                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">영업이익율 (%)</div>
+                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">순수수료율 (%)</div>
                   <div className="justify-self-end text-right text-sm font-bold text-primary">
                     {campaign.netMarginRate ?? 0}%
                   </div>
@@ -2333,7 +2333,7 @@ function SettlementFinancialSummary({
       <div className="grid grid-cols-2 gap-2">
         {/* 판매대행비 = 실제로 나가는 돈 → 자금 방향축 토큰(값은 rose-600 과 동일 #E11D48) */}
         <div className="flex min-h-9 min-w-0 items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-xs">
-          <div className="min-w-0 truncate text-[11px] font-semibold text-money-out">판매대행비 (셀러 정산금)</div>
+          <div className="min-w-0 truncate text-[11px] font-semibold text-money-out">셀러지급액</div>
           <div className="shrink-0 text-right text-sm tabular-nums text-money-out">
             {formatSettlementMoney(isEditing ? draftSellerExpense : sellerFee)}
           </div>
@@ -2345,7 +2345,7 @@ function SettlementFinancialSummary({
             정렬 대상은 이 파일 아래 원장 하단 요약 박스의 `border-slate-200 bg-slate-50` 이다.
             네이비로 바꾸지 않는 이유: 라벨이 이미 `text-primary` 라 셸까지 네이비면 동어반복. */}
         <div className="flex min-h-9 min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-          <div className="min-w-0 truncate text-[11px] font-semibold text-primary">영업이익 (자사 순수익)</div>
+          <div className="min-w-0 truncate text-[11px] font-semibold text-primary">영업이익</div>
           <div className={cn("shrink-0 text-right text-sm font-bold tabular-nums", summaryProfitTone ? PROFIT_TONE_TEXT[summaryProfitTone] : "text-primary")}>
             {formatSettlementMoney(isEditing ? draftOperatingProfit : operatingProfit)}
           </div>
@@ -2364,7 +2364,7 @@ function SettlementFinancialSummary({
       {isEditing ? (
         <div className="grid gap-2 text-xs">
           <SettlementZoneHeader icon={Building2} title="브랜드사 정산" />
-          <FinancialEditInput label="총 거래액" value={String(grossSales)} readOnly />
+          <FinancialEditInput label="총거래액" value={String(grossSales)} readOnly />
           <FinancialEditInput
             label="공급가액"
             value={draft.settlementSupplyCost}
@@ -2387,12 +2387,12 @@ function SettlementFinancialSummary({
           />
           {/* text-xs = P8 폼 타이포 4단 사다리의 도움말 티어(ss-ux 검토 반영 — 10px 신설 금지) */}
           <p className="px-2 text-xs leading-relaxed text-slate-500">
-            자동은 요율 기반 공식(총 거래액 − 영업 수익) 추정이고, 수동은 이 캠페인 앞으로 온
+            자동은 요율 기반 공식(총거래액 − 수수료매출) 추정이고, 수동은 이 캠페인 앞으로 온
             매입 계산서 합계(VAT 포함)입니다. <span className="font-semibold">0</span>은 다른
             캠페인 계산서에 합산된 건이라는 표시입니다. 손익 계산에는 쓰이지 않습니다.
           </p>
           <FinancialEditInput
-            label="영업 수익"
+            label="수수료매출"
             value={draft.settlementSales}
             readOnly={!draft.isManualSettlementSales}
             mode={draft.isManualSettlementSales ? "수동" : "자동"}
@@ -2417,7 +2417,7 @@ function SettlementFinancialSummary({
             errorId={draftBasisError ? sellerFeeBasisErrorId : undefined}
             manualDisabled={!sellerFeeBasisEligibility.eligible}
             manualDescribedBy={sellerFeeBasisEligibility.eligible ? undefined : sellerFeeBasisReasonId}
-            hint={isDraftBasisManual ? SELLER_FEE_BASIS_MANUAL_LABEL : `판매대행비 기준 · ${autoSellerFeeBasis.label}`}
+            hint={isDraftBasisManual ? SELLER_FEE_BASIS_MANUAL_LABEL : `셀러지급액 기준 · ${autoSellerFeeBasis.label}`}
             onModeChange={(mode) =>
               setDraft((prev) => ({
                 ...prev,
@@ -2447,12 +2447,12 @@ function SettlementFinancialSummary({
           ) : isDraftBasisManual && draftBasisPreviewFee != null ? (
             // 물품대금 도움말과 같은 상시 한 줄 — 입력하는 동안 곱셈 결과를 바로 보인다.
             <p className="px-2 text-xs leading-relaxed text-slate-500">
-              판매대행비 = 기준액 × {sellerFeeBasisEligibility.sellerRate}% ={" "}
+              셀러지급액 = 기준액 × {sellerFeeBasisEligibility.sellerRate}% ={" "}
               {formatSettlementMoney(draftBasisPreviewFee)}
             </p>
           ) : null}
           <FinancialEditInput
-            label="판매대행비"
+            label="셀러지급액"
             value={draft.isManualSellerExpense ? draft.sellerExpense : String(draftSellerExpense)}
             readOnly={!draft.isManualSellerExpense}
             mode={draft.isManualSellerExpense ? "수동" : "자동"}
@@ -2473,7 +2473,7 @@ function SettlementFinancialSummary({
           />
           {isIndividual && (
             <FinancialEditInput
-              label="원천세 3.3% (판매대행비 + 부가 항목 합산)"
+              label="원천세 3.3% (셀러지급액 + 부가 항목 합산)"
               value={String(draftSellerZoneTotals.withholdingTax)}
               readOnly
             />
@@ -2523,7 +2523,7 @@ function SettlementFinancialSummary({
       ) : (
         <div className="grid gap-2 text-xs">
           <SettlementZoneHeader icon={Building2} title="브랜드사 정산" />
-          <FinancialLine label="총 거래액" value={formatSettlementMoney(grossSales)} />
+          <FinancialLine label="총거래액" value={formatSettlementMoney(grossSales)} />
           <FinancialLine label="공급가액" value={formatSettlementMoney(currentSupplyCost)} muted />
           {/* 라벨·값 모두 위 `goodsCost`(SSOT 판정)에서 파생한다 — 여기서 필드를 다시
               보고 3-상태를 유도하면 이 행과 아래 총액이 갈린다(그 드리프트가 실제로 났다). */}
@@ -2541,7 +2541,7 @@ function SettlementFinancialSummary({
             }
             muted
           />
-          <FinancialLine label="영업 수익" value={formatSettlementMoney(grossCommission)} />
+          <FinancialLine label="수수료매출" value={formatSettlementMoney(grossCommission)} />
           {itemsByZone.BRAND.map((item) => (
             <SettlementItemLine key={item.id} item={item} />
           ))}
@@ -2563,13 +2563,13 @@ function SettlementFinancialSummary({
             hint={
               sellerFeeBasis.isManual
                 ? sellerFeeBasis.label
-                : `판매대행비 기준 · ${sellerFeeBasis.label}`
+                : `셀러지급액 기준 · ${sellerFeeBasis.label}`
             }
           />
           {isSellerFeeBasisStale ? (
             <p className="px-2 text-xs leading-relaxed text-slate-500">{SELLER_FEE_BASIS_STALE_MESSAGE}</p>
           ) : null}
-          <FinancialLine label="판매대행비" value={formatSettlementMoney(sellerFee)} danger />
+          <FinancialLine label="셀러지급액" value={formatSettlementMoney(sellerFee)} danger />
           {itemsByZone.SELLER.map((item) => (
             <SettlementItemLine key={item.id} item={item} />
           ))}
@@ -2577,7 +2577,7 @@ function SettlementFinancialSummary({
             // 원천세는 판매대행비 + 셀러 지급 부가 항목을 **합산해 한 줄로** 공제한다 —
             // 항목마다 세후로 쪼개면 실제로 이체할 원천세 합계를 어디서도 못 읽는다.
             <FinancialLine
-              label="원천세 3.3% (판매대행비 + 부가 항목 합산)"
+              label="원천세 3.3% (셀러지급액 + 부가 항목 합산)"
               value={formatSettlementExpense(sellerWithholdingTax)}
               muted
             />
@@ -2675,22 +2675,22 @@ function SettlementFinancialSummary({
           {isEditing ? (
             <>
               <FinancialRateInput
-                label="총 수수료율 (%)"
+                label="총수수료율 (%)"
                 value={draft.totalMarginRate}
                 onChange={(value) => updateDraft("totalMarginRate", value)}
               />
               <FinancialRateInput
-                label="셀러 수수료율 (%)"
+                label="셀러수수료율 (%)"
                 value={draft.sellerMarginRate}
                 onChange={(value) => updateDraft("sellerMarginRate", value)}
               />
-              <FinancialRate label="영업이익율 (%)" value={draftNetMarginRate} />
+              <FinancialRate label="순수수료율 (%)" value={draftNetMarginRate} />
             </>
           ) : (
             <>
-              <FinancialRate label="총 수수료율 (%)" value={campaign.totalMarginRate} />
-              <FinancialRate label="셀러 수수료율 (%)" value={campaign.sellerMarginRate} />
-              <FinancialRate label="영업이익율 (%)" value={campaign.netMarginRate} />
+              <FinancialRate label="총수수료율 (%)" value={campaign.totalMarginRate} />
+              <FinancialRate label="셀러수수료율 (%)" value={campaign.sellerMarginRate} />
+              <FinancialRate label="순수수료율 (%)" value={campaign.netMarginRate} />
             </>
           )}
         </div>

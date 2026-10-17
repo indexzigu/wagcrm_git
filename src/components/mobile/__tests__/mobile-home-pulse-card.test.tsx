@@ -44,15 +44,15 @@ afterEach(() => {
 });
 
 describe("MobileHomePulseCard (홈 재구성 안 C — 오너 승인 2026-07-15)", () => {
-  it("오늘 매출·오늘 주문 2칸 스탯을 렌더한다", async () => {
+  it("오늘 판매금액·오늘 주문 2칸 스탯을 렌더한다", async () => {
     renderWithClient(<MobileHomePulseCard />);
-    await waitFor(() => expect(screen.getByText("오늘 매출")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("오늘 판매금액")).toBeInTheDocument());
     expect(screen.getByText("₩1,240,000")).toBeInTheDocument();
     expect(screen.getByText("오늘 주문")).toBeInTheDocument();
     expect(screen.getByText("8건")).toBeInTheDocument();
   });
 
-  it("byCampaign 상위 3건만 딜명·셀러명·오늘 매출로 노출한다(4번째 행 제외)", async () => {
+  it("byCampaign 상위 3건만 딜명·셀러명·오늘 판매금액로 노출한다(4번째 행 제외)", async () => {
     renderWithClient(<MobileHomePulseCard />);
     await waitFor(() => expect(screen.getByText("비타민C 앰플")).toBeInTheDocument());
     expect(screen.getByText("하늘맘")).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe("MobileHomePulseCard (홈 재구성 안 C — 오너 승인 2026-07-15)
       }),
     );
     renderWithClient(<MobileHomePulseCard />);
-    await waitFor(() => expect(screen.getByText("오늘 매출")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("오늘 판매금액")).toBeInTheDocument());
     expect(screen.queryByText("비타민C 앰플")).not.toBeInTheDocument();
     expect(screen.getByText("오늘 들어온 주문이 아직 없습니다")).toBeInTheDocument();
   });
@@ -80,7 +80,7 @@ describe("MobileHomePulseCard (홈 재구성 안 C — 오너 승인 2026-07-15)
   it("마운트 시 1회만 fetch 한다(자동 폴링 금지)", async () => {
     const fetchMock = stubFetch(makePulse());
     renderWithClient(<MobileHomePulseCard />);
-    await waitFor(() => expect(screen.getByText("오늘 매출")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("오늘 판매금액")).toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith("/api/mobile/pulse", { cache: "no-store" });
   });
@@ -93,7 +93,7 @@ describe("MobileHomePulseCard (홈 재구성 안 C — 오너 승인 2026-07-15)
         <MobileTodaySummaryBar />
       </>,
     );
-    await waitFor(() => expect(screen.getByText("오늘 매출")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("오늘 판매금액")).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText("배송중")).toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -101,7 +101,7 @@ describe("MobileHomePulseCard (홈 재구성 안 C — 오너 승인 2026-07-15)
   it("새로고침 버튼으로 수동 재조회한다", async () => {
     const fetchMock = stubFetch(makePulse());
     renderWithClient(<MobileHomePulseCard />);
-    await waitFor(() => expect(screen.getByText("오늘 매출")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("오늘 판매금액")).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: "오늘의 펄스 새로고침" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

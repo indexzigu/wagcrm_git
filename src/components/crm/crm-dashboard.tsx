@@ -50,7 +50,7 @@ import { ExecutionKanbanBoard } from "./execution-kanban-board";
 import { StageFilterBar } from "./stage-filter-bar";
 import { StageKanbanBoard } from "./stage-kanban-board";
 import { GroupedTableView } from "./grouped-table-view";
-import { resolveDisplaySellerFee } from "@/lib/campaign-financials";
+import { summarizePipelineMoney } from "@/lib/pipeline-money-summary";
 
 interface ViewSwitcherProps {
   viewMode: "kanban" | "table" | "report";
@@ -367,32 +367,14 @@ export function CrmDashboard({
   );
 
   const kanbanSummary = useMemo(() => {
-    let sumTotal = 0;
-    let sumRevenue = 0;
-    let sumFee = 0;
-    let sumProfit = 0;
-    
     const rowsToSum = useExecutionKanban ? executionRows : filteredRows;
-    rowsToSum.forEach(camp => {
-      if (camp.status === "DROPPED" || camp.status === "SETTLEMENT_IN_PROGRESS" || camp.status === "COMPLETED") return;
-      const actual = camp.actualSales || 0;
-      const revenue = Math.floor(actual * (camp.totalMarginRate || 0) / 100);
-      // 수동 정산 기준액 캠페인은 기준액 × 단일 요율(저장 판매대행비와 같은 식) — SSOT 위임.
-      const fee = resolveDisplaySellerFee({
-        sellerFeeBasisOverride: camp.sellerFeeBasisOverride,
-        deals: camp.campaignDeals,
-        campaignSellerMarginRate: camp.sellerMarginRate,
-        autoFee: () => Math.floor(actual * (camp.sellerMarginRate || 0) / 100),
-      });
-      const profit = revenue - fee;
-      
-      sumTotal += actual;
-      sumRevenue += revenue;
-      sumFee += fee;
-      sumProfit += profit;
-    });
-    
-    return { sumTotal, sumRevenue, sumFee, sumProfit };
+    const m = summarizePipelineMoney(rowsToSum);
+    return {
+      sumTotal: m.grossMerchandise,
+      sumRevenue: m.commissionRevenue,
+      sumFee: m.sellerPayout,
+      sumProfit: m.grossProfit,
+    };
   }, [executionRows, filteredRows, useExecutionKanban]);
 
   // ---------------------------------------------------------------------------
@@ -441,19 +423,19 @@ export function CrmDashboard({
               <span className="hidden text-slate-200 md:inline">|</span>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Wallet className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">영업수익:</span>
+                <span className="font-medium">수수료매출:</span>
                 <span className="font-semibold text-slate-800">{kanbanSummary.sumRevenue.toLocaleString()}원</span>
               </div>
               <span className="hidden text-slate-200 md:inline">|</span>
               <div className="flex shrink-0 items-center gap-1.5">
                 <Download className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">판매대행비:</span>
+                <span className="font-medium">셀러지급액:</span>
                 <span className="font-semibold text-slate-800">{kanbanSummary.sumFee.toLocaleString()}원</span>
               </div>
               <span className="hidden text-slate-200 md:inline">|</span>
               <div className="flex shrink-0 items-center gap-1.5">
                 <PiggyBank className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">영업이익:</span>
+                <span className="font-medium">매출총이익:</span>
                 <span className="font-semibold text-slate-800">{kanbanSummary.sumProfit.toLocaleString()}원</span>
               </div>
             </div>

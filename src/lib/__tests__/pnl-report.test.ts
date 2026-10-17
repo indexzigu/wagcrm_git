@@ -115,7 +115,7 @@ describe("buildPnlReportModel", () => {
     // 걷어내면서 소비처가 0 이 되어 함께 지웠다.
     expect(report.campaigns.find((row) => row.id === "campaign-2")).toMatchObject({
       campaignName: "딜 B 셀러 B",
-      missingCostFields: ["셀러 지급액", "공제세액", "운영비", "기타비용"],
+      missingCostFields: ["셀러지급액", "공제세액", "운영비", "기타비용"],
     });
   });
 

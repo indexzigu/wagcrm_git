@@ -970,7 +970,7 @@ export function AssetManager({
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">실매출</dt>
+                  <dt className="text-muted-foreground">총거래액</dt>
                   <dd className="font-semibold tabular-nums text-foreground">
                     {performance.revenue !== null
                       ? `${performance.revenue.toLocaleString()}원`

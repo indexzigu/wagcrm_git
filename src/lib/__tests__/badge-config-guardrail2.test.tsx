@@ -339,11 +339,15 @@ describe("죽은 레거시 이름색 정리 (소비처 0건 확인 후 제거)",
     expect(GLOBALS).not.toContain(`--color-${token}:`);
   });
 
-  it("음성 대조군 — neon-gold 는 소비처가 실재하므로 남아 있다", () => {
-    // 이 단언이 없으면 위 13건은 "정의를 지웠다"만 말할 뿐, 이 테스트가 토큰 정의를
-    // 실제로 보고 있는지(= 하네스가 살아 있는지) 증명하지 못한다.
-    expect(GLOBALS).toContain("--color-neon-gold:");
-    expect(read("components/crm/inline-data-grid.tsx")).toContain("hover:bg-neon-gold/5");
+  it("neon-gold 도 제거됐다 — 정의와 소비 유틸이 모두 없다(금색 금지, 행 hover 는 primary-tint)", () => {
+    expect(GLOBALS).not.toContain("--color-neon-gold:");
+    expect(GLOBALS).not.toContain("D4AF37");
+    expect(read("components/crm/inline-data-grid.tsx")).not.toContain("neon-gold");
+    expect(read("components/crm/inline-data-grid.tsx")).toContain("hover:bg-primary-tint");
+  });
+
+  it("양성 대조군 — 같은 단언 방식이 실재하는 토큰은 잡는다(하네스 생존)", () => {
+    expect(GLOBALS).toContain("--color-status-urgent:");
   });
 });
 
