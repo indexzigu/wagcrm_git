@@ -105,13 +105,6 @@ export class SettlementPage extends BasePage {
     await this.waitForNetworkIdle();
   }
 
-  async exportCsvAndGetFileName(): Promise<string> {
-    const downloadPromise = this.page.waitForEvent('download', { timeout: 15_000 });
-    await this.page.getByRole('button', { name: 'CSV 내보내기' }).click();
-    const download = await downloadPromise;
-    return download.suggestedFilename();
-  }
-
   async openFirstRowDetail(): Promise<void> {
     const detailButton = this.page.locator('table tbody tr button').first();
     await detailButton.waitFor({ state: 'visible', timeout: 10_000 });

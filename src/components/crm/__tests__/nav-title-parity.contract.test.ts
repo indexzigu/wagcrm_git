@@ -88,7 +88,8 @@ describe("메뉴 이름 = 페이지 제목", () => {
   });
 
   it("반증 프로브 — 스캐너가 다른 컴포넌트의 title 은 집지 않는다", () => {
-    // channel-fees-client 는 CrmShell title 「채널 수수료 설정」을 쓴다(양성 대조).
-    expect(crmShellTitles("components/crm/channel-fees-client.tsx")).toEqual(["채널 수수료 설정"]);
+    // price-sheet-detail 은 메뉴에 없는 CrmShell title 「가격표 상세」를 쓴다(양성 대조) —
+    // 메뉴 라벨 「가격표」와 다르므로 스캐너가 부분 일치로 뭉개지 않는지도 함께 본다.
+    expect([...new Set(crmShellTitles("components/crm/price-sheet/price-sheet-detail.tsx"))]).toEqual(["가격표 상세"]);
   });
 });

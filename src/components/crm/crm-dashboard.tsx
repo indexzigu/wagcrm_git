@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, cloneElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   KanbanIcon,
   LayoutListIcon,
@@ -55,10 +55,9 @@ import { summarizePipelineMoney } from "@/lib/pipeline-money-summary";
 interface ViewSwitcherProps {
   viewMode: "kanban" | "table" | "report";
   onViewModeChange: (mode: "kanban" | "table" | "report") => void;
-  enableReportView?: boolean;
 }
 
-function ViewSwitcher({ viewMode, onViewModeChange, enableReportView }: ViewSwitcherProps) {
+function ViewSwitcher({ viewMode, onViewModeChange }: ViewSwitcherProps) {
   return (
     <div
       className="flex items-center rounded-2xl border border-border/70 bg-white/80 p-0.5 shadow-soft-sm"
@@ -93,22 +92,6 @@ function ViewSwitcher({ viewMode, onViewModeChange, enableReportView }: ViewSwit
         <LayoutListIcon className="size-3.5" />
         <span>테이블</span>
       </button>
-      {enableReportView && (
-        <button
-          type="button"
-          onClick={() => onViewModeChange("report")}
-          aria-pressed={viewMode === "report"}
-          className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-[color,background-color,box-shadow] ${
-            viewMode === "report"
-              ? "bg-white shadow-soft-sm text-foreground"
-              : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
-          }`}
-          title="리포트 뷰"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-line-chart"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-          <span>리포트</span>
-        </button>
-      )}
     </div>
   );
 }
@@ -125,10 +108,6 @@ type CrmDashboardProps = {
   lockedStageFilter?: StageFilter;
   allowCreate?: boolean;
   createDefaultStatus?: CampaignStatus;
-  enableReportView?: boolean;
-  reportViewComponent?: React.ReactNode;
-  /** 모바일 전용(v3.2) — "진행 캠페인"(active) vs "업무 처리"(tasks) 뷰. 데스크탑 무영향. */
-  mobilePipelineMode?: "active" | "tasks";
 };
 
 export function CrmDashboard({
@@ -136,9 +115,6 @@ export function CrmDashboard({
   lockedStageFilter,
   allowCreate = true,
   createDefaultStatus: preferredCreateDefaultStatus,
-  enableReportView,
-  reportViewComponent,
-  mobilePipelineMode = "active",
 }: CrmDashboardProps) {
   const isMobile = useIsMobile();
   const [rows, setRows] = useState(initialData.campaigns);
@@ -406,7 +382,6 @@ export function CrmDashboard({
             setStageFilter={setStageFilter}
             counts={stageFilterCounts}
             isStageLocked={Boolean(lockedStageFilter)}
-            mode={mobilePipelineMode}
             overdueReminders={initialData.actionRequiredCounts?.overdueReminders ?? 0}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
@@ -577,18 +552,6 @@ export function CrmDashboard({
                 >
                   전체 필터 초기화
                 </Button>
-              </div>
-            ) : viewMode === "report" && enableReportView && reportViewComponent ? (
-              <div className="flex-1 overflow-auto bg-[#f8fafc]">
-                {cloneElement(reportViewComponent as React.ReactElement<{
-                  teamFilter: string | null;
-                  searchQuery: string;
-                  onRowOpenById: (id: string) => Promise<void>;
-                }>, {
-                  teamFilter,
-                  searchQuery,
-                  onRowOpenById: openCampaignById
-                })}
               </div>
             ) : viewMode === "kanban" ? (
               <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc] p-4">
