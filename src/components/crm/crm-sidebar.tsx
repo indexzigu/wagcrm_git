@@ -374,7 +374,12 @@ export function CrmSidebar() {
                         tooltip={`${item.label}: ${item.description}`}
                         className={cn(SIDEBAR_ROW_CLASS, active && SIDEBAR_ROW_ACTIVE_CLASS)}
                       >
-                        <Link href={item.children?.[0]?.href ?? item.href} className={SIDEBAR_ROW_INNER_CLASS}>
+                        <Link
+                          href={item.children?.[0]?.href ?? item.href}
+                          className={SIDEBAR_ROW_INNER_CLASS}
+                          // 하위 목록이 펼쳐져 있으면 「현재 화면」은 하위 행이 말한다 — 부모는 현재 위치의 묶음("true")만.
+                          aria-current={active ? (expanded && childActive ? "true" : "page") : undefined}
+                        >
                           <Icon />
                           <span className={SIDEBAR_LABEL_CLASS}>
                             {item.label}
@@ -397,7 +402,7 @@ export function CrmSidebar() {
                                     childIsActive && SIDEBAR_SUB_ACTIVE_CLASS,
                                   )}
                                 >
-                                  <Link href={child.href}>
+                                  <Link href={child.href} aria-current={childIsActive ? "page" : undefined}>
                                     <span>{child.label}</span>
                                   </Link>
                                 </SidebarMenuSubButton>
@@ -430,7 +435,11 @@ export function CrmSidebar() {
                   isActivePath(pathname, "/settings") && SIDEBAR_ROW_ACTIVE_CLASS,
                 )}
               >
-                <Link href="/settings/operations" className={SIDEBAR_ROW_INNER_CLASS}>
+                <Link
+                  href="/settings/operations"
+                  className={SIDEBAR_ROW_INNER_CLASS}
+                  aria-current={isActivePath(pathname, "/settings") ? "page" : undefined}
+                >
                   <Settings2Icon />
                   <span className={SIDEBAR_LABEL_CLASS}>
                     설정
