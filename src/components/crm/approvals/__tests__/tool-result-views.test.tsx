@@ -70,7 +70,7 @@ describe("get_settlement_report 뷰", () => {
     stateCounts: { pending: 0, confirmed: 1, paid: 0 },
   };
 
-  it("요약 스탯 4개(총매출·총마진·셀러지급·건수)와 캠페인 테이블을 렌더한다", () => {
+  it("요약 스탯 4개(총거래액·매출총이익·셀러지급·건수)와 캠페인 테이블을 렌더한다", () => {
     render(<View data={sampleData} />);
     expect(screen.getAllByText("1,000,000").length).toBeGreaterThan(0);
     expect(screen.getAllByText("200,000").length).toBeGreaterThan(0);

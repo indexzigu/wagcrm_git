@@ -24,6 +24,7 @@ import {
 // 구분 라벨 정본. crm-types.ts 는 type-only import 뿐이라 클라이언트 번들에 안전하다.
 import { campaignStatusLabels, dealStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
 import { displayLabel } from "@/lib/display-label";
+import { MONEY_TERMS } from "@/lib/ui-glossary";
 
 /** 도구가 돌려준 영문 상태 코드를 화면 낱말로 — 표에 없는 코드는 원문(빈칸이 되지 않게). */
 const dealStatusWord = (status: string) => displayLabel(dealStatusLabels, status);
@@ -86,11 +87,11 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
     <div className={cn("flex flex-col gap-2", !bare && "mt-2 rounded-lg border border-border p-3")}>
       <div className="grid grid-cols-4 gap-2 text-xs">
         <div>
-          <p className="text-muted-foreground">총매출</p>
+          <p className="text-muted-foreground">{MONEY_TERMS.grossMerchandise.label}</p>
           <p className="font-semibold text-foreground">{formatNumber(summary.totalRevenue)}</p>
         </div>
         <div>
-          <p className="text-muted-foreground">총마진</p>
+          <p className="text-muted-foreground">{MONEY_TERMS.grossProfit.label}</p>
           <p className="font-semibold text-foreground">{formatNumber(summary.totalMargin)}</p>
         </div>
         <div>

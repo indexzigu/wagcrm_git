@@ -1081,7 +1081,12 @@ export function CampaignSidePanel({
                 </label>
 
                 <div className="grid h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-1 shadow-soft-sm">
-                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">순수수료율 (%)</div>
+                  <div
+                    className="min-w-0 truncate text-[11px] font-medium text-slate-500"
+                    title="총수수료율 − 셀러수수료율. 우리 몫 비율"
+                  >
+                    순수수료율 (%)
+                  </div>
                   <div className="justify-self-end text-right text-sm font-bold text-primary">
                     {campaign.netMarginRate ?? 0}%
                   </div>

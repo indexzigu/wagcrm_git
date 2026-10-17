@@ -296,6 +296,8 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
     "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후. 키가 낱말 단위라 이 파일의 다른 옛 이름은 여전히 잡힌다.",
   "oldMoneyTerm | lib/settlement-statement.ts | 총 거래액":
     "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후(위 판매대행비와 같은 사유).",
+  "oldMoneyTerm | components/mobile/mobile-campaign-detail-sheet.tsx | 매출액":
+    "모바일 상세의 품목별 주문 금액 열(주문 합계라 「총거래액」이 아니라 「판매금액」 계열일 수 있다). 모바일 표면은 애플 UI 묶음 1에서 손대지 않는다(P5) — 모바일 묶음에서 낱말을 정하며 이 줄을 지운다.",
   "oldMoneyTerm | lib/tax-invoice-mail/receipt-similarity.ts | 매출":
     "화면 라벨이 아니라 영수증 품목명 유사도 판정용 키워드다(바꾸면 판정이 달라진다).",
   "rawField | components/crm/link-search-dialog.tsx | {meta.status}":
