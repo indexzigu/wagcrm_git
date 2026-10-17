@@ -175,7 +175,7 @@ export const MONEY_TERM_ALIASES: Readonly<Record<string, keyof typeof MONEY_TERM
   "매출": "grossMerchandise", "이번 달 매출": "grossMerchandise", "총 매출액": "grossMerchandise", "총 상품매출": "grossMerchandise", "실매출": "grossMerchandise", "총 거래액": "grossMerchandise",
   "영업수익": "commissionRevenue", "영업 수익": "commissionRevenue", "수수료 매출": "commissionRevenue", "확정 매출": "commissionRevenue",
   "판매대행비": "sellerPayout", "판매 대행비": "sellerPayout", "판매대행비 (셀러 정산금)": "sellerPayout", "셀러 정산금": "sellerPayout", "셀러 지급액": "sellerPayout",
-  "예상 순마진": "grossProfit", "순마진": "grossProfit", "총 마진": "grossProfit", "총마진": "grossProfit", "마진율": "grossProfit",
+  "예상 순마진": "grossProfit", "순마진": "grossProfit", "총 마진": "grossProfit", "총마진": "grossProfit", "마진율": "rate.net",
   "순수익": "operatingProfit", "총매출": "grossMerchandise", "매출액": "grossMerchandise",
   "영업이익 (자사 순수익)": "operatingProfit", "세전 영업순이익": "operatingProfit", "영업이익율": "operatingProfit",
   "세후 예상 영업이익": "netIncomeEstimate",
