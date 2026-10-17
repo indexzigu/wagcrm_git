@@ -330,6 +330,23 @@ export function CrmDashboard({
   // 검색·조합 캠페인 — 단계 칩 줄 오른쪽, 실행 보드에선 보드 빠른 필터 줄 오른쪽에 붙는다(한 벌만 그린다).
   const pipelineControls = (
     <div className="ml-auto flex flex-wrap items-center gap-2">
+      {/* 실행 보드에선 적용 중 필터 줄을 보드 위에 따로 띄우지 않는다 — 검색을 치는 순간 그 줄이 생기며 보드와
+          검색칸이 아래로 밀렸다(실측 87px). 빈 결과 안내와 초기화는 검색칸 왼쪽에 붙여 검색칸 자리를 고정한다. */}
+      {useExecutionKanban && hasActiveFilters ? (
+        <>
+          {filteredRows.length === 0 ? (
+            <span className="text-xs text-muted-foreground">조건에 맞는 캠페인 없음</span>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 rounded-lg px-2 text-xs text-muted-foreground"
+            onClick={resetPipelineFilters}
+          >
+            필터 초기화
+          </Button>
+        </>
+      ) : null}
       <InputGroup className="h-9 w-full rounded-lg border border-slate-200 bg-white shadow-soft-sm md:w-64">
         <InputGroupAddon>
           <SearchIcon />
@@ -358,7 +375,8 @@ export function CrmDashboard({
   );
   const showFilterRow = !lockedStageFilter || !useExecutionKanban;
   const showOutOfFilterNotice = Boolean(panelOpen && selected && !selectedInFilteredRows);
-  const showCardHead = showFilterRow || hasActiveFilters || showOutOfFilterNotice;
+  const showActiveFilterRow = hasActiveFilters && !useExecutionKanban;
+  const showCardHead = showFilterRow || showActiveFilterRow || showOutOfFilterNotice;
 
   return (
     <>
@@ -460,7 +478,7 @@ export function CrmDashboard({
                 </div>
               ) : null}
 
-              {hasActiveFilters ? (
+              {showActiveFilterRow ? (
                 <div className="flex flex-col gap-2 rounded-lg border border-border/80 bg-white/70 px-3.5 py-3 md:flex-row md:items-center md:justify-between">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {activeFilterLabels.map((label) => (

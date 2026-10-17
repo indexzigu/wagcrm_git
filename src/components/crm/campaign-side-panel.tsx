@@ -1091,7 +1091,8 @@ export function CampaignSidePanel({
                         <TooltipTrigger asChild>
                           <button
                             type="button"
-                            className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                            // crm-hit-area: 보이는 크기(14px)는 그대로, 누를 수 있는 영역만 사방 3px 넓힌다.
+                            className="crm-hit-area inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                             aria-label="순수수료율 풀이"
                           >
                             <Info className="size-3" aria-hidden="true" />

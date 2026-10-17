@@ -68,7 +68,7 @@ export default async function StoryInboxPage({
     // 제목·설명·수집 버튼은 CrmShell 머리로 올렸다(메뉴 이름 = 페이지 제목) — 세로 스크롤러도 CrmShell 이 소유한다.
     <CrmShell
       title="스토리 분류함"
-      description="매일 자정에 모은 행사 기간 스토리 중 캠페인 홍보분을 골라 분류하면 홍보 이력·성과 근거로 남습니다."
+      description="시작 7일 전~마감 1일 후 스토리를 매일 자정에 모읍니다. 홍보분을 분류하면 성과 근거로 남습니다."
       actions={
         <div className="flex shrink-0 items-center gap-2">
           {/* 전체 수집(게시물+스토리, 고비용·순차) vs 스토리만(저비용·1콜) — 두 옵션 분리 제공 */}

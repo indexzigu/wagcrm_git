@@ -1817,7 +1817,8 @@ export default function OrderDashboard() {
               반품/교환 {inProgressClaimCount}
             </button>
           )}
-          <span className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-medium text-slate-500">
+          {/* 동기화 상태는 조작이 아니라 안내 글이다 — 테두리·바탕 없이 써서 버튼으로 보이지 않게 한다. */}
+          <span className="flex h-9 items-center gap-1.5 px-1 text-[11px] font-medium text-muted-foreground">
             {syncMeta.lastSync ? (
               <>
                 마지막 동기화{' '}

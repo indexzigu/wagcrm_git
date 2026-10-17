@@ -548,6 +548,7 @@ describe("순수수료율 풀이", () => {
       />,
     );
     const trigger = screen.getByRole("button", { name: "순수수료율 풀이" });
+    expect(trigger.className).toContain("crm-hit-area");
     expect(screen.getByText("순수수료율 (%)").closest("[title]")).toBeNull();
     fireEvent.focus(trigger);
     expect(await screen.findByRole("tooltip")).toHaveTextContent("총수수료율 − 셀러수수료율. 셀러 몫을 뺀 우리 몫");

@@ -172,6 +172,21 @@ describe("CrmDashboard view mode switching", () => {
     expect(container.querySelector('[data-slot="pipeline-card-head"]')).toBeNull();
   });
 
+  it("실행 보드에서 필터 결과가 비면 검색칸 왼쪽에 「조건에 맞는 캠페인 없음」·초기화를 붙이고, 보드 위에 새 줄을 띄우지 않는다", () => {
+    mockStageFilter = "PROGRESS";
+    mockSearchQuery = "존재하지않는검색어";
+    const { container } = render(
+      <CrmDashboard initialData={makeInitialData(sampleCampaigns)} lockedStageFilter="PROGRESS" />,
+    );
+    const quick = screen.getByRole("button", { name: /^전체 처리/ });
+    const toolbar = quick.parentElement!.parentElement as HTMLElement;
+    expect(within(toolbar).getByText("조건에 맞는 캠페인 없음")).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "필터 초기화" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("textbox", { name: "캠페인 검색" })).toBeInTheDocument();
+    // 검색을 치는 순간 보드 위에 적용 중 필터 줄이 생기면 보드·검색칸이 아래로 밀린다(화면 튐).
+    expect(container.querySelector('[data-slot="pipeline-card-head"]')).toBeNull();
+  });
+
   it("defaults to kanban active state", () => {
     render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
 
