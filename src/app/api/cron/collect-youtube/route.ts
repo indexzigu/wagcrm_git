@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import { collectYouTubeSubscribers } from "@/lib/collectors/youtube-collector";
 import { declareTotalFailure } from "@/lib/cron-outcome";
@@ -41,7 +42,7 @@ async function handler(request: Request) {
   } catch (error) {
     console.error("YouTube collection cron error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 }
     );
   }

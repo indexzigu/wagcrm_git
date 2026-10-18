@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import { analyzeDirtyDeals } from "@/lib/order-converter/voc-insight";
 import { declareTotalFailure } from "@/lib/cron-outcome";
@@ -36,7 +37,7 @@ async function handler(request: Request) {
   } catch (error) {
     console.error("[cron/analyze-voc] Unexpected error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 }
     );
   }

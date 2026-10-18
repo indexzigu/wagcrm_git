@@ -210,13 +210,20 @@ export type StoryCaptureResult = {
 export function declareStoryCaptureOutcome(result: StoryCaptureResult): {
   failed: boolean;
   failureReason?: string;
+  targets: number;
+  produced: number;
 } {
   const attempted = result.handles.length;
   // 수집창에 셀러가 없으면 액터 호출 없이 무비용 종료 — 정상이다(attempted 0 = 실패 아님).
   const totalFailure = attempted > 0 && result.handlesFailed === attempted;
+  // 산출 = 이번 실행이 **실제로 저장한** 스토리 수(`storiesNew`), 대상 = 조회한 셀러 수(멱등 스킵 제외).
+  // ⚠️ `failed` 는 위처럼 여전히 「조회 전원 실패」로만 판정한다 — 스토리 0건 하루는 정상이다.
+  // 산출 0 은 래퍼가 **연속 회차**로만 사고 B 로 본다(조회는 되는데 저장이 0 인 무음 실패 —
+  // 응답 형식 변경 등. 설계 docs/private/specs/2026-10-18-cron-self-healing-design.md ⚙️J8).
+  const counts = { targets: attempted, produced: result.storiesNew };
   return totalFailure
-    ? { failed: true, failureReason: `대상 ${attempted}명 전원 스토리 조회 실패(수집 0건)` }
-    : { failed: false };
+    ? { failed: true, failureReason: `대상 ${attempted}명 전원 스토리 조회 실패(수집 0건)`, ...counts }
+    : { failed: false, ...counts };
 }
 
 export type CaptureWindowSeller = {

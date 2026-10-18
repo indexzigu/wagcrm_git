@@ -89,6 +89,14 @@ describe("capture-stories 실질 실패 선언", () => {
     expect((await (await call()).json()).failed).toBe(false);
   });
 
+  it("본문에 산출 판정 숫자를 싣는다 — 대상은 조회 셀러 수, 산출은 저장한 스토리 수", async () => {
+    captureMock.mockResolvedValue(
+      result({ activeSellers: 3, handles: ["a", "b", "c"], storiesSeen: 6, storiesNew: 4, handlesFailed: 0 }),
+    );
+
+    expect(await (await call()).json()).toMatchObject({ failed: false, targets: 3, produced: 4 });
+  });
+
   it("수집창에 셀러가 없으면 정상이다(무비용 종료 — 0/0 을 실패로 읽지 않는다)", async () => {
     captureMock.mockResolvedValue(result({}));
 

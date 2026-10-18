@@ -106,6 +106,9 @@ describe("GET /api/cron/enrich-references", () => {
       failedCount: 0,
       engagement: ENGAGEMENT_STUB,
       failed: false,
+      // 산출 판정 숫자(declareTotalFailure) — 시도 = 1단계 시도 + 보강 + 스윕 실패, 산출 = 성공.
+      targets: 0,
+      produced: 0,
     });
 
     expect(findManyMock).toHaveBeenCalledTimes(1);
@@ -140,6 +143,8 @@ describe("GET /api/cron/enrich-references", () => {
       failedCount: 0,
       engagement: ENGAGEMENT_STUB,
       failed: false,
+      targets: 0,
+      produced: 0,
     });
     expect(fetchMetaMock).not.toHaveBeenCalled();
     expect(updateMock).not.toHaveBeenCalled();
@@ -160,6 +165,8 @@ describe("GET /api/cron/enrich-references", () => {
       failedCount: 0,
       engagement: ENGAGEMENT_STUB,
       failed: false,
+      targets: 1,
+      produced: 1,
     });
     expect(fetchMetaMock).not.toHaveBeenCalled();
     expect(rehostMock).toHaveBeenCalledWith(
@@ -196,6 +203,8 @@ describe("GET /api/cron/enrich-references", () => {
       failedCount: 0,
       engagement: ENGAGEMENT_STUB,
       failed: false,
+      targets: 1,
+      produced: 1,
     });
     expect(fetchMetaMock).toHaveBeenCalledWith("https://www.instagram.com/reel/DEF456/");
     expect(updateMock).toHaveBeenCalledWith({
@@ -250,6 +259,8 @@ describe("GET /api/cron/enrich-references", () => {
       failedCount: 1,
       engagement: ENGAGEMENT_STUB,
       failed: false,
+      targets: 2,
+      produced: 1,
     });
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(updateMock).toHaveBeenCalledWith({

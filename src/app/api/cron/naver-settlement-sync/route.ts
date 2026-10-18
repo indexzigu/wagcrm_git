@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import {
   runPlannedSettlementSync,
@@ -101,7 +102,7 @@ async function handler(request: Request) {
   } catch (error) {
     console.error("[cron/naver-settlement-sync] Unexpected error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 }
     );
   }
@@ -127,7 +128,7 @@ async function dryRunHandler(request: Request) {
   } catch (error) {
     console.error("[cron/naver-settlement-sync] dry-run 실패:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 },
     );
   }

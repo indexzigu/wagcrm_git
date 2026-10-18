@@ -6,7 +6,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import { getPrisma } from "@/lib/prisma";
-import { withSystemTaskStatus } from "@/lib/system-task-status";
+import { capDetailsForLog, withSystemTaskStatus } from "@/lib/system-task-status";
 
 /**
  * 시스템 레이더 공용 기록기 검증:
@@ -21,6 +21,11 @@ const upsert = vi.fn();
 // ⚠️ 이 mock이 없으면 systemTaskLog.create 가 undefined 라 래퍼의 try/catch 에 삼켜져
 // 이력 경로가 **한 줄도 실행되지 않은 채** 테스트가 통과한다(details 회귀를 못 잡는다).
 const logCreate = vi.fn();
+const logFindMany = vi.fn();
+const incidentFindFirst = vi.fn();
+const incidentCreate = vi.fn();
+const incidentUpdate = vi.fn();
+const incidentUpdateMany = vi.fn();
 
 function makeRequest(auth?: string): Request {
   return new Request("http://localhost/api/cron/price-monitoring", {
@@ -39,9 +44,20 @@ function loggedRuns(): Array<{ status: string; message: string; details: unknown
 beforeEach(() => {
   upsert.mockReset().mockResolvedValue({});
   logCreate.mockReset().mockResolvedValue({});
+  logFindMany.mockReset().mockResolvedValue([]);
+  incidentFindFirst.mockReset().mockResolvedValue(null);
+  incidentCreate.mockReset().mockResolvedValue({ id: "inc-1" });
+  incidentUpdate.mockReset().mockResolvedValue({});
+  incidentUpdateMany.mockReset().mockResolvedValue({ count: 0 });
   vi.mocked(getPrisma).mockReturnValue({
     systemTaskStatus: { upsert },
-    systemTaskLog: { create: logCreate },
+    systemTaskLog: { create: logCreate, findMany: logFindMany },
+    cronIncident: {
+      findFirst: incidentFindFirst,
+      create: incidentCreate,
+      update: incidentUpdate,
+      updateMany: incidentUpdateMany,
+    },
   } as unknown as ReturnType<typeof getPrisma>);
   vi.stubEnv("CRON_SECRET", SECRET);
 });
@@ -95,6 +111,8 @@ describe("withSystemTaskStatus 기록", () => {
     // RUNNING 마커는 직전 실패 메시지를 지우지 않고(undefined), SUCCESS가 null로 청소한다
     expect(upsert.mock.calls[0][0].update.lastErrorMessage).toBeUndefined();
     expect(upsert.mock.calls[1][0].update.lastErrorMessage).toBeNull();
+    // RUNNING 마커는 직전 실패 종류(lastErrorKind)도 지우지 않는다
+    expect(upsert.mock.calls[0][0].update.lastErrorKind).toBeUndefined();
   });
 
   it("핸들러가 던지면 ERROR로 기록하고 예외를 다시 던진다", async () => {
@@ -337,5 +355,199 @@ describe("withSystemTaskStatus durationMs 계측", () => {
     // RUNNING은 systemTaskLog.create를 타지 않으므로 로그 이력은 SUCCESS 1건뿐이다.
     expect(loggedRuns()).toHaveLength(1);
     expect(loggedRuns()[0].status).toBe("SUCCESS");
+  });
+});
+
+/**
+ * 사고 장부 연결(설계 §B·⚙️J8) — 래퍼가 실패를 사고 A 로, 「대상은 있었는데 산출 0」 연속을
+ * 사고 B 로 열고, 정상 실행에서 닫는다. 사고 기록은 응답·상태 기록을 막지 않는다.
+ */
+describe("withSystemTaskStatus 사고 장부", () => {
+  /** 산출 선언(`output`)이 있는 작업 — B 판정 대상. */
+  const DECLARED_JOB = "collect-instagram";
+
+  /** 이력 조회 모킹: 방금 남긴 SUCCESS 줄(현재 회차)을 맨 앞에, 그 뒤에 직전 이력을 붙인다. */
+  function historyWithCurrent(previous: unknown[]) {
+    logFindMany.mockImplementation(async () => {
+      const current = logCreate.mock.calls.at(-1)?.[0].data;
+      return [current, ...previous.map((details) => ({ status: "SUCCESS", details }))].filter(Boolean);
+    });
+  }
+
+  function createdIncidents(): Array<{ kind: string; errorKind: string | null; jobKey: string }> {
+    return incidentCreate.mock.calls.map((c) => c[0].data);
+  }
+
+  it("throw 된 오류의 원인 사슬과 종류를 기록한다", async () => {
+    const cause = new Error("Proxy response (407) !== 200 when HTTP Tunneling");
+    const handler = vi.fn(async () => {
+      throw new TypeError("fetch failed", { cause });
+    });
+    const wrapped = withSystemTaskStatus("job-a", handler);
+
+    await expect(wrapped(makeRequest(`Bearer ${SECRET}`))).rejects.toThrow("fetch failed");
+
+    const update = upsert.mock.calls[1][0].update;
+    expect(update.lastErrorMessage).toContain("Proxy response (407)");
+    expect(update.lastErrorKind).toBe("proxy_quota");
+    expect(logCreate.mock.calls[0][0].data.errorKind).toBe("proxy_quota");
+    expect(createdIncidents()).toEqual([expect.objectContaining({ kind: "A", errorKind: "proxy_quota", jobKey: "job-a" })]);
+  });
+
+  it("failed:true 본문도 A 사고를 연다", async () => {
+    const handler = vi.fn(async () =>
+      Response.json({ ok: true, failed: true, failureReason: "대상 4명 전원 조회 실패" }),
+    );
+    await withSystemTaskStatus("job-a", handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(createdIncidents()).toEqual([expect.objectContaining({ kind: "A", errorKind: "unknown" })]);
+    expect(upsert.mock.calls[1][0].update.lastErrorKind).toBe("unknown");
+  });
+
+  it("비정상 응답은 HTTP 상태로도 종류를 가르고 A 사고를 연다", async () => {
+    const handler = vi.fn(async () => Response.json({ error: "요청 한도 초과" }, { status: 429 }));
+    await withSystemTaskStatus("job-a", handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(createdIncidents()).toEqual([expect.objectContaining({ kind: "A", errorKind: "rate_limit" })]);
+  });
+
+  it("성공하면 열린 A 사고를 닫고 종류 표시를 지운다", async () => {
+    await withSystemTaskStatus("job-a", vi.fn(async () => Response.json({ ok: true })))(
+      makeRequest(`Bearer ${SECRET}`),
+    );
+
+    expect(incidentUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ jobKey: "job-a", kind: { in: ["A"] } }) }),
+    );
+    expect(upsert.mock.calls[1][0].update.lastErrorKind).toBeNull();
+    expect(incidentCreate).not.toHaveBeenCalled();
+  });
+
+  it("산출 선언 작업이 연속 2회 대상>0·산출0 이면 B 사고를 연다", async () => {
+    historyWithCurrent([{ targets: 3, produced: 0 }]);
+    const handler = vi.fn(async () => Response.json({ ok: true, failed: false, targets: 3, produced: 0 }));
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(logFindMany).toHaveBeenCalledWith({
+      where: { jobKey: DECLARED_JOB, status: "SUCCESS" },
+      orderBy: { createdAt: "desc" },
+      take: 2,
+    });
+    expect(createdIncidents()).toEqual([expect.objectContaining({ kind: "B", errorKind: null, jobKey: DECLARED_JOB })]);
+    expect(incidentCreate.mock.calls[0][0].data.lastMessage).toBe("인스타 지표 대상 3건인데 산출 0");
+  });
+
+  it("스토리 수집: 조회는 되는데(failed:false) 저장 0 이 연속 2회면 B 사고를 연다", async () => {
+    historyWithCurrent([{ ok: true, failed: false, targets: 5, produced: 0 }]);
+    const handler = vi.fn(async () => Response.json({ ok: true, failed: false, targets: 5, produced: 0 }));
+    await withSystemTaskStatus("capture-stories", handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(recordedStatuses()).toEqual(["RUNNING", "SUCCESS"]);
+    expect(createdIncidents()).toEqual([
+      expect.objectContaining({ kind: "B", errorKind: null, jobKey: "capture-stories" }),
+    ]);
+    expect(incidentCreate.mock.calls[0][0].data.lastMessage).toBe("스토리 대상 5건인데 산출 0");
+  });
+
+  it("직전 회차에 산출이 있었으면 B 사고를 열지 않는다", async () => {
+    historyWithCurrent([{ targets: 3, produced: 1 }]);
+    const handler = vi.fn(async () => Response.json({ ok: true, targets: 3, produced: 0 }));
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(incidentCreate).not.toHaveBeenCalled();
+  });
+
+  it("이력이 연속 횟수만큼 쌓이지 않았으면(첫 회차) B 사고를 열지 않는다", async () => {
+    historyWithCurrent([]);
+    const handler = vi.fn(async () => Response.json({ ok: true, targets: 3, produced: 0 }));
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(incidentCreate).not.toHaveBeenCalled();
+  });
+
+  it("이력 details 가 문자열(sqlite)이어도 읽고, 못 읽는 줄은 산출 0 으로 치지 않는다", async () => {
+    historyWithCurrent([JSON.stringify({ targets: 2, produced: 0 })]);
+    const handler = vi.fn(async () => Response.json({ ok: true, targets: 3, produced: 0 }));
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+    expect(createdIncidents()).toEqual([expect.objectContaining({ kind: "B" })]);
+
+    incidentCreate.mockClear();
+    historyWithCurrent(["{not json"]);
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+    expect(incidentCreate).not.toHaveBeenCalled();
+  });
+
+  it("산출 선언이 없는 작업은 대상>0·산출0 이어도 B 판정을 하지 않는다", async () => {
+    historyWithCurrent([{ targets: 3, produced: 0 }]);
+    const handler = vi.fn(async () => Response.json({ ok: true, targets: 3, produced: 0 }));
+    await withSystemTaskStatus("job-a", handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(logFindMany).not.toHaveBeenCalled();
+    expect(incidentCreate).not.toHaveBeenCalled();
+  });
+
+  it("대상이 0이면 B 사고를 열지도 닫지도 않는다", async () => {
+    historyWithCurrent([{ targets: 0, produced: 0 }]);
+    const handler = vi.fn(async () => Response.json({ ok: true, targets: 0, produced: 0 }));
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(incidentCreate).not.toHaveBeenCalled();
+    expect(logFindMany).not.toHaveBeenCalled();
+    const kindsClosed = incidentUpdateMany.mock.calls.map((c) => c[0].where.kind.in);
+    expect(kindsClosed).toEqual([["A"]]);
+    expect(upsert.mock.calls[1][0].update.lastProducedAt).toBeUndefined();
+  });
+
+  it("산출이 생기면 B 사고를 닫고 lastProducedAt 을 남긴다", async () => {
+    const handler = vi.fn(async () => Response.json({ ok: true, targets: 3, produced: 2 }));
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+
+    const closedB = incidentUpdateMany.mock.calls.find((c) => c[0].where.kind.in.includes("B"));
+    expect(closedB?.[0].where).toMatchObject({ jobKey: DECLARED_JOB, kind: { in: ["B"] } });
+    expect(closedB?.[0].data.normalizedEvidence).toMatchObject({ produced: 2, targets: 3 });
+    expect(upsert.mock.calls[1][0].update.lastProducedAt).toBeInstanceOf(Date);
+    expect(incidentCreate).not.toHaveBeenCalled();
+  });
+
+  it("사고 기록 실패가 응답을 막지 않는다", async () => {
+    incidentFindFirst.mockRejectedValue(new Error("incident table down"));
+    incidentUpdateMany.mockRejectedValue(new Error("incident table down"));
+    logFindMany.mockRejectedValue(new Error("history down"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const body = { ok: true, failed: true, failureReason: "전부 실패" };
+    const wrapped = withSystemTaskStatus(DECLARED_JOB, vi.fn(async () => Response.json(body)));
+
+    const res = await wrapped(makeRequest(`Bearer ${SECRET}`));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(body);
+    expect(upsert).toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
+
+    // 성공 경로(닫기·B 이력 조회 실패)도 같다.
+    const okBody = { ok: true, targets: 3, produced: 0 };
+    const okRes = await withSystemTaskStatus(DECLARED_JOB, vi.fn(async () => Response.json(okBody)))(
+      makeRequest(`Bearer ${SECRET}`),
+    );
+    expect(okRes.status).toBe(200);
+    expect(await okRes.json()).toEqual(okBody);
+    consoleError.mockRestore();
+  });
+});
+
+describe("capDetailsForLog — 산출 판정 숫자 보존", () => {
+  it("과대 페이로드를 줄여도 targets·produced 는 그대로 남는다(B 판정이 이력에서 읽는다)", () => {
+    const capped = capDetailsForLog({
+      ok: true,
+      targets: 42,
+      produced: 0,
+      errors: Array.from({ length: 200 }, (_, i) => `seller-${i}: 응답 형식 변경 ${"x".repeat(80)}`),
+      blob: "y".repeat(20_000),
+      nested: { list: Array.from({ length: 300 }, (_, i) => ({ id: i, note: "z".repeat(50) })) },
+    }) as Record<string, unknown>;
+
+    expect(JSON.stringify(capped).length).toBeLessThanOrEqual(4_000);
+    expect(capped.targets).toBe(42);
+    expect(capped.produced).toBe(0);
   });
 });
