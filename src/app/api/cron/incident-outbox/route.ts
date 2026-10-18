@@ -69,13 +69,27 @@ function toReport(row: IncidentRow): ReportIncident {
 
 /**
  * 알림 직전 재확인으로 막는다 — 보내지 않을 사고를 닫고, 「알림이 틀릴 뻔했다」는 C 사고를 남겨 바로 닫는다.
- * 조치대기 상태일 때만 닫는다(그 사이 다른 호출이 닫았으면 P2025, 경합이지 오류가 아니다). 던지지 않는다.
+ * PR 이 붙은 사고는 막지 않는다(resolveOpenIncidents 와 같은 기준). 조치대기 상태일 때만 닫는다(그 사이 다른 호출이 닫았으면 P2025, 경합이지 오류가 아니다). 던지지 않는다.
  */
+type TaskStatusRow = { status: string; lastRunAt: Date | null; lastProducedAt: Date | null };
+
+/**
+ * 마지막 발생 뒤 정상으로 돌아온 실행 시각, 아니면 null.
+ * B(결과 0건)는 SUCCESS 로 기록되므로 성공 여부로는 못 가린다 — 대상이 없어 조용히 끝난 실행도 SUCCESS 다.
+ * 그래서 B 는 실제 산출(`lastProducedAt`)이 마지막 발생 뒤에 생겼을 때만 정상화로 본다.
+ */
+function healedSince(row: IncidentRow, s: TaskStatusRow | undefined): Date | null {
+  if (!s) return null;
+  const after = (d: Date | null) => (d && d.getTime() > row.lastSeenAt.getTime() ? d : null);
+  if (row.kind === "B") return after(s.lastProducedAt);
+  return s.status === "SUCCESS" ? after(s.lastRunAt) : null;
+}
+
 async function suppressIncident(row: IncidentRow, lastRunAt: Date, now: Date): Promise<void> {
   const prisma = getPrisma();
   try {
     await prisma.cronIncident.update({
-      where: { id: row.id, status: "waiting_owner" },
+      where: { id: row.id, status: "waiting_owner", prNumber: null },
       data: {
         status: "resolved",
         suppressedAt: now,
@@ -106,13 +120,13 @@ async function immediateMessages(now: Date): Promise<OutboxMessage[]> {
   if (pending.length > 0) {
     const statuses = await prisma.systemTaskStatus.findMany({
       where: { jobKey: { in: [...new Set(pending.map((r) => r.jobKey))] } },
-      select: { jobKey: true, status: true, lastRunAt: true },
+      select: { jobKey: true, status: true, lastRunAt: true, lastProducedAt: true },
     });
     const statusByJob = new Map(statuses.map((s) => [s.jobKey, s]));
     for (const row of pending) {
-      const s = statusByJob.get(row.jobKey);
-      if (s?.status === "SUCCESS" && s.lastRunAt && s.lastRunAt.getTime() > row.lastSeenAt.getTime()) {
-        await suppressIncident(row, s.lastRunAt, now);
+      const healedAt = row.prNumber == null ? healedSince(row, statusByJob.get(row.jobKey)) : null;
+      if (healedAt) {
+        await suppressIncident(row, healedAt, now);
         continue;
       }
       messages.push(formatImmediate(toReport(row), jobNameOf(row.jobKey)));

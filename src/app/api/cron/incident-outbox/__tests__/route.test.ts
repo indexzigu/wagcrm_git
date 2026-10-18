@@ -136,7 +136,7 @@ describe("incident-outbox 크론", () => {
     const body = await (await GET(get("immediate"))).json();
     expect(body.messages).toEqual([]);
     expect(incidentUpdate).toHaveBeenCalledWith({
-      where: { id: "inc1", status: "waiting_owner" },
+      where: { id: "inc1", status: "waiting_owner", prNumber: null },
       data: {
         status: "resolved",
         suppressedAt: NOW,
@@ -164,6 +164,59 @@ describe("incident-outbox 크론", () => {
     ]);
     const body = await (await GET(get("immediate"))).json();
     expect(body.messages).toHaveLength(1);
+    expect(recordIncidentOccurrence).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["산출 시각이 마지막 발생보다 이르다", new Date("2026-10-17T21:00:00Z")],
+    ["산출 기록이 없다", null],
+  ])("immediate: B 는 SUCCESS·새 실행이어도 %s면 막지 않고 보낸다", async (_label, lastProducedAt) => {
+    routeFindMany([row({ kind: "B", errorKind: null })], []);
+    statusFindMany.mockResolvedValue([
+      {
+        jobKey: "naver-settlement-sync",
+        status: "SUCCESS",
+        lastRunAt: new Date("2026-10-18T00:00:00Z"),
+        lastProducedAt,
+      },
+    ]);
+    const body = await (await GET(get("immediate"))).json();
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].ackField).toBe("alertedAt");
+    expect(incidentUpdate).not.toHaveBeenCalled();
+    expect(recordIncidentOccurrence).not.toHaveBeenCalled();
+  });
+
+  it("immediate: B 는 마지막 발생 뒤 실제 산출이 생겼으면 막고 C 사고를 남긴다", async () => {
+    const lastProducedAt = new Date("2026-10-18T00:00:00Z");
+    routeFindMany([row({ kind: "B", errorKind: null })], []);
+    statusFindMany.mockResolvedValue([
+      { jobKey: "naver-settlement-sync", status: "SUCCESS", lastRunAt: lastProducedAt, lastProducedAt },
+    ]);
+    const body = await (await GET(get("immediate"))).json();
+    expect(body.messages).toEqual([]);
+    expect(incidentUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inc1", status: "waiting_owner", prNumber: null },
+        data: expect.objectContaining({
+          normalizedEvidence: { runAt: lastProducedAt.toISOString(), suppressed: true },
+        }),
+      }),
+    );
+    expect(recordIncidentOccurrence).toHaveBeenCalledWith(expect.objectContaining({ kind: "C" }));
+    expect(resolveOpenIncidents).toHaveBeenCalledWith(expect.objectContaining({ kinds: ["C"] }));
+  });
+
+  it.each(["A", "B"])("immediate: PR 이 붙은 %s 사고는 정상 실행이 있어도 막지 않는다", async (kind) => {
+    const later = new Date("2026-10-18T00:00:00Z");
+    routeFindMany([row({ kind, errorKind: kind === "B" ? null : "network", prNumber: 7 })], []);
+    statusFindMany.mockResolvedValue([
+      { jobKey: "naver-settlement-sync", status: "SUCCESS", lastRunAt: later, lastProducedAt: later },
+    ]);
+    const body = await (await GET(get("immediate"))).json();
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].detail).toContain("PR #7");
+    expect(incidentUpdate).not.toHaveBeenCalled();
     expect(recordIncidentOccurrence).not.toHaveBeenCalled();
   });
 
