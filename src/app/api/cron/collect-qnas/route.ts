@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import { QNA_DEFAULT_LOOKBACK_DAYS, runQnaSync } from "@/lib/order-converter/naver-qna-sync";
 import { verifyCronAuth } from "@/lib/cron-auth";
@@ -25,7 +26,7 @@ async function handler(request: Request) {
   } catch (error) {
     console.error("[cron/collect-qnas] Unexpected error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 }
     );
   }

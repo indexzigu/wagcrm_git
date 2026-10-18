@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 
 // 다른 크론 라우트(enrich-references, collect-instagram 등)와 동일한 상한.
@@ -227,7 +228,7 @@ async function handler(request: Request) {
   } catch (error) {
     console.error("[cron/price-monitoring] Unexpected error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 },
     );
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import { runSync } from "@/lib/order-converter/naver-order-sync";
 import { sweepBuyerFingerprints } from "@/lib/cross-campaign-repurchase";
@@ -69,7 +70,7 @@ async function handler(request: Request) {
   } catch (error) {
     console.error("[cron/naver-order-sync] Unexpected error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 }
     );
   }

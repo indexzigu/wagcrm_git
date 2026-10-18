@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import { runReviewSync } from "@/lib/order-converter/review-collect";
 import { verifyCronAuth } from "@/lib/cron-auth";
@@ -24,7 +25,7 @@ async function handler(request: Request) {
   } catch (error) {
     console.error("[cron/collect-reviews] Unexpected error:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal server error" },
+      { error: describeErrorChain(error) },
       { status: 500 }
     );
   }

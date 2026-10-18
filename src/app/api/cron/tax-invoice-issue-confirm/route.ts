@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { describeErrorChain } from "@/lib/cron-error-text";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import { getPrisma } from "@/lib/prisma";
@@ -278,7 +279,7 @@ async function runMonthlyAutoRecord(input: {
       if (row) report.applied += 1;
       else report.noop += 1;
     } catch (error) {
-      report.failures.push({ key, error: error instanceof Error ? error.message : String(error) });
+      report.failures.push({ key, error: describeErrorChain(error) });
     }
   }
   return report;
@@ -328,7 +329,7 @@ async function handler(request: Request): Promise<Response> {
       invoicePassword: SUPPLIER.businessNumber,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "메일함 조회에 실패했습니다.";
+    const message = describeErrorChain(error);
     return NextResponse.json(
       { failed: true, failureReason: `메일함 조회 실패: ${message}`, error: message },
       { status: 502 },
@@ -432,7 +433,7 @@ async function handler(request: Request): Promise<Response> {
         // 한 건의 실패가 나머지를 막지 않는다. 삼키지도 않는다 — 응답에 싣는다.
         failures.push({
           key: op.key,
-          error: error instanceof Error ? error.message : String(error),
+          error: describeErrorChain(error),
         });
       }
     }
@@ -449,7 +450,7 @@ async function handler(request: Request): Promise<Response> {
       dryRun,
     });
   } catch (error) {
-    monthlyAutoRecord = { failed: true, error: error instanceof Error ? error.message : String(error) };
+    monthlyAutoRecord = { failed: true, error: describeErrorChain(error) };
   }
   const monthlyFailures =
     "failed" in monthlyAutoRecord
