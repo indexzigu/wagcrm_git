@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardHome } from "../dashboard-home";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { buildTaxableRevenueTracker } from "@/lib/taxable-revenue-tracker";
+import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
 
 vi.mock("recharts", () => ({
   ComposedChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -21,10 +22,24 @@ vi.mock("@/components/ui/chart", () => ({
   ChartTooltipContent: () => null,
 }));
 
-// 「오늘 처리할 주문」 카드는 자기 데이터를 react-query 로 따로 받는다(사이드바 배지와 공유 캐시) —
-// 카드 자체의 상태 계약은 order-work-card.test.tsx 가 본다. 여기서는 배치만 본다.
-vi.mock("../order-work-card", () => ({
-  OrderWorkCard: () => <section data-testid="order-work-card" />,
+// 「오늘 처리할 일」의 주문·승인대기 원천은 react-query 훅이다(사이드바 배지와 공유 캐시) — 여기서는
+// 훅 값을 고정해 홈이 원천을 모아 카드에 넘기는지만 본다. 카드 자체의 표시 계약은
+// today-work-card.test.tsx, 행 규칙은 src/lib/__tests__/today-work.test.ts 가 본다.
+const hookState = vi.hoisted(() => ({
+  orders: undefined as unknown,
+  approvalsCount: 0,
+}));
+vi.mock("@/hooks/useOrderWorkSummary", () => ({
+  useOrderWorkSummary: () => ({
+    data: hookState.orders,
+    dataUpdatedAt: Date.now(),
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("@/hooks/useApprovalInbox", () => ({
+  useApprovalInbox: () => ({ count: hookState.approvalsCount, isLoading: false, isError: false, refetch: vi.fn() }),
 }));
 
 vi.mock("@/components/ui/animated-number", () => ({
@@ -89,6 +104,19 @@ function data(overrides: Partial<DesktopDashboardData> = {}): DesktopDashboardDa
     },
     dataIntegrityIssues: [],
     taxableRevenueTracker: buildTaxableRevenueTracker([], new Date("2026-06-15T03:00:00.000Z")),
+    ...overrides,
+  };
+}
+
+function orderSummary(overrides: Partial<OrderWorkSummary> = {}): OrderWorkSummary {
+  return {
+    awaitingPo: { lines: 0, campaigns: 0, delayedLines: 0 },
+    delayed: { lines: 0, campaigns: 0, invoiceLines: 0, shippingLines: 0 },
+    openClaims: { lines: 0, campaigns: 0, unmatchedLines: 0 },
+    total: 0,
+    lastSyncAt: new Date().toISOString(),
+    activeCampaignCount: 1,
+    hasSnapshot: true,
     ...overrides,
   };
 }
@@ -241,15 +269,47 @@ describe("DashboardHome", () => {
     expect(screen.queryByText(/최근 실적/)).not.toBeInTheDocument();
   });
 
-  // 움브렐라 제목 "오늘의 핵심 업무" 제거(오너 2026-07-24) — 카드는 탭[영업 팔로업|지연된 정산]이
-  // 헤더다. 할 일이 없으면 축하 빈 상태를 보여준다(제목 없이도 맥락 전달).
-  it("renders the daily action card empty state when there is no agenda", async () => {
+  // 「오늘 처리할 일」(2026-10-18): 주문·영업 팔로업·지연된 정산·승인대기·데이터 점검을 한 목록으로.
+  it("모든 원천이 0건이면 「오늘 처리할 일」이 한 줄로 접힌다", async () => {
+    hookState.orders = orderSummary();
+    hookState.approvalsCount = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tasks: [], settlements: [] }) }),
     );
     render(<DashboardHome initialData={data()} />);
-    expect(await screen.findByText(/오늘 할 일이 모두 완료/)).toBeInTheDocument();
+    expect(await screen.findByText("오늘 처리할 일이 없습니다")).toBeInTheDocument();
+    // 종전 핵심 업무 탭 카드(축하 빈 상태)와 빠른 정산 창은 흡수됐다.
+    expect(screen.queryByText(/오늘 할 일이 모두 완료/)).not.toBeInTheDocument();
+  });
+
+  it("원천을 모아 행으로 — 지연된 정산 한 건은 그 캠페인 상세로, 데이터 점검은 아래 탭으로 간다", async () => {
+    hookState.orders = orderSummary({ awaitingPo: { lines: 4, campaigns: 2, delayedLines: 0 }, total: 4 });
+    hookState.approvalsCount = 2;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ tasks: [{ id: "t-1" }, { id: "t-2" }], settlements: [{ id: "camp-9" }] }),
+      }),
+    );
+    const { container } = render(
+      <DashboardHome
+        initialData={data({
+          dataIntegrityIssues: [
+            { campaignId: "c-1", campaignName: "점검캠페인", type: "MISSING_SALES", label: "매출 미입력" },
+          ] as unknown as DesktopDashboardData["dataIntegrityIssues"],
+        })}
+      />,
+    );
+    const settlement = (await screen.findByText("지연된 정산")).closest("a")!;
+    expect(settlement).toHaveAttribute("href", "/settlement?campaign=camp-9");
+    expect(screen.getByText("영업 팔로업").closest("a")).toHaveAttribute("href", "/outreach");
+    expect(screen.getByText("승인대기").closest("a")).toHaveAttribute("href", "/approvals");
+    expect(screen.getByText("발주 대기").closest("a")).toHaveAttribute("href", "/order-converter");
+    const check = container.querySelector('a[data-row="data-check"]')!;
+    expect(check).toHaveAttribute("href", "/#data-check");
+    expect(container.querySelector("#data-check")).not.toBeNull();
   });
 
   // 오너 2026-10-06: 퍼널 트랙의 빈 구간이 slate-100(흰 카드 대비 1.09:1)이라 안 보였다 → slate-300.
@@ -283,12 +343,12 @@ describe("DashboardHome", () => {
     expect(screen.queryByText("셀러 베이스 모멘텀")).not.toBeInTheDocument();
   });
 
-  // 발주 자동화 1단계(오너 승인 2026-10-06): 그날 손이 가야 하는 주문 일은 매출·일정보다 먼저 읽힌다.
-  it("「오늘 처리할 주문」 카드를 KPI 밴드보다 위, 첫 줄에 둔다", () => {
+  // 그날 손이 가야 하는 일은 매출·일정보다 먼저 읽힌다(발주 자동화 1단계 2026-10-06 배치 승계).
+  it("「오늘 처리할 일」 카드를 KPI 밴드보다 위, 첫 줄에 둔다", () => {
     const { container } = render(<DashboardHome initialData={data()} />);
-    const card = screen.getByTestId("order-work-card");
+    const heading = screen.getByRole("heading", { name: "오늘 처리할 일" });
     const stack = container.querySelector("main > div.space-y-6");
-    expect(stack?.firstElementChild).toBe(card);
+    expect(stack?.firstElementChild?.contains(heading)).toBe(true);
   });
 
   it("재계약 검토는 페이지 이동 없이 팝업으로 휴면 셀러 목록을 연다", () => {

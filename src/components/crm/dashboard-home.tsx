@@ -7,15 +7,10 @@ import {
   Target,
   TrendingUp,
   UsersRound,
-  ChevronRight,
-  Loader2,
-  Sparkles,
-  Globe,
 } from "lucide-react";
 import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChartContainer,
   ChartTooltip,
@@ -33,10 +28,14 @@ import { ScheduleGapBriefingBody } from "./schedule-gap-briefing-card";
 import { UpcomingScheduleBody, UpcomingScheduleCard, CalendarSyncBadge } from "./upcoming-schedule-card";
 import { DataIntegrityBody } from "./data-integrity-card";
 import { usePriceOverview, PriceDefenseBody, PriceDefenseLegend } from "./price-defense-card";
-import { SegmentedTabCard, SegmentedTabBar, type SegmentedTab } from "./segmented-tab-card";
+import { SegmentedTabCard, type SegmentedTab } from "./segmented-tab-card";
 import { SystemRadarCard } from "./system-radar-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
-import { OrderWorkCard } from "./order-work-card";
+import { TodayWorkCard } from "./today-work-card";
+import { resolveOrderSyncState } from "./order-work-card";
+import { buildTodayWorkRows, DATA_CHECK_ANCHOR } from "@/lib/today-work";
+import { useOrderWorkSummary } from "@/hooks/useOrderWorkSummary";
+import { useApprovalInbox } from "@/hooks/useApprovalInbox";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { DASHBOARD_SCOPE_CAPTION, DASHBOARD_YTD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 import { formatCurrency, formatNumber } from "@/lib/format";
@@ -49,13 +48,10 @@ import {
 } from "@/lib/goal-band";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { QuickSettlementModal } from "./quick-settlement-modal";
-import { useState, useEffect, useId } from "react";
+import { useState, useEffect } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
-import { toast } from "@/lib/toast";
 import { AnimatedNumber } from "@/components/ui/animated-number";
-import { badgeSizeClassName } from "@/components/ui/badge";
 
 
 // WAG CRM 팔레트 스펙(오너 승인, 2026-07-09) — 차트라인/기준선 하드코딩 색 → 토큰 수렴
@@ -132,12 +128,6 @@ function monthLabel(monthKey: string) {
   return `${m}월`;
 }
 
-// 핵심 업무 행의 기한 표기 — 좁은 반쪽 칸에서 toLocaleDateString()(7/21/2026)은 이름 폭을
-// 잡아먹는다. 연도는 이 카드 맥락(지연·임박)에서 항상 올해 부근이라 "7.21"로 족하다.
-function shortDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}.${d.getDate()}`;
-}
 
 function monthlyActionHint(achievementRate: number | null, targetSet: boolean): string {
   if (!targetSet) return "운영 설정에서 월 목표를 등록하세요";
@@ -508,136 +498,15 @@ function ShortageGridRow({
   );
 }
 
+// `/api/agenda` 응답 중 홈이 읽는 부분 — 건수와 지연된 정산 id(그룹은 대표 멤버 id)뿐이다. 목록 렌더·
+// 빠른 정산 창은 「오늘 처리할 일」로 흡수되며 빠졌다(2026-10-18).
 interface AgendaItem {
   id: string;
-  type: "TASK" | "SETTLEMENT";
-  status: string;
-  title: string;
-  dueDate: string | null;
-  label: string;
-  badgeColor: {
-    bg: string;
-    text: string;
-    border: string;
-  };
-  sellerName?: string;
-  dealName?: string;
-  accountNumber?: string | null;
-  settlementSales?: number;
-  actualPayoutAmount?: number;
-  /** 지연된 칸(입금/지급 × 상대) — 서버(`agenda-settlements.ts`)가 슬롯에서 파생한다. */
-  overdueSlot?: {
-    kind: "DEPOSIT" | "PAYOUT";
-    verb: "입금" | "지급";
-    counterpartLabel: string;
-    flagField: "isDepositReceived" | "isPayoutCompleted" | "isSupplierPayoutCompleted";
-  };
-  /** 모달이 대조할 금액. null = 금액 컬럼이 없는 칸(자사몰 공급사 지급) — 0 이 아니다. */
-  targetAmount?: number | null;
-  snsType?: string;
 }
 
 interface AgendaData {
   tasks: AgendaItem[];
   settlements: AgendaItem[];
-}
-
-function InstagramIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-    </svg>
-  );
-}
-
-function YoutubeIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17z" />
-      <polygon points="10 15 15 12 10 9" />
-    </svg>
-  );
-}
-
-const renderSnsIcon = (snsType?: string) => {
-  if (!snsType) return null;
-  const type = snsType.toUpperCase();
-  if (type === "INSTAGRAM") {
-    return <InstagramIcon className="size-3.5 text-pink-500/70 shrink-0" />;
-  }
-  if (type === "YOUTUBE") {
-    return <YoutubeIcon className="size-3.5 text-red-500/70 shrink-0" />;
-  }
-  return <Globe className="size-3.5 text-slate-400/80 shrink-0" />;
-};
-
-// 핵심 업무 탭에 인라인으로 보여줄 상위 건수 — 나머지는 "더보기" 팝오버로(데이터 점검과 동일 패턴).
-const AGENDA_PREVIEW_COUNT = 3;
-
-// "더보기" 팝오버 — 데이터 점검 카드와 동일한 경량 Popover(포털·충돌회피·available-height 캡).
-function AgendaMore({
-  open,
-  onOpenChange,
-  moreCount,
-  title,
-  sub,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  moreCount: number;
-  title: string;
-  sub: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mt-2 shrink-0 text-center">
-      <Popover open={open} onOpenChange={onOpenChange}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="crm-hit-area-wide inline-block rounded text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
-          >
-            + {moreCount}건 더보기
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="center"
-          sideOffset={6}
-          collisionPadding={12}
-          className="flex w-[340px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay max-h-[min(460px,var(--radix-popover-content-available-height))]"
-        >
-          <div className="shrink-0 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5">
-            <p className="text-[12px] font-bold text-slate-700">{title}</p>
-            <p className="text-[10px] text-slate-500">{sub}</p>
-          </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto [scrollbar-gutter:stable] px-3 py-2">
-            {children}
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
 }
 
 export function DashboardHome({ initialData }: { initialData: DesktopDashboardData }) {
@@ -646,9 +515,6 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   // — 빈 상태 pop-in이 마운트/데이터 도착 시 이중 발화하는 원인이기도 했다.
   const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState<string | null>(null);
-  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
-  const [selectedSettlement, setSelectedSettlement] = useState<AgendaItem | null>(null);
-  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   // 휴면 셀러 재계약 검토 팝업 — 페이지 이동 없이 대시보드에서 대상 확인(오너 2026-07-24)
   const [isDormantListOpen, setIsDormantListOpen] = useState(false);
 
@@ -657,12 +523,6 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   const priceOverview = usePriceOverview();
   // 막대 성장 애니메이션은 OS 「동작 줄이기」면 끈다(recharts 는 CSS 가드 밖이라 JS 로).
   const reducedMotion = useReducedMotion();
-
-  // 핵심 업무 탭(오너 2026-07-24 — 데이터 점검처럼 탭 방식으로 통일). 반쪽 2열은 각 행에
-  // ≈200px만 남겨 딜명·셀러명이 말줄임으로 죽었다. 두 목록은 비교가 아니라 하나씩 처리하는
-  // 큐라서, 밑줄 탭으로 전환하면 각 목록이 카드 전폭을 받는다.
-  const [agendaTab, setAgendaTab] = useState<"tasks" | "settlements">("tasks");
-  const agendaTabId = useId();
 
   const fetchAgenda = async () => {
     setAgendaLoading(true);
@@ -683,116 +543,33 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
     fetchAgenda();
   }, []);
 
-  // 팔로업이 비어 있고 지연 정산만 있으면 정산 탭을 첫 화면으로 — 빈 목록이 첫 인상이
-  // 되는 것을 방지(재조회로 팔로업이 소진된 경우에도 동일하게 정산 쪽으로 넘어간다).
-  const agendaTaskCount = agendaData.tasks.length;
-  const agendaSettlementCount = agendaData.settlements.length;
-  useEffect(() => {
-    if (!agendaLoading && agendaTaskCount === 0 && agendaSettlementCount > 0) {
-      setAgendaTab("settlements");
-    }
-  }, [agendaLoading, agendaTaskCount, agendaSettlementCount]);
-
-  const handleCompleteReminder = async (e: React.MouseEvent, taskId: string) => {
-    e.stopPropagation();
-    setCompletingTaskId(taskId);
-    try {
-      const now = new Date();
-      const nextDate = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // 3일 추가
-      const res = await fetch(`/api/outreach/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "PROPOSED",
-          lastReminderAt: now.toISOString(),
-          nextReminderAt: nextDate.toISOString(),
-        }),
-      });
-
-      if (!res.ok) throw new Error("리마인드 처리 기록에 실패했습니다.");
-      
-      toast.success("리마인드 완료 처리되었습니다.");
-      await fetchAgenda();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "오류가 발생했습니다.");
-    } finally {
-      setCompletingTaskId(null);
-    }
+  // 「오늘 처리할 일」 원천 — 카드는 fetch 하지 않고 여기서 모아 준다(today-work.ts). 주문 요약은 사이드바
+  // 배지와 한 캐시(`useOrderWorkSummary`), 승인대기 수는 사이드바 `ApprovalBadge` 와 같은 쿼리키라
+  // 추가 요청이 생기지 않는다. 데이터 점검 건수는 아래 「데이터 점검」 탭과 같은 배열이다.
+  const orderWork = useOrderWorkSummary();
+  const approvals = useApprovalInbox("PENDING_APPROVAL");
+  const todayRows = buildTodayWorkRows({
+    orders: orderWork.data,
+    agenda: {
+      tasks: agendaData.tasks.length,
+      settlements: agendaData.settlements.length,
+      overdueSettlementIds: agendaData.settlements.map((item) => item.id),
+    },
+    approvalsPending: approvals.count,
+    dataCheck: initialData.dataIntegrityIssues.length,
+  });
+  const todayFailedSources = [
+    orderWork.isError ? "주문" : null,
+    agendaError ? "영업·정산" : null,
+    approvals.isError ? "승인대기" : null,
+  ].filter((name): name is string => name != null);
+  const retryTodayWork = () => {
+    if (orderWork.isError) void orderWork.refetch();
+    if (agendaError) void fetchAgenda();
+    if (approvals.isError) void approvals.refetch();
   };
-
-  const handleOpenSettlementModal = (e: React.MouseEvent, item: AgendaItem) => {
-    e.stopPropagation();
-    setSelectedSettlement(item);
-    setIsSettlementModalOpen(true);
-  };
-
-  // 핵심 업무 탭 오버플로도 데이터 점검과 동일하게: 상위 N건만 카드에 두고 나머지는 "더보기" 팝오버로
-  // 본다(오너 2026-07-24 — 스크롤 대신). N건 캡이라 카드 높이는 데이터와 무관하게 안정적이다.
-  const [tasksMoreOpen, setTasksMoreOpen] = useState(false);
-  const [settlementsMoreOpen, setSettlementsMoreOpen] = useState(false);
-
-  // 행 렌더 헬퍼 — 카드 인라인(상위 N)과 더보기 팝오버(전체)가 같은 마크업을 공유한다.
-  const renderTaskRow = (item: AgendaItem) => (
-    <div
-      key={item.id}
-      className="group rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 transition-[border-color,background-color,box-shadow] duration-200 hover:border-status-info/20 hover:bg-white hover:shadow-soft-sm"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <Link
-          href={`/outreach?taskId=${item.id}`}
-          className="crm-hit-area min-w-0 flex-1 truncate text-xs font-semibold text-slate-700 leading-snug hover:text-status-info transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          title={item.dealName || item.title}
-        >
-          {item.dealName || item.title}
-        </Link>
-        <button
-          onClick={(e) => handleCompleteReminder(e, item.id)}
-          disabled={completingTaskId === item.id}
-          className="crm-hit-area shrink-0 inline-flex items-center gap-0.5 rounded-md border border-status-info/20 bg-status-info/10 hover:border-status-info/40 px-1.5 py-0.5 text-[10px] font-semibold text-status-info transition-colors active:translate-y-px disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          {completingTaskId === item.id ? <Loader2 className="size-3 animate-spin" /> : "연락 완료"}
-        </button>
-      </div>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        {renderSnsIcon(item.snsType)}
-        <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600" title={item.sellerName || ""}>
-          {item.sellerName || ""}
-        </span>
-        <span className={`shrink-0 inline-flex items-center ${badgeSizeClassName.compact} ${item.badgeColor.bg} ${item.badgeColor.text} ${item.badgeColor.border}`}>
-          {item.label}
-        </span>
-        {item.dueDate && <span className="shrink-0 text-[9px] tabular-nums text-slate-500">{shortDate(item.dueDate)}</span>}
-      </div>
-    </div>
-  );
-
-  // 정산 행은 행 전체가 정산 확인 모달 트리거. 팝오버 안에서 누르면 팝오버를 닫고 모달을 연다(중첩 방지).
-  const renderSettlementRow = (item: AgendaItem, afterClick?: () => void) => (
-    <button
-      key={item.id}
-      type="button"
-      onClick={(e) => { handleOpenSettlementModal(e, item); afterClick?.(); }}
-      className="group w-full text-left rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 transition-[border-color,background-color,box-shadow] duration-200 hover:border-status-urgent/20 hover:bg-white hover:shadow-soft-sm flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
-      title={`${item.dealName || item.title} · ${item.sellerName || ""} 정산 확인`}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700 leading-snug group-hover:text-status-urgent-text transition-colors">
-            {item.dealName || item.title}
-          </span>
-          {item.dueDate && <span className="shrink-0 text-[9px] tabular-nums text-slate-500">{shortDate(item.dueDate)}</span>}
-        </div>
-        <div className="mt-1.5 flex items-center gap-1.5">
-          {renderSnsIcon(item.snsType)}
-          <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600">{item.sellerName || ""}</span>
-          <span className={`shrink-0 inline-flex items-center ${badgeSizeClassName.compact} ${item.badgeColor.bg} ${item.badgeColor.text} ${item.badgeColor.border}`}>
-            {item.label}
-          </span>
-        </div>
-      </div>
-      <ChevronRight className="size-3.5 shrink-0 text-slate-400 group-hover:text-status-urgent-text transition-colors" aria-hidden="true" />
-    </button>
-  );
+  // 낡음 판정의 「지금」은 데이터를 받은 시각이다 — 렌더 중 Date.now() 는 순수하지 않다.
+  const orderSync = orderWork.data ? resolveOrderSyncState(orderWork.data, orderWork.dataUpdatedAt) : null;
 
   const monthRate = rate(initialData.goals.monthActual, initialData.goals.monthTarget);
   const annualRate = rate(initialData.goals.ytdActual, initialData.goals.annualTarget);
@@ -860,10 +637,17 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
     <CrmShell>
       <main className="min-h-full bg-[radial-gradient(circle_at_top_right,_rgba(15,95,103,0.07),_transparent_30%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] px-5 pb-5 pt-5 md:px-8">
         <div className="space-y-6">
-          {/* 밴드 -1: 오늘 처리할 주문(발주 자동화 1단계, 오너 승인 2026-10-06) — 그날 손이 가야 하는
-              주문 일(발주 대기·배송 지연·진행 중 클레임)이라 매출·일정보다 먼저 읽힌다. 일이 없으면 한 줄로
-              물러나 아래 밴드를 밀어내지 않는다. 네이버 호출 0(저장된 스냅샷만), 사이드바 배지와 한 캐시. */}
-          <OrderWorkCard />
+          {/* 밴드 -1: 오늘 처리할 일(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17) — 주문·영업 팔로업·지연된
+              정산·승인대기·데이터 점검을 한 목록으로. 그날 손이 가야 하는 일이라 매출·일정보다 먼저 읽힌다.
+              일이 없으면 한 줄로 물러나 아래 밴드를 밀어내지 않는다. 종전 「오늘 처리할 주문」 카드와
+              「핵심 업무」 탭 카드(빠른 정산 창 포함)를 흡수했다 — 지연된 정산은 정산 관리 상세로 간다. */}
+          <TodayWorkCard
+            rows={todayRows}
+            loading={orderWork.isLoading || agendaLoading || approvals.isLoading}
+            failedSources={todayFailedSources}
+            onRetry={retryTodayWork}
+            orderSync={orderSync}
+          />
           {/* items-start: 좌측 히어로가 우측 컬럼 높이에 강제로 늘어나며 카드 내부에
               빈 공백이 생기는 것을 방지 — 두 컬럼 높이 차이는 카드 밖 배경으로 흡수한다 */}
           {/* 밴드 0: 실시간 KPI 스트립 (1x3 풀폭) — 소형 지표라 상단 밴드로 분리, 각 지표가 폭 여유 확보 (오너 결정 A안, 2026-07-10) */}
@@ -1185,129 +969,10 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
             />
           )}
 
-          {/* 밴드 3: 할 일(반응)·기회(셀러 모멘텀)·점검(데이터) 3렌즈 triad — 3등분 (오너 결정 2026-07-10) */}
-          {/* 트라이어드 배치(오너 2026-07-24): 스탯 카드(활성 셀러)를 좌측에, 탭 카드 2종(핵심 업무·
-              데이터 점검)을 우측에 모아 같은 형태끼리 인접시킨다. xl 데스크톱에서만 order 로 재배치
-              (모바일 스택은 DOM 순서 유지). */}
-          <section className="grid gap-4 xl:grid-cols-3 items-stretch min-h-0">
-            <Card className="border-black/5 bg-white/85 shadow-soft-sm h-full flex flex-col min-h-0 xl:order-2">
-              <CardContent className="px-4 py-3 flex flex-col flex-1">
-                {/* 움브렐라 제목 "오늘의 핵심 업무" 제거(오너 2026-07-24) — 데이터 점검처럼 세부항목
-                    탭[영업 팔로업|지연된 정산]이 곧 카드 헤더다. 카운트는 각 탭 배지가 담당. */}
-                <div className="flex flex-col flex-1 min-h-0">
-                  {agendaLoading && agendaData.tasks.length === 0 && agendaData.settlements.length === 0 ? (
-                    /* 캐러셀 전환으로 로딩도 단일 전폭 페인 — 2열 스켈레톤은 옛 레이아웃 잔상을 만든다 */
-                    <div className="space-y-2 flex-1 min-h-0">
-                      {Array.from({ length: 3 }).map((_, i) => (
-                        <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 animate-pulse">
-                          <Skeleton className="h-3.5 w-2/3 bg-slate-200" />
-                          <div className="mt-1.5 flex gap-2">
-                            <Skeleton className="h-3 w-24 bg-slate-200" />
-                            <Skeleton className="h-3 w-12 bg-slate-200" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : agendaError ? (
-                    <div className="rounded-xl border border-red-100 bg-red-50/50 p-4 text-center my-auto">
-                      <p className="text-xs text-red-600">{agendaError}</p>
-                      <button
-                        className="mt-2.5 h-7 text-[10px] inline-flex items-center justify-center px-3 border border-red-200 rounded-md bg-white hover:bg-red-50 text-red-700 transition-colors"
-                        onClick={fetchAgenda}
-                      >
-                        다시 시도
-                      </button>
-                    </div>
-                  ) : (agendaData.tasks.length + agendaData.settlements.length) === 0 ? (
-                    <div className="flex flex-col items-center justify-center text-center gap-3 flex-1">
-                      {/* 완료 보상 pop-in 1회 — agendaLoading 초기값 true라 마운트 시 이중 발화 없음 */}
-                      <div className="pop-in-once flex size-9 items-center justify-center rounded-full bg-slate-50 border border-slate-100 text-slate-400">
-                        <Sparkles className="size-4 text-blue-500/80" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-700">오늘 할 일이 모두 완료되었습니다!</p>
-                        <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                          자동 팔로업 제안 리드나 기한이 경과된 정산 내역 없음
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col flex-1 min-h-0">
-                      {/* 데이터 점검처럼 밑줄 탭으로 전환(오너 2026-07-24) — 비활성 탭도 카운트 배지로
-                          알림 전달(팔로업=info 리마인드, 정산=urgent 지연). 각 목록이 카드 전폭을 받아
-                          딜명·셀러명이 온전히 읽힌다(반쪽 2열 잘림 해소). */}
-                      <SegmentedTabBar
-                        idPrefix={agendaTabId}
-                        active={agendaTab}
-                        onSelect={(k) => setAgendaTab(k as "tasks" | "settlements")}
-                        tabs={[
-                          { key: "tasks", label: "영업 팔로업", count: agendaData.tasks.length, countTone: "info" },
-                          { key: "settlements", label: "지연된 정산", count: agendaData.settlements.length, countTone: "urgent" },
-                        ]}
-                      />
-                      {/* 패널 고정 높이(데이터 점검 1순위와 동일 h-[210px]) — 정산 카드가 많아도 내부
-                          스크롤로 흡수해 카드·행 높이가 커지지 않는다(오너 2026-07-24 지적 반영) */}
-                      <div
-                        role="tabpanel"
-                        id={`${agendaTabId}-panel-${agendaTab}`}
-                        aria-labelledby={`${agendaTabId}-tab-${agendaTab}`}
-                        className="mt-2 flex flex-col h-[210px]"
-                      >
-                        {/* 스크롤 대신 상위 N건 + "더보기" 팝오버(데이터 점검과 동일, 오너 2026-07-24).
-                            N건 캡이라 카드 높이가 데이터 양과 무관하게 안정적이다. */}
-                        {agendaTab === "tasks" ? (
-                          agendaData.tasks.length === 0 ? (
-                            <div className="flex-1 flex items-center justify-center text-center text-xs text-slate-500 border border-dashed border-slate-150 rounded-xl bg-slate-50/30">
-                              팔로업할 영업 리드 없음
-                            </div>
-                          ) : (
-                            <>
-                              {/* stagger-cascade: fetch 후 도착하는 리스트만 순차 등장(ss-motion use-case 정합) */}
-                              <div className="stagger-fade-in space-y-2">
-                                {agendaData.tasks.slice(0, AGENDA_PREVIEW_COUNT).map(renderTaskRow)}
-                              </div>
-                              {agendaData.tasks.length > AGENDA_PREVIEW_COUNT && (
-                                <AgendaMore
-                                  open={tasksMoreOpen}
-                                  onOpenChange={setTasksMoreOpen}
-                                  moreCount={agendaData.tasks.length - AGENDA_PREVIEW_COUNT}
-                                  title={`영업 팔로업 ${agendaData.tasks.length}건`}
-                                  sub="자동 팔로업 제안 리드"
-                                >
-                                  {agendaData.tasks.map(renderTaskRow)}
-                                </AgendaMore>
-                              )}
-                            </>
-                          )
-                        ) : agendaData.settlements.length === 0 ? (
-                          <div className="flex-1 flex items-center justify-center text-center text-xs text-slate-500 border border-dashed border-slate-150 rounded-xl bg-slate-50/30">
-                            지연된 정산 내역 없음
-                          </div>
-                        ) : (
-                          <>
-                            <div className="stagger-fade-in space-y-2">
-                              {agendaData.settlements.slice(0, AGENDA_PREVIEW_COUNT).map((item) => renderSettlementRow(item))}
-                            </div>
-                            {agendaData.settlements.length > AGENDA_PREVIEW_COUNT && (
-                              <AgendaMore
-                                open={settlementsMoreOpen}
-                                onOpenChange={setSettlementsMoreOpen}
-                                moreCount={agendaData.settlements.length - AGENDA_PREVIEW_COUNT}
-                                title={`지연된 정산 ${agendaData.settlements.length}건`}
-                                sub="기한이 경과된 정산 · 행을 누르면 정산 확인"
-                              >
-                                {agendaData.settlements.map((item) => renderSettlementRow(item, () => setSettlementsMoreOpen(false)))}
-                              </AgendaMore>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
+          {/* 밴드 3: 기회(셀러 모멘텀)·점검(데이터) — 종전 3렌즈 triad(오너 결정 2026-07-10)의 「할 일」 칸
+              (핵심 업무 탭)은 맨 위 「오늘 처리할 일」로 흡수돼 2등분이 됐다(2026-10-18). 이 밴드의 재배치는
+              묶음 1-b 다음 단계(활성 셀러 카드 제거)가 맡는다. */}
+          <section className="grid gap-4 xl:grid-cols-2 items-stretch min-h-0">
             {/* 활성 셀러 현황(구 "셀러 베이스 모멘텀" — 알기 쉬운 한글 표기, 오너 2026-07-24)
                 — 관계 기반 매출 근원의 성장/이탈 선행지표 (오너 결정 2026-07-10). 좌측 배치(order-1) */}
             <Card className="border-black/5 bg-white/85 shadow-soft-sm h-full flex flex-col xl:order-1">
@@ -1434,7 +1099,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 #101이 최저가를 풀폭으로 뒀던 것을 오너 지시로 이 트라이어드 칸에 흡수(풀폭 밴드 제거).
                 카드 높이는 트라이어드 items-stretch로 형제 칸에 고정되고, 패널은 flex-1 내부 스크롤이라
                 탭 전환·데이터 증감에도 카드 높이가 흔들리지 않는다(오너 요구). 우측 배치(order-3) */}
-            <div className="h-full min-h-0 xl:order-3">
+            {/* id = 「오늘 처리할 일」 데이터 점검 행의 목적지(별도 화면이 없어 이 탭으로 내려온다). */}
+            <div id={DATA_CHECK_ANCHOR} className="h-full min-h-0 scroll-mt-20 xl:order-3">
               {/* bodyClassName 고정 높이(h-[210px]) — 두 탭 패널을 동일 높이·내부 스크롤로 만들어,
                   최저가 위반이 데이터 점검 5행 캡보다 많아져도 탭 전환·데이터 증감에 카드 높이가
                   흔들리지 않는다(ss-ux P0 반영). 데이터 점검은 5행+더보기라 내재적으로 유계. */}
@@ -1483,31 +1149,6 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
           <SystemRadarCard />
         </div>
       </main>
-      <QuickSettlementModal
-        isOpen={isSettlementModalOpen}
-        onClose={() => {
-          setIsSettlementModalOpen(false);
-          setSelectedSettlement(null);
-        }}
-        onSuccess={() => {
-          fetchAgenda();
-          window.location.reload();
-        }}
-        data={
-          selectedSettlement
-            ? {
-                id: selectedSettlement.id,
-                title: selectedSettlement.title,
-                sellerName: selectedSettlement.sellerName ?? "",
-                accountNumber: selectedSettlement.accountNumber ?? null,
-                // ⛔ 여기서 슬롯을 다시 유도하지 말 것 — 서버가 이미 어느 칸이 지연인지
-                // 판정했다. 없으면(구 배포 응답) 모달이 스스로 닫는다.
-                overdueSlot: selectedSettlement.overdueSlot ?? null,
-                targetAmount: selectedSettlement.targetAmount ?? null,
-              }
-            : null
-        }
-      />
     </CrmShell>
   );
 }
