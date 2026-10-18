@@ -2,7 +2,7 @@
 //   ① 인증 — 공유 시크릿 SSOT(`@/lib/cron-auth`). 미인증이면 DB 를 읽지 않는다
 //   ② immediate — 알림 직전 재확인으로 이미 정상화된 건은 보내지 않고 닫은 뒤 C 사고를 남긴다
 //   ③ immediate — 알렸던 사고가 정상화되면 정상화 메시지를 만든다
-//   ④ digest — KST 전날 08:00 ~ 오늘 08:00 창으로 조회한다
+//   ④ digest — 막은 개수는 KST 전날 08:00 ~ 오늘 08:00, 정상화 목록은 그 창 끝 기준 7일 안의 미요약분
 //   ⑤ POST — 지정한 사고의 지정한 칸만 지금 시각으로 바꾼다, 모르는 칸은 400
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -220,7 +220,7 @@ describe("incident-outbox 크론", () => {
     expect(recordIncidentOccurrence).not.toHaveBeenCalled();
   });
 
-  it("immediate: 알렸던 사고가 정상화되면 정상화 메시지, KNOWN_JOBS 에 없는 작업은 키를 이름으로", async () => {
+  it("immediate: 알렸던 사고가 정상화되면 정상화 메시지, KNOWN_JOBS 에 없는 작업은 「알 수 없음」", async () => {
     routeFindMany(
       [],
       [
@@ -239,7 +239,7 @@ describe("incident-outbox 크론", () => {
       {
         key: "incident-inc9-ok",
         icon: "✅",
-        title: "unlisted-job 정상화",
+        title: "알 수 없음 정상화",
         detail: "09:05 실행부터 정상입니다.",
         ackField: "recoveryAlertedAt",
         incidentIds: ["inc9"],
@@ -280,13 +280,29 @@ describe("incident-outbox 크론", () => {
     const start = new Date("2026-10-16T23:00:00Z");
     const end = new Date("2026-10-17T23:00:00Z");
     const resolvedQuery = incidentFindMany.mock.calls.find(([a]) => a.where.status === "resolved")![0];
+    // 정상화 목록의 하한은 7일 전이다 — 08:00 회차를 놓친 날의 정상화가 다음 날 요약에 실린다(digestedAt null 로 한 번만).
+    // 「막은 건」 개수는 24시간 창 그대로다(개수라 따로 확인 칸이 없다).
     expect(resolvedQuery.where).toMatchObject({
-      normalizedAt: { gte: start, lt: end },
+      normalizedAt: { gte: new Date("2026-10-10T23:00:00Z"), lt: end },
       digestedAt: null,
       suppressedAt: null,
       kind: { not: "C" },
     });
     expect(incidentCount).toHaveBeenCalledWith({ where: { suppressedAt: { gte: start, lt: end } } });
+  });
+
+  it("digest: 08:00 회차를 놓친 전전날 정상화도 날짜와 함께 싣는다", async () => {
+    routeFindMany([], [row({ id: "r0", status: "resolved", firstSeenAt: new Date("2026-10-15T18:00:00Z"), normalizedAt: new Date("2026-10-15T21:15:00Z") })]);
+    const body = await (await GET(get("digest"))).json();
+    expect(body.messages[0].detail).toBe("정상화 1건\n10-16 03:00 네이버 정산 동기화 · 네트워크 끊김 · 정상화 06:15");
+    expect(body.messages[0].incidentIds).toEqual(["r0"]);
+  });
+
+  it("목록에 없는 작업은 영문 키 대신 화면과 같은 「알 수 없음」으로 부른다", async () => {
+    routeFindMany([row({ jobKey: "retired-job-key" })], []);
+    const body = await (await GET(get("immediate"))).json();
+    expect(body.messages[0].title).toBe("알 수 없음 조치대기");
+    expect(JSON.stringify(body.messages)).not.toContain("retired-job-key");
   });
 
   it("digest: 보낼 것이 없으면 빈 목록", async () => {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getPrisma } from "@/lib/prisma";
-import { KNOWN_JOBS } from "@/lib/cron-jobs";
+import { automationJobName } from "@/lib/automation-incidents";
 import type { CronErrorKind } from "@/lib/cron-error-kind";
 import {
   escalatePendingIncidents,
@@ -28,15 +28,20 @@ import {
 // immediate: ① 승격 규칙 적용 ② 아직 안 알린 조치대기 사고마다 **알림 직전 재확인** — 그 작업이 마지막 발생
 //   뒤에 성공했으면 보내지 않고 사고를 「막힘」으로 닫은 뒤 C 사고 1건을 남겨 즉시 닫는다 ③ 알렸던 사고가
 //   정상화됐으면 정상화 알림.
-// digest: KST 전날 08:00 ~ 오늘 08:00 에 정상화된 사고 + 지금 조치대기 + 그 창에 막은 개수 → 묶음 알림 1건.
+// digest: 아직 요약에 안 실린 정상화 사고(창 끝 기준 7일 안) + 지금 조치대기 + KST 전날 08:00 ~ 오늘 08:00 에
+//   막은 개수 → 묶음 알림 1건. 정상화의 하한을 24시간이 아니라 7일로 두는 것은 08:00 회차를 놓친 날의 정상화를
+//   다음 날 요약이 잡게 하려는 것이다(digestedAt 이 한 번만 싣게 막는다). 줄마다 날짜가 붙어 24시간 밖인 것도 구분된다.
 
 export const dynamic = "force-dynamic";
 
 const ACK_FIELDS = ["alertedAt", "recoveryAlertedAt", "digestedAt"] as const satisfies readonly OutboxMessage["ackField"][];
 type AckField = (typeof ACK_FIELDS)[number];
 
-const JOB_NAMES: ReadonlyMap<string, string> = new Map(KNOWN_JOBS.map((job) => [job.key, job.name]));
-const jobNameOf = (jobKey: string): string => JOB_NAMES.get(jobKey) ?? jobKey;
+/** 요약이 놓친 정상화를 되짚는 기간 — 08:00 회차가 며칠 빠져도(맥 꺼짐 등) 그 사이 정상화가 사라지지 않게 */
+const DIGEST_CATCH_UP_MS = 7 * 24 * 60 * 60 * 1000;
+
+// 작업 이름은 화면과 같은 함수로 짓는다 — 목록에 없는 작업은 영문 키 대신 「알 수 없음」(화면 문구 기준 ③).
+const jobNameOf = automationJobName;
 
 type IncidentRow = {
   id: string;
@@ -145,12 +150,13 @@ async function immediateMessages(now: Date): Promise<OutboxMessage[]> {
 async function digestMessages(now: Date): Promise<OutboxMessage[]> {
   const prisma = getPrisma();
   const { start, end } = digestWindow(now);
+  const resolvedFloor = new Date(end.getTime() - DIGEST_CATCH_UP_MS);
   const [resolved, waiting, suppressedCount] = await Promise.all([
     prisma.cronIncident.findMany({
       where: {
         status: "resolved",
         kind: { not: "C" },
-        normalizedAt: { gte: start, lt: end },
+        normalizedAt: { gte: resolvedFloor, lt: end },
         digestedAt: null,
         suppressedAt: null,
       },

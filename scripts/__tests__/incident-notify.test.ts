@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -45,6 +45,11 @@ interface RunOpts {
   getExit?: number;
   postExit?: number;
   notifyExit?: number;
+  /** 이 키들만 notify.sh 가 1 로 끝난다(엄격 모드의 「끝내 못 보냄」) */
+  notifyFailKeys?: string[];
+  /** 실행 전에 심어 둘 실행 잠금의 나이(초). 모드별 잠금 이름은 lockMode(기본 immediate) */
+  lockAgeS?: number;
+  lockMode?: string;
   /** .env 내용. 기본은 스텁 값 */
   envFile?: string;
   /** 지금(초). 기본은 실제 현재 */
@@ -84,7 +89,20 @@ function run(opts: RunOpts = {}) {
       `cat "${bodyFile}"\n`,
   );
   const notifyImpl = path.join(dir, "notify.impl");
-  writeFileSync(notifyImpl, record(notifyCalls) + `exit ${opts.notifyExit ?? 0}\n`);
+  const notifyStrict = path.join(dir, "notify.strict");
+  writeFileSync(
+    notifyImpl,
+    record(notifyCalls) +
+      `printf '%s\\n' "\${NOTIFY_STRICT_EXIT:-unset}" >> "${notifyStrict}"\n` +
+      (opts.notifyFailKeys?.length ? `case "$2" in ${opts.notifyFailKeys.join("|")}) exit 1;; esac\n` : "") +
+      `exit ${opts.notifyExit ?? 0}\n`,
+  );
+  if (opts.lockAgeS !== undefined) {
+    const lock = path.join(logs, `incident-notify-${opts.lockMode ?? "immediate"}.lock`);
+    mkdirSync(lock);
+    const at = (opts.now ?? nowSec()) - opts.lockAgeS;
+    utimesSync(lock, at, at);
+  }
   const envFile = path.join(dir, "selfhost.env");
   // 실제 시크릿을 쓰지 않는다 — 스텁 curl 은 값을 기록만 한다(P0).
   writeFileSync(envFile, opts.envFile ?? "CRON_SECRET=stub-value-not-a-secret\n");
@@ -126,7 +144,8 @@ function run(opts: RunOpts = {}) {
   const logFile = path.join(logs, "cron.log");
   const lines = existsSync(logFile) ? readFileSync(logFile, "utf8").trimEnd().split("\n") : [];
   const ackBody = (post: string[]) => JSON.parse(post[post.indexOf("--data-binary") + 1]) as { acks: { incidentIds: string[]; ackField: string }[] };
-  return { status: result.status, stderr: result.stderr, logs, gets, posts, notify: calls(notifyCalls), lines, ackBody };
+  const strict = existsSync(notifyStrict) ? readFileSync(notifyStrict, "utf8").trimEnd().split("\n") : [];
+  return { status: result.status, stderr: result.stderr, logs, gets, posts, notify: calls(notifyCalls), strict, lines, ackBody };
 }
 
 const alert = (n: number): Msg => ({
@@ -260,6 +279,94 @@ describe("incident-notify.sh 발송", () => {
       expect(r.status, mode).toBe(1);
       expect(r.gets, mode).toHaveLength(0);
     }
+  });
+});
+
+describe("incident-notify.sh 발송 실패는 확인하지 않는다(엄격 종료)", () => {
+  it("notify.sh 를 엄격 모드(NOTIFY_STRICT_EXIT=1)로 부른다 — 기본 모드는 실패에도 0 이라 못 보낸 것을 보낸 것으로 찍는다", () => {
+    const r = run({ messages: [alert(1), recovery(1)] });
+    expect(r.strict).toEqual(["1", "1"]);
+  });
+
+  it("못 보낸 메시지만 확인에서 빠지고, 보낸 것은 확인 POST 로 찍힌다 · 실패 개수를 로그에 남긴다", () => {
+    const r = run({ messages: [alert(1), recovery(1), alert(2)], notifyFailKeys: ["incident-r1-ok"] });
+    expect(r.notify.map((c) => c[1])).toEqual(["incident-i1", "incident-r1-ok", "incident-i2"]);
+    expect(r.posts).toHaveLength(1);
+    expect(r.ackBody(r.posts[0]).acks).toEqual([
+      { incidentIds: ["i1"], ackField: "alertedAt" },
+      { incidentIds: ["i2"], ackField: "alertedAt" },
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatch(/\] FAIL incident-notify immediate .*sent=2 acked=2 capped=0 failed=1/);
+  });
+
+  it("못 보낸 조치 알림은 하루 상한에 세지 않는다", () => {
+    const now = nowSec();
+    const r = run({
+      messages: [alert(1), alert(2), alert(3)],
+      notifyFailKeys: ["incident-i1"],
+      now,
+      countFile: `since\t${now - 3600}\n${kstDate(now)}\t4\t0\n`,
+    });
+    // i1 실패(4 그대로) → i2 발송(5) → i3 는 상한
+    expect(r.notify.map((c) => c[1])).toEqual(["incident-i1", "incident-i2", "incident-cap"]);
+    expect(r.ackBody(r.posts[0]).acks.flatMap((a) => a.incidentIds)).toEqual(["i2", "i3"]);
+    expect(readFileSync(path.join(r.logs, "incident-notify-count.tsv"), "utf8")).toContain(`${kstDate(now)}\t5\t1`);
+    expect(r.lines[0]).toMatch(/sent=1 acked=2 capped=1 failed=1/); // 상한 안내는 sent 에 세지 않는다(기존 규약)
+  });
+
+  it("상한 안내를 못 보내면 보냄으로 적지 않는다 — 다음 회차가 다시 보낸다", () => {
+    const now = nowSec();
+    const r = run({
+      messages: [alert(6)],
+      notifyFailKeys: ["incident-cap"],
+      now,
+      countFile: `since\t${now - 3600}\n${kstDate(now)}\t5\t0\n`,
+    });
+    expect(readFileSync(path.join(r.logs, "incident-notify-count.tsv"), "utf8")).toContain(`${kstDate(now)}\t5\t0`);
+    expect(r.lines[0]).toMatch(/failed=1/);
+  });
+
+  it("전부 실패하면 확인 POST 를 하지 않는다", () => {
+    const r = run({ messages: [alert(1)], notifyFailKeys: ["incident-i1"] });
+    expect(r.posts).toHaveLength(0);
+    expect(r.status).toBe(1);
+    expect(r.lines[0]).toMatch(/sent=0 acked=0 capped=0 failed=1/);
+  });
+});
+
+describe("incident-notify.sh 실행 잠금", () => {
+  it("15분 안의 잠금이 있으면 조회·발송 없이 SKIP 한 줄 · exit 0 이고 남의 잠금을 지우지 않는다", () => {
+    const r = run({ messages: [alert(1)], lockAgeS: 60 });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.gets).toHaveLength(0);
+    expect(r.notify).toHaveLength(0);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatch(/^\[[0-9-]+ [0-9:]+\] SKIP incident-notify immediate /);
+    expect(existsSync(path.join(r.logs, "incident-notify-immediate.lock"))).toBe(true);
+  });
+
+  it("15분이 지난 잠금은 죽은 실행이 남긴 것으로 보고 넘겨받아 돈다 · 끝나면 잠금을 푼다", () => {
+    const r = run({ messages: [alert(1)], lockAgeS: 16 * 60 });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.notify).toHaveLength(1);
+    expect(r.posts).toHaveLength(1);
+    expect(r.lines.at(-1)).toMatch(/\] OK {3}incident-notify immediate sent=1 acked=1 capped=0$/);
+    expect(existsSync(path.join(r.logs, "incident-notify-immediate.lock"))).toBe(false);
+  });
+
+  it("실패로 끝나도 잠금을 푼다", () => {
+    const r = run({ messages: [alert(1)], getExit: 7 });
+    expect(r.status).toBe(1);
+    expect(existsSync(path.join(r.logs, "incident-notify-immediate.lock"))).toBe(false);
+  });
+
+  it("잠금은 모드별이다 — 08:00 에 동시에 도는 digest 가 immediate 의 잠금에 막히지 않는다", () => {
+    const digest: Msg = { key: "digest-incident", icon: "📋", title: "요약", detail: "줄", ackField: "digestedAt", incidentIds: ["a"] };
+    const r = run({ mode: "digest", messages: [digest], lockAgeS: 5, lockMode: "immediate" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.notify).toHaveLength(1);
   });
 });
 

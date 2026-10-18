@@ -13,6 +13,17 @@ set -euo pipefail
 # ⚠️ 목록 조회가 실패해도 텔레그램을 보내지 않는다 — 앱이 죽은 것은 메뉴바(status.sh 의 prodLocal)가
 #    이미 알린다. 여기서 또 보내면 같은 사건이 두 갈래로 울린다.
 #
+# 📮 notify.sh 는 **엄격 모드**(NOTIFY_STRICT_EXIT=1)로 부른다 — 기본 모드는 텔레그램 실패에도 exit 0 이라
+#    못 보낸 알림이 「보냈음」으로 찍히고, 그러면 그 ✅·📋 는 다시 나갈 길이 없다. 엄격 모드에서 1 로 끝난
+#    메시지는 확인하지 않고 개수(failed)만 남긴다 — 다음 회차 목록에 다시 오고, notify.sh 는 못 보낸 키를
+#    억제 기록(alert-sent.tsv)에 적지 않으므로 6시간 하한 없이 바로 다시 보낸다. 못 보낸 조치 알림은 하루 상한에
+#    세지 않는다. 같은 회차에 보낸 것은 그대로 확인 POST 로 찍는다.
+#
+# 🔒 실행 잠금(모드별 `incident-notify-<모드>.lock`) — 앞 회차가 아직 돌면(목록 조회 60초 + 발송 재시도) 이번 회차는
+#    SKIP 한 줄만 남기고 끝난다. 겹쳐 돌면 같은 알림을 둘이 함께 보낸다. 15분이 지난 잠금은 죽은 실행이 남긴 것으로
+#    보고 넘겨받는다. ⚠️ 모드별인 이유: 08:00 에는 digest 와 immediate 가 동시에 도는 것이 정상이라(아래 상한 파일
+#    🪤), 잠금 하나를 나누면 digest 가 그날 요약을 건너뛸 수 있다.
+#
 # 🔁 확인 POST 가 실패하면 exit 1 이다. 그 회차에 보낸 알림은 「보냈음」이 안 찍혀 다음 회차(10분 뒤)에
 #    목록에 다시 오지만, notify.sh 가 같은 키를 6시간 안에 다시 보내지 않으므로(alert-sent.tsv) 폰이 다시
 #    울리지 않는다. 그 사이 확인 POST 가 성공하면 그때 찍힌다(POST 는 이미 찍힌 칸을 덮지 않는다).
@@ -26,7 +37,8 @@ set -euo pipefail
 #
 # cron.log 에는 실행 1회 = 한 줄, 개수만 남긴다(알림 본문은 남기지 않는다 — 이 파일은 하루치 훑기용이다).
 #   [STAMP] OK   incident-notify <mode> sent=N acked=N capped=N
-#   [STAMP] FAIL incident-notify <mode> <사유>
+#   [STAMP] FAIL incident-notify <mode> <사유>   (발송 실패가 있으면 사유 끝에 sent·acked·capped·failed 개수)
+#   [STAMP] SKIP incident-notify <mode> <사유>   (앞 회차가 아직 도는 중 — exit 0)
 #
 # 테스트 훅(scripts/__tests__/incident-notify.test.ts): INCIDENT_CURL_CMD · INCIDENT_NOTIFY_CMD
 # ("bash <파일>" 두 단어를 받는다 — notify.sh 의 NOTIFY_CURL_CMD 와 같은 규약) · INCIDENT_LOGS_DIR ·
@@ -43,6 +55,8 @@ PY="${INCIDENT_PYTHON:-/usr/bin/python3}"
 
 DAILY_CAP=5
 CAP_WINDOW_S=$(( 7 * 86400 ))
+# 실행 잠금이 이 나이(초)를 넘으면 죽은 실행이 남긴 것으로 본다 — 정상 회차는 길어야 몇 분이다.
+LOCK_STALE_S=$(( 15 * 60 ))
 
 # $CURL·$NOTIFY 는 의도적 미인용 — 테스트 훅이 "bash <경로>" 두 단어를 준다(notify.sh 와 같은 규약).
 CURL="${INCIDENT_CURL_CMD:-curl}"
@@ -68,6 +82,31 @@ case "$MODE" in
   *) fail "사용법: incident-notify.sh immediate|digest" ;;
 esac
 
+# ── 실행 잠금(위 🔒) ─────────────────────────────────────────────────────────
+LOCK_DIR="$LOGS_DIR/incident-notify-$MODE.lock"
+# notify.sh 의 mtime_of 와 같다 — BSD(macOS) stat 먼저, 안 되면 GNU. 못 읽으면 0(= 아주 오래됨 → 넘겨받는다).
+mtime_of() {
+  local m
+  m="$(stat -f %m "$1" 2>/dev/null || true)"
+  case "$m" in ""|*[!0-9]*) m="$(stat -c %Y "$1" 2>/dev/null || true)" ;; esac
+  case "$m" in ""|*[!0-9]*) m=0 ;; esac
+  printf '%s\n' "$m"
+}
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  lock_age=$(( NOW - $(mtime_of "$LOCK_DIR") ))
+  if [ "$lock_age" -le "$LOCK_STALE_S" ]; then
+    log_line SKIP "$MODE 앞 회차가 아직 도는 중입니다(잠금 ${lock_age}초)"
+    exit 0
+  fi
+  # 넘겨받기 — 그 사이 다른 회차가 먼저 넘겨받았으면 mkdir 이 실패하므로 그쪽에 맡긴다.
+  if ! { rmdir "$LOCK_DIR" 2>/dev/null && mkdir "$LOCK_DIR" 2>/dev/null; }; then
+    log_line SKIP "$MODE 오래된 잠금을 넘겨받지 못했습니다(잠금 ${lock_age}초)"
+    exit 0
+  fi
+fi
+# 잠금을 쥔 뒤에만 건다 — SKIP 경로에서 남의 잠금을 지우지 않게. 아래 TMP_DIR 의 trap 이 이것을 함께 다시 건다.
+trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+
 # .env 는 run-cron.sh 와 같은 방식으로 읽고 CRON_SECRET 만 쓴다. 바깥 환경의 값은 믿지 않는다.
 unset CRON_SECRET
 [ -r "$ENV_FILE" ] || fail "환경 파일을 읽지 못했습니다 — CRON_SECRET 미설정(fail-closed)"
@@ -75,7 +114,7 @@ set -a; . "$ENV_FILE"; set +a
 [ -n "${CRON_SECRET:-}" ] || fail "CRON_SECRET 미설정 — fail-closed 계약(src/lib/cron-auth.ts)"
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/incident-notify.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'rm -rf "$TMP_DIR"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 
 # ── 상한 파일 ────────────────────────────────────────────────────────────────
 # 형식: 첫 줄 `since<TAB><epoch>`(7일 창의 시작), 이후 `<KST 날짜><TAB><보낸 개수><TAB><안내 보냄 0|1>`.
@@ -134,11 +173,11 @@ fi
 ACKS="$TMP_DIR/acks"   # 줄마다 <확인칸><TAB><id 쉼표 목록>
 : > "$ACKS"
 sent=0; capped=0; notify_failed=0
-send_one() { # key title detail icon
+send_one() { # key title detail icon — 엄격 모드(위 📮): 끝내 못 보냈으면 0 이 아니다
   if [ -n "${INCIDENT_NOTIFY_CMD:-}" ]; then
-    $NOTIFY send "$1" "$2" "$3" "$4"
+    NOTIFY_STRICT_EXIT=1 $NOTIFY send "$1" "$2" "$3" "$4"
   else
-    "$NOTIFY" send "$1" "$2" "$3" "$4"
+    NOTIFY_STRICT_EXIT=1 "$NOTIFY" send "$1" "$2" "$3" "$4"
   fi
 }
 while IFS= read -r -d '' key && IFS= read -r -d '' icon && IFS= read -r -d '' title \
@@ -149,8 +188,8 @@ while IFS= read -r -d '' key && IFS= read -r -d '' icon && IFS= read -r -d '' ti
     printf '%s\t%s\n' "$ack_field" "$ids" >> "$ACKS"
     continue
   fi
-  # notify.sh 는 텔레그램 실패에도 exit 0 이다(실패는 마커로 남아 메뉴바가 그린다). 여기서 0 이 아닌 것은
-  # notify.sh 를 아예 못 돌린 경우뿐이라, 그 메시지는 확인하지 않고 다음 회차에 다시 시도한다.
+  # 0 이 아니면(텔레그램에 끝내 못 보냄 · 자격값 없음 · notify.sh 를 아예 못 돌림) 확인하지 않고 상한에도 세지
+  # 않는다 — 다음 회차 목록에 다시 온다(위 📮).
   if send_one "$key" "$title" "$detail" "$icon"; then
     sent=$((sent + 1))
     [ "$ack_field" = "alertedAt" ] && TODAY_SENT=$((TODAY_SENT + 1))
@@ -196,6 +235,6 @@ print(json.dumps({"acks": acks}, ensure_ascii=False))
 fi
 
 if [ "$notify_failed" -gt 0 ]; then
-  fail "notify.sh 실행 실패 ${notify_failed}건(sent=$sent acked=$acked capped=$capped)"
+  fail "발송 실패 ${notify_failed}건 — 다음 회차에 다시 보냅니다(sent=$sent acked=$acked capped=$capped failed=$notify_failed)"
 fi
 log_line OK "$MODE sent=$sent acked=$acked capped=$capped"

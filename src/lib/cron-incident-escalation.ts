@@ -4,13 +4,15 @@ import type { IncidentKind } from "@/lib/cron-incident";
 /**
  * 사고 승격 규칙 — 열린 사고 중 오너가 손봐야 하는 것을 가려 `waiting_owner` 로 올린다(크론 자가 복구 2단계).
  * 일시 장애(network·timeout·upstream_5xx·app_down)는 한 번은 재시도로 풀릴 수 있으니 2회째부터 올리고,
- * 산출 없음(B)과 사람이 손봐야 하는 오류(한도·인증·설정·미분류)는 첫 회에 올린다.
+ * 산출 없음(B)과 사람이 손봐야 하는 오류(한도·인증·설정·미분류)는 첫 회에 올린다. 알림 틀림(C)은 올리지 않는다.
  */
 export function shouldEscalate(i: {
   kind: IncidentKind;
   errorKind: CronErrorKind | null;
   occurrences: number;
 }): boolean {
+  // C(알림 틀림)는 작업 고장이 아니라 알림 쪽 기록이다 — 오너 조치로 올리면 틀린 알림이 또 알림을 낳는다.
+  if (i.kind === "C") return false;
   if (i.kind === "B") return true;
   if (i.kind === "A" && i.errorKind && isTransientErrorKind(i.errorKind)) return i.occurrences >= 2;
   return true;

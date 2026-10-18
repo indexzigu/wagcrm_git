@@ -15,6 +15,9 @@ describe("shouldEscalate", () => {
     ["A", "app_down", 1, false],
     ["A", "unknown", 1, true],
     ["A", null, 1, true],
+    // C(알림 틀림)는 작업 고장이 아니라 알림 쪽 기록이라 오너 조치로 올리지 않는다.
+    ["C", null, 1, false],
+    ["C", "auth", 3, false],
   ];
   it.each(cases)("%s/%s %i회 → %s", (kind, errorKind, occurrences, expected) => {
     expect(shouldEscalate({ kind, errorKind, occurrences })).toBe(expected);

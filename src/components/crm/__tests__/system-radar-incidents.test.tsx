@@ -97,14 +97,35 @@ describe("자동화 작업 상태 — 조치대기 행", () => {
     expect(waitingWord.parentElement!.className).toContain("flex-wrap");
   });
 
-  it("조치대기 행이 지연이기도 하면 상세 첫 줄의 지연 사유를 그대로 남긴다", async () => {
+  it("조치대기 행이 지연이기도 하면 「지연」을 둘째 낱말로 남기고 상세 첫 줄의 지연 사유도 그대로다", async () => {
+    // 첫 알림 뒤 작업이 아예 멈춘 경우 — 조치대기만 보이면 「아직 실패 중」으로 읽혀 멈춘 사실이 가려진다.
     vi.setSystemTime(new Date("2026-10-18T03:00:00Z"));
     mockApis({ waiting: [incident()], lastRunAt: new Date(Date.now() - 3 * 24 * HOUR).toISOString() });
     render(<SystemRadarCard />);
     await waitFor(() => expect(within(rowButton()).getByText("조치대기")).toBeInTheDocument());
-    expect(within(rowButton()).queryByText("지연")).toBeNull();
+    const lateWord = within(rowButton()).getByText("지연");
+    // 실패 행의 둘째 낱말 「조치대기」와 같은 꼴 — 한 낱말 · 같은 크기 · 주의색 글자, 합치지 않는다.
+    expect(lateWord.className).toBe("shrink-0 text-[10.5px] font-medium text-[var(--status-caution-text)]");
+    expect(within(rowButton()).queryByText(/조치대기 · 지연/)).toBeNull();
     fireEvent.click(rowButton());
     expect(await screen.findByText(/지연 사유/)).toBeInTheDocument();
+  });
+
+  it("조치대기지만 늦지 않았으면 「지연」을 붙이지 않는다", async () => {
+    vi.setSystemTime(new Date("2026-10-18T03:00:00Z"));
+    mockApis({ waiting: [incident()] });
+    render(<SystemRadarCard />);
+    await waitFor(() => expect(within(rowButton()).getByText("조치대기")).toBeInTheDocument());
+    expect(within(rowButton()).queryByText("지연")).toBeNull();
+  });
+
+  it("실패이면서 늦어도 「지연」은 붙이지 않는다 — 실패가 지연을 이긴다(지연은 그 실패의 결과)", async () => {
+    vi.setSystemTime(new Date("2026-10-18T03:00:00Z"));
+    mockApis({ status: "ERROR", waiting: [incident()], lastRunAt: new Date(Date.now() - 3 * 24 * HOUR).toISOString() });
+    render(<SystemRadarCard />);
+    await waitFor(() => expect(within(rowButton()).getByText("실패")).toBeInTheDocument());
+    await within(rowButton()).findByText("조치대기");
+    expect(within(rowButton()).queryByText("지연")).toBeNull();
   });
 
   it("수동 실행 뒤 조치대기 목록도 다시 받는다", async () => {

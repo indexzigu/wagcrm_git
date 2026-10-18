@@ -595,6 +595,12 @@ export function SystemRadarCard() {
                           {waiting && key !== "WAITING" && (
                             <span className="shrink-0 text-[10.5px] font-medium text-[var(--status-caution-text)]">조치대기</span>
                           )}
+                          {/* 반대로 조치대기가 점·첫 낱말을 가져가도 늦었다는 사실은 「지연」 한 낱말로 남긴다 — 첫 알림 뒤 작업이
+                              아예 멈추면 조치대기만으로는 「아직 실패 중」으로 읽혀 멈춘 사실이 가려진다. 실패 행에는 붙이지 않는다
+                              (실패가 지연을 이긴다 — statusKey 순위와 같다). */}
+                          {key === "WAITING" && overdueText !== null && (
+                            <span className="shrink-0 text-[10.5px] font-medium text-[var(--status-caution-text)]">지연</span>
+                          )}
                         </span>
                         {/* 실패·지연 사유는 행에 두지 않는다 — 행 버튼 안에 툴팁 앵커를 두면 누르는 요소
                             안에 누르는 요소가 생긴다(상태 표시 기준 ④). 사유는 이 행을 눌러 여는 상세

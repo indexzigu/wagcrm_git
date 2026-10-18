@@ -45,6 +45,8 @@ interface RunOpts {
   sent?: Record<string, number | string>;
   /** 자격값을 비운다(미설정 경로) */
   noCreds?: boolean;
+  /** NOTIFY_STRICT_EXIT=1 로 부른다(사고 알림 발송기 경로). 기본은 변수 자체를 지운다 — 바깥 환경이 새지 않게 */
+  strict?: boolean;
 }
 
 function makeHome(opts: RunOpts): {
@@ -84,11 +86,14 @@ function makeHome(opts: RunOpts): {
     );
   }
 
+  const base: NodeJS.ProcessEnv = { ...process.env };
+  delete base.NOTIFY_STRICT_EXIT;
+  if (opts.strict) base.NOTIFY_STRICT_EXIT = "1";
   return {
     home,
     calls,
     env: {
-      ...process.env,
+      ...base,
       HOME: home,
       NOTIFY_CURL_CMD: `bash ${curlImpl}`,
       NOTIFY_ENV_FILE: envFile,
@@ -289,6 +294,45 @@ describe("notify.sh 발송 계약", () => {
     const marker = readMarker(r.home);
     expect(marker?.reason).toBe("unconfigured");
     expect(marker?.msg.length).toBeGreaterThan(0);
+  });
+});
+
+describe("notify.sh 엄격 종료(NOTIFY_STRICT_EXIT=1 — 사고 알림 발송기 전용)", () => {
+  // 사고 알림은 보낸 것만 「보냈음」을 찍는다 — 실패를 0 으로 삼키면 못 보낸 ✅·📋 가 보낸 것으로 찍혀
+  // 다시 나갈 길이 없다. 기본(메뉴바) 호출은 그대로 0 이다 — 알림 실패가 폴링을 죽이면 안 된다.
+  it("발송 실패(재시도 후)면 1 로 끝나고 억제 기록·이력을 남기지 않는다 — 다음 회차가 6시간 하한 없이 다시 보낸다", () => {
+    const r = run(["send", "incident-i1", "제목", "본문", "🙋"], { httpCode: "500", strict: true });
+    expect(r.code).toBe(1);
+    expect(callCount(r.calls)).toBe(2); // 기존 재시도 1회는 그대로
+    expect(sentAt(r.home, "incident-i1")).toBeNull();
+    expect(historyLines(r.home)).toHaveLength(0);
+    expect(readMarker(r.home)?.reason).toBe("send"); // 메뉴바 경고 마커도 그대로 남긴다
+  });
+
+  it("자격값이 없어도 1 로 끝난다(보내지 못한 것은 같다)", () => {
+    const r = run(["send", "incident-i1", "제목", "본문"], { noCreds: true, strict: true });
+    expect(r.code).toBe(1);
+    expect(readMarker(r.home)?.reason).toBe("unconfigured");
+  });
+
+  it("발송 성공은 0 이다", () => {
+    const r = run(["send", "incident-i1", "제목", "본문"], { strict: true });
+    expect(r.code).toBe(0);
+    expect(sentAt(r.home, "incident-i1")).not.toBeNull();
+  });
+
+  it("하한에 막힌 것은 0 이다 — 이미 나간 알림이라 보낸 것으로 친다", () => {
+    const r = run(["send", "incident-i1", "제목", "본문"], { sent: { "incident-i1": 1 }, strict: true });
+    expect(r.code).toBe(0);
+    expect(callCount(r.calls)).toBe(0);
+  });
+
+  it("엄격 모드가 아니면 실패해도 0 이고 출력도 없다 — 기존 호출(메뉴바·status.sh)은 그대로", () => {
+    const { env } = makeHome({ httpCode: "500" });
+    const out = execFileSync("bash", [SCRIPT, "send", "crons", "자동 작업", "본문"], { env, encoding: "utf8" });
+    expect(out).toBe("");
+    const unconf = makeHome({ noCreds: true });
+    expect(execFileSync("bash", [SCRIPT, "send", "crons", "자동 작업", "본문"], { env: unconf.env, encoding: "utf8" })).toBe("");
   });
 });
 
