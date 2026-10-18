@@ -27,11 +27,11 @@ function summary(overrides: Partial<OrderWorkSummary> = {}): OrderWorkSummary {
 }
 
 describe("buildOrderWorkBuckets", () => {
-  it("세 칸을 고정 순서로 낸다 — 발주 대기 · 송장·배송 지연 · 반품/교환", () => {
+  it("세 칸을 고정 순서로 낸다 — 발주 대기 · 송장·배송 지연 · 반품·교환", () => {
     expect(buildOrderWorkBuckets(summary()).map((b) => [b.key, b.label])).toEqual([
       ["awaiting-po", "발주 대기"],
       ["delayed", "송장·배송 지연"],
-      ["open-claims", "반품/교환"],
+      ["open-claims", "반품·교환"],
     ]);
   });
 
@@ -52,7 +52,7 @@ describe("buildOrderWorkBuckets", () => {
     expect(delayed.detail).toBe("송장 지연 3건 · 배송 지연 1건");
   });
 
-  it("반품/교환은 위험색, 캠페인을 못 찾은 건은 건수로 말한다", () => {
+  it("반품·교환은 위험색, 캠페인을 못 찾은 건은 건수로 말한다", () => {
     const claims = buildOrderWorkBuckets(summary({ openClaims: { lines: 2, campaigns: 1, unmatchedLines: 1 } }))[2];
     expect(claims.tone).toBe("urgent");
     expect(claims.detail).toBe("캠페인 못 찾은 1건");

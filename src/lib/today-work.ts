@@ -1,7 +1,7 @@
 // 홈 「오늘 처리할 일」 행 빌더 (client-safe 순수 로직).
 //
-// 그날 손이 가야 하는 일을 **한 목록**으로 모은다 — 주문(발주 대기·송장·배송 지연·반품/교환) ·
-// 영업 팔로업 · 지연된 정산 · 승인대기 · 데이터 점검. 종전에는 「오늘 처리할 주문」 카드와 「핵심 업무」
+// 그날 손이 가야 하는 일을 **한 목록**으로 모은다 — 주문(발주 대기·송장·배송 지연·반품·교환) ·
+// 영업 팔로업 · 정산 지연 · 승인대기 · 데이터 점검. 종전에는 「오늘 처리할 주문」 카드와 「핵심 업무」
 // 탭 카드(영업 팔로업|지연된 정산)가 따로 있었고, 승인대기는 사이드바 배지에만, 데이터 점검은 맨 아래
 // 탭에만 있었다(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17).
 //
@@ -12,6 +12,7 @@
 // ⛔ 여기서 건수를 다시 세지 말 것 — 같은 판정의 두 번째 인코딩이 이 레포의 반복 사고다.
 
 import { buildOrderWorkBuckets, type Bucket } from "@/lib/order-converter/order-work-buckets";
+import type { OrderSyncState } from "@/lib/order-converter/order-work-buckets";
 import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
 
 export type TodayWorkKey =
@@ -58,7 +59,7 @@ const ORDER_ROW: Record<Bucket["key"], TodayWorkKey> = {
 export const DATA_CHECK_ANCHOR = "data-check";
 
 /**
- * 지연된 정산 행의 목적지 — 그 캠페인 상세를 연 채로(`/settlement?campaign=<id>`). 여러 건이면
+ * 정산 지연 행의 목적지 — 그 캠페인 상세를 연 채로(`/settlement?campaign=<id>`). 여러 건이면
  * **가장 오래 지연된 것**(목록 첫 항목 — `buildOverdueSettlementItems` 가 지연 기준일 오름차순으로 준다)을
  * 연다. 정산 관리 표에는 지연 걸러보기가 없어서(지연 경고는 2026-08-25 오너 결정으로 그 표에서 뺐다 —
  * `settlement-table.tsx` 묘비 주석) 첫 화면으로 보내면 어느 건이 늦었는지 모른 채 도착한다.
@@ -91,7 +92,8 @@ export function buildTodayWorkRows(input: TodayWorkInput): TodayWorkRow[] {
     // 정산 지연은 대금 기한 초과 — 종전 탭 배지 countTone="urgent" 승계.
     {
       key: "settlement-delayed",
-      label: "지연된 정산",
+      // 「정산 지연」 — 같은 자리의 「송장·배송 지연」과 같은 꼴(대상 + 지연)로(2026-10-18 ss-ux 문구).
+      label: "정산 지연",
       count: input.agenda.settlements,
       tone: "urgent",
       href: settlementHref(input.agenda.overdueSettlementIds),
@@ -104,4 +106,22 @@ export function buildTodayWorkRows(input: TodayWorkInput): TodayWorkRow[] {
   );
 
   return rows.filter((row) => row.count > 0);
+}
+
+const ORDER_ROW_KEYS: ReadonlySet<TodayWorkKey> = new Set(["orders-pending", "orders-delayed", "orders-returns"]);
+
+/**
+ * 주문 동기화가 낡았거나(stale) 아직 없으면(waiting) 주문 행 건수는 **마지막으로 받은 스냅샷 기준**이다 —
+ * 지금 일로 보이지 않게 심각도 색을 거두고(neutral), 낡은 경우엔 세부 줄 앞에 「N일 전 기준」을 붙인다
+ * (2026-10-18 ss-ux P1-1). 경과일은 헤더의 「마지막 동기화 N일 전」과 같은 값(`resolveOrderSyncState`)이다.
+ * 주문 밖의 행(영업·정산·승인·점검)은 주문 동기화와 무관하므로 그대로 둔다.
+ */
+export function markUnverifiedOrderRows(rows: TodayWorkRow[], sync: OrderSyncState | null): TodayWorkRow[] {
+  if (sync?.kind !== "stale" && sync?.kind !== "waiting") return rows;
+  const prefix = sync.kind === "stale" ? `${sync.daysAgo}일 전 기준` : null;
+  return rows.map((row) => {
+    if (!ORDER_ROW_KEYS.has(row.key)) return row;
+    const detail = prefix ? (row.detail ? `${prefix} · ${row.detail}` : prefix) : row.detail;
+    return { ...row, tone: "neutral", detail };
+  });
 }

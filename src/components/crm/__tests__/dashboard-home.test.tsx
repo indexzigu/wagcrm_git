@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DashboardHome } from "../dashboard-home";
+import { DashboardHome, formatAxisWon } from "../dashboard-home";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { buildTaxableRevenueTracker } from "@/lib/taxable-revenue-tracker";
 import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
@@ -265,7 +265,7 @@ describe("DashboardHome", () => {
     expect(screen.queryByText(/최근 실적/)).not.toBeInTheDocument();
   });
 
-  // 「오늘 처리할 일」(2026-10-18): 주문·영업 팔로업·지연된 정산·승인대기·데이터 점검을 한 목록으로.
+  // 「오늘 처리할 일」(2026-10-18): 주문·영업 팔로업·정산 지연·승인대기·데이터 점검을 한 목록으로.
   it("모든 원천이 0건이면 「오늘 처리할 일」이 한 줄로 접힌다", async () => {
     hookState.orders = orderSummary();
     hookState.approvalsCount = 0;
@@ -298,7 +298,7 @@ describe("DashboardHome", () => {
         })}
       />,
     );
-    const settlement = (await screen.findByText("지연된 정산")).closest("a")!;
+    const settlement = (await screen.findByText("정산 지연")).closest("a")!;
     expect(settlement).toHaveAttribute("href", "/settlement?campaign=camp-9");
     expect(screen.getByText("영업 팔로업").closest("a")).toHaveAttribute("href", "/outreach");
     expect(screen.getByText("승인대기").closest("a")).toHaveAttribute("href", "/approvals");
@@ -410,5 +410,54 @@ describe("DashboardHome", () => {
     // 그리지 않는다(크기 0) — 그래서 막대 색의 출처인 chartConfig 줄을 소스에서 고정한다. 범례·툴팁 견본과 같은 토큰.
     const src = readFileSync(join(__dirname, "..", "dashboard-home.tsx"), "utf8");
     expect(src).toMatch(/expectedMargin:\s*\{\s*label:\s*"매출총이익",\s*color:\s*"var\(--fill-teal-1\)"\s*\}/);
+  });
+
+  // 2026-10-18 최종 리뷰 묶음 — 첫 밴드 배치·잘림, 차트 가장자리 대비, 축 눈금.
+  it("첫 밴드는 히어로 높이를 실적 지표 칸이 받는다 — 「오늘 처리할 일」은 늘어나지 않는다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const band = container.querySelector('[data-band="focus"]')!;
+    expect(band).toHaveClass("items-stretch");
+    const left = band.firstElementChild!;
+    expect(left).toHaveClass("h-full");
+    const metrics = band.querySelector('[data-band="metrics"]')!;
+    expect(metrics).toHaveClass("flex-1");
+    const todayCard = screen.getByRole("heading", { name: "오늘 처리할 일" }).closest('[data-slot="card"]')!;
+    expect(todayCard.className).not.toMatch(/\b(flex-1|h-full)\b/);
+  });
+
+  it("실적 카드 당월 줄은 증감을 값 아래로 내릴 수 있다 — 월 라벨과 겹치지 않게", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const rows = [...container.querySelectorAll('[data-slot="metric-current-row"]')];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const group = row.lastElementChild!;
+      expect(group).toHaveClass("flex-wrap", "min-w-0");
+    }
+  });
+
+  it("「확정 N건 · 확정률」은 좁으면 줄을 바꾸고 전문을 title 로도 남긴다", () => {
+    render(<DashboardHome initialData={data({ outreach90d: { total: 40, responded: 18, confirmed: 6, converted: 6 } })} />);
+    const line = screen.getByText(/^확정 6건 · 확정률/);
+    expect(line).not.toHaveClass("truncate");
+    expect(line).toHaveAttribute("title", "확정 6건 · 확정률 15.0%");
+  });
+
+  it("매출총이익 막대·견본은 --chart-2 테두리로 흰 카드 위 가장자리 대비를 낸다", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const legend = container.querySelector('[data-slot="chart-legend"]')!;
+    expect(legend.innerHTML).toContain("border-color: var(--chart-2)");
+    const src = readFileSync(join(__dirname, "..", "dashboard-home.tsx"), "utf8");
+    const marginBars = src.match(/<Bar dataKey="expectedMargin"[^>]*>/g) ?? [];
+    expect(marginBars).toHaveLength(2);
+    for (const bar of marginBars) expect(bar).toContain('stroke="var(--chart-2)" strokeWidth={1}');
+  });
+
+  it("Y축 눈금은 1억 이상을 「억」으로 쓴다", () => {
+    expect(formatAxisWon(0)).toBe("0만");
+    expect(formatAxisWon(50_000_000)).toBe("5000만");
+    expect(formatAxisWon(100_000_000)).toBe("1억");
+    expect(formatAxisWon(150_000_000)).toBe("1.5억");
+    expect(formatAxisWon(225_000_000)).toBe("2.25억");
+    expect(formatAxisWon(300_000_000)).toBe("3억");
   });
 });

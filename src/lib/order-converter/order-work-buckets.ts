@@ -11,7 +11,7 @@ import { isOrderSyncStale, type OrderWorkSummary } from "@/lib/order-converter/o
  * lib 가 components 를 import 하지 않게. 칸 이름은 주문 관리 화면 어휘와 같은 말이 다른 집합을 가리키지 않게 정했다
  * (`order-work.ts` OrderWorkSummaryCounts).
  *
- * 색은 심각도 축만 탄다(P8 §1): 송장·배송 지연과 반품/교환 = urgent(주문 관리의 반품/교환 버튼과
+ * 색은 심각도 축만 탄다(P8 §1): 송장·배송 지연과 반품·교환 = urgent(주문 관리의 반품·교환 버튼과
  * 같은 위험색), 발주 대기 중 결제 후 2일 이상 = caution. 평상시 발주 대기와 0 인 칸은 무채색.
  */
 
@@ -55,7 +55,7 @@ export function buildOrderWorkBuckets(summary: OrderWorkSummary): Bucket[] {
     },
     {
       key: "open-claims",
-      label: "반품/교환",
+      label: "반품·교환",
       lines: openClaims.lines,
       campaigns: openClaims.campaigns,
       tone: openClaims.lines > 0 ? "urgent" : null,

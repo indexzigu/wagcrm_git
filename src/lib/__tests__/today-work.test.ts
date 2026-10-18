@@ -1,11 +1,11 @@
 /**
  * 홈 「오늘 처리할 일」 — 행 빌더 계약.
  *
- * 주문(발주 대기·송장·배송 지연·반품/교환) · 영업 팔로업 · 지연된 정산 · 승인대기 · 데이터 점검을
+ * 주문(발주 대기·송장·배송 지연·반품·교환) · 영업 팔로업 · 정산 지연 · 승인대기 · 데이터 점검을
  * 한 목록으로 모은다. 0건 행은 빠지고, 순서는 고정이며, 색(tone)은 종전 두 카드의 규칙을 승계한다.
  */
 import { describe, expect, it } from "vitest";
-import { buildTodayWorkRows, type TodayWorkInput } from "../today-work";
+import { buildTodayWorkRows, markUnverifiedOrderRows, type TodayWorkInput } from "../today-work";
 import type { OrderWorkSummary } from "../order-converter/order-work";
 
 function orders(overrides: Partial<OrderWorkSummary> = {}): OrderWorkSummary {
@@ -73,9 +73,9 @@ describe("buildTodayWorkRows", () => {
     expect(rows.map((r) => r.label)).toEqual([
       "발주 대기",
       "송장·배송 지연",
-      "반품/교환",
+      "반품·교환",
       "영업 팔로업",
-      "지연된 정산",
+      "정산 지연",
       "승인대기",
       "데이터 점검",
     ]);
@@ -143,5 +143,45 @@ describe("buildTodayWorkRows", () => {
   it("캠페인 번호를 모르면 정산 관리 첫 화면으로 간다", () => {
     const row = buildTodayWorkRows(input({ agenda: { tasks: 0, settlements: 1 } }))[0];
     expect(row.href).toBe("/settlement");
+  });
+});
+
+describe("markUnverifiedOrderRows", () => {
+  const rows = () =>
+    buildTodayWorkRows(
+      input({
+        orders: orders({
+          awaitingPo: { lines: 12, campaigns: 3, delayedLines: 5 },
+          delayed: { lines: 4, campaigns: 2, invoiceLines: 3, shippingLines: 1 },
+          openClaims: { lines: 2, campaigns: 1, unmatchedLines: 0 },
+          total: 18,
+        }),
+        agenda: { tasks: 1, settlements: 1, overdueSettlementIds: ["c-1"] },
+      }),
+    );
+
+  it("동기화가 신선하면(또는 아직 모르면) 그대로 돌려준다", () => {
+    const base = rows();
+    expect(markUnverifiedOrderRows(base, { kind: "fresh", label: "10분 전" })).toBe(base);
+    expect(markUnverifiedOrderRows(base, null)).toBe(base);
+    expect(markUnverifiedOrderRows(base, { kind: "loading" })).toBe(base);
+  });
+
+  it("낡았으면 주문 행만 무채색 + 「N일 전 기준」 접두 — 세부가 없던 행은 접두만", () => {
+    const out = markUnverifiedOrderRows(rows(), { kind: "stale", daysAgo: 4 });
+    const by = Object.fromEntries(out.map((r) => [r.key, r]));
+    expect(by["orders-pending"]).toMatchObject({ tone: "neutral", detail: "4일 전 기준 · 결제 후 2일 이상 5건" });
+    expect(by["orders-delayed"]).toMatchObject({ tone: "neutral", detail: "4일 전 기준 · 송장 지연 3건 · 배송 지연 1건" });
+    expect(by["orders-returns"]).toMatchObject({ tone: "neutral", detail: "4일 전 기준" });
+    // 건수는 바꾸지 않는다(무엇이 남아 있었는지는 그대로 보여 준다).
+    expect(by["orders-pending"].count).toBe(12);
+    expect(by["outreach-followup"].tone).toBe("info");
+    expect(by["settlement-delayed"].tone).toBe("urgent");
+  });
+
+  it("스냅샷이 없으면(동기화대기) 색만 거둔다 — 경과일이 없어 접두를 짓지 않는다", () => {
+    const out = markUnverifiedOrderRows(rows(), { kind: "waiting" });
+    const pending = out.find((r) => r.key === "orders-pending")!;
+    expect(pending).toMatchObject({ tone: "neutral", detail: "결제 후 2일 이상 5건" });
   });
 });

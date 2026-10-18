@@ -55,6 +55,8 @@ import { AnimatedNumber } from "@/components/ui/animated-number";
 // 심각도 축으로 읽혔다(P8 §1). 같은 청록 계열 중 앵커 막대(--chart-1)와 가장 잘 갈리면서 흰 카드 위 대비가
 // 종전 주황(2.15)보다 떨어지지 않는 값: chart-1 대비 2.86 · 흰 카드 2.57. --chart-2 는 chart-1 과 1.56 이라
 // 붙은 막대에서 안 갈린다. 계열 구분은 색 + 막대 폭(넓게·좁게) + 범례 이름 세 겹이다.
+// 면색은 흰 카드 위 3:1 에 못 미치므로(2.57) 막대·범례·툴팁 견본에 --chart-2 1px 테두리를 둘러 가장자리가
+// 3:1(흰 카드 대비 4.7)을 넘게 한다(2026-10-18 ss-ux P2) — 면은 그대로 청록 면색이라 계열 구분은 유지된다.
 const chartConfig = {
   revenue: { label: "총거래액", color: "var(--chart-1)" },
   expectedMargin: { label: "매출총이익", color: "var(--fill-teal-1)" },
@@ -94,7 +96,7 @@ function TrendTooltip({
       {margin != null && (
         <div className="flex items-center justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--fill-teal-1)" }} />
+            <span className="size-2 rounded-[2px] border" style={{ backgroundColor: "var(--fill-teal-1)", borderColor: "var(--chart-2)" }} />
             매출총이익
           </span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{formatCurrency(margin)}</span>
@@ -125,7 +127,7 @@ function SalesChartCaption({ caption, showGoal }: { caption: string; showGoal: b
           {chartConfig.revenue.label}
         </li>
         <li className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-2.5 w-2 rounded-[2px]" style={{ backgroundColor: "var(--fill-teal-1)" }} />
+          <span aria-hidden="true" className="h-2.5 w-2 rounded-[2px] border" style={{ backgroundColor: "var(--fill-teal-1)", borderColor: "var(--chart-2)" }} />
           {chartConfig.expectedMargin.label}
         </li>
         {showGoal ? (
@@ -137,6 +139,13 @@ function SalesChartCaption({ caption, showGoal }: { caption: string; showGoal: b
       </ul>
     </div>
   );
+}
+
+/** 차트 Y축 눈금 — 1억 이상은 「억」(「30000만」은 자릿수를 세어야 읽힌다), 그 아래는 「만」. */
+export function formatAxisWon(value: number): string {
+  // 소수 둘째 자리까지(눈금이 2.25억처럼 4등분에 떨어진다 — 한 자리로 반올림하면 2.3억으로 틀린 값이 된다).
+  if (Math.abs(value) >= 100_000_000) return `${Number((value / 100_000_000).toFixed(2))}억`;
+  return `${Math.round(value / 10000)}만`;
 }
 
 function rate(actual: number, target: number | null | undefined): number | null {
@@ -204,11 +213,15 @@ function StockTrendIndicator({
   const diffText = isCurrency ? formatCurrency(absChange) : (Number.isInteger(absChange) ? String(absChange) : absChange.toFixed(1));
   const absPercent = Math.abs(percent).toFixed(1);
 
+  const percentText = `(${isUp ? "+" : "-"}${absPercent}%)`;
+  // 좁은 칸(200% 확대·좌 칸 1/3 폭)에서 값 옆에 안 들어가면 부모가 이 줄을 값 **아래**로 내린다. 그 줄마저
+  // 좁으면 말줄임 + title 로 전체를 남긴다 — 겹치거나 왼쪽 월 라벨 위로 넘치지 않게(2026-10-18 리뷰 HIGH).
   return (
-    <span className={`inline-flex items-center text-[10px] gap-0.5 font-semibold ${colorClass}`}>
-      <span>{sign}</span>
-      <span>{diffText}{suffix}</span>
-      <span className="opacity-70">({isUp ? "+" : "-"}{absPercent}%)</span>
+    <span
+      className={`min-w-0 max-w-full truncate whitespace-nowrap text-[10px] font-semibold ${colorClass}`}
+      title={`${sign} ${diffText}${suffix} ${percentText}`}
+    >
+      {sign} {diffText}{suffix} <span className="opacity-70">{percentText}</span>
     </span>
   );
 }
@@ -404,9 +417,11 @@ function MetricCard({
   const focusPoints = spark?.points.slice(-SPARK_FOCUS_MONTHS) ?? [];
   const lossMonths = spark?.months.slice(-SPARK_FOCUS_MONTHS).filter((_, i) => focusPoints[i] < 0) ?? [];
   return (
-    <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0">
+    // h-full: 첫 밴드에서 히어로 높이를 받아 늘어난다 — 남는 높이는 표와 스파크라인 사이(mt-auto)로 가고
+    // 스파크라인은 카드 바닥에 붙는다(2026-10-18 리뷰: 좌 칸 아래가 비어 첫 줄이 기울었다).
+    <Card className="h-full border-black/5 bg-white/85 shadow-soft-sm p-0">
       {/* 데이터 점검 카드 밀도 기준(오너 2026-07-10): 행 기반·타이트, 라벨 좌/값 우, 얇은 구분선. Card 기본 p-6 제거해 이중 패딩(48px) 해소 */}
-      <CardContent className="px-4 py-3">
+      <CardContent className="flex flex-1 flex-col px-4 py-3">
         {/* 서브텍스트는 제목 우측에 이어서(오너 2026-07-24 — 카드 폭이 넓어 별도 줄이 불필요).
             좁은 폭에서는 truncate로 잘리되 title 속성으로 전문 확인 가능.
             적자 달 경고는 note 줄을 '추가'하지 않고 같은 슬롯에서 '교체'한다(오너 결정 2026-07-15, D안):
@@ -436,19 +451,21 @@ function MetricCard({
             증감(보조지표)은 당월 값 좌측에 두고 우측 정렬로 묶어, 값 컬럼의 우측 기준선을 밀지 않는다 */}
         <div className="mt-1.5">
           {/* 당월 행 */}
-          <div className="flex items-baseline justify-between gap-2 py-1">
+          {/* 값이 먼저(DOM)·증감이 뒤 + flex-row-reverse: 한 줄에 들어가면 「증감 값」 순으로 오른쪽 정렬, 안 들어가면
+              증감이 값 **아래 줄**로 내려가 오른쪽에 붙는다(겹침·잘림 대신 줄바꿈 — 2026-10-18 리뷰 HIGH). */}
+          <div data-slot="metric-current-row" className="flex items-baseline justify-between gap-2 py-1">
             <span className="text-[11px] font-semibold text-muted-foreground shrink-0">{monthLabel(currentMonthKey)}</span>
-            <div className="flex items-baseline justify-end gap-1.5 min-w-0">
-              {numericValue !== undefined && prevNumericValue !== undefined && (
-                <StockTrendIndicator current={numericValue} previous={prevNumericValue} isCurrency={isCurrency} suffix={suffix} />
-              )}
-              <span className="text-[13px] font-semibold tracking-tight text-[#1F2A30] tabular-nums">
+            <div className="flex min-w-0 flex-1 flex-row-reverse flex-wrap items-baseline justify-start gap-x-1.5">
+              <span className="shrink-0 text-[13px] font-semibold tracking-tight text-[#1F2A30] tabular-nums">
                 {numericValue !== undefined ? (
                   <AnimatedNumber value={numericValue} format={isCurrency ? "currency" : "raw"} decimalPlaces={decimalPlaces} suffix={suffix} />
                 ) : (
                   value
                 )}
               </span>
+              {numericValue !== undefined && prevNumericValue !== undefined && (
+                <StockTrendIndicator current={numericValue} previous={prevNumericValue} isCurrency={isCurrency} suffix={suffix} />
+              )}
             </div>
           </div>
           {/* 전월 행: 동일 크기·medium·뮤트 */}
@@ -468,7 +485,7 @@ function MetricCard({
         </div>
 
         {spark && spark.points.length > 1 && (
-          <div className="mt-1">
+          <div className="mt-auto pt-1">
             <Sparkline points={spark.points} months={spark.months} type={spark.type} />
           </div>
         )}
@@ -541,8 +558,8 @@ interface AgendaData {
 
 export function DashboardHome({ initialData }: { initialData: DesktopDashboardData }) {
   const [agendaData, setAgendaData] = useState<AgendaData>({ tasks: [], settlements: [] });
-  // 초기값 true: fetch 시작 전 첫 페인트에 빈 상태("모두 완료")가 잠깐 노출되는 플래시 방지
-  // — 빈 상태 pop-in이 마운트/데이터 도착 시 이중 발화하는 원인이기도 했다.
+  // 초기값 true: fetch 시작 전 첫 페인트에 「오늘 처리할 일」 접힘 문구(「오늘 처리할 일이 없습니다」)가 잠깐
+  // 보였다가 행이 들어오는 플래시 방지 — 아젠다 건수를 모르는 동안은 「없다」고 말하지 않는다.
   const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState<string | null>(null);
 
@@ -671,13 +688,15 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
           <p className="mb-3 text-[11px] text-muted-foreground">{DASHBOARD_PAGE_SCOPE_CAPTION}</p>
 
           {/* 밴드 1: 두 초점(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17) — 좌 2fr 「오늘 처리할 일」(그날 손이 가야
-              하는 일: 주문·영업 팔로업·지연된 정산·승인대기·데이터 점검) | 우 1fr 거래액 목표 히어로(이 화면의
+              하는 일: 주문·영업 팔로업·정산 지연·승인대기·데이터 점검) | 우 1fr 거래액 목표 히어로(이 화면의
               단일 lg 강조). 둘 다 "지금 무엇을 보고 무엇을 할지"의 답이라 첫 줄에 나란히 둔다.
               좌 칸 아래에 실적 지표 3장을 붙여 히어로 높이를 받는다 — 일 목록만 두면 히어로(약 400px) 옆이
-              비어 첫 줄이 한쪽으로 기운다. items-start: 일이 없어 「오늘 처리할 일」이 한 줄로 접혀도 늘려서
-              빈 카드를 만들지 않는다(접힘 계약 승계). */}
-          <section data-band="focus" className="grid gap-4 xl:grid-cols-[2fr_1fr] items-start">
-            <div className="flex min-w-0 flex-col gap-4">
+              비어 첫 줄이 한쪽으로 기운다. 일이 없어 「오늘 처리할 일」이 한 줄로 접혀도 늘려서
+              빈 카드를 만들지 않는다(접힘 계약 승계). 줄은 items-stretch 로 히어로 높이를 좌 칸에 주고, 그 높이는
+              「오늘 처리할 일」이 아니라 실적 지표 칸(flex-1)이 받는다 — 일 카드는 자기 높이 그대로라 접힘이 유지되고,
+              좌 칸 아래가 비지 않는다(2026-10-18 리뷰). */}
+          <section data-band="focus" className="grid gap-4 xl:grid-cols-[2fr_1fr] items-stretch">
+            <div className="flex h-full min-w-0 flex-col gap-4">
               <TodayWorkCard
                 rows={todayRows}
                 loading={orderWork.isLoading || agendaLoading || approvals.isLoading}
@@ -687,7 +706,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               />
 
               {/* 실적 지표(1x3) — 월 환산 캠페인 수 · 매출총이익 · 최근 90일 영업 전환. 매출 히어로 옆에서 같이 읽힌다. */}
-              <section data-band="metrics" className="grid gap-4 sm:grid-cols-3">
+              <section data-band="metrics" className="grid flex-1 gap-4 sm:grid-cols-3">
                 <MetricCard
                   label="월 환산 캠페인 수"
                   value={`${initialData.scale.weightedCampaignCount.toFixed(1)}건`}
@@ -734,10 +753,15 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0 h-full flex flex-col">
                   <CardContent className="px-4 py-3 flex flex-1 flex-col">
                     {/* 서브텍스트는 제목 우측에 이어서 — 형제 KPI 카드와 형식 통일(오너 2026-07-24) */}
-                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                    {/* flex-wrap + 부연 min-w-[8rem]: 3열이 좁아지면(640px·200% 확대) 부연이 제목 다음 줄로 내려간다. */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pb-2 border-b border-slate-100">
                       <UsersRound className="size-4 shrink-0 text-[var(--primary)]" />
                       <p className="shrink-0 text-[13px] font-semibold text-[var(--primary)] tracking-tight">최근 90일 영업 전환</p>
-                      <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                      {/* 짧은 두 마디라 좁으면 말줄임 대신 줄을 바꾼다 — 잘린 채 읽을 방법이 없던 자리(2026-10-18 리뷰 HIGH). */}
+                      <p
+                        className="min-w-[8rem] flex-1 break-keep text-[11px] text-muted-foreground"
+                        title={`확정 ${initialData.outreach90d.confirmed}건 · 확정률 ${ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}`}
+                      >
                         확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
                       </p>
                     </div>
@@ -916,11 +940,11 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
                             <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
                             {/* 연간 탭과 공통 domain — Y축 틀·목표선 고정(오너 2026-07-24) */}
-                            <YAxis domain={[0, chartYMax]} tickFormatter={(value) => `${Math.round(value / 10000)}만`} width={58} tickLine={false} axisLine={false} />
+                            <YAxis domain={[0, chartYMax]} tickFormatter={formatAxisWon} width={58} tickLine={false} axisLine={false} />
                             <ChartTooltip content={<TrendTooltip />} />
                             {/* 마운트 애니메이션 450ms 캡. 점선 목표선은 draw 애니메이션 충돌로 비활성 */}
                             <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
-                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={20} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" stroke="var(--chart-2)" strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={20} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
                             <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
                           </ComposedChart>
                         </ChartContainer>
@@ -943,10 +967,10 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                           <ComposedChart data={initialData.yearlyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
                             <CartesianGrid vertical={false} strokeDasharray="3 3" />
                             <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
-                            <YAxis domain={[0, chartYMax]} tickFormatter={(value) => `${Math.round(value / 10000)}만`} width={58} tickLine={false} axisLine={false} />
+                            <YAxis domain={[0, chartYMax]} tickFormatter={formatAxisWon} width={58} tickLine={false} axisLine={false} />
                             <ChartTooltip content={<TrendTooltip />} />
                             <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
-                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={18} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" stroke="var(--chart-2)" strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={18} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
                             <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
                           </ComposedChart>
                         </ChartContainer>
