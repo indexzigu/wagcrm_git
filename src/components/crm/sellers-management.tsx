@@ -55,6 +55,7 @@ import {
 } from "@/lib/partner-seller-display";
 import {
   type SellerSegment,
+  compareByLongestDormancy,
   filterSellersBySegment,
 } from "@/lib/seller-segment";
 
@@ -599,9 +600,12 @@ export function SellersManagement({
         })
       : sellers;
 
-    // 파생 세그먼트 필터: 전체 / 거래 셀러(campaignCount>0) / 발굴 후보(=0) / 미분석(aiComposite==null).
+    // 파생 세그먼트 필터: 전체 / 거래 셀러(campaignCount>0) / 발굴 후보(=0) / 미분석(aiComposite==null) / 휴면(seller-dormancy SSOT).
     // 순수 함수(seller-segment.ts)로 분리 — property test로 기존 active/prospect 계약 + 신규 unanalyzed 검증.
     const segmented = filterSellersBySegment(list, segment);
+
+    // 「휴면」 보기는 오래 쉰 셀러부터 — 재계약 검토 순서(오너 결정 2026-10-18). 다른 보기는 종전 정렬.
+    if (segment === "dormant") return [...segmented].sort(compareByLongestDormancy);
 
     return [...segmented].sort((a, b) => {
       const aMonitored = a.isMonitored ? 1 : 0;
@@ -742,6 +746,7 @@ export function SellersManagement({
                 { value: "active", label: "거래 셀러" },
                 { value: "prospect", label: "발굴 후보" },
                 { value: "unanalyzed", label: "미분석" },
+                { value: "dormant", label: "휴면" },
               ]}
             />
             <InputGroup className="ml-auto w-48 shrink-0 border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">

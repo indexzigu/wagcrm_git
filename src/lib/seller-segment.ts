@@ -7,8 +7,9 @@
 // 별도 client-safe 모듈로 둔다.
 
 import type { SellerSummary } from "@/lib/crm-types";
+import { computeDormancyTier } from "@/lib/seller-dormancy";
 
-export type SellerSegment = "all" | "active" | "prospect" | "unanalyzed";
+export type SellerSegment = "all" | "active" | "prospect" | "unanalyzed" | "dormant";
 
 /**
  * 파생 세그먼트 predicate. 상태가 아니라 계산되는 사실(거래 이력·분석 유무)이므로 순수.
@@ -16,8 +17,17 @@ export type SellerSegment = "all" | "active" | "prospect" | "unanalyzed";
  * - active: 거래 셀러 (campaignCount > 0)
  * - prospect: 발굴 후보 (campaignCount === 0)
  * - unanalyzed: 미분석 (aiComposite == null) — AI 점수 캐시가 비어있는 셀러
+ * - dormant: 휴면 — 재계약 검토 대상(오너 결정 2026-10-18). 판정은 `seller-dormancy.ts` 의
+ *   `computeDormancyTier` 가 DORMANT(90~180일)로 낸 셀러뿐이다 — 규칙을 여기서 다시 쓰지 않는다.
+ *   180일+(제외 티어)는 「거래 리듬」 열이 무채색으로 두는 "사실상 제외"라 이 보기에도 넣지 않는다.
+ *   `runCount` 가 없으면(집계 실패) 표가 「—」로 그리는 행이라 휴면으로 단정하지 않는다.
+ *   이 보기는 오너가 **고르는** 필터다 — 기본 보기·기본 정렬에 휴면을 쓰지 않는다는 SSOT 조항(D10)은 그대로.
  */
-export function matchesSellerSegment(seller: SellerSummary, segment: SellerSegment): boolean {
+export function matchesSellerSegment(
+  seller: SellerSummary,
+  segment: SellerSegment,
+  now: Date = new Date(),
+): boolean {
   switch (segment) {
     case "all":
       return true;
@@ -28,6 +38,9 @@ export function matchesSellerSegment(seller: SellerSummary, segment: SellerSegme
     case "unanalyzed":
       // == null 로 null/undefined 양쪽을 포착 (AI 프로필 미적용/미분석 환경 모두 미분석으로 간주)
       return seller.aiComposite == null;
+    case "dormant":
+      if (seller.runCount === undefined) return false;
+      return computeDormancyTier(seller.lastRunStartAt ?? null, now).tier === "DORMANT";
     default:
       return true;
   }
@@ -36,8 +49,20 @@ export function matchesSellerSegment(seller: SellerSummary, segment: SellerSegme
 /** 세그먼트로 걸러진 목록. 정렬은 호출부 책임(이 함수는 순서를 보존한다). */
 export function filterSellersBySegment(
   sellers: SellerSummary[],
-  segment: SellerSegment
+  segment: SellerSegment,
+  now: Date = new Date(),
 ): SellerSummary[] {
   if (segment === "all") return sellers;
-  return sellers.filter((seller) => matchesSellerSegment(seller, segment));
+  return sellers.filter((seller) => matchesSellerSegment(seller, segment, now));
+}
+
+/**
+ * 「휴면」 보기 정렬 — 오래 쉰 셀러 먼저(마지막 진행 시작일 오름차순). 휴면 보기 안에서는 모든 행에
+ * 시작일이 있지만, 비교기는 단독으로도 안전하게 시작일 없는 행을 뒤로 보낸다.
+ */
+export function compareByLongestDormancy(a: SellerSummary, b: SellerSummary): number {
+  const ta = a.lastRunStartAt ? Date.parse(a.lastRunStartAt) : Number.POSITIVE_INFINITY;
+  const tb = b.lastRunStartAt ? Date.parse(b.lastRunStartAt) : Number.POSITIVE_INFINITY;
+  if (ta === tb) return 0;
+  return ta < tb ? -1 : 1;
 }

@@ -60,7 +60,7 @@ const sellersArb = fc
     fc.tuple(...ids.map((id) => sellerArb(id))).map((sellers) => sellers as SellerSummary[])
   );
 
-const segmentArb = fc.constantFrom<SellerSegment>("all", "active", "prospect", "unanalyzed");
+const segmentArb = fc.constantFrom<SellerSegment>("all", "active", "prospect", "unanalyzed", "dormant");
 
 // ---------------------------------------------------------------------------
 // Property 1: "all" is the identity filter (order + membership preserved)
