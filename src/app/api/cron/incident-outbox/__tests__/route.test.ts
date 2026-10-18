@@ -14,7 +14,8 @@ vi.mock("@/lib/cron-incident", () => ({
   resolveOpenIncidents: vi.fn(),
 }));
 
-import { GET, POST, dynamic } from "../route";
+import * as routeModule from "../route";
+import { GET, POST } from "../route";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getPrisma } from "@/lib/prisma";
 import { escalatePendingIncidents, recordIncidentOccurrence, resolveOpenIncidents } from "@/lib/cron-incident";
@@ -92,8 +93,8 @@ function routeFindMany(waiting: unknown[], recovered: unknown[]) {
 }
 
 describe("incident-outbox 크론", () => {
-  it("요청마다 새로 계산한다(force-dynamic)", () => {
-    expect(dynamic).toBe("force-dynamic");
+  it("세그먼트 설정(dynamic)을 내보내지 않는다 — cacheComponents 빌드가 거부한다, GET 은 기본이 동적", () => {
+    expect("dynamic" in routeModule).toBe(false);
   });
 
   it("미인증이면 GET·POST 모두 401 이고 DB 를 읽지 않는다", async () => {

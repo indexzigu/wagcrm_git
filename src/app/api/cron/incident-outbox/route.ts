@@ -32,7 +32,8 @@ import {
 //   막은 개수 → 묶음 알림 1건. 정상화의 하한을 24시간이 아니라 7일로 두는 것은 08:00 회차를 놓친 날의 정상화를
 //   다음 날 요약이 잡게 하려는 것이다(digestedAt 이 한 번만 싣게 막는다). 줄마다 날짜가 붙어 24시간 밖인 것도 구분된다.
 
-export const dynamic = "force-dynamic";
+// ⚠️ `export const dynamic` 를 두지 않는다 — 이 레포는 `cacheComponents` 라 라우트 세그먼트 설정이 빌드를 깬다
+// (PR #212 preflight 실측). GET 핸들러는 Next 15+ 기본이 동적이고, 매 요청 인증 헤더를 읽어 캐시될 수 없다.
 
 const ACK_FIELDS = ["alertedAt", "recoveryAlertedAt", "digestedAt"] as const satisfies readonly OutboxMessage["ackField"][];
 type AckField = (typeof ACK_FIELDS)[number];
