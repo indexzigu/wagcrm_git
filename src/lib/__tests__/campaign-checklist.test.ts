@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CAMPAIGN_STATUS_ORDER,
   canonicalChecklistLabel,
+  CHECKLIST_LABEL_ALIASES,
+  DEFAULT_CAMPAIGN_CHECKLIST_TEMPLATES,
+  RETIRED_CHECKLIST_TEMPLATE_LABELS,
   ensureDefaultChecklistTemplates,
   EXECUTION_CHECKLIST_GROUPS,
   getNextCampaignStatus,
@@ -732,6 +735,16 @@ describe("기본 템플릿 개명 — 「기본 딜 조건 확인」 → 「기�
     expect(canonicalChecklistLabel("행사 일정 확정")).toBe("행사 일정 확정");
     const group = EXECUTION_CHECKLIST_GROUPS.PREPARATION.find((g) => g.title === "일정/조건 확정");
     expect([...(group?.items ?? [])]).toContain(canonicalChecklistLabel("기본 딜 조건 확인"));
+  });
+
+  it("별칭 표의 옛 라벨은 모두 은퇴 목록에 있고, 새 라벨은 현행 기본 템플릿에 있다 — 한쪽만 고치는 드리프트 방지", () => {
+    const retired = new Set(RETIRED_CHECKLIST_TEMPLATE_LABELS.map((r) => r.label));
+    const current = new Set(Object.values(DEFAULT_CAMPAIGN_CHECKLIST_TEMPLATES).flat().map((t) => t.label));
+    expect(Object.keys(CHECKLIST_LABEL_ALIASES).length).toBeGreaterThan(0); // 0건이면 늘 초록이다
+    for (const [oldLabel, newLabel] of Object.entries(CHECKLIST_LABEL_ALIASES)) {
+      expect(retired.has(oldLabel), `${oldLabel} 이 은퇴 목록에 없다`).toBe(true);
+      expect(current.has(newLabel), `${newLabel} 이 현행 기본 템플릿에 없다`).toBe(true);
+    }
   });
 
   it("다음 작업 안내도 새 이름으로 낸다", () => {

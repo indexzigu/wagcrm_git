@@ -96,12 +96,12 @@ export function LandingHeadline() {
         id="landing-login-heading"
         className="text-3xl font-bold leading-[1.25] tracking-tight break-keep text-slate-900"
       >
-        오늘의 공동구매,
+        오늘의 딜,
         <br />
         이어서 진행하세요
       </h1>
       <p className="text-sm leading-relaxed break-keep text-slate-500">
-        와이그라운드 셀러 네트워크의 공동구매 운영과 정산을 한 화면에서 관리하는
+        와이그라운드 셀러 네트워크의 딜 운영과 정산을 한 화면에서 관리하는
         내부 워크스페이스입니다.
       </p>
     </div>
@@ -113,7 +113,7 @@ const BRAND_FEATURES = [
   {
     no: "01",
     title: "파이프라인",
-    desc: "제안부터 확정, 진행까지, 모든 캠페인의 단계를 실시간으로 추적합니다.",
+    desc: "제안부터 확정, 진행까지, 모든 딜의 단계를 실시간으로 추적합니다.",
   },
   {
     no: "02",
@@ -166,7 +166,7 @@ export function LandingEditorialPanel() {
           </>
         ) : (
           <>
-            흩어진 공동구매와 정산을
+            흩어진 딜과 정산을
             <br />
             <span className="text-primary">하나의 흐름</span>으로.
           </>
@@ -176,7 +176,7 @@ export function LandingEditorialPanel() {
       <p className="mt-5 max-w-md text-[15px] leading-relaxed break-keep text-slate-500">
         {neutral
           ? "허가된 구성원과 초대된 파트너를 위한 비공개 워크스페이스입니다."
-          : "셀러 네트워크 공동구매의 시작부터 정산까지, 운영의 모든 단계를 끊김 없이 잇습니다."}
+          : "셀러 네트워크 공동구매 딜의 시작부터 정산까지, 운영의 모든 단계를 끊김 없이 잇습니다."}
       </p>
 
       {/* 얇은 괘선으로 구분한 넘버드 기능 리스트 */}

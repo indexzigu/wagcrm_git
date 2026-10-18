@@ -259,7 +259,7 @@ export function summarizeChecklist(
  * ⚠️ 은퇴는 **템플릿만** 끈다 — 이미 만들어진 `CampaignChecklistItem` 행은 그대로 남아
  * 진행 중인 캠페인의 체크 이력이 사라지지 않는다.
  */
-const RETIRED_CHECKLIST_TEMPLATE_LABELS: ReadonlyArray<{ status: CampaignStatus; label: string }> = [
+export const RETIRED_CHECKLIST_TEMPLATE_LABELS: ReadonlyArray<{ status: CampaignStatus; label: string }> = [
   // 2026-08-25 — 채널 중립 문구로 개명(「몰 정산금 …」 → 「정산금 …」).
   { status: "SETTLEMENT_WAIT", label: "몰 정산금 입금 예정일 확인" },
   { status: "SETTLEMENT_WAIT", label: "몰 정산금 입금 여부 확인" },

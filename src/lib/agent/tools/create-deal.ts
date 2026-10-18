@@ -65,13 +65,13 @@ async function execute(input: CreateDealInput): Promise<ToolResult<CreateDealDat
   const partnerLabel = describeDealPartner(partnerId, partner);
   if (partnerLabel === null) {
     return missingParam(
-      "딜을 만들 거래처를 정확히 하나로 지정해야 합니다: 이미 등록된 거래처는 partnerId, " +
+      "판매 조건을 만들 거래처를 정확히 하나로 지정해야 합니다: 이미 등록된 거래처는 partnerId, " +
         "새로 만들 거래처는 partner. 둘 다 없으면 거래처 정보를 먼저 확인해 주십시오.",
       { partnerId: partnerId ?? null, hasNewPartner: Boolean(partner) }
     );
   }
   if (!mainDeal?.dealName || !mainDeal.dealName.trim()) {
-    return missingParam("등록할 딜(상품) 이름이 필요합니다.", { partnerId: partnerId ?? null });
+    return missingParam("등록할 판매 조건(상품) 이름이 필요합니다.", { partnerId: partnerId ?? null });
   }
 
   const options = optionDeals ?? [];

@@ -80,6 +80,7 @@ export const ENTITY_TERM_EXEMPT_PATHS: Readonly<Record<string, string>> = {
   "lib/content-guide.ts": "콘텐츠 가이드 생성 모델에 주는 지시문 묶음이다(화면 글자가 아니다 — 바꾸면 모델 출력이 바뀐다).",
   "app/api/deals/extract-info/route.ts": "최저가 검색어 추출 모델에 주는 지시문이다.",
   "app/api/outreach/generate-message/route.ts": "제안 메시지 초안 생성 모델에 주는 지시문이다.",
+  "components/auth/landing-login-branding.tsx": "로그인 첫 화면 소개 문구 — 바깥 사람용, 오너 2026-10-15 유지 결정(2026-10-18 오너 최종 확인: 원문 그대로).",
 };
 
 const DEV_WORD_PATTERN = buildDevWordPattern(Object.keys(DEV_WORDS));

@@ -27,7 +27,7 @@ async function execute(input: ChangeDealStatusInput): Promise<ToolResult<ChangeD
   const { dealId, newStatus } = input;
 
   if (!dealId || !dealId.trim()) {
-    return missingParam("상태를 변경할 딜 ID가 필요합니다.", { dealId, newStatus });
+    return missingParam("상태를 변경할 판매 조건 ID가 필요합니다.", { dealId, newStatus });
   }
 
   const writeIntent: WriteIntent = {
