@@ -75,7 +75,7 @@ describe("CrmSidebar 섹션 구조 계약", () => {
   it("자료 목록(/assets)은 하위 항목 5개를 갖는다 — 허브 화면을 대신하는 입구다", () => {
     const assets = allItems.find((item) => item.href === "/assets");
     expect(assets?.children?.map((child) => [child.href, child.label])).toEqual([
-      ["/assets/archive", "자료 아카이브"],
+      ["/assets/archive", "캠페인 자료"],
       ["/assets/price-sheets", "가격표"],
       ["/assets/katalk", "카톡 기록"],
       ["/assets/inbox", "미분류 레퍼런스"],

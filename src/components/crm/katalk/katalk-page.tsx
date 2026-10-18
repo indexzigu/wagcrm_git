@@ -10,7 +10,7 @@ import { KatalkManageTab } from "./manage-tab";
 import { useUserRole } from "@/hooks/use-user-role";
 
 export function KatalkPage() {
-  // operator 에게 이 페이지는 앱의 전부다 — 「방 관리」탭과 「자료 아카이브」 링크는 둘 다
+  // operator 에게 이 페이지는 앱의 전부다 — 「방 관리」탭과 「캠페인 자료」 링크는 둘 다
   // 미들웨어가 막는 곳으로 나가므로(방 관리는 /api/chat-room-mappings/manage 를 부른다)
   // 눌러도 실패하는 UI 를 남기지 않고 아예 뺀다. 탭이 하나뿐이면 탭 껍데기도 뺀다.
   const isOperator = useUserRole() === "operator";
@@ -26,7 +26,7 @@ export function KatalkPage() {
             className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             <ArrowLeftIcon className="size-3.5" />
-            자료 아카이브
+            캠페인 자료
           </Link>
         )
       }

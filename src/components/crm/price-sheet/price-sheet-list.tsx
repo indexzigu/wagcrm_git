@@ -121,7 +121,7 @@ export function PriceSheetList() {
           href="/assets/archive"
           className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
-          ← 자료 아카이브
+          ← 캠페인 자료
         </Link>
       }
       description="브랜드사 가격표(xlsx/이미지/pdf/pptx)를 업로드해 구조화 추출하고 딜에 반영합니다."

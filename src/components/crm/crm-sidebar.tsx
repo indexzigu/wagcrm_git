@@ -149,7 +149,7 @@ export const navSections: {
         icon: FolderIcon,
         description: "에셋 및 문서 아카이브",
         children: [
-          { href: "/assets/archive", label: "자료 아카이브" },
+          { href: "/assets/archive", label: "캠페인 자료" },
           { href: "/assets/price-sheets", label: "가격표" },
           { href: "/assets/katalk", label: "카톡 기록" },
           { href: "/assets/inbox", label: "미분류 레퍼런스" },

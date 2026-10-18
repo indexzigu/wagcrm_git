@@ -478,7 +478,7 @@ export function ReferenceInboxClient() {
             className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             <ArrowLeftIcon className="size-3.5" />
-            자료 아카이브
+            캠페인 자료
           </Link>
         }
         description="수집한 인스타/틱톡/유튜브 링크를 딜에 배정하거나 기각합니다."

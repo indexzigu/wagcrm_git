@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe("KatalkPage — operator", () => {
-  it("방 관리 탭과 자료 아카이브 링크를 그리지 않는다", async () => {
+  it("방 관리 탭과 캠페인 자료 링크를 그리지 않는다", async () => {
     setRoleCookie("operator");
     render(<KatalkPage />);
 
@@ -59,7 +59,7 @@ describe("KatalkPage — operator", () => {
     expect(await screen.findByTestId("upload-tab")).toBeTruthy();
     expect(screen.queryByText("방 관리")).toBeNull();
     expect(screen.queryByText("업로드")).toBeNull(); // 탭이 하나뿐이면 탭 껍데기도 없다
-    expect(screen.queryByText("자료 아카이브")).toBeNull();
+    expect(screen.queryByText("캠페인 자료")).toBeNull();
     expect(screen.queryByTestId("manage-tab")).toBeNull();
   });
 });
@@ -70,13 +70,13 @@ describe("KatalkPage — admin", () => {
     render(<KatalkPage />);
 
     expect(await screen.findByText("방 관리")).toBeTruthy();
-    expect(screen.getByText("자료 아카이브")).toBeTruthy();
+    expect(screen.getByText("캠페인 자료")).toBeTruthy();
   });
 
   it("역할 쿠키가 없어도 기존 화면 그대로다 (미들웨어를 못 거친 경로 폴백)", async () => {
     render(<KatalkPage />);
 
     expect(await screen.findByText("방 관리")).toBeTruthy();
-    expect(screen.getByText("자료 아카이브")).toBeTruthy();
+    expect(screen.getByText("캠페인 자료")).toBeTruthy();
   });
 });

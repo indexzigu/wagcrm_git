@@ -821,7 +821,7 @@ export function AssetLibrary({
 
   return (
     <CrmShell
-      title="자료 아카이브"
+      title="캠페인 자료"
       actions={
         <Button
           size="sm"
