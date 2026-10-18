@@ -393,7 +393,7 @@ export function CampaignCreationForm({
         )}
 
         {/* 딜 필드 */}
-        <FormField label="딜" required error={errors.dealId}>
+        <FormField label="판매 조건" required error={errors.dealId}>
           {isDealLocked ? (
             <Input value={dealName || initialDealId} disabled className="bg-muted" />
           ) : (
@@ -420,7 +420,7 @@ export function CampaignCreationForm({
                     setDealDropdownOpen(true);
                   }
                 }}
-                placeholder="딜명 또는 브랜드명으로 검색 (2자 이상)"
+                placeholder="판매 조건 이름 또는 브랜드명으로 검색 (2자 이상)"
               />
               {dealName ? (
                 <EntityIdentity

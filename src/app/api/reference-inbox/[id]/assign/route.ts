@@ -51,7 +51,7 @@ export async function POST(request: Request, context: Context) {
   // 배정 대상 딜 존재 확인(없는 딜에 승격하면 고아 Asset이 생기므로 선제 차단).
   const deal = await prisma.deal.findUnique({ where: { id: dealId }, select: { id: true } });
   if (!deal) {
-    return NextResponse.json({ error: "대상 딜을 찾을 수 없습니다." }, { status: 404 });
+    return NextResponse.json({ error: "대상 판매 조건을 찾을 수 없습니다." }, { status: 404 });
   }
 
   const uploadedBy = auth.context.userId;

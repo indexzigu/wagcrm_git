@@ -43,7 +43,7 @@ async function execute(input: SearchDealsInput): Promise<ToolResult<SearchDealsD
     });
 
     if (deals.length === 0) {
-      return notFound("검색 조건에 맞는 딜이 없습니다.", ["Deal"], { keyword, status, partnerName });
+      return notFound("검색 조건에 맞는 판매 조건이 없습니다.", ["Deal"], { keyword, status, partnerName });
     }
 
     const truncated = deals.length > TAKE_LIMIT;
@@ -65,7 +65,7 @@ async function execute(input: SearchDealsInput): Promise<ToolResult<SearchDealsD
     );
   } catch (err) {
     return queryFailed(
-      err instanceof Error ? err.message : "딜 검색 중 오류가 발생했습니다.",
+      err instanceof Error ? err.message : "판매 조건 검색 중 오류가 발생했습니다.",
       ["Deal"],
       { keyword, status, partnerName }
     );

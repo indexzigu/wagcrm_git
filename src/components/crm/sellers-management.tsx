@@ -210,7 +210,7 @@ export function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<Seller
             {dealRows > count && (
               // "N개 딜"은 mobile-campaign-card 그룹 배지의 확립 표기 — 축약형 "N딜"로 갈라지지 않는다.
               // 두 자릿수 조합("12회 · 15개 딜")을 위해 컬럼 폭 112(ss-ux P2).
-              <span className="font-normal text-[10px] text-slate-500"> · {dealRows}개 딜</span>
+              <span className="font-normal text-[10px] text-slate-500"> · {dealRows}개 판매 조건</span>
             )}
           </span>
           {recency && <span className="text-[10px] text-slate-500">{recency.label}</span>}

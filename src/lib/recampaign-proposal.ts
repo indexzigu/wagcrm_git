@@ -74,7 +74,7 @@ export function buildRecampaignMemoContent(alert: RecampaignAlert): string {
     `재캠페인 적기 검토: 지난 ${alert.runCount}회 캠페인, 케이던스 ${alert.medianIntervalDays}일 주기, ` +
     `마지막 캠페인 시작 후 ${overdue}.`;
   const avail = alert.availabilityNote ? ` 가용 일정: ${alert.availabilityNote}.` : "";
-  return `${base}${avail} 다음 딜 제안을 검토하세요.`;
+  return `${base}${avail} 다음 판매 조건 제안을 검토하세요.`;
 }
 
 export function buildRecampaignProposalTitle(alert: RecampaignAlert): string {

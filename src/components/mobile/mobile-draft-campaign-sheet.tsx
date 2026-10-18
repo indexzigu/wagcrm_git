@@ -201,7 +201,7 @@ export function MobileDraftCampaignSheet({
       >
         <MobileSheetHeader
           title="예비 일정 만들기"
-          description="셀러·딜·기간만 정하면 이름과 차수는 자동으로 붙습니다"
+          description="셀러·판매 조건·기간만 정하면 이름과 차수는 자동으로 붙습니다"
           closeLabel="예비 일정 만들기 닫기"
         />
 
@@ -259,14 +259,14 @@ export function MobileDraftCampaignSheet({
           {/* ② 딜 검색 선택 (확정 딜만) */}
           <div className="flex flex-col gap-1.5">
             <label htmlFor="draft-deal-query" className="text-[11px] font-semibold text-muted-foreground">
-              딜 <span className="font-normal text-slate-500">(확정 딜만)</span>
+              판매 조건 <span className="font-normal text-slate-500">(확정 판매 조건만)</span>
             </label>
             <input
               id="draft-deal-query"
               type="text"
               inputMode="search"
               autoComplete="off"
-              placeholder="딜 이름·브랜드 검색"
+              placeholder="판매 조건 이름·브랜드 검색"
               value={dealQuery}
               onChange={(event) => handleDealQueryChange(event.target.value)}
               className={cn(FIELD_CLASS, selectedDeal ? FIELD_SELECTED : FIELD_IDLE)}
@@ -351,7 +351,7 @@ export function MobileDraftCampaignSheet({
                 namePreview ? "font-semibold text-primary" : "text-muted-foreground",
               )}
             >
-              {namePreview ?? "셀러와 딜을 선택하면 이름이 만들어집니다"}
+              {namePreview ?? "셀러와 판매 조건을 선택하면 이름이 만들어집니다"}
             </p>
             <p className="mt-0.5 text-[10px] text-muted-foreground">(차수는 자동 계산)</p>
           </div>

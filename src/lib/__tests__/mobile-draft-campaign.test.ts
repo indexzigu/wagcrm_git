@@ -71,7 +71,7 @@ beforeEach(() => {
 });
 
 describe("createDraftCampaign — 저장 값", () => {
-  it("status PROPOSAL·링크 빈값·딜 정책 첫 채널 마진으로 저장한다", async () => {
+  it("status PROPOSAL·링크 빈값·판매 조건 정책 첫 채널 마진으로 저장한다", async () => {
     primeHappyPath();
 
     await createDraftCampaign(INPUT);
@@ -135,7 +135,7 @@ describe("createDraftCampaign — 저장 값", () => {
 });
 
 describe("createDraftCampaign — 검증·에러", () => {
-  it("존재하지 않는 딜이면 404 DraftCampaignError, 캠페인 생성 없음", async () => {
+  it("존재하지 않는 판매 조건이면 404 DraftCampaignError, 캠페인 생성 없음", async () => {
     mockTx.deal.findUnique.mockResolvedValue(null);
 
     const promise = createDraftCampaign(INPUT);
@@ -143,7 +143,7 @@ describe("createDraftCampaign — 검증·에러", () => {
     await expect(promise).rejects.toBeInstanceOf(DraftCampaignError);
     await expect(promise).rejects.toMatchObject({
       status: 404,
-      message: expect.stringContaining("딜"),
+      message: expect.stringContaining("판매 조건"),
     });
     expect(mockTx.salesCampaign.create).not.toHaveBeenCalled();
     expect(recalculateCampaignRounds).not.toHaveBeenCalled();

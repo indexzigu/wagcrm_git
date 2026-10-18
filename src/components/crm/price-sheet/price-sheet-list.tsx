@@ -124,7 +124,7 @@ export function PriceSheetList() {
           ← 캠페인 자료
         </Link>
       }
-      description="브랜드사 가격표(xlsx/이미지/pdf/pptx)를 업로드해 구조화 추출하고 딜에 반영합니다."
+      description="브랜드사 가격표(xlsx/이미지/pdf/pptx)를 업로드해 구조화 추출하고 판매 조건에 반영합니다."
     >
       <div className="flex flex-col gap-6 p-6 md:p-8">
         <Card className="p-6">

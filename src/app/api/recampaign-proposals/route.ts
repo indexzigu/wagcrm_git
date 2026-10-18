@@ -63,12 +63,12 @@ export async function POST(request: Request) {
   if (dealId) {
     const { deal, candidates } = await loadDealSellerCandidates(prisma, dealId, now);
     if (!deal) {
-      return NextResponse.json({ error: "딜을 찾을 수 없습니다." }, { status: 404 });
+      return NextResponse.json({ error: "판매 조건을 찾을 수 없습니다." }, { status: 404 });
     }
     const candidate = candidates.find((c) => c.sellerId === sellerId);
     if (!candidate) {
       return NextResponse.json(
-        { error: "해당 셀러는 이 딜의 현재 제안 후보가 아닙니다." },
+        { error: "해당 셀러는 이 판매 조건의 현재 제안 후보가 아닙니다." },
         { status: 409 },
       );
     }
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
         sellerId: candidate.sellerId,
         sellerName: candidate.name,
         dealId: deal.id,
-        dealName: dealRecord?.dealName ?? "딜",
+        dealName: dealRecord?.dealName ?? "판매 조건",
         reason: candidate.reason,
         priority: candidate.priority,
         pairRunCount: candidate.pairRunCount,

@@ -2161,7 +2161,7 @@ export default function OrderDashboard() {
                             <StatusDot
                               tone="caution"
                               label={labelFor('period-mismatch')}
-                              hint="연결된 판매캠페인들의 기간이 서로 다릅니다. 표시된 기간은 가장 이른 시작 ~ 가장 늦은 종료를 합성한 값이라, 짧게 운영한 딜에는 정확하지 않습니다. 판매관리에서 회차 기간을 확인하세요."
+                              hint="연결된 판매캠페인들의 기간이 서로 다릅니다. 표시된 기간은 가장 이른 시작 ~ 가장 늦은 종료를 합성한 값이라, 짧게 운영한 판매 조건에는 정확하지 않습니다. 판매관리에서 회차 기간을 확인하세요."
                             />
                           </span>
                           );

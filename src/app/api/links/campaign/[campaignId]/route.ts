@@ -70,7 +70,7 @@ export async function PATCH(
       (err as { code: string }).code === "P2025"
     ) {
       return NextResponse.json(
-        { error: "캠페인 또는 딜을 찾을 수 없습니다" },
+        { error: "캠페인 또는 판매 조건을 찾을 수 없습니다" },
         { status: 404 },
       );
     }
@@ -83,7 +83,7 @@ export async function PATCH(
       (err as { code: string }).code === "P2003"
     ) {
       return NextResponse.json(
-        { error: "유효하지 않은 딜 ID입니다" },
+        { error: "유효하지 않은 판매 조건 ID입니다" },
         { status: 400 },
       );
     }

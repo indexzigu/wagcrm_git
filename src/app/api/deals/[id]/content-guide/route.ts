@@ -120,7 +120,7 @@ export async function POST(request: Request, context: Context) {
   });
   if (!deal) {
     return NextResponse.json(
-      { error: "딜을 찾을 수 없습니다" },
+      { error: "판매 조건을 찾을 수 없습니다" },
       { status: 404 },
     );
   }
@@ -453,7 +453,7 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json(
         {
           error:
-            "생성물에 금지 표현이 포함돼 내보내지 않았습니다. 딜 표현 관리에서 승인 소구점을 보강한 뒤 다시 시도해주세요.",
+            "생성물에 금지 표현이 포함돼 내보내지 않았습니다. 판매 조건 표현 관리에서 승인 소구점을 보강한 뒤 다시 시도해주세요.",
           violations: blocked.violations,
         },
         { status: 422 },

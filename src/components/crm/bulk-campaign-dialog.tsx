@@ -159,7 +159,7 @@ export function BulkCampaignDialog({
         <DialogHeader>
           <DialogTitle>벌크 캠페인 생성</DialogTitle>
           <DialogDescription>
-            딜을 선택하고 여러 셀러를 지정하여 한 번에 캠페인을 생성합니다.
+            판매 조건을 선택하고 여러 셀러를 지정하여 한 번에 캠페인을 생성합니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -169,10 +169,10 @@ export function BulkCampaignDialog({
           <>
             <FieldGroup>
               <Field>
-                <FieldLabel>딜 선택</FieldLabel>
+                <FieldLabel>판매 조건 선택</FieldLabel>
                 <Select value={dealId} onValueChange={setDealId}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="딜을 선택하세요" />
+                    <SelectValue placeholder="판매 조건을 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>

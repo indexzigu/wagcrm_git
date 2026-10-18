@@ -282,11 +282,11 @@ async function runApplyActions(
         select: { parentDealId: true },
       });
       if (!parent) {
-        throw new ApplyExecutorError(`상위딜을 찾을 수 없습니다 (${parentDealId})`);
+        throw new ApplyExecutorError(`상위 판매 조건을 찾을 수 없습니다 (${parentDealId})`);
       }
       if (parent.parentDealId) {
         // 2단 중첩은 오퍼 진단·발주 준비도의 부모 치환(parentDealId ?? id)을 조용히 망가뜨린다.
-        throw new ApplyExecutorError("하위품목딜에는 다시 하위품목을 붙일 수 없습니다");
+        throw new ApplyExecutorError("하위품목 판매 조건에는 다시 하위품목을 붙일 수 없습니다");
       }
       const maxOrder = await tx.deal.aggregate({
         where: { parentDealId },

@@ -77,7 +77,7 @@ export async function POST(request: Request, context: Context) {
       : null;
     if (!deal) {
       return NextResponse.json(
-        { error: "캠페인에 연결된 딜이 없어 레퍼런스로 복사할 수 없습니다." },
+        { error: "캠페인에 연결된 판매 조건이 없어 레퍼런스로 복사할 수 없습니다." },
         { status: 400 },
       );
     }
@@ -171,7 +171,7 @@ export async function POST(request: Request, context: Context) {
     }
     if (result.kind === "not_link") {
       return NextResponse.json(
-        { error: "외부 링크 자산만 딜 레퍼런스로 복사할 수 있습니다." },
+        { error: "외부 링크 자산만 판매 조건 레퍼런스로 복사할 수 있습니다." },
         { status: 400 },
       );
     }
@@ -185,7 +185,7 @@ export async function POST(request: Request, context: Context) {
       campaignId,
       action: "ASSET_LINKED",
       label: "Reference promoted",
-      details: `딜 레퍼런스로 복사 · ${result.fileName}`,
+      details: `판매 조건 레퍼런스로 복사 · ${result.fileName}`,
     });
 
     revalidateCrmTags(ASSET_INVALIDATION_TAGS);
@@ -194,7 +194,7 @@ export async function POST(request: Request, context: Context) {
     // P0: 실패를 삼키지 않고 노출한다. 트랜잭션은 throw 시 전체 롤백된다.
     console.error("[/api/campaigns/[id]/promote-content] promote failed:", error);
     return NextResponse.json(
-      { error: "딜 레퍼런스 복사에 실패했습니다." },
+      { error: "판매 조건 레퍼런스 복사에 실패했습니다." },
       { status: 500 },
     );
   }

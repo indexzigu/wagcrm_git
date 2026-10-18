@@ -128,7 +128,7 @@ describe("ClaimCheckerPanel", () => {
     expect(marks[0].className).toContain("underline");
   });
 
-  it("딜을 연결하면 승인된 딜 표현만 검사에 반영한다", async () => {
+  it("판매 조건을 연결하면 승인된 판매 조건 표현만 검사에 반영한다", async () => {
     const claims = [
       // 승인된 딜 전용 금지 — 게이트에 들어가 BLOCK 을 낸다.
       {
@@ -162,7 +162,7 @@ describe("ClaimCheckerPanel", () => {
         deals={[
           {
             id: "d1",
-            dealName: "테스트 딜",
+            dealName: "테스트 판매 조건",
             brandName: "브랜드",
             category: "FOOD",
           },
@@ -170,9 +170,9 @@ describe("ClaimCheckerPanel", () => {
       />,
     );
 
-    await user.click(screen.getByLabelText("딜 연결"));
-    await user.click(screen.getByRole("option", { name: /테스트 딜/ }));
-    await screen.findByText(/딜 표현 1건/); // APPROVED 1건만 로드
+    await user.click(screen.getByLabelText("판매 조건 연결"));
+    await user.click(screen.getByRole("option", { name: /테스트 판매 조건/ }));
+    await screen.findByText(/판매 조건 표현 1건/); // APPROVED 1건만 로드
 
     await user.type(
       screen.getByLabelText("검사할 문구"),
@@ -188,7 +188,7 @@ describe("ClaimCheckerPanel", () => {
     expect(marks[0].textContent).toBe("리뉴얼 전 제품");
   });
 
-  it("딜 표현 로드가 실패해도 공통 사전으로 검사를 계속한다", async () => {
+  it("판매 조건 표현 로드가 실패해도 공통 사전으로 검사를 계속한다", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("nope", { status: 500 })),
@@ -198,13 +198,13 @@ describe("ClaimCheckerPanel", () => {
       <ClaimCheckerPanel
         rules={RULES}
         deals={[
-          { id: "d1", dealName: "테스트 딜", brandName: null, category: null },
+          { id: "d1", dealName: "테스트 판매 조건", brandName: null, category: null },
         ]}
       />,
     );
 
-    await user.click(screen.getByLabelText("딜 연결"));
-    await user.click(screen.getByRole("option", { name: /테스트 딜/ }));
+    await user.click(screen.getByLabelText("판매 조건 연결"));
+    await user.click(screen.getByRole("option", { name: /테스트 판매 조건/ }));
     expect(
       await screen.findByText(/공통 사전만으로 검사 중/),
     ).toBeInTheDocument();

@@ -65,13 +65,13 @@ async function execute(input: CreateDealInput): Promise<ToolResult<CreateDealDat
   const partnerLabel = describeDealPartner(partnerId, partner);
   if (partnerLabel === null) {
     return missingParam(
-      "딜을 만들 거래처를 정확히 하나로 지정해야 합니다: 이미 등록된 거래처는 partnerId, " +
+      "판매 조건을 만들 거래처를 정확히 하나로 지정해야 합니다: 이미 등록된 거래처는 partnerId, " +
         "새로 만들 거래처는 partner. 둘 다 없으면 거래처 정보를 먼저 확인해 주십시오.",
       { partnerId: partnerId ?? null, hasNewPartner: Boolean(partner) }
     );
   }
   if (!mainDeal?.dealName || !mainDeal.dealName.trim()) {
-    return missingParam("등록할 딜(상품) 이름이 필요합니다.", { partnerId: partnerId ?? null });
+    return missingParam("등록할 판매 조건(상품) 이름이 필요합니다.", { partnerId: partnerId ?? null });
   }
 
   const options = optionDeals ?? [];
@@ -89,7 +89,7 @@ async function execute(input: CreateDealInput): Promise<ToolResult<CreateDealDat
     // 알 방법이 없다 — 「같다」고 적어 두면 다음 사람이 카드에 상호가 뜬다고 믿는다.
     // 승인 화면이 저장될 값을 보여주는 문제는 이 자리에서 풀 수 없다(별도 후속).
     summary:
-      `딜 "${mainDeal.dealName}" 등록 (${partnerLabel})` +
+      `판매 조건 "${mainDeal.dealName}" 등록 (${partnerLabel})` +
       (options.length > 0 ? `, 옵션 ${options.length}건` : ""),
     // 이미 등록된 거래처에 붙는 딜만 가리킬 대상이 있다. 대상을 달아 두면 없는 거래처
     // id가 승인까지 끌려가지 않고 기안 시점에 걸린다. 거래처까지 새로 만드는 딜은

@@ -32,10 +32,10 @@ import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
  */
 export const ACTION_LABELS: Record<string, string> = {
   add_entity_memo: "메모 추가",
-  change_deal_status: "딜 상태 변경",
+  change_deal_status: "판매 조건 상태 변경",
   confirm_settlement: "정산 확정",
   create_partner: "거래처 등록",
-  create_deal: "딜 등록",
+  create_deal: "판매 조건 등록",
   update_settlement_amount: "정산 금액 수정",
   update_record: "기록 수정",
   upsert_product_mappings: "상품 매핑 등록",

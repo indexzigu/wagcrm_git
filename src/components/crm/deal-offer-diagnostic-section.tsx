@@ -232,7 +232,7 @@ export function DealOfferDiagnosticSection({ dealId }: { dealId: string }) {
               <span>손볼 항목 없음</span>
             )}
             {data.resolvedFromParent && (
-              <span>옵션 딜이라 본품 기준으로 판정했습니다</span>
+              <span>옵션 판매 조건이라 본품 기준으로 판정했습니다</span>
             )}
           </div>
 

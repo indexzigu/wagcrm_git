@@ -50,7 +50,7 @@ describe("link-search-dialog deal labels", () => {
     const results = normalizeSearchResults("deal", [
       {
         id: "deal-1",
-        dealName: "테스트 딜",
+        dealName: "테스트 판매 조건",
         brandName: "브랜드A",
         partnerName: "벤더A",
         status: "NEGOTIATING",
@@ -60,10 +60,10 @@ describe("link-search-dialog deal labels", () => {
     expect(results).toEqual([
       {
         id: "deal-1",
-        label: "테스트 딜",
+        label: "테스트 판매 조건",
         sublabel: "브랜드A - 벤더A",
         identityParts: [
-          { label: "딜", value: "테스트 딜" },
+          { label: "판매 조건", value: "테스트 판매 조건" },
           { label: "브랜드", value: "브랜드A" },
           { label: "거래처", value: "벤더A" },
         ],
@@ -77,8 +77,8 @@ describe("link-search-dialog deal labels", () => {
 
   it("표에 없는 상태 코드는 영문 대신 「알 수 없음」, 상태가 없으면 칸을 비운다(P2 ③ 상태 칸)", () => {
     const [unknown, empty] = normalizeSearchResults("campaign", [
-      { id: "c-1", sellerName: "셀러A", dealName: "딜A", status: "FUTURE_STATUS" },
-      { id: "c-2", sellerName: "셀러B", dealName: "딜B" },
+      { id: "c-1", sellerName: "셀러A", dealName: "판매 조건A", status: "FUTURE_STATUS" },
+      { id: "c-2", sellerName: "셀러B", dealName: "판매 조건B" },
     ]);
     expect(unknown.metadata?.status).toBe("알 수 없음");
     expect(empty.metadata?.status).toBe("");
@@ -122,8 +122,8 @@ describe("link-search-dialog deal labels", () => {
       />,
     );
 
-    expect(screen.getByText("딜 연결")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("딜 또는 브랜드 이름으로 검색")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 연결")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("판매 조건 또는 브랜드 이름으로 검색")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "연결" })).toBeDisabled();
   });
 
@@ -163,7 +163,7 @@ describe("link-search-dialog deal labels", () => {
   it("고른 행을 더블클릭해도 바로 확정하지 않는다(연결·변경은 즉시 저장이라 확인 버튼으로만)", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ results: [{ id: "d1", dealName: "딜 하나", status: "CONFIRMED" }] }),
+      json: async () => ({ results: [{ id: "d1", dealName: "판매 조건 하나", status: "CONFIRMED" }] }),
     });
     const onSelect = vi.fn();
     render(
@@ -177,15 +177,15 @@ describe("link-search-dialog deal labels", () => {
       />,
     );
 
-    fireEvent.doubleClick(await screen.findByRole("button", { name: /딜 하나/ }));
+    fireEvent.doubleClick(await screen.findByRole("button", { name: /판매 조건 하나/ }));
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("딜·거래처는 최근 등록순을 요청하고, 행에 상태 대신 등록일을 한 줄로 보인다", async () => {
+  it("판매 조건·거래처는 최근 등록순을 요청하고, 행에 상태 대신 등록일을 한 줄로 보인다", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
-        results: [{ id: "d1", dealName: "딜 하나", status: "CONFIRMED", createdAt: "2026-10-16T03:00:00.000Z" }],
+        results: [{ id: "d1", dealName: "판매 조건 하나", status: "CONFIRMED", createdAt: "2026-10-16T03:00:00.000Z" }],
       }),
     });
     render(
@@ -198,7 +198,7 @@ describe("link-search-dialog deal labels", () => {
       />,
     );
 
-    const row = await screen.findByRole("button", { name: /딜 하나/ });
+    const row = await screen.findByRole("button", { name: /판매 조건 하나/ });
     expect(row).toHaveTextContent("26-10-16");
     expect(row).not.toHaveTextContent("확정");
     expect(screen.getByText(/최근 등록 20건/)).toBeInTheDocument();
@@ -225,18 +225,18 @@ describe("link-search-dialog deal labels", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/search/sellers?", expect.anything());
   });
 
-  it("캠페인 행은 셀러 · 딜 · 채널 한 줄에 시작일을 보이고 상태 칩은 없다", async () => {
+  it("캠페인 행은 셀러 · 판매 조건 · 채널 한 줄에 시작일을 보이고 상태 칩은 없다", async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
-        results: [{ id: "c1", sellerName: "셀러 하나", dealName: "딜 하나", salesChannel: "OWN_MALL", status: "SELLING", startDate: "2026-10-01T00:00:00.000Z" }],
+        results: [{ id: "c1", sellerName: "셀러 하나", dealName: "판매 조건 하나", salesChannel: "OWN_MALL", status: "SELLING", startDate: "2026-10-01T00:00:00.000Z" }],
       }),
     });
     render(
       <LinkSearchDialog open mode="link" onOpenChange={() => {}} entityType="campaign" searchEndpoint="/api/search/campaigns" onSelect={() => {}} />,
     );
     const row = await screen.findByRole("button", { name: /셀러 하나/ });
-    expect(row).toHaveTextContent("딜 하나");
+    expect(row).toHaveTextContent("판매 조건 하나");
     expect(row).toHaveTextContent("26-10-01");
     expect(row).not.toHaveTextContent("판매중");
     expect(screen.getByText(/최근 시작순 20건/)).toBeInTheDocument();

@@ -34,7 +34,7 @@ const KIND_META = {
     label: "승인 소구점",
     hint: "생성물이 이 표현을 쓰도록 허용",
   },
-  BANNED_PHRASE: { label: "금지 표현", hint: "이 딜에 한정된 브랜드 제약" },
+  BANNED_PHRASE: { label: "금지 표현", hint: "이 판매 조건에 한정된 브랜드 제약" },
   REQUIRED_DISCLOSURE: {
     label: "필수 고지",
     hint: "본문에 반드시 포함되어야 함",
@@ -301,7 +301,7 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
         <div>
           <h3 className="text-sm font-semibold text-foreground">표현 관리</h3>
           <p className="text-xs text-muted-foreground">
-            이 딜에서 쓸 수 있는 표현과 금지 표현. 표현 검사와 자료 생성이
+            이 판매 조건에서 쓸 수 있는 표현과 금지 표현. 표현 검사와 자료 생성이
             여기를 기준으로 판정합니다.
           </p>
         </div>

@@ -43,7 +43,7 @@ export const EXCLUDED_FIELDS: Record<RecordEntityType, Readonly<Record<string, s
     salesTask: "연결된 영업 작업은 묶음 값이라 이 통로로는 고치지 않습니다.",
   },
   DEAL: {
-    baseMarginPolicy: "기본 마진 정책은 묶음 값이라 이 통로로는 고치지 않습니다. 딜 화면에서 고치세요.",
+    baseMarginPolicy: "기본 마진 정책은 묶음 값이라 이 통로로는 고치지 않습니다. 판매 조건 화면에서 고치세요.",
   },
   PARTNER: {
     bankAccount: "계좌 정보는 민감 정보라 기안(결재함·작업 기록에 평문으로 남음)으로 받지 않습니다. 화면에서 직접 고치세요.",

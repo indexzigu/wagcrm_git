@@ -46,7 +46,7 @@ export async function GET(_request: Request, { params }: Context) {
   });
   if (!requested) {
     return NextResponse.json(
-      { error: "딜을 찾을 수 없습니다" },
+      { error: "판매 조건을 찾을 수 없습니다" },
       { status: 404 },
     );
   }
@@ -71,7 +71,7 @@ export async function GET(_request: Request, { params }: Context) {
   });
   if (!deal) {
     return NextResponse.json(
-      { error: "딜을 찾을 수 없습니다" },
+      { error: "판매 조건을 찾을 수 없습니다" },
       { status: 404 },
     );
   }
@@ -195,7 +195,7 @@ export async function PUT(request: Request, { params }: Context) {
   });
   if (!deal) {
     return NextResponse.json(
-      { error: "딜을 찾을 수 없습니다" },
+      { error: "판매 조건을 찾을 수 없습니다" },
       { status: 404 },
     );
   }

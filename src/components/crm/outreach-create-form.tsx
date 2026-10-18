@@ -118,7 +118,7 @@ export function OutreachCreateForm({
       const payload = await response.json();
 
       if (response.status === 409) {
-        const message = payload.error ?? "이미 같은 딜과 셀러 조합의 영업 테스크가 있습니다";
+        const message = payload.error ?? "이미 같은 판매 조건과 셀러 조합의 영업 테스크가 있습니다";
         setError(message);
         toast.error(message);
       } else {
@@ -139,19 +139,19 @@ export function OutreachCreateForm({
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <FieldGroup>
           <EntityLinkSelectField
-            label="딜"
+            label="판매 조건"
             required
             selected={!!selectedDealId}
-            emptyText="선택된 딜 없음"
-            actionLabel="딜 선택"
-            changeLabel="딜 변경"
+            emptyText="선택된 판매 조건 없음"
+            actionLabel="판매 조건 선택"
+            changeLabel="판매 조건 변경"
             disabled={!!dealId}
             onOpen={() => setIsDealSearchOpen(true)}
             selectedContent={
               <EntityIdentity
                 variant="heading"
                 parts={[
-                  { label: "딜", value: selectedDealName || "로딩 중..." },
+                  { label: "판매 조건", value: selectedDealName || "로딩 중..." },
                   ...selectedDealContext,
                 ]}
               />
@@ -219,7 +219,7 @@ export function OutreachCreateForm({
             </Alert>
           )}
           <FieldError className="sr-only">
-            {!sellerId || !selectedDealId ? "딜과 셀러를 선택해야 영업 테스크를 생성할 수 있습니다." : undefined}
+            {!sellerId || !selectedDealId ? "판매 조건과 셀러를 선택해야 영업 테스크를 생성할 수 있습니다." : undefined}
           </FieldError>
         </FieldGroup>
 
@@ -241,7 +241,7 @@ export function OutreachCreateForm({
           setSelectedDealId(deal.id);
           setSelectedDealName(deal.label);
           setSelectedDealContext(
-            deal.identityParts?.filter((part) => part.label !== "딜") ?? [],
+            deal.identityParts?.filter((part) => part.label !== "판매 조건") ?? [],
           );
         }}
       />

@@ -142,7 +142,7 @@ function diagnoseResultClarity(input: OfferInput): OfferRow {
       "결과 명확성",
       "UNKNOWN",
       "승인된 소구점이 없습니다",
-      "딜 상세 '표현 관리'에서 소구점을 등록하고 승인하세요. 승인 표현이 없으면 브리프·대본이 근거 없이 쓰입니다.",
+      "판매 조건 상세 '표현 관리'에서 소구점을 등록하고 승인하세요. 승인 표현이 없으면 브리프·대본이 근거 없이 쓰입니다.",
     );
   }
   if (approvedClaimCount === 1) {
@@ -243,7 +243,7 @@ function diagnosePriceAdvantage(input: OfferInput): OfferRow {
       "가격 우위",
       "UNKNOWN",
       "최저가 스냅샷도 정가도 없습니다",
-      "정가를 입력하고 최저가 모니터링을 켜세요. 가격 우위는 이 딜의 핵심 판단인데 지금은 확인할 근거가 없습니다.",
+      "정가를 입력하고 최저가 모니터링을 켜세요. 가격 우위는 이 판매 조건의 핵심 판단인데 지금은 확인할 근거가 없습니다.",
     );
   }
   if (discount < MIN_MEANINGFUL_DISCOUNT) {

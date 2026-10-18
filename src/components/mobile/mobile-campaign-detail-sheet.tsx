@@ -551,7 +551,7 @@ export function MobileCampaignDetailSheet({
               ) : null}
               {campaign.kind === "group" && campaign.members ? (
                 <Badge className="shrink-0 bg-primary/10 text-primary hover:bg-primary/10 border-0 h-5 px-1.5 text-[10px]">
-                  {campaign.members.length}개 딜
+                  {campaign.members.length}개 판매 조건
                 </Badge>
               ) : null}
             </div>
@@ -775,7 +775,7 @@ function GroupMembersSection({ members }: { members: MobileCampaignDetailMember[
       <MobileSheetCard
         title="구성 캠페인"
         ariaLabel="그룹 구성 캠페인"
-        chip={`${members.length}개 딜`}
+        chip={`${members.length}개 판매 조건`}
       >
         {members.map((member) => (
           <MobileSheetRow

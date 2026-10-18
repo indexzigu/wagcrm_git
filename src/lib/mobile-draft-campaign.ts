@@ -85,7 +85,7 @@ export async function createDraftCampaign(
         },
       });
       if (!deal) {
-        throw new DraftCampaignError("해당 딜을 찾을 수 없습니다.", 404);
+        throw new DraftCampaignError("해당 판매 조건을 찾을 수 없습니다.", 404);
       }
 
       const seller = await tx.seller.findUnique({

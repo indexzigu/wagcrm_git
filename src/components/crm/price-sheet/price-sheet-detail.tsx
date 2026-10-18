@@ -185,10 +185,10 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
       // 매핑 실패는 추출 결과를 잃지 않도록 안내만 하고 수동 버튼에 맡긴다.
       const mapRes = await fetch(`/api/price-sheets/${priceSheetId}/map`, { method: "POST" });
       if (mapRes.ok) {
-        toast.success(`${data.rowCount}개 행을 추출하고 딜 매핑을 제안했습니다.`);
+        toast.success(`${data.rowCount}개 행을 추출하고 판매 조건 매핑을 제안했습니다.`);
       } else {
         toast.success(
-          `${data.rowCount}개 행을 추출했습니다. 매핑 제안은 실패했습니다. "딜 매핑 제안"으로 다시 시도하세요.`
+          `${data.rowCount}개 행을 추출했습니다. 매핑 제안은 실패했습니다. "판매 조건 매핑 제안"으로 다시 시도하세요.`
         );
       }
       await load();
@@ -242,8 +242,8 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
       const dealCount = data.results?.length ?? rowCount;
       toast.success(
         dealCount === rowCount
-          ? `${rowCount}건을 딜에 반영했습니다.`
-          : `${rowCount}개 품목을 반영했습니다 (딜 ${dealCount}개 생성·수정).`
+          ? `${rowCount}건을 판매 조건에 반영했습니다.`
+          : `${rowCount}개 품목을 반영했습니다 (판매 조건 ${dealCount}개 생성·수정).`
       );
       setApplyModalOpen(false);
       await load();
@@ -316,7 +316,7 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
                 disabled={busy !== null || sheet.rows.length === 0}
                 onClick={runMapping}
               >
-                딜 매핑 제안
+                판매 조건 매핑 제안
               </Button>
               {/* 확정 0건일 때 disabled로 두면 "눌렀는데 아무 일도 없다"가 된다(실보고) —
                   클릭은 받되 왜 안 되는지 안내한다. busy/APPLIED만 물리적으로 잠근다. */}
@@ -326,7 +326,7 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
                 onClick={() => {
                   if (confirmedRows.length === 0) {
                     toast.error(
-                      "확정된 행이 없습니다. 검수표의 매핑에서 \"신규 딜로 생성\" 또는 기존 딜을 선택해 행을 확정하세요."
+                      "확정된 행이 없습니다. 검수표의 매핑에서 \"신규 판매 조건으로 생성\" 또는 기존 판매 조건을 선택해 행을 확정하세요."
                     );
                     return;
                   }
@@ -337,8 +337,8 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
                     if (missing) {
                       toast.error(
                         target.kind === "EXISTING"
-                          ? "묶음 상위딜을 선택하세요."
-                          : "새 상위딜 이름을 입력하세요."
+                          ? "묶음 상위 판매 조건을 선택하세요."
+                          : "새 상위 판매 조건 이름을 입력하세요."
                       );
                       return;
                     }

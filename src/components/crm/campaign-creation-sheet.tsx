@@ -186,7 +186,7 @@ export function CampaignCreationSheet({
             <>
               {!saving && (!dealId || !sellerId) ? (
                 <span className="mr-auto text-xs text-muted-foreground">
-                  딜과 셀러를 골라야 등록할 수 있습니다.
+                  판매 조건과 셀러를 골라야 등록할 수 있습니다.
                 </span>
               ) : null}
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
@@ -200,21 +200,21 @@ export function CampaignCreationSheet({
         >
           <FieldGroup className="gap-7">
             <FieldSet>
-              <FieldLegend>딜과 셀러</FieldLegend>
+              <FieldLegend>판매 조건과 셀러</FieldLegend>
               <EntityLinkSelectField
-                label="딜"
+                label="판매 조건"
                 required
                 selected={!!selectedDeal}
-                emptyText="선택된 딜 없음"
-                actionLabel="딜 선택"
-                changeLabel="딜 변경"
+                emptyText="선택된 판매 조건 없음"
+                actionLabel="판매 조건 선택"
+                changeLabel="판매 조건 변경"
                 disabled={!!lockedDealId}
                 onOpen={() => setIsDealSearchOpen(true)}
                 selectedContent={
                   <EntityIdentity
                     variant="heading"
                     parts={[
-                      { label: "딜", value: selectedDeal?.dealName ?? "로딩 중..." },
+                      { label: "판매 조건", value: selectedDeal?.dealName ?? "로딩 중..." },
                       ...(selectedDeal?.partner?.name
                         ? [{ label: "거래처", value: selectedDeal.partner.name }]
                         : []),
@@ -249,7 +249,7 @@ export function CampaignCreationSheet({
                 <Input
                   value={defaultCampaignName}
                   disabled
-                  placeholder="딜과 셀러를 고르면 자동으로 조합됩니다."
+                  placeholder="판매 조건과 셀러를 고르면 자동으로 조합됩니다."
                   className="cursor-not-allowed bg-slate-50"
                 />
                 <FieldDescription>

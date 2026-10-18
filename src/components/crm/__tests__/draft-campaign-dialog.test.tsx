@@ -85,7 +85,7 @@ async function pickSellerAndDeal(user: ReturnType<typeof userEvent.setup>) {
   // 결과 오버레이는 입력 focus 중에만 뜬다(다이얼로그 높이 안정화). 먼저 focus.
   await user.click(screen.getByLabelText("셀러"));
   await user.click(await screen.findByRole("button", { name: /하늘맘/ }));
-  await user.click(screen.getByLabelText(/^딜/));
+  await user.click(screen.getByLabelText(/^판매 조건/));
   await user.click(await screen.findByRole("button", { name: /비타민C 앰플/ }));
 }
 
@@ -99,13 +99,13 @@ describe("DraftCampaignDialog — 초기 상태", () => {
     expect(screen.getByText(/7월 20일\(월\)에 추가합니다/)).toBeInTheDocument();
   });
 
-  it("CTA 는 셀러·딜 선택 전에는 비활성", () => {
+  it("CTA 는 셀러·판매 조건 선택 전에는 비활성", () => {
     renderDialog();
 
     expect(screen.getByRole("button", { name: "예비 일정 만들기" })).toBeDisabled();
   });
 
-  it("딜 검색은 status=CONFIRMED 로 요청한다", async () => {
+  it("판매 조건 검색은 status=CONFIRMED 로 요청한다", async () => {
     renderDialog();
 
     await waitFor(() => {
@@ -129,7 +129,7 @@ describe("DraftCampaignDialog — 초기 상태", () => {
 });
 
 describe("DraftCampaignDialog — 이름 미리보기", () => {
-  it("딜·셀러 선택 시 '딜 - 셀러' 미리보기와 차수 자동 캡션, 이름 입력란 없음", async () => {
+  it("판매 조건·셀러 선택 시 '판매 조건 - 셀러' 미리보기와 차수 자동 캡션, 이름 입력란 없음", async () => {
     const user = userEvent.setup();
     renderDialog();
 
@@ -179,12 +179,12 @@ describe("DraftCampaignDialog — 제출", () => {
     await pickSellerAndDeal(user);
 
     fetchMock.mockImplementationOnce(async () =>
-      jsonResponse({ error: "해당 딜을 찾을 수 없습니다." }, 404),
+      jsonResponse({ error: "해당 판매 조건을 찾을 수 없습니다." }, 404),
     );
 
     await user.click(screen.getByRole("button", { name: "예비 일정 만들기" }));
 
-    expect(await screen.findByText("해당 딜을 찾을 수 없습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("해당 판매 조건을 찾을 수 없습니다.")).toBeInTheDocument();
     expect(onCreated).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });

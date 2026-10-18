@@ -132,7 +132,7 @@ function sortCampaigns(
 
 const DEFAULT_COLUMNS: { field: SortField; label: string; width: string }[] = [
   { field: "sellerName", label: "셀러명", width: "w-[160px]" },
-  { field: "dealName", label: "딜명", width: "w-[200px]" },
+  { field: "dealName", label: "판매 조건 이름", width: "w-[200px]" },
   { field: "status", label: "상태", width: "w-[130px]" },
   { field: "startDate", label: "시작일", width: "w-[100px]" },
   { field: "endDate", label: "종료일", width: "w-[100px]" },
@@ -142,7 +142,7 @@ const DEFAULT_COLUMNS: { field: SortField; label: string; width: string }[] = [
 
 const SETTLEMENT_COLUMNS: { field: SortField; label: string; width: string }[] = [
   { field: "sellerName", label: "셀러명", width: "w-[140px]" },
-  { field: "dealName", label: "딜명", width: "w-[160px]" },
+  { field: "dealName", label: "판매 조건 이름", width: "w-[160px]" },
   { field: "status", label: "상태", width: "w-[120px]" },
   { field: "actualSales", label: "총거래액", width: "w-[100px]" },
   { field: "depositReceivedAt", label: "입금일", width: "w-[100px]" },

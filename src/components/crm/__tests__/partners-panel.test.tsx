@@ -71,7 +71,7 @@ describe("PartnersPanel", () => {
   const linkedDealFixture = [
     {
       id: "deal-1",
-      dealName: "테스트 딜",
+      dealName: "테스트 판매 조건",
       brandName: "테스트 브랜드",
       status: "SOURCING",
       createdAt: "2024-06-01T00:00:00Z",
@@ -121,7 +121,7 @@ describe("PartnersPanel", () => {
       renderPartnersPanel();
 
       expect(screen.queryByText("메모")).not.toBeInTheDocument();
-      expect(screen.queryByText("딜 수")).not.toBeInTheDocument();
+      expect(screen.queryByText("판매 조건 수")).not.toBeInTheDocument();
       expect(screen.queryByText("등록일")).not.toBeInTheDocument();
       expect(screen.queryByText("최근 컨택")).not.toBeInTheDocument();
       expect(screen.queryByText("소개처")).not.toBeInTheDocument();
@@ -153,10 +153,10 @@ describe("PartnersPanel", () => {
       expect(screen.getAllByRole("button", { name: "담당자 추가" })).toHaveLength(1);
     });
 
-    it("shows only one 딜 연결 button in the detail view", () => {
+    it("shows only one 판매 조건 연결 button in the detail view", () => {
       renderPartnersPanel();
 
-      const section = screen.getByText("연결된 딜 (0건)").closest("div");
+      const section = screen.getByText("연결된 판매 조건 (0건)").closest("div");
       expect(section).toBeInTheDocument();
       expect(within(section!).getAllByRole("button", { name: "연결" })).toHaveLength(1);
     });
@@ -167,7 +167,7 @@ describe("PartnersPanel", () => {
       const brandText = await screen.findByText("테스트 브랜드");
       expect(brandText).toBeInTheDocument();
       expect(brandText.parentElement).toHaveTextContent("브랜드테스트 브랜드");
-      expect(brandText.parentElement?.parentElement?.parentElement).toHaveTextContent("테스트 딜");
+      expect(brandText.parentElement?.parentElement?.parentElement).toHaveTextContent("테스트 판매 조건");
 
       const statusBadge = screen.getByText(dealStatusLabels.SOURCING);
       const metaRow = statusBadge.closest("div");

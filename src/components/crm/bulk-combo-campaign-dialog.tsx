@@ -226,8 +226,8 @@ export function BulkComboCampaignDialog({
   }
 
   const previewSummary = hasEnoughDeals
-    ? `현재 ${selectedCount}개 딜, 예상 캠페인 ${selectedCount}건`
-    : "딜을 2개 이상 선택하세요";
+    ? `현재 ${selectedCount}개 판매 조건, 예상 캠페인 ${selectedCount}건`
+    : "판매 조건을 2개 이상 선택하세요";
 
   return (
     <>
@@ -241,7 +241,7 @@ export function BulkComboCampaignDialog({
           heightClassName="h-[min(54rem,90dvh)]"
           bodyClassName="flex flex-col"
           title="조합 캠페인 등록"
-          description="한 셀러에게 여러 딜을 같은 기간으로 한 번에 올립니다."
+          description="한 셀러에게 여러 판매 조건을 같은 기간으로 한 번에 올립니다."
           error={
             error ? (
               <Alert variant="destructive">
@@ -253,7 +253,7 @@ export function BulkComboCampaignDialog({
             <>
               {!saving && !hasEnoughDeals ? (
                 <span className="mr-auto text-xs text-muted-foreground">
-                  셀러와 딜 2개 이상을 골라야 등록할 수 있습니다.
+                  셀러와 판매 조건 2개 이상을 골라야 등록할 수 있습니다.
                 </span>
               ) : null}
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
@@ -296,7 +296,7 @@ export function BulkComboCampaignDialog({
                   }
                 />
                 <FieldDescription className="text-xs">
-                  이 셀러의 딜만 아래에서 고를 수 있습니다.
+                  이 셀러의 판매 조건만 아래에서 고를 수 있습니다.
                 </FieldDescription>
               </div>
 
@@ -313,7 +313,7 @@ export function BulkComboCampaignDialog({
                 <div className="flex items-center justify-between gap-3">
                   <legend className="flex items-center gap-2 text-sm font-semibold">
                     <span>
-                      딜 조합<span className="ml-0.5 text-destructive" aria-hidden="true">*</span>
+                      판매 조건 조합<span className="ml-0.5 text-destructive" aria-hidden="true">*</span>
                       <span className="sr-only">(필수)</span>
                     </span>
                     <Badge variant="secondary">{selectedCount}개</Badge>
@@ -323,14 +323,14 @@ export function BulkComboCampaignDialog({
                       className="h-8 w-36 text-xs group-disabled/combo:opacity-50"
                       value={dealFilter}
                       onChange={(event) => setDealFilter(event.target.value)}
-                      placeholder="딜 검색"
-                      aria-label="딜 검색 필터"
+                      placeholder="판매 조건 검색"
+                      aria-label="판매 조건 검색 필터"
                     />
                   ) : null}
                 </div>
                 <div
                   role="group"
-                  aria-label="딜 조합 선택"
+                  aria-label="판매 조건 조합 선택"
                   className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto rounded-md border border-border p-2 [scrollbar-gutter:stable] group-disabled/combo:pointer-events-none group-disabled/combo:opacity-50"
                 >
                   {!sellerSelected ? (
@@ -339,7 +339,7 @@ export function BulkComboCampaignDialog({
                     </p>
                   ) : dealOptions.length === 0 ? (
                     <p className="m-auto py-2 text-center text-xs text-muted-foreground">
-                      이 셀러로 만들 수 있는 딜 없음
+                      이 셀러로 만들 수 있는 판매 조건 없음
                     </p>
                   ) : filteredDealOptions.length === 0 ? (
                     <p className="m-auto py-2 text-center text-xs text-muted-foreground">
@@ -375,7 +375,7 @@ export function BulkComboCampaignDialog({
                 {/* 딜이 모자랄 때의 안내는 바닥 띠 한 곳에서만 한다(같은 말 되풀이 방지). */}
                 <FieldDescription id="combo-deal-hint" className="text-xs">
                   {hasEnoughDeals
-                    ? "선택한 딜마다 캠페인 1건이 만들어집니다."
+                    ? "선택한 판매 조건마다 캠페인 1건이 만들어집니다."
                     : "\u00a0"}
                 </FieldDescription>
               </fieldset>
@@ -384,7 +384,7 @@ export function BulkComboCampaignDialog({
               <FieldSet className="shrink-0 gap-3">
                 <div className="flex flex-col gap-1">
                   <FieldLegend className="mb-0">운영 기간·채널</FieldLegend>
-                  <FieldDescription>선택한 딜 모두에 같이 적용됩니다.</FieldDescription>
+                  <FieldDescription>선택한 판매 조건 모두에 같이 적용됩니다.</FieldDescription>
                 </div>
                 {/* 한 줄 3열 — 세로 공간을 아껴 고정 높이 안에서 딜 목록 몫을 키운다.
                     채널 열은 최소 8.5rem 보장 — "자사몰(네이버)/자사몰(카카오)"가 닫힌
@@ -458,7 +458,7 @@ export function BulkComboCampaignDialog({
                   <span className="sr-only">{previewSummary}</span>
                   {selectedDeals.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
-                      딜을 선택하면 캠페인 이름이 여기에 표시됩니다.
+                      판매 조건을 선택하면 캠페인 이름이 여기에 표시됩니다.
                     </p>
                   ) : (
                     <ul className="flex flex-col gap-1.5">

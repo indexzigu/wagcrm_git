@@ -116,7 +116,7 @@ const SettlementReportView: FC<ToolResultViewProps> = ({ data, bare }) => {
         <table className="w-full text-left text-xs">
           <thead className="bg-muted text-slate-600">
             <tr>
-              <th className="px-2 py-1.5 font-medium">딜명</th>
+              <th className="px-2 py-1.5 font-medium">판매 조건 이름</th>
               <th className="px-2 py-1.5 font-medium">셀러</th>
               <th className="px-2 py-1.5 font-medium">총거래액</th>
               <th className="px-2 py-1.5 font-medium">정산액</th>

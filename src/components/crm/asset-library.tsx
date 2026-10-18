@@ -145,7 +145,7 @@ function getAssetOriginInfo(
       primaryName = entityName;
       break;
     case "DEAL":
-      badgeText = "딜";
+      badgeText = "판매 조건";
       primaryName = partnerInfo?.partnerName ?? "미지정 거래처";
       secondaryName = entityName;
       break;
@@ -719,7 +719,7 @@ export function AssetLibrary({
       // 없어(globals.css 주석 ".dark는 현재 미사용") 애초에 도달 불가한 죽은 클래스였다.
       const labelMap = {
         PARTNER: "거래처",
-        DEAL: "딜",
+        DEAL: "판매 조건",
         CAMPAIGN: "캠페인",
         OUTREACH: "영업",
         SELLER: "셀러",
@@ -961,7 +961,7 @@ export function AssetLibrary({
                   <SelectContent>
                     <SelectItem value="ALL">전체 대상</SelectItem>
                     <SelectItem value="PARTNER">거래처</SelectItem>
-                    <SelectItem value="DEAL">딜</SelectItem>
+                    <SelectItem value="DEAL">판매 조건</SelectItem>
                     <SelectItem value="SELLER">셀러</SelectItem>
                     <SelectItem value="OUTREACH">영업 테스크</SelectItem>
                     <SelectItem value="CAMPAIGN">캠페인</SelectItem>
@@ -1191,7 +1191,7 @@ export function AssetLibrary({
                           </Badge>
                           <Badge variant="secondary" className="px-1.5 py-0.5 text-[10px]">
                             {asset.entityType === "PARTNER" ? "거래처" :
-                             asset.entityType === "DEAL" ? "딜" :
+                             asset.entityType === "DEAL" ? "판매 조건" :
                              asset.entityType === "SELLER" ? "셀러" :
                              asset.entityType === "OUTREACH" ? "영업 테스크" : "캠페인"}
                           </Badge>

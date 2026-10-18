@@ -49,7 +49,7 @@ export async function DELETE(_request: Request, context: Context) {
     if (error.message?.includes("찾을 수 없습니다")) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    if (error.message?.includes("연결된 딜이 존재")) {
+    if (error.message?.includes("연결된 판매 조건이 존재")) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
     return NextResponse.json({ error: "삭제에 실패했습니다." }, { status: 500 });

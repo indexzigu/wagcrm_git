@@ -49,7 +49,7 @@ export function getValidOutreachNextStatuses(
 }
 
 export const createOutreachSchema = z.object({
-  dealId: z.string().min(1, "딜 ID는 필수입니다"),
+  dealId: z.string().min(1, "판매 조건 ID는 필수입니다"),
   sellerId: z.string().min(1, "셀러 ID는 필수입니다"),
   contactChannel: z.string().trim().min(1).default("DM"),
   proposalMessage: z.string().trim().max(2000).optional().nullable(),

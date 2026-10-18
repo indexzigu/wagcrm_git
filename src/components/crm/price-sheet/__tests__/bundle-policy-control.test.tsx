@@ -6,10 +6,10 @@ import { BundlePolicyControl } from "../bundle-policy-control";
 import type { DealOption } from "../review-table";
 
 const deals: DealOption[] = [
-  { id: "d1", dealName: "상위딜1", parentDealId: null, brandName: "브랜드B", partnerId: "p1" },
-  { id: "d2", dealName: "하위딜", parentDealId: "d1", brandName: "브랜드B", partnerId: "p1" },
-  { id: "d3", dealName: "상위딜2", parentDealId: null, brandName: null, partnerId: "p2" },
-  { id: "d4", dealName: "상위딜3", parentDealId: null, brandName: null, partnerId: "p2" },
+  { id: "d1", dealName: "상위 판매 조건1", parentDealId: null, brandName: "브랜드B", partnerId: "p1" },
+  { id: "d2", dealName: "하위 판매 조건", parentDealId: "d1", brandName: "브랜드B", partnerId: "p1" },
+  { id: "d3", dealName: "상위 판매 조건2", parentDealId: null, brandName: null, partnerId: "p2" },
+  { id: "d4", dealName: "상위 판매 조건3", parentDealId: null, brandName: null, partnerId: "p2" },
 ];
 
 describe("BundlePolicyControl", () => {
@@ -17,10 +17,10 @@ describe("BundlePolicyControl", () => {
     render(
       <BundlePolicyControl value={{ mode: "AUTO" }} onChange={vi.fn()} deals={deals} sheetPartnerId={null} />
     );
-    expect(screen.queryByLabelText("상위딜")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("상위 판매 조건")).not.toBeInTheDocument();
   });
 
-  it("묶기를 고르면 기존 딜 선택이 기본으로 열린다", async () => {
+  it("묶기를 고르면 기존 판매 조건 선택이 기본으로 열린다", async () => {
     const onChange = vi.fn();
     render(
       <BundlePolicyControl value={{ mode: "AUTO" }} onChange={onChange} deals={deals} sheetPartnerId={null} />
@@ -34,7 +34,7 @@ describe("BundlePolicyControl", () => {
     );
   });
 
-  it("하위품목딜은 상위딜 후보에서 제외된다", async () => {
+  it("하위품목 판매 조건은 상위 판매 조건 후보에서 제외된다", async () => {
     render(
       <BundlePolicyControl
         value={{
@@ -47,13 +47,13 @@ describe("BundlePolicyControl", () => {
         sheetPartnerId={null}
       />
     );
-    await userEvent.click(screen.getByLabelText("상위딜"));
-    expect(screen.getByText("상위딜1")).toBeInTheDocument();
-    expect(screen.getByText("상위딜2")).toBeInTheDocument();
-    expect(screen.queryByText("하위딜")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText("상위 판매 조건"));
+    expect(screen.getByText("상위 판매 조건1")).toBeInTheDocument();
+    expect(screen.getByText("상위 판매 조건2")).toBeInTheDocument();
+    expect(screen.queryByText("하위 판매 조건")).not.toBeInTheDocument();
   });
 
-  it("시트 거래처의 딜이 목록 앞에 온다", async () => {
+  it("시트 거래처의 판매 조건이 목록 앞에 온다", async () => {
     render(
       <BundlePolicyControl
         value={{
@@ -66,12 +66,12 @@ describe("BundlePolicyControl", () => {
         sheetPartnerId="p2"
       />
     );
-    await userEvent.click(screen.getByLabelText("상위딜"));
+    await userEvent.click(screen.getByLabelText("상위 판매 조건"));
     const options = screen.getAllByRole("option").map((el) => el.textContent);
-    expect(options[0]).toContain("상위딜2");
+    expect(options[0]).toContain("상위 판매 조건2");
   });
 
-  it("거래처 매칭 딜이 여러 건이면 원래 상대 순서를 유지한 채로 앞으로 온다", async () => {
+  it("거래처 매칭 판매 조건이 여러 건이면 원래 상대 순서를 유지한 채로 앞으로 온다", async () => {
     // p2 매칭 딜(상위딜2, 상위딜3)이 둘 다 앞으로 와야 하고, 그 둘 사이의 순서는
     // deals 배열의 원래 순서(상위딜2 → 상위딜3)를 그대로 지켜야 한다 — 단일 매치만
     // 검증하면 "매칭 딜이 앞으로 온다"만 증명될 뿐 파티션 내부 순서 보존은 증명되지 않는다.
@@ -87,11 +87,11 @@ describe("BundlePolicyControl", () => {
         sheetPartnerId="p2"
       />
     );
-    await userEvent.click(screen.getByLabelText("상위딜"));
+    await userEvent.click(screen.getByLabelText("상위 판매 조건"));
     const options = screen.getAllByRole("option").map((el) => el.textContent ?? "");
     const names = options.map((text) =>
-      text.includes("상위딜3") ? "상위딜3" : text.includes("상위딜2") ? "상위딜2" : "상위딜1"
+      text.includes("상위 판매 조건3") ? "상위 판매 조건3" : text.includes("상위 판매 조건2") ? "상위 판매 조건2" : "상위 판매 조건1"
     );
-    expect(names).toEqual(["상위딜2", "상위딜3", "상위딜1"]);
+    expect(names).toEqual(["상위 판매 조건2", "상위 판매 조건3", "상위 판매 조건1"]);
   });
 });

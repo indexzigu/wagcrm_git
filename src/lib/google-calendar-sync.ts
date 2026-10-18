@@ -569,7 +569,7 @@ async function syncOne(
     summary: title,
     description: [
       `셀러: ${sellerName}`,
-      `딜: ${campaign.deal.dealName}`,
+      `판매 조건: ${campaign.deal.dealName}`,
       `상태: ${campaign.status}`,
       // 완료된 칸은 실제일을 말한다 — 이 줄이 예정일에 머물면 같은 캘린더 안에서 대금
       // 이벤트와 캠페인 본문이 서로 다른 날을 가리킨다(판정은 슬롯 SSOT).

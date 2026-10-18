@@ -1041,7 +1041,7 @@ export function SellerDetailContent({
                     // font-sans: 부모 font-mono(값 자릿수 정렬용)가 메타 병기까지 새지 않게(ss-ux P2).
                     // "N개 딜" 표기는 mobile-campaign-card 그룹 배지와 통일.
                     <span className="ml-1 font-sans font-normal text-[10px] text-muted-foreground">
-                      · {seller.campaignRowCount}개 딜
+                      · {seller.campaignRowCount}개 판매 조건
                     </span>
                   )}
                 </div>

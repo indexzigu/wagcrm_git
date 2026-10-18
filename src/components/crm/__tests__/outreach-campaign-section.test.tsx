@@ -211,7 +211,7 @@ describe("Integration: Sales task workspace", () => {
     expect(screen.getByRole("tab", { name: "제안 메시지" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "협의 메모" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("제안 메시지")).toBeInTheDocument();
-    expect(screen.getAllByText("딜").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("판매 조건").length).toBeGreaterThan(0);
     expect(screen.getAllByText("브랜드").length).toBeGreaterThan(0);
   });
 

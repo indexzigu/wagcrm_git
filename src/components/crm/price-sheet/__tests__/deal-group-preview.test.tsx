@@ -27,8 +27,8 @@ function row(overrides: Partial<PriceSheetRowData> = {}): PriceSheetRowData {
   };
 }
 
-describe("DealGroupPreview — 딜 반영 미리보기", () => {
-  it("같은 제품의 옵션들이 상위딜 1 + 하위 옵션 N으로 표시된다", () => {
+describe("DealGroupPreview — 판매 조건 반영 미리보기", () => {
+  it("같은 제품의 옵션들이 상위 판매 조건 1 + 하위 옵션 N으로 표시된다", () => {
     render(
       <DealGroupPreview
         rows={[
@@ -44,16 +44,16 @@ describe("DealGroupPreview — 딜 반영 미리보기", () => {
       />
     );
 
-    expect(screen.getByText("딜 반영 미리보기")).toBeInTheDocument();
-    expect(screen.getByText("상위딜")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 반영 미리보기")).toBeInTheDocument();
+    expect(screen.getByText("상위 판매 조건")).toBeInTheDocument();
     expect(screen.getByText("제품A")).toBeInTheDocument();
     expect(screen.getByText("하위 옵션 3개")).toBeInTheDocument();
     expect(screen.getByText("제품A - 2팩")).toBeInTheDocument();
     // 단위 1 옵션이 없으므로 빈 컨테이너 경고가 뜬다
-    expect(screen.getByText(/상위딜 가격 없음\(0원\)/)).toBeInTheDocument();
+    expect(screen.getByText(/상위 판매 조건 가격 없음\(0원\)/)).toBeInTheDocument();
   });
 
-  it("MAPPED 행은 '기존 딜 업데이트'로 딜명과 함께 표시된다", () => {
+  it("MAPPED 행은 '기존 판매 조건 업데이트'로 판매 조건 이름과 함께 표시된다", () => {
     render(
       <DealGroupPreview
         rows={[row({ id: "m1", mappingStatus: "MAPPED", mappedDealId: "deal-9" })]}
@@ -62,13 +62,13 @@ describe("DealGroupPreview — 딜 반영 미리보기", () => {
         overrides={{}}
         onOverrideChange={() => {}}
         deals={[
-          { id: "deal-9", dealName: "기존딜Z", parentDealId: null, brandName: null, partnerId: null },
+          { id: "deal-9", dealName: "기존 판매 조건Z", parentDealId: null, brandName: null, partnerId: null },
         ]}
       />
     );
 
-    expect(screen.getByText(/기존 딜 업데이트 \(1건\)/)).toBeInTheDocument();
-    expect(screen.getByText("기존딜Z")).toBeInTheDocument();
+    expect(screen.getByText(/기존 판매 조건 업데이트 \(1건\)/)).toBeInTheDocument();
+    expect(screen.getByText("기존 판매 조건Z")).toBeInTheDocument();
   });
 
   it("SUGGESTED/UNMAPPED는 미확정 카운트로 반영 제외를 알린다", () => {
@@ -130,7 +130,7 @@ describe("DealGroupPreview — 딜 반영 미리보기", () => {
     expect(screen.getByDisplayValue("수정브랜드")).toBeInTheDocument();
   });
 
-  it("기존 딜에 붙이는 묶음은 '기존 딜에 추가'로 표시되고 상위딜 가격을 보이지 않는다", () => {
+  it("기존 판매 조건에 붙이는 묶음은 '기존 판매 조건에 추가'로 표시되고 상위 판매 조건 가격을 보이지 않는다", () => {
     render(
       <DealGroupPreview
         rows={[
@@ -147,7 +147,7 @@ describe("DealGroupPreview — 딜 반영 미리보기", () => {
           target: {
             kind: "EXISTING",
             dealId: "d1",
-            parentDealName: "기존상위딜",
+            parentDealName: "기존상위 판매 조건",
             parentBrandName: null,
             parentPartnerId: null,
           },
@@ -155,9 +155,9 @@ describe("DealGroupPreview — 딜 반영 미리보기", () => {
         }}
       />
     );
-    expect(screen.getByText("기존 딜에 추가")).toBeInTheDocument();
-    expect(screen.getByText("기존상위딜")).toBeInTheDocument();
-    expect(screen.queryByText(/상위딜 가격 없음/)).not.toBeInTheDocument();
+    expect(screen.getByText("기존 판매 조건에 추가")).toBeInTheDocument();
+    expect(screen.getByText("기존상위 판매 조건")).toBeInTheDocument();
+    expect(screen.queryByText(/상위 판매 조건 가격 없음/)).not.toBeInTheDocument();
   });
 
   it("행이 없으면 아무것도 렌더하지 않는다(추출 전)", () => {

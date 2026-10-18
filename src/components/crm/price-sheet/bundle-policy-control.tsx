@@ -58,7 +58,7 @@ export function BundlePolicyControl({
         <div className="flex flex-col gap-0.5">
           <h3 className="text-sm font-semibold text-foreground">반영 방식</h3>
           <p className="text-xs text-muted-foreground">
-            이 시트의 신규 행들을 어떤 구조로 딜에 넣을지 정합니다.
+            이 시트의 신규 행들을 어떤 구조로 판매 조건에 넣을지 정합니다.
           </p>
         </div>
 
@@ -97,9 +97,9 @@ export function BundlePolicyControl({
               }
             />
             <Label htmlFor="bundle-on" className="flex flex-col items-start gap-0.5 font-normal">
-              <span className="text-xs font-medium text-foreground">한 딜의 하위품목으로 묶기</span>
+              <span className="text-xs font-medium text-foreground">한 판매 조건의 하위품목으로 묶기</span>
               <span className="text-xs text-muted-foreground">
-                제품이 서로 달라도 지정한 상위딜 아래로 전부 넣습니다.
+                제품이 서로 달라도 지정한 상위 판매 조건 아래로 전부 넣습니다.
               </span>
             </Label>
           </div>
@@ -111,7 +111,7 @@ export function BundlePolicyControl({
             두면 카드 안에 카드가 중첩되므로 여백으로만 표현한다. */}
         {value.mode === "BUNDLE" && (
           <div className="flex flex-col gap-2 border-t border-border/40 pt-3 pl-6">
-            <div role="radiogroup" aria-label="상위딜 대상" className="flex gap-4">
+            <div role="radiogroup" aria-label="상위 판매 조건 대상" className="flex gap-4">
               <div className="flex items-center gap-1.5">
                 <input
                   type="radio"
@@ -122,7 +122,7 @@ export function BundlePolicyControl({
                   onChange={() => onChange({ ...value, target: emptyExisting })}
                 />
                 <Label htmlFor="target-existing" className="text-xs font-normal">
-                  기존 딜에 붙이기
+                  기존 판매 조건에 붙이기
                 </Label>
               </div>
               <div className="flex items-center gap-1.5">
@@ -137,14 +137,14 @@ export function BundlePolicyControl({
                   }
                 />
                 <Label htmlFor="target-new" className="text-xs font-normal">
-                  새 상위딜 만들기
+                  새 상위 판매 조건 만들기
                 </Label>
               </div>
             </div>
 
             {value.target.kind === "EXISTING" ? (
               <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <span id="bundle-parent-label">상위딜</span>
+                <span id="bundle-parent-label">상위 판매 조건</span>
                 <Select
                   value={value.target.dealId}
                   onValueChange={(dealId) => {
@@ -163,7 +163,7 @@ export function BundlePolicyControl({
                   }}
                 >
                   <SelectTrigger aria-labelledby="bundle-parent-label" className="h-8 w-72 text-xs">
-                    <SelectValue placeholder="상위딜 선택" />
+                    <SelectValue placeholder="상위 판매 조건 선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {parentCandidates.map((d) => (
@@ -176,10 +176,10 @@ export function BundlePolicyControl({
               </label>
             ) : (
               <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                상위딜 이름
+                상위 판매 조건 이름
                 <Input
                   className="h-8 w-72 text-xs"
-                  placeholder="새로 만들 상위딜 이름"
+                  placeholder="새로 만들 상위 판매 조건 이름"
                   value={value.target.parentDealName}
                   onChange={(e) =>
                     onChange({ ...value, target: { kind: "NEW", parentDealName: e.target.value } })

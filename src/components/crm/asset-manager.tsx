@@ -711,15 +711,15 @@ export function AssetManager({
         setSellerPostError(
           typeof data.error === "string"
             ? data.error
-            : `딜 레퍼런스 복사 실패 (HTTP ${response.status})`,
+            : `판매 조건 레퍼런스 복사 실패 (HTTP ${response.status})`,
         );
         return;
       }
       setSellerPostNotice(
-        data.alreadyExists ? "이미 딜 레퍼런스에 등록된 링크입니다." : "딜 레퍼런스로 복사됨",
+        data.alreadyExists ? "이미 판매 조건 레퍼런스에 등록된 링크입니다." : "판매 조건 레퍼런스로 복사됨",
       );
     } catch {
-      setSellerPostError("딜 레퍼런스 복사 요청 중 오류가 발생했습니다.");
+      setSellerPostError("판매 조건 레퍼런스 복사 요청 중 오류가 발생했습니다.");
     } finally {
       setPromoteBusyId(null);
     }
@@ -1223,7 +1223,7 @@ export function AssetManager({
                         className="shrink-0"
                         disabled={promoteBusyId === asset.id}
                         onClick={() => void promoteSellerPost(asset)}
-                        title="딜 레퍼런스로 복사"
+                        title="판매 조건 레퍼런스로 복사"
                       >
                         <CopyPlus className="size-4" />
                       </Button>

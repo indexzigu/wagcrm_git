@@ -68,7 +68,7 @@ export function ContentGuideReferences({
   if (references.length === 0) {
     return (
       <ShallowNotice>
-        참고 레퍼런스 없이 딜 정보만으로 작성했습니다. 위 URL 입력으로 이 딜에
+        참고 레퍼런스 없이 판매 조건 정보만으로 작성했습니다. 위 URL 입력으로 이 판매 조건에
         SNS 레퍼런스를 등록하면 다음 생성부터 그 방향을 반영합니다.
       </ShallowNotice>
     );
@@ -135,7 +135,7 @@ export function ContentGuideReferences({
       </ul>
       {references.length < SHALLOW_REFERENCE_THRESHOLD ? (
         <ShallowNotice>
-          레퍼런스가 {references.length}건뿐이라 훅·포맷 방향이 딜 정보에 크게
+          레퍼런스가 {references.length}건뿐이라 훅·포맷 방향이 판매 조건 정보에 크게
           기댔습니다. 위 URL 입력으로 비슷한 결의 게시물을 몇 개 더 넣고 다시
           생성하면 방향이 또렷해집니다.
         </ShallowNotice>

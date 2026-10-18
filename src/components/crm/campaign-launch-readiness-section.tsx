@@ -235,7 +235,7 @@ export function CampaignLaunchReadinessSection({
               {data.requiredDisclosureCount > 0
                 ? ` 필수 고지 ${data.requiredDisclosureCount}건이 등록돼 있지만, 본문에 실제로 들어갔는지는 자료가 있어야 확인됩니다.`
                 : " 필수 고지도 아직 등록되지 않았습니다."}{" "}
-              딜에서 콘텐츠 가이드를 생성해 보내면 다음 조회부터 금지 표현과 고지
+              판매 조건에서 콘텐츠 가이드를 생성해 보내면 다음 조회부터 금지 표현과 고지
               누락을 함께 판정합니다.
             </p>
           )}

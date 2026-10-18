@@ -146,7 +146,7 @@ export function ClaimCheckerPanel({
     setClaimsError(null);
     fetch(`/api/deals/${dealId}/claims`)
       .then((res) => {
-        if (!res.ok) throw new Error("딜 표현을 불러오지 못했습니다");
+        if (!res.ok) throw new Error("판매 조건 표현을 불러오지 못했습니다");
         return res.json();
       })
       .then((data: { category: string | null; claims: RawClaim[] }) => {
@@ -166,7 +166,7 @@ export function ClaimCheckerPanel({
         if (cancelled) return;
         setDealClaims([]);
         setClaimsError(
-          err instanceof Error ? err.message : "딜 표현 로드 실패",
+          err instanceof Error ? err.message : "판매 조건 표현 로드 실패",
         );
       })
       .finally(() => {
@@ -241,7 +241,7 @@ export function ClaimCheckerPanel({
           </Select>
           <span className="text-xs text-muted-foreground">
             적용 규칙 {activeRuleCount}건
-            {dealClaims.length > 0 ? ` · 딜 표현 ${dealClaims.length}건` : ""}
+            {dealClaims.length > 0 ? ` · 판매 조건 표현 ${dealClaims.length}건` : ""}
           </span>
         </div>
 
@@ -251,7 +251,7 @@ export function ClaimCheckerPanel({
               htmlFor="claim-deal"
               className="text-sm font-medium text-foreground"
             >
-              딜 연결
+              판매 조건 연결
             </label>
             <Select value={dealId} onValueChange={setDealId}>
               <SelectTrigger id="claim-deal" className="w-80">
@@ -271,9 +271,9 @@ export function ClaimCheckerPanel({
             </Select>
             <span className="text-xs text-muted-foreground">
               {claimsLoading
-                ? "딜 표현 불러오는 중…"
+                ? "판매 조건 표현 불러오는 중…"
                 : dealId === NO_DEAL
-                  ? "딜을 고르면 승인 소구점·전용 금지·필수 고지까지 함께 검사합니다"
+                  ? "판매 조건을 고르면 승인 소구점·전용 금지·필수 고지까지 함께 검사합니다"
                   : "승인된 표현만 검사에 반영됩니다"}
             </span>
           </div>

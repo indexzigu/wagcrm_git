@@ -326,7 +326,7 @@ export class PartnerService {
 
     const typedPartner = partner as unknown as { _count: { deals: number } };
     if (typedPartner._count.deals > 0) {
-      throw new Error("연결된 딜이 존재하여 삭제할 수 없습니다.");
+      throw new Error("연결된 판매 조건이 존재하여 삭제할 수 없습니다.");
     }
 
     await recordActivityDelete("PARTNER", id, actor);

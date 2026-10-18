@@ -84,7 +84,7 @@ export function ApplyDiffModal({
         <DialogHeader>
           <DialogTitle>가격표 반영 확인</DialogTitle>
           <DialogDescription>
-            승인 시 ActionProposal(WRITE)이 생성되어 즉시 실행됩니다. 아래 {rows.length}건이 딜에 반영됩니다.
+            승인 시 ActionProposal(WRITE)이 생성되어 즉시 실행됩니다. 아래 {rows.length}건이 판매 조건에 반영됩니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -92,7 +92,7 @@ export function ApplyDiffModal({
           {creates.length > 0 && (
             <div className="flex flex-col gap-2">
               <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                신규 딜 생성 ({creates.length}건)
+                신규 판매 조건 생성 ({creates.length}건)
               </h4>
               {creates.map((row) => (
                 <div key={row.id} className="flex items-center justify-between rounded-md border border-border/50 p-2 text-sm">
@@ -112,7 +112,7 @@ export function ApplyDiffModal({
               {newDealGroups.filter((g) => !g.attachToExisting).length > 0 && (
                 <div className="flex flex-col gap-1 rounded-md border border-border/50 bg-muted/20 p-2">
                   <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                    생성될 딜 구조
+                    생성될 판매 조건 구조
                   </span>
                   {newDealGroups
                     .filter((group) => !group.attachToExisting)
@@ -133,7 +133,7 @@ export function ApplyDiffModal({
               {newDealGroups.filter((g) => g.attachToExisting).length > 0 && (
                 <div className="flex flex-col gap-1 rounded-md border border-border/50 bg-muted/20 p-2">
                   <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                    기존 딜에 추가
+                    기존 판매 조건에 추가
                   </span>
                   {newDealGroups
                     .filter((group) => group.attachToExisting)
@@ -153,7 +153,7 @@ export function ApplyDiffModal({
           {updates.length > 0 && (
             <div className="flex flex-col gap-2">
               <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-                기존 딜 갱신 ({updates.length}건)
+                기존 판매 조건 갱신 ({updates.length}건)
               </h4>
               {updates.map((row) => (
                 <div key={row.id} className="flex items-center justify-between rounded-md border border-border/50 p-2 text-sm">

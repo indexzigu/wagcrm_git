@@ -30,7 +30,7 @@ type ProposalDetail = {
 function makeProposal(overrides: Partial<ProposalDetail> = {}): ProposalDetail {
   return {
     id: "proposal-123456789",
-    title: "딜(deal-1)에 메모 추가",
+    title: "판매 조건(deal-1)에 메모 추가",
     status: "PENDING_APPROVAL",
     kind: "WRITE",
     targetEntityType: "DEAL",
@@ -125,11 +125,11 @@ describe("ProposalCard", () => {
   });
 
   it("FAILED: '실패' 칩 + errorMessage + [재시도] 단독 버튼을 보여준다 (반려 버튼 없음)", async () => {
-    stubFetchOk(makeProposal({ status: "FAILED", errorMessage: "대상 딜을 찾을 수 없습니다" }));
+    stubFetchOk(makeProposal({ status: "FAILED", errorMessage: "대상 판매 조건을 찾을 수 없습니다" }));
     renderCard("proposal-123456789");
 
     await waitFor(() => expect(screen.getByText("실패")).toBeInTheDocument());
-    expect(screen.getByText(/대상 딜을 찾을 수 없습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/대상 판매 조건을 찾을 수 없습니다/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "재시도" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "반려" })).not.toBeInTheDocument();
   });
@@ -140,10 +140,10 @@ describe("ProposalCard", () => {
     await waitFor(() => expect(screen.getByText("메모 추가")).toBeInTheDocument());
   });
 
-  it("액션 라벨 매핑: change_deal_status → '딜 상태 변경'", async () => {
+  it("액션 라벨 매핑: change_deal_status → '판매 조건 상태 변경'", async () => {
     stubFetchOk(makeProposal({ payload: { action: "change_deal_status", args: {} } }));
     renderCard("proposal-123456789");
-    await waitFor(() => expect(screen.getByText("딜 상태 변경")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("판매 조건 상태 변경")).toBeInTheDocument());
   });
 
   it("액션 라벨 매핑: confirm_settlement → '정산 확정' (이모지 없이, 강조 보더로만 표시)", async () => {
@@ -163,7 +163,7 @@ describe("ProposalCard", () => {
     stubFetchOk(makeProposal({ targetEntityType: "DEAL", targetEntityName: "락토핏 골드" }));
     renderCard("proposal-123456789");
     await waitFor(() => expect(screen.getByText(/락토핏 골드/)).toBeInTheDocument());
-    expect(screen.getByText(/딜: 락토핏 골드/)).toBeInTheDocument();
+    expect(screen.getByText(/판매 조건: 락토핏 골드/)).toBeInTheDocument();
   });
 
   it("[승인] 클릭(메모 액션) 시 다이얼로그 없이 바로 approve(id)를 호출한다", async () => {
@@ -180,7 +180,7 @@ describe("ProposalCard", () => {
     confirmSpy.mockRestore();
   });
 
-  it("[승인] 클릭(딜 상태 변경) 시에도 다이얼로그 없이 바로 approve(id)를 호출한다", async () => {
+  it("[승인] 클릭(판매 조건 상태 변경) 시에도 다이얼로그 없이 바로 approve(id)를 호출한다", async () => {
     const approve = vi.fn().mockResolvedValue({ ok: true });
     stubFetchOk(makeProposal({ payload: { action: "change_deal_status", args: {} } }));
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);

@@ -111,13 +111,13 @@ export async function POST(
       },
     });
     if (!parent) {
-      return NextResponse.json({ error: "지정한 상위딜을 찾을 수 없습니다." }, { status: 400 });
+      return NextResponse.json({ error: "지정한 상위 판매 조건을 찾을 수 없습니다." }, { status: 400 });
     }
     // parentDealId만 보면 dealType:"OPTION" + parentDealId:null인(현재 코드로는 생성되지
     // 않지만 조작된 요청으로는 가능한) 행이 통과한다 — dealType:"MAIN"까지 함께 확인한다.
     if (parent.parentDealId || parent.dealType !== "MAIN") {
       return NextResponse.json(
-        { error: "하위품목딜에는 다시 하위품목을 붙일 수 없습니다. 상위딜을 선택하세요." },
+        { error: "하위품목 판매 조건에는 다시 하위품목을 붙일 수 없습니다. 상위 판매 조건을 선택하세요." },
         { status: 400 }
       );
     }

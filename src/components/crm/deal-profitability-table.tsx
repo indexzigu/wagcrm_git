@@ -50,7 +50,7 @@ export function DealProfitabilityTable({
         columns={[
           {
             key: "dealName",
-            label: "딜 이름",
+            label: "판매 조건 이름",
             width: 240,
             render: (row) => (
               <span className="truncate text-xs font-medium text-foreground">

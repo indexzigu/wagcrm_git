@@ -1393,7 +1393,7 @@ describe("create_action_proposal", () => {
       data: expect.objectContaining({
         targetEntityType: null,
         targetEntityId: null,
-        resultSummary: '딜 "샤인머스캣 1kg" 등록 (거래처 "위엄식품" 신규 등록), 옵션 2건',
+        resultSummary: '판매 조건 "샤인머스캣 1kg" 등록 (거래처 "위엄식품" 신규 등록), 옵션 2건',
       }),
     });
     expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
@@ -1704,7 +1704,7 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     expect(proposalCreateMock).toHaveBeenCalledTimes(1);
     const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
     expect(data).toMatchObject({ kind: "READ", status: "EXECUTED", createdBy: "AGENT_WORKER", reviewRequired: false, dataSources: ["Deal"] });
-    expect(data.title).toBe("딜 검색 1건");
+    expect(data.title).toBe("판매 조건 검색 1건");
     expect(data.structuredResult).toMatchObject({
       operation: "search_deals",
       jobId: "job-1",
@@ -1825,7 +1825,7 @@ describe("read operations are recorded as READ proposals (spec §3-A)", () => {
     const outcome = await executeAgentJob(job("search_deals", { query: "nothing" }), deps(accepted("python")));
     expect(outcome).toMatchObject({ kind: "terminal", toStatus: "SUCCEEDED", result: { actionProposalId: "read-1" } });
     const data = proposalCreateMock.mock.calls[0][0].data as Record<string, unknown>;
-    expect(data.title).toBe("딜 검색 0건");
+    expect(data.title).toBe("판매 조건 검색 0건");
   });
 
   it("a failed read (FAILED_FINAL) records nothing", async () => {

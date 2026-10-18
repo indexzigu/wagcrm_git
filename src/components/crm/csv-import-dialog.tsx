@@ -61,7 +61,7 @@ const SYSTEM_FIELDS: Record<EntityType, { value: string; label: string }[]> = {
     { value: "notes", label: "메모" },
   ],
   deals: [
-    { value: "dealName", label: "딜 이름" },
+    { value: "dealName", label: "판매 조건 이름" },
     { value: "partnerId", label: "거래처 ID" },
     { value: "costPrice", label: "공급가" },
     { value: "sellingPrice", label: "판매가" },
@@ -75,7 +75,7 @@ const SYSTEM_FIELDS: Record<EntityType, { value: string; label: string }[]> = {
 const ENTITY_LABELS: Record<EntityType, string> = {
   partners: "거래처",
   sellers: "셀러",
-  deals: "딜",
+  deals: "판매 조건",
 };
 
 export function CSVImportDialog({

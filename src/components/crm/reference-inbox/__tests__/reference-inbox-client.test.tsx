@@ -323,7 +323,7 @@ describe("ReferenceInboxClient — 다중 선택·일괄 배정", () => {
     );
   });
 
-  it("일괄 딜 배정: 선택 항목마다 assign을 호출하고 집계 토스트를 띄운다", async () => {
+  it("일괄 판매 조건 배정: 선택 항목마다 assign을 호출하고 집계 토스트를 띄운다", async () => {
     await renderInbox();
 
     const checks = screen.getAllByRole("button", { name: "선택" });
@@ -331,9 +331,9 @@ describe("ReferenceInboxClient — 다중 선택·일괄 배정", () => {
     fireEvent.click(screen.getByRole("button", { name: "같은 계정 모두 선택" }));
 
     // 액션 바의 딜 배정 → 다이얼로그
-    const bulkAssign = screen.getAllByRole("button", { name: "딜 배정" }).at(-1)!;
+    const bulkAssign = screen.getAllByRole("button", { name: "판매 조건 배정" }).at(-1)!;
     fireEvent.click(bulkAssign);
-    expect(await screen.findByText("2건을 딜에 배정하기")).toBeInTheDocument();
+    expect(await screen.findByText("2건을 판매 조건에 배정하기")).toBeInTheDocument();
 
     // 최근 딜 목록에서 선택
     const dialog = screen.getByRole("dialog");
@@ -348,23 +348,23 @@ describe("ReferenceInboxClient — 다중 선택·일괄 배정", () => {
       expect(assignCalls.length).toBe(2);
     });
     await waitFor(() => {
-      expect(mockToast.success).toHaveBeenCalledWith("2건을 딜 자료로 배정했습니다.");
+      expect(mockToast.success).toHaveBeenCalledWith("2건을 판매 조건 자료로 배정했습니다.");
     });
     // 배정된 카드는 목록에서 사라진다
     expect(screen.queryByText("애엥의 기록")).not.toBeInTheDocument();
   });
 });
 
-describe("ReferenceInboxClient — 딜 서버 검색", () => {
+describe("ReferenceInboxClient — 판매 조건 서버 검색", () => {
   it("2자 이상 입력하면 디바운스 후 서버 검색(q=)을 호출해 결과를 갱신한다", async () => {
     await renderInbox();
 
     // 단건 배정 다이얼로그 열기
-    fireEvent.click(screen.getAllByRole("button", { name: "딜 배정" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "판매 조건 배정" })[0]);
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("combobox"));
 
-    const input = screen.getByPlaceholderText("검색하여 딜 선택...");
+    const input = screen.getByPlaceholderText("검색하여 판매 조건 선택...");
     fireEvent.change(input, { target: { value: "콜라겐" } });
 
     await waitFor(
@@ -379,10 +379,10 @@ describe("ReferenceInboxClient — 딜 서버 검색", () => {
   });
 });
 
-describe("ReferenceInboxClient — 딜 선택 목록", () => {
+describe("ReferenceInboxClient — 판매 조건 선택 목록", () => {
   async function openDealList() {
     await renderInbox();
-    fireEvent.click(screen.getAllByRole("button", { name: "딜 배정" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "판매 조건 배정" })[0]);
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("combobox"));
     return dialog;
@@ -396,7 +396,7 @@ describe("ReferenceInboxClient — 딜 선택 목록", () => {
     expect(await within(dialog).findByText("홍삼 스틱")).toBeInTheDocument();
   });
 
-  it("딜 이름과 함께 브랜드명·거래처명을 보여준다", async () => {
+  it("판매 조건 이름과 함께 브랜드명·거래처명을 보여준다", async () => {
     const dialog = await openDealList();
     expect(await within(dialog).findByText("홍삼 스틱")).toBeInTheDocument();
     expect(within(dialog).getByText("브랜드")).toBeInTheDocument();
@@ -409,7 +409,7 @@ describe("ReferenceInboxClient — 딜 선택 목록", () => {
   it("브랜드명과 거래처명이 같으면 한 번만 적는다", async () => {
     const dialog = await openDealList();
 
-    const input = screen.getByPlaceholderText("검색하여 딜 선택...");
+    const input = screen.getByPlaceholderText("검색하여 판매 조건 선택...");
     fireEvent.change(input, { target: { value: "콜라겐" } });
 
     // searchedDeals 는 브랜드·거래처가 둘 다 "트리프"다.

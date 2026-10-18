@@ -199,7 +199,7 @@ export function useDeals(initialDeals: DealRow[]) {
 
   const handleNewDealSuccess = useCallback(async () => {
     setNewDealDialogOpen(false);
-    toast.success("새로운 딜이 성공적으로 추가되었습니다.");
+    toast.success("새로운 판매 조건이 성공적으로 추가되었습니다.");
     const refreshed = await fetchDeals();
     if (!refreshed) {
       window.location.reload();

@@ -37,7 +37,7 @@ export function SellerDealCandidates({ sellerId }: { sellerId: string }) {
       try {
         const res = await fetch(`/api/sellers/${sellerId}/deal-candidates`);
         const data = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(data?.error ?? "제안 후보 딜을 불러오지 못했습니다.");
+        if (!res.ok) throw new Error(data?.error ?? "제안 후보 판매 조건을 불러오지 못했습니다.");
         if (!cancelled) {
           const list: CandidateView[] = data.candidates ?? [];
           setCandidates(list);
@@ -81,19 +81,19 @@ export function SellerDealCandidates({ sellerId }: { sellerId: string }) {
   };
 
   if (error) {
-    return <p className="text-[11px] text-[var(--status-urgent)]">제안 후보 딜: {error}</p>;
+    return <p className="text-[11px] text-[var(--status-urgent)]">제안 후보 판매 조건: {error}</p>;
   }
   if (candidates === null) return null;
 
   return (
     <div className="space-y-2 rounded-2xl border border-border/70 bg-white/90 p-4">
       <h3 className="text-xs font-semibold text-foreground">
-        제안 후보 딜 ({candidates.length}건)
+        제안 후보 판매 조건 ({candidates.length}건)
       </h3>
 
       {candidates.length === 0 ? (
         <div className="flex items-center justify-center rounded-xl border border-dashed border-slate-200 p-6 bg-slate-50/30">
-          <p className="text-xs text-slate-500">제안 후보 딜 없음</p>
+          <p className="text-xs text-slate-500">제안 후보 판매 조건 없음</p>
         </div>
       ) : (
         <div className="space-y-1">

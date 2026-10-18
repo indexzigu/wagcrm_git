@@ -109,7 +109,7 @@ export function CampaignDuplicator({
           <div className="rounded-md border bg-muted/40 p-3 text-sm">
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">딜</span>
+                <span className="text-muted-foreground">판매 조건</span>
                 <span className="font-medium">{sourceCampaign.dealName}</span>
               </div>
               <div className="flex items-center justify-between">

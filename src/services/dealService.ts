@@ -144,7 +144,7 @@ function serializeDealResponse(
 // --- Service ---
 
 export class DealNotFoundError extends Error {
-  constructor(message = "해당 딜을 찾을 수 없습니다") {
+  constructor(message = "해당 판매 조건을 찾을 수 없습니다") {
     super(message);
     this.name = "DealNotFoundError";
   }

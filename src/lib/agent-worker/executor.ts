@@ -408,7 +408,7 @@ async function searchDeals(input: SearchDealsInput): Promise<OperationOutcome> {
     evidenceRefs: boundEvidence(items.map((row) => row.id)),
     actionProposalId: null,
     record: {
-      title: `딜 검색 ${items.length}건`,
+      title: `판매 조건 검색 ${items.length}건`,
       resultSummary: summary,
       structuredResult: {
         items: items.map((row) => ({
