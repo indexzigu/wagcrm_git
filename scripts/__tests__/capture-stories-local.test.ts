@@ -82,4 +82,18 @@ describe("capture-stories-local 사고 장부 연결", () => {
     expect(recordFailureIncident).toHaveBeenCalledTimes(1);
     expect(settleIncidentsAfterSuccess).not.toHaveBeenCalled();
   });
+
+  it("성공 기록에 산출 수를 넘겨 마지막 산출 시각이 남게 한다", async () => {
+    captureActiveCampaignStories.mockResolvedValue(baseResult);
+    await runMain();
+    const success = recordSystemTaskRun.mock.calls.find((c) => c[1] === "SUCCESS");
+    expect(success?.[5]).toEqual({ produced: 3 });
+  });
+
+  it("산출 0 도 그대로 넘긴다(0 이면 시각을 안 남기는 판정은 recordSystemTaskRun 몫)", async () => {
+    captureActiveCampaignStories.mockResolvedValue({ ...baseResult, storiesNew: 0 });
+    await runMain();
+    const success = recordSystemTaskRun.mock.calls.find((c) => c[1] === "SUCCESS");
+    expect(success?.[5]).toEqual({ produced: 0 });
+  });
 });

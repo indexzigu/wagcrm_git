@@ -58,7 +58,10 @@ async function main() {
     // "어느 레인이 남긴 행인가"와 무관하게 같은 눈으로 읽을 수 있다.
     { ok: true, ...result, ...outcome, lane: "local" },
     undefined,
-    outcome.failed ? { errorKind: classifyCronError(outcome.failureReason ?? "") } : undefined,
+    // 서버 레인과 같이 산출 수를 넘긴다 — > 0 일 때 lastProducedAt 이 남는다(판정은 recordSystemTaskRun 몫).
+    outcome.failed
+      ? { errorKind: classifyCronError(outcome.failureReason ?? "") }
+      : { produced: outcome.produced },
   );
   if (outcome.failed) {
     const reason = outcome.failureReason ?? "실행은 끝났으나 산출이 없습니다(핸들러 실패 선언).";
