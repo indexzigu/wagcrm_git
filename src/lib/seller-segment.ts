@@ -8,6 +8,7 @@
 
 import type { SellerSummary } from "@/lib/crm-types";
 import { computeDormancyTier } from "@/lib/seller-dormancy";
+import { campaignRecency } from "@/lib/partner-seller-display";
 
 export type SellerSegment = "all" | "active" | "prospect" | "unanalyzed" | "dormant";
 
@@ -21,6 +22,9 @@ export type SellerSegment = "all" | "active" | "prospect" | "unanalyzed" | "dorm
  *   `computeDormancyTier` 가 DORMANT(90~180일)로 낸 셀러뿐이다 — 규칙을 여기서 다시 쓰지 않는다.
  *   180일+(제외 티어)는 「거래 리듬」 열이 무채색으로 두는 "사실상 제외"라 이 보기에도 넣지 않는다.
  *   `runCount` 가 없으면(집계 실패) 표가 「—」로 그리는 행이라 휴면으로 단정하지 않는다.
+ *   **시작예정·진행중 캠페인이 있는 셀러는 뺀다**(2026-10-18 ss-ux P1-2): 마지막 진행이 오래됐어도 다음 캠페인이
+ *   잡혀 있으면 재계약 검토 대상이 아니다. 신호는 목록의 「시작예정」·「진행중」 표시와 같은 `campaignRecency`
+ *   (서버 집계 우선, 없으면 캡 배열 — 드랍 제외)다 — 휴면 티어 자체(`computeDormancyTier`)는 바꾸지 않는다.
  *   이 보기는 오너가 **고르는** 필터다 — 기본 보기·기본 정렬에 휴면을 쓰지 않는다는 SSOT 조항(D10)은 그대로.
  */
 export function matchesSellerSegment(
@@ -38,9 +42,12 @@ export function matchesSellerSegment(
     case "unanalyzed":
       // == null 로 null/undefined 양쪽을 포착 (AI 프로필 미적용/미분석 환경 모두 미분석으로 간주)
       return seller.aiComposite == null;
-    case "dormant":
+    case "dormant": {
       if (seller.runCount === undefined) return false;
-      return computeDormancyTier(seller.lastRunStartAt ?? null, now).tier === "DORMANT";
+      if (computeDormancyTier(seller.lastRunStartAt ?? null, now).tier !== "DORMANT") return false;
+      const recency = campaignRecency(seller.campaigns, now.getTime(), seller);
+      return recency?.kind !== "upcoming" && recency?.kind !== "active";
+    }
     default:
       return true;
   }

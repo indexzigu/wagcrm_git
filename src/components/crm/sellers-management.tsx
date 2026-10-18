@@ -270,7 +270,11 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
             )}
             title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과 (휴면 ${DORMANT_DAYS}일 · 제외 ${EXCLUDE_DAYS}일 기준)`}
           >
-            {DORMANCY_TIER_LABEL[verdict.tier]}
+            {/* 휴면은 경과일을 배지에 함께 쓴다(「휴면 132일」) — 「휴면」 보기가 오래 쉰 순이라 그 순서가 행에서
+                읽혀야 하고, title 만으로는 키보드·터치에서 안 보인다(2026-10-18 interfaces MEDIUM). 제외는 그대로. */}
+            {verdict.tier === "DORMANT"
+              ? `${DORMANCY_TIER_LABEL.DORMANT} ${verdict.daysSinceLastRun}일`
+              : DORMANCY_TIER_LABEL[verdict.tier]}
           </span>
           )}
           {/* 진행 횟수를 함께 노출한다 — "재접촉으로 되살릴 휴면"과 "첫 거래 후 이탈"은
