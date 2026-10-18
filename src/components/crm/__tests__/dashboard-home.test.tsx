@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardHome } from "../dashboard-home";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { buildTaxableRevenueTracker } from "@/lib/taxable-revenue-tracker";
 import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
+import {
+  DASHBOARD_PAGE_SCOPE_CAPTION,
+  DASHBOARD_SCOPE_CAPTION,
+  DASHBOARD_YTD_SCOPE_CAPTION,
+} from "@/lib/dashboard-scope";
 
 vi.mock("recharts", () => ({
   ComposedChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -336,30 +341,71 @@ describe("DashboardHome", () => {
     expect(screen.queryByText("정산 노출액")).not.toBeInTheDocument();
   });
 
-  // 오너 2026-07-24: "셀러 베이스 모멘텀"은 알기 쉬운 한글로, 재계약 검토는 페이지 이동 없이 팝업으로
-  it("셀러 카드 제목은 한글 표기('활성 셀러 현황')다 — 구 영문 혼용 표기는 회귀", () => {
-    render(<DashboardHome initialData={data()} />);
-    expect(screen.getByText("활성 셀러 현황")).toBeInTheDocument();
-    expect(screen.queryByText("셀러 베이스 모멘텀")).not.toBeInTheDocument();
-  });
-
-  // 그날 손이 가야 하는 일은 매출·일정보다 먼저 읽힌다(발주 자동화 1단계 2026-10-06 배치 승계).
-  it("「오늘 처리할 일」 카드를 KPI 밴드보다 위, 첫 줄에 둔다", () => {
+  // 밴드 재배치(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17) — 첫 밴드는 두 초점(오늘 처리할 일 + 거래액 목표).
+  it("첫 밴드에 「오늘 처리할 일」과 거래액 목표 히어로가 함께 있다", () => {
     const { container } = render(<DashboardHome initialData={data()} />);
-    const heading = screen.getByRole("heading", { name: "오늘 처리할 일" });
-    const stack = container.querySelector("main > div.space-y-6");
-    expect(stack?.firstElementChild?.contains(heading)).toBe(true);
+    const stack = container.querySelector("main > div.space-y-6")!;
+    // 맨 위 한 줄은 범위 안내(<p>), 그 다음이 첫 밴드다.
+    const firstBand = stack.querySelector('[data-band="focus"]')!;
+    expect(firstBand).not.toBeNull();
+    expect(firstBand.contains(screen.getByRole("heading", { name: "오늘 처리할 일" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "이번 달 거래액" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "연간 누적" }))).toBe(true);
   });
 
-  it("재계약 검토는 페이지 이동 없이 팝업으로 휴면 셀러 목록을 연다", () => {
+  it("밴드 순서 — 두 초점 → 거래액 차트 → 일정 → 점검·과세기준", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const stack = container.querySelector("main > div.space-y-6")!;
+    const bands = [...stack.querySelectorAll(":scope > [data-band]")].map((el) => el.getAttribute("data-band"));
+    expect(bands).toEqual(["focus", "sales-chart", "schedule", "checks"]);
+    // 실적 지표 3장은 첫 밴드 좌 칸(「오늘 처리할 일」 아래)에 붙는다 — 히어로 옆을 비우지 않는다.
+    const metrics = stack.querySelector('[data-band="focus"] [data-band="metrics"]');
+    expect(metrics).not.toBeNull();
+    expect(metrics!.textContent).toContain("최근 90일 영업 전환");
+    // 데이터 점검 탭과 과세기준 카드는 같은 밴드(반폭씩).
+    const checks = stack.querySelector('[data-band="checks"]')!;
+    expect(checks.querySelector("#data-check")).not.toBeNull();
+    expect(checks.textContent).toContain("과세기준매출");
+  });
+
+  it("「오늘 처리할 일」 데이터 점검 행의 목적지(#data-check)가 재배치 뒤에도 남는다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const anchor = container.querySelector("#data-check")!;
+    expect(anchor).not.toBeNull();
+    expect(anchor.textContent).toContain("데이터 점검");
+  });
+
+  it("활성 셀러 카드는 없다 — 판단을 바꾸지 않는 개수 카드(오너 2026-10-17)", () => {
     render(<DashboardHome initialData={data()} />);
-    const trigger = screen.getByRole("button", { name: /휴면 2명 재계약 검토/ });
-    // 링크(페이지 이동)가 아니라 버튼이어야 한다
-    expect(trigger.tagName).toBe("BUTTON");
-    fireEvent.click(trigger);
-    // 팝업에 휴면 셀러 목록 + 셀러 상세 진입 링크가 있어야 한다
-    expect(screen.getByText("휴면셀러A")).toBeInTheDocument();
-    expect(screen.getByText("휴면셀러B")).toBeInTheDocument();
-    expect(screen.getByText("휴면셀러A").closest("a")).toHaveAttribute("href", "/sellers/seller-a");
+    expect(screen.queryByText("활성 셀러 현황")).not.toBeInTheDocument();
+    expect(screen.queryByText(/재계약 검토/)).not.toBeInTheDocument();
+  });
+
+  it("자동화 작업 상태(구 시스템 레이더)는 대시보드에 없다 — 설정 → 외부 연동 진단으로 옮겼다", () => {
+    render(<DashboardHome initialData={data()} />);
+    expect(screen.queryByText("자동화 작업 상태")).not.toBeInTheDocument();
+    expect(screen.queryByText("시스템 레이더")).not.toBeInTheDocument();
+  });
+
+  it("범위 안내는 페이지 맨 위에 정확히 한 번 — 히어로 안 캡션은 없다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const stack = container.querySelector("main > div.space-y-6")!;
+    const hits = [...container.querySelectorAll("*")].filter(
+      (el) => el.children.length === 0 && el.textContent === DASHBOARD_PAGE_SCOPE_CAPTION,
+    );
+    expect(hits).toHaveLength(1);
+    expect(stack.firstElementChild?.tagName).toBe("P");
+    expect(stack.firstElementChild?.textContent).toBe(DASHBOARD_PAGE_SCOPE_CAPTION);
+    // 히어로에 남던 짧은 캡션 두 개(모바일 히어로가 여전히 쓴다)는 데스크톱에서 사라졌다.
+    expect(container.textContent).not.toContain(DASHBOARD_SCOPE_CAPTION);
+    expect(container.textContent).not.toContain(DASHBOARD_YTD_SCOPE_CAPTION);
+  });
+
+  it("거래액 차트에 범례가 있다 — 계열을 색만으로 가르지 않는다", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const legend = container.querySelector('[data-slot="chart-legend"]')!;
+    expect(legend).not.toBeNull();
+    expect(legend.textContent).toContain("총거래액");
+    expect(legend.textContent).toContain("매출총이익");
   });
 });

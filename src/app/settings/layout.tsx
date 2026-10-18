@@ -19,7 +19,7 @@ const settingsNav = [
     href: "/settings/integrations",
     label: "외부 연동 진단",
     icon: HardDriveIcon,
-    description: "구글 드라이브 및 캘린더 연동 상태 및 권한 검사",
+    description: "구글 드라이브·캘린더 연동 상태와 권한 검사, 자동화 작업 상태",
   },
   {
     href: "/settings/accounts",
