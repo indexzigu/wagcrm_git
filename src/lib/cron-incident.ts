@@ -7,7 +7,7 @@ import type { CronErrorKind } from "@/lib/cron-error-kind";
  * 호출처(system-task-status 래퍼)의 응답을 막지 않도록 DB 오류는 로그만 남기고 삼키지 않되 던지지도 않는다.
  */
 
-/** A=오류 종료, B=전량 실패, C=정상인데 결과 없음 */
+/** A=실패 기록, B=성공 기록인데 산출 없음, C=알림 자체가 틀림(2단계부터) */
 export type IncidentKind = "A" | "B" | "C";
 
 const SIGNATURE_MESSAGE_MAX = 200;

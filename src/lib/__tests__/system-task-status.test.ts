@@ -111,6 +111,8 @@ describe("withSystemTaskStatus 기록", () => {
     // RUNNING 마커는 직전 실패 메시지를 지우지 않고(undefined), SUCCESS가 null로 청소한다
     expect(upsert.mock.calls[0][0].update.lastErrorMessage).toBeUndefined();
     expect(upsert.mock.calls[1][0].update.lastErrorMessage).toBeNull();
+    // RUNNING 마커는 직전 실패 종류(lastErrorKind)도 지우지 않는다
+    expect(upsert.mock.calls[0][0].update.lastErrorKind).toBeUndefined();
   });
 
   it("핸들러가 던지면 ERROR로 기록하고 예외를 다시 던진다", async () => {
