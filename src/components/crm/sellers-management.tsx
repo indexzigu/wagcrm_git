@@ -57,6 +57,7 @@ import {
   type SellerSegment,
   compareByLongestDormancy,
   filterSellersBySegment,
+  isDormantForReview,
 } from "@/lib/seller-segment";
 
 type SellerRow = SellerSummary;
@@ -78,7 +79,8 @@ type SellersManagementProps = {
   dataSourceMessage?: string;
 };
 
-function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] {
+/** 셀러 표 컬럼 팩토리 — 테스트가 셀 렌더(휴면 배지 등)를 직접 확인하려고 내보낸다. */
+export function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] {
   return [
   {
     key: "name",
@@ -255,9 +257,19 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
           </span>
         );
       }
+      // 휴면이지만 시작예정·진행중 캠페인이 잡힌 셀러는 재계약 검토 대상이 아니다 — 「휴면」 보기와 **같은 판정**
+      // (`isDormantForReview`)으로 배지를 거둔다. 배지와 보기가 갈리면 배지가 붙었는데 보기에 없는 셀러가 생긴다.
+      const nextCampaignBooked = verdict.tier === "DORMANT" && !isDormantForReview(row);
       return (
         <span className="inline-flex flex-col items-center leading-tight">
-          {verdict.tier === "HEALTHY" ? (
+          {nextCampaignBooked ? (
+            <span
+              className="text-xs text-slate-500"
+              title={`다음 캠페인이 잡혀 있음 · 마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과`}
+            >
+              —
+            </span>
+          ) : verdict.tier === "HEALTHY" ? (
             // 건강은 할 일이 없다 — 낱말 대신 「—」(상태 낱말 기준 2026-10-08). 휴면만 손이 필요하다.
             <span className="text-xs text-slate-500" title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과`}>—</span>
           ) : (

@@ -42,15 +42,25 @@ export function matchesSellerSegment(
     case "unanalyzed":
       // == null 로 null/undefined 양쪽을 포착 (AI 프로필 미적용/미분석 환경 모두 미분석으로 간주)
       return seller.aiComposite == null;
-    case "dormant": {
-      if (seller.runCount === undefined) return false;
-      if (computeDormancyTier(seller.lastRunStartAt ?? null, now).tier !== "DORMANT") return false;
-      const recency = campaignRecency(seller.campaigns, now.getTime(), seller);
-      return recency?.kind !== "upcoming" && recency?.kind !== "active";
-    }
+    case "dormant":
+      return isDormantForReview(seller, now);
     default:
       return true;
   }
+}
+
+/**
+ * 「재계약 검토 대상 휴면」 — 휴면 보기(필터)와 셀러 표의 휴면 배지가 **함께** 쓰는 한 판정(2026-10-18 결정:
+ * 배지와 필터가 갈리면 「휴면」 배지가 붙었는데 휴면 보기엔 없는 셀러가 생긴다).
+ * = 티어 SSOT(`computeDormancyTier`)가 DORMANT && 시작예정·진행중 캠페인 없음(`campaignRecency`, 목록의 「시작예정」
+ * 표시와 같은 신호). 휴면 규칙을 새로 쓰지 않는다 — 티어는 그대로 두고 「다음 캠페인이 잡힌 셀러」만 뺀다.
+ * `runCount` 가 없으면(집계 실패) 단정하지 않는다.
+ */
+export function isDormantForReview(seller: SellerSummary, now: Date = new Date()): boolean {
+  if (seller.runCount === undefined) return false;
+  if (computeDormancyTier(seller.lastRunStartAt ?? null, now).tier !== "DORMANT") return false;
+  const recency = campaignRecency(seller.campaigns, now.getTime(), seller);
+  return recency?.kind !== "upcoming" && recency?.kind !== "active";
 }
 
 /** 세그먼트로 걸러진 목록. 정렬은 호출부 책임(이 함수는 순서를 보존한다). */

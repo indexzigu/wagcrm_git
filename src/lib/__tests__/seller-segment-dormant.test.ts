@@ -7,6 +7,7 @@ import { DORMANT_DAYS, EXCLUDE_DAYS, computeDormancyTier } from "@/lib/seller-do
 import {
   compareByLongestDormancy,
   filterSellersBySegment,
+  isDormantForReview,
   matchesSellerSegment,
 } from "@/lib/seller-segment";
 
@@ -83,6 +84,15 @@ describe("seller-segment: dormant", () => {
         ] as unknown as SellerSummary["campaigns"],
       });
       expect(matchesSellerSegment(s, "dormant", NOW)).toBe(true);
+    });
+
+    it("isDormantForReview 가 필터와 한 행도 어긋나지 않는다 — 배지와 보기가 같은 판정을 쓴다", () => {
+      const cases = [
+        ...rows,
+        seller("up", { ...old, hasUpcomingCampaign: true, hasActiveCampaign: false, lastCampaignEndAt: daysAgo(140) }),
+        seller("past", { ...old, hasUpcomingCampaign: false, hasActiveCampaign: false, lastCampaignEndAt: daysAgo(140) }),
+      ];
+      for (const row of cases) expect(isDormantForReview(row, NOW)).toBe(matchesSellerSegment(row, "dormant", NOW));
     });
 
     it("지난 캠페인만 있으면 휴면 그대로", () => {
