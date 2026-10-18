@@ -25,7 +25,7 @@ type Rule = {
 // 맨 상태코드 숫자 패턴 — 건수("503건")·식별자("ORD-503-1")·버전("4.0.403")은 제외한다.
 // JS \b 는 한글을 비단어로 보므로 앞뒤를 직접 막는다.
 const bareStatus = (alt: string): RegExp =>
-  new RegExp(`(?<![\\w.\\-])(?:${alt})(?![\\w.\\-]|[가-힣])`);
+  new RegExp(`(?<![\\w.\\-가-힣])(?:${alt})(?![\\w\\-]|\\.\\w|[가-힣])`);
 
 // 위에서 아래로 처음 맞는 규칙이 이긴다 — 407 은 `fetch failed` 와 같은 줄에 있어도 proxy_quota.
 const RULES: readonly Rule[] = [

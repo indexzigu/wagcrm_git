@@ -26,6 +26,10 @@ describe("classifyCronError", () => {
     ["429 Too Many Requests", undefined, "rate_limit"],
     ["Request failed with status code 502", undefined, "upstream_5xx"],
     ["fetch failed", 503, "upstream_5xx"],
+    ["Request failed with status 503.", undefined, "upstream_5xx"],
+    ["upstream returned 401.", undefined, "auth"],
+    ["오류503 발생", undefined, "unknown"],
+    ["N번째401 실패", undefined, "unknown"],
   ];
   it.each(cases)("%s → %s", (text, status, kind) => {
     expect(classifyCronError(text, status)).toBe(kind);
