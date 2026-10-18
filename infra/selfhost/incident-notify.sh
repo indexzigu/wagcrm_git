@@ -19,7 +19,9 @@ set -euo pipefail
 #
 # 📏 하루 즉시 알림 상한 5건 — 배포 후 7일만(오너 결정 Q1). 7일 창의 시작은 상한 파일이 처음 생긴 때다.
 #    상한은 조치 알림(ackField=alertedAt)만 센다 — 정상화(✅)·요약(📋)은 세지 않는다.
-#    넘친 사고는 보내지도 확인하지도 않는다 → 다음 08:00 요약의 「조치대기」에 그대로 잡힌다.
+#    넘친 사고는 **보내지 않고 alertedAt 으로 확인만 한다** — 확인하지 않으면 자정에 개수가 새로 시작될 때
+#    개별 알림으로 나가 「08:00 요약으로 넘긴다」는 안내와 어긋난다. 08:00 요약은 조치대기(waiting_owner)를
+#    alertedAt 과 무관하게 전부 실으므로 넘친 사고도 거기 그대로 잡힌다. 넘친 것은 보낸 개수에 넣지 않는다.
 #    넘쳤다는 안내(incident-cap)는 하루 한 번만 보낸다.
 #
 # cron.log 에는 실행 1회 = 한 줄, 개수만 남긴다(알림 본문은 남기지 않는다 — 이 파일은 하루치 훑기용이다).
@@ -138,7 +140,9 @@ send_one() { # key title detail icon
 while IFS= read -r -d '' key && IFS= read -r -d '' icon && IFS= read -r -d '' title \
    && IFS= read -r -d '' detail && IFS= read -r -d '' ack_field && IFS= read -r -d '' ids; do
   if [ "$ack_field" = "alertedAt" ] && [ "$CAP_ACTIVE" -eq 1 ] && [ "$TODAY_SENT" -ge "$DAILY_CAP" ]; then
+    # 보내지 않고 확인만 한다(위 📏). TODAY_SENT 는 올리지 않는다 — 실제로 나간 알림만 센다.
     capped=$((capped + 1))
+    printf '%s\t%s\n' "$ack_field" "$ids" >> "$ACKS"
     continue
   fi
   # notify.sh 는 텔레그램 실패에도 exit 0 이다(실패는 마커로 남아 메뉴바가 그린다). 여기서 0 이 아닌 것은

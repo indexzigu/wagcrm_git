@@ -242,7 +242,7 @@ describe("incident-notify.sh 하루 즉시 알림 상한(배포 후 7일)", () =
     expect(file.split("\n")[0]).toBe(`since\t${now}`);
   });
 
-  it("창 안에서는 하루 5건까지만 보내고, 넘친 것은 확인하지 않고 상한 안내를 한 번 보낸다", () => {
+  it("창 안에서는 하루 5건까지만 보내고, 넘친 것은 보내지 않은 채 보냄(alertedAt)으로 표시하고 상한 안내를 한 번 보낸다", () => {
     const now = nowSec();
     const messages = [1, 2, 3, 4, 5, 6, 7].map(alert).concat([recovery(1)]);
     const r = run({ messages, now });
@@ -254,14 +254,23 @@ describe("incident-notify.sh 하루 즉시 알림 상한(배포 후 7일)", () =
       "incident-cap",
     ]);
     expect(r.notify[6]).toEqual(["send", "incident-cap", "자동화 작업 알림 상한", "오늘 알림 2건은 내일 08:00 요약으로 넘깁니다.", "🙋"]);
-    const acked = r.ackBody(r.posts[0]).acks.flatMap((a) => a.incidentIds);
-    expect(acked).toEqual(["i1", "i2", "i3", "i4", "i5", "r1"]);
-    expect(r.lines[0]).toMatch(/sent=6 acked=6 capped=2$/);
+    // 넘친 i6·i7 도 alertedAt 으로 확인한다 — 자정이 지나 개별 알림으로 나가지 않게. 08:00 요약은 조치대기 전부를 싣는다.
+    const acks = r.ackBody(r.posts[0]).acks;
+    expect(acks.flatMap((a) => a.incidentIds)).toEqual(["i1", "i2", "i3", "i4", "i5", "i6", "i7", "r1"]);
+    expect(acks.filter((a) => ["i6", "i7"].includes(a.incidentIds[0])).map((a) => a.ackField)).toEqual(["alertedAt", "alertedAt"]);
+    expect(r.lines[0]).toMatch(/sent=6 acked=8 capped=2$/);
+    // 넘친 것은 보낸 개수에 넣지 않는다.
+    expect(readFileSync(path.join(r.logs, "incident-notify-count.tsv"), "utf8")).toContain(`${kstDate(now)}\t5\t1`);
 
     // 같은 날 다음 회차: 상한이 이미 찼으니 즉시 알림은 0건, 상한 안내도 다시 보내지 않는다. 정상화(✅)는 세지 않는다.
     const again = run({ messages: [alert(6), alert(7), recovery(2)], now: now + 1, logsDir: r.logs });
     expect(again.notify.map((c) => c[1])).toEqual(["incident-r2-ok"]);
-    expect(again.lines.at(-1)).toMatch(/sent=1 acked=1 capped=2$/);
+    expect(again.ackBody(again.posts[0]).acks).toEqual([
+      { incidentIds: ["i6"], ackField: "alertedAt" },
+      { incidentIds: ["i7"], ackField: "alertedAt" },
+      { incidentIds: ["r2"], ackField: "recoveryAlertedAt" },
+    ]);
+    expect(again.lines.at(-1)).toMatch(/sent=1 acked=3 capped=2$/);
   });
 
   it("날이 바뀌면 개수가 새로 시작한다", () => {
