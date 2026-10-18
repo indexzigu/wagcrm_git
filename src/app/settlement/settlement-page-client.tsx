@@ -462,9 +462,10 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   // 맨 위로 간다(2026-10-18 실측). 그때만 이 화면의 첫 표 제목으로 돌린다. 행에서 연 패널은 Radix 가 그 행으로 돌린다.
   const handlePanelCloseAutoFocus = useCallback(
     (event: Event) => {
-      if (!panelFromUrl) return;
+      // 목록 대신 오류 화면이면 제목이 없다 — 그때는 Radix 기본 복귀에 맡긴다.
+      if (!panelFromUrl || !activeHeadingRef.current) return;
       event.preventDefault();
-      activeHeadingRef.current?.focus();
+      activeHeadingRef.current.focus();
     },
     [panelFromUrl],
   );
