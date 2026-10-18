@@ -53,9 +53,10 @@ interface RunOpts {
   botBackupAgeH?: number;
   plistUp?: boolean;
   fast?: boolean;
-  /** crontab 픽스처에 넣을 잡. "<job>" = 매일, "<job>@weekly" = 요일 고정(매주). 기본 2개(매일). */
+  /** crontab 픽스처에 넣을 잡. "<job>" = 매일, "<job>@weekly" = 요일 고정(매주),
+   *  "<job>@every2" = 2분마다(상시, `*\/2 * * * *`). 기본 2개(매일). */
   cronJobs?: string[];
-  /** 잡별 "마지막 SUCCESS 가 몇 시간 전인가". 목록에 없는 잡은 SUCCESS 기록이 없는 것으로 본다. */
+  /** 잡별 "마지막 SUCCESS 가 몇 시간 전인가"(소수 허용). 목록에 없는 잡은 SUCCESS 기록이 없는 것으로 본다. */
   cronRows?: Record<string, number>;
   /** true 면 psql 조회가 실패한다(판정 불능 경로). */
   cronQueryFails?: boolean;
@@ -122,7 +123,7 @@ esac`,
   const cronJobs = opts.cronJobs ?? ["job-alpha", "job-beta"];
   const cronRows = opts.cronRows ?? { "job-alpha": 1, "job-beta": 2 };
   const psqlOut = Object.entries(cronRows)
-    .map(([job, agoH]) => `${job}|${Math.floor(Date.now() / 1000) - agoH * 3600}`)
+    .map(([job, agoH]) => `${job}|${Math.floor(Date.now() / 1000) - Math.round(agoH * 3600)}`)
     .join("\n");
   const dockerImpl = stub(
     bin,
@@ -188,9 +189,10 @@ esac`,
     crontabFixture,
     cronJobs
       .map((spec) => {
-        const [job, weekly] = spec.split("@");
-        const dow = weekly ? "1" : "*";
-        return `0 0 * * ${dow} /Users/x/selfhost/wagcrm/infra/selfhost/run-cron.sh ${job} >> /dev/null 2>&1`;
+        const [job, kind] = spec.split("@");
+        const every = /^every(\d+)$/.exec(kind ?? "");
+        const schedule = every ? `*/${every[1]} * * * *` : `0 0 * * ${kind ? "1" : "*"}`;
+        return `${schedule} /Users/x/selfhost/wagcrm/infra/selfhost/run-cron.sh ${job} >> /dev/null 2>&1`;
       })
       .join("\n") + "\n",
   );
@@ -407,6 +409,32 @@ describe("status.sh 행위 계약", () => {
   it("매주 잡은 30h 로 늦었다고 하지 않는다(주기별 문턱)", () => {
     const r = runStatus({ dailyAgeH: 5, weeklyAgeH: 24, cronJobs: ["w@weekly"], cronRows: { w: 40 } });
     expect(byKey(r, "crons").level).toBe("ok");
+  });
+
+  it("상시(2분마다) 잡은 30h 문턱이 아니라 간격 + 30분으로 잰다 — 10분 전 성공은 정상", () => {
+    const r = runStatus({ dailyAgeH: 5, weeklyAgeH: 24, cronJobs: ["tick@every2"], cronRows: { tick: 10 / 60 } });
+    expect(byKey(r, "crons").level).toBe("ok");
+  });
+
+  it("상시(2분마다) 잡이 32분을 넘기면 늦음이다 — 매일 문턱(30h)이면 하루 넘게 조용했다", () => {
+    const r = runStatus({ dailyAgeH: 5, weeklyAgeH: 24, cronJobs: ["tick@every2"], cronRows: { tick: 40 / 60 } });
+    const item = byKey(r, "crons");
+    expect(item.level).toBe("error");
+    expect(item.detail).toContain("tick");
+  });
+
+  it("마지막 성공 조회가 할 일 없던 회차(quiet)를 보도록 상태 표를 함께 읽는다", () => {
+    // quiet SUCCESS 는 SystemTaskLog 에 행을 남기지 않는다(skipLog) — 이력만 읽으면 2분마다
+    // 정상으로 도는 잡이 「늦었습니다」로 뜬다(2026-10-18 실측 오알림). 판정 SQL 이 상태 표의
+    // lastRunAt 을 함께 보는지 소스로 고정한다(가짜 docker 는 SQL 을 실행하지 않으므로).
+    const src = readFileSync(SCRIPT, "utf8");
+    const sql = /^\s*CRON_SQL="(.*)"$/m.exec(src)?.[1];
+    expect(sql, "CRON_SQL 앵커 없음(공허 통과 방지)").toBeTruthy();
+    expect(sql).toContain('\\"SystemTaskStatus\\"');
+    expect(sql).toContain('\\"lastRunAt\\"');
+    expect(sql).toContain('\\"SystemTaskLog\\"');
+    expect(sql).toMatch(/status in \('SUCCESS', 'RUNNING'\)/);
+    expect(isSingleReadOnlySelect(sql!.replace(/\\"/g, '"'))).toBe(true);
   });
 
   it("성공 기록이 없는 잡은 warn 이다(새로 추가된 크론 오탐 방지)", () => {
