@@ -111,6 +111,88 @@ describe("CrmSidebar 행 형태 계약 — 클래스 정본은 한 곳뿐이다"
 });
 
 /**
+ * 하위 항목(자료 목록 아래 5개)은 **접힌 레일에서 DOM 에 아예 없어야** 한다.
+ * `SidebarMenuSub` 프리미티브의 `group-data-[collapsible=icon]:hidden` 는 숨길 뿐 렌더는
+ * 하므로(접근성 트리·탭 순서에 남는다) 쓰지 않고, 펼침 상태(`state === "expanded"`,
+ * 호버 오버레이 포함)에서만 렌더하도록 조건 자체로 막는다.
+ */
+describe("CrmSidebar 하위 항목 — 접힌 레일에서는 렌더하지 않는다", () => {
+  const source = parse(SIDEBAR);
+
+  /** 조건식이 「펼침일 때 참」인가 — `expanded` 식별자 또는 `state === "expanded"` (&& 로 이어진 항 포함). */
+  function isExpandedTruthy(expr: ts.Expression): boolean {
+    if (ts.isParenthesizedExpression(expr)) return isExpandedTruthy(expr.expression);
+    if (ts.isIdentifier(expr)) return expr.text === "expanded";
+    if (ts.isBinaryExpression(expr)) {
+      const op = expr.operatorToken.kind;
+      if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
+        return isExpandedTruthy(expr.left) || isExpandedTruthy(expr.right);
+      }
+      if (op === ts.SyntaxKind.EqualsEqualsEqualsToken) {
+        const texts = [expr.left.getText(), expr.right.getText()];
+        return texts.some((t) => /state$/i.test(t)) && texts.includes('"expanded"');
+      }
+    }
+    return false; // `!expanded`, `collapsed` 등은 거부
+  }
+
+  function isGuardedByExpanded(node: ts.Node): boolean {
+    for (let cur: ts.Node | undefined = node.parent; cur; cur = cur.parent) {
+      // `expanded && x ? <Sub/> : null` — 조건식의 참 가지 안.
+      if (
+        ts.isConditionalExpression(cur) &&
+        isExpandedTruthy(cur.condition) &&
+        node.pos >= cur.whenTrue.pos &&
+        node.end <= cur.whenTrue.end
+      ) {
+        return true;
+      }
+      // `expanded && <Sub/>` — 오른쪽 항.
+      if (
+        ts.isBinaryExpression(cur) &&
+        cur.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken &&
+        isExpandedTruthy(cur.left) &&
+        node.pos >= cur.right.pos
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function unguardedIn(code: string) {
+    const src = ts.createSourceFile("probe.tsx", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    return jsxElementsNamed(src, "SidebarMenuSub").filter((el) => !isGuardedByExpanded(el));
+  }
+
+  it("반례 프로브: 올바른 가드는 통과, 반대·무관 가드는 거부한다", () => {
+    expect(unguardedIn("const a = <>{expanded && <SidebarMenuSub />}</>;")).toHaveLength(0);
+    expect(unguardedIn('const a = <>{state === "expanded" ? <SidebarMenuSub /> : null}</>;')).toHaveLength(0);
+    expect(unguardedIn("const a = <>{!expanded ? <SidebarMenuSub /> : null}</>;")).toHaveLength(1);
+    expect(unguardedIn("const a = <>{expanded ? null : <SidebarMenuSub />}</>;")).toHaveLength(1);
+    expect(unguardedIn("const a = <>{x && <SidebarMenuSub />}</>;")).toHaveLength(1);
+    expect(unguardedIn("const a = <SidebarMenuSub />;")).toHaveLength(1);
+  });
+
+  it("SidebarMenuSub 을 실제로 렌더한다 (스캐너 양성 대조군)", () => {
+    expect(jsxElementsNamed(source, "SidebarMenuSub").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("모든 SidebarMenuSub 이 펼침 조건(expanded) 아래에서만 렌더된다", () => {
+    const unguarded = jsxElementsNamed(source, "SidebarMenuSub").filter((el) => !isGuardedByExpanded(el));
+    expect(unguarded.map((el) => el.getText().slice(0, 60))).toEqual([]);
+  });
+
+  it("펼침 여부를 provider 상태(useSidebar)에서 읽는다", () => {
+    const identifiers = new Set<string>();
+    walk(source, (node) => {
+      if (ts.isIdentifier(node)) identifiers.add(node.text);
+    });
+    expect(identifiers.has("useSidebar")).toBe(true);
+  });
+});
+
+/**
  * **호버 오버레이 불변식** 계약(2026-08-28).
  *
  * 종전 이 자리에는 「쿠키 상수 1개 ↔ 소비자 3종(writer·서버 리더·프리페인트)」 짝

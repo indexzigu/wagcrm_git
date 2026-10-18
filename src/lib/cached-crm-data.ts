@@ -391,29 +391,6 @@ export async function getCachedCurrentYearPnlReportData() {
 }
 
 /**
- * Cached channel fee settings for the admin configuration screen.
- */
-export async function getCachedChannelFeeConfig() {
-  "use cache";
-  // 저변경 설정 — 쓰기(channel-fees PATCH)가 태그를 즉시 깨므로 static(30일)으로 충분
-  cacheLife(CRM_CACHE_LIFE.static);
-  cacheTag(CRM_CACHE_TAGS.channelFees);
-
-  const channels = await getPrisma().channelFeeConfig.findMany({
-    orderBy: { channel: "asc" },
-  });
-
-  return channels.map((channel) => ({
-    id: channel.id,
-    channel: channel.channel,
-    label: channel.label,
-    feeRate: Number(channel.feeRate),
-    paymentRate: Number(channel.paymentRate),
-    notes: channel.notes,
-  }));
-}
-
-/**
  * Cached Meta review inputs, including the rolling evidence window.
  */
 export async function getCachedMetaReviewChecklistData() {

@@ -67,7 +67,13 @@ export function OperationsSettingsClient() {
         fetch("/api/settings/order-sync"),
       ]);
       if (reminderResponse.ok) setReminders(await reminderResponse.json());
-      if (channelResponse.ok) setChannels((await channelResponse.json()).channels);
+      if (channelResponse.ok) {
+        // GET 은 Decimal 을 문자열로 내려보낸다 — 합산 표시와 저장(숫자 검증)이 숫자를 요구한다.
+        const loaded: ChannelFee[] = (await channelResponse.json()).channels;
+        setChannels(
+          loaded.map((item) => ({ ...item, feeRate: Number(item.feeRate), paymentRate: Number(item.paymentRate) })),
+        );
+      }
       if (orderSyncResponse.ok) setOrderSync(await orderSyncResponse.json());
       else setOrderSyncLoadFailed(true);
     }
@@ -131,7 +137,13 @@ export function OperationsSettingsClient() {
     const response = await fetch("/api/settings/channel-fees", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(channel),
+      // 저장 검증은 비고가 문자열이거나 없을 때만 통과한다 — null(비고 없음)은 보내지 않는다.
+      body: JSON.stringify({
+        channel: channel.channel,
+        feeRate: channel.feeRate,
+        paymentRate: channel.paymentRate,
+        notes: channel.notes ?? undefined,
+      }),
     });
     setSavingSection(null);
     if (response.ok) {
@@ -287,40 +299,62 @@ export function OperationsSettingsClient() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 p-6">
           {channels.map((channel) => (
-            <div 
-              key={channel.channel} 
+            // 채널 카드마다 같은 라벨(스토어 수수료…)이 반복되므로 카드를 채널명 그룹으로 묶고
+            // 각 라벨을 htmlFor 로 입력칸에 잇는다 — 화면낭독기가 「채널명 … 스토어 수수료」로 구분해 읽는다.
+            <div
+              key={channel.channel}
+              role="group"
+              aria-labelledby={`channel-fee-${channel.channel}-title`}
               className="space-y-3.5 rounded-xl border border-slate-100 bg-white/50 p-4 shadow-soft-sm hover:bg-white/80 transition-colors"
             >
-              <p className="text-xs font-bold text-slate-800">{channel.label}</p>
+              <div className="flex items-center justify-between">
+                <p id={`channel-fee-${channel.channel}-title`} className="text-xs font-bold text-slate-800">{channel.label}</p>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">{(channel.feeRate + channel.paymentRate).toFixed(2)}%</p>
+                  <p className="text-[10px] text-muted-foreground">합산 수수료</p>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-3">
-                <label className="space-y-1">
-                  <span className="text-[10px] font-semibold text-muted-foreground">스토어 수수료 (%)</span>
-                  <Input 
-                    type="number" 
-                    min="0" 
-                    step="0.01" 
-                    value={channel.feeRate} 
-                    onChange={(event) => setChannels((current) => current.map((item) => item.channel === channel.channel ? { ...item, feeRate: Number(event.target.value) } : item))} 
+                <div className="space-y-1">
+                  <label htmlFor={`channel-fee-${channel.channel}-feeRate`} className="text-[10px] font-semibold text-muted-foreground">스토어 수수료 (%)</label>
+                  <Input
+                    id={`channel-fee-${channel.channel}-feeRate`}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={channel.feeRate}
+                    onChange={(event) => setChannels((current) => current.map((item) => item.channel === channel.channel ? { ...item, feeRate: Number(event.target.value) } : item))}
                     className="border-slate-200 focus-visible:ring-focus-ring h-8 text-xs"
                   />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[10px] font-semibold text-muted-foreground">결제 수수료 (%)</span>
-                  <Input 
-                    type="number" 
-                    min="0" 
-                    step="0.01" 
-                    value={channel.paymentRate} 
-                    onChange={(event) => setChannels((current) => current.map((item) => item.channel === channel.channel ? { ...item, paymentRate: Number(event.target.value) } : item))} 
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor={`channel-fee-${channel.channel}-paymentRate`} className="text-[10px] font-semibold text-muted-foreground">결제 수수료 (%)</label>
+                  <Input
+                    id={`channel-fee-${channel.channel}-paymentRate`}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={channel.paymentRate}
+                    onChange={(event) => setChannels((current) => current.map((item) => item.channel === channel.channel ? { ...item, paymentRate: Number(event.target.value) } : item))}
                     className="border-slate-200 focus-visible:ring-focus-ring h-8 text-xs"
                   />
-                </label>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor={`channel-fee-${channel.channel}-notes`} className="text-[10px] font-semibold text-muted-foreground">비고</label>
+                <Input
+                  id={`channel-fee-${channel.channel}-notes`}
+                  value={channel.notes ?? ""}
+                  onChange={(event) => setChannels((current) => current.map((item) => item.channel === channel.channel ? { ...item, notes: event.target.value } : item))}
+                  placeholder="메모"
+                  className="border-slate-200 focus-visible:ring-focus-ring h-8 text-xs"
+                />
               </div>
               <div className="flex justify-end pt-1">
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => saveChannel(channel)} 
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => saveChannel(channel)}
                   disabled={savingSection === channel.channel}
                   className="h-8 rounded-lg text-[11px] shadow-soft-sm hover:bg-slate-50"
                 >

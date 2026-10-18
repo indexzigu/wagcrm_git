@@ -271,21 +271,18 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
   );
 
   return (
-    <CrmShell>
+    <CrmShell
+      title="손익 리포트"
+      description="완료 캠페인 기준으로 캠페인 비용과 개인사업자 예상 세금을 반영한 당기순이익(추정)을 봅니다."
+    >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/70 bg-background/70 shadow-ambient backdrop-blur md:rounded-[24px]">
+          {/* 제목·설명은 CrmShell 머리로 옮겼다(메뉴 이름 = 페이지 제목). 연도·캠페인 수·세율 기준은
+              이 보고서의 범위라 카드 머리에 남긴다. */}
           <div className="crm-topbar flex shrink-0 flex-col gap-3 border-b border-border/70 bg-background/60 px-4 py-4 md:flex-row md:items-start md:justify-between md:px-5">
-            <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-bold text-foreground">
-                  {report.year}년 영업 순수익 리포트
-                </h2>
-                <Badge variant="outline">{totals.campaignCount}개 캠페인</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                완료 캠페인 기준으로 캠페인 비용과 개인사업자 예상 세금을 반영한
-                당기순이익(추정)을 봅니다.
-              </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-base font-bold text-foreground">{report.year}년</span>
+              <Badge variant="outline">{totals.campaignCount}개 캠페인</Badge>
             </div>
             <div className="flex flex-col items-start gap-1 text-xs text-muted-foreground md:items-end">
               <span>{report.taxRules.label}</span>
@@ -538,7 +535,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
 
               <Card className="rounded-lg">
                 <CardHeader>
-                  <CardTitle>캠페인별 순수익</CardTitle>
+                  <CardTitle>캠페인별 손익</CardTitle>
                   <CardDescription>
                     진행 월별로 구분했습니다. 행을 선택하면 계산 근거를 확인합니다.
                   </CardDescription>

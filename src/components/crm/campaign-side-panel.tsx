@@ -1081,7 +1081,27 @@ export function CampaignSidePanel({
                 </label>
 
                 <div className="grid h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-1 shadow-soft-sm">
-                  <div className="min-w-0 truncate text-[11px] font-medium text-slate-500">순수수료율 (%)</div>
+                  {/* 풀이는 title 이 아니라 Tooltip — 마우스뿐 아니라 키보드 포커스로도 열린다. */}
+                  <div className="flex min-w-0 items-center gap-1">
+                    <span className="min-w-0 truncate text-[11px] font-medium text-slate-500">
+                      순수수료율 (%)
+                    </span>
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            // crm-hit-area: 보이는 크기(14px)는 그대로, 누를 수 있는 영역만 사방 3px 넓힌다.
+                            className="crm-hit-area inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                            aria-label="순수수료율 풀이"
+                          >
+                            <Info className="size-3" aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">총수수료율 − 셀러수수료율. 셀러 몫을 뺀 우리 몫</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <div className="justify-self-end text-right text-sm font-bold text-primary">
                     {campaign.netMarginRate ?? 0}%
                   </div>

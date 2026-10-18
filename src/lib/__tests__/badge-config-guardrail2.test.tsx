@@ -123,20 +123,20 @@ describe("렌더 도달 (그렙이 못 보는 것)", () => {
 
     // 그런데 그 분기가 닫혀 있다. StageKanbanBoard 는 `useExecutionKanban` 이 거짓일 때만
     // 그려지는데(참이면 ExecutionKanbanBoard), 판정식이 `kanban && PROGRESS` 이고
-    // **CrmDashboard 의 두 호출부가 전부 lockedStageFilter="PROGRESS"** 라 칸반 모드에서는
+    // **CrmDashboard 의 앱 호출부가 전부 lockedStageFilter="PROGRESS"** 라 칸반 모드에서는
     // 항상 참이다 → StageColumn 은 오늘 렌더되지 않는다(실측 2026-07-30, dev 서버).
     // 그래도 색을 정렬해 두는 이유: 되살릴 때 purple 이 함께 되살아나면 안 되기 때문이다.
     expect(code(CRM_DASHBOARD)).toContain(
       'viewMode === "kanban" && effectiveStageFilter === "PROGRESS"',
     );
-    for (const rel of ["app/pipeline/page.tsx", "app/pipeline/tasks/page.tsx"]) {
+    for (const rel of ["app/pipeline/page.tsx"]) {
       expect(
         read(rel),
         `${rel} 의 stage 락이 풀렸다 — StageColumn/SubGroupDivider 가 살아났을 수 있다. ` +
           "칸반에서 세부상태 divider 칩의 실렌더(특히 CLOSED 의 중립 outline)를 눈으로 확인하라.",
       ).toContain('lockedStageFilter="PROGRESS"');
     }
-    // 호출부가 늘어나면 위 두 개만 보는 이 가드가 조용히 샌다 — 전수로 다시 센다.
+    // 호출부가 늘어나면 위 하나만 보는 이 가드가 조용히 샌다 — 전수로 다시 센다.
     // ⚠️ `src/app` 만 훑으면 `src/components` 등에서 여는 호출부를 놓쳐 이 가드가 막으려던
     // 누수가 그대로 재현된다(code-reviewer L1). `src/` 전체를 훑고, 경로 구분자를 POSIX 로
     // 정규화한다(Windows 에서 `pipeline\page.tsx` 로 나와 기대값과 어긋나던 문제).
@@ -148,11 +148,11 @@ describe("렌더 도달 (그렙이 못 보는 것)", () => {
       .filter((f) => read(f).includes("<CrmDashboard"))
       .sort();
 
-    // **앱** 호출부는 이 둘뿐이고 둘 다 락이 걸려 있다 = 프로덕션 도달 불가의 근거.
+    // **앱** 호출부는 `/pipeline` 하나뿐이고(`/pipeline/tasks` 는 2026-10-17 리다이렉트로 바뀌었다) 락이 걸려 있다 = 프로덕션 도달 불가의 근거.
     expect(
       allCallSites.filter((f) => !isTest(f)),
       "CrmDashboard 앱 호출부가 늘었다 — 새 호출부가 stage 락 없이 열렸다면 StageColumn 이 살아난다",
-    ).toEqual(["app/pipeline/page.tsx", "app/pipeline/tasks/page.tsx"]);
+    ).toEqual(["app/pipeline/page.tsx"]);
 
     // ⚠️ 다만 **테스트에서는 그려진다** — 이 통합 테스트가 락 없이 렌더하므로
     // `effectiveStageFilter` 가 URL 파라미터를 타고 PROGRESS 밖으로 갈 수 있다.

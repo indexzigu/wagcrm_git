@@ -1,9 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, cloneElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  KanbanIcon,
-  LayoutListIcon,
   PlusIcon,
   SearchIcon,
   TrendingUp,
@@ -52,66 +50,11 @@ import { StageKanbanBoard } from "./stage-kanban-board";
 import { GroupedTableView } from "./grouped-table-view";
 import { summarizePipelineMoney } from "@/lib/pipeline-money-summary";
 
-interface ViewSwitcherProps {
-  viewMode: "kanban" | "table" | "report";
-  onViewModeChange: (mode: "kanban" | "table" | "report") => void;
-  enableReportView?: boolean;
-}
-
-function ViewSwitcher({ viewMode, onViewModeChange, enableReportView }: ViewSwitcherProps) {
-  return (
-    <div
-      className="flex items-center rounded-2xl border border-border/70 bg-white/80 p-0.5 shadow-soft-sm"
-      role="group"
-      aria-label="뷰 전환"
-    >
-      <button
-        type="button"
-        onClick={() => onViewModeChange("kanban")}
-        aria-pressed={viewMode === "kanban"}
-        className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-[color,background-color,box-shadow] ${
-          viewMode === "kanban"
-            ? "bg-white shadow-soft-sm text-foreground"
-            : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
-        }`}
-        title="칸반 뷰"
-      >
-        <KanbanIcon className="size-3.5" />
-        <span>칸반</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => onViewModeChange("table")}
-        aria-pressed={viewMode === "table"}
-        className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-[color,background-color,box-shadow] ${
-          viewMode === "table"
-            ? "bg-white shadow-soft-sm text-foreground"
-            : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
-        }`}
-        title="테이블 뷰"
-      >
-        <LayoutListIcon className="size-3.5" />
-        <span>테이블</span>
-      </button>
-      {enableReportView && (
-        <button
-          type="button"
-          onClick={() => onViewModeChange("report")}
-          aria-pressed={viewMode === "report"}
-          className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-[color,background-color,box-shadow] ${
-            viewMode === "report"
-              ? "bg-white shadow-soft-sm text-foreground"
-              : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
-          }`}
-          title="리포트 뷰"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-line-chart"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-          <span>리포트</span>
-        </button>
-      )}
-    </div>
-  );
-}
+/** 보기 전환(칸반/테이블) — 셸 머리 가운데의 분할 버튼으로 그린다. 상태·저장은 useStageFilter 그대로. */
+const VIEW_MODE_OPTIONS = [
+  { value: "kanban", label: "칸반" },
+  { value: "table", label: "테이블" },
+] as const;
 
 /** 상태 변경 실패의 기본 문구 — 보드가 그대로 토스트로 띄운다. */
 const STATUS_CHANGE_ERROR = "상태 변경에 실패했습니다. 다시 시도해주세요.";
@@ -125,10 +68,6 @@ type CrmDashboardProps = {
   lockedStageFilter?: StageFilter;
   allowCreate?: boolean;
   createDefaultStatus?: CampaignStatus;
-  enableReportView?: boolean;
-  reportViewComponent?: React.ReactNode;
-  /** 모바일 전용(v3.2) — "진행 캠페인"(active) vs "업무 처리"(tasks) 뷰. 데스크탑 무영향. */
-  mobilePipelineMode?: "active" | "tasks";
 };
 
 export function CrmDashboard({
@@ -136,9 +75,6 @@ export function CrmDashboard({
   lockedStageFilter,
   allowCreate = true,
   createDefaultStatus: preferredCreateDefaultStatus,
-  enableReportView,
-  reportViewComponent,
-  mobilePipelineMode = "active",
 }: CrmDashboardProps) {
   const isMobile = useIsMobile();
   const [rows, setRows] = useState(initialData.campaigns);
@@ -391,9 +327,88 @@ export function CrmDashboard({
   // Render
   // ---------------------------------------------------------------------------
 
+  // 검색·조합 캠페인 — 단계 칩 줄 오른쪽, 실행 보드에선 보드 빠른 필터 줄 오른쪽에 붙는다(한 벌만 그린다).
+  const pipelineControls = (
+    <div className="ml-auto flex flex-wrap items-center gap-2">
+      {/* 실행 보드에선 적용 중 필터 줄을 보드 위에 따로 띄우지 않는다 — 검색을 치는 순간 그 줄이 생기며 보드와
+          검색칸이 아래로 밀렸다(실측 87px). 빈 결과 안내와 초기화는 검색칸 왼쪽에 붙여 검색칸 자리를 고정한다. */}
+      {useExecutionKanban && hasActiveFilters ? (
+        <>
+          {filteredRows.length === 0 ? (
+            <span className="text-xs text-muted-foreground">조건에 맞는 캠페인 없음</span>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 rounded-lg px-2 text-xs text-muted-foreground"
+            onClick={resetPipelineFilters}
+          >
+            필터 초기화
+          </Button>
+        </>
+      ) : null}
+      <InputGroup className="h-9 w-full rounded-lg border border-slate-200 bg-white shadow-soft-sm md:w-64">
+        <InputGroupAddon>
+          <SearchIcon />
+        </InputGroupAddon>
+        <InputGroupInput
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="캠페인, 셀러, 링크 검색"
+          aria-label="캠페인 검색"
+          className="h-full border-0 text-xs focus-visible:ring-0"
+        />
+      </InputGroup>
+      {allowCreate ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 rounded-lg border-primary/30 bg-white px-3.5 text-xs text-primary hover:bg-primary/5"
+          onClick={() => setComboOpen(true)}
+          title="한 셀러에게 여러 딜을 같은 기간으로 한 번에 올립니다."
+        >
+          <Boxes className="mr-1 size-3.5" />
+          조합 캠페인
+        </Button>
+      ) : null}
+    </div>
+  );
+  const showFilterRow = !lockedStageFilter || !useExecutionKanban;
+  const showOutOfFilterNotice = Boolean(panelOpen && selected && !selectedInFilteredRows);
+  const showActiveFilterRow = hasActiveFilters && !useExecutionKanban;
+  const showCardHead = showFilterRow || showActiveFilterRow || showOutOfFilterNotice;
+
   return (
     <>
-      <CrmShell variant="focus">
+      {/* 모바일 표면은 자체 머리를 쓴다(P5 UA 분기 유지) — 제목은 데스크톱에서만 CrmShell 머리에 올린다 */}
+      <CrmShell
+        variant="focus"
+        title={isMobile ? undefined : "판매 관리"}
+        description={isMobile ? undefined : "캠페인별 판매 진행과 오늘 처리할 일을 봅니다."}
+        segments={
+          isMobile
+            ? undefined
+            : {
+                options: VIEW_MODE_OPTIONS,
+                value: viewMode,
+                onValueChange: (value) => setViewMode(value === "table" ? "table" : "kanban"),
+                ariaLabel: "보기 전환",
+              }
+        }
+        actions={
+          !isMobile && allowCreate ? (
+            <Button
+              variant="default"
+              size="sm"
+              className="h-9 rounded-lg bg-primary px-3.5 text-xs text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95"
+              onClick={() => openCreationSheet(preferredCreateDefaultStatus)}
+            >
+              <PlusIcon className="mr-1 size-3.5" />
+              캠페인 등록
+            </Button>
+          ) : undefined
+        }
+      >
         {isMobile ? (
           <MobilePipelineView
             campaigns={filteredRows}
@@ -401,7 +416,6 @@ export function CrmDashboard({
             setStageFilter={setStageFilter}
             counts={stageFilterCounts}
             isStageLocked={Boolean(lockedStageFilter)}
-            mode={mobilePipelineMode}
             overdueReminders={initialData.actionRequiredCounts?.overdueReminders ?? 0}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
@@ -446,71 +460,25 @@ export function CrmDashboard({
                  <DataSourceBanner message={initialData.dataSourceMessage} />
                </div>
             ) : null}
-            <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h2 className="text-[15px] font-bold text-slate-900">판매 관리</h2>
-                    <p className="mt-0.5 text-xs font-medium text-slate-500">
-                      캠페인의 실제 판매 진행 상황과 지표를 관리합니다.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex w-full items-center gap-2 md:w-auto">
-                      <InputGroup className="h-9 w-full rounded-lg border border-slate-200 bg-white shadow-soft-sm md:w-64">
-                        <InputGroupAddon>
-                          <SearchIcon />
-                        </InputGroupAddon>
-                        <InputGroupInput
-                          value={searchQuery}
-                          onChange={(event) => setSearchQuery(event.target.value)}
-                          placeholder="캠페인, 셀러, 링크 검색"
-                          aria-label="캠페인 검색"
-                          className="h-full border-0 text-xs focus-visible:ring-0"
-                        />
-                      </InputGroup>
-                    </div>
-                    <ViewSwitcher
-                      viewMode={viewMode}
-                      onViewModeChange={setViewMode}
+            {showCardHead ? (
+            <div data-slot="pipeline-card-head" className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
+              {/* 단계 칩(왼쪽)과 검색·조합 캠페인(오른쪽)을 한 줄에 둔다. 제목·보기 전환·캠페인 등록은
+                  CrmShell 머리로 올렸다 — 종전의 조작 전용 줄은 빈 줄로 남아 지웠다. 실행 보드(진행·칸반)
+                  에선 검색·조합 캠페인이 보드의 빠른 필터 줄 오른쪽으로 가므로 이 줄을 그리지 않는다. */}
+              {showFilterRow ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {!lockedStageFilter ? (
+                    <StageFilterBar
+                      currentFilter={effectiveStageFilter}
+                      onFilterChange={setStageFilter}
+                      counts={stageFilterCounts}
                     />
-                    {allowCreate ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-9 rounded-lg border-primary/30 bg-white px-3.5 text-xs text-primary hover:bg-primary/5"
-                          onClick={() => setComboOpen(true)}
-                          title="한 셀러에게 여러 딜을 같은 기간으로 한 번에 올립니다."
-                        >
-                          <Boxes className="mr-1 size-3.5" />
-                          조합 캠페인
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="h-9 rounded-lg bg-primary px-3.5 text-xs text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95"
-                          onClick={() => openCreationSheet(preferredCreateDefaultStatus)}
-                        >
-                          <PlusIcon className="mr-1 size-3.5" />
-                          캠페인 등록
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
+                  ) : null}
+                  {useExecutionKanban ? null : pipelineControls}
                 </div>
-              </div>
-
-              {/* Stage Filter Bar */}
-              {!lockedStageFilter ? (
-                <StageFilterBar
-                  currentFilter={effectiveStageFilter}
-                  onFilterChange={setStageFilter}
-                  counts={stageFilterCounts}
-                />
               ) : null}
 
-              {hasActiveFilters ? (
+              {showActiveFilterRow ? (
                 <div className="flex flex-col gap-2 rounded-lg border border-border/80 bg-white/70 px-3.5 py-3 md:flex-row md:items-center md:justify-between">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {activeFilterLabels.map((label) => (
@@ -533,7 +501,7 @@ export function CrmDashboard({
                 </div>
               ) : null}
 
-              {panelOpen && selected && !selectedInFilteredRows ? (
+              {showOutOfFilterNotice ? (
                 <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-sm text-amber-950 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <div className="font-medium">현재 선택한 캠페인이 필터 결과 밖에 있습니다.</div>
@@ -562,9 +530,12 @@ export function CrmDashboard({
                 </div>
               ) : null}
             </div>
+            ) : null}
 
             {/* Main content area: Kanban or Table view */}
-            {filteredRows.length === 0 && hasActiveFilters ? (
+            {/* 실행 보드는 검색칸을 보드 안에 들고 있어 빈 결과에도 보드를 그대로 둔다 — 빈 안내로 바꾸면 입력 중인
+                검색칸이 사라졌다 다른 자리에 나타나 화면이 튄다. 초기화는 위 「전체 필터 초기화」 줄이 맡는다. */}
+            {filteredRows.length === 0 && hasActiveFilters && !useExecutionKanban ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#f8fafc] px-6 py-16 text-center">
                 <p className="text-sm text-muted-foreground">
                   필터 조건에 맞는 캠페인 없음
@@ -578,18 +549,6 @@ export function CrmDashboard({
                   전체 필터 초기화
                 </Button>
               </div>
-            ) : viewMode === "report" && enableReportView && reportViewComponent ? (
-              <div className="flex-1 overflow-auto bg-[#f8fafc]">
-                {cloneElement(reportViewComponent as React.ReactElement<{
-                  teamFilter: string | null;
-                  searchQuery: string;
-                  onRowOpenById: (id: string) => Promise<void>;
-                }>, {
-                  teamFilter,
-                  searchQuery,
-                  onRowOpenById: openCampaignById
-                })}
-              </div>
             ) : viewMode === "kanban" ? (
               <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc] p-4">
                 {useExecutionKanban ? (
@@ -600,6 +559,7 @@ export function CrmDashboard({
                     onRowDuplicate={duplicateCampaign}
                     onStatusChange={handleStatusChange}
                     onAddCampaign={allowCreate ? openCreationSheet : undefined}
+                    toolbarEnd={pipelineControls}
                   />
                 ) : (
                   <StageKanbanBoard

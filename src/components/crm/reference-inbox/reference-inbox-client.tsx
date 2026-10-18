@@ -469,18 +469,17 @@ export function ReferenceInboxClient() {
 
   return (
     <TooltipProvider delayDuration={300}>
+      {/* 제목은 메뉴 이름과 같은 문자열 하나(메뉴 이름 = 페이지 제목). 되돌아가기 링크는 머리 오른쪽 조작 자리. */}
       <CrmShell
-        title={
-          <div className="flex flex-col gap-1">
-            <Link
-              href="/assets"
-              className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeftIcon className="size-3.5" />
-              자료 목록
-            </Link>
-            <span>미분류 레퍼런스</span>
-          </div>
+        title="미분류 레퍼런스"
+        actions={
+          <Link
+            href="/assets/archive"
+            className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeftIcon className="size-3.5" />
+            캠페인 자료
+          </Link>
         }
         description="수집한 인스타/틱톡/유튜브 링크를 딜에 배정하거나 기각합니다."
       >

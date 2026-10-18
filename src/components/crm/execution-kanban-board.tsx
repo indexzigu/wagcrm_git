@@ -108,6 +108,8 @@ type ExecutionKanbanBoardProps = {
   onRowDuplicate: (campaign: CampaignRow) => void;
   onStatusChange: (campaignId: string, status: CampaignStatus) => Promise<void>;
   onAddCampaign?: (defaultStatus?: CampaignStatus) => void;
+  /** 빠른 필터 줄 오른쪽 끝에 붙이는 조작(판매 관리의 검색·조합 캠페인) — 보드 위에 조작만 담긴 줄을 따로 두지 않게. */
+  toolbarEnd?: React.ReactNode;
 };
 
 type QuickFilter = "ALL" | "TODAY" | "DELAYED" | "MISSING_SALES" | "CHECKLIST_PENDING";
@@ -390,6 +392,7 @@ export function ExecutionKanbanBoard({
   onRowDuplicate,
   onStatusChange,
   onAddCampaign,
+  toolbarEnd,
 }: ExecutionKanbanBoardProps) {
   const [localCampaigns, setLocalCampaigns] = React.useState<CampaignRow[]>(campaigns);
   const [showDropped, setShowDropped] = React.useState(false);
@@ -608,13 +611,16 @@ export function ExecutionKanbanBoard({
             </Button>
           ))}
         </div>
-        <Button
-          variant={showDropped ? "secondary" : "outline"}
-          size="sm"
-          onClick={() => setShowDropped((value) => !value)}
-        >
-          {showDropped ? "진행 중인 캠페인 보기" : "정산 및 종료 캠페인 보기"}
-        </Button>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {toolbarEnd}
+          <Button
+            variant={showDropped ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowDropped((value) => !value)}
+          >
+            {showDropped ? "진행 중인 캠페인 보기" : "정산 및 종료 캠페인 보기"}
+          </Button>
+        </div>
       </div>
       <DndContext
         // 안정적 id — dnd-kit이 aria-describedby(DndDescribedBy)를 모듈 카운터로 만들어

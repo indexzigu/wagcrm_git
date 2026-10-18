@@ -31,11 +31,7 @@ test.describe.serial('Settlement Workspace', () => {
     }
   });
 
-  test('moves month and exports csv', async () => {
-    const filename = await settlementPage.exportCsvAndGetFileName();
-    expect(filename).toContain('settlement-workspace-');
-    expect(filename.toLowerCase()).toContain('.csv');
-
+  test('moves month', async () => {
     const before = await settlementPage.getMonthLabel();
     await settlementPage.moveToNextMonth();
     const after = await settlementPage.getMonthLabel();

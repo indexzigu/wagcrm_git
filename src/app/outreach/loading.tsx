@@ -3,10 +3,7 @@ import { CrmShell } from "@/components/crm/crm-shell";
 
 export default function OutreachLoading() {
   return (
-    <CrmShell
-      title={<Skeleton className="h-6 w-32" />}
-      description=""
-    >
+    <CrmShell title="영업 관리" description="셀러별 영업 진행 상태와 리마인드 일정을 관리합니다.">
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           {/* Filters Bar Skeleton */}

@@ -15,8 +15,6 @@ import {
   ListTodo,
   CircleCheckBig,
   XCircle,
-  Kanban,
-  LayoutList,
   BellRing,
   Check,
   Upload,
@@ -139,6 +137,13 @@ const OUTREACH_ATTENTION_ITEMS: ReadonlyArray<{
     description: `제안·협의·테스트 중 ${RESPONSE_GAP_DAYS}일 이상 움직임이 없는 건(리마인드 건 제외)`,
   },
 ];
+
+
+/** 보기 전환(칸반/목록) — 셸 머리 가운데의 분할 버튼. */
+const OUTREACH_VIEW_OPTIONS = [
+  { value: "board", label: "칸반" },
+  { value: "table", label: "목록" },
+] as const;
 
 export default function OutreachPage() {
   const isMobile = useIsMobile();
@@ -653,7 +658,27 @@ export default function OutreachPage() {
           onStatusChange={handleStatusChange}
         />
       ) : (
-        <CrmShell>
+        <CrmShell
+          title="영업 관리"
+          description="셀러별 영업 진행 상태와 리마인드 일정을 관리합니다."
+          segments={{
+            options: OUTREACH_VIEW_OPTIONS,
+            value: viewMode,
+            onValueChange: (value) => setViewMode(value === "table" ? "table" : "board"),
+            ariaLabel: "보기 전환",
+          }}
+          actions={
+            <Button
+              variant="default"
+              size="sm"
+              className="rounded-lg bg-primary px-3.5 text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95 h-9 text-xs"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="mr-1.5 size-4" />
+              테스크 등록
+            </Button>
+          }
+        >
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
           {loading ? (
           <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
@@ -721,61 +746,16 @@ export default function OutreachPage() {
             {/* 카드 컨테이너 */}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
               <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
-                {/* Header Title & Controls */}
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h2 className="text-[15px] font-bold text-slate-900 dark:text-white">영업 관리</h2>
-                    <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                      셀러별 영업 진행 상태와 리마인드 일정을 관리합니다.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex w-full items-center gap-2 md:w-auto">
-                      <div className="relative w-full sm:w-64">
-                        <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-                        <Input
-                          placeholder="셀러, 딜, 거래처 검색..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="pl-9 h-9 w-full text-xs bg-white shadow-soft-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center rounded-2xl border border-border/70 bg-white/80 p-0.5 shadow-soft-sm">
-                        <button
-                          onClick={() => setViewMode("board")}
-                          className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-[color,background-color,box-shadow] ${
-                            viewMode === "board"
-                              ? "bg-white shadow-soft-sm text-foreground"
-                              : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
-                          }`}
-                        >
-                          <Kanban className="size-3.5" />
-                          <span>칸반</span>
-                        </button>
-                        <button
-                          onClick={() => setViewMode("table")}
-                          className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-[12px] font-medium transition-[color,background-color,box-shadow] ${
-                            viewMode === "table"
-                              ? "bg-white shadow-soft-sm text-foreground"
-                              : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
-                          }`}
-                        >
-                          <LayoutList className="size-3.5" />
-                          <span>목록</span>
-                        </button>
-                      </div>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="rounded-lg bg-primary px-3.5 text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95 h-9 text-xs"
-                        onClick={() => setCreateOpen(true)}
-                      >
-                        <Plus className="mr-1.5 size-4" />
-                        테스크 등록
-                      </Button>
-                    </div>
+                {/* 검색만 남은 줄 — 제목·보기 전환·테스크 등록은 CrmShell 머리로 올렸다(빈 칸 없이 오른쪽 정렬). */}
+                <div className="flex justify-end">
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
+                    <Input
+                      placeholder="셀러, 딜, 거래처 검색..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 h-9 w-full text-xs bg-white shadow-soft-sm"
+                    />
                   </div>
                 </div>
 

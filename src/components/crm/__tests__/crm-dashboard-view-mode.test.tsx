@@ -130,25 +130,75 @@ describe("CrmDashboard view mode switching", () => {
     localStorage.clear();
   });
 
-  it("renders view switcher buttons in header", () => {
-    render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
+  it("renders view switcher as CrmShell header segments", () => {
+    const { container } = render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
+    const header = container.querySelector("header") as HTMLElement;
 
-    expect(screen.getByRole("button", { name: "칸반" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "테이블" })).toBeInTheDocument();
+    const group = within(header).getByRole("radiogroup", { name: "보기 전환" });
+    expect(within(group).getByRole("radio", { name: "칸반" })).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: "테이블" })).toBeInTheDocument();
+  });
+
+  it("puts the primary 캠페인 등록 action in the header, not in the card row", () => {
+    const { container } = render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
+    const header = container.querySelector("header") as HTMLElement;
+    expect(within(header).getByRole("button", { name: "캠페인 등록" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "캠페인 등록" })).toHaveLength(1);
+  });
+
+  it("merges search and 조합 캠페인 into the stage filter row (no separate control row)", () => {
+    render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
+    const filterGroup = screen.getByRole("group", { name: "단계 필터" });
+    // 단계 칩과 검색·조합 캠페인이 **한 가로줄**(칩 왼쪽, 조작 오른쪽)이어야 한다 — 종전엔 조작만 담긴
+    // 별도 줄이 칩 위에 있었다(제목을 셸 머리로 올린 뒤 빈 줄로 남음).
+    const row = filterGroup.parentElement as HTMLElement;
+    expect(row.className).toContain("justify-between");
+    expect(row.className).not.toContain("flex-col");
+    expect(within(row).getByRole("textbox", { name: "캠페인 검색" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: /조합 캠페인/ })).toBeInTheDocument();
+  });
+
+  it("/pipeline(진행 고정·칸반): 검색·조합 캠페인은 실행 보드의 빠른 필터 줄 오른쪽에 붙고, 조작만 담긴 줄은 없다", () => {
+    mockStageFilter = "PROGRESS";
+    const { container } = render(
+      <CrmDashboard initialData={makeInitialData(sampleCampaigns)} lockedStageFilter="PROGRESS" />,
+    );
+    const quick = screen.getByRole("button", { name: /^전체 처리/ });
+    const toolbar = quick.parentElement!.parentElement as HTMLElement;
+    expect(within(toolbar).getByRole("textbox", { name: "캠페인 검색" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: /조합 캠페인/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("textbox", { name: "캠페인 검색" })).toHaveLength(1);
+    // 카드 머리의 조작 줄(border-b 묶음)이 비어 남지 않는다 — 필터가 없으면 아예 그리지 않는다.
+    expect(container.querySelector('[data-slot="pipeline-card-head"]')).toBeNull();
+  });
+
+  it("실행 보드에서 필터 결과가 비면 검색칸 왼쪽에 「조건에 맞는 캠페인 없음」·초기화를 붙이고, 보드 위에 새 줄을 띄우지 않는다", () => {
+    mockStageFilter = "PROGRESS";
+    mockSearchQuery = "존재하지않는검색어";
+    const { container } = render(
+      <CrmDashboard initialData={makeInitialData(sampleCampaigns)} lockedStageFilter="PROGRESS" />,
+    );
+    const quick = screen.getByRole("button", { name: /^전체 처리/ });
+    const toolbar = quick.parentElement!.parentElement as HTMLElement;
+    expect(within(toolbar).getByText("조건에 맞는 캠페인 없음")).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "필터 초기화" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("textbox", { name: "캠페인 검색" })).toBeInTheDocument();
+    // 검색을 치는 순간 보드 위에 적용 중 필터 줄이 생기면 보드·검색칸이 아래로 밀린다(화면 튐).
+    expect(container.querySelector('[data-slot="pipeline-card-head"]')).toBeNull();
   });
 
   it("defaults to kanban active state", () => {
     render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
 
-    expect(screen.getByRole("button", { name: "칸반" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "테이블" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("radio", { name: "칸반" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "테이블" })).toHaveAttribute("aria-checked", "false");
   });
 
   it("calls setViewMode('table') when table button is clicked", async () => {
     const user = userEvent.setup();
     render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
 
-    await user.click(screen.getByRole("button", { name: "테이블" }));
+    await user.click(screen.getByRole("radio", { name: "테이블" }));
     expect(mockSetViewMode).toHaveBeenCalledWith("table");
   });
 
@@ -157,7 +207,7 @@ describe("CrmDashboard view mode switching", () => {
     mockViewMode = "table";
     render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
 
-    await user.click(screen.getByRole("button", { name: "칸반" }));
+    await user.click(screen.getByRole("radio", { name: "칸반" }));
     expect(mockSetViewMode).toHaveBeenCalledWith("kanban");
   });
 
@@ -177,7 +227,7 @@ describe("CrmDashboard view mode switching", () => {
     mockSearchQuery = "셀러";
 
     render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
-    await user.click(screen.getByRole("button", { name: "테이블" }));
+    await user.click(screen.getByRole("radio", { name: "테이블" }));
 
     expect(mockSetStageFilter).not.toHaveBeenCalled();
     expect(mockSetTeamFilter).not.toHaveBeenCalled();
