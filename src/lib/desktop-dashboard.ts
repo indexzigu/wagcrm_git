@@ -429,7 +429,8 @@ export async function getDesktopDashboardData(now = new Date()) {
     };
   });
 
-  // 캠페인 "개수" 지표는 유효 캠페인 기준(그룹 = 멤버 포락선 1건, 오너 확정 2026-07-30).
+  // 캠페인 "개수" 지표는 유효 캠페인 기준(그룹 = 멤버 포락선 1건, 오너 확정 2026-07-30)이고, 금액 지표와
+  // 같이 드랍을 뺀 `countedCampaigns` 에서 만든다(오너 2026-10-17).
   // 매출·마진 합산은 계속 행(멤버) 단위다 — actualSales가 딜 고유 값이라 병합 금지(CG-1).
   // allocateCampaignToMonth는 창 밖이면 weight 0을 돌려주므로 월 필터 없이 전량 reduce한다.
   const effectivePeriods = buildEffectiveCampaignPeriods(countedCampaigns);
@@ -457,50 +458,10 @@ export async function getDesktopDashboardData(now = new Date()) {
     (sum, period) => sum + allocateCampaignToMonth(period, prevMonth).operatingDays,
     0,
   );
-  const latestActiveMonth = [...campaigns]
+  // 가장 최근에 매출이 난 캠페인 — 다른 지표와 같이 드랍 제외 목록에서 고른다.
+  const latestActiveMonth = [...countedCampaigns]
     .filter((campaign) => campaignSales(campaign) > 0)
     .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())[0];
-  // 셀러 베이스 모멘텀 — 관계 기반 매출 근원의 성장/이탈 선행지표. 추가 쿼리 없이 campaigns 이력에서 산출.
-  const oneEightyDaysAgo = new Date(now.getTime() - 180 * DAY_MS);
-  const curMonthStart = startOfMonth(selectedMonth);
-  const sellerStartTimes = new Map<string, { times: number[]; name: string; alias: string | null }>();
-  for (const campaign of countedCampaigns) {
-    if (!campaign.sellerId) continue;
-    const entry = sellerStartTimes.get(campaign.sellerId);
-    if (entry) entry.times.push(campaign.startDate.getTime());
-    else
-      sellerStartTimes.set(campaign.sellerId, {
-        times: [campaign.startDate.getTime()],
-        name: campaign.seller.name,
-        alias: campaign.seller.alias,
-      });
-  }
-  let activeSellers = 0;
-  let prevActiveSellers = 0;
-  let newSellersThisMonth = 0;
-  // 휴면 셀러 목록 — 대시보드 "재계약 검토" 팝업에서 페이지 이동 없이 대상 확인(오너 2026-07-24).
-  // 최근 이탈 순 정렬: 가장 최근까지 활동한 셀러가 재계약 성사 확률이 높아 검토 우선순위가 된다.
-  const dormantSellerList: Array<{ id: string; name: string; lastCampaignAt: string }> = [];
-  for (const [sellerId, entry] of sellerStartTimes.entries()) {
-    const { times } = entry;
-    const maxTime = Math.max(...times);
-    const minTime = Math.min(...times);
-    const hasRecent = times.some((t) => t >= ninetyDaysAgo.getTime() && t <= now.getTime());
-    const hasPrevWindow = times.some((t) => t >= oneEightyDaysAgo.getTime() && t < ninetyDaysAgo.getTime());
-    if (hasRecent) activeSellers += 1;
-    if (hasPrevWindow) prevActiveSellers += 1;
-    // 신규 = 첫 캠페인이 이번 달(실제 활성화 기준 — 온보딩/대량 발굴 유입 노이즈 배제)
-    if (minTime >= curMonthStart.getTime() && minTime <= now.getTime()) newSellersThisMonth += 1;
-    // 휴면 = 과거 캠페인은 있으나 최근 90일 활동 없음(재계약 대상). 표기명은 별칭 우선(P2).
-    if (!hasRecent && maxTime < ninetyDaysAgo.getTime()) {
-      dormantSellerList.push({
-        id: sellerId,
-        name: entry.alias && entry.alias.trim() !== "" ? entry.alias : entry.name,
-        lastCampaignAt: new Date(maxTime).toISOString(),
-      });
-    }
-  }
-  dormantSellerList.sort((a, b) => b.lastCampaignAt.localeCompare(a.lastCampaignAt));
 
   return {
     selectedMonth,
@@ -525,16 +486,8 @@ export async function getDesktopDashboardData(now = new Date()) {
       prevOperatingDays,
       prevPrevWeightedCampaignCount,
     },
-    // 셀러 베이스 모멘텀 — 활성/신규/휴면/순증감(최근 90일 vs 직전 90일 활성 셀러 차)
-    sellerMomentum: {
-      active: activeSellers,
-      newThisMonth: newSellersThisMonth,
-      dormant: dormantSellerList.length,
-      dormantList: dormantSellerList,
-      netChange: activeSellers - prevActiveSellers,
-    },
     // 확정 손익(정산 완료 후행 지표)은 실시간 현황판에서 제외 — 손익 리포트(/reports/pnl)가 담당.
-    // 매출·순마진은 상태를 거르지 않는다: 판매진행·판매마감·정산대기·정산진행중도 포함한다.
+    // 매출·순마진은 드랍만 뺀다(`isCountedForDashboard`): 판매진행·판매마감·정산대기·정산진행중은 포함한다.
     profitability: {
       expectedMargin: selectedCampaigns.reduce(
         (sum, campaign) => sum + campaignNetMargin(campaign),
@@ -579,12 +532,11 @@ export async function getDesktopDashboardData(now = new Date()) {
           (sum, campaign) => sum + campaignNetMargin(campaign),
           0,
         ),
-        // KPI 스파크라인·모멘텀 미니차트용 — 월 환산 캠페인 수(유효 기준), 해당 월 활성(캠페인 보유) 셀러 수
+        // KPI 스파크라인용 — 월 환산 캠페인 수(유효 기준, 드랍 제외)
         campaignCount: effectivePeriods.reduce(
           (sum, period) => sum + allocateCampaignToMonth(period, key).weightedCampaignCount,
           0,
         ),
-        activeSellers: new Set(inMonth.map((campaign) => campaign.sellerId).filter(Boolean)).size,
         goal: goals.find((goal) => goal.periodKey === key)?.revenueTarget
           ? numberValue(goals.find((goal) => goal.periodKey === key)?.revenueTarget)
           : null,

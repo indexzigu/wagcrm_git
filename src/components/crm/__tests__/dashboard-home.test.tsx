@@ -84,16 +84,6 @@ function data(overrides: Partial<DesktopDashboardData> = {}): DesktopDashboardDa
       { month: "2024-06", ytd: 450000000 }
     ],
     scale: { weightedCampaignCount: 0.4, operatingDays: 4, prevWeightedCampaignCount: 0, prevOperatingDays: 0, prevPrevWeightedCampaignCount: 0 },
-    sellerMomentum: {
-      active: 3,
-      newThisMonth: 1,
-      dormant: 2,
-      dormantList: [
-        { id: "seller-a", name: "휴면셀러A", lastCampaignAt: "2026-02-10T00:00:00.000Z" },
-        { id: "seller-b", name: "휴면셀러B", lastCampaignAt: "2026-01-05T00:00:00.000Z" },
-      ],
-      netChange: 1,
-    },
     profitability: { expectedMargin: 0, prevExpectedMargin: 0, prevPrevExpectedMargin: 0 },
     exceptions: { overdueReminders: 23, pendingApprovals: 8 },
     outreach90d: { total: 2, responded: 2, confirmed: 1, converted: 1 },
@@ -135,7 +125,6 @@ function trend6(): DesktopDashboardData["trend"] {
     revenue: (i + 1) * 1000000,
     expectedMargin: (i + 1) * 100000,
     campaignCount: i + 1,
-    activeSellers: i,
     goal: null,
   }));
 }

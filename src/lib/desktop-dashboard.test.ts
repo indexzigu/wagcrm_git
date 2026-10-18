@@ -178,11 +178,33 @@ describe("getDesktopDashboardData — 정산 전 상태의 매출·순마진", (
     expect(data.goals.monthActual).toBe(500_000);
     expect(data.goals.ytdActual).toBe(500_000);
     expect(data.profitability.expectedMargin).toBe(50_000);
-    expect(data.trend.at(-1)).toMatchObject({ month: "2026-09", revenue: 500_000, expectedMargin: 50_000, activeSellers: 1 });
+    expect(data.trend.at(-1)).toMatchObject({ month: "2026-09", revenue: 500_000, expectedMargin: 50_000 });
     expect(data.yearlyTrend.at(-1)).toMatchObject({ month: "2026-09", revenue: 500_000, expectedMargin: 50_000 });
   });
 
-  it("개수 지표(운영일·가중 캠페인 수·활성 셀러)도 현재·전월·전전월 모두 드랍을 뺀다", async () => {
+  it("가장 최근 매출 캠페인(latestActiveMonth)도 드랍을 건너뛴다", async () => {
+    campaignRows.push(
+      campaignRow({
+        status: "ACTIVE",
+        actualSales: 500_000,
+        startDate: new Date("2026-08-01T00:00:00.000Z"),
+        endDate: new Date("2026-08-10T00:00:00.000Z"),
+      }),
+      // 더 늦게 시작했지만 드랍 — 고르면 진행되지 않은 캠페인이 "최근 매출"로 뜬다.
+      campaignRow({
+        status: "DROPPED",
+        actualSales: 900_000,
+        startDate: new Date("2026-09-01T00:00:00.000Z"),
+        endDate: new Date("2026-09-10T00:00:00.000Z"),
+      }),
+    );
+
+    const data = await getDesktopDashboardData(new Date("2026-09-15T00:00:00.000Z"));
+
+    expect(data.latestActiveMonth).toEqual({ month: "2026-08", revenue: 500_000 });
+  });
+
+  it("개수 지표(운영일·가중 캠페인 수)도 현재·전월·전전월 모두 드랍을 뺀다", async () => {
     const span = {
       startDate: new Date("2026-07-01T00:00:00.000Z"),
       endDate: new Date("2026-09-30T00:00:00.000Z"),
@@ -200,9 +222,7 @@ describe("getDesktopDashboardData — 정산 전 상태의 매출·순마진", (
     expect(data.scale.weightedCampaignCount).toBeCloseTo(30 / 92, 10);
     expect(data.scale.prevWeightedCampaignCount).toBeCloseTo(31 / 92, 10);
     expect(data.scale.prevPrevWeightedCampaignCount).toBeCloseTo(31 / 92, 10);
-    expect(data.sellerMomentum.active).toBe(1);
     const byMonth = Object.fromEntries(data.trend.map((point) => [point.month, point]));
-    expect(byMonth["2026-09"]).toMatchObject({ activeSellers: 1 });
     expect(byMonth["2026-09"]!.campaignCount).toBeCloseTo(30 / 92, 10);
     expect(byMonth["2026-08"]!.campaignCount).toBeCloseTo(31 / 92, 10);
     expect(byMonth["2026-07"]!.campaignCount).toBeCloseTo(31 / 92, 10);
