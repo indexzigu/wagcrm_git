@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { EXECUTION_CHECKLIST_GROUPS } from "@/lib/campaign-checklist";
+import { canonicalChecklistLabel, EXECUTION_CHECKLIST_GROUPS } from "@/lib/campaign-checklist";
 import { campaignStatusLabels, type CampaignStatus } from "@/lib/crm-types";
 import { formatDate } from "@/lib/format";
 
@@ -181,7 +181,7 @@ function groupChecklistItems(
   const groups: Array<{ title: string; items: CampaignTaskChecklistItem[] }> = groupConfig
     .map((group) => {
       const labelsArray: string[] = [...group.items];
-      const groupItems = items.filter((item) => labelsArray.includes(item.label));
+      const groupItems = items.filter((item) => labelsArray.includes(canonicalChecklistLabel(item.label)));
       for (const item of groupItems) {
         remaining.delete(item.id);
       }
@@ -237,7 +237,7 @@ function ChecklistRow({
         checked={optimisticChecked}
         onChange={() => void handleToggle()}
         className="mt-0.5 size-4 rounded border-input accent-primary"
-        aria-label={item.label}
+        aria-label={canonicalChecklistLabel(item.label)}
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -248,7 +248,7 @@ function ChecklistRow({
                 : "text-foreground"
             }`}
           >
-            {item.label}
+            {canonicalChecklistLabel(item.label)}
           </span>
           {item.isRequired ? (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">

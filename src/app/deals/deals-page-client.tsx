@@ -362,7 +362,7 @@ export function DealsPageClient({
         {/* New Deal Registration Dialog */}
         <Dialog open={newDealDialogOpen} onOpenChange={setNewDealDialogOpen}>
           <FormDialogFrame
-            title="신규 판매 조건 등록"
+            title="신규 판매 조건"
             description="거래처 제안에 대한 판매 조건을 빠르게 등록합니다."
           >
             <DealCreationForm

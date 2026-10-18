@@ -200,7 +200,7 @@ describe("주문 관리 모달 — 아이콘 버튼·라벨·매핑 표 입력�
     expect(screen.getByLabelText("참조 이메일 주소")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "1행 상품명" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "1행 단가" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "1행 캠페인(판매 조건)" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "1행 캠페인" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "1행 삭제" })).toBeInTheDocument();
   });
 

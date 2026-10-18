@@ -463,7 +463,7 @@ export default function CampaignEditModal({
                         <th className="px-2 py-2 font-bold">옵션명</th>
                         <th className="px-2 py-2 font-bold w-[14%]">상품코드</th>
                         <th className="px-2 py-2 font-bold w-20">단가</th>
-                        <th className="px-2 py-2 font-bold w-[28%]">캠페인(판매 조건)</th>
+                        <th className="px-2 py-2 font-bold w-[28%]">캠페인</th>
                         <th className="px-2 py-2 font-bold w-10 text-center">삭제</th>
                       </tr>
                     </thead>
@@ -519,7 +519,7 @@ export default function CampaignEditModal({
                                       newM[idx] = { ...newM[idx], campaignDealId: e.target.value || null };
                                       setEditMappings(newM);
                                     }}
-                                    aria-label={`${idx + 1}행 캠페인(판매 조건)`}
+                                    aria-label={`${idx + 1}행 캠페인`}
                                     aria-describedby={priceMismatch ? `price-check-${idx}` : undefined}
                                     className={`w-full border rounded-lg pl-1.5 pr-2 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-ellipsis ${m.campaignDealId ? 'border-green-300 bg-green-50 text-green-700 font-bold' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
                                   >

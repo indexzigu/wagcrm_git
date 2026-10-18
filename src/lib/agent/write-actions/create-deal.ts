@@ -85,7 +85,7 @@ async function resolveDealPartner(
     // argsSchema의 「둘 중 정확히 하나」가 이미 막는다. 스키마가 느슨해져도 거래처 없는 딜이
     // 서지 않도록 실행기에서도 닫는다.
     throw new Error(
-      "딜을 만들 거래처가 지정되지 않았습니다 (partnerId 또는 partner 중 하나가 필요합니다)."
+      "판매 조건을 만들 거래처가 지정되지 않았습니다 (partnerId 또는 partner 중 하나가 필요합니다)."
     );
   }
 
@@ -195,7 +195,7 @@ async function handleCreateDeal(
     refType: "DEAL",
     refId: parentDeal.id,
     summary:
-      `딜 "${main.dealName}" 등록 (거래처 ${partner.name}${args.partnerId ? "" : " 신규 등록"})` +
+      `판매 조건 "${main.dealName}" 등록 (거래처 ${partner.name}${args.partnerId ? "" : " 신규 등록"})` +
       (options.length > 0 ? `, 옵션 ${options.length}건` : ""),
   };
 }

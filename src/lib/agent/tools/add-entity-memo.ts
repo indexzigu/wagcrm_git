@@ -19,7 +19,7 @@ export type AddEntityMemoData = {
 const ENTITY_TYPE_LABELS: Record<(typeof ENTITY_TYPES)[number], string> = {
   PARTNER: "거래처",
   SELLER: "셀러",
-  DEAL: "딜",
+  DEAL: "판매 조건",
   CAMPAIGN: "캠페인",
 };
 

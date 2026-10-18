@@ -69,6 +69,9 @@ const MONEY_EXEMPT_PATHS = ["components/portal/", "app/[slug]/", "app/p/"];
 /**
  * 옛 대상 이름(`oldEntityTerm`) 검사에서 통째로 빼는 파일·폴더 → 사유. **사유 없이 늘리지 말 것.**
  * 한 파일 안에 화면 문구와 지시문이 섞여 있으면 여기 말고 `EXCEPTIONS` 에 문구 단위로 둔다.
+ * 봇 기안 처리(`lib/agent/write-actions/` 등)는 요약·실패 사유가 결재함·활동 기록에 저장돼 보이므로
+ * **검사 대상이다.** 🪤 `lib/agent/tools/` 는 `PROMPT_DIRS` 로 모든 규칙에서 빠져 있어, 그 안의 기안
+ * 요약(`summary`)·대상 라벨 표는 기계가 못 본다(2026-10-18 손으로 고침 — 도구 설명문과 섞여 있어서).
  */
 export const ENTITY_TERM_EXEMPT_PATHS: Readonly<Record<string, string>> = {
   "components/portal/": "셀러 포털 — 셀러가 보는 표면이라 오너 화면 낱말 결정의 대상이 아니다(2026-10-18 실측 0건).",
@@ -77,8 +80,6 @@ export const ENTITY_TERM_EXEMPT_PATHS: Readonly<Record<string, string>> = {
   "lib/content-guide.ts": "콘텐츠 가이드 생성 모델에 주는 지시문 묶음이다(화면 글자가 아니다 — 바꾸면 모델 출력이 바뀐다).",
   "app/api/deals/extract-info/route.ts": "최저가 검색어 추출 모델에 주는 지시문이다.",
   "app/api/outreach/generate-message/route.ts": "제안 메시지 초안 생성 모델에 주는 지시문이다.",
-  "lib/agent/":
-    "봇(도구 스키마·기안 처리·봇 답장) 영역 — 이번 낱말 통일 범위 밖(2026-10-18 지시). ⚠️ 기안 처리(`write-actions/`)의 요약·오류 문구는 결재함·활동 기록에 보일 수 있어 후속 작업에서 이 줄을 좁힌다.",
 };
 
 const DEV_WORD_PATTERN = buildDevWordPattern(Object.keys(DEV_WORDS));
@@ -336,6 +337,8 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
     "자동 매핑 디버그 로그(파일 기록)다 — 화면 글자가 아니다.",
   "oldEntityTerm | lib/order-converter/mapping-service.ts | ⛔ REJECTED: 최종 딜 연결이 서로 다른 셀러 곳을 가리킵니다. 전체 거부(쓰기 0건).":
     "자동 매핑 디버그 로그(파일 기록)다 — 화면 글자가 아니다. 화면에 가는 거부 문구는 `CROSS_SELLER_REJECT_MESSAGE`(lib/cross-seller.ts)다.",
+  "oldEntityTerm | lib/campaign-checklist.ts | 기본 딜 조건 확인":
+    "은퇴 라벨 앵커 — 화면 글자 아님. 옛 템플릿을 끄는 은퇴 목록과, 이미 만들어진 체크리스트 행을 새 이름으로 읽는 별칭 표의 키다(`CHECKLIST_LABEL_ALIASES`).",
   "oldEntityTerm | lib/order-converter/voc-insight.ts | 딜(상품):":
     "문의·리뷰 요약 모델에 주는 지시문 줄이다(화면 글자가 아니다).",
   "devWord | app/privacy/page.tsx | 캠페인 운영을 위해 거래처, 셀러 SNS 핸들, 공개 팔로워 지표, 마케팅 링크 파라미터, 전환 이벤트 및 관리자 운영 로그를 저장합니다.":
@@ -384,11 +387,11 @@ describe("화면 문구 기준 (AST 전역 스캔)", () => {
     ]);
   });
 
-  it("음성 — 새 이름·다른 낱말(딜러)·주석·console·포털·지시문 파일은 잡지 않는다", () => {
+  it("음성 — 새 이름·다른 낱말(딜러·딜레이·딜레마·딜리버리)·주석·console·포털·지시문 파일은 잡지 않는다", () => {
     const src = [
       `// 딜 목록을 그린다`,
       "console.warn(`[x] 딜 ${1} 해석 실패`);",
-      `const C = () => <><h1>판매 조건 목록</h1><p>딜러 할인 · 딜레이 없음</p></>;`,
+      `const C = () => <><h1>판매 조건 목록</h1><p>딜러 할인 · 딜레이 없음</p><p>딜레마에 빠짐</p><i title="딜리버리 일정" /></>;`,
     ].join("\n");
     expect(findCopyIssues(src, "components/crm/x.tsx")).toEqual([]);
     const old = `const C = () => <span>딜 정보</span>;`;

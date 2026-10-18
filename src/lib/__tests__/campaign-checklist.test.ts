@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CAMPAIGN_STATUS_ORDER,
+  canonicalChecklistLabel,
+  ensureDefaultChecklistTemplates,
+  EXECUTION_CHECKLIST_GROUPS,
   getNextCampaignStatus,
   getWorkspaceStatuses,
   isSellerInvoiceLabel,
@@ -683,5 +686,56 @@ describe("setChecklistItemChecked — 월정산 공급사 계산서는 체크리
     });
     await setChecklistItemChecked(plain.prisma, "p-invoice", true);
     expect(plain.campaignStates.get("p")?.supplierInvoiceIssuedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("기본 템플릿 개명 — 「기본 딜 조건 확인」 → 「기본 판매 조건 확인」(2026-10-18)", () => {
+  function fakeTemplateDb(seed: Array<{ status: string; label: string; isActive: boolean }>) {
+    const rows = seed.map((r, i) => ({ id: `t${i}`, sortOrder: 0, isRequired: true, ...r }));
+    const db = {
+      campaignChecklistTemplate: {
+        upsert: async ({ where, create, update }: {
+          where: { status_label: { status: string; label: string } };
+          create: Record<string, unknown>;
+          update: Record<string, unknown>;
+        }) => {
+          const { status, label } = where.status_label;
+          const found = rows.find((r) => r.status === status && r.label === label);
+          if (found) Object.assign(found, update);
+          else rows.push({ id: `t${rows.length}`, ...(create as { status: string; label: string; isActive: boolean; sortOrder: number; isRequired: boolean }) });
+          return found;
+        },
+        updateMany: async ({ where, data }: {
+          where: { status: string; label: string; isActive?: boolean };
+          data: { isActive: boolean };
+        }) => {
+          const hit = rows.filter((r) => r.status === where.status && r.label === where.label && (where.isActive === undefined || r.isActive === where.isActive));
+          for (const r of hit) r.isActive = data.isActive;
+          return { count: hit.length };
+        },
+      },
+    };
+    return { rows, db: db as unknown as Parameters<typeof ensureDefaultChecklistTemplates>[0] };
+  }
+
+  it("옛 라벨 템플릿을 끄고 새 라벨만 활성으로 남긴다 — 준비 단계 캠페인이 둘 다 받지 않는다", async () => {
+    const { rows, db } = fakeTemplateDb([{ status: "PREPARATION", label: "기본 딜 조건 확인", isActive: true }]);
+    await ensureDefaultChecklistTemplates(db);
+    const prep = rows.filter((r) => r.status === "PREPARATION");
+    expect(prep.find((r) => r.label === "기본 딜 조건 확인")?.isActive).toBe(false);
+    expect(prep.find((r) => r.label === "기본 판매 조건 확인")?.isActive).toBe(true);
+    expect(prep.filter((r) => r.isActive).map((r) => r.label)).not.toContain("기본 딜 조건 확인");
+  });
+
+  it("이미 만들어진 옛 라벨 항목은 새 이름으로 읽혀 원래 그룹에 들어간다", () => {
+    expect(canonicalChecklistLabel("기본 딜 조건 확인")).toBe("기본 판매 조건 확인");
+    expect(canonicalChecklistLabel("행사 일정 확정")).toBe("행사 일정 확정");
+    const group = EXECUTION_CHECKLIST_GROUPS.PREPARATION.find((g) => g.title === "일정/조건 확정");
+    expect([...(group?.items ?? [])]).toContain(canonicalChecklistLabel("기본 딜 조건 확인"));
+  });
+
+  it("다음 작업 안내도 새 이름으로 낸다", () => {
+    const summary = summarizeChecklist([{ ...item("a", "PREPARATION", false, true), label: "기본 딜 조건 확인" }], "PREPARATION");
+    expect(summary.nextItemLabel).toBe("기본 판매 조건 확인");
   });
 });

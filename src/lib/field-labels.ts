@@ -87,7 +87,7 @@ export const FIELD_LABELS: Record<string, string> = {
   // 아래는 화면에 입력칸이 없다(가격표·옵션 구성 경로에서만 바뀐다).
   brokerageCommissionRate: "중개수수료율",
   parentDealId: "상위 판매 조건",
-  dealType: "판매 조건 구분",
+  dealType: "판매 조건 유형",
   optionSortOrder: "옵션 순서",
   baseMarginPolicy: "기본 마진 정책",
   sourcingMemo: "소싱 메모",

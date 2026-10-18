@@ -39,7 +39,7 @@ describe("create_deal 도구 — intent만 반환, 쓰기 없음", () => {
       targetEntityType: "PARTNER",
       targetEntityId: "partner-1",
     });
-    expect(result.data.writeIntent.summary).toBe('딜 "샤인머스캣 1kg" 등록 (기존 거래처 partner-1)');
+    expect(result.data.writeIntent.summary).toBe('판매 조건 "샤인머스캣 1kg" 등록 (기존 거래처 partner-1)');
 
     expect(recordActivityCreateMock).not.toHaveBeenCalled();
     expect(getPrismaMock).not.toHaveBeenCalled();
@@ -56,7 +56,7 @@ describe("create_deal 도구 — intent만 반환, 쓰기 없음", () => {
     if (!result.ok) throw new Error("expected ok");
     expect(result.data.writeIntent).toMatchObject({ targetEntityType: null, targetEntityId: null });
     expect(result.data.writeIntent.summary).toBe(
-      '딜 "샤인머스캣 1kg" 등록 (거래처 "위엄식품" 신규 등록), 옵션 3건'
+      '판매 조건 "샤인머스캣 1kg" 등록 (거래처 "위엄식품" 신규 등록), 옵션 3건'
     );
   });
 

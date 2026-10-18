@@ -200,7 +200,7 @@ export function DealsManagement({
                 onClick={() => setNewDealSheetOpen(true)}
               >
                 <PlusIcon data-icon="inline-start" className="size-3.5 mr-1" />
-                신규 판매 조건 등록
+                판매 조건 추가
               </Button>
             </div>
           </section>
@@ -252,7 +252,7 @@ export function DealsManagement({
     {/* New Deal Registration Dialog */}
     <Dialog open={newDealSheetOpen} onOpenChange={setNewDealSheetOpen}>
       <FormDialogFrame
-        title="신규 판매 조건 등록"
+        title="신규 판매 조건"
         description="거래처 제안에 대한 판매 조건을 빠르게 등록합니다."
       >
         <DealCreationForm

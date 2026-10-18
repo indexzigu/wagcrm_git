@@ -236,7 +236,8 @@ export function summarizeChecklist(
     totalCount: currentItems.length,
     requiredCheckedCount,
     requiredTotalCount: requiredItems.length,
-    nextItemLabel: nextItem?.label ?? null,
+    // 화면 문구라 개명된 옛 라벨은 새 이름으로 낸다(`CHECKLIST_LABEL_ALIASES`).
+    nextItemLabel: nextItem ? canonicalChecklistLabel(nextItem.label) : null,
     isComplete:
       requiredItems.length > 0 &&
       requiredItems.every((item) => item.isChecked),
@@ -262,7 +263,24 @@ const RETIRED_CHECKLIST_TEMPLATE_LABELS: ReadonlyArray<{ status: CampaignStatus;
   // 2026-08-25 — 채널 중립 문구로 개명(「몰 정산금 …」 → 「정산금 …」).
   { status: "SETTLEMENT_WAIT", label: "몰 정산금 입금 예정일 확인" },
   { status: "SETTLEMENT_WAIT", label: "몰 정산금 입금 여부 확인" },
+  // 2026-10-18 — 대상 이름 「딜」 → 「판매 조건」 통일(「기본 딜 조건 확인」 → 「기본 판매 조건 확인」).
+  { status: "PREPARATION", label: "기본 딜 조건 확인" },
 ];
+
+/**
+ * 개명된 기본 라벨의 **옛 글자 → 새 글자**. 은퇴(위 목록)는 템플릿만 끄므로, 이미 만들어진
+ * `CampaignChecklistItem` 행에는 옛 글자가 저장돼 있다. 화면은 이 표로 그 행을 새 이름 그룹
+ * (`EXECUTION_CHECKLIST_GROUPS`)에 넣고 새 이름으로 보인다 — 저장값은 바꾸지 않는다(DB 갱신은 오너 결정).
+ * 라벨을 개명할 때 은퇴 목록과 **함께** 여기에도 한 줄 더한다.
+ */
+export const CHECKLIST_LABEL_ALIASES: Readonly<Record<string, string>> = {
+  "기본 딜 조건 확인": "기본 판매 조건 확인", // 2026-10-18
+};
+
+/** 체크리스트 항목의 화면 이름 — 옛 라벨이면 새 라벨로, 아니면 그대로. */
+export function canonicalChecklistLabel(label: string): string {
+  return Object.hasOwn(CHECKLIST_LABEL_ALIASES, label) ? CHECKLIST_LABEL_ALIASES[label] : label;
+}
 
 export async function ensureDefaultChecklistTemplates(prisma: ChecklistDb) {
   for (const status of CAMPAIGN_STATUS_ORDER) {

@@ -33,7 +33,7 @@ async function execute(input: ChangeDealStatusInput): Promise<ToolResult<ChangeD
   const writeIntent: WriteIntent = {
     action: "change_deal_status",
     args: { dealId, newStatus },
-    summary: `딜(${dealId})의 상태를 ${newStatus}(으)로 변경`,
+    summary: `판매 조건(${dealId})의 상태를 ${newStatus}(으)로 변경`,
     targetEntityType: "DEAL",
     targetEntityId: dealId,
   };

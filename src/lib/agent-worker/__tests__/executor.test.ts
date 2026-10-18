@@ -1393,7 +1393,7 @@ describe("create_action_proposal", () => {
       data: expect.objectContaining({
         targetEntityType: null,
         targetEntityId: null,
-        resultSummary: '딜 "샤인머스캣 1kg" 등록 (거래처 "위엄식품" 신규 등록), 옵션 2건',
+        resultSummary: '판매 조건 "샤인머스캣 1kg" 등록 (거래처 "위엄식품" 신규 등록), 옵션 2건',
       }),
     });
     expect(outcome).toMatchObject({ kind: "terminal", toStatus: "NEEDS_APPROVAL" });
