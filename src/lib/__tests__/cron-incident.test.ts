@@ -4,7 +4,12 @@ vi.mock("@/lib/prisma", () => ({
   getPrisma: vi.fn(),
 }));
 
+vi.mock("@/lib/prisma-client", () => ({
+  isRemoteDatabaseUrl: vi.fn(() => true),
+}));
+
 import { getPrisma } from "@/lib/prisma";
+import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 import {
   incidentSignature,
   normalizeIncidentMessage,
@@ -16,14 +21,22 @@ const findFirst = vi.fn();
 const create = vi.fn();
 const update = vi.fn();
 const updateMany = vi.fn();
+const executeRaw = vi.fn();
+const transaction = vi.fn();
 
 beforeEach(() => {
   findFirst.mockReset();
   create.mockReset().mockResolvedValue({ id: "new1" });
   update.mockReset().mockResolvedValue({ id: "old1" });
   updateMany.mockReset().mockResolvedValue({ count: 2 });
+  executeRaw.mockReset().mockResolvedValue(1);
+  vi.mocked(isRemoteDatabaseUrl).mockReturnValue(true);
+  const tx = { cronIncident: { findFirst, create, update, updateMany }, $executeRaw: executeRaw };
+  // 트랜잭션 클라이언트와 평소 클라이언트를 같은 mock 으로 묶어 기존 단언을 그대로 쓴다.
+  transaction.mockReset().mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
   vi.mocked(getPrisma).mockReturnValue({
-    cronIncident: { findFirst, create, update, updateMany },
+    ...tx,
+    $transaction: transaction,
   } as unknown as ReturnType<typeof getPrisma>);
 });
 
@@ -91,6 +104,27 @@ describe("recordIncidentOccurrence", () => {
     findFirst.mockResolvedValue(null);
     await recordIncidentOccurrence({ ...input, message: "b".repeat(1500) });
     expect(create.mock.calls[0][0].data.lastMessage).toHaveLength(1000);
+  });
+
+  it("원격 DB 에서는 같은 서명 기록을 자문 잠금 안에서 한다", async () => {
+    findFirst.mockResolvedValue(null);
+    await recordIncidentOccurrence(input);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    const sql = (executeRaw.mock.calls[0][0] as string[]).join("?");
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(executeRaw.mock.calls[0][1]).toBe("j|A|timeout|실패 #건");
+    // 잠금이 조회·쓰기보다 먼저다.
+    expect(executeRaw.mock.invocationCallOrder[0]).toBeLessThan(findFirst.mock.invocationCallOrder[0]);
+    expect(findFirst.mock.invocationCallOrder[0]).toBeLessThan(create.mock.invocationCallOrder[0]);
+  });
+
+  it("sqlite 에서는 잠금 없이 기록한다", async () => {
+    vi.mocked(isRemoteDatabaseUrl).mockReturnValue(false);
+    findFirst.mockResolvedValue(null);
+    const r = await recordIncidentOccurrence(input);
+    expect(r).toEqual({ id: "new1", opened: true });
+    expect(executeRaw).not.toHaveBeenCalled();
   });
 
   it("DB 오류는 console.error 후 null", async () => {

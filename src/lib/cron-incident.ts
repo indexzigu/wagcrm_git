@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
+import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 import type { CronErrorKind } from "@/lib/cron-error-kind";
 
 /**
@@ -57,31 +58,39 @@ export async function recordIncidentOccurrence(input: {
     const signature = incidentSignature(input);
     const lastMessage = input.message.slice(0, LAST_MESSAGE_MAX);
 
-    const existing = await prisma.cronIncident.findFirst({
-      where: { signature, status: { in: OPEN_STATUSES } },
-      orderBy: { firstSeenAt: "desc" },
-    });
-    if (existing) {
-      await prisma.cronIncident.update({
-        where: { id: existing.id },
-        data: { occurrences: { increment: 1 }, lastSeenAt: at, lastMessage },
+    // 조회→쓰기 사이에 같은 서명의 동시 기록이 끼면 사고가 둘로 갈라진다(조회 시점엔 둘 다 「없음」).
+    // 같은 서명끼리만 직렬화하도록 트랜잭션 안에서 서명 해시로 자문 잠금을 잡는다(커밋 때 자동 해제).
+    // sqlite(로컬 개발)에는 이 함수가 없고 단일 쓰기라 건너뛴다.
+    return await prisma.$transaction(async (tx) => {
+      if (isRemoteDatabaseUrl()) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${signature}))`;
+      }
+      const existing = await tx.cronIncident.findFirst({
+        where: { signature, status: { in: OPEN_STATUSES } },
+        orderBy: { firstSeenAt: "desc" },
       });
-      return { id: existing.id, opened: false };
-    }
+      if (existing) {
+        await tx.cronIncident.update({
+          where: { id: existing.id },
+          data: { occurrences: { increment: 1 }, lastSeenAt: at, lastMessage },
+        });
+        return { id: existing.id, opened: false };
+      }
 
-    const created = await prisma.cronIncident.create({
-      data: {
-        jobKey: input.jobKey,
-        kind: input.kind,
-        errorKind: input.errorKind,
-        signature,
-        status: "open",
-        firstSeenAt: at,
-        lastSeenAt: at,
-        lastMessage,
-      },
+      const created = await tx.cronIncident.create({
+        data: {
+          jobKey: input.jobKey,
+          kind: input.kind,
+          errorKind: input.errorKind,
+          signature,
+          status: "open",
+          firstSeenAt: at,
+          lastSeenAt: at,
+          lastMessage,
+        },
+      });
+      return { id: created.id, opened: true };
     });
-    return { id: created.id, opened: true };
   } catch (error) {
     console.error("[CronIncident] 사고 기록 실패", error);
     return null;

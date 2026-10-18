@@ -20,7 +20,12 @@
 //   set -a; . .env; set +a; npx tsx scripts/capture-stories-local.ts
 import { getPrisma } from "../src/lib/prisma";
 import { captureActiveCampaignStories, declareStoryCaptureOutcome } from "../src/lib/story-capture";
-import { recordSystemTaskRun } from "../src/lib/system-task-status";
+import { classifyCronError } from "../src/lib/cron-error-kind";
+import {
+  recordFailureIncident,
+  recordSystemTaskRun,
+  settleIncidentsAfterSuccess,
+} from "../src/lib/system-task-status";
 
 const JOB_KEY = "capture-stories";
 
@@ -37,7 +42,10 @@ async function main() {
     result = await captureActiveCampaignStories(prisma);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await recordSystemTaskRun(JOB_KEY, "ERROR", message);
+    const errorKind = classifyCronError(message);
+    await recordSystemTaskRun(JOB_KEY, "ERROR", message, undefined, undefined, { errorKind });
+    // 서버 레인(withSystemTaskStatus)과 같은 사고 장부에 잇는다 — 이 러너만 장부 밖이면 같은 실패가 한 건으로 안 묶인다.
+    await recordFailureIncident(JOB_KEY, message, errorKind);
     throw error;
   }
 
@@ -49,7 +57,19 @@ async function main() {
     // 응답 본문과 같은 페이로드를 남긴다 — 서버 레인과 이력 형태를 맞춰야
     // "어느 레인이 남긴 행인가"와 무관하게 같은 눈으로 읽을 수 있다.
     { ok: true, ...result, ...outcome, lane: "local" },
+    undefined,
+    outcome.failed ? { errorKind: classifyCronError(outcome.failureReason ?? "") } : undefined,
   );
+  if (outcome.failed) {
+    const reason = outcome.failureReason ?? "실행은 끝났으나 산출이 없습니다(핸들러 실패 선언).";
+    await recordFailureIncident(JOB_KEY, reason, classifyCronError(reason));
+  } else {
+    await settleIncidentsAfterSuccess(
+      JOB_KEY,
+      { targets: outcome.targets, produced: outcome.produced },
+      new Date(),
+    );
+  }
 
   console.log("\n[스토리 수집] 완료");
   console.log(`  대상 셀러: ${result.activeSellers}명 (${result.handles.join(", ") || "-"})`);

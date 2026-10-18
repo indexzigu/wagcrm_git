@@ -680,7 +680,11 @@ function isZeroOutputDetails(details: unknown): boolean {
  * 실패 1회를 사고 A 로 장부에 올린다. ⚠️ 사고 기록은 크론 응답·상태 기록을 막지 않는다 —
  * `recordIncidentOccurrence` 는 스스로 던지지 않지만, 여기서도 한 겹 더 감싸 계약을 고정한다.
  */
-async function recordFailureIncident(jobKey: string, message: string, errorKind: CronErrorKind) {
+export async function recordFailureIncident(
+  jobKey: string,
+  message: string,
+  errorKind: CronErrorKind,
+): Promise<void> {
   try {
     await recordIncidentOccurrence({ jobKey, kind: "A", errorKind, message });
   } catch (error) {
@@ -695,11 +699,11 @@ async function recordFailureIncident(jobKey: string, message: string, errorKind:
  * 이번 회차가 들어 있어야 「연속 N회」가 한 칸 어긋나지 않는다. quiet 회차는 이력 줄이 없으므로
  * B 를 열지 않는다(닫기는 이력과 무관하다).
  */
-async function settleIncidentsAfterSuccess(
+export async function settleIncidentsAfterSuccess(
   jobKey: string,
-  body: CronOutcomeBody | null,
+  body: { targets?: number; produced?: number; quiet?: boolean } | null,
   runAt: Date,
-) {
+): Promise<void> {
   try {
     const targets = finiteCount(body?.targets);
     const produced = finiteCount(body?.produced);
