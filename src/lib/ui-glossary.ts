@@ -11,6 +11,7 @@
  *    다른 화면에 이미 있으면 `STATUS_WORD_SPACING` 에 한 줄 더한다.
  * 3. 설명문에 `DEV_WORDS` 의 낱말이 들어가면 오너의 업무 말로 바꾼다.
  * 4. 돈 이름은 `MONEY_TERMS` 의 label 만 쓴다(옛 이름은 `MONEY_TERM_ALIASES` 가 기계로 막는다).
+ * 5. 대상 이름은 `ENTITY_TERMS` 의 label 만 쓴다(옛 이름은 `ENTITY_TERM_ALIASES` 가 기계로 막는다).
  */
 
 /**
@@ -117,18 +118,19 @@ export const RAW_CODE_FIELDS: ReadonlySet<string> = new Set([
  */
 export const UI_LABEL_TABLES = {
   "캠페인 상태": "campaignStatusLabels (src/lib/crm-types.ts)",
-  "딜 상태": "dealStatusLabels (src/lib/crm-types.ts)",
+  "판매 조건 상태": "dealStatusLabels (src/lib/crm-types.ts)",
   "업무 상태": "taskStatusLabels (src/lib/crm-types.ts)",
   "판매 채널": "salesChannelLabels (src/lib/crm-types.ts)",
   "거래처 유형": "partnerTypeLabels (src/lib/crm-types.ts)",
   "거래처 상태": "partnerStatusLabel (src/lib/crm-types.ts)",
   "API 기록 출처": "apiProviderLabels (src/lib/crm-types.ts)",
-  "대상 종류(거래처·셀러·딜·캠페인)": "ENTITY_TYPE_LABELS (src/components/crm/approvals/entity-type-labels.ts)",
+  "대상 종류(거래처·셀러·판매 조건·캠페인)": "ENTITY_TYPE_LABELS (src/components/crm/approvals/entity-type-labels.ts)",
   "필드 이름": "FIELD_LABELS (src/lib/field-labels.ts)",
   "결재함 작업 이름": "ACTION_LABELS (src/components/crm/approvals/proposal-card.tsx)",
   "주문 작업 기록": "ORDER_ACTION_LABELS (src/lib/order-converter/action-log.ts)",
   "사이드바 메뉴": "src/components/crm/crm-sidebar.tsx",
   "돈 이름": "MONEY_TERMS (src/lib/ui-glossary.ts)",
+  "대상 이름": "ENTITY_TERMS (src/lib/ui-glossary.ts)",
 } as const;
 
 /**
@@ -139,7 +141,7 @@ export const UI_LABEL_TABLES = {
 export const MONEY_TERMS = {
   grossMerchandise: {
     label: "총거래액",
-    definition: "셀러가 판 물건값 전체(딜별 판매가 × 주문수량의 합, 직접 수정 가능). 배송비·별도 할인 차감은 반영하지 않는다",
+    definition: "셀러가 판 물건값 전체(판매 조건별 판매가 × 주문수량의 합, 직접 수정 가능). 배송비·별도 할인 차감은 반영하지 않는다",
     column: "SalesCampaign.actualSales",
   },
   commissionRevenue: { label: "수수료매출", definition: "총거래액 × 총수수료율(수동 덮어쓰기 가능)", column: "SalesCampaign.settlementSales" },
@@ -182,3 +184,38 @@ export const MONEY_TERM_ALIASES: Readonly<Record<string, keyof typeof MONEY_TERM
   "오늘 매출": "todaySales", "마감일": "endDate",
   "영업이익율 (%)": "rate.net", "협의수수료": "rate.seller",
 };
+
+/**
+ * **대상 이름 정본** (오너 확정 2026-10-18). 오너 화면에서 대상(엔티티)을 부르는 이름은 여기 label 만 쓴다.
+ * 코드 식별자·라우트(`Deal`·`/deals`)·DB·API 키·주석은 대상이 아니다 — 화면 글자만이다.
+ * `model` = 그 대상의 Prisma 모델.
+ */
+export const ENTITY_TERMS = {
+  deal: {
+    label: "판매 조건",
+    definition: "공동구매로 팔 상품 하나와 그 조건(공급가·판매가·할인·수수료율·옵션·소싱 상태). 메뉴 「판매 조건 관리」",
+    model: "Deal",
+  },
+} as const satisfies Readonly<Record<string, { label: string; definition: string; model: string }>>;
+
+/**
+ * 옛 대상 이름 → 정본 키. 돈 이름(`MONEY_TERM_ALIASES`)과 달리 **문장 속 낱말도** 잡는다 —
+ * 「딜을 삭제하시겠습니까?」처럼 조사가 붙은 형태가 대부분이라 전체 일치로는 못 막는다.
+ * 같은 글자로 시작하는 다른 낱말(「딜러」 등)은 `ENTITY_TERM_FALSE_FRIENDS` 가 뺀다.
+ */
+export const ENTITY_TERM_ALIASES: Readonly<Record<string, keyof typeof ENTITY_TERMS>> = {
+  "딜": "deal",
+};
+
+/** 옛 대상 이름으로 **시작하지만 다른 낱말**인 것 — 검사에서 뺀다. 늘릴 때는 실제 화면 낱말인지 확인한다. */
+export const ENTITY_TERM_FALSE_FRIENDS: readonly string[] = ["딜러", "딜레이", "딜레마", "딜리버리"];
+
+/** 문구에 옛 대상 이름이 들어 있으면 그 옛 이름을, 없으면 null. 검사(`ui-copy-terms`)가 쓴다. */
+export function findOldEntityTerm(text: string): string | null {
+  for (const alias of Object.keys(ENTITY_TERM_ALIASES)) {
+    for (let i = text.indexOf(alias); i !== -1; i = text.indexOf(alias, i + alias.length)) {
+      if (!ENTITY_TERM_FALSE_FRIENDS.some((w) => text.startsWith(w, i))) return alias;
+    }
+  }
+  return null;
+}

@@ -5,6 +5,7 @@ import ts from "typescript";
 import {
   ALLOWED_UPPERCASE_WORDS,
   DEV_WORDS,
+  findOldEntityTerm,
   MONEY_TERM_ALIASES,
   RAW_CODE_FIELDS,
   STATUS_WORD_SPACING,
@@ -20,6 +21,9 @@ import {
  * - `rawCode`  : 화면 글자 자체가 대문자 코드값(`PENDING`)
  * - `devWord`  : 화면 글자에 개발 용어(null·payload·레코드·파라미터…)
  * - `oldMoneyTerm` : 옛 돈 이름(「총 마진」·「영업수익」…) — 문자열 **전체가** `MONEY_TERM_ALIASES` 키일 때만
+ * - `oldEntityTerm` : 옛 대상 이름(「딜」 → 「판매 조건」, 오너 확정 2026-10-18) — 문장 속 낱말도 잡는다
+ *   (`findOldEntityTerm`). `.ts` 라벨 표·오류 문구·토스트까지 모든 문자열을 본다 — 화면에 갈 수 있는
+ *   글자를 정적으로 다 따라갈 수 없어서다. 화면에 안 가는 모델 지시문·디버그 로그는 아래 제외 목록으로 푼다.
  *
  * 낱말 목록은 용어집(`src/lib/ui-glossary.ts`)이 정본이다 — 여기에 다시 적지 않는다.
  *
@@ -47,7 +51,7 @@ import {
 
 const ROOT = join(__dirname, "..");
 
-export type CopyRule = "spaced" | "fallback" | "rawField" | "rawCode" | "devWord" | "oldMoneyTerm";
+export type CopyRule = "spaced" | "fallback" | "rawField" | "rawCode" | "devWord" | "oldMoneyTerm" | "oldEntityTerm";
 
 export interface CopyIssue {
   rule: CopyRule;
@@ -61,6 +65,21 @@ const VISIBLE_ATTRS = new Set(["title", "placeholder", "aria-label", "alt", "lab
 
 /** 셀러 포털은 셀러 본인의 「매출」을 보는 표면이라 돈 낱말 통일 대상이 아니다(오너 확정 2026-10-16). */
 const MONEY_EXEMPT_PATHS = ["components/portal/", "app/[slug]/", "app/p/"];
+
+/**
+ * 옛 대상 이름(`oldEntityTerm`) 검사에서 통째로 빼는 파일·폴더 → 사유. **사유 없이 늘리지 말 것.**
+ * 한 파일 안에 화면 문구와 지시문이 섞여 있으면 여기 말고 `EXCEPTIONS` 에 문구 단위로 둔다.
+ */
+export const ENTITY_TERM_EXEMPT_PATHS: Readonly<Record<string, string>> = {
+  "components/portal/": "셀러 포털 — 셀러가 보는 표면이라 오너 화면 낱말 결정의 대상이 아니다(2026-10-18 실측 0건).",
+  "app/[slug]/": "셀러 포털 — 위와 같은 사유.",
+  "app/p/": "셀러 포털(토큰 링크) — 위와 같은 사유.",
+  "lib/content-guide.ts": "콘텐츠 가이드 생성 모델에 주는 지시문 묶음이다(화면 글자가 아니다 — 바꾸면 모델 출력이 바뀐다).",
+  "app/api/deals/extract-info/route.ts": "최저가 검색어 추출 모델에 주는 지시문이다.",
+  "app/api/outreach/generate-message/route.ts": "제안 메시지 초안 생성 모델에 주는 지시문이다.",
+  "lib/agent/":
+    "봇(도구 스키마·기안 처리·봇 답장) 영역 — 이번 낱말 통일 범위 밖(2026-10-18 지시). ⚠️ 기안 처리(`write-actions/`)의 요약·오류 문구는 결재함·활동 기록에 보일 수 있어 후속 작업에서 이 줄을 좁힌다.",
+};
 
 const DEV_WORD_PATTERN = buildDevWordPattern(Object.keys(DEV_WORDS));
 const UPPERCASE_CODE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
@@ -186,6 +205,7 @@ function oneLine(s: string): string {
 export function findCopyIssues(source: string, fileName = "x.tsx"): CopyIssue[] {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
   const isTsx = fileName.endsWith(".tsx");
+  const entityTermExempt = Object.keys(ENTITY_TERM_EXEMPT_PATHS).some((d) => fileName.startsWith(d));
   const found: CopyIssue[] = [];
   const add = (rule: CopyRule, node: ts.Node, text: string) => {
     const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
@@ -201,6 +221,7 @@ export function findCopyIssues(source: string, fileName = "x.tsx"): CopyIssue[] 
     if (Object.hasOwn(MONEY_TERM_ALIASES, text) && !MONEY_EXEMPT_PATHS.some((d) => fileName.startsWith(d))) {
       add("oldMoneyTerm", node, text);
     }
+    if (findOldEntityTerm(text) && !entityTermExempt) add("oldEntityTerm", node, text);
     if (!isTsx || !isVisibleText(node)) return;
     if (UPPERCASE_CODE.test(text) && text.length >= MIN_CODE_LENGTH && !ALLOWED_UPPERCASE_WORDS.has(text)) {
       add("rawCode", node, text);
@@ -209,6 +230,11 @@ export function findCopyIssues(source: string, fileName = "x.tsx"): CopyIssue[] 
   };
 
   const walk = (node: ts.Node) => {
+    if (ts.isTemplateExpression(node) && !entityTermExempt && !insideConsoleCall(node)) {
+      // 변수를 끼운 문구(`${n}개 딜`)는 글자 조각을 이어 옛 대상 이름을 본다 — 위치와 무관(토스트·라벨 표).
+      const text = [node.head.text, ...node.templateSpans.map((s) => s.literal.text)].join(" ");
+      if (findOldEntityTerm(text)) add("oldEntityTerm", node, text);
+    }
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isJsxText(node)) {
       checkText(node, node.text);
     } else if (isTsx && ts.isTemplateExpression(node) && isVisibleText(node)) {
@@ -306,6 +332,12 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
     "`LinkedEntityItem.status` 는 호출부가 라벨 표를 거쳐 넘기는 한글 낱말이다(코드값이 아니다).",
   "rawField | components/crm/upcoming-schedule-card.tsx | {event.type}":
     "`UpcomingEvent.type` 은 「캠페인 시작」·「입금 예정 (공급사)」 같은 한글 문장이다(lib/desktop-dashboard.ts 가 만든다) — 필드 이름만 type 이다.",
+  "oldEntityTerm | lib/order-converter/mapping-service.ts | -> SKIP Deal \" \" in \" \" | 기간 불일치(옵션 개월분 ≠ 딜 개월분)":
+    "자동 매핑 디버그 로그(파일 기록)다 — 화면 글자가 아니다.",
+  "oldEntityTerm | lib/order-converter/mapping-service.ts | ⛔ REJECTED: 최종 딜 연결이 서로 다른 셀러 곳을 가리킵니다. 전체 거부(쓰기 0건).":
+    "자동 매핑 디버그 로그(파일 기록)다 — 화면 글자가 아니다. 화면에 가는 거부 문구는 `CROSS_SELLER_REJECT_MESSAGE`(lib/cross-seller.ts)다.",
+  "oldEntityTerm | lib/order-converter/voc-insight.ts | 딜(상품):":
+    "문의·리뷰 요약 모델에 주는 지시문 줄이다(화면 글자가 아니다).",
   "devWord | app/privacy/page.tsx | 캠페인 운영을 위해 거래처, 셀러 SNS 핸들, 공개 팔로워 지표, 마케팅 링크 파라미터, 전환 이벤트 및 관리자 운영 로그를 저장합니다.":
     "개인정보 처리방침(법정 고지문)의 수집 항목 명칭이다 — 문구 변경은 고지 개정 사안이다.",
 };
@@ -335,6 +367,39 @@ describe("화면 문구 기준 (AST 전역 스캔)", () => {
   it("양성 — 옛 돈 이름 라벨을 잡는다", () => {
     const hits = findCopyIssues(`const C = () => <span>총 마진</span>; const T = { a: "영업수익" };`, "a.tsx");
     expect(hits.map((h) => [h.rule, h.text])).toEqual([["oldMoneyTerm", "총 마진"], ["oldMoneyTerm", "영업수익"]]);
+  });
+
+  it("양성 — 옛 대상 이름 「딜」을 조사·합성어·변수 낀 문구·라벨 표 값까지 잡는다", () => {
+    const src = [
+      `const C = () => <><h1>딜 목록</h1><p>딜을 삭제하시겠습니까?</p><i title="상위딜 선택" /></>;`,
+      `const T = { DEAL: "딜" };`,
+      "const m = (n: number) => toast.success(`${n}개 딜에 반영했습니다.`);",
+    ].join("\n");
+    expect(findCopyIssues(src, "components/crm/x.tsx").map((h) => [h.rule, h.text])).toEqual([
+      ["oldEntityTerm", "딜 목록"],
+      ["oldEntityTerm", "딜을 삭제하시겠습니까?"],
+      ["oldEntityTerm", "상위딜 선택"],
+      ["oldEntityTerm", "딜"],
+      ["oldEntityTerm", "개 딜에 반영했습니다."],
+    ]);
+  });
+
+  it("음성 — 새 이름·다른 낱말(딜러)·주석·console·포털·지시문 파일은 잡지 않는다", () => {
+    const src = [
+      `// 딜 목록을 그린다`,
+      "console.warn(`[x] 딜 ${1} 해석 실패`);",
+      `const C = () => <><h1>판매 조건 목록</h1><p>딜러 할인 · 딜레이 없음</p></>;`,
+    ].join("\n");
+    expect(findCopyIssues(src, "components/crm/x.tsx")).toEqual([]);
+    const old = `const C = () => <span>딜 정보</span>;`;
+    expect(findCopyIssues(old, "components/portal/x.tsx")).toEqual([]);
+    expect(findCopyIssues(old, "lib/content-guide.ts")).toEqual([]);
+    expect(findCopyIssues(old, "components/crm/x.tsx").map((h) => h.rule)).toEqual(["oldEntityTerm"]);
+  });
+
+  it("옛 대상 이름 제외 목록의 모든 항목에 사유가 있다", () => {
+    const blank = Object.entries(ENTITY_TERM_EXEMPT_PATHS).filter(([, why]) => why.trim().length === 0);
+    expect(blank.map(([k]) => k)).toEqual([]);
   });
 
   it("음성 — 문장 속 '매출'은 잡지 않는다", () => {
