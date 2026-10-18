@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  declareStoryCaptureOutcome,
   parseStoryItems,
   isWithinCaptureWindow,
   normalizeHandle,
@@ -220,5 +221,28 @@ describe("normalizeHandle", () => {
   it("@·공백·대문자를 정규화한다 (액터 응답 매칭 키)", () => {
     expect(normalizeHandle("@Gaon ")).toBe("gaon");
     expect(normalizeHandle("nari_c")).toBe("nari_c");
+  });
+});
+
+describe("declareStoryCaptureOutcome — 산출 판정 숫자", () => {
+  const base = { activeSellers: 3, storiesSeen: 0, storiesNew: 0, thumbnailsRehosted: 0, errors: [] };
+
+  it("targets 는 조회 대상 수, produced 는 조회에 성공한 셀러 수다", () => {
+    expect(
+      declareStoryCaptureOutcome({ ...base, handles: ["h_a", "h_b", "h_c"], handlesFailed: 1 }),
+    ).toEqual({ failed: false, targets: 3, produced: 2 });
+  });
+
+  it("전원 실패면 failed 와 produced 0 을 함께 싣는다", () => {
+    const outcome = declareStoryCaptureOutcome({ ...base, handles: ["h_a", "h_b"], handlesFailed: 2 });
+    expect(outcome).toMatchObject({ failed: true, targets: 2, produced: 0 });
+  });
+
+  it("대상이 없으면 targets 0 — 실패도 산출 없음도 아니다", () => {
+    expect(declareStoryCaptureOutcome({ ...base, handles: [], handlesFailed: 0 })).toEqual({
+      failed: false,
+      targets: 0,
+      produced: 0,
+    });
   });
 });

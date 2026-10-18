@@ -2,6 +2,10 @@ import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { runWithProxySource } from "@/lib/order-converter/proxy-usage";
+import { classifyCronError, type CronErrorKind } from "@/lib/cron-error-kind";
+import { describeErrorChain } from "@/lib/cron-error-text";
+import { recordIncidentOccurrence, resolveOpenIncidents } from "@/lib/cron-incident";
+import { KNOWN_JOBS, type KnownJob } from "@/lib/cron-jobs";
 
 // 시스템 레이더(SystemTaskStatus) 공용 기록기 — 크론 라우트 핸들러를 감싸
 // 실행 결과(성공/실패)와 실제 작동 시각을 남긴다. enrich-inbox처럼 라우트가
@@ -37,6 +41,13 @@ type CronOutcomeBody = {
    * 언제나 남는다.
    */
   quiet?: boolean;
+  /**
+   * 이번 실행이 손댄 대상 수 — 산출 판정(사고 B) 근거. `KNOWN_JOBS` 에 `output` 을 선언한 작업만
+   * 판정에 쓴다. 0 이면 「대상 없는 날」이라 사고도 정상화 근거도 아니다.
+   */
+  targets?: number;
+  /** 그중 산출이 있었던 수 — `> 0` 이면 `lastProducedAt` 을 남기고 열린 B 사고를 닫는다. */
+  produced?: number;
 };
 
 /** `SystemTaskLog.details` 직렬화 상한 — 이력 테이블이 페이로드로 비대해지지 않게 한다. */
@@ -586,14 +597,28 @@ export async function recordSystemTaskRun(
   // RUNNING 시작 마커에는 아직 알 수 없으므로 전달하지 않는다.
   durationMs?: number,
   // true면 종결 상태여도 이력 줄을 남기지 않는다(`CronOutcomeBody.quiet` — 할 일 없던 SUCCESS 회차 전용).
-  options: { skipLog?: boolean } = {},
+  // errorKind: 실패의 종류(`classifyCronError`) — ERROR 면 상태·이력에 남기고, SUCCESS 면 상태에서 지운다.
+  // produced: 이번 실행의 산출 수 — `> 0` 이면 `lastProducedAt` 을 지금으로 남긴다.
+  options: { skipLog?: boolean; errorKind?: CronErrorKind; produced?: number } = {},
 ) {
   try {
     const prisma = getPrisma();
+    const now = new Date();
+    // RUNNING 시작 마커는 직전 실패 종류를 건드리지 않는다(lastErrorMessage 와 같은 규칙).
+    const lastErrorKind =
+      status === "SUCCESS" ? null : status === "ERROR" ? (options.errorKind ?? null) : undefined;
+    const producedAt = options.produced != null && options.produced > 0 ? { lastProducedAt: now } : {};
     await prisma.systemTaskStatus.upsert({
       where: { jobKey },
-      create: { jobKey, status, lastRunAt: new Date(), lastErrorMessage: errorMessage ?? null },
-      update: { status, lastRunAt: new Date(), lastErrorMessage: errorMessage },
+      create: {
+        jobKey,
+        status,
+        lastRunAt: now,
+        lastErrorMessage: errorMessage ?? null,
+        lastErrorKind: lastErrorKind ?? null,
+        ...producedAt,
+      },
+      update: { status, lastRunAt: now, lastErrorMessage: errorMessage, lastErrorKind, ...producedAt },
     });
     // 종결 상태(SUCCESS/ERROR)는 실행 이력(SystemTaskLog)에도 append한다 — 시스템 레이더
     // 클릭 인박스가 "언제 무엇이 됐나"를 보여줄 소스다(오너 2026-07-13). RUNNING 시작
@@ -612,6 +637,7 @@ export async function recordSystemTaskRun(
           jobKey,
           status,
           message: errorMessage ?? "정상 완료",
+          errorKind: status === "ERROR" ? (options.errorKind ?? null) : null,
           details: mergedDetails == null ? undefined : (mergedDetails as Prisma.InputJsonValue),
         },
       });
@@ -619,6 +645,92 @@ export async function recordSystemTaskRun(
   } catch (error) {
     // 상태 기록 실패가 크론 본연의 작업까지 실패시키면 안 된다 — 로그로만 표면화
     console.error(`[SystemTaskStatus] ${jobKey} 상태 기록 실패:`, error);
+  }
+}
+
+/** 작업 키 → 산출 선언(`KNOWN_JOBS.output`). 목록에 없거나 `null` 이면 산출 판정을 하지 않는다. */
+const OUTPUT_BY_JOB: ReadonlyMap<string, NonNullable<KnownJob["output"]>> = new Map(
+  KNOWN_JOBS.flatMap((job) => (job.output ? [[job.key, job.output] as const] : [])),
+);
+
+function finiteCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * 이력 한 줄이 「대상은 있었는데 산출 0」인가. sqlite 사본은 `details` 가 JSON **문자열**이라
+ * 풀어서 본다 — 못 읽는 줄은 산출 0 으로 치지 않는다(모르는 것을 사고 근거로 쓰지 않는다).
+ */
+function isZeroOutputDetails(details: unknown): boolean {
+  let parsed: unknown = details;
+  if (typeof details === "string") {
+    try {
+      parsed = JSON.parse(details);
+    } catch {
+      return false;
+    }
+  }
+  if (parsed == null || typeof parsed !== "object") return false;
+  const record = parsed as Record<string, unknown>;
+  const targets = finiteCount(record.targets);
+  return targets != null && targets > 0 && record.produced === 0;
+}
+
+/**
+ * 실패 1회를 사고 A 로 장부에 올린다. ⚠️ 사고 기록은 크론 응답·상태 기록을 막지 않는다 —
+ * `recordIncidentOccurrence` 는 스스로 던지지 않지만, 여기서도 한 겹 더 감싸 계약을 고정한다.
+ */
+async function recordFailureIncident(jobKey: string, message: string, errorKind: CronErrorKind) {
+  try {
+    await recordIncidentOccurrence({ jobKey, kind: "A", errorKind, message });
+  } catch (error) {
+    console.error(`[SystemTaskStatus] ${jobKey} 사고 기록 실패:`, error);
+  }
+}
+
+/**
+ * 정상 실행 뒤 사고 장부 갱신 — 열린 A 를 닫고, 산출 선언 작업이면 B 를 열거나 닫는다.
+ *
+ * ⚠️ B 판정은 **이번 SUCCESS 이력 줄을 쓴 뒤에** 부른다. 최근 `zeroRunsToFlag` 개 SUCCESS 줄에
+ * 이번 회차가 들어 있어야 「연속 N회」가 한 칸 어긋나지 않는다. quiet 회차는 이력 줄이 없으므로
+ * B 를 열지 않는다(닫기는 이력과 무관하다).
+ */
+async function settleIncidentsAfterSuccess(
+  jobKey: string,
+  body: CronOutcomeBody | null,
+  runAt: Date,
+) {
+  try {
+    const targets = finiteCount(body?.targets);
+    const produced = finiteCount(body?.produced);
+    await resolveOpenIncidents({ jobKey, kinds: ["A"], evidence: { runAt, produced, targets } });
+
+    const output = OUTPUT_BY_JOB.get(jobKey);
+    // 대상 0 은 사고도 정상화 근거도 아니다 — 산출 판정 숫자가 없을 때와 같이 아무것도 안 한다.
+    if (!output || targets == null || produced == null || targets === 0) return;
+
+    if (produced > 0) {
+      await resolveOpenIncidents({ jobKey, kinds: ["B"], evidence: { runAt, produced, targets } });
+      return;
+    }
+    if (produced !== 0 || body?.quiet === true) return;
+
+    const prisma = getPrisma();
+    const recent = await prisma.systemTaskLog.findMany({
+      where: { jobKey, status: "SUCCESS" },
+      orderBy: { createdAt: "desc" },
+      take: output.zeroRunsToFlag,
+    });
+    if (recent.length !== output.zeroRunsToFlag) return;
+    if (!recent.every((row) => isZeroOutputDetails(row.details))) return;
+    await recordIncidentOccurrence({
+      jobKey,
+      kind: "B",
+      errorKind: null,
+      message: `${output.label} 대상 ${targets}건인데 산출 0`,
+    });
+  } catch (error) {
+    console.error(`[SystemTaskStatus] ${jobKey} 사고 장부 갱신 실패:`, error);
   }
 }
 
@@ -658,13 +770,11 @@ export function withSystemTaskStatus(
     try {
       response = await runWithProxySource(`cron:${jobKey}`, () => handler(request));
     } catch (error) {
-      await recordSystemTaskRun(
-        jobKey,
-        "ERROR",
-        error instanceof Error ? error.message : String(error),
-        undefined,
-        Date.now() - startedAt,
-      );
+      // 겉 문구(`fetch failed`)만 남기면 진짜 원인(프록시 407 등)이 사라진다 — 원인 사슬을 펼친다.
+      const message = describeErrorChain(error);
+      const errorKind = classifyCronError(message);
+      await recordSystemTaskRun(jobKey, "ERROR", message, undefined, Date.now() - startedAt, { errorKind });
+      await recordFailureIncident(jobKey, message, errorKind);
       throw error;
     }
 
@@ -676,22 +786,25 @@ export function withSystemTaskStatus(
       const body = await readOutcomeBody(response);
       const details = toDetails(body);
       if (body?.failed === true) {
-        await recordSystemTaskRun(
-          jobKey,
-          "ERROR",
-          body.failureReason || "실행은 끝났으나 산출이 없습니다(핸들러 실패 선언).",
-          details,
-          durationMs,
-        );
+        const message = body.failureReason || "실행은 끝났으나 산출이 없습니다(핸들러 실패 선언).";
+        const errorKind = classifyCronError(message, response.status);
+        await recordSystemTaskRun(jobKey, "ERROR", message, details, durationMs, { errorKind });
+        await recordFailureIncident(jobKey, message, errorKind);
       } else {
-        await recordSystemTaskRun(jobKey, "SUCCESS", null, details, durationMs, { skipLog: body?.quiet === true });
+        await recordSystemTaskRun(jobKey, "SUCCESS", null, details, durationMs, {
+          skipLog: body?.quiet === true,
+          produced: finiteCount(body?.produced),
+        });
+        await settleIncidentsAfterSuccess(jobKey, body, new Date());
       }
     } else {
       // 시크릿이 일치한 시점 이후의 비정상 응답(401 포함)은 전부 크론 실행 실패로 기록한다
       // — RUNNING 마커를 남긴 채 침묵하면 '실행 중' 고착으로 오독된다.
       const body = await readOutcomeBody(response);
       const message = typeof body?.error === "string" ? body.error : `HTTP ${response.status}`;
-      await recordSystemTaskRun(jobKey, "ERROR", message, toDetails(body), durationMs);
+      const errorKind = classifyCronError(message, response.status);
+      await recordSystemTaskRun(jobKey, "ERROR", message, toDetails(body), durationMs, { errorKind });
+      await recordFailureIncident(jobKey, message, errorKind);
     }
     return response;
   };

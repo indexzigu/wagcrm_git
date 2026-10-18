@@ -53,6 +53,14 @@ export type KnownJob = {
   readonly timeKst: string;
   readonly lane: CronLane;
   readonly desc: string;
+  /**
+   * 「성공 기록인데 산출 없음」(사고 B) 판정 선언 — **모든 작업이 명시적으로 갖는다**
+   * (`cron-jobs-output.contract.test.ts` 가 강제). `null` = 판정 면제(할 일 없는 회차가 정상인 작업).
+   * 선언하면 래퍼가 응답 본문의 `targets`·`produced` 로, 대상이 있었는데 산출 0 인 SUCCESS 가
+   * `zeroRunsToFlag` 회 연속이면 사고를 연다. 1단계 선언 대상은 실질 실패 선언
+   * (`declareTotalFailure`·`declareStoryCaptureOutcome`)을 이미 쓰는 작업뿐이다(설계 ⚙️J8).
+   */
+  readonly output: { readonly label: string; readonly zeroRunsToFlag: number } | null;
 };
 
 // ⚠️ `as const` 가 아니라 명시 타입인 것은 **의도다.** 리터럴 추론을 쓰면 lane 의 타입이 현재
@@ -60,25 +68,25 @@ export type KnownJob = {
 // **TS2367 로 컴파일 자체를 거부한다** — 즉 로컬 레인이 비는 순간 그 가드를 지우도록 타입이
 // 등을 떠민다. 넓힌 것은 lane 뿐 아니라 key 도지만 소비처는 전부 string 으로 쓴다(전수 확인).
 export const KNOWN_JOBS: readonly KnownJob[] = [
-  { key: "enrich-inbox", name: "인박스 썸네일 수집", cycle: "매일", timeKst: "03:00", lane: "vercel", desc: "발굴 인박스에 등록된 셀러 후보의 프로필 썸네일을 수집·보강합니다." },
-  { key: "rehost-seller-media", name: "미디어 재호스팅", cycle: "매일", timeKst: "05:00", lane: "vercel", desc: "셀러 프로필·미디어 이미지를 외부 URL에서 내부 저장소로 재호스팅해 만료를 방지합니다." },
-  { key: "naver-settlement-sync", name: "네이버 정산 동기화", cycle: "매일", timeKst: "06:30", lane: "vercel", desc: "네이버페이 정산 내역을 조회해 캠페인 정산 케이스에 반영합니다." },
-  { key: "naver-order-sync", name: "네이버 발주 동기화", cycle: "매일", timeKst: "09:00", lane: "vercel", desc: "네이버 스토어 주문 스냅샷을 수집해 발주·배송 상태를 갱신합니다." },
-  { key: "enrich-references", name: "레퍼런스 심층 수집", cycle: "매일", timeKst: "07:30", lane: "vercel", desc: "발굴 레퍼런스의 인스타·유튜브 상세 지표를 심층 수집합니다." },
-  { key: "collect-qnas", name: "상품 문의 수집", cycle: "매주 월", timeKst: "08:00", lane: "vercel", desc: "네이버 상품문의·고객문의(VOC)를 수집해 상품·캠페인에 귀속합니다." },
-  { key: "analyze-voc", name: "VOC AI 인사이트", cycle: "매일", timeKst: "08:30", lane: "vercel", desc: "신규 문의·리뷰가 임계 이상 쌓인 판매 조건만 골라 AI 요약(소구점·불만·FAQ)을 생성합니다." },
-  { key: "price-monitoring", name: "최저가 모니터링", cycle: "매일", timeKst: "13:00", lane: "vercel", desc: "캠페인 상품의 최저가를 판매기간 ±7일 창에서 수집하고 가격 위반을 감지합니다." },
-  { key: "capture-stories", name: "스토리 스냅샷 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "행사 수집창(시작 7일 전~마감 1일 후) 캠페인의 인스타 셀러 스토리를 익명 뷰어로 전량 스냅샷 수집합니다. 태그·멘션과 무관하게 다 담고, 우리 캠페인 홍보인지는 나중에 썸네일로 분류합니다. ⚠️ 스토리는 24시간 뒤 사라지므로 거른 회차는 소급이 불가능합니다. 이 줄이 지연으로 뜨면 그날 밤 수집이 통째로 빠졌다는 뜻이니 맥이 꺼져 있었는지부터 확인하세요. 아직 같은 날 안이라면 지금 실행 버튼으로 만회할 수 있습니다." },
-  { key: "collect-campaign-posts", name: "캠페인 게시물 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "캠페인 관련 셀러 게시물 후보를 수집합니다." },
-  { key: "refresh-instagram-token", name: "Instagram 토큰 갱신", cycle: "매주 월", timeKst: "11:00", lane: "vercel", desc: "인스타그램 장기 액세스 토큰을 만료 전에 갱신합니다." },
-  { key: "collect-instagram", name: "Instagram 셀러 분석", cycle: "매일", timeKst: "12:00", lane: "vercel", desc: "감시 셀러의 인스타그램 프로필·성과 지표를 수집합니다. 매일 돌면서 마지막 갱신에서 7일이 지난 셀러만 골라 수집합니다." },
-  { key: "collect-youtube", name: "YouTube 셀러 분석", cycle: "매일", timeKst: "12:00", lane: "vercel", desc: "감시 셀러의 유튜브 채널 지표를 수집합니다. 매일 돌면서 마지막 갱신에서 7일이 지난 셀러만 골라 수집합니다." },
-  { key: "recampaign-auto-propose", name: "재진행 적기 자동 기안", cycle: "매일", timeKst: "09:00", lane: "vercel", desc: "재진행 시점이 온 (셀러×판매 조건) 조합을 승인 대기 기안으로 올립니다. 매출 D3 문턱을 넘는 조합만 자동 발화하고(화면에는 문턱 미만도 전부 보입니다), 같은 조합은 쿨다운 3개월 안에 다시 올리지 않습니다. 승인하면 셀러에 재접촉 결정이 메모로 남습니다. 셀러에게 나가는 것은 없습니다." },
-  { key: "tax-invoice-issue-confirm", name: "발행 계산서 자동 확정", cycle: "매일", timeKst: "10:00", lane: "vercel", desc: "세금계산서 전용 메일함을 읽어, 우리가 발행한 계산서를 정산 건과 대조해 발행일을 자동으로 찍습니다. 첨부(국세청 표준 XML)를 연 건만 대상이고 금액이 완전히 맞을 때만 확정합니다. 어긋나면 찍지 않고 「확인 필요」로 남기므로 그때는 정산 화면에서 직접 완료를 누르면 됩니다. 이미 찍힌 날짜는 덮지 않고, 메일이 없다고 해서 이미 찍힌 것을 지우지도 않습니다." },
-  { key: "scan-invoice-replies", name: "송장 회신 도착 감지", cycle: "매일", timeKst: "10:00~20:00 매시", lane: "vercel", desc: "발주요청을 보냈는데 송장 등록이 아직 덜 끝난 주문 캠페인마다, 브랜드사의 송장 회신 메일이 왔는지 메일함을 읽기 전용으로 확인합니다. 찾으면 주문 관리 카드에 「송장 회신 도착 · 주문 N건 · 시각」을 띄웁니다. 메일을 읽음으로 바꾸지 않고, 송장 등록·네이버 발송처리는 하지 않습니다(처리는 지금처럼 송장회신 버튼으로 합니다). 빨강이면 메일함에 붙지 못했다는 뜻이라 그동안 도착 표시가 뜨지 않습니다." },
-  { key: "db-exposure-audit", name: "DB 노출 방어 감사", cycle: "매일", timeKst: "02:00", lane: "vercel", desc: "Supabase Data API 노출 방어 두 겹(anon GRANT 회수 · public 테이블 RLS)이 그대로인지, 그리고 읽기 전용 계정 wag_readonly 가 정해진 조회 범위 밖으로 권한을 얻지 않았는지 점검합니다. 방어가 벗겨져도 앱은 멀쩡히 돌아 사람이 알아챌 계기가 없으므로 기계가 매일 확인합니다. 빨강이면 유출이 났다는 뜻이 아니라 방어가 한 겹으로 줄었거나 그 계정이 범위를 넘었다는 뜻입니다." },
-  { key: "agent-auto-execute", name: "정산 수정 자동 실행", cycle: "상시", timeKst: "2분마다", lane: "vercel", desc: "슬랙봇(Muse)이 올린 정산 금액 수정 기안 중 한도 안(한 번 변동 50만 원 이하·하루 10건)인 것만, 슬랙 원문을 직접 가져와 Muse 가 실제로 같은 내용을 요청했는지 확인한 뒤 사람 대신 승인합니다. 같은 캠페인·칸을 최근 7일 안에 자동으로 바꾼 적이 있으면 되돌리기일 수 있어 자동으로 하지 않습니다. 스위치(AGENT_AUTO_EXECUTE)가 off 면 아무것도 하지 않고, shadow 면 실행 없이 판정만 기안 이력에 남깁니다. 조건이 하나라도 어긋나면 기안은 승인 대기로 남아 결재함에서 직접 승인합니다. 할 일이 없던 회차는 이력 줄을 남기지 않습니다." },
-  { key: "encryption-key-audit", name: "암호화 키 정합 감사", cycle: "매일", timeKst: "02:30", lane: "vercel", desc: "저장된 셀러 주민등록번호가 현재 암호화 키로 열리는지 점검합니다. 키가 데이터와 어긋나면 화면에는 그냥 빈칸으로 보여서(미입력과 구분되지 않습니다) 사람이 알아챌 계기가 없으므로 기계가 매일 셉니다. 개수만 세고 값은 어디에도 남기지 않으며, 읽기만 합니다. 빨강이면 그 셀러의 정산·원천징수 화면에서 주민등록번호가 비어 보이는 상태라는 뜻입니다." },
+  { key: "enrich-inbox", name: "인박스 썸네일 수집", cycle: "매일", timeKst: "03:00", lane: "vercel", desc: "발굴 인박스에 등록된 셀러 후보의 프로필 썸네일을 수집·보강합니다.", output: null },
+  { key: "rehost-seller-media", name: "미디어 재호스팅", cycle: "매일", timeKst: "05:00", lane: "vercel", desc: "셀러 프로필·미디어 이미지를 외부 URL에서 내부 저장소로 재호스팅해 만료를 방지합니다.", output: null },
+  { key: "naver-settlement-sync", name: "네이버 정산 동기화", cycle: "매일", timeKst: "06:30", lane: "vercel", desc: "네이버페이 정산 내역을 조회해 캠페인 정산 케이스에 반영합니다.", output: null },
+  { key: "naver-order-sync", name: "네이버 발주 동기화", cycle: "매일", timeKst: "09:00", lane: "vercel", desc: "네이버 스토어 주문 스냅샷을 수집해 발주·배송 상태를 갱신합니다.", output: null },
+  { key: "enrich-references", name: "레퍼런스 심층 수집", cycle: "매일", timeKst: "07:30", lane: "vercel", desc: "발굴 레퍼런스의 인스타·유튜브 상세 지표를 심층 수집합니다.", output: { label: "참조 지표", zeroRunsToFlag: 2 } },
+  { key: "collect-qnas", name: "상품 문의 수집", cycle: "매주 월", timeKst: "08:00", lane: "vercel", desc: "네이버 상품문의·고객문의(VOC)를 수집해 상품·캠페인에 귀속합니다.", output: null },
+  { key: "analyze-voc", name: "VOC AI 인사이트", cycle: "매일", timeKst: "08:30", lane: "vercel", desc: "신규 문의·리뷰가 임계 이상 쌓인 판매 조건만 골라 AI 요약(소구점·불만·FAQ)을 생성합니다.", output: { label: "VOC 분석", zeroRunsToFlag: 2 } },
+  { key: "price-monitoring", name: "최저가 모니터링", cycle: "매일", timeKst: "13:00", lane: "vercel", desc: "캠페인 상품의 최저가를 판매기간 ±7일 창에서 수집하고 가격 위반을 감지합니다.", output: null },
+  { key: "capture-stories", name: "스토리 스냅샷 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "행사 수집창(시작 7일 전~마감 1일 후) 캠페인의 인스타 셀러 스토리를 익명 뷰어로 전량 스냅샷 수집합니다. 태그·멘션과 무관하게 다 담고, 우리 캠페인 홍보인지는 나중에 썸네일로 분류합니다. ⚠️ 스토리는 24시간 뒤 사라지므로 거른 회차는 소급이 불가능합니다. 이 줄이 지연으로 뜨면 그날 밤 수집이 통째로 빠졌다는 뜻이니 맥이 꺼져 있었는지부터 확인하세요. 아직 같은 날 안이라면 지금 실행 버튼으로 만회할 수 있습니다.", output: { label: "스토리", zeroRunsToFlag: 2 } },
+  { key: "collect-campaign-posts", name: "캠페인 게시물 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "캠페인 관련 셀러 게시물 후보를 수집합니다.", output: { label: "캠페인 게시물", zeroRunsToFlag: 2 } },
+  { key: "refresh-instagram-token", name: "Instagram 토큰 갱신", cycle: "매주 월", timeKst: "11:00", lane: "vercel", desc: "인스타그램 장기 액세스 토큰을 만료 전에 갱신합니다.", output: null },
+  { key: "collect-instagram", name: "Instagram 셀러 분석", cycle: "매일", timeKst: "12:00", lane: "vercel", desc: "감시 셀러의 인스타그램 프로필·성과 지표를 수집합니다. 매일 돌면서 마지막 갱신에서 7일이 지난 셀러만 골라 수집합니다.", output: { label: "인스타 지표", zeroRunsToFlag: 2 } },
+  { key: "collect-youtube", name: "YouTube 셀러 분석", cycle: "매일", timeKst: "12:00", lane: "vercel", desc: "감시 셀러의 유튜브 채널 지표를 수집합니다. 매일 돌면서 마지막 갱신에서 7일이 지난 셀러만 골라 수집합니다.", output: { label: "유튜브 지표", zeroRunsToFlag: 2 } },
+  { key: "recampaign-auto-propose", name: "재진행 적기 자동 기안", cycle: "매일", timeKst: "09:00", lane: "vercel", desc: "재진행 시점이 온 (셀러×판매 조건) 조합을 승인 대기 기안으로 올립니다. 매출 D3 문턱을 넘는 조합만 자동 발화하고(화면에는 문턱 미만도 전부 보입니다), 같은 조합은 쿨다운 3개월 안에 다시 올리지 않습니다. 승인하면 셀러에 재접촉 결정이 메모로 남습니다. 셀러에게 나가는 것은 없습니다.", output: null },
+  { key: "tax-invoice-issue-confirm", name: "발행 계산서 자동 확정", cycle: "매일", timeKst: "10:00", lane: "vercel", desc: "세금계산서 전용 메일함을 읽어, 우리가 발행한 계산서를 정산 건과 대조해 발행일을 자동으로 찍습니다. 첨부(국세청 표준 XML)를 연 건만 대상이고 금액이 완전히 맞을 때만 확정합니다. 어긋나면 찍지 않고 「확인 필요」로 남기므로 그때는 정산 화면에서 직접 완료를 누르면 됩니다. 이미 찍힌 날짜는 덮지 않고, 메일이 없다고 해서 이미 찍힌 것을 지우지도 않습니다.", output: null },
+  { key: "scan-invoice-replies", name: "송장 회신 도착 감지", cycle: "매일", timeKst: "10:00~20:00 매시", lane: "vercel", desc: "발주요청을 보냈는데 송장 등록이 아직 덜 끝난 주문 캠페인마다, 브랜드사의 송장 회신 메일이 왔는지 메일함을 읽기 전용으로 확인합니다. 찾으면 주문 관리 카드에 「송장 회신 도착 · 주문 N건 · 시각」을 띄웁니다. 메일을 읽음으로 바꾸지 않고, 송장 등록·네이버 발송처리는 하지 않습니다(처리는 지금처럼 송장회신 버튼으로 합니다). 빨강이면 메일함에 붙지 못했다는 뜻이라 그동안 도착 표시가 뜨지 않습니다.", output: null },
+  { key: "db-exposure-audit", name: "DB 노출 방어 감사", cycle: "매일", timeKst: "02:00", lane: "vercel", desc: "Supabase Data API 노출 방어 두 겹(anon GRANT 회수 · public 테이블 RLS)이 그대로인지, 그리고 읽기 전용 계정 wag_readonly 가 정해진 조회 범위 밖으로 권한을 얻지 않았는지 점검합니다. 방어가 벗겨져도 앱은 멀쩡히 돌아 사람이 알아챌 계기가 없으므로 기계가 매일 확인합니다. 빨강이면 유출이 났다는 뜻이 아니라 방어가 한 겹으로 줄었거나 그 계정이 범위를 넘었다는 뜻입니다.", output: null },
+  { key: "agent-auto-execute", name: "정산 수정 자동 실행", cycle: "상시", timeKst: "2분마다", lane: "vercel", desc: "슬랙봇(Muse)이 올린 정산 금액 수정 기안 중 한도 안(한 번 변동 50만 원 이하·하루 10건)인 것만, 슬랙 원문을 직접 가져와 Muse 가 실제로 같은 내용을 요청했는지 확인한 뒤 사람 대신 승인합니다. 같은 캠페인·칸을 최근 7일 안에 자동으로 바꾼 적이 있으면 되돌리기일 수 있어 자동으로 하지 않습니다. 스위치(AGENT_AUTO_EXECUTE)가 off 면 아무것도 하지 않고, shadow 면 실행 없이 판정만 기안 이력에 남깁니다. 조건이 하나라도 어긋나면 기안은 승인 대기로 남아 결재함에서 직접 승인합니다. 할 일이 없던 회차는 이력 줄을 남기지 않습니다.", output: null },
+  { key: "encryption-key-audit", name: "암호화 키 정합 감사", cycle: "매일", timeKst: "02:30", lane: "vercel", desc: "저장된 셀러 주민등록번호가 현재 암호화 키로 열리는지 점검합니다. 키가 데이터와 어긋나면 화면에는 그냥 빈칸으로 보여서(미입력과 구분되지 않습니다) 사람이 알아챌 계기가 없으므로 기계가 매일 셉니다. 개수만 세고 값은 어디에도 남기지 않으며, 읽기만 합니다. 빨강이면 그 셀러의 정산·원천징수 화면에서 주민등록번호가 비어 보이는 상태라는 뜻입니다.", output: null },
 ];
 
 // 수동 실행 허용 목록 — 레이더의 모든 행에 실행 버튼이 붙으므로, 표시 목록에서 파생시켜

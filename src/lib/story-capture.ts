@@ -210,13 +210,18 @@ export type StoryCaptureResult = {
 export function declareStoryCaptureOutcome(result: StoryCaptureResult): {
   failed: boolean;
   failureReason?: string;
+  targets: number;
+  produced: number;
 } {
   const attempted = result.handles.length;
   // 수집창에 셀러가 없으면 액터 호출 없이 무비용 종료 — 정상이다(attempted 0 = 실패 아님).
   const totalFailure = attempted > 0 && result.handlesFailed === attempted;
+  // 산출 = 조회에 성공한 셀러 수(스토리 개수가 아니다 — 그날 안 올린 셀러는 정상이므로
+  // 스토리 0건을 산출 0 으로 치면 위 「산출 0 기준 금지」를 되산다). declareTotalFailure 와 같은 뜻.
+  const counts = { targets: attempted, produced: Math.max(0, attempted - result.handlesFailed) };
   return totalFailure
-    ? { failed: true, failureReason: `대상 ${attempted}명 전원 스토리 조회 실패(수집 0건)` }
-    : { failed: false };
+    ? { failed: true, failureReason: `대상 ${attempted}명 전원 스토리 조회 실패(수집 0건)`, ...counts }
+    : { failed: false, ...counts };
 }
 
 export type CaptureWindowSeller = {

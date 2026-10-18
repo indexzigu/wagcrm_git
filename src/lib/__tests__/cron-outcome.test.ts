@@ -45,4 +45,22 @@ describe("declareTotalFailure", () => {
     expect(outcome.failed).toBe(false);
     expect(outcome.failureReason).toBeUndefined();
   });
+
+  it("산출 판정용 targets·produced 를 함께 돌려준다(targets=시도, produced=성공)", () => {
+    expect(declareTotalFailure({ attempted: 5, succeeded: 2, unit: "명", what: "x" })).toMatchObject({
+      failed: false,
+      targets: 5,
+      produced: 2,
+    });
+    expect(declareTotalFailure({ attempted: 3, succeeded: 0, unit: "명", what: "x" })).toMatchObject({
+      failed: true,
+      targets: 3,
+      produced: 0,
+    });
+    expect(declareTotalFailure({ attempted: 0, succeeded: 0, unit: "건", what: "x" })).toMatchObject({
+      failed: false,
+      targets: 0,
+      produced: 0,
+    });
+  });
 });

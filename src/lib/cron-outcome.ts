@@ -27,10 +27,13 @@ export function declareTotalFailure(input: {
   unit: string;
   /** 무엇을 하다 실패했는가 — "인스타 지표 수집" 등 */
   what: string;
-}): { failed: boolean; failureReason?: string } {
+}): { failed: boolean; failureReason?: string; targets: number; produced: number } {
   const { attempted, succeeded, unit, what } = input;
+  // targets·produced 는 래퍼의 산출 판정(사고 B·`lastProducedAt`) 근거다 — 라우트가 이 반환을
+  // 응답 본문에 펼치면 그대로 이력에 남는다(`CronOutcomeBody`).
+  const counts = { targets: attempted, produced: succeeded };
   if (attempted > 0 && succeeded === 0) {
-    return { failed: true, failureReason: `${what} 대상 ${attempted}${unit} 전량 실패(성공 0)` };
+    return { failed: true, failureReason: `${what} 대상 ${attempted}${unit} 전량 실패(성공 0)`, ...counts };
   }
-  return { failed: false };
+  return { failed: false, ...counts };
 }
