@@ -6,7 +6,7 @@ import type { CampaignRow, DashboardData } from "@/lib/crm-types";
 /**
  * 주소로 캠페인 상세 열기 — `/settlement?campaign=<id>`.
  *
- * 홈 「오늘 처리할 일」의 「지연된 정산」 행(한 건일 때)이 이 주소로 온다(2026-10-18 오너 결정 — 빠른
+ * 홈 「오늘 처리할 일」의 「정산 지연」 행(한 건일 때)이 이 주소로 온다(2026-10-18 오너 결정 — 빠른
  * 정산 창을 홈에서 빼고 정산 관리 상세가 그 일을 맡는다). id 는 아젠다 항목 id 이고, 그룹은 대표 멤버
  * id 다(`agenda-settlements.ts`). 상세 패널은 표의 월 필터와 무관하게 열린다 — 행은 월로 걸러지기
  * 전의 정산 목록(`data.campaigns`)에서 찾고, 없으면 그 한 건을 서버에서 읽는다.
@@ -31,14 +31,33 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => search,
 }));
 
-let panelProps: { campaign: CampaignRow | null; open: boolean; onOpenChange: (open: boolean) => void } | null = null;
+type PanelProps = {
+  campaign: CampaignRow | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title?: React.ReactNode;
+  focusTitleOnOpen?: boolean;
+  onCloseAutoFocus?: (event: Event) => void;
+};
+let panelProps: PanelProps | null = null;
 vi.mock("@/components/crm/campaign-side-panel", () => ({
-  CampaignSidePanel: (props: { campaign: CampaignRow | null; open: boolean; onOpenChange: (open: boolean) => void }) => {
+  CampaignSidePanel: (props: PanelProps) => {
     panelProps = props;
-    return props.open && props.campaign ? <aside data-testid="panel">{props.campaign.id}</aside> : null;
+    return props.open && props.campaign ? (
+      <aside data-testid="panel">
+        <h2 data-testid="panel-title">{props.title}</h2>
+        <span data-testid="panel-id">{props.campaign.id}</span>
+      </aside>
+    ) : null;
   },
 }));
-vi.mock("@/components/crm/settlement-table", () => ({ SettlementTable: () => null }));
+let tableProps: { onSelectCampaign: (campaign: CampaignRow) => void } | null = null;
+vi.mock("@/components/crm/settlement-table", () => ({
+  SettlementTable: (props: { onSelectCampaign: (campaign: CampaignRow) => void }) => {
+    tableProps = props;
+    return null;
+  },
+}));
 vi.mock("@/components/crm/settlement-completed-table", () => ({ SettlementCompletedTable: () => null }));
 
 import { SettlementPageClient } from "../settlement-page-client";
@@ -89,6 +108,7 @@ beforeEach(() => {
   campaignRequests = [];
   serverRows = {};
   panelProps = null;
+  tableProps = null;
   search = new URLSearchParams();
   stubFetch();
 });
@@ -101,7 +121,7 @@ describe("정산 페이지 — 주소로 캠페인 상세 열기", () => {
   it("campaign 이 정산 목록에 있으면 표의 월과 무관하게 그 상세를 연다(서버 재조회 없음)", async () => {
     search = new URLSearchParams("campaign=b");
     render(<SettlementPageClient initialData={initialData([row("a"), row("b")])} defaultMonth="2026-10" />);
-    expect(await screen.findByTestId("panel")).toHaveTextContent("b");
+    expect(await screen.findByTestId("panel-id")).toHaveTextContent(/^b$/);
     expect(campaignRequests).toEqual([]);
   });
 
@@ -109,7 +129,7 @@ describe("정산 페이지 — 주소로 캠페인 상세 열기", () => {
     search = new URLSearchParams("campaign=far");
     serverRows = { far: row("far") };
     render(<SettlementPageClient initialData={initialData([row("a")])} defaultMonth="2026-10" />);
-    expect(await screen.findByTestId("panel")).toHaveTextContent("far");
+    expect(await screen.findByTestId("panel-id")).toHaveTextContent(/^far$/);
     expect(campaignRequests).toEqual(["far"]);
   });
 
@@ -138,5 +158,67 @@ describe("정산 페이지 — 주소로 캠페인 상세 열기", () => {
     expect(screen.queryByTestId("panel")).not.toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();
     expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  // 최종 코드 리뷰(2026-10-18 minor 4): 목록에 없어 서버에서 읽는 사이 오너가 표에서 다른 행을 고르면,
+  // 늦게 온 응답이 그 새 선택을 덮어썼다.
+  it("서버 응답이 늦게 오는 사이 표에서 다른 행을 고르면 늦은 응답이 그 선택을 덮지 않는다", async () => {
+    search = new URLSearchParams("campaign=far");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.startsWith("/api/campaigns/far")) {
+          await gate;
+          return { ok: true, json: async () => row("far") };
+        }
+        return { ok: true, json: async () => ({ campaigns: [], summary: { totalRevenue: 0, totalMargin: 0, totalSellerPayouts: 0 } }) };
+      }),
+    );
+    render(<SettlementPageClient initialData={initialData([row("a")])} defaultMonth="2026-10" />);
+    await waitFor(() => expect(tableProps).not.toBeNull());
+    act(() => tableProps!.onSelectCampaign(row("a")));
+    expect(await screen.findByTestId("panel-id")).toHaveTextContent(/^a$/);
+    await act(async () => {
+      release();
+      await gate;
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.getByTestId("panel-id")).toHaveTextContent(/^a$/);
+  });
+
+  // interfaces MEDIUM(2026-10-18): 주소로 열면 포커스가 첫 입력 칸에 떨어지고, 닫으면 BODY 로 돌아갔다.
+  it("주소로 열면 패널 제목으로 포커스를 보내고, 제목이 그 캠페인을 말한다", async () => {
+    search = new URLSearchParams("campaign=b");
+    render(<SettlementPageClient initialData={initialData([row("a"), row("b")])} defaultMonth="2026-10" />);
+    await screen.findByTestId("panel");
+    expect(panelProps!.focusTitleOnOpen).toBe(true);
+    expect(screen.getByTestId("panel-title")).toHaveTextContent("딜-b - 셀러");
+  });
+
+  it("표에서 고른 행은 Radix 기본 포커스(첫 조작 요소·닫으면 그 행)를 그대로 쓴다", async () => {
+    render(<SettlementPageClient initialData={initialData([row("a")])} defaultMonth="2026-10" />);
+    await waitFor(() => expect(tableProps).not.toBeNull());
+    act(() => tableProps!.onSelectCampaign(row("a")));
+    await screen.findByTestId("panel");
+    expect(panelProps!.focusTitleOnOpen).toBe(false);
+    const event = new Event("close", { cancelable: true });
+    panelProps!.onCloseAutoFocus?.(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("주소로 연 패널을 닫으면 포커스를 페이지 제목(정산 진행 중 캠페인)으로 돌린다 — BODY 로 떨어뜨리지 않는다", async () => {
+    search = new URLSearchParams("campaign=b");
+    render(<SettlementPageClient initialData={initialData([row("b")])} defaultMonth="2026-10" />);
+    await screen.findByTestId("panel");
+    act(() => panelProps!.onOpenChange(false));
+    const event = new Event("close", { cancelable: true });
+    act(() => panelProps!.onCloseAutoFocus!(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "정산 진행 중 캠페인" }));
   });
 });

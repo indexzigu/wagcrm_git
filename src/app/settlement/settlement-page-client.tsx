@@ -373,13 +373,21 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
   const pendingDepositAmount = settlementPending?.deposit.total ?? null;
   const pendingPayoutAmount = settlementPending?.payout.total ?? null;
 
+  // 표에서 고를 때마다 오른다 — 주소 열기의 늦은 서버 응답이 그 사이 고른 행을 덮지 않게 비교한다(아래 effect).
+  const selectionSeqRef = useRef(0);
+  // 지금 패널이 주소로 열렸는가 — 누른 행이 없으니 포커스를 제목으로 보내고, 닫으면 페이지 제목으로 돌린다.
+  const [panelFromUrl, setPanelFromUrl] = useState(false);
+  const activeHeadingRef = useRef<HTMLHeadingElement>(null);
+
   const handleSelectCampaign = (campaign: CampaignRow) => {
+    selectionSeqRef.current += 1;
+    setPanelFromUrl(false);
     selectCampaign(campaign);
     setPanelOpen(true);
   };
 
   // ── 주소로 캠페인 상세 열기: `/settlement?campaign=<id>` ─────────────────────────────
-  // 홈 「오늘 처리할 일」의 「지연된 정산」이 이 주소로 온다(여러 건이면 가장 오래 지연된 것) — 홈의 빠른 정산 창을 빼고 이 상세가
+  // 홈 「오늘 처리할 일」의 「정산 지연」이 이 주소로 온다(여러 건이면 가장 오래 지연된 것) — 홈의 빠른 정산 창을 빼고 이 상세가
   // 그 일을 맡는다(오너 2026-10-18). id 는 아젠다 항목 id, 그룹이면 대표 멤버 id(`agenda-settlements.ts`).
   // 행은 표의 월 필터로 걸러지기 **전** 목록(`data.campaigns` = 정산 작업공간 전체)에서 찾으므로 월을
   // 바꾸지 않아도 열린다. 목록에 없으면(초기 스냅샷이 낡은 경우) 그 한 건을 서버에서 읽는다.
@@ -411,6 +419,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     // `campaignRowsRef` 는 위 effect 가 먼저 동기화한다(effect 는 선언 순서대로 돈다).
     const local = campaignRowsRef.current.find((campaign) => campaign.id === deepLinkCampaignId);
     if (local) {
+      setPanelFromUrl(true);
       selectCampaign(local);
       setPanelOpen(true);
       return;
@@ -418,13 +427,18 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     // 늦게 온 응답은 **주소가 여전히 그 캠페인을 가리킬 때만** 반영한다. effect 정리 함수의 취소 플래그를
     // 쓰지 않는 이유: 주소의 다른 값(월 등)이 바뀌거나 개발 모드가 effect 를 두 번 돌리면 정리가 먼저 불리는데,
     // 위 가드가 재실행을 막아 그 응답이 영영 버려진다.
-    const stillWanted = () => handledDeepLinkRef.current === deepLinkCampaignId;
+    // 그 사이 표에서 다른 행을 골랐으면(선택 번호가 바뀜) 늦은 응답은 버린다 — 새 선택을 덮지 않는다
+    // (2026-10-18 코드 리뷰). 고른 행은 주소의 campaign 을 지우지 않으므로 주소만으로는 이걸 모른다.
+    const seqAtStart = selectionSeqRef.current;
+    const stillWanted = () =>
+      handledDeepLinkRef.current === deepLinkCampaignId && selectionSeqRef.current === seqAtStart;
     void (async () => {
       try {
         const response = await fetch(`/api/campaigns/${encodeURIComponent(deepLinkCampaignId)}`);
         if (!response.ok) throw new Error(`campaign ${response.status}`);
         const campaign = (await response.json()) as CampaignRow;
         if (!stillWanted()) return;
+        setPanelFromUrl(true);
         selectCampaign(campaign);
         setPanelOpen(true);
       } catch (err: unknown) {
@@ -443,6 +457,20 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     },
     [clearCampaignParam],
   );
+
+  // 주소로 연 패널은 돌아갈 행(트리거)이 없다 — Radix 기본값이면 포커스가 BODY 로 떨어져 다음 Tab 이 사이드바
+  // 맨 위로 간다(2026-10-18 실측). 그때만 이 화면의 첫 표 제목으로 돌린다. 행에서 연 패널은 Radix 가 그 행으로 돌린다.
+  const handlePanelCloseAutoFocus = useCallback(
+    (event: Event) => {
+      if (!panelFromUrl) return;
+      event.preventDefault();
+      activeHeadingRef.current?.focus();
+    },
+    [panelFromUrl],
+  );
+  const panelCampaignName = selectedCampaign
+    ? [selectedCampaign.dealName, selectedCampaign.sellerName].filter(Boolean).join(" - ") || selectedCampaign.campaignName
+    : null;
 
 
   return isMobile ? (
@@ -617,7 +645,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
             <section className="flex flex-col gap-4 px-5 py-4">
               <div className="flex items-center gap-2">
                 <ChevronDown className="size-4 text-slate-500" />
-                <h2 className="text-base font-semibold text-slate-800">정산 진행 중 캠페인</h2>
+                <h2 ref={activeHeadingRef} tabIndex={-1} className="text-base font-semibold text-slate-800 outline-none">정산 진행 중 캠페인</h2>
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
                   {activeCampaigns.length}건
                 </span>
@@ -666,9 +694,21 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
         open={panelOpen}
         onOpenChange={handlePanelOpenChange}
         onCampaignUpdated={handleCampaignSaved}
-        title="정산관리 캠페인 상세 페이지"
+        // 창 이름이 어느 캠페인인지 말한다 — 「정산 지연」에서 온 오너·화면 읽기 도구가 무엇이 열렸는지 안다.
+        title={
+          panelCampaignName ? (
+            <>
+              <span className="sr-only">정산 상세: </span>
+              {panelCampaignName}
+            </>
+          ) : (
+            "정산관리 캠페인 상세 페이지"
+          )
+        }
         description="캠페인의 정산 및 재무 내역을 확인하고 설정을 관리합니다."
         settlementWorkspace
+        focusTitleOnOpen={panelFromUrl}
+        onCloseAutoFocus={handlePanelCloseAutoFocus}
       />
 
 

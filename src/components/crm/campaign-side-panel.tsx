@@ -361,9 +361,16 @@ type CampaignSidePanelProps = {
   onCampaignDuplicated?: (campaign: CampaignRow) => void;
   workspaceFilter?: StageFilter;
   onCampaignDeleted?: (campaignId: string) => void;
-  title?: string;
+  title?: React.ReactNode;
   description?: string;
   settlementWorkspace?: boolean;
+  /**
+   * 열릴 때 첫 조작 요소 대신 **패널 제목**에 포커스를 둔다(데스크톱 Sheet). 주소로 열린 패널처럼 누른 버튼이
+   * 없는 경우용 — 첫 입력 칸이 맥락 없이 읽히던 것을 막는다(2026-10-18 interfaces MEDIUM). 기본은 Radix 기본값.
+   */
+  focusTitleOnOpen?: boolean;
+  /** 닫힐 때 포커스 복귀 처리(Radix `onCloseAutoFocus` 통과). 여는 버튼이 없던 패널의 복귀 자리를 호출부가 정한다. */
+  onCloseAutoFocus?: (event: Event) => void;
 };
 
 export function CampaignSidePanel({
@@ -380,7 +387,10 @@ export function CampaignSidePanel({
   title = "판매 관리 캠페인 상세 페이지",
   description,
   settlementWorkspace = false,
+  focusTitleOnOpen = false,
+  onCloseAutoFocus,
 }: CampaignSidePanelProps) {
+  const sheetTitleRef = useRef<HTMLHeadingElement>(null);
   const isDesktop = useDesktop();
   const [noteContent, setNoteContent] = useState("");
   const [isSellerSearchOpen, setIsSellerSearchOpen] = useState(false);
@@ -1346,13 +1356,23 @@ export function CampaignSidePanel({
         <Sheet open={open} onOpenChange={onOpenChange}>
           <SheetContent
             showCloseButton={false}
+            onOpenAutoFocus={
+              focusTitleOnOpen
+                ? (event) => {
+                    event.preventDefault();
+                    sheetTitleRef.current?.focus();
+                  }
+                : undefined
+            }
+            onCloseAutoFocus={onCloseAutoFocus}
             style={{ width: "min(720px, 96vw)", maxWidth: "min(720px, 96vw)" }}
             className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
           >
             <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
               <div className="flex items-start justify-between gap-4">
               <div>
-                <SheetTitle>{title}</SheetTitle>
+                {/* tabIndex -1: 프로그램으로만 포커스(focusTitleOnOpen) — 탭 순서에는 넣지 않는다. */}
+                <SheetTitle ref={sheetTitleRef} tabIndex={-1} className="outline-none">{title}</SheetTitle>
                 <SheetDescription>
                   {panelDescription}
                 </SheetDescription>
