@@ -175,7 +175,8 @@ function IncidentSection({ incidents, error }: { incidents: AutomationIncident[]
   return (
     <section aria-label="이상 기록" className="shrink-0 border-t border-slate-100 px-3.5 py-2.5">
       <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">이상 기록</p>
-      <ul className="space-y-2">
+      {/* 조치대기는 자르지 않으므로 줄이 많을 수 있다 — 높이를 묶고 스크롤(키보드로도 닿게, 확인대기 목록과 같은 꼴). */}
+      <ul tabIndex={0} className="max-h-[168px] space-y-2 overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring">
         {shown.map((incident) => {
           const meta = INCIDENT_LINE_META[incident.status];
           return (
@@ -234,7 +235,7 @@ function JobDetailPopoverContent({
       })
       .catch((err: unknown) => {
         console.error("[SystemRadarCard] 이상 기록 조회 실패:", err);
-        if (!cancelled) setIncidentError("이상 기록을 불러오지 못했습니다. 창을 닫았다 다시 열면 다시 불러옵니다.");
+        if (!cancelled) setIncidentError("이상 기록을 불러오지 못했습니다. 창을 닫았다가 다시 열어 주세요.");
       });
     return () => {
       cancelled = true;
@@ -435,26 +436,24 @@ export function SystemRadarCard() {
   const [waitingJobs, setWaitingJobs] = useState<ReadonlySet<string>>(new Set());
   const [waitingError, setWaitingError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/system/incidents?status=waiting_owner")
-      .then(async (res) => {
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !Array.isArray(json?.incidents)) throw new Error(`HTTP ${res.status}`);
-        return json.incidents as AutomationIncident[];
-      })
-      .then((list) => {
-        if (!cancelled) setWaitingJobs(new Set(list.map((i) => i.jobKey)));
-      })
-      .catch((err: unknown) => {
-        // 못 받으면 조치대기 행이 정상처럼 보인다 — 조용히 넘기지 않고 카드에 알린다.
-        console.error("[SystemRadarCard] 조치대기 조회 실패:", err);
-        if (!cancelled) setWaitingError("조치대기 여부를 불러오지 못했습니다. 페이지를 새로 고치면 다시 불러옵니다.");
-      });
-    return () => {
-      cancelled = true;
-    };
+  // 카드가 열릴 때 한 번, 그리고 수동 실행 뒤 레이더와 함께 다시 받는다(실행이 사고를 정상화했을 수 있다).
+  const fetchWaiting = useCallback(async () => {
+    try {
+      const res = await fetch("/api/system/incidents?status=waiting_owner");
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !Array.isArray(json?.incidents)) throw new Error(`HTTP ${res.status}`);
+      setWaitingJobs(new Set((json.incidents as AutomationIncident[]).map((i) => i.jobKey)));
+      setWaitingError(null);
+    } catch (err: unknown) {
+      // 못 받으면 조치대기 행이 정상처럼 보인다 — 조용히 넘기지 않고 카드에 알린다.
+      console.error("[SystemRadarCard] 조치대기 조회 실패:", err);
+      setWaitingError("조치대기 작업을 불러오지 못해 일부 작업이 정상으로 보일 수 있습니다. 페이지를 새로 고쳐 주세요.");
+    }
   }, []);
+
+  useEffect(() => {
+    fetchWaiting();
+  }, [fetchWaiting]);
 
   const fetchRadar = useCallback(async () => {
     try {
@@ -504,14 +503,14 @@ export function SystemRadarCard() {
             `HTTP ${json?.status ?? res.status}`;
           throw new Error(detail);
         }
-        await fetchRadar();
+        await Promise.all([fetchRadar(), fetchWaiting()]);
       } catch (err: unknown) {
         setRunError(`${jobName} 수동 실행 실패: ${err instanceof Error ? err.message : "알 수 없는 오류"}`);
       } finally {
         setRunningJob(null);
       }
     },
-    [fetchRadar],
+    [fetchRadar, fetchWaiting],
   );
 
   return (
@@ -558,7 +557,8 @@ export function SystemRadarCard() {
                 // 지연 = 한 회차를 통째로 걸렀다. 판정 SSOT 는 cron-staleness(유예·주기별 임계).
                 // 사유 문자열이 곧 지연 여부다(지연이 아니면 null) — 판정을 두 번 돌리지 않는다.
                 const overdueText = overdueSummary(job, task?.lastRunAt ?? null);
-                const key = statusKey(task, overdueText !== null, waitingJobs.has(job.key));
+                const waiting = waitingJobs.has(job.key);
+                const key = statusKey(task, overdueText !== null, waiting);
                 const meta = STATUS_META[key];
                 const lastRunText = task?.lastRunAt
                   ? formatDistanceToNow(new Date(task.lastRunAt), { addSuffix: true, locale: ko })
@@ -578,7 +578,7 @@ export function SystemRadarCard() {
                         title={`${job.name} 상세 · 클릭하여 설명·로그 보기`}
                         className="min-w-0 flex-1 -mx-1.5 rounded-lg px-1.5 py-1 text-left transition-colors duration-150 hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-[var(--primary)] focus-visible:outline-offset-1"
                       >
-                        <span className="flex items-center gap-2 min-w-0">
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
                           {/* RUNNING만 live-indicator pulse — 종결 상태(SUCCESS/ERROR/NONE)는 정적 유지 */}
                           <span aria-hidden className={`size-2 rounded-full shrink-0 ${meta.dotClass}${key === "RUNNING" ? " pulse-beat-dot" : ""}`} />
                           <span className="text-xs font-semibold text-slate-700">{job.name}</span>
@@ -589,6 +589,11 @@ export function SystemRadarCard() {
                             <span className="sr-only">{meta.label}</span>
                           ) : (
                             <span className={`shrink-0 text-[10.5px] font-medium ${meta.textClass}`}>{meta.label}</span>
+                          )}
+                          {/* 실패가 조치대기를 이겨 점·첫 낱말을 가져가도, 오너 손을 기다리는 사고가 있다는 사실은 따로 한 낱말로
+                              남긴다(2026-10-18 ss-ux 구현 검토). 「실패 · 조치대기」로 합치지 않는다 — 두 상태다. */}
+                          {waiting && key !== "WAITING" && (
+                            <span className="shrink-0 text-[10.5px] font-medium text-[var(--status-caution-text)]">조치대기</span>
                           )}
                         </span>
                         {/* 실패·지연 사유는 행에 두지 않는다 — 행 버튼 안에 툴팁 앵커를 두면 누르는 요소
@@ -624,7 +629,8 @@ export function SystemRadarCard() {
                     <JobDetailPopoverContent
                       job={job}
                       onClose={() => setOpenJob(null)}
-                      overdueText={key === "OVERDUE" ? overdueText : null}
+                      // 조치대기가 지연을 이겨도 지연 사유는 상세 첫 줄에 남긴다(무엇이 늦었는지는 여전히 판단 정보다).
+                      overdueText={key === "OVERDUE" || key === "WAITING" ? overdueText : null}
                       lastErrorMessage={key === "ERROR" ? task?.lastErrorMessage ?? null : null}
                     />
                     </div>

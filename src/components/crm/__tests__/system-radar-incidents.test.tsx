@@ -38,20 +38,25 @@ function mockApis({
   waiting = [] as AutomationIncident[],
   byJob = [] as AutomationIncident[],
   waitingFails = false,
+  byJobFails = false,
+  lastRunAt = new Date(Date.now() - HOUR).toISOString(),
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/api/system/radar")) {
       return json({
         success: true,
-        data: [{ jobKey: job.key, status, lastRunAt: new Date(Date.now() - HOUR).toISOString(), lastErrorMessage: status === "ERROR" ? "boom" : null }],
+        data: [{ jobKey: job.key, status, lastRunAt, lastErrorMessage: status === "ERROR" ? "boom" : null }],
         collectHealth: null,
       });
     }
     if (url.includes("/api/system/incidents?status=waiting_owner")) {
       return waitingFails ? new Response("{}", { status: 500 }) : json({ incidents: waiting });
     }
-    if (url.includes("/api/system/incidents?jobKey=")) return json({ incidents: byJob });
+    if (url.includes("/api/system/incidents?jobKey=")) {
+      return byJobFails ? new Response("{}", { status: 500 }) : json({ incidents: byJob });
+    }
+    if (url.includes("/api/system/cron-run")) return json({ ok: true });
     if (url.includes("/api/system/task-log")) return json({ success: true, data: [] });
     return json({});
   });
@@ -80,12 +85,37 @@ describe("자동화 작업 상태 — 조치대기 행", () => {
     expect(rowButton().querySelector('[aria-hidden].rounded-full')!.className).toContain("bg-[var(--status-caution)]");
   });
 
-  it("실패가 조치대기를 이긴다", async () => {
+  it("실패가 점·첫 낱말을 가져가도 조치대기는 둘째 낱말로 남는다(합치지 않는다)", async () => {
     vi.setSystemTime(new Date("2026-10-18T03:00:00Z"));
     mockApis({ status: "ERROR", waiting: [incident()] });
     render(<SystemRadarCard />);
     await waitFor(() => expect(within(rowButton()).getByText("실패")).toBeInTheDocument());
-    expect(within(rowButton()).queryByText("조치대기")).toBeNull();
+    expect(rowButton().querySelector('[aria-hidden].rounded-full')!.className).toContain("bg-[var(--status-urgent)]");
+    const waitingWord = await within(rowButton()).findByText("조치대기");
+    expect(waitingWord.className).toContain("text-[var(--status-caution-text)]");
+    expect(within(rowButton()).queryByText(/실패 · 조치대기/)).toBeNull();
+    expect(waitingWord.parentElement!.className).toContain("flex-wrap");
+  });
+
+  it("조치대기 행이 지연이기도 하면 상세 첫 줄의 지연 사유를 그대로 남긴다", async () => {
+    vi.setSystemTime(new Date("2026-10-18T03:00:00Z"));
+    mockApis({ waiting: [incident()], lastRunAt: new Date(Date.now() - 3 * 24 * HOUR).toISOString() });
+    render(<SystemRadarCard />);
+    await waitFor(() => expect(within(rowButton()).getByText("조치대기")).toBeInTheDocument());
+    expect(within(rowButton()).queryByText("지연")).toBeNull();
+    fireEvent.click(rowButton());
+    expect(await screen.findByText(/지연 사유/)).toBeInTheDocument();
+  });
+
+  it("수동 실행 뒤 조치대기 목록도 다시 받는다", async () => {
+    vi.setSystemTime(new Date("2026-10-18T03:00:00Z"));
+    const fetchMock = mockApis({ waiting: [incident()] });
+    render(<SystemRadarCard />);
+    await waitFor(() => expect(within(rowButton()).getByText("조치대기")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: `${job.name} 지금 실행` }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.filter(([u]) => String(u).includes("status=waiting_owner"))).toHaveLength(2),
+    );
   });
 
   it("조치대기 목록은 카드가 한 번만 받는다", async () => {
@@ -111,7 +141,7 @@ describe("자동화 작업 상태 — 조치대기 행", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockApis({ waitingFails: true });
     render(<SystemRadarCard />);
-    expect(await screen.findByText("조치대기 여부를 불러오지 못했습니다. 페이지를 새로 고치면 다시 불러옵니다.")).toBeInTheDocument();
+    expect(await screen.findByText("조치대기 작업을 불러오지 못해 일부 작업이 정상으로 보일 수 있습니다. 페이지를 새로 고쳐 주세요.")).toBeInTheDocument();
     spy.mockRestore();
   });
 });
@@ -145,7 +175,7 @@ describe("자동화 작업 상태 — 설명창 「이상 기록」", () => {
     expect(within(section).queryByText("보이면 안 됨")).toBeNull();
     expect(within(section).queryByText("이것도 보이면 안 됨")).toBeNull();
     expect(within(items[0]).getByText("10-17 09:30 시작")).toBeInTheDocument();
-    expect(within(items[1]).getByText("10-17 09:30 시작 · 3회")).toBeInTheDocument();
+    expect(within(items[1]).getByText("10-17 09:30 시작 · 3회 발생")).toBeInTheDocument();
     expect(within(items[2]).getByText("10-17 09:30 시작 · 12:05 정상화")).toBeInTheDocument();
   });
 
@@ -173,6 +203,25 @@ describe("자동화 작업 상태 — 설명창 「이상 기록」", () => {
     ]);
     expect(within(section).getAllByRole("listitem")).toHaveLength(3);
     expect(within(section).getByText("외 2건")).toBeInTheDocument();
+  });
+
+  it("이상 기록 목록은 높이를 묶고 키보드로 스크롤할 수 있다", async () => {
+    const section = await openDetail([incident({ id: "w" })]);
+    const list = within(section).getByRole("list");
+    expect(list).toHaveAttribute("tabindex", "0");
+    expect(list.className).toContain("max-h-[168px]");
+    expect(list.className).toContain("overflow-y-auto");
+  });
+
+  it("이상 기록을 못 받으면 다시 여는 방법까지 말한다", async () => {
+    vi.setSystemTime(new Date("2026-10-18T03:00:00Z"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockApis({ byJobFails: true });
+    render(<SystemRadarCard />);
+    await waitFor(() => expect(screen.getByText(job.name)).toBeInTheDocument());
+    fireEvent.click(rowButton());
+    expect(await screen.findByText("이상 기록을 불러오지 못했습니다. 창을 닫았다가 다시 열어 주세요.")).toBeInTheDocument();
+    spy.mockRestore();
   });
 
   it("사고 기록이 없으면 섹션을 그리지 않는다", async () => {

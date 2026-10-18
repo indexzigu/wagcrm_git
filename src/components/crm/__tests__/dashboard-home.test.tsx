@@ -343,13 +343,13 @@ describe("DashboardHome", () => {
     hookState.automationWaiting = [];
   });
 
-  it("자동화 작업을 불러오지 못하면 실패 원천에 「자동화 작업」을 싣고 「없다」고 하지 않는다", async () => {
+  it("자동화 작업을 불러오지 못하면 실패 원천에 「자동화 작업 조치대기」를 싣고 「없다」고 하지 않는다", async () => {
     hookState.orders = orderSummary();
     hookState.approvalsCount = 0;
     hookState.automationError = true;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tasks: [], settlements: [] }) }));
     render(<DashboardHome initialData={data()} />);
-    expect(await screen.findByText("자동화 작업 건수를 불러오지 못했습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("자동화 작업 조치대기 건수를 불러오지 못했습니다.")).toBeInTheDocument();
     expect(screen.queryByText("오늘 처리할 일이 없습니다")).not.toBeInTheDocument();
     hookState.automationError = false;
   });

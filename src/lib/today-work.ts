@@ -51,7 +51,7 @@ export type TodayWorkInput = {
   approvalsPending: number;
   /**
    * 조치대기 자동화 작업 사고(`/api/system/incidents?status=waiting_owner`). 아직 없으면(로딩·실패) 줄을
-   * 만들지 않는다 — 0 으로 위장하지 않는다(실패는 홈이 「자동화 작업」 실패 원천으로 알린다).
+   * 만들지 않는다 — 0 으로 위장하지 않는다(실패는 홈이 「자동화 작업 조치대기」 실패 원천으로 알린다).
    */
   automationWaiting?: readonly AutomationIncident[];
   dataCheck: number;

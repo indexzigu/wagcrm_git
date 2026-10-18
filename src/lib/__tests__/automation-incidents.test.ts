@@ -86,15 +86,24 @@ describe("summarizeWaitingJobs", () => {
 });
 
 describe("incidentTimeText", () => {
-  it("조치대기·재확인중은 「MM-DD HH:mm 시작」(KST), 2회 이상이면 횟수를 붙인다", () => {
+  it("조치대기·재확인중은 「MM-DD HH:mm 시작」(KST), 2회 이상이면 「N회 발생」을 붙인다", () => {
     expect(incidentTimeText(incident())).toBe("10-17 09:30 시작");
-    expect(incidentTimeText(incident({ status: "open", occurrences: 3 }))).toBe("10-17 09:30 시작 · 3회");
+    expect(incidentTimeText(incident({ status: "open", occurrences: 3 }))).toBe("10-17 09:30 시작 · 3회 발생");
   });
 
   it("정상화는 「MM-DD HH:mm 시작 · HH:mm 정상화」", () => {
     expect(
       incidentTimeText(incident({ status: "resolved", normalizedAt: "2026-10-17T03:05:00.000Z", occurrences: 4 })),
     ).toBe("10-17 09:30 시작 · 12:05 정상화");
+  });
+
+  it("정상화가 시작과 다른 날(KST)이면 정상화에도 날짜를 붙인다", () => {
+    // 10-17 23:50 KST 시작 → 10-18 00:20 KST 정상화(UTC 로는 같은 날이지만 KST 로는 날이 넘어간다)
+    expect(
+      incidentTimeText(
+        incident({ status: "resolved", firstSeenAt: "2026-10-17T14:50:00.000Z", normalizedAt: "2026-10-17T15:20:00.000Z" }),
+      ),
+    ).toBe("10-17 23:50 시작 · 10-18 00:20 정상화");
   });
 });
 

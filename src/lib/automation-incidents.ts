@@ -3,6 +3,7 @@ import type { IncidentKind } from "@/lib/cron-incident";
 import { incidentCauseLabel, kstDateTime, kstTime } from "@/lib/cron-incident-report";
 import { ownerActionFor } from "@/lib/cron-incident-escalation";
 import { KNOWN_JOBS } from "@/lib/cron-jobs";
+import { toKstYmd } from "@/lib/date-utils";
 import { UNKNOWN_NAME } from "@/lib/display-label";
 
 /**
@@ -86,15 +87,19 @@ export function summarizeWaitingJobs(
 }
 
 /**
- * 「이상 기록」 줄의 보조 글(KST). 조치대기·재확인중 = 「MM-DD HH:mm 시작」(2회 이상이면 「 · N회」),
- * 정상화 = 「MM-DD HH:mm 시작 · HH:mm 정상화」.
+ * 「이상 기록」 줄의 보조 글(KST). 조치대기·재확인중 = 「MM-DD HH:mm 시작」(2회 이상이면 「 · N회 발생」),
+ * 정상화 = 「MM-DD HH:mm 시작 · HH:mm 정상화」(날이 넘어가면 「MM-DD HH:mm 정상화」).
  */
 export function incidentTimeText(i: AutomationIncident): string {
   const start = `${kstDateTime(new Date(i.firstSeenAt))} 시작`;
   if (i.status === "resolved") {
-    return i.normalizedAt ? `${start} · ${kstTime(new Date(i.normalizedAt))} 정상화` : start;
+    if (!i.normalizedAt) return start;
+    const normalized = new Date(i.normalizedAt);
+    // 시작과 같은 날(KST)이면 시각만, 날이 넘어갔으면 날짜까지 — 시각만 쓰면 다음 날 정상화가 같은 날로 읽힌다.
+    const sameDay = toKstYmd(normalized) === toKstYmd(new Date(i.firstSeenAt));
+    return `${start} · ${sameDay ? kstTime(normalized) : kstDateTime(normalized)} 정상화`;
   }
-  return i.occurrences >= 2 ? `${start} · ${i.occurrences}회` : start;
+  return i.occurrences >= 2 ? `${start} · ${i.occurrences}회 발생` : start;
 }
 
 const DETAIL_MAX_LINES = 3;

@@ -594,7 +594,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   // 추가 요청이 생기지 않는다. 데이터 점검 건수는 아래 「데이터 점검」 탭과 같은 배열이다.
   const orderWork = useOrderWorkSummary();
   const approvals = useApprovalInbox("PENDING_APPROVAL");
-  // 조치대기 자동화 작업(크론 자가 복구 2단계) — 조회 실패면 줄을 만들지 않고 실패 원천 「자동화 작업」으로 알린다.
+  // 조치대기 자동화 작업(크론 자가 복구 2단계) — 조회 실패면 줄을 만들지 않고 실패 원천 「자동화 작업 조치대기」로 알린다.
   const automationWaiting = useWaitingAutomationIncidents();
   const todayRows = buildTodayWorkRows({
     orders: orderWork.data,
@@ -611,7 +611,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
     orderWork.isError ? "주문" : null,
     agendaError ? "영업·정산" : null,
     approvals.isError ? "승인대기" : null,
-    automationWaiting.isError ? "자동화 작업" : null,
+    automationWaiting.isError ? "자동화 작업 조치대기" : null,
   ].filter((name): name is string => name != null);
   const retryTodayWork = () => {
     if (orderWork.isError) void orderWork.refetch();
