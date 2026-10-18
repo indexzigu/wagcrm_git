@@ -20,7 +20,8 @@ export const DASHBOARD_YTD_SCOPE_CAPTION = "드랍 제외 · 올해 시작한 �
 
 /**
  * 대시보드 거래액·매출총이익 집계에 넣을 상태인가. 드랍(DROPPED)은 진행되지 않은 캠페인이라 뺀다.
- * 개수 지표(유효 캠페인 수·활성 셀러)는 이 술어를 쓰지 않는다 — 금액 합산 전용.
+ * 금액 지표뿐 아니라 개수 지표(운영일·유효 캠페인 수·활성 셀러·추이의 캠페인 수)도 이 술어 하나를 쓴다
+ * (오너 2026-10-17). 현재·전월·전전월 모두 같다.
  */
 export function isCountedForDashboard(status: string): boolean {
   return status !== "DROPPED";

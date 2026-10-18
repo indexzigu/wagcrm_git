@@ -407,7 +407,8 @@ export async function getDesktopDashboardData(now = new Date()) {
   const prevPrevMonthlyGoal = goals.find((goal) => goal.periodKey === prevPrevMonth);
   const annualGoal = goals.find((goal) => goal.periodKey === year);
 
-  // 금액 합산 대상 — 드랍 제외(개수 지표는 아래에서 전량 `campaigns` 를 그대로 쓴다).
+  // 금액·개수 지표 모두의 대상 — 드랍 제외(오너 2026-10-17: 개수 지표도 같은 술어). 아래 어떤 집계도
+  // 술어를 새로 쓰지 말고 이 목록(또는 `isCountedForDashboard`)에서 파생할 것.
   const countedCampaigns = campaigns.filter((campaign) => isCountedForDashboard(campaign.status));
   const selectedCampaigns = countedCampaigns.filter((campaign) => allocateCampaignToMonth(campaign, selectedMonth).operatingDays > 0);
   const prevCampaigns = countedCampaigns.filter((campaign) => allocateCampaignToMonth(campaign, prevMonth).operatingDays > 0);
@@ -431,7 +432,7 @@ export async function getDesktopDashboardData(now = new Date()) {
   // 캠페인 "개수" 지표는 유효 캠페인 기준(그룹 = 멤버 포락선 1건, 오너 확정 2026-07-30).
   // 매출·마진 합산은 계속 행(멤버) 단위다 — actualSales가 딜 고유 값이라 병합 금지(CG-1).
   // allocateCampaignToMonth는 창 밖이면 weight 0을 돌려주므로 월 필터 없이 전량 reduce한다.
-  const effectivePeriods = buildEffectiveCampaignPeriods(campaigns);
+  const effectivePeriods = buildEffectiveCampaignPeriods(countedCampaigns);
   const weightedCampaignCount = effectivePeriods.reduce(
     (sum, period) => sum + allocateCampaignToMonth(period, selectedMonth).weightedCampaignCount,
     0,
@@ -463,7 +464,7 @@ export async function getDesktopDashboardData(now = new Date()) {
   const oneEightyDaysAgo = new Date(now.getTime() - 180 * DAY_MS);
   const curMonthStart = startOfMonth(selectedMonth);
   const sellerStartTimes = new Map<string, { times: number[]; name: string; alias: string | null }>();
-  for (const campaign of campaigns) {
+  for (const campaign of countedCampaigns) {
     if (!campaign.sellerId) continue;
     const entry = sellerStartTimes.get(campaign.sellerId);
     if (entry) entry.times.push(campaign.startDate.getTime());
@@ -583,7 +584,7 @@ export async function getDesktopDashboardData(now = new Date()) {
           (sum, period) => sum + allocateCampaignToMonth(period, key).weightedCampaignCount,
           0,
         ),
-        activeSellers: new Set(inMonthAll.map((campaign) => campaign.sellerId).filter(Boolean)).size,
+        activeSellers: new Set(inMonth.map((campaign) => campaign.sellerId).filter(Boolean)).size,
         goal: goals.find((goal) => goal.periodKey === key)?.revenueTarget
           ? numberValue(goals.find((goal) => goal.periodKey === key)?.revenueTarget)
           : null,
