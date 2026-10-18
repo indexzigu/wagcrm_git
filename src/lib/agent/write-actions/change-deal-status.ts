@@ -31,7 +31,7 @@ async function handleChangeDealStatus(
   if (!deal) {
     // assertEntityExists가 이미 존재를 확인했으므로 이 분기는 사실상 도달 불가하지만
     // 타입 좁히기 및 방어적 코딩을 위해 남겨둔다.
-    throw new Error(`대상 딜(${args.dealId})를 찾을 수 없습니다. 이미 삭제되었거나 잘못된 대상입니다.`);
+    throw new Error(`대상 판매 조건(${args.dealId})을 찾을 수 없습니다. 이미 삭제되었거나 잘못된 대상입니다.`);
   }
 
   const currentStatus = deal.status as DealStatus;
@@ -44,7 +44,7 @@ async function handleChangeDealStatus(
     const validNext = getValidNextStatuses(currentStatus);
     const validNextLabel = validNext.length > 0 ? validNext.join(", ") : "없음(terminal 상태)";
     throw new Error(
-      `${currentStatus}에서 ${args.newStatus}로 변경할 수 없습니다 (딜 상태기계 위반). ` +
+      `${currentStatus}에서 ${args.newStatus}로 변경할 수 없습니다 (판매 조건 상태 순서 위반). ` +
         `가능한 다음 상태: ${validNextLabel}`
     );
   }
@@ -59,7 +59,7 @@ async function handleChangeDealStatus(
   return {
     refType: "DEAL",
     refId: args.dealId,
-    summary: `딜 상태 ${currentStatus}→${args.newStatus} 변경`,
+    summary: `판매 조건 상태 ${currentStatus}→${args.newStatus} 변경`,
   };
 }
 

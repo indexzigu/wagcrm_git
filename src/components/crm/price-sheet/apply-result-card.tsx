@@ -44,7 +44,7 @@ export function ApplyResultCard({ summary }: { summary: ApplySummary | null }) {
       icon: ClockIcon,
       badge: "status-pending" as const,
       label: "반영중",
-      description: "딜에 반영하는 중입니다. 잠시 후 새로고침하면 결과가 표시됩니다.",
+      description: "판매 조건에 반영하는 중입니다. 잠시 후 새로고침하면 결과가 표시됩니다.",
     },
     SUCCEEDED: {
       icon: CheckCircle2Icon,
@@ -56,7 +56,7 @@ export function ApplyResultCard({ summary }: { summary: ApplySummary | null }) {
       icon: AlertTriangleIcon,
       badge: "status-urgent" as const,
       label: "반영실패",
-      description: "딜은 하나도 변경되지 않았습니다. 원인을 고친 뒤 다시 반영할 수 있습니다.",
+      description: "판매 조건은 하나도 변경되지 않았습니다. 원인을 고친 뒤 다시 반영할 수 있습니다.",
     },
   }[summary.outcome];
 
@@ -82,7 +82,7 @@ export function ApplyResultCard({ summary }: { summary: ApplySummary | null }) {
 
         {summary.outcome === "SUCCEEDED" && (
           <p className="text-xs text-muted-foreground">
-            딜 {summary.createdCount}개 생성
+            판매 조건 {summary.createdCount}개 생성
             {summary.updatedCount > 0 && `, ${summary.updatedCount}개 갱신`}
           </p>
         )}

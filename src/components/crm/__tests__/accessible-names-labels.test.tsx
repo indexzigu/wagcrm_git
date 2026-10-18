@@ -132,9 +132,9 @@ describe("등록 폼 — placeholder 대신 라벨이 이름이 된다", () => {
     expect(screen.getByRole("combobox", { name: /^소개자 \(선택\)/ })).toBeInTheDocument();
   });
 
-  it("DealCreationForm 딜명·브랜드명이 라벨로 읽힌다", () => {
+  it("DealCreationForm 판매 조건 이름·브랜드명이 라벨로 읽힌다", () => {
     render(<DealCreationForm />);
-    expect(screen.getByRole("textbox", { name: /^딜명/ })).toHaveAttribute("maxlength", "100");
+    expect(screen.getByRole("textbox", { name: /^판매 조건 이름/ })).toHaveAttribute("maxlength", "100");
     expect(screen.getByRole("textbox", { name: /^브랜드명/ })).toBeInTheDocument();
   });
 });
@@ -200,7 +200,7 @@ describe("주문 관리 모달 — 아이콘 버튼·라벨·매핑 표 입력�
     expect(screen.getByLabelText("참조 이메일 주소")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "1행 상품명" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "1행 단가" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "1행 캠페인(딜)" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "1행 캠페인" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "1행 삭제" })).toBeInTheDocument();
   });
 

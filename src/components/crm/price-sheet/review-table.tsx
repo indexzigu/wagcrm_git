@@ -420,7 +420,7 @@ export function ReviewTable({
                             <SelectValue placeholder="매핑 선택" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="__new__">신규 딜로 생성</SelectItem>
+                            <SelectItem value="__new__">신규 판매 조건으로 생성</SelectItem>
                             {deals.map((d) => (
                               <SelectItem key={d.id} value={d.id}>
                                 {d.dealName}

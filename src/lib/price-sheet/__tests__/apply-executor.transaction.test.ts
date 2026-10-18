@@ -220,7 +220,7 @@ describe("applyPriceSheet — attachDealOptions 실행부", () => {
     target: {
       kind: "EXISTING" as const,
       dealId,
-      parentDealName: "기존상위딜",
+      parentDealName: "기존상위 판매 조건",
       parentBrandName: null,
       parentPartnerId: null,
     },
@@ -252,7 +252,7 @@ describe("applyPriceSheet — attachDealOptions 실행부", () => {
     expect(dealCreateMock.mock.calls[0][0].data.parentDeal).toEqual({ connect: { id: "parent-1" } });
   });
 
-  it("상위딜이 이미 하위품목딜(OPTION)이면 2단 중첩을 거부한다", async () => {
+  it("상위 판매 조건이 이미 하위품목 판매 조건(OPTION)이면 2단 중첩을 거부한다", async () => {
     dealFindUniqueMock.mockResolvedValue({ id: "parent-1", parentDealId: "grandparent-1" });
 
     await expect(
@@ -263,14 +263,14 @@ describe("applyPriceSheet — attachDealOptions 실행부", () => {
         rows: [newDealRow("r1", "제품A")],
         bundle: bundlePolicy("parent-1"),
       })
-    ).rejects.toThrow(/하위품목딜에는 다시 하위품목을 붙일 수 없습니다/);
+    ).rejects.toThrow(/하위품목 판매 조건에는 다시 하위품목을 붙일 수 없습니다/);
 
     // 가드가 옵션 생성 전에 던지므로 아무 Deal도 만들어지지 않았어야 한다(부분반영 금지).
     expect(dealCreateMock).not.toHaveBeenCalled();
     expect(dealAggregateMock).not.toHaveBeenCalled();
   });
 
-  it("존재하지 않는 상위딜 id로는 붙일 수 없다", async () => {
+  it("존재하지 않는 상위 판매 조건 id로는 붙일 수 없다", async () => {
     dealFindUniqueMock.mockResolvedValue(null);
 
     await expect(
@@ -281,7 +281,7 @@ describe("applyPriceSheet — attachDealOptions 실행부", () => {
         rows: [newDealRow("r1", "제품A")],
         bundle: bundlePolicy("missing-parent"),
       })
-    ).rejects.toThrow(/상위딜을 찾을 수 없습니다/);
+    ).rejects.toThrow(/상위 판매 조건을 찾을 수 없습니다/);
 
     expect(dealCreateMock).not.toHaveBeenCalled();
   });

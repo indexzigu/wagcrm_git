@@ -36,7 +36,7 @@ describe("CampaignCreationForm", () => {
               results: [
                 {
                   id: "deal-1",
-                  dealName: "테스트 딜",
+                  dealName: "테스트 판매 조건",
                   brandName: "브랜드A",
                   partnerName: "벤더A",
                   status: "NEGOTIATING",
@@ -53,7 +53,7 @@ describe("CampaignCreationForm", () => {
           json: () =>
             Promise.resolve({
               id: "deal-1",
-              dealName: "테스트 딜",
+              dealName: "테스트 판매 조건",
               brandName: "브랜드A",
               partnerName: "벤더A",
               costPrice: 1000,
@@ -74,7 +74,7 @@ describe("CampaignCreationForm", () => {
   it("shows normalized deal context in search results and after selection", async () => {
     render(<CampaignCreationForm />);
 
-    const input = screen.getByPlaceholderText("딜명 또는 브랜드명으로 검색 (2자 이상)");
+    const input = screen.getByPlaceholderText("판매 조건 이름 또는 브랜드명으로 검색 (2자 이상)");
     fireEvent.change(input, { target: { value: "테스트" } });
 
     await waitFor(() => {
@@ -83,7 +83,7 @@ describe("CampaignCreationForm", () => {
       expect(screen.getByText("협의")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("테스트 딜"));
+    fireEvent.click(screen.getByText("테스트 판매 조건"));
 
     await waitFor(() => {
       expect(screen.getByText("브랜드A")).toBeInTheDocument();

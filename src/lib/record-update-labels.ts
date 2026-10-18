@@ -24,7 +24,7 @@ import {
 
 export const RECORD_ENTITY_LABELS = {
   CAMPAIGN: "캠페인",
-  DEAL: "딜",
+  DEAL: "판매 조건",
   PARTNER: "거래처",
   SELLER: "셀러",
 } as const;
@@ -69,7 +69,7 @@ const CAMPAIGN_FIELD_LABELS: Record<string, string> = {
   notesFromImport: "계산서 정보",
   roundNumber: "회차",
   campaignName: "캠페인 이름",
-  dealId: "딜",
+  dealId: "판매 조건",
   sellerId: "셀러",
   baseNaverLink: "상품 링크",
   dropReason: "드랍 사유",

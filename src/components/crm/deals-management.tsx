@@ -94,7 +94,7 @@ export function DealsManagement({
   }));
 
   const columns: GridColumn<DealRow>[] = [
-    { key: "dealName", label: "딜 이름", width: 320 },
+    { key: "dealName", label: "판매 조건 이름", width: 320 },
     {
       key: "partnerId",
       label: "거래처",
@@ -117,7 +117,7 @@ export function DealsManagement({
 
   async function handleNewDealSuccess() {
     setNewDealSheetOpen(false);
-    toast.success("새로운 딜이 성공적으로 추가되었습니다.");
+    toast.success("새로운 판매 조건이 성공적으로 추가되었습니다.");
     // Refresh deals list by fetching latest data
     try {
       const response = await fetch("/api/deals");
@@ -161,7 +161,7 @@ export function DealsManagement({
           ) : null}
           <section className="flex min-h-12 shrink-0 items-center justify-between border-b border-border/70 px-5 py-3.5">
             <div className="text-xs text-muted-foreground font-medium">
-              전체 딜 {deals.length}건
+              전체 판매 조건 {deals.length}건
             </div>
             <div className="flex items-center gap-3">
               <InputGroup className="w-full sm:max-w-xs border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">
@@ -189,8 +189,8 @@ export function DealsManagement({
                     const val = (event.target as HTMLInputElement).value;
                     debouncedSetQuery(val);
                   }}
-                  placeholder="딜 검색"
-                  aria-label="딜 검색"
+                  placeholder="판매 조건 검색"
+                  aria-label="판매 조건 검색"
                   className="h-full border-0 focus-visible:ring-0 text-xs"
                 />
               </InputGroup>
@@ -200,7 +200,7 @@ export function DealsManagement({
                 onClick={() => setNewDealSheetOpen(true)}
               >
                 <PlusIcon data-icon="inline-start" className="size-3.5 mr-1" />
-                신규 딜 등록
+                판매 조건 추가
               </Button>
             </div>
           </section>
@@ -221,14 +221,14 @@ export function DealsManagement({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(normalizedPatch),
                   });
-                  if (!response.ok) throw new Error("딜 수정에 실패했습니다");
+                  if (!response.ok) throw new Error("판매 조건 수정에 실패했습니다");
                   const updated = toDealRow(await response.json());
                   setDeals((previous) =>
                     previous.map((deal) => (deal.id === id ? updated : deal)),
                   );
                   return updated;
                 })(),
-                "딜 정보가 수정되었습니다."
+                "판매 조건 정보가 수정되었습니다."
               ).catch(() => null);
             }}
             onDelete={async (row) => {
@@ -237,11 +237,11 @@ export function DealsManagement({
                   const response = await fetch(`/api/deals/${row.id}`, {
                     method: "DELETE",
                   });
-                  if (!response.ok) throw new Error("딜 삭제에 실패했습니다");
+                  if (!response.ok) throw new Error("판매 조건 삭제에 실패했습니다");
                   setDeals((previous) => previous.filter((deal) => deal.id !== row.id));
                   return true;
                 })(),
-                "딜이 삭제되었습니다."
+                "판매 조건이 삭제되었습니다."
               ).catch(() => false);
             }}
           />
@@ -252,8 +252,8 @@ export function DealsManagement({
     {/* New Deal Registration Dialog */}
     <Dialog open={newDealSheetOpen} onOpenChange={setNewDealSheetOpen}>
       <FormDialogFrame
-        title="신규 딜 등록"
-        description="거래처 제안에 대한 딜을 빠르게 등록합니다."
+        title="신규 판매 조건"
+        description="거래처 제안에 대한 판매 조건을 빠르게 등록합니다."
       >
         <DealCreationForm
           onSuccess={handleNewDealSuccess}

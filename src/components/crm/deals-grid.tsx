@@ -74,8 +74,8 @@ export function DealsGrid({
             icon={SearchX}
             title={
               filterQuery.trim()
-                ? `'${filterQuery.trim()}'에 맞는 딜 없음`
-                : "조건에 맞는 딜 없음"
+                ? `'${filterQuery.trim()}'에 맞는 판매 조건 없음`
+                : "해당하는 판매 조건 없음"
             }
             description="검색어나 상태 필터를 바꿔 보세요."
           >
@@ -96,8 +96,8 @@ export function DealsGrid({
         <div className="flex h-64 items-center justify-center p-4">
           <DataEmpty
             icon={PackageOpen}
-            title="등록된 딜 없음"
-            description="딜을 추가하여 상품을 관리하세요."
+            title="등록된 판매 조건 없음"
+            description="판매 조건을 추가하여 상품을 관리하세요."
           />
         </div>
       </div>
@@ -111,7 +111,7 @@ export function DealsGrid({
         columns={[
           {
             key: "dealName",
-            label: "딜 이름",
+            label: "판매 조건 이름",
             width: 240,
             // 리뷰 소스 부재 도트 — 무채색 랭크 마커(ss-ux 판정: 22/30행에 경고색을 칠하면
             // 습관화로 신호가 죽는다). 리스크 카드의 slate 도트 어휘 재사용, 상태 축과 분리.

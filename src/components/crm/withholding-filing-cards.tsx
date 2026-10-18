@@ -513,7 +513,7 @@ export function WithholdingFilingCards({ month }: { month: string }) {
         <p className="mt-2 text-[10px] text-muted-foreground">
           특별징수세액은 과세표준을 넣으면 위택스가 자동으로 채웁니다. 직접 입력하지 않습니다. 채워진 값이
           명세서상 실제 원천징수 지방소득세({formatWon(report.totals.localIncomeTax)})와 1원 이상 달라도
-          정상입니다. 딜별 반올림과 위택스 원단위 절사 때문이며, 오차가 아니라 계산 기준이 다른 것입니다.
+          정상입니다. 판매 조건별 반올림과 위택스 원단위 절사 때문이며, 오차가 아니라 계산 기준이 다른 것입니다.
         </p>
         <p className="mt-1 text-[10px] text-muted-foreground">
           가감조정액(환급·추가납부)은 해당 없음이므로 전부 0으로 둡니다. 비고: 지방소득세 특별징수분.

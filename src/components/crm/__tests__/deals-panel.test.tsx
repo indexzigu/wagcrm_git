@@ -39,7 +39,7 @@ Object.defineProperty(window, "matchMedia", {
 
 const baseDeal: DealPanelData = {
   id: "deal-1",
-  dealName: "테스트 딜",
+  dealName: "테스트 판매 조건",
   brandName: "테스트 브랜드",
   partnerName: "테스트 파트너",
   partnerId: "partner-1",
@@ -260,19 +260,19 @@ describe("DealsPanel", () => {
   });
 
   describe("Deal deletion flow (Requirements 2.9, 2.10)", () => {
-    it("renders '딜 삭제' button", () => {
+    it("renders '판매 조건 삭제' button", () => {
       renderDealsPanel();
 
-      expect(screen.getByRole("button", { name: /딜 삭제/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /판매 조건 삭제/ })).toBeInTheDocument();
     });
 
     it("shows confirm dialog when delete button is clicked", async () => {
       renderDealsPanel();
 
-      fireEvent.click(screen.getByRole("button", { name: /딜 삭제/ }));
+      fireEvent.click(screen.getByRole("button", { name: /판매 조건 삭제/ }));
 
       await waitFor(() => {
-        expect(screen.getByText("딜을 삭제하시겠습니까?")).toBeInTheDocument();
+        expect(screen.getByText("판매 조건을 삭제하시겠습니까?")).toBeInTheDocument();
         expect(
           screen.getByText(/이 작업은 되돌릴 수 없습니다/)
         ).toBeInTheDocument();
@@ -299,7 +299,7 @@ describe("DealsPanel", () => {
       renderDealsPanel({ onDeleted, onOpenChange });
 
       // Open confirm dialog
-      fireEvent.click(screen.getByRole("button", { name: /딜 삭제/ }));
+      fireEvent.click(screen.getByRole("button", { name: /판매 조건 삭제/ }));
 
       // Click confirm button in dialog
       await waitFor(() => {
@@ -315,7 +315,7 @@ describe("DealsPanel", () => {
       });
 
       await waitFor(() => {
-        expect(mockToast.success).toHaveBeenCalledWith("딜이 삭제되었습니다");
+        expect(mockToast.success).toHaveBeenCalledWith("판매 조건이 삭제되었습니다");
         expect(onDeleted).toHaveBeenCalledWith("deal-1");
         expect(onOpenChange).toHaveBeenCalledWith(false);
       });
@@ -341,7 +341,7 @@ describe("DealsPanel", () => {
       renderDealsPanel({ onDeleted, onOpenChange });
 
       // Open confirm dialog
-      fireEvent.click(screen.getByRole("button", { name: /딜 삭제/ }));
+      fireEvent.click(screen.getByRole("button", { name: /판매 조건 삭제/ }));
 
       // Click confirm
       await waitFor(() => {
@@ -374,7 +374,7 @@ describe("DealsPanel", () => {
 
       renderDealsPanel();
 
-      fireEvent.click(screen.getByRole("button", { name: /딜 삭제/ }));
+      fireEvent.click(screen.getByRole("button", { name: /판매 조건 삭제/ }));
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "삭제" })).toBeInTheDocument();
@@ -382,7 +382,7 @@ describe("DealsPanel", () => {
       fireEvent.click(screen.getByRole("button", { name: "삭제" }));
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("딜 삭제에 실패했습니다", expect.objectContaining({ duration: Infinity }));
+        expect(mockToast.error).toHaveBeenCalledWith("판매 조건 삭제에 실패했습니다", expect.objectContaining({ duration: Infinity }));
       });
     });
 
@@ -399,7 +399,7 @@ describe("DealsPanel", () => {
 
       renderDealsPanel();
 
-      fireEvent.click(screen.getByRole("button", { name: /딜 삭제/ }));
+      fireEvent.click(screen.getByRole("button", { name: /판매 조건 삭제/ }));
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "삭제" })).toBeInTheDocument();
@@ -407,14 +407,14 @@ describe("DealsPanel", () => {
       fireEvent.click(screen.getByRole("button", { name: "삭제" }));
 
       await waitFor(() => {
-        expect(mockToast.error).toHaveBeenCalledWith("딜 삭제에 실패했습니다", expect.objectContaining({ duration: Infinity }));
+        expect(mockToast.error).toHaveBeenCalledWith("판매 조건 삭제에 실패했습니다", expect.objectContaining({ duration: Infinity }));
       });
     });
 
     it("displays deal name in the confirmation dialog", async () => {
       renderDealsPanel();
 
-      fireEvent.click(screen.getByRole("button", { name: /딜 삭제/ }));
+      fireEvent.click(screen.getByRole("button", { name: /판매 조건 삭제/ }));
 
       await waitFor(() => {
         expect(
@@ -818,7 +818,7 @@ describe("DealsPanel", () => {
           options: [
             {
               id: "opt-1",
-              dealName: "테스트 딜 - 3통 구성",
+              dealName: "테스트 판매 조건 - 3통 구성",
               costPrice: 30000,
               sellingPrice: 42000,
               totalCommissionRate: 10,
@@ -835,7 +835,7 @@ describe("DealsPanel", () => {
       });
 
       fireEvent.click(screen.getByRole("button", { name: /하위 옵션 상품/ }));
-      fireEvent.click(screen.getByRole("button", { name: "테스트 딜 - 3통 구성 수정" }));
+      fireEvent.click(screen.getByRole("button", { name: "테스트 판매 조건 - 3통 구성 수정" }));
 
       expect(screen.getByDisplayValue("PB-10000X")).toBeInTheDocument();
     });
@@ -1095,7 +1095,7 @@ describe("DealsPanel", () => {
       });
 
       fireEvent.click(screen.getByRole("button", { name: /하위 옵션 상품/ }));
-      fireEvent.click(screen.getByRole("button", { name: "테스트 딜 - 3통 구성 수정" }));
+      fireEvent.click(screen.getByRole("button", { name: "테스트 판매 조건 - 3통 구성 수정" }));
 
       expect(screen.getByText("옵션 수정")).toBeInTheDocument();
       expect(screen.getByDisplayValue("3통 구성")).toBeInTheDocument();
@@ -1115,7 +1115,7 @@ describe("DealsPanel", () => {
           expect.objectContaining({
             method: "PATCH",
             body: JSON.stringify({
-              dealName: "테스트 딜 - 6통 구성",
+              dealName: "테스트 판매 조건 - 6통 구성",
               unitQuantity: null,
               supplementaryInfo: null,
               costPrice: 37840,
@@ -1254,7 +1254,7 @@ describe("DealsPanel", () => {
       });
 
       fireEvent.click(screen.getByRole("button", { name: /하위 옵션 상품/ }));
-      fireEvent.click(screen.getByRole("button", { name: "테스트 딜 - 1통 구성 아래로 이동" }));
+      fireEvent.click(screen.getByRole("button", { name: "테스트 판매 조건 - 1통 구성 아래로 이동" }));
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(

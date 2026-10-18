@@ -57,7 +57,7 @@ export async function GET(_request: Request, context: Context) {
     const claimContext = await loadDealClaimContext(dealId);
     if (!claimContext) {
       return NextResponse.json(
-        { error: "딜을 찾을 수 없습니다" },
+        { error: "판매 조건을 찾을 수 없습니다" },
         { status: 404 },
       );
     }
@@ -89,7 +89,7 @@ export async function POST(request: Request, context: Context) {
     });
     if (!deal) {
       return NextResponse.json(
-        { error: "딜을 찾을 수 없습니다" },
+        { error: "판매 조건을 찾을 수 없습니다" },
         { status: 404 },
       );
     }

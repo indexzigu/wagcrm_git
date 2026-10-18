@@ -37,7 +37,7 @@ function makeJob(overrides: Partial<AgentJobListItem> = {}): AgentJobListItem {
     attempt: 1,
     failureCode: null,
     resultStatus: "OK",
-    resultSummary: "딜 3건을 찾았습니다.",
+    resultSummary: "판매 조건 3건을 찾았습니다.",
     actionProposalId: null,
     payloadUnreadable: false,
     ...overrides,
@@ -96,7 +96,7 @@ describe("BotActivityTable", () => {
         onToggleSucceeded={vi.fn()}
       />
     );
-    expect(screen.getByRole("link", { name: "딜 검색 결과 보기" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "판매 조건 검색 결과 보기" })).toHaveAttribute(
       "href",
       "/approvals/proposal-9"
     );

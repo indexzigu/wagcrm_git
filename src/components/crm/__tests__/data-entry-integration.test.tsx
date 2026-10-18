@@ -47,7 +47,7 @@ Object.defineProperty(window, "matchMedia", {
 
 const mockDeal = {
   id: "deal-1",
-  dealName: "테스트 딜",
+  dealName: "테스트 판매 조건",
   costPrice: 10000,
   sellingPrice: 15000,
   status: "SOURCING" as const,
@@ -83,9 +83,9 @@ const baseCampaign: CampaignRow = {
   id: "camp-1",
   dealId: "deal-1",
   sellerId: "seller-1",
-  campaignName: "테스트 딜 테스트 셀러",
+  campaignName: "테스트 판매 조건 테스트 셀러",
   salesCode: null,
-  dealName: "테스트 딜",
+  dealName: "테스트 판매 조건",
   partnerName: "테스트 파트너",
   sellerName: "테스트 셀러",
   snsType: "INSTAGRAM",
@@ -125,7 +125,7 @@ const emptyStorage: StorageSummary = {
  * 「추천」으로 읽었다). 검색 창에서 직접 고르는 흐름을 그대로 밟는다.
  */
 const SEARCH_RESULTS: Record<string, unknown[]> = {
-  "/api/search/deals": [{ id: "deal-1", dealName: "테스트 딜", partnerName: "테스트 파트너", status: "CONFIRMED" }],
+  "/api/search/deals": [{ id: "deal-1", dealName: "테스트 판매 조건", partnerName: "테스트 파트너", status: "CONFIRMED" }],
   "/api/search/sellers": [{ id: "seller-1", name: "테스트 셀러", snsType: "INSTAGRAM", snsHandle: "test" }],
 };
 
@@ -145,7 +145,7 @@ async function pickFromSearch(triggerName: string, rowText: string) {
 
 async function pickDealAndSeller() {
   expect(screen.getByRole("button", { name: "등록" })).toBeDisabled();
-  await pickFromSearch("딜 선택", "테스트 딜");
+  await pickFromSearch("판매 조건 선택", "테스트 판매 조건");
   await pickFromSearch("셀러 선택", "테스트 셀러");
 }
 
@@ -619,7 +619,7 @@ describe("Integration: Quick add → parent select option update", () => {
   it("deal quick add creates entity and calls onCreated with new entity", async () => {
     const newDeal = {
       id: "deal-new",
-      dealName: "새 딜",
+      dealName: "새 판매 조건",
       costPrice: 5000,
       partnerId: "partner-1",
     };
@@ -655,8 +655,8 @@ describe("Integration: Quick add → parent select option update", () => {
     );
 
     // Fill in the required fields
-    const dealNameInput = screen.getByPlaceholderText("딜 이름");
-    fireEvent.change(dealNameInput, { target: { value: "새 딜" } });
+    const dealNameInput = screen.getByPlaceholderText("판매 조건 이름");
+    fireEvent.change(dealNameInput, { target: { value: "새 판매 조건" } });
 
     // Set cost price
     const costInput = screen.getByPlaceholderText("0");
@@ -681,7 +681,7 @@ describe("Integration: Quick add → parent select option update", () => {
       );
       expect(postCall).toBeDefined();
       const body = JSON.parse(postCall!.options!.body as string);
-      expect(body.dealName).toBe("새 딜");
+      expect(body.dealName).toBe("새 판매 조건");
       expect(body.partnerId).toBe("partner-1");
       expect(body.costPrice).toBe(5000);
     });
@@ -690,7 +690,7 @@ describe("Integration: Quick add → parent select option update", () => {
     await waitFor(() => {
       expect(onCreated).toHaveBeenCalledWith({
         id: "deal-new",
-        label: "새 딜",
+        label: "새 판매 조건",
       });
     });
   });

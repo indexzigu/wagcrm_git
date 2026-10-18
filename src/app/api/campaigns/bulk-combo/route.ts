@@ -29,7 +29,7 @@ const bulkComboSchema = z
     sellerId: z.string().min(1),
     dealIds: z
       .array(z.string().min(1))
-      .min(2, "조합은 딜 2개 이상이 필요합니다."),
+      .min(2, "조합은 판매 조건 2개 이상이 필요합니다."),
     startDate: z.string().date(),
     endDate: z.string().date(),
     // createCampaignSchema(campaigns POST)의 salesChannel enum과 동일 정의(재사용).
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   const dealIds = [...new Set(parsed.data.dealIds)];
   if (dealIds.length < 2) {
     return NextResponse.json(
-      { error: "조합은 서로 다른 딜 2개 이상이 필요합니다." },
+      { error: "조합은 서로 다른 판매 조건 2개 이상이 필요합니다." },
       { status: 400 },
     );
   }
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       {
         error: !seller
           ? "셀러를 찾을 수 없습니다."
-          : "일부 딜을 찾을 수 없습니다.",
+          : "일부 판매 조건을 찾을 수 없습니다.",
         sellerFound: Boolean(seller),
         missingDealIds,
       },

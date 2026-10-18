@@ -51,7 +51,7 @@ describe("MobileCampaignCard — 최저가 위반 배지 (UX1-C)", () => {
     expect(screen.getByText("최저가위반")).toBeInTheDocument();
   });
 
-  it("위반 딜 개수를 hover 안내(title)로 노출한다", () => {
+  it("위반 판매 조건 개수를 hover 안내(title)로 노출한다", () => {
     render(
       <MobileCampaignCard
         campaign={makeCampaign({ hasPriceViolation: true, violatedDealCount: 4 })}
@@ -77,17 +77,17 @@ describe("MobileCampaignCard — 최저가 위반 배지 (UX1-C)", () => {
     expect(screen.queryByText("최저가위반")).not.toBeInTheDocument();
   });
 
-  it("groupMemberCount가 2 이상이면 N개 딜 배지를 렌더하고 마진(개별 멤버 값)은 숨긴다", () => {
+  it("groupMemberCount가 2 이상이면 N개 판매 조건 배지를 렌더하고 마진(개별 멤버 값)은 숨긴다", () => {
     render(
       <MobileCampaignCard campaign={makeCampaign()} groupMemberCount={3} onOpen={noop} />,
     );
-    expect(screen.getByText("3개 딜")).toBeInTheDocument();
+    expect(screen.getByText("3개 판매 조건")).toBeInTheDocument();
     expect(screen.queryByText(/마진/)).not.toBeInTheDocument();
   });
 
   it("groupMemberCount가 없으면(개별 카드) 배지가 없고 마진은 그대로 보인다", () => {
     render(<MobileCampaignCard campaign={makeCampaign()} onOpen={noop} />);
-    expect(screen.queryByText(/개 딜/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/개 판매 조건/)).not.toBeInTheDocument();
     // 적자만 색을 얹기 위해 값이 별도 span 으로 분리됐다(라벨은 색 없음) — testing-library 의
     // 기본 매처는 직속 텍스트 노드만 이어붙이므로 "마진 20%" 한 덩어리로는 안 잡힌다.
     // 표시 여부라는 원래 의도는 라벨+값을 각각 확인해 그대로 지킨다.

@@ -47,7 +47,7 @@ export function LinkedDealsList({
       dealName: deal.dealName,
       brandName: deal.brandName ?? undefined,
       partnerName: deal.partnerName ?? undefined,
-    }).filter((part) => part.label !== "딜");
+    }).filter((part) => part.label !== "판매 조건");
 
     return {
       id: deal.id,
@@ -71,7 +71,7 @@ export function LinkedDealsList({
   return (
     <>
       <LinkedEntitySection
-        title={title ?? `연결된 딜 (${deals.length}건)`}
+        title={title ?? `연결된 판매 조건 (${deals.length}건)`}
         entities={linkedDealItems}
         onLinkClick={onLinkClick ?? (onLinkDeal ? () => setSearchOpen(true) : undefined)}
         {...props}

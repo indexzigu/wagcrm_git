@@ -16,7 +16,7 @@ export function OutreachMessageGenerator({ dealId, sellerId, onGenerated }: Outr
 
   const handleGenerate = async () => {
     if (!dealId || !sellerId) {
-      toast.error("딜과 셀러를 먼저 선택해주세요.");
+      toast.error("판매 조건과 셀러를 먼저 선택해주세요.");
       return;
     }
 

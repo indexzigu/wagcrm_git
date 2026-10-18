@@ -77,7 +77,7 @@ export async function assertEntityExists(
   const entityLabel: Record<ActivityEntityType, string> = {
     PARTNER: "거래처",
     SELLER: "셀러",
-    DEAL: "딜",
+    DEAL: "판매 조건",
     CAMPAIGN: "캠페인",
   };
 

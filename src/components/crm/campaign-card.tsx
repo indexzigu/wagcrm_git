@@ -388,7 +388,7 @@ export function CampaignCard({
             {salesChannelLabels[campaign.salesChannel]}
           </Badge>
           {campaign.hasPriceViolation ? (
-            <span title={`최저가 위반 딜 ${campaign.violatedDealCount ?? 0}건`}>
+            <span title={`최저가 위반 판매 조건 ${campaign.violatedDealCount ?? 0}건`}>
               {/* 리터럴 red → status-urgent 변형. mobile-campaign-card 가 같은 배지에 대해 이미
                   같은 스왑을 마쳐서, 같은 "최저가 위반"이 두 표면에서 다른 빨강이던 상태였다.
                   이 배지는 흰 카드 위라 변형의 알파 틴트(/10 → #F9EEEE)로도 6.42 로 통과한다. */}

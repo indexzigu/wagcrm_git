@@ -76,7 +76,7 @@ export type DealIdentityInput = DealContextInput & {
 };
 
 export type DealContextPart = {
-  label: "딜" | "브랜드" | "거래처";
+  label: "판매 조건" | "브랜드" | "거래처";
   value: string;
 };
 
@@ -126,7 +126,7 @@ export function getDealIdentityParts(input: DealIdentityInput): DealContextPart[
       : null;
 
   return [
-    ...(dealName ? [{ label: "딜", value: dealName } satisfies DealContextPart] : []),
+    ...(dealName ? [{ label: "판매 조건", value: dealName } satisfies DealContextPart] : []),
     ...getDealContextParts(input),
   ];
 }

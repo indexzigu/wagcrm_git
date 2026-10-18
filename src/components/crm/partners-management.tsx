@@ -87,7 +87,7 @@ const partnerColumns: GridColumn<PartnerRow>[] = [
   },
   {
     key: "dealCount",
-    label: "연결된 딜",
+    label: "연결된 판매 조건",
     width: 100,
     render: (row) => (
       <span className="font-semibold text-slate-700 tabular-nums">
@@ -268,7 +268,7 @@ export function PartnersManagement({
           </div>
           <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="font-medium">연결된 딜:</span>
+            <span className="font-medium">연결된 판매 조건:</span>
             <span className="font-semibold text-slate-800 dark:text-slate-200">{partnerStats.totalDeals}개</span>
           </div>
         </div>

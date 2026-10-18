@@ -181,7 +181,7 @@ describe("①-b 후보 1b — 같은 파일 카드 뷰 출처 배지: 단색 ind
 
   it("라벨 어휘가 트리 배지와 같다 — 이것이 두 뷰를 함께 회수한 이유다", () => {
     // 어느 한쪽이 어휘를 바꾸면 "같은 범주가 두 뷰에서 갈렸다"는 전제가 사라진다.
-    for (const label of ["거래처", "딜", "캠페인", "영업", "셀러"]) {
+    for (const label of ["거래처", "판매 조건", "캠페인", "영업", "셀러"]) {
       expect(CODE.assets, `라벨 "${label}" 이 사라졌다`).toContain(`"${label}"`);
     }
   });
@@ -266,7 +266,7 @@ describe("③ 후보 3 — outreach 평균 전환일: 창(window)은 hue 를 받
   // 카드 경계는 **헤더 아이콘 태그 통째로** 잡는다 — 제목 텍스트만 앵커로 쓰면 다음 카드의
   // 여는 태그(그 안의 emerald 아이콘)까지 딸려 들어와 단언이 이웃 카드에 오탐한다(실제로 깨졌다).
   const AVG_HEAD = '<Target className="size-3.5 text-status-info" />평균 전환일';
-  const TOP_HEAD = '<TrendingUp className="size-3.5 text-emerald-600" />전환율 높은 딜';
+  const TOP_HEAD = '<TrendingUp className="size-3.5 text-emerald-600" />전환율 높은 판매 조건';
   const RATE_HEAD = '<TrendingUp className="size-3.5 text-emerald-600" />전환율';
 
   const card = slice(CODE.outreach, AVG_HEAD, TOP_HEAD);
@@ -500,7 +500,7 @@ describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", ()
       (n) => typeof n.className === "string" && n.className.includes("border-border"),
     );
     expect(origin.length, "출처 배지가 렌더되지 않았다").toBeGreaterThan(0);
-    expect(origin.map((n) => n.textContent)).toContain("딜");
+    expect(origin.map((n) => n.textContent)).toContain("판매 조건");
     for (const el of origin) {
       expect(el.className).toContain("text-foreground");
       expect(el.className).not.toMatch(/indigo|violet|emerald|sky-|pink-/);

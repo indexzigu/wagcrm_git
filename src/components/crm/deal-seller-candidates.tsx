@@ -148,7 +148,7 @@ export function DealSellerCandidates({
                 <DormancyBadge verdict={c.dormancy} />
                 <span>진행 {c.runCount}회</span>
                 {c.fitLevel && <span>· 평가 {c.fitLevel}</span>}
-                {c.pairLastRunStartAt && <span>· 이 딜 {formatElapsed(c.pairLastRunStartAt)}</span>}
+                {c.pairLastRunStartAt && <span>· 이 판매 조건 {formatElapsed(c.pairLastRunStartAt)}</span>}
                 {/* 미입력(null)은 아예 그리지 않는다 — 0원으로 보이면 실적 없음으로 오독된다 */}
                 {c.pairSalesTotal != null && <span>· {formatPairSales(c.pairSalesTotal)}</span>}
               </div>

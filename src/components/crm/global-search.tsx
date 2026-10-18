@@ -205,7 +205,7 @@ export function GlobalSearch() {
               )}
 
               {results.deals.length > 0 && (
-                <CommandGroup heading="딜">
+                <CommandGroup heading="판매 조건">
                   {results.deals.map((deal) => (
                     <CommandItem
                       key={`deal-${deal.id}`}

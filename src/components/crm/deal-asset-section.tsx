@@ -79,7 +79,7 @@ export function DealAssetSection({ dealId }: { dealId: string }) {
         </Button>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        딜 소개자료, 가격표, 제안자료 등 관련 파일을 첨부합니다.
+        판매 조건 소개자료, 가격표, 제안자료 등 관련 파일을 첨부합니다.
       </p>
       <OfferDiagnosticHint dealId={dealId} />
       {guideError ? (
@@ -352,7 +352,7 @@ export function DealAssetSection({ dealId }: { dealId: string }) {
             <p className="mt-2 rounded-md border border-input bg-background px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
               {formatRelativeSavedAt(guideRestored.savedAt)}에 저장된 초안입니다.
               {guideRestored.dealChangedAfter
-                ? " 그 뒤 딜 정보가 바뀌었습니다. 다시 생성해야 지금 값이 반영됩니다."
+                ? " 그 뒤 판매 조건 정보가 바뀌었습니다. 다시 생성해야 지금 값이 반영됩니다."
                 : " 다시 생성하지 않아도 그대로 쓸 수 있습니다."}
             </p>
           ) : null}
@@ -362,14 +362,14 @@ export function DealAssetSection({ dealId }: { dealId: string }) {
           {guideFreeGeneration ? (
             <p className="mt-2 rounded-md border border-input bg-background px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
               승인된 소구점이 등록되지 않아 모델이 자유 생성했습니다. 생성 후
-              표현 검사만 적용됐습니다. 딜 표현 관리에서 소구점을 승인하면 다음
+              표현 검사만 적용됐습니다. 판매 조건 표현 관리에서 소구점을 승인하면 다음
               생성부터 그 표현을 근거로 씁니다.
             </p>
           ) : null}
 
           {guideProofCardAbsence === "NO_EVIDENCE" ? (
             <p className="mt-2 rounded-md border border-input bg-background px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-              승인된 소구점에 근거가 없어 근거 카드를 만들지 못했습니다. 딜 표현
+              승인된 소구점에 근거가 없어 근거 카드를 만들지 못했습니다. 판매 조건 표현
               관리에서 근거(시험성적서·인증번호 등)와 근거 구분을 채우면 다음
               생성부터 붙습니다. 셀러가 인용할 재료가 없으면 그 공백을 과장으로
               메우게 됩니다.

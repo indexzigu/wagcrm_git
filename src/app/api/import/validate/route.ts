@@ -46,7 +46,7 @@ const sellerImportSchema = z.object({
 });
 
 const dealImportSchema = z.object({
-  dealName: z.string().min(1, "딜 이름은 필수입니다"),
+  dealName: z.string().min(1, "판매 조건 이름은 필수입니다"),
   partnerId: z.string().min(1, "거래처 ID는 필수입니다"),
   costPrice: z
     .string()

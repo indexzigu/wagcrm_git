@@ -46,7 +46,7 @@ const viewProps = {
 };
 
 describe("buildMobilePipelineEntities — 조합 캠페인 그룹 1카드 병합", () => {
-  it("같은 groupId 멤버 2건 이상이면 그룹 엔티티 1개로 병합한다 (라벨=첫딜명 외 N-1, 기간 min~max, 대표 상태)", () => {
+  it("같은 groupId 멤버 2건 이상이면 그룹 엔티티 1개로 병합한다 (라벨=첫판매 조건 이름 외 N-1, 기간 min~max, 대표 상태)", () => {
     const entities = buildMobilePipelineEntities([
       makeCampaign({
         id: "a",
@@ -66,7 +66,7 @@ describe("buildMobilePipelineEntities — 조합 캠페인 그룹 1카드 병합
         status: "ACTIVE",
         actualSales: 50,
       }),
-      makeCampaign({ id: "c", dealName: "단독딜" }),
+      makeCampaign({ id: "c", dealName: "단독 판매 조건" }),
     ]);
 
     expect(entities).toHaveLength(2);
@@ -92,7 +92,7 @@ describe("buildMobilePipelineEntities — 조합 캠페인 그룹 1카드 병합
   it("그룹 멤버가 1건뿐이면 개별 캠페인 엔티티로 폴백한다", () => {
     const entities = buildMobilePipelineEntities([
       makeCampaign({ id: "a", groupId: "g1" }),
-      makeCampaign({ id: "c", dealName: "단독딜" }),
+      makeCampaign({ id: "c", dealName: "단독 판매 조건" }),
     ]);
     expect(entities).toHaveLength(2);
     expect(entities[0].kind).toBe("campaign");
@@ -108,7 +108,7 @@ describe("buildMobilePipelineEntities — 조합 캠페인 그룹 1카드 병합
     expect(entities[0].displayRow.actualSales).toBeNull();
   });
 
-  it("최저가 위반은 멤버 중 하나라도 있으면 그룹에 승격되고 위반 딜 수는 합산된다", () => {
+  it("최저가 위반은 멤버 중 하나라도 있으면 그룹에 승격되고 위반 판매 조건 수는 합산된다", () => {
     const entities = buildMobilePipelineEntities([
       makeCampaign({ id: "a", groupId: "g1", hasPriceViolation: false, violatedDealCount: 0 }),
       makeCampaign({
@@ -161,10 +161,10 @@ describe("MobilePipelineView — 그룹 카드 렌더", () => {
       endDate: "2026-07-10",
       status: "CLOSED",
     }),
-    makeCampaign({ id: "c", dealName: "단독딜", status: "ACTIVE" }),
+    makeCampaign({ id: "c", dealName: "단독 판매 조건", status: "ACTIVE" }),
   ];
 
-  it("그룹 멤버 2건은 카드 1장(그룹명 + N개 딜 배지)으로, 상단 배지는 그룹 단위 건수로 렌더한다", () => {
+  it("그룹 멤버 2건은 카드 1장(그룹명 + N개 판매 조건 배지)으로, 상단 배지는 그룹 단위 건수로 렌더한다", () => {
     render(
       <MobilePipelineView campaigns={groupedCampaigns} onOpenCampaign={() => {}} {...viewProps} />,
     );
@@ -172,7 +172,7 @@ describe("MobilePipelineView — 그룹 카드 렌더", () => {
     // 카드 1장으로 병합 — 개별 멤버 카드 없음
     expect(screen.getByText("앰플 외 1")).toBeInTheDocument();
     expect(screen.queryByText("세럼")).not.toBeInTheDocument();
-    expect(screen.getByText("2개 딜")).toBeInTheDocument();
+    expect(screen.getByText("2개 판매 조건")).toBeInTheDocument();
     // 기간 = min ~ max
     expect(screen.getByText("07-01 ~ 07-10")).toBeInTheDocument();
     // 상단 N건 배지 = 엔티티 수(그룹 1 + 단독 1)

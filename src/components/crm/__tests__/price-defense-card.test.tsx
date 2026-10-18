@@ -33,7 +33,7 @@ describe("PriceDefenseCard", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("위반이 있으면 딜명·격차·캠페인 peek 링크를 렌더한다", async () => {
+  it("위반이 있으면 판매 조건 이름·격차·캠페인 peek 링크를 렌더한다", async () => {
     mockOverview({
       monitoredCount: 9,
       latestSnapshotDate: "2026-07-24",
@@ -68,8 +68,8 @@ describe("PriceDefenseCard", () => {
 
     render(<PriceDefenseCard />);
 
-    expect(await screen.findByText("전 딜 최저가 이상 없음")).toBeInTheDocument();
-    expect(screen.getByText(/모니터링 9딜/)).toBeInTheDocument();
+    expect(await screen.findByText("모든 판매 조건 최저가 이상 없음")).toBeInTheDocument();
+    expect(screen.getByText(/모니터링 9개 판매 조건/)).toBeInTheDocument();
     // 위반 0이면 count 배지 미렌더
     expect(screen.queryByText("최저가 점검")).toBeInTheDocument(); // 제목은 유지
   });

@@ -25,8 +25,8 @@ import { withMutationFeedback } from "@/lib/use-mutation-feedback";
 const dealFormSchema = z.object({
   dealName: z
     .string()
-    .min(1, "딜 이름은 필수입니다")
-    .max(100, "딜 이름은 100자를 초과할 수 없습니다"),
+    .min(1, "판매 조건 이름은 필수입니다")
+    .max(100, "판매 조건 이름은 100자를 초과할 수 없습니다"),
   partnerId: z.string().min(1, "거래처 선택은 필수입니다"),
   brandName: z.string().min(1, "브랜드명은 필수입니다"),
 });
@@ -151,7 +151,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
         <FieldSet>
           <Field data-invalid={!!errors.dealName}>
             <FieldLabel htmlFor={`${fid}-dealName`} className="text-xs font-medium text-foreground">
-              딜명<span className="ml-0.5 text-destructive">*</span>
+              판매 조건 이름<span className="ml-0.5 text-destructive">*</span>
             </FieldLabel>
             <Input
               id={`${fid}-dealName`}
@@ -164,7 +164,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
                   setDuplicateConfirmed(false);
                 }
               }}
-              placeholder="딜/상품 이름 (최대 100자)"
+              placeholder="판매 조건 이름 (최대 100자)"
               maxLength={100}
               aria-invalid={!!errors.dealName}
               aria-describedby={errors.dealName ? "dealName-error" : undefined}
@@ -215,13 +215,13 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
       {duplicateWarning && duplicateWarning.length > 0 && (
         <Alert className="mt-5 border-amber-200 bg-amber-50 text-amber-900">
           <AlertDescription className="text-xs">
-            <p className="font-medium mb-1">유사한 딜이 이미 존재합니다:</p>
+            <p className="font-medium mb-1">유사한 판매 조건이 이미 존재합니다:</p>
             <ul className="list-disc pl-4 mb-2 space-y-0.5">
               {duplicateWarning.map((name) => (
                 <li key={name}>{name}</li>
               ))}
             </ul>
-            <p>동일한 딜이 아닌지 확인한 뒤 진행해 주세요.</p>
+            <p>동일한 판매 조건이 아닌지 확인한 뒤 진행해 주세요.</p>
           </AlertDescription>
         </Alert>
       )}

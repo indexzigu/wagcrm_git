@@ -121,7 +121,7 @@ export function ReferralNetworkDialog({
               </ul>
             )}
             <p className="mt-2 text-[10px] text-muted-foreground">
-              소개는 금전 보상 없이 관계로 유지됩니다. 상위 커넥터에게는 좋은 딜 우선 제안·성과 공유로 답하세요.
+              소개는 금전 보상 없이 관계로 유지됩니다. 상위 커넥터에게는 좋은 상품 우선 제안·성과 공유로 답하세요.
             </p>
           </section>
         </div>

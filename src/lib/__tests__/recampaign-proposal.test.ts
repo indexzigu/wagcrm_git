@@ -32,7 +32,7 @@ describe("recampaign-proposal", () => {
     expect(content).toContain("3회");
     expect(content).toContain("31일");
     expect(content).toContain("36일 경과");
-    expect(content).toContain("다음 딜 제안");
+    expect(content).toContain("다음 판매 조건 제안");
   });
 
   it("가용 일정이 있으면 본문에 포함한다", () => {
@@ -69,7 +69,7 @@ describe("recampaign-proposal", () => {
     expect(input.structuredResult.runCount).toBe(3);
   });
 
-  it("케이던스 기안은 사유를 CADENCE_DUE·딜 없음으로 남긴다 (dedup 키의 축)", () => {
+  it("케이던스 기안은 사유를 CADENCE_DUE·판매 조건 없음으로 남긴다 (dedup 키의 축)", () => {
     const input = buildRecampaignProposalInput(dueAlert);
     expect(input.structuredResult.reason).toBe("CADENCE_DUE");
     expect(input.structuredResult.dealId).toBeNull();
@@ -81,19 +81,19 @@ describe("recampaign-proposal", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildProposalDedupeKey", () => {
-  it("같은 셀러라도 딜이 다르면 다른 키다 — 과차단 방지가 이 확장의 목적이다", () => {
+  it("같은 셀러라도 판매 조건이 다르면 다른 키다 — 과차단 방지가 이 확장의 목적이다", () => {
     const a = buildProposalDedupeKey({ sellerId: "s1", reason: "SAME_DEAL_RERUN", dealId: "d1" });
     const b = buildProposalDedupeKey({ sellerId: "s1", reason: "SAME_DEAL_RERUN", dealId: "d2" });
     expect(a).not.toBe(b);
   });
 
-  it("같은 셀러·같은 딜이라도 사유가 다르면 다른 키다", () => {
+  it("같은 셀러·같은 판매 조건이라도 사유가 다르면 다른 키다", () => {
     const a = buildProposalDedupeKey({ sellerId: "s1", reason: "SAME_DEAL_RERUN", dealId: "d1" });
     const b = buildProposalDedupeKey({ sellerId: "s1", reason: "SAME_PARTNER", dealId: "d1" });
     expect(a).not.toBe(b);
   });
 
-  it("딜 없는 케이던스 기안과 딜 기안은 서로를 막지 않는다", () => {
+  it("판매 조건 없는 케이던스 기안과 판매 조건 기안은 서로를 막지 않는다", () => {
     const cadence = buildProposalDedupeKey({ sellerId: "s1", reason: "CADENCE_DUE", dealId: null });
     const deal = buildProposalDedupeKey({ sellerId: "s1", reason: "CADENCE_DUE", dealId: "d1" });
     expect(cadence).not.toBe(deal);
@@ -107,7 +107,7 @@ describe("buildProposalDedupeKey", () => {
 });
 
 describe("readProposalDedupeKey — 저장된 행에서 키를 복원한다", () => {
-  it("기록된 사유·딜을 그대로 읽는다", () => {
+  it("기록된 사유·판매 조건을 그대로 읽는다", () => {
     expect(
       readProposalDedupeKey({
         targetEntityId: "s1",
@@ -165,7 +165,7 @@ const dealMatch: DealMatchProposalInput = {
   sellerId: "seller-1",
   sellerName: "김본명",
   dealId: "deal-1",
-  dealName: "딜 이름",
+  dealName: "판매 조건 이름",
   reason: "SAME_DEAL_RERUN",
   priority: true,
   pairRunCount: 2,
@@ -173,9 +173,9 @@ const dealMatch: DealMatchProposalInput = {
   pairSalesTotal: RERUN_PRIORITY_SALES + 2_000_000,
 };
 
-describe("딜 스코프 기안", () => {
-  it("제목에 셀러·딜·사유를 담는다", () => {
-    expect(buildDealMatchProposalTitle(dealMatch)).toBe("제안 검토: 김본명 × 딜 이름 (재진행)");
+describe("판매 조건 스코프 기안", () => {
+  it("제목에 셀러·판매 조건·사유를 담는다", () => {
+    expect(buildDealMatchProposalTitle(dealMatch)).toBe("제안 검토: 김본명 × 판매 조건 이름 (재진행)");
   });
 
   it("본문에 조합 이력과 우선순위를 담는다", () => {

@@ -675,7 +675,7 @@ export function PnlReportClient({ report }: PnlReportClientProps) {
                     <CardTitle>캠페인 메타</CardTitle>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-3 px-0">
-                    <DetailLine label="상품/딜" value={selectedCampaign.dealName} />
+                    <DetailLine label="상품/판매 조건" value={selectedCampaign.dealName} />
                     <DetailLine label="셀러" value={selectedCampaign.sellerName} />
                     <DetailLine
                       label="브랜드"

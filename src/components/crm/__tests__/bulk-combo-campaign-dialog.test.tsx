@@ -74,7 +74,7 @@ afterEach(() => {
 });
 
 describe("BulkComboCampaignDialog — 검증 게이트", () => {
-  it("초기(셀러 미선택)에는 제출이 비활성이고 딜 목록은 안내로 잠긴다", () => {
+  it("초기(셀러 미선택)에는 제출이 비활성이고 판매 조건 목록은 안내로 잠긴다", () => {
     render(
       <BulkComboCampaignDialog data={makeData()} open onOpenChange={noop} onCreated={noop} />,
     );
@@ -84,7 +84,7 @@ describe("BulkComboCampaignDialog — 검증 게이트", () => {
     expect(submit).toBeDisabled();
   });
 
-  it("셀러 선택 후 딜 2개 미만이면 제출 비활성 + '딜 2개 이상' 힌트를 노출한다", () => {
+  it("셀러 선택 후 판매 조건 2개 미만이면 제출 비활성 + '판매 조건 2개 이상' 힌트를 노출한다", () => {
     render(
       <BulkComboCampaignDialog data={makeData()} open onOpenChange={noop} onCreated={noop} />,
     );
@@ -94,14 +94,14 @@ describe("BulkComboCampaignDialog — 검증 게이트", () => {
     // 셀러 선택 → 딜 체크박스 노출
     const checkboxes = screen.getAllByRole("checkbox");
     expect(checkboxes).toHaveLength(3);
-    expect(screen.getByText("셀러와 딜 2개 이상을 골라야 등록할 수 있습니다.")).toBeInTheDocument();
+    expect(screen.getByText("셀러와 판매 조건 2개 이상을 골라야 등록할 수 있습니다.")).toBeInTheDocument();
 
     // 딜 1개만 선택 → 여전히 비활성
     fireEvent.click(checkboxes[0]);
     expect(screen.getByRole("button", { name: "캠페인 등록" })).toBeDisabled();
   });
 
-  it("딜 2개 이상 선택 시 제출이 활성화되고 bulk-combo로 원자 제출한다", async () => {
+  it("판매 조건 2개 이상 선택 시 제출이 활성화되고 bulk-combo로 원자 제출한다", async () => {
     const onCreated = vi.fn();
     const onOpenChange = vi.fn();
     const fetchMock = vi.fn().mockResolvedValue({

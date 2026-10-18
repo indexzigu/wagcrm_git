@@ -128,7 +128,7 @@ export function CampaignDealsTable({
       }
       try {
         const response = await fetch(`/api/deals/${campaign.dealId}`);
-        if (!response.ok) throw new Error("딜 상세 정보를 불러오지 못했습니다.");
+        if (!response.ok) throw new Error("판매 조건 상세 정보를 불러오지 못했습니다.");
         const data = await response.json();
         
         if (active) {
@@ -482,7 +482,7 @@ export function CampaignDealsTable({
               disabled={loadingOptions}
             >
               <option value="" disabled>
-                {loadingOptions ? "딜 목록 로딩 중..." : "+ 옵션 품목 추가"}
+                {loadingOptions ? "판매 조건 목록 로딩 중..." : "+ 옵션 품목 추가"}
               </option>
               {availableOptions.map((opt) => (
                 <option key={opt.id} value={opt.id}>

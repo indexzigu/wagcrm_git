@@ -45,7 +45,7 @@ export async function POST(request: Request) {
 
   if (!deal) {
     return NextResponse.json(
-      { error: "해당 딜을 찾을 수 없습니다" },
+      { error: "해당 판매 조건을 찾을 수 없습니다" },
       { status: 404 },
     );
   }

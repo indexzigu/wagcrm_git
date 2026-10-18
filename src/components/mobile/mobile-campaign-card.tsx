@@ -109,7 +109,7 @@ export function MobileCampaignCard({
               {isGroup ? (
                 // 조합 캠페인 그룹 카드 — 상세 시트 헤더의 "N개 딜" 배지와 동일 스타일.
                 <Badge className="shrink-0 bg-primary/10 text-primary hover:bg-primary/10 border-0 h-5 px-1.5 text-[10px]">
-                  {groupMemberCount}개 딜
+                  {groupMemberCount}개 판매 조건
                 </Badge>
               ) : null}
               {campaign.deal?.brandName || campaign.partnerName ? (
@@ -147,7 +147,7 @@ export function MobileCampaignCard({
             </Badge>
           ) : null}
           {campaign.hasPriceViolation ? (
-            <span title={`최저가 위반 딜 ${campaign.violatedDealCount ?? 0}건`}>
+            <span title={`최저가 위반 판매 조건 ${campaign.violatedDealCount ?? 0}건`}>
               {/* 리터럴 red-600 → status-urgent 토큰. 같은 카드의 지연 배지(toneVariant)가 이미
                   --status-urgent 를 쓰고 있어 같은 "위험" 의미에 빨강 두 개가 공존했다. */}
               <Badge variant="status-urgent" className="text-[10px] px-2 py-0.5 h-5">

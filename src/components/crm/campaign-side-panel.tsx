@@ -1373,9 +1373,9 @@ export function CampaignSidePanel({
           onSelect={async (item) => {
             const result = await saveCampaignField(campaign.id, "dealId", item.id);
             if (!result.success) {
-              toast.error(result.error ?? "딜 변경 실패");
+              toast.error(result.error ?? "판매 조건 변경 실패");
             } else {
-              toast.success("딜이 변경되었습니다");
+              toast.success("판매 조건이 변경되었습니다");
               if (result.data) onCampaignUpdated(result.data);
             }
           }}
@@ -1439,9 +1439,9 @@ export function CampaignSidePanel({
         onSelect={async (item) => {
           const result = await saveCampaignField(campaign.id, "dealId", item.id);
           if (!result.success) {
-            toast.error(result.error ?? "딜 변경 실패");
+            toast.error(result.error ?? "판매 조건 변경 실패");
           } else {
-            toast.success("딜이 변경되었습니다");
+            toast.success("판매 조건이 변경되었습니다");
             if (result.data) onCampaignUpdated(result.data);
           }
         }}
@@ -3095,7 +3095,7 @@ function SettlementInfo({
             </>
           ) : (
             <p className="col-span-2 row-span-2 flex items-center justify-center rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-center text-muted-foreground">
-              연결된 거래처가 없습니다. 딜에 거래처를 연결하면 공급사 정산 정보가 여기에 표시됩니다.
+              연결된 거래처가 없습니다. 판매 조건에 거래처를 연결하면 공급사 정산 정보가 여기에 표시됩니다.
             </p>
           )}
         </TabsContent>

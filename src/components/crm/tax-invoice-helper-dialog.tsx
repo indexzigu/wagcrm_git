@@ -192,7 +192,7 @@ export function TaxInvoiceHelperDialog({
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/50 text-left text-[10px] uppercase text-muted-foreground">
-                        <th className="px-3 py-2 font-medium">딜명</th>
+                        <th className="px-3 py-2 font-medium">판매 조건 이름</th>
                         <th className="px-3 py-2 text-right font-medium">수량</th>
                         <th className="px-3 py-2 text-right font-medium">단가</th>
                       </tr>

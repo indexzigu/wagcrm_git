@@ -42,7 +42,7 @@ function hookOf(
 function readProposal(overrides: Partial<ApprovalDetailData> = {}): ApprovalDetailData {
   return {
     id: "proposal-read-1",
-    title: "딜 검색 1건",
+    title: "판매 조건 검색 1건",
     kind: "READ",
     status: "EXECUTED",
     createdBy: "AGENT_WORKER",
@@ -54,7 +54,7 @@ function readProposal(overrides: Partial<ApprovalDetailData> = {}): ApprovalDeta
       query: { query: "A", status: "" },
       truncated: false,
       data: {
-        items: [{ id: "d1", dealName: "딜 A", status: "CONFIRMED" }],
+        items: [{ id: "d1", dealName: "판매 조건 A", status: "CONFIRMED" }],
         rowLimitReached: true,
       },
     },
@@ -65,7 +65,7 @@ function readProposal(overrides: Partial<ApprovalDetailData> = {}): ApprovalDeta
 describe("ApprovalDetail — READ", () => {
   it("헤더에 작업 라벨·출처 배지·시각·jobId 를 보여준다", () => {
     render(<ApprovalDetail id="proposal-read-1" useDetailHook={hookOf(readProposal())} />);
-    expect(screen.getByText("딜 검색")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 검색")).toBeInTheDocument();
     expect(screen.getByText("슬랙봇")).toBeInTheDocument();
     // 2026-09-22T05:30:00Z = KST 14:30
     expect(screen.getByText("09-22 14:30")).toBeInTheDocument();
@@ -138,7 +138,7 @@ describe("ApprovalDetail — WRITE", () => {
       status: "PENDING_APPROVAL",
       structuredResult: null,
       resultSummary: null,
-      title: "딜 상태 변경",
+      title: "판매 조건 상태 변경",
     });
     render(<ApprovalDetail id="proposal-write-1" useDetailHook={hookOf(proposal)} />);
     expect(screen.getByTestId("proposal-card-mock")).toHaveTextContent("proposal-write-1");

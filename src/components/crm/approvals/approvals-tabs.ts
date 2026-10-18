@@ -58,7 +58,7 @@ export const EMPTY_MESSAGES: Record<ApprovalsTab, string> = {
  * 보여준다 — 새 도구가 붙었을 때 「빈 칸」이 되면 무슨 일이 있었는지 알 수 없다.
  */
 export const OPERATION_LABELS: Record<string, string> = {
-  search_deals: "딜 검색",
+  search_deals: "판매 조건 검색",
   search_partners: "거래처 검색",
   get_pipeline_status: "파이프라인 현황",
   get_order_snapshot: "주문 스냅샷",

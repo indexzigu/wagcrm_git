@@ -41,11 +41,11 @@ describe("ProposalPayloadPreview", () => {
     expect(screen.getByText(/이담당/)).toBeTruthy();
   });
 
-  it("딜 기안은 가격을 값으로 보여준다 — 값이 다르면 화면이 다르다", () => {
+  it("판매 조건 기안은 가격을 값으로 보여준다 — 값이 다르면 화면이 다르다", () => {
     const { unmount } = render(
       <ProposalPayloadPreview
         action="create_deal"
-        args={{ partnerId: "partner-1", mainDeal: { dealName: "딜A", sellingPrice: 1_000 } }}
+        args={{ partnerId: "partner-1", mainDeal: { dealName: "판매 조건A", sellingPrice: 1_000 } }}
       />,
     );
     expect(screen.getByText("1,000원")).toBeTruthy();
@@ -54,7 +54,7 @@ describe("ProposalPayloadPreview", () => {
     render(
       <ProposalPayloadPreview
         action="create_deal"
-        args={{ partnerId: "partner-1", mainDeal: { dealName: "딜A", sellingPrice: 999_000 } }}
+        args={{ partnerId: "partner-1", mainDeal: { dealName: "판매 조건A", sellingPrice: 999_000 } }}
       />,
     );
     expect(screen.getByText("999,000원")).toBeTruthy();
@@ -69,7 +69,7 @@ describe("ProposalPayloadPreview", () => {
     render(
       <ProposalPayloadPreview
         action="create_deal"
-        args={{ partnerId: "partner-1", mainDeal: { dealName: "딜A" }, optionDeals }}
+        args={{ partnerId: "partner-1", mainDeal: { dealName: "판매 조건A" }, optionDeals }}
       />,
     );
 
@@ -85,19 +85,19 @@ describe("ProposalPayloadPreview", () => {
     render(
       <ProposalPayloadPreview
         action="create_deal"
-        args={{ partnerId: "clx0000partner", mainDeal: { dealName: "딜A" } }}
+        args={{ partnerId: "clx0000partner", mainDeal: { dealName: "판매 조건A" } }}
       />,
     );
     expect(screen.queryByText("clx0000partner")).toBeNull();
     expect(screen.queryByText("기존 거래처")).toBeNull();
-    expect(screen.getByText("딜A")).toBeTruthy();
+    expect(screen.getByText("판매 조건A")).toBeTruthy();
   });
 
-  it("딜에 거래처를 동봉하면 그 거래처도 함께 만들어진다고 알린다", () => {
+  it("판매 조건에 거래처를 동봉하면 그 거래처도 함께 만들어진다고 알린다", () => {
     render(
       <ProposalPayloadPreview
         action="create_deal"
-        args={{ partner: { name: "새거래처", type: "VENDOR" }, mainDeal: { dealName: "딜A" } }}
+        args={{ partner: { name: "새거래처", type: "VENDOR" }, mainDeal: { dealName: "판매 조건A" } }}
       />,
     );
     expect(screen.getByText("거래처도 새로 등록됩니다")).toBeTruthy();
@@ -111,7 +111,7 @@ describe("ProposalPayloadPreview", () => {
     render(
       <ProposalPayloadPreview
         action="create_deal"
-        args={{ partner: { id: "p-1" }, mainDeal: { dealName: "딜A", costPrice: 9_000, supplyPrice: 8_500 } }}
+        args={{ partner: { id: "p-1" }, mainDeal: { dealName: "판매 조건A", costPrice: 9_000, supplyPrice: 8_500 } }}
       />,
     );
     expect(screen.getByText("공급가")).toBeTruthy();
@@ -280,7 +280,7 @@ describe("ProposalPayloadPreview", () => {
     });
 
     const AUTO_LINK_NOTICE =
-      "승인하면 화면 저장과 같이 이 캠페인 전체의 판매 딜 자동 연결이 다시 돕니다(기존 연결이 바뀔 수 있음).";
+      "승인하면 화면 저장과 같이 이 캠페인 전체의 판매 조건 자동 연결이 다시 돕니다(기존 연결이 바뀔 수 있음).";
 
     it("새 줄이 하나라도 있으면 표 위에 「전체 자동 연결이 다시 돈다」 한 줄을 보인다", () => {
       const { container } = render(<ProposalPayloadPreview action="upsert_product_mappings" args={base} />);

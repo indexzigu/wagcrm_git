@@ -27,13 +27,13 @@ async function execute(input: ChangeDealStatusInput): Promise<ToolResult<ChangeD
   const { dealId, newStatus } = input;
 
   if (!dealId || !dealId.trim()) {
-    return missingParam("상태를 변경할 딜 ID가 필요합니다.", { dealId, newStatus });
+    return missingParam("상태를 변경할 판매 조건 ID가 필요합니다.", { dealId, newStatus });
   }
 
   const writeIntent: WriteIntent = {
     action: "change_deal_status",
     args: { dealId, newStatus },
-    summary: `딜(${dealId})의 상태를 ${newStatus}(으)로 변경`,
+    summary: `판매 조건(${dealId})의 상태를 ${newStatus}(으)로 변경`,
     targetEntityType: "DEAL",
     targetEntityId: dealId,
   };
