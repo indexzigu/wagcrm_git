@@ -24,6 +24,8 @@ export const queryKeys = {
   mobilePulse: () => ["mobile-pulse"] as const,
   /** 홈 「오늘 처리할 주문」 카드. */
   orderWork: () => ["order-work"] as const,
+  /** 홈 「오늘 처리할 일」의 조치대기 자동화 작업(`/api/system/incidents?status=waiting_owner`). */
+  automationWaitingIncidents: () => ["automation-incidents", "waiting_owner"] as const,
   outreach: () => ["outreach"] as const,
   /**
    * 기안 목록. kind 까지 키에 넣는다 — 같은 EXECUTED 라도 기안 완료(WRITE)와 봇 조회

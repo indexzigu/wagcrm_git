@@ -9,6 +9,15 @@ import { ko } from "date-fns/locale";
 import { KNOWN_JOBS, type KnownJob } from "@/lib/cron-jobs";
 import { overdueSummary } from "@/lib/cron-staleness";
 import { parseNeedsReviewDetail } from "@/lib/system-task-needs-review";
+import {
+  INCIDENT_STATUS_LABELS,
+  incidentDetailLines,
+  incidentOwnerAction,
+  incidentTimeText,
+  type AutomationIncident,
+  type IncidentStatus,
+} from "@/lib/automation-incidents";
+import { incidentCauseLabel } from "@/lib/cron-incident-report";
 
 interface TaskStatus {
   id: string;
@@ -43,6 +52,8 @@ interface TaskLogEntry {
 const STATUS_META = {
   SUCCESS: { dotClass: "bg-[var(--status-success)]", label: "정상", textClass: "" },
   ERROR: { dotClass: "bg-[var(--status-urgent)]", label: "실패", textClass: "text-[var(--status-urgent-text)]" },
+  // 조치대기 = 재시도로 안 풀려 오너 손을 기다리는 사고가 있다(크론 자가 복구 2단계). 실패(urgent)가 아니라 주의다.
+  WAITING: { dotClass: "bg-[var(--status-caution)]", label: "조치대기", textClass: "text-[var(--status-caution-text)]" },
   OVERDUE: { dotClass: "bg-[var(--status-caution)]", label: "지연", textClass: "text-[var(--status-caution-text)]" },
   RUNNING: { dotClass: "bg-[var(--status-caution)]", label: "실행중", textClass: "text-[var(--status-caution-text)]" },
   NONE: { dotClass: "bg-slate-300", label: "미실행", textClass: "text-slate-600" },
@@ -53,16 +64,18 @@ const STATUS_META = {
  * 하는가"는 말하지 않는다 — 그래서 안 도는 잡이 마지막 성공(초록)을 그대로 달고 있었다
  * (로컬 레인 전환으로 상시 가능해진 무음 실패, 2026-08-04).
  *
- * 순위는 ERROR > 지연 > 실행중 > 정상이다. **실패가 지연을 이긴다** — 둘 다면 사유가 있는
- * 쪽(실패 메시지)이 오너에게 더 쓸모 있고, 지연은 그 실패의 결과일 뿐이다.
+ * 순위는 ERROR > 조치대기 > 지연 > 실행중 > 정상이다. **실패가 지연을 이긴다** — 둘 다면 사유가 있는
+ * 쪽(실패 메시지)이 오너에게 더 쓸모 있고, 지연은 그 실패의 결과일 뿐이다. 조치대기(오너 손을 기다리는
+ * 사고가 있다)는 실패 다음이다 — 실패 줄은 지금 무엇이 깨졌는지를, 조치대기는 상세의 「이상 기록」이 할 일을 말한다.
  *
  * ⚠️ 지연과 실행중은 같은 caution 토큰을 쓴다(새 hue 도입 금지 — P8 가드레일 2). 색만으로
  * 구분되지 않으므로 **지연은 텍스트 배지로, 실행중은 pulse 로** 각각 다른 캐리어를 함께 준다.
  */
-function statusKey(task: TaskStatus | undefined, overdue = false): keyof typeof STATUS_META {
-  if (!task) return "NONE";
+function statusKey(task: TaskStatus | undefined, overdue = false, waiting = false): keyof typeof STATUS_META {
+  if (!task) return waiting ? "WAITING" : "NONE";
   const stored = task.status in STATUS_META ? (task.status as keyof typeof STATUS_META) : "NONE";
   if (stored === "ERROR") return "ERROR";
+  if (waiting) return "WAITING";
   if (overdue) return "OVERDUE";
   return stored;
 }
@@ -71,6 +84,8 @@ function statusKey(task: TaskStatus | undefined, overdue = false): keyof typeof 
  * `label` 은 caution 토큰을 **두 상태가 공유**하기 때문에 있다(지연·실행 중 — 새 hue 를 만들지
  * 않는다는 P8 가드레일 2의 결과). 범례에 같은 색 점을 두 줄로 늘어놓으면 "같은 색 = 같은 의미"가
  * 깨져 보이므로, 그 점 하나에 두 의미를 합쳐 적는다. 행에서는 텍스트 배지와 pulse 가 둘을 가른다.
+ * 「조치대기」도 같은 caution 점이지만 범례에 **따로** 둔다(2026-10-18 ss-ux 설계 검토) — 오너가 손댈 일이 있다는
+ * 뜻이라 「실행중 · 지연」(기다리면 풀리는 상태)과 한 줄에 묶으면 그 차이가 범례에서 사라진다. 행에서는 낱말이 가른다.
  */
 function LegendDot({ statusKey: key, label }: { statusKey: keyof typeof STATUS_META; label?: string }) {
   const meta = STATUS_META[key];
@@ -131,6 +146,60 @@ function ReasonLine({ kind, text }: { kind: "overdue" | "error"; text: string })
   );
 }
 
+// 「이상 기록」 줄의 색 — 조치대기만 주의색 글자(손댈 일), 재확인중·정상화는 무채색 글자 + 점 색으로만 가른다.
+// 흑백에서도 세 상태는 줄 맨 앞 낱말(조치대기·재확인중·정상화)로 갈린다. 위험색(urgent)은 쓰지 않는다 — 실패 줄은
+// 이미 상세 맨 위 「실패 사유」가 말한다.
+const INCIDENT_LINE_META: Record<IncidentStatus, { dotClass: string; titleClass: string }> = {
+  waiting_owner: { dotClass: "bg-[var(--status-caution)]", titleClass: "font-medium text-[var(--status-caution-text)]" },
+  open: { dotClass: "bg-slate-300", titleClass: "text-slate-700" },
+  resolved: { dotClass: "bg-[var(--status-success)]", titleClass: "text-slate-700" },
+};
+
+/**
+ * 설명창 「이상 기록」(크론 자가 복구 2단계) — 이 작업의 사고 장부. 줄 = 「상태 · 원인」 + (조치대기만) 할 일 한 문장 +
+ * 시작 시각·횟수(정상화는 정상화 시각). 정렬·3줄 상한은 `incidentDetailLines` 가 정한다(조치대기는 자르지 않는다).
+ * 원문 실패 메시지는 받지도 않는다(API 가 내리지 않는다) — 원문은 아래 「작동 로그」가 맡는다.
+ */
+function IncidentSection({ incidents, error }: { incidents: AutomationIncident[] | null; error: string | null }) {
+  if (error) {
+    return (
+      <section aria-label="이상 기록" className="shrink-0 border-t border-slate-100 px-3.5 py-2.5">
+        <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">이상 기록</p>
+        <p className="text-[11px] text-[var(--status-urgent-text)]">{error}</p>
+      </section>
+    );
+  }
+  // 불러오는 중이거나 기록이 없으면 섹션을 그리지 않는다 — 사고가 없는 것이 정상이라 빈 칸으로 자리를 차지하지 않는다.
+  if (!incidents || incidents.length === 0) return null;
+  const { shown, hiddenCount } = incidentDetailLines(incidents);
+  return (
+    <section aria-label="이상 기록" className="shrink-0 border-t border-slate-100 px-3.5 py-2.5">
+      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">이상 기록</p>
+      <ul className="space-y-2">
+        {shown.map((incident) => {
+          const meta = INCIDENT_LINE_META[incident.status];
+          return (
+            <li key={incident.id} className="flex items-start gap-2">
+              <span aria-hidden className={`mt-1 size-1.5 shrink-0 rounded-full ${meta.dotClass}`} />
+              <div className="min-w-0 flex-1">
+                <p className={`break-keep text-[11px] leading-snug ${meta.titleClass}`}>
+                  {INCIDENT_STATUS_LABELS[incident.status]} · {incidentCauseLabel(incident.kind, incident.errorKind)}
+                </p>
+                {incident.status === "waiting_owner" && (
+                  // 할 일 문장은 자르지 않는다(340px 에서 두 줄) — 잘리면 무엇을 해야 하는지가 사라진다.
+                  <p className="mt-0.5 break-keep text-[11px] leading-snug text-slate-700">{incidentOwnerAction(incident)}</p>
+                )}
+                <p className="mt-0.5 text-[10px] tabular-nums text-slate-500">{incidentTimeText(incident)}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {hiddenCount > 0 && <p className="mt-1.5 text-[10px] text-slate-500">외 {hiddenCount}건</p>}
+    </section>
+  );
+}
+
 function JobDetailPopoverContent({
   job,
   onClose,
@@ -146,6 +215,31 @@ function JobDetailPopoverContent({
 }) {
   const [logs, setLogs] = useState<TaskLogEntry[] | null>(null);
   const [logError, setLogError] = useState<string | null>(null);
+  const [incidents, setIncidents] = useState<AutomationIncident[] | null>(null);
+  const [incidentError, setIncidentError] = useState<string | null>(null);
+
+  // 「이상 기록」 — 열릴 때마다 이 작업의 사고를 받는다(작동 로그와 같은 계약: 열림 시에만 마운트).
+  useEffect(() => {
+    let cancelled = false;
+    setIncidents(null);
+    setIncidentError(null);
+    fetch(`/api/system/incidents?jobKey=${encodeURIComponent(job.key)}`)
+      .then(async (res) => {
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !Array.isArray(json?.incidents)) throw new Error(`HTTP ${res.status}`);
+        return json.incidents as AutomationIncident[];
+      })
+      .then((list) => {
+        if (!cancelled) setIncidents(list);
+      })
+      .catch((err: unknown) => {
+        console.error("[SystemRadarCard] 이상 기록 조회 실패:", err);
+        if (!cancelled) setIncidentError("이상 기록을 불러오지 못했습니다. 창을 닫았다 다시 열면 다시 불러옵니다.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [job.key]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,6 +303,8 @@ function JobDetailPopoverContent({
         <div className="shrink-0 px-3.5 py-2.5">
           <p className="text-[11px] leading-relaxed text-slate-600">{job.desc}</p>
         </div>
+
+        <IncidentSection incidents={incidents} error={incidentError} />
 
         {needsReview.items.length > 0 && (
           <section
@@ -335,6 +431,30 @@ export function SystemRadarCard() {
   const [runError, setRunError] = useState<string | null>(null);
   // 인박스 팝오버는 한 번에 한 행만 — 상호 배타(오너 지시 3c)
   const [openJob, setOpenJob] = useState<string | null>(null);
+  // 오너 조치를 기다리는 사고가 있는 작업(jobKey) — 카드가 열릴 때 한 번 받는다(크론 자가 복구 2단계).
+  const [waitingJobs, setWaitingJobs] = useState<ReadonlySet<string>>(new Set());
+  const [waitingError, setWaitingError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/system/incidents?status=waiting_owner")
+      .then(async (res) => {
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !Array.isArray(json?.incidents)) throw new Error(`HTTP ${res.status}`);
+        return json.incidents as AutomationIncident[];
+      })
+      .then((list) => {
+        if (!cancelled) setWaitingJobs(new Set(list.map((i) => i.jobKey)));
+      })
+      .catch((err: unknown) => {
+        // 못 받으면 조치대기 행이 정상처럼 보인다 — 조용히 넘기지 않고 카드에 알린다.
+        console.error("[SystemRadarCard] 조치대기 조회 실패:", err);
+        if (!cancelled) setWaitingError("조치대기 여부를 불러오지 못했습니다. 페이지를 새로 고치면 다시 불러옵니다.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchRadar = useCallback(async () => {
     try {
@@ -407,6 +527,7 @@ export function SystemRadarCard() {
           <div className="flex items-center gap-3">
             <LegendDot statusKey="SUCCESS" />
             <LegendDot statusKey="ERROR" />
+            <LegendDot statusKey="WAITING" />
             <LegendDot statusKey="RUNNING" label="실행중 · 지연" />
             <LegendDot statusKey="NONE" />
           </div>
@@ -416,6 +537,7 @@ export function SystemRadarCard() {
           <p className="mt-2 text-[11px] text-[var(--status-urgent)]">{error} 상태는 미실행으로 표시됩니다.</p>
         )}
         {runError && <p className="mt-2 text-[11px] text-[var(--status-urgent)]">{runError}</p>}
+        {waitingError && <p className="mt-2 text-[11px] text-[var(--status-urgent-text)]">{waitingError}</p>}
 
         {/* 2행 밀도(이름 줄 + 서브텍스트 줄)에 맞춰 열을 줄여 셀 폭을 확보 — 이름 잘림 해소(오너 3a) */}
         <div className="mt-2.5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-1">
@@ -436,7 +558,7 @@ export function SystemRadarCard() {
                 // 지연 = 한 회차를 통째로 걸렀다. 판정 SSOT 는 cron-staleness(유예·주기별 임계).
                 // 사유 문자열이 곧 지연 여부다(지연이 아니면 null) — 판정을 두 번 돌리지 않는다.
                 const overdueText = overdueSummary(job, task?.lastRunAt ?? null);
-                const key = statusKey(task, overdueText !== null);
+                const key = statusKey(task, overdueText !== null, waitingJobs.has(job.key));
                 const meta = STATUS_META[key];
                 const lastRunText = task?.lastRunAt
                   ? formatDistanceToNow(new Date(task.lastRunAt), { addSuffix: true, locale: ko })

@@ -7,6 +7,8 @@
 import { describe, expect, it } from "vitest";
 import { buildTodayWorkRows, markUnverifiedOrderRows, type TodayWorkInput } from "../today-work";
 import type { OrderWorkSummary } from "../order-converter/order-work";
+import type { AutomationIncident } from "../automation-incidents";
+import { KNOWN_JOBS } from "../cron-jobs";
 
 function orders(overrides: Partial<OrderWorkSummary> = {}): OrderWorkSummary {
   return {
@@ -143,6 +145,62 @@ describe("buildTodayWorkRows", () => {
   it("캠페인 번호를 모르면 정산 관리 첫 화면으로 간다", () => {
     const row = buildTodayWorkRows(input({ agenda: { tasks: 0, settlements: 1 } }))[0];
     expect(row.href).toBe("/settlement");
+  });
+});
+
+describe("buildTodayWorkRows — 자동화 작업 조치대기", () => {
+  const [jobA, jobB] = KNOWN_JOBS;
+  const waiting = (id: string, jobKey: string, firstSeenAt: string): AutomationIncident => ({
+    id,
+    jobKey,
+    kind: "A",
+    errorKind: "auth",
+    status: "waiting_owner",
+    ownerAction: null,
+    firstSeenAt,
+    normalizedAt: null,
+    occurrences: 1,
+  });
+
+  it("조치대기가 0건이거나 아직 모르면(로딩·실패) 줄이 없다", () => {
+    expect(buildTodayWorkRows(input({ automationWaiting: [] }))).toEqual([]);
+    expect(buildTodayWorkRows(input({ automationWaiting: undefined }))).toEqual([]);
+  });
+
+  it("작업 2개·사고 3건 → 건수는 작업 수 2, 세부는 「가장 오래된 작업 외 1건」, 자동화 작업 상태로 간다", () => {
+    const rows = buildTodayWorkRows(
+      input({
+        automationWaiting: [
+          waiting("a1", jobA.key, "2026-10-17T05:00:00.000Z"),
+          waiting("b1", jobB.key, "2026-10-16T05:00:00.000Z"),
+          waiting("a2", jobA.key, "2026-10-18T05:00:00.000Z"),
+        ],
+      }),
+    );
+    expect(rows).toEqual([
+      {
+        key: "automation-waiting",
+        label: "자동화 작업 조치대기",
+        count: 2,
+        tone: "caution",
+        href: "/settings/integrations#automation-status",
+        detail: `${jobB.name} 외 1건`,
+      },
+    ]);
+  });
+
+  it("작업 1개면 세부는 「작업 이름 · 원인」", () => {
+    const [row] = buildTodayWorkRows(input({ automationWaiting: [waiting("a1", jobA.key, "2026-10-17T05:00:00.000Z")] }));
+    expect(row.detail).toBe(`${jobA.name} · 인증 실패`);
+  });
+
+  it("순서는 승인대기 다음, 데이터 점검 앞이다", () => {
+    const rows = buildTodayWorkRows({
+      ...busy(),
+      automationWaiting: [waiting("a1", jobA.key, "2026-10-17T05:00:00.000Z")],
+    });
+    const keys = rows.map((r) => r.key);
+    expect(keys.slice(-3)).toEqual(["approvals-pending", "automation-waiting", "data-check"]);
   });
 });
 

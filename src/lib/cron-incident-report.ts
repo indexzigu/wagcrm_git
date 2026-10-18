@@ -62,12 +62,13 @@ const KST_TIME = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
 });
 
-function kstTime(d: Date): string {
+/** `HH:mm`(KST) — 설명창 「이상 기록」도 같은 표기를 쓴다(`automation-incidents.ts`). */
+export function kstTime(d: Date): string {
   return KST_TIME.format(d);
 }
 
 /** `MM-DD HH:mm`(KST) */
-function kstDateTime(d: Date): string {
+export function kstDateTime(d: Date): string {
   const [, mm, dd] = toKstYmd(d).split("-");
   return `${mm}-${dd} ${kstTime(d)}`;
 }

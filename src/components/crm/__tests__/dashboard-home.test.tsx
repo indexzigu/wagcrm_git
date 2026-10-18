@@ -35,6 +35,8 @@ vi.mock("@/components/ui/chart", () => ({
 const hookState = vi.hoisted(() => ({
   orders: undefined as unknown,
   approvalsCount: 0,
+  automationWaiting: [] as unknown[] | undefined,
+  automationError: false,
 }));
 vi.mock("@/hooks/useOrderWorkSummary", () => ({
   useOrderWorkSummary: () => ({
@@ -42,6 +44,14 @@ vi.mock("@/hooks/useOrderWorkSummary", () => ({
     dataUpdatedAt: Date.now(),
     isLoading: false,
     isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("@/hooks/useAutomationIncidents", () => ({
+  useWaitingAutomationIncidents: () => ({
+    data: hookState.automationError ? undefined : hookState.automationWaiting,
+    isLoading: false,
+    isError: hookState.automationError,
     refetch: vi.fn(),
   }),
 }));
@@ -306,6 +316,42 @@ describe("DashboardHome", () => {
     const check = container.querySelector('a[data-row="data-check"]')!;
     expect(check).toHaveAttribute("href", "/#data-check");
     expect(container.querySelector("#data-check")).not.toBeNull();
+  });
+
+  // 크론 자가 복구 2단계(2026-10-18): 오너 조치를 기다리는 자동화 작업.
+  it("조치대기 자동화 작업이 있으면 「자동화 작업 조치대기」 줄이 자동화 작업 상태로 간다", async () => {
+    hookState.orders = orderSummary();
+    hookState.approvalsCount = 0;
+    hookState.automationWaiting = [
+      {
+        id: "i-1",
+        jobKey: "naver-order-sync",
+        kind: "A",
+        errorKind: "auth",
+        status: "waiting_owner",
+        ownerAction: null,
+        firstSeenAt: "2026-10-17T00:00:00.000Z",
+        normalizedAt: null,
+        occurrences: 1,
+      },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tasks: [], settlements: [] }) }));
+    render(<DashboardHome initialData={data()} />);
+    const row = (await screen.findByText("자동화 작업 조치대기")).closest("a")!;
+    expect(row).toHaveAttribute("href", "/settings/integrations#automation-status");
+    expect(screen.getByText("네이버 발주 동기화 · 인증 실패")).toBeInTheDocument();
+    hookState.automationWaiting = [];
+  });
+
+  it("자동화 작업을 불러오지 못하면 실패 원천에 「자동화 작업」을 싣고 「없다」고 하지 않는다", async () => {
+    hookState.orders = orderSummary();
+    hookState.approvalsCount = 0;
+    hookState.automationError = true;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tasks: [], settlements: [] }) }));
+    render(<DashboardHome initialData={data()} />);
+    expect(await screen.findByText("자동화 작업 건수를 불러오지 못했습니다.")).toBeInTheDocument();
+    expect(screen.queryByText("오늘 처리할 일이 없습니다")).not.toBeInTheDocument();
+    hookState.automationError = false;
   });
 
   // 오너 2026-10-06: 퍼널 트랙의 빈 구간이 slate-100(흰 카드 대비 1.09:1)이라 안 보였다 → slate-300.

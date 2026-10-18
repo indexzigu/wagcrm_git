@@ -134,6 +134,7 @@ export const UI_LABEL_TABLES = {
   "돈 이름": "MONEY_TERMS (src/lib/ui-glossary.ts)",
   "대상 이름": "ENTITY_TERMS (src/lib/ui-glossary.ts)",
   "자동화 작업 원인": "incidentCauseLabel (src/lib/cron-incident-report.ts)",
+  "자동화 작업 사고 상태": "INCIDENT_STATUS_LABELS (src/lib/automation-incidents.ts)",
 } as const;
 
 /**
@@ -199,6 +200,12 @@ export const ENTITY_TERMS = {
     definition: "공동구매로 팔 상품 하나와 그 조건(공급가·판매가·할인·수수료율·옵션·소싱 상태). 메뉴 「판매 조건 관리」",
     model: "Deal",
   },
+  automationJob: {
+    label: "자동화 작업",
+    definition:
+      "정해진 시각에 저절로 도는 수집·동기화 작업(네이버 발주 동기화 등). 설정 → 외부 연동 진단 「자동화 작업 상태」, 홈 「자동화 작업 조치대기」",
+    model: "SystemTaskStatus · CronIncident",
+  },
 } as const satisfies Readonly<Record<string, { label: string; definition: string; model: string }>>;
 
 /**
@@ -208,6 +215,9 @@ export const ENTITY_TERMS = {
  */
 export const ENTITY_TERM_ALIASES: Readonly<Record<string, keyof typeof ENTITY_TERMS>> = {
   "딜": "deal",
+  // 크론 자가 복구 2단계 설계 검토(2026-10-18 ss-ux): 대상 이름은 「자동화 작업」 하나.
+  "자동 작업": "automationJob",
+  "자동작업": "automationJob",
 };
 
 /** 옛 대상 이름으로 **시작하지만 다른 낱말**인 것 — 검사에서 뺀다. 늘릴 때는 실제 화면 낱말인지 확인한다. */
