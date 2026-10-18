@@ -254,11 +254,23 @@ if [ "$MODE" = "full" ]; then
   #    드러나지 않는다. cron-staleness-threshold-parity.contract.test.ts 가 기계로 고정한다.
   CRON_DAILY_LIMIT_H=30    # 매일 = 24h 주기 + 유예 6h
   CRON_WEEKLY_LIMIT_H=192  # 매주 = 7d 주기 + 유예 24h
+  CRON_CONTINUOUS_GRACE_MIN=30  # 상시(`*/N * * * *`) = N분 주기 + 유예 30분 (STALE_GRACE_MS.상시)
 
   # 질문은 하나다: "이 잡의 마지막 SUCCESS 기록이 언제인가". 실패한 실행은 SUCCESS 행을
   # 만들지 않으므로 「안 돌았다」와 「돌았는데 실패했다」를 한 번에 답한다 —
   # withSystemTaskStatus 가 2xx + failed:true 도 ERROR 로 강등하기 때문이다(소스 실측).
   # ⛔ 응답 본문을 다시 파싱하는 분기를 만들지 말 것.
+  #
+  # 🪤 SystemTaskLog 만 보면 **할 일 없던 회차(quiet)가 안 보인다** — withSystemTaskStatus 는
+  #    `quiet: true` SUCCESS 를 상태 표(SystemTaskStatus)에만 쓰고 이력 행은 남기지 않는다
+  #    (skipLog). 2분마다 도는 agent-auto-execute 는 대부분 회차가 quiet 라, 이력만 보던 시절
+  #    정상인데 매일 「늦었습니다」로 떴다(2026-10-18). 그래서 상태 표의 lastRunAt 을 함께 보고
+  #    더 최근 값을 「마지막 성공」으로 쓴다 — 레이더(cron-staleness.ts)가 읽는 것도 같은 칸이다.
+  #    상태 표는 status='SUCCESS' 와 'RUNNING' 만 센다: RUNNING 은 매 회차 시작 마커라 직전
+  #    성공 행을 덮어쓰므로, 빼면 정상 잡이 실행 중인 몇 초마다 다시 늦음으로 깜빡인다. 실행 중
+  #    고착이면 lastRunAt 이 그대로 낡아 문턱을 넘는 순간 늦음이 되므로 놓치지 않는다. ERROR 는
+  #    세지 않는다 — 계속 실패하는 잡은 이력의 마지막 SUCCESS 로 떨어져 지연으로 드러난다.
+  #    계약: cron-staleness-threshold-parity.contract.test.ts 가 이 두 출처를 고정한다.
   #
   # ⛔ 이 판정을 크론 잡으로 옮기지 말 것 — 크론으로 크론을 감시하면 대상과 함께 죽는다
   #    (2026-08-19 실사고: 상태 기록도 DB 쓰기라 DB 가 원인이던 실패에서 6일간 무음이었다).
@@ -267,7 +279,7 @@ if [ "$MODE" = "full" ]; then
   # 대상 목록은 **레포의 crontab**(설치본 `crontab -l` 이 아니다)에서 온다 — 머지됐는데
   # 기계에 재설치되지 않은 잡도 SUCCESS 가 안 쌓여 지연으로 드러나게 하려는 의도다.
   CRONTAB_FILE="${STATUS_CRONTAB_FILE:-$(dirname "$0")/crontab}"
-  CRON_SQL="select \"jobKey\", floor(extract(epoch from max(\"createdAt\")))::bigint from \"SystemTaskLog\" where status = 'SUCCESS' group by 1;"
+  CRON_SQL="select \"jobKey\", floor(extract(epoch from max(t)))::bigint from (select \"jobKey\", \"createdAt\" as t from \"SystemTaskLog\" where status = 'SUCCESS' union all select \"jobKey\", \"lastRunAt\" from \"SystemTaskStatus\" where status in ('SUCCESS', 'RUNNING') and \"lastRunAt\" is not null) s group by 1;"
   # $DOCKER 는 의도적 미인용(테스트 훅이 "bash <경로>" 두 단어를 줄 수 있다 — 기존 규약).
   CRON_ROWS="$($DOCKER exec supabase-db psql -U supabase_admin -d postgres -At -F'|' -c "$CRON_SQL" 2>/dev/null || true)"
 
@@ -287,7 +299,18 @@ if [ "$MODE" = "full" ]; then
       c_job="${c_job%% *}"
       [ -z "$c_job" ] && continue
       cron_total=$((cron_total + 1))
-      # 요일 필드가 * 면 매일, 아니면 매주 — cron-staleness.ts 의 resolveCadence 와 같은 규칙.
+      # 분 필드가 `*/N`(시 필드 *)이면 상시, 요일 필드가 * 면 매일, 아니면 매주 —
+      # cron-staleness.ts 의 resolveCadence 와 같은 규칙. 상시를 매일 문턱(30h)으로 재면
+      # 2분 주기 잡이 하루 넘게 멈춰도 조용하다.
+      c_limit_min=""
+      case "$c_min" in
+        \*/[0-9]*)
+          c_step="${c_min#\*/}"
+          case "$c_step" in
+            ''|*[!0-9]*) ;;
+            *) [ "$c_hour" = "*" ] && c_limit_min=$(( 10#$c_step + CRON_CONTINUOUS_GRACE_MIN )) ;;
+          esac ;;
+      esac
       if [ "$c_dow" = "*" ]; then c_limit_h=$CRON_DAILY_LIMIT_H; else c_limit_h=$CRON_WEEKLY_LIMIT_H; fi
       c_last="$(printf '%s\n' "$CRON_ROWS" | awk -F'|' -v j="$c_job" '$1==j {print $2}')"
       # 빈 값과 숫자가 아닌 값을 한 번에 "기록 없음"으로 접는다 — set -euo pipefail 아래
@@ -302,7 +325,7 @@ if [ "$MODE" = "full" ]; then
       # cron-staleness-threshold-parity 가 고정하는 CRON_*_LIMIT_H 값·이름은 그대로 두고
       # 여기서만 분으로 환산해 절삭 오차를 없앤다).
       c_age_min=$(( (NOW_EPOCH - c_last) / 60 ))
-      c_limit_min=$(( c_limit_h * 60 ))
+      [ -n "$c_limit_min" ] || c_limit_min=$(( c_limit_h * 60 ))
       if [ "$c_age_min" -gt "$c_limit_min" ]; then
         cron_late=$((cron_late + 1))
         cron_late_names="${cron_late_names:+$cron_late_names, }$c_job"

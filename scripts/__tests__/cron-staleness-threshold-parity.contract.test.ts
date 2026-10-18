@@ -34,7 +34,40 @@ describe("크론 지연 문턱 정합 (status.sh ↔ cron-staleness.ts)", () => 
     expect(shellIntVar("CRON_WEEKLY_LIMIT_H")).toBe(expectedH);
   });
 
+  it("상시(분 단위) 잡의 유예가 STALE_GRACE_MS.상시와 같다", () => {
+    expect(shellIntVar("CRON_CONTINUOUS_GRACE_MIN")).toBe(STALE_GRACE_MS.상시 / (60 * 1000));
+  });
+
   it("양성 대조군 — 없는 변수는 실패로 잡힌다", () => {
     expect(() => shellIntVar("CRON_NOT_A_REAL_VAR_H")).toThrow();
+  });
+});
+
+/**
+ * 계약: 두 판정이 **같은 칸**을 읽는다 — 문턱이 같아도 출처가 다르면 어긋난다.
+ *
+ * 2026-10-18 실사고: 레이더는 SystemTaskStatus.lastRunAt 을 읽는데 status.sh 는
+ * SystemTaskLog 의 SUCCESS 행만 읽었다. 할 일 없던 회차(quiet)는 이력 행을 남기지 않아
+ * (withSystemTaskStatus skipLog), 2분마다 정상으로 도는 잡이 메뉴바·텔레그램 요약에서만
+ * 매일 「늦었습니다」였다.
+ */
+describe("크론 지연 판정 출처 정합 (status.sh ↔ system-radar-card)", () => {
+  const RADAR = readFileSync(
+    path.resolve(__dirname, "..", "..", "src", "components", "crm", "system-radar-card.tsx"),
+    "utf8",
+  );
+  const SKIP_LOG = readFileSync(path.resolve(__dirname, "..", "..", "src", "lib", "system-task-status.ts"), "utf8");
+
+  it("레이더는 상태 표의 lastRunAt 으로 지연을 잰다", () => {
+    expect(RADAR).toMatch(/overdueSummary\(\s*job\s*,\s*task\?\.lastRunAt/);
+  });
+
+  it("status.sh 도 상태 표의 lastRunAt 을 읽는다 — quiet 회차가 이력에 안 남기 때문이다", () => {
+    // 전제가 살아 있는지 먼저 확인한다: skipLog 가 사라지면 이 계약의 이유도 바뀐다.
+    expect(SKIP_LOG).toMatch(/skipLog:\s*body\?\.quiet === true/);
+    const sql = /^\s*CRON_SQL="(.*)"$/m.exec(SRC)?.[1];
+    expect(sql, "CRON_SQL 을 status.sh 에서 찾지 못했다(앵커 함정)").toBeTruthy();
+    expect(sql).toMatch(/from \\"SystemTaskStatus\\"/);
+    expect(sql).toMatch(/\\"lastRunAt\\"/);
   });
 });
