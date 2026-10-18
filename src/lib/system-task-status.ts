@@ -714,6 +714,8 @@ async function settleIncidentsAfterSuccess(
       return;
     }
     if (produced !== 0 || body?.quiet === true) return;
+    // ℹ️ 지금 이 아래에 닿는 선언 작업은 capture-stories 뿐이다 — 나머지는 `produced = 성공 수`라
+    // 산출 0 이면 이미 `failed:true` 로 A 가 됐다(`KnownJob.output` 주석, 설계 ⚙️J8).
 
     const prisma = getPrisma();
     const recent = await prisma.systemTaskLog.findMany({

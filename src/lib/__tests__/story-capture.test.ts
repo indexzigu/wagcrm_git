@@ -227,10 +227,16 @@ describe("normalizeHandle", () => {
 describe("declareStoryCaptureOutcome — 산출 판정 숫자", () => {
   const base = { activeSellers: 3, storiesSeen: 0, storiesNew: 0, thumbnailsRehosted: 0, errors: [] };
 
-  it("targets 는 조회 대상 수, produced 는 조회에 성공한 셀러 수다", () => {
+  it("targets 는 조회 대상 셀러 수, produced 는 이번에 저장한 스토리 수다(셀러 수가 아니다)", () => {
     expect(
-      declareStoryCaptureOutcome({ ...base, handles: ["h_a", "h_b", "h_c"], handlesFailed: 1 }),
-    ).toEqual({ failed: false, targets: 3, produced: 2 });
+      declareStoryCaptureOutcome({ ...base, storiesSeen: 9, storiesNew: 7, handles: ["h_a", "h_b", "h_c"], handlesFailed: 1 }),
+    ).toEqual({ failed: false, targets: 3, produced: 7 });
+  });
+
+  it("조회는 전원 성공했는데 저장 0 이면 failed 는 아니고 produced 0 이다(B 판정 몫)", () => {
+    expect(
+      declareStoryCaptureOutcome({ ...base, storiesSeen: 0, storiesNew: 0, handles: ["h_a", "h_b"], handlesFailed: 0 }),
+    ).toEqual({ failed: false, targets: 2, produced: 0 });
   });
 
   it("전원 실패면 failed 와 produced 0 을 함께 싣는다", () => {

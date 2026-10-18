@@ -435,6 +435,18 @@ describe("withSystemTaskStatus 사고 장부", () => {
     expect(incidentCreate.mock.calls[0][0].data.lastMessage).toBe("인스타 지표 대상 3건인데 산출 0");
   });
 
+  it("스토리 수집: 조회는 되는데(failed:false) 저장 0 이 연속 2회면 B 사고를 연다", async () => {
+    historyWithCurrent([{ ok: true, failed: false, targets: 5, produced: 0 }]);
+    const handler = vi.fn(async () => Response.json({ ok: true, failed: false, targets: 5, produced: 0 }));
+    await withSystemTaskStatus("capture-stories", handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(recordedStatuses()).toEqual(["RUNNING", "SUCCESS"]);
+    expect(createdIncidents()).toEqual([
+      expect.objectContaining({ kind: "B", errorKind: null, jobKey: "capture-stories" }),
+    ]);
+    expect(incidentCreate.mock.calls[0][0].data.lastMessage).toBe("스토리 대상 5건인데 산출 0");
+  });
+
   it("직전 회차에 산출이 있었으면 B 사고를 열지 않는다", async () => {
     historyWithCurrent([{ targets: 3, produced: 1 }]);
     const handler = vi.fn(async () => Response.json({ ok: true, targets: 3, produced: 0 }));

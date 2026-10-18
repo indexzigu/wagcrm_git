@@ -59,6 +59,9 @@ export type KnownJob = {
    * 선언하면 래퍼가 응답 본문의 `targets`·`produced` 로, 대상이 있었는데 산출 0 인 SUCCESS 가
    * `zeroRunsToFlag` 회 연속이면 사고를 연다. 1단계 선언 대상은 실질 실패 선언
    * (`declareTotalFailure`·`declareStoryCaptureOutcome`)을 이미 쓰는 작업뿐이다(설계 ⚙️J8).
+   * ℹ️ capture-stories 만 `produced` 가 실산출(저장한 스토리 수)이라 B 가 독립 신호다. 나머지 5개는
+   * `produced = 성공 수`라 「대상>0·산출0」이 곧 `failed:true`(사고 A)와 겹친다 — 받아들인 한계이고,
+   * 기간 기준 보강은 2단계 몫이다(docs/private/specs/2026-10-18-cron-self-healing-design.md ⚙️J8).
    */
   readonly output: { readonly label: string; readonly zeroRunsToFlag: number } | null;
 };
