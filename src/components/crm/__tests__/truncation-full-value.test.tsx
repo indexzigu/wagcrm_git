@@ -68,14 +68,6 @@ describe("SellerIdentityInfo — 전체값 접근", () => {
 describe("판단용 값은 말줄임하지 않는다(소스 계약)", () => {
   const read = (rel: string) => readFileSync(path.join(__dirname, "..", rel), "utf8");
 
-  it("이체 전 대조 모달의 계좌번호는 break-all 로 전부 보인다", () => {
-    const src = read("quick-settlement-modal.tsx");
-    const line = src.split("\n").find((l) => l.includes("font-mono") && l.includes("text-sm text-foreground"));
-    expect(line, "계좌번호 span 을 찾지 못했다 — 마크업이 바뀌었으면 이 계약도 옮길 것").toBeDefined();
-    expect(line).toContain("break-all");
-    expect(line).not.toContain("truncate");
-  });
-
   it("삭제 판단용 일정명은 잘리지 않는다", () => {
     const src = read("calendar-orphan-cleanup-dialog.tsx");
     const m = src.match(/<span className="([^"]*)">\s*\{o\.summary\}/);

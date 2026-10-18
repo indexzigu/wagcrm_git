@@ -7,7 +7,7 @@
  * 믿을 수 없다.
  */
 import { describe, expect, it } from "vitest";
-import { buildOrderWorkBuckets, resolveOrderSyncState } from "../order-work-card";
+import { buildOrderWorkBuckets, resolveOrderSyncState } from "../order-work-buckets";
 import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
 
 const HOUR = 3_600_000;

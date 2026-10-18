@@ -9,7 +9,7 @@ import { badgeSizeClassName } from "@/components/ui/badge";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TodayWorkRow, TodayWorkTone } from "@/lib/today-work";
-import type { OrderSyncState } from "./order-work-card";
+import type { OrderSyncState } from "@/lib/order-converter/order-work-buckets";
 import { StatusDot } from "./status-dot";
 import { TONE_BADGE } from "./segmented-tab-card";
 

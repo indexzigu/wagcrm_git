@@ -117,7 +117,7 @@ describe("buildTodayWorkRows", () => {
       "orders-delayed": "/order-converter",
       "orders-returns": "/order-converter",
       "outreach-followup": "/outreach",
-      "settlement-delayed": "/settlement",
+      "settlement-delayed": "/settlement?campaign=c-1",
       "approvals-pending": "/approvals",
       "data-check": "/#data-check",
     });
@@ -131,7 +131,16 @@ describe("buildTodayWorkRows", () => {
     expect(row.href).toBe("/settlement?campaign=camp%2F1");
   });
 
-  it("한 건이어도 캠페인 번호를 모르면 정산 관리 첫 화면으로 간다", () => {
+  it("지연된 정산이 여러 건이면 가장 오래 지연된 캠페인(목록 첫 항목) 상세로 간다", () => {
+    // `/api/agenda` 의 settlements 는 지연 기준일 오름차순(`buildOverdueSettlementItems`) — 첫 항목이 가장 오래됐다.
+    const row = buildTodayWorkRows(
+      input({ agenda: { tasks: 0, settlements: 3, overdueSettlementIds: ["old", "mid", "new"] } }),
+    )[0];
+    expect(row.count).toBe(3);
+    expect(row.href).toBe("/settlement?campaign=old");
+  });
+
+  it("캠페인 번호를 모르면 정산 관리 첫 화면으로 간다", () => {
     const row = buildTodayWorkRows(input({ agenda: { tasks: 0, settlements: 1 } }))[0];
     expect(row.href).toBe("/settlement");
   });

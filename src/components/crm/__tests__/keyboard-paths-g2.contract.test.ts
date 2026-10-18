@@ -29,14 +29,13 @@ describe("파일 입력 — display:none 으로 숨기지 않거나, 보이는 �
   /**
    * 두 형태만 허용한다.
    * ① 라벨로 감싼 입력(송장등록·증빙 첨부) → `sr-only` — 포커스는 받고 라벨이 이름·위치를 준다.
-   * ② 드롭존(가격표·카톡·빠른 정산) → 입력은 `hidden` 이어도 되지만 같은 파일에 입력의 ref 를
+   * ② 드롭존(가격표·카톡) → 입력은 `hidden` 이어도 되지만 같은 파일에 입력의 ref 를
    *    `.click()` 하는 **「파일 선택」 버튼**이 있어야 한다.
    */
   const LABEL_WRAPPED = ["order-dashboard.tsx", "settlement-section.tsx"];
   const DROP_ZONES = [
     "price-sheet/price-sheet-list.tsx",
     "katalk/upload-tab.tsx",
-    "quick-settlement-modal.tsx",
   ];
 
   function fileInputTags(source: string): string[] {

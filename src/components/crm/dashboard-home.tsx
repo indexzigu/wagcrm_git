@@ -32,7 +32,7 @@ import { SegmentedTabCard, type SegmentedTab } from "./segmented-tab-card";
 import { SystemRadarCard } from "./system-radar-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
 import { TodayWorkCard } from "./today-work-card";
-import { resolveOrderSyncState } from "./order-work-card";
+import { resolveOrderSyncState } from "@/lib/order-converter/order-work-buckets";
 import { buildTodayWorkRows, DATA_CHECK_ANCHOR } from "@/lib/today-work";
 import { useOrderWorkSummary } from "@/hooks/useOrderWorkSummary";
 import { useApprovalInbox } from "@/hooks/useApprovalInbox";

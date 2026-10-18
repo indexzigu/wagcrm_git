@@ -11,7 +11,7 @@
 // 승인대기는 `useApprovalInbox` 의 조건 전체 건수, 데이터 점검은 `computeDataIntegrityIssues`.
 // ⛔ 여기서 건수를 다시 세지 말 것 — 같은 판정의 두 번째 인코딩이 이 레포의 반복 사고다.
 
-import { buildOrderWorkBuckets, type Bucket } from "@/components/crm/order-work-card";
+import { buildOrderWorkBuckets, type Bucket } from "@/lib/order-converter/order-work-buckets";
 import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
 
 export type TodayWorkKey =
@@ -41,7 +41,7 @@ export type TodayWorkInput = {
   agenda: {
     tasks: number;
     settlements: number;
-    /** 지연된 정산 항목 id(그룹은 대표 멤버 id — `agenda-settlements.ts`). 한 건이면 그 상세로 바로 간다. */
+    /** 지연된 정산 항목 id, 오래 지연된 순(그룹은 대표 멤버 id — `agenda-settlements.ts`). 첫 항목 상세로 바로 간다. */
     overdueSettlementIds?: string[];
   };
   approvalsPending: number;
@@ -58,13 +58,15 @@ const ORDER_ROW: Record<Bucket["key"], TodayWorkKey> = {
 export const DATA_CHECK_ANCHOR = "data-check";
 
 /**
- * 지연된 정산 행의 목적지 — 한 건이면 그 캠페인 상세를 연 채로(`/settlement?campaign=<id>`),
- * 여러 건이면 정산 관리 첫 화면. 정산 관리 표에는 지연 걸러보기가 없다(지연 경고는 2026-08-25 오너
- * 결정으로 그 표에서 뺐다 — `settlement-table.tsx` 묘비 주석) — 그래서 거르는 주소를 지어내지 않는다.
+ * 지연된 정산 행의 목적지 — 그 캠페인 상세를 연 채로(`/settlement?campaign=<id>`). 여러 건이면
+ * **가장 오래 지연된 것**(목록 첫 항목 — `buildOverdueSettlementItems` 가 지연 기준일 오름차순으로 준다)을
+ * 연다. 정산 관리 표에는 지연 걸러보기가 없어서(지연 경고는 2026-08-25 오너 결정으로 그 표에서 뺐다 —
+ * `settlement-table.tsx` 묘비 주석) 첫 화면으로 보내면 어느 건이 늦었는지 모른 채 도착한다.
+ * id 를 모르면(응답에 없음) 정산 관리 첫 화면 — 거르는 주소를 지어내지 않는다.
  */
-function settlementHref(ids: string[] | undefined, count: number): string {
-  if (count === 1 && ids?.length === 1) return `/settlement?campaign=${encodeURIComponent(ids[0])}`;
-  return "/settlement";
+function settlementHref(ids: string[] | undefined): string {
+  const oldest = ids?.[0];
+  return oldest ? `/settlement?campaign=${encodeURIComponent(oldest)}` : "/settlement";
 }
 
 export function buildTodayWorkRows(input: TodayWorkInput): TodayWorkRow[] {
@@ -92,7 +94,7 @@ export function buildTodayWorkRows(input: TodayWorkInput): TodayWorkRow[] {
       label: "지연된 정산",
       count: input.agenda.settlements,
       tone: "urgent",
-      href: settlementHref(input.agenda.overdueSettlementIds, input.agenda.settlements),
+      href: settlementHref(input.agenda.overdueSettlementIds),
       detail: null,
     },
     // 승인대기는 오너 결정을 기다리는 일(정보) — 늦음·위험의 뜻이 없어 심각도 색을 주지 않는다.

@@ -3,10 +3,12 @@ import { formatNumber } from "@/lib/format";
 import { isOrderSyncStale, type OrderWorkSummary } from "@/lib/order-converter/order-work";
 
 /**
- * 주문 일감의 칸 판정(순수 로직) — 홈 「오늘 처리할 일」(`today-work-card.tsx`)이 소비한다.
+ * 주문 일감의 칸 판정(순수 로직) — 홈 「오늘 처리할 일」 행 빌더(`src/lib/today-work.ts`)와
+ * 카드(`today-work-card.tsx`)가 소비한다.
  *
- * 종전 이 파일의 「오늘 처리할 주문」 카드는 2026-10-18 「오늘 처리할 일」 카드로 흡수됐다(애플 UI
- * 리뉴얼 묶음 1-b). 칸 이름은 주문 관리 화면 어휘와 같은 말이 다른 집합을 가리키지 않게 정했다
+ * 종전엔 `src/components/crm/order-work-card.tsx` 의 「오늘 처리할 주문」 카드 안에 있었다. 그 카드가
+ * 2026-10-18 「오늘 처리할 일」로 흡수되면서(애플 UI 리뉴얼 묶음 1-b) 순수 판정만 여기로 옮겼다 —
+ * lib 가 components 를 import 하지 않게. 칸 이름은 주문 관리 화면 어휘와 같은 말이 다른 집합을 가리키지 않게 정했다
  * (`order-work.ts` OrderWorkSummaryCounts).
  *
  * 색은 심각도 축만 탄다(P8 §1): 송장·배송 지연과 반품/교환 = urgent(주문 관리의 반품/교환 버튼과
