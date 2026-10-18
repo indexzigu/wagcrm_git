@@ -16,9 +16,25 @@ describe("classifyCronError", () => {
     ["Can't reach database server at 127.0.0.1:55432", undefined, "config"],
     ["인스타 토큰/계정ID 미설정", undefined, "config"],
     ["스토리 응답 미포착(감시 패턴 불일치)", undefined, "unknown"],
+    ["대상 503건 처리 실패", undefined, "unknown"],
+    ["주문 401건 누락", undefined, "unknown"],
+    ["ORD-503-1 실패", undefined, "unknown"],
+    ["v4.0.403", undefined, "unknown"],
+    ["429건 중 일부 실패", undefined, "unknown"],
+    ["HTTP 503", undefined, "upstream_5xx"],
+    ["status 401 Unauthorized", undefined, "auth"],
+    ["429 Too Many Requests", undefined, "rate_limit"],
+    ["Request failed with status code 502", undefined, "upstream_5xx"],
+    ["fetch failed", 503, "upstream_5xx"],
   ];
   it.each(cases)("%s → %s", (text, status, kind) => {
     expect(classifyCronError(text, status)).toBe(kind);
+  });
+
+  it("app_down 은 돌려주지 않는다", () => {
+    for (const [text, status] of cases) {
+      expect(classifyCronError(text, status)).not.toBe("app_down");
+    }
   });
 
   it("일시 장애 종류만 재시도 대상이다", () => {

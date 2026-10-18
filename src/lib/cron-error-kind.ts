@@ -22,20 +22,25 @@ type Rule = {
   patterns: readonly RegExp[];
 };
 
+// 맨 상태코드 숫자 패턴 — 건수("503건")·식별자("ORD-503-1")·버전("4.0.403")은 제외한다.
+// JS \b 는 한글을 비단어로 보므로 앞뒤를 직접 막는다.
+const bareStatus = (alt: string): RegExp =>
+  new RegExp(`(?<![\\w.\\-])(?:${alt})(?![\\w.\\-]|[가-힣])`);
+
 // 위에서 아래로 처음 맞는 규칙이 이긴다 — 407 은 `fetch failed` 와 같은 줄에 있어도 proxy_quota.
 const RULES: readonly Rule[] = [
-  { kind: "proxy_quota", patterns: [/Proxy response \(407\)/, /\b407\b.*(proxy|Proxy|tunnel)/] },
-  { kind: "rate_limit", statuses: [429], patterns: [/\b429\b/, /RESOURCE_EXHAUSTED/, /rate.?limit/i] },
+  { kind: "proxy_quota", patterns: [/Proxy response \(407\)/, new RegExp(`${bareStatus("407").source}.*(proxy|Proxy|tunnel)`)] },
+  { kind: "rate_limit", statuses: [429], patterns: [bareStatus("429"), /RESOURCE_EXHAUSTED/, /rate.?limit/i] },
   {
     kind: "auth",
     statuses: [401, 403],
-    patterns: [/\b(401|403)\b/, /Authentication failed/, /"code"\s*:\s*190\b/, /GW\.IP_NOT_ALLOWED/],
+    patterns: [bareStatus("401|403"), /Authentication failed/, /"code"\s*:\s*190\b/, /GW\.IP_NOT_ALLOWED/],
   },
   {
     kind: "config",
     patterns: [/Can't reach database/, /(미설정|not set|missing env|is not defined in env)/i],
   },
-  { kind: "upstream_5xx", statuses: [502, 503, 504], patterns: [/\b(502|503|504)\b/] },
+  { kind: "upstream_5xx", statuses: [502, 503, 504], patterns: [bareStatus("502|503|504")] },
   { kind: "timeout", patterns: [/ETIMEDOUT|timed? ?out|시간 초과|AbortError|TimeoutError/i] },
   {
     kind: "network",
