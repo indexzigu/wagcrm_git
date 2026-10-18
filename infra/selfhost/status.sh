@@ -282,13 +282,15 @@ if [ "$MODE" = "full" ]; then
   CRON_SQL="select \"jobKey\", floor(extract(epoch from max(t)))::bigint from (select \"jobKey\", \"createdAt\" as t from \"SystemTaskLog\" where status = 'SUCCESS' union all select \"jobKey\", \"lastRunAt\" from \"SystemTaskStatus\" where status in ('SUCCESS', 'RUNNING') and \"lastRunAt\" is not null) s group by 1;"
   # $DOCKER 는 의도적 미인용(테스트 훅이 "bash <경로>" 두 단어를 줄 수 있다 — 기존 규약).
   CRON_ROWS="$($DOCKER exec supabase-db psql -U supabase_admin -d postgres -At -F'|' -c "$CRON_SQL" 2>/dev/null || true)"
-  # 열린 사고(open·waiting_owner)가 있는 잡 — 늦음 목록에서만 뺀다(크론 자가 복구 2단계).
+  # 조치대기(waiting_owner) 사고가 있는 잡 — 늦음 목록에서만 뺀다(크론 자가 복구 2단계).
   # 그 잡은 사고 알림(incident-notify.sh)이 이미 오너에게 알렸거나 알릴 차례라, 메뉴바가 같은 일을
   # 「늦었습니다」로 또 울리면 알림이 두 갈래가 된다. 정상 개수·「성공 기록 없음」 판정은 그대로다.
+  # ⛔ 'open'(일시 실패)은 빼지 않는다 — 승격은 다음 발생에서 일어나므로, 작업이 아예 멈추면 open 사고는
+  #    영영 조치대기로 안 올라가고 사고 알림도 안 나간다. 그때 메뉴바까지 빼면 아무도 안 울린다.
   # 🪤 CRON_SQL 에 NOT IN 으로 넣지 않는다 — 그러면 그 잡의 마지막 성공 행이 사라져 「성공 기록이
   #    없습니다」(warn)로 바뀐다. 따로 묻고, 조회가 실패하면(테이블 미적용 등) 빈 목록 = 아무것도
   #    빼지 않는다 — 모르는 것을 근거로 알림을 끄지 않는다. 늦은 잡이 있을 때만 묻는다(평소엔 0회).
-  CRON_INCIDENT_SQL="select distinct \"jobKey\" from \"CronIncident\" where status in ('open', 'waiting_owner');"
+  CRON_INCIDENT_SQL="select distinct \"jobKey\" from \"CronIncident\" where status = 'waiting_owner';"
   CRON_INCIDENT_JOBS=""
   cron_incident_loaded=0
 
@@ -337,7 +339,7 @@ if [ "$MODE" = "full" ]; then
       [ -n "$c_limit_min" ] || c_limit_min=$(( c_limit_h * 60 ))
       if [ "$c_age_min" -gt "$c_limit_min" ]; then
         if [ "$cron_incident_loaded" -eq 0 ]; then
-          CRON_INCIDENT_JOBS="$($DOCKER exec supabase-db psql -U supabase_admin -d postgres -At -c "$CRON_INCIDENT_SQL" 2>/dev/null || true)"
+          CRON_INCIDENT_JOBS="$($DOCKER exec supabase-db psql -U supabase_admin -d postgres -At -c "$CRON_INCIDENT_SQL" </dev/null 2>/dev/null || true)"
           cron_incident_loaded=1
         fi
         if printf '%s\n' "$CRON_INCIDENT_JOBS" | awk -v j="$c_job" '$0==j {f=1} END {exit !f}'; then

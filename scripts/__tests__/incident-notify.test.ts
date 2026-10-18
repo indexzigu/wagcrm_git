@@ -53,6 +53,8 @@ interface RunOpts {
   countFile?: string;
   /** 같은 LOGS_DIR 를 이어 쓸 때 */
   logsDir?: string;
+  /** 가짜 python 이 실패할 호출: "all" = 전부, "ack" = 확인 본문 만들기만 */
+  pythonFails?: "all" | "ack";
 }
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -88,6 +90,15 @@ function run(opts: RunOpts = {}) {
   writeFileSync(envFile, opts.envFile ?? "CRON_SECRET=stub-value-not-a-secret\n");
   if (opts.countFile !== undefined) writeFileSync(path.join(logs, "incident-notify-count.tsv"), opts.countFile);
 
+  const pyImpl = path.join(dir, "python.impl");
+  writeFileSync(
+    pyImpl,
+    opts.pythonFails === "all"
+      ? "exit 1\n"
+      : opts.pythonFails === "ack"
+        ? `case "$*" in *'"acks"'*) exit 1;; esac\nexec /usr/bin/python3 "$@"\n`
+        : 'exec /usr/bin/python3 "$@"\n',
+  );
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.CRON_SECRET;
   const result = spawnSync("bash", [SCRIPT, ...(opts.mode === undefined ? ["immediate"] : opts.mode ? [opts.mode] : [])], {
@@ -98,6 +109,7 @@ function run(opts: RunOpts = {}) {
       INCIDENT_LOGS_DIR: logs,
       INCIDENT_ENV_FILE: envFile,
       INCIDENT_NOW: String(opts.now ?? nowSec()),
+      INCIDENT_PYTHON: `bash ${pyImpl}`,
     },
     encoding: "utf8",
   });
@@ -211,6 +223,23 @@ describe("incident-notify.sh 발송", () => {
     expect(r.lines[0]).toMatch(/\] FAIL incident-notify /);
   });
 
+  it("python 이 실패하면(날짜 계산) 아무것도 보내지 않고 FAIL · exit 1", () => {
+    const r = run({ messages: [alert(1)], pythonFails: "all" });
+    expect(r.status).toBe(1);
+    expect(r.notify).toHaveLength(0);
+    expect(r.posts).toHaveLength(0);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatch(/\] FAIL incident-notify /);
+  });
+
+  it("확인 본문 만들기가 실패하면 POST 없이 FAIL · exit 1", () => {
+    const r = run({ messages: [alert(1)], pythonFails: "ack" });
+    expect(r.status).toBe(1);
+    expect(r.posts).toHaveLength(0);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatch(/\] FAIL incident-notify /);
+  });
+
   it("digest 모드는 mode=digest 로 묻고 📋 은 상한에 세지 않는다", () => {
     const digest: Msg = { key: "digest-incident", icon: "📋", title: "자동화 작업 요약", detail: "줄1\n줄2", ackField: "digestedAt", incidentIds: ["a", "b"] };
     const now = nowSec();
@@ -253,7 +282,7 @@ describe("incident-notify.sh 하루 즉시 알림 상한(배포 후 7일)", () =
       "incident-r1-ok",
       "incident-cap",
     ]);
-    expect(r.notify[6]).toEqual(["send", "incident-cap", "자동화 작업 알림 상한", "오늘 알림 2건은 내일 08:00 요약으로 넘깁니다.", "🙋"]);
+    expect(r.notify[6]).toEqual(["send", "incident-cap", "자동화 작업 알림 상한", "오늘 알림 2건은 다음 08:00 요약으로 넘깁니다.", "🙋"]);
     // 넘친 i6·i7 도 alertedAt 으로 확인한다 — 자정이 지나 개별 알림으로 나가지 않게. 08:00 요약은 조치대기 전부를 싣는다.
     const acks = r.ackBody(r.posts[0]).acks;
     expect(acks.flatMap((a) => a.incidentIds)).toEqual(["i1", "i2", "i3", "i4", "i5", "i6", "i7", "r1"]);

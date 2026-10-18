@@ -60,8 +60,8 @@ interface RunOpts {
   cronRows?: Record<string, number>;
   /** true 면 psql 조회가 실패한다(판정 불능 경로). */
   cronQueryFails?: boolean;
-  /** 열린(open·waiting_owner) 사고가 있는 잡. 사고 조회(CronIncident)만 이 목록을 돌려준다. */
-  openIncidentJobs?: string[];
+  /** 잡별 사고 상태(open · waiting_owner · resolved). 가짜 psql 은 SQL 에 그 상태 리터럴이 있는 잡만 돌려준다. */
+  incidents?: Record<string, string>;
   /** true 면 사고 조회만 실패한다(테이블 미적용 등) — 늦음 판정은 그대로여야 한다. */
   incidentQueryFails?: boolean;
   /** 실행 전에 미리 심어 둘 연속 기록. firstSeenAgoH = "지금부터 몇 시간 전에 처음 관측".
@@ -135,7 +135,7 @@ esac`,
     `if [ "$1" = "inspect" ]; then
   ${opts.dbState === undefined ? 'echo "running"' : opts.dbState === "" ? "exit 1" : `echo "${opts.dbState}"`}
 elif [ "$1" = "exec" ] && [[ "$*" == *CronIncident* ]]; then
-  ${opts.incidentQueryFails ? "exit 1" : `printf '%s\\n' ${(opts.openIncidentJobs ?? []).map((j) => JSON.stringify(j)).join(" ") || "''"}`}
+  ${opts.incidentQueryFails ? "exit 1" : Object.entries(opts.incidents ?? {}).map(([j, st]) => `[[ "$*" == *"'${st}'"* ]] && printf '%s\\n' ${JSON.stringify(j)}`).join("\n  ") + "\n  true"}
 elif [ "$1" = "exec" ]; then
   ${opts.cronQueryFails ? "exit 1" : `cat <<'PSQL_ROWS'\n${psqlOut}\nPSQL_ROWS`}
 fi`,
@@ -443,26 +443,39 @@ describe("status.sh 행위 계약", () => {
     expect(isSingleReadOnlySelect(sql!.replace(/\\"/g, '"'))).toBe(true);
   });
 
-  it("열린 사고가 있는 잡은 늦음 목록에서 뺀다 — 사고 알림이 이미 오너에게 갔으므로 메뉴바가 같은 일을 또 울리지 않는다", () => {
+  it("조치대기 사고가 있는 잡은 늦음 목록에서 뺀다 — 사고 알림이 이미 오너에게 갔으므로 메뉴바가 같은 일을 또 울리지 않는다", () => {
     const r = runStatus({
       dailyAgeH: 5,
       weeklyAgeH: 24,
       cronJobs: ["a", "b", "c"],
       cronRows: { a: 40, b: 41, c: 2 },
-      openIncidentJobs: ["a"],
+      incidents: { a: "waiting_owner" },
     });
     const item = byKey(r, "crons");
     expect(item.level).toBe("error");
     expect(item.detail).toBe("1개가 예정보다 늦었습니다: b");
   });
 
-  it("늦은 잡이 전부 열린 사고면 정상 문구 그대로다", () => {
+  it("open(일시) 사고만 있는 잡은 늦음 목록에 남는다 — 작업이 멈추면 승격이 안 일어나 메뉴바가 영영 조용해진다", () => {
     const r = runStatus({
       dailyAgeH: 5,
       weeklyAgeH: 24,
       cronJobs: ["a", "b"],
       cronRows: { a: 40, b: 2 },
-      openIncidentJobs: ["a"],
+      incidents: { a: "open" },
+    });
+    const item = byKey(r, "crons");
+    expect(item.level).toBe("error");
+    expect(item.detail).toBe("1개가 예정보다 늦었습니다: a");
+  });
+
+  it("늦은 잡이 전부 조치대기 사고면 정상 문구 그대로다", () => {
+    const r = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["a", "b"],
+      cronRows: { a: 40, b: 2 },
+      incidents: { a: "waiting_owner" },
     });
     const item = byKey(r, "crons");
     expect(item.level).toBe("ok");
@@ -475,18 +488,19 @@ describe("status.sh 행위 계약", () => {
       weeklyAgeH: 24,
       cronJobs: ["a", "b"],
       cronRows: { a: 40, b: 2 },
-      openIncidentJobs: ["a"],
+      incidents: { a: "waiting_owner" },
       incidentQueryFails: true,
     });
     expect(byKey(r, "crons").level).toBe("error");
   });
 
-  it("사고 조회도 단일 읽기전용 SELECT 이고 열린 상태 둘만 본다", () => {
+  it("사고 조회도 단일 읽기전용 SELECT 이고 조치대기만 본다", () => {
     const src = readFileSync(SCRIPT, "utf8");
     const sql = /^\s*CRON_INCIDENT_SQL="(.*)"$/m.exec(src)?.[1];
     expect(sql, "CRON_INCIDENT_SQL 앵커 없음(공허 통과 방지)").toBeTruthy();
     expect(sql).toContain('\\"CronIncident\\"');
-    expect(sql).toMatch(/status in \('open', 'waiting_owner'\)/);
+    expect(sql).toMatch(/status = 'waiting_owner'/);
+    expect(sql).not.toContain("'open'");
     expect(isSingleReadOnlySelect(sql!.replace(/\\"/g, '"'))).toBe(true);
   });
 

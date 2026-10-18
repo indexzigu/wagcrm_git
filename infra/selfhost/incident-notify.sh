@@ -30,7 +30,7 @@ set -euo pipefail
 #
 # 테스트 훅(scripts/__tests__/incident-notify.test.ts): INCIDENT_CURL_CMD · INCIDENT_NOTIFY_CMD
 # ("bash <파일>" 두 단어를 받는다 — notify.sh 의 NOTIFY_CURL_CMD 와 같은 규약) · INCIDENT_LOGS_DIR ·
-# INCIDENT_ENV_FILE · INCIDENT_NOW(지금, epoch 초).
+# INCIDENT_ENV_FILE · INCIDENT_NOW(지금, epoch 초) · INCIDENT_PYTHON.
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOGS_DIR="${INCIDENT_LOGS_DIR:-$HOME/selfhost/logs}"
@@ -38,7 +38,8 @@ LOG="$LOGS_DIR/cron.log"
 COUNT_FILE="$LOGS_DIR/incident-notify-count.tsv"
 ENV_FILE="${INCIDENT_ENV_FILE:-$SELF_DIR/.env}"
 OUTBOX_URL="http://127.0.0.1:3000/api/cron/incident-outbox"
-PY=/usr/bin/python3
+# $PY 도 의도적 미인용 — 테스트 훅 INCIDENT_PYTHON 이 "bash <경로>" 두 단어를 준다.
+PY="${INCIDENT_PYTHON:-/usr/bin/python3}"
 
 DAILY_CAP=5
 CAP_WINDOW_S=$(( 7 * 86400 ))
@@ -79,7 +80,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # ── 상한 파일 ────────────────────────────────────────────────────────────────
 # 형식: 첫 줄 `since<TAB><epoch>`(7일 창의 시작), 이후 `<KST 날짜><TAB><보낸 개수><TAB><안내 보냄 0|1>`.
 # 손상됐으면(첫 줄이 since 가 아니거나 숫자가 아님) 지금부터 다시 센다 — 죽어서 알림을 막는 쪽보다 낫다.
-TODAY="$("$PY" -I -c 'import sys,datetime as d; print(d.datetime.fromtimestamp(int(sys.argv[1]), d.timezone(d.timedelta(hours=9))).strftime("%Y-%m-%d"))' "$NOW")"
+# 🪤 `|| fail` 을 빼지 말 것 — set -e 아래 맨 대입이 실패하면 cron.log 에 아무 줄도 없이 죽는다.
+TODAY="$($PY -I -c 'import sys,datetime as d; print(d.datetime.fromtimestamp(int(sys.argv[1]), d.timezone(d.timedelta(hours=9))).strftime("%Y-%m-%d"))' "$NOW" 2>/dev/null)" \
+  || fail "날짜 계산 실패(python3)"
+case "$TODAY" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) fail "날짜 계산 실패(python3)" ;; esac
 SINCE="$(awk -F'\t' 'NR==1 && $1=="since" {print $2}' "$COUNT_FILE" 2>/dev/null || true)"
 case "$SINCE" in
   ''|*[!0-9]*) SINCE="$NOW"; printf 'since\t%s\n' "$SINCE" > "$COUNT_FILE" ;;
@@ -101,7 +105,7 @@ fi
 # 응답을 NUL 구분 레코드(키·아이콘·제목·상세·확인칸·사고 id 쉼표 목록)로 푼다. 상세에 줄바꿈이 있어 NUL 로 가른다.
 # 형식이 하나라도 어긋나면 아무것도 보내지 않는다 — 반쯤 보내고 반쯤 확인하는 상태를 만들지 않는다.
 RECORDS="$TMP_DIR/records"
-if ! printf '%s' "$OUT" | "$PY" -I -c '
+if ! printf '%s' "$OUT" | $PY -I -c '
 import json, sys
 data = json.load(sys.stdin)
 if not isinstance(data, dict) or data.get("ok") is not True or not isinstance(data.get("messages"), list):
@@ -157,7 +161,7 @@ while IFS= read -r -d '' key && IFS= read -r -d '' icon && IFS= read -r -d '' ti
 done < "$RECORDS"
 
 if [ "$capped" -gt 0 ] && [ "$TODAY_CAP_SENT" -eq 0 ]; then
-  if send_one incident-cap "자동화 작업 알림 상한" "오늘 알림 ${capped}건은 내일 08:00 요약으로 넘깁니다." "🙋"; then
+  if send_one incident-cap "자동화 작업 알림 상한" "오늘 알림 ${capped}건은 다음 08:00 요약으로 넘깁니다." "🙋"; then
     TODAY_CAP_SENT=1
   else
     notify_failed=$((notify_failed + 1))
@@ -176,14 +180,14 @@ fi
 # ── 확인 ────────────────────────────────────────────────────────────────────
 acked=0
 if [ -s "$ACKS" ]; then
-  ACK_JSON="$("$PY" -I -c '
+  ACK_JSON="$($PY -I -c '
 import json, sys
 acks = []
 for line in open(sys.argv[1], encoding="utf-8"):
     field, _, ids = line.rstrip("\n").partition("\t")
     acks.append({"incidentIds": [i for i in ids.split(",") if i], "ackField": field})
 print(json.dumps({"acks": acks}, ensure_ascii=False))
-' "$ACKS")"
+' "$ACKS" 2>/dev/null)" || fail "확인 본문 만들기 실패(python3, sent=$sent capped=$capped)"
   if ! POST_OUT="$($CURL -fsS -m 60 -X POST -H "Authorization: Bearer ${CRON_SECRET}" \
         -H "Content-Type: application/json" --data-binary "$ACK_JSON" "$OUTBOX_URL" 2>&1)"; then
     fail "확인 표시 실패(sent=$sent capped=$capped — 다음 회차에 다시 오지만 notify.sh 6시간 하한이 거른다): $POST_OUT"
