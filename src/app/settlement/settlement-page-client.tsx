@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useFilterParams } from "@/hooks/use-filter-params";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronLeft, ChevronRight, Download, FileText, RefreshCw, Search, TrendingUp, Wallet } from "lucide-react";
 import { MONEY_DIRECTION_ICON } from "@/lib/money-direction";
 import { SettlementTable } from "@/components/crm/settlement-table";
@@ -377,6 +378,72 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     setPanelOpen(true);
   };
 
+  // ── 주소로 캠페인 상세 열기: `/settlement?campaign=<id>` ─────────────────────────────
+  // 홈 「오늘 처리할 일」의 「지연된 정산」(한 건)이 이 주소로 온다 — 홈의 빠른 정산 창을 빼고 이 상세가
+  // 그 일을 맡는다(오너 2026-10-18). id 는 아젠다 항목 id, 그룹이면 대표 멤버 id(`agenda-settlements.ts`).
+  // 행은 표의 월 필터로 걸러지기 **전** 목록(`data.campaigns` = 정산 작업공간 전체)에서 찾으므로 월을
+  // 바꾸지 않아도 열린다. 목록에 없으면(초기 스냅샷이 낡은 경우) 그 한 건을 서버에서 읽는다.
+  // 패널을 닫으면 주소에서 `campaign` 만 지운다 — 새로고침·뒤로가기가 패널을 다시 열지 않게.
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const deepLinkCampaignId = searchParams.get("campaign");
+  const handledDeepLinkRef = useRef<string | null>(null);
+
+  // 주소만 고친다 — `router.replace` 는 서버 렌더를 한 번 더 돌리고 그것이 끝나야 주소가 바뀌어서, 그 사이
+  // 새로고침하면 패널이 다시 열렸다(데모 실렌더 실측). 브라우저 history 갱신은 Next 라우터와 동기화되어
+  // `useSearchParams` 도 따라 바뀐다(Next 16 문서 「linking-and-navigating」 — `use-stage-filter.ts` 와 같은 방식).
+  const clearCampaignParam = useCallback(() => {
+    if (!searchParams.has("campaign")) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("campaign");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `${pathname}?${query}` : pathname);
+  }, [pathname, searchParams]);
+
+  useEffect(() => {
+    if (!deepLinkCampaignId) {
+      handledDeepLinkRef.current = null;
+      return;
+    }
+    if (handledDeepLinkRef.current === deepLinkCampaignId) return;
+    handledDeepLinkRef.current = deepLinkCampaignId;
+
+    // `campaignRowsRef` 는 위 effect 가 먼저 동기화한다(effect 는 선언 순서대로 돈다).
+    const local = campaignRowsRef.current.find((campaign) => campaign.id === deepLinkCampaignId);
+    if (local) {
+      selectCampaign(local);
+      setPanelOpen(true);
+      return;
+    }
+    // 늦게 온 응답은 **주소가 여전히 그 캠페인을 가리킬 때만** 반영한다. effect 정리 함수의 취소 플래그를
+    // 쓰지 않는 이유: 주소의 다른 값(월 등)이 바뀌거나 개발 모드가 effect 를 두 번 돌리면 정리가 먼저 불리는데,
+    // 위 가드가 재실행을 막아 그 응답이 영영 버려진다.
+    const stillWanted = () => handledDeepLinkRef.current === deepLinkCampaignId;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/campaigns/${encodeURIComponent(deepLinkCampaignId)}`);
+        if (!response.ok) throw new Error(`campaign ${response.status}`);
+        const campaign = (await response.json()) as CampaignRow;
+        if (!stillWanted()) return;
+        selectCampaign(campaign);
+        setPanelOpen(true);
+      } catch (err: unknown) {
+        if (!stillWanted()) return;
+        console.error("[settlement] 주소의 캠페인을 열지 못했습니다:", err);
+        toast.warning("그 캠페인을 찾지 못했습니다. 정산 목록에서 다시 골라 주세요.");
+        clearCampaignParam();
+      }
+    })();
+  }, [clearCampaignParam, deepLinkCampaignId, selectCampaign]);
+
+  const handlePanelOpenChange = useCallback(
+    (open: boolean) => {
+      setPanelOpen(open);
+      if (!open) clearCampaignParam();
+    },
+    [clearCampaignParam],
+  );
+
 
   return isMobile ? (
     <MobileSettlementView
@@ -597,7 +664,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
         assets={initialData.assets}
         storage={initialData.storage}
         open={panelOpen}
-        onOpenChange={setPanelOpen}
+        onOpenChange={handlePanelOpenChange}
         onCampaignUpdated={handleCampaignSaved}
         title="정산관리 캠페인 상세 페이지"
         description="캠페인의 정산 및 재무 내역을 확인하고 설정을 관리합니다."
