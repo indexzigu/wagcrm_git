@@ -16,7 +16,7 @@ type ProgressStatusSummaryProps = {
 export function ProgressStatusSummary({ deals }: ProgressStatusSummaryProps) {
   if (deals.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground">연결된 딜 없음</p>
+      <p className="text-xs text-muted-foreground">연결된 판매 조건 없음</p>
     );
   }
 

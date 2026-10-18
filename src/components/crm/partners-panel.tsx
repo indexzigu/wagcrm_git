@@ -363,7 +363,7 @@ export function PartnersPanel({
     try {
       const res = await fetch(`/api/deals?partnerId=${activePartner.id}&sortBy=createdAt&sortDir=desc`);
       if (!res.ok) {
-        throw new Error("연결된 딜을 불러오지 못했습니다.");
+        throw new Error("연결된 판매 조건을 불러오지 못했습니다.");
       }
       const data = await res.json();
       const deals = Array.isArray(data) ? data : data.deals ?? [];
@@ -381,7 +381,7 @@ export function PartnersPanel({
     } catch (error) {
       setLinkedDeals([]);
       setDealsError(
-        error instanceof Error ? error.message : "연결된 딜을 불러오지 못했습니다.",
+        error instanceof Error ? error.message : "연결된 판매 조건을 불러오지 못했습니다.",
       );
     } finally {
       setLoadingDeals(false);
@@ -864,7 +864,7 @@ export function PartnersPanel({
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      throw new Error(data?.error ?? "딜 연결 변경에 실패했습니다.");
+      throw new Error(data?.error ?? "판매 조건 연결 변경에 실패했습니다.");
     }
     if (data?.logWarning) {
       toast.warning(data.logWarning);
@@ -885,7 +885,7 @@ export function PartnersPanel({
     setConfirmLoading(true);
     try {
       await applyDealPartnerChange(pendingLinkTarget.id, partner.id);
-      toast.success("딜이 연결되었습니다.");
+      toast.success("판매 조건이 연결되었습니다.");
       await fetchLinkedDeals(partner);
       onUpdated?.({
         ...partner,
@@ -894,7 +894,7 @@ export function PartnersPanel({
       setConfirmOpen(false);
       setPendingLinkTarget(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "딜 연결에 실패했습니다.");
+      toast.error(error instanceof Error ? error.message : "판매 조건 연결에 실패했습니다.");
     } finally {
       setConfirmLoading(false);
     }
@@ -904,7 +904,7 @@ export function PartnersPanel({
     if (!pendingDealChange || !partner) return;
     try {
       await applyDealPartnerChange(pendingDealChange.id, item.id);
-      toast.success("딜 연결이 변경되었습니다.");
+      toast.success("판매 조건 연결이 변경되었습니다.");
       setLinkedDeals((current) => current.filter((deal) => deal.id !== pendingDealChange.id));
       onUpdated?.({
         ...partner,
@@ -913,7 +913,7 @@ export function PartnersPanel({
       setChangeSearchOpen(false);
       setPendingDealChange(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "딜 연결 변경에 실패했습니다.");
+      toast.error(error instanceof Error ? error.message : "판매 조건 연결 변경에 실패했습니다.");
     }
   }
 
@@ -1354,7 +1354,7 @@ export function PartnersPanel({
             }))}
             loading={loadingDeals}
             error={dealsError}
-            emptyMessage="연결된 딜 없음"
+            emptyMessage="연결된 판매 조건 없음"
             onLinkClick={() => setLinkSearchOpen(true)}
             onUnlinkClick={async (entityId) => {
               try {
@@ -1363,9 +1363,9 @@ export function PartnersPanel({
                 });
                 if (!res.ok) {
                   const data = await res.json().catch(() => null);
-                  throw new Error(data?.error ?? "딜 연결 해제에 실패했습니다.");
+                  throw new Error(data?.error ?? "판매 조건 연결 해제에 실패했습니다.");
                 }
-                toast.success("딜 연결이 해제되었습니다.");
+                toast.success("판매 조건 연결이 해제되었습니다.");
                 await fetchLinkedDeals(partner);
                 onUpdated?.({
                   ...partner,
@@ -1373,7 +1373,7 @@ export function PartnersPanel({
                 });
               } catch (error) {
                 toast.error(
-                  error instanceof Error ? error.message : "딜 연결 해제에 실패했습니다."
+                  error instanceof Error ? error.message : "판매 조건 연결 해제에 실패했습니다."
                 );
               }
             }}
@@ -1518,7 +1518,7 @@ export function PartnersPanel({
           <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
             <SheetTitle>거래처 상세</SheetTitle>
             <SheetDescription>
-              거래처 정보, 연결된 딜, 활동 기록을 확인합니다.
+              거래처 정보, 연결된 판매 조건, 활동 기록을 확인합니다.
             </SheetDescription>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-hidden px-6 py-5">{body}</div>
@@ -1531,7 +1531,7 @@ export function PartnersPanel({
           <div>
             <DrawerTitle>거래처 상세</DrawerTitle>
             <DrawerDescription>
-              거래처 정보, 연결된 딜, 활동 기록을 확인합니다.
+              거래처 정보, 연결된 판매 조건, 활동 기록을 확인합니다.
             </DrawerDescription>
           </div>
           <Button
@@ -1582,7 +1582,7 @@ export function PartnersPanel({
         onOpenChange={setConfirmOpen}
         message={
           pendingLinkTarget
-            ? `"${pendingLinkTarget.label}" 딜을 현재 거래처에 연결하시겠습니까? 기존 거래처 연결은 새 거래처로 변경됩니다.`
+            ? `"${pendingLinkTarget.label}" 판매 조건을 현재 거래처에 연결하시겠습니까? 기존 거래처 연결은 새 거래처로 변경됩니다.`
             : "연결을 진행하시겠습니까?"
         }
         onConfirm={() => void handleConfirmLinkDeal()}

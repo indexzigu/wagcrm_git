@@ -204,10 +204,10 @@ function CreateDealPreview({ args }: { args: Record<string, unknown> }) {
         </div>
       )}
       <div className="space-y-1">
-        <SectionTitle>딜</SectionTitle>
+        <SectionTitle>판매 조건</SectionTitle>
         <Rows
           rows={[
-            ["딜명", asText(mainDeal.dealName)],
+            ["판매 조건 이름", asText(mainDeal.dealName)],
             ["브랜드", asText(mainDeal.brandName)],
             ["단위", unitLabel(mainDeal)],
             ...moneyRows(mainDeal),
@@ -367,7 +367,7 @@ function UpsertProductMappingsPreview({ args }: { args: Record<string, unknown> 
       {memo && <p className="text-muted-foreground">메모: {memo}</p>}
       {hasNewRow && (
         <p className="text-muted-foreground">
-          승인하면 화면 저장과 같이 이 캠페인 전체의 판매 딜 자동 연결이 다시 돕니다(기존 연결이 바뀔 수 있음).
+          승인하면 화면 저장과 같이 이 캠페인 전체의 판매 조건 자동 연결이 다시 돕니다(기존 연결이 바뀔 수 있음).
         </p>
       )}
       <div className="overflow-x-auto">

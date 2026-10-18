@@ -100,7 +100,7 @@ describe("DealOfferDiagnosticSection", () => {
     expect(await screen.findByText("미확인")).toBeInTheDocument();
   });
 
-  it("옵션 딜이면 본품 기준 판정임을 밝힌다", async () => {
+  it("옵션 판매 조건이면 본품 기준 판정임을 밝힌다", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -113,7 +113,7 @@ describe("DealOfferDiagnosticSection", () => {
     );
     render(<DealOfferDiagnosticSection dealId="opt1" />);
     expect(
-      await screen.findByText("옵션 딜이라 본품 기준으로 판정했습니다"),
+      await screen.findByText("옵션 판매 조건이라 본품 기준으로 판정했습니다"),
     ).toBeInTheDocument();
   });
 
@@ -122,14 +122,14 @@ describe("DealOfferDiagnosticSection", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ error: "딜을 찾을 수 없습니다" }), {
+          new Response(JSON.stringify({ error: "판매 조건을 찾을 수 없습니다" }), {
             status: 404,
           }),
       ),
     );
     render(<DealOfferDiagnosticSection dealId="missing" />);
     expect(
-      await screen.findByText("딜을 찾을 수 없습니다"),
+      await screen.findByText("판매 조건을 찾을 수 없습니다"),
     ).toBeInTheDocument();
   });
 

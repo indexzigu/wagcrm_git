@@ -88,7 +88,7 @@ export const EXECUTION_CHECKLIST_GROUPS = {
   PREPARATION: [
     {
       title: "일정/조건 확정",
-      items: ["행사 일정 확정", "기본 딜 조건 확인"],
+      items: ["행사 일정 확정", "기본 판매 조건 확인"],
     },
     {
       title: "상품/가격 확인",

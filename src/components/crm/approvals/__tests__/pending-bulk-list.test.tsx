@@ -38,12 +38,12 @@ import { summarizeByAction } from "../pending-bulk-list";
 function makeProposal(overrides: Partial<ApprovalInboxItem> = {}): ApprovalInboxItem {
   return {
     id: "p1",
-    title: "딜에 메모 추가",
+    title: "판매 조건에 메모 추가",
     status: "PENDING_APPROVAL",
     kind: "WRITE",
     targetEntityType: "DEAL",
     targetEntityId: "deal-1",
-    targetEntityName: "테스트 딜",
+    targetEntityName: "테스트 판매 조건",
     payload: { action: "add_entity_memo", args: { content: "재입고 확인" } },
     createdBy: "AGENT_WORKER",
     createdAt: "2026-10-08T05:30:00Z",
@@ -245,8 +245,8 @@ describe("summarizeByAction", () => {
         makeProposal({ id: "4", payload: null }),
       ])
     ).toEqual([
-      { label: "딜 등록", count: 2 },
       { label: "알 수 없음", count: 2 },
+      { label: "판매 조건 등록", count: 2 },
     ]);
   });
 });

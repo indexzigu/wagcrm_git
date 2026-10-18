@@ -112,7 +112,7 @@ export class OutreachService {
 
     const deal = await OutreachRepository.findDealById(dealId);
     if (!deal) {
-      throw new Error("해당 딜을 찾을 수 없습니다");
+      throw new Error("해당 판매 조건을 찾을 수 없습니다");
     }
 
     const seller = await OutreachRepository.findSellerById(sellerId);

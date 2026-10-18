@@ -120,15 +120,15 @@ export function DealGroupPreview({
     <Card className="p-4">
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-0.5">
-          <h3 className="text-sm font-semibold text-foreground">딜 반영 미리보기</h3>
+          <h3 className="text-sm font-semibold text-foreground">판매 조건 반영 미리보기</h3>
           <p className="text-xs text-muted-foreground">
-            검수 승인 시 아래 구조 그대로 딜에 입력됩니다. 매핑을 바꾸면 즉시 갱신됩니다.
+            검수 승인 시 아래 구조 그대로 판매 조건에 입력됩니다. 매핑을 바꾸면 즉시 갱신됩니다.
           </p>
         </div>
 
         {!hasAnyConfirmed ? (
           <p className="text-sm text-muted-foreground">
-            아직 확정된 행이 없습니다. 검수표에서 매핑을 확정(신규 딜/기존 딜)하면 반영될 딜
+            아직 확정된 행이 없습니다. 검수표에서 매핑을 확정(신규 판매 조건/기존 판매 조건)하면 반영될 판매 조건
             구조가 여기 표시됩니다.
           </p>
         ) : (
@@ -139,7 +139,7 @@ export function DealGroupPreview({
                     신규 생성 개수에서 뺀다 — 아래 카드 본문의 "기존 딜에 추가" 문구와
                     헤더가 서로 모순되지 않게 한다. */}
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  신규 생성 ({createdGroups.length}개 딜)
+                  신규 생성 ({createdGroups.length}개 판매 조건)
                 </span>
                 {createdGroups.map((group) => (
                   <div
@@ -150,10 +150,10 @@ export function DealGroupPreview({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                           {group.parentPriceSource === "existing"
-                            ? "기존 딜에 추가"
+                            ? "기존 판매 조건에 추가"
                             : group.options
-                              ? "상위딜"
-                              : "단일 딜"}
+                              ? "상위 판매 조건"
+                              : "단일 판매 조건"}
                         </span>
                         <span className="text-sm font-medium text-foreground">
                           {group.parentDealName}
@@ -214,7 +214,7 @@ export function DealGroupPreview({
 
                       {group.parentPriceSource === "existing" ? (
                         <p className="text-xs text-muted-foreground">
-                          기존 상위딜 아래에 하위품목으로 추가됩니다. 상위딜의 가격·브랜드·거래처는
+                          기존 상위 판매 조건 아래에 하위품목으로 추가됩니다. 상위 판매 조건의 가격·브랜드·거래처는
                           변경되지 않습니다.
                         </p>
                       ) : group.parentPriceSource === "empty" ? (
@@ -223,7 +223,7 @@ export function DealGroupPreview({
                             aria-hidden
                             className="size-1.5 shrink-0 rounded-full bg-status-caution"
                           />
-                          상위딜 가격 없음(0원). 단위 1(1개/1통/1팩) 옵션이 없어 빈
+                          상위 판매 조건 가격 없음(0원). 단위 1(1개/1통/1팩) 옵션이 없어 빈
                           컨테이너로 생성됩니다.
                         </p>
                       ) : (
@@ -272,7 +272,7 @@ export function DealGroupPreview({
             {attachGroups.length > 0 && (
               <div className="flex flex-col gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  기존 딜에 추가 ({attachGroups.length}개 딜)
+                  기존 판매 조건에 추가 ({attachGroups.length}개 판매 조건)
                 </span>
                 {attachGroups.map((group) => (
                   <div
@@ -282,7 +282,7 @@ export function DealGroupPreview({
                     <div className="flex flex-col gap-1.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          기존 딜에 추가
+                          기존 판매 조건에 추가
                         </span>
                         <span className="text-sm font-medium text-foreground">
                           {group.parentDealName}
@@ -290,7 +290,7 @@ export function DealGroupPreview({
                       </div>
 
                       <p className="text-xs text-muted-foreground">
-                        기존 상위딜 아래에 하위품목으로 추가됩니다. 상위딜의 가격·브랜드·거래처는
+                        기존 상위 판매 조건 아래에 하위품목으로 추가됩니다. 상위 판매 조건의 가격·브랜드·거래처는
                         변경되지 않습니다.
                       </p>
 
@@ -323,7 +323,7 @@ export function DealGroupPreview({
             {updates.length > 0 && (
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  기존 딜 업데이트 ({updates.length}건)
+                  기존 판매 조건 업데이트 ({updates.length}건)
                 </span>
                 <div className="flex flex-col gap-1">
                   {updates.map((row) => (
@@ -338,7 +338,7 @@ export function DealGroupPreview({
                         →
                       </span>
                       <span className="font-medium text-foreground">
-                        {dealNameById.get(row.mappedDealId!) ?? "선택한 딜"}
+                        {dealNameById.get(row.mappedDealId!) ?? "선택한 판매 조건"}
                       </span>
                     </div>
                   ))}
@@ -352,13 +352,13 @@ export function DealGroupPreview({
           <div className="flex flex-col gap-0.5 border-t border-border/40 pt-2">
             {unconfirmed.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                미확정 {unconfirmed.length}건은 반영에서 제외됩니다 (제안 승인 또는 딜 선택
+                미확정 {unconfirmed.length}건은 반영에서 제외됩니다 (제안 승인 또는 판매 조건 선택
                 필요).
               </p>
             )}
             {skippedRowIds.length > 0 && (
               <p className="text-xs font-medium text-status-caution-text">
-                신규 딜로 확정했지만 필수값(제품명·판매가) 누락으로 제외되는 행이{" "}
+                신규 판매 조건으로 확정했지만 필수값(제품명·판매가) 누락으로 제외되는 행이{" "}
                 {skippedRowIds.length}건 있습니다.
               </p>
             )}

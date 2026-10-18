@@ -13,7 +13,7 @@ export const linkDealRequestSchema = z.object({
  * Since SalesCampaign.dealId is a required (non-nullable) FK, dealId is always required.
  */
 export const linkCampaignRequestSchema = z.object({
-  dealId: z.string().min(1, "딜 ID는 필수입니다"),
+  dealId: z.string().min(1, "판매 조건 ID는 필수입니다"),
 });
 
 export type LinkDealRequest = z.infer<typeof linkDealRequestSchema>;

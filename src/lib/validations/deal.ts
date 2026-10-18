@@ -49,7 +49,7 @@ export const baseMarginPolicySchema = z.object({
 });
 
 export const createDealSchema = z.object({
-  dealName: z.string().min(1, "딜 이름은 필수입니다"),
+  dealName: z.string().min(1, "판매 조건 이름은 필수입니다"),
   partnerId: z.string().min(1, "거래처 연결은 필수입니다"),
   costPrice: z.number().min(0).default(0),
   sellingPrice: z.number().min(0).default(0),

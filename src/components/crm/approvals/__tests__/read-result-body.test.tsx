@@ -30,7 +30,7 @@ function envelope(operation: string, data: unknown, extra: Record<string, unknow
 }
 
 describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
-  it("정산 리포트 봉투는 기존 정산 뷰(총거래액 스탯 + 딜명 표)로 그린다", () => {
+  it("정산 리포트 봉투는 기존 정산 뷰(총거래액 스탯 + 판매 조건 이름 표)로 그린다", () => {
     const data = {
       period: "2026-07",
       summary: {
@@ -42,7 +42,7 @@ describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
       campaigns: [
         {
           id: "camp1",
-          dealName: "딜 A",
+          dealName: "판매 조건 A",
           brandName: "브랜드 A",
           sellerName: "셀러 A",
           actualSales: 1000000,
@@ -60,8 +60,8 @@ describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
     render(<ReadResultBody envelope={envelope("get_settlement_report", data)} />);
     // 「총거래액」은 요약 스탯과 표 머리 두 곳에 나온다.
     expect(screen.getAllByText("총거래액").length).toBeGreaterThan(0);
-    expect(screen.getByText("딜명")).toBeInTheDocument();
-    expect(screen.getByText("딜 A")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 이름")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 A")).toBeInTheDocument();
   });
 
   it("리치 뷰는 bare 로 그린다 — 상세 화면 안에서 카드 속 카드를 만들지 않는다", () => {
@@ -77,7 +77,7 @@ describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
     // 가공값. 봇 기록은 `derived` 없이 저장된 금액을 그대로 싣는다(agent-worker executor).
     const data = {
       campaignId: "camp2",
-      dealName: "딜 B",
+      dealName: "판매 조건 B",
       sellerName: "셀러 B",
       status: "ACTIVE",
       source: "stored",
@@ -111,7 +111,7 @@ describe("ReadResultBody — 갈래 ① 도구 전용 리치 뷰", () => {
 describe("ReadResultBody — 갈래 ② 제네릭 표", () => {
   const workerSearchDeals = {
     items: [
-      { id: "d1", dealName: "딜 A", status: "CONFIRMED", updatedAt: "2026-09-01T00:00:00.000Z" },
+      { id: "d1", dealName: "판매 조건 A", status: "CONFIRMED", updatedAt: "2026-09-01T00:00:00.000Z" },
     ],
     rowLimitReached: false,
   };
@@ -121,7 +121,7 @@ describe("ReadResultBody — 갈래 ② 제네릭 표", () => {
     const table = screen.getByRole("table");
     expect(table).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "dealName" })).toBeInTheDocument();
-    expect(screen.getByText("딜 A")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 A")).toBeInTheDocument();
   });
 
   it("제네릭 표에는 sr-only 이름표(caption)가 붙는다", () => {
@@ -138,7 +138,7 @@ describe("ReadResultBody — 갈래 ② 제네릭 표", () => {
       <ReadResultBody
         envelope={envelope("search_deals", {
           items: [
-            { id: "d1", dealName: "딜 A" },
+            { id: "d1", dealName: "판매 조건 A" },
             { id: "d2", memo: "뒤늦게 등장한 키" },
           ],
           rowLimitReached: false,

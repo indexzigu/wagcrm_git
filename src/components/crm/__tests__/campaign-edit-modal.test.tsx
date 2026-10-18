@@ -37,7 +37,7 @@ function campaign(overrides: Record<string, unknown> = {}) {
       {
         id: "sales-1",
         campaignName: "판매 캠페인",
-        campaignDeals: [{ id: "deal-1", deal: { dealName: "테스트 딜" } }],
+        campaignDeals: [{ id: "deal-1", deal: { dealName: "테스트 판매 조건" } }],
       },
     ],
     ...overrides,
@@ -79,10 +79,10 @@ describe("CampaignEditModal sales push", () => {
       }));
       expect(fetchMock).toHaveBeenCalledWith("/order-converter/api/campaigns/order-1/push-sales", { method: "POST" });
     });
-    expect(await screen.findByText("판매관리 1개 캠페인, 1개 딜에 반영했습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("판매관리 1개 캠페인, 1개 판매 조건에 반영했습니다.")).toBeInTheDocument();
   });
 
-  it("매칭 0건 딜이 있으면 경고와 함께 제외 안내를 표시한다", async () => {
+  it("매칭 0건 판매 조건이 있으면 경고와 함께 제외 안내를 표시한다", async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/order-converter/api/brands")) return jsonResponse({ brands: [] });
@@ -96,7 +96,7 @@ describe("CampaignEditModal sales push", () => {
 
     await user.click(await screen.findByRole("button", { name: "매출전송" }));
 
-    expect(await screen.findByText(/1개 딜은 매칭된 주문이 없어 제외/)).toBeInTheDocument();
+    expect(await screen.findByText(/1개 판매 조건은 매칭된 주문이 없어 제외/)).toBeInTheDocument();
   });
 
   it("현재 편집값 저장에 실패하면 판매관리 푸시 API를 호출하지 않는다", async () => {
@@ -145,7 +145,7 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
   it("100점 미만이어도 기간 정확일치 후보가 유일하면 자동 선택하고, 가격 불일치 배지를 띄운다", async () => {
     withRecs({
       "mapping-1": [
-        { id: "deal-3m", name: "딜 3개월분", score: 50, periodExact: true, dealPrice: 228800 },
+        { id: "deal-3m", name: "판매 조건 3개월분", score: 50, periodExact: true, dealPrice: 228800 },
       ],
     });
     render(
@@ -164,18 +164,18 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
       expect(await screen.findByRole("button", { name: "매출전송" })).toBeEnabled();
     });
     // 가격 확인 배지 — 옵션가(스토어 실판매가) 212,200 vs 딜 등록가 228,800
-    const badge = await screen.findByText(/가격 확인: 옵션 212,200 · 딜 228,800/);
+    const badge = await screen.findByText(/가격 확인: 옵션 212,200 · 판매 조건 228,800/);
     expect(badge).toBeInTheDocument();
     // ss-ux P1: 스크린리더가 select 포커스 시 경고를 듣도록 aria-describedby로 연결한다.
-    const dealSelect = screen.getByDisplayValue(/딜 3개월분/);
+    const dealSelect = screen.getByDisplayValue(/판매 조건 3개월분/);
     expect(dealSelect).toHaveAttribute("aria-describedby", badge.closest("p")!.id);
   });
 
   it("기간 정확일치 후보가 둘이면 자동 선택하지 않는다(오채움 방지)", async () => {
     withRecs({
       "mapping-1": [
-        { id: "deal-3m-a", name: "딜 3개월분 1차", score: 50, periodExact: true, dealPrice: 228800 },
-        { id: "deal-3m-b", name: "딜 3개월분 2차", score: 50, periodExact: true, dealPrice: 228800 },
+        { id: "deal-3m-a", name: "판매 조건 3개월분 1차", score: 50, periodExact: true, dealPrice: 228800 },
+        { id: "deal-3m-b", name: "판매 조건 3개월분 2차", score: 50, periodExact: true, dealPrice: 228800 },
       ],
     });
     render(
@@ -194,10 +194,10 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
   });
 
   // T-260: 자동채움된 딜대로 저장하면 그 판매캠페인이 다른 주문캠페인에서 떨어져 옮겨 온다.
-  it("다른 주문캠페인에 붙은 판매캠페인의 딜은 100점이어도 자동 선택하지 않는다 (T-260)", async () => {
+  it("다른 주문캠페인에 붙은 판매캠페인의 판매 조건은 100점이어도 자동 선택하지 않는다 (T-260)", async () => {
     withRecs({
       "mapping-1": [
-        { id: "deal-other", name: "다른 회차 딜", score: 120, periodExact: true, dealPrice: 12000, linkedToOtherOrderCampaign: true },
+        { id: "deal-other", name: "다른 회차 판매 조건", score: 120, periodExact: true, dealPrice: 12000, linkedToOtherOrderCampaign: true },
       ],
     });
     render(
@@ -213,15 +213,15 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/recommended-deals")));
     // 드롭다운 후보로는 남는다(운영자가 직접 고를 수 있다) — 추천이 반영된 뒤에 판정한다.
-    expect(await screen.findByRole("option", { name: /다른 회차 딜/ })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: /다른 회차 판매 조건/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "매출전송" })).toBeDisabled();
   });
 
   it("기간 정확일치 후보 둘 중 하나가 다른 주문캠페인 소속이면 나머지 하나를 자동 선택한다 (T-260)", async () => {
     withRecs({
       "mapping-1": [
-        { id: "deal-3m-other", name: "딜 3개월분 다른 회차", score: 50, periodExact: true, dealPrice: 228800, linkedToOtherOrderCampaign: true },
-        { id: "deal-3m-own", name: "딜 3개월분 이번 회차", score: 50, periodExact: true, dealPrice: 228800, linkedToOtherOrderCampaign: false },
+        { id: "deal-3m-other", name: "판매 조건 3개월분 다른 회차", score: 50, periodExact: true, dealPrice: 228800, linkedToOtherOrderCampaign: true },
+        { id: "deal-3m-own", name: "판매 조건 3개월분 이번 회차", score: 50, periodExact: true, dealPrice: 228800, linkedToOtherOrderCampaign: false },
       ],
     });
     render(
@@ -235,13 +235,13 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
       />,
     );
 
-    expect(await screen.findByDisplayValue(/딜 3개월분 이번 회차/)).toBeInTheDocument();
+    expect(await screen.findByDisplayValue(/판매 조건 3개월분 이번 회차/)).toBeInTheDocument();
   });
 
-  it("옵션가와 딜 등록가가 같으면 배지를 띄우지 않는다", async () => {
+  it("옵션가와 판매 조건 등록가가 같으면 배지를 띄우지 않는다", async () => {
     withRecs({
       "mapping-1": [
-        { id: "deal-1", name: "테스트 딜", score: 120, periodExact: false, dealPrice: 12000 },
+        { id: "deal-1", name: "테스트 판매 조건", score: 120, periodExact: false, dealPrice: 12000 },
       ],
     });
     render(
@@ -263,8 +263,8 @@ describe("CampaignEditModal 자동채움·가격 확인 배지", () => {
 // 실사고 회귀: 주문관리 목록 응답(campaigns-handler)은 egress 절감으로 campaignDeals 를
 // 요율 스칼라만 싣는다(`{ sellerMarginRate }` — `deal`·`id` 없음). 모달이 그 항목마다 딜 이름을
 // 만들다 `undefined.parentDealId` 로 죽어 수정 창이 열리지 않았다. 딜 정보가 없는 항목은 건너뛴다.
-describe("CampaignEditModal 연결 딜 정보가 없는 목록 응답", () => {
-  it("campaignDeals 에 deal 이 없어도 수정 창이 열리고, 연결 딜 묶음은 만들지 않는다", async () => {
+describe("CampaignEditModal 연결 판매 조건 정보가 없는 목록 응답", () => {
+  it("campaignDeals 에 deal 이 없어도 수정 창이 열리고, 연결 판매 조건 묶음은 만들지 않는다", async () => {
     render(
       <CampaignEditModal
         campaign={campaign({
@@ -279,12 +279,12 @@ describe("CampaignEditModal 연결 딜 정보가 없는 목록 응답", () => {
     expect(document.querySelector('optgroup[label="연결된 캠페인"]')).toBeNull();
   });
 
-  it("딜 정보가 있는 항목은 그대로 연결 딜 묶음에 이름으로 남는다", async () => {
+  it("판매 조건 정보가 있는 항목은 그대로 연결 판매 조건 묶음에 이름으로 남는다", async () => {
     render(
       <CampaignEditModal
         campaign={campaign({
           salesCampaigns: [
-            { id: "sales-1", campaignDeals: [{ sellerMarginRate: 0.1 }, { id: "deal-1", deal: { dealName: "테스트 딜" } }] },
+            { id: "sales-1", campaignDeals: [{ sellerMarginRate: 0.1 }, { id: "deal-1", deal: { dealName: "테스트 판매 조건" } }] },
           ],
         })}
         onClose={vi.fn()}
@@ -298,7 +298,7 @@ describe("CampaignEditModal 연결 딜 정보가 없는 목록 응답", () => {
       return el!;
     });
     const options = [...group.querySelectorAll("option")].map((o) => [o.getAttribute("value"), o.textContent]);
-    expect(options).toEqual([["deal-1", "테스트 딜"]]);
+    expect(options).toEqual([["deal-1", "테스트 판매 조건"]]);
   });
 });
 
@@ -328,7 +328,7 @@ describe("CampaignEditModal 스토어 옵션 다시 불러오기", () => {
     { id: "m-b", productName: "상품", optionName: "구성: 단종 옵션", brandCode: "CODE-B", price: 9000, campaignDealId: null },
   ];
 
-  it("옵션명이 같은 줄은 상품코드·단가·딜 연결을 이어받고, 새 옵션만 빈 상품코드로 더한다", async () => {
+  it("옵션명이 같은 줄은 상품코드·단가·판매 조건 연결을 이어받고, 새 옵션만 빈 상품코드로 더한다", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     storeFetch([

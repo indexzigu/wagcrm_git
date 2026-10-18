@@ -70,7 +70,7 @@ const MAPPING_LABEL: Record<string, string> = {
   UNMAPPED: "미매핑",
   SUGGESTED: "제안됨",
   MAPPED: "매핑확정",
-  NEW_DEAL: "신규딜",
+  NEW_DEAL: "신규 판매 조건",
   // 반영 API 가 반영된 행을 이 값으로 전이시킨다(같은 라우트) — 표에 없어서 화면에
   // 영문 "APPLIED" 가 그대로 노출됐다. 시트 단위 종착점과 같은 색 어휘를 쓴다.
   APPLIED: "반영완료",

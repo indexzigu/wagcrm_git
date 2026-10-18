@@ -490,7 +490,7 @@ export async function analyzeVocForDeal(dealId: string): Promise<DealAnalyzeResu
       prisma.productQna.count({ where: { dealId } }),
       prisma.dealVocSource.findMany({ where: { dealId } }),
     ]);
-    if (!deal) throw new Error('딜을 찾을 수 없습니다.');
+    if (!deal) throw new Error('판매 조건을 찾을 수 없습니다.');
 
     const qnaRows = await prisma.productQna.findMany({
       where: { dealId },
@@ -660,7 +660,7 @@ async function observeBatchScale(dirtyFound: number, analyzed: number): Promise<
             entityType: 'SYSTEM',
             entityId: 'analyze-voc',
             userId: 'SYSTEM',
-            messageTemplate: `최근 7일 평균 분석 ${avgAnalyzedPerDay7d}딜/일 · 배압 연속 ${backlogConsecutiveRuns}회: Gemini Batch(단가 ~50%) 전환을 검토하세요(계획서 §6-5).`,
+            messageTemplate: `최근 7일 평균 분석 판매 조건 ${avgAnalyzedPerDay7d}개/일 · 배압 연속 ${backlogConsecutiveRuns}회: Gemini Batch(단가 ~50%) 전환을 검토하세요(계획서 §6-5).`,
           },
         })
         .catch(() => undefined);

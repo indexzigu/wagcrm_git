@@ -73,7 +73,7 @@ export default function CampaignEditModal({
   // 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드. 새 옵션의 상품코드는 비워두고(미기입 운영),
   // 이미 있던 옵션 줄은 상품코드·단가·딜 연결을 이어받는다(아래 setEditMappings 주석).
   const handleLoadStoreOptions = async () => {
-    if (editMappings.some(hasRowContent) && !window.confirm('스토어 옵션으로 매핑 표를 다시 맞출까요? 옵션명이 같은 줄의 상품코드·단가·딜 연결은 그대로 남고, 스토어에 없는 옵션 줄은 지우지 않고 표시합니다.')) return;
+    if (editMappings.some(hasRowContent) && !window.confirm('스토어 옵션으로 매핑 표를 다시 맞출까요? 옵션명이 같은 줄의 상품코드·단가·판매 조건 연결은 그대로 남고, 스토어에 없는 옵션 줄은 지우지 않고 표시합니다.')) return;
 
     setIsLoadingOptions(true);
     setLoadOptionsError(null);
@@ -276,11 +276,11 @@ export default function CampaignEditModal({
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || '판매관리 푸시에 실패했습니다.');
       const unmatched = data.unmatchedDeals ?? 0;
-      let text = `판매관리 ${data.pushedCampaigns ?? 0}개 캠페인, ${data.pushedDeals ?? 0}개 딜에 반영했습니다.`;
+      let text = `판매관리 ${data.pushedCampaigns ?? 0}개 캠페인, ${data.pushedDeals ?? 0}개 판매 조건에 반영했습니다.`;
       // 매칭 0건 딜은 0으로 덮어쓰지 않고 제외했음을 경고로 드러낸다(조용한 0 방지) —
       // 운영자가 매핑 표의 옵션명↔주문 옵션명을 확인하도록 유도.
       if (unmatched > 0) {
-        text += ` ${unmatched}개 딜은 매칭된 주문이 없어 제외했습니다. 옵션명 매핑을 확인하세요.`;
+        text += ` ${unmatched}개 판매 조건은 매칭된 주문이 없어 제외했습니다. 옵션명 매핑을 확인하세요.`;
       }
       setPushSalesMessage({ text, tone: unmatched > 0 ? 'warn' : 'success' });
     } catch (err: any) {
@@ -463,7 +463,7 @@ export default function CampaignEditModal({
                         <th className="px-2 py-2 font-bold">옵션명</th>
                         <th className="px-2 py-2 font-bold w-[14%]">상품코드</th>
                         <th className="px-2 py-2 font-bold w-20">단가</th>
-                        <th className="px-2 py-2 font-bold w-[28%]">캠페인(딜)</th>
+                        <th className="px-2 py-2 font-bold w-[28%]">캠페인(판매 조건)</th>
                         <th className="px-2 py-2 font-bold w-10 text-center">삭제</th>
                       </tr>
                     </thead>
@@ -519,7 +519,7 @@ export default function CampaignEditModal({
                                       newM[idx] = { ...newM[idx], campaignDealId: e.target.value || null };
                                       setEditMappings(newM);
                                     }}
-                                    aria-label={`${idx + 1}행 캠페인(딜)`}
+                                    aria-label={`${idx + 1}행 캠페인(판매 조건)`}
                                     aria-describedby={priceMismatch ? `price-check-${idx}` : undefined}
                                     className={`w-full border rounded-lg pl-1.5 pr-2 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-ellipsis ${m.campaignDealId ? 'border-green-300 bg-green-50 text-green-700 font-bold' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
                                   >
@@ -546,7 +546,7 @@ export default function CampaignEditModal({
                                       <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                         <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />
                                       </svg>
-                                      가격 확인: 옵션 {optionPrice.toLocaleString()} · 딜 {dealPrice!.toLocaleString()}
+                                      가격 확인: 옵션 {optionPrice.toLocaleString()} · 판매 조건 {dealPrice!.toLocaleString()}
                                     </p>
                                   )}
                                 </>

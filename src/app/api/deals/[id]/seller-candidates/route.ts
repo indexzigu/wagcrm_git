@@ -27,7 +27,7 @@ export async function GET(_request: Request, context: Context) {
 
   const { deal, candidates } = await loadDealSellerCandidates(prisma, id, now);
   if (!deal) {
-    return NextResponse.json({ error: "딜을 찾을 수 없습니다" }, { status: 404 });
+    return NextResponse.json({ error: "판매 조건을 찾을 수 없습니다" }, { status: 404 });
   }
 
   // 열린 기안의 dedup 키 집합 — 버튼을 '기안됨'으로 바꾸는 근거.

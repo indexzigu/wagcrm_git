@@ -29,7 +29,7 @@ import type { ReadRecordItem } from "@/hooks/useReadRecords";
 function makeItem(overrides: Partial<ReadRecordItem> = {}): ReadRecordItem {
   return {
     id: "proposal-read-1",
-    title: "딜 검색: 유산균",
+    title: "판매 조건 검색: 유산균",
     status: "EXECUTED",
     kind: "READ",
     targetEntityType: null,
@@ -39,7 +39,7 @@ function makeItem(overrides: Partial<ReadRecordItem> = {}): ReadRecordItem {
     createdBy: "AGENT_WORKER",
     createdAt: "2026-09-22T05:30:00Z",
     errorMessage: null,
-    resultSummary: "딜 3건을 찾았습니다.\n두 번째 줄은 카드에 보이지 않는다.",
+    resultSummary: "판매 조건 3건을 찾았습니다.\n두 번째 줄은 카드에 보이지 않는다.",
     structuredResult: { operation: "search_deals" },
     ...overrides,
   };
@@ -66,7 +66,7 @@ describe("ReadRecordCard", () => {
         <ReadRecordCard item={makeItem()} />
       </ul>
     );
-    expect(screen.getByText("딜 검색")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 검색")).toBeInTheDocument();
     expect(screen.getByText("슬랙봇")).toBeInTheDocument();
     // 2026-09-22T05:30:00Z = KST 14:30
     expect(screen.getByText("09-22 14:30")).toBeInTheDocument();
@@ -88,8 +88,8 @@ describe("ReadRecordCard", () => {
         <ReadRecordCard item={makeItem()} />
       </ul>
     );
-    expect(screen.getByText("딜 검색: 유산균")).toBeInTheDocument();
-    expect(screen.getByText("딜 3건을 찾았습니다.")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 검색: 유산균")).toBeInTheDocument();
+    expect(screen.getByText("판매 조건 3건을 찾았습니다.")).toBeInTheDocument();
     expect(screen.queryByText(/두 번째 줄은/)).not.toBeInTheDocument();
   });
 

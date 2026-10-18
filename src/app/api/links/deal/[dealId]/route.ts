@@ -24,7 +24,7 @@ export async function PATCH(request: Request, context: Context) {
   const { dealId } = await context.params;
   if (!dealId) {
     return NextResponse.json(
-      { error: "딜 ID가 필요합니다" },
+      { error: "판매 조건 ID가 필요합니다" },
       { status: 400 }
     );
   }
@@ -72,7 +72,7 @@ export async function PATCH(request: Request, context: Context) {
       (error as { code: string }).code === "P2025"
     ) {
       return NextResponse.json(
-        { error: "딜 또는 거래처를 찾을 수 없습니다" },
+        { error: "판매 조건 또는 거래처를 찾을 수 없습니다" },
         { status: 404 }
       );
     }
@@ -101,7 +101,7 @@ export async function DELETE(request: Request, context: Context) {
   const { dealId } = await context.params;
   if (!dealId) {
     return NextResponse.json(
-      { error: "딜 ID가 필요합니다" },
+      { error: "판매 조건 ID가 필요합니다" },
       { status: 400 }
     );
   }
@@ -126,7 +126,7 @@ export async function DELETE(request: Request, context: Context) {
       (error as { code: string }).code === "P2025"
     ) {
       return NextResponse.json(
-        { error: "딜을 찾을 수 없습니다" },
+        { error: "판매 조건을 찾을 수 없습니다" },
         { status: 404 }
       );
     }

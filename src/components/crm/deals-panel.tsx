@@ -173,7 +173,7 @@ function DealsPanelContent({
       });
 
       // 필드 수정의 단일 피드백 지점(handleDealUpdated는 이제 무음 상태동기화).
-      withMutationFeedback(promise, "딜 정보가 업데이트되었습니다.").catch(
+      withMutationFeedback(promise, "판매 조건 정보가 업데이트되었습니다.").catch(
         () => {},
       );
 
@@ -213,15 +213,15 @@ function DealsPanelContent({
     try {
       const res = await fetch(`/api/deals/${deal.id}`, { method: "DELETE" });
       if (res.ok) {
-        toast.success("딜이 삭제되었습니다");
+        toast.success("판매 조건이 삭제되었습니다");
         onDeleted?.(deal.id);
         onOpenChange(false);
       } else {
         const data = await res.json().catch(() => null);
-        toast.error(data?.error ?? "딜 삭제에 실패했습니다");
+        toast.error(data?.error ?? "판매 조건 삭제에 실패했습니다");
       }
     } catch {
-      toast.error("딜 삭제에 실패했습니다");
+      toast.error("판매 조건 삭제에 실패했습니다");
     } finally {
       setDeleting(false);
     }
@@ -318,7 +318,7 @@ function DealsPanelContent({
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <InlineEditField
-              label="딜 이름"
+              label="판매 조건 이름"
               fieldType="text"
               value={(getFieldValue("dealName") as string) ?? ""}
               onSave={async (val) => {
@@ -349,7 +349,7 @@ function DealsPanelContent({
 
             <InlineEditField
               label="기본 수량"
-              description="상위 딜의 기본 수량입니다"
+              description="상위 판매 조건의 기본 수량입니다"
               descriptionAsTooltip
               fieldType="number"
               value={
@@ -801,14 +801,14 @@ function DealsPanelContent({
                 className="w-full"
                 disabled={deleting}
               >
-                <Trash2 className="mr-1.5 size-4" />딜 삭제
+                <Trash2 className="mr-1.5 size-4" />판매 조건 삭제
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>딜을 삭제하시겠습니까?</AlertDialogTitle>
+                <AlertDialogTitle>판매 조건을 삭제하시겠습니까?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  이 작업은 되돌릴 수 없습니다. 딜 &quot;{deal.dealName}
+                  이 작업은 되돌릴 수 없습니다. 판매 조건 &quot;{deal.dealName}
                   &quot;이(가) 영구적으로 삭제됩니다.
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -849,9 +849,9 @@ function DealsPanelContent({
         className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
       >
         <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
-          <SheetTitle>딜 상세</SheetTitle>
+          <SheetTitle>판매 조건 상세</SheetTitle>
           <SheetDescription>
-            딜 정보 및 수수료 정책을 확인하고 수정합니다.
+            판매 조건 정보 및 수수료 정책을 확인하고 수정합니다.
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-hidden px-6 py-5">{body}</div>
@@ -862,9 +862,9 @@ function DealsPanelContent({
       <DrawerContent className="max-h-[88vh] px-5 pb-5 duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]">
         <DrawerHeader className="flex-row items-center justify-between px-0">
           <div>
-            <DrawerTitle>딜 상세</DrawerTitle>
+            <DrawerTitle>판매 조건 상세</DrawerTitle>
             <DrawerDescription>
-              딜 정보 및 수수료 정책을 관리합니다.
+              판매 조건 정보 및 수수료 정책을 관리합니다.
             </DrawerDescription>
           </div>
           <Button

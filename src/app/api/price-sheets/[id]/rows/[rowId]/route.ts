@@ -99,7 +99,7 @@ export async function DELETE(
   }
   if (existing.mappingStatus === "APPLIED") {
     return NextResponse.json(
-      { error: "이미 딜에 반영된 행은 삭제할 수 없습니다." },
+      { error: "이미 판매 조건에 반영된 행은 삭제할 수 없습니다." },
       { status: 409 }
     );
   }

@@ -22,12 +22,12 @@ const ref = (over: Partial<GuideReferenceCard> = {}): GuideReferenceCard => ({
 });
 
 describe("ContentGuideReferences", () => {
-  it("0건이면 딜 정보만으로 썼다는 사실을 말한다 — 빈 입력을 숨기지 않는다", () => {
+  it("0건이면 판매 조건 정보만으로 썼다는 사실을 말한다 — 빈 입력을 숨기지 않는다", () => {
     render(<ContentGuideReferences references={[]} />);
-    expect(screen.getByText(/딜 정보만으로 작성/)).toBeTruthy();
+    expect(screen.getByText(/판매 조건 정보만으로 작성/)).toBeTruthy();
   });
 
-  it("건수가 얕으면 방향이 딜 정보에 기댔다고 알린다", () => {
+  it("건수가 얕으면 방향이 판매 조건 정보에 기댔다고 알린다", () => {
     render(<ContentGuideReferences references={[ref(), ref()]} />);
     expect(screen.getByText(/2건뿐/)).toBeTruthy();
   });

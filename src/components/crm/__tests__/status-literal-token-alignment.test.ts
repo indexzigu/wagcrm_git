@@ -132,7 +132,7 @@ describe("campaign-card — 심각도 배지가 리터럴이 아니라 토큰을
   });
 
   it("최저가 위반 배지가 모바일과 같은 변형을 쓴다 (같은 의미, 두 표면 같은 빨강)", () => {
-    const violation = slice(CARD, "최저가 위반 딜", "urgencyTextClass[urgency]");
+    const violation = slice(CARD, "최저가 위반 판매 조건", "urgencyTextClass[urgency]");
     expect(violation).toContain('variant="status-urgent"');
     expect(classText(violation)).not.toContain("red-");
     // 모바일이 먼저 끝낸 스왑 — 여기서 갈라지면 다시 두 빨강이 된다.

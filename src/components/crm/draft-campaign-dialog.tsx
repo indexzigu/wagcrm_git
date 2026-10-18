@@ -209,7 +209,7 @@ export function DraftCampaignDialog({
         <DialogHeader className="shrink-0">
           <DialogTitle>예비 일정 만들기</DialogTitle>
           <DialogDescription>
-            셀러·딜·기간만 정하면 이름과 차수는 자동으로 붙습니다.
+            셀러·판매 조건·기간만 정하면 이름과 차수는 자동으로 붙습니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -285,7 +285,7 @@ export function DraftCampaignDialog({
           {/* ② 딜 검색 선택 (확정 딜만) */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="desktop-draft-deal">
-              딜 <span className="font-normal text-muted-foreground">(확정 딜만)</span>
+              판매 조건 <span className="font-normal text-muted-foreground">(확정 판매 조건만)</span>
             </Label>
             <div className="relative">
               <Search
@@ -296,7 +296,7 @@ export function DraftCampaignDialog({
                 id="desktop-draft-deal"
                 type="text"
                 autoComplete="off"
-                placeholder="딜 이름·브랜드 검색"
+                placeholder="판매 조건 이름·브랜드 검색"
                 value={dealQuery}
                 onChange={(event) => handleDealQueryChange(event.target.value)}
                 onFocus={() => setDealFocused(true)}
@@ -377,7 +377,7 @@ export function DraftCampaignDialog({
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
             <p className="text-[11px] text-muted-foreground">캠페인명 자동(차수 포함)</p>
             <p className="truncate text-sm font-medium text-foreground">
-              {namePreview ?? "셀러와 딜을 선택하면 이름이 만들어집니다"}
+              {namePreview ?? "셀러와 판매 조건을 선택하면 이름이 만들어집니다"}
             </p>
           </div>
 

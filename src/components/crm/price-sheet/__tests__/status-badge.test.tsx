@@ -47,7 +47,7 @@ const MAPPING_CASES: Array<[status: string, label: string, variant: string]> = [
   ["UNMAPPED", "미매핑", "outline"],
   ["SUGGESTED", "제안됨", "status-pending"],
   ["MAPPED", "매핑확정", "status-info"],
-  ["NEW_DEAL", "신규딜", "status-info"],
+  ["NEW_DEAL", "신규 판매 조건", "status-info"],
   ["APPLIED", "반영완료", "status-success"],
 ];
 
@@ -97,7 +97,7 @@ describe("MappingStatusBadge", () => {
     }
   });
 
-  it("매핑확정과 신규 딜은 같은 톤이다 — 한쪽만 튀면 없는 위계가 생긴다", () => {
+  it("매핑확정과 신규 판매 조건은 같은 톤이다 — 한쪽만 튀면 없는 위계가 생긴다", () => {
     // ⛔ 기대표가 아니라 실제 렌더 두 개를 맞대 본다(위 동어반복 주석과 같은 이유).
     const { container: mapped, unmount } = render(<MappingStatusBadge status="MAPPED" />);
     const mappedVariant = renderedBadge(mapped).variant;

@@ -45,11 +45,11 @@ describe("formatDealContextLabel", () => {
   it("builds deal identity parts with deal first", () => {
     expect(
       getDealIdentityParts({
-        dealName: "테스트 딜",
+        dealName: "테스트 판매 조건",
         partnerName: "거래처A",
       }),
     ).toEqual([
-      { label: "딜", value: "테스트 딜" },
+      { label: "판매 조건", value: "테스트 판매 조건" },
       { label: "거래처", value: "거래처A" },
     ]);
   });

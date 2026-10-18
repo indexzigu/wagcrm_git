@@ -262,7 +262,7 @@ export function ReferenceInboxClient() {
       try {
         const alreadyExists = await assignOne(item, dealId);
         toast.success(
-          alreadyExists ? "이미 등록된 자료라 인박스에서 정리했습니다." : "딜 자료로 배정했습니다.",
+          alreadyExists ? "이미 등록된 자료라 인박스에서 정리했습니다." : "판매 조건 자료로 배정했습니다.",
         );
         setItems((prev) => prev.filter((i) => i.id !== item.id));
         removeFromSelection([item.id]);
@@ -297,7 +297,7 @@ export function ReferenceInboxClient() {
         setItems((prev) => prev.filter((i) => !okIds.has(i.id)));
         removeFromSelection(okIds);
         if (failedCount === 0) {
-          toast.success(`${okIds.size}건을 딜 자료로 배정했습니다.`);
+          toast.success(`${okIds.size}건을 판매 조건 자료로 배정했습니다.`);
         } else if (okIds.size === 0) {
           toast.error(`배정에 실패했습니다. (${failedCount}건)`);
         } else {
@@ -481,7 +481,7 @@ export function ReferenceInboxClient() {
             캠페인 자료
           </Link>
         }
-        description="수집한 인스타/틱톡/유튜브 링크를 딜에 배정하거나 기각합니다."
+        description="수집한 인스타/틱톡/유튜브 링크를 판매 조건에 배정하거나 기각합니다."
       >
         <div className="flex flex-col gap-6 p-6 md:p-8">
           {/* 상단 일괄 추가 입력 */}
@@ -596,7 +596,7 @@ export function ReferenceInboxClient() {
                 ) : (
                   <FolderPlusIcon className="size-3.5" />
                 )}
-                딜 배정
+                판매 조건 배정
               </Button>
             </div>
           </div>
@@ -608,13 +608,13 @@ export function ReferenceInboxClient() {
             <DialogHeader>
               <DialogTitle>
                 {assignTarget?.kind === "bulk"
-                  ? `${selected.size}건을 딜에 배정하기`
-                  : "딜에 배정하기"}
+                  ? `${selected.size}건을 판매 조건에 배정하기`
+                  : "판매 조건에 배정하기"}
               </DialogTitle>
               <DialogDescription>
                 {assignTarget?.kind === "bulk"
-                  ? "선택한 레퍼런스들을 어느 딜의 자료로 귀속시킬지 선택하세요."
-                  : "선택한 레퍼런스를 어느 딜의 자료로 귀속시킬지 선택하세요."}
+                  ? "선택한 레퍼런스들을 어느 판매 조건의 자료로 귀속시킬지 선택하세요."
+                  : "선택한 레퍼런스를 어느 판매 조건의 자료로 귀속시킬지 선택하세요."}
               </DialogDescription>
             </DialogHeader>
             <div className="flex min-h-[160px] flex-col justify-start py-4">
@@ -650,7 +650,7 @@ export function ReferenceInboxClient() {
                   );
                 }}
                 getValue={(deal) => deal.id}
-                placeholder="검색하여 딜 선택..."
+                placeholder="검색하여 판매 조건 선택..."
                 emptyMessage="검색 결과 없음"
                 /* Dialog 안이므로 포털 금지 — 포털하면 목록이 스크롤되지 않는다.
                    근거는 ui/popover.tsx 의 portal prop 주석. */
@@ -984,7 +984,7 @@ const InboxCard = React.memo(function InboxCard({
             <TooltipContent>원본 열기</TooltipContent>
           </Tooltip>
           <CardActionButton
-            label="딜 배정"
+            label="판매 조건 배정"
             primary
             busy={busyAction === "assign"}
             disabled={busy || disableActions}

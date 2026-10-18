@@ -142,7 +142,7 @@ export const navSections: {
     items: [
       { href: "/partners", label: "거래처", icon: Building2Icon, description: "협력사 및 거래처 관리" },
       { href: "/sellers", label: "셀러", icon: UserRoundIcon, description: "셀러 관리" },
-      { href: "/deals", label: "판매 조건 관리", icon: BriefcaseIcon, description: "진행 중인 딜 리스트" },
+      { href: "/deals", label: "판매 조건 관리", icon: BriefcaseIcon, description: "진행 중인 판매 조건 리스트" },
       {
         href: "/assets",
         label: "자료 목록",

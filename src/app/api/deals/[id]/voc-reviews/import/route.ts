@@ -52,7 +52,7 @@ export async function POST(request: Request, context: Context) {
   // 딜 존재 확인(고아 소스 방지).
   const prisma = getPrisma();
   const deal = await prisma.deal.findUnique({ where: { id: dealId }, select: { id: true } });
-  if (!deal) return NextResponse.json({ error: "딜을 찾을 수 없습니다." }, { status: 404 });
+  if (!deal) return NextResponse.json({ error: "판매 조건을 찾을 수 없습니다." }, { status: 404 });
 
   try {
     const result = await persistDealReviews({

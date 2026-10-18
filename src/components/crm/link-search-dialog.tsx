@@ -201,7 +201,7 @@ export function normalizeSearchResults(
 }
 
 const ENTITY_NOUN: Record<LinkSearchDialogProps["entityType"], string> = {
-  deal: "딜",
+  deal: "판매 조건",
   campaign: "캠페인",
   partner: "거래처",
   seller: "셀러",
@@ -221,7 +221,7 @@ function dialogCopy(
     // 딜 검색 API 는 딜 이름·브랜드명으로 찾는다(/api/search/deals — 거래처 이름은 대상 아님).
     placeholder:
       entityType === "deal"
-        ? "딜 또는 브랜드 이름으로 검색"
+        ? "판매 조건 또는 브랜드 이름으로 검색"
         : `${noun} 이름으로 검색`,
     confirmLabel: verb,
   };

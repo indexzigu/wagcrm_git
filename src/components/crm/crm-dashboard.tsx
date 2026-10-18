@@ -365,7 +365,7 @@ export function CrmDashboard({
           size="sm"
           className="h-9 rounded-lg border-primary/30 bg-white px-3.5 text-xs text-primary hover:bg-primary/5"
           onClick={() => setComboOpen(true)}
-          title="한 셀러에게 여러 딜을 같은 기간으로 한 번에 올립니다."
+          title="한 셀러에게 여러 판매 조건을 같은 기간으로 한 번에 올립니다."
         >
           <Boxes className="mr-1 size-3.5" />
           조합 캠페인

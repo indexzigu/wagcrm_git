@@ -212,7 +212,7 @@ function DealQuickForm({
   const [error, setError] = useState<string | null>(null);
 
   function validate(): string | null {
-    if (!dealName.trim()) return "딜 이름은 필수입니다";
+    if (!dealName.trim()) return "판매 조건 이름은 필수입니다";
     if (!partnerId) return "거래처를 선택해주세요";
     const cost = Number(costPrice);
     if (isNaN(cost) || cost < 0) return "공급가는 0 이상이어야 합니다";
@@ -246,7 +246,7 @@ function DealQuickForm({
 
       if (!response.ok) {
         const data = await response.json();
-        setError(data.error?.toString() ?? "딜 생성에 실패했습니다");
+        setError(data.error?.toString() ?? "판매 조건 생성에 실패했습니다");
         setSaving(false);
         return;
       }
@@ -266,8 +266,8 @@ function DealQuickForm({
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium">딜 빠른 추가</span>
-          <span className="text-xs text-muted-foreground">마진 정책과 옵션 품목은 생성 후 딜 상세에서 보강합니다.</span>
+          <span className="text-sm font-medium">판매 조건 빠른 추가</span>
+          <span className="text-xs text-muted-foreground">마진 정책과 옵션 품목은 생성 후 판매 조건 상세에서 보강합니다.</span>
         </div>
         <Button
           variant="ghost"
@@ -280,16 +280,16 @@ function DealQuickForm({
       </div>
 
       <FieldGroup className="gap-3">
-        <Field data-invalid={error === "딜 이름은 필수입니다"}>
-          <FieldLabel className="text-xs">딜명 <span className="text-destructive">*</span></FieldLabel>
+        <Field data-invalid={error === "판매 조건 이름은 필수입니다"}>
+          <FieldLabel className="text-xs">판매 조건 이름 <span className="text-destructive">*</span></FieldLabel>
           <Input
-            placeholder="딜 이름"
+            placeholder="판매 조건 이름"
             value={dealName}
             onChange={(e) => setDealName(e.target.value)}
             className="h-8 text-sm"
-            aria-invalid={error === "딜 이름은 필수입니다"}
+            aria-invalid={error === "판매 조건 이름은 필수입니다"}
           />
-          <FieldError className="text-xs">{error === "딜 이름은 필수입니다" ? error : undefined}</FieldError>
+          <FieldError className="text-xs">{error === "판매 조건 이름은 필수입니다" ? error : undefined}</FieldError>
         </Field>
 
         <div className="grid grid-cols-2 gap-2">
@@ -324,7 +324,7 @@ function DealQuickForm({
       </FieldGroup>
 
       {error &&
-      error !== "딜 이름은 필수입니다" &&
+      error !== "판매 조건 이름은 필수입니다" &&
       error !== "거래처를 선택해주세요" &&
       error !== "공급가는 0 이상이어야 합니다" ? (
         <Alert variant="destructive">

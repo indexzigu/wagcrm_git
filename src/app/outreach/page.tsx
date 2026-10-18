@@ -440,7 +440,7 @@ export default function OutreachPage() {
     if (field === "sellerId") {
       toast.success("셀러가 변경되었습니다.");
     } else if (field === "dealId") {
-      toast.success("딜이 변경되었습니다.");
+      toast.success("판매 조건이 변경되었습니다.");
     } else {
       toast.success("테스크 정보를 저장했습니다.");
     }
@@ -604,7 +604,7 @@ export default function OutreachPage() {
       },
       {
         key: "dealName",
-        label: "연결된 딜",
+        label: "연결된 판매 조건",
         width: 160,
       },
       {
@@ -751,7 +751,7 @@ export default function OutreachPage() {
                   <div className="relative w-full sm:w-64">
                     <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                     <Input
-                      placeholder="셀러, 딜, 거래처 검색..."
+                      placeholder="셀러, 판매 조건, 거래처 검색..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9 h-9 w-full text-xs bg-white shadow-soft-sm"
@@ -847,7 +847,7 @@ export default function OutreachPage() {
                   {/* 3. 전환율 높은 딜 */}
                   <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
-                      <TrendingUp className="size-3.5 text-emerald-600" />전환율 높은 딜
+                      <TrendingUp className="size-3.5 text-emerald-600" />전환율 높은 판매 조건
                     </p>
                     <div className="space-y-2 flex-1">
                       {metrics.topDeals.length > 0 ? metrics.topDeals.map((d) => (
@@ -867,7 +867,7 @@ export default function OutreachPage() {
                   {/* 4. 전환율 낮은 딜 */}
                   <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
-                      <TrendingDown className="size-3.5 text-rose-500" />전환율 낮은 딜
+                      <TrendingDown className="size-3.5 text-rose-500" />전환율 낮은 판매 조건
                     </p>
                     <div className="space-y-2 flex-1">
                       {metrics.bottomDeals.length > 0 ? metrics.bottomDeals.map((d) => (
@@ -1211,7 +1211,7 @@ export default function OutreachPage() {
           <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
             <SheetTitle>새 영업 테스크</SheetTitle>
             <SheetDescription>
-              딜과 셀러를 연결하고 제안 발송 테스크를 만듭니다.
+              판매 조건과 셀러를 연결하고 제안 발송 테스크를 만듭니다.
             </SheetDescription>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -1580,7 +1580,7 @@ function SalesTaskDetailPanel({
           </div>
           <div className="flex items-center justify-between gap-2 pt-2">
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] text-muted-foreground font-medium mb-1">연결된 딜</div>
+              <div className="text-[10px] text-muted-foreground font-medium mb-1">연결된 판매 조건</div>
               <EntityIdentity
                 parts={getDealIdentityParts({
                   dealName: task.dealName,

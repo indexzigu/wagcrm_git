@@ -12,7 +12,7 @@ export const SALES_CHANNELS: SalesChannel[] = [
 
 export const campaignFormSchema = z
   .object({
-    dealId: z.string().min(1, "딜을 선택해주세요"),
+    dealId: z.string().min(1, "판매 조건을 선택해주세요"),
     sellerId: z.string().min(1, "셀러를 선택해주세요"),
     salesChannel: z.enum(
       ["UNSPECIFIED", "OWN_MALL", "OWN_MALL_NAVER", "OWN_MALL_KAKAO", "SELLER_MALL", "BRAND_MALL"],

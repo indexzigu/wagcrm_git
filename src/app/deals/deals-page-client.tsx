@@ -218,7 +218,7 @@ export function DealsPageClient({
           {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치) */}
           <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0">
             <div className="flex items-center gap-1.5 shrink-0">
-              <span className="font-medium">전체 딜:</span>
+              <span className="font-medium">전체 판매 조건:</span>
               <span className="font-semibold text-slate-800 dark:text-slate-200">{initialDeals.length}개</span>
             </div>
             <span className="hidden md:inline text-slate-200 dark:text-slate-800">|</span>
@@ -248,7 +248,7 @@ export function DealsPageClient({
                     value="deals"
                     className="h-9 rounded-none border-b-2 border-transparent bg-transparent px-3 text-xs text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
                   >
-                    딜 목록
+                    판매 조건 목록
                   </TabsTrigger>
                   <TabsTrigger
                     value="profitability"
@@ -281,8 +281,8 @@ export function DealsPageClient({
                       const val = (e.target as HTMLInputElement).value;
                       debouncedSetFilter(val);
                     }}
-                    placeholder="딜 검색 (2글자 이상)"
-                    aria-label="딜 검색"
+                    placeholder="판매 조건 검색 (2글자 이상)"
+                    aria-label="판매 조건 검색"
                     className="h-full text-xs"
                   />
                 </InputGroup>
@@ -298,7 +298,7 @@ export function DealsPageClient({
                   onClick={() => setNewDealDialogOpen(true)}
                 >
                   <PlusIcon className="h-3.5 w-3.5 mr-1" />
-                  딜 추가
+                  판매 조건 추가
                 </Button>
               </div>
             </section>
@@ -362,8 +362,8 @@ export function DealsPageClient({
         {/* New Deal Registration Dialog */}
         <Dialog open={newDealDialogOpen} onOpenChange={setNewDealDialogOpen}>
           <FormDialogFrame
-            title="신규 딜 등록"
-            description="거래처 제안에 대한 딜을 빠르게 등록합니다."
+            title="신규 판매 조건 등록"
+            description="거래처 제안에 대한 판매 조건을 빠르게 등록합니다."
           >
             <DealCreationForm
               onSuccess={handleNewDealSuccess}

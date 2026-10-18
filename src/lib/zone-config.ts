@@ -16,7 +16,7 @@ export const ZONE_ORDER: PipelineZone[] = ["SALES", "DEAL_EXECUTION", "SETTLEMEN
 /** Human-readable zone labels. */
 export const ZONE_LABELS: Record<PipelineZone, string> = {
   SALES: "영업",
-  DEAL_EXECUTION: "딜 진행",
+  DEAL_EXECUTION: "판매 진행",
   SETTLEMENT: "정산",
   DROPPED: "드랍",
 };

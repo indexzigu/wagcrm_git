@@ -16,7 +16,7 @@ export async function GET(_request: Request, context: Context) {
   // Verify deal exists
   const deal = await prisma.deal.findUnique({ where: { id }, select: { id: true } });
   if (!deal) {
-    return NextResponse.json({ error: "딜을 찾을 수 없습니다" }, { status: 404 });
+    return NextResponse.json({ error: "판매 조건을 찾을 수 없습니다" }, { status: 404 });
   }
 
   // Fetch sellers from SalesTask

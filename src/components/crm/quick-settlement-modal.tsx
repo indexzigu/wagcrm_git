@@ -195,7 +195,7 @@ export function QuickSettlementModal({
             <FieldLabel>대상 정보</FieldLabel>
             <div className="grid gap-2 rounded-md border border-border bg-muted/20 p-3 text-sm">
               <div className="flex items-start justify-between gap-4">
-                <span className="shrink-0 text-muted-foreground">캠페인 / 딜</span>
+                <span className="shrink-0 text-muted-foreground">캠페인 / 판매 조건</span>
                 <span className="min-w-0 break-words text-right font-medium">{title}</span>
               </div>
               <div className="flex items-center justify-between gap-4">

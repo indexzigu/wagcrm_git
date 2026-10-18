@@ -56,7 +56,7 @@ export function isCrossSellerSet(
 export const CROSS_SELLER_REJECT_MESSAGE =
   "한 주문캠페인에 서로 다른 셀러의 판매캠페인을 연결할 수 없습니다. " +
   "주문캠페인은 셀러·회차마다 새로 만드는 것이 운영 규약이며, 섞이면 셀러 화면에 " +
-  "다른 셀러의 매출이 합산돼 나갑니다. 딜 연결을 한 셀러로 정리하거나 주문캠페인을 나누세요.";
+  "다른 셀러의 매출이 합산돼 나갑니다. 판매 조건 연결을 한 셀러로 정리하거나 주문캠페인을 나누세요.";
 
 /** 응답 코드 판별용 마커 — `instanceof` 는 번들 경계에서 신뢰할 수 없어 문자열 코드로 가른다. */
 export const CROSS_SELLER_REJECTED_CODE = "CROSS_SELLER_REJECTED";
