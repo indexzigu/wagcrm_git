@@ -1594,11 +1594,11 @@ export default function OrderDashboard() {
 
   // 제목은 스냅샷(displayedClaimFilter) 기준 — 닫힘 애니메이션 중 제목이 기본값으로 튀지 않게 한다.
   const claimFilterTitle = displayedClaimFilter?.kind === 'campaign'
-    ? `${displayedClaimFilter.campaignName}: 반품/교환`
+    ? `${displayedClaimFilter.campaignName}: 반품·교환`
     : displayedClaimFilter?.kind === 'unmatched'
-      ? '캠페인 미매칭 반품/교환'
+      ? '캠페인 미매칭 반품·교환'
       : displayedClaimFilter?.kind === 'all-in-progress'
-        ? '진행중인 반품/교환 전체'
+        ? '진행중인 반품·교환 전체'
         : undefined;
 
   // 판매상태는 배지가 아니라 평문 라벨로 표기(2026-07-08 소유자 확정 — 배지 남발 지양)
@@ -1812,9 +1812,9 @@ export default function OrderDashboard() {
             <button
               onClick={() => setClaimFilter({ kind: 'all-in-progress' })}
               className="flex h-9 items-center gap-1.5 rounded-lg border border-destructive/25 bg-white px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/5 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
-              title="진행 중인 반품/교환 전체 보기"
+              title="진행 중인 반품·교환 전체 보기"
             >
-              반품/교환 {inProgressClaimCount}
+              반품·교환 {inProgressClaimCount}
             </button>
           )}
           {/* 동기화 상태는 조작이 아니라 안내 글이다 — 테두리·바탕 없이 써서 버튼으로 보이지 않게 한다. */}
@@ -1908,7 +1908,7 @@ export default function OrderDashboard() {
       <Sheet open={!!claimFilter} onOpenChange={(open) => { if (!open) setClaimFilter(null); }}>
         <SheetContent side="right" className="gap-0 p-0 sm:max-w-2xl">
           <SheetHeader className="border-b border-slate-100">
-            <SheetTitle className="text-sm font-bold text-slate-800">{claimFilterTitle ?? '반품/교환'}</SheetTitle>
+            <SheetTitle className="text-sm font-bold text-slate-800">{claimFilterTitle ?? '반품·교환'}</SheetTitle>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto p-4 md:p-6">
             {displayedClaimFilter && (

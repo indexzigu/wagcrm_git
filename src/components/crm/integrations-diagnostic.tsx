@@ -409,7 +409,7 @@ export function IntegrationsDiagnostic({
                     <CloudLightning className="size-3.5 text-amber-500 shrink-0 animate-pulse" />
                     토큰 자격 자가 복구 원리
                   </div>
-                  구글 API 보안 정책으로 인해 비활성 기간이 길어지거나 리프레시 토큰이 회수될 경우, 연동이 끊어질 수 있습니다. **[재승인 및 복구]** 버튼을 통해 사용자가 직접 동의 화면으로 리다이렉트되어 새로운 토큰을 갱신해 복구할 수 있습니다.
+                  구글 API 보안 정책으로 인해 비활성 기간이 길어지거나 리프레시 토큰이 회수될 경우, 연동이 끊어질 수 있습니다. [재승인 및 복구] 버튼을 통해 사용자가 직접 동의 화면으로 리다이렉트되어 새로운 토큰을 갱신해 복구할 수 있습니다.
                 </div>
                 <div className="space-y-2">
                   <h4 className="font-bold text-slate-800">구글 드라이브 연동 단계</h4>
@@ -472,7 +472,7 @@ export function IntegrationsDiagnostic({
                 </div>
               </div>
               <p className="text-[10px] text-muted-foreground leading-normal bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                Supabase 무료 한도를 초과하지 않도록, 대용량 파일은 **구글 드라이브**로 자동 이관해 가상 바로가기로 관리합니다.
+                Supabase 무료 한도를 초과하지 않도록, 대용량 파일은 구글 드라이브로 자동 이관해 가상 바로가기로 관리합니다.
               </p>
             </CardContent>
           </Card>

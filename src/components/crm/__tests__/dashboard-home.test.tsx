@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DashboardHome } from "../dashboard-home";
+import { DashboardHome, formatAxisWon } from "../dashboard-home";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { buildTaxableRevenueTracker } from "@/lib/taxable-revenue-tracker";
+import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
+import {
+  DASHBOARD_PAGE_SCOPE_CAPTION,
+  DASHBOARD_SCOPE_CAPTION,
+  DASHBOARD_YTD_SCOPE_CAPTION,
+} from "@/lib/dashboard-scope";
 
 vi.mock("recharts", () => ({
   ComposedChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -21,10 +29,24 @@ vi.mock("@/components/ui/chart", () => ({
   ChartTooltipContent: () => null,
 }));
 
-// 「오늘 처리할 주문」 카드는 자기 데이터를 react-query 로 따로 받는다(사이드바 배지와 공유 캐시) —
-// 카드 자체의 상태 계약은 order-work-card.test.tsx 가 본다. 여기서는 배치만 본다.
-vi.mock("../order-work-card", () => ({
-  OrderWorkCard: () => <section data-testid="order-work-card" />,
+// 「오늘 처리할 일」의 주문·승인대기 원천은 react-query 훅이다(사이드바 배지와 공유 캐시) — 여기서는
+// 훅 값을 고정해 홈이 원천을 모아 카드에 넘기는지만 본다. 카드 자체의 표시 계약은
+// today-work-card.test.tsx, 행 규칙은 src/lib/__tests__/today-work.test.ts 가 본다.
+const hookState = vi.hoisted(() => ({
+  orders: undefined as unknown,
+  approvalsCount: 0,
+}));
+vi.mock("@/hooks/useOrderWorkSummary", () => ({
+  useOrderWorkSummary: () => ({
+    data: hookState.orders,
+    dataUpdatedAt: Date.now(),
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("@/hooks/useApprovalInbox", () => ({
+  useApprovalInbox: () => ({ count: hookState.approvalsCount, isLoading: false, isError: false, refetch: vi.fn() }),
 }));
 
 vi.mock("@/components/ui/animated-number", () => ({
@@ -62,16 +84,6 @@ function data(overrides: Partial<DesktopDashboardData> = {}): DesktopDashboardDa
       { month: "2024-06", ytd: 450000000 }
     ],
     scale: { weightedCampaignCount: 0.4, operatingDays: 4, prevWeightedCampaignCount: 0, prevOperatingDays: 0, prevPrevWeightedCampaignCount: 0 },
-    sellerMomentum: {
-      active: 3,
-      newThisMonth: 1,
-      dormant: 2,
-      dormantList: [
-        { id: "seller-a", name: "휴면셀러A", lastCampaignAt: "2026-02-10T00:00:00.000Z" },
-        { id: "seller-b", name: "휴면셀러B", lastCampaignAt: "2026-01-05T00:00:00.000Z" },
-      ],
-      netChange: 1,
-    },
     profitability: { expectedMargin: 0, prevExpectedMargin: 0, prevPrevExpectedMargin: 0 },
     exceptions: { overdueReminders: 23, pendingApprovals: 8 },
     outreach90d: { total: 2, responded: 2, confirmed: 1, converted: 1 },
@@ -93,6 +105,19 @@ function data(overrides: Partial<DesktopDashboardData> = {}): DesktopDashboardDa
   };
 }
 
+function orderSummary(overrides: Partial<OrderWorkSummary> = {}): OrderWorkSummary {
+  return {
+    awaitingPo: { lines: 0, campaigns: 0, delayedLines: 0 },
+    delayed: { lines: 0, campaigns: 0, invoiceLines: 0, shippingLines: 0 },
+    openClaims: { lines: 0, campaigns: 0, unmatchedLines: 0 },
+    total: 0,
+    lastSyncAt: new Date().toISOString(),
+    activeCampaignCount: 1,
+    hasSnapshot: true,
+    ...overrides,
+  };
+}
+
 // 6개월 추세 — 카드 표(당월·전월·전전월)는 이 중 뒤 3개월만 숫자로 펼친다.
 function trend6(): DesktopDashboardData["trend"] {
   return ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"].map((month, i) => ({
@@ -100,7 +125,6 @@ function trend6(): DesktopDashboardData["trend"] {
     revenue: (i + 1) * 1000000,
     expectedMargin: (i + 1) * 100000,
     campaignCount: i + 1,
-    activeSellers: i,
     goal: null,
   }));
 }
@@ -217,7 +241,7 @@ describe("DashboardHome 스파크라인 기간 정합", () => {
     expect(axis.parentElement!.querySelector("svg line")).toBeNull();
   });
 
-  it("--chart-2를 쓰지 않는다 — 그 파랑은 6개월 대형 차트의 계열 구분 의미를 갖는다", () => {
+  it("--chart-2를 쓰지 않는다 — 그 중간 틸은 차트 계열 구분 색이다", () => {
     const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
     const axis = container.querySelector('[data-slot="spark-axis"]')!;
     const spark = axis.parentElement!;
@@ -241,15 +265,47 @@ describe("DashboardHome", () => {
     expect(screen.queryByText(/최근 실적/)).not.toBeInTheDocument();
   });
 
-  // 움브렐라 제목 "오늘의 핵심 업무" 제거(오너 2026-07-24) — 카드는 탭[영업 팔로업|지연된 정산]이
-  // 헤더다. 할 일이 없으면 축하 빈 상태를 보여준다(제목 없이도 맥락 전달).
-  it("renders the daily action card empty state when there is no agenda", async () => {
+  // 「오늘 처리할 일」(2026-10-18): 주문·영업 팔로업·정산 지연·승인대기·데이터 점검을 한 목록으로.
+  it("모든 원천이 0건이면 「오늘 처리할 일」이 한 줄로 접힌다", async () => {
+    hookState.orders = orderSummary();
+    hookState.approvalsCount = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tasks: [], settlements: [] }) }),
     );
     render(<DashboardHome initialData={data()} />);
-    expect(await screen.findByText(/오늘 할 일이 모두 완료/)).toBeInTheDocument();
+    expect(await screen.findByText("오늘 처리할 일이 없습니다")).toBeInTheDocument();
+    // 종전 핵심 업무 탭 카드(축하 빈 상태)와 빠른 정산 창은 흡수됐다.
+    expect(screen.queryByText(/오늘 할 일이 모두 완료/)).not.toBeInTheDocument();
+  });
+
+  it("원천을 모아 행으로 — 지연된 정산 한 건은 그 캠페인 상세로, 데이터 점검은 아래 탭으로 간다", async () => {
+    hookState.orders = orderSummary({ awaitingPo: { lines: 4, campaigns: 2, delayedLines: 0 }, total: 4 });
+    hookState.approvalsCount = 2;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ tasks: [{ id: "t-1" }, { id: "t-2" }], settlements: [{ id: "camp-9" }] }),
+      }),
+    );
+    const { container } = render(
+      <DashboardHome
+        initialData={data({
+          dataIntegrityIssues: [
+            { campaignId: "c-1", campaignName: "점검캠페인", type: "MISSING_SALES", label: "매출 미입력" },
+          ] as unknown as DesktopDashboardData["dataIntegrityIssues"],
+        })}
+      />,
+    );
+    const settlement = (await screen.findByText("정산 지연")).closest("a")!;
+    expect(settlement).toHaveAttribute("href", "/settlement?campaign=camp-9");
+    expect(screen.getByText("영업 팔로업").closest("a")).toHaveAttribute("href", "/outreach");
+    expect(screen.getByText("승인대기").closest("a")).toHaveAttribute("href", "/approvals");
+    expect(screen.getByText("발주 대기").closest("a")).toHaveAttribute("href", "/order-converter");
+    const check = container.querySelector('a[data-row="data-check"]')!;
+    expect(check).toHaveAttribute("href", "/#data-check");
+    expect(container.querySelector("#data-check")).not.toBeNull();
   });
 
   // 오너 2026-10-06: 퍼널 트랙의 빈 구간이 slate-100(흰 카드 대비 1.09:1)이라 안 보였다 → slate-300.
@@ -276,30 +332,132 @@ describe("DashboardHome", () => {
     expect(screen.queryByText("정산 노출액")).not.toBeInTheDocument();
   });
 
-  // 오너 2026-07-24: "셀러 베이스 모멘텀"은 알기 쉬운 한글로, 재계약 검토는 페이지 이동 없이 팝업으로
-  it("셀러 카드 제목은 한글 표기('활성 셀러 현황')다 — 구 영문 혼용 표기는 회귀", () => {
-    render(<DashboardHome initialData={data()} />);
-    expect(screen.getByText("활성 셀러 현황")).toBeInTheDocument();
-    expect(screen.queryByText("셀러 베이스 모멘텀")).not.toBeInTheDocument();
-  });
-
-  // 발주 자동화 1단계(오너 승인 2026-10-06): 그날 손이 가야 하는 주문 일은 매출·일정보다 먼저 읽힌다.
-  it("「오늘 처리할 주문」 카드를 KPI 밴드보다 위, 첫 줄에 둔다", () => {
+  // 밴드 재배치(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17) — 첫 밴드는 두 초점(오늘 처리할 일 + 거래액 목표).
+  it("첫 밴드에 「오늘 처리할 일」과 거래액 목표 히어로가 함께 있다", () => {
     const { container } = render(<DashboardHome initialData={data()} />);
-    const card = screen.getByTestId("order-work-card");
-    const stack = container.querySelector("main > div.space-y-6");
-    expect(stack?.firstElementChild).toBe(card);
+    const stack = container.querySelector("main > div.space-y-6")!;
+    // 맨 위 한 줄은 범위 안내(<p>), 그 다음이 첫 밴드다.
+    const firstBand = stack.querySelector('[data-band="focus"]')!;
+    expect(firstBand).not.toBeNull();
+    expect(firstBand.contains(screen.getByRole("heading", { name: "오늘 처리할 일" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "이번 달 거래액" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "연간 누적" }))).toBe(true);
   });
 
-  it("재계약 검토는 페이지 이동 없이 팝업으로 휴면 셀러 목록을 연다", () => {
+  it("밴드 순서 — 두 초점 → 거래액 차트 → 일정 → 점검·과세기준", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const stack = container.querySelector("main > div.space-y-6")!;
+    const bands = [...stack.querySelectorAll(":scope > [data-band]")].map((el) => el.getAttribute("data-band"));
+    expect(bands).toEqual(["focus", "sales-chart", "schedule", "checks"]);
+    // 실적 지표 3장은 첫 밴드 좌 칸(「오늘 처리할 일」 아래)에 붙는다 — 히어로 옆을 비우지 않는다.
+    const metrics = stack.querySelector('[data-band="focus"] [data-band="metrics"]');
+    expect(metrics).not.toBeNull();
+    expect(metrics!.textContent).toContain("최근 90일 영업 전환");
+    // 데이터 점검 탭과 과세기준 카드는 같은 밴드(반폭씩).
+    const checks = stack.querySelector('[data-band="checks"]')!;
+    expect(checks.querySelector("#data-check")).not.toBeNull();
+    expect(checks.textContent).toContain("과세기준매출");
+  });
+
+  it("「오늘 처리할 일」 데이터 점검 행의 목적지(#data-check)가 재배치 뒤에도 남는다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const anchor = container.querySelector("#data-check")!;
+    expect(anchor).not.toBeNull();
+    expect(anchor.textContent).toContain("데이터 점검");
+  });
+
+  it("활성 셀러 카드는 없다 — 판단을 바꾸지 않는 개수 카드(오너 2026-10-17)", () => {
     render(<DashboardHome initialData={data()} />);
-    const trigger = screen.getByRole("button", { name: /휴면 2명 재계약 검토/ });
-    // 링크(페이지 이동)가 아니라 버튼이어야 한다
-    expect(trigger.tagName).toBe("BUTTON");
-    fireEvent.click(trigger);
-    // 팝업에 휴면 셀러 목록 + 셀러 상세 진입 링크가 있어야 한다
-    expect(screen.getByText("휴면셀러A")).toBeInTheDocument();
-    expect(screen.getByText("휴면셀러B")).toBeInTheDocument();
-    expect(screen.getByText("휴면셀러A").closest("a")).toHaveAttribute("href", "/sellers/seller-a");
+    expect(screen.queryByText("활성 셀러 현황")).not.toBeInTheDocument();
+    expect(screen.queryByText(/재계약 검토/)).not.toBeInTheDocument();
+  });
+
+  it("자동화 작업 상태(구 시스템 레이더)는 대시보드에 없다 — 설정 → 외부 연동 진단으로 옮겼다", () => {
+    render(<DashboardHome initialData={data()} />);
+    expect(screen.queryByText("자동화 작업 상태")).not.toBeInTheDocument();
+    expect(screen.queryByText("시스템 레이더")).not.toBeInTheDocument();
+  });
+
+  it("범위 안내는 페이지 맨 위에 정확히 한 번 — 히어로 안 캡션은 없다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const stack = container.querySelector("main > div.space-y-6")!;
+    const hits = [...container.querySelectorAll("*")].filter(
+      (el) => el.children.length === 0 && el.textContent === DASHBOARD_PAGE_SCOPE_CAPTION,
+    );
+    expect(hits).toHaveLength(1);
+    expect(stack.firstElementChild?.tagName).toBe("P");
+    expect(stack.firstElementChild?.textContent).toBe(DASHBOARD_PAGE_SCOPE_CAPTION);
+    // 히어로에 남던 짧은 캡션 두 개(모바일 히어로가 여전히 쓴다)는 데스크톱에서 사라졌다.
+    expect(container.textContent).not.toContain(DASHBOARD_SCOPE_CAPTION);
+    expect(container.textContent).not.toContain(DASHBOARD_YTD_SCOPE_CAPTION);
+  });
+
+  it("거래액 차트에 범례가 있다 — 계열을 색만으로 가르지 않는다", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const legend = container.querySelector('[data-slot="chart-legend"]')!;
+    expect(legend).not.toBeNull();
+    expect(legend.textContent).toContain("총거래액");
+    expect(legend.textContent).toContain("매출총이익");
+  });
+
+  it("매출총이익 막대는 청록 면색이다 — 대기 주황(--chart-4 = --status-pending 값)은 심각도 축이라 쓰지 않는다", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const legend = container.querySelector('[data-slot="chart-legend"]')!;
+    expect(legend.innerHTML).toContain("var(--fill-teal-1)");
+    expect(legend.innerHTML).not.toContain("--chart-4");
+    expect(container.innerHTML).not.toContain("var(--chart-4)");
+    // 막대 fill 은 chartConfig → ChartContainer 의 --color-expectedMargin 으로 흐르는데 jsdom 은 차트를
+    // 그리지 않는다(크기 0) — 그래서 막대 색의 출처인 chartConfig 줄을 소스에서 고정한다. 범례·툴팁 견본과 같은 토큰.
+    const src = readFileSync(join(__dirname, "..", "dashboard-home.tsx"), "utf8");
+    expect(src).toMatch(/expectedMargin:\s*\{\s*label:\s*"매출총이익",\s*color:\s*"var\(--fill-teal-1\)"\s*\}/);
+  });
+
+  // 2026-10-18 최종 리뷰 묶음 — 첫 밴드 배치·잘림, 차트 가장자리 대비, 축 눈금.
+  it("첫 밴드는 히어로 높이를 실적 지표 칸이 받는다 — 「오늘 처리할 일」은 늘어나지 않는다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const band = container.querySelector('[data-band="focus"]')!;
+    expect(band).toHaveClass("items-stretch");
+    const left = band.firstElementChild!;
+    expect(left).toHaveClass("h-full");
+    const metrics = band.querySelector('[data-band="metrics"]')!;
+    expect(metrics).toHaveClass("flex-1");
+    const todayCard = screen.getByRole("heading", { name: "오늘 처리할 일" }).closest('[data-slot="card"]')!;
+    expect(todayCard.className).not.toMatch(/\b(flex-1|h-full)\b/);
+  });
+
+  it("실적 카드 당월 줄은 증감을 값 아래로 내릴 수 있다 — 월 라벨과 겹치지 않게", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const rows = [...container.querySelectorAll('[data-slot="metric-current-row"]')];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const group = row.lastElementChild!;
+      expect(group).toHaveClass("flex-wrap", "min-w-0");
+    }
+  });
+
+  it("「확정 N건 · 확정률」은 좁으면 줄을 바꾸고 전문을 title 로도 남긴다", () => {
+    render(<DashboardHome initialData={data({ outreach90d: { total: 40, responded: 18, confirmed: 6, converted: 6 } })} />);
+    const line = screen.getByText(/^확정 6건 · 확정률/);
+    expect(line).not.toHaveClass("truncate");
+    expect(line).toHaveAttribute("title", "확정 6건 · 확정률 15.0%");
+  });
+
+  it("매출총이익 막대·견본은 --chart-2 테두리로 흰 카드 위 가장자리 대비를 낸다", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const legend = container.querySelector('[data-slot="chart-legend"]')!;
+    expect(legend.innerHTML).toContain("border-color: var(--chart-2)");
+    const src = readFileSync(join(__dirname, "..", "dashboard-home.tsx"), "utf8");
+    const marginBars = src.match(/<Bar dataKey="expectedMargin"[^>]*>/g) ?? [];
+    expect(marginBars).toHaveLength(2);
+    for (const bar of marginBars) expect(bar).toContain('stroke="var(--chart-2)" strokeWidth={1}');
+  });
+
+  it("Y축 눈금은 1억 이상을 「억」으로 쓴다", () => {
+    expect(formatAxisWon(0)).toBe("0만");
+    expect(formatAxisWon(50_000_000)).toBe("5000만");
+    expect(formatAxisWon(100_000_000)).toBe("1억");
+    expect(formatAxisWon(150_000_000)).toBe("1.5억");
+    expect(formatAxisWon(225_000_000)).toBe("2.25억");
+    expect(formatAxisWon(300_000_000)).toBe("3억");
   });
 });

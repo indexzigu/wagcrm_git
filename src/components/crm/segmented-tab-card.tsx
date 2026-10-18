@@ -13,7 +13,8 @@ import { badgeSizeClassName } from "@/components/ui/badge";
 
 export type TabCountTone = "caution" | "urgent" | "success" | "info" | "neutral";
 
-const TONE_BADGE: Record<TabCountTone, string> = {
+// 홈 「오늘 처리할 일」 행 배지도 같은 표를 쓴다(같은 심각도 = 같은 배지 — P8 §1).
+export const TONE_BADGE: Record<TabCountTone, string> = {
   // 전부 @theme 노출 유틸로 통일(ss-ux 지적) — caution 만 화살괄호 문법이던 것 수렴.
   caution: "bg-status-caution-bg text-status-caution-text",
   urgent: "bg-status-urgent-bg text-status-urgent-text",

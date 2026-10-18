@@ -55,7 +55,9 @@ import {
 } from "@/lib/partner-seller-display";
 import {
   type SellerSegment,
+  compareByLongestDormancy,
   filterSellersBySegment,
+  isDormantForReview,
 } from "@/lib/seller-segment";
 
 type SellerRow = SellerSummary;
@@ -77,7 +79,8 @@ type SellersManagementProps = {
   dataSourceMessage?: string;
 };
 
-function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] {
+/** 셀러 표 컬럼 팩토리 — 테스트가 셀 렌더(휴면 배지 등)를 직접 확인하려고 내보낸다. */
+export function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] {
   return [
   {
     key: "name",
@@ -254,9 +257,19 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
           </span>
         );
       }
+      // 휴면이지만 시작예정·진행중 캠페인이 잡힌 셀러는 재계약 검토 대상이 아니다 — 「휴면」 보기와 **같은 판정**
+      // (`isDormantForReview`)으로 배지를 거둔다. 배지와 보기가 갈리면 배지가 붙었는데 보기에 없는 셀러가 생긴다.
+      const nextCampaignBooked = verdict.tier === "DORMANT" && !isDormantForReview(row);
       return (
         <span className="inline-flex flex-col items-center leading-tight">
-          {verdict.tier === "HEALTHY" ? (
+          {nextCampaignBooked ? (
+            <span
+              className="text-xs text-slate-500"
+              title={`다음 캠페인이 잡혀 있음 · 마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과`}
+            >
+              —
+            </span>
+          ) : verdict.tier === "HEALTHY" ? (
             // 건강은 할 일이 없다 — 낱말 대신 「—」(상태 낱말 기준 2026-10-08). 휴면만 손이 필요하다.
             <span className="text-xs text-slate-500" title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과`}>—</span>
           ) : (
@@ -269,7 +282,11 @@ function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<SellerRow>[] 
             )}
             title={`마지막 진행 시작 후 ${verdict.daysSinceLastRun}일 경과 (휴면 ${DORMANT_DAYS}일 · 제외 ${EXCLUDE_DAYS}일 기준)`}
           >
-            {DORMANCY_TIER_LABEL[verdict.tier]}
+            {/* 휴면은 경과일을 배지에 함께 쓴다(「휴면 132일」) — 「휴면」 보기가 오래 쉰 순이라 그 순서가 행에서
+                읽혀야 하고, title 만으로는 키보드·터치에서 안 보인다(2026-10-18 interfaces MEDIUM). 제외는 그대로. */}
+            {verdict.tier === "DORMANT"
+              ? `${DORMANCY_TIER_LABEL.DORMANT} ${verdict.daysSinceLastRun}일`
+              : DORMANCY_TIER_LABEL[verdict.tier]}
           </span>
           )}
           {/* 진행 횟수를 함께 노출한다 — "재접촉으로 되살릴 휴면"과 "첫 거래 후 이탈"은
@@ -599,9 +616,12 @@ export function SellersManagement({
         })
       : sellers;
 
-    // 파생 세그먼트 필터: 전체 / 거래 셀러(campaignCount>0) / 발굴 후보(=0) / 미분석(aiComposite==null).
+    // 파생 세그먼트 필터: 전체 / 거래 셀러(campaignCount>0) / 발굴 후보(=0) / 미분석(aiComposite==null) / 휴면(seller-dormancy SSOT).
     // 순수 함수(seller-segment.ts)로 분리 — property test로 기존 active/prospect 계약 + 신규 unanalyzed 검증.
     const segmented = filterSellersBySegment(list, segment);
+
+    // 「휴면」 보기는 오래 쉰 셀러부터 — 재계약 검토 순서(오너 결정 2026-10-18). 다른 보기는 종전 정렬.
+    if (segment === "dormant") return [...segmented].sort(compareByLongestDormancy);
 
     return [...segmented].sort((a, b) => {
       const aMonitored = a.isMonitored ? 1 : 0;
@@ -742,6 +762,7 @@ export function SellersManagement({
                 { value: "active", label: "거래 셀러" },
                 { value: "prospect", label: "발굴 후보" },
                 { value: "unanalyzed", label: "미분석" },
+                { value: "dormant", label: "휴면" },
               ]}
             />
             <InputGroup className="ml-auto w-48 shrink-0 border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">

@@ -322,6 +322,10 @@ function JobDetailPopoverContent({
   );
 }
 
+/**
+ * 자동화 작업 상태 카드(코드 이름은 구 「시스템 레이더」 승계) — 설정 → 외부 연동 진단 하단에 산다
+ * (`src/app/settings/integrations/page.tsx`, 2026-10-18 홈에서 이동). 화면 이름은 「자동화 작업 상태」 하나다.
+ */
 export function SystemRadarCard() {
   const [statuses, setStatuses] = useState<Record<string, TaskStatus>>({});
   const [health, setHealth] = useState<CollectHealth | null>(null);
@@ -335,7 +339,7 @@ export function SystemRadarCard() {
   const fetchRadar = useCallback(async () => {
     try {
       const res = await fetch("/api/system/radar");
-      if (!res.ok) throw new Error("시스템 레이더를 불러오지 못했습니다.");
+      if (!res.ok) throw new Error("자동화 작업 상태를 불러오지 못했습니다.");
       const json = await res.json();
       if (json.success) {
         const statusMap = json.data.reduce((acc: Record<string, TaskStatus>, curr: TaskStatus) => {
@@ -397,7 +401,7 @@ export function SystemRadarCard() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Radar className="size-4 text-[var(--primary)]" />
-            <h3 className="text-sm font-bold text-[var(--primary)] tracking-tight">시스템 레이더</h3>
+            <h2 className="text-sm font-bold text-[var(--primary)] tracking-tight">자동화 작업 상태</h2>
             <p className="text-[10px] text-muted-foreground">자동화 스케줄 · 예정(KST) 대비 실제 작동</p>
           </div>
           <div className="flex items-center gap-3">

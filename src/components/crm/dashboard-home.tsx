@@ -7,15 +7,10 @@ import {
   Target,
   TrendingUp,
   UsersRound,
-  ChevronRight,
-  Loader2,
-  Sparkles,
-  Globe,
 } from "lucide-react";
 import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   ChartContainer,
   ChartTooltip,
@@ -33,12 +28,15 @@ import { ScheduleGapBriefingBody } from "./schedule-gap-briefing-card";
 import { UpcomingScheduleBody, UpcomingScheduleCard, CalendarSyncBadge } from "./upcoming-schedule-card";
 import { DataIntegrityBody } from "./data-integrity-card";
 import { usePriceOverview, PriceDefenseBody, PriceDefenseLegend } from "./price-defense-card";
-import { SegmentedTabCard, SegmentedTabBar, type SegmentedTab } from "./segmented-tab-card";
-import { SystemRadarCard } from "./system-radar-card";
+import { SegmentedTabCard, type SegmentedTab } from "./segmented-tab-card";
 import { TaxableRevenueCard } from "./taxable-revenue-card";
-import { OrderWorkCard } from "./order-work-card";
+import { TodayWorkCard } from "./today-work-card";
+import { resolveOrderSyncState } from "@/lib/order-converter/order-work-buckets";
+import { buildTodayWorkRows, DATA_CHECK_ANCHOR } from "@/lib/today-work";
+import { useOrderWorkSummary } from "@/hooks/useOrderWorkSummary";
+import { useApprovalInbox } from "@/hooks/useApprovalInbox";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
-import { DASHBOARD_SCOPE_CAPTION, DASHBOARD_YTD_SCOPE_CAPTION } from "@/lib/dashboard-scope";
+import { DASHBOARD_PAGE_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
   resolveGoalBand,
@@ -48,20 +46,20 @@ import {
   GOAL_BAND_TEXT_UNSET_ON_NAVY,
 } from "@/lib/goal-band";
 
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { QuickSettlementModal } from "./quick-settlement-modal";
-import { useState, useEffect, useId } from "react";
-import { formatDistanceToNow } from "date-fns";
-import { ko } from "date-fns/locale";
-import { toast } from "@/lib/toast";
+import { useState, useEffect } from "react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
-import { badgeSizeClassName } from "@/components/ui/badge";
 
 
 // WAG CRM 팔레트 스펙(오너 승인, 2026-07-09) — 차트라인/기준선 하드코딩 색 → 토큰 수렴
+// 매출총이익 = 청록 면색 --fill-teal-1(2026-10-18). 종전 --chart-4 는 --status-pending(대기 주황)과 같은 값이라
+// 심각도 축으로 읽혔다(P8 §1). 같은 청록 계열 중 앵커 막대(--chart-1)와 가장 잘 갈리면서 흰 카드 위 대비가
+// 종전 주황(2.15)보다 떨어지지 않는 값: chart-1 대비 2.86 · 흰 카드 2.57. --chart-2 는 chart-1 과 1.56 이라
+// 붙은 막대에서 안 갈린다. 계열 구분은 색 + 막대 폭(넓게·좁게) + 범례 이름 세 겹이다.
+// 면색은 흰 카드 위 3:1 에 못 미치므로(2.57) 막대·범례·툴팁 견본에 --chart-2 1px 테두리를 둘러 가장자리가
+// 3:1(흰 카드 대비 4.7)을 넘게 한다(2026-10-18 ss-ux P2) — 면은 그대로 청록 면색이라 계열 구분은 유지된다.
 const chartConfig = {
   revenue: { label: "총거래액", color: "var(--chart-1)" },
-  expectedMargin: { label: "매출총이익", color: "var(--chart-4)" },
+  expectedMargin: { label: "매출총이익", color: "var(--fill-teal-1)" },
   goal: { label: "거래액 목표", color: "var(--muted-foreground)" },
 } satisfies ChartConfig;
 
@@ -98,7 +96,7 @@ function TrendTooltip({
       {margin != null && (
         <div className="flex items-center justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--chart-4)" }} />
+            <span className="size-2 rounded-[2px] border" style={{ backgroundColor: "var(--fill-teal-1)", borderColor: "var(--chart-2)" }} />
             매출총이익
           </span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{formatCurrency(margin)}</span>
@@ -112,6 +110,42 @@ function TrendTooltip({
       )}
     </div>
   );
+}
+
+/**
+ * 거래액 차트 머리 줄 — 왼쪽 범위 한 마디, 오른쪽 범례. 두 막대 계열(--chart-1 총거래액 · --fill-teal-1
+ * 매출총이익)을 **색만으로 가르지 않도록**(P8) 이름을 붙이고, 견본 폭도 실제 막대 폭(넓게·좁게)을 따른다.
+ * 목표선은 그 기간에 목표가 하나라도 있을 때만 범례에 올린다(없는 선을 설명하지 않는다).
+ */
+function SalesChartCaption({ caption, showGoal }: { caption: string; showGoal: boolean }) {
+  return (
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+      <p className="text-[11px] text-muted-foreground">{caption}</p>
+      <ul data-slot="chart-legend" aria-label="차트 범례" className="flex items-center gap-3 text-[11px] text-muted-foreground">
+        <li className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-2.5 w-3 rounded-[2px]" style={{ backgroundColor: "var(--chart-1)" }} />
+          {chartConfig.revenue.label}
+        </li>
+        <li className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="h-2.5 w-2 rounded-[2px] border" style={{ backgroundColor: "var(--fill-teal-1)", borderColor: "var(--chart-2)" }} />
+          {chartConfig.expectedMargin.label}
+        </li>
+        {showGoal ? (
+          <li className="flex items-center gap-1.5">
+            <span aria-hidden="true" className="w-3 border-t-2 border-dashed" style={{ borderColor: "var(--muted-foreground)" }} />
+            {chartConfig.goal.label}
+          </li>
+        ) : null}
+      </ul>
+    </div>
+  );
+}
+
+/** 차트 Y축 눈금 — 1억 이상은 「억」(「30000만」은 자릿수를 세어야 읽힌다), 그 아래는 「만」. */
+export function formatAxisWon(value: number): string {
+  // 소수 둘째 자리까지(눈금이 2.25억처럼 4등분에 떨어진다 — 한 자리로 반올림하면 2.3억으로 틀린 값이 된다).
+  if (Math.abs(value) >= 100_000_000) return `${Number((value / 100_000_000).toFixed(2))}억`;
+  return `${Math.round(value / 10000)}만`;
 }
 
 function rate(actual: number, target: number | null | undefined): number | null {
@@ -132,12 +166,6 @@ function monthLabel(monthKey: string) {
   return `${m}월`;
 }
 
-// 핵심 업무 행의 기한 표기 — 좁은 반쪽 칸에서 toLocaleDateString()(7/21/2026)은 이름 폭을
-// 잡아먹는다. 연도는 이 카드 맥락(지연·임박)에서 항상 올해 부근이라 "7.21"로 족하다.
-function shortDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}.${d.getDate()}`;
-}
 
 function monthlyActionHint(achievementRate: number | null, targetSet: boolean): string {
   if (!targetSet) return "운영 설정에서 월 목표를 등록하세요";
@@ -185,11 +213,15 @@ function StockTrendIndicator({
   const diffText = isCurrency ? formatCurrency(absChange) : (Number.isInteger(absChange) ? String(absChange) : absChange.toFixed(1));
   const absPercent = Math.abs(percent).toFixed(1);
 
+  const percentText = `(${isUp ? "+" : "-"}${absPercent}%)`;
+  // 좁은 칸(200% 확대·좌 칸 1/3 폭)에서 값 옆에 안 들어가면 부모가 이 줄을 값 **아래**로 내린다. 그 줄마저
+  // 좁으면 말줄임 + title 로 전체를 남긴다 — 겹치거나 왼쪽 월 라벨 위로 넘치지 않게(2026-10-18 리뷰 HIGH).
   return (
-    <span className={`inline-flex items-center text-[10px] gap-0.5 font-semibold ${colorClass}`}>
-      <span>{sign}</span>
-      <span>{diffText}{suffix}</span>
-      <span className="opacity-70">({isUp ? "+" : "-"}{absPercent}%)</span>
+    <span
+      className={`min-w-0 max-w-full truncate whitespace-nowrap text-[10px] font-semibold ${colorClass}`}
+      title={`${sign} ${diffText}${suffix} ${percentText}`}
+    >
+      {sign} {diffText}{suffix} <span className="opacity-70">{percentText}</span>
     </span>
   );
 }
@@ -205,8 +237,9 @@ const SPARK_FOCUS_MONTHS = 3;
 //
 // 가드레일 두 가지:
 // 1. 색은 2단계뿐 — 중립 회색(--chart-5, 맥락) + 앵커 틸(--chart-1, 강조는 불투명도로만 2단).
-//    --chart-2는 쓰지 않는다: 같은 화면의 6개월 대형 차트에서 그 중간 틸은 이미 "매출 vs 순마진"의
-//    계열 구분 의미를 갖고 있어, 여기서 "시간적 근접"에 재사용하면 한 스와치가 두 의미를 갖는다.
+//    --chart-2는 쓰지 않는다: 그 중간 틸은 차트 계열 구분 색(손익 보고서의 영업이익 등)이라, 여기서 "시간적
+//    근접"에 재사용하면 한 스와치가 두 의미를 갖는다. 같은 이유로 6개월 대형 차트의 매출총이익 색
+//    (--fill-teal-1, 2026-10-18 교체 — 종전 기록의 "대형 차트 = chart-2"는 이미 낡아 있었다)도 빌리지 않는다.
 // 2. Y축 눈금·그리드라인 금지 — max가 카드마다 독립 정규화라 카드 간 막대 높이 비교는 무의미하다.
 //    눈금이 붙는 순간 "정밀 판독 가능한 계기판"으로 보여 그 비교를 유도한다. 이건 계기판이 아니라
 //    라벨 붙은 타임라인 스트립이다.
@@ -384,9 +417,11 @@ function MetricCard({
   const focusPoints = spark?.points.slice(-SPARK_FOCUS_MONTHS) ?? [];
   const lossMonths = spark?.months.slice(-SPARK_FOCUS_MONTHS).filter((_, i) => focusPoints[i] < 0) ?? [];
   return (
-    <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0">
+    // h-full: 첫 밴드에서 히어로 높이를 받아 늘어난다 — 남는 높이는 표와 스파크라인 사이(mt-auto)로 가고
+    // 스파크라인은 카드 바닥에 붙는다(2026-10-18 리뷰: 좌 칸 아래가 비어 첫 줄이 기울었다).
+    <Card className="h-full border-black/5 bg-white/85 shadow-soft-sm p-0">
       {/* 데이터 점검 카드 밀도 기준(오너 2026-07-10): 행 기반·타이트, 라벨 좌/값 우, 얇은 구분선. Card 기본 p-6 제거해 이중 패딩(48px) 해소 */}
-      <CardContent className="px-4 py-3">
+      <CardContent className="flex flex-1 flex-col px-4 py-3">
         {/* 서브텍스트는 제목 우측에 이어서(오너 2026-07-24 — 카드 폭이 넓어 별도 줄이 불필요).
             좁은 폭에서는 truncate로 잘리되 title 속성으로 전문 확인 가능.
             적자 달 경고는 note 줄을 '추가'하지 않고 같은 슬롯에서 '교체'한다(오너 결정 2026-07-15, D안):
@@ -416,19 +451,21 @@ function MetricCard({
             증감(보조지표)은 당월 값 좌측에 두고 우측 정렬로 묶어, 값 컬럼의 우측 기준선을 밀지 않는다 */}
         <div className="mt-1.5">
           {/* 당월 행 */}
-          <div className="flex items-baseline justify-between gap-2 py-1">
+          {/* 값이 먼저(DOM)·증감이 뒤 + flex-row-reverse: 한 줄에 들어가면 「증감 값」 순으로 오른쪽 정렬, 안 들어가면
+              증감이 값 **아래 줄**로 내려가 오른쪽에 붙는다(겹침·잘림 대신 줄바꿈 — 2026-10-18 리뷰 HIGH). */}
+          <div data-slot="metric-current-row" className="flex items-baseline justify-between gap-2 py-1">
             <span className="text-[11px] font-semibold text-muted-foreground shrink-0">{monthLabel(currentMonthKey)}</span>
-            <div className="flex items-baseline justify-end gap-1.5 min-w-0">
-              {numericValue !== undefined && prevNumericValue !== undefined && (
-                <StockTrendIndicator current={numericValue} previous={prevNumericValue} isCurrency={isCurrency} suffix={suffix} />
-              )}
-              <span className="text-[13px] font-semibold tracking-tight text-[#1F2A30] tabular-nums">
+            <div className="flex min-w-0 flex-1 flex-row-reverse flex-wrap items-baseline justify-start gap-x-1.5">
+              <span className="shrink-0 text-[13px] font-semibold tracking-tight text-[#1F2A30] tabular-nums">
                 {numericValue !== undefined ? (
                   <AnimatedNumber value={numericValue} format={isCurrency ? "currency" : "raw"} decimalPlaces={decimalPlaces} suffix={suffix} />
                 ) : (
                   value
                 )}
               </span>
+              {numericValue !== undefined && prevNumericValue !== undefined && (
+                <StockTrendIndicator current={numericValue} previous={prevNumericValue} isCurrency={isCurrency} suffix={suffix} />
+              )}
             </div>
           </div>
           {/* 전월 행: 동일 크기·medium·뮤트 */}
@@ -448,7 +485,7 @@ function MetricCard({
         </div>
 
         {spark && spark.points.length > 1 && (
-          <div className="mt-1">
+          <div className="mt-auto pt-1">
             <Sparkline points={spark.points} months={spark.months} type={spark.type} />
           </div>
         )}
@@ -508,33 +545,10 @@ function ShortageGridRow({
   );
 }
 
+// `/api/agenda` 응답 중 홈이 읽는 부분 — 건수와 지연된 정산 id(그룹은 대표 멤버 id)뿐이다. 목록 렌더·
+// 빠른 정산 창은 「오늘 처리할 일」로 흡수되며 빠졌다(2026-10-18).
 interface AgendaItem {
   id: string;
-  type: "TASK" | "SETTLEMENT";
-  status: string;
-  title: string;
-  dueDate: string | null;
-  label: string;
-  badgeColor: {
-    bg: string;
-    text: string;
-    border: string;
-  };
-  sellerName?: string;
-  dealName?: string;
-  accountNumber?: string | null;
-  settlementSales?: number;
-  actualPayoutAmount?: number;
-  /** 지연된 칸(입금/지급 × 상대) — 서버(`agenda-settlements.ts`)가 슬롯에서 파생한다. */
-  overdueSlot?: {
-    kind: "DEPOSIT" | "PAYOUT";
-    verb: "입금" | "지급";
-    counterpartLabel: string;
-    flagField: "isDepositReceived" | "isPayoutCompleted" | "isSupplierPayoutCompleted";
-  };
-  /** 모달이 대조할 금액. null = 금액 컬럼이 없는 칸(자사몰 공급사 지급) — 0 이 아니다. */
-  targetAmount?: number | null;
-  snsType?: string;
 }
 
 interface AgendaData {
@@ -542,127 +556,18 @@ interface AgendaData {
   settlements: AgendaItem[];
 }
 
-function InstagramIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-    </svg>
-  );
-}
-
-function YoutubeIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17z" />
-      <polygon points="10 15 15 12 10 9" />
-    </svg>
-  );
-}
-
-const renderSnsIcon = (snsType?: string) => {
-  if (!snsType) return null;
-  const type = snsType.toUpperCase();
-  if (type === "INSTAGRAM") {
-    return <InstagramIcon className="size-3.5 text-pink-500/70 shrink-0" />;
-  }
-  if (type === "YOUTUBE") {
-    return <YoutubeIcon className="size-3.5 text-red-500/70 shrink-0" />;
-  }
-  return <Globe className="size-3.5 text-slate-400/80 shrink-0" />;
-};
-
-// 핵심 업무 탭에 인라인으로 보여줄 상위 건수 — 나머지는 "더보기" 팝오버로(데이터 점검과 동일 패턴).
-const AGENDA_PREVIEW_COUNT = 3;
-
-// "더보기" 팝오버 — 데이터 점검 카드와 동일한 경량 Popover(포털·충돌회피·available-height 캡).
-function AgendaMore({
-  open,
-  onOpenChange,
-  moreCount,
-  title,
-  sub,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  moreCount: number;
-  title: string;
-  sub: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mt-2 shrink-0 text-center">
-      <Popover open={open} onOpenChange={onOpenChange}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="crm-hit-area-wide inline-block rounded text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
-          >
-            + {moreCount}건 더보기
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="center"
-          sideOffset={6}
-          collisionPadding={12}
-          className="flex w-[340px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay max-h-[min(460px,var(--radix-popover-content-available-height))]"
-        >
-          <div className="shrink-0 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5">
-            <p className="text-[12px] font-bold text-slate-700">{title}</p>
-            <p className="text-[10px] text-slate-500">{sub}</p>
-          </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto [scrollbar-gutter:stable] px-3 py-2">
-            {children}
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}
-
 export function DashboardHome({ initialData }: { initialData: DesktopDashboardData }) {
   const [agendaData, setAgendaData] = useState<AgendaData>({ tasks: [], settlements: [] });
-  // 초기값 true: fetch 시작 전 첫 페인트에 빈 상태("모두 완료")가 잠깐 노출되는 플래시 방지
-  // — 빈 상태 pop-in이 마운트/데이터 도착 시 이중 발화하는 원인이기도 했다.
+  // 초기값 true: fetch 시작 전 첫 페인트에 「오늘 처리할 일」 접힘 문구(「오늘 처리할 일이 없습니다」)가 잠깐
+  // 보였다가 행이 들어오는 플래시 방지 — 아젠다 건수를 모르는 동안은 「없다」고 말하지 않는다.
   const [agendaLoading, setAgendaLoading] = useState(true);
   const [agendaError, setAgendaError] = useState<string | null>(null);
-  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
-  const [selectedSettlement, setSelectedSettlement] = useState<AgendaItem | null>(null);
-  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
-  // 휴면 셀러 재계약 검토 팝업 — 페이지 이동 없이 대시보드에서 대상 확인(오너 2026-07-24)
-  const [isDormantListOpen, setIsDormantListOpen] = useState(false);
 
   // 최저가 점검 데이터를 대시보드 레벨에서 fetch(오너 2026-07-24, 1순위 탭 묶음) — 위반 수를
   // 탭 배지(숨은 탭 알림)로 반응형 반영하려면 데이터가 탭 레벨에서 필요하다.
   const priceOverview = usePriceOverview();
   // 막대 성장 애니메이션은 OS 「동작 줄이기」면 끈다(recharts 는 CSS 가드 밖이라 JS 로).
   const reducedMotion = useReducedMotion();
-
-  // 핵심 업무 탭(오너 2026-07-24 — 데이터 점검처럼 탭 방식으로 통일). 반쪽 2열은 각 행에
-  // ≈200px만 남겨 딜명·셀러명이 말줄임으로 죽었다. 두 목록은 비교가 아니라 하나씩 처리하는
-  // 큐라서, 밑줄 탭으로 전환하면 각 목록이 카드 전폭을 받는다.
-  const [agendaTab, setAgendaTab] = useState<"tasks" | "settlements">("tasks");
-  const agendaTabId = useId();
 
   const fetchAgenda = async () => {
     setAgendaLoading(true);
@@ -683,116 +588,33 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
     fetchAgenda();
   }, []);
 
-  // 팔로업이 비어 있고 지연 정산만 있으면 정산 탭을 첫 화면으로 — 빈 목록이 첫 인상이
-  // 되는 것을 방지(재조회로 팔로업이 소진된 경우에도 동일하게 정산 쪽으로 넘어간다).
-  const agendaTaskCount = agendaData.tasks.length;
-  const agendaSettlementCount = agendaData.settlements.length;
-  useEffect(() => {
-    if (!agendaLoading && agendaTaskCount === 0 && agendaSettlementCount > 0) {
-      setAgendaTab("settlements");
-    }
-  }, [agendaLoading, agendaTaskCount, agendaSettlementCount]);
-
-  const handleCompleteReminder = async (e: React.MouseEvent, taskId: string) => {
-    e.stopPropagation();
-    setCompletingTaskId(taskId);
-    try {
-      const now = new Date();
-      const nextDate = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // 3일 추가
-      const res = await fetch(`/api/outreach/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "PROPOSED",
-          lastReminderAt: now.toISOString(),
-          nextReminderAt: nextDate.toISOString(),
-        }),
-      });
-
-      if (!res.ok) throw new Error("리마인드 처리 기록에 실패했습니다.");
-      
-      toast.success("리마인드 완료 처리되었습니다.");
-      await fetchAgenda();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "오류가 발생했습니다.");
-    } finally {
-      setCompletingTaskId(null);
-    }
+  // 「오늘 처리할 일」 원천 — 카드는 fetch 하지 않고 여기서 모아 준다(today-work.ts). 주문 요약은 사이드바
+  // 배지와 한 캐시(`useOrderWorkSummary`), 승인대기 수는 사이드바 `ApprovalBadge` 와 같은 쿼리키라
+  // 추가 요청이 생기지 않는다. 데이터 점검 건수는 아래 「데이터 점검」 탭과 같은 배열이다.
+  const orderWork = useOrderWorkSummary();
+  const approvals = useApprovalInbox("PENDING_APPROVAL");
+  const todayRows = buildTodayWorkRows({
+    orders: orderWork.data,
+    agenda: {
+      tasks: agendaData.tasks.length,
+      settlements: agendaData.settlements.length,
+      overdueSettlementIds: agendaData.settlements.map((item) => item.id),
+    },
+    approvalsPending: approvals.count,
+    dataCheck: initialData.dataIntegrityIssues.length,
+  });
+  const todayFailedSources = [
+    orderWork.isError ? "주문" : null,
+    agendaError ? "영업·정산" : null,
+    approvals.isError ? "승인대기" : null,
+  ].filter((name): name is string => name != null);
+  const retryTodayWork = () => {
+    if (orderWork.isError) void orderWork.refetch();
+    if (agendaError) void fetchAgenda();
+    if (approvals.isError) void approvals.refetch();
   };
-
-  const handleOpenSettlementModal = (e: React.MouseEvent, item: AgendaItem) => {
-    e.stopPropagation();
-    setSelectedSettlement(item);
-    setIsSettlementModalOpen(true);
-  };
-
-  // 핵심 업무 탭 오버플로도 데이터 점검과 동일하게: 상위 N건만 카드에 두고 나머지는 "더보기" 팝오버로
-  // 본다(오너 2026-07-24 — 스크롤 대신). N건 캡이라 카드 높이는 데이터와 무관하게 안정적이다.
-  const [tasksMoreOpen, setTasksMoreOpen] = useState(false);
-  const [settlementsMoreOpen, setSettlementsMoreOpen] = useState(false);
-
-  // 행 렌더 헬퍼 — 카드 인라인(상위 N)과 더보기 팝오버(전체)가 같은 마크업을 공유한다.
-  const renderTaskRow = (item: AgendaItem) => (
-    <div
-      key={item.id}
-      className="group rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 transition-[border-color,background-color,box-shadow] duration-200 hover:border-status-info/20 hover:bg-white hover:shadow-soft-sm"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <Link
-          href={`/outreach?taskId=${item.id}`}
-          className="crm-hit-area min-w-0 flex-1 truncate text-xs font-semibold text-slate-700 leading-snug hover:text-status-info transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          title={item.dealName || item.title}
-        >
-          {item.dealName || item.title}
-        </Link>
-        <button
-          onClick={(e) => handleCompleteReminder(e, item.id)}
-          disabled={completingTaskId === item.id}
-          className="crm-hit-area shrink-0 inline-flex items-center gap-0.5 rounded-md border border-status-info/20 bg-status-info/10 hover:border-status-info/40 px-1.5 py-0.5 text-[10px] font-semibold text-status-info transition-colors active:translate-y-px disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          {completingTaskId === item.id ? <Loader2 className="size-3 animate-spin" /> : "연락 완료"}
-        </button>
-      </div>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        {renderSnsIcon(item.snsType)}
-        <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600" title={item.sellerName || ""}>
-          {item.sellerName || ""}
-        </span>
-        <span className={`shrink-0 inline-flex items-center ${badgeSizeClassName.compact} ${item.badgeColor.bg} ${item.badgeColor.text} ${item.badgeColor.border}`}>
-          {item.label}
-        </span>
-        {item.dueDate && <span className="shrink-0 text-[9px] tabular-nums text-slate-500">{shortDate(item.dueDate)}</span>}
-      </div>
-    </div>
-  );
-
-  // 정산 행은 행 전체가 정산 확인 모달 트리거. 팝오버 안에서 누르면 팝오버를 닫고 모달을 연다(중첩 방지).
-  const renderSettlementRow = (item: AgendaItem, afterClick?: () => void) => (
-    <button
-      key={item.id}
-      type="button"
-      onClick={(e) => { handleOpenSettlementModal(e, item); afterClick?.(); }}
-      className="group w-full text-left rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 transition-[border-color,background-color,box-shadow] duration-200 hover:border-status-urgent/20 hover:bg-white hover:shadow-soft-sm flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
-      title={`${item.dealName || item.title} · ${item.sellerName || ""} 정산 확인`}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700 leading-snug group-hover:text-status-urgent-text transition-colors">
-            {item.dealName || item.title}
-          </span>
-          {item.dueDate && <span className="shrink-0 text-[9px] tabular-nums text-slate-500">{shortDate(item.dueDate)}</span>}
-        </div>
-        <div className="mt-1.5 flex items-center gap-1.5">
-          {renderSnsIcon(item.snsType)}
-          <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600">{item.sellerName || ""}</span>
-          <span className={`shrink-0 inline-flex items-center ${badgeSizeClassName.compact} ${item.badgeColor.bg} ${item.badgeColor.text} ${item.badgeColor.border}`}>
-            {item.label}
-          </span>
-        </div>
-      </div>
-      <ChevronRight className="size-3.5 shrink-0 text-slate-400 group-hover:text-status-urgent-text transition-colors" aria-hidden="true" />
-    </button>
-  );
+  // 낡음 판정의 「지금」은 데이터를 받은 시각이다 — 렌더 중 Date.now() 는 순수하지 않다.
+  const orderSync = orderWork.data ? resolveOrderSyncState(orderWork.data, orderWork.dataUpdatedAt) : null;
 
   const monthRate = rate(initialData.goals.monthActual, initialData.goals.monthTarget);
   const annualRate = rate(initialData.goals.ytdActual, initialData.goals.annualTarget);
@@ -860,168 +682,131 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
     <CrmShell>
       <main className="min-h-full bg-[radial-gradient(circle_at_top_right,_rgba(15,95,103,0.07),_transparent_30%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] px-5 pb-5 pt-5 md:px-8">
         <div className="space-y-6">
-          {/* 밴드 -1: 오늘 처리할 주문(발주 자동화 1단계, 오너 승인 2026-10-06) — 그날 손이 가야 하는
-              주문 일(발주 대기·배송 지연·진행 중 클레임)이라 매출·일정보다 먼저 읽힌다. 일이 없으면 한 줄로
-              물러나 아래 밴드를 밀어내지 않는다. 네이버 호출 0(저장된 스냅샷만), 사이드바 배지와 한 캐시. */}
-          <OrderWorkCard />
-          {/* items-start: 좌측 히어로가 우측 컬럼 높이에 강제로 늘어나며 카드 내부에
-              빈 공백이 생기는 것을 방지 — 두 컬럼 높이 차이는 카드 밖 배경으로 흡수한다 */}
-          {/* 밴드 0: 실시간 KPI 스트립 (1x3 풀폭) — 소형 지표라 상단 밴드로 분리, 각 지표가 폭 여유 확보 (오너 결정 A안, 2026-07-10) */}
-          <section className="grid gap-4 sm:grid-cols-3">
-            <MetricCard
-              label="월 환산 캠페인 수"
-              value={`${initialData.scale.weightedCampaignCount.toFixed(1)}건`}
-              prevValue={`${initialData.scale.prevWeightedCampaignCount.toFixed(1)}건`}
-              prevPrevValue={`${initialData.scale.prevPrevWeightedCampaignCount.toFixed(1)}건`}
-              numericValue={initialData.scale.weightedCampaignCount}
-              prevNumericValue={initialData.scale.prevWeightedCampaignCount}
-              currentMonthKey={currentMonthKey}
-              prevMonthKey={prevMonthKey}
-              prevPrevMonthKey={prevPrevMonthKey}
-              suffix="건"
-              decimalPlaces={1}
-              note={`조합 그룹은 1건으로 집계 · 운영일 ${formatNumber(initialData.scale.operatingDays)}일 포함 · 월 경계 일정은 비율 배분`}
-              icon={CalendarDays}
-              spark={{
-                points: initialData.trend.map((t) => t.campaignCount),
-                months: initialData.trend.map((t) => t.month),
-                type: "bars",
-              }}
-            />
-            <MetricCard
-              label="매출총이익"
-              value={formatCurrency(initialData.profitability.expectedMargin)}
-              prevValue={formatCurrency(initialData.profitability.prevExpectedMargin)}
-              prevPrevValue={formatCurrency(initialData.profitability.prevPrevExpectedMargin)}
-              numericValue={initialData.profitability.expectedMargin}
-              prevNumericValue={initialData.profitability.prevExpectedMargin}
-              currentMonthKey={currentMonthKey}
-              prevMonthKey={prevMonthKey}
-              prevPrevMonthKey={prevPrevMonthKey}
-              isCurrency
-              note="진행 중 판단용 추정치"
-              icon={TrendingUp}
-              tone="orange"
-              spark={{
-                points: initialData.trend.map((t) => t.expectedMargin),
-                months: initialData.trend.map((t) => t.month),
-                type: "line",
-              }}
-            />
+          {/* 범위 안내 — 이 화면의 모든 금액·개수가 같은 범위라 맨 위에 한 번만(오너 2026-10-17). 종전엔
+              히어로 두 단에 짧은 캡션이 따로 붙어 같은 말이 두 번 읽혔다. mb-3 은 space-y-6 의 아래 여백(24px)을
+              덮어 안내를 첫 밴드에 붙인다(Tailwind v4 space-y 는 :where() 특이성 0 의 margin-bottom). */}
+          <p className="mb-3 text-[11px] text-muted-foreground">{DASHBOARD_PAGE_SCOPE_CAPTION}</p>
 
-            {/* 최근 90일 영업 전환 — 형제 KPI 카드와 세로 밀도 정합(오너 피드백 2026-07-14):
-                내용을 flex로 세로 분산해 하단 여백을 없애고, 단계별 전환율을 병기해 판독 밀도를 높인다 */}
-            <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0 h-full flex flex-col">
-              <CardContent className="px-4 py-3 flex flex-1 flex-col">
-                {/* 서브텍스트는 제목 우측에 이어서 — 형제 KPI 카드와 형식 통일(오너 2026-07-24) */}
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                  <UsersRound className="size-4 shrink-0 text-[var(--primary)]" />
-                  <p className="shrink-0 text-[13px] font-semibold text-[var(--primary)] tracking-tight">최근 90일 영업 전환</p>
-                  <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                    확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
-                  </p>
-                </div>
-                {/* 퍼널 막대 — 접촉→응답→전환 폭 비율이 곧 전환 효율. 트랙(전체폭 기준선)+단계별 전환율 병기 */}
-                <div className="mt-3 flex flex-1 flex-col justify-center gap-3">
-                  {[
-                    { label: "접촉", count: initialData.outreach90d.total, base: initialData.outreach90d.total, strong: false, showRate: false },
-                    { label: "응답", count: initialData.outreach90d.responded, base: initialData.outreach90d.total, strong: false, showRate: true },
-                    { label: "전환", count: initialData.outreach90d.converted, base: initialData.outreach90d.total, strong: true, showRate: true },
-                  ].map((row, i) => (
-                    <div key={row.label} className="flex items-center gap-2.5">
-                      <span className="w-[26px] shrink-0 text-[11px] font-medium text-muted-foreground">{row.label}</span>
-                      {/* 트랙 = 전체폭 기준선이라 빈 구간이 보여야 비율이 읽힌다(오너 2026-10-06: slate-100 은 흰 카드
-                          대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
-                          약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
-                          올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 앵커 틸의 농도 사다리
-                          (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 6개월 대형 차트의 계열
-                          구분 의미라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
-                      <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
-                        {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
-                        <div
-                          className="h-full rounded-full animate-grow-x"
-                          style={{
-                            width: row.base > 0 ? `${Math.max((row.count / row.base) * 100, 2)}%` : "2%",
-                            backgroundColor: "var(--chart-1)",
-                            opacity: row.strong ? 1 : 0.6,
-                            animationDelay: `${i * 60}ms`,
-                          }}
-                        />
-                      </div>
-                      <span className="w-[30px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
-                        {row.showRate ? ratioText(row.count, row.base) : ""}
-                      </span>
-                      {/* 값 크기·무게는 형제 MetricCard 당월 값(13px semibold)과 통일(오너 2026-07-24) */}
-                      <span className="w-[34px] shrink-0 text-right text-[13px] font-semibold text-[#1F2A30] tabular-nums">{row.count}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </section>
+          {/* 밴드 1: 두 초점(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17) — 좌 2fr 「오늘 처리할 일」(그날 손이 가야
+              하는 일: 주문·영업 팔로업·정산 지연·승인대기·데이터 점검) | 우 1fr 거래액 목표 히어로(이 화면의
+              단일 lg 강조). 둘 다 "지금 무엇을 보고 무엇을 할지"의 답이라 첫 줄에 나란히 둔다.
+              좌 칸 아래에 실적 지표 3장을 붙여 히어로 높이를 받는다 — 일 목록만 두면 히어로(약 400px) 옆이
+              비어 첫 줄이 한쪽으로 기운다. 일이 없어 「오늘 처리할 일」이 한 줄로 접혀도 늘려서
+              빈 카드를 만들지 않는다(접힘 계약 승계). 줄은 items-stretch 로 히어로 높이를 좌 칸에 주고, 그 높이는
+              「오늘 처리할 일」이 아니라 실적 지표 칸(flex-1)이 받는다 — 일 카드는 자기 높이 그대로라 접힘이 유지되고,
+              좌 칸 아래가 비지 않는다(2026-10-18 리뷰). */}
+          <section data-band="focus" className="grid gap-4 xl:grid-cols-[2fr_1fr] items-stretch">
+            <div className="flex h-full min-w-0 flex-col gap-4">
+              <TodayWorkCard
+                rows={todayRows}
+                loading={orderWork.isLoading || agendaLoading || approvals.isLoading}
+                failedSources={todayFailedSources}
+                onRetry={retryTodayWork}
+                orderSync={orderSync}
+              />
 
-          {/* 밴드 1: 6개월 차트(좌 2fr, 폭 확보) | 매출 목표 히어로(우 1fr). items-stretch로 높이 균형,
-              (오너 결정 A안, 2026-07-10). 종전엔 분할선 65%가 바로 아래 트라이어드와 세로로 이어졌으나,
-              2026-09-24 일정 밴드가 사이에 들어오면서 두 밴드가 인접하지 않아 그 정렬 의도는 해제됐다 */}
-          <section className="grid gap-4 xl:grid-cols-[2fr_1fr] items-stretch">
-            {/* 매출 차트 — 6개월 추이 · 연간 월별을 탭으로 전환(오너 2026-07-24). 좌측 앵커, 카드 높이에
-                맞춰 차트가 채워진다. 두 차트 모두 h-[262px] 고정이라 탭 전환에도 높이가 안 흔들린다. */}
-            <SegmentedTabCard
-              className="h-full"
-              tabs={[
-                {
-                  key: "recent6",
-                  label: "최근 6개월",
-                  render: () => (
-                    <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground">총거래액·매출총이익 추이 및 목표 대비 달성</p>
-                      {/* 오너 피드백 2026-07-10: 하단 안개 제거, 순마진은 나란한 막대, 툴팁은 매출·순마진·마진율만 */}
-                      <div className="flex-1 flex items-center justify-center">
-                        <ChartContainer config={chartConfig} className="h-[262px] w-full">
-                          <ComposedChart data={initialData.trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
-                            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                            <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
-                            {/* 연간 탭과 공통 domain — Y축 틀·목표선 고정(오너 2026-07-24) */}
-                            <YAxis domain={[0, chartYMax]} tickFormatter={(value) => `${Math.round(value / 10000)}만`} width={58} tickLine={false} axisLine={false} />
-                            <ChartTooltip content={<TrendTooltip />} />
-                            {/* 마운트 애니메이션 450ms 캡. 점선 목표선은 draw 애니메이션 충돌로 비활성 */}
-                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
-                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={20} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
-                            <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
-                          </ComposedChart>
-                        </ChartContainer>
-                      </div>
-                    </div>
-                  ),
-                },
-                {
-                  key: "annual",
-                  label: "연간 거래액",
-                  render: () => (
-                    <div className="flex flex-1 flex-col">
-                      <p className="mb-2 text-[11px] text-muted-foreground">{year}년 월별 총거래액 · 매출총이익{initialData.yearlyTrend.some((t) => t.goal != null) ? " · 점선 = 거래액 목표" : ""}</p>
-                      <div className="flex-1 flex items-center justify-center">
-                        {/* 6개월 추이와 동일 구성(매출·순마진 막대 + 목표선) + 공통 Y축 domain 으로 틀 고정 */}
-                        <ChartContainer config={chartConfig} className="h-[262px] w-full">
-                          <ComposedChart data={initialData.yearlyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
-                            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                            <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
-                            <YAxis domain={[0, chartYMax]} tickFormatter={(value) => `${Math.round(value / 10000)}만`} width={58} tickLine={false} axisLine={false} />
-                            <ChartTooltip content={<TrendTooltip />} />
-                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
-                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" radius={[4, 4, 0, 0]} maxBarSize={18} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
-                            <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
-                          </ComposedChart>
-                        </ChartContainer>
-                      </div>
-                    </div>
-                  ),
-                },
-              ]}
-            />
+              {/* 실적 지표(1x3) — 월 환산 캠페인 수 · 매출총이익 · 최근 90일 영업 전환. 매출 히어로 옆에서 같이 읽힌다. */}
+              <section data-band="metrics" className="grid flex-1 gap-4 sm:grid-cols-3">
+                <MetricCard
+                  label="월 환산 캠페인 수"
+                  value={`${initialData.scale.weightedCampaignCount.toFixed(1)}건`}
+                  prevValue={`${initialData.scale.prevWeightedCampaignCount.toFixed(1)}건`}
+                  prevPrevValue={`${initialData.scale.prevPrevWeightedCampaignCount.toFixed(1)}건`}
+                  numericValue={initialData.scale.weightedCampaignCount}
+                  prevNumericValue={initialData.scale.prevWeightedCampaignCount}
+                  currentMonthKey={currentMonthKey}
+                  prevMonthKey={prevMonthKey}
+                  prevPrevMonthKey={prevPrevMonthKey}
+                  suffix="건"
+                  decimalPlaces={1}
+                  note={`조합 그룹은 1건으로 집계 · 운영일 ${formatNumber(initialData.scale.operatingDays)}일 포함 · 월 경계 일정은 비율 배분`}
+                  icon={CalendarDays}
+                  spark={{
+                    points: initialData.trend.map((t) => t.campaignCount),
+                    months: initialData.trend.map((t) => t.month),
+                    type: "bars",
+                  }}
+                />
+                <MetricCard
+                  label="매출총이익"
+                  value={formatCurrency(initialData.profitability.expectedMargin)}
+                  prevValue={formatCurrency(initialData.profitability.prevExpectedMargin)}
+                  prevPrevValue={formatCurrency(initialData.profitability.prevPrevExpectedMargin)}
+                  numericValue={initialData.profitability.expectedMargin}
+                  prevNumericValue={initialData.profitability.prevExpectedMargin}
+                  currentMonthKey={currentMonthKey}
+                  prevMonthKey={prevMonthKey}
+                  prevPrevMonthKey={prevPrevMonthKey}
+                  isCurrency
+                  note="진행 중 판단용 추정치"
+                  icon={TrendingUp}
+                  tone="orange"
+                  spark={{
+                    points: initialData.trend.map((t) => t.expectedMargin),
+                    months: initialData.trend.map((t) => t.month),
+                    type: "line",
+                  }}
+                />
 
-            {/* 매출 목표 히어로 — 우측 (A안 수직 스택). WAG 팔레트: --hero-deep 토큰, 공유 elevation(shadow-soft-lg) */}
-            <Card className="overflow-hidden border-0 bg-[var(--hero-deep)] text-white shadow-soft-lg px-6 py-3 flex flex-col h-full min-h-[312px]">
+                {/* 최근 90일 영업 전환 — 형제 KPI 카드와 세로 밀도 정합(오너 피드백 2026-07-14):
+                    내용을 flex로 세로 분산해 하단 여백을 없애고, 단계별 전환율을 병기해 판독 밀도를 높인다 */}
+                <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0 h-full flex flex-col">
+                  <CardContent className="px-4 py-3 flex flex-1 flex-col">
+                    {/* 서브텍스트는 제목 우측에 이어서 — 형제 KPI 카드와 형식 통일(오너 2026-07-24) */}
+                    {/* flex-wrap + 부연 min-w-[8rem]: 3열이 좁아지면(640px·200% 확대) 부연이 제목 다음 줄로 내려간다. */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pb-2 border-b border-slate-100">
+                      <UsersRound className="size-4 shrink-0 text-[var(--primary)]" />
+                      <p className="shrink-0 text-[13px] font-semibold text-[var(--primary)] tracking-tight">최근 90일 영업 전환</p>
+                      {/* 짧은 두 마디라 좁으면 말줄임 대신 줄을 바꾼다 — 잘린 채 읽을 방법이 없던 자리(2026-10-18 리뷰 HIGH). */}
+                      <p
+                        className="min-w-[8rem] flex-1 break-keep text-[11px] text-muted-foreground"
+                        title={`확정 ${initialData.outreach90d.confirmed}건 · 확정률 ${ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}`}
+                      >
+                        확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
+                      </p>
+                    </div>
+                    {/* 퍼널 막대 — 접촉→응답→전환 폭 비율이 곧 전환 효율. 트랙(전체폭 기준선)+단계별 전환율 병기 */}
+                    <div className="mt-3 flex flex-1 flex-col justify-center gap-3">
+                      {[
+                        { label: "접촉", count: initialData.outreach90d.total, base: initialData.outreach90d.total, strong: false, showRate: false },
+                        { label: "응답", count: initialData.outreach90d.responded, base: initialData.outreach90d.total, strong: false, showRate: true },
+                        { label: "전환", count: initialData.outreach90d.converted, base: initialData.outreach90d.total, strong: true, showRate: true },
+                      ].map((row, i) => (
+                        <div key={row.label} className="flex items-center gap-2.5">
+                          <span className="w-[26px] shrink-0 text-[11px] font-medium text-muted-foreground">{row.label}</span>
+                          {/* 트랙 = 전체폭 기준선이라 빈 구간이 보여야 비율이 읽힌다(오너 2026-10-06: slate-100 은 흰 카드
+                              대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
+                              약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
+                              올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 앵커 틸의 농도 사다리
+                              (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 차트 계열
+                              구분 색이라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
+                          <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
+                            {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
+                            <div
+                              className="h-full rounded-full animate-grow-x"
+                              style={{
+                                width: row.base > 0 ? `${Math.max((row.count / row.base) * 100, 2)}%` : "2%",
+                                backgroundColor: "var(--chart-1)",
+                                opacity: row.strong ? 1 : 0.6,
+                                animationDelay: `${i * 60}ms`,
+                              }}
+                            />
+                          </div>
+                          <span className="w-[30px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                            {row.showRate ? ratioText(row.count, row.base) : ""}
+                          </span>
+                          {/* 값 크기·무게는 형제 MetricCard 당월 값(13px semibold)과 통일(오너 2026-07-24) */}
+                          <span className="w-[34px] shrink-0 text-right text-[13px] font-semibold text-[#1F2A30] tabular-nums">{row.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+            </div>
+
+            {/* 거래액 목표 히어로 — WAG 팔레트: --hero-deep 토큰, 공유 elevation(shadow-soft-lg = 페이지당 1개) */}
+            <Card className="overflow-hidden border-0 bg-[var(--hero-deep)] text-white shadow-soft-lg px-6 py-3 flex flex-col">
               {/* 1. 연간 누적 (위) */}
               <div className="space-y-3">
                 <div className="flex items-start justify-between">
@@ -1069,7 +854,6 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   })}
                 </div>
                 <p className="text-[10px] text-white/80 leading-none">{annualActionHint(annualRate, initialData.goals.annualTarget != null)}</p>
-                <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_YTD_SCOPE_CAPTION}</p>
               </div>
 
               {/* 구분선 및 이번 달 매출 (아래) */}
@@ -1113,7 +897,6 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 </div>
                 <p className="text-[10px] text-white/80 leading-none">{monthlyActionHint(monthRate, initialData.goals.monthTarget != null)}</p>
 
-                <p className="text-[11px] text-white/75 leading-none">{DASHBOARD_SCOPE_CAPTION}</p>
 
                 {/* 이전 누적 추이 행 (5월, 4월) */}
                 <div className="space-y-2.5 pt-1">
@@ -1132,309 +915,130 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 </div>
               </div>
             </Card>
-
           </section>
 
-          {/* 밴드 2: 일정 계열 탭 묶음 — 같은 시간축의 조감(12주 커버리지)·상세(14일). 두 풀폭 밴드를
-              한 프레임에 묶어 세로 한 밴드를 절약한다. 일정 커버리지가 없으면 14일만 단독. 패널 min-h 로
-              탭 전환 시 높이 튐을 억제한다.
-              배치(오너 2026-09-24): 트라이어드(활성 셀러·영업 팔로업·데이터 점검)보다 위 — 일정 공백·
-              다가올 일정이 그날 운영 판단의 선행 정보라 매출 밴드 바로 아래로 올렸다(종전 2026-07-24
-              배치는 트라이어드 아래였다). */}
-          {initialData.scheduleGapBriefing ? (
+          {/* 밴드 2: 거래액 차트(풀폭) — 최근 6개월 · 연간 월별을 탭으로 전환(오너 2026-07-24). 두 차트 모두
+              h-[262px] 고정 + 공통 Y축이라 탭 전환에 높이·틀이 안 흔들린다. 계열은 범례로 이름을 붙이고
+              막대 폭(총거래액 넓게 · 매출총이익 좁게)도 달라 색만으로 가르지 않는다(P8). */}
+          <section data-band="sales-chart">
             <SegmentedTabCard
+              className="h-full"
               tabs={[
                 {
-                  key: "coverage",
-                  label: "일정 커버리지",
-                  count: initialData.scheduleGapBriefing.summary.riskyGapCount,
-                  countTone: "urgent",
+                  key: "recent6",
+                  label: "최근 6개월",
                   render: () => (
-                    <div className="min-h-[300px]">
-                      <ScheduleGapBriefingBody data={initialData.scheduleGapBriefing!} />
+                    <div className="flex flex-1 flex-col">
+                      <SalesChartCaption
+                        caption="월별 추이 · 목표 대비"
+                        showGoal={initialData.trend.some((t) => t.goal != null)}
+                      />
+                      {/* 오너 피드백 2026-07-10: 하단 안개 제거, 순마진은 나란한 막대, 툴팁은 매출·순마진·마진율만 */}
+                      <div className="flex-1 flex items-center justify-center">
+                        <ChartContainer config={chartConfig} className="h-[262px] w-full">
+                          <ComposedChart data={initialData.trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
+                            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                            <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
+                            {/* 연간 탭과 공통 domain — Y축 틀·목표선 고정(오너 2026-07-24) */}
+                            <YAxis domain={[0, chartYMax]} tickFormatter={formatAxisWon} width={58} tickLine={false} axisLine={false} />
+                            <ChartTooltip content={<TrendTooltip />} />
+                            {/* 마운트 애니메이션 450ms 캡. 점선 목표선은 draw 애니메이션 충돌로 비활성 */}
+                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={32} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" stroke="var(--chart-2)" strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={20} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
+                          </ComposedChart>
+                        </ChartContainer>
+                      </div>
                     </div>
                   ),
                 },
                 {
-                  key: "upcoming",
-                  label: "다가올 14일 일정",
-                  count: initialData.upcomingEvents.length,
-                  countTone: "neutral",
+                  key: "annual",
+                  label: "연간 거래액",
                   render: () => (
-                    <div className="min-h-[300px]">
-                      <div className="mb-3 flex items-center gap-2 flex-wrap">
-                        <CalendarSyncBadge connected={initialData.googleCalendarConnected} />
-                        <span className="text-[11px] text-muted-foreground">진행 예정인 정산 및 주요 마일스톤</span>
-                      </div>
-                      <UpcomingScheduleBody
-                        events={initialData.upcomingEvents}
-                        thisWeekLabel={thisWeekLabel}
-                        nextWeekLabel={nextWeekLabel}
+                    <div className="flex flex-1 flex-col">
+                      <SalesChartCaption
+                        caption={`${year}년 월별`}
+                        showGoal={initialData.yearlyTrend.some((t) => t.goal != null)}
                       />
+                      <div className="flex-1 flex items-center justify-center">
+                        {/* 6개월 추이와 동일 구성(매출·순마진 막대 + 목표선) + 공통 Y축 domain 으로 틀 고정 */}
+                        <ChartContainer config={chartConfig} className="h-[262px] w-full">
+                          <ComposedChart data={initialData.yearlyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
+                            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                            <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
+                            <YAxis domain={[0, chartYMax]} tickFormatter={formatAxisWon} width={58} tickLine={false} axisLine={false} />
+                            <ChartTooltip content={<TrendTooltip />} />
+                            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Bar dataKey="expectedMargin" fill="var(--color-expectedMargin)" stroke="var(--chart-2)" strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={18} isAnimationActive={!reducedMotion} animationDuration={450} animationEasing="ease-out" />
+                            <Line dataKey="goal" stroke="var(--color-goal)" strokeDasharray="4 4" dot={false} legendType="none" isAnimationActive={false} />
+                          </ComposedChart>
+                        </ChartContainer>
+                      </div>
                     </div>
                   ),
                 },
               ]}
             />
-          ) : (
-            <UpcomingScheduleCard
-              events={initialData.upcomingEvents}
-              thisWeekLabel={thisWeekLabel}
-              nextWeekLabel={nextWeekLabel}
-              googleCalendarConnected={initialData.googleCalendarConnected}
-            />
-          )}
+          </section>
 
-          {/* 밴드 3: 할 일(반응)·기회(셀러 모멘텀)·점검(데이터) 3렌즈 triad — 3등분 (오너 결정 2026-07-10) */}
-          {/* 트라이어드 배치(오너 2026-07-24): 스탯 카드(활성 셀러)를 좌측에, 탭 카드 2종(핵심 업무·
-              데이터 점검)을 우측에 모아 같은 형태끼리 인접시킨다. xl 데스크톱에서만 order 로 재배치
-              (모바일 스택은 DOM 순서 유지). */}
-          <section className="grid gap-4 xl:grid-cols-3 items-stretch min-h-0">
-            <Card className="border-black/5 bg-white/85 shadow-soft-sm h-full flex flex-col min-h-0 xl:order-2">
-              <CardContent className="px-4 py-3 flex flex-col flex-1">
-                {/* 움브렐라 제목 "오늘의 핵심 업무" 제거(오너 2026-07-24) — 데이터 점검처럼 세부항목
-                    탭[영업 팔로업|지연된 정산]이 곧 카드 헤더다. 카운트는 각 탭 배지가 담당. */}
-                <div className="flex flex-col flex-1 min-h-0">
-                  {agendaLoading && agendaData.tasks.length === 0 && agendaData.settlements.length === 0 ? (
-                    /* 캐러셀 전환으로 로딩도 단일 전폭 페인 — 2열 스켈레톤은 옛 레이아웃 잔상을 만든다 */
-                    <div className="space-y-2 flex-1 min-h-0">
-                      {Array.from({ length: 3 }).map((_, i) => (
-                        <div key={i} className="rounded-xl border border-slate-100 bg-slate-50/40 p-2.5 animate-pulse">
-                          <Skeleton className="h-3.5 w-2/3 bg-slate-200" />
-                          <div className="mt-1.5 flex gap-2">
-                            <Skeleton className="h-3 w-24 bg-slate-200" />
-                            <Skeleton className="h-3 w-12 bg-slate-200" />
-                          </div>
+          {/* 밴드 3: 일정 계열 탭 묶음 — 같은 시간축의 조감(12주 커버리지)·상세(14일). 두 풀폭 밴드를
+              한 프레임에 묶어 세로 한 밴드를 절약한다. 일정 커버리지가 없으면 14일만 단독. 패널 min-h 로
+              탭 전환 시 높이 튐을 억제한다. 일정 공백·다가올 일정은 그날 운영 판단의 선행 정보라 점검 밴드보다
+              위(오너 2026-09-24). */}
+          <section data-band="schedule">
+            {initialData.scheduleGapBriefing ? (
+              <SegmentedTabCard
+                tabs={[
+                  {
+                    key: "coverage",
+                    label: "일정 커버리지",
+                    count: initialData.scheduleGapBriefing.summary.riskyGapCount,
+                    countTone: "urgent",
+                    render: () => (
+                      <div className="min-h-[300px]">
+                        <ScheduleGapBriefingBody data={initialData.scheduleGapBriefing!} />
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "upcoming",
+                    label: "다가올 14일 일정",
+                    count: initialData.upcomingEvents.length,
+                    countTone: "neutral",
+                    render: () => (
+                      <div className="min-h-[300px]">
+                        <div className="mb-3 flex items-center gap-2 flex-wrap">
+                          <CalendarSyncBadge connected={initialData.googleCalendarConnected} />
+                          <span className="text-[11px] text-muted-foreground">진행 예정인 정산 및 주요 마일스톤</span>
                         </div>
-                      ))}
-                    </div>
-                  ) : agendaError ? (
-                    <div className="rounded-xl border border-red-100 bg-red-50/50 p-4 text-center my-auto">
-                      <p className="text-xs text-red-600">{agendaError}</p>
-                      <button
-                        className="mt-2.5 h-7 text-[10px] inline-flex items-center justify-center px-3 border border-red-200 rounded-md bg-white hover:bg-red-50 text-red-700 transition-colors"
-                        onClick={fetchAgenda}
-                      >
-                        다시 시도
-                      </button>
-                    </div>
-                  ) : (agendaData.tasks.length + agendaData.settlements.length) === 0 ? (
-                    <div className="flex flex-col items-center justify-center text-center gap-3 flex-1">
-                      {/* 완료 보상 pop-in 1회 — agendaLoading 초기값 true라 마운트 시 이중 발화 없음 */}
-                      <div className="pop-in-once flex size-9 items-center justify-center rounded-full bg-slate-50 border border-slate-100 text-slate-400">
-                        <Sparkles className="size-4 text-blue-500/80" />
+                        <UpcomingScheduleBody
+                          events={initialData.upcomingEvents}
+                          thisWeekLabel={thisWeekLabel}
+                          nextWeekLabel={nextWeekLabel}
+                        />
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-700">오늘 할 일이 모두 완료되었습니다!</p>
-                        <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                          자동 팔로업 제안 리드나 기한이 경과된 정산 내역 없음
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col flex-1 min-h-0">
-                      {/* 데이터 점검처럼 밑줄 탭으로 전환(오너 2026-07-24) — 비활성 탭도 카운트 배지로
-                          알림 전달(팔로업=info 리마인드, 정산=urgent 지연). 각 목록이 카드 전폭을 받아
-                          딜명·셀러명이 온전히 읽힌다(반쪽 2열 잘림 해소). */}
-                      <SegmentedTabBar
-                        idPrefix={agendaTabId}
-                        active={agendaTab}
-                        onSelect={(k) => setAgendaTab(k as "tasks" | "settlements")}
-                        tabs={[
-                          { key: "tasks", label: "영업 팔로업", count: agendaData.tasks.length, countTone: "info" },
-                          { key: "settlements", label: "지연된 정산", count: agendaData.settlements.length, countTone: "urgent" },
-                        ]}
-                      />
-                      {/* 패널 고정 높이(데이터 점검 1순위와 동일 h-[210px]) — 정산 카드가 많아도 내부
-                          스크롤로 흡수해 카드·행 높이가 커지지 않는다(오너 2026-07-24 지적 반영) */}
-                      <div
-                        role="tabpanel"
-                        id={`${agendaTabId}-panel-${agendaTab}`}
-                        aria-labelledby={`${agendaTabId}-tab-${agendaTab}`}
-                        className="mt-2 flex flex-col h-[210px]"
-                      >
-                        {/* 스크롤 대신 상위 N건 + "더보기" 팝오버(데이터 점검과 동일, 오너 2026-07-24).
-                            N건 캡이라 카드 높이가 데이터 양과 무관하게 안정적이다. */}
-                        {agendaTab === "tasks" ? (
-                          agendaData.tasks.length === 0 ? (
-                            <div className="flex-1 flex items-center justify-center text-center text-xs text-slate-500 border border-dashed border-slate-150 rounded-xl bg-slate-50/30">
-                              팔로업할 영업 리드 없음
-                            </div>
-                          ) : (
-                            <>
-                              {/* stagger-cascade: fetch 후 도착하는 리스트만 순차 등장(ss-motion use-case 정합) */}
-                              <div className="stagger-fade-in space-y-2">
-                                {agendaData.tasks.slice(0, AGENDA_PREVIEW_COUNT).map(renderTaskRow)}
-                              </div>
-                              {agendaData.tasks.length > AGENDA_PREVIEW_COUNT && (
-                                <AgendaMore
-                                  open={tasksMoreOpen}
-                                  onOpenChange={setTasksMoreOpen}
-                                  moreCount={agendaData.tasks.length - AGENDA_PREVIEW_COUNT}
-                                  title={`영업 팔로업 ${agendaData.tasks.length}건`}
-                                  sub="자동 팔로업 제안 리드"
-                                >
-                                  {agendaData.tasks.map(renderTaskRow)}
-                                </AgendaMore>
-                              )}
-                            </>
-                          )
-                        ) : agendaData.settlements.length === 0 ? (
-                          <div className="flex-1 flex items-center justify-center text-center text-xs text-slate-500 border border-dashed border-slate-150 rounded-xl bg-slate-50/30">
-                            지연된 정산 내역 없음
-                          </div>
-                        ) : (
-                          <>
-                            <div className="stagger-fade-in space-y-2">
-                              {agendaData.settlements.slice(0, AGENDA_PREVIEW_COUNT).map((item) => renderSettlementRow(item))}
-                            </div>
-                            {agendaData.settlements.length > AGENDA_PREVIEW_COUNT && (
-                              <AgendaMore
-                                open={settlementsMoreOpen}
-                                onOpenChange={setSettlementsMoreOpen}
-                                moreCount={agendaData.settlements.length - AGENDA_PREVIEW_COUNT}
-                                title={`지연된 정산 ${agendaData.settlements.length}건`}
-                                sub="기한이 경과된 정산 · 행을 누르면 정산 확인"
-                              >
-                                {agendaData.settlements.map((item) => renderSettlementRow(item, () => setSettlementsMoreOpen(false)))}
-                              </AgendaMore>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                    ),
+                  },
+                ]}
+              />
+            ) : (
+              <UpcomingScheduleCard
+                events={initialData.upcomingEvents}
+                thisWeekLabel={thisWeekLabel}
+                nextWeekLabel={nextWeekLabel}
+                googleCalendarConnected={initialData.googleCalendarConnected}
+              />
+            )}
+          </section>
 
-            {/* 활성 셀러 현황(구 "셀러 베이스 모멘텀" — 알기 쉬운 한글 표기, 오너 2026-07-24)
-                — 관계 기반 매출 근원의 성장/이탈 선행지표 (오너 결정 2026-07-10). 좌측 배치(order-1) */}
-            <Card className="border-black/5 bg-white/85 shadow-soft-sm h-full flex flex-col xl:order-1">
-              <CardContent className="px-4 py-3 flex flex-col flex-1">
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                  <UsersRound className="size-4.5 text-[var(--primary)]" />
-                  <h3 className="shrink-0 text-sm font-bold text-[var(--primary)] tracking-tight">활성 셀러 현황</h3>
-                  {/* 서브텍스트는 제목 우측에 이어서(오너 2026-07-24) */}
-                  <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">최근 90일 활성 · 직전 90일 대비 순증감</p>
-                </div>
-
-                {/* 대표값은 18px(카드 headline 계층) — 24px는 매출 히어로 전용이라 여기 쓰면
-                    일반 카드가 히어로와 같은 크기로 충돌한다(오너 2026-07-24: 전역 숫자 위계 정리) */}
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-lg font-bold tracking-tight text-[#1F2A30]">{initialData.sellerMomentum.active}</span>
-                  <span className="text-xs text-muted-foreground">명 활성</span>
-                  {initialData.sellerMomentum.netChange !== 0 && (
-                    <span className={`inline-flex items-center text-[11px] gap-0.5 font-semibold ${initialData.sellerMomentum.netChange > 0 ? "text-[var(--status-success)]" : "text-[var(--status-caution-text)]"}`}>
-                      <span>{initialData.sellerMomentum.netChange > 0 ? "▲" : "▼"}</span>
-                      <span>{Math.abs(initialData.sellerMomentum.netChange)}명</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* 월별 활성(해당 월 캠페인 보유) 셀러 미니 막대 — 값 라벨 포함.
-                    캡션 필수(오너 2026-07-10): 위 큰 숫자는 90일 창, 막대는 월 창이라 기준이 달라
-                    캡션 없이는 수치 불일치(예: 활성 9 vs 월별 최대 5)로 오독됨.
-                    막대는 HTML flex로 그린다(오너 2026-07-24) — 이전 SVG는 preserveAspectRatio="none"으로
-                    카드 폭만큼 가로 확대돼 안에 넣은 <text> 값 라벨의 글자가 늘어나 보였다(스파크라인과 같은 함정). */}
-                <div className="mt-2">
-                  <p className="text-[9px] font-medium text-muted-foreground mb-0.5">월별 활성 셀러 (해당 월 캠페인 보유)</p>
-                  {(() => {
-                    const pts = initialData.trend.map((t) => t.activeSellers);
-                    const max = Math.max(...pts, 1);
-                    return (
-                      <div className="flex items-end gap-1.5 h-[44px]">
-                        {pts.map((p, i) => {
-                          const barH = Math.max(4, (p / max) * 30);
-                          const last = i === pts.length - 1;
-                          return (
-                            <div key={i} className="flex flex-1 flex-col items-center justify-end">
-                              <span className={`mb-0.5 text-[9px] leading-none tabular-nums ${last ? "font-bold text-[var(--chart-1)]" : "font-medium text-muted-foreground"}`}>
-                                {Math.round(p)}
-                              </span>
-                              <div
-                                className="w-full rounded-[2px] animate-grow-y"
-                                style={{ height: `${barH}px`, backgroundColor: last ? "var(--chart-1)" : "var(--chart-2)", opacity: last ? 1 : 0.35, animationDelay: `${i * 25}ms` }}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                  <div className="mt-1 flex gap-1.5">
-                    {initialData.trend.map((t) => (
-                      <span key={t.month} className="flex-1 text-center text-[9px] text-muted-foreground">{parseInt(t.month.slice(5), 10)}월</span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 pt-2 border-t border-black/5">
-                  <div className="flex justify-between items-baseline border-r border-black/5 pr-1.5">
-                    <span className="text-[10px] text-muted-foreground">신규 (이번 달)</span>
-                    <span className="text-xs font-bold text-[var(--status-success)]">+{initialData.sellerMomentum.newThisMonth}</span>
-                  </div>
-                  <div className="flex justify-between items-baseline pl-1.5">
-                    <span className="text-[10px] text-muted-foreground">휴면</span>
-                    <span className="text-xs font-bold text-[var(--status-caution-text)]">{initialData.sellerMomentum.dormant}명</span>
-                  </div>
-                </div>
-
-                {initialData.sellerMomentum.dormant > 0 && (
-                  /* 페이지 이동 대신 팝업으로 대상 확인(오너 2026-07-24) — 셀러 상세는 팝업 안 행에서 진입.
-                     모달 Dialog가 아니라 다른 팝업(레이더 잡 상세 등)과 같은 경량 Popover로 표시
-                     (오너 2026-07-24 2차: "팝업만 강조할 필요 없이 간단히 정보 보여주는 수준") */
-                  <Popover open={isDormantListOpen} onOpenChange={setIsDormantListOpen}>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="crm-hit-area-wide mt-auto pt-3 self-start text-[11px] font-medium text-[var(--primary)] hover:underline inline-flex items-center gap-1 rounded focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
-                      >
-                        휴면 {initialData.sellerMomentum.dormant}명 재계약 검토
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      sideOffset={6}
-                      collisionPadding={12}
-                      className="flex w-[320px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay max-h-[min(420px,var(--radix-popover-content-available-height))]"
-                    >
-                      <div className="shrink-0 border-b border-slate-100 bg-slate-50/70 px-3.5 py-2.5">
-                        <p className="text-[12px] font-bold text-slate-700">
-                          휴면 셀러 {initialData.sellerMomentum.dormant}명 · 재계약 검토
-                        </p>
-                        <p className="text-[10px] text-slate-500">최근 90일 활동 없음 · 최근 활동순</p>
-                      </div>
-                      <ul className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] divide-y divide-slate-100 px-3.5">
-                        {initialData.sellerMomentum.dormantList.map((seller) => (
-                          <li key={seller.id} className="flex items-center justify-between gap-3 py-2">
-                            <Link
-                              href={`/sellers/${seller.id}`}
-                              className="crm-hit-area-wide min-w-0 truncate text-[13px] font-medium text-slate-800 hover:text-[var(--primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                            >
-                              {seller.name}
-                            </Link>
-                            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                              마지막 캠페인{" "}
-                              <span className="font-medium text-slate-600">
-                                {formatDistanceToNow(new Date(seller.lastCampaignAt), { addSuffix: true, locale: ko })}
-                              </span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </PopoverContent>
-                  </Popover>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* 트라이어드 3번째 칸 = 예외 알림 계열 탭 묶음(오너 2026-07-24): 데이터 점검 + 최저가 점검.
-                둘 다 "확인 필요 N건"이라 카운트 배지 탭으로 묶으면 자리 1칸에 알림 2개가 산다.
-                #101이 최저가를 풀폭으로 뒀던 것을 오너 지시로 이 트라이어드 칸에 흡수(풀폭 밴드 제거).
-                카드 높이는 트라이어드 items-stretch로 형제 칸에 고정되고, 패널은 flex-1 내부 스크롤이라
-                탭 전환·데이터 증감에도 카드 높이가 흔들리지 않는다(오너 요구). 우측 배치(order-3) */}
-            <div className="h-full min-h-0 xl:order-3">
+          {/* 밴드 4: 점검(반폭) | 과세기준(반폭). 왼쪽은 예외 알림 탭 묶음(데이터 점검 + 최저가 점검 — 둘 다
+              "확인 필요 N건"이라 카운트 배지 탭 한 자리에 알림 2개, 오너 2026-07-24), 오른쪽은 네이버 판매자 등급
+              과세기준매출 여유(설계 2026-09-29, 항상 표시 — 등급 갱신이 반년 단위라 매일의 판단보다 아래).
+              종전 이 줄의 활성 셀러 카드는 판단을 바꾸지 않는 개수 카드라 뺐고(오너 2026-10-17), 맨 아래
+              시스템 레이더는 설정 → 외부 연동 진단 → 「자동화 작업 상태」로 옮겼다. */}
+          <section data-band="checks" className="grid gap-4 xl:grid-cols-2 items-stretch min-h-0">
+            <div id={DATA_CHECK_ANCHOR} className="h-full min-h-0 scroll-mt-20">
               {/* bodyClassName 고정 높이(h-[210px]) — 두 탭 패널을 동일 높이·내부 스크롤로 만들어,
                   최저가 위반이 데이터 점검 5행 캡보다 많아져도 탭 전환·데이터 증감에 카드 높이가
                   흔들리지 않는다(ss-ux P0 반영). 데이터 점검은 5행+더보기라 내재적으로 유계. */}
@@ -1472,42 +1076,10 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 ]}
               />
             </div>
+            <TaxableRevenueCard tracker={initialData.taxableRevenueTracker} />
           </section>
-
-          {/* 밴드 4: 네이버 판매자 등급 과세기준매출 여유(설계 2026-09-29, 항상 표시) — 등급 갱신이 반년
-              단위라 매일의 운영 판단(밴드 0~3)보다 아래, 관제 정보(시스템 레이더)보다 위에 풀폭으로 둔다.
-              세 칸(여유 · 채널 소계 · 넘었을 때 비용)이 가로로 읽혀야 해서 트라이어드 칸에 넣지 않았다. */}
-          <TaxableRevenueCard tracker={initialData.taxableRevenueTracker} />
-
-          {/* 시스템 레이더 — 자동화 스케줄 모니터링. 판단 빈도가 낮은 관제 정보라 최하단 풀폭 스트립으로 배치 */}
-          <SystemRadarCard />
         </div>
       </main>
-      <QuickSettlementModal
-        isOpen={isSettlementModalOpen}
-        onClose={() => {
-          setIsSettlementModalOpen(false);
-          setSelectedSettlement(null);
-        }}
-        onSuccess={() => {
-          fetchAgenda();
-          window.location.reload();
-        }}
-        data={
-          selectedSettlement
-            ? {
-                id: selectedSettlement.id,
-                title: selectedSettlement.title,
-                sellerName: selectedSettlement.sellerName ?? "",
-                accountNumber: selectedSettlement.accountNumber ?? null,
-                // ⛔ 여기서 슬롯을 다시 유도하지 말 것 — 서버가 이미 어느 칸이 지연인지
-                // 판정했다. 없으면(구 배포 응답) 모달이 스스로 닫는다.
-                overdueSlot: selectedSettlement.overdueSlot ?? null,
-                targetAmount: selectedSettlement.targetAmount ?? null,
-              }
-            : null
-        }
-      />
     </CrmShell>
   );
 }

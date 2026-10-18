@@ -70,7 +70,6 @@ const EXEMPTIONS: Exemption[] = [
   { file: "app/coupang-partners/page.tsx", token: "text-slate-400", count: 1, reason: `${DARK_400} — 추천 섹션` },
   { file: "components/mobile/mobile-standalone-gate.tsx", token: "text-slate-400", count: 1, reason: DARK_400 },
   { file: "components/crm/asset-library.tsx", token: "text-slate-400", count: 2, reason: ICON_WRAPPER },
-  { file: "components/crm/dashboard-home.tsx", token: "text-slate-400", count: 1, reason: ICON_WRAPPER },
   { file: "components/mobile/mobile-campaign-detail-sheet.tsx", token: "text-slate-400", count: 1, reason: ICON_WRAPPER },
   { file: "components/crm/bulk-content-collect-button.tsx", token: "text-slate-400", count: 1, reason: DISABLED },
 ];

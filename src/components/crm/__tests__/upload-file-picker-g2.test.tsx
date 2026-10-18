@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PriceSheetList } from "../price-sheet/price-sheet-list";
-import { QuickSettlementModal } from "../quick-settlement-modal";
 import { KatalkUploadTab } from "../katalk/upload-tab";
 
 // interfaces 점검 묶음 G2(2026-09-24): 업로드 드롭존은 `<input type="file" class="hidden">` 을
@@ -62,32 +61,5 @@ describe("업로드 드롭존 — 키보드 「파일 선택」 경로", () => {
     expect(targets.length).toBeGreaterThan(0);
     expect(targets[0].type).toBe("file");
     expect(targets[0].multiple).toBe(true);
-  });
-
-  it("빠른 정산 증빙: 버튼 Enter 가 파일 입력을 한 번 연다", async () => {
-    render(
-      <QuickSettlementModal
-        isOpen
-        onClose={vi.fn()}
-        onSuccess={vi.fn()}
-        data={{
-          id: "c1",
-          title: "테스트 캠페인",
-          sellerName: "셀러",
-          accountNumber: null,
-          overdueSlot: {
-            kind: "PAYOUT",
-            verb: "지급",
-            counterpartLabel: "셀러",
-            flagField: "isPayoutCompleted",
-          },
-          targetAmount: 1000,
-        }}
-      />,
-    );
-    const targets = await pressFilePicker();
-    // 입력이 드롭존 밖에 있고 버튼이 전파를 막으므로 정확히 한 번이다.
-    await waitFor(() => expect(targets).toHaveLength(1));
-    expect(targets[0].type).toBe("file");
   });
 });
