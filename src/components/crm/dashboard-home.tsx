@@ -686,99 +686,99 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 orderSync={orderSync}
               />
 
-            {/* 실적 지표(1x3) — 월 환산 캠페인 수 · 매출총이익 · 최근 90일 영업 전환. 매출 히어로 옆에서 같이 읽힌다. */}
-            <section data-band="metrics" className="grid gap-4 sm:grid-cols-3">
-              <MetricCard
-                label="월 환산 캠페인 수"
-                value={`${initialData.scale.weightedCampaignCount.toFixed(1)}건`}
-                prevValue={`${initialData.scale.prevWeightedCampaignCount.toFixed(1)}건`}
-                prevPrevValue={`${initialData.scale.prevPrevWeightedCampaignCount.toFixed(1)}건`}
-                numericValue={initialData.scale.weightedCampaignCount}
-                prevNumericValue={initialData.scale.prevWeightedCampaignCount}
-                currentMonthKey={currentMonthKey}
-                prevMonthKey={prevMonthKey}
-                prevPrevMonthKey={prevPrevMonthKey}
-                suffix="건"
-                decimalPlaces={1}
-                note={`조합 그룹은 1건으로 집계 · 운영일 ${formatNumber(initialData.scale.operatingDays)}일 포함 · 월 경계 일정은 비율 배분`}
-                icon={CalendarDays}
-                spark={{
-                  points: initialData.trend.map((t) => t.campaignCount),
-                  months: initialData.trend.map((t) => t.month),
-                  type: "bars",
-                }}
-              />
-              <MetricCard
-                label="매출총이익"
-                value={formatCurrency(initialData.profitability.expectedMargin)}
-                prevValue={formatCurrency(initialData.profitability.prevExpectedMargin)}
-                prevPrevValue={formatCurrency(initialData.profitability.prevPrevExpectedMargin)}
-                numericValue={initialData.profitability.expectedMargin}
-                prevNumericValue={initialData.profitability.prevExpectedMargin}
-                currentMonthKey={currentMonthKey}
-                prevMonthKey={prevMonthKey}
-                prevPrevMonthKey={prevPrevMonthKey}
-                isCurrency
-                note="진행 중 판단용 추정치"
-                icon={TrendingUp}
-                tone="orange"
-                spark={{
-                  points: initialData.trend.map((t) => t.expectedMargin),
-                  months: initialData.trend.map((t) => t.month),
-                  type: "line",
-                }}
-              />
+              {/* 실적 지표(1x3) — 월 환산 캠페인 수 · 매출총이익 · 최근 90일 영업 전환. 매출 히어로 옆에서 같이 읽힌다. */}
+              <section data-band="metrics" className="grid gap-4 sm:grid-cols-3">
+                <MetricCard
+                  label="월 환산 캠페인 수"
+                  value={`${initialData.scale.weightedCampaignCount.toFixed(1)}건`}
+                  prevValue={`${initialData.scale.prevWeightedCampaignCount.toFixed(1)}건`}
+                  prevPrevValue={`${initialData.scale.prevPrevWeightedCampaignCount.toFixed(1)}건`}
+                  numericValue={initialData.scale.weightedCampaignCount}
+                  prevNumericValue={initialData.scale.prevWeightedCampaignCount}
+                  currentMonthKey={currentMonthKey}
+                  prevMonthKey={prevMonthKey}
+                  prevPrevMonthKey={prevPrevMonthKey}
+                  suffix="건"
+                  decimalPlaces={1}
+                  note={`조합 그룹은 1건으로 집계 · 운영일 ${formatNumber(initialData.scale.operatingDays)}일 포함 · 월 경계 일정은 비율 배분`}
+                  icon={CalendarDays}
+                  spark={{
+                    points: initialData.trend.map((t) => t.campaignCount),
+                    months: initialData.trend.map((t) => t.month),
+                    type: "bars",
+                  }}
+                />
+                <MetricCard
+                  label="매출총이익"
+                  value={formatCurrency(initialData.profitability.expectedMargin)}
+                  prevValue={formatCurrency(initialData.profitability.prevExpectedMargin)}
+                  prevPrevValue={formatCurrency(initialData.profitability.prevPrevExpectedMargin)}
+                  numericValue={initialData.profitability.expectedMargin}
+                  prevNumericValue={initialData.profitability.prevExpectedMargin}
+                  currentMonthKey={currentMonthKey}
+                  prevMonthKey={prevMonthKey}
+                  prevPrevMonthKey={prevPrevMonthKey}
+                  isCurrency
+                  note="진행 중 판단용 추정치"
+                  icon={TrendingUp}
+                  tone="orange"
+                  spark={{
+                    points: initialData.trend.map((t) => t.expectedMargin),
+                    months: initialData.trend.map((t) => t.month),
+                    type: "line",
+                  }}
+                />
 
-              {/* 최근 90일 영업 전환 — 형제 KPI 카드와 세로 밀도 정합(오너 피드백 2026-07-14):
-                  내용을 flex로 세로 분산해 하단 여백을 없애고, 단계별 전환율을 병기해 판독 밀도를 높인다 */}
-              <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0 h-full flex flex-col">
-                <CardContent className="px-4 py-3 flex flex-1 flex-col">
-                  {/* 서브텍스트는 제목 우측에 이어서 — 형제 KPI 카드와 형식 통일(오너 2026-07-24) */}
-                  <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                    <UsersRound className="size-4 shrink-0 text-[var(--primary)]" />
-                    <p className="shrink-0 text-[13px] font-semibold text-[var(--primary)] tracking-tight">최근 90일 영업 전환</p>
-                    <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                      확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
-                    </p>
-                  </div>
-                  {/* 퍼널 막대 — 접촉→응답→전환 폭 비율이 곧 전환 효율. 트랙(전체폭 기준선)+단계별 전환율 병기 */}
-                  <div className="mt-3 flex flex-1 flex-col justify-center gap-3">
-                    {[
-                      { label: "접촉", count: initialData.outreach90d.total, base: initialData.outreach90d.total, strong: false, showRate: false },
-                      { label: "응답", count: initialData.outreach90d.responded, base: initialData.outreach90d.total, strong: false, showRate: true },
-                      { label: "전환", count: initialData.outreach90d.converted, base: initialData.outreach90d.total, strong: true, showRate: true },
-                    ].map((row, i) => (
-                      <div key={row.label} className="flex items-center gap-2.5">
-                        <span className="w-[26px] shrink-0 text-[11px] font-medium text-muted-foreground">{row.label}</span>
-                        {/* 트랙 = 전체폭 기준선이라 빈 구간이 보여야 비율이 읽힌다(오너 2026-10-06: slate-100 은 흰 카드
-                            대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
-                            약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
-                            올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 앵커 틸의 농도 사다리
-                            (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 차트 계열
-                            구분 색이라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
-                        <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
-                          {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
-                          <div
-                            className="h-full rounded-full animate-grow-x"
-                            style={{
-                              width: row.base > 0 ? `${Math.max((row.count / row.base) * 100, 2)}%` : "2%",
-                              backgroundColor: "var(--chart-1)",
-                              opacity: row.strong ? 1 : 0.6,
-                              animationDelay: `${i * 60}ms`,
-                            }}
-                          />
+                {/* 최근 90일 영업 전환 — 형제 KPI 카드와 세로 밀도 정합(오너 피드백 2026-07-14):
+                    내용을 flex로 세로 분산해 하단 여백을 없애고, 단계별 전환율을 병기해 판독 밀도를 높인다 */}
+                <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0 h-full flex flex-col">
+                  <CardContent className="px-4 py-3 flex flex-1 flex-col">
+                    {/* 서브텍스트는 제목 우측에 이어서 — 형제 KPI 카드와 형식 통일(오너 2026-07-24) */}
+                    <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                      <UsersRound className="size-4 shrink-0 text-[var(--primary)]" />
+                      <p className="shrink-0 text-[13px] font-semibold text-[var(--primary)] tracking-tight">최근 90일 영업 전환</p>
+                      <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                        확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
+                      </p>
+                    </div>
+                    {/* 퍼널 막대 — 접촉→응답→전환 폭 비율이 곧 전환 효율. 트랙(전체폭 기준선)+단계별 전환율 병기 */}
+                    <div className="mt-3 flex flex-1 flex-col justify-center gap-3">
+                      {[
+                        { label: "접촉", count: initialData.outreach90d.total, base: initialData.outreach90d.total, strong: false, showRate: false },
+                        { label: "응답", count: initialData.outreach90d.responded, base: initialData.outreach90d.total, strong: false, showRate: true },
+                        { label: "전환", count: initialData.outreach90d.converted, base: initialData.outreach90d.total, strong: true, showRate: true },
+                      ].map((row, i) => (
+                        <div key={row.label} className="flex items-center gap-2.5">
+                          <span className="w-[26px] shrink-0 text-[11px] font-medium text-muted-foreground">{row.label}</span>
+                          {/* 트랙 = 전체폭 기준선이라 빈 구간이 보여야 비율이 읽힌다(오너 2026-10-06: slate-100 은 흰 카드
+                              대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
+                              약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
+                              올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 앵커 틸의 농도 사다리
+                              (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 차트 계열
+                              구분 색이라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
+                          <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
+                            {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
+                            <div
+                              className="h-full rounded-full animate-grow-x"
+                              style={{
+                                width: row.base > 0 ? `${Math.max((row.count / row.base) * 100, 2)}%` : "2%",
+                                backgroundColor: "var(--chart-1)",
+                                opacity: row.strong ? 1 : 0.6,
+                                animationDelay: `${i * 60}ms`,
+                              }}
+                            />
+                          </div>
+                          <span className="w-[30px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                            {row.showRate ? ratioText(row.count, row.base) : ""}
+                          </span>
+                          {/* 값 크기·무게는 형제 MetricCard 당월 값(13px semibold)과 통일(오너 2026-07-24) */}
+                          <span className="w-[34px] shrink-0 text-right text-[13px] font-semibold text-[#1F2A30] tabular-nums">{row.count}</span>
                         </div>
-                        <span className="w-[30px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
-                          {row.showRate ? ratioText(row.count, row.base) : ""}
-                        </span>
-                        {/* 값 크기·무게는 형제 MetricCard 당월 값(13px semibold)과 통일(오너 2026-07-24) */}
-                        <span className="w-[34px] shrink-0 text-right text-[13px] font-semibold text-[#1F2A30] tabular-nums">{row.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </section>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
             </div>
 
             {/* 거래액 목표 히어로 — WAG 팔레트: --hero-deep 토큰, 공유 elevation(shadow-soft-lg = 페이지당 1개) */}
