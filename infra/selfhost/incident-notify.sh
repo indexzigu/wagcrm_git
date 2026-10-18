@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 사고 알림 발송기 — 크론 자가 복구 2단계의 호스트 쪽.
+#
+#   incident-notify.sh immediate   # 10분마다: 조치가 필요한 사고(🙋)·정상화(✅)
+#   incident-notify.sh digest      # 매일 08:00: 하루치 요약(📋)
+#
+# 앱(`/api/cron/incident-outbox`, src/app/api/cron/incident-outbox/route.ts)이 **무엇을 보낼지** 정한다.
+# 이 파일은 그 목록을 notify.sh 로 텔레그램에 내보내고, 보낸 것만 POST 로 「보냈음」을 찍는다.
+# ⛔ 여기서 사고를 판정하지 않는다 — 판정은 앱, 같은 키 재발송 하한은 notify.sh 의 몫이다.
+#
+# ⚠️ 목록 조회가 실패해도 텔레그램을 보내지 않는다 — 앱이 죽은 것은 메뉴바(status.sh 의 prodLocal)가
+#    이미 알린다. 여기서 또 보내면 같은 사건이 두 갈래로 울린다.
+#
+# 🔁 확인 POST 가 실패하면 exit 1 이다. 그 회차에 보낸 알림은 「보냈음」이 안 찍혀 다음 회차(10분 뒤)에
+#    목록에 다시 오지만, notify.sh 가 같은 키를 6시간 안에 다시 보내지 않으므로(alert-sent.tsv) 폰이 다시
+#    울리지 않는다. 그 사이 확인 POST 가 성공하면 그때 찍힌다(POST 는 이미 찍힌 칸을 덮지 않는다).
+#
+# 📏 하루 즉시 알림 상한 5건 — 배포 후 7일만(오너 결정 Q1). 7일 창의 시작은 상한 파일이 처음 생긴 때다.
+#    상한은 조치 알림(ackField=alertedAt)만 센다 — 정상화(✅)·요약(📋)은 세지 않는다.
+#    넘친 사고는 보내지도 확인하지도 않는다 → 다음 08:00 요약의 「조치대기」에 그대로 잡힌다.
+#    넘쳤다는 안내(incident-cap)는 하루 한 번만 보낸다.
+#
+# cron.log 에는 실행 1회 = 한 줄, 개수만 남긴다(알림 본문은 남기지 않는다 — 이 파일은 하루치 훑기용이다).
+#   [STAMP] OK   incident-notify <mode> sent=N acked=N capped=N
+#   [STAMP] FAIL incident-notify <mode> <사유>
+#
+# 테스트 훅(scripts/__tests__/incident-notify.test.ts): INCIDENT_CURL_CMD · INCIDENT_NOTIFY_CMD
+# ("bash <파일>" 두 단어를 받는다 — notify.sh 의 NOTIFY_CURL_CMD 와 같은 규약) · INCIDENT_LOGS_DIR ·
+# INCIDENT_ENV_FILE · INCIDENT_NOW(지금, epoch 초).
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOGS_DIR="${INCIDENT_LOGS_DIR:-$HOME/selfhost/logs}"
+LOG="$LOGS_DIR/cron.log"
+COUNT_FILE="$LOGS_DIR/incident-notify-count.tsv"
+ENV_FILE="${INCIDENT_ENV_FILE:-$SELF_DIR/.env}"
+OUTBOX_URL="http://127.0.0.1:3000/api/cron/incident-outbox"
+PY=/usr/bin/python3
+
+DAILY_CAP=5
+CAP_WINDOW_S=$(( 7 * 86400 ))
+
+# $CURL·$NOTIFY 는 의도적 미인용 — 테스트 훅이 "bash <경로>" 두 단어를 준다(notify.sh 와 같은 규약).
+CURL="${INCIDENT_CURL_CMD:-curl}"
+NOTIFY="${INCIDENT_NOTIFY_CMD:-$SELF_DIR/notify.sh}"
+
+mkdir -p "$LOGS_DIR"
+NOW="${INCIDENT_NOW:-$(date +%s)}"
+case "$NOW" in ''|*[!0-9]*) NOW="$(date +%s)" ;; esac
+STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
+MODE="${1:-}"
+
+log_line() { # label body
+  local label="$1"; shift
+  # 라벨 폭은 run-cron.sh 와 같다(OK + 공백 3칸 / FAIL + 1칸) — 같은 파일을 같은 grep 으로 훑는다.
+  [ "$label" = "OK" ] && label="OK  "
+  # 줄바꿈·제어문자는 공백으로 접는다(이 파일의 "실행 1회 = 한 줄" 불변식).
+  printf '[%s] %s incident-notify %s\n' "$STAMP" "$label" "$(printf '%s' "$*" | tr '\000-\037' ' ' | cut -c1-400)" >> "$LOG"
+}
+fail() { log_line FAIL "$MODE $*"; exit 1; }
+
+case "$MODE" in
+  immediate|digest) ;;
+  *) fail "사용법: incident-notify.sh immediate|digest" ;;
+esac
+
+# .env 는 run-cron.sh 와 같은 방식으로 읽고 CRON_SECRET 만 쓴다. 바깥 환경의 값은 믿지 않는다.
+unset CRON_SECRET
+[ -r "$ENV_FILE" ] || fail "환경 파일을 읽지 못했습니다 — CRON_SECRET 미설정(fail-closed)"
+set -a; . "$ENV_FILE"; set +a
+[ -n "${CRON_SECRET:-}" ] || fail "CRON_SECRET 미설정 — fail-closed 계약(src/lib/cron-auth.ts)"
+
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/incident-notify.XXXXXX")"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# ── 상한 파일 ────────────────────────────────────────────────────────────────
+# 형식: 첫 줄 `since<TAB><epoch>`(7일 창의 시작), 이후 `<KST 날짜><TAB><보낸 개수><TAB><안내 보냄 0|1>`.
+# 손상됐으면(첫 줄이 since 가 아니거나 숫자가 아님) 지금부터 다시 센다 — 죽어서 알림을 막는 쪽보다 낫다.
+TODAY="$("$PY" -I -c 'import sys,datetime as d; print(d.datetime.fromtimestamp(int(sys.argv[1]), d.timezone(d.timedelta(hours=9))).strftime("%Y-%m-%d"))' "$NOW")"
+SINCE="$(awk -F'\t' 'NR==1 && $1=="since" {print $2}' "$COUNT_FILE" 2>/dev/null || true)"
+case "$SINCE" in
+  ''|*[!0-9]*) SINCE="$NOW"; printf 'since\t%s\n' "$SINCE" > "$COUNT_FILE" ;;
+esac
+SINCE=$((10#$SINCE))
+TODAY_SENT="$(awk -F'\t' -v t="$TODAY" '$1==t {print $2}' "$COUNT_FILE" 2>/dev/null | tail -1 || true)"
+TODAY_CAP_SENT="$(awk -F'\t' -v t="$TODAY" '$1==t {print $3}' "$COUNT_FILE" 2>/dev/null | tail -1 || true)"
+case "$TODAY_SENT" in ''|*[!0-9]*) TODAY_SENT=0 ;; esac
+TODAY_SENT=$((10#$TODAY_SENT))
+[ "$TODAY_CAP_SENT" = "1" ] || TODAY_CAP_SENT=0
+CAP_ACTIVE=0
+[ $(( NOW - SINCE )) -lt "$CAP_WINDOW_S" ] && CAP_ACTIVE=1
+
+# ── 목록 조회 ────────────────────────────────────────────────────────────────
+if ! OUT="$($CURL -fsS -m 60 -H "Authorization: Bearer ${CRON_SECRET}" "${OUTBOX_URL}?mode=${MODE}" 2>&1)"; then
+  fail "목록 조회 실패: $OUT"
+fi
+
+# 응답을 NUL 구분 레코드(키·아이콘·제목·상세·확인칸·사고 id 쉼표 목록)로 푼다. 상세에 줄바꿈이 있어 NUL 로 가른다.
+# 형식이 하나라도 어긋나면 아무것도 보내지 않는다 — 반쯤 보내고 반쯤 확인하는 상태를 만들지 않는다.
+RECORDS="$TMP_DIR/records"
+if ! printf '%s' "$OUT" | "$PY" -I -c '
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, dict) or data.get("ok") is not True or not isinstance(data.get("messages"), list):
+    sys.exit(3)
+out = sys.stdout.buffer
+for m in data["messages"]:
+    if not isinstance(m, dict):
+        sys.exit(3)
+    fields = [m.get(k) for k in ("key", "icon", "title", "detail", "ackField")]
+    ids = m.get("incidentIds")
+    if not all(isinstance(f, str) and f and "\0" not in f for f in fields[:2] + fields[4:]):
+        sys.exit(3)
+    if not all(isinstance(f, str) and "\0" not in f for f in fields[2:4]):
+        sys.exit(3)
+    if fields[4] not in ("alertedAt", "recoveryAlertedAt", "digestedAt"):
+        sys.exit(3)
+    if not isinstance(ids, list) or not all(isinstance(i, str) and i and "," not in i and "\0" not in i for i in ids):
+        sys.exit(3)
+    for f in fields + [",".join(ids)]:
+        out.write(f.encode("utf-8") + b"\0")
+' > "$RECORDS" 2>/dev/null; then
+  fail "응답 형식 오류"
+fi
+
+# ── 발송 ────────────────────────────────────────────────────────────────────
+ACKS="$TMP_DIR/acks"   # 줄마다 <확인칸><TAB><id 쉼표 목록>
+: > "$ACKS"
+sent=0; capped=0; notify_failed=0
+send_one() { # key title detail icon
+  if [ -n "${INCIDENT_NOTIFY_CMD:-}" ]; then
+    $NOTIFY send "$1" "$2" "$3" "$4"
+  else
+    "$NOTIFY" send "$1" "$2" "$3" "$4"
+  fi
+}
+while IFS= read -r -d '' key && IFS= read -r -d '' icon && IFS= read -r -d '' title \
+   && IFS= read -r -d '' detail && IFS= read -r -d '' ack_field && IFS= read -r -d '' ids; do
+  if [ "$ack_field" = "alertedAt" ] && [ "$CAP_ACTIVE" -eq 1 ] && [ "$TODAY_SENT" -ge "$DAILY_CAP" ]; then
+    capped=$((capped + 1))
+    continue
+  fi
+  # notify.sh 는 텔레그램 실패에도 exit 0 이다(실패는 마커로 남아 메뉴바가 그린다). 여기서 0 이 아닌 것은
+  # notify.sh 를 아예 못 돌린 경우뿐이라, 그 메시지는 확인하지 않고 다음 회차에 다시 시도한다.
+  if send_one "$key" "$title" "$detail" "$icon"; then
+    sent=$((sent + 1))
+    [ "$ack_field" = "alertedAt" ] && TODAY_SENT=$((TODAY_SENT + 1))
+    printf '%s\t%s\n' "$ack_field" "$ids" >> "$ACKS"
+  else
+    notify_failed=$((notify_failed + 1))
+  fi
+done < "$RECORDS"
+
+if [ "$capped" -gt 0 ] && [ "$TODAY_CAP_SENT" -eq 0 ]; then
+  if send_one incident-cap "자동화 작업 알림 상한" "오늘 알림 ${capped}건은 내일 08:00 요약으로 넘깁니다." "🙋"; then
+    TODAY_CAP_SENT=1
+  else
+    notify_failed=$((notify_failed + 1))
+  fi
+fi
+
+# 오늘 줄을 갱신한다(첫 줄 since 는 그대로). 창이 끝난 뒤에는 세지 않으므로 더 쓰지 않는다.
+# 🪤 immediate 만 쓴다 — 08:00 에는 digest 와 immediate(*/10 의 0분)가 동시에 돈다. digest 는 세는 것이
+#    없는데 여기서 덮어쓰면 immediate 가 방금 올린 개수를 낡은 값으로 지운다.
+if [ "$MODE" = "immediate" ] && [ "$CAP_ACTIVE" -eq 1 ]; then
+  awk -F'\t' -v t="$TODAY" '$1 != t' "$COUNT_FILE" > "$TMP_DIR/count" 2>/dev/null || true
+  printf '%s\t%s\t%s\n' "$TODAY" "$TODAY_SENT" "$TODAY_CAP_SENT" >> "$TMP_DIR/count"
+  mv "$TMP_DIR/count" "$COUNT_FILE"
+fi
+
+# ── 확인 ────────────────────────────────────────────────────────────────────
+acked=0
+if [ -s "$ACKS" ]; then
+  ACK_JSON="$("$PY" -I -c '
+import json, sys
+acks = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    field, _, ids = line.rstrip("\n").partition("\t")
+    acks.append({"incidentIds": [i for i in ids.split(",") if i], "ackField": field})
+print(json.dumps({"acks": acks}, ensure_ascii=False))
+' "$ACKS")"
+  if ! POST_OUT="$($CURL -fsS -m 60 -X POST -H "Authorization: Bearer ${CRON_SECRET}" \
+        -H "Content-Type: application/json" --data-binary "$ACK_JSON" "$OUTBOX_URL" 2>&1)"; then
+    fail "확인 표시 실패(sent=$sent capped=$capped — 다음 회차에 다시 오지만 notify.sh 6시간 하한이 거른다): $POST_OUT"
+  fi
+  acked="$(wc -l < "$ACKS" | tr -d ' ')"
+fi
+
+if [ "$notify_failed" -gt 0 ]; then
+  fail "notify.sh 실행 실패 ${notify_failed}건(sent=$sent acked=$acked capped=$capped)"
+fi
+log_line OK "$MODE sent=$sent acked=$acked capped=$capped"

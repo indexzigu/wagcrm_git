@@ -106,3 +106,13 @@
 # off(기본)면 라우트가 아무것도 하지 않는다. 회차가 겹쳐도 앱의 단일 실행 잠금이 한 회차만 돌린다.
 # 빈 회차는 레이더 상태만 갱신하고 이력(SystemTaskLog)은 남기지 않는다(cron.log 에는 매 회차 한 줄).
 */2 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh agent-auto-execute >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# incident-notify immediate → **10분마다**. 앱이 정한 사고 알림(조치 필요 🙋 · 정상화 ✅)을 notify.sh 로
+# 보낸다(크론 자가 복구 2단계). 레이더가 지켜보는 정기 작업이 아니다 — 앱 크론 래퍼를 거치지 않고
+# KNOWN_JOBS 에도 없다(발송기가 자기 자신을 사고 장부에 올리면 알림 실패가 알림을 낳는다). 그래서 위
+# 앱 크론 개수 앵커에도 세지 않는다. 앱이 죽어 목록을 못 받으면 보내지 않는다(메뉴바가 알린다).
+*/10 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh immediate >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# incident-notify digest → KST 매일 08:00. 전날 08:00 ~ 오늘 08:00 의 사고 요약(📋) 1건 — 정상화된 것 ·
+# 지금 조치대기 · 막은 개수. 위 즉시 알림의 하루 상한(배포 후 7일)으로 넘긴 사고도 여기 조치대기로 실린다.
+0 8 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh digest >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1

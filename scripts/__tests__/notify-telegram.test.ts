@@ -199,6 +199,19 @@ describe("notify.sh 발송 계약", () => {
     expect(body).toContain("3개가 예정보다 늦었습니다");
   });
 
+  it("머리 아이콘을 주지 않으면 🔴 그대로다 — 기존 4인자 호출(status.sh·앱)의 본문이 바뀌지 않는다", () => {
+    const r = run(["send", "crons", "자동 작업", "3개가 예정보다 늦었습니다"]);
+    const body = readFileSync(r.calls, "utf8");
+    expect(body).toContain("text=🔴 자동 작업 — 3개가 예정보다 늦었습니다");
+  });
+
+  it("5번째 인자는 머리 아이콘이다 — 사고 알림(🙋·✅·📋)이 빨강으로 오인되지 않게", () => {
+    const r = run(["send", "incident-x", "작업 실패", "상세", "✅"]);
+    const body = readFileSync(r.calls, "utf8");
+    expect(body).toContain("text=✅ 작업 실패 — 상세");
+    expect(body).not.toContain("🔴");
+  });
+
   it("하한 안(5시간 전 발송)이면 조용히 건너뛴다", () => {
     const r = run(["send", "crons", "자동 작업", "본문"], {
       sent: { crons: 5 },

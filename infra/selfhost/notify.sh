@@ -4,7 +4,8 @@ set -euo pipefail
 # 외부 채널(텔레그램) 발송 + 소음 억제.
 # 설계 정본: docs/private/specs/2026-08-19-external-alert-channel-design.md
 #
-#   notify.sh send  <key> <title> <detail>   # error 로 떨어지는 전환에서
+#   notify.sh send  <key> <title> <detail> [icon]   # error 로 떨어지는 전환에서
+#                                                   # icon = 머리 아이콘(생략하면 🔴 — 사고 알림이 🙋·✅·📋 를 준다)
 #   notify.sh clear <key>                    # error 에서 벗어나는 전환에서
 #   notify.sh probe                          # 메시지 없이 도달성만 확인(getMe)
 #
@@ -251,6 +252,8 @@ fi
 [ "$CMD" = "send" ] || exit 0
 TITLE="${3:-}"
 DETAIL="${4:-}"
+# 머리 아이콘. 생략(또는 빈 값)이면 🔴 — 기존 4인자 호출(status.sh·앱)의 본문은 한 글자도 바뀌지 않는다.
+ICON="${5:-🔴}"
 
 TOKEN="$(read_env TELEGRAM_BOT_TOKEN)"
 CHAT="$(read_env TELEGRAM_CHAT_ID)"
@@ -281,7 +284,7 @@ if [ "$LAST" -gt 0 ] && [ $(( (NOW - LAST) / 3600 )) -lt "$FLOOR_H" ]; then
 fi
 
 # 봇 이름("WAG 서버")이 알림 앞에 이미 붙으므로 본문에 서비스명을 다시 넣지 않는다.
-TEXT="🔴 ${TITLE} — ${DETAIL}"
+TEXT="${ICON} ${TITLE} — ${DETAIL}"
 
 send_once() {
   local code
