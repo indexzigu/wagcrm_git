@@ -51,9 +51,13 @@ import { AnimatedNumber } from "@/components/ui/animated-number";
 
 
 // WAG CRM 팔레트 스펙(오너 승인, 2026-07-09) — 차트라인/기준선 하드코딩 색 → 토큰 수렴
+// 매출총이익 = 청록 면색 --fill-teal-1(2026-10-18). 종전 --chart-4 는 --status-pending(대기 주황)과 같은 값이라
+// 심각도 축으로 읽혔다(P8 §1). 같은 청록 계열 중 앵커 막대(--chart-1)와 가장 잘 갈리면서 흰 카드 위 대비가
+// 종전 주황(2.15)보다 떨어지지 않는 값: chart-1 대비 2.86 · 흰 카드 2.57. --chart-2 는 chart-1 과 1.56 이라
+// 붙은 막대에서 안 갈린다. 계열 구분은 색 + 막대 폭(넓게·좁게) + 범례 이름 세 겹이다.
 const chartConfig = {
   revenue: { label: "총거래액", color: "var(--chart-1)" },
-  expectedMargin: { label: "매출총이익", color: "var(--chart-4)" },
+  expectedMargin: { label: "매출총이익", color: "var(--fill-teal-1)" },
   goal: { label: "거래액 목표", color: "var(--muted-foreground)" },
 } satisfies ChartConfig;
 
@@ -90,7 +94,7 @@ function TrendTooltip({
       {margin != null && (
         <div className="flex items-center justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--chart-4)" }} />
+            <span className="size-2 rounded-[2px]" style={{ backgroundColor: "var(--fill-teal-1)" }} />
             매출총이익
           </span>
           <span className="font-semibold text-[#1F2A30] tabular-nums">{formatCurrency(margin)}</span>
@@ -107,7 +111,7 @@ function TrendTooltip({
 }
 
 /**
- * 거래액 차트 머리 줄 — 왼쪽 범위 한 마디, 오른쪽 범례. 두 막대 계열(--chart-1 총거래액 · --chart-4
+ * 거래액 차트 머리 줄 — 왼쪽 범위 한 마디, 오른쪽 범례. 두 막대 계열(--chart-1 총거래액 · --fill-teal-1
  * 매출총이익)을 **색만으로 가르지 않도록**(P8) 이름을 붙이고, 견본 폭도 실제 막대 폭(넓게·좁게)을 따른다.
  * 목표선은 그 기간에 목표가 하나라도 있을 때만 범례에 올린다(없는 선을 설명하지 않는다).
  */
@@ -121,7 +125,7 @@ function SalesChartCaption({ caption, showGoal }: { caption: string; showGoal: b
           {chartConfig.revenue.label}
         </li>
         <li className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-2.5 w-2 rounded-[2px]" style={{ backgroundColor: "var(--chart-4)" }} />
+          <span aria-hidden="true" className="h-2.5 w-2 rounded-[2px]" style={{ backgroundColor: "var(--fill-teal-1)" }} />
           {chartConfig.expectedMargin.label}
         </li>
         {showGoal ? (
@@ -220,8 +224,9 @@ const SPARK_FOCUS_MONTHS = 3;
 //
 // 가드레일 두 가지:
 // 1. 색은 2단계뿐 — 중립 회색(--chart-5, 맥락) + 앵커 틸(--chart-1, 강조는 불투명도로만 2단).
-//    --chart-2는 쓰지 않는다: 같은 화면의 6개월 대형 차트에서 그 중간 틸은 이미 "매출 vs 순마진"의
-//    계열 구분 의미를 갖고 있어, 여기서 "시간적 근접"에 재사용하면 한 스와치가 두 의미를 갖는다.
+//    --chart-2는 쓰지 않는다: 그 중간 틸은 차트 계열 구분 색(손익 보고서의 영업이익 등)이라, 여기서 "시간적
+//    근접"에 재사용하면 한 스와치가 두 의미를 갖는다. 같은 이유로 6개월 대형 차트의 매출총이익 색
+//    (--fill-teal-1, 2026-10-18 교체 — 종전 기록의 "대형 차트 = chart-2"는 이미 낡아 있었다)도 빌리지 않는다.
 // 2. Y축 눈금·그리드라인 금지 — max가 카드마다 독립 정규화라 카드 간 막대 높이 비교는 무의미하다.
 //    눈금이 붙는 순간 "정밀 판독 가능한 계기판"으로 보여 그 비교를 유도한다. 이건 계기판이 아니라
 //    라벨 붙은 타임라인 스트립이다.
@@ -749,8 +754,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                             대비 1.09:1 로 사라져 slate-300 으로 진하게 — 과세기준매출 카드와 같은 처리).
                             약한 행(접촉·응답)은 종전 --chart-2 @.45 였는데 slate-300 위 대비가 1.58 이고 불투명으로
                             올려도 2.76 이라 3:1 에 못 닿는다. 그래서 강한 행(전환)과 같은 앵커 틸의 농도 사다리
-                            (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 6개월 대형 차트의 계열
-                            구분 의미라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
+                            (1.0 / 0.6 — 트랙 대비 7.62 / 3.06)로 바꿨다. --chart-2 중간 틸은 차트 계열
+                            구분 색이라 여기서 빌려 쓰지 않는다(스파크라인 계약 테스트와 같은 이유). */}
                         <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
                           {/* 접촉→응답→전환 순 60ms stagger — 퍼널 순서 자체가 의미라 흐름감을 준다 */}
                           <div

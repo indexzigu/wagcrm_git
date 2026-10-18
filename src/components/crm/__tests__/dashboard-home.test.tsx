@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardHome } from "../dashboard-home";
@@ -250,7 +252,7 @@ describe("DashboardHome 스파크라인 기간 정합", () => {
     expect(axis.parentElement!.querySelector("svg line")).toBeNull();
   });
 
-  it("--chart-2를 쓰지 않는다 — 그 파랑은 6개월 대형 차트의 계열 구분 의미를 갖는다", () => {
+  it("--chart-2를 쓰지 않는다 — 그 중간 틸은 차트 계열 구분 색이다", () => {
     const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
     const axis = container.querySelector('[data-slot="spark-axis"]')!;
     const spark = axis.parentElement!;
@@ -407,5 +409,17 @@ describe("DashboardHome", () => {
     expect(legend).not.toBeNull();
     expect(legend.textContent).toContain("총거래액");
     expect(legend.textContent).toContain("매출총이익");
+  });
+
+  it("매출총이익 막대는 청록 면색이다 — 대기 주황(--chart-4 = --status-pending 값)은 심각도 축이라 쓰지 않는다", () => {
+    const { container } = render(<DashboardHome initialData={data({ trend: trend6() })} />);
+    const legend = container.querySelector('[data-slot="chart-legend"]')!;
+    expect(legend.innerHTML).toContain("var(--fill-teal-1)");
+    expect(legend.innerHTML).not.toContain("--chart-4");
+    expect(container.innerHTML).not.toContain("var(--chart-4)");
+    // 막대 fill 은 chartConfig → ChartContainer 의 --color-expectedMargin 으로 흐르는데 jsdom 은 차트를
+    // 그리지 않는다(크기 0) — 그래서 막대 색의 출처인 chartConfig 줄을 소스에서 고정한다. 범례·툴팁 견본과 같은 토큰.
+    const src = readFileSync(join(__dirname, "..", "dashboard-home.tsx"), "utf8");
+    expect(src).toMatch(/expectedMargin:\s*\{\s*label:\s*"매출총이익",\s*color:\s*"var\(--fill-teal-1\)"\s*\}/);
   });
 });
