@@ -64,6 +64,8 @@ export const STATUS_WORD_SPACING: Readonly<Record<string, string>> = {
   "수집 실패": "수집실패",
   "연동 실패": "연동실패",
   "샘플 테스트": "샘플테스트",
+  "조치 대기": "조치대기",
+  "재확인 중": "재확인중",
 };
 
 /**
@@ -131,6 +133,7 @@ export const UI_LABEL_TABLES = {
   "사이드바 메뉴": "src/components/crm/crm-sidebar.tsx",
   "돈 이름": "MONEY_TERMS (src/lib/ui-glossary.ts)",
   "대상 이름": "ENTITY_TERMS (src/lib/ui-glossary.ts)",
+  "자동화 작업 원인": "incidentCauseLabel (src/lib/cron-incident-report.ts)",
 } as const;
 
 /**
