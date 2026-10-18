@@ -35,6 +35,7 @@ import { resolveOrderSyncState } from "@/lib/order-converter/order-work-buckets"
 import { buildTodayWorkRows, DATA_CHECK_ANCHOR } from "@/lib/today-work";
 import { useOrderWorkSummary } from "@/hooks/useOrderWorkSummary";
 import { useApprovalInbox } from "@/hooks/useApprovalInbox";
+import { useWaitingAutomationIncidents } from "@/hooks/useAutomationIncidents";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { DASHBOARD_PAGE_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 import { formatCurrency, formatNumber } from "@/lib/format";
@@ -593,6 +594,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   // 추가 요청이 생기지 않는다. 데이터 점검 건수는 아래 「데이터 점검」 탭과 같은 배열이다.
   const orderWork = useOrderWorkSummary();
   const approvals = useApprovalInbox("PENDING_APPROVAL");
+  // 조치대기 자동화 작업(크론 자가 복구 2단계) — 조회 실패면 줄을 만들지 않고 실패 원천 「자동화 작업 조치대기」로 알린다.
+  const automationWaiting = useWaitingAutomationIncidents();
   const todayRows = buildTodayWorkRows({
     orders: orderWork.data,
     agenda: {
@@ -601,17 +604,20 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
       overdueSettlementIds: agendaData.settlements.map((item) => item.id),
     },
     approvalsPending: approvals.count,
+    automationWaiting: automationWaiting.data,
     dataCheck: initialData.dataIntegrityIssues.length,
   });
   const todayFailedSources = [
     orderWork.isError ? "주문" : null,
     agendaError ? "영업·정산" : null,
     approvals.isError ? "승인대기" : null,
+    automationWaiting.isError ? "자동화 작업 조치대기" : null,
   ].filter((name): name is string => name != null);
   const retryTodayWork = () => {
     if (orderWork.isError) void orderWork.refetch();
     if (agendaError) void fetchAgenda();
     if (approvals.isError) void approvals.refetch();
+    if (automationWaiting.isError) void automationWaiting.refetch();
   };
   // 낡음 판정의 「지금」은 데이터를 받은 시각이다 — 렌더 중 Date.now() 는 순수하지 않다.
   const orderSync = orderWork.data ? resolveOrderSyncState(orderWork.data, orderWork.dataUpdatedAt) : null;
@@ -699,7 +705,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
             <div className="flex h-full min-w-0 flex-col gap-4">
               <TodayWorkCard
                 rows={todayRows}
-                loading={orderWork.isLoading || agendaLoading || approvals.isLoading}
+                loading={orderWork.isLoading || agendaLoading || approvals.isLoading || automationWaiting.isLoading}
                 failedSources={todayFailedSources}
                 onRetry={retryTodayWork}
                 orderSync={orderSync}

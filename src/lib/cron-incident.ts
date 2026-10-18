@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
+import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 import type { CronErrorKind } from "@/lib/cron-error-kind";
+import { ownerActionFor, shouldEscalate } from "@/lib/cron-incident-escalation";
 
 /**
  * 자동 작업 사고 장부 — 같은 원인의 반복 실패를 한 건의 사고로 묶는다.
@@ -57,31 +59,39 @@ export async function recordIncidentOccurrence(input: {
     const signature = incidentSignature(input);
     const lastMessage = input.message.slice(0, LAST_MESSAGE_MAX);
 
-    const existing = await prisma.cronIncident.findFirst({
-      where: { signature, status: { in: OPEN_STATUSES } },
-      orderBy: { firstSeenAt: "desc" },
-    });
-    if (existing) {
-      await prisma.cronIncident.update({
-        where: { id: existing.id },
-        data: { occurrences: { increment: 1 }, lastSeenAt: at, lastMessage },
+    // 조회→쓰기 사이에 같은 서명의 동시 기록이 끼면 사고가 둘로 갈라진다(조회 시점엔 둘 다 「없음」).
+    // 같은 서명끼리만 직렬화하도록 트랜잭션 안에서 서명 해시로 자문 잠금을 잡는다(커밋 때 자동 해제).
+    // sqlite(로컬 개발)에는 이 함수가 없고 단일 쓰기라 건너뛴다.
+    return await prisma.$transaction(async (tx) => {
+      if (isRemoteDatabaseUrl()) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${signature}))`;
+      }
+      const existing = await tx.cronIncident.findFirst({
+        where: { signature, status: { in: OPEN_STATUSES } },
+        orderBy: { firstSeenAt: "desc" },
       });
-      return { id: existing.id, opened: false };
-    }
+      if (existing) {
+        await tx.cronIncident.update({
+          where: { id: existing.id },
+          data: { occurrences: { increment: 1 }, lastSeenAt: at, lastMessage },
+        });
+        return { id: existing.id, opened: false };
+      }
 
-    const created = await prisma.cronIncident.create({
-      data: {
-        jobKey: input.jobKey,
-        kind: input.kind,
-        errorKind: input.errorKind,
-        signature,
-        status: "open",
-        firstSeenAt: at,
-        lastSeenAt: at,
-        lastMessage,
-      },
+      const created = await tx.cronIncident.create({
+        data: {
+          jobKey: input.jobKey,
+          kind: input.kind,
+          errorKind: input.errorKind,
+          signature,
+          status: "open",
+          firstSeenAt: at,
+          lastSeenAt: at,
+          lastMessage,
+        },
+      });
+      return { id: created.id, opened: true };
     });
-    return { id: created.id, opened: true };
   } catch (error) {
     console.error("[CronIncident] 사고 기록 실패", error);
     return null;
@@ -89,8 +99,9 @@ export async function recordIncidentOccurrence(input: {
 }
 
 /**
- * 정상 실행 증거로 그 작업의 열린(`open`) 사고를 닫고 닫은 개수를 돌려준다.
- * `waiting_owner` 는 닫지 않는다 — 배포 반영 확인은 별도 2단계다. DB 오류는 console.error 후 0.
+ * 정상 실행 증거로 그 작업의 열린(`open`·`waiting_owner`) 사고를 닫고 닫은 개수를 돌려준다.
+ * PR 이 붙은 사고(`prNumber` 있음)는 닫지 않는다 — 고친 코드가 배포에 반영됐는지의 판정은 5단계 몫이다.
+ * DB 오류는 console.error 후 0.
  */
 export async function resolveOpenIncidents(input: {
   jobKey: string;
@@ -101,7 +112,7 @@ export async function resolveOpenIncidents(input: {
     const prisma = getPrisma();
     const { runAt, produced, targets } = input.evidence;
     const result = await prisma.cronIncident.updateMany({
-      where: { jobKey: input.jobKey, kind: { in: input.kinds }, status: "open" },
+      where: { jobKey: input.jobKey, kind: { in: input.kinds }, status: { in: OPEN_STATUSES }, prNumber: null },
       data: {
         status: "resolved",
         normalizedAt: new Date(),
@@ -111,6 +122,47 @@ export async function resolveOpenIncidents(input: {
     return result.count;
   } catch (error) {
     console.error("[CronIncident] 사고 종결 실패", error);
+    return 0;
+  }
+}
+
+/**
+ * `open` 사고 중 승격 규칙(`shouldEscalate`)에 걸리는 것을 `waiting_owner` 로 올리고 오너 조치 문구를 붙인다.
+ * 바꾼 개수를 돌려준다. 이미 올린 사고는 조회 대상이 아니라 두 번 불러도 같은 결과다.
+ * `now` 는 호출 시각 계약용이다(알림 표시는 호출처가 한다). 던지지 않는다 — DB 오류는 console.error 후 0.
+ */
+export async function escalatePendingIncidents(now: Date): Promise<number> {
+  void now;
+  try {
+    const prisma = getPrisma();
+    const rows = await prisma.cronIncident.findMany({
+      where: { status: "open" },
+      select: { id: true, kind: true, errorKind: true, occurrences: true },
+    });
+    let changed = 0;
+    for (const row of rows) {
+      const incident = {
+        kind: row.kind as IncidentKind,
+        errorKind: (row.errorKind ?? null) as CronErrorKind | null,
+        occurrences: row.occurrences,
+      };
+      if (!shouldEscalate(incident)) continue;
+      try {
+        // 조회 뒤 정상화로 닫힌 사고를 되살리지 않도록 아직 open 인 것만 바꾼다.
+        await prisma.cronIncident.update({
+          where: { id: row.id, status: "open" },
+          data: { status: "waiting_owner", ownerAction: ownerActionFor(incident) },
+        });
+        changed += 1;
+      } catch (error) {
+        // P2025 = 그 사이 다른 호출이 이미 올렸거나 닫았다 — 경합이지 오류가 아니다.
+        if ((error as { code?: unknown })?.code === "P2025") continue;
+        console.error("[CronIncident] 사고 승격 실패", row.id, error);
+      }
+    }
+    return changed;
+  } catch (error) {
+    console.error("[CronIncident] 사고 승격 조회 실패", error);
     return 0;
   }
 }

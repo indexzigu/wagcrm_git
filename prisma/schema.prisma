@@ -1695,6 +1695,10 @@ model CronIncident {
   prNumber           Int?
   normalizedAt       DateTime?
   normalizedEvidence Json?     // { runAt, produced?, targets? }
+  alertedAt          DateTime? // 오너 조치 알림을 보낸 시각(2단계)
+  recoveryAlertedAt  DateTime? // 정상화 알림을 보낸 시각
+  digestedAt         DateTime? // 일일 요약에 실은 시각
+  suppressedAt       DateTime? // 알림 직전 재확인에서 막힌 시각
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

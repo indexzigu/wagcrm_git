@@ -1,19 +1,21 @@
 // 홈 「오늘 처리할 일」 행 빌더 (client-safe 순수 로직).
 //
 // 그날 손이 가야 하는 일을 **한 목록**으로 모은다 — 주문(발주 대기·송장·배송 지연·반품·교환) ·
-// 영업 팔로업 · 정산 지연 · 승인대기 · 데이터 점검. 종전에는 「오늘 처리할 주문」 카드와 「핵심 업무」
+// 영업 팔로업 · 정산 지연 · 승인대기 · 자동화 작업 조치대기 · 데이터 점검. 종전에는 「오늘 처리할 주문」 카드와 「핵심 업무」
 // 탭 카드(영업 팔로업|지연된 정산)가 따로 있었고, 승인대기는 사이드바 배지에만, 데이터 점검은 맨 아래
 // 탭에만 있었다(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17).
 //
 // 판단 순서(P2): ① 일이 있는가(0건 행은 빠지고, 전부 0 이면 카드가 한 줄로 접힌다) ② 어느 일이 몇 건
 // ③ 그중 늦은 것이 있는가(색). 판정은 각 원천의 SSOT 를 그대로 쓴다 — 주문 칸은
 // `buildOrderWorkBuckets`, 정산 지연은 `/api/agenda`(`buildOverdueSettlementItems`, 그룹 SoT 접기 포함),
-// 승인대기는 `useApprovalInbox` 의 조건 전체 건수, 데이터 점검은 `computeDataIntegrityIssues`.
+// 승인대기는 `useApprovalInbox` 의 조건 전체 건수, 자동화 작업 조치대기는 `summarizeWaitingJobs`
+// (`/api/system/incidents?status=waiting_owner` — 크론 자가 복구 2단계), 데이터 점검은 `computeDataIntegrityIssues`.
 // ⛔ 여기서 건수를 다시 세지 말 것 — 같은 판정의 두 번째 인코딩이 이 레포의 반복 사고다.
 
 import { buildOrderWorkBuckets, type Bucket } from "@/lib/order-converter/order-work-buckets";
 import type { OrderSyncState } from "@/lib/order-converter/order-work-buckets";
 import type { OrderWorkSummary } from "@/lib/order-converter/order-work";
+import { summarizeWaitingJobs, type AutomationIncident } from "@/lib/automation-incidents";
 
 export type TodayWorkKey =
   | "orders-pending"
@@ -22,6 +24,7 @@ export type TodayWorkKey =
   | "outreach-followup"
   | "settlement-delayed"
   | "approvals-pending"
+  | "automation-waiting"
   | "data-check";
 
 export type TodayWorkTone = "neutral" | "caution" | "urgent" | "info";
@@ -46,6 +49,11 @@ export type TodayWorkInput = {
     overdueSettlementIds?: string[];
   };
   approvalsPending: number;
+  /**
+   * 조치대기 자동화 작업 사고(`/api/system/incidents?status=waiting_owner`). 아직 없으면(로딩·실패) 줄을
+   * 만들지 않는다 — 0 으로 위장하지 않는다(실패는 홈이 「자동화 작업 조치대기」 실패 원천으로 알린다).
+   */
+  automationWaiting?: readonly AutomationIncident[];
   dataCheck: number;
 };
 
@@ -101,6 +109,23 @@ export function buildTodayWorkRows(input: TodayWorkInput): TodayWorkRow[] {
     },
     // 승인대기는 오너 결정을 기다리는 일(정보) — 늦음·위험의 뜻이 없어 심각도 색을 주지 않는다.
     { key: "approvals-pending", label: "승인대기", count: input.approvalsPending, tone: "info", href: "/approvals", detail: null },
+  );
+
+  // 자동화 작업 조치대기 — 일시 재시도로 안 풀려 오너 손을 기다리는 작업(주의). 건수는 사고 수가 아니라 작업 수다.
+  // 목적지는 설정 → 외부 연동 진단의 「자동화 작업 상태」(행을 눌러 「이상 기록」에서 할 일을 본다).
+  const automation = input.automationWaiting ? summarizeWaitingJobs(input.automationWaiting) : null;
+  if (automation) {
+    rows.push({
+      key: "automation-waiting",
+      label: "자동화 작업 조치대기",
+      count: automation.jobCount,
+      tone: "caution",
+      href: "/settings/integrations#automation-status",
+      detail: automation.detail,
+    });
+  }
+
+  rows.push(
     // 데이터 점검 — 종전 탭 배지 countTone="caution" 승계.
     { key: "data-check", label: "데이터 점검", count: input.dataCheck, tone: "caution", href: `/#${DATA_CHECK_ANCHOR}`, detail: null },
   );

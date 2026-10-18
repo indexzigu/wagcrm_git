@@ -4,7 +4,8 @@ set -euo pipefail
 # 외부 채널(텔레그램) 발송 + 소음 억제.
 # 설계 정본: docs/private/specs/2026-08-19-external-alert-channel-design.md
 #
-#   notify.sh send  <key> <title> <detail>   # error 로 떨어지는 전환에서
+#   notify.sh send  <key> <title> <detail> [icon]   # error 로 떨어지는 전환에서
+#                                                   # icon = 머리 아이콘(생략하면 🔴 — 사고 알림이 🙋·✅·📋 를 준다)
 #   notify.sh clear <key>                    # error 에서 벗어나는 전환에서
 #   notify.sh probe                          # 메시지 없이 도달성만 확인(getMe)
 #
@@ -18,6 +19,10 @@ set -euo pipefail
 #
 # ⛔ 실패해도 exit 0 이다 — 알림 발송이 앱의 폴링을 죽이면 안 된다. 실패는 마커로
 #    남고 status.sh 가 그것을 warn 행으로 그린다.
+#    예외는 `NOTIFY_STRICT_EXIT=1` 로 부른 `send` 하나다(사고 알림 발송기 incident-notify.sh 전용).
+#    그 호출자는 보낸 것만 「보냈음」을 찍으므로, 못 보낸 것을 0 으로 삼키면 그 알림은 다시 나갈 길이
+#    없다. 그때만 「끝내 못 보냄」(재시도 후 실패 · 자격값 없음)을 1 로 알린다 — 하한에 막힌 것은 이미
+#    나간 알림이라 0 이다. 마커·기록 동작은 기본과 같다(억제 기록은 원래 성공했을 때만 쓴다).
 #
 # 📒 `alert-sent.tsv` 는 **억제 상태**이지 이력이 아니다 — `clear` 가 그 키의 행을 지운다
 #    (회복 후 6시간 하한을 우회하려는 **의도된** 동작이다). 그래서 회복하고 나면
@@ -64,6 +69,9 @@ SEND_MARKER_KEEP_H=24
 # 잠금이 이 시간(초)보다 오래됐으면 죽은 프로세스가 남긴 것으로 보고 정리한다.
 LOCK_STALE_S=30
 LOCK_MAX_WAIT_S=3
+# send 가 끝내 못 보냈을 때의 종료코드 — 기본 0, 엄격 모드만 1(위 ⛔ 예외).
+SEND_FAIL_EXIT=0
+[ "${NOTIFY_STRICT_EXIT:-}" = "1" ] && SEND_FAIL_EXIT=1
 
 # $CURL 은 의도적 미인용 — 테스트 훅이 "bash <경로>" 두 단어를 줄 수 있다(기존 규약).
 CURL="${NOTIFY_CURL_CMD:-curl}"
@@ -251,12 +259,14 @@ fi
 [ "$CMD" = "send" ] || exit 0
 TITLE="${3:-}"
 DETAIL="${4:-}"
+# 머리 아이콘. 생략(또는 빈 값)이면 🔴 — 기존 4인자 호출(status.sh·앱)의 본문은 한 글자도 바뀌지 않는다.
+ICON="${5:-🔴}"
 
 TOKEN="$(read_env TELEGRAM_BOT_TOKEN)"
 CHAT="$(read_env TELEGRAM_CHAT_ID)"
 if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
   write_marker unconfigured "텔레그램 자격값이 없어 '${TITLE}' 알림을 보내지 못했습니다 — .env 를 확인하세요"
-  exit 0
+  exit "$SEND_FAIL_EXIT"
 fi
 
 LAST="$(awk -F'\t' -v k="$KEY" '$1==k {print $2}' "$SENT_FILE" 2>/dev/null | tail -1 || true)"
@@ -281,7 +291,7 @@ if [ "$LAST" -gt 0 ] && [ $(( (NOW - LAST) / 3600 )) -lt "$FLOOR_H" ]; then
 fi
 
 # 봇 이름("WAG 서버")이 알림 앞에 이미 붙으므로 본문에 서비스명을 다시 넣지 않는다.
-TEXT="🔴 ${TITLE} — ${DETAIL}"
+TEXT="${ICON} ${TITLE} — ${DETAIL}"
 
 send_once() {
   local code
@@ -306,6 +316,7 @@ if send_once || { sleep "$RETRY_DELAY_S"; send_once; }; then
   rm -f "$FAIL_MARKER" 2>/dev/null || true
 else
   write_marker send "'${TITLE}' 알림 발송에 실패했습니다 — 네트워크·토큰을 확인하세요"
+  exit "$SEND_FAIL_EXIT"
 fi
 
 exit 0

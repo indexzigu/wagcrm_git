@@ -4,26 +4,42 @@ vi.mock("@/lib/prisma", () => ({
   getPrisma: vi.fn(),
 }));
 
+vi.mock("@/lib/prisma-client", () => ({
+  isRemoteDatabaseUrl: vi.fn(() => true),
+}));
+
 import { getPrisma } from "@/lib/prisma";
+import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 import {
   incidentSignature,
   normalizeIncidentMessage,
+  escalatePendingIncidents,
   recordIncidentOccurrence,
   resolveOpenIncidents,
 } from "@/lib/cron-incident";
 
 const findFirst = vi.fn();
+const findMany = vi.fn();
 const create = vi.fn();
 const update = vi.fn();
 const updateMany = vi.fn();
+const executeRaw = vi.fn();
+const transaction = vi.fn();
 
 beforeEach(() => {
   findFirst.mockReset();
+  findMany.mockReset().mockResolvedValue([]);
   create.mockReset().mockResolvedValue({ id: "new1" });
   update.mockReset().mockResolvedValue({ id: "old1" });
   updateMany.mockReset().mockResolvedValue({ count: 2 });
+  executeRaw.mockReset().mockResolvedValue(1);
+  vi.mocked(isRemoteDatabaseUrl).mockReturnValue(true);
+  const tx = { cronIncident: { findFirst, findMany, create, update, updateMany }, $executeRaw: executeRaw };
+  // 트랜잭션 클라이언트와 평소 클라이언트를 같은 mock 으로 묶어 기존 단언을 그대로 쓴다.
+  transaction.mockReset().mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
   vi.mocked(getPrisma).mockReturnValue({
-    cronIncident: { findFirst, create, update, updateMany },
+    ...tx,
+    $transaction: transaction,
   } as unknown as ReturnType<typeof getPrisma>);
 });
 
@@ -93,6 +109,27 @@ describe("recordIncidentOccurrence", () => {
     expect(create.mock.calls[0][0].data.lastMessage).toHaveLength(1000);
   });
 
+  it("원격 DB 에서는 같은 서명 기록을 자문 잠금 안에서 한다", async () => {
+    findFirst.mockResolvedValue(null);
+    await recordIncidentOccurrence(input);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(executeRaw).toHaveBeenCalledTimes(1);
+    const sql = (executeRaw.mock.calls[0][0] as string[]).join("?");
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(executeRaw.mock.calls[0][1]).toBe("j|A|timeout|실패 #건");
+    // 잠금이 조회·쓰기보다 먼저다.
+    expect(executeRaw.mock.invocationCallOrder[0]).toBeLessThan(findFirst.mock.invocationCallOrder[0]);
+    expect(findFirst.mock.invocationCallOrder[0]).toBeLessThan(create.mock.invocationCallOrder[0]);
+  });
+
+  it("sqlite 에서는 잠금 없이 기록한다", async () => {
+    vi.mocked(isRemoteDatabaseUrl).mockReturnValue(false);
+    findFirst.mockResolvedValue(null);
+    const r = await recordIncidentOccurrence(input);
+    expect(r).toEqual({ id: "new1", opened: true });
+    expect(executeRaw).not.toHaveBeenCalled();
+  });
+
   it("DB 오류는 console.error 후 null", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     findFirst.mockRejectedValue(new Error("db down"));
@@ -105,7 +142,7 @@ describe("recordIncidentOccurrence", () => {
 describe("resolveOpenIncidents", () => {
   const at = new Date("2026-10-18T00:00:00Z");
 
-  it("open 사고만 닫고 개수를 돌려준다", async () => {
+  it("PR 이 없는 open·waiting_owner 사고만 닫고 개수를 돌려준다", async () => {
     const n = await resolveOpenIncidents({
       jobKey: "j",
       kinds: ["A", "B"],
@@ -113,7 +150,12 @@ describe("resolveOpenIncidents", () => {
     });
     expect(n).toBe(2);
     const arg = updateMany.mock.calls[0][0];
-    expect(arg.where).toEqual({ jobKey: "j", kind: { in: ["A", "B"] }, status: "open" });
+    expect(arg.where).toEqual({
+      jobKey: "j",
+      kind: { in: ["A", "B"] },
+      status: { in: ["open", "waiting_owner"] },
+      prNumber: null,
+    });
     expect(arg.data.status).toBe("resolved");
     expect(arg.data.normalizedAt).toBeInstanceOf(Date);
     expect(arg.data.normalizedEvidence).toEqual({ runAt: at.toISOString(), produced: 5, targets: 5 });
@@ -123,6 +165,55 @@ describe("resolveOpenIncidents", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     updateMany.mockRejectedValue(new Error("db down"));
     expect(await resolveOpenIncidents({ jobKey: "j", kinds: ["A"], evidence: { runAt: at } })).toBe(0);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+describe("escalatePendingIncidents", () => {
+  const now = new Date("2026-10-18T09:00:00Z");
+
+  it("open 사고 중 승격 대상만 waiting_owner 로 올리고 조치 문구를 붙인다", async () => {
+    findMany.mockResolvedValue([
+      { id: "b1", kind: "B", errorKind: null, occurrences: 1 },
+      { id: "n1", kind: "A", errorKind: "network", occurrences: 1 },
+      { id: "n2", kind: "A", errorKind: "network", occurrences: 2 },
+      { id: "p1", kind: "A", errorKind: "proxy_quota", occurrences: 1 },
+    ]);
+    const n = await escalatePendingIncidents(now);
+    expect(n).toBe(3);
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findMany.mock.calls[0][0].where).toEqual({ status: "open" });
+    const ids = update.mock.calls.map((c) => c[0].where.id);
+    expect(ids).toEqual(["b1", "n2", "p1"]);
+    const first = update.mock.calls[0][0];
+    // 그 사이 닫힌 사고를 되살리지 않도록 open 인 것만 바꾼다.
+    expect(first.where).toEqual({ id: "b1", status: "open" });
+    expect(first.data.status).toBe("waiting_owner");
+    expect(first.data.ownerAction).toMatch(/^대상은 있는데/);
+    expect(update.mock.calls[2][0].data.ownerAction).toMatch(/^프록시 월 한도/);
+  });
+
+  it("두 번 불러도 이미 올린 사고는 다시 바꾸지 않는다", async () => {
+    findMany.mockResolvedValueOnce([{ id: "b1", kind: "B", errorKind: null, occurrences: 1 }]).mockResolvedValueOnce([]);
+    expect(await escalatePendingIncidents(now)).toBe(1);
+    expect(await escalatePendingIncidents(now)).toBe(0);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("조회 사이에 상태가 바뀐 사고(P2025)는 세지 않고 넘어간다", async () => {
+    findMany.mockResolvedValue([
+      { id: "b1", kind: "B", errorKind: null, occurrences: 1 },
+      { id: "b2", kind: "B", errorKind: null, occurrences: 1 },
+    ]);
+    update.mockRejectedValueOnce(Object.assign(new Error("not found"), { code: "P2025" }));
+    expect(await escalatePendingIncidents(now)).toBe(1);
+  });
+
+  it("DB 오류는 던지지 않고 console.error 후 0", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    findMany.mockRejectedValue(new Error("db down"));
+    expect(await escalatePendingIncidents(now)).toBe(0);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });

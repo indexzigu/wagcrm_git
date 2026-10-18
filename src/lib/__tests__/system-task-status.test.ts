@@ -4,6 +4,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@/lib/prisma", () => ({
   getPrisma: vi.fn(),
 }));
+vi.mock("@/lib/prisma-client", () => ({
+  isRemoteDatabaseUrl: vi.fn(() => false),
+}));
 
 import { getPrisma } from "@/lib/prisma";
 import { capDetailsForLog, withSystemTaskStatus } from "@/lib/system-task-status";
@@ -49,7 +52,14 @@ beforeEach(() => {
   incidentCreate.mockReset().mockResolvedValue({ id: "inc-1" });
   incidentUpdate.mockReset().mockResolvedValue({});
   incidentUpdateMany.mockReset().mockResolvedValue({ count: 0 });
+  const incidentDb = {
+    findFirst: incidentFindFirst,
+    create: incidentCreate,
+    update: incidentUpdate,
+    updateMany: incidentUpdateMany,
+  };
   vi.mocked(getPrisma).mockReturnValue({
+    $transaction: async (cb: (t: unknown) => unknown) => cb({ cronIncident: incidentDb, $executeRaw: vi.fn() }),
     systemTaskStatus: { upsert },
     systemTaskLog: { create: logCreate, findMany: logFindMany },
     cronIncident: {

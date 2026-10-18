@@ -282,6 +282,21 @@ if [ "$MODE" = "full" ]; then
   CRON_SQL="select \"jobKey\", floor(extract(epoch from max(t)))::bigint from (select \"jobKey\", \"createdAt\" as t from \"SystemTaskLog\" where status = 'SUCCESS' union all select \"jobKey\", \"lastRunAt\" from \"SystemTaskStatus\" where status in ('SUCCESS', 'RUNNING') and \"lastRunAt\" is not null) s group by 1;"
   # $DOCKER 는 의도적 미인용(테스트 훅이 "bash <경로>" 두 단어를 줄 수 있다 — 기존 규약).
   CRON_ROWS="$($DOCKER exec supabase-db psql -U supabase_admin -d postgres -At -F'|' -c "$CRON_SQL" 2>/dev/null || true)"
+  # 조치대기(waiting_owner) 사고가 있는 잡 — 늦음 목록에서만 뺀다(크론 자가 복구 2단계).
+  # 그 잡은 사고 알림(incident-notify.sh)이 이미 오너에게 알렸거나 알릴 차례라, 메뉴바가 같은 일을
+  # 「늦었습니다」로 또 울리면 알림이 두 갈래가 된다. 정상 개수·「성공 기록 없음」 판정은 그대로다.
+  # ⛔ 'open'(일시 실패)은 빼지 않는다 — 승격은 다음 발생에서 일어나므로, 작업이 아예 멈추면 open 사고는
+  #    영영 조치대기로 안 올라가고 사고 알림도 안 나간다. 그때 메뉴바까지 빼면 아무도 안 울린다.
+  # ⏱ 빼는 것은 그 사고가 **아직 되풀이되는 동안**뿐이다 — 마지막 발생(lastSeenAt)이 그 잡의 늦음 문턱(아래
+  #    c_limit_min, 늦음 판정과 같은 값) 안일 때만. 첫 알림 뒤 작업이 아예 멈추면 실패 기록도 안 쌓여 lastSeenAt 이
+  #    낡는데, 그때까지 빼면 사고 알림은 이미 한 번 나갔고 메뉴바는 영영 조용하다. 그래서 그 경우 늦음으로 되살린다.
+  # ⛔ 알림 틀림(C)은 작업 고장이 아니라 빼는 근거가 아니다(kind <> 'C').
+  # 🪤 CRON_SQL 에 NOT IN 으로 넣지 않는다 — 그러면 그 잡의 마지막 성공 행이 사라져 「성공 기록이
+  #    없습니다」(warn)로 바뀐다. 따로 묻고, 조회가 실패하면(테이블 미적용 등) 빈 목록 = 아무것도
+  #    빼지 않는다 — 모르는 것을 근거로 알림을 끄지 않는다. 늦은 잡이 있을 때만 묻는다(평소엔 0회).
+  CRON_INCIDENT_SQL="select \"jobKey\", floor(max(extract(epoch from \"lastSeenAt\")))::bigint from \"CronIncident\" where status = 'waiting_owner' and kind <> 'C' group by 1;"
+  CRON_INCIDENT_JOBS=""
+  cron_incident_loaded=0
 
   if [ ! -r "$CRONTAB_FILE" ]; then
     # 크론탭 자체를 못 읽는 것은 DB 실행 기록과 무관한 원인이다(파일 부재·권한) —
@@ -327,6 +342,16 @@ if [ "$MODE" = "full" ]; then
       c_age_min=$(( (NOW_EPOCH - c_last) / 60 ))
       [ -n "$c_limit_min" ] || c_limit_min=$(( c_limit_h * 60 ))
       if [ "$c_age_min" -gt "$c_limit_min" ]; then
+        if [ "$cron_incident_loaded" -eq 0 ]; then
+          CRON_INCIDENT_JOBS="$($DOCKER exec supabase-db psql -U supabase_admin -d postgres -At -F'|' -c "$CRON_INCIDENT_SQL" </dev/null 2>/dev/null || true)"
+          cron_incident_loaded=1
+        fi
+        # 위 ⏱ — 사고의 마지막 발생이 이 잡의 문턱 안이면(아직 되풀이되는 중) 뺀다. 숫자가 아니면 빼지 않는다.
+        c_seen="$(printf '%s\n' "$CRON_INCIDENT_JOBS" | awk -F'|' -v j="$c_job" '$1==j {print $2}' | tail -1 || true)"
+        case "$c_seen" in
+          ''|*[!0-9]*) ;;
+          *) if [ $(( (NOW_EPOCH - 10#$c_seen) / 60 )) -le "$c_limit_min" ]; then continue; fi ;;
+        esac
         cron_late=$((cron_late + 1))
         cron_late_names="${cron_late_names:+$cron_late_names, }$c_job"
       fi

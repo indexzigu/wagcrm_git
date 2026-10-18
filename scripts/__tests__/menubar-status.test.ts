@@ -60,6 +60,12 @@ interface RunOpts {
   cronRows?: Record<string, number>;
   /** true 면 psql 조회가 실패한다(판정 불능 경로). */
   cronQueryFails?: boolean;
+  /** 잡별 사고 상태(open · waiting_owner · resolved). 가짜 psql 은 SQL 에 그 상태 리터럴이 있는 잡만 돌려준다. */
+  incidents?: Record<string, string>;
+  /** true 면 사고 조회만 실패한다(테이블 미적용 등) — 늦음 판정은 그대로여야 한다. */
+  incidentQueryFails?: boolean;
+  /** 잡별 사고의 마지막 발생(lastSeenAt)이 몇 시간 전인가. 기본 0.5 = 아직 되풀이되는 중 */
+  incidentLastSeenAgoH?: Record<string, number>;
   /** 실행 전에 미리 심어 둘 연속 기록. firstSeenAgoH = "지금부터 몇 시간 전에 처음 관측".
    *  count 는 보통 number 지만, 손상 픽스처("089"·"abc" 등 8진수 함정·비숫자)를 그대로
    *  파일에 심기 위해 string 도 받는다. */
@@ -130,6 +136,8 @@ esac`,
     "docker",
     `if [ "$1" = "inspect" ]; then
   ${opts.dbState === undefined ? 'echo "running"' : opts.dbState === "" ? "exit 1" : `echo "${opts.dbState}"`}
+elif [ "$1" = "exec" ] && [[ "$*" == *CronIncident* ]]; then
+  ${opts.incidentQueryFails ? "exit 1" : Object.entries(opts.incidents ?? {}).map(([j, st]) => `[[ "$*" == *"'${st}'"* ]] && printf '%s|%s\\n' ${JSON.stringify(j)} ${Math.floor(Date.now() / 1000) - Math.round((opts.incidentLastSeenAgoH?.[j] ?? 0.5) * 3600)}`).join("\n  ") + "\n  true"}
 elif [ "$1" = "exec" ]; then
   ${opts.cronQueryFails ? "exit 1" : `cat <<'PSQL_ROWS'\n${psqlOut}\nPSQL_ROWS`}
 fi`,
@@ -434,6 +442,105 @@ describe("status.sh 행위 계약", () => {
     expect(sql).toContain('\\"lastRunAt\\"');
     expect(sql).toContain('\\"SystemTaskLog\\"');
     expect(sql).toMatch(/status in \('SUCCESS', 'RUNNING'\)/);
+    expect(isSingleReadOnlySelect(sql!.replace(/\\"/g, '"'))).toBe(true);
+  });
+
+  it("조치대기 사고가 있는 잡은 늦음 목록에서 뺀다 — 사고 알림이 이미 오너에게 갔으므로 메뉴바가 같은 일을 또 울리지 않는다", () => {
+    const r = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["a", "b", "c"],
+      cronRows: { a: 40, b: 41, c: 2 },
+      incidents: { a: "waiting_owner" },
+    });
+    const item = byKey(r, "crons");
+    expect(item.level).toBe("error");
+    expect(item.detail).toBe("1개가 예정보다 늦었습니다: b");
+  });
+
+  it("조치대기 사고라도 마지막 발생이 그 잡의 늦음 문턱보다 오래면 늦음으로 되살린다 — 첫 알림 뒤 작업이 아예 멈춘 경우", () => {
+    const r = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["a", "b"],
+      cronRows: { a: 40, b: 2 },
+      incidents: { a: "waiting_owner" },
+      incidentLastSeenAgoH: { a: 31 }, // 매일 문턱 30h 초과 — 실패 기록조차 안 쌓인다 = 안 돌고 있다
+    });
+    const item = byKey(r, "crons");
+    expect(item.level).toBe("error");
+    expect(item.detail).toBe("1개가 예정보다 늦었습니다: a");
+  });
+
+  it("상시 잡은 상시 문턱으로 잰다 — 조치대기 사고의 마지막 발생이 40분 전이면(2분 주기 + 30분 초과) 되살린다", () => {
+    const r = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["tick@every2"],
+      cronRows: { tick: 2 },
+      incidents: { tick: "waiting_owner" },
+      incidentLastSeenAgoH: { tick: 40 / 60 },
+    });
+    expect(byKey(r, "crons").detail).toBe("1개가 예정보다 늦었습니다: tick");
+    const fresh = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["tick@every2"],
+      cronRows: { tick: 2 },
+      incidents: { tick: "waiting_owner" },
+      incidentLastSeenAgoH: { tick: 10 / 60 },
+    });
+    expect(byKey(fresh, "crons").level).toBe("ok");
+  });
+
+  it("open(일시) 사고만 있는 잡은 늦음 목록에 남는다 — 작업이 멈추면 승격이 안 일어나 메뉴바가 영영 조용해진다", () => {
+    const r = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["a", "b"],
+      cronRows: { a: 40, b: 2 },
+      incidents: { a: "open" },
+    });
+    const item = byKey(r, "crons");
+    expect(item.level).toBe("error");
+    expect(item.detail).toBe("1개가 예정보다 늦었습니다: a");
+  });
+
+  it("늦은 잡이 전부 조치대기 사고면 정상 문구 그대로다", () => {
+    const r = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["a", "b"],
+      cronRows: { a: 40, b: 2 },
+      incidents: { a: "waiting_owner" },
+    });
+    const item = byKey(r, "crons");
+    expect(item.level).toBe("ok");
+    expect(item.detail).toBe("2개 모두 정상");
+  });
+
+  it("사고 조회가 실패하면 빼지 않는다 — 모르는 것을 근거로 알림을 끄지 않는다", () => {
+    const r = runStatus({
+      dailyAgeH: 5,
+      weeklyAgeH: 24,
+      cronJobs: ["a", "b"],
+      cronRows: { a: 40, b: 2 },
+      incidents: { a: "waiting_owner" },
+      incidentQueryFails: true,
+    });
+    expect(byKey(r, "crons").level).toBe("error");
+  });
+
+  it("사고 조회도 단일 읽기전용 SELECT 이고 조치대기만 본다", () => {
+    const src = readFileSync(SCRIPT, "utf8");
+    const sql = /^\s*CRON_INCIDENT_SQL="(.*)"$/m.exec(src)?.[1];
+    expect(sql, "CRON_INCIDENT_SQL 앵커 없음(공허 통과 방지)").toBeTruthy();
+    expect(sql).toContain('\\"CronIncident\\"');
+    expect(sql).toMatch(/status = 'waiting_owner'/);
+    expect(sql).not.toContain("'open'");
+    // 알림 틀림(C)은 작업 고장이 아니다 — 그것으로 늦음을 빼지 않는다. 마지막 발생 시각으로 「아직 되풀이되는가」를 잰다.
+    expect(sql).toMatch(/kind <> 'C'/);
+    expect(sql).toContain('max(extract(epoch from \\"lastSeenAt\\"))');
     expect(isSingleReadOnlySelect(sql!.replace(/\\"/g, '"'))).toBe(true);
   });
 

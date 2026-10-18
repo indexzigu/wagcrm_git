@@ -115,6 +115,27 @@ describe("TodayWorkCard", () => {
     expect(screen.getByText("마지막 동기화 2일 전")).not.toHaveClass("shrink-0");
   });
 
+  // 크론 자가 복구 2단계(2026-10-18): 오너 조치를 기다리는 자동화 작업이 한 줄로 뜬다.
+  it("자동화 작업 조치대기 줄 — 주의색 세부는 줄을 바꾸고, 주문 동기화가 낡아도 색을 거두지 않는다", () => {
+    const automation: TodayWorkRow = {
+      key: "automation-waiting",
+      label: "자동화 작업 조치대기",
+      count: 2,
+      tone: "caution",
+      href: "/settings/integrations#automation-status",
+      detail: "네이버 발주 동기화 외 1건",
+    };
+    render(
+      <TodayWorkCard rows={[automation]} loading={false} failedSources={[]} onRetry={() => {}} orderSync={{ kind: "stale", daysAgo: 3 }} />,
+    );
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", "/settings/integrations#automation-status");
+    expect(link).toHaveAccessibleName("자동화 작업 조치대기 2건, 네이버 발주 동기화 외 1건");
+    const detail = screen.getByText("네이버 발주 동기화 외 1건");
+    expect(detail).toHaveClass("text-status-caution-text", "break-keep");
+    expect(within(link).getByText("2", { selector: '[data-slot="today-work-count"]' })).toHaveClass("text-status-caution-text");
+  });
+
   it("처음 불러오는 중에는 헤더 한 줄 + 스켈레톤 — 「없다」고 하지 않는다", () => {
     const { container } = render(<TodayWorkCard rows={[]} loading failedSources={[]} onRetry={() => {}} orderSync={{ kind: "loading" }} />);
     expect(screen.getByText("오늘 처리할 일")).toBeInTheDocument();
