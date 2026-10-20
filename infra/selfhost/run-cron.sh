@@ -105,9 +105,75 @@ has_partial_failure() {
   return 1
 }
 
+# ── 재시도: 판정은 앱, 실행은 이 스크립트 (자가 정상화 3단계, 2026-10-21) ──────
+# 작업별 재시도 정책의 정본은 `src/lib/cron-jobs.ts`(`KnownJob.retry`)이고, 이번
+# 실패가 재시도 대상인지(일시 장애인가·남은 회차가 있는가)는 **앱이** 판정해 응답 헤더
+# `X-Cron-Retry-After-Sec: <초>` 로 알려 준다. 이 스크립트는 그 헤더가 있으면 그만큼
+# 기다렸다가 같은 작업을 `X-Cron-Attempt: <n+1>` 로 다시 부른다. 여기서 정책을 따로
+# 들고 있지 않는다 — 두 번째 판사가 생기면 둘이 어긋나는 날 같은 부수효과가 두 번 난다.
+#
+# 그래도 스크립트 쪽 상한은 따로 둔다: **앱 판정 재시도는 최대 2회**(앱이 몇 번을 더
+# 달라고 해도 여기서 멈춘다), 헤더 값은 **정수 1..3600초만** 받는다. 앱 쪽 결함 하나가
+# 무한 반복·하루짜리 대기로 번지지 않게 하는 양쪽 상한이다.
+#
+# 예외 둘 — 앱이 판정할 수 없는 경우다:
+#  - curl 종료코드 7(앱 접속 자체 실패 = 앱 응답 없음): 요청이 앱에 닿지 않았으니 다시
+#    불러도 이중 효과가 없다. **앱이 아직 한 번도 응답하지 않았을 때 1회만**, 120초 뒤.
+#    이때 회차 헤더는 올리지 않는다 — 앱이 본 회차는 여전히 1이다. 올리면 앱이 정기
+#    실행을 「재시도 회차」로 읽어 사고 반복 횟수를 세지 않게 되고, 오너 알림 기준
+#    (같은 원인 2회 연속)이 하루 밀린다.
+#  - curl 종료코드 28(15분 시간 초과): 앱 안에서 작업이 **아직 돌고 있을 수 있어**
+#    다시 부르면 겹쳐 돈다. 다시 부르지 않는다.
+#
+# 실측(2026-10-21, 임시 로컬 HTTP 서버가 500 + 사용자 헤더를 돌려주게 해서 확인 —
+# curl 8.7.1): `-f` 로 종료코드 22 가 나도 `-D <파일>` 에는 응답 헤더가 **그대로
+# 남는다**. 그래서 `--fail-with-body` 로 바꾸지 않았고 기존 FAIL 줄 내용도 그대로다.
+#
+# 로그: 회차마다 기존 라벨 줄 1줄(불변식 그대로) + 재시도를 예약할 때만
+# `RETRY <job> <k>/<상한> after <초>s (<사유>)` 1줄. k/상한은 그 종류 재시도의 순번과
+# 이 스크립트의 상한이다(앱 판정 x/2, 앱 응답 없음 1/1) — 작업별 정책 횟수가 아니다.
+# 대기 명령은 `CRON_RETRY_SLEEP_CMD`(기본 `sleep`) — 테스트가 실제로 기다리지 않게 하는 훅.
+CRON_RETRY_SLEEP_CMD="${CRON_RETRY_SLEEP_CMD:-sleep}"
+APP_RETRY_MAX=2
+APP_DOWN_RETRY_SEC=120
+
+HDR_FILE="$(mktemp "${TMPDIR:-/tmp}/run-cron-hdr.XXXXXX")"
+trap 'rm -f "$HDR_FILE"' EXIT
+
+# 응답 헤더 파일에서 재시도 초를 읽는다. 유효하지 않으면 빈 문자열.
+# (리다이렉트로 응답이 여럿이면 마지막 값이 이긴다. bash 3.2 호환 — `${x,,}` 금지.)
+retry_after_sec() {
+  local file="$1" line val=""
+  [ -s "$file" ] || return 0
+  shopt -s nocasematch
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    if [[ "$line" == x-cron-retry-after-sec:* ]]; then
+      val="${line#*:}"
+      val="${val#"${val%%[![:space:]]*}"}"
+      val="${val%"${val##*[![:space:]]}"}"
+    fi
+  done < "$file"
+  shopt -u nocasematch
+  # 숫자만, 그리고 앞자리 0 은 10진수로(`10#`) — 그냥 산술에 넣으면 `0090` 이 8진수 오류다.
+  [[ "$val" =~ ^[0-9]+$ ]] || return 0
+  [ "${#val}" -le 6 ] || return 0
+  val=$(( 10#$val ))
+  if [ "$val" -ge 1 ] && [ "$val" -le 3600 ]; then printf '%s' "$val"; fi
+}
+
+ATTEMPT=1          # 앱이 본 회차(헤더 X-Cron-Attempt)
+APP_RETRIES=0      # 앱 판정 재시도 횟수
+APP_REACHED=0      # 앱이 한 번이라도 응답했는가(앱 응답 없음 재시도 자격)
+APP_DOWN_RETRIED=0
+while :; do
 STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
-if OUT="$(curl -fsS -m 900 -H "Authorization: Bearer ${CRON_SECRET}" \
-          "http://127.0.0.1:3000/api/cron/${JOB}" 2>&1)"; then
+: > "$HDR_FILE"
+RC=0
+OUT="$(curl -fsS -m 900 -H "Authorization: Bearer ${CRON_SECRET}" \
+          -H "X-Cron-Attempt: ${ATTEMPT}" -D "$HDR_FILE" \
+          "http://127.0.0.1:3000/api/cron/${JOB}" 2>&1)" || RC=$?
+if [ "$RC" -eq 0 ]; then
   # ⚠️ 아래 두 갈래 모두 종료코드는 0 이다. HTTP 호출 자체는 성공했고, 잡 성패의
   # SSOT 는 이 래퍼가 아니라 `SystemTaskStatus`(레이더)다 — 여기서 exit 1 을 내면
   # 같은 사실을 판정하는 두 번째·더 약한 판사가 생긴다. 이 래퍼의 몫은 **원인을
@@ -121,5 +187,34 @@ if OUT="$(curl -fsS -m 900 -H "Authorization: Bearer ${CRON_SECRET}" \
   fi
 else
   echo "[$STAMP] FAIL $JOB $(clip "$OUT" "$CRON_LOG_DETAIL_MAX")" >> "$LOG"
-  exit 1
 fi
+
+# 다음 회차를 부를지 정한다. 7(앱 응답 없음)·28(시간 초과)·기타 연결 오류는 앱 응답이
+# 없으니 헤더도 없다. 0(정상 응답)·22(HTTP 4xx/5xx)만 앱이 응답한 것이다.
+WAIT=""; REASON=""; KIND=""
+if [ "$RC" -eq 0 ] || [ "$RC" -eq 22 ]; then
+  APP_REACHED=1
+  if [ "$APP_RETRIES" -lt "$APP_RETRY_MAX" ]; then
+    WAIT="$(retry_after_sec "$HDR_FILE")"
+    if [ -n "$WAIT" ]; then KIND=app; REASON="앱 판정"; fi
+  fi
+elif [ "$RC" -eq 7 ] && [ "$APP_REACHED" -eq 0 ] && [ "$APP_DOWN_RETRIED" -eq 0 ]; then
+  WAIT="$APP_DOWN_RETRY_SEC"; KIND=down; REASON="앱 응답 없음"
+fi
+
+if [ -z "$WAIT" ]; then
+  # 최종 회차가 판정한다(기존 계약: 호출 실패만 exit 1).
+  [ "$RC" -eq 0 ] || exit 1
+  exit 0
+fi
+
+if [ "$KIND" = app ]; then
+  APP_RETRIES=$(( APP_RETRIES + 1 ))
+  ATTEMPT=$(( ATTEMPT + 1 ))
+  echo "[$STAMP] RETRY $JOB ${APP_RETRIES}/${APP_RETRY_MAX} after ${WAIT}s (${REASON})" >> "$LOG"
+else
+  APP_DOWN_RETRIED=1
+  echo "[$STAMP] RETRY $JOB 1/1 after ${WAIT}s (${REASON})" >> "$LOG"
+fi
+$CRON_RETRY_SLEEP_CMD "$WAIT"
+done

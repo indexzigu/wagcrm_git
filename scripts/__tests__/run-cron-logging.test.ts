@@ -64,7 +64,8 @@ function runJob(
   writeCurlStub(stubDir, curlStubBody(bodyFile, curlExit));
 
   const result = spawnSync("bash", [scriptPath, "some-job"], {
-    env: { ...process.env, ...env, HOME: home, ...curlStubEnv(stubDir) },
+    // 재시도 대기는 기다리지 않는다(재시도 행위 자체는 `run-cron-retry.test.ts` 가 고정).
+    env: { ...process.env, CRON_RETRY_SLEEP_CMD: "true", ...env, HOME: home, ...curlStubEnv(stubDir) },
     encoding: "utf8",
   });
   const log = path.join(home, "selfhost", "logs", "cron.log");
@@ -151,7 +152,9 @@ describe("run-cron.sh 로그 기록", () => {
   });
 
   it("여러 줄 응답도 한 줄로 접는다", () => {
-    const { line } = runJob("curl: (7) 연결 실패\n두 번째 줄", { curlExit: 7 });
+    // 종료코드 6(호스트 해석 실패) — 7(앱 응답 없음)은 1회 재시도가 붙어 한 줄 단언과
+    // 섞이므로 재시도 테스트(`run-cron-retry.test.ts`)로 넘겼다.
+    const { line } = runJob("curl: (6) 연결 실패\n두 번째 줄", { curlExit: 6 });
     expect(line).toContain("두 번째 줄");
   });
 
