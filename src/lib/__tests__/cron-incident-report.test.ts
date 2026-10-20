@@ -183,6 +183,38 @@ describe("formatDigest", () => {
     );
   });
 
+  it("기록된 조치 없이 재시도 회차(2 이상)에서 풀렸으면 조치 칸에 「자동 재시도로 정상화」", () => {
+    const retried = digestItem({
+      id: "r3",
+      normalizedAt: new Date("2026-10-17T21:15:00Z"),
+      normalizedEvidence: { runAt: "2026-10-17T21:15:00.000Z", attempt: 2 },
+    });
+    expect(formatDigest([retried], [], 0, NOW)?.detail).toBe(
+      "정상화 1건\n10-18 03:00 네이버 정산 동기화 · 네트워크 끊김 · 자동 재시도로 정상화 · 정상화 06:15",
+    );
+  });
+
+  it("첫 실행(회차 1)으로 풀린 정상화 줄은 그대로다", () => {
+    const plain = digestItem({
+      id: "r4",
+      normalizedAt: new Date("2026-10-17T21:15:00Z"),
+      normalizedEvidence: { runAt: "2026-10-17T21:15:00.000Z", attempt: 1 },
+    });
+    expect(formatDigest([plain], [], 0, NOW)?.detail).toBe(
+      "정상화 1건\n10-18 03:00 네이버 정산 동기화 · 네트워크 끊김 · 정상화 06:15",
+    );
+  });
+
+  it("기록된 조치가 있으면 재시도 회차여도 그 조치를 적는다", () => {
+    const both = digestItem({
+      id: "r5",
+      normalizedAt: new Date("2026-10-17T21:15:00Z"),
+      normalizedEvidence: { attempt: 3 },
+      actions: [{ at: "2026-10-17T20:00:00Z", what: "다시 시도" }],
+    });
+    expect(formatDigest([both], [], 0, NOW)?.detail).toContain("네트워크 끊김 · 다시 시도 · 정상화 06:15");
+  });
+
   it("조치대기가 7일을 넘으면 (N일째)", () => {
     const old = digestItem({ id: "w2", firstSeenAt: new Date("2026-10-09T00:30:00Z") }); // 9일 전
     const recent = digestItem({ id: "w3", firstSeenAt: new Date("2026-10-11T00:30:00Z") }); // 7일 전
