@@ -250,7 +250,7 @@ describe("resolveOpenIncidents", () => {
       kind: "A",
       status: { in: ["open", "waiting_owner"] },
       prNumber: null,
-      lastSeenAt: { gte: new Date(at.getTime() - RETRY_CYCLE_WINDOW_MS) },
+      lastSeenAt: { gte: new Date(at.getTime() - RETRY_CYCLE_WINDOW_MS), lte: at },
     });
     expect(first.data.normalizedEvidence).toEqual({ runAt: at.toISOString(), attempt: 2 });
     expect(first.data.layer).toBe(1);

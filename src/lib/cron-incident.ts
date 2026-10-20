@@ -184,7 +184,8 @@ export async function resolveOpenIncidents(input: {
           kind: "A",
           status: { in: OPEN_STATUSES },
           prNumber: null,
-          lastSeenAt: { gte: new Date(runAt.getTime() - RETRY_CYCLE_WINDOW_MS) },
+          // 상한 runAt: 이 성공 뒤에 겹친 실행이 남긴 실패는 이번 재시도가 고친 것이 아니다.
+          lastSeenAt: { gte: new Date(runAt.getTime() - RETRY_CYCLE_WINDOW_MS), lte: runAt },
         },
         data: {
           status: "resolved",
