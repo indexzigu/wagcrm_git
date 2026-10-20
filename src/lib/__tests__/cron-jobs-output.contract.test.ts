@@ -9,10 +9,10 @@ import { KNOWN_JOBS } from "@/lib/cron-jobs";
  *
  *  O1. 19개 작업 전부가 `output` 키를 **명시적으로** 가진다(선언 또는 `null` 면제). 키를 빠뜨린
  *      작업은 「판정 대상인지」를 아무도 정하지 않은 상태라, 그 작업의 산출 0 이 영영 안 잡힌다.
- *  O2. 1단계 선언 대상은 실질 실패 선언(`declareTotalFailure`·`declareStoryCaptureOutcome`)을
- *      이미 쓰는 6개와 정확히 같다(설계 ⚙️J8).
- *  O3. 실질 실패 선언을 부르는 크론 라우트의 작업 키 ⊆ 선언 집합 — 새 수집 작업이 선언 없이
- *      생기면 여기서 깨진다.
+ *  O2. 선언 대상은 실질 실패 선언(`declareTotalFailure`·`declareStoryCaptureOutcome`)을
+ *      쓰는 작업 중 판정 면제를 뺀 5개와 정확히 같다(설계 ⚙️J8).
+ *  O3. 실질 실패 선언을 부르는 크론 라우트의 작업 키 ⊆ 선언 집합 ∪ 사유 있는 면제 — 새 수집 작업이
+ *      선언도 면제 사유도 없이 생기면 여기서 깨진다.
  *
  * ⚠️ 소스 스캔은 정규식이 아니라 **컴파일러(AST)** 로 한다 — 주석에 함수 이름만 적힌 라우트가
  * 호출하는 것으로 잡히면 안 되고, 손수 만든 주석 제거기는 문자열·정규식 리터럴에서 틀린다.
@@ -22,8 +22,13 @@ const root = process.cwd();
 const CRON_DIR = join(root, "src/app/api/cron");
 const OUTCOME_FUNCTIONS = new Set(["declareTotalFailure", "declareStoryCaptureOutcome"]);
 
+// 실질 실패 선언은 쓰지만 「산출 0」 판정은 면제한 작업 — 면제는 사유와 함께만 둔다.
+const EXEMPT_WITH_REASON: Record<string, string> = {
+  "capture-stories":
+    "스토리는 24시간이면 사라지고 셀러가 며칠씩 안 올리는 것이 흔해 산출 0 만으로 고장을 못 가른다(2026-10-20 첫 실 B 경보가 거짓 경보)",
+};
+
 const EXPECTED_DECLARED: Record<string, string> = {
-  "capture-stories": "스토리",
   "collect-instagram": "인스타 지표",
   "collect-youtube": "유튜브 지표",
   "collect-campaign-posts": "캠페인 게시물",
@@ -81,7 +86,7 @@ describe("KNOWN_JOBS 산출 선언 계약", () => {
     expect(missing).toEqual([]);
   });
 
-  it("O2: 선언 대상은 정확히 6개이고 라벨·연속 횟수가 설계와 같다", () => {
+  it("O2: 선언 대상은 정확히 5개(면제 제외)이고 라벨·연속 횟수가 설계와 같다", () => {
     const declared = Object.fromEntries(
       KNOWN_JOBS.filter((job) => job.output != null).map((job) => [job.key, job.output]),
     );
@@ -103,7 +108,13 @@ describe("KNOWN_JOBS 산출 선언 계약", () => {
     }
     // 음성 대조군 — 스캔이 아무것도 못 찾으면 ⊆ 가 공허하게 통과한다.
     expect(callers.length).toBeGreaterThanOrEqual(6);
-    expect(callers.filter((key) => !declaredKeys.has(key))).toEqual([]);
+    expect(callers.filter((key) => !declaredKeys.has(key) && !(key in EXEMPT_WITH_REASON))).toEqual([]);
+    // 면제는 실제로 선언 없이 남아 있어야 하고(면제 목록이 죽은 항목이 되지 않게) 사유가 비면 안 된다.
+    for (const [key, reason] of Object.entries(EXEMPT_WITH_REASON)) {
+      expect(KNOWN_JOBS.find((job) => job.key === key)?.output, key).toBeNull();
+      expect(callers, key).toContain(key);
+      expect(reason.trim().length, key).toBeGreaterThan(10);
+    }
   });
 
   it("스캐너 반증: 주석·문자열 속 이름은 호출로 세지 않고, 실제 호출은 센다", () => {

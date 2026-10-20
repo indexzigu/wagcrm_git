@@ -59,9 +59,14 @@ export type KnownJob = {
    * 선언하면 래퍼가 응답 본문의 `targets`·`produced` 로, 대상이 있었는데 산출 0 인 SUCCESS 가
    * `zeroRunsToFlag` 회 연속이면 사고를 연다. 1단계 선언 대상은 실질 실패 선언
    * (`declareTotalFailure`·`declareStoryCaptureOutcome`)을 이미 쓰는 작업뿐이다(설계 ⚙️J8).
-   * ℹ️ capture-stories 만 `produced` 가 실산출(저장한 스토리 수)이라 B 가 독립 신호다. 나머지 5개는
-   * `produced = 성공 수`라 「대상>0·산출0」이 곧 `failed:true`(사고 A)와 겹친다 — 받아들인 한계이고,
-   * 기간 기준 보강은 2단계 몫이다(docs/private/specs/2026-10-18-cron-self-healing-design.md ⚙️J8).
+   * ℹ️ 선언된 5개는 `produced = 성공 수`라 「대상>0·산출0」이 곧 `failed:true`(사고 A)와 겹친다 — 받아들인
+   * 한계이고, 기간 기준 보강은 후속 단계 몫이다(docs/private/specs/2026-10-18-cron-self-healing-design.md ⚙️J8).
+   * ⛔ capture-stories 는 `null`(판정 면제)이다(2026-10-20). 스토리는 24시간이면 사라지고 셀러가 며칠씩
+   * 안 올리는 것이 흔해 「대상>0·산출0」만으로는 고장과 정상을 가를 수 없다 — 첫 실 B 경보가 바로 그
+   * 거짓 경보였다(대상 1명이 2주간 스토리 0개, 뷰어 조회 정상). 뷰어 형식 변경 같은 진짜 고장은
+   * 「응답 미포착」·「응답 형식 불일치」(`extractStoryItems`, story-viewer-fetch.ts) 오류로 남아 전원
+   * 실패 시 사고 A 가 된다 — 「스토리 없음」 응답은 `items: []` 라 이 오류에 걸리지 않는다(2026-10-20
+   * 실측). 「뷰어가 본 수」로 바꿔도 그날 값이 0이라 해법이 아니다.
    */
   readonly output: { readonly label: string; readonly zeroRunsToFlag: number } | null;
 };
@@ -79,7 +84,7 @@ export const KNOWN_JOBS: readonly KnownJob[] = [
   { key: "collect-qnas", name: "상품 문의 수집", cycle: "매주 월", timeKst: "08:00", lane: "vercel", desc: "네이버 상품문의·고객문의(VOC)를 수집해 상품·캠페인에 귀속합니다.", output: null },
   { key: "analyze-voc", name: "VOC AI 인사이트", cycle: "매일", timeKst: "08:30", lane: "vercel", desc: "신규 문의·리뷰가 임계 이상 쌓인 판매 조건만 골라 AI 요약(소구점·불만·FAQ)을 생성합니다.", output: { label: "VOC 분석", zeroRunsToFlag: 2 } },
   { key: "price-monitoring", name: "최저가 모니터링", cycle: "매일", timeKst: "13:00", lane: "vercel", desc: "캠페인 상품의 최저가를 판매기간 ±7일 창에서 수집하고 가격 위반을 감지합니다.", output: null },
-  { key: "capture-stories", name: "스토리 스냅샷 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "행사 수집창(시작 7일 전~마감 1일 후) 캠페인의 인스타 셀러 스토리를 익명 뷰어로 전량 스냅샷 수집합니다. 태그·멘션과 무관하게 다 담고, 우리 캠페인 홍보인지는 나중에 썸네일로 분류합니다. ⚠️ 스토리는 24시간 뒤 사라지므로 거른 회차는 소급이 불가능합니다. 이 줄이 지연으로 뜨면 그날 밤 수집이 통째로 빠졌다는 뜻이니 맥이 꺼져 있었는지부터 확인하세요. 아직 같은 날 안이라면 지금 실행 버튼으로 만회할 수 있습니다.", output: { label: "스토리", zeroRunsToFlag: 2 } },
+  { key: "capture-stories", name: "스토리 스냅샷 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "행사 수집창(시작 7일 전~마감 1일 후) 캠페인의 인스타 셀러 스토리를 익명 뷰어로 전량 스냅샷 수집합니다. 태그·멘션과 무관하게 다 담고, 우리 캠페인 홍보인지는 나중에 썸네일로 분류합니다. ⚠️ 스토리는 24시간 뒤 사라지므로 거른 회차는 소급이 불가능합니다. 이 줄이 지연으로 뜨면 그날 밤 수집이 통째로 빠졌다는 뜻이니 맥이 꺼져 있었는지부터 확인하세요. 아직 같은 날 안이라면 지금 실행 버튼으로 만회할 수 있습니다.", output: null },
   { key: "collect-campaign-posts", name: "캠페인 게시물 수집", cycle: "매일", timeKst: "00:00", lane: "vercel", desc: "캠페인 관련 셀러 게시물 후보를 수집합니다.", output: { label: "캠페인 게시물", zeroRunsToFlag: 2 } },
   { key: "refresh-instagram-token", name: "Instagram 토큰 갱신", cycle: "매주 월", timeKst: "11:00", lane: "vercel", desc: "인스타그램 장기 액세스 토큰을 만료 전에 갱신합니다.", output: null },
   { key: "collect-instagram", name: "Instagram 셀러 분석", cycle: "매일", timeKst: "12:00", lane: "vercel", desc: "감시 셀러의 인스타그램 프로필·성과 지표를 수집합니다. 매일 돌면서 마지막 갱신에서 7일이 지난 셀러만 골라 수집합니다.", output: { label: "인스타 지표", zeroRunsToFlag: 2 } },
