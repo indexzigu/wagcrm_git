@@ -51,6 +51,7 @@ import {
 import type { ReceiptScanApiResponse } from "@/lib/tax-invoice-mail/board-evidence";
 import { SUPPLIER } from "@/lib/tax-invoice-builder";
 import { toKstYmd } from "@/lib/date-utils";
+import { INVOICE_LOOKUP_DAYS_AFTER_END } from "@/lib/tax-invoice-mail/invoice-lookup-scope";
 
 type ApplicableView = Extract<CampaignInvoiceView, { applicable: true }>;
 
@@ -62,6 +63,10 @@ const DOT_CLASS: Record<"none" | "info" | "caution" | "slate", string> = {
 };
 
 const SCANNING_HINT = "메일함을 확인하고 있습니다.";
+/** 자동 조회를 하지 않는 캠페인에서 메일함을 아직 안 본 달의 풀이(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). */
+/** 메일함 조회를 시도했는데 결과가 없는 달의 풀이 — 실패 사유는 토스트가 따로 알린다. */
+const SCAN_FAILED_HINT = "메일함을 확인하지 못했습니다. 「조회」를 다시 눌러 주세요.";
+const LOOKUP_IDLE_HINT = `정산 단계 캠페인만 판매 종료 후 ${INVOICE_LOOKUP_DAYS_AFTER_END}일까지 자동으로 메일함을 확인합니다. 「조회」를 누르면 지금 확인합니다.`;
 
 function formatWon(value: number | null): string {
   return value === null ? "—" : `${value.toLocaleString("ko-KR")}원`;
@@ -105,14 +110,14 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
 }
 
 /** 달별 줄 하나 — 줄 전체가 마우스 올림 트리거다(풀이 + 세부). */
-function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean }) {
+function MonthRow({ month, awaitingHint }: { month: InvoiceMonth; awaitingHint: string | null }) {
   const [open, setOpen] = useState(false);
   const openOnTouch = (event: PointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === "touch") setOpen(true);
   };
   // 메일함 확인 전에는 「미발견」·「조회불가」를 단정하지 않는다 — 판정이 메일에 기대는 상태는 「—」.
   const awaitingScan =
-    scanning && (month.state === "NOT_FOUND" || month.state === "OUT_OF_SCAN");
+    awaitingHint !== null && (month.state === "NOT_FOUND" || month.state === "OUT_OF_SCAN");
   // 기록은 됐는데 합계가 전액과 어긋난 달(R0) — 작성일은 그대로 두고 낱말·색·풀이만 어긋남 상태 것을 쓴다.
   // 칸: 「9/30 · 오류 가능성」(점은 caution). 끝난 달 수(n/m)에는 그대로 센다 — 머리글이 「확인 필요」를 따로 보인다.
   const mismatch = month.recorded.length > 0 ? month.mismatch : null;
@@ -122,7 +127,7 @@ function MonthRow({ month, scanning }: { month: InvoiceMonth; scanning: boolean 
   // 「수정됨」은 풀이에 덧붙인다 — 한쪽 신호가 다른 쪽을 덮어 작성일까지 사라지지 않게.
   const amendedAndMismatched = month.state === "AMENDED" && mismatch !== null;
   const hint = awaitingScan
-    ? SCANNING_HINT
+    ? awaitingHint
     : amendedAndMismatched
       ? `${INVOICE_MONTH_HINT[mismatch ?? month.state]} ${INVOICE_MONTH_HINT.AMENDED}`
       : INVOICE_MONTH_HINT[mismatch ?? month.state];
@@ -641,7 +646,7 @@ function useCampaignInvoices({
     [busy, campaignId, load, onChanged],
   );
 
-  return { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading };
+  return { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading, hasOpenMonth };
 }
 
 type UnitReview = { mismatch: RecordedMismatch; acknowledged: InvoiceReviewAck | null; staleAck: boolean };
@@ -872,6 +877,7 @@ export function CampaignInvoiceSlot({
   title,
   scan,
   scanLoading,
+  autoLookup,
   onRequestScan,
   onChanged,
   legacyFallback,
@@ -882,6 +888,8 @@ export function CampaignInvoiceSlot({
   title: string;
   scan: ReceiptScanApiResponse | null;
   scanLoading: boolean;
+  /** 열 때 메일함을 자동으로 볼 캠페인인가 — 정산 단계 · 판매 종료 후 60일 이내(`isInvoiceLookupTarget`). */
+  autoLookup: boolean;
   /** 메일함 조회(읽기 전용 IMAP 스캔) — 부모가 결과를 소유한다(수취 칸과 같은 스캔을 재사용). */
   onRequestScan: () => Promise<void> | void;
   /** 기록이 바뀐 뒤 캠페인 행을 다시 읽는다(레거시 날짜가 같이 바뀔 수 있다). */
@@ -892,18 +900,21 @@ export function CampaignInvoiceSlot({
   attachment: ReactNode;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
+  const { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading, hasOpenMonth } = useCampaignInvoices({
     campaignId,
     scan,
     onRequestScan,
     onChanged,
   });
 
-  // 열 때 메일함을 한 번 본다 — 확인 전에는 지난 달을 「미발견」으로 단정할 수 없어서다.
+  // 열 때 메일함을 한 번 본다 — 확인 전에는 지난 달을 「미발견」으로 단정할 수 없어서다. 단 자동 조회 대상
+  // (정산 단계 · 판매 종료 후 60일 이내)이고 아직 빈 달이 있을 때만 — 다 끝난 캠페인에서 메일함 전체를 다시
+  // 훑지 않는다(오너 확정 2026-10-21). 대상이 아니어도 「조회」 버튼은 그대로 쓸 수 있다.
+  const autoScan = autoLookup && hasOpenMonth;
   useEffect(() => {
-    if (!applicable || scan || scanLoading || scanAttempted) return;
+    if (!autoScan || scan || scanLoading || scanAttempted) return;
     requestScan();
-  }, [applicable, scan, scanLoading, scanAttempted, requestScan]);
+  }, [autoScan, scan, scanLoading, scanAttempted, requestScan]);
 
   // 처음 읽기 전에는 옛 단일 날짜 칸을 잠깐이라도 보이지 않는다(그 칸에 날짜를 넣으면 달별 판정을
   // 우회한다). 읽기에 실패했을 때만 옛 칸으로 돌아간다 — 그 실패는 위 load 가 콘솔에 남긴다.
@@ -921,7 +932,9 @@ export function CampaignInvoiceSlot({
   const done = months.filter((m) => isInvoiceMonthDone(m.state)).length;
   // 달은 다 끝났는데 기록한 합계가 전액과 어긋난다(R0) — n/m 이 깨끗한 완료로 읽히지 않게 머리글에 함께 보인다.
   const mismatch = months.find((m) => m.recorded.length > 0 && m.mismatch)?.mismatch ?? null;
-  const scanning = scanLoading || (!scan && !scanAttempted);
+  const scanning = scanLoading || (autoScan && !scan && !scanAttempted);
+  // 메일함을 안 본 달은 「미발견」·「조회불가」로 단정하지 않고 「—」로 둔다 — 풀이만 조회 중인지·자동 조회 밖인지로 가른다.
+  const awaitingHint = scanning ? SCANNING_HINT : scan ? null : scanAttempted ? SCAN_FAILED_HINT : LOOKUP_IDLE_HINT;
 
   return (
     <div className="rounded-xl border border-slate-100 bg-slate-50/40 p-3 space-y-2" data-testid="campaign-invoice-slot">
@@ -966,7 +979,7 @@ export function CampaignInvoiceSlot({
           <span>작성일</span>
         </div>
         {months.map((month) => (
-          <MonthRow key={month.yearMonth} month={month} scanning={scanning} />
+          <MonthRow key={month.yearMonth} month={month} awaitingHint={awaitingHint} />
         ))}
       </div>
       <InvoiceMonthsDialog
