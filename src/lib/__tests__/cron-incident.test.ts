@@ -85,6 +85,24 @@ describe("recordIncidentOccurrence", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("재시도 회차의 실패는 열린 사고의 반복 횟수를 올리지 않고 마지막 메시지·시각만 갱신한다(⚙️K1)", async () => {
+    findFirst.mockResolvedValue({ id: "old1" });
+    const at = new Date("2026-10-21T01:10:00Z");
+    const r = await recordIncidentOccurrence({ ...input, message: "실패 4건", at, isRetryAttempt: true });
+    expect(r).toEqual({ id: "old1", opened: false });
+    const data = update.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("occurrences");
+    expect(data).toEqual({ lastSeenAt: at, lastMessage: "실패 4건" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("재시도 회차라도 열린 사고가 없으면 새로 연다(반복 1)", async () => {
+    findFirst.mockResolvedValue(null);
+    const r = await recordIncidentOccurrence({ ...input, isRetryAttempt: true });
+    expect(r).toEqual({ id: "new1", opened: true });
+    expect(create).toHaveBeenCalledOnce();
+  });
+
   it("열린 사고가 없으면 새로 연다", async () => {
     findFirst.mockResolvedValue(null);
     const at = new Date("2026-10-18T00:00:00Z");
@@ -159,6 +177,20 @@ describe("resolveOpenIncidents", () => {
     expect(arg.data.status).toBe("resolved");
     expect(arg.data.normalizedAt).toBeInstanceOf(Date);
     expect(arg.data.normalizedEvidence).toEqual({ runAt: at.toISOString(), produced: 5, targets: 5 });
+  });
+
+  it("재시도 회차(2 이상)의 정상화는 증거에 회차를 남기고 1층(자동 재시도)으로 찍는다", async () => {
+    await resolveOpenIncidents({ jobKey: "j", kinds: ["A"], evidence: { runAt: at, attempt: 2 } });
+    const data = updateMany.mock.calls[0][0].data;
+    expect(data.normalizedEvidence).toEqual({ runAt: at.toISOString(), attempt: 2 });
+    expect(data.layer).toBe(1);
+  });
+
+  it("첫 실행(회차 1)의 정상화는 회차·층을 남기지 않는다", async () => {
+    await resolveOpenIncidents({ jobKey: "j", kinds: ["A"], evidence: { runAt: at, attempt: 1 } });
+    const data = updateMany.mock.calls[0][0].data;
+    expect(data.normalizedEvidence).not.toHaveProperty("attempt");
+    expect(data).not.toHaveProperty("layer");
   });
 
   it("DB 오류는 console.error 후 0", async () => {

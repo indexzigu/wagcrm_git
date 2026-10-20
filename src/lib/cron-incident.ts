@@ -45,6 +45,11 @@ export function incidentSignature(input: {
 /**
  * 사고 발생 1회를 장부에 반영한다. 같은 서명의 열린 사고가 있으면 횟수만 늘리고(opened:false),
  * 없으면 새로 연다(opened:true). DB 오류는 console.error 후 null.
+ *
+ * `isRetryAttempt` = 자동 재시도 회차(2회차 이상)의 실패. 열린 사고가 있으면 반복 횟수를 **올리지 않고**
+ * 마지막 메시지·시각만 갱신한다(⚙️K1) — 오너 알림 기준 「같은 원인 2회 연속」의 「회」는 정기 실행
+ * 기준이라, 재시도가 횟수를 올리면 정상화를 앞당기려던 장치가 알림을 앞당긴다. 열린 사고가 없으면
+ * (재시도 사이에 정상화로 닫혔다 등) 평소처럼 새로 연다.
  */
 export async function recordIncidentOccurrence(input: {
   jobKey: string;
@@ -52,6 +57,7 @@ export async function recordIncidentOccurrence(input: {
   errorKind: CronErrorKind | null;
   message: string;
   at?: Date;
+  isRetryAttempt?: boolean;
 }): Promise<{ id: string; opened: boolean } | null> {
   try {
     const prisma = getPrisma();
@@ -73,7 +79,9 @@ export async function recordIncidentOccurrence(input: {
       if (existing) {
         await tx.cronIncident.update({
           where: { id: existing.id },
-          data: { occurrences: { increment: 1 }, lastSeenAt: at, lastMessage },
+          data: input.isRetryAttempt
+            ? { lastSeenAt: at, lastMessage }
+            : { occurrences: { increment: 1 }, lastSeenAt: at, lastMessage },
         });
         return { id: existing.id, opened: false };
       }
@@ -101,22 +109,31 @@ export async function recordIncidentOccurrence(input: {
 /**
  * 정상 실행 증거로 그 작업의 열린(`open`·`waiting_owner`) 사고를 닫고 닫은 개수를 돌려준다.
  * PR 이 붙은 사고(`prNumber` 있음)는 닫지 않는다 — 고친 코드가 배포에 반영됐는지의 판정은 5단계 몫이다.
+ * `evidence.attempt` 가 2 이상이면 자동 재시도 회차가 정상으로 끝난 것이라 증거에 회차를 남기고
+ * 처리 층을 1(자동 재시도)로 찍는다 — 묶음 요약이 이것으로 「자동 재시도로 정상화」를 적는다.
  * DB 오류는 console.error 후 0.
  */
 export async function resolveOpenIncidents(input: {
   jobKey: string;
   kinds: IncidentKind[];
-  evidence: { runAt: Date; produced?: number; targets?: number };
+  evidence: { runAt: Date; produced?: number; targets?: number; attempt?: number };
 }): Promise<number> {
   try {
     const prisma = getPrisma();
-    const { runAt, produced, targets } = input.evidence;
+    const { runAt, produced, targets, attempt } = input.evidence;
+    const retried = attempt != null && attempt > 1;
     const result = await prisma.cronIncident.updateMany({
       where: { jobKey: input.jobKey, kind: { in: input.kinds }, status: { in: OPEN_STATUSES }, prNumber: null },
       data: {
         status: "resolved",
         normalizedAt: new Date(),
-        normalizedEvidence: { runAt: runAt.toISOString(), produced, targets } as Prisma.InputJsonValue,
+        normalizedEvidence: {
+          runAt: runAt.toISOString(),
+          produced,
+          targets,
+          ...(retried ? { attempt } : {}),
+        } as Prisma.InputJsonValue,
+        ...(retried ? { layer: 1 } : {}),
       },
     });
     return result.count;

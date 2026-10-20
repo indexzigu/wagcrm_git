@@ -5,7 +5,7 @@ import { runWithProxySource } from "@/lib/order-converter/proxy-usage";
 import { classifyCronError, type CronErrorKind } from "@/lib/cron-error-kind";
 import { describeErrorChain } from "@/lib/cron-error-text";
 import { recordIncidentOccurrence, resolveOpenIncidents } from "@/lib/cron-incident";
-import { KNOWN_JOBS, type KnownJob } from "@/lib/cron-jobs";
+import { KNOWN_JOBS, retryDelaySecFor, type KnownJob } from "@/lib/cron-jobs";
 
 // 시스템 레이더(SystemTaskStatus) 공용 기록기 — 크론 라우트 핸들러를 감싸
 // 실행 결과(성공/실패)와 실제 작동 시각을 남긴다. enrich-inbox처럼 라우트가
@@ -684,9 +684,11 @@ export async function recordFailureIncident(
   jobKey: string,
   message: string,
   errorKind: CronErrorKind,
+  // 이번 실행의 회차(첫 실행 = 1). 2 이상(자동 재시도)이면 반복 횟수를 올리지 않는다(⚙️K1).
+  attempt = 1,
 ): Promise<void> {
   try {
-    await recordIncidentOccurrence({ jobKey, kind: "A", errorKind, message });
+    await recordIncidentOccurrence({ jobKey, kind: "A", errorKind, message, isRetryAttempt: attempt > 1 });
   } catch (error) {
     console.error(`[SystemTaskStatus] ${jobKey} 사고 기록 실패:`, error);
   }
@@ -698,11 +700,13 @@ export async function recordFailureIncident(
  * ⚠️ B 판정은 **이번 SUCCESS 이력 줄을 쓴 뒤에** 부른다. 최근 `zeroRunsToFlag` 개 SUCCESS 줄에
  * 이번 회차가 들어 있어야 「연속 N회」가 한 칸 어긋나지 않는다. quiet 회차는 이력 줄이 없으므로
  * B 를 열지 않는다(닫기는 이력과 무관하다).
+ * `attempt` 가 2 이상이면 자동 재시도로 정상화된 것이라 정상화 증거에 회차를 남긴다(`resolveOpenIncidents`).
  */
 export async function settleIncidentsAfterSuccess(
   jobKey: string,
   body: { targets?: number; produced?: number; quiet?: boolean } | null,
   runAt: Date,
+  attempt = 1,
 ): Promise<void> {
   try {
     const targets = finiteCount(body?.targets);
@@ -711,12 +715,16 @@ export async function settleIncidentsAfterSuccess(
     // 판정 면제(`output: null`) 작업에 남은 B 는 면제 전에 열린 것이라 성공 한 번으로 함께 닫는다 —
     // 면제 작업에서는 B 를 닫을 「산출」 근거가 다시 안 오므로, 안 닫으면 조치대기로 영영 남는다.
     // 한 번의 updateMany 로 묶어 2분 주기 작업의 쓰기 횟수를 늘리지 않는다.
-    await resolveOpenIncidents({ jobKey, kinds: output ? ["A"] : ["A", "B"], evidence: { runAt, produced, targets } });
+    await resolveOpenIncidents({
+      jobKey,
+      kinds: output ? ["A"] : ["A", "B"],
+      evidence: { runAt, produced, targets, attempt },
+    });
     // 대상 0 은 사고도 정상화 근거도 아니다 — 산출 판정 숫자가 없을 때와 같이 아무것도 안 한다.
     if (!output || targets == null || produced == null || targets === 0) return;
 
     if (produced > 0) {
-      await resolveOpenIncidents({ jobKey, kinds: ["B"], evidence: { runAt, produced, targets } });
+      await resolveOpenIncidents({ jobKey, kinds: ["B"], evidence: { runAt, produced, targets, attempt } });
       return;
     }
     if (produced !== 0 || body?.quiet === true) return;
@@ -740,6 +748,34 @@ export async function settleIncidentsAfterSuccess(
   } catch (error) {
     console.error(`[SystemTaskStatus] ${jobKey} 사고 장부 갱신 실패:`, error);
   }
+}
+
+/**
+ * 자동 재시도 신호 — 실행 스크립트(`infra/selfhost/run-cron.sh`)와 앱 사이의 약속이다.
+ * 요청 `X-Cron-Attempt` = 이번 실행의 회차(첫 실행 1, 없으면 1). 응답 `X-Cron-Retry-After-Sec` = 이 초만큼
+ * 기다렸다가 회차를 하나 올려 다시 부르라는 뜻이다. 다시 부를지는 앱이 정하고(작업별 정책·오류 종류,
+ * `retryDelaySecFor`), 스크립트는 따로 최대 2회에서 멈춘다(양쪽 상한).
+ */
+export const CRON_ATTEMPT_HEADER = "X-Cron-Attempt";
+export const CRON_RETRY_AFTER_HEADER = "X-Cron-Retry-After-Sec";
+
+/** 회차 헤더의 상한 — 정책 최대 2회 재시도 = 3회차. 그보다 큰 값은 3 으로 자른다(재시도가 늘지 않는 쪽). */
+const MAX_CRON_ATTEMPT = 3;
+
+/** 요청의 회차 — 없거나 정수가 아니거나 1 미만이면 1, 3 을 넘으면 3. */
+function readCronAttempt(request: Request): number {
+  const raw = request.headers.get(CRON_ATTEMPT_HEADER)?.trim() ?? "";
+  if (!/^\d+$/.test(raw)) return 1;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 1) return 1;
+  return Math.min(n, MAX_CRON_ATTEMPT);
+}
+
+/** 응답의 상태·본문·헤더를 그대로 두고 재시도 대기 헤더만 더한 새 응답. */
+function withRetryAfter(response: Response, delaySec: number): Response {
+  const headers = new Headers(response.headers);
+  headers.set(CRON_RETRY_AFTER_HEADER, String(delaySec));
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 export function withSystemTaskStatus(
@@ -768,6 +804,8 @@ export function withSystemTaskStatus(
     // 시작 마커 — 핸들러가 플랫폼 타임아웃/강제종료로 완주하지 못해도 RUNNING 행이 남아,
     // "호출 자체가 없었음"(행 없음)과 "호출됐지만 미완주"(RUNNING 고착)를 구분할 수 있다.
     await recordSystemTaskRun(jobKey, "RUNNING", undefined);
+    // 자동 재시도 회차 — 기록 게이트를 넘은 호출에서만 읽는다(수동 실행에는 재시도 신호를 주지 않는다).
+    const attempt = readCronAttempt(request);
 
     // Vercel Hobby 플랜의 함수 실행 60초 제한이 실제 걸림돌인지 판단할 유일한 실측
     // 창구다(2026-08-06) — 마커 upsert 이후·핸들러 실행 전부터 재서 기록 자체의 지연은
@@ -782,11 +820,22 @@ export function withSystemTaskStatus(
       const message = describeErrorChain(error);
       const errorKind = classifyCronError(message);
       await recordSystemTaskRun(jobKey, "ERROR", message, undefined, Date.now() - startedAt, { errorKind });
-      await recordFailureIncident(jobKey, message, errorKind);
-      throw error;
+      await recordFailureIncident(jobKey, message, errorKind, attempt);
+      const retryAfter = retryDelaySecFor(jobKey, attempt, errorKind);
+      // 재시도가 없으면 지금처럼 다시 던진다(플랫폼 오류 처리·스택 기록이 그대로 산다).
+      if (retryAfter == null) throw error;
+      // 재시도를 예약하면 던지지 않고 응답으로 돌려줘야 헤더를 실을 수 있다 — 대신 던졌을 때 남던
+      // 스택이 사라지지 않게 원 예외를 먼저 app.err.log 로 남긴다.
+      console.error(`[SystemTaskStatus] ${jobKey} 실행 예외(${retryAfter}초 뒤 자동 재시도 예약):`, error);
+      return Response.json(
+        { error: message },
+        { status: 500, headers: { [CRON_RETRY_AFTER_HEADER]: String(retryAfter) } },
+      );
     }
 
     const durationMs = Date.now() - startedAt;
+    // ERROR 로 기록했을 때의 오류 종류 — 아래에서 재시도 대기를 정한다(성공이면 null 로 남는다).
+    let retryErrorKind: CronErrorKind | null = null;
 
     if (response.ok) {
       // 2xx여도 핸들러가 실질 실패를 선언했으면 ERROR다 — 이 분기가 없으면 "전량 실패
@@ -797,13 +846,14 @@ export function withSystemTaskStatus(
         const message = body.failureReason || "실행은 끝났으나 산출이 없습니다(핸들러 실패 선언).";
         const errorKind = classifyCronError(message, response.status);
         await recordSystemTaskRun(jobKey, "ERROR", message, details, durationMs, { errorKind });
-        await recordFailureIncident(jobKey, message, errorKind);
+        await recordFailureIncident(jobKey, message, errorKind, attempt);
+        retryErrorKind = errorKind;
       } else {
         await recordSystemTaskRun(jobKey, "SUCCESS", null, details, durationMs, {
           skipLog: body?.quiet === true,
           produced: finiteCount(body?.produced),
         });
-        await settleIncidentsAfterSuccess(jobKey, body, new Date());
+        await settleIncidentsAfterSuccess(jobKey, body, new Date(), attempt);
       }
     } else {
       // 시크릿이 일치한 시점 이후의 비정상 응답(401 포함)은 전부 크론 실행 실패로 기록한다
@@ -812,8 +862,11 @@ export function withSystemTaskStatus(
       const message = typeof body?.error === "string" ? body.error : `HTTP ${response.status}`;
       const errorKind = classifyCronError(message, response.status);
       await recordSystemTaskRun(jobKey, "ERROR", message, toDetails(body), durationMs, { errorKind });
-      await recordFailureIncident(jobKey, message, errorKind);
+      await recordFailureIncident(jobKey, message, errorKind, attempt);
+      retryErrorKind = errorKind;
     }
-    return response;
+    // ERROR 로 기록한 두 경로(실질 실패 선언·비정상 응답)는 정책이 허락하면 재시도 대기를 실어 보낸다.
+    const retryAfter = retryErrorKind == null ? null : retryDelaySecFor(jobKey, attempt, retryErrorKind);
+    return retryAfter == null ? response : withRetryAfter(response, retryAfter);
   };
 }
