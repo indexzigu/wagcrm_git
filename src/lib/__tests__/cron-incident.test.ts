@@ -27,6 +27,7 @@ const update = vi.fn();
 const updateMany = vi.fn();
 const executeRaw = vi.fn();
 const transaction = vi.fn();
+const proxyFindMany = vi.fn();
 
 beforeEach(() => {
   findFirst.mockReset();
@@ -35,12 +36,14 @@ beforeEach(() => {
   update.mockReset().mockResolvedValue({ id: "old1" });
   updateMany.mockReset().mockResolvedValue({ count: 2 });
   executeRaw.mockReset().mockResolvedValue(1);
+  proxyFindMany.mockReset().mockResolvedValue([]);
   vi.mocked(isRemoteDatabaseUrl).mockReturnValue(true);
   const tx = { cronIncident: { findFirst, findMany, create, update, updateMany }, $executeRaw: executeRaw };
   // 트랜잭션 클라이언트와 평소 클라이언트를 같은 mock 으로 묶어 기존 단언을 그대로 쓴다.
   transaction.mockReset().mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
   vi.mocked(getPrisma).mockReturnValue({
     ...tx,
+    proxyRequestDaily: { findMany: proxyFindMany },
     $transaction: transaction,
   } as unknown as ReturnType<typeof getPrisma>);
 });
@@ -345,6 +348,87 @@ describe("escalatePendingIncidents", () => {
     ]);
     update.mockRejectedValueOnce(Object.assign(new Error("not found"), { code: "P2025" }));
     expect(await escalatePendingIncidents(now)).toBe(1);
+  });
+
+  const at = new Date("2026-10-18T00:30:00Z"); // KST 2026-10-18 09:30
+
+  it("조회에 작업 키·원문·마지막 시각을 함께 가져온다", async () => {
+    await escalatePendingIncidents(now);
+    expect(findMany.mock.calls[0][0].select).toMatchObject({ jobKey: true, lastMessage: true, lastSeenAt: true });
+  });
+
+  it("알려진 원인이면 원인·확신·맞는 할 일·처리 층 2를 기록한다", async () => {
+    findMany.mockResolvedValue([
+      { id: "t1", jobKey: "refresh-instagram-token", kind: "A", errorKind: "auth", occurrences: 1, lastMessage: "토큰 갱신 실패 (code 190)", lastSeenAt: at },
+    ]);
+    expect(await escalatePendingIncidents(now)).toBe(1);
+    const data = update.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      status: "waiting_owner",
+      cause: "인스타그램 접근 토큰 만료",
+      causeConfidence: "확정",
+      layer: 2,
+    });
+    expect(data.ownerAction).toMatch(/^인스타그램 접근 토큰이 만료됐습니다/);
+    // 프록시를 안 쓰는 작업은 장부를 읽지 않는다.
+    expect(proxyFindMany).not.toHaveBeenCalled();
+  });
+
+  it("안 맞으면 지금처럼 종류별 일반 문장이고 원인 칸은 비운다", async () => {
+    findMany.mockResolvedValue([
+      { id: "u1", jobKey: "capture-stories", kind: "A", errorKind: "unknown", occurrences: 1, lastMessage: "대상 3건 전량 실패(성공 0)", lastSeenAt: at },
+    ]);
+    expect(await escalatePendingIncidents(now)).toBe(1);
+    const data = update.mock.calls[0][0].data;
+    expect(data).toEqual({ status: "waiting_owner", ownerAction: "설정의 「자동화 작업 상태」에서 작동 로그를 확인해 주세요." });
+  });
+
+  it("프록시 작업의 일시 장애도 그날 장부가 전부 실패면 첫 회에 프록시 한도 확정으로 올린다", async () => {
+    findMany.mockResolvedValue([
+      { id: "o1", jobKey: "naver-order-sync", kind: "A", errorKind: "network", occurrences: 1, lastMessage: "fetch failed", lastSeenAt: at },
+    ]);
+    proxyFindMany.mockResolvedValue([
+      { requests: 30, failures: 30 },
+      { requests: 4, failures: 4 },
+    ]);
+    expect(await escalatePendingIncidents(now)).toBe(1);
+    expect(proxyFindMany.mock.calls[0][0].where).toEqual({ day: "2026-10-18", source: "cron:naver-order-sync" });
+    expect(update.mock.calls[0][0].data).toMatchObject({ cause: "프록시 월 한도 소진", causeConfidence: "확정", layer: 2 });
+  });
+
+  it("장부에 성공이 섞였거나 요청이 0이면 프록시 한도가 아니다(일시 장애 1회는 그대로 대기)", async () => {
+    const row = { id: "o1", jobKey: "naver-order-sync", kind: "A", errorKind: "network", occurrences: 1, lastMessage: "fetch failed", lastSeenAt: at };
+    findMany.mockResolvedValue([row]);
+    proxyFindMany.mockResolvedValue([{ requests: 30, failures: 29 }]);
+    expect(await escalatePendingIncidents(now)).toBe(0);
+    proxyFindMany.mockResolvedValue([]);
+    expect(await escalatePendingIncidents(now)).toBe(0);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("장부 조회가 실패해도 승격은 멈추지 않고 일반 문장을 쓴다", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    findMany.mockResolvedValue([
+      { id: "o2", jobKey: "naver-settlement-sync", kind: "A", errorKind: "unknown", occurrences: 1, lastMessage: "날짜 2건 실패", lastSeenAt: at },
+    ]);
+    proxyFindMany.mockRejectedValue(new Error("ledger down"));
+    expect(await escalatePendingIncidents(now)).toBe(1);
+    expect(update.mock.calls[0][0].data).toEqual({
+      status: "waiting_owner",
+      ownerAction: "설정의 「자동화 작업 상태」에서 작동 로그를 확인해 주세요.",
+    });
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("같은 작업 사고가 여럿이어도 장부는 작업·날짜당 한 번만 읽는다", async () => {
+    findMany.mockResolvedValue([
+      { id: "x1", jobKey: "collect-qnas", kind: "A", errorKind: "unknown", occurrences: 1, lastMessage: "a", lastSeenAt: at },
+      { id: "x2", jobKey: "collect-qnas", kind: "A", errorKind: "unknown", occurrences: 1, lastMessage: "b", lastSeenAt: at },
+    ]);
+    proxyFindMany.mockResolvedValue([{ requests: 2, failures: 2 }]);
+    expect(await escalatePendingIncidents(now)).toBe(2);
+    expect(proxyFindMany).toHaveBeenCalledTimes(1);
   });
 
   it("DB 오류는 던지지 않고 console.error 후 0", async () => {

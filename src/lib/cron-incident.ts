@@ -3,6 +3,8 @@ import { getPrisma } from "@/lib/prisma";
 import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 import { isTransientErrorKind, type CronErrorKind } from "@/lib/cron-error-kind";
 import { ownerActionFor, shouldEscalate } from "@/lib/cron-incident-escalation";
+import { isProxyJob, matchPlaybook, type PlaybookMatch } from "@/lib/cron-incident-playbook";
+import { toKstYmd } from "@/lib/date-utils";
 
 /**
  * 자동 작업 사고 장부 — 같은 원인의 반복 실패를 한 건의 사고로 묶는다.
@@ -204,18 +206,65 @@ export async function resolveOpenIncidents(input: {
 }
 
 /**
+ * 그 작업의 그날(KST) 프록시 장부(`ProxyRequestDaily`, source `cron:<작업>`)가 「요청 > 0 이고 전부 실패」인가.
+ * 대상(호스트)별 줄을 합쳐서 본다. 조회 실패는 console.error 후 null — 플레이북을 안 쓸 뿐 승격은 그대로 간다.
+ */
+export async function readProxyLedgerAllFailed(jobKey: string, day: string): Promise<boolean | null> {
+  try {
+    const rows = await getPrisma().proxyRequestDaily.findMany({
+      where: { day, source: `cron:${jobKey}` },
+      select: { requests: true, failures: true },
+    });
+    let requests = 0;
+    let failures = 0;
+    for (const r of rows) {
+      requests += r.requests;
+      failures += r.failures;
+    }
+    return requests > 0 && failures >= requests;
+  } catch (error) {
+    console.error("[CronIncident] 프록시 장부 조회 실패(플레이북 미적용, 승격은 계속)", jobKey, day, error);
+    return null;
+  }
+}
+
+/**
  * `open` 사고 중 승격 규칙(`shouldEscalate`)에 걸리는 것을 `waiting_owner` 로 올리고 오너 조치 문구를 붙인다.
  * 바꾼 개수를 돌려준다. 이미 올린 사고는 조회 대상이 아니라 두 번 불러도 같은 결과다.
- * `now` 는 호출 시각 계약용이다(알림 표시는 호출처가 한다). 던지지 않는다 — DB 오류는 console.error 후 0.
+ *
+ * 알려진 원인(플레이북, `cron-incident-playbook.ts`)이면 원인·확신·그 원인의 할 일 문장을 적고 처리 층을 2로
+ * 찍는다. 안 맞으면 지금처럼 종류별 일반 문장(`ownerActionFor`)이고 원인 칸은 비운다.
+ * 프록시 장부는 플레이북이 아직 안 맞은 프록시 작업의 A 사고에만, 작업·날짜당 한 번 읽는다. 날짜는 사고를
+ * 마지막으로 본 시각의 KST 날짜다(자정 직후 승격이 어제 실패를 오늘 장부로 판정하지 않게). 장부로 프록시
+ * 한도가 확정된 사고는 일시 장애(예: 주문 동기화의 「fetch failed」)로 분류돼 있어도 첫 회에 올린다 —
+ * 한도 소진은 재시도로 안 풀린다.
+ * 던지지 않는다 — DB 오류는 console.error 후 0.
  */
 export async function escalatePendingIncidents(now: Date): Promise<number> {
-  void now;
   try {
     const prisma = getPrisma();
     const rows = await prisma.cronIncident.findMany({
       where: { status: "open" },
-      select: { id: true, kind: true, errorKind: true, occurrences: true },
+      select: {
+        id: true,
+        jobKey: true,
+        kind: true,
+        errorKind: true,
+        occurrences: true,
+        lastMessage: true,
+        lastSeenAt: true,
+      },
     });
+    const ledgerCache = new Map<string, Promise<boolean | null>>();
+    const ledgerAllFailed = (jobKey: string, day: string) => {
+      const key = `${jobKey}|${day}`;
+      let hit = ledgerCache.get(key);
+      if (!hit) {
+        hit = readProxyLedgerAllFailed(jobKey, day);
+        ledgerCache.set(key, hit);
+      }
+      return hit;
+    };
     let changed = 0;
     for (const row of rows) {
       const incident = {
@@ -223,12 +272,32 @@ export async function escalatePendingIncidents(now: Date): Promise<number> {
         errorKind: (row.errorKind ?? null) as CronErrorKind | null,
         occurrences: row.occurrences,
       };
-      if (!shouldEscalate(incident)) continue;
+      const playbookInput = {
+        jobKey: row.jobKey,
+        kind: incident.kind,
+        errorKind: incident.errorKind,
+        lastMessage: row.lastMessage ?? null,
+      };
+      let playbook: PlaybookMatch | null = matchPlaybook(playbookInput);
+      if (!playbook && incident.kind === "A" && isProxyJob(row.jobKey)) {
+        const day = toKstYmd(row.lastSeenAt ?? now);
+        const allFailed = await ledgerAllFailed(row.jobKey, day);
+        if (allFailed) playbook = matchPlaybook({ ...playbookInput, proxyLedgerAllFailed: true });
+      }
+      if (!shouldEscalate(incident) && playbook?.id !== "proxy-quota") continue;
       try {
         // 조회 뒤 정상화로 닫힌 사고를 되살리지 않도록 아직 open 인 것만 바꾼다.
         await prisma.cronIncident.update({
           where: { id: row.id, status: "open" },
-          data: { status: "waiting_owner", ownerAction: ownerActionFor(incident) },
+          data: playbook
+            ? {
+                status: "waiting_owner",
+                ownerAction: playbook.ownerAction,
+                cause: playbook.cause,
+                causeConfidence: playbook.confidence,
+                layer: 2,
+              }
+            : { status: "waiting_owner", ownerAction: ownerActionFor(incident) },
         });
         changed += 1;
       } catch (error) {
