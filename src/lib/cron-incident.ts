@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
-import type { CronErrorKind } from "@/lib/cron-error-kind";
+import { isTransientErrorKind, type CronErrorKind } from "@/lib/cron-error-kind";
 import { ownerActionFor, shouldEscalate } from "@/lib/cron-incident-escalation";
 
 /**
@@ -15,6 +15,15 @@ export type IncidentKind = "A" | "B" | "C";
 const SIGNATURE_MESSAGE_MAX = 200;
 const LAST_MESSAGE_MAX = 1000;
 const OPEN_STATUSES = ["open", "waiting_owner"];
+
+/**
+ * 「이번 재시도 주기」로 보는 창 — 재시도로 정상화됐을 때 회차·1층을 찍을 A 사고를 이 안에서 본 것으로 좁힌다.
+ * 첫 실패부터 마지막 재시도 성공까지 걸릴 수 있는 최장 시간에서 나왔다: 재시도 대기
+ * `RETRY_DELAYS_SEC`(600 + 1800초 = 40분) + 실행 3회 각각 최장 15분(`run-cron.sh` 의 `curl -m 900`, 45분)
+ * + 앱 응답 없음 재시도 대기 2분 = 87분. 시계 오차·느린 기록을 덮도록 여유를 더해 2시간으로 둔다.
+ * (`cron-incident.test.ts` 가 이 창이 위 합보다 큰지 확인한다.)
+ */
+export const RETRY_CYCLE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 /**
  * 메시지에서 매번 달라지는 부분을 지워 같은 원인이 같은 서명이 되게 한다.
@@ -48,8 +57,14 @@ export function incidentSignature(input: {
  *
  * `isRetryAttempt` = 자동 재시도 회차(2회차 이상)의 실패. 열린 사고가 있으면 반복 횟수를 **올리지 않고**
  * 마지막 메시지·시각만 갱신한다(⚙️K1) — 오너 알림 기준 「같은 원인 2회 연속」의 「회」는 정기 실행
- * 기준이라, 재시도가 횟수를 올리면 정상화를 앞당기려던 장치가 알림을 앞당긴다. 열린 사고가 없으면
- * (재시도 사이에 정상화로 닫혔다 등) 평소처럼 새로 연다.
+ * 기준이라, 재시도가 횟수를 올리면 정상화를 앞당기려던 장치가 알림을 앞당긴다.
+ * 같은 서명의 열린 사고가 없을 때:
+ *  - 이번 종류가 일시 장애면 그 작업의 열린 A 사고(마지막으로 본 것)에 접는다 — 같은 일시 장애가 메시지만
+ *    바뀌어 서명이 갈라져도(시간 초과 문구가 회차마다 다르다 등) 재시도가 새 사고를 열면 「반복 1」짜리
+ *    사고가 늘어 위 ⚙️K1 이 막으려던 알림 증가가 다른 문으로 들어온다.
+ *  - 일시 장애가 아닌 종류(인증·설정 등)면 평소처럼 새로 연다 — 그런 원인은 첫 기록에서 바로 오너에게
+ *    올라가는 것이 이미 승격 규칙(`shouldEscalate`)이라 접어서 숨길 이유가 없다.
+ *  - 접을 A 가 없으면(재시도 사이에 정상화로 닫혔다 등) 평소처럼 새로 연다.
  */
 export async function recordIncidentOccurrence(input: {
   jobKey: string;
@@ -86,6 +101,29 @@ export async function recordIncidentOccurrence(input: {
         return { id: existing.id, opened: false };
       }
 
+      if (input.isRetryAttempt && input.kind === "A" && input.errorKind && isTransientErrorKind(input.errorKind)) {
+        // 위 서명 잠금은 서명이 같은 기록끼리만 막는다. 여기서는 서명이 **다른** 재시도 실패 둘이 동시에
+        // 「접을 A 없음」을 보고 각자 새 사고를 여는 틈이 생기므로 작업 단위 잠금을 하나 더 잡는다.
+        // 잠금 순서는 언제나 서명 → 작업이고 작업 잠금을 먼저 잡는 경로가 없어 교착이 생기지 않는다.
+        if (isRemoteDatabaseUrl()) {
+          const jobLockKey = `job:${input.jobKey}|A`;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${jobLockKey}))`;
+        }
+        const openA = await tx.cronIncident.findFirst({
+          where: { jobKey: input.jobKey, kind: "A", status: { in: OPEN_STATUSES } },
+          orderBy: { lastSeenAt: "desc" },
+        });
+        if (openA) {
+          // 정상화(`resolveOpenIncidents`)는 이 잠금을 잡지 않으므로 그 사이 닫혔을 수 있다 —
+          // 아직 열린 것만 바꾸고, 바뀐 줄이 없으면 닫힌 사고를 되살리지 않고 아래에서 새로 연다.
+          const folded = await tx.cronIncident.updateMany({
+            where: { id: openA.id, status: { in: OPEN_STATUSES } },
+            data: { lastSeenAt: at, lastMessage },
+          });
+          if (folded.count > 0) return { id: openA.id, opened: false };
+        }
+      }
+
       const created = await tx.cronIncident.create({
         data: {
           jobKey: input.jobKey,
@@ -111,6 +149,9 @@ export async function recordIncidentOccurrence(input: {
  * PR 이 붙은 사고(`prNumber` 있음)는 닫지 않는다 — 고친 코드가 배포에 반영됐는지의 판정은 5단계 몫이다.
  * `evidence.attempt` 가 2 이상이면 자동 재시도 회차가 정상으로 끝난 것이라 증거에 회차를 남기고
  * 처리 층을 1(자동 재시도)로 찍는다 — 묶음 요약이 이것으로 「자동 재시도로 정상화」를 적는다.
+ * 단 찍는 대상은 **이번 재시도 주기 안에 본 A 사고**(`lastSeenAt >= runAt - RETRY_CYCLE_WINDOW_MS`)뿐이다.
+ * 같은 성공으로 함께 닫히는 B 나 어제부터 조치대기였던 A 는 재시도가 고친 것이 아니므로 평소처럼 닫는다
+ * — 찍으면 묶음 요약이 오너가 손볼 일이었던 사고를 「자동 재시도로 정상화」로 적는다.
  * DB 오류는 console.error 후 0.
  */
 export async function resolveOpenIncidents(input: {
@@ -121,22 +162,40 @@ export async function resolveOpenIncidents(input: {
   try {
     const prisma = getPrisma();
     const { runAt, produced, targets, attempt } = input.evidence;
-    const retried = attempt != null && attempt > 1;
-    const result = await prisma.cronIncident.updateMany({
-      where: { jobKey: input.jobKey, kind: { in: input.kinds }, status: { in: OPEN_STATUSES }, prNumber: null },
-      data: {
-        status: "resolved",
-        normalizedAt: new Date(),
-        normalizedEvidence: {
-          runAt: runAt.toISOString(),
-          produced,
-          targets,
-          ...(retried ? { attempt } : {}),
-        } as Prisma.InputJsonValue,
-        ...(retried ? { layer: 1 } : {}),
-      },
+    const normalizedAt = new Date();
+    const evidence = { runAt: runAt.toISOString(), produced, targets };
+    const where = { jobKey: input.jobKey, kind: { in: input.kinds }, status: { in: OPEN_STATUSES }, prNumber: null };
+    const plainData = {
+      status: "resolved",
+      normalizedAt,
+      normalizedEvidence: evidence as Prisma.InputJsonValue,
+    };
+    const retried = attempt != null && attempt > 1 && input.kinds.includes("A");
+    if (!retried) {
+      const result = await prisma.cronIncident.updateMany({ where, data: plainData });
+      return result.count;
+    }
+    // 이번 재시도 주기에 본 A 를 먼저 찍어 닫고, 남은 열린 사고(B·옛 A)는 평소처럼 닫는다.
+    // 첫 쓰기로 닫힌 줄은 열린 상태 조건에서 빠지므로 둘째 쓰기가 다시 건드리지 않는다.
+    return await prisma.$transaction(async (tx) => {
+      const stamped = await tx.cronIncident.updateMany({
+        where: {
+          jobKey: input.jobKey,
+          kind: "A",
+          status: { in: OPEN_STATUSES },
+          prNumber: null,
+          lastSeenAt: { gte: new Date(runAt.getTime() - RETRY_CYCLE_WINDOW_MS) },
+        },
+        data: {
+          status: "resolved",
+          normalizedAt,
+          normalizedEvidence: { ...evidence, attempt } as Prisma.InputJsonValue,
+          layer: 1,
+        },
+      });
+      const rest = await tx.cronIncident.updateMany({ where, data: plainData });
+      return stamped.count + rest.count;
     });
-    return result.count;
   } catch (error) {
     console.error("[CronIncident] 사고 종결 실패", error);
     return 0;
