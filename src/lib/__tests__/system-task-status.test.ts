@@ -7,6 +7,8 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/lib/prisma-client", () => ({
   isRemoteDatabaseUrl: vi.fn(() => false),
 }));
+const captureException = vi.hoisted(() => vi.fn());
+vi.mock("@sentry/nextjs", () => ({ captureException }));
 
 import { getPrisma } from "@/lib/prisma";
 import { capDetailsForLog, withSystemTaskStatus } from "@/lib/system-task-status";
@@ -45,6 +47,7 @@ function loggedRuns(): Array<{ status: string; message: string; details: unknown
 }
 
 beforeEach(() => {
+  captureException.mockReset();
   upsert.mockReset().mockResolvedValue({});
   logCreate.mockReset().mockResolvedValue({});
   logFindMany.mockReset().mockResolvedValue([]);
@@ -649,6 +652,9 @@ describe("withSystemTaskStatus 일시 장애 재시도", () => {
     expect((await res.json()).error).toContain("ECONNRESET");
     expect(spy.mock.calls.some((call) => call.includes(thrown))).toBe(true);
     expect(recordedStatuses()).toEqual(["RUNNING", "ERROR"]);
+    // 던지지 않으면 Next 의 onRequestError(Sentry)가 못 보므로 원 예외를 직접 보낸다.
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(captureException.mock.calls[0][0]).toBe(thrown);
     spy.mockRestore();
   });
 
@@ -657,6 +663,27 @@ describe("withSystemTaskStatus 일시 장애 재시도", () => {
       throw new TypeError("fetch failed", { cause: new Error("connect ECONNRESET") });
     });
     await expect(withSystemTaskStatus(ONCE_JOB, handler)(cronRequest("2"))).rejects.toThrow("fetch failed");
+    // 다시 던지는 경로는 onRequestError 가 보낸다 — 여기서 또 보내면 두 번 잡힌다.
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("재시도 헤더를 얹은 응답을 다시 만들지 못하면 console.error 후 원 응답을 그대로 돌려준다", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // 응답 생성자가 거절하는 상태 문구(줄바꿈)를 가진 응답 — 다시 만들기만 실패하게 한다.
+    const odd = {
+      ok: false,
+      status: 503,
+      statusText: "bad\nline",
+      headers: new Headers(),
+      body: null,
+      clone: () => ({ json: async () => ({ error: "네이버 서버 오류" }) }),
+    } as unknown as Response;
+    const res = await withSystemTaskStatus(ONCE_JOB, vi.fn(async () => odd))(cronRequest());
+
+    expect(res).toBe(odd);
+    expect(recordedStatuses()).toEqual(["RUNNING", "ERROR"]);
+    expect(spy.mock.calls.some((call) => String(call[0]).includes("재시도 헤더"))).toBe(true);
+    spy.mockRestore();
   });
 
   it("재시도 회차의 실패는 열린 사고의 반복 횟수를 올리지 않는다(오너 알림 기준 불변)", async () => {

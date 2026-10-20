@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import * as Sentry from "@sentry/nextjs";
 import { getPrisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { runWithProxySource } from "@/lib/order-converter/proxy-usage";
@@ -771,11 +772,20 @@ function readCronAttempt(request: Request): number {
   return Math.min(n, MAX_CRON_ATTEMPT);
 }
 
-/** 응답의 상태·본문·헤더를 그대로 두고 재시도 대기 헤더만 더한 새 응답. */
+/**
+ * 응답의 상태·본문·헤더를 그대로 두고 재시도 대기 헤더만 더한 새 응답.
+ * 다시 만들기가 실패하면(생성자가 거절하는 상태 문구 등) 재시도 신호만 잃고 원 응답을 돌려준다 —
+ * 상태 기록은 이미 끝났고, 여기서 던지면 정상 응답까지 플랫폼 500 으로 바뀐다.
+ */
 function withRetryAfter(response: Response, delaySec: number): Response {
-  const headers = new Headers(response.headers);
-  headers.set(CRON_RETRY_AFTER_HEADER, String(delaySec));
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  try {
+    const headers = new Headers(response.headers);
+    headers.set(CRON_RETRY_AFTER_HEADER, String(delaySec));
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  } catch (error) {
+    console.error(`[SystemTaskStatus] 재시도 헤더(${delaySec}초)를 얹지 못해 원 응답을 그대로 돌려준다:`, error);
+    return response;
+  }
 }
 
 export function withSystemTaskStatus(
@@ -804,7 +814,9 @@ export function withSystemTaskStatus(
     // 시작 마커 — 핸들러가 플랫폼 타임아웃/강제종료로 완주하지 못해도 RUNNING 행이 남아,
     // "호출 자체가 없었음"(행 없음)과 "호출됐지만 미완주"(RUNNING 고착)를 구분할 수 있다.
     await recordSystemTaskRun(jobKey, "RUNNING", undefined);
-    // 자동 재시도 회차 — 기록 게이트를 넘은 호출에서만 읽는다(수동 실행에는 재시도 신호를 주지 않는다).
+    // 자동 재시도 회차 — 기록 게이트를 넘은 호출에서만 읽는다. 레이더 「지금 실행」(`/api/system/cron-run`)도
+    // CRON_SECRET 을 실어 이 게이트를 넘으므로 실패하면 재시도 헤더를 받는다 — 그 라우트는 헤더를 읽지
+    // 않고 다시 부르지도 않아 무해하다(재호출은 `run-cron.sh` 만 한다). 게이트를 못 넘은 호출은 받지 않는다.
     const attempt = readCronAttempt(request);
 
     // Vercel Hobby 플랜의 함수 실행 60초 제한이 실제 걸림돌인지 판단할 유일한 실측
@@ -827,6 +839,9 @@ export function withSystemTaskStatus(
       // 재시도를 예약하면 던지지 않고 응답으로 돌려줘야 헤더를 실을 수 있다 — 대신 던졌을 때 남던
       // 스택이 사라지지 않게 원 예외를 먼저 app.err.log 로 남긴다.
       console.error(`[SystemTaskStatus] ${jobKey} 실행 예외(${retryAfter}초 뒤 자동 재시도 예약):`, error);
+      // 다시 던지지 않으니 Next 의 onRequestError(src/instrumentation.ts → Sentry)가 이 예외를 못 본다 —
+      // 재시도로 풀리더라도 예외 자체는 Sentry 에 남도록 직접 보낸다(다시 던지는 경로는 onRequestError 몫).
+      Sentry.captureException(error, { tags: { module: "system-task-status", cronJob: jobKey } });
       return Response.json(
         { error: message },
         { status: 500, headers: { [CRON_RETRY_AFTER_HEADER]: String(retryAfter) } },
