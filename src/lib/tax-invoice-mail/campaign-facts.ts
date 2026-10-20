@@ -203,14 +203,14 @@ export interface InvoiceLookupTargets {
   campaignIds: Set<string>;
   /** 대상 캠페인이 속한 그룹 id — 그룹 단위 쓰기·월정산 단위 키 대조용 */
   groupIds: Set<string>;
-  /** 메일 조회 창 일수(가장 이른 판매 시작일 ~ 오늘). 대상이 없으면 null — 메일함을 열지 않는다 */
+  /** 메일 조회 창 일수(가장 이른 판매 종료일 +10일 ~ 오늘). 대상이 없으면 null — 메일함을 열지 않는다 */
   sinceDays: number | null;
   /** 월정산 단위 키(그룹 id 또는 캠페인 id — `loadAutoRecordUnits`)가 대상인가 */
   includesUnit(unitKey: string): boolean;
 }
 
 /**
- * 오늘 계산서 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내)을 읽는다 — 판정은
+ * 오늘 계산서 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일)을 읽는다 — 판정은
  * `invoice-lookup-scope.ts` 가 소유하고 여기는 읽기만 한다(오너 확정 2026-10-21).
  */
 export async function loadInvoiceLookupTargets(
@@ -222,30 +222,29 @@ export async function loadInvoiceLookupTargets(
   const endFloor = new Date(`${addDaysToYmd(todayYmd, -(INVOICE_LOOKUP_DAYS_AFTER_END + 1))}T00:00:00.000Z`);
   const rows = await prisma.salesCampaign.findMany({
     where: { status: { in: [...SETTLEMENT_STAGE_STATUSES] }, endDate: { gte: endFloor } },
-    select: { id: true, groupId: true, status: true, startDate: true, endDate: true },
+    select: { id: true, groupId: true, status: true, endDate: true },
   });
   const targets = rows.filter((row) =>
     isInvoiceLookupTarget({ status: row.status, endYmd: toKstYmd(row.endDate) }, todayYmd),
   );
   const groupIds = new Set(targets.map((row) => row.groupId).filter((id): id is string => id !== null));
   const campaignIds = new Set(targets.map((row) => row.id));
-  const startYmds = targets.map((row) => toKstYmd(row.startDate));
+  const endYmds = targets.map((row) => toKstYmd(row.endDate));
   if (groupIds.size > 0) {
-    // 멤버의 시작일도 창에 넣는다 — 달별 칸은 멤버 전원의 가장 이른 시작일부터 세므로, 대상 멤버만 보면
-    // 먼저 시작한 멤버의 앞 달 계산서가 창 밖에 남는다(교차 검증 2026-10-21).
+    // 멤버의 종료일도 창에 넣는다 — 먼저 끝난 멤버가 있으면 그 멤버의 종료 +10일부터 본다.
     const members = await prisma.salesCampaign.findMany({
       where: { groupId: { in: [...groupIds] } },
-      select: { id: true, startDate: true },
+      select: { id: true, endDate: true },
     });
     for (const member of members) {
       campaignIds.add(member.id);
-      startYmds.push(toKstYmd(member.startDate));
+      endYmds.push(toKstYmd(member.endDate));
     }
   }
   return {
     campaignIds,
     groupIds,
-    sinceDays: invoiceLookupSinceDays(startYmds, todayYmd),
+    sinceDays: invoiceLookupSinceDays(endYmds, todayYmd, "auto"),
     includesUnit: (unitKey) => groupIds.has(unitKey) || campaignIds.has(unitKey),
   };
 }

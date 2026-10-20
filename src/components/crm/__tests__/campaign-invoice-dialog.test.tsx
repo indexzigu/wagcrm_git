@@ -290,9 +290,9 @@ describe("CampaignInvoiceSlot — 수정세금계산서가 따라온 달이 금�
   });
 });
 
-// 자동 조회 대상(오너 확정 2026-10-21) — 정산 단계 · 판매 종료 후 60일 이내만 열 때 메일함을 본다.
+// 자동 조회 대상(오너 확정 2026-10-21) — 정산 단계 · 판매 종료 +10일 ~ +60일만 열 때 메일함을 본다.
 describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에서만", () => {
-  function renderUnscanned(autoLookup: boolean, onRequestScan: () => void) {
+  function renderUnscanned(autoLookup: boolean, onRequestScan: (mode: "auto" | "manual") => void) {
     return render(
       <CampaignInvoiceSlot
         autoLookup={autoLookup}
@@ -313,6 +313,8 @@ describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에�
     renderUnscanned(true, onRequestScan);
     await screen.findByTestId("invoice-month-2026-09");
     expect(onRequestScan).toHaveBeenCalledTimes(1);
+    // 열 때 도는 조회는 자동 조회 기간(종료 +10일부터)을 쓴다.
+    expect(onRequestScan).toHaveBeenCalledWith("auto");
   });
 
   it("대상이 아니면 조회를 시작하지 않고, 안 본 달을 「미발견」으로 단정하지 않으며 풀이로 이유를 알린다", async () => {
@@ -323,7 +325,7 @@ describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에�
     expect(cell).not.toHaveTextContent("미발견");
     expect(screen.getByRole("button", { name: "조회" })).toBeEnabled();
     fireEvent.pointerDown(cell, { pointerType: "touch" });
-    expect(await screen.findByText(/판매 종료 후 60일까지 자동으로 메일함을 확인합니다/)).toBeInTheDocument();
+    expect(await screen.findByText(/판매 종료 10일 뒤부터 60일까지 자동으로 메일함을 확인합니다/)).toBeInTheDocument();
   });
 
   it("대상이 아니면 정산서 메일도 미리 읽지 않고, 「조회」를 누를 때 함께 읽는다", async () => {
@@ -335,6 +337,8 @@ describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에�
     expect(statementCalls()).toBe(0);
     fireEvent.click(screen.getByRole("button", { name: "조회" }));
     expect(onRequestScan).toHaveBeenCalledTimes(1);
+    // 버튼은 수동 조회 기간(종료 +1일부터)을 쓴다.
+    expect(onRequestScan).toHaveBeenCalledWith("manual");
     expect(statementCalls()).toBe(1);
   });
 });

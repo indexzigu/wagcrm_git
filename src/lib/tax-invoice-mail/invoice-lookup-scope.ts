@@ -3,12 +3,14 @@
  *
  * 계산서는 판매가 끝난 뒤 정산을 거쳐 발행된다. 그래서 자동 조회는
  *   ① 오늘 정산 단계(`SETTLEMENT_STAGE_STATUSES`)에 있고
- *   ② 판매 종료일 + `INVOICE_LOOKUP_DAYS_AFTER_END`(60일)을 넘기지 않은
+ *   ② 오늘이 판매 종료일 +`INVOICE_LOOKUP_START_DAYS_AFTER_END`(10일) ~ +`INVOICE_LOOKUP_DAYS_AFTER_END`(60일) 사이인
  * 캠페인만 대상으로 한다. 계산서 확인이 끝났는지(달별 칸이 다 찼는지 · 날짜 칸이 비었는지)는
  * 표면마다 판정 축이 달라 호출부가 덧붙인다 — 이 모듈은 상태·날짜 두 축만 소유한다.
  *
- * 메일 조회 창의 시작은 **판매 시작일**이다(종료일이 아니다). 월정산은 판매가 달을 넘기면 앞 달
- * 계산서가 판매 종료 전에 나온다 — 운영 기록에서 종료일보다 앞선 작성일이 실제로 있었다.
+ * 메일 조회 창(오너 확정 2026-10-21): **자동 조회는 판매 종료일 +10일 ~ 오늘**(종료 직후 정산 기간을 지나
+ * 발행된다는 업무 기준), **「조회」 버튼의 수동 조회는 판매 종료일 +1일 ~ 오늘**. 종료 후 10일 안에 발행된
+ * 계산서 메일(운영 기록상 브랜드몰에 있었다)은 자동으로는 못 찾고 수동 조회가 잡는다.
+ * ⛔ 2026-10-21 첫 판의 「판매 시작일부터」는 같은 날 이 기준으로 **SUPERSEDED**.
  * 창의 끝은 따로 두지 않는다: 대상이면 오늘 ≤ 종료일+60 이므로 「오늘까지」가 곧 그 끝이다.
  *
  * ⛔ 종전 규칙 「오늘부터 90일 전」(sinceDays=90)은 **SUPERSEDED** — 판매 종료일과 무관해
@@ -16,6 +18,12 @@
  * ⚠️ 세무 보드의 기간 선택 조회는 캠페인 하나에 묶이지 않은 조회라 이 규칙의 대상이 아니다.
  */
 import { SETTLEMENT_STAGE_STATUSES } from "../settlement-stage";
+
+/** 조회를 누가 시작했나 — 칸이 열릴 때·매일 작업(auto) 또는 오너의 「조회」 버튼(manual). */
+export type InvoiceLookupMode = "auto" | "manual";
+
+/** 판매 종료일 뒤 메일 조회를 시작하는 일수(오너 확정 2026-10-21). */
+export const INVOICE_LOOKUP_START_DAYS_AFTER_END: Record<InvoiceLookupMode, number> = { auto: 10, manual: 1 };
 
 /** 판매 종료일 뒤로 자동 조회를 이어 가는 일수(오너 확정 2026-10-21). */
 export const INVOICE_LOOKUP_DAYS_AFTER_END = 60;
@@ -31,6 +39,11 @@ export function addDaysToYmd(ymd: string, days: number): string {
   return new Date(ymdToUtcMs(ymd) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
+/** 메일 조회 시작일 = 판매 종료일 + 10일(자동) · + 1일(수동). */
+export function invoiceLookupFirstYmd(endYmd: string, mode: InvoiceLookupMode): string {
+  return addDaysToYmd(endYmd, INVOICE_LOOKUP_START_DAYS_AFTER_END[mode]);
+}
+
 /** 자동 조회 마지막 날 = 판매 종료일 + 60일. */
 export function invoiceLookupLastYmd(endYmd: string): string {
   return addDaysToYmd(endYmd, INVOICE_LOOKUP_DAYS_AFTER_END);
@@ -42,17 +55,22 @@ export function isInvoiceLookupTarget(
   todayYmd: string,
 ): boolean {
   if (!(SETTLEMENT_STAGE_STATUSES as readonly string[]).includes(campaign.status)) return false;
-  return todayYmd <= invoiceLookupLastYmd(campaign.endYmd);
+  // 자동 조회 시작일(종료 +10일) 전에는 조회할 기간이 아직 없다.
+  return invoiceLookupFirstYmd(campaign.endYmd, "auto") <= todayYmd && todayYmd <= invoiceLookupLastYmd(campaign.endYmd);
 }
 
 /**
- * 메일 조회 창의 일수 — 가장 이른 판매 시작일부터 오늘까지(양끝 포함).
- * 메일 스캔은 「오늘 − N일」 이후를 읽으므로 하루를 더해 시작일 당일이 빠지지 않게 한다.
- * 시작일이 하나도 없으면 null(조회할 대상이 없다).
+ * 메일 조회 창의 일수 — 판매 종료일들 중 가장 이른 것의 +10일(자동) · +1일(수동)부터 오늘까지(양끝 포함).
+ * 메일 스캔은 「오늘 − N일」 이후를 읽으므로 하루를 더해 시작일 당일이 빠지지 않게 한다. 시작일이 아직 오지
+ * 않았으면 1(오늘 하루 — 수동 「조회」에서만 생긴다). 종료일이 하나도 없으면 null(조회할 대상이 없다).
  */
-export function invoiceLookupSinceDays(startYmds: readonly string[], todayYmd: string): number | null {
-  if (startYmds.length === 0) return null;
-  const earliest = [...startYmds].sort()[0];
+export function invoiceLookupSinceDays(
+  endYmds: readonly string[],
+  todayYmd: string,
+  mode: InvoiceLookupMode,
+): number | null {
+  if (endYmds.length === 0) return null;
+  const earliest = invoiceLookupFirstYmd([...endYmds].sort()[0], mode);
   const days = Math.round((ymdToUtcMs(todayYmd) - ymdToUtcMs(earliest)) / DAY_MS) + 1;
   return Math.max(1, days);
 }
