@@ -363,8 +363,12 @@ async function handler(request: Request): Promise<Response> {
   const mailSinceDays = targets.sinceDays !== null && hasOpenTarget ? targets.sinceDays : null;
   const expected = mailSinceDays === null ? [] : allExpected;
 
-  /** 메일 조회 창의 시작일 — 판정이 「안 봤다」와 「안 왔다」를 가르는 데 쓴다. 메일함을 안 열면 오늘(본 구간 없음). */
-  const scanWindowFrom = new Date(Date.now() - Math.max(0, (mailSinceDays ?? 0) - 1) * 24 * 60 * 60 * 1000)
+  /**
+   * 메일 조회 창의 시작일 — 판정이 「안 봤다」와 「안 왔다」를 가르는 데 쓴다. 메일함을 안 열면 오늘(본 구간 없음).
+   * ⚠️ 스캐너(`scanTaxInvoiceMails`)가 SINCE 경계를 만드는 식(`now − sinceDays일`)과 **같게** 계산한다 — 하루를 덜
+   * 빼면 KST 새벽 실행에서 이 날짜가 실제로 읽은 범위보다 늦어져 읽은 구간을 「조회 범위 밖」으로 보고한다.
+   */
+  const scanWindowFrom = new Date(Date.now() - (mailSinceDays ?? 0) * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
 
