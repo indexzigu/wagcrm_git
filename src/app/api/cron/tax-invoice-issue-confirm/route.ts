@@ -4,7 +4,11 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 import { getPrisma } from "@/lib/prisma";
 import { SUPPLIER } from "@/lib/tax-invoice-builder";
-import { loadCampaignSettlementFacts } from "@/lib/tax-invoice-mail/campaign-facts";
+import {
+  loadCampaignSettlementFacts,
+  loadInvoiceLookupTargets,
+  type InvoiceLookupTargets,
+} from "@/lib/tax-invoice-mail/campaign-facts";
 import {
   buildGroupExpectedIssuances,
   type ExpectedIssuance,
@@ -32,6 +36,7 @@ import {
   type InvoiceMonthNote,
 } from "@/lib/campaign-invoices";
 import { toInvoiceMailSummary } from "@/lib/tax-invoice-mail/invoice-mail-summary";
+import { hasOpenInvoiceLookupTarget } from "@/lib/tax-invoice-mail/invoice-lookup-scope";
 import { scanBrandStatementMails } from "@/lib/tax-invoice-mail/brand-statement-scan";
 import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 
@@ -78,9 +83,9 @@ import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 export const maxDuration = 300;
 
 /**
- * 메일 조회 창(일). 미발행 건 다수가 **이전 달 종료**라는 것이 프로덕션 실측이므로
- * 한 달로 좁히지 않는다. 캠페인 조회 창은 여기에 더해 `CAMPAIGN_WINDOW_LOOKBACK_DAYS`
- * 만큼 더 넓다(계산서는 캠페인이 끝난 뒤에 끊긴다).
+ * 월정산 단위(`loadAutoRecordUnits`)를 읽는 창(일) — 저장된 기록만 보는 「확인 필요」(R0) 보고가 이 창을 쓴다.
+ * ⛔ 메일 조회 창이 아니다. 메일은 오늘의 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내)의 가장 이른
+ * 판매 시작일부터만 본다(`loadInvoiceLookupTargets`, 오너 확정 2026-10-21). 종전 「메일도 오늘부터 90일」은 SUPERSEDED.
  */
 const SCAN_SINCE_DAYS = 90;
 
@@ -132,7 +137,7 @@ function summarizeConfirm(op: {
 /**
  * 정산서는 계산서보다 먼저 온다(월말 작성 · 다음 달 초 발급) — 계산서 조회 창보다 한 달 더 본다.
  */
-const STATEMENT_SCAN_SINCE_DAYS = SCAN_SINCE_DAYS + 31;
+const STATEMENT_SCAN_EXTRA_DAYS = 31;
 
 type MonthlyAutoRecordReport = {
   /**
@@ -190,11 +195,17 @@ function toNeedsReviewDetail(items: readonly AutoRecordReviewItem[]): MonthlyAut
  * 확정과 **같은 env 게이트**(`TAX_INVOICE_AUTO_CONFIRM=1`) 뒤에 있다 — 꺼져 있으면 예행만 한다.
  * 정산서 스캔이 실패하면 이 단계만 실패로 보고하고(조용히 0건으로 보이지 않게) 위 단계 결과는 둔다.
  */
+type LoadedAutoRecordUnits = Awaited<ReturnType<typeof campaignInvoiceService.loadAutoRecordUnits>>;
+
 async function runMonthlyAutoRecord(input: {
   mails: InvoiceMailSummary[];
   /** 계산서 스캔이 상한에 걸려 안 읽은 메일 수 */
   invoiceScanTruncated: number;
   dryRun: boolean;
+  /** 오늘의 자동 조회 대상 — 기록 계획은 이 단위에만 세운다(「확인 필요」 보고는 저장된 기록이라 전 단위) */
+  targets: InvoiceLookupTargets;
+  /** 핸들러가 메일함을 열지 정하려고 먼저 읽은 월정산 단위 — 읽기 실패는 이 단계의 실패로 보고한다 */
+  loaded: LoadedAutoRecordUnits | { error: string };
 }): Promise<MonthlyAutoRecordReport> {
   const report: MonthlyAutoRecordReport = {
     blocked: null,
@@ -211,22 +222,26 @@ async function runMonthlyAutoRecord(input: {
     needsReviewDetail: [],
     failures: [],
   };
-  const { units, recordedIssueIds } = await campaignInvoiceService.loadAutoRecordUnits(getPrisma(), {
-    sinceDays: SCAN_SINCE_DAYS,
-  });
+  if ("error" in input.loaded) throw new Error(input.loaded.error);
+  const { units, recordedIssueIds } = input.loaded;
   report.units = units.length;
   // 기록한 합계가 전액과 어긋나는 단위(R0)의 오너 확인 건 — **저장된 행만으로** 정해져 메일과 무관하다. 그래서
   // 아래 스캔 잘림 멈춤·정산서 메일함 생략과 상관없이 늘 낸다(리뷰 2026-10-15 #4). 오너가 「확인함」으로 본
   // 차이는 단위 목록에서 이미 빠져 있다. `planAutoRecords` 는 이 단위를 건너뛰므로 두 번 세지 않는다.
   report.needsReviewDetail = toNeedsReviewDetail(collectRecordedMismatchReviews(units));
-  // 비어 있는 발행 달이 없으면(확인 건만 남은 단위뿐) 정산서 메일함을 열지 않는다 — 기록할 것이 없다.
-  if (!units.some((unit) => unit.direction === "ISSUE" && unit.openMonths.length > 0)) return report;
+  // 자동 조회 대상 단위만 기록한다.
+  const targetUnits = units.filter((unit) => input.targets.includesUnit(unit.unitKey));
+  // 대상 중 비어 있는 발행 달이 없으면 정산서 메일함을 열지 않는다 — 기록할 것이 없다.
+  if (input.targets.sinceDays === null) return report;
+  if (!targetUnits.some((unit) => unit.direction === "ISSUE" && unit.openMonths.length > 0)) return report;
 
   if (input.invoiceScanTruncated > 0) {
     report.blocked = "INVOICE_SCAN_TRUNCATED";
     return report;
   }
-  const statementScan = await scanBrandStatementMails({ sinceDays: STATEMENT_SCAN_SINCE_DAYS });
+  const statementScan = await scanBrandStatementMails({
+    sinceDays: input.targets.sinceDays + STATEMENT_SCAN_EXTRA_DAYS,
+  });
   report.statementBox = statementScan.box;
   report.statements = statementScan.statements.length;
   report.statementsUnparsed = statementScan.unparsed;
@@ -236,7 +251,7 @@ async function runMonthlyAutoRecord(input: {
   }
 
   const plan = planAutoRecords({
-    units,
+    units: targetUnits,
     mails: input.mails,
     statements: statementScan.statements,
     ourBusinessNumber: SUPPLIER.businessNumber,
@@ -308,26 +323,66 @@ async function handler(request: Request): Promise<Response> {
   const dryRun = dryRunRequested || !writeEnabled;
   const prisma = getPrisma();
 
-  /** 메일 조회 창의 시작일 — 판정이 「안 봤다」와 「안 왔다」를 가르는 데 쓴다. */
-  const scanWindowFrom = new Date(Date.now() - SCAN_SINCE_DAYS * 24 * 60 * 60 * 1000)
+  // ── 0. 오늘의 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내, 오너 확정 2026-10-21).
+  //      대상이 없으면 메일함을 열지 않는다 — 응답 모양은 그대로 두고 0건으로 보고한다.
+  const targets = await loadInvoiceLookupTargets(prisma);
+
+  // ── 1. 발행 기대 건. 그룹은 합산 인지형 진입점이 정리하고, 미그룹은 1건짜리 묶음으로 탄다.
+  //      ⚠️ 대조 모집단은 대상만으로 좁히지 않고 종전 넓이(`SCAN_SINCE_DAYS` 이상)를 유지한다 — 끝난 캠페인의
+  //      계산서 메일이 금액이 같은 대상 캠페인에 잘못 붙지 않게 후보를 다 둔 채 판정하고, **쓰기**만 대상으로
+  //      거른다(아래 4).
+  const facts =
+    targets.sinceDays === null
+      ? null
+      : await loadCampaignSettlementFacts(prisma, {
+          sinceDays: Math.max(SCAN_SINCE_DAYS, targets.sinceDays),
+        });
+  const allExpected: ExpectedIssuance[] = facts
+    ? [
+        ...facts.solo.flatMap((item) => buildGroupExpectedIssuances([item])),
+        ...[...facts.byGroup.values()].flatMap((members) => buildGroupExpectedIssuances(members)),
+      ]
+    : [];
+
+  // 월정산 단위(달별 계산서) — 메일함을 열지 정하는 데도 쓴다. 읽기 실패는 월정산 단계의 실패로 넘긴다.
+  let autoRecordUnits: LoadedAutoRecordUnits | { error: string };
+  try {
+    autoRecordUnits = await campaignInvoiceService.loadAutoRecordUnits(prisma, { sinceDays: SCAN_SINCE_DAYS });
+  } catch (error) {
+    autoRecordUnits = { error: describeErrorChain(error) };
+  }
+
+  // 메일함은 대상 중 **발행 확인이 남은 것**이 있을 때만 연다(오너 확정 2026-10-21) — 날짜 칸이 빈 발행 건이나
+  // 빈 달이 있는 월정산 단위. 없으면 판정도 하지 않는다(메일 없이 판정하면 전부 「미수신」으로 세어진다).
+  const hasOpenTarget = hasOpenInvoiceLookupTarget({
+    issuances: allExpected,
+    monthlyUnits: "units" in autoRecordUnits ? autoRecordUnits.units : [],
+    isTargetCampaign: (id) => targets.campaignIds.has(id),
+    isTargetUnit: targets.includesUnit,
+  });
+  const mailSinceDays = targets.sinceDays !== null && hasOpenTarget ? targets.sinceDays : null;
+  const expected = mailSinceDays === null ? [] : allExpected;
+
+  /**
+   * 메일 조회 창의 시작일 — 판정이 「안 봤다」와 「안 왔다」를 가르는 데 쓴다. 메일함을 안 열면 오늘(본 구간 없음).
+   * ⚠️ 스캐너(`scanTaxInvoiceMails`)가 SINCE 경계를 만드는 식(`now − sinceDays일`)과 **같게** 계산한다 — 하루를 덜
+   * 빼면 KST 새벽 실행에서 이 날짜가 실제로 읽은 범위보다 늦어져 읽은 구간을 「조회 범위 밖」으로 보고한다.
+   */
+  const scanWindowFrom = new Date(Date.now() - (mailSinceDays ?? 0) * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
 
-  // ── 1. 발행 기대 건. 그룹은 합산 인지형 진입점이 정리하고, 미그룹은 1건짜리 묶음으로 탄다.
-  const facts = await loadCampaignSettlementFacts(prisma, { sinceDays: SCAN_SINCE_DAYS });
-  const expected: ExpectedIssuance[] = [
-    ...facts.solo.flatMap((item) => buildGroupExpectedIssuances([item])),
-    ...[...facts.byGroup.values()].flatMap((members) => buildGroupExpectedIssuances(members)),
-  ];
-
   // ── 2. 전용 메일함 스캔(읽기 전용·무흔적). 실패를 삼키면 "발행 0건"으로 오독돼
   //      레이더가 초록인 채 아무 일도 안 하는 상태가 된다 — 실질 실패로 선언한다.
-  let scan;
+  let scan: Awaited<ReturnType<typeof scanTaxInvoiceMails>>;
   try {
-    scan = await scanTaxInvoiceMails({
-      sinceDays: SCAN_SINCE_DAYS,
-      invoicePassword: SUPPLIER.businessNumber,
-    });
+    scan =
+      mailSinceDays === null
+        ? EMPTY_SCAN
+        : await scanTaxInvoiceMails({
+            sinceDays: mailSinceDays,
+            invoicePassword: SUPPLIER.businessNumber,
+          });
   } catch (error) {
     const message = describeErrorChain(error);
     return NextResponse.json(
@@ -355,7 +410,12 @@ async function handler(request: Request): Promise<Response> {
     // 흡수된 오차는 `AMOUNT_TOLERATED` 로 표면화되고 감사 로그에도 실린다(조용한 완화 아님).
     amountToleranceWon: SUB_HUNDRED_TRUNCATION_TOLERANCE_WON,
   });
-  const plan = buildIssuanceWritePlan(verdicts, expected);
+  const fullPlan = buildIssuanceWritePlan(verdicts, expected);
+  // ── 4. 쓰기는 오늘의 자동 조회 대상에만 — 정산 단계를 지났거나 종료 후 60일이 지난 캠페인에는 찍지 않는다.
+  const plan = {
+    ...fullPlan,
+    ops: fullPlan.ops.filter((op) => op.campaignIds.some((id) => targets.campaignIds.has(id))),
+  };
 
   const capped = plan.ops.slice(0, MAX_CONFIRMS_PER_RUN);
   const droppedByCap = plan.ops.length - capped.length;
@@ -448,6 +508,8 @@ async function handler(request: Request): Promise<Response> {
         .filter((mail): mail is InvoiceMailSummary => mail !== null),
       invoiceScanTruncated: scan.truncated,
       dryRun,
+      targets: mailSinceDays === null ? { ...targets, sinceDays: null } : targets,
+      loaded: autoRecordUnits,
     });
   } catch (error) {
     monthlyAutoRecord = { failed: true, error: describeErrorChain(error) };
@@ -458,6 +520,8 @@ async function handler(request: Request): Promise<Response> {
       : monthlyAutoRecord.failures;
   const allFailures = [...failures, ...monthlyFailures];
 
+  // ⚠️ 아래 판정 집계는 **대조 모집단 전체**(자동 조회 대상이 아닌 캠페인 포함)를 센다 — 대상만 걸러지는 것은
+  //    쓰기(`planned`·`applied`)다. 메일 창이 대상의 판매 시작일부터라 비대상은 `outOfScanRange` 에 잡히는 것이 정상이다.
   const byStatus = {
     confirmed: verdicts.filter((v) => v.status === "CONFIRMED").length,
     needsReview: verdicts.filter((v) => v.status === "NEEDS_REVIEW").length,
@@ -535,10 +599,12 @@ async function handler(request: Request): Promise<Response> {
       truncated: scan.truncated,
       duplicateCopies: scan.duplicateCopies,
       parsedInvoices: invoices.length,
-      sinceDays: SCAN_SINCE_DAYS,
+      sinceDays: mailSinceDays ?? 0,
       /** 화면이 「이 범위는 확인했다」고 말할 때 근거로 쓸 실제 시작일 */
       windowFrom: scanWindowFrom,
     },
+    /** 오늘의 자동 조회 대상 캠페인 수(그룹은 멤버 전원). 대상이 있어도 발행 확인이 다 끝났으면 메일함을 열지 않는다(`scan.sinceDays` 0). */
+    lookupTargets: targets.campaignIds.size,
     expectedTotal: expected.length,
     ...byStatus,
     needsReviewDetail,
@@ -565,5 +631,16 @@ async function handler(request: Request): Promise<Response> {
       : {}),
   });
 }
+
+/** 자동 조회 대상이 없는 날의 스캔 결과 — 메일함을 열지 않았다(오늘 시작 · 0통). */
+const EMPTY_SCAN: Awaited<ReturnType<typeof scanTaxInvoiceMails>> = {
+  box: "",
+  headerScanned: 0,
+  candidates: 0,
+  skippedByFilter: 0,
+  truncated: 0,
+  duplicateCopies: 0,
+  mails: [],
+};
 
 export const GET = withSystemTaskStatus("tax-invoice-issue-confirm", handler);

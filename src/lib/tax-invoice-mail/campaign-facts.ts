@@ -11,6 +11,14 @@
 
 import type { PrismaClient } from "@prisma/client";
 import type { CampaignIssuanceFacts } from "./expected-issuances";
+import { toKstYmd } from "../date-utils";
+import { SETTLEMENT_STAGE_STATUSES } from "../settlement-stage";
+import {
+  INVOICE_LOOKUP_DAYS_AFTER_END,
+  addDaysToYmd,
+  invoiceLookupSinceDays,
+  isInvoiceLookupTarget,
+} from "./invoice-lookup-scope";
 
 /**
  * 작성일자 타당 창의 뒤쪽 여유.
@@ -188,4 +196,56 @@ export async function loadCampaignSettlementFacts(
   }
 
   return { solo, byGroup, all };
+}
+
+export interface InvoiceLookupTargets {
+  /** 자동 조회 대상 캠페인 id — 그룹이면 멤버 전원(상태는 그룹 안에서 함께 움직인다) */
+  campaignIds: Set<string>;
+  /** 대상 캠페인이 속한 그룹 id — 그룹 단위 쓰기·월정산 단위 키 대조용 */
+  groupIds: Set<string>;
+  /** 메일 조회 창 일수(가장 이른 판매 시작일 ~ 오늘). 대상이 없으면 null — 메일함을 열지 않는다 */
+  sinceDays: number | null;
+  /** 월정산 단위 키(그룹 id 또는 캠페인 id — `loadAutoRecordUnits`)가 대상인가 */
+  includesUnit(unitKey: string): boolean;
+}
+
+/**
+ * 오늘 계산서 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내)을 읽는다 — 판정은
+ * `invoice-lookup-scope.ts` 가 소유하고 여기는 읽기만 한다(오너 확정 2026-10-21).
+ */
+export async function loadInvoiceLookupTargets(
+  prisma: PrismaClient,
+  now: Date = new Date(),
+): Promise<InvoiceLookupTargets> {
+  const todayYmd = toKstYmd(now);
+  // 저장 시각대가 어긋나도 빠지지 않게 하루 넉넉히 거른 뒤 KST 날짜로 다시 판정한다.
+  const endFloor = new Date(`${addDaysToYmd(todayYmd, -(INVOICE_LOOKUP_DAYS_AFTER_END + 1))}T00:00:00.000Z`);
+  const rows = await prisma.salesCampaign.findMany({
+    where: { status: { in: [...SETTLEMENT_STAGE_STATUSES] }, endDate: { gte: endFloor } },
+    select: { id: true, groupId: true, status: true, startDate: true, endDate: true },
+  });
+  const targets = rows.filter((row) =>
+    isInvoiceLookupTarget({ status: row.status, endYmd: toKstYmd(row.endDate) }, todayYmd),
+  );
+  const groupIds = new Set(targets.map((row) => row.groupId).filter((id): id is string => id !== null));
+  const campaignIds = new Set(targets.map((row) => row.id));
+  const startYmds = targets.map((row) => toKstYmd(row.startDate));
+  if (groupIds.size > 0) {
+    // 멤버의 시작일도 창에 넣는다 — 달별 칸은 멤버 전원의 가장 이른 시작일부터 세므로, 대상 멤버만 보면
+    // 먼저 시작한 멤버의 앞 달 계산서가 창 밖에 남는다(교차 검증 2026-10-21).
+    const members = await prisma.salesCampaign.findMany({
+      where: { groupId: { in: [...groupIds] } },
+      select: { id: true, startDate: true },
+    });
+    for (const member of members) {
+      campaignIds.add(member.id);
+      startYmds.push(toKstYmd(member.startDate));
+    }
+  }
+  return {
+    campaignIds,
+    groupIds,
+    sinceDays: invoiceLookupSinceDays(startYmds, todayYmd),
+    includesUnit: (unitKey) => groupIds.has(unitKey) || campaignIds.has(unitKey),
+  };
 }

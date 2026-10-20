@@ -26,6 +26,8 @@ import { resolveCampaignWithholdingStatus } from "@/lib/tax-filing-log";
 // 승인 카드는 세무 처리 다이얼로그와 **같은 컴포넌트**를 쓴다(그 파일 헤더의 ⛔).
 import { ReceiptDecisionDialog, ReceiptSuggestionCards, resolveDecisionScopeKeys } from "./receipt-suggestion-cards";
 import { CampaignInvoiceSlot } from "./campaign-invoice-slot";
+import { toKstYmd } from "@/lib/date-utils";
+import { invoiceLookupSinceDays, isInvoiceLookupTarget } from "@/lib/tax-invoice-mail/invoice-lookup-scope";
 
 /**
  * 수취 판정 문구 — 엔진의 어휘를 그대로 옮긴다. 새 어휘를 만들지 않는다.
@@ -277,6 +279,11 @@ export function SettlementSection({
   // 읽어 같은 틱의 두 번째 클릭이 여전히 `false`를 본다. IMAP 전량 스캔은 수 초가 걸려
   // 두 번째 클릭이 스캔을 중복으로 띄우기 쉽다. 같은 ref 가드를 쓴다.
   const receiptLoadingRef = useRef(false);
+  // 계산서 메일 조회 대상·기간(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). 오늘은 패널이 열릴 때 한 번 고정한다.
+  const [todayYmd] = useState(() => toKstYmd(new Date()));
+  const invoiceAutoLookup = isInvoiceLookupTarget({ status: campaign.status, endYmd: campaign.endDate }, todayYmd);
+  // 조합 캠페인의 가장 이른 판매 시작일(그룹 기간 = 멤버 포락선) — 그룹 조회 때 함께 받아 둔다.
+  const groupStartYmdRef = useRef<string | null>(null);
 
   const [groupMemberIds, setGroupMemberIds] = useState<string[] | null>(null);
 
@@ -304,6 +311,7 @@ export function SettlementSection({
       if (groupMemberIds) return groupMemberIds;
       try {
         const detail = await fetchGroupDetail(groupId);
+        groupStartYmdRef.current = detail.startDate;
         const ids = detail.members.map((member) => member.campaignId).sort();
         const resolved = ids.length > 0 ? ids : [campaign.id];
         setGroupMemberIds(resolved);
@@ -362,7 +370,11 @@ export function SettlementSection({
       // 이 경로는 그 조회 실패를 오너에게 고지한다(notifyFailure) — 발행 경로와 달리
       // 판정 범위 자체가 좁아지므로 조용히 넘기면 안 된다.
       await resolveMemberIds({ notifyFailure: true });
-      const res = await fetch("/api/settlement/tax-invoice-receipts?sinceDays=90");
+      // 메일함은 판매 시작일부터 본다(달을 넘긴 월정산은 앞 달 계산서가 판매 종료 전에 나온다). 조합이면 그룹의
+      // 가장 이른 시작일까지 — 달별 칸은 멤버 전원 기준이라 늦게 시작하면 앞 달이 「조회불가」로 남는다.
+      const starts = [campaign.startDate, groupStartYmdRef.current].filter((ymd): ymd is string => Boolean(ymd));
+      const receiptSinceDays = invoiceLookupSinceDays(starts, todayYmd) ?? 1;
+      const res = await fetch(`/api/settlement/tax-invoice-receipts?sinceDays=${receiptSinceDays}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         toast.error(body?.error ?? "메일함 조회에 실패했습니다.");
@@ -383,7 +395,7 @@ export function SettlementSection({
       receiptLoadingRef.current = false;
       setReceiptLoading(false);
     }
-  }, [resolveMemberIds]);
+  }, [resolveMemberIds, campaign.startDate, todayYmd]);
 
   /**
    * 수취 결정(승인·무관 처리·되돌리기) 뒤처리.
@@ -760,6 +772,7 @@ export function SettlementSection({
                     title={slot.title}
                     scan={receiptScan}
                     scanLoading={receiptLoading}
+                    autoLookup={invoiceAutoLookup}
                     onRequestScan={handleCheckReceipt}
                     onChanged={refreshThisCampaign}
                     legacyFallback={box}
