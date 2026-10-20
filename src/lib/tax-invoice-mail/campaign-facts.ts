@@ -205,6 +205,8 @@ export interface InvoiceLookupTargets {
   groupIds: Set<string>;
   /** 메일 조회 창 일수(가장 이른 판매 시작일 ~ 오늘). 대상이 없으면 null — 메일함을 열지 않는다 */
   sinceDays: number | null;
+  /** 월정산 단위 키(그룹 id 또는 캠페인 id — `loadAutoRecordUnits`)가 대상인가 */
+  includesUnit(unitKey: string): boolean;
 }
 
 /**
@@ -240,5 +242,10 @@ export async function loadInvoiceLookupTargets(
       startYmds.push(toKstYmd(member.startDate));
     }
   }
-  return { campaignIds, groupIds, sinceDays: invoiceLookupSinceDays(startYmds, todayYmd) };
+  return {
+    campaignIds,
+    groupIds,
+    sinceDays: invoiceLookupSinceDays(startYmds, todayYmd),
+    includesUnit: (unitKey) => groupIds.has(unitKey) || campaignIds.has(unitKey),
+  };
 }

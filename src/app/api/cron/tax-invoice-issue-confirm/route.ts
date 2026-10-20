@@ -194,6 +194,8 @@ function toNeedsReviewDetail(items: readonly AutoRecordReviewItem[]): MonthlyAut
  * 확정과 **같은 env 게이트**(`TAX_INVOICE_AUTO_CONFIRM=1`) 뒤에 있다 — 꺼져 있으면 예행만 한다.
  * 정산서 스캔이 실패하면 이 단계만 실패로 보고하고(조용히 0건으로 보이지 않게) 위 단계 결과는 둔다.
  */
+type LoadedAutoRecordUnits = Awaited<ReturnType<typeof campaignInvoiceService.loadAutoRecordUnits>>;
+
 async function runMonthlyAutoRecord(input: {
   mails: InvoiceMailSummary[];
   /** 계산서 스캔이 상한에 걸려 안 읽은 메일 수 */
@@ -201,6 +203,8 @@ async function runMonthlyAutoRecord(input: {
   dryRun: boolean;
   /** 오늘의 자동 조회 대상 — 기록 계획은 이 단위에만 세운다(「확인 필요」 보고는 저장된 기록이라 전 단위) */
   targets: InvoiceLookupTargets;
+  /** 핸들러가 메일함을 열지 정하려고 먼저 읽은 월정산 단위 — 읽기 실패는 이 단계의 실패로 보고한다 */
+  loaded: LoadedAutoRecordUnits | { error: string };
 }): Promise<MonthlyAutoRecordReport> {
   const report: MonthlyAutoRecordReport = {
     blocked: null,
@@ -217,18 +221,15 @@ async function runMonthlyAutoRecord(input: {
     needsReviewDetail: [],
     failures: [],
   };
-  const { units, recordedIssueIds } = await campaignInvoiceService.loadAutoRecordUnits(getPrisma(), {
-    sinceDays: SCAN_SINCE_DAYS,
-  });
+  if ("error" in input.loaded) throw new Error(input.loaded.error);
+  const { units, recordedIssueIds } = input.loaded;
   report.units = units.length;
   // 기록한 합계가 전액과 어긋나는 단위(R0)의 오너 확인 건 — **저장된 행만으로** 정해져 메일과 무관하다. 그래서
   // 아래 스캔 잘림 멈춤·정산서 메일함 생략과 상관없이 늘 낸다(리뷰 2026-10-15 #4). 오너가 「확인함」으로 본
   // 차이는 단위 목록에서 이미 빠져 있다. `planAutoRecords` 는 이 단위를 건너뛰므로 두 번 세지 않는다.
   report.needsReviewDetail = toNeedsReviewDetail(collectRecordedMismatchReviews(units));
-  // 자동 조회 대상 단위만 기록한다 — 단위 키는 그룹 id 또는 캠페인 id 다.
-  const targetUnits = units.filter(
-    (unit) => input.targets.groupIds.has(unit.unitKey) || input.targets.campaignIds.has(unit.unitKey),
-  );
+  // 자동 조회 대상 단위만 기록한다.
+  const targetUnits = units.filter((unit) => input.targets.includesUnit(unit.unitKey));
   // 대상 중 비어 있는 발행 달이 없으면 정산서 메일함을 열지 않는다 — 기록할 것이 없다.
   if (input.targets.sinceDays === null) return report;
   if (!targetUnits.some((unit) => unit.direction === "ISSUE" && unit.openMonths.length > 0)) return report;
@@ -324,24 +325,49 @@ async function handler(request: Request): Promise<Response> {
   // ── 0. 오늘의 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내, 오너 확정 2026-10-21).
   //      대상이 없으면 메일함을 열지 않는다 — 응답 모양은 그대로 두고 0건으로 보고한다.
   const targets = await loadInvoiceLookupTargets(prisma);
-  const mailSinceDays = targets.sinceDays;
-
-  /** 메일 조회 창의 시작일 — 판정이 「안 봤다」와 「안 왔다」를 가르는 데 쓴다. 대상이 없으면 오늘(본 구간 없음). */
-  const scanWindowFrom = new Date(Date.now() - Math.max(0, (mailSinceDays ?? 0) - 1) * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
 
   // ── 1. 발행 기대 건. 그룹은 합산 인지형 진입점이 정리하고, 미그룹은 1건짜리 묶음으로 탄다.
-  //      ⚠️ 대조 모집단은 대상만으로 좁히지 않는다 — 끝난 캠페인의 계산서 메일이 금액이 같은 대상 캠페인에
-  //      잘못 붙지 않게 후보를 다 둔 채 판정하고, **쓰기**만 대상으로 거른다(아래 4).
+  //      ⚠️ 대조 모집단은 대상만으로 좁히지 않고 종전 넓이(`SCAN_SINCE_DAYS` 이상)를 유지한다 — 끝난 캠페인의
+  //      계산서 메일이 금액이 같은 대상 캠페인에 잘못 붙지 않게 후보를 다 둔 채 판정하고, **쓰기**만 대상으로
+  //      거른다(아래 4).
   const facts =
-    mailSinceDays === null ? null : await loadCampaignSettlementFacts(prisma, { sinceDays: mailSinceDays });
-  const expected: ExpectedIssuance[] = facts
+    targets.sinceDays === null
+      ? null
+      : await loadCampaignSettlementFacts(prisma, {
+          sinceDays: Math.max(SCAN_SINCE_DAYS, targets.sinceDays),
+        });
+  const allExpected: ExpectedIssuance[] = facts
     ? [
         ...facts.solo.flatMap((item) => buildGroupExpectedIssuances([item])),
         ...[...facts.byGroup.values()].flatMap((members) => buildGroupExpectedIssuances(members)),
       ]
     : [];
+
+  // 월정산 단위(달별 계산서) — 메일함을 열지 정하는 데도 쓴다. 읽기 실패는 월정산 단계의 실패로 넘긴다.
+  let autoRecordUnits: LoadedAutoRecordUnits | { error: string };
+  try {
+    autoRecordUnits = await campaignInvoiceService.loadAutoRecordUnits(prisma, { sinceDays: SCAN_SINCE_DAYS });
+  } catch (error) {
+    autoRecordUnits = { error: describeErrorChain(error) };
+  }
+
+  // 메일함은 대상 중 **발행 확인이 남은 것**이 있을 때만 연다(오너 확정 2026-10-21) — 날짜 칸이 빈 발행 건이나
+  // 빈 달이 있는 월정산 단위. 없으면 판정도 하지 않는다(메일 없이 판정하면 전부 「미수신」으로 세어진다).
+  const hasOpenTarget =
+    allExpected.some(
+      (item) => item.alreadyMarkedAt === null && item.campaignIds.some((id) => targets.campaignIds.has(id)),
+    ) ||
+    ("units" in autoRecordUnits &&
+      autoRecordUnits.units.some(
+        (unit) => unit.direction === "ISSUE" && unit.openMonths.length > 0 && targets.includesUnit(unit.unitKey),
+      ));
+  const mailSinceDays = targets.sinceDays !== null && hasOpenTarget ? targets.sinceDays : null;
+  const expected = mailSinceDays === null ? [] : allExpected;
+
+  /** 메일 조회 창의 시작일 — 판정이 「안 봤다」와 「안 왔다」를 가르는 데 쓴다. 메일함을 안 열면 오늘(본 구간 없음). */
+  const scanWindowFrom = new Date(Date.now() - Math.max(0, (mailSinceDays ?? 0) - 1) * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
 
   // ── 2. 전용 메일함 스캔(읽기 전용·무흔적). 실패를 삼키면 "발행 0건"으로 오독돼
   //      레이더가 초록인 채 아무 일도 안 하는 상태가 된다 — 실질 실패로 선언한다.
@@ -479,7 +505,8 @@ async function handler(request: Request): Promise<Response> {
         .filter((mail): mail is InvoiceMailSummary => mail !== null),
       invoiceScanTruncated: scan.truncated,
       dryRun,
-      targets,
+      targets: mailSinceDays === null ? { ...targets, sinceDays: null } : targets,
+      loaded: autoRecordUnits,
     });
   } catch (error) {
     monthlyAutoRecord = { failed: true, error: describeErrorChain(error) };
@@ -573,7 +600,7 @@ async function handler(request: Request): Promise<Response> {
       /** 화면이 「이 범위는 확인했다」고 말할 때 근거로 쓸 실제 시작일 */
       windowFrom: scanWindowFrom,
     },
-    /** 오늘의 자동 조회 대상 캠페인 수(그룹은 멤버 전원). 0 이면 메일함을 열지 않았다. */
+    /** 오늘의 자동 조회 대상 캠페인 수(그룹은 멤버 전원). 대상이 있어도 발행 확인이 다 끝났으면 메일함을 열지 않는다(`scan.sinceDays` 0). */
     lookupTargets: targets.campaignIds.size,
     expectedTotal: expected.length,
     ...byStatus,

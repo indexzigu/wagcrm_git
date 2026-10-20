@@ -63,9 +63,9 @@ const DOT_CLASS: Record<"none" | "info" | "caution" | "slate", string> = {
 };
 
 const SCANNING_HINT = "메일함을 확인하고 있습니다.";
-/** 자동 조회를 하지 않는 캠페인에서 메일함을 아직 안 본 달의 풀이(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). */
 /** 메일함 조회를 시도했는데 결과가 없는 달의 풀이 — 실패 사유는 토스트가 따로 알린다. */
 const SCAN_FAILED_HINT = "메일함을 확인하지 못했습니다. 「조회」를 다시 눌러 주세요.";
+/** 자동 조회를 하지 않는 캠페인에서 메일함을 아직 안 본 달의 풀이(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). */
 const LOOKUP_IDLE_HINT = `정산 단계 캠페인만 판매 종료 후 ${INVOICE_LOOKUP_DAYS_AFTER_END}일까지 자동으로 메일함을 확인합니다. 「조회」를 누르면 지금 확인합니다.`;
 
 function formatWon(value: number | null): string {
@@ -498,7 +498,10 @@ function useCampaignInvoices({
   scan,
   onRequestScan,
   onChanged,
+  autoLoadStatements,
 }: {
+  /** 빈 달이 있으면 열 때 정산서 메일을 자동으로 읽는가 — 끄면 「조회」를 누를 때 함께 읽는다(오너 확정 2026-10-21). */
+  autoLoadStatements: boolean;
   campaignId: string;
   scan: ReceiptScanApiResponse | null;
   onRequestScan: () => Promise<void> | void;
@@ -555,11 +558,6 @@ function useCampaignInvoices({
 
   const applicable: ApplicableView | null = view && view.applicable && !view.legacyMode ? view : null;
 
-  const requestScan = useCallback(() => {
-    setScanAttempted(true);
-    void onRequestScan();
-  }, [onRequestScan]);
-
   // 월정산 칸에 **비어 있는 달이 있을 때만** 정산서를 한 번 읽는다(메일함 스캔과 별개 — 전체보관함을
   // 훑는 비싼 조회라 다 끝난 캠페인에서는 돌리지 않는다). 실패는 창 설명에 드러난다. ref 로 막는 이유:
   // 개발 모드에서 효과가 두 번 돌아도 한 번만 부르게(상태 갱신은 그 사이에 반영되지 않는다).
@@ -573,11 +571,21 @@ function useCampaignInvoices({
       expectedTotalAmount: applicable.expectedTotalAmount,
     }).openMonths.length > 0;
   }, [applicable]);
-  useEffect(() => {
+  const requestStatementsOnce = useCallback(() => {
     if (!hasOpenMonth || statementsRequested.current) return;
     statementsRequested.current = true;
     void loadStatements();
   }, [hasOpenMonth, loadStatements]);
+  useEffect(() => {
+    if (autoLoadStatements) requestStatementsOnce();
+  }, [autoLoadStatements, requestStatementsOnce]);
+
+  const requestScan = useCallback(() => {
+    setScanAttempted(true);
+    // 자동 조회 밖 캠페인은 정산서를 미리 읽지 않았다 — 오너가 「조회」를 누른 지금 함께 읽는다.
+    requestStatementsOnce();
+    void onRequestScan();
+  }, [onRequestScan, requestStatementsOnce]);
 
   const months = useMemo(() => {
     if (!applicable) return [];
@@ -822,6 +830,8 @@ export function CampaignInvoiceDialog({
     scan,
     onRequestScan,
     onChanged,
+    // 세무 보드가 여는 창 — 캠페인 하나의 자동 조회 규칙 밖이라 종전대로 읽는다.
+    autoLoadStatements: true,
   });
 
   useEffect(() => {
@@ -905,6 +915,7 @@ export function CampaignInvoiceSlot({
     scan,
     onRequestScan,
     onChanged,
+    autoLoadStatements: autoLookup,
   });
 
   // 열 때 메일함을 한 번 본다 — 확인 전에는 지난 달을 「미발견」으로 단정할 수 없어서다. 단 자동 조회 대상

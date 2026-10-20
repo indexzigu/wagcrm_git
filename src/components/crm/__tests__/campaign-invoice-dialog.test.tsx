@@ -325,4 +325,16 @@ describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에�
     fireEvent.pointerDown(cell, { pointerType: "touch" });
     expect(await screen.findByText(/판매 종료 후 60일까지 자동으로 메일함을 확인합니다/)).toBeInTheDocument();
   });
+
+  it("대상이 아니면 정산서 메일도 미리 읽지 않고, 「조회」를 누를 때 함께 읽는다", async () => {
+    const onRequestScan = vi.fn();
+    renderUnscanned(false, onRequestScan);
+    await screen.findByTestId("invoice-month-2026-09");
+    const statementCalls = () =>
+      vi.mocked(global.fetch).mock.calls.filter(([input]) => String(input).includes("/brand-statements")).length;
+    expect(statementCalls()).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "조회" }));
+    expect(onRequestScan).toHaveBeenCalledTimes(1);
+    expect(statementCalls()).toBe(1);
+  });
 });
