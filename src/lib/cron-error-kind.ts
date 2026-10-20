@@ -31,6 +31,9 @@ const bareStatus = (alt: string): RegExp =>
 const RULES: readonly Rule[] = [
   { kind: "proxy_quota", patterns: [/Proxy response \(407\)/, new RegExp(`${bareStatus("407").source}.*(proxy|Proxy|tunnel)`)] },
   { kind: "rate_limit", statuses: [429], patterns: [bareStatus("429"), /RESOURCE_EXHAUSTED/, /rate.?limit/i] },
+  // DB 인증 실패(Prisma)는 접속 정보 불일치 = 설정 문제다. 아래 인증 규칙의 「authentication failed」가
+  // 먼저 잡지 않도록 반드시 인증 규칙보다 위에 둔다(규칙 순서가 판정이다).
+  { kind: "config", patterns: [/Authentication failed against database server/i] },
   {
     kind: "auth",
     statuses: [401, 403],
@@ -40,13 +43,19 @@ const RULES: readonly Rule[] = [
       bareStatus("401|403"),
       /AUTHENTICATIONFAILED|Invalid credentials|authentication failed/i,
       /"code"\s*:\s*190\b/,
+      // 토큰 갱신이 남기는 Meta 오류 코드 표기 「(code 190)」, 단기→장기 토큰 교환 실패
+      /\(code 190\b/,
+      /토큰 교환 실패/,
       /GW\.IP_NOT_ALLOWED/,
     ],
   },
   {
     kind: "config",
     // 「설정되어 있지 않」 = 메일함 연동 정보 누락(메일함 작업은 이것도 HTTP 502 로 돌려준다, ⚙️K4).
-    patterns: [/Can't reach database/, /(미설정|설정되어 있지 않|not set|missing env|is not defined in env)/i],
+    patterns: [
+      /Can't reach database/,
+      /(미설정|설정되어 있지 않|설정되지 않|설정돼 있지 않|not set|missing env|is not defined in env)/i,
+    ],
   },
   { kind: "upstream_5xx", statuses: [502, 503, 504], patterns: [bareStatus("502|503|504")] },
   { kind: "timeout", patterns: [/ETIMEDOUT|timed? ?out|시간 초과|AbortError|TimeoutError/i] },
