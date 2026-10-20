@@ -330,14 +330,35 @@ async function driveViewer(page: Page, viewer: Viewer, handle: string): Promise<
   } catch {
     throw new Error(`${viewer.name}: 스토리 응답 JSON 파싱 실패`);
   }
-  const result = (parsed as { result?: unknown })?.result;
-  // storiesig: result = 스토리 배열. 형식이 어긋나면 뷰어 변경 신호 — 드러낸다.
+  return extractStoryItems(parsed, viewer.name);
+}
+
+/**
+ * 뷰어 스토리 응답 본문(JSON 파싱 결과)에서 항목 배열을 꺼낸다.
+ * v1 = `result` 가 배열, v2 = `result.items`(+ `result.owner`). **스토리가 없는 날도 v2 모양**
+ * (`{ result: { items: [], pageInfo, owner } }` — 2026-10-20 실측)이라 빈 배열은 정상이다.
+ *
+ * ⛔ 그 밖의 모양은 조용히 `[]` 로 넘기지 않고 던진다. 종전엔 `return []` 이라 「응답은 오는데 모양이
+ * 바뀐」 뷰어 변경이 「스토리 0개」와 구별되지 않았고, 스토리 수집이 「결과 0건」 판정에서 면제된 뒤
+ * (cron-jobs.ts) 그 고장을 잡을 곳이 이 오류(→ 전원 실패면 사고 A)뿐이다. 메시지에는 내용이 아니라
+ * 겉모양(키 이름)만 싣는다.
+ */
+export function extractStoryItems(parsed: unknown, viewerName: string): unknown[] {
+  const result = (parsed as { result?: unknown } | null)?.result;
   if (Array.isArray(result)) return result;
   if (result && typeof result === "object" && Array.isArray((result as { items?: unknown[] }).items)) {
     const { items, owner } = result as { items: unknown[]; owner?: unknown };
     return attachOwner(items, owner);
   }
-  return [];
+  throw new Error(`${viewerName}: 스토리 응답 형식 불일치(뷰어 변경 의심): ${describeShape(parsed)}`);
+}
+
+/** 응답의 겉모양만 — 최상위 키와 `result` 의 형태·키. 값(스토리 내용·계정)은 싣지 않는다. */
+function describeShape(parsed: unknown): string {
+  const keysOf = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v).slice(0, 8).join(",") : "");
+  const result = (parsed as { result?: unknown } | null)?.result;
+  const kind = result === null ? "null" : result === undefined ? "없음" : Array.isArray(result) ? "배열" : typeof result;
+  return `최상위[${keysOf(parsed)}] result=${kind}${keysOf(result) ? `[${keysOf(result)}]` : ""}`;
 }
 
 /**

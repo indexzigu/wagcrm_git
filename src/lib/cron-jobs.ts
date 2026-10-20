@@ -64,8 +64,9 @@ export type KnownJob = {
    * ⛔ capture-stories 는 `null`(판정 면제)이다(2026-10-20). 스토리는 24시간이면 사라지고 셀러가 며칠씩
    * 안 올리는 것이 흔해 「대상>0·산출0」만으로는 고장과 정상을 가를 수 없다 — 첫 실 B 경보가 바로 그
    * 거짓 경보였다(대상 1명이 2주간 스토리 0개, 뷰어 조회 정상). 뷰어 형식 변경 같은 진짜 고장은
-   * 「응답 미포착」 오류로 남아 전원 실패 시 사고 A 가 된다. 「뷰어가 본 수」로 바꿔도 그날 값이 0이라
-   * 해법이 아니다.
+   * 「응답 미포착」·「응답 형식 불일치」(`extractStoryItems`, story-viewer-fetch.ts) 오류로 남아 전원
+   * 실패 시 사고 A 가 된다 — 「스토리 없음」 응답은 `items: []` 라 이 오류에 걸리지 않는다(2026-10-20
+   * 실측). 「뷰어가 본 수」로 바꿔도 그날 값이 0이라 해법이 아니다.
    */
   readonly output: { readonly label: string; readonly zeroRunsToFlag: number } | null;
 };
