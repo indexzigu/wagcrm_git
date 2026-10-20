@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   INVOICE_LOOKUP_DAYS_AFTER_END,
   addDaysToYmd,
+  hasOpenInvoiceLookupTarget,
   invoiceLookupLastYmd,
   invoiceLookupSinceDays,
   isInvoiceLookupTarget,
@@ -46,5 +47,34 @@ describe("메일 조회 창 — 가장 이른 판매 시작일부터 오늘까�
 
   it("대상이 없으면 null — 메일함을 열지 않는다", () => {
     expect(invoiceLookupSinceDays([], "2026-10-21")).toBeNull();
+  });
+});
+
+describe("메일함을 열지 — 대상 중 발행 확인이 남은 것이 있을 때만", () => {
+  const targetsOnly = { isTargetCampaign: (id: string) => id === "t", isTargetUnit: (key: string) => key === "t" };
+  const issuance = (campaignId: string, alreadyMarkedAt: string | null) => ({ campaignIds: [campaignId], alreadyMarkedAt });
+  const unit = (unitKey: string, openMonths: string[], direction = "ISSUE") => ({ unitKey, direction, openMonths });
+
+  it("대상의 발행 날짜 칸이 비었으면 연다", () => {
+    expect(hasOpenInvoiceLookupTarget({ issuances: [issuance("t", null)], monthlyUnits: [], ...targetsOnly })).toBe(true);
+  });
+
+  it("대상의 발행이 다 확인됐고 빈 달도 없으면 열지 않는다", () => {
+    expect(
+      hasOpenInvoiceLookupTarget({ issuances: [issuance("t", "2026-10-01")], monthlyUnits: [unit("t", [])], ...targetsOnly }),
+    ).toBe(false);
+  });
+
+  it("비대상의 빈 칸·빈 달은 메일함을 열 이유가 아니다", () => {
+    expect(
+      hasOpenInvoiceLookupTarget({ issuances: [issuance("x", null)], monthlyUnits: [unit("x", ["2026-09"])], ...targetsOnly }),
+    ).toBe(false);
+  });
+
+  it("대상 월정산 단위에 빈 발행 달이 있으면 연다(수취 방향 단위는 세지 않는다)", () => {
+    expect(hasOpenInvoiceLookupTarget({ issuances: [], monthlyUnits: [unit("t", ["2026-09"])], ...targetsOnly })).toBe(true);
+    expect(
+      hasOpenInvoiceLookupTarget({ issuances: [], monthlyUnits: [unit("t", ["2026-09"], "RECEIVE")], ...targetsOnly }),
+    ).toBe(false);
   });
 });

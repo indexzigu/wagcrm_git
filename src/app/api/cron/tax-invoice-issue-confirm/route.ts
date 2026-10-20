@@ -36,6 +36,7 @@ import {
   type InvoiceMonthNote,
 } from "@/lib/campaign-invoices";
 import { toInvoiceMailSummary } from "@/lib/tax-invoice-mail/invoice-mail-summary";
+import { hasOpenInvoiceLookupTarget } from "@/lib/tax-invoice-mail/invoice-lookup-scope";
 import { scanBrandStatementMails } from "@/lib/tax-invoice-mail/brand-statement-scan";
 import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 
@@ -353,14 +354,12 @@ async function handler(request: Request): Promise<Response> {
 
   // 메일함은 대상 중 **발행 확인이 남은 것**이 있을 때만 연다(오너 확정 2026-10-21) — 날짜 칸이 빈 발행 건이나
   // 빈 달이 있는 월정산 단위. 없으면 판정도 하지 않는다(메일 없이 판정하면 전부 「미수신」으로 세어진다).
-  const hasOpenTarget =
-    allExpected.some(
-      (item) => item.alreadyMarkedAt === null && item.campaignIds.some((id) => targets.campaignIds.has(id)),
-    ) ||
-    ("units" in autoRecordUnits &&
-      autoRecordUnits.units.some(
-        (unit) => unit.direction === "ISSUE" && unit.openMonths.length > 0 && targets.includesUnit(unit.unitKey),
-      ));
+  const hasOpenTarget = hasOpenInvoiceLookupTarget({
+    issuances: allExpected,
+    monthlyUnits: "units" in autoRecordUnits ? autoRecordUnits.units : [],
+    isTargetCampaign: (id) => targets.campaignIds.has(id),
+    isTargetUnit: targets.includesUnit,
+  });
   const mailSinceDays = targets.sinceDays !== null && hasOpenTarget ? targets.sinceDays : null;
   const expected = mailSinceDays === null ? [] : allExpected;
 

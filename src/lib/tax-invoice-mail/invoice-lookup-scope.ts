@@ -56,3 +56,21 @@ export function invoiceLookupSinceDays(startYmds: readonly string[], todayYmd: s
   const days = Math.round((ymdToUtcMs(todayYmd) - ymdToUtcMs(earliest)) / DAY_MS) + 1;
   return Math.max(1, days);
 }
+
+/**
+ * 오늘 메일함을 열어야 하는가 — 대상 중 **발행 확인이 남은 것**이 하나라도 있을 때만(오너 확정 2026-10-21).
+ * 날짜 칸이 빈 발행 건(`alreadyMarkedAt === null`)이거나 빈 발행 달이 있는 월정산 단위. 대상 판정은 호출부가 넘긴다.
+ */
+export function hasOpenInvoiceLookupTarget(input: {
+  issuances: ReadonlyArray<{ alreadyMarkedAt: string | null; campaignIds: readonly string[] }>;
+  monthlyUnits: ReadonlyArray<{ unitKey: string; direction: string; openMonths: readonly unknown[] }>;
+  isTargetCampaign: (campaignId: string) => boolean;
+  isTargetUnit: (unitKey: string) => boolean;
+}): boolean {
+  return (
+    input.issuances.some((item) => item.alreadyMarkedAt === null && item.campaignIds.some(input.isTargetCampaign)) ||
+    input.monthlyUnits.some(
+      (unit) => unit.direction === "ISSUE" && unit.openMonths.length > 0 && input.isTargetUnit(unit.unitKey),
+    )
+  );
+}
