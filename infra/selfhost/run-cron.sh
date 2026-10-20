@@ -132,34 +132,59 @@ has_partial_failure() {
 # 로그: 회차마다 기존 라벨 줄 1줄(불변식 그대로) + 재시도를 예약할 때만
 # `RETRY <job> <k>/<상한> after <초>s (<사유>)` 1줄. k/상한은 그 종류 재시도의 순번과
 # 이 스크립트의 상한이다(앱 판정 x/2, 앱 응답 없음 1/1) — 작업별 정책 횟수가 아니다.
+# 헤더가 **있는데 값이 이상하면** 다시 부르지 않고 `RETRY <job> 건너뜀: 재시도 신호 값 이상 '<값>'`
+# 1줄을 남긴다 — 앱이 재시도를 원했는데 조용히 사라지면 앱 쪽 결함을 아무도 모른다.
+# 헤더가 없으면(재시도 대상 아님) 아무것도 남기지 않는다.
 # 대기 명령은 `CRON_RETRY_SLEEP_CMD`(기본 `sleep`) — 테스트가 실제로 기다리지 않게 하는 훅.
 CRON_RETRY_SLEEP_CMD="${CRON_RETRY_SLEEP_CMD:-sleep}"
 APP_RETRY_MAX=2
 APP_DOWN_RETRY_SEC=120
 
-HDR_FILE="$(mktemp "${TMPDIR:-/tmp}/run-cron-hdr.XXXXXX")"
+# 🪤 `set -e` 아래에서 임시 파일 만들기·비우기가 실패하면 스크립트가 **로그 한 줄 없이** 죽는다
+# (cron 은 stderr 를 버린다) — 그날 그 작업이 안 돈 흔적이 어디에도 안 남는다. 그래서 둘 다 실패를
+# 직접 잡아 기존 FAIL 줄 형식으로 남기고 exit 1 한다(호출 실패와 같은 판정).
+fail_tmpfile() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] FAIL $JOB $1" >> "$LOG"
+  exit 1
+}
+HDR_FILE=""
+HDR_FILE="$(mktemp "${TMPDIR:-/tmp}/run-cron-hdr.XXXXXX" 2>/dev/null)" \
+  || fail_tmpfile "임시 파일을 만들지 못함 (${TMPDIR:-/tmp})"
 trap 'rm -f "$HDR_FILE"' EXIT
 
-# 응답 헤더 파일에서 재시도 초를 읽는다. 유효하지 않으면 빈 문자열.
+# 로그에 남길 헤더 원값 — 제어문자를 걷고 40자로 자른다(한 줄 불변식, 앱 결함이 줄을 부풀리지 않게).
+clip_value() {
+  local LC_ALL="${CRON_LOG_LOCALE:-C.UTF-8}"
+  local v="${1//[[:cntrl:]]/ }"
+  if [ "${#v}" -gt 40 ]; then v="${v:0:40}…"; fi
+  printf '%s' "$v"
+}
+
+# 응답 헤더 파일에서 재시도 신호를 읽어 전역 셋을 채운다 — 값을 둘로 나눠야 「헤더 없음」(조용히)과
+# 「헤더는 있는데 값 이상」(1줄 남김)을 가를 수 있다. 서브셸(`$(...)`)로 부르면 전역이 사라진다.
+#   RETRY_HDR_SEEN: 헤더가 있었으면 1 · RETRY_HDR_RAW: 마지막 원값 · RETRY_HDR_SEC: 유효하면 초, 아니면 빈 값
 # (리다이렉트로 응답이 여럿이면 마지막 값이 이긴다. bash 3.2 호환 — `${x,,}` 금지.)
-retry_after_sec() {
+read_retry_header() {
   local file="$1" line val=""
+  RETRY_HDR_SEEN=0; RETRY_HDR_RAW=""; RETRY_HDR_SEC=""
   [ -s "$file" ] || return 0
   shopt -s nocasematch
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     if [[ "$line" == x-cron-retry-after-sec:* ]]; then
+      RETRY_HDR_SEEN=1
       val="${line#*:}"
       val="${val#"${val%%[![:space:]]*}"}"
       val="${val%"${val##*[![:space:]]}"}"
     fi
   done < "$file"
   shopt -u nocasematch
+  RETRY_HDR_RAW="$val"
   # 숫자만, 그리고 앞자리 0 은 10진수로(`10#`) — 그냥 산술에 넣으면 `0090` 이 8진수 오류다.
   [[ "$val" =~ ^[0-9]+$ ]] || return 0
   [ "${#val}" -le 6 ] || return 0
   val=$(( 10#$val ))
-  if [ "$val" -ge 1 ] && [ "$val" -le 3600 ]; then printf '%s' "$val"; fi
+  if [ "$val" -ge 1 ] && [ "$val" -le 3600 ]; then RETRY_HDR_SEC="$val"; fi
 }
 
 ATTEMPT=1          # 앱이 본 회차(헤더 X-Cron-Attempt)
@@ -168,7 +193,8 @@ APP_REACHED=0      # 앱이 한 번이라도 응답했는가(앱 응답 없음 �
 APP_DOWN_RETRIED=0
 while :; do
 STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
-: > "$HDR_FILE"
+# 비우지 못한 채 진행하면 지난 회차의 재시도 헤더를 이번 응답 것으로 읽는다 — 여기서 멈춘다.
+{ : > "$HDR_FILE"; } 2>/dev/null || fail_tmpfile "임시 파일을 비우지 못함"
 RC=0
 OUT="$(curl -fsS -m 900 -H "Authorization: Bearer ${CRON_SECRET}" \
           -H "X-Cron-Attempt: ${ATTEMPT}" -D "$HDR_FILE" \
@@ -195,8 +221,13 @@ WAIT=""; REASON=""; KIND=""
 if [ "$RC" -eq 0 ] || [ "$RC" -eq 22 ]; then
   APP_REACHED=1
   if [ "$APP_RETRIES" -lt "$APP_RETRY_MAX" ]; then
-    WAIT="$(retry_after_sec "$HDR_FILE")"
-    if [ -n "$WAIT" ]; then KIND=app; REASON="앱 판정"; fi
+    read_retry_header "$HDR_FILE"
+    WAIT="$RETRY_HDR_SEC"
+    if [ -n "$WAIT" ]; then
+      KIND=app; REASON="앱 판정"
+    elif [ "$RETRY_HDR_SEEN" -eq 1 ]; then
+      echo "[$STAMP] RETRY $JOB 건너뜀: 재시도 신호 값 이상 '$(clip_value "$RETRY_HDR_RAW")'" >> "$LOG"
+    fi
   fi
 elif [ "$RC" -eq 7 ] && [ "$APP_REACHED" -eq 0 ] && [ "$APP_DOWN_RETRIED" -eq 0 ]; then
   WAIT="$APP_DOWN_RETRY_SEC"; KIND=down; REASON="앱 응답 없음"

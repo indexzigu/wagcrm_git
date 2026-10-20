@@ -105,7 +105,9 @@ function runScripted(
   const log = path.join(home, "selfhost", "logs", "cron.log");
   expect(existsSync(log), `cron.log 가 없다(stderr: ${result.stderr})`).toBe(true);
   const lines = readFileSync(log, "utf8").trimEnd().split("\n");
-  const count = Number(readFileSync(path.join(stubDir, "count"), "utf8").trim());
+  // 스크립트가 curl 에 닿기 전에 멈추면(임시 파일 실패) 호출 기록 파일 자체가 없다.
+  const countFile = path.join(stubDir, "count");
+  const count = existsSync(countFile) ? Number(readFileSync(countFile, "utf8").trim()) : 0;
   const calls = Array.from({ length: count }, (_, k) =>
     readFileSync(path.join(stubDir, `call.${k + 1}.args`), "utf8").trimEnd().split("\n"),
   );
@@ -192,11 +194,43 @@ describe("run-cron.sh 재시도", () => {
     ["abc"],
     ["60.5"],
     [""],
-  ])("헤더 값 %j 는 무시한다 — 정수 1..3600 만 받는다", (value) => {
+  ])("헤더 값 %j 는 다시 부르지 않고 건너뛴 사실만 1줄 남긴다 — 정수 1..3600 만 받는다", (value) => {
     const r = runScripted([{ body: FAILED_200, headers: [`X-Cron-Retry-After-Sec: ${value}`] }, { body: OK }]);
     expect(r.calls).toHaveLength(1);
     expect(r.sleeps).toEqual([]);
+    expect(r.lines).toHaveLength(2);
+    expect(r.lines[1]).toMatch(/\] RETRY some-job 건너뜀: 재시도 신호 값 이상 '/);
+    expect(r.lines[1].endsWith(`'${value}'`)).toBe(true);
+    expect(r.status, "종료코드 판정은 그대로(호출은 성공)").toBe(0);
+  });
+
+  it("이상한 재시도 신호 값이 길면 잘라서 남긴다(한 줄 불변식)", () => {
+    const long = "9".repeat(100);
+    const r = runScripted([{ body: FAILED_200, headers: [`X-Cron-Retry-After-Sec: ${long}`] }]);
+    expect(r.calls).toHaveLength(1);
+    expect(r.lines).toHaveLength(2);
+    expect(r.lines[1]).toMatch(/재시도 신호 값 이상 '9{40}…'$/);
+  });
+
+  it("응답 헤더 임시 파일을 만들지 못하면 조용히 죽지 않고 FAIL 1줄 + 종료코드 1", () => {
+    const r = runScripted([{ body: OK }], { TMPDIR: path.join(root, "no-such-dir", "deeper") });
+    expect(r.calls, "curl 까지 가지 않는다").toHaveLength(0);
     expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatch(/^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] FAIL some-job 임시 파일을 만들지 못함/);
+    expect(r.status).toBe(1);
+  });
+
+  it("다음 회차 전에 임시 파일을 비우지 못하면 FAIL 1줄 + 종료코드 1 — 낡은 헤더로 다시 부르지 않는다", () => {
+    // 대기 훅이 그 사이 임시 파일을 디렉터리로 바꿔 둔다 → 다음 회차의 비우기가 실패한다.
+    const swap = path.join(root, "swap.sh");
+    writeFileSync(swap, 'for f in "$TMPDIR"/run-cron-hdr.*; do rm -f "$f"; mkdir "$f"; done\n');
+    const r = runScripted(
+      [{ body: FAILED_200, headers: ["X-Cron-Retry-After-Sec: 600"] }, { body: OK }],
+      { CRON_RETRY_SLEEP_CMD: `bash ${swap}` },
+    );
+    expect(r.calls).toHaveLength(1);
+    expect(r.lines.at(-1)).toMatch(/\] FAIL some-job 임시 파일을 비우지 못함/);
+    expect(r.status).toBe(1);
   });
 
   it("앞자리 0 이 붙은 값도 10진수로 읽는다(8진수 오독 금지)", () => {
