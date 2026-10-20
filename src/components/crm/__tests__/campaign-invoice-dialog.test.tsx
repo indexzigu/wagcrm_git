@@ -290,7 +290,7 @@ describe("CampaignInvoiceSlot — 수정세금계산서가 따라온 달이 금�
   });
 });
 
-// 자동 조회 대상(오너 확정 2026-10-21) — 정산 단계 · 판매 종료 후 60일 이내만 열 때 메일함을 본다.
+// 자동 조회 대상(오너 확정 2026-10-21) — 정산 단계 · 판매 종료 +10일 ~ +60일만 열 때 메일함을 본다.
 describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에서만", () => {
   function renderUnscanned(autoLookup: boolean, onRequestScan: (mode: "auto" | "manual") => void) {
     return render(

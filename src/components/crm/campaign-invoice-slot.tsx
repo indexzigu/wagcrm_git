@@ -840,6 +840,7 @@ export function CampaignInvoiceDialog({
 
   useEffect(() => {
     if (!applicable || scan || scanLoading || scanAttempted) return;
+    // 세무 보드의 조회 함수는 이 구분을 쓰지 않는다(보드의 기간 선택이 정한다) — 열릴 때 도는 조회라 auto 로 둔다.
     requestScan("auto");
   }, [applicable, scan, scanLoading, scanAttempted, requestScan]);
 
@@ -902,7 +903,7 @@ export function CampaignInvoiceSlot({
   title: string;
   scan: ReceiptScanApiResponse | null;
   scanLoading: boolean;
-  /** 열 때 메일함을 자동으로 볼 캠페인인가 — 정산 단계 · 판매 종료 후 60일 이내(`isInvoiceLookupTarget`). */
+  /** 열 때 메일함을 자동으로 볼 캠페인인가 — 정산 단계 · 판매 종료 +10일 ~ +60일(`isInvoiceLookupTarget`). */
   autoLookup: boolean;
   /** 메일함 조회(읽기 전용 IMAP 스캔) — 부모가 결과를 소유한다(수취 칸과 같은 스캔을 재사용). */
   onRequestScan: (mode: InvoiceLookupMode) => Promise<void> | void;
@@ -923,7 +924,7 @@ export function CampaignInvoiceSlot({
   });
 
   // 열 때 메일함을 한 번 본다 — 확인 전에는 지난 달을 「미발견」으로 단정할 수 없어서다. 단 자동 조회 대상
-  // (정산 단계 · 판매 종료 후 60일 이내)이고 아직 빈 달이 있을 때만 — 다 끝난 캠페인에서 메일함 전체를 다시
+  // (정산 단계 · 판매 종료 +10일 ~ +60일)이고 아직 빈 달이 있을 때만 — 다 끝난 캠페인에서 메일함 전체를 다시
   // 훑지 않는다(오너 확정 2026-10-21). 대상이 아니어도 「조회」 버튼은 그대로 쓸 수 있다.
   const autoScan = autoLookup && hasOpenMonth;
   useEffect(() => {

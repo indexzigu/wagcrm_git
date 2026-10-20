@@ -210,7 +210,7 @@ export interface InvoiceLookupTargets {
 }
 
 /**
- * 오늘 계산서 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내)을 읽는다 — 판정은
+ * 오늘 계산서 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일)을 읽는다 — 판정은
  * `invoice-lookup-scope.ts` 가 소유하고 여기는 읽기만 한다(오너 확정 2026-10-21).
  */
 export async function loadInvoiceLookupTargets(

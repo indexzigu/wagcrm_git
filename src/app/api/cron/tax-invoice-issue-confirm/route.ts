@@ -84,7 +84,7 @@ export const maxDuration = 300;
 
 /**
  * 월정산 단위(`loadAutoRecordUnits`)를 읽는 창(일) — 저장된 기록만 보는 「확인 필요」(R0) 보고가 이 창을 쓴다.
- * ⛔ 메일 조회 창이 아니다. 메일은 오늘의 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내)의 가장 이른
+ * ⛔ 메일 조회 창이 아니다. 메일은 오늘의 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일)의 가장 이른
  * 판매 종료일 +10일부터만 본다(`loadInvoiceLookupTargets`, 오너 확정 2026-10-21). 종전 「메일도 오늘부터 90일」은 SUPERSEDED.
  */
 const SCAN_SINCE_DAYS = 90;
@@ -323,7 +323,7 @@ async function handler(request: Request): Promise<Response> {
   const dryRun = dryRunRequested || !writeEnabled;
   const prisma = getPrisma();
 
-  // ── 0. 오늘의 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내, 오너 확정 2026-10-21).
+  // ── 0. 오늘의 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일, 오너 확정 2026-10-21).
   //      대상이 없으면 메일함을 열지 않는다 — 응답 모양은 그대로 두고 0건으로 보고한다.
   const targets = await loadInvoiceLookupTargets(prisma);
 

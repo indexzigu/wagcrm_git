@@ -283,6 +283,8 @@ export function SettlementSection({
   // 읽어 같은 틱의 두 번째 클릭이 여전히 `false`를 본다. IMAP 전량 스캔은 수 초가 걸려
   // 두 번째 클릭이 스캔을 중복으로 띄우기 쉽다. 같은 ref 가드를 쓴다.
   const receiptLoadingRef = useRef(false);
+  // 마지막 메일함 조회가 자동(+10일)이었나 수동(+1일)이었나 — 결정 뒤 재조회가 기간을 말없이 바꾸지 않게.
+  const lastReceiptScanModeRef = useRef<InvoiceLookupMode>("manual");
   // 계산서 메일 조회 대상·기간(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). 오늘은 패널이 열릴 때 한 번 고정한다.
   const [todayYmd] = useState(() => toKstYmd(new Date()));
   const invoiceAutoLookup = isInvoiceLookupTarget({ status: campaign.status, endYmd: campaign.endDate }, todayYmd);
@@ -364,6 +366,7 @@ export function SettlementSection({
   const handleCheckReceipt = useCallback(async (mode: InvoiceLookupMode = "manual") => {
     if (receiptLoadingRef.current) return;
     receiptLoadingRef.current = true;
+    lastReceiptScanModeRef.current = mode;
     setReceiptLoading(true);
     try {
       // 그룹이면 형제 id 가 있어야 판정이 선다 — 없으면 `resolveRowEvidence` 가 그룹
@@ -372,7 +375,8 @@ export function SettlementSection({
       // 판정 범위 자체가 좁아지므로 조용히 넘기면 안 된다.
       await resolveMemberIds({ notifyFailure: true });
       // 메일함은 판매 종료 +10일(자동) · +1일(「조회」 버튼)부터 오늘까지 본다(오너 확정 2026-10-21).
-      // 조합 캠페인은 회차 일정이 함께 움직이므로(`fanOutMemberSchedule`) 이 캠페인의 종료일로 충분하다.
+      // 조합 캠페인은 회차 일정이 함께 움직이므로(`fanOutMemberSchedule`) 이 캠페인의 종료일로 충분하다. 크론
+      // (`loadInvoiceLookupTargets`)은 멤버 종료일까지 모으는데, 일정이 어긋난 옛 기록에 대한 방어일 뿐 같은 값이다.
       const ends = campaign.endDate ? [campaign.endDate] : [];
       const receiptSinceDays = invoiceLookupSinceDays(ends, todayYmd, mode) ?? 1;
       const res = await fetch(`/api/settlement/tax-invoice-receipts?sinceDays=${receiptSinceDays}`);
@@ -424,7 +428,7 @@ export function SettlementSection({
         toast.warning("처리는 저장됐지만 화면 갱신에 실패했습니다. 새로고침해 주세요.");
       }
     };
-    await Promise.all([handleCheckReceipt(), refreshCampaign()]);
+    await Promise.all([handleCheckReceipt(lastReceiptScanModeRef.current), refreshCampaign()]);
   }, [campaign.id, handleCheckReceipt, onCampaignUpdated]);
 
   const evidenceByKey = useMemo(
