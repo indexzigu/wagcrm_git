@@ -1,52 +1,66 @@
 import { describe, expect, it } from "vitest";
 import {
   INVOICE_LOOKUP_DAYS_AFTER_END,
+  INVOICE_LOOKUP_START_DAYS_AFTER_END,
   addDaysToYmd,
+  invoiceLookupFirstYmd,
   hasOpenInvoiceLookupTarget,
   invoiceLookupLastYmd,
   invoiceLookupSinceDays,
   isInvoiceLookupTarget,
 } from "./invoice-lookup-scope";
 
-describe("계산서 자동 조회 대상 — 정산 단계 · 판매 종료 후 60일 (오너 확정 2026-10-21)", () => {
-  it("60일은 오너가 정한 값이다", () => {
+describe("계산서 자동 조회 대상 — 정산 단계 · 판매 종료 +10일 ~ +60일 (오너 확정 2026-10-21)", () => {
+  it("기간 숫자는 오너가 정한 값이다", () => {
     expect(INVOICE_LOOKUP_DAYS_AFTER_END).toBe(60);
+    expect(INVOICE_LOOKUP_START_DAYS_AFTER_END).toEqual({ auto: 10, manual: 1 });
   });
 
   it("달·해를 넘기는 날짜 산술", () => {
     expect(addDaysToYmd("2026-08-31", 1)).toBe("2026-09-01");
     expect(addDaysToYmd("2026-12-15", 60)).toBe("2027-02-13");
     expect(invoiceLookupLastYmd("2026-09-16")).toBe("2026-11-15");
+    expect(invoiceLookupFirstYmd("2026-09-16", "auto")).toBe("2026-09-26");
+    expect(invoiceLookupFirstYmd("2026-09-30", "manual")).toBe("2026-10-01");
   });
 
-  it("정산대기·정산중이고 종료 후 60일째(당일 포함)까지는 대상이다", () => {
+  it("정산대기·정산중이고 종료 +10일째부터 +60일째(양끝 포함)까지 대상이다", () => {
+    expect(isInvoiceLookupTarget({ status: "SETTLEMENT_WAIT", endYmd: "2026-09-16" }, "2026-09-26")).toBe(true);
     expect(isInvoiceLookupTarget({ status: "SETTLEMENT_WAIT", endYmd: "2026-09-16" }, "2026-10-21")).toBe(true);
     expect(isInvoiceLookupTarget({ status: "SETTLEMENT_IN_PROGRESS", endYmd: "2026-09-16" }, "2026-11-15")).toBe(true);
   });
 
-  it("종료 후 61일째부터는 대상이 아니다", () => {
+  it("종료 +9일째까지와 +61일째부터는 대상이 아니다", () => {
+    expect(isInvoiceLookupTarget({ status: "SETTLEMENT_WAIT", endYmd: "2026-09-16" }, "2026-09-25")).toBe(false);
     expect(isInvoiceLookupTarget({ status: "SETTLEMENT_IN_PROGRESS", endYmd: "2026-09-16" }, "2026-11-16")).toBe(false);
   });
 
   it("정산 단계가 아니면(판매 중·판매마감·완료·드랍) 날짜와 무관하게 대상이 아니다", () => {
     for (const status of ["ACTIVE", "CLOSED", "COMPLETED", "DROPPED", "PROPOSAL"]) {
-      expect(isInvoiceLookupTarget({ status, endYmd: "2026-10-15" }, "2026-10-21")).toBe(false);
+      expect(isInvoiceLookupTarget({ status, endYmd: "2026-10-01" }, "2026-10-21")).toBe(false);
     }
   });
 });
 
-describe("메일 조회 창 — 가장 이른 판매 시작일부터 오늘까지", () => {
+describe("메일 조회 창 — 가장 이른 판매 종료일 +10일(자동) · +1일(수동)부터 오늘까지", () => {
   it("시작일 당일을 포함한다", () => {
-    expect(invoiceLookupSinceDays(["2026-10-21"], "2026-10-21")).toBe(1);
-    expect(invoiceLookupSinceDays(["2026-10-20"], "2026-10-21")).toBe(2);
+    expect(invoiceLookupSinceDays(["2026-10-11"], "2026-10-21", "auto")).toBe(1);
+    expect(invoiceLookupSinceDays(["2026-10-20"], "2026-10-21", "manual")).toBe(1);
+    expect(invoiceLookupSinceDays(["2026-10-10"], "2026-10-21", "manual")).toBe(11);
   });
 
-  it("여럿이면 가장 이른 시작일 기준이다", () => {
-    expect(invoiceLookupSinceDays(["2026-09-10", "2026-08-25", "2026-09-30"], "2026-10-21")).toBe(58);
+  it("같은 종료일이면 수동이 자동보다 9일 넓다", () => {
+    expect(invoiceLookupSinceDays(["2026-09-16"], "2026-10-21", "auto")).toBe(26);
+    expect(invoiceLookupSinceDays(["2026-09-16"], "2026-10-21", "manual")).toBe(35);
   });
 
-  it("대상이 없으면 null — 메일함을 열지 않는다", () => {
-    expect(invoiceLookupSinceDays([], "2026-10-21")).toBeNull();
+  it("여럿이면 가장 이른 종료일 기준이다", () => {
+    expect(invoiceLookupSinceDays(["2026-09-30", "2026-09-16", "2026-10-05"], "2026-10-21", "auto")).toBe(26);
+  });
+
+  it("시작일이 아직 오지 않았으면 오늘 하루만, 종료일이 없으면 null", () => {
+    expect(invoiceLookupSinceDays(["2026-10-20"], "2026-10-21", "auto")).toBe(1);
+    expect(invoiceLookupSinceDays([], "2026-10-21", "auto")).toBeNull();
   });
 });
 

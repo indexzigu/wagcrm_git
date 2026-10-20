@@ -85,7 +85,7 @@ export const maxDuration = 300;
 /**
  * 월정산 단위(`loadAutoRecordUnits`)를 읽는 창(일) — 저장된 기록만 보는 「확인 필요」(R0) 보고가 이 창을 쓴다.
  * ⛔ 메일 조회 창이 아니다. 메일은 오늘의 자동 조회 대상(정산 단계 · 판매 종료 후 60일 이내)의 가장 이른
- * 판매 시작일부터만 본다(`loadInvoiceLookupTargets`, 오너 확정 2026-10-21). 종전 「메일도 오늘부터 90일」은 SUPERSEDED.
+ * 판매 종료일 +10일부터만 본다(`loadInvoiceLookupTargets`, 오너 확정 2026-10-21). 종전 「메일도 오늘부터 90일」은 SUPERSEDED.
  */
 const SCAN_SINCE_DAYS = 90;
 
@@ -521,7 +521,7 @@ async function handler(request: Request): Promise<Response> {
   const allFailures = [...failures, ...monthlyFailures];
 
   // ⚠️ 아래 판정 집계는 **대조 모집단 전체**(자동 조회 대상이 아닌 캠페인 포함)를 센다 — 대상만 걸러지는 것은
-  //    쓰기(`planned`·`applied`)다. 메일 창이 대상의 판매 시작일부터라 비대상은 `outOfScanRange` 에 잡히는 것이 정상이다.
+  //    쓰기(`planned`·`applied`)다. 메일 창이 대상의 판매 종료 +10일부터라 비대상은 `outOfScanRange` 에 잡히는 것이 정상이다.
   const byStatus = {
     confirmed: verdicts.filter((v) => v.status === "CONFIRMED").length,
     needsReview: verdicts.filter((v) => v.status === "NEEDS_REVIEW").length,

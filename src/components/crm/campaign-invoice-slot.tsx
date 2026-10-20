@@ -51,7 +51,11 @@ import {
 import type { ReceiptScanApiResponse } from "@/lib/tax-invoice-mail/board-evidence";
 import { SUPPLIER } from "@/lib/tax-invoice-builder";
 import { toKstYmd } from "@/lib/date-utils";
-import { INVOICE_LOOKUP_DAYS_AFTER_END } from "@/lib/tax-invoice-mail/invoice-lookup-scope";
+import {
+  INVOICE_LOOKUP_DAYS_AFTER_END,
+  INVOICE_LOOKUP_START_DAYS_AFTER_END,
+  type InvoiceLookupMode,
+} from "@/lib/tax-invoice-mail/invoice-lookup-scope";
 
 type ApplicableView = Extract<CampaignInvoiceView, { applicable: true }>;
 
@@ -66,7 +70,7 @@ const SCANNING_HINT = "메일함을 확인하고 있습니다.";
 /** 메일함 조회를 시도했는데 결과가 없는 달의 풀이 — 실패 사유는 토스트가 따로 알린다. */
 const SCAN_FAILED_HINT = "메일함을 확인하지 못했습니다. 「조회」를 다시 눌러 주세요.";
 /** 자동 조회를 하지 않는 캠페인에서 메일함을 아직 안 본 달의 풀이(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). */
-const LOOKUP_IDLE_HINT = `정산 단계 캠페인만 판매 종료 후 ${INVOICE_LOOKUP_DAYS_AFTER_END}일까지 자동으로 메일함을 확인합니다. 「조회」를 누르면 지금 확인합니다.`;
+const LOOKUP_IDLE_HINT = `정산 단계 캠페인만 판매 종료 ${INVOICE_LOOKUP_START_DAYS_AFTER_END.auto}일 뒤부터 ${INVOICE_LOOKUP_DAYS_AFTER_END}일까지 자동으로 메일함을 확인합니다. 「조회」를 누르면 판매 종료 다음 날부터 지금까지 확인합니다.`;
 
 function formatWon(value: number | null): string {
   return value === null ? "—" : `${value.toLocaleString("ko-KR")}원`;
@@ -504,7 +508,7 @@ function useCampaignInvoices({
   autoLoadStatements: boolean;
   campaignId: string;
   scan: ReceiptScanApiResponse | null;
-  onRequestScan: () => Promise<void> | void;
+  onRequestScan: (mode: InvoiceLookupMode) => Promise<void> | void;
   onChanged: () => Promise<void> | void;
 }) {
   const [view, setView] = useState<CampaignInvoiceView | null>(null);
@@ -580,11 +584,11 @@ function useCampaignInvoices({
     if (autoLoadStatements) requestStatementsOnce();
   }, [autoLoadStatements, requestStatementsOnce]);
 
-  const requestScan = useCallback(() => {
+  const requestScan = useCallback((mode: InvoiceLookupMode) => {
     setScanAttempted(true);
     // 자동 조회 밖 캠페인은 정산서를 미리 읽지 않았다 — 오너가 「조회」를 누른 지금 함께 읽는다.
     requestStatementsOnce();
-    void onRequestScan();
+    void onRequestScan(mode);
   }, [onRequestScan, requestStatementsOnce]);
 
   const months = useMemo(() => {
@@ -822,7 +826,7 @@ export function CampaignInvoiceDialog({
   onOpenChange: (open: boolean) => void;
   scan: ReceiptScanApiResponse | null;
   scanLoading: boolean;
-  onRequestScan: () => Promise<void> | void;
+  onRequestScan: (mode: InvoiceLookupMode) => Promise<void> | void;
   onChanged: () => Promise<void> | void;
 }) {
   const { view, loadFailed, applicable, months, review, busy, run, requestScan, scanAttempted, statementsFailed, statementsLoading } = useCampaignInvoices({
@@ -836,7 +840,7 @@ export function CampaignInvoiceDialog({
 
   useEffect(() => {
     if (!applicable || scan || scanLoading || scanAttempted) return;
-    requestScan();
+    requestScan("auto");
   }, [applicable, scan, scanLoading, scanAttempted, requestScan]);
 
   // 한 번이라도 달별 창을 그렸는가 — 그 뒤의 재조회 실패·모드 변화는 「처음부터 못 연 것」과 다르다.
@@ -901,7 +905,7 @@ export function CampaignInvoiceSlot({
   /** 열 때 메일함을 자동으로 볼 캠페인인가 — 정산 단계 · 판매 종료 후 60일 이내(`isInvoiceLookupTarget`). */
   autoLookup: boolean;
   /** 메일함 조회(읽기 전용 IMAP 스캔) — 부모가 결과를 소유한다(수취 칸과 같은 스캔을 재사용). */
-  onRequestScan: () => Promise<void> | void;
+  onRequestScan: (mode: InvoiceLookupMode) => Promise<void> | void;
   /** 기록이 바뀐 뒤 캠페인 행을 다시 읽는다(레거시 날짜가 같이 바뀔 수 있다). */
   onChanged: () => Promise<void> | void;
   /** 월정산이 아니거나 레거시 모드면 지금까지의 단일 날짜 칸을 그대로 그린다. */
@@ -924,7 +928,7 @@ export function CampaignInvoiceSlot({
   const autoScan = autoLookup && hasOpenMonth;
   useEffect(() => {
     if (!autoScan || scan || scanLoading || scanAttempted) return;
-    requestScan();
+    requestScan("auto");
   }, [autoScan, scan, scanLoading, scanAttempted, requestScan]);
 
   // 처음 읽기 전에는 옛 단일 날짜 칸을 잠깐이라도 보이지 않는다(그 칸에 날짜를 넣으면 달별 판정을
@@ -975,7 +979,7 @@ export function CampaignInvoiceSlot({
             disabled={scanLoading}
             onClick={() => {
               setDialogOpen(true);
-              requestScan();
+              requestScan("manual");
             }}
             className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 shadow-soft-sm transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-50"
           >
