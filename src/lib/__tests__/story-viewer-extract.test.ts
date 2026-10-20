@@ -13,7 +13,7 @@ describe("extractStoryItems", () => {
 
   it("v2 항목에는 작성자를 붙인다", () => {
     const items = extractStoryItems({ result: { items: [{ id: 1 }], owner: { username: "x" } } }, "v");
-    expect(items).toHaveLength(1);
+    expect(items).toEqual([{ id: 1, owner: { username: "x" } }]);
   });
 
   it.each([
@@ -27,6 +27,7 @@ describe("extractStoryItems", () => {
   });
 
   it("오류 메시지에 값(계정·내용)을 싣지 않는다", () => {
+    expect.assertions(2);
     try {
       extractStoryItems({ result: { secretField: "private-handle" } }, "v");
     } catch (e) {
