@@ -8,7 +8,7 @@ vi.mock("@/lib/prisma-client", () => ({
   isRemoteDatabaseUrl: vi.fn(() => false),
 }));
 const captureException = vi.hoisted(() => vi.fn());
-vi.mock("@sentry/nextjs", () => ({ captureException }));
+vi.mock("@sentry/core", () => ({ captureException }));
 
 import { getPrisma } from "@/lib/prisma";
 import { capDetailsForLog, withSystemTaskStatus } from "@/lib/system-task-status";

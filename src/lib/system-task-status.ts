@@ -1,5 +1,10 @@
 import type { Prisma } from "@prisma/client";
-import * as Sentry from "@sentry/nextjs";
+// `@sentry/nextjs` 가 아니라 그 코어를 직접 부른다 — 이 파일은 `scripts/capture-stories-local.ts` 를 거쳐
+// `tsconfig.scripts.json` 에도 들어가는데, `@sentry/nextjs` 의 타입이 Next 전역 타입(ProcessEnv.NODE_ENV 필수)을
+// 끌고 와 scripts 테스트 12곳의 타입체크를 깬다(실측). 코어는 `@sentry/nextjs` 가 같은 버전으로 고정해
+// 끌어오는 하나뿐이라(`npm ls @sentry/core` 중복 제거 1벌) 서버 설정(`sentry.server.config.ts`)이 만든
+// 같은 클라이언트로 간다.
+import { captureException } from "@sentry/core";
 import { getPrisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { runWithProxySource } from "@/lib/order-converter/proxy-usage";
@@ -841,7 +846,7 @@ export function withSystemTaskStatus(
       console.error(`[SystemTaskStatus] ${jobKey} 실행 예외(${retryAfter}초 뒤 자동 재시도 예약):`, error);
       // 다시 던지지 않으니 Next 의 onRequestError(src/instrumentation.ts → Sentry)가 이 예외를 못 본다 —
       // 재시도로 풀리더라도 예외 자체는 Sentry 에 남도록 직접 보낸다(다시 던지는 경로는 onRequestError 몫).
-      Sentry.captureException(error, { tags: { module: "system-task-status", cronJob: jobKey } });
+      captureException(error, { tags: { module: "system-task-status", cronJob: jobKey } });
       return Response.json(
         { error: message },
         { status: 500, headers: { [CRON_RETRY_AFTER_HEADER]: String(retryAfter) } },
