@@ -707,9 +707,11 @@ export async function settleIncidentsAfterSuccess(
   try {
     const targets = finiteCount(body?.targets);
     const produced = finiteCount(body?.produced);
-    await resolveOpenIncidents({ jobKey, kinds: ["A"], evidence: { runAt, produced, targets } });
-
     const output = OUTPUT_BY_JOB.get(jobKey);
+    // 판정 면제(`output: null`) 작업에 남은 B 는 면제 전에 열린 것이라 성공 한 번으로 함께 닫는다 —
+    // 면제 작업에서는 B 를 닫을 「산출」 근거가 다시 안 오므로, 안 닫으면 조치대기로 영영 남는다.
+    // 한 번의 updateMany 로 묶어 2분 주기 작업의 쓰기 횟수를 늘리지 않는다.
+    await resolveOpenIncidents({ jobKey, kinds: output ? ["A"] : ["A", "B"], evidence: { runAt, produced, targets } });
     // 대상 0 은 사고도 정상화 근거도 아니다 — 산출 판정 숫자가 없을 때와 같이 아무것도 안 한다.
     if (!output || targets == null || produced == null || targets === 0) return;
 
@@ -718,8 +720,8 @@ export async function settleIncidentsAfterSuccess(
       return;
     }
     if (produced !== 0 || body?.quiet === true) return;
-    // ℹ️ 지금 이 아래에 닿는 선언 작업은 capture-stories 뿐이다 — 나머지는 `produced = 성공 수`라
-    // 산출 0 이면 이미 `failed:true` 로 A 가 됐다(`KnownJob.output` 주석, 설계 ⚙️J8).
+    // ℹ️ 지금 선언된 작업은 전부 `produced = 성공 수`라 산출 0 이면 이미 `failed:true` 로 A 가 됐다 —
+    // 이 아래는 장래 실산출을 따로 세는 작업을 위한 자리다(`KnownJob.output` 주석, 설계 ⚙️J8).
 
     const prisma = getPrisma();
     const recent = await prisma.systemTaskLog.findMany({

@@ -421,13 +421,13 @@ describe("withSystemTaskStatus 사고 장부", () => {
     expect(createdIncidents()).toEqual([expect.objectContaining({ kind: "A", errorKind: "rate_limit" })]);
   });
 
-  it("성공하면 열린 A 사고를 닫고 종류 표시를 지운다", async () => {
+  it("성공하면 열린 A 사고를 닫고 종류 표시를 지운다(산출 판정이 없는 작업이라 B 도 함께)", async () => {
     await withSystemTaskStatus("job-a", vi.fn(async () => Response.json({ ok: true })))(
       makeRequest(`Bearer ${SECRET}`),
     );
 
     expect(incidentUpdateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ jobKey: "job-a", kind: { in: ["A"] } }) }),
+      expect.objectContaining({ where: expect.objectContaining({ jobKey: "job-a", kind: { in: ["A", "B"] } }) }),
     );
     expect(upsert.mock.calls[1][0].update.lastErrorKind).toBeNull();
     expect(incidentCreate).not.toHaveBeenCalled();
@@ -447,16 +447,35 @@ describe("withSystemTaskStatus 사고 장부", () => {
     expect(incidentCreate.mock.calls[0][0].data.lastMessage).toBe("인스타 지표 대상 3건인데 산출 0");
   });
 
-  it("스토리 수집: 조회는 되는데(failed:false) 저장 0 이 연속 2회면 B 사고를 연다", async () => {
+  it("스토리 수집은 판정 면제라 조회 성공·저장 0 이 연속이어도 B 사고를 열지 않는다(셀러가 스토리를 안 올린 날이 정상)", async () => {
     historyWithCurrent([{ ok: true, failed: false, targets: 5, produced: 0 }]);
     const handler = vi.fn(async () => Response.json({ ok: true, failed: false, targets: 5, produced: 0 }));
     await withSystemTaskStatus("capture-stories", handler)(makeRequest(`Bearer ${SECRET}`));
 
     expect(recordedStatuses()).toEqual(["RUNNING", "SUCCESS"]);
-    expect(createdIncidents()).toEqual([
-      expect.objectContaining({ kind: "B", errorKind: null, jobKey: "capture-stories" }),
-    ]);
-    expect(incidentCreate.mock.calls[0][0].data.lastMessage).toBe("스토리 대상 5건인데 산출 0");
+    expect(incidentCreate).not.toHaveBeenCalled();
+    expect(logFindMany).not.toHaveBeenCalled();
+  });
+
+  it("판정 면제 작업이 성공하면 남아 있던 B 사고도 A 와 함께 닫는다(면제 전에 열린 거짓 경보 정리)", async () => {
+    const handler = vi.fn(async () => Response.json({ ok: true, failed: false, targets: 1, produced: 0 }));
+    await withSystemTaskStatus("capture-stories", handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(incidentUpdateMany).toHaveBeenCalledTimes(1);
+    expect(incidentUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ jobKey: "capture-stories", kind: { in: ["A", "B"] } }) }),
+    );
+  });
+
+  it("산출 선언 작업의 성공은 A 만 닫고, B 는 산출이 생겨야 닫는다", async () => {
+    historyWithCurrent([{ targets: 3, produced: 1 }]);
+    const handler = vi.fn(async () => Response.json({ ok: true, targets: 3, produced: 0 }));
+    await withSystemTaskStatus(DECLARED_JOB, handler)(makeRequest(`Bearer ${SECRET}`));
+
+    expect(incidentUpdateMany).toHaveBeenCalledTimes(1);
+    expect(incidentUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ kind: { in: ["A"] } }) }),
+    );
   });
 
   it("직전 회차에 산출이 있었으면 B 사고를 열지 않는다", async () => {
