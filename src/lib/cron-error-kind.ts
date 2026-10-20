@@ -34,11 +34,19 @@ const RULES: readonly Rule[] = [
   {
     kind: "auth",
     statuses: [401, 403],
-    patterns: [bareStatus("401|403"), /Authentication failed/, /"code"\s*:\s*190\b/, /GW\.IP_NOT_ALLOWED/],
+    // IMAP 인증 실패(`AUTHENTICATIONFAILED`·`Invalid credentials`)는 메일함 작업이 HTTP 502 로 돌려준다 —
+    // 이 규칙이 외부 서버 오류보다 위라 상태코드보다 문구가 먼저 걸린다(⚙️K4, 대소문자 무시).
+    patterns: [
+      bareStatus("401|403"),
+      /AUTHENTICATIONFAILED|Invalid credentials|authentication failed/i,
+      /"code"\s*:\s*190\b/,
+      /GW\.IP_NOT_ALLOWED/,
+    ],
   },
   {
     kind: "config",
-    patterns: [/Can't reach database/, /(미설정|not set|missing env|is not defined in env)/i],
+    // 「설정되어 있지 않」 = 메일함 연동 정보 누락(메일함 작업은 이것도 HTTP 502 로 돌려준다, ⚙️K4).
+    patterns: [/Can't reach database/, /(미설정|설정되어 있지 않|not set|missing env|is not defined in env)/i],
   },
   { kind: "upstream_5xx", statuses: [502, 503, 504], patterns: [bareStatus("502|503|504")] },
   { kind: "timeout", patterns: [/ETIMEDOUT|timed? ?out|시간 초과|AbortError|TimeoutError/i] },
