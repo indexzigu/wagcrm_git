@@ -138,9 +138,18 @@ function lastActionWhat(actions: unknown): string | null {
   return typeof what === "string" && what.trim() ? what.trim() : null;
 }
 
+/** 자동 재시도 회차(2 이상)가 정상으로 끝나 닫힌 사고인가 — 정상화 증거의 `attempt`(`resolveOpenIncidents`). */
+function resolvedByRetry(evidence: unknown): boolean {
+  const attempt = (evidence as { attempt?: unknown } | null | undefined)?.attempt;
+  return typeof attempt === "number" && attempt > 1;
+}
+
+const RETRY_RESOLVED_ACTION = "자동 재시도로 정상화";
+
 function resolvedLine(i: DigestIncident): string {
   const parts = [`${kstDateTime(i.firstSeenAt)} ${i.jobName}`, incidentCauseLabel(i.kind, i.errorKind)];
-  const action = lastActionWhat(i.actions);
+  // 기록된 조치가 있으면 그것이 우선이다 — 재시도 문구는 사람이·플레이북이 한 일이 없을 때만 채운다.
+  const action = lastActionWhat(i.actions) ?? (resolvedByRetry(i.normalizedEvidence) ? RETRY_RESOLVED_ACTION : null);
   if (action) parts.push(action);
   parts.push(`정상화 ${i.normalizedAt ? kstTime(i.normalizedAt) : "시각 모름"}`);
   return parts.join(" · ");

@@ -30,6 +30,14 @@ describe("classifyCronError", () => {
     ["upstream returned 401.", undefined, "auth"],
     ["오류503 발생", undefined, "unknown"],
     ["N번째401 실패", undefined, "unknown"],
+    // 세금계산서 메일함 실패는 HTTP 502 로 돌아온다 — 설정 누락·인증 실패 문구가 상태코드보다 먼저 걸려야
+    // 자동 재시도·「외부 서비스 상태 확인」 오안내가 안 난다(⚙️K4).
+    ["메일함 조회 실패: 메일 서버(IMAP) 연동 정보가 설정되어 있지 않습니다.", 502, "config"],
+    ["메일함 조회 실패: Invalid credentials (Failure)", 502, "auth"],
+    ["메일함 조회 실패: [AUTHENTICATIONFAILED] Invalid credentials", 502, "auth"],
+    ["메일함 조회 실패: authentication failed", 502, "auth"],
+    ["Authentication failed", undefined, "auth"],
+    ["메일함 조회 실패: Connection closed", 502, "upstream_5xx"],
   ];
   it.each(cases)("%s → %s", (text, status, kind) => {
     expect(classifyCronError(text, status)).toBe(kind);

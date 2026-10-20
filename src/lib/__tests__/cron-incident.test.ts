@@ -16,7 +16,9 @@ import {
   escalatePendingIncidents,
   recordIncidentOccurrence,
   resolveOpenIncidents,
+  RETRY_CYCLE_WINDOW_MS,
 } from "@/lib/cron-incident";
+import { RETRY_DELAYS_SEC } from "@/lib/cron-jobs";
 
 const findFirst = vi.fn();
 const findMany = vi.fn();
@@ -83,6 +85,83 @@ describe("recordIncidentOccurrence", () => {
     expect(update.mock.calls[0][0].data.occurrences).toEqual({ increment: 1 });
     expect(update.mock.calls[0][0].data.lastMessage).toBe("실패 3건");
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("재시도 회차의 실패는 열린 사고의 반복 횟수를 올리지 않고 마지막 메시지·시각만 갱신한다(⚙️K1)", async () => {
+    findFirst.mockResolvedValue({ id: "old1" });
+    const at = new Date("2026-10-21T01:10:00Z");
+    const r = await recordIncidentOccurrence({ ...input, message: "실패 4건", at, isRetryAttempt: true });
+    expect(r).toEqual({ id: "old1", opened: false });
+    const data = update.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("occurrences");
+    expect(data).toEqual({ lastSeenAt: at, lastMessage: "실패 4건" });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("재시도 회차라도 열린 사고가 없으면 새로 연다(반복 1)", async () => {
+    findFirst.mockResolvedValue(null);
+    const r = await recordIncidentOccurrence({ ...input, isRetryAttempt: true });
+    expect(r).toEqual({ id: "new1", opened: true });
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("재시도 회차가 같은 오류 종류·다른 메시지로 실패하면 그 작업의 열린 A 사고에 접는다(새 사고 없음)", async () => {
+    // 1번째 조회 = 같은 서명(없음), 2번째 조회 = 그 작업의 열린 A(있음).
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "a1" });
+    updateMany.mockResolvedValue({ count: 1 });
+    const at = new Date("2026-10-21T01:10:00Z");
+    const r = await recordIncidentOccurrence({ ...input, message: "다른 문구로 시간 초과", at, isRetryAttempt: true });
+    expect(r).toEqual({ id: "a1", opened: false });
+    expect(findFirst.mock.calls[1][0]).toEqual({
+      where: { jobKey: "j", kind: "A", status: { in: ["open", "waiting_owner"] } },
+      orderBy: { lastSeenAt: "desc" },
+    });
+    const arg = updateMany.mock.calls[0][0];
+    // 그 사이 정상화로 닫힌 사고를 되살리지 않도록 아직 열린 것만 바꾼다.
+    expect(arg.where).toEqual({ id: "a1", status: { in: ["open", "waiting_owner"] } });
+    expect(arg.data).toEqual({ lastSeenAt: at, lastMessage: "다른 문구로 시간 초과" });
+    expect(update).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("재시도 회차가 일시 장애가 아닌 종류로 실패하면 접지 않고 새 사고를 연다", async () => {
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "a1" });
+    const r = await recordIncidentOccurrence({ ...input, errorKind: "auth", message: "HTTP 401", isRetryAttempt: true });
+    expect(r).toEqual({ id: "new1", opened: true });
+    // 작업 단위 조회 자체를 하지 않는다 — 같은 서명 조회 1번뿐.
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0].data).toMatchObject({ kind: "A", errorKind: "auth" });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("재시도 회차인데 그 작업에 열린 A 가 하나도 없으면 반복 1 의 새 사고를 연다", async () => {
+    findFirst.mockResolvedValue(null);
+    const r = await recordIncidentOccurrence({ ...input, message: "다른 문구", isRetryAttempt: true });
+    expect(r).toEqual({ id: "new1", opened: true });
+    expect(findFirst).toHaveBeenCalledTimes(2);
+    expect(create).toHaveBeenCalledOnce();
+    // 반복 횟수는 스키마 기본값(1)에 맡긴다 — 따로 올리지 않는다.
+    expect(create.mock.calls[0][0].data).not.toHaveProperty("occurrences");
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("접으려던 A 가 그 사이 닫혔으면(바뀐 줄 0) 새 사고를 연다", async () => {
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "a1" });
+    updateMany.mockResolvedValue({ count: 0 });
+    const r = await recordIncidentOccurrence({ ...input, message: "다른 문구", isRetryAttempt: true });
+    expect(r).toEqual({ id: "new1", opened: true });
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("재시도 회차의 접기는 작업 단위 자문 잠금도 잡는다", async () => {
+    findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "a1" });
+    updateMany.mockResolvedValue({ count: 1 });
+    await recordIncidentOccurrence({ ...input, message: "다른 문구", isRetryAttempt: true });
+    expect(executeRaw).toHaveBeenCalledTimes(2);
+    expect(executeRaw.mock.calls[0][1]).toBe("j|A|timeout|다른 문구");
+    expect(executeRaw.mock.calls[1][1]).toBe("job:j|A");
+    // 작업 잠금은 작업 단위 조회보다 먼저다.
+    expect(executeRaw.mock.invocationCallOrder[1]).toBeLessThan(findFirst.mock.invocationCallOrder[1]);
   });
 
   it("열린 사고가 없으면 새로 연다", async () => {
@@ -159,6 +238,64 @@ describe("resolveOpenIncidents", () => {
     expect(arg.data.status).toBe("resolved");
     expect(arg.data.normalizedAt).toBeInstanceOf(Date);
     expect(arg.data.normalizedEvidence).toEqual({ runAt: at.toISOString(), produced: 5, targets: 5 });
+  });
+
+  it("재시도 회차(2 이상)의 정상화는 이번 재시도 주기 안에 본 A 에만 회차를 남기고 1층(자동 재시도)으로 찍는다", async () => {
+    updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const n = await resolveOpenIncidents({ jobKey: "j", kinds: ["A"], evidence: { runAt: at, attempt: 2 } });
+    expect(n).toBe(1);
+    const first = updateMany.mock.calls[0][0];
+    expect(first.where).toEqual({
+      jobKey: "j",
+      kind: "A",
+      status: { in: ["open", "waiting_owner"] },
+      prNumber: null,
+      lastSeenAt: { gte: new Date(at.getTime() - RETRY_CYCLE_WINDOW_MS), lte: at },
+    });
+    expect(first.data.normalizedEvidence).toEqual({ runAt: at.toISOString(), attempt: 2 });
+    expect(first.data.layer).toBe(1);
+  });
+
+  it("같은 정상화로 닫히는 B·오래된 조치대기 A 는 회차·층 없이 평소처럼 닫는다", async () => {
+    // 재시도 주기 창 안의 A 1건 + 그 밖(어제 본 조치대기 A·B) 2건.
+    updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 2 });
+    const n = await resolveOpenIncidents({ jobKey: "j", kinds: ["A", "B"], evidence: { runAt: at, attempt: 3 } });
+    expect(n).toBe(3);
+    expect(updateMany).toHaveBeenCalledTimes(2);
+    const rest = updateMany.mock.calls[1][0];
+    // 첫 쓰기로 닫힌 줄은 열린 상태 조건에서 빠지므로, 둘째 쓰기는 남은 열린 사고 전부(B·옛 A)다.
+    expect(rest.where).toEqual({
+      jobKey: "j",
+      kind: { in: ["A", "B"] },
+      status: { in: ["open", "waiting_owner"] },
+      prNumber: null,
+    });
+    expect(rest.data.normalizedEvidence).toEqual({ runAt: at.toISOString() });
+    expect(rest.data).not.toHaveProperty("layer");
+    // 두 쓰기는 한 트랜잭션 안에서 찍힌 것 먼저.
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("A 를 닫지 않는 호출(B 만)은 재시도 회차여도 회차·층을 찍지 않는다", async () => {
+    await resolveOpenIncidents({ jobKey: "j", kinds: ["B"], evidence: { runAt: at, attempt: 2 } });
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    const data = updateMany.mock.calls[0][0].data;
+    expect(data.normalizedEvidence).not.toHaveProperty("attempt");
+    expect(data).not.toHaveProperty("layer");
+  });
+
+  it("재시도 주기 창은 대기 간격 합 + 최장 실행 3회보다 넉넉하다", () => {
+    const waitsMs = RETRY_DELAYS_SEC.reduce((s, v) => s + v, 0) * 1000;
+    const curlRunsMs = 3 * 900 * 1000;
+    const appDownWaitMs = 120 * 1000;
+    expect(RETRY_CYCLE_WINDOW_MS).toBeGreaterThan(waitsMs + curlRunsMs + appDownWaitMs);
+  });
+
+  it("첫 실행(회차 1)의 정상화는 회차·층을 남기지 않는다", async () => {
+    await resolveOpenIncidents({ jobKey: "j", kinds: ["A"], evidence: { runAt: at, attempt: 1 } });
+    const data = updateMany.mock.calls[0][0].data;
+    expect(data.normalizedEvidence).not.toHaveProperty("attempt");
+    expect(data).not.toHaveProperty("layer");
   });
 
   it("DB 오류는 console.error 후 0", async () => {

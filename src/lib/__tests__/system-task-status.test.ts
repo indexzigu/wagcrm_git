@@ -7,6 +7,8 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/lib/prisma-client", () => ({
   isRemoteDatabaseUrl: vi.fn(() => false),
 }));
+const captureException = vi.hoisted(() => vi.fn());
+vi.mock("@sentry/core", () => ({ captureException }));
 
 import { getPrisma } from "@/lib/prisma";
 import { capDetailsForLog, withSystemTaskStatus } from "@/lib/system-task-status";
@@ -45,6 +47,7 @@ function loggedRuns(): Array<{ status: string; message: string; details: unknown
 }
 
 beforeEach(() => {
+  captureException.mockReset();
   upsert.mockReset().mockResolvedValue({});
   logCreate.mockReset().mockResolvedValue({});
   logFindMany.mockReset().mockResolvedValue([]);
@@ -561,6 +564,157 @@ describe("withSystemTaskStatus 사고 장부", () => {
     expect(okRes.status).toBe(200);
     expect(await okRes.json()).toEqual(okBody);
     consoleError.mockRestore();
+  });
+});
+
+describe("withSystemTaskStatus 일시 장애 재시도", () => {
+  /** 재시도 1회 작업 / 2회 작업 / 안 함 작업(cron-jobs.ts `retry`). */
+  const ONCE_JOB = "naver-order-sync";
+  const TWICE_JOB = "capture-stories";
+  const NEVER_JOB = "collect-youtube";
+
+  function cronRequest(attempt?: string, auth: string | null = `Bearer ${SECRET}`): Request {
+    const headers: Record<string, string> = {};
+    if (auth) headers.authorization = auth;
+    if (attempt != null) headers["X-Cron-Attempt"] = attempt;
+    return new Request("http://localhost/api/cron/x", { headers });
+  }
+
+  const upstream503 = () => vi.fn(async () => Response.json({ error: "네이버 서버 오류" }, { status: 503 }));
+
+  it("일시 장애 + 정책 1회 작업의 첫 실패는 재시도 대기 600초를 응답 헤더로 알리고 상태·본문은 그대로다", async () => {
+    const res = await withSystemTaskStatus(ONCE_JOB, upstream503())(cronRequest());
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBe("600");
+    expect(await res.json()).toEqual({ error: "네이버 서버 오류" });
+    expect(recordedStatuses()).toEqual(["RUNNING", "ERROR"]);
+  });
+
+  it("정책 1회 작업의 2회차 실패는 더 재시도하지 않는다", async () => {
+    const res = await withSystemTaskStatus(ONCE_JOB, upstream503())(cronRequest("2"));
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBeNull();
+  });
+
+  it("정책 2회 작업의 2회차 실패는 1800초 뒤 한 번 더", async () => {
+    const res = await withSystemTaskStatus(TWICE_JOB, upstream503())(cronRequest("2"));
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBe("1800");
+  });
+
+  it("failed:true(200) 실질 실패도 일시 장애면 헤더를 붙인다", async () => {
+    const handler = vi.fn(async () => Response.json({ ok: true, failed: true, failureReason: "fetch failed <- ECONNRESET" }));
+    const res = await withSystemTaskStatus(ONCE_JOB, handler)(cronRequest());
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBe("600");
+  });
+
+  it("프록시 한도 소진은 재시도하지 않는다", async () => {
+    const handler = vi.fn(async () =>
+      Response.json({ error: "fetch failed <- Proxy response (407) !== 200 when HTTP Tunneling" }, { status: 500 }),
+    );
+    const res = await withSystemTaskStatus(ONCE_JOB, handler)(cronRequest());
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBeNull();
+  });
+
+  it("「안 함」 작업은 일시 장애여도 헤더를 받지 않는다", async () => {
+    const res = await withSystemTaskStatus(NEVER_JOB, upstream503())(cronRequest());
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBeNull();
+  });
+
+  it("성공 응답에는 헤더를 붙이지 않는다", async () => {
+    const res = await withSystemTaskStatus(ONCE_JOB, vi.fn(async () => Response.json({ ok: true })))(cronRequest());
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBeNull();
+  });
+
+  it("수동 실행(기록 게이트 미통과)은 실패해도 헤더를 붙이지 않는다", async () => {
+    const res = await withSystemTaskStatus(ONCE_JOB, upstream503())(cronRequest("1", null));
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBeNull();
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("회차 헤더가 숫자가 아니면 첫 실행으로, 3을 넘으면 3으로 본다", async () => {
+    const garbled = await withSystemTaskStatus(ONCE_JOB, upstream503())(cronRequest("abc"));
+    expect(garbled.headers.get("X-Cron-Retry-After-Sec")).toBe("600");
+    const huge = await withSystemTaskStatus(TWICE_JOB, upstream503())(cronRequest("99"));
+    expect(huge.headers.get("X-Cron-Retry-After-Sec")).toBeNull();
+  });
+
+  it("핸들러 예외 + 재시도 예약이면 원 예외를 console.error 로 남기고 500 JSON 에 헤더를 실어 돌려준다", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const thrown = new TypeError("fetch failed", { cause: new Error("connect ECONNRESET") });
+    const handler = vi.fn(async () => {
+      throw thrown;
+    });
+    const res = await withSystemTaskStatus(ONCE_JOB, handler)(cronRequest());
+
+    expect(res.status).toBe(500);
+    expect(res.headers.get("X-Cron-Retry-After-Sec")).toBe("600");
+    expect((await res.json()).error).toContain("ECONNRESET");
+    expect(spy.mock.calls.some((call) => call.includes(thrown))).toBe(true);
+    expect(recordedStatuses()).toEqual(["RUNNING", "ERROR"]);
+    // 던지지 않으면 Next 의 onRequestError(Sentry)가 못 보므로 원 예외를 직접 보낸다.
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(captureException.mock.calls[0][0]).toBe(thrown);
+    spy.mockRestore();
+  });
+
+  it("핸들러 예외인데 재시도가 없으면(마지막 회차) 지금처럼 예외를 다시 던진다", async () => {
+    const handler = vi.fn(async () => {
+      throw new TypeError("fetch failed", { cause: new Error("connect ECONNRESET") });
+    });
+    await expect(withSystemTaskStatus(ONCE_JOB, handler)(cronRequest("2"))).rejects.toThrow("fetch failed");
+    // 다시 던지는 경로는 onRequestError 가 보낸다 — 여기서 또 보내면 두 번 잡힌다.
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("재시도 헤더를 얹은 응답을 다시 만들지 못하면 console.error 후 원 응답을 그대로 돌려준다", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // 응답 생성자가 거절하는 상태 문구(줄바꿈)를 가진 응답 — 다시 만들기만 실패하게 한다.
+    const odd = {
+      ok: false,
+      status: 503,
+      statusText: "bad\nline",
+      headers: new Headers(),
+      body: null,
+      clone: () => ({ json: async () => ({ error: "네이버 서버 오류" }) }),
+    } as unknown as Response;
+    const res = await withSystemTaskStatus(ONCE_JOB, vi.fn(async () => odd))(cronRequest());
+
+    expect(res).toBe(odd);
+    expect(recordedStatuses()).toEqual(["RUNNING", "ERROR"]);
+    expect(spy.mock.calls.some((call) => String(call[0]).includes("재시도 헤더"))).toBe(true);
+    spy.mockRestore();
+  });
+
+  it("재시도 회차의 실패는 열린 사고의 반복 횟수를 올리지 않는다(오너 알림 기준 불변)", async () => {
+    incidentFindFirst.mockResolvedValue({ id: "inc-open" });
+    await withSystemTaskStatus(TWICE_JOB, upstream503())(cronRequest("2"));
+
+    expect(incidentUpdate).toHaveBeenCalledOnce();
+    expect(incidentUpdate.mock.calls[0][0].data).not.toHaveProperty("occurrences");
+  });
+
+  it("첫 실행 실패는 지금처럼 반복 횟수를 올린다", async () => {
+    incidentFindFirst.mockResolvedValue({ id: "inc-open" });
+    await withSystemTaskStatus(TWICE_JOB, upstream503())(cronRequest());
+
+    expect(incidentUpdate.mock.calls[0][0].data.occurrences).toEqual({ increment: 1 });
+  });
+
+  it("재시도 회차가 성공하면 정상화 증거에 회차와 1층을 남긴다", async () => {
+    await withSystemTaskStatus(ONCE_JOB, vi.fn(async () => Response.json({ ok: true })))(cronRequest("2"));
+
+    const data = incidentUpdateMany.mock.calls[0][0].data;
+    expect(data.normalizedEvidence.attempt).toBe(2);
+    expect(data.layer).toBe(1);
+  });
+
+  it("첫 실행 성공은 정상화 증거에 회차를 남기지 않는다", async () => {
+    await withSystemTaskStatus(ONCE_JOB, vi.fn(async () => Response.json({ ok: true })))(cronRequest());
+
+    const data = incidentUpdateMany.mock.calls[0][0].data;
+    expect(data.normalizedEvidence).not.toHaveProperty("attempt");
+    expect(data).not.toHaveProperty("layer");
   });
 });
 
