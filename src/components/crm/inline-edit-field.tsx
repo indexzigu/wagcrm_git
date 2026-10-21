@@ -359,7 +359,7 @@ export function InlineEditField({
         >
           <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/field:opacity-100 transition-opacity" />
           {badgeText && (
-            <Badge variant="secondary" className="px-1.5 py-0 h-4 text-[9px] bg-red-50 text-red-600 border border-red-100 font-semibold shrink-0">
+            <Badge variant="secondary" className="px-1.5 py-0 h-4 text-[9px] bg-primary/10 text-primary border border-primary/20 font-semibold shrink-0">
               {badgeText}
             </Badge>
           )}

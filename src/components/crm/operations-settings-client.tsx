@@ -159,7 +159,7 @@ export function OperationsSettingsClient() {
         <CardHeader className="flex-row items-center justify-between gap-3 border-b border-border py-3.5 px-6">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Target className="size-4 text-primary" /> 매출 목표
+              <Target className="size-4 text-muted-foreground" /> 매출 목표
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">캠페인 목표가 아니라 월·연 서비스 매출 목표를 독립 관리합니다.</p>
           </div>
@@ -221,7 +221,7 @@ export function OperationsSettingsClient() {
                 ) : null}
               </div>
               {!goals.schemaReady ? (
-                <p className="text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-100 p-3 rounded-xl">
+                <p className="text-[11px] font-semibold text-status-urgent-text bg-status-urgent-bg border border-status-urgent/20 p-3 rounded-xl">
                   ⚠️ 현재 DB에 `RevenueGoal` 테이블이 없어 목표 저장이 비활성 상태입니다. 최신 마이그레이션 적용 후 사용 가능합니다.
                 </p>
               ) : null}
@@ -233,7 +233,7 @@ export function OperationsSettingsClient() {
       <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
         <CardHeader className="border-b border-border py-3.5 px-6">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <CalendarRange className="size-4 text-blue-500" /> 일정 확보 기준일
+            <CalendarRange className="size-4 text-muted-foreground" /> 일정 확보 기준일
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5 p-6">
@@ -294,7 +294,7 @@ export function OperationsSettingsClient() {
       <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
         <CardHeader className="border-b border-border py-3.5 px-6">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <CircleDollarSign className="size-4 text-indigo-500" /> 채널 수수료
+            <CircleDollarSign className="size-4 text-muted-foreground" /> 채널 수수료
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2 p-6">
@@ -370,7 +370,7 @@ export function OperationsSettingsClient() {
       <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
         <CardHeader className="border-b border-border py-3.5 px-6">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <RefreshCw className="size-4 text-primary" /> 주문 자동 동기화
+            <RefreshCw className="size-4 text-muted-foreground" /> 주문 자동 동기화
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5 p-6">

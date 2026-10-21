@@ -196,7 +196,7 @@ export function InlineDataGrid<T extends { id: string }>({
                       className={cn(
                         "h-8 rounded-md px-2 text-[11px] font-semibold uppercase tracking-[0.08em] hover:bg-muted hover:text-foreground transition-colors",
                         isSorted
-                          ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/20"
+                          ? "text-primary font-bold bg-primary/5"
                           : "text-muted-foreground",
                         column.align === "right" && "ml-auto -mr-1",
                         column.align === "center" && "mx-auto",
@@ -207,9 +207,9 @@ export function InlineDataGrid<T extends { id: string }>({
                       {column.label}
                       {isSorted ? (
                         sort.direction === "asc" ? (
-                          <ArrowUpIcon className="ml-1 size-3 text-blue-600 dark:text-blue-400" />
+                          <ArrowUpIcon className="ml-1 size-3 text-primary" />
                         ) : (
-                          <ArrowDownIcon className="ml-1 size-3 text-blue-600 dark:text-blue-400" />
+                          <ArrowDownIcon className="ml-1 size-3 text-primary" />
                         )
                       ) : (
                         <ArrowUpDownIcon className="ml-1 size-3 opacity-0 group-hover:opacity-100 transition-opacity" />

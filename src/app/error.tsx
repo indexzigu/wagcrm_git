@@ -23,7 +23,7 @@ export default function Error({
     <div className="flex h-full min-h-[500px] w-full flex-col items-center justify-center bg-[radial-gradient(circle_at_top_right,_rgba(191,80,80,0.06),_transparent_35%),linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)] p-4 dark:from-slate-950 dark:to-slate-900">
       <div className="max-w-md w-full rounded-xl border border-white/70 bg-[rgba(255,255,255,0.62)] p-6 shadow-ambient backdrop-blur text-center space-y-6 md:rounded-[24px] md:p-8 dark:bg-slate-900/60 dark:border-slate-800">
         <div className="flex justify-center">
-          <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-full text-rose-600 dark:text-rose-400">
+          <div className="p-4 bg-status-urgent/10 border border-status-urgent/20 rounded-full text-status-urgent-text">
             <AlertTriangle className="size-8" />
           </div>
         </div>
@@ -47,7 +47,7 @@ export default function Error({
             {showDetails ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
           </button>
           {showDetails && (
-            <div className="border-t border-slate-200/50 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 p-3 text-left font-mono text-[10px] text-rose-600 dark:text-rose-400 break-all select-all leading-normal">
+            <div className="border-t border-slate-200/50 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 p-3 text-left font-mono text-[10px] text-status-urgent-text break-all select-all leading-normal">
               <div>Message: {error.message || "Unknown Error"}</div>
               {error.digest && <div className="mt-1">Digest: {error.digest}</div>}
             </div>

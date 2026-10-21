@@ -7,10 +7,10 @@ export function DataSourceBanner({
 }) {
   const toneClassName =
     tone === "success"
-      ? "border-emerald-200 bg-emerald-50/90 text-emerald-900"
+      ? "border-status-success/30 bg-status-success-bg text-status-success"
       : tone === "error"
-        ? "border-rose-200 bg-rose-50/90 text-rose-900"
-        : "border-amber-200 bg-amber-50/90 text-amber-900";
+        ? "border-status-urgent/30 bg-status-urgent-bg text-status-urgent-text"
+        : "border-status-caution/30 bg-status-caution-bg text-status-caution-text";
 
   return (
     <div className={`rounded-xl border px-4 py-3 text-sm ${toneClassName}`}>

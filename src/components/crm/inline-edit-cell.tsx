@@ -153,7 +153,7 @@ export function InlineEditCell({
           <SelectTrigger
             className={cn(
               "h-8 w-full rounded-md border-transparent bg-transparent px-2 text-xs shadow-none hover:bg-slate-100 focus:ring-0 transition-colors",
-              flashError && "border-red-400 bg-red-50 text-red-700"
+              flashError && "border-status-urgent bg-status-urgent-bg text-status-urgent-text"
             )}
           >
             <SelectValue>{selectedLabel}</SelectValue>
@@ -207,7 +207,7 @@ export function InlineEditCell({
         }}
         className={cn(
           "block w-full truncate rounded-md px-2 py-1.5 text-left text-xs text-foreground transition-colors hover:bg-slate-100",
-          flashError && "border border-red-400 bg-red-50 text-red-700"
+          flashError && "border border-status-urgent bg-status-urgent-bg text-status-urgent-text"
         )}
       >
         {displayValue || "-"}
