@@ -13,6 +13,7 @@ import {
   toCompletedSelectionInput,
 } from "@/lib/settlement-selection-summary";
 import { MobileSettlementView } from "@/components/mobile/mobile-settlement-view";
+import { MobileCampaignDetailSheet, campaignRowToDetailData } from "@/components/mobile/mobile-campaign-detail-sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CampaignSidePanel } from "@/components/crm/campaign-side-panel";
 import { TaxFilingDialog, previousMonth } from "@/components/crm/tax-filing-dialog";
@@ -476,7 +477,16 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     : null;
 
 
+  // 휴대폰도 같은 선택 상태·같은 닫기 핸들러로 상세를 연다 — 카드 탭과 주소(`?campaign=`) 두 경로 모두
+  // 위 상태를 거치는데, 전에는 그릴 부품이 데스크톱 분기에만 있어서 휴대폰에선 아무것도 열리지 않았다.
+  // 변환은 홈 정산 카드(`mobile-home-settlement-card.tsx`)와 같은 `campaignRowToDetailData`.
+  const mobileDetail = useMemo(
+    () => (isMobile && selectedCampaign ? campaignRowToDetailData(selectedCampaign) : null),
+    [isMobile, selectedCampaign],
+  );
+
   return isMobile ? (
+    <>
     <MobileSettlementView
       reportData={reportData}
       campaigns={filteredCampaigns}
@@ -493,6 +503,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
       onRetryLoad={() => void retryReport()}
       retryingLoad={reportRetrying}
     />
+    <MobileCampaignDetailSheet open={panelOpen} onOpenChange={handlePanelOpenChange} campaign={mobileDetail} />
+    </>
   ) : (
     // 세로 스크롤러는 CrmShell 이 소유한다(스크롤바 자리 예약 포함) — 안쪽에 두 번째 스크롤러를 두지 않는다.
     <CrmShell>
