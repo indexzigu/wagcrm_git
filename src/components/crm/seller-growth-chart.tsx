@@ -393,14 +393,14 @@ export function SellerGrowthChart({ data }: GrowthTrendChartProps) {
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-3">
+        <div className="flex shrink-0 flex-col items-end gap-3">
           <GrowthLegend showPosts={trendData.some((p) => typeof p.postsTrend === "number")} />
           <div className="flex shrink-0 rounded-lg border border-border/50 bg-muted p-0.5">
             {(["ALL", "7D", "1M", "3M"] as FilterType[]).map((t) => (
               <button
                 key={t}
                 onClick={() => handleFilterChange(t)}
-                className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-[color,background-color,box-shadow] duration-200 ${
+                className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-medium transition-[color,background-color,box-shadow] duration-200 ${
                   filter === t
                     ? "bg-background text-foreground shadow-soft-sm"
                     : "text-muted-foreground hover:text-foreground"

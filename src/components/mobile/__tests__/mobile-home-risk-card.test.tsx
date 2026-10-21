@@ -77,4 +77,25 @@ describe("MobileHomeRiskCard (홈 재구성 안 C — 오너 승인 2026-07-15)"
     expect(screen.queryByText("캠페인 4")).not.toBeInTheDocument();
     expect(screen.getByText(/\+ 2건 더/)).toBeInTheDocument();
   });
+  it("점검 줄은 그 캠페인의 정산 상세로 가는 링크다 — 이름에 캠페인명과 문제를 담는다", () => {
+    render(
+      <MobileHomeRiskCard
+        issues={[makeIssue({ campaignId: "camp 9", type: "NEGATIVE_SALES", label: "매출이 음수로 입력됨" })]}
+        exceptions={makeExceptions()}
+      />,
+    );
+    const link = screen.getByRole("link", { name: "비타민C 앰플 - 하늘맘 매출이 음수로 입력됨 열기" });
+    expect(link).toHaveAttribute("href", "/settlement?campaign=camp%209");
+  });
+
+  it("리마인더 지연은 영업 화면 링크, 승인대기는 링크가 아니다", () => {
+    render(
+      <MobileHomeRiskCard issues={[]} exceptions={makeExceptions({ overdueReminders: 2, pendingApprovals: 1 })} />,
+    );
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", "/outreach");
+    expect(links[0]).toHaveAccessibleName("리마인더 지연 2건 영업 화면에서 보기");
+    expect(screen.getByText("승인대기 1").closest("a")).toBeNull();
+  });
 });

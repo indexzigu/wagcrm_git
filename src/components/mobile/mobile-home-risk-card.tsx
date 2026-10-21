@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +27,13 @@ import { INTEGRITY_ISSUE_WORD } from "@/lib/data-integrity-words";
  *   T-062). 이중 표기가 아닌 이유: 정산 대기 카드의 모집단은 정산 단계 캠페인이고 이쪽은
  *   **아직 정산 단계가 아닌** 캠페인이라 두 집합이 정의상 겹치지 않는다.
  * 색은 상태 토큰(--status-*) 계열만 사용(hex 하드코딩 금지, P8).
+ *
+ * 이동(설계서 §11 #5 — 3탭 IA 는 그대로, 기존 모바일 화면으로만 잇는다):
+ * - 점검 줄 → `/settlement?campaign=<id>` — 휴대폰 정산 화면이 그 캠페인 상세 시트를 연다(정산 단계가
+ *   아닌 캠페인도 서버에서 한 건 읽어 연다).
+ * - 리마인더 지연 칩 → `/outreach`(모바일 영업 뷰). 영업 화면은 특정 건 주소를 지원하지 않아 목록까지만 간다.
+ * - 승인대기 → 링크 없음. 휴대폰 결재는 쓰기 경로 신설이라 오너 게이트(§11 #6)다.
+ * 줄 끝 화살표(›) 같은 「눌러진다」 표시는 리뉴얼 전에 없던 요소라 넣지 않았다 — 오너 확인 대상(2026-10-21 디자인 검토).
  */
 
 type IntegrityIssue = DesktopDashboardData["dataIntegrityIssues"][number];
@@ -56,15 +64,21 @@ export function MobileHomeRiskCard({
   exceptions: DashboardExceptions;
 }) {
   const outreachSignals = [
-    { key: "overdueReminders", label: "리마인더 지연", count: exceptions.overdueReminders, variant: "status-caution" as const },
-    { key: "pendingApprovals", label: "승인대기", count: exceptions.pendingApprovals, variant: "status-pending" as const },
+    { key: "overdueReminders", label: "리마인더 지연", count: exceptions.overdueReminders, variant: "status-caution" as const, href: "/outreach" },
+    { key: "pendingApprovals", label: "승인대기", count: exceptions.pendingApprovals, variant: "status-pending" as const, href: undefined },
   ].filter((signal) => signal.count > 0);
 
   const totalCount = issues.length + outreachSignals.reduce((sum, s) => sum + s.count, 0);
   if (totalCount === 0) return null;
 
   // 유형별 건수 (issues 는 이미 심각도순 정렬 — computeDataIntegrityIssues 계약)
-  const integrityChips: { key: string; label: string; count: number; variant: "status-urgent" | "status-caution" | "status-pending" | "outline" }[] = [];
+  const integrityChips: {
+    key: string;
+    label: string;
+    count: number;
+    variant: "status-urgent" | "status-caution" | "status-pending" | "outline";
+    href?: string;
+  }[] = [];
   for (const issue of issues) {
     const meta = INTEGRITY_META[issue.type];
     const existing = integrityChips.find((chip) => chip.key === issue.type);
@@ -74,7 +88,7 @@ export function MobileHomeRiskCard({
 
   const chips = [
     ...integrityChips,
-    ...outreachSignals.map((s) => ({ key: s.key, label: s.label, count: s.count, variant: s.variant })),
+    ...outreachSignals.map((s) => ({ key: s.key, label: s.label, count: s.count, variant: s.variant, href: s.href })),
   ];
 
   return (
@@ -89,11 +103,25 @@ export function MobileHomeRiskCard({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {chips.map((chip) => (
-            <Badge key={chip.key} variant={chip.variant} className="tabular-nums">
-              {chip.label} {chip.count}
-            </Badge>
-          ))}
+          {chips.map((chip) =>
+            chip.href ? (
+              // 칩은 작아서 눌리는 자리를 위아래로 넓힌다(보이는 모양은 그대로, 터치 하한 44px). 프레스는 ④ 투명도.
+              // `overflow-visible` 은 Badge 기본 `overflow-hidden` 이 넓힌 자리(::after)를 잘라내지 않게 덮는다.
+              <Badge key={chip.key} variant={chip.variant} asChild className="tabular-nums">
+                <Link
+                  href={chip.href}
+                  aria-label={`${chip.label} ${chip.count}건 영업 화면에서 보기`}
+                  className="relative overflow-visible transition-opacity duration-150 after:absolute after:-inset-x-1 after:-inset-y-3 active:opacity-60"
+                >
+                  {chip.label} {chip.count}
+                </Link>
+              </Badge>
+            ) : (
+              <Badge key={chip.key} variant={chip.variant} className="tabular-nums">
+                {chip.label} {chip.count}
+              </Badge>
+            ),
+          )}
         </div>
 
         {issues.length > 0 && (
@@ -103,23 +131,34 @@ export function MobileHomeRiskCard({
               return (
                 <li
                   key={`${issue.campaignId}-${issue.type}-${i}`}
-                  className="flex items-center justify-between gap-3 border-b border-slate-100 py-1.5 last:border-0 last:pb-0"
+                  className="border-b border-slate-100 last:border-0"
                 >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className={`size-2 shrink-0 rounded-full ${meta.dot}`} aria-hidden="true" />
-                    <span className="truncate text-[13px] font-medium text-slate-800" title={issue.campaignName}>
-                      {issue.campaignName}
-                    </span>
-                  </div>
-                  {/* 데스크톱 자매 카드와 같은 규약 — 라벨도 이름과 같이 줄어든다.
-                      ⛔ `shrink-0` 으로 되돌리지 말 것: 긴 라벨이 자기 폭을 다 가져가면
-                      **어느 캠페인인지가 대신 잘린다**(실측 근거는 `data-integrity-card` 주석). */}
-                  <span
-                    className="min-w-0 truncate text-[11px] text-muted-foreground"
-                    title={issue.label}
+                  {/* 줄 전체가 링크 — 카드 안 보조 목록이라 머리·칩 줄과 같은 카드 여백(16px)에 맞춘다(행 여백 계약 예외).
+                      하이라이트가 카드 끝까지 닿게 여백만큼 바깥으로 넓힌다. 이름은 aria-label 로 고정해 색만 다른
+                      점·흐린 라벨이 「무엇을 여는지」를 흐리지 않게 한다.
+                      누름은 ① 회색 하이라이트 — 카드 끝까지 닿는 전폭 줄이고 바탕이 불투명 흰 카드라 덮을 수 있다(P8 프레스 표 ①,
+                      설계서 §5.4). ③ slate-50/70 은 흰 카드 위에서 거의 보이지 않는다. */}
+                  <Link
+                    href={`/settlement?campaign=${encodeURIComponent(issue.campaignId)}`}
+                    aria-label={`${issue.campaignName} ${issue.label} 열기`}
+                    className="-mx-4 flex min-h-11 items-center gap-3 px-4 transition-colors duration-150 active:bg-black/[0.06]"
                   >
-                    {issue.label}
-                  </span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className={`size-2 shrink-0 rounded-full ${meta.dot}`} aria-hidden="true" />
+                      <span className="truncate text-[13px] font-medium text-slate-800" title={issue.campaignName}>
+                        {issue.campaignName}
+                      </span>
+                    </div>
+                    {/* 데스크톱 자매 카드와 같은 규약 — 라벨도 이름과 같이 줄어든다.
+                        ⛔ `shrink-0` 으로 되돌리지 말 것: 긴 라벨이 자기 폭을 다 가져가면
+                        **어느 캠페인인지가 대신 잘린다**(실측 근거는 `data-integrity-card` 주석). */}
+                    <span
+                      className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground"
+                      title={issue.label}
+                    >
+                      {issue.label}
+                    </span>
+                  </Link>
                 </li>
               );
             })}
