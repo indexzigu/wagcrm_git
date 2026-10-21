@@ -83,6 +83,18 @@ export function resolveStatementSellerPayoutDates(campaigns: CampaignRow[]): {
 }
 
 /**
+ * 명세서 날짜 줄 — HTML·평문이 같은 라벨·값을 쓰도록 한 곳에서 만든다(표면마다 라벨을
+ * 손으로 다시 적으면 갈린다). 실제 지급일이 먼저, 예정일이 뒤. 날짜가 없으면 빈 배열.
+ */
+function buildStatementPayoutDateLines(campaigns: CampaignRow[]): { label: string; value: string }[] {
+  const { paid, expected } = resolveStatementSellerPayoutDates(campaigns);
+  return [
+    ...(paid.length > 0 ? [{ label: "입금일", value: paid.join(", ") }] : []),
+    ...(expected.length > 0 ? [{ label: "입금 예정일", value: expected.join(", ") }] : []),
+  ];
+}
+
+/**
  * 날짜 문자열의 정렬 키 — 미입력은 **뒤로** 보낸다.
  *
  * 빈 문자열을 그대로 비교하면 `""` 가 어떤 날짜보다 작아서 **기간 미입력 캠페인이 맨 앞**으로
@@ -919,12 +931,8 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
 
   // 입금 날짜는 HTML 과 같은 판정 함수를 쓴다 — 평문을 고르는 메일 클라이언트에서만 날짜가
   // 빠지던 상태였다. 날짜가 없으면 줄 자체를 싣지 않는다(종전 평문과 바이트 동일).
-  const { paid, expected } = resolveStatementSellerPayoutDates(sortStatementCampaigns(campaigns));
-  const dateLines = [
-    ...(paid.length > 0 ? [`- 입금일: ${paid.join(", ")}`] : []),
-    ...(expected.length > 0 ? [`- 입금 예정일: ${expected.join(", ")}`] : []),
-  ];
-  const dateBlock = dateLines.length > 0 ? `\n${dateLines.join("\n")}` : "";
+  const dateLines = buildStatementPayoutDateLines(sortStatementCampaigns(campaigns));
+  const dateBlock = dateLines.map(({ label, value }) => `\n- ${label}: ${value}`).join("");
 
   // 수동 기준액 캠페인이 섞이면 총 거래액(우리 판매분 포함)을 싣지 않고 정산 기준액 합을 싣는다.
   const salesLine = totals.hasSellerFeeBasisOverride
@@ -1173,11 +1181,7 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSellerFeeBasis)}</td>
       </tr>`;
 
-  const { paid: paidDates, expected: expectedDates } = resolveStatementSellerPayoutDates(ordered);
-  const payoutDateLines = [
-    ...(paidDates.length > 0 ? [{ label: "입금일", value: paidDates.join(", ") }] : []),
-    ...(expectedDates.length > 0 ? [{ label: "입금 예정일", value: expectedDates.join(", ") }] : []),
-  ];
+  const payoutDateLines = buildStatementPayoutDateLines(ordered);
 
   /**
    * 별도 지급 항목 줄 — 대상=셀러 부가 항목이 있을 때만 만든다(없으면 현행과 바이트 동일).
