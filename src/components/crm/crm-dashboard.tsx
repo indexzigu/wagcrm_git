@@ -39,6 +39,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { CampaignSidePanel } from "./campaign-side-panel";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { CrmShell } from "./crm-shell";
+import { summarizeExecutionHeadline } from "@/lib/execution-quick-filters";
 import { MoneySummaryStrip, moneyFlowGroup } from "./money-summary-strip";
 import { DataSourceBanner } from "./data-source-banner";
 import { ExecutionKanbanBoard } from "./execution-kanban-board";
@@ -299,6 +300,9 @@ export function CrmDashboard({
     [rowsWithoutStageFilter],
   );
 
+  // 머리 부제 건수 — 실행 보드가 받는 같은 행·같은 빠른 필터 판정(`execution-quick-filters`)을 읽는다.
+  const executionHeadline = useMemo(() => summarizeExecutionHeadline(executionRows), [executionRows]);
+
   const kanbanSummary = useMemo(() => {
     const rowsToSum = useExecutionKanban ? executionRows : filteredRows;
     const m = summarizePipelineMoney(rowsToSum);
@@ -381,7 +385,7 @@ export function CrmDashboard({
       <CrmShell
         variant="focus"
         title={isMobile ? undefined : "판매 관리"}
-        description={isMobile ? undefined : "캠페인별 판매 진행과 오늘 처리할 일을 봅니다."}
+        description={isMobile ? undefined : `판매중 ${executionHeadline.selling}건 · 지연 ${executionHeadline.delayed}건`}
         segments={
           isMobile
             ? undefined

@@ -43,6 +43,11 @@ import {
   getPreviousMonth,
 } from "@/lib/settlement-report";
 
+const VIEW_TYPE_OPTIONS = [
+  { value: "month", label: "월별" },
+  { value: "year", label: "연도별" },
+] as const;
+
 interface SettlementPageClientProps {
   initialData: DashboardData;
   defaultMonth?: string;
@@ -489,7 +494,41 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     />
   ) : (
     // 세로 스크롤러는 CrmShell 이 소유한다(스크롤바 자리 예약 포함) — 안쪽에 두 번째 스크롤러를 두지 않는다.
-    <CrmShell title="정산 관리">
+    <CrmShell
+      title="정산 관리"
+      // 건수는 두 섹션 배지와 같은 변수를 읽는다(새 계산 없음) — 머리와 본문이 다른 수를 말하지 않게.
+      description={`진행 ${activeCampaigns.length}건 · 완료 ${completedCampaigns.length}건`}
+      segments={{
+        options: VIEW_TYPE_OPTIONS,
+        value: viewType,
+        // 종전 툴바 토글과 같은 경로 — 기간 이동(‹ ›)은 이 값을 읽어 단위를 정한다.
+        onValueChange: (value) => setFilter("viewType", value === "year" ? "year" : "month"),
+        ariaLabel: "기간 단위",
+      }}
+      actions={
+        <>
+          <Button size="sm" variant="outline" onClick={() => setTaxFilingOpen(true)}>
+            <FileText data-icon="inline-start" />
+            세무 처리
+            {taxPendingCount != null && taxPendingCount > 0 ? (
+              <span className="ml-1.5 rounded-full bg-status-caution/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-caution-text">
+                {taxPendingCount}
+                {taxNextDueDate ? ` · ${formatDDay(taxNextDueDate)}` : ""}
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleRefresh()}
+            disabled={loading}
+          >
+            <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
+            새로고침
+          </Button>
+        </>
+      }
+    >
     <div className="flex w-full flex-col px-5 pb-5 pt-5 md:px-8">
       <MoneySummaryStrip
         className="mb-4 shrink-0"
@@ -510,25 +549,6 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
       <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
         <div className="flex min-h-12 shrink-0 flex-col gap-3 border-b border-border/70 px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-border/80 bg-white p-1 shadow-soft-sm">
-              <Button
-                size="xs"
-                variant={viewType === "month" ? "default" : "ghost"}
-                onClick={() => setFilter("viewType", "month")}
-                className="h-7 rounded-md px-2.5 text-xs"
-              >
-                월별
-              </Button>
-              <Button
-                size="xs"
-                variant={viewType === "year" ? "default" : "ghost"}
-                onClick={() => setFilter("viewType", "year")}
-                className="h-7 rounded-md px-2.5 text-xs"
-              >
-                연도별
-              </Button>
-            </div>
-
             <div className="flex h-9 min-w-48 items-center justify-between gap-2 rounded-lg border border-border/80 bg-white px-2 shadow-soft-sm">
               <button
                 type="button"
@@ -591,25 +611,6 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
                 className="h-full text-xs"
               />
             </InputGroup>
-            <Button size="sm" variant="outline" onClick={() => setTaxFilingOpen(true)}>
-              <FileText data-icon="inline-start" />
-              세무 처리
-              {taxPendingCount != null && taxPendingCount > 0 ? (
-                <span className="ml-1.5 rounded-full bg-status-caution/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-caution-text">
-                  {taxPendingCount}
-                  {taxNextDueDate ? ` · ${formatDDay(taxNextDueDate)}` : ""}
-                </span>
-              ) : null}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void handleRefresh()}
-              disabled={loading}
-            >
-              <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
-              새로고침
-            </Button>
           </div>
         </div>
 
