@@ -2500,7 +2500,7 @@ export default function OrderDashboard() {
                   
                   {/* 진행률 오버레이 UI */}
                   {activeProgress && activeProgress.campaignId === camp.id && (
-                    <div className="absolute inset-0 bg-card/90 rounded-xl flex flex-col items-center justify-center p-4 z-10 border border-border">
+                    <div className="absolute inset-0 bg-card rounded-xl flex flex-col items-center justify-center p-4 z-10 border border-border">
                       <div className="w-full max-w-sm">
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-xs font-bold text-slate-700">{activeProgress.message}</span>

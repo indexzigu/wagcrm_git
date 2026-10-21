@@ -47,7 +47,7 @@ export default function ProductSelectModal({
     <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent
         style={{ width: "min(640px, 96vw)", maxWidth: "min(640px, 96vw)" }}
-        className="flex flex-col h-full overflow-hidden border-l border-border/70 bg-card p-0 gap-0"
+        className="flex flex-col h-full overflow-hidden border-l border-border bg-card p-0 gap-0"
         showCloseButton={false}
       >
         <SheetHeader className="shrink-0 border-b border-slate-100 flex flex-row justify-between items-center bg-white px-5 py-4 gap-0">

@@ -4,11 +4,12 @@ import { join } from 'node:path';
 
 /**
  * 계약: 주문 카드의 진행 오버레이(발주 메일·엑셀 업로드 등 긴 작업 중 카드를 덮는 판)는
- * **블러 없이 불투명도 0.9 이상의 카드 면**이다.
+ * **블러 없는 완전 불투명 카드 면**(`bg-card`)이다.
  *
  * 콘텐츠 면을 불투명 헤어라인 질감으로 바꾸면서 종전 `bg-white/80 backdrop-blur-sm` 의 블러를 뺐다.
- * 블러가 없으면 아래 카드 글자가 비쳐 진행 메시지와 겹쳐 읽힌다 — 그래서 불투명도를 `bg-card/90`
- * 로 올려 그 비침을 막는다. 누군가 블러를 되살리거나 불투명도를 낮추면 이 테스트가 깨진다.
+ * 블러가 없으면 반투명 판(예: `bg-card/90`) 아래로 카드 글자가 선명한 잔상으로 비쳐 진행 메시지와
+ * 겹쳐 읽힌다. 작업 중 카드를 막는 판이라 비칠 이유가 없으므로 완전 불투명으로 둔다(디자인 검토 2026-10-21).
+ * 누군가 블러를 되살리거나 불투명도를 낮추면 이 테스트가 깨진다.
  */
 const SOURCE = readFileSync(join(__dirname, '..', 'order-dashboard.tsx'), 'utf8');
 
@@ -21,13 +22,13 @@ function overlayClassTokens(): string[] {
 }
 
 describe('주문 카드 진행 오버레이 — 블러 없는 불투명 면', () => {
-  it('불투명도 0.9 이상의 카드 면(bg-card/90 이상)을 쓴다', () => {
+  it('완전 불투명 카드 면(bg-card)을 쓴다', () => {
     const bg = overlayClassTokens().find((t) => t.startsWith('bg-'));
     expect(bg, '오버레이 배경 클래스가 없다').toBeDefined();
     const m = bg!.match(/^bg-card(?:\/(\d+))?$/);
     expect(m, `오버레이 배경이 ${bg} 다 — bg-card 계열이어야 한다`).not.toBeNull();
     const opacity = m![1] === undefined ? 100 : Number(m![1]);
-    expect(opacity, `오버레이 불투명도 ${opacity} — 블러가 없으니 90 미만이면 아래 글자가 비친다`).toBeGreaterThanOrEqual(90);
+    expect(opacity, `오버레이 불투명도 ${opacity} — 블러가 없으니 100 미만이면 아래 글자가 비친다`).toBe(100);
   });
 
   it('backdrop-blur 를 쓰지 않는다', () => {

@@ -1408,7 +1408,7 @@ function WorkspaceSection({
             {onAdd && !isCollapsed ? (
               <button
                 onClick={onAdd}
-                className="flex h-6 w-6 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
                 title="새 테스크 추가"
               >
                 <Plus className="size-3" />
@@ -1420,7 +1420,7 @@ function WorkspaceSection({
             {onCollapse && (
               <button
                 onClick={onCollapse}
-                className="flex h-6 w-6 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:bg-slate-50 hover:text-foreground"
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:bg-slate-50 hover:text-foreground"
                 title={isCollapsed ? "단계 펼치기" : "단계 접기"}
               >
                 {isCollapsed ? (
@@ -1601,15 +1601,15 @@ function SalesTaskDetailPanel({
           </div>
         </div>
         <div className="mt-3.5 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-          <span className="rounded-full border border-border/70 bg-background px-2.5 py-0.5 text-[10px]">
+          <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-[10px]">
             채널 {task.contactChannel ?? "DM"}
           </span>
           {task.sellerCategory ? (
-            <span className="rounded-full border border-border/70 bg-background px-2.5 py-0.5 text-[10px]">
+            <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-[10px]">
               {task.sellerCategory}
             </span>
           ) : null}
-          <span className="rounded-full border border-border/70 bg-background px-2.5 py-0.5 text-[10px]">
+          <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-[10px]">
             제안일 {formatDate(task.proposedAt)}
           </span>
         </div>
