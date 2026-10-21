@@ -23,6 +23,12 @@ vi.mock("@/repositories/actionProposalRepository", () => ({
   ConcurrentModificationError: FakeConcurrentModificationError,
 }));
 
+const markInboundRejectedMock = vi.fn();
+vi.mock("@/lib/calendar-inbound/adopt", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/calendar-inbound/adopt")>();
+  return { ...actual, markInboundRejected: (...args: unknown[]) => markInboundRejectedMock(...args) };
+});
+
 const { POST } = await import("./route");
 
 function makeParams(id: string) {
@@ -38,6 +44,8 @@ describe("POST /api/action-proposals/[id]/reject", () => {
     requireRoleMock.mockReset();
     findByIdMock.mockReset();
     transitionMock.mockReset();
+    markInboundRejectedMock.mockReset();
+    markInboundRejectedMock.mockResolvedValue(undefined);
     requireRoleMock.mockResolvedValue({
       authenticated: true,
       context: { userId: "approver@example.com", role: "admin" },
@@ -91,5 +99,68 @@ describe("POST /api/action-proposals/[id]/reject", () => {
 
     const res = await POST(makeRequest(), makeParams("proposal-1"));
     expect(res.status).toBe(200);
+  });
+
+  it("[캘린더수집] 캘린더에서 온 기안이면 수집 행을 REJECTED 로 표기한다(다시 기안하지 않는다)", async () => {
+    findByIdMock.mockResolvedValue({
+      id: "proposal-1",
+      status: "PENDING_APPROVAL",
+      createdBy: "SYSTEM_CALENDAR_INBOUND",
+      sourceRef: JSON.stringify({
+        calendarInbound: {
+          inboundId: "in-1",
+          eventId: "ev-owner",
+          calendarId: "primary",
+          ledgerKind: "campaign",
+          adopt: true,
+          summary: "샘플셀러 테스트브랜드 2차",
+          startDate: "2026-11-03",
+          endDate: "2026-11-09",
+          htmlLink: null,
+          warnings: [],
+        },
+      }),
+    });
+    transitionMock.mockResolvedValue({ id: "proposal-1", status: "REJECTED" });
+
+    const res = await POST(makeRequest(), makeParams("proposal-1"));
+    expect(res.status).toBe(200);
+    expect(markInboundRejectedMock).toHaveBeenCalledWith("in-1");
+  });
+
+  it("[캘린더수집] 표기가 실패해도 반려 응답은 200 이다(반려는 이미 커밋됨)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findByIdMock.mockResolvedValue({
+      id: "proposal-1",
+      status: "PENDING_APPROVAL",
+      createdBy: "SYSTEM_CALENDAR_INBOUND",
+      sourceRef: {
+        calendarInbound: {
+          inboundId: "in-1",
+          eventId: "ev-owner",
+          calendarId: "primary",
+          ledgerKind: "campaign",
+          adopt: true,
+          summary: "x",
+          startDate: "2026-11-03",
+          endDate: "2026-11-09",
+          htmlLink: null,
+          warnings: [],
+        },
+      },
+    });
+    transitionMock.mockResolvedValue({ id: "proposal-1", status: "REJECTED" });
+    markInboundRejectedMock.mockRejectedValue(new Error("DB 끊김"));
+
+    const res = await POST(makeRequest(), makeParams("proposal-1"));
+    expect(res.status).toBe(200);
+  });
+
+  it("[캘린더수집] 캘린더 출처가 없으면 표기하지 않는다", async () => {
+    findByIdMock.mockResolvedValue({ id: "proposal-1", status: "PENDING_APPROVAL", createdBy: "creator@example.com" });
+    transitionMock.mockResolvedValue({ id: "proposal-1", status: "REJECTED" });
+
+    await POST(makeRequest(), makeParams("proposal-1"));
+    expect(markInboundRejectedMock).not.toHaveBeenCalled();
   });
 });

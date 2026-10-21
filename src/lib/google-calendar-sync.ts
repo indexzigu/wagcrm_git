@@ -59,6 +59,9 @@ const STATUS_COLOR_MAP: Record<string, string> = {
  */
 type EventKind = "campaign" | CampaignMoneySlot["key"];
 
+/** 장부 키(바깥 모듈용 이름) — [캘린더수집] 넘겨받기가 어느 칸에 적을지 고를 때 쓴다. */
+export type CalendarLedgerKind = EventKind;
+
 /** 장부 항목 — 이벤트 id 와 그 이벤트가 사는 캘린더. */
 type StoredEventRef = { id: string; calendarId: string };
 type StoredEventIds = Partial<Record<EventKind, StoredEventRef>>;
@@ -833,6 +836,83 @@ export async function syncCampaignToCalendar(
   }
 
   return syncOne(prisma, accessToken, campaign, await getFinanceCalendarId());
+}
+
+/** 넘겨받기 결과 — 호출부(`approveProposal`)가 수집 행 표기를 고른다. */
+export type AdoptLedgerOutcome = "adopted" | "already_adopted" | "conflict" | "not_found";
+
+/** 조건부 쓰기가 다른 쓰기에 밀렸을 때 다시 읽는 횟수 — 동기화 한 번과 겹치는 정도만 견디면 된다. */
+const ADOPT_LEDGER_ATTEMPTS = 3;
+
+/**
+ * [캘린더수집] 오너가 손으로 만든 구글 이벤트를 캠페인 장부에 **넘겨받는다**(오너 확정 ①, 2026-10-21).
+ * 장부 키에 그 이벤트 id 를 적어 두면 다음 `syncCampaignToCalendar` 가 새로 만들지 않고 그 이벤트를
+ * 제자리에서 PATCH 한다(제목·날짜를 CRM 형식으로 덮는다 — 일정은 하나로 남는다).
+ *
+ * - **장부 주인:** 조합(그룹) 소속 캠페인이면 kind 와 무관하게 **그룹 행**이다. 기간 이벤트만이 아니라
+ *   대금 이벤트도 그룹 장부가 소유하고(`syncGroupOne`), 멤버 장부에 남은 이벤트는 동기화가 **지운다** —
+ *   멤버 행에 적으면 넘겨받은 원본이 삭제된다.
+ * - **충돌:** 같은 키에 다른 id 가 이미 있으면(CRM 이 만든 이벤트가 있다) **덮지 않는다** — 덮으면 그
+ *   CRM 이벤트가 장부에서 떨어져 고아가 된다. 오너 원본은 평범한 일정으로 남고, 카드 경고가 알린다.
+ * - **동시성:** 읽은 원문 그대로일 때만 쓰는 조건부 쓰기다. 그 사이 동기화가 장부를 바꿨으면 다시 읽는다.
+ * - 커밋 **뒤** 단계라 던지지 않는 것이 원칙이지만, DB 오류는 그대로 던진다 — 호출부가 잡아 보고한다.
+ */
+export async function adoptCalendarEventIntoLedger(input: {
+  campaignId: string;
+  kind: CalendarLedgerKind;
+  eventId: string;
+  calendarId: string;
+}): Promise<AdoptLedgerOutcome> {
+  const prisma = getPrisma();
+
+  for (let attempt = 0; attempt < ADOPT_LEDGER_ATTEMPTS; attempt += 1) {
+    const campaign = await prisma.salesCampaign.findUnique({
+      where: { id: input.campaignId },
+      select: { id: true, groupId: true, calendarEventIds: true },
+    });
+    if (!campaign) return "not_found";
+
+    let owner: { table: "campaign" | "group"; id: string; raw: string | null };
+    if (campaign.groupId) {
+      const group = await prisma.campaignGroup.findUnique({
+        where: { id: campaign.groupId },
+        select: { id: true, calendarEventIds: true },
+      });
+      if (!group) return "not_found";
+      owner = { table: "group", id: group.id, raw: group.calendarEventIds };
+    } else {
+      owner = { table: "campaign", id: campaign.id, raw: campaign.calendarEventIds };
+    }
+
+    const stored = parseStoredIds(owner.raw);
+    const existing = stored[input.kind];
+    if (existing?.id === input.eventId) return "already_adopted";
+    if (existing?.id) {
+      console.warn(
+        `[calendar-adopt] ${owner.table} ${owner.id} 장부 ${input.kind} 에 다른 이벤트(${existing.id})가 있어 ` +
+          `넘겨받지 않음 — 원본 ${input.eventId} 는 평범한 일정으로 남는다`,
+      );
+      return "conflict";
+    }
+
+    const next: StoredEventIds = {
+      ...stored,
+      [input.kind]: { id: input.eventId, calendarId: input.calendarId },
+    };
+    const args = {
+      where: { id: owner.id, calendarEventIds: owner.raw },
+      data: { calendarEventIds: serializeStoredIds(next) },
+    };
+    const { count } =
+      owner.table === "group"
+        ? await prisma.campaignGroup.updateMany(args)
+        : await prisma.salesCampaign.updateMany(args);
+    if (count > 0) return "adopted";
+  }
+
+  throw new Error(
+    `캠페인 ${input.campaignId} 장부가 계속 바뀌어 넘겨받기를 기록하지 못했다(${ADOPT_LEDGER_ATTEMPTS}회 시도)`,
+  );
 }
 
 /**

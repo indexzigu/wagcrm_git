@@ -35,6 +35,25 @@ vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({ $transaction: transactionMock }),
 }));
 
+// [캘린더수집] 승인 뒤 넘겨받기 — 장부 기록과 수집 행 상태 표기는 가짜로, 출처 읽기(`readCalendarInboundRef`)는 진짜로.
+const callOrder: string[] = [];
+const adoptCalendarEventIntoLedgerMock = vi.fn();
+const markInboundAdoptedMock = vi.fn();
+const resetInboundForRetryMock = vi.fn();
+
+vi.mock("@/lib/google-calendar-sync", () => ({
+  adoptCalendarEventIntoLedger: (...args: unknown[]) => adoptCalendarEventIntoLedgerMock(...args),
+}));
+
+vi.mock("@/lib/calendar-inbound/adopt", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/calendar-inbound/adopt")>();
+  return {
+    ...actual,
+    markInboundAdopted: (...args: unknown[]) => markInboundAdoptedMock(...args),
+    resetInboundForRetry: (...args: unknown[]) => resetInboundForRetryMock(...args),
+  };
+});
+
 const { approveProposal, bulkApproveProposals } = await import("../approve-proposal");
 
 const APPROVER = "owner@example.com";
@@ -58,6 +77,21 @@ beforeEach(() => {
   executeWriteActionMock.mockReset();
   transactionMock.mockReset();
   applyWriteActionEffectsMock.mockReset();
+  callOrder.length = 0;
+  adoptCalendarEventIntoLedgerMock.mockReset();
+  markInboundAdoptedMock.mockReset();
+  resetInboundForRetryMock.mockReset();
+  adoptCalendarEventIntoLedgerMock.mockImplementation(async () => {
+    callOrder.push("ledger");
+    return "adopted";
+  });
+  markInboundAdoptedMock.mockImplementation(async () => {
+    callOrder.push("mark");
+  });
+  resetInboundForRetryMock.mockResolvedValue(undefined);
+  applyWriteActionEffectsMock.mockImplementation(() => {
+    callOrder.push("effects");
+  });
   transactionMock.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({}));
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -180,6 +214,150 @@ describe("approveProposal", () => {
     expect(outcome).toMatchObject({ ok: false, code: "EMPTY_PAYLOAD", httpStatus: 422, status: "FAILED" });
     expect(transitionMock.mock.calls.map((call) => call[1])).toEqual(["APPROVED", "FAILED"]);
     expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+});
+
+const INBOUND_REF = {
+  inboundId: "in-1",
+  eventId: "ev-owner",
+  calendarId: "primary",
+  ledgerKind: "campaign",
+  adopt: true,
+  summary: "샘플셀러 테스트브랜드 2차",
+  startDate: "2026-11-03",
+  endDate: "2026-11-09",
+  htmlLink: null,
+  warnings: [],
+};
+
+function inboundCreateProposal(refOverrides: Record<string, unknown> = {}, asString = false) {
+  const sourceRef = { calendarInbound: { ...INBOUND_REF, ...refOverrides } };
+  return makeProposal({
+    createdBy: "SYSTEM_CALENDAR_INBOUND",
+    payload: {
+      action: "create_campaign_round",
+      args: { dealId: "deal-1", sellerId: "seller-1", startDate: "2026-11-03", endDate: "2026-11-09" },
+    },
+    sourceRef: asString ? JSON.stringify(sourceRef) : sourceRef,
+  });
+}
+
+const CREATE_RESULT = { refType: "CAMPAIGN", refId: "camp-new", summary: "회차 생성" };
+
+describe("approveProposal — [캘린더수집] 넘겨받기", () => {
+  function primeExecuted(result = CREATE_RESULT) {
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue(result);
+  }
+
+  it("새 회차: 커밋 뒤 장부 넘겨받기 → ADOPTED 표기 → 그다음 후속 처리(동기화가 원본을 제자리 갱신)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(adoptCalendarEventIntoLedgerMock).toHaveBeenCalledWith({
+      campaignId: "camp-new",
+      kind: "campaign",
+      eventId: "ev-owner",
+      calendarId: "primary",
+    });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: null });
+    expect(callOrder).toEqual(["ledger", "mark", "effects"]);
+  });
+
+  it("기록 수정 기안은 기안이 가리킨 캠페인(args.entityId)에 넘겨받는다 · 문자열 sourceRef(SQLite)도 읽는다", async () => {
+    findByIdMock.mockResolvedValue(
+      makeProposal({
+        createdBy: "SYSTEM_CALENDAR_INBOUND",
+        payload: {
+          action: "update_record",
+          args: { entityType: "CAMPAIGN", entityId: "camp-old", changes: {}, expected: {} },
+        },
+        sourceRef: JSON.stringify({ calendarInbound: { ...INBOUND_REF, ledgerKind: "deposit" } }),
+      }),
+    );
+    primeExecuted({ refType: "CAMPAIGN", refId: "camp-old", summary: "수정" });
+
+    await approveProposal("p1", APPROVER);
+
+    expect(adoptCalendarEventIntoLedgerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignId: "camp-old", kind: "deposit" }),
+    );
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-old", { skipReason: null });
+  });
+
+  it("adopt:false 면 장부는 건드리지 않고 ADOPTED 로만 표기한다(멱등 제외)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal({ adopt: false }));
+    primeExecuted();
+
+    await approveProposal("p1", APPROVER);
+
+    expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: null });
+    expect(applyWriteActionEffectsMock).toHaveBeenCalled();
+  });
+
+  it("장부 키 충돌이면 ADOPTED + skipReason ledger_conflict(다시 기안하지 않는다)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockResolvedValue("conflict");
+
+    await approveProposal("p1", APPROVER);
+
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: "ledger_conflict" });
+  });
+
+  it("넘겨받기가 던져도 승인은 성공이고 후속 처리는 돈다(쓰기는 이미 커밋됨)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockRejectedValue(new Error("DB 끊김"));
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(applyWriteActionEffectsMock).toHaveBeenCalledWith("create_campaign_round", CREATE_RESULT);
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it("실행이 FAILED 로 끝나면 수집 행을 재판정 대기로 되돌린다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "FAILED" });
+    executeWriteActionMock.mockRejectedValue(new Error("지금 값이 기안 때와 다릅니다"));
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "EXECUTION_FAILED" });
+    expect(resetInboundForRetryMock).toHaveBeenCalledWith("in-1");
+    expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
+    expect(markInboundAdoptedMock).not.toHaveBeenCalled();
+  });
+
+  it("되돌리기가 던져도 판정(EXECUTION_FAILED)은 그대로 돌려준다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "FAILED" });
+    executeWriteActionMock.mockRejectedValue(new Error("x"));
+    resetInboundForRetryMock.mockRejectedValue(new Error("DB 끊김"));
+
+    await expect(approveProposal("p1", APPROVER)).resolves.toMatchObject({ ok: false, code: "EXECUTION_FAILED" });
+  });
+
+  it("캘린더 출처가 없는 기안은 넘겨받기·되돌리기를 하지 않는다", async () => {
+    findByIdMock.mockResolvedValue(makeProposal({ sourceRef: { workRecordId: "w1" } }));
+    primeExecuted(EXEC_RESULT);
+
+    await approveProposal("p1", APPROVER);
+
+    expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
+    expect(markInboundAdoptedMock).not.toHaveBeenCalled();
+    expect(resetInboundForRetryMock).not.toHaveBeenCalled();
   });
 });
 

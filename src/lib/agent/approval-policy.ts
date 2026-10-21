@@ -49,6 +49,9 @@ export const REQUEST_TYPE_BY_ACTION: Record<string, string> = {
   // crm_mutation 은 이미 alwaysManual 이라 approval.rules.json 은 건드리지 않는다. 전용 requestType 을
   // 두지 않은 이유: 이 기안만 다르게 다룰 정책이 없다.
   upsert_product_mappings: "crm_mutation", // alwaysManual → 수동
+  // [캘린더수집] 구글 캘린더에서 들어온 새 회차 생성(2026-10-21) — 없던 캠페인이 생기는 일이라 생성 기안과
+  // 같이 언제나 사람이 승인한다. 캘린더 출처는 requestType 이 아니라 기안의 createdBy·sourceRef 로 구분한다.
+  create_campaign_round: "crm_mutation", // alwaysManual → 수동
 };
 
 const FAIL_CLOSED_REQUEST_TYPE = "crm_mutation";
