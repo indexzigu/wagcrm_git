@@ -189,6 +189,18 @@ function matchGlued(
   );
   const brandKeys = new Set(chosen.filter((x) => !x.seller).map((x) => x.key));
   if (sellerIds.size !== 1 || brandKeys.size !== 1) return null;
+  // 이름이 닿은 토큰은 고른 구간들로 빈틈없이 덮여야 한다: 남는 글자가 있으면
+  // ("하나로마트" 속 "하나") 우연 일치일 수 있어 확신하지 않는다.
+  let offset = 0;
+  for (const token of joined.split("\n")) {
+    const end = offset + token.length;
+    const inside = chosen.filter((x) => x.start >= offset && x.end <= end);
+    if (inside.length > 0) {
+      const covered = inside.reduce((n, x) => n + (x.end - x.start), 0);
+      if (covered !== token.length) return null;
+    }
+    offset = end + 1;
+  }
   // 토큰 패스와 같은 규칙: 고른 브랜드 정체성의 딜은 이름 구간이 이기지 않았어도 전부 포함한다.
   const identity = [...brandKeys][0].slice(2);
   return {

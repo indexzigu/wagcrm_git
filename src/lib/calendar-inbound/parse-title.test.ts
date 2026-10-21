@@ -378,4 +378,19 @@ describe("parseCalendarTitle — 붙여 쓴 제목(전체 부분 문자열 보�
     const r = parseCalendarTitle("샘플셀러테스트브랜드 지급", d);
     expect(r.ok && r.intent.dealIds).toEqual(["d1", "d2"]);
   });
+
+  it("이름이 닿은 토큰에 남는 글자가 있으면 우연 일치로 보고 실패한다", () => {
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["하나"] }],
+      deals: dict.deals,
+    };
+    const r = parseCalendarTitle("하나로마트테스트브랜드 지급", d);
+    expect(r.ok).toBe(false);
+  });
+
+  it("붙은 토큰 옆의 무관한 토큰은 남는 글자로 치지 않는다", () => {
+    const r = parseCalendarTitle("샘플셀러테스트브랜드 라방 지급", dict);
+    expect(r.ok && r.intent.sellerId).toBe("s1");
+    expect(r.ok && r.intent.dealIds).toEqual(["d1"]);
+  });
 });
