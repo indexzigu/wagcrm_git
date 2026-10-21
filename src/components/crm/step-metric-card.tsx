@@ -65,7 +65,7 @@ export function StepMetricCard({
   }
 
   return (
-    <div className="rounded-lg border border-border/70 bg-white/90 p-3">
+    <div className="rounded-lg border border-border bg-card p-3">
       <div className="text-[11px] text-muted-foreground">{label}</div>
       <TooltipProvider>
         <div className="mt-2 flex items-center gap-1">

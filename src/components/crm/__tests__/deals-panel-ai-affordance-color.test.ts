@@ -11,7 +11,8 @@
 // `category-color-reclaim.test.ts`(셀러 화면).
 //
 // 대체는 §4 가 이름으로 허용한 **브랜드 네이비 틴트(중립 태그 캐리어)** 다. 신규 토큰 0개.
-// 실측 대비(실제 표면 = 섹션 `bg-white/90` on 페이지 `#F8FAFC` → `#FEFFFF`):
+// 실측 대비(당시 표면 = 섹션 `bg-white/90` on 페이지 `#F8FAFC` → `#FEFFFF`; 지금은 `bg-card` #FFFFFF 라
+// 대비가 같거나 조금 높다):
 //   text-primary on bg-primary/10 = 9.43:1 · on bg-primary/5 = 10.32:1 · 본문 foreground = 16.29:1
 //   (하네스는 P8 §5 기지값 #BF5050/흰 4.69 · 구 골드/흰 2.11 로 검증)
 //

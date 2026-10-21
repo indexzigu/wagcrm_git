@@ -103,6 +103,13 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/crm/deal-voc-section.tsx": SURFACE_TOKENS,
   "components/crm/campaign-short-link-card.tsx": SURFACE_TOKENS,
   "components/crm/campaign-task-checklist.tsx": SURFACE_TOKENS,
+  "components/crm/seller-link-section.tsx": SURFACE_TOKENS,
+  "components/crm/deal-link-section.tsx": SURFACE_TOKENS,
+  "components/crm/seller-deal-candidates.tsx": SURFACE_TOKENS,
+  "components/crm/seller-growth-chart.tsx": SURFACE_TOKENS,
+  "components/crm/seller-er-chart.tsx": SURFACE_TOKENS,
+  "components/crm/margin-policy-form.tsx": SURFACE_TOKENS,
+  "components/crm/step-metric-card.tsx": SURFACE_TOKENS,
 };
 
 /**
