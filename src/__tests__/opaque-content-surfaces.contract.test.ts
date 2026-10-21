@@ -5,7 +5,7 @@ import ts from "typescript";
 
 /**
  * **데스크톱 콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2·2-b·2-c — 정산·판매·영업·주문
- * 관리, 리포트, 기본정보 관리, 결재함·설정·캘린더, 공용 표 `InlineDataGrid`).
+ * 관리, 리포트, 기본정보 관리, 결재함·설정·캘린더, 공용 표 `InlineDataGrid`, 상세 옆 창 계열).
  *
  * 반투명 유리(`backdrop-blur`·`bg-white/NN`·`bg-[rgba(…)]`)는 크롬(사이드바·Sheet)에만
  * 남긴다(CrmShell 페이지 머리는 2026-10-21 없앴다) — 밝은 반투명을 겹치면 면 경계가 흐려진다. 콘텐츠 카드·표·요약띠는
@@ -17,7 +17,8 @@ import ts from "typescript";
  * 틀린 전례가 있다: `ui-copy-em-dash.contract.test.ts` 머리말).
  *
  * 대상 밖(의도): `crm-shell.tsx` · `crm-sidebar.tsx` · `ui/sheet.tsx` — 크롬(사이드바·Sheet)은
- * 반투명 유지. 상세 옆 창 계열(판매 조건·셀러·거래처 패널, 셀러 상세 본문)은 묶음 2-c B 에서 등재.
+ * 반투명 유지. 상세 옆 창(판매 조건·셀러·거래처·캠페인)은 Sheet 틀 안의 **내용**이라 대상이다 —
+ * 같은 코드를 모바일 하단 시트도 쓴다(묶음 2-c B).
  *
  * 대상 파일 안에서도 의도된 반투명·임의값은 `EXCEPTIONS` 에 **사유와 정확한 적중 개수와 함께** 둔다
  * (사유가 비었거나, 적중 개수가 달라지면 실패 — 같은 모양의 새 위반이 예외에 묻어가지 않게, 낡은 예외도 남지 않게).
@@ -46,13 +47,9 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/crm/execution-kanban-board.tsx": SURFACE_TOKENS,
   "components/crm/campaign-card.tsx": SURFACE_TOKENS,
   "components/crm/grouped-table-view.tsx": SURFACE_TOKENS,
-  // 상세 시트 안 이웃 섹션 20여 곳이 rounded-[24px] 라 이 파일만 바꾸면 모서리가 섞인다 — 모서리는 시트 묶음에서 함께.
-  "components/crm/settlement-section.tsx": ["backdrop-blur", "bg-white/", "bg-[rgba(", "bg-[#"],
+  "components/crm/settlement-section.tsx": SURFACE_TOKENS,
   "components/crm/money-summary-strip.tsx": SURFACE_TOKENS,
-  // 캠페인 상세 시트는 **시트 바탕 그라디언트만** 막는다. 이 파일의 다른 섹션 카드
-  // (`rounded-[24px]`·`bg-white/90` 등)는 이 묶음의 교체 규칙 밖이라 아직 대상이 아니다 —
-  // 그 섹션들을 정리하는 묶음에서 SURFACE_TOKENS 로 넓힐 것.
-  "components/crm/campaign-side-panel.tsx": ["bg-[linear-gradient"],
+  "components/crm/campaign-side-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
   // 묶음 2-b — 영업 관리·주문 관리. `outreach-list.tsx`(모바일 공유)는 등재하지 않는다(모바일 묶음).
   // 공용 표 `inline-data-grid.tsx` 는 묶음 2-c A 에서 등재했다(아래).
   "app/outreach/page.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
@@ -91,6 +88,12 @@ const TARGETS: Record<string, readonly string[]> = {
   "app/outreach/loading.tsx": SURFACE_TOKENS,
   "app/reports/loading.tsx": SURFACE_TOKENS,
   "app/settlement/loading.tsx": SURFACE_TOKENS,
+  // 묶음 2-c B — 상세 옆 창 계열(데스크톱 Sheet · 모바일 하단 시트 공유).
+  "components/crm/deals-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
+  "components/crm/sellers-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
+  "components/crm/partners-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
+  "components/crm/seller-detail-content.tsx": SURFACE_TOKENS,
+  "components/crm/asset-manager.tsx": SURFACE_TOKENS,
 };
 
 /**
@@ -116,6 +119,22 @@ const EXCEPTIONS: Record<string, readonly Exception[]> = {
       context: "size-2.5 rounded-[3px]",
       count: 1,
       reason: "범례 점(10px) — 모서리 사다리의 가장 작은 단(rounded-md 6.4px)도 10px 사각형에는 너무 둥글어 원과 구분되지 않는다",
+    },
+  ],
+  "components/crm/asset-manager.tsx": [
+    {
+      token: "backdrop-blur",
+      cls: "backdrop-blur-sm",
+      context: "bg-black/55",
+      count: 2,
+      reason: "사진 썸네일 위 영상·장수 표시 칩 — 어두운 반투명 바탕이라야 어떤 사진 위에서도 흰 글자가 읽힌다",
+    },
+    {
+      token: "backdrop-blur",
+      cls: "backdrop-blur-sm",
+      context: "bg-primary/90",
+      count: 2,
+      reason: "사진 썸네일 위 「대표」 칩 — 사진 위에 얹는 오버레이라 살짝 비치는 청록 바탕이 의도",
     },
   ],
   "components/crm/calendar-filter-bar.tsx": [
