@@ -27,11 +27,11 @@ import { ActionProposalRepository } from "@/repositories/actionProposalRepositor
 import { CALENDAR_INBOUND_CREATED_BY, calendarInboundRefSchema, type CalendarInboundRef } from "./adopt";
 import { loadInboundDictionary } from "./dictionary";
 import { withScanLock } from "./run-lock";
-import { extractTitleHints } from "./llm-hints";
+import { extractTitleHints, type TitleHintsResult } from "./llm-hints";
 import { parseCalendarTitle } from "./parse-title";
 import { resolveInboundTarget, type ProposalDraft, type ResolveResult } from "./resolve-target";
 import { INBOUND_SKIP_ADOPT_FAILED, INBOUND_STATUS, inboundSkipReasonForAdoptOutcome } from "./status";
-import type { InboundDictionary, ParsedCalendarIntent, TitleHints } from "./types";
+import type { InboundDictionary, ParsedCalendarIntent } from "./types";
 
 /**
  * 한 회차 기안 상한. 평시엔 하루 몇 건이라 걸리지 않는다 — 데이터 결함(대량 붙여넣기 등)이 결재함
@@ -44,6 +44,7 @@ export const MAX_PROPOSALS_PER_RUN = 20;
  * 한 회차 LLM 힌트 호출 상한. 기안 상한은 기안 수만 세므로 해석 못 하는 일정(개인 일정 등)이 쌓이면
  * 힌트 호출이 무한정 는다 — 이 예산으로 따로 묶는다. 예산이 바닥난 뒤 규칙 파서가 실패한 건은
  * **쓰지 않고** 다음 회차로 넘기며 `hintDeferred` 로 센다(SKIPPED 로 적으면 힌트 없이 영영 닫힌다).
+ * 힌트가 일시 장애(`unavailable`)로 끝난 건도 같다 — 그 시도는 예산을 쓴다(호출은 실제로 나갔다).
  */
 export const MAX_HINT_CALLS_PER_RUN = 20;
 
@@ -87,7 +88,7 @@ export type ScanSummary = {
   adoptedNoop: number;
   /** 기안 상한·회차 시간 예산에 걸려 이번 회차에 손대지 않은 수(다음 회차가 집는다). */
   dropped: number;
-  /** 힌트 예산이 바닥나 이번 회차에 손대지 않은 해석 실패 수(다음 회차가 집는다). */
+  /** 힌트 예산 소진·힌트 일시 장애로 이번 회차에 손대지 않은 해석 실패 수(다음 회차가 집는다). */
   hintDeferred: number;
   /** 같은 지문·결정 대기 중인 기안·닫힌 기안 등 이미 처리된 수. */
   alreadyHandled: number;
@@ -126,7 +127,7 @@ export type InboundRowWrite = {
 export type CalendarInboundScanDeps = {
   listCandidates: (range: { timeMin: string; timeMax: string }) => Promise<CandidateListResult>;
   loadDictionary: () => Promise<InboundDictionary>;
-  extractHints: (summary: string) => Promise<TitleHints | null>;
+  extractHints: (summary: string) => Promise<TitleHintsResult>;
   resolveTarget: (intent: ParsedCalendarIntent, event: CandidateEvent) => Promise<ResolveResult>;
   adoptIntoLedger: typeof adoptCalendarEventIntoLedger;
   createProposal: (data: Prisma.ActionProposalUncheckedCreateInput) => Promise<{ id: string }>;
@@ -218,7 +219,8 @@ type HintBudget = { used: number; max: number };
 
 /**
  * 규칙 파서 → (실패 시) 힌트 1회 → 재파서. 힌트 호출은 이 함수 안에서만, 이벤트당 최대 1회.
- * 예산이 바닥났으면 힌트를 부르지 않고 "deferred"(호출부는 행을 쓰지 않는다).
+ * 예산이 바닥났거나 힌트가 일시 장애(`unavailable`)면 "deferred"(호출부는 행을 쓰지 않는다 — 다음 회차가
+ * 다시 묻는다). `none` 이면 규칙 파서의 실패를 그대로 돌려준다(SKIPPED 로 닫힌다).
  */
 async function parseWithHints(
   summary: string,
@@ -230,9 +232,10 @@ async function parseWithHints(
   if (first.ok) return first;
   if (budget.used >= budget.max) return "deferred";
   budget.used++;
-  const hints = await deps.extractHints(summary);
-  if (!hints) return first;
-  return parseCalendarTitle(summary, dict, hints);
+  const result = await deps.extractHints(summary);
+  if (result.kind === "unavailable") return "deferred";
+  if (result.kind === "none") return first;
+  return parseCalendarTitle(summary, dict, result.hints);
 }
 
 /** noop 넘겨받기 — 승인 경로(`approveProposal`)와 같은 판정→사유 표를 쓴다. 던지지 않는다. */

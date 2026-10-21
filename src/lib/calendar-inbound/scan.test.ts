@@ -13,7 +13,8 @@ import {
   type InboundRow,
   type InboundRowWrite,
 } from "./scan";
-import type { InboundDictionary, ParsedCalendarIntent, TitleHints } from "./types";
+import type { TitleHintsResult } from "./llm-hints";
+import type { InboundDictionary, ParsedCalendarIntent } from "./types";
 
 // [캘린더수집] 스캔 오케스트레이션 — 캘린더·DB·LLM 은 전부 가짜(메모리). 가명 픽스처만 쓴다.
 
@@ -64,7 +65,7 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
       draft: CREATE_DRAFT,
     }),
   );
-  const extractHints = vi.fn(async (_summary: string): Promise<TitleHints | null> => null);
+  const extractHints = vi.fn(async (_summary: string): Promise<TitleHintsResult> => ({ kind: "none" }));
   const adoptIntoLedger = vi.fn<CalendarInboundScanDeps["adoptIntoLedger"]>(async () => "adopted");
   const listCandidates = vi.fn(async () => listing.value);
 
@@ -281,7 +282,10 @@ describe("runCalendarInboundScan", () => {
 
   it("규칙 파서가 맞히면 힌트를 부르지 않는다 · 실패분은 힌트로 다시 맞춘다(matchedBy llm)", async () => {
     const h = makeHarness([ev("e1"), ev("e2", { summary: "ㅅㅍ 테스트브랜드" })]);
-    h.extractHints.mockResolvedValue({ sellerHint: "샘플셀러", brandHint: null, round: null, kind: null });
+    h.extractHints.mockResolvedValue({
+      kind: "hints",
+      hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null },
+    });
 
     const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
@@ -384,6 +388,22 @@ describe("runCalendarInboundScan", () => {
     expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED", proposalId: "prop-2" });
   });
 
+  it("재시도 승인 성공으로 ADOPTED 가 된 행(지문 보존)은 다음 스캔이 손대지 않는다 — 회차가 둘 생기지 않는다", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    const fingerprint = h.rows.get("e1")!.fingerprint;
+    // 승인 실행 실패 → 재판정 대기(지문은 그대로) → 다음 스캔 전에 오너가 재시도해 성공 → ADOPTED.
+    h.proposals.get("prop-1")!.status = "EXECUTED";
+    h.rows.get("e1")!.status = "ADOPTED";
+    expect(h.rows.get("e1")!.fingerprint).toBe(fingerprint);
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ proposed: 0, newOrChanged: 0, alreadyHandled: 1 });
+    expect(h.proposals.size).toBe(1);
+    expect(h.resolveTarget).toHaveBeenCalledTimes(1);
+  });
+
   it("PENDING_RETRY 행이 SKIPPED·noop ADOPTED 로 끝나면 proposalId 를 비운다(옛 FAILED 기안 대체)", async () => {
     const h = makeHarness([ev("e1"), ev("e2")]);
     await runCalendarInboundScan({ now: NOW, deps: h.deps });
@@ -457,6 +477,33 @@ describe("runCalendarInboundScan", () => {
     expect(h.extractHints).toHaveBeenCalledTimes(4);
     expect(next).toMatchObject({ skippedUnparsed: 2, hintDeferred: 0, alreadyHandled: 2 });
     expect(h.rows.get("e4")).toMatchObject({ status: "SKIPPED" });
+  });
+
+  it("힌트가 일시 장애(unavailable)면 행을 쓰지 않고 hintDeferred · 시도는 예산을 쓴다 · 다음 회차가 다시 묻는다", async () => {
+    const h = makeHarness([ev("e1", { summary: "치과 예약 e1" }), ev("e2", { summary: "치과 예약 e2" })]);
+    h.extractHints.mockResolvedValueOnce({ kind: "unavailable" });
+
+    const summary = await runCalendarInboundScan({ now: NOW, maxHintCalls: 1, deps: h.deps });
+
+    // e1: 시도했지만 일시 장애 → 미기록. e2: 예산(1회)을 e1 이 썼다 → 미기록.
+    expect(h.extractHints).toHaveBeenCalledTimes(1);
+    expect(summary).toMatchObject({ hintDeferred: 2, skippedUnparsed: 0, errors: 0 });
+    expect(h.rows.size).toBe(0);
+
+    const next = await runCalendarInboundScan({ now: NOW, maxHintCalls: 5, deps: h.deps });
+    expect(h.extractHints).toHaveBeenCalledTimes(3);
+    expect(next).toMatchObject({ hintDeferred: 0, skippedUnparsed: 2 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
+  });
+
+  it("힌트가 none(다시 물어도 같음)이면 SKIPPED 로 닫는다", async () => {
+    const h = makeHarness([ev("e1", { summary: "치과 예약" })]);
+    h.extractHints.mockResolvedValue({ kind: "none" });
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ hintDeferred: 0, skippedUnparsed: 1 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
   });
 
   it("힌트 예산이 바닥나도 규칙 파서로 맞는 건은 계속 기안한다", async () => {

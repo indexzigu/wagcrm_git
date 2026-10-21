@@ -9,7 +9,7 @@
  *  ④ 이미 같은 id 면 쓰지 않는다(멱등).
  *  ⑤ 장부 쓰기는 조건부(읽은 원문 그대로일 때만) — 그 사이 동기화가 장부를 바꿨으면 다시 읽는다.
  *  ⑥ `readCalendarInboundRef` 는 문자열(SQLite)·객체 모두 읽고, 모양이 틀리면 null.
- *  ⑦ 상태 표기 — ADOPTED / REJECTED / PENDING_RETRY(지문 비움).
+ *  ⑦ 상태 표기 — ADOPTED / REJECTED / PENDING_RETRY(지문 보존).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -408,14 +408,16 @@ describe("수집 행 상태 표기", () => {
     });
   });
 
-  it("resetInboundForRetry: PENDING_RETRY + 지문 비움", async () => {
+  it("resetInboundForRetry: PENDING_RETRY 만 — 지문은 건드리지 않는다", async () => {
+    // 지문을 비우면, 다음 스캔 전에 재시도 승인이 성공해 ADOPTED 가 된 행도 「지문이 바뀜」으로 보여 다시
+    // 기안된다(회차 표기 없는 제목이면 새 회차가 하나 더 생긴다). 재판정은 상태(PENDING_RETRY)만으로 한다.
     const db = fakePrisma({});
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
     await resetInboundForRetry("in-1");
     expect(db.calendarInboundEvent.updateMany).toHaveBeenCalledWith({
       where: { id: "in-1" },
-      data: { status: INBOUND_STATUS.PENDING_RETRY, fingerprint: "" },
+      data: { status: INBOUND_STATUS.PENDING_RETRY },
     });
   });
 });

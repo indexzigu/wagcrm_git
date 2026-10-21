@@ -4,7 +4,7 @@
 // 흐름(호출부):
 //  - 승인 실행 성공 → `approveProposal` 이 커밋 뒤 장부 넘겨받기(`adoptCalendarEventIntoLedger`) →
 //    `markInboundAdopted` → 그다음 후속 처리(캘린더 동기화가 넘겨받은 원본을 제자리 갱신).
-//  - 승인 실행 실패(FAILED) → `resetInboundForRetry` — 지문을 비워 다음 스캔이 최신 값으로 다시 판정한다.
+//  - 승인 실행 실패(FAILED) → `resetInboundForRetry` — 재판정 대기로 적어 다음 스캔이 최신 값으로 다시 판정한다.
 //  - 반려 → `markInboundRejected` — 같은 일정을 다시 기안하지 않는다.
 //
 // ⚠️ 이 함수들은 모두 **커밋 뒤** 단계에서 불린다 — 호출부는 실패를 잡아 console.error 로 보고하고
@@ -36,11 +36,13 @@ export async function markInboundRejected(inboundId: string): Promise<void> {
 }
 
 /**
- * 승인 실행 실패 — REJECTED 와 달리 닫지 않는다. 지문을 비워 다음 스캔이 최신 값으로 다시 판정한다
- * (같은 값이면 noop → ADOPTED). `proposalId` 는 마지막 기안 기록으로 남긴다.
+ * 승인 실행 실패 — REJECTED 와 달리 닫지 않는다. 다음 스캔이 상태(PENDING_RETRY)만 보고 최신 값으로 다시
+ * 판정한다(같은 값이면 noop → ADOPTED). `proposalId` 는 마지막 기안 기록으로 남긴다.
+ * ⛔ 지문을 비우지 말 것 — 다음 스캔 전에 오너가 FAILED 카드를 재시도해 성공하면 행은 ADOPTED 가 되는데,
+ *    지문이 비어 있으면 스캔이 「바뀐 일정」으로 보고 다시 기안한다(회차 표기 없는 제목이면 새 회차가 둘).
  */
 export async function resetInboundForRetry(inboundId: string): Promise<void> {
-  await updateInbound(inboundId, { status: INBOUND_STATUS.PENDING_RETRY, fingerprint: "" });
+  await updateInbound(inboundId, { status: INBOUND_STATUS.PENDING_RETRY });
 }
 
 /**
@@ -56,7 +58,7 @@ export async function findInboundRow(inboundId: string): Promise<{ proposalId: s
 
 async function updateInbound(
   inboundId: string,
-  data: { status: string; campaignId?: string | null; skipReason?: string | null; fingerprint?: string },
+  data: { status: string; campaignId?: string | null; skipReason?: string | null },
 ): Promise<void> {
   // updateMany — 행이 지워졌어도 던지지 않고 0건으로 끝난다. 그 경우는 보고만 한다.
   const { count } = await getPrisma().calendarInboundEvent.updateMany({ where: { id: inboundId }, data });

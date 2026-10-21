@@ -7,7 +7,7 @@ import type { AdoptLedgerOutcome } from "@/lib/google-calendar-sync";
 // - SKIPPED       : 해석 못 함·대상 없음 등으로 기안하지 않았다(`skipReason`).
 // - ADOPTED       : 승인돼 처리 끝(장부 넘겨받기 여부와 무관 — 다시 기안하지 않는다).
 // - REJECTED      : 오너가 반려했다(다시 기안하지 않는다).
-// - PENDING_RETRY : 승인 실행이 실패했다 — 지문을 비워 다음 스캔이 최신 값으로 다시 판정한다.
+// - PENDING_RETRY : 승인 실행이 실패했다 — 다음 스캔이 지문과 무관하게 최신 값으로 다시 판정한다(지문은 보존).
 export const INBOUND_STATUS = {
   PROPOSED: "PROPOSED",
   SKIPPED: "SKIPPED",

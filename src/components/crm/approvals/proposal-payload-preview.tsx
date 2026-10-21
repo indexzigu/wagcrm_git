@@ -25,9 +25,8 @@ import {
   recordFieldLabel,
 } from "@/lib/record-update-labels";
 import { displayLabel } from "@/lib/display-label";
-import { partnerTypeLabels } from "@/lib/crm-types";
+import { campaignStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
 import { FIELD_LABELS } from "@/lib/field-labels";
-import { campaignStatusLabels } from "@/lib/crm-types";
 import { readCalendarInboundRef, type CalendarInboundRef } from "@/lib/calendar-inbound/ref";
 import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import { AlertTriangleIcon, ExternalLinkIcon } from "lucide-react";
