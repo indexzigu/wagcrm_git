@@ -79,6 +79,17 @@ export async function resetInboundForRetry(inboundId: string): Promise<void> {
   await updateInbound(inboundId, { status: INBOUND_STATUS.PENDING_RETRY, fingerprint: "" });
 }
 
+/**
+ * 수집 행이 지금 가리키는 기안 — 없으면 null(행이 지워졌다). 승인 전 「재기안으로 대체됐나」 판정에 쓴다
+ * (`approveProposal`). 재판정 대기 행을 다시 기안하면 스캔이 `proposalId` 를 새 기안으로 바꾼다.
+ */
+export async function findInboundRow(inboundId: string): Promise<{ proposalId: string | null } | null> {
+  return getPrisma().calendarInboundEvent.findUnique({
+    where: { id: inboundId },
+    select: { proposalId: true },
+  });
+}
+
 async function updateInbound(
   inboundId: string,
   data: { status: string; campaignId?: string | null; skipReason?: string | null; fingerprint?: string },

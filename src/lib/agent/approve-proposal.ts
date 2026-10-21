@@ -35,19 +35,15 @@ import { ActionProposalRepository, ConcurrentModificationError } from "@/reposit
 import { executeWriteAction } from "@/lib/agent/write-executor";
 import { applyWriteActionEffects } from "@/lib/agent/write-action-effects";
 import { parseStoredJson } from "@/lib/stored-json";
-import { adoptCalendarEventIntoLedger, type AdoptLedgerOutcome } from "@/lib/google-calendar-sync";
+import { adoptCalendarEventIntoLedger } from "@/lib/google-calendar-sync";
 import {
+  findInboundRow,
   markInboundAdopted,
   readCalendarInboundRef,
   resetInboundForRetry,
   type CalendarInboundRef,
 } from "@/lib/calendar-inbound/adopt";
-import {
-  INBOUND_SKIP_ADOPT_FAILED,
-  INBOUND_SKIP_ALREADY_REFERENCED,
-  INBOUND_SKIP_LEDGER_CONFLICT,
-  INBOUND_SKIP_NOT_ACTIVE,
-} from "@/lib/calendar-inbound/status";
+import { INBOUND_SKIP_ADOPT_FAILED, inboundSkipReasonForAdoptOutcome } from "@/lib/calendar-inbound/status";
 import { partnerEnrichmentSchema } from "@/lib/agent/partner-enrichment-schema";
 import {
   PARTNER_ENRICHMENT_LABELS,
@@ -77,7 +73,12 @@ export type ApproveProposalFailureCode =
   | "APPROVE_ERROR"
   | "EMPTY_PAYLOAD"
   | "INVALID_ENRICHMENT"
-  | "EXECUTION_FAILED";
+  | "EXECUTION_FAILED"
+  /** [캘린더수집] 같은 일정이 새 기안으로 다시 올라왔다 — 옛 기안은 승인하지 않는다. */
+  | "SUPERSEDED";
+
+/** [캘린더수집] SUPERSEDED 문구 — 단건 응답과 일괄 결과 창이 같은 문장을 쓴다. */
+const SUPERSEDED_MESSAGE = "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.";
 
 export type ApproveProposalOutcome =
   | {
@@ -117,13 +118,6 @@ function inboundCampaignId(payload: ProposalPayload, result: ExecutionResult): s
   return null;
 }
 
-/** 넘겨받지 못한 판정 → 수집 행 `skipReason`. 표에 없는 판정(adopted 등)은 사유 없음. */
-const INBOUND_SKIP_BY_OUTCOME: Partial<Record<AdoptLedgerOutcome, string>> = {
-  conflict: INBOUND_SKIP_LEDGER_CONFLICT,
-  already_referenced: INBOUND_SKIP_ALREADY_REFERENCED,
-  not_active: INBOUND_SKIP_NOT_ACTIVE,
-};
-
 /**
  * [캘린더수집] 커밋 뒤 넘겨받기 — 장부 기록(ref.adopt 일 때만) → 수집 행 ADOPTED.
  * ⛔ 던지지 않는다 — 이 시점의 쓰기는 이미 커밋됐다(아래 후속 처리와 같은 이유). 장부에 적지 못한 경우
@@ -146,7 +140,7 @@ async function adoptInboundAfterCommit(
         eventId: ref.eventId,
         calendarId: ref.calendarId,
       });
-      skipReason = INBOUND_SKIP_BY_OUTCOME[adopted] ?? null;
+      skipReason = inboundSkipReasonForAdoptOutcome(adopted);
       if (adopted === "not_found") {
         console.error(`[approveProposal ${id}] 넘겨받을 캠페인 ${campaignId} 를 찾지 못함 — 장부 기록 생략`);
       }
@@ -272,6 +266,29 @@ export async function approveProposal(
   const payload = enrichment.payload;
   const enriched = enrichment.filledLabels.length > 0;
   const inboundRef = readCalendarInboundRef(proposal.sourceRef);
+
+  // [캘린더수집] 재기안으로 대체된 기안은 승인하지 않는다 — tx1 **전에** 판정한다. 재판정 대기 행을 스캔이
+  // 다시 기안하면 수집 행의 `proposalId` 가 새 기안으로 바뀐다. 옛 기안(FAILED 재시도 등)까지 실행되면 같은
+  // 일정이 두 번 반영된다(새 회차라면 캠페인이 둘). 행이 없어도 같다 — 넘겨받기 근거가 사라졌다.
+  // 전역 상태기계(TRANSITIONS)는 건드리지 않고 이 판정만 더한다.
+  if (inboundRef) {
+    let row: { proposalId: string | null } | null;
+    try {
+      row = await findInboundRow(inboundRef.inboundId);
+    } catch (err) {
+      console.error(`[approveProposal ${id}] 캘린더 수집 행 조회 실패:`, err);
+      return {
+        ok: false,
+        code: "APPROVE_ERROR",
+        httpStatus: 500,
+        error: "승인 처리 중 오류가 발생했습니다.",
+        status: currentStatus,
+      };
+    }
+    if (!row || row.proposalId !== proposal.id) {
+      return { ok: false, code: "SUPERSEDED", httpStatus: 409, error: SUPERSEDED_MESSAGE, status: currentStatus };
+    }
+  }
   const baseNote = currentStatus === "FAILED" ? "재시도 승인" : "관리자 승인";
 
   // tx1: 조건부 승인 커밋 (§0-5 동시성 — 더블클릭/2인 동시 승인/일괄과 단건의 겹침 방어).
@@ -385,7 +402,7 @@ export async function approveProposal(
  * 운영자가 할 일이 없다. self-approval 거부는 정책 거부라 운영자가 알아야 하므로 실패로 센다.
  * 없는 id 도 실패로 센다 — 건너뜀으로 접으면 잘못 보낸 id 가 조용히 묻힌다.
  */
-const SKIPPED_CODES: ReadonlySet<ApproveProposalFailureCode> = new Set(["INVALID_STATUS", "CONFLICT"]);
+const SKIPPED_CODES: ReadonlySet<ApproveProposalFailureCode> = new Set(["INVALID_STATUS", "CONFLICT", "SUPERSEDED"]);
 
 /**
  * 운영자가 읽는 상태 이름 — 결과 창에 `EXECUTED` 같은 식별자를 내보내지 않는다. 낱말은 결재함
@@ -424,6 +441,8 @@ function bulkReason(outcome: Extract<ApproveProposalOutcome, { ok: false }>, sta
       return "승인을 기록하지 못했습니다. 잠시 후 다시 시도해 주세요.";
     case "EXECUTION_FAILED":
       return outcome.error;
+    case "SUPERSEDED":
+      return SUPERSEDED_MESSAGE;
   }
 }
 

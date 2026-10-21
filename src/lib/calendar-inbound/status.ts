@@ -1,3 +1,5 @@
+import type { AdoptLedgerOutcome } from "@/lib/google-calendar-sync";
+
 // [캘린더수집] CalendarInboundEvent.status 값 — 스키마는 String 이라 허용 값을 여기 한곳에 둔다.
 // 넘겨받기(adopt.ts)와 스캔(Task 7)이 같은 상수를 쓴다. 손으로 문자열을 다시 쓰지 말 것.
 //
@@ -25,3 +27,21 @@ export const INBOUND_SKIP_ALREADY_REFERENCED = "already_referenced";
 export const INBOUND_SKIP_NOT_ACTIVE = "not_active";
 /** 넘겨받기 도중 오류 — 장부는 그대로일 수 있다(로그 확인). */
 export const INBOUND_SKIP_ADOPT_FAILED = "adopt_failed";
+/** 넘겨받을 캠페인(또는 그 그룹)이 없다. */
+export const INBOUND_SKIP_CAMPAIGN_NOT_FOUND = "campaign_not_found";
+
+/** 넘겨받지 못한 판정 → 수집 행 `skipReason`. 표에 없는 판정(adopted·already_adopted)은 사유 없음. */
+const INBOUND_SKIP_BY_OUTCOME: Partial<Record<AdoptLedgerOutcome, string>> = {
+  conflict: INBOUND_SKIP_LEDGER_CONFLICT,
+  already_referenced: INBOUND_SKIP_ALREADY_REFERENCED,
+  not_active: INBOUND_SKIP_NOT_ACTIVE,
+  not_found: INBOUND_SKIP_CAMPAIGN_NOT_FOUND,
+};
+
+/**
+ * 넘겨받기 판정 → 수집 행 `skipReason`(null = 장부에 있다). 승인 뒤 넘겨받기(`approveProposal`)와
+ * 스캔의 noop 넘겨받기(`scan.ts`)가 이 함수 하나를 쓴다 — 표를 두 곳에 두지 말 것.
+ */
+export function inboundSkipReasonForAdoptOutcome(outcome: AdoptLedgerOutcome): string | null {
+  return INBOUND_SKIP_BY_OUTCOME[outcome] ?? null;
+}

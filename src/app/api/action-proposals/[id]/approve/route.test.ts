@@ -170,6 +170,38 @@ describe("POST /api/action-proposals/[id]/approve", () => {
     expect(executeWriteActionMock).not.toHaveBeenCalled();
   });
 
+  it("[캘린더수집] 재기안으로 대체된 캘린더 기안이면 409 + 새 기안 안내, 전이·실행 없음", async () => {
+    const findUnique = vi.fn().mockResolvedValue({ proposalId: "proposal-new" });
+    getPrismaMock.mockReturnValue({ $transaction: transactionMock, calendarInboundEvent: { findUnique } });
+    findByIdMock.mockResolvedValue({
+      ...baseProposal,
+      createdBy: "SYSTEM_CALENDAR_INBOUND",
+      sourceRef: {
+        calendarInbound: {
+          inboundId: "in-1",
+          eventId: "ev-1",
+          calendarId: "primary",
+          ledgerKind: "campaign",
+          adopt: true,
+          summary: "샘플셀러 테스트브랜드",
+          startDate: "2026-11-03",
+          endDate: "2026-11-09",
+          htmlLink: null,
+          warnings: [],
+        },
+      },
+    });
+
+    const res = await POST(makeRequest(), makeParams("proposal-1"));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.",
+    });
+    expect(findUnique).toHaveBeenCalledWith({ where: { id: "in-1" }, select: { proposalId: true } });
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
   it("실행 실패(엔티티 부재 등) 시 APPROVED→FAILED로 기록하고 502/422를 반환한다", async () => {
     findByIdMock.mockResolvedValue(baseProposal);
     // tx1(APPROVED) 성공, executeWriteAction이 tx2 콜백 안에서 throw -> $transaction reject

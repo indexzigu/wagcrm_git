@@ -40,6 +40,7 @@ const callOrder: string[] = [];
 const adoptCalendarEventIntoLedgerMock = vi.fn();
 const markInboundAdoptedMock = vi.fn();
 const resetInboundForRetryMock = vi.fn();
+const findInboundRowMock = vi.fn();
 
 vi.mock("@/lib/google-calendar-sync", () => ({
   adoptCalendarEventIntoLedger: (...args: unknown[]) => adoptCalendarEventIntoLedgerMock(...args),
@@ -51,6 +52,7 @@ vi.mock("@/lib/calendar-inbound/adopt", async (importOriginal) => {
     ...actual,
     markInboundAdopted: (...args: unknown[]) => markInboundAdoptedMock(...args),
     resetInboundForRetry: (...args: unknown[]) => resetInboundForRetryMock(...args),
+    findInboundRow: (...args: unknown[]) => findInboundRowMock(...args),
   };
 });
 
@@ -89,6 +91,9 @@ beforeEach(() => {
     callOrder.push("mark");
   });
   resetInboundForRetryMock.mockResolvedValue(undefined);
+  findInboundRowMock.mockReset();
+  // 기본: 수집 행이 이 기안(p1)을 가리킨다 — 대체되지 않은 기안.
+  findInboundRowMock.mockImplementation(async () => ({ proposalId: "p1" }));
   applyWriteActionEffectsMock.mockImplementation(() => {
     callOrder.push("effects");
   });
@@ -311,6 +316,44 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: "ledger_conflict" });
   });
 
+  it("캠페인을 못 찾으면 ADOPTED + skipReason campaign_not_found", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockResolvedValue("not_found");
+
+    await approveProposal("p1", APPROVER);
+
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: "campaign_not_found" });
+  });
+
+  it("수집 행이 새 기안을 가리키면(재기안됨) 승인하지 않고 SUPERSEDED·409", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    findInboundRowMock.mockResolvedValue({ proposalId: "p-new" });
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(findInboundRowMock).toHaveBeenCalledWith("in-1");
+    expect(outcome).toMatchObject({
+      ok: false,
+      code: "SUPERSEDED",
+      httpStatus: 409,
+      error: "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.",
+      status: "PENDING_APPROVAL",
+    });
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
+  it("수집 행이 없어도 SUPERSEDED(재시도 승인 포함) — 원본 정리 근거가 사라졌다", async () => {
+    findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
+    findInboundRowMock.mockResolvedValue(null);
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "SUPERSEDED", httpStatus: 409, status: "FAILED" });
+    expect(transitionMock).not.toHaveBeenCalled();
+  });
+
   it("넘겨받기가 던져도 승인은 성공이고 후속 처리는 돈다(쓰기는 이미 커밋됨)", async () => {
     findByIdMock.mockResolvedValue(inboundCreateProposal());
     primeExecuted();
@@ -379,6 +422,16 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     await expect(approveProposal("p1", APPROVER)).resolves.toMatchObject({ ok: false, code: "EXECUTION_FAILED" });
   });
 
+  it("캘린더 출처가 없는 기안은 수집 행을 읽지 않는다", async () => {
+    findByIdMock.mockResolvedValue(makeProposal());
+    transitionMock.mockResolvedValue({ id: "p1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue(EXEC_RESULT);
+
+    await approveProposal("p1", APPROVER);
+
+    expect(findInboundRowMock).not.toHaveBeenCalled();
+  });
+
   it("캘린더 출처가 없는 기안은 넘겨받기·되돌리기를 하지 않는다", async () => {
     findByIdMock.mockResolvedValue(makeProposal({ sourceRef: { workRecordId: "w1" } }));
     primeExecuted(EXEC_RESULT);
@@ -438,6 +491,25 @@ describe("bulkApproveProposals", () => {
     expect(response.results[3].error).toBe("이미 다른 곳에서 처리된 기안입니다.");
     expect(response.counts).toEqual({ total: 4, executed: 0, failed: 1, skipped: 3 });
     expect(response.results[2].error).toMatch(/찾을 수 없습니다/);
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
+  it("재기안으로 대체된 캘린더 기안은 건너뜀 + 새 기안 안내", async () => {
+    findByIdMock.mockImplementation(async (id: string) => ({ ...inboundCreateProposal(), id }));
+    findInboundRowMock.mockResolvedValue({ proposalId: "p-new" });
+
+    const response = await bulkApproveProposals(["old"], APPROVER);
+
+    expect(response.results).toEqual([
+      {
+        id: "old",
+        ok: false,
+        outcome: "skipped",
+        status: "PENDING_APPROVAL",
+        error: "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.",
+      },
+    ]);
+    expect(response.counts).toEqual({ total: 1, executed: 0, failed: 0, skipped: 1 });
     expect(executeWriteActionMock).not.toHaveBeenCalled();
   });
 
