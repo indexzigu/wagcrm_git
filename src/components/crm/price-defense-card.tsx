@@ -36,8 +36,8 @@ export type PriceOverview = {
 };
 
 // 판정 분포 범례 — 좋고 나쁨이 있는 축이므로 심각도 토큰만 탄다(P8).
-// 정상은 money-in 계열이 아니라 ok 시맨틱 전용 emerald 텍스트 토큰을 쓰지 않고
-// 도트로만 표현한다(텍스트는 전부 무채색 — 색은 도트 캐리어에만).
+// 정상은 평상시 상태라 도트까지 무채색이다(오너 결정 2026-10-22 — 늘 켜진 초록은 신호를 잃는다, P8 §2).
+// 텍스트는 전부 무채색 — 색은 동가·위반·검토 도트 캐리어에만.
 const LEGEND: Array<{ key: keyof PriceOverview["counts"]; label: string; dotClass: string }> = [
   { key: "ok", label: "정상", dotClass: "bg-slate-500" },
   // 점 색은 감시 표의 행(`market-price-monitor.tsx` VERDICT_BADGE)과 같아야 한다 — 같은 값은 같은 색(P8 §1).

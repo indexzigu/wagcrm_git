@@ -623,13 +623,10 @@ export function CalendarView({
 
         {/* Day of week headers */}
         <div className="grid grid-cols-7 border-b bg-muted/30">
-          {DAY_LABELS.map((label, idx) => (
+          {DAY_LABELS.map((label) => (
             <div
               key={label}
-              className={cn(
-                "px-2 py-3 text-center text-xs font-semibold text-muted-foreground",
-                (idx === 0 || idx === 6) && "text-slate-500",
-              )}
+              className="px-2 py-3 text-center text-xs font-semibold text-muted-foreground"
             >
               {label}
             </div>
@@ -840,9 +837,7 @@ function DateCell({
               ? "bg-primary text-primary-foreground"
               : !day.inMonth
                 ? "font-normal text-muted-foreground"
-                : isWeekend
-                  ? "text-slate-500"
-                  : "text-slate-700",
+                : "text-slate-700",
           )}
         >
           {day.date.getDate()}
