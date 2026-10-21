@@ -125,7 +125,7 @@ describe("create_campaign_round — 실행", () => {
     expect(recordActivityCreateMock).toHaveBeenCalledWith("CAMPAIGN", "camp-new", APPROVER, tx);
     expect(result).toMatchObject({ refType: "CAMPAIGN", refId: "camp-new" });
     expect(result.summary).toContain("테스트브랜드 앰플 - 샘플셀러 2차");
-    expect(result.summary).toContain("준비중");
+    expect(result.summary).toContain("세팅대기"); // 캠페인 상태 라벨 표(campaignStatusLabels.PREPARATION)
   });
 
   it("없는 판매 조건이면 실패한다(승인 tx 롤백 → 기안 FAILED)", async () => {

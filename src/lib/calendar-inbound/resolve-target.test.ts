@@ -107,8 +107,11 @@ function event(startDate: string, endDate = startDate): CandidateEvent {
 }
 
 describe("resolveInboundTarget — 캠페인 회차", () => {
-  it("회차 표기 없음 → 새 회차 생성(가장 최근 캠페인의 딜)", async () => {
-    const db = fakeDb([campaign({ id: "c1", roundNumber: null })]);
+  it("회차 표기 없음 → 새 회차 생성(가장 최근 캠페인의 딜) · 후보가 여럿이면 자동 지정 경고", async () => {
+    const db = fakeDb([
+      campaign({ id: "c1", roundNumber: null }),
+      campaign({ id: "c0", roundNumber: null, startDate: d("2026-09-01"), endDate: d("2026-09-07") }),
+    ]);
     const r = await resolveInboundTarget(intent({ round: null }), event("2026-12-01", "2026-12-07"), db);
     expect(r).toEqual({
       ok: true,
@@ -122,6 +125,13 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
         ledgerKind: "campaign",
       },
     });
+  });
+
+  it("회차 표기 없음 + 후보 캠페인 1건이면 자동 지정 경고를 달지 않는다(고를 것이 없었다)", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: null })]);
+    const r = await resolveInboundTarget(intent({ round: null }), event("2026-12-01", "2026-12-07"), db);
+    expect(r.ok && r.draft.action).toBe("create_campaign_round");
+    expect(r.ok && r.draft.warnings).toEqual([]);
   });
 
   it("회차 N 이 있는데 그 회차가 없으면 생성 + 번호 경고, 하루짜리면 종료일 경고", async () => {
@@ -217,7 +227,7 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
     const db = fakeDb([campaign({ id: "c1", roundNumber: 1, status: "PROPOSAL" })]);
     const r = await resolveInboundTarget(intent({ round: 1 }), event("2026-11-02", "2026-11-07"), db);
     expect(r.ok && r.draft.adopt).toBe(false);
-    expect(r.ok && r.draft.warnings).toContain("제안 단계라 캘린더 정리는 준비중 전환 후");
+    expect(r.ok && r.draft.warnings).toContain("제안 단계라 캘린더 정리는 세팅대기 전환 후");
   });
 });
 
@@ -335,7 +345,7 @@ describe("resolveInboundTarget — 입금·지급", () => {
     const db = fakeDb([campaign({ id: "c1", status: "PROPOSAL" })]);
     const r = await resolveInboundTarget(intent({ kind: "deposit" }), event("2026-11-20"), db);
     expect(r.ok && r.draft.adopt).toBe(false);
-    expect(r.ok && r.draft.warnings).toEqual(["제안 단계라 캘린더 정리는 준비중 전환 후"]);
+    expect(r.ok && r.draft.warnings).toEqual(["제안 단계라 캘린더 정리는 세팅대기 전환 후"]);
   });
 });
 

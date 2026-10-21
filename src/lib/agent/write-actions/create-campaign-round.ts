@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { recordActivityCreate } from "@/lib/activity-log";
 import { CAMPAIGN_INVALIDATION_TAGS } from "@/lib/cache-tags";
+import { campaignStatusLabels } from "@/lib/crm-types";
 import { createDraftCampaignInTx } from "@/lib/mobile-draft-campaign";
 import { isAutomatedActor } from "./update-settlement-amount";
 import type { WriteActionDefinition, WriteActionResult } from "./types";
@@ -59,7 +60,8 @@ async function handleCreateCampaignRound(
   return {
     refType: "CAMPAIGN",
     refId: created.id,
-    summary: `캠페인 "${name}" 생성(준비중, ${args.startDate}~${args.endDate})`,
+    // 상태 이름은 라벨 표에서 — 같은 상태를 화면마다 다른 말로 부르지 않는다(P2 화면 문구 기준 ①).
+    summary: `캠페인 "${name}" 생성(${campaignStatusLabels.PREPARATION}, ${args.startDate}~${args.endDate})`,
   };
 }
 

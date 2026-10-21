@@ -26,7 +26,8 @@ export const WARN_SKIPPED_NEWER_ROUND = "최근 회차는 이 칸이 없어 이�
 export const WARN_CHECK_END_DATE = "종료일 확인 필요";
 // ⛔ 화면 문구에 em-dash 를 쓰지 않는다(`ui-copy-em-dash.contract.test.ts`) — 설계서 문구의 「 — 」를 괄호로 바꿨다.
 export const WARN_ROUND_NUMBER_MAY_DIFFER = "CRM 회차 번호는 날짜순 자동 부여(제목의 N차와 다를 수 있음)";
-export const WARN_PROPOSAL_NOT_ADOPTED = "제안 단계라 캘린더 정리는 준비중 전환 후";
+// 상태 이름은 캠페인 상태 라벨 표(`campaignStatusLabels.PREPARATION` = 세팅대기)와 같은 말이어야 한다.
+export const WARN_PROPOSAL_NOT_ADOPTED = "제안 단계라 캘린더 정리는 세팅대기 전환 후";
 
 export type CreateCampaignRoundDraftArgs = { dealId: string; sellerId: string; startDate: string; endDate: string };
 
@@ -239,7 +240,8 @@ async function resolveCampaignKind(
   const seller = await db.seller.findUnique({ where: { id: intent.sellerId }, select: { name: true, alias: true } });
 
   const warnings: string[] = [];
-  if (round === null && candidates.length > 0) warnings.push(WARN_AUTO_LATEST);
+  // 후보가 하나면 고를 것이 없었으므로 경고하지 않는다 — 카드에서 「회차를 골라 정했다」로 읽힌다(리뷰 지적).
+  if (round === null && candidates.length > 1) warnings.push(WARN_AUTO_LATEST);
   if (event.startDate === event.endDate) warnings.push(WARN_CHECK_END_DATE);
   if (round !== null) warnings.push(WARN_ROUND_NUMBER_MAY_DIFFER);
 
