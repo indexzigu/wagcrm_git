@@ -15,6 +15,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 
 export type SegmentOption<T extends string> = { value: T; label: string };
 
@@ -91,8 +92,8 @@ export function SegmentToggle<T extends string>({
               "h-7 rounded-md px-2.5 text-[11px] transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
               selected
-                ? "bg-primary/10 font-bold text-primary"
-                : "font-medium text-slate-500 hover:text-slate-900"
+                ? SELECTED_TOGGLE
+                : cn(UNSELECTED_TOGGLE, "hover:text-slate-900")
             )}
           >
             {opt.label}

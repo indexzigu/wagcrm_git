@@ -8,7 +8,7 @@ import { stringValues } from "./string-values";
 //   실행 버튼            → 청록 채움(`<Button>` 기본 변형과 같은 bg-primary / text-primary-foreground)
 //   선택된 필터·단계 표시 → 청록 옅은 바탕 + 청록 글자(bg-primary/10 text-primary) — 한 화면의 청록 채움은
 //                          누를 동작 하나로 남긴다(설정 메뉴·모바일 탭바 선택 표시와 같은 말).
-// 아래 ALLOWED 는 버튼이 아닌 어두운 표면(툴팁·디버그 로그·진행 막대·외부 공개 페이지)이다 — 정확한 개수로 묶는다.
+// 아래 KEPT_DARK_SURFACES 는 버튼이 아닌 어두운 표면(툴팁·디버그 로그·진행 막대·외부 공개 페이지)이다 — 정확한 개수로 묶는다.
 // 판정은 코드의 문자열 값(TS 구문 트리)에서 하고, `dark:` 변형과 `/NN` 알파 틴트는 남색 채움이 아니라 제외한다.
 
 const SRC = path.join(process.cwd(), "src");
@@ -20,13 +20,14 @@ function navyFills(values: string[]): string[] {
   return values.flatMap((v) => v.split(/\s+/).filter((t) => NAVY_FILL.test(t)));
 }
 
-const ALLOWED: Record<string, { count: number; reason: string }> = {
+const KEPT_DARK_SURFACES: Record<string, { count: number; reason: string }> = {
   "app/coupang-partners/page.tsx": { count: 2, reason: "외부 공개 페이지(WAGPICK) — 단계 번호 원·어두운 안내 구역, CRM 버튼 아님" },
   "components/crm/step-metric-card.tsx": { count: 1, reason: "툴팁 바탕" },
   "components/crm/schedule-gap-briefing-card.tsx": { count: 1, reason: "툴팁 바탕(slate-950)" },
   "components/crm/partners-panel.tsx": { count: 1, reason: "툴팁 바탕" },
   "components/crm/campaign-side-panel.tsx": { count: 1, reason: "툴팁 바탕" },
   "components/crm/inline-edit-field.tsx": { count: 1, reason: "툴팁 바탕" },
+  "components/crm/campaign-card.tsx": { count: 1, reason: "체크리스트 진행 막대 채움(차트 표시 — 범위 밖) — progress-track-contrast 가 트랙 대비를 고정" },
   "components/crm/shipping/modals/CampaignEditModal.tsx": { count: 1, reason: "개발용 디버그 로그 블록 바탕" },
 };
 
@@ -83,10 +84,10 @@ describe("진한 남색 채움은 허용 목록(버튼 아닌 어두운 표면)�
       const n = navyFills(stringValues(raw, rel)).length;
       if (n > 0) found[rel] = n;
     }
-    for (const [rel, { reason }] of Object.entries(ALLOWED)) {
+    for (const [rel, { reason }] of Object.entries(KEPT_DARK_SURFACES)) {
       expect(reason.length, `${rel} 사유가 비었다`).toBeGreaterThan(0);
     }
-    expect(found).toEqual(Object.fromEntries(Object.entries(ALLOWED).map(([k, v]) => [k, v.count])));
+    expect(found).toEqual(Object.fromEntries(Object.entries(KEPT_DARK_SURFACES).map(([k, v]) => [k, v.count])));
   }, 30_000);
 });
 
@@ -100,7 +101,10 @@ describe("바뀐 자리 고정 — 실행 버튼은 청록 채움, 선택 표시
     expect(read("app/error.tsx")).toContain('className="rounded-lg h-9 px-4 text-xs"');
   });
 
-  it("선택 토글 — 옅은 청록 + 굵기 차이(색만으로 구분하지 않는다, WCAG 1.4.1)", () => {
+  it("선택 토글 — 공용 상수(옅은 청록 + 굵기 차이, WCAG 1.4.1)를 쓰고 문자열을 손으로 복사하지 않는다", () => {
+    const tone = read("lib/selection-tone.ts");
+    expect(tone).toContain('SELECTED_TOGGLE = "bg-primary/10 font-bold text-primary"');
+    expect(tone).toContain('UNSELECTED_TOGGLE = "font-medium text-slate-500"');
     for (const rel of [
       "components/crm/story-inbox-grid.tsx",
       "components/crm/deals-panel.tsx",
@@ -109,9 +113,9 @@ describe("바뀐 자리 고정 — 실행 버튼은 청록 채움, 선택 표시
       "components/crm/stage-filter-bar.tsx",
       "app/outreach/page.tsx",
     ]) {
-      const src = read(rel);
-      expect(src, rel).toContain("bg-primary/10 font-bold text-primary");
-      expect(src, `${rel} 미선택 쪽 굵기`).toContain("font-medium text-slate-500");
+      const values = stringValues(read(rel), rel).join(" ");
+      expect(read(rel), rel).toMatch(/SELECTED_TOGGLE[\s\S]*UNSELECTED_TOGGLE|UNSELECTED_TOGGLE[\s\S]*SELECTED_TOGGLE/);
+      expect(values, `${rel} 에 선택 표시 문자열 사본`).not.toContain("bg-primary/10 font-bold text-primary");
     }
   });
 

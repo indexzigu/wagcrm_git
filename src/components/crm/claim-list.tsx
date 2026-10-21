@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 import { useClaims, type ClaimWithCompanyName } from '@/hooks/useClaims';
 import { buildTrackingUrl, type ClaimType } from '@/lib/order-converter/claim-derive';
 import { RefreshCw, XIcon, Inbox } from 'lucide-react';
@@ -232,7 +233,7 @@ export default function ClaimList({ campaignNameFilter, orderIdsFilter, unmatche
                 aria-pressed={typeFilter === f.key}
                 title={f.hint}
                 className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-                  typeFilter === f.key ? 'bg-primary/10 font-bold text-primary' : 'font-medium text-slate-500 hover:text-slate-700'
+                  typeFilter === f.key ? SELECTED_TOGGLE : `${UNSELECTED_TOGGLE} hover:text-slate-700`
                 }`}
               >
                 {f.label}
@@ -251,7 +252,7 @@ export default function ClaimList({ campaignNameFilter, orderIdsFilter, unmatche
                 onClick={() => setProgressFilter(f.key)}
                 aria-pressed={progressFilter === f.key}
                 className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
-                  progressFilter === f.key ? 'bg-primary/10 font-bold text-primary' : 'font-medium text-slate-500 hover:text-slate-700'
+                  progressFilter === f.key ? SELECTED_TOGGLE : `${UNSELECTED_TOGGLE} hover:text-slate-700`
                 }`}
               >
                 {f.label}

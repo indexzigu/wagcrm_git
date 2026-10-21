@@ -474,10 +474,10 @@ export function CampaignCard({
             
             <div className="flex items-center justify-between gap-2">
               {/* 트랙 = 필수 체크 전체(100%) — slate-50 박스 위 slate-200 은 1.18:1 로 흐려 slate-300(1.42)으로.
-                  채움은 청록 주색(트랙 대비 약 4.5, 그래픽 3:1 충족 — 남색 정리 2026-10-22). */}
+                  채움 slate-900 은 트랙 대비 12.02 그대로. */}
               <div className="flex-1 h-1 overflow-hidden rounded-full bg-slate-300">
                 <div
-                  className="h-full rounded-full bg-primary transition-[width]"
+                  className="h-full rounded-full bg-slate-900 transition-[width]"
                   style={{ width: `${requiredProgress}%` }}
                 />
               </div>

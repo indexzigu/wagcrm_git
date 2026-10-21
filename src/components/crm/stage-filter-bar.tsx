@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import type { StageFilter } from "@/hooks/use-stage-filter";
 import { cn } from "@/lib/utils";
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,8 +49,8 @@ export function StageFilterBar({
             className={cn(
               "rounded-lg",
               isActive
-                ? "bg-primary/10 font-bold text-primary hover:bg-primary/10 hover:text-primary"
-                : "font-medium text-slate-500",
+                ? cn(SELECTED_TOGGLE, "hover:bg-primary/10 hover:text-primary")
+                : UNSELECTED_TOGGLE,
             )}
           >
             {label}

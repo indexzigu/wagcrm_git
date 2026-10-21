@@ -9,6 +9,7 @@
 // (P0 무음 실패 금지). 성공 알림은 두지 않는다 — 카드가 빠지고 개수가 바뀌는 것이 곧 신호다(P2 Toast
 // Ownership, ss-ux 검토 2026-10-21).
 import Link from "next/link";
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 import { useOptimistic, useTransition } from "react";
 import { classifyStory } from "@/app/admin/stories/actions";
 import { toast } from "@/lib/toast";
@@ -75,8 +76,8 @@ export function StoryInboxGrid({
                 aria-current={active ? "page" : undefined}
                 className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
                   active
-                    ? "bg-primary/10 font-bold text-primary"
-                    : "bg-card font-medium text-slate-500 border border-slate-200 hover:bg-slate-50"
+                    ? SELECTED_TOGGLE
+                    : `${UNSELECTED_TOGGLE} bg-card border border-slate-200 hover:bg-slate-50`
                 }`}
               >
                 {tab.label} {count}
