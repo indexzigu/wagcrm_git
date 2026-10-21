@@ -95,7 +95,8 @@ export type InboundRowWrite = {
   status: string;
   skipReason: string | null;
   parsed?: ParsedCalendarIntent | null;
-  proposalId?: string;
+  /** null = 옛 기안과의 연결을 끊는다(그 기안은 승인 단계에서 SUPERSEDED). */
+  proposalId?: string | null;
   campaignId?: string | null;
   lastSeenAt: Date;
 };
@@ -252,6 +253,8 @@ async function evaluateEvent(
   dict: InboundDictionary,
   now: Date,
   deps: CalendarInboundScanDeps,
+  /** 재판정 대기 행이다 — 기안 없이 끝나면(SKIPPED·noop) 옛 FAILED 기안과의 연결을 끊는다(R20). */
+  retrying: boolean,
 ): Promise<EventOutcome> {
   const base = {
     calendarId: event.calendarId,
@@ -260,6 +263,9 @@ async function evaluateEvent(
     endDate: event.endDate,
     lastSeenAt: now,
   };
+  // 옛 FAILED 기안을 그대로 가리키면 그 기안의 재시도 승인이 최신 판정(해석 불가·이미 같음)을 무시하고
+  // 실행된다. null 이면 승인 단계(`approveProposal`)가 SUPERSEDED 로 거절한다.
+  const detach = retrying ? { proposalId: null } : {};
 
   const parsed = await parseWithHints(event.summary, dict, deps);
   if (!parsed.ok) {
@@ -269,6 +275,7 @@ async function evaluateEvent(
       status: INBOUND_STATUS.SKIPPED,
       skipReason: parsed.reason,
       parsed: null,
+      ...detach,
     });
     return "skipped";
   }
@@ -282,6 +289,7 @@ async function evaluateEvent(
       status: INBOUND_STATUS.SKIPPED,
       skipReason: truncate(reason, SKIP_REASON_MAX),
       parsed: parsed.intent,
+      ...detach,
     });
     return "skipped";
   }
@@ -296,6 +304,7 @@ async function evaluateEvent(
       skipReason,
       parsed: parsed.intent,
       campaignId: draft.targetCampaignId,
+      ...detach,
     });
     return "adopted";
   }
@@ -410,12 +419,14 @@ export async function runCalendarInboundScan(
       }
 
       summary.newOrChanged++;
+      // 해석 전에 자른다 — 상한이 회차당 Gemini 힌트 호출 수도 묶는다(R21).
       if (summary.proposed >= cap) {
         // 손대지 않는다 — 다음 회차가 처음 본 것처럼 집는다.
         summary.dropped++;
         continue;
       }
-      const outcome = await evaluateEvent(event, fingerprint, dict, now, deps);
+      const retrying = row?.status === INBOUND_STATUS.PENDING_RETRY;
+      const outcome = await evaluateEvent(event, fingerprint, dict, now, deps, retrying);
       if (outcome === "proposed") summary.proposed++;
       else if (outcome === "adopted") summary.adoptedNoop++;
       else summary.skippedUnparsed++;

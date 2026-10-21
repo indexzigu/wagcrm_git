@@ -344,6 +344,17 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     expect(executeWriteActionMock).not.toHaveBeenCalled();
   });
 
+  it("수집 행의 proposalId 가 비었으면(재판정이 기안 없이 끝남) FAILED 재시도도 SUPERSEDED", async () => {
+    findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
+    findInboundRowMock.mockResolvedValue({ proposalId: null });
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "SUPERSEDED", httpStatus: 409, status: "FAILED" });
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
   it("수집 행이 없어도 SUPERSEDED(재시도 승인 포함) — 원본 정리 근거가 사라졌다", async () => {
     findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
     findInboundRowMock.mockResolvedValue(null);

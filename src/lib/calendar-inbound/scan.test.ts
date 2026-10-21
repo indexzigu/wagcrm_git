@@ -374,6 +374,46 @@ describe("runCalendarInboundScan", () => {
     expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED", proposalId: "prop-2" });
   });
 
+  it("PENDING_RETRY 행이 SKIPPED·noop ADOPTED 로 끝나면 proposalId 를 비운다(옛 FAILED 기안 대체)", async () => {
+    const h = makeHarness([ev("e1"), ev("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    for (const id of ["e1", "e2"]) h.rows.get(id)!.status = "PENDING_RETRY";
+    h.resolveTarget.mockImplementation(async (_intent, event) =>
+      event.id === "e1"
+        ? { ok: false, reason: "no_deal" }
+        : { ok: true, draft: { ...CREATE_DRAFT, action: "update_record", args: null, noop: true, targetCampaignId: "c1" } },
+    );
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ proposed: 0, skippedUnparsed: 1, adoptedNoop: 1 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_deal", proposalId: null });
+    expect(h.rows.get("e2")).toMatchObject({ status: "ADOPTED", proposalId: null });
+  });
+
+  it("PENDING_RETRY 행이 파서 실패로 SKIPPED 여도 proposalId 를 비운다", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.rows.get("e1")!.status = "PENDING_RETRY";
+    h.listing.value = { ok: true, events: [ev("e1", { summary: "치과 예약" })], referencedIds: new Set() };
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller", proposalId: null });
+  });
+
+  it("재판정 대기가 아닌 행은 SKIPPED 로 끝나도 proposalId 기록을 지우지 않는다", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.proposals.get("prop-1")!.status = "REJECTED";
+    h.rows.get("e1")!.status = "REJECTED";
+    h.listing.value = { ok: true, events: [ev("e1", { summary: "치과 예약" })], referencedIds: new Set() };
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", proposalId: "prop-1" });
+  });
+
   it("상한을 넘는 건은 손대지 않고 dropped 로 센다(다음 회차가 집는다)", async () => {
     const h = makeHarness([ev("e1"), ev("e2"), ev("e3")]);
 
