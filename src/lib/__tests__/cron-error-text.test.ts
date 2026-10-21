@@ -18,6 +18,23 @@ describe("describeErrorChain", () => {
     expect(describeErrorChain("x")).toBe("x");
     expect(describeErrorChain({ code: 1 })).toBe('{"code":1}');
   });
+  it("메시지가 빈 오류는 이름으로, 이름도 없으면 「알 수 없는 오류」로 쓴다(빈 문자열이 실패를 지우지 않게)", () => {
+    expect(describeErrorChain(new Error())).toBe("Error");
+    const abort = new Error("");
+    abort.name = "AbortError";
+    expect(describeErrorChain(abort)).toBe("AbortError");
+    const nameless = new Error("");
+    nameless.name = "";
+    expect(describeErrorChain(nameless)).toBe("알 수 없는 오류");
+    expect(describeErrorChain(new Error("fetch failed", { cause: new Error() }))).toBe("fetch failed <- Error");
+  });
+  it("Error 가 아니어도 message 문자열이 있으면 그것을 쓰고 cause 를 잇는다", () => {
+    expect(describeErrorChain({ message: "boom", code: "E1" })).toBe("boom");
+    expect(describeErrorChain({ message: "outer", cause: new Error("inner") })).toBe("outer <- inner");
+  });
+  it("빈 값 throw 도 빈 문자열이 되지 않는다", () => {
+    expect(describeErrorChain("")).toBe("알 수 없는 오류");
+  });
   it("1000자에서 자른다", () => {
     expect(describeErrorChain(new Error("a".repeat(5000))).length).toBe(1000);
   });

@@ -321,6 +321,19 @@ describe('runChangedSync 커서 원자성 (M1/M2 회귀)', () => {
     (global as any).__naverSyncLastAt = undefined;
   });
 
+  it('메시지 없는 오류(new Error())로 실패해도 error 가 비지 않는다 — 크론 라우트가 실패로 선언하는 근거', async () => {
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue(null);
+    vi.spyOn(clientModule, 'apiRequest').mockRejectedValue(new Error());
+
+    const result = await runChangedSync();
+
+    // 라우트(`/api/cron/naver-order-sync`)는 `result.error` 가 참일 때만 failed:true 를 선언한다.
+    expect(result.error).toBe('Error');
+  });
+
   it('다중 날짜 중 하나의 upsert가 실패하면 커서를 전진시키지 않는다 (M1)', async () => {
     const clientModule = await import('@/lib/order-converter/naver-commerce-client');
     const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
