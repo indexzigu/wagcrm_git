@@ -98,7 +98,7 @@ export function TodayWorkCard({
   const shownRows = markUnverifiedOrderRows(rows, orderSync);
 
   return (
-    <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0">
+    <Card className="border-border bg-card shadow-soft-sm p-0">
       <CardContent className="px-4 py-3">
         {/* flex-wrap: 좁은 폭(320px)에서 동기화 안내가 제목 다음 줄로 내려간다 — 카드 overflow 에 잘리지 않게. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

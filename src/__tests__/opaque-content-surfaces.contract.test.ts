@@ -92,6 +92,12 @@ const TARGETS: Record<string, readonly string[]> = {
   "app/pipeline/loading.tsx": SURFACE_TOKENS,
   "app/loading.tsx": SURFACE_TOKENS,
   "components/crm/dashboard-home.tsx": SURFACE_TOKENS,
+  // 같은 데스크톱 홈 화면의 나머지 카드 — 하나만 바꾸면 한 화면에서 유리·불투명이 섞인다.
+  "components/crm/today-work-card.tsx": SURFACE_TOKENS,
+  "components/crm/segmented-tab-card.tsx": SURFACE_TOKENS,
+  "components/crm/upcoming-schedule-card.tsx": SURFACE_TOKENS,
+  "components/crm/price-defense-card.tsx": SURFACE_TOKENS,
+  "components/crm/taxable-revenue-card.tsx": SURFACE_TOKENS,
   // 묶음 2-c B — 상세 옆 창 계열(데스크톱 Sheet · 모바일 하단 시트 공유).
   "components/crm/deals-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
   "components/crm/sellers-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],

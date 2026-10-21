@@ -176,7 +176,7 @@ export function PriceDefenseCard() {
   if (!loading && !error && data && data.monitoredCount === 0) return null;
 
   return (
-    <Card className="border-black/5 bg-white/85 shadow-soft-sm">
+    <Card className="border-border bg-card shadow-soft-sm">
       <CardContent className="px-4 py-3">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100 flex-wrap">
           <ShieldCheck className={cn("size-4.5", data && data.counts.violated > 0 ? "text-status-urgent" : "text-emerald-600")} />

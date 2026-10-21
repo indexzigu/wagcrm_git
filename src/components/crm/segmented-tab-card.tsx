@@ -126,7 +126,7 @@ export function SegmentedTabCard({
   const uid = useId();
 
   return (
-    <Card className={`border-black/5 bg-white/85 shadow-soft-sm h-full flex flex-col ${className ?? ""}`}>
+    <Card className={`border-border bg-card shadow-soft-sm h-full flex flex-col ${className ?? ""}`}>
       <CardContent className="px-4 py-3 flex flex-col flex-1 min-h-0">
         <SegmentedTabBar tabs={tabs} active={active ?? ""} onSelect={setActive} idPrefix={uid} />
         {/* 활성 패널 — bodyClassName 로 높이 정책을 주입(기본 flex-1) */}
