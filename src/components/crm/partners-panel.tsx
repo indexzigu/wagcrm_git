@@ -1042,7 +1042,7 @@ export function PartnersPanel({
     <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
       <div className="space-y-6 overflow-hidden p-1 pr-3">
         {/* Partner Details — 회사 정보 섹션 */}
-        <div className="space-y-1 rounded-lg border border-border/70 bg-card p-4">
+        <div className="space-y-1 rounded-2xl border border-border bg-card p-4">
           <h3 className="mb-2 text-xs font-semibold text-foreground">회사 정보</h3>
 
           {/* Editable fields */}
@@ -1246,7 +1246,7 @@ export function PartnersPanel({
         </div>
 
         {/* 담당자 정보 섹션 */}
-        <div className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-foreground">
               담당자 정보
@@ -1324,7 +1324,7 @@ export function PartnersPanel({
         </div>
 
         {/* 연결된 셀러 섹션 */}
-        <div className="rounded-lg border border-border/70 bg-card p-4">
+        <div className="rounded-2xl border border-border bg-card p-4">
           <LinkedSellersList
             sellers={linkedSellers.map((s) => ({
               id: s.id,
@@ -1343,7 +1343,7 @@ export function PartnersPanel({
           />
         </div>
 
-        <div className="rounded-lg border border-border/70 bg-card p-4">
+        <div className="rounded-2xl border border-border bg-card p-4">
           <LinkedDealsList
             deals={linkedDeals.map((d) => ({
               id: d.id,
@@ -1390,7 +1390,7 @@ export function PartnersPanel({
         {/* 발주 설정 섹션 (F4-② 딜 온보딩 제로코드화) — 공급사(BRAND/VENDOR) 또는 이미 설정된 거래처에만 노출. 첨부 자료 바로 위 */}
         {(partner.type === "BRAND" || partner.type === "VENDOR" || partner.orderTemplateSlug) && (
           <>
-            <div className="space-y-1 rounded-lg border border-border/70 bg-card p-4">
+            <div className="space-y-1 rounded-2xl border border-border bg-card p-4">
               <h3 className="mb-0.5 text-xs font-semibold text-foreground">발주 설정</h3>
               <p className="mb-2 text-[11px] leading-normal text-muted-foreground">
                 이 거래처(공급사)에 발주서를 보낼 이메일을 넣어두면 <b className="font-semibold text-foreground/80">발주 브랜드로 등록</b>되어, 주문관리 캠페인 등록의 &lsquo;거래처 양식&rsquo;에 나타나고 캠페인이 이 수신 이메일을 상속받습니다. (발주 코드는 자동 부여, 이름은 거래처명 사용.)
@@ -1472,7 +1472,7 @@ export function PartnersPanel({
         <Separator />
 
         {/* Activity Timeline */}
-        <div className="rounded-lg border border-border/70 bg-card px-4">
+        <div className="rounded-2xl border border-border bg-card px-4">
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="activity" className="border-b-0">
               <AccordionTrigger className="py-4 text-xs font-semibold text-foreground hover:no-underline">
@@ -1714,7 +1714,7 @@ function PartnerAssetSection({ partnerId }: { partnerId: string }) {
   const visibleAssets = assets.filter((a) => !a.archivedAt);
 
   return (
-    <section className="rounded-lg border border-border/70 bg-card p-4">
+    <section className="rounded-2xl border border-border bg-card p-4">
       <h3 className="text-xs font-semibold text-foreground">첨부 자료</h3>
       <p className="mt-1 text-xs text-muted-foreground">계약서, 거래처 서류 등 관련 파일을 첨부합니다.</p>
 

@@ -220,7 +220,7 @@ export function DealVocSection({ dealId }: { dealId: string }) {
       )}
 
       {error && !loading && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background p-3">
           <p className="text-xs text-muted-foreground">{error}</p>
           <Button variant="outline" size="sm" onClick={() => load()} className="shrink-0">
             다시 시도
@@ -300,7 +300,7 @@ export function DealVocSection({ dealId }: { dealId: string }) {
                   <h4 className="text-[11px] font-medium text-muted-foreground">불만·이슈</h4>
                   <ul className="space-y-1.5">
                     {sortedComplaints.map((c, i) => (
-                      <li key={`${i}-${c.label}`} className="rounded-lg border border-border bg-card p-2.5">
+                      <li key={`${i}-${c.label}`} className="rounded-lg border border-border bg-background p-2.5">
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-sm text-foreground">
                             {c.label} <span className="text-muted-foreground">({c.count}건)</span>
@@ -378,7 +378,7 @@ export function DealVocSection({ dealId }: { dealId: string }) {
 
           {/* 분석 전 상태 — 대기(최소치 미만) / 분석 전(충족·크론 대기) */}
           {payload == null && (
-            <div className="rounded-lg border border-dashed border-border bg-card p-3">
+            <div className="rounded-lg border border-dashed border-border bg-background p-3">
               <p className="text-xs text-muted-foreground">
                 {belowMin
                   ? `문의·리뷰를 합쳐 ${insight.minInitial}건 미만이라 아직 요약할 내용이 없습니다. 데이터가 쌓이면 자동으로 분석합니다.`
@@ -401,7 +401,7 @@ export function DealVocSection({ dealId }: { dealId: string }) {
                   {qnas.length > 0 && (
                     <ul className="space-y-2">
                       {qnas.map((q) => (
-                        <li key={q.questionId} className="rounded-lg border border-border bg-card p-3">
+                        <li key={q.questionId} className="rounded-lg border border-border bg-background p-3">
                           <div className="flex items-start justify-between gap-2">
                             <p className="text-sm text-foreground">{q.question}</p>
                             <Badge variant={q.answered ? "secondary" : "status-caution"} className="shrink-0">
@@ -433,7 +433,7 @@ export function DealVocSection({ dealId }: { dealId: string }) {
 function ReviewSummaryRow({ summary }: { summary: DealVocView["reviewSummaries"][number] }) {
   const total = summary.reviewCount;
   return (
-    <div className="rounded-lg border border-border bg-card p-3">
+    <div className="rounded-lg border border-border bg-background p-3">
       <div className="flex items-baseline justify-between">
         <span className="text-sm font-medium text-foreground">
           리뷰 {total.toLocaleString("ko-KR")}건
