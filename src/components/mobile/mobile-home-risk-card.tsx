@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, ChevronRight } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
@@ -33,6 +33,7 @@ import { INTEGRITY_ISSUE_WORD } from "@/lib/data-integrity-words";
  *   아닌 캠페인도 서버에서 한 건 읽어 연다).
  * - 리마인더 지연 칩 → `/outreach`(모바일 영업 뷰). 영업 화면은 특정 건 주소를 지원하지 않아 목록까지만 간다.
  * - 승인대기 → 링크 없음. 휴대폰 결재는 쓰기 경로 신설이라 오너 게이트(§11 #6)다.
+ * 줄 끝 화살표(›) 같은 「눌러진다」 표시는 리뉴얼 전에 없던 요소라 넣지 않았다 — 오너 확인 대상(2026-10-21 디자인 검토).
  */
 
 type IntegrityIssue = DesktopDashboardData["dataIntegrityIssues"][number];
@@ -112,7 +113,6 @@ export function MobileHomeRiskCard({
                   className="relative transition-opacity duration-150 after:absolute after:-inset-x-1 after:-inset-y-3 active:opacity-60"
                 >
                   {chip.label} {chip.count}
-                  <ChevronRight aria-hidden="true" />
                 </Link>
               </Badge>
             ) : (
@@ -155,7 +155,6 @@ export function MobileHomeRiskCard({
                     >
                       {issue.label}
                     </span>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   </Link>
                 </li>
               );
