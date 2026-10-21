@@ -744,7 +744,7 @@ export function SellerDetailContent({
                       href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-white/70 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                      className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
                     >
                       <ExternalLink className="size-3 shrink-0" />
                       <span className="truncate">{url}</span>
@@ -1025,13 +1025,13 @@ export function SellerDetailContent({
             <h3 className="text-[13px] font-semibold text-foreground">성과 요약</h3>
             <Separator />
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-border/70 bg-white/90 p-3">
+              <div className="rounded-lg border border-border bg-card p-3">
                 <div className="text-[11px] text-muted-foreground">누적 매출</div>
                 <div className="mt-1 font-mono text-xs font-semibold">
                   {formatCurrency(scorecard.cumulativeSales)}
                 </div>
               </div>
-              <div className="rounded-lg border border-border/70 bg-white/90 p-3">
+              <div className="rounded-lg border border-border bg-card p-3">
                 <div className="text-[11px] text-muted-foreground">캠페인 수</div>
                 {/* 유효 캠페인 수(그룹=1건, 캡 무관 서버 집계) 우선 — scorecard 는 12건 캡 배열
                     기반 폴백. 딜 행 수가 더 크면 병기(오너 G3)로 축소 오독을 막는다. */}
@@ -1046,7 +1046,7 @@ export function SellerDetailContent({
                   )}
                 </div>
               </div>
-              <div className="rounded-lg border border-border/70 bg-white/90 p-3">
+              <div className="rounded-lg border border-border bg-card p-3">
                 <div className="text-[11px] text-muted-foreground">팔로워 성장률</div>
                 <div className="mt-1 font-mono text-xs font-semibold">
                   {scorecard.followerGrowthRate != null ? (
@@ -1121,7 +1121,7 @@ export function SellerDetailContent({
                   <AnimatedTabsContent value="profile" className="space-y-3 mt-0">
                     {/* 내역 추가 폼 */}
                     {showAddHistory && (
-                      <form onSubmit={handleAddHistory} className="rounded-lg border border-border/50 bg-white/60 p-3.5 animate-fade-in-up shadow-soft-sm">
+                      <form onSubmit={handleAddHistory} className="rounded-lg border border-border bg-card p-3.5 animate-fade-in-up shadow-soft-sm">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                           <div className="space-y-1 col-span-1">
                             <label className="text-[10px] font-bold text-muted-foreground">날짜</label>
@@ -1186,10 +1186,10 @@ export function SellerDetailContent({
                     ) : snapshots.length === 0 ? (
                       <DataEmpty title="수집된 프로필 데이터 내역 없음" className="py-6" />
                     ) : (
-                      <div className="w-full rounded-lg border border-border/50 bg-white/30 shadow-soft-sm overflow-hidden">
+                      <div className="w-full rounded-lg border border-border bg-card shadow-soft-sm overflow-hidden">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead>
-                            <tr className="border-b border-border/50 bg-muted/60 text-[10px] font-semibold text-muted-foreground sticky top-0 backdrop-blur-sm z-10">
+                            <tr className="border-b border-border bg-muted text-[10px] font-semibold text-muted-foreground sticky top-0 z-10">
                               <th className="px-3 py-2.5">날짜</th>
                               <th className="px-3 py-2.5 text-right">팔로워 수</th>
                               <th className="px-3 py-2.5 text-right">게시물 수</th>
@@ -1238,13 +1238,13 @@ export function SellerDetailContent({
 
                   <AnimatedTabsContent value="bio" className="mt-0">
                     {bioHistories.length === 0 ? (
-                      <div className="py-6 text-center text-xs text-muted-foreground border rounded-lg border-border/40 bg-white/30">
+                      <div className="py-6 text-center text-xs text-muted-foreground border rounded-lg border-border bg-card">
                         소개글 변경 이력 없음
                       </div>
                     ) : (
                       <div className="space-y-2.5 w-full">
                         {bioHistories.map((history) => (
-                          <div key={history.id} className="rounded-lg border border-border/40 bg-white/40 p-3 space-y-1.5 shadow-soft-sm transition-colors hover:bg-white/60">
+                          <div key={history.id} className="rounded-lg border border-border bg-card p-3 space-y-1.5 shadow-soft-sm transition-colors hover:bg-muted/60">
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] text-muted-foreground font-semibold">
                                 {formatDate(history.collectedAt)}
@@ -1255,7 +1255,7 @@ export function SellerDetailContent({
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] text-slate-600 font-semibold border border-slate-200">자동</span>
                               )}
                             </div>
-                            <p className="text-[11px] text-foreground whitespace-pre-wrap bg-white/50 p-2.5 rounded border border-border/20 leading-relaxed font-sans">
+                            <p className="text-[11px] text-foreground whitespace-pre-wrap bg-muted/60 p-2.5 rounded border border-border leading-relaxed font-sans">
                               {history.bio.trim() || "(소개글 없음)"}
                             </p>
                           </div>
@@ -1554,7 +1554,7 @@ function SellerAssetSection({ sellerId }: { sellerId: string }) {
           {visibleAssets.map((asset) => (
             <li
               key={asset.id}
-              className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-white/80 px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" />

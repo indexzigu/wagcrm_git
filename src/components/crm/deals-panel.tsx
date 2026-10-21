@@ -302,7 +302,7 @@ function DealsPanelContent({
     <div className="h-full overflow-y-auto [scrollbar-gutter:stable]">
       <div className="space-y-6 overflow-hidden p-1 pr-3">
         {/* Deal Details */}
-        <div className="space-y-3 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm relative">
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-soft-sm relative">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-foreground">기본 정보</h3>
             {hasPendingChanges && (
@@ -564,7 +564,7 @@ function DealsPanelContent({
 
         <DealOptionsSection deal={deal} fetchDealDetails={fetchDealDetails} />
 
-        <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-foreground">
               수수료 정책
@@ -579,7 +579,7 @@ function DealsPanelContent({
         </div>
 
         {/* 연결된 거래처 섹션 */}
-        <div className="space-y-3 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-foreground">
               연결된 거래처
@@ -673,7 +673,7 @@ function DealsPanelContent({
         </div>
 
         {/* 연결된 캠페인 섹션 */}
-        <div className="rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <LinkedCampaignsList
             campaigns={linkedCampaigns.map((c) => ({
               id: c.id,
@@ -700,7 +700,7 @@ function DealsPanelContent({
         </div>
 
         {/* 영업 테스크 섹션 */}
-        <div className="rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <LinkedTasksList
             tasks={linkedTasks.map((t) => ({
               id: t.id,
@@ -722,7 +722,7 @@ function DealsPanelContent({
         </div>
 
         {/* 제안 후보 셀러 섹션 (D2① — 읽기 전용. 제안은 기존 아웃리치 생성 경로를 탄다) */}
-        <div className="rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <DealSellerCandidates
             dealId={deal.id}
             dealName={deal.dealName}
@@ -731,7 +731,7 @@ function DealsPanelContent({
         </div>
 
         {/* 연결된 셀러 섹션 */}
-        <div className="rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <LinkedSellersList
             sellers={linkedSellers.map((s) => ({
               id: s.id,
@@ -766,19 +766,19 @@ function DealsPanelContent({
 
         {/* 표현 관리(클레임 레지스트리) — 표현 검사·자료 생성의 게이트 입력(C1 M2b).
             key=딜 — VOC 와 같은 이유로 딜 전환 시 이전 딜의 목록·입력 상태 누수를 막는다. */}
-        <div className="rounded-[24px] border border-border/70 bg-white/90 px-4 py-3 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-soft-sm">
           <DealClaimsSection key={deal.id} dealId={deal.id} />
         </div>
 
         {/* 오퍼 진단 — 표현 관리 바로 아래에 둔다(C2 M2). 위가 "이 표현을 써도
             되는가"(합법성)면 여기는 "이 오퍼가 팔릴 구조인가"(설계 품질)로,
             같은 딜의 다른 축이다. 표현을 다듬기 전에 보는 것이 순서다. */}
-        <div className="rounded-[24px] border border-border/70 bg-white/90 px-4 py-3 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-soft-sm">
           <DealOfferDiagnosticSection key={deal.id} dealId={deal.id} />
         </div>
 
         {/* Activity Timeline */}
-        <div className="rounded-[24px] border border-border/70 bg-white/90 px-4 py-3 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-soft-sm">
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="activity" className="border-b-0">
               <AccordionTrigger className="py-4 text-xs font-semibold text-foreground hover:no-underline">
@@ -829,7 +829,7 @@ function DealsPanelContent({
 
       {/* Sticky save button */}
       {hasPendingChanges && (
-        <div className="sticky bottom-0 border-t border-border/70 bg-white/95 px-4 py-3 backdrop-blur">
+        <div className="sticky bottom-0 border-t border-border bg-card px-4 py-3">
           <Button
             onClick={() => void saveNow()}
             disabled={isDeferredSaving}
@@ -846,9 +846,9 @@ function DealsPanelContent({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         style={{ width: "min(640px, 96vw)", maxWidth: "min(640px, 96vw)" }}
-        className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
+        className="flex flex-col overflow-hidden border-l border-border bg-card p-0"
       >
-        <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
+        <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
           <SheetTitle>판매 조건 상세</SheetTitle>
           <SheetDescription>
             판매 조건 정보 및 수수료 정책을 확인하고 수정합니다.

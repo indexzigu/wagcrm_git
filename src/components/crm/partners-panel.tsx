@@ -1275,7 +1275,7 @@ export function PartnersPanel({
               {contacts.map((contact) => (
                 <div
                   key={contact.id}
-                  className="relative rounded-lg border border-border/70 bg-white/80 px-3 py-3"
+                  className="relative rounded-lg border border-border bg-card px-3 py-3"
                 >
                   <button
                     type="button"
@@ -1513,9 +1513,9 @@ export function PartnersPanel({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           style={{ width: "min(540px, 96vw)", maxWidth: "min(540px, 96vw)" }}
-          className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
+          className="flex flex-col overflow-hidden border-l border-border bg-card p-0"
         >
-          <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
+          <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
             <SheetTitle>거래처 상세</SheetTitle>
             <SheetDescription>
               거래처 정보, 연결된 판매 조건, 활동 기록을 확인합니다.
@@ -1757,7 +1757,7 @@ function PartnerAssetSection({ partnerId }: { partnerId: string }) {
           {visibleAssets.map((asset) => (
             <li
               key={asset.id}
-              className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-white/80 px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" />

@@ -116,9 +116,9 @@ export function SellersPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         style={{ width: "min(640px, 96vw)", maxWidth: "min(640px, 96vw)" }}
-        className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
+        className="flex flex-col overflow-hidden border-l border-border bg-card p-0"
       >
-        <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
+        <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
           <SheetTitle>셀러 상세</SheetTitle>
           <SheetDescription>
             셀러 정보, 성과 요약, 캠페인 이력을 확인합니다.

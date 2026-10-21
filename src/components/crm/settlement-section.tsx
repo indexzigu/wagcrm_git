@@ -548,7 +548,7 @@ export function SettlementSection({
   };
 
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-card p-4 shadow-soft-sm">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <div className="flex items-center gap-2">
         <h3 className="flex items-center text-sm font-semibold text-foreground">
           <CalendarDays className="mr-2 size-4 text-muted-foreground" />
@@ -655,7 +655,7 @@ export function SettlementSection({
         </div>
 
         {/* 회계 일정 — 칸 구성·방향·상대는 판정표에서 파생한다(카드가 채널 분기를 쓰지 않는다) */}
-        <div className="pt-3 border-t border-border/40">
+        <div className="pt-3 border-t border-border">
           <h4 className="text-xs font-semibold text-slate-700 mb-2">회계 일정</h4>
           <div className="grid grid-cols-2 gap-4">
             {invoiceSlots.map((slot) => {
