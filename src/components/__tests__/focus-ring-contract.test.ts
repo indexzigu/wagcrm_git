@@ -45,8 +45,10 @@ function walk(dir: string): string[] {
 /**
  * 면제 — 이유 없이 늘리지 말 것.
  *
- * 1) 셀러 포털은 CRM 과 다른 세계다(slate+blue 팔레트). 자기 hue 로 3:1을 확보하는 게
- *    정본이라 뺀다 — **cross-palette 예외이지 대비 면제가 아니다.** 컴포넌트
+ * 1) 셀러 포털 — 종전엔 CRM 과 다른 slate+blue 팔레트라 자기 hue 로 3:1을 확보하려고 뺐다.
+ *    애플 UI 리뉴얼 묶음 4 이후 포털도 CRM 과 같은 토큰(bg-background·bg-card·청록 primary)을
+ *    쓰고, 포털의 포커스 링도 이미 전부 `ring-focus-ring` 이다(면제 없이도 위반 0건). 면제는
+ *    포털 고유 표면이 다시 생길 때를 위한 여지로만 남는다 — **대비 면제가 아니다.** 컴포넌트
  *    (components/portal)뿐 아니라 라우트(`/<slug>`·`/p/[token]`)도 포털 표면이다.
  * 2) `ui/tabs.tsx` 의 `outline-ring` 은 같은 요소에 준수 링(`ring-focus-ring`)이
  *    공존하는 1px 보조선이다 — 링이 유일 단서가 아니므로 SC 1.4.11 평가 대상이 아니다

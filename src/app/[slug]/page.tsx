@@ -31,9 +31,10 @@ function PasswordGate({
   error?: string;
 }) {
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+    // 가운데 정렬 화면이라 일반 브라우저 위쪽 여백은 0 그대로 두고, 홈 화면 앱에서만 상태바 높이를 비운다.
+    <div className="min-h-screen bg-background flex items-center justify-center px-4 pt-[env(safe-area-inset-top)]">
       <div className="w-full max-w-sm">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-soft-sm px-6 py-8">
+        <div className="bg-card rounded-2xl border border-border shadow-soft-sm px-6 py-8">
           <p className="text-[11px] font-bold tracking-widest text-slate-500 uppercase text-center">
             WAG Campaign Report
           </p>
@@ -71,7 +72,7 @@ function PasswordGate({
                   autoFocus
                   autoComplete="current-password"
                   placeholder="비밀번호"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none focus:border-primary focus:bg-white focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-base text-slate-900 outline-none focus:border-primary focus:bg-card focus-visible:ring-2 focus-visible:ring-focus-ring"
                 />
                 {error === "wrong" && (
                   <p id="portal-password-error" role="alert" className="text-[11px] font-medium text-status-urgent-text">
@@ -85,7 +86,7 @@ function PasswordGate({
                 )}
                 <button
                   type="submit"
-                  className="w-full rounded-xl bg-slate-900 py-3 text-sm font-bold text-white transition-colors hover:bg-slate-700"
+                  className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   리포트 열기
                 </button>

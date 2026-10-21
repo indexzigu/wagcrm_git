@@ -382,9 +382,9 @@ describe("남은 파랑·보라(5차)", () => {
   it("셀러 포털: 오늘 매출은 무채색, 오픈 카운트다운은 네이비 틴트, 단골 수는 slate-900 — 마감 배지 amber 는 유지", () => {
     const src = sourceOf("portal/seller-portal-report.tsx");
     expect(src).toContain('<div className="text-[11px] font-bold text-slate-500 uppercase">오늘 매출</div>');
-    expect(src).toContain('<div className="text-xl font-bold text-slate-900">{fmtWon(todayStat?.revenue || 0)}</div>');
+    expect(src).toContain('<div className="text-xl font-bold text-slate-900 tabular-nums">{fmtWon(todayStat?.revenue || 0)}</div>');
     expect(src).toContain('className: "bg-primary/10 text-primary border-primary/20", icon: "clock", mode: "open"');
-    expect(src).toContain('<div className="text-xl font-bold text-slate-900">{crossCampaignBuyers.toLocaleString()}명</div>');
+    expect(src).toContain('<div className="text-xl font-bold text-slate-900 tabular-nums">{crossCampaignBuyers.toLocaleString()}명</div>');
     // 마감 임박은 심각도 축(caution) — 그대로 amber.
     expect(src).toContain('className: "bg-amber-50 text-amber-700 border-amber-200", icon: "clock", mode: "close"');
     // 「성과 카드 →」 링크는 7차에서 네이비로 — 아래 7차 테스트가 고정한다.

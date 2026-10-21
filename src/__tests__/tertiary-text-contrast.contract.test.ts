@@ -65,7 +65,7 @@ const EXEMPTIONS: Exemption[] = [
   { file: "components/crm/post-preview-card.tsx", token: "text-slate-300", count: 1, reason: ICON },
   { file: "components/crm/seller-analysis/SellerAiAnalysis.tsx", token: "text-slate-300", count: 3, reason: ICON },
   { file: "components/crm/schedule-gap-briefing-card.tsx", token: "text-slate-300", count: 2, reason: `${DARK} — slate-950 툴팁` },
-  { file: "components/portal/seller-performance-card.tsx", token: "text-slate-300", count: 2, reason: `${DARK} — slate-900→700 헤더` },
+  { file: "components/portal/seller-performance-card.tsx", token: "text-slate-300", count: 2, reason: `${DARK} — 히어로 진한 청록(--hero-deep #0B474D) 단색 헤더, slate-300 6.99:1` },
   { file: "components/mobile/mobile-standalone-gate.tsx", token: "text-slate-300", count: 1, reason: DARK },
   { file: "app/coupang-partners/page.tsx", token: "text-slate-400", count: 1, reason: `${DARK_400} — 추천 섹션` },
   { file: "components/mobile/mobile-standalone-gate.tsx", token: "text-slate-400", count: 1, reason: DARK_400 },

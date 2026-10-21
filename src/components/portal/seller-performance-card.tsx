@@ -110,11 +110,14 @@ export async function SellerPerformanceCard({
   const returning = returningByOrderCampaign[campaignId];
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="max-w-sm mx-auto px-4 py-8">
+    // 위쪽 여백은 홈 화면 앱(viewportFit:cover · black-translucent)에서 상태바 높이만큼 늘어난다 —
+    // 일반 브라우저는 env()=0 이라 종전 2rem 그대로다.
+    <div className="min-h-screen bg-background">
+      <div className="max-w-sm mx-auto px-4 pb-8 pt-[max(2rem,env(safe-area-inset-top))]">
         {/* 캡처 대상 카드 — 이 박스 안에 자랑 포인트를 밀도 있게 담는다 */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-soft-md overflow-hidden">
-          <div className="px-6 pt-6 pb-4 bg-gradient-to-br from-slate-900 to-slate-700">
+        <div className="bg-card rounded-3xl border border-border shadow-soft-md overflow-hidden">
+          {/* 머리 = 히어로 진한 청록 단색(--hero-deep #0B474D) — 흰 제목 10.38 · slate-300 보조 6.99. */}
+          <div className="px-6 pt-6 pb-4 bg-hero-deep">
             <p className="text-[10px] font-bold tracking-widest text-slate-300 uppercase">
               WAG Performance Card
             </p>
@@ -126,10 +129,10 @@ export async function SellerPerformanceCard({
 
           <div className="px-6 py-5 border-b border-slate-100 text-center">
             <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
-            <div className="text-3xl font-bold text-slate-900 mt-1">{fmtWon(camp.totalRevenue)}</div>
+            <div className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">{fmtWon(camp.totalRevenue)}</div>
             {/* 합계만 보이는 캠페인(`totalOnly`)은 주문·수량 줄이 없다 — 페이로드에 값이 없다. */}
             {!camp.totalOnly && (
-              <div className="text-xs text-slate-500 mt-1">
+              <div className="text-xs text-slate-500 mt-1 tabular-nums">
                 주문 {camp.distinctOrderCount.toLocaleString()}건 · 수량 {camp.totalQuantity.toLocaleString()}개
                 {soldDays > 0 && <> · {soldDays}일 판매</>}
               </div>
@@ -142,17 +145,17 @@ export async function SellerPerformanceCard({
               className={`grid ${returning ? "grid-cols-3" : "grid-cols-2"} divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/50`}
             >
               <div className="px-3 py-4 text-center">
-                <div className="text-lg font-bold text-primary">{insights.linkRatio.toFixed(0)}%</div>
+                <div className="text-lg font-bold text-primary tabular-nums">{insights.linkRatio.toFixed(0)}%</div>
                 <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">내 채널 유입</div>
               </div>
               {returning && (
                 <div className="px-3 py-4 text-center">
-                  <div className="text-lg font-bold text-primary">{returning.returningRatio.toFixed(0)}%</div>
+                  <div className="text-lg font-bold text-primary tabular-nums">{returning.returningRatio.toFixed(0)}%</div>
                   <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">재구매 고객</div>
                 </div>
               )}
               <div className="px-3 py-4 text-center">
-                <div className="text-lg font-bold text-primary">{peak != null ? `${peak}시` : "-"}</div>
+                <div className="text-lg font-bold text-primary tabular-nums">{peak != null ? `${peak}시` : "-"}</div>
                 <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">피크 시간대</div>
               </div>
             </div>
@@ -216,7 +219,7 @@ export async function SellerPerformanceCard({
           </p>
           <Link
             href={basePath}
-            className="inline-block text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-full px-4 py-2 shadow-soft-sm"
+            className="inline-block text-xs font-semibold text-slate-600 bg-card border border-border rounded-full px-4 py-2 shadow-soft-sm active:bg-black/[0.06] transition-colors"
           >
             ← 전체 캠페인 리포트로
           </Link>
