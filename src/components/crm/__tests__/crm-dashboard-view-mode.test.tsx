@@ -130,34 +130,45 @@ describe("CrmDashboard view mode switching", () => {
     localStorage.clear();
   });
 
-  it("renders view switcher as CrmShell header segments", () => {
+  it("페이지 머리(<header>·h1 제목·건수 부제)를 그리지 않는다", () => {
     const { container } = render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
-    const header = container.querySelector("header") as HTMLElement;
+    expect(container.querySelector("header")).toBeNull();
+    expect(container.querySelector("h1")).toBeNull();
+    expect(screen.queryByText(/^판매중 \d+건 · 지연 \d+건$/)).toBeNull();
+  });
 
-    const group = within(header).getByRole("radiogroup", { name: "보기 전환" });
+  it("보기 전환 분할 버튼은 카드 도구줄(단계 칩 줄)에 있다", () => {
+    render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
+    const row = screen.getByRole("group", { name: "단계 필터" }).parentElement as HTMLElement;
+    const group = within(row).getByRole("radiogroup", { name: "보기 전환" });
     expect(within(group).getByRole("radio", { name: "칸반" })).toBeInTheDocument();
     expect(within(group).getByRole("radio", { name: "테이블" })).toBeInTheDocument();
   });
 
-  it("머리 부제는 건수 요약 「판매중 N건 · 지연 N건」(지연 판정은 execution-quick-filters)", () => {
-    const { container } = render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
-    const header = container.querySelector("header") as HTMLElement;
-    // 지연 건수는 오늘 날짜에 따라 달라 형식만 고정한다 — 판정 자체는 execution-quick-filters 테스트가 고정.
-    expect(within(header).getByText(/^판매중 1건 · 지연 \d+건$/)).toBeInTheDocument();
-  });
-
-  it("puts the primary 캠페인 등록 action in the header, not in the card row", () => {
-    const { container } = render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
-    const header = container.querySelector("header") as HTMLElement;
-    expect(within(header).getByRole("button", { name: "캠페인 등록" })).toBeInTheDocument();
+  it("주요 버튼 「캠페인 등록」은 카드 도구줄 오른쪽 끝에 한 벌만 있다(리뉴얼 전 순서: 검색 → 보기 전환 → 조합 → 등록)", () => {
+    render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
+    const row = screen.getByRole("group", { name: "단계 필터" }).parentElement as HTMLElement;
+    const create = within(row).getByRole("button", { name: "캠페인 등록" });
     expect(screen.getAllByRole("button", { name: "캠페인 등록" })).toHaveLength(1);
+    const controls = create.parentElement as HTMLElement;
+    const order = [
+      within(controls).getByRole("textbox", { name: "캠페인 검색" }).closest("[data-slot='input-group']") ??
+        within(controls).getByRole("textbox", { name: "캠페인 검색" }),
+      within(controls).getByRole("radiogroup", { name: "보기 전환" }),
+      within(controls).getByRole("button", { name: /조합 캠페인/ }),
+      create,
+    ];
+    for (let k = 1; k < order.length; k++) {
+      expect(order[k - 1].compareDocumentPosition(order[k]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(controls.lastElementChild).toBe(create);
   });
 
   it("merges search and 조합 캠페인 into the stage filter row (no separate control row)", () => {
     render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
     const filterGroup = screen.getByRole("group", { name: "단계 필터" });
     // 단계 칩과 검색·조합 캠페인이 **한 가로줄**(칩 왼쪽, 조작 오른쪽)이어야 한다 — 종전엔 조작만 담긴
-    // 별도 줄이 칩 위에 있었다(제목을 셸 머리로 올린 뒤 빈 줄로 남음).
+    // 별도 줄이 칩 위에 있었다.
     const row = filterGroup.parentElement as HTMLElement;
     expect(row.className).toContain("justify-between");
     expect(row.className).not.toContain("flex-col");
@@ -174,9 +185,26 @@ describe("CrmDashboard view mode switching", () => {
     const toolbar = quick.parentElement!.parentElement as HTMLElement;
     expect(within(toolbar).getByRole("textbox", { name: "캠페인 검색" })).toBeInTheDocument();
     expect(within(toolbar).getByRole("button", { name: /조합 캠페인/ })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("radiogroup", { name: "보기 전환" })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: "캠페인 등록" })).toBeInTheDocument();
     expect(screen.getAllByRole("textbox", { name: "캠페인 검색" })).toHaveLength(1);
+    expect(screen.getAllByRole("radiogroup", { name: "보기 전환" })).toHaveLength(1);
     // 카드 머리의 조작 줄(border-b 묶음)이 비어 남지 않는다 — 필터가 없으면 아예 그리지 않는다.
     expect(container.querySelector('[data-slot="pipeline-card-head"]')).toBeNull();
+  });
+
+  it("/pipeline(진행 고정·칸반): 보기 전환·캠페인 등록은 정확히 한 벌이고 실행 보드 도구줄 안에만 있다", () => {
+    mockStageFilter = "PROGRESS";
+    render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} lockedStageFilter="PROGRESS" />);
+    const toolbar = screen.getByRole("button", { name: /^전체 처리/ }).parentElement!.parentElement as HTMLElement;
+    const toggles = screen.getAllByRole("radiogroup", { name: "보기 전환" });
+    const creates = screen.getAllByRole("button", { name: "캠페인 등록" });
+    expect(toggles).toHaveLength(1);
+    expect(creates).toHaveLength(1);
+    expect(toolbar.contains(toggles[0])).toBe(true);
+    expect(toolbar.contains(creates[0])).toBe(true);
+    // 단계 칩 줄(데이터 매트릭스 도구줄)은 진행 고정 화면에 없다 — 조작이 그쪽에 한 벌 더 서지 않는다.
+    expect(screen.queryByRole("group", { name: "단계 필터" })).toBeNull();
   });
 
   it("실행 보드에서 필터 결과가 비면 검색칸 왼쪽에 「조건에 맞는 캠페인 없음」·초기화를 붙이고, 보드 위에 새 줄을 띄우지 않는다", () => {

@@ -216,8 +216,8 @@ export function ClaimCheckerPanel({
   );
 
   return (
-    // 제목·설명과 스크롤러는 CrmShell 소유다(P8 Layout Stability) — 여기서
-    // 페이지 프레임을 다시 만들지 않는다.
+    // 스크롤러는 CrmShell 소유다(P8 Layout Stability) — 여기서 페이지 프레임을
+    // 다시 만들지 않는다.
     <div className="mx-auto w-full max-w-5xl space-y-5 p-6">
       <Card className="space-y-4 p-5 shadow-soft-md">
         <div className="flex flex-wrap items-center gap-3">

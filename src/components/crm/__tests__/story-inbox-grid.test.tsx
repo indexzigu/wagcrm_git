@@ -100,6 +100,31 @@ describe("StoryInboxGrid — 누르는 즉시 반영", () => {
   });
 });
 
+describe("StoryInboxGrid — 도구줄(페이지 머리 없음, 2026-10-21)", () => {
+  it("actions 는 분류 탭과 같은 줄 오른쪽 끝에 선다", () => {
+    render(
+      <StoryInboxGrid
+        filter="all"
+        cards={cards}
+        counts={counts}
+        total={18}
+        actions={<button type="button">수집</button>}
+      />
+    );
+    const toolbar = screen.getByTestId("story-inbox-toolbar");
+    const nav = within(toolbar).getByRole("navigation");
+    const button = within(toolbar).getByRole("button", { name: "수집" });
+    expect(toolbar.firstElementChild).toBe(nav);
+    expect(toolbar.lastElementChild?.contains(button)).toBe(true);
+    expect(nav.contains(button)).toBe(false);
+  });
+
+  it("actions 가 없으면 버튼 자리를 만들지 않는다", () => {
+    render(<StoryInboxGrid filter="all" cards={cards} counts={counts} total={18} />);
+    expect(screen.getByTestId("story-inbox-toolbar").children).toHaveLength(1);
+  });
+});
+
 describe("applyOverrides — 개수 계산", () => {
   it("덮어쓰기가 없으면 서버 개수를 그대로 쓴다", () => {
     expect(applyOverrides(cards, counts, {}).counts).toEqual(counts);

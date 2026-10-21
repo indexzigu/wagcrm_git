@@ -112,24 +112,13 @@ export function PriceSheetList() {
   );
 
   return (
-    // 제목은 메뉴 이름과 같은 문자열 하나(메뉴 이름 = 페이지 제목). 옛 제목 위 되돌아가기 링크는
-    // 머리 오른쪽 조작 자리로 옮겼다 — 28px 제목 위에 얹으면 머리 높이가 화면마다 달라진다.
-    <CrmShell
-      title="가격표"
-      actions={
-        <Link
-          href="/assets/archive"
-          className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-        >
-          ← 캠페인 자료
-        </Link>
-      }
-      description="브랜드사 가격표(xlsx/이미지/pdf/pptx)를 업로드해 구조화 추출하고 판매 조건에 반영합니다."
-    >
+    // 페이지 머리(제목·설명)는 두지 않는다 — 오너 디자인 방침(2026-10-21). 「캠페인 자료」로
+    // 돌아가는 링크는 첫 카드의 도구줄(거래처 선택 줄) 오른쪽 끝이 소유한다.
+    <CrmShell>
       <div className="flex flex-col gap-6 p-6 md:p-8">
         <Card className="p-6">
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
+            <div data-testid="price-sheet-toolbar" className="flex items-center gap-3">
               <span className="text-sm font-medium text-foreground">거래처 (선택)</span>
               <div className="w-64">
                 <SearchableDropdown
@@ -143,6 +132,12 @@ export function PriceSheetList() {
                   emptyMessage="검색 결과 없음"
                 />
               </div>
+              <Link
+                href="/assets/archive"
+                className="ml-auto inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                ← 캠페인 자료
+              </Link>
             </div>
 
             <div

@@ -469,26 +469,22 @@ export function ReferenceInboxClient() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      {/* 제목은 메뉴 이름과 같은 문자열 하나(메뉴 이름 = 페이지 제목). 되돌아가기 링크는 머리 오른쪽 조작 자리. */}
-      <CrmShell
-        title="미분류 레퍼런스"
-        actions={
-          <Link
-            href="/assets/archive"
-            className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeftIcon className="size-3.5" />
-            캠페인 자료
-          </Link>
-        }
-        description="수집한 인스타/틱톡/유튜브 링크를 판매 조건에 배정하거나 기각합니다."
-      >
+      {/* 페이지 머리(제목·설명)는 두지 않는다 — 오너 디자인 방침(2026-10-21). 「캠페인 자료」로
+          돌아가는 링크는 첫 카드(링크 일괄 추가)의 제목줄 오른쪽 끝이 소유한다. */}
+      <CrmShell>
         <div className="flex flex-col gap-6 p-6 md:p-8">
           {/* 상단 일괄 추가 입력 */}
           <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/90 p-5 shadow-soft-md">
-            <div className="flex items-center gap-2">
+            <div data-testid="reference-inbox-toolbar" className="flex items-center gap-2">
               <InboxIcon className="size-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold text-foreground">링크 일괄 추가</h2>
+              <Link
+                href="/assets/archive"
+                className="ml-auto inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeftIcon className="size-3.5" />
+                캠페인 자료
+              </Link>
             </div>
             <textarea
               value={text}

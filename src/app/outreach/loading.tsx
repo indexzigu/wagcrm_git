@@ -3,16 +3,15 @@ import { CrmShell } from "@/components/crm/crm-shell";
 
 export default function OutreachLoading() {
   return (
-    <CrmShell title="영업 관리" description="셀러별 영업 진행 상태와 리마인드 일정을 관리합니다.">
+    <CrmShell>
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           {/* Filters Bar Skeleton */}
           <div className="crm-topbar flex flex-col gap-4 border-b border-border/70 px-5 py-3 md:flex-row md:items-center md:justify-between shrink-0 bg-white/40">
-            <div className="flex flex-1 items-center gap-3">
-              <Skeleton className="h-9 w-full sm:max-w-xs rounded-lg" />
-            </div>
-            <div className="flex items-center gap-2">
-              <Skeleton className="h-9 w-32 rounded-lg" />
+            {/* 도구줄: 검색 · 보기 전환 · 테스크 등록(오른쪽 정렬, 페이지 머리 없음) */}
+            <div className="flex flex-1 items-center justify-end gap-2">
+              <Skeleton className="h-9 w-full sm:w-64 rounded-lg" />
+              <Skeleton className="h-9 w-28 rounded-lg" />
               <Skeleton className="h-9 w-24 rounded-lg" />
             </div>
           </div>

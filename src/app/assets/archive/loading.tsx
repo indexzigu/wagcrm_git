@@ -3,7 +3,7 @@ import { CrmShell } from "@/components/crm/crm-shell";
 
 export default function AssetsLoading() {
   return (
-    <CrmShell title="캠페인 자료">
+    <CrmShell>
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           {/* Top Bar Skeleton */}

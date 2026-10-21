@@ -130,6 +130,29 @@ describe("ApprovalDetail — READ", () => {
   });
 });
 
+describe("ApprovalDetail — 머리 없음(오너 디자인 방침 2026-10-21)", () => {
+  it("기안 제목은 카드 안 첫 줄(h2)이고 되돌아가기 링크가 같은 줄 오른쪽에 있다", () => {
+    const { container } = render(
+      <ApprovalDetail id="proposal-read-1" useDetailHook={hookOf(readProposal())} />
+    );
+    const toolbar = screen.getByTestId("approval-detail-toolbar");
+    const subject = screen.getByRole("heading", { level: 2, name: "판매 조건 검색 1건" });
+    const link = screen.getByRole("link", { name: "결재함" });
+    expect(toolbar.contains(subject)).toBe(true);
+    expect(toolbar.lastElementChild).toBe(link);
+    // 카드(ambient 컨테이너)의 첫 자식이 이 줄이다 — 카드 바깥 머리가 아니다.
+    expect(container.querySelector(".shadow-ambient")?.firstElementChild).toBe(toolbar);
+    expect(container.querySelector("header, h1")).toBeNull();
+  });
+
+  it("제목을 모르는 상태(없음)에서는 페이지 제목을 채우지 않고 링크만 둔다", () => {
+    render(<ApprovalDetail id="gone" useDetailHook={hookOf(null)} />);
+    const toolbar = screen.getByTestId("approval-detail-toolbar");
+    expect(toolbar.querySelector("h1, h2")).toBeNull();
+    expect(toolbar.contains(screen.getByRole("link", { name: "결재함" }))).toBe(true);
+  });
+});
+
 describe("ApprovalDetail — WRITE", () => {
   it("기안 카드를 그대로 얹는다", () => {
     const proposal = readProposal({
@@ -144,6 +167,25 @@ describe("ApprovalDetail — WRITE", () => {
     expect(screen.getByTestId("proposal-card-mock")).toHaveTextContent("proposal-write-1");
     // 조회 결과 표면(조건 칩·봇 요약)은 WRITE 에 없다.
     expect(screen.queryByText("봇 요약")).not.toBeInTheDocument();
+  });
+
+  it("도구줄에 제목을 또 두지 않고(기안 카드가 그린다) 출처 배지·시각을 왼쪽에 둔다", () => {
+    const proposal = readProposal({
+      id: "proposal-write-1",
+      kind: "WRITE",
+      status: "PENDING_APPROVAL",
+      structuredResult: null,
+      resultSummary: null,
+      title: "판매 조건 상태 변경",
+      createdBy: "AGENT",
+    });
+    render(<ApprovalDetail id="proposal-write-1" useDetailHook={hookOf(proposal)} />);
+    const toolbar = screen.getByTestId("approval-detail-toolbar");
+    expect(toolbar.querySelector("h1, h2")).toBeNull();
+    expect(screen.queryByText("판매 조건 상태 변경")).not.toBeInTheDocument();
+    expect(toolbar).toHaveTextContent("어시스턴트");
+    expect(toolbar.textContent).toMatch(/\d/);
+    expect(toolbar.lastElementChild).toBe(screen.getByRole("link", { name: "결재함" }));
   });
 });
 

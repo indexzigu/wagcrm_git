@@ -212,8 +212,7 @@ export function DealsPageClient({
 
   return (
     <>
-      {/* 화면 제목만 메뉴와 같게 한다 — 화면 안의 「딜」(딜 목록·딜 추가)은 개별 항목 이름이라 그대로 둔다 */}
-      <CrmShell title="판매 조건 관리">
+      <CrmShell>
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
           {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치) */}
           <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0">

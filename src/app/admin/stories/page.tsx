@@ -74,25 +74,22 @@ export default async function StoryInboxPage({
   });
 
   return (
-    // 제목·설명·수집 버튼은 CrmShell 머리로 올렸다(메뉴 이름 = 페이지 제목) — 세로 스크롤러도 CrmShell 이 소유한다.
-    <CrmShell
-      title="스토리 분류함"
-      description="시작 7일 전~마감 1일 후 스토리를 매일 자정에 모읍니다. 홍보분을 분류하면 성과 근거로 남습니다."
-      actions={
-        <div className="flex shrink-0 items-center gap-2">
-          {/* 전체 수집(게시물+스토리, 고비용·순차) vs 스토리만(저비용·1콜) — 두 옵션 분리 제공 */}
-          <BulkContentCollectButton targets={bulkTargets} />
-          <StoryCollectButton />
-        </div>
-      }
-    >
+    // 페이지 머리(제목·설명) 없음 — 오너 디자인 방침(2026-10-21). 수집 버튼은 본문 맨 위 도구줄(분류 탭 줄)
+    // 오른쪽 끝에 둔다. 세로 스크롤러는 CrmShell 이 소유한다.
+    <CrmShell>
     <div className="mx-auto max-w-6xl px-6 py-8">
-
       <StoryInboxGrid
         filter={filter}
         counts={{ UNREVIEWED: countOf("UNREVIEWED"), CAMPAIGN: countOf("CAMPAIGN"), OTHER: countOf("OTHER") }}
         total={counts.reduce((sum, x) => sum + x._count, 0)}
         cards={cards}
+        actions={
+          <>
+            {/* 전체 수집(게시물+스토리, 고비용·순차) vs 스토리만(저비용·1콜) — 두 옵션 분리 제공 */}
+            <BulkContentCollectButton targets={bulkTargets} />
+            <StoryCollectButton />
+          </>
+        }
       />
     </div>
     </CrmShell>

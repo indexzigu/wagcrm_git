@@ -6,8 +6,8 @@ import ts from "typescript";
 /**
  * **정산 관리·판매 관리 화면의 콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2).
  *
- * 반투명 유리(`backdrop-blur`·`bg-white/NN`·`bg-[rgba(…)]`)는 크롬(CrmShell 머리·사이드바·
- * Sheet)에만 남긴다 — 밝은 반투명을 겹치면 면 경계가 흐려진다. 콘텐츠 카드·표·요약띠는
+ * 반투명 유리(`backdrop-blur`·`bg-white/NN`·`bg-[rgba(…)]`)는 크롬(사이드바·Sheet)에만
+ * 남긴다(CrmShell 페이지 머리는 2026-10-21 없앴다) — 밝은 반투명을 겹치면 면 경계가 흐려진다. 콘텐츠 카드·표·요약띠는
  * `bg-card` + `border-border`, 내용 바닥은 `bg-background`. hex 리터럴(`bg-[#…]`)과 임의
  * 모서리(`rounded-[…]`)도 토큰 밖 값이라 같이 막는다.
  *
@@ -15,7 +15,8 @@ import ts from "typescript";
  * 인용한 설명 주석이 스스로 위반으로 잡히지 않는다(정규식 스트리퍼는 레포에서 양방향으로
  * 틀린 전례가 있다: `ui-copy-em-dash.contract.test.ts` 머리말).
  *
- * 대상 밖(의도): `crm-shell.tsx` · `crm-sidebar.tsx` · `ui/sheet.tsx` — 크롬은 반투명 유지.
+ * 대상 밖(의도): `crm-shell.tsx` · `crm-sidebar.tsx` · `ui/sheet.tsx` — 크롬(사이드바·Sheet)은
+ * 반투명 유지.
  */
 
 const ROOT = join(__dirname, "..");

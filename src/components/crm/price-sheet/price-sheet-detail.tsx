@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ArrowLeftIcon } from "lucide-react";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -254,7 +254,7 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
 
   if (loading) {
     return (
-      <CrmShell title="가격표 상세">
+      <CrmShell>
         <p className="p-8 text-sm text-muted-foreground">불러오는 중...</p>
       </CrmShell>
     );
@@ -262,18 +262,18 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
 
   if (!sheet) {
     return (
-      <CrmShell title="가격표 상세">
+      <CrmShell>
         <p className="p-8 text-sm text-muted-foreground">가격표를 찾을 수 없습니다.</p>
       </CrmShell>
     );
   }
 
   const confirmedRows = sheet.rows.filter((r) => r.mappingStatus === "MAPPED" || r.mappingStatus === "NEW_DEAL");
-  const sheetLabel = `${sheet.partner?.name ?? "거래처 미지정"} · ${sheet.sourceFormat}`;
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-col gap-1.5 border-b border-border/40 bg-white/50 px-6 pt-3 backdrop-blur-sm md:px-8">
+      {/* 되돌아가기 링크만 둔다 — 빵부스러기(거래처 · 형식)는 첫 카드 h2 와 같은 말이라 지웠다. */}
+      <div className="flex shrink-0 items-center border-b border-border/40 bg-white/50 px-6 py-3 backdrop-blur-sm md:px-8">
         <Link
           href="/assets/price-sheets"
           className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
@@ -281,78 +281,82 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
           <ArrowLeftIcon className="size-3.5" />
           가격표 목록
         </Link>
-        <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-          <span>가격표 인제스트</span>
-          <ChevronRightIcon className="size-3" />
-          <span className="text-foreground">{sheetLabel}</span>
-        </div>
       </div>
       <div className="min-h-0 flex-1">
-        <CrmShell
-          title={`${sheet.partner?.name ?? "거래처 미지정"} 가격표`}
-          description={`${sheet.sourceFormat} · 경로 ${sheet.extractPath} · 표 ${sheet.detectedTables}개`}
-          actions={
-            <div className="flex items-center gap-2">
-              <PriceSheetStatusBadge status={sheet.status} />
-              {/* UPLOADED는 자동 추출이 담당하므로 버튼을 노출하지 않는다(추출 중 표시는
-                  스켈레톤이 전담). 실패·완료 상태에서만 수동 재추출을 제공한다. */}
-              {sheet.status !== "UPLOADED" && (
+        <CrmShell>
+          <div className="flex flex-col gap-6 p-6 md:p-8">
+            {/* 페이지 머리는 두지 않는다(오너 디자인 방침 2026-10-21). 이 가격표의 이름은 페이지
+                제목이 아니라 **내용**이라 첫 카드 첫 줄에 두고, 그 건의 상태·조작 버튼을 같은 줄
+                오른쪽 끝에 둔다. 옛 머리 설명의 출처 정보(형식·경로·표 수)도 이 줄의 보조 글자로 남긴다. */}
+            <Card data-testid="price-sheet-detail-toolbar" className="flex flex-row flex-wrap items-center justify-between gap-3 p-4">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <h2 className="truncate text-base font-semibold text-foreground">
+                  {sheet.partner?.name ?? "거래처 미지정"} 가격표
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {sheet.sourceFormat} · 경로 {sheet.extractPath} · 표 {sheet.detectedTables}개
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <PriceSheetStatusBadge status={sheet.status} />
+                {/* UPLOADED는 자동 추출이 담당하므로 버튼을 노출하지 않는다(추출 중 표시는
+                    스켈레톤이 전담). 실패·완료 상태에서만 수동 재추출을 제공한다. */}
+                {sheet.status !== "UPLOADED" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={runExtract}
+                  >
+                    {busy === "extract"
+                      ? "추출 중..."
+                      : sheet.status === "EXTRACT_FAILED"
+                        ? "추출 실행"
+                        : "재추출"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={busy !== null}
-                  onClick={runExtract}
+                  disabled={busy !== null || sheet.rows.length === 0}
+                  onClick={runMapping}
                 >
-                  {busy === "extract"
-                    ? "추출 중..."
-                    : sheet.status === "EXTRACT_FAILED"
-                      ? "추출 실행"
-                      : "재추출"}
+                  판매 조건 매핑 제안
                 </Button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={busy !== null || sheet.rows.length === 0}
-                onClick={runMapping}
-              >
-                판매 조건 매핑 제안
-              </Button>
-              {/* 확정 0건일 때 disabled로 두면 "눌렀는데 아무 일도 없다"가 된다(실보고) —
-                  클릭은 받되 왜 안 되는지 안내한다. busy/APPLIED만 물리적으로 잠근다. */}
-              <Button
-                size="sm"
-                disabled={busy !== null || sheet.status === "APPLIED"}
-                onClick={() => {
-                  if (confirmedRows.length === 0) {
-                    toast.error(
-                      "확정된 행이 없습니다. 검수표의 매핑에서 \"신규 판매 조건으로 생성\" 또는 기존 판매 조건을 선택해 행을 확정하세요."
-                    );
-                    return;
-                  }
-                  if (bundle.mode === "BUNDLE") {
-                    const target = bundle.target;
-                    const missing =
-                      target.kind === "EXISTING" ? !target.dealId : !target.parentDealName.trim();
-                    if (missing) {
+                {/* 확정 0건일 때 disabled로 두면 "눌렀는데 아무 일도 없다"가 된다(실보고) —
+                    클릭은 받되 왜 안 되는지 안내한다. busy/APPLIED만 물리적으로 잠근다. */}
+                <Button
+                  size="sm"
+                  disabled={busy !== null || sheet.status === "APPLIED"}
+                  onClick={() => {
+                    if (confirmedRows.length === 0) {
                       toast.error(
-                        target.kind === "EXISTING"
-                          ? "묶음 상위 판매 조건을 선택하세요."
-                          : "새 상위 판매 조건 이름을 입력하세요."
+                        "확정된 행이 없습니다. 검수표의 매핑에서 \"신규 판매 조건으로 생성\" 또는 기존 판매 조건을 선택해 행을 확정하세요."
                       );
                       return;
                     }
-                  }
-                  setApplyModalOpen(true);
-                }}
-              >
-                검수 승인 및 반영
-              </Button>
-            </div>
-          }
-        >
-          <div className="flex flex-col gap-6 p-6 md:p-8">
-            {/* 결과 카드가 맨 위다 — "지난번 반영이 어떻게 됐나"는 화면 진입 즉시 갖는
+                    if (bundle.mode === "BUNDLE") {
+                      const target = bundle.target;
+                      const missing =
+                        target.kind === "EXISTING" ? !target.dealId : !target.parentDealName.trim();
+                      if (missing) {
+                        toast.error(
+                          target.kind === "EXISTING"
+                            ? "묶음 상위 판매 조건을 선택하세요."
+                            : "새 상위 판매 조건 이름을 입력하세요."
+                        );
+                        return;
+                      }
+                    }
+                    setApplyModalOpen(true);
+                  }}
+                >
+                  검수 승인 및 반영
+                </Button>
+              </div>
+            </Card>
+
+            {/* 결과 카드가 이 건 줄 바로 아래다 — "지난번 반영이 어떻게 됐나"는 화면 진입 즉시 갖는
                 질문이고, 실패 사유를 검수표 아래까지 스크롤해 찾게 하면 안 된다. 하단의
                 "딜 반영 미리보기"(앞으로 일어날 일)와 양 끝에 놓여 시제가 위치로 갈린다. */}
             <ApplyResultCard summary={lastApply} />

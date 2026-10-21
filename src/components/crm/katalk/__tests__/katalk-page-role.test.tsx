@@ -10,20 +10,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { ROLE_COOKIE } from "@/lib/auth-roles";
 
+// CrmShell 은 머리 없는 스크롤 틀이다(오너 디자인 방침 2026-10-21) — 본문만 통과시킨다. 옛 대역은
+// title·actions 를 그려 줬으나 그 속성은 이제 없다.
 vi.mock("@/components/crm/crm-shell", () => ({
-  CrmShell: ({ title, description, actions, children }: {
-    title?: React.ReactNode;
-    description?: string;
-    actions?: React.ReactNode;
-    children: React.ReactNode;
-  }) => (
-    <div>
-      <div>{title}</div>
-      <div>{description}</div>
-      <div>{actions}</div>
-      {children}
-    </div>
-  ),
+  CrmShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 // 업로드 탭은 파일 입력·드래그 영역이라 이 테스트의 관심사가 아니다 — 대신 「귀속 대상
@@ -71,6 +61,20 @@ describe("KatalkPage — admin", () => {
 
     expect(await screen.findByText("방 관리")).toBeTruthy();
     expect(screen.getByText("캠페인 자료")).toBeTruthy();
+  });
+
+  it("「캠페인 자료」 링크는 탭줄(첫 도구줄) 오른쪽에 있고 페이지 머리는 없다", async () => {
+    setRoleCookie("admin");
+    render(<KatalkPage />);
+
+    const toolbar = await screen.findByTestId("katalk-toolbar");
+    const link = screen.getByRole("link", { name: /캠페인 자료/ });
+    expect(toolbar.contains(link)).toBe(true);
+    expect(toolbar.contains(screen.getByText("방 관리"))).toBe(true);
+    expect(toolbar.lastElementChild).toBe(link);
+    expect(link.getAttribute("href")).toBe("/assets/archive");
+    expect(document.querySelector("header, h1")).toBeNull();
+    expect(screen.queryByText("카톡 기록")).toBeNull();
   });
 
   it("역할 쿠키가 없어도 기존 화면 그대로다 (미들웨어를 못 거친 경로 폴백)", async () => {

@@ -242,25 +242,8 @@ export function CalendarPageClient({
   }
 
   return (
-    // 제목·설명·동기화 버튼은 CrmShell 머리로 올렸다(메뉴 이름 = 페이지 제목 — 옛 「캠페인 캘린더」).
-    <CrmShell
-      title="캘린더"
-      description="캠페인 기간과 입금/지급 예정일을 확인하고 구글 캘린더로 동기화합니다."
-      actions={
-        <Button
-          onClick={handleFullSync}
-          disabled={syncing}
-          className="h-9 gap-1.5 rounded-lg bg-primary px-3.5 text-xs text-white hover:bg-primary/90"
-        >
-          {syncing ? (
-            <Loader2 className="size-3.5 shrink-0 animate-spin" />
-          ) : (
-            <CloudUpload className="size-3.5 shrink-0" />
-          )}
-          {syncing ? "동기화 중..." : "구글 캘린더 전체 동기화"}
-        </Button>
-      }
-    >
+    // 페이지 머리(제목·설명)는 두지 않는다(오너 방침 2026-10-21) — 동기화 버튼은 필터 줄 오른쪽 끝에.
+    <CrmShell>
     <div className="mx-auto w-full max-w-6xl space-y-5 px-4 py-6 sm:px-6">
       {/* 매출 공백 요약 스트립 (오늘부터 롤링 — 월 이동 무관) */}
       {briefing && (
@@ -305,7 +288,7 @@ export function CalendarPageClient({
         </Button>
       </div>
 
-      {/* 필터 바 + 예비 일정 생성(키보드 접근 베이스라인 — 셀 hover 어포던스와 병행) */}
+      {/* 필터 바 + 예비 일정 생성(키보드 접근 베이스라인 — 셀 hover 어포던스와 병행) + 구글 캘린더 전체 동기화 */}
       <div className="flex flex-wrap items-center gap-2">
         <CalendarFilterBar
           sellers={sellersInMonth}
@@ -317,8 +300,22 @@ export function CalendarPageClient({
           onReset={resetFilters}
         />
         <Button
+          variant="outline"
           size="sm"
-          className="ml-auto h-8 gap-1.5 rounded-lg bg-primary px-3 text-xs text-white hover:bg-primary/90"
+          onClick={handleFullSync}
+          disabled={syncing}
+          className="ml-auto h-9 gap-1.5 rounded-lg px-3.5 text-xs"
+        >
+          {syncing ? (
+            <Loader2 className="size-3.5 shrink-0 animate-spin" />
+          ) : (
+            <CloudUpload className="size-3.5 shrink-0" />
+          )}
+          {syncing ? "동기화 중..." : "구글 캘린더 전체 동기화"}
+        </Button>
+        <Button
+          size="sm"
+          className="h-9 gap-1.5 rounded-lg bg-primary px-3.5 text-xs text-white hover:bg-primary/90"
           onClick={() => openDraftDialog(todayYmd())}
         >
           <Plus className="size-3.5" aria-hidden="true" />

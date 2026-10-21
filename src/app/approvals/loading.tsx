@@ -8,7 +8,7 @@ import { HubSkeleton } from "@/components/crm/approvals/hub-states";
  */
 export default function ApprovalsLoading() {
   return (
-    <CrmShell title="결재함" description="봇과 화면에서 올린 기안을 결재하고, 봇의 조회 결과와 작업 기록을 봅니다">
+    <CrmShell>
       <div className="px-5 pb-5 pt-5 md:px-8">
         <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           <HubSkeleton />

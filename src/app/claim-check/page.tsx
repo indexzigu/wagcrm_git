@@ -38,15 +38,22 @@ export default async function ClaimCheckPage() {
     }),
   ]);
 
-  // CrmShell 로 감싸는 이유는 헤더 통일만이 아니다 — 데스크톱 CRM 전 페이지의
-  // 실제 세로 스크롤러가 이 셸 내부 div(`[scrollbar-gutter:stable]`)라,
-  // 벗어나면 위반 목록이 길어질 때 스크롤바 등장으로 폭이 튄다(P8 Layout Stability).
+  // CrmShell 로 감싸는 이유 — 데스크톱 CRM 전 페이지의 실제 세로 스크롤러가 이 셸
+  // 내부 div(`[scrollbar-gutter:stable]`)라, 벗어나면 위반 목록이 길어질 때 스크롤바
+  // 등장으로 폭이 튄다(P8 Layout Stability). 페이지 머리(제목·설명)는 두지 않는다
+  // (오너 디자인 방침 2026-10-21).
+  //
+  // ⚠️ 옛 머리 설명에 들어 있던 「참고용 안내이며 법률 자문이 아님」 고지는 페이지 제목이
+  // 아니라 **판정의 효력 범위**라 머리와 함께 지우지 않는다 — 패널 아래 각주로 남긴다.
   return (
-    <CrmShell
-      title="표현 검사"
-      description="셀러에게 보낼 자료나 셀러가 올린 초안을 발행 전에 훑습니다. 판정은 참고용 안내이며 법률 자문이 아닙니다. 최종 판단은 담당자가 합니다."
-    >
+    <CrmShell>
       <ClaimCheckerPanel rules={rows} deals={deals} />
+      <p
+        data-testid="claim-check-disclaimer"
+        className="mx-auto -mt-2 w-full max-w-5xl px-6 pb-6 text-xs text-muted-foreground"
+      >
+        판정은 참고용 안내이며 법률 자문이 아닙니다. 최종 판단은 담당자가 합니다.
+      </p>
     </CrmShell>
   );
 }
