@@ -2,7 +2,7 @@
 // 모델은 DB id 를 고르지 않고, 제목에 실제로 있는 문자열만 인정한다(주입 차단).
 // 실패는 삼키지 않되 던지지도 않는다 — 결과 종류로 돌려주고, 실패는 ApiCallLog 로 계측.
 //
-// 이 파일은 로컬 모델(local-hints.ts)과 Gemini(단건·일괄)가 함께 쓰는 조각 — 지시문,
+// 이 파일은 로컬 모델(local-hints.ts)과 Gemini 일괄이 함께 쓰는 조각 — 지시문,
 // 응답 스키마, 근거 방벽(groundHints) — 의 정본이다. 경로마다 복제하면 한쪽만 고쳐져
 // 모델이 지어낸 이름이 그 경로로만 새어 들어간다.
 import { z } from "zod";
@@ -22,7 +22,8 @@ import type { TitleHints } from "./types";
 
 const GEMINI_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta/models";
-const FETCH_TIMEOUT_MS = 20_000;
+/** Gemini 키 하나당 요청 시간 제한. 호출부(수집 스캔)가 일괄을 시작할지 가늠하는 단위이기도 하다. */
+export const GEMINI_FETCH_TIMEOUT_MS = 20_000;
 
 /**
  * Gemini 일괄 호출 한 번에 담는 제목 수 상한. 넘기면 호출 전에 던진다 — 나누는 것은
@@ -48,7 +49,7 @@ export const HINT_FIELD_RULES = `- sellerHint: 셀러(사람·닉네임) 이름
 const TITLE_CONTEXT =
   "한국 인플루언서 공동구매 운영자가 구글 캘린더에 적은 일정 제목";
 
-/** 제목 하나용 지시문(Gemini 단건·로컬 모델 공용). */
+/** 제목 하나용 지시문(로컬 모델용 — 일괄 지시문과 필드 규칙을 공유한다). */
 export function buildHintPrompt(summary: string): string {
   return `아래는 ${TITLE_CONTEXT}이다.
 여기서 다음을 뽑아 JSON 하나로만 답하라.
@@ -148,7 +149,15 @@ export function groundHints(raw: RawHints, summary: string): TitleHintsResult {
   return empty ? NONE : { kind: "hints", hints };
 }
 
-type GeminiDeps = { fetchImpl?: typeof fetch; apiKey?: string };
+type GeminiDeps = {
+  fetchImpl?: typeof fetch;
+  apiKey?: string;
+  /**
+   * 키 회전 전체에 거는 시간 한도(ms, 호출 시작부터). 키마다 20초씩 새로 주면 키 수 × 20초가 되어 호출부의 시간
+   * 예산을 넘는다 — 한도가 지나면 다음 키로 넘어가지 않고 unavailable(일시 장애)로 끝낸다. 없으면 키당 20초만.
+   */
+  totalTimeoutMs?: number;
+};
 
 /**
  * Gemini generateContent 1회(키 회전 포함). 성공이면 모델이 낸 텍스트, 아니면
@@ -161,6 +170,7 @@ async function callGemini(
   const fetchImpl = deps.fetchImpl ?? fetch;
   const keys = deps.apiKey ? [deps.apiKey] : getGeminiApiKeys();
   const startedAt = Date.now();
+  const deadline = deps.totalTimeoutMs === undefined ? Infinity : startedAt + deps.totalTimeoutMs;
   const fail = async (
     kind: "NO_KEYS" | "NETWORK" | "HTTP" | "KEYS_EXHAUSTED",
     statusCode: number,
@@ -199,9 +209,16 @@ async function callGemini(
   });
 
   for (let i = 0; i < keys.length; i++) {
-    const isLast = i === keys.length - 1;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      // 첫 키 전에 이미 한도가 지났다(호출부 예산 계산 실수) — 부르지 않았으니 계측할 실패도 없다.
+      console.error("[calendar-inbound] 힌트 호출 시간 한도가 이미 지나 부르지 않음");
+      return { kind: "unavailable" };
+    }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), Math.min(GEMINI_FETCH_TIMEOUT_MS, remaining));
+    // 다음 키로 넘어갈 수 있는지는 이 시도가 끝난 뒤에 판단한다 — 한도가 지났으면 이 키가 마지막이다.
+    const isLastAttempt = () => i === keys.length - 1 || Date.now() >= deadline;
     let res: Response;
     let text: string;
     try {
@@ -216,7 +233,7 @@ async function callGemini(
       );
       text = await res.text();
     } catch (err) {
-      if (isLast) {
+      if (isLastAttempt()) {
         await fail("NETWORK", NO_HTTP_RESPONSE, i + 1, keys[i], err);
         return { kind: "unavailable" };
       }
@@ -227,7 +244,7 @@ async function callGemini(
 
     if (!res.ok) {
       const retryable = isRetryableGeminiStatus(res.status);
-      if (retryable && !isLast) continue;
+      if (retryable && !isLastAttempt()) continue;
       await fail(
         i > 0 && retryable ? "KEYS_EXHAUSTED" : "HTTP",
         res.status,
@@ -249,27 +266,6 @@ async function callGemini(
     }
   }
   return { kind: "none" };
-}
-
-/**
- * 제목 하나를 Gemini 로 1회 해석한다.
- * @deprecated 수집 파이프라인은 로컬 모델(extractTitleHintsLocal) → 실패분만
- *   extractTitleHintsBatch 로 옮겨 간다. 이벤트당 Gemini 호출은 회차당 호출 수를 키운다.
- */
-export async function extractTitleHints(
-  summary: string,
-  deps: GeminiDeps = {},
-): Promise<TitleHintsResult> {
-  const r = await callGemini(buildHintPrompt(summary), deps);
-  if (r.kind !== "text") return r.kind === "unavailable" ? UNAVAILABLE : NONE;
-  try {
-    return groundHints(HintsSchema.parse(JSON.parse(r.text)), summary);
-  } catch {
-    console.error(
-      "[calendar-inbound] 힌트 응답을 해석하지 못했습니다 (비JSON 또는 스키마 불일치)",
-    );
-    return NONE;
-  }
 }
 
 const BatchEntrySchema = z.object({ id: z.string() }).passthrough();

@@ -37,6 +37,7 @@ import { CALENDAR_INBOUND_CREATED_BY, calendarInboundRefSchema, type CalendarInb
 import { loadInboundDictionary } from "./dictionary";
 import { withScanLock } from "./run-lock";
 import {
+  GEMINI_FETCH_TIMEOUT_MS,
   MAX_GEMINI_BATCH,
   NONE,
   extractTitleHintsBatch,
@@ -61,9 +62,9 @@ export const MAX_PROPOSALS_PER_RUN = 20;
  * - 60초 이하: 배포 지침(`docs/agents/deployment.md` 「Plan Limits」) — Vercel Hobby 가 함수 실행을 60초로 자르므로
  *   예산 상수를 그 위로 두지 않는다. 남은 일정은 다음 회차(30분 뒤)가 집는다.
  * - 단일 실행 잠금의 트랜잭션 시간 제한(`run-lock.ts` `LOCK_TX_TIMEOUT_MS`)보다 짧아야 한다 — 예산은 일정 하나를
- *   **시작하기 전에만** 보므로 마지막 일정은 예산을 넘겨 끝날 수 있다(DB 쓰기). 로컬 모델 호출은 남은 예산 안으로
- *   시간 제한을 줄여 부르고, Gemini 일괄(시간 제한 20초)은 회차 맨 앞에서 한 번만 부른다. 제한이 먼저 오면 잠금이
- *   풀린 채 본문이 돌아 겹친 회차가 같은 일정을 또 기안할 수 있다.
+ *   **시작하기 전에만** 보므로 마지막 일정은 예산을 넘겨 끝날 수 있다(DB 쓰기). 모델 호출은 둘 다 남은 예산 안에
+ *   묶는다 — 로컬은 호출마다, Gemini 일괄은 키 회전 전체에 남은 예산에서 여유를 뺀 한도를 건다. 제한이 먼저 오면
+ *   잠금이 풀린 채 본문이 돌아 겹친 회차가 같은 일정을 또 기안할 수 있다.
  */
 export const SCAN_BUDGET_MS = 55_000;
 
@@ -75,6 +76,14 @@ export const LOCAL_MIN_REMAINING_MS = 8_000;
 
 /** 로컬 모델 호출의 시간 제한을 남은 예산에서 이만큼 덜어 잡는다(응답 뒤 해석·DB 쓰기 몫). */
 export const LOCAL_TIMEOUT_MARGIN_MS = 3_000;
+
+/**
+ * Gemini 일괄을 시작하는 데 필요한 남은 예산 = 키 하나의 요청 시간 제한 + 여유. 이보다 적으면 부르지 않고 일시
+ * 장애와 똑같이 해석 대기로 두어 다음 회차에 묻는다. 부를 때는 키 회전 전체에 (남은 예산 - 여유) 한도를 걸어,
+ * 키마다 20초씩 새로 받아 예산을 넘지 않게 한다.
+ */
+export const GEMINI_BATCH_TIMEOUT_MS = GEMINI_FETCH_TIMEOUT_MS;
+export const GEMINI_TIMEOUT_MARGIN_MS = 3_000;
 
 /** 스캔 창 — KST 오늘 기준 과거 14일 ~ 미래 180일(끝날 포함). */
 const WINDOW_DAYS_BACK = 14;
@@ -114,7 +123,7 @@ export type ScanSummary = {
   dropped: number;
   /**
    * 이번 회차가 해석 대기(AWAITING_HINT)로 남긴 수 — 로컬 모델이 못 풀어 다음 회차 Gemini 로 넘긴 것, 예산이 모자라
-   * 로컬 모델을 못 부른 것, Gemini 일괄이 일시 장애였거나 일괄 한도를 넘어 다음 회차를 기다리는 것. `dropped` 와 겹치지
+   * 로컬 모델·Gemini 를 못 부르거나 끊긴 것, Gemini 일괄이 일시 장애였거나 일괄 한도를 넘어 다음 회차를 기다리는 것. `dropped` 와 겹치지
    * 않는다(상한·예산으로 손대지 않은 해석 대기 행은 `dropped` 로만 센다).
    */
   awaitingHint: number;
@@ -170,8 +179,11 @@ export type CalendarInboundScanDeps = {
   loadDictionary: () => Promise<InboundDictionary>;
   /** 이 맥의 로컬 모델로 제목 하나 — `timeoutMs` 는 남은 예산으로 줄여 넘긴다. */
   extractHintsLocal: (summary: string, opts: { timeoutMs: number }) => Promise<TitleHintsResult>;
-  /** Gemini 일괄 — 회차당 최대 1번, 최대 `MAX_GEMINI_BATCH` 개. */
-  extractHintsBatch: (items: ReadonlyArray<{ id: string; summary: string }>) => Promise<TitleHintsBatchResult>;
+  /** Gemini 일괄 — 회차당 최대 1번, 최대 `MAX_GEMINI_BATCH` 개. `timeoutMs` 는 키 회전 전체의 한도(남은 예산에서). */
+  extractHintsBatch: (
+    items: ReadonlyArray<{ id: string; summary: string }>,
+    opts: { timeoutMs: number },
+  ) => Promise<TitleHintsBatchResult>;
   resolveTarget: (intent: ParsedCalendarIntent, event: CandidateEvent) => Promise<ResolveResult>;
   createProposal: (data: Prisma.ActionProposalUncheckedCreateInput) => Promise<{ id: string }>;
   findRows: (googleEventIds: string[]) => Promise<InboundRow[]>;
@@ -323,6 +335,8 @@ type Work = {
   version: InboundRowVersion | null;
   /** 기존 행(해석 대기 행의 lastSeenAt·id 를 읽는다). */
   row: InboundRow | undefined;
+  /** 지난 회차에 예산이 모자라 로컬을 못 부른 해석 대기 행(같은 지문) — 이번 회차 로컬 단계에서 먼저 부른다. */
+  carriedLocal: boolean;
 };
 
 type ParseResult = { ok: true; intent: ParsedCalendarIntent } | ParseFailure;
@@ -579,6 +593,7 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
         retrying: row?.status === INBOUND_STATUS.PENDING_RETRY,
         version: row ? { id: row.id, updatedAt: row.updatedAt } : null,
         row,
+        carriedLocal: decision.kind === "awaiting" && decision.stage === "local",
       };
       // Gemini 단계로 적힌 행은 로컬 모델에 다시 보내지 않는다(이미 못 풀었다).
       if (decision.kind === "awaiting" && decision.stage === "gemini") geminiQueue.push(work);
@@ -589,8 +604,8 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
   }
 
   // ── ① Gemini 일괄 — 지난 회차에 로컬 모델이 못 푼 것만, 회차당 최대 1번 ──
-  // 회차 맨 앞에서 부른다: 시간 제한(20초)이 남은 예산을 넘지 않게. 규칙은 공짜라 먼저 다시 본다(사전이 그 사이
-  // 늘었을 수 있다) — 실패 사유도 여기서 얻는다(힌트가 none 이면 그 사유로 닫는다).
+  // 규칙은 공짜라 먼저 다시 본다(사전이 그 사이 늘었을 수 있다) — 실패 사유도 여기서 얻는다(힌트가 none 이면 그
+  // 사유로 닫는다). 일괄 호출은 남은 예산이 충분할 때만, 키 회전 전체에 남은 예산 한도를 걸어 부른다.
   geminiQueue.sort((a, b) => a.row!.lastSeenAt.getTime() - b.row!.lastSeenAt.getTime());
   const batch: { work: Work; ruleFailure: ParseFailure }[] = [];
   for (const work of geminiQueue) {
@@ -615,17 +630,24 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
     }
   }
   if (batch.length > 0) {
-    let result: TitleHintsBatchResult;
-    try {
-      // id 는 일괄 안의 순번 — 구글 이벤트 id 를 바깥 모델에 보내지 않고, 같은 이벤트 id 가 두 캘린더에 있어도 겹치지 않는다.
-      result = await deps.extractHintsBatch(batch.map((b, i) => ({ id: String(i), summary: b.work.event.summary })));
-    } catch (err) {
-      console.error("[calendar-inbound] Gemini 일괄 힌트 호출 실패 (다음 회차에 다시):", err);
-      summary.errors++;
-      result = { kind: "unavailable" };
+    let result: TitleHintsBatchResult = { kind: "unavailable" };
+    const remaining = budgetMs - elapsed();
+    // 남은 예산이 모자라면 부르지 않는다 — 일시 장애와 똑같이 해석 대기로 두고 다음 회차에 묻는다.
+    if (remaining >= GEMINI_BATCH_TIMEOUT_MS + GEMINI_TIMEOUT_MARGIN_MS) {
+      try {
+        // id 는 일괄 안의 순번 — 구글 이벤트 id 를 바깥 모델에 보내지 않고, 같은 이벤트 id 가 두 캘린더에 있어도 겹치지 않는다.
+        result = await deps.extractHintsBatch(
+          batch.map((b, i) => ({ id: String(i), summary: b.work.event.summary })),
+          { timeoutMs: remaining - GEMINI_TIMEOUT_MARGIN_MS },
+        );
+      } catch (err) {
+        // 한 건의 예외가 아니라 호출 하나의 예외라 `errors`(건별)로 세지 않는다 — 행은 해석 대기로 남아 다음 회차에 다시.
+        console.error("[calendar-inbound] Gemini 일괄 힌트 호출 실패 (다음 회차에 다시):", err);
+        result = { kind: "unavailable" };
+      }
     }
     if (result.kind === "unavailable") {
-      // 일시 장애 — 닫지 않고 해석 대기(gemini)로 둔다. 쓸 칸이 없어 lastSeenAt 만 갱신한다.
+      // 일시 장애·예외·예산 부족으로 못 부름 — 닫지 않고 해석 대기(gemini)로 둔다. 쓸 칸이 없어 lastSeenAt 만 갱신한다.
       for (const b of batch) {
         touched.push(b.work.row!.id);
         summary.awaitingHint++;
@@ -653,10 +675,15 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
   }
 
   // ── ② 규칙 → ③ 로컬 모델(하나씩, 남은 예산 안에서) ──
-  // 로컬 서버가 한 번 일시 장애(연결 거부·시간 초과)면 이 회차엔 더 부르지 않고 바로 Gemini 단계로 넘긴다 —
-  // 꺼진 서버에 제목마다 기다리면 예산만 탄다.
+  // 지난 회차에 예산이 모자라 로컬을 못 부른 행(hintStage "local")부터, 오래 기다린 순으로 — 새 일정에 밀려 매번
+  // 뒤로 가면 영영 못 부른다. 그다음 새로 보거나 바뀐 일정(후보 순서).
+  const carried = ruleQueue.filter((w) => w.carriedLocal);
+  carried.sort((a, b) => a.row!.lastSeenAt.getTime() - b.row!.lastSeenAt.getTime());
+  const ordered = [...carried, ...ruleQueue.filter((w) => !w.carriedLocal)];
+  // 로컬 서버가 일시 장애(연결 거부·5xx·제 시간 제한을 다 쓰고 끊김)면 이 회차엔 더 부르지 않고 바로 Gemini 단계로
+  // 넘긴다 — 꺼진 서버에 제목마다 기다리면 예산만 탄다. 예산 때문에 줄인 시간 제한으로 끊긴 것은 서버 탓이 아니다.
   let localDown = false;
-  for (const work of ruleQueue) {
+  for (const work of ordered) {
     try {
       if (mustDrop()) {
         summary.dropped++;
@@ -667,20 +694,26 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
         record(await settleParsed(work, byRule, now, deps));
         continue;
       }
+      // 예산 판정이 먼저다 — 시간이 없어 못 부른 것은 서버 장애와 무관하게 다음 회차가 로컬부터 잇는다.
+      const remaining = budgetMs - elapsed();
+      if (remaining < LOCAL_MIN_REMAINING_MS) {
+        record(await saveAwaiting(work, "local", now, deps));
+        continue;
+      }
       if (localDown) {
         record(await saveAwaiting(work, "gemini", now, deps));
         continue;
       }
-      const remaining = budgetMs - elapsed();
-      if (remaining < LOCAL_MIN_REMAINING_MS) {
-        // 로컬 모델을 부를 시간이 없다 — 다음 회차가 로컬부터 잇는다(Gemini 로 건너뛰지 않는다).
-        record(await saveAwaiting(work, "local", now, deps));
-        continue;
+      const timeoutMs = Math.min(LOCAL_HINT_TIMEOUT_MS, remaining - LOCAL_TIMEOUT_MARGIN_MS);
+      const local = await deps.extractHintsLocal(work.event.summary, { timeoutMs });
+      if (local.kind === "unavailable") {
+        if (timeoutMs < LOCAL_HINT_TIMEOUT_MS) {
+          // 예산 때문에 줄인 시간 제한 — 끊긴 것이 서버 장애라고 볼 수 없다. 차단기를 올리지 않고 다음 회차가 로컬부터.
+          record(await saveAwaiting(work, "local", now, deps));
+          continue;
+        }
+        localDown = true;
       }
-      const local = await deps.extractHintsLocal(work.event.summary, {
-        timeoutMs: Math.min(LOCAL_HINT_TIMEOUT_MS, remaining - LOCAL_TIMEOUT_MARGIN_MS),
-      });
-      if (local.kind === "unavailable") localDown = true;
       if (local.kind === "hints") {
         const byLocal = parseCalendarTitle(work.event.summary, dict, local.hints);
         if (byLocal.ok) {
@@ -722,7 +755,7 @@ function defaultDeps(): CalendarInboundScanDeps {
     listCandidates: listAllDayCandidateEvents,
     loadDictionary: () => loadInboundDictionary(getPrisma()),
     extractHintsLocal: (summary, { timeoutMs }) => extractTitleHintsLocal(summary, { timeoutMs }),
-    extractHintsBatch: (items) => extractTitleHintsBatch(items),
+    extractHintsBatch: (items, { timeoutMs }) => extractTitleHintsBatch(items, { totalTimeoutMs: timeoutMs }),
     resolveTarget: (intent, event) => resolveInboundTarget(intent, event, getPrisma()),
     createProposal: (data) => ActionProposalRepository.create(data),
     findRows: (googleEventIds) =>

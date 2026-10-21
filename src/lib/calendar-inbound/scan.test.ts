@@ -13,6 +13,8 @@ import { CALENDAR_INBOUND_CREATED_BY, calendarInboundRefSchema } from "./adopt";
 import type { ProposalDraft, ResolveResult } from "./resolve-target";
 import { LOCK_TX_TIMEOUT_MS } from "./run-lock";
 import {
+  GEMINI_BATCH_TIMEOUT_MS,
+  GEMINI_TIMEOUT_MARGIN_MS,
   LOCAL_MIN_REMAINING_MS,
   LOCAL_TIMEOUT_MARGIN_MS,
   SCAN_BUDGET_MS,
@@ -85,7 +87,10 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
   );
   // 기본: 일괄 응답이 전부 none(실제 함수처럼 입력 id 를 빠짐없이 채운다).
   const extractHintsBatch = vi.fn(
-    async (items: ReadonlyArray<{ id: string; summary: string }>): Promise<TitleHintsBatchResult> => ({
+    async (
+      items: ReadonlyArray<{ id: string; summary: string }>,
+      _opts: { timeoutMs: number },
+    ): Promise<TitleHintsBatchResult> => ({
       kind: "ok",
       results: new Map(items.map((it) => [it.id, { kind: "none" } as TitleHintsResult])),
     }),
@@ -843,7 +848,9 @@ describe("runCalendarInboundScan — 해석 단계(규칙 → 로컬 → Gemini 
 
     const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
-    expect(summary).toMatchObject({ errors: 1, awaitingHint: 1, proposed: 1 });
+    // 호출 하나의 예외는 건별 오류(errors)로 세지 않는다 — 행은 해석 대기로 남아 다음 회차에 다시.
+    expect(summary).toMatchObject({ errors: 0, awaitingHint: 1, proposed: 1 });
+    expect(console.error).toHaveBeenCalled();
     expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
   });
 
@@ -863,21 +870,33 @@ describe("runCalendarInboundScan — 해석 단계(규칙 → 로컬 → Gemini 
     expect(state.t - start).toBeLessThanOrEqual(SCAN_BUDGET_MS);
   });
 
+  /**
+   * 실제 로컬 클라이언트처럼 동작하는 가짜 — 응답에 `takesMs` 가 걸리고, 그 전에 시간 제한이 오면 끊겨 unavailable.
+   */
+  function slowLocal(state: { t: number }, takesMs: (summary: string) => number, answer: TitleHintsResult) {
+    return async (summary: string, { timeoutMs }: { timeoutMs: number }): Promise<TitleHintsResult> => {
+      const takes = takesMs(summary);
+      if (takes > timeoutMs) {
+        state.t += timeoutMs;
+        return { kind: "unavailable" };
+      }
+      state.t += takes;
+      return answer;
+    };
+  }
+
   it("로컬이 느리면 남은 예산으로 시간 제한을 줄이고, 8초 미만이면 부르지 않고 해석 대기(local) → 다음 회차가 로컬부터 잇는다", async () => {
     const h = makeHarness([unparsed("e1"), unparsed("e2"), unparsed("e3")]);
     const { clock, state } = fakeClock();
     const start = state.t;
-    // 응답이 시간 제한까지 걸리고 none(서버는 살아 있다).
-    h.extractHintsLocal.mockImplementation(async (_summary, { timeoutMs }) => {
-      state.t += timeoutMs;
-      return { kind: "none" };
-    });
+    // 응답에 25초 걸리고 none(서버는 살아 있다).
+    h.extractHintsLocal.mockImplementation(slowLocal(state, () => 25_000, { kind: "none" }));
 
     const first = await runCalendarInboundScan({ now: NOW, clock, deps: h.deps });
 
     expect(h.extractHintsLocal.mock.calls.map(([, o]) => o.timeoutMs)).toEqual([
       LOCAL_HINT_TIMEOUT_MS,
-      SCAN_BUDGET_MS - LOCAL_HINT_TIMEOUT_MS - LOCAL_TIMEOUT_MARGIN_MS,
+      SCAN_BUDGET_MS - 25_000 - LOCAL_TIMEOUT_MARGIN_MS,
     ]);
     expect(state.t - start).toBeLessThanOrEqual(SCAN_BUDGET_MS);
     expect(first).toMatchObject({ awaitingHint: 3, dropped: 0 });
@@ -886,7 +905,7 @@ describe("runCalendarInboundScan — 해석 단계(규칙 → 로컬 → Gemini 
     expect(h.rows.get("e3")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "local" } });
 
     // 다음 회차: e3 만 로컬로(건너뛰지도 겹치지도 않는다), e1·e2 는 Gemini 일괄로.
-    h.extractHintsLocal.mockClear();
+    h.extractHintsLocal.mockReset();
     h.extractHintsLocal.mockResolvedValue({ kind: "none" });
     const second = await runCalendarInboundScan({ now: NOW, clock: fakeClock().clock, deps: h.deps });
 
@@ -894,6 +913,99 @@ describe("runCalendarInboundScan — 해석 단계(규칙 → 로컬 → Gemini 
     expect(h.batchSummaries()).toEqual([["치과 예약 e1", "치과 예약 e2"]]);
     expect(second).toMatchObject({ skippedUnparsed: 2, awaitingHint: 1 });
     expect(h.rows.get("e3")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+  });
+
+  it("예산 때문에 줄인 시간 제한으로 끊긴 호출은 차단기를 올리지 않고 그 행은 해석 대기(local)로 남는다", async () => {
+    // ① 줄인 시간 제한 안에 응답이 안 와 끊김 → e1 은 local, 남은 예산이 없어 e2 도 local(Gemini 로 건너뛰지 않는다).
+    {
+      const h = makeHarness([unparsed("e1"), unparsed("e2")]);
+      const { clock, state } = fakeClock();
+      h.extractHintsLocal.mockImplementation(slowLocal(state, () => 60_000, { kind: "none" }));
+
+      const summary = await runCalendarInboundScan({ now: NOW, clock, budgetMs: 30_000, deps: h.deps });
+
+      expect(h.extractHintsLocal.mock.calls.map(([, o]) => o.timeoutMs)).toEqual([30_000 - LOCAL_TIMEOUT_MARGIN_MS]);
+      expect(summary).toMatchObject({ awaitingHint: 2 });
+      for (const id of ["e1", "e2"]) {
+        expect(h.rows.get(id)).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "local" } });
+      }
+    }
+    // ② 줄인 시간 제한 호출이 일시 장애로 끝나도 다음 제목은 여전히 로컬을 부른다(차단기 안 올림).
+    {
+      const h = makeHarness([unparsed("e1"), ev("e2", { summary: "ㅅㅍ 테스트브랜드" })]);
+      h.extractHintsLocal.mockResolvedValueOnce({ kind: "unavailable" }).mockResolvedValueOnce({
+        kind: "hints",
+        hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null },
+      });
+
+      const summary = await runCalendarInboundScan({ now: NOW, clock: fakeClock().clock, budgetMs: 30_000, deps: h.deps });
+
+      expect(h.extractHintsLocal).toHaveBeenCalledTimes(2);
+      expect(summary).toMatchObject({ localResolved: 1, proposed: 1, awaitingHint: 1 });
+      expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "local" } });
+    }
+  });
+
+  it("제 시간 제한(30초)을 다 쓰고 끊기면 서버 장애로 보고 차단기를 올린다 — 나머지는 바로 Gemini 단계", async () => {
+    const h = makeHarness([unparsed("e1"), unparsed("e2"), unparsed("e3")]);
+    const { clock, state } = fakeClock();
+    h.extractHintsLocal.mockImplementation(slowLocal(state, () => 60_000, { kind: "none" }));
+
+    const summary = await runCalendarInboundScan({ now: NOW, clock, deps: h.deps });
+
+    expect(h.extractHintsLocal.mock.calls.map(([, o]) => o.timeoutMs)).toEqual([LOCAL_HINT_TIMEOUT_MS]);
+    expect(summary).toMatchObject({ awaitingHint: 3, dropped: 0 });
+    for (const id of ["e1", "e2", "e3"]) {
+      expect(h.rows.get(id)).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+    }
+  });
+
+  it("차단기가 올라간 뒤라도 예산이 모자라 못 부른 행은 Gemini 가 아니라 로컬 대기로 남는다(예산 판정이 먼저)", async () => {
+    const h = makeHarness([unparsed("e1"), unparsed("e2")]);
+    const { clock, state } = fakeClock();
+    h.extractHintsLocal.mockImplementation(slowLocal(state, () => 60_000, { kind: "none" }));
+
+    await runCalendarInboundScan({ now: NOW, clock, budgetMs: 37_000, deps: h.deps });
+
+    expect(h.extractHintsLocal.mock.calls.map(([, o]) => o.timeoutMs)).toEqual([LOCAL_HINT_TIMEOUT_MS]);
+    expect(h.rows.get("e1")).toMatchObject({ parsed: { hintStage: "gemini" } });
+    expect(h.rows.get("e2")).toMatchObject({ parsed: { hintStage: "local" } });
+  });
+
+  it("지난 회차에서 넘어온 로컬 대기 행을 오래 기다린 순으로 먼저 부르고, 새 일정은 그다음", async () => {
+    const h = makeHarness([unparsed("e1"), unparsed("e2")]);
+    await runCalendarInboundScan({ now: NOW, budgetMs: LOCAL_MIN_REMAINING_MS - 1, deps: h.deps });
+    expect(h.rows.get("e1")).toMatchObject({ parsed: { hintStage: "local" } });
+    h.rows.get("e2")!.lastSeenAt = new Date(NOW.getTime() - 60 * 60_000);
+    h.listing.value = { ok: true, events: [unparsed("e0"), unparsed("e1"), unparsed("e2")], referencedIds: new Set() };
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.extractHintsLocal.mock.calls.map(([s]) => s)).toEqual(["치과 예약 e2", "치과 예약 e1", "치과 예약 e0"]);
+  });
+
+  it("Gemini 일괄은 남은 예산이 (20초 + 여유) 이상일 때만 부르고, 키 회전 전체에 남은 예산 한도를 건다", async () => {
+    expect(GEMINI_BATCH_TIMEOUT_MS).toBe(20_000);
+    expect(GEMINI_TIMEOUT_MARGIN_MS).toBe(3_000);
+    const h = makeHarness([unparsed("e1"), unparsed("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    const later = new Date(NOW.getTime() + 30 * 60_000);
+
+    const short = await runCalendarInboundScan({
+      now: later,
+      clock: fakeClock().clock,
+      budgetMs: GEMINI_BATCH_TIMEOUT_MS + GEMINI_TIMEOUT_MARGIN_MS - 1,
+      deps: h.deps,
+    });
+    expect(h.extractHintsBatch).not.toHaveBeenCalled();
+    expect(short).toMatchObject({ awaitingHint: 2, skippedUnparsed: 0, errors: 0 });
+    for (const id of ["e1", "e2"]) {
+      expect(h.rows.get(id)).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" }, lastSeenAt: later });
+    }
+
+    await runCalendarInboundScan({ now: later, clock: fakeClock().clock, deps: h.deps });
+    expect(h.extractHintsBatch).toHaveBeenCalledTimes(1);
+    expect(h.extractHintsBatch.mock.calls[0][1]).toEqual({ timeoutMs: SCAN_BUDGET_MS - GEMINI_TIMEOUT_MARGIN_MS });
   });
 
   it("로컬이 제목에 맞지 않는 이름을 주면(사전에 없음) 버리고 Gemini 단계로 넘긴다", async () => {
