@@ -156,7 +156,7 @@ export function OperationsSettingsClient() {
   return (
     <div className="space-y-6 max-w-5xl">
       <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
-        <CardHeader className="flex-row items-center justify-between gap-3 border-b border-border/50 py-3.5 px-6">
+        <CardHeader className="flex-row items-center justify-between gap-3 border-b border-border py-3.5 px-6">
           <div>
             <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Target className="size-4 text-primary" /> 매출 목표
@@ -231,7 +231,7 @@ export function OperationsSettingsClient() {
       </Card>
 
       <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
-        <CardHeader className="border-b border-border/50 py-3.5 px-6">
+        <CardHeader className="border-b border-border py-3.5 px-6">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <CalendarRange className="size-4 text-blue-500" /> 일정 확보 기준일
           </CardTitle>
@@ -292,7 +292,7 @@ export function OperationsSettingsClient() {
       </Card>
 
       <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
-        <CardHeader className="border-b border-border/50 py-3.5 px-6">
+        <CardHeader className="border-b border-border py-3.5 px-6">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <CircleDollarSign className="size-4 text-indigo-500" /> 채널 수수료
           </CardTitle>
@@ -368,7 +368,7 @@ export function OperationsSettingsClient() {
       </Card>
 
       <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
-        <CardHeader className="border-b border-border/50 py-3.5 px-6">
+        <CardHeader className="border-b border-border py-3.5 px-6">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <RefreshCw className="size-4 text-primary" /> 주문 자동 동기화
           </CardTitle>
