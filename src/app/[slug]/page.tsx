@@ -32,7 +32,7 @@ function PasswordGate({
 }) {
   return (
     // 가운데 정렬 화면이라 일반 브라우저 위쪽 여백은 0 그대로 두고, 홈 화면 앱에서만 상태바 높이를 비운다.
-    <div className="min-h-screen bg-background flex items-center justify-center px-4 pt-[env(safe-area-inset-top)]">
+    <div className="min-h-screen w-full flex-1 min-w-0 bg-background flex items-center justify-center px-4 pt-[env(safe-area-inset-top)]">
       <div className="w-full max-w-sm">
         <div className="bg-card rounded-2xl border border-border shadow-soft-sm px-6 py-8">
           <p className="text-[11px] font-bold tracking-widest text-slate-500 uppercase text-center">

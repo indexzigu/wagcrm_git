@@ -111,8 +111,9 @@ export async function SellerPerformanceCard({
 
   return (
     // 위쪽 여백은 홈 화면 앱(viewportFit:cover · black-translucent)에서 상태바 높이만큼 늘어난다 —
-    // 일반 브라우저는 env()=0 이라 종전 2rem 그대로다.
-    <div className="min-h-screen bg-background">
+    // 일반 브라우저는 env()=0 이라 종전 2rem 그대로다. flex-1·min-w-0 은 리포트(seller-portal-report)와 같은 사유 —
+    // 사이드바 래퍼(flex) 안에서 콘텐츠 폭으로 쪼그라들어 카드가 왼쪽에 좁게 붙던 것을 막는다.
+    <div className="min-h-screen w-full flex-1 min-w-0 bg-background">
       <div className="max-w-sm mx-auto px-4 pb-8 pt-[max(2rem,env(safe-area-inset-top))]">
         {/* 캡처 대상 카드 — 이 박스 안에 자랑 포인트를 밀도 있게 담는다 */}
         <div className="bg-card rounded-3xl border border-border shadow-soft-md overflow-hidden">
