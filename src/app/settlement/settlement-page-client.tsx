@@ -546,8 +546,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
         ]}
       />
 
-      <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
-        <div className="flex min-h-12 shrink-0 flex-col gap-3 border-b border-border/70 px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col rounded-2xl border border-border bg-card shadow-ambient">
+        <div className="flex min-h-12 shrink-0 flex-col gap-3 border-b border-border px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex h-9 min-w-48 items-center justify-between gap-2 rounded-lg border border-border/80 bg-white px-2 shadow-soft-sm">
               <button
@@ -628,7 +628,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
               <div className="flex items-center gap-2">
                 <ChevronDown className="size-4 text-slate-500" />
                 <h2 ref={activeHeadingRef} tabIndex={-1} className="text-base font-semibold text-slate-800 outline-none">정산 진행 중 캠페인</h2>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-slate-500">
                   {activeCampaigns.length}건
                 </span>
               </div>
@@ -648,7 +648,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
               <div className="flex items-center gap-2">
                 <ChevronDown className="size-4 text-slate-500" />
                 <h2 className="text-base font-semibold text-slate-800">정산 완료 캠페인</h2>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-slate-500">
                   {completedCampaigns.length}건
                 </span>
               </div>

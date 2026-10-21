@@ -548,7 +548,7 @@ export function SettlementSection({
   };
 
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <div className="flex items-center gap-2">
         <h3 className="flex items-center text-sm font-semibold text-foreground">
           <CalendarDays className="mr-2 size-4 text-muted-foreground" />
@@ -557,7 +557,7 @@ export function SettlementSection({
       </div>
 
 
-      <div className="space-y-3.5 pt-2 border-t border-border/50">
+      <div className="space-y-3.5 pt-2 border-t border-border">
         {/* 대금 결제 일정 — 칸 구성(입금/지급 × 상대)은 채널 슬롯에서 파생한다.
             자사몰: 지급(공급사)+지급(셀러), 브랜드몰: 입금(공급사)+지급(셀러),
             셀러몰: 입금(셀러)+지급(공급사). 회계 일정의 invoiceSlots 와 같은 구조다. */}

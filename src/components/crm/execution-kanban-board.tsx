@@ -247,13 +247,13 @@ function ExecutionColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "crm-horizontal-accent flex w-[300px] flex-none shrink-0 flex-col overflow-hidden rounded-xl border bg-white/85 shadow-soft-sm transition-colors",
+        "crm-horizontal-accent flex w-[300px] flex-none shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-soft-sm transition-colors",
         droppable && isOver
           ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
-          : "border-slate-200/80",
+          : "border-border",
       )}
     >
-      <div className="border-b px-4 py-3 border-slate-200/80">
+      <div className="border-b px-4 py-3 border-border">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">

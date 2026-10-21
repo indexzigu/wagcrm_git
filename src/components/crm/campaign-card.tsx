@@ -244,7 +244,7 @@ export function CampaignCard({
       data-campaign-card-id={campaign.id}
       style={dragListeners ? { touchAction: "none" } : undefined}
       className={cn(
-        "group relative rounded-2xl border border-slate-200 bg-white shadow-soft-sm transition-[translate,scale,rotate,opacity,box-shadow,border-color] duration-200",
+        "group relative rounded-2xl border border-border bg-card shadow-soft-sm transition-[translate,scale,rotate,opacity,box-shadow,border-color] duration-200",
         // 키보드 드래그/열기(role=button·KeyboardSensor) 포커스 링 — 앱 전역 --focus-ring 토큰(WCAG 1.4.11).
         // 카드류는 inset이라 틴트 배경에도 흰 테 아티팩트 없음 + 컬럼 outer 하이라이트와 시각 구분. OutreachCardContent와 동일.
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring",

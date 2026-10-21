@@ -182,7 +182,7 @@ function GroupSection({
   return (
     <div className="mb-4">
       {/* Group Header */}
-      <div className="flex items-center gap-2 rounded-t-md border border-border/70 bg-muted/50 px-3 py-2">
+      <div className="flex items-center gap-2 rounded-t-md border border-border bg-muted/50 px-3 py-2">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -205,7 +205,7 @@ function GroupSection({
 
       {/* Group Content */}
       {expanded && (
-        <div className="overflow-hidden rounded-b-md border border-t-0 border-border/70">
+        <div className="overflow-hidden rounded-b-md border border-t-0 border-border">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
