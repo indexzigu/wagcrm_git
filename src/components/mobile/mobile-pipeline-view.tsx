@@ -279,7 +279,7 @@ export function MobilePipelineView({
           {hasMore && (
             <button
               onClick={() => setVisibleCount((prev) => prev + 20)}
-              className="mt-2 flex items-center justify-center gap-1.5 rounded-2xl bg-white border border-slate-200 py-3 text-[13px] font-medium text-slate-600 shadow-soft-sm transition-[filter] duration-150 active:brightness-[0.93]"
+              className="mt-2 flex items-center justify-center gap-1.5 rounded-2xl bg-white border border-slate-200 py-3 text-[13px] font-medium text-slate-600 shadow-soft-sm transition-colors duration-150 active:bg-black/[0.06]"
             >
               더 보기 <ChevronDownIcon className="size-4 opacity-70" />
             </button>

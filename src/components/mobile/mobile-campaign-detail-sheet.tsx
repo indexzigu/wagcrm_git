@@ -581,7 +581,7 @@ export function MobileCampaignDetailSheet({
                   aria-disabled={refreshing}
                   aria-busy={refreshing}
                   aria-label="매출 동기화"
-                  className="-my-2.5 -mr-3 flex size-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-slate-900/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:text-slate-400"
+                  className="-my-2.5 -mr-3 flex size-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:text-slate-400"
                 >
                   <RefreshCwIcon
                     aria-hidden="true"
@@ -960,7 +960,7 @@ function ItemBreakdown({ items }: { items: CampaignItemSales[] }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
-        className="flex min-h-11 items-center justify-between gap-2 px-4 py-3 bg-white active:bg-slate-50 transition-colors duration-150"
+        className="flex min-h-11 items-center justify-between gap-2 px-4 py-3 bg-white active:bg-black/[0.06] transition-colors duration-150"
       >
         <span className="text-xs font-bold text-slate-700">
           품목별 매출 상세

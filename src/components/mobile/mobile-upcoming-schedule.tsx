@@ -73,7 +73,7 @@ export const MobileUpcomingSchedule = React.memo(function MobileUpcomingSchedule
               key={item.key}
               type="button"
               onClick={() => onOpenCampaign(item.key)}
-              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-slate-50/70"
+              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-black/[0.06]"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

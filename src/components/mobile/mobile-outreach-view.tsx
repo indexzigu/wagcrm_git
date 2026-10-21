@@ -104,7 +104,7 @@ function MobileOutreachCard({
         onClick={() => onSelectTask(task)}
         // 프레스 틴트 — 네거티브 마진으로 시각 레이아웃은 그대로 두고 탭 피드백 면적만 확보.
         // 카드 전체가 아니라 이 영역만 탭 대상이라(하단 액션 버튼 별도) scale 대신 행 틴트를 쓴다.
-        className="-m-1.5 flex w-full flex-col gap-2 rounded-xl p-1.5 text-left transition-colors duration-150 active:bg-slate-900/[0.04]"
+        className="-m-1.5 flex w-full flex-col gap-2 rounded-xl p-1.5 text-left transition-colors duration-150 active:bg-black/[0.06]"
       >
         {/* 1행: 셀러이름 | 딜명 (브랜드명) */}
         <div className="flex items-center justify-between gap-2 min-w-0 w-full">

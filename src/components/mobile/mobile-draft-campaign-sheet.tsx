@@ -363,9 +363,9 @@ export function MobileDraftCampaignSheet({
             onClick={() => void handleSubmit()}
             disabled={!canSubmit}
             // 글로우는 Tailwind 컬러 섀도우로 — raw rgba 대신 --primary 토큰을 참조한다.
-            // 프레스 딤(계층 ①) — 이 화면의 1급 액션인데 프레스 상태가 아예 없었다
-            // (ss-ux 판정, 딤 전환의 사각지대). 네이비 그라디언트 면이라 brightness 가 먹는다.
-            className="min-h-12 w-full rounded-xl bg-gradient-to-br from-primary to-[var(--hero-deep)] text-sm font-bold tracking-tight text-primary-foreground shadow-lg shadow-primary/25 transition-[opacity,filter] duration-150 active:brightness-[0.93] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-50 disabled:shadow-none"
+            // 프레스(계층 ④ 투명도) — 이 화면의 1급 액션인데 프레스 상태가 아예 없었다(ss-ux 판정).
+            // 배경이 그라디언트라 bg 하이라이트는 그라디언트를 덮어쓰고, brightness(filter)는 금지라(#192) 투명도로.
+            className="min-h-12 w-full rounded-xl bg-gradient-to-br from-primary to-[var(--hero-deep)] text-sm font-bold tracking-tight text-primary-foreground shadow-lg shadow-primary/25 transition-opacity duration-150 active:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-50 disabled:shadow-none"
           >
             {submitting ? "만드는 중…" : "예비 일정 만들기"}
           </button>

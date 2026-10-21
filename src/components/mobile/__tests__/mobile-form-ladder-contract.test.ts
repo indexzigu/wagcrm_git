@@ -146,6 +146,10 @@ describe("모바일 프레스 상태 — 표면당 정확히 한 계층", () => 
    * 계층이 표면 종류를 구분하는 기능 자체가 사라진다. TDS 도 요소별로 방식을
    * 나눠 쓴다(Button=딤 오버레이 / GridList.Item=확대) — 겹쳐 쓰지 않는다.
    *
+   * 2026-10-16 애플 UI 리뉴얼(묶음 3 B): ①·③의 값은 아이폰식 회색 하이라이트 `active:bg-black/[0.06]` 한 값으로
+   * 모았다 — 카드가 불투명 흰색이 되어 배경으로 덮어도 재질이 사라지지 않는다. `brightness`(filter)는 더 쓰지 않는다
+   * (아래 「프레스 값」 계약). 그 아래 옛 설명의 `brightness` 근거는 무효, `opacity` 근거는 유효.
+   *
    * 딤의 구현은 **면이 있느냐**로 갈린다: 배경이 있는 표면은 `brightness`,
    * 배경이 투명한 표면(비활성 탭)은 `opacity` — filter 는 렌더 결과에 곱연산이라
    * 투명한 곳에서는 어두워질 픽셀이 없어 사실상 무피드백이 된다.
@@ -201,7 +205,7 @@ describe("모바일 프레스 상태 — 표면당 정확히 한 계층", () => 
         for (const [value] of line.matchAll(/\bactive:scale-[\w[\].]+/g)) {
           offenders.push(
             `${relative(file)}:${index + 1} — ${value} — 축소는 그리드 타일 전용이다. ` +
-              `전폭 카드·버튼은 active:brightness-95(딤), 목록 행·아이콘 버튼은 bg 틴트를 써라. ` +
+              `전폭 카드·버튼·목록 행·아이콘 버튼은 active:bg-black/[0.06](회색 하이라이트)을 써라. ` +
               `진짜 타일이면 이 테스트의 SCALE_ALLOWED 에 근거와 함께 등재하라.`,
           );
         }
@@ -209,6 +213,60 @@ describe("모바일 프레스 상태 — 표면당 정확히 한 계층", () => 
     }
 
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 프레스 값 — 아이폰식 회색 하이라이트 한 값 (설계서 §5.4, 묶음 3 B).
+   *
+   * 배경 프레스는 `active:bg-black/[0.06]` 하나만 쓴다. 전에는 목록 행만 해도
+   * `slate-50/70`·`slate-900/[0.04]`·`slate-50`·`slate-100`·`slate-200` 다섯 값이 섞여 같은 손짓이
+   * 화면마다 다른 진하기로 보였다. `active:brightness-` 는 금지 — filter 는 자손 `position:fixed`
+   * 좌표계를 깨고(#192), 불투명 카드에서는 배경 덮기로 충분하다.
+   */
+  const PRESS_BG_EXCEPTIONS: { file: string; token: string; why: string }[] = [
+    {
+      file: "mobile-sheet-close-chip.tsx",
+      token: "active:bg-slate-200",
+      why: "닫기 칩 — 평상시 바탕이 slate-100 칩이라 6% 검정 하이라이트로는 구분이 안 된다. 한 단계 진한 회색",
+    },
+  ];
+  const PRESS_OPACITY_ON_SURFACE: { file: string; why: string }[] = [
+    {
+      file: "mobile-draft-campaign-sheet.tsx",
+      why: "「예비 일정 만들기」 그라디언트 전폭 버튼 — 배경이 그라디언트라 bg 프레스가 그라디언트를 덮어쓴다. ④ 투명도(opacity-80)로",
+    },
+  ];
+
+  it("배경 프레스는 active:bg-black/[0.06] 한 값이고 active:brightness 는 쓰지 않는다", () => {
+    const offenders: string[] = [];
+    for (const file of listMobileSourceFiles()) {
+      const base = file.split("/").pop() ?? "";
+      const source = stripComments(readFileSync(file, "utf8"));
+      source.split("\n").forEach((line, index) => {
+        for (const [value] of line.matchAll(/\bactive:brightness-[\w[\].]+/g)) {
+          offenders.push(`${relative(file)}:${index + 1} — ${value} — brightness 프레스 금지. active:bg-black/[0.06] 을 써라.`);
+        }
+        for (const [value] of line.matchAll(/\bactive:bg-[\w[\]./-]+/g)) {
+          if (value === "active:bg-black/[0.06]") continue;
+          if (PRESS_BG_EXCEPTIONS.some((entry) => entry.file === base && entry.token === value)) continue;
+          offenders.push(
+            `${relative(file)}:${index + 1} — ${value} — 배경 프레스는 active:bg-black/[0.06] 한 값이다. ` +
+              `정말 다른 값이 필요하면 PRESS_BG_EXCEPTIONS 에 근거와 함께 등재하라.`,
+          );
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("그라디언트 전폭 버튼만 opacity-80 프레스를 쓴다", () => {
+    const allowed = new Set(PRESS_OPACITY_ON_SURFACE.map((entry) => entry.file));
+    const found = new Set<string>();
+    for (const file of listMobileSourceFiles()) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      if (/\bactive:opacity-80\b/.test(source)) found.add(file.split("/").pop() ?? "");
+    }
+    expect([...found].sort()).toEqual([...allowed].sort());
   });
 
   it("터치 표면에 hover 를 두지 않는다 — iOS sticky-hover 방지", () => {

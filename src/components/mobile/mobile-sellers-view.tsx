@@ -128,7 +128,7 @@ export function MobileSellersView({
                 onClick={() => onOpenSeller(seller)}
                 // 프레스 틴트 — 카드 하단 "채널 열기" 버튼이 별도 탭 대상이라 카드 scale 대신
                 // 이 영역만 틴트한다(outreach 카드와 동일 패턴, 네거티브 마진 = 레이아웃 불변).
-                className="-m-1.5 flex w-full flex-col gap-2.5 rounded-xl p-1.5 text-left transition-colors duration-150 active:bg-slate-900/[0.04]"
+                className="-m-1.5 flex w-full flex-col gap-2.5 rounded-xl p-1.5 text-left transition-colors duration-150 active:bg-black/[0.06]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

@@ -85,10 +85,8 @@ export function MobileCampaignCard({
   const isLoss = showMargin && campaign.netMarginRate < 0;
 
   return (
-    // 프레스는 딤이다(오너 결정 2026-07-22) — 축소는 그리드 타일 전용. 배경색 대신
-    // brightness 를 쓰는 이유: 이 카드는 bg-white/80 글래스라 active:bg-* 로 덮으면
-    // 유리 재질이 사라진다. 필터는 재질을 유지한 채 어둡게만 만든다.
-    <article className="rounded-2xl border border-white/60 bg-white/80 p-3.5 shadow-soft-sm backdrop-blur-sm transition-[filter] duration-150 active:brightness-[0.93]">
+    // 프레스는 아이폰식 회색 하이라이트(P8 프레스 표 ①) — 축소는 그리드 타일 전용.
+    <article className="rounded-2xl border border-white/60 bg-white/80 p-3.5 shadow-soft-sm backdrop-blur-sm transition-colors duration-150 active:bg-black/[0.06]">
       <button
         type="button"
         onClick={() => onOpen(campaign)}

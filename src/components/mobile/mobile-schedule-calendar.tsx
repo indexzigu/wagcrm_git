@@ -357,7 +357,7 @@ export const MobileScheduleCalendar = React.memo(function MobileScheduleCalendar
           type="button"
           aria-label="이전 달"
           onClick={() => onMonthChange(-1)}
-          className="flex size-11 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          className="flex size-11 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           <ChevronLeftIcon className="size-5" />
         </button>
@@ -368,7 +368,7 @@ export const MobileScheduleCalendar = React.memo(function MobileScheduleCalendar
           type="button"
           aria-label="다음 달"
           onClick={() => onMonthChange(1)}
-          className="flex size-11 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          className="flex size-11 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           <ChevronRightIcon className="size-5" />
         </button>

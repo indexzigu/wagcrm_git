@@ -140,7 +140,7 @@ export const MobileScheduleDayList = React.memo(function MobileScheduleDayList({
               key={campaign.key}
               type="button"
               onClick={() => onOpenCampaign(campaign.key)}
-              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-slate-50/70"
+              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-black/[0.06]"
             >
               <span className="truncate text-[13px] font-medium text-foreground">
                 {campaign.dealName}
@@ -162,7 +162,7 @@ export const MobileScheduleDayList = React.memo(function MobileScheduleDayList({
               key={event.key}
               type="button"
               onClick={() => onOpenCampaign(event.campaign.key)}
-              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-slate-50/70"
+              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-black/[0.06]"
             >
               {/* 방향 색은 규칙 SSOT(lib/money-direction) — 이전에는 입금·지급이 둘 다
                   text-primary 라 같은 네이비였다(방향이 색으로 구분되지 않음).
