@@ -96,9 +96,15 @@ describe("declareTotalFailure — 대표 원인", () => {
     expect(outcome.failureReason).toBeUndefined();
   });
 
-  it("대표 원인은 300자에서 자른다", () => {
-    const reason = appendFailureCause("사유", "가".repeat(500));
-    expect(reason).toBe(`사유 · 대표 원인: ${"가".repeat(300)}`);
+  it("대표 원인이 길면 앞 100자와 끝 200자를 남긴다(사슬의 진짜 원인은 끝에 있다)", () => {
+    const cause = `${"가".repeat(400)} <- Proxy response (407)`;
+    const reason = appendFailureCause("사유", cause);
+    expect(reason).toBe(`사유 · 대표 원인: ${cause.slice(0, 100)} … ${cause.slice(-200)}`);
+    expect(reason).toContain("Proxy response (407)");
+  });
+
+  it("300자 이하 대표 원인은 그대로 둔다", () => {
+    expect(appendFailureCause("사유", "가".repeat(300))).toBe(`사유 · 대표 원인: ${"가".repeat(300)}`);
   });
 });
 
@@ -123,6 +129,28 @@ describe("describeFailureCause — 항목 식별자·자격 증명 제외", () =
     );
     expect(scrubFailureCause("GET /oauth?client_secret=abc&fb_exchange_token=xyz&grant_type=x")).toBe(
       "GET /oauth?client_secret=<가림>&fb_exchange_token=<가림>&grant_type=x",
+    );
+  });
+
+  it("식별자는 낱말 전체로 나올 때만 바꾼다(짧은 핸들이 다른 낱말 속을 먹지 않는다)", () => {
+    expect(scrubFailureCause("Graph said: ai explain failed for ai", ["ai"])).toBe(
+      "Graph said: <항목> explain failed for <항목>",
+    );
+    expect(scrubFailureCause("detail: email sai.x failed", ["ai"])).toBe("detail: email sai.x failed");
+    expect(scrubFailureCause("@seller_a. 끝", ["seller_a"])).toBe("@<항목>. 끝");
+    expect(scrubFailureCause("seller_a님 조회 실패", ["seller_a"])).toBe("<항목>님 조회 실패");
+  });
+
+  it("흔한 오류 낱말과 같은 식별자는 바꾸지 않는다(fetch 라는 핸들이 「fetch failed」를 지우지 않게)", () => {
+    expect(scrubFailureCause("fetch failed <- timeout", ["fetch", "timeout"])).toBe("fetch failed <- timeout");
+  });
+
+  it("Bearer 토큰과 JSON 의 access_token·client_secret 값을 가린다", () => {
+    expect(scrubFailureCause("Authorization: Bearer abc.DEF-123_x= rejected")).toBe(
+      "Authorization: Bearer <가림> rejected",
+    );
+    expect(scrubFailureCause('body {"access_token":"tok123","client_secret": "sec456","x":1}')).toBe(
+      'body {"access_token":"<가림>","client_secret": "<가림>","x":1}',
     );
   });
 

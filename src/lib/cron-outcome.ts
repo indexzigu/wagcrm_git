@@ -57,6 +57,14 @@ export const FAILURE_CAUSE_SEPARATOR = " · 대표 원인: ";
 
 /** 대표 원인 상한 — 사고 기록(`lastMessage` 1,000자) 안에 사유·원인이 함께 들어가게 한다. */
 const FAILURE_CAUSE_MAX = 300;
+/** 상한을 넘으면 앞·끝을 이만큼 남긴다 — 원인 사슬(`a <- b <- c`)의 진짜 원인은 끝에 있다. */
+const FAILURE_CAUSE_HEAD = 100;
+const FAILURE_CAUSE_TAIL = 200;
+
+function clipFailureCause(cause: string): string {
+  if (cause.length <= FAILURE_CAUSE_MAX) return cause;
+  return `${cause.slice(0, FAILURE_CAUSE_HEAD)} … ${cause.slice(-FAILURE_CAUSE_TAIL)}`;
+}
 
 /**
  * 전량 실패 사유에 대표 원인을 붙인다 — `declareTotalFailure` 와 스토리 수집 선언
@@ -70,7 +78,7 @@ const FAILURE_CAUSE_MAX = 300;
 export function appendFailureCause(reason: string, cause?: string | null): string {
   const trimmed = cause?.trim();
   if (!trimmed) return reason;
-  return `${reason}${FAILURE_CAUSE_SEPARATOR}${trimmed.slice(0, FAILURE_CAUSE_MAX)}`;
+  return `${reason}${FAILURE_CAUSE_SEPARATOR}${clipFailureCause(trimmed)}`;
 }
 
 /**
@@ -79,8 +87,13 @@ export function appendFailureCause(reason: string, cause?: string | null): strin
  * - 항목 식별자(셀러 핸들·이름·id·URL)는 `<항목>` 으로 바꾼다 — 남기면 같은 원인이 셀러마다 다른
  *   사고 서명이 되어 반복 집계가 갈라지고, 오너 알림 경로로 셀러 정보가 샐 수 있다.
  *   긴 것부터 바꾼다(짧은 식별자가 긴 식별자의 일부를 먼저 먹지 않게).
- * - URL 사용자 정보(`//user:pw@`)와 이름에 secret·token·key 가 든 쿼리 값은 `<가림>` 으로 바꾼다 —
- *   전송 계층 오류 사슬에 프록시 주소·토큰 교환 URL 이 섞일 수 있다(실행 이력으로 새면 안 된다).
+ *   **낱말 전체로 나올 때만** 바꾼다(앞뒤가 영숫자·밑줄·점으로 이어지지 않을 때 — 문장 끝 마침표는 경계다).
+ *   그냥 부분 문자열로 바꾸면 「ai」 같은 짧은 핸들이 「email」 속을 먹어 원인 문구가 망가진다.
+ *   흔한 오류 낱말(`fetch`·`failed`·`timeout` 등)과 같은 식별자는 아예 바꾸지 않는다 — 그런 핸들이
+ *   「fetch failed」를 지우면 원인 판정 신호가 사라진다.
+ * - URL 사용자 정보(`//user:pw@`)·이름에 secret·token·key 가 든 쿼리 값·`Bearer` 토큰·JSON 의
+ *   `access_token`·`refresh_token`·`client_secret` 값은 `<가림>` 으로 바꾼다 — 전송 계층 오류 사슬에
+ *   프록시 주소·토큰 교환 요청/응답이 섞일 수 있다(실행 이력으로 새면 안 된다).
  */
 export function scrubFailureCause(
   text: string,
@@ -88,11 +101,46 @@ export function scrubFailureCause(
 ): string {
   let out = text
     .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, "$1<가림>@")
-    .replace(/([?&][\w-]*(?:secret|token|key)[\w-]*=)[^&\s]+/gi, "$1<가림>");
-  const ids = [...new Set(identifiers.filter((id): id is string => typeof id === "string" && id.trim().length > 0))]
-    .sort((a, b) => b.length - a.length);
-  for (const id of ids) out = out.split(id).join("<항목>");
+    .replace(/([?&][\w-]*(?:secret|token|key)[\w-]*=)[^&\s]+/gi, "$1<가림>")
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1<가림>")
+    .replace(/("(?:access_token|refresh_token|client_secret)"\s*:\s*")[^"]*"/gi, '$1<가림>"');
+  const ids = [
+    ...new Set(
+      identifiers.filter(
+        (id): id is string =>
+          typeof id === "string" && id.trim().length > 0 && !COMMON_ERROR_WORDS.has(id.trim().toLowerCase()),
+      ),
+    ),
+  ].sort((a, b) => b.length - a.length);
+  for (const id of ids) {
+    out = out.replace(new RegExp(`(?<![A-Za-z0-9_.])${escapeRegExp(id)}(?![A-Za-z0-9_]|\\.[A-Za-z0-9_])`, "g"), "<항목>");
+  }
   return out;
+}
+
+/** 식별자로 들어와도 바꾸지 않는 흔한 오류 낱말 — 바꾸면 원인 문구 자체가 지워진다. */
+const COMMON_ERROR_WORDS: ReadonlySet<string> = new Set([
+  "fetch",
+  "failed",
+  "fail",
+  "error",
+  "code",
+  "status",
+  "timeout",
+  "network",
+  "proxy",
+  "request",
+  "response",
+  "token",
+  "http",
+  "https",
+  "null",
+  "undefined",
+  "unknown",
+]);
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** 항목 오류 하나를 대표 원인 문구로 — 원인 사슬(`describeErrorChain`)을 펼친 뒤 식별자를 걷어낸다. */
