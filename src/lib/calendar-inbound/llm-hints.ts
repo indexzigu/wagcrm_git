@@ -13,7 +13,7 @@ import {
   truncateGeminiReason,
 } from "@/lib/agent/gemini-usage";
 import { GEMINI_LITE_MODEL } from "@/lib/gemini-model";
-import { normalizeToken } from "./parse-title";
+import { DEPOSIT_RE, PAYOUT_RE, ROUND_RE, normalizeToken } from "./parse-title";
 import type { TitleHints } from "./types";
 
 const GEMINI_API_BASE =
@@ -58,6 +58,26 @@ function grounded(
   if (!hint) return null;
   const n = normalizeToken(hint);
   return n.length >= 2 && normTitle.includes(n) ? hint.trim() : null;
+}
+
+function groundedRound(
+  round: number | null | undefined,
+  title: string,
+): number | null {
+  if (round == null) return null;
+  const m = ROUND_RE.exec(title.normalize("NFC"));
+  return m && Number(m[1]) === round ? round : null;
+}
+
+function groundedKind(
+  kind: TitleHints["kind"] | undefined,
+  title: string,
+): TitleHints["kind"] {
+  if (!kind) return null;
+  const t = title.normalize("NFC");
+  if (kind === "deposit") return DEPOSIT_RE.test(t) ? kind : null;
+  if (kind === "payout") return PAYOUT_RE.test(t) ? kind : null;
+  return kind;
 }
 
 export async function extractTitleHints(
@@ -152,8 +172,10 @@ export async function extractTitleHints(
       return {
         sellerHint: grounded(parsed.sellerHint, norm),
         brandHint: grounded(parsed.brandHint, norm),
-        round: parsed.round ?? null,
-        kind: parsed.kind ?? null,
+        // 회차·종류도 제목에 근거가 있을 때만 인정한다(지어낸 값이 엉뚱한 회차/종류를
+        // 고치지 못하게). "campaign" 은 기본값이라 그대로 통과시킨다.
+        round: groundedRound(parsed.round, summary),
+        kind: groundedKind(parsed.kind, summary),
       };
     } catch {
       console.error(

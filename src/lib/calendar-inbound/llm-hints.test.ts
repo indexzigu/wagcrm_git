@@ -74,8 +74,59 @@ describe("extractTitleHints", () => {
       sellerHint: null,
       brandHint: "테스트브랜드",
       round: 2,
-      kind: "payout",
+      kind: null,
     });
+  });
+
+  it("제목에 차가 없으면 모델이 준 회차는 버린다", async () => {
+    const fetchImpl = vi.fn(async () =>
+      geminiReply({
+        sellerHint: "샘플셀러",
+        brandHint: null,
+        round: 3,
+        kind: null,
+      }),
+    );
+    const r = await extractTitleHints("샘플셀러님 테스트브랜드 공구", {
+      fetchImpl,
+      apiKey: "k",
+    });
+    expect(r?.round).toBeNull();
+  });
+
+  it("제목의 회차와 다른 숫자도 버린다", async () => {
+    const fetchImpl = vi.fn(async () => geminiReply({ round: 3, kind: null }));
+    const r = await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" });
+    expect(r?.round).toBeNull();
+  });
+
+  it("제목에 입금/지급 키워드가 없으면 deposit/payout 종류를 버린다", async () => {
+    for (const kind of ["deposit", "payout"]) {
+      const fetchImpl = vi.fn(async () => geminiReply({ round: 2, kind }));
+      const r = await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" });
+      expect(r?.kind).toBeNull();
+    }
+  });
+
+  it("근거 있는 입금·정산금 종류는 통과한다", async () => {
+    const dep = vi.fn(async () => geminiReply({ kind: "deposit" }));
+    expect(
+      (
+        await extractTitleHints("샘플셀러 입금", {
+          fetchImpl: dep,
+          apiKey: "k",
+        })
+      )?.kind,
+    ).toBe("deposit");
+    const pay = vi.fn(async () => geminiReply({ kind: "payout" }));
+    expect(
+      (
+        await extractTitleHints("샘플셀러 정산금", {
+          fetchImpl: pay,
+          apiKey: "k",
+        })
+      )?.kind,
+    ).toBe("payout");
   });
 
   it("키가 없으면 fetch 없이 null", async () => {

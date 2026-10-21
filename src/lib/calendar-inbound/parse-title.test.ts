@@ -8,8 +8,18 @@ const dict: InboundDictionary = {
     { id: "s2", names: ["다른셀러"] },
   ],
   deals: [
-    { id: "d1", brandNames: ["테스트브랜드"], dealName: "테스트브랜드 봄딜", partnerName: "테스트상사" },
-    { id: "d2", brandNames: ["다른브랜드"], dealName: "다른브랜드 딜", partnerName: null },
+    {
+      id: "d1",
+      brandNames: ["테스트브랜드"],
+      dealName: "테스트브랜드 봄딜",
+      partnerName: "테스트상사",
+    },
+    {
+      id: "d2",
+      brandNames: ["다른브랜드"],
+      dealName: "다른브랜드 딜",
+      partnerName: null,
+    },
   ],
 };
 
@@ -18,7 +28,14 @@ describe("parseCalendarTitle", () => {
     const r = parseCalendarTitle("샘플셀러 X 테스트브랜드 2차", dict);
     expect(r).toEqual({
       ok: true,
-      intent: { kind: "campaign", sellerId: "s1", dealIds: ["d1"], round: 2, supplierHint: false, matchedBy: "rule" },
+      intent: {
+        kind: "campaign",
+        sellerId: "s1",
+        dealIds: ["d1"],
+        round: 2,
+        supplierHint: false,
+        matchedBy: "rule",
+      },
     });
   });
 
@@ -40,15 +57,24 @@ describe("parseCalendarTitle", () => {
         { id: "s2", names: ["샘플셀러B"] },
       ],
     };
-    expect(parseCalendarTitle("샘플셀러 테스트브랜드 지급", d)).toEqual({ ok: false, reason: "ambiguous_seller" });
+    expect(parseCalendarTitle("샘플셀러 테스트브랜드 지급", d)).toEqual({
+      ok: false,
+      reason: "ambiguous_seller",
+    });
   });
 
   it("브랜드 없음 → no_brand", () => {
-    expect(parseCalendarTitle("샘플셀러 없는곳 지급", dict)).toEqual({ ok: false, reason: "no_brand" });
+    expect(parseCalendarTitle("샘플셀러 없는곳 지급", dict)).toEqual({
+      ok: false,
+      reason: "no_brand",
+    });
   });
 
   it("셀러 없음 → no_seller", () => {
-    expect(parseCalendarTitle("모르는사람 테스트브랜드 지급", dict)).toEqual({ ok: false, reason: "no_seller" });
+    expect(parseCalendarTitle("모르는사람 테스트브랜드 지급", dict)).toEqual({
+      ok: false,
+      reason: "no_seller",
+    });
   });
 
   it("공급사 단어 → supplierHint", () => {
@@ -58,7 +84,10 @@ describe("parseCalendarTitle", () => {
   });
 
   it("NFD 자모 제목도 매칭", () => {
-    const r = parseCalendarTitle("샘플셀러 X 테스트브랜드 2차".normalize("NFD"), dict);
+    const r = parseCalendarTitle(
+      "샘플셀러 X 테스트브랜드 2차".normalize("NFD"),
+      dict,
+    );
     expect(r.ok && r.intent.sellerId).toBe("s1");
     expect(r.ok && r.intent.round).toBe(2);
   });
@@ -68,7 +97,12 @@ describe("parseCalendarTitle", () => {
       ...dict,
       deals: [
         ...dict.deals,
-        { id: "d3", brandNames: ["테스트브랜드"], dealName: "테스트브랜드 가을딜", partnerName: "테스트상사" },
+        {
+          id: "d3",
+          brandNames: ["테스트브랜드"],
+          dealName: "테스트브랜드 가을딜",
+          partnerName: "테스트상사",
+        },
       ],
     };
     const r = parseCalendarTitle("샘플셀러 테스트브랜드 3차", d);
@@ -79,8 +113,18 @@ describe("parseCalendarTitle", () => {
     const r = parseCalendarTitle("샘플셀러 브랜드 지급", {
       ...dict,
       deals: [
-        { id: "d1", brandNames: ["테스트브랜드"], dealName: "a", partnerName: null },
-        { id: "d2", brandNames: ["다른브랜드"], dealName: "b", partnerName: null },
+        {
+          id: "d1",
+          brandNames: ["테스트브랜드"],
+          dealName: "a",
+          partnerName: null,
+        },
+        {
+          id: "d2",
+          brandNames: ["다른브랜드"],
+          dealName: "b",
+          partnerName: null,
+        },
       ],
     });
     expect(r).toEqual({ ok: false, reason: "ambiguous_brand" });
@@ -89,9 +133,19 @@ describe("parseCalendarTitle", () => {
   it("셀러에 쓴 토큰은 브랜드로 재사용하지 않는다", () => {
     const d: InboundDictionary = {
       sellers: [{ id: "s1", names: ["보바"] }],
-      deals: [{ id: "d1", brandNames: ["보바티"], dealName: "보바티 딜", partnerName: null }],
+      deals: [
+        {
+          id: "d1",
+          brandNames: ["보바티"],
+          dealName: "보바티 딜",
+          partnerName: null,
+        },
+      ],
     };
-    expect(parseCalendarTitle("보바 지급", d)).toEqual({ ok: false, reason: "no_brand" });
+    expect(parseCalendarTitle("보바 지급", d)).toEqual({
+      ok: false,
+      reason: "no_brand",
+    });
   });
 
   it("셀러는 정확 일치가 포함 일치보다 우선", () => {
@@ -115,7 +169,14 @@ describe("parseCalendarTitle", () => {
     });
     expect(r).toEqual({
       ok: true,
-      intent: { kind: "payout", sellerId: "s1", dealIds: ["d1"], round: 4, supplierHint: false, matchedBy: "llm" },
+      intent: {
+        kind: "payout",
+        sellerId: "s1",
+        dealIds: ["d1"],
+        round: 4,
+        supplierHint: false,
+        matchedBy: "llm",
+      },
     });
   });
 

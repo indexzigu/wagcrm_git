@@ -8,6 +8,12 @@ import type {
   TitleHints,
 } from "./types";
 
+/** 제목 속 회차("2차"/"2 차") 정규식 — 파서와 LLM 힌트 근거 검증이 공유한다. */
+export const ROUND_RE = /(\d+)\s*차/;
+/** 제목 속 종류 키워드 — 파서와 LLM 힌트 근거 검증이 공유한다. */
+export const DEPOSIT_RE = /입금/;
+export const PAYOUT_RE = /지급|송금|정산금/;
+
 /** NFC + 공백·기호 제거 + 소문자. */
 export function normalizeToken(s: string): string {
   return s
@@ -57,7 +63,11 @@ function matchSeller(
 
 function brandIdentity(deal: InboundDictionary["deals"][number]): string {
   const first = deal.brandNames.map(normalizeToken).find((n) => n.length > 0);
-  return first || normalizeToken(deal.partnerName ?? "") || normalizeToken(deal.dealName);
+  return (
+    first ||
+    normalizeToken(deal.partnerName ?? "") ||
+    normalizeToken(deal.dealName)
+  );
 }
 
 /** 브랜드 매칭: 맞은 딜 전부. 서로 다른 브랜드 정체성이 2개 이상이면 모호. */
@@ -70,12 +80,11 @@ function matchBrand(
     const names = [...deal.brandNames, deal.dealName, deal.partnerName ?? ""]
       .map(normalizeToken)
       .filter((n) => n.length > 0);
-    if (tokens.some((t) => names.some((n) => nameMatches(t, n)))) hit.push(deal);
+    if (tokens.some((t) => names.some((n) => nameMatches(t, n))))
+      hit.push(deal);
   }
   if (hit.length === 0) return "none";
-  const identities = new Set(
-    hit.map(brandIdentity),
-  );
+  const identities = new Set(hit.map(brandIdentity));
   if (identities.size > 1) return "ambiguous";
   return { dealIds: hit.map((d) => d.id) };
 }
@@ -89,7 +98,7 @@ export function parseCalendarTitle(
 
   // 회차: "2차" / "2 차"
   let round: number | null = null;
-  const roundMatch = /(\d+)\s*차/.exec(text);
+  const roundMatch = ROUND_RE.exec(text);
   if (roundMatch) {
     round = Number(roundMatch[1]);
     text = text.replace(roundMatch[0], " ");
@@ -97,8 +106,8 @@ export function parseCalendarTitle(
 
   // 종류·공급사 키워드는 이름 매칭 전에 걷어낸다.
   let kind: InboundKind | null = null;
-  if (/입금/.test(text)) kind = "deposit";
-  else if (/지급|송금|정산금/.test(text)) kind = "payout";
+  if (DEPOSIT_RE.test(text)) kind = "deposit";
+  else if (PAYOUT_RE.test(text)) kind = "payout";
   const supplierHint = /공급사|업체|벤더/.test(text);
   text = text.replace(/입금|지급|송금|정산금|공급사|업체|벤더/g, " ");
 
@@ -109,9 +118,13 @@ export function parseCalendarTitle(
 
   const useHints = hints !== undefined;
   const sellerTokens =
-    useHints && hints.sellerHint ? [normalizeToken(hints.sellerHint)] : titleTokens;
+    useHints && hints.sellerHint
+      ? [normalizeToken(hints.sellerHint)]
+      : titleTokens;
   const brandPool =
-    useHints && hints.brandHint ? [normalizeToken(hints.brandHint)] : titleTokens;
+    useHints && hints.brandHint
+      ? [normalizeToken(hints.brandHint)]
+      : titleTokens;
 
   const seller = matchSeller(sellerTokens, dict);
   if (seller === "none") return { ok: false, reason: "no_seller" };
