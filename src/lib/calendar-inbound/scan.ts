@@ -345,14 +345,17 @@ async function evaluateEvent(
     return "adopted";
   }
 
-  // 기안 전에 행부터 「재판정 대기·빈 지문」으로 적는다 — 기안 id 를 받기 전에 실패하면 다음 회차가
-  // 다시 판정한다(조용히 PROPOSED 로 남아 기안 없는 행이 되지 않게).
+  // 기안 전에 행부터 「재판정 대기」로 적는다 — 기안 id 를 받기 전에 실패하면 다음 회차가 상태만 보고 다시
+  // 판정한다(조용히 PROPOSED 로 남아 기안 없는 행이 되지 않게). 지문은 실값을 적는다(재판정은 상태가 정한다).
+  // ⛔ proposalId 를 여기서 끊는다 — 남겨 두면 이 사이 실패했을 때 옛 FAILED 카드가 SUPERSEDED 가드를 통과해
+  //    재시도 승인될 수 있고(새 회차 #1), 다음 회차가 또 기안한다(#2). 승인과 겹쳐도 옛 카드는 거절된다.
   const { id: inboundId } = await deps.saveRow(event.id, {
     ...base,
-    fingerprint: "",
+    fingerprint,
     status: INBOUND_STATUS.PENDING_RETRY,
     skipReason: null,
     parsed: parsed.intent,
+    proposalId: null,
   });
   // 승인 쪽이 읽는 모양(`readCalendarInboundRef`)으로 검사 — 못 읽을 출처면 넘겨받기가 조용히 빠진다.
   const ref = calendarInboundRefSchema.parse({

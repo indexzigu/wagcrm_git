@@ -540,7 +540,32 @@ describe("runCalendarInboundScan", () => {
     const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
     expect(summary).toMatchObject({ errors: 1, proposed: 0 });
-    expect(h.rows.get("e1")).toMatchObject({ status: "PENDING_RETRY", fingerprint: "" });
+    expect(h.rows.get("e1")).toMatchObject({
+      status: "PENDING_RETRY",
+      fingerprint: calendarInboundFingerprint(ev("e1")),
+      proposalId: null,
+    });
+  });
+
+  it("재판정 대기 행에서 기안 생성이 실패해도 옛 FAILED 기안과의 연결은 끊긴다(옛 카드 재시도는 SUPERSEDED)", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.proposals.get("prop-1")!.status = "FAILED";
+    h.rows.get("e1")!.status = "PENDING_RETRY";
+    h.deps.createProposal = async () => {
+      throw new Error("쓰기 실패");
+    };
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ errors: 1, proposed: 0 });
+    // proposalId 가 null 이면 승인 단계(`approveProposal`)가 옛 카드를 SUPERSEDED 로 거절한다
+    // (approve-proposal.test 「수집 행의 proposalId 가 비었으면 … SUPERSEDED」).
+    expect(h.rows.get("e1")).toMatchObject({
+      status: "PENDING_RETRY",
+      proposalId: null,
+      fingerprint: calendarInboundFingerprint(ev("e1")),
+    });
   });
 
   it("후보 조회가 실패하면 던지지 않고 ok:false · 미연결은 skipped", async () => {
