@@ -3,6 +3,7 @@ import { isIndividualSeller, getSellerPayoutBase, calcIndividualIncomeTax, calcB
 import { resolveSellerFeeBasis, sumSellerPayoutItems } from "./settlement-items";
 import { resolveEffectiveSellerFeeBasis, sellerFeeFromBasis } from "./campaign-financials";
 import { sortDealRowsByName } from "./deal-sort";
+import { PAYOUT_SLOT_DATE_FIELDS, resolveMoneySlotEffectiveDate } from "./money-slot-date";
 
 const YGRD_COMPANY = {
   name: "와이그라운드",
@@ -49,6 +50,36 @@ function formatBusinessNumber(value?: string | null) {
 
 function formatDate(value?: string | null) {
   return value ? value.slice(0, 10) : "-";
+}
+
+/**
+ * 명세서에 싣는 **셀러 입금 날짜** — 정산 카드의 「지급 (셀러)」 칸이 보여주는 값과 같다.
+ *
+ * 종전에는 `expectedPayoutDate`(예정일)만 읽어서, 지급 완료를 체크하고 칸에 실제 지급일을
+ * 적어도 명세서에는 날짜가 안 실렸다(예정일을 비워 둔 건은 아예 빈칸). 그래서 칸과 같은
+ * `resolveMoneySlotEffectiveDate` 를 쓴다 — 완료면 실제 지급일, 아니면 예정일.
+ *
+ * 칸은 판정표의 `payout` 칸(= 종전이 읽던 `expectedPayoutDate` 축, 필드는 채널 무관 고정)이다.
+ * 자사몰의 공급사 지급 칸(`supplierPayout`)은 셀러 몫이 아니라 제외된다.
+ * ⛔ 판정표(`tax-filing-board.ts`)를 import 하지 말 것 — 그 파일은 달별 계산서 모듈을 참조해
+ * 셀러 대면 격리 계약에 걸린다. 그래서 날짜 판정만 의존 없는 `money-slot-date.ts` 에서 쓴다.
+ * ⚠️ 셀러몰·채널 미지정은 판정표상 이 칸의 상대가 공급사다 — 종전 동작을 그대로 잇느라
+ * 여기서 거르지 않는다(거를지는 오너 결정 사항, 미결).
+ *
+ * 반환값은 캠페인 순서대로 중복 제거한 `YYYY-MM-DD` 목록이다(실제·예정 분리).
+ */
+export function resolveStatementSellerPayoutDates(campaigns: CampaignRow[]): {
+  paid: string[];
+  expected: string[];
+} {
+  const paid = new Set<string>();
+  const expected = new Set<string>();
+  for (const campaign of campaigns) {
+    const { date, isActual } = resolveMoneySlotEffectiveDate(PAYOUT_SLOT_DATE_FIELDS, campaign);
+    if (!date) continue;
+    (isActual ? paid : expected).add(formatDate(date));
+  }
+  return { paid: Array.from(paid), expected: Array.from(expected) };
 }
 
 /**
@@ -886,6 +917,15 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
       ? `\n- 별도 지급 항목 (광고비 등): ${won(totals.totalSettlementItemPayout)}  ※ 수수료 정산과 별개`
       : "";
 
+  // 입금 날짜는 HTML 과 같은 판정 함수를 쓴다 — 평문을 고르는 메일 클라이언트에서만 날짜가
+  // 빠지던 상태였다. 날짜가 없으면 줄 자체를 싣지 않는다(종전 평문과 바이트 동일).
+  const { paid, expected } = resolveStatementSellerPayoutDates(sortStatementCampaigns(campaigns));
+  const dateLines = [
+    ...(paid.length > 0 ? [`- 입금일: ${paid.join(", ")}`] : []),
+    ...(expected.length > 0 ? [`- 입금 예정일: ${expected.join(", ")}`] : []),
+  ];
+  const dateBlock = dateLines.length > 0 ? `\n${dateLines.join("\n")}` : "";
+
   // 수동 기준액 캠페인이 섞이면 총 거래액(우리 판매분 포함)을 싣지 않고 정산 기준액 합을 싣는다.
   const salesLine = totals.hasSellerFeeBasisOverride
     ? `- ${sellerFeeBasisSummaryLabel(totals)}: ${won(totals.totalSellerFeeBasis)}`
@@ -899,7 +939,7 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
 ■ 정산 합계
 ${salesLine}${itemLine}
 - 차인지급액: ${won(totals.totalPostTaxPayout)}
-${breakdown}
+${breakdown}${dateBlock}
 `.trim();
 }
 
@@ -1133,15 +1173,11 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSellerFeeBasis)}</td>
       </tr>`;
 
-  const payoutDates = Array.from(
-    new Set(
-      ordered
-        .map((c) => c.expectedPayoutDate)
-        .filter(Boolean)
-        .map((d) => formatDate(d))
-    )
-  );
-  const payoutDateStr = payoutDates.length > 0 ? payoutDates.join(", ") : "-";
+  const { paid: paidDates, expected: expectedDates } = resolveStatementSellerPayoutDates(ordered);
+  const payoutDateLines = [
+    ...(paidDates.length > 0 ? [{ label: "입금일", value: paidDates.join(", ") }] : []),
+    ...(expectedDates.length > 0 ? [{ label: "입금 예정일", value: expectedDates.join(", ") }] : []),
+  ];
 
   /**
    * 별도 지급 항목 줄 — 대상=셀러 부가 항목이 있을 때만 만든다(없으면 현행과 바이트 동일).
@@ -1221,12 +1257,12 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
           <td style="padding: 6px; color: #475569; background-color: #f1f5f9; border: 1px solid #cbd5e1; width: 120px; font-weight: 600;">발행 대상 금액</td>
           <td style="padding: 6px; color: #1e293b; border: 1px solid #cbd5e1; font-weight: 700; font-size: 12px;">${formatCurrency(totalPostTaxPayout)}</td>
         </tr>
-        ${payoutDateStr !== "-" ? `
+        ${payoutDateLines.map(({ label, value }) => `
         <tr>
-          <td style="padding: 6px; color: #475569; background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: 600;">입금 예정일</td>
-          <td style="padding: 6px; color: #166534; border: 1px solid #cbd5e1; font-weight: 700;">${payoutDateStr}</td>
+          <td style="padding: 6px; color: #475569; background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: 600;">${label}</td>
+          <td style="padding: 6px; color: #166534; border: 1px solid #cbd5e1; font-weight: 700;">${value}</td>
         </tr>
-        ` : ""}
+        `).join("")}
         <tr>
           <td style="padding: 6px; color: #475569; background-color: #f1f5f9; border: 1px solid #cbd5e1; font-weight: 600;">상호 (법인명)</td>
           <td style="padding: 6px; color: #1e293b; border: 1px solid #cbd5e1; font-weight: 600;">${escapeHtml(YGRD_COMPANY.name)}</td>
@@ -1264,9 +1300,9 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
       <div style="font-size: 12px; margin-bottom: 14px;">정산 대상: <strong>${escapeHtml(recipient.label)}</strong> (캠페인 ${campaigns.length}건)</div>
       ${buildRecipientHtml(recipient)}
       ${isIndividual ? individualSummary : businessSummary}
-      ${isIndividual && payoutDateStr !== "-" ? `
+      ${isIndividual && payoutDateLines.length > 0 ? `
       <div style="margin-bottom: 24px; font-size: 12px; color: #166534; font-weight: 600; text-align: right;">
-        * 입금 예정일: <span style="font-weight: 700; text-decoration: underline;">${payoutDateStr}</span>
+        ${payoutDateLines.map(({ label, value }) => `<div>* ${label}: <span style="font-weight: 700; text-decoration: underline;">${value}</span></div>`).join("")}
       </div>
       ` : ""}
       ${!isIndividual ? taxInvoiceBlock : ""}

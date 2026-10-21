@@ -4,6 +4,8 @@ import type { CampaignRow } from "@/lib/crm-types";
 import {
   buildSettlementStatementHtml,
   buildSettlementStatementPrintDoc,
+  buildSettlementStatementText,
+  resolveStatementSellerPayoutDates,
   validateSettlementStatementCampaigns,
 } from "@/lib/settlement-statement";
 import { readFileSync } from "node:fs";
@@ -215,5 +217,48 @@ describe("인쇄 경로 계약 — 라이브 표면은 정본 래퍼만 쓴다",
     // 옛 방식(각 파일이 자체 <head><style>@page 를 감싸던 것)의 재유입 차단. 주석은 위에서 제거됨.
     expect(sidePanel).not.toMatch(/@page/);
     expect(table).not.toMatch(/@page/);
+  });
+});
+
+describe("명세서 입금 날짜 — 정산 카드 지급(셀러) 칸과 같은 값", () => {
+  it("예정일만 있으면 「입금 예정일」로 싣는다", () => {
+    const campaign = createCampaign({ expectedPayoutDate: "2026-06-10" });
+    expect(resolveStatementSellerPayoutDates([campaign])).toEqual({ paid: [], expected: ["2026-06-10"] });
+    expect(buildSettlementStatementHtml([campaign])).toContain("입금 예정일");
+    expect(buildSettlementStatementText([campaign])).toContain("- 입금 예정일: 2026-06-10");
+  });
+
+  it("지급 완료면 예정일 대신 실제 지급일을 「입금일」로 싣는다(예정일이 비어 있어도)", () => {
+    const campaign = createCampaign({
+      expectedPayoutDate: null,
+      isPayoutCompleted: true,
+      payoutCompletedAt: "2026-06-08",
+    });
+    expect(resolveStatementSellerPayoutDates([campaign])).toEqual({ paid: ["2026-06-08"], expected: [] });
+    const html = buildSettlementStatementHtml([campaign]);
+    expect(html).toContain("입금일");
+    expect(html).toContain("2026-06-08");
+    expect(html).not.toContain("입금 예정일");
+    expect(buildSettlementStatementText([campaign])).toContain("- 입금일: 2026-06-08");
+  });
+
+  it("개인 셀러 요약에도 같은 날짜가 실린다", () => {
+    const campaign = createCampaign({
+      sellerCompanyName: null,
+      sellerCompanyBusinessNumber: null,
+      sellerTaxType: "INDIVIDUAL",
+      isPayoutCompleted: true,
+      payoutCompletedAt: "2026-06-08",
+    });
+    expect(buildSettlementStatementHtml([campaign])).toContain("* 입금일:");
+  });
+
+  it("자사몰의 공급사 지급 예정일은 셀러 명세서에 싣지 않는다", () => {
+    const campaign = createCampaign({ salesChannel: "OWN_MALL", expectedSupplierPayoutDate: "2026-06-20" });
+    expect(resolveStatementSellerPayoutDates([campaign])).toEqual({ paid: [], expected: [] });
+  });
+
+  it("날짜가 없으면 평문에 날짜 줄이 없다", () => {
+    expect(buildSettlementStatementText([createCampaign()])).not.toContain("입금");
   });
 });
