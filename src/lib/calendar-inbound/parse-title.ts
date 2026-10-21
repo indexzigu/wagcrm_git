@@ -100,6 +100,102 @@ function matchBrand(
   return { dealIds: hit.map((d) => d.id) };
 }
 
+type Span = {
+  start: number;
+  end: number;
+  /** 같은 대상끼리만 구간을 합칠 수 있다: 셀러는 id, 브랜드는 브랜드 정체성. */
+  key: string;
+  seller: boolean;
+  sellerId?: string;
+  dealIds: string[];
+};
+
+/**
+ * 붙여 쓴 제목("샘플셀러테스트브랜드") 보조 패스: 토큰 매칭이 실패했을 때만 쓴다.
+ * 정규화된 제목 전체에서 사전 이름의 부분 문자열을 찾는다.
+ * - 긴 이름부터 구간을 확정하고, 겹치는 짧은 일치는 버린다(셀러 별칭이 브랜드명의 일부인 경우).
+ * - 같은 길이로 다른 대상이 같은 구간을 다투면 유일하지 않은 것이므로 실패한다.
+ * - 셀러·브랜드 모두 유일해야 성공한다. 하나라도 아니면 null(호출자가 기존 실패 사유를 낸다).
+ */
+function matchGlued(
+  joined: string,
+  dict: InboundDictionary,
+): { sellerId: string; dealIds: string[] } | null {
+  const cands: Span[] = [];
+  const find = (name: string, make: (start: number) => Span) => {
+    if (name.length < MIN_LEN) return;
+    for (
+      let i = joined.indexOf(name);
+      i >= 0;
+      i = joined.indexOf(name, i + 1)
+    ) {
+      cands.push({ ...make(i), start: i, end: i + name.length });
+    }
+  };
+  for (const seller of dict.sellers) {
+    for (const raw of seller.names) {
+      find(normalizeToken(raw), () => ({
+        start: 0,
+        end: 0,
+        key: `S:${seller.id}`,
+        seller: true,
+        sellerId: seller.id,
+        dealIds: [],
+      }));
+    }
+  }
+  for (const deal of dict.deals) {
+    const names = [...deal.brandNames, deal.dealName, deal.partnerName ?? ""];
+    for (const raw of names) {
+      find(normalizeToken(raw), () => ({
+        start: 0,
+        end: 0,
+        key: `B:${brandIdentity(deal)}`,
+        seller: false,
+        dealIds: [deal.id],
+      }));
+    }
+  }
+
+  cands.sort(
+    (a, b) => b.end - b.start - (a.end - a.start) || a.start - b.start,
+  );
+  const chosen: Span[] = [];
+  for (const c of cands) {
+    const overlaps = chosen.filter((x) => c.start < x.end && x.start < c.end);
+    if (overlaps.length === 0) {
+      chosen.push({ ...c, dealIds: [...c.dealIds] });
+      continue;
+    }
+    const sameSpan = overlaps.find(
+      (x) => x.start === c.start && x.end === c.end && x.key === c.key,
+    );
+    if (sameSpan) {
+      for (const id of c.dealIds)
+        if (!sameSpan.dealIds.includes(id)) sameSpan.dealIds.push(id);
+      continue;
+    }
+    // 더 긴(또는 같은 길이로 먼저 확정된) 일치와 겹침. 같은 길이의 다른 대상이면 모호.
+    if (
+      overlaps.some(
+        (x) => x.end - x.start === c.end - c.start && x.key !== c.key,
+      )
+    )
+      return null;
+  }
+
+  const sellerIds = new Set(
+    chosen.filter((x) => x.seller).map((x) => x.sellerId!),
+  );
+  const brandKeys = new Set(chosen.filter((x) => !x.seller).map((x) => x.key));
+  if (sellerIds.size !== 1 || brandKeys.size !== 1) return null;
+  const dealIds = new Set(chosen.flatMap((x) => (x.seller ? [] : x.dealIds)));
+  return {
+    sellerId: [...sellerIds][0],
+    dealIds: dict.deals.filter((d) => dealIds.has(d.id)).map((d) => d.id),
+  };
+}
+
 export function parseCalendarTitle(
   summary: string,
   dict: InboundDictionary,
@@ -137,22 +233,41 @@ export function parseCalendarTitle(
       ? [normalizeToken(hints.brandHint)]
       : titleTokens;
 
-  const seller = matchSeller(sellerTokens, dict);
-  if (seller === "none") return { ok: false, reason: "no_seller" };
-  if (seller === "ambiguous") return { ok: false, reason: "ambiguous_seller" };
+  let sellerId: string;
+  let dealIds: string[];
 
-  // 셀러에 쓴 토큰은 브랜드 후보에서 뺀다.
-  const brandTokens = brandPool.filter((t) => !seller.usedTokens.has(t));
-  const brand = matchBrand(brandTokens, dict);
-  if (brand === "none") return { ok: false, reason: "no_brand" };
-  if (brand === "ambiguous") return { ok: false, reason: "ambiguous_brand" };
+  const seller = matchSeller(sellerTokens, dict);
+  let failure: ParseFailure | null = null;
+  let brand: ReturnType<typeof matchBrand> = "none";
+  if (seller === "none") failure = { ok: false, reason: "no_seller" };
+  else if (seller === "ambiguous")
+    failure = { ok: false, reason: "ambiguous_seller" };
+  else {
+    // 셀러에 쓴 토큰은 브랜드 후보에서 뺀다.
+    const brandTokens = brandPool.filter((t) => !seller.usedTokens.has(t));
+    brand = matchBrand(brandTokens, dict);
+    if (brand === "none") failure = { ok: false, reason: "no_brand" };
+    else if (brand === "ambiguous")
+      failure = { ok: false, reason: "ambiguous_brand" };
+  }
+
+  if (failure === null) {
+    sellerId = (seller as { id: string }).id;
+    dealIds = (brand as { dealIds: string[] }).dealIds;
+  } else {
+    // 힌트(LLM 근거) 경로는 힌트 문자열이 근거라 제목 전체 탐색을 하지 않는다.
+    const glued = useHints ? null : matchGlued(titleTokens.join(""), dict);
+    if (!glued) return failure;
+    sellerId = glued.sellerId;
+    dealIds = glued.dealIds;
+  }
 
   return {
     ok: true,
     intent: {
       kind: kind ?? hints?.kind ?? "campaign",
-      sellerId: seller.id,
-      dealIds: brand.dealIds,
+      sellerId,
+      dealIds,
       round: round ?? hints?.round ?? null,
       supplierHint,
       matchedBy: useHints ? "llm" : "rule",
