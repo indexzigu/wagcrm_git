@@ -250,6 +250,55 @@ describe("formatDigest", () => {
     );
   });
 
+  describe("재시도 반복 — 같은 작업이 7일 안에 재시도로 2번 이상 풀렸으면 「(7일 중 N번째)」", () => {
+    const retried = (id: string, normalizedAt: string, over: Partial<DigestIncident> = {}) =>
+      digestItem({ id, normalizedAt: new Date(normalizedAt), normalizedEvidence: { runAt: normalizedAt, attempt: 2 }, ...over });
+    const history = (id: string, normalizedAt: string, attempt: number, jobKey = "naver-settlement-sync") => ({
+      id,
+      jobKey,
+      normalizedAt: new Date(normalizedAt),
+      normalizedEvidence: { attempt },
+    });
+
+    it("지난 7일 기록과 합쳐 몇 번째인지 붙인다", () => {
+      const today = retried("r3", "2026-10-17T21:15:00Z");
+      const msg = formatDigest([today], [], 0, NOW, [
+        history("h1", "2026-10-12T21:15:00Z", 2),
+        history("h2", "2026-10-15T21:15:00Z", 3),
+        history("r3", "2026-10-17T21:15:00Z", 2), // 자기 자신이 이력에 있어도 한 번만 센다
+      ]);
+      expect(msg?.detail).toBe(
+        "정상화 1건\n10-18 03:00 네이버 정산 동기화 · 네트워크 끊김 · 자동 재시도로 정상화 (7일 중 3번째) · 정상화 06:15",
+      );
+    });
+
+    it("7일보다 오래된 것·첫 실행으로 풀린 것·다른 작업은 세지 않는다 — 1번째면 붙이지 않는다", () => {
+      const today = retried("r3", "2026-10-17T21:15:00Z");
+      const msg = formatDigest([today], [], 0, NOW, [
+        history("old", "2026-10-10T21:00:00Z", 2), // 7일 넘음
+        history("first", "2026-10-15T21:15:00Z", 1), // 재시도 아님
+        history("other", "2026-10-16T21:15:00Z", 2, "collect-instagram"),
+      ]);
+      expect(msg?.detail).toBe(
+        "정상화 1건\n10-18 03:00 네이버 정산 동기화 · 네트워크 끊김 · 자동 재시도로 정상화 · 정상화 06:15",
+      );
+    });
+
+    it("같은 요약에 같은 작업이 두 줄이면 줄마다 그때까지의 번째", () => {
+      const a = retried("a", "2026-10-16T21:15:00Z");
+      const b = retried("b", "2026-10-17T21:15:00Z");
+      const lines = formatDigest([a, b], [], 0, NOW, [])!.detail.split("\n");
+      expect(lines[1]).toContain("자동 재시도로 정상화 · 정상화");
+      expect(lines[2]).toContain("자동 재시도로 정상화 (7일 중 2번째) · 정상화");
+    });
+
+    it("기록된 조치가 있는 줄에는 붙이지 않는다 — 재시도 문구가 아니다", () => {
+      const both = retried("r5", "2026-10-17T21:15:00Z", { actions: [{ at: "2026-10-17T20:00:00Z", what: "다시 시도" }] });
+      const msg = formatDigest([both], [], 0, NOW, [history("h1", "2026-10-15T21:15:00Z", 2)]);
+      expect(msg?.detail).not.toContain("번째");
+    });
+  });
+
   it("첫 실행(회차 1)으로 풀린 정상화 줄은 그대로다", () => {
     const plain = digestItem({
       id: "r4",

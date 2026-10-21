@@ -166,11 +166,39 @@ function resolvedByRetry(evidence: unknown): boolean {
 
 const RETRY_RESOLVED_ACTION = "자동 재시도로 정상화";
 
-function resolvedLine(i: DigestIncident): string {
+/** 재시도 반복을 세는 기간 — 「(7일 중 N번째)」 */
+export const RETRY_REPEAT_WINDOW_MS = 7 * DAY_MS;
+
+/** 재시도 반복을 세는 데 쓰는 지난 정상화 기록(요약에 이미 실렸던 것 포함) — 칸은 이것뿐이다. */
+export type RetryHealedRecord = { id: string; jobKey: string; normalizedAt: Date | null; normalizedEvidence: unknown };
+
+/**
+ * 이 사고가 같은 작업의 재시도 정상화 중 7일 안에서 몇 번째인가 — 이 사고의 정상화 시각까지 거슬러 7일.
+ * 이력과 이번 요약의 줄을 합쳐 id 로 한 번씩만 센다(이력 조회 창이 이번 요약의 사고를 다시 담는다).
+ */
+function retryOrdinal(i: DigestIncident, pool: readonly RetryHealedRecord[]): number {
+  const at = i.normalizedAt?.getTime();
+  if (at == null) return 0;
+  const ids = new Set<string>();
+  for (const r of pool) {
+    const t = r.normalizedAt?.getTime();
+    if (r.jobKey !== i.jobKey || t == null || !resolvedByRetry(r.normalizedEvidence)) continue;
+    if (t <= at && t > at - RETRY_REPEAT_WINDOW_MS) ids.add(r.id);
+  }
+  return ids.size;
+}
+
+function resolvedLine(i: DigestIncident, pool: readonly RetryHealedRecord[]): string {
   const parts = [`${kstDateTime(i.firstSeenAt)} ${i.jobName}`, incidentCauseText(i)];
   // 기록된 조치가 있으면 그것이 우선이다 — 재시도 문구는 사람이·플레이북이 한 일이 없을 때만 채운다.
-  const action = lastActionWhat(i.actions) ?? (resolvedByRetry(i.normalizedEvidence) ? RETRY_RESOLVED_ACTION : null);
-  if (action) parts.push(action);
+  const recorded = lastActionWhat(i.actions);
+  if (recorded) parts.push(recorded);
+  else if (resolvedByRetry(i.normalizedEvidence)) {
+    // 같은 작업이 7일 안에 재시도로 2번 이상 풀렸으면 몇 번째인지 붙인다 — 자주 풀리는 작업은 근본 원인을 볼 때다.
+    // 즉시 알림은 늘리지 않는다(묶음 요약 표시만).
+    const nth = retryOrdinal(i, pool);
+    parts.push(nth >= 2 ? `${RETRY_RESOLVED_ACTION} (7일 중 ${nth}번째)` : RETRY_RESOLVED_ACTION);
+  }
   parts.push(`정상화 ${i.normalizedAt ? kstTime(i.normalizedAt) : "시각 모름"}`);
   return parts.join(" · ");
 }
@@ -184,6 +212,7 @@ function waitingLine(i: DigestIncident, now: Date): string {
 /**
  * 하루 한 번 묶음 알림. 정상화·조치대기가 모두 0이면 null — 「알림 직전에 막은 건」만으로는 보내지 않는다.
  * 사고 줄은 합쳐 15줄까지만 싣고 나머지는 「외 N건」으로 접는다(머리 줄은 세지 않는다).
+ * `retryHistory` 는 재시도 반복 「(7일 중 N번째)」를 세는 지난 정상화 기록이다(없으면 표시 없음).
  * 확인 표시(`incidentIds`)는 정상화 사고만 — 조치대기 사고에 찍으면 나중에 정상화돼도 묶음에서 빠진다.
  */
 export function formatDigest(
@@ -191,6 +220,7 @@ export function formatDigest(
   waiting: DigestIncident[],
   suppressedCount: number,
   now: Date,
+  retryHistory: readonly RetryHealedRecord[] = [],
 ): OutboxMessage | null {
   // C(알림 자체가 틀림)는 내부 기록이라 줄로 싣지 않는다 — 막은 건 개수로만 보인다.
   const shownResolved = resolved.filter((i) => i.kind !== "C");
@@ -208,7 +238,8 @@ export function formatDigest(
     budget -= take;
     hidden += items.length - take;
   };
-  section(`정상화 ${shownResolved.length}건`, shownResolved.map(resolvedLine));
+  const retryPool = [...retryHistory, ...shownResolved];
+  section(`정상화 ${shownResolved.length}건`, shownResolved.map((i) => resolvedLine(i, retryPool)));
   section(`조치대기 ${shownWaiting.length}건`, shownWaiting.map((i) => waitingLine(i, now)));
   if (hidden > 0) lines.push(`외 ${hidden}건`);
   if (suppressedCount > 0) lines.push(`알림 직전에 정상화돼 보내지 않은 건 ${suppressedCount}건`);
