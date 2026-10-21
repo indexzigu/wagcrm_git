@@ -58,6 +58,11 @@ describe("describeErrorChain — AggregateError", () => {
     );
     expect(classifyCronError(text)).toBe("proxy_quota");
   });
+  it("자기 자신을 품은 묶음 오류에서도 멈춘다", () => {
+    const loop = new AggregateError([], "loop");
+    (loop as unknown as { errors: unknown[] }).errors = [loop, new AggregateError([loop], "nested")];
+    expect(describeErrorChain(loop)).toBe("loop <- [loop | nested]");
+  });
   it("errors 가 비면 지금처럼 끝낸다", () => {
     expect(describeErrorChain(new AggregateError([], "all attempts failed"))).toBe("all attempts failed");
   });

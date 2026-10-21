@@ -36,6 +36,12 @@ function describeValue(value: unknown): string {
 }
 
 export function describeErrorChain(error: unknown, maxDepth = 5): string {
+  return chain(error, maxDepth, true);
+}
+
+// expandAggregate: 묶음 오류의 `errors` 는 한 단계만 펼친다 — 안쪽에서 다시 펼치면 자기 자신을 품은 묶음 오류에서
+// 호출이 끝없이 이어져(검토 재현) 오류를 보고하는 이 경로가 도리어 터진다.
+function chain(error: unknown, maxDepth: number, expandAggregate: boolean): string {
   const parts: string[] = [];
   const seen = new Set<unknown>();
   let current: unknown = error;
@@ -53,8 +59,8 @@ export function describeErrorChain(error: unknown, maxDepth = 5): string {
       // 경로가 있다(`fetch-client.contract.test.ts`). 안 보면 원인이 「all attempts failed」에서 끊겨 한도 소진이
       // 네트워크 장애로 분류되고 헛재시도가 난다. 앞의 3개만, 각각 짧게 펼친다.
       const inner = (current as { errors?: unknown }).errors;
-      if (Array.isArray(inner) && inner.length > 0) {
-        parts.push(`[${inner.slice(0, 3).map((e) => describeErrorChain(e, 2)).join(" | ")}]`);
+      if (expandAggregate && Array.isArray(inner) && inner.length > 0) {
+        parts.push(`[${inner.slice(0, 3).map((e) => chain(e, 2, false)).join(" | ")}]`);
       }
       break;
     }
