@@ -88,6 +88,10 @@ const TARGETS: Record<string, readonly string[]> = {
   "app/outreach/loading.tsx": SURFACE_TOKENS,
   "app/reports/loading.tsx": SURFACE_TOKENS,
   "app/settlement/loading.tsx": SURFACE_TOKENS,
+  // 묶음 3 B — 모바일 탭 화면 뼈대(#192: 본문과 높이·여백·재질이 같아야 한다)와 홈 로딩 뼈대, 데스크톱 홈 카드.
+  "app/pipeline/loading.tsx": SURFACE_TOKENS,
+  "app/loading.tsx": SURFACE_TOKENS,
+  "components/crm/dashboard-home.tsx": SURFACE_TOKENS,
   // 묶음 2-c B — 상세 옆 창 계열(데스크톱 Sheet · 모바일 하단 시트 공유).
   "components/crm/deals-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
   "components/crm/sellers-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
@@ -143,6 +147,20 @@ const TARGETS: Record<string, readonly string[]> = {
 type Exception = { token: string; cls: string; context: string; count: number; reason: string };
 
 const EXCEPTIONS: Record<string, readonly Exception[]> = {
+  "components/crm/dashboard-home.tsx": [
+    {
+      token: "rounded-[",
+      cls: "rounded-[2px]",
+      context: "",
+      count: 4,
+      reason: "차트 범례·툴팁 표식(8~12px) — 모서리 사다리의 가장 작은 단도 이 크기에는 너무 둥글어 원과 구분되지 않는다(calendar-view 범례와 같은 사유)",
+    },
+    { token: "bg-white/", cls: "bg-white/10", context: "", count: 3, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 진행 막대 홈·설정 단추 바탕" },
+    { token: "bg-white/", cls: "hover:bg-white/20", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 설정 단추 마우스 올림" },
+    { token: "bg-white/", cls: "bg-white/50", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 진행 막대 위 기준선 표시" },
+    { token: "border-white/", cls: "border-white/10", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 히어로 안 구분선" },
+    { token: "border-white/", cls: "border-white/5", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 히어로 안 실적 줄 구분선" },
+  ],
   "components/mobile/mobile-home-view.tsx": [
     {
       token: "bg-white/",

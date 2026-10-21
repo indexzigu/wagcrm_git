@@ -420,7 +420,7 @@ function MetricCard({
   return (
     // h-full: 첫 밴드에서 히어로 높이를 받아 늘어난다 — 남는 높이는 표와 스파크라인 사이(mt-auto)로 가고
     // 스파크라인은 카드 바닥에 붙는다(2026-10-18 리뷰: 좌 칸 아래가 비어 첫 줄이 기울었다).
-    <Card className="h-full border-black/5 bg-white/85 shadow-soft-sm p-0">
+    <Card className="h-full border-border bg-card shadow-soft-sm p-0">
       {/* 데이터 점검 카드 밀도 기준(오너 2026-07-10): 행 기반·타이트, 라벨 좌/값 우, 얇은 구분선. Card 기본 p-6 제거해 이중 패딩(48px) 해소 */}
       <CardContent className="flex flex-1 flex-col px-4 py-3">
         {/* 서브텍스트는 제목 우측에 이어서(오너 2026-07-24 — 카드 폭이 넓어 별도 줄이 불필요).
@@ -756,7 +756,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
 
                 {/* 최근 90일 영업 전환 — 형제 KPI 카드와 세로 밀도 정합(오너 피드백 2026-07-14):
                     내용을 flex로 세로 분산해 하단 여백을 없애고, 단계별 전환율을 병기해 판독 밀도를 높인다 */}
-                <Card className="border-black/5 bg-white/85 shadow-soft-sm p-0 h-full flex flex-col">
+                <Card className="border-border bg-card shadow-soft-sm p-0 h-full flex flex-col">
                   <CardContent className="px-4 py-3 flex flex-1 flex-col">
                     {/* 서브텍스트는 제목 우측에 이어서 — 형제 KPI 카드와 형식 통일(오너 2026-07-24) */}
                     {/* flex-wrap + 부연 min-w-[8rem]: 3열이 좁아지면(640px·200% 확대) 부연이 제목 다음 줄로 내려간다. */}
