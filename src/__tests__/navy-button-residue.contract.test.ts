@@ -114,7 +114,11 @@ describe("바뀐 자리 고정 — 실행 버튼은 청록 채움, 선택 표시
       "app/outreach/page.tsx",
     ]) {
       const values = stringValues(read(rel), rel).join(" ");
-      expect(read(rel), rel).toMatch(/SELECTED_TOGGLE[\s\S]*UNSELECTED_TOGGLE|UNSELECTED_TOGGLE[\s\S]*SELECTED_TOGGLE/);
+      // \b 로 센다 — UNSELECTED_TOGGLE 안의 SELECTED_TOGGLE 부분 문자열에 속지 않게. import 1 + 사용 1 이상.
+      for (const name of ["SELECTED_TOGGLE", "UNSELECTED_TOGGLE"]) {
+        const uses = read(rel).match(new RegExp(`\\b${name}\\b`, "g")) ?? [];
+        expect(uses.length, `${rel} 가 ${name} 를 가져오기만 하고 쓰지 않는다`).toBeGreaterThanOrEqual(2);
+      }
       expect(values, `${rel} 에 선택 표시 문자열 사본`).not.toContain("bg-primary/10 font-bold text-primary");
     }
   });
