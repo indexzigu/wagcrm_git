@@ -88,7 +88,7 @@ const SECTION_SHELL =
   "space-y-3 rounded-2xl border border-border bg-card p-4 shadow-soft-sm";
 
 const ROUND_BADGE =
-  "inline-flex shrink-0 items-center rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 select-none";
+  "inline-flex shrink-0 items-center rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold text-slate-600 select-none";
 
 export function CampaignGroupSection({
   campaign,

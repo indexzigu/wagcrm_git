@@ -525,7 +525,7 @@ export default function DelayDispatchModal({
           <>
             <div className="p-5 space-y-4 overflow-y-auto">
               {/* ① caution 톤 배너 */}
-              <div className="rounded-xl border border-amber-200 bg-[var(--status-caution-bg)] p-4">
+              <div className="rounded-xl border border-status-caution/30 bg-[var(--status-caution-bg)] p-4">
                 <h3 className="text-sm font-bold text-[var(--status-caution-text)]">
                   지연 안내, 지금 고객에게 전송됩니다
                 </h3>

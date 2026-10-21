@@ -228,7 +228,7 @@ const DayCell = React.memo(function DayCell({
 
       <div className="h-[8px] flex items-start justify-center gap-[2px] mt-1 z-10 w-full">
         {Array.from({ length: Math.min(Math.max(campaignCount, isToday ? 1 : 0), 3) }).map((_, i) => (
-          <div key={i} className={cn("w-1 h-1 rounded-full", isToday ? "bg-blue-500" : "bg-slate-400", i === 1 && "opacity-60", i === 2 && "opacity-30")} />
+          <div key={i} className={cn("w-1 h-1 rounded-full", isToday ? "bg-primary" : "bg-slate-400", i === 1 && "opacity-60", i === 2 && "opacity-30")} />
         ))}
       </div>
     </button>

@@ -475,10 +475,10 @@ export function CrmDashboard({
               ) : null}
 
               {showOutOfFilterNotice ? (
-                <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50/80 px-3.5 py-3 text-sm text-amber-950 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-3 rounded-lg border border-status-caution/30 bg-status-caution-bg px-3.5 py-3 text-sm text-status-caution-text md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <div className="font-medium">현재 선택한 캠페인이 필터 결과 밖에 있습니다.</div>
-                    <div className="text-xs text-amber-900/80">
+                    <div className="text-xs text-status-caution-text">
                       상세 패널은 유지되고 있으며, 목록에서 다시 보려면 필터를 초기화하면 됩니다.
                     </div>
                   </div>
@@ -486,7 +486,7 @@ export function CrmDashboard({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-amber-300 bg-white text-amber-950 hover:bg-amber-100"
+                      className="border-status-caution/30 bg-white text-status-caution-text hover:bg-status-caution-bg"
                       onClick={resetPipelineFilters}
                     >
                       필터 초기화
@@ -494,7 +494,7 @@ export function CrmDashboard({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-amber-950 hover:bg-amber-100"
+                      className="text-status-caution-text hover:bg-status-caution/10"
                       onClick={() => setPanelOpen(false)}
                     >
                       패널 닫기

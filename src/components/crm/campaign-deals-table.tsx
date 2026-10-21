@@ -604,7 +604,7 @@ export function CampaignDealsTable({
                       <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-medium tabular-nums text-slate-700">
                         {formatCurrency(commission)}
                       </td>
-                      <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-medium tabular-nums text-rose-600">
+                      <td className="px-1.5 py-1.5 text-right align-middle text-[10px] font-medium tabular-nums text-money-out">
                         {formatCurrency(sellerFee)}
                       </td>
                       {/* 영업이익 = 영업 수익 − 판매대행비 로 상쇄된 **판정값**이다(P8 §1 판정축).
@@ -624,7 +624,7 @@ export function CampaignDealsTable({
                           <button
                             type="button"
                             onClick={() => handleRemoveRow(idx)}
-                            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-red-500 transition-colors"
+                            className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-status-urgent-text transition-colors"
                             aria-label="품목 삭제"
                           >
                             <Trash2 className="size-3.5" />
@@ -640,7 +640,7 @@ export function CampaignDealsTable({
                   <td className="px-2 py-2 text-right text-primary">{totals.quantity}</td>
                   <td className="px-1.5 py-2 text-right text-slate-700">{formatCurrency(totals.actualSales)}</td>
                   <td className="px-1.5 py-2 text-right text-slate-700">{formatCurrency(totals.commission)}</td>
-                  <td className="px-1.5 py-2 text-right text-rose-600">{formatCurrency(totals.sellerFee)}</td>
+                  <td className="px-1.5 py-2 text-right text-money-out">{formatCurrency(totals.sellerFee)}</td>
                   {/* 합계는 표당 1개뿐인 결론 값이라 **초점 강도**다(흑자 초록·적자 경고) — 품목 행만 밀집.
                       선례: campaign-side-panel 「헤더 요약값은 패널당 1개라 초점 강도다」. */}
                   <td

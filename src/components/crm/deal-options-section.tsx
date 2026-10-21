@@ -138,7 +138,7 @@ export function DealOptionsSection({ deal, fetchDealDetails }: DealOptionsSectio
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="size-7 hover:bg-red-50 hover:text-red-500"
+                      className="size-7 hover:bg-status-urgent-bg hover:text-status-urgent-text"
                       aria-label={`${formatOptionDealName(deal.dealName, opt.dealName)} 삭제`}
                       onClick={() => void handleRemoveOption(opt.id)}
                     >

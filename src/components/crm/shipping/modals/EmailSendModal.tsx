@@ -474,7 +474,7 @@ export default function EmailSendModal({
               ) : (
                 <div className="flex items-center bg-slate-50 border border-slate-100 p-3 rounded-xl min-h-[46px] text-[11px] text-slate-500 font-medium">
                   {manualError ? (
-                    <span role="alert" className="whitespace-pre-line font-bold text-red-600">{manualError}</span>
+                    <span role="alert" className="whitespace-pre-line font-bold text-status-urgent-text">{manualError}</span>
                   ) : manualFile ? (
                     <span className="text-slate-700">
                       수동 첨부: <span className="font-bold truncate max-w-[220px] inline-block align-bottom">{manualFile.name}</span>

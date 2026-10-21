@@ -113,7 +113,7 @@ export function CommissionSmartForm({
   // No matching channel policy
   if (!policyRates && !manualOverride) {
     return (
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+      <div className="rounded-md border border-status-caution/30 bg-status-caution-bg px-3 py-2 text-xs text-status-caution-text">
         해당 채널의 수수료 정책이 없습니다
       </div>
     );
@@ -136,7 +136,7 @@ export function CommissionSmartForm({
 
       {/* No policy notice when override is on but no policy exists */}
       {!policyRates && manualOverride && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
+        <div className="rounded-md border border-status-caution/30 bg-status-caution-bg px-3 py-2 text-xs text-status-caution-text">
           해당 채널의 수수료 정책이 없습니다
         </div>
       )}

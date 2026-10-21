@@ -18,6 +18,31 @@ const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8");
 
 const FILES = [
   "components/crm/order-dashboard.tsx",
+  // [애플UI] 전수 정리 A — 주문·캠페인·정산·휴대폰(2026-10-22)
+  "components/crm/campaign-side-panel.tsx",
+  "components/crm/campaign-card.tsx",
+  "components/crm/campaign-group-section.tsx",
+  "components/crm/campaign-deals-table.tsx",
+  "components/crm/campaign-creation-form.tsx",
+  "components/crm/deal-creation-form.tsx",
+  "components/crm/deals-panel.tsx",
+  "components/crm/deal-options-section.tsx",
+  "components/crm/calendar-view.tsx",
+  "components/crm/settlement-section.tsx",
+  "components/crm/settlement-checklist.tsx",
+  "components/crm/commission-smart-form.tsx",
+  "components/crm/schedule-gap-briefing-card.tsx",
+  "components/crm/crm-dashboard.tsx",
+  "components/crm/recampaign-alerts-card.tsx",
+  "components/crm/step-metric-card.tsx",
+  "components/crm/price-defense-card.tsx",
+  "components/crm/market-price-monitor.tsx",
+  "components/crm/shipping/modals/CampaignEditModal.tsx",
+  "components/crm/shipping/modals/CampaignCreateModal.tsx",
+  "components/crm/shipping/modals/EmailSendModal.tsx",
+  "components/crm/shipping/modals/DelayDispatchModal.tsx",
+  "components/mobile/mobile-campaign-detail-sheet.tsx",
+  "components/mobile/mobile-schedule-calendar.tsx",
   "components/crm/outreach-list.tsx",
   "app/outreach/page.tsx",
   "components/portal/seller-portal-report.tsx",
@@ -29,15 +54,27 @@ const FILES = [
 const OFF_TOKEN_HUE = /\b(?:emerald|amber|blue|indigo|sky|violet|purple|rose|orange|green|yellow|teal|cyan|pink|red|lime|fuchsia)-\d{2,3}\b/g;
 const HEX = /#[0-9a-fA-F]{3,8}\b/g;
 
-/** 파일 → 남겨 둔 hue 와 정확한 개수·사유. 줄이기만 한다(고치면 개수를 낮추고, 0 이 되면 항목을 지운다). */
+/** 파일 → 남겨 둔 hue(또는 "#" hex 값) 와 정확한 개수·사유. 줄이기만 한다(고치면 개수를 낮추고, 0 이 되면 항목을 지운다). */
 const REMAINING: Record<string, { hue: string; count: number; reason: string }[]> = {
-  "components/crm/order-dashboard.tsx": [
-    {
-      hue: "green",
-      count: 1,
-      reason:
-        "「발송처리」 어두운 버튼 위 네이버 N 표식 — 의미축이 아니라 플랫폼 표식이라 이번 범위 밖(옆 버튼들의 bg-status-success N 표식과 함께 판단할 것)",
-    },
+  "components/crm/calendar-view.tsx": [
+    { hue: "rose", count: 5, reason: "주말·공휴일 빨강 — 맞는 의미축 없음(같은 칸 「매출 공백」 위험 틴트와 겹침), 오너 확인 필요(2026-10-22 일괄 질문)" },
+  ],
+  "components/crm/campaign-card.tsx": [
+    { hue: "emerald", count: 2, reason: "ACTIVE 라이브 도트 — 오너 확정 예외(2026-07-16), status-literal-token-alignment 가 고정" },
+    { hue: "pink", count: 1, reason: "인스타·유튜브 아이콘 상표색 — §4(채널·플랫폼은 무채색) vs 상표 원색, 오너 확인 필요(2026-10-22 일괄 질문)" },
+    { hue: "red", count: 1, reason: "인스타·유튜브 아이콘 상표색 — §4(채널·플랫폼은 무채색) vs 상표 원색, 오너 확인 필요(2026-10-22 일괄 질문)" },
+  ],
+  "components/crm/shipping/modals/CampaignEditModal.tsx": [
+    { hue: "green", count: 1, reason: "개발용 디버그 로그 글자(어두운 slate-900 바탕) — 그 표면 대비를 지키는 토큰 없음" },
+  ],
+  "components/crm/step-metric-card.tsx": [
+    { hue: "amber", count: 1, reason: "단계 막대 3색 — 한 색 농도 사다리로 바꿀지 오너 확인 필요(2026-10-22 일괄 질문)" },
+    { hue: "blue", count: 1, reason: "단계 막대 3색 — 오너 확인 필요(2026-10-22 일괄 질문)" },
+    { hue: "green", count: 1, reason: "단계 막대 3색 — 오너 확인 필요(2026-10-22 일괄 질문)" },
+  ],
+  "components/crm/schedule-gap-briefing-card.tsx": [
+    { hue: "#FBF7F0", count: 1, reason: "크림 바탕 — 무채색에 가까운 바탕(범위 밖)" },
+    { hue: "#1F2A30", count: 4, reason: "본문 진한 글자 — 무채색(범위 밖)" },
   ],
   "app/outreach/page.tsx": [
     {
@@ -133,15 +170,20 @@ describe("대상 표면에 globals.css 밖 hue·hex 가 돌아오지 않는다",
     const values = stringValues(read(rel), rel);
     const hits = hueHits(values);
     const allowed = REMAINING[rel] ?? [];
+    const hexes = values.flatMap((v) => v.match(HEX) ?? []);
+    // hue 가 "#" 로 시작하는 항목은 hex 남김(무채색·남의 상표) — 대소문자 무시로 정확히 같은 값만 센다.
+    const sameHex = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
     for (const entry of allowed) {
       expect(entry.reason.length, `${rel} 예외 사유가 비었다`).toBeGreaterThan(0);
-      const n = hits.filter((h) => h.startsWith(`${entry.hue}-`)).length;
+      const n = entry.hue.startsWith("#")
+        ? hexes.filter((h) => sameHex(h, entry.hue)).length
+        : hits.filter((h) => h.startsWith(`${entry.hue}-`)).length;
       expect(n, `${rel} 의 ${entry.hue} 개수가 바뀌었다 — 줄었으면 REMAINING 을 낮출 것`).toBe(entry.count);
     }
     const unexpected = hits.filter((h) => !allowed.some((e) => h.startsWith(`${e.hue}-`)));
     expect(unexpected, `${rel} 에 팔레트 hue 재유입`).toEqual([]);
-    const hexes = values.flatMap((v) => v.match(HEX) ?? []);
-    expect(hexes, `${rel} 에 hex 하드코딩 재유입 — 토큰을 쓸 것`).toEqual([]);
+    const unexpectedHex = hexes.filter((h) => !allowed.some((e) => e.hue.startsWith("#") && sameHex(h, e.hue)));
+    expect(unexpectedHex, `${rel} 에 hex 하드코딩 재유입 — 토큰을 쓸 것`).toEqual([]);
   });
 });
 
@@ -175,6 +217,18 @@ describe("의미축 고정", () => {
 });
 
 describe("대비 — 흰 바탕 기준(§5 표면 종속)", () => {
+  it("전수 정리 A — 위험 행 점수 글자·셀러지급액 칸이 AA(4.5:1) 이상", () => {
+    // 시세 모니터: 위험 행(bg-status-urgent-bg) 위 점수 글자는 -text 짝이어야 한다(맨 status-urgent 는 4.1).
+    expect(read("components/crm/market-price-monitor.tsx")).toContain('"text-status-urgent-text font-medium"');
+    expect(ratio(token("--status-urgent-text"), token("--status-urgent-bg"))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(token("--status-urgent"), token("--status-urgent-bg"))).toBeLessThan(4.5);
+    // 캠페인 옆 패널 셀러지급액: money-out 글자가 자기 2% 틴트 위에서 AA(5% 틴트면 4.36 미달).
+    expect(read("components/crm/campaign-side-panel.tsx")).toContain("border-money-out/20 bg-money-out/[0.02]");
+    const mo = token("--money-out");
+    expect(ratio(mo, over(mo, 0.02, WHITE))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(mo, over(mo, 0.05, WHITE))).toBeLessThan(4.5);
+  });
+
   it("시간대별 주문 막대(두 화면)가 흰 바탕·slate-100 기준선 옆 모두 3:1 이상", () => {
     const bars = [
       read("components/portal/seller-portal-report.tsx"),

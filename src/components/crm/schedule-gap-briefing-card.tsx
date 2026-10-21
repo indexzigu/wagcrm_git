@@ -84,12 +84,9 @@ const urgencyConfig: Record<
 const MAX_BAR_HEIGHT = 120; // px
 const MIN_BAR_HEIGHT = 28;  // px (0건일 때도 최소 높이)
 
-function FunnelDot({ color }: { color: string }) {
+function FunnelDot() {
   return (
-    <span
-      className="inline-block size-[6px] rounded-full shrink-0"
-      style={{ backgroundColor: color }}
-    />
+    <span className="inline-block size-[6px] rounded-full shrink-0 bg-slate-500" />
   );
 }
 
@@ -206,7 +203,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
                         </ul>
                       )}
                       {bucket.actionLabel && (
-                        <p className="mt-1.5 text-[10px] font-semibold text-orange-400 whitespace-nowrap">
+                        <p className="mt-1.5 text-[10px] font-semibold text-status-pending whitespace-nowrap">
                           → {bucket.actionLabel}
                         </p>
                       )}
@@ -249,17 +246,17 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
             </span>
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="inline-flex items-center gap-1">
-                <FunnelDot color="var(--primary)" />
+                <FunnelDot />
                 <span className="text-muted-foreground">확정대기</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.readyDeals}</span>
               </span>
               <span className="inline-flex items-center gap-1">
-                <FunnelDot color="#2E7D9B" />
+                <FunnelDot />
                 <span className="text-muted-foreground">제안</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.proposedTasks}</span>
               </span>
               <span className="inline-flex items-center gap-1">
-                <FunnelDot color="#C97A40" />
+                <FunnelDot />
                 <span className="text-muted-foreground">협의·테스트</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.negotiatingTasks}</span>
                 {funnel.stagnantTasks > 0 && (
@@ -270,7 +267,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
                 )}
               </span>
               <span className="inline-flex items-center gap-1">
-                <FunnelDot color="#5D9B6E" />
+                <FunnelDot />
                 <span className="text-muted-foreground">승인</span>
                 <span className="font-bold text-[#1F2A30]">{funnel.pendingApproval}</span>
               </span>

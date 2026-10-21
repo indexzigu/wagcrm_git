@@ -213,7 +213,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
 
       {/* 중복 딜 이름 경고 */}
       {duplicateWarning && duplicateWarning.length > 0 && (
-        <Alert className="mt-5 border-amber-200 bg-amber-50 text-amber-900">
+        <Alert className="mt-5 border-status-caution/30 bg-status-caution-bg text-status-caution-text">
           <AlertDescription className="text-xs">
             <p className="font-medium mb-1">유사한 판매 조건이 이미 존재합니다:</p>
             <ul className="list-disc pl-4 mb-2 space-y-0.5">
@@ -242,7 +242,7 @@ export function DealCreationForm({ onSuccess, onCancel }: DealCreationFormProps)
           <Button
             size="sm"
             variant="outline"
-            className="border-amber-300 text-amber-700 hover:bg-amber-50"
+            className="border-status-caution/30 text-status-caution-text hover:bg-status-caution-bg"
             onClick={() => {
               setDuplicateConfirmed(true);
               setDuplicateWarning(null);

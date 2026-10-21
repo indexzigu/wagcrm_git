@@ -1751,7 +1751,7 @@ export default function OrderDashboard() {
                         {submitBusy ? (
                           <><RefreshCw className="w-4 h-4 animate-spin" />발송처리 중…</>
                         ) : (
-                          <><span className="text-green-400 font-black text-base leading-none">N</span>발송처리</>
+                          <><span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5">N</span>발송처리</>
                         )}
                       </button>
                     );

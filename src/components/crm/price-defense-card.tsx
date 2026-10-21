@@ -39,7 +39,7 @@ export type PriceOverview = {
 // 정상은 money-in 계열이 아니라 ok 시맨틱 전용 emerald 텍스트 토큰을 쓰지 않고
 // 도트로만 표현한다(텍스트는 전부 무채색 — 색은 도트 캐리어에만).
 const LEGEND: Array<{ key: keyof PriceOverview["counts"]; label: string; dotClass: string }> = [
-  { key: "ok", label: "정상", dotClass: "bg-emerald-600" },
+  { key: "ok", label: "정상", dotClass: "bg-status-success" },
   // 점 색은 감시 표의 행(`market-price-monitor.tsx` VERDICT_BADGE)과 같아야 한다 — 같은 값은 같은 색(P8 §1).
   { key: "tie", label: "동가", dotClass: "bg-status-caution" },
   { key: "violated", label: "위반", dotClass: "bg-status-urgent" },
@@ -153,7 +153,7 @@ export function PriceDefenseBody({ data, loading, error, refetch }: PriceOvervie
   }
   return (
     <div className="flex items-center gap-2.5 pt-1 text-xs text-slate-600">
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 text-[12px] font-bold border border-emerald-100">
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-status-success-bg text-status-success text-[12px] font-bold border border-status-success/20">
         ✓
       </span>
       모든 판매 조건 최저가 이상 없음
@@ -179,7 +179,7 @@ export function PriceDefenseCard() {
     <Card className="border-border bg-card shadow-soft-sm">
       <CardContent className="px-4 py-3">
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100 flex-wrap">
-          <ShieldCheck className={cn("size-4.5", data && data.counts.violated > 0 ? "text-status-urgent" : "text-emerald-600")} />
+          <ShieldCheck className={cn("size-4.5", data && data.counts.violated > 0 ? "text-status-urgent" : "text-status-success")} />
           <h3 className="text-sm font-bold text-[var(--primary)] tracking-tight">최저가 점검</h3>
           {data && data.counts.violated > 0 && (
             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-status-urgent/10 px-1 text-[10px] font-bold text-status-urgent-text border border-status-urgent/20">

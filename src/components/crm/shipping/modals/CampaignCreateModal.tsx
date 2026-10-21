@@ -292,7 +292,7 @@ export default function CampaignCreateModal({
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-xs font-bold text-slate-500">상품 매핑 표 (코드표 붙여넣기 또는 스토어 옵션 자동 로드 · 상품코드는 코드표 없으면 비워둠)</label>
                   <div className="flex gap-1.5">
-                    <button type="button" onClick={handleLoadStoreOptions} disabled={isLoadingOptions} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1 rounded hover:bg-emerald-100 font-bold transition-colors disabled:opacity-50">
+                    <button type="button" onClick={handleLoadStoreOptions} disabled={isLoadingOptions} className="text-xs bg-white text-primary border border-primary/30 px-2 py-1 rounded hover:bg-primary-tint font-bold transition-colors disabled:opacity-50">
                       {isLoadingOptions ? '동기화 중...' : 'N스토어 동기화'}
                     </button>
                     <button type="button" onClick={() => setMappings([...mappings, { productName: '', optionName: '', brandCode: '', price: 0 }])} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded hover:bg-slate-200 font-bold transition-colors">
@@ -344,7 +344,7 @@ export default function CampaignCreateModal({
                           <td className="px-2 py-1.5 text-center">
                             <button type="button" onClick={() => {
                               if (mappings.length > 1) setMappings(mappings.filter((_, i) => i !== idx));
-                            }} aria-label={`${idx + 1}행 삭제`} className="text-destructive hover:text-red-700 font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            }} aria-label={`${idx + 1}행 삭제`} className="text-destructive hover:text-status-urgent-text font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
                           </td>
                         </tr>
                       ))}
