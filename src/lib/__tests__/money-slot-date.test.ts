@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PAYOUT_SLOT_DATE_FIELDS } from "@/lib/money-slot-date";
+import { isPayoutSlotToSeller, PAYOUT_SLOT_DATE_FIELDS } from "@/lib/money-slot-date";
 import { resolveCampaignMoneySlots } from "@/lib/tax-filing-board";
 import type { SalesChannel } from "@/lib/crm-types";
 
@@ -15,5 +15,10 @@ describe("PAYOUT_SLOT_DATE_FIELDS — 판정표의 payout 칸과 같은 필드",
       completedAtField: slot!.completedAtField,
       flagField: slot!.flagField,
     }).toEqual(PAYOUT_SLOT_DATE_FIELDS);
+  });
+
+  it.each(CHANNELS)("%s 의 isPayoutSlotToSeller 가 판정표의 payout 상대와 같다", (channel) => {
+    const slot = resolveCampaignMoneySlots(channel).find((s) => s.key === "payout");
+    expect(isPayoutSlotToSeller(channel)).toBe(slot!.counterpart === "SELLER");
   });
 });

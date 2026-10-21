@@ -258,6 +258,24 @@ describe("명세서 입금 날짜 — 정산 카드 지급(셀러) 칸과 같은
     expect(resolveStatementSellerPayoutDates([campaign])).toEqual({ paid: [], expected: [] });
   });
 
+  it.each(["SELLER_MALL", "UNSPECIFIED"] as const)("%s 는 지급 칸 상대가 공급사라 날짜를 싣지 않는다", (salesChannel) => {
+    const campaign = createCampaign({
+      salesChannel,
+      expectedPayoutDate: "2026-06-10",
+      isPayoutCompleted: true,
+      payoutCompletedAt: "2026-06-08",
+    });
+    expect(resolveStatementSellerPayoutDates([campaign])).toEqual({ paid: [], expected: [] });
+    expect(buildSettlementStatementHtml([campaign])).not.toContain("입금");
+    expect(buildSettlementStatementText([campaign])).not.toContain("입금");
+  });
+
+  it("셀러몰이 섞인 묶음에서는 셀러 지급 캠페인 날짜만 싣는다", () => {
+    const brand = createCampaign({ expectedPayoutDate: "2026-06-10" });
+    const sellerMall = createCampaign({ id: "campaign-002", salesChannel: "SELLER_MALL", expectedPayoutDate: "2026-06-30" });
+    expect(resolveStatementSellerPayoutDates([brand, sellerMall])).toEqual({ paid: [], expected: ["2026-06-10"] });
+  });
+
   it("날짜가 없으면 평문에 날짜 줄이 없다", () => {
     expect(buildSettlementStatementText([createCampaign()])).not.toContain("입금");
   });

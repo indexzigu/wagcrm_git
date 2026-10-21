@@ -27,6 +27,16 @@ export const PAYOUT_SLOT_DATE_FIELDS = {
 } as const satisfies MoneySlotDateFields;
 
 /**
+ * 이 채널의 `payout` 칸 상대가 **셀러**인가 — 자사몰 계열·브랜드몰은 셀러, 셀러몰·미지정은
+ * 공급사(셀러몰은 셀러가 우리에게 입금하는 구조). 정산 명세서가 공급사 날짜를 셀러에게
+ * 싣지 않도록 거르는 데 쓴다(오너 확정 2026-10-21).
+ * 판정표(`resolveCampaignMoneySlots`)와의 일치는 `money-slot-date.test.ts` 가 전 채널로 고정한다.
+ */
+export function isPayoutSlotToSeller(salesChannel: string): boolean {
+  return salesChannel.startsWith("OWN_MALL") || salesChannel === "BRAND_MALL";
+}
+
+/**
  * 대금 칸 하나의 **날짜 근거** — 예정일·완료일·완료 플래그. 날짜 타입은 호출부가 정한다
  * (서버 경로는 `Date`, 페이로드 경로는 ISO 문자열) — 변환은 이 함수의 일이 아니다.
  */

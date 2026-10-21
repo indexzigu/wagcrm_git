@@ -3,7 +3,7 @@ import { isIndividualSeller, getSellerPayoutBase, calcIndividualIncomeTax, calcB
 import { resolveSellerFeeBasis, sumSellerPayoutItems } from "./settlement-items";
 import { resolveEffectiveSellerFeeBasis, sellerFeeFromBasis } from "./campaign-financials";
 import { sortDealRowsByName } from "./deal-sort";
-import { PAYOUT_SLOT_DATE_FIELDS, resolveMoneySlotEffectiveDate } from "./money-slot-date";
+import { isPayoutSlotToSeller, PAYOUT_SLOT_DATE_FIELDS, resolveMoneySlotEffectiveDate } from "./money-slot-date";
 
 const YGRD_COMPANY = {
   name: "와이그라운드",
@@ -63,8 +63,8 @@ function formatDate(value?: string | null) {
  * 자사몰의 공급사 지급 칸(`supplierPayout`)은 셀러 몫이 아니라 제외된다.
  * ⛔ 판정표(`tax-filing-board.ts`)를 import 하지 말 것 — 그 파일은 달별 계산서 모듈을 참조해
  * 셀러 대면 격리 계약에 걸린다. 그래서 날짜 판정만 의존 없는 `money-slot-date.ts` 에서 쓴다.
- * ⚠️ 셀러몰·채널 미지정은 판정표상 이 칸의 상대가 공급사다 — 종전 동작을 그대로 잇느라
- * 여기서 거르지 않는다(거를지는 오너 결정 사항, 미결).
+ * 셀러몰·채널 미지정은 이 칸의 상대가 공급사라 날짜를 싣지 않는다(오너 확정 2026-10-21 —
+ * 종전에는 공급사 지급 예정일이 셀러 명세서에 「입금 예정일」로 실렸다).
  *
  * 반환값은 캠페인 순서대로 중복 제거한 `YYYY-MM-DD` 목록이다(실제·예정 분리).
  */
@@ -75,6 +75,7 @@ export function resolveStatementSellerPayoutDates(campaigns: CampaignRow[]): {
   const paid = new Set<string>();
   const expected = new Set<string>();
   for (const campaign of campaigns) {
+    if (!isPayoutSlotToSeller(campaign.salesChannel)) continue;
     const { date, isActual } = resolveMoneySlotEffectiveDate(PAYOUT_SLOT_DATE_FIELDS, campaign);
     if (!date) continue;
     (isActual ? paid : expected).add(formatDate(date));
