@@ -168,7 +168,7 @@ describe("ScoreCard — 서브점수 막대(3차)", () => {
 });
 
 describe("CampaignCard — 필수 체크 진행 막대(3차)", () => {
-  it("slate-50 박스 위 트랙이 slate-200 이 아니라 slate-300 이고 채움은 slate-900", () => {
+  it("slate-50 박스 위 트랙이 slate-200 이 아니라 slate-300 이고 채움은 청록 주색(bg-primary)", () => {
     const campaign = {
       id: "c1",
       dealName: "딜",
@@ -194,7 +194,7 @@ describe("CampaignCard — 필수 체크 진행 막대(3차)", () => {
     const { container } = render(<CampaignCard campaign={campaign} onOpen={noop} onDelete={noop} onDuplicate={noop} />);
     const tracks = [...container.querySelectorAll("div.h-1.rounded-full.overflow-hidden")];
     expect(tracks).toHaveLength(1);
-    expectVisibleTrack(tracks[0], "bg-slate-900");
+    expectVisibleTrack(tracks[0], "bg-primary");
   });
 });
 

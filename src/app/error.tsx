@@ -67,7 +67,7 @@ export default function Error({
           <Button
             variant="default"
             size="sm"
-            className="rounded-lg h-9 px-4 text-xs bg-slate-900 text-white hover:bg-slate-800 shadow-md shadow-slate-900/10 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200 dark:shadow-none"
+            className="rounded-lg h-9 px-4 text-xs"
             asChild
           >
             <Link href="/">

@@ -88,11 +88,11 @@ export function SegmentToggle<T extends string>({
             onClick={() => onValueChange(opt.value)}
             onKeyDown={(e) => handleKeyDown(e, i)}
             className={cn(
-              "h-7 rounded-md px-2.5 text-[11px] font-semibold transition-colors",
+              "h-7 rounded-md px-2.5 text-[11px] transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
               selected
-                ? "bg-slate-800 text-white"
-                : "text-slate-600 hover:text-slate-900"
+                ? "bg-primary/10 font-bold text-primary"
+                : "font-medium text-slate-500 hover:text-slate-900"
             )}
           >
             {opt.label}

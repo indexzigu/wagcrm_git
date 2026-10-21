@@ -925,35 +925,38 @@ export default function OutreachPage() {
                 {/* Stage Filter Tabs */}
                 <div className="flex items-center gap-1.5 pt-2">
                   <Button
-                    variant={stageFilter === "ALL" ? "secondary" : "ghost"}
+                    variant="ghost"
+                    aria-pressed={stageFilter === "ALL"}
                     size="sm"
                     onClick={() => selectStage("ALL")}
-                    className={cn("rounded-lg h-8", stageFilter === "ALL" && "bg-slate-200 text-slate-900 font-semibold")}
+                    className={cn("rounded-lg h-8", stageFilter === "ALL" ? "bg-primary/10 font-bold text-primary hover:bg-primary/10 hover:text-primary" : "font-medium text-slate-500")}
                   >
                     전체
-                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "ALL" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-slate-600")}>
+                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "ALL" ? "bg-primary/10 text-primary" : "bg-muted text-slate-600")}>
                       {tasks.length}
                     </span>
                   </Button>
                   <Button
-                    variant={stageFilter === "IN_PROGRESS" ? "secondary" : "ghost"}
+                    variant="ghost"
+                    aria-pressed={stageFilter === "IN_PROGRESS"}
                     size="sm"
                     onClick={() => selectStage("IN_PROGRESS")}
-                    className={cn("rounded-lg h-8", stageFilter === "IN_PROGRESS" && "bg-slate-200 text-slate-900 font-semibold")}
+                    className={cn("rounded-lg h-8", stageFilter === "IN_PROGRESS" ? "bg-primary/10 font-bold text-primary hover:bg-primary/10 hover:text-primary" : "font-medium text-slate-500")}
                   >
                     진행중
-                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "IN_PROGRESS" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-slate-600")}>
+                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "IN_PROGRESS" ? "bg-primary/10 text-primary" : "bg-muted text-slate-600")}>
                       {tasks.filter(t => ["PROPOSED", "NEGOTIATION", "TESTING", "PENDING_APPROVAL"].includes(t.status)).length}
                     </span>
                   </Button>
                   <Button
-                    variant={stageFilter === "CLOSED" ? "secondary" : "ghost"}
+                    variant="ghost"
+                    aria-pressed={stageFilter === "CLOSED"}
                     size="sm"
                     onClick={() => selectStage("CLOSED")}
-                    className={cn("rounded-lg h-8", stageFilter === "CLOSED" && "bg-slate-200 text-slate-900 font-semibold")}
+                    className={cn("rounded-lg h-8", stageFilter === "CLOSED" ? "bg-primary/10 font-bold text-primary hover:bg-primary/10 hover:text-primary" : "font-medium text-slate-500")}
                   >
                     종료됨
-                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "CLOSED" ? "bg-slate-900/10 text-slate-700" : "bg-muted text-slate-600")}>
+                    <span className={cn("ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums", stageFilter === "CLOSED" ? "bg-primary/10 text-primary" : "bg-muted text-slate-600")}>
                       {tasks.filter(t => ["CONVERTED", "DROPPED"].includes(t.status)).length}
                     </span>
                   </Button>

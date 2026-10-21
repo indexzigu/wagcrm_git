@@ -522,9 +522,9 @@ function DealsPanelContent({
                         className={cn(
                           "flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-colors text-center whitespace-nowrap",
                           isSelected
-                            ? "bg-slate-900 text-white shadow-soft-sm"
+                            ? "bg-primary/10 font-bold text-primary shadow-soft-sm"
                             : canTransition
-                              ? "text-muted-foreground hover:text-foreground hover:bg-slate-200/50"
+                              ? "font-medium text-slate-500 hover:text-foreground"
                               : "cursor-not-allowed text-slate-300",
                         )}
                       >

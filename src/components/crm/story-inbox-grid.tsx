@@ -72,10 +72,11 @@ export function StoryInboxGrid({
               <Link
                 key={tab.key}
                 href={`/admin/stories?f=${tab.key}`}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                aria-current={active ? "page" : undefined}
+                className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
                   active
-                    ? "bg-slate-900 text-white"
-                    : "bg-card text-slate-600 border border-slate-200 hover:bg-slate-50"
+                    ? "bg-primary/10 font-bold text-primary"
+                    : "bg-card font-medium text-slate-500 border border-slate-200 hover:bg-slate-50"
                 }`}
               >
                 {tab.label} {count}

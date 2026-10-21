@@ -41,13 +41,15 @@ export function StageFilterBar({
         return (
           <Button
             key={value}
-            variant={isActive ? "secondary" : "ghost"}
+            variant="ghost"
             size="sm"
             aria-pressed={isActive}
             onClick={() => onFilterChange(value)}
             className={cn(
               "rounded-lg",
-              isActive && "bg-slate-200 text-slate-900 font-semibold",
+              isActive
+                ? "bg-primary/10 font-bold text-primary hover:bg-primary/10 hover:text-primary"
+                : "font-medium text-slate-500",
             )}
           >
             {label}
@@ -55,7 +57,7 @@ export function StageFilterBar({
               className={cn(
                 "ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums",
                 isActive
-                  ? "bg-slate-900/10 text-slate-700"
+                  ? "bg-primary/10 text-primary"
                   : "bg-muted text-slate-600",
               )}
             >
