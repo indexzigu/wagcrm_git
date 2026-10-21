@@ -139,6 +139,13 @@ describe("CrmDashboard view mode switching", () => {
     expect(within(group).getByRole("radio", { name: "테이블" })).toBeInTheDocument();
   });
 
+  it("머리 부제는 건수 요약 「판매중 N건 · 지연 N건」(지연 판정은 execution-quick-filters)", () => {
+    const { container } = render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
+    const header = container.querySelector("header") as HTMLElement;
+    // 지연 건수는 오늘 날짜에 따라 달라 형식만 고정한다 — 판정 자체는 execution-quick-filters 테스트가 고정.
+    expect(within(header).getByText(/^판매중 1건 · 지연 \d+건$/)).toBeInTheDocument();
+  });
+
   it("puts the primary 캠페인 등록 action in the header, not in the card row", () => {
     const { container } = render(<CrmDashboard initialData={makeInitialData(sampleCampaigns)} />);
     const header = container.querySelector("header") as HTMLElement;

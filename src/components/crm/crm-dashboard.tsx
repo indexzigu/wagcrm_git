@@ -4,10 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PlusIcon,
   SearchIcon,
-  TrendingUp,
-  Wallet,
-  Download,
-  PiggyBank,
   Boxes,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +39,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { CampaignSidePanel } from "./campaign-side-panel";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { CrmShell } from "./crm-shell";
+import { summarizeExecutionHeadline } from "@/lib/execution-quick-filters";
+import { MoneySummaryStrip, moneyFlowGroup } from "./money-summary-strip";
 import { DataSourceBanner } from "./data-source-banner";
 import { ExecutionKanbanBoard } from "./execution-kanban-board";
 import { StageFilterBar } from "./stage-filter-bar";
@@ -302,6 +300,9 @@ export function CrmDashboard({
     [rowsWithoutStageFilter],
   );
 
+  // 머리 부제 건수 — 실행 보드가 받는 같은 행·같은 빠른 필터 판정(`execution-quick-filters`)을 읽는다.
+  const executionHeadline = useMemo(() => summarizeExecutionHeadline(executionRows), [executionRows]);
+
   const kanbanSummary = useMemo(() => {
     const rowsToSum = useExecutionKanban ? executionRows : filteredRows;
     const m = summarizePipelineMoney(rowsToSum);
@@ -384,7 +385,7 @@ export function CrmDashboard({
       <CrmShell
         variant="focus"
         title={isMobile ? undefined : "판매 관리"}
-        description={isMobile ? undefined : "캠페인별 판매 진행과 오늘 처리할 일을 봅니다."}
+        description={isMobile ? undefined : `판매중 ${executionHeadline.selling}건 · 지연 ${executionHeadline.delayed}건`}
         segments={
           isMobile
             ? undefined
@@ -427,41 +428,26 @@ export function CrmDashboard({
           />
         ) : (
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
-            {/* Summary Bar */}
-            <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
-              <div className="flex shrink-0 items-center gap-1.5">
-                <TrendingUp className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">총거래액:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumTotal.toLocaleString()}원</span>
-              </div>
-              <span className="hidden text-slate-200 md:inline">|</span>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Wallet className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">수수료매출:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumRevenue.toLocaleString()}원</span>
-              </div>
-              <span className="hidden text-slate-200 md:inline">|</span>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Download className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">셀러지급액:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumFee.toLocaleString()}원</span>
-              </div>
-              <span className="hidden text-slate-200 md:inline">|</span>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <PiggyBank className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">매출총이익:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumProfit.toLocaleString()}원</span>
-              </div>
-            </div>
+            <MoneySummaryStrip
+              className="mb-4 shrink-0"
+              groups={[
+                moneyFlowGroup({
+                  grossMerchandise: kanbanSummary.sumTotal,
+                  commissionRevenue: kanbanSummary.sumRevenue,
+                  sellerPayout: kanbanSummary.sumFee,
+                  grossProfit: kanbanSummary.sumProfit,
+                }),
+              ]}
+            />
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
             {initialData.dataSource === "mock" && initialData.dataSourceMessage ? (
                <div className="px-5 pt-5">
                  <DataSourceBanner message={initialData.dataSourceMessage} />
                </div>
             ) : null}
             {showCardHead ? (
-            <div data-slot="pipeline-card-head" className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
+            <div data-slot="pipeline-card-head" className="flex flex-col gap-4 border-b border-border px-5 py-4">
               {/* 단계 칩(왼쪽)과 검색·조합 캠페인(오른쪽)을 한 줄에 둔다. 제목·보기 전환·캠페인 등록은
                   CrmShell 머리로 올렸다 — 종전의 조작 전용 줄은 빈 줄로 남아 지웠다. 실행 보드(진행·칸반)
                   에선 검색·조합 캠페인이 보드의 빠른 필터 줄 오른쪽으로 가므로 이 줄을 그리지 않는다. */}
@@ -479,7 +465,7 @@ export function CrmDashboard({
               ) : null}
 
               {showActiveFilterRow ? (
-                <div className="flex flex-col gap-2 rounded-lg border border-border/80 bg-white/70 px-3.5 py-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-2 rounded-lg border border-border/80 bg-card px-3.5 py-3 md:flex-row md:items-center md:justify-between">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     {activeFilterLabels.map((label) => (
                       <span
@@ -536,7 +522,7 @@ export function CrmDashboard({
             {/* 실행 보드는 검색칸을 보드 안에 들고 있어 빈 결과에도 보드를 그대로 둔다 — 빈 안내로 바꾸면 입력 중인
                 검색칸이 사라졌다 다른 자리에 나타나 화면이 튄다. 초기화는 위 「전체 필터 초기화」 줄이 맡는다. */}
             {filteredRows.length === 0 && hasActiveFilters && !useExecutionKanban ? (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#f8fafc] px-6 py-16 text-center">
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-background px-6 py-16 text-center">
                 <p className="text-sm text-muted-foreground">
                   필터 조건에 맞는 캠페인 없음
                 </p>
@@ -550,7 +536,7 @@ export function CrmDashboard({
                 </Button>
               </div>
             ) : viewMode === "kanban" ? (
-              <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc] p-4">
+              <div className="min-h-0 flex-1 overflow-auto bg-background p-4">
                 {useExecutionKanban ? (
                   <ExecutionKanbanBoard
                     campaigns={executionRows}
@@ -574,7 +560,7 @@ export function CrmDashboard({
                 )}
               </div>
             ) : (
-              <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc]">
+              <div className="min-h-0 flex-1 overflow-auto bg-background">
                 <GroupedTableView
                   campaigns={filteredRows}
                   stageFilter={effectiveStageFilter}

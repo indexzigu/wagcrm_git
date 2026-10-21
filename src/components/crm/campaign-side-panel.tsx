@@ -1366,9 +1366,9 @@ export function CampaignSidePanel({
             }
             onCloseAutoFocus={onCloseAutoFocus}
             style={{ width: "min(720px, 96vw)", maxWidth: "min(720px, 96vw)" }}
-            className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
+            className="flex flex-col overflow-hidden border-l border-border/70 bg-card p-0"
           >
-            <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
+            <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
               <div className="flex items-start justify-between gap-4">
               <div>
                 {/* tabIndex -1: 프로그램으로만 포커스(focusTitleOnOpen) — 탭 순서에는 넣지 않는다. */}

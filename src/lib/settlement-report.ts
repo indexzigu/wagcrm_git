@@ -83,6 +83,8 @@ export type SettlementReportData = {
   summary: {
     totalRevenue: number;
     totalMargin: number;
+    /** 수수료매출(영업수익) 합계 — Σ `resolveCampaignNetMargin().totalMarginAmount`. */
+    totalCommissionRevenue: number;
     totalSellerPayouts: number;
     campaignCount: number;
   };
@@ -249,6 +251,7 @@ export function buildSettlementReportModel(
 ): SettlementReportData {
   let totalRevenue = 0;
   let totalMargin = 0;
+  let totalCommissionRevenue = 0;
   let totalSellerPayouts = 0;
 
   const campaignBreakdown = campaigns.map((campaign) => {
@@ -274,6 +277,7 @@ export function buildSettlementReportModel(
 
     totalRevenue += actualSales;
     totalMargin += netMarginAmount;
+    totalCommissionRevenue += totalMarginAmount;
     totalSellerPayouts += sellerPayoutAmount;
 
     return {
@@ -310,6 +314,7 @@ export function buildSettlementReportModel(
     summary: {
       totalRevenue: roundCurrency(totalRevenue),
       totalMargin: roundCurrency(totalMargin),
+      totalCommissionRevenue: roundCurrency(totalCommissionRevenue),
       totalSellerPayouts: roundCurrency(totalSellerPayouts),
       campaignCount: campaigns.length,
     },

@@ -50,7 +50,7 @@ export function SettlementCompletedTable({
   return (
     <div className="relative flex flex-col min-h-[150px]">
       {loading ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-16 text-center bg-white/40 rounded-xl border border-border/50">
+        <div className="flex flex-1 flex-col items-center justify-center py-16 text-center bg-card rounded-xl border border-border">
           <Loader2 className="size-8 animate-spin text-primary/60 mb-3" />
           <h4 className="text-sm font-semibold text-slate-800">데이터를 불러오는 중입니다</h4>
           <p className="mt-1 text-xs text-muted-foreground max-w-xs">잠시만 기다려주세요.</p>
@@ -63,7 +63,7 @@ export function SettlementCompletedTable({
           className="flex-1 justify-center py-16"
         />
       ) : (
-        <div className="crm-horizontal-accent crm-horizontal-accent-settlement overflow-hidden rounded-xl border border-border/60 bg-white/50 shadow-soft-sm">
+        <div className="crm-horizontal-accent crm-horizontal-accent-settlement overflow-hidden rounded-xl border border-border bg-card shadow-soft-sm">
           <div className="overflow-x-auto pt-1">
             {/* 폭 규약의 정본은 `settlement-table-layout.ts` 다 — 진행 표와 **같은 모듈**을 써야
                 체크박스 폭·캠페인명 시작 좌표·오른쪽 끝이 어긋나지 않는다.
@@ -111,7 +111,7 @@ export function SettlementCompletedTable({
                 <col style={settlementFluidCol(74)} />
               </colgroup>
               <thead>
-                <tr className="border-b border-border/70 bg-slate-50/70 font-semibold text-muted-foreground select-none">
+                <tr className="border-b border-border bg-muted/60 font-semibold text-muted-foreground select-none">
                   <th className="px-4 py-3 text-center">
                     <input
                       type="checkbox"
@@ -136,7 +136,7 @@ export function SettlementCompletedTable({
                   <th className="px-2 py-3 text-right">영업이익</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/50">
+              <tbody className="divide-y divide-border">
                 {campaigns.map((campaign) => {
                   const reportCampaign = reportMap.get(campaign.id);
                   const profitTone = resolveProfitTone(campaign.operatingProfit);

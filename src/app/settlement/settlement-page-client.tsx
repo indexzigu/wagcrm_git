@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useFilterParams } from "@/hooks/use-filter-params";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronLeft, ChevronRight, Download, FileText, RefreshCw, Search, TrendingUp, Wallet } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, RefreshCw, Search } from "lucide-react";
 import { MONEY_DIRECTION_ICON } from "@/lib/money-direction";
 import { SettlementTable } from "@/components/crm/settlement-table";
 import { SettlementCompletedTable } from "@/components/crm/settlement-completed-table";
@@ -35,6 +35,7 @@ import type {
   SettlementReportData,
 } from "@/lib/settlement-report";
 import { CrmShell } from "@/components/crm/crm-shell";
+import { MoneySummaryStrip, moneyFlowGroup } from "@/components/crm/money-summary-strip";
 import {
   formatSettlementMonth,
   getCurrentMonth,
@@ -42,10 +43,10 @@ import {
   getPreviousMonth,
 } from "@/lib/settlement-report";
 
-const formatCurrency = (val: number | null | undefined) => {
-  if (val == null) return "-";
-  return `${Math.round(Number(val)).toLocaleString()}원`;
-};
+const VIEW_TYPE_OPTIONS = [
+  { value: "month", label: "월별" },
+  { value: "year", label: "연도별" },
+] as const;
 
 interface SettlementPageClientProps {
   initialData: DashboardData;
@@ -493,62 +494,62 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     />
   ) : (
     // 세로 스크롤러는 CrmShell 이 소유한다(스크롤바 자리 예약 포함) — 안쪽에 두 번째 스크롤러를 두지 않는다.
-    <CrmShell title="정산 관리">
+    <CrmShell
+      title="정산 관리"
+      // 건수는 두 섹션 배지와 같은 변수를 읽는다(새 계산 없음) — 머리와 본문이 다른 수를 말하지 않게.
+      // 정산 목록을 받기 전에는 부제를 비운다 — 두 목록이 아직 비어 있어 「0건」으로 읽히면 「할 일 없음」이라는 거짓말이 된다.
+      description={reportData === null ? undefined : `정산중 ${activeCampaigns.length}건 · 정산완료 ${completedCampaigns.length}건`}
+      segments={{
+        options: VIEW_TYPE_OPTIONS,
+        value: viewType,
+        // 종전 툴바 토글과 같은 경로 — 기간 이동(‹ ›)은 이 값을 읽어 단위를 정한다.
+        onValueChange: (value) => setFilter("viewType", value === "year" ? "year" : "month"),
+        ariaLabel: "기간 단위",
+      }}
+      actions={
+        <>
+          <Button size="sm" variant="outline" onClick={() => setTaxFilingOpen(true)}>
+            <FileText data-icon="inline-start" />
+            세무 처리
+            {taxPendingCount != null && taxPendingCount > 0 ? (
+              <span className="ml-1.5 rounded-full bg-status-caution/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-caution-text">
+                {taxPendingCount}
+                {taxNextDueDate ? ` · ${formatDDay(taxNextDueDate)}` : ""}
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleRefresh()}
+            disabled={loading}
+          >
+            <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
+            새로고침
+          </Button>
+        </>
+      }
+    >
     <div className="flex w-full flex-col px-5 pb-5 pt-5 md:px-8">
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
-        <div className="flex shrink-0 items-center gap-1.5">
-          <TrendingUp className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">총거래액:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalRevenue)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Wallet className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">매출총이익:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalMargin)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Download className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">셀러지급액:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalSellerPayouts)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <MONEY_DIRECTION_ICON.in className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">입금 대기:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(pendingDepositAmount)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <MONEY_DIRECTION_ICON.out className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">지급 대기:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(pendingPayoutAmount)}</span>
-        </div>
-      </div>
+      <MoneySummaryStrip
+        className="mb-4 shrink-0"
+        groups={[
+          moneyFlowGroup({
+            grossMerchandise: reportData?.summary.totalRevenue ?? null,
+            commissionRevenue: reportData?.summary.totalCommissionRevenue ?? null,
+            sellerPayout: reportData?.summary.totalSellerPayouts ?? null,
+            grossProfit: reportData?.summary.totalMargin ?? null,
+          }),
+          [
+            { key: "pendingDeposit", label: "입금대기", value: pendingDepositAmount, icon: MONEY_DIRECTION_ICON.in },
+            { key: "pendingPayout", label: "지급대기", value: pendingPayoutAmount, icon: MONEY_DIRECTION_ICON.out },
+          ],
+        ]}
+      />
 
-      <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
-        <div className="flex min-h-12 shrink-0 flex-col gap-3 border-b border-border/70 px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col rounded-2xl border border-border bg-card shadow-ambient">
+        <div className="flex min-h-12 shrink-0 flex-col gap-3 border-b border-border px-5 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 rounded-lg border border-border/80 bg-white p-1 shadow-soft-sm">
-              <Button
-                size="xs"
-                variant={viewType === "month" ? "default" : "ghost"}
-                onClick={() => setFilter("viewType", "month")}
-                className="h-7 rounded-md px-2.5 text-xs"
-              >
-                월별
-              </Button>
-              <Button
-                size="xs"
-                variant={viewType === "year" ? "default" : "ghost"}
-                onClick={() => setFilter("viewType", "year")}
-                className="h-7 rounded-md px-2.5 text-xs"
-              >
-                연도별
-              </Button>
-            </div>
-
             <div className="flex h-9 min-w-48 items-center justify-between gap-2 rounded-lg border border-border/80 bg-white px-2 shadow-soft-sm">
               <button
                 type="button"
@@ -611,25 +612,6 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
                 className="h-full text-xs"
               />
             </InputGroup>
-            <Button size="sm" variant="outline" onClick={() => setTaxFilingOpen(true)}>
-              <FileText data-icon="inline-start" />
-              세무 처리
-              {taxPendingCount != null && taxPendingCount > 0 ? (
-                <span className="ml-1.5 rounded-full bg-status-caution/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-caution-text">
-                  {taxPendingCount}
-                  {taxNextDueDate ? ` · ${formatDDay(taxNextDueDate)}` : ""}
-                </span>
-              ) : null}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void handleRefresh()}
-              disabled={loading}
-            >
-              <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
-              새로고침
-            </Button>
           </div>
         </div>
 
@@ -646,8 +628,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
             <section className="flex flex-col gap-4 px-5 py-4">
               <div className="flex items-center gap-2">
                 <ChevronDown className="size-4 text-slate-500" />
-                <h2 ref={activeHeadingRef} tabIndex={-1} className="text-base font-semibold text-slate-800 outline-none">정산 진행 중 캠페인</h2>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                <h2 ref={activeHeadingRef} tabIndex={-1} className="text-base font-semibold text-slate-800 outline-none">정산중 캠페인</h2>
+                <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-slate-500">
                   {activeCampaigns.length}건
                 </span>
               </div>
@@ -666,8 +648,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
             <section className="flex flex-col gap-4 px-5 py-4">
               <div className="flex items-center gap-2">
                 <ChevronDown className="size-4 text-slate-500" />
-                <h2 className="text-base font-semibold text-slate-800">정산 완료 캠페인</h2>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                <h2 className="text-base font-semibold text-slate-800">정산완료 캠페인</h2>
+                <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-slate-500">
                   {completedCampaigns.length}건
                 </span>
               </div>

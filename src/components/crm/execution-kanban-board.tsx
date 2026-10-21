@@ -20,7 +20,11 @@ import { CampaignCard, type CampaignStageMoveTarget } from "@/components/crm/cam
 import { buildKanbanDndAccessibility } from "@/components/crm/kanban-dnd-a11y";
 import { KanbanDragOverlay } from "@/components/crm/kanban-drag-overlay";
 import { campaignStatusLabels, type CampaignRow, type CampaignStatus } from "@/lib/crm-types";
-import { getCampaignAction } from "@/lib/campaign-actions";
+import {
+  countExecutionQuickFilters,
+  matchesExecutionQuickFilter,
+  type ExecutionQuickFilter,
+} from "@/lib/execution-quick-filters";
 import { getDaysUntilStart, isInSetupWindow } from "@/lib/campaign-setup";
 import { cn } from "@/lib/utils";
 import { sortCampaignsByStatus } from "@/lib/zone-config";
@@ -112,7 +116,8 @@ type ExecutionKanbanBoardProps = {
   toolbarEnd?: React.ReactNode;
 };
 
-type QuickFilter = "ALL" | "TODAY" | "DELAYED" | "MISSING_SALES" | "CHECKLIST_PENDING";
+// 빠른 필터 판정의 정본은 `execution-quick-filters` — 판매 관리 머리 부제도 같은 술어를 읽는다.
+type QuickFilter = ExecutionQuickFilter;
 
 // ---------------------------------------------------------------------------
 // DraggableExecutionCard — useDraggable로 CampaignCard를 감싼다
@@ -223,17 +228,8 @@ function ExecutionColumn({
 
   const expandWaiting = showWaiting || isFiltered;
 
-  const delayedCount = column.filter((campaign) => {
-    const action = getCampaignAction(campaign);
-    return action.isStagnant || action.tone === "overdue";
-  }).length;
-  const missingSalesCount = column.filter(
-    (campaign) =>
-      (campaign.status === "ACTIVE" ||
-        campaign.status === "CLOSED" ||
-        campaign.status === "SETTLEMENT_WAIT") &&
-      campaign.actualSales == null,
-  ).length;
+  const delayedCount = column.filter((campaign) => matchesExecutionQuickFilter(campaign, "DELAYED")).length;
+  const missingSalesCount = column.filter((campaign) => matchesExecutionQuickFilter(campaign, "MISSING_SALES")).length;
   const avgCompletion =
     column.length === 0
       ? 0
@@ -251,13 +247,13 @@ function ExecutionColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "crm-horizontal-accent flex w-[300px] flex-none shrink-0 flex-col overflow-hidden rounded-xl border bg-white/85 shadow-soft-sm transition-colors",
+        "crm-horizontal-accent flex w-[300px] flex-none shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-soft-sm transition-colors",
         droppable && isOver
           ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
-          : "border-slate-200/80",
+          : "border-border",
       )}
     >
-      <div className="border-b px-4 py-3 border-slate-200/80">
+      <div className="border-b px-4 py-3 border-border">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
@@ -413,32 +409,10 @@ export function ExecutionKanbanBoard({
   );
 
   const filteredCampaigns = React.useMemo(() => {
-    return localCampaigns.filter((campaign) => {
-      if (campaign.status === "DROPPED") return true;
-      const action = getCampaignAction(campaign);
-      switch (quickFilter) {
-        case "TODAY":
-          return action.tone === "today" || action.tone === "overdue";
-        case "DELAYED":
-          return action.isStagnant || action.tone === "overdue";
-        case "MISSING_SALES":
-          return (
-            (campaign.status === "ACTIVE" ||
-              campaign.status === "CLOSED" ||
-              campaign.status === "SETTLEMENT_WAIT") &&
-            campaign.actualSales == null
-          );
-        case "CHECKLIST_PENDING":
-          return Boolean(
-            campaign.checklistSummary &&
-              !campaign.checklistSummary.isComplete &&
-              campaign.checklistSummary.requiredTotalCount > 0,
-          );
-        case "ALL":
-        default:
-          return true;
-      }
-    });
+    // 중단 칸은 필터와 무관하게 늘 보인다(건수에서는 빠진다).
+    return localCampaigns.filter(
+      (campaign) => campaign.status === "DROPPED" || matchesExecutionQuickFilter(campaign, quickFilter),
+    );
   }, [localCampaigns, quickFilter]);
 
   const campaignsByStatus = React.useMemo(() => {
@@ -464,35 +438,7 @@ export function ExecutionKanbanBoard({
     );
   }, [filteredCampaigns]);
 
-  const quickFilterCounts = React.useMemo<Record<QuickFilter, number>>(() => {
-    const actionable = localCampaigns.filter((campaign) => campaign.status !== "DROPPED");
-    return {
-      ALL: actionable.length,
-      TODAY: actionable.filter((campaign) => {
-        const action = getCampaignAction(campaign);
-        return action.tone === "today" || action.tone === "overdue";
-      }).length,
-      DELAYED: actionable.filter((campaign) => {
-        const action = getCampaignAction(campaign);
-        return action.isStagnant || action.tone === "overdue";
-      }).length,
-      MISSING_SALES: actionable.filter(
-        (campaign) =>
-          (campaign.status === "ACTIVE" ||
-            campaign.status === "CLOSED" ||
-            campaign.status === "SETTLEMENT_WAIT") &&
-          campaign.actualSales == null,
-      ).length,
-      CHECKLIST_PENDING: actionable.filter(
-        (campaign) =>
-          Boolean(
-            campaign.checklistSummary &&
-              !campaign.checklistSummary.isComplete &&
-              campaign.checklistSummary.requiredTotalCount > 0,
-          ),
-      ).length,
-    };
-  }, [localCampaigns]);
+  const quickFilterCounts = React.useMemo(() => countExecutionQuickFilters(localCampaigns), [localCampaigns]);
 
   const handleDrop = React.useCallback(
     async (campaignId: string, targetStatus: CampaignStatus) => {

@@ -75,8 +75,8 @@ describe("정산 페이지 — 조회 실패는 빈 목록이 아니다", () => 
     expect(alert.textContent).toContain(ERROR_TEXT);
     expect(screen.queryByText(EMPTY_TEXT)).toBeNull();
     // 요약 줄의 대기 금액도 리포트로 걸러진 목록에서 나온다 — 모르는 값을 0원으로 말하지 않는다.
-    expect(screen.getByText("입금 대기:").nextElementSibling?.textContent).toBe("-");
-    expect(screen.getByText("지급 대기:").nextElementSibling?.textContent).toBe("-");
+    expect(screen.getByText("입금대기:").nextElementSibling?.textContent).toBe("—");
+    expect(screen.getByText("지급대기:").nextElementSibling?.textContent).toBe("—");
   });
 
   it("「다시 불러오기」는 제자리에서 다시 조회하고, 성공하면 진짜 0건을 보인다", async () => {

@@ -245,7 +245,7 @@ export function SettlementTable({
           <DataEmpty icon={FileSpreadsheet} title="정산중 캠페인 없음" bordered={false} />
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border/60 bg-white/50 shadow-soft-sm">
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft-sm">
           <div className="overflow-x-auto">
             {/* 폭 규약의 정본은 `settlement-table-layout.ts` 다(완료 표와 공유) — 최소폭·체크박스
                 고정폭·유동폭 계산이 모두 거기 있다. 아래 `<col>` 의 숫자는 **최소폭(994px)에서의
@@ -294,7 +294,7 @@ export function SettlementTable({
                 <col style={settlementFluidCol(74)} />
               </colgroup>
               <thead>
-                <tr className="border-b border-border/70 bg-slate-50/70 font-semibold text-muted-foreground">
+                <tr className="border-b border-border bg-muted/60 font-semibold text-muted-foreground">
                   <th className="px-4 py-3 text-center">
                     <input
                       type="checkbox"
@@ -318,7 +318,7 @@ export function SettlementTable({
                   <th className="px-2 py-3 text-right">영업이익</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/50">
+              <tbody className="divide-y divide-border">
                 {campaigns.map((campaign) => {
                   const isSelected = selectedIds.includes(campaign.id);
                   const profitTone = resolveProfitTone(campaign.operatingProfit);
@@ -589,10 +589,10 @@ function SlotIconLegend() {
     { Icon: INAPPLICABLE_ICON, label: "해당 없음" },
   ];
   return (
-    // 헤더 행과 **같은 어휘**(`border-*/70` + `bg-slate-50/70`)로 묶는다 — 이 표에서 그 조합이
+    // 헤더 행과 **같은 어휘**(`border-border` + `bg-muted/60`)로 묶는다 — 이 표에서 그 조합이
     // 「데이터가 아니라 표의 부속물」을 뜻한다. 실선 하나만 두면 표의 아래쪽 테두리처럼 보여
     // 범례가 붕 뜬다. `overflow-x-auto` **바깥**이라 가로 스크롤이 생겨도 안 밀린다.
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/70 bg-slate-50/70 px-4 py-2 text-[10px] text-slate-600">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-muted/60 px-4 py-2 text-[10px] text-slate-600">
       {items.map(({ Icon, filled, label }) => (
         <span key={label} className="inline-flex items-center gap-1">
           <Icon
