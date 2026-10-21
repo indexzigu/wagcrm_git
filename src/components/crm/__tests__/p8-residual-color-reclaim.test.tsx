@@ -645,7 +645,7 @@ describe("대비 게이트 (P8 §5 — 그 표면에서 직접 계산)", () => {
 
   const SHELL = hex("#FAF9F6");                          // CrmShell 페이지 배경
   const TABLE_ROW = over(hex("#FFFFFF"), 0.5, SHELL);    // settlement-table 컨테이너 bg-white/50
-  const METRIC_CARD = over(hex("#FFFFFF"), 0.7, SHELL);  // outreach 지표 카드 bg-white/70
+  const METRIC_CARD = over(hex("#FFFFFF"), 0.7, SHELL);  // 옛 outreach 지표 카드 bg-white/70(현재 bg-card 불투명 — 흰색이 더 유리, 보수적 하한으로 유지)
   const TREE = hex("#FFFFFF");                           // asset-library 스크롤 컨테이너 bg-white
 
   /**

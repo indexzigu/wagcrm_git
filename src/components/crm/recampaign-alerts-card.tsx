@@ -44,7 +44,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
   if (loading) return null;
   if (loadError) {
     return (
-      <div className={cn("rounded-xl border border-black/5 bg-white/85 shadow-soft-sm px-4 py-3", className)}>
+      <div className={cn("rounded-xl border border-border bg-card shadow-soft-sm px-4 py-3", className)}>
         <p className="text-[11px] text-[var(--status-urgent)]">재캠페인 적기 알림: {loadError}</p>
       </div>
     );
@@ -82,7 +82,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
   };
 
   return (
-    <div className={cn("rounded-xl border border-black/5 bg-white/85 shadow-soft-sm", className)}>
+    <div className={cn("rounded-xl border border-border bg-card shadow-soft-sm", className)}>
       <div className="px-4 py-5">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -107,9 +107,9 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
           {alerts.slice(0, 8).map((alert) => {
             const isProposed = proposed.has(alert.sellerId);
             return (
-              <div key={alert.sellerId} className="rounded-xl border border-black/5 bg-[#FAF9F6] px-3.5 py-2.5 w-[240px] shrink-0">
+              <div key={alert.sellerId} className="rounded-xl border border-border bg-background px-3.5 py-2.5 w-[240px] shrink-0">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-xs font-semibold text-[#1F2A30]" title={alert.sellerName}>
+                  <p className="truncate text-xs font-semibold text-foreground" title={alert.sellerName}>
                     {alert.sellerName}
                   </p>
                   <span

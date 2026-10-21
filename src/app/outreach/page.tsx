@@ -674,7 +674,7 @@ export default function OutreachPage() {
             <div
               role="group"
               aria-label="오늘 할 일"
-              className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0"
+              className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-slate-600 shadow-soft-sm shrink-0"
             >
               <span className="px-1 font-medium text-slate-500">오늘 할 일</span>
               {OUTREACH_ATTENTION_ITEMS.map((item) => {
@@ -725,8 +725,8 @@ export default function OutreachPage() {
             <RecampaignAlertsCard className="mb-4 shrink-0" />
 
             {/* 카드 컨테이너 */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
-              <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
+              <div className="flex flex-col gap-4 border-b border-border px-5 py-4">
                 {/* 카드 도구줄 — 검색·보기 전환·테스크 등록(리뉴얼 전 순서, 오른쪽 정렬). 페이지 머리(제목·설명)는
                     두지 않는다(오너 방침 2026-10-21). */}
                 <div className="flex flex-wrap items-center justify-end gap-2">
@@ -759,7 +759,7 @@ export default function OutreachPage() {
                 {/* Dashboard Metrics */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2">
                   {/* 1. 전체 전환율 도넛 */}
-                  <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
+                  <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-700 mb-3 flex items-center gap-1.5 shrink-0">
                       <TrendingUp className="size-3.5 text-emerald-600" />전환율
                     </p>
@@ -804,7 +804,7 @@ export default function OutreachPage() {
                   </div>
 
                   {/* 2. 평균 전환일 — 방향성 없는 서술 지표(호불호 無) → info, PALETTE_IMPL_SPEC.md 인디고 분류 2026-07-09 */}
-                  <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
+                  <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-700 mb-3 flex items-center gap-1.5 shrink-0">
                       <Target className="size-3.5 text-status-info" />평균 전환일
                     </p>
@@ -842,7 +842,7 @@ export default function OutreachPage() {
                   </div>
 
                   {/* 3. 전환율 높은 딜 */}
-                  <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
+                  <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
                       <TrendingUp className="size-3.5 text-emerald-600" />전환율 높은 판매 조건
                     </p>
@@ -862,7 +862,7 @@ export default function OutreachPage() {
                   </div>
 
                   {/* 4. 전환율 낮은 딜 */}
-                  <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
+                  <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
                       <TrendingDown className="size-3.5 text-rose-500" />전환율 낮은 판매 조건
                     </p>
@@ -882,7 +882,7 @@ export default function OutreachPage() {
                   </div>
 
                   {/* 5. 전환율 높은 셀러 */}
-                  <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
+                  <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
                       <Target className="size-3.5 text-emerald-500" />전환율 높은 셀러
                     </p>
@@ -902,7 +902,7 @@ export default function OutreachPage() {
                   </div>
 
                   {/* 6. 전환율 낮은 셀러 */}
-                  <div className="rounded-xl border border-border/70 bg-white/70 p-4 shadow-soft-sm flex flex-col">
+                  <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
                       <Target className="size-3.5 text-rose-500" />전환율 낮은 셀러
                     </p>
@@ -962,7 +962,7 @@ export default function OutreachPage() {
 
             {/* Content Body */}
             {viewMode === "board" ? (
-              <div className="min-h-0 flex-1 overflow-x-auto bg-[#f8fafc] p-4">
+              <div className="min-h-0 flex-1 overflow-x-auto bg-background p-4">
                 <DndContext
                   // 안정적 id — dnd-kit의 aria-describedby 모듈 카운터가 SSR/클라 하이드레이션
                   // 미스매치를 내는 것을 방지(결정론화). ExecutionKanbanBoard와 동일.
@@ -990,7 +990,7 @@ export default function OutreachPage() {
                       <Button
                         onClick={() => setCreateOpen(true)}
                         variant="outline"
-                        className="w-full border-dashed border-slate-200 hover:border-primary/50 hover:bg-slate-50/50 hover:text-primary transition-colors flex items-center justify-center gap-1.5 h-10 rounded-xl"
+                        className="w-full border-dashed border-border hover:border-primary/50 hover:bg-muted/60 hover:text-primary transition-colors flex items-center justify-center gap-1.5 h-10 rounded-xl"
                       >
                         <Plus className="size-4" />
                         <span className="text-xs font-semibold">테스크 추가</span>
@@ -1160,8 +1160,9 @@ export default function OutreachPage() {
                 </DndContext>
               </div>
             ) : (
-              <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc]">
+              <div className="min-h-0 flex-1 overflow-auto bg-background">
                 <InlineDataGrid
+                  className="border-border bg-card"
                   columns={outreachColumns}
                   rows={filteredTasks}
                   onRowClick={setSelectedTask}
@@ -1203,9 +1204,9 @@ export default function OutreachPage() {
             width: "min(520px, 96vw)",
             maxWidth: "min(520px, 96vw)",
           }}
-          className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
+          className="flex flex-col overflow-hidden border-l border-border bg-card p-0"
         >
-          <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
+          <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
             <SheetTitle>새 영업 테스크</SheetTitle>
             <SheetDescription>
               판매 조건과 셀러를 연결하고 제안 발송 테스크를 만듭니다.
@@ -1232,11 +1233,11 @@ export default function OutreachPage() {
             width: "min(560px, 96vw)",
             maxWidth: "min(560px, 96vw)",
           }}
-          className="flex flex-col overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0"
+          className="flex flex-col overflow-hidden border-l border-border bg-card p-0"
         >
           {selectedTask ? (
             <>
-              <SheetHeader className="shrink-0 border-b border-border/70 px-6 py-5">
+              <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
                 <SheetTitle>영업 테스크 상세 페이지</SheetTitle>
                 <SheetDescription>
                   셀러 제안·협의·테스트 진행 현황을 확인하고 관리합니다.
@@ -1392,10 +1393,10 @@ function WorkspaceSection({
         "overflow-hidden rounded-2xl border shadow-soft-sm w-full min-w-0 flex flex-col h-full transition-colors",
         isDropTarget
           ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
-          : "border-border/70 bg-white/80",
+          : "border-border bg-card",
       )}
     >
-      <div className={cn("px-5 py-4 shrink-0", !isCollapsed && "border-b border-border/70")}>
+      <div className={cn("px-5 py-4 shrink-0", !isCollapsed && "border-b border-border")}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             <h2 className="text-xs font-semibold text-foreground truncate">{title}</h2>
@@ -1413,7 +1414,7 @@ function WorkspaceSection({
                 <Plus className="size-3" />
               </button>
             ) : null}
-            <span className="rounded-full border border-border/70 bg-background px-2.5 py-1 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
               {count}
             </span>
             {onCollapse && (
@@ -1545,7 +1546,7 @@ function SalesTaskDetailPanel({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border/70 bg-white/80 p-4 shadow-soft-sm">
+      <section className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div>
@@ -1644,7 +1645,7 @@ function SalesTaskDetailPanel({
       />
 
       {/* 수수료 협의 */}
-      <section className="rounded-2xl border border-border/70 bg-white/80 p-4 shadow-soft-sm">
+      <section className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xs font-semibold text-foreground">수수료 협의</h3>
           <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-blue-50 text-blue-600 border border-blue-200">캠페인 연동</Badge>
@@ -1696,7 +1697,7 @@ function SalesTaskDetailPanel({
         </p>
       </section>
 
-      <section className="rounded-2xl border border-border/70 bg-white/80 p-4 shadow-soft-sm">
+      <section className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
         <h3 className="text-xs font-semibold text-foreground">리마인드 이력</h3>
         <div className="mt-3 space-y-2">
           {timeline.length > 0 ? (
@@ -1719,7 +1720,7 @@ function SalesTaskDetailPanel({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-border/70 bg-white/80 p-4 shadow-soft-sm">
+      <section className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
         <h3 className="text-xs font-semibold text-foreground">메모</h3>
         <p className="mt-1 mb-4 text-[11px] leading-5 text-muted-foreground">
           제안, 협의, 테스트 메모를 한 영역에서 단계별로 관리합니다.
@@ -1930,7 +1931,7 @@ function OutreachStageStepper({
 
   return (
     <>
-      <div className="space-y-2 rounded-2xl border border-border/70 bg-white/80 p-4 shadow-soft-sm">
+      <div className="space-y-2 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-semibold text-foreground">영업 단계</h3>
           {isDropped && (
@@ -2098,7 +2099,7 @@ function TaskAssetSection({ taskId }: { taskId: string }) {
   const visibleAssets = assets.filter((a) => !a.archivedAt);
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-white/80 p-4 shadow-soft-sm">
+    <section className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <h3 className="text-xs font-semibold text-foreground">첨부 자료</h3>
       <p className="mt-1 text-xs text-muted-foreground">제안서, 가격표, 계약서 등 테스크 관련 파일을 첨부합니다.</p>
 
