@@ -93,14 +93,18 @@ const TARGETS: Record<string, readonly string[]> = {
   "app/settlement/loading.tsx": SURFACE_TOKENS,
 };
 
-/** 대상 파일 안의 의도된 예외 — `match` 는 걸린 문자열 노드에 들어 있는 부분 문자열, `count` 는 그 적중의 정확한 개수. */
-type Exception = { token: string; match: string; count: number; reason: string };
+/**
+ * 대상 파일 안의 의도된 예외 — `cls` 는 허용하는 클래스 낱말 그대로, `context` 는 그 클래스가 든 문자열 노드에
+ * 함께 있어야 하는 부분 문자열, `count` 는 그 적중의 정확한 개수. 같은 노드의 다른 금지 클래스는 예외가 아니다.
+ */
+type Exception = { token: string; cls: string; context: string; count: number; reason: string };
 
 const EXCEPTIONS: Record<string, readonly Exception[]> = {
   "components/crm/reference-inbox/reference-inbox-client.tsx": [
     {
       token: "backdrop-blur",
-      match: "bg-black/40",
+      cls: "backdrop-blur-sm",
+      context: "bg-black/40",
       count: 1,
       reason: "사진 위에 얹는 오버레이 칩 — 어두운 반투명 바탕이라야 어떤 사진 위에서도 흰 글자가 읽힌다",
     },
@@ -108,7 +112,8 @@ const EXCEPTIONS: Record<string, readonly Exception[]> = {
   "components/crm/calendar-view.tsx": [
     {
       token: "rounded-[",
-      match: "size-2.5 rounded-[3px]",
+      cls: "rounded-[3px]",
+      context: "size-2.5 rounded-[3px]",
       count: 1,
       reason: "범례 점(10px) — 모서리 사다리의 가장 작은 단(rounded-md 6.4px)도 10px 사각형에는 너무 둥글어 원과 구분되지 않는다",
     },
@@ -116,7 +121,8 @@ const EXCEPTIONS: Record<string, readonly Exception[]> = {
   "components/crm/calendar-filter-bar.tsx": [
     {
       token: "rounded-[",
-      match: "size-2.5 shrink-0 rounded-[3px]",
+      cls: "rounded-[3px]",
+      context: "size-2.5 shrink-0 rounded-[3px]",
       count: 1,
       reason: "캘린더 범례 점과 같은 모양의 필터 점 — calendar-view 범례와 같은 사유",
     },
@@ -124,9 +130,10 @@ const EXCEPTIONS: Record<string, readonly Exception[]> = {
 };
 
 const isExempt = (rel: string, hit: Hit) =>
-  (EXCEPTIONS[rel] ?? []).some((e) => e.token === hit.token && hit.full.includes(e.match));
+  (EXCEPTIONS[rel] ?? []).some((e) => e.token === hit.token && hit.cls === e.cls && hit.full.includes(e.context));
 
-type Hit = { token: string; line: number; text: string; full: string };
+/** 적중 1건 = 금지 문자열이 든 클래스 낱말 1개(`cls`). 같은 문자열 노드에 두 번 들어 있으면 2건이다. */
+type Hit = { token: string; cls: string; line: number; text: string; full: string };
 
 /** 소스의 문자열·템플릿·JSX 텍스트 노드에서 금지 문자열을 찾는다(주석 제외). */
 function findForbidden(source: string, fileName: string, tokens: readonly string[]): Hit[] {
@@ -142,10 +149,10 @@ function findForbidden(source: string, fileName: string, tokens: readonly string
       ts.isJsxText(node)
     ) {
       const text = node.text;
-      for (const token of tokens) {
-        if (text.includes(token)) {
-          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-          hits.push({ token, line: line + 1, text: text.slice(0, 120), full: text });
+      const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+      for (const cls of text.split(/\s+/)) {
+        for (const token of tokens) {
+          if (cls.includes(token)) hits.push({ token, cls, line: line + 1, text: text.slice(0, 120), full: text });
         }
       }
     }
@@ -201,10 +208,10 @@ describe("opaque content surfaces — 예외 목록", () => {
   it.each(entries)("%s 예외의 적중 개수가 등재값과 같다(낡은 예외·묻어가는 위반 금지)", (rel, e) => {
     expect(TARGETS[rel], `${rel} 은 TARGETS 에 없다`).toBeDefined();
     const source = readFileSync(join(ROOT, rel), "utf8");
-    const used = findForbidden(source, rel, TARGETS[rel]).filter((h) => h.token === e.token && h.full.includes(e.match));
+    const used = findForbidden(source, rel, TARGETS[rel]).filter((h) => h.token === e.token && h.cls === e.cls && h.full.includes(e.context));
     expect(
       used.length,
-      `${rel} 의 예외 ${e.token} / ${e.match} 적중이 ${used.length}건 — 0건이면 예외를 지우고, 늘었으면 새 줄을 고칠 것`,
+      `${rel} 의 예외 ${e.cls} (${e.context}) 적중이 ${used.length}건 — 0건이면 예외를 지우고, 늘었으면 새 줄을 고칠 것`,
     ).toBe(e.count);
   });
 });
