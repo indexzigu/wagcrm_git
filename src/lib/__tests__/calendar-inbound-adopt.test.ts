@@ -381,36 +381,57 @@ describe("readCalendarInboundRef", () => {
 });
 
 describe("수집 행 상태 표기", () => {
-  it("markInboundAdopted: ADOPTED + 캠페인 id + skipReason", async () => {
+  it("markInboundAdopted: 그 기안이 행을 가리킬 때만 ADOPTED + 캠페인 id + skipReason", async () => {
     const db = fakePrisma({});
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    await markInboundAdopted("in-1", "c1");
+    await markInboundAdopted("in-1", "p1", "c1");
     expect(db.calendarInboundEvent.updateMany).toHaveBeenLastCalledWith({
-      where: { id: "in-1" },
+      where: { id: "in-1", proposalId: "p1" },
       data: { status: INBOUND_STATUS.ADOPTED, campaignId: "c1", skipReason: null },
     });
 
-    await markInboundAdopted("in-1", "c1", { skipReason: "ledger_conflict" });
+    await markInboundAdopted("in-1", "p1", "c1", { skipReason: "ledger_conflict" });
     expect(db.calendarInboundEvent.updateMany).toHaveBeenLastCalledWith({
-      where: { id: "in-1" },
+      where: { id: "in-1", proposalId: "p1" },
       data: { status: INBOUND_STATUS.ADOPTED, campaignId: "c1", skipReason: "ledger_conflict" },
     });
   });
 
-  it("markInboundRejected: REJECTED", async () => {
+  it("행이 이미 다른 기안을 가리키면(0건) 덮지 않고 두 id 를 경고로 남긴다", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const db = fakePrisma({});
+    db.calendarInboundEvent.updateMany.mockResolvedValue({ count: 0 });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    await markInboundAdopted("in-1", "p-old", "c1");
+    await markInboundRejected("in-1", "p-old");
+    await resetInboundForRetry("in-1", "p-old");
+
+    expect(warn).toHaveBeenCalledTimes(3);
+    for (const call of warn.mock.calls) {
+      expect(String(call[0])).toContain("in-1");
+      expect(String(call[0])).toContain("p-old");
+    }
+    warn.mockRestore();
+  });
+
+  it("markInboundRejected: 그 기안이 행을 가리킬 때만 REJECTED", async () => {
     const db = fakePrisma({});
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    await markInboundRejected("in-1");
+    await markInboundRejected("in-1", "p1");
     expect(db.calendarInboundEvent.updateMany).toHaveBeenCalledWith({
-      where: { id: "in-1" },
+      where: { id: "in-1", proposalId: "p1" },
       data: { status: INBOUND_STATUS.REJECTED },
     });
   });
 
-  it("claimInboundRowForApproval: 행이 그 기안을 가리킬 때만 조건부로 잡고 updatedAt 을 올린다", async () => {
+  it("claimInboundRowForApproval: 행이 그 기안을 가리킬 때만 조건부로 잡고 updatedAt 을 명시해 올린다", async () => {
+    // updatedAt 을 명시하는 것이 계약이다 — 스캔의 조건부 쓰기(scan.ts)가 이 값이 바뀌는 것으로 승인의 행 잡기를
+    // 알아챈다. 「값이 그대로라 불필요」해 보여 지우면 경합 방어가 조용히 사라진다.
     for (const count of [1, 0]) {
+      const before = Date.now();
       const updateMany = vi.fn(async (_args: unknown) => ({ count }));
       const tx = { calendarInboundEvent: { updateMany } };
       expect(await claimInboundRowForApproval(tx as never, "in-1", "p1")).toBe(count === 1);
@@ -418,18 +439,19 @@ describe("수집 행 상태 표기", () => {
       expect(args.where).toEqual({ id: "in-1", proposalId: "p1" });
       expect(args.data.proposalId).toBe("p1");
       expect(args.data.updatedAt).toBeInstanceOf(Date);
+      expect(args.data.updatedAt.getTime()).toBeGreaterThanOrEqual(before);
     }
   });
 
-  it("resetInboundForRetry: PENDING_RETRY 만 — 지문은 건드리지 않는다", async () => {
+  it("resetInboundForRetry: 그 기안이 행을 가리킬 때만 PENDING_RETRY — 지문은 건드리지 않는다", async () => {
     // 지문을 비우면, 다음 스캔 전에 재시도 승인이 성공해 ADOPTED 가 된 행도 「지문이 바뀜」으로 보여 다시
     // 기안된다(회차 표기 없는 제목이면 새 회차가 하나 더 생긴다). 재판정은 상태(PENDING_RETRY)만으로 한다.
     const db = fakePrisma({});
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    await resetInboundForRetry("in-1");
+    await resetInboundForRetry("in-1", "p1");
     expect(db.calendarInboundEvent.updateMany).toHaveBeenCalledWith({
-      where: { id: "in-1" },
+      where: { id: "in-1", proposalId: "p1" },
       data: { status: INBOUND_STATUS.PENDING_RETRY },
     });
   });

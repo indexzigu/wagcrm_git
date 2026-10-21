@@ -163,7 +163,7 @@ async function adoptInboundAfterCommit(
     skipReason = INBOUND_SKIP_ADOPT_FAILED;
   }
   try {
-    await markInboundAdopted(ref.inboundId, campaignId, { skipReason });
+    await markInboundAdopted(ref.inboundId, id, campaignId, { skipReason });
   } catch (err) {
     console.error(`[approveProposal ${id}] 캘린더 수집 행 처리 끝 표기 실패:`, err);
   }
@@ -173,7 +173,7 @@ async function adoptInboundAfterCommit(
 async function resetInboundAfterFailure(id: string, ref: CalendarInboundRef | null): Promise<void> {
   if (!ref) return;
   try {
-    await resetInboundForRetry(ref.inboundId);
+    await resetInboundForRetry(ref.inboundId, id);
   } catch (err) {
     console.error(`[approveProposal ${id}] 캘린더 수집 행 재판정 대기 표기 실패:`, err);
   }

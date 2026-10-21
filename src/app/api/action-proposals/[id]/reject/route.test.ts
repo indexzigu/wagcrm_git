@@ -146,7 +146,7 @@ describe("POST /api/action-proposals/[id]/reject", () => {
 
     const res = await POST(makeRequest(), makeParams("proposal-1"));
     expect(res.status).toBe(200);
-    expect(markInboundRejectedMock).toHaveBeenCalledWith("in-1");
+    expect(markInboundRejectedMock).toHaveBeenCalledWith("in-1", "proposal-1");
   });
 
   it("[캘린더수집] 재기안으로 대체된 옛 카드를 반려하면 수집 행은 건드리지 않는다(새 기안이 그 행의 주인)", async () => {

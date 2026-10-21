@@ -274,7 +274,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
       eventId: "ev-owner",
       calendarId: "primary",
     });
-    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: null });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: null });
     expect(callOrder).toEqual(["ledger", "mark", "effects"]);
   });
 
@@ -296,7 +296,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     expect(adoptCalendarEventIntoLedgerMock).toHaveBeenCalledWith(
       expect.objectContaining({ campaignId: "camp-old", kind: "deposit" }),
     );
-    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-old", { skipReason: null });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-old", { skipReason: null });
   });
 
   it("adopt:false 면 장부는 건드리지 않고 ADOPTED 로만 표기한다(멱등 제외)", async () => {
@@ -306,7 +306,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     await approveProposal("p1", APPROVER);
 
     expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
-    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: null });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: null });
     expect(applyWriteActionEffectsMock).toHaveBeenCalled();
   });
 
@@ -317,7 +317,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
 
     await approveProposal("p1", APPROVER);
 
-    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: "ledger_conflict" });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: "ledger_conflict" });
   });
 
   it("캠페인을 못 찾으면 ADOPTED + skipReason campaign_not_found", async () => {
@@ -327,7 +327,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
 
     await approveProposal("p1", APPROVER);
 
-    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: "campaign_not_found" });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: "campaign_not_found" });
   });
 
   it("수집 행이 새 기안을 가리키면(재기안됨) 승인하지 않고 SUPERSEDED·409", async () => {
@@ -410,7 +410,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     expect(applyWriteActionEffectsMock).toHaveBeenCalledWith("create_campaign_round", CREATE_RESULT);
     expect(console.error).toHaveBeenCalled();
     // 그래도 처리 끝으로 적는다 — 같은 일정을 다시 기안하지 않게.
-    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: "adopt_failed" });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: "adopt_failed" });
   });
 
   it("넘겨받기와 처리 끝 표기가 둘 다 던져도 승인은 성공이고 둘 다 보고한다", async () => {
@@ -438,7 +438,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
 
     await approveProposal("p1", APPROVER);
 
-    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason });
   });
 
   it("실행이 FAILED 로 끝나면 수집 행을 재판정 대기로 되돌린다", async () => {
@@ -451,7 +451,7 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     const outcome = await approveProposal("p1", APPROVER);
 
     expect(outcome).toMatchObject({ ok: false, code: "EXECUTION_FAILED" });
-    expect(resetInboundForRetryMock).toHaveBeenCalledWith("in-1");
+    expect(resetInboundForRetryMock).toHaveBeenCalledWith("in-1", "p1");
     expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
     expect(markInboundAdoptedMock).not.toHaveBeenCalled();
   });

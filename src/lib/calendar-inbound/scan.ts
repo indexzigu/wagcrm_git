@@ -197,6 +197,14 @@ function emptySummary(): ScanSummary {
   };
 }
 
+/** 기안 상태를 읽어야 분류할 수 있는 행 — 결정 대기 행 + 기안이 있는 재판정 대기 행. */
+function needsProposalStatus(row: InboundRow): boolean {
+  return awaitsDecision(row) || (row.status === INBOUND_STATUS.PENDING_RETRY && row.proposalId !== null);
+}
+
+/** 재시도 승인이 이미 행을 잡은 기안 상태 — 승인 중(APPROVED)이거나 끝남(EXECUTED). */
+const RETRY_IN_FLIGHT_STATUSES = new Set(["APPROVED", "EXECUTED"]);
+
 /** 결정 대기로 볼 행 — 기안을 올렸거나, 열린 기안 때문에 건너뛴 행. */
 function awaitsDecision(row: InboundRow): boolean {
   return (
@@ -214,8 +222,14 @@ type Triage =
 
 function triage(row: InboundRow | undefined, fingerprint: string, proposalStatuses: Map<string, string>): Triage {
   if (!row) return { kind: "evaluate" };
-  // 승인 실행 실패 — 지문과 무관하게 최신 값으로 다시 판정한다.
-  if (row.status === INBOUND_STATUS.PENDING_RETRY) return { kind: "evaluate" };
+  // 승인 실행 실패 — 지문과 무관하게 최신 값으로 다시 판정한다. 단 오너가 그 FAILED 기안을 재시도 승인해 이미
+  // 행을 잡았으면(기안 APPROVED·EXECUTED) 손대지 않는다 — 다시 기안하면 같은 일정이 두 번 반영된다. 행 잡기는
+  // 상태를 바꾸지 않으므로(사후 표기 전까지 PENDING_RETRY) 기안 상태로 가른다. FAILED·REJECTED·없음은 재판정.
+  if (row.status === INBOUND_STATUS.PENDING_RETRY) {
+    const proposalStatus = row.proposalId ? proposalStatuses.get(row.proposalId) : undefined;
+    if (proposalStatus !== undefined && RETRY_IN_FLIGHT_STATUSES.has(proposalStatus)) return { kind: "handled" };
+    return { kind: "evaluate" };
+  }
   if (awaitsDecision(row)) {
     const proposalStatus = proposalStatuses.get(row.proposalId!);
     if (proposalStatus !== undefined && CLOSED_PROPOSAL_STATUSES.has(proposalStatus)) return { kind: "handled" };
@@ -454,7 +468,7 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
     dict = await deps.loadDictionary();
     const rows = await deps.findRows(candidates.map((event) => event.id));
     rowsByEventId = new Map(rows.map((row) => [row.googleEventId, row]));
-    const proposalIds = rows.filter(awaitsDecision).map((row) => row.proposalId!);
+    const proposalIds = rows.filter(needsProposalStatus).map((row) => row.proposalId!);
     proposalStatuses = proposalIds.length > 0 ? await deps.findProposalStatuses(proposalIds) : new Map();
   } catch (err) {
     console.error("[calendar-inbound] 사전·수집 행 조회 실패:", err);

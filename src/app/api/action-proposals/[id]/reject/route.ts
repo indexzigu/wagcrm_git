@@ -41,7 +41,7 @@ export async function POST(_request: Request, context: Context) {
     if (inboundRef) {
       try {
         const row = await findInboundRow(inboundRef.inboundId);
-        if (row?.proposalId === proposal.id) await markInboundRejected(inboundRef.inboundId);
+        if (row?.proposalId === proposal.id) await markInboundRejected(inboundRef.inboundId, proposal.id);
       } catch (markError) {
         console.error(`[POST /api/action-proposals/${id}/reject] 캘린더 수집 행 반려 표기 실패:`, markError);
       }

@@ -410,6 +410,39 @@ describe("runCalendarInboundScan", () => {
     expect(h.resolveTarget).toHaveBeenCalledTimes(1);
   });
 
+  it("재시도 승인이 이미 행을 잡은(기안 APPROVED·EXECUTED) 재판정 대기 행은 다음 스캔이 다시 판정하지 않는다", async () => {
+    for (const status of ["APPROVED", "EXECUTED"]) {
+      const h = makeHarness([ev("e1")]);
+      await runCalendarInboundScan({ now: NOW, deps: h.deps });
+      // 승인 실행 실패 → 재판정 대기 → 오너가 재시도 승인(행 잡기 성공, 상태는 그대로 PENDING_RETRY).
+      h.rows.get("e1")!.status = "PENDING_RETRY";
+      h.claimByApproval("e1");
+      h.proposals.get("prop-1")!.status = status;
+
+      const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+      expect(summary).toMatchObject({ proposed: 0, newOrChanged: 0, alreadyHandled: 1 });
+      expect(h.proposals.size).toBe(1);
+      expect(h.resolveTarget).toHaveBeenCalledTimes(1);
+      expect(h.rows.get("e1")).toMatchObject({ status: "PENDING_RETRY", proposalId: "prop-1" });
+    }
+  });
+
+  it("재판정 대기 행의 기안이 FAILED·REJECTED·없음이면 다시 판정한다", async () => {
+    for (const status of ["FAILED", "REJECTED", null]) {
+      const h = makeHarness([ev("e1")]);
+      await runCalendarInboundScan({ now: NOW, deps: h.deps });
+      h.rows.get("e1")!.status = "PENDING_RETRY";
+      if (status === null) h.proposals.delete("prop-1");
+      else h.proposals.get("prop-1")!.status = status;
+
+      const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+      expect(summary).toMatchObject({ proposed: 1, newOrChanged: 1 });
+      expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED", proposalId: "prop-2" });
+    }
+  });
+
   it("재판정 중 승인이 행을 먼저 잡으면(updatedAt 바뀜) 기안을 만들지 않고 행도 덮지 않는다", async () => {
     const h = makeHarness([ev("e1")]);
     await runCalendarInboundScan({ now: NOW, deps: h.deps });
