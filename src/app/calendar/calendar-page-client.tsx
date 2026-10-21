@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   ChevronLeft,
   ChevronRight,
+  CloudDownload,
   CloudUpload,
   Loader2,
   Plus,
@@ -24,6 +25,8 @@ import { ScheduleGapSummaryStrip } from "@/components/crm/schedule-gap-summary-s
 import type { CampaignStatus } from "@/lib/crm-types";
 import type { DraftCampaignResult } from "@/lib/mobile-draft-campaign";
 import type { ScheduleGapBriefing } from "@/lib/schedule-gap-briefing";
+import { formatInboundScanToast } from "@/lib/calendar-inbound/scan-toast";
+import type { ScanSummary } from "@/lib/calendar-inbound/scan";
 
 const calendarCampaignSchema = z.object({
   id: z.string(),
@@ -116,6 +119,7 @@ export function CalendarPageClient({
   const [loadError, setLoadError] = useState(false);
   const latestLoadRequestRef = useRef(0);
   const [syncing, setSyncing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // 예비 일정 생성 다이얼로그 — 날짜 셀/헤더 어포던스에서 진입, 클릭일 프리필.
   const [draftOpen, setDraftOpen] = useState(false);
@@ -241,6 +245,34 @@ export function CalendarPageClient({
     }
   }
 
+  /**
+   * [캘린더수집] 「캘린더에서 가져오기」 — 30분 수집을 기다리지 않고 지금 한 회차를 돈다. 결과는 결재함 기안이라
+   * 달력은 다시 불러오지 않는다(승인 전에는 캠페인이 바뀌지 않는다). 토스트는 이 버튼 하나가 소유한다.
+   */
+  async function handleInboundScan() {
+    setImporting(true);
+    try {
+      const res = await fetch("/api/integrations/google-calendar/inbound-scan", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        const { message, tone } = formatInboundScanToast(data as ScanSummary);
+        if (tone === "warning") toast.warning(message);
+        else toast.success(message);
+      } else if (res.status === 401) {
+        toast.error(
+          data.error ?? "구글 캘린더가 연결되어 있지 않습니다. 설정 > 외부 연동 진단에서 연동하세요.",
+        );
+      } else {
+        toast.error(data.error ?? "캘린더 일정을 가져오지 못했습니다.");
+      }
+    } catch (error) {
+      console.error("[calendar] 캘린더에서 가져오기 실패:", error);
+      toast.error(error instanceof Error ? error.message : "가져오기 요청에 실패했습니다.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     // 페이지 머리(제목·설명)는 두지 않는다(오너 방침 2026-10-21) — 동기화 버튼은 필터 줄 오른쪽 끝에.
     <CrmShell>
@@ -288,7 +320,7 @@ export function CalendarPageClient({
         </Button>
       </div>
 
-      {/* 필터 바 + 예비 일정 생성(키보드 접근 베이스라인 — 셀 hover 어포던스와 병행) + 구글 캘린더 전체 동기화 */}
+      {/* 필터 바 + 예비 일정 생성(키보드 접근 베이스라인 — 셀 hover 어포던스와 병행) + 구글 캘린더 전체 동기화 + 캘린더에서 가져오기 */}
       <div className="flex flex-wrap items-center gap-2">
         <CalendarFilterBar
           sellers={sellersInMonth}
@@ -312,6 +344,21 @@ export function CalendarPageClient({
             <CloudUpload className="size-3.5 shrink-0" />
           )}
           {syncing ? "동기화 중..." : "구글 캘린더 전체 동기화"}
+        </Button>
+        {/* [캘린더수집] 반대 방향(캘린더 → CRM). 결과는 결재함 기안이고 승인 전에는 아무것도 바뀌지 않는다. */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleInboundScan}
+          disabled={importing}
+          className="h-9 gap-1.5 rounded-lg px-3.5 text-xs"
+        >
+          {importing ? (
+            <Loader2 className="size-3.5 shrink-0 animate-spin" />
+          ) : (
+            <CloudDownload className="size-3.5 shrink-0" />
+          )}
+          {importing ? "가져오는 중..." : "캘린더에서 가져오기"}
         </Button>
         <Button
           size="sm"

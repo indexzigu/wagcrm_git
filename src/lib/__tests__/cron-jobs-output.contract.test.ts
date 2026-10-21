@@ -7,7 +7,7 @@ import { KNOWN_JOBS } from "@/lib/cron-jobs";
 /**
  * 산출 선언 계약 — 「성공 기록인데 산출 없음」(사고 B) 판정의 전제를 고정한다.
  *
- *  O1. 19개 작업 전부가 `output` 키를 **명시적으로** 가진다(선언 또는 `null` 면제). 키를 빠뜨린
+ *  O1. 20개 작업 전부가 `output` 키를 **명시적으로** 가진다(선언 또는 `null` 면제). 키를 빠뜨린
  *      작업은 「판정 대상인지」를 아무도 정하지 않은 상태라, 그 작업의 산출 0 이 영영 안 잡힌다.
  *  O2. 선언 대상은 실질 실패 선언(`declareTotalFailure`·`declareStoryCaptureOutcome`)을
  *      쓰는 작업 중 판정 면제를 뺀 5개와 정확히 같다(설계 ⚙️J8).
@@ -80,7 +80,7 @@ function wrappedJobKey(raw: string): string | null {
 
 describe("KNOWN_JOBS 산출 선언 계약", () => {
   it("O1: 모든 작업이 output 키를 명시적으로 가진다(선언 또는 null 면제)", () => {
-    expect(KNOWN_JOBS.length).toBe(19);
+    expect(KNOWN_JOBS.length).toBe(20);
     // 타입상 필수라 `in` 은 never 로 좁혀진다 — 실제 객체에 키가 **있는지**를 런타임으로 본다.
     const missing = KNOWN_JOBS.filter((job) => !Object.hasOwn(job, "output")).map((job) => job.key);
     expect(missing).toEqual([]);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { ActionProposalRepository, deserializeJsonField } from "@/repositories/actionProposalRepository";
-import { resolveEntityLabel } from "@/lib/agent/resolve-entity-label";
+import { resolveEntityLabel, resolveProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 
 type Context = {
   params: Promise<{ id: string }>;
@@ -30,9 +30,16 @@ export async function GET(_request: Request, context: Context) {
   // 역직렬화해야 한다(Postgres 객체엔 no-op). 안 하면 dev:local에서 카드 라벨이 "알 수 없는 액션"이 된다.
   // structuredResult/dataSources/evidence도 같은 이유로 역직렬화한다 — 결재함 상세(§3-B)가
   // READ 봉투 `{operation, jobId, query, truncated, data}`를 읽는다.
+  const payload = deserializeJsonField(proposal.payload);
+  // [캘린더수집] 새 회차 기안은 대상 캠페인이 없어 배지로 이름을 못 보인다 — args 의 셀러·판매 조건을 푼다.
+  const argLabels = await resolveProposalArgLabels(payload);
+
   return NextResponse.json({
     ...proposal,
-    payload: deserializeJsonField(proposal.payload),
+    payload,
+    // 캘린더 출신 카드의 「원본 일정」 — sqlite 문자열 저장 대응(위와 같은 이유).
+    sourceRef: deserializeJsonField(proposal.sourceRef),
+    argLabels,
     executionResult: deserializeJsonField(proposal.executionResult),
     structuredResult: deserializeJsonField(proposal.structuredResult),
     dataSources: deserializeJsonField(proposal.dataSources),

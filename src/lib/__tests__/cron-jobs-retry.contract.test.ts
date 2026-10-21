@@ -4,7 +4,7 @@ import { KNOWN_JOBS, RETRY_DELAYS_SEC, retryDelaySecFor } from "@/lib/cron-jobs"
 /**
  * 재시도 정책 계약 — 일시 장애로 실패한 자동 작업을 사람 없이 다시 돌릴지(설계 §5.4.1 확정판).
  *
- *  R1. 19개 작업 전부가 `retry` 키를 **명시적으로** 가진다. 타입이 필수로 강제하지만, 값 표를
+ *  R1. 20개 작업 전부가 `retry` 키를 **명시적으로** 가진다. 타입이 필수로 강제하지만, 값 표를
  *      여기에 고정해 「안 함」 작업이 조용히 재시도 대상으로 바뀌는 것을 막는다 — 같은 부수효과가
  *      두 번 나는 사고(유료 실행 이중 시작 등)는 정책 한 칸 차이로 생긴다.
  *  R2. `retryDelaySecFor` 경계 — 일시 장애·정책 안·남은 회차일 때만 대기 초를 준다.
@@ -30,11 +30,14 @@ const EXPECTED_POLICY: Record<string, { max: 1 | 2 } | "never"> = {
   "db-exposure-audit": { max: 1 },
   "agent-auto-execute": "never",
   "encryption-key-audit": { max: 1 },
+  // 다시 불러도 안전: 같은 일정은 지문 장부(CalendarInboundEvent)가 「이미 처리」로 거르고, 결정 대기 기안이
+  // 있으면 다시 기안하지 않는다(scan.ts triage). 기안 상한·힌트 호출 상한도 회차마다 따로 묶인다.
+  "calendar-inbound-scan": { max: 1 },
 };
 
 describe("KNOWN_JOBS 재시도 정책 계약", () => {
   it("R1: 모든 작업이 retry 를 명시적으로 갖고, 값이 정책 표와 같다", () => {
-    expect(KNOWN_JOBS.length).toBe(19);
+    expect(KNOWN_JOBS.length).toBe(20);
     const missing = KNOWN_JOBS.filter((job) => !Object.hasOwn(job, "retry")).map((job) => job.key);
     expect(missing).toEqual([]);
     const actual = Object.fromEntries(KNOWN_JOBS.map((job) => [job.key, job.retry]));

@@ -18,7 +18,7 @@ vi.mock("@/lib/prisma", () => ({
   }),
 }));
 
-const { resolveEntityLabel } = await import("../resolve-entity-label");
+const { resolveEntityLabel, resolveProposalArgLabels } = await import("../resolve-entity-label");
 
 describe("resolveEntityLabel", () => {
   beforeEach(() => {
@@ -76,5 +76,37 @@ describe("resolveEntityLabel", () => {
   it("entityId가 null/undefined면 null을 반환한다", async () => {
     expect(await resolveEntityLabel("DEAL", null)).toBeNull();
     expect(await resolveEntityLabel(null, "deal-1")).toBeNull();
+  });
+});
+
+describe("resolveProposalArgLabels — [캘린더수집] 새 회차 기안의 셀러·판매 조건 이름", () => {
+  beforeEach(() => {
+    dealFindUniqueMock.mockReset();
+    sellerFindUniqueMock.mockReset();
+  });
+
+  it("셀러는 별칭을 먼저(P2 Seller Alias Priority), 판매 조건은 이름", async () => {
+    sellerFindUniqueMock.mockResolvedValue({ name: "샘플셀러", alias: "샘플" });
+    dealFindUniqueMock.mockResolvedValue({ dealName: "테스트브랜드 봄딜" });
+    const labels = await resolveProposalArgLabels({
+      action: "create_campaign_round",
+      args: { dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-07" },
+    });
+    expect(labels).toEqual({ seller: "샘플", deal: "테스트브랜드 봄딜" });
+  });
+
+  it("별칭이 비면 실명, 대상이 없으면 null 칸", async () => {
+    sellerFindUniqueMock.mockResolvedValue({ name: "샘플셀러", alias: " " });
+    dealFindUniqueMock.mockResolvedValue(null);
+    const labels = await resolveProposalArgLabels({ action: "create_campaign_round", args: { dealId: "d9", sellerId: "s1" } });
+    expect(labels).toEqual({ seller: "샘플셀러", deal: null });
+  });
+
+  it("다른 액션·모양이 깨진 내용은 조회 없이 null", async () => {
+    expect(await resolveProposalArgLabels({ action: "update_record", args: {} })).toBeNull();
+    expect(await resolveProposalArgLabels({ action: "create_campaign_round", args: { dealId: 1 } })).toBeNull();
+    expect(await resolveProposalArgLabels(null)).toBeNull();
+    expect(dealFindUniqueMock).not.toHaveBeenCalled();
+    expect(sellerFindUniqueMock).not.toHaveBeenCalled();
   });
 });

@@ -12,6 +12,7 @@ import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
+import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
 
 /**
@@ -28,7 +29,7 @@ import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
  *
  * ⚠️ **WRITE 도구가 늘면 여기도 늘어야 한다** — 빠진 도구는 배지에 `create_partner`
  * 같은 영문 식별자로 뜬다(운영자에게는 그냥 읽을 수 없는 글자다). 레지스트리
- * (`WRITE_TOOL_NAMES`)와의 짝은 `action-labels.contract.test.ts` 가 고정한다.
+ * (`WRITE_TOOL_NAMES`)·실행기(`WRITE_ACTIONS`)와의 짝은 `action-labels.contract.test.ts` 가 고정한다.
  */
 export const ACTION_LABELS: Record<string, string> = {
   add_entity_memo: "메모 추가",
@@ -39,6 +40,8 @@ export const ACTION_LABELS: Record<string, string> = {
   update_settlement_amount: "정산 금액 수정",
   update_record: "기록 수정",
   upsert_product_mappings: "상품 매핑 등록",
+  // [캘린더수집] 봇 도구가 아니라 캘린더 수집만 기안하는 실행기 액션 — 계약 상한이 실행기 화이트리스트다.
+  create_campaign_round: "새 회차 생성",
 };
 
 // confirm_settlement만 승인 시 확인 다이얼로그를 거친다(§1-3, critic Q4 — 금전 최고위험 액션).
@@ -58,6 +61,9 @@ type ProposalDetail = {
   createdAt: string;
   executedBy?: string | null;
   errorMessage?: string | null;
+  /** [캘린더수집] 기안 출처 칸·새 회차 이름 — 목록 카드(`ApprovalInboxItem`)와 같은 칸. */
+  sourceRef?: unknown;
+  argLabels?: ProposalArgLabels | null;
 };
 
 async function fetchProposal(id: string): Promise<ProposalDetail> {
@@ -251,7 +257,12 @@ export function ProposalCard({
       <p className="text-sm text-foreground">{proposal.title}</p>
 
       {/* 제목은 무엇을 만드는지만 말한다. 승인 판단에 필요한 값(가격·옵션·담당자)은 여기 있다. */}
-      <ProposalPayloadPreview action={proposal.payload?.action} args={proposal.payload?.args} />
+      <ProposalPayloadPreview
+        action={proposal.payload?.action}
+        args={proposal.payload?.args}
+        sourceRef={proposal.sourceRef}
+        argLabels={proposal.argLabels}
+      />
 
       {/* 실패(FAILED) 재시도에는 붙이지 않는다 — 첫 승인 때 채운 값은 이미 기안에 저장돼 있다. */}
       {action === "create_partner" && proposal.status === "PENDING_APPROVAL" && (

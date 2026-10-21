@@ -107,6 +107,12 @@
 # 빈 회차는 레이더 상태만 갱신하고 이력(SystemTaskLog)은 남기지 않는다(cron.log 에는 매 회차 한 줄).
 */2 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh agent-auto-execute >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
 
+# calendar-inbound-scan → **30분마다**(상시). **UTC 원본이 없다** — 셀프호스트 이후에 생긴 잡이다.
+# 표기는 KNOWN_JOBS(cycle "상시" · timeKst "30분마다")와 C5 가 대조한다. 구글 캘린더 종일 일정을 읽어
+# 결재함에 기안만 올린다(승인 전에는 CRM 값·캘린더를 바꾸지 않는다). 같은 일정은 지문 장부가 걸러
+# 회차가 겹치거나 다시 돌아도 기안이 두 번 생기지 않는다. 할 일이 없던 회차는 이력을 남기지 않는다.
+*/30 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/run-cron.sh calendar-inbound-scan >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
 # incident-notify immediate → **10분마다**. 앱이 정한 사고 알림(조치 필요 🙋 · 정상화 ✅)을 notify.sh 로
 # 보낸다(크론 자가 복구 2단계). 레이더가 지켜보는 정기 작업이 아니다 — 앱 크론 래퍼를 거치지 않고
 # KNOWN_JOBS 에도 없다(발송기가 자기 자신을 사고 장부에 올리면 알림 실패가 알림을 낳는다). 그래서 위

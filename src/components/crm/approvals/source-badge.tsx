@@ -1,5 +1,6 @@
-import { SparklesIcon, UserRoundIcon } from "lucide-react";
+import { CalendarDaysIcon, SparklesIcon, UserRoundIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { CALENDAR_INBOUND_CREATED_BY } from "@/lib/calendar-inbound/ref";
 
 /**
  * SourceBadge — 기안이 어디서 만들어졌는지 배지로 보여준다 (Plan 2 · Task 3).
@@ -7,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
  * `createdBy`는 사람 사용자 id 또는 두 시스템 상수 중 하나다:
  * - `AGENT_WORKER`: 슬랙봇(백그라운드 에이전트 워커)이 만든 기안.
  * - `AGENT`: 어시스턴트 채팅(대화 중 인라인 제안)이 만든 기안.
+ * - `SYSTEM_CALENDAR_INBOUND`: [캘린더수집] 구글 캘린더 일정에서 수집 스캔이 올린 기안. 이 출처가 없던 동안엔
+ *   「직접」으로 떠서 오너가 자기가 만든 기안으로 읽을 수 있었다.
  * - 그 외(사람 사용자 id): 오너가 화면에서 직접 만든 기안.
  *
  * 기존 `기안자: {createdBy}` 텍스트(사용자 id 원문 노출)를 대체한다 — 결재함
@@ -31,6 +34,14 @@ export function SourceBadge({ createdBy }: { createdBy: string }) {
       </Badge>
     );
   }
+  if (createdBy === CALENDAR_INBOUND_CREATED_BY) {
+    return (
+      <Badge variant="outline">
+        <CalendarDaysIcon aria-hidden />
+        {sourceLabelOf(createdBy)}
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline">
       <UserRoundIcon aria-hidden />
@@ -46,5 +57,6 @@ export function SourceBadge({ createdBy }: { createdBy: string }) {
 export function sourceLabelOf(createdBy: string): string {
   if (createdBy === "AGENT_WORKER") return "슬랙봇";
   if (createdBy === "AGENT") return "어시스턴트";
+  if (createdBy === CALENDAR_INBOUND_CREATED_BY) return "캘린더";
   return "직접";
 }

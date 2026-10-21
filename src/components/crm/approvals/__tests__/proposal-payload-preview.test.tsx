@@ -346,3 +346,99 @@ describe("ProposalPayloadPreview", () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe("ProposalPayloadPreview — [캘린더수집] 캘린더에서 온 기안", () => {
+  const calendarRef = (over: Record<string, unknown> = {}) => ({
+    calendarInbound: {
+      inboundId: "in-1",
+      eventId: "ev-1",
+      calendarId: "primary",
+      ledgerKind: "campaign",
+      adopt: true,
+      summary: "샘플 테스트브랜드 2차",
+      startDate: "2026-12-01",
+      endDate: "2026-12-07",
+      htmlLink: "https://calendar.google.com/event?eid=abc",
+      warnings: ["종료일 확인 필요", "가장 최근 회차로 자동 지정"],
+      ...over,
+    },
+  });
+
+  it("새 회차 생성은 셀러·판매 조건·기간·생성 상태를 이름으로 보여준다(id 가 아니라)", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_campaign_round"
+        args={{ dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-07" }}
+        argLabels={{ seller: "샘플", deal: "테스트브랜드 봄딜" }}
+      />,
+    );
+    expect(screen.getByText("샘플")).toBeTruthy();
+    expect(screen.getByText("테스트브랜드 봄딜")).toBeTruthy();
+    expect(screen.getByText("2026-12-01 ~ 2026-12-07")).toBeTruthy();
+    // 상태 이름은 캠페인 상태 라벨 표(PREPARATION = 세팅대기)와 같은 말
+    expect(screen.getByText("세팅대기로 생성")).toBeTruthy();
+    expect(screen.queryByText("d1")).toBeNull();
+    expect(screen.queryByText("s1")).toBeNull();
+  });
+
+  it("이름을 못 풀었으면 셀러·판매 조건 칸을 id 로 채우지 않고 뺀다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_campaign_round"
+        args={{ dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-01" }}
+      />,
+    );
+    expect(screen.queryByText("d1")).toBeNull();
+    expect(screen.queryByText("셀러")).toBeNull();
+    expect(screen.getByText("2026-12-01")).toBeTruthy();
+  });
+
+  it("캘린더 출처가 있으면 원본 일정(제목·날짜·구글 링크)과 확인할 점 목록을 보여준다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_campaign_round"
+        args={{ dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-07" }}
+        argLabels={{ seller: "샘플", deal: "테스트브랜드 봄딜" }}
+        sourceRef={calendarRef()}
+      />,
+    );
+    expect(screen.getByText("원본 일정")).toBeTruthy();
+    expect(screen.getByText("샘플 테스트브랜드 2차")).toBeTruthy();
+    const link = screen.getByRole("link", { name: /구글 캘린더에서 보기/ });
+    expect(link.getAttribute("href")).toBe("https://calendar.google.com/event?eid=abc");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(items).toEqual(["종료일 확인 필요", "가장 최근 회차로 자동 지정"]);
+  });
+
+  it("기록 수정 기안에도 원본 일정이 붙고, 링크가 없으면 링크를 그리지 않는다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="update_record"
+        args={{
+          entityType: "CAMPAIGN",
+          entityId: "c1",
+          changes: { startDate: "2026-12-02" },
+          expected: { startDate: "2026-12-01" },
+        }}
+        sourceRef={JSON.stringify(calendarRef({ htmlLink: null, warnings: [] }))}
+      />,
+    );
+    expect(screen.getByText("원본 일정")).toBeTruthy();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByText("확인할 점")).toBeNull();
+    // 기록 수정 본문(지금 값 → 바꿀 값)도 그대로 그린다
+    expect(screen.getByText(/→/)).toBeTruthy();
+  });
+
+  it("캘린더 출처가 없거나 모양이 틀리면 원본 일정 블록이 없다", () => {
+    const { unmount } = render(
+      <ProposalPayloadPreview action="create_deal" args={{ mainDeal: { dealName: "A", sellingPrice: 1 } }} sourceRef={{ slack: {} }} />,
+    );
+    expect(screen.queryByText("원본 일정")).toBeNull();
+    unmount();
+    render(<ProposalPayloadPreview action="create_deal" args={{ mainDeal: { dealName: "A" } }} sourceRef={{ calendarInbound: { summary: "x" } }} />);
+    expect(screen.queryByText("원본 일정")).toBeNull();
+  });
+});
