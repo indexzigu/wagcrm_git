@@ -364,6 +364,10 @@ function Sidebar({
           //    끝까지 같은 속도라 도착이 뭉개지고, 사용자가 가장 주시하는 마지막 구간이
           //    가장 심심해진다(review-animations 기준 3). 지속시간 200ms 는 불변.
           peek && "ease-out group-data-[state=expanded]:shadow-soft-lg",
+          // peek 패널은 본문 위로 펼쳐지므로 본문 고정 머리(`crm-shell-header` z-10)보다
+          // 높아야 한다 — 동률이면 문서 순서상 뒤의 머리가 이겨 로고 줄을 덮는다.
+          // 상한: 하단 선택 바(z-40)·Dialog/Sheet(z-50) 아래. 계약 `sidebar-peek.test.tsx`.
+          peek && "z-30",
           className
         )}
         {...props}
