@@ -211,7 +211,7 @@ describe("정산 페이지 — 주소로 캠페인 상세 열기", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it("주소로 연 패널을 닫으면 포커스를 페이지 제목(정산 진행 중 캠페인)으로 돌린다 — BODY 로 떨어뜨리지 않는다", async () => {
+  it("주소로 연 패널을 닫으면 포커스를 페이지 제목(정산중 캠페인)으로 돌린다 — BODY 로 떨어뜨리지 않는다", async () => {
     search = new URLSearchParams("campaign=b");
     render(<SettlementPageClient initialData={initialData([row("b")])} defaultMonth="2026-10" />);
     await screen.findByTestId("panel");
@@ -219,6 +219,6 @@ describe("정산 페이지 — 주소로 캠페인 상세 열기", () => {
     const event = new Event("close", { cancelable: true });
     act(() => panelProps!.onCloseAutoFocus!(event));
     expect(event.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "정산 진행 중 캠페인" }));
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "정산중 캠페인" }));
   });
 });

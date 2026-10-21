@@ -497,7 +497,8 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     <CrmShell
       title="정산 관리"
       // 건수는 두 섹션 배지와 같은 변수를 읽는다(새 계산 없음) — 머리와 본문이 다른 수를 말하지 않게.
-      description={`진행 ${activeCampaigns.length}건 · 완료 ${completedCampaigns.length}건`}
+      // 정산 목록을 받기 전에는 부제를 비운다 — 두 목록이 아직 비어 있어 「0건」으로 읽히면 「할 일 없음」이라는 거짓말이 된다.
+      description={reportData === null ? undefined : `정산중 ${activeCampaigns.length}건 · 정산완료 ${completedCampaigns.length}건`}
       segments={{
         options: VIEW_TYPE_OPTIONS,
         value: viewType,
@@ -627,7 +628,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
             <section className="flex flex-col gap-4 px-5 py-4">
               <div className="flex items-center gap-2">
                 <ChevronDown className="size-4 text-slate-500" />
-                <h2 ref={activeHeadingRef} tabIndex={-1} className="text-base font-semibold text-slate-800 outline-none">정산 진행 중 캠페인</h2>
+                <h2 ref={activeHeadingRef} tabIndex={-1} className="text-base font-semibold text-slate-800 outline-none">정산중 캠페인</h2>
                 <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-slate-500">
                   {activeCampaigns.length}건
                 </span>
@@ -647,7 +648,7 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
             <section className="flex flex-col gap-4 px-5 py-4">
               <div className="flex items-center gap-2">
                 <ChevronDown className="size-4 text-slate-500" />
-                <h2 className="text-base font-semibold text-slate-800">정산 완료 캠페인</h2>
+                <h2 className="text-base font-semibold text-slate-800">정산완료 캠페인</h2>
                 <span className="rounded-full border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-slate-500">
                   {completedCampaigns.length}건
                 </span>

@@ -29,6 +29,7 @@ export const STATUS_WORD_SPACING: Readonly<Record<string, string>> = {
   "확인 대기": "확인대기",
   "정산 대기": "정산대기",
   "세팅 대기": "세팅대기",
+  "입금 대기": "입금대기",
   "지급 대기": "지급대기",
   "발송 대기": "발송대기",
   "제안 중": "제안중",

@@ -330,10 +330,8 @@ describe("summary.totalCommissionRevenue — 수수료매출 합계", () => {
     expect(report.summary.totalCommissionRevenue).toBe(445000.4);
   });
 
-  it("매출총이익 = 수수료매출 − 셀러지급액 (반올림 오차 ≤ 캠페인 수)", () => {
+  it("매출총이익 = 수수료매출 − 셀러지급액 (합계마다 소수 둘째 자리 반올림 오차만)", () => {
     const { totalMargin, totalCommissionRevenue, totalSellerPayouts } = report.summary;
-    expect(
-      Math.abs(totalMargin - (totalCommissionRevenue - totalSellerPayouts)),
-    ).toBeLessThanOrEqual(report.summary.campaignCount);
+    expect(totalMargin).toBeCloseTo(totalCommissionRevenue - totalSellerPayouts, 1);
   });
 });

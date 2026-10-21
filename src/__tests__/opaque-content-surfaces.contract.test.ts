@@ -31,7 +31,8 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/crm/execution-kanban-board.tsx": SURFACE_TOKENS,
   "components/crm/campaign-card.tsx": SURFACE_TOKENS,
   "components/crm/grouped-table-view.tsx": SURFACE_TOKENS,
-  "components/crm/settlement-section.tsx": SURFACE_TOKENS,
+  // 상세 시트 안 이웃 섹션 20여 곳이 rounded-[24px] 라 이 파일만 바꾸면 모서리가 섞인다 — 모서리는 시트 묶음에서 함께.
+  "components/crm/settlement-section.tsx": ["backdrop-blur", "bg-white/", "bg-[rgba(", "bg-[#"],
   "components/crm/money-summary-strip.tsx": SURFACE_TOKENS,
   // 캠페인 상세 시트는 **시트 바탕 그라디언트만** 막는다. 이 파일의 다른 섹션 카드
   // (`rounded-[24px]`·`bg-white/90` 등)는 이 묶음의 교체 규칙 밖이라 아직 대상이 아니다 —

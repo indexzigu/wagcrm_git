@@ -87,8 +87,8 @@ describe("MobileSettlementView", () => {
     // 「지급 필요」에는 **영원히 못 들어왔다**(2026-08-25 2단계 회귀 단언).
     expect(screen.queryByText("입금 확인 필요")).not.toBeInTheDocument();
     expect(screen.getByText("지급 필요")).toBeInTheDocument();
-    expect(screen.queryByText("정산 진행 중 캠페인")).not.toBeInTheDocument();
-    expect(screen.queryByText("정산 완료 캠페인")).not.toBeInTheDocument();
+    expect(screen.queryByText("정산중 캠페인")).not.toBeInTheDocument();
+    expect(screen.queryByText("정산완료 캠페인")).not.toBeInTheDocument();
     expect(container.firstElementChild).not.toHaveClass("md:hidden");
   });
 });

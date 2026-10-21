@@ -130,7 +130,7 @@
      오너 결정 2026-07-10: 달성색(--accent-achieve, 구 골드)을 상태축에 승격(기존 '장식 전용' 원칙 해제). 지연은 색 아닌 라벨 빨간 텍스트로. */
   --pipeline-unconfirmed: #94A3B8;          /* 미확인(발주확인 대기 큐) = slate-400. 경보 아닌 '아직 손 안 댄 대기'라 회색, 빨강은 지연 전용 보존 */
   --pipeline-confirm: var(--primary);       /* 주문확인(발주완료) — --primary 그대로 */
-  --pipeline-pending: var(--chart-2);       /* 배송대기 */
+  --pipeline-pending: var(--chart-2);       /* 배송대기 — ⚠️ .dark 의 --chart-2 는 파란 계열이라 다크 모드를 켜면 여기도 다시 정해야 한다 */
   --pipeline-shipping: var(--fill-teal-1);  /* 배송중 */
   --pipeline-completed: var(--accent-achieve); /* 배송완료 = 미션완료(달성 종착점) — 달성 모래색 */
   --transition-smooth: 200ms cubic-bezier(0.4, 0, 0.2, 1);

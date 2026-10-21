@@ -150,10 +150,29 @@ describe("정산 머리 — 판매 관리와 같은 형태", () => {
     expect(within(header()).getByRole("button", { name: /새로고침/ })).toBeInTheDocument();
   });
 
-  it("부제는 두 섹션 배지와 같은 건수로 「진행 N건 · 완료 N건」", async () => {
+  it("부제는 두 섹션 배지와 같은 건수로 「정산중 N건 · 정산완료 N건」", async () => {
     render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
-    await waitFor(() => expect(within(header()).getByText("진행 2건 · 완료 1건")).toBeInTheDocument());
+    await waitFor(() => expect(within(header()).getByText("정산중 2건 · 정산완료 1건")).toBeInTheDocument());
     expect(screen.getByText("2건")).toBeInTheDocument();
     expect(screen.getByText("1건")).toBeInTheDocument();
+  });
+
+  it("정산 목록을 받기 전에는 부제를 비운다 — 「0건」(할 일 없음)으로 읽히지 않게", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const base = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).startsWith("/api/reports/settlement")) await gate;
+        return base(input, init);
+      }),
+    );
+    render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
+    expect(within(header()).queryByText(/건 · /)).not.toBeInTheDocument();
+    release();
+    await waitFor(() => expect(within(header()).getByText("정산중 2건 · 정산완료 1건")).toBeInTheDocument());
   });
 });

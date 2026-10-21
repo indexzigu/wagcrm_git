@@ -47,6 +47,7 @@ export function matchesExecutionQuickFilter(
           campaign.checklistSummary.requiredTotalCount > 0,
       );
     case "ALL":
+    default:
       return true;
   }
 }

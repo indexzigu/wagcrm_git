@@ -548,7 +548,7 @@ export function SettlementSection({
   };
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
+    <div className="space-y-4 rounded-[24px] border border-border/70 bg-card p-4 shadow-soft-sm">
       <div className="flex items-center gap-2">
         <h3 className="flex items-center text-sm font-semibold text-foreground">
           <CalendarDays className="mr-2 size-4 text-muted-foreground" />
