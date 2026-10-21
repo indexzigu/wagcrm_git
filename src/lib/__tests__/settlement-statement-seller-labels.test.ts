@@ -178,7 +178,10 @@ describe("셀러 정산서 줄 이름 (설계서 §14)", () => {
     expect(amounts(render(FIXTURES.business).html)).toEqual(AMOUNTS_BEFORE.business);
     expect(amounts(render(FIXTURES.individualBasis).html)).toEqual(AMOUNTS_BEFORE.individualBasis);
     expect(amounts(render(FIXTURES.businessMixed).html)).toEqual(AMOUNTS_BEFORE.businessMixed);
-    expect(amounts(render(FIXTURES.individual).text)).toEqual(AMOUNTS_BEFORE.individualText);
+    // 개인 평문은 줄 순서를 HTML 합계 표 순서로 바꿨다(정산 금액 → 추가 지급 → 세금 공제 → 실제 입금액,
+    // 세금 공제에 「-」) — 값의 모음이 같은지로 본다.
+    const unsigned = (xs: string[]) => xs.map((x) => x.replace(/^-/, "")).sort();
+    expect(unsigned(amounts(render(FIXTURES.individual).text))).toEqual(unsigned(AMOUNTS_BEFORE.individualText));
     expect(amounts(render(FIXTURES.business).text)).toEqual(AMOUNTS_BEFORE.businessText);
   });
 });

@@ -969,16 +969,20 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
   const { recipient } = validation;
   const totals = computeSettlementPayoutTotals(campaigns);
   const won = (value: number) => `${Math.round(value).toLocaleString()}원`;
+  // 개인은 HTML 합계 표와 같은 순서로 한 줄씩 푼다(정산 금액 → 추가 지급 → 세금 공제 → 실제 입금액) —
+  // 「실제 입금액」 아래 └ 로 두 값을 달면 하위 내역처럼 읽히는데, 추가 지급이 있으면 그 둘로 입금액이
+  // 맞춰지지 않아 셀러가 암산하다 틀린다(디자인 검토 2026-10-21).
   const breakdown = totals.isIndividual
-    ? `  └ ${L.individual.preTaxPayout}: ${won(totals.totalPreTaxPayout)}, ${L.individual.withholding}: ${won(totals.totalWithholdingTaxOnly)}\n    ※ ${L.individual.withholdingNote}`
+    ? ""
     : (() => {
         const { supply, vat } = calcBusinessVatBreakdown(totals.totalPostTaxPayout);
         return `  └ ${L.business.supplyOfPayout}: ${won(supply)}, ${L.business.vat}: ${won(vat)}`;
       })();
   // 평문도 HTML 과 **같은 합계 함수**를 쓴다 — 두 표면이 갈리면 메일 클라이언트가
   // 평문을 고르는 순간 다른 금액이 셀러에게 간다(이 파일이 이미 한 번 낸 사고).
+  const hasItems = totals.totalSettlementItemPayout !== 0;
   const itemLine =
-    totals.totalSettlementItemPayout !== 0
+    hasItems
       ? `\n- ${L.common.extraPayout}: ${won(totals.totalSettlementItemPayout)}  ※ ${L.common.extraPayoutNote}`
       : "";
 
@@ -986,6 +990,17 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
   // 빠지던 상태였다. 날짜가 없으면 줄 자체를 싣지 않는다(종전 평문과 바이트 동일).
   const dateLines = buildStatementPayoutDateLines(sortStatementCampaigns(campaigns));
   const dateBlock = dateLines.map(({ label, value }) => `\n- ${label}: ${value}`).join("");
+
+  function individualLines() {
+    const tax = totals.totalWithholdingTaxOnly > 0 ? `-${won(totals.totalWithholdingTaxOnly)}` : "0원";
+    return [
+      `\n- ${L.individual.preTaxPayout}: ${won(totals.totalPreTaxPayout)}`,
+      itemLine,
+      `\n- ${L.individual.withholding}: ${tax}${hasItems ? `  ※ ${L.individual.withholdingCombinedNote}` : ""}`,
+      `\n  ※ ${L.individual.withholdingNote}`,
+      `\n- ${L.individual.postTaxPayout}: ${won(totals.totalPostTaxPayout)}`,
+    ].join("");
+  }
 
   // 수동 기준액 캠페인이 섞이면 총 거래액(우리 판매분 포함)을 싣지 않고 정산 기준액 합을 싣는다.
   const salesLine = totals.hasSellerFeeBasisOverride
@@ -998,9 +1013,7 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
 발행일: ${now.toISOString().slice(0, 10)}
 
 ■ 정산 합계
-${salesLine}${itemLine}
-- ${totals.isIndividual ? L.individual.postTaxPayout : L.business.payout}: ${won(totals.totalPostTaxPayout)}
-${breakdown}${dateBlock}
+${salesLine}${totals.isIndividual ? individualLines() : `${itemLine}\n- ${L.business.payout}: ${won(totals.totalPostTaxPayout)}\n${breakdown}`}${dateBlock}
 `.trim();
 }
 

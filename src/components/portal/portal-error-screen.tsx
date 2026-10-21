@@ -25,7 +25,7 @@ export function PortalErrorScreen({ error, retry }: { error: Error & { digest?: 
         <button
           type="button"
           onClick={retry}
-          className="w-full min-h-11 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          className="w-full min-h-11 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground transition-[background-color,opacity] hover:bg-primary/90 active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
         >
           다시 시도
         </button>

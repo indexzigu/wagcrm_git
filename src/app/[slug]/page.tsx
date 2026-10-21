@@ -86,7 +86,7 @@ function PasswordGate({
                 )}
                 <button
                   type="submit"
-                  className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+                  className="w-full rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground transition-[background-color,opacity] hover:bg-primary/90 active:opacity-80"
                 >
                   리포트 열기
                 </button>
