@@ -5,9 +5,11 @@ import {
   formatImmediate,
   formatRecovery,
   incidentCauseLabel,
+  incidentCauseText,
   type DigestIncident,
   type ReportIncident,
 } from "@/lib/cron-incident-report";
+import { matchPlaybook } from "@/lib/cron-incident-playbook";
 import { ownerActionFor } from "@/lib/cron-incident-escalation";
 
 // 기준 시각: KST 2026-10-18 09:30
@@ -85,6 +87,60 @@ describe("formatImmediate", () => {
   it("조치 문구가 비어 있으면 승격 규칙의 문구로 채운다", () => {
     const msg = formatImmediate(incident({ ownerAction: null, errorKind: "auth" }), "작업");
     expect(msg.detail).toBe(`원인: 인증 실패\n조치: ${ownerActionFor({ kind: "A", errorKind: "auth" })}`);
+  });
+});
+
+describe("incidentCauseText — 플레이북 원인이 있으면 그것을 확신과 함께", () => {
+  it("원인이 있으면 「확정|후보 원인」", () => {
+    expect(incidentCauseText({ kind: "A", errorKind: "network", cause: "프록시 월 한도 소진", causeConfidence: "확정" })).toBe(
+      "확정 프록시 월 한도 소진",
+    );
+    expect(incidentCauseText({ kind: "A", errorKind: "rate_limit", cause: "Gemini 사용 한도 도달", causeConfidence: "후보" })).toBe(
+      "후보 Gemini 사용 한도 도달",
+    );
+  });
+
+  it("확신 표기가 정해진 둘이 아니면 원인만", () => {
+    expect(incidentCauseText({ kind: "A", errorKind: null, cause: "어떤 원인", causeConfidence: "불명" })).toBe("어떤 원인");
+  });
+
+  it("원인이 없으면 지금 라벨", () => {
+    expect(incidentCauseText({ kind: "A", errorKind: "network" })).toBe("네트워크 끊김");
+    expect(incidentCauseText({ kind: "A", errorKind: "network", cause: null, causeConfidence: null })).toBe("네트워크 끊김");
+    expect(incidentCauseText({ kind: "B", errorKind: null, cause: "  " })).toBe("결과 0건");
+  });
+});
+
+describe("formatImmediate — 알려진 원인", () => {
+  it("프록시 한도 확정: 원인 줄에 확정 원인, 조치는 플레이북 문장", () => {
+    const action =
+      "프록시 월 한도가 바닥났습니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.";
+    const msg = formatImmediate(
+      incident({ jobKey: "naver-order-sync", cause: "프록시 월 한도 소진", causeConfidence: "확정", ownerAction: action }),
+      "네이버 발주 동기화",
+    );
+    expect(msg.detail).toBe(`원인: 확정 프록시 월 한도 소진\n조치: ${action}`);
+  });
+});
+
+describe("formatImmediate — 설정값 누락(플레이북 결과를 그대로 실은 경우)", () => {
+  it("원인 줄에 키 이름, 조치는 키 이름을 끼운 고정 문장 — 원문은 싣지 않는다", () => {
+    const lastMessage = "EXAMPLE_API_KEY 설정되지 않음 (seller_a) token=placeholder";
+    const m = matchPlaybook({ jobKey: "enrich-references", kind: "A", errorKind: "config", lastMessage })!;
+    const msg = formatImmediate(
+      incident({ jobKey: "enrich-references", errorKind: "config", cause: m.cause, causeConfidence: m.confidence, ownerAction: m.ownerAction }),
+      "참고 자료 보강",
+    );
+    expect(msg.detail).toBe(
+      "원인: 확정 설정값 누락: EXAMPLE_API_KEY\n조치: 운영 서버 설정에 EXAMPLE_API_KEY 값이 비어 있습니다. 값을 넣고 서버를 다시 시작해 주세요.",
+    );
+    expect(msg.detail).not.toContain("seller_a");
+    expect(msg.detail).not.toContain("placeholder");
+  });
+
+  it("플레이북이 안 맞은 사고는 지금처럼 오류 종류 라벨", () => {
+    const msg = formatImmediate(incident({ errorKind: "config", ownerAction: null }), "참고 자료 보강");
+    expect(msg.detail.split("\n")[0]).toBe(`원인: ${incidentCauseLabel("A", "config")}`);
   });
 });
 
@@ -194,6 +250,55 @@ describe("formatDigest", () => {
     );
   });
 
+  describe("재시도 반복 — 같은 작업이 7일 안에 재시도로 2번 이상 풀렸으면 「(7일 중 N번째)」", () => {
+    const retried = (id: string, normalizedAt: string, over: Partial<DigestIncident> = {}) =>
+      digestItem({ id, normalizedAt: new Date(normalizedAt), normalizedEvidence: { runAt: normalizedAt, attempt: 2 }, ...over });
+    const history = (id: string, normalizedAt: string, attempt: number, jobKey = "naver-settlement-sync") => ({
+      id,
+      jobKey,
+      normalizedAt: new Date(normalizedAt),
+      normalizedEvidence: { attempt },
+    });
+
+    it("지난 7일 기록과 합쳐 몇 번째인지 붙인다", () => {
+      const today = retried("r3", "2026-10-17T21:15:00Z");
+      const msg = formatDigest([today], [], 0, NOW, [
+        history("h1", "2026-10-12T21:15:00Z", 2),
+        history("h2", "2026-10-15T21:15:00Z", 3),
+        history("r3", "2026-10-17T21:15:00Z", 2), // 자기 자신이 이력에 있어도 한 번만 센다
+      ]);
+      expect(msg?.detail).toBe(
+        "정상화 1건\n10-18 03:00 네이버 정산 동기화 · 네트워크 끊김 · 자동 재시도로 정상화 (7일 중 3번째) · 정상화 06:15",
+      );
+    });
+
+    it("7일보다 오래된 것·첫 실행으로 풀린 것·다른 작업은 세지 않는다 — 1번째면 붙이지 않는다", () => {
+      const today = retried("r3", "2026-10-17T21:15:00Z");
+      const msg = formatDigest([today], [], 0, NOW, [
+        history("old", "2026-10-10T21:00:00Z", 2), // 7일 넘음
+        history("first", "2026-10-15T21:15:00Z", 1), // 재시도 아님
+        history("other", "2026-10-16T21:15:00Z", 2, "collect-instagram"),
+      ]);
+      expect(msg?.detail).toBe(
+        "정상화 1건\n10-18 03:00 네이버 정산 동기화 · 네트워크 끊김 · 자동 재시도로 정상화 · 정상화 06:15",
+      );
+    });
+
+    it("같은 요약에 같은 작업이 두 줄이면 줄마다 그때까지의 번째", () => {
+      const a = retried("a", "2026-10-16T21:15:00Z");
+      const b = retried("b", "2026-10-17T21:15:00Z");
+      const lines = formatDigest([a, b], [], 0, NOW, [])!.detail.split("\n");
+      expect(lines[1]).toContain("자동 재시도로 정상화 · 정상화");
+      expect(lines[2]).toContain("자동 재시도로 정상화 (7일 중 2번째) · 정상화");
+    });
+
+    it("기록된 조치가 있는 줄에는 붙이지 않는다 — 재시도 문구가 아니다", () => {
+      const both = retried("r5", "2026-10-17T21:15:00Z", { actions: [{ at: "2026-10-17T20:00:00Z", what: "다시 시도" }] });
+      const msg = formatDigest([both], [], 0, NOW, [history("h1", "2026-10-15T21:15:00Z", 2)]);
+      expect(msg?.detail).not.toContain("번째");
+    });
+  });
+
   it("첫 실행(회차 1)으로 풀린 정상화 줄은 그대로다", () => {
     const plain = digestItem({
       id: "r4",
@@ -222,6 +327,30 @@ describe("formatDigest", () => {
     expect(msg?.detail).toBe(
       "조치대기 2건\n네이버 정산 동기화 · 네트워크 끊김 (9일째)\n네이버 정산 동기화 · 네트워크 끊김",
     );
+  });
+
+  it("원인이 확정된 사고는 정상화·조치대기 줄의 원인 칸에 그 원인을 쓴다", () => {
+    const resolved = digestItem({
+      id: "r9",
+      errorKind: "auth",
+      cause: "인스타그램 접근 토큰 만료",
+      causeConfidence: "확정",
+      normalizedAt: new Date("2026-10-17T21:15:00Z"),
+    });
+    const waiting = digestItem({
+      id: "w9",
+      errorKind: "unknown",
+      cause: "외부 사이트 화면 구조가 바뀜",
+      causeConfidence: "후보",
+      jobName: "스토리 스냅샷 수집",
+    });
+    const msg = formatDigest([resolved], [waiting], 0, NOW);
+    expect(msg?.detail.split("\n")).toEqual([
+      "정상화 1건",
+      "10-18 03:00 네이버 정산 동기화 · 확정 인스타그램 접근 토큰 만료 · 정상화 06:15",
+      "조치대기 1건",
+      "스토리 스냅샷 수집 · 후보 외부 사이트 화면 구조가 바뀜",
+    ]);
   });
 
   it("C 사고는 줄로 싣지 않는다", () => {

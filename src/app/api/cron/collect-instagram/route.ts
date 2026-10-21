@@ -7,7 +7,7 @@ import {
 } from "@/lib/collectors/instagram-collector";
 import { collectInstagramEngagement } from "@/lib/collectors/instagram-engagement-collector";
 import { applyDbInstagramToken } from "@/lib/instagram-token";
-import { declareTotalFailure } from "@/lib/cron-outcome";
+import { declareTotalFailure, scrubFailureCause } from "@/lib/cron-outcome";
 import { SELLER_METRICS_INVALIDATION_TAGS, revalidateCrmTags } from "@/lib/cache-tags";
 import { verifyCronAuth } from "@/lib/cron-auth";
 
@@ -81,12 +81,19 @@ async function handler(request: Request) {
       (engagement.monitoredCount - engagement.skippedCount - engagement.deferredCount) +
       (result.monitoredCount - result.skippedCount);
     const succeeded = engagement.collectedCount + result.successCount;
+    // 대표 원인 — 1단계가 남긴 원인 사슬이 먼저, 없으면 2단계 첫 오류 문구(핸들은 걷어낸다).
+    const followerError = result.errors[0];
+    const cause =
+      engagement.firstErrorCause ??
+      (followerError
+        ? scrubFailureCause(followerError.error, result.errors.map((e) => e.snsHandle))
+        : undefined);
 
     return NextResponse.json({
       ...result,
       engagement,
       tokenSource,
-      ...declareTotalFailure({ attempted, succeeded, unit: "명", what: "인스타 수집" }),
+      ...declareTotalFailure({ attempted, succeeded, unit: "명", what: "인스타 수집", cause }),
     });
   } catch (error) {
     console.error("[collect-instagram] Unexpected error:", error);

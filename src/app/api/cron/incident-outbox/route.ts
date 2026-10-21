@@ -14,8 +14,10 @@ import {
   formatDigest,
   formatImmediate,
   formatRecovery,
+  RETRY_REPEAT_WINDOW_MS,
   type OutboxMessage,
   type ReportIncident,
+  type RetryHealedRecord,
 } from "@/lib/cron-incident-report";
 
 // 사고 알림 목록(outbox) — 크론 자가 복구 2단계.
@@ -52,6 +54,8 @@ type IncidentRow = {
   firstSeenAt: Date;
   lastSeenAt: Date;
   ownerAction: string | null;
+  cause: string | null;
+  causeConfidence: string | null;
   prNumber: number | null;
   normalizedAt: Date | null;
   normalizedEvidence: unknown;
@@ -66,6 +70,9 @@ function toReport(row: IncidentRow): ReportIncident {
     errorKind: (row.errorKind ?? null) as CronErrorKind | null,
     firstSeenAt: row.firstSeenAt,
     ownerAction: row.ownerAction,
+    // 플레이북이 정한 원인(4단계) — 원문(lastMessage)이 아니라 고정 문장이다. 알림에는 원문을 넣지 않는다.
+    cause: row.cause ?? null,
+    causeConfidence: row.causeConfidence ?? null,
     prNumber: row.prNumber,
     normalizedAt: row.normalizedAt,
     normalizedEvidence: row.normalizedEvidence,
@@ -148,11 +155,33 @@ async function immediateMessages(now: Date): Promise<OutboxMessage[]> {
   return messages;
 }
 
+/**
+ * 재시도 반복 「(7일 중 N번째)」를 세는 지난 정상화 기록 — 이번 요약의 정상화(창 끝 7일 전부터)마다 다시 7일을
+ * 거슬러 세므로 14일 전부터 읽는다. 재시도 여부(`normalizedEvidence.attempt > 1`)는 세는 쪽이 가린다.
+ * 조회가 실패해도 요약은 표시 없이 나간다 — 반복 표시는 보조 정보라 요약 전체를 막을 이유가 아니다.
+ */
+async function retryHealedHistory(end: Date): Promise<RetryHealedRecord[]> {
+  try {
+    return await getPrisma().cronIncident.findMany({
+      where: {
+        status: "resolved",
+        kind: { not: "C" },
+        suppressedAt: null,
+        normalizedAt: { gte: new Date(end.getTime() - DIGEST_CATCH_UP_MS - RETRY_REPEAT_WINDOW_MS), lt: end },
+      },
+      select: { id: true, jobKey: true, normalizedAt: true, normalizedEvidence: true },
+    });
+  } catch (error) {
+    console.error("[incident-outbox] 재시도 반복 이력 조회 실패 — 반복 표시 없이 요약을 만든다", error);
+    return [];
+  }
+}
+
 async function digestMessages(now: Date): Promise<OutboxMessage[]> {
   const prisma = getPrisma();
   const { start, end } = digestWindow(now);
   const resolvedFloor = new Date(end.getTime() - DIGEST_CATCH_UP_MS);
-  const [resolved, waiting, suppressedCount] = await Promise.all([
+  const [resolved, waiting, suppressedCount, retryHistory] = await Promise.all([
     prisma.cronIncident.findMany({
       where: {
         status: "resolved",
@@ -168,9 +197,10 @@ async function digestMessages(now: Date): Promise<OutboxMessage[]> {
       orderBy: { firstSeenAt: "asc" },
     }) as Promise<IncidentRow[]>,
     prisma.cronIncident.count({ where: { suppressedAt: { gte: start, lt: end } } }),
+    retryHealedHistory(end),
   ]);
   const withName = (row: IncidentRow) => ({ ...toReport(row), jobName: jobNameOf(row.jobKey) });
-  const digest = formatDigest(resolved.map(withName), waiting.map(withName), suppressedCount, now);
+  const digest = formatDigest(resolved.map(withName), waiting.map(withName), suppressedCount, now, retryHistory);
   return digest ? [digest] : [];
 }
 

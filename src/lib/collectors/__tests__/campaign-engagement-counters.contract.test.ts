@@ -133,3 +133,19 @@ describe("CampaignEngagementSyncResult 카운터 계약", () => {
     expect(result.sellersMonitored - result.sellersSkipped - result.sellersDeferred).toBe(3);
   });
 });
+
+describe("CampaignEngagementSyncResult 대표 원인", () => {
+  it("처음 난 셀러 오류의 원인 사슬을 핸들 없이 남긴다", async () => {
+    scrapeTier0Mock.mockImplementation(async (handle: string) => {
+      throw new Error(`Tier0 ${handle} 실패`, { cause: new Error("fetch failed") });
+    });
+    const result = await syncCampaignPostEngagement({ spacingMs: 0 });
+    expect(result.firstErrorCause).toBe("Tier0 <항목> 실패 <- fetch failed");
+  });
+
+  it("Tier0 미설정 게이트 사유도 대표 원인으로 남는다", async () => {
+    isGraphConfiguredMock.mockReturnValue(false);
+    const result = await syncCampaignPostEngagement({ spacingMs: 0 });
+    expect(result.firstErrorCause).toContain("INSTAGRAM_ACCESS_TOKEN");
+  });
+});

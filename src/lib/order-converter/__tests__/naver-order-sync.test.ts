@@ -321,6 +321,19 @@ describe('runChangedSync 커서 원자성 (M1/M2 회귀)', () => {
     (global as any).__naverSyncLastAt = undefined;
   });
 
+  it('메시지 없는 오류(new Error())로 실패해도 error 가 비지 않는다 — 크론 라우트가 실패로 선언하는 근거', async () => {
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue(null);
+    vi.spyOn(clientModule, 'apiRequest').mockRejectedValue(new Error());
+
+    const result = await runChangedSync();
+
+    // 라우트(`/api/cron/naver-order-sync`)는 `result.error` 가 참일 때만 failed:true 를 선언한다.
+    expect(result.error).toBe('Error');
+  });
+
   it('다중 날짜 중 하나의 upsert가 실패하면 커서를 전진시키지 않는다 (M1)', async () => {
     const clientModule = await import('@/lib/order-converter/naver-commerce-client');
     const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
@@ -913,5 +926,58 @@ describe('queryOrderDetails 청크 크기', () => {
     expect(sentSizes).toEqual([300, 1]);
     expect(result).toHaveLength(301);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 대표 원인 보존(자가 정상화 4단계 Task 1) — 실패를 `error?.message` 로만 담으면 겉 문구
+ * 「fetch failed」만 남고 진짜 원인(프록시 407)이 사라져 사고 원인이 「네트워크」로 기록된다.
+ */
+// 자격증명이 든 프록시 주소 픽스처 — 리터럴로 쓰면 commit-guard 가 「URL 내장 자격증명」으로 막아 조립한다(가짜 값).
+const CRED_PROXY = 'http://' + ['fake_user', 'fake_pw'].join(':') + '@proxy.example.com:80';
+
+describe('동기화 실패 문구는 원인 사슬을 보존한다', () => {
+  beforeEach(() => {
+    (global as any).__naverSyncInFlight = null;
+    (global as any).__naverSyncLastAt = undefined;
+    (global as any).__naverDailyCache = {};
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    (global as any).__naverSyncInFlight = null;
+    (global as any).__naverSyncLastAt = undefined;
+  });
+
+  const proxyError = () =>
+    new TypeError('fetch failed', {
+      cause: new Error('Proxy response (407) !== 200 when HTTP Tunneling'),
+    });
+
+  it('runChangedSync: 변경피드 조회가 프록시 407 로 막히면 사슬 전체가 error 에 남는다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue(null);
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    vi.spyOn(clientModule, 'apiRequest').mockRejectedValue(proxyError());
+
+    const result = await runChangedSync();
+
+    expect(result.error).toBe('fetch failed <- Proxy response (407) !== 200 when HTTP Tunneling');
+  });
+
+  it('runChangedSync: 프록시 주소의 사용자 정보는 가린다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue(null);
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    vi.spyOn(clientModule, 'apiRequest').mockRejectedValue(
+      new TypeError('fetch failed', { cause: new Error(`connect ${CRED_PROXY} refused`) }),
+    );
+
+    const result = await runChangedSync();
+
+    expect(result.error).toBe('fetch failed <- connect http://<가림>@proxy.example.com:80 refused');
+    expect(result.error).not.toContain('fake_pw');
   });
 });

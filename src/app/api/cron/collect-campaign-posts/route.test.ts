@@ -45,7 +45,7 @@ describe("collect-campaign-posts 실질 실패 선언", () => {
       activeSellers: 2,
       refreshed: 0,
       skipped: 0,
-      errors: ["INSTAGRAM_ACCESS_TOKEN/BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가"],
+      errors: ["INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가"],
     });
 
     const body = await (await call()).json();
@@ -81,5 +81,20 @@ describe("collect-campaign-posts 실질 실패 선언", () => {
     const body = await (await call()).json();
 
     expect(body.failed).toBe(false);
+  });
+});
+
+describe("collect-campaign-posts 대표 원인", () => {
+  it("전량 실패면 수집기의 대표 원인을 사유에 붙인다", async () => {
+    refreshMock.mockResolvedValue({
+      activeSellers: 2,
+      refreshed: 0,
+      skipped: 0,
+      errors: ["seller_a: boom"],
+      firstErrorCause: "boom <- (code 190) Session expired",
+    });
+    const body = await (await call()).json();
+    expect(body.failureReason).toContain("· 대표 원인: boom <- (code 190) Session expired");
+    expect(body.failureReason).not.toContain("seller_a");
   });
 });

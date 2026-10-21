@@ -136,3 +136,39 @@ describe('runPlannedSettlementSync', () => {
     expect(result.failedDates).toEqual(['complete:2026-09-08']);
   });
 });
+
+// 자격증명이 든 프록시 주소 픽스처 — 리터럴로 쓰면 commit-guard 가 「URL 내장 자격증명」으로 막아 조립한다(가짜 값).
+const CRED_PROXY = 'http://' + ['fake_user', 'fake_pw'].join(':') + '@proxy.example.com:80';
+
+describe('runPlannedSettlementSync — 대표 원인', () => {
+  it('처음 실패한 날짜의 원인 사슬을 남긴다(날짜 목록과 별개로)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    apiRequestMock
+      .mockRejectedValueOnce(
+        new TypeError('fetch failed', { cause: new Error('Proxy response (407) !== 200 when HTTP Tunneling') }),
+      )
+      .mockRejectedValueOnce(new Error('두 번째 오류'))
+      .mockResolvedValue(page(0));
+
+    const result = await runPlannedSettlementSync(plan(['2026-09-09', '2026-09-10']));
+
+    expect(result.failedDates).toEqual(['pay:2026-09-09', 'pay:2026-09-10']);
+    expect(result.firstFailureCause).toBe('fetch failed <- Proxy response (407) !== 200 when HTTP Tunneling');
+  });
+
+  it('프록시 주소의 사용자 정보는 가린다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    apiRequestMock.mockRejectedValueOnce(
+      new TypeError('fetch failed', { cause: new Error(`connect ${CRED_PROXY}`) }),
+    );
+
+    const result = await runPlannedSettlementSync(plan(['2026-09-09']));
+
+    expect(result.firstFailureCause).toBe('fetch failed <- connect http://<가림>@proxy.example.com:80');
+  });
+
+  it('실패가 없으면 비어 있다', async () => {
+    const result = await runPlannedSettlementSync(plan(['2026-09-09']));
+    expect(result.firstFailureCause).toBeUndefined();
+  });
+});

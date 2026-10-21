@@ -1,6 +1,6 @@
 import type { CronErrorKind } from "@/lib/cron-error-kind";
 import type { IncidentKind } from "@/lib/cron-incident";
-import { incidentCauseLabel, kstDateTime, kstTime } from "@/lib/cron-incident-report";
+import { incidentCauseText, kstDateTime, kstTime } from "@/lib/cron-incident-report";
 import { ownerActionFor } from "@/lib/cron-incident-escalation";
 import { KNOWN_JOBS } from "@/lib/cron-jobs";
 import { toKstYmd } from "@/lib/date-utils";
@@ -9,7 +9,7 @@ import { UNKNOWN_NAME } from "@/lib/display-label";
 /**
  * 자동화 작업 사고 → 오너 화면(크론 자가 복구 2단계). 홈 「오늘 처리할 일」의 「자동화 작업 조치대기」 줄과
  * 설정 「자동화 작업 상태」 설명창의 「이상 기록」이 이 파일 하나로 묶기·정렬·시각을 정한다(client-safe 순수 함수).
- * 원인 낱말은 알림과 같은 `incidentCauseLabel` 이다 — 여기서 원인 문구를 다시 짓지 말 것.
+ * 원인 글자는 알림과 같은 `incidentCauseText`(플레이북 원인, 없으면 `incidentCauseLabel`)다 — 여기서 원인 문구를 다시 짓지 말 것.
  */
 
 /**
@@ -26,6 +26,9 @@ export const AUTOMATION_INCIDENT_FIELDS = [
   "firstSeenAt",
   "normalizedAt",
   "occurrences",
+  // 플레이북이 정한 원인(4단계) — 고정 문장이라 원문이 아니다.
+  "cause",
+  "causeConfidence",
 ] as const;
 
 export type IncidentStatus = "open" | "waiting_owner" | "resolved";
@@ -41,6 +44,8 @@ export type AutomationIncident = {
   firstSeenAt: string;
   normalizedAt: string | null;
   occurrences: number;
+  cause: string | null;
+  causeConfidence: string | null;
 };
 
 /** 사고 상태 낱말(용어집 「자동화 작업 사고 상태」). 붙여 쓴 한 낱말. */
@@ -82,7 +87,7 @@ export function summarizeWaitingJobs(
   const oldest = jobs[0];
   const name = automationJobName(oldest.jobKey);
   const detail =
-    jobs.length === 1 ? `${name} · ${incidentCauseLabel(oldest.kind, oldest.errorKind)}` : `${name} 외 ${jobs.length - 1}건`;
+    jobs.length === 1 ? `${name} · ${incidentCauseText(oldest)}` : `${name} 외 ${jobs.length - 1}건`;
   return { jobCount: jobs.length, detail };
 }
 

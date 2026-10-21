@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { refreshCampaignWindowPosts, extractPostsCollectedAt } from "../campaign-posts-refresh";
-import { scrapeTier0 } from "../seller-analysis/graphScraper";
+import { isGraphConfigured, scrapeTier0 } from "../seller-analysis/graphScraper";
 
 // 일간 캠페인 게시물 수집(발행 확인용)의 계약을 고정한다: Tier0 전용·일일 게이트·보존 병합·
 // analyzedAt 불변·셀러별 실패 격리. Graph 호출은 mock — 대상 선정·갱신 로직만 본다.
@@ -156,6 +156,28 @@ describe("refreshCampaignWindowPosts", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain("handle_a");
     expect(upserts).toHaveLength(1);
+  });
+
+  it("처음 난 셀러 오류의 원인 사슬을 핸들 없이 대표 원인으로 남긴다", async () => {
+    vi.mocked(scrapeTier0).mockImplementation(async (handle: string) => {
+      throw new Error(`Graph BD failed for ${handle}`, { cause: new Error("(code 190) Session expired") });
+    });
+    const { prisma } = mockPrisma();
+    const result = await refreshCampaignWindowPosts(prisma, NOW);
+
+    expect(result.refreshed).toBe(0);
+    expect(result.firstErrorCause).toBe("Graph BD failed for <항목> <- (code 190) Session expired");
+  });
+});
+
+describe("refreshCampaignWindowPosts — Graph 미설정", () => {
+  it("미설정 사유에 실제 환경변수 이름을 그대로 적는다(설정값 누락 플레이북이 키 이름을 집어 오너에게 보인다)", async () => {
+    vi.mocked(isGraphConfigured).mockReturnValueOnce(false);
+    const { prisma } = mockPrisma();
+    const result = await refreshCampaignWindowPosts(prisma, NOW);
+
+    expect(result.firstErrorCause).toContain("INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID");
+    expect(result.errors[0]).toContain("INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID");
   });
 });
 

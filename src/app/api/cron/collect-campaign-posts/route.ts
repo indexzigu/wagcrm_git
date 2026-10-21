@@ -34,6 +34,7 @@ async function handler(request: Request) {
       succeeded: result.refreshed,
       unit: "명",
       what: "캠페인 셀러 게시물 갱신",
+      cause: result.firstErrorCause,
     }),
   });
 }

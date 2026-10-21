@@ -3,6 +3,14 @@ import { getPrisma } from "@/lib/prisma";
 import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 import { isTransientErrorKind, type CronErrorKind } from "@/lib/cron-error-kind";
 import { ownerActionFor, shouldEscalate } from "@/lib/cron-incident-escalation";
+import {
+  isProxyJob,
+  matchPlaybook,
+  PROXY_LEDGER_MIN_REQUESTS,
+  type PlaybookMatch,
+} from "@/lib/cron-incident-playbook";
+import { FAILURE_CAUSE_SEPARATOR } from "@/lib/cron-outcome";
+import { toKstYmd } from "@/lib/date-utils";
 
 /**
  * 자동 작업 사고 장부 — 같은 원인의 반복 실패를 한 건의 사고로 묶는다.
@@ -42,13 +50,20 @@ export function normalizeIncidentMessage(message: string): string {
     .slice(0, SIGNATURE_MESSAGE_MAX);
 }
 
+/**
+ * 사고 서명. 대표 원인이 붙은 문구(`appendFailureCause`)는 **원인 부분만** 정규화한다 — 앞 사유에는
+ * 실패 날짜 목록·건수처럼 회차마다 길이가 달라지는 값이 있어(정산 동기화 「정산 조회 N건 실패: 날짜, 날짜…」)
+ * 숫자를 접어도 같은 원인이 다른 서명으로 갈라진다. 원인이 없는 문구는 종전처럼 전체를 본다.
+ */
 export function incidentSignature(input: {
   jobKey: string;
   kind: IncidentKind;
   errorKind: CronErrorKind | null;
   message: string;
 }): string {
-  return `${input.jobKey}|${input.kind}|${input.errorKind ?? "-"}|${normalizeIncidentMessage(input.message)}`;
+  const at = input.message.indexOf(FAILURE_CAUSE_SEPARATOR);
+  const basis = at >= 0 ? input.message.slice(at + FAILURE_CAUSE_SEPARATOR.length) : input.message;
+  return `${input.jobKey}|${input.kind}|${input.errorKind ?? "-"}|${normalizeIncidentMessage(basis)}`;
 }
 
 /**
@@ -204,18 +219,67 @@ export async function resolveOpenIncidents(input: {
 }
 
 /**
+ * 그 작업의 그날(KST) 프록시 장부(`ProxyRequestDaily`, source `cron:<작업>`)가 「요청이
+ * `PROXY_LEDGER_MIN_REQUESTS` 이상이고 전부 실패」인가(1/1 같은 한두 건 실패는 일시 장애와 구별되지 않는다).
+ * 대상(호스트)별 줄을 합쳐서 본다. 조회 실패는 console.error 후 null — 플레이북을 안 쓸 뿐 승격은 그대로 간다.
+ */
+export async function readProxyLedgerAllFailed(jobKey: string, day: string): Promise<boolean | null> {
+  try {
+    const rows = await getPrisma().proxyRequestDaily.findMany({
+      where: { day, source: `cron:${jobKey}` },
+      select: { requests: true, failures: true },
+    });
+    let requests = 0;
+    let failures = 0;
+    for (const r of rows) {
+      requests += r.requests;
+      failures += r.failures;
+    }
+    return requests >= PROXY_LEDGER_MIN_REQUESTS && failures >= requests;
+  } catch (error) {
+    console.error("[CronIncident] 프록시 장부 조회 실패(플레이북 미적용, 승격은 계속)", jobKey, day, error);
+    return null;
+  }
+}
+
+/**
  * `open` 사고 중 승격 규칙(`shouldEscalate`)에 걸리는 것을 `waiting_owner` 로 올리고 오너 조치 문구를 붙인다.
  * 바꾼 개수를 돌려준다. 이미 올린 사고는 조회 대상이 아니라 두 번 불러도 같은 결과다.
- * `now` 는 호출 시각 계약용이다(알림 표시는 호출처가 한다). 던지지 않는다 — DB 오류는 console.error 후 0.
+ *
+ * 알려진 원인(플레이북, `cron-incident-playbook.ts`)이면 원인·확신·그 원인의 할 일 문장을 적고 처리 층을 2로
+ * 찍는다. 안 맞으면 지금처럼 종류별 일반 문장(`ownerActionFor`)이고 원인 칸은 비운다.
+ * 프록시 장부는 플레이북이 아직 안 맞은 프록시 작업의 A 사고에만, 작업·날짜당 한 번 읽는다. 날짜는 사고를
+ * 마지막으로 본 시각의 KST 날짜다(자정 직후 승격이 어제 실패를 오늘 장부로 판정하지 않게).
+ * 장부 정황만으로는 「후보」다 — 문구가 407 을 말하지 않으므로 승격 규칙(`shouldEscalate`)을 건너뛰지 않는다:
+ * 일시 장애(예: 주문 동기화의 「fetch failed」)는 지금처럼 2회째에 올리고, 그때 원인 칸에 후보로 적는다.
+ * 그래서 장부는 승격 대상인 사고에만 읽는다.
+ * 던지지 않는다 — DB 오류는 console.error 후 0. 사고 한 건의 판정이 던져도 그 건만 건너뛰고 나머지를 계속 본다.
  */
 export async function escalatePendingIncidents(now: Date): Promise<number> {
-  void now;
   try {
     const prisma = getPrisma();
     const rows = await prisma.cronIncident.findMany({
       where: { status: "open" },
-      select: { id: true, kind: true, errorKind: true, occurrences: true },
+      select: {
+        id: true,
+        jobKey: true,
+        kind: true,
+        errorKind: true,
+        occurrences: true,
+        lastMessage: true,
+        lastSeenAt: true,
+      },
     });
+    const ledgerCache = new Map<string, Promise<boolean | null>>();
+    const ledgerAllFailed = (jobKey: string, day: string) => {
+      const key = `${jobKey}|${day}`;
+      let hit = ledgerCache.get(key);
+      if (!hit) {
+        hit = readProxyLedgerAllFailed(jobKey, day);
+        ledgerCache.set(key, hit);
+      }
+      return hit;
+    };
     let changed = 0;
     for (const row of rows) {
       const incident = {
@@ -225,10 +289,31 @@ export async function escalatePendingIncidents(now: Date): Promise<number> {
       };
       if (!shouldEscalate(incident)) continue;
       try {
+        // 판정(플레이북·날짜 계산·장부 조회)도 이 try 안에 둔다 — 한 줄이 깨져 있어도 묶음 전체가 멈추지 않게.
+        const playbookInput = {
+          jobKey: row.jobKey,
+          kind: incident.kind,
+          errorKind: incident.errorKind,
+          lastMessage: row.lastMessage ?? null,
+        };
+        let playbook: PlaybookMatch | null = matchPlaybook(playbookInput);
+        if (!playbook && incident.kind === "A" && isProxyJob(row.jobKey)) {
+          const day = toKstYmd(row.lastSeenAt ?? now);
+          const allFailed = await ledgerAllFailed(row.jobKey, day);
+          if (allFailed) playbook = matchPlaybook({ ...playbookInput, proxyLedgerAllFailed: true });
+        }
         // 조회 뒤 정상화로 닫힌 사고를 되살리지 않도록 아직 open 인 것만 바꾼다.
         await prisma.cronIncident.update({
           where: { id: row.id, status: "open" },
-          data: { status: "waiting_owner", ownerAction: ownerActionFor(incident) },
+          data: playbook
+            ? {
+                status: "waiting_owner",
+                ownerAction: playbook.ownerAction,
+                cause: playbook.cause,
+                causeConfidence: playbook.confidence,
+                layer: 2,
+              }
+            : { status: "waiting_owner", ownerAction: ownerActionFor(incident) },
         });
         changed += 1;
       } catch (error) {

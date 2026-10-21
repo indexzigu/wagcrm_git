@@ -84,8 +84,10 @@ afterEach(() => {
 });
 
 /** findMany 호출을 조회 조건으로 갈라 응답한다 — 재확인 대상(waiting_owner·미알림) / 정상화 알림 대상 */
-function routeFindMany(waiting: unknown[], recovered: unknown[]) {
-  incidentFindMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
+function routeFindMany(waiting: unknown[], recovered: unknown[], retryHistory: unknown[] = []) {
+  incidentFindMany.mockImplementation(async ({ where, select }: { where: Record<string, unknown>; select?: unknown }) => {
+    // 재시도 반복 이력 조회만 select 를 쓴다(칸을 좁혀 읽는다) — 그것으로 가른다.
+    if (select) return retryHistory;
     if (where.status === "waiting_owner") return waiting;
     if (where.status === "resolved") return recovered;
     return [];
@@ -128,6 +130,27 @@ describe("incident-outbox 크론", () => {
       },
     ]);
     expect(incidentUpdate).not.toHaveBeenCalled();
+  });
+
+  it("immediate: 플레이북 원인이 있으면 원인 줄에 확신과 함께 싣고, 원문(lastMessage)은 넣지 않는다", async () => {
+    const action =
+      "프록시 월 한도가 바닥났습니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.";
+    routeFindMany(
+      [
+        row({
+          jobKey: "naver-order-sync",
+          cause: "프록시 월 한도 소진",
+          causeConfidence: "확정",
+          ownerAction: action,
+          lastMessage: "fetch failed <- Proxy response (407) seller_a token=placeholder",
+        }),
+      ],
+      [],
+    );
+    const body = await (await GET(get("immediate"))).json();
+    expect(body.messages[0].detail).toBe(`원인: 확정 프록시 월 한도 소진\n조치: ${action}`);
+    expect(JSON.stringify(body)).not.toContain("seller_a");
+    expect(JSON.stringify(body)).not.toContain("407");
   });
 
   it("immediate: 마지막 발생 뒤 성공한 작업은 보내지 않고 사고를 막힘으로 닫고 C 사고를 남긴다", async () => {
@@ -304,6 +327,43 @@ describe("incident-outbox 크론", () => {
     const body = await (await GET(get("immediate"))).json();
     expect(body.messages[0].title).toBe("알 수 없음 조치대기");
     expect(JSON.stringify(body.messages)).not.toContain("retired-job-key");
+  });
+
+  it("digest: 같은 작업이 7일 안에 재시도로 또 풀렸으면 「(7일 중 N번째)」 — 이력은 14일 전부터 좁은 칸만 읽는다", async () => {
+    const evidence = { runAt: "2026-10-17T21:15:00.000Z", attempt: 2 };
+    routeFindMany(
+      [],
+      [row({ id: "r1", status: "resolved", normalizedAt: new Date("2026-10-17T21:15:00Z"), normalizedEvidence: evidence })],
+      [{ id: "h1", jobKey: "naver-settlement-sync", normalizedAt: new Date("2026-10-14T21:15:00Z"), normalizedEvidence: { attempt: 2 } }],
+    );
+    const body = await (await GET(get("digest"))).json();
+    expect(body.messages[0].detail).toBe(
+      "정상화 1건\n10-18 03:00 네이버 정산 동기화 · 네트워크 끊김 · 자동 재시도로 정상화 (7일 중 2번째) · 정상화 06:15",
+    );
+    const historyQuery = incidentFindMany.mock.calls.find(([a]) => a.select)![0];
+    expect(historyQuery.where).toMatchObject({
+      status: "resolved",
+      kind: { not: "C" },
+      suppressedAt: null,
+      normalizedAt: { gte: new Date("2026-10-03T23:00:00Z"), lt: new Date("2026-10-17T23:00:00Z") },
+    });
+    expect(Object.keys(historyQuery.select).sort()).toEqual(["id", "jobKey", "normalizedAt", "normalizedEvidence"]);
+  });
+
+  it("digest: 재시도 이력 조회가 실패해도 요약은 표시 없이 나간다(로그는 남긴다)", async () => {
+    routeFindMany(
+      [],
+      [row({ id: "r1", status: "resolved", normalizedAt: new Date("2026-10-17T21:15:00Z"), normalizedEvidence: { attempt: 2 } })],
+    );
+    const base = incidentFindMany.getMockImplementation()!;
+    incidentFindMany.mockImplementation(async (args: { select?: unknown }) => {
+      if (args.select) throw new Error("db down");
+      return base(args);
+    });
+    const body = await (await GET(get("digest"))).json();
+    expect(body.ok).toBe(true);
+    expect(body.messages[0].detail).toContain("자동 재시도로 정상화 · 정상화 06:15");
+    expect(console.error).toHaveBeenCalled();
   });
 
   it("digest: 보낼 것이 없으면 빈 목록", async () => {

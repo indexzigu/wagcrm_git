@@ -25,6 +25,8 @@ function incident(overrides: Partial<AutomationIncident> = {}): AutomationIncide
     firstSeenAt: "2026-10-17T00:30:00.000Z",
     normalizedAt: null,
     occurrences: 1,
+    cause: null,
+    causeConfidence: null,
     ...overrides,
   };
 }
@@ -198,6 +200,25 @@ describe("자동화 작업 상태 — 설명창 「이상 기록」", () => {
     expect(within(items[0]).getByText("10-17 09:30 시작")).toBeInTheDocument();
     expect(within(items[1]).getByText("10-17 09:30 시작 · 3회 발생")).toBeInTheDocument();
     expect(within(items[2]).getByText("10-17 09:30 시작 · 12:05 정상화")).toBeInTheDocument();
+  });
+
+  it("플레이북이 원인을 정했으면 원인 칸에 확신과 함께 그 원인을 쓴다(없으면 오류 종류 라벨)", async () => {
+    const section = await openDetail([
+      incident({
+        id: "w",
+        errorKind: "network",
+        cause: "프록시 월 한도 소진",
+        causeConfidence: "확정",
+        ownerAction: "프록시 월 한도가 바닥났습니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.",
+      }),
+      incident({ id: "o", status: "open", errorKind: "timeout" }),
+    ]);
+    const items = within(section).getAllByRole("listitem");
+    expect(items.map((li) => li.querySelector("p")!.textContent)).toEqual([
+      "조치대기 · 확정 프록시 월 한도 소진",
+      "재확인중 · 시간 초과",
+    ]);
+    expect(within(items[0]).getByText(/프록시 목록 맨 앞에/)).toBeInTheDocument();
   });
 
   it("조치대기 제목만 주의색 굵은 글자 — 재확인중·정상화는 무채색, 위험색은 쓰지 않는다", async () => {

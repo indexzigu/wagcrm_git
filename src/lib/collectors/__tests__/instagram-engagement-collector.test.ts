@@ -94,3 +94,33 @@ describe("collectInstagramEngagement — 프로필 전체 커버(1단계 대체)
     expect(metrics.profileExternalUrls).toEqual([]);
   });
 });
+
+describe("collectInstagramEngagement — 대표 원인(firstErrorCause)", () => {
+  beforeEach(() => {
+    vi.stubEnv("INSTAGRAM_COLLECT_MODE", "live");
+    findManyMock.mockReset();
+    findFirstMock.mockReset().mockResolvedValue(null);
+    scrapeTier0Mock.mockReset();
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("처음 난 셀러 오류의 원인 사슬을 핸들 없이 남긴다", async () => {
+    findManyMock.mockResolvedValue([
+      { id: "s1", snsHandle: "seller_a" },
+      { id: "s2", snsHandle: "seller_b" },
+    ]);
+    scrapeTier0Mock
+      .mockRejectedValueOnce(new Error("Tier0 seller_a 실패", { cause: new Error("Graph (code 190) Session expired") }))
+      .mockRejectedValueOnce(new Error("다른 오류"));
+
+    const res = await collectInstagramEngagement({ spacingMs: 0 });
+    expect(res.failedCount).toBe(2);
+    expect(res.firstErrorCause).toBe("Tier0 <항목> 실패 <- Graph (code 190) Session expired");
+  });
+
+  it("오류가 없으면 비어 있다", async () => {
+    findManyMock.mockResolvedValue([]);
+    const res = await collectInstagramEngagement({ spacingMs: 0 });
+    expect(res.firstErrorCause).toBeUndefined();
+  });
+});

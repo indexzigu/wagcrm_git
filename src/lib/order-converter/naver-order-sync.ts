@@ -2,6 +2,7 @@ import { apiRequest } from './naver-commerce-client';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { fetchAllProductOrderPages, PRODUCT_ORDER_RANGE_TYPE_PAYED } from './product-order-paging';
 import { isDemoMode } from '@/lib/demo-mode';
+import { describeFailureCause } from '@/lib/cron-outcome';
 
 
 
@@ -621,7 +622,9 @@ export async function runFullSync(options: RunFullSyncOptions): Promise<SyncResu
       affectedDates,
       fetchedAt: new Date().toISOString(),
       skipped: false,
-      error: error?.message || String(error),
+      // 원인 사슬을 보존한다 — 겉 문구(「fetch failed」)만 남기면 프록시 407 같은 진짜 원인이 사라져
+      // 사고 원인이 「네트워크」로 기록된다(자가 정상화 4단계). 프록시 주소의 사용자 정보는 가린다.
+      error: describeFailureCause(error),
     };
   }
 }
@@ -822,7 +825,9 @@ export async function runChangedSync(): Promise<SyncResult> {
       affectedDates: [],
       fetchedAt: nowIso,
       skipped: false,
-      error: error?.message || String(error),
+      // 원인 사슬을 보존한다 — 겉 문구(「fetch failed」)만 남기면 프록시 407 같은 진짜 원인이 사라져
+      // 사고 원인이 「네트워크」로 기록된다(자가 정상화 4단계). 프록시 주소의 사용자 정보는 가린다.
+      error: describeFailureCause(error),
     };
   }
 }
