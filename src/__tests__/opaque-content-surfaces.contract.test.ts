@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 
@@ -120,8 +120,9 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/crm/seller-er-chart.tsx": SURFACE_TOKENS,
   "components/crm/margin-policy-form.tsx": SURFACE_TOKENS,
   "components/crm/step-metric-card.tsx": SURFACE_TOKENS,
-  // 묶음 3 B — 모바일(아이폰) 콘텐츠 면 전부. 크롬은 대상 밖: `mobile-bottom-nav.tsx`(떠 있는 탭 바·상태바 베일 —
-  // 반투명 유지, 재질은 nav 자신에만 — #192) · `mobile-standalone-gate.tsx`(설치 안내 다크 화면, 앱 본문 밖).
+  // 묶음 3 B — 모바일(아이폰) 콘텐츠 면 전부. 크롬(탭 바·상태바 베일)과 설치 안내 화면은 아래 EXCEPTIONS 에 정확한 개수로.
+  "components/mobile/mobile-bottom-nav.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-standalone-gate.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-calendar-home.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-campaign-card.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-campaign-detail-sheet.tsx": SURFACE_TOKENS,
@@ -153,6 +154,16 @@ const TARGETS: Record<string, readonly string[]> = {
 type Exception = { token: string; cls: string; context: string; count: number; reason: string };
 
 const EXCEPTIONS: Record<string, readonly Exception[]> = {
+  "components/mobile/mobile-bottom-nav.tsx": [
+    { token: "bg-card/", cls: "bg-card/85", context: "fixed inset-x-3", count: 1, reason: "떠 있는 탭 바 — 크롬이라 반투명(콘텐츠가 아래로 비친다). 재질은 nav 자신에만(#192 — 조상에 filter·transform·backdrop-filter 금지)" },
+    { token: "backdrop-blur", cls: "backdrop-blur-xl", context: "fixed inset-x-3", count: 1, reason: "떠 있는 탭 바의 흐림 재질 — 위와 같은 사유" },
+    { token: "backdrop-blur", cls: "backdrop-blur-sm", context: "safe-area-inset-top", count: 1, reason: "스탠드얼론 상태바 베일 — 상태바 아래로 지나가는 콘텐츠를 흐려 시계·배터리 글자를 읽히게 한다" },
+  ],
+  "components/mobile/mobile-standalone-gate.tsx": [
+    { token: "bg-[#", cls: "bg-[#080B11]", context: "min-h-dvh", count: 1, reason: "설치 안내 다크 화면 — 앱 본문 밖(앱 설치 전 한 번 보는 화면), 브랜드 마크 대비 표(P8 §7)의 기준 바탕" },
+    { token: "border-white/", cls: "border-white/10", context: "bg-white/[0.03]", count: 1, reason: "다크 화면 위 안내 상자 테두리 — 흰 카드 토큰은 다크 바탕에서 면·선이 되지 않는다(P8 §5)" },
+    { token: "bg-white/", cls: "bg-white/[0.03]", context: "border-white/10", count: 1, reason: "다크 화면 위 안내 상자 바탕 — 위와 같은 사유" },
+  ],
   "components/crm/dashboard-home.tsx": [
     {
       token: "rounded-[",
@@ -294,6 +305,16 @@ describe("opaque content surfaces — 대상 파일", () => {
     const source = readFileSync(join(ROOT, rel), "utf8");
     const hits = findForbidden(source, rel, tokens).filter((h) => !isExempt(rel, h));
     expect(hits, hits.map((h) => `${rel}:${h.line} [${h.token}] ${h.text}`).join("\n")).toEqual([]);
+  });
+});
+
+describe("opaque content surfaces — 모바일 폴더 전수", () => {
+  it("src/components/mobile 의 화면 파일이 전부 TARGETS 에 있다 — 새 파일이 조용히 대상 밖이 되지 않게", () => {
+    const dir = join(ROOT, "components/mobile");
+    const files = readdirSync(dir).filter((name) => name.endsWith(".tsx"));
+    expect(files.length).toBeGreaterThan(0);
+    const missing = files.map((name) => `components/mobile/${name}`).filter((rel) => !(rel in TARGETS));
+    expect(missing).toEqual([]);
   });
 });
 

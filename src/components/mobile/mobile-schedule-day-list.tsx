@@ -108,7 +108,7 @@ export const MobileScheduleDayList = React.memo(function MobileScheduleDayList({
   const isEmpty = dayCampaigns.length === 0 && moneyEvents.length === 0;
 
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-soft-sm">
+    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft-sm">
       <div className="flex min-h-11 items-center gap-2 px-6 py-2">
         <span className="text-[13px] font-medium text-foreground">
           {formatDayHeader(selectedYmd)}

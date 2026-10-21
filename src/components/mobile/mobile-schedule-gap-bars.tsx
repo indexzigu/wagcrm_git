@@ -46,7 +46,7 @@ export const MobileScheduleGapBars = React.memo(function MobileScheduleGapBars({
   const hiddenCount = risky.length - summaryLabels.length;
 
   return (
-    <div className="rounded-2xl border border-border bg-card shadow-soft-sm">
+    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft-sm">
       <button
         type="button"
         aria-expanded={expanded}
