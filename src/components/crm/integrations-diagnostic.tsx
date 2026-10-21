@@ -205,7 +205,7 @@ export function IntegrationsDiagnostic({
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* 통합 진단 목록 카드 */}
-        <Card className="rounded-[24px] border border-border/70 bg-white/90 shadow-soft-sm overflow-hidden lg:col-span-2">
+        <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden lg:col-span-2">
           <CardHeader className="pb-3 border-b border-border/50 bg-slate-50/50 px-6 py-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Server className="size-4 text-primary shrink-0" />
@@ -395,7 +395,7 @@ export function IntegrationsDiagnostic({
         {/* 도움말 및 스토리지 현황 우측 카드 */}
         <div className="space-y-6">
           {/* 1. 토큰 자격 자가 복구 가이드 */}
-          <Card className="rounded-[24px] border border-border/70 bg-white/90 shadow-soft-sm overflow-hidden">
+          <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
             <CardHeader className="pb-3 border-b border-border/50 bg-slate-50/50 px-6 py-4">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <HelpCircle className="size-4 text-indigo-500 shrink-0" />
@@ -432,7 +432,7 @@ export function IntegrationsDiagnostic({
           </Card>
 
           {/* 2. 스토리지 사용 현황 */}
-          <Card className="rounded-[24px] border border-border/70 bg-white/90 shadow-soft-sm overflow-hidden">
+          <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
             <CardHeader className="pb-3 border-b border-border/50 bg-slate-50/50 px-6 py-4">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Server className="size-4 text-primary shrink-0" />

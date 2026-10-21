@@ -618,7 +618,7 @@ export function CalendarView({
 
   return (
     <TooltipProvider>
-      <div className="overflow-hidden rounded-2xl border border-border/50 bg-white/80 shadow-soft-sm">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft-sm">
         <CalendarLegend />
 
         {/* Day of week headers */}

@@ -515,7 +515,7 @@ export function SystemRadarCard() {
 
   return (
     // 인박스 팝오버가 Radix Popover(포털)로 옮겨가 카드 overflow와 무관해짐 — 구 overflow-visible 오버라이드 제거
-    <Card className="border-black/5 bg-white/85 shadow-soft-sm">
+    <Card className="border-border bg-card shadow-soft-sm">
       <CardContent className="px-4 py-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">

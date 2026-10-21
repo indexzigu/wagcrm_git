@@ -20,7 +20,7 @@ export default function ApprovalsPage() {
   return (
     <CrmShell>
       <div className="px-5 pb-5 pt-5 md:px-8">
-        <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex flex-col rounded-2xl border border-border bg-card shadow-ambient">
           <React.Suspense fallback={<HubSkeleton />}>
             <ApprovalHub />
           </React.Suspense>

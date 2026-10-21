@@ -111,10 +111,10 @@ function DetailShell({
   return (
     <CrmShell>
       <div className="px-5 pb-5 pt-5 md:px-8">
-        <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex flex-col rounded-2xl border border-border bg-card shadow-ambient">
           <div
             data-testid="approval-detail-toolbar"
-            className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-3"
+            className="flex items-center justify-between gap-3 border-b border-border px-5 py-3"
           >
             {subject ? (
               <h2 className="min-w-0 truncate text-base font-semibold text-foreground">{subject}</h2>

@@ -135,7 +135,7 @@ export function DataIntegrityCard({ issues }: { issues: Issue[] }) {
   // 이슈 0건이어도 카드는 렌더한다(오너 2026-07-24) — 카드가 통째로 사라지면 그리드에
   // 빈 공간만 남고, "점검 결과 이상 없음"과 "점검 기능이 없음"을 구분할 수 없다.
   return (
-    <Card className="border-black/5 bg-white/85 shadow-soft-sm h-full flex flex-col">
+    <Card className="border-border bg-card shadow-soft-sm h-full flex flex-col">
       <CardContent className="px-4 py-3 flex flex-col flex-1 h-full">
         {/* 영문 병행 표기 제거·서브텍스트는 제목 우측에 이어서(오너 2026-07-24) */}
         <div className="flex items-center gap-2 pb-2 border-b border-slate-100 mb-3">

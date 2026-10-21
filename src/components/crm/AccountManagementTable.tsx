@@ -139,10 +139,10 @@ export function AccountManagementTable({ currentUserId }: { currentUserId: strin
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-2xl border border-border/70 bg-white/60">
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
         <Table className="min-w-[860px] text-[13px]">
-          <TableHeader className="bg-white/90 supports-backdrop-filter:backdrop-blur">
-            <TableRow className="border-b border-slate-200 hover:bg-transparent">
+          <TableHeader className="bg-muted/60">
+            <TableRow className="border-b border-border hover:bg-transparent">
               <TableHead className="h-11 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 이름
               </TableHead>
@@ -166,7 +166,7 @@ export function AccountManagementTable({ currentUserId }: { currentUserId: strin
           <TableBody>
             {loading ? (
               Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i} className="border-b border-slate-200/80 hover:bg-transparent">
+                <TableRow key={i} className="border-b border-border hover:bg-transparent">
                   <TableCell colSpan={6} className="h-14 px-3">
                     <Skeleton className="h-5 w-full" />
                   </TableCell>
@@ -190,7 +190,7 @@ export function AccountManagementTable({ currentUserId }: { currentUserId: strin
               sorted.map((account) => (
                 <TableRow
                   key={account.id}
-                  className="border-b border-slate-200/80 bg-white/60 transition-colors duration-150 hover:bg-white"
+                  className="border-b border-border bg-card transition-colors duration-150 hover:bg-muted/60"
                 >
                   <TableCell className="h-14 px-3">
                     <span className="block truncate font-medium text-foreground">{account.displayName}</span>
