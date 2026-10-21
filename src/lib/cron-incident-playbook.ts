@@ -1,4 +1,4 @@
-import type { CronErrorKind } from "@/lib/cron-error-kind";
+import { DB_AUTH_FAILED, IG_TOKEN_EXPIRED, type CronErrorKind } from "@/lib/cron-error-kind";
 import type { IncidentKind } from "@/lib/cron-incident";
 
 /**
@@ -113,13 +113,13 @@ const DB_AUTH = fixed(
 
 // 신호 — 사고 원문의 부분 문자열. 숫자 앞뒤는 직접 막는다(「(code 1900)」·「422건」이 걸리지 않게).
 // 「토큰 교환 실패」 문구만으로는 걸지 않는다 — 교환 서버 장애(503)는 토큰 만료가 아니다. 숫자 코드 190 만 본다.
-const IG_TOKEN_SIGNAL = /\(code 190(?!\d)|"code"\s*:\s*190(?!\d)/;
+const IG_TOKEN_SIGNAL = IG_TOKEN_EXPIRED;
 const GEMINI_STRONG = /RESOURCE_EXHAUSTED/;
 const STATUS_429 = /status=429(?!\d)/;
 const GEMINI_CAP_WORDS = /spending cap|quota/i;
 const RESPONSE_FORMAT_SIGNAL = /응답 형식 불일치|응답 미포착|감시 패턴 불일치|검색 결과 미렌더/;
 const CAPTCHA_SIGNAL = /CAPTCHA_REQUIRED|status=422(?!\d)/;
-const DB_AUTH_SIGNAL = /Authentication failed against database server/i;
+const DB_AUTH_SIGNAL = DB_AUTH_FAILED;
 const ENV_KEY = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g;
 const UNREADABLE_ROWS = /열리지 않는 행 (\d+)건/;
 
