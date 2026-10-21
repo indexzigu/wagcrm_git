@@ -166,6 +166,15 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
     });
   });
 
+  it("기간 수정도 하루짜리 일정이면 종료일 경고를 단다", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: 2, startDate: d("2026-12-01"), endDate: d("2026-12-07") })]);
+    const r = await resolveInboundTarget(intent({ round: 2 }), event("2026-12-03"), db);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.draft.action).toBe("update_record");
+    expect(r.draft.warnings).toEqual(["종료일 확인 필요"]);
+  });
+
   it("1차는 roundNumber null 회차도 맞고, 바뀐 칸만 싣는다", async () => {
     const db = fakeDb([campaign({ id: "c1", roundNumber: null })]);
     const r = await resolveInboundTarget(intent({ round: 1 }), event("2026-11-01", "2026-11-09"), db);

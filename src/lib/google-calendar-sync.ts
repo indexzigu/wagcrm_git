@@ -453,16 +453,6 @@ const MONEY_COLOR_ID: Record<CampaignMoneySlot["kind"], string> = {
 };
 
 /**
- * 대금 슬롯 → 회계·정산 캘린더의 하루짜리 종일 이벤트. 슬롯마다 **완료일 우선, 없으면
- * 예정일**로 그린다(종전 `depositReceivedAt ?? expectedDepositDate` 규칙 그대로).
- *
- * ⛔ 채널 분기를 여기서 다시 쓰지 말 것 — 어느 상대에게 몇 건의 대금 일정이 있는지는
- * 전부 `slots` 가 들고 온다. 자사몰이면 지급 슬롯이 둘이고 입금 슬롯이 없다.
- *
- * 반환값은 **이번 동기화가 장부에 남기려는 kind 집합**이다(날짜가 없어 건너뛴 슬롯은
- * 빠진다). 호출부는 이걸 `deleteStaleEvents` 에 넘겨 나머지를 정리한다.
- */
-/**
  * 이번 동기화에서 **이벤트를 갖는 대금 슬롯**(실효 날짜가 있는 슬롯)과 그 날짜.
  * 동기화 루프(`syncMoneyEvents`)와 넘겨받기 사전 판정(`plannedEventKinds`)이 이 함수 하나를 쓴다 —
  * 두 곳이 다른 판정을 들면 넘겨받은 원본을 다음 동기화가 「낡은 종류」로 보고 지운다.
@@ -481,6 +471,16 @@ function datedMoneySlots(
   return out;
 }
 
+/**
+ * 대금 슬롯 → 회계·정산 캘린더의 하루짜리 종일 이벤트. 슬롯마다 **완료일 우선, 없으면
+ * 예정일**로 그린다(종전 `depositReceivedAt ?? expectedDepositDate` 규칙 그대로).
+ *
+ * ⛔ 채널 분기를 여기서 다시 쓰지 말 것 — 어느 상대에게 몇 건의 대금 일정이 있는지는
+ * 전부 `slots` 가 들고 온다. 자사몰이면 지급 슬롯이 둘이고 입금 슬롯이 없다.
+ *
+ * 반환값은 **이번 동기화가 장부에 남기려는 kind 집합**이다(날짜가 없어 건너뛴 슬롯은
+ * 빠진다). 호출부는 이걸 `deleteStaleEvents` 에 넘겨 나머지를 정리한다.
+ */
 async function syncMoneyEvents(
   accessToken: string,
   slots: CampaignMoneySlot[],

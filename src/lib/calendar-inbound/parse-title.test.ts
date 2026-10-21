@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { normalizeToken, parseCalendarTitle } from "./parse-title";
+import {
+  DEPOSIT_RE,
+  KEYWORD_STRIP_RE,
+  PAYOUT_RE,
+  SUPPLIER_RE,
+  normalizeToken,
+  parseCalendarTitle,
+} from "./parse-title";
 import type { InboundDictionary } from "./types";
 
 const dict: InboundDictionary = {
@@ -189,6 +196,16 @@ describe("parseCalendarTitle", () => {
     });
     expect(r.ok && r.intent.kind).toBe("deposit");
     expect(r.ok && r.intent.round).toBe(2);
+  });
+});
+
+describe("KEYWORD_STRIP_RE", () => {
+  it("종류·공급사 정규식의 낱말을 전부 걷어낸다(공유 정규식에서 파생)", () => {
+    const words = [DEPOSIT_RE, PAYOUT_RE, SUPPLIER_RE].flatMap((re) => re.source.split("|"));
+    expect(words.length).toBeGreaterThan(5);
+    for (const word of words) {
+      expect(`샘플${word}브랜드`.replace(KEYWORD_STRIP_RE, " ")).toBe("샘플 브랜드");
+    }
   });
 });
 

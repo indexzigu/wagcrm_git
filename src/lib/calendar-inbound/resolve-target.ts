@@ -212,6 +212,8 @@ async function resolveCampaignKind(
     );
     if (matches.length > 0) {
       const warnings = matches.length > 1 ? [WARN_AUTO_LATEST] : [];
+      // 하루짜리 일정은 종료일을 모르고 적었을 수 있다 — 새 회차와 같은 경고(설계 §5).
+      if (event.startDate === event.endDate) warnings.push(WARN_CHECK_END_DATE);
       return buildUpdateDraft(
         db,
         matches[0],
