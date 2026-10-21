@@ -290,8 +290,11 @@ export function CrmSidebar() {
           {/* 36px 슬롯 — 마크가 타일 없는 선화라 이전 solid 칩(32px)보다 작아 보이는 것을
               보정한다(브랜드 마크 viewBox 는 아트가 폭 74.5%만 차지하는 세이프존을 포함).
               viewBox 를 조이지 않는 이유: 아이콘·파비콘과 같은 도형이어야 하므로 크롭은
-              브랜드 번들 쪽 결정이다. 아바타도 같은 치수를 써야 프라이버시 토글 때 안 튄다. */}
-          <div className="absolute left-[8px] top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center shrink-0">
+              브랜드 번들 쪽 결정이다. 아바타도 같은 치수를 써야 프라이버시 토글 때 안 튄다.
+              left 6px = 슬롯 중심(6+18=24)을 아래 메뉴 아이콘 중심(행 pl 15 + 아이콘 18/2 = 24)에 맞춘
+              값 — 접힌 레일에서 로고가 아이콘 열과 한 세로축에 선다(8px 이던 때 2px 오른쪽으로 보였다,
+              오너 지적 2026-10-21). 계약: `crm-sidebar-row-shape.contract.test.ts`. */}
+          <div className="absolute left-[6px] top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center shrink-0">
             {isPrivacyMode ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
@@ -311,8 +314,8 @@ export function CrmSidebar() {
             )}
           </div>
           <span className={cn(
-            // 8(left) + 36(아이콘) + 8(간격). 아이콘 슬롯 폭과 함께 움직여야 한다.
-            "pl-[52px] truncate transition-[opacity,width,height,color,font-size,font-weight,letter-spacing] duration-150 ease-in-out whitespace-nowrap inline-block",
+            // 6(left) + 36(아이콘) + 8(간격). 아이콘 슬롯 폭과 함께 움직여야 한다.
+            "pl-[50px] truncate transition-[opacity,width,height,color,font-size,font-weight,letter-spacing] duration-150 ease-in-out whitespace-nowrap inline-block",
             isPrivacyMode 
               ? "text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground"
               : "text-[15px] font-bold tracking-tight text-sidebar-foreground",
