@@ -37,6 +37,7 @@ import { applyWriteActionEffects } from "@/lib/agent/write-action-effects";
 import { parseStoredJson } from "@/lib/stored-json";
 import { adoptCalendarEventIntoLedger } from "@/lib/google-calendar-sync";
 import {
+  claimInboundRowForApproval,
   findInboundRow,
   markInboundAdopted,
   readCalendarInboundRef,
@@ -76,6 +77,14 @@ export type ApproveProposalFailureCode =
   | "EXECUTION_FAILED"
   /** [캘린더수집] 같은 일정이 새 기안으로 다시 올라왔다 — 옛 기안은 승인하지 않는다. */
   | "SUPERSEDED";
+
+/** [캘린더수집] tx1 안에서 수집 행을 잡지 못했다 — 트랜잭션을 되돌리고 SUPERSEDED 로 답한다. */
+class InboundSupersededError extends Error {
+  constructor() {
+    super("캘린더 수집 행이 다른 기안으로 넘어갔습니다");
+    this.name = "InboundSupersededError";
+  }
+}
 
 /** [캘린더수집] SUPERSEDED 문구 — 단건 응답과 일괄 결과 창이 같은 문장을 쓴다. */
 const SUPERSEDED_MESSAGE = "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.";
@@ -267,7 +276,8 @@ export async function approveProposal(
   const enriched = enrichment.filledLabels.length > 0;
   const inboundRef = readCalendarInboundRef(proposal.sourceRef);
 
-  // [캘린더수집] 재기안으로 대체된 기안은 승인하지 않는다 — tx1 **전에** 판정한다. 재판정 대기 행을 스캔이
+  // [캘린더수집] 재기안으로 대체된 기안은 승인하지 않는다 — tx1 전에 먼저 거른다(빠른 길. 경합까지 막는 정본 판정은
+  // tx1 안의 조건부 잡기 `claimInboundRowForApproval`). 재판정 대기 행을 스캔이
   // 다시 기안하면 수집 행의 `proposalId` 가 새 기안으로 바뀐다. 옛 기안(FAILED 재시도 등)까지 실행되면 같은
   // 일정이 두 번 반영된다(새 회차라면 캠페인이 둘). 행이 없어도 같다 — 넘겨받기 근거가 사라졌다.
   // 전역 상태기계(TRANSITIONS)는 건드리지 않고 이 판정만 더한다.
@@ -293,15 +303,33 @@ export async function approveProposal(
 
   // tx1: 조건부 승인 커밋 (§0-5 동시성 — 더블클릭/2인 동시 승인/일괄과 단건의 겹침 방어).
   // 보강했으면 합친 payload 를 같은 조건부 쓰기로 저장한다 — 승인과 「무엇을 승인했나」가 한 번에 굳는다.
-  try {
-    await ActionProposalRepository.transition(id, "APPROVED", {
+  const approveTransition = (tx?: Prisma.TransactionClient) =>
+    ActionProposalRepository.transition(id, "APPROVED", {
       actor: approverId,
       note: enriched ? `${baseNote} · 계산서로 채움: ${enrichment.filledLabels.join("·")}` : baseNote,
       expectedFrom: currentStatus,
       // ProposalPayload 는 JSON 으로 왕복한 값(`parseStoredJson`)이라 JSON 입력으로 넘겨도 안전하다.
       ...(enriched && payload ? { data: { payload: payload as unknown as Prisma.InputJsonObject } } : {}),
+      ...(tx ? { tx } : {}),
     });
+  try {
+    if (inboundRef) {
+      // [캘린더수집] 위 사전 확인은 빠른 길일 뿐이고 판정의 정본은 여기다 — 수집 행을 이 기안 앞으로 조건부로 잡는
+      // 쓰기와 승인 전이를 한 트랜잭션에 묶는다. 그 사이 재판정 스캔이 행을 새 기안으로 넘겼으면 잡기가 0건이고
+      // 전이도 함께 취소된다(옛 기안과 새 기안이 둘 다 실행되면 같은 일정이 두 번 반영된다).
+      await getPrisma().$transaction(async (tx) => {
+        if (!(await claimInboundRowForApproval(tx, inboundRef.inboundId, proposal.id))) {
+          throw new InboundSupersededError();
+        }
+        await approveTransition(tx);
+      });
+    } else {
+      await approveTransition();
+    }
   } catch (err) {
+    if (err instanceof InboundSupersededError) {
+      return { ok: false, code: "SUPERSEDED", httpStatus: 409, error: SUPERSEDED_MESSAGE, status: currentStatus };
+    }
     if (err instanceof ConcurrentModificationError) {
       return {
         ok: false,

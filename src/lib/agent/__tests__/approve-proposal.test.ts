@@ -41,6 +41,7 @@ const adoptCalendarEventIntoLedgerMock = vi.fn();
 const markInboundAdoptedMock = vi.fn();
 const resetInboundForRetryMock = vi.fn();
 const findInboundRowMock = vi.fn();
+const claimInboundRowMock = vi.fn();
 
 vi.mock("@/lib/google-calendar-sync", () => ({
   adoptCalendarEventIntoLedger: (...args: unknown[]) => adoptCalendarEventIntoLedgerMock(...args),
@@ -53,6 +54,7 @@ vi.mock("@/lib/calendar-inbound/adopt", async (importOriginal) => {
     markInboundAdopted: (...args: unknown[]) => markInboundAdoptedMock(...args),
     resetInboundForRetry: (...args: unknown[]) => resetInboundForRetryMock(...args),
     findInboundRow: (...args: unknown[]) => findInboundRowMock(...args),
+    claimInboundRowForApproval: (...args: unknown[]) => claimInboundRowMock(...args),
   };
 });
 
@@ -94,6 +96,8 @@ beforeEach(() => {
   findInboundRowMock.mockReset();
   // 기본: 수집 행이 이 기안(p1)을 가리킨다 — 대체되지 않은 기안.
   findInboundRowMock.mockImplementation(async () => ({ proposalId: "p1" }));
+  claimInboundRowMock.mockReset();
+  claimInboundRowMock.mockResolvedValue(true);
   applyWriteActionEffectsMock.mockImplementation(() => {
     callOrder.push("effects");
   });
@@ -355,6 +359,36 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     expect(executeWriteActionMock).not.toHaveBeenCalled();
   });
 
+  it("사전 확인 뒤 스캔이 행을 넘겨받았으면(tx1 안 조건부 갱신 실패) SUPERSEDED · 전이·실행 없음", async () => {
+    findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
+    claimInboundRowMock.mockResolvedValue(false);
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "SUPERSEDED", httpStatus: 409, status: "FAILED" });
+    expect(claimInboundRowMock).toHaveBeenCalledWith(expect.anything(), "in-1", "p1");
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+    expect(resetInboundForRetryMock).not.toHaveBeenCalled();
+  });
+
+  it("캘린더 기안의 승인 전이는 행 잡기와 같은 트랜잭션에서 돈다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    const tx = { marker: "tx1" };
+    transactionMock.mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx));
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue(CREATE_RESULT);
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(claimInboundRowMock).toHaveBeenCalledWith(tx, "in-1", "p1");
+    expect(transitionMock.mock.calls[0][1]).toBe("APPROVED");
+    expect(transitionMock.mock.calls[0][2]).toMatchObject({ tx, expectedFrom: "PENDING_APPROVAL" });
+  });
+
   it("수집 행이 없어도 SUPERSEDED(재시도 승인 포함) — 원본 정리 근거가 사라졌다", async () => {
     findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
     findInboundRowMock.mockResolvedValue(null);
@@ -441,6 +475,9 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     await approveProposal("p1", APPROVER);
 
     expect(findInboundRowMock).not.toHaveBeenCalled();
+    expect(claimInboundRowMock).not.toHaveBeenCalled();
+    // 승인 전이는 종전처럼 트랜잭션 없이(tx 미지정).
+    expect(transitionMock.mock.calls[0][2].tx).toBeUndefined();
   });
 
   it("캘린더 출처가 없는 기안은 넘겨받기·되돌리기를 하지 않는다", async () => {

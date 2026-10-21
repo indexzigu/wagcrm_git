@@ -66,6 +66,9 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
   const proposals = new Map<string, { status: string; data: Record<string, unknown> }>();
   let rowSeq = 0;
   let proposalSeq = 0;
+  let clock = 0;
+  /** 행 쓰기마다 올라가는 updatedAt(실 DB 의 @updatedAt 흉내). */
+  const tick = () => new Date(Date.UTC(2026, 0, 1) + ++clock);
   const listing: { value: CandidateListResult } = {
     value: { ok: true, events, referencedIds: new Set(referenced) },
   };
@@ -88,23 +91,40 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
       proposals.set(id, { status: "PENDING_APPROVAL", data: data as unknown as Record<string, unknown> });
       return { id };
     },
-    findRows: async (ids) => ids.flatMap((id) => (rows.has(id) ? [rows.get(id)!] : [])),
+    // 사본을 돌려준다 — 분류 시점에 읽은 값이어야 한다(그 뒤 다른 쓰기가 행을 바꿔도 이 값은 그대로).
+    findRows: async (ids) => ids.flatMap((id) => (rows.has(id) ? [{ ...rows.get(id)! }] : [])),
     findProposalStatuses: async (ids) =>
       new Map(ids.flatMap((id) => (proposals.has(id) ? [[id, proposals.get(id)!.status] as const] : []))),
-    saveRow: async (googleEventId, write) => {
+    saveRow: async (googleEventId, write, expected) => {
       const existing = rows.get(googleEventId);
+      if (expected) {
+        // 조건부 갱신 — 읽은 뒤 누가 행을 바꿨으면(updatedAt 다름) 0건.
+        if (!existing || existing.id !== expected.id || existing.updatedAt.getTime() !== expected.updatedAt.getTime()) {
+          return null;
+        }
+      }
       const next: StoredRow = {
         ...(existing ?? { id: `in-${++rowSeq}`, googleEventId, proposalId: null, campaignId: null, parsed: null }),
         ...Object.fromEntries(Object.entries(write).filter(([, v]) => v !== undefined)),
+        updatedAt: tick(),
       } as StoredRow;
       rows.set(googleEventId, next);
-      return { id: next.id };
+      return { id: next.id, updatedAt: next.updatedAt };
     },
     touchRows: async (ids, lastSeenAt) => {
-      for (const row of rows.values()) if (ids.includes(row.id)) row.lastSeenAt = lastSeenAt;
+      for (const row of rows.values()) {
+        if (ids.includes(row.id)) {
+          row.lastSeenAt = lastSeenAt;
+          row.updatedAt = tick();
+        }
+      }
     },
   };
-  return { deps, rows, proposals, listing, resolveTarget, extractHints, listCandidates };
+  /** 승인이 행을 잡았다(claimInboundRowForApproval) — updatedAt 만 오른다. */
+  const claimByApproval = (googleEventId: string) => {
+    rows.get(googleEventId)!.updatedAt = tick();
+  };
+  return { deps, rows, proposals, listing, resolveTarget, extractHints, listCandidates, claimByApproval };
 }
 
 beforeEach(() => {
@@ -388,6 +408,46 @@ describe("runCalendarInboundScan", () => {
     expect(summary).toMatchObject({ proposed: 0, newOrChanged: 0, alreadyHandled: 1 });
     expect(h.proposals.size).toBe(1);
     expect(h.resolveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it("재판정 중 승인이 행을 먼저 잡으면(updatedAt 바뀜) 기안을 만들지 않고 행도 덮지 않는다", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.proposals.get("prop-1")!.status = "FAILED";
+    h.rows.get("e1")!.status = "PENDING_RETRY";
+    // 분류 뒤·임시 쓰기 전에 오너가 옛 FAILED 카드를 재시도 승인해 행을 잡는다.
+    h.resolveTarget.mockImplementationOnce(async () => {
+      h.claimByApproval("e1");
+      return { ok: true, draft: CREATE_DRAFT };
+    });
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ proposed: 0, alreadyHandled: 1, errors: 0 });
+    expect(h.proposals.size).toBe(1);
+    expect(h.rows.get("e1")).toMatchObject({ status: "PENDING_RETRY", proposalId: "prop-1" });
+  });
+
+  it("재판정이 SKIPPED·noop 으로 끝나도 그 사이 승인이 행을 잡았으면 덮지 않는다", async () => {
+    const results: ResolveResult[] = [
+      { ok: false, reason: "no_deal" },
+      { ok: true, draft: { ...CREATE_DRAFT, action: "update_record", args: null, noop: true, targetCampaignId: "c1" } },
+    ];
+    for (const result of results) {
+      const h = makeHarness([ev("e1")]);
+      await runCalendarInboundScan({ now: NOW, deps: h.deps });
+      h.proposals.get("prop-1")!.status = "FAILED";
+      h.rows.get("e1")!.status = "PENDING_RETRY";
+      h.resolveTarget.mockImplementationOnce(async () => {
+        h.claimByApproval("e1");
+        return result;
+      });
+
+      const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+      expect(summary).toMatchObject({ alreadyHandled: 1, skippedUnparsed: 0, adoptedNoop: 0 });
+      expect(h.rows.get("e1")).toMatchObject({ status: "PENDING_RETRY", proposalId: "prop-1" });
+    }
   });
 
   it("PENDING_RETRY 행이 SKIPPED·noop ADOPTED 로 끝나면 proposalId 를 비운다(옛 FAILED 기안 대체)", async () => {

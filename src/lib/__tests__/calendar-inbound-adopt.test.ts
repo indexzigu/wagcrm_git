@@ -24,6 +24,7 @@ vi.mock("../google-calendar", () => ({
 import { getPrisma } from "../prisma";
 import { adoptCalendarEventIntoLedger } from "../google-calendar-sync";
 import {
+  claimInboundRowForApproval,
   markInboundAdopted,
   markInboundRejected,
   readCalendarInboundRef,
@@ -406,6 +407,18 @@ describe("수집 행 상태 표기", () => {
       where: { id: "in-1" },
       data: { status: INBOUND_STATUS.REJECTED },
     });
+  });
+
+  it("claimInboundRowForApproval: 행이 그 기안을 가리킬 때만 조건부로 잡고 updatedAt 을 올린다", async () => {
+    for (const count of [1, 0]) {
+      const updateMany = vi.fn(async (_args: unknown) => ({ count }));
+      const tx = { calendarInboundEvent: { updateMany } };
+      expect(await claimInboundRowForApproval(tx as never, "in-1", "p1")).toBe(count === 1);
+      const args = updateMany.mock.calls[0][0] as { where: unknown; data: { proposalId: string; updatedAt: Date } };
+      expect(args.where).toEqual({ id: "in-1", proposalId: "p1" });
+      expect(args.data.proposalId).toBe("p1");
+      expect(args.data.updatedAt).toBeInstanceOf(Date);
+    }
   });
 
   it("resetInboundForRetry: PENDING_RETRY 만 — 지문은 건드리지 않는다", async () => {

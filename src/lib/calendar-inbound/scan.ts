@@ -107,7 +107,12 @@ export type InboundRow = {
   status: string;
   skipReason: string | null;
   proposalId: string | null;
+  /** 조건부 쓰기의 기준 — 분류 시점에 읽은 값. */
+  updatedAt: Date;
 };
+
+/** 수집 행의 판(版) — 조건부 쓰기는 이 값이 그대로일 때만 성공한다. */
+export type InboundRowVersion = { id: string; updatedAt: Date };
 
 /** 수집 행 쓰기. `undefined` 칸은 그대로 둔다(proposalId·campaignId 를 지우지 않으려고). */
 export type InboundRowWrite = {
@@ -134,8 +139,15 @@ export type CalendarInboundScanDeps = {
   createProposal: (data: Prisma.ActionProposalUncheckedCreateInput) => Promise<{ id: string }>;
   findRows: (googleEventIds: string[]) => Promise<InboundRow[]>;
   findProposalStatuses: (proposalIds: string[]) => Promise<Map<string, string>>;
-  /** googleEventId 로 upsert 하고 행 id 를 돌려준다. */
-  saveRow: (googleEventId: string, write: InboundRowWrite) => Promise<{ id: string }>;
+  /**
+   * 행 쓰기. `expected` 가 없으면(처음 보는 일정) googleEventId 로 upsert — 유일 키가 중복을 막는다. 있으면(기존 행)
+   * `id`·`updatedAt` 이 그대로일 때만 쓰고, 그 사이 누가 바꿨으면 null(아무것도 쓰지 않음). 새 판을 돌려준다.
+   */
+  saveRow: (
+    googleEventId: string,
+    write: InboundRowWrite,
+    expected?: InboundRowVersion,
+  ) => Promise<InboundRowVersion | null>;
   touchRows: (rowIds: string[], lastSeenAt: Date) => Promise<void>;
 };
 
@@ -258,7 +270,8 @@ function buildProposalInput(
   };
 }
 
-type EventOutcome = "proposed" | "skipped" | "adopted" | "deferred";
+/** lost = 분류 뒤 다른 쓰기(재시도 승인의 행 잡기 등)가 행을 바꿔 이번 회차는 손떼었다. */
+type EventOutcome = "proposed" | "skipped" | "adopted" | "deferred" | "lost";
 
 /** 해석 대상 한 건 처리. 예외는 호출부가 잡는다. */
 async function evaluateEvent(
@@ -270,7 +283,18 @@ async function evaluateEvent(
   /** 재판정 대기 행이다 — 기안 없이 끝나면(SKIPPED·noop) 옛 FAILED 기안과의 연결을 끊는다(옛 카드 재시도가 승인 단계에서 거절되게). */
   retrying: boolean,
   hintBudget: HintBudget,
+  /** 기존 행이면 분류 시점의 판 — 모든 쓰기를 이 판에 조건부로 건다. 처음 보는 일정이면 null(upsert). */
+  version: InboundRowVersion | null,
 ): Promise<EventOutcome> {
+  // 기존 행 쓰기는 전부 조건부다. 분류와 쓰기 사이에 오너가 옛 FAILED 카드를 재시도 승인하면 승인이 행을 잡아
+  // (`claimInboundRowForApproval`, updatedAt 갱신) 여기 쓰기가 0건이 된다 — 그 일정은 승인이 처리하고 스캔은 손뗀다.
+  // 덮어쓰거나 새 기안을 만들면 같은 일정이 두 번 반영된다.
+  let current = version;
+  const save = async (write: InboundRowWrite): Promise<InboundRowVersion | null> => {
+    const saved = await deps.saveRow(event.id, write, current ?? undefined);
+    if (saved) current = saved;
+    return saved;
+  };
   const base = {
     calendarId: event.calendarId,
     summary: event.summary,
@@ -285,7 +309,7 @@ async function evaluateEvent(
   const parsed = await parseWithHints(event.summary, dict, deps, hintBudget);
   if (parsed === "deferred") return "deferred";
   if (!parsed.ok) {
-    await deps.saveRow(event.id, {
+    const saved = await save({
       ...base,
       fingerprint,
       status: INBOUND_STATUS.SKIPPED,
@@ -293,13 +317,13 @@ async function evaluateEvent(
       parsed: null,
       ...detach,
     });
-    return "skipped";
+    return saved ? "skipped" : "lost";
   }
 
   const resolved = await deps.resolveTarget(parsed.intent, event);
   if (!resolved.ok) {
     const reason = resolved.reason === "invalid_draft" ? `invalid_draft: ${resolved.detail}` : resolved.reason;
-    await deps.saveRow(event.id, {
+    const saved = await save({
       ...base,
       fingerprint,
       status: INBOUND_STATUS.SKIPPED,
@@ -307,13 +331,13 @@ async function evaluateEvent(
       parsed: parsed.intent,
       ...detach,
     });
-    return "skipped";
+    return saved ? "skipped" : "lost";
   }
 
   const draft = resolved.draft;
   if (draft.noop) {
     // 처리 끝으로만 적는다 — 장부에 넘겨받지 않는다(헤더 ⛔). 같은 지문이면 다시 해석하지 않는다.
-    await deps.saveRow(event.id, {
+    const saved = await save({
       ...base,
       fingerprint,
       status: INBOUND_STATUS.ADOPTED,
@@ -322,14 +346,15 @@ async function evaluateEvent(
       campaignId: draft.targetCampaignId,
       ...detach,
     });
-    return "adopted";
+    return saved ? "adopted" : "lost";
   }
 
   // 기안 전에 행부터 「재판정 대기」로 적는다 — 기안 id 를 받기 전에 실패하면 다음 회차가 상태만 보고 다시
   // 판정한다(조용히 PROPOSED 로 남아 기안 없는 행이 되지 않게). 지문은 실값을 적는다(재판정은 상태가 정한다).
   // ⛔ proposalId 를 여기서 끊는다 — 남겨 두면 이 사이 실패했을 때 옛 FAILED 카드가 SUPERSEDED 가드를 통과해
   //    재시도 승인돼 새 회차가 하나 생기고, 다음 회차가 또 기안해 하나 더 생긴다. 승인과 겹쳐도 옛 카드는 거절된다.
-  const { id: inboundId } = await deps.saveRow(event.id, {
+  // 이 조건부 쓰기는 기안 생성 **앞**이다 — 승인과의 경합에서 지면 기안을 만들지 않고 끝난다.
+  const provisional = await save({
     ...base,
     fingerprint,
     status: INBOUND_STATUS.PENDING_RETRY,
@@ -337,6 +362,8 @@ async function evaluateEvent(
     parsed: parsed.intent,
     proposalId: null,
   });
+  if (!provisional) return "lost";
+  const inboundId = provisional.id;
   // 승인 쪽이 읽는 모양(`readCalendarInboundRef`)으로 검사 — 못 읽을 출처면 넘겨받기가 조용히 빠진다.
   const ref = calendarInboundRefSchema.parse({
     inboundId,
@@ -352,7 +379,7 @@ async function evaluateEvent(
   });
   const proposal = await deps.createProposal(buildProposalInput(draft, ref));
   // proposalId 를 새 기안으로 — 재판정 대기에서 다시 올린 경우 옛 기안은 승인 단계에서 SUPERSEDED 가 된다.
-  await deps.saveRow(event.id, {
+  const linked = await save({
     ...base,
     fingerprint,
     status: INBOUND_STATUS.PROPOSED,
@@ -360,6 +387,11 @@ async function evaluateEvent(
     proposalId: proposal.id,
     campaignId: draft.targetCampaignId,
   });
+  if (!linked) {
+    // 임시 쓰기로 proposalId 를 끊었으므로 그 사이 승인될 기안이 없다 — 정상 흐름에선 오지 않는다. 방금 만든 기안은
+    // 행이 가리키지 않아 승인 단계에서 SUPERSEDED 로 거절되고, 행은 재판정 대기라 다음 회차가 다시 판정한다.
+    throw new Error(`기안 ${proposal.id} 를 만든 뒤 수집 행을 잡지 못함`);
+  }
   return "proposed";
 }
 
@@ -442,17 +474,22 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
         continue;
       }
       if (decision.kind === "open_proposal") {
-        // 지문은 옛것 그대로 둔다 — 기안이 닫힌 뒤 다음 회차가 바뀐 일정으로 다시 판정하게.
-        await deps.saveRow(event.id, {
-          calendarId: event.calendarId,
-          summary: event.summary,
-          startDate: event.startDate,
-          endDate: event.endDate,
-          fingerprint: row!.fingerprint,
-          status: INBOUND_STATUS.SKIPPED,
-          skipReason: INBOUND_SKIP_OPEN_PROPOSAL,
-          lastSeenAt: now,
-        });
+        // 지문은 옛것 그대로 둔다 — 기안이 닫힌 뒤 다음 회차가 바뀐 일정으로 다시 판정하게. 조건부 쓰기라 그 사이
+        // 승인이 행을 잡았으면 0건이고, 그래도 이미 처리된 것으로 센다.
+        await deps.saveRow(
+          event.id,
+          {
+            calendarId: event.calendarId,
+            summary: event.summary,
+            startDate: event.startDate,
+            endDate: event.endDate,
+            fingerprint: row!.fingerprint,
+            status: INBOUND_STATUS.SKIPPED,
+            skipReason: INBOUND_SKIP_OPEN_PROPOSAL,
+            lastSeenAt: now,
+          },
+          { id: row!.id, updatedAt: row!.updatedAt },
+        );
         summary.alreadyHandled++;
         continue;
       }
@@ -466,8 +503,10 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
         continue;
       }
       const retrying = row?.status === INBOUND_STATUS.PENDING_RETRY;
-      const outcome = await evaluateEvent(event, fingerprint, dict, now, deps, retrying, hintBudget);
+      const version = row ? { id: row.id, updatedAt: row.updatedAt } : null;
+      const outcome = await evaluateEvent(event, fingerprint, dict, now, deps, retrying, hintBudget, version);
       if (outcome === "proposed") summary.proposed++;
+      else if (outcome === "lost") summary.alreadyHandled++;
       else if (outcome === "adopted") summary.adoptedNoop++;
       else if (outcome === "deferred") summary.hintDeferred++;
       else summary.skippedUnparsed++;
@@ -509,7 +548,15 @@ function defaultDeps(): CalendarInboundScanDeps {
     findRows: (googleEventIds) =>
       getPrisma().calendarInboundEvent.findMany({
         where: { googleEventId: { in: googleEventIds } },
-        select: { id: true, googleEventId: true, fingerprint: true, status: true, skipReason: true, proposalId: true },
+        select: {
+          id: true,
+          googleEventId: true,
+          fingerprint: true,
+          status: true,
+          skipReason: true,
+          proposalId: true,
+          updatedAt: true,
+        },
       }),
     findProposalStatuses: async (proposalIds) => {
       const rows = await getPrisma().actionProposal.findMany({
@@ -518,13 +565,22 @@ function defaultDeps(): CalendarInboundScanDeps {
       });
       return new Map(rows.map((row) => [row.id, row.status]));
     },
-    saveRow: async (googleEventId, write) => {
+    saveRow: async (googleEventId, write, expected) => {
       const data = { ...write, parsed: parsedColumn(write.parsed) } as Prisma.CalendarInboundEventUpdateInput;
+      if (expected) {
+        // 판을 직접 정해 적는다 — 다음 조건부 쓰기의 기준을 다시 읽지 않고 안다.
+        const updatedAt = new Date();
+        const { count } = await getPrisma().calendarInboundEvent.updateMany({
+          where: { id: expected.id, updatedAt: expected.updatedAt },
+          data: { ...data, updatedAt } as Prisma.CalendarInboundEventUpdateManyMutationInput,
+        });
+        return count === 1 ? { id: expected.id, updatedAt } : null;
+      }
       return getPrisma().calendarInboundEvent.upsert({
         where: { googleEventId },
         create: { ...data, googleEventId } as Prisma.CalendarInboundEventCreateInput,
         update: data,
-        select: { id: true },
+        select: { id: true, updatedAt: true },
       });
     },
     touchRows: async (rowIds, lastSeenAt) => {

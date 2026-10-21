@@ -9,6 +9,7 @@
 //
 // ⚠️ 이 함수들은 모두 **커밋 뒤** 단계에서 불린다 — 호출부는 실패를 잡아 console.error 로 보고하고
 //    이미 커밋된 승인·반려를 실패로 되돌리지 않는다.
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { INBOUND_STATUS } from "./status";
 
@@ -54,6 +55,25 @@ export async function findInboundRow(inboundId: string): Promise<{ proposalId: s
     where: { id: inboundId },
     select: { proposalId: true },
   });
+}
+
+/**
+ * 승인이 수집 행을 잡는다 — 행이 **아직 이 기안을 가리킬 때만** 조건부로 갱신하고 `updatedAt` 을 올린다. 승인 전이
+ * (tx1)와 **같은 트랜잭션**에서 부른다. 사전 확인(`findInboundRow`)과 tx1 사이에 재판정 스캔이 행을 새 기안으로
+ * 넘기면 여기서 0건이 되어 옛 기안은 승인되지 않는다. 반대로 승인이 먼저 잡으면 `updatedAt` 이 바뀌어 스캔의 조건부
+ * 쓰기(scan.ts)가 0건이 되고 스캔은 그 일정을 건너뛴다 — 같은 일정이 두 번 반영되지 않는다.
+ */
+export async function claimInboundRowForApproval(
+  tx: Prisma.TransactionClient,
+  inboundId: string,
+  proposalId: string,
+): Promise<boolean> {
+  const { count } = await tx.calendarInboundEvent.updateMany({
+    where: { id: inboundId, proposalId },
+    // 값은 그대로 — 행 잠금과 `updatedAt` 갱신이 목적이다(@updatedAt 에 기대지 않고 명시).
+    data: { proposalId, updatedAt: new Date() },
+  });
+  return count === 1;
 }
 
 async function updateInbound(
