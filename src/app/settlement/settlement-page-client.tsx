@@ -487,23 +487,23 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
 
   return isMobile ? (
     <>
-    <MobileSettlementView
-      reportData={reportData}
-      campaigns={filteredCampaigns}
-      selectedMonth={selectedMonth}
-      viewType={viewType}
-      selectedYear={selectedYear}
-      localQuery={localQuery}
-      setLocalQuery={setLocalQuery}
-      commitSearch={debouncedSetFilter}
-      onOpenCampaign={handleSelectCampaign}
-      onRefresh={handleRefresh}
-      loading={loading || reportPending}
-      loadError={reportError}
-      onRetryLoad={() => void retryReport()}
-      retryingLoad={reportRetrying}
-    />
-    <MobileCampaignDetailSheet open={panelOpen} onOpenChange={handlePanelOpenChange} campaign={mobileDetail} />
+      <MobileSettlementView
+        reportData={reportData}
+        campaigns={filteredCampaigns}
+        selectedMonth={selectedMonth}
+        viewType={viewType}
+        selectedYear={selectedYear}
+        localQuery={localQuery}
+        setLocalQuery={setLocalQuery}
+        commitSearch={debouncedSetFilter}
+        onOpenCampaign={handleSelectCampaign}
+        onRefresh={handleRefresh}
+        loading={loading || reportPending}
+        loadError={reportError}
+        onRetryLoad={() => void retryReport()}
+        retryingLoad={reportRetrying}
+      />
+      <MobileCampaignDetailSheet open={panelOpen} onOpenChange={handlePanelOpenChange} campaign={mobileDetail} />
     </>
   ) : (
     // 세로 스크롤러는 CrmShell 이 소유한다(스크롤바 자리 예약 포함) — 안쪽에 두 번째 스크롤러를 두지 않는다.

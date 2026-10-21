@@ -106,11 +106,12 @@ export function MobileHomeRiskCard({
           {chips.map((chip) =>
             "href" in chip && chip.href ? (
               // 칩은 작아서 눌리는 자리를 위아래로 넓힌다(보이는 모양은 그대로, 터치 하한 44px). 프레스는 ④ 투명도.
+              // `overflow-visible` 은 Badge 기본 `overflow-hidden` 이 넓힌 자리(::after)를 잘라내지 않게 덮는다.
               <Badge key={chip.key} variant={chip.variant} asChild className="tabular-nums">
                 <Link
                   href={chip.href}
                   aria-label={`${chip.label} ${chip.count}건 영업 화면에서 보기`}
-                  className="relative transition-opacity duration-150 after:absolute after:-inset-x-1 after:-inset-y-3 active:opacity-60"
+                  className="relative overflow-visible transition-opacity duration-150 after:absolute after:-inset-x-1 after:-inset-y-3 active:opacity-60"
                 >
                   {chip.label} {chip.count}
                 </Link>
