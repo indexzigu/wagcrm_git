@@ -82,6 +82,15 @@ const TARGETS: Record<string, readonly string[]> = {
   "app/calendar/calendar-page-client.tsx": SURFACE_TOKENS,
   "components/crm/calendar-view.tsx": SURFACE_TOKENS,
   "components/crm/calendar-filter-bar.tsx": SURFACE_TOKENS,
+  // 데스크톱 로딩 뼈대 — 본 화면과 질감이 다르면 화면 전환 때 유리 → 불투명으로 깜박인다.
+  // `pipeline/loading.tsx` 는 모바일 탭 화면 뼈대라 모바일 묶음에서.
+  "app/approvals/loading.tsx": SURFACE_TOKENS,
+  "app/assets/loading.tsx": SURFACE_TOKENS,
+  "app/assets/archive/loading.tsx": SURFACE_TOKENS,
+  "app/sellers/loading.tsx": SURFACE_TOKENS,
+  "app/outreach/loading.tsx": SURFACE_TOKENS,
+  "app/reports/loading.tsx": SURFACE_TOKENS,
+  "app/settlement/loading.tsx": SURFACE_TOKENS,
 };
 
 /** 대상 파일 안의 의도된 예외 — `match` 는 걸린 문자열 노드에 들어 있는 부분 문자열, `count` 는 그 적중의 정확한 개수. */

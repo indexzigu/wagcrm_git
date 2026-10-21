@@ -1664,7 +1664,7 @@ export default function OrderDashboard() {
           // 전제**에 기대게 되고, 탭을 더하거나 순서를 바꾸면 조용히 어긋난다. id 로 찾는다.
           document.getElementById(previewTabId(order[next]))?.focus();
         }}
-        className="flex border-b border-border bg-muted/60"
+        className="flex border-b border-border bg-muted"
       >
         <PreviewTab
           id={previewTabId('orders')}

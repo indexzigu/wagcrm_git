@@ -6,9 +6,9 @@ export default function ReportsLoading() {
     // /reports/pnl·/reports/inflow 공용 — 페이지 머리 없음(2026-10-21 오너 방침), 카드부터 그린다.
     <CrmShell>
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
           {/* Top Bar Skeleton */}
-          <div className="crm-topbar flex flex-col gap-4 border-b border-border/70 px-5 py-3 md:flex-row md:items-center md:justify-between shrink-0 bg-white/40">
+          <div className="crm-topbar flex flex-col gap-4 border-b border-border px-5 py-3 md:flex-row md:items-center md:justify-between shrink-0 bg-card">
             <div className="flex flex-1 items-center gap-3">
               <Skeleton className="h-9 w-32 rounded-lg" />
             </div>
@@ -19,8 +19,8 @@ export default function ReportsLoading() {
 
           {/* Table Skeleton */}
           <div className="flex-1 overflow-y-auto p-5">
-            <div className="rounded-xl border border-border/60 bg-white/50 shadow-soft-sm overflow-hidden">
-              <div className="border-b border-border/70 bg-slate-50/50 p-4 flex gap-4">
+            <div className="rounded-xl border border-border bg-card shadow-soft-sm overflow-hidden">
+              <div className="border-b border-border bg-muted/60 p-4 flex gap-4">
                 <Skeleton className="h-4 flex-1" />
                 <Skeleton className="h-4 flex-1" />
                 <Skeleton className="h-4 flex-1" />

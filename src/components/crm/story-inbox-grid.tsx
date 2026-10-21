@@ -87,7 +87,7 @@ export function StoryInboxGrid({
       </div>
 
       {visible.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-card p-10 text-center text-sm text-slate-500">
+        <div className="rounded-2xl border border-border bg-card p-10 text-center text-sm text-slate-500">
           {filter === "unreviewed"
             ? "분류할 스토리가 없습니다. 다음 수집(매일 00:00 KST)을 기다려주세요."
             : "해당 분류의 스토리 없음"}
@@ -97,7 +97,7 @@ export function StoryInboxGrid({
           {visible.map((s) => {
             const now = effective.get(s.id) ?? s.classification;
             return (
-              <div key={s.id} className="overflow-hidden rounded-xl border border-slate-200 bg-card shadow-soft-sm">
+              <div key={s.id} className="overflow-hidden rounded-xl border border-border bg-card shadow-soft-sm">
                 <div className="relative aspect-[9/16] bg-slate-100">
                   {s.img ? (
                     // eslint-disable-next-line @next/next/no-img-element

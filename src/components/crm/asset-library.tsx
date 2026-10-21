@@ -1062,7 +1062,7 @@ export function AssetLibrary({
                   {filteredAssets.map((asset) => (
                     <div
                       key={asset.id}
-                      className="group flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-300 hover:shadow-soft-sm transition-[border-color,box-shadow] min-h-[105px]"
+                      className="group flex flex-col justify-between rounded-xl border border-border bg-card p-3 hover:border-slate-300 hover:shadow-soft-sm transition-[border-color,box-shadow] min-h-[105px]"
                     >
                       <div className="min-w-0">
                         {/* 1줄: 파일형식 아이콘 + 파일명 및 수정 버튼 */}
@@ -1174,7 +1174,7 @@ export function AssetLibrary({
                   {filteredAssets.map((asset) => (
                     <div
                       key={asset.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -1230,7 +1230,7 @@ export function AssetLibrary({
               ) : (
                 <div 
                   ref={parentRef}
-                  className="rounded-xl border border-slate-200 bg-white dark:bg-slate-900 p-4 overflow-y-auto max-h-[600px] scrollbar-thin"
+                  className="rounded-xl border border-border bg-card p-4 overflow-y-auto max-h-[600px] scrollbar-thin"
                 >
                   {flatVisibleNodes.length > 0 ? (
                     <div
