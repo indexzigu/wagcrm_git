@@ -108,6 +108,24 @@ describe("CrmSidebar 행 형태 계약 — 클래스 정본은 한 곳뿐이다"
     const rowShape = stringLiterals(source).find((text) => text.includes("rounded-lg pl-[15px]"));
     expect(rowShape).toContain("gap-3");
   });
+
+  /**
+   * 2026-10-21 오너 지적: 접힌 레일에서 로고가 가운데에서 벗어나 보였다(실측 로고 중심 26px ·
+   * 메뉴 아이콘 중심 24px). 로고 슬롯(36px, absolute left)과 메뉴 아이콘(행 pl + 프리미티브
+   * `[&_svg]:size-[18px]`)이 서로 다른 선언에서 위치를 얻으므로, 두 중심이 같은 세로축인지 수치로 고정한다.
+   */
+  it("로고 슬롯 중심이 메뉴 아이콘 중심과 같은 세로축이다", () => {
+    const literals = stringLiterals(source);
+    const rowShape = literals.find((text) => text.includes("rounded-lg pl-[15px]"));
+    const slot = literals.find((text) => /^absolute left-\[\d+px\] .*\bw-9 h-9\b/.test(text));
+    const writer = stringLiterals(parse(WRITER)).find((text) => text.includes("[&_svg]:size-["));
+    expect(rowShape && slot && writer).toBeTruthy();
+    const rowPad = Number(/\bpl-\[(\d+)px\]/.exec(rowShape!)![1]);
+    const icon = Number(/\[&_svg\]:size-\[(\d+)px\]/.exec(writer!)![1]);
+    const slotLeft = Number(/\bleft-\[(\d+)px\]/.exec(slot!)![1]);
+    const SLOT = 36; // w-9
+    expect(slotLeft + SLOT / 2).toBe(rowPad + icon / 2);
+  });
 });
 
 /**
