@@ -233,7 +233,7 @@ export function PartnersManagement({
     <CrmShell>
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치) */}
-        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0">
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-card px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm shrink-0">
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="font-medium">전체 거래처:</span>
             <span className="font-semibold text-slate-800 dark:text-slate-200">{partners.length}개</span>
@@ -258,14 +258,14 @@ export function PartnersManagement({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
           {dataSource === "mock" && dataSourceMessage ? (
             <div className="px-5 pt-5">
               <DataSourceBanner message={dataSourceMessage} />
             </div>
           ) : null}
           {/* 카드 도구줄 — 검색 + 신규 거래처(페이지 머리 없음, 2026-10-21 오너). 빈 칸 없이 오른쪽 정렬, 높이는 좁게(py-2). */}
-          <section className="flex shrink-0 items-center justify-end gap-2 border-b border-border/70 px-5 py-2">
+          <section className="flex shrink-0 items-center justify-end gap-2 border-b border-border px-5 py-2">
             <InputGroup className="w-48 shrink-0 border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">
               <InputGroupAddon>
                 {localQuery !== query ? (

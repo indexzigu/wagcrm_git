@@ -273,7 +273,7 @@ export function PriceSheetDetail({ priceSheetId }: { priceSheetId: string }) {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       {/* 되돌아가기 링크만 둔다 — 빵부스러기(거래처 · 형식)는 첫 카드 h2 와 같은 말이라 지웠다. */}
-      <div className="flex shrink-0 items-center border-b border-border/40 bg-white/50 px-6 py-3 backdrop-blur-sm md:px-8">
+      <div className="flex shrink-0 items-center border-b border-border bg-card px-6 py-3 md:px-8">
         <Link
           href="/assets/price-sheets"
           className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"

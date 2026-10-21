@@ -474,7 +474,7 @@ export function ReferenceInboxClient() {
       <CrmShell>
         <div className="flex flex-col gap-6 p-6 md:p-8">
           {/* 상단 일괄 추가 입력 */}
-          <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/90 p-5 shadow-soft-md">
+          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-soft-md">
             <div data-testid="reference-inbox-toolbar" className="flex items-center gap-2">
               <InboxIcon className="size-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold text-foreground">링크 일괄 추가</h2>
@@ -821,7 +821,7 @@ const InboxCard = React.memo(function InboxCard({
           selected
             ? "border-primary bg-primary text-primary-foreground opacity-100"
             : cn(
-                "border-border bg-card/95 text-transparent opacity-0",
+                "border-border bg-card text-transparent opacity-0",
                 "group-hover:opacity-100 group-focus-within:opacity-100",
                 selectionActive && "opacity-100",
               ),
