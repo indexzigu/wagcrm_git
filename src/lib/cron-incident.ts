@@ -9,6 +9,7 @@ import {
   PROXY_LEDGER_MIN_REQUESTS,
   type PlaybookMatch,
 } from "@/lib/cron-incident-playbook";
+import { FAILURE_CAUSE_SEPARATOR } from "@/lib/cron-outcome";
 import { toKstYmd } from "@/lib/date-utils";
 
 /**
@@ -49,13 +50,20 @@ export function normalizeIncidentMessage(message: string): string {
     .slice(0, SIGNATURE_MESSAGE_MAX);
 }
 
+/**
+ * 사고 서명. 대표 원인이 붙은 문구(`appendFailureCause`)는 **원인 부분만** 정규화한다 — 앞 사유에는
+ * 실패 날짜 목록·건수처럼 회차마다 길이가 달라지는 값이 있어(정산 동기화 「정산 조회 N건 실패: 날짜, 날짜…」)
+ * 숫자를 접어도 같은 원인이 다른 서명으로 갈라진다. 원인이 없는 문구는 종전처럼 전체를 본다.
+ */
 export function incidentSignature(input: {
   jobKey: string;
   kind: IncidentKind;
   errorKind: CronErrorKind | null;
   message: string;
 }): string {
-  return `${input.jobKey}|${input.kind}|${input.errorKind ?? "-"}|${normalizeIncidentMessage(input.message)}`;
+  const at = input.message.indexOf(FAILURE_CAUSE_SEPARATOR);
+  const basis = at >= 0 ? input.message.slice(at + FAILURE_CAUSE_SEPARATOR.length) : input.message;
+  return `${input.jobKey}|${input.kind}|${input.errorKind ?? "-"}|${normalizeIncidentMessage(basis)}`;
 }
 
 /**

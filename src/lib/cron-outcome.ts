@@ -49,6 +49,12 @@ export function declareTotalFailure(input: {
   return { failed: false, ...counts };
 }
 
+/**
+ * 사유와 대표 원인을 잇는 구분 문구 — 사고 서명(`incidentSignature`)이 이것으로 원인 부분을 찾는다.
+ * 바꾸면 서명도 함께 바뀐다(열린 사고가 새 사고로 갈라진다).
+ */
+export const FAILURE_CAUSE_SEPARATOR = " · 대표 원인: ";
+
 /** 대표 원인 상한 — 사고 기록(`lastMessage` 1,000자) 안에 사유·원인이 함께 들어가게 한다. */
 const FAILURE_CAUSE_MAX = 300;
 
@@ -64,7 +70,7 @@ const FAILURE_CAUSE_MAX = 300;
 export function appendFailureCause(reason: string, cause?: string | null): string {
   const trimmed = cause?.trim();
   if (!trimmed) return reason;
-  return `${reason} · 대표 원인: ${trimmed.slice(0, FAILURE_CAUSE_MAX)}`;
+  return `${reason}${FAILURE_CAUSE_SEPARATOR}${trimmed.slice(0, FAILURE_CAUSE_MAX)}`;
 }
 
 /**

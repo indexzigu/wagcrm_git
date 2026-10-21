@@ -72,6 +72,23 @@ describe("incidentSignature", () => {
   it("errorKind 가 없으면 - 로 쓴다", () => {
     expect(incidentSignature({ jobKey: "j", kind: "B", errorKind: null, message: "m" })).toBe("j|B|-|m");
   });
+
+  it("대표 원인이 붙은 문구는 원인 부분만으로 서명한다(실패 날짜 목록이 달라도 같은 사고)", () => {
+    const sig = (message: string) =>
+      incidentSignature({ jobKey: "naver-settlement-sync", kind: "A", errorKind: "network", message });
+    const a = sig("정산 조회 2건 실패: 2026-10-01, 2026-10-02 · 대표 원인: fetch failed <- Proxy response (403)");
+    const b = sig("정산 조회 3건 실패: 2026-10-01, 2026-10-02, 2026-10-03 · 대표 원인: fetch failed <- Proxy response (403)");
+    expect(a).toBe(b);
+    expect(a).toBe("naver-settlement-sync|A|network|fetch failed <- Proxy response (#)");
+    // 원인이 다르면 다른 사고다.
+    expect(sig("정산 조회 2건 실패: 2026-10-01 · 대표 원인: timeout")).not.toBe(a);
+  });
+
+  it("대표 원인이 없는 문구는 지금처럼 전체를 정규화한다", () => {
+    expect(
+      incidentSignature({ jobKey: "j", kind: "A", errorKind: null, message: "정산 조회 2건 실패: 2026-10-01, 2026-10-02" }),
+    ).toBe("j|A|-|정산 조회 #건 실패: #-#-#, #-#-#");
+  });
 });
 
 describe("recordIncidentOccurrence", () => {
