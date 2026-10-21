@@ -126,7 +126,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
                   {alert.medianIntervalDays}일 주기 · {alert.runCount}회 진행
                 </p>
                 {alert.availabilityNote && (
-                  <p className="mt-0.5 truncate text-[10px] text-status-success" title={alert.availabilityNote}>
+                  <p className="mt-0.5 truncate text-[10px] text-muted-foreground" title={alert.availabilityNote}>
                     일정: {alert.availabilityNote}
                   </p>
                 )}

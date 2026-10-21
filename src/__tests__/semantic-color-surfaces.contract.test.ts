@@ -56,21 +56,11 @@ const HEX = /#[0-9a-fA-F]{3,8}\b/g;
 
 /** 파일 → 남겨 둔 hue(또는 "#" hex 값) 와 정확한 개수·사유. 줄이기만 한다(고치면 개수를 낮추고, 0 이 되면 항목을 지운다). */
 const REMAINING: Record<string, { hue: string; count: number; reason: string }[]> = {
-  "components/crm/calendar-view.tsx": [
-    { hue: "rose", count: 5, reason: "주말·공휴일 빨강 — 맞는 의미축 없음(같은 칸 「매출 공백」 위험 틴트와 겹침), 오너 확인 필요(2026-10-22 일괄 질문)" },
-  ],
   "components/crm/campaign-card.tsx": [
     { hue: "emerald", count: 2, reason: "ACTIVE 라이브 도트 — 오너 확정 예외(2026-07-16), status-literal-token-alignment 가 고정" },
-    { hue: "pink", count: 1, reason: "인스타·유튜브 아이콘 상표색 — §4(채널·플랫폼은 무채색) vs 상표 원색, 오너 확인 필요(2026-10-22 일괄 질문)" },
-    { hue: "red", count: 1, reason: "인스타·유튜브 아이콘 상표색 — §4(채널·플랫폼은 무채색) vs 상표 원색, 오너 확인 필요(2026-10-22 일괄 질문)" },
   ],
   "components/crm/shipping/modals/CampaignEditModal.tsx": [
     { hue: "green", count: 1, reason: "개발용 디버그 로그 글자(어두운 slate-900 바탕) — 그 표면 대비를 지키는 토큰 없음" },
-  ],
-  "components/crm/step-metric-card.tsx": [
-    { hue: "amber", count: 1, reason: "단계 막대 3색 — 한 색 농도 사다리로 바꿀지 오너 확인 필요(2026-10-22 일괄 질문)" },
-    { hue: "blue", count: 1, reason: "단계 막대 3색 — 오너 확인 필요(2026-10-22 일괄 질문)" },
-    { hue: "green", count: 1, reason: "단계 막대 3색 — 오너 확인 필요(2026-10-22 일괄 질문)" },
   ],
   "components/crm/schedule-gap-briefing-card.tsx": [
     { hue: "#FBF7F0", count: 1, reason: "크림 바탕 — 무채색에 가까운 바탕(범위 밖)" },
@@ -217,6 +207,12 @@ describe("의미축 고정", () => {
 });
 
 describe("대비 — 흰 바탕 기준(§5 표면 종속)", () => {
+  it("오너 결정(2026-10-22) — 단계 막대는 청록 진하기 사다리, 가장 옅은 칸도 흰 바탕 3:1", () => {
+    const src = read("components/crm/step-metric-card.tsx");
+    expect(src).toContain('"bg-primary/65",\n  "bg-primary/80",\n  "bg-primary",');
+    expect(ratio(over(token("--primary"), 0.65, WHITE), WHITE)).toBeGreaterThanOrEqual(3);
+  });
+
   it("전수 정리 A — 위험 행 점수 글자·셀러지급액 칸이 AA(4.5:1) 이상", () => {
     // 시세 모니터: 위험 행(bg-status-urgent-bg) 위 점수 글자는 -text 짝이어야 한다(맨 status-urgent 는 4.1).
     expect(read("components/crm/market-price-monitor.tsx")).toContain('"text-status-urgent-text font-medium"');

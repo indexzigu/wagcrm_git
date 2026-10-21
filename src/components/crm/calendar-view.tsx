@@ -628,7 +628,7 @@ export function CalendarView({
               key={label}
               className={cn(
                 "px-2 py-3 text-center text-xs font-semibold text-muted-foreground",
-                (idx === 0 || idx === 6) && "text-rose-700",
+                (idx === 0 || idx === 6) && "text-slate-500",
               )}
             >
               {label}
@@ -683,7 +683,7 @@ export function CalendarView({
                         (cellIdx === 0 || cellIdx === 6) &&
                           day.inMonth &&
                           !gapUrgency &&
-                          "bg-rose-50/20",
+                          "bg-slate-50/60",
                         gapUrgency === "DANGER" && "bg-status-urgent/[0.07]",
                         gapUrgency === "URGENT" && "bg-status-caution/[0.08]",
                       )}
@@ -820,7 +820,7 @@ function DateCell({
         "group/cell relative border-r border-border/20 px-1.5 py-1.5 last:border-r-0 transition-colors",
         !day.inMonth && "bg-muted/20",
         day.inMonth && "hover:bg-muted/10",
-        isWeekend && day.inMonth && !gapUrgency && "bg-rose-50/30",
+        isWeekend && day.inMonth && !gapUrgency && "bg-slate-50/60",
         gapUrgency === "DANGER" && "bg-status-urgent/[0.07]",
         gapUrgency === "URGENT" && "bg-status-caution/[0.08]",
       )}
@@ -841,7 +841,7 @@ function DateCell({
               : !day.inMonth
                 ? "font-normal text-muted-foreground"
                 : isWeekend
-                  ? "text-rose-700"
+                  ? "text-slate-500"
                   : "text-slate-700",
           )}
         >
@@ -850,7 +850,7 @@ function DateCell({
         {holiday && day.inMonth && (
           <span
             className={cn(
-              "truncate text-right text-[10px] font-medium leading-tight text-rose-700",
+              "truncate text-right text-[10px] font-medium leading-tight text-slate-500",
               // "+"와 우상단 슬롯을 교대 — hover 시 공휴일이 물러나고 "+"가 나온다.
               onCreateDraft && "transition-opacity group-hover/cell:opacity-0",
             )}

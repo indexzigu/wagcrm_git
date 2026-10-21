@@ -1202,12 +1202,7 @@ export function CampaignSidePanel({
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <div
-                        className="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                        style={{
-                          backgroundColor: note.actor.includes("@")
-                            ? `hsl(${Math.abs(note.actor.split("").reduce((h, c) => h * 31 + c.charCodeAt(0), 0)) % 360}, 60%, 50%)`
-                            : "var(--muted-foreground)",
-                        }}
+                        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted-foreground text-[10px] font-semibold text-white"
                       >
                         {(note.actorName ?? note.actor).charAt(0).toUpperCase()}
                       </div>

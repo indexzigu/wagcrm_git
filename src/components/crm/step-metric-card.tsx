@@ -4,9 +4,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 export const STEP_COLORS = [
   "bg-slate-200",
-  "bg-amber-300",
-  "bg-blue-400",
-  "bg-green-500",
+  "bg-primary/65",
+  "bg-primary/80",
+  "bg-primary",
 ];
 
 export type StepMetricCardProps = {

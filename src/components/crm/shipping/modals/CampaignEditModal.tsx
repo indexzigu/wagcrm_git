@@ -521,7 +521,7 @@ export default function CampaignEditModal({
                                     }}
                                     aria-label={`${idx + 1}행 캠페인`}
                                     aria-describedby={priceMismatch ? `price-check-${idx}` : undefined}
-                                    className={`w-full border rounded-lg pl-1.5 pr-2 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-ellipsis ${m.campaignDealId ? 'border-status-success/30 bg-status-success-bg text-status-success font-bold' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
+                                    className={`w-full border rounded-lg pl-1.5 pr-2 py-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-focus-ring text-ellipsis ${m.campaignDealId ? 'border-slate-300 bg-white text-foreground font-bold' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
                                   >
                                     <option value="">미지정</option>
                                     {availableDeals.length > 0 && (
