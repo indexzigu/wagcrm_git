@@ -116,7 +116,7 @@ describe("buildSettlementStatementHtml", () => {
     expect(html).toContain("(캠페인 2건)");
     expect(html).toContain("300,000원");
     expect(html).toContain("30,000원");
-    expect(html).toContain("캠페인 소계");
+    expect(html).toContain("캠페인 합계");
     expect(html).toContain("여름 캠페인");
   });
 
@@ -141,8 +141,8 @@ describe("buildSettlementStatementHtml", () => {
       createCampaign(withoutCompany),
     ], new Date("2026-06-01T00:00:00.000Z"));
 
-    expect(html).toContain("차인지급액 (세후)");
-    expect(html).toContain("원천세 (3.3%)");
+    expect(html).toContain("실제 입금액");
+    expect(html).toContain("세금 공제 (3.3%)");
     expect(html).toContain("10,000원");
     expect(html).toContain("-330원");
     expect(html).toContain("9,670원");

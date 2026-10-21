@@ -83,21 +83,21 @@ describe("평문 명세서 — 자사 마진이 셀러에게 새지 않는다 (P
     }
   });
 
-  it("셀러가 알아야 할 것은 담는다 — 총 거래액과 차인지급액", () => {
+  it("셀러가 알아야 할 것은 담는다 — 총 판매 금액과 정산 금액", () => {
     expect(text).toContain("[정산 명세서]");
     expect(text).toContain("정산 대상: 테스트 셀러");
     expect(text).toContain("발행일: 2026-02-01");
-    expect(text).toContain("총 거래액: 10,000,000원");
-    expect(text).toContain("차인지급액");
+    expect(text).toContain("총 판매 금액: 10,000,000원");
+    expect(text).toContain("정산 금액 (부가세 포함)");
   });
 
-  it("법인은 공급가액·부가세액으로 쪼개 보여준다", () => {
-    expect(text).toContain("공급가액");
-    expect(text).toContain("부가세액");
-    expect(text).not.toContain("원천세");
+  it("법인은 부가세 제외 금액(공급가액)·부가세로 쪼개 보여준다", () => {
+    expect(text).toContain("부가세 제외 금액 (공급가액)");
+    expect(text).toContain("부가세:");
+    expect(text).not.toContain("세금 공제");
   });
 
-  it("개인 셀러는 원천세 3.3% 로 쪼개 보여준다", () => {
+  it("개인 셀러는 세금 공제 3.3% 로 쪼개 보여준다", () => {
     // 사업자정보가 없으면 개인 — getRecipient 가 seller: 키로 떨어진다.
     const individual = buildSettlementStatementText([
       makeCampaign({
@@ -107,9 +107,10 @@ describe("평문 명세서 — 자사 마진이 셀러에게 새지 않는다 (P
         sellerCompanyAddress: null,
       }),
     ]);
-    expect(individual).toContain("원천세 3.3%");
-    expect(individual).toContain("대행비 합계");
-    expect(individual).not.toContain("부가세액");
+    expect(individual).toContain("세금 공제 (3.3%)");
+    expect(individual).toContain("정산 금액 (세전)");
+    expect(individual).toContain("실제 입금액");
+    expect(individual).not.toContain("부가세");
   });
 
   it("수신자가 불명확하면 발행하지 않고 throw 한다 — HTML 빌더와 같은 계약", () => {

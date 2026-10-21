@@ -320,10 +320,6 @@ const EXCEPTIONS: Readonly<Record<string, string>> = {
     "네이버 클레임 사유 코드 — 위 클레임 상태와 같은 사유(표의 다수가 추정 코드라 미등록 코드가 실제로 온다).",
   "fallback | lib/content-guide.ts | EVIDENCE_LABEL[claim.evidenceType] ?? claim.evidenceType":
     "이 근거 카드는 콘텐츠 가이드 본문에 붙어 **저장**된다 — 「—」로 바꾸면 무엇이었는지 영구히 잃는다. 지금 오는 값(MEASURED·USER_PROVIDED)은 표에 다 있고 NEEDS_SOURCE 는 앞에서 걸러진다.",
-  "oldMoneyTerm | lib/settlement-statement.ts | 판매대행비":
-    "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후. 키가 낱말 단위라 이 파일의 다른 옛 이름은 여전히 잡힌다.",
-  "oldMoneyTerm | lib/settlement-statement.ts | 총 거래액":
-    "셀러에게 보내는 정산서 — 문구 통일은 오너 결정 후(위 판매대행비와 같은 사유).",
   "oldMoneyTerm | components/mobile/mobile-campaign-detail-sheet.tsx | 매출액":
     "모바일 상세의 품목별 주문 금액 열(주문 합계라 「총거래액」이 아니라 「판매금액」 계열일 수 있다). 모바일 표면은 애플 UI 묶음 1에서 손대지 않는다(P5) — 모바일 묶음에서 낱말을 정하며 이 줄을 지운다.",
   "oldMoneyTerm | lib/tax-invoice-mail/receipt-similarity.ts | 매출":

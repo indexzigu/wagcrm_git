@@ -14,6 +14,44 @@ const YGRD_COMPANY = {
   type: "도매 및 소매업 / 전자상거래 중개 및 소매업, 공동구매",
 };
 
+/**
+ * 셀러가 받는 정산 명세서의 **줄 이름** — 이 파일의 셀러용 라벨은 전부 이 표에서만 나온다
+ * (HTML·평문·인쇄·PNG 네 형식이 같은 이름을 쓰게 하는 단일 원천).
+ *
+ * 오너 확정 2026-10-21(설계서 §14 「추천안 전체 채택」): 계약서·회계 표기(총 거래액·판매 대행비·
+ * 원천세·차인지급액) 대신 셀러가 읽고 이해하기 쉬운 말. 같은 「공급가액」이 개인(판매 금액의
+ * 부가세 제외분)과 사업자(정산금의 부가세 제외분)에서 뜻이 갈려, 개인은 「부가세 제외 판매 금액」으로
+ * 바꾸고 사업자만 괄호 안에 「공급가액」을 남긴다(세금계산서와 대조하는 낱말이라서).
+ * ⛔ 낱말을 바꾸려면 오너 결정이 먼저다. 옛 이름의 재등장은 `ui-copy-terms` 계약이 막는다.
+ * 오너가 읽는 검증 메시지(`validateSettlementStatementCampaigns`)는 오너 화면 낱말이라 대상이 아니다.
+ */
+export const SELLER_STATEMENT_LABELS = {
+  common: {
+    grossSales: "총 판매 금액",
+    rate: "정산 비율",
+    extraPayout: "추가 지급 (광고비 등)",
+    extraPayoutNote: "정산 비율과 무관",
+    basisAmount: "정산 계산 기준 금액",
+    campaignTotal: "캠페인 합계",
+    detailSection: "캠페인별 정산 내역",
+  },
+  individual: {
+    supplyOfSales: "부가세 제외 판매 금액",
+    preTaxPayout: "정산 금액 (세전)",
+    withholding: "세금 공제 (3.3%)",
+    withholdingNote: "소득세·지방소득세를 회사가 대신 신고·납부합니다",
+    withholdingCombinedNote: "정산 금액 + 추가 지급 합산",
+    postTaxPayout: "실제 입금액",
+  },
+  business: {
+    payout: "정산 금액 (부가세 포함)",
+    supplyOfPayout: "부가세 제외 금액 (공급가액)",
+    vat: "부가세",
+  },
+} as const;
+
+const L = SELLER_STATEMENT_LABELS;
+
 type SettlementRecipient = {
   key: string;
   label: string;
@@ -475,9 +513,13 @@ const STMT_RATE_CELL = "padding: 6px 8px; text-align: center; vertical-align: mi
  * 보이지만(실측 확인), 그건 선언이 아니라 기본값 의존이다 — 메일 클라이언트·PDF 엔진 중
  * 기본이 `baseline` 인 곳에서는 품목명이 2줄로 넘어가는 순간 옆 숫자들이 **첫 줄 기준선**에
  * 붙어 위로 쏠린다. 셀러가 받는 문서라 렌더러를 고를 수 없으므로 값을 못 박는다.
+ *
+ * 머리 행은 **줄바꿈을 허용**한다(종전 `white-space: nowrap`). 셀러용 열 이름(「부가세 제외 판매 금액」·
+ * 「정산 금액 (부가세 포함)」 등, `SELLER_STATEMENT_LABELS`)이 10px 고정폭 열보다 길어 한 줄이면 옆 칸을
+ * 덮는다. `keep-all` 로 어절 사이(공백)에서만 넘긴다 — 「부가세」 한가운데서 자르지 않는다.
  */
 const STMT_HEAD_CELL_BASE =
-  "padding: 6px 8px; vertical-align: middle; font-weight: 600; color: #334155; border: 1px solid #cbd5e1;";
+  "padding: 6px 8px; vertical-align: middle; font-weight: 600; color: #334155; border: 1px solid #cbd5e1; word-break: keep-all;";
 
 /**
  * **차감 항목(원천세) 글자색** — 명세서 안에서 유일한 유채색 텍스트다(T-027).
@@ -521,7 +563,16 @@ const STMT_DEDUCTION_TEXT = "#be123c";
  * ⛔ "본문과 축이 다르다"를 이유로 되돌리지 말 것. 축이 다른 것이 의도다.
  */
 function stmtHeadCell(label: string, index: number) {
-  return `<th style="${STMT_HEAD_CELL_BASE} text-align: center; width: ${STMT_COL_WIDTHS[index]};">${label}</th>`;
+  return `<th style="${STMT_HEAD_CELL_BASE} text-align: center; width: ${STMT_COL_WIDTHS[index]};">${keepParenTogether(label)}</th>`;
+}
+
+/**
+ * 머리 칸에서 괄호 묶음 안의 공백을 줄바꿈 없는 공백으로 — 「정산 금액 (부가세 / 포함)」처럼 괄호
+ * 한가운데서 갈리지 않고 「정산 금액 / (부가세 포함)」으로 넘어가게 한다. 머리 칸에만 쓴다(합계 표·평문은
+ * 한 줄이라 해당 없음).
+ */
+function keepParenTogether(label: string) {
+  return label.replace(/\([^)]*\)/g, (group) => group.replace(/ /g, "&nbsp;"));
 }
 
 /**
@@ -564,8 +615,8 @@ function buildBasisOverrideCampaignHtml(campaign: CampaignRow, isIndividual: boo
   // 품목명이 그 세 열 폭(colspan 3)을 차지하고 나머지 5열은 일반 표와 같은 뼈대·너비다.
   const nameHead = `<th colspan="3" style="${STMT_HEAD_CELL_BASE} text-align: center; width: ${STMT_NAME_SPAN_WIDTH};">품목명</th>`;
   const heads = isIndividual
-    ? ["정산 기준액", "수수료율", "판매대행비", "원천세", "차인지급액"]
-    : ["정산 기준액", "수수료율", "공급가액", "부가세액", "차인지급액"];
+    ? [L.common.basisAmount, L.common.rate, L.individual.preTaxPayout, L.individual.withholding, L.individual.postTaxPayout]
+    : [L.common.basisAmount, L.common.rate, L.business.supplyOfPayout, L.business.vat, L.business.payout];
   const sixthColor = isIndividual ? STMT_DEDUCTION_TEXT : "#334155";
 
   return `
@@ -576,7 +627,7 @@ function buildBasisOverrideCampaignHtml(campaign: CampaignRow, isIndividual: boo
       </table>
       <table style="width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; table-layout: fixed; margin-bottom: 16px;">
         <thead>
-          <tr style="background-color: #f1f5f9; white-space: nowrap;">
+          <tr style="background-color: #f1f5f9;">
             ${nameHead}
             ${heads.map((label, index) => stmtHeadCell(label, index + 3)).join("\n            ")}
           </tr>
@@ -591,7 +642,7 @@ function buildBasisOverrideCampaignHtml(campaign: CampaignRow, isIndividual: boo
             <td style="${STMT_NUM_CELL} color: #1e293b; font-weight: 600; border: 1px solid #e2e8f0;">${cells[2]}</td>
           </tr>
           <tr style="background-color: #f8fafc; font-weight: 600;">
-            <td style="padding: 8px; vertical-align: middle; color: #334155; border: 1px solid #cbd5e1;" colspan="3">캠페인 소계</td>
+            <td style="padding: 8px; vertical-align: middle; color: #334155; border: 1px solid #cbd5e1;" colspan="3">${L.common.campaignTotal}</td>
             <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${formatCurrency(basis, true)}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1;"></td>
             <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${cells[0]}</td>
@@ -657,15 +708,15 @@ function buildCampaignHtml(campaign: CampaignRow, isIndividual: boolean) {
       </table>
       <table style="width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; table-layout: fixed; margin-bottom: 16px;">
         <thead>
-          <tr style="background-color: #f1f5f9; white-space: nowrap;">
+          <tr style="background-color: #f1f5f9;">
             ${stmtHeadCell("품목명", 0)}
             ${stmtHeadCell("판매가", 1)}
             ${stmtHeadCell("수량", 2)}
-            ${stmtHeadCell("공급가액", 3)}
-            ${stmtHeadCell("수수료율", 4)}
-            ${stmtHeadCell("판매대행비", 5)}
-            ${stmtHeadCell("원천세", 6)}
-            ${stmtHeadCell("차인지급액", 7)}
+            ${stmtHeadCell(L.individual.supplyOfSales, 3)}
+            ${stmtHeadCell(L.common.rate, 4)}
+            ${stmtHeadCell(L.individual.preTaxPayout, 5)}
+            ${stmtHeadCell(L.individual.withholding, 6)}
+            ${stmtHeadCell(L.individual.postTaxPayout, 7)}
           </tr>
         </thead>
         <tbody>
@@ -699,7 +750,7 @@ function buildCampaignHtml(campaign: CampaignRow, isIndividual: boolean) {
             </tr>`;
           }).join("")}
           <tr style="background-color: #f8fafc; font-weight: 600;">
-            <td style="padding: 8px; vertical-align: middle; color: #334155; border: 1px solid #cbd5e1;" colspan="2">캠페인 소계</td>
+            <td style="padding: 8px; vertical-align: middle; color: #334155; border: 1px solid #cbd5e1;" colspan="2">${L.common.campaignTotal}</td>
             <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${totalOrderCount.toLocaleString()}</td>
             <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${formatCurrency(Math.round(totalSales / 1.1), true)}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1;"></td>
@@ -722,15 +773,15 @@ function buildCampaignHtml(campaign: CampaignRow, isIndividual: boolean) {
       </table>
       <table style="width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; table-layout: fixed; margin-bottom: 16px;">
         <thead>
-          <tr style="background-color: #f1f5f9; white-space: nowrap;">
+          <tr style="background-color: #f1f5f9;">
             ${stmtHeadCell("품목명", 0)}
             ${stmtHeadCell("판매가", 1)}
             ${stmtHeadCell("수량", 2)}
-            ${stmtHeadCell("총 거래액", 3)}
-            ${stmtHeadCell("수수료율", 4)}
-            ${stmtHeadCell("공급가액", 5)}
-            ${stmtHeadCell("부가세액", 6)}
-            ${stmtHeadCell("차인지급액", 7)}
+            ${stmtHeadCell(L.common.grossSales, 3)}
+            ${stmtHeadCell(L.common.rate, 4)}
+            ${stmtHeadCell(L.business.supplyOfPayout, 5)}
+            ${stmtHeadCell(L.business.vat, 6)}
+            ${stmtHeadCell(L.business.payout, 7)}
           </tr>
         </thead>
         <tbody>
@@ -753,7 +804,7 @@ function buildCampaignHtml(campaign: CampaignRow, isIndividual: boolean) {
             </tr>`;
           }).join("")}
           <tr style="background-color: #f8fafc; font-weight: 600;">
-            <td style="padding: 8px; vertical-align: middle; color: #334155; border: 1px solid #cbd5e1;" colspan="2">캠페인 소계</td>
+            <td style="padding: 8px; vertical-align: middle; color: #334155; border: 1px solid #cbd5e1;" colspan="2">${L.common.campaignTotal}</td>
             <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${totalOrderCount.toLocaleString()}</td>
             <td style="${STMT_TOTAL_NUM_CELL} color: #334155; border: 1px solid #cbd5e1;">${formatCurrency(totalSales, true)}</td>
             <td style="padding: 8px; border: 1px solid #cbd5e1;"></td>
@@ -891,7 +942,7 @@ export function computeSettlementPayoutTotals(campaigns: CampaignRow[]): Settlem
 
 /** 합계 첫 줄 이름 — 혼합 명세서만 「(캠페인별 기준 합계)」를 붙인다. */
 function sellerFeeBasisSummaryLabel(totals: Pick<SettlementPayoutTotals, "isMixedSellerFeeBasis">) {
-  return totals.isMixedSellerFeeBasis ? "정산 기준액 (캠페인별 기준 합계)" : "정산 기준액";
+  return totals.isMixedSellerFeeBasis ? `${L.common.basisAmount} (캠페인별 기준 합계)` : L.common.basisAmount;
 }
 
 /**
@@ -918,16 +969,16 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
   const totals = computeSettlementPayoutTotals(campaigns);
   const won = (value: number) => `${Math.round(value).toLocaleString()}원`;
   const breakdown = totals.isIndividual
-    ? `  (대행비 합계: ${won(totals.totalPreTaxPayout)}, 원천세 3.3%: ${won(totals.totalWithholdingTaxOnly)})`
+    ? `  └ ${L.individual.preTaxPayout}: ${won(totals.totalPreTaxPayout)}, ${L.individual.withholding}: ${won(totals.totalWithholdingTaxOnly)}`
     : (() => {
         const { supply, vat } = calcBusinessVatBreakdown(totals.totalPostTaxPayout);
-        return `  (공급가액: ${won(supply)}, 부가세액: ${won(vat)})`;
+        return `  └ ${L.business.supplyOfPayout}: ${won(supply)}, ${L.business.vat}: ${won(vat)}`;
       })();
   // 평문도 HTML 과 **같은 합계 함수**를 쓴다 — 두 표면이 갈리면 메일 클라이언트가
   // 평문을 고르는 순간 다른 금액이 셀러에게 간다(이 파일이 이미 한 번 낸 사고).
   const itemLine =
     totals.totalSettlementItemPayout !== 0
-      ? `\n- 별도 지급 항목 (광고비 등): ${won(totals.totalSettlementItemPayout)}  ※ 수수료 정산과 별개`
+      ? `\n- ${L.common.extraPayout}: ${won(totals.totalSettlementItemPayout)}  ※ ${L.common.extraPayoutNote}`
       : "";
 
   // 입금 날짜는 HTML 과 같은 판정 함수를 쓴다 — 평문을 고르는 메일 클라이언트에서만 날짜가
@@ -938,7 +989,7 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
   // 수동 기준액 캠페인이 섞이면 총 거래액(우리 판매분 포함)을 싣지 않고 정산 기준액 합을 싣는다.
   const salesLine = totals.hasSellerFeeBasisOverride
     ? `- ${sellerFeeBasisSummaryLabel(totals)}: ${won(totals.totalSellerFeeBasis)}`
-    : `- 총 거래액: ${won(totals.totalSales)}`;
+    : `- ${L.common.grossSales}: ${won(totals.totalSales)}`;
 
   return `
 [정산 명세서]
@@ -947,7 +998,7 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
 
 ■ 정산 합계
 ${salesLine}${itemLine}
-- 차인지급액: ${won(totals.totalPostTaxPayout)}
+- ${totals.isIndividual ? L.individual.postTaxPayout : L.business.payout}: ${won(totals.totalPostTaxPayout)}
 ${breakdown}${dateBlock}
 `.trim();
 }
@@ -1193,7 +1244,7 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
     totalSettlementItemPayout !== 0
       ? `
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 8px 4px; color: #475569;">별도 지급 항목 (광고비 등)<span style="color: #64748b; font-size: 11px;"> · 수수료 정산과 별개</span></td>
+        <td style="padding: 8px 4px; color: #475569;">${L.common.extraPayout}<span style="color: #64748b; font-size: 11px;"> · ${L.common.extraPayoutNote}</span></td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSettlementItemPayout)}</td>
       </tr>`
       : "";
@@ -1205,20 +1256,20 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
         <td style="padding: 8px 4px; text-align: right; color: #475569;">금액</td>
       </tr>
       ${hasSellerFeeBasisOverride ? basisSummaryRow : `<tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 8px 4px; color: #475569;">총 거래액</td>
+        <td style="padding: 8px 4px; color: #475569;">${L.common.grossSales}</td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSales)}</td>
       </tr>`}
       ${settlementItemRow}
       <tr style="border-bottom: 1px solid #e2e8f0; background-color: #f8fafc; font-weight: 700;">
-        <td style="padding: 10px 4px; color: #1e293b; font-size: 13px;">차인지급액 (정산금)</td>
+        <td style="padding: 10px 4px; color: #1e293b; font-size: 13px;">${L.business.payout}</td>
         <td style="padding: 10px 4px; text-align: right; color: #1e293b; font-size: 13px;">${formatCurrency(totalPostTaxPayout)}</td>
       </tr>
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 8px 4px; color: #64748b; padding-left: 12px;">├ 공급가액 합계</td>
+        <td style="padding: 8px 4px; color: #64748b; padding-left: 12px;">├ ${L.business.supplyOfPayout}</td>
         <td style="padding: 8px 4px; text-align: right; color: #475569;">${formatCurrency(calcBusinessVatBreakdown(totalPostTaxPayout).supply)}</td>
       </tr>
       <tr style="border-bottom: 2px solid #334155;">
-        <td style="padding: 8px 4px; color: #64748b; padding-left: 12px;">└ 부가세액 합계</td>
+        <td style="padding: 8px 4px; color: #64748b; padding-left: 12px;">└ ${L.business.vat}</td>
         <td style="padding: 8px 4px; text-align: right; color: #475569;">${formatCurrency(calcBusinessVatBreakdown(totalPostTaxPayout).vat)}</td>
       </tr>
     </table>
@@ -1231,24 +1282,24 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
         <td style="padding: 8px 4px; text-align: right; color: #475569;">금액</td>
       </tr>
       ${hasSellerFeeBasisOverride ? basisSummaryRow : `<tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 8px 4px; color: #475569;">총 거래액</td>
+        <td style="padding: 8px 4px; color: #475569;">${L.common.grossSales}</td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalSales)}</td>
       </tr>
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 8px 4px; color: #64748b; padding-left: 12px;">└ 공급가액</td>
+        <td style="padding: 8px 4px; color: #64748b; padding-left: 12px;">└ ${L.individual.supplyOfSales}</td>
         <td style="padding: 8px 4px; text-align: right; color: #475569;">${formatCurrency(Math.round(totalSales / 1.1))}</td>
       </tr>`}
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 8px 4px; color: #475569;">판매 대행비 합계</td>
+        <td style="padding: 8px 4px; color: #475569;">${L.individual.preTaxPayout}</td>
         <td style="padding: 8px 4px; text-align: right; font-weight: 700; color: #334155;">${formatCurrency(totalPreTaxPayout)}</td>
       </tr>
       ${settlementItemRow}
       <tr style="border-bottom: 1px solid #cbd5e1;">
-        <td style="padding: 8px 4px; color: ${STMT_DEDUCTION_TEXT}; padding-left: 12px;">└ 원천세 (3.3%)${totalSettlementItemPayout !== 0 ? "<span style=\"color: #64748b; font-size: 11px; font-weight: 400;\"> · 대행비 + 별도 지급 항목 합산</span>" : ""}</td>
+        <td style="padding: 8px 4px; color: ${STMT_DEDUCTION_TEXT}; padding-left: 12px;">└ ${L.individual.withholding}${totalSettlementItemPayout !== 0 ? `<span style="color: #64748b; font-size: 11px; font-weight: 400;"> · ${L.individual.withholdingCombinedNote}</span>` : ""}<div style="color: #64748b; font-size: 11px; font-weight: 400; margin-top: 2px; padding-left: 12px;">${L.individual.withholdingNote}</div></td>
         <td style="padding: 8px 4px; text-align: right; color: ${STMT_DEDUCTION_TEXT};">${totalWithholdingTaxOnly > 0 ? `-${formatCurrency(totalWithholdingTaxOnly)}` : "0원"}</td>
       </tr>
       <tr style="border-bottom: 2px solid #334155; background-color: #f8fafc; font-weight: 700;">
-        <td style="padding: 10px 4px; color: #1e293b; font-size: 13px;">차인지급액 (세후)</td>
+        <td style="padding: 10px 4px; color: #1e293b; font-size: 13px;">${L.individual.postTaxPayout}</td>
         <td style="padding: 10px 4px; text-align: right; color: #1e293b; font-size: 13px;">${formatCurrency(totalPostTaxPayout)}</td>
       </tr>
     </table>
@@ -1311,7 +1362,7 @@ export function buildSettlementStatementHtml(campaigns: CampaignRow[], now = new
       </div>
       ` : ""}
       ${!isIndividual ? taxInvoiceBlock : ""}
-      <div style="margin: 32px 0 10px; font-size: 13px; font-weight: 700; color: #1e293b; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">캠페인별 매출 상세 내역</div>
+      <div style="margin: 32px 0 10px; font-size: 13px; font-weight: 700; color: #1e293b; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">${L.common.detailSection}</div>
       ${ordered.map(c => buildCampaignHtml(c, isIndividual)).join("")}
     </div>
   `;

@@ -73,7 +73,7 @@ function expectNoGross(output: string, isIndividual: boolean) {
   for (const amount of [GROSS, Math.round(GROSS / 1.1), 6_000_000, 4_000_000, Math.round(6_000_000 / 1.1)]) {
     expect(output).not.toContain(amount.toLocaleString());
   }
-  expect(output).not.toContain("총 거래액");
+  expect(output).not.toContain("총 판매 금액");
   if (isIndividual) expect(output).not.toContain("공급가액");
   for (const word of ["직접 입력", "수동", "조정", "자체 판매", "override"]) expect(output).not.toContain(word);
 }
@@ -85,7 +85,7 @@ describe("명세서 — 수동 기준액 캠페인은 총 거래액 대신 정�
   ] as const)("%s: HTML 에 총액이 없고 정산 기준액·저장 판매대행비가 있다", (_label, extra, isIndividual) => {
     const html = buildSettlementStatementHtml([campaign(extra)], now);
     expectNoGross(html, isIndividual);
-    expect(html).toContain("정산 기준액");
+    expect(html).toContain("정산 계산 기준 금액");
     expect(html).toContain(BASIS.toLocaleString());
     expect(html).toContain("960,000");
     // 품목 판매가·수량도 싣지 않는다(판매가 × 수량 = 우리 판매분이 섞인 총액).
@@ -98,7 +98,7 @@ describe("명세서 — 수동 기준액 캠페인은 총 거래액 대신 정�
   ] as const)("%s: 평문도 같은 규칙", (_label, extra, isIndividual) => {
     const text = buildSettlementStatementText([campaign(extra)], now);
     expectNoGross(text, isIndividual);
-    expect(text).toContain(`- 정산 기준액: ${BASIS.toLocaleString()}원`);
+    expect(text).toContain(`- 정산 계산 기준 금액: ${BASIS.toLocaleString()}원`);
   });
 
   it("개인: 원천세·차인지급액은 저장 판매대행비 기준(960,000 × 3.3% = 31,680)", () => {
@@ -134,13 +134,13 @@ describe("명세서 — 수동·자동 캠페인이 섞여도 합계가 맞는�
 
     expect(totals.isMixedSellerFeeBasis).toBe(true);
     const html = buildSettlementStatementHtml([campaign(), plain], now);
-    expect(html).toContain("정산 기준액 (캠페인별 기준 합계)");
+    expect(html).toContain("정산 계산 기준 금액 (캠페인별 기준 합계)");
     expect(html).toContain((BASIS + 1_000_000).toLocaleString());
     expect(html).toContain((960_000 + 100_000).toLocaleString());
     // 수동 캠페인의 총액은 어디에도 없다.
     expect(html).not.toContain(GROSS.toLocaleString());
     expect(buildSettlementStatementText([campaign(), plain], now)).toContain(
-      `- 정산 기준액 (캠페인별 기준 합계): ${(BASIS + 1_000_000).toLocaleString()}원`,
+      `- 정산 계산 기준 금액 (캠페인별 기준 합계): ${(BASIS + 1_000_000).toLocaleString()}원`,
     );
   });
 
@@ -156,11 +156,11 @@ describe("명세서 — 수동·자동 캠페인이 섞여도 합계가 맞는�
 describe("명세서 — 기준액이 없는 캠페인은 종전 그대로", () => {
   it("총 거래액·공급가액 줄을 그대로 싣는다", () => {
     const html = buildSettlementStatementHtml([campaign({ ...individual, sellerFeeBasisOverride: null, sellerExpense: null })], now);
-    expect(html).toContain("총 거래액");
-    expect(html).toContain("└ 공급가액");
-    expect(html).not.toContain("정산 기준액");
+    expect(html).toContain("총 판매 금액");
+    expect(html).toContain("└ 부가세 제외 판매 금액");
+    expect(html).not.toContain("정산 계산 기준 금액");
     const text = buildSettlementStatementText([campaign({ sellerFeeBasisOverride: null })], now);
-    expect(text).toContain(`- 총 거래액: ${GROSS.toLocaleString()}원`);
+    expect(text).toContain(`- 총 판매 금액: ${GROSS.toLocaleString()}원`);
     expect(computeSettlementPayoutTotals([campaign({ sellerFeeBasisOverride: null })]).hasSellerFeeBasisOverride).toBe(false);
   });
 });
@@ -183,7 +183,7 @@ describe("명세서 — 혼합이 아니면 합계 줄 이름은 「정산 기�
   it("수동 기준액 캠페인만이면 괄호 설명을 붙이지 않는다", () => {
     const html = buildSettlementStatementHtml([campaign()], now);
     expect(html).not.toContain("캠페인별 기준 합계");
-    expect(buildSettlementStatementText([campaign()], now)).toContain(`- 정산 기준액: ${BASIS.toLocaleString()}원`);
+    expect(buildSettlementStatementText([campaign()], now)).toContain(`- 정산 계산 기준 금액: ${BASIS.toLocaleString()}원`);
   });
 });
 
@@ -193,7 +193,7 @@ describe("명세서 — 기준액 표에는 빈 칸·「-」가 없다(판매가
     ["개인", individual],
   ] as const)("%s", (_label, extra) => {
     const html = buildSettlementStatementHtml([campaign(extra)], now);
-    const table = html.slice(html.indexOf("캠페인별 매출 상세 내역"));
+    const table = html.slice(html.indexOf("캠페인별 정산 내역"));
     expect(table).not.toMatch(/>\s*-\s*</);
     expect(table).not.toContain("판매가");
     expect(table).not.toContain(">수량<");
@@ -216,8 +216,8 @@ describe("명세서 — 저장된 기준액이라도 품목 요율이 섞이면 
   it("기준액을 찍지 않고 종전(총 거래액) 명세서를 낸다", () => {
     const html = buildSettlementStatementHtml([mixedRates()], now);
     expect(html).not.toContain(BASIS.toLocaleString());
-    expect(html).toContain("총 거래액");
+    expect(html).toContain("총 판매 금액");
     expect(computeSettlementPayoutTotals([mixedRates()]).hasSellerFeeBasisOverride).toBe(false);
-    expect(buildSettlementStatementText([mixedRates()], now)).toContain("- 총 거래액:");
+    expect(buildSettlementStatementText([mixedRates()], now)).toContain("- 총 판매 금액:");
   });
 });

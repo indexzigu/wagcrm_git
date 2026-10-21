@@ -139,11 +139,11 @@ function campaignWith(items: SettlementItemRow[], overrides: Partial<CampaignRow
 }
 
 describe("셀러 명세서 — 대상=셀러 항목만 노출한다(P0)", () => {
-  it("셀러 항목은 「별도 지급 항목」으로 표시된다", () => {
+  it("셀러 항목은 「추가 지급」으로 표시된다", () => {
     const html = buildSettlementStatementHtml([campaignWith([SELLER_ITEM])]);
-    expect(html).toContain("별도 지급 항목");
-    // 「수수료 정산과 별개」를 명시해야 셀러가 다음 회차 기준에 포함된다고 오해하지 않는다.
-    expect(html).toContain("수수료 정산과 별개");
+    expect(html).toContain("추가 지급 (광고비 등)");
+    // 「정산 비율과 무관」(옛 「수수료 정산과 별개」)을 명시해야 셀러가 다음 회차 기준에 포함된다고 오해하지 않는다.
+    expect(html).toContain("정산 비율과 무관");
   });
 
   it("⛔ 브랜드사·자사 항목의 비고와 금액은 어떤 경우에도 등장하지 않는다", () => {
@@ -157,7 +157,7 @@ describe("셀러 명세서 — 대상=셀러 항목만 노출한다(P0)", () => 
 
   it("부가 항목이 없으면 그 줄을 만들지 않는다(현행 명세서와 동일)", () => {
     const html = buildSettlementStatementHtml([campaignWith([])]);
-    expect(html).not.toContain("별도 지급 항목");
+    expect(html).not.toContain("추가 지급");
   });
 
   it("평문과 HTML 이 같은 합계를 말한다 — 갈리면 메일 클라이언트가 다른 금액을 보낸다", () => {
