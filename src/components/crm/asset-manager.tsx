@@ -780,7 +780,7 @@ export function AssetManager({
           variant="outline"
           className={
             storage.supabaseEstimatedBytes >= storage.supabaseWarningBytes
-              ? "border-amber-300 bg-amber-50 text-amber-700"
+              ? "border-status-caution/30 bg-status-caution-bg text-status-caution-text"
               : "bg-muted"
           }
         >
@@ -873,7 +873,7 @@ export function AssetManager({
             자료 추가
           </Button>
         </div>
-        {message ? <p className="text-xs text-rose-600">{message}</p> : null}
+        {message ? <p className="text-xs text-status-urgent">{message}</p> : null}
       </div>
 
       <div className="space-y-2">
@@ -1043,7 +1043,7 @@ export function AssetManager({
             {sellerPostBusy ? "추가 중..." : "게시물 추가"}
           </Button>
         </div>
-        {sellerPostError ? <p className="text-xs text-rose-600">{sellerPostError}</p> : null}
+        {sellerPostError ? <p className="text-xs text-status-urgent">{sellerPostError}</p> : null}
         {sellerPostNotice ? <p className="text-xs text-status-success">{sellerPostNotice}</p> : null}
 
         {/* 검토 기간(마감 +7일)이 지난 캠페인 — 미분류 후보·스토리를 접었다는 사실과 되살리는 길을
@@ -1250,7 +1250,7 @@ export function AssetManager({
             })}
           </div>
         )}
-        {suggestError ? <p className="text-[11px] text-rose-600">{suggestError}</p> : null}
+        {suggestError ? <p className="text-[11px] text-status-urgent">{suggestError}</p> : null}
 
         {/* 셀러 스토리(캠페인 통합) — /admin/stories 전역 분류함과 같은 데이터를 이 캠페인
             수집창(시작 7일 전~마감 1일 후)으로 좁혀 최신순으로 보여준다. 스토리는 좋아요/댓글이
@@ -1371,7 +1371,7 @@ export function AssetManager({
                   );
                 })}
               </div>
-              {storiesError ? <p className="text-[11px] text-rose-600">{storiesError}</p> : null}
+              {storiesError ? <p className="text-[11px] text-status-urgent">{storiesError}</p> : null}
             </>
           )}
         </div>

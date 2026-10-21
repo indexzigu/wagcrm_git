@@ -168,7 +168,7 @@ export function KatalkManageTab() {
               room.entityType && room.entityId ? `${room.entityType}:${room.entityId}` : "__none__";
 
             return (
-              <TableRow key={`${room.source}:${room.roomKey}`} className={stale ? "bg-amber-50" : undefined}>
+              <TableRow key={`${room.source}:${room.roomKey}`} className={stale ? "bg-status-caution-bg" : undefined}>
                 <TableCell className="max-w-[220px] truncate font-medium text-foreground">
                   {room.roomName ?? room.roomKey}
                   {stale && (
@@ -288,7 +288,7 @@ function ManageGuideNote() {
     <p className="text-xs leading-relaxed text-muted-foreground">
       방을 거래처·셀러·캠페인에 연결(매핑)하면 그 방의 대화 기록이 해당 업체 기록으로 자동
       정리됩니다.{" "}
-      <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">
+      <span className="inline-flex items-center gap-1 rounded bg-status-caution-bg px-1.5 py-0.5 text-status-caution-text">
         주황색 표시
       </span>
       는 7일 이상 업로드가 없었던 방이라는 뜻이니, 최근 대화가 있다면 다시 업로드해주세요.

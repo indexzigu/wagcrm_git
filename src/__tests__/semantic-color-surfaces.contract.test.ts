@@ -70,15 +70,39 @@ const FILES = [
   "components/crm/shipping/modals/CampaignInsightsModal.tsx",
   "components/portal/seller-portal-report.tsx",
   "components/portal/campaign-countdown.tsx",
+  // [애플UI] 전수 정리 C — 설정·자료·공용(2026-10-22)
+  "components/crm/asset-library.tsx",
+  "components/crm/integrations-diagnostic.tsx",
+  "components/crm/data-source-banner.tsx",
+  "components/crm/inline-data-grid.tsx",
+  "components/crm/asset-manager.tsx",
+  "components/crm/inline-edit-cell.tsx",
+  "components/crm/operations-settings-client.tsx",
+  "components/crm/katalk/manage-tab.tsx",
+  "components/crm/inline-edit-field.tsx",
+  "app/coupang-partners/page.tsx",
+  "app/error.tsx",
+  "components/crm/shipping/modals/CampaignInsightsModal.tsx",
   "components/crm/shipping/modals/CampaignInsightsModal.tsx",
 ] as const;
 
 /** globals.css 밖 팔레트 hue(셰이드가 붙은 유틸) + hex 리터럴. */
 const OFF_TOKEN_HUE = /\b(?:emerald|amber|blue|indigo|sky|violet|purple|rose|orange|green|yellow|teal|cyan|pink|red|lime|fuchsia)-\d{2,3}\b/g;
-const HEX = /#[0-9a-fA-F]{3,8}\b/g;
+// 뒤 경계는 \b 가 아니라 「영숫자가 아님」 — Tailwind 임의값 `bg-[linear-gradient(#F8FAFC_0%…)]` 의 `_` 는 단어 문자라 \b 로는 못 잡는다.
+const HEX = /#[0-9a-fA-F]{3,8}(?![0-9a-zA-Z])/g;
 
 /** 파일 → 남겨 둔 hue(또는 "#" hex 값) 와 정확한 개수·사유. 줄이기만 한다(고치면 개수를 낮추고, 0 이 되면 항목을 지운다). */
 const REMAINING: Record<string, { hue: string; count: number; reason: string }[]> = {
+  "app/error.tsx": [
+    { hue: "#F8FAFC", count: 1, reason: "오류 화면 바탕 그라디언트 — 무채색(범위 밖)" },
+    { hue: "#F1F5F9", count: 1, reason: "오류 화면 바탕 그라디언트 — 무채색(범위 밖)" },
+  ],
+  "app/coupang-partners/page.tsx": [
+    { hue: "yellow", count: 2, reason: "외부 공개 페이지 상품 색 견본 — 색 자체가 내용" },
+    { hue: "orange", count: 2, reason: "외부 공개 페이지 상품 색 견본 — 색 자체가 내용" },
+    { hue: "rose", count: 5, reason: "외부 공개 페이지(WAGPICK) 브랜드 강조색 — CRM 팔레트 밖, 오너 확인: 유지(2026-10-22)" },
+    { hue: "#FBFAF8", count: 1, reason: "페이지 바탕 — 무채색(범위 밖)" },
+  ],
   "components/crm/campaign-card.tsx": [
     { hue: "emerald", count: 2, reason: "ACTIVE 라이브 도트 — 오너 확정 예외(2026-07-16), status-literal-token-alignment 가 고정" },
   ],
@@ -161,6 +185,7 @@ describe("스캐너 프로브 — 스캐너가 고장 나면 아래 「0건」�
       'const a = "bg-emerald-50 text-amber-700";',
       "const b = `x ${y ? 'border-l-indigo-500' : ''} text-blue-600`;",
       'const c = <circle stroke="#10b981" className="fill-rose-500" />;',
+      'const d = "bg-[linear-gradient(180deg,_#F8FAFC_0%,_#F1F5F9_100%)]";',
     ].join("\n");
     expect(hueHits(stringValues(src))).toEqual([
       "emerald-50",
@@ -169,7 +194,7 @@ describe("스캐너 프로브 — 스캐너가 고장 나면 아래 「0건」�
       "blue-600",
       "rose-500",
     ]);
-    expect(stringValues(src).filter((v) => /#[0-9a-fA-F]{3,8}\b/.test(v))).toEqual(["#10b981"]);
+    expect(stringValues(src).flatMap((v) => v.match(HEX) ?? [])).toEqual(["#10b981", "#F8FAFC", "#F1F5F9"]);
   });
 
   it("음성: 주석과 토큰 유틸은 잡지 않는다", () => {
@@ -180,7 +205,7 @@ describe("스캐너 프로브 — 스캐너가 고장 나면 아래 「0건」�
       'const u = "https://example.com/a";',
     ].join("\n");
     expect(hueHits(stringValues(src))).toEqual([]);
-    expect(stringValues(src).filter((v) => /#[0-9a-fA-F]{3,8}\b/.test(v))).toEqual([]);
+    expect(stringValues(src).flatMap((v) => v.match(HEX) ?? [])).toEqual([]);
   });
 });
 

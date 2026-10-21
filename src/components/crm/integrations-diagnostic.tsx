@@ -217,8 +217,8 @@ export function IntegrationsDiagnostic({
             <div className="p-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-100 dark:bg-amber-950/10 dark:border-amber-900/20">
-                    <FolderOpen className="size-5 text-amber-600" />
+                  <div className="p-2.5 bg-muted rounded-xl border border-border">
+                    <FolderOpen className="size-5 text-muted-foreground" />
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -267,8 +267,8 @@ export function IntegrationsDiagnostic({
               </div>
 
               {drive.lastError && (
-                <div className="flex gap-2 items-start p-3 bg-rose-50/50 border border-rose-100 rounded-xl text-rose-800 text-xs">
-                  <AlertTriangle className="size-3.5 text-rose-500 shrink-0 mt-0.5" />
+                <div className="flex gap-2 items-start p-3 bg-status-urgent-bg border border-status-urgent/20 rounded-xl text-status-urgent-text text-xs">
+                  <AlertTriangle className="size-3.5 text-status-urgent shrink-0 mt-0.5" />
                   <div className="min-w-0">
                     <p className="font-semibold">에러 로그</p>
                     <p className="font-mono mt-0.5 break-all">{drive.lastError}</p>
@@ -287,8 +287,8 @@ export function IntegrationsDiagnostic({
             <div className="p-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-blue-50 rounded-xl border border-blue-100 dark:bg-blue-950/10 dark:border-blue-900/20">
-                    <Calendar className="size-5 text-blue-600" />
+                  <div className="p-2.5 bg-muted rounded-xl border border-border">
+                    <Calendar className="size-5 text-muted-foreground" />
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -374,8 +374,8 @@ export function IntegrationsDiagnostic({
               </div>
 
               {calendar.lastError && (
-                <div className="flex gap-2 items-start p-3 bg-rose-50/50 border border-rose-100 rounded-xl text-rose-800 text-xs">
-                  <AlertTriangle className="size-3.5 text-rose-500 shrink-0 mt-0.5" />
+                <div className="flex gap-2 items-start p-3 bg-status-urgent-bg border border-status-urgent/20 rounded-xl text-status-urgent-text text-xs">
+                  <AlertTriangle className="size-3.5 text-status-urgent shrink-0 mt-0.5" />
                   <div className="min-w-0">
                     <p className="font-semibold">에러 로그</p>
                     <p className="font-mono mt-0.5 break-all">{calendar.lastError}</p>
@@ -398,15 +398,15 @@ export function IntegrationsDiagnostic({
           <Card className="rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden">
             <CardHeader className="pb-3 border-b border-border bg-muted/60 px-6 py-4">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <HelpCircle className="size-4 text-indigo-500 shrink-0" />
+                <HelpCircle className="size-4 text-muted-foreground shrink-0" />
                 연동 자격 가이드
               </CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-4 text-xs leading-relaxed text-slate-600">
               <div className="space-y-3">
-                <div className="bg-amber-50/50 border border-amber-100/50 rounded-xl p-3 text-slate-700">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-800 mb-1">
-                    <CloudLightning className="size-3.5 text-amber-500 shrink-0 animate-pulse" />
+                <div className="bg-muted/60 border border-border rounded-xl p-3 text-slate-700">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1">
+                    <CloudLightning className="size-3.5 text-slate-500 shrink-0 animate-pulse" />
                     토큰 자격 자가 복구 원리
                   </div>
                   구글 API 보안 정책으로 인해 비활성 기간이 길어지거나 리프레시 토큰이 회수될 경우, 연동이 끊어질 수 있습니다. [재승인 및 복구] 버튼을 통해 사용자가 직접 동의 화면으로 리다이렉트되어 새로운 토큰을 갱신해 복구할 수 있습니다.

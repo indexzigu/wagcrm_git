@@ -94,10 +94,10 @@ function getFileIcon(mimeType: string | null | undefined, fileName: string) {
   const ext = fileName.split('.').pop()?.toLowerCase() || "";
   
   if (mime.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) {
-    return <ImageIcon className="size-4 text-emerald-500 shrink-0" />;
+    return <ImageIcon className="size-4 text-muted-foreground shrink-0" />;
   }
   if (mime.startsWith("video/") || ["mp4", "mov", "avi", "mkv"].includes(ext)) {
-    return <Video className="size-4 text-rose-500 shrink-0" />;
+    return <Video className="size-4 text-muted-foreground shrink-0" />;
   }
   if (
     mime.includes("spreadsheet") || 
@@ -105,7 +105,7 @@ function getFileIcon(mimeType: string | null | undefined, fileName: string) {
     mime.includes("sheet") || 
     ["xlsx", "xls", "csv"].includes(ext)
   ) {
-    return <FileSpreadsheet className="size-4 text-teal-600 shrink-0" />;
+    return <FileSpreadsheet className="size-4 text-muted-foreground shrink-0" />;
   }
   if (
     mime.includes("zip") || 
@@ -113,7 +113,7 @@ function getFileIcon(mimeType: string | null | undefined, fileName: string) {
     mime.includes("compressed") || 
     ["zip", "tar", "gz", "rar", "7z"].includes(ext)
   ) {
-    return <FileArchive className="size-4 text-amber-600 shrink-0" />;
+    return <FileArchive className="size-4 text-muted-foreground shrink-0" />;
   }
   if (
     mime.includes("pdf") || 
@@ -122,7 +122,7 @@ function getFileIcon(mimeType: string | null | undefined, fileName: string) {
     mime.includes("powerpoint") ||
     ["pdf", "docx", "doc", "pptx", "ppt", "txt", "hwp"].includes(ext)
   ) {
-    return <FileText className="size-4 text-blue-500 shrink-0" />;
+    return <FileText className="size-4 text-muted-foreground shrink-0" />;
   }
   return <File className="size-4 text-slate-400 shrink-0" />;
 }
@@ -742,9 +742,9 @@ export function AssetLibrary({
             <span className="flex items-center gap-2 min-w-0">
               <span className="text-slate-400 shrink-0">
                 {node.isOpen ? (
-                  <FolderOpen className="size-4 text-amber-500 fill-amber-500/20" />
+                  <FolderOpen className="size-4 text-muted-foreground fill-muted-foreground/20" />
                 ) : (
-                  <Folder className="size-4 text-amber-400 fill-amber-400/10" />
+                  <Folder className="size-4 text-muted-foreground fill-muted-foreground/10" />
                 )}
               </span>
               <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 truncate">
@@ -802,7 +802,7 @@ export function AssetLibrary({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                className={`rounded-lg size-7 ${asset.archivedAt ? "text-slate-500 hover:text-emerald-500 hover:bg-emerald-50" : "text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"}`}
+                className={`rounded-lg size-7 ${asset.archivedAt ? "text-slate-500 hover:text-status-success hover:bg-status-success-bg" : "text-slate-500 hover:text-status-urgent-text hover:bg-status-urgent-bg"}`}
                 onClick={() => toggleArchiveAsset(asset)}
                 title={asset.archivedAt ? "보관 해제" : "보관"}
               >
@@ -838,7 +838,7 @@ export function AssetLibrary({
           <div className="flex items-center gap-1.5 shrink-0">
             <FolderOpen className="size-3.5 text-slate-400" />
             <span className="font-medium">Google Drive:</span>
-            <span className={`font-semibold ${initialData.storage.googleDriveConnected ? "text-status-success dark:text-emerald-400" : "text-status-caution-text dark:text-amber-400"}`}>
+            <span className={`font-semibold ${initialData.storage.googleDriveConnected ? "text-foreground" : "text-status-caution-text"}`}>
               {initialData.storage.googleDriveConnected ? "연결됨" : "미연결"}
             </span>
             {initialData.storage.googleDriveAccount && (
@@ -892,7 +892,7 @@ export function AssetLibrary({
                 size="sm"
                 className={`h-9 rounded-lg transition-[color,background-color,border-color,font-weight] text-xs shrink-0 ${
                   showArchived 
-                    ? "bg-amber-50 text-amber-700 border-amber-200/60 hover:bg-amber-100/80 hover:text-amber-800 font-semibold" 
+                    ? "bg-status-caution-bg text-status-caution-text border-status-caution/30 hover:bg-status-caution/10 hover:text-status-caution-text font-semibold" 
                     : "bg-white text-slate-600 hover:text-slate-800 border-slate-200"
                 }`}
                 onClick={() => setShowArchived(!showArchived)}
@@ -1151,7 +1151,7 @@ export function AssetLibrary({
                           <Button 
                             variant="ghost" 
                             size="icon-xs" 
-                            className={`size-6 rounded-md hover:bg-slate-100 ${asset.archivedAt ? "hover:text-emerald-600" : "hover:text-rose-600"}`}
+                            className={`size-6 rounded-md hover:bg-slate-100 ${asset.archivedAt ? "hover:text-status-success" : "hover:text-status-urgent-text"}`}
                             onClick={() => toggleArchiveAsset(asset)}
                             title={asset.archivedAt ? "보관 해제" : "보관"}
                           >
@@ -1212,7 +1212,7 @@ export function AssetLibrary({
                         <Button 
                           variant="ghost" 
                           size="icon-sm" 
-                          className={`rounded-lg ${asset.archivedAt ? "hover:text-emerald-600" : "hover:text-rose-600"}`}
+                          className={`rounded-lg ${asset.archivedAt ? "hover:text-status-success" : "hover:text-status-urgent-text"}`}
                           onClick={() => toggleArchiveAsset(asset)}
                           title={asset.archivedAt ? "보관 해제" : "보관"}
                         >
