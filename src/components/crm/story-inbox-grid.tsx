@@ -12,52 +12,16 @@ import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
 import { classifyStory } from "@/app/admin/stories/actions";
 import { toast } from "@/lib/toast";
-
-export type StoryClassification = "UNREVIEWED" | "CAMPAIGN" | "OTHER";
-export type StoryInboxFilter = "unreviewed" | "campaign" | "other" | "all";
-
-export type StoryInboxCard = {
-  id: string;
-  displayName: string;
-  img: string | null;
-  isVideo: boolean;
-  sourceUrlOnly: boolean;
-  takenAtLabel: string;
-  snsHandle: string;
-  classification: StoryClassification;
-};
-
-const FILTERS: { key: StoryInboxFilter; label: string; classification?: StoryClassification }[] = [
-  { key: "unreviewed", label: "미분류", classification: "UNREVIEWED" },
-  { key: "campaign", label: "캠페인 홍보", classification: "CAMPAIGN" },
-  { key: "other", label: "무관", classification: "OTHER" },
-  { key: "all", label: "전체" },
-];
+import {
+  STORY_INBOX_FILTERS,
+  applyOverrides,
+  classificationOfFilter,
+  type StoryClassification,
+  type StoryInboxCard,
+  type StoryInboxFilter,
+} from "@/lib/story-inbox";
 
 type Override = { id: string; classification: StoryClassification };
-
-/**
- * 낙관적 덮어쓰기를 반영한 카드별 분류와 탭 개수. 개수는 서버 집계(`counts`)에 "원래 분류 → 새 분류"
- * 이동분만 더한다 — 지금 화면에 없는 카드(200장 밖)의 개수는 서버 값 그대로다.
- */
-export function applyOverrides(
-  cards: StoryInboxCard[],
-  counts: Record<StoryClassification, number>,
-  overrides: Record<string, StoryClassification>,
-) {
-  const next = { ...counts };
-  const effective = new Map<string, StoryClassification>();
-  for (const card of cards) {
-    const now = overrides[card.id] ?? card.classification;
-    effective.set(card.id, now);
-    if (now !== card.classification) {
-      // 저장값은 DB 상 String 이라 3종 밖 값이 올 수 있다 — 그 칸은 0 에서 시작해 NaN 을 막는다.
-      next[card.classification] = (next[card.classification] ?? 0) - 1;
-      next[now] = (next[now] ?? 0) + 1;
-    }
-  }
-  return { effective, counts: next };
-}
 
 export function StoryInboxGrid({
   filter,
@@ -78,7 +42,7 @@ export function StoryInboxGrid({
   );
 
   const { effective, counts: shown } = applyOverrides(cards, counts, overrides);
-  const want = FILTERS.find((f) => f.key === filter)?.classification;
+  const want = classificationOfFilter(filter);
   const visible = cards.filter((c) => !want || effective.get(c.id) === want);
 
   function classify(id: string, displayName: string, classification: StoryClassification) {
@@ -97,7 +61,7 @@ export function StoryInboxGrid({
   return (
     <>
       <nav className="mb-5 flex items-center gap-1.5">
-        {FILTERS.map((tab) => {
+        {STORY_INBOX_FILTERS.map((tab) => {
           const count = tab.classification ? shown[tab.classification] : total;
           const active = tab.key === filter;
           return (

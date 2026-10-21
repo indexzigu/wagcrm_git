@@ -9,7 +9,8 @@ vi.mock("@/app/admin/stories/actions", () => ({
 const toastError = vi.fn();
 vi.mock("@/lib/toast", () => ({ toast: { error: (...args: unknown[]) => toastError(...args) } }));
 
-import { StoryInboxGrid, applyOverrides, type StoryInboxCard } from "@/components/crm/story-inbox-grid";
+import { StoryInboxGrid } from "@/components/crm/story-inbox-grid";
+import { applyOverrides, type StoryInboxCard } from "@/lib/story-inbox";
 
 /**
  * 분류 버튼은 서버 응답을 기다리지 않고 **즉시** 화면을 바꿔야 한다 — 예전엔 저장은 됐는데 서버
@@ -106,5 +107,17 @@ describe("applyOverrides — 개수 계산", () => {
 
   it("원래 분류와 같은 값으로 덮어쓰면 개수가 변하지 않는다", () => {
     expect(applyOverrides(cards, counts, { a: "UNREVIEWED" }).counts).toEqual(counts);
+  });
+});
+
+describe("story-inbox-grid 모듈 경계", () => {
+  /**
+   * "use client" 모듈에서 내보낸 상수·함수를 서버 페이지가 가져오면 실제 값이 아니라 클라이언트 참조가
+   * 와서 런타임에 죽는다(2026-10-21 실렌더: `.find is not a function`). 타입체크·단위 테스트로는 안 보인다.
+   * 서버와 공유할 것은 `src/lib/story-inbox.ts` 에 둔다 — 이 모듈은 컴포넌트만 내보낸다.
+   */
+  it("컴포넌트 하나만 내보낸다", async () => {
+    const mod = await import("@/components/crm/story-inbox-grid");
+    expect(Object.keys(mod)).toEqual(["StoryInboxGrid"]);
   });
 });

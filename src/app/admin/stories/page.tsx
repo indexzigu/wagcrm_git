@@ -8,11 +8,16 @@ import { CrmShell } from "@/components/crm/crm-shell";
 import { StoryCollectButton } from "@/components/crm/story-collect-button";
 import { BulkContentCollectButton } from "@/components/crm/bulk-content-collect-button";
 import { listCaptureWindowSellers } from "@/lib/story-capture";
-import { StoryInboxGrid, type StoryClassification, type StoryInboxFilter } from "@/components/crm/story-inbox-grid";
+import { StoryInboxGrid } from "@/components/crm/story-inbox-grid";
+import {
+  STORY_INBOX_FILTER_KEYS,
+  classificationOfFilter,
+  toStoryClassification,
+  type StoryInboxCard,
+  type StoryInboxFilter,
+} from "@/lib/story-inbox";
 
 export const metadata: Metadata = { title: "스토리 분류함" };
-
-const FILTER_KEYS: StoryInboxFilter[] = ["unreviewed", "campaign", "other", "all"];
 
 function fmtKst(d: Date): string {
   const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
@@ -29,16 +34,10 @@ export default async function StoryInboxPage({
   searchParams: Promise<{ f?: string }>;
 }) {
   const { f } = await searchParams;
-  const filter: StoryInboxFilter = FILTER_KEYS.find((k) => k === f) ?? "unreviewed";
+  const filter: StoryInboxFilter = STORY_INBOX_FILTER_KEYS.find((k) => k === f) ?? "unreviewed";
 
-  const where =
-    filter === "unreviewed"
-      ? { classification: "UNREVIEWED" }
-      : filter === "campaign"
-        ? { classification: "CAMPAIGN" }
-        : filter === "other"
-          ? { classification: "OTHER" }
-          : {};
+  const wanted = classificationOfFilter(filter);
+  const where = wanted ? { classification: wanted } : {};
 
   const prisma = getPrisma();
   const [snapshots, counts, windowSellers] = await Promise.all([
@@ -55,6 +54,24 @@ export default async function StoryInboxPage({
   // 표시명은 별칭 우선(P2 Seller Alias Priority)
   const bulkTargets = windowSellers.map((s) => ({ id: s.id, label: s.alias || s.name }));
   const countOf = (c: string) => counts.find((x) => x.classification === c)?._count ?? 0;
+
+  // 3종 밖 분류값은 어느 탭에도 속하지 않으므로 그리드에 넘기지 않는다(전체 탭 개수에는 서버 합으로 남는다).
+  const cards: StoryInboxCard[] = snapshots.flatMap((s) => {
+    const classification = toStoryClassification(s.classification);
+    if (!classification) return [];
+    return [
+      {
+        id: s.id,
+        displayName: s.seller.alias || s.seller.name,
+        img: s.thumbnailUrl || s.sourceImageUrl,
+        isVideo: s.mediaType === 2,
+        sourceUrlOnly: !s.thumbnailUrl && !!s.sourceImageUrl,
+        takenAtLabel: fmtKst(s.takenAt),
+        snsHandle: s.seller.snsHandle,
+        classification,
+      },
+    ];
+  });
 
   return (
     // 제목·설명·수집 버튼은 CrmShell 머리로 올렸다(메뉴 이름 = 페이지 제목) — 세로 스크롤러도 CrmShell 이 소유한다.
@@ -75,16 +92,7 @@ export default async function StoryInboxPage({
         filter={filter}
         counts={{ UNREVIEWED: countOf("UNREVIEWED"), CAMPAIGN: countOf("CAMPAIGN"), OTHER: countOf("OTHER") }}
         total={counts.reduce((sum, x) => sum + x._count, 0)}
-        cards={snapshots.map((s) => ({
-          id: s.id,
-          displayName: s.seller.alias || s.seller.name,
-          img: s.thumbnailUrl || s.sourceImageUrl,
-          isVideo: s.mediaType === 2,
-          sourceUrlOnly: !s.thumbnailUrl && !!s.sourceImageUrl,
-          takenAtLabel: fmtKst(s.takenAt),
-          snsHandle: s.seller.snsHandle ?? "",
-          classification: s.classification as StoryClassification,
-        }))}
+        cards={cards}
       />
     </div>
     </CrmShell>
