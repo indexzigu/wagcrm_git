@@ -141,7 +141,7 @@ describe("셀러 정산서 줄 이름 (설계서 §14)", () => {
 
     expect(html).not.toContain("공급가액");
     expect(text).not.toContain("공급가액");
-    for (const label of [L.common.grossSales, L.individual.preTaxPayout, L.individual.withholding, L.individual.postTaxPayout, L.common.extraPayout]) {
+    for (const label of [L.common.grossSales, L.individual.preTaxPayout, L.individual.withholding, L.individual.withholdingNote, L.individual.postTaxPayout, L.common.extraPayout]) {
       expect(text).toContain(label);
     }
   });

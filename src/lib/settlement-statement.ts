@@ -22,7 +22,8 @@ const YGRD_COMPANY = {
  * 원천세·차인지급액) 대신 셀러가 읽고 이해하기 쉬운 말. 같은 「공급가액」이 개인(판매 금액의
  * 부가세 제외분)과 사업자(정산금의 부가세 제외분)에서 뜻이 갈려, 개인은 「부가세 제외 판매 금액」으로
  * 바꾸고 사업자만 괄호 안에 「공급가액」을 남긴다(세금계산서와 대조하는 낱말이라서).
- * ⛔ 낱말을 바꾸려면 오너 결정이 먼저다. 옛 이름의 재등장은 `ui-copy-terms` 계약이 막는다.
+ * ⛔ 낱말을 바꾸려면 오너 결정이 먼저다. 옛 이름의 재등장은 `ui-copy-terms` 계약(문자열 리터럴)과
+ * `settlement-statement-seller-labels.test.ts`(HTML 템플릿 안까지 — 네 형식의 실제 출력)가 함께 막는다.
  * 오너가 읽는 검증 메시지(`validateSettlementStatementCampaigns`)는 오너 화면 낱말이라 대상이 아니다.
  */
 export const SELLER_STATEMENT_LABELS = {
@@ -969,7 +970,7 @@ export function buildSettlementStatementText(campaigns: CampaignRow[], now = new
   const totals = computeSettlementPayoutTotals(campaigns);
   const won = (value: number) => `${Math.round(value).toLocaleString()}원`;
   const breakdown = totals.isIndividual
-    ? `  └ ${L.individual.preTaxPayout}: ${won(totals.totalPreTaxPayout)}, ${L.individual.withholding}: ${won(totals.totalWithholdingTaxOnly)}`
+    ? `  └ ${L.individual.preTaxPayout}: ${won(totals.totalPreTaxPayout)}, ${L.individual.withholding}: ${won(totals.totalWithholdingTaxOnly)}\n    ※ ${L.individual.withholdingNote}`
     : (() => {
         const { supply, vat } = calcBusinessVatBreakdown(totals.totalPostTaxPayout);
         return `  └ ${L.business.supplyOfPayout}: ${won(supply)}, ${L.business.vat}: ${won(vat)}`;
