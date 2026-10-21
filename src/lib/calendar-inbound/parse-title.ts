@@ -18,6 +18,7 @@ export const SUPPLIER_RE = /공급사|업체|벤더/;
 /**
  * 이름 매칭 전에 걷어낼 키워드 전부 — 위 세 정규식에서 만든다(키워드를 한 곳에서만 고치게).
  * ⛔ 리터럴로 다시 적지 말 것: 종류 판정에 키워드를 더하고 여기를 빠뜨리면 그 낱말이 브랜드 토큰으로 남는다.
+ * ⛔ replace 전용 — `.test`/`.exec` 금지(g 플래그라 lastIndex 가 남아 다음 호출 결과가 바뀐다).
  */
 export const KEYWORD_STRIP_RE = new RegExp(
   [DEPOSIT_RE, PAYOUT_RE, SUPPLIER_RE].map((re) => re.source).join("|"),

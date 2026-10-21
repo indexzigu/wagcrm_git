@@ -39,6 +39,13 @@ import type { InboundDictionary, ParsedCalendarIntent, TitleHints } from "./type
  */
 export const MAX_PROPOSALS_PER_RUN = 20;
 
+/**
+ * 한 회차 LLM 힌트 호출 상한. 기안 상한은 기안 수만 세므로 해석 못 하는 일정(개인 일정 등)이 쌓이면
+ * 힌트 호출이 무한정 는다 — 이 예산으로 따로 묶는다. 예산이 바닥난 뒤 규칙 파서가 실패한 건은
+ * **쓰지 않고** 다음 회차로 넘기며 `hintDeferred` 로 센다(SKIPPED 로 적으면 힌트 없이 영영 닫힌다).
+ */
+export const MAX_HINT_CALLS_PER_RUN = 20;
+
 /** 스캔 창 — KST 오늘 기준 과거 14일 ~ 미래 180일(끝날 포함). */
 const WINDOW_DAYS_BACK = 14;
 const WINDOW_DAYS_FORWARD = 180;
@@ -68,6 +75,8 @@ export type ScanSummary = {
   adoptedNoop: number;
   /** 상한에 걸려 이번 회차에 손대지 않은 수. */
   dropped: number;
+  /** 힌트 예산이 바닥나 이번 회차에 손대지 않은 해석 실패 수(다음 회차가 집는다). */
+  hintDeferred: number;
   /** 같은 지문·결정 대기 중인 기안·닫힌 기안 등 이미 처리된 수. */
   alreadyHandled: number;
   /** 한 건 처리 중 예외가 난 수(그 건만 건너뛰었다 — 로그 확인). */
@@ -156,6 +165,7 @@ function emptySummary(): ScanSummary {
     skippedUnparsed: 0,
     adoptedNoop: 0,
     dropped: 0,
+    hintDeferred: 0,
     alreadyHandled: 0,
     errors: 0,
   };
@@ -191,14 +201,23 @@ function triage(row: InboundRow | undefined, fingerprint: string, proposalStatus
   return row.fingerprint === fingerprint ? { kind: "handled" } : { kind: "evaluate" };
 }
 
-/** 규칙 파서 → (실패 시) 힌트 1회 → 재파서. 힌트 호출은 이 함수 안에서만, 이벤트당 최대 1회. */
+/** 회차당 힌트 호출 예산 — 실제 호출 수를 센다. */
+type HintBudget = { used: number; max: number };
+
+/**
+ * 규칙 파서 → (실패 시) 힌트 1회 → 재파서. 힌트 호출은 이 함수 안에서만, 이벤트당 최대 1회.
+ * 예산이 바닥났으면 힌트를 부르지 않고 "deferred"(호출부는 행을 쓰지 않는다).
+ */
 async function parseWithHints(
   summary: string,
   dict: InboundDictionary,
   deps: CalendarInboundScanDeps,
-): Promise<ReturnType<typeof parseCalendarTitle>> {
+  budget: HintBudget,
+): Promise<ReturnType<typeof parseCalendarTitle> | "deferred"> {
   const first = parseCalendarTitle(summary, dict);
   if (first.ok) return first;
+  if (budget.used >= budget.max) return "deferred";
+  budget.used++;
   const hints = await deps.extractHints(summary);
   if (!hints) return first;
   return parseCalendarTitle(summary, dict, hints);
@@ -244,7 +263,7 @@ function buildProposalInput(
   };
 }
 
-type EventOutcome = "proposed" | "skipped" | "adopted";
+type EventOutcome = "proposed" | "skipped" | "adopted" | "deferred";
 
 /** 해석 대상 한 건 처리. 예외는 호출부가 잡는다. */
 async function evaluateEvent(
@@ -255,6 +274,7 @@ async function evaluateEvent(
   deps: CalendarInboundScanDeps,
   /** 재판정 대기 행이다 — 기안 없이 끝나면(SKIPPED·noop) 옛 FAILED 기안과의 연결을 끊는다(R20). */
   retrying: boolean,
+  hintBudget: HintBudget,
 ): Promise<EventOutcome> {
   const base = {
     calendarId: event.calendarId,
@@ -267,7 +287,8 @@ async function evaluateEvent(
   // 실행된다. null 이면 승인 단계(`approveProposal`)가 SUPERSEDED 로 거절한다.
   const detach = retrying ? { proposalId: null } : {};
 
-  const parsed = await parseWithHints(event.summary, dict, deps);
+  const parsed = await parseWithHints(event.summary, dict, deps, hintBudget);
+  if (parsed === "deferred") return "deferred";
   if (!parsed.ok) {
     await deps.saveRow(event.id, {
       ...base,
@@ -345,10 +366,16 @@ async function evaluateEvent(
 }
 
 export async function runCalendarInboundScan(
-  opts: { now?: Date; maxProposals?: number; deps?: Partial<CalendarInboundScanDeps> } = {},
+  opts: {
+    now?: Date;
+    maxProposals?: number;
+    maxHintCalls?: number;
+    deps?: Partial<CalendarInboundScanDeps>;
+  } = {},
 ): Promise<ScanSummary> {
   const now = opts.now ?? new Date();
   const cap = opts.maxProposals ?? MAX_PROPOSALS_PER_RUN;
+  const hintBudget: HintBudget = { used: 0, max: opts.maxHintCalls ?? MAX_HINT_CALLS_PER_RUN };
   const deps: CalendarInboundScanDeps = { ...defaultDeps(), ...opts.deps };
   const summary = emptySummary();
 
@@ -419,16 +446,17 @@ export async function runCalendarInboundScan(
       }
 
       summary.newOrChanged++;
-      // 해석 전에 자른다 — 상한이 회차당 Gemini 힌트 호출 수도 묶는다(R21).
+      // 기안 상한 — 기안 수만 센다. 힌트(Gemini) 호출은 따로 `hintBudget` 이 묶는다.
       if (summary.proposed >= cap) {
         // 손대지 않는다 — 다음 회차가 처음 본 것처럼 집는다.
         summary.dropped++;
         continue;
       }
       const retrying = row?.status === INBOUND_STATUS.PENDING_RETRY;
-      const outcome = await evaluateEvent(event, fingerprint, dict, now, deps, retrying);
+      const outcome = await evaluateEvent(event, fingerprint, dict, now, deps, retrying, hintBudget);
       if (outcome === "proposed") summary.proposed++;
       else if (outcome === "adopted") summary.adoptedNoop++;
+      else if (outcome === "deferred") summary.hintDeferred++;
       else summary.skippedUnparsed++;
     } catch (err) {
       // 이벤트 id 만 남긴다 — 제목에는 셀러 이름이 있을 수 있다.

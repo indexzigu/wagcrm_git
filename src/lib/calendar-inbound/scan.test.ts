@@ -4,6 +4,7 @@ import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { CALENDAR_INBOUND_CREATED_BY, calendarInboundRefSchema } from "./adopt";
 import type { ProposalDraft, ResolveResult } from "./resolve-target";
 import {
+  MAX_HINT_CALLS_PER_RUN,
   MAX_PROPOSALS_PER_RUN,
   calendarInboundFingerprint,
   calendarInboundWindow,
@@ -109,6 +110,14 @@ describe("calendarInboundWindow · fingerprint", () => {
     });
   });
 
+  it("UTC 15:00 이후(KST 다음날)는 KST 날짜로 창을 잡는다", () => {
+    // 2026-10-22T16:30Z = KST 2026-10-23 01:30 → 오늘은 10-23
+    expect(calendarInboundWindow(new Date("2026-10-22T16:30:00.000Z"))).toEqual({
+      timeMin: "2026-10-08T15:00:00.000Z", // KST 2026-10-09 00:00
+      timeMax: "2027-04-21T15:00:00.000Z", // KST 2027-04-22 00:00
+    });
+  });
+
   it("지문은 제목·시작·끝에만 의존", () => {
     const a = calendarInboundFingerprint(ev("e1"));
     expect(calendarInboundFingerprint(ev("e2", { calendarId: "fin" }))).toBe(a);
@@ -133,6 +142,7 @@ describe("runCalendarInboundScan", () => {
       skippedUnparsed: 0,
       adoptedNoop: 0,
       dropped: 0,
+      hintDeferred: 0,
       alreadyHandled: 0,
       errors: 0,
     });
@@ -426,8 +436,37 @@ describe("runCalendarInboundScan", () => {
     expect(next).toMatchObject({ proposed: 1, dropped: 0, alreadyHandled: 2 });
   });
 
-  it("상한 기본값은 20", () => {
+  it("상한 기본값은 기안 20 · 힌트 호출 20", () => {
     expect(MAX_PROPOSALS_PER_RUN).toBe(20);
+    expect(MAX_HINT_CALLS_PER_RUN).toBe(20);
+  });
+
+  it("힌트 예산을 다 쓰면 그 뒤 해석 실패분은 힌트를 부르지 않고 손대지 않는다(hintDeferred)", async () => {
+    const h = makeHarness(["e1", "e2", "e3", "e4"].map((id) => ev(id, { summary: `치과 예약 ${id}` })));
+
+    const summary = await runCalendarInboundScan({ now: NOW, maxHintCalls: 2, deps: h.deps });
+
+    expect(h.extractHints).toHaveBeenCalledTimes(2);
+    expect(summary).toMatchObject({ skippedUnparsed: 2, hintDeferred: 2, newOrChanged: 4, errors: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
+    expect(h.rows.get("e2")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
+    expect(h.rows.has("e3")).toBe(false);
+    expect(h.rows.has("e4")).toBe(false);
+
+    const next = await runCalendarInboundScan({ now: NOW, maxHintCalls: 2, deps: h.deps });
+    expect(h.extractHints).toHaveBeenCalledTimes(4);
+    expect(next).toMatchObject({ skippedUnparsed: 2, hintDeferred: 0, alreadyHandled: 2 });
+    expect(h.rows.get("e4")).toMatchObject({ status: "SKIPPED" });
+  });
+
+  it("힌트 예산이 바닥나도 규칙 파서로 맞는 건은 계속 기안한다", async () => {
+    const h = makeHarness([ev("e1", { summary: "치과 예약" }), ev("e2")]);
+
+    const summary = await runCalendarInboundScan({ now: NOW, maxHintCalls: 0, deps: h.deps });
+
+    expect(h.extractHints).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ proposed: 1, hintDeferred: 1, skippedUnparsed: 0 });
+    expect(h.rows.has("e1")).toBe(false);
   });
 
   it("한 건의 예외는 그 건만 errors 로 세고 나머지를 계속한다", async () => {
