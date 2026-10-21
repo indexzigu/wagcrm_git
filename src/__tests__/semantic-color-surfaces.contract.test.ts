@@ -44,7 +44,7 @@ const REMAINING: Record<string, { hue: string; count: number; reason: string }[]
       hue: "rose",
       count: 6,
       reason:
-        "「전환율 낮은 판매 조건·셀러」 순위 막대·아이콘 — 높은 쪽과 짝을 이루는 판정 의미인지 오너 확인 전이라 이번 범위 밖(2026-10-21)",
+        "오너 확인: 유지 — 「전환율 낮은 판매 조건·셀러」 순위 막대·아이콘(2026-10-21)",
     },
   ],
 };
