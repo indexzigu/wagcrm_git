@@ -7,6 +7,7 @@ import { CalendarDaysIcon, HomeIcon, Table2Icon } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { useWebAppEnvironment } from "@/hooks/use-web-app-environment";
+import { isPortalPublicPath } from "@/lib/portal-slug";
 
 // v3.2(소유자 피드백 C): 영업 탭 제거 — /outreach 라우트는 존치, "업무 처리" 탭의
 // 리마인드 지연 행에서 딥링크로만 진입한다.
@@ -116,9 +117,12 @@ export function MobileBottomNav() {
     return null;
   }
 
-  const isNoSidebarPage = ["/login", "/auth", "/privacy", "/coupang-partners", "/p/"].some((p) =>
-    pathname.startsWith(p),
-  );
+  // 셀러 포털(/<slug>·/<slug>/card/<id>)도 숨긴다 — 셀러가 포털을 홈 화면에 추가해 열면 위 스탠드얼론
+  // 게이트를 통과해 오너용 탭이 셀러 화면에 떴다. 판정은 사이드바(persistent-sidebar-layout)·proxy 와 같은
+  // isPortalPublicPath 하나로 맞춘다(예약어는 포털로 보지 않으므로 CRM 화면은 영향 없음).
+  const isNoSidebarPage =
+    ["/login", "/auth", "/privacy", "/coupang-partners", "/p/"].some((p) => pathname.startsWith(p)) ||
+    isPortalPublicPath(pathname);
 
   if (!environment.isReady || !environment.isMobile || !environment.isStandalone || isNoSidebarPage) {
     return null;

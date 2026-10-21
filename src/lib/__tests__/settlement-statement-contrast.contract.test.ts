@@ -138,9 +138,9 @@ describe("명세서 글자 대비", () => {
 
   it("차감 항목은 무채색으로 뭉개지지 않는다 (읽히되 구분은 남는다)", () => {
     // 대비만 보면 검정이 제일 좋지만, 그러면 "얼마가 빠졌는지"가 다른 숫자와 섞인다.
-    // 원천세 줄에는 여전히 유채색이 있어야 한다.
-    const deductionRow = /└ 원천세[^<]*<\/td>/.exec(html().replace(/\s+/g, " "));
-    expect(deductionRow, "원천세 줄을 못 찾았다").not.toBeNull();
+    // 세금 공제(원천세) 줄에는 여전히 유채색이 있어야 한다.
+    const deductionRow = /└ 세금 공제 \(3\.3%\)/.exec(html().replace(/\s+/g, " "));
+    expect(deductionRow, "세금 공제 줄을 못 찾았다").not.toBeNull();
 
     const chromatic = textColors(html()).filter((hex) => {
       const n = parseInt(hex.slice(1), 16);

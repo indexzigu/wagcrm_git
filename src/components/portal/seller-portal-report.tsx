@@ -100,7 +100,7 @@ function deadlineBadge(salePeriod: string, today: string): TimingBadge | null {
   return { kind: "live", targetMs, initialLabel: `${days}일 --:--:--`, className: "bg-amber-50 text-amber-700 border-amber-200", icon: "clock", mode: "close" };
 }
 
-// 예정 캠페인의 오픈 카운트다운. 4일+ 정적 'D-N 오픈예정', 1~3일·당일 라이브(브랜드 네이비 틴트).
+// 예정 캠페인의 오픈 카운트다운. 4일+ 정적 'D-N 오픈예정', 1~3일·당일 라이브(브랜드 청록 틴트).
 // 오픈은 시작 경계라 주의 의미가 없어 마감(amber) 같은 상태 hue 를 받지 않는다 — P8 §4 의 중립 태그 캐리어
 // (bg-primary/10 text-primary, 셀러 목록 「신규(7일)」 선례)로 정적 D-N(slate)과만 구분한다. 종전 blue 는 축 밖 hue.
 // 시작일이 이미 지났으면(진행중) null — 진행중 분기가 담당한다.
@@ -175,8 +175,9 @@ function HourlyChart({ hourly }: { hourly: { hour: number; orders: number }[] })
     <div role="img" aria-label={summary} className="flex items-end gap-[3px] h-24">
       {hourly.map((h) => (
         <div key={h.hour} className="flex-1 h-full flex flex-col items-center justify-end gap-1">
-          {/* 단일 계열 분포라 상태 hue 없이 차트 네이비(--chart-1) 60% 단색 — 흰 표면 3.59(1.4.11 통과, 종전
-              blue-400 2.64 미달). 아래 「구성별 판매」 네이비 100% 막대보다 한 단계 약하게 둬 위계를 지킨다
+          {/* 단일 계열 분포라 상태 hue 없이 차트 청록(--chart-1 #0F5F67) 60% 단색. 흰 표면 대비는 청록 교체 후
+              2.93 으로 1.4.11(3:1)에 못 미친다(네이비 시절 3.59 — CRM 캠페인 인사이트 막대도 같은 값이라 함께 판단할 것).
+              아래 「구성별 판매」 청록 100% 막대보다 한 단계 약하게 둬 위계를 지킨다
               (시간대 시안 선례: intraday-hour-heatmap 의 chart-1 알파). 0건 시간대는 2px slate-100 기준선 그대로. */}
           <div
             className={`w-full rounded-t ${h.orders > 0 ? "bg-chart-1/60" : "bg-slate-100"}`}
@@ -195,13 +196,13 @@ function OptionRow({ o }: { o: { name: string; quantity: number; revenue: number
     <div>
       <div className="flex justify-between items-baseline gap-2">
         <span className="min-w-0 break-words text-xs font-medium text-slate-700">{o.name}</span>
-        <span className="text-xs font-bold text-slate-800 shrink-0">
+        <span className="text-xs font-bold text-slate-800 shrink-0 tabular-nums">
           {o.quantity.toLocaleString()}개 · {fmtWon(o.revenue)}
         </span>
       </div>
       {/* 트랙 = 이 캠페인 전체 판매(100%) 기준선 — slate-100 은 흰 표면 대비 1.10:1 로 사라져 slate-300 으로.
-          구성(옵션)은 좋고 나쁨이 없는 범주라 상태 hue 를 받지 않는다(P8 §4) — 중립 강조인 브랜드 네이비
-          (bg-primary, 트랙 대비 7.62)로. 종전 blue-500 은 트랙 위 2.53 이었다. 오너 결정 2026-10-06, 값·데이터 무변경. */}
+          구성(옵션)은 좋고 나쁨이 없는 범주라 상태 hue 를 받지 않는다(P8 §4) — 중립 강조인 브랜드 청록
+          (bg-primary, 트랙 대비 4.96)으로. 종전 blue-500 은 트랙 위 2.53 이었다. 오너 결정 2026-10-06, 값·데이터 무변경. */}
       <div className="mt-1 h-1.5 bg-slate-300 rounded-full overflow-hidden">
         <div className="h-full bg-primary rounded-full" style={{ width: `${o.ratio}%` }}></div>
       </div>
@@ -236,7 +237,7 @@ function ActiveCampaignSection({
   const isEnded = deadline?.kind === "static" && deadline.label === "판매종료";
 
   return (
-    <section className="bg-white rounded-2xl border border-slate-200 shadow-soft-sm overflow-hidden">
+    <section className="bg-card rounded-2xl border border-border shadow-soft-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100">
         <div className="flex items-start gap-2">
           <span
@@ -273,14 +274,14 @@ function ActiveCampaignSection({
       {camp.totalOnly ? (
         <div data-testid="portal-headline" className="px-5 py-4 border-b border-slate-100">
           <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
-          <div className="text-xl font-bold text-slate-900 mt-0.5">{fmtWon(camp.totalRevenue)}</div>
+          <div className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{fmtWon(camp.totalRevenue)}</div>
         </div>
       ) : (
       <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
         <div className="px-5 py-4">
           <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
-          <div className="text-xl font-bold text-slate-900 mt-0.5">{fmtWon(camp.totalRevenue)}</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
+          <div className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{fmtWon(camp.totalRevenue)}</div>
+          <div className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
             주문 {camp.distinctOrderCount.toLocaleString()}건 · 수량 {camp.totalQuantity.toLocaleString()}개
           </div>
         </div>
@@ -289,7 +290,7 @@ function ActiveCampaignSection({
               「오늘」은 라벨이, 강조는 크기·굵기가 맡아 옆 누적 매출 칸과 같은 무채색으로 둔다(종전 blue-600 은 축 밖 hue). */}
           <div className="text-[11px] font-bold text-slate-500 uppercase">오늘 매출</div>
           <div className="flex items-baseline gap-1.5 mt-0.5">
-            <div className="text-xl font-bold text-slate-900">{fmtWon(todayStat?.revenue || 0)}</div>
+            <div className="text-xl font-bold text-slate-900 tabular-nums">{fmtWon(todayStat?.revenue || 0)}</div>
             {momentum && (
               <span
                 className={`text-[10px] font-bold ${momentum.className}`}
@@ -299,7 +300,7 @@ function ActiveCampaignSection({
               </span>
             )}
           </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
+          <div className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
             주문 {(todayStat?.orders || 0).toLocaleString()}건 · 수량 {(todayStat?.quantity || 0).toLocaleString()}개
           </div>
         </div>
@@ -314,17 +315,17 @@ function ActiveCampaignSection({
           className={`grid ${returning ? "grid-cols-3" : "grid-cols-2"} divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/50`}
         >
           <div className="px-4 py-3 text-center">
-            <div className="text-base font-bold text-primary">{insights.linkRatio.toFixed(0)}%</div>
+            <div className="text-base font-bold text-primary tabular-nums">{insights.linkRatio.toFixed(0)}%</div>
             <div className="text-[10px] text-slate-500 mt-0.5">링크 유입 주문</div>
           </div>
           {returning && (
             <div className="px-4 py-3 text-center">
-              <div className="text-base font-bold text-primary">{returning.returningRatio.toFixed(0)}%</div>
+              <div className="text-base font-bold text-primary tabular-nums">{returning.returningRatio.toFixed(0)}%</div>
               <div className="text-[10px] text-slate-500 mt-0.5">재구매 고객</div>
             </div>
           )}
           <div className="px-4 py-3 text-center">
-            <div className="text-base font-bold text-primary">{insights.mobileRatio.toFixed(0)}%</div>
+            <div className="text-base font-bold text-primary tabular-nums">{insights.mobileRatio.toFixed(0)}%</div>
             <div className="text-[10px] text-slate-500 mt-0.5">모바일 주문</div>
           </div>
         </div>
@@ -355,9 +356,9 @@ function ActiveCampaignSection({
           </div>
           {options.length > 5 && (
             <details className="group mt-2.5">
-              <summary className="list-none [&::-webkit-details-marker]:hidden marker:hidden flex items-center justify-between gap-1.5 cursor-pointer -mx-1 px-1 py-1.5 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
+              <summary className="list-none [&::-webkit-details-marker]:hidden marker:hidden flex items-center justify-between gap-1.5 cursor-pointer -mx-1 px-1 py-1.5 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-700 active:bg-black/[0.06] transition-colors">
                 <span>나머지 {options.length - 5}종 보기</span>
-                <span className="flex items-center gap-1 text-slate-500">
+                <span className="flex items-center gap-1 text-slate-500 tabular-nums">
                   합계 {options.slice(5).reduce((s, o) => s + o.quantity, 0).toLocaleString()}개 ·{" "}
                   {fmtWon(options.slice(5).reduce((s, o) => s + o.revenue, 0))}
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
@@ -377,7 +378,7 @@ function ActiveCampaignSection({
       {camp.dailyStats.length > 0 && (
         <div className="px-5 py-4">
           <h3 className="text-xs font-bold text-slate-500 mb-2">일자별 현황</h3>
-          <table className="w-full text-xs">
+          <table className="w-full text-xs tabular-nums">
             <thead>
               <tr className="text-slate-500 border-b border-slate-100">
                 <th className="text-left py-1.5 font-medium">날짜</th>
@@ -393,7 +394,7 @@ function ActiveCampaignSection({
                   <td className="py-1.5 text-right text-slate-600">{d.orders.toLocaleString()}</td>
                   <td className="py-1.5 text-right text-slate-600">{d.quantity.toLocaleString()}</td>
                   {/* 매출 셀: 정확한 숫자는 그대로 읽히고, 배경 바로 매출 흐름이 눈에 보이게(무JS).
-                      배경 바는 같은 차트 네이비 10% 단색(폭이 크기) — 숫자 slate-800 이 그 위 12.31. */}
+                      배경 바는 같은 차트 청록 10% 단색(폭이 크기) — 숫자 slate-800 이 그 위 12.54. */}
                   <td className="relative py-1.5 text-right font-bold text-slate-800">
                     {maxDailyRevenue > 0 && (
                       <div
@@ -423,7 +424,7 @@ function ActiveCampaignSection({
 function UpcomingCampaignSection({ camp, today }: { camp: PortalCampaign; today: string }) {
   const opening = openingBadge(camp.salePeriod, today);
   return (
-    <section className="bg-slate-50/60 rounded-2xl border border-slate-200/70 px-5 py-4">
+    <section className="bg-muted/60 rounded-2xl border border-border px-5 py-4">
       {/* 오픈 배지는 제목 줄이 아니라 기간 줄에 둔다 — 판매중 카드(마감 배지)와 같은 자리. 제목 줄에 두면
           라이브 카운트다운(약 150px, shrink-0)이 제목 폭을 깎아 320px 에서 긴 제목이 5줄까지 늘었다. */}
       <div className="flex items-start gap-2">
@@ -551,8 +552,10 @@ export async function SellerPortalReport({
     // 콘텐츠(옵션명 등)가 길어지면 그만큼 이 컨테이너와 안쪽 카드가 좌우로 흔들린다.
     // flex-1로 라인 전체를 채워(폭이 콘텐츠와 무관하게 고정) 안쪽 max-w-lg 카드를 항상
     // 같은 폭으로 중앙 정렬한다. min-w-0은 좁은 화면에서 라인보다 넓은 콘텐츠를 shrink 허용(오버플로 방지).
-    <div className="min-h-screen w-full flex-1 min-w-0 bg-slate-50">
-      <div className="max-w-lg mx-auto px-4 py-8">
+    // 위쪽 여백은 홈 화면 앱(viewportFit:cover · black-translucent)에서 상태바 높이만큼 늘어난다 —
+    // 일반 브라우저는 env()=0 이라 종전 2rem 그대로다.
+    <div className="min-h-screen w-full flex-1 min-w-0 bg-background">
+      <div className="max-w-lg mx-auto px-4 pb-8 pt-[max(2rem,env(safe-area-inset-top))]">
         <header className="mb-6">
           <p className="text-[11px] font-bold tracking-widest text-slate-500 uppercase">WAG Campaign Report</p>
           <h1 className="text-xl font-bold text-slate-900 mt-1">{displayName}님의 캠페인 리포트</h1>
@@ -560,7 +563,7 @@ export async function SellerPortalReport({
         </header>
 
         {inProgress.length === 0 && upcoming.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+          <div className="bg-card rounded-2xl border border-border p-8 text-center text-sm text-slate-500">
             현재 공유 중인 캠페인 리포트가 없습니다.
           </div>
         ) : (
@@ -590,13 +593,13 @@ export async function SellerPortalReport({
 
             {/* 단골 고객 — 회차간 재구매(§0-1: 본인 카운트만). crossCampaignBuyers>=1일 때만. */}
             {crossCampaignBuyers >= 1 && (
-              <section className="bg-white rounded-2xl border border-slate-200 shadow-soft-sm overflow-hidden">
+              <section className="bg-card rounded-2xl border border-border shadow-soft-sm overflow-hidden">
                 <div className="px-5 py-3 border-b border-slate-100">
                   <h2 className="text-xs font-bold text-slate-500">단골 고객</h2>
                 </div>
                 <div className="px-5 py-4">
                   {/* 숫자 강조는 크기·굵기로 — 누적 매출 값과 같은 slate-900(종전 indigo-600 은 globals.css 밖 hue). */}
-                  <div className="text-xl font-bold text-slate-900">{crossCampaignBuyers.toLocaleString()}명</div>
+                  <div className="text-xl font-bold text-slate-900 tabular-nums">{crossCampaignBuyers.toLocaleString()}명</div>
                   <div className="text-[11px] text-slate-500 mt-0.5">여러 캠페인에서 다시 찾아주신 단골 고객이에요</div>
                   <div className="text-[10px] text-slate-500 mt-1">네이버스토어 주문 기준</div>
                 </div>

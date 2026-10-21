@@ -133,6 +133,8 @@ export const UI_LABEL_TABLES = {
   "주문 작업 기록": "ORDER_ACTION_LABELS (src/lib/order-converter/action-log.ts)",
   "사이드바 메뉴": "src/components/crm/crm-sidebar.tsx",
   "돈 이름": "MONEY_TERMS (src/lib/ui-glossary.ts)",
+  // 셀러가 받는 문서라 오너 화면의 돈 이름(MONEY_TERMS)과 다른 낱말을 쓴다(오너 확정 2026-10-21).
+  "셀러 정산서": "SELLER_STATEMENT_LABELS (src/lib/settlement-statement.ts)",
   "대상 이름": "ENTITY_TERMS (src/lib/ui-glossary.ts)",
   "자동화 작업 원인": "incidentCauseLabel (src/lib/cron-incident-report.ts)",
   "자동화 작업 사고 상태": "INCIDENT_STATUS_LABELS (src/lib/automation-incidents.ts)",

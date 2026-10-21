@@ -18,9 +18,9 @@ export function PortalStatusScreen({
   action?: ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+    <main className="min-h-screen w-full flex-1 min-w-0 bg-background flex items-center justify-center px-4 pt-[env(safe-area-inset-top)]">
       <div className="w-full max-w-sm">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-soft-sm px-6 py-8 text-center">
+        <div className="bg-card rounded-2xl border border-border shadow-soft-sm px-6 py-8 text-center">
           <p className="text-[11px] font-bold tracking-widest text-slate-500 uppercase">WAG Campaign Report</p>
           <h1 className="text-lg font-bold text-slate-900 mt-1.5">{title}</h1>
           <p className="text-xs text-slate-500 mt-3 leading-relaxed">{description}</p>

@@ -84,7 +84,7 @@ function PostRow({ post, best }: { post: PerfPost; best: boolean }) {
       href={post.externalUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-3 -mx-1 px-1 py-0.5 rounded-lg hover:bg-slate-50 transition-colors"
+      className="flex items-center gap-3 -mx-1 px-1 py-0.5 rounded-lg hover:bg-slate-50 active:bg-black/[0.06] transition-colors"
     >
       {body}
     </a>
@@ -124,7 +124,7 @@ export function ContentPerformanceSection({ contentPerf }: { contentPerf: Campai
       )}
       {folded.length > 0 && (
         <details className="group mt-2.5">
-          <summary className="list-none [&::-webkit-details-marker]:hidden marker:hidden flex items-center justify-between gap-1.5 cursor-pointer -mx-1 px-1 py-1.5 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
+          <summary className="list-none [&::-webkit-details-marker]:hidden marker:hidden flex items-center justify-between gap-1.5 cursor-pointer -mx-1 px-1 py-1.5 rounded-md text-[11px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-700 active:bg-black/[0.06] transition-colors">
             <span>나머지 {folded.length}건 보기</span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
           </summary>
