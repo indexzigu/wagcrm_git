@@ -417,7 +417,7 @@ describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
     expect(src).toContain('<div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-4 items-center">');
     expect(src).toContain('className="w-16 h-16 rounded-lg object-cover border border-slate-200 shadow-soft-sm"');
     expect(src).toContain('<p className="text-sm text-slate-900 font-bold mb-1 line-clamp-1">{newName}</p>');
-    expect(src).toContain("text-xs text-slate-700 mt-2 bg-white/60 p-2 rounded-md");
+    expect(src).toContain("text-xs text-slate-700 mt-2 bg-card p-2 rounded-md");
     expect(src).toContain('<svg className="w-3.5 h-3.5 text-slate-500" fill="none"');
     expect(src).not.toMatch(/bg-blue-50|border-blue-100|border-blue-200|text-blue-900|text-blue-800|text-blue-500/);
     // 저장 CTA 는 7차에서 다른 저장 버튼과 같은 네이비로(bg-primary).
