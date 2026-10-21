@@ -154,6 +154,20 @@ beforeEach(() => {
   installFetchMock();
 });
 
+describe("ReferenceInboxClient — 페이지 머리 없음(오너 디자인 방침 2026-10-21)", () => {
+  it("「캠페인 자료」 링크는 첫 카드(링크 일괄 추가) 제목줄 오른쪽 끝에 있고 h1 페이지 제목은 없다", async () => {
+    await renderInbox();
+
+    const toolbar = screen.getByTestId("reference-inbox-toolbar");
+    const link = screen.getByRole("link", { name: /캠페인 자료/ });
+    expect(toolbar.contains(screen.getByRole("heading", { name: "링크 일괄 추가" }))).toBe(true);
+    expect(toolbar.lastElementChild).toBe(link);
+    expect(link).toHaveAttribute("href", "/assets/archive");
+    expect(document.querySelector("header, h1")).toBeNull();
+    expect(screen.queryByText("미분류 레퍼런스")).toBeNull();
+  });
+});
+
 describe("ReferenceInboxClient — 카드 렌더링", () => {
   it("프로필 카드: 이름·팔로워 칩·프로필 배지·bio를 표시한다", async () => {
     await renderInbox();

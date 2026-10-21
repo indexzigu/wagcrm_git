@@ -4,9 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CampaignRow, DashboardData } from "@/lib/crm-types";
 
 /**
- * 정산 머리는 판매 관리와 같은 형태다(애플 UI 리뉴얼 묶음 2):
- * 부제 = 건수 요약 · 가운데 = 월별/연도별 분할 버튼 · 오른쪽 = 세무 처리·새로고침.
- * 카드 툴바에는 기간 이동(‹ ›)과 검색만 남는다.
+ * 정산 화면은 페이지 머리(제목·부제)를 두지 않는다(오너 방침 2026-10-21). 조작은 리뉴얼 전처럼 카드 도구줄에:
+ * 왼쪽 = 월별/연도별 분할 버튼 · 기간 이동(‹ ›) / 오른쪽 = 검색 · 세무 처리 · 새로고침.
  * 분할 버튼은 종전 토글과 같은 경로(`viewType` 주소 값)를 쓴다 — 기간 라벨이 그 단위로 바뀌어야 한다.
  */
 
@@ -115,64 +114,60 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function header(): HTMLElement {
-  const el = document.querySelector("header");
-  if (!el) throw new Error("CrmShell 머리가 없다");
-  return el as HTMLElement;
+/** 카드 도구줄 — 기간 이동 버튼이 들어 있는 줄(왼쪽 묶음 + 오른쪽 묶음의 부모). */
+function toolbar(): HTMLElement {
+  const prev = screen.getByRole("button", { name: "이전 기간" });
+  const row = prev.parentElement?.parentElement?.parentElement;
+  if (!row) throw new Error("카드 도구줄이 없다");
+  return row as HTMLElement;
 }
 
-describe("정산 머리 — 판매 관리와 같은 형태", () => {
-  it("월별/연도별은 머리 분할 버튼이고 카드 툴바에는 없다", async () => {
+describe("정산 카드 도구줄 — 페이지 머리 없음", () => {
+  it("페이지 머리(<header>·h1 제목·건수 부제)를 그리지 않는다", async () => {
+    const { container } = render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
+    await waitFor(() => expect(screen.getByText("2건")).toBeInTheDocument());
+    expect(container.querySelector("header")).toBeNull();
+    expect(container.querySelector("h1")).toBeNull();
+    expect(screen.queryByText(/정산중 \d+건 · 정산완료 \d+건/)).not.toBeInTheDocument();
+  });
+
+  it("월별/연도별은 카드 도구줄의 분할 버튼이고, 기간 이동(‹ ›) 왼쪽에 한 벌만 있다", async () => {
     render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
-    const group = within(header()).getByRole("radiogroup");
+    const group = within(toolbar()).getByRole("radiogroup", { name: "기간 단위" });
     expect(within(group).getByRole("radio", { name: "월별" })).toHaveAttribute("aria-checked", "true");
     expect(within(group).getByRole("radio", { name: "연도별" })).toBeInTheDocument();
-    // 머리 밖(본문)에는 같은 이름의 조작이 없다.
     expect(screen.getAllByText("월별")).toHaveLength(1);
     expect(screen.getAllByText("연도별")).toHaveLength(1);
+    const prev = screen.getByRole("button", { name: "이전 기간" });
+    expect(group.compareDocumentPosition(prev) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("연도별을 누르면 기간 라벨이 YYYY년 으로 바뀐다", async () => {
     render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
-    fireEvent.click(within(header()).getByRole("radio", { name: "연도별" }));
+    fireEvent.click(within(toolbar()).getByRole("radio", { name: "연도별" }));
     await waitFor(() =>
-      expect(within(header()).getByRole("radio", { name: "연도별" })).toHaveAttribute("aria-checked", "true"),
+      expect(within(toolbar()).getByRole("radio", { name: "연도별" })).toHaveAttribute("aria-checked", "true"),
     );
     expect(screen.getByText(/^\d{4}년$/)).toBeInTheDocument();
-    // 기간 이동은 본문 툴바에 남는다.
-    expect(header()).not.toContainElement(screen.getByRole("button", { name: "이전 기간" }));
   });
 
-  it("세무 처리·새로고침은 머리 오른쪽에 있고 미처리 배지를 유지한다", async () => {
+  it("세무 처리·새로고침은 도구줄 오른쪽 검색칸 옆에 있고 미처리 배지를 유지한다", async () => {
     render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
-    const tax = within(header()).getByRole("button", { name: /세무 처리/ });
+    const tax = within(toolbar()).getByRole("button", { name: /세무 처리/ });
     await waitFor(() => expect(tax).toHaveTextContent("3"));
-    expect(within(header()).getByRole("button", { name: /새로고침/ })).toBeInTheDocument();
+    const refresh = within(toolbar()).getByRole("button", { name: /새로고침/ });
+    const search = within(toolbar()).getByPlaceholderText("검색 (2글자 이상)");
+    // 오른쪽 묶음: 검색 → 세무 처리 → 새로고침
+    const right = tax.parentElement as HTMLElement;
+    expect(right).toContainElement(search);
+    expect(right).toContainElement(refresh);
+    expect(search.compareDocumentPosition(tax) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tax.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("부제는 두 섹션 배지와 같은 건수로 「정산중 N건 · 정산완료 N건」", async () => {
+  it("두 섹션 배지 건수는 그대로다(정산중 2 · 정산완료 1)", async () => {
     render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
-    await waitFor(() => expect(within(header()).getByText("정산중 2건 · 정산완료 1건")).toBeInTheDocument());
-    expect(screen.getByText("2건")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("2건")).toBeInTheDocument());
     expect(screen.getByText("1건")).toBeInTheDocument();
-  });
-
-  it("정산 목록을 받기 전에는 부제를 비운다 — 「0건」(할 일 없음)으로 읽히지 않게", async () => {
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const base = globalThis.fetch;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input).startsWith("/api/reports/settlement")) await gate;
-        return base(input, init);
-      }),
-    );
-    render(<SettlementPageClient initialData={INITIAL_DATA} defaultMonth="2026-08" />);
-    expect(within(header()).queryByText(/건 · /)).not.toBeInTheDocument();
-    release();
-    await waitFor(() => expect(within(header()).getByText("정산중 2건 · 정산완료 1건")).toBeInTheDocument());
   });
 });

@@ -112,11 +112,11 @@ type ExecutionKanbanBoardProps = {
   onRowDuplicate: (campaign: CampaignRow) => void;
   onStatusChange: (campaignId: string, status: CampaignStatus) => Promise<void>;
   onAddCampaign?: (defaultStatus?: CampaignStatus) => void;
-  /** 빠른 필터 줄 오른쪽 끝에 붙이는 조작(판매 관리의 검색·조합 캠페인) — 보드 위에 조작만 담긴 줄을 따로 두지 않게. */
+  /** 빠른 필터 줄 오른쪽 끝에 붙이는 조작(판매 관리의 검색·조합 캠페인·보기 전환·캠페인 등록) — 보드 위에 조작만 담긴 줄을 따로 두지 않게. */
   toolbarEnd?: React.ReactNode;
 };
 
-// 빠른 필터 판정의 정본은 `execution-quick-filters` — 판매 관리 머리 부제도 같은 술어를 읽는다.
+// 빠른 필터 판정의 정본은 `execution-quick-filters` — 이 보드의 필터 칩이 그 술어를 읽는다.
 type QuickFilter = ExecutionQuickFilter;
 
 // ---------------------------------------------------------------------------

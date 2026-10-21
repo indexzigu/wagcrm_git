@@ -91,4 +91,15 @@ describe("PartnersManagement", () => {
     expect(screen.getByText("panel-open:true")).toBeInTheDocument();
     expect(screen.getByText("panel-partner:Nutrione")).toBeInTheDocument();
   });
+
+  // 페이지 머리 없음(2026-10-21 오너 방침) — 신규 거래처 버튼은 검색과 같은 카드 도구줄에 산다.
+  it("신규 거래처 버튼이 검색창과 같은 카드 도구줄에 있고, 페이지 제목(h1·header)은 없다", () => {
+    const { container } = renderWithQueryClient(<PartnersManagement initialPartners={initialPartners} />);
+
+    const toolbar = screen.getByRole("textbox", { name: "거래처 검색" }).closest("section");
+    expect(toolbar).not.toBeNull();
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "신규 거래처" }));
+    expect(container.querySelector("h1")).toBeNull();
+    expect(container.querySelector("header")).toBeNull();
+  });
 });

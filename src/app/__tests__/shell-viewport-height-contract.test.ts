@@ -79,8 +79,8 @@ describe("데스크톱 셸 뷰포트 높이 계약", () => {
   // 위 첫 줄(CrmShell 안쪽 스크롤러)이 자리 예약을 맡는다 — 루트가 두 번째 세로 스크롤러가 되면 안 된다.
   it("정산 화면 — CrmShell 스크롤러를 쓰고 루트에 두 번째 스크롤러를 두지 않는다", () => {
     const src = read("src/app/settlement/settlement-page-client.tsx");
-    // 묶음 2부터 머리에 부제·분할 버튼·오른쪽 버튼을 함께 넘겨 여는 태그가 여러 줄이다.
-    expect(src).toMatch(/<CrmShell\s+title="정산 관리"/);
+    // 페이지 머리는 없다(2026-10-21) — 셸은 속성 없이 연다.
+    expect(src).toMatch(/<CrmShell>/);
     expect(src).not.toMatch(/className="[^"]*\bflex-1 flex-col overflow-auto[^"]*"/);
   });
 });

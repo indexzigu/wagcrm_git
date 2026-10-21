@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CrmShell } from "@/components/crm/crm-shell";
+import { SegmentToggle } from "@/components/crm/segment-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -139,7 +140,7 @@ const OUTREACH_ATTENTION_ITEMS: ReadonlyArray<{
 ];
 
 
-/** 보기 전환(칸반/목록) — 셸 머리 가운데의 분할 버튼. */
+/** 보기 전환(칸반/목록) — 카드 도구줄의 분할 버튼. */
 const OUTREACH_VIEW_OPTIONS = [
   { value: "board", label: "칸반" },
   { value: "table", label: "목록" },
@@ -658,27 +659,7 @@ export default function OutreachPage() {
           onStatusChange={handleStatusChange}
         />
       ) : (
-        <CrmShell
-          title="영업 관리"
-          description="셀러별 영업 진행 상태와 리마인드 일정을 관리합니다."
-          segments={{
-            options: OUTREACH_VIEW_OPTIONS,
-            value: viewMode,
-            onValueChange: (value) => setViewMode(value === "table" ? "table" : "board"),
-            ariaLabel: "보기 전환",
-          }}
-          actions={
-            <Button
-              variant="default"
-              size="sm"
-              className="rounded-lg bg-primary px-3.5 text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95 h-9 text-xs"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="mr-1.5 size-4" />
-              테스크 등록
-            </Button>
-          }
-        >
+        <CrmShell>
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
           {loading ? (
           <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
@@ -746,8 +727,9 @@ export default function OutreachPage() {
             {/* 카드 컨테이너 */}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
               <div className="flex flex-col gap-4 border-b border-border/70 px-5 py-4">
-                {/* 검색만 남은 줄 — 제목·보기 전환·테스크 등록은 CrmShell 머리로 올렸다(빈 칸 없이 오른쪽 정렬). */}
-                <div className="flex justify-end">
+                {/* 카드 도구줄 — 검색·보기 전환·테스크 등록(리뉴얼 전 순서, 오른쪽 정렬). 페이지 머리(제목·설명)는
+                    두지 않는다(오너 방침 2026-10-21). */}
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <div className="relative w-full sm:w-64">
                     <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
                     <Input
@@ -757,6 +739,21 @@ export default function OutreachPage() {
                       className="pl-9 h-9 w-full text-xs bg-white shadow-soft-sm"
                     />
                   </div>
+                  <SegmentToggle
+                    options={OUTREACH_VIEW_OPTIONS}
+                    value={viewMode}
+                    onValueChange={(value) => setViewMode(value === "table" ? "table" : "board")}
+                    ariaLabel="보기 전환"
+                  />
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="rounded-lg bg-primary px-3.5 text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95 h-9 text-xs"
+                    onClick={() => setCreateOpen(true)}
+                  >
+                    <Plus className="mr-1.5 size-4" />
+                    테스크 등록
+                  </Button>
                 </div>
 
                 {/* Dashboard Metrics */}

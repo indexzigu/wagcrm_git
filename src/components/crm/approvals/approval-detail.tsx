@@ -10,7 +10,7 @@ import { CardListSkeleton } from "./hub-states";
 import { ReadDetailHeader } from "./read-detail-header";
 import { ReadResultBody, isReadEnvelope } from "./read-result-body";
 import { formatShortDateTime } from "./format-time";
-import { sourceLabelOf } from "./source-badge";
+import { SourceBadge } from "./source-badge";
 
 /**
  * ApprovalDetail — 결재함 상세 `/approvals/[id]` (Plan 2 Task 5).
@@ -89,20 +89,42 @@ function BackLink() {
   );
 }
 
-/** 허브(`/approvals`)와 같은 컨테이너다 — 목록에서 상세로 넘어갈 때 바탕이 바뀌지 않는다. */
+/**
+ * 허브(`/approvals`)와 같은 컨테이너다 — 목록에서 상세로 넘어갈 때 바탕이 바뀌지 않는다.
+ *
+ * 페이지 머리는 두지 않는다(오너 디자인 방침 2026-10-21). 이 기안의 제목은 페이지 제목이 아니라
+ * **내용**이라 카드 안 첫 줄에 두고, 되돌아가기 링크는 같은 줄 오른쪽 끝이다. 제목을 아직 모르는
+ * 상태(로딩·실패·없음)에서는 링크만 그 줄에 선다 — 「결재함」 같은 페이지 제목을 채우지 않는다.
+ *
+ * 기안(WRITE)은 ProposalCard 가 제목을 이미 그리므로 이 줄에 제목을 또 두지 않는다 — 대신
+ * 출처·시각(옛 머리 설명 「기안 · 출처 · 시각」의 나머지)을 왼쪽에 둔다(`lead`).
+ */
 function DetailShell({
-  title,
-  description,
+  subject,
+  lead,
   children,
 }: {
-  title: string;
-  description?: string;
+  subject?: string;
+  lead?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <CrmShell title={title} description={description} actions={<BackLink />}>
+    <CrmShell>
       <div className="px-5 pb-5 pt-5 md:px-8">
         <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+          <div
+            data-testid="approval-detail-toolbar"
+            className="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-3"
+          >
+            {subject ? (
+              <h2 className="min-w-0 truncate text-base font-semibold text-foreground">{subject}</h2>
+            ) : lead ? (
+              <div className="flex min-w-0 items-center gap-2">{lead}</div>
+            ) : (
+              <span />
+            )}
+            <BackLink />
+          </div>
           {children}
         </div>
       </div>
@@ -121,7 +143,7 @@ export function ApprovalDetail({
 
   if (isLoading) {
     return (
-      <DetailShell title="결재함">
+      <DetailShell>
         <div className="p-5">
           <CardListSkeleton rows={2} />
         </div>
@@ -131,7 +153,7 @@ export function ApprovalDetail({
 
   if (isError) {
     return (
-      <DetailShell title="결재함">
+      <DetailShell>
         {/* 실패와 「없음」은 다른 얼굴이어야 한다 — 하나는 다시 해볼 일이고 하나는 아니다. */}
         <div role="alert" className="flex flex-col items-start gap-2 p-5">
           <p className="text-sm text-muted-foreground">기안을 불러오지 못했습니다.</p>
@@ -145,7 +167,7 @@ export function ApprovalDetail({
 
   if (!data) {
     return (
-      <DetailShell title="결재함">
+      <DetailShell>
         <div className="p-5">
           <p className="text-sm text-muted-foreground">기안을 찾을 수 없습니다.</p>
         </div>
@@ -155,15 +177,19 @@ export function ApprovalDetail({
 
   const isRead = data.kind === "READ";
   const envelope = isReadEnvelope(data.structuredResult) ? data.structuredResult : null;
-  const description = [
-    isRead ? "조회 결과" : "기안",
-    sourceLabelOf(data.createdBy),
-    formatShortDateTime(data.createdAt),
-  ].join(" · ");
 
   if (!isRead) {
     return (
-      <DetailShell title={data.title} description={description}>
+      <DetailShell
+        lead={
+          <>
+            <SourceBadge createdBy={data.createdBy} />
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {formatShortDateTime(data.createdAt)}
+            </span>
+          </>
+        }
+      >
         <div className="p-5">
           <ProposalCard id={id} />
         </div>
@@ -172,7 +198,7 @@ export function ApprovalDetail({
   }
 
   return (
-    <DetailShell title={data.title} description={description}>
+    <DetailShell subject={data.title}>
       <ReadDetailHeader
         envelope={envelope}
         createdBy={data.createdBy}

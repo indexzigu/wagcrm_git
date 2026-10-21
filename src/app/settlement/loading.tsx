@@ -3,7 +3,7 @@ import { CrmShell } from "@/components/crm/crm-shell";
 
 export default function SettlementLoading() {
   return (
-    <CrmShell title="정산 관리">
+    <CrmShell>
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         {/* Statistics Summary Bar Skeleton */}
         <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 shadow-soft-sm backdrop-blur-sm shrink-0">
@@ -29,13 +29,13 @@ export default function SettlementLoading() {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
           {/* Top Bar Skeleton */}
           <section className="flex min-h-12 shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border/70 px-5 py-3 bg-white/40">
-            <div className="flex flex-wrap items-center gap-3.5">
-              <Skeleton className="h-5 w-24 shrink-0" />
-              <Skeleton className="h-9 w-20 rounded-lg" />
+            {/* 왼쪽: 기간 단위 분할 버튼 · 기간 이동 / 오른쪽: 검색 · 세무 처리 · 새로고침 (페이지 머리 없음) */}
+            <div className="flex flex-wrap items-center gap-2">
               <Skeleton className="h-9 w-28 rounded-lg" />
-            </div>
-            <div className="flex items-center gap-3">
               <Skeleton className="h-9 w-48 rounded-lg" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-9 w-64 rounded-lg" />
               <Skeleton className="h-9 w-24 rounded-lg" />
               <Skeleton className="h-9 w-20 rounded-lg" />
             </div>

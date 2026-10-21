@@ -39,7 +39,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { CampaignSidePanel } from "./campaign-side-panel";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { CrmShell } from "./crm-shell";
-import { summarizeExecutionHeadline } from "@/lib/execution-quick-filters";
+import { SegmentToggle } from "./segment-toggle";
 import { MoneySummaryStrip, moneyFlowGroup } from "./money-summary-strip";
 import { DataSourceBanner } from "./data-source-banner";
 import { ExecutionKanbanBoard } from "./execution-kanban-board";
@@ -48,7 +48,7 @@ import { StageKanbanBoard } from "./stage-kanban-board";
 import { GroupedTableView } from "./grouped-table-view";
 import { summarizePipelineMoney } from "@/lib/pipeline-money-summary";
 
-/** 보기 전환(칸반/테이블) — 셸 머리 가운데의 분할 버튼으로 그린다. 상태·저장은 useStageFilter 그대로. */
+/** 보기 전환(칸반/테이블) — 카드 도구줄의 분할 버튼으로 그린다. 상태·저장은 useStageFilter 그대로. */
 const VIEW_MODE_OPTIONS = [
   { value: "kanban", label: "칸반" },
   { value: "table", label: "테이블" },
@@ -300,9 +300,6 @@ export function CrmDashboard({
     [rowsWithoutStageFilter],
   );
 
-  // 머리 부제 건수 — 실행 보드가 받는 같은 행·같은 빠른 필터 판정(`execution-quick-filters`)을 읽는다.
-  const executionHeadline = useMemo(() => summarizeExecutionHeadline(executionRows), [executionRows]);
-
   const kanbanSummary = useMemo(() => {
     const rowsToSum = useExecutionKanban ? executionRows : filteredRows;
     const m = summarizePipelineMoney(rowsToSum);
@@ -328,7 +325,8 @@ export function CrmDashboard({
   // Render
   // ---------------------------------------------------------------------------
 
-  // 검색·조합 캠페인 — 단계 칩 줄 오른쪽, 실행 보드에선 보드 빠른 필터 줄 오른쪽에 붙는다(한 벌만 그린다).
+  // 검색·보기 전환·조합 캠페인·캠페인 등록 — 단계 칩 줄 오른쪽, 실행 보드에선 보드 빠른 필터 줄 오른쪽에 붙는다
+  // (한 벌만 그린다). 순서는 리뉴얼(#207) 전 카드 도구줄과 같다 — 페이지 머리는 두지 않는다(오너 방침 2026-10-21).
   const pipelineControls = (
     <div className="ml-auto flex flex-wrap items-center gap-2">
       {/* 실행 보드에선 적용 중 필터 줄을 보드 위에 따로 띄우지 않는다 — 검색을 치는 순간 그 줄이 생기며 보드와
@@ -360,6 +358,12 @@ export function CrmDashboard({
           className="h-full border-0 text-xs focus-visible:ring-0"
         />
       </InputGroup>
+      <SegmentToggle
+        options={VIEW_MODE_OPTIONS}
+        value={viewMode === "table" ? "table" : "kanban"}
+        onValueChange={(value) => setViewMode(value === "table" ? "table" : "kanban")}
+        ariaLabel="보기 전환"
+      />
       {allowCreate ? (
         <Button
           variant="outline"
@@ -372,6 +376,17 @@ export function CrmDashboard({
           조합 캠페인
         </Button>
       ) : null}
+      {allowCreate ? (
+        <Button
+          variant="default"
+          size="sm"
+          className="h-9 rounded-lg bg-primary px-3.5 text-xs text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95"
+          onClick={() => openCreationSheet(preferredCreateDefaultStatus)}
+        >
+          <PlusIcon className="mr-1 size-3.5" />
+          캠페인 등록
+        </Button>
+      ) : null}
     </div>
   );
   const showFilterRow = !lockedStageFilter || !useExecutionKanban;
@@ -381,35 +396,8 @@ export function CrmDashboard({
 
   return (
     <>
-      {/* 모바일 표면은 자체 머리를 쓴다(P5 UA 분기 유지) — 제목은 데스크톱에서만 CrmShell 머리에 올린다 */}
-      <CrmShell
-        variant="focus"
-        title={isMobile ? undefined : "판매 관리"}
-        description={isMobile ? undefined : `판매중 ${executionHeadline.selling}건 · 지연 ${executionHeadline.delayed}건`}
-        segments={
-          isMobile
-            ? undefined
-            : {
-                options: VIEW_MODE_OPTIONS,
-                value: viewMode,
-                onValueChange: (value) => setViewMode(value === "table" ? "table" : "kanban"),
-                ariaLabel: "보기 전환",
-              }
-        }
-        actions={
-          !isMobile && allowCreate ? (
-            <Button
-              variant="default"
-              size="sm"
-              className="h-9 rounded-lg bg-primary px-3.5 text-xs text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/95"
-              onClick={() => openCreationSheet(preferredCreateDefaultStatus)}
-            >
-              <PlusIcon className="mr-1 size-3.5" />
-              캠페인 등록
-            </Button>
-          ) : undefined
-        }
-      >
+      {/* 모바일 표면은 자체 머리를 쓴다(P5 UA 분기 유지). 데스크톱도 페이지 머리를 두지 않는다 — 조작은 카드 도구줄에. */}
+      <CrmShell variant="focus">
         {isMobile ? (
           <MobilePipelineView
             campaigns={filteredRows}
@@ -448,9 +436,8 @@ export function CrmDashboard({
             ) : null}
             {showCardHead ? (
             <div data-slot="pipeline-card-head" className="flex flex-col gap-4 border-b border-border px-5 py-4">
-              {/* 단계 칩(왼쪽)과 검색·조합 캠페인(오른쪽)을 한 줄에 둔다. 제목·보기 전환·캠페인 등록은
-                  CrmShell 머리로 올렸다 — 종전의 조작 전용 줄은 빈 줄로 남아 지웠다. 실행 보드(진행·칸반)
-                  에선 검색·조합 캠페인이 보드의 빠른 필터 줄 오른쪽으로 가므로 이 줄을 그리지 않는다. */}
+              {/* 단계 칩(왼쪽)과 검색·보기 전환·조합 캠페인·캠페인 등록(오른쪽)을 한 줄에 둔다. 실행 보드(진행·칸반)
+                  에선 그 조작이 보드의 빠른 필터 줄 오른쪽으로 가므로 이 줄을 그리지 않는다. */}
               {showFilterRow ? (
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   {!lockedStageFilter ? (

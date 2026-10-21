@@ -28,12 +28,15 @@ export function StoryInboxGrid({
   cards,
   counts,
   total,
+  actions,
 }: {
   filter: StoryInboxFilter;
   cards: StoryInboxCard[];
   counts: Record<StoryClassification, number>;
   /** 전체 탭 개수 — 서버 집계 합(분류 이동은 합을 바꾸지 않는다). */
   total: number;
+  /** 탭 줄 오른쪽 끝에 서는 버튼(수집 등) — 페이지 머리를 없앤 뒤 이 줄이 본문 맨 위 도구줄이다. */
+  actions?: React.ReactNode;
 }) {
   const [, startTransition] = useTransition();
   const [overrides, addOverride] = useOptimistic<Record<string, StoryClassification>, Override>(
@@ -60,25 +63,28 @@ export function StoryInboxGrid({
 
   return (
     <>
-      <nav className="mb-5 flex items-center gap-1.5">
-        {STORY_INBOX_FILTERS.map((tab) => {
-          const count = tab.classification ? shown[tab.classification] : total;
-          const active = tab.key === filter;
-          return (
-            <Link
-              key={tab.key}
-              href={`/admin/stories?f=${tab.key}`}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                active
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              {tab.label} {count}
-            </Link>
-          );
-        })}
-      </nav>
+      <div data-testid="story-inbox-toolbar" className="mb-5 flex items-center justify-between gap-3">
+        <nav className="flex items-center gap-1.5">
+          {STORY_INBOX_FILTERS.map((tab) => {
+            const count = tab.classification ? shown[tab.classification] : total;
+            const active = tab.key === filter;
+            return (
+              <Link
+                key={tab.key}
+                href={`/admin/stories?f=${tab.key}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  active
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                {tab.label} {count}
+              </Link>
+            );
+          })}
+        </nav>
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      </div>
 
       {visible.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">

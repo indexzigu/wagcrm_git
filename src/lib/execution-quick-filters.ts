@@ -64,14 +64,3 @@ export function countExecutionQuickFilters(
   }
   return counts;
 }
-
-/** 판매 관리 머리 부제의 두 숫자 — 판매중(ACTIVE)과 지연(보드 「지연」 필터와 같은 값). */
-export function summarizeExecutionHeadline(
-  rows: readonly CampaignRow[],
-  now: Date = new Date(),
-): { selling: number; delayed: number } {
-  return {
-    selling: rows.filter((campaign) => campaign.status === "ACTIVE").length,
-    delayed: countExecutionQuickFilters(rows, now).DELAYED,
-  };
-}

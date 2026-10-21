@@ -60,6 +60,20 @@ describe("PriceSheetList — 거래처 선택 검색화 (UX1-D)", () => {
     expect(getTrigger()).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("페이지 머리가 없고 「캠페인 자료」 링크는 첫 카드 도구줄(거래처 선택 줄) 오른쪽 끝에 있다", async () => {
+    render(<PriceSheetList />);
+
+    await waitFor(() => {
+      expect(getTrigger()).toBeInTheDocument();
+    });
+    const toolbar = screen.getByTestId("price-sheet-toolbar");
+    const link = screen.getByRole("link", { name: /캠페인 자료/ });
+    expect(toolbar.contains(getTrigger())).toBe(true);
+    expect(toolbar.lastElementChild).toBe(link);
+    expect(link).toHaveAttribute("href", "/assets/archive");
+    expect(document.querySelector("header, h1")).toBeNull();
+  });
+
   it("기본값은 '지정 안 함'이다", async () => {
     render(<PriceSheetList />);
 

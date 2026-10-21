@@ -3,7 +3,6 @@ import type { CampaignRow } from "@/lib/crm-types";
 import {
   countExecutionQuickFilters,
   matchesExecutionQuickFilter,
-  summarizeExecutionHeadline,
 } from "@/lib/execution-quick-filters";
 
 /**
@@ -67,9 +66,5 @@ describe("execution-quick-filters", () => {
     ).map((r) => r.id);
     expect(delayed).toEqual(["overdue"]);
     expect(matchesExecutionQuickFilter(ROWS[1], "ALL", NOW)).toBe(true);
-  });
-
-  it("머리 부제 건수 — 판매중은 ACTIVE, 지연은 지연 필터와 같은 값", () => {
-    expect(summarizeExecutionHeadline(ROWS, NOW)).toEqual({ selling: 3, delayed: 1 });
   });
 });

@@ -15,32 +15,32 @@ export function KatalkPage() {
   // 눌러도 실패하는 UI 를 남기지 않고 아예 뺀다. 탭이 하나뿐이면 탭 껍데기도 뺀다.
   const isOperator = useUserRole() === "operator";
 
-  return (
-    // 제목은 메뉴 이름과 같은 문자열 하나(메뉴 이름 = 페이지 제목). 되돌아가기 링크는 머리 오른쪽 조작 자리.
-    <CrmShell
-      title="카톡 기록"
-      actions={
-        isOperator ? undefined : (
-          <Link
-            href="/assets/archive"
-            className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeftIcon className="size-3.5" />
-            캠페인 자료
-          </Link>
-        )
-      }
-      description={isOperator ? "카톡 대화 txt 업로드" : "직원 카톡 txt 업로드 · 방 매핑 관리"}
+  // 페이지 머리(제목·설명)는 두지 않는다 — 오너 디자인 방침(2026-10-21). 「캠페인 자료」로 돌아가는
+  // 링크는 탭줄 오른쪽 끝이 소유한다(탭이 이 화면의 첫 도구줄이다).
+  const backLink = (
+    <Link
+      href="/assets/archive"
+      className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
     >
+      <ArrowLeftIcon className="size-3.5" />
+      캠페인 자료
+    </Link>
+  );
+
+  return (
+    <CrmShell>
       <div className="flex flex-col gap-6 p-6 md:p-8">
         {isOperator ? (
           <KatalkUploadTab />
         ) : (
           <Tabs defaultValue="upload">
-            <TabsList>
-              <TabsTrigger value="upload">업로드</TabsTrigger>
-              <TabsTrigger value="manage">방 관리</TabsTrigger>
-            </TabsList>
+            <div data-testid="katalk-toolbar" className="flex items-center justify-between gap-2">
+              <TabsList>
+                <TabsTrigger value="upload">업로드</TabsTrigger>
+                <TabsTrigger value="manage">방 관리</TabsTrigger>
+              </TabsList>
+              {backLink}
+            </div>
             <TabsContent value="upload">
               <KatalkUploadTab />
             </TabsContent>

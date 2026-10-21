@@ -48,33 +48,12 @@ vi.mock("sonner", () => ({
   },
 }));
 
-// Mock CrmShell to avoid SidebarProvider dependency
-// 보기 전환(칸반/테이블)은 셸 머리의 segments 로 올라갔다 — 목에서도 실제 SegmentToggle 로 그린다.
-vi.mock("@/components/crm/crm-shell", async () => {
-  const { SegmentToggle } = await vi.importActual<typeof import("@/components/crm/segment-toggle")>(
-    "@/components/crm/segment-toggle",
-  );
-  return {
-    CrmShell: ({
-      children,
-      actions,
-      segments,
-    }: {
-      children: React.ReactNode;
-      actions?: React.ReactNode;
-      segments?: React.ComponentProps<typeof SegmentToggle<string>> & { ariaLabel?: string };
-    }) =>
-      React.createElement(
-        "div",
-        { "data-testid": "crm-shell" },
-        segments
-          ? React.createElement(SegmentToggle, { ...segments, ariaLabel: segments.ariaLabel ?? "보기 전환" })
-          : null,
-        actions,
-        children,
-      ),
-  };
-});
+// Mock CrmShell to avoid SidebarProvider dependency — 셸은 머리 없이 children 만 그린다(보기 전환·캠페인 등록은
+// 대시보드 카드 도구줄이 직접 그린다).
+vi.mock("@/components/crm/crm-shell", () => ({
+  CrmShell: ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", { "data-testid": "crm-shell" }, children),
+}));
 
 // Mock CampaignSidePanel to avoid complex dependencies
 vi.mock("@/components/crm/campaign-side-panel", () => ({
@@ -357,9 +336,10 @@ describe("CrmDashboard Integration Tests", () => {
       const tableButton = screen.getByRole("radio", { name: "테이블" });
       fireEvent.click(tableButton);
 
-      // Verify table view is active
+      // Verify table view is active — 진행·칸반에선 도구줄이 실행 보드 안에 있다가 테이블로 바뀌면 카드 도구줄로
+      // 다시 그려지므로(같은 조작 한 벌, 자리만 이동) 분할 버튼을 새로 찾는다.
       await waitFor(() => {
-        expect(tableButton).toHaveAttribute("aria-checked", "true");
+        expect(screen.getByRole("radio", { name: "테이블" })).toHaveAttribute("aria-checked", "true");
       });
 
       // Verify "진행" filter is still active

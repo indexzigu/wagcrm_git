@@ -27,6 +27,12 @@ describe("결재함 페이지", () => {
     expect(ambient!.contains(screen.getByTestId("approval-hub"))).toBe(true);
   });
 
+  it("페이지 머리(제목·설명)가 없다 — 첫 줄은 허브다(오너 디자인 방침 2026-10-21)", () => {
+    const { container } = render(<ApprovalsPage />);
+    expect(container.querySelector("header, h1")).toBeNull();
+    expect(screen.queryByText("결재함")).toBeNull();
+  });
+
   it("가격표 업로드 카드는 없다 — 입구는 /assets/price-sheets 하나", () => {
     render(<ApprovalsPage />);
     expect(screen.queryByTestId("price-sheet-ingest-card")).toBeNull();

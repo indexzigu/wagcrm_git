@@ -230,22 +230,7 @@ export function PartnersManagement({
   }, [partners]);
 
   return (
-    <CrmShell
-      title="거래처"
-      actions={
-        <Button
-          size="sm"
-          className="shrink-0 rounded-lg h-9 text-xs"
-          onClick={() => {
-            setSelectedPartner(null);
-            setPartnerPanelMode("create");
-          }}
-        >
-          <PlusIcon aria-hidden="true" data-icon="inline-start" />
-          신규 거래처
-        </Button>
-      }
-    >
+    <CrmShell>
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치) */}
         <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0">
@@ -279,7 +264,7 @@ export function PartnersManagement({
               <DataSourceBanner message={dataSourceMessage} />
             </div>
           ) : null}
-          {/* 검색만 남은 줄 — 제목·신규 거래처는 CrmShell 머리로 올렸다. 빈 칸 없이 오른쪽 정렬, 높이는 좁게(py-2). */}
+          {/* 카드 도구줄 — 검색 + 신규 거래처(페이지 머리 없음, 2026-10-21 오너). 빈 칸 없이 오른쪽 정렬, 높이는 좁게(py-2). */}
           <section className="flex shrink-0 items-center justify-end gap-2 border-b border-border/70 px-5 py-2">
             <InputGroup className="w-48 shrink-0 border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">
               <InputGroupAddon>
@@ -315,6 +300,17 @@ export function PartnersManagement({
             <span className="sr-only" role="status" aria-live="polite">
               {localQuery !== query ? "검색 중" : `거래처 ${partners.length}개`}
             </span>
+            <Button
+              size="sm"
+              className="shrink-0 rounded-lg h-9 text-xs"
+              onClick={() => {
+                setSelectedPartner(null);
+                setPartnerPanelMode("create");
+              }}
+            >
+              <PlusIcon aria-hidden="true" data-icon="inline-start" />
+              신규 거래처
+            </Button>
           </section>
 
           {partners.length === 0 && !query ? (
