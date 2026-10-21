@@ -102,3 +102,36 @@ describe("@theme 노출 프로브 (Tailwind compile)", () => {
     expect(hits).toEqual(["bg-accent-achieve", "bg-fill-teal-1", "bg-hero-deep", "bg-primary-tint", "bg-brand-mark", "text-brand-mark"]);
   });
 });
+
+/** `:root` 의 `--x: var(--y)` 별칭을 hex 까지 따라간다(분포바 토큰은 다른 토큰의 별칭이다). */
+function resolveRootToken(css: string, name: string, depth = 0): string {
+  if (depth > 5) throw new Error(`${name} 별칭이 너무 깊다`);
+  if (tokens[name]) return tokens[name];
+  const start = css.indexOf(":root {");
+  const block = css.slice(start, css.indexOf("\n}", start));
+  const m = block.match(new RegExp(`${name}:\\s*var\\((--[\\w-]+)\\)`));
+  if (!m) throw new Error(`${name} 토큰 없음`);
+  return resolveRootToken(css, m[1], depth + 1);
+}
+
+describe("주문 분포바 4구간 — 청록 램프 → 달성 모래색 (묶음 2)", () => {
+  const css = readFileSync(CSS_PATH, "utf8");
+  const ramp = ["--pipeline-confirm", "--pipeline-pending", "--pipeline-shipping", "--pipeline-completed"];
+  const hexes = ramp.map((n) => resolveRootToken(css, n));
+
+  it("파란 계열 옛 값이 남지 않는다", () => {
+    expect(hexes.map((h) => h.toUpperCase())).not.toContain("#276B9B");
+    expect(hexes.map((h) => h.toUpperCase())).not.toContain("#649CC4");
+  });
+
+  it("상대 휘도가 주문확인 → 배송대기 → 배송중 → 배송완료로 단조 증가(어두움 → 밝음 → 모래색)", () => {
+    const lum = hexes.map((h) => luminance(h));
+    for (let i = 1; i < lum.length; i++) expect(lum[i]).toBeGreaterThan(lum[i - 1]);
+  });
+
+  it("이웃 구간끼리 대비 ≥ 1.3 — 구간 경계가 색 이름 없이도 갈린다", () => {
+    for (let i = 1; i < hexes.length; i++) {
+      expect(contrast(hexes[i], hexes[i - 1]), `${ramp[i - 1]} | ${ramp[i]}`).toBeGreaterThanOrEqual(1.3);
+    }
+  });
+});
