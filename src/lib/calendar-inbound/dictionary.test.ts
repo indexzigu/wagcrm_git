@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { getPrisma } from "@/lib/prisma";
 import { loadInboundDictionary, type InboundDictionaryDb } from "./dictionary";
+
+// 컴파일 전용 가드: 실제 Prisma 클라이언트가 InboundDictionaryDb 에 대입 가능해야 한다.
+export const _assignable: (
+  c: ReturnType<typeof getPrisma>,
+) => InboundDictionaryDb = (c) => c;
 
 function fakeDb(): InboundDictionaryDb {
   return {
@@ -16,9 +22,16 @@ function fakeDb(): InboundDictionaryDb {
           id: "d1",
           brandName: "테스트브랜드 / 가짜브랜드,",
           dealName: "테스트 딜",
+          partnerCompanyName: "무시될값",
           partner: { name: "테스트거래처" },
         },
-        { id: "d2", brandName: null, dealName: "비활성 딜", partner: null },
+        {
+          id: "d2",
+          brandName: null,
+          dealName: "비활성 딜",
+          partnerCompanyName: "자유입력거래처",
+          partner: null,
+        },
       ],
     },
   };
@@ -42,6 +55,9 @@ describe("loadInboundDictionary", () => {
       dealName: "테스트 딜",
       partnerName: "테스트거래처",
     });
-    expect(d.deals[1]).toMatchObject({ brandNames: [], partnerName: null });
+    expect(d.deals[1]).toMatchObject({
+      brandNames: [],
+      partnerName: "자유입력거래처",
+    });
   });
 });

@@ -7,13 +7,16 @@ type DealRow = {
   id: string;
   brandName: string | null;
   dealName: string;
+  partnerCompanyName: string | null;
   partner: { name: string } | null;
 };
 
 /** PrismaClient 의 필요한 면만. */
 export type InboundDictionaryDb = {
   seller: {
-    findMany(args: { select: Record<string, true> }): Promise<SellerRow[]>;
+    findMany(args: {
+      select: { id: true; name: true; alias: true };
+    }): Promise<SellerRow[]>;
   };
   deal: {
     findMany(args: {
@@ -21,6 +24,7 @@ export type InboundDictionaryDb = {
         id: true;
         brandName: true;
         dealName: true;
+        partnerCompanyName: true;
         partner: { select: { name: true } };
       };
     }): Promise<DealRow[]>;
@@ -46,6 +50,7 @@ export async function loadInboundDictionary(
         id: true,
         brandName: true,
         dealName: true,
+        partnerCompanyName: true,
         partner: { select: { name: true } },
       },
     }),
@@ -59,7 +64,8 @@ export async function loadInboundDictionary(
       id: d.id,
       brandNames: uniqueNonEmpty((d.brandName ?? "").split(/[/,]/)),
       dealName: d.dealName,
-      partnerName: d.partner?.name?.trim() || null,
+      partnerName:
+        d.partner?.name?.trim() || d.partnerCompanyName?.trim() || null,
     })),
   };
 }
