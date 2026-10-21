@@ -32,7 +32,7 @@ export async function LandingLogin({
   const appUrl = getAppUrl();
 
   return (
-    <div className="relative min-h-svh w-full bg-[#F8FAFC] font-sans text-slate-900 selection:bg-primary selection:text-white">
+    <div className="relative min-h-svh w-full bg-slate-50 font-sans text-slate-900 selection:bg-primary selection:text-white">
       <div className="grid min-h-svh w-full grid-cols-1 lg:grid-cols-[minmax(420px,44%)_1fr]">
         {/* 좌측: 로그인 컬럼.
             상하 여백은 safe-area 를 더한다 — 루트 레이아웃이 viewportFit:"cover" 라 홈 화면에
@@ -54,11 +54,11 @@ export async function LandingLogin({
             {deniedAccess && (
               <div
                 role="alert"
-                className="mb-8 flex items-start gap-3 rounded-xl border border-[#BF5050]/25 bg-[#BF5050]/[0.06] px-4 py-3.5"
+                className="mb-8 flex items-start gap-3 rounded-xl border border-status-urgent/30 bg-status-urgent-bg px-4 py-3.5"
               >
-                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-[#BF5050]" aria-hidden="true" />
+                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-status-urgent" aria-hidden="true" />
                 <div className="space-y-0.5">
-                  <p className="text-[13px] font-semibold text-[#8B3A3A]">
+                  <p className="text-[13px] font-semibold text-status-urgent-text">
                     접근 권한이 없는 계정입니다
                   </p>
                   <p className="text-[13px] leading-relaxed text-slate-600">
@@ -72,11 +72,11 @@ export async function LandingLogin({
             {authError && (
               <div
                 role="alert"
-                className="mb-8 flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3.5"
+                className="mb-8 flex items-start gap-3 rounded-xl border border-status-caution/30 bg-status-caution-bg px-4 py-3.5"
               >
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden="true" />
+                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-status-caution" aria-hidden="true" />
                 <div className="space-y-0.5">
-                  <p className="text-[13px] font-semibold text-amber-800">
+                  <p className="text-[13px] font-semibold text-status-caution-text">
                     로그인에 실패했습니다
                   </p>
                   <p className="text-[13px] leading-relaxed text-slate-600">
@@ -117,7 +117,7 @@ export async function LandingLogin({
                 <Button
                   type="submit"
                   size="lg"
-                  className="group relative h-12 w-full cursor-pointer gap-3 overflow-hidden rounded-xl bg-primary text-[15px] font-semibold text-white shadow-soft-sm shadow-primary/25 transition-colors duration-200 hover:bg-[#0C4A75] focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                  className="group relative h-12 w-full cursor-pointer gap-3 overflow-hidden rounded-xl bg-primary text-[15px] font-semibold text-white shadow-soft-sm shadow-primary/25 transition-colors duration-200 hover:bg-primary/90 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-white"
                 >
                   {/* 호버 시 한 번 지나가는 광택 스윕 — 장식이므로 reduced-motion에선 숨김 */}
                   <div

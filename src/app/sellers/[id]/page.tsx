@@ -305,7 +305,7 @@ async function SellerAnalysisReport({ params }: Params) {
               key={f.key}
               title={f.reason}
               className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full border cursor-help ${
-                f.severity === "danger" ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-amber-50 text-amber-700 border-amber-200"
+                f.severity === "danger" ? "bg-status-urgent-bg text-status-urgent-text border-status-urgent/30" : "bg-status-caution-bg text-status-caution-text border-status-caution/30"
               }`}
             >
               <AlertTriangle className="size-3" />
@@ -375,7 +375,7 @@ async function SellerAnalysisReport({ params }: Params) {
                 {brandMentions.map((b) => (
                   <div key={b.handle} className="flex items-center gap-2 text-[11px]">
                     <span className="font-mono text-slate-700 flex-1 truncate">@{b.handle}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{b.count}회</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200/70 text-slate-700">{b.count}회</span>
                   </div>
                 ))}
               </div>

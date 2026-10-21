@@ -172,7 +172,7 @@ function AnimatedActiveDot(props: {
   // PALETTE_IMPL_SPEC.md (2026-07-09): positive branch → chart-growth token (same
   // family as the followers line). Negative branch is an unrelated red hue, out of
   // this pass's scope — left as-is.
-  const color = isPositive ? "var(--chart-growth)" : "hsl(0, 75%, 55%)";
+  const color = isPositive ? "var(--chart-growth)" : "var(--status-urgent)";
 
   return (
     <g>
@@ -357,8 +357,8 @@ export function SellerGrowthChart({ data }: GrowthTrendChartProps) {
                 <span
                   className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                     isGrowthPositive
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-rose-50 text-rose-700"
+                      ? "bg-status-success-bg text-status-success"
+                      : "bg-status-urgent-bg text-status-urgent-text"
                   }`}
                 >
                   {isGrowthPositive ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
@@ -380,7 +380,7 @@ export function SellerGrowthChart({ data }: GrowthTrendChartProps) {
                 return (
                   <span
                     className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      isPostGrowthPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                      isPostGrowthPositive ? "bg-status-success-bg text-status-success" : "bg-status-urgent-bg text-status-urgent-text"
                     }`}
                   >
                     {isPostGrowthPositive ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}

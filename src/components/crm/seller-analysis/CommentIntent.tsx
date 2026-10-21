@@ -43,10 +43,10 @@ export function CommentIntent({ analysis }: { analysis: CommentAnalysis }) {
   const d = analysis.intent_distribution;
   if (!d) return null;
   const rows = [
-    { label: "문의", v: d.inquiry ?? 0, cls: "bg-blue-500" },
-    { label: "구매", v: d.purchase ?? 0, cls: "bg-emerald-500" },
+    { label: "문의", v: d.inquiry ?? 0, cls: "bg-chart-2" },
+    { label: "구매", v: d.purchase ?? 0, cls: "bg-chart-growth" },
     { label: "친목", v: d.social ?? 0, cls: "bg-slate-400" },
-    { label: "봇·무관", v: d.bot_or_irrelevant ?? 0, cls: "bg-rose-400" },
+    { label: "봇·무관", v: d.bot_or_irrelevant ?? 0, cls: "bg-slate-500" },
   ];
   const buyIntent = (d.inquiry ?? 0) + (d.purchase ?? 0);
   return (
@@ -55,11 +55,11 @@ export function CommentIntent({ analysis }: { analysis: CommentAnalysis }) {
         <MessageSquareText className="w-4 h-4 text-slate-400" />
         <span className="text-[11px] text-slate-600 font-medium">댓글 구매의도</span>
         <span className="text-[10px] text-slate-500">(LLM 분류 · 추정)</span>
-        <span className="ml-auto text-[11px] font-bold text-emerald-700 tabular-nums">
+        <span className="ml-auto text-[11px] font-bold text-status-success tabular-nums">
           구매신호 {buyIntent}%
         </span>
       </div>
-      <div className="flex h-2 rounded-full overflow-hidden bg-slate-100">
+      <div className="flex h-2 gap-px rounded-full overflow-hidden bg-slate-100">
         {rows.map((r) => (
           <div
             key={r.label}

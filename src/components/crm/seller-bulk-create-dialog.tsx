@@ -214,7 +214,7 @@ export function SellerBulkCreateDialog({
             </div>
 
             {overCap && (
-              <p className="text-xs text-rose-600">
+              <p className="text-xs text-status-urgent-text">
                 1회 최대 {BULK_SELLER_MAX}건까지 등록됩니다. 초과분은 건너뜁니다.
               </p>
             )}
@@ -286,10 +286,10 @@ function ResultBadge({
 }) {
   const toneClass =
     tone === "ok"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      ? "bg-status-success-bg text-status-success border-status-success/20"
       : tone === "dup"
-      ? "bg-amber-50 text-amber-700 border-amber-200"
-      : "bg-rose-50 text-rose-700 border-rose-200";
+      ? "bg-status-caution-bg text-status-caution-text border-status-caution/30"
+      : "bg-status-urgent-bg text-status-urgent-text border-status-urgent/30";
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-medium ${toneClass}`}>
       {label}

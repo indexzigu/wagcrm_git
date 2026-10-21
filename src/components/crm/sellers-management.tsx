@@ -101,8 +101,8 @@ export function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<Seller
                 <span className="flex items-center gap-1.5 min-w-0 max-w-full">
                   {row.isMonitored && (
                     <span className="relative flex h-2 w-2 shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-success opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-status-success"></span>
                     </span>
                   )}
                   <span className="font-semibold text-slate-900 truncate block">{displayName}</span>
@@ -150,12 +150,12 @@ export function buildSellerColumns(ctx: SellerColumnsContext): GridColumn<Seller
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-blue-600 hover:underline font-mono overflow-hidden"
+          className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-primary hover:underline font-mono overflow-hidden"
         >
           {row.snsType === "INSTAGRAM" ? (
-            <InstagramIcon className="size-3.5 text-pink-500/70 shrink-0" />
+            <InstagramIcon className="size-3.5 text-muted-foreground shrink-0" />
           ) : row.snsType === "YOUTUBE" ? (
-            <YoutubeIcon className="size-3.5 text-red-500/70 shrink-0" />
+            <YoutubeIcon className="size-3.5 text-muted-foreground shrink-0" />
           ) : row.snsType === "X" ? (
             <span className="text-[10px] font-bold text-slate-800 border border-slate-300 px-1 rounded bg-slate-50 mr-0.5 select-none shrink-0">X</span>
           ) : null}

@@ -110,7 +110,7 @@ export function ReferralNetworkDialog({
                         소개 {row.referredCount}명
                       </Badge>
                       {row.activeReferredCount > 0 && (
-                        <span className="text-[10px] text-emerald-700">거래 {row.activeReferredCount}</span>
+                        <span className="text-[10px] text-muted-foreground">거래 {row.activeReferredCount}</span>
                       )}
                       {row.downstreamSales > 0 && (
                         <span className="text-[10px] font-mono text-slate-600">{formatCurrency(row.downstreamSales)}</span>

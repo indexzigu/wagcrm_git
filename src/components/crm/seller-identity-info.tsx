@@ -43,10 +43,10 @@ const renderSnsIcon = (snsType?: string | null, className?: string) => {
   if (!snsType) return null;
   const type = snsType.toUpperCase();
   if (type === "INSTAGRAM") {
-    return <InstagramIcon className={cn("text-pink-500/80 shrink-0", className)} />;
+    return <InstagramIcon className={cn("text-muted-foreground shrink-0", className)} />;
   }
   if (type === "YOUTUBE") {
-    return <YoutubeIcon className={cn("text-red-500/80 shrink-0", className)} />;
+    return <YoutubeIcon className={cn("text-muted-foreground shrink-0", className)} />;
   }
   return <Globe className={cn("text-slate-400/80 shrink-0", className)} />;
 };
@@ -94,9 +94,9 @@ export function SellerIdentityInfo({
   const isHeading = variant === "heading";
 
   const badgeColors: Record<string, string> = {
-    추천: "text-emerald-700 border-emerald-200 bg-emerald-50",
-    보류: "text-amber-700 border-amber-200 bg-amber-50",
-    비추천: "text-rose-700 border-rose-200 bg-rose-50",
+    추천: "text-status-success border-status-success/20 bg-status-success-bg",
+    보류: "text-status-caution-text border-status-caution/30 bg-status-caution-bg",
+    비추천: "text-status-urgent-text border-status-urgent/30 bg-status-urgent-bg",
     미진행: "text-slate-600 border-slate-200 bg-slate-100",
   };
 

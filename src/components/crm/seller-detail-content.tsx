@@ -669,9 +669,9 @@ export function SellerDetailContent({
                           className={cn(
                             "h-7 px-3 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer select-none shrink-0",
                             isSelected ? (
-                              (level === "추천" && "bg-emerald-50 text-emerald-700 border-emerald-300 shadow-soft-sm") ||
-                              (level === "보류" && "bg-amber-50 text-amber-700 border-amber-300 shadow-soft-sm") ||
-                              (level === "비추천" && "bg-rose-50 text-rose-700 border-rose-300 shadow-soft-sm") ||
+                              (level === "추천" && "bg-status-success-bg text-status-success border-status-success/30 shadow-soft-sm") ||
+                              (level === "보류" && "bg-status-caution-bg text-status-caution-text border-status-caution/30 shadow-soft-sm") ||
+                              (level === "비추천" && "bg-status-urgent-bg text-status-urgent-text border-status-urgent/30 shadow-soft-sm") ||
                               "bg-slate-100 text-slate-700 border-slate-300 shadow-soft-sm"
                             ) : (
                               "bg-white text-slate-500 border-slate-200 hover:text-slate-600 hover:bg-slate-50"
@@ -1226,7 +1226,7 @@ export function SellerDetailContent({
                                     type="button"
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 text-muted-foreground hover:text-red-600 hover:bg-red-50 rounded"
+                                    className="h-6 w-6 text-muted-foreground hover:text-status-urgent-text hover:bg-status-urgent-bg rounded"
                                     onClick={() => handleDeleteHistory(snapshot.id)}
                                     aria-label={`${formatDate(snapshot.snapshotDate)} 기록 삭제`}
                                   >
@@ -1313,7 +1313,7 @@ export function SellerDetailContent({
                               className={cn(
                                 "text-[9px] px-2 py-0.5 rounded-full font-semibold border transition-colors leading-none",
                                 isCompleted
-                                  ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200/60"
+                                  ? "bg-status-success-bg text-status-success hover:bg-status-success-bg border-status-success/20"
                                   : "bg-slate-100 text-slate-600 hover:bg-slate-100 border-transparent"
                               )}
                             >

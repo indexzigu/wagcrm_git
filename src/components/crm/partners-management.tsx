@@ -76,8 +76,8 @@ const partnerColumns: GridColumn<PartnerRow>[] = [
         <span
           className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
             isNormal
-              ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-              : "bg-red-50 text-red-700 ring-red-600/10"
+              ? "bg-slate-100 text-slate-600 ring-slate-200"
+              : "bg-status-urgent-bg text-status-urgent-text ring-status-urgent/30"
           }`}
         >
           {status}
