@@ -154,7 +154,8 @@ export function matchPlaybook(input: PlaybookInput): PlaybookMatch | null {
   if (input.errorKind === "config") {
     const keys = extractEnvKeys(msg);
     if (keys.length > 0) {
-      const names = keys.join("·");
+      // 「A/B 미설정」류는 둘 중 하나만 비어도 나는 문구다 — 둘 다 비었다고 단정하지 않는다.
+      const names = keys.join(" 또는 ");
       return {
         id: "env-missing",
         cause: `설정값 누락: ${names}`,

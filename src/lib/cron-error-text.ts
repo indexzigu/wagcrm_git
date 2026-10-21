@@ -48,7 +48,16 @@ export function describeErrorChain(error: unknown, maxDepth = 5): string {
       break;
     }
     parts.push(err.message || err.name || UNKNOWN_ERROR);
-    if (err.cause === undefined) break;
+    if (err.cause === undefined) {
+      // `AggregateError` 는 원인을 `cause` 가 아니라 `errors` 배열에 싣는다 — 프록시 407 이 이 안에 실려 오는
+      // 경로가 있다(`fetch-client.contract.test.ts`). 안 보면 원인이 「all attempts failed」에서 끊겨 한도 소진이
+      // 네트워크 장애로 분류되고 헛재시도가 난다. 앞의 3개만, 각각 짧게 펼친다.
+      const inner = (current as { errors?: unknown }).errors;
+      if (Array.isArray(inner) && inner.length > 0) {
+        parts.push(`[${inner.slice(0, 3).map((e) => describeErrorChain(e, 2)).join(" | ")}]`);
+      }
+      break;
+    }
     current = err.cause;
   }
   return parts.join(" <- ").slice(0, MAX_LENGTH);

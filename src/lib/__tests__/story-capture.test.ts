@@ -274,6 +274,18 @@ describe("declareStoryCaptureOutcome — 대표 원인", () => {
     expect(outcome.failureReason).not.toContain("가나다");
   });
 
+  it("본문의 대문자_밑줄 토큰 중 오류 코드 모양만 남긴다 — 대문자 표시 이름은 싣지 않는다", () => {
+    const outcome = declareStoryCaptureOutcome({
+      ...base,
+      handles: ["seller_a"],
+      handlesFailed: 1,
+      activeSellers: 1,
+      errors: [unrendered("seller_a", "SELLER_DISPLAY_NAME")],
+    });
+    expect(outcome.failureReason).toContain("코드 CAPTCHA_REQUIRED");
+    expect(outcome.failureReason).not.toContain("SELLER_DISPLAY_NAME");
+  });
+
   it("「(핸들 …, 」 꼴도 걷어낸다", () => {
     const outcome = declareStoryCaptureOutcome({
       ...base,

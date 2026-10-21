@@ -243,6 +243,9 @@ export function declareStoryCaptureOutcome(result: StoryCaptureResult): {
  *   회차마다 달라 같은 원인이 다른 사고 서명이 된다. 앞쪽 「status=N」은 원인 판정 신호라 남긴다.
  * 썸네일 오류(`thumb …`)는 조회 실패가 아니라 대표 원인으로 쓰지 않는다.
  */
+const ERROR_CODE_TOKEN =
+  /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_(?:REQUIRED|BLOCKED|DENIED|FAILED|LIMIT(?:ED)?|EXCEEDED|ERROR|INVALID|EXPIRED|NOT_FOUND|FORBIDDEN|UNAVAILABLE)\b/g;
+
 function storyFailureCause(errors: readonly string[], handles: readonly string[]): string | undefined {
   const first = errors.find((e) => e.startsWith("fetch "));
   if (!first) return undefined;
@@ -252,7 +255,8 @@ function storyFailureCause(errors: readonly string[], handles: readonly string[]
     .replace(/\(핸들 [^,)]*, /g, "(");
   const cut = text.search(/ ?(?:본문:|화면 제목:)/);
   if (cut >= 0) {
-    const codes = [...new Set(text.slice(cut).match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g) ?? [])].slice(0, 3);
+    // 오류 코드 모양(…_REQUIRED·…_BLOCKED 등 끝말)만 남긴다 — 본문의 대문자_밑줄 토큰에는 셀러 표시 이름이 섞일 수 있다.
+    const codes = [...new Set(text.slice(cut).match(ERROR_CODE_TOKEN) ?? [])].slice(0, 3);
     text = `${text.slice(0, cut)} (본문 생략${codes.length > 0 ? `, 코드 ${codes.join(",")}` : ""})`;
   }
   return scrubFailureCause(text, handles);

@@ -145,9 +145,9 @@ describe("matchPlaybook — 표의 행마다 맞는 예·안 맞는 예", () => 
     const m = matchPlaybook(
       a("INSTAGRAM_ACCESS_TOKEN·INSTAGRAM_ACCOUNT_ID 미설정 (INSTAGRAM_ACCESS_TOKEN, THIRD_KEY)", "config"),
     );
-    expect(m?.cause).toBe("설정값 누락: INSTAGRAM_ACCESS_TOKEN·INSTAGRAM_ACCOUNT_ID");
+    expect(m?.cause).toBe("설정값 누락: INSTAGRAM_ACCESS_TOKEN 또는 INSTAGRAM_ACCOUNT_ID");
     expect(m?.ownerAction).toBe(
-      "운영 서버 설정에 INSTAGRAM_ACCESS_TOKEN·INSTAGRAM_ACCOUNT_ID 값이 비어 있습니다. 값을 넣고 서버를 다시 시작해 주세요.",
+      "운영 서버 설정에 INSTAGRAM_ACCESS_TOKEN 또는 INSTAGRAM_ACCOUNT_ID 값이 비어 있습니다. 값을 넣고 서버를 다시 시작해 주세요.",
     );
   });
 

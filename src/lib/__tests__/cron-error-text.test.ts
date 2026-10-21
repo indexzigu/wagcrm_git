@@ -44,3 +44,21 @@ describe("describeErrorChain", () => {
     expect(describeErrorChain(e, 3)).toBe("e9 <- e8 <- e7");
   });
 });
+
+describe("describeErrorChain — AggregateError", () => {
+  it("errors 배열 안의 원인(프록시 407)을 펼쳐 한도 소진으로 분류되게 한다", async () => {
+    const { classifyCronError } = await import("../cron-error-kind");
+    const aggregate = new AggregateError(
+      [new Error("Proxy response (407) !== 200 when HTTP Tunneling"), new Error("connect ECONNREFUSED")],
+      "all attempts failed",
+    );
+    const text = describeErrorChain(new TypeError("fetch failed", { cause: aggregate }));
+    expect(text).toBe(
+      "fetch failed <- all attempts failed <- [Proxy response (407) !== 200 when HTTP Tunneling | connect ECONNREFUSED]",
+    );
+    expect(classifyCronError(text)).toBe("proxy_quota");
+  });
+  it("errors 가 비면 지금처럼 끝낸다", () => {
+    expect(describeErrorChain(new AggregateError([], "all attempts failed"))).toBe("all attempts failed");
+  });
+});
