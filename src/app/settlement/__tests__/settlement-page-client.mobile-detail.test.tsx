@@ -84,6 +84,7 @@ beforeEach(() => {
       if (url.startsWith("/api/reports/settlement")) {
         return { ok: true, json: async () => ({ campaigns: [], summary: { totalRevenue: 0, totalMargin: 0, totalSellerPayouts: 0 } }) };
       }
+      if (url === "/api/campaigns/early") return { ok: true, json: async () => row("early") };
       return { ok: true, json: async () => ({}) };
     }),
   );
@@ -100,6 +101,12 @@ describe("정산 페이지(휴대폰) — 캠페인 상세 열기", () => {
     expect(await screen.findByTestId("mobile-sheet-title")).toHaveTextContent("딜-b");
     // 휴대폰에서 데스크톱 옆 창은 그리지 않는다.
     expect(sidePanel).not.toHaveBeenCalled();
+  });
+
+  it("정산 목록에 없는 캠페인(홈 리스크 카드의 정산 전 캠페인)은 서버에서 한 건 읽어 시트로 연다", async () => {
+    search = new URLSearchParams("campaign=early");
+    render(<SettlementPageClient initialData={initialData([row("a")])} defaultMonth="2026-10" />);
+    expect(await screen.findByTestId("mobile-sheet-title")).toHaveTextContent("딜-early");
   });
 
   it("카드를 누르면 모바일 상세 시트가 열린다", async () => {

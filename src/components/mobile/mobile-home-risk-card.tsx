@@ -64,15 +64,21 @@ export function MobileHomeRiskCard({
   exceptions: DashboardExceptions;
 }) {
   const outreachSignals = [
-    { key: "overdueReminders", label: "리마인더 지연", count: exceptions.overdueReminders, variant: "status-caution" as const },
-    { key: "pendingApprovals", label: "승인대기", count: exceptions.pendingApprovals, variant: "status-pending" as const },
+    { key: "overdueReminders", label: "리마인더 지연", count: exceptions.overdueReminders, variant: "status-caution" as const, href: "/outreach" },
+    { key: "pendingApprovals", label: "승인대기", count: exceptions.pendingApprovals, variant: "status-pending" as const, href: undefined },
   ].filter((signal) => signal.count > 0);
 
   const totalCount = issues.length + outreachSignals.reduce((sum, s) => sum + s.count, 0);
   if (totalCount === 0) return null;
 
   // 유형별 건수 (issues 는 이미 심각도순 정렬 — computeDataIntegrityIssues 계약)
-  const integrityChips: { key: string; label: string; count: number; variant: "status-urgent" | "status-caution" | "status-pending" | "outline" }[] = [];
+  const integrityChips: {
+    key: string;
+    label: string;
+    count: number;
+    variant: "status-urgent" | "status-caution" | "status-pending" | "outline";
+    href?: string;
+  }[] = [];
   for (const issue of issues) {
     const meta = INTEGRITY_META[issue.type];
     const existing = integrityChips.find((chip) => chip.key === issue.type);
@@ -82,13 +88,7 @@ export function MobileHomeRiskCard({
 
   const chips = [
     ...integrityChips,
-    ...outreachSignals.map((s) => ({
-      key: s.key,
-      label: s.label,
-      count: s.count,
-      variant: s.variant,
-      href: s.key === "overdueReminders" ? "/outreach" : undefined,
-    })),
+    ...outreachSignals.map((s) => ({ key: s.key, label: s.label, count: s.count, variant: s.variant, href: s.href })),
   ];
 
   return (
@@ -104,7 +104,7 @@ export function MobileHomeRiskCard({
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           {chips.map((chip) =>
-            "href" in chip && chip.href ? (
+            chip.href ? (
               // 칩은 작아서 눌리는 자리를 위아래로 넓힌다(보이는 모양은 그대로, 터치 하한 44px). 프레스는 ④ 투명도.
               // `overflow-visible` 은 Badge 기본 `overflow-hidden` 이 넓힌 자리(::after)를 잘라내지 않게 덮는다.
               <Badge key={chip.key} variant={chip.variant} asChild className="tabular-nums">
@@ -135,7 +135,9 @@ export function MobileHomeRiskCard({
                 >
                   {/* 줄 전체가 링크 — 카드 안 보조 목록이라 머리·칩 줄과 같은 카드 여백(16px)에 맞춘다(행 여백 계약 예외).
                       하이라이트가 카드 끝까지 닿게 여백만큼 바깥으로 넓힌다. 이름은 aria-label 로 고정해 색만 다른
-                      점·흐린 라벨이 「무엇을 여는지」를 흐리지 않게 한다. */}
+                      점·흐린 라벨이 「무엇을 여는지」를 흐리지 않게 한다.
+                      누름은 ① 회색 하이라이트 — 카드 끝까지 닿는 전폭 줄이고 바탕이 불투명 흰 카드라 덮을 수 있다(P8 프레스 표 ①,
+                      설계서 §5.4). ③ slate-50/70 은 흰 카드 위에서 거의 보이지 않는다. */}
                   <Link
                     href={`/settlement?campaign=${encodeURIComponent(issue.campaignId)}`}
                     aria-label={`${issue.campaignName} ${issue.label} 열기`}

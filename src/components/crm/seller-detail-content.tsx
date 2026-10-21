@@ -598,113 +598,113 @@ export function SellerDetailContent({
                 칸보다 넓어 이름↔별칭·팔로워↔등록일자 글자가 겹쳤다. 480px 미만이면 한 칸, 데스크톱 옆 창(640px)은 지금처럼 두 칸.
                 ⚠️ `@container` 는 그리드의 **부모**에 둔다 — 컨테이너 쿼리는 조상만 찾는다(`order-dashboard.tsx` 실사고). */}
             <div className="@container">
-            <div className="grid grid-cols-1 gap-3 @[480px]:grid-cols-2">
-              {/* 이름 */}
-              <InlineEditField
-                label="이름"
-                value={filterNotionTemp(seller.name) || ""}
-                displayValue={filterNotionTemp(seller.name) || "-"}
-                fieldType="text"
-                onSave={(v) => handleFieldSave("name", v)}
-                className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
-              />
+              <div className="grid grid-cols-1 gap-3 @[480px]:grid-cols-2">
+                {/* 이름 */}
+                <InlineEditField
+                  label="이름"
+                  value={filterNotionTemp(seller.name) || ""}
+                  displayValue={filterNotionTemp(seller.name) || "-"}
+                  fieldType="text"
+                  onSave={(v) => handleFieldSave("name", v)}
+                  className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
+                />
 
-              {/* 별칭 */}
-              <InlineEditField
-                label="별칭"
-                value={seller.alias || ""}
-                displayValue={seller.alias || "-"}
-                fieldType="text"
-                onSave={(v) => handleFieldSave("alias", v)}
-                className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
-              />
+                {/* 별칭 */}
+                <InlineEditField
+                  label="별칭"
+                  value={seller.alias || ""}
+                  displayValue={seller.alias || "-"}
+                  fieldType="text"
+                  onSave={(v) => handleFieldSave("alias", v)}
+                  className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
+                />
 
-              {/* SNS 유형 */}
-              <div className="col-span-1 flex min-w-0 items-center justify-between gap-2 border border-border/60 bg-muted/20 p-2.5 rounded-md">
-                <span className="shrink-0 text-xs text-muted-foreground">SNS 유형</span>
-                <span className="min-w-0 truncate text-xs font-medium text-foreground">
-                  {seller.snsType === "INSTAGRAM" ? "Instagram" : "YouTube"}
-                </span>
-              </div>
+                {/* SNS 유형 */}
+                <div className="col-span-1 flex min-w-0 items-center justify-between gap-2 border border-border/60 bg-muted/20 p-2.5 rounded-md">
+                  <span className="shrink-0 text-xs text-muted-foreground">SNS 유형</span>
+                  <span className="min-w-0 truncate text-xs font-medium text-foreground">
+                    {seller.snsType === "INSTAGRAM" ? "Instagram" : "YouTube"}
+                  </span>
+                </div>
 
-              {/* SNS 핸들 */}
-              <InlineEditField
-                label="SNS 핸들"
-                value={filterNotionTemp(seller.snsHandle) || ""}
-                displayValue={filterNotionTemp(seller.snsHandle) || "-"}
-                fieldType="text"
-                onSave={(v) => handleFieldSave("snsHandle", v)}
-                className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
-              />
+                {/* SNS 핸들 */}
+                <InlineEditField
+                  label="SNS 핸들"
+                  value={filterNotionTemp(seller.snsHandle) || ""}
+                  displayValue={filterNotionTemp(seller.snsHandle) || "-"}
+                  fieldType="text"
+                  onSave={(v) => handleFieldSave("snsHandle", v)}
+                  className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
+                />
 
-              {/* 팔로워 */}
-              <InlineEditField
-                label="팔로워"
-                value={String(seller.currentFollowers)}
-                displayValue={seller.currentFollowers.toLocaleString()}
-                fieldType="number"
-                onSave={(v) => handleFieldSave("currentFollowers", v)}
-                className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
-              />
+                {/* 팔로워 */}
+                <InlineEditField
+                  label="팔로워"
+                  value={String(seller.currentFollowers)}
+                  displayValue={seller.currentFollowers.toLocaleString()}
+                  fieldType="number"
+                  onSave={(v) => handleFieldSave("currentFollowers", v)}
+                  className="col-span-1 border border-border/60 bg-muted/20 p-2.5 rounded-md"
+                />
 
-              {/* 등록일자 */}
-              <div className="col-span-1 flex min-w-0 items-center justify-between gap-2 border border-border/60 bg-muted/20 p-2.5 rounded-md">
-                <span className="shrink-0 text-xs text-muted-foreground">등록일자</span>
-                <span className="min-w-0 truncate text-xs font-medium text-foreground">
-                  {seller.createdAt ? formatDate(seller.createdAt) : "-"}
-                </span>
-              </div>
+                {/* 등록일자 */}
+                <div className="col-span-1 flex min-w-0 items-center justify-between gap-2 border border-border/60 bg-muted/20 p-2.5 rounded-md">
+                  <span className="shrink-0 text-xs text-muted-foreground">등록일자</span>
+                  <span className="min-w-0 truncate text-xs font-medium text-foreground">
+                    {seller.createdAt ? formatDate(seller.createdAt) : "-"}
+                  </span>
+                </div>
 
-              {/* 적합성 */}
-              <div className="col-span-1 @[480px]:col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
-                <span className="text-xs text-muted-foreground shrink-0">적합성</span>
-                <div className="flex gap-1.5 overflow-x-auto no-scrollbar justify-end w-full">
-                  {["추천", "보류", "비추천", "미진행"].map((level) => {
-                    const isSelected = (seller.fitLevel || "미진행") === level;
-                    return (
-                      <button
-                        key={level}
-                        type="button"
-                        onClick={() => handleFieldSave("fitLevel", level)}
-                        className={cn(
-                          "h-7 px-3 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer select-none shrink-0",
-                          isSelected ? (
-                            (level === "추천" && "bg-emerald-50 text-emerald-700 border-emerald-300 shadow-soft-sm") ||
-                            (level === "보류" && "bg-amber-50 text-amber-700 border-amber-300 shadow-soft-sm") ||
-                            (level === "비추천" && "bg-rose-50 text-rose-700 border-rose-300 shadow-soft-sm") ||
-                            "bg-slate-100 text-slate-700 border-slate-300 shadow-soft-sm"
-                          ) : (
-                            "bg-white text-slate-500 border-slate-200 hover:text-slate-600 hover:bg-slate-50"
-                          )
-                        )}
-                      >
-                        {level}
-                      </button>
-                    );
-                  })}
+                {/* 적합성 */}
+                <div className="col-span-1 @[480px]:col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
+                  <span className="text-xs text-muted-foreground shrink-0">적합성</span>
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar justify-end w-full">
+                    {["추천", "보류", "비추천", "미진행"].map((level) => {
+                      const isSelected = (seller.fitLevel || "미진행") === level;
+                      return (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => handleFieldSave("fitLevel", level)}
+                          className={cn(
+                            "h-7 px-3 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer select-none shrink-0",
+                            isSelected ? (
+                              (level === "추천" && "bg-emerald-50 text-emerald-700 border-emerald-300 shadow-soft-sm") ||
+                              (level === "보류" && "bg-amber-50 text-amber-700 border-amber-300 shadow-soft-sm") ||
+                              (level === "비추천" && "bg-rose-50 text-rose-700 border-rose-300 shadow-soft-sm") ||
+                              "bg-slate-100 text-slate-700 border-slate-300 shadow-soft-sm"
+                            ) : (
+                              "bg-white text-slate-500 border-slate-200 hover:text-slate-600 hover:bg-slate-50"
+                            )
+                          )}
+                        >
+                          {level}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 카테고리 태그 */}
+                <div className="col-span-1 @[480px]:col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
+                  <span className="text-xs text-muted-foreground shrink-0">카테고리</span>
+                  <div className="flex-1 flex justify-end">
+                    <CategoryTagInput
+                      selectedTags={categoryTags}
+                      maxTags={5}
+                      sellerId={seller.id}
+                      onTagsChange={(tags) => {
+                        setCategoryTags(tags);
+                        onUpdated?.({
+                          ...seller,
+                          category: tags.map((t) => t.name).join(", ") || null,
+                        });
+                      }}
+                      onError={(msg) => toast.error(msg)}
+                    />
+                  </div>
                 </div>
               </div>
-
-              {/* 카테고리 태그 */}
-              <div className="col-span-1 @[480px]:col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
-                <span className="text-xs text-muted-foreground shrink-0">카테고리</span>
-                <div className="flex-1 flex justify-end">
-                  <CategoryTagInput
-                    selectedTags={categoryTags}
-                    maxTags={5}
-                    sellerId={seller.id}
-                    onTagsChange={(tags) => {
-                      setCategoryTags(tags);
-                      onUpdated?.({
-                        ...seller,
-                        category: tags.map((t) => t.name).join(", ") || null,
-                      });
-                    }}
-                    onError={(msg) => toast.error(msg)}
-                  />
-                </div>
-              </div>
-            </div>
             </div>
 
             {/* 프로필 이미지 & 소개글 — 이미지는 라벨 달린 '데이터 필드'가 아니라 셀러 정체성
