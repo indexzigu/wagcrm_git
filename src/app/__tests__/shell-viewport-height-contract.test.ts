@@ -66,7 +66,7 @@ describe("데스크톱 셸 뷰포트 높이 계약", () => {
   // 예약하지 않으면 흔들림이 한 층 안쪽에서 재현된다(T-178 실측: 정산 1392→1377px).
   it.each([
     ["CrmShell 안쪽 스크롤러", "src/components/crm/crm-shell.tsx", /className="[^"]*overflow-y-auto[^"]*"/],
-    ["주문관리 목록 스크롤러", "src/components/crm/order-dashboard.tsx", /className="[^"]*overflow-auto bg-\[#f8fafc\][^"]*"/],
+    ["주문관리 목록 스크롤러", "src/components/crm/order-dashboard.tsx", /className="[^"]*overflow-auto bg-background[^"]*"/],
   ])("%s — 스크롤바 자리를 예약한다", (_label, file, pattern) => {
     const scroller = read(file).match(pattern)?.[0];
     expect(scroller, `스크롤러를 찾지 못했다 — 클래스가 바뀌었다면 이 계약도 함께 고칠 것 (${file})`).toBeDefined();

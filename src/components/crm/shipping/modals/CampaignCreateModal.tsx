@@ -214,7 +214,7 @@ export default function CampaignCreateModal({
     <Sheet open={!!selectedProduct} onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent
         style={{ width: "min(640px, 96vw)", maxWidth: "min(640px, 96vw)" }}
-        className="flex flex-col h-full overflow-hidden border-l border-border/70 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-0 gap-0"
+        className="flex flex-col h-full overflow-hidden border-l border-border bg-card p-0 gap-0"
         showCloseButton={false}
       >
         <SheetHeader className="shrink-0 border-b border-slate-100 flex flex-row justify-between items-center bg-white px-5 py-4 gap-0">
@@ -246,7 +246,7 @@ export default function CampaignCreateModal({
                 <p className="text-sm text-slate-900 font-bold mb-1 line-clamp-1">{newName}</p>
                 {/* 카테고리·판매기간 칩은 필드 이름표라 상태 의미가 없다 — 회색 칩(slate-100 위 slate-600, 6.90)으로 둔다
                     (P8 §4). 종전 blue·indigo 두 색은 같은 역할에 서로 다른 hue 였다. */}
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700 mt-2 bg-white/60 p-2 rounded-md">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700 mt-2 bg-card p-2 rounded-md">
                   <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">카테고리</span> {newCategory}</span>
                   <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">판매기간</span> {newSalePeriod}</span>
                   <span className="flex items-center gap-1 font-medium">

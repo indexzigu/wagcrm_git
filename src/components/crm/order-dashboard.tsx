@@ -151,9 +151,9 @@ function PendingOrdersPopover({ campName, orders, onClose }: { campName: string;
       collisionPadding={12}
       aria-label={`${campName} 송장 지연 목록`}
       onClick={(e) => e.stopPropagation()}
-      className="flex w-[420px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay max-h-[min(420px,var(--radix-popover-content-available-height))]"
+      className="flex w-[420px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-border bg-popover p-0 shadow-overlay max-h-[min(420px,var(--radix-popover-content-available-height))]"
     >
-        <div className="flex shrink-0 items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/70">
+        <div className="flex shrink-0 items-center justify-between px-4 py-2.5 border-b border-border bg-muted/60">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2 h-2 rounded-full bg-destructive shrink-0" aria-hidden="true" />
             <span className="text-[12px] font-bold text-slate-700 shrink-0">송장 지연 {orders.length}건</span>
@@ -232,9 +232,9 @@ function DelayOrdersPopover({ campName, orders, onClose, heading = '배송 지�
       collisionPadding={12}
       aria-label={`${campName} ${heading} 목록`}
       onClick={(e) => e.stopPropagation()}
-      className="flex w-[420px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay max-h-[min(420px,var(--radix-popover-content-available-height))]"
+      className="flex w-[420px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-border bg-popover p-0 shadow-overlay max-h-[min(420px,var(--radix-popover-content-available-height))]"
     >
-        <div className="flex shrink-0 items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/70">
+        <div className="flex shrink-0 items-center justify-between px-4 py-2.5 border-b border-border bg-muted/60">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2 h-2 rounded-full bg-destructive shrink-0" aria-hidden="true" />
             <span className="text-[12px] font-bold text-slate-700 shrink-0">{heading} {orders.length}건</span>
@@ -314,9 +314,9 @@ function PostPeriodOrdersPopover({ campName, salePeriod, totalCount, orders, onC
       collisionPadding={12}
       aria-label={`${campName} 판매기간 후 주문 목록`}
       onClick={(e) => e.stopPropagation()}
-      className="flex w-[440px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay max-h-[min(440px,var(--radix-popover-content-available-height))]"
+      className="flex w-[440px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-border bg-popover p-0 shadow-overlay max-h-[min(440px,var(--radix-popover-content-available-height))]"
     >
-        <div className="shrink-0 px-4 py-2.5 border-b border-slate-100 bg-status-caution-bg/60">
+        <div className="shrink-0 px-4 py-2.5 border-b border-border bg-status-caution-bg/60">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2 h-2 rounded-full bg-status-caution shrink-0" aria-hidden="true" />
@@ -393,9 +393,9 @@ function StorePeriodDriftPopover({ campName, currentLabel, drift, isSyncing, onS
       collisionPadding={12}
       aria-label={`${campName} 스토어 판매기간 차이`}
       onClick={(e) => e.stopPropagation()}
-      className="flex w-[380px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-slate-200 bg-white p-0 shadow-overlay"
+      className="flex w-[380px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-xl border-border bg-popover p-0 shadow-overlay"
     >
-      <div className="shrink-0 px-4 py-2.5 border-b border-slate-100 bg-status-caution-bg/60">
+      <div className="shrink-0 px-4 py-2.5 border-b border-border bg-status-caution-bg/60">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-2 h-2 rounded-full bg-status-caution shrink-0" aria-hidden="true" />
@@ -567,13 +567,13 @@ function SettledCampaignRow({ camp, isLoading, error, onExpand }: {
   const period = camp.periodLabel || camp.salePeriod || '기간 정보 없음';
 
   return (
-    <div className="bg-white rounded-2xl shadow-soft-sm border border-slate-200">
+    <div className="bg-card rounded-2xl shadow-soft-sm border border-border">
       <button
         type="button"
         onClick={onExpand}
         disabled={isLoading}
         aria-expanded={false}
-        className="w-full px-6 py-4 flex items-center gap-4 text-left rounded-2xl hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-wait"
+        className="w-full px-6 py-4 flex items-center gap-4 text-left rounded-2xl hover:bg-muted/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-wait"
       >
         <div className="min-w-0 flex-1">
           <div className="font-bold text-sm text-slate-500 truncate">{camp.name}</div>
@@ -797,11 +797,11 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
         {visibleItems.map((item, idx) => {
           const s = item.stat;
           return (
-            <div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-soft-sm lg:@container flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div key={idx} className="bg-card p-4 rounded-xl border border-border shadow-soft-sm lg:@container flex flex-col md:flex-row md:items-center justify-between gap-4">
               {/* 좌측: 날짜 / 총주문 / 매출액 */}
               <div className="flex items-center gap-4 @max-[860px]:shrink-0 @[860px]:flex-1 @[860px]:gap-3">
                 <span className="font-medium text-slate-700 text-sm w-24 shrink-0 text-center">{item.date}</span>
-                <div className="w-px h-4 bg-slate-200 shrink-0"></div>
+                <div className="w-px h-4 bg-border shrink-0"></div>
                 
                 <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">주문</span>
@@ -810,7 +810,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
                   </div>
                 </div>
                 
-                <div className="w-px h-4 bg-slate-200 shrink-0"></div>
+                <div className="w-px h-4 bg-border shrink-0"></div>
 
                 <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">수량</span>
@@ -819,7 +819,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
                   </div>
                 </div>
                 
-                <div className="w-px h-4 bg-slate-200 shrink-0"></div>
+                <div className="w-px h-4 bg-border shrink-0"></div>
                 
                 <div className="flex items-center w-[130px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-[1.4]">
                   <span className="text-[11px] text-slate-500 font-normal">판매금액</span>
@@ -830,7 +830,7 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
               </div>
 
               {/* 좌/우 묶음 경계 — 한 줄로 붙을 때만 보인다(줄바꿈 상태에서는 줄이 곧 경계다) */}
-              <div className="w-px h-4 bg-slate-200 shrink-0 hidden @[860px]:block"></div>
+              <div className="w-px h-4 bg-border shrink-0 hidden @[860px]:block"></div>
 
               {/* 우측: 일자별 주문 상태 건수 (주문확인, 배송대기, 배송중, 배송완료) */}
               <div className="flex-1 flex flex-wrap gap-x-4 gap-y-2 md:justify-end items-center mt-2 md:mt-0 px-2 md:px-0 @[860px]:flex-nowrap @[860px]:gap-x-3">
@@ -840,21 +840,21 @@ function DailyStatusAccordion({ camp }: { camp: any }) {
                     {(s.newOrderBefore ?? 0).toLocaleString()} / {(s.newOrderAfter ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
                   </div>
                 </div>
-                <div className="w-px h-3.5 bg-slate-200 hidden md:block"></div>
+                <div className="w-px h-3.5 bg-border hidden md:block"></div>
                 <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">배송대기</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.pending ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
                   </div>
                 </div>
-                <div className="w-px h-3.5 bg-slate-200 hidden md:block"></div>
+                <div className="w-px h-3.5 bg-border hidden md:block"></div>
                 <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">배송중</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
                     {(s.shipping ?? 0).toLocaleString()}<span className="text-[11px] text-slate-500 ml-0.5 font-normal">건</span>
                   </div>
                 </div>
-                <div className="w-px h-3.5 bg-slate-200 hidden md:block"></div>
+                <div className="w-px h-3.5 bg-border hidden md:block"></div>
                 <div className="flex items-center w-[90px] @max-[860px]:shrink-0 justify-between @[860px]:w-auto @[860px]:flex-1">
                   <span className="text-[11px] text-slate-500 font-normal">배송완료</span>
                   <div className="text-[13px] font-medium text-slate-700 tabular-nums text-right">
@@ -1802,10 +1802,10 @@ export default function OrderDashboard() {
   return (
     <CrmShell variant="focus">
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
           {/* 카드 도구줄 — 반품·교환 입구·동기화 안내·새로고침·캠페인 등록(리뉴얼 전 자리, 오른쪽 정렬).
               페이지 머리(제목·설명)는 두지 않는다(오너 방침 2026-10-21). */}
-          <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border/70 px-5 py-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border px-5 py-2">
             {/* 반품/교환 처리 큐 입구 — 별도 행이 아니라 툴바 동급 버튼(h-9 규약, 위험색만 유지) */}
             {inProgressClaimCount > 0 && (
               <button
@@ -1856,7 +1856,7 @@ export default function OrderDashboard() {
           {/* scrollbar-gutter: 지금은 넘침을 셸 스크롤러가 받지만(실측), 내용·높이 조건이
               바뀌어 이 div 가 스크롤러가 되는 순간 스크롤바 등장으로 카드 폭이 흔들린다.
               P8 Layout Stability 관례대로 자리를 미리 예약해 그 경로를 원천 차단한다. */}
-          <div className="min-h-0 flex-1 overflow-auto bg-[#f8fafc] p-4 md:p-6 [scrollbar-gutter:stable]">
+          <div className="min-h-0 flex-1 overflow-auto bg-background p-4 md:p-6 [scrollbar-gutter:stable]">
             <div className="space-y-6">
 
       <CampaignCreateModal
@@ -1903,7 +1903,7 @@ export default function OrderDashboard() {
           Sheet가 헤더·닫기를 제공하므로 넘기지 않는다). */}
       <Sheet open={!!claimFilter} onOpenChange={(open) => { if (!open) setClaimFilter(null); }}>
         <SheetContent side="right" className="gap-0 p-0 sm:max-w-2xl">
-          <SheetHeader className="border-b border-slate-100">
+          <SheetHeader className="border-b border-border">
             <SheetTitle className="text-sm font-bold text-slate-800">{claimFilterTitle ?? '반품·교환'}</SheetTitle>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -1921,7 +1921,7 @@ export default function OrderDashboard() {
       {isLoading ? (
         <div className="p-10 text-center text-slate-500 font-bold animate-pulse">데이터를 불러오는 중입니다...</div>
       ) : campaigns.length === 0 ? (
-        <div className="bg-white p-10 text-center rounded-2xl shadow-soft-sm border border-slate-200 text-slate-500">
+        <div className="bg-card p-10 text-center rounded-2xl shadow-soft-sm border border-border text-slate-500">
           등록된 캠페인이 없습니다. 우측 상단의 [캠페인 등록] 버튼을 눌러주세요.
         </div>
       ) : (
@@ -1942,10 +1942,10 @@ export default function OrderDashboard() {
               ];
             }
             return [
-            <div key={camp.id} className={`bg-white rounded-2xl shadow-soft-sm border border-slate-200 relative transition-opacity ${camp.isActive === false ? 'opacity-60 hover:opacity-100' : ''}`}>
+            <div key={camp.id} className={`bg-card rounded-2xl shadow-soft-sm border border-border relative transition-opacity ${camp.isActive === false ? 'opacity-60 hover:opacity-100' : ''}`}>
               {/* 카드 상단 (헤더) */}
               <div 
-                className={`p-6 flex flex-col md:flex-row gap-6 items-start md:items-center cursor-pointer hover:bg-slate-50 transition-colors relative ${expandedCampaignId === camp.id ? 'rounded-t-2xl' : 'rounded-2xl'}`}
+                className={`p-6 flex flex-col md:flex-row gap-6 items-start md:items-center cursor-pointer hover:bg-muted/60 transition-colors relative ${expandedCampaignId === camp.id ? 'rounded-t-2xl' : 'rounded-2xl'}`}
                 onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}
               >
                 {/* 더보기(⋮) 메뉴 — ui/dropdown-menu(Radix). 종전 손으로 만든 div 메뉴는 키보드로 열리긴 해도
@@ -2003,7 +2003,7 @@ export default function OrderDashboard() {
                   </DropdownMenu>
                 </div>
                 {/* 썸네일 */}
-                <div className="w-24 h-24 bg-slate-100 rounded-xl overflow-hidden flex-shrink-0 border border-slate-200 shadow-soft-sm flex items-center justify-center">
+                <div className="w-24 h-24 bg-muted rounded-xl overflow-hidden flex-shrink-0 border border-border shadow-soft-sm flex items-center justify-center">
                   {camp.thumbnailUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={camp.thumbnailUrl} alt={camp.name} className="w-full h-full object-cover" />
@@ -2275,7 +2275,7 @@ export default function OrderDashboard() {
                     const feeRate = settle && revenue > 0 ? (Math.abs(settle.feeAmount) / revenue) * 100 : null;
 
                     return (
-                      <div className="w-full bg-slate-50/60 p-3 rounded-xl border border-slate-200/50 flex flex-wrap items-end gap-x-7 gap-y-3">
+                      <div className="w-full bg-muted/60 p-3 rounded-xl border border-border flex flex-wrap items-end gap-x-7 gap-y-3">
                         {/* 좌: 매출 + 아이콘 규모 줄 (필드명 라벨 없이 아이콘+숫자, 의미는 툴팁) */}
                         <div className="flex flex-col w-[200px] shrink-0">
                           <span className="text-[15px] font-bold text-slate-900 tabular-nums leading-none">₩{revenue.toLocaleString()}</span>
@@ -2500,7 +2500,7 @@ export default function OrderDashboard() {
                   
                   {/* 진행률 오버레이 UI */}
                   {activeProgress && activeProgress.campaignId === camp.id && (
-                    <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center p-4 z-10 border border-slate-200">
+                    <div className="absolute inset-0 bg-card rounded-xl flex flex-col items-center justify-center p-4 z-10 border border-border">
                       <div className="w-full max-w-sm">
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-xs font-bold text-slate-700">{activeProgress.message}</span>
@@ -2522,7 +2522,7 @@ export default function OrderDashboard() {
 
               {/* 아코디언 상세 뷰 (일자별 통합 타임라인) */}
               {expandedCampaignId === camp.id && (
-                <div className="border-t border-slate-100 bg-slate-50/50 p-6 rounded-b-2xl animate-in slide-in-from-top-2">
+                <div className="border-t border-border bg-muted/40 p-6 rounded-b-2xl animate-in slide-in-from-top-2">
                   {/* 작업 기록(감사 추적) — 실패가 가장 먼저 보이도록 상세 최상단에 배치 */}
                   <CampaignActionLog campaignId={camp.id} refreshKey={actionLogRefresh} />
                   <DailyStatusAccordion camp={camp} />
@@ -2543,7 +2543,7 @@ export default function OrderDashboard() {
       {unmatchedInProgressCount > 0 && (
         <button
           onClick={() => setClaimFilter({ kind: 'unmatched' })}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 bg-slate-50 py-3 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-muted/60 py-3 text-xs font-bold text-slate-500 transition-colors hover:bg-muted hover:text-slate-700"
         >
           미매칭 {unmatchedInProgressCount}건
         </button>

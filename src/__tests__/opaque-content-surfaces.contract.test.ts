@@ -4,7 +4,7 @@ import { join } from "node:path";
 import ts from "typescript";
 
 /**
- * **정산 관리·판매 관리 화면의 콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2).
+ * **정산·판매·영업·주문 관리 화면의 콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2·2-b).
  *
  * 반투명 유리(`backdrop-blur`·`bg-white/NN`·`bg-[rgba(…)]`)는 크롬(사이드바·Sheet)에만
  * 남긴다(CrmShell 페이지 머리는 2026-10-21 없앴다) — 밝은 반투명을 겹치면 면 경계가 흐려진다. 콘텐츠 카드·표·요약띠는
@@ -39,6 +39,13 @@ const TARGETS: Record<string, readonly string[]> = {
   // (`rounded-[24px]`·`bg-white/90` 등)는 이 묶음의 교체 규칙 밖이라 아직 대상이 아니다 —
   // 그 섹션들을 정리하는 묶음에서 SURFACE_TOKENS 로 넓힐 것.
   "components/crm/campaign-side-panel.tsx": ["bg-[linear-gradient"],
+  // 묶음 2-b — 영업 관리·주문 관리. `outreach-list.tsx`(모바일 공유)·`inline-data-grid.tsx`(5화면 공유)는
+  // 등재하지 않는다 — 공용 변환은 묶음 2-c. 목록 보기는 그리드 컨테이너만 className 으로 덮는다.
+  "app/outreach/page.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
+  "components/crm/recampaign-alerts-card.tsx": SURFACE_TOKENS,
+  "components/crm/order-dashboard.tsx": SURFACE_TOKENS,
+  "components/crm/shipping/modals/CampaignCreateModal.tsx": ["bg-[linear-gradient", "bg-white/"],
+  "components/crm/shipping/modals/ProductSelectModal.tsx": ["bg-[linear-gradient", "bg-white/"],
 };
 
 type Hit = { token: string; line: number; text: string };
