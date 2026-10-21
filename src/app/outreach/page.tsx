@@ -1162,7 +1162,6 @@ export default function OutreachPage() {
             ) : (
               <div className="min-h-0 flex-1 overflow-auto bg-background">
                 <InlineDataGrid
-                  className="border-border bg-card"
                   columns={outreachColumns}
                   rows={filteredTasks}
                   onRowClick={setSelectedTask}

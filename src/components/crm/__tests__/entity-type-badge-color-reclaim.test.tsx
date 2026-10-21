@@ -219,7 +219,8 @@ describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", ()
 
 // 값이 바뀌어도 AA 가 조용히 깨지지 않게, 대비를 테스트 안에서 다시 계산한다
 // (`shared-badge-contrast` 선례). 표면은 배지가 실제로 앉는 자리다 —
-// InlineDataGrid 행 배경 `bg-white/60` over 페이지 `#F8FAFC`.
+// InlineDataGrid 행 배경 — 옛 `bg-white/60` over 페이지 `#F8FAFC`(현재 `bg-card` 불투명 —
+// 흰색이 더 유리하므로 보수적 하한으로 유지).
 describe("대비 게이트 (P8 §5 — 그 표면에서 직접 계산)", () => {
   type Rgb = [number, number, number];
   const hex = (h: string): Rgb => {
