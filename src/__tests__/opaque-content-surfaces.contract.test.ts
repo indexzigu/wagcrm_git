@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 
 /**
  * **콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2·2-b·2-c — 정산·판매·영업·주문
- * 관리, 리포트, 기본정보 관리, 결재함·설정·캘린더, 공용 표 `InlineDataGrid`, 상세 옆 창 계열 · 묶음 3 B — 모바일 화면).
+ * 관리, 리포트, 기본정보 관리, 결재함·설정·캘린더, 공용 표 `InlineDataGrid`, 상세 옆 창 계열 · 묶음 3 B — 모바일 화면 ·
+ * 묶음 4 — 셀러 포털(`/<slug>`·`/p/[token]`·성과 카드)).
  *
  * 반투명 유리(`backdrop-blur`·`bg-white/NN`·`bg-[rgba(…)]`)는 크롬(사이드바·Sheet)에만
  * 남긴다(CrmShell 페이지 머리는 2026-10-21 없앴다) — 밝은 반투명을 겹치면 면 경계가 흐려진다. 콘텐츠 카드·표·요약띠는
@@ -25,6 +26,22 @@ import ts from "typescript";
  */
 
 const ROOT = join(__dirname, "..");
+
+/**
+ * 묶음 4 — 셀러 포털 표면. 모바일처럼 손으로 나열하지 않고 **디렉터리에서 파생**한다 — 포털 라우트는
+ * 하위 폴더(`card/[campaignId]`)까지 있어 손 목록은 새 파일을 조용히 놓친다.
+ */
+const PORTAL_DIRS = ["components/portal", "app/[slug]", "app/p"] as const;
+
+function portalScreenFiles(rel: string): string[] {
+  return readdirSync(join(ROOT, rel)).flatMap((name) => {
+    const child = `${rel}/${name}`;
+    if (statSync(join(ROOT, child)).isDirectory()) return name === "__tests__" ? [] : portalScreenFiles(child);
+    return name.endsWith(".tsx") && !/\.test\.tsx$/.test(name) ? [child] : [];
+  });
+}
+
+const PORTAL_FILES = PORTAL_DIRS.flatMap(portalScreenFiles);
 
 // `border-white/`·`bg-background/`·`bg-card/` 는 반쪽 반투명(`border-white/70 bg-background/70` 같은 것)까지 막는다.
 const SURFACE_TOKENS = [
@@ -145,6 +162,8 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/mobile/mobile-today-summary-bar.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-top-bar.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-upcoming-schedule.tsx": SURFACE_TOKENS,
+  // 묶음 4 — 셀러 포털 전부(디렉터리 파생, 위 PORTAL_DIRS).
+  ...Object.fromEntries(PORTAL_FILES.map((rel) => [rel, SURFACE_TOKENS])),
 };
 
 /**
@@ -226,6 +245,15 @@ const EXCEPTIONS: Record<string, readonly Exception[]> = {
       context: "bg-primary/90",
       count: 2,
       reason: "사진 썸네일 위 「대표」 칩 — 사진 위에 얹는 오버레이라 살짝 비치는 청록 바탕이 의도",
+    },
+  ],
+  "components/portal/content-performance.tsx": [
+    {
+      token: "backdrop-blur",
+      cls: "backdrop-blur-sm",
+      context: "bg-black/55",
+      count: 1,
+      reason: "이미지 위 오버레이 — 게시물 썸네일 위 릴스·영상·캐러셀 표시 칩. 어두운 반투명 바탕(bg-black/55, 금지 목록 밖)이라야 어떤 사진 위에서도 흰 글리프가 보인다(asset-manager 칩과 같은 사유)",
     },
   ],
   "components/crm/calendar-filter-bar.tsx": [
@@ -315,6 +343,25 @@ describe("opaque content surfaces — 모바일 폴더 전수", () => {
     expect(files.length).toBeGreaterThan(0);
     const missing = files.map((name) => `components/mobile/${name}`).filter((rel) => !(rel in TARGETS));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("opaque content surfaces — 셀러 포털 폴더 파생", () => {
+  // 파생 목록이 비면 대상 파일 검사가 통째로 0건이 되어 초록이 된다 — 아는 진입점이 실제로 잡히는지 양성 대조.
+  it("포털 파생 목록에 알려진 진입점이 들어 있고, 테스트 파일은 빠진다", () => {
+    expect(PORTAL_FILES).toEqual(
+      expect.arrayContaining([
+        "components/portal/seller-portal-report.tsx",
+        "components/portal/seller-performance-card.tsx",
+        "components/portal/content-performance.tsx",
+        "app/[slug]/page.tsx",
+        "app/[slug]/card/[campaignId]/page.tsx",
+        "app/p/[token]/loading.tsx",
+        "app/p/[token]/card/[campaignId]/page.tsx",
+      ]),
+    );
+    expect(PORTAL_FILES.every((rel) => rel in TARGETS)).toBe(true);
+    expect(PORTAL_FILES.some((rel) => rel.endsWith(".test.tsx"))).toBe(false);
   });
 });
 
