@@ -169,10 +169,10 @@ const renderSnsIcon = (snsType?: string) => {
   if (!snsType) return null;
   const type = snsType.toUpperCase();
   if (type === "INSTAGRAM") {
-    return <InstagramIcon className="size-3 text-pink-500/70 shrink-0" />;
+    return <InstagramIcon className="size-3 text-muted-foreground shrink-0" />;
   }
   if (type === "YOUTUBE") {
-    return <YoutubeIcon className="size-3 text-red-500/70 shrink-0" />;
+    return <YoutubeIcon className="size-3 text-muted-foreground shrink-0" />;
   }
   return <Globe className="size-3 text-slate-400/80 shrink-0" />;
 };

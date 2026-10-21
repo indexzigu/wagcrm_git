@@ -89,7 +89,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
             <RotateCcw className="size-4 shrink-0 text-[var(--primary)]" />
             <p className="text-sm font-semibold tracking-wide text-[var(--primary)]">재캠페인 적기</p>
             {dueCount > 0 && (
-              <Badge variant="outline" className="py-0.5 px-2 text-[10px] font-semibold bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/30">
+              <Badge variant="outline" className="py-0.5 px-2 text-[10px] font-semibold bg-status-caution-bg text-status-caution-text border-status-caution/30">
                 도래 {dueCount}
               </Badge>
             )}
@@ -115,7 +115,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
                   <span
                     className={
                       alert.state === "DUE"
-                        ? "shrink-0 text-[10px] font-semibold text-amber-700"
+                        ? "shrink-0 text-[10px] font-semibold text-status-caution-text"
                         : "shrink-0 text-[10px] font-semibold text-slate-500"
                     }
                   >
@@ -126,7 +126,7 @@ export function RecampaignAlertsCard({ className }: { className?: string }) {
                   {alert.medianIntervalDays}일 주기 · {alert.runCount}회 진행
                 </p>
                 {alert.availabilityNote && (
-                  <p className="mt-0.5 truncate text-[10px] text-emerald-700" title={alert.availabilityNote}>
+                  <p className="mt-0.5 truncate text-[10px] text-muted-foreground" title={alert.availabilityNote}>
                     일정: {alert.availabilityNote}
                   </p>
                 )}

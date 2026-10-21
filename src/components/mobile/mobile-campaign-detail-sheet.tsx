@@ -858,9 +858,9 @@ function SalesDetailBody({
       {claims != null ? (
         <div className={cn(
           "flex items-center gap-2 p-3 rounded-xl text-[12px]",
-          hasClaims ? "bg-rose-50/50 text-rose-700" : "bg-slate-50 text-slate-500"
+          hasClaims ? "bg-status-urgent-bg text-status-urgent-text" : "bg-slate-50 text-slate-500"
         )}>
-          <RotateCcwIcon aria-hidden="true" className={cn("size-3.5", hasClaims ? "text-rose-500" : "text-slate-400")} />
+          <RotateCcwIcon aria-hidden="true" className={cn("size-3.5", hasClaims ? "text-status-urgent" : "text-slate-400")} />
           <span className="font-medium">
             취소 <span className={cn("tabular-nums", hasClaims && claims.canceled > 0 && "font-bold")}>{claims.canceled}</span> · 
             반품 <span className={cn("tabular-nums", hasClaims && claims.returned > 0 && "font-bold")}>{claims.returned}</span> · 

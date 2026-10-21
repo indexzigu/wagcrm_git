@@ -545,8 +545,8 @@ function DealsPanelContent({
                   className={cn(
                     "py-1.5 px-3 rounded-md text-xs font-semibold transition-colors text-center whitespace-nowrap shrink-0",
                     deal.status === "DROPPED"
-                      ? "bg-red-50 text-red-600 border border-red-200/60 font-semibold shadow-soft-sm"
-                      : "text-muted-foreground hover:text-red-500 hover:bg-red-50/50",
+                      ? "bg-status-urgent-bg text-status-urgent-text border border-status-urgent/20 font-semibold shadow-soft-sm"
+                      : "text-muted-foreground hover:text-status-urgent-text hover:bg-status-urgent-bg",
                   )}
                 >
                   {/* DROPPED 의 낱말은 「드랍」이다(오너 확정 2026-10-08) — 배지와 같은 말. */}

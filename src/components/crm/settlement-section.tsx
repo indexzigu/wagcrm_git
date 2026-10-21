@@ -788,7 +788,7 @@ export function SettlementSection({
                             href={invoiceDraft.supplierInvoiceLink}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-[10px] font-medium text-indigo-600 hover:underline flex items-center gap-0.5"
+                            className="text-[10px] font-medium text-primary hover:underline flex items-center gap-0.5"
                           >
                             <ExternalLink className="size-2.5" />
                             확인
@@ -939,7 +939,7 @@ function InvoiceSlotBox({
               href={invoiceLink}
               target="_blank"
               rel="noreferrer"
-              className="text-[10px] font-medium text-indigo-600 hover:underline flex items-center gap-0.5"
+              className="text-[10px] font-medium text-primary hover:underline flex items-center gap-0.5"
             >
               <ExternalLink className="size-2.5" />
               확인
@@ -1090,7 +1090,7 @@ function WithholdingSlotBox({
               href={invoiceLink}
               target="_blank"
               rel="noreferrer"
-              className="text-[10px] font-medium text-indigo-600 hover:underline flex items-center gap-0.5"
+              className="text-[10px] font-medium text-primary hover:underline flex items-center gap-0.5"
             >
               <ExternalLink className="size-2.5" />
               확인
