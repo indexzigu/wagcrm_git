@@ -1,10 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CandidateEvent, CandidateListResult } from "@/lib/google-calendar-sync";
+
+// 스캔은 장부에 원본을 넘겨받지 않는다(승인 없이 오너 일정을 CRM 이 갖게 된다) — 진짜 함수를 감시한다.
+const adoptCalendarEventIntoLedgerSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/google-calendar-sync", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/google-calendar-sync")>()),
+  adoptCalendarEventIntoLedger: adoptCalendarEventIntoLedgerSpy,
+}));
+
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { CALENDAR_INBOUND_CREATED_BY, calendarInboundRefSchema } from "./adopt";
 import type { ProposalDraft, ResolveResult } from "./resolve-target";
+import { LOCK_TX_TIMEOUT_MS } from "./run-lock";
 import {
   MAX_HINT_CALLS_PER_RUN,
+  SCAN_BUDGET_MS,
   MAX_PROPOSALS_PER_RUN,
   calendarInboundFingerprint,
   calendarInboundWindow,
@@ -66,7 +76,6 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
     }),
   );
   const extractHints = vi.fn(async (_summary: string): Promise<TitleHintsResult> => ({ kind: "none" }));
-  const adoptIntoLedger = vi.fn<CalendarInboundScanDeps["adoptIntoLedger"]>(async () => "adopted");
   const listCandidates = vi.fn(async () => listing.value);
 
   const deps: CalendarInboundScanDeps = {
@@ -74,7 +83,6 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
     loadDictionary: async () => DICT,
     extractHints,
     resolveTarget,
-    adoptIntoLedger,
     createProposal: async (data) => {
       const id = `prop-${++proposalSeq}`;
       proposals.set(id, { status: "PENDING_APPROVAL", data: data as unknown as Record<string, unknown> });
@@ -96,7 +104,7 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
       for (const row of rows.values()) if (ids.includes(row.id)) row.lastSeenAt = lastSeenAt;
     },
   };
-  return { deps, rows, proposals, listing, resolveTarget, extractHints, adoptIntoLedger, listCandidates };
+  return { deps, rows, proposals, listing, resolveTarget, extractHints, listCandidates };
 }
 
 beforeEach(() => {
@@ -313,33 +321,8 @@ describe("runCalendarInboundScan", () => {
     expect(h.rows.get("e2")!.parsed).toMatchObject({ sellerId: "s1" });
   });
 
-  it("noop → 바로 넘겨받기 + ADOPTED · 기안 0건", async () => {
-    const h = makeHarness([ev("e1")]);
-    h.resolveTarget.mockResolvedValue({
-      ok: true,
-      draft: { ...CREATE_DRAFT, action: "update_record", args: null, noop: true, targetCampaignId: "c1" },
-    });
-
-    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
-
-    expect(summary).toMatchObject({ proposed: 0, adoptedNoop: 1 });
-    expect(h.proposals.size).toBe(0);
-    expect(h.adoptIntoLedger).toHaveBeenCalledWith({
-      campaignId: "c1",
-      kind: "campaign",
-      eventId: "e1",
-      calendarId: "primary",
-    });
-    expect(h.rows.get("e1")).toMatchObject({
-      status: "ADOPTED",
-      campaignId: "c1",
-      skipReason: null,
-      fingerprint: calendarInboundFingerprint(ev("e1")),
-    });
-  });
-
-  it("noop 넘겨받기 판정은 승인 경로와 같은 표로 사유를 남긴다 · adopt:false 면 장부를 건드리지 않는다", async () => {
-    const h = makeHarness([ev("e1"), ev("e2"), ev("e3")]);
+  it("noop(CRM 값이 이미 같음) → 기안 없이 ADOPTED + already_current · 장부는 건드리지 않는다", async () => {
+    const h = makeHarness([ev("e1"), ev("e2")]);
     h.resolveTarget.mockImplementation(async (_intent, event) => ({
       ok: true,
       draft: {
@@ -348,21 +331,24 @@ describe("runCalendarInboundScan", () => {
         args: null,
         noop: true,
         targetCampaignId: `c-${event.id}`,
-        adopt: event.id !== "e3",
+        adopt: event.id === "e1",
       },
     }));
-    h.adoptIntoLedger.mockImplementation(async (input) => {
-      if (input.eventId === "e2") throw new Error("DB 끊김");
-      return "not_found";
-    });
 
     const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
-    expect(summary).toMatchObject({ adoptedNoop: 3, errors: 0 });
-    expect(h.adoptIntoLedger).toHaveBeenCalledTimes(2);
-    expect(h.rows.get("e1")).toMatchObject({ status: "ADOPTED", skipReason: "campaign_not_found" });
-    expect(h.rows.get("e2")).toMatchObject({ status: "ADOPTED", skipReason: "adopt_failed" });
-    expect(h.rows.get("e3")).toMatchObject({ status: "ADOPTED", skipReason: null, campaignId: "c-e3" });
+    expect(summary).toMatchObject({ proposed: 0, adoptedNoop: 2, errors: 0 });
+    expect(h.proposals.size).toBe(0);
+    // 넘겨받기는 승인 뒤에만 — 승인 없이 장부에 적으면 다음 동기화가 오너 일정을 고쳐 쓴다.
+    expect(adoptCalendarEventIntoLedgerSpy).not.toHaveBeenCalled();
+    for (const id of ["e1", "e2"]) {
+      expect(h.rows.get(id)).toMatchObject({
+        status: "ADOPTED",
+        skipReason: "already_current",
+        campaignId: `c-${id}`,
+        fingerprint: calendarInboundFingerprint(ev(id)),
+      });
+    }
   });
 
   it("crmSigned·장부 참조 이벤트는 crmOwned 로 세고 아무것도 쓰지 않는다", async () => {
@@ -454,6 +440,13 @@ describe("runCalendarInboundScan", () => {
 
     const next = await runCalendarInboundScan({ now: NOW, maxProposals: 2, deps: h.deps });
     expect(next).toMatchObject({ proposed: 1, dropped: 0, alreadyHandled: 2 });
+  });
+
+  it("회차 시간 예산은 60초 이하이고, 잠금 시간 제한은 예산 + 일정 한 건(힌트 20초 + DB)보다 넉넉히 길다", () => {
+    // 배포 지침 Plan Limits: Vercel Hobby 가 함수 실행을 60초로 자른다 — 예산 상수를 그 위로 두지 않는다.
+    expect(SCAN_BUDGET_MS).toBe(55_000);
+    expect(SCAN_BUDGET_MS).toBeLessThanOrEqual(60_000);
+    expect(LOCK_TX_TIMEOUT_MS - SCAN_BUDGET_MS).toBeGreaterThanOrEqual(30_000);
   });
 
   it("상한 기본값은 기안 20 · 힌트 호출 20", () => {
@@ -591,7 +584,7 @@ describe("runCalendarInboundScan", () => {
   });
 });
 
-describe("runCalendarInboundScan — 단일 실행(R24)", () => {
+describe("runCalendarInboundScan — 단일 실행 잠금", () => {
   it("겹친 두 회차: 뒤 회차는 아무것도 건드리지 않고 busy, 기안은 1건", async () => {
     const h = makeHarness([ev("e1")]);
     let release!: () => void;

@@ -13,3 +13,14 @@ export const ENTITY_TYPE_LABELS: Record<string, string> = {
   // 가격표 반영 기안(lib/price-sheet/apply-executor.ts)의 대상 — 종전엔 표에 없어 영문 코드가 배지에 떴다.
   PRICE_SHEET: "가격표",
 };
+
+/** 기안 시점에 대상이 아직 없는 액션 — 새 회차 생성은 승인돼야 캠페인이 생긴다. */
+const NO_TARGET_YET_ACTIONS: ReadonlySet<string> = new Set(["create_campaign_round"]);
+
+/**
+ * 대상 배지를 달지 않을 액션인가. 대상이 아직 없는데 종류(「캠페인」)만 적힌 배지를 달면 어느 캠페인인지
+ * 알 수 없는 빈 배지가 된다. 목록 카드와 기안 카드가 같은 판정을 쓴다.
+ */
+export function actionHasNoTargetYet(action: string | null | undefined): boolean {
+  return action != null && NO_TARGET_YET_ACTIONS.has(action);
+}

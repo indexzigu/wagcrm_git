@@ -8,7 +8,7 @@ import { parseStoredJson } from "@/lib/stored-json";
 export const CALENDAR_INBOUND_CREATED_BY = "SYSTEM_CALENDAR_INBOUND";
 
 /**
- * 기안 `sourceRef.calendarInbound` 모양 — 스캔(Task 7)이 쓰고 승인·반려·결재 카드가 읽는다.
+ * 기안 `sourceRef.calendarInbound` 모양 — 수집 스캔(`scan.ts`)이 쓰고 승인·반려·결재 카드가 읽는다.
  * 카드 표시용 칸(summary·날짜·htmlLink·warnings)도 함께 싣는다.
  */
 export const calendarInboundRefSchema = z.object({

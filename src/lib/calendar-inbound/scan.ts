@@ -4,19 +4,20 @@
 // 한 회차 흐름(이벤트마다 순서대로, 한 건의 예외는 그 건만 `errors` 로 세고 계속한다):
 //   창 계산(KST 오늘-14일 ~ 오늘+180일) → 후보 조회 → CRM 소유(장부 참조 id · `crmSigned`) 제외 →
 //   수집 행(CalendarInboundEvent)과 대조 → 처음 보거나 지문이 바뀐 것·재판정 대기만 해석 →
-//   규칙 파서(실패 시 LLM 힌트 1회 → 재파서) → 대상 결정 → noop 이면 바로 넘겨받기(ADOPTED) ·
-//   아니면 기안(PENDING_APPROVAL) + 행 PROPOSED.
+//   규칙 파서(실패 시 LLM 힌트 1회 → 재파서) → 대상 결정 → noop(CRM 값이 이미 같음)이면 처리 끝(ADOPTED,
+//   `already_current`) · 아니면 기안(PENDING_APPROVAL) + 행 PROPOSED.
 //
-// ⛔ 이 스캔은 `syncCampaignToCalendar` 를 부르지 않는다 — noop 넘겨받기도 장부에 적기만 하고, 다음
-//    정상 동기화(캠페인 수정 훅·전체 동기화)가 그 원본을 CRM 형식으로 갱신한다. 스캔이 캘린더에 쓰기
-//    시작하면 「읽기 → 쓰기 → 다음 스캔이 자기 쓰기를 읽음」 고리가 생긴다.
+// ⛔ 이 스캔은 승인 없이 아무것도 바꾸지 않는다 — 장부에 원본을 넘겨받지도(`adoptCalendarEventIntoLedger`),
+//    캘린더에 쓰지도(`syncCampaignToCalendar`) 않는다. 넘겨받으면 다음 동기화가 오너 일정의 제목·날짜를 CRM
+//    형식으로 덮는데, 그것은 사람이 승인한 기안 뒤에만 일어나야 한다(넘겨받기는 `approveProposal` 커밋 뒤 단계).
+//    noop 일정은 CRM 과 따로 남는 평범한 일정이다. 스캔이 캘린더에 쓰기 시작하면 「읽기 → 쓰기 → 다음 스캔이
+//    자기 쓰기를 읽음」 고리도 생긴다.
 // ⛔ 승인은 언제나 사람 — 기안의 requestType 은 액션이 정한다(`getRequestTypeForAction`, alwaysManual).
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { toKstYmd } from "@/lib/date-utils";
 import {
-  adoptCalendarEventIntoLedger,
   listAllDayCandidateEvents,
   type CandidateEvent,
   type CandidateListResult,
@@ -30,7 +31,7 @@ import { withScanLock } from "./run-lock";
 import { extractTitleHints, type TitleHintsResult } from "./llm-hints";
 import { parseCalendarTitle } from "./parse-title";
 import { resolveInboundTarget, type ProposalDraft, type ResolveResult } from "./resolve-target";
-import { INBOUND_SKIP_ADOPT_FAILED, INBOUND_STATUS, inboundSkipReasonForAdoptOutcome } from "./status";
+import { INBOUND_SKIP_ALREADY_CURRENT, INBOUND_SKIP_OPEN_PROPOSAL, INBOUND_STATUS } from "./status";
 import type { InboundDictionary, ParsedCalendarIntent } from "./types";
 
 /**
@@ -49,18 +50,19 @@ export const MAX_PROPOSALS_PER_RUN = 20;
 export const MAX_HINT_CALLS_PER_RUN = 20;
 
 /**
- * 한 회차 시간 예산. 넘기면 남은 일정은 **쓰지 않고** 다음 회차로 넘긴다(`dropped` 로 센다). 단일 실행 잠금의
- * 트랜잭션 시간 제한(`run-lock.ts` `LOCK_TX_TIMEOUT_MS`)보다 짧아야 한다 — 제한이 먼저 오면 잠금이 풀린 채
- * 본문이 돌아 겹친 회차가 같은 일정을 또 기안할 수 있다. 예산은 일정 하나를 시작하기 전에만 본다.
+ * 한 회차 시간 예산. 넘기면 남은 일정은 **쓰지 않고** 다음 회차로 넘긴다(`dropped` 로 센다).
+ * - 60초 이하: 배포 지침(`docs/agents/deployment.md` 「Plan Limits」) — Vercel Hobby 가 함수 실행을 60초로 자르므로
+ *   예산 상수를 그 위로 두지 않는다. 남은 일정은 다음 회차(30분 뒤)가 집는다.
+ * - 단일 실행 잠금의 트랜잭션 시간 제한(`run-lock.ts` `LOCK_TX_TIMEOUT_MS`)보다 짧아야 한다 — 예산은 일정 하나를
+ *   **시작하기 전에만** 보므로 마지막 일정은 예산을 넘겨 끝날 수 있다(힌트 호출 시간 제한 20초 + DB 쓰기). 제한이
+ *   먼저 오면 잠금이 풀린 채 본문이 돌아 겹친 회차가 같은 일정을 또 기안할 수 있다.
  */
-export const SCAN_BUDGET_MS = 240_000;
+export const SCAN_BUDGET_MS = 55_000;
 
 /** 스캔 창 — KST 오늘 기준 과거 14일 ~ 미래 180일(끝날 포함). */
 const WINDOW_DAYS_BACK = 14;
 const WINDOW_DAYS_FORWARD = 180;
 
-/** 열린 기안이 있어 다시 기안하지 않았다(옛 기안이 결정될 때까지). */
-export const INBOUND_SKIP_OPEN_PROPOSAL = "open_proposal";
 const SKIP_REASON_MAX = 500;
 
 /** 아직 결정되지 않은 기안 상태 — 이 기안이 살아 있는 동안은 같은 일정을 다시 기안하지 않는다. */
@@ -84,7 +86,7 @@ export type ScanSummary = {
   proposed: number;
   /** 해석 실패·대상 없음으로 SKIPPED 적은 수. */
   skippedUnparsed: number;
-  /** 바꿀 칸이 없어 기안 없이 처리 끝(ADOPTED)으로 적은 수. */
+  /** 바꿀 칸이 없어(CRM 값이 이미 같음) 기안 없이 처리 끝(ADOPTED, `already_current`)으로 적은 수. 장부는 그대로다. */
   adoptedNoop: number;
   /** 기안 상한·회차 시간 예산에 걸려 이번 회차에 손대지 않은 수(다음 회차가 집는다). */
   dropped: number;
@@ -129,7 +131,6 @@ export type CalendarInboundScanDeps = {
   loadDictionary: () => Promise<InboundDictionary>;
   extractHints: (summary: string) => Promise<TitleHintsResult>;
   resolveTarget: (intent: ParsedCalendarIntent, event: CandidateEvent) => Promise<ResolveResult>;
-  adoptIntoLedger: typeof adoptCalendarEventIntoLedger;
   createProposal: (data: Prisma.ActionProposalUncheckedCreateInput) => Promise<{ id: string }>;
   findRows: (googleEventIds: string[]) => Promise<InboundRow[]>;
   findProposalStatuses: (proposalIds: string[]) => Promise<Map<string, string>>;
@@ -238,27 +239,6 @@ async function parseWithHints(
   return parseCalendarTitle(summary, dict, result.hints);
 }
 
-/** noop 넘겨받기 — 승인 경로(`approveProposal`)와 같은 판정→사유 표를 쓴다. 던지지 않는다. */
-async function adoptNoop(
-  draft: ProposalDraft,
-  event: CandidateEvent,
-  deps: CalendarInboundScanDeps,
-): Promise<string | null> {
-  if (!draft.adopt || !draft.targetCampaignId) return null;
-  try {
-    const outcome = await deps.adoptIntoLedger({
-      campaignId: draft.targetCampaignId,
-      kind: draft.ledgerKind,
-      eventId: event.id,
-      calendarId: event.calendarId,
-    });
-    return inboundSkipReasonForAdoptOutcome(outcome);
-  } catch (err) {
-    console.error(`[calendar-inbound] 이벤트 ${event.id} noop 넘겨받기 실패:`, err);
-    return INBOUND_SKIP_ADOPT_FAILED;
-  }
-}
-
 function buildProposalInput(
   draft: ProposalDraft,
   ref: CalendarInboundRef,
@@ -287,7 +267,7 @@ async function evaluateEvent(
   dict: InboundDictionary,
   now: Date,
   deps: CalendarInboundScanDeps,
-  /** 재판정 대기 행이다 — 기안 없이 끝나면(SKIPPED·noop) 옛 FAILED 기안과의 연결을 끊는다(R20). */
+  /** 재판정 대기 행이다 — 기안 없이 끝나면(SKIPPED·noop) 옛 FAILED 기안과의 연결을 끊는다(옛 카드 재시도가 승인 단계에서 거절되게). */
   retrying: boolean,
   hintBudget: HintBudget,
 ): Promise<EventOutcome> {
@@ -332,12 +312,12 @@ async function evaluateEvent(
 
   const draft = resolved.draft;
   if (draft.noop) {
-    const skipReason = await adoptNoop(draft, event, deps);
+    // 처리 끝으로만 적는다 — 장부에 넘겨받지 않는다(헤더 ⛔). 같은 지문이면 다시 해석하지 않는다.
     await deps.saveRow(event.id, {
       ...base,
       fingerprint,
       status: INBOUND_STATUS.ADOPTED,
-      skipReason,
+      skipReason: INBOUND_SKIP_ALREADY_CURRENT,
       parsed: parsed.intent,
       campaignId: draft.targetCampaignId,
       ...detach,
@@ -348,7 +328,7 @@ async function evaluateEvent(
   // 기안 전에 행부터 「재판정 대기」로 적는다 — 기안 id 를 받기 전에 실패하면 다음 회차가 상태만 보고 다시
   // 판정한다(조용히 PROPOSED 로 남아 기안 없는 행이 되지 않게). 지문은 실값을 적는다(재판정은 상태가 정한다).
   // ⛔ proposalId 를 여기서 끊는다 — 남겨 두면 이 사이 실패했을 때 옛 FAILED 카드가 SUPERSEDED 가드를 통과해
-  //    재시도 승인될 수 있고(새 회차 #1), 다음 회차가 또 기안한다(#2). 승인과 겹쳐도 옛 카드는 거절된다.
+  //    재시도 승인돼 새 회차가 하나 생기고, 다음 회차가 또 기안해 하나 더 생긴다. 승인과 겹쳐도 옛 카드는 거절된다.
   const { id: inboundId } = await deps.saveRow(event.id, {
     ...base,
     fingerprint,
@@ -479,7 +459,7 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
 
       summary.newOrChanged++;
       // 기안 상한 — 기안 수만 센다. 힌트(Gemini) 호출은 따로 `hintBudget` 이 묶는다.
-      // 시간 예산도 같이 본다 — 잠금 트랜잭션 시간 제한 안에서 끝내야 한다(위 SCAN_BUDGET_MS).
+      // 시간 예산도 같이 본다 — 60초 실행 한도와 잠금 트랜잭션 시간 제한 안에서 끝내야 한다(위 SCAN_BUDGET_MS).
       if (summary.proposed >= cap || Date.now() - startedAt > budgetMs) {
         // 손대지 않는다 — 다음 회차가 처음 본 것처럼 집는다.
         summary.dropped++;
@@ -525,7 +505,6 @@ function defaultDeps(): CalendarInboundScanDeps {
     loadDictionary: () => loadInboundDictionary(getPrisma()),
     extractHints: (summary) => extractTitleHints(summary),
     resolveTarget: (intent, event) => resolveInboundTarget(intent, event, getPrisma()),
-    adoptIntoLedger: adoptCalendarEventIntoLedger,
     createProposal: (data) => ActionProposalRepository.create(data),
     findRows: (googleEventIds) =>
       getPrisma().calendarInboundEvent.findMany({

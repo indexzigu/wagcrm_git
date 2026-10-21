@@ -19,6 +19,7 @@
 // ②입금 플래그가 영원히 false 라 셀러 지급 예정일이 지나지 않아도 「입금 지연」이 뜰
 // 수 있었다(입금 예정일이 남아 있는 레거시 행). 채널 분기를 여기 손으로 다시 쓰지 말 것.
 
+import { sellerDisplayName } from "./seller-display-name";
 import { resolveMoneySlotsForChannels, type CampaignMoneySlot } from "./tax-filing-board";
 import {
   SETTLEMENT_STAGE_STATUSES,
@@ -115,7 +116,7 @@ function money(value: { toString(): string } | number | string | null): number {
 }
 
 function sellerLabel(c: AgendaSettlementCampaign): string {
-  return c.seller.alias && c.seller.alias.trim() !== "" ? c.seller.alias : c.seller.name;
+  return sellerDisplayName(c.seller);
 }
 
 function earliest(dates: (Date | null)[]): Date | null {

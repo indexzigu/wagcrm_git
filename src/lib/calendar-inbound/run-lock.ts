@@ -1,5 +1,5 @@
 // [캘린더수집] 수집 스캔 단일 실행 잠금 — 크론(30분)과 「캘린더에서 가져오기」(수동)가 같은 회차를 겹쳐 돌면
-// 둘 다 같은 일정을 「처음 봄」으로 읽어 기안이 두 번 생기고 해석 도우미(Gemini) 호출도 두 번 나간다(R24).
+// 둘 다 같은 일정을 「처음 봄」으로 읽어 기안이 두 번 생기고 해석 도우미(Gemini) 호출도 두 번 나간다.
 // 그래서 `runCalendarInboundScan` 이 이 잠금 안에서만 돈다 — 겹친 쪽은 아무것도 건드리지 않고 끝난다.
 //
 // 모양은 정산 자동 실행기(`settlement-auto-execute.ts` 「단일 실행」)를 그대로 따른다:
@@ -16,8 +16,11 @@ import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 /** 자문 잠금 키 — 정산 자동 실행기(7301, 1)와 겹치지 않는 고정 쌍. */
 const LOCK_KEY_CLASS = 7_302;
 const LOCK_KEY_OBJECT = 1;
-/** 잠금 트랜잭션 시간 제한 — 회차 예산(scan.ts `SCAN_BUDGET_MS` 240초)보다 길다. */
-export const LOCK_TX_TIMEOUT_MS = 290_000;
+/**
+ * 잠금 트랜잭션 시간 제한 — 회차 예산(scan.ts `SCAN_BUDGET_MS` 55초)에 일정 한 건(힌트 호출 시간 제한 20초 + DB)을
+ * 더한 것보다 넉넉히 길다. 회차 예산 자체는 배포 지침 「Plan Limits」의 60초 이하 규칙을 따른다.
+ */
+export const LOCK_TX_TIMEOUT_MS = 120_000;
 
 let inProcessBusy = false;
 

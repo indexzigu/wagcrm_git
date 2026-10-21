@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProposalActions } from "@/hooks/useProposalActions";
-import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
+import { ENTITY_TYPE_LABELS, actionHasNoTargetYet } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
@@ -231,8 +231,8 @@ export function ProposalCard({
   const action = proposal.payload?.action;
   const actionLabel = displayLabel(ACTION_LABELS, action, UNKNOWN_NAME);
   const isSettlement = action === SETTLEMENT_ACTION;
-  // [캘린더수집] 새 회차 생성은 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다(R25-10).
-  const entityLabel = proposal.targetEntityType && action !== "create_campaign_round"
+  // [캘린더수집] 새 회차 생성은 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다.
+  const entityLabel = proposal.targetEntityType && !actionHasNoTargetYet(action)
     ? displayLabel(ENTITY_TYPE_LABELS, proposal.targetEntityType, "") || null
     : null;
 

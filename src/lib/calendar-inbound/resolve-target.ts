@@ -9,6 +9,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { generateCampaignName } from "@/lib/campaign-name";
 import type { CandidateEvent } from "@/lib/google-calendar-sync";
 import { recordFieldLabel } from "@/lib/record-update-labels";
+import { sellerDisplayName } from "@/lib/seller-display-name";
 import { resolveCampaignMoneySlots, type CampaignMoneySlot } from "@/lib/tax-filing-board";
 import {
   currentValueOf,
@@ -37,7 +38,7 @@ export type CreateCampaignRoundDraftArgs = { dealId: string; sellerId: string; s
 
 export type ProposalDraft = {
   action: "create_campaign_round" | "update_record";
-  /** noop 이면 null — 기안을 만들지 않고 넘겨받기만 한다(호출부 몫). */
+  /** noop 이면 null — 기안을 만들지 않는다. 호출부(스캔)는 처리 끝으로만 적고 장부는 건드리지 않는다. */
   args: unknown;
   title: string;
   targetCampaignId: string | null;
@@ -92,10 +93,6 @@ export function pickMoneySlot(
   const seller = payouts.find((slot) => slot.key === "payout");
   if (seller) return seller;
   return payouts.length === 1 ? payouts[0] : null;
-}
-
-function sellerDisplayName(seller: { name: string; alias: string | null }): string {
-  return seller.alias && seller.alias.trim() !== "" ? seller.alias : seller.name;
 }
 
 type CampaignRow = {
@@ -245,7 +242,7 @@ async function resolveCampaignKind(
   const seller = await db.seller.findUnique({ where: { id: intent.sellerId }, select: { name: true, alias: true } });
 
   const warnings: string[] = [];
-  // 후보가 하나면 고를 것이 없었으므로 경고하지 않는다 — 카드에서 「회차를 골라 정했다」로 읽힌다(리뷰 지적).
+  // 후보가 하나면 고를 것이 없었으므로 경고하지 않는다 — 경고가 붙으면 카드가 「여러 회차 중 하나를 골랐다」로 잘못 읽힌다.
   if (round === null && candidates.length > 1) warnings.push(WARN_AUTO_LATEST);
   if (event.startDate === event.endDate) warnings.push(WARN_CHECK_END_DATE);
   if (round !== null) warnings.push(warnRoundNumberMayDiffer(round));

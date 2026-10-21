@@ -24,7 +24,7 @@ describe("withScanLock — Postgres", () => {
     expect(await withScanLock(work)).toEqual({ acquired: true, value: 42 });
     expect(work).toHaveBeenCalledTimes(1);
     expect(transaction.mock.calls[0][1]).toMatchObject({ timeout: LOCK_TX_TIMEOUT_MS });
-    expect(LOCK_TX_TIMEOUT_MS).toBeGreaterThan(240_000);
+    expect(LOCK_TX_TIMEOUT_MS).toBe(120_000);
   });
 
   it("잠금을 못 잡으면 본문을 돌리지 않는다", async () => {

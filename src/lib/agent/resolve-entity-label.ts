@@ -7,11 +7,7 @@
  * 실제 실행 전 존재 검증(throw)은 write-executor.assertEntityExists가 담당한다.
  */
 import { getPrisma } from "@/lib/prisma";
-
-/** 셀러 화면 이름 — 별칭이 있으면 별칭(P2 Seller Alias Priority). 공백 별칭은 없는 것으로 본다. */
-function sellerDisplayName(seller: { name: string; alias: string | null }): string {
-  return seller.alias && seller.alias.trim() !== "" ? seller.alias : seller.name;
-}
+import { sellerDisplayName } from "@/lib/seller-display-name";
 
 export type ResolvableEntityType = "PARTNER" | "SELLER" | "DEAL" | "CAMPAIGN";
 

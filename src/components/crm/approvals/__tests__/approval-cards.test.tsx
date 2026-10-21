@@ -210,7 +210,7 @@ describe("PendingCard", () => {
     );
     expect(screen.getByText("캘린더")).toBeInTheDocument();
     expect(screen.getByText(/^원본: 샘플 테스트브랜드/)).toBeInTheDocument();
-    // 새 회차는 아직 캠페인이 없다 — 이름 없는 「캠페인」 배지를 달지 않는다(R25-10)
+    // 새 회차는 아직 캠페인이 없다 — 이름 없는 「캠페인」 배지를 달지 않는다
     expect(screen.queryByText("캠페인")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /구글 캘린더에서 보기/ })).toBeInTheDocument();
     expect(screen.getByText("테스트브랜드 봄딜")).toBeInTheDocument();

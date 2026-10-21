@@ -258,7 +258,7 @@ export function CalendarPageClient({
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const { message, tone, openApprovals } = formatInboundScanToast(data as ScanSummary);
-        // 기안을 올렸으면 토스트에서 바로 결재함으로 간다(R25-7).
+        // 기안을 올렸으면 토스트에서 바로 결재함으로 간다.
         const options = openApprovals
           ? { action: { label: "결재함 열기", onClick: () => router.push("/approvals") } }
           : undefined;
@@ -353,7 +353,7 @@ export function CalendarPageClient({
           {syncing ? "동기화 중..." : "구글 캘린더 전체 동기화"}
         </Button>
         {/* [캘린더수집] 반대 방향(캘린더 → CRM). 결과는 결재함 기안이고 승인 전에는 아무것도 바뀌지 않는다 —
-            그 사실을 설명창으로 단다(마우스·키보드 포커스 둘 다로 열림, R25-9). */}
+            그 사실을 설명창으로 단다(마우스·키보드 포커스 둘 다로 열림). */}
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

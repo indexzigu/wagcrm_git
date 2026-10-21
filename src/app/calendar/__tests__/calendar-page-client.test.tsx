@@ -151,7 +151,7 @@ describe("CalendarPageClient — 캘린더에서 가져오기", () => {
     await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalled());
     const [message, options] = toastMock.success.mock.calls[0];
     expect(message).toBe("기안 2건 올림 · 해석 못 함 1건 · 이미 처리 3건");
-    // 기안을 올렸으면 토스트에서 바로 결재함으로 간다(R25-7)
+    // 기안을 올렸으면 토스트에서 바로 결재함으로 간다
     expect(options.action.label).toBe("결재함 열기");
     options.action.onClick();
     expect(pushMock).toHaveBeenCalledWith("/approvals");

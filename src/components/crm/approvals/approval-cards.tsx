@@ -6,7 +6,7 @@ import { CheckCheckIcon, Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-re
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
+import { ENTITY_TYPE_LABELS, actionHasNoTargetYet } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
@@ -105,11 +105,9 @@ function PayloadSummary({ item }: { item: ApprovalInboxItem }) {
   );
 }
 
-/** [캘린더수집] 새 회차 생성은 기안 시점에 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다(R25-10). */
-const NO_TARGET_YET_ACTIONS: ReadonlySet<string> = new Set(["create_campaign_round"]);
-
 function EntityBadge({ item }: { item: ApprovalInboxItem }) {
-  if (item.payload?.action && NO_TARGET_YET_ACTIONS.has(item.payload.action)) return null;
+  // [캘린더수집] 새 회차 생성은 기안 시점에 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다.
+  if (actionHasNoTargetYet(item.payload?.action)) return null;
   const entityLabel = item.targetEntityType ? displayLabel(ENTITY_TYPE_LABELS, item.targetEntityType, "") || null : null;
   if (!entityLabel) return null;
   return (

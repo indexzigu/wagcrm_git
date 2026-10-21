@@ -269,7 +269,7 @@ function isRecordScalar(value: unknown): boolean {
  * 기록 수정 — 칸마다 **지금 값 → 바꿀 값**. 「지금 값」은 기안자가 본 값이고 실행기는 실제 값이 이것과
  * 같을 때만 고친다. 칸 이름은 화면 이름 표에서, 표에 없으면 칸 이름 그대로 보인다.
  * 칸을 접거나 개수로 줄이지 않는다(머리 주석 — 감춘 줄에 틀린 값이 있으면 이 화면의 의미가 사라진다).
- * 대상 칸은 종류(「캠페인」)가 아니라 서버가 푼 그 대상의 이름을 보인다(R25-1) — 종류만으로는 어느 캠페인인지
+ * 대상 칸은 종류(「캠페인」)가 아니라 서버가 푼 그 대상의 이름을 보인다 — 종류만으로는 어느 캠페인인지
  * 판단할 수 없다. 이름을 못 풀었으면 칸을 뺀다(값 없는 칸은 빼는 이 컴포넌트의 규칙).
  */
 function UpdateRecordPreview({
@@ -445,7 +445,7 @@ function CreateCampaignRoundPreview({
 }
 
 /**
- * [캘린더수집] 이 기안을 만든 구글 캘린더 일정 — 흐린 한 줄 「원본: 제목 · 날짜 · 구글 캘린더에서 보기」(R25-4).
+ * [캘린더수집] 이 기안을 만든 구글 캘린더 일정 — 흐린 한 줄 「원본: 제목 · 날짜 · 구글 캘린더에서 보기」.
  * 판단의 주인공은 위의 바뀔 칸이고, 원문은 해석이 맞는지 대조하는 근거라 그 아래에 조용히 둔다.
  * 링크는 `https://` 만 그린다(출처 스키마 `calendarInboundRefSchema` 가 그 밖의 값을 null 로 접는다).
  */
@@ -500,7 +500,7 @@ function CalendarWarnings({ warnings }: { warnings: readonly string[] }) {
  * 기존 표시(제목 한 줄)를 그대로 둔다.
  *
  * [캘린더수집] `sourceRef` 에 캘린더 출처(`calendarInbound`)가 있으면 액션과 무관하게 바뀔 칸 아래에 흐린
- * 「원본:」 한 줄과 「확인할 점」을 그린다(R25-4 순서). 출처 모양은 서버와 같은 리더(`readCalendarInboundRef`)로 읽는다 — sqlite
+ * 「원본:」 한 줄과 「확인할 점」을 그 순서로 그린다. 출처 모양은 서버와 같은 리더(`readCalendarInboundRef`)로 읽는다 — sqlite
  * 레인의 문자열 저장도 거기서 푼다.
  */
 export function ProposalPayloadPreview({

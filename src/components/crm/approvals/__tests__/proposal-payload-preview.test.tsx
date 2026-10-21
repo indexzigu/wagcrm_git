@@ -189,7 +189,7 @@ describe("ProposalPayloadPreview", () => {
         targetEntityName="테스트브랜드 봄딜 - 샘플 2차"
       />,
     );
-    // 대상 칸은 종류(「캠페인」)가 아니라 그 캠페인 이름을 보인다(R25-1)
+    // 대상 칸은 종류(「캠페인」)가 아니라 그 캠페인 이름을 보인다
     expect(screen.getByText("캠페인")).toBeTruthy();
     expect(screen.getByText("테스트브랜드 봄딜 - 샘플 2차")).toBeTruthy();
     expect(screen.getByText("판매 채널")).toBeTruthy();
