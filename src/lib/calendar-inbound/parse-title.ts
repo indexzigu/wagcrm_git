@@ -112,7 +112,7 @@ type Span = {
 
 /**
  * 붙여 쓴 제목("샘플셀러테스트브랜드") 보조 패스: 토큰 매칭이 실패했을 때만 쓴다.
- * 정규화된 제목 전체에서 사전 이름의 부분 문자열을 찾는다.
+ * 토큰 안에서만 사전 이름의 부분 문자열을 찾는다(토큰 사이 \n 은 이름에 없어 경계를 못 넘는다).
  * - 긴 이름부터 구간을 확정하고, 겹치는 짧은 일치는 버린다(셀러 별칭이 브랜드명의 일부인 경우).
  * - 같은 길이로 다른 대상이 같은 구간을 다투면 유일하지 않은 것이므로 실패한다.
  * - 셀러·브랜드 모두 유일해야 성공한다. 하나라도 아니면 null(호출자가 기존 실패 사유를 낸다).
@@ -189,10 +189,13 @@ function matchGlued(
   );
   const brandKeys = new Set(chosen.filter((x) => !x.seller).map((x) => x.key));
   if (sellerIds.size !== 1 || brandKeys.size !== 1) return null;
-  const dealIds = new Set(chosen.flatMap((x) => (x.seller ? [] : x.dealIds)));
+  // 토큰 패스와 같은 규칙: 고른 브랜드 정체성의 딜은 이름 구간이 이기지 않았어도 전부 포함한다.
+  const identity = [...brandKeys][0].slice(2);
   return {
     sellerId: [...sellerIds][0],
-    dealIds: dict.deals.filter((d) => dealIds.has(d.id)).map((d) => d.id),
+    dealIds: dict.deals
+      .filter((d) => brandIdentity(d) === identity)
+      .map((d) => d.id),
   };
 }
 
@@ -256,7 +259,11 @@ export function parseCalendarTitle(
     dealIds = (brand as { dealIds: string[] }).dealIds;
   } else {
     // 힌트(LLM 근거) 경로는 힌트 문자열이 근거라 제목 전체 탐색을 하지 않는다.
-    const glued = useHints ? null : matchGlued(titleTokens.join(""), dict);
+    // 모호(ambiguous_*)는 실패로 둔다: 보조 패스가 뒤집으면 확신 있는 오답이 된다.
+    const retryable =
+      failure.reason === "no_seller" || failure.reason === "no_brand";
+    const glued =
+      useHints || !retryable ? null : matchGlued(titleTokens.join("\n"), dict);
     if (!glued) return failure;
     sellerId = glued.sellerId;
     dealIds = glued.dealIds;

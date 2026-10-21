@@ -236,8 +236,8 @@ describe("parseCalendarTitle — 붙여 쓴 제목(전체 부분 문자열 보�
     });
   });
 
-  it("X 로 이어진 붙임 + 회차: 샘플셀러X테스트브랜드3차", () => {
-    const r = parseCalendarTitle("샘플셀러X테스트브랜드3차", dict);
+  it("회차까지 붙은 제목: 샘플셀러테스트브랜드3차", () => {
+    const r = parseCalendarTitle("샘플셀러테스트브랜드3차", dict);
     expect(r.ok && r.intent.kind).toBe("campaign");
     expect(r.ok && r.intent.round).toBe(3);
     expect(r.ok && r.intent.sellerId).toBe("s1");
@@ -320,5 +320,62 @@ describe("parseCalendarTitle — 붙여 쓴 제목(전체 부분 문자열 보�
     expect(r.ok && r.intent.sellerId).toBe("s1");
     expect(r.ok && r.intent.dealIds).toEqual(["d1"]);
     expect(parseCalendarTitle("샘플테스트브랜드 지급", d).ok).toBe(false);
+  });
+
+  it("토큰 경계를 넘는 우연 일치는 셀러로 보지 않는다", () => {
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["하나"] }],
+      deals: dict.deals,
+    };
+    expect(parseCalendarTitle("테스트브랜드 지하 나눔 지급", d)).toEqual({
+      ok: false,
+      reason: "no_seller",
+    });
+  });
+
+  it("토큰 패스의 모호 실패를 보조 패스가 뒤집지 않는다", () => {
+    const d: InboundDictionary = {
+      sellers: dict.sellers,
+      deals: [
+        {
+          id: "d1",
+          brandNames: ["테스트브랜드"],
+          dealName: "a",
+          partnerName: null,
+        },
+        {
+          id: "d2",
+          brandNames: ["테스트브랜드2"],
+          dealName: "b",
+          partnerName: null,
+        },
+      ],
+    };
+    expect(parseCalendarTitle("샘플셀러 테스트브랜드2 지급", d)).toEqual({
+      ok: false,
+      reason: "ambiguous_brand",
+    });
+  });
+
+  it("보조 패스도 같은 브랜드의 모든 딜을 담는다", () => {
+    const d: InboundDictionary = {
+      sellers: dict.sellers,
+      deals: [
+        {
+          id: "d1",
+          brandNames: ["테스트브랜드"],
+          dealName: "봄딜",
+          partnerName: null,
+        },
+        {
+          id: "d2",
+          brandNames: ["테스트브랜드"],
+          dealName: "가을딜",
+          partnerName: null,
+        },
+      ],
+    };
+    const r = parseCalendarTitle("샘플셀러테스트브랜드 지급", d);
+    expect(r.ok && r.intent.dealIds).toEqual(["d1", "d2"]);
   });
 });
