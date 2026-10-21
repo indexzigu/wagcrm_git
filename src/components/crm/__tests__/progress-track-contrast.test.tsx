@@ -4,7 +4,7 @@
  *
  * 트랙이 slate-100 이면 흰 표면 대비 1.10:1 로 사라져 「전체 중 얼마인가」가 안 읽힌다 → slate-300.
  * 트랙을 진하게 하면 채움이 그 위에서 3:1(WCAG 1.4.11)을 잃을 수 있어, 채움도 함께 고정한다:
- * slate-500 3.21 · 네이비(bg-primary) 7.62 · emerald-700 3.62 · amber-700 3.40 · rose-700 4.08.
+ * slate-500 3.21 · 네이비(bg-primary) 7.62 · status-success 3.62 · status-caution 3.40 · status-urgent 3.16(2026-10-22 토큰 전환).
  * ⚠️ 하위(펼침) 막대의 종전 채움 slate-300 은 새 트랙과 **같은 색**이라 막대가 통째로 사라진다 — 되돌리지 말 것.
  * 3차: 범주 비중 막대(포털 구성별 판매·매출 보고 판매 비중·인사이트 유입 경로)와 스토리지 게이지는 중립 네이비
  * (bg-primary 7.62 — 오너 결정 2026-10-06, 종전 blue/indigo 는 P8 §4 위반·hue 부채). 발주 메일 진행은 네이비(bg-primary 7.62 — 7차),
@@ -141,7 +141,7 @@ describe("CategoryProfile — 카테고리 적합도", () => {
     );
     const bars = screen.getAllByRole("progressbar");
     expect(bars).toHaveLength(3);
-    const expected = ["bg-emerald-700", "bg-amber-700", "bg-rose-700"];
+    const expected = ["bg-status-success", "bg-status-caution", "bg-status-urgent"];
     bars.forEach((bar, i) => expectVisibleTrack(bar, expected[i]));
   });
 });
@@ -162,7 +162,7 @@ describe("ScoreCard — 서브점수 막대(3차)", () => {
     const { container } = render(<ScoreCard scores={scores} />);
     const tracks = [...container.querySelectorAll("div.h-1\\.5.rounded-full")];
     expect(tracks).toHaveLength(4); // null 서브점수는 막대 대신 문구
-    const expected = ["bg-emerald-700", "bg-amber-700", "bg-rose-700", "bg-rose-700"];
+    const expected = ["bg-status-success", "bg-status-caution", "bg-status-urgent", "bg-status-urgent"];
     tracks.forEach((t, i) => expectVisibleTrack(t, expected[i]));
   });
 });

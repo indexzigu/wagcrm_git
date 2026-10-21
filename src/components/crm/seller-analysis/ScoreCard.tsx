@@ -24,12 +24,12 @@ const SUBSCORE_KEYS = Object.keys(SUBSCORE_LABELS) as Array<keyof typeof SUBSCOR
 /**
  * 점수별 바 색상: ≥70 emerald / ≥40 amber / 미만 rose.
  * 트랙(100점까지 남은 구간)이 slate-300 이라 채움은 그 위 3:1 을 지키는 700 단계로 둔다 —
- * 500 단계는 1.66 / 1.45 / 2.53 으로 묻힌다(CategoryProfile 과 같은 처리·같은 수치 3.62 / 3.40 / 4.08).
+ * 500 단계는 1.66 / 1.45 / 2.53 으로 묻힌다(CategoryProfile 과 같은 처리·토큰 전환 후 3.62 / 3.40 / 3.16).
  */
 function barColor(score: number): string {
-  if (score >= 70) return 'bg-emerald-700';
-  if (score >= 40) return 'bg-amber-700';
-  return 'bg-rose-700';
+  if (score >= 70) return 'bg-status-success';
+  if (score >= 40) return 'bg-status-caution';
+  return 'bg-status-urgent';
 }
 
 /**

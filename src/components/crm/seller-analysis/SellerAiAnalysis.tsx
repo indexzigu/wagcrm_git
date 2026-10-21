@@ -139,7 +139,7 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
   return (
     <div className="space-y-3">
       {error && (
-        <div className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded px-2.5 py-1.5">
+        <div className="text-[11px] text-status-urgent-text bg-status-urgent-bg border border-status-urgent/30 rounded px-2.5 py-1.5">
           {error}
         </div>
       )}
@@ -214,9 +214,9 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
               이 패널은 확정 게이트가 아니라 근거 대장(어떤 값이 왜 반영됐나)이다. 체크박스·확정
               버튼은 폐기 — 수동 조정이 필요하면 위 평가 카드(StepMetricCard)에서 직접 고친다. */}
           {suggestions && (
-            <div className="p-4 bg-white rounded-lg border border-blue-200 space-y-3">
+            <div className="p-4 bg-white rounded-lg border border-border space-y-3">
               <div className="flex items-center gap-2">
-                <UserCheck className="w-4 h-4 text-blue-500" />
+                <UserCheck className="w-4 h-4 text-muted-foreground" />
                 <span className="text-[12px] font-semibold text-slate-800">AI 지표 반영</span>
                 <span className="text-[10px] text-slate-500">
                   분석 완료 시 자동 반영 · 카테고리는 미입력일 때만
@@ -255,7 +255,7 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
                             <ArrowRight className="w-3 h-3 text-slate-300 shrink-0" />
                             {/* 카테고리 병합 제안처럼 긴 문자열은 잘라 표시 — 전체는 title로 */}
                             <span
-                              className="text-[11px] font-semibold text-emerald-700 shrink-0 truncate max-w-[160px]"
+                              className="text-[11px] font-semibold text-status-success shrink-0 truncate max-w-[160px]"
                               title={s.suggested}
                             >
                               {s.suggested}
@@ -288,7 +288,7 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
           {/* T3 전체 분석 리포트 (딥다이브·피드 프리뷰) */}
           <a
             href={`/sellers/${sellerId}`}
-            className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-blue-600 border border-blue-200 rounded-lg py-2 hover:bg-blue-50"
+            className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-primary border border-primary/30 rounded-lg py-2 hover:bg-primary-tint"
           >
             <ExternalLink className="size-3" />
             전체 분석 리포트 열기

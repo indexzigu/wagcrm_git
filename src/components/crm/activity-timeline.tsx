@@ -101,7 +101,7 @@ function renderContentWithMentions(content: string): React.ReactNode {
     parts.push(
       <span
         key={`mention-${match.index}`}
-        className="font-medium text-blue-600 dark:text-blue-400"
+        className="font-medium text-primary"
       >
         @{match[1]}
       </span>,
@@ -240,7 +240,7 @@ export function ActivityTimeline({
               key={`${item.kind}-${item.data.id}`}
               className={
                 item.kind === "comment"
-                  ? "rounded-lg border border-blue-200/70 bg-blue-50/30 px-3 py-2 dark:border-blue-900/50 dark:bg-blue-950/20"
+                  ? "rounded-lg border border-primary/20 bg-primary-tint/30 px-3 py-2"
                   : "rounded-lg border border-slate-200/80 bg-slate-50/50 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/40"
               }
             >

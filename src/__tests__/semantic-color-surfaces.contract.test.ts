@@ -45,6 +45,29 @@ const FILES = [
   "components/mobile/mobile-schedule-calendar.tsx",
   "components/crm/outreach-list.tsx",
   "app/outreach/page.tsx",
+  // [애플UI] 전수 정리 B — 셀러·영업·포털·로그인(2026-10-22)
+  "app/sellers/[id]/page.tsx",
+  "components/crm/seller-detail-content.tsx",
+  "components/crm/sellers-management.tsx",
+  "components/crm/seller-identity-info.tsx",
+  "components/crm/seller-bulk-create-dialog.tsx",
+  "components/crm/seller-analysis/SellerAiAnalysis.tsx",
+  "components/crm/seller-analysis/CategoryProfile.tsx",
+  "components/crm/seller-analysis/ScoreCard.tsx",
+  "components/crm/seller-analysis/CommentIntent.tsx",
+  "components/crm/seller-growth-chart.tsx",
+  "components/crm/seller-er-chart.tsx",
+  "components/crm/seller-portal-link-section.tsx",
+  "components/crm/outreach-message-generator.tsx",
+  "components/crm/activity-timeline.tsx",
+  "components/crm/partners-management.tsx",
+  "components/crm/referral-network-dialog.tsx",
+  "components/crm/follower-bar-cell.tsx",
+  "components/crm/story-inbox-grid.tsx",
+  "components/auth/landing-login.tsx",
+  "components/portal/seller-portal-report.tsx",
+  "components/portal/campaign-countdown.tsx",
+  "components/crm/shipping/modals/CampaignInsightsModal.tsx",
   "components/portal/seller-portal-report.tsx",
   "components/portal/campaign-countdown.tsx",
   "components/crm/shipping/modals/CampaignInsightsModal.tsx",
@@ -73,6 +96,12 @@ const REMAINING: Record<string, { hue: string; count: number; reason: string }[]
       reason:
         "오너 확인: 유지 — 「전환율 낮은 판매 조건·셀러」 순위 막대·아이콘(2026-10-21)",
     },
+  ],
+  "components/auth/landing-login.tsx": [
+    { hue: "#4285F4", count: 1, reason: "구글 로그인 G 로고 — 남의 상표 원색" },
+    { hue: "#34A853", count: 1, reason: "구글 로그인 G 로고 — 남의 상표 원색" },
+    { hue: "#FBBC05", count: 1, reason: "구글 로그인 G 로고 — 남의 상표 원색" },
+    { hue: "#EA4335", count: 1, reason: "구글 로그인 G 로고 — 남의 상표 원색" },
   ],
 };
 
@@ -207,6 +236,12 @@ describe("의미축 고정", () => {
 });
 
 describe("대비 — 흰 바탕 기준(§5 표면 종속)", () => {
+  it("전수 정리 B — 셀러 목록 팔로워 막대가 slate-100 트랙 위 3:1 이상", () => {
+    // 종전 emerald-400(2.0)·chart-growth-soft(1.3)는 트랙과 뭉갰다 — 데이터 크기 막대라 차트 축(chart-2).
+    expect(read("components/crm/follower-bar-cell.tsx")).toContain("rounded-sm bg-chart-2");
+    expect(ratio(token("--chart-2"), SLATE_100)).toBeGreaterThanOrEqual(3);
+  });
+
   it("오너 결정(2026-10-22) — 단계 막대는 청록 진하기 사다리, 가장 옅은 칸도 흰 바탕 3:1", () => {
     const src = read("components/crm/step-metric-card.tsx");
     expect(src).toContain('"bg-primary/65",\n  "bg-primary/80",\n  "bg-primary",');

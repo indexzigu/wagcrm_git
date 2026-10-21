@@ -129,7 +129,7 @@ export function StoryInboxGrid({
                         <button
                           type="button"
                           onClick={() => classify(s.id, s.displayName, "CAMPAIGN")}
-                          className="flex-1 rounded-md bg-status-success py-1 text-[11px] font-bold text-white hover:bg-emerald-800"
+                          className="flex-1 rounded-md bg-status-success py-1 text-[11px] font-bold text-white hover:brightness-90"
                         >
                           캠페인
                         </button>

@@ -15,12 +15,12 @@ interface CategoryProfileProps {
 /**
  * 점수별 바 색상: ≥70 emerald / ≥40 amber / >0 rose / 0 slate.
  * 트랙(100점까지 남은 구간)이 slate-300 이라 채움은 그 위 3:1 을 지키는 명도로 둔다 —
- * 500 단계는 1.66 / 1.45 / 2.53 으로 묻혀 700 단계(3.62 / 3.40 / 4.08)로 맞췄다(rose-600 은 3.04 로 여유 없음).
+ * 500 단계는 1.66 / 1.45 / 2.53 으로 묻혀 700 단계(3.62 / 3.40 / 4.08)로 맞췄다 — 2026-10-22 토큰 전환 후 status-success 3.62 · status-caution 3.40 · status-urgent 3.16(3:1 여유가 얇다 — 트랙을 더 밝히면 미달)(rose-600 은 3.04 로 여유 없음).
  */
 function barColor(score: number): string {
-  if (score >= 70) return 'bg-emerald-700';
-  if (score >= 40) return 'bg-amber-700';
-  if (score > 0) return 'bg-rose-700';
+  if (score >= 70) return 'bg-status-success';
+  if (score >= 40) return 'bg-status-caution';
+  if (score > 0) return 'bg-status-urgent';
   return 'bg-slate-300';
 }
 
@@ -46,7 +46,7 @@ export function CategoryProfile({ affinities }: CategoryProfileProps) {
               <span className="text-[11px] text-slate-600 w-14 shrink-0 flex items-center gap-1">
                 {a.category}
                 {a.isPrimary && (
-                  <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 leading-none">
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 leading-none">
                     주
                   </span>
                 )}

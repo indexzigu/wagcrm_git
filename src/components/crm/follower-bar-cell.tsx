@@ -19,7 +19,7 @@ export function FollowerBarCell({ count }: FollowerBarCellProps) {
       </span>
       <div className="relative h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
         <div
-          className="absolute inset-y-0 left-0 rounded-sm bg-emerald-400"
+          className="absolute inset-y-0 left-0 rounded-sm bg-chart-2"
           style={{ width: `${calculateBarWidth(value)}%` }}
         />
       </div>

@@ -52,7 +52,7 @@ export function OutreachMessageGenerator({ dealId, sellerId, onGenerated }: Outr
       type="button"
       variant="outline"
       size="sm"
-      className="h-7 px-2.5 text-[11px] font-medium text-blue-600 border-blue-200 bg-blue-50/50 hover:bg-blue-50 hover:text-blue-700"
+      className="h-7 px-2.5 text-[11px] font-medium text-primary border-primary/30 bg-primary-tint/50 hover:bg-primary-tint hover:text-primary"
       onClick={handleGenerate}
       disabled={isGenerating || !dealId || !sellerId}
     >

@@ -152,7 +152,7 @@ export function SellerErChart({ data }: SellerErChartProps) {
             {periodChangePp !== null && (
               <span
                 className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                  isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                  isPositive ? "bg-status-success-bg text-status-success" : "bg-status-urgent-bg text-status-urgent-text"
                 }`}
               >
                 {isPositive ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
