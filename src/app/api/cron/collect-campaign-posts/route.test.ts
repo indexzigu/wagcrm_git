@@ -45,7 +45,7 @@ describe("collect-campaign-posts 실질 실패 선언", () => {
       activeSellers: 2,
       refreshed: 0,
       skipped: 0,
-      errors: ["INSTAGRAM_ACCESS_TOKEN/BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가"],
+      errors: ["INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가"],
     });
 
     const body = await (await call()).json();

@@ -87,8 +87,11 @@ export async function refreshCampaignWindowPosts(
   await applyDbInstagramToken();
   if (!isGraphConfigured()) {
     // 조용히 성공으로 위장하지 않는다(P0 무음 실패 금지) — 크론 레이더에 그대로 표면화.
-    errors.push("INSTAGRAM_ACCESS_TOKEN/BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가");
-    result.firstErrorCause = "INSTAGRAM_ACCESS_TOKEN/BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가";
+    // 키 이름은 실제 환경변수 이름 그대로 쓴다 — 설정값 누락 플레이북이 이 문구에서 키 이름을 집어 오너
+    // 할 일에 넣는다(줄여 쓰면 없는 키 「BUSINESS_ACCOUNT_ID」를 넣으라고 안내한다).
+    const reason = "INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가";
+    errors.push(reason);
+    result.firstErrorCause = reason;
     return result;
   }
 
