@@ -428,7 +428,7 @@ export default function CampaignEditModal({
                   )}
                 </div>
                 {pushSalesMessage && (
-                  <p className={`mt-1 text-[11px] font-semibold ${pushSalesMessage.tone === 'error' ? 'text-status-urgent' : pushSalesMessage.tone === 'warn' ? 'text-status-caution-text' : 'text-status-success'}`}>
+                  <p className={`mt-1 text-[11px] font-semibold ${pushSalesMessage.tone === 'error' ? 'text-status-urgent-text' : pushSalesMessage.tone === 'warn' ? 'text-status-caution-text' : 'text-status-success'}`}>
                     {pushSalesMessage.text}
                   </p>
                 )}
@@ -588,7 +588,7 @@ export default function CampaignEditModal({
                       await onDelete(campaign.id);
                       onClose();
                     }
-                  }} className="px-5 py-2 text-sm text-status-urgent-text bg-destructive/5 hover:bg-status-urgent-bg rounded-lg font-bold transition-colors">삭제</button>
+                  }} className="px-5 py-2 text-sm text-status-urgent-text bg-status-urgent-bg hover:bg-status-urgent/10 rounded-lg font-bold transition-colors">삭제</button>
                 )}
               </div>
               <div className="flex gap-2">
