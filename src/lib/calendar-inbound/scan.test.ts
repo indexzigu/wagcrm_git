@@ -13,7 +13,8 @@ import { CALENDAR_INBOUND_CREATED_BY, calendarInboundRefSchema } from "./adopt";
 import type { ProposalDraft, ResolveResult } from "./resolve-target";
 import { LOCK_TX_TIMEOUT_MS } from "./run-lock";
 import {
-  MAX_HINT_CALLS_PER_RUN,
+  LOCAL_MIN_REMAINING_MS,
+  LOCAL_TIMEOUT_MARGIN_MS,
   SCAN_BUDGET_MS,
   MAX_PROPOSALS_PER_RUN,
   calendarInboundFingerprint,
@@ -23,7 +24,8 @@ import {
   type InboundRow,
   type InboundRowWrite,
 } from "./scan";
-import type { TitleHintsResult } from "./llm-hints";
+import { MAX_GEMINI_BATCH, type TitleHintsBatchResult, type TitleHintsResult } from "./llm-hints";
+import { LOCAL_HINT_TIMEOUT_MS } from "./local-hints";
 import type { InboundDictionary, ParsedCalendarIntent } from "./types";
 
 // [캘린더수집] 스캔 오케스트레이션 — 캘린더·DB·LLM 은 전부 가짜(메모리). 가명 픽스처만 쓴다.
@@ -78,13 +80,23 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
       draft: CREATE_DRAFT,
     }),
   );
-  const extractHints = vi.fn(async (_summary: string): Promise<TitleHintsResult> => ({ kind: "none" }));
+  const extractHintsLocal = vi.fn(
+    async (_summary: string, _opts: { timeoutMs: number }): Promise<TitleHintsResult> => ({ kind: "none" }),
+  );
+  // 기본: 일괄 응답이 전부 none(실제 함수처럼 입력 id 를 빠짐없이 채운다).
+  const extractHintsBatch = vi.fn(
+    async (items: ReadonlyArray<{ id: string; summary: string }>): Promise<TitleHintsBatchResult> => ({
+      kind: "ok",
+      results: new Map(items.map((it) => [it.id, { kind: "none" } as TitleHintsResult])),
+    }),
+  );
   const listCandidates = vi.fn(async () => listing.value);
 
   const deps: CalendarInboundScanDeps = {
     listCandidates,
     loadDictionary: async () => DICT,
-    extractHints,
+    extractHintsLocal,
+    extractHintsBatch,
     resolveTarget,
     createProposal: async (data) => {
       const id = `prop-${++proposalSeq}`;
@@ -124,7 +136,20 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
   const claimByApproval = (googleEventId: string) => {
     rows.get(googleEventId)!.updatedAt = tick();
   };
-  return { deps, rows, proposals, listing, resolveTarget, extractHints, listCandidates, claimByApproval };
+  /** 일괄에 담긴 제목들(호출마다). */
+  const batchSummaries = () => extractHintsBatch.mock.calls.map(([items]) => items.map((it) => it.summary));
+  return {
+    deps,
+    rows,
+    proposals,
+    listing,
+    resolveTarget,
+    extractHintsLocal,
+    extractHintsBatch,
+    batchSummaries,
+    listCandidates,
+    claimByApproval,
+  };
 }
 
 beforeEach(() => {
@@ -171,7 +196,9 @@ describe("runCalendarInboundScan", () => {
       skippedUnparsed: 0,
       adoptedNoop: 0,
       dropped: 0,
-      hintDeferred: 0,
+      awaitingHint: 0,
+      localResolved: 0,
+      geminiResolved: 0,
       alreadyHandled: 0,
       errors: 0,
     });
@@ -293,33 +320,46 @@ describe("runCalendarInboundScan", () => {
     }
   });
 
-  it("파서 실패 → 힌트 1회 → 그래도 실패면 SKIPPED(사유) · 같은 지문은 다시 해석하지 않는다", async () => {
+  it("규칙 실패 → 로컬 1회 → 못 풀면 해석 대기(gemini) → 다음 회차 일괄 → none 이면 SKIPPED · 같은 지문은 다시 해석하지 않는다", async () => {
     const h = makeHarness([ev("e1", { summary: "치과 예약" })]);
 
-    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    const first = await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
-    expect(summary).toMatchObject({ proposed: 0, skippedUnparsed: 1, newOrChanged: 1 });
-    expect(h.extractHints).toHaveBeenCalledTimes(1);
-    expect(h.extractHints).toHaveBeenCalledWith("치과 예약");
+    expect(first).toMatchObject({ proposed: 0, skippedUnparsed: 0, awaitingHint: 1, newOrChanged: 1 });
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(1);
+    expect(h.extractHintsLocal.mock.calls[0][0]).toBe("치과 예약");
+    expect(h.extractHintsBatch).not.toHaveBeenCalled();
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", skipReason: null, parsed: { hintStage: "gemini" } });
+    expect(h.proposals.size).toBe(0);
+
+    const second = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(second).toMatchObject({ skippedUnparsed: 1, awaitingHint: 0, newOrChanged: 1 });
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(1); // Gemini 단계 행은 로컬에 다시 보내지 않는다
+    expect(h.batchSummaries()).toEqual([["치과 예약"]]);
     expect(h.resolveTarget).not.toHaveBeenCalled();
     expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller", parsed: null });
 
-    await runCalendarInboundScan({ now: NOW, deps: h.deps });
-    expect(h.extractHints).toHaveBeenCalledTimes(1);
+    const third = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(third).toMatchObject({ newOrChanged: 0, alreadyHandled: 1 });
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(1);
+    expect(h.extractHintsBatch).toHaveBeenCalledTimes(1);
   });
 
-  it("규칙 파서가 맞히면 힌트를 부르지 않는다 · 실패분은 힌트로 다시 맞춘다(matchedBy llm)", async () => {
+  it("규칙 파서가 맞히면 모델을 부르지 않는다 · 실패분은 로컬 힌트로 같은 회차에 기안한다(matchedBy llm)", async () => {
     const h = makeHarness([ev("e1"), ev("e2", { summary: "ㅅㅍ 테스트브랜드" })]);
-    h.extractHints.mockResolvedValue({
+    h.extractHintsLocal.mockResolvedValue({
       kind: "hints",
       hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null },
     });
 
     const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
-    expect(summary).toMatchObject({ proposed: 2, skippedUnparsed: 0 });
-    expect(h.extractHints).toHaveBeenCalledTimes(1);
-    expect(h.extractHints).toHaveBeenCalledWith("ㅅㅍ 테스트브랜드");
+    expect(summary).toMatchObject({ proposed: 2, skippedUnparsed: 0, localResolved: 1, geminiResolved: 0, awaitingHint: 0 });
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(1);
+    expect(h.extractHintsLocal.mock.calls[0][0]).toBe("ㅅㅍ 테스트브랜드");
+    expect(h.extractHintsBatch).not.toHaveBeenCalled();
+    expect(h.rows.get("e2")).toMatchObject({ status: "PROPOSED", proposalId: "prop-2" });
     expect(h.rows.get("e2")!.parsed).toMatchObject({ sellerId: "s1", matchedBy: "llm" });
   });
 
@@ -500,14 +540,17 @@ describe("runCalendarInboundScan", () => {
     expect(h.rows.get("e2")).toMatchObject({ status: "ADOPTED", proposalId: null });
   });
 
-  it("PENDING_RETRY 행이 파서 실패로 SKIPPED 여도 proposalId 를 비운다", async () => {
+  it("PENDING_RETRY 행이 파서 실패로 해석 대기·SKIPPED 가 돼도 proposalId 를 비운다", async () => {
     const h = makeHarness([ev("e1")]);
     await runCalendarInboundScan({ now: NOW, deps: h.deps });
     h.rows.get("e1")!.status = "PENDING_RETRY";
     h.listing.value = { ok: true, events: [ev("e1", { summary: "치과 예약" })], referencedIds: new Set() };
 
     await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    // 해석 대기로 적는 순간 옛 FAILED 카드와 끊는다 — 그 카드를 재시도하면 최신 판정을 무시하고 실행된다.
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", proposalId: null });
 
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
     expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller", proposalId: null });
   });
 
@@ -518,6 +561,8 @@ describe("runCalendarInboundScan", () => {
     h.rows.get("e1")!.status = "REJECTED";
     h.listing.value = { ok: true, events: [ev("e1", { summary: "치과 예약" })], referencedIds: new Set() };
 
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", proposalId: "prop-1" });
     await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
     expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", proposalId: "prop-1" });
@@ -542,64 +587,32 @@ describe("runCalendarInboundScan", () => {
     expect(LOCK_TX_TIMEOUT_MS - SCAN_BUDGET_MS).toBeGreaterThanOrEqual(30_000);
   });
 
-  it("상한 기본값은 기안 20 · 힌트 호출 20", () => {
+  it("상한 기본값은 기안 20 · Gemini 일괄 30 · 로컬 호출은 남은 예산 8초부터(시간 제한은 남은 예산 - 3초, 최대 30초)", () => {
     expect(MAX_PROPOSALS_PER_RUN).toBe(20);
-    expect(MAX_HINT_CALLS_PER_RUN).toBe(20);
+    expect(MAX_GEMINI_BATCH).toBe(30);
+    expect(LOCAL_MIN_REMAINING_MS).toBe(8_000);
+    expect(LOCAL_TIMEOUT_MARGIN_MS).toBe(3_000);
+    expect(LOCAL_HINT_TIMEOUT_MS).toBe(30_000);
   });
 
-  it("힌트 예산을 다 쓰면 그 뒤 해석 실패분은 힌트를 부르지 않고 손대지 않는다(hintDeferred)", async () => {
-    const h = makeHarness(["e1", "e2", "e3", "e4"].map((id) => ev(id, { summary: `치과 예약 ${id}` })));
-
-    const summary = await runCalendarInboundScan({ now: NOW, maxHintCalls: 2, deps: h.deps });
-
-    expect(h.extractHints).toHaveBeenCalledTimes(2);
-    expect(summary).toMatchObject({ skippedUnparsed: 2, hintDeferred: 2, newOrChanged: 4, errors: 0 });
-    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
-    expect(h.rows.get("e2")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
-    expect(h.rows.has("e3")).toBe(false);
-    expect(h.rows.has("e4")).toBe(false);
-
-    const next = await runCalendarInboundScan({ now: NOW, maxHintCalls: 2, deps: h.deps });
-    expect(h.extractHints).toHaveBeenCalledTimes(4);
-    expect(next).toMatchObject({ skippedUnparsed: 2, hintDeferred: 0, alreadyHandled: 2 });
-    expect(h.rows.get("e4")).toMatchObject({ status: "SKIPPED" });
-  });
-
-  it("힌트가 일시 장애(unavailable)면 행을 쓰지 않고 hintDeferred · 시도는 예산을 쓴다 · 다음 회차가 다시 묻는다", async () => {
-    const h = makeHarness([ev("e1", { summary: "치과 예약 e1" }), ev("e2", { summary: "치과 예약 e2" })]);
-    h.extractHints.mockResolvedValueOnce({ kind: "unavailable" });
-
-    const summary = await runCalendarInboundScan({ now: NOW, maxHintCalls: 1, deps: h.deps });
-
-    // e1: 시도했지만 일시 장애 → 미기록. e2: 예산(1회)을 e1 이 썼다 → 미기록.
-    expect(h.extractHints).toHaveBeenCalledTimes(1);
-    expect(summary).toMatchObject({ hintDeferred: 2, skippedUnparsed: 0, errors: 0 });
-    expect(h.rows.size).toBe(0);
-
-    const next = await runCalendarInboundScan({ now: NOW, maxHintCalls: 5, deps: h.deps });
-    expect(h.extractHints).toHaveBeenCalledTimes(3);
-    expect(next).toMatchObject({ hintDeferred: 0, skippedUnparsed: 2 });
-    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
-  });
-
-  it("힌트가 none(다시 물어도 같음)이면 SKIPPED 로 닫는다", async () => {
+  it("Gemini 일괄이 none 이면 그 제목은 SKIPPED 로 닫는다(마지막 단계)", async () => {
     const h = makeHarness([ev("e1", { summary: "치과 예약" })]);
-    h.extractHints.mockResolvedValue({ kind: "none" });
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
     const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
 
-    expect(summary).toMatchObject({ hintDeferred: 0, skippedUnparsed: 1 });
+    expect(summary).toMatchObject({ awaitingHint: 0, skippedUnparsed: 1 });
     expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
   });
 
-  it("힌트 예산이 바닥나도 규칙 파서로 맞는 건은 계속 기안한다", async () => {
+  it("예산이 모자라 로컬을 못 불러도 규칙 파서로 맞는 건은 계속 기안한다 · 못 부른 것은 해석 대기(local)", async () => {
     const h = makeHarness([ev("e1", { summary: "치과 예약" }), ev("e2")]);
 
-    const summary = await runCalendarInboundScan({ now: NOW, maxHintCalls: 0, deps: h.deps });
+    const summary = await runCalendarInboundScan({ now: NOW, budgetMs: LOCAL_MIN_REMAINING_MS - 1, deps: h.deps });
 
-    expect(h.extractHints).not.toHaveBeenCalled();
-    expect(summary).toMatchObject({ proposed: 1, hintDeferred: 1, skippedUnparsed: 0 });
-    expect(h.rows.has("e1")).toBe(false);
+    expect(h.extractHintsLocal).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ proposed: 1, awaitingHint: 1, skippedUnparsed: 0, dropped: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "local" } });
   });
 
   it("한 건의 예외는 그 건만 errors 로 세고 나머지를 계속한다", async () => {
@@ -720,5 +733,257 @@ describe("runCalendarInboundScan — 단일 실행 잠금", () => {
     const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps, budgetMs: -1 });
     expect(summary).toMatchObject({ newOrChanged: 2, proposed: 0, dropped: 2 });
     expect(h.rows.size).toBe(0);
+  });
+});
+
+describe("runCalendarInboundScan — 해석 단계(규칙 → 로컬 → Gemini 일괄)", () => {
+  const unparsed = (id: string) => ev(id, { summary: `치과 예약 ${id}` });
+
+  /** 가짜 시계 — 로컬 모델의 느린 응답을 흉내 낸다. */
+  function fakeClock() {
+    const state = { t: 1_000_000 };
+    return { state, clock: () => state.t };
+  }
+
+  it("Gemini 는 회차당 최대 1번 · 한 번에 30개 · 오래 기다린 것부터 · 넘친 것은 다음 회차", async () => {
+    const events = Array.from({ length: MAX_GEMINI_BATCH + 1 }, (_, i) => unparsed(`e${i}`));
+    const h = makeHarness(events);
+    h.extractHintsLocal.mockResolvedValue({ kind: "none" });
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(h.extractHintsBatch).not.toHaveBeenCalled(); // 로컬이 못 푼 것은 이번 회차가 아니라 다음 회차 일괄로
+    expect([...h.rows.values()].every((r) => r.status === "AWAITING_HINT")).toBe(true);
+    // e30 이 가장 오래 기다렸다 — 후보 순서로는 마지막이지만 먼저 담겨야 한다.
+    h.rows.get("e30")!.lastSeenAt = new Date(NOW.getTime() - 60 * 60_000);
+
+    const second = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.extractHintsBatch).toHaveBeenCalledTimes(1);
+    const sent = h.batchSummaries()[0];
+    expect(sent).toHaveLength(MAX_GEMINI_BATCH);
+    expect(sent).toContain("치과 예약 e30");
+    expect(sent).not.toContain("치과 예약 e29");
+    expect(second).toMatchObject({ skippedUnparsed: MAX_GEMINI_BATCH, awaitingHint: 1, dropped: 0 });
+    expect(h.rows.get("e29")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+    // 일괄 id 는 순번이다 — 구글 이벤트 id 를 바깥 모델에 보내지 않는다.
+    expect(h.extractHintsBatch.mock.calls[0][0].map((it) => it.id)).toEqual(
+      Array.from({ length: MAX_GEMINI_BATCH }, (_, i) => String(i)),
+    );
+    // Gemini 단계 행은 로컬에 다시 보내지 않는다.
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(MAX_GEMINI_BATCH + 1);
+
+    const third = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(h.extractHintsBatch).toHaveBeenCalledTimes(2);
+    expect(h.batchSummaries()[1]).toEqual(["치과 예약 e29"]);
+    expect(third).toMatchObject({ skippedUnparsed: 1, awaitingHint: 0 });
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(MAX_GEMINI_BATCH + 1);
+  });
+
+  it("Gemini 힌트로 풀리면 같은 회차에 기안한다 · 힌트로도 유일하게 안 맞으면 그 사유로 SKIPPED", async () => {
+    const h = makeHarness([ev("e1", { summary: "ㅅㅍ 테스트브랜드" }), unparsed("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.extractHintsBatch.mockImplementationOnce(async (items) => ({
+      kind: "ok",
+      results: new Map<string, TitleHintsResult>([
+        [items[0].id, { kind: "hints", hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null } }],
+        // 사전에 없는 이름 — 힌트가 있어도 대상이 정해지지 않는다.
+        [items[1].id, { kind: "hints", hints: { sellerHint: "치과", brandHint: null, round: null, kind: null } }],
+      ]),
+    }));
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ proposed: 1, geminiResolved: 1, localResolved: 0, skippedUnparsed: 1, awaitingHint: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED", proposalId: "prop-1" });
+    expect(h.rows.get("e1")!.parsed).toMatchObject({ sellerId: "s1", matchedBy: "llm" });
+    expect(h.rows.get("e2")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
+  });
+
+  it("일괄 응답에 빠진 항목은 none(SKIPPED), 모르는 id 는 무시한다", async () => {
+    const h = makeHarness([unparsed("e1"), ev("e2", { summary: "ㅅㅍ 테스트브랜드" })]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.extractHintsBatch.mockImplementationOnce(async () => ({
+      kind: "ok",
+      results: new Map<string, TitleHintsResult>([
+        ["1", { kind: "hints", hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null } }],
+        ["99", { kind: "hints", hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null } }],
+      ]),
+    }));
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ proposed: 1, skippedUnparsed: 1, errors: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
+    expect(h.rows.get("e2")).toMatchObject({ status: "PROPOSED" });
+  });
+
+  it("Gemini 일시 장애면 해석 대기(gemini)로 두고 다음 회차에 다시 일괄로 묻는다(로컬은 다시 안 부른다)", async () => {
+    const h = makeHarness([unparsed("e1"), unparsed("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.extractHintsBatch.mockResolvedValueOnce({ kind: "unavailable" });
+    const later = new Date(NOW.getTime() + 30 * 60_000);
+
+    const second = await runCalendarInboundScan({ now: later, deps: h.deps });
+
+    expect(second).toMatchObject({ awaitingHint: 2, skippedUnparsed: 0, errors: 0 });
+    for (const id of ["e1", "e2"]) {
+      expect(h.rows.get(id)).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" }, lastSeenAt: later });
+    }
+
+    const third = await runCalendarInboundScan({ now: later, deps: h.deps });
+    expect(h.extractHintsBatch).toHaveBeenCalledTimes(2);
+    expect(third).toMatchObject({ skippedUnparsed: 2, awaitingHint: 0 });
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(2);
+  });
+
+  it("일괄 호출이 예외로 끝나도 회차는 계속되고 행은 해석 대기로 남는다", async () => {
+    const h = makeHarness([unparsed("e1"), ev("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.listing.value = { ok: true, events: [unparsed("e1"), ev("e2"), ev("e3")], referencedIds: new Set() };
+    h.extractHintsBatch.mockRejectedValueOnce(new Error("boom"));
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ errors: 1, awaitingHint: 1, proposed: 1 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+  });
+
+  it("로컬 서버가 꺼져 있으면(연결 거부) 한 번만 부르고 나머지는 바로 Gemini 단계로 · 예산을 넘기지 않는다", async () => {
+    const h = makeHarness([unparsed("e1"), unparsed("e2"), unparsed("e3"), ev("e4")]);
+    h.extractHintsLocal.mockResolvedValue({ kind: "unavailable" });
+    const { clock, state } = fakeClock();
+    const start = state.t;
+
+    const summary = await runCalendarInboundScan({ now: NOW, clock, deps: h.deps });
+
+    expect(h.extractHintsLocal).toHaveBeenCalledTimes(1);
+    expect(summary).toMatchObject({ awaitingHint: 3, proposed: 1, dropped: 0, localResolved: 0 });
+    for (const id of ["e1", "e2", "e3"]) {
+      expect(h.rows.get(id)).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+    }
+    expect(state.t - start).toBeLessThanOrEqual(SCAN_BUDGET_MS);
+  });
+
+  it("로컬이 느리면 남은 예산으로 시간 제한을 줄이고, 8초 미만이면 부르지 않고 해석 대기(local) → 다음 회차가 로컬부터 잇는다", async () => {
+    const h = makeHarness([unparsed("e1"), unparsed("e2"), unparsed("e3")]);
+    const { clock, state } = fakeClock();
+    const start = state.t;
+    // 응답이 시간 제한까지 걸리고 none(서버는 살아 있다).
+    h.extractHintsLocal.mockImplementation(async (_summary, { timeoutMs }) => {
+      state.t += timeoutMs;
+      return { kind: "none" };
+    });
+
+    const first = await runCalendarInboundScan({ now: NOW, clock, deps: h.deps });
+
+    expect(h.extractHintsLocal.mock.calls.map(([, o]) => o.timeoutMs)).toEqual([
+      LOCAL_HINT_TIMEOUT_MS,
+      SCAN_BUDGET_MS - LOCAL_HINT_TIMEOUT_MS - LOCAL_TIMEOUT_MARGIN_MS,
+    ]);
+    expect(state.t - start).toBeLessThanOrEqual(SCAN_BUDGET_MS);
+    expect(first).toMatchObject({ awaitingHint: 3, dropped: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+    expect(h.rows.get("e2")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+    expect(h.rows.get("e3")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "local" } });
+
+    // 다음 회차: e3 만 로컬로(건너뛰지도 겹치지도 않는다), e1·e2 는 Gemini 일괄로.
+    h.extractHintsLocal.mockClear();
+    h.extractHintsLocal.mockResolvedValue({ kind: "none" });
+    const second = await runCalendarInboundScan({ now: NOW, clock: fakeClock().clock, deps: h.deps });
+
+    expect(h.extractHintsLocal.mock.calls.map(([s]) => s)).toEqual(["치과 예약 e3"]);
+    expect(h.batchSummaries()).toEqual([["치과 예약 e1", "치과 예약 e2"]]);
+    expect(second).toMatchObject({ skippedUnparsed: 2, awaitingHint: 1 });
+    expect(h.rows.get("e3")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+  });
+
+  it("로컬이 제목에 맞지 않는 이름을 주면(사전에 없음) 버리고 Gemini 단계로 넘긴다", async () => {
+    const h = makeHarness([ev("e1", { summary: "ㅅㅍ 테스트브랜드" })]);
+    h.extractHintsLocal.mockResolvedValue({
+      kind: "hints",
+      hints: { sellerHint: "다른셀러", brandHint: null, round: null, kind: null },
+    });
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ localResolved: 0, proposed: 0, awaitingHint: 1 });
+    expect(h.resolveTarget).not.toHaveBeenCalled();
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+  });
+
+  it("지문이 바뀐 해석 대기 행은 규칙부터 다시 본다(Gemini 단계여도)", async () => {
+    const h = makeHarness([ev("e1", { summary: "ㅅㅍ 테스트브랜드" }), unparsed("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+    expect(h.rows.get("e2")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
+    h.listing.value = {
+      ok: true,
+      // e1: 규칙으로 풀리게 고쳤다 · e2: 다른 제목이지만 여전히 못 푼다 → 로컬부터 다시.
+      events: [ev("e1", { summary: "샘플셀러 테스트브랜드 3차" }), ev("e2", { summary: "치과 예약 오후" })],
+      referencedIds: new Set(),
+    };
+    h.extractHintsLocal.mockClear();
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.extractHintsBatch).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ proposed: 1, awaitingHint: 1 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED", fingerprint: calendarInboundFingerprint(ev("e1", { summary: "샘플셀러 테스트브랜드 3차" })) });
+    expect(h.extractHintsLocal.mock.calls.map(([s]) => s)).toEqual(["치과 예약 오후"]);
+    expect(h.rows.get("e2")).toMatchObject({
+      status: "AWAITING_HINT",
+      fingerprint: calendarInboundFingerprint(ev("e2", { summary: "치과 예약 오후" })),
+    });
+  });
+
+  it("해석 대기 행은 「이미 처리」로 묻히지 않는다 — 같은 지문이어도 매 회차 해석 대상이다", async () => {
+    const h = makeHarness([unparsed("e1")]);
+    h.extractHintsBatch.mockResolvedValue({ kind: "unavailable" });
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    for (let i = 0; i < 2; i++) {
+      const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+      expect(summary).toMatchObject({ newOrChanged: 1, alreadyHandled: 0, awaitingHint: 1 });
+    }
+    expect(h.extractHintsBatch).toHaveBeenCalledTimes(2);
+  });
+
+  it("해석 대기로 적기 직전에 다른 쓰기가 행을 바꿨으면(updatedAt) 덮지 않고 손뗀다", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.proposals.get("prop-1")!.status = "FAILED";
+    h.rows.get("e1")!.status = "PENDING_RETRY";
+    h.listing.value = { ok: true, events: [unparsed("e1")], referencedIds: new Set() };
+    // 로컬 호출 중에 오너가 옛 FAILED 카드를 재시도 승인해 행을 잡는다.
+    h.extractHintsLocal.mockImplementationOnce(async () => {
+      h.claimByApproval("e1");
+      return { kind: "none" };
+    });
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ alreadyHandled: 1, awaitingHint: 0, errors: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "PENDING_RETRY", proposalId: "prop-1" });
+  });
+
+  it("Gemini 결과를 적기 직전에 다른 쓰기가 행을 바꿨으면 덮지 않고 손뗀다", async () => {
+    const h = makeHarness([unparsed("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    const before = { ...h.rows.get("e1")! };
+    h.extractHintsBatch.mockImplementationOnce(async (items) => {
+      h.claimByApproval("e1");
+      return { kind: "ok", results: new Map(items.map((it) => [it.id, { kind: "none" } as TitleHintsResult])) };
+    });
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ alreadyHandled: 1, skippedUnparsed: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "AWAITING_HINT", parsed: before.parsed });
+  });
+
+  it("해석 대기 행에는 기안이 없다 — 결재함에 아무것도 올라가지 않는다", async () => {
+    const h = makeHarness([unparsed("e1"), unparsed("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(h.proposals.size).toBe(0);
+    for (const id of ["e1", "e2"]) expect(h.rows.get(id)!.proposalId).toBeNull();
   });
 });

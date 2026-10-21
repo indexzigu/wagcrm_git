@@ -133,7 +133,7 @@ describe("CalendarPageClient — 캘린더에서 가져오기", () => {
     const fetchMock = routeFetch(
       {
         ok: true,
-        body: { ok: true, proposed: 2, skippedUnparsed: 1, alreadyHandled: 3, adoptedNoop: 0, dropped: 0, hintDeferred: 0, errors: 0 },
+        body: { ok: true, proposed: 2, skippedUnparsed: 1, alreadyHandled: 3, adoptedNoop: 0, dropped: 0, awaitingHint: 0, localResolved: 0, geminiResolved: 0, errors: 0 },
       },
       gate,
     );
@@ -176,7 +176,7 @@ describe("CalendarPageClient — 캘린더에서 가져오기", () => {
     toastMock.success.mockReset();
     routeFetch({
       ok: true,
-      body: { ok: true, proposed: 0, skippedUnparsed: 0, alreadyHandled: 2, adoptedNoop: 0, dropped: 0, hintDeferred: 0, errors: 0 },
+      body: { ok: true, proposed: 0, skippedUnparsed: 0, alreadyHandled: 2, adoptedNoop: 0, dropped: 0, awaitingHint: 0, localResolved: 0, geminiResolved: 0, errors: 0 },
     });
     render(<CalendarPageClient />);
     fireEvent.click(screen.getByRole("button", { name: "캘린더에서 가져오기" }));
@@ -186,7 +186,7 @@ describe("CalendarPageClient — 캘린더에서 가져오기", () => {
 
   it("다른 가져오기가 도는 중이면 「이미 가져오는 중」 안내", async () => {
     toastMock.info.mockReset();
-    routeFetch({ ok: true, body: { ok: true, skipped: "busy", proposed: 0, skippedUnparsed: 0, alreadyHandled: 0, adoptedNoop: 0, dropped: 0, hintDeferred: 0, errors: 0 } });
+    routeFetch({ ok: true, body: { ok: true, skipped: "busy", proposed: 0, skippedUnparsed: 0, alreadyHandled: 0, adoptedNoop: 0, dropped: 0, awaitingHint: 0, localResolved: 0, geminiResolved: 0, errors: 0 } });
     render(<CalendarPageClient />);
     fireEvent.click(screen.getByRole("button", { name: "캘린더에서 가져오기" }));
     await vi.waitFor(() =>

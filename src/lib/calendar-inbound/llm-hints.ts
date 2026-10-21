@@ -286,7 +286,7 @@ export type TitleHintsBatchResult =
   | { kind: "unavailable" };
 
 /**
- * 여러 제목을 Gemini 1회로 해석한다(최대 MAX_GEMINI_BATCH 개, 넘기면 RangeError).
+ * 여러 제목을 Gemini 1회로 해석한다(최대 MAX_GEMINI_BATCH 개, 넘기거나 입력 id 가 겹치면 RangeError).
  * - 응답 배열은 순서가 아니라 id 로 매칭한다. 응답에 없는 id 는 none, 입력에 없는 id 는
  *   무시, 같은 id 가 여러 번이면 첫 것만 쓴다.
  * - 근거 방벽은 항목마다 **그 항목 자신의 제목**으로 판정한다(옆 제목의 이름이 건너오지 못하게).
@@ -302,6 +302,14 @@ export async function extractTitleHintsBatch(
     throw new RangeError(
       `extractTitleHintsBatch: 한 번에 최대 ${MAX_GEMINI_BATCH}개 (받은 수 ${items.length})`,
     );
+  }
+  // 같은 id 가 둘이면 응답을 어느 제목에 붙일지 정할 수 없다(근거 방벽도 엉뚱한 제목으로 판정된다).
+  const seen = new Set<string>();
+  for (const it of items) {
+    if (seen.has(it.id)) {
+      throw new RangeError(`extractTitleHintsBatch: 입력 id 중복 (${it.id})`);
+    }
+    seen.add(it.id);
   }
   const results = new Map<string, TitleHintsResult>();
   if (items.length === 0) return { kind: "ok", results };

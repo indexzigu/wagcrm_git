@@ -9,12 +9,16 @@ import type { AdoptLedgerOutcome } from "@/lib/google-calendar-sync";
 //                   (`already_current`, 장부는 그대로). 같은 지문이면 다시 기안하지 않는다.
 // - REJECTED      : 오너가 반려했다(다시 기안하지 않는다).
 // - PENDING_RETRY : 승인 실행이 실패했다 — 다음 스캔이 지문과 무관하게 최신 값으로 다시 판정한다(지문은 보존).
+// - AWAITING_HINT : 규칙으로 못 푼 제목이 모델 해석을 기다린다. `parsed` 칸은 `{ hintStage: "local" | "gemini" }`
+//                   (다음 스캔이 이을 단계)이고 기안은 없다. 끝난 행이 아니다 — 매 스캔이 그 단계부터 잇고,
+//                   일정이 바뀌면 규칙부터 다시 본다.
 export const INBOUND_STATUS = {
   PROPOSED: "PROPOSED",
   SKIPPED: "SKIPPED",
   ADOPTED: "ADOPTED",
   REJECTED: "REJECTED",
   PENDING_RETRY: "PENDING_RETRY",
+  AWAITING_HINT: "AWAITING_HINT",
 } as const;
 
 export type InboundStatus = (typeof INBOUND_STATUS)[keyof typeof INBOUND_STATUS];
