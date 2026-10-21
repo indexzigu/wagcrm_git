@@ -1392,6 +1392,29 @@ model ActionProposal {
   @@index([createdBy])
 }
 
+// 캘린더 수집 장부 — 오너가 구글 캘린더에 직접 적은 종일 이벤트를 스캔해 승인함 기안으로 올리는 흐름의
+// 멱등 장부다(googleEventId 로 upsert). CRM 이 만든 캘린더 이벤트는 여기 기록하지 않는다(루프 방지).
+model CalendarInboundEvent {
+  id            String   @id @default(cuid())
+  googleEventId String   @unique
+  calendarId    String
+  summary       String
+  startDate     String // YYYY-MM-DD (KST)
+  endDate       String // YYYY-MM-DD (KST, 포함 끝날 — 구글 종일 end.date 에서 1일 뺀 값)
+  fingerprint   String
+  status        String // PROPOSED | SKIPPED | ADOPTED | REJECTED | PENDING_RETRY
+  skipReason    String?
+  parsed        Json?
+  proposalId    String?
+  campaignId    String?
+  firstSeenAt   DateTime @default(now())
+  lastSeenAt    DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, lastSeenAt])
+}
+
 model ActionProposalEvent {
   id         String         @id @default(cuid())
   proposalId String
