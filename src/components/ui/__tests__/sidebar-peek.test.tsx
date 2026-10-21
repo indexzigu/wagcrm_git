@@ -251,3 +251,27 @@ describe("펼침 상태에서는 행 툴팁을 띄우지 않는다", () => {
     expect(contents.every((node) => node.hasAttribute("hidden"))).toBe(true);
   });
 });
+
+/**
+ * peek 패널은 본문 **위로** 펼쳐진다. 그런데 본문 쪽 고정 머리(`crm-shell-header`)가
+ * `z-10` 이라 패널도 `z-10` 이면 동률이 되고, 문서 순서상 뒤에 오는 머리가 이겨
+ * 펼친 패널의 윗부분(로고 줄)을 덮는다(2026-10-21 오너 제보).
+ * 패널 층은 본문 안 요소 최대치(z-20)보다 높고, 화면 하단 선택 바(z-40)·
+ * Dialog/Sheet(z-50)보다 낮아야 한다 → z-30.
+ */
+describe("peek 패널의 쌓임 순서", () => {
+  const containerOf = (peek: boolean) => {
+    const { container } = renderSidebar({ peek, open: true });
+    const el = container.querySelector('[data-slot="sidebar-container"]');
+    if (!el) throw new Error("sidebar-container 가 렌더되지 않았다 — 판정 대상 부재");
+    return el.className.split(/\s+/).filter((token) => /^z-/.test(token));
+  };
+
+  it("⛔ peek 이면 패널이 z-30 이다 — 본문 고정 머리(z-10)와 동률이면 로고 줄이 덮인다", () => {
+    expect(containerOf(true)).toEqual(["z-30"]);
+  });
+
+  it("peek 이 아니면 상류 기본값(z-10)을 유지한다 (음성 대조군 — 판정기가 살아있다)", () => {
+    expect(containerOf(false)).toEqual(["z-10"]);
+  });
+});

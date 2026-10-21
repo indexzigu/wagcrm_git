@@ -4,8 +4,9 @@
  * 월정산 공급사 계산서 칸(T-240 후속) — 캠페인당 계산서 여러 장.
  *
  * 화면 원칙(오너 확정 2026-10-08, 시안 6차):
- * - 칸 안에는 제목 · 버튼 · 달별 줄(작성일 또는 한 낱말 상태)만. 설명 문장을 넣지 않는다.
- * - 풀이·세부(금액·품목명·승인번호·출처)는 줄에 마우스를 올리면(키보드 포커스·터치 포함) 뜨는
+ * - 칸 안에는 제목 · 버튼 · 달별 줄(작성일 또는 한 낱말 상태 + 발행금액)만. 설명 문장을 넣지 않는다.
+ *   발행금액 = 그 달 기록한 계산서 합계(오너 지시 2026-10-21 — 종전 「금액은 마우스 올림 창에서만」을 바꿨다).
+ * - 풀이·세부(공급가액·세액·품목명·승인번호·출처)는 줄에 마우스를 올리면(키보드 포커스·터치 포함) 뜨는
  *   작은 창에서. 그 창에는 조작을 넣지 않는다(`hover-card.tsx` 계약).
  * - 확인·직접 입력·「이 달은 계산서 없음」·취소는 「조회」가 여는 창 안에서만(오너 지시
  *   2026-08-15 — 칸에 승인 버튼을 따로 두지 않는다).
@@ -34,6 +35,7 @@ import {
   deriveInvoiceMonths,
   findInvoiceCandidates,
   formatInvoiceMonth,
+  sumRecordedInvoiceTotal,
   isInvoiceMonthDone,
   listYearMonths,
   matchesExpectedAmount,
@@ -71,6 +73,12 @@ const SCANNING_HINT = "메일함을 확인하고 있습니다.";
 const SCAN_FAILED_HINT = "메일함을 확인하지 못했습니다. 「조회」를 다시 눌러 주세요.";
 /** 자동 조회를 하지 않는 캠페인에서 메일함을 아직 안 본 달의 풀이(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). */
 const LOOKUP_IDLE_HINT = `정산 단계 캠페인만 판매 종료 ${INVOICE_LOOKUP_START_DAYS_AFTER_END.auto}일 뒤부터 ${INVOICE_LOOKUP_DAYS_AFTER_END}일까지 자동으로 메일함을 확인합니다. 「조회」를 누르면 판매 종료 다음 날부터 지금까지 확인합니다.`;
+
+/**
+ * 머리글과 달별 줄이 함께 쓰는 열 폭 — 줄마다 따로 격자라 금액 열은 고정 폭이어야 오른쪽 끝이 맞는다.
+ * 76px = 「12,345,678원」(text-xs 실측 74px)이 들어가는 최소 폭. 더 넓히면 상태 낱말(「· 분할 가능성」)이 잘린다.
+ */
+const MONTH_GRID = "grid grid-cols-[44px_minmax(0,1fr)_76px] gap-x-2";
 
 function formatWon(value: number | null): string {
   return value === null ? "—" : `${value.toLocaleString("ko-KR")}원`;
@@ -141,6 +149,8 @@ function MonthRow({ month, awaitingHint }: { month: InvoiceMonth; awaitingHint: 
     ? `${formatMonthDay(lastRecorded?.writtenAt ?? null)}${mismatch ? ` · ${label}` : ""}`
     : label ?? INVOICE_MONTH_EMPTY_MARK;
   const detail = lastRecorded ?? null;
+  // 그 달 기록한 계산서 합계. 기록이 없거나 금액을 모르는 장이 섞이면 「—」(추정해 채우지 않는다).
+  const issuedTotal = month.recorded.length > 0 ? sumRecordedInvoiceTotal(month.recorded) : null;
   // 어긋남 상태도 메일 후보 한 장이 근거다 — 금액을 같은 자리에서 보인다.
   const candidate =
     month.state === "PENDING" || month.state === "MINOR_MISMATCH" || month.state === "OVER_EXPECTED" || month.state === "POSSIBLE_SPLIT"
@@ -154,7 +164,7 @@ function MonthRow({ month, awaitingHint }: { month: InvoiceMonth; awaitingHint: 
           type="button"
           onPointerDown={openOnTouch}
           data-testid={`invoice-month-${month.yearMonth}`}
-          className="grid h-6 w-full grid-cols-[44px_minmax(0,1fr)] items-center rounded-md px-1 text-left text-xs hover:bg-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+          className={cn(MONTH_GRID, "h-6 w-full items-center rounded-md px-1 text-left text-xs hover:bg-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring")}
         >
           <span className="text-slate-700">{formatInvoiceMonth(month.yearMonth)}</span>
           <span
@@ -164,8 +174,15 @@ function MonthRow({ month, awaitingHint }: { month: InvoiceMonth; awaitingHint: 
             )}
           >
             {tone !== "none" ? <span className={cn("size-1.5 shrink-0 rounded-full", DOT_CLASS[tone])} aria-hidden="true" /> : null}
-            <span className="underline decoration-slate-300 decoration-dotted underline-offset-4">{shown}</span>
-            {month.recorded.length > 1 ? <span className="text-muted-foreground">외 {month.recorded.length - 1}장</span> : null}
+            {/* 좁으면 상태 낱말이 말줄임으로 줄고 「외 N장」은 남는다 — 오른쪽 발행금액이 몇 장의 합인지 알려 주는 단서다. */}
+            <span className="min-w-0 truncate underline decoration-slate-300 decoration-dotted underline-offset-4">{shown}</span>
+            {month.recorded.length > 1 ? <span className="shrink-0 text-muted-foreground">외 {month.recorded.length - 1}장</span> : null}
+          </span>
+          <span
+            data-testid={`invoice-month-amount-${month.yearMonth}`}
+            className={cn("text-right tabular-nums", issuedTotal === null ? "text-muted-foreground" : "text-foreground")}
+          >
+            {issuedTotal === null ? INVOICE_MONTH_EMPTY_MARK : formatWon(issuedTotal)}
           </span>
         </button>
       </HoverCardTrigger>
@@ -990,9 +1007,10 @@ export function CampaignInvoiceSlot({
         </div>
       </div>
       <div className="space-y-0.5">
-        <div className="grid grid-cols-[44px_minmax(0,1fr)] px-1 text-[10px] text-muted-foreground">
+        <div className={cn(MONTH_GRID, "px-1 text-[10px] text-muted-foreground")}>
           <span>월</span>
           <span>작성일</span>
+          <span className="text-right">발행금액</span>
         </div>
         {months.map((month) => (
           <MonthRow key={month.yearMonth} month={month} awaitingHint={awaitingHint} />
