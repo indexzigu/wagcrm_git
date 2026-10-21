@@ -35,6 +35,29 @@ vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({ $transaction: transactionMock }),
 }));
 
+// [캘린더수집] 승인 뒤 넘겨받기 — 장부 기록과 수집 행 상태 표기는 가짜로, 출처 읽기(`readCalendarInboundRef`)는 진짜로.
+const callOrder: string[] = [];
+const adoptCalendarEventIntoLedgerMock = vi.fn();
+const markInboundAdoptedMock = vi.fn();
+const resetInboundForRetryMock = vi.fn();
+const findInboundRowMock = vi.fn();
+const claimInboundRowMock = vi.fn();
+
+vi.mock("@/lib/google-calendar-sync", () => ({
+  adoptCalendarEventIntoLedger: (...args: unknown[]) => adoptCalendarEventIntoLedgerMock(...args),
+}));
+
+vi.mock("@/lib/calendar-inbound/adopt", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/calendar-inbound/adopt")>();
+  return {
+    ...actual,
+    markInboundAdopted: (...args: unknown[]) => markInboundAdoptedMock(...args),
+    resetInboundForRetry: (...args: unknown[]) => resetInboundForRetryMock(...args),
+    findInboundRow: (...args: unknown[]) => findInboundRowMock(...args),
+    claimInboundRowForApproval: (...args: unknown[]) => claimInboundRowMock(...args),
+  };
+});
+
 const { approveProposal, bulkApproveProposals } = await import("../approve-proposal");
 
 const APPROVER = "owner@example.com";
@@ -58,6 +81,26 @@ beforeEach(() => {
   executeWriteActionMock.mockReset();
   transactionMock.mockReset();
   applyWriteActionEffectsMock.mockReset();
+  callOrder.length = 0;
+  adoptCalendarEventIntoLedgerMock.mockReset();
+  markInboundAdoptedMock.mockReset();
+  resetInboundForRetryMock.mockReset();
+  adoptCalendarEventIntoLedgerMock.mockImplementation(async () => {
+    callOrder.push("ledger");
+    return "adopted";
+  });
+  markInboundAdoptedMock.mockImplementation(async () => {
+    callOrder.push("mark");
+  });
+  resetInboundForRetryMock.mockResolvedValue(undefined);
+  findInboundRowMock.mockReset();
+  // 기본: 수집 행이 이 기안(p1)을 가리킨다 — 대체되지 않은 기안.
+  findInboundRowMock.mockImplementation(async () => ({ proposalId: "p1" }));
+  claimInboundRowMock.mockReset();
+  claimInboundRowMock.mockResolvedValue(true);
+  applyWriteActionEffectsMock.mockImplementation(() => {
+    callOrder.push("effects");
+  });
   transactionMock.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({}));
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -183,6 +226,272 @@ describe("approveProposal", () => {
   });
 });
 
+const INBOUND_REF = {
+  inboundId: "in-1",
+  eventId: "ev-owner",
+  calendarId: "primary",
+  ledgerKind: "campaign",
+  adopt: true,
+  summary: "샘플셀러 테스트브랜드 2차",
+  startDate: "2026-11-03",
+  endDate: "2026-11-09",
+  htmlLink: null,
+  warnings: [],
+};
+
+function inboundCreateProposal(refOverrides: Record<string, unknown> = {}, asString = false) {
+  const sourceRef = { calendarInbound: { ...INBOUND_REF, ...refOverrides } };
+  return makeProposal({
+    createdBy: "SYSTEM_CALENDAR_INBOUND",
+    payload: {
+      action: "create_campaign_round",
+      args: { dealId: "deal-1", sellerId: "seller-1", startDate: "2026-11-03", endDate: "2026-11-09" },
+    },
+    sourceRef: asString ? JSON.stringify(sourceRef) : sourceRef,
+  });
+}
+
+const CREATE_RESULT = { refType: "CAMPAIGN", refId: "camp-new", summary: "회차 생성" };
+
+describe("approveProposal — [캘린더수집] 넘겨받기", () => {
+  function primeExecuted(result = CREATE_RESULT) {
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue(result);
+  }
+
+  it("새 회차: 커밋 뒤 장부 넘겨받기 → ADOPTED 표기 → 그다음 후속 처리(동기화가 원본을 제자리 갱신)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(adoptCalendarEventIntoLedgerMock).toHaveBeenCalledWith({
+      campaignId: "camp-new",
+      kind: "campaign",
+      eventId: "ev-owner",
+      calendarId: "primary",
+    });
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: null });
+    expect(callOrder).toEqual(["ledger", "mark", "effects"]);
+  });
+
+  it("기록 수정 기안은 기안이 가리킨 캠페인(args.entityId)에 넘겨받는다 · 문자열 sourceRef(SQLite)도 읽는다", async () => {
+    findByIdMock.mockResolvedValue(
+      makeProposal({
+        createdBy: "SYSTEM_CALENDAR_INBOUND",
+        payload: {
+          action: "update_record",
+          args: { entityType: "CAMPAIGN", entityId: "camp-old", changes: {}, expected: {} },
+        },
+        sourceRef: JSON.stringify({ calendarInbound: { ...INBOUND_REF, ledgerKind: "deposit" } }),
+      }),
+    );
+    primeExecuted({ refType: "CAMPAIGN", refId: "camp-old", summary: "수정" });
+
+    await approveProposal("p1", APPROVER);
+
+    expect(adoptCalendarEventIntoLedgerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ campaignId: "camp-old", kind: "deposit" }),
+    );
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-old", { skipReason: null });
+  });
+
+  it("adopt:false 면 장부는 건드리지 않고 ADOPTED 로만 표기한다(멱등 제외)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal({ adopt: false }));
+    primeExecuted();
+
+    await approveProposal("p1", APPROVER);
+
+    expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: null });
+    expect(applyWriteActionEffectsMock).toHaveBeenCalled();
+  });
+
+  it("장부 키 충돌이면 ADOPTED + skipReason ledger_conflict(다시 기안하지 않는다)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockResolvedValue("conflict");
+
+    await approveProposal("p1", APPROVER);
+
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: "ledger_conflict" });
+  });
+
+  it("캠페인을 못 찾으면 ADOPTED + skipReason campaign_not_found", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockResolvedValue("not_found");
+
+    await approveProposal("p1", APPROVER);
+
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: "campaign_not_found" });
+  });
+
+  it("수집 행이 새 기안을 가리키면(재기안됨) 승인하지 않고 SUPERSEDED·409", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    findInboundRowMock.mockResolvedValue({ proposalId: "p-new" });
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(findInboundRowMock).toHaveBeenCalledWith("in-1");
+    expect(outcome).toMatchObject({
+      ok: false,
+      code: "SUPERSEDED",
+      httpStatus: 409,
+      error: "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.",
+      status: "PENDING_APPROVAL",
+    });
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
+  it("수집 행의 proposalId 가 비었으면(재판정이 기안 없이 끝남) FAILED 재시도도 SUPERSEDED", async () => {
+    findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
+    findInboundRowMock.mockResolvedValue({ proposalId: null });
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "SUPERSEDED", httpStatus: 409, status: "FAILED" });
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
+  it("사전 확인 뒤 스캔이 행을 넘겨받았으면(tx1 안 조건부 갱신 실패) SUPERSEDED · 전이·실행 없음", async () => {
+    findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
+    claimInboundRowMock.mockResolvedValue(false);
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "SUPERSEDED", httpStatus: 409, status: "FAILED" });
+    expect(claimInboundRowMock).toHaveBeenCalledWith(expect.anything(), "in-1", "p1");
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+    expect(resetInboundForRetryMock).not.toHaveBeenCalled();
+  });
+
+  it("캘린더 기안의 승인 전이는 행 잡기와 같은 트랜잭션에서 돈다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    const tx = { marker: "tx1" };
+    transactionMock.mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx));
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue(CREATE_RESULT);
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(claimInboundRowMock).toHaveBeenCalledWith(tx, "in-1", "p1");
+    expect(transitionMock.mock.calls[0][1]).toBe("APPROVED");
+    expect(transitionMock.mock.calls[0][2]).toMatchObject({ tx, expectedFrom: "PENDING_APPROVAL" });
+  });
+
+  it("수집 행이 없어도 SUPERSEDED(재시도 승인 포함) — 원본 정리 근거가 사라졌다", async () => {
+    findByIdMock.mockResolvedValue({ ...inboundCreateProposal(), status: "FAILED" });
+    findInboundRowMock.mockResolvedValue(null);
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "SUPERSEDED", httpStatus: 409, status: "FAILED" });
+    expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it("넘겨받기가 던져도 승인은 성공이고 후속 처리는 돈다(쓰기는 이미 커밋됨)", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockRejectedValue(new Error("DB 끊김"));
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(applyWriteActionEffectsMock).toHaveBeenCalledWith("create_campaign_round", CREATE_RESULT);
+    expect(console.error).toHaveBeenCalled();
+    // 그래도 처리 끝으로 적는다 — 같은 일정을 다시 기안하지 않게.
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason: "adopt_failed" });
+  });
+
+  it("넘겨받기와 처리 끝 표기가 둘 다 던져도 승인은 성공이고 둘 다 보고한다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockRejectedValue(new Error("DB 끊김"));
+    markInboundAdoptedMock.mockRejectedValue(new Error("DB 끊김 2"));
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(applyWriteActionEffectsMock).toHaveBeenCalled();
+    expect(vi.mocked(console.error).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each([
+    ["already_referenced", "already_referenced"],
+    ["not_active", "not_active"],
+    ["conflict", "ledger_conflict"],
+    ["already_adopted", null],
+  ] as const)("넘겨받기 판정 %s → 처리 끝 사유 %s", async (adopted, skipReason) => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockResolvedValue(adopted);
+
+    await approveProposal("p1", APPROVER);
+
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "p1", "camp-new", { skipReason });
+  });
+
+  it("실행이 FAILED 로 끝나면 수집 행을 재판정 대기로 되돌린다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "FAILED" });
+    executeWriteActionMock.mockRejectedValue(new Error("지금 값이 기안 때와 다릅니다"));
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome).toMatchObject({ ok: false, code: "EXECUTION_FAILED" });
+    expect(resetInboundForRetryMock).toHaveBeenCalledWith("in-1", "p1");
+    expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
+    expect(markInboundAdoptedMock).not.toHaveBeenCalled();
+  });
+
+  it("되돌리기가 던져도 판정(EXECUTION_FAILED)은 그대로 돌려준다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    transitionMock
+      .mockResolvedValueOnce({ id: "p1", status: "APPROVED" })
+      .mockResolvedValueOnce({ id: "p1", status: "FAILED" });
+    executeWriteActionMock.mockRejectedValue(new Error("x"));
+    resetInboundForRetryMock.mockRejectedValue(new Error("DB 끊김"));
+
+    await expect(approveProposal("p1", APPROVER)).resolves.toMatchObject({ ok: false, code: "EXECUTION_FAILED" });
+  });
+
+  it("캘린더 출처가 없는 기안은 수집 행을 읽지 않는다", async () => {
+    findByIdMock.mockResolvedValue(makeProposal());
+    transitionMock.mockResolvedValue({ id: "p1", status: "EXECUTED" });
+    executeWriteActionMock.mockResolvedValue(EXEC_RESULT);
+
+    await approveProposal("p1", APPROVER);
+
+    expect(findInboundRowMock).not.toHaveBeenCalled();
+    expect(claimInboundRowMock).not.toHaveBeenCalled();
+    // 승인 전이는 종전처럼 트랜잭션 없이(tx 미지정).
+    expect(transitionMock.mock.calls[0][2].tx).toBeUndefined();
+  });
+
+  it("캘린더 출처가 없는 기안은 넘겨받기·되돌리기를 하지 않는다", async () => {
+    findByIdMock.mockResolvedValue(makeProposal({ sourceRef: { workRecordId: "w1" } }));
+    primeExecuted(EXEC_RESULT);
+
+    await approveProposal("p1", APPROVER);
+
+    expect(adoptCalendarEventIntoLedgerMock).not.toHaveBeenCalled();
+    expect(markInboundAdoptedMock).not.toHaveBeenCalled();
+    expect(resetInboundForRetryMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("bulkApproveProposals", () => {
   it("주어진 순서대로 한 건씩 처리하고, 중간 실패가 나머지를 멈추지 않는다", async () => {
     const proposals: Record<string, ReturnType<typeof makeProposal>> = {
@@ -230,6 +539,25 @@ describe("bulkApproveProposals", () => {
     expect(response.results[3].error).toBe("이미 다른 곳에서 처리된 기안입니다.");
     expect(response.counts).toEqual({ total: 4, executed: 0, failed: 1, skipped: 3 });
     expect(response.results[2].error).toMatch(/찾을 수 없습니다/);
+    expect(executeWriteActionMock).not.toHaveBeenCalled();
+  });
+
+  it("재기안으로 대체된 캘린더 기안은 건너뜀 + 새 기안 안내", async () => {
+    findByIdMock.mockImplementation(async (id: string) => ({ ...inboundCreateProposal(), id }));
+    findInboundRowMock.mockResolvedValue({ proposalId: "p-new" });
+
+    const response = await bulkApproveProposals(["old"], APPROVER);
+
+    expect(response.results).toEqual([
+      {
+        id: "old",
+        ok: false,
+        outcome: "skipped",
+        status: "PENDING_APPROVAL",
+        error: "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.",
+      },
+    ]);
+    expect(response.counts).toEqual({ total: 1, executed: 0, failed: 0, skipped: 1 });
     expect(executeWriteActionMock).not.toHaveBeenCalled();
   });
 

@@ -23,6 +23,11 @@
  * ⚠️ 예외를 던지는 경로가 둘 남아 있다(옮기기 전과 같다): ①tx2 실패 뒤 FAILED 기록 자체가
  * 실패할 때 ②커밋 뒤 후속 처리(`applyWriteActionEffects`)가 던질 때. 단건 라우트는 그대로
  * 500 이 되고, 일괄 라우트는 그 건만 잡아 상태를 다시 읽는다(`bulkApproveProposals`).
+ *
+ * [캘린더수집] 기안 `sourceRef.calendarInbound` 가 있으면(캘린더에서 들어온 기안) 커밋 뒤 후속 처리 **전에**
+ * 원본 이벤트를 장부에 넘겨받고 수집 행을 ADOPTED 로 적는다 — 그래야 후속 동기화가 새 이벤트를 만들지
+ * 않고 원본을 제자리에서 갱신한다. 실행이 FAILED 로 끝나면 수집 행을 재판정 대기로 되돌린다.
+ * 두 일 모두 실패해도 판정을 바꾸지 않는다(console.error 로 보고).
  */
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
@@ -30,6 +35,16 @@ import { ActionProposalRepository, ConcurrentModificationError } from "@/reposit
 import { executeWriteAction } from "@/lib/agent/write-executor";
 import { applyWriteActionEffects } from "@/lib/agent/write-action-effects";
 import { parseStoredJson } from "@/lib/stored-json";
+import { adoptCalendarEventIntoLedger } from "@/lib/google-calendar-sync";
+import {
+  claimInboundRowForApproval,
+  findInboundRow,
+  markInboundAdopted,
+  readCalendarInboundRef,
+  resetInboundForRetry,
+  type CalendarInboundRef,
+} from "@/lib/calendar-inbound/adopt";
+import { INBOUND_SKIP_ADOPT_FAILED, inboundSkipReasonForAdoptOutcome } from "@/lib/calendar-inbound/status";
 import { partnerEnrichmentSchema } from "@/lib/agent/partner-enrichment-schema";
 import {
   PARTNER_ENRICHMENT_LABELS,
@@ -59,7 +74,20 @@ export type ApproveProposalFailureCode =
   | "APPROVE_ERROR"
   | "EMPTY_PAYLOAD"
   | "INVALID_ENRICHMENT"
-  | "EXECUTION_FAILED";
+  | "EXECUTION_FAILED"
+  /** [캘린더수집] 같은 일정이 새 기안으로 다시 올라왔다 — 옛 기안은 승인하지 않는다. */
+  | "SUPERSEDED";
+
+/** [캘린더수집] tx1 안에서 수집 행을 잡지 못했다 — 트랜잭션을 되돌리고 SUPERSEDED 로 답한다. */
+class InboundSupersededError extends Error {
+  constructor() {
+    super("캘린더 수집 행이 다른 기안으로 넘어갔습니다");
+    this.name = "InboundSupersededError";
+  }
+}
+
+/** [캘린더수집] SUPERSEDED 문구 — 단건 응답과 일괄 결과 창이 같은 문장을 쓴다. */
+const SUPERSEDED_MESSAGE = "이 캘린더 일정은 새 기안으로 다시 올라왔습니다. 새 기안을 승인해 주세요.";
 
 export type ApproveProposalOutcome =
   | {
@@ -84,6 +112,71 @@ export type ApproveProposalOutcome =
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * [캘린더수집] 넘겨받을 캠페인 — 새 회차면 방금 만든 캠페인, 기록 수정이면 기안이 가리킨 캠페인.
+ * 그 밖의 모양은 캘린더 수집이 만들지 않는다 — null(장부는 건드리지 않고 처리 끝으로만 적는다).
+ */
+function inboundCampaignId(payload: ProposalPayload, result: ExecutionResult): string | null {
+  if (payload.action === "create_campaign_round") return result.refId;
+  if (payload.action === "update_record" && payload.args.entityType === "CAMPAIGN") {
+    const entityId = payload.args.entityId;
+    return typeof entityId === "string" && entityId ? entityId : null;
+  }
+  return null;
+}
+
+/**
+ * [캘린더수집] 커밋 뒤 넘겨받기 — 장부 기록(ref.adopt 일 때만) → 수집 행 ADOPTED.
+ * ⛔ 던지지 않는다 — 이 시점의 쓰기는 이미 커밋됐다(아래 후속 처리와 같은 이유). 장부에 적지 못한 경우
+ * (충돌·다른 장부가 이미 가리킴·다음 동기화가 남기지 않을 칸·오류)도 처리 끝으로 적고 사유를 남긴다 —
+ * 같은 일정을 다시 기안하지 않게 하려는 것이다. 오너 원본은 평범한 일정으로 남는다.
+ */
+async function adoptInboundAfterCommit(
+  id: string,
+  ref: CalendarInboundRef,
+  payload: ProposalPayload,
+  result: ExecutionResult,
+): Promise<void> {
+  const campaignId = inboundCampaignId(payload, result);
+  let skipReason: string | null = null;
+  try {
+    if (ref.adopt && campaignId) {
+      const adopted = await adoptCalendarEventIntoLedger({
+        campaignId,
+        kind: ref.ledgerKind,
+        eventId: ref.eventId,
+        calendarId: ref.calendarId,
+      });
+      skipReason = inboundSkipReasonForAdoptOutcome(adopted);
+      if (adopted === "not_found") {
+        console.error(`[approveProposal ${id}] 넘겨받을 캠페인 ${campaignId} 를 찾지 못함 — 장부 기록 생략`);
+      }
+    } else if (ref.adopt) {
+      // 액션 이름만 싣는다 — 기안 내용(args)은 로그에 남기지 않는다(`resident-number-exposure.contract.test.ts`).
+      const action = payload.action;
+      console.error(`[approveProposal ${id}] ${action} 기안에서 넘겨받을 캠페인을 정하지 못함 — 장부 기록 생략`);
+    }
+  } catch (err) {
+    console.error(`[approveProposal ${id}] 캘린더 원본 넘겨받기 실패 (쓰기는 이미 커밋됨):`, err);
+    skipReason = INBOUND_SKIP_ADOPT_FAILED;
+  }
+  try {
+    await markInboundAdopted(ref.inboundId, id, campaignId, { skipReason });
+  } catch (err) {
+    console.error(`[approveProposal ${id}] 캘린더 수집 행 처리 끝 표기 실패:`, err);
+  }
+}
+
+/** [캘린더수집] 실행 실패 — 수집 행을 재판정 대기로. 실패해도 판정(FAILED)은 그대로 돌려준다. */
+async function resetInboundAfterFailure(id: string, ref: CalendarInboundRef | null): Promise<void> {
+  if (!ref) return;
+  try {
+    await resetInboundForRetry(ref.inboundId, id);
+  } catch (err) {
+    console.error(`[approveProposal ${id}] 캘린더 수집 행 재판정 대기 표기 실패:`, err);
+  }
 }
 
 export type ApproveProposalOptions = {
@@ -181,19 +274,62 @@ export async function approveProposal(
   }
   const payload = enrichment.payload;
   const enriched = enrichment.filledLabels.length > 0;
+  const inboundRef = readCalendarInboundRef(proposal.sourceRef);
+
+  // [캘린더수집] 재기안으로 대체된 기안은 승인하지 않는다 — tx1 전에 먼저 거른다(빠른 길. 경합까지 막는 정본 판정은
+  // tx1 안의 조건부 잡기 `claimInboundRowForApproval`). 재판정 대기 행을 스캔이
+  // 다시 기안하면 수집 행의 `proposalId` 가 새 기안으로 바뀐다. 옛 기안(FAILED 재시도 등)까지 실행되면 같은
+  // 일정이 두 번 반영된다(새 회차라면 캠페인이 둘). 행이 없어도 같다 — 넘겨받기 근거가 사라졌다.
+  // 전역 상태기계(TRANSITIONS)는 건드리지 않고 이 판정만 더한다.
+  if (inboundRef) {
+    let row: { proposalId: string | null } | null;
+    try {
+      row = await findInboundRow(inboundRef.inboundId);
+    } catch (err) {
+      console.error(`[approveProposal ${id}] 캘린더 수집 행 조회 실패:`, err);
+      return {
+        ok: false,
+        code: "APPROVE_ERROR",
+        httpStatus: 500,
+        error: "승인 처리 중 오류가 발생했습니다.",
+        status: currentStatus,
+      };
+    }
+    if (!row || row.proposalId !== proposal.id) {
+      return { ok: false, code: "SUPERSEDED", httpStatus: 409, error: SUPERSEDED_MESSAGE, status: currentStatus };
+    }
+  }
   const baseNote = currentStatus === "FAILED" ? "재시도 승인" : "관리자 승인";
 
   // tx1: 조건부 승인 커밋 (§0-5 동시성 — 더블클릭/2인 동시 승인/일괄과 단건의 겹침 방어).
   // 보강했으면 합친 payload 를 같은 조건부 쓰기로 저장한다 — 승인과 「무엇을 승인했나」가 한 번에 굳는다.
-  try {
-    await ActionProposalRepository.transition(id, "APPROVED", {
+  const approveTransition = (tx?: Prisma.TransactionClient) =>
+    ActionProposalRepository.transition(id, "APPROVED", {
       actor: approverId,
       note: enriched ? `${baseNote} · 계산서로 채움: ${enrichment.filledLabels.join("·")}` : baseNote,
       expectedFrom: currentStatus,
       // ProposalPayload 는 JSON 으로 왕복한 값(`parseStoredJson`)이라 JSON 입력으로 넘겨도 안전하다.
       ...(enriched && payload ? { data: { payload: payload as unknown as Prisma.InputJsonObject } } : {}),
+      ...(tx ? { tx } : {}),
     });
+  try {
+    if (inboundRef) {
+      // [캘린더수집] 위 사전 확인은 빠른 길일 뿐이고 판정의 정본은 여기다 — 수집 행을 이 기안 앞으로 조건부로 잡는
+      // 쓰기와 승인 전이를 한 트랜잭션에 묶는다. 그 사이 재판정 스캔이 행을 새 기안으로 넘겼으면 잡기가 0건이고
+      // 전이도 함께 취소된다(옛 기안과 새 기안이 둘 다 실행되면 같은 일정이 두 번 반영된다).
+      await getPrisma().$transaction(async (tx) => {
+        if (!(await claimInboundRowForApproval(tx, inboundRef.inboundId, proposal.id))) {
+          throw new InboundSupersededError();
+        }
+        await approveTransition(tx);
+      });
+    } else {
+      await approveTransition();
+    }
   } catch (err) {
+    if (err instanceof InboundSupersededError) {
+      return { ok: false, code: "SUPERSEDED", httpStatus: 409, error: SUPERSEDED_MESSAGE, status: currentStatus };
+    }
     if (err instanceof ConcurrentModificationError) {
       return {
         ok: false,
@@ -220,6 +356,7 @@ export async function approveProposal(
       note: "실행 실패: payload가 비어 있음",
       data: { errorMessage: "payload가 비어 있어 실행할 액션이 없습니다." },
     });
+    await resetInboundAfterFailure(id, inboundRef);
     return {
       ok: false,
       code: "EMPTY_PAYLOAD",
@@ -264,6 +401,7 @@ export async function approveProposal(
       data: { errorMessage: message },
     });
     console.error(`[approveProposal ${id}] tx2 Error:`, err);
+    await resetInboundAfterFailure(id, inboundRef);
     return {
       ok: false,
       code: "EXECUTION_FAILED",
@@ -277,6 +415,11 @@ export async function approveProposal(
   // 쓰기 뒤에 하는 일과 같은 짝이며, 액션별 대상은 write-executor 의 effects 명세가 정한다.
   // ⛔ **위 try 안으로 옮기지 말 것** — 이 시점의 쓰기는 이미 커밋됐는데, 여기서 난 문제를
   // 저 catch 가 잡으면 성공한 실행을 FAILED 로 되돌려 운영자가 반영된 정산을 재시도하게 된다.
+  // [캘린더수집] 넘겨받기는 후속 처리 **앞**이다 — 장부에 원본 id 가 먼저 있어야 후속 동기화가 그 이벤트를
+  // 갱신한다(뒤면 새 이벤트를 만들어 일정이 둘이 된다).
+  if (inboundRef) {
+    await adoptInboundAfterCommit(id, inboundRef, payload, outcome.result);
+  }
   applyWriteActionEffects(payload.action, outcome.result);
 
   return { ok: true, action: payload.action, proposal: outcome.executed, result: outcome.result };
@@ -287,7 +430,7 @@ export async function approveProposal(
  * 운영자가 할 일이 없다. self-approval 거부는 정책 거부라 운영자가 알아야 하므로 실패로 센다.
  * 없는 id 도 실패로 센다 — 건너뜀으로 접으면 잘못 보낸 id 가 조용히 묻힌다.
  */
-const SKIPPED_CODES: ReadonlySet<ApproveProposalFailureCode> = new Set(["INVALID_STATUS", "CONFLICT"]);
+const SKIPPED_CODES: ReadonlySet<ApproveProposalFailureCode> = new Set(["INVALID_STATUS", "CONFLICT", "SUPERSEDED"]);
 
 /**
  * 운영자가 읽는 상태 이름 — 결과 창에 `EXECUTED` 같은 식별자를 내보내지 않는다. 낱말은 결재함
@@ -326,6 +469,8 @@ function bulkReason(outcome: Extract<ApproveProposalOutcome, { ok: false }>, sta
       return "승인을 기록하지 못했습니다. 잠시 후 다시 시도해 주세요.";
     case "EXECUTION_FAILED":
       return outcome.error;
+    case "SUPERSEDED":
+      return SUPERSEDED_MESSAGE;
   }
 }
 

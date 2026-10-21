@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { ActionProposalRepository, deserializeJsonField } from "@/repositories/actionProposalRepository";
 import type { ActionProposalKind, ActionProposalStatus } from "@/repositories/actionProposalRepository";
-import { resolveEntityLabel } from "@/lib/agent/resolve-entity-label";
+import { resolveEntityLabel, resolveProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 
 /**
  * 한 페이지 크기. 조회 결과는 봇이 돌 때마다 쌓이므로 커서(before)로 넘긴다(§3-B).
@@ -83,8 +83,10 @@ export async function GET(request: Request) {
         proposal.targetEntityId
       );
       // payload는 SQLite에서 문자열 저장이므로 역직렬화(Postgres 객체엔 no-op) — 인박스/카드가
-      // payload.action으로 라벨을 읽는다.
-      return { ...proposal, payload: deserializeJsonField(proposal.payload), targetEntityName };
+      // payload.action으로 라벨을 읽는다. sourceRef 도 같다 — 캘린더 출신 카드가 「원본 일정」을 읽는다.
+      const payload = deserializeJsonField(proposal.payload);
+      const argLabels = await resolveProposalArgLabels(payload);
+      return { ...proposal, payload, sourceRef: deserializeJsonField(proposal.sourceRef), targetEntityName, argLabels };
     })
   );
 

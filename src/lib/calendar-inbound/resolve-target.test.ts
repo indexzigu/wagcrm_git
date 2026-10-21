@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import type { CandidateEvent } from "@/lib/google-calendar-sync";
-import { WARN_SKIPPED_NEWER_ROUND, pickRecentCampaigns, pickMoneySlot, resolveInboundTarget } from "./resolve-target";
+import { WARN_SKIPPED_NEWER_ROUND, pickRecentCampaigns, warnRoundNumberMayDiffer, pickMoneySlot, resolveInboundTarget } from "./resolve-target";
 import type { ParsedCalendarIntent } from "./types";
 
 // [캘린더수집] 대상 캠페인·칸 결정 — 가짜 DB(메모리) 위에서 판정만 본다. 가명 픽스처만 쓴다.
@@ -107,21 +107,31 @@ function event(startDate: string, endDate = startDate): CandidateEvent {
 }
 
 describe("resolveInboundTarget — 캠페인 회차", () => {
-  it("회차 표기 없음 → 새 회차 생성(가장 최근 캠페인의 딜)", async () => {
-    const db = fakeDb([campaign({ id: "c1", roundNumber: null })]);
+  it("회차 표기 없음 → 새 회차 생성(가장 최근 캠페인의 딜) · 후보가 여럿이면 자동 지정 경고", async () => {
+    const db = fakeDb([
+      campaign({ id: "c1", roundNumber: null }),
+      campaign({ id: "c0", roundNumber: null, startDate: d("2026-09-01"), endDate: d("2026-09-07") }),
+    ]);
     const r = await resolveInboundTarget(intent({ round: null }), event("2026-12-01", "2026-12-07"), db);
     expect(r).toEqual({
       ok: true,
       draft: {
         action: "create_campaign_round",
         args: { dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-07" },
-        title: "캘린더 일정 → 새 회차 생성: 샘플 · 테스트브랜드 봄딜 (2026-12-01~2026-12-07)",
+        title: "새 회차 생성: 샘플 · 테스트브랜드 봄딜 (2026-12-01~2026-12-07)",
         targetCampaignId: null,
         warnings: ["가장 최근 회차로 자동 지정"],
         adopt: true,
         ledgerKind: "campaign",
       },
     });
+  });
+
+  it("회차 표기 없음 + 후보 캠페인 1건이면 자동 지정 경고를 달지 않는다(고를 것이 없었다)", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: null })]);
+    const r = await resolveInboundTarget(intent({ round: null }), event("2026-12-01", "2026-12-07"), db);
+    expect(r.ok && r.draft.action).toBe("create_campaign_round");
+    expect(r.ok && r.draft.warnings).toEqual([]);
   });
 
   it("회차 N 이 있는데 그 회차가 없으면 생성 + 번호 경고, 하루짜리면 종료일 경고", async () => {
@@ -132,7 +142,7 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
     expect(r.draft.action).toBe("create_campaign_round");
     // 캠페인이 없으면 활성 딜이 유일할 때 그 딜(d2 는 ARCHIVED 라 활성이 아님)
     expect(r.draft.args).toEqual({ dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-01" });
-    expect(r.draft.warnings).toEqual(["종료일 확인 필요", "CRM 회차 번호는 날짜순 자동 부여(제목의 N차와 다를 수 있음)"]);
+    expect(r.draft.warnings).toEqual(["종료일 확인 필요", "회차 번호는 시작일 순서로 정해져 일정 제목의 3차와 다를 수 있습니다."]);
   });
 
   it("활성 딜이 유일하지 않고 캠페인도 없으면 no_deal", async () => {
@@ -157,13 +167,22 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
           changes: { startDate: "2026-12-03", endDate: "2026-12-10" },
           expected: { startDate: "2026-12-01", endDate: "2026-12-07" },
         },
-        title: "캘린더 일정 → 시작일·종료일 변경: 봄딜 샘플 2차",
+        title: "시작일·종료일 변경: 봄딜 샘플 2차",
         targetCampaignId: "c2",
         warnings: [],
         adopt: true,
         ledgerKind: "campaign",
       },
     });
+  });
+
+  it("기간 수정도 하루짜리 일정이면 종료일 경고를 단다", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: 2, startDate: d("2026-12-01"), endDate: d("2026-12-07") })]);
+    const r = await resolveInboundTarget(intent({ round: 2 }), event("2026-12-03"), db);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.draft.action).toBe("update_record");
+    expect(r.draft.warnings).toEqual(["종료일 확인 필요"]);
   });
 
   it("1차는 roundNumber null 회차도 맞고, 바뀐 칸만 싣는다", async () => {
@@ -175,7 +194,7 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
       changes: { endDate: "2026-11-09" },
       expected: { endDate: "2026-11-07" },
     });
-    expect(r.ok && r.draft.title).toBe("캘린더 일정 → 종료일 변경: 테스트브랜드 봄딜 - 샘플");
+    expect(r.ok && r.draft.title).toBe("종료일 변경: 테스트브랜드 봄딜 - 샘플");
   });
 
   it("스키마가 거절하는 초안은 invalid_draft + 사유(throw 하지 않음)", async () => {
@@ -208,7 +227,7 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
     const db = fakeDb([campaign({ id: "c1", roundNumber: 1, status: "PROPOSAL" })]);
     const r = await resolveInboundTarget(intent({ round: 1 }), event("2026-11-02", "2026-11-07"), db);
     expect(r.ok && r.draft.adopt).toBe(false);
-    expect(r.ok && r.draft.warnings).toContain("제안 단계라 캘린더 정리는 준비중 전환 후");
+    expect(r.ok && r.draft.warnings).toContain("이 캠페인은 아직 제안 단계라 승인해도 손으로 적은 캘린더 일정은 그대로 남습니다.");
   });
 });
 
@@ -229,7 +248,7 @@ describe("resolveInboundTarget — 입금·지급", () => {
           changes: { expectedDepositDate: "2026-11-25" },
           expected: { expectedDepositDate: null },
         },
-        title: "캘린더 일정 → 입금 예정일 변경: 테스트브랜드 봄딜 - 샘플",
+        title: "입금 예정일 변경: 테스트브랜드 봄딜 - 샘플",
         targetCampaignId: "c1",
         warnings: ["가장 최근 회차로 자동 지정"],
         adopt: true,
@@ -326,7 +345,7 @@ describe("resolveInboundTarget — 입금·지급", () => {
     const db = fakeDb([campaign({ id: "c1", status: "PROPOSAL" })]);
     const r = await resolveInboundTarget(intent({ kind: "deposit" }), event("2026-11-20"), db);
     expect(r.ok && r.draft.adopt).toBe(false);
-    expect(r.ok && r.draft.warnings).toEqual(["제안 단계라 캘린더 정리는 준비중 전환 후"]);
+    expect(r.ok && r.draft.warnings).toEqual(["이 캠페인은 아직 제안 단계라 승인해도 손으로 적은 캘린더 일정은 그대로 남습니다."]);
   });
 });
 
@@ -348,5 +367,12 @@ describe("순수 판정 도우미", () => {
     expect(pickMoneySlot("OWN_MALL", "payout", true)?.key).toBe("supplierPayout");
     // 지급 레그가 하나뿐인 채널은 공급사 단어가 있어도 그 한 칸(payout)
     expect(pickMoneySlot("SELLER_MALL", "payout", true)?.key).toBe("payout");
+  });
+});
+
+describe("경고 문구", () => {
+  it("회차 번호 경고는 해석한 N 을 싣고, 없으면 번호 없이", () => {
+    expect(warnRoundNumberMayDiffer(2)).toBe("회차 번호는 시작일 순서로 정해져 일정 제목의 2차와 다를 수 있습니다.");
+    expect(warnRoundNumberMayDiffer(null)).toBe("회차 번호는 시작일 순서로 정해져 일정 제목의 회차와 다를 수 있습니다.");
   });
 });

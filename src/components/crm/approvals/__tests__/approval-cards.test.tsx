@@ -53,6 +53,7 @@ describe("SourceBadge", () => {
   it.each([
     ["AGENT_WORKER", "슬랙봇"],
     ["AGENT", "어시스턴트"],
+    ["SYSTEM_CALENDAR_INBOUND", "캘린더"],
     ["3f2a-uuid", "직접"],
   ])("%s → %s", (createdBy, label) => {
     render(<SourceBadge createdBy={createdBy} />);
@@ -169,6 +170,50 @@ describe("PendingCard", () => {
     // 기안자 원문(user-1) 대신 SourceBadge 출처 라벨을 보여준다.
     expect(screen.getByText("직접")).toBeInTheDocument();
     expect(screen.queryByText(/기안자:/)).not.toBeInTheDocument();
+  });
+
+  // [캘린더수집] 캘린더 출신 기안 — 출처가 「직접」으로 보이면 오너가 자기가 만든 기안으로 읽는다.
+  it("캘린더에서 온 새 회차 기안은 캘린더 출처·원본 일정·셀러/판매 조건 이름을 보여준다", () => {
+    render(
+      <ul>
+        <PendingCard
+          item={makeItem({
+            title: "새 회차 생성: 샘플 · 테스트브랜드 봄딜 (2026-12-01~2026-12-07)",
+            targetEntityType: "CAMPAIGN",
+            targetEntityId: null,
+            targetEntityName: null,
+            payload: {
+              action: "create_campaign_round",
+              args: { dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-07" },
+            },
+            createdBy: "SYSTEM_CALENDAR_INBOUND",
+            argLabels: { seller: "샘플", deal: "테스트브랜드 봄딜" },
+            sourceRef: {
+              calendarInbound: {
+                inboundId: "in-1",
+                eventId: "ev-1",
+                calendarId: "primary",
+                ledgerKind: "campaign",
+                adopt: true,
+                summary: "샘플 테스트브랜드",
+                startDate: "2026-12-01",
+                endDate: "2026-12-07",
+                htmlLink: "https://calendar.google.com/event?eid=abc",
+                warnings: [],
+              },
+            },
+          })}
+          onApprove={approveMock}
+          onReject={rejectMock}
+        />
+      </ul>
+    );
+    expect(screen.getByText("캘린더")).toBeInTheDocument();
+    expect(screen.getByText(/^원본: 샘플 테스트브랜드/)).toBeInTheDocument();
+    // 새 회차는 아직 캠페인이 없다 — 이름 없는 「캠페인」 배지를 달지 않는다
+    expect(screen.queryByText("캠페인")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /구글 캘린더에서 보기/ })).toBeInTheDocument();
+    expect(screen.getByText("테스트브랜드 봄딜")).toBeInTheDocument();
   });
 
   it("대기 카드 버튼 라벨은 승인·반려다", () => {

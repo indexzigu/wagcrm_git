@@ -24,8 +24,10 @@ vi.mock("@/repositories/actionProposalRepository", () => ({
   deserializeJsonField: (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v),
 }));
 
+const resolveArgLabelsMock = vi.fn();
 vi.mock("@/lib/agent/resolve-entity-label", () => ({
   resolveEntityLabel: (...args: unknown[]) => resolveEntityLabelMock(...args),
+  resolveProposalArgLabels: (...args: unknown[]) => resolveArgLabelsMock(...args),
 }));
 
 const { GET } = await import("./route");
@@ -40,6 +42,7 @@ describe("GET /api/action-proposals", () => {
     findManyMock.mockReset();
     countMock.mockReset();
     resolveEntityLabelMock.mockReset();
+    resolveArgLabelsMock.mockReset().mockResolvedValue(null);
     requireAuthMock.mockResolvedValue({ authenticated: true, context: { userId: "u1", role: "admin" } });
     resolveEntityLabelMock.mockResolvedValue("락토핏 골드");
     countMock.mockResolvedValue(0);
@@ -126,6 +129,32 @@ describe("GET /api/action-proposals", () => {
 
     expect(resolveEntityLabelMock).toHaveBeenCalledWith("DEAL", "deal-1");
     expect(body.items[0].targetEntityName).toBe("락토핏 골드");
+  });
+
+  it("[캘린더수집] sourceRef 를 역직렬화하고(sqlite 문자열) 새 회차 기안의 셀러·판매 조건 이름을 붙인다", async () => {
+    const sourceRef = { calendarInbound: { inboundId: "in-1", summary: "샘플 테스트브랜드" } };
+    const payload = { action: "create_campaign_round", args: { dealId: "d1", sellerId: "s1" } };
+    findManyMock.mockResolvedValue([
+      {
+        id: "proposal-cal",
+        title: "새 회차 생성",
+        status: "PENDING_APPROVAL",
+        kind: "WRITE",
+        targetEntityType: "CAMPAIGN",
+        targetEntityId: null,
+        payload: JSON.stringify(payload),
+        sourceRef: JSON.stringify(sourceRef),
+        createdBy: "SYSTEM_CALENDAR_INBOUND",
+        createdAt: new Date("2026-10-21T00:00:00Z"),
+      },
+    ]);
+    resolveArgLabelsMock.mockResolvedValue({ seller: "샘플", deal: "테스트브랜드 봄딜" });
+
+    const body = await (await GET(makeRequest())).json();
+
+    expect(body.items[0].sourceRef).toEqual(sourceRef);
+    expect(resolveArgLabelsMock).toHaveBeenCalledWith(payload);
+    expect(body.items[0].argLabels).toEqual({ seller: "샘플", deal: "테스트브랜드 봄딜" });
   });
 
   it("take 제한이 걸려 있다 (무한정 조회 방지)", async () => {

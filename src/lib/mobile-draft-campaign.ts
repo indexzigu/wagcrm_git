@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { SalesChannel } from "@/lib/crm-types";
 import { getPrisma } from "@/lib/prisma";
 import { parseBaseMarginPolicy } from "@/lib/base-margin-policy";
@@ -59,9 +60,15 @@ export class DraftCampaignError extends Error {
 
 const YMD_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-export async function createDraftCampaign(
-  input: DraftCampaignInput,
-): Promise<DraftCampaignResult> {
+/**
+ * 이 경량 생성이 만들 수 있는 상태 — 입구별로 다르다.
+ * - `PROPOSAL`: 모바일 예비 일정(셀러 제안 단계 선점). 캘린더에 올리지 않는다(`CALENDAR_EXCLUDED_STATUSES`).
+ * - `PREPARATION`: [캘린더수집] 구글 캘린더에서 들어온 새 회차(오너 확정 ③, 2026-10-21) — PROPOSAL 로 만들면
+ *   동기화가 넘겨받은 원본 일정을 지운다. 기안 액션 `create_campaign_round` 만 이 값을 쓴다.
+ */
+export type DraftCampaignStatus = "PROPOSAL" | "PREPARATION";
+
+function assertDraftDates(input: DraftCampaignInput): void {
   if (!YMD_PATTERN.test(input.startDate) || !YMD_PATTERN.test(input.endDate)) {
     throw new DraftCampaignError("날짜는 YYYY-MM-DD 형식이어야 합니다.", 400);
   }
@@ -69,86 +76,101 @@ export async function createDraftCampaign(
   if (input.endDate < input.startDate) {
     throw new DraftCampaignError("종료일은 시작일보다 빠를 수 없습니다.", 400);
   }
+}
+
+/**
+ * 모바일 예비 캠페인 경량 생성 — 자체 트랜잭션을 열고 `PROPOSAL` 로 만든다(종전 동작 그대로).
+ * 본체는 `createDraftCampaignInTx` 하나다.
+ */
+export async function createDraftCampaign(
+  input: DraftCampaignInput,
+): Promise<DraftCampaignResult> {
+  assertDraftDates(input);
 
   const prisma = getPrisma();
-
-  const { campaign, dealName, sellerName } = await prisma.$transaction(
-    async (tx) => {
-      const deal = await tx.deal.findUnique({
-        where: { id: input.dealId },
-        select: {
-          id: true,
-          dealName: true,
-          dealType: true,
-          status: true,
-          baseMarginPolicy: true,
-        },
-      });
-      if (!deal) {
-        throw new DraftCampaignError("해당 판매 조건을 찾을 수 없습니다.", 404);
-      }
-
-      const seller = await tx.seller.findUnique({
-        where: { id: input.sellerId },
-        select: { id: true, name: true, alias: true },
-      });
-      if (!seller) {
-        throw new DraftCampaignError("해당 셀러를 찾을 수 없습니다.", 404);
-      }
-
-      // bulk(campaigns/bulk POST)와 동일 패턴: 딜 정책의 첫 채널에서 마진 자동.
-      // salesChannel 은 §4 확정대로 정책 첫 채널(없으면 미지정) — 예비 단계에
-      // 임의 채널을 확정하지 않는다.
-      const policy = parseBaseMarginPolicy(deal.baseMarginPolicy);
-      const [firstChannelName, firstChannelRate] =
-        Object.entries(policy.byChannel)[0] ?? [];
-      const totalMarginRate = firstChannelRate?.totalMarginRate ?? 0;
-      const sellerMarginRate = firstChannelRate?.sellerMarginRate ?? 0;
-
-      const created = await tx.salesCampaign.create({
-        data: {
-          dealId: input.dealId,
-          sellerId: input.sellerId,
-          startDate: new Date(input.startDate),
-          endDate: new Date(input.endDate),
-          status: "PROPOSAL",
-          salesChannel: firstChannelName ?? "UNSPECIFIED",
-          totalMarginRate,
-          sellerMarginRate,
-          netMarginRate: totalMarginRate - sellerMarginRate,
-          // 예비의 정의 — 링크 빈값. 추적 링크도 실링크 확정 전이므로 비워둔다
-          // (bulk 의 가짜 랜덤 track.wag.kr 링크는 복사 사고 위험이라 미채택).
-          baseNaverLink: "",
-          generatedTrackingLink: "",
-        },
-      });
-
-      // 같은 tx 안에서 캠페인명·차수 자동 부여(딜×셀러 조합 전체 재계산).
-      await recalculateCampaignRounds(input.dealId, input.sellerId, tx);
-
-      const refreshed = await tx.salesCampaign.findUnique({
-        where: { id: created.id },
-        select: {
-          id: true,
-          campaignName: true,
-          roundNumber: true,
-          startDate: true,
-          endDate: true,
-          status: true,
-          salesChannel: true,
-        },
-      });
-      if (!refreshed) {
-        throw new DraftCampaignError("생성된 캠페인을 다시 읽지 못했습니다.", 500);
-      }
-
-      return {
-        campaign: refreshed,
-        dealName: deal.dealName,
-        sellerName: seller.alias || seller.name,
-      };
-    },
+  return prisma.$transaction((tx) =>
+    createDraftCampaignInTx(tx, { ...input, status: "PROPOSAL" }),
   );
+}
+
+/**
+ * 경량 캠페인 생성 본체 — **호출부가 연 tx 안에서** 돈다. 승인 실행(`create_campaign_round`)은 기안의
+ * EXECUTED 전이와 같은 트랜잭션이어야 해서(롤백 시 캠페인도 함께 사라진다) 자체 `$transaction` 을 열 수 없다.
+ * ⛔ 생성 규칙(마진 유도·링크 빈값·회차 재부여)을 호출부에 다시 쓰지 말 것 — 두 입구가 이 함수 하나를 부른다.
+ */
+export async function createDraftCampaignInTx(
+  tx: Prisma.TransactionClient,
+  input: DraftCampaignInput & { status: DraftCampaignStatus },
+): Promise<DraftCampaignResult> {
+  assertDraftDates(input);
+
+  const deal = await tx.deal.findUnique({
+    where: { id: input.dealId },
+    select: {
+      id: true,
+      dealName: true,
+      dealType: true,
+      status: true,
+      baseMarginPolicy: true,
+    },
+  });
+  if (!deal) {
+    throw new DraftCampaignError("해당 판매 조건을 찾을 수 없습니다.", 404);
+  }
+
+  const seller = await tx.seller.findUnique({
+    where: { id: input.sellerId },
+    select: { id: true, name: true, alias: true },
+  });
+  if (!seller) {
+    throw new DraftCampaignError("해당 셀러를 찾을 수 없습니다.", 404);
+  }
+
+  // bulk(campaigns/bulk POST)와 동일 패턴: 딜 정책의 첫 채널에서 마진 자동.
+  // salesChannel 은 §4 확정대로 정책 첫 채널(없으면 미지정) — 예비 단계에
+  // 임의 채널을 확정하지 않는다.
+  const policy = parseBaseMarginPolicy(deal.baseMarginPolicy);
+  const [firstChannelName, firstChannelRate] =
+    Object.entries(policy.byChannel)[0] ?? [];
+  const totalMarginRate = firstChannelRate?.totalMarginRate ?? 0;
+  const sellerMarginRate = firstChannelRate?.sellerMarginRate ?? 0;
+
+  const created = await tx.salesCampaign.create({
+    data: {
+      dealId: input.dealId,
+      sellerId: input.sellerId,
+      startDate: new Date(input.startDate),
+      endDate: new Date(input.endDate),
+      status: input.status,
+      salesChannel: firstChannelName ?? "UNSPECIFIED",
+      totalMarginRate,
+      sellerMarginRate,
+      netMarginRate: totalMarginRate - sellerMarginRate,
+      // 예비의 정의 — 링크 빈값. 추적 링크도 실링크 확정 전이므로 비워둔다
+      // (bulk 의 가짜 랜덤 track.wag.kr 링크는 복사 사고 위험이라 미채택).
+      baseNaverLink: "",
+      generatedTrackingLink: "",
+    },
+  });
+
+  // 같은 tx 안에서 캠페인명·차수 자동 부여(딜×셀러 조합 전체 재계산).
+  await recalculateCampaignRounds(input.dealId, input.sellerId, tx);
+
+  const campaign = await tx.salesCampaign.findUnique({
+    where: { id: created.id },
+    select: {
+      id: true,
+      campaignName: true,
+      roundNumber: true,
+      startDate: true,
+      endDate: true,
+      status: true,
+      salesChannel: true,
+    },
+  });
+  if (!campaign) {
+    throw new DraftCampaignError("생성된 캠페인을 다시 읽지 못했습니다.", 500);
+  }
 
   return {
     id: campaign.id,
@@ -160,7 +182,7 @@ export async function createDraftCampaign(
     endDate: campaign.endDate.toISOString(),
     status: campaign.status,
     salesChannel: campaign.salesChannel as SalesChannel,
-    dealName,
-    sellerName,
+    dealName: deal.dealName,
+    sellerName: seller.alias || seller.name,
   };
 }

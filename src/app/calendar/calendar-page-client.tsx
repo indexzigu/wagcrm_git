@@ -7,11 +7,13 @@ import { z } from "zod";
 import {
   ChevronLeft,
   ChevronRight,
+  CloudDownload,
   CloudUpload,
   Loader2,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { DataLoadError } from "@/components/ui/empty";
 import { CalendarView, type CalendarCampaign } from "@/components/crm/calendar-view";
@@ -24,6 +26,8 @@ import { ScheduleGapSummaryStrip } from "@/components/crm/schedule-gap-summary-s
 import type { CampaignStatus } from "@/lib/crm-types";
 import type { DraftCampaignResult } from "@/lib/mobile-draft-campaign";
 import type { ScheduleGapBriefing } from "@/lib/schedule-gap-briefing";
+import { formatInboundScanToast } from "@/lib/calendar-inbound/scan-toast";
+import type { ScanSummary } from "@/lib/calendar-inbound/scan";
 
 const calendarCampaignSchema = z.object({
   id: z.string(),
@@ -116,6 +120,7 @@ export function CalendarPageClient({
   const [loadError, setLoadError] = useState(false);
   const latestLoadRequestRef = useRef(0);
   const [syncing, setSyncing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // 예비 일정 생성 다이얼로그 — 날짜 셀/헤더 어포던스에서 진입, 클릭일 프리필.
   const [draftOpen, setDraftOpen] = useState(false);
@@ -223,7 +228,7 @@ export function CalendarPageClient({
       const res = await fetch("/api/integrations/google-calendar/sync", {
         method: "POST",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success(data.message ?? "구글 캘린더 동기화가 완료되었습니다.");
       } else if (res.status === 401) {
@@ -238,6 +243,40 @@ export function CalendarPageClient({
       toast.error(error instanceof Error ? error.message : "동기화 요청에 실패했습니다.");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  /**
+   * [캘린더수집] 「캘린더에서 가져오기」 — 30분 수집을 기다리지 않고 지금 한 회차를 돈다. 결과는 결재함 기안이라
+   * 달력은 다시 불러오지 않는다(승인 전에는 캠페인이 바뀌지 않는다). 토스트는 이 버튼 하나가 소유한다.
+   */
+  async function handleInboundScan() {
+    setImporting(true);
+    try {
+      const res = await fetch("/api/integrations/google-calendar/inbound-scan", { method: "POST" });
+      // 프록시 시간 초과 같은 HTML 오류 본문이면 파싱 예외 문구 대신 아래 기본 문구가 뜨게 빈 객체로 둔다.
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const { message, tone, openApprovals } = formatInboundScanToast(data as ScanSummary);
+        // 기안을 올렸으면 토스트에서 바로 결재함으로 간다.
+        const options = openApprovals
+          ? { action: { label: "결재함 열기", onClick: () => router.push("/approvals") } }
+          : undefined;
+        if (tone === "info") toast.info(message);
+        else if (tone === "warning") toast.warning(message, options);
+        else toast.success(message, options);
+      } else if (res.status === 401) {
+        toast.error(
+          data.error ?? "구글 캘린더가 연결되어 있지 않습니다. 설정 > 외부 연동 진단에서 연동하세요.",
+        );
+      } else {
+        toast.error(data.error ?? "캘린더 일정을 가져오지 못했습니다.");
+      }
+    } catch (error) {
+      console.error("[calendar] 캘린더에서 가져오기 실패:", error);
+      toast.error(error instanceof Error ? error.message : "가져오기 요청에 실패했습니다.");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -288,7 +327,7 @@ export function CalendarPageClient({
         </Button>
       </div>
 
-      {/* 필터 바 + 예비 일정 생성(키보드 접근 베이스라인 — 셀 hover 어포던스와 병행) + 구글 캘린더 전체 동기화 */}
+      {/* 필터 바 + 예비 일정 생성(키보드 접근 베이스라인 — 셀 hover 어포던스와 병행) + 구글 캘린더 전체 동기화 + 캘린더에서 가져오기 */}
       <div className="flex flex-wrap items-center gap-2">
         <CalendarFilterBar
           sellers={sellersInMonth}
@@ -313,6 +352,29 @@ export function CalendarPageClient({
           )}
           {syncing ? "동기화 중..." : "구글 캘린더 전체 동기화"}
         </Button>
+        {/* [캘린더수집] 반대 방향(캘린더 → CRM). 결과는 결재함 기안이고 승인 전에는 아무것도 바뀌지 않는다 —
+            그 사실을 설명창으로 단다(마우스·키보드 포커스 둘 다로 열림). */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleInboundScan}
+                disabled={importing}
+                className="h-9 gap-1.5 rounded-lg px-3.5 text-xs"
+              >
+                {importing ? (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                ) : (
+                  <CloudDownload className="size-3.5 shrink-0" />
+                )}
+                {importing ? "가져오는 중..." : "캘린더에서 가져오기"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">승인하기 전에는 CRM이 바뀌지 않습니다</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <Button
           size="sm"
           className="h-9 gap-1.5 rounded-lg bg-primary px-3.5 text-xs text-white hover:bg-primary/90"

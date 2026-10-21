@@ -7,6 +7,7 @@
  * 실제 실행 전 존재 검증(throw)은 write-executor.assertEntityExists가 담당한다.
  */
 import { getPrisma } from "@/lib/prisma";
+import { sellerDisplayName } from "@/lib/seller-display-name";
 
 export type ResolvableEntityType = "PARTNER" | "SELLER" | "DEAL" | "CAMPAIGN";
 
@@ -34,7 +35,7 @@ export async function resolveEntityLabel(
     }
     case "SELLER": {
       const seller = await prisma.seller.findUnique({ where: { id: entityId } });
-      return seller?.name ?? null;
+      return seller ? sellerDisplayName(seller) : null;
     }
     case "CAMPAIGN": {
       const campaign = await prisma.salesCampaign.findUnique({
@@ -44,11 +45,36 @@ export async function resolveEntityLabel(
       if (!campaign) return null;
       if (campaign.campaignName) return campaign.campaignName;
       const dealName = campaign.deal?.dealName ?? "";
-      const sellerName = campaign.seller?.name ?? "";
+      const sellerName = campaign.seller ? sellerDisplayName(campaign.seller) : "";
       const combined = [dealName, sellerName].filter(Boolean).join(" - ");
       return combined || null;
     }
     default:
       return null;
   }
+}
+
+/** 기안 내용(args)에 든 대상 id 를 화면 이름으로 푼 것 — 카드 미리보기가 id 대신 보여준다. */
+export type ProposalArgLabels = { seller: string | null; deal: string | null };
+
+/**
+ * [캘린더수집] 새 회차 생성(`create_campaign_round`) 기안은 대상 캠페인이 아직 없어 배지(`targetEntityName`)로
+ * 이름을 보여줄 수 없다 — args 의 셀러·판매 조건 id 를 여기서 이름으로 푼다. 셀러는 별칭이 있으면 별칭
+ * (P2 Seller Alias Priority). 다른 액션·모양이 깨진 내용은 조회 없이 null 이고, 대상이 지워졌으면 그 칸만 null
+ * (위 `resolveEntityLabel` 과 같이 throw 하지 않는다 — 목록 조회를 막지 않는다).
+ */
+export async function resolveProposalArgLabels(payload: unknown): Promise<ProposalArgLabels | null> {
+  if (typeof payload !== "object" || payload === null) return null;
+  const { action, args } = payload as { action?: unknown; args?: unknown };
+  if (action !== "create_campaign_round" || typeof args !== "object" || args === null) return null;
+  const { dealId, sellerId } = args as { dealId?: unknown; sellerId?: unknown };
+  if (typeof dealId !== "string" || typeof sellerId !== "string") return null;
+
+  const prisma = getPrisma();
+  const [seller, deal] = await Promise.all([
+    prisma.seller.findUnique({ where: { id: sellerId }, select: { name: true, alias: true } }),
+    prisma.deal.findUnique({ where: { id: dealId }, select: { dealName: true } }),
+  ]);
+  const sellerLabel = seller ? sellerDisplayName(seller) : null;
+  return { seller: sellerLabel, deal: deal?.dealName ?? null };
 }

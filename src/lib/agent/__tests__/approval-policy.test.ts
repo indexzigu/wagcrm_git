@@ -77,6 +77,15 @@ describe("getRequestTypeForAction", () => {
     }
   });
 
+  it("create_campaign_round → crm_mutation: 명시 등재 + alwaysManual 이라 자동승인 불가([캘린더수집] 2026-10-21)", () => {
+    // 캘린더에서 들어온 새 회차 생성 — 없던 캠페인이 생기는 일이라 언제나 사람이 승인한다.
+    expect(REQUEST_TYPE_BY_ACTION.create_campaign_round).toBe("crm_mutation");
+    expect(getRequestTypeForAction("create_campaign_round")).toBe("crm_mutation");
+    for (const kind of ["WRITE", "READ"] as const) {
+      expect(isAutoApprovable("crm_mutation", kind)).toBe(false);
+    }
+  });
+
   it("미등록 action → fail-closed로 crm_mutation을 반환한다", () => {
     expect(getRequestTypeForAction("delete_everything")).toBe("crm_mutation");
     expect(getRequestTypeForAction("")).toBe("crm_mutation");

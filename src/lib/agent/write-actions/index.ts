@@ -10,6 +10,7 @@ import type { Prisma } from "@prisma/client";
 import { addEntityMemoAction } from "./add-entity-memo";
 import { changeDealStatusAction } from "./change-deal-status";
 import { confirmSettlementAction } from "./confirm-settlement";
+import { createCampaignRoundAction } from "./create-campaign-round";
 import { createPartnerAction } from "./create-partner";
 import { createDealAction } from "./create-deal";
 import { updateSettlementAmountAction } from "./update-settlement-amount";
@@ -22,8 +23,9 @@ import type { WriteActionDefinition, WriteActionEffectSpec, WriteActionResult } 
  * confirm_settlement 3종으로 시작했고(청사진 확정 설계), 에이전트가 거래처·딜을
  * 등록할 수 있도록 create_partner, create_deal 2종을 더했고, 금액 칸 정정용(확정된 정산은 사람 승인만)
  * update_settlement_amount 를 더했고, 화면에서 고칠 수 있는 칸을 화면 저장과 같은 본체로 고치는
- * update_record 를 더했고, 주문캠페인 상품 매핑을 새로 넣거나 고치는 upsert_product_mappings 를 더한
- * 8종이다(승인은 언제나 수동, 사람만 — `approval-policy.ts`).
+ * update_record 를 더했고, 주문캠페인 상품 매핑을 새로 넣거나 고치는 upsert_product_mappings 를 더했고, 구글 캘린더에서 들어온
+ * 새 회차를 만드는 create_campaign_round([캘린더수집] — 캘린더 수집만 기안, 봇 도구 아님)를 더한
+ * 9종이다(승인은 언제나 수동, 사람만 — `approval-policy.ts`).
  */
 export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
   add_entity_memo: addEntityMemoAction,
@@ -34,6 +36,7 @@ export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
   update_settlement_amount: updateSettlementAmountAction,
   update_record: updateRecordAction,
   upsert_product_mappings: upsertProductMappingsAction,
+  create_campaign_round: createCampaignRoundAction,
 };
 
 export type WriteActionName = keyof typeof WRITE_ACTIONS;

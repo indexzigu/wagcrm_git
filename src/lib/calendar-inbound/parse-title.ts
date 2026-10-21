@@ -13,6 +13,17 @@ export const ROUND_RE = /(\d+)\s*차/;
 /** 제목 속 종류 키워드 — 파서와 LLM 힌트 근거 검증이 공유한다. */
 export const DEPOSIT_RE = /입금/;
 export const PAYOUT_RE = /지급|송금|정산금/;
+/** 제목 속 공급사 지급 표지(자사몰 공급사 지급 칸을 고를 때). */
+export const SUPPLIER_RE = /공급사|업체|벤더/;
+/**
+ * 이름 매칭 전에 걷어낼 키워드 전부 — 위 세 정규식에서 만든다(키워드를 한 곳에서만 고치게).
+ * ⛔ 리터럴로 다시 적지 말 것: 종류 판정에 키워드를 더하고 여기를 빠뜨리면 그 낱말이 브랜드 토큰으로 남는다.
+ * ⛔ replace 전용 — `.test`/`.exec` 금지(g 플래그라 lastIndex 가 남아 다음 호출 결과가 바뀐다).
+ */
+export const KEYWORD_STRIP_RE = new RegExp(
+  [DEPOSIT_RE, PAYOUT_RE, SUPPLIER_RE].map((re) => re.source).join("|"),
+  "g",
+);
 
 /** NFC + 공백·기호 제거 + 소문자. */
 export function normalizeToken(s: string): string {
@@ -108,8 +119,8 @@ export function parseCalendarTitle(
   let kind: InboundKind | null = null;
   if (DEPOSIT_RE.test(text)) kind = "deposit";
   else if (PAYOUT_RE.test(text)) kind = "payout";
-  const supplierHint = /공급사|업체|벤더/.test(text);
-  text = text.replace(/입금|지급|송금|정산금|공급사|업체|벤더/g, " ");
+  const supplierHint = SUPPLIER_RE.test(text);
+  text = text.replace(KEYWORD_STRIP_RE, " ");
 
   const titleTokens = text
     .split(SPLIT_RE)

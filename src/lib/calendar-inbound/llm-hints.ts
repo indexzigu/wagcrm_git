@@ -1,6 +1,6 @@
 // [캘린더수집] 규칙 파서가 실패한 일정 제목에서 LLM 으로 힌트(문자열)만 뽑는다.
 // 모델은 DB id 를 고르지 않고, 제목에 실제로 있는 문자열만 인정한다(주입 차단).
-// 실패는 삼키지 않되 던지지도 않는다 — null = 힌트 없음, 실패는 ApiCallLog 로 계측.
+// 실패는 삼키지 않되 던지지도 않는다 — 결과 종류로 돌려주고, 실패는 ApiCallLog 로 계측.
 import { z } from "zod";
 import {
   getGeminiApiKeys,
@@ -80,10 +80,26 @@ function groundedKind(
   return kind;
 }
 
+/**
+ * 힌트 추출 결과.
+ * - `hints`: 제목에 근거 있는 힌트가 하나 이상 있다.
+ * - `none`: 다시 물어도 같다 — 키 미설정 · 재시도해도 안 될 HTTP 오류 · 응답이 비JSON/스키마 불일치 ·
+ *   근거 있는 힌트 없음. 호출부는 이 일정을 해석 실패로 닫아도 된다.
+ * - `unavailable`: 일시 장애(네트워크 예외·시간 초과 · 429/5xx · 키 전부 소진) — 호출부는 닫지 말고
+ *   다음 회차에 다시 물어야 한다(닫으면 장애 한 번에 그 일정이 영영 해석 실패로 남는다).
+ */
+export type TitleHintsResult =
+  | { kind: "hints"; hints: TitleHints }
+  | { kind: "none" }
+  | { kind: "unavailable" };
+
+const NONE: TitleHintsResult = { kind: "none" };
+const UNAVAILABLE: TitleHintsResult = { kind: "unavailable" };
+
 export async function extractTitleHints(
   summary: string,
   deps: { fetchImpl?: typeof fetch; apiKey?: string } = {},
-): Promise<TitleHints | null> {
+): Promise<TitleHintsResult> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const keys = deps.apiKey ? [deps.apiKey] : getGeminiApiKeys();
   const startedAt = Date.now();
@@ -116,7 +132,7 @@ export async function extractTitleHints(
       undefined,
       "GEMINI_API_KEY 미설정",
     );
-    return null;
+    return NONE;
   }
 
   const body = JSON.stringify({
@@ -144,7 +160,7 @@ export async function extractTitleHints(
     } catch (err) {
       if (isLast) {
         await fail("NETWORK", NO_HTTP_RESPONSE, i + 1, keys[i], err);
-        return null;
+        return UNAVAILABLE;
       }
       continue;
     } finally {
@@ -152,24 +168,24 @@ export async function extractTitleHints(
     }
 
     if (!res.ok) {
-      if (isRetryableGeminiStatus(res.status) && !isLast) continue;
+      const retryable = isRetryableGeminiStatus(res.status);
+      if (retryable && !isLast) continue;
       await fail(
-        i > 0 && isRetryableGeminiStatus(res.status)
-          ? "KEYS_EXHAUSTED"
-          : "HTTP",
+        i > 0 && retryable ? "KEYS_EXHAUSTED" : "HTTP",
         res.status,
         i + 1,
         keys[i],
         text,
       );
-      return null;
+      // 429/5xx(키 하나여도)는 일시 장애 — 다음 회차에 다시 묻는다. 그 밖의 HTTP 오류는 다시 물어도 같다.
+      return retryable ? UNAVAILABLE : NONE;
     }
 
     try {
       const inner = responseText(JSON.parse(text));
       const parsed = HintsSchema.parse(JSON.parse(inner));
       const norm = normalizeToken(summary);
-      return {
+      const hints: TitleHints = {
         sellerHint: grounded(parsed.sellerHint, norm),
         brandHint: grounded(parsed.brandHint, norm),
         // 회차·종류도 제목에 근거가 있을 때만 인정한다(지어낸 값이 엉뚱한 회차/종류를
@@ -177,12 +193,18 @@ export async function extractTitleHints(
         round: groundedRound(parsed.round, summary),
         kind: groundedKind(parsed.kind, summary),
       };
+      const empty =
+        hints.sellerHint === null &&
+        hints.brandHint === null &&
+        hints.round === null &&
+        hints.kind === null;
+      return empty ? NONE : { kind: "hints", hints };
     } catch {
       console.error(
         "[calendar-inbound] 힌트 응답을 해석하지 못했습니다 (비JSON 또는 스키마 불일치)",
       );
-      return null;
+      return NONE;
     }
   }
-  return null;
+  return NONE;
 }

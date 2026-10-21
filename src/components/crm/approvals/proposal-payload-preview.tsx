@@ -25,8 +25,11 @@ import {
   recordFieldLabel,
 } from "@/lib/record-update-labels";
 import { displayLabel } from "@/lib/display-label";
-import { partnerTypeLabels } from "@/lib/crm-types";
+import { campaignStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
 import { FIELD_LABELS } from "@/lib/field-labels";
+import { readCalendarInboundRef, type CalendarInboundRef } from "@/lib/calendar-inbound/ref";
+import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
+import { AlertTriangleIcon, ExternalLinkIcon } from "lucide-react";
 
 // 직접 넣는 공급가(costPrice)와 자동 계산 공급가(supplyPrice)는 운영상 같은 돈이다(오너 확정 2026-10-15) — 둘 다
 // 「공급가」. 한 줄에 둘이 **함께** 있을 때만 계산 칸을 「공급가(계산값)」로 가른다(활동 기록 FIELD_LABELS 와 같은 이름).
@@ -266,8 +269,16 @@ function isRecordScalar(value: unknown): boolean {
  * 기록 수정 — 칸마다 **지금 값 → 바꿀 값**. 「지금 값」은 기안자가 본 값이고 실행기는 실제 값이 이것과
  * 같을 때만 고친다. 칸 이름은 화면 이름 표에서, 표에 없으면 칸 이름 그대로 보인다.
  * 칸을 접거나 개수로 줄이지 않는다(머리 주석 — 감춘 줄에 틀린 값이 있으면 이 화면의 의미가 사라진다).
+ * 대상 칸은 종류(「캠페인」)가 아니라 서버가 푼 그 대상의 이름을 보인다 — 종류만으로는 어느 캠페인인지
+ * 판단할 수 없다. 이름을 못 풀었으면 칸을 뺀다(값 없는 칸은 빼는 이 컴포넌트의 규칙).
  */
-function UpdateRecordPreview({ args }: { args: Record<string, unknown> }) {
+function UpdateRecordPreview({
+  args,
+  targetEntityName,
+}: {
+  args: Record<string, unknown>;
+  targetEntityName: string | null | undefined;
+}) {
   const entityType = args.entityType;
   const changes = asRecord(args.changes);
   const expected = asRecord(args.expected);
@@ -283,7 +294,7 @@ function UpdateRecordPreview({ args }: { args: Record<string, unknown> }) {
     <>
       <Rows
         rows={[
-          ["대상", RECORD_ENTITY_LABELS[entityType]],
+          [RECORD_ENTITY_LABELS[entityType], targetEntityName && targetEntityName.trim() !== "" ? targetEntityName : null],
           ["메모", asText(args.memo)],
         ]}
       />
@@ -400,19 +411,116 @@ function UpsertProductMappingsPreview({ args }: { args: Record<string, unknown> 
   );
 }
 
+/** `YYYY-MM-DD` 두 날 → 「시작 ~ 끝」, 같은 날이면 하루만. */
+function periodText(start: string | null, end: string | null): string | null {
+  if (!start || !end) return null;
+  return start === end ? start : `${start} ~ ${end}`;
+}
+
+/**
+ * [캘린더수집] 새 회차 생성 — 누구(셀러)의 어떤 판매 조건으로 언제 여는지. args 에는 id 만 있어 이름은
+ * 서버가 푼 `argLabels` 로 보인다(`resolveProposalArgLabels`). 못 풀었으면 그 칸을 id 로 채우지 않고 뺀다 —
+ * 승인자는 id 문자열로 「맞는 셀러인가」를 판단할 수 없다(위 판매 조건 미리보기의 거래처 칸과 같은 규칙).
+ * 상태는 캠페인 상태 라벨 표의 말(세팅대기)을 그대로 쓴다 — 같은 상태를 화면마다 다른 말로 부르지 않는다.
+ */
+function CreateCampaignRoundPreview({
+  args,
+  labels,
+}: {
+  args: Record<string, unknown>;
+  labels: ProposalArgLabels | null | undefined;
+}) {
+  const period = periodText(asText(args.startDate), asText(args.endDate));
+  if (!period) return null;
+  return (
+    <Rows
+      rows={[
+        ["셀러", labels?.seller ?? null],
+        ["판매 조건", labels?.deal ?? null],
+        ["기간", period],
+        ["상태", `${campaignStatusLabels.PREPARATION}로 생성`],
+      ]}
+    />
+  );
+}
+
+/**
+ * [캘린더수집] 이 기안을 만든 구글 캘린더 일정 — 흐린 한 줄 「원본: 제목 · 날짜 · 구글 캘린더에서 보기」.
+ * 판단의 주인공은 위의 바뀔 칸이고, 원문은 해석이 맞는지 대조하는 근거라 그 아래에 조용히 둔다.
+ * 링크는 `https://` 만 그린다(출처 스키마 `calendarInboundRefSchema` 가 그 밖의 값을 null 로 접는다).
+ */
+function CalendarOriginLine({ origin }: { origin: CalendarInboundRef }) {
+  const parts = [origin.summary.trim(), periodText(origin.startDate, origin.endDate)].filter(
+    (part): part is string => !!part,
+  );
+  return (
+    <p className="min-w-0 break-words text-muted-foreground">
+      원본: {parts.join(" · ")}
+      {origin.htmlLink ? (
+        <>
+          {" · "}
+          <a
+            href={origin.htmlLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            구글 캘린더에서 보기
+            <ExternalLinkIcon aria-hidden className="size-3" />
+          </a>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/**
+ * [캘린더수집] 해석하면서 짐작한 것 — 승인 버튼 바로 위에 둔다(누르기 직전에 읽히게). 색은 주의 단계
+ * (`status-caution`)를 아이콘에만 싣고 글자는 본문색이다 — 경고마다 빨갛게 칠하면 매번 뜨는 색이라 신호를 잃는다.
+ */
+function CalendarWarnings({ warnings }: { warnings: readonly string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <SectionTitle>확인할 점</SectionTitle>
+      <ul className="space-y-0.5">
+        {warnings.map((warning, index) => (
+          <li key={`${index}-${warning}`} className="flex items-start gap-1.5 text-foreground">
+            <AlertTriangleIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-status-caution" />
+            {warning}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /**
  * 저장될 값의 미리보기. 미리보기를 가진 action 만 그리고, 나머지는 `null` 을 돌려
  * 기존 표시(제목 한 줄)를 그대로 둔다.
+ *
+ * [캘린더수집] `sourceRef` 에 캘린더 출처(`calendarInbound`)가 있으면 액션과 무관하게 바뀔 칸 아래에 흐린
+ * 「원본:」 한 줄과 「확인할 점」을 그 순서로 그린다. 출처 모양은 서버와 같은 리더(`readCalendarInboundRef`)로 읽는다 — sqlite
+ * 레인의 문자열 저장도 거기서 푼다.
  */
 export function ProposalPayloadPreview({
   action,
   args,
+  sourceRef,
+  argLabels,
+  targetEntityName,
 }: {
   action: string | undefined;
   args: Record<string, unknown> | undefined;
+  /** 기안 출처 칸 원본(역직렬화 전이어도 된다). */
+  sourceRef?: unknown;
+  /** 서버가 args 의 id 를 이름으로 푼 것(새 회차 생성만). */
+  argLabels?: ProposalArgLabels | null;
+  /** 기안 대상의 이름(서버 해석 `targetEntityName`) — 기록 수정의 대상 칸에 쓴다. */
+  targetEntityName?: string | null;
 }) {
-  if (!args) return null;
-  const body =
+  const origin = readCalendarInboundRef(sourceRef);
+  const body = !args ? null :
     action === "create_partner" ? (
       <CreatePartnerPreview args={args} />
     ) : action === "create_deal" ? (
@@ -420,10 +528,18 @@ export function ProposalPayloadPreview({
     ) : action === "update_settlement_amount" ? (
       <UpdateSettlementAmountPreview args={args} />
     ) : action === "update_record" ? (
-      <UpdateRecordPreview args={args} />
+      <UpdateRecordPreview args={args} targetEntityName={targetEntityName} />
     ) : action === "upsert_product_mappings" ? (
       <UpsertProductMappingsPreview args={args} />
+    ) : action === "create_campaign_round" ? (
+      <CreateCampaignRoundPreview args={args} labels={argLabels} />
     ) : null;
-  if (!body) return null;
-  return <div className="space-y-3 text-xs">{body}</div>;
+  if (!body && !origin) return null;
+  return (
+    <div className="space-y-3 text-xs">
+      {body}
+      {origin && <CalendarOriginLine origin={origin} />}
+      {origin && <CalendarWarnings warnings={origin.warnings} />}
+    </div>
+  );
 }

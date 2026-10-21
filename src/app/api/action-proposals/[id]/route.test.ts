@@ -20,8 +20,10 @@ vi.mock("@/repositories/actionProposalRepository", () => ({
   deserializeJsonField: (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v),
 }));
 
+const resolveArgLabelsMock = vi.fn();
 vi.mock("@/lib/agent/resolve-entity-label", () => ({
   resolveEntityLabel: (...args: unknown[]) => resolveEntityLabelMock(...args),
+  resolveProposalArgLabels: (...args: unknown[]) => resolveArgLabelsMock(...args),
 }));
 
 const { GET } = await import("./route");
@@ -39,6 +41,7 @@ describe("GET /api/action-proposals/[id]", () => {
     requireAuthMock.mockReset();
     findByIdMock.mockReset();
     resolveEntityLabelMock.mockReset();
+    resolveArgLabelsMock.mockReset().mockResolvedValue(null);
     requireAuthMock.mockResolvedValue({ authenticated: true, context: { userId: "u1", role: "admin" } });
   });
 
@@ -137,5 +140,34 @@ describe("GET /api/action-proposals/[id]", () => {
     );
     expect(body.dataSources).toEqual(["Deal"]);
     expect(body.evidence).toBeNull();
+  });
+
+  it("[캘린더수집] sourceRef 를 역직렬화하고 새 회차 기안의 이름을 붙인다", async () => {
+    const sourceRef = { calendarInbound: { inboundId: "in-1" } };
+    const payload = { action: "create_campaign_round", args: { dealId: "d1", sellerId: "s1" } };
+    findByIdMock.mockResolvedValue({
+      id: "p-cal",
+      title: "새 회차 생성",
+      status: "PENDING_APPROVAL",
+      payload: JSON.stringify(payload),
+      sourceRef: JSON.stringify(sourceRef),
+      executionResult: null,
+      structuredResult: null,
+      dataSources: null,
+      evidence: null,
+      targetEntityType: "CAMPAIGN",
+      targetEntityId: null,
+      createdBy: "SYSTEM_CALENDAR_INBOUND",
+      createdAt: new Date(),
+      events: [],
+    });
+    resolveEntityLabelMock.mockResolvedValue(null);
+    resolveArgLabelsMock.mockResolvedValue({ seller: "샘플", deal: "테스트브랜드 봄딜" });
+
+    const body = await (await GET(makeRequest("p-cal"), makeParams("p-cal"))).json();
+
+    expect(body.sourceRef).toEqual(sourceRef);
+    expect(resolveArgLabelsMock).toHaveBeenCalledWith(payload);
+    expect(body.argLabels).toEqual({ seller: "샘플", deal: "테스트브랜드 봄딜" });
   });
 });

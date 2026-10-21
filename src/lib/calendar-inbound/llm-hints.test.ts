@@ -6,7 +6,12 @@ vi.mock("@/lib/agent/gemini-usage", async (orig) => ({
   recordGeminiFailure: (f: unknown) => recordGeminiFailure(f),
 }));
 
-import { extractTitleHints } from "./llm-hints";
+import { extractTitleHints, type TitleHintsResult } from "./llm-hints";
+
+/** hints 결과면 그 힌트, 아니면 null — 근거 검증 테스트용. */
+function hintsOf(r: TitleHintsResult) {
+  return r.kind === "hints" ? r.hints : null;
+}
 
 function geminiReply(obj: unknown, status = 200): Response {
   const body =
@@ -44,7 +49,7 @@ describe("extractTitleHints", () => {
       }),
     );
     const r = await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" });
-    expect(r).toEqual({
+    expect(hintsOf(r)).toEqual({
       sellerHint: "샘플셀러",
       brandHint: "테스트브랜드",
       round: 2,
@@ -70,7 +75,7 @@ describe("extractTitleHints", () => {
       }),
     );
     const r = await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" });
-    expect(r).toEqual({
+    expect(hintsOf(r)).toEqual({
       sellerHint: null,
       brandHint: "테스트브랜드",
       round: 2,
@@ -91,20 +96,20 @@ describe("extractTitleHints", () => {
       fetchImpl,
       apiKey: "k",
     });
-    expect(r?.round).toBeNull();
+    expect(hintsOf(r)?.round ?? null).toBeNull();
   });
 
   it("제목의 회차와 다른 숫자도 버린다", async () => {
     const fetchImpl = vi.fn(async () => geminiReply({ round: 3, kind: null }));
     const r = await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" });
-    expect(r?.round).toBeNull();
+    expect(hintsOf(r)?.round ?? null).toBeNull();
   });
 
   it("제목에 입금/지급 키워드가 없으면 deposit/payout 종류를 버린다", async () => {
     for (const kind of ["deposit", "payout"]) {
       const fetchImpl = vi.fn(async () => geminiReply({ round: 2, kind }));
       const r = await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" });
-      expect(r?.kind).toBeNull();
+      expect(hintsOf(r)?.kind ?? null).toBeNull();
     }
   });
 
@@ -112,24 +117,24 @@ describe("extractTitleHints", () => {
     const dep = vi.fn(async () => geminiReply({ kind: "deposit" }));
     expect(
       (
-        await extractTitleHints("샘플셀러 입금", {
+        hintsOf(await extractTitleHints("샘플셀러 입금", {
           fetchImpl: dep,
           apiKey: "k",
-        })
+        }))
       )?.kind,
     ).toBe("deposit");
     const pay = vi.fn(async () => geminiReply({ kind: "payout" }));
     expect(
       (
-        await extractTitleHints("샘플셀러 정산금", {
+        hintsOf(await extractTitleHints("샘플셀러 정산금", {
           fetchImpl: pay,
           apiKey: "k",
-        })
+        }))
       )?.kind,
     ).toBe("payout");
   });
 
-  it("키가 없으면 fetch 없이 null", async () => {
+  it("키가 없으면 fetch 없이 none(설정 문제라 다시 물어도 같다)", async () => {
     const fetchImpl = vi.fn();
     const prev = {
       a: process.env.GEMINI_API_KEY,
@@ -138,7 +143,7 @@ describe("extractTitleHints", () => {
     delete process.env.GEMINI_API_KEY;
     delete process.env.BACKUP_GEMINI_API_KEY;
     try {
-      expect(await extractTitleHints(TITLE, { fetchImpl })).toBeNull();
+      expect(await extractTitleHints(TITLE, { fetchImpl })).toEqual({ kind: "none" });
     } finally {
       if (prev.a !== undefined) process.env.GEMINI_API_KEY = prev.a;
       if (prev.b !== undefined) process.env.BACKUP_GEMINI_API_KEY = prev.b;
@@ -149,41 +154,76 @@ describe("extractTitleHints", () => {
     );
   });
 
-  it("비JSON 응답은 null", async () => {
+  it("비JSON 응답은 none", async () => {
     const fetchImpl = vi.fn(async () => geminiReply("이건 JSON 이 아님"));
     expect(
       await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" }),
-    ).toBeNull();
+    ).toEqual({ kind: "none" });
   });
 
-  it("스키마가 어긋나면 null", async () => {
+  it("스키마가 어긋나면 none", async () => {
     const fetchImpl = vi.fn(async () =>
       geminiReply({ round: "둘째", kind: "weird" }),
     );
     expect(
       await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" }),
-    ).toBeNull();
+    ).toEqual({ kind: "none" });
   });
 
-  it("HTTP 오류는 null 이고 실패가 계측된다", async () => {
+  it("5xx 는 unavailable(일시 장애) 이고 실패가 계측된다", async () => {
     const fetchImpl = vi.fn(async () => geminiReply(null, 500));
     expect(
       await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" }),
-    ).toBeNull();
+    ).toEqual({ kind: "unavailable" });
     expect(recordGeminiFailure).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "HTTP", statusCode: 500 }),
     );
   });
 
-  it("네트워크 예외도 throw 하지 않는다", async () => {
+  it("네트워크 예외는 throw 하지 않고 unavailable", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("down");
     });
     expect(
       await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" }),
-    ).toBeNull();
+    ).toEqual({ kind: "unavailable" });
     expect(recordGeminiFailure).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "NETWORK" }),
     );
+  });
+
+  it("429 도 unavailable", async () => {
+    const fetchImpl = vi.fn(async () => geminiReply(null, 429));
+    expect(await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" })).toEqual({ kind: "unavailable" });
+  });
+
+  it("재시도해도 안 될 HTTP 오류(400)는 none 이고 계측된다", async () => {
+    const fetchImpl = vi.fn(async () => geminiReply(null, 400));
+    expect(await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" })).toEqual({ kind: "none" });
+    expect(recordGeminiFailure).toHaveBeenCalledWith(expect.objectContaining({ kind: "HTTP", statusCode: 400 }));
+  });
+
+  it("키 여럿이 전부 429/5xx 면 KEYS_EXHAUSTED 로 계측하고 unavailable", async () => {
+    const prev = { a: process.env.GEMINI_API_KEY, b: process.env.BACKUP_GEMINI_API_KEY };
+    process.env.GEMINI_API_KEY = "k1";
+    process.env.BACKUP_GEMINI_API_KEY = "k2";
+    const fetchImpl = vi.fn(async () => geminiReply(null, 503));
+    try {
+      expect(await extractTitleHints(TITLE, { fetchImpl })).toEqual({ kind: "unavailable" });
+    } finally {
+      if (prev.a === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = prev.a;
+      if (prev.b === undefined) delete process.env.BACKUP_GEMINI_API_KEY;
+      else process.env.BACKUP_GEMINI_API_KEY = prev.b;
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(recordGeminiFailure).toHaveBeenCalledWith(expect.objectContaining({ kind: "KEYS_EXHAUSTED" }));
+  });
+
+  it("근거 있는 힌트가 하나도 없으면 none", async () => {
+    const fetchImpl = vi.fn(async () =>
+      geminiReply({ sellerHint: "없는사람", brandHint: null, round: 9, kind: "payout" }),
+    );
+    expect(await extractTitleHints(TITLE, { fetchImpl, apiKey: "k" })).toEqual({ kind: "none" });
   });
 });

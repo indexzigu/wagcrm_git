@@ -9,9 +9,16 @@
  *
  * 실제로 그렇게 두 개가 빠져 있었다(`create_partner` · `create_deal`, 2026-09-23).
  * 그래서 **레지스트리가 라벨 표의 상한**이라는 사실을 여기 못박는다.
+ *
+ * [캘린더수집] 상한을 봇 도구 목록(`WRITE_TOOL_NAMES`)에서 **실행기 화이트리스트(`WRITE_ACTIONS`)** 로 넓혔다.
+ * 결재함에 기안을 올리는 것은 봇만이 아니다 — 캘린더 수집이 올리는 `create_campaign_round` 는 봇 도구가 아니라
+ * 실행기에만 있는 액션이고, 종전 상한으로는 그 라벨을 둘 수 없어 배지에 영문 식별자가 뜰 자리였다. 보호 의도
+ * (낡은 라벨이 조용히 남지 않는다)는 그대로다 — 실행기에서 빠진 액션의 라벨은 여전히 실패한다. 오히려 하한을
+ * 실행기 전체로 올려, 봇 도구가 아닌 액션도 라벨 없이 결재함에 뜨지 못하게 했다.
  */
 import { describe, expect, it } from "vitest";
 import { WRITE_TOOL_NAMES } from "@/lib/agent/tools/types";
+import { WRITE_ACTIONS } from "@/lib/agent/write-actions";
 import { ACTION_LABELS } from "../proposal-card";
 
 describe("ACTION_LABELS 계약", () => {
@@ -20,8 +27,13 @@ describe("ACTION_LABELS 계약", () => {
     expect(missing).toEqual([]);
   });
 
-  it("라벨 표에 WRITE 도구가 아닌 키를 두지 않는다 — 낡은 라벨은 조용히 남는다", () => {
-    const orphans = Object.keys(ACTION_LABELS).filter((key) => !WRITE_TOOL_NAMES.has(key));
+  it("결재함에 기안될 수 있는 모든 실행기 액션에 한글 라벨이 있다(봇 도구가 아닌 것 포함)", () => {
+    const missing = Object.keys(WRITE_ACTIONS).filter((name) => !ACTION_LABELS[name]);
+    expect(missing).toEqual([]);
+  });
+
+  it("라벨 표에 실행기 액션이 아닌 키를 두지 않는다 — 낡은 라벨은 조용히 남는다", () => {
+    const orphans = Object.keys(ACTION_LABELS).filter((key) => !Object.hasOwn(WRITE_ACTIONS, key));
     expect(orphans).toEqual([]);
   });
 

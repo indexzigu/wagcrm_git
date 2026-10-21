@@ -6,13 +6,14 @@ import { CheckCheckIcon, Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-re
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ENTITY_TYPE_LABELS } from "./entity-type-labels";
+import { ENTITY_TYPE_LABELS, actionHasNoTargetYet } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
 import { formatShortDateTime } from "./format-time";
 import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
+import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import type { ApproveOptions } from "@/hooks/useProposalActions";
 import { displayLabel } from "@/lib/display-label";
 import { AGENT_MAPPING_APPLY_ACTOR } from "@/lib/agent-internal/actors";
@@ -32,6 +33,10 @@ export type ApprovalInboxItem = {
   errorMessage?: string | null;
   // §6-1 v1.2 추가: 완료 카드의 자동승인 표기용(proposal-card.tsx의 StatusChip 관례 재사용).
   executedBy?: string | null;
+  /** [캘린더수집] 기안 출처 칸 — 캘린더 출신이면 카드가 「원본 일정」을 그린다(역직렬화는 라우트가 한다). */
+  sourceRef?: unknown;
+  /** [캘린더수집] 새 회차 생성 기안의 셀러·판매 조건 이름(서버 해석). */
+  argLabels?: ProposalArgLabels | null;
 };
 
 // 정산(confirm_settlement) 승인은 카드(proposal-card.tsx)와 동일한 확인 다이얼로그를
@@ -89,12 +94,20 @@ function PayloadSummary({ item }: { item: ApprovalInboxItem }) {
       <p className="text-sm text-muted-foreground">
         <DetailLink id={item.id}>{item.title}</DetailLink>
       </p>
-      <ProposalPayloadPreview action={item.payload?.action} args={item.payload?.args} />
+      <ProposalPayloadPreview
+        action={item.payload?.action}
+        args={item.payload?.args}
+        sourceRef={item.sourceRef}
+        argLabels={item.argLabels}
+        targetEntityName={item.targetEntityName}
+      />
     </div>
   );
 }
 
 function EntityBadge({ item }: { item: ApprovalInboxItem }) {
+  // [캘린더수집] 새 회차 생성은 기안 시점에 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다.
+  if (actionHasNoTargetYet(item.payload?.action)) return null;
   const entityLabel = item.targetEntityType ? displayLabel(ENTITY_TYPE_LABELS, item.targetEntityType, "") || null : null;
   if (!entityLabel) return null;
   return (
