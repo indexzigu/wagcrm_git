@@ -266,8 +266,8 @@ describe("③ 후보 3 — outreach 평균 전환일: 창(window)은 hue 를 받
   // 카드 경계는 **헤더 아이콘 태그 통째로** 잡는다 — 제목 텍스트만 앵커로 쓰면 다음 카드의
   // 여는 태그(그 안의 emerald 아이콘)까지 딸려 들어와 단언이 이웃 카드에 오탐한다(실제로 깨졌다).
   const AVG_HEAD = '<Target className="size-3.5 text-status-info" />평균 전환일';
-  const TOP_HEAD = '<TrendingUp className="size-3.5 text-emerald-600" />전환율 높은 판매 조건';
-  const RATE_HEAD = '<TrendingUp className="size-3.5 text-emerald-600" />전환율';
+  const TOP_HEAD = '<TrendingUp className="size-3.5 text-primary" />전환율 높은 판매 조건';
+  const RATE_HEAD = '<TrendingUp className="size-3.5 text-primary" />전환율';
 
   const card = slice(CODE.outreach, AVG_HEAD, TOP_HEAD);
 
@@ -297,13 +297,13 @@ describe("③ 후보 3 — outreach 평균 전환일: 창(window)은 hue 를 받
     expect(card).toContain("최근30일");
   });
 
-  it("자매 카드 '전환율'도 두 창을 한 hue 로 그린다 — 이 통일의 근거다", () => {
+  it("자매 카드 '전환율'도 두 창을 한 값으로 그린다 — 이 통일의 근거다", () => {
     // 이 관례가 깨지면 "창은 색을 안 받는다"는 이 화면의 전제가 사라진다.
-    // 셰이드 차이(emerald-700 vs 800)는 허용 — 회수 대상은 **다른 hue** 다.
+    // 2026-10-21: 도넛 hex(#10b981·#059669) → 두 링 모두 차트 청록 stroke-chart-1, 숫자는 무채색.
     const donut = slice(CODE.outreach, RATE_HEAD, AVG_HEAD);
-    expect(textHues(donut), "전환율 카드가 두 창에 서로 다른 hue 를 쓰기 시작했다").toEqual(
-      new Set(["emerald"]),
-    );
+    expect(textHues(donut), "전환율 카드 숫자에 유채색 hue 가 돌아왔다").toEqual(new Set());
+    expect(donut.split('className="stroke-chart-1"').length - 1).toBe(2);
+    expect(donut).not.toMatch(/stroke="#/);
   });
 });
 
@@ -649,7 +649,9 @@ describe("대비 게이트 (P8 §5 — 그 표면에서 직접 계산)", () => {
   const TREE = hex("#FFFFFF");                           // asset-library 스크롤 컨테이너 bg-white
 
   /**
-   * 경과일 램프가 앉는 **가장 불리한** 카드 표면. followUp 틴트 중 가장 어두운 것을 쓴다 —
+   * 경과일 램프가 앉는 **가장 불리한** 카드 표면. 2026-10-21 부터 팔로업 카드는 틴트 없이 흰 카드 +
+   * 왼쪽 status-info 막대라 실제 표면은 흰색이다 — 아래 옛 indigo-50/20 틴트는 보수적 하한으로 남긴다.
+   * (옛 서술) followUp 틴트 중 가장 어두운 것을 쓴다 —
    * `rose-600` 이 흰 카드(4.53)에서만 턱걸이로 통과하고 틴트에서 무너졌던 게 정확히 이 차이다.
    * ⚠️ `calculateFollowUp` 은 status 분기보다 **먼저** `nextReminderAt` 룰을 타므로 이 틴트는
    * CONVERTED 를 포함한 어떤 상태에도 붙을 수 있다 — "전환은 흰 카드 확정"은 성립하지 않는다.

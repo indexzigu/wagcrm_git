@@ -761,19 +761,19 @@ export default function OutreachPage() {
                   {/* 1. 전체 전환율 도넛 */}
                   <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-700 mb-3 flex items-center gap-1.5 shrink-0">
-                      <TrendingUp className="size-3.5 text-emerald-600" />전환율
+                      <TrendingUp className="size-3.5 text-primary" />전환율
                     </p>
                     <div className="flex flex-col gap-3">
                       {/* 전체 */}
                       <div className="flex items-center gap-2.5">
                         <div className="relative size-8 shrink-0">
                           <svg viewBox="0 0 36 36" className="size-8 -rotate-90">
-                            <circle cx="18" cy="18" r="15.5" fill="none" stroke="#e2e8f0" strokeWidth="3.5" />
-                            <circle cx="18" cy="18" r="15.5" fill="none" stroke="#10b981" strokeWidth="3.5"
+                            <circle cx="18" cy="18" r="15.5" fill="none" className="stroke-slate-200" strokeWidth="3.5" />
+                            <circle cx="18" cy="18" r="15.5" fill="none" className="stroke-chart-1" strokeWidth="3.5"
                               strokeDasharray={`${metrics.allRate * 97.4} 97.4`}
                               strokeLinecap="round" />
                           </svg>
-                          <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-emerald-700 tabular-nums">
+                          <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-slate-700 tabular-nums">
                             {(metrics.allRate * 100).toFixed(0)}%
                           </span>
                         </div>
@@ -786,12 +786,12 @@ export default function OutreachPage() {
                       <div className="flex items-center gap-2.5">
                         <div className="relative size-8 shrink-0">
                           <svg viewBox="0 0 36 36" className="size-8 -rotate-90">
-                            <circle cx="18" cy="18" r="15.5" fill="none" stroke="#e2e8f0" strokeWidth="3.5" />
-                            <circle cx="18" cy="18" r="15.5" fill="none" stroke="#059669" strokeWidth="3.5"
+                            <circle cx="18" cy="18" r="15.5" fill="none" className="stroke-slate-200" strokeWidth="3.5" />
+                            <circle cx="18" cy="18" r="15.5" fill="none" className="stroke-chart-1" strokeWidth="3.5"
                               strokeDasharray={`${metrics.r30Rate * 97.4} 97.4`}
                               strokeLinecap="round" />
                           </svg>
-                          <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-emerald-800 tabular-nums">
+                          <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-slate-700 tabular-nums">
                             {(metrics.r30Rate * 100).toFixed(0)}%
                           </span>
                         </div>
@@ -824,7 +824,7 @@ export default function OutreachPage() {
                       {/* 최근 30일 — 위 "전체" 행과 **같은 status-info** 다(오너 결정 2026-07-30).
                           창(전체/최근30일)은 좋고 나쁨이 없는 범주라 hue 를 받지 않는다(P8 §4): 구
                           violet 은 "최근 30일"이라는 범주만 나르고 있었고, 자매 카드 "전환율"은 이미
-                          두 창을 같은 emerald 로 그리고 라벨로만 구분한다. 이 타일은 장식이 아니라
+                          두 창을 같은 차트 청록(stroke-chart-1)으로 그리고 라벨로만 구분한다. 이 타일은 장식이 아니라
                           **값 캐리어**라 무채색화 대신 hue 통일을 택했다 — 전체만 유채색이고 최근30일만
                           회색이면 없던 위계가 생긴다. 대비: status-info on /10 틴트 = 4.86 ✅ */}
                       <div className="flex items-center gap-2.5">
@@ -844,7 +844,7 @@ export default function OutreachPage() {
                   {/* 3. 전환율 높은 딜 */}
                   <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
-                      <TrendingUp className="size-3.5 text-emerald-600" />전환율 높은 판매 조건
+                      <TrendingUp className="size-3.5 text-primary" />전환율 높은 판매 조건
                     </p>
                     <div className="space-y-2 flex-1">
                       {metrics.topDeals.length > 0 ? metrics.topDeals.map((d) => (
@@ -853,8 +853,8 @@ export default function OutreachPage() {
                             <span className="text-slate-600 truncate min-w-0 mr-2">{d.name}</span>
                             <span className="shrink-0 font-bold text-status-success tabular-nums">{(d.rate * 100).toFixed(0)}%</span>
                           </div>
-                          <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full transition-[width]" style={{ width: `${Math.max(d.rate * 100, 2)}%` }} />
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-chart-1 rounded-full transition-[width]" style={{ width: `${Math.max(d.rate * 100, 2)}%` }} />
                           </div>
                         </div>
                       )) : <div className="text-[10px] text-muted-foreground mb-1">데이터 부족</div>}
@@ -884,7 +884,7 @@ export default function OutreachPage() {
                   {/* 5. 전환율 높은 셀러 */}
                   <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm flex flex-col">
                     <p className="text-[11px] font-semibold text-slate-800 mb-3 flex items-center gap-1.5 shrink-0 border-b border-slate-100 pb-2">
-                      <Target className="size-3.5 text-emerald-500" />전환율 높은 셀러
+                      <Target className="size-3.5 text-primary" />전환율 높은 셀러
                     </p>
                     <div className="space-y-2 flex-1">
                       {metrics.topSellers.length > 0 ? metrics.topSellers.map((s) => (
@@ -893,8 +893,8 @@ export default function OutreachPage() {
                             <span className="text-slate-600 truncate min-w-0 mr-2">{s.name}</span>
                             <span className="shrink-0 font-bold text-status-success tabular-nums">{(s.rate * 100).toFixed(0)}%</span>
                           </div>
-                          <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full transition-[width]" style={{ width: `${Math.max(s.rate * 100, 2)}%` }} />
+                          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-chart-1 rounded-full transition-[width]" style={{ width: `${Math.max(s.rate * 100, 2)}%` }} />
                           </div>
                         </div>
                       )) : <div className="text-[10px] text-muted-foreground mb-1">데이터 부족</div>}
@@ -1647,7 +1647,7 @@ function SalesTaskDetailPanel({
       <section className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xs font-semibold text-foreground">수수료 협의</h3>
-          <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-blue-50 text-blue-600 border border-blue-200">캠페인 연동</Badge>
+          <Badge variant="secondary" className="h-5 px-1.5 text-[9px] bg-primary/10 text-primary border border-primary/20">캠페인 연동</Badge>
         </div>
         <div className="space-y-4">
           <div className="flex items-center justify-between text-[11px]">

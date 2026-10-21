@@ -61,7 +61,7 @@ function fmtSyncTime(iso: string | null): string {
 }
 
 // 마감/오픈 카운트다운 배지의 서버측 결정(§B+D 혼합). 근접도로 정적(무JS) vs 라이브(클라 island)를 가른다.
-// 빨강은 오류 전용으로 예약 — 임박은 amber(마감)·blue(오픈)로만 알린다.
+// 빨강은 오류 전용으로 예약 — 마감 임박은 심각도 caution 토큰(--status-caution*), 오픈은 브랜드 청록 틴트로만 알린다.
 type TimingBadge =
   | { kind: "static"; label: string; className: string }
   | {
@@ -73,7 +73,7 @@ type TimingBadge =
       mode: "close" | "open";
     };
 
-// 진행중 캠페인의 마감 카운트다운. 1~3일 라이브(amber), 당일 라이브+flame 강조.
+// 진행중 캠페인의 마감 카운트다운. 1~3일 라이브(caution), 당일 라이브+flame 강조(caution 진한 글자·테두리).
 // 열린 기간('계속')·형식불량은 null(미표기), 마감 지난 건은 정적 "판매종료".
 //
 // ⛔ 4일 이상 남은 건에 정적 `D-N` 을 붙이지 말 것 (오너 지시 2026-08-26).
@@ -96,12 +96,12 @@ function deadlineBadge(salePeriod: string, today: string): TimingBadge | null {
   // initialLabel은 마운트 후 라이브 포맷과 같은 모양(하루 단위 접두 + --:--:--)으로 둔다 —
   // "D-2" → "2일 23:59:59"처럼 형태 자체가 바뀌면 폭이 튀는 플래시가 생긴다(ss-ux-designer 지적).
   if (days === 0)
-    return { kind: "live", targetMs, initialLabel: "오늘 마감 --:--:--", className: "bg-amber-100 text-amber-800 border-amber-300", icon: "flame", mode: "close" };
-  return { kind: "live", targetMs, initialLabel: `${days}일 --:--:--`, className: "bg-amber-50 text-amber-700 border-amber-200", icon: "clock", mode: "close" };
+    return { kind: "live", targetMs, initialLabel: "오늘 마감 --:--:--", className: "bg-status-caution-bg text-status-caution-text border-status-caution/50", icon: "flame", mode: "close" };
+  return { kind: "live", targetMs, initialLabel: `${days}일 --:--:--`, className: "bg-status-caution-bg text-status-caution border-status-caution/25", icon: "clock", mode: "close" };
 }
 
 // 예정 캠페인의 오픈 카운트다운. 4일+ 정적 'D-N 오픈예정', 1~3일·당일 라이브(브랜드 청록 틴트).
-// 오픈은 시작 경계라 주의 의미가 없어 마감(amber) 같은 상태 hue 를 받지 않는다 — P8 §4 의 중립 태그 캐리어
+// 오픈은 시작 경계라 주의 의미가 없어 마감(caution) 같은 상태 hue 를 받지 않는다 — P8 §4 의 중립 태그 캐리어
 // (bg-primary/10 text-primary, 셀러 목록 「신규(7일)」 선례)로 정적 D-N(slate)과만 구분한다. 종전 blue 는 축 밖 hue.
 // 시작일이 이미 지났으면(진행중) null — 진행중 분기가 담당한다.
 function openingBadge(salePeriod: string, today: string): TimingBadge | null {
@@ -155,11 +155,11 @@ function momentumMeta(
   const yesterdayRevenue = yesterdayStat.revenue;
   if (yesterdayRevenue === 0) {
     if (todayRevenue === 0) return null; // 0→0, 비교 무의미
-    return { label: "신규", className: "text-emerald-700" };
+    return { label: "신규", className: "text-status-success" };
   }
   const pct = Math.round(((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100);
   if (pct === 0) return { label: "보합", className: "text-slate-500" };
-  if (pct > 0) return { label: `▲ ${pct}%`, className: "text-emerald-700" };
+  if (pct > 0) return { label: `▲ ${pct}%`, className: "text-status-success" };
   return { label: `▼ ${Math.abs(pct)}%`, className: "text-slate-500" };
 }
 
@@ -175,12 +175,12 @@ function HourlyChart({ hourly }: { hourly: { hour: number; orders: number }[] })
     <div role="img" aria-label={summary} className="flex items-end gap-[3px] h-24">
       {hourly.map((h) => (
         <div key={h.hour} className="flex-1 h-full flex flex-col items-center justify-end gap-1">
-          {/* 단일 계열 분포라 상태 hue 없이 차트 청록(--chart-1 #0F5F67) 60% 단색. 흰 표면 대비는 청록 교체 후
-              2.93 으로 1.4.11(3:1)에 못 미친다(네이비 시절 3.59 — CRM 캠페인 인사이트 막대도 같은 값이라 함께 판단할 것).
+          {/* 단일 계열 분포라 상태 hue 없이 차트 청록(--chart-1 #0F5F67) 70% 단색 — 흰 표면 3.64 · 0건 기준선 slate-100 옆
+              3.32 로 1.4.11(3:1) 충족(60% 는 청록 교체 뒤 2.93 미달이라 2026-10-21 상향. CRM 캠페인 인사이트 막대와 같은 값).
               아래 「구성별 판매」 청록 100% 막대보다 한 단계 약하게 둬 위계를 지킨다
               (시간대 시안 선례: intraday-hour-heatmap 의 chart-1 알파). 0건 시간대는 2px slate-100 기준선 그대로. */}
           <div
-            className={`w-full rounded-t ${h.orders > 0 ? "bg-chart-1/60" : "bg-slate-100"}`}
+            className={`w-full rounded-t ${h.orders > 0 ? "bg-chart-1/70" : "bg-slate-100"}`}
             style={{ height: `${Math.max(h.orders > 0 ? 4 : 2, Math.round((h.orders / max) * 72))}px` }}
           ></div>
           <span aria-hidden="true" className="text-[10px] text-slate-500 leading-none">{h.hour % 6 === 0 ? h.hour : ""}</span>
@@ -242,7 +242,7 @@ function ActiveCampaignSection({
         <div className="flex items-start gap-2">
           <span
             className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${
-              isEnded ? "bg-slate-100 text-slate-600 border-slate-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
+              isEnded ? "bg-slate-100 text-slate-600 border-slate-200" : "bg-status-active/10 text-status-active border-status-active/30"
             }`}
           >
             {isEnded ? "판매종료" : "판매중"}
