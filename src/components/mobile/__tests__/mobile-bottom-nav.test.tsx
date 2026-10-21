@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MobileBottomNav } from "../mobile-bottom-nav";
 
+// 경로별 숨김 판정을 시험하려고 pathname 을 테스트마다 바꿀 수 있게 둔다(기본 "/").
+const nav = vi.hoisted(() => ({ pathname: "/" }));
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/",
+  usePathname: () => nav.pathname,
 }));
 
 vi.mock("next/link", () => ({
@@ -53,4 +55,33 @@ describe("MobileBottomNav — 탭 순서 (오너 피드백 2026-07-15)", () => {
     expect(links[1]).not.toHaveAttribute("aria-current");
     expect(links[2]).not.toHaveAttribute("aria-current");
   });
+});
+
+describe("MobileBottomNav — 셀러 포털에서는 CRM 탭 바를 그리지 않는다", () => {
+  afterEach(() => {
+    nav.pathname = "/";
+  });
+
+  // 셀러가 포털을 홈 화면에 추가해 열면 이 컴포넌트의 스탠드얼론 게이트를 통과한다 —
+  // 셀러는 CRM 사용자가 아니므로 오너용 탭(홈·일정·캠페인)이 보이면 안 된다.
+  it.each(["/some-seller", "/some-seller/", "/some-seller/card/abc123", "/p/token-abcdefghijklmnopqrst"])(
+    "%s 에서는 렌더하지 않는다",
+    (pathname) => {
+      nav.pathname = pathname;
+      const { container } = render(<MobileBottomNav />);
+      expect(container).toBeEmptyDOMElement();
+      expect(screen.queryAllByRole("link")).toHaveLength(0);
+    },
+  );
+
+  // 포털 판정(isPortalPublicPath)은 한 세그먼트 경로를 슬러그로 보지만 예약어는 제외한다 —
+  // 실제 CRM 화면이 포털로 오판돼 탭 바가 사라지지 않는지 고정한다.
+  it.each(["/", "/schedule", "/pipeline", "/settlement", "/sellers", "/deals", "/reports", "/settings"])(
+    "CRM 경로 %s 에서는 렌더한다",
+    (pathname) => {
+      nav.pathname = pathname;
+      render(<MobileBottomNav />);
+      expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["홈", "일정", "캠페인"]);
+    },
+  );
 });
