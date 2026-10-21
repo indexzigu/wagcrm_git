@@ -160,6 +160,8 @@ describe("buildTodayWorkRows — 자동화 작업 조치대기", () => {
     firstSeenAt,
     normalizedAt: null,
     occurrences: 1,
+    cause: null,
+    causeConfidence: null,
   });
 
   it("조치대기가 0건이거나 아직 모르면(로딩·실패) 줄이 없다", () => {

@@ -26,12 +26,14 @@ function incident(overrides: Partial<AutomationIncident> = {}): AutomationIncide
     firstSeenAt: "2026-10-17T00:30:00.000Z",
     normalizedAt: null,
     occurrences: 1,
+    cause: null,
+    causeConfidence: null,
     ...overrides,
   };
 }
 
 describe("AUTOMATION_INCIDENT_FIELDS", () => {
-  it("화면이 받는 칸은 이 9개뿐이다 — 원문 메시지(lastMessage)는 내려보내지 않는다", () => {
+  it("화면이 받는 칸은 이 11개뿐이다 — 원문 메시지(lastMessage)는 내려보내지 않는다", () => {
     expect([...AUTOMATION_INCIDENT_FIELDS]).toEqual([
       "id",
       "jobKey",
@@ -42,6 +44,8 @@ describe("AUTOMATION_INCIDENT_FIELDS", () => {
       "firstSeenAt",
       "normalizedAt",
       "occurrences",
+      "cause",
+      "causeConfidence",
     ]);
     expect(AUTOMATION_INCIDENT_FIELDS).not.toContain("lastMessage");
   });
@@ -78,6 +82,12 @@ describe("summarizeWaitingJobs", () => {
       incident({ id: "a1", firstSeenAt: "2026-10-17T05:00:00.000Z", errorKind: "proxy_quota" }),
     ]);
     expect(out).toEqual({ jobCount: 1, detail: `${jobA.name} · 프록시 한도 소진` });
+  });
+
+  it("플레이북 원인이 있으면 원인 칸에 확신과 함께 그 원인을 쓴다", () => {
+    expect(
+      summarizeWaitingJobs([incident({ cause: "인스타그램 접근 토큰 만료", causeConfidence: "확정" })])?.detail,
+    ).toBe(`${jobA.name} · 확정 인스타그램 접근 토큰 만료`);
   });
 
   it("목록에 없는 작업은 「알 수 없음」으로 — 영문 작업 키를 화면에 내지 않는다", () => {

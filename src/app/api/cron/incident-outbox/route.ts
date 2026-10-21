@@ -52,6 +52,8 @@ type IncidentRow = {
   firstSeenAt: Date;
   lastSeenAt: Date;
   ownerAction: string | null;
+  cause: string | null;
+  causeConfidence: string | null;
   prNumber: number | null;
   normalizedAt: Date | null;
   normalizedEvidence: unknown;
@@ -66,6 +68,9 @@ function toReport(row: IncidentRow): ReportIncident {
     errorKind: (row.errorKind ?? null) as CronErrorKind | null,
     firstSeenAt: row.firstSeenAt,
     ownerAction: row.ownerAction,
+    // 플레이북이 정한 원인(4단계) — 원문(lastMessage)이 아니라 고정 문장이다. 알림에는 원문을 넣지 않는다.
+    cause: row.cause ?? null,
+    causeConfidence: row.causeConfidence ?? null,
     prNumber: row.prNumber,
     normalizedAt: row.normalizedAt,
     normalizedEvidence: row.normalizedEvidence,

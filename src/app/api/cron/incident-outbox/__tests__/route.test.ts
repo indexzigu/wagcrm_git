@@ -130,6 +130,27 @@ describe("incident-outbox 크론", () => {
     expect(incidentUpdate).not.toHaveBeenCalled();
   });
 
+  it("immediate: 플레이북 원인이 있으면 원인 줄에 확신과 함께 싣고, 원문(lastMessage)은 넣지 않는다", async () => {
+    const action =
+      "프록시 월 한도가 바닥났습니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.";
+    routeFindMany(
+      [
+        row({
+          jobKey: "naver-order-sync",
+          cause: "프록시 월 한도 소진",
+          causeConfidence: "확정",
+          ownerAction: action,
+          lastMessage: "fetch failed <- Proxy response (407) seller_a token=placeholder",
+        }),
+      ],
+      [],
+    );
+    const body = await (await GET(get("immediate"))).json();
+    expect(body.messages[0].detail).toBe(`원인: 확정 프록시 월 한도 소진\n조치: ${action}`);
+    expect(JSON.stringify(body)).not.toContain("seller_a");
+    expect(JSON.stringify(body)).not.toContain("407");
+  });
+
   it("immediate: 마지막 발생 뒤 성공한 작업은 보내지 않고 사고를 막힘으로 닫고 C 사고를 남긴다", async () => {
     const lastRunAt = new Date("2026-10-18T00:00:00Z");
     routeFindMany([row()], []);

@@ -33,6 +33,8 @@ function row(overrides: Record<string, unknown> = {}) {
     firstSeenAt: new Date("2026-10-17T00:00:00.000Z"),
     normalizedAt: null,
     occurrences: 2,
+    cause: "프록시 월 한도 소진",
+    causeConfidence: "확정",
     lastMessage: "fetch failed: 407 proxy auth token=secret-placeholder",
     signature: "naver-order-sync|A|proxy_quota|fetch failed",
     suppressedAt: null,
@@ -64,7 +66,7 @@ describe("GET /api/system/incidents", () => {
     expect(findManyMock).not.toHaveBeenCalled();
   });
 
-  it("응답 칸은 정해진 9개뿐이다 — 원문 메시지(lastMessage)·서명은 내려보내지 않는다", async () => {
+  it("응답 칸은 정해진 11개뿐이다 — 원문 메시지(lastMessage)·서명은 내려보내지 않는다", async () => {
     findManyMock.mockImplementation(async (args: { select?: Record<string, true> }) => {
       // 라우트가 select 를 빠뜨려도 이 테스트가 잡도록, select 에 없는 칸은 지우지 않고 그대로 돌려준다.
       const full = row();

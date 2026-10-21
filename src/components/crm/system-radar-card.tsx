@@ -17,7 +17,7 @@ import {
   type AutomationIncident,
   type IncidentStatus,
 } from "@/lib/automation-incidents";
-import { incidentCauseLabel } from "@/lib/cron-incident-report";
+import { incidentCauseText } from "@/lib/cron-incident-report";
 
 interface TaskStatus {
   id: string;
@@ -184,7 +184,7 @@ function IncidentSection({ incidents, error }: { incidents: AutomationIncident[]
               <span aria-hidden className={`mt-1 size-1.5 shrink-0 rounded-full ${meta.dotClass}`} />
               <div className="min-w-0 flex-1">
                 <p className={`break-keep text-[11px] leading-snug ${meta.titleClass}`}>
-                  {INCIDENT_STATUS_LABELS[incident.status]} · {incidentCauseLabel(incident.kind, incident.errorKind)}
+                  {INCIDENT_STATUS_LABELS[incident.status]} · {incidentCauseText(incident)}
                 </p>
                 {incident.status === "waiting_owner" && (
                   // 할 일 문장은 자르지 않는다(340px 에서 두 줄) — 잘리면 무엇을 해야 하는지가 사라진다.

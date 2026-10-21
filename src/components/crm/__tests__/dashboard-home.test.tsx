@@ -333,6 +333,8 @@ describe("DashboardHome", () => {
         firstSeenAt: "2026-10-17T00:00:00.000Z",
         normalizedAt: null,
         occurrences: 1,
+        cause: null,
+        causeConfidence: null,
       },
     ];
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tasks: [], settlements: [] }) }));

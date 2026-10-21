@@ -28,6 +28,10 @@ export type ReportIncident = {
   errorKind: CronErrorKind | null;
   firstSeenAt: Date;
   ownerAction: string | null;
+  /** 플레이북이 정한 원인(4단계) — 없으면 오류 종류 라벨 */
+  cause?: string | null;
+  /** 「확정」|「후보」 */
+  causeConfidence?: string | null;
   prNumber: number | null;
   normalizedAt: Date | null;
   normalizedEvidence: unknown;
@@ -53,6 +57,22 @@ const UNKNOWN_CAUSE = "원인 불명";
 export function incidentCauseLabel(kind: IncidentKind, errorKind: CronErrorKind | null): string {
   if (kind === "B") return "결과 0건";
   return (errorKind && CAUSE_BY_ERROR_KIND[errorKind]) || UNKNOWN_CAUSE;
+}
+
+/**
+ * 원인 칸에 쓸 글자 — 승격 때 플레이북이 원인을 정했으면 「확정 프록시 월 한도 소진」처럼 확신과 함께, 아니면
+ * `incidentCauseLabel`. 즉시 알림·묶음 알림·오늘 처리할 일·설명창이 이 함수 하나를 쓴다.
+ * 원인 글자는 플레이북의 고정 문장(키 이름·건수만 끼움)이라 원문이 섞이지 않는다(`cron-incident-playbook.ts`).
+ */
+export function incidentCauseText(i: {
+  kind: IncidentKind;
+  errorKind: CronErrorKind | null;
+  cause?: string | null;
+  causeConfidence?: string | null;
+}): string {
+  const cause = i.cause?.trim();
+  if (!cause) return incidentCauseLabel(i.kind, i.errorKind);
+  return i.causeConfidence === "확정" || i.causeConfidence === "후보" ? `${i.causeConfidence} ${cause}` : cause;
 }
 
 const KST_TIME = new Intl.DateTimeFormat("en-GB", {
@@ -83,7 +103,7 @@ function actionFor(i: ReportIncident): string {
 }
 
 export function formatImmediate(i: ReportIncident, jobName: string): OutboxMessage {
-  const lines = i.kind === "B" ? [] : [`원인: ${incidentCauseLabel(i.kind, i.errorKind)}`];
+  const lines = i.kind === "B" ? [] : [`원인: ${incidentCauseText(i)}`];
   lines.push(`조치: ${actionFor(i)}`);
   if (i.prNumber != null) lines.push(`PR #${i.prNumber}`);
   return {
@@ -147,7 +167,7 @@ function resolvedByRetry(evidence: unknown): boolean {
 const RETRY_RESOLVED_ACTION = "자동 재시도로 정상화";
 
 function resolvedLine(i: DigestIncident): string {
-  const parts = [`${kstDateTime(i.firstSeenAt)} ${i.jobName}`, incidentCauseLabel(i.kind, i.errorKind)];
+  const parts = [`${kstDateTime(i.firstSeenAt)} ${i.jobName}`, incidentCauseText(i)];
   // 기록된 조치가 있으면 그것이 우선이다 — 재시도 문구는 사람이·플레이북이 한 일이 없을 때만 채운다.
   const action = lastActionWhat(i.actions) ?? (resolvedByRetry(i.normalizedEvidence) ? RETRY_RESOLVED_ACTION : null);
   if (action) parts.push(action);
@@ -158,7 +178,7 @@ function resolvedLine(i: DigestIncident): string {
 function waitingLine(i: DigestIncident, now: Date): string {
   const days = Math.floor((now.getTime() - i.firstSeenAt.getTime()) / DAY_MS);
   const age = days > WAITING_DAYS_NOTE_AFTER ? ` (${days}일째)` : "";
-  return `${i.jobName} · ${incidentCauseLabel(i.kind, i.errorKind)}${age}`;
+  return `${i.jobName} · ${incidentCauseText(i)}${age}`;
 }
 
 /**
