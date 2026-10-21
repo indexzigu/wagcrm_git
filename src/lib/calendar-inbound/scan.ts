@@ -26,6 +26,7 @@ import { isSqliteDatabaseUrl } from "@/lib/prisma-client";
 import { ActionProposalRepository } from "@/repositories/actionProposalRepository";
 import { CALENDAR_INBOUND_CREATED_BY, calendarInboundRefSchema, type CalendarInboundRef } from "./adopt";
 import { loadInboundDictionary } from "./dictionary";
+import { withScanLock } from "./run-lock";
 import { extractTitleHints } from "./llm-hints";
 import { parseCalendarTitle } from "./parse-title";
 import { resolveInboundTarget, type ProposalDraft, type ResolveResult } from "./resolve-target";
@@ -46,6 +47,13 @@ export const MAX_PROPOSALS_PER_RUN = 20;
  */
 export const MAX_HINT_CALLS_PER_RUN = 20;
 
+/**
+ * 한 회차 시간 예산. 넘기면 남은 일정은 **쓰지 않고** 다음 회차로 넘긴다(`dropped` 로 센다). 단일 실행 잠금의
+ * 트랜잭션 시간 제한(`run-lock.ts` `LOCK_TX_TIMEOUT_MS`)보다 짧아야 한다 — 제한이 먼저 오면 잠금이 풀린 채
+ * 본문이 돌아 겹친 회차가 같은 일정을 또 기안할 수 있다. 예산은 일정 하나를 시작하기 전에만 본다.
+ */
+export const SCAN_BUDGET_MS = 240_000;
+
 /** 스캔 창 — KST 오늘 기준 과거 14일 ~ 미래 180일(끝날 포함). */
 const WINDOW_DAYS_BACK = 14;
 const WINDOW_DAYS_FORWARD = 180;
@@ -61,7 +69,11 @@ const CLOSED_PROPOSAL_STATUSES = new Set(["EXECUTED", "REJECTED"]);
 
 export type ScanSummary = {
   ok: boolean;
-  skipped?: "not_connected";
+  /**
+   * not_connected = 캘린더 연결 없음(ok:false). busy = 다른 회차가 도는 중이라 이번 회차는 아무것도 건드리지
+   * 않았다(ok:true — 고장이 아니다. 앞 회차가 같은 일정을 처리한다).
+   */
+  skipped?: "not_connected" | "busy";
   /** 후보로 읽은 종일·비반복 이벤트 수(CRM 소유 포함). */
   scanned: number;
   /** 장부가 참조하거나 CRM 표식이 있어 제외한 수. */
@@ -73,7 +85,7 @@ export type ScanSummary = {
   skippedUnparsed: number;
   /** 바꿀 칸이 없어 기안 없이 처리 끝(ADOPTED)으로 적은 수. */
   adoptedNoop: number;
-  /** 상한에 걸려 이번 회차에 손대지 않은 수. */
+  /** 기안 상한·회차 시간 예산에 걸려 이번 회차에 손대지 않은 수(다음 회차가 집는다). */
   dropped: number;
   /** 힌트 예산이 바닥나 이번 회차에 손대지 않은 해석 실패 수(다음 회차가 집는다). */
   hintDeferred: number;
@@ -365,14 +377,28 @@ async function evaluateEvent(
   return "proposed";
 }
 
-export async function runCalendarInboundScan(
-  opts: {
-    now?: Date;
-    maxProposals?: number;
-    maxHintCalls?: number;
-    deps?: Partial<CalendarInboundScanDeps>;
-  } = {},
-): Promise<ScanSummary> {
+type ScanOptions = {
+  now?: Date;
+  maxProposals?: number;
+  maxHintCalls?: number;
+  /** 회차 시간 예산(ms). 기본 `SCAN_BUDGET_MS`. */
+  budgetMs?: number;
+  deps?: Partial<CalendarInboundScanDeps>;
+};
+
+/**
+ * 한 회차. 크론과 수동 실행이 겹치지 않게 단일 실행 잠금(`run-lock.ts`) 안에서만 돈다 — 잠금을 못 잡으면
+ * 후보 조회도 하지 않고 `{ ok: true, skipped: "busy" }` 로 끝난다.
+ */
+export async function runCalendarInboundScan(opts: ScanOptions = {}): Promise<ScanSummary> {
+  const flight = await withScanLock(() => scanOnce(opts));
+  if (!flight.acquired) return { ...emptySummary(), skipped: "busy" };
+  return flight.value;
+}
+
+async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
+  const startedAt = Date.now();
+  const budgetMs = opts.budgetMs ?? SCAN_BUDGET_MS;
   const now = opts.now ?? new Date();
   const cap = opts.maxProposals ?? MAX_PROPOSALS_PER_RUN;
   const hintBudget: HintBudget = { used: 0, max: opts.maxHintCalls ?? MAX_HINT_CALLS_PER_RUN };
@@ -447,7 +473,8 @@ export async function runCalendarInboundScan(
 
       summary.newOrChanged++;
       // 기안 상한 — 기안 수만 센다. 힌트(Gemini) 호출은 따로 `hintBudget` 이 묶는다.
-      if (summary.proposed >= cap) {
+      // 시간 예산도 같이 본다 — 잠금 트랜잭션 시간 제한 안에서 끝내야 한다(위 SCAN_BUDGET_MS).
+      if (summary.proposed >= cap || Date.now() - startedAt > budgetMs) {
         // 손대지 않는다 — 다음 회차가 처음 본 것처럼 집는다.
         summary.dropped++;
         continue;

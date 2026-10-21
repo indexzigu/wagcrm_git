@@ -4,12 +4,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { CalendarPageClient } from "../calendar-page-client";
 import type { CalendarCampaign } from "@/components/crm/calendar-view";
 
-const toastMock = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }));
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() }));
+const pushMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/toast", () => ({ toast: toastMock }));
 
 // 페이지가 예비 일정 생성 후 공백 브리핑 갱신에 useRouter().refresh()를 쓴다.
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: pushMock, refresh: vi.fn() }),
 }));
 
 // 현재 월(로컬 기준) — 컴포넌트가 new Date()로 초기 월을 잡으므로 픽스처도 같은 기준으로 생성
@@ -147,9 +148,13 @@ describe("CalendarPageClient — 캘린더에서 가져오기", () => {
     // 응답 전에는 눌린 상태로 막혀 있다(연타 방지)
     expect(await screen.findByRole("button", { name: "가져오는 중..." })).toBeDisabled();
     release();
-    await vi.waitFor(() =>
-      expect(toastMock.success).toHaveBeenCalledWith("기안 2건 올림 · 해석 못 함 1건 · 이미 처리 3건"),
-    );
+    await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalled());
+    const [message, options] = toastMock.success.mock.calls[0];
+    expect(message).toBe("기안 2건 올림 · 해석 못 함 1건 · 이미 처리 3건");
+    // 기안을 올렸으면 토스트에서 바로 결재함으로 간다(R25-7)
+    expect(options.action.label).toBe("결재함 열기");
+    options.action.onClick();
+    expect(pushMock).toHaveBeenCalledWith("/approvals");
     expect(fetchMock).toHaveBeenCalledWith("/api/integrations/google-calendar/inbound-scan", { method: "POST" });
     expect(await screen.findByRole("button", { name: "캘린더에서 가져오기" })).not.toBeDisabled();
   });
@@ -165,5 +170,50 @@ describe("CalendarPageClient — 캘린더에서 가져오기", () => {
     fireEvent.click(screen.getByRole("button", { name: "캘린더에서 가져오기" }));
     await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalled());
     expect(toastMock.error.mock.calls[0][0]).toContain("외부 연동 진단");
+  });
+
+  it("올린 기안이 없으면 결재함 버튼을 달지 않는다", async () => {
+    toastMock.success.mockReset();
+    routeFetch({
+      ok: true,
+      body: { ok: true, proposed: 0, skippedUnparsed: 0, alreadyHandled: 2, adoptedNoop: 0, dropped: 0, hintDeferred: 0, errors: 0 },
+    });
+    render(<CalendarPageClient />);
+    fireEvent.click(screen.getByRole("button", { name: "캘린더에서 가져오기" }));
+    await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalled());
+    expect(toastMock.success.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it("다른 가져오기가 도는 중이면 「이미 가져오는 중」 안내", async () => {
+    toastMock.info.mockReset();
+    routeFetch({ ok: true, body: { ok: true, skipped: "busy", proposed: 0, skippedUnparsed: 0, alreadyHandled: 0, adoptedNoop: 0, dropped: 0, hintDeferred: 0, errors: 0 } });
+    render(<CalendarPageClient />);
+    fireEvent.click(screen.getByRole("button", { name: "캘린더에서 가져오기" }));
+    await vi.waitFor(() =>
+      expect(toastMock.info).toHaveBeenCalledWith("이미 가져오는 중입니다. 잠시 뒤 다시 눌러 주세요."),
+    );
+  });
+
+  it("JSON 이 아닌 오류 응답이면 기본 오류 문구를 띄운다(파싱 예외 문구가 새지 않는다)", async () => {
+    toastMock.error.mockReset();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url === "/api/integrations/google-calendar/inbound-scan"
+          ? { ok: false, status: 504, json: async () => { throw new SyntaxError("Unexpected token <"); } }
+          : { ok: true, json: async () => ({ campaigns: [] }) },
+      ),
+    );
+    render(<CalendarPageClient />);
+    fireEvent.click(screen.getByRole("button", { name: "캘린더에서 가져오기" }));
+    await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("캘린더 일정을 가져오지 못했습니다."));
+  });
+
+  it("버튼에 「승인하기 전에는 CRM이 바뀌지 않습니다」 설명창이 붙는다(포커스로도 열린다)", async () => {
+    routeFetch({ ok: true, body: {} });
+    render(<CalendarPageClient />);
+    fireEvent.focus(screen.getByRole("button", { name: "캘린더에서 가져오기" }));
+    expect((await screen.findAllByText("승인하기 전에는 CRM이 바뀌지 않습니다")).length).toBeGreaterThan(0);
   });
 });

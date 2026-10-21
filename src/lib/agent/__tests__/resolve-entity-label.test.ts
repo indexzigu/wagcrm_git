@@ -40,10 +40,26 @@ describe("resolveEntityLabel", () => {
     expect(label).toBe("종근당 벤더사");
   });
 
-  it("SELLER는 name을 반환한다", async () => {
-    sellerFindUniqueMock.mockResolvedValue({ name: "최가명" });
+  it("SELLER는 별칭이 없으면 name을 반환한다", async () => {
+    sellerFindUniqueMock.mockResolvedValue({ name: "최가명", alias: null });
     const label = await resolveEntityLabel("SELLER", "seller-1");
     expect(label).toBe("최가명");
+  });
+
+  it("SELLER는 별칭이 있으면 별칭을 먼저 쓴다(P2 Seller Alias Priority), 공백 별칭은 없는 것으로", async () => {
+    sellerFindUniqueMock.mockResolvedValue({ name: "최가명", alias: "가명별칭" });
+    expect(await resolveEntityLabel("SELLER", "seller-1")).toBe("가명별칭");
+    sellerFindUniqueMock.mockResolvedValue({ name: "최가명", alias: "  " });
+    expect(await resolveEntityLabel("SELLER", "seller-1")).toBe("최가명");
+  });
+
+  it("CAMPAIGN 조합명도 셀러 별칭을 먼저 쓴다", async () => {
+    campaignFindUniqueMock.mockResolvedValue({
+      campaignName: null,
+      deal: { dealName: "락토핏 골드" },
+      seller: { name: "최가명", alias: "가명별칭" },
+    });
+    expect(await resolveEntityLabel("CAMPAIGN", "camp-1")).toBe("락토핏 골드 - 가명별칭");
   });
 
   it("CAMPAIGN은 campaignName이 있으면 그대로, 없으면 dealName 기반 조합명을 반환한다", async () => {

@@ -231,7 +231,8 @@ export function ProposalCard({
   const action = proposal.payload?.action;
   const actionLabel = displayLabel(ACTION_LABELS, action, UNKNOWN_NAME);
   const isSettlement = action === SETTLEMENT_ACTION;
-  const entityLabel = proposal.targetEntityType
+  // [캘린더수집] 새 회차 생성은 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다(R25-10).
+  const entityLabel = proposal.targetEntityType && action !== "create_campaign_round"
     ? displayLabel(ENTITY_TYPE_LABELS, proposal.targetEntityType, "") || null
     : null;
 
@@ -262,6 +263,7 @@ export function ProposalCard({
         args={proposal.payload?.args}
         sourceRef={proposal.sourceRef}
         argLabels={proposal.argLabels}
+        targetEntityName={proposal.targetEntityName}
       />
 
       {/* 실패(FAILED) 재시도에는 붙이지 않는다 — 첫 승인 때 채운 값은 이미 기안에 저장돼 있다. */}

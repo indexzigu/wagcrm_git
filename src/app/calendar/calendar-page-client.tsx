@@ -13,6 +13,7 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { DataLoadError } from "@/components/ui/empty";
 import { CalendarView, type CalendarCampaign } from "@/components/crm/calendar-view";
@@ -227,7 +228,7 @@ export function CalendarPageClient({
       const res = await fetch("/api/integrations/google-calendar/sync", {
         method: "POST",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         toast.success(data.message ?? "구글 캘린더 동기화가 완료되었습니다.");
       } else if (res.status === 401) {
@@ -253,11 +254,17 @@ export function CalendarPageClient({
     setImporting(true);
     try {
       const res = await fetch("/api/integrations/google-calendar/inbound-scan", { method: "POST" });
-      const data = await res.json();
+      // 프록시 시간 초과 같은 HTML 오류 본문이면 파싱 예외 문구 대신 아래 기본 문구가 뜨게 빈 객체로 둔다.
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const { message, tone } = formatInboundScanToast(data as ScanSummary);
-        if (tone === "warning") toast.warning(message);
-        else toast.success(message);
+        const { message, tone, openApprovals } = formatInboundScanToast(data as ScanSummary);
+        // 기안을 올렸으면 토스트에서 바로 결재함으로 간다(R25-7).
+        const options = openApprovals
+          ? { action: { label: "결재함 열기", onClick: () => router.push("/approvals") } }
+          : undefined;
+        if (tone === "info") toast.info(message);
+        else if (tone === "warning") toast.warning(message, options);
+        else toast.success(message, options);
       } else if (res.status === 401) {
         toast.error(
           data.error ?? "구글 캘린더가 연결되어 있지 않습니다. 설정 > 외부 연동 진단에서 연동하세요.",
@@ -345,21 +352,29 @@ export function CalendarPageClient({
           )}
           {syncing ? "동기화 중..." : "구글 캘린더 전체 동기화"}
         </Button>
-        {/* [캘린더수집] 반대 방향(캘린더 → CRM). 결과는 결재함 기안이고 승인 전에는 아무것도 바뀌지 않는다. */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleInboundScan}
-          disabled={importing}
-          className="h-9 gap-1.5 rounded-lg px-3.5 text-xs"
-        >
-          {importing ? (
-            <Loader2 className="size-3.5 shrink-0 animate-spin" />
-          ) : (
-            <CloudDownload className="size-3.5 shrink-0" />
-          )}
-          {importing ? "가져오는 중..." : "캘린더에서 가져오기"}
-        </Button>
+        {/* [캘린더수집] 반대 방향(캘린더 → CRM). 결과는 결재함 기안이고 승인 전에는 아무것도 바뀌지 않는다 —
+            그 사실을 설명창으로 단다(마우스·키보드 포커스 둘 다로 열림, R25-9). */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleInboundScan}
+                disabled={importing}
+                className="h-9 gap-1.5 rounded-lg px-3.5 text-xs"
+              >
+                {importing ? (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                ) : (
+                  <CloudDownload className="size-3.5 shrink-0" />
+                )}
+                {importing ? "가져오는 중..." : "캘린더에서 가져오기"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">승인하기 전에는 CRM이 바뀌지 않습니다</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <Button
           size="sm"
           className="h-9 gap-1.5 rounded-lg bg-primary px-3.5 text-xs text-white hover:bg-primary/90"

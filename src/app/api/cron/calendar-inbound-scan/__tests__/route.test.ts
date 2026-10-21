@@ -75,6 +75,14 @@ describe("calendar-inbound-scan 크론", () => {
     expect(body).toMatchObject({ ok: true, quiet: true });
   });
 
+  it("다른 회차가 도는 중(busy)이면 조용한 성공이다(빨강 아님)", async () => {
+    vi.mocked(verifyCronAuth).mockReturnValue(true);
+    scanMock.mockResolvedValue(summary({ skipped: "busy" }));
+    const body = await (await GET(req())).json();
+    expect(body).toMatchObject({ ok: true, skipped: "busy", quiet: true });
+    expect(body.failed).toBeUndefined();
+  });
+
   it("캘린더 연결이 없으면 failed:true 로 빨강을 선언한다", async () => {
     vi.mocked(verifyCronAuth).mockReturnValue(true);
     scanMock.mockResolvedValue(summary({ ok: false, skipped: "not_connected" }));

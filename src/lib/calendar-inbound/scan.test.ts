@@ -41,9 +41,9 @@ function ev(id: string, over: Partial<CandidateEvent> = {}): CandidateEvent {
 const CREATE_DRAFT: ProposalDraft = {
   action: "create_campaign_round",
   args: { dealId: "d1", sellerId: "s1", startDate: "2026-11-03", endDate: "2026-11-09" },
-  title: "캘린더 일정 → 새 회차 생성: 샘플셀러 · 테스트브랜드 봄딜 (2026-11-03~2026-11-09)",
+  title: "새 회차 생성: 샘플셀러 · 테스트브랜드 봄딜 (2026-11-03~2026-11-09)",
   targetCampaignId: null,
-  warnings: ["CRM 회차 번호는 날짜순 자동 부여(제목의 N차와 다를 수 있음)"],
+  warnings: ["회차 번호는 시작일 순서로 정해져 일정 제목의 3차와 다를 수 있습니다."],
   adopt: true,
   ledgerKind: "campaign",
 };
@@ -516,5 +516,51 @@ describe("runCalendarInboundScan", () => {
       ok: false,
       error: "토큰 갱신 실패",
     });
+  });
+});
+
+describe("runCalendarInboundScan — 단일 실행(R24)", () => {
+  it("겹친 두 회차: 뒤 회차는 아무것도 건드리지 않고 busy, 기안은 1건", async () => {
+    const h = makeHarness([ev("e1")]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstList = h.listing.value;
+    h.listCandidates.mockImplementationOnce(async () => {
+      await gate;
+      return firstList;
+    });
+
+    const first = runCalendarInboundScan({ now: NOW, deps: h.deps });
+    const second = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(second).toMatchObject({ ok: true, skipped: "busy", scanned: 0, proposed: 0 });
+    // 뒤 회차는 후보 조회조차 하지 않았다(Gemini·DB 호출 없음)
+    expect(h.listCandidates).toHaveBeenCalledTimes(1);
+
+    release();
+    expect(await first).toMatchObject({ ok: true, proposed: 1 });
+    expect(h.proposals.size).toBe(1);
+
+    // 잠금은 회차가 끝나면 풀린다 — 다음 회차는 정상으로 돈다(같은 일정은 이미 처리)
+    const third = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    expect(third.skipped).toBeUndefined();
+    expect(third).toMatchObject({ proposed: 0, alreadyHandled: 1 });
+  });
+
+  it("앞 회차가 예외로 끝나도 잠금이 풀린다", async () => {
+    const h = makeHarness([ev("e1")]);
+    h.listCandidates.mockImplementationOnce(async () => {
+      throw new Error("boom");
+    });
+    expect(await runCalendarInboundScan({ now: NOW, deps: h.deps })).toMatchObject({ ok: false });
+    expect((await runCalendarInboundScan({ now: NOW, deps: h.deps })).skipped).toBeUndefined();
+  });
+
+  it("회차 예산을 넘기면 남은 일정은 손대지 않고 다음 회차로 넘긴다(dropped)", async () => {
+    const h = makeHarness([ev("e1"), ev("e2", { summary: "샘플셀러 테스트브랜드 3차" })]);
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps, budgetMs: -1 });
+    expect(summary).toMatchObject({ newOrChanged: 2, proposed: 0, dropped: 2 });
+    expect(h.rows.size).toBe(0);
   });
 });

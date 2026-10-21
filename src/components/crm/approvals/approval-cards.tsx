@@ -99,12 +99,17 @@ function PayloadSummary({ item }: { item: ApprovalInboxItem }) {
         args={item.payload?.args}
         sourceRef={item.sourceRef}
         argLabels={item.argLabels}
+        targetEntityName={item.targetEntityName}
       />
     </div>
   );
 }
 
+/** [캘린더수집] 새 회차 생성은 기안 시점에 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다(R25-10). */
+const NO_TARGET_YET_ACTIONS: ReadonlySet<string> = new Set(["create_campaign_round"]);
+
 function EntityBadge({ item }: { item: ApprovalInboxItem }) {
+  if (item.payload?.action && NO_TARGET_YET_ACTIONS.has(item.payload.action)) return null;
   const entityLabel = item.targetEntityType ? displayLabel(ENTITY_TYPE_LABELS, item.targetEntityType, "") || null : null;
   if (!entityLabel) return null;
   return (

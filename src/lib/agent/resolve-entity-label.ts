@@ -8,6 +8,11 @@
  */
 import { getPrisma } from "@/lib/prisma";
 
+/** 셀러 화면 이름 — 별칭이 있으면 별칭(P2 Seller Alias Priority). 공백 별칭은 없는 것으로 본다. */
+function sellerDisplayName(seller: { name: string; alias: string | null }): string {
+  return seller.alias && seller.alias.trim() !== "" ? seller.alias : seller.name;
+}
+
 export type ResolvableEntityType = "PARTNER" | "SELLER" | "DEAL" | "CAMPAIGN";
 
 function isResolvableEntityType(value: unknown): value is ResolvableEntityType {
@@ -34,7 +39,7 @@ export async function resolveEntityLabel(
     }
     case "SELLER": {
       const seller = await prisma.seller.findUnique({ where: { id: entityId } });
-      return seller?.name ?? null;
+      return seller ? sellerDisplayName(seller) : null;
     }
     case "CAMPAIGN": {
       const campaign = await prisma.salesCampaign.findUnique({
@@ -44,7 +49,7 @@ export async function resolveEntityLabel(
       if (!campaign) return null;
       if (campaign.campaignName) return campaign.campaignName;
       const dealName = campaign.deal?.dealName ?? "";
-      const sellerName = campaign.seller?.name ?? "";
+      const sellerName = campaign.seller ? sellerDisplayName(campaign.seller) : "";
       const combined = [dealName, sellerName].filter(Boolean).join(" - ");
       return combined || null;
     }
@@ -74,6 +79,6 @@ export async function resolveProposalArgLabels(payload: unknown): Promise<Propos
     prisma.seller.findUnique({ where: { id: sellerId }, select: { name: true, alias: true } }),
     prisma.deal.findUnique({ where: { id: dealId }, select: { dealName: true } }),
   ]);
-  const sellerLabel = seller ? (seller.alias && seller.alias.trim() !== "" ? seller.alias : seller.name) : null;
+  const sellerLabel = seller ? sellerDisplayName(seller) : null;
   return { seller: sellerLabel, deal: deal?.dealName ?? null };
 }

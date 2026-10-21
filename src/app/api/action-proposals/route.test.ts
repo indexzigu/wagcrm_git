@@ -137,7 +137,7 @@ describe("GET /api/action-proposals", () => {
     findManyMock.mockResolvedValue([
       {
         id: "proposal-cal",
-        title: "캘린더 일정 → 새 회차 생성",
+        title: "새 회차 생성",
         status: "PENDING_APPROVAL",
         kind: "WRITE",
         targetEntityType: "CAMPAIGN",

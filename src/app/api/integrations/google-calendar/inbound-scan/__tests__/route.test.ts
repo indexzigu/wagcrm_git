@@ -60,6 +60,13 @@ describe("POST /api/integrations/google-calendar/inbound-scan", () => {
     expect(scanMock).toHaveBeenCalledTimes(1);
   });
 
+  it("다른 회차가 도는 중이면 200 + skipped:busy(화면이 「이미 가져오는 중」을 띄운다)", async () => {
+    scanMock.mockResolvedValue(summary({ skipped: "busy" }));
+    const res = await POST();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, skipped: "busy" });
+  });
+
   it("캘린더 연결이 없으면 401 과 안내 문구", async () => {
     scanMock.mockResolvedValue(summary({ ok: false, skipped: "not_connected" }));
     const res = await POST();

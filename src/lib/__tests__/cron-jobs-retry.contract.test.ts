@@ -31,7 +31,8 @@ const EXPECTED_POLICY: Record<string, { max: 1 | 2 } | "never"> = {
   "agent-auto-execute": "never",
   "encryption-key-audit": { max: 1 },
   // 다시 불러도 안전: 같은 일정은 지문 장부(CalendarInboundEvent)가 「이미 처리」로 거르고, 결정 대기 기안이
-  // 있으면 다시 기안하지 않는다(scan.ts triage). 기안 상한·힌트 호출 상한도 회차마다 따로 묶인다.
+  // 있으면 다시 기안하지 않는다(scan.ts triage). 재시도가 다른 회차와 겹치면 단일 실행 잠금(run-lock.ts)이
+  // 뒤 회차를 아무것도 안 하고 끝낸다. 기안 상한·힌트 호출 상한도 회차마다 따로 묶인다.
   "calendar-inbound-scan": { max: 1 },
 };
 

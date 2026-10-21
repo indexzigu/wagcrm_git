@@ -26,8 +26,12 @@ describe("formatInboundScanToast", () => {
     expect(formatInboundScanToast(summary({ proposed: 2, skippedUnparsed: 1, alreadyHandled: 3, adoptedNoop: 1 }))).toEqual({
       message: "기안 2건 올림 · 해석 못 함 1건 · 이미 처리 4건",
       tone: "success",
+      openApprovals: true,
     });
-    expect(formatInboundScanToast(summary()).message).toBe("기안 0건 올림 · 해석 못 함 0건 · 이미 처리 0건");
+    expect(formatInboundScanToast(summary())).toMatchObject({
+      message: "기안 0건 올림 · 해석 못 함 0건 · 이미 처리 0건",
+      openApprovals: false, // 올린 기안이 없으면 결재함 버튼을 달지 않는다
+    });
   });
 
   it("상한에 걸려 다음 회차로 넘긴 건이 있으면 「다음에 이어서」를 덧붙인다", () => {
@@ -36,10 +40,19 @@ describe("formatInboundScanToast", () => {
     );
   });
 
+  it("다른 회차가 도는 중이면 「이미 가져오는 중」 안내만 띄운다", () => {
+    expect(formatInboundScanToast(summary({ skipped: "busy" }))).toEqual({
+      message: "이미 가져오는 중입니다. 잠시 뒤 다시 눌러 주세요.",
+      tone: "info",
+      openApprovals: false,
+    });
+  });
+
   it("처리 중 오류가 난 건이 있으면 숨기지 않고 알리고 주의 톤으로 띄운다", () => {
     expect(formatInboundScanToast(summary({ proposed: 1, errors: 2 }))).toEqual({
       message: "기안 1건 올림 · 해석 못 함 0건 · 이미 처리 0건 · 처리 실패 2건",
       tone: "warning",
+      openApprovals: true,
     });
   });
 });

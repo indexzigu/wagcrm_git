@@ -270,8 +270,16 @@ function isRecordScalar(value: unknown): boolean {
  * 기록 수정 — 칸마다 **지금 값 → 바꿀 값**. 「지금 값」은 기안자가 본 값이고 실행기는 실제 값이 이것과
  * 같을 때만 고친다. 칸 이름은 화면 이름 표에서, 표에 없으면 칸 이름 그대로 보인다.
  * 칸을 접거나 개수로 줄이지 않는다(머리 주석 — 감춘 줄에 틀린 값이 있으면 이 화면의 의미가 사라진다).
+ * 대상 칸은 종류(「캠페인」)가 아니라 서버가 푼 그 대상의 이름을 보인다(R25-1) — 종류만으로는 어느 캠페인인지
+ * 판단할 수 없다. 이름을 못 풀었으면 칸을 뺀다(값 없는 칸은 빼는 이 컴포넌트의 규칙).
  */
-function UpdateRecordPreview({ args }: { args: Record<string, unknown> }) {
+function UpdateRecordPreview({
+  args,
+  targetEntityName,
+}: {
+  args: Record<string, unknown>;
+  targetEntityName: string | null | undefined;
+}) {
   const entityType = args.entityType;
   const changes = asRecord(args.changes);
   const expected = asRecord(args.expected);
@@ -287,7 +295,7 @@ function UpdateRecordPreview({ args }: { args: Record<string, unknown> }) {
     <>
       <Rows
         rows={[
-          ["대상", RECORD_ENTITY_LABELS[entityType]],
+          [RECORD_ENTITY_LABELS[entityType], targetEntityName && targetEntityName.trim() !== "" ? targetEntityName : null],
           ["메모", asText(args.memo)],
         ]}
       />
@@ -438,31 +446,32 @@ function CreateCampaignRoundPreview({
 }
 
 /**
- * [캘린더수집] 이 기안을 만든 구글 캘린더 일정 — 오너가 직접 적은 **원래 제목·날짜**와 그 일정으로 가는 링크.
- * 해석이 틀렸는지는 원문과 나란히 봐야 알 수 있으므로 해석 결과(아래 본문)보다 먼저 둔다(설계 §7 순서).
+ * [캘린더수집] 이 기안을 만든 구글 캘린더 일정 — 흐린 한 줄 「원본: 제목 · 날짜 · 구글 캘린더에서 보기」(R25-4).
+ * 판단의 주인공은 위의 바뀔 칸이고, 원문은 해석이 맞는지 대조하는 근거라 그 아래에 조용히 둔다.
+ * 링크는 `https://` 만 그린다(출처 스키마 `calendarInboundRefSchema` 가 그 밖의 값을 null 로 접는다).
  */
-function CalendarOriginBlock({ origin }: { origin: CalendarInboundRef }) {
+function CalendarOriginLine({ origin }: { origin: CalendarInboundRef }) {
+  const parts = [origin.summary.trim(), periodText(origin.startDate, origin.endDate)].filter(
+    (part): part is string => !!part,
+  );
   return (
-    <div className="space-y-1">
-      <SectionTitle>원본 일정</SectionTitle>
-      <Rows
-        rows={[
-          ["제목", origin.summary.trim() === "" ? null : origin.summary],
-          ["날짜", periodText(origin.startDate, origin.endDate)],
-        ]}
-      />
+    <p className="min-w-0 break-words text-muted-foreground">
+      원본: {parts.join(" · ")}
       {origin.htmlLink ? (
-        <a
-          href={origin.htmlLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          구글 캘린더에서 보기
-          <ExternalLinkIcon aria-hidden className="size-3" />
-        </a>
+        <>
+          {" · "}
+          <a
+            href={origin.htmlLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          >
+            구글 캘린더에서 보기
+            <ExternalLinkIcon aria-hidden className="size-3" />
+          </a>
+        </>
       ) : null}
-    </div>
+    </p>
   );
 }
 
@@ -491,8 +500,8 @@ function CalendarWarnings({ warnings }: { warnings: readonly string[] }) {
  * 저장될 값의 미리보기. 미리보기를 가진 action 만 그리고, 나머지는 `null` 을 돌려
  * 기존 표시(제목 한 줄)를 그대로 둔다.
  *
- * [캘린더수집] `sourceRef` 에 캘린더 출처(`calendarInbound`)가 있으면 액션과 무관하게 「원본 일정」과
- * 「확인할 점」을 함께 그린다. 출처 모양은 서버와 같은 리더(`readCalendarInboundRef`)로 읽는다 — sqlite
+ * [캘린더수집] `sourceRef` 에 캘린더 출처(`calendarInbound`)가 있으면 액션과 무관하게 바뀔 칸 아래에 흐린
+ * 「원본:」 한 줄과 「확인할 점」을 그린다(R25-4 순서). 출처 모양은 서버와 같은 리더(`readCalendarInboundRef`)로 읽는다 — sqlite
  * 레인의 문자열 저장도 거기서 푼다.
  */
 export function ProposalPayloadPreview({
@@ -500,6 +509,7 @@ export function ProposalPayloadPreview({
   args,
   sourceRef,
   argLabels,
+  targetEntityName,
 }: {
   action: string | undefined;
   args: Record<string, unknown> | undefined;
@@ -507,6 +517,8 @@ export function ProposalPayloadPreview({
   sourceRef?: unknown;
   /** 서버가 args 의 id 를 이름으로 푼 것(새 회차 생성만). */
   argLabels?: ProposalArgLabels | null;
+  /** 기안 대상의 이름(서버 해석 `targetEntityName`) — 기록 수정의 대상 칸에 쓴다. */
+  targetEntityName?: string | null;
 }) {
   const origin = readCalendarInboundRef(sourceRef);
   const body = !args ? null :
@@ -517,7 +529,7 @@ export function ProposalPayloadPreview({
     ) : action === "update_settlement_amount" ? (
       <UpdateSettlementAmountPreview args={args} />
     ) : action === "update_record" ? (
-      <UpdateRecordPreview args={args} />
+      <UpdateRecordPreview args={args} targetEntityName={targetEntityName} />
     ) : action === "upsert_product_mappings" ? (
       <UpsertProductMappingsPreview args={args} />
     ) : action === "create_campaign_round" ? (
@@ -526,8 +538,8 @@ export function ProposalPayloadPreview({
   if (!body && !origin) return null;
   return (
     <div className="space-y-3 text-xs">
-      {origin && <CalendarOriginBlock origin={origin} />}
       {body}
+      {origin && <CalendarOriginLine origin={origin} />}
       {origin && <CalendarWarnings warnings={origin.warnings} />}
     </div>
   );

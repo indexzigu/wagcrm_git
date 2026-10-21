@@ -23,7 +23,11 @@ export const calendarInboundRefSchema = z.object({
   summary: z.string(),
   startDate: z.string(),
   endDate: z.string(),
-  htmlLink: z.string().nullable(),
+  /** 구글 캘린더 링크. 카드가 `<a href>` 로 그리므로 `https://` 만 받고 그 밖(javascript: 등)은 null 로 접는다. */
+  htmlLink: z
+    .string()
+    .nullable()
+    .transform((link) => (link !== null && link.startsWith("https://") ? link : null)),
   warnings: z.array(z.string()),
 });
 

@@ -25,9 +25,13 @@ export const WARN_AUTO_LATEST = "가장 최근 회차로 자동 지정";
 export const WARN_SKIPPED_NEWER_ROUND = "최근 회차는 이 칸이 없어 이전 회차로 지정";
 export const WARN_CHECK_END_DATE = "종료일 확인 필요";
 // ⛔ 화면 문구에 em-dash 를 쓰지 않는다(`ui-copy-em-dash.contract.test.ts`) — 설계서 문구의 「 — 」를 괄호로 바꿨다.
-export const WARN_ROUND_NUMBER_MAY_DIFFER = "CRM 회차 번호는 날짜순 자동 부여(제목의 N차와 다를 수 있음)";
-// 상태 이름은 캠페인 상태 라벨 표(`campaignStatusLabels.PREPARATION` = 세팅대기)와 같은 말이어야 한다.
-export const WARN_PROPOSAL_NOT_ADOPTED = "제안 단계라 캘린더 정리는 세팅대기 전환 후";
+/** 회차 번호는 같은 셀러×판매 조건 안에서 시작일 순서로 다시 매겨진다 — 제목에 적은 N차와 어긋날 수 있다. */
+export function warnRoundNumberMayDiffer(round: number | null): string {
+  const titled = round === null ? "회차" : `${round}차`;
+  return `회차 번호는 시작일 순서로 정해져 일정 제목의 ${titled}와 다를 수 있습니다.`;
+}
+// adopt=false 면 승인해도 원본 일정을 장부에 넘겨받지 않는다 — 손으로 적은 일정이 캘린더에 그대로 남는다(사실 그대로).
+export const WARN_PROPOSAL_NOT_ADOPTED = "이 캠페인은 아직 제안 단계라 승인해도 손으로 적은 캘린더 일정은 그대로 남습니다.";
 
 export type CreateCampaignRoundDraftArgs = { dealId: string; sellerId: string; startDate: string; endDate: string };
 
@@ -143,7 +147,8 @@ async function buildUpdateDraft(
     .join("·");
   const base = {
     action: "update_record" as const,
-    title: `캘린더 일정 → ${fieldLabels} 변경: ${campaignLabel(target)}`,
+    // 출처(캘린더)는 카드의 출처 배지가 말한다 — 제목은 무엇을 바꾸는지만.
+    title: `${fieldLabels} 변경: ${campaignLabel(target)}`,
     targetCampaignId: target.id,
     warnings: allWarnings,
     adopt,
@@ -243,7 +248,7 @@ async function resolveCampaignKind(
   // 후보가 하나면 고를 것이 없었으므로 경고하지 않는다 — 카드에서 「회차를 골라 정했다」로 읽힌다(리뷰 지적).
   if (round === null && candidates.length > 1) warnings.push(WARN_AUTO_LATEST);
   if (event.startDate === event.endDate) warnings.push(WARN_CHECK_END_DATE);
-  if (round !== null) warnings.push(WARN_ROUND_NUMBER_MAY_DIFFER);
+  if (round !== null) warnings.push(warnRoundNumberMayDiffer(round));
 
   const args: CreateCampaignRoundDraftArgs = {
     dealId,
@@ -258,7 +263,7 @@ async function resolveCampaignKind(
     draft: {
       action: "create_campaign_round",
       args,
-      title: `캘린더 일정 → 새 회차 생성: ${sellerName} · ${dealName} (${event.startDate}~${event.endDate})`,
+      title: `새 회차 생성: ${sellerName} · ${dealName} (${event.startDate}~${event.endDate})`,
       targetCampaignId: null,
       warnings,
       // 새 회차는 PREPARATION 으로 생성되므로 넘겨받는다(설계 §3-3).

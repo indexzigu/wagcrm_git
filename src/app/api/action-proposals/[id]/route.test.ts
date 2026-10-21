@@ -147,7 +147,7 @@ describe("GET /api/action-proposals/[id]", () => {
     const payload = { action: "create_campaign_round", args: { dealId: "d1", sellerId: "s1" } };
     findByIdMock.mockResolvedValue({
       id: "p-cal",
-      title: "캘린더 일정 → 새 회차 생성",
+      title: "새 회차 생성",
       status: "PENDING_APPROVAL",
       payload: JSON.stringify(payload),
       sourceRef: JSON.stringify(sourceRef),

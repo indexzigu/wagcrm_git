@@ -178,7 +178,7 @@ describe("PendingCard", () => {
       <ul>
         <PendingCard
           item={makeItem({
-            title: "캘린더 일정 → 새 회차 생성: 샘플 · 테스트브랜드 봄딜 (2026-12-01~2026-12-07)",
+            title: "새 회차 생성: 샘플 · 테스트브랜드 봄딜 (2026-12-01~2026-12-07)",
             targetEntityType: "CAMPAIGN",
             targetEntityId: null,
             targetEntityName: null,
@@ -209,8 +209,9 @@ describe("PendingCard", () => {
       </ul>
     );
     expect(screen.getByText("캘린더")).toBeInTheDocument();
-    expect(screen.getByText("원본 일정")).toBeInTheDocument();
-    expect(screen.getByText("샘플 테스트브랜드")).toBeInTheDocument();
+    expect(screen.getByText(/^원본: 샘플 테스트브랜드/)).toBeInTheDocument();
+    // 새 회차는 아직 캠페인이 없다 — 이름 없는 「캠페인」 배지를 달지 않는다(R25-10)
+    expect(screen.queryByText("캠페인")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /구글 캘린더에서 보기/ })).toBeInTheDocument();
     expect(screen.getByText("테스트브랜드 봄딜")).toBeInTheDocument();
   });
