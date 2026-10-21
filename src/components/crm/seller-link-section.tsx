@@ -35,7 +35,7 @@ export function SellerLinkSection({
   // Empty state when no seller is linked
   if (!sellerId) {
     return (
-      <div className="space-y-2 rounded-2xl border border-border/70 bg-white/90 p-4">
+      <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h3 className="text-xs font-semibold text-foreground">연결된 셀러</h3>
@@ -61,7 +61,7 @@ export function SellerLinkSection({
   }
 
   return (
-    <div className="space-y-2 rounded-2xl border border-border/70 bg-white/90 p-4">
+    <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-semibold text-foreground">연결된 셀러</h3>

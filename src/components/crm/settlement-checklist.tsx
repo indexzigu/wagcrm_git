@@ -94,7 +94,7 @@ export function SettlementChecklist({
   );
 
   return (
-    <div className="flex flex-col gap-6 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <div className="flex flex-col gap-6 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       {/* 정산 체크리스트 영역 */}
       <div>
         <h4 className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-3">

@@ -75,7 +75,7 @@ function MarginPolicyFormInner({
         {CHANNELS.map((channel) => (
           <div
             key={channel}
-            className="flex flex-col gap-1 rounded-lg border border-border/70 bg-white/90 p-3 shadow-soft-sm transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-focus-ring"
+            className="flex flex-col gap-1 rounded-lg border border-border bg-card p-3 shadow-soft-sm transition-colors focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-focus-ring"
           >
             <Label className="text-[11px] text-muted-foreground font-medium">
               {salesChannelLabels[channel]} 수수료율 (%)

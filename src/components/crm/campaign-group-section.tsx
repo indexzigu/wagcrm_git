@@ -85,7 +85,7 @@ type CampaignGroupSectionProps = {
 };
 
 const SECTION_SHELL =
-  "space-y-3 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm";
+  "space-y-3 rounded-2xl border border-border bg-card p-4 shadow-soft-sm";
 
 const ROUND_BADGE =
   "inline-flex shrink-0 items-center rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 select-none";

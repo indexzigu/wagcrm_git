@@ -1103,7 +1103,7 @@ export function AssetManager({
                           추천
                         </span>
                       ) : (
-                        <span className="absolute right-1.5 top-1.5 z-10 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 backdrop-blur-sm">
+                        <span className="absolute right-1.5 top-1.5 z-10 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
                           후보
                         </span>
                       )}

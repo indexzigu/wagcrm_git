@@ -168,7 +168,7 @@ export function SellerErChart({ data }: SellerErChartProps) {
             <button
               key={t}
               onClick={() => handleFilterChange(t)}
-              className={`rounded-[5px] px-2 py-0.5 text-[10px] font-medium transition-[color,background-color,box-shadow] duration-200 ${
+              className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-[color,background-color,box-shadow] duration-200 ${
                 filter === t
                   ? "bg-background text-foreground shadow-soft-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -181,7 +181,7 @@ export function SellerErChart({ data }: SellerErChartProps) {
       </div>
 
       {filteredData.length < 2 ? (
-        <div className="mt-4 flex h-[140px] items-center justify-center rounded-lg border border-dashed border-border/50 bg-white/50">
+        <div className="mt-4 flex h-[140px] items-center justify-center rounded-lg border border-dashed border-border bg-card">
           <p className="text-xs text-muted-foreground">해당 기간의 데이터가 부족합니다.</p>
         </div>
       ) : (

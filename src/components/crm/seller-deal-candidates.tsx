@@ -86,7 +86,7 @@ export function SellerDealCandidates({ sellerId }: { sellerId: string }) {
   if (candidates === null) return null;
 
   return (
-    <div className="space-y-2 rounded-2xl border border-border/70 bg-white/90 p-4">
+    <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
       <h3 className="text-xs font-semibold text-foreground">
         제안 후보 판매 조건 ({candidates.length}건)
       </h3>

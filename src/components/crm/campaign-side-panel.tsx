@@ -761,7 +761,7 @@ export function CampaignSidePanel({
       <div className="space-y-6 overflow-hidden p-1 pr-3">
 
         {/* [캠페인정보] 캠페인명, 차수(배지) + 연결된 딜/셀러 통합 카드 */}
-        <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <div className="flex items-center justify-between gap-4 min-w-0">
             <h3 className="flex items-center text-sm font-semibold text-foreground shrink-0">
               <Info className="mr-2 size-4 text-muted-foreground" />
@@ -770,7 +770,7 @@ export function CampaignSidePanel({
 
           </div>
 
-          <div className="grid grid-cols-2 gap-4 border-t border-border/50 pt-4">
+          <div className="grid grid-cols-2 gap-4 border-t border-border pt-4">
               <div className="rounded-xl border border-slate-100 bg-white p-3">
                 <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
                   <Info className="size-3" />
@@ -855,8 +855,8 @@ export function CampaignSidePanel({
         
 
           {/* 캠페인 일정 (가로 배치) */}
-          <div className="border-t border-border/50 pt-4 mt-4">
-            <div className="space-y-2 rounded-2xl border border-border/70 bg-white/90 p-4">
+          <div className="border-t border-border pt-4 mt-4">
+            <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
               <div className="text-xs font-semibold text-foreground">캠페인 일정</div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="group/date flex items-center justify-between gap-2 rounded-md bg-white border border-slate-100 hover:bg-accent/30 px-3 py-1.5 shadow-soft-sm">
@@ -915,7 +915,7 @@ export function CampaignSidePanel({
         )}
 
         {/* [진행단계] 프로세스 */}
-        <div className="space-y-3 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <div className="flex items-center gap-2">
             <h3 className="flex items-center text-sm font-semibold text-foreground">
               <Activity className="mr-2 size-4 text-muted-foreground" />
@@ -1134,7 +1134,7 @@ export function CampaignSidePanel({
           <>
 
             {/* [자료관리] (제안 3 수용: 체크리스트 아래로 상향 재배치) */}
-            <div className="rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
               <AssetManager
                 key={campaign.id}
                 campaign={campaign}
@@ -1145,7 +1145,7 @@ export function CampaignSidePanel({
             </div>
 
             {/* [콘텐츠×주문 타임라인] — 발행 시점과 주문 반응을 함께 본다(오너 2026-07-25) */}
-            <section className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+            <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
               <ContentOrderTimeline key={campaign.id} campaignId={campaign.id} />
             </section>
 
@@ -1161,7 +1161,7 @@ export function CampaignSidePanel({
         )}
 
         {/* 영업활동/정산 회계 노트 */}
-        <div className="space-y-3 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <div className="flex items-center gap-2">
             <h3 className="flex items-center text-sm font-semibold text-foreground">
               <MessageSquareTextIcon className="mr-2 size-4 text-muted-foreground" />
@@ -1197,7 +1197,7 @@ export function CampaignSidePanel({
               {notes.map((note) => (
                 <div
                   key={note.id}
-                  className="group relative rounded-[20px] border border-border/70 bg-background px-4 py-3"
+                  className="group relative rounded-xl border border-border bg-background px-4 py-3"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -1240,7 +1240,7 @@ export function CampaignSidePanel({
             </div>
           ) : null}
 
-          <div className="rounded-[20px] border border-border/70 bg-background p-3">
+          <div className="rounded-xl border border-border bg-background p-3">
             <Textarea
               ref={noteInputRef}
               placeholder={
@@ -1279,7 +1279,7 @@ export function CampaignSidePanel({
 
         {/* 연동 로그 */}
         {!settlementWorkspace ? (
-        <div className="rounded-[24px] border border-border/70 bg-white/90 px-4 py-2 shadow-soft-sm">
+        <div className="rounded-2xl border border-border bg-card px-4 py-2 shadow-soft-sm">
           <Accordion type="single" collapsible defaultValue="timeline">
             <AccordionItem value="timeline">
               <AccordionTrigger>타임라인</AccordionTrigger>
@@ -1366,7 +1366,7 @@ export function CampaignSidePanel({
             }
             onCloseAutoFocus={onCloseAutoFocus}
             style={{ width: "min(720px, 96vw)", maxWidth: "min(720px, 96vw)" }}
-            className="flex flex-col overflow-hidden border-l border-border/70 bg-card p-0"
+            className="flex flex-col overflow-hidden border-l border-border bg-card p-0"
           >
             <SheetHeader className="shrink-0 border-b border-border px-6 py-5">
               <div className="flex items-start justify-between gap-4">
@@ -2278,8 +2278,8 @@ function SettlementFinancialSummary({
   };
 
   return (
-    <section className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-border/50 pb-3">
+    <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <DollarSign className="size-4 text-slate-500" />
           재무 정산 내역
@@ -3011,8 +3011,8 @@ function SettlementInfo({
   };
 
   return (
-    <section className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
-      <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-3">
+    <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
+      <div className="flex items-center justify-between gap-2 border-b border-border pb-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <UserRound className="size-4 text-slate-500" />
           정산 정보
@@ -3474,7 +3474,7 @@ function SettlementWaitPanel({
   const isTransferReady = daysAfterEnd >= RETURN_PERIOD_DAYS;
 
   return (
-    <div className="space-y-3 rounded-[24px] border border-amber-200 bg-amber-50/70 p-4">
+    <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-xs font-semibold text-amber-950">정산 대기 기준</h3>
@@ -3487,11 +3487,11 @@ function SettlementWaitPanel({
         </span>
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg bg-white/80 px-3 py-2">
+        <div className="rounded-lg bg-card px-3 py-2">
           <div className="text-muted-foreground">반품기간 종료 기준</div>
           <div className="mt-1 font-medium">{formatDate(returnPeriodEndDate.toISOString())}</div>
         </div>
-        <div className="rounded-lg bg-white/80 px-3 py-2">
+        <div className="rounded-lg bg-card px-3 py-2">
           <div className="text-muted-foreground">정산 확인 상태</div>
           {/* 붙여 쓴 상태 낱말 + 설명창(상태 표시 기준 ①⑤, 오너 확정 2026-10-08). 「시작가능」은 아래
               「정산 진행 시작」 버튼과 짝이다 — 조작은 그 버튼이 맡고 낱말은 누르는 요소가 아니다(④).
@@ -3760,7 +3760,7 @@ export function MarketingLinkConverter({
   }
 
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <div className="flex items-center gap-2">
         <Link2 className="mr-2 size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold text-foreground">고객 분석 링크 변환</h3>

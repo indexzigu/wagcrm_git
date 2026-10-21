@@ -176,7 +176,7 @@ export function CampaignShortLinkCard({
   }
 
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <div className="flex items-center gap-2">
         <Link2 className="mr-2 size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold text-foreground">셀러 배포용 링크</h3>

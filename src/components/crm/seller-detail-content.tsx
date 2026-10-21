@@ -533,7 +533,7 @@ export function SellerDetailContent({
       <div className="h-full w-full overflow-y-auto overflow-x-hidden pr-2">
         <div className="space-y-4 p-1.5 w-full max-w-full">
           {/* Editable Fields */}
-          <div className="space-y-5 rounded-lg border border-border/70 bg-card p-4">
+          <div className="space-y-5 rounded-2xl border border-border bg-card p-4">
             {/* 상단 프로필 헤더 */}
             <div className="flex items-center justify-between gap-4">
               <h3 className="text-[13px] font-semibold text-foreground">기본 정보</h3>
@@ -744,7 +744,7 @@ export function SellerDetailContent({
                       href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-white/70 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                      className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
                     >
                       <ExternalLink className="size-3 shrink-0" />
                       <span className="truncate">{url}</span>
@@ -768,7 +768,7 @@ export function SellerDetailContent({
               전환 대응은 이미 `SalesCampaign.sellerTaxType` 스냅샷이 담당한다 —
               과거 개인 시절 캠페인은 사업자 전환 후에도 INDIVIDUAL 로 남아 원천징수
               대상에 정상 포함된다(`isIndividualSeller` 가 스냅샷을 우선 본다). */}
-          <div className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
+          <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center justify-between">
               <h3 className="text-[13px] font-semibold text-foreground">정산 정보</h3>
               <Button
@@ -921,7 +921,7 @@ export function SellerDetailContent({
           {/* F6 유입 경로 — 소개 기반 플라이휠의 outcome 적립 입력면 (GROWTH_FLYWHEEL_PLAN.md §F6).
               가용 일정 필드는 제거됐다(오너 확정 2026-07-16: 미리 파악하고 있는 개념이 아님) —
               DB 필드(availabilityNote)와 재캠페인 알림 표시는 보존, 입력면만 없앤다. */}
-          <div className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
+          <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
             <h3 className="text-[13px] font-semibold text-foreground">유입 경로</h3>
             <Separator />
             <div className="grid grid-cols-2 gap-3">
@@ -993,7 +993,7 @@ export function SellerDetailContent({
           {/* AI 분석 (§12-4) — 수동 평가(위 4필드) 바로 아래 배치: "입력 → AI 대조 → 검토 확정"의
               판단 순서를 만든다(UX 감사 P1-1). 성과/차트 등 다른 섹션은 이 판단 뒤로 밀린다. */}
           <Accordion type="single" collapsible defaultValue="ai-analysis" className="w-full">
-            <AccordionItem value="ai-analysis" className="border rounded-lg border-border/70 bg-card px-4 py-1">
+            <AccordionItem value="ai-analysis" className="border rounded-2xl border-border bg-card px-4 py-1">
               <AccordionTrigger className="hover:no-underline py-3">
                 <h3 className="text-[13px] font-semibold text-foreground">AI 분석</h3>
               </AccordionTrigger>
@@ -1021,17 +1021,17 @@ export function SellerDetailContent({
           </Accordion>
 
           {/* Scorecard */}
-          <div className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
+          <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
             <h3 className="text-[13px] font-semibold text-foreground">성과 요약</h3>
             <Separator />
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-border/70 bg-white/90 p-3">
+              <div className="rounded-lg border border-border bg-background p-3">
                 <div className="text-[11px] text-muted-foreground">누적 매출</div>
                 <div className="mt-1 font-mono text-xs font-semibold">
                   {formatCurrency(scorecard.cumulativeSales)}
                 </div>
               </div>
-              <div className="rounded-lg border border-border/70 bg-white/90 p-3">
+              <div className="rounded-lg border border-border bg-background p-3">
                 <div className="text-[11px] text-muted-foreground">캠페인 수</div>
                 {/* 유효 캠페인 수(그룹=1건, 캡 무관 서버 집계) 우선 — scorecard 는 12건 캡 배열
                     기반 폴백. 딜 행 수가 더 크면 병기(오너 G3)로 축소 오독을 막는다. */}
@@ -1046,7 +1046,7 @@ export function SellerDetailContent({
                   )}
                 </div>
               </div>
-              <div className="rounded-lg border border-border/70 bg-white/90 p-3">
+              <div className="rounded-lg border border-border bg-background p-3">
                 <div className="text-[11px] text-muted-foreground">팔로워 성장률</div>
                 <div className="mt-1 font-mono text-xs font-semibold">
                   {scorecard.followerGrowthRate != null ? (
@@ -1082,7 +1082,7 @@ export function SellerDetailContent({
 
           {/* 데이터 수집 */}
           <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="followers" className="border rounded-lg border-border/70 bg-card px-4 py-1">
+            <AccordionItem value="followers" className="border rounded-2xl border-border bg-card px-4 py-1">
               <AccordionTrigger className="hover:no-underline py-3">
                 <h3 className="text-[13px] font-semibold text-foreground">데이터 수집</h3>
               </AccordionTrigger>
@@ -1121,7 +1121,7 @@ export function SellerDetailContent({
                   <AnimatedTabsContent value="profile" className="space-y-3 mt-0">
                     {/* 내역 추가 폼 */}
                     {showAddHistory && (
-                      <form onSubmit={handleAddHistory} className="rounded-lg border border-border/50 bg-white/60 p-3.5 animate-fade-in-up shadow-soft-sm">
+                      <form onSubmit={handleAddHistory} className="rounded-lg border border-border bg-card p-3.5 animate-fade-in-up shadow-soft-sm">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                           <div className="space-y-1 col-span-1">
                             <label className="text-[10px] font-bold text-muted-foreground">날짜</label>
@@ -1186,10 +1186,10 @@ export function SellerDetailContent({
                     ) : snapshots.length === 0 ? (
                       <DataEmpty title="수집된 프로필 데이터 내역 없음" className="py-6" />
                     ) : (
-                      <div className="w-full rounded-lg border border-border/50 bg-white/30 shadow-soft-sm overflow-hidden">
+                      <div className="w-full rounded-lg border border-border bg-card shadow-soft-sm overflow-hidden">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead>
-                            <tr className="border-b border-border/50 bg-muted/60 text-[10px] font-semibold text-muted-foreground sticky top-0 backdrop-blur-sm z-10">
+                            <tr className="border-b border-border bg-muted text-[10px] font-semibold text-muted-foreground sticky top-0 z-10">
                               <th className="px-3 py-2.5">날짜</th>
                               <th className="px-3 py-2.5 text-right">팔로워 수</th>
                               <th className="px-3 py-2.5 text-right">게시물 수</th>
@@ -1238,13 +1238,13 @@ export function SellerDetailContent({
 
                   <AnimatedTabsContent value="bio" className="mt-0">
                     {bioHistories.length === 0 ? (
-                      <div className="py-6 text-center text-xs text-muted-foreground border rounded-lg border-border/40 bg-white/30">
+                      <div className="py-6 text-center text-xs text-muted-foreground border rounded-lg border-border bg-card">
                         소개글 변경 이력 없음
                       </div>
                     ) : (
                       <div className="space-y-2.5 w-full">
                         {bioHistories.map((history) => (
-                          <div key={history.id} className="rounded-lg border border-border/40 bg-white/40 p-3 space-y-1.5 shadow-soft-sm transition-colors hover:bg-white/60">
+                          <div key={history.id} className="rounded-lg border border-border bg-card p-3 space-y-1.5 shadow-soft-sm transition-colors hover:bg-muted/60">
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] text-muted-foreground font-semibold">
                                 {formatDate(history.collectedAt)}
@@ -1255,7 +1255,7 @@ export function SellerDetailContent({
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] text-slate-600 font-semibold border border-slate-200">자동</span>
                               )}
                             </div>
-                            <p className="text-[11px] text-foreground whitespace-pre-wrap bg-white/50 p-2.5 rounded border border-border/20 leading-relaxed font-sans">
+                            <p className="text-[11px] text-foreground whitespace-pre-wrap bg-muted/60 p-2.5 rounded border border-border leading-relaxed font-sans">
                               {history.bio.trim() || "(소개글 없음)"}
                             </p>
                           </div>
@@ -1270,7 +1270,7 @@ export function SellerDetailContent({
 
           {/* Campaign History Table */}
           <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="campaigns" className="border rounded-lg border-border/70 bg-card px-4 py-1">
+            <AccordionItem value="campaigns" className="border rounded-2xl border-border bg-card px-4 py-1">
               <AccordionTrigger className="hover:no-underline py-3">
                 <h3 className="text-[13px] font-semibold text-foreground">캠페인 이력</h3>
               </AccordionTrigger>
@@ -1328,7 +1328,7 @@ export function SellerDetailContent({
 
           {/* Activity Timeline */}
           <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="activity" className="border rounded-lg border-border/70 bg-card px-4 py-1">
+            <AccordionItem value="activity" className="border rounded-2xl border-border bg-card px-4 py-1">
               <AccordionTrigger className="hover:no-underline py-3">
                 <h3 className="text-[13px] font-semibold text-foreground">활동 기록</h3>
               </AccordionTrigger>
@@ -1511,7 +1511,7 @@ function SellerAssetSection({ sellerId }: { sellerId: string }) {
   const visibleAssets = assets.filter((a) => !a.archivedAt);
 
   return (
-    <section className="rounded-lg border border-border/70 bg-card p-4">
+    <section className="rounded-2xl border border-border bg-card p-4">
       <h3 className="text-xs font-semibold text-foreground">첨부 자료</h3>
       <p className="mt-1 text-xs text-muted-foreground">SNS 크리에이티브, 포트폴리오 등 관련 파일을 첨부합니다.</p>
 
@@ -1554,7 +1554,7 @@ function SellerAssetSection({ sellerId }: { sellerId: string }) {
           {visibleAssets.map((asset) => (
             <li
               key={asset.id}
-              className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-white/80 px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" />
