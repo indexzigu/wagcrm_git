@@ -78,7 +78,26 @@ type CalendarEventBody = {
   start: { date: string };
   end: { date: string };
   colorId?: string;
+  /**
+   * CRM 이 만든 이벤트 표식(`wagcrm=1`) — 캘린더 수집이 이 표식으로 「CRM 이 쓴 것」을
+   * 가려 되먹임 루프를 막는다. `upsertEvent` 한 곳에서 모든 생성·갱신 본문에 찍는다.
+   */
+  extendedProperties?: { private: { wagcrm: "1" } };
 };
+
+/** CRM 이 만든 이벤트에 찍는 표식 — 생성·갱신(PATCH) 모두 이 값을 싣는다. */
+const CRM_EVENT_STAMP = { private: { wagcrm: "1" } } as const;
+
+/**
+ * 설명란 CRM 서명 — 캠페인 본문(`syncOne`·`syncGroupOne`)과 대금 본문(`syncMoneyEvents`)이
+ * **모두** `셀러: <이름>` 줄을 쓴다(캠페인은 첫 줄, 대금은 둘째 줄). 표식 도입 전에 만든
+ * 이벤트는 `wagcrm` 표식이 없어 이 서명이 유일한 단서다. 줄 머리 기준으로만 맞춘다
+ * (오너가 본문 중간에 우연히 적은 「셀러:」 와 구분).
+ */
+export function hasCrmDescriptionSignature(description: string | null): boolean {
+  if (!description) return false;
+  return /^셀러: /m.test(description);
+}
 
 /**
  * 대금 이벤트가 읽는 날짜·플래그 묶음 — 캠페인과 그룹이 **같은 모양**이라 슬롯 루프가
@@ -361,8 +380,9 @@ async function upsertEvent(
   accessToken: string,
   existing: StoredEventRef | undefined,
   targetCalendarId: string,
-  body: CalendarEventBody,
+  rawBody: CalendarEventBody,
 ): Promise<StoredEventRef | null> {
+  const body: CalendarEventBody = { ...rawBody, extendedProperties: CRM_EVENT_STAMP };
   if (existing && existing.calendarId !== targetCalendarId) {
     const createdId = await createEvent(accessToken, targetCalendarId, body);
     if (createdId) {
@@ -979,15 +999,18 @@ export type OrphanScanResult = {
 type RawCalendarEvent = {
   id?: string;
   summary?: string;
+  description?: string;
   status?: string;
+  htmlLink?: string;
   recurrence?: unknown;
   recurringEventId?: string;
   start?: { date?: string; dateTime?: string };
   end?: { date?: string; dateTime?: string };
+  extendedProperties?: { private?: Record<string, string> };
 };
 
 /** DB 두 장부(캠페인·그룹)가 참조 중인 모든 구글 이벤트 id 집합. */
-async function collectReferencedEventIds(
+export async function collectReferencedEventIds(
   prisma: ReturnType<typeof getPrisma>,
 ): Promise<Set<string>> {
   const [campaigns, groups] = await Promise.all([
@@ -1009,15 +1032,51 @@ async function collectReferencedEventIds(
   return referenced;
 }
 
+/** 종일·비반복 후보 이벤트 한 건 — 고아 스캔과 캘린더 수집이 함께 쓴다. */
+export type CandidateEvent = {
+  id: string;
+  calendarId: string;
+  summary: string;
+  description: string | null;
+  /** 시작일 YYYY-MM-DD (구글 `start.date` 그대로) */
+  startDate: string;
+  /** CRM 포함 종료일 YYYY-MM-DD — 구글 종일 `end.date` 는 배타적이라 하루를 뺀 값. */
+  endDate: string;
+  htmlLink: string | null;
+  /**
+   * CRM 이 만든 이벤트로 보이는가(`wagcrm` 표식 또는 설명란 서명). 호출부는 장부 참조
+   * (`referencedIds`)와 함께 둘 중 하나라도 해당하면 제외한다(되먹임 루프 방지).
+   */
+  crmSigned: boolean;
+};
+
+export type CandidateListResult = {
+  ok: boolean;
+  skipped?: "not_connected";
+  error?: string;
+  events: CandidateEvent[];
+  referencedIds: Set<string>;
+};
+
+/** YYYY-MM-DD 에 일수를 더한다 — UTC 문자열 산술이라 시간대 이동이 없다. */
+function shiftDateStr(dateStr: string, days: number): string {
+  if (!dateStr) return dateStr;
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
- * 기간 내 종일·비반복 이벤트를 훑어 **DB 장부가 참조하지 않는 것**(고아)을 골라낸다.
- * 읽기 전용 — 아무것도 지우지 않는다.
+ * 기간 내 **종일·비반복·취소 아님** 이벤트를 모든 대상 캘린더(primary + 회계·정산)에서
+ * 읽어 후보로 돌려준다. 읽기 전용. 장부 참조 집합도 함께 돌려주지만 **거르지는 않는다** —
+ * 거르는 규칙(참조 id · `crmSigned`)은 호출부가 정한다.
  */
-export async function scanOrphanCalendarEvents(opts: {
+export async function listAllDayCandidateEvents(opts: {
   timeMin: string;
   timeMax: string;
-}): Promise<OrphanScanResult> {
-  const empty = { scanned: 0, referenced: 0, orphans: [] as OrphanCalendarEvent[] };
+}): Promise<CandidateListResult> {
+  const empty = { events: [] as CandidateEvent[], referencedIds: new Set<string>() };
 
   const status = await getGoogleCalendarConnectionStatus();
   if (!status.connected) return { ok: false, skipped: "not_connected", ...empty };
@@ -1033,7 +1092,7 @@ export async function scanOrphanCalendarEvents(opts: {
     };
   }
 
-  const referenced = await collectReferencedEventIds(getPrisma());
+  const referencedIds = await collectReferencedEventIds(getPrisma());
 
   // 회계·정산 캘린더가 설정돼 있으면 두 캘린더 모두 훑는다 — 한쪽만 보면
   // 이사 후 남은 잔재(또는 이사 전 옛 이벤트)가 스캔 사각이 된다.
@@ -1045,9 +1104,7 @@ export async function scanOrphanCalendarEvents(opts: {
       : []),
   ];
 
-  const orphans: OrphanCalendarEvent[] = [];
-  let scanned = 0;
-  let referencedSeen = 0;
+  const events: CandidateEvent[] = [];
 
   for (const calendarId of calendarIds) {
     let pageToken: string | undefined;
@@ -1079,25 +1136,69 @@ export async function scanOrphanCalendarEvents(opts: {
         const isRecurring = Boolean(ev.recurrence) || Boolean(ev.recurringEventId);
         if (!isAllDay || isRecurring) continue;
 
-        scanned++;
-        if (referenced.has(ev.id)) {
-          referencedSeen++;
-          continue;
-        }
-        orphans.push({
+        const startDate = ev.start?.date ?? "";
+        const endExclusive = ev.end?.date ?? "";
+        const description = ev.description ?? null;
+        events.push({
           id: ev.id,
-          summary: ev.summary ?? "(제목 없음)",
-          start: ev.start?.date ?? "",
-          end: ev.end?.date ?? "",
           calendarId,
+          summary: ev.summary ?? "(제목 없음)",
+          description,
+          startDate,
+          endDate: shiftDateStr(endExclusive, -1),
+          htmlLink: ev.htmlLink ?? null,
+          crmSigned:
+            ev.extendedProperties?.private?.wagcrm === "1" ||
+            hasCrmDescriptionSignature(description),
         });
       }
       pageToken = data.nextPageToken;
     } while (pageToken);
   }
 
+  return { ok: true, events, referencedIds };
+}
+
+/**
+ * 기간 내 종일·비반복 이벤트를 훑어 **DB 장부가 참조하지 않는 것**(고아)을 골라낸다.
+ * 읽기 전용 — 아무것도 지우지 않는다. (`crmSigned` 는 여기서 쓰지 않는다 — 고아 정리는
+ * 장부 참조만으로 판정하는 기존 동작을 유지한다.)
+ */
+export async function scanOrphanCalendarEvents(opts: {
+  timeMin: string;
+  timeMax: string;
+}): Promise<OrphanScanResult> {
+  const listed = await listAllDayCandidateEvents(opts);
+  if (!listed.ok) {
+    return {
+      ok: false,
+      ...(listed.skipped ? { skipped: listed.skipped } : {}),
+      ...(listed.error ? { error: listed.error } : {}),
+      scanned: 0,
+      referenced: 0,
+      orphans: [],
+    };
+  }
+
+  const orphans: OrphanCalendarEvent[] = [];
+  let referencedSeen = 0;
+  for (const ev of listed.events) {
+    if (listed.referencedIds.has(ev.id)) {
+      referencedSeen++;
+      continue;
+    }
+    orphans.push({
+      id: ev.id,
+      summary: ev.summary,
+      // 고아 정리 화면은 구글 원형(배타적 종료일)을 그대로 쓴다 — 동작 불변.
+      start: ev.startDate,
+      end: shiftDateStr(ev.endDate, 1),
+      calendarId: ev.calendarId,
+    });
+  }
+
   orphans.sort((a, b) => a.start.localeCompare(b.start));
-  return { ok: true, scanned, referenced: referencedSeen, orphans };
+  return { ok: true, scanned: listed.events.length, referenced: referencedSeen, orphans };
 }
 
 /**
