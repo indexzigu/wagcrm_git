@@ -2543,7 +2543,7 @@ export default function OrderDashboard() {
       {unmatchedInProgressCount > 0 && (
         <button
           onClick={() => setClaimFilter({ kind: 'unmatched' })}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-muted py-3 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-muted/60 py-3 text-xs font-bold text-slate-500 transition-colors hover:bg-muted hover:text-slate-700"
         >
           미매칭 {unmatchedInProgressCount}건
         </button>
