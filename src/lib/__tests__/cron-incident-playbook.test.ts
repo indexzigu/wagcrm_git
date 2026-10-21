@@ -13,6 +13,8 @@ const a = (lastMessage: string, errorKind: CronErrorKind | null = "unknown", job
 // 플레이북 표(설계 §5.5 확정판)의 문장 — 오너 화면·알림에 그대로 나간다. 한 글자도 바꾸지 않는다.
 const PROXY_ACTION =
   "프록시 월 한도가 바닥났습니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.";
+const PROXY_LEDGER_ACTION =
+  "프록시 월 한도가 바닥난 것으로 보입니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.";
 const IG_ACTION =
   "인스타그램 접근 토큰이 만료됐습니다. Meta 개발자 화면에서 토큰을 다시 발급해 운영 서버 설정에 넣어 주세요.";
 const GEMINI_ACTION =
@@ -33,10 +35,14 @@ describe("matchPlaybook — 표의 행마다 맞는 예·안 맞는 예", () => 
     });
   });
 
-  it("proxy-quota: 프록시 작업 + 장부 전부 실패면 일시 장애 문구여도 확정", () => {
+  it("proxy-quota: 프록시 작업 + 장부 전부 실패만으로는 후보(문구가 407 을 말하지 않으면 정황 추정, ⚙️L2)", () => {
     const m = matchPlaybook({ ...a("fetch failed", "network", "naver-order-sync"), proxyLedgerAllFailed: true });
-    expect(m?.id).toBe("proxy-quota");
-    expect(m?.confidence).toBe("확정");
+    expect(m).toEqual({
+      id: "proxy-quota",
+      cause: "프록시 월 한도 소진",
+      confidence: "후보",
+      ownerAction: PROXY_LEDGER_ACTION,
+    });
   });
 
   it("proxy-quota: 프록시를 안 쓰는 작업은 장부 신호를 무시한다", () => {
@@ -52,7 +58,7 @@ describe("matchPlaybook — 표의 행마다 맞는 예·안 맞는 예", () => 
     "토큰 갱신 실패: Error validating access token (code 190)",
     'Graph error {"code": 190, "message": "expired"}',
     'Graph error {"code":190}',
-    "토큰 교환 실패: HTTP 400",
+    "토큰 교환 실패: Error validating access token (code 190)",
   ])("ig-token: %s → 확정", (msg) => {
     expect(matchPlaybook(a(msg, "auth"))).toEqual({
       id: "ig-token",
@@ -60,6 +66,11 @@ describe("matchPlaybook — 표의 행마다 맞는 예·안 맞는 예", () => 
       confidence: "확정",
       ownerAction: IG_ACTION,
     });
+  });
+
+  it("ig-token: 「토큰 교환 실패」만으로는 안 맞는다(교환 서버 503 은 토큰 만료가 아니다)", () => {
+    expect(matchPlaybook(a("토큰 교환 실패: HTTP 503", "upstream_5xx"))).toBeNull();
+    expect(matchPlaybook(a("토큰 교환 실패: HTTP 400", "unknown"))).toBeNull();
   });
 
   it("ig-token: 다른 코드 번호는 안 맞는다", () => {
@@ -178,7 +189,7 @@ describe("matchPlaybook — 표의 행마다 맞는 예·안 맞는 예", () => 
 
   it("대표 원인이 붙은 전량 실패 문구에서도 맞는다(1번 작업 형식)", () => {
     expect(
-      matchPlaybook(a("대상 4건 전량 실패(성공 0) — 대표 원인: Graph error (code 190)", "auth"))?.id,
+      matchPlaybook(a("대상 4건 전량 실패(성공 0) · 대표 원인: Graph error (code 190)", "auth"))?.id,
     ).toBe("ig-token");
   });
 });
@@ -199,7 +210,7 @@ describe("계약: 오너 문장에 원문이 끼지 않는다(⚙️L3)", () => 
     a(`Proxy response (407) ${SENTINEL}`, "proxy_quota", "naver-order-sync"),
     { ...a(`fetch failed ${SENTINEL}`, "network", "naver-settlement-sync"), proxyLedgerAllFailed: true },
     a(`(code 190) ${SENTINEL}`, "auth"),
-    a(`토큰 교환 실패 ${SENTINEL}`, "auth"),
+    a(`토큰 교환 실패 ${SENTINEL} (code 190)`, "auth"),
     a(`RESOURCE_EXHAUSTED ${SENTINEL}`, "rate_limit"),
     a(`응답 형식 불일치 ${SENTINEL}`, "unknown"),
     a(`CAPTCHA_REQUIRED ${SENTINEL}`, "unknown"),
@@ -212,6 +223,7 @@ describe("계약: 오너 문장에 원문이 끼지 않는다(⚙️L3)", () => 
   const TEMPLATES = new Set([
     "프록시 월 한도 소진",
     PROXY_ACTION,
+    PROXY_LEDGER_ACTION,
     "인스타그램 접근 토큰 만료",
     IG_ACTION,
     "Gemini 사용 한도 도달",

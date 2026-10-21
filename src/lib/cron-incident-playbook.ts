@@ -34,7 +34,10 @@ export type PlaybookInput = {
   kind: IncidentKind;
   errorKind: CronErrorKind | null;
   lastMessage: string | null;
-  /** 그 작업의 프록시 장부(그날)가 「요청 > 0 이고 전부 실패」인가. 모르면 생략 */
+  /**
+   * 그 작업의 프록시 장부(그날)가 「요청 `PROXY_LEDGER_MIN_REQUESTS` 이상이고 전부 실패」인가. 모르면 생략.
+   * 문구가 407 을 말하지 않는 정황 추정이라 「후보」로만 쓴다(⚙️L2).
+   */
   proxyLedgerAllFailed?: boolean;
 };
 
@@ -51,6 +54,12 @@ const PROXY_JOB_KEYS: ReadonlySet<string> = new Set([
   "enrich-inbox",
 ]);
 
+/**
+ * 장부 정황만으로 프록시 한도를 의심하려면 그날 요청이 이만큼은 쌓여야 한다 — 요청 1건 실패(1/1)는
+ * 일시 장애 한 번과 구별되지 않는다.
+ */
+export const PROXY_LEDGER_MIN_REQUESTS = 5;
+
 export function isProxyJob(jobKey: string): boolean {
   return PROXY_JOB_KEYS.has(jobKey);
 }
@@ -63,6 +72,13 @@ const PROXY_QUOTA = fixed(
   "프록시 월 한도 소진",
   "확정",
   "프록시 월 한도가 바닥났습니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.",
+);
+// 장부 정황(요청 전부 실패)만 있고 문구에 407 이 없을 때 — 같은 원인을 「후보」로, 할 일도 추정 어조로.
+const PROXY_QUOTA_LEDGER = fixed(
+  "proxy-quota",
+  "프록시 월 한도 소진",
+  "후보",
+  "프록시 월 한도가 바닥난 것으로 보입니다. 운영 서버 설정의 프록시 목록 맨 앞에 여유 있는 계정을 넣고 서버를 다시 시작해 주세요.",
 );
 const IG_TOKEN = fixed(
   "ig-token",
@@ -96,7 +112,8 @@ const DB_AUTH = fixed(
 );
 
 // 신호 — 사고 원문의 부분 문자열. 숫자 앞뒤는 직접 막는다(「(code 1900)」·「422건」이 걸리지 않게).
-const IG_TOKEN_SIGNAL = /\bcode 190(?!\d)|"code"\s*:\s*190(?!\d)|토큰 교환 실패/;
+// 「토큰 교환 실패」 문구만으로는 걸지 않는다 — 교환 서버 장애(503)는 토큰 만료가 아니다. 숫자 코드 190 만 본다.
+const IG_TOKEN_SIGNAL = /\(code 190(?!\d)|"code"\s*:\s*190(?!\d)/;
 const GEMINI_STRONG = /RESOURCE_EXHAUSTED/;
 const STATUS_429 = /status=429(?!\d)/;
 const GEMINI_CAP_WORDS = /spending cap|quota/i;
@@ -125,7 +142,7 @@ export function matchPlaybook(input: PlaybookInput): PlaybookMatch | null {
   const msg = input.lastMessage ?? "";
 
   if (input.errorKind === "proxy_quota") return PROXY_QUOTA;
-  if (input.proxyLedgerAllFailed === true && isProxyJob(input.jobKey)) return PROXY_QUOTA;
+  if (input.proxyLedgerAllFailed === true && isProxyJob(input.jobKey)) return PROXY_QUOTA_LEDGER;
   if (!msg) return null;
 
   if (IG_TOKEN_SIGNAL.test(msg)) return IG_TOKEN;

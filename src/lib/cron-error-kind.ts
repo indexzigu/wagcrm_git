@@ -43,9 +43,9 @@ const RULES: readonly Rule[] = [
       bareStatus("401|403"),
       /AUTHENTICATIONFAILED|Invalid credentials|authentication failed/i,
       /"code"\s*:\s*190\b/,
-      // 토큰 갱신이 남기는 Meta 오류 코드 표기 「(code 190)」, 단기→장기 토큰 교환 실패
+      // 토큰 갱신·교환이 남기는 Meta 오류 코드 표기 「(code 190)」. 「토큰 교환 실패」 문구만으로는 걸지 않는다 —
+      // 교환 서버 장애(HTTP 503 등)까지 인증으로 접혀 일시 장애 재시도가 막힌다(코드 190 이 있어야 만료다).
       /\(code 190\b/,
-      /토큰 교환 실패/,
       /GW\.IP_NOT_ALLOWED/,
     ],
   },

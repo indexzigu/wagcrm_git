@@ -40,7 +40,9 @@ describe("classifyCronError", () => {
     ["메일함 조회 실패: Connection closed", 502, "upstream_5xx"],
     // 4단계 보강 — 실제 기록 문구에 맞춘다.
     ["인스타 토큰 갱신 실패: Error validating access token (code 190)", undefined, "auth"],
-    ["토큰 교환 실패: HTTP 400", undefined, "auth"],
+    // 「토큰 교환 실패」만으로는 인증이 아니다 — 교환 서버 장애(503)는 일시 장애로 남아야 한다.
+    ["토큰 교환 실패: HTTP 503", undefined, "upstream_5xx"],
+    ["토큰 교환 실패: Error validating access token (code 190)", undefined, "auth"],
     ["(code 1900) something", undefined, "unknown"],
     // DB 인증 실패는 사람 손 문제가 아니라 설정 불일치 — 인증 규칙의 「authentication failed」보다 먼저 걸린다.
     ["Authentication failed against database server at 127.0.0.1, the provided database credentials are not valid", undefined, "config"],

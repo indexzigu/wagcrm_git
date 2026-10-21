@@ -383,22 +383,67 @@ describe("escalatePendingIncidents", () => {
     expect(data).toEqual({ status: "waiting_owner", ownerAction: "설정의 「자동화 작업 상태」에서 작동 로그를 확인해 주세요." });
   });
 
-  it("프록시 작업의 일시 장애도 그날 장부가 전부 실패면 첫 회에 프록시 한도 확정으로 올린다", async () => {
-    findMany.mockResolvedValue([
-      { id: "o1", jobKey: "naver-order-sync", kind: "A", errorKind: "network", occurrences: 1, lastMessage: "fetch failed", lastSeenAt: at },
-    ]);
+  const orderRow = (occurrences: number) => ({
+    id: "o1",
+    jobKey: "naver-order-sync",
+    kind: "A",
+    errorKind: "network",
+    occurrences,
+    lastMessage: "fetch failed",
+    lastSeenAt: at,
+  });
+
+  it("장부 정황만 있는 일시 장애는 첫 회에 올리지 않는다(장부만으로는 후보라 승격 규칙을 건너뛰지 않는다)", async () => {
+    findMany.mockResolvedValue([orderRow(1)]);
+    proxyFindMany.mockResolvedValue([{ requests: 30, failures: 30 }]);
+    expect(await escalatePendingIncidents(now)).toBe(0);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("장부 정황 + 일시 장애 2회째면 프록시 한도 후보로 올린다", async () => {
+    findMany.mockResolvedValue([orderRow(2)]);
     proxyFindMany.mockResolvedValue([
       { requests: 30, failures: 30 },
       { requests: 4, failures: 4 },
     ]);
     expect(await escalatePendingIncidents(now)).toBe(1);
     expect(proxyFindMany.mock.calls[0][0].where).toEqual({ day: "2026-10-18", source: "cron:naver-order-sync" });
+    expect(update.mock.calls[0][0].data).toMatchObject({ cause: "프록시 월 한도 소진", causeConfidence: "후보", layer: 2 });
+  });
+
+  it("장부 요청이 너무 적으면(1/1) 프록시 한도로 보지 않고 일반 문장을 쓴다", async () => {
+    findMany.mockResolvedValue([orderRow(2)]);
+    proxyFindMany.mockResolvedValue([{ requests: 1, failures: 1 }]);
+    expect(await escalatePendingIncidents(now)).toBe(1);
+    expect(update.mock.calls[0][0].data).toEqual({
+      status: "waiting_owner",
+      ownerAction: "같은 오류가 연속으로 났습니다. 외부 서비스 상태와 서버의 인터넷 연결을 확인해 주세요.",
+    });
+  });
+
+  it("문구가 407 을 말하는 프록시 한도는 지금처럼 첫 회에 확정으로 올린다", async () => {
+    findMany.mockResolvedValue([
+      { id: "q1", jobKey: "naver-order-sync", kind: "A", errorKind: "proxy_quota", occurrences: 1, lastMessage: "fetch failed <- Proxy response (407)", lastSeenAt: at },
+    ]);
+    expect(await escalatePendingIncidents(now)).toBe(1);
     expect(update.mock.calls[0][0].data).toMatchObject({ cause: "프록시 월 한도 소진", causeConfidence: "확정", layer: 2 });
   });
 
+  it("한 사고의 판정이 던져도 나머지 사고는 계속 올린다", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    findMany.mockResolvedValue([
+      // 깨진 시각 — 장부 날짜 계산(toKstYmd)이 RangeError 를 던진다.
+      { ...orderRow(2), id: "bad", lastSeenAt: new Date(Number.NaN) },
+      { id: "b1", jobKey: "capture-stories", kind: "B", errorKind: null, occurrences: 1, lastMessage: null, lastSeenAt: at },
+    ]);
+    expect(await escalatePendingIncidents(now)).toBe(1);
+    expect(update.mock.calls.map((c) => c[0].where.id)).toEqual(["b1"]);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it("장부에 성공이 섞였거나 요청이 0이면 프록시 한도가 아니다(일시 장애 1회는 그대로 대기)", async () => {
-    const row = { id: "o1", jobKey: "naver-order-sync", kind: "A", errorKind: "network", occurrences: 1, lastMessage: "fetch failed", lastSeenAt: at };
-    findMany.mockResolvedValue([row]);
+    findMany.mockResolvedValue([orderRow(1)]);
     proxyFindMany.mockResolvedValue([{ requests: 30, failures: 29 }]);
     expect(await escalatePendingIncidents(now)).toBe(0);
     proxyFindMany.mockResolvedValue([]);
