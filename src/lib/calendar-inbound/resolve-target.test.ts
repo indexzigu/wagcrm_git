@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import type { CandidateEvent } from "@/lib/google-calendar-sync";
-import { pickRecentCampaigns, pickMoneySlot, resolveInboundTarget } from "./resolve-target";
+import { WARN_SKIPPED_NEWER_ROUND, pickRecentCampaigns, pickMoneySlot, resolveInboundTarget } from "./resolve-target";
 import type { ParsedCalendarIntent } from "./types";
 
 // [캘린더수집] 대상 캠페인·칸 결정 — 가짜 DB(메모리) 위에서 판정만 본다. 가명 픽스처만 쓴다.
@@ -175,6 +175,16 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
       changes: { endDate: "2026-11-09" },
       expected: { endDate: "2026-11-07" },
     });
+    expect(r.ok && r.draft.title).toBe("캘린더 일정 → 종료일 변경: 테스트브랜드 봄딜 - 샘플");
+  });
+
+  it("스키마가 거절하는 초안은 invalid_draft + 사유(throw 하지 않음)", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: 1 })]);
+    // 존재하지 않는 날짜 — 화면 PATCH 스키마(z.string().date())가 거절한다.
+    const r = await resolveInboundTarget(intent({ round: 1 }), event("2026-11-01", "2026-13-40"), db);
+    expect(r.ok).toBe(false);
+    if (r.ok || r.reason !== "invalid_draft") throw new Error(`invalid_draft 여야 한다: ${JSON.stringify(r)}`);
+    expect(r.detail).toContain("endDate");
   });
 
   it("noop: 날짜가 이미 같으면 noop 기안", async () => {
@@ -191,6 +201,7 @@ describe("resolveInboundTarget — 캠페인 회차", () => {
     expect(r.ok && r.draft.action).toBe("create_campaign_round");
     // DROPPED 캠페인의 딜도 「가장 최근 캠페인의 딜」 로 쓰지 않는다 — 활성 딜 유일 경로로 d1
     expect(r.ok && r.draft.targetCampaignId).toBeNull();
+    expect(r.ok && (r.draft.args as { dealId: string }).dealId).toBe("d1");
   });
 
   it("PROPOSAL 대상이면 adopt=false + 경고", async () => {
@@ -253,6 +264,17 @@ describe("resolveInboundTarget — 입금·지급", () => {
     });
     expect(r.ok && r.draft.ledgerKind).toBe("supplierPayout");
     expect(r.ok && r.draft.warnings).toEqual([]);
+  });
+
+  it("최근 회차(자사몰)에 입금 칸이 없으면 이전 회차로 지정 + 경고", async () => {
+    const db = fakeDb([
+      campaign({ id: "new", salesChannel: "OWN_MALL", startDate: d("2026-12-01") }),
+      campaign({ id: "old", salesChannel: "SELLER_MALL", startDate: d("2026-11-01") }),
+    ]);
+    const r = await resolveInboundTarget(intent({ kind: "deposit" }), event("2026-12-20"), db);
+    expect(r.ok && r.draft.targetCampaignId).toBe("old");
+    expect(r.ok && r.draft.warnings).toEqual(["가장 최근 회차로 자동 지정", WARN_SKIPPED_NEWER_ROUND]);
+    expect(WARN_SKIPPED_NEWER_ROUND).toBe("최근 회차는 이 칸이 없어 이전 회차로 지정");
   });
 
   it("자사몰 입금은 슬롯이 없어 no_slot", async () => {

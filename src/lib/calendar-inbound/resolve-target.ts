@@ -21,6 +21,8 @@ import { updateRecordActionArgsSchema } from "@/lib/agent/write-actions/update-r
 import type { InboundKind, ParsedCalendarIntent } from "./types";
 
 export const WARN_AUTO_LATEST = "가장 최근 회차로 자동 지정";
+/** 더 최근 회차의 채널에 그 대금 칸이 없어 이전 회차를 대상으로 잡았을 때. */
+export const WARN_SKIPPED_NEWER_ROUND = "최근 회차는 이 칸이 없어 이전 회차로 지정";
 export const WARN_CHECK_END_DATE = "종료일 확인 필요";
 // ⛔ 화면 문구에 em-dash 를 쓰지 않는다(`ui-copy-em-dash.contract.test.ts`) — 설계서 문구의 「 — 」를 괄호로 바꿨다.
 export const WARN_ROUND_NUMBER_MAY_DIFFER = "CRM 회차 번호는 날짜순 자동 부여(제목의 N차와 다를 수 있음)";
@@ -41,7 +43,10 @@ export type ProposalDraft = {
   ledgerKind: "campaign" | "deposit" | "payout" | "supplierPayout";
 };
 
-export type ResolveFailure = { ok: false; reason: "no_campaign" | "no_slot" | "no_deal" };
+export type ResolveFailure =
+  | { ok: false; reason: "no_campaign" | "no_slot" | "no_deal" }
+  /** 초안이 계약·화면 스키마 검사를 통과하지 못했다 — 승인할 수 없는 기안은 올리지 않는다. */
+  | { ok: false; reason: "invalid_draft"; detail: string };
 export type ResolveResult = { ok: true; draft: ProposalDraft } | ResolveFailure;
 
 type Db = Prisma.TransactionClient | PrismaClient;
@@ -117,9 +122,9 @@ async function buildUpdateDraft(
   wanted: Record<string, string>,
   ledgerKind: ProposalDraft["ledgerKind"],
   warnings: string[],
-): Promise<ProposalDraft | null> {
+): Promise<{ ok: true; draft: ProposalDraft } | ResolveFailure> {
   const snapshot: RecordSnapshot | null = await readRecordSnapshot(db as Prisma.TransactionClient, "CAMPAIGN", target.id);
-  if (!snapshot) return null;
+  if (!snapshot) return { ok: false, reason: "no_campaign" };
 
   const changes: Record<string, string> = {};
   const expected: Record<string, string | number | boolean | null> = {};
@@ -145,11 +150,17 @@ async function buildUpdateDraft(
   };
 
   if (Object.keys(changes).length === 0) {
-    return { ...base, args: null, noop: true };
+    return { ok: true, draft: { ...base, args: null, noop: true } };
   }
   const args = { entityType: "CAMPAIGN" as const, entityId: target.id, changes, expected };
-  if (!updateRecordActionArgsSchema.safeParse(args).success) return null;
-  return { ...base, args };
+  const parsed = updateRecordActionArgsSchema.safeParse(args);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((issue) => `${issue.path.join(".") || "(args)"}: ${issue.message}`)
+      .join("; ");
+    return { ok: false, reason: "invalid_draft", detail };
+  }
+  return { ok: true, draft: { ...base, args } };
 }
 
 /**
@@ -201,14 +212,13 @@ async function resolveCampaignKind(
     );
     if (matches.length > 0) {
       const warnings = matches.length > 1 ? [WARN_AUTO_LATEST] : [];
-      const draft = await buildUpdateDraft(
+      return buildUpdateDraft(
         db,
         matches[0],
         { startDate: event.startDate, endDate: event.endDate },
         "campaign",
         warnings,
       );
-      return draft ? { ok: true, draft } : { ok: false, reason: "no_campaign" };
     }
   }
 
@@ -281,13 +291,18 @@ async function resolveMoneyKind(
   }
   const target = chosen ?? withSlot[0];
 
-  const warnings = withSlot.length > 1 ? [WARN_AUTO_LATEST] : [];
-  const draft = await buildUpdateDraft(
+  const warnings = candidates.length > 1 ? [WARN_AUTO_LATEST] : [];
+  // 더 최근 회차가 이 칸이 없어 건너뛰었으면 드러낸다(조용히 이전 회차를 고치지 않는다).
+  const slotIds = new Set(withSlot.map((x) => x.row.id));
+  const newerRounds = candidates.slice(0, candidates.findIndex((row) => row.id === target.row.id));
+  if (newerRounds.some((row) => !slotIds.has(row.id))) {
+    warnings.push(WARN_SKIPPED_NEWER_ROUND);
+  }
+  return buildUpdateDraft(
     db,
     target.row,
     { [target.slot.expectedField]: event.startDate },
     target.slot.key,
     warnings,
   );
-  return draft ? { ok: true, draft } : { ok: false, reason: "no_campaign" };
 }
