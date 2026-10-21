@@ -170,7 +170,9 @@ describe("CampaignInvoiceSlot — 기록한 합계가 전액과 어긋난 달 (R
       />,
     );
     const cell = await screen.findByTestId("invoice-month-2026-09");
-    expect(cell).toHaveTextContent("9월9/30 · 오류 가능성");
+    expect(cell).toHaveTextContent("9월9/30 · 오류 가능성1,940,000원");
+    // 발행금액 열 = 그 달 기록한 계산서 합계(오너 지시 2026-10-21)
+    expect(screen.getByTestId("invoice-month-amount-2026-09")).toHaveTextContent(/^1,940,000원$/);
     const slot = screen.getByTestId("campaign-invoice-slot");
     expect(slot).toHaveTextContent("1/1");
     const review = screen.getByTestId("campaign-invoice-review");
@@ -180,7 +182,8 @@ describe("CampaignInvoiceSlot — 기록한 합계가 전액과 어긋난 달 (R
     fireEvent.pointerDown(cell, { pointerType: "touch" });
     expect(await screen.findByText(/정산 오류 가능성 · 원인 확인 필요/)).toBeInTheDocument();
     expect(screen.getByText("기대액이 수동 입력값에서 계산됨 · CRM 금액 재확인")).toBeInTheDocument();
-    expect(screen.getByText("1,940,000원")).toBeInTheDocument();
+    // 줄의 발행금액 열 + 풀이 창의 합계 — 두 곳에 같은 금액
+    expect(screen.getAllByText("1,940,000원")).toHaveLength(2);
   });
 });
 
@@ -340,5 +343,37 @@ describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에�
     // 버튼은 수동 조회 기간(종료 +1일부터)을 쓴다.
     expect(onRequestScan).toHaveBeenCalledWith("manual");
     expect(statementCalls()).toBe(1);
+  });
+});
+
+// 발행금액 열(오너 지시 2026-10-21) — 그 달 기록한 계산서 합계. 9월 두 장 · 10월 없음.
+const recordedRow = (id: string, totalAmount: number | null) => ({
+  ...MISMATCH_VIEW.rows[0],
+  id,
+  approvalNo: `X-${id}`,
+  totalAmount,
+});
+const TWO_MONTH_VIEW = {
+  ...MISMATCH_VIEW,
+  periodStart: "2026-09-09T15:00:00.000Z",
+  periodEnd: "2026-10-20T14:59:59.000Z",
+  expectedTotalAmount: null,
+  expectedFromManual: false,
+  rows: [recordedRow("a", 1_000_000), recordedRow("b", 940_000)],
+};
+
+describe("CampaignInvoiceSlot — 달별 발행금액 열", () => {
+  it("한 달에 여러 장이면 합계를, 기록이 없는 달은 「—」를 보인다", async () => {
+    mockFetch(TWO_MONTH_VIEW);
+    renderSlot();
+    expect(await screen.findByTestId("invoice-month-amount-2026-09")).toHaveTextContent(/^1,940,000원$/);
+    expect(screen.getByTestId("invoice-month-amount-2026-10")).toHaveTextContent(/^—$/);
+    expect(screen.getByTestId("campaign-invoice-slot")).toHaveTextContent("발행금액");
+  });
+
+  it("금액을 모르는 장이 섞인 달은 합계를 추정하지 않고 「—」", async () => {
+    mockFetch({ ...TWO_MONTH_VIEW, rows: [recordedRow("a", 1_000_000), recordedRow("b", null)] });
+    renderSlot();
+    expect(await screen.findByTestId("invoice-month-amount-2026-09")).toHaveTextContent(/^—$/);
   });
 });
