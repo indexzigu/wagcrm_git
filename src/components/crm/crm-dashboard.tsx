@@ -4,10 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PlusIcon,
   SearchIcon,
-  TrendingUp,
-  Wallet,
-  Download,
-  PiggyBank,
   Boxes,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +39,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { CampaignSidePanel } from "./campaign-side-panel";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { CrmShell } from "./crm-shell";
+import { MoneySummaryStrip, moneyFlowGroup } from "./money-summary-strip";
 import { DataSourceBanner } from "./data-source-banner";
 import { ExecutionKanbanBoard } from "./execution-kanban-board";
 import { StageFilterBar } from "./stage-filter-bar";
@@ -427,32 +424,17 @@ export function CrmDashboard({
           />
         ) : (
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
-            {/* Summary Bar */}
-            <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
-              <div className="flex shrink-0 items-center gap-1.5">
-                <TrendingUp className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">총거래액:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumTotal.toLocaleString()}원</span>
-              </div>
-              <span className="hidden text-slate-200 md:inline">|</span>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Wallet className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">수수료매출:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumRevenue.toLocaleString()}원</span>
-              </div>
-              <span className="hidden text-slate-200 md:inline">|</span>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Download className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">셀러지급액:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumFee.toLocaleString()}원</span>
-              </div>
-              <span className="hidden text-slate-200 md:inline">|</span>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <PiggyBank className="size-3.5 text-muted-foreground" />
-                <span className="font-medium">매출총이익:</span>
-                <span className="font-semibold text-slate-800">{kanbanSummary.sumProfit.toLocaleString()}원</span>
-              </div>
-            </div>
+            <MoneySummaryStrip
+              className="mb-4 shrink-0"
+              groups={[
+                moneyFlowGroup({
+                  grossMerchandise: kanbanSummary.sumTotal,
+                  commissionRevenue: kanbanSummary.sumRevenue,
+                  sellerPayout: kanbanSummary.sumFee,
+                  grossProfit: kanbanSummary.sumProfit,
+                }),
+              ]}
+            />
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
             {initialData.dataSource === "mock" && initialData.dataSourceMessage ? (

@@ -52,6 +52,7 @@ const reportData: SettlementReportData = {
   summary: {
     totalRevenue: 10_000_000,
     totalMargin: 2_500_000,
+    totalCommissionRevenue: 4_000_000,
     totalSellerPayouts: 1_500_000,
     campaignCount: 1,
   },

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useFilterParams } from "@/hooks/use-filter-params";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronLeft, ChevronRight, Download, FileText, RefreshCw, Search, TrendingUp, Wallet } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, FileText, RefreshCw, Search } from "lucide-react";
 import { MONEY_DIRECTION_ICON } from "@/lib/money-direction";
 import { SettlementTable } from "@/components/crm/settlement-table";
 import { SettlementCompletedTable } from "@/components/crm/settlement-completed-table";
@@ -35,17 +35,13 @@ import type {
   SettlementReportData,
 } from "@/lib/settlement-report";
 import { CrmShell } from "@/components/crm/crm-shell";
+import { MoneySummaryStrip, moneyFlowGroup } from "@/components/crm/money-summary-strip";
 import {
   formatSettlementMonth,
   getCurrentMonth,
   getNextMonth,
   getPreviousMonth,
 } from "@/lib/settlement-report";
-
-const formatCurrency = (val: number | null | undefined) => {
-  if (val == null) return "-";
-  return `${Math.round(Number(val)).toLocaleString()}원`;
-};
 
 interface SettlementPageClientProps {
   initialData: DashboardData;
@@ -495,37 +491,21 @@ export function SettlementPageClient({ initialData, defaultMonth }: SettlementPa
     // 세로 스크롤러는 CrmShell 이 소유한다(스크롤바 자리 예약 포함) — 안쪽에 두 번째 스크롤러를 두지 않는다.
     <CrmShell title="정산 관리">
     <div className="flex w-full flex-col px-5 pb-5 pt-5 md:px-8">
-      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm">
-        <div className="flex shrink-0 items-center gap-1.5">
-          <TrendingUp className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">총거래액:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalRevenue)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Wallet className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">매출총이익:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalMargin)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Download className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">셀러지급액:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(reportData?.summary.totalSellerPayouts)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <MONEY_DIRECTION_ICON.in className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">입금 대기:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(pendingDepositAmount)}</span>
-        </div>
-        <span className="hidden text-slate-200 md:inline">|</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <MONEY_DIRECTION_ICON.out className="size-3.5 text-muted-foreground" />
-          <span className="font-medium">지급 대기:</span>
-          <span className="font-semibold text-slate-800">{formatCurrency(pendingPayoutAmount)}</span>
-        </div>
-      </div>
+      <MoneySummaryStrip
+        className="mb-4 shrink-0"
+        groups={[
+          moneyFlowGroup({
+            grossMerchandise: reportData?.summary.totalRevenue ?? null,
+            commissionRevenue: reportData?.summary.totalCommissionRevenue ?? null,
+            sellerPayout: reportData?.summary.totalSellerPayouts ?? null,
+            grossProfit: reportData?.summary.totalMargin ?? null,
+          }),
+          [
+            { key: "pendingDeposit", label: "입금대기", value: pendingDepositAmount, icon: MONEY_DIRECTION_ICON.in },
+            { key: "pendingPayout", label: "지급대기", value: pendingPayoutAmount, icon: MONEY_DIRECTION_ICON.out },
+          ],
+        ]}
+      />
 
       <div className="flex flex-col rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
         <div className="flex min-h-12 shrink-0 flex-col gap-3 border-b border-border/70 px-5 py-3 lg:flex-row lg:items-center lg:justify-between">

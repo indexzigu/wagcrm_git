@@ -276,3 +276,64 @@ describe("resolveCampaignNetMargin — 수동 정산 기준액 폴백", () => {
     ).toBe(55_000);
   });
 });
+
+describe("summary.totalCommissionRevenue — 수수료매출 합계", () => {
+  const base = {
+    updatedAt: new Date("2026-05-10T00:00:00.000Z"),
+    startDate: new Date("2026-05-01T00:00:00.000Z"),
+    endDate: new Date("2026-05-03T00:00:00.000Z"),
+    deal: { dealName: "테스트 딜", brandName: null },
+    seller: { name: "셀러A" },
+  };
+
+  const report = buildSettlementReportModel(
+    [
+      {
+        // 저장값 있음 — 저장 영업수익이 정본(요율 식 300,000 이 아니라 저장값)
+        ...base,
+        id: "stored",
+        status: "SETTLEMENT_IN_PROGRESS",
+        actualSales: 1_000_000,
+        totalMarginRate: 30,
+        sellerMarginRate: 10,
+        settlementSales: "280000.4",
+        sellerExpense: "90000.3",
+      },
+      {
+        // 저장값 없음(정산 전 미입력) — 0 이 아니라 요율 폴백으로 더한다
+        ...base,
+        id: "fallback",
+        status: "SETTLEMENT_IN_PROGRESS",
+        actualSales: 500_000,
+        totalMarginRate: 25,
+        sellerMarginRate: 8,
+        settlementSales: null,
+        sellerExpense: null,
+      },
+      {
+        // 정산완료 — 저장값
+        ...base,
+        id: "completed",
+        status: "COMPLETED",
+        actualSales: 200_000,
+        totalMarginRate: 20,
+        sellerMarginRate: 5,
+        settlementSales: 40_000,
+        sellerExpense: 10_000,
+      },
+    ],
+    "2026-05",
+  );
+
+  it("저장값·요율 폴백·정산완료를 모두 더한다", () => {
+    // 280,000.4 + 500,000 × 25% + 40,000
+    expect(report.summary.totalCommissionRevenue).toBe(445000.4);
+  });
+
+  it("매출총이익 = 수수료매출 − 셀러지급액 (반올림 오차 ≤ 캠페인 수)", () => {
+    const { totalMargin, totalCommissionRevenue, totalSellerPayouts } = report.summary;
+    expect(
+      Math.abs(totalMargin - (totalCommissionRevenue - totalSellerPayouts)),
+    ).toBeLessThanOrEqual(report.summary.campaignCount);
+  });
+});

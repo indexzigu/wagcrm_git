@@ -208,11 +208,11 @@ describe("정산 페이지 — 헤더 대기 합계는 슬롯 SSOT 와 같다", 
 
     const won = (n: number) => `${Math.round(n).toLocaleString()}원`;
     await waitFor(() =>
-      expect(screen.getByText("지급 대기:").parentElement).toHaveTextContent(
+      expect(screen.getByText("지급대기:").parentElement).toHaveTextContent(
         won(expected.payout.total),
       ),
     );
-    expect(screen.getByText("입금 대기:").parentElement).toHaveTextContent(
+    expect(screen.getByText("입금대기:").parentElement).toHaveTextContent(
       won(expected.deposit.total),
     );
   });
