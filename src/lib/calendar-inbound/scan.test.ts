@@ -585,7 +585,7 @@ describe("runCalendarInboundScan", () => {
     expect(next).toMatchObject({ proposed: 1, dropped: 0, alreadyHandled: 2 });
   });
 
-  it("회차 시간 예산은 60초 이하이고, 잠금 시간 제한은 예산 + 일정 한 건(힌트 20초 + DB)보다 넉넉히 길다", () => {
+  it("회차 시간 예산은 60초 이하이고, 잠금 시간 제한은 예산 + 후보 조회·마지막 일정 DB 쓰기보다 넉넉히 길다(모델 호출은 예산 안에서 끝난다)", () => {
     // 배포 지침 Plan Limits: Vercel Hobby 가 함수 실행을 60초로 자른다 — 예산 상수를 그 위로 두지 않는다.
     expect(SCAN_BUDGET_MS).toBe(55_000);
     expect(SCAN_BUDGET_MS).toBeLessThanOrEqual(60_000);
@@ -801,6 +801,35 @@ describe("runCalendarInboundScan — 해석 단계(규칙 → 로컬 → Gemini 
     expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED", proposalId: "prop-1" });
     expect(h.rows.get("e1")!.parsed).toMatchObject({ sellerId: "s1", matchedBy: "llm" });
     expect(h.rows.get("e2")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
+  });
+
+  it("일괄 응답을 받은 뒤에는 시간 예산이 지나도 그 결과를 버리지 않고 적는다(기안 상한만 본다)", async () => {
+    const h = makeHarness([unparsed("e2"), ev("e1", { summary: "ㅅㅍ 테스트브랜드" }), ev("e3", { summary: "ㅅㅍ 테스트브랜드 3차" })]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    const { clock, state } = fakeClock();
+    // 일괄 응답이 예산을 다 쓰고 돌아온다.
+    h.extractHintsBatch.mockImplementationOnce(async (items) => {
+      state.t += SCAN_BUDGET_MS + 1;
+      return {
+        kind: "ok",
+        results: new Map<string, TitleHintsResult>(
+          items.map((it) => [
+            it.id,
+            it.summary.startsWith("ㅅㅍ")
+              ? { kind: "hints", hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null } }
+              : { kind: "none" },
+          ]),
+        ),
+      };
+    });
+
+    const summary = await runCalendarInboundScan({ now: NOW, clock, maxProposals: 1, deps: h.deps });
+
+    // e1 기안 · e2 SKIPPED(예산이 지났어도 적는다) · e3 은 기안 상한(1)에 걸려 다음 회차(행은 그대로 gemini 대기).
+    expect(summary).toMatchObject({ proposed: 1, skippedUnparsed: 1, dropped: 1, geminiResolved: 1 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED" });
+    expect(h.rows.get("e2")).toMatchObject({ status: "SKIPPED", skipReason: "no_seller" });
+    expect(h.rows.get("e3")).toMatchObject({ status: "AWAITING_HINT", parsed: { hintStage: "gemini" } });
   });
 
   it("일괄 응답에 빠진 항목은 none(SKIPPED), 모르는 id 는 무시한다", async () => {

@@ -44,7 +44,7 @@ import {
   type TitleHintsBatchResult,
   type TitleHintsResult,
 } from "./llm-hints";
-import { LOCAL_HINT_TIMEOUT_MS, extractTitleHintsLocal } from "./local-hints";
+import { LOCAL_HINT_TIMEOUT_MS, extractTitleHintsLocal, resetLocalHintWarnings } from "./local-hints";
 import { parseCalendarTitle } from "./parse-title";
 import { resolveInboundTarget, type ProposalDraft, type ResolveResult } from "./resolve-target";
 import { INBOUND_SKIP_ALREADY_CURRENT, INBOUND_SKIP_OPEN_PROPOSAL, INBOUND_STATUS } from "./status";
@@ -487,6 +487,7 @@ export async function runCalendarInboundScan(opts: ScanOptions = {}): Promise<Sc
 }
 
 async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
+  resetLocalHintWarnings();
   const clock = opts.clock ?? Date.now;
   const startedAt = clock();
   const budgetMs = opts.budgetMs ?? SCAN_BUDGET_MS;
@@ -655,7 +656,9 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
     } else {
       for (const [i, b] of batch.entries()) {
         try {
-          if (mustDrop()) {
+          // 받은 힌트는 시간 예산으로 버리지 않는다 — 버리면 같은 제목을 다음 회차에 Gemini 로 또 보낸다(남은 일은
+          // 대상 결정·DB 쓰기뿐이라 짧다). 기안 상한만 본다.
+          if (summary.proposed >= cap) {
             summary.dropped++;
             continue;
           }

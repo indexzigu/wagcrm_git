@@ -19,7 +19,15 @@ export const LOCAL_HINT_TIMEOUT_MS = 30_000;
 type LocalFailureKind = "network" | "timeout" | "http" | "parse" | "empty";
 const warned = new Set<LocalFailureKind>();
 
-/** 실패 종류마다 한 번만 경고한다(제목 텍스트는 로그에 남기지 않는다). */
+/**
+ * 경고 기록을 비운다 — 수집 스캔이 회차마다 부른다. 프로세스가 오래 살면(셀프호스트 서버) 첫 회차 뒤로는 꺼진
+ * ollama 가 로그에 다시 안 남아, 서버가 계속 꺼져 있다는 사실이 묻힌다.
+ */
+export function resetLocalHintWarnings(): void {
+  warned.clear();
+}
+
+/** 실패 종류마다 한 회차에 한 번만 경고한다(제목 텍스트는 로그에 남기지 않는다). */
 function warnOnce(kind: LocalFailureKind, detail: string): void {
   if (warned.has(kind)) return;
   warned.add(kind);

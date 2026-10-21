@@ -216,9 +216,13 @@ async function callGemini(
       return { kind: "unavailable" };
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(GEMINI_FETCH_TIMEOUT_MS, remaining));
-    // 다음 키로 넘어갈 수 있는지는 이 시도가 끝난 뒤에 판단한다 — 한도가 지났으면 이 키가 마지막이다.
-    const isLastAttempt = () => i === keys.length - 1 || Date.now() >= deadline;
+    // 이 키에 준 시간이 남은 한도 전부면(키당 20초보다 짧게 잘렸으면) 이 시도가 끝나는 순간 한도도 끝난 것이다.
+    // 시계로 다시 재지 않는다 — 타이머는 1ms 쯤 일찍 깰 수 있어 `Date.now() < deadline` 이 되면 1~2ms 짜리 시도로
+    // 다음 키를 또 부르고 헛 실패를 계측한다.
+    const slice = Math.min(GEMINI_FETCH_TIMEOUT_MS, remaining);
+    const deadlineSlice = slice === remaining;
+    const timer = setTimeout(() => controller.abort(), slice);
+    const isLastAttempt = () => i === keys.length - 1 || deadlineSlice || Date.now() >= deadline;
     let res: Response;
     let text: string;
     try {
@@ -268,7 +272,10 @@ async function callGemini(
   return { kind: "none" };
 }
 
-const BatchEntrySchema = z.object({ id: z.string() }).passthrough();
+// 모델이 "0" 대신 0 처럼 숫자로 돌려주는 경우도 받는다(입력 id 는 늘 문자열로 비교).
+const BatchEntrySchema = z
+  .object({ id: z.union([z.string(), z.number()]).transform(String) })
+  .passthrough();
 
 /** 모델이 배열을 `{results:[...]}` 로 감싸 오는 경우도 받아 준다. */
 function batchArray(parsed: unknown): unknown[] | null {

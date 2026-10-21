@@ -8,6 +8,7 @@ vi.mock("@/lib/agent/gemini-usage", async (orig) => ({
 
 import {
   LOCAL_HINT_TIMEOUT_MS,
+  resetLocalHintWarnings,
   extractTitleHintsLocal,
 } from "./local-hints";
 
@@ -117,6 +118,21 @@ describe("extractTitleHintsLocal", () => {
     expect(await extractTitleHintsLocal(TITLE, { ...BASE, fetchImpl })).toEqual({
       kind: "none",
     });
+  });
+
+  it("같은 실패는 한 회차에 한 번만 경고하고, 회차가 바뀌면(초기화) 다시 경고한다", async () => {
+    const warn = vi.mocked(console.warn);
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    resetLocalHintWarnings();
+    warn.mockClear();
+    await extractTitleHintsLocal(TITLE, { ...BASE, fetchImpl });
+    await extractTitleHintsLocal(TITLE, { ...BASE, fetchImpl });
+    expect(warn).toHaveBeenCalledTimes(1);
+    resetLocalHintWarnings();
+    await extractTitleHintsLocal(TITLE, { ...BASE, fetchImpl });
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 
   it("연결 거부는 unavailable", async () => {

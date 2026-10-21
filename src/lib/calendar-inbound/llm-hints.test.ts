@@ -172,6 +172,26 @@ describe("extractTitleHintsBatch", () => {
     expect(results.has("zzz")).toBe(false);
   });
 
+  it("모델이 id 를 숫자로 돌려줘도(0) 입력 id \"0\" 에 맞춘다", async () => {
+    const fetchImpl = vi.fn(async () =>
+      geminiReply([{ id: 0, sellerHint: "샘플셀러", brandHint: null, round: null, kind: null }]),
+    );
+    const results = okResults(
+      await extractTitleHintsBatch(
+        [
+          { id: "0", summary: "샘플셀러 공구" },
+          { id: "1", summary: "테스트브랜드 공구" },
+        ],
+        { fetchImpl, apiKey: "k" },
+      ),
+    );
+    expect(results.get("0")).toEqual({
+      kind: "hints",
+      hints: { sellerHint: "샘플셀러", brandHint: null, round: null, kind: null },
+    });
+    expect(results.get("1")).toEqual({ kind: "none" });
+  });
+
   it("한 항목만 스키마가 어긋나면 그 항목만 none", async () => {
     const fetchImpl = vi.fn(async () =>
       geminiReply([
@@ -391,6 +411,28 @@ describe("extractTitleHintsBatch", () => {
       expect(Date.now() - startedAt).toBeLessThan(2_000);
       expect(hang).toHaveBeenCalledTimes(1);
       expect(recordGeminiFailure).toHaveBeenCalledWith(expect.objectContaining({ kind: "NETWORK" }));
+    });
+
+    it("타이머가 한도보다 일찍 깨도(시계상 한도 전) 한도 몫 시도였으면 다음 키로 넘어가지 않는다", async () => {
+      // 시계를 멈춰 「아직 한도 전」을 흉내 낸다 — 시계로 다시 재면 두 번째 키를 부른다.
+      const frozen = Date.now();
+      const nowSpy = vi.spyOn(Date, "now").mockReturnValue(frozen);
+      const hang = vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_, reject) => {
+            init.signal!.addEventListener("abort", () => reject(new Error("aborted")));
+          }),
+      );
+      try {
+        expect(
+          await extractTitleHintsBatch(ITEMS, { fetchImpl: hang as unknown as typeof fetch, totalTimeoutMs: 10 }),
+        ).toEqual({ kind: "unavailable" });
+      } finally {
+        nowSpy.mockRestore();
+      }
+      expect(hang).toHaveBeenCalledTimes(1);
+      expect(recordGeminiFailure).toHaveBeenCalledTimes(1);
+      expect(recordGeminiFailure).toHaveBeenCalledWith(expect.objectContaining({ kind: "NETWORK", keysTried: 1 }));
     });
 
     it("한도가 이미 지났으면 부르지 않고 unavailable", async () => {
