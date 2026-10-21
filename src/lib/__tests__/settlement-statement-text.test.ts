@@ -43,6 +43,7 @@ function makeCampaign(overrides: Partial<CampaignRow> = {}): CampaignRow {
     status: "COMPLETED",
     startDate: "2026-01-01",
     endDate: "2026-01-31",
+    salesChannel: "BRAND_MALL",
     actualSales: 10_000_000,
     settlementSales: 2_000_000,
     sellerExpense: 1_000_000,

@@ -36,6 +36,8 @@ const SCHEDULE_SURFACES = [
   "src/lib/desktop-dashboard.ts",
   // 구글 캘린더 대금 이벤트(이 규칙의 최초 소유자 — 사본이 아니라 같은 함수를 쓴다)
   "src/lib/google-calendar-sync.ts",
+  // 정산 명세서 입금 날짜(셀러에게 가는 문서 — 정산 카드 칸과 같은 날짜여야 한다)
+  "src/lib/settlement-statement.ts",
 ];
 
 /**
