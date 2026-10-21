@@ -35,7 +35,7 @@ export function MobileSheetCard({
     <section
       aria-label={ariaLabel ?? title}
       className={cn(
-        "rounded-2xl border border-white/60 bg-white/85 shadow-soft-sm backdrop-blur-md",
+        "overflow-hidden rounded-2xl border border-border bg-card shadow-soft-sm",
         className,
       )}
     >
@@ -126,7 +126,7 @@ export function MobileSheetRow({
       data-overdue={overdue ? "true" : undefined}
       className={cn(
         rowClassName,
-        "transition-colors duration-150 active:bg-slate-50/70 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
+        "transition-colors duration-150 active:bg-black/[0.06] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring",
       )}
     >
       {content}

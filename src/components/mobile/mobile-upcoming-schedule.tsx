@@ -55,7 +55,7 @@ export const MobileUpcomingSchedule = React.memo(function MobileUpcomingSchedule
   onOpenCampaign,
 }: MobileUpcomingScheduleProps) {
   return (
-    <section className="rounded-2xl border border-white/60 bg-white/85 backdrop-blur-lg shadow-soft-sm">
+    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft-sm">
       <div className="flex min-h-11 items-center px-6 py-2">
         <h2 className="text-[13px] font-medium text-foreground">다가오는 일정</h2>
       </div>
@@ -73,7 +73,7 @@ export const MobileUpcomingSchedule = React.memo(function MobileUpcomingSchedule
               key={item.key}
               type="button"
               onClick={() => onOpenCampaign(item.key)}
-              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-slate-50/70"
+              className="flex min-h-11 w-full items-center gap-2 border-t border-slate-100 px-6 py-3 text-left transition-colors duration-150 active:bg-black/[0.06]"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

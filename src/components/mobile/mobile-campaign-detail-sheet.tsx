@@ -483,7 +483,7 @@ export function MobileCampaignDetailSheet({
         ref={containerRef}
         side="bottom"
         showCloseButton={false}
-        className="mobile-sheet-safe-bottom top-0 gap-0 overflow-y-auto overscroll-y-contain rounded-none border-0 p-0 bg-slate-50/80 backdrop-blur-3xl"
+        className="mobile-sheet-safe-bottom top-0 gap-0 overflow-y-auto overscroll-y-contain rounded-none border-0 p-0 bg-background"
       >
         {/* ⓪ 당겨서 새로고침 인디케이터 — 과한 모션 금지, reduced-motion 게이트.
             높이·스피너는 **당김으로 시작한 새로고침**에만 편다 — 헤더 버튼으로 시작하면 버튼 아이콘이
@@ -581,7 +581,7 @@ export function MobileCampaignDetailSheet({
                   aria-disabled={refreshing}
                   aria-busy={refreshing}
                   aria-label="매출 동기화"
-                  className="-my-2.5 -mr-3 flex size-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-slate-900/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:text-slate-400"
+                  className="-my-2.5 -mr-3 flex size-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors duration-150 active:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring aria-disabled:text-slate-400"
                 >
                   <RefreshCwIcon
                     aria-hidden="true"
@@ -816,7 +816,7 @@ function SalesDetailBody({
       {/* 결과 — 오늘 판매와 누적 매출을 동일한 라벨+금액 위계로 표시(오너 피드백 2026-07-14) */}
       {/* 카드 안이라 테두리를 빼고 틴트로만 묶는다(카드 속 카드 금지) — 라디우스도 카드(2xl)보다
           한 단 낮춰 바깥 > 안 위계를 지킨다. */}
-      <div className="flex flex-col gap-2 p-4 rounded-xl bg-slate-50/80">
+      <div className="flex flex-col gap-2 p-4 rounded-xl bg-muted/60">
         {source === "live" ? (
           <div className="flex flex-col pb-3 border-b border-slate-200/60">
             {/* 라벨만 primary — 라이브 수치임을 누적(확정치)과 은은하게 구분(ss 검토 P2) */}
@@ -955,12 +955,12 @@ function ItemBreakdown({ items }: { items: CampaignItemSales[] }) {
   }
 
   return (
-    <div className="flex flex-col border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50">
+    <div className="flex flex-col border border-slate-100 rounded-xl overflow-hidden bg-muted/60">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
-        className="flex min-h-11 items-center justify-between gap-2 px-4 py-3 bg-white active:bg-slate-50 transition-colors duration-150"
+        className="flex min-h-11 items-center justify-between gap-2 px-4 py-3 bg-white active:bg-black/[0.06] transition-colors duration-150"
       >
         <span className="text-xs font-bold text-slate-700">
           품목별 매출 상세
@@ -1037,7 +1037,7 @@ function ItemSalesTableHeader({
   return (
     <div
       className={cn(
-        "grid items-center gap-2 px-4 border-b border-slate-100 text-[10px] font-semibold text-slate-500 bg-slate-50/80",
+        "grid items-center gap-2 px-4 border-b border-slate-100 text-[10px] font-semibold text-slate-500 bg-muted/60",
         ITEM_TABLE_GRID,
       )}
       role="row"

@@ -136,8 +136,9 @@ export function MobileBottomNav() {
         aria-hidden="true"
         className="pointer-events-none fixed inset-x-0 top-0 z-30 h-[env(safe-area-inset-top,0px)] bg-slate-50/80 backdrop-blur-sm"
       />
-      {/* 플로팅 카드(오너 확정 2026-07-16) — 구 풀폭 고정 바 폐기. 상단바(MobileTopBar)와
-          같은 유리 카드 재질, 그림자는 사다리의 lg(플로팅 바 전용 층, design-system P8).
+      {/* 플로팅 카드(오너 확정 2026-07-16) — 구 풀폭 고정 바 폐기. 콘텐츠 카드(상단바 포함)는 불투명 흰 카드이고
+          이 탭 바만 크롬이라 반투명 재질(bg-card/85 + 흐림)을 유지한다(애플 UI 리뉴얼 묶음 3 B — 모양·숨김 동작은 그대로).
+          그림자는 사다리의 lg(플로팅 바 전용 층, design-system P8).
 
           여전히 position:fixed 다 — #192 의 "로딩↔본문 높이 급변 시 iOS 가 fixed 를 스테일
           오프셋으로 그리는" 회귀 조건을 그대로 상속하므로, 로딩 화면의
@@ -150,7 +151,7 @@ export function MobileBottomNav() {
           등장 220ms(조심스럽게 복귀). 곡선은 iOS 시트 계열 커스텀 베지어. */}
       <nav
       className={cn(
-        "fixed inset-x-3 z-40 rounded-2xl border border-white/60 bg-card/90 backdrop-blur-md shadow-soft-lg",
+        "fixed inset-x-3 z-40 rounded-2xl border border-border bg-card/85 backdrop-blur-xl shadow-soft-lg",
         "bottom-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]",
         "transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
         hidden

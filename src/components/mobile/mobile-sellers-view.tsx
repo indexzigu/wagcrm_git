@@ -70,7 +70,7 @@ export function MobileSellersView({
         </div>
       </MobileTopBar>
 
-      <InputGroup className="h-11 rounded-2xl border border-white/60 bg-white/80 backdrop-blur-sm shadow-soft-sm">
+      <InputGroup className="h-11 rounded-2xl border border-border bg-card shadow-soft-sm">
         <InputGroupAddon>
           <SearchIcon />
         </InputGroupAddon>
@@ -100,7 +100,7 @@ export function MobileSellersView({
           Array.from({ length: 3 }).map((_, i) => (
             <article
               key={`skeleton-seller-${i}`}
-              className="rounded-2xl border border-white/60 bg-white/85 backdrop-blur-sm p-3 shadow-soft-sm space-y-3 animate-pulse"
+              className="rounded-2xl border border-border bg-card p-3 shadow-soft-sm space-y-3 animate-pulse"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-2 flex-1">
@@ -121,14 +121,14 @@ export function MobileSellersView({
           sellers.map((seller) => (
             <article
               key={seller.id}
-              className="rounded-2xl border border-white/60 bg-white/85 backdrop-blur-sm p-3 shadow-soft-sm"
+              className="rounded-2xl border border-border bg-card p-3 shadow-soft-sm"
             >
               <button
                 type="button"
                 onClick={() => onOpenSeller(seller)}
                 // 프레스 틴트 — 카드 하단 "채널 열기" 버튼이 별도 탭 대상이라 카드 scale 대신
                 // 이 영역만 틴트한다(outreach 카드와 동일 패턴, 네거티브 마진 = 레이아웃 불변).
-                className="-m-1.5 flex w-full flex-col gap-2.5 rounded-xl p-1.5 text-left transition-colors duration-150 active:bg-slate-900/[0.04]"
+                className="-m-1.5 flex w-full flex-col gap-2.5 rounded-xl p-1.5 text-left transition-colors duration-150 active:bg-black/[0.06]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

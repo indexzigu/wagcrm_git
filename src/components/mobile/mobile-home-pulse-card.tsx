@@ -42,7 +42,7 @@ export function MobileHomePulseCard() {
             onClick={() => void refetch()}
             disabled={isFetching}
             aria-label="오늘의 펄스 새로고침"
-            className="-my-3 -mr-2 flex size-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors duration-150 active:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="-my-3 -mr-2 flex size-11 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors duration-150 active:bg-black/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             <RefreshCwIcon className={cn("size-4", isFetching && "animate-spin")} />
           </button>
@@ -64,13 +64,13 @@ export function MobileHomePulseCard() {
         ) : (
           <>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-muted/60 px-3 py-2.5">
                 <span className="text-[11px] font-medium text-slate-500">오늘 판매금액</span>
                 <span className="text-[15px] font-bold tabular-nums tracking-tight text-slate-800">
                   ₩{formatCurrency(data.today.revenue)}
                 </span>
               </div>
-              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-muted/60 px-3 py-2.5">
                 <span className="text-[11px] font-medium text-slate-500">오늘 주문</span>
                 <span className="text-[15px] font-bold tabular-nums tracking-tight text-slate-800">
                   {data.today.orders}건

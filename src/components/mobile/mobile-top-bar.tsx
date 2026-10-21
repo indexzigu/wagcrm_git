@@ -27,7 +27,7 @@ export function MobileTopBar({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-white/60 bg-white/80 backdrop-blur-md shadow-soft-sm flex flex-col gap-2 px-4 py-3",
+        "rounded-2xl border border-border bg-card shadow-soft-sm flex flex-col gap-2 px-4 py-3",
         className,
       )}
     >

@@ -21,14 +21,15 @@ export default function PipelineLoading() {
     <div className="mobile-tab-safe-top flex min-h-[calc(100dvh+1px)] flex-1 flex-col gap-4 bg-slate-50/50 px-5 pb-24">
       {/* 상단바 카드 자리 — 캡션 줄은 본문에서 사라졌으므로 여기서도 뺀다(오너 지시
           2026-08-26, `mobile-top-bar.tsx` 주석 참조). 로딩↔본문 높이가 어긋나면 위
-          #192 회귀가 그대로 재발하므로 두 파일은 반드시 함께 움직인다. */}
-      <div className="rounded-2xl border border-white/60 bg-white/80 px-4 py-3 shadow-soft-sm">
+          #192 회귀가 그대로 재발하므로 두 파일은 반드시 함께 움직인다. 재질도 본문 카드와 같은 불투명 흰 카드다
+          (애플 UI 리뉴얼 묶음 3 B) — 유리↔불투명으로 바뀌면 전환 때 깜박인다. */}
+      <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-soft-sm">
         <Skeleton className="h-5 w-28" />
         <Skeleton className="mt-2 h-3 w-40" />
       </div>
       {/* 캠페인 카드 목록 자리 */}
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="rounded-2xl border border-white/60 bg-white/80 p-4 shadow-soft-sm">
+        <div key={i} className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
           <div className="flex items-center justify-between">
             <Skeleton className="h-4 w-36" />
             <Skeleton className="h-5 w-14 rounded-2xl" />

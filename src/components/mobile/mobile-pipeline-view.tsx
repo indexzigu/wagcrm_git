@@ -239,7 +239,7 @@ export function MobilePipelineView({
       </MobileTopBar>
 
       {/* Search Bar */}
-      <InputGroup className="h-11 rounded-2xl border border-white/60 bg-white/80 backdrop-blur-sm shadow-soft-sm transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-focus-ring">
+      <InputGroup className="h-11 rounded-2xl border border-border bg-card shadow-soft-sm transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-focus-ring">
         <InputGroupAddon>
           <SearchIcon className="text-slate-400 size-4 ml-1" />
         </InputGroupAddon>
@@ -279,14 +279,14 @@ export function MobilePipelineView({
           {hasMore && (
             <button
               onClick={() => setVisibleCount((prev) => prev + 20)}
-              className="mt-2 flex items-center justify-center gap-1.5 rounded-2xl bg-white border border-slate-200 py-3 text-[13px] font-medium text-slate-600 shadow-soft-sm transition-[filter] duration-150 active:brightness-[0.93]"
+              className="mt-2 flex items-center justify-center gap-1.5 rounded-2xl bg-white border border-slate-200 py-3 text-[13px] font-medium text-slate-600 shadow-soft-sm transition-colors duration-150 active:bg-black/[0.06]"
             >
               더 보기 <ChevronDownIcon className="size-4 opacity-70" />
             </button>
           )}
         </div>
       ) : (
-        <Empty className="border border-white/60 bg-white/50 backdrop-blur-sm shadow-soft-sm py-12 rounded-2xl mt-2">
+        <Empty className="border border-border bg-card shadow-soft-sm py-12 rounded-2xl mt-2">
           <EmptyHeader>
             <EmptyMedia variant="icon" className="bg-slate-100/50 text-slate-400">
               <AlertCircleIcon />

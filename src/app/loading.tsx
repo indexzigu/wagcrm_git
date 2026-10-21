@@ -9,7 +9,7 @@ export default function Loading() {
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="relative overflow-hidden rounded-[var(--radius-3xl)] border border-white/40 bg-white/60 p-6 backdrop-blur-xl"
+              className="relative overflow-hidden rounded-2xl border border-border bg-card p-6"
             >
               <Skeleton className="mb-2 h-3 w-24" />
               <Skeleton className="mb-4 h-10 w-36" />

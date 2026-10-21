@@ -143,7 +143,7 @@ export function MobileSettlementView({
       </MobileTopBar>
 
       <div className="flex items-center gap-2">
-        <InputGroup className="h-11 rounded-2xl border border-white/60 bg-white/80 backdrop-blur-sm shadow-soft-sm">
+        <InputGroup className="h-11 rounded-2xl border border-border bg-card shadow-soft-sm">
           <InputGroupAddon>
             <SearchIcon />
           </InputGroupAddon>

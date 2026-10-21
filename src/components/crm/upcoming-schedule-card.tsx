@@ -115,7 +115,7 @@ export function UpcomingScheduleBody({
           const dow = ["일", "월", "화", "수", "목", "금", "토"][(todayDow + offset) % 7];
           const isToday = offset === 0;
           return (
-            <div key={`card-${offset}`} className="rounded-lg border border-black/5 bg-[#FAF9F6] px-2.5 py-2">
+            <div key={`card-${offset}`} className="rounded-lg border border-border bg-muted/60 px-2.5 py-2">
               <div className="mb-1.5 flex items-baseline justify-between gap-1 border-b border-black/5 pb-1.5">
                 <span className={`text-[11px] font-bold tabular-nums ${isToday ? "text-[var(--status-caution-text)]" : "text-[#1F2A30]"}`}>
                   {dateLabel} <span className="font-medium text-muted-foreground">({dow})</span>
@@ -192,7 +192,7 @@ export function UpcomingScheduleCard({
   googleCalendarConnected: boolean;
 }) {
   return (
-    <Card className="border-black/5 bg-white/85 shadow-soft-sm">
+    <Card className="border-border bg-card shadow-soft-sm">
       <CardContent className="px-4 py-3">
         <div className="flex items-center gap-2.5 flex-wrap">
           <Banknote className="size-4 shrink-0 text-[var(--primary)]" />

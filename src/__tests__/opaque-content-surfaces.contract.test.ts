@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 
 /**
- * **데스크톱 콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2·2-b·2-c — 정산·판매·영업·주문
- * 관리, 리포트, 기본정보 관리, 결재함·설정·캘린더, 공용 표 `InlineDataGrid`, 상세 옆 창 계열).
+ * **콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2·2-b·2-c — 정산·판매·영업·주문
+ * 관리, 리포트, 기본정보 관리, 결재함·설정·캘린더, 공용 표 `InlineDataGrid`, 상세 옆 창 계열 · 묶음 3 B — 모바일 화면).
  *
  * 반투명 유리(`backdrop-blur`·`bg-white/NN`·`bg-[rgba(…)]`)는 크롬(사이드바·Sheet)에만
  * 남긴다(CrmShell 페이지 머리는 2026-10-21 없앴다) — 밝은 반투명을 겹치면 면 경계가 흐려진다. 콘텐츠 카드·표·요약띠는
@@ -88,6 +88,16 @@ const TARGETS: Record<string, readonly string[]> = {
   "app/outreach/loading.tsx": SURFACE_TOKENS,
   "app/reports/loading.tsx": SURFACE_TOKENS,
   "app/settlement/loading.tsx": SURFACE_TOKENS,
+  // 묶음 3 B — 모바일 탭 화면 뼈대(#192: 본문과 높이·여백·재질이 같아야 한다)와 홈 로딩 뼈대, 데스크톱 홈 카드.
+  "app/pipeline/loading.tsx": SURFACE_TOKENS,
+  "app/loading.tsx": SURFACE_TOKENS,
+  "components/crm/dashboard-home.tsx": SURFACE_TOKENS,
+  // 같은 데스크톱 홈 화면의 나머지 카드 — 하나만 바꾸면 한 화면에서 유리·불투명이 섞인다.
+  "components/crm/today-work-card.tsx": SURFACE_TOKENS,
+  "components/crm/segmented-tab-card.tsx": SURFACE_TOKENS,
+  "components/crm/upcoming-schedule-card.tsx": SURFACE_TOKENS,
+  "components/crm/price-defense-card.tsx": SURFACE_TOKENS,
+  "components/crm/taxable-revenue-card.tsx": SURFACE_TOKENS,
   // 묶음 2-c B — 상세 옆 창 계열(데스크톱 Sheet · 모바일 하단 시트 공유).
   "components/crm/deals-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
   "components/crm/sellers-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
@@ -110,6 +120,31 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/crm/seller-er-chart.tsx": SURFACE_TOKENS,
   "components/crm/margin-policy-form.tsx": SURFACE_TOKENS,
   "components/crm/step-metric-card.tsx": SURFACE_TOKENS,
+  // 묶음 3 B — 모바일(아이폰) 콘텐츠 면 전부. 크롬(탭 바·상태바 베일)과 설치 안내 화면은 아래 EXCEPTIONS 에 정확한 개수로.
+  "components/mobile/mobile-bottom-nav.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-standalone-gate.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-calendar-home.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-campaign-card.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-campaign-detail-sheet.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-draft-campaign-sheet.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-home-pulse-card.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-home-risk-card.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-home-settlement-card.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-home-view.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-outreach-view.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-pipeline-view.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-schedule-calendar.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-schedule-day-list.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-schedule-gap-bars.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-sellers-view.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-settlement-pending-sheet.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-settlement-view.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-sheet-card.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-sheet-close-chip.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-sheet-header.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-today-summary-bar.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-top-bar.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-upcoming-schedule.tsx": SURFACE_TOKENS,
 };
 
 /**
@@ -119,6 +154,46 @@ const TARGETS: Record<string, readonly string[]> = {
 type Exception = { token: string; cls: string; context: string; count: number; reason: string };
 
 const EXCEPTIONS: Record<string, readonly Exception[]> = {
+  "components/mobile/mobile-bottom-nav.tsx": [
+    { token: "bg-card/", cls: "bg-card/85", context: "fixed inset-x-3", count: 1, reason: "떠 있는 탭 바 — 크롬이라 반투명(콘텐츠가 아래로 비친다). 재질은 nav 자신에만(#192 — 조상에 filter·transform·backdrop-filter 금지)" },
+    { token: "backdrop-blur", cls: "backdrop-blur-xl", context: "fixed inset-x-3", count: 1, reason: "떠 있는 탭 바의 흐림 재질 — 위와 같은 사유" },
+    { token: "backdrop-blur", cls: "backdrop-blur-sm", context: "safe-area-inset-top", count: 1, reason: "스탠드얼론 상태바 베일 — 상태바 아래로 지나가는 콘텐츠를 흐려 시계·배터리 글자를 읽히게 한다" },
+  ],
+  "components/mobile/mobile-standalone-gate.tsx": [
+    { token: "bg-[#", cls: "bg-[#080B11]", context: "min-h-dvh", count: 1, reason: "설치 안내 다크 화면 — 앱 본문 밖(앱 설치 전 한 번 보는 화면), 브랜드 마크 대비 표(P8 §7)의 기준 바탕" },
+    { token: "border-white/", cls: "border-white/10", context: "bg-white/[0.03]", count: 1, reason: "다크 화면 위 안내 상자 테두리 — 흰 카드 토큰은 다크 바탕에서 면·선이 되지 않는다(P8 §5)" },
+    { token: "bg-white/", cls: "bg-white/[0.03]", context: "border-white/10", count: 1, reason: "다크 화면 위 안내 상자 바탕 — 위와 같은 사유" },
+  ],
+  "components/crm/dashboard-home.tsx": [
+    {
+      token: "rounded-[",
+      cls: "rounded-[2px]",
+      context: "",
+      count: 4,
+      reason: "차트 범례·툴팁 표식(8~12px) — 모서리 사다리의 가장 작은 단도 이 크기에는 너무 둥글어 원과 구분되지 않는다(calendar-view 범례와 같은 사유)",
+    },
+    { token: "bg-white/", cls: "bg-white/10", context: "", count: 3, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 진행 막대 홈·설정 단추 바탕" },
+    { token: "bg-white/", cls: "hover:bg-white/20", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 설정 단추 마우스 올림" },
+    { token: "bg-white/", cls: "bg-white/50", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 진행 막대 위 기준선 표시" },
+    { token: "border-white/", cls: "border-white/10", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 히어로 안 구분선" },
+    { token: "border-white/", cls: "border-white/5", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) — 히어로 안 실적 줄 구분선" },
+  ],
+  "components/mobile/mobile-home-view.tsx": [
+    {
+      token: "bg-white/",
+      cls: "bg-white/10",
+      context: "",
+      count: 2,
+      reason: "진한 청록 히어로 위 진행 막대 홈·구분 면 — 흰 카드 토큰은 진한 바탕에서 면이 되지 않는다(P8 §5 토큰은 표면 종속)",
+    },
+    {
+      token: "border-white/",
+      cls: "border-white/10",
+      context: "",
+      count: 1,
+      reason: "진한 청록 히어로 안 구분선 — slate 헤어라인은 진한 바탕에서 보이지 않는다(P8 구분선 2단의 히어로 예외)",
+    },
+  ],
   "components/crm/reference-inbox/reference-inbox-client.tsx": [
     {
       token: "backdrop-blur",
@@ -230,6 +305,16 @@ describe("opaque content surfaces — 대상 파일", () => {
     const source = readFileSync(join(ROOT, rel), "utf8");
     const hits = findForbidden(source, rel, tokens).filter((h) => !isExempt(rel, h));
     expect(hits, hits.map((h) => `${rel}:${h.line} [${h.token}] ${h.text}`).join("\n")).toEqual([]);
+  });
+});
+
+describe("opaque content surfaces — 모바일 폴더 전수", () => {
+  it("src/components/mobile 의 화면 파일이 전부 TARGETS 에 있다 — 새 파일이 조용히 대상 밖이 되지 않게", () => {
+    const dir = join(ROOT, "components/mobile");
+    const files = readdirSync(dir).filter((name) => name.endsWith(".tsx"));
+    expect(files.length).toBeGreaterThan(0);
+    const missing = files.map((name) => `components/mobile/${name}`).filter((rel) => !(rel in TARGETS));
+    expect(missing).toEqual([]);
   });
 });
 

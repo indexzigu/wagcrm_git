@@ -71,7 +71,7 @@ export function MobileHomeSettlementCard({ campaigns }: { campaigns: MobileSettl
                 type="button"
                 onClick={() => setPendingOpen(true)}
                 aria-label="입금대기 목록 열기"
-                className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-left transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-muted/60 px-3 py-2.5 text-left transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
               >
                 {/* 방향 아이콘 + 색 한 쌍(규칙 SSOT: lib/money-direction). 이 카드는 5개 표면
                     중 유일하게 아이콘이 없어 입금·지급이 라벨 글자로만 구분됐다 — 첫 화면인데
@@ -91,7 +91,7 @@ export function MobileHomeSettlementCard({ campaigns }: { campaigns: MobileSettl
                 type="button"
                 onClick={() => setPendingOpen(true)}
                 aria-label="지급대기 목록 열기"
-                className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5 text-left transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+                className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-muted/60 px-3 py-2.5 text-left transition-transform duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
               >
                 <span className="flex items-center gap-1 text-[11px] font-medium text-slate-500">
                   <MONEY_DIRECTION_ICON.out
