@@ -251,7 +251,7 @@ export function CalendarPageClient({
       )}
 
       {/* 월 네비게이션 */}
-      <div className="flex items-center justify-between rounded-xl border border-border/60 bg-white/80 px-3 py-2 dark:bg-slate-900/40">
+      <div className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2">
         <Button
           variant="ghost"
           size="sm"

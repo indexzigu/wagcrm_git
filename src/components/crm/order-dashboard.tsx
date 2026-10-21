@@ -526,7 +526,7 @@ function PreviewTab({ id, panelId, label, campaignName, isActive, onSelect }: {
       tabIndex={isActive ? 0 : -1}
       onClick={onSelect}
       className={`px-6 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ${
-        isActive ? 'bg-white border-b-2 border-primary' : 'hover:bg-slate-100/60'
+        isActive ? 'bg-card border-b-2 border-primary' : 'hover:bg-slate-100/60'
       }`}
     >
       <span className={`block text-sm font-bold ${isActive ? 'text-primary' : 'text-slate-500'}`}>
@@ -663,11 +663,11 @@ function CampaignActionLog({ campaignId, refreshKey }: { campaignId: string; ref
         )}
       </div>
       {error ? (
-        <div className="text-sm text-destructive bg-white p-4 rounded-xl border border-destructive/20">{error}</div>
+        <div className="text-sm text-destructive bg-card p-4 rounded-xl border border-destructive/20">{error}</div>
       ) : logs === null ? (
-        <div className="text-sm text-slate-500 bg-white p-4 rounded-xl border border-slate-100">불러오는 중...</div>
+        <div className="text-sm text-slate-500 bg-card p-4 rounded-xl border border-border">불러오는 중...</div>
       ) : logs.length === 0 ? (
-        <div className="text-sm text-slate-500 italic bg-white p-4 rounded-xl border border-slate-100 text-center">
+        <div className="text-sm text-slate-500 italic bg-card p-4 rounded-xl border border-border text-center">
           아직 기록된 작업이 없습니다. 주문확인·발주요청·송장회신·송장등록 실행 시 여기에 남습니다.
         </div>
       ) : (
@@ -678,13 +678,13 @@ function CampaignActionLog({ campaignId, refreshKey }: { campaignId: string; ref
             const skipped = log.details?.skipped ?? [];
             // 색=의미: 카드 테두리·에러문구도 상태 3단계를 그대로 따른다(부분실패가 완전실패로 뭉개지지 않게).
             const cardBorder =
-              log.status === 'ERROR' ? 'border-destructive/20' : log.status === 'PARTIAL' ? 'border-amber-200/70' : 'border-slate-200';
+              log.status === 'ERROR' ? 'border-destructive/20' : log.status === 'PARTIAL' ? 'border-amber-200/70' : 'border-border';
             const msgColor =
               log.status === 'ERROR' ? 'text-destructive' : log.status === 'PARTIAL' ? 'text-amber-700' : 'text-slate-500';
             return (
               <div
                 key={log.id}
-                className={`bg-white rounded-xl border shadow-soft-sm px-4 py-2.5 ${cardBorder}`}
+                className={`bg-card rounded-xl border shadow-soft-sm px-4 py-2.5 ${cardBorder}`}
               >
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-[11px] text-slate-500 tabular-nums w-[78px] shrink-0">{fmtTime(log.createdAt)}</span>
@@ -1637,12 +1637,12 @@ export default function OrderDashboard() {
       key="campaign-data-preview"
       // 테두리 등급이 앵커 여부에 따라 갈린다(P8 「구분선 2단」): 붙었을 때는 **섹션 경계**
       // (`border-slate-200/60`) 라 위 카드에 딸린 영역으로 읽히고, 독립 카드로 설 때는 카드
-      // 테두리(`border-slate-200`) 를 그대로 쓴다. ⛔ 앵커 변형에 카드 테두리를 두르면 틴트로
+      // 테두리(`border-border`) 를 그대로 쓴다. ⛔ 앵커 변형에 카드 테두리를 두르면 틴트로
       // 지운 "독립 박스" 인상이 테두리에서 되살아난다.
       className={`rounded-2xl border overflow-hidden ${
         isPreviewAnchored
           ? '-mt-4 bg-slate-50/50 border-slate-200/60'
-          : 'bg-white shadow-soft-sm border-slate-200'
+          : 'bg-card shadow-soft-sm border-border'
       }`}
     >
       <div
@@ -1664,7 +1664,7 @@ export default function OrderDashboard() {
           // 전제**에 기대게 되고, 탭을 더하거나 순서를 바꾸면 조용히 어긋난다. id 로 찾는다.
           document.getElementById(previewTabId(order[next]))?.focus();
         }}
-        className="flex border-b border-slate-200 bg-slate-50"
+        className="flex border-b border-border bg-muted"
       >
         <PreviewTab
           id={previewTabId('orders')}
@@ -1694,7 +1694,7 @@ export default function OrderDashboard() {
           >
             {previewOrders.length > 0 ? (
               <table className="w-full text-[10px] text-left whitespace-nowrap">
-                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-soft-sm z-10">
+                <thead className="bg-muted border-b border-border sticky top-0 shadow-soft-sm z-10">
                   <tr>
                     {Object.keys(previewOrders[0]).map(key => (
                       <th key={key} className="px-3 py-2 font-bold text-slate-500 text-[10px]">{key}</th>
@@ -1724,7 +1724,7 @@ export default function OrderDashboard() {
             aria-labelledby={previewTabId('tracking')}
             className="flex flex-col h-full"
           >
-            <div className="p-4 bg-white flex justify-between items-center border-b border-slate-100">
+            <div className="p-4 bg-card flex justify-between items-center border-b border-border">
               <p className="text-sm text-slate-600 font-medium">송장회신 메일을 통해 확보된 임시 송장 데이터입니다.</p>
               {/* 파일을 받았으면(버퍼 존재) 0건이어도 원본 확인용 '저장'은 항상 노출 */}
               {previewInvoiceBuffer && (
@@ -1762,7 +1762,7 @@ export default function OrderDashboard() {
             <div className="overflow-x-auto max-h-[400px]">
               {Object.keys(previewTracking).length > 0 ? (
                 <table className="w-full text-[10px] text-left whitespace-nowrap">
-                  <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-soft-sm z-10">
+                  <thead className="bg-muted border-b border-border sticky top-0 shadow-soft-sm z-10">
                     <tr>
                       <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">주문번호</th>
                       <th className="px-3 py-2 font-bold text-slate-500 text-[10px] w-1/3">택배사</th>

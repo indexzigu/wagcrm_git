@@ -163,7 +163,7 @@ export function InlineDataGrid<T extends { id: string }>({
   }
 
   return (
-    <div className={cn("rounded-2xl border border-border/40 bg-white/70 backdrop-blur-md shadow-soft-sm overflow-hidden", className)}>
+    <div className={cn("rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden", className)}>
       <div className="overflow-x-auto">
         <table style={{ minWidth: totalWidth }} className="w-full table-fixed text-[13px]">
           <colgroup>
@@ -176,7 +176,7 @@ export function InlineDataGrid<T extends { id: string }>({
             {onDelete ? <col style={{ width: 80 }} /> : null}
           </colgroup>
           <thead>
-            <tr className="border-b border-slate-200 bg-white/85">
+            <tr className="border-b border-border bg-muted/60">
               {columns.map((column) => {
                 const isSorted = sort?.key === column.key;
                 return (
@@ -194,7 +194,7 @@ export function InlineDataGrid<T extends { id: string }>({
                       variant="ghost"
                       size="xs"
                       className={cn(
-                        "h-8 rounded-md px-2 text-[11px] font-semibold uppercase tracking-[0.08em] hover:bg-slate-100 hover:text-foreground transition-colors",
+                        "h-8 rounded-md px-2 text-[11px] font-semibold uppercase tracking-[0.08em] hover:bg-muted hover:text-foreground transition-colors",
                         isSorted
                           ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/20"
                           : "text-muted-foreground",
@@ -225,7 +225,7 @@ export function InlineDataGrid<T extends { id: string }>({
           <tbody>
             {isLoading ? (
               Array.from({ length: 5 }).map((_, rowIndex) => (
-                <tr key={`loading-row-${rowIndex}`} className="border-b border-slate-200/80 bg-white/60">
+                <tr key={`loading-row-${rowIndex}`} className="border-b border-border bg-card">
                   {columns.map((column) => (
                     <td key={`loading-cell-${rowIndex}-${column.key}`} className="h-11 px-3">
                       <div className="flex items-center">
@@ -257,7 +257,7 @@ export function InlineDataGrid<T extends { id: string }>({
               <tr 
                 key={row.id} 
                 className={cn(
-                  "border-b border-slate-200/80 bg-white/60 transition-colors duration-150 hover:bg-primary-tint hover:shadow-soft-sm",
+                  "border-b border-border bg-card transition-colors duration-150 hover:bg-primary-tint hover:shadow-soft-sm",
                   onRowClick && "cursor-pointer"
                 )}
                 onClick={() => onRowClick?.(row)}

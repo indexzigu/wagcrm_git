@@ -4,7 +4,8 @@ import { join } from "node:path";
 import ts from "typescript";
 
 /**
- * **정산·판매·영업·주문 관리 화면의 콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2·2-b).
+ * **데스크톱 콘텐츠 면은 불투명 헤어라인 질감이다** (애플 UI 리뉴얼 묶음 2·2-b·2-c — 정산·판매·영업·주문
+ * 관리, 리포트, 기본정보 관리, 결재함·설정·캘린더, 공용 표 `InlineDataGrid`).
  *
  * 반투명 유리(`backdrop-blur`·`bg-white/NN`·`bg-[rgba(…)]`)는 크롬(사이드바·Sheet)에만
  * 남긴다(CrmShell 페이지 머리는 2026-10-21 없앴다) — 밝은 반투명을 겹치면 면 경계가 흐려진다. 콘텐츠 카드·표·요약띠는
@@ -16,12 +17,25 @@ import ts from "typescript";
  * 틀린 전례가 있다: `ui-copy-em-dash.contract.test.ts` 머리말).
  *
  * 대상 밖(의도): `crm-shell.tsx` · `crm-sidebar.tsx` · `ui/sheet.tsx` — 크롬(사이드바·Sheet)은
- * 반투명 유지.
+ * 반투명 유지. 상세 옆 창 계열(판매 조건·셀러·거래처 패널, 셀러 상세 본문)은 묶음 2-c B 에서 등재.
+ *
+ * 대상 파일 안에서도 의도된 반투명·임의값은 `EXCEPTIONS` 에 **사유와 정확한 적중 개수와 함께** 둔다
+ * (사유가 비었거나, 적중 개수가 달라지면 실패 — 같은 모양의 새 위반이 예외에 묻어가지 않게, 낡은 예외도 남지 않게).
  */
 
 const ROOT = join(__dirname, "..");
 
-const SURFACE_TOKENS = ["backdrop-blur", "bg-white/", "bg-[rgba(", "bg-[#", "rounded-["] as const;
+// `border-white/`·`bg-background/`·`bg-card/` 는 반쪽 반투명(`border-white/70 bg-background/70` 같은 것)까지 막는다.
+const SURFACE_TOKENS = [
+  "backdrop-blur",
+  "bg-white/",
+  "bg-[rgba(",
+  "bg-[#",
+  "rounded-[",
+  "border-white/",
+  "bg-background/",
+  "bg-card/",
+] as const;
 
 /** 파일 → 그 파일에서 금지하는 문자열. */
 const TARGETS: Record<string, readonly string[]> = {
@@ -39,16 +53,87 @@ const TARGETS: Record<string, readonly string[]> = {
   // (`rounded-[24px]`·`bg-white/90` 등)는 이 묶음의 교체 규칙 밖이라 아직 대상이 아니다 —
   // 그 섹션들을 정리하는 묶음에서 SURFACE_TOKENS 로 넓힐 것.
   "components/crm/campaign-side-panel.tsx": ["bg-[linear-gradient"],
-  // 묶음 2-b — 영업 관리·주문 관리. `outreach-list.tsx`(모바일 공유)·`inline-data-grid.tsx`(5화면 공유)는
-  // 등재하지 않는다 — 공용 변환은 묶음 2-c. 목록 보기는 그리드 컨테이너만 className 으로 덮는다.
+  // 묶음 2-b — 영업 관리·주문 관리. `outreach-list.tsx`(모바일 공유)는 등재하지 않는다(모바일 묶음).
+  // 공용 표 `inline-data-grid.tsx` 는 묶음 2-c A 에서 등재했다(아래).
   "app/outreach/page.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
   "components/crm/recampaign-alerts-card.tsx": SURFACE_TOKENS,
   "components/crm/order-dashboard.tsx": SURFACE_TOKENS,
   "components/crm/shipping/modals/CampaignCreateModal.tsx": ["bg-[linear-gradient", "bg-white/"],
   "components/crm/shipping/modals/ProductSelectModal.tsx": ["bg-[linear-gradient", "bg-white/"],
+  // 묶음 2-c A — 공용 표(영업·판매 조건·거래처·셀러 목록 공유), 리포트, 기본정보 관리, 결재함·설정·캘린더.
+  "components/crm/inline-data-grid.tsx": SURFACE_TOKENS,
+  "components/crm/pnl-report-client.tsx": SURFACE_TOKENS,
+  "components/crm/inflow-report-client.tsx": SURFACE_TOKENS,
+  "components/crm/partners-management.tsx": SURFACE_TOKENS,
+  "components/crm/sellers-management.tsx": SURFACE_TOKENS,
+  "app/deals/deals-page-client.tsx": SURFACE_TOKENS,
+  "components/crm/asset-library.tsx": SURFACE_TOKENS,
+  "components/crm/price-sheet/price-sheet-detail.tsx": SURFACE_TOKENS,
+  "components/crm/reference-inbox/reference-inbox-client.tsx": SURFACE_TOKENS,
+  "components/crm/story-inbox-grid.tsx": SURFACE_TOKENS,
+  "app/approvals/page.tsx": SURFACE_TOKENS,
+  "components/crm/approvals/approval-detail.tsx": SURFACE_TOKENS,
+  "app/settings/layout.tsx": SURFACE_TOKENS,
+  "components/crm/operations-settings-client.tsx": SURFACE_TOKENS,
+  "components/crm/integrations-diagnostic.tsx": SURFACE_TOKENS,
+  "components/crm/AccountManagementTable.tsx": SURFACE_TOKENS,
+  "components/crm/system-radar-card.tsx": SURFACE_TOKENS,
+  "components/crm/data-integrity-card.tsx": SURFACE_TOKENS,
+  "app/calendar/calendar-page-client.tsx": SURFACE_TOKENS,
+  "components/crm/calendar-view.tsx": SURFACE_TOKENS,
+  "components/crm/calendar-filter-bar.tsx": SURFACE_TOKENS,
+  // 데스크톱 로딩 뼈대 — 본 화면과 질감이 다르면 화면 전환 때 유리 → 불투명으로 깜박인다.
+  // `pipeline/loading.tsx` 는 모바일 탭 화면 뼈대라 모바일 묶음에서.
+  "app/approvals/loading.tsx": SURFACE_TOKENS,
+  "app/assets/loading.tsx": SURFACE_TOKENS,
+  "app/assets/archive/loading.tsx": SURFACE_TOKENS,
+  "app/sellers/loading.tsx": SURFACE_TOKENS,
+  "app/outreach/loading.tsx": SURFACE_TOKENS,
+  "app/reports/loading.tsx": SURFACE_TOKENS,
+  "app/settlement/loading.tsx": SURFACE_TOKENS,
 };
 
-type Hit = { token: string; line: number; text: string };
+/**
+ * 대상 파일 안의 의도된 예외 — `cls` 는 허용하는 클래스 낱말 그대로, `context` 는 그 클래스가 든 문자열 노드에
+ * 함께 있어야 하는 부분 문자열, `count` 는 그 적중의 정확한 개수. 같은 노드의 다른 금지 클래스는 예외가 아니다.
+ */
+type Exception = { token: string; cls: string; context: string; count: number; reason: string };
+
+const EXCEPTIONS: Record<string, readonly Exception[]> = {
+  "components/crm/reference-inbox/reference-inbox-client.tsx": [
+    {
+      token: "backdrop-blur",
+      cls: "backdrop-blur-sm",
+      context: "bg-black/40",
+      count: 1,
+      reason: "사진 위에 얹는 오버레이 칩 — 어두운 반투명 바탕이라야 어떤 사진 위에서도 흰 글자가 읽힌다",
+    },
+  ],
+  "components/crm/calendar-view.tsx": [
+    {
+      token: "rounded-[",
+      cls: "rounded-[3px]",
+      context: "size-2.5 rounded-[3px]",
+      count: 1,
+      reason: "범례 점(10px) — 모서리 사다리의 가장 작은 단(rounded-md 6.4px)도 10px 사각형에는 너무 둥글어 원과 구분되지 않는다",
+    },
+  ],
+  "components/crm/calendar-filter-bar.tsx": [
+    {
+      token: "rounded-[",
+      cls: "rounded-[3px]",
+      context: "size-2.5 shrink-0 rounded-[3px]",
+      count: 1,
+      reason: "캘린더 범례 점과 같은 모양의 필터 점 — calendar-view 범례와 같은 사유",
+    },
+  ],
+};
+
+const isExempt = (rel: string, hit: Hit) =>
+  (EXCEPTIONS[rel] ?? []).some((e) => e.token === hit.token && hit.cls === e.cls && hit.full.includes(e.context));
+
+/** 적중 1건 = 금지 문자열이 든 클래스 낱말 1개(`cls`). 같은 문자열 노드에 두 번 들어 있으면 2건이다. */
+type Hit = { token: string; cls: string; line: number; text: string; full: string };
 
 /** 소스의 문자열·템플릿·JSX 텍스트 노드에서 금지 문자열을 찾는다(주석 제외). */
 function findForbidden(source: string, fileName: string, tokens: readonly string[]): Hit[] {
@@ -64,10 +149,10 @@ function findForbidden(source: string, fileName: string, tokens: readonly string
       ts.isJsxText(node)
     ) {
       const text = node.text;
-      for (const token of tokens) {
-        if (text.includes(token)) {
-          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-          hits.push({ token, line: line + 1, text: text.slice(0, 120) });
+      const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+      for (const cls of text.split(/\s+/)) {
+        for (const token of tokens) {
+          if (cls.includes(token)) hits.push({ token, cls, line: line + 1, text: text.slice(0, 120), full: text });
         }
       }
     }
@@ -88,6 +173,12 @@ describe("opaque content surfaces — 스캐너 자체", () => {
     expect(tokens).toEqual(["backdrop-blur", "bg-[#", "bg-white/", "rounded-["].sort());
   });
 
+  it("양성 프로브: 반쪽 반투명(테두리·바탕 알파)도 잡는다", () => {
+    const probe = 'const a = <div className="border-white/70 bg-background/70" />; const b = "bg-card/90";';
+    const tokens = findForbidden(probe, "probe.tsx", SURFACE_TOKENS).map((h) => h.token).sort();
+    expect(tokens).toEqual(["bg-background/", "bg-card/", "border-white/"].sort());
+  });
+
   it("음성 프로브: 주석에만 등장하는 금지 문자열은 잡지 않는다", () => {
     const probe = [
       "// 종전 bg-white/50 backdrop-blur 를 bg-card 로 바꿨다",
@@ -102,7 +193,25 @@ describe("opaque content surfaces — 스캐너 자체", () => {
 describe("opaque content surfaces — 대상 파일", () => {
   it.each(Object.entries(TARGETS))("%s 에 반투명·hex·임의 모서리 클래스가 없다", (rel, tokens) => {
     const source = readFileSync(join(ROOT, rel), "utf8");
-    const hits = findForbidden(source, rel, tokens);
+    const hits = findForbidden(source, rel, tokens).filter((h) => !isExempt(rel, h));
     expect(hits, hits.map((h) => `${rel}:${h.line} [${h.token}] ${h.text}`).join("\n")).toEqual([]);
+  });
+});
+
+describe("opaque content surfaces — 예외 목록", () => {
+  const entries = Object.entries(EXCEPTIONS).flatMap(([rel, list]) => list.map((e) => [rel, e] as const));
+
+  it.each(entries)("%s 예외에 사유가 있다", (_rel, e) => {
+    expect(e.reason.trim().length).toBeGreaterThan(0);
+  });
+
+  it.each(entries)("%s 예외의 적중 개수가 등재값과 같다(낡은 예외·묻어가는 위반 금지)", (rel, e) => {
+    expect(TARGETS[rel], `${rel} 은 TARGETS 에 없다`).toBeDefined();
+    const source = readFileSync(join(ROOT, rel), "utf8");
+    const used = findForbidden(source, rel, TARGETS[rel]).filter((h) => h.token === e.token && h.cls === e.cls && h.full.includes(e.context));
+    expect(
+      used.length,
+      `${rel} 의 예외 ${e.cls} (${e.context}) 적중이 ${used.length}건 — 0건이면 예외를 지우고, 늘었으면 새 줄을 고칠 것`,
+    ).toBe(e.count);
   });
 });

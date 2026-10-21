@@ -702,7 +702,7 @@ export function SellersManagement({
             없고, ThemeProvider 도 classList 토글도 없다(globals.css 주석도 ".dark는 현재 미사용(확인됨)").
             회수한 줄을 새로 쓰면서 죽은 분기를 같이 저술할 이유가 없어 뺐다. 레포의 나머지 dark: 는
             이 작업 범위가 아니다 — 다크모드를 켜게 되면 그때 일괄로 다룰 일이다. */}
-        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm shrink-0">
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-card px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm shrink-0">
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="font-medium">전체 셀러:</span>
             <span className="font-semibold text-slate-800">{sellers.length}명</span>
@@ -729,14 +729,14 @@ export function SellersManagement({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
           {dataSource === "mock" && dataSourceMessage ? (
             <div className="px-5 pt-5">
               <DataSourceBanner message={dataSourceMessage} />
             </div>
           ) : null}
           {/* 카드 도구줄 — 보기 토글은 왼쪽, 검색·보조 버튼·신규 셀러는 오른쪽(페이지 머리 없음, 2026-10-21 오너; 빈 칸 없음). */}
-          <section className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border/70 px-5 py-3">
+          <section className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-5 py-3">
             {/* 파생 세그먼트 토글 (§12-3) — 공용 SegmentToggle(radiogroup a11y·h-9 정렬) */}
             <SegmentToggle<SellerSegment>
               ariaLabel="셀러 목록 보기"

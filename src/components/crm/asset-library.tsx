@@ -823,7 +823,7 @@ export function AssetLibrary({
     <CrmShell>
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
         {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치) */}
-        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm backdrop-blur-sm dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-400 shrink-0">
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border bg-card px-4 py-2.5 text-xs text-slate-600 shadow-soft-sm shrink-0">
           <div className="flex items-center gap-1.5 shrink-0">
             <HardDrive className="size-3.5 text-slate-400" />
             <span className="font-medium">Supabase:</span>
@@ -853,10 +853,10 @@ export function AssetLibrary({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
           {/* 탑바 (타 워크스페이스와 일관성 확보) */}
           {/* 카드 도구줄 — 검색·보관자료·캠페인·Drive 연결을 오른쪽에(페이지 머리 없음, 2026-10-21 오너; 빈 칸 없음, 높이 py-2). */}
-          <section className="flex shrink-0 items-center justify-end border-b border-border/70 px-5 py-2 bg-white/40 gap-3">
+          <section className="flex shrink-0 items-center justify-end border-b border-border px-5 py-2 bg-card gap-3">
             <div className="flex items-center gap-3">
               <InputGroup className="w-48 shrink-0 border border-slate-200 bg-white h-9 rounded-lg shadow-soft-sm">
                 <InputGroupAddon>
@@ -1062,7 +1062,7 @@ export function AssetLibrary({
                   {filteredAssets.map((asset) => (
                     <div
                       key={asset.id}
-                      className="group flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-3 hover:border-slate-300 hover:shadow-soft-sm transition-[border-color,box-shadow] min-h-[105px]"
+                      className="group flex flex-col justify-between rounded-xl border border-border bg-card p-3 hover:border-slate-300 hover:shadow-soft-sm transition-[border-color,box-shadow] min-h-[105px]"
                     >
                       <div className="min-w-0">
                         {/* 1줄: 파일형식 아이콘 + 파일명 및 수정 버튼 */}
@@ -1174,7 +1174,7 @@ export function AssetLibrary({
                   {filteredAssets.map((asset) => (
                     <div
                       key={asset.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -1230,7 +1230,7 @@ export function AssetLibrary({
               ) : (
                 <div 
                   ref={parentRef}
-                  className="rounded-xl border border-slate-200 bg-white dark:bg-slate-900 p-4 overflow-y-auto max-h-[600px] scrollbar-thin"
+                  className="rounded-xl border border-border bg-card p-4 overflow-y-auto max-h-[600px] scrollbar-thin"
                 >
                   {flatVisibleNodes.length > 0 ? (
                     <div

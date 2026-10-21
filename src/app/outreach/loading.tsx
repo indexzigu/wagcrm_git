@@ -5,9 +5,9 @@ export default function OutreachLoading() {
   return (
     <CrmShell>
       <div className="flex min-h-[calc(100dvh+1px)] md:min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/70 bg-[rgba(255,255,255,0.62)] shadow-ambient backdrop-blur">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
           {/* Filters Bar Skeleton */}
-          <div className="crm-topbar flex flex-col gap-4 border-b border-border/70 px-5 py-3 md:flex-row md:items-center md:justify-between shrink-0 bg-white/40">
+          <div className="crm-topbar flex flex-col gap-4 border-b border-border px-5 py-3 md:flex-row md:items-center md:justify-between shrink-0 bg-card">
             {/* 도구줄: 검색 · 보기 전환 · 테스크 등록(오른쪽 정렬, 페이지 머리 없음) */}
             <div className="flex flex-1 items-center justify-end gap-2">
               <Skeleton className="h-9 w-full sm:w-64 rounded-lg" />
@@ -19,14 +19,14 @@ export default function OutreachLoading() {
           <div className="flex-1 overflow-y-auto p-5">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start pb-6">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex flex-col gap-5 border border-border/60 bg-white/50 rounded-2xl p-5 shadow-soft-sm">
-                  <div className="pb-3 border-b border-border/60">
+                <div key={i} className="flex flex-col gap-5 border border-border bg-card rounded-2xl p-5 shadow-soft-sm">
+                  <div className="pb-3 border-b border-border">
                     <Skeleton className="h-5 w-24 mb-2" />
                     <Skeleton className="h-3 w-48" />
                   </div>
                   <div className="flex flex-col gap-3">
                     {Array.from({ length: 2 }).map((_, j) => (
-                      <div key={j} className="border border-border/60 bg-white rounded-xl p-4 shadow-xs space-y-3">
+                      <div key={j} className="border border-border bg-card rounded-xl p-4 shadow-xs space-y-3">
                         <div className="flex justify-between items-start">
                           <Skeleton className="h-4 w-28" />
                           <Skeleton className="h-4 w-12" />

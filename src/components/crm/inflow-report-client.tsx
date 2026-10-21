@@ -102,8 +102,8 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
   return (
     <CrmShell>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6 md:px-8">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/70 bg-background/70 shadow-ambient backdrop-blur md:rounded-[24px]">
-          <div className="crm-topbar flex shrink-0 flex-col gap-3 border-b border-border/70 bg-background/60 px-4 py-4 md:flex-row md:items-start md:justify-between md:px-5">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
+          <div className="crm-topbar flex shrink-0 flex-col gap-3 border-b border-border bg-card px-4 py-4 md:flex-row md:items-start md:justify-between md:px-5">
             {/* 페이지 머리(제목·설명) 없음 — 오너 디자인 방침(2026-10-21). 범위 배지만 카드 도구줄에 둔다 */}
             <div className="flex flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -149,7 +149,7 @@ export function InflowReportClient({ report }: { report: InflowReport }) {
               {report.links.length === 0 ? (
                 <EmptyState />
               ) : (
-                <div className="overflow-hidden rounded-xl border border-border/70 bg-white/90">
+                <div className="overflow-hidden rounded-xl border border-border bg-card">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -304,7 +304,7 @@ function SummaryTile({
   note?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <div className="rounded-xl border border-border bg-card p-4 shadow-soft-sm">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-foreground">
         <span className="text-2xl font-semibold tabular-nums">{nf.format(value)}</span>
