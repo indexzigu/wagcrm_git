@@ -33,6 +33,10 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/crm/grouped-table-view.tsx": SURFACE_TOKENS,
   "components/crm/settlement-section.tsx": SURFACE_TOKENS,
   "components/crm/money-summary-strip.tsx": SURFACE_TOKENS,
+  // 캠페인 상세 시트는 **시트 바탕 그라디언트만** 막는다. 이 파일의 다른 섹션 카드
+  // (`rounded-[24px]`·`bg-white/90` 등)는 이 묶음의 교체 규칙 밖이라 아직 대상이 아니다 —
+  // 그 섹션들을 정리하는 묶음에서 SURFACE_TOKENS 로 넓힐 것.
+  "components/crm/campaign-side-panel.tsx": ["bg-[linear-gradient"],
 };
 
 type Hit = { token: string; line: number; text: string };
