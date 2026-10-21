@@ -594,7 +594,11 @@ export function SellerDetailContent({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            {/* 칸 수는 화면이 아니라 **이 카드 폭**이 정한다 — 휴대폰 하단 서랍(390px)에서 두 칸이면 값 칸 최소폭(148px)이
+                칸보다 넓어 이름↔별칭·팔로워↔등록일자 글자가 겹쳤다. 480px 미만이면 한 칸, 데스크톱 옆 창(640px)은 지금처럼 두 칸.
+                ⚠️ `@container` 는 그리드의 **부모**에 둔다 — 컨테이너 쿼리는 조상만 찾는다(`order-dashboard.tsx` 실사고). */}
+            <div className="@container">
+            <div className="grid grid-cols-1 gap-3 @[480px]:grid-cols-2">
               {/* 이름 */}
               <InlineEditField
                 label="이름"
@@ -616,9 +620,9 @@ export function SellerDetailContent({
               />
 
               {/* SNS 유형 */}
-              <div className="col-span-1 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md">
-                <span className="text-xs text-muted-foreground">SNS 유형</span>
-                <span className="text-xs font-medium text-foreground truncate">
+              <div className="col-span-1 flex min-w-0 items-center justify-between gap-2 border border-border/60 bg-muted/20 p-2.5 rounded-md">
+                <span className="shrink-0 text-xs text-muted-foreground">SNS 유형</span>
+                <span className="min-w-0 truncate text-xs font-medium text-foreground">
                   {seller.snsType === "INSTAGRAM" ? "Instagram" : "YouTube"}
                 </span>
               </div>
@@ -644,15 +648,15 @@ export function SellerDetailContent({
               />
 
               {/* 등록일자 */}
-              <div className="col-span-1 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md">
-                <span className="text-xs text-muted-foreground">등록일자</span>
-                <span className="text-xs font-medium text-foreground">
+              <div className="col-span-1 flex min-w-0 items-center justify-between gap-2 border border-border/60 bg-muted/20 p-2.5 rounded-md">
+                <span className="shrink-0 text-xs text-muted-foreground">등록일자</span>
+                <span className="min-w-0 truncate text-xs font-medium text-foreground">
                   {seller.createdAt ? formatDate(seller.createdAt) : "-"}
                 </span>
               </div>
 
               {/* 적합성 */}
-              <div className="col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
+              <div className="col-span-1 @[480px]:col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
                 <span className="text-xs text-muted-foreground shrink-0">적합성</span>
                 <div className="flex gap-1.5 overflow-x-auto no-scrollbar justify-end w-full">
                   {["추천", "보류", "비추천", "미진행"].map((level) => {
@@ -682,7 +686,7 @@ export function SellerDetailContent({
               </div>
 
               {/* 카테고리 태그 */}
-              <div className="col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
+              <div className="col-span-1 @[480px]:col-span-2 flex items-center justify-between border border-border/60 bg-muted/20 p-2.5 rounded-md gap-4">
                 <span className="text-xs text-muted-foreground shrink-0">카테고리</span>
                 <div className="flex-1 flex justify-end">
                   <CategoryTagInput
@@ -700,6 +704,7 @@ export function SellerDetailContent({
                   />
                 </div>
               </div>
+            </div>
             </div>
 
             {/* 프로필 이미지 & 소개글 — 이미지는 라벨 달린 '데이터 필드'가 아니라 셀러 정체성

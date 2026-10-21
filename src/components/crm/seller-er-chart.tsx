@@ -168,7 +168,7 @@ export function SellerErChart({ data }: SellerErChartProps) {
             <button
               key={t}
               onClick={() => handleFilterChange(t)}
-              className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-[color,background-color,box-shadow] duration-200 ${
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[10px] font-medium transition-[color,background-color,box-shadow] duration-200 ${
                 filter === t
                   ? "bg-background text-foreground shadow-soft-sm"
                   : "text-muted-foreground hover:text-foreground"
