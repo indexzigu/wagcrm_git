@@ -70,7 +70,7 @@ export function MobileSellersView({
         </div>
       </MobileTopBar>
 
-      <InputGroup className="h-11 rounded-2xl border border-white/60 bg-white/80 backdrop-blur-sm shadow-soft-sm">
+      <InputGroup className="h-11 rounded-2xl border border-border bg-card shadow-soft-sm">
         <InputGroupAddon>
           <SearchIcon />
         </InputGroupAddon>
@@ -100,7 +100,7 @@ export function MobileSellersView({
           Array.from({ length: 3 }).map((_, i) => (
             <article
               key={`skeleton-seller-${i}`}
-              className="rounded-2xl border border-white/60 bg-white/85 backdrop-blur-sm p-3 shadow-soft-sm space-y-3 animate-pulse"
+              className="rounded-2xl border border-border bg-card p-3 shadow-soft-sm space-y-3 animate-pulse"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-2 flex-1">
@@ -121,7 +121,7 @@ export function MobileSellersView({
           sellers.map((seller) => (
             <article
               key={seller.id}
-              className="rounded-2xl border border-white/60 bg-white/85 backdrop-blur-sm p-3 shadow-soft-sm"
+              className="rounded-2xl border border-border bg-card p-3 shadow-soft-sm"
             >
               <button
                 type="button"

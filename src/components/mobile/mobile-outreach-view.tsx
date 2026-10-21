@@ -90,9 +90,9 @@ function MobileOutreachCard({
 
   // 후속 필요 카드 = 단일 info 액센트(좌측 보더). 리마인드 종류(수동/1차/2차)는 색으로 구분하지
   // 않는다 — 무지개 제거(amber·blue 삭제), 심각도는 위 경과일 텍스트 램프가 담당(소유자 승인 2026-07-09).
-  // 기본 카드는 다른 탭과 같은 유리 문법. followUp 액센트는 의미를 담은 상태 표시라
-  // 그대로 둔다 — 유리로 덮으면 "후속 필요"가 안 읽힌다.
-  let cardBorder = "border-white/60 bg-white/85 backdrop-blur-sm";
+  // 기본 카드는 다른 탭과 같은 불투명 흰 카드(애플 UI 리뉴얼 묶음 3 B). followUp 액센트는 의미를 담은
+  // 상태 표시라 그대로 둔다 — 흰 카드로 덮으면 "후속 필요"가 안 읽힌다.
+  let cardBorder = "border-border bg-card";
   if (followUp) {
     cardBorder = "border-status-info/20 bg-status-info/[0.06] border-l-4 border-l-status-info";
   }
@@ -244,14 +244,14 @@ export function MobileOutreachView({
           </div>
           <Skeleton className="h-5 w-10 rounded-full" />
         </div>
-        <div className="flex flex-col gap-5 border border-white/60 bg-white/85 backdrop-blur-sm rounded-2xl p-5 shadow-soft-sm">
+        <div className="flex flex-col gap-5 border border-border bg-card rounded-2xl p-5 shadow-soft-sm">
           <div className="pb-3 border-b border-slate-100">
             <Skeleton className="h-5 w-32 mb-2" />
             <Skeleton className="h-3 w-48" />
           </div>
           <div className="flex flex-col gap-3">
             {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="border border-white/60 bg-white/85 backdrop-blur-sm rounded-xl p-4 shadow-soft-sm space-y-3">
+              <div key={i} className="border border-border bg-card rounded-xl p-4 shadow-soft-sm space-y-3">
                 <div className="flex justify-between items-start">
                   <Skeleton className="h-4 w-28" />
                   <Skeleton className="h-4 w-12" />

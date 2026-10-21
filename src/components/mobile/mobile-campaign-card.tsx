@@ -86,7 +86,7 @@ export function MobileCampaignCard({
 
   return (
     // 프레스는 아이폰식 회색 하이라이트(P8 프레스 표 ①) — 축소는 그리드 타일 전용.
-    <article className="rounded-2xl border border-white/60 bg-white/80 p-3.5 shadow-soft-sm backdrop-blur-sm transition-colors duration-150 active:bg-black/[0.06]">
+    <article className="rounded-2xl border border-border bg-card p-3.5 shadow-soft-sm transition-colors duration-150 active:bg-black/[0.06]">
       <button
         type="button"
         onClick={() => onOpen(campaign)}

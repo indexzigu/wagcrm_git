@@ -348,7 +348,7 @@ export const MobileScheduleCalendar = React.memo(function MobileScheduleCalendar
 
   return (
     <section 
-      className="rounded-2xl border border-white/60 bg-white/85 backdrop-blur-[20px] shadow-soft-lg px-3 pb-4 pt-3"
+      className="rounded-2xl border border-border bg-card shadow-soft-lg px-3 pb-4 pt-3"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >

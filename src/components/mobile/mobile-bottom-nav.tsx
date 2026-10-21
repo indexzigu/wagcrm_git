@@ -150,7 +150,7 @@ export function MobileBottomNav() {
           등장 220ms(조심스럽게 복귀). 곡선은 iOS 시트 계열 커스텀 베지어. */}
       <nav
       className={cn(
-        "fixed inset-x-3 z-40 rounded-2xl border border-white/60 bg-card/90 backdrop-blur-md shadow-soft-lg",
+        "fixed inset-x-3 z-40 rounded-2xl border border-border bg-card/85 backdrop-blur-xl shadow-soft-lg",
         "bottom-[calc(env(safe-area-inset-bottom,0px)+0.75rem)]",
         "transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
         hidden

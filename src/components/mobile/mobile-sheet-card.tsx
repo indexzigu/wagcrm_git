@@ -35,7 +35,7 @@ export function MobileSheetCard({
     <section
       aria-label={ariaLabel ?? title}
       className={cn(
-        "rounded-2xl border border-white/60 bg-white/85 shadow-soft-sm backdrop-blur-md",
+        "rounded-2xl border border-border bg-card shadow-soft-sm",
         className,
       )}
     >

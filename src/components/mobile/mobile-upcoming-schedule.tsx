@@ -55,7 +55,7 @@ export const MobileUpcomingSchedule = React.memo(function MobileUpcomingSchedule
   onOpenCampaign,
 }: MobileUpcomingScheduleProps) {
   return (
-    <section className="rounded-2xl border border-white/60 bg-white/85 backdrop-blur-lg shadow-soft-sm">
+    <section className="rounded-2xl border border-border bg-card shadow-soft-sm">
       <div className="flex min-h-11 items-center px-6 py-2">
         <h2 className="text-[13px] font-medium text-foreground">다가오는 일정</h2>
       </div>

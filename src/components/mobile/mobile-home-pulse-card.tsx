@@ -64,13 +64,13 @@ export function MobileHomePulseCard() {
         ) : (
           <>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-muted/60 px-3 py-2.5">
                 <span className="text-[11px] font-medium text-slate-500">오늘 판매금액</span>
                 <span className="text-[15px] font-bold tabular-nums tracking-tight text-slate-800">
                   ₩{formatCurrency(data.today.revenue)}
                 </span>
               </div>
-              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+              <div className="flex min-h-16 flex-col items-start gap-1 rounded-xl border border-slate-100 bg-muted/60 px-3 py-2.5">
                 <span className="text-[11px] font-medium text-slate-500">오늘 주문</span>
                 <span className="text-[15px] font-bold tabular-nums tracking-tight text-slate-800">
                   {data.today.orders}건
