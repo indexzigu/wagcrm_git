@@ -129,7 +129,7 @@ export function CampaignLaunchReadinessSection({
     : [];
 
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="flex items-center text-sm font-semibold text-foreground">
@@ -227,7 +227,7 @@ export function CampaignLaunchReadinessSection({
               뒤집힌다.
 
               심각도가 아니라 "검사 조건"이라 상태 hue 를 받지 않는다(P8 §4) —
-              무채색 인셋. 컨테이너가 `bg-white/90` 이라 틴트-온-틴트가 아니다. */}
+              무채색 인셋. 컨테이너가 `bg-card` 라 틴트-온-틴트가 아니다. */}
           {data.claimGateSource === "NO_ASSET_DRAFT" && (
             <p className="rounded-md border border-input bg-background px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
               표현 검사는 아직 돌지 않았습니다. 셀러에게 보낸 자료가 없어 검사할

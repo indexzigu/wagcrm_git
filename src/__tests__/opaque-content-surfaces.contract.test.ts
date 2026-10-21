@@ -94,6 +94,15 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/crm/partners-panel.tsx": [...SURFACE_TOKENS, "bg-[linear-gradient"],
   "components/crm/seller-detail-content.tsx": SURFACE_TOKENS,
   "components/crm/asset-manager.tsx": SURFACE_TOKENS,
+  // 옆 창 안에 들어가는 섹션 부품 — 하나라도 빠지면 한 옆 창 안에서 모서리·바탕이 섞인다.
+  "components/crm/campaign-deals-table.tsx": SURFACE_TOKENS,
+  "components/crm/campaign-group-section.tsx": SURFACE_TOKENS,
+  "components/crm/campaign-launch-readiness-section.tsx": SURFACE_TOKENS,
+  "components/crm/settlement-checklist.tsx": SURFACE_TOKENS,
+  "components/crm/deal-asset-section.tsx": SURFACE_TOKENS,
+  "components/crm/deal-voc-section.tsx": SURFACE_TOKENS,
+  "components/crm/campaign-short-link-card.tsx": SURFACE_TOKENS,
+  "components/crm/campaign-task-checklist.tsx": SURFACE_TOKENS,
 };
 
 /**

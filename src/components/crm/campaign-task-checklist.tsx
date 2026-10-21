@@ -65,7 +65,7 @@ export function CampaignTaskChecklist({
       : "현재 단계의 필수 작업을 확인하세요.";
 
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

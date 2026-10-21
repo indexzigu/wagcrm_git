@@ -59,7 +59,7 @@ export function DealAssetSection({ dealId }: { dealId: string }) {
   } = useDealAssets({ dealId });
 
   return (
-    <section className="rounded-[24px] border border-border/70 bg-white/90 p-4 shadow-soft-sm">
+    <section className="rounded-2xl border border-border bg-card p-4 shadow-soft-sm">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold text-foreground">첨부 자료</h3>
         <Button
@@ -165,7 +165,7 @@ export function DealAssetSection({ dealId }: { dealId: string }) {
           {visibleAssets.map((asset) => (
             <li
               key={asset.id}
-              className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-white/80 px-3 py-2"
+              className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2"
             >
               <div className="flex min-w-0 items-center gap-2">
                 {asset.thumbnailUrl ? (
@@ -256,7 +256,7 @@ export function DealAssetSection({ dealId }: { dealId: string }) {
                 className={`flex h-6 items-center gap-1 rounded-md px-2 text-[10px] font-medium transition-colors ${
                   active
                     ? "bg-background text-foreground"
-                    : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {GUIDE_KIND_LABEL[kindOption]}

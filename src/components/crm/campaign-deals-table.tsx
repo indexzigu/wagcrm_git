@@ -444,7 +444,7 @@ export function CampaignDealsTable({
   );
 
   return (
-    <div className="space-y-4 rounded-[24px] border border-border/70 bg-white/90 p-5 shadow-soft-sm">
+    <div className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-soft-sm">
       {/* 폭이 모자라면 **제목을 쪼개지 말고 액션 묶음을 다음 줄로** 내린다 — 종전엔
           제목이 「매출 상 / 세 내역」으로 갈라졌다(오너 지적 2026-08-28). */}
       <div className="flex flex-wrap items-center justify-between gap-3">
