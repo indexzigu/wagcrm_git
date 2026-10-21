@@ -86,3 +86,22 @@ describe("analyze-voc 실질 실패 선언", () => {
     expect(typeof body.failed).toBe("boolean");
   });
 });
+
+describe("analyze-voc 대표 원인", () => {
+  it("전량 실패면 첫 딜의 원인을 사유에 붙인다", async () => {
+    analyzeMock.mockResolvedValue(
+      runResult({
+        dirtyFound: 2,
+        analyzed: 0,
+        failedCount: 2,
+        firstErrorCause: "VOC 인사이트 LLM 오류 (status=429): RESOURCE_EXHAUSTED",
+      }),
+    );
+
+    const body = await (await call()).json();
+
+    expect(body.failureReason).toBe(
+      "VOC 인사이트 분석 대상 2건 전량 실패(성공 0) · 대표 원인: VOC 인사이트 LLM 오류 (status=429): RESOURCE_EXHAUSTED",
+    );
+  });
+});

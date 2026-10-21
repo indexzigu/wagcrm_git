@@ -915,3 +915,56 @@ describe('queryOrderDetails 청크 크기', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 대표 원인 보존(자가 정상화 4단계 Task 1) — 실패를 `error?.message` 로만 담으면 겉 문구
+ * 「fetch failed」만 남고 진짜 원인(프록시 407)이 사라져 사고 원인이 「네트워크」로 기록된다.
+ */
+// 자격증명이 든 프록시 주소 픽스처 — 리터럴로 쓰면 commit-guard 가 「URL 내장 자격증명」으로 막아 조립한다(가짜 값).
+const CRED_PROXY = 'http://' + ['fake_user', 'fake_pw'].join(':') + '@proxy.example.com:80';
+
+describe('동기화 실패 문구는 원인 사슬을 보존한다', () => {
+  beforeEach(() => {
+    (global as any).__naverSyncInFlight = null;
+    (global as any).__naverSyncLastAt = undefined;
+    (global as any).__naverDailyCache = {};
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    (global as any).__naverSyncInFlight = null;
+    (global as any).__naverSyncLastAt = undefined;
+  });
+
+  const proxyError = () =>
+    new TypeError('fetch failed', {
+      cause: new Error('Proxy response (407) !== 200 when HTTP Tunneling'),
+    });
+
+  it('runChangedSync: 변경피드 조회가 프록시 407 로 막히면 사슬 전체가 error 에 남는다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue(null);
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    vi.spyOn(clientModule, 'apiRequest').mockRejectedValue(proxyError());
+
+    const result = await runChangedSync();
+
+    expect(result.error).toBe('fetch failed <- Proxy response (407) !== 200 when HTTP Tunneling');
+  });
+
+  it('runChangedSync: 프록시 주소의 사용자 정보는 가린다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue(null);
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    vi.spyOn(clientModule, 'apiRequest').mockRejectedValue(
+      new TypeError('fetch failed', { cause: new Error(`connect ${CRED_PROXY} refused`) }),
+    );
+
+    const result = await runChangedSync();
+
+    expect(result.error).toBe('fetch failed <- connect http://<가림>@proxy.example.com:80 refused');
+    expect(result.error).not.toContain('fake_pw');
+  });
+});

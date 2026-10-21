@@ -296,6 +296,26 @@ describe("GET /api/cron/enrich-references", () => {
     expect(body.failureReason).toContain("전량 실패");
   });
 
+  it("전량 실패면 1단계 대표 원인을, 없으면 스윕 첫 오류를 자산 주소·id 없이 붙인다", async () => {
+    stubStorageConfigured();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findManyMock.mockResolvedValue([
+      { id: "asset_x1", entityId: "d1", externalUrl: "https://www.instagram.com/p/FAKE1/", notes: null },
+    ]);
+    fetchMetaMock.mockRejectedValue(
+      new Error("Apify 조회 실패 https://www.instagram.com/p/FAKE1/", { cause: new Error("status=402 quota") }),
+    );
+
+    const body = await (await GET(createRequest("Bearer test-secret"))).json();
+    expect(body.failed).toBe(true);
+    expect(body.failureReason).toContain("· 대표 원인: Apify 조회 실패 <항목> <- status=402 quota");
+    expect(body.failureReason).not.toContain("FAKE1");
+
+    engagementMock.mockResolvedValue({ ...ENGAGEMENT_STUB, sellersMonitored: 1, firstErrorCause: "(code 190) expired" });
+    const body2 = await (await GET(createRequest("Bearer test-secret"))).json();
+    expect(body2.failureReason).toContain("· 대표 원인: (code 190) expired");
+  });
+
   it("1단계가 통째로 막혀 감시 셀러를 한 명도 갱신 못 하면 선언한다(스윕 대상 0이어도)", async () => {
     // 🪤 이 경우가 종전의 구멍이다 — Tier0 미설정이면 처리·실패 카운터가 **둘 다 0**이라
     //    `sellersProcessed + failedCount` 로 시도를 재면 영영 발화하지 못한다.

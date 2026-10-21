@@ -1,6 +1,7 @@
 import { apiRequest } from './naver-commerce-client';
 import { createNaverCallTally, runWithNaverCallTally } from './naver-api-usage';
 import { prisma } from './prisma';
+import { describeFailureCause } from '@/lib/cron-outcome';
 import { collectProductOrderIds, findMissingProductOrderIds, queryOrderDetails } from './naver-order-sync';
 import { isCampaignPeriodFrozen, resolveSaleWindowEndMs } from './sale-window';
 import { decidePostCloseCheck, isPostCloseTerminalOrder, nextAllTerminalMarker, postCloseCandidateEndDateFloor } from './post-close-check-window';
@@ -151,10 +152,17 @@ export interface PlannedSettlementSyncResult {
   casesUpserted: number;
   /**
    * 조회에 실패한 날짜(`pay:YYYY-MM-DD` · `complete:YYYY-MM-DD`). 비어 있지 않으면 호출자가
-   * 크론을 **실패로 선언**해야 한다. ⛔ 오류 메시지는 싣지 않는다 — 전송 계층 오류 사슬에 프록시
-   * 주소가 섞일 수 있어 `SystemTaskLog.details` 로 새면 안 된다(P0). 원인은 서버 로그에 남긴다.
+   * 크론을 **실패로 선언**해야 한다. 날짜별 오류 메시지는 여기 싣지 않는다 — 원인은 아래
+   * `firstFailureCause` 하나로만 대표한다.
    */
   failedDates: string[];
+  /**
+   * 처음 실패한 날짜의 원인 사슬(`describeFailureCause`) — 크론이 실패 날짜 목록 뒤에 붙인다.
+   * 이것이 없으면 사고 기록에 날짜만 남아 프록시 한도 소진 같은 진짜 원인이 「원인 불명」이 된다
+   * (자가 정상화 4단계). ⚠️ 전송 계층 오류 사슬에는 프록시 주소가 섞일 수 있어 사용자 정보
+   * (`//user:pw@`)와 비밀 쿼리 값은 가린 뒤 싣는다(P0 — `SystemTaskLog.details` 로 새면 안 된다).
+   */
+  firstFailureCause?: string;
 }
 
 /**
@@ -188,6 +196,7 @@ export async function runPlannedSettlementSync(
   let requests = 0;
   let casesUpserted = 0;
   const failedDates: string[] = [];
+  let firstFailureCause: string | undefined;
 
   const fetchInto = async (label: string, dateKey: string, periodType: string) => {
     try {
@@ -196,6 +205,7 @@ export async function runPlannedSettlementSync(
       casesUpserted += await upsertCases(cases);
     } catch (error) {
       failedDates.push(`${label}:${dateKey}`);
+      firstFailureCause ??= describeFailureCause(error);
       console.error(`[naver-settlement-sync] ${label}:${dateKey} 조회 실패 — 다른 날짜는 계속한다:`, error);
     }
   };
@@ -212,6 +222,7 @@ export async function runPlannedSettlementSync(
     httpAttempts: tally.httpAttempts,
     casesUpserted,
     failedDates,
+    ...(firstFailureCause ? { firstFailureCause } : {}),
   };
 }
 

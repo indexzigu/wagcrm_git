@@ -16,7 +16,7 @@ import {
   syncCampaignPostEngagement,
   type CampaignEngagementSyncResult,
 } from "@/lib/collectors/campaign-engagement-collector";
-import { declareTotalFailure } from "@/lib/cron-outcome";
+import { declareTotalFailure, describeFailureCause } from "@/lib/cron-outcome";
 import { verifyCronAuth } from "@/lib/cron-auth";
 
 // 레퍼런스 링크 메타데이터 보강 sweep (R3) — 일일 크론(30 22 * * * UTC = KST 07:30).
@@ -66,8 +66,10 @@ function declareEnrichOutcome(input: {
   engagement: CampaignEngagementSyncResult;
   enriched: number;
   sweepFailed: number;
+  /** 썸네일 스윕에서 처음 난 오류의 대표 원인(자산 주소·id 제외) */
+  sweepCause?: string;
 }) {
-  const { engagement, enriched, sweepFailed } = input;
+  const { engagement, enriched, sweepFailed, sweepCause } = input;
   const engagementAttempted =
     engagement.sellersMonitored - engagement.sellersSkipped - engagement.sellersDeferred;
   return declareTotalFailure({
@@ -75,6 +77,8 @@ function declareEnrichOutcome(input: {
     succeeded: engagement.sellersProcessed + enriched,
     unit: "건",
     what: "레퍼런스 보강(반응 지표·썸네일)",
+    // 대표 원인 — 1단계(반응 지표)가 먼저다. 1단계가 막히면 대개 같은 원인이 스윕도 막는다.
+    cause: engagement.firstErrorCause ?? sweepCause,
   });
 }
 
@@ -140,6 +144,8 @@ async function handler(request: Request) {
    */
   let failedCount = 0;
   let instagramTouched = false;
+  /** 스윕에서 처음 난 오류의 대표 원인 — 자산 주소·id 는 걷어낸다(사고 서명이 자산마다 갈라지지 않게) */
+  let sweepCause: string | undefined;
 
   for (const asset of assets) {
     if (Date.now() >= deadlineMs) break;
@@ -197,6 +203,7 @@ async function handler(request: Request) {
         `[enrich-references] asset ${asset.id} (${asset.externalUrl}) 보강 실패:`,
         e instanceof Error ? e.message : e
       );
+      sweepCause ??= describeFailureCause(e, [asset.externalUrl, asset.id, asset.entityId]);
     }
   }
 
@@ -212,7 +219,7 @@ async function handler(request: Request) {
     skippedUnsupported,
     failedCount,
     engagement,
-    ...declareEnrichOutcome({ engagement, enriched, sweepFailed: failedCount }),
+    ...declareEnrichOutcome({ engagement, enriched, sweepFailed: failedCount, sweepCause }),
   });
 }
 

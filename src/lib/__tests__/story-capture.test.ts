@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { incidentSignature } from "@/lib/cron-incident";
 import {
   declareStoryCaptureOutcome,
   parseStoryItems,
@@ -250,5 +251,52 @@ describe("declareStoryCaptureOutcome — 산출 판정 숫자", () => {
       targets: 0,
       produced: 0,
     });
+  });
+});
+
+describe("declareStoryCaptureOutcome — 대표 원인", () => {
+  const base = { activeSellers: 2, storiesSeen: 0, storiesNew: 0, thumbnailsRehosted: 0 };
+  const unrendered = (handle: string, name: string) =>
+    `fetch ${handle}: viewer_x: 검색 결과 미렌더(핸들 ${handle}): 프로필 조회 status=422 ` +
+    `본문:{"error":"CAPTCHA_REQUIRED","username":"${handle}","full_name":"${name}"} / 화면 제목:viewer 화면:${name} 님의 프로필`;
+
+  it("전원 실패면 첫 조회 오류를 대표 원인으로 싣되 핸들·본문 미리보기는 걷어낸다", () => {
+    const outcome = declareStoryCaptureOutcome({
+      ...base,
+      handles: ["seller_a", "seller_b"],
+      handlesFailed: 2,
+      errors: ["thumb 123: boom", unrendered("seller_a", "가나다"), unrendered("seller_b", "라마바")],
+    });
+    expect(outcome.failureReason).toBe(
+      "대상 2명 전원 스토리 조회 실패(수집 0건) · 대표 원인: viewer_x: 검색 결과 미렌더: 프로필 조회 status=422 (본문 생략, 코드 CAPTCHA_REQUIRED)",
+    );
+    expect(outcome.failureReason).not.toContain("seller_");
+    expect(outcome.failureReason).not.toContain("가나다");
+  });
+
+  it("「(핸들 …, 」 꼴도 걷어낸다", () => {
+    const outcome = declareStoryCaptureOutcome({
+      ...base,
+      handles: ["seller_a"],
+      handlesFailed: 1,
+      errors: ["fetch seller_a: viewer_x: 스토리 응답 미포착(핸들 seller_a, 비공개/스토리없음/차단 가능): 프로필 조회 응답 없음(감시 패턴 불일치)"],
+    });
+    expect(outcome.failureReason).toBe(
+      "대상 1명 전원 스토리 조회 실패(수집 0건) · 대표 원인: viewer_x: 스토리 응답 미포착(비공개/스토리없음/차단 가능): 프로필 조회 응답 없음(감시 패턴 불일치)",
+    );
+  });
+
+  it("같은 원인·다른 셀러면 같은 사고 서명이다", () => {
+    const reasonFor = (handle: string, name: string) =>
+      declareStoryCaptureOutcome({ ...base, handles: [handle], handlesFailed: 1, errors: [unrendered(handle, name)] })
+        .failureReason!;
+    const sig = (message: string) =>
+      incidentSignature({ jobKey: "capture-stories", kind: "A", errorKind: null, message });
+    expect(sig(reasonFor("seller_a", "가나다"))).toBe(sig(reasonFor("seller_b", "라마바")));
+  });
+
+  it("조회 오류가 없으면 종전 문구 그대로다", () => {
+    const outcome = declareStoryCaptureOutcome({ ...base, handles: ["seller_a"], handlesFailed: 1, errors: [] });
+    expect(outcome.failureReason).toBe("대상 1명 전원 스토리 조회 실패(수집 0건)");
   });
 });

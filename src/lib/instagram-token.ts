@@ -8,6 +8,7 @@
 // env는 최초 시드이자 DB 부재 시 폴백. 갱신 실패는 lastError로 기록한다(무음 실패 금지).
 
 import { getPrisma } from "@/lib/prisma";
+import { describeFailureCause } from "@/lib/cron-outcome";
 
 const GRAPH_VERSION = "v23.0";
 
@@ -95,13 +96,17 @@ export async function refreshInstagramToken(now = new Date()): Promise<RefreshTo
     const body = await res.json();
     if (!res.ok || !body.access_token) {
       const detail = body?.error?.message ?? `HTTP ${res.status}`;
-      const error = `토큰 교환 실패: ${detail}`;
+      // Meta 오류 코드를 「(code N)」으로 싣는다 — 190(토큰 만료)을 다른 실패와 가르는 유일한 신호다
+      // (자가 정상화 4단계 — 사고 원인 판정이 이 표기를 읽는다).
+      const code = body?.error?.code;
+      const error = `토큰 교환 실패: ${detail}${typeof code === "number" ? ` (code ${code})` : ""}`;
       await recordError(error, now);
       return { ok: false, error };
     }
     newToken = String(body.access_token);
   } catch (e) {
-    const error = `토큰 교환 요청 실패: ${e instanceof Error ? e.message : String(e)}`;
+    // 원인 사슬을 보존하되 교환 URL 의 비밀 쿼리 값(client_secret·토큰)은 가린다.
+    const error = `토큰 교환 요청 실패: ${describeFailureCause(e)}`;
     await recordError(error, now);
     return { ok: false, error };
   }

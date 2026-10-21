@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { describeFailureCause } from '@/lib/cron-outcome';
 import { getGeminiApiKeys, isRetryableGeminiStatus } from '../agent/gemini-client';
 import {
   loadCorpus,
@@ -400,7 +401,10 @@ export async function callInsightLlm(prompt: { systemInstruction: string; userTe
       bodyText = await res.text();
     } catch (networkErr) {
       if (i === apiKeys.length - 1) {
-        throw new Error(`VOC 인사이트 LLM 호출 실패(네트워크): ${networkErr instanceof Error ? networkErr.message : networkErr}`);
+        // cause 로 원 오류를 잇는다 — 사슬이 끊기면 대표 원인(`vocFailureCause`)에 겉 문구만 남는다.
+        throw new Error(`VOC 인사이트 LLM 호출 실패(네트워크): ${networkErr instanceof Error ? networkErr.message : networkErr}`, {
+          cause: networkErr,
+        });
       }
       continue;
     } finally {
@@ -480,10 +484,23 @@ export type DealAnalyzeResult = {
   inputTokens?: number | null;
   outputTokens?: number | null;
   error?: string;
+  /** 실패 원인 사슬(`vocFailureCause` — 딜 id·이름 제외). 크론이 전량 실패 사유 뒤에 붙인다. */
+  cause?: string;
 };
+
+/**
+ * 딜 분석 실패의 대표 원인 — 원인 사슬을 펼치고 딜 식별자를 걷어낸다.
+ *
+ * LLM 출력 꼬리(`tail="…"`)는 생략한다 — 회차마다 달라 같은 원인(출력 잘림)이 다른 사고 서명이
+ * 되고, VOC 원문 조각이 실행 이력으로 샌다. `finishReason`·`len` 은 판정 신호라 남긴다.
+ */
+export function vocFailureCause(err: unknown, identifiers: ReadonlyArray<string | null | undefined> = []): string {
+  return describeFailureCause(err, identifiers).replace(/tail="[\s\S]*"\): /, 'tail=<생략>): ');
+}
 
 /** 단일 딜 분석 엔진 — 크론(dirty 경유)과 수동 "분석 갱신"(PR B)이 공유한다. 루프 금지(I2). */
 export async function analyzeVocForDeal(dealId: string): Promise<DealAnalyzeResult> {
+  let dealName: string | undefined;
   try {
     const [deal, qnaTotal, sources] = await Promise.all([
       prisma.deal.findUnique({ where: { id: dealId }, select: { dealName: true } }),
@@ -491,6 +508,7 @@ export async function analyzeVocForDeal(dealId: string): Promise<DealAnalyzeResu
       prisma.dealVocSource.findMany({ where: { dealId } }),
     ]);
     if (!deal) throw new Error('판매 조건을 찾을 수 없습니다.');
+    dealName = deal.dealName;
 
     const qnaRows = await prisma.productQna.findMany({
       where: { dealId },
@@ -560,7 +578,7 @@ export async function analyzeVocForDeal(dealId: string): Promise<DealAnalyzeResu
         update: { lastError: message },
       })
       .catch(() => undefined);
-    return { dealId, ok: false, error: message };
+    return { dealId, ok: false, error: message, cause: vocFailureCause(err, [dealId, dealName]) };
   }
 }
 
@@ -578,6 +596,8 @@ export type AnalyzeRunResult = {
    * 하나가 소리 없이 사라진다. 개수 어휘는 수집기들이 이미 쓰는 `failedCount` 로 맞춘다.
    */
   failedCount: number;
+  /** 처음 실패한 딜의 원인(`vocFailureCause`) — 크론이 전량 실패 사유 뒤에 붙인다. */
+  firstErrorCause?: string;
   backlog: number; // dirtyFound - 이번에 처리한 수(다음 실행 자연 처리)
   batchSignal: { avgAnalyzedPerDay7d: number; backlogConsecutiveRuns: number; alerted: boolean };
   deals: DealAnalyzeResult[];
@@ -714,6 +734,7 @@ export async function analyzeDirtyDeals(): Promise<AnalyzeRunResult> {
     dirtyFound: dirty.length,
     analyzed: analyzedOk,
     failedCount: deals.length - analyzedOk,
+    firstErrorCause: deals.find((d) => !d.ok)?.cause,
     backlog: Math.max(0, dirty.length - deals.length), // 캡+데드라인 이탈분 — 다음 실행 자연 처리
     batchSignal,
     deals,

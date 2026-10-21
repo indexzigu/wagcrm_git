@@ -14,6 +14,7 @@ import {
   matchAssetEngagement,
   type EngagementAssetInput,
 } from "@/lib/campaign-post-engagement";
+import { describeFailureCause } from "@/lib/cron-outcome";
 
 const LEAD_DAYS = 7; // 캠페인 시작 전 티저 게시물 창(campaign-suggested-posts와 동일)
 const TRAIL_DAYS = 3; // 종료 후 최종 수치 확정 창
@@ -44,6 +45,11 @@ export interface CampaignEngagementSyncResult {
   failedCount: number;
   deadlineReached: boolean;
   errors: Array<{ sellerId: string; snsHandle: string; error: string }>;
+  /**
+   * 대표 원인 — 처음 난 오류의 원인 사슬(셀러 핸들 제외). 단계를 막은 게이트 사유도 여기 실린다.
+   * `enrich-references` 크론이 전량 실패를 선언할 때 사유 뒤에 붙인다.
+   */
+  firstErrorCause?: string;
 }
 
 export async function syncCampaignPostEngagement(options?: {
@@ -115,6 +121,7 @@ export async function syncCampaignPostEngagement(options?: {
   const mode = resolveCollectMode("INSTAGRAM");
   if (!mode) {
     result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: `skipped: ${collectModeUnsetReason("INSTAGRAM")}` });
+    result.firstErrorCause = collectModeUnsetReason("INSTAGRAM");
     return result;
   }
   // ⚠️ mock 은 **돌지 않기로 명시 선택한 것**이라 시도가 아니다 — 대상을 전부 스킵으로 세어
@@ -139,6 +146,7 @@ export async function syncCampaignPostEngagement(options?: {
       snsHandle: "",
       error: "skipped: INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정 (Tier0 전용 단계)",
     });
+    result.firstErrorCause = "INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정 (Tier0 전용 단계)";
     return result;
   }
 
@@ -195,6 +203,7 @@ export async function syncCampaignPostEngagement(options?: {
         snsHandle,
         error: err instanceof Error ? err.message : "Unknown error",
       });
+      result.firstErrorCause ??= describeFailureCause(err, [snsHandle, sellerId]);
     }
 
     if (spacingMs > 0) await new Promise((r) => setTimeout(r, spacingMs));

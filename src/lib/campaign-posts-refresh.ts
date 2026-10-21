@@ -16,6 +16,7 @@ import { isGraphConfigured, scrapeTier0 } from "@/lib/seller-analysis/graphScrap
 import { applyDbInstagramToken } from "@/lib/instagram-token";
 import { mergePostsPreview, toPostsPreview } from "@/lib/seller-analysis/posts-preview-merge";
 import type { PostPreview } from "@/lib/seller-analysis/types";
+import { describeFailureCause } from "@/lib/cron-outcome";
 
 /** 재분석 보존 병합 상한 — analyze 라우트(POSTS_PREVIEW_CAP)와 동일 값 유지. */
 export const CAMPAIGN_POSTS_PREVIEW_CAP = 45;
@@ -27,6 +28,11 @@ export type CampaignPostsRefreshResult = {
   /** 오늘(KST) 이미 갱신돼 건너뛴 셀러 수(일일 중복 방지 게이트, force로 우회) */
   skipped: number;
   errors: string[];
+  /**
+   * 대표 원인 — 처음 난 오류의 원인 사슬(셀러 핸들 제외). 토큰 게이트 사유도 여기 실린다.
+   * 크론이 전량 실패를 선언할 때 사유 뒤에 붙인다(`declareTotalFailure` 의 `cause`).
+   */
+  firstErrorCause?: string;
 };
 
 function asRecord(aiTags: unknown): Record<string, unknown> {
@@ -82,6 +88,7 @@ export async function refreshCampaignWindowPosts(
   if (!isGraphConfigured()) {
     // 조용히 성공으로 위장하지 않는다(P0 무음 실패 금지) — 크론 레이더에 그대로 표면화.
     errors.push("INSTAGRAM_ACCESS_TOKEN/BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가");
+    result.firstErrorCause = "INSTAGRAM_ACCESS_TOKEN/BUSINESS_ACCOUNT_ID 미설정: Tier0 수집 불가";
     return result;
   }
 
@@ -120,6 +127,7 @@ export async function refreshCampaignWindowPosts(
       result.refreshed += 1;
     } catch (e) {
       errors.push(`${seller.handle}: ${e instanceof Error ? e.message : String(e)}`);
+      result.firstErrorCause ??= describeFailureCause(e, [seller.handle, seller.snsHandle, seller.name, seller.alias, seller.id]);
     }
   }
   return result;

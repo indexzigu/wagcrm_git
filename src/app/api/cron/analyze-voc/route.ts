@@ -32,6 +32,7 @@ async function handler(request: Request) {
         succeeded: result.analyzed,
         unit: "건",
         what: "VOC 인사이트 분석",
+        cause: result.firstErrorCause,
       }),
     });
   } catch (error) {

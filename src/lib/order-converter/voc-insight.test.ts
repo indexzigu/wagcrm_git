@@ -16,7 +16,9 @@ import {
   VOC_BLOCK_START,
   VOC_BLOCK_END,
   type InsightQna,
+  vocFailureCause,
 } from "./voc-insight";
+import { incidentSignature } from "@/lib/cron-incident";
 import type { VocReview } from "./voc-store";
 
 const qna = (o: Partial<InsightQna> & { question: string }): InsightQna => ({
@@ -240,5 +242,37 @@ describe("evaluateManualRefreshGate (수동 갱신 게이트 — PR B)", () => {
     const gate = evaluateManualRefreshGate({ now, lastAttemptAt, totalVoc: 10 });
     expect(gate.allowed).toBe(false);
     expect(gate.retryAfterSec).toBeGreaterThan(0);
+  });
+});
+
+describe("vocFailureCause (대표 원인 — 자가 정상화 4단계)", () => {
+  it("원인 사슬을 펼치고 딜 id·이름을 걷어낸다", () => {
+    const err = new Error("VOC 인사이트 LLM 호출 실패(네트워크): fetch failed", {
+      cause: new Error("connect ETIMEDOUT"),
+    });
+    expect(vocFailureCause(err, ["deal_fake_1", "가짜 판매 조건"])).toBe(
+      "VOC 인사이트 LLM 호출 실패(네트워크): fetch failed <- connect ETIMEDOUT",
+    );
+    expect(vocFailureCause(new Error("deal_fake_1 없음"), ["deal_fake_1"])).toBe("<항목> 없음");
+  });
+
+  it("LLM 출력 꼬리는 생략한다 — 회차마다 달라 같은 원인이 다른 사고 서명이 된다", () => {
+    const make = (tail: string) =>
+      vocFailureCause(
+        new Error(`VOC 인사이트 LLM 출력 JSON 파싱 실패(finishReason=MAX_TOKENS, len=812, tail="${tail}"): Unexpected end of JSON input`),
+      );
+    const a = make('{"summary":"가짜 문장 하나');
+    const b = make('"themes":[{"label":"다른 문장');
+    expect(a).toBe(
+      "VOC 인사이트 LLM 출력 JSON 파싱 실패(finishReason=MAX_TOKENS, len=812, tail=<생략>): Unexpected end of JSON input",
+    );
+    const sig = (m: string) => incidentSignature({ jobKey: "analyze-voc", kind: "A", errorKind: null, message: m });
+    expect(sig(a)).toBe(sig(b));
+  });
+
+  it("API 키 쿼리 값을 가린다", () => {
+    expect(vocFailureCause(new Error("GET /v1beta/models/x:generateContent?key=FAKEKEY failed"))).toBe(
+      "GET /v1beta/models/x:generateContent?key=<가림> failed",
+    );
   });
 });

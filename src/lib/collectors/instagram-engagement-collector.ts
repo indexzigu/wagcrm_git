@@ -12,6 +12,7 @@ import { collectModeUnsetReason, resolveCollectMode } from "@/lib/collect-mode";
 import { isGraphConfigured, scrapeTier0 } from "@/lib/seller-analysis/graphScraper";
 import { applyDbInstagramToken } from "@/lib/instagram-token";
 import { computeSellerMetrics } from "@/lib/seller-analysis/metrics";
+import { describeFailureCause } from "@/lib/cron-outcome";
 import { recordSellerMetricsSnapshot } from "@/lib/seller-history";
 
 export interface EngagementCollectionResult {
@@ -34,6 +35,11 @@ export interface EngagementCollectionResult {
    */
   deferredCount: number;
   errors: Array<{ sellerId: string; snsHandle: string; error: string }>;
+  /**
+   * 대표 원인 — 처음 난 오류의 원인 사슬(셀러 핸들 제외). 단계를 막은 게이트 사유도 여기 실린다.
+   * 크론이 전량 실패를 선언할 때 사유 뒤에 붙인다(`declareTotalFailure` 의 `cause`).
+   */
+  firstErrorCause?: string;
 }
 
 export async function collectInstagramEngagement(options?: {
@@ -66,6 +72,7 @@ export async function collectInstagramEngagement(options?: {
   const mode = resolveCollectMode("INSTAGRAM");
   if (!mode) {
     result.errors.push({ sellerId: "SYSTEM", snsHandle: "", error: `skipped: ${collectModeUnsetReason("INSTAGRAM")}` });
+    result.firstErrorCause = collectModeUnsetReason("INSTAGRAM");
     return result;
   }
   // ⚠️ mock 은 **돌지 않기로 명시 선택한 것**이라 시도가 아니다 — 감시 대상을 전부 스킵으로
@@ -90,6 +97,7 @@ export async function collectInstagramEngagement(options?: {
       snsHandle: "",
       error: "skipped: INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정 (Tier0 전용 단계)",
     });
+    result.firstErrorCause = "INSTAGRAM_ACCESS_TOKEN/INSTAGRAM_BUSINESS_ACCOUNT_ID 미설정 (Tier0 전용 단계)";
     return result;
   }
 
@@ -162,6 +170,7 @@ export async function collectInstagramEngagement(options?: {
         snsHandle: seller.snsHandle,
         error: err instanceof Error ? err.message : "Unknown error",
       });
+      result.firstErrorCause ??= describeFailureCause(err, [seller.snsHandle, seller.id]);
     }
 
     if (spacingMs > 0) await new Promise((r) => setTimeout(r, spacingMs));

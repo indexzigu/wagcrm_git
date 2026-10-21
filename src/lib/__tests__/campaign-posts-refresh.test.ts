@@ -157,6 +157,17 @@ describe("refreshCampaignWindowPosts", () => {
     expect(result.errors[0]).toContain("handle_a");
     expect(upserts).toHaveLength(1);
   });
+
+  it("처음 난 셀러 오류의 원인 사슬을 핸들 없이 대표 원인으로 남긴다", async () => {
+    vi.mocked(scrapeTier0).mockImplementation(async (handle: string) => {
+      throw new Error(`Graph BD failed for ${handle}`, { cause: new Error("(code 190) Session expired") });
+    });
+    const { prisma } = mockPrisma();
+    const result = await refreshCampaignWindowPosts(prisma, NOW);
+
+    expect(result.refreshed).toBe(0);
+    expect(result.firstErrorCause).toBe("Graph BD failed for <항목> <- (code 190) Session expired");
+  });
 });
 
 describe("extractPostsCollectedAt", () => {

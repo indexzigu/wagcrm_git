@@ -106,6 +106,28 @@ describe("naver-settlement-sync 기본 경로 — 계획", () => {
   });
 });
 
+describe("naver-settlement-sync 대표 원인", () => {
+  it("실패 날짜 목록 뒤에 첫 실패의 원인 사슬을 붙인다", async () => {
+    runPlannedMock.mockResolvedValue({
+      ...PLANNED_OK,
+      failedDates: ["pay:2026-09-10", "complete:2026-09-08"],
+      firstFailureCause: "fetch failed <- Proxy response (407) !== 200 when HTTP Tunneling",
+    });
+
+    const body = await (await call("")).json();
+
+    expect(body.failureReason).toBe(
+      "정산 조회 2건 실패: pay:2026-09-10, complete:2026-09-08 · 대표 원인: fetch failed <- Proxy response (407) !== 200 when HTTP Tunneling",
+    );
+  });
+
+  it("원인이 없으면 종전 문구 그대로다", async () => {
+    runPlannedMock.mockResolvedValue({ ...PLANNED_OK, failedDates: ["pay:2026-09-10"] });
+    const body = await (await call("")).json();
+    expect(body.failureReason).toBe("정산 조회 1건 실패: pay:2026-09-10");
+  });
+});
+
 describe("naver-settlement-sync ?dryRun=1", () => {
   it("계획만 돌려주고 네이버 조회·결산·사후취소를 부르지 않는다", async () => {
     const res = await call("?dryRun=1");

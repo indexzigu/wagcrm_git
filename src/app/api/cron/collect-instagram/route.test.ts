@@ -153,3 +153,29 @@ describe("collect-instagram 실질 실패 선언", () => {
     expect(body.failed).toBe(false);
   });
 });
+
+describe("collect-instagram 대표 원인", () => {
+  it("전량 실패면 1단계의 대표 원인을 사유에 붙인다", async () => {
+    engagementMock.mockResolvedValue(
+      engagement({ monitoredCount: 2, failedCount: 2, firstErrorCause: "Graph (code 190) Session expired" }),
+    );
+    followersMock.mockResolvedValue(followers());
+    const body = await (await call()).json();
+    expect(body.failed).toBe(true);
+    expect(body.failureReason).toContain("· 대표 원인: Graph (code 190) Session expired");
+  });
+
+  it("1단계 원인이 없으면 2단계 첫 오류를 핸들 없이 쓴다", async () => {
+    engagementMock.mockResolvedValue(engagement());
+    followersMock.mockResolvedValue(
+      followers({
+        monitoredCount: 1,
+        failedCount: 1,
+        errors: [{ sellerId: "s1", snsHandle: "seller_a", error: "scraper seller_a 403" }],
+      }),
+    );
+    const body = await (await call()).json();
+    expect(body.failureReason).toContain("· 대표 원인: scraper <항목> 403");
+    expect(body.failureReason).not.toContain("seller_a");
+  });
+});

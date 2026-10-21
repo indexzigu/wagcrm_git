@@ -10,6 +10,7 @@ import {
 import { formatSettlementQueryPlan, loadSettlementQueryPlan } from "@/lib/order-converter/settlement-pending-dates";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { appendFailureCause } from "@/lib/cron-outcome";
 
 export const maxDuration = 300;
 
@@ -84,9 +85,17 @@ async function handler(request: Request) {
     // 날짜별 실패는 격리했으므로(한 날짜가 나머지를 막지 않는다) 여기서 **실패로 선언**한다 —
     // 안 하면 HTTP 200 이라 래퍼가 SUCCESS 로 기록해 레이더가 초록으로 남는다(CronOutcomeBody 계약).
     const failedDates = sync.mode === "planned" ? sync.failedDates : [];
+    // 실패 날짜 목록 뒤에 첫 실패의 원인 사슬을 붙인다 — 날짜만 남으면 사고 원인이 「원인 불명」이다.
+    const firstFailureCause = sync.mode === "planned" ? sync.firstFailureCause : undefined;
     const failure =
       failedDates.length > 0
-        ? { failed: true, failureReason: `정산 조회 ${failedDates.length}건 실패: ${failedDates.join(", ")}` }
+        ? {
+            failed: true,
+            failureReason: appendFailureCause(
+              `정산 조회 ${failedDates.length}건 실패: ${failedDates.join(", ")}`,
+              firstFailureCause,
+            ),
+          }
         : {};
 
     return NextResponse.json({

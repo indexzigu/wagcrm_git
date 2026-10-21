@@ -22,6 +22,7 @@ import {
   uploadBytes,
 } from "@/lib/seller-analysis/seller-media-storage";
 import { assertPublicHttpUrl } from "@/lib/ssrf-guard";
+import { appendFailureCause, scrubFailureCause } from "@/lib/cron-outcome";
 
 /** 행사 시작 며칠 전부터 수집할지 — 공구 사전 홍보 스토리가 시작 직전에 가장 활발하다.
  *  추천 피드(campaign-suggested-posts.leadDays)와 통일(시작 −7일, 오너 2026-07-11). */
@@ -222,8 +223,39 @@ export function declareStoryCaptureOutcome(result: StoryCaptureResult): {
   // 응답 형식 변경 등. 설계 docs/private/specs/2026-10-18-cron-self-healing-design.md ⚙️J8).
   const counts = { targets: attempted, produced: result.storiesNew };
   return totalFailure
-    ? { failed: true, failureReason: `대상 ${attempted}명 전원 스토리 조회 실패(수집 0건)`, ...counts }
+    ? {
+        failed: true,
+        failureReason: appendFailureCause(
+          `대상 ${attempted}명 전원 스토리 조회 실패(수집 0건)`,
+          storyFailureCause(result.errors, result.handles),
+        ),
+        ...counts,
+      }
     : { failed: false, ...counts };
+}
+
+/**
+ * 전원 실패 회차의 대표 원인 — 처음 난 조회 오류(`fetch <핸들>: …`)에서 셀러를 가리키는 부분을 걷어낸다.
+ *
+ * - `fetch <핸들>: ` 접두와 뷰어 문구의 「(핸들 …)」·「(핸들 …, 」를 지운다.
+ * - 프로필 응답 본문·화면 미리보기(`본문:`·`화면 제목:` 이후)는 통째로 생략하고 그 안의 오류 코드
+ *   (대문자_밑줄, 예: CAPTCHA_REQUIRED)만 남긴다 — 본문에는 셀러 이름 같은 프로필 내용이 섞이고,
+ *   회차마다 달라 같은 원인이 다른 사고 서명이 된다. 앞쪽 「status=N」은 원인 판정 신호라 남긴다.
+ * 썸네일 오류(`thumb …`)는 조회 실패가 아니라 대표 원인으로 쓰지 않는다.
+ */
+function storyFailureCause(errors: readonly string[], handles: readonly string[]): string | undefined {
+  const first = errors.find((e) => e.startsWith("fetch "));
+  if (!first) return undefined;
+  let text = first
+    .replace(/^fetch \S+: /, "")
+    .replace(/\(핸들 [^,)]*\)/g, "")
+    .replace(/\(핸들 [^,)]*, /g, "(");
+  const cut = text.search(/ ?(?:본문:|화면 제목:)/);
+  if (cut >= 0) {
+    const codes = [...new Set(text.slice(cut).match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g) ?? [])].slice(0, 3);
+    text = `${text.slice(0, cut)} (본문 생략${codes.length > 0 ? `, 코드 ${codes.join(",")}` : ""})`;
+  }
+  return scrubFailureCause(text, handles);
 }
 
 export type CaptureWindowSeller = {
