@@ -325,10 +325,10 @@ describe("@theme 노출 — 3차에서 새로 쓰는 채움 토큰", () => {
   });
 });
 
-// 4차: 같은 화면의 단일 계열 차트(시간대별 주문)가 네이비 범주 막대를 앞지르지 않게 — 차트 네이비 60% 단색
-// (흰 표면 3.59, 종전 blue-400 2.64 미달). 0건 시간대는 2px slate-100 기준선 그대로.
+// 4차: 같은 화면의 단일 계열 차트(시간대별 주문)가 범주 막대를 앞지르지 않게 — 차트 청록 70% 단색
+// (흰 표면 3.64 — 60% 는 청록 교체 뒤 2.93 미달이라 2026-10-21 상향, 종전 blue-400 2.64). 0건 시간대는 2px slate-100 기준선 그대로.
 describe("시간대 차트·인사이트 패널 틀(4차)", () => {
-  it("캠페인 인사이트: 시간대 막대 chart-1/60(hover 100%), 0건은 slate-100, 유입 경로 틀은 무채색", async () => {
+  it("캠페인 인사이트: 시간대 막대 chart-1/70(hover 100%), 0건은 slate-100, 유입 경로 틀은 무채색", async () => {
     const campaign = {
       id: "c1",
       name: "캠페인",
@@ -354,7 +354,7 @@ describe("시간대 차트·인사이트 패널 틀(4차)", () => {
     const bars = [...dialog.querySelectorAll("div.w-full.rounded-t")];
     expect(bars).toHaveLength(2);
     expect(bars[0].classList.contains("bg-slate-100")).toBe(true);
-    expect(bars[1].classList.contains("bg-chart-1/60")).toBe(true);
+    expect(bars[1].classList.contains("bg-chart-1/70")).toBe(true);
     expect(bars[1].classList.contains("group-hover:bg-chart-1")).toBe(true);
     // 범주(유입 경로) 막대는 100% 네이비 — 시간대 막대보다 진하다.
     const inflowFill = dialog.querySelector("div.w-20.h-1\\.5.rounded-full")!.firstElementChild as HTMLElement;
@@ -369,9 +369,9 @@ describe("시간대 차트·인사이트 패널 틀(4차)", () => {
     expect(dialog.innerHTML).not.toMatch(/indigo|blue-/);
   });
 
-  it("셀러 포털: 시간대 막대 chart-1/60 + 0건 slate-100, 일자별 매출 배경 바 chart-1/10(색만)", () => {
+  it("셀러 포털: 시간대 막대 chart-1/70 + 0건 slate-100, 일자별 매출 배경 바 chart-1/10(색만)", () => {
     const src = sourceOf("portal/seller-portal-report.tsx");
-    expect(src).toContain('className={`w-full rounded-t ${h.orders > 0 ? "bg-chart-1/60" : "bg-slate-100"}`}');
+    expect(src).toContain('className={`w-full rounded-t ${h.orders > 0 ? "bg-chart-1/70" : "bg-slate-100"}`}');
     expect(src).toContain('className="absolute inset-y-0.5 right-0 bg-chart-1/10 rounded-l-sm"');
     expect(src).not.toMatch(/bg-blue-400|bg-blue-500\/10/);
   });
@@ -379,14 +379,14 @@ describe("시간대 차트·인사이트 패널 틀(4차)", () => {
 
 // 5차: 상태 의미가 없는 파랑·보라 잔존을 5개 의미축 밖 무채색(또는 §4 네이비 태그 캐리어)으로.
 describe("남은 파랑·보라(5차)", () => {
-  it("셀러 포털: 오늘 매출은 무채색, 오픈 카운트다운은 네이비 틴트, 단골 수는 slate-900 — 마감 배지 amber 는 유지", () => {
+  it("셀러 포털: 오늘 매출은 무채색, 오픈 카운트다운은 네이비 틴트, 단골 수는 slate-900 — 마감 배지는 caution 토큰", () => {
     const src = sourceOf("portal/seller-portal-report.tsx");
     expect(src).toContain('<div className="text-[11px] font-bold text-slate-500 uppercase">오늘 매출</div>');
     expect(src).toContain('<div className="text-xl font-bold text-slate-900 tabular-nums">{fmtWon(todayStat?.revenue || 0)}</div>');
     expect(src).toContain('className: "bg-primary/10 text-primary border-primary/20", icon: "clock", mode: "open"');
     expect(src).toContain('<div className="text-xl font-bold text-slate-900 tabular-nums">{crossCampaignBuyers.toLocaleString()}명</div>');
-    // 마감 임박은 심각도 축(caution) — 그대로 amber.
-    expect(src).toContain('className: "bg-amber-50 text-amber-700 border-amber-200", icon: "clock", mode: "close"');
+    // 마감 임박은 심각도 축(caution) — 2026-10-21 amber 리터럴 → --status-caution* 토큰(값은 같은 계열).
+    expect(src).toContain('className: "bg-status-caution-bg text-status-caution border-status-caution/25", icon: "clock", mode: "close"');
     // 「성과 카드 →」 링크는 7차에서 네이비로 — 아래 7차 테스트가 고정한다.
     expect(src).not.toMatch(/text-indigo-|bg-blue-50 text-blue-600|text-xl font-bold text-blue-600|text-\[11px\] font-bold text-blue-600/);
   });

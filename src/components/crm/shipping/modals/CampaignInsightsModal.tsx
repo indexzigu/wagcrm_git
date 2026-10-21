@@ -135,10 +135,10 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
                           {h.hour}시 · {h.orders}건
                         </div>
                         {/* 퍼센트 높이는 items-end 부모에서 0으로 해석되므로 픽셀 고정(막대영역 88px).
-                            단일 계열이라 차트 네이비 60% 단색(흰 표면 3.59) — 위 유입 경로 네이비 100% 막대보다 약하게 둔다.
+                            단일 계열이라 차트 청록 70% 단색(흰 표면 3.64 — 60% 는 청록 교체 뒤 2.93 미달이라 2026-10-21 상향) — 위 유입 경로 100% 막대보다 약하게 둔다.
                             hover 는 값 툴팁과 함께 100% 로 올린다. 종전 blue-400 은 2.64 로 미달이고 범주 막대를 앞질렀다. */}
                         <div
-                          className={`w-full rounded-t ${h.orders > 0 ? 'bg-chart-1/60 group-hover:bg-chart-1' : 'bg-slate-100'}`}
+                          className={`w-full rounded-t ${h.orders > 0 ? 'bg-chart-1/70 group-hover:bg-chart-1' : 'bg-slate-100'}`}
                           style={{ height: `${Math.max(h.orders > 0 ? 5 : 2, Math.round((h.orders / hourlyMax) * 88))}px` }}
                         ></div>
                         <span className="text-[9px] text-slate-500 leading-none">{h.hour % 3 === 0 ? h.hour : ''}</span>

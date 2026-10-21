@@ -128,7 +128,7 @@ type ShippingOrderLine = {
 const CAUTION_HIT_AREA = 'relative before:absolute before:inset-x-0 before:-inset-y-px';
 // 주의 낱말 옆의 조작 버튼(「맞추기」「내역」). 상태 낱말은 누르는 요소가 아니다 — 조작은 이 버튼이
 // 따로 맡는다(상태 낱말 기준 ④, 오너 확정 2026-10-08). 색은 옆 낱말의 점이 이미 지므로 버튼은 무채색.
-const CAUTION_TRIGGER_CLASS = `inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`;
+const CAUTION_TRIGGER_CLASS = `inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-card px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none cursor-pointer whitespace-nowrap ${CAUTION_HIT_AREA}`;
 
 function PendingOrdersPopover({ campName, orders, onClose }: { campName: string; orders: PendingOrderLine[]; onClose: () => void }) {
     // eslint-disable-next-line react-hooks/purity
@@ -647,7 +647,7 @@ function CampaignActionLog({ campaignId, refreshKey }: { campaignId: string; ref
 
   const statusPill = (status: OrderActionStatus) => {
     if (status === 'OK') return { cls: 'border-slate-200 bg-slate-50 text-slate-500', label: '정상' };
-    if (status === 'PARTIAL') return { cls: 'border-amber-200 bg-amber-50 text-amber-700', label: '부분 실패' };
+    if (status === 'PARTIAL') return { cls: 'border-status-caution/30 bg-status-caution-bg text-status-caution-text', label: '부분 실패' };
     return { cls: 'border-destructive/25 bg-destructive/5 text-status-urgent-text', label: '실패' };
   };
 
@@ -678,9 +678,9 @@ function CampaignActionLog({ campaignId, refreshKey }: { campaignId: string; ref
             const skipped = log.details?.skipped ?? [];
             // 색=의미: 카드 테두리·에러문구도 상태 3단계를 그대로 따른다(부분실패가 완전실패로 뭉개지지 않게).
             const cardBorder =
-              log.status === 'ERROR' ? 'border-destructive/20' : log.status === 'PARTIAL' ? 'border-amber-200/70' : 'border-border';
+              log.status === 'ERROR' ? 'border-destructive/20' : log.status === 'PARTIAL' ? 'border-status-caution/30' : 'border-border';
             const msgColor =
-              log.status === 'ERROR' ? 'text-destructive' : log.status === 'PARTIAL' ? 'text-amber-700' : 'text-slate-500';
+              log.status === 'ERROR' ? 'text-destructive' : log.status === 'PARTIAL' ? 'text-status-caution-text' : 'text-slate-500';
             return (
               <div
                 key={log.id}
@@ -1735,7 +1735,7 @@ export default function OrderDashboard() {
                         downloadExcelBlob(previewInvoiceBuffer, previewInvoiceFileName);
                       }
                     }}
-                    className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors"
+                    className="flex items-center gap-1.5 bg-card hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors"
                   >
                     <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                     저장
@@ -1810,7 +1810,7 @@ export default function OrderDashboard() {
             {inProgressClaimCount > 0 && (
               <button
                 onClick={() => setClaimFilter({ kind: 'all-in-progress' })}
-                className="flex h-9 items-center gap-1.5 rounded-lg border border-destructive/25 bg-white px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/5 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-destructive/25 bg-card px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/5 focus-visible:ring-2 focus-visible:ring-focus-ring focus:outline-none"
                 title="진행 중인 반품·교환 전체 보기"
               >
                 반품·교환 {inProgressClaimCount}
@@ -2454,19 +2454,19 @@ export default function OrderDashboard() {
 
                   {/* 3행: 실행 조작 버튼 (Action Buttons) */}
                   <div className="flex flex-wrap gap-2 items-center w-full" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => handleDownloadExcel(camp.id)} className="flex items-center gap-1.5 text-xs bg-white text-emerald-700 hover:bg-emerald-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-emerald-200 shadow-soft-sm relative overflow-hidden group">
-                      <div className="absolute inset-0 bg-emerald-50/50 translate-y-full group-hover:translate-y-0 transition-transform"></div>
+                    <button onClick={() => handleDownloadExcel(camp.id)} className="flex items-center gap-1.5 text-xs bg-card text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-slate-50 translate-y-full group-hover:translate-y-0 transition-transform"></div>
                       <span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span>
                       <span className="relative z-10">주문확인</span>
                     </button>
-                    <button onClick={() => openEmailModal(camp.id)} className="flex items-center gap-1.5 text-xs bg-white text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm">
+                    <button onClick={() => openEmailModal(camp.id)} className="flex items-center gap-1.5 text-xs bg-card text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm">
                       <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
                       발주요청
                     </button>
                     <button
                       onClick={() => handleFetchInvoice(camp)}
                       disabled={isActionBusy(`fetchInvoice:${camp.id}`)}
-                      className="flex items-center gap-1.5 text-xs bg-white text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+                      className="flex items-center gap-1.5 text-xs bg-card text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card"
                     >
                       {isActionBusy(`fetchInvoice:${camp.id}`) ? (
                         <><RefreshCw className="w-3.5 h-3.5 text-slate-500 animate-spin" />조회 중…</>
@@ -2481,11 +2481,11 @@ export default function OrderDashboard() {
                       return (
                         <label
                           aria-disabled={uploadBusy}
-                          className={`flex items-center gap-1.5 text-xs bg-white text-emerald-700 font-bold py-1.5 px-3 rounded-lg transition-colors border border-emerald-200 shadow-soft-sm mb-0 relative overflow-hidden group focus-within:ring-2 focus-within:ring-focus-ring ${uploadBusy ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'hover:bg-emerald-50 cursor-pointer'}`}
+                          className={`flex items-center gap-1.5 text-xs bg-card text-slate-700 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm mb-0 relative overflow-hidden group focus-within:ring-2 focus-within:ring-focus-ring ${uploadBusy ? 'opacity-50 cursor-not-allowed pointer-events-none' : 'hover:bg-slate-50 cursor-pointer'}`}
                         >
-                          {!uploadBusy && <div className="absolute inset-0 bg-emerald-50/50 translate-y-full group-hover:translate-y-0 transition-transform"></div>}
+                          {!uploadBusy && <div className="absolute inset-0 bg-slate-50 translate-y-full group-hover:translate-y-0 transition-transform"></div>}
                           {uploadBusy ? (
-                            <><RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin relative z-10" /><span className="relative z-10">등록 중…</span></>
+                            <><RefreshCw className="w-3.5 h-3.5 text-slate-500 animate-spin relative z-10" /><span className="relative z-10">등록 중…</span></>
                           ) : (
                             <><span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span><span className="relative z-10">송장등록</span></>
                           )}

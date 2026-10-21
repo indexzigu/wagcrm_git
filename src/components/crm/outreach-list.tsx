@@ -91,7 +91,7 @@ function getDaysInStatus(updatedAt: string | null | undefined, proposedAt: strin
  * 데스크톱은 그 결정의 반쪽 마이그레이션 잔여물이었다(DROPPED 만 무채색으로 옮기고 멈춤).
  *
  * ⚠️ **회수가 곧 가독성 개선이다** — 리터럴 3색이 `text-[11px] font-semibold` 에서 AA 미달이었다.
- * 표면은 이 배지가 실제로 앉는 카드 4종(흰 카드 + followUp 틴트 amber/blue/indigo-50/20):
+ * 표면은 이 배지가 실제로 앉는 카드(흰 카드 — 2026-10-21 이전엔 followUp 틴트 amber/blue/indigo-50/20 도 있었다):
  *   orange-600 3.60~3.51 ❌ · amber-600 3.20~3.12 ❌ · rose-600 4.53(흰 카드만 통과)~4.42 ❌
  *   → status-caution 5.02~4.90 ✅ · status-urgent-text 7.29~7.12 ✅ · slate-500 4.76~4.65 ✅
  *   (orange 를 받던 PENDING_APPROVAL 은 아래 §PENDING_APPROVAL 대로 일 램프에 흡수됐다)
@@ -176,16 +176,13 @@ export function OutreachCardContent({
 
   const followUp = calculateFollowUp(outreach, new Date(now));
 
-  let cardBorder = "border-slate-200 bg-white shadow-soft-sm";
-  if (followUp) {
-    if (followUp.type === "MANUAL_REMINDER") {
-      cardBorder = "border-amber-200 bg-amber-50/20 hover:bg-amber-100/30 border-l-4 border-l-amber-500 shadow-soft-sm";
-    } else if (followUp.type === "1ST_REMINDER" || followUp.type === "SAMPLE_CHECK") {
-      cardBorder = "border-blue-200 bg-blue-50/20 hover:bg-blue-100/30 border-l-4 border-l-blue-500 shadow-soft-sm";
-    } else if (followUp.type === "2ND_REMINDER") {
-      cardBorder = "border-indigo-200 bg-indigo-50/20 hover:bg-indigo-100/30 border-l-4 border-l-indigo-500 shadow-soft-sm";
-    }
-  }
+  // 팔로업 카드 표시는 종류(지정일·1차·2차·샘플)와 무관하게 한 값이다 — 종류는 좋고 나쁨이 없는 범주라
+  // hue 를 받지 않고(P8 §4), 「팔로업 걸림」 자체만 왼쪽 막대로 알린다. 값은 팔로업 배지와 같은
+  // status-info(followup-engine INFO_BADGE_COLOR, 오너 승인 2026-07-09) — 막대 흰 카드 대비 5.65.
+  // 종전 amber/blue/indigo 3색은 globals.css 밖 hue 였고 종류를 색으로 갈라 무지개를 만들었다.
+  const cardBorder = followUp
+    ? "border-status-info/20 bg-card border-l-4 border-l-status-info shadow-soft-sm"
+    : "border-slate-200 bg-card shadow-soft-sm";
 
   return (
     <div
@@ -202,7 +199,7 @@ export function OutreachCardContent({
         "rounded-2xl border px-3.5 py-3 transition-[translate,scale,rotate,opacity,box-shadow,border-color,background-color] duration-200",
         cardBorder,
         // 드래그 핸들 부착 시 dnd-kit이 tabindex/role 주입 → 키보드 포커스 가능. 앱 전역 --focus-ring 토큰(WCAG 1.4.11).
-        // inset이라 틴트 배경(앰버/블루/인디고)에도 흰 테 아티팩트 없음 + 컬럼 outer 하이라이트와 시각 구분. CampaignCard와 동일.
+        // inset이라 왼쪽 팔로업 막대 위에도 흰 테 아티팩트 없음 + 컬럼 outer 하이라이트와 시각 구분. CampaignCard와 동일.
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus-ring",
         // 드래그 핸들이 없으면(정적/터미널 컬럼) 기존처럼 클릭 포인터
         dragListeners ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
