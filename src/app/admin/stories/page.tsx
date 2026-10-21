@@ -3,24 +3,16 @@
 // 태그 기반이 아니라 전량 수집 후 썸네일 후분류). 추후 LLM 배치 분류가 붙어도 이 화면이
 // 검수·정정 표면으로 남는다.
 import type { Metadata } from "next";
-import Link from "next/link";
 import { getPrisma } from "@/lib/prisma";
 import { CrmShell } from "@/components/crm/crm-shell";
 import { StoryCollectButton } from "@/components/crm/story-collect-button";
 import { BulkContentCollectButton } from "@/components/crm/bulk-content-collect-button";
 import { listCaptureWindowSellers } from "@/lib/story-capture";
-import { classifyStory } from "./actions";
+import { StoryInboxGrid, type StoryClassification, type StoryInboxFilter } from "@/components/crm/story-inbox-grid";
 
 export const metadata: Metadata = { title: "스토리 분류함" };
 
-type Filter = "unreviewed" | "campaign" | "other" | "all";
-
-const FILTERS: { key: Filter; label: string; where?: string }[] = [
-  { key: "unreviewed", label: "미분류" },
-  { key: "campaign", label: "캠페인 홍보" },
-  { key: "other", label: "무관" },
-  { key: "all", label: "전체" },
-];
+const FILTER_KEYS: StoryInboxFilter[] = ["unreviewed", "campaign", "other", "all"];
 
 function fmtKst(d: Date): string {
   const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
@@ -37,7 +29,7 @@ export default async function StoryInboxPage({
   searchParams: Promise<{ f?: string }>;
 }) {
   const { f } = await searchParams;
-  const filter: Filter = (FILTERS.find((x) => x.key === f)?.key ?? "unreviewed") as Filter;
+  const filter: StoryInboxFilter = FILTER_KEYS.find((k) => k === f) ?? "unreviewed";
 
   const where =
     filter === "unreviewed"
@@ -79,95 +71,21 @@ export default async function StoryInboxPage({
     >
     <div className="mx-auto max-w-6xl px-6 py-8">
 
-      <nav className="mb-5 flex items-center gap-1.5">
-        {FILTERS.map((tab) => {
-          const count =
-            tab.key === "all"
-              ? counts.reduce((a, x) => a + x._count, 0)
-              : countOf(tab.key === "unreviewed" ? "UNREVIEWED" : tab.key === "campaign" ? "CAMPAIGN" : "OTHER");
-          const active = tab.key === filter;
-          return (
-            <Link
-              key={tab.key}
-              href={`/admin/stories?f=${tab.key}`}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                active
-                  ? "bg-slate-900 text-white"
-                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              {tab.label} {count}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {snapshots.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
-          {filter === "unreviewed"
-            ? "분류할 스토리가 없습니다. 다음 수집(매일 00:00 KST)을 기다려주세요."
-            : "해당 분류의 스토리 없음"}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {snapshots.map((s) => {
-            const displayName = s.seller.alias || s.seller.name;
-            const img = s.thumbnailUrl || s.sourceImageUrl;
-            return (
-              <div key={s.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-soft-sm">
-                <div className="relative aspect-[9/16] bg-slate-100">
-                  {img ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={img} alt="" className="h-full w-full object-cover" loading="lazy" />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-[11px] text-slate-500">
-                      썸네일 없음
-                    </div>
-                  )}
-                  {s.mediaType === 2 && (
-                    <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                      영상
-                    </span>
-                  )}
-                  {!s.thumbnailUrl && s.sourceImageUrl && (
-                    <span className="absolute left-1.5 top-1.5 rounded bg-status-caution px-1.5 py-0.5 text-[10px] font-bold text-white">
-                      원본 URL(만료 가능)
-                    </span>
-                  )}
-                </div>
-                <div className="px-2.5 py-2">
-                  <div className="truncate text-xs font-semibold text-slate-800">{displayName}</div>
-                  <div className="mt-0.5 text-[10px] text-slate-500">
-                    {fmtKst(s.takenAt)} · @{s.seller.snsHandle}
-                  </div>
-                  <div className="mt-2 flex gap-1">
-                    {s.classification === "UNREVIEWED" ? (
-                      <>
-                        <form action={classifyStory.bind(null, s.id, "CAMPAIGN")} className="flex-1">
-                          <button className="w-full rounded-md bg-status-success py-1 text-[11px] font-bold text-white hover:bg-emerald-800">
-                            캠페인
-                          </button>
-                        </form>
-                        <form action={classifyStory.bind(null, s.id, "OTHER")} className="flex-1">
-                          <button className="w-full rounded-md bg-slate-200 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-300">
-                            무관
-                          </button>
-                        </form>
-                      </>
-                    ) : (
-                      <form action={classifyStory.bind(null, s.id, "UNREVIEWED")} className="flex-1">
-                        <button className="w-full rounded-md border border-slate-200 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50">
-                          {s.classification === "CAMPAIGN" ? "✓ 캠페인 홍보" : "무관"} (되돌리기)
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <StoryInboxGrid
+        filter={filter}
+        counts={{ UNREVIEWED: countOf("UNREVIEWED"), CAMPAIGN: countOf("CAMPAIGN"), OTHER: countOf("OTHER") }}
+        total={counts.reduce((sum, x) => sum + x._count, 0)}
+        cards={snapshots.map((s) => ({
+          id: s.id,
+          displayName: s.seller.alias || s.seller.name,
+          img: s.thumbnailUrl || s.sourceImageUrl,
+          isVideo: s.mediaType === 2,
+          sourceUrlOnly: !s.thumbnailUrl && !!s.sourceImageUrl,
+          takenAtLabel: fmtKst(s.takenAt),
+          snsHandle: s.seller.snsHandle ?? "",
+          classification: s.classification as StoryClassification,
+        }))}
+      />
     </div>
     </CrmShell>
   );
