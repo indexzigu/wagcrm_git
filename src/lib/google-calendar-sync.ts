@@ -209,7 +209,7 @@ const CAMPAIGN_SYNC_INCLUDE = {
  * 방어하지 않는 것은 그 조합이 존재하지 않기 때문이지 안전해서가 아니다. 혼재가 실제로
  * 생기면 슬롯 판정부터 다시 정의해야 한다(이 함수에 분기를 더하는 것으로는 못 고친다).
  */
-function resolveGroupMoneySlots(members: GroupMemberForSync[]): CampaignMoneySlot[] {
+function resolveGroupMoneySlots(members: { id: string; salesChannel: string }[]): CampaignMoneySlot[] {
   const anchorOrder = [...members].sort((a, b) => a.id.localeCompare(b.id));
   return resolveMoneySlotsForChannels(anchorOrder.map((m) => m.salesChannel));
 }
@@ -462,6 +462,25 @@ const MONEY_COLOR_ID: Record<CampaignMoneySlot["kind"], string> = {
  * 반환값은 **이번 동기화가 장부에 남기려는 kind 집합**이다(날짜가 없어 건너뛴 슬롯은
  * 빠진다). 호출부는 이걸 `deleteStaleEvents` 에 넘겨 나머지를 정리한다.
  */
+/**
+ * 이번 동기화에서 **이벤트를 갖는 대금 슬롯**(실효 날짜가 있는 슬롯)과 그 날짜.
+ * 동기화 루프(`syncMoneyEvents`)와 넘겨받기 사전 판정(`plannedEventKinds`)이 이 함수 하나를 쓴다 —
+ * 두 곳이 다른 판정을 들면 넘겨받은 원본을 다음 동기화가 「낡은 종류」로 보고 지운다.
+ */
+function datedMoneySlots(
+  slots: CampaignMoneySlot[],
+  source: MoneyDateFields,
+): { slot: CampaignMoneySlot; date: Date; isActual: boolean }[] {
+  const out: { slot: CampaignMoneySlot; date: Date; isActual: boolean }[] = [];
+  for (const slot of slots) {
+    // ⛔ `완료일 ?? 예정일` 사본을 여기에 다시 쓰지 말 것 — 앱 캘린더 4표면이 같은 판정을
+    // 쓰므로(#481 통합) 규칙은 슬롯 SSOT 한 곳에서만 바뀐다.
+    const { date, isActual } = resolveMoneySlotEffectiveDate(slot, source);
+    if (date) out.push({ slot, date, isActual });
+  }
+  return out;
+}
+
 async function syncMoneyEvents(
   accessToken: string,
   slots: CampaignMoneySlot[],
@@ -480,11 +499,7 @@ async function syncMoneyEvents(
   },
 ): Promise<Set<EventKind>> {
   const activeKinds = new Set<EventKind>();
-  for (const slot of slots) {
-    // ⛔ `완료일 ?? 예정일` 사본을 여기에 다시 쓰지 말 것 — 앱 캘린더 4표면이 같은 판정을
-    // 쓰므로(#481 통합) 규칙은 슬롯 SSOT 한 곳에서만 바뀐다.
-    const { date, isActual: completedAt } = resolveMoneySlotEffectiveDate(slot, source);
-    if (!date) continue;
+  for (const { slot, date, isActual: completedAt } of datedMoneySlots(slots, source)) {
     activeKinds.add(slot.key);
     const nextDay = new Date(date);
     nextDay.setDate(nextDay.getDate() + 1);
@@ -548,6 +563,35 @@ async function deleteStaleEvents(
  * 성격이 다르다).
  */
 const CALENDAR_EXCLUDED_STATUSES = new Set(["DROPPED", "PROPOSAL"]);
+
+/** 그룹에서 캘린더에 올릴 자격이 있는 멤버 — 그룹 동기화와 넘겨받기 사전 판정이 함께 쓴다. */
+function calendarActiveMembers<T extends { status: string }>(members: T[]): T[] {
+  return members.filter((m) => !CALENDAR_EXCLUDED_STATUSES.has(m.status));
+}
+
+/**
+ * 다음 동기화가 **남길** 이벤트 종류 — 개별 캠페인(`syncOne`)·그룹(`syncGroupOne`)과 같은 판정이다.
+ * 비노출 상태(그룹이면 자격 있는 멤버 0명)면 빈 집합(동기화가 장부 전체를 지운다), 아니면 기간 이벤트 +
+ * 실효 날짜가 있는 대금 슬롯. 여기 없는 종류를 장부에 적으면 다음 동기화의 `deleteStaleEvents` 가 지운다.
+ */
+function plannedEventKinds(
+  target:
+    | { type: "campaign"; status: string; salesChannel: string; source: MoneyDateFields }
+    | { type: "group"; members: { id: string; status: string; salesChannel: string }[]; source: MoneyDateFields },
+): Set<EventKind> {
+  let slots: CampaignMoneySlot[];
+  if (target.type === "campaign") {
+    if (CALENDAR_EXCLUDED_STATUSES.has(target.status)) return new Set();
+    slots = resolveCampaignMoneySlots(target.salesChannel);
+  } else {
+    const activeMembers = calendarActiveMembers(target.members);
+    if (activeMembers.length === 0) return new Set();
+    slots = resolveGroupMoneySlots(activeMembers);
+  }
+  const kinds = new Set<EventKind>(["campaign"]);
+  for (const { slot } of datedMoneySlots(slots, target.source)) kinds.add(slot.key);
+  return kinds;
+}
 
 async function syncOne(
   prisma: ReturnType<typeof getPrisma>,
@@ -680,9 +724,7 @@ async function syncGroupOne(
   const stored = parseStoredIds(group.calendarEventIds);
   // 제목·기간 롤업의 근거는 **캘린더에 올릴 자격이 있는 멤버**뿐이다. 제안 멤버를 넣으면
   // 성사되지도 않은 딜이 그룹 이벤트 기간을 늘린다(실사고 — 위 상수 주석 참조).
-  const activeMembers = group.members.filter(
-    (m) => !CALENDAR_EXCLUDED_STATUSES.has(m.status),
-  );
+  const activeMembers = calendarActiveMembers(group.members);
 
   // 올릴 멤버가 없으면(전원 드랍·제안) 그룹 이벤트를 제거하고 장부를 비운다.
   if (activeMembers.length === 0) {
@@ -838,24 +880,55 @@ export async function syncCampaignToCalendar(
   return syncOne(prisma, accessToken, campaign, await getFinanceCalendarId());
 }
 
-/** 넘겨받기 결과 — 호출부(`approveProposal`)가 수집 행 표기를 고른다. */
-export type AdoptLedgerOutcome = "adopted" | "already_adopted" | "conflict" | "not_found";
+/**
+ * 넘겨받기 결과 — 호출부(`approveProposal`)가 수집 행 표기(`skipReason`)를 고른다.
+ * - `adopted` · `already_adopted`: 장부에 그 이벤트가 있다(새로 적었거나 이미 적혀 있었다).
+ * - `already_referenced`: 다른 칸·다른 캠페인·그룹 장부가 이미 그 이벤트를 가리킨다 — 두 장부가 같은 이벤트를
+ *   잡으면 두 동기화가 번갈아 덮고, 어느 한쪽 캠페인을 지우면 오너 원본이 함께 지워진다.
+ * - `conflict`: 그 칸에 다른 이벤트가 이미 있다 — 덮으면 그 CRM 이벤트가 고아가 된다.
+ * - `not_active`: 다음 동기화가 그 칸을 남기지 않는다(비노출 상태 · 채널에 없는 대금 칸 · 날짜 빈 칸) —
+ *   적으면 동기화가 「낡은 종류」로 보고 오너 원본을 **지운다**.
+ * - `not_found`: 캠페인(또는 그 그룹)이 없다.
+ */
+export type AdoptLedgerOutcome =
+  | "adopted"
+  | "already_adopted"
+  | "already_referenced"
+  | "conflict"
+  | "not_active"
+  | "not_found";
 
 /** 조건부 쓰기가 다른 쓰기에 밀렸을 때 다시 읽는 횟수 — 동기화 한 번과 겹치는 정도만 견디면 된다. */
 const ADOPT_LEDGER_ATTEMPTS = 3;
 
+/** 대금 날짜·완료 플래그 — `plannedEventKinds` 가 동기화와 같은 판정을 하려고 읽는 칸(`MoneyDateFields`). */
+const MONEY_DATE_SELECT = {
+  expectedDepositDate: true,
+  expectedPayoutDate: true,
+  expectedSupplierPayoutDate: true,
+  depositReceivedAt: true,
+  payoutCompletedAt: true,
+  supplierPayoutCompletedAt: true,
+  isDepositReceived: true,
+  isPayoutCompleted: true,
+  isSupplierPayoutCompleted: true,
+} as const;
+
 /**
  * [캘린더수집] 오너가 손으로 만든 구글 이벤트를 캠페인 장부에 **넘겨받는다**(오너 확정 ①, 2026-10-21).
- * 장부 키에 그 이벤트 id 를 적어 두면 다음 `syncCampaignToCalendar` 가 새로 만들지 않고 그 이벤트를
- * 제자리에서 PATCH 한다(제목·날짜를 CRM 형식으로 덮는다 — 일정은 하나로 남는다).
+ * 장부 칸에 그 이벤트 id 를 적어 두면 다음 `syncCampaignToCalendar` 가 새로 만들지 않고 그 이벤트를
+ * 갱신한다(제목·날짜를 CRM 형식으로 덮는다 — 일정은 하나로 남는다).
  *
- * - **장부 주인:** 조합(그룹) 소속 캠페인이면 kind 와 무관하게 **그룹 행**이다. 기간 이벤트만이 아니라
- *   대금 이벤트도 그룹 장부가 소유하고(`syncGroupOne`), 멤버 장부에 남은 이벤트는 동기화가 **지운다** —
- *   멤버 행에 적으면 넘겨받은 원본이 삭제된다.
- * - **충돌:** 같은 키에 다른 id 가 이미 있으면(CRM 이 만든 이벤트가 있다) **덮지 않는다** — 덮으면 그
- *   CRM 이벤트가 장부에서 떨어져 고아가 된다. 오너 원본은 평범한 일정으로 남고, 카드 경고가 알린다.
+ * - **제자리 갱신이 아닐 수 있다(의도):** 장부에 적힌 캘린더가 그 칸의 목적지와 다르면(예: 오너가 대금 일정을
+ *   primary 에 적었고 회계·정산 캘린더가 설정돼 있다) 동기화의 이사 로직(`upsertEvent`)이 목적지 캘린더에
+ *   새로 만들고 원본을 지운다 — 결과적으로 일정은 여전히 하나다(설계 §3①). 막지 않는다.
+ * - **장부 주인:** 조합(그룹) 소속 캠페인이면 칸과 무관하게 **그룹 행**이다. 기간 이벤트만이 아니라
+ *   대금 이벤트도 그룹 장부가 소유하고(`syncGroupOne`), 멤버 장부에 남은 이벤트는 동기화가 **지운다**.
+ * - **원본을 지우게 될 쓰기는 하지 않는다** — 이미 다른 장부가 잡은 이벤트(`already_referenced`), 다음 동기화가
+ *   남기지 않을 칸(`not_active`, 판정은 동기화와 같은 `plannedEventKinds`), 다른 이벤트가 있는 칸(`conflict`).
+ *   이때 원본은 평범한 일정으로 남는다.
  * - **동시성:** 읽은 원문 그대로일 때만 쓰는 조건부 쓰기다. 그 사이 동기화가 장부를 바꿨으면 다시 읽는다.
- * - 커밋 **뒤** 단계라 던지지 않는 것이 원칙이지만, DB 오류는 그대로 던진다 — 호출부가 잡아 보고한다.
+ * - 커밋 **뒤** 단계라 판정은 결과로 돌려주고, DB 오류는 그대로 던진다 — 호출부가 잡아 보고한다.
  */
 export async function adoptCalendarEventIntoLedger(input: {
   campaignId: string;
@@ -868,31 +941,65 @@ export async function adoptCalendarEventIntoLedger(input: {
   for (let attempt = 0; attempt < ADOPT_LEDGER_ATTEMPTS; attempt += 1) {
     const campaign = await prisma.salesCampaign.findUnique({
       where: { id: input.campaignId },
-      select: { id: true, groupId: true, calendarEventIds: true },
+      select: {
+        id: true,
+        groupId: true,
+        status: true,
+        salesChannel: true,
+        calendarEventIds: true,
+        ...MONEY_DATE_SELECT,
+      },
     });
     if (!campaign) return "not_found";
 
     let owner: { table: "campaign" | "group"; id: string; raw: string | null };
+    let planned: Set<EventKind>;
     if (campaign.groupId) {
       const group = await prisma.campaignGroup.findUnique({
         where: { id: campaign.groupId },
-        select: { id: true, calendarEventIds: true },
+        select: {
+          id: true,
+          calendarEventIds: true,
+          ...MONEY_DATE_SELECT,
+          members: { select: { id: true, status: true, salesChannel: true } },
+        },
       });
       if (!group) return "not_found";
       owner = { table: "group", id: group.id, raw: group.calendarEventIds };
+      planned = plannedEventKinds({ type: "group", members: group.members, source: group });
     } else {
       owner = { table: "campaign", id: campaign.id, raw: campaign.calendarEventIds };
+      planned = plannedEventKinds({
+        type: "campaign",
+        status: campaign.status,
+        salesChannel: campaign.salesChannel,
+        source: campaign,
+      });
     }
 
     const stored = parseStoredIds(owner.raw);
     const existing = stored[input.kind];
     if (existing?.id === input.eventId) return "already_adopted";
+    // 자기 장부의 다른 칸 포함 — 어디서든 이미 가리키면 두 번째 주인을 만들지 않는다.
+    if ((await collectReferencedEventIds(prisma)).has(input.eventId)) {
+      console.warn(
+        `[calendar-adopt] 이벤트 ${input.eventId} 는 이미 다른 장부가 가리켜 ${owner.table} ${owner.id} 에 넘겨받지 않음`,
+      );
+      return "already_referenced";
+    }
     if (existing?.id) {
       console.warn(
         `[calendar-adopt] ${owner.table} ${owner.id} 장부 ${input.kind} 에 다른 이벤트(${existing.id})가 있어 ` +
           `넘겨받지 않음 — 원본 ${input.eventId} 는 평범한 일정으로 남는다`,
       );
       return "conflict";
+    }
+    if (!planned.has(input.kind)) {
+      console.warn(
+        `[calendar-adopt] ${owner.table} ${owner.id} 의 ${input.kind} 칸은 다음 동기화가 남기지 않아 넘겨받지 않음 ` +
+          `— 원본 ${input.eventId} 는 평범한 일정으로 남는다`,
+      );
+      return "not_active";
     }
 
     const next: StoredEventIds = {

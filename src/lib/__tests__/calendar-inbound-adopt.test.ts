@@ -30,22 +30,81 @@ import {
   resetInboundForRetry,
 } from "../calendar-inbound/adopt";
 import { INBOUND_STATUS } from "../calendar-inbound/status";
+import { resolveCampaignMoneySlots } from "../tax-filing-board";
+
+const NO_MONEY_DATES = {
+  expectedDepositDate: null,
+  expectedPayoutDate: null,
+  expectedSupplierPayoutDate: null,
+  depositReceivedAt: null,
+  payoutCompletedAt: null,
+  supplierPayoutCompletedAt: null,
+  isDepositReceived: false,
+  isPayoutCompleted: false,
+  isSupplierPayoutCompleted: false,
+};
+const DATED = new Date("2026-11-20T00:00:00.000Z");
+
+type CampaignRow = {
+  id: string;
+  groupId: string | null;
+  calendarEventIds: string | null;
+  status?: string;
+  salesChannel?: string;
+  [field: string]: unknown;
+};
+
+/** 캠페인 행 — 기본은 준비중·셀러몰·대금 예정일 전부 있음(모든 칸이 다음 동기화에 남는다). */
+function campaignRow(row: CampaignRow) {
+  return {
+    status: "PREPARATION",
+    salesChannel: "SELLER_MALL",
+    ...NO_MONEY_DATES,
+    expectedDepositDate: DATED,
+    expectedPayoutDate: DATED,
+    expectedSupplierPayoutDate: DATED,
+    ...row,
+  };
+}
 
 function fakePrisma(opts: {
-  campaign?: { id: string; groupId: string | null; calendarEventIds: string | null } | null;
-  group?: { id: string; calendarEventIds: string | null } | null;
+  campaign?: CampaignRow | null;
+  group?: { id: string; calendarEventIds: string | null; [field: string]: unknown } | null;
   updateCount?: number[];
+  /** collectReferencedEventIds 가 읽는 다른 장부들 */
+  otherCampaignLedgers?: string[];
+  otherGroupLedgers?: string[];
 }) {
   const counts = [...(opts.updateCount ?? [])];
   const nextCount = () => (counts.length > 0 ? counts.shift()! : 1);
+  const own = opts.campaign ? campaignRow(opts.campaign) : null;
+  const group = opts.group
+    ? {
+        ...NO_MONEY_DATES,
+        expectedDepositDate: DATED,
+        expectedPayoutDate: DATED,
+        members: [{ id: "c1", status: "PREPARATION", salesChannel: "SELLER_MALL" }],
+        ...opts.group,
+      }
+    : null;
   return {
     salesCampaign: {
-      findUnique: vi.fn().mockResolvedValue(opts.campaign ?? null),
+      findUnique: vi.fn().mockResolvedValue(own),
       updateMany: vi.fn(async (_args: unknown) => ({ count: nextCount() })),
+      findMany: vi.fn(async () =>
+        [own?.calendarEventIds ?? null, ...(opts.otherCampaignLedgers ?? [])]
+          .filter((raw): raw is string => raw != null)
+          .map((calendarEventIds) => ({ calendarEventIds })),
+      ),
     },
     campaignGroup: {
-      findUnique: vi.fn().mockResolvedValue(opts.group ?? null),
+      findUnique: vi.fn().mockResolvedValue(group),
       updateMany: vi.fn(async (_args: unknown) => ({ count: nextCount() })),
+      findMany: vi.fn(async () =>
+        [group?.calendarEventIds ?? null, ...(opts.otherGroupLedgers ?? [])]
+          .filter((raw): raw is string => raw != null)
+          .map((calendarEventIds) => ({ calendarEventIds })),
+      ),
     },
     calendarInboundEvent: {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -58,17 +117,19 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
+const ADOPT = { campaignId: "c1", eventId: "ev-owner", calendarId: "primary" } as const;
+
 describe("adoptCalendarEventIntoLedger", () => {
+  it("픽스처 전제: 셀러몰은 입금·지급 칸, 자사몰은 지급(셀러)·지급(공급사) 칸이고 입금 칸이 없다", () => {
+    expect(resolveCampaignMoneySlots("SELLER_MALL").map((s) => s.key).sort()).toEqual(["deposit", "payout"]);
+    expect(resolveCampaignMoneySlots("OWN_MALL_NAVER").map((s) => s.key).sort()).toEqual(["payout", "supplierPayout"]);
+  });
+
   it("빈 장부에 원본 이벤트를 적는다(primary 는 문자열 형식)", async () => {
     const db = fakePrisma({ campaign: { id: "c1", groupId: null, calendarEventIds: null } });
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    const outcome = await adoptCalendarEventIntoLedger({
-      campaignId: "c1",
-      kind: "campaign",
-      eventId: "ev-owner",
-      calendarId: "primary",
-    });
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "campaign" });
 
     expect(outcome).toBe("adopted");
     expect(db.salesCampaign.updateMany).toHaveBeenCalledWith({
@@ -78,17 +139,12 @@ describe("adoptCalendarEventIntoLedger", () => {
     expect(db.campaignGroup.updateMany).not.toHaveBeenCalled();
   });
 
-  it("다른 키는 보존하고 비-primary 캘린더는 {id, cal} 로 적는다", async () => {
+  it("다른 칸은 보존하고 비-primary 캘린더는 {id, cal} 로 적는다", async () => {
     const raw = JSON.stringify({ campaign: "ev-crm" });
     const db = fakePrisma({ campaign: { id: "c1", groupId: null, calendarEventIds: raw } });
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    const outcome = await adoptCalendarEventIntoLedger({
-      campaignId: "c1",
-      kind: "deposit",
-      eventId: "ev-dep",
-      calendarId: "finance-cal-id",
-    });
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "deposit", eventId: "ev-dep", calendarId: "finance-cal-id" });
 
     expect(outcome).toBe("adopted");
     expect(db.salesCampaign.updateMany).toHaveBeenCalledWith({
@@ -102,18 +158,26 @@ describe("adoptCalendarEventIntoLedger", () => {
     });
   });
 
-  it("같은 키에 다른 이벤트가 있으면 덮지 않는다(conflict)", async () => {
+  it("캘린더 불일치(대금 원본이 primary 인데 회계 캘린더가 따로 있다)여도 넘겨받는다 — 이사는 동기화 몫(설계 §3①)", async () => {
+    const db = fakePrisma({ campaign: { id: "c1", groupId: null, calendarEventIds: null } });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "payout", calendarId: "primary" });
+
+    expect(outcome).toBe("adopted");
+    expect(db.salesCampaign.updateMany).toHaveBeenCalledWith({
+      where: { id: "c1", calendarEventIds: null },
+      data: { calendarEventIds: JSON.stringify({ payout: "ev-owner" }) },
+    });
+  });
+
+  it("같은 칸에 다른 이벤트가 있으면 덮지 않는다(conflict)", async () => {
     const db = fakePrisma({
       campaign: { id: "c1", groupId: null, calendarEventIds: JSON.stringify({ campaign: "ev-crm" }) },
     });
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    const outcome = await adoptCalendarEventIntoLedger({
-      campaignId: "c1",
-      kind: "campaign",
-      eventId: "ev-owner",
-      calendarId: "primary",
-    });
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "campaign" });
 
     expect(outcome).toBe("conflict");
     expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
@@ -126,15 +190,91 @@ describe("adoptCalendarEventIntoLedger", () => {
     });
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    const outcome = await adoptCalendarEventIntoLedger({
-      campaignId: "c1",
-      kind: "payout",
-      eventId: "ev-owner",
-      calendarId: "primary",
-    });
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "payout" });
 
     expect(outcome).toBe("already_adopted");
     expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("다른 캠페인 장부가 이미 그 이벤트를 가리키면 쓰지 않는다(already_referenced)", async () => {
+    const db = fakePrisma({
+      campaign: { id: "c1", groupId: null, calendarEventIds: null },
+      otherCampaignLedgers: [JSON.stringify({ campaign: "ev-owner" })],
+    });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "campaign" });
+
+    expect(outcome).toBe("already_referenced");
+    expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
+    expect(db.campaignGroup.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("그룹 장부가 이미 그 이벤트를 가리키면 쓰지 않는다(already_referenced)", async () => {
+    const db = fakePrisma({
+      campaign: { id: "c1", groupId: null, calendarEventIds: null },
+      otherGroupLedgers: [JSON.stringify({ deposit: { id: "ev-owner", cal: "finance-cal-id" } })],
+    });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "deposit" });
+
+    expect(outcome).toBe("already_referenced");
+    expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("자기 장부의 다른 칸이 그 이벤트를 가리켜도 already_referenced", async () => {
+    const db = fakePrisma({
+      campaign: { id: "c1", groupId: null, calendarEventIds: JSON.stringify({ campaign: "ev-owner" }) },
+    });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "payout" })).toBe("already_referenced");
+    expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("not_active (a): 제안(PROPOSAL) 캠페인의 기간 칸 — 동기화가 장부를 통째로 지운다", async () => {
+    const db = fakePrisma({ campaign: { id: "c1", groupId: null, calendarEventIds: null, status: "PROPOSAL" } });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "campaign" })).toBe("not_active");
+    expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("not_active (b): 지급 칸은 있지만 예정일이 비었다", async () => {
+    const db = fakePrisma({
+      campaign: { id: "c1", groupId: null, calendarEventIds: null, expectedPayoutDate: null },
+    });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "payout" })).toBe("not_active");
+    expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("not_active (c): 채널에 그 칸이 없다(자사몰에는 입금 칸이 없다)", async () => {
+    const db = fakePrisma({
+      campaign: { id: "c1", groupId: null, calendarEventIds: null, salesChannel: "OWN_MALL_NAVER" },
+    });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "deposit" })).toBe("not_active");
+    expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("완료일만 있고 예정일이 빈 칸도 남는 칸이다(동기화와 같은 실효 날짜 판정)", async () => {
+    const db = fakePrisma({
+      campaign: {
+        id: "c1",
+        groupId: null,
+        calendarEventIds: null,
+        expectedPayoutDate: null,
+        isPayoutCompleted: true,
+        payoutCompletedAt: DATED,
+      },
+    });
+    vi.mocked(getPrisma).mockReturnValue(db as never);
+
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "payout" })).toBe("adopted");
   });
 
   it.each(["campaign", "deposit"] as const)("그룹 소속 캠페인은 그룹 행 장부에 적는다(%s)", async (kind) => {
@@ -144,12 +284,7 @@ describe("adoptCalendarEventIntoLedger", () => {
     });
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    const outcome = await adoptCalendarEventIntoLedger({
-      campaignId: "c1",
-      kind,
-      eventId: "ev-owner",
-      calendarId: "primary",
-    });
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind });
 
     expect(outcome).toBe("adopted");
     expect(db.campaignGroup.updateMany).toHaveBeenCalledWith({
@@ -159,22 +294,40 @@ describe("adoptCalendarEventIntoLedger", () => {
     expect(db.salesCampaign.updateMany).not.toHaveBeenCalled();
   });
 
+  it("그룹: 대금 날짜는 그룹 행이 정본이고, 자격 있는 멤버가 없으면 not_active", async () => {
+    const noDate = fakePrisma({
+      campaign: { id: "c1", groupId: "g1", calendarEventIds: null },
+      group: { id: "g1", calendarEventIds: null, expectedDepositDate: null },
+    });
+    vi.mocked(getPrisma).mockReturnValue(noDate as never);
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "deposit" })).toBe("not_active");
+
+    const allProposal = fakePrisma({
+      campaign: { id: "c1", groupId: "g1", calendarEventIds: null },
+      group: {
+        id: "g1",
+        calendarEventIds: null,
+        members: [{ id: "c1", status: "PROPOSAL", salesChannel: "SELLER_MALL" }],
+      },
+    });
+    vi.mocked(getPrisma).mockReturnValue(allProposal as never);
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "campaign" })).toBe("not_active");
+    expect(allProposal.campaignGroup.updateMany).not.toHaveBeenCalled();
+  });
+
   it("조건부 쓰기가 밀리면(그 사이 장부가 바뀜) 다시 읽어 판정한다", async () => {
     const db = fakePrisma({
       campaign: { id: "c1", groupId: null, calendarEventIds: null },
       updateCount: [0, 1],
     });
     db.salesCampaign.findUnique
-      .mockResolvedValueOnce({ id: "c1", groupId: null, calendarEventIds: null })
-      .mockResolvedValueOnce({ id: "c1", groupId: null, calendarEventIds: JSON.stringify({ deposit: "ev-x" }) });
+      .mockResolvedValueOnce(campaignRow({ id: "c1", groupId: null, calendarEventIds: null }))
+      .mockResolvedValueOnce(
+        campaignRow({ id: "c1", groupId: null, calendarEventIds: JSON.stringify({ deposit: "ev-x" }) }),
+      );
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    const outcome = await adoptCalendarEventIntoLedger({
-      campaignId: "c1",
-      kind: "campaign",
-      eventId: "ev-owner",
-      calendarId: "primary",
-    });
+    const outcome = await adoptCalendarEventIntoLedger({ ...ADOPT, kind: "campaign" });
 
     expect(outcome).toBe("adopted");
     expect(db.salesCampaign.updateMany).toHaveBeenCalledTimes(2);
@@ -188,14 +341,7 @@ describe("adoptCalendarEventIntoLedger", () => {
     const db = fakePrisma({ campaign: null });
     vi.mocked(getPrisma).mockReturnValue(db as never);
 
-    const outcome = await adoptCalendarEventIntoLedger({
-      campaignId: "gone",
-      kind: "campaign",
-      eventId: "ev-owner",
-      calendarId: "primary",
-    });
-
-    expect(outcome).toBe("not_found");
+    expect(await adoptCalendarEventIntoLedger({ ...ADOPT, campaignId: "gone", kind: "campaign" })).toBe("not_found");
   });
 });
 

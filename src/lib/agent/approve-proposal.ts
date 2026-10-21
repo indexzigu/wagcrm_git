@@ -35,14 +35,19 @@ import { ActionProposalRepository, ConcurrentModificationError } from "@/reposit
 import { executeWriteAction } from "@/lib/agent/write-executor";
 import { applyWriteActionEffects } from "@/lib/agent/write-action-effects";
 import { parseStoredJson } from "@/lib/stored-json";
-import { adoptCalendarEventIntoLedger } from "@/lib/google-calendar-sync";
+import { adoptCalendarEventIntoLedger, type AdoptLedgerOutcome } from "@/lib/google-calendar-sync";
 import {
   markInboundAdopted,
   readCalendarInboundRef,
   resetInboundForRetry,
   type CalendarInboundRef,
 } from "@/lib/calendar-inbound/adopt";
-import { INBOUND_SKIP_LEDGER_CONFLICT } from "@/lib/calendar-inbound/status";
+import {
+  INBOUND_SKIP_ADOPT_FAILED,
+  INBOUND_SKIP_ALREADY_REFERENCED,
+  INBOUND_SKIP_LEDGER_CONFLICT,
+  INBOUND_SKIP_NOT_ACTIVE,
+} from "@/lib/calendar-inbound/status";
 import { partnerEnrichmentSchema } from "@/lib/agent/partner-enrichment-schema";
 import {
   PARTNER_ENRICHMENT_LABELS,
@@ -112,10 +117,18 @@ function inboundCampaignId(payload: ProposalPayload, result: ExecutionResult): s
   return null;
 }
 
+/** 넘겨받지 못한 판정 → 수집 행 `skipReason`. 표에 없는 판정(adopted 등)은 사유 없음. */
+const INBOUND_SKIP_BY_OUTCOME: Partial<Record<AdoptLedgerOutcome, string>> = {
+  conflict: INBOUND_SKIP_LEDGER_CONFLICT,
+  already_referenced: INBOUND_SKIP_ALREADY_REFERENCED,
+  not_active: INBOUND_SKIP_NOT_ACTIVE,
+};
+
 /**
  * [캘린더수집] 커밋 뒤 넘겨받기 — 장부 기록(ref.adopt 일 때만) → 수집 행 ADOPTED.
- * ⛔ 던지지 않는다 — 이 시점의 쓰기는 이미 커밋됐다(아래 후속 처리와 같은 이유). 장부 키에 다른 이벤트가
- * 이미 있으면 덮지 않고 `ledger_conflict` 로 처리 끝을 적는다 — 오너 원본은 평범한 일정으로 남는다.
+ * ⛔ 던지지 않는다 — 이 시점의 쓰기는 이미 커밋됐다(아래 후속 처리와 같은 이유). 장부에 적지 못한 경우
+ * (충돌·다른 장부가 이미 가리킴·다음 동기화가 남기지 않을 칸·오류)도 처리 끝으로 적고 사유를 남긴다 —
+ * 같은 일정을 다시 기안하지 않게 하려는 것이다. 오너 원본은 평범한 일정으로 남는다.
  */
 async function adoptInboundAfterCommit(
   id: string,
@@ -123,9 +136,9 @@ async function adoptInboundAfterCommit(
   payload: ProposalPayload,
   result: ExecutionResult,
 ): Promise<void> {
+  const campaignId = inboundCampaignId(payload, result);
+  let skipReason: string | null = null;
   try {
-    const campaignId = inboundCampaignId(payload, result);
-    let skipReason: string | null = null;
     if (ref.adopt && campaignId) {
       const adopted = await adoptCalendarEventIntoLedger({
         campaignId,
@@ -133,7 +146,7 @@ async function adoptInboundAfterCommit(
         eventId: ref.eventId,
         calendarId: ref.calendarId,
       });
-      if (adopted === "conflict") skipReason = INBOUND_SKIP_LEDGER_CONFLICT;
+      skipReason = INBOUND_SKIP_BY_OUTCOME[adopted] ?? null;
       if (adopted === "not_found") {
         console.error(`[approveProposal ${id}] 넘겨받을 캠페인 ${campaignId} 를 찾지 못함 — 장부 기록 생략`);
       }
@@ -142,9 +155,14 @@ async function adoptInboundAfterCommit(
       const action = payload.action;
       console.error(`[approveProposal ${id}] ${action} 기안에서 넘겨받을 캠페인을 정하지 못함 — 장부 기록 생략`);
     }
-    await markInboundAdopted(ref.inboundId, campaignId, { skipReason });
   } catch (err) {
     console.error(`[approveProposal ${id}] 캘린더 원본 넘겨받기 실패 (쓰기는 이미 커밋됨):`, err);
+    skipReason = INBOUND_SKIP_ADOPT_FAILED;
+  }
+  try {
+    await markInboundAdopted(ref.inboundId, campaignId, { skipReason });
+  } catch (err) {
+    console.error(`[approveProposal ${id}] 캘린더 수집 행 처리 끝 표기 실패:`, err);
   }
 }
 

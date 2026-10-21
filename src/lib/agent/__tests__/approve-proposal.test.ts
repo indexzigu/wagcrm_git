@@ -321,6 +321,36 @@ describe("approveProposal — [캘린더수집] 넘겨받기", () => {
     expect(outcome.ok).toBe(true);
     expect(applyWriteActionEffectsMock).toHaveBeenCalledWith("create_campaign_round", CREATE_RESULT);
     expect(console.error).toHaveBeenCalled();
+    // 그래도 처리 끝으로 적는다 — 같은 일정을 다시 기안하지 않게.
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason: "adopt_failed" });
+  });
+
+  it("넘겨받기와 처리 끝 표기가 둘 다 던져도 승인은 성공이고 둘 다 보고한다", async () => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockRejectedValue(new Error("DB 끊김"));
+    markInboundAdoptedMock.mockRejectedValue(new Error("DB 끊김 2"));
+
+    const outcome = await approveProposal("p1", APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    expect(applyWriteActionEffectsMock).toHaveBeenCalled();
+    expect(vi.mocked(console.error).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each([
+    ["already_referenced", "already_referenced"],
+    ["not_active", "not_active"],
+    ["conflict", "ledger_conflict"],
+    ["already_adopted", null],
+  ] as const)("넘겨받기 판정 %s → 처리 끝 사유 %s", async (adopted, skipReason) => {
+    findByIdMock.mockResolvedValue(inboundCreateProposal());
+    primeExecuted();
+    adoptCalendarEventIntoLedgerMock.mockResolvedValue(adopted);
+
+    await approveProposal("p1", APPROVER);
+
+    expect(markInboundAdoptedMock).toHaveBeenCalledWith("in-1", "camp-new", { skipReason });
   });
 
   it("실행이 FAILED 로 끝나면 수집 행을 재판정 대기로 되돌린다", async () => {

@@ -16,5 +16,12 @@ export const INBOUND_STATUS = {
 
 export type InboundStatus = (typeof INBOUND_STATUS)[keyof typeof INBOUND_STATUS];
 
-/** 장부 키에 이미 다른 이벤트가 있어 넘겨받지 않고 처리 끝으로 둔 행의 `skipReason`. */
+// 승인됐지만 장부에 넘겨받지 못하고 처리 끝(ADOPTED)으로 둔 행의 `skipReason` — 원본은 평범한 일정으로 남는다.
+/** 장부 칸에 이미 다른 이벤트가 있다(덮으면 그 CRM 이벤트가 고아가 된다). */
 export const INBOUND_SKIP_LEDGER_CONFLICT = "ledger_conflict";
+/** 다른 장부가 이미 그 이벤트를 가리킨다(두 주인이면 번갈아 덮고, 한쪽 삭제가 원본을 지운다). */
+export const INBOUND_SKIP_ALREADY_REFERENCED = "already_referenced";
+/** 다음 동기화가 그 칸을 남기지 않는다(적으면 동기화가 원본을 지운다). */
+export const INBOUND_SKIP_NOT_ACTIVE = "not_active";
+/** 넘겨받기 도중 오류 — 장부는 그대로일 수 있다(로그 확인). */
+export const INBOUND_SKIP_ADOPT_FAILED = "adopt_failed";
