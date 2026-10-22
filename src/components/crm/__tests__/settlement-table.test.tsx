@@ -201,7 +201,10 @@ describe("SettlementTable 계산서 열", () => {
     expect(visible("공급사 발행 미완료")).toBe("공급 발행");
     expect(visible("셀러 수취 미완료")).toBe("셀러 수취");
     // 아이콘 시절 범례 줄은 없어졌다 — 글자가 곧 뜻이다.
-    expect(document.querySelector("svg.lucide-arrow-big-down")).toBeNull();
+    // 범례 항목은 낱말 하나짜리였다 — 배지 축약(「공급 수취」)과 정확 일치로 갈린다.
+    for (const legendWord of ["공급사", "입금", "지급", "수취", "발행"]) {
+      expect(screen.queryByText(legendWord)).toBeNull();
+    }
   });
 
   it("⛔ 의무가 없어도 값이 있으면 날짜를 계속 보여준다", () => {
@@ -218,6 +221,8 @@ describe("SettlementTable 계산서 열", () => {
 
     expect(slotBadge("셀러 발행 해당없음 개인 셀러(원천징수 대상)")).toBeInTheDocument();
     expect(screen.getByText("26-08-06")).toBeInTheDocument();
+    // 날짜가 남은 레거시 행은 날짜 자리를 날짜가 쓴다 — 「해당없음」 낱말을 나란히 두지 않는다(열 폭).
+    expect(screen.queryByText("해당없음")).toBeNull();
   });
 
   it("「다음 업무」 열이 사라지고 정산일정 열은 심각도 축을 얹지 않는다", () => {

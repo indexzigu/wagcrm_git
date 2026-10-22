@@ -196,6 +196,10 @@ export const MONEY_TERM_ALIASES: Readonly<Record<string, keyof typeof MONEY_TERM
  * **대상 이름 정본** (오너 확정 2026-10-18). 오너 화면에서 대상(엔티티)을 부르는 이름은 여기 label 만 쓴다.
  * 코드 식별자·라우트(`Deal`·`/deals`)·DB·API 키·주석은 대상이 아니다 — 화면 글자만이다.
  * `model` = 그 대상의 Prisma 모델.
+ *
+ * 축약 예외(이 표에 넣지 않는다): 정산 목록 배지의 「공급」은 「공급사」의 폭 축약이다(오너 확정
+ * 2026-10-22, 정본 `resolveSlotBadgeText` — tax-filing-board.ts). 전체 이름은 같은 배지의 화면리더·호버
+ * 이름이 「공급사」로 진다. 이 표나 옛 이름 표에 「공급」을 넣으면 부분 일치로 「공급가」까지 잡힌다.
  */
 export const ENTITY_TERMS = {
   deal: {

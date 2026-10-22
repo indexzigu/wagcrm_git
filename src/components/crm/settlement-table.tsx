@@ -12,10 +12,11 @@ import { formatDate } from "@/lib/format";
 import { resolveProfitTone, PROFIT_TONE_TEXT_DENSE } from "@/lib/profit-tone";
 import { cn } from "@/lib/utils";
 import type { CampaignRow } from "@/lib/crm-types";
-import type {
-  TaxInvoiceCounterpart,
+import {
+  resolveCampaignInvoiceSlots,
+  resolveCampaignMoneySlots,
+  resolveSlotBadgeText,
 } from "@/lib/tax-filing-board";
-import { resolveCampaignInvoiceSlots, resolveCampaignMoneySlots } from "@/lib/tax-filing-board";
 
 
 /**
@@ -33,7 +34,8 @@ import { resolveCampaignInvoiceSlots, resolveCampaignMoneySlots } from "@/lib/ta
  *
  * ⛔ **「공급」을 「공급사」로 되돌리지 말 것** — 이 칸의 축약은 폭 예산 때문이다(아래 열 폭 주석).
  * 전체 이름(「공급사 지급 미완료」)은 `sr-only`·`title` 이 그대로 진다 — 화면리더·호버·페이지 내
- * 찾기(Ctrl+F)에서 종전과 같은 낱말로 잡힌다.
+ * 찾기(Ctrl+F)에서 종전과 같은 낱말로 잡힌다. 예외 하나: 해당 없음 칸의 이름은 「해당 없음」 →
+ * 「해당없음」으로 붙였다(상태 낱말 붙여쓰기, P2 화면 문구 기준 ②) — 띄어 쓴 형태로는 더 안 잡힌다.
  *
  * ⚠️ 두 열이 **다른 낱말**을 쓰는 것이 아이콘 시절 접근성 검토 차단 사유(2026-08-26)의 해법이다.
  * 같은 상대에 대해 두 열의 방향은 항상 반대다(우리가 계산서를 발행하면 돈이 들어온다 —
@@ -46,14 +48,10 @@ import { resolveCampaignInvoiceSlots, resolveCampaignMoneySlots } from "@/lib/ta
  * (오너 결정 2026-07-30, 방향 토큰은 자기 틴트 위 3.93 으로 실측 기각). ⛔ 이 주석 없이 두면
  * 다음 세션이 「방향색 누락」으로 오판해 되돌린다.
  *
- * ⛔ **분기는 코드값으로 한다** — 상대 축약은 `counterpart` 코드로 고르고, 행위 낱말은 SSOT 가
- * 준 `slot.verb`(입금/지급) · `slot.directionLabel`(발행/수취)을 그대로 쓴다. 한글 문자열을
- * 비교해 분기하지 말 것(문구를 다듬는 순간 조용히 깨지는 부류다).
+ * ⛔ **축약 라벨을 여기서 조립하지 말 것** — `resolveSlotBadgeText`(tax-filing-board SSOT)가
+ * 상대 축약 표와 조합 규칙을 함께 소유한다. 화면이 「공급」 매핑을 다시 들면 SSOT 문구를 고칠 때
+ * 조용히 어긋난다. 분기도 한글 문자열 비교가 아니라 코드값으로 한다.
  */
-const COUNTERPART_SHORT_LABEL: Record<TaxInvoiceCounterpart, string> = {
-  SUPPLIER: "공급",
-  SELLER: "셀러",
-};
 
 /** 「해당 없음」 칸의 날짜 자리 낱말. 상태 낱말은 붙여 쓴 한 낱말이다(P2 화면 문구 기준 ②). */
 const INAPPLICABLE_WORD = "해당없음";
@@ -349,16 +347,10 @@ export function SettlementTable({
                             const completed = Boolean(campaign[slot.flagField]);
                             return (
                               <div key={slot.flagField} className="flex items-center gap-1.5">
-                                {/* 행위 낱말은 SSOT 의 `slot.verb` 를 그대로 쓴다 — 여기서 kind 로
+                                {/* 보이는 축약은 SSOT `resolveSlotBadgeText` 가 만든다 — 여기서 kind 로
                                     입금/지급을 다시 고르지 않는다(SSOT 주석이 반복 경고하는 「두 번째 인코딩」). */}
                                 <SlotLabelBadge
-                                  // 상대가 null 이면 몰 정산금 슬롯(현재 판정표에서는 나오지 않는 조합)이다.
-                                  // 상대를 지어내지 않고 행위 낱말만 보인다 — 전체 이름은 `label` 이 진다.
-                                  text={
-                                    slot.counterpart
-                                      ? `${COUNTERPART_SHORT_LABEL[slot.counterpart]} ${slot.verb}`
-                                      : slot.verb
-                                  }
+                                  text={resolveSlotBadgeText(slot)}
                                   label={`${slot.counterpartLabel} ${slot.verb}`}
                                   tone={completed ? "done" : "todo"}
                                   statusSuffix={completed ? "완료" : "미완료"}
@@ -435,18 +427,13 @@ export function SettlementTable({
                             const issuedAt = campaign[slot.field];
                             return (
                               <div key={slot.field} className="flex items-center gap-1.5">
-                                {/* 행위 글리프는 `slot.direction` **코드값**으로 고른다.
-                                    ISSUE(발행) = 서류가 나간다 · RECEIVE(수취) = 서류가 들어온다.
+                                {/* 보이는 축약은 SSOT `resolveSlotBadgeText` 가 만든다(「공급 발행」·「셀러 수취」).
                                     「해당 없음」은 **상대를 살린 채** 행위 낱말만 빼고, 「해당없음」 낱말은
                                     날짜 자리로 보낸다(그 칸은 날짜가 없어 자리가 비어 있다 — 배지 폭이 안 는다).
                                     종전 `"해당 없음"` 단독 문자열은 상대를 지워버려 어느 쪽이 해당
                                     없는지 배지만으로는 알 수 없었다. */}
                                 <SlotLabelBadge
-                                  text={
-                                    slot.applicable
-                                      ? `${COUNTERPART_SHORT_LABEL[slot.counterpart]} ${slot.directionLabel}`
-                                      : COUNTERPART_SHORT_LABEL[slot.counterpart]
-                                  }
+                                  text={resolveSlotBadgeText(slot)}
                                   // ⛔ 「해당 없음」만 단독으로 쓰지 말 것 — 종전 문자열이 그랬고,
                                   // 상대를 지워버려 어느 쪽이 해당 없는지 알 수 없었다.
                                   // `shortTitle`(SSOT 파생, 예 "셀러 수취")을 앞에 세워 상대를 살린다.
