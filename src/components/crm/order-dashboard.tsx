@@ -1746,12 +1746,12 @@ export default function OrderDashboard() {
                       <button
                         onClick={() => submitTrackingData(previewTracking, { skipDownload: true, campaign: previewTrackingCampaign ?? undefined })}
                         disabled={submitBusy}
-                        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-800"
+                        className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg font-bold text-sm shadow-soft-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
                       >
                         {submitBusy ? (
                           <><RefreshCw className="w-4 h-4 animate-spin" />발송처리 중…</>
                         ) : (
-                          <><span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5">N</span>발송처리</>
+                          <><span className="bg-card text-status-success text-[9px] px-1 rounded font-black leading-none py-0.5">N</span>발송처리</>
                         )}
                       </button>
                     );

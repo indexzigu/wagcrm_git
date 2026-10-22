@@ -44,7 +44,7 @@ export function StoryCollectButton() {
       disabled={busy}
       onClick={collect}
       title="수집창 안 활성 셀러의 스토리만 서버에서 즉시 수집합니다 (게시물 미포함, 저비용)"
-      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-700 disabled:opacity-60"
+      className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
     >
       {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
       {busy ? "수집 중…" : "스토리만 수집"}

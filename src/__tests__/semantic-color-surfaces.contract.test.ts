@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { stringValues } from "./string-values";
 
 // 색 정리 후속(애플 UI 리뉴얼 뒤, 2026-10-21) — P8 「색 사용 원칙」 §1(5개 의미축)·§4(범주는 색을 받지 않는다)·
 // §5(표면 종속 대비)·세부 규칙 「hex 하드코딩 금지」를 아래 표면에 고정한다.
@@ -128,26 +128,6 @@ const REMAINING: Record<string, { hue: string; count: number; reason: string }[]
     { hue: "#EA4335", count: 1, reason: "구글 로그인 G 로고 — 남의 상표 원색" },
   ],
 };
-
-/** 코드의 문자열 값만 모은다(주석·JSX 본문 글자 제외). */
-export function stringValues(source: string, fileName = "x.tsx"): string[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const out: string[] = [];
-  const visit = (node: ts.Node) => {
-    if (
-      ts.isStringLiteral(node) ||
-      ts.isNoSubstitutionTemplateLiteral(node) ||
-      ts.isTemplateHead(node) ||
-      ts.isTemplateMiddle(node) ||
-      ts.isTemplateTail(node)
-    ) {
-      out.push(node.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sf);
-  return out;
-}
 
 function hueHits(values: string[]): string[] {
   return values.flatMap((v) => v.match(OFF_TOKEN_HUE) ?? []);

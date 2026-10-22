@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 import { useClaims, type ClaimWithCompanyName } from '@/hooks/useClaims';
 import { buildTrackingUrl, type ClaimType } from '@/lib/order-converter/claim-derive';
 import { RefreshCw, XIcon, Inbox } from 'lucide-react';
@@ -229,14 +230,15 @@ export default function ClaimList({ campaignNameFilter, orderIdsFilter, unmatche
               <button
                 key={f.key}
                 onClick={() => setTypeFilter(f.key)}
+                aria-pressed={typeFilter === f.key}
                 title={f.hint}
-                className={`rounded-md px-2.5 py-1 text-xs font-bold transition-colors ${
-                  typeFilter === f.key ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-700'
+                className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                  typeFilter === f.key ? SELECTED_TOGGLE : `${UNSELECTED_TOGGLE} hover:text-slate-700`
                 }`}
               >
                 {f.label}
                 {f.count != null && (
-                  <span className={`ml-1 tabular-nums font-semibold ${typeFilter === f.key ? 'text-white/70' : 'text-slate-500'}`}>
+                  <span className={`ml-1 tabular-nums font-semibold ${typeFilter === f.key ? 'text-primary' : 'text-slate-500'}`}>
                     {f.count}
                   </span>
                 )}
@@ -248,8 +250,9 @@ export default function ClaimList({ campaignNameFilter, orderIdsFilter, unmatche
               <button
                 key={f.key}
                 onClick={() => setProgressFilter(f.key)}
-                className={`rounded-md px-2.5 py-1 text-xs font-bold transition-colors ${
-                  progressFilter === f.key ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-700'
+                aria-pressed={progressFilter === f.key}
+                className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+                  progressFilter === f.key ? SELECTED_TOGGLE : `${UNSELECTED_TOGGLE} hover:text-slate-700`
                 }`}
               >
                 {f.label}

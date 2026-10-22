@@ -68,6 +68,7 @@ import { computeDiscountRate, formatDiscountRate } from "@/lib/discount-rate";
 import { LinkSearchDialog } from "./link-search-dialog";
 import { useDeferredSave } from "@/hooks/use-deferred-save";
 import { cn } from "@/lib/utils";
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 import { LinkedSellersList } from "./linked-sellers-list";
 import { DealSellerCandidates } from "./deal-seller-candidates";
 import { DealVocSection } from "./deal-voc-section";
@@ -519,12 +520,13 @@ function DealsPanelContent({
                           await handleInlineFieldSave("status", step.value);
                         }}
                         disabled={isDeferredSaving || isCurrentStep || !canTransition}
+                        aria-current={isSelected ? "step" : undefined}
                         className={cn(
                           "flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-colors text-center whitespace-nowrap",
                           isSelected
-                            ? "bg-slate-900 text-white shadow-soft-sm"
+                            ? cn(SELECTED_TOGGLE, "shadow-soft-sm")
                             : canTransition
-                              ? "text-muted-foreground hover:text-foreground hover:bg-slate-200/50"
+                              ? cn(UNSELECTED_TOGGLE, "hover:text-foreground")
                               : "cursor-not-allowed text-slate-300",
                         )}
                       >

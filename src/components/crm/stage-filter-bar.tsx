@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import type { StageFilter } from "@/hooks/use-stage-filter";
 import { cn } from "@/lib/utils";
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,13 +42,15 @@ export function StageFilterBar({
         return (
           <Button
             key={value}
-            variant={isActive ? "secondary" : "ghost"}
+            variant="ghost"
             size="sm"
             aria-pressed={isActive}
             onClick={() => onFilterChange(value)}
             className={cn(
               "rounded-lg",
-              isActive && "bg-slate-200 text-slate-900 font-semibold",
+              isActive
+                ? cn(SELECTED_TOGGLE, "hover:bg-primary/10 hover:text-primary")
+                : UNSELECTED_TOGGLE,
             )}
           >
             {label}
@@ -55,7 +58,7 @@ export function StageFilterBar({
               className={cn(
                 "ml-1 inline-flex items-center justify-center rounded-md px-1.5 text-xs tabular-nums",
                 isActive
-                  ? "bg-slate-900/10 text-slate-700"
+                  ? "bg-primary/10 text-primary"
                   : "bg-muted text-slate-600",
               )}
             >

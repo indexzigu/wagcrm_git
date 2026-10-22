@@ -15,6 +15,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { SELECTED_TOGGLE, UNSELECTED_TOGGLE } from "@/lib/selection-tone";
 
 export type SegmentOption<T extends string> = { value: T; label: string };
 
@@ -88,11 +89,11 @@ export function SegmentToggle<T extends string>({
             onClick={() => onValueChange(opt.value)}
             onKeyDown={(e) => handleKeyDown(e, i)}
             className={cn(
-              "h-7 rounded-md px-2.5 text-[11px] font-semibold transition-colors",
+              "h-7 rounded-md px-2.5 text-[11px] transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
               selected
-                ? "bg-slate-800 text-white"
-                : "text-slate-600 hover:text-slate-900"
+                ? SELECTED_TOGGLE
+                : cn(UNSELECTED_TOGGLE, "hover:text-slate-900")
             )}
           >
             {opt.label}
