@@ -143,11 +143,11 @@ describe("campaign-card — 심각도 배지가 리터럴이 아니라 토큰을
 describe("settlement-table — 계산서 열의 완료 배지가 정산일정과 같은 토큰을 쓴다", () => {
   // 두 열이 나란히 붙어 있어 한쪽만 다른 토큰을 쓰면 "같은 값 다른 색"이 된다.
   //
-  // 2026-08-26 아이콘화로 두 열이 **한 컴포넌트**(`SlotIconBadge`)를 공유하게 됐다.
+  // 2026-08-26 이후 두 열이 **한 컴포넌트**(`SlotLabelBadge`)를 공유하게 됐다.
   // 그래서 이 계약은 "두 구간의 색이 우연히 같다"가 아니라 **"색을 정할 자리가 하나뿐이다"**
   // 를 고정한다 — 구조적으로 더 강하다. 종전처럼 `{invoiceSlots.map(` 구간을 훑으면
   // 그 안에 색 리터럴이 아예 없어 **앵커는 살아 있는데 단언만 빈 채로 초록**이 된다.
-  const badge = slice(SETTLEMENT, "function SlotIconBadge", "interface SettlementTableProps");
+  const badge = slice(SETTLEMENT, "function SlotLabelBadge", "interface SettlementTableProps");
 
   it("구간을 실제로 찾았다", () => {
     expect(badge).toContain("tone");
@@ -157,8 +157,8 @@ describe("settlement-table — 계산서 열의 완료 배지가 정산일정과
   it("⛔ 두 열이 모두 그 한 컴포넌트를 쓴다 — 한쪽만 색을 인라인으로 되돌리면 깨진다", () => {
     const money = slice(SETTLEMENT, "{moneySlots.map(", "{/* ⛔ 지연 경고를");
     const invoice = slice(SETTLEMENT, "{invoiceSlots.map(", "</td>");
-    expect(money).toContain("<SlotIconBadge");
-    expect(invoice).toContain("<SlotIconBadge");
+    expect(money).toContain("<SlotLabelBadge");
+    expect(invoice).toContain("<SlotLabelBadge");
     // 색은 두 소비처 어디에도 없어야 한다(있으면 사본이 생긴 것이다).
     expect(classText(money)).not.toContain("bg-status-success-bg");
     expect(classText(invoice)).not.toContain("bg-status-success-bg");
@@ -181,7 +181,7 @@ describe("settlement-table — 계산서 열의 완료 배지가 정산일정과
   });
 
   // ⚠️ 금지 hue 스캔은 **공유 템플릿과 두 소비처 셋 다**에 돌린다.
-  // 종전에는 계산서 소비처 구간 하나만 훑었는데, 색이 `SlotIconBadge` 로 올라가면서 그 구간을
+  // 종전에는 계산서 소비처 구간 하나만 훑었는데, 색이 `SlotLabelBadge` 로 올라가면서 그 구간을
   // 템플릿으로 **옮기기만** 하자 두 소비처가 어떤 금지 단언도 안 받게 됐다 — 뮤테이션으로
   // 확인된 실제 구멍이다(계산서 날짜 span 에 `text-money-out`·`text-emerald-600` 을 넣어도
   // 안 잡혔다). 소비처는 색을 아예 안 써야 하므로 스캔 비용도 거의 없다.

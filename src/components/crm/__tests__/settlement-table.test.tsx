@@ -12,8 +12,9 @@ import type { CampaignRow } from "@/lib/crm-types";
  * 정산일정·계산서 배지를 **접근 가능한 이름**으로 찾아 배지 요소(색·레이아웃 클래스를 든
  * 바깥 span)를 돌려준다.
  *
- * 2026-08-26 아이콘화 이후 배지에는 **보이는 글자가 없다**(글리프 2개 + `sr-only`).
- * 그래서 `getByText("공급사 지급").className` 같은 종전 형태는 두 가지로 깨진다 —
+ * 배지의 보이는 글자는 **축약 라벨**(「공급 지급」, `aria-hidden`)이고 전체 이름은 `sr-only` 가 진다
+ * (2026-10-22 — 그 전 2026-08-26~ 는 글리프 2개였다). 그래서 `getByText("공급사 지급").className`
+ * 같은 형태는 두 가지로 깨진다 —
  * ①이름이 `"공급사 지급 완료"` 라 정확 일치가 안 되고 ②일치시켜도 잡히는 노드가
  * `sr-only` span 이라 className 단언이 `"sr-only"` 를 검사하는 **무의미한 초록**이 된다.
  *
@@ -173,18 +174,34 @@ describe("SettlementTable 계산서 열", () => {
   it("개인 셀러의 셀러 칸은 「해당 없음」이고 사유가 이름과 title 양쪽에 실린다", () => {
     renderTable([{ ...campaign, salesChannel: "SELLER_MALL", sellerTaxType: "INDIVIDUAL" }]);
 
-    // 2026-08-26 아이콘화로 두 가지가 강해졌다:
+    // 2026-08-26 이후 두 가지가 강해졌다:
     // ① 상대가 살아났다 — 종전 표기는 맨 "해당 없음" 이라 **어느 쪽이** 해당 없는지 배지만
-    //    봐서는 알 수 없었다(글리프는 이제 셀러 아이콘 + 대시다).
+    //    봐서는 알 수 없었다(지금 배지는 「셀러」, 날짜 자리에 「해당없음」).
     // ② 사유가 **접근 가능한 이름**에 들어갔다 — 종전에는 `title` 로만 붙어 화면리더
     //    사용자에게 전달되는 경로가 아예 없었다.
     // ⛔ 사유를 이름에서 빼고 title 로만 되돌리지 말 것.
-    const badge = slotBadge("셀러 발행 해당 없음 개인 셀러(원천징수 대상)");
+    const badge = slotBadge("셀러 발행 해당없음 개인 셀러(원천징수 대상)");
     // title 은 `aria-hidden` 안쪽 span 이 진다(바깥에 두면 이름 사본이 낭독된다).
     const hoverTarget = badge.querySelector("[aria-hidden='true']");
-    expect(hoverTarget?.getAttribute("title")).toBe("셀러 발행 해당 없음 개인 셀러(원천징수 대상)");
+    expect(hoverTarget?.getAttribute("title")).toBe("셀러 발행 해당없음 개인 셀러(원천징수 대상)");
+    // 보이는 표기: 배지는 상대만, 「해당없음」 낱말은 날짜 자리(붙여 쓴 상태 낱말).
+    expect(hoverTarget?.textContent).toBe("셀러");
+    expect(screen.getByText("해당없음")).toBeInTheDocument();
     // 공급사 의무는 셀러 세무 유형과 무관하다 — 사라지면 안 된다.
     expect(slotBadge("공급사 수취 미완료")).toBeInTheDocument();
+  });
+
+  it("배지의 보이는 글자는 「상대 2자 + 행위 2자」 축약 라벨이다(2026-10-22 오너 확정)", () => {
+    renderTable([{ ...businessCampaign, salesChannel: "BRAND_MALL" }]);
+    // 보이는 축약은 `aria-hidden` 안쪽에 있다 — 화면리더는 전체 이름(sr-only)만 읽는다.
+    const visible = (name: string) =>
+      slotBadge(name).querySelector("[aria-hidden='true']")?.textContent;
+    expect(visible("공급사 입금 미완료")).toBe("공급 입금");
+    expect(visible("셀러 지급 미완료")).toBe("셀러 지급");
+    expect(visible("공급사 발행 미완료")).toBe("공급 발행");
+    expect(visible("셀러 수취 미완료")).toBe("셀러 수취");
+    // 아이콘 시절 범례 줄은 없어졌다 — 글자가 곧 뜻이다.
+    expect(document.querySelector("svg.lucide-arrow-big-down")).toBeNull();
   });
 
   it("⛔ 의무가 없어도 값이 있으면 날짜를 계속 보여준다", () => {
@@ -199,7 +216,7 @@ describe("SettlementTable 계산서 열", () => {
       },
     ]);
 
-    expect(slotBadge("셀러 발행 해당 없음 개인 셀러(원천징수 대상)")).toBeInTheDocument();
+    expect(slotBadge("셀러 발행 해당없음 개인 셀러(원천징수 대상)")).toBeInTheDocument();
     expect(screen.getByText("26-08-06")).toBeInTheDocument();
   });
 
@@ -240,10 +257,8 @@ describe("SettlementTable 계산서 열", () => {
     ]);
     expect(slotBadge("공급사 지급 미완료")).toBeInTheDocument();
     expect(slotBadge("셀러 지급 미완료")).toBeInTheDocument();
-    // ⚠️ 문서 전체에서 /입금/ 을 찾지 말 것 — 표 아래 **범례**가 채널과 무관하게 기호 뜻을
-    // 전부 설명하므로 「입금」 낱말은 항상 화면에 있다(정적 범례가 맞다). 이 계약이 지키는
-    // 것은 「자사몰 **행**에 입금 줄이 없다」이므로 배지의 접근 가능한 이름으로 좁힌다
-    // (배지 이름은 항상 완료/미완료로 끝나고 범례 항목은 낱말 하나뿐이라 갈린다).
+    // 이 계약이 지키는 것은 「자사몰 **행**에 입금 줄이 없다」이므로 배지의 접근 가능한 이름으로
+    // 좁힌다(배지 이름은 항상 완료/미완료로 끝난다).
     expect(screen.queryByText(/입금\s+(완료|미완료)/)).not.toBeInTheDocument();
     // 공급사 줄은 전용 필드를, 셀러 줄은 기존 payout 필드를 읽는다(카드와 같은 매핑).
     expect(screen.getByText("26-08-21")).toBeInTheDocument();
