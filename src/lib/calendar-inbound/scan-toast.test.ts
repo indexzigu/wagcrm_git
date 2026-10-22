@@ -14,7 +14,9 @@ function summary(over: Partial<ScanSummary> = {}): ScanSummary {
     skippedUnparsed: 0,
     adoptedNoop: 0,
     dropped: 0,
-    hintDeferred: 0,
+    awaitingHint: 0,
+    localResolved: 0,
+    geminiResolved: 0,
     alreadyHandled: 0,
     errors: 0,
     ...over,
@@ -35,9 +37,21 @@ describe("formatInboundScanToast", () => {
   });
 
   it("상한에 걸려 다음 회차로 넘긴 건이 있으면 「다음에 이어서」를 덧붙인다", () => {
-    expect(formatInboundScanToast(summary({ proposed: 20, dropped: 3, hintDeferred: 2 })).message).toBe(
-      "기안 20건 올림 · 해석 못 함 0건 · 이미 처리 0건 · 다음에 이어서 5건",
+    expect(formatInboundScanToast(summary({ proposed: 20, dropped: 3 })).message).toBe(
+      "기안 20건 올림 · 해석 못 함 0건 · 이미 처리 0건 · 다음에 이어서 3건",
     );
+  });
+
+  it("모델 해석을 기다리는 건이 있으면 「해석 대기」를 덧붙인다(0 이면 싣지 않는다)", () => {
+    expect(formatInboundScanToast(summary({ proposed: 1, awaitingHint: 4 }))).toEqual({
+      message: "기안 1건 올림 · 해석 못 함 0건 · 이미 처리 0건 · 해석 대기 4건",
+      tone: "success",
+      openApprovals: true,
+    });
+    expect(formatInboundScanToast(summary({ dropped: 2, awaitingHint: 1 })).message).toBe(
+      "기안 0건 올림 · 해석 못 함 0건 · 이미 처리 0건 · 다음에 이어서 2건 · 해석 대기 1건",
+    );
+    expect(formatInboundScanToast(summary({ localResolved: 3, geminiResolved: 2 })).message).not.toContain("해석 대기");
   });
 
   it("다른 회차가 도는 중이면 「이미 가져오는 중」 안내만 띄운다", () => {

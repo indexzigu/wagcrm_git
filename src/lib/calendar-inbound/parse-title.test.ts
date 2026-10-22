@@ -201,10 +201,14 @@ describe("parseCalendarTitle", () => {
 
 describe("KEYWORD_STRIP_RE", () => {
   it("종류·공급사 정규식의 낱말을 전부 걷어낸다(공유 정규식에서 파생)", () => {
-    const words = [DEPOSIT_RE, PAYOUT_RE, SUPPLIER_RE].flatMap((re) => re.source.split("|"));
+    const words = [DEPOSIT_RE, PAYOUT_RE, SUPPLIER_RE].flatMap((re) =>
+      re.source.split("|"),
+    );
     expect(words.length).toBeGreaterThan(5);
     for (const word of words) {
-      expect(`샘플${word}브랜드`.replace(KEYWORD_STRIP_RE, " ")).toBe("샘플 브랜드");
+      expect(`샘플${word}브랜드`.replace(KEYWORD_STRIP_RE, " ")).toBe(
+        "샘플 브랜드",
+      );
     }
   });
 });
@@ -213,5 +217,180 @@ describe("normalizeToken", () => {
   it("NFC·공백·기호 제거·소문자", () => {
     expect(normalizeToken(" A-b_C! ")).toBe("abc");
     expect(normalizeToken("가".normalize("NFD"))).toBe("가");
+  });
+});
+
+describe("parseCalendarTitle — 붙여 쓴 제목(전체 부분 문자열 보조 패스)", () => {
+  it("셀러+브랜드가 붙은 지급 제목", () => {
+    const r = parseCalendarTitle("샘플셀러테스트브랜드 지급", dict);
+    expect(r).toEqual({
+      ok: true,
+      intent: {
+        kind: "payout",
+        sellerId: "s1",
+        dealIds: ["d1"],
+        round: null,
+        supplierHint: false,
+        matchedBy: "rule",
+      },
+    });
+  });
+
+  it("회차까지 붙은 제목: 샘플셀러테스트브랜드3차", () => {
+    const r = parseCalendarTitle("샘플셀러테스트브랜드3차", dict);
+    expect(r.ok && r.intent.kind).toBe("campaign");
+    expect(r.ok && r.intent.round).toBe(3);
+    expect(r.ok && r.intent.sellerId).toBe("s1");
+    expect(r.ok && r.intent.dealIds).toEqual(["d1"]);
+  });
+
+  it("셀러 별칭이 브랜드 이름의 일부여도 겹치지 않는 가장 긴 일치가 이긴다", () => {
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["샘플", "샘플셀러"] }],
+      deals: [
+        {
+          id: "d1",
+          brandNames: ["샘플브랜드"],
+          dealName: "샘플브랜드 딜",
+          partnerName: null,
+        },
+      ],
+    };
+    const r = parseCalendarTitle("샘플브랜드샘플셀러 지급", d);
+    expect(r.ok && r.intent.sellerId).toBe("s1");
+    expect(r.ok && r.intent.dealIds).toEqual(["d1"]);
+  });
+
+  it("사전 이름이 2자 미만이면 무시한다", () => {
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["샘"] }],
+      deals: dict.deals,
+    };
+    expect(parseCalendarTitle("샘테스트브랜드 지급", d)).toEqual({
+      ok: false,
+      reason: "no_seller",
+    });
+  });
+
+  it("셀러·브랜드가 같은 구간을 다투면(길이 동률) 실패 사유를 그대로 낸다", () => {
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["겹침이름"] }],
+      deals: [
+        {
+          id: "d1",
+          brandNames: ["겹침이름"],
+          dealName: "딜",
+          partnerName: null,
+        },
+      ],
+    };
+    const r = parseCalendarTitle("겹침이름 지급", d);
+    expect(r.ok).toBe(false);
+  });
+
+  it("붙여 써도 브랜드가 둘이면 유일하지 않아 토큰 패스의 실패 사유 그대로", () => {
+    expect(
+      parseCalendarTitle("샘플셀러테스트브랜드다른브랜드 지급", dict),
+    ).toEqual({ ok: false, reason: "no_brand" });
+  });
+
+  it("보조 패스로도 못 찾으면 기존 실패 사유 그대로(no_brand)", () => {
+    expect(parseCalendarTitle("샘플셀러없는곳 지급", dict)).toEqual({
+      ok: false,
+      reason: "no_brand",
+    });
+  });
+
+  it("토큰 패스가 이미 성공하면 보조 패스는 돌지 않는다", () => {
+    // 이어 붙인 "샘플테스트브랜드" 에서는 더 긴 딜 이름 "플테스트브랜"(6자)이 셀러 별칭을
+    // 잘라 내므로 보조 패스를 돌렸다면 실패했을 제목이다. 토큰 패스 결과가 그대로 나와야 한다.
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["샘플"] }],
+      deals: [
+        ...dict.deals,
+        {
+          id: "d3",
+          brandNames: ["플테스트브랜"],
+          dealName: "딜3",
+          partnerName: null,
+        },
+      ],
+    };
+    const r = parseCalendarTitle("샘플 테스트브랜드 지급", d);
+    expect(r.ok && r.intent.sellerId).toBe("s1");
+    expect(r.ok && r.intent.dealIds).toEqual(["d1"]);
+    expect(parseCalendarTitle("샘플테스트브랜드 지급", d).ok).toBe(false);
+  });
+
+  it("토큰 경계를 넘는 우연 일치는 셀러로 보지 않는다", () => {
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["하나"] }],
+      deals: dict.deals,
+    };
+    expect(parseCalendarTitle("테스트브랜드 지하 나눔 지급", d)).toEqual({
+      ok: false,
+      reason: "no_seller",
+    });
+  });
+
+  it("토큰 패스의 모호 실패를 보조 패스가 뒤집지 않는다", () => {
+    const d: InboundDictionary = {
+      sellers: dict.sellers,
+      deals: [
+        {
+          id: "d1",
+          brandNames: ["테스트브랜드"],
+          dealName: "a",
+          partnerName: null,
+        },
+        {
+          id: "d2",
+          brandNames: ["테스트브랜드2"],
+          dealName: "b",
+          partnerName: null,
+        },
+      ],
+    };
+    expect(parseCalendarTitle("샘플셀러 테스트브랜드2 지급", d)).toEqual({
+      ok: false,
+      reason: "ambiguous_brand",
+    });
+  });
+
+  it("보조 패스도 같은 브랜드의 모든 딜을 담는다", () => {
+    const d: InboundDictionary = {
+      sellers: dict.sellers,
+      deals: [
+        {
+          id: "d1",
+          brandNames: ["테스트브랜드"],
+          dealName: "봄딜",
+          partnerName: null,
+        },
+        {
+          id: "d2",
+          brandNames: ["테스트브랜드"],
+          dealName: "가을딜",
+          partnerName: null,
+        },
+      ],
+    };
+    const r = parseCalendarTitle("샘플셀러테스트브랜드 지급", d);
+    expect(r.ok && r.intent.dealIds).toEqual(["d1", "d2"]);
+  });
+
+  it("이름이 닿은 토큰에 남는 글자가 있으면 우연 일치로 보고 실패한다", () => {
+    const d: InboundDictionary = {
+      sellers: [{ id: "s1", names: ["하나"] }],
+      deals: dict.deals,
+    };
+    const r = parseCalendarTitle("하나로마트테스트브랜드 지급", d);
+    expect(r.ok).toBe(false);
+  });
+
+  it("붙은 토큰 옆의 무관한 토큰은 남는 글자로 치지 않는다", () => {
+    const r = parseCalendarTitle("샘플셀러테스트브랜드 라방 지급", dict);
+    expect(r.ok && r.intent.sellerId).toBe("s1");
+    expect(r.ok && r.intent.dealIds).toEqual(["d1"]);
   });
 });

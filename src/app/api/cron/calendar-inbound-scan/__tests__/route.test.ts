@@ -33,7 +33,9 @@ function summary(over: Partial<ScanSummary> = {}): ScanSummary {
     skippedUnparsed: 0,
     adoptedNoop: 0,
     dropped: 0,
-    hintDeferred: 0,
+    awaitingHint: 0,
+    localResolved: 0,
+    geminiResolved: 0,
     alreadyHandled: 0,
     errors: 0,
     ...over,
@@ -104,6 +106,8 @@ describe("calendar-inbound-scan 크론", () => {
     scanMock.mockResolvedValue(summary({ newOrChanged: 2, errors: 2 }));
     expect((await (await GET(req())).json()).failed).toBe(true);
     scanMock.mockResolvedValue(summary({ newOrChanged: 2, errors: 1, proposed: 1 }));
+    expect((await (await GET(req())).json()).failed).toBeUndefined();    // 해석 대기로 남긴 것도 결론이다 — Gemini 일괄 호출이 예외로 끝나 해석 대기로 둔 회차는 빨강이 아니다.
+    scanMock.mockResolvedValue(summary({ newOrChanged: 2, errors: 1, awaitingHint: 2 }));
     expect((await (await GET(req())).json()).failed).toBeUndefined();
   });
 });

@@ -17,8 +17,9 @@ import { isRemoteDatabaseUrl } from "@/lib/prisma-client";
 const LOCK_KEY_CLASS = 7_302;
 const LOCK_KEY_OBJECT = 1;
 /**
- * 잠금 트랜잭션 시간 제한 — 회차 예산(scan.ts `SCAN_BUDGET_MS` 55초)에 일정 한 건(힌트 호출 시간 제한 20초 + DB)을
- * 더한 것보다 넉넉히 길다. 회차 예산 자체는 배포 지침 「Plan Limits」의 60초 이하 규칙을 따른다.
+ * 잠금 트랜잭션 시간 제한 — 회차 예산(scan.ts `SCAN_BUDGET_MS` 55초)보다 넉넉히 길다. 모델 호출(로컬·Gemini)은
+ * 남은 예산 안으로 시간 제한을 묶어 55초 안에 끝나고, 나머지 여유는 후보 조회와 예산을 넘겨 끝나는 마지막 일정의
+ * DB 쓰기 몫이다. 회차 예산 자체는 배포 지침 「Plan Limits」의 60초 이하 규칙을 따른다.
  */
 export const LOCK_TX_TIMEOUT_MS = 120_000;
 

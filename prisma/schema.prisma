@@ -1402,7 +1402,7 @@ model CalendarInboundEvent {
   startDate     String // YYYY-MM-DD (KST)
   endDate       String // YYYY-MM-DD (KST, 포함 끝날 — 구글 종일 end.date 에서 1일 뺀 값)
   fingerprint   String
-  status        String // PROPOSED | SKIPPED | ADOPTED | REJECTED | PENDING_RETRY
+  status        String // PROPOSED | SKIPPED | ADOPTED | REJECTED | PENDING_RETRY | AWAITING_HINT (정본: src/lib/calendar-inbound/status.ts)
   skipReason    String?
   parsed        Json?
   proposalId    String?

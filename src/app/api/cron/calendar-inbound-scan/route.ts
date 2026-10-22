@@ -19,7 +19,7 @@ export const maxDuration = 300;
 
 /** 오류 말고 어떤 결론이든 낸 건수 — 0 이면서 오류가 있으면 회차가 통째로 헛돈 것이다. */
 function settledCount(s: ScanSummary): number {
-  return s.proposed + s.adoptedNoop + s.skippedUnparsed + s.hintDeferred + s.dropped + s.alreadyHandled;
+  return s.proposed + s.adoptedNoop + s.skippedUnparsed + s.awaitingHint + s.dropped + s.alreadyHandled;
 }
 
 function failureReasonOf(s: ScanSummary): string | null {
