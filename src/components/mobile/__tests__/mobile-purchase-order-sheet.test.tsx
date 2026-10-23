@@ -172,21 +172,71 @@ describe("MobilePurchaseOrderSheet — 미리보기", () => {
     expect(screen.getByText(/준비본/)).toBeInTheDocument();
   });
 
-  it("받는 사람은 브랜드 수신처로 채워지고 편집할 수 있다 · 참조는 표시만", async () => {
+  it("받는 사람·참조는 브랜드 수신처로 채워지고 둘 다 편집할 수 있다(오너 확정 2026-10-23)", async () => {
     stubFetch({});
     renderSheet();
 
-    const to = (await screen.findByLabelText("메일 주소")) as HTMLInputElement;
+    const to = (await screen.findByLabelText("받는 사람")) as HTMLInputElement;
+    const cc = screen.getByLabelText("참조") as HTMLInputElement;
     expect(to.value).toBe("order@brand.example.com");
-    expect(screen.getByText(/참조 cc@brand\.example\.com/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("참조")).toBeNull();
-    expect(screen.queryByLabelText("받는 사람")).toBeNull();
+    expect(cc.value).toBe("cc@brand.example.com");
+    expect(to).toBeEnabled();
+    expect(cc).toBeEnabled();
   });
 
-  it("발주확인이 필요한 행이 있으면 버튼이 「발주확인하고 발송」이다", async () => {
+  it("편집한 참조가 메일에 실리고, 참조를 비우면 참조 없이 보낸다", async () => {
+    stubFetch({ mail: [{ status: 200 }, { status: 200 }] });
+    const user = userEvent.setup();
+    renderSheet();
+
+    const cc = await screen.findByLabelText("참조");
+    await user.clear(cc);
+    await user.type(cc, "cc2@brand.example.com; cc3@brand.example.com");
+    await user.click(screen.getByRole("button", { name: "발송" }));
+    await screen.findByText(/발주서 1건 ·/);
+    const [, firstMail] = callsTo("/order-converter/api/send-email", "POST")[0];
+    expect((firstMail?.body as FormData).get("cc")).toBe("cc2@brand.example.com; cc3@brand.example.com");
+  });
+
+  it("참조를 비우면 cc 필드 자체를 보내지 않는다", async () => {
+    stubFetch({});
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.clear(await screen.findByLabelText("참조"));
+    await user.click(screen.getByRole("button", { name: "발송" }));
+    await screen.findByText(/발주서 1건 ·/);
+    const [, mail] = callsTo("/order-converter/api/send-email", "POST")[0];
+    expect((mail?.body as FormData).has("cc")).toBe(false);
+  });
+
+  it("참조 형식이 틀리면 되돌릴 수 없는 발주확인 전에 막는다", async () => {
+    stubFetch({});
+    const user = userEvent.setup();
+    renderSheet();
+
+    const cc = await screen.findByLabelText("참조");
+    await user.clear(cc);
+    await user.type(cc, "cc@brand");
+    await user.click(screen.getByRole("button", { name: "발송" }));
+    expect(screen.getByText("참조 이메일 주소 형식을 확인하세요.")).toBeInTheDocument();
+    expect(cc).toHaveAttribute("aria-invalid", "true");
+    expect(callsTo(PO_BASE, "POST")).toHaveLength(0);
+  });
+
+  it("발주확인이 필요한 행이 있으면 버튼이 「발주확인하고 발송」이고 안내문도 발주확인을 말한다", async () => {
     stubFetch({ preview: previewPayload([row({ needsConfirm: true })]) });
     renderSheet();
     expect(await screen.findByRole("button", { name: "발주확인하고 발송" })).toBeEnabled();
+    expect(screen.getByText(/네이버 발주확인과 브랜드사 메일 발송이 함께/)).toBeInTheDocument();
+  });
+
+  it("발주확인이 필요 없으면 안내문이 발주확인을 말하지 않는다 — 버튼이 하는 일과 같아야 한다", async () => {
+    stubFetch({});
+    renderSheet();
+    await screen.findByRole("button", { name: "발송" });
+    expect(screen.queryByText(/네이버 발주확인과/)).toBeNull();
+    expect(screen.getByText(/발주서 메일이 나가며 되돌릴 수 없습니다/)).toBeInTheDocument();
   });
 
   it("발주할 주문이 없으면 버튼이 비활성이다", async () => {
@@ -244,7 +294,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     const { onSent } = renderSheet();
 
-    const to = await screen.findByLabelText("메일 주소");
+    const to = await screen.findByLabelText("받는 사람");
     await user.clear(to);
     await user.type(to, "other@brand.example.com");
     await user.click(screen.getByRole("button", { name: "발주확인하고 발송" }));
@@ -277,7 +327,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     renderSheet({ purchaseOrder: { ...INFO, toEmail: null } });
 
     await user.click(await screen.findByRole("button", { name: "발송" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("받는 사람 이메일을 입력하세요.");
+    expect(screen.getByLabelText("받는 사람")).toHaveAccessibleDescription("받는 사람 이메일을 입력하세요.");
     expect(callsTo(PO_BASE, "POST")).toHaveLength(0);
   });
 
@@ -287,10 +337,10 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     renderSheet({ purchaseOrder: { ...INFO, toEmail: "a@b" } });
 
     await user.click(await screen.findByRole("button", { name: "발송" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("이메일 주소 형식을 확인하세요.");
+    expect(screen.getByLabelText("받는 사람")).toHaveAccessibleDescription("이메일 주소 형식을 확인하세요.");
     expect(callsTo(PO_BASE, "POST")).toHaveLength(0);
 
-    const to = screen.getByLabelText("메일 주소");
+    const to = screen.getByLabelText("받는 사람");
     await user.clear(to);
     await user.type(to, "a@brand.example.com, b@brand.example.com");
     await user.click(screen.getByRole("button", { name: "발송" }));
@@ -363,9 +413,12 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     expect(await screen.findByText("SMTP 거부")).toBeInTheDocument();
     expect(onSent).not.toHaveBeenCalled();
     // 실패 화면에서도 받는 사람을 고칠 수 있고(가장 흔한 실패가 주소 오타), 미리보기 카드는 다시 뜨지 않는다.
-    const to = screen.getByLabelText("메일 주소");
+    const to = screen.getByLabelText("받는 사람");
     await user.clear(to);
     await user.type(to, "fixed@brand.example.com");
+    const cc = screen.getByLabelText("참조");
+    await user.clear(cc);
+    await user.type(cc, "fixedcc@brand.example.com");
     expect(screen.queryByRole("region", { name: "발주 미리보기" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "메일 다시 보내기" }));
@@ -374,6 +427,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const mails = callsTo("/order-converter/api/send-email", "POST");
     expect(mails).toHaveLength(2);
     expect((mails[1][1]?.body as FormData).get("to")).toBe("fixed@brand.example.com");
+    expect((mails[1][1]?.body as FormData).get("cc")).toBe("fixedcc@brand.example.com");
     expect(onSent).toHaveBeenCalledWith(1);
   });
 

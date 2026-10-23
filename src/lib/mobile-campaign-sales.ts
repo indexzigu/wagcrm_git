@@ -89,7 +89,7 @@ export type MobileCampaignSalesResponse = {
    */
   coverage?: { startDate: string; truncated: boolean };
   /**
-   * 모바일 발주서 간편 전송(2026-10-23, 오너 확정 "축소판 · 받는 사람만 편집") — 상세 시트가
+   * 모바일 발주서 간편 전송(2026-10-23, 오너 확정 "축소판 · 받는 사람·참조만 편집") — 상세 시트가
    * 「발주서 전송」 버튼을 보일지와, 데스크톱 발주 API(`/order-converter/api/campaigns/{OrderCampaign.id}/…`)
    * 에 넘길 id·수신처. **진행 중(live) 응답에만** 실린다 — 마감(cached)·미연동(none)에는 없고,
    * 조합(그룹) 응답은 멤버가 주문캠페인을 정확히 하나 공유할 때만 실린다. `sendable=false` 의 사유는 서버 미리보기가 400 을 내는 조건(양식 없음)과 같은

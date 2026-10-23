@@ -35,9 +35,9 @@ import {
  *   POST /order-converter/api/send-email (multipart)                                 (메일 + 배송대기 스탬프)
  *
  * 접은 것(PC 전용으로 남긴 것): 출처 선택(준비본 가능하면 자동으로 준비본, 아니면 지금 수집) ·
- * 참조/제목/본문/파일명 편집 · 「이미 발주요청한 주문 포함」 · 엑셀 직접 첨부.
- * 남긴 것: 받는 사람 편집(메일 실패 뒤에도) · 누락(수령인·연락처·주소) 동의 1회 · 메일만 실패 시
- * 재발송(확정 반복 없음).
+ * 제목/본문/파일명 편집 · 「이미 발주요청한 주문 포함」 · 엑셀 직접 첨부.
+ * 남긴 것: 받는 사람·참조 편집(메일 실패 뒤에도 — 참조는 오너 확정 2026-10-23 추가) · 누락(수령인·연락처·
+ * 주소) 동의 1회 · 메일만 실패 시 재발송(확정 반복 없음).
  *
  * ⛔ 확정 버튼을 `<form>` 제출로 만들지 말 것 — 입력칸 Enter 한 번이 네이버 발주확인 + 브랜드사 메일이
  *    된다(되돌릴 수 없다). 데스크톱 창과 같은 이유로 이 시트에는 form 이 없고 버튼은 전부 type="button".
@@ -103,10 +103,14 @@ export function MobilePurchaseOrderSheet({
   const [error, setError] = useState<string | null>(null);
   const [toError, setToError] = useState<string | null>(null);
   const [to, setTo] = useState(purchaseOrder.toEmail ?? "");
+  // 참조 — 비워도 된다(그때는 cc 를 보내지 않는다). 형식은 받는 사람과 같은 규칙으로 검사한다.
+  const [cc, setCc] = useState(purchaseOrder.ccEmail ?? "");
+  const [ccError, setCcError] = useState<string | null>(null);
   const [missingAck, setMissingAck] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
   const [pendingMail, setPendingMail] = useState<PendingMail | null>(null);
   const toInputRef = useRef<HTMLInputElement | null>(null);
+  const ccInputRef = useRef<HTMLInputElement | null>(null);
   // 미리보기 로드 취소 신호 — 효과와 「다시 불러오기」가 같은 ref 를 쓰므로 늦게 끝난 옛 로드가 새 상태를 덮지 않는다.
   const loadSignalRef = useRef<{ cancelled: boolean }>({ cancelled: true });
   // 되돌릴 수 없는 구간(발주확인·메일) 재진입 가드 — 상태(step)보다 먼저 닫힌다.
@@ -122,6 +126,7 @@ export function MobilePurchaseOrderSheet({
     setStep("LOADING");
     setError(null);
     setToError(null);
+    setCcError(null);
     setPreview(null);
     setMissingAck(false);
     try {
@@ -152,13 +157,14 @@ export function MobilePurchaseOrderSheet({
     if (!open) return;
     // 진행 중에는 닫히지 않으므로(아래 가드) 여기 올 때는 항상 새 세션이다.
     setTo(purchaseOrder.toEmail ?? "");
+    setCc(purchaseOrder.ccEmail ?? "");
     setResult(null);
     setPendingMail(null);
     void loadPreview();
     return () => {
       loadSignalRef.current.cancelled = true;
     };
-  }, [open, purchaseOrder.toEmail, loadPreview]);
+  }, [open, purchaseOrder.toEmail, purchaseOrder.ccEmail, loadPreview]);
 
   /** 닫기 가드 — 발주확인·메일이 진행 중이면 닫지 않는다(닫았다 열면 두 번째 발주확인이 가능해진다). */
   const handleOpenChange = (next: boolean) => {
@@ -166,19 +172,17 @@ export function MobilePurchaseOrderSheet({
     onOpenChange(next);
   };
 
-  const validateTo = (): boolean => {
-    if (!to.trim()) {
-      setToError("받는 사람 이메일을 입력하세요.");
-      toInputRef.current?.focus();
-      return false;
-    }
-    if (!isMailRecipientListValid(to)) {
-      setToError("이메일 주소 형식을 확인하세요.");
-      toInputRef.current?.focus();
-      return false;
-    }
-    setToError(null);
-    return true;
+  /** 수신처 검사 — 되돌릴 수 없는 발주확인 **전에** 돈다. 받는 사람은 필수, 참조는 비어 있으면 통과. */
+  const validateRecipients = (): boolean => {
+    let nextToError: string | null = null;
+    if (!to.trim()) nextToError = "받는 사람 이메일을 입력하세요.";
+    else if (!isMailRecipientListValid(to)) nextToError = "이메일 주소 형식을 확인하세요.";
+    const nextCcError = cc.trim() && !isMailRecipientListValid(cc) ? "참조 이메일 주소 형식을 확인하세요." : null;
+    setToError(nextToError);
+    setCcError(nextCcError);
+    if (nextToError) toInputRef.current?.focus();
+    else if (nextCcError) ccInputRef.current?.focus();
+    return !nextToError && !nextCcError;
   };
 
   const postMail = async (file: File, orderIdsCsv: string) => {
@@ -186,7 +190,7 @@ export function MobilePurchaseOrderSheet({
     const formData = buildSendEmailFormData({
       file,
       to: to.trim(),
-      cc: purchaseOrder.ccEmail ?? undefined,
+      cc: cc.trim() || undefined,
       subject: defaults.subject,
       message: defaults.message,
       campaignId: purchaseOrder.orderCampaignId,
@@ -219,14 +223,14 @@ export function MobilePurchaseOrderSheet({
 
   const handleRetryMail = () => {
     if (!pendingMail || step !== "MAIL_FAILED") return;
-    if (!validateTo()) return;
+    if (!validateRecipients()) return;
     void sendCommittedMail(pendingMail);
   };
 
   const handleCommit = async () => {
     // 클릭 즉시 단계를 바꿔 중복 탭을 막는다 — 이 버튼은 되돌릴 수 없는 외부 효과를 낸다.
     if (!preview || step !== "PREVIEW" || inFlightRef.current) return;
-    if (!validateTo()) return;
+    if (!validateRecipients()) return;
     inFlightRef.current = true;
     setError(null);
     setStep("COMMITTING");
@@ -289,34 +293,33 @@ export function MobilePurchaseOrderSheet({
   const recipientField = (
     <MobileSheetCard title="받는 곳" ariaLabel="받는 곳">
       <div className="flex flex-col gap-2 px-6 pb-5">
-        <label htmlFor="mobile-po-to" className="text-xs font-medium text-foreground">
-          메일 주소
-        </label>
-        <input
+        <RecipientInput
           id="mobile-po-to"
-          ref={toInputRef}
-          type="email"
-          inputMode="email"
-          autoComplete="off"
-          autoCapitalize="none"
+          label="받는 사람"
           placeholder="브랜드 발주 메일 주소"
+          inputRef={toInputRef}
           value={to}
-          onChange={(e) => {
-            setTo(e.target.value);
+          error={toError}
+          disabled={busy}
+          onChange={(value) => {
+            setTo(value);
             if (toError) setToError(null);
           }}
-          disabled={busy}
-          aria-invalid={toError ? true : undefined}
-          aria-describedby="mobile-po-to-err"
-          className={FIELD_CLASS}
         />
-        {/* 오류 줄은 항상 자리를 둔다(레이아웃 안정) — 비어 있으면 높이만, 생기면 낭독(alert). */}
-        <p id="mobile-po-to-err" role="alert" className="min-h-4 text-xs text-status-urgent-text">
-          {toError}
-        </p>
-        <p className="text-xs text-slate-500">
-          {purchaseOrder.ccEmail ? `참조 ${purchaseOrder.ccEmail} · ` : ""}제목과 본문은 정해진 문구로 갑니다.
-        </p>
+        <RecipientInput
+          id="mobile-po-cc"
+          label="참조"
+          placeholder="비워 두면 참조 없이 보냅니다"
+          inputRef={ccInputRef}
+          value={cc}
+          error={ccError}
+          disabled={busy}
+          onChange={(value) => {
+            setCc(value);
+            if (ccError) setCcError(null);
+          }}
+        />
+        <p className="text-xs text-slate-500">여러 명은 쉼표로 구분합니다. 제목과 본문은 정해진 문구로 갑니다.</p>
       </div>
     </MobileSheetCard>
   );
@@ -414,8 +417,11 @@ export function MobilePurchaseOrderSheet({
               >
                 {step === "COMMITTING" ? "발주확인 중…" : step === "SENDING" ? "메일 보내는 중…" : commitLabel}
               </Button>
+              {/* 안내문은 버튼이 실제로 하는 일과 같아야 한다 — 발주확인이 필요 없으면 메일만 나간다. */}
               <p className="px-2 text-center text-xs text-slate-500">
-                누르면 네이버 발주확인과 브랜드사 메일 발송이 함께 일어나며 되돌릴 수 없습니다.
+                {(summary.needsConfirmCount ?? 0) > 0
+                  ? "누르면 네이버 발주확인과 브랜드사 메일 발송이 함께 일어나며 되돌릴 수 없습니다."
+                  : "누르면 브랜드사로 발주서 메일이 나가며 되돌릴 수 없습니다."}
               </p>
             </>
           ) : null}
@@ -494,6 +500,53 @@ export function MobilePurchaseOrderSheet({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** 수신처 한 칸 — 라벨·입력·오류 줄(항상 자리를 둔다: 레이아웃 안정, 생기면 alert 로 낭독). */
+function RecipientInput({
+  id,
+  label,
+  placeholder,
+  inputRef,
+  value,
+  error,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  value: string;
+  error: string | null;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-xs font-medium text-foreground">
+        {label}
+      </label>
+      <input
+        id={id}
+        ref={inputRef}
+        type="email"
+        inputMode="email"
+        autoComplete="off"
+        autoCapitalize="none"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={`${id}-err`}
+        className={FIELD_CLASS}
+      />
+      <p id={`${id}-err`} role="alert" className="min-h-4 text-xs text-status-urgent-text">
+        {error}
+      </p>
+    </div>
   );
 }
 
