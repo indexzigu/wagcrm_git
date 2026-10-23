@@ -24,6 +24,7 @@ import {
   resolveTaxFilingChannelGroup,
   type CampaignMoneySlot,
   type TaxInvoiceBoardRow,
+  resolveSlotBadgeText,
 } from "../tax-filing-board";
 import { GOODS_COST_CONSOLIDATED_LABEL } from "../goods-cost";
 import { isSupplierInvoiceLabel, isSellerInvoiceLabel } from "../campaign-checklist";
@@ -1465,5 +1466,22 @@ describe("월정산 공급사 행 — 달별 계산서가 「끝」을 정한다
       progressOf(1, 2, ["2026-10"]),
     );
     expect(rowFor(board.rows, "ISSUE")!.monthlyInvoice).toEqual({ done: 1, total: 2, review: null });
+  });
+});
+
+describe("resolveSlotBadgeText — 정산 목록 배지 축약(2026-10-22 오너 확정)", () => {
+  it("대금 칸은 「상대 2자 + 행위 2자」, 상대 없는 몰 정산금 칸은 행위만", () => {
+    expect(resolveSlotBadgeText({ counterpart: "SUPPLIER", verb: "지급" })).toBe("공급 지급");
+    expect(resolveSlotBadgeText({ counterpart: "SELLER", verb: "입금" })).toBe("셀러 입금");
+    expect(resolveSlotBadgeText({ counterpart: null, verb: "입금" })).toBe("입금");
+  });
+
+  it("계산서 칸은 방향 낱말을 붙이고, 해당 없음이면 상대만", () => {
+    expect(resolveSlotBadgeText({ counterpart: "SUPPLIER", directionLabel: "발행", applicable: true })).toBe("공급 발행");
+    expect(resolveSlotBadgeText({ counterpart: "SELLER", directionLabel: "수취", applicable: false })).toBe("셀러");
+  });
+
+  it("실제 슬롯 파생과 맞물린다 — 셀러몰은 공급 지급 · 셀러 입금", () => {
+    expect(resolveCampaignMoneySlots("SELLER_MALL").map(resolveSlotBadgeText).sort()).toEqual(["공급 지급", "셀러 입금"]);
   });
 });

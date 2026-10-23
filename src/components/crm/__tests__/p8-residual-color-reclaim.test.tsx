@@ -215,19 +215,19 @@ describe("② 후보 2 — settlement-table 입금/지급: 가드레일 2 정렬
     // money-direction.ts 의 핵심 계약: 한쪽만 칠하면 "지급 = 나쁜 것"으로 오독된다.
     // #452 슬롯화 이후 대칭은 구조적이다 — 입금/지급 줄이 같은 map 템플릿 하나에서 나온다.
     //
-    // 2026-08-26 아이콘화로 완료색이 **공유 컴포넌트**(`SlotIconBadge`)로 올라갔다.
+    // 2026-08-26 이후 완료색이 **공유 컴포넌트**(`SlotLabelBadge`)로 올라갔다.
     // 그래서 개수는 이 열의 구간이 아니라 그 컴포넌트에서 센다 — 대칭이 더 강해졌다
     // (이제 정산일정·계산서 **두 열**이 같은 한 곳을 쓴다).
     // ⚠️ 구간을 종전대로 두면 색 리터럴이 0개라 `.not.toContain` 류가 전부 공허하게
     // 초록이 된다 — 그래서 **긍정 단언**으로 소비 구조까지 고정한다.
-    const shared = slice(CODE.settlement, "function SlotIconBadge", "interface SettlementTableProps");
+    const shared = slice(CODE.settlement, "function SlotLabelBadge", "interface SettlementTableProps");
     const pair = "bg-status-success-bg text-status-success";
     expect(shared.split(pair).length - 1, "완료색은 공유 템플릿 한 곳에만 있어야 한다").toBe(1);
     const neutral = "bg-slate-100 text-slate-600";
     expect(shared.split(neutral).length - 1, "미완료 중립도 공유 템플릿 한 곳에만 있어야 한다").toBe(1);
     // 이 열이 그 공유 템플릿을 실제로 쓰는지, 그리고 슬롯 파생인지까지 고정한다 —
     // 색 개수만 세면 map 을 걷어내고 두 줄을 다시 손으로 쓴 회귀를 못 잡는다.
-    expect(region).toContain("SlotIconBadge");
+    expect(region).toContain("SlotLabelBadge");
     expect(region).toContain("moneySlots.map");
     // 소비처가 색을 다시 인라인하기 시작하면 여기서 깨진다.
     expect(region).not.toContain(pair);
@@ -527,7 +527,7 @@ describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", ()
         onToggleAll={vi.fn()}
       />,
     );
-    // 아이콘 배지는 보이는 글자가 없다 — 접근 가능한 이름(sr-only)으로 찾아 **부모 배지**에서
+    // 배지의 보이는 글자는 축약 라벨이다 — 전체 이름(sr-only)으로 찾아 **부모 배지**에서
     // 색을 본다. ⛔ `getByText(label).className` 로 되돌리지 말 것: 잡히는 노드가 sr-only span
     // 이라 단언이 "sr-only" 를 검사하는 무의미한 초록이 된다.
     for (const label of ["공급사 입금", "셀러 지급"]) {

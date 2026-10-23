@@ -1482,6 +1482,35 @@ export function resolveCampaignMoneySlots(salesChannel: string): CampaignMoneySl
 }
 
 /**
+ * 정산 목록 배지(좁은 표 칸)용 상대 **축약**. 전체 이름 `COUNTERPART_LABEL`(「공급사」)과 같은
+ * 이유로 ⛔ 이 모듈 밖으로 내보내지 않는다 — 소비처는 아래 `resolveSlotBadgeText` 를 쓴다.
+ */
+const COUNTERPART_SHORT_LABEL: Record<TaxInvoiceCounterpart, string> = {
+  SUPPLIER: "공급",
+  SELLER: "셀러",
+};
+
+/**
+ * 정산 목록 배지의 **보이는 축약 라벨** — 「상대 2자 + 행위 2자」(오너 확정 2026-10-22).
+ * 「공급사 입금」(5자)이 정산 목록의 128px 칸에 날짜와 한 줄로 안 들어가서 줄였다.
+ * 전체 이름은 `counterpartLabel`·`shortTitle` 이 계속 소유한다(화면리더·호버용).
+ *
+ * - 대금 칸: 「공급 입금」·「셀러 지급」. 상대가 null 인 몰 정산금 칸은 상대를 지어내지 않고 행위만.
+ * - 계산서 칸: 「공급 발행」·「셀러 수취」. 해당 없음이면 상대만(「해당없음」 낱말은 화면이 날짜 자리에 둔다).
+ */
+export function resolveSlotBadgeText(
+  slot:
+    | Pick<CampaignMoneySlot, "counterpart" | "verb">
+    | Pick<CampaignInvoiceSlotView, "counterpart" | "directionLabel" | "applicable">,
+): string {
+  if ("verb" in slot) {
+    return slot.counterpart ? `${COUNTERPART_SHORT_LABEL[slot.counterpart]} ${slot.verb}` : slot.verb;
+  }
+  const subject = COUNTERPART_SHORT_LABEL[slot.counterpart];
+  return slot.applicable ? `${subject} ${slot.directionLabel}` : subject;
+}
+
+/**
  * 대금 칸이 **표시**할 금액의 근거 필드. `CampaignRow` 전체가 아니라 이 셋뿐이다 —
  * 캘린더는 월 단위 대량 조회라 select 를 넓히는 대가가 크다.
  */
