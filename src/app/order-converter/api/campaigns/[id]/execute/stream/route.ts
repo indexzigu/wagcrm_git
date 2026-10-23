@@ -7,6 +7,7 @@ import { loadOrderTemplateBuffer, resolveOrderBrand } from '@/lib/order-converte
 import { syncOrdersByIds } from '@/lib/order-converter/naver-order-sync';
 import { buildPurchaseOrderRows, describeEmptyPurchaseOrder } from '@/lib/order-converter/purchase-order-rows';
 import { confirmPlaceOrders } from '@/lib/order-converter/place-order-confirm';
+import { PURCHASE_ORDER_COPY } from '@/lib/order-converter/purchase-order-client';
 import {
   createNaverCallTally,
   noteNaverLogicalCall,
@@ -156,7 +157,7 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
           return;
         }
 
-        sendEvent({ progress: 60, message: `발주 대상 ${matchedOrders.length}건 확인됨. 스마트스토어 발주확인 처리 중...` });
+        sendEvent({ progress: 60, message: `발주 대상 ${matchedOrders.length}건 확인됨. 스마트스토어 ${PURCHASE_ORDER_COPY.needsConfirm} 처리 중...` });
 
         // 4. 발주확인 API 호출 (아직 발주대기(NOT_YET)인 건만 확인 처리)
         // 과거 사고: 청크 100이 API 제한/레이트리밋에 걸려 전멸했는데 console.warn으로 삼켜져
@@ -174,7 +175,7 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
             apiRequest: (method, path, body) => apiRequest(method, path, body),
             onProgress: (p) => {
               if (p.kind === 'chunk') {
-                sendEvent({ progress: 60 + Math.floor((p.offset / p.total) * 15), message: `발주확인 중... (${p.done}/${p.total})` });
+                sendEvent({ progress: 60 + Math.floor((p.offset / p.total) * 15), message: `${PURCHASE_ORDER_COPY.committing} (${p.done}/${p.total})` });
               } else {
                 sendEvent({ progress: 78, message: `미확인 ${p.pending}건 네이버 확인 대기, 자동 재시도 중 (${p.round}/${p.maxRounds - 1})` });
               }
@@ -189,7 +190,7 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
             const parts = [`성공 ${confirmSuccessCount}건`];
             if (confirmFailCount > 0) parts.push(`실패 ${confirmFailCount}건`);
             if (confirmDeferredCount > 0) parts.push(`확인 대기 잔류 ${confirmDeferredCount}건(자동 재시도 후에도 네이버 미확인)`);
-            sendEvent({ progress: 80, message: `발주확인 ${parts.join(' · ')}${confirmFirstError ? `: ${confirmFirstError}` : ''}` });
+            sendEvent({ progress: 80, message: `${PURCHASE_ORDER_COPY.needsConfirm} ${parts.join(' · ')}${confirmFirstError ? `: ${confirmFirstError}` : ''}` });
           }
         }
 
