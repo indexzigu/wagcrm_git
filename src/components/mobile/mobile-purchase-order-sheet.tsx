@@ -11,8 +11,17 @@ import { buildPurchaseOrderMailDefaults } from "@/lib/order-converter/purchase-o
 // ⛔ `@/lib/order-converter/prepared-po` 를 여기서 가져오지 말 것 — 서버 전용 의존(네이버 클라이언트·bcrypt)이
 //    딸려 와 클라이언트 번들이 깨진다(실측 2026-10-23). 시각 포맷은 의존 0 인 형제 모듈에서.
 import { formatKstShort } from "@/lib/order-converter/prepared-po-format";
-import type { DroppedOrder, PurchaseOrderPreviewRow } from "@/lib/order-converter/purchase-order-rows";
-import type { PurchaseOrderPreviewSummary } from "@/components/crm/shipping/modals/PurchaseOrderPreview";
+import {
+  DROP_REASON_LABEL,
+  base64ToFile,
+  buildSendEmailFormData,
+  readApiError as readError,
+  type PurchaseOrderAvailability as Availability,
+  type PurchaseOrderPendingMail as PendingMail,
+  type PurchaseOrderPreviewResponse as Preview,
+  type PurchaseOrderSendResult as SendResult,
+  type PurchaseOrderSource as Source,
+} from "@/lib/order-converter/purchase-order-client";
 
 /**
  * 모바일 발주서 **간편 전송** 시트 (오너 확정 2026-10-23: "모바일에서는 간편 전송 기능(축소판),
@@ -45,32 +54,7 @@ type Step =
   | "MAIL_FAILED"
   | "ERROR";
 
-type Source = "prepared" | "live";
-type Availability =
-  | { available: true; asOfIso: string }
-  | {
-      available: false;
-      reason: "disabled" | "no-sync" | "stale-sync" | "window-too-old";
-      asOfIso: string | null;
-      /** 서버가 붙여 주는 사람 말 사유(purchase-order GET) */
-      message?: string;
-    };
-type Preview = {
-  source: Source;
-  asOfIso: string;
-  rows: PurchaseOrderPreviewRow[];
-  summary: PurchaseOrderPreviewSummary;
-  empty: { message: string; noWork: boolean } | null;
-};
-type ConfirmSummary = { requested: number; succeeded: number; failed: number; firstError: string };
-type SendResult = { sentCount: number; fileName: string; confirm: ConfirmSummary; dropped: DroppedOrder[] };
-type PendingMail = { file: File; orderIdsCsv: string; result: SendResult };
-
-const DROP_REASON_LABEL: Record<DroppedOrder["reason"], string> = {
-  "status-changed": "취소·변경됨",
-  "not-returned": "네이버 응답 없음",
-  "already-requested": "이미 발주요청됨",
-};
+// 응답 타입·드롭 사유 라벨·파일 변환은 purchase-order-client.ts(데스크톱 창과 공유)에서 온다.
 
 const FIELD_CLASS =
   "min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-base text-foreground placeholder:text-slate-500 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring aria-invalid:border-status-urgent disabled:opacity-50";
@@ -95,25 +79,11 @@ function firstSentence(text: string): string {
   return idx > 0 ? text.slice(0, idx + 1) : text;
 }
 
-async function readError(res: Response, fallback: string): Promise<string> {
-  const data = await res.json().catch(() => ({}));
-  return (data && typeof data.error === "string" && data.error) || fallback;
-}
-
-function base64ToFile(base64: string, name: string): File {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new File([bytes], name, {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-}
-
 export type MobilePurchaseOrderSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** 매출 응답의 `purchaseOrder` — 주문캠페인 id·수신처·셀러명 */
-  info: MobilePurchaseOrderInfo;
+  purchaseOrder: MobilePurchaseOrderInfo;
   /** 헤더 부제용 캠페인 이름(딜 · 셀러) */
   campaignLabel: string;
   /** 메일까지 성공했을 때 — 상위 시트가 매출 현황을 다시 읽는다(배송대기 수가 바뀐다) */
@@ -123,7 +93,7 @@ export type MobilePurchaseOrderSheetProps = {
 export function MobilePurchaseOrderSheet({
   open,
   onOpenChange,
-  info,
+  purchaseOrder,
   campaignLabel,
   onSent,
 }: MobilePurchaseOrderSheetProps) {
@@ -132,7 +102,7 @@ export function MobilePurchaseOrderSheet({
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toError, setToError] = useState<string | null>(null);
-  const [to, setTo] = useState(info.toEmail ?? "");
+  const [to, setTo] = useState(purchaseOrder.toEmail ?? "");
   const [missingAck, setMissingAck] = useState(false);
   const [result, setResult] = useState<SendResult | null>(null);
   const [pendingMail, setPendingMail] = useState<PendingMail | null>(null);
@@ -141,7 +111,7 @@ export function MobilePurchaseOrderSheet({
   const loadSignalRef = useRef<{ cancelled: boolean }>({ cancelled: true });
   // 되돌릴 수 없는 구간(발주확인·메일) 재진입 가드 — 상태(step)보다 먼저 닫힌다.
   const inFlightRef = useRef(false);
-  const apiBase = `/order-converter/api/campaigns/${info.orderCampaignId}/purchase-order`;
+  const apiBase = `/order-converter/api/campaigns/${purchaseOrder.orderCampaignId}/purchase-order`;
 
   const busy = step === "LOADING" || step === "COMMITTING" || step === "SENDING";
 
@@ -181,14 +151,14 @@ export function MobilePurchaseOrderSheet({
   useEffect(() => {
     if (!open) return;
     // 진행 중에는 닫히지 않으므로(아래 가드) 여기 올 때는 항상 새 세션이다.
-    setTo(info.toEmail ?? "");
+    setTo(purchaseOrder.toEmail ?? "");
     setResult(null);
     setPendingMail(null);
     void loadPreview();
     return () => {
       loadSignalRef.current.cancelled = true;
     };
-  }, [open, info.toEmail, loadPreview]);
+  }, [open, purchaseOrder.toEmail, loadPreview]);
 
   /** 닫기 가드 — 발주확인·메일이 진행 중이면 닫지 않는다(닫았다 열면 두 번째 발주확인이 가능해진다). */
   const handleOpenChange = (next: boolean) => {
@@ -212,15 +182,16 @@ export function MobilePurchaseOrderSheet({
   };
 
   const postMail = async (file: File, orderIdsCsv: string) => {
-    const defaults = buildPurchaseOrderMailDefaults(info.sellerName);
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("to", to.trim());
-    if (info.ccEmail) formData.append("cc", info.ccEmail);
-    formData.append("subject", defaults.subject);
-    formData.append("message", defaults.message);
-    formData.append("campaignId", info.orderCampaignId);
-    if (orderIdsCsv) formData.append("productOrderIds", orderIdsCsv);
+    const defaults = buildPurchaseOrderMailDefaults(purchaseOrder.sellerName);
+    const formData = buildSendEmailFormData({
+      file,
+      to: to.trim(),
+      cc: purchaseOrder.ccEmail ?? undefined,
+      subject: defaults.subject,
+      message: defaults.message,
+      campaignId: purchaseOrder.orderCampaignId,
+      orderIdsCsv,
+    });
     const res = await fetch("/order-converter/api/send-email", { method: "POST", body: formData });
     if (!res.ok) throw new Error(await readError(res, "이메일 발송에 실패했습니다."));
   };
@@ -299,9 +270,10 @@ export function MobilePurchaseOrderSheet({
   const commitLabel = (summary?.needsConfirmCount ?? 0) > 0 ? "발주확인하고 발송" : "발송";
 
   // 화면 분기 — 결과 카드는 재발송(SENDING + pendingMail) 중에도 유지된다(미리보기로 튀지 않는다).
-  const showResult = result && (step === "SUCCESS" || step === "MAIL_FAILED" || (step === "SENDING" && pendingMail));
+  const showResult =
+    result !== null && (step === "SUCCESS" || step === "MAIL_FAILED" || (step === "SENDING" && pendingMail !== null));
   const showPreview =
-    preview && summary && !showResult && (step === "PREVIEW" || step === "COMMITTING" || step === "SENDING");
+    preview !== null && !showResult && (step === "PREVIEW" || step === "COMMITTING" || step === "SENDING");
   const retrying = step === "SENDING" && !!pendingMail;
 
   const sourceLine = preview
@@ -343,7 +315,7 @@ export function MobilePurchaseOrderSheet({
           {toError}
         </p>
         <p className="text-xs text-slate-500">
-          {info.ccEmail ? `참조 ${info.ccEmail} · ` : ""}제목과 본문은 정해진 문구로 갑니다.
+          {purchaseOrder.ccEmail ? `참조 ${purchaseOrder.ccEmail} · ` : ""}제목과 본문은 정해진 문구로 갑니다.
         </p>
       </div>
     </MobileSheetCard>

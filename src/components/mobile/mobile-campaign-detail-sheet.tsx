@@ -363,6 +363,9 @@ export function MobileCampaignDetailSheet({
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
   // 발주서 간편 전송 2차 시트(2026-10-23). 열림 여부만 여기 두고 진행 상태는 그 시트가 가진다.
   const [poSheetOpen, setPoSheetOpen] = useState(false);
+  // 버튼·2차 시트 노출 조건 한 곳 — 진행 중 단일 캠페인에만 매출 응답이 sendable 을 싣는다(그룹은 범위 밖).
+  const purchaseOrderInfo =
+    campaign?.kind !== "group" && sales?.purchaseOrder?.sendable ? sales.purchaseOrder : null;
   // 재조회 시 스켈레톤 없이 기존 수치를 유지하기 위한 플래그(당김 재조회 전용).
   const silentReloadRef = useRef(false);
   const followUpTimerRef = useRef<number | null>(null);
@@ -634,7 +637,7 @@ export function MobileCampaignDetailSheet({
                   <SalesDetailBody sales={sales} todayYmd={effectiveTodayYmd} />
                   {/* 발주서 간편 전송 — 진행 중 단일 캠페인에만 매출 응답이 purchaseOrder.sendable 을 싣는다
                       (마감·미연동·그룹은 필드 자체가 없어 버튼이 생기지 않는다). 이 시트의 유일한 청록 채움. */}
-                  {campaign.kind !== "group" && sales.purchaseOrder?.sendable ? (
+                  {purchaseOrderInfo ? (
                     <Button
                       type="button"
                       onClick={() => setPoSheetOpen(true)}
@@ -716,11 +719,11 @@ export function MobileCampaignDetailSheet({
         </div>
       </SheetContent>
       {/* 발주서 간편 전송 2차 시트 — 메일까지 성공하면 매출 현황을 조용히 다시 읽는다(배송대기 수가 바뀐다). */}
-      {campaign.kind !== "group" && sales?.purchaseOrder?.sendable ? (
+      {purchaseOrderInfo ? (
         <MobilePurchaseOrderSheet
           open={poSheetOpen}
           onOpenChange={setPoSheetOpen}
-          info={sales.purchaseOrder}
+          purchaseOrder={purchaseOrderInfo}
           campaignLabel={`${campaign.dealName} · ${campaign.sellerName}`}
           onSent={() => reloadSales()}
         />

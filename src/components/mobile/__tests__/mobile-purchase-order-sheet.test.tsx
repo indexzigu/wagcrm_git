@@ -107,7 +107,7 @@ function renderSheet(props: Partial<Parameters<typeof MobilePurchaseOrderSheet>[
     <MobilePurchaseOrderSheet
       open
       onOpenChange={vi.fn()}
-      info={INFO}
+      purchaseOrder={INFO}
       campaignLabel="비타민C 앰플 · 하늘맘"
       onSent={onSent}
       {...props}
@@ -274,7 +274,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
   it("받는 사람이 비어 있으면 확정 POST 를 보내지 않는다", async () => {
     stubFetch({});
     const user = userEvent.setup();
-    renderSheet({ info: { ...INFO, toEmail: null } });
+    renderSheet({ purchaseOrder: { ...INFO, toEmail: null } });
 
     await user.click(await screen.findByRole("button", { name: "발송" }));
     expect(screen.getByRole("alert")).toHaveTextContent("받는 사람 이메일을 입력하세요.");
@@ -284,7 +284,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
   it("이메일 형식이 아니면 되돌릴 수 없는 발주확인 전에 막는다 — 쉼표 목록은 허용", async () => {
     stubFetch({});
     const user = userEvent.setup();
-    renderSheet({ info: { ...INFO, toEmail: "a@b" } });
+    renderSheet({ purchaseOrder: { ...INFO, toEmail: "a@b" } });
 
     await user.click(await screen.findByRole("button", { name: "발송" }));
     expect(screen.getByRole("alert")).toHaveTextContent("이메일 주소 형식을 확인하세요.");
@@ -336,6 +336,21 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     await user.click(await screen.findByRole("button", { name: "발송" }));
     expect(await screen.findByText(/네이버 응답 없음.*미리보기를 다시 불러와/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "발송" })).toBeNull();
+    expect(callsTo("/order-converter/api/send-email", "POST")).toHaveLength(0);
+  });
+
+  it("확정 409(보낼 행 0건 — 전부 취소·이미 요청됨)도 서버 문장을 보이고 메일은 보내지 않는다", async () => {
+    stubFetch({
+      commit: {
+        status: 409,
+        body: { error: "발주서에 실을 주문이 없습니다.", dropped: [{ productOrderId: "PO-1", recipientName: "김수령", reason: "already-requested" }], confirm: { requested: 0, succeeded: 0, failed: 0, firstError: "" } },
+      },
+    });
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.click(await screen.findByRole("button", { name: "발송" }));
+    expect(await screen.findByText(/발주서에 실을 주문이 없습니다\..*미리보기를 다시 불러와/)).toBeInTheDocument();
     expect(callsTo("/order-converter/api/send-email", "POST")).toHaveLength(0);
   });
 

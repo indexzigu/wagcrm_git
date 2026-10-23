@@ -32,6 +32,7 @@ import {
   type PreparedPoAvailability,
 } from '@/lib/order-converter/prepared-po';
 import { confirmPlaceOrders } from '@/lib/order-converter/place-order-confirm';
+import { kstYymmdd } from '@/lib/order-converter/purchase-order-mail-defaults';
 import { getSnapshotL1Cache, hydrateSnapshotL1 } from '@/lib/order-converter/snapshot-l1-cache';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
@@ -427,7 +428,8 @@ async function commitPurchaseOrder(args: {
   });
 
   const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const yymmdd = `${String(kst.getUTCFullYear()).slice(2)}${String(kst.getUTCMonth() + 1).padStart(2, '0')}${String(kst.getUTCDate()).padStart(2, '0')}`;
+  // 파일명 날짜 = 메일 제목 날짜와 같은 함수(purchase-order-mail-defaults.ts) — 사본 둘이 어긋나지 않게.
+  const yymmdd = kstYymmdd();
   const provider = orderBrand?.displayName || campaign.template || '기본';
 
   // 일일 발주 태스크(구 execute 와 같은 기록) — 송장 회신 메일 검색이 이 날짜들을 쓴다.

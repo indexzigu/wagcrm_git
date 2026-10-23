@@ -1,9 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DialogTitle } from '@/components/ui/dialog';
 import { ShippingDialogFrame } from './ShippingDialogFrame';
-import { PurchaseOrderPreview, type PurchaseOrderPreviewSummary } from './PurchaseOrderPreview';
+import { PurchaseOrderPreview } from './PurchaseOrderPreview';
 import { formatLastSyncLabel } from '@/lib/date-utils';
-import type { DroppedOrder, PurchaseOrderPreviewRow } from '@/lib/order-converter/purchase-order-rows';
+import {
+  DROP_REASON_LABEL,
+  base64ToFile,
+  buildSendEmailFormData,
+  readApiError as readError,
+  type PurchaseOrderAvailability as Availability,
+  type PurchaseOrderPendingMail as PendingMail,
+  type PurchaseOrderPreviewResponse as Preview,
+  type PurchaseOrderSendResult as SendResult,
+  type PurchaseOrderSource as Source,
+} from '@/lib/order-converter/purchase-order-client';
 
 /**
  * 발주요청(발주서 첨부 메일) 창 — 발주 자동화 2단계(오너 승인 2026-10-06).
@@ -45,42 +55,13 @@ type EmailSendModalProps = {
   addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
 };
 
-type Source = 'prepared' | 'live';
-type Availability = { available: boolean; reason?: string; message?: string; asOfIso: string | null };
-type Preview = {
-  source: Source;
-  asOfIso: string;
-  rows: PurchaseOrderPreviewRow[];
-  summary: PurchaseOrderPreviewSummary;
-  empty: { message: string; noWork: boolean } | null;
-};
-type ConfirmSummary = { requested: number; succeeded: number; failed: number; firstError: string };
-type SendResult = { sentCount: number; fileName: string; confirm: ConfirmSummary; dropped: DroppedOrder[] };
-type PendingMail = { file: File; orderIdsCsv: string; result: SendResult };
-
-const DROP_REASON_LABEL: Record<DroppedOrder['reason'], string> = {
-  'status-changed': '취소·변경됨',
-  'not-returned': '네이버 응답 없음',
-  'already-requested': '이미 발주요청됨',
-};
+// 응답 타입·드롭 사유 라벨·파일 변환은 purchase-order-client.ts(모바일 시트와 공유)에서 온다.
 
 // 사용자가 편집한 파일명에 .xlsx 확장자를 보장한다(빈 값이면 폴백 이름을 그대로 쓰도록 빈 문자열 반환).
 function ensureXlsxName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
   return /\.xlsx$/i.test(trimmed) ? trimmed : `${trimmed}.xlsx`;
-}
-
-function base64ToFile(base64: string, name: string): File {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new File([bytes], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-}
-
-async function readError(res: Response, fallback: string): Promise<string> {
-  const data = await res.json().catch(() => ({}));
-  return (data && typeof data.error === 'string' && data.error) || fallback;
 }
 
 const inputClass =
@@ -220,15 +201,16 @@ export default function EmailSendModal({
 
   /** 메일 발송(자동·수동 공용). 실패하면 던진다. */
   const postMail = async (file: File, orderIdsCsv: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('to', emailToStr);
-    if (emailCcStr) formData.append('cc', emailCcStr);
-    formData.append('subject', emailSubject);
-    formData.append('message', emailMessage);
-    formData.append('campaignId', campaignId);
-    // 배송대기 스탬프용 상품주문번호. 서버가 발송 성공 시 사용.
-    if (orderIdsCsv) formData.append('productOrderIds', orderIdsCsv);
+    // 필드 집합의 정본은 purchase-order-client.ts(모바일과 공유). productOrderIds = 배송대기 스탬프용.
+    const formData = buildSendEmailFormData({
+      file,
+      to: emailToStr,
+      cc: emailCcStr || undefined,
+      subject: emailSubject,
+      message: emailMessage,
+      campaignId,
+      orderIdsCsv,
+    });
     const res = await fetch('/order-converter/api/send-email', { method: 'POST', body: formData });
     if (!res.ok) throw new Error(await readError(res, '이메일 발송에 실패했습니다.'));
   };

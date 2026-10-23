@@ -912,6 +912,27 @@ describe("getMobileCampaignSales — purchaseOrder(모바일 발주서 전송 �
     });
   });
 
+  it("진행 중이어도 형제 회차 0건으로 none 이 되면 purchaseOrder 를 싣지 않는다(연동 없음과 같은 얼굴)", async () => {
+    vi.mocked(getPrisma).mockReturnValue({
+      salesCampaign: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "camp-1",
+          status: "ACTIVE",
+          startDate: new Date("2026-07-01T00:00:00+09:00"),
+          orderCampaignId: "oc-1",
+          orderCampaign: { isActive: true, template: "nutrione", toEmail: "a@b.example.com", ccEmail: null, sellerName: "하늘언니" },
+        }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      naverOrderSnapshot: { findMany: vi.fn(), findFirst: vi.fn() },
+    } as never);
+
+    const detail = await getMobileCampaignSales("camp-1", NOW);
+
+    expect(detail?.source).toBe("none");
+    expect(detail?.purchaseOrder).toBeUndefined();
+  });
+
   it("마감(cached) 캠페인에는 purchaseOrder 를 싣지 않는다 — 진행 중에 한한다", async () => {
     vi.mocked(getPrisma).mockReturnValue({
       salesCampaign: {
