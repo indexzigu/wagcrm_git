@@ -71,7 +71,8 @@ const cases: Array<{ title: string; render: (onClose: () => void) => React.React
     render: (onClose) => <SalesReportModal campaign={campaign} onClose={onClose} onToast={vi.fn()} />,
   },
   {
-    title: "발주서 첨부 발송",
+    // 창 제목은 발주요청 흐름 문구 SSOT(purchase-order-client.ts PURCHASE_ORDER_COPY.entry) — 오너 선택 1안(2026-10-23).
+    title: "발주요청",
     render: (onClose) => (
       <EmailSendModal campaignId="order-1" onClose={onClose} onSuccess={vi.fn()} addToast={vi.fn()} />
     ),

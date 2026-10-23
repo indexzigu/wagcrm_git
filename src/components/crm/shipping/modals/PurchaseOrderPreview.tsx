@@ -39,7 +39,7 @@ export function PurchaseOrderPreview({
     <div className="space-y-2">
       <p className="text-xs text-slate-700 tabular-nums" data-testid="po-preview-summary">
         상품주문 {summary.lineCount.toLocaleString('ko-KR')}건 · 수량 합계 {summary.quantityTotal.toLocaleString('ko-KR')}개 ·
-        발주확인 {summary.needsConfirmCount.toLocaleString('ko-KR')}건
+        주문확인 {summary.needsConfirmCount.toLocaleString('ko-KR')}건
         {/* 상태는 붙여 쓴 한 낱말 + 점(상태 낱말 기준 ①③, 오너 확정 2026-10-08). 무엇을 확인하는지는
             설명창이 말한다 — 이 요약 줄은 버튼·링크 안이 아니라 설명창 트리거를 둘 수 있다. */}
         {summary.missingCount > 0 && (
@@ -68,7 +68,7 @@ export function PurchaseOrderPreview({
               <th scope="col" className="px-3 py-2">옵션</th>
               <th scope="col" className="px-3 py-2 text-right">수량</th>
               <th scope="col" className="px-3 py-2">배송메시지</th>
-              <th scope="col" className="px-3 py-2">발주확인</th>
+              <th scope="col" className="px-3 py-2">주문확인</th>
             </tr>
           </thead>
           <tbody>

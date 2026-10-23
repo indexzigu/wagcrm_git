@@ -13,6 +13,7 @@ import { buildPurchaseOrderMailDefaults } from "@/lib/order-converter/purchase-o
 import { formatKstShort } from "@/lib/order-converter/prepared-po-format";
 import {
   DROP_REASON_LABEL,
+  PURCHASE_ORDER_COPY,
   base64ToFile,
   buildSendEmailFormData,
   readApiError as readError,
@@ -199,7 +200,7 @@ export function MobilePurchaseOrderSheet({
       orderIdsCsv,
     });
     const res = await fetch("/order-converter/api/send-email", { method: "POST", body: formData });
-    if (!res.ok) throw new Error(await readError(res, "이메일 발송에 실패했습니다."));
+    if (!res.ok) throw new Error(await readError(res, PURCHASE_ORDER_COPY.mailFailedFallback));
   };
 
   const sendCommittedMail = async (mail: PendingMail) => {
@@ -213,7 +214,7 @@ export function MobilePurchaseOrderSheet({
       setStep("SUCCESS");
       onSent?.(mail.result.sentCount);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "이메일 발송에 실패했습니다.";
+      const message = err instanceof Error ? err.message : PURCHASE_ORDER_COPY.mailFailedFallback;
       setPendingMail(mail);
       setResult(mail.result);
       setError(message);
@@ -249,7 +250,7 @@ export function MobilePurchaseOrderSheet({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error((typeof data?.error === "string" && data.error) || "발주 확정에 실패했습니다.");
+        throw new Error((typeof data?.error === "string" && data.error) || PURCHASE_ORDER_COPY.commitFailedFallback);
       }
       const file = base64ToFile(data.fileBase64, data.fileName);
       const ids: string[] = Array.isArray(data.productOrderIds) ? data.productOrderIds : [];
@@ -261,7 +262,7 @@ export function MobilePurchaseOrderSheet({
       });
     } catch (err) {
       // 확정 실패 — 발주확인이 일부 일어났을 수 있으니 미리보기부터 다시 받게 한다.
-      const message = err instanceof Error ? err.message : "발주 확정에 실패했습니다.";
+      const message = err instanceof Error ? err.message : PURCHASE_ORDER_COPY.commitFailedFallback;
       inFlightRef.current = false;
       setError(`${message} 미리보기를 다시 불러와 확인하세요.`);
       setPreview(null);
@@ -275,7 +276,7 @@ export function MobilePurchaseOrderSheet({
   const canSend = step === "PREVIEW" && rows.length > 0 && (!needsAck || missingAck);
   // 버튼 이름과 그 아래 안내문은 같은 판정 하나로 갈린다 — 둘이 어긋나면 안내문이 거짓말을 한다.
   const needsConfirm = (summary?.needsConfirmCount ?? 0) > 0;
-  const commitLabel = needsConfirm ? "발주확인하고 발송" : "발송";
+  const commitLabel = PURCHASE_ORDER_COPY.commit(needsConfirm);
 
   // 화면 분기 — 결과 카드는 재발송(SENDING + pendingMail) 중에도 유지된다(미리보기로 튀지 않는다).
   const showResult =
@@ -335,7 +336,11 @@ export function MobilePurchaseOrderSheet({
         showCloseButton={false}
         className="mobile-sheet-safe-bottom top-0 gap-0 overflow-y-auto rounded-none border-0 bg-slate-50 p-0"
       >
-        <MobileSheetHeader title="발주서 전송" description={campaignLabel} closeLabel="발주서 전송 닫기" />
+        <MobileSheetHeader
+          title={PURCHASE_ORDER_COPY.entry}
+          description={campaignLabel}
+          closeLabel={`${PURCHASE_ORDER_COPY.entry} 닫기`}
+        />
 
         <div className="flex flex-col gap-2.5 px-3 py-3">
           {step === "LOADING" ? (
@@ -371,7 +376,7 @@ export function MobilePurchaseOrderSheet({
                   ) : (
                     <dl className="grid grid-cols-3 gap-2 text-center">
                       <Stat label="발주" value={`${summary.lineCount}건`} />
-                      <Stat label="발주확인 필요" value={`${summary.needsConfirmCount}건`} />
+                      <Stat label={`${PURCHASE_ORDER_COPY.needsConfirm} 필요`} value={`${summary.needsConfirmCount}건`} />
                       <Stat
                         label="누락"
                         value={`${summary.missingCount}건`}
@@ -419,13 +424,17 @@ export function MobilePurchaseOrderSheet({
                 aria-busy={busy}
                 className="min-h-12 w-full rounded-xl text-sm font-bold"
               >
-                {step === "COMMITTING" ? "발주확인 중…" : step === "SENDING" ? "메일 보내는 중…" : commitLabel}
+                {step === "COMMITTING"
+                  ? PURCHASE_ORDER_COPY.committing
+                  : step === "SENDING"
+                    ? PURCHASE_ORDER_COPY.sending
+                    : commitLabel}
               </Button>
               {/* 안내문은 버튼이 실제로 하는 일과 같아야 한다 — 발주확인이 필요 없으면 메일만 나간다. */}
               <p className="px-2 text-center text-xs text-slate-500">
                 {needsConfirm
-                  ? "누르면 네이버 발주확인과 브랜드사 메일 발송이 함께 일어나며 되돌릴 수 없습니다."
-                  : "누르면 브랜드사로 발주서 메일이 나가며 되돌릴 수 없습니다."}
+                  ? "누르면 네이버 주문확인과 브랜드사 발주요청 메일이 함께 일어나며 되돌릴 수 없습니다."
+                  : "누르면 브랜드사로 발주요청 메일이 나가며 되돌릴 수 없습니다."}
               </p>
             </>
           ) : null}
@@ -433,8 +442,8 @@ export function MobilePurchaseOrderSheet({
           {showResult && result ? (
             <>
               <MobileSheetCard
-                title={step === "SUCCESS" ? "메일 발송됨" : "메일 발송 실패"}
-                ariaLabel={step === "SUCCESS" ? "메일 발송됨" : "메일 발송 실패"}
+                title={step === "SUCCESS" ? PURCHASE_ORDER_COPY.successTitle : PURCHASE_ORDER_COPY.failureTitle}
+                ariaLabel={step === "SUCCESS" ? PURCHASE_ORDER_COPY.successTitle : PURCHASE_ORDER_COPY.failureTitle}
               >
                 <div className="flex flex-col gap-3 px-6 pb-5">
                   {step === "SUCCESS" ? (
@@ -446,12 +455,12 @@ export function MobilePurchaseOrderSheet({
                       role="alert"
                       className="rounded-xl bg-status-urgent-bg p-3 text-[13px] font-medium text-status-urgent-text"
                     >
-                      {error ?? "이메일 발송에 실패했습니다."}
+                      {error ?? PURCHASE_ORDER_COPY.mailFailedFallback}
                     </p>
                   )}
                   {result.confirm && result.confirm.requested > 0 ? (
                     <p className="text-xs text-slate-500">
-                      네이버 발주확인 {result.confirm.succeeded}/{result.confirm.requested}
+                      네이버 {PURCHASE_ORDER_COPY.needsConfirm} {result.confirm.succeeded}/{result.confirm.requested}
                       {result.confirm.failed > 0 ? ` · 실패 ${result.confirm.failed}건` : ""}
                     </p>
                   ) : null}
@@ -478,7 +487,7 @@ export function MobilePurchaseOrderSheet({
                     </Button>
                   ) : (
                     <p className="text-xs text-status-caution-text">
-                      네이버 발주확인은 끝났습니다. 아래 버튼은 메일만 다시 보내며 발주확인을 반복하지 않습니다. 보내지
+                      네이버 주문확인은 끝났습니다. 아래 버튼은 메일만 다시 보내며 주문확인을 반복하지 않습니다. 보내지
                       않고 닫으면 이 주문들은 다음 발주요청에 다시 잡힙니다.
                     </p>
                   )}
@@ -495,7 +504,7 @@ export function MobilePurchaseOrderSheet({
                     aria-busy={retrying}
                     className="min-h-12 w-full rounded-xl text-sm font-bold"
                   >
-                    {retrying ? "메일 보내는 중…" : "메일 다시 보내기"}
+                    {retrying ? PURCHASE_ORDER_COPY.sending : PURCHASE_ORDER_COPY.retryMail}
                   </Button>
                 </>
               ) : null}

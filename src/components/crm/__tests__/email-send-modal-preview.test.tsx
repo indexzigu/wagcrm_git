@@ -128,7 +128,7 @@ describe('발주요청 창 — 3단계 흐름', () => {
     renderModal();
     await screen.findByRole('radio', { name: /준비본 사용/ });
     await user.click(await screen.findByRole('button', { name: '미리보기' }));
-    const send = await screen.findByRole('button', { name: '발주확인하고 발송' });
+    const send = await screen.findByRole('button', { name: '주문확인하고 발주요청' });
     expect(send).toBeDisabled();
     await user.click(screen.getByRole('checkbox', { name: /빈 칸이 있는 1건/ }));
     expect(send).toBeEnabled();
@@ -141,8 +141,8 @@ describe('발주요청 창 — 3단계 흐름', () => {
     await screen.findByRole('radio', { name: /준비본 사용/ });
     await user.click(await screen.findByRole('button', { name: '미리보기' }));
     await user.click(await screen.findByRole('checkbox', { name: /빈 칸이 있는/ }));
-    await user.click(screen.getByRole('button', { name: '발주확인하고 발송' }));
-    expect(await screen.findByText(/발송 완료 · 상품주문 2건/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '주문확인하고 발주요청' }));
+    expect(await screen.findByText(/발주요청 메일 보냄 · 상품주문 2건/)).toBeInTheDocument();
     const [, init] = callsTo('/purchase-order', 'POST')[0];
     expect(JSON.parse(String(init!.body))).toMatchObject({ source: 'prepared', productOrderIds: ['A', 'B'], confirmIds: ['A'] });
     expect(onResult).toHaveBeenCalledWith(true, undefined, expect.any(String), 2);
@@ -155,9 +155,9 @@ describe('발주요청 창 — 3단계 흐름', () => {
     await screen.findByRole('radio', { name: /준비본 사용/ });
     await user.click(await screen.findByRole('button', { name: '미리보기' }));
     await user.click(await screen.findByRole('checkbox', { name: /빈 칸이 있는/ }));
-    await user.click(screen.getByRole('button', { name: '발주확인하고 발송' }));
+    await user.click(screen.getByRole('button', { name: '주문확인하고 발주요청' }));
     await user.click(await screen.findByRole('button', { name: '메일 다시 보내기' }));
-    expect(await screen.findByText(/발송 완료/)).toBeInTheDocument();
+    expect(await screen.findByText(/발주요청 메일 보냄/)).toBeInTheDocument();
     expect(callsTo('/purchase-order', 'POST')).toHaveLength(1);
     expect(callsTo('/send-email', 'POST')).toHaveLength(2);
   });
@@ -174,7 +174,7 @@ describe('발주요청 창 — 확정 실패 복구', () => {
     await screen.findByRole('radio', { name: /준비본 사용/ });
     await user.click(await screen.findByRole('button', { name: '미리보기' }));
     await user.click(await screen.findByRole('checkbox', { name: /빈 칸이 있는/ }));
-    await user.click(screen.getByRole('button', { name: '발주확인하고 발송' }));
+    await user.click(screen.getByRole('button', { name: '주문확인하고 발주요청' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('미리보기를 다시 불러와');
     expect(screen.getByRole('button', { name: '미리보기' })).toBeInTheDocument();
     expect(callsTo('/send-email', 'POST')).toHaveLength(0);
