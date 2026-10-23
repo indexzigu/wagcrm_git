@@ -156,6 +156,8 @@ export function MobilePurchaseOrderSheet({
   useEffect(() => {
     if (!open) return;
     // 진행 중에는 닫히지 않으므로(아래 가드) 여기 올 때는 항상 새 세션이다.
+    // ⚠️ 열린 채로 상위가 매출을 다시 읽어 저장된 기본 수신처가 바뀌면 두 칸이 그 값으로 초기화된다
+    //    (편집 중이던 값이 사라진다). 실제로는 시트가 열린 동안 상위 재조회가 수신처를 바꾸는 경로가 없다.
     setTo(purchaseOrder.toEmail ?? "");
     setCc(purchaseOrder.ccEmail ?? "");
     setResult(null);
@@ -271,7 +273,9 @@ export function MobilePurchaseOrderSheet({
   const summary = preview?.summary;
   const needsAck = (summary?.missingCount ?? 0) > 0;
   const canSend = step === "PREVIEW" && rows.length > 0 && (!needsAck || missingAck);
-  const commitLabel = (summary?.needsConfirmCount ?? 0) > 0 ? "발주확인하고 발송" : "발송";
+  // 버튼 이름과 그 아래 안내문은 같은 판정 하나로 갈린다 — 둘이 어긋나면 안내문이 거짓말을 한다.
+  const needsConfirm = (summary?.needsConfirmCount ?? 0) > 0;
+  const commitLabel = needsConfirm ? "발주확인하고 발송" : "발송";
 
   // 화면 분기 — 결과 카드는 재발송(SENDING + pendingMail) 중에도 유지된다(미리보기로 튀지 않는다).
   const showResult =
@@ -319,7 +323,7 @@ export function MobilePurchaseOrderSheet({
             if (ccError) setCcError(null);
           }}
         />
-        <p className="text-xs text-slate-500">여러 명은 쉼표로 구분합니다. 제목과 본문은 정해진 문구로 갑니다.</p>
+        <p className="text-xs text-slate-500">여러 명은 쉼표(,)나 세미콜론(;)으로 구분합니다. 제목과 본문은 정해진 문구로 갑니다.</p>
       </div>
     </MobileSheetCard>
   );
@@ -419,7 +423,7 @@ export function MobilePurchaseOrderSheet({
               </Button>
               {/* 안내문은 버튼이 실제로 하는 일과 같아야 한다 — 발주확인이 필요 없으면 메일만 나간다. */}
               <p className="px-2 text-center text-xs text-slate-500">
-                {(summary.needsConfirmCount ?? 0) > 0
+                {needsConfirm
                   ? "누르면 네이버 발주확인과 브랜드사 메일 발송이 함께 일어나며 되돌릴 수 없습니다."
                   : "누르면 브랜드사로 발주서 메일이 나가며 되돌릴 수 없습니다."}
               </p>
