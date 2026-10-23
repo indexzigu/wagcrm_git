@@ -635,8 +635,7 @@ export function MobileCampaignDetailSheet({
               ) : (
                 <>
                   <SalesDetailBody sales={sales} todayYmd={effectiveTodayYmd} />
-                  {/* 발주서 간편 전송 — 진행 중 단일 캠페인에만 매출 응답이 purchaseOrder.sendable 을 싣는다
-                      (마감·미연동·그룹은 필드 자체가 없어 버튼이 생기지 않는다). 이 시트의 유일한 청록 채움. */}
+                  {/* 발주서 간편 전송 — 노출 판정은 purchaseOrderInfo(위) 한 곳. 이 시트의 유일한 청록 채움. */}
                   {purchaseOrderInfo ? (
                     <Button
                       type="button"
