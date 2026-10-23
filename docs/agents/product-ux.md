@@ -88,11 +88,13 @@
   (P5와 한 몸이다).
 
 - **Mobile IA & Write Path:** 모바일은 3탭 정보구조를 유지한다. 모바일의 쓰기
-  경로는 2종이다(오너 승인 2026-07-15) — ① 예비 캠페인 생성
+  경로는 3종이다 — ① 예비 캠페인 생성
   (`POST /api/mobile/campaigns/draft`), ② 주문 동기화 트리거
   (`POST /api/mobile/order-sync`, 캠페인 상세 당겨서 새로고침 · TTL 90s
-  게이트 — 계약 상세는 `docs/agents/data-contracts.md` P7). 그 외 쓰기 경로
-  신설은 오너 게이트. 스펙 SSOT는 `MOBILE_UX_PLAN.md`.
+  게이트 — 계약 상세는 `docs/agents/data-contracts.md` P7), ③ 발주서 간편 전송
+  (캠페인 상세 시트, 데스크톱 발주 라우트 재사용 — 계약 상세는
+  `docs/agents/data-contracts.md` P7 「Mobile Purchase Order Send」). 그 외 쓰기
+  경로 신설은 오너 게이트. 스펙 SSOT는 `MOBILE_UX_PLAN.md`. (근거: log 2026-10-23)
 
 ## P5. Desktop UI Protection against Mobile Adjustments
 
