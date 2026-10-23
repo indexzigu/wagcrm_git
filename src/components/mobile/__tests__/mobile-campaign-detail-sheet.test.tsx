@@ -987,3 +987,54 @@ describe("campaignRowToDetailData 변환", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 발주서 간편 전송 진입 버튼(2026-10-23) — 매출 응답의 purchaseOrder.sendable 이 유일한 노출 조건.
+// ---------------------------------------------------------------------------
+describe("MobileCampaignDetailSheet — 발주서 전송 버튼", () => {
+  const PO = {
+    orderCampaignId: "oc-1",
+    sendable: true,
+    toEmail: "order@brand.example.com",
+    ccEmail: null,
+    sellerName: "하늘맘",
+  };
+
+  it("진행 중 단일 캠페인에 sendable 이 실리면 매출 카드 안에 「발주서 전송」 버튼이 뜬다", async () => {
+    stubSalesFetch(makeSales({ purchaseOrder: PO }));
+    render(<MobileCampaignDetailSheet open onOpenChange={() => {}} campaign={makeDetail()} todayYmd={TODAY} />);
+    const card = await screen.findByRole("region", { name: "매출상세현황" });
+    expect(await within(card).findByRole("button", { name: "발주서 전송" })).toBeInTheDocument();
+  });
+
+  it("sendable=false(양식 없음)면 버튼이 없다 — 눌러서 실패하게 두지 않는다", async () => {
+    stubSalesFetch(makeSales({ purchaseOrder: { ...PO, sendable: false, reason: "no-template" } }));
+    render(<MobileCampaignDetailSheet open onOpenChange={() => {}} campaign={makeDetail()} todayYmd={TODAY} />);
+    await screen.findByRole("region", { name: "매출상세현황" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "매출 동기화" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "발주서 전송" })).toBeNull();
+  });
+
+  it("purchaseOrder 가 없는 응답(마감·미연동)에는 버튼이 없다", async () => {
+    stubSalesFetch(makeSales());
+    render(<MobileCampaignDetailSheet open onOpenChange={() => {}} campaign={makeDetail()} todayYmd={TODAY} />);
+    await screen.findByRole("region", { name: "매출상세현황" });
+    await waitFor(() => expect(screen.getByText(/누적/)).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "발주서 전송" })).toBeNull();
+  });
+
+  it("그룹(조합) 캠페인은 응답에 sendable 이 있어도 버튼을 내지 않는다", async () => {
+    stubSalesFetch(makeSales({ purchaseOrder: PO }));
+    render(
+      <MobileCampaignDetailSheet
+        open
+        onOpenChange={() => {}}
+        campaign={makeDetail({ kind: "group", groupId: "g-1", members: [] })}
+        todayYmd={TODAY}
+      />,
+    );
+    await screen.findByRole("region", { name: "매출상세현황" });
+    await waitFor(() => expect(screen.getByText(/누적/)).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "발주서 전송" })).toBeNull();
+  });
+});

@@ -16,6 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/crm/status-badge";
 import { MobileSheetCloseChip } from "./mobile-sheet-close-chip";
+import { MobilePurchaseOrderSheet } from "./mobile-purchase-order-sheet";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateWithWeekday } from "@/lib/format";
 import {
@@ -359,6 +361,11 @@ export function MobileCampaignDetailSheet({
   // 당겨서 새로고침(POST /api/mobile/order-sync) 결과에 따른 매출 GET 재조회 키.
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
+  // 발주서 간편 전송 2차 시트(2026-10-23). 열림 여부만 여기 두고 진행 상태는 그 시트가 가진다.
+  const [poSheetOpen, setPoSheetOpen] = useState(false);
+  // 버튼·2차 시트 노출 조건 한 곳 — 진행 중 단일 캠페인에만 매출 응답이 sendable 을 싣는다(그룹은 범위 밖).
+  const purchaseOrderInfo =
+    campaign?.kind !== "group" && sales?.purchaseOrder?.sendable ? sales.purchaseOrder : null;
   // 재조회 시 스켈레톤 없이 기존 수치를 유지하기 위한 플래그(당김 재조회 전용).
   const silentReloadRef = useRef(false);
   const followUpTimerRef = useRef<number | null>(null);
@@ -626,7 +633,20 @@ export function MobileCampaignDetailSheet({
                   <p className="text-[12px] font-medium text-slate-500">판매 데이터가 연동되지 않았습니다.</p>
                 </div>
               ) : (
-                <SalesDetailBody sales={sales} todayYmd={effectiveTodayYmd} />
+                <>
+                  <SalesDetailBody sales={sales} todayYmd={effectiveTodayYmd} />
+                  {/* 발주서 간편 전송 — 진행 중 단일 캠페인에만 매출 응답이 purchaseOrder.sendable 을 싣는다
+                      (마감·미연동·그룹은 필드 자체가 없어 버튼이 생기지 않는다). 이 시트의 유일한 청록 채움. */}
+                  {purchaseOrderInfo ? (
+                    <Button
+                      type="button"
+                      onClick={() => setPoSheetOpen(true)}
+                      className="mt-4 min-h-11 w-full rounded-xl text-sm font-bold"
+                    >
+                      발주서 전송
+                    </Button>
+                  ) : null}
+                </>
               )}
             </div>
           </MobileSheetCard>
@@ -698,6 +718,16 @@ export function MobileCampaignDetailSheet({
           <p className="text-[12px] text-slate-500">메모 및 상세 설정은 PC에서 확인할 수 있습니다.</p>
         </div>
       </SheetContent>
+      {/* 발주서 간편 전송 2차 시트 — 메일까지 성공하면 매출 현황을 조용히 다시 읽는다(배송대기 수가 바뀐다). */}
+      {purchaseOrderInfo ? (
+        <MobilePurchaseOrderSheet
+          open={poSheetOpen}
+          onOpenChange={setPoSheetOpen}
+          purchaseOrder={purchaseOrderInfo}
+          campaignLabel={`${campaign.dealName} · ${campaign.sellerName}`}
+          onSent={() => reloadSales()}
+        />
+      ) : null}
     </Sheet>
   );
 }

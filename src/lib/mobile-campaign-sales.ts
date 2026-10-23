@@ -88,6 +88,23 @@ export type MobileCampaignSalesResponse = {
    * `truncated=true` 면 `startDate` 이전 구간을 못 읽은 것이므로 0으로 그리면 안 된다.
    */
   coverage?: { startDate: string; truncated: boolean };
+  /**
+   * 모바일 발주서 간편 전송(2026-10-23, 오너 확정 "축소판 · 받는 사람만 편집") — 상세 시트가
+   * 「발주서 전송」 버튼을 보일지와, 데스크톱 발주 API(`/order-converter/api/campaigns/{OrderCampaign.id}/…`)
+   * 에 넘길 id·수신처. **진행 중(live) 단일 캠페인에만** 실린다 — 마감(cached)·미연동(none)·그룹
+   * 응답에는 없다. `sendable=false` 의 사유는 서버 미리보기가 400 을 내는 조건(양식 없음)과 같은
+   * 판정이라 버튼을 아예 숨긴다(눌러서 실패하는 것보다 낫다).
+   */
+  purchaseOrder?: MobilePurchaseOrderInfo;
+};
+
+export type MobilePurchaseOrderInfo = {
+  orderCampaignId: string;
+  sendable: boolean;
+  reason?: "no-template";
+  toEmail: string | null;
+  ccEmail: string | null;
+  sellerName: string;
 };
 
 /** 매출 로더 옵션 — 인트라데이는 opt-in(위 intraday 주석). */
@@ -292,7 +309,9 @@ export async function getMobileCampaignSales(
       status: true,
       startDate: true,
       orderCampaignId: true,
-      orderCampaign: { select: { isActive: true } },
+      orderCampaign: {
+        select: { isActive: true, template: true, toEmail: true, ccEmail: true, sellerName: true },
+      },
     },
   });
   if (!campaign) return null;
@@ -314,9 +333,35 @@ export async function getMobileCampaignSales(
 
   const hasLiveOrderSource = shouldReadLiveCampaignSales(campaign);
   if (hasLiveOrderSource) {
-    return getLiveSalesDetail(campaignId, campaign.orderCampaignId, now, noneResponse, options);
+    const live = await getLiveSalesDetail(campaignId, campaign.orderCampaignId, now, noneResponse, options);
+    // 형제 회차 0건 등으로 none 이 돌아오면 발주 정보도 싣지 않는다(연동 없음과 같은 얼굴).
+    if (live.source !== "live" || !campaign.orderCampaign) return live;
+    return {
+      ...live,
+      purchaseOrder: buildMobilePurchaseOrderInfo(campaign.orderCampaignId, campaign.orderCampaign),
+    };
   }
   return getCachedSalesDetail(campaign.orderCampaignId, noneResponse, options);
+}
+
+/** 발주 버튼 노출 판정 — 서버 `purchase-order` 라우트의 400 조건(양식 없음)과 같은 게이트. */
+export function buildMobilePurchaseOrderInfo(
+  orderCampaignId: string,
+  orderCampaign: {
+    template: string | null;
+    toEmail: string | null;
+    ccEmail: string | null;
+    sellerName: string;
+  },
+): MobilePurchaseOrderInfo {
+  const base = {
+    orderCampaignId,
+    toEmail: orderCampaign.toEmail,
+    ccEmail: orderCampaign.ccEmail,
+    sellerName: orderCampaign.sellerName,
+  };
+  if (!orderCampaign.template) return { ...base, sendable: false, reason: "no-template" };
+  return { ...base, sendable: true };
 }
 
 /**
