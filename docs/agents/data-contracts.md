@@ -197,18 +197,20 @@
   **같은** `GET/POST /order-converter/api/campaigns/{OrderCampaign.id}/purchase-order` 와
   `POST /order-converter/api/send-email` 을 부른다(요청 수 계측과 `order-execute` 프록시
   버킷이 모바일에도 그대로 적용되고, 모바일만의 사본이 생기지 않게).
-  ① 노출 게이트는 모바일 매출 응답(`/api/mobile/campaigns/{id}/sales`)의 `purchaseOrder.sendable`
-  하나다 — live 단일 캠페인(판매 상태 ACTIVE 이거나 `OrderCampaign.isActive`)이면서 발주서
-  양식(`template`)이 있을 때만 true 이고(서버 미리보기가 400 을 내는 조건과 같다), cached·none·그룹
-  응답에는 필드 자체가 없다. 이 필드를 위해 네이버 호출이나 주문 블롭 조회를 더하지 않는다(아래
-  *Mobile Sales Read* 불변). 발주 라우트 호출은 사용자가 시트를 연 뒤에만 일어난다.
+  ① 노출 게이트는 모바일 매출 응답(`/api/mobile/campaigns/{id}/sales` · 조합은
+  `/api/mobile/campaign-groups/{id}/sales`)의 `purchaseOrder.sendable` 하나다 — live 응답(판매 상태
+  ACTIVE 이거나 `OrderCampaign.isActive`, 조합은 연동 멤버 중 하나라도)이면서 발주서 양식(`template`)이
+  있을 때만 true 이고(서버 미리보기가 400 을 내는 조건과 같다), 조합은 연동된 멤버들이 가리키는
+  주문캠페인이 정확히 하나일 때만 필드를 싣는다(둘 이상이면 보낼 브랜드가 하나로 정해지지 않는다).
+  cached·none 응답에는 필드 자체가 없다. 이 필드를 위해 네이버 호출이나 주문 블롭 조회를 더하지
+  않는다(아래 *Mobile Sales Read* 불변). 발주 라우트 호출은 사용자가 시트를 연 뒤에만 일어난다.
   ② 편집 가능한 값은 받는 사람(To) 뿐이다 — 참조·제목·본문·파일명은 데스크톱 기본값
   (`purchase-order-mail-defaults.ts`·서버 `fileName`) 그대로 보내고, 이미 발주요청한 주문은 싣지
   않는다(`includePending=false` 고정). 되돌릴 수 없는 발주확인 **전에** 수신처 형식을 검사한다.
   ③ 확정(발주확인·엑셀) 다음 메일 순서는 데스크톱과 같고, 메일만 실패하면 같은 파일로 재발송하며
   발주확인을 반복하지 않는다. 확정·메일 진행 중에는 시트가 닫히지 않는다(닫았다 열면 두 번째
-  발주확인이 가능해진다). 노출 판정 SSOT는 `buildMobilePurchaseOrderInfo`
-  (`src/lib/mobile-campaign-sales.ts`). 설계 정본: `docs/private/specs/2026-10-23-mobile-purchase-order-send.md`.
+  발주확인이 가능해진다). 노출 판정 SSOT는 `src/lib/mobile-campaign-sales.ts` 의
+  `buildMobilePurchaseOrderInfo`(양식)와 `getMobileCampaignGroupSales`(조합의 주문캠페인 1개 조건)다. 설계 정본: `docs/private/specs/2026-10-23-mobile-purchase-order-send.md`.
   (근거: log 2026-10-23)
 
 - **Mobile Sales Read = Aggregate Column Only:** 모바일 매출 상세의 live
