@@ -231,7 +231,7 @@ describe('POST 확정 — 미리보기에서 본 주문 그대로', () => {
     syncOrdersByIdsMock.mockRejectedValue(new Error('timeout'));
     const res = await post({ source: 'prepared', productOrderIds: ['A'], confirmIds: ['A'] });
     expect(res.status).toBe(502);
-    expect((await res.json()).error).toContain('발주확인은 1건 처리됐습니다');
+    expect((await res.json()).error).toContain('주문확인은 1건 처리됐습니다');
     expect(generateExcelMock).not.toHaveBeenCalled();
   });
 

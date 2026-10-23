@@ -249,7 +249,8 @@ export default function EmailSendModal({
       const message = err instanceof Error ? err.message : PURCHASE_ORDER_COPY.mailFailedFallback;
       setPendingMail(mail);
       setResult(mail.result);
-      setError(`${PURCHASE_ORDER_COPY.mailFailedFallback} ${message}`);
+      // 서버가 이유를 주면 「대체 문구 + 이유」, 못 주면 대체 문구 한 번만 — 같은 문장이 두 번 찍히지 않게.
+      setError(message === PURCHASE_ORDER_COPY.mailFailedFallback ? message : `${PURCHASE_ORDER_COPY.mailFailedFallback} ${message}`);
       setStep('MAIL_FAILED');
       onResult?.(false, message);
     }
@@ -577,7 +578,7 @@ export default function EmailSendModal({
           {stepKind === 'progress' && (
             <div role="status">
               <h3 ref={stepHeadingRef} tabIndex={-1} className="text-sm font-normal text-slate-700 focus:outline-none">
-                {step === 'COMMITTING' ? '네이버 주문확인과 발주서 작성 중…' : PURCHASE_ORDER_COPY.sending}
+                {step === 'COMMITTING' ? PURCHASE_ORDER_COPY.committingDetail : PURCHASE_ORDER_COPY.sending}
               </h3>
             </div>
           )}
@@ -719,7 +720,7 @@ export default function EmailSendModal({
                     onClick={() => { setError(null); void sendCommittedMail(pendingMail); }}
                     className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity]"
                   >
-                    메일 다시 보내기
+                    {PURCHASE_ORDER_COPY.retryMail}
                   </button>
                 )}
                 <button

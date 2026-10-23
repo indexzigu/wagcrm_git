@@ -148,6 +148,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: '이메일이 성공적으로 발송되었습니다.' }, { status: 200 });
   } catch (error: any) {
     console.error('Email send error:', error);
-    return NextResponse.json({ error: '이메일 발송 중 서버 오류가 발생했습니다.' }, { status: 500 });
+    return NextResponse.json({ error: '발주요청 메일을 보내는 중 서버 오류가 발생했습니다.' }, { status: 500 });
   }
 }

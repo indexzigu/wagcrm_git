@@ -107,6 +107,8 @@ export const PURCHASE_ORDER_COPY = {
   /** 「주문확인 필요」 세는 칸·표 열 이름 */
   needsConfirm: '주문확인',
   committing: '주문확인 중…',
+  /** 데스크톱 진행 제목(공간이 넉넉한 쪽) — 같은 단계의 긴 이름 */
+  committingDetail: '네이버 주문확인과 발주서 작성 중…',
   sending: '발주요청 중…',
   successTitle: '발주요청 메일 보냄',
   failureTitle: '발주요청 메일 실패',
