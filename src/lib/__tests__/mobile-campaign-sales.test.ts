@@ -847,3 +847,101 @@ describe("getMobileCampaignSales(live) — 조회 창이 시간에 따라 갉히
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 모바일 발주서 간편 전송(2026-10-23) — 상세 시트가 발주 버튼을 보일지 판정하는 필드.
+// 데스크톱 발주 API 는 OrderCampaign.id 를 받는데 모바일 페이로드에는 그 id 가 없었다.
+// ---------------------------------------------------------------------------
+describe("getMobileCampaignSales — purchaseOrder(모바일 발주서 전송 정보)", () => {
+  function mockLiveWithOrderCampaign(orderCampaign: Record<string, unknown>) {
+    const aggregate = computeSnapshotDailyAggregate([makeCampaign()], [order({})]);
+    const { snapshotFindMany, salesCampaignFindMany } = mockLivePrisma(
+      [{ snapshotDate: TODAY, dailyAggregate: aggregate }],
+      [order({})],
+    );
+    vi.mocked(getPrisma).mockReturnValue({
+      salesCampaign: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "camp-1",
+          status: "ACTIVE",
+          startDate: new Date("2026-07-01T00:00:00+09:00"),
+          orderCampaignId: "oc-1",
+          orderCampaign: { isActive: true, ...orderCampaign },
+        }),
+        findMany: salesCampaignFindMany,
+      },
+      naverOrderSnapshot: {
+        findMany: snapshotFindMany,
+        findFirst: vi.fn().mockResolvedValue({ lastCallTime: new Date("2026-07-08T11:30:00+09:00") }),
+      },
+    } as never);
+  }
+
+  it("진행 중(live)이고 양식이 있으면 sendable=true 와 수신처·주문캠페인 id 를 싣는다", async () => {
+    mockLiveWithOrderCampaign({
+      template: "nutrione",
+      toEmail: "order@brand.example.com",
+      ccEmail: "cc@brand.example.com",
+      sellerName: "하늘언니",
+    });
+
+    const detail = await getMobileCampaignSales("camp-1", NOW);
+
+    expect(detail?.source).toBe("live");
+    expect(detail?.purchaseOrder).toEqual({
+      orderCampaignId: "oc-1",
+      sendable: true,
+      toEmail: "order@brand.example.com",
+      ccEmail: "cc@brand.example.com",
+      sellerName: "하늘언니",
+    });
+  });
+
+  it("양식(template)이 없으면 sendable=false — 서버 미리보기가 400 을 내는 조건과 같다", async () => {
+    mockLiveWithOrderCampaign({ template: null, toEmail: null, ccEmail: null, sellerName: "하늘언니" });
+
+    const detail = await getMobileCampaignSales("camp-1", NOW);
+
+    expect(detail?.purchaseOrder).toEqual({
+      orderCampaignId: "oc-1",
+      sendable: false,
+      reason: "no-template",
+      toEmail: null,
+      ccEmail: null,
+      sellerName: "하늘언니",
+    });
+  });
+
+  it("마감(cached) 캠페인에는 purchaseOrder 를 싣지 않는다 — 진행 중에 한한다", async () => {
+    vi.mocked(getPrisma).mockReturnValue({
+      salesCampaign: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "camp-1",
+          status: "CLOSED",
+          startDate: new Date("2026-07-01T00:00:00+09:00"),
+          orderCampaignId: "oc-1",
+          orderCampaign: { isActive: false, template: "nutrione", toEmail: "a@b.example.com", ccEmail: null, sellerName: "하늘언니" },
+        }),
+      },
+      orderCampaign: {
+        findUnique: vi.fn().mockResolvedValue({
+          cachedNewOrderBeforeCount: 0,
+          cachedNewOrderAfterCount: 0,
+          cachedPendingCount: 0,
+          cachedShippingCount: 0,
+          cachedCompletedCount: 3,
+          cachedTotalOrders: 3,
+          cachedDistinctOrderCount: 3,
+          cachedTotalQuantity: 3,
+          cachedTotalRevenue: 90000,
+          cachedDailyStats: null,
+        }),
+      },
+    } as never);
+
+    const detail = await getMobileCampaignSales("camp-1", NOW);
+
+    expect(detail?.source).toBe("cached");
+    expect(detail?.purchaseOrder).toBeUndefined();
+  });
+});

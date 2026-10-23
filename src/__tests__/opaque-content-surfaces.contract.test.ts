@@ -150,6 +150,7 @@ const TARGETS: Record<string, readonly string[]> = {
   "components/mobile/mobile-home-view.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-outreach-view.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-pipeline-view.tsx": SURFACE_TOKENS,
+  "components/mobile/mobile-purchase-order-sheet.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-schedule-calendar.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-schedule-day-list.tsx": SURFACE_TOKENS,
   "components/mobile/mobile-schedule-gap-bars.tsx": SURFACE_TOKENS,

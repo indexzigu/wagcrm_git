@@ -2,6 +2,7 @@ import { CURSOR_STALE_MS, isCursorHealthy, toKstDateKey } from './order-fetch-wi
 import { SNAPSHOT_WINDOW_DAYS } from './naver-order-sync';
 import { wrapFlatOrder, type OrderWrapper } from './purchase-order-rows';
 import type { SnapshotL1Entry } from './snapshot-l1-cache';
+import { formatKstShort } from './prepared-po-format';
 
 /**
  * 발주서 **준비본** 판정 SSOT(발주 자동화 2단계, 오너 승인 2026-10-06 — 설계 정본
@@ -70,12 +71,8 @@ export function describePreparedPoUnavailable(reason: PreparedPoUnavailableReaso
   }
 }
 
-/** ISO → KST `MM/DD HH:MM`. */
-export function formatKstShort(iso: string): string {
-  const kst = new Date(Date.parse(iso) + 9 * 60 * 60 * 1000);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(kst.getUTCMonth() + 1)}/${p(kst.getUTCDate())} ${p(kst.getUTCHours())}:${p(kst.getUTCMinutes())}`;
-}
+// `formatKstShort` 는 클라이언트 안전 모듈로 이사했다(prepared-po-format.ts 머리 주석) — 여기서 재수출.
+export { formatKstShort } from './prepared-po-format';
 
 /** 준비본이 읽을 스냅샷 날짜 범위 — 발주 조회창(`fetchPendingOrderWindow`)과 같은 [시작일, 오늘]. */
 export function preparedSnapshotRange(queryStartMs: number, nowMs: number): { startKey: string; endKey: string } {

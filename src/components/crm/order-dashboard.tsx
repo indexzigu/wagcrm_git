@@ -39,6 +39,7 @@ type Campaign = {
 // 등이 빠져 있다). 목록 파이프라인에 그 타입을 끼우면 기존 접근이 전부 타입 오류로 터지므로,
 // 서버 페이로드를 다루는 새 코드는 정본 타입을 쓴다. 로컬 사본 정리는 이 변경의 범위 밖이다.
 import type { Campaign as CampaignPayload } from '@/types/campaign';
+import { buildPurchaseOrderMailDefaults } from '@/lib/order-converter/purchase-order-mail-defaults';
 import { mergeExpandedCampaignDetails } from '@/lib/order-converter/settled-campaign-collapse';
 import { patchCampaign, type CampaignPatchResult } from '@/lib/campaign-patch';
 import { buildStorePeriodPatchBody } from '@/lib/order-converter/sale-window';
@@ -1139,17 +1140,10 @@ export default function OrderDashboard() {
     setEmailModalCampaignId(campaignId);
     setEmailDefaultTo(camp?.toEmail || '');
     setEmailDefaultCc(camp?.ccEmail || '');
-    const sellerName = camp?.sellerName || '';
-    const today = new Date();
-    const yy = String(today.getFullYear()).slice(-2);
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
-    const todayStr = `${yy}${mm}${dd}`;
-    setEmailDefaultSubject(`[와이그라운드] ${sellerName} ${todayStr} 발주서 보내드립니다.`);
-    setEmailDefaultMessage(`안녕하세요,
-금일 ${sellerName} 발주서를 첨부하여 전달드립니다.
-확인후 회신 부탁드립니다.
-감사합니다.`);
+    // 제목·본문 SSOT — 모바일 간편 전송과 같은 문구를 쓴다(purchase-order-mail-defaults.ts).
+    const defaults = buildPurchaseOrderMailDefaults(camp?.sellerName || '');
+    setEmailDefaultSubject(defaults.subject);
+    setEmailDefaultMessage(defaults.message);
   };
 
   const handleFetchInvoice = async (campaign: Campaign) => {
