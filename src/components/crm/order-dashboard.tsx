@@ -85,6 +85,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useClaims } from '@/hooks/useClaims';
 import { displayLabel } from "@/lib/display-label";
+import { PURCHASE_ORDER_COPY } from '@/lib/order-converter/purchase-order-client';
 
 type DailyTask = {
   id: string;
@@ -1515,11 +1516,11 @@ export default function OrderDashboard() {
                   if (data.confirmFailCount > 0) {
                     // 발주확인이 일부/전체 실패해도 파일은 내려주되, 실패 사실을 명확히 알린다
                     // (과거: 실패가 서버 로그로만 삼켜져 스토어는 발주전인데 파일만 받는 사고)
-                    addToast(`⚠️ 발주서 다운로드됨. 스토어 발주확인 실패 ${data.confirmFailCount}건 (성공 ${data.confirmSuccessCount ?? 0}건)${deferred > 0 ? ` · 확인 대기 ${deferred}건` : ''}${data.confirmFirstError ? `: ${data.confirmFirstError}` : ''}`, 'error');
+                    addToast(`⚠️ 발주서 다운로드됨. 스토어 ${PURCHASE_ORDER_COPY.needsConfirm} 실패 ${data.confirmFailCount}건 (성공 ${data.confirmSuccessCount ?? 0}건)${deferred > 0 ? ` · 확인 대기 ${deferred}건` : ''}${data.confirmFirstError ? `: ${data.confirmFirstError}` : ''}`, 'error');
                   } else if (deferred > 0) {
                     // 서버가 잔여분을 자동 재시도(최대 3회)했는데도 네이버가 끝내 확인 못한 잔여 —
                     // 실패는 아니고 네이버 처리 지연이므로 info 톤. 다음 주문확인 때 자연 반영된다.
-                    addToast(`발주확인 ${data.confirmSuccessCount ?? 0}건 완료 · ${deferred}건은 네이버 처리 지연으로 대기 중입니다(자동 재시도했으나 미확정). 잠시 후 다시 시도하면 반영됩니다.`, 'info');
+                    addToast(`${PURCHASE_ORDER_COPY.needsConfirm} ${data.confirmSuccessCount ?? 0}건 완료 · ${deferred}건은 네이버 처리 지연으로 대기 중입니다(자동 재시도했으나 미확정). 잠시 후 다시 시도하면 반영됩니다.`, 'info');
                   } else {
                     addToast('발주서가 성공적으로 다운로드 되었습니다.', 'success');
                   }
@@ -2352,7 +2353,7 @@ export default function OrderDashboard() {
                                   <span className={`w-2 h-2 rounded-full shrink-0 ${s.tone}`} aria-hidden="true" />
                                   {s.key === 'confirm' && nBefore > 0 && (
                                     <>
-                                      <span className="font-semibold text-[var(--status-caution-text)]" title="발주확인 대기: 주문확인 버튼으로 처리">미확인 {nBefore.toLocaleString()}</span>
+                                      <span className="font-semibold text-[var(--status-caution-text)]" title={`아직 ${PURCHASE_ORDER_COPY.needsConfirm} 전: ${PURCHASE_ORDER_COPY.needsConfirm} 버튼으로 처리`}>미확인 {nBefore.toLocaleString()}</span>
                                       <span className="text-slate-300" aria-hidden="true">·</span>
                                     </>
                                   )}

@@ -363,7 +363,7 @@ async function commitPurchaseOrder(args: {
     refreshed = (await syncOrdersByIds(productOrderIds)).orders;
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
-    const confirmedNote = confirm ? ` 네이버 발주확인은 ${confirm.succeeded.size}건 처리됐습니다.` : '';
+    const confirmedNote = confirm ? ` 네이버 주문확인은 ${confirm.succeeded.size}건 처리됐습니다.` : '';
     return NextResponse.json(
       { error: `주문 재조회에 실패해 발주서를 만들지 않았습니다(${detail}).${confirmedNote} 잠시 후 다시 시도하세요.` },
       { status: 502 },

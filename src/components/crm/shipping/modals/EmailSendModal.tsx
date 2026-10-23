@@ -5,6 +5,7 @@ import { PurchaseOrderPreview } from './PurchaseOrderPreview';
 import { formatLastSyncLabel } from '@/lib/date-utils';
 import {
   DROP_REASON_LABEL,
+  PURCHASE_ORDER_COPY,
   base64ToFile,
   buildSendEmailFormData,
   readApiError as readError,
@@ -170,7 +171,7 @@ export default function EmailSendModal({
       default: return 0;
     }
   };
-  const stageLabels = mode === 'auto' ? ['미리보기', '발주확인·발주서', '메일 발송'] : ['검증', '발주서', '메일 발송'];
+  const stageLabels = mode === 'auto' ? ['미리보기', '주문확인·발주서', '발주요청 메일'] : ['검증', '발주서', '발주요청 메일'];
   const stageIndex = step === 'LOADING_PREVIEW' || step === 'PREVIEW' || step === 'ANALYZING' ? 0 : step === 'COMMITTING' ? 1 : step === 'SENDING' || step === 'MAIL_FAILED' ? 2 : step === 'SUCCESS' ? 3 : -1;
 
   const handleClose = () => {
@@ -212,7 +213,7 @@ export default function EmailSendModal({
       orderIdsCsv,
     });
     const res = await fetch('/order-converter/api/send-email', { method: 'POST', body: formData });
-    if (!res.ok) throw new Error(await readError(res, '이메일 발송에 실패했습니다.'));
+    if (!res.ok) throw new Error(await readError(res, PURCHASE_ORDER_COPY.mailFailedFallback));
   };
 
   // ── 자동 연동 ────────────────────────────────────────────────────────────
@@ -245,10 +246,11 @@ export default function EmailSendModal({
       setStep('SUCCESS');
       onResult?.(true, undefined, mail.file.name, mail.result.sentCount);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '이메일 발송에 실패했습니다.';
+      const message = err instanceof Error ? err.message : PURCHASE_ORDER_COPY.mailFailedFallback;
       setPendingMail(mail);
       setResult(mail.result);
-      setError(`메일 발송에 실패했습니다: ${message}`);
+      // 서버가 이유를 주면 「대체 문구 + 이유」, 못 주면 대체 문구 한 번만 — 같은 문장이 두 번 찍히지 않게.
+      setError(message === PURCHASE_ORDER_COPY.mailFailedFallback ? message : `${PURCHASE_ORDER_COPY.mailFailedFallback} ${message}`);
       setStep('MAIL_FAILED');
       onResult?.(false, message);
     }
@@ -272,7 +274,7 @@ export default function EmailSendModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error((typeof data?.error === 'string' && data.error) || '발주 확정에 실패했습니다.');
+        throw new Error((typeof data?.error === 'string' && data.error) || PURCHASE_ORDER_COPY.commitFailedFallback);
       }
       const chosenName = ensureXlsxName(fileName) || data.fileName;
       const file = base64ToFile(data.fileBase64, chosenName);
@@ -284,7 +286,7 @@ export default function EmailSendModal({
       });
     } catch (err: unknown) {
       // 확정 실패 — 발주확인이 일부 일어났을 수 있으니 미리보기부터 다시 받게 한다(상태가 바뀌었을 수 있다).
-      const message = err instanceof Error ? err.message : '발주 확정에 실패했습니다.';
+      const message = err instanceof Error ? err.message : PURCHASE_ORDER_COPY.commitFailedFallback;
       setError(`${message} 미리보기를 다시 불러와 확인하세요.`);
       setPreview(null);
       setStep('IDLE');
@@ -321,7 +323,7 @@ export default function EmailSendModal({
       setStep('SUCCESS');
       onResult?.(true, undefined, file.name, sentCount);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '발송에 실패했습니다.';
+      const message = err instanceof Error ? err.message : PURCHASE_ORDER_COPY.mailFailedFallback;
       console.error(err);
       onResult?.(false, message);
       setManualError(message);
@@ -342,7 +344,7 @@ export default function EmailSendModal({
             <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            발주서 첨부 발송
+            {PURCHASE_ORDER_COPY.entry}
           </DialogTitle>
           {!isBusy && (
             <button
@@ -566,8 +568,8 @@ export default function EmailSendModal({
               {!preview.empty && (
                 <p id="po-commit-notice" className="text-xs text-slate-700">
                   {needsConfirmCount > 0
-                    ? `누르면 네이버에서 ${needsConfirmCount}건이 발주확인 처리되고, 발주서가 ${recipientLabel}(으)로 메일 발송됩니다. 되돌릴 수 없습니다.`
-                    : `누르면 발주서가 ${recipientLabel}(으)로 메일 발송됩니다. 되돌릴 수 없습니다.`}
+                    ? `누르면 네이버에서 ${needsConfirmCount}건이 주문확인 처리되고, 발주서가 ${recipientLabel}(으)로 발주요청 메일로 나갑니다. 되돌릴 수 없습니다.`
+                    : `누르면 발주서가 ${recipientLabel}(으)로 발주요청 메일로 나갑니다. 되돌릴 수 없습니다.`}
                 </p>
               )}
             </div>
@@ -576,7 +578,7 @@ export default function EmailSendModal({
           {stepKind === 'progress' && (
             <div role="status">
               <h3 ref={stepHeadingRef} tabIndex={-1} className="text-sm font-normal text-slate-700 focus:outline-none">
-                {step === 'COMMITTING' ? '네이버 발주확인과 발주서 작성 중...' : '메일 발송 중...'}
+                {step === 'COMMITTING' ? PURCHASE_ORDER_COPY.committingDetail : PURCHASE_ORDER_COPY.sending}
               </h3>
             </div>
           )}
@@ -584,26 +586,26 @@ export default function EmailSendModal({
           {stepKind === 'result' && result && (
             <div className="space-y-3">
               <h3 ref={stepHeadingRef} tabIndex={-1} className="text-sm font-semibold text-slate-800 focus:outline-none">
-                {step === 'SUCCESS' ? `발송 완료 · 상품주문 ${result.sentCount.toLocaleString('ko-KR')}건` : '메일 발송 실패'}
+                {step === 'SUCCESS' ? `${PURCHASE_ORDER_COPY.successTitle} · 상품주문 ${result.sentCount.toLocaleString('ko-KR')}건` : PURCHASE_ORDER_COPY.failureTitle}
               </h3>
               {mode === 'auto' && (
                 <p className="text-xs text-slate-700">
-                  네이버 발주확인 {result.confirm.succeeded.toLocaleString('ko-KR')}건 완료
+                  네이버 주문확인 {result.confirm.succeeded.toLocaleString('ko-KR')}건 완료
                   {result.confirm.requested === 0 ? ' (확인할 주문 없음)' : ''}
                 </p>
               )}
               {step === 'MAIL_FAILED' && (
                 <div role="alert" className="rounded-xl bg-status-urgent-bg p-3 text-xs text-status-urgent-text">
-                  <p className="font-bold">{error || '메일 발송에 실패했습니다.'}</p>
+                  <p className="font-bold">{error || PURCHASE_ORDER_COPY.mailFailedFallback}</p>
                   <p className="mt-1">
-                    발주서는 만들어졌고 네이버 발주확인도 끝났습니다. 「메일 다시 보내기」를 누르면 같은 파일로 메일만 다시 보냅니다.
+                    발주서는 만들어졌고 네이버 주문확인도 끝났습니다. 「메일 다시 보내기」를 누르면 같은 파일로 메일만 다시 보냅니다.
                     보내지 않고 닫으면 이 주문들은 다음 발주요청에 다시 잡힙니다.
                   </p>
                 </div>
               )}
               {result.confirm.failed > 0 && (
                 <p className="rounded-xl bg-status-caution-bg p-3 text-xs font-semibold text-status-caution-text">
-                  네이버 발주확인에 실패한 주문 {result.confirm.failed}건이 있습니다{result.confirm.firstError ? `: ${result.confirm.firstError}` : ''}.
+                  네이버 주문확인에 실패한 주문 {result.confirm.failed}건이 있습니다{result.confirm.firstError ? `: ${result.confirm.firstError}` : ''}.
                   주문확인 버튼으로 다시 확인하세요.
                 </p>
               )}
@@ -683,7 +685,7 @@ export default function EmailSendModal({
                   <span>
                     {mode === 'auto'
                       ? step === 'LOADING_PREVIEW' ? '불러오는 중...' : '미리보기'
-                      : step === 'ANALYZING' ? '검증 중...' : step === 'SENDING' ? '발송 중...' : '발송'}
+                      : step === 'ANALYZING' ? '검증 중...' : step === 'SENDING' ? PURCHASE_ORDER_COPY.sending : PURCHASE_ORDER_COPY.entry}
                   </span>
                 </button>
               </>
@@ -706,7 +708,7 @@ export default function EmailSendModal({
                   className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] flex items-center gap-2 disabled:opacity-50"
                 >
                   {isBusy && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-                  <span>{needsConfirmCount > 0 ? '발주확인하고 발송' : '발송'}</span>
+                  <span>{PURCHASE_ORDER_COPY.commit(needsConfirmCount > 0)}</span>
                 </button>
               </>
             )}
@@ -718,7 +720,7 @@ export default function EmailSendModal({
                     onClick={() => { setError(null); void sendCommittedMail(pendingMail); }}
                     className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity]"
                   >
-                    메일 다시 보내기
+                    {PURCHASE_ORDER_COPY.retryMail}
                   </button>
                 )}
                 <button

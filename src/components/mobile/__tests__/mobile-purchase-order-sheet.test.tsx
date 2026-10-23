@@ -142,7 +142,7 @@ describe("MobilePurchaseOrderSheet — 미리보기", () => {
     stubFetch({});
     renderSheet();
 
-    await screen.findByRole("button", { name: "발송" });
+    await screen.findByRole("button", { name: "발주요청" });
     const previews = callsTo(`${PO_BASE}?`);
     expect(previews).toHaveLength(1);
     expect(String(previews[0][0])).toContain("source=live");
@@ -156,7 +156,7 @@ describe("MobilePurchaseOrderSheet — 미리보기", () => {
       availability: { available: false, reason: "disabled", asOfIso: null, message: "이 캠페인은 발주서 자동 준비가 꺼져 있습니다." } as never,
     });
     renderSheet();
-    await screen.findByRole("button", { name: "발송" });
+    await screen.findByRole("button", { name: "발주요청" });
     expect(screen.getByText(/자동 준비가 꺼져 있습니다/)).toBeInTheDocument();
   });
 
@@ -167,32 +167,82 @@ describe("MobilePurchaseOrderSheet — 미리보기", () => {
     });
     renderSheet();
 
-    await screen.findByRole("button", { name: "발송" });
+    await screen.findByRole("button", { name: "발주요청" });
     expect(String(callsTo(`${PO_BASE}?`)[0][0])).toContain("source=prepared");
     expect(screen.getByText(/준비본/)).toBeInTheDocument();
   });
 
-  it("받는 사람은 브랜드 수신처로 채워지고 편집할 수 있다 · 참조는 표시만", async () => {
+  it("받는 사람·참조는 브랜드 수신처로 채워지고 둘 다 편집할 수 있다(오너 확정 2026-10-23)", async () => {
     stubFetch({});
     renderSheet();
 
-    const to = (await screen.findByLabelText("메일 주소")) as HTMLInputElement;
+    const to = (await screen.findByLabelText("받는 사람")) as HTMLInputElement;
+    const cc = screen.getByLabelText("참조") as HTMLInputElement;
     expect(to.value).toBe("order@brand.example.com");
-    expect(screen.getByText(/참조 cc@brand\.example\.com/)).toBeInTheDocument();
-    expect(screen.queryByLabelText("참조")).toBeNull();
-    expect(screen.queryByLabelText("받는 사람")).toBeNull();
+    expect(cc.value).toBe("cc@brand.example.com");
+    expect(to).toBeEnabled();
+    expect(cc).toBeEnabled();
   });
 
-  it("발주확인이 필요한 행이 있으면 버튼이 「발주확인하고 발송」이다", async () => {
+  it("편집한 참조가 메일에 실리고, 참조를 비우면 참조 없이 보낸다", async () => {
+    stubFetch({ mail: [{ status: 200 }, { status: 200 }] });
+    const user = userEvent.setup();
+    renderSheet();
+
+    const cc = await screen.findByLabelText("참조");
+    await user.clear(cc);
+    await user.type(cc, "cc2@brand.example.com; cc3@brand.example.com");
+    await user.click(screen.getByRole("button", { name: "발주요청" }));
+    await screen.findByText(/발주서 1건 ·/);
+    const [, firstMail] = callsTo("/order-converter/api/send-email", "POST")[0];
+    expect((firstMail?.body as FormData).get("cc")).toBe("cc2@brand.example.com; cc3@brand.example.com");
+  });
+
+  it("참조를 비우면 cc 필드 자체를 보내지 않는다", async () => {
+    stubFetch({});
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.clear(await screen.findByLabelText("참조"));
+    await user.click(screen.getByRole("button", { name: "발주요청" }));
+    await screen.findByText(/발주서 1건 ·/);
+    const [, mail] = callsTo("/order-converter/api/send-email", "POST")[0];
+    expect((mail?.body as FormData).has("cc")).toBe(false);
+  });
+
+  it("참조 형식이 틀리면 되돌릴 수 없는 발주확인 전에 막는다", async () => {
+    stubFetch({});
+    const user = userEvent.setup();
+    renderSheet();
+
+    const cc = await screen.findByLabelText("참조");
+    await user.clear(cc);
+    await user.type(cc, "cc@brand");
+    await user.click(screen.getByRole("button", { name: "발주요청" }));
+    expect(screen.getByText("참조 이메일 주소 형식을 확인하세요.")).toBeInTheDocument();
+    expect(cc).toHaveAttribute("aria-invalid", "true");
+    expect(callsTo(PO_BASE, "POST")).toHaveLength(0);
+  });
+
+  it("발주확인이 필요한 행이 있으면 버튼이 「주문확인하고 발주요청」이고 안내문도 발주확인을 말한다", async () => {
     stubFetch({ preview: previewPayload([row({ needsConfirm: true })]) });
     renderSheet();
-    expect(await screen.findByRole("button", { name: "발주확인하고 발송" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "주문확인하고 발주요청" })).toBeEnabled();
+    expect(screen.getByText(/네이버 주문확인과 브랜드사 발주요청 메일이 함께/)).toBeInTheDocument();
+  });
+
+  it("발주확인이 필요 없으면 안내문이 발주확인을 말하지 않는다 — 버튼이 하는 일과 같아야 한다", async () => {
+    stubFetch({});
+    renderSheet();
+    await screen.findByRole("button", { name: "발주요청" });
+    expect(screen.queryByText(/네이버 주문확인과/)).toBeNull();
+    expect(screen.getByText(/발주요청 메일이 나가며 되돌릴 수 없습니다/)).toBeInTheDocument();
   });
 
   it("발주할 주문이 없으면 버튼이 비활성이다", async () => {
     stubFetch({ preview: previewPayload([]) });
     renderSheet();
-    expect(await screen.findByRole("button", { name: "발송" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "발주요청" })).toBeDisabled();
     expect(screen.getByText("발주할 주문이 없습니다.")).toBeInTheDocument();
   });
 
@@ -201,7 +251,7 @@ describe("MobilePurchaseOrderSheet — 미리보기", () => {
     const user = userEvent.setup();
     renderSheet();
 
-    const send = await screen.findByRole("button", { name: "발송" });
+    const send = await screen.findByRole("button", { name: "발주요청" });
     expect(send).toBeDisabled();
     await user.click(screen.getByLabelText("빈 칸 주문 포함 동의"));
     expect(send).toBeEnabled();
@@ -210,7 +260,7 @@ describe("MobilePurchaseOrderSheet — 미리보기", () => {
   it("누락이 없으면 동의 체크 없이 안내줄만 같은 자리에 둔다 — 레이아웃 안정", async () => {
     stubFetch({});
     renderSheet();
-    await screen.findByRole("button", { name: "발송" });
+    await screen.findByRole("button", { name: "발주요청" });
     expect(screen.queryByLabelText("빈 칸 주문 포함 동의")).toBeNull();
     expect(screen.getByText(/빈 주문 없음/)).toBeInTheDocument();
   });
@@ -223,7 +273,7 @@ describe("MobilePurchaseOrderSheet — 미리보기", () => {
 
     expect(await screen.findByText("양식이 없습니다.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "미리보기 다시 불러오기" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "발송" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "발주요청" })).toBeNull();
   });
 });
 
@@ -244,10 +294,10 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     const { onSent } = renderSheet();
 
-    const to = await screen.findByLabelText("메일 주소");
+    const to = await screen.findByLabelText("받는 사람");
     await user.clear(to);
     await user.type(to, "other@brand.example.com");
-    await user.click(screen.getByRole("button", { name: "발주확인하고 발송" }));
+    await user.click(screen.getByRole("button", { name: "주문확인하고 발주요청" }));
 
     await screen.findByText(/발주서 2건 · other@brand\.example\.com/);
     const [, commitInit] = callsTo(PO_BASE, "POST")[0];
@@ -268,7 +318,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     expect(String(form.get("message"))).toContain("하늘맘 발주서를 첨부하여");
     expect((form.get("file") as File).name).toBe("발주서.xlsx");
     expect(onSent).toHaveBeenCalledWith(2);
-    expect(screen.getByText(/네이버 발주확인 1\/1/)).toBeInTheDocument();
+    expect(screen.getByText(/네이버 주문확인 1\/1/)).toBeInTheDocument();
   });
 
   it("받는 사람이 비어 있으면 확정 POST 를 보내지 않는다", async () => {
@@ -276,8 +326,8 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     renderSheet({ purchaseOrder: { ...INFO, toEmail: null } });
 
-    await user.click(await screen.findByRole("button", { name: "발송" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("받는 사람 이메일을 입력하세요.");
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
+    expect(screen.getByLabelText("받는 사람")).toHaveAccessibleDescription("받는 사람 이메일을 입력하세요.");
     expect(callsTo(PO_BASE, "POST")).toHaveLength(0);
   });
 
@@ -286,14 +336,14 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     renderSheet({ purchaseOrder: { ...INFO, toEmail: "a@b" } });
 
-    await user.click(await screen.findByRole("button", { name: "발송" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("이메일 주소 형식을 확인하세요.");
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
+    expect(screen.getByLabelText("받는 사람")).toHaveAccessibleDescription("이메일 주소 형식을 확인하세요.");
     expect(callsTo(PO_BASE, "POST")).toHaveLength(0);
 
-    const to = screen.getByLabelText("메일 주소");
+    const to = screen.getByLabelText("받는 사람");
     await user.clear(to);
     await user.type(to, "a@brand.example.com, b@brand.example.com");
-    await user.click(screen.getByRole("button", { name: "발송" }));
+    await user.click(screen.getByRole("button", { name: "발주요청" }));
     await screen.findByText(/발주서 1건 ·/);
     expect(callsTo(PO_BASE, "POST")).toHaveLength(1);
   });
@@ -318,9 +368,9 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const onOpenChange = vi.fn();
     renderSheet({ onOpenChange });
 
-    await user.click(await screen.findByRole("button", { name: "발송" }));
-    await screen.findByRole("button", { name: "발주확인 중…" });
-    await user.click(screen.getByRole("button", { name: "발주서 전송 닫기" }));
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
+    await screen.findByRole("button", { name: "주문확인 중…" });
+    await user.click(screen.getByRole("button", { name: "발주요청 닫기" }));
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
 
     resolveCommit!();
@@ -333,9 +383,9 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     renderSheet();
 
-    await user.click(await screen.findByRole("button", { name: "발송" }));
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
     expect(await screen.findByText(/네이버 응답 없음.*미리보기를 다시 불러와/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "발송" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "발주요청" })).toBeNull();
     expect(callsTo("/order-converter/api/send-email", "POST")).toHaveLength(0);
   });
 
@@ -349,7 +399,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     renderSheet();
 
-    await user.click(await screen.findByRole("button", { name: "발송" }));
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
     expect(await screen.findByText(/발주서에 실을 주문이 없습니다\..*미리보기를 다시 불러와/)).toBeInTheDocument();
     expect(callsTo("/order-converter/api/send-email", "POST")).toHaveLength(0);
   });
@@ -359,13 +409,16 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     const { onSent } = renderSheet();
 
-    await user.click(await screen.findByRole("button", { name: "발송" }));
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
     expect(await screen.findByText("SMTP 거부")).toBeInTheDocument();
     expect(onSent).not.toHaveBeenCalled();
     // 실패 화면에서도 받는 사람을 고칠 수 있고(가장 흔한 실패가 주소 오타), 미리보기 카드는 다시 뜨지 않는다.
-    const to = screen.getByLabelText("메일 주소");
+    const to = screen.getByLabelText("받는 사람");
     await user.clear(to);
     await user.type(to, "fixed@brand.example.com");
+    const cc = screen.getByLabelText("참조");
+    await user.clear(cc);
+    await user.type(cc, "fixedcc@brand.example.com");
     expect(screen.queryByRole("region", { name: "발주 미리보기" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "메일 다시 보내기" }));
@@ -374,6 +427,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const mails = callsTo("/order-converter/api/send-email", "POST");
     expect(mails).toHaveLength(2);
     expect((mails[1][1]?.body as FormData).get("to")).toBe("fixed@brand.example.com");
+    expect((mails[1][1]?.body as FormData).get("cc")).toBe("fixedcc@brand.example.com");
     expect(onSent).toHaveBeenCalledWith(1);
   });
 
@@ -392,7 +446,7 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     const user = userEvent.setup();
     renderSheet();
 
-    await user.click(await screen.findByRole("button", { name: "발송" }));
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
     await waitFor(() => expect(screen.getByText(/발주서에서 빠진 주문 1건/)).toBeInTheDocument());
     expect(screen.getByText(/박취소 · 취소·변경됨/)).toBeInTheDocument();
   });

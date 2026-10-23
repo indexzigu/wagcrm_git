@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { StatusBadge } from "@/components/crm/status-badge";
 import { MobileSheetCloseChip } from "./mobile-sheet-close-chip";
 import { MobilePurchaseOrderSheet } from "./mobile-purchase-order-sheet";
+import { PURCHASE_ORDER_COPY } from "@/lib/order-converter/purchase-order-client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateWithWeekday } from "@/lib/format";
@@ -642,7 +643,7 @@ export function MobileCampaignDetailSheet({
                       onClick={() => setPoSheetOpen(true)}
                       className="mt-4 min-h-11 w-full rounded-xl text-sm font-bold"
                     >
-                      발주서 전송
+                      {PURCHASE_ORDER_COPY.entry}
                     </Button>
                   ) : null}
                 </>
