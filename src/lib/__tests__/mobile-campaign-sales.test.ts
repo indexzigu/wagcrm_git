@@ -966,3 +966,98 @@ describe("getMobileCampaignSales — purchaseOrder(모바일 발주서 전송 �
     expect(detail?.purchaseOrder).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 조합(그룹) 캠페인의 발주서 간편 전송(2026-10-23 후속) — 멤버가 주문캠페인을 **정확히 하나** 공유할
+// 때만 발주 정보를 싣는다. 운영의 진행 중 주문캠페인이 전부 조합 멤버라 그룹 제외가 버튼을 통째로 막았다.
+// ---------------------------------------------------------------------------
+describe("getMobileCampaignGroupSales — purchaseOrder(조합 발주서 전송 정보)", () => {
+  const OC = { template: "nutrione", toEmail: "order@brand.example.com", ccEmail: null, sellerName: "하늘언니" };
+
+  function mockLiveGroup(members: Array<{ id: string; orderCampaignId: string; orderCampaign: Record<string, unknown> }>) {
+    const aggregate = computeSnapshotDailyAggregate(
+      members.map((m) => makeCampaign({ id: m.id })),
+      [order({})],
+    );
+    const salesCampaignFindMany = vi.fn().mockImplementation(
+      (args: { where: { groupId?: string; orderCampaignId?: { in?: string[] }; orderCampaign?: { isActive?: boolean } } }) => {
+        if (args.where.groupId) return Promise.resolve(members.map((m) => ({ ...m, status: "ACTIVE" })));
+        if (args.where.orderCampaign?.isActive) return Promise.resolve([aggregationUniverseRow()]);
+        return Promise.resolve(members.map((m) => ({ id: m.id, startDate: new Date("2026-07-01T00:00:00+09:00") })));
+      },
+    );
+    vi.mocked(getPrisma).mockReturnValue({
+      salesCampaign: { findMany: salesCampaignFindMany },
+      naverOrderSnapshot: {
+        findMany: vi.fn().mockResolvedValue([{ snapshotDate: TODAY, dailyAggregate: aggregate }]),
+        findFirst: vi.fn().mockResolvedValue({ lastCallTime: new Date("2026-07-08T11:30:00+09:00") }),
+      },
+    } as never);
+    return { salesCampaignFindMany };
+  }
+
+  it("진행 중 조합의 멤버가 주문캠페인 하나를 공유하고 양식이 있으면 sendable 발주 정보를 싣는다", async () => {
+    const { salesCampaignFindMany } = mockLiveGroup([
+      { id: "camp-1", orderCampaignId: "oc-1", orderCampaign: { isActive: true, ...OC } },
+      { id: "camp-2", orderCampaignId: "oc-1", orderCampaign: { isActive: true, ...OC } },
+    ]);
+
+    const detail = await getMobileCampaignGroupSales("group-1", NOW);
+
+    expect(detail?.source).toBe("live");
+    expect(detail?.purchaseOrder).toEqual({
+      orderCampaignId: "oc-1",
+      sendable: true,
+      toEmail: "order@brand.example.com",
+      ccEmail: null,
+      sellerName: "하늘언니",
+    });
+    // 발주 정보 때문에 조회가 늘지 않는다 — 멤버 조회의 select 를 넓힐 뿐이다.
+    const memberQuery = salesCampaignFindMany.mock.calls.find(([args]) => args.where.groupId)?.[0];
+    expect(memberQuery.select.orderCampaign.select).toMatchObject({ template: true, toEmail: true });
+  });
+
+  it("멤버의 주문캠페인이 둘 이상이면 싣지 않는다 — 어느 브랜드로 보낼지 정해지지 않는다", async () => {
+    mockLiveGroup([
+      { id: "camp-1", orderCampaignId: "oc-1", orderCampaign: { isActive: true, ...OC } },
+      { id: "camp-2", orderCampaignId: "oc-2", orderCampaign: { isActive: true, ...OC } },
+    ]);
+
+    const detail = await getMobileCampaignGroupSales("group-1", NOW);
+
+    expect(detail?.source).toBe("live");
+    expect(detail?.purchaseOrder).toBeUndefined();
+  });
+
+  it("공유 주문캠페인에 양식이 없으면 sendable=false 로 싣는다(버튼은 숨는다)", async () => {
+    mockLiveGroup([
+      { id: "camp-1", orderCampaignId: "oc-1", orderCampaign: { isActive: true, ...OC, template: null } },
+      { id: "camp-2", orderCampaignId: "oc-1", orderCampaign: { isActive: true, ...OC, template: null } },
+    ]);
+
+    const detail = await getMobileCampaignGroupSales("group-1", NOW);
+
+    expect(detail?.purchaseOrder).toMatchObject({ orderCampaignId: "oc-1", sendable: false, reason: "no-template" });
+  });
+
+  it("마감(cached) 조합에는 싣지 않는다 — 진행 중에 한한다", async () => {
+    vi.mocked(getPrisma).mockReturnValue({
+      salesCampaign: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "camp-1", status: "CLOSED", orderCampaignId: "oc-1", orderCampaign: { isActive: false, ...OC } },
+          { id: "camp-2", status: "CLOSED", orderCampaignId: "oc-1", orderCampaign: { isActive: false, ...OC } },
+        ]),
+      },
+      orderCampaign: {
+        findMany: vi.fn().mockResolvedValue([
+          { cachedNewOrderBeforeCount: 0, cachedNewOrderAfterCount: 0, cachedPendingCount: 0, cachedShippingCount: 0, cachedCompletedCount: 1, cachedTotalOrders: 1, cachedDistinctOrderCount: 1, cachedTotalQuantity: 1, cachedTotalRevenue: 30000, cachedDailyStats: [{ date: "2026-07-07", orders: 1, revenue: 30000 }] },
+        ]),
+      },
+    } as never);
+
+    const detail = await getMobileCampaignGroupSales("group-1", NOW);
+
+    expect(detail?.source).toBe("cached");
+    expect(detail?.purchaseOrder).toBeUndefined();
+  });
+});

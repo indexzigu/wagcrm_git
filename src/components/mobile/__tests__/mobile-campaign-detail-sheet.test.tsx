@@ -1023,8 +1023,24 @@ describe("MobileCampaignDetailSheet — 발주서 전송 버튼", () => {
     expect(screen.queryByRole("button", { name: "발주서 전송" })).toBeNull();
   });
 
-  it("그룹(조합) 캠페인은 응답에 sendable 이 있어도 버튼을 내지 않는다", async () => {
-    stubSalesFetch(makeSales({ purchaseOrder: PO }));
+  it("조합(그룹) 캠페인도 조합 매출 응답에 sendable 이 실리면 버튼을 낸다 — 판정은 서버 몫", async () => {
+    const fetchMock = stubSalesFetch(makeSales({ purchaseOrder: PO }));
+    render(
+      <MobileCampaignDetailSheet
+        open
+        onOpenChange={() => {}}
+        campaign={makeDetail({ kind: "group", groupId: "g-1", members: [] })}
+        todayYmd={TODAY}
+      />,
+    );
+    const card = await screen.findByRole("region", { name: "매출상세현황" });
+    expect(await within(card).findByRole("button", { name: "발주서 전송" })).toBeInTheDocument();
+    // 조합은 조합 매출 경로를 읽는다(그 응답이 공유 주문캠페인 1개일 때만 발주 정보를 싣는다).
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/mobile/campaign-groups/g-1/sales");
+  });
+
+  it("조합 매출 응답에 발주 정보가 없으면(주문캠페인 둘 이상) 버튼이 없다", async () => {
+    stubSalesFetch(makeSales());
     render(
       <MobileCampaignDetailSheet
         open

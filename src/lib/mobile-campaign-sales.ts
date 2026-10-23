@@ -91,8 +91,8 @@ export type MobileCampaignSalesResponse = {
   /**
    * 모바일 발주서 간편 전송(2026-10-23, 오너 확정 "축소판 · 받는 사람만 편집") — 상세 시트가
    * 「발주서 전송」 버튼을 보일지와, 데스크톱 발주 API(`/order-converter/api/campaigns/{OrderCampaign.id}/…`)
-   * 에 넘길 id·수신처. **진행 중(live) 단일 캠페인에만** 실린다 — 마감(cached)·미연동(none)·그룹
-   * 응답에는 없다. `sendable=false` 의 사유는 서버 미리보기가 400 을 내는 조건(양식 없음)과 같은
+   * 에 넘길 id·수신처. **진행 중(live) 응답에만** 실린다 — 마감(cached)·미연동(none)에는 없고,
+   * 조합(그룹) 응답은 멤버가 주문캠페인을 정확히 하나 공유할 때만 실린다. `sendable=false` 의 사유는 서버 미리보기가 400 을 내는 조건(양식 없음)과 같은
    * 판정이라 버튼을 아예 숨긴다(눌러서 실패하는 것보다 낫다).
    */
   purchaseOrder?: MobilePurchaseOrderInfo;
@@ -405,7 +405,10 @@ export async function getMobileCampaignGroupSales(
       id: true,
       status: true,
       orderCampaignId: true,
-      orderCampaign: { select: { isActive: true } },
+      // template·toEmail·ccEmail·sellerName = 발주서 간편 전송 정보(아래). 조회를 늘리지 않고 select 만 넓힌다.
+      orderCampaign: {
+        select: { isActive: true, template: true, toEmail: true, ccEmail: true, sellerName: true },
+      },
     },
   });
   if (members.length === 0) return null;
@@ -419,7 +422,7 @@ export async function getMobileCampaignGroupSales(
   const targetCampaignIds = new Set(linkedMembers.map((member) => member.id));
 
   if (linkedMembers.some(shouldReadLiveCampaignSales)) {
-    return getLiveSalesDetailForTargets(
+    const live = await getLiveSalesDetailForTargets(
       orderCampaignIds,
       targetCampaignIds,
       now,
@@ -427,6 +430,12 @@ export async function getMobileCampaignGroupSales(
       responseId,
       options,
     );
+    // 발주서 간편 전송 — 멤버가 주문캠페인을 **정확히 하나** 공유할 때만 싣는다. 둘 이상이면 어느
+    // 브랜드로 보낼지 정해지지 않으므로 숨긴다. (종전엔 조합을 통째로 뺐는데 2026-10-23 운영의 진행 중
+    // 주문캠페인이 전부 한 조합의 멤버여서 버튼이 아무 데도 뜨지 않았다.)
+    const shared = orderCampaignIds.length === 1 ? linkedMembers[0].orderCampaign : null;
+    if (live.source !== "live" || !shared) return live;
+    return { ...live, purchaseOrder: buildMobilePurchaseOrderInfo(orderCampaignIds[0], shared) };
   }
 
   return getCachedGroupSalesDetail(orderCampaignIds, noneResponse, targetCampaignIds, options);
