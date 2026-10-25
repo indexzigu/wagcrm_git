@@ -86,6 +86,87 @@ describe("ChatRoomMappingRepository.reconcileFolderRooms — 폴더=수집 스�
     expect((await get("r1")).excluded).toBe(false);
   });
 
+  it("폴더 pause는 제외 출처를 FOLDER로 남기고, resume하면 출처를 지운다", async () => {
+    const { ChatRoomMappingRepository } = await import("../workRecordRepository");
+    await ChatRoomMappingRepository.reconcileFolderRooms({ folderId: FOLDER, rooms: [{ roomKey: "r1" }] });
+    await ChatRoomMappingRepository.reconcileFolderRooms({ folderId: FOLDER, rooms: [] });
+    expect((await get("r1")).excludedBy).toBe("FOLDER");
+    await ChatRoomMappingRepository.reconcileFolderRooms({ folderId: FOLDER, rooms: [{ roomKey: "r1" }] });
+    const row = await get("r1");
+    expect(row.excluded).toBe(false);
+    expect(row.excludedBy).toBeNull();
+  });
+
+  it("방 관리에서 직접 제외한 방은 폴더에 있어도 다시 켜지 않는다(이름 갱신은 계속)", async () => {
+    const { ChatRoomMappingRepository } = await import("../workRecordRepository");
+    await ChatRoomMappingRepository.reconcileFolderRooms({
+      folderId: FOLDER,
+      rooms: [{ roomKey: "r1", roomName: "방1" }],
+    });
+    await ChatRoomMappingRepository.upsert({ source: "KAKAO", roomKey: "r1", excluded: true });
+    expect((await get("r1")).excludedBy).toBe("MANUAL");
+
+    const res = await ChatRoomMappingRepository.reconcileFolderRooms({
+      folderId: FOLDER,
+      rooms: [{ roomKey: "r1", roomName: "방1-갱신" }],
+    });
+    expect(res.resumed).toBe(0);
+    expect(res.keptManualExcluded).toBe(1);
+    const row = await get("r1");
+    expect(row.excluded).toBe(true);
+    expect(row.excludedBy).toBe("MANUAL");
+    expect(row.roomName).toBe("방1-갱신");
+    expect(row.sourceFolderId).toBe(FOLDER);
+  });
+
+  it("직접 제외한 방이 폴더에서 빠져도 FOLDER로 덮어쓰지 않는다", async () => {
+    const { ChatRoomMappingRepository } = await import("../workRecordRepository");
+    await ChatRoomMappingRepository.reconcileFolderRooms({ folderId: FOLDER, rooms: [{ roomKey: "r1" }] });
+    await ChatRoomMappingRepository.upsert({ source: "KAKAO", roomKey: "r1", excluded: true });
+    const res = await ChatRoomMappingRepository.reconcileFolderRooms({ folderId: FOLDER, rooms: [] });
+    expect(res.paused).toBe(0);
+    const row = await get("r1");
+    expect(row.excluded).toBe(true);
+    expect(row.excludedBy).toBe("MANUAL");
+  });
+
+  it("출처 없는 옛 제외(excludedBy=null)는 종전대로 resume한다", async () => {
+    const { ChatRoomMappingRepository } = await import("../workRecordRepository");
+    await realPrisma.chatRoomMapping.create({
+      data: { source: "KAKAO", roomKey: "legacy", collectorType: "KATOK_AUTO", excluded: true, sourceFolderId: FOLDER },
+    });
+    const res = await ChatRoomMappingRepository.reconcileFolderRooms({
+      folderId: FOLDER,
+      rooms: [{ roomKey: "legacy" }],
+    });
+    expect(res.resumed).toBe(1);
+    expect((await get("legacy")).excluded).toBe(false);
+  });
+
+  it("직접 제외를 해제하면 출처가 지워지고 다음 정합에서 수집 대상으로 남는다", async () => {
+    const { ChatRoomMappingRepository } = await import("../workRecordRepository");
+    await ChatRoomMappingRepository.reconcileFolderRooms({ folderId: FOLDER, rooms: [{ roomKey: "r1" }] });
+    await ChatRoomMappingRepository.upsert({ source: "KAKAO", roomKey: "r1", excluded: true });
+    await ChatRoomMappingRepository.upsert({ source: "KAKAO", roomKey: "r1", excluded: false });
+    expect((await get("r1")).excludedBy).toBeNull();
+    await ChatRoomMappingRepository.reconcileFolderRooms({ folderId: FOLDER, rooms: [{ roomKey: "r1" }] });
+    expect((await get("r1")).excluded).toBe(false);
+  });
+
+  it("excluded를 지정하지 않은 upsert(러너 등록·매핑 변경)는 제외 출처를 건드리지 않는다", async () => {
+    const { ChatRoomMappingRepository } = await import("../workRecordRepository");
+    await ChatRoomMappingRepository.upsert({ source: "KAKAO", roomKey: "r1", excluded: true });
+    await ChatRoomMappingRepository.upsert({
+      source: "KAKAO",
+      roomKey: "r1",
+      entityType: "SELLER",
+      entityId: "seller-1",
+    });
+    const row = await get("r1");
+    expect(row.excluded).toBe(true);
+    expect(row.excludedBy).toBe("MANUAL");
+  });
+
   it("수동 등록방(sourceFolderId=null)은 폴더에 없어도 pause하지 않는다", async () => {
     const { ChatRoomMappingRepository } = await import("../workRecordRepository");
     await realPrisma.chatRoomMapping.create({

@@ -124,11 +124,11 @@ async function main() {
   }
 
   const json = (await response.json()) as {
-    result: { added: number; resumed: number; unchanged: number; paused: number; skippedTxt: number };
+    result: { added: number; resumed: number; unchanged: number; paused: number; skippedTxt: number; keptManualExcluded?: number };
   };
   const r = json.result;
   console.log(
-    `[kakao-reconcile] Done. added=${r.added} resumed=${r.resumed} paused=${r.paused} unchanged=${r.unchanged} skippedTxt=${r.skippedTxt}`
+    `[kakao-reconcile] Done. added=${r.added} resumed=${r.resumed} paused=${r.paused} unchanged=${r.unchanged} skippedTxt=${r.skippedTxt} keptManualExcluded=${r.keptManualExcluded ?? "?"}`
   );
 }
 
