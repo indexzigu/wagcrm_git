@@ -5,6 +5,11 @@ import type { Prisma } from "@prisma/client";
 
 // WorkRecord는 상태기계 없음(append-only). attributedBy(null→AUTO/MANUAL), isMasked 플래그만 관리한다.
 
+// ChatRoomMapping.excludedBy 값. 제외 아님=null. MANUAL은 폴더 정합이 되살리지 않는다.
+export type ChatRoomExcludedBy = "MANUAL" | "FOLDER";
+const EXCLUDED_BY_MANUAL: ChatRoomExcludedBy = "MANUAL";
+const EXCLUDED_BY_FOLDER: ChatRoomExcludedBy = "FOLDER";
+
 // Json 이원화: Postgres는 객체 그대로, SQLite는 문자열 직렬화.
 export function serializeJsonField(value: unknown): unknown {
   if (value === undefined || value === null) return value ?? null;
@@ -199,7 +204,7 @@ export class ChatRoomMappingRepository {
     const source = input.source ?? "KAKAO";
     const campaignField = input.campaignId === undefined ? {} : { campaignId: input.campaignId };
     const excludedByField =
-      input.excluded === undefined ? {} : { excludedBy: input.excluded ? "MANUAL" : null };
+      input.excluded === undefined ? {} : { excludedBy: input.excluded ? EXCLUDED_BY_MANUAL : null };
 
     return getPrisma().chatRoomMapping.upsert({
       where: { source_roomKey: { source, roomKey: input.roomKey } },
@@ -271,7 +276,7 @@ export class ChatRoomMappingRepository {
         continue;
       }
 
-      const manuallyExcluded = existing?.excluded === true && existing.excludedBy === "MANUAL";
+      const manuallyExcluded = existing?.excluded === true && existing.excludedBy === EXCLUDED_BY_MANUAL;
 
       await prisma.chatRoomMapping.upsert({
         where: { source_roomKey: { source, roomKey: room.roomKey } },
@@ -308,7 +313,7 @@ export class ChatRoomMappingRepository {
       if (desired.has(m.roomKey)) continue;
       await prisma.chatRoomMapping.update({
         where: { source_roomKey: { source, roomKey: m.roomKey } },
-        data: { excluded: true, excludedBy: "FOLDER" },
+        data: { excluded: true, excludedBy: EXCLUDED_BY_FOLDER },
       });
       paused += 1;
     }
