@@ -1501,6 +1501,7 @@ model ChatRoomMapping {
   roomType       String? // DIRECT|GROUP|OPEN
   collectorType  String         @default("KATOK_AUTO") // KATOK_AUTO|TXT_UPLOAD|EXCLUDED — 이중 수집 차단용
   excluded       Boolean        @default(false)
+  excludedBy     String? // MANUAL(방 관리에서 직접 제외 — 폴더 정합이 해제 금지)|FOLDER(폴더에서 빠져 pause), 제외 아님=null
   sourceFolderId String? // 카톡 폴더 자동등록: 이 방을 관리하는 NTChatFolder.folderId (수동 등록방=null, 불가침)
   campaignId     String?
   campaign       SalesCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)

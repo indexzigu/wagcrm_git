@@ -5,6 +5,11 @@ import type { Prisma } from "@prisma/client";
 
 // WorkRecord는 상태기계 없음(append-only). attributedBy(null→AUTO/MANUAL), isMasked 플래그만 관리한다.
 
+// ChatRoomMapping.excludedBy 값. 제외 아님=null. MANUAL은 폴더 정합이 되살리지 않는다.
+export type ChatRoomExcludedBy = "MANUAL" | "FOLDER";
+const EXCLUDED_BY_MANUAL: ChatRoomExcludedBy = "MANUAL";
+const EXCLUDED_BY_FOLDER: ChatRoomExcludedBy = "FOLDER";
+
 // Json 이원화: Postgres는 객체 그대로, SQLite는 문자열 직렬화.
 export function serializeJsonField(value: unknown): unknown {
   if (value === undefined || value === null) return value ?? null;
@@ -181,6 +186,9 @@ export class ChatRoomMappingRepository {
    * collectorType/roomType/campaignId/excluded는 undefined면 필드 자체를 생략해(=기존값 보존)
    * update 시 의도치 않게 초기화되지 않게 한다. campaignId는 null 지정(해제)과 undefined(보존)를
    * 구분해야 하므로 workRecordRepository.attributeByRoom의 campaignField 패턴을 그대로 따른다.
+   * excluded를 지정한 호출(방 관리 「제외」/「제외 해제」)만 제외 출처를 함께 쓴다 — true=MANUAL,
+   * false=null. MANUAL은 reconcileFolderRooms가 되살리지 않는다(실사고 2026-10-22: 매일 06시
+   * 폴더 정합이 직접 제외한 방을 다시 켰다). 미지정 호출(러너 등록·매핑 변경)은 출처를 보존한다.
    */
   static async upsert(input: {
     source?: string;
@@ -195,6 +203,8 @@ export class ChatRoomMappingRepository {
   }) {
     const source = input.source ?? "KAKAO";
     const campaignField = input.campaignId === undefined ? {} : { campaignId: input.campaignId };
+    const excludedByField =
+      input.excluded === undefined ? {} : { excludedBy: input.excluded ? EXCLUDED_BY_MANUAL : null };
 
     return getPrisma().chatRoomMapping.upsert({
       where: { source_roomKey: { source, roomKey: input.roomKey } },
@@ -207,6 +217,7 @@ export class ChatRoomMappingRepository {
         roomType: input.roomType ?? null,
         collectorType: input.collectorType ?? "KATOK_AUTO",
         excluded: input.excluded ?? false,
+        ...excludedByField,
         ...campaignField,
       },
       update: {
@@ -220,6 +231,7 @@ export class ChatRoomMappingRepository {
         roomType: input.roomType,
         collectorType: input.collectorType ?? undefined,
         excluded: input.excluded ?? undefined,
+        ...excludedByField,
         ...campaignField,
       },
     });
@@ -232,6 +244,8 @@ export class ChatRoomMappingRepository {
    *  - 이 폴더가 관리하던(sourceFolderId=folderId) 방인데 지금 폴더에 없음 → excluded=true(pause, 데이터 보존).
    *  - 수동 등록방(sourceFolderId=null)·다른 폴더 관리분은 불가침.
    *  - 이미 TXT_UPLOAD(직원 txt 수집)로 지정된 방은 존중해 건너뜀(자동 승격 금지).
+   *  - 방 관리에서 직접 제외한 방(excludedBy=MANUAL)은 폴더에 있어도 되살리지 않는다 — 이름·폴더
+   *    소속만 갱신. 폴더 pause(FOLDER)와 출처 없는 옛 제외(null)만 resume 대상이다.
    * 멱등: upsert + 집합 diff라 여러 번 돌려도 동일 결과.
    */
   static async reconcileFolderRooms(input: {
@@ -248,11 +262,12 @@ export class ChatRoomMappingRepository {
     let unchanged = 0;
     let paused = 0;
     let skippedTxt = 0;
+    let keptManualExcluded = 0;
 
     for (const room of input.rooms) {
       const existing = await prisma.chatRoomMapping.findUnique({
         where: { source_roomKey: { source, roomKey: room.roomKey } },
-        select: { collectorType: true, excluded: true },
+        select: { collectorType: true, excluded: true, excludedBy: true },
       });
 
       // 수동 txt 수집 방은 존중(자동 승격 금지) — kakao-uploads 이중수집 정책과 정합.
@@ -260,6 +275,8 @@ export class ChatRoomMappingRepository {
         skippedTxt += 1;
         continue;
       }
+
+      const manuallyExcluded = existing?.excluded === true && existing.excludedBy === EXCLUDED_BY_MANUAL;
 
       await prisma.chatRoomMapping.upsert({
         where: { source_roomKey: { source, roomKey: room.roomKey } },
@@ -276,13 +293,13 @@ export class ChatRoomMappingRepository {
           // roomName/roomType는 값 있을 때만 갱신, entity/campaign은 미지정 → 보존.
           roomName: room.roomName ?? undefined,
           roomType: room.roomType ?? undefined,
-          collectorType: "KATOK_AUTO",
-          excluded: false,
           sourceFolderId: input.folderId,
+          ...(manuallyExcluded ? {} : { collectorType: "KATOK_AUTO", excluded: false, excludedBy: null }),
         },
       });
 
-      if (!existing) added += 1;
+      if (manuallyExcluded) keptManualExcluded += 1;
+      else if (!existing) added += 1;
       else if (existing.excluded) resumed += 1;
       else unchanged += 1;
     }
@@ -296,12 +313,12 @@ export class ChatRoomMappingRepository {
       if (desired.has(m.roomKey)) continue;
       await prisma.chatRoomMapping.update({
         where: { source_roomKey: { source, roomKey: m.roomKey } },
-        data: { excluded: true },
+        data: { excluded: true, excludedBy: EXCLUDED_BY_FOLDER },
       });
       paused += 1;
     }
 
-    return { added, resumed, unchanged, paused, skippedTxt };
+    return { added, resumed, unchanged, paused, skippedTxt, keptManualExcluded };
   }
 
   // 증분 동기화 커서 갱신
