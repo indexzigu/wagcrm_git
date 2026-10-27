@@ -316,7 +316,7 @@ describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에�
     renderUnscanned(true, onRequestScan);
     await screen.findByTestId("invoice-month-2026-09");
     expect(onRequestScan).toHaveBeenCalledTimes(1);
-    // 열 때 도는 조회는 자동 조회 기간(종료 +10일부터)을 쓴다.
+    // 열 때 도는 조회는 자동 조회 기간을 쓴다(월정산은 판매 시작일부터 — 기간 계산은 부모의 `invoiceLookupSinceDays`).
     expect(onRequestScan).toHaveBeenCalledWith("auto");
   });
 
@@ -328,7 +328,9 @@ describe("CampaignInvoiceSlot — 열 때 자동 조회는 대상 캠페인에�
     expect(cell).not.toHaveTextContent("미발견");
     expect(screen.getByRole("button", { name: "조회" })).toBeEnabled();
     fireEvent.pointerDown(cell, { pointerType: "touch" });
-    expect(await screen.findByText(/판매 종료 10일 뒤부터 60일까지 자동으로 메일함을 확인합니다/)).toBeInTheDocument();
+    // 이 칸은 월정산 거래처 캠페인에만 그려진다 — 월정산 규칙(판매 시작일부터)을 말한다(오너 확정 2026-10-27, T-270).
+    expect(await screen.findByText(/판매중부터 정산중까지인 캠페인은 판매를 시작한 날부터 판매 종료 60일 뒤까지 자동으로 메일함을 확인합니다/)).toBeInTheDocument();
+    expect(screen.queryByText(/판매 종료 10일 뒤부터/)).not.toBeInTheDocument();
   });
 
   it("대상이 아니면 정산서 메일도 미리 읽지 않고, 「조회」를 누를 때 함께 읽는다", async () => {

@@ -84,8 +84,9 @@ export const maxDuration = 300;
 
 /**
  * 월정산 단위(`loadAutoRecordUnits`)를 읽는 창(일) — 저장된 기록만 보는 「확인 필요」(R0) 보고가 이 창을 쓴다.
- * ⛔ 메일 조회 창이 아니다. 메일은 오늘의 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일)의 가장 이른
- * 판매 종료일 +10일부터만 본다(`loadInvoiceLookupTargets`, 오너 확정 2026-10-21). 종전 「메일도 오늘부터 90일」은 SUPERSEDED.
+ * ⛔ 메일 조회 창이 아니다. 메일은 오늘의 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일, 월정산 거래처는 판매중부터 ·
+ * 판매 시작일 ~ 종료 +60일)의 가장 이른 조회 시작일부터만 본다(`loadInvoiceLookupTargets`, 오너 확정 2026-10-21 · 월정산
+ * 예외 2026-10-27 T-270). 종전 「메일도 오늘부터 90일」은 SUPERSEDED.
  */
 const SCAN_SINCE_DAYS = 90;
 
@@ -323,7 +324,9 @@ async function handler(request: Request): Promise<Response> {
   const dryRun = dryRunRequested || !writeEnabled;
   const prisma = getPrisma();
 
-  // ── 0. 오늘의 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일, 오너 확정 2026-10-21).
+  // ── 0. 오늘의 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일, 오너 확정 2026-10-21). 월정산 거래처 캠페인은
+  //      판매중부터 · 판매 시작일 ~ 종료 +60일이 달별 계산서 기록 대상이다(2026-10-27 T-270, `targets.includesUnit`) —
+  //      단일 날짜 확정 대상(`targets.campaignIds`)은 넓히지 않는다.
   //      대상이 없으면 메일함을 열지 않는다 — 응답 모양은 그대로 두고 0건으로 보고한다.
   const targets = await loadInvoiceLookupTargets(prisma);
 
@@ -412,6 +415,7 @@ async function handler(request: Request): Promise<Response> {
   });
   const fullPlan = buildIssuanceWritePlan(verdicts, expected);
   // ── 4. 쓰기는 오늘의 자동 조회 대상에만 — 정산 단계를 지났거나 종료 후 60일이 지난 캠페인에는 찍지 않는다.
+  //      월정산 예외(판매중부터)로 메일 창이 넓어져도 이 필터는 `campaignIds`(종전 규칙)만 본다 — 판매 중 캠페인에 안 찍는다.
   const plan = {
     ...fullPlan,
     ops: fullPlan.ops.filter((op) => op.campaignIds.some((id) => targets.campaignIds.has(id))),
@@ -521,7 +525,8 @@ async function handler(request: Request): Promise<Response> {
   const allFailures = [...failures, ...monthlyFailures];
 
   // ⚠️ 아래 판정 집계는 **대조 모집단 전체**(자동 조회 대상이 아닌 캠페인 포함)를 센다 — 대상만 걸러지는 것은
-  //    쓰기(`planned`·`applied`)다. 메일 창이 대상의 판매 종료 +10일부터라 비대상은 `outOfScanRange` 에 잡히는 것이 정상이다.
+  //    쓰기(`planned`·`applied`)다. 메일 창이 대상의 조회 시작일(판매 종료 +10일, 월정산은 판매 시작일)부터라 비대상은
+  //    `outOfScanRange` 에 잡히는 것이 정상이다.
   const byStatus = {
     confirmed: verdicts.filter((v) => v.status === "CONFIRMED").length,
     needsReview: verdicts.filter((v) => v.status === "NEEDS_REVIEW").length,

@@ -12,9 +12,10 @@
 import type { PrismaClient } from "@prisma/client";
 import type { CampaignIssuanceFacts } from "./expected-issuances";
 import { toKstYmd } from "../date-utils";
-import { SETTLEMENT_STAGE_STATUSES } from "../settlement-stage";
 import {
   INVOICE_LOOKUP_DAYS_AFTER_END,
+  MONTHLY_INVOICE_LOOKUP_STATUSES,
+  type InvoiceLookupWindow,
   addDaysToYmd,
   invoiceLookupSinceDays,
   isInvoiceLookupTarget,
@@ -199,52 +200,84 @@ export async function loadCampaignSettlementFacts(
 }
 
 export interface InvoiceLookupTargets {
-  /** 자동 조회 대상 캠페인 id — 그룹이면 멤버 전원(상태는 그룹 안에서 함께 움직인다) */
+  /**
+   * 단일 날짜 자동 확정 대상 캠페인 id — 그룹이면 멤버 전원(상태는 그룹 안에서 함께 움직인다). 정산 단계 · 종료 +10일 ~
+   * +60일 규칙만 따른다 — 월정산 예외(판매 중부터)는 달별 계산서 기록에만 쓰고 여기에 넣지 않는다(판매 중 캠페인의
+   * 다른 날짜 칸이 자동으로 찍히지 않게, T-270).
+   */
   campaignIds: Set<string>;
-  /** 대상 캠페인이 속한 그룹 id — 그룹 단위 쓰기·월정산 단위 키 대조용 */
+  /** `campaignIds` 의 캠페인이 속한 그룹 id — 그룹 단위 쓰기 대조용 */
   groupIds: Set<string>;
-  /** 메일 조회 창 일수(가장 이른 판매 종료일 +10일 ~ 오늘). 대상이 없으면 null — 메일함을 열지 않는다 */
+  /** 메일 조회 창 일수(대상들의 조회 시작일 중 가장 이른 날 ~ 오늘 — 월정산은 판매 시작일). 대상이 없으면 null — 메일함을 열지 않는다 */
   sinceDays: number | null;
-  /** 월정산 단위 키(그룹 id 또는 캠페인 id — `loadAutoRecordUnits`)가 대상인가 */
+  /** 월정산 단위 키(그룹 id 또는 캠페인 id — `loadAutoRecordUnits`)가 대상인가 — 위 대상 + 월정산 예외 대상 */
   includesUnit(unitKey: string): boolean;
 }
 
+type LookupRow = {
+  id: string;
+  startDate: Date;
+  endDate: Date;
+  deal: { partner: { monthlySettlement: boolean } | null } | null;
+};
+
+function toLookupWindow(row: LookupRow): InvoiceLookupWindow {
+  return {
+    startYmd: toKstYmd(row.startDate),
+    endYmd: toKstYmd(row.endDate),
+    monthlySettlement: row.deal?.partner?.monthlySettlement === true,
+  };
+}
+
+const LOOKUP_ROW_SELECT = {
+  id: true,
+  startDate: true,
+  endDate: true,
+  deal: { select: { partner: { select: { monthlySettlement: true } } } },
+} as const;
+
 /**
- * 오늘 계산서 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일)을 읽는다 — 판정은
- * `invoice-lookup-scope.ts` 가 소유하고 여기는 읽기만 한다(오너 확정 2026-10-21).
+ * 오늘 계산서 자동 조회 대상(정산 단계 · 판매 종료 +10일 ~ +60일, 월정산은 판매중부터 · 판매 시작일 ~ 종료 +60일)을
+ * 읽는다 — 판정은 `invoice-lookup-scope.ts` 가 소유하고 여기는 읽기만 한다(오너 확정 2026-10-21 · 2026-10-27).
  */
 export async function loadInvoiceLookupTargets(
   prisma: PrismaClient,
   now: Date = new Date(),
 ): Promise<InvoiceLookupTargets> {
   const todayYmd = toKstYmd(now);
-  // 저장 시각대가 어긋나도 빠지지 않게 하루 넉넉히 거른 뒤 KST 날짜로 다시 판정한다.
+  // 저장 시각대가 어긋나도 빠지지 않게 하루 넉넉히 거른 뒤 KST 날짜로 다시 판정한다. 상태는 월정산 예외까지 넓게 읽고
+  // 일반 캠페인은 아래 판정이 다시 정산 단계로 거른다(`MONTHLY_INVOICE_LOOKUP_STATUSES` ⊃ 정산 단계).
   const endFloor = new Date(`${addDaysToYmd(todayYmd, -(INVOICE_LOOKUP_DAYS_AFTER_END + 1))}T00:00:00.000Z`);
   const rows = await prisma.salesCampaign.findMany({
-    where: { status: { in: [...SETTLEMENT_STAGE_STATUSES] }, endDate: { gte: endFloor } },
-    select: { id: true, groupId: true, status: true, endDate: true },
+    where: { status: { in: [...MONTHLY_INVOICE_LOOKUP_STATUSES] }, endDate: { gte: endFloor } },
+    select: { ...LOOKUP_ROW_SELECT, groupId: true, status: true },
   });
-  const targets = rows.filter((row) =>
-    isInvoiceLookupTarget({ status: row.status, endYmd: toKstYmd(row.endDate) }, todayYmd),
+  const targets = rows.filter((row) => isInvoiceLookupTarget({ status: row.status, ...toLookupWindow(row) }, todayYmd));
+  // 단일 날짜 자동 확정은 일반 규칙만 — 월정산 캠페인도 정산 단계 · 종료 +10일 ~ +60일이면 종전대로 든다.
+  const general = targets.filter((row) =>
+    isInvoiceLookupTarget({ status: row.status, ...toLookupWindow(row), monthlySettlement: false }, todayYmd),
   );
-  const groupIds = new Set(targets.map((row) => row.groupId).filter((id): id is string => id !== null));
-  const campaignIds = new Set(targets.map((row) => row.id));
-  const endYmds = targets.map((row) => toKstYmd(row.endDate));
-  if (groupIds.size > 0) {
-    // 멤버의 종료일도 창에 넣는다 — 먼저 끝난 멤버가 있으면 그 멤버의 종료 +10일부터 본다.
+  const groupIds = new Set(general.map((row) => row.groupId).filter((id): id is string => id !== null));
+  const campaignIds = new Set(general.map((row) => row.id));
+  const unitKeys = new Set(targets.map((row) => row.groupId ?? row.id));
+  const windows = targets.map(toLookupWindow);
+  const targetGroupIds = [...new Set(targets.map((row) => row.groupId).filter((id): id is string => id !== null))];
+  if (targetGroupIds.length > 0) {
+    // 멤버의 날짜도 창에 넣는다 — 먼저 끝난(월정산은 먼저 시작한) 멤버가 있으면 그 멤버 기준으로 본다.
     const members = await prisma.salesCampaign.findMany({
-      where: { groupId: { in: [...groupIds] } },
-      select: { id: true, endDate: true },
+      where: { groupId: { in: targetGroupIds } },
+      select: { ...LOOKUP_ROW_SELECT, groupId: true },
     });
     for (const member of members) {
-      campaignIds.add(member.id);
-      endYmds.push(toKstYmd(member.endDate));
+      if (member.groupId !== null && groupIds.has(member.groupId)) campaignIds.add(member.id);
+      windows.push(toLookupWindow(member));
     }
   }
   return {
     campaignIds,
     groupIds,
-    sinceDays: invoiceLookupSinceDays(endYmds, todayYmd, "auto"),
-    includesUnit: (unitKey) => groupIds.has(unitKey) || campaignIds.has(unitKey),
+    sinceDays: invoiceLookupSinceDays(windows, todayYmd, "auto"),
+    // 단위 키는 `groupId ?? id` — 종전 규칙 대상도 `targets` 안에 있으므로 이 집합 하나가 전부 덮는다.
+    includesUnit: (unitKey) => unitKeys.has(unitKey),
   };
 }

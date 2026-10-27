@@ -285,9 +285,18 @@ export function SettlementSection({
   const receiptLoadingRef = useRef(false);
   // 마지막 메일함 조회가 자동(+10일)이었나 수동(+1일)이었나 — 결정 뒤 재조회가 기간을 말없이 바꾸지 않게.
   const lastReceiptScanModeRef = useRef<InvoiceLookupMode>("manual");
-  // 계산서 메일 조회 대상·기간(오너 확정 2026-10-21, `invoice-lookup-scope.ts`). 오늘은 패널이 열릴 때 한 번 고정한다.
+  // 계산서 메일 조회 대상·기간(오너 확정 2026-10-21 · 월정산 예외 2026-10-27, `invoice-lookup-scope.ts`). 오늘은 패널이
+  // 열릴 때 한 번 고정한다. 월정산 거래처 캠페인은 판매 중에도 대상이고 메일을 판매 시작일부터 본다.
   const [todayYmd] = useState(() => toKstYmd(new Date()));
-  const invoiceAutoLookup = isInvoiceLookupTarget({ status: campaign.status, endYmd: campaign.endDate }, todayYmd);
+  const invoiceLookupWindow = useMemo(
+    () => ({
+      startYmd: campaign.startDate,
+      endYmd: campaign.endDate,
+      monthlySettlement: campaign.partnerMonthlySettlement === true,
+    }),
+    [campaign.startDate, campaign.endDate, campaign.partnerMonthlySettlement],
+  );
+  const invoiceAutoLookup = isInvoiceLookupTarget({ status: campaign.status, ...invoiceLookupWindow }, todayYmd);
 
   const [groupMemberIds, setGroupMemberIds] = useState<string[] | null>(null);
 
@@ -374,11 +383,12 @@ export function SettlementSection({
       // 이 경로는 그 조회 실패를 오너에게 고지한다(notifyFailure) — 발행 경로와 달리
       // 판정 범위 자체가 좁아지므로 조용히 넘기면 안 된다.
       await resolveMemberIds({ notifyFailure: true });
-      // 메일함은 판매 종료 +10일(자동) · +1일(「조회」 버튼)부터 오늘까지 본다(오너 확정 2026-10-21).
-      // 조합 캠페인은 회차 일정이 함께 움직이므로(`fanOutMemberSchedule`) 이 캠페인의 종료일로 충분하다. 크론
-      // (`loadInvoiceLookupTargets`)은 멤버 종료일까지 모으는데, 일정이 어긋난 옛 기록에 대한 방어일 뿐 같은 값이다.
-      const ends = campaign.endDate ? [campaign.endDate] : [];
-      const receiptSinceDays = invoiceLookupSinceDays(ends, todayYmd, mode) ?? 1;
+      // 메일함은 판매 종료 +10일(자동) · +1일(「조회」 버튼)부터 오늘까지 본다(오너 확정 2026-10-21). 월정산 거래처
+      // 캠페인은 둘 다 판매 시작일부터(2026-10-27, T-270). 조합 캠페인은 회차 일정이 함께 움직이므로
+      // (`fanOutMemberSchedule`) 이 캠페인의 날짜로 충분하다. 크론(`loadInvoiceLookupTargets`)은 멤버 날짜까지 모으는데,
+      // 일정이 어긋난 옛 기록에 대한 방어일 뿐 같은 값이다.
+      const windows = invoiceLookupWindow.endYmd && invoiceLookupWindow.startYmd ? [invoiceLookupWindow] : [];
+      const receiptSinceDays = invoiceLookupSinceDays(windows, todayYmd, mode) ?? 1;
       const res = await fetch(`/api/settlement/tax-invoice-receipts?sinceDays=${receiptSinceDays}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -400,7 +410,7 @@ export function SettlementSection({
       receiptLoadingRef.current = false;
       setReceiptLoading(false);
     }
-  }, [resolveMemberIds, campaign.endDate, todayYmd]);
+  }, [resolveMemberIds, invoiceLookupWindow, todayYmd]);
 
   /**
    * 수취 결정(승인·무관 처리·되돌리기) 뒤처리.
