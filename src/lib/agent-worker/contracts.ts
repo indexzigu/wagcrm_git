@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { z } from "zod";
+import { formatOptionDealName } from "@/lib/deal-display";
 
 export const AGENT_JOB_LEASE_MS = 120_000;
 export const AGENT_JOB_HEARTBEAT_MS = 30_000;
@@ -53,6 +54,7 @@ export const AgentJobOperationSchema = z.enum([
   "get_order_campaign_mappings",
   "get_store_product_options",
   "apply_product_mappings",
+  "get_campaign_items",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -513,6 +515,104 @@ export const upsertProductMappingsArgsSchema = upsertProductMappingsInputSchema
   .strict()
   .superRefine(refineProductMappingRows);
 
+/**
+ * 「판매캠페인 품목 추가」(`add_campaign_items`, 2026-10-27 · T-271) — 새 상품 구성·옵션이 생겼을 때 봇이 판매캠페인
+ * 하나의 품목(매출 상세내역 줄)에 하위품목을 덧붙이는 기안. 화면의 두 손 작업(판매 조건 화면에서 하위품목 만들기 →
+ * 판매캠페인 품목 표에 「+ 옵션 품목 추가」 → 저장)을 한 건으로 묶는다. 줄마다 둘 중 하나다:
+ *  - `dealId` — 이미 있는 하위품목(또는 상위 판매 조건 자신)을 이 캠페인 품목에 연결한다.
+ *  - `dealName` + `sellingPrice` — 상위 판매 조건 밑에 하위품목을 새로 만들고 연결한다.
+ * 기존 품목 줄은 고치거나 지우지 않는다(화면에서 한다). `mainDealId` 는 봇이 본 상위 판매 조건이다 — 기안 시점·승인
+ * 시점에 캠페인의 지금 판매 조건과 대조해, 그 사이 캠페인이 다른 판매 조건으로 바뀌었으면 실행하지 않는다.
+ */
+export const MAX_CAMPAIGN_ITEMS_PER_PROPOSAL = 20;
+export const MAX_CAMPAIGN_ITEM_NAME_CHARS = 200;
+export const MAX_CAMPAIGN_ITEM_PRICE = 100_000_000;
+
+export const campaignItemRowSchema = z
+  .object({
+    dealId: opaqueIdSchema.optional(),
+    dealName: z.string().trim().min(1).max(MAX_CAMPAIGN_ITEM_NAME_CHARS).optional(),
+    sellingPrice: z.number().int().min(0).max(MAX_CAMPAIGN_ITEM_PRICE).optional(),
+    // 수수료율(%) — 화면의 하위품목 만들기 칸과 같은 단위. 없으면 상위 판매 조건의 수수료율을 물려받는다.
+    totalCommissionRate: z.number().finite().min(0).max(99.99).optional(),
+    unitQuantity: z.number().int().min(1).max(100_000).optional(),
+  })
+  .strict();
+
+export type CampaignItemRow = z.infer<typeof campaignItemRowSchema>;
+
+/** 하위품목 이름 비교 키 — 옵션명 비교 키와 같은 규칙(NFC · 앞뒤 공백 · 안쪽 연속 공백 하나로). 저장값은 그대로다. */
+export function campaignItemNameKey(value: string): string {
+  return normalizeMappingOptionName(value);
+}
+
+/**
+ * 판매 조건 밑 하위품목 이름 비교 키 — 화면이 저장하는 이름(`formatOptionDealName`: 「판매 조건 이름 - 옵션 이름」)으로
+ * 맞춘 뒤 비교 키를 만든다. 봇이 「3개입」만 보내도, 이미 있는 「샘플크림 - 3개입」과 같은 하위품목으로 본다(양쪽 모두
+ * 같은 함수로 맞추므로 접두가 없는 옛 이름도 비교된다). 기안 시점 확인과 승인 시점 실행기가 같은 키를 쓴다.
+ */
+export function campaignOptionNameKey(mainDealName: string, optionName: string): string {
+  return campaignItemNameKey(formatOptionDealName(mainDealName, optionName));
+}
+
+/** 줄마다 「연결(dealId)」과 「새로 만들기(dealName+sellingPrice)」 중 정확히 하나, 그리고 기안 안 중복 금지. */
+export function refineCampaignItems(
+  value: { items: ReadonlyArray<CampaignItemRow> },
+  context: z.RefinementCtx,
+): void {
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  value.items.forEach((row, index) => {
+    const path = ["items", index];
+    if (Boolean(row.dealId) === Boolean(row.dealName)) {
+      context.addIssue({
+        code: "custom",
+        path: [...path, "dealId"],
+        message: "줄마다 dealId(이미 있는 하위품목 연결)와 dealName(새 하위품목) 중 정확히 하나를 넣어야 한다.",
+      });
+      return;
+    }
+    if (row.dealId) {
+      if (row.sellingPrice !== undefined || row.totalCommissionRate !== undefined || row.unitQuantity !== undefined) {
+        context.addIssue({
+          code: "custom",
+          path: [...path, "sellingPrice"],
+          message: "dealId 로 연결하는 줄에는 가격·수수료율·수량을 넣지 않는다(이미 있는 하위품목 값을 쓴다).",
+        });
+      }
+      if (seenIds.has(row.dealId)) {
+        context.addIssue({ code: "custom", path: [...path, "dealId"], message: `같은 dealId 가 기안 안에 두 번 있다: ${row.dealId}` });
+      }
+      seenIds.add(row.dealId);
+      return;
+    }
+    if (row.sellingPrice === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: [...path, "sellingPrice"],
+        message: "새 하위품목(dealName)에는 판매가(sellingPrice)가 필요하다.",
+      });
+    }
+    const key = campaignItemNameKey(row.dealName ?? "");
+    if (seenNames.has(key)) {
+      context.addIssue({ code: "custom", path: [...path, "dealName"], message: `같은 하위품목 이름이 기안 안에 두 번 있다: ${key}` });
+    }
+    seenNames.add(key);
+  });
+}
+
+export const addCampaignItemsInputSchema = z.object({
+  campaignId: opaqueIdSchema,
+  mainDealId: opaqueIdSchema,
+  items: z.array(campaignItemRowSchema).min(1).max(MAX_CAMPAIGN_ITEMS_PER_PROPOSAL),
+  memo: z.string().trim().min(1).max(500).optional(),
+});
+
+/** 저장 args 스키마 — 실행기(`write-actions/add-campaign-items.ts`)의 argsSchema, 기안 의도 도구의 입력, 결재함 미리보기. */
+export const addCampaignItemsArgsSchema = addCampaignItemsInputSchema.strict().superRefine(refineCampaignItems);
+
+export type AddCampaignItemsArgs = z.infer<typeof addCampaignItemsArgsSchema>;
+
 export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -600,6 +700,13 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     })
     .strict()
     .superRefine(refineDistinctMappingOptionNames),
+  z
+    .object({
+      action: z.literal("add_campaign_items"),
+      ...addCampaignItemsInputSchema.shape,
+    })
+    .strict()
+    .superRefine(refineCampaignItems),
 ]);
 
 /**
@@ -757,6 +864,27 @@ export const applyProductMappingsInputSchema = z
   .strict()
   .superRefine(refineDistinctMappingOptionNames);
 
+/**
+ * 판매캠페인 품목 조회(`get_campaign_items`, 2026-10-27 · T-271) — 봇이 `add_campaign_items` 기안을 올리기 전에 대상
+ * 판매캠페인, 그 상위 판매 조건, 판매 조건 밑 하위품목, 각 하위품목이 이미 품목에 있는지를 본다. `campaignId` 로 하나를
+ * 집거나, `query`(판매 조건 이름·셀러 이름 일부)로 최근 캠페인 몇 건을 찾는다.
+ */
+const campaignItemsInputSchema = z
+  .object({
+    campaignId: opaqueIdSchema.optional(),
+    query: z.string().trim().min(1).max(160).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (Boolean(value.campaignId) === Boolean(value.query)) {
+      context.addIssue({
+        code: "custom",
+        path: ["campaignId"],
+        message: "campaignId 와 query 중 정확히 하나를 넣어야 한다.",
+      });
+    }
+  });
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -773,6 +901,7 @@ const operationInputSchemas = {
   get_order_campaign_mappings: orderCampaignMappingsInputSchema,
   get_store_product_options: storeProductOptionsInputSchema,
   apply_product_mappings: applyProductMappingsInputSchema,
+  get_campaign_items: campaignItemsInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;
