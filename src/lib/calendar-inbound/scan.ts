@@ -146,6 +146,8 @@ export type InboundRow = {
   status: string;
   skipReason: string | null;
   proposalId: string | null;
+  /** 승인돼 처리 끝난 행이 이어진 캠페인(없으면 null). */
+  campaignId?: string | null;
   /** 해석 대기 행이면 `{ hintStage }`(SQLite 레인은 문자열로 온다 — `parseStoredJsonObject` 로 읽는다). */
   parsed: unknown;
   /** Gemini 일괄에 오래 기다린 해석 대기 행부터 담는 기준. */
@@ -184,7 +186,13 @@ export type CalendarInboundScanDeps = {
     items: ReadonlyArray<{ id: string; summary: string }>,
     opts: { timeoutMs: number },
   ) => Promise<TitleHintsBatchResult>;
-  resolveTarget: (intent: ParsedCalendarIntent, event: CandidateEvent) => Promise<ResolveResult>;
+  resolveTarget: (
+    intent: ParsedCalendarIntent,
+    event: CandidateEvent,
+    opts?: { linkedCampaignId?: string | null },
+  ) => Promise<ResolveResult>;
+  /** 새 기안으로 대체된 옛 실패(FAILED) 기안을 반려로 닫는다 — 결재함에 죽은 카드가 남지 않게. */
+  retireProposal: (proposalId: string) => Promise<void>;
   createProposal: (data: Prisma.ActionProposalUncheckedCreateInput) => Promise<{ id: string }>;
   findRows: (googleEventIds: string[]) => Promise<InboundRow[]>;
   findProposalStatuses: (proposalIds: string[]) => Promise<Map<string, string>>;
@@ -335,6 +343,8 @@ type Work = {
   version: InboundRowVersion | null;
   /** 기존 행(해석 대기 행의 lastSeenAt·id 를 읽는다). */
   row: InboundRow | undefined;
+  /** 이 일정을 다시 판정하면서 연결을 끊게 될 옛 FAILED 기안 id(재판정 대기 행에 한함) — 끊는 순간 반려로 닫는다. */
+  supersedesProposalId: string | null;
   /** 지난 회차에 예산이 모자라 로컬을 못 부른 해석 대기 행(같은 지문) — 이번 회차 로컬 단계에서 먼저 부른다. */
   carriedLocal: boolean;
 };
@@ -348,9 +358,21 @@ type ParseResult = { ok: true; intent: ParsedCalendarIntent } | ParseFailure;
  */
 function rowWriter(work: Work, now: Date, deps: CalendarInboundScanDeps) {
   let current = work.version;
+  let retired = false;
   const save = async (write: InboundRowWrite): Promise<InboundRowVersion | null> => {
     const saved = await deps.saveRow(work.event.id, write, current ?? undefined);
     if (saved) current = saved;
+    // 행이 옛 FAILED 기안과의 연결을 끊은 순간부터 그 카드는 승인 단계에서 늘 SUPERSEDED 로 거절된다 — 결재함에
+    // 남기지 말고 닫는다. 분류 때 읽은 상태가 FAILED 였던 카드만(`supersedesProposalId`), 한 건당 한 번.
+    if (saved && !retired && work.supersedesProposalId && write.proposalId === null) {
+      retired = true;
+      try {
+        await deps.retireProposal(work.supersedesProposalId);
+      } catch (err) {
+        // 닫기 실패는 판정을 되돌릴 이유가 아니다(행은 이미 정리됨) — 보고만 한다. 카드는 여전히 승인 단계에서 거절된다.
+        console.error(`[calendar-inbound] 대체된 옛 기안 ${work.supersedesProposalId} 닫기 실패:`, err);
+      }
+    }
     return saved;
   };
   const base = {
@@ -380,6 +402,13 @@ async function saveAwaiting(
   return saved ? "awaiting" : "lost";
 }
 
+/** 승인돼 처리 끝난 캠페인 일정 행이면 그 캠페인 id — 고쳐진 일정을 새 회차가 아니라 이 캠페인 기준으로 판정한다. */
+function linkedCampaignOf(row: InboundRow | undefined): string | null {
+  if (!row || row.status !== INBOUND_STATUS.ADOPTED || !row.campaignId) return null;
+  // 입금·지급 일정이 묶인 캠페인은 날짜 칸이 다르다 — 캠페인 일정으로 해석됐던 행만.
+  return parseStoredJsonObject(row.parsed).kind === "campaign" ? row.campaignId : null;
+}
+
 /** 해석(성공 또는 최종 실패)이 정해진 한 건을 끝까지 — SKIPPED · noop · 기안. 예외는 호출부가 잡는다. */
 async function settleParsed(
   work: Work,
@@ -395,7 +424,7 @@ async function settleParsed(
     return saved ? "skipped" : "lost";
   }
 
-  const resolved = await deps.resolveTarget(parsed.intent, event);
+  const resolved = await deps.resolveTarget(parsed.intent, event, { linkedCampaignId: linkedCampaignOf(work.row) });
   if (!resolved.ok) {
     const reason = resolved.reason === "invalid_draft" ? `invalid_draft: ${resolved.detail}` : resolved.reason;
     const saved = await save({
@@ -594,6 +623,12 @@ async function scanOnce(opts: ScanOptions): Promise<ScanSummary> {
         retrying: row?.status === INBOUND_STATUS.PENDING_RETRY,
         version: row ? { id: row.id, updatedAt: row.updatedAt } : null,
         row,
+        supersedesProposalId:
+          row?.status === INBOUND_STATUS.PENDING_RETRY &&
+          row.proposalId &&
+          proposalStatuses.get(row.proposalId) === "FAILED"
+            ? row.proposalId
+            : null,
         carriedLocal: decision.kind === "awaiting" && decision.stage === "local",
       };
       // Gemini 단계로 적힌 행은 로컬 모델에 다시 보내지 않는다(이미 못 풀었다).
@@ -759,8 +794,15 @@ function defaultDeps(): CalendarInboundScanDeps {
     loadDictionary: () => loadInboundDictionary(getPrisma()),
     extractHintsLocal: (summary, { timeoutMs }) => extractTitleHintsLocal(summary, { timeoutMs }),
     extractHintsBatch: (items, { timeoutMs }) => extractTitleHintsBatch(items, { totalTimeoutMs: timeoutMs }),
-    resolveTarget: (intent, event) => resolveInboundTarget(intent, event, getPrisma()),
+    resolveTarget: (intent, event, opts) => resolveInboundTarget(intent, event, getPrisma(), opts),
     createProposal: (data) => ActionProposalRepository.create(data),
+    retireProposal: async (proposalId) => {
+      // 그 사이 오너가 재시도 승인으로 집었으면(FAILED 아님) 아무것도 쓰지 않는다 — 승인이 행·기안을 처리한다.
+      await ActionProposalRepository.rejectSupersededFailed(proposalId, {
+        actor: "calendar-inbound",
+        note: "캘린더 일정이 고쳐져 다시 판정되어 이 기안은 더 쓰이지 않음",
+      });
+    },
     findRows: (googleEventIds) =>
       getPrisma().calendarInboundEvent.findMany({
         where: { googleEventId: { in: googleEventIds } },
@@ -771,6 +813,7 @@ function defaultDeps(): CalendarInboundScanDeps {
           status: true,
           skipReason: true,
           proposalId: true,
+          campaignId: true,
           parsed: true,
           lastSeenAt: true,
           updatedAt: true,

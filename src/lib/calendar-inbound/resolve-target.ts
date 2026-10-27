@@ -177,6 +177,7 @@ export async function resolveInboundTarget(
   intent: ParsedCalendarIntent,
   event: CandidateEvent,
   db: Db,
+  opts: { linkedCampaignId?: string | null } = {},
 ): Promise<ResolveResult> {
   const rows = (await db.salesCampaign.findMany({
     where: { sellerId: intent.sellerId, dealId: { in: intent.dealIds } },
@@ -197,7 +198,7 @@ export async function resolveInboundTarget(
   const candidates = pickRecentCampaigns(rows);
 
   if (intent.kind === "campaign") {
-    return resolveCampaignKind(intent, event, db, candidates);
+    return resolveCampaignKind(intent, event, db, candidates, opts.linkedCampaignId ?? null);
   }
   return resolveMoneyKind(intent.kind, intent.supplierHint, event, db, candidates);
 }
@@ -207,7 +208,20 @@ async function resolveCampaignKind(
   event: CandidateEvent,
   db: Db,
   candidates: CampaignRow[],
+  linkedCampaignId: string | null,
 ): Promise<ResolveResult> {
+  // 이미 처리된 일정(승인돼 이 캠페인으로 이어진 행)은 연결된 캠페인을 대상으로 판정한다 — 승인 뒤 장부 넘겨받기가
+  // 예외로 실패해 원본이 CRM 소유로 안 잡힌 채 고쳐졌을 때, 회차 표기 없는 제목이 다시 「새 회차 생성」으로 올라오지 않게.
+  // 단 제목의 회차가 연결 캠페인의 회차와 다르면(2차였던 일정을 3차로 고쳐 씀) 새 회차 의도라 기존 규칙으로 간다.
+  const linkedRow = linkedCampaignId ? candidates.find((row) => row.id === linkedCampaignId) : undefined;
+  const sameRound =
+    linkedRow !== undefined &&
+    (intent.round === null || linkedRow.roundNumber === intent.round || (intent.round === 1 && linkedRow.roundNumber === null));
+  const linked = sameRound ? linkedRow : undefined;
+  if (linked) {
+    const warnings = event.startDate === event.endDate ? [WARN_CHECK_END_DATE] : [];
+    return buildUpdateDraft(db, linked, { startDate: event.startDate, endDate: event.endDate }, "campaign", warnings);
+  }
   const round = intent.round;
   if (round !== null) {
     const matches = candidates.filter(

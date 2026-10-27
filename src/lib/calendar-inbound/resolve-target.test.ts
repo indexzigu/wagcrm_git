@@ -106,6 +106,49 @@ function event(startDate: string, endDate = startDate): CandidateEvent {
   } as CandidateEvent;
 }
 
+describe("resolveInboundTarget — 이미 처리된 일정의 연결 캠페인 (T-263)", () => {
+  it("연결된 캠페인이 있으면 회차 표기 없는 제목도 새 회차가 아니라 그 캠페인 기간 수정으로 판정한다", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: null })]);
+    const r = await resolveInboundTarget(intent({ round: null }), event("2026-11-01", "2026-11-12"), db, {
+      linkedCampaignId: "c1",
+    });
+    expect(r.ok && r.draft.action).toBe("update_record");
+    expect(r.ok && r.draft.targetCampaignId).toBe("c1");
+  });
+
+  it("연결 캠페인이 후보에 없으면(드랍·딜 변경) 기존 규칙으로 돌아간다", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: null })]);
+    const r = await resolveInboundTarget(intent({ round: null }), event("2026-12-01", "2026-12-07"), db, {
+      linkedCampaignId: "gone",
+    });
+    expect(r.ok && r.draft.action).toBe("create_campaign_round");
+  });
+
+  it("제목의 회차가 연결 캠페인 회차와 다르면 연결 캠페인을 쓰지 않는다(새 회차 의도)", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: 2 })]);
+    const r = await resolveInboundTarget(intent({ round: 3 }), event("2026-12-01", "2026-12-07"), db, {
+      linkedCampaignId: "c1",
+    });
+    expect(r.ok && r.draft.action).toBe("create_campaign_round");
+  });
+
+  it("제목의 회차가 연결 캠페인 회차와 같으면 그 캠페인 기간 수정이다", async () => {
+    const db = fakeDb([campaign({ id: "c1", roundNumber: 2 })]);
+    const r = await resolveInboundTarget(intent({ round: 2 }), event("2026-11-01", "2026-11-12"), db, {
+      linkedCampaignId: "c1",
+    });
+    expect(r.ok && r.draft.targetCampaignId).toBe("c1");
+  });
+
+  it("연결 캠페인 값이 이미 같으면 noop", async () => {
+    const db = fakeDb([campaign({ id: "c1" })]);
+    const r = await resolveInboundTarget(intent({ round: null }), event("2026-11-01", "2026-11-07"), db, {
+      linkedCampaignId: "c1",
+    });
+    expect(r.ok && r.draft.noop).toBe(true);
+  });
+});
+
 describe("resolveInboundTarget — 캠페인 회차", () => {
   it("회차 표기 없음 → 새 회차 생성(가장 최근 캠페인의 딜) · 후보가 여럿이면 자동 지정 경고", async () => {
     const db = fakeDb([
