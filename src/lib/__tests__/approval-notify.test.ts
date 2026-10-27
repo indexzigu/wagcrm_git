@@ -95,6 +95,13 @@ describe("formatApprovalMessages", () => {
 });
 
 describe("formatApprovalBatch", () => {
+  it("키는 구성 전체의 지문이다 — 첫 기안이 같아도 구성이 바뀌면 다른 키, 순서만 바뀌면 같은 키", () => {
+    const abcd = ["a", "b", "c", "d"].map((id) => ({ id, title: id }));
+    const key = (list: { id: string; title: string }[]) => formatApprovalBatch(list, BASE).key;
+    expect(key([...abcd, { id: "e", title: "e" }])).not.toBe(key(abcd));
+    expect(key([...abcd].reverse())).toBe(key(abcd));
+  });
+
   it("제목은 10건까지 나열하고 나머지는 개수로 · 결재함 링크", () => {
     const list = Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, title: `기안 ${i}` }));
     const m = formatApprovalBatch(list, BASE);
@@ -102,7 +109,7 @@ describe("formatApprovalBatch", () => {
     expect(lines.slice(0, 10)).toEqual(list.slice(0, 10).map((p) => `· ${p.title}`));
     expect(lines).toContain("외 3건");
     expect(lines.at(-1)).toBe("결재함: https://crm.example.com/approvals");
-    expect(m.key).toBe("approval-batch-p0");
+    expect(m.key).toMatch(/^approval-batch-[0-9a-f]{16}$/);
     expect(m.proposalIds).toHaveLength(13);
   });
 });

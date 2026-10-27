@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { ACTION_LABELS } from "@/lib/agent/action-labels";
 import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import { kstDateTime } from "@/lib/cron-incident-report";
@@ -96,6 +97,10 @@ export function formatApprovalMessage(p: ApprovalNotifyProposal, baseUrl: string
   };
 }
 
+/**
+ * 묶음 1통. 제목은 BATCH_LIST_MAX 건까지만 나열하지만 `proposalIds` 에는 실린 기안 **전부**를 담는다 — 나머지는
+ * 「외 N건」과 결재함 링크로 알렸으므로 함께 확인한다(다음 회차에 같은 기안을 또 묶어 보내지 않게).
+ */
 export function formatApprovalBatch(
   proposals: Pick<ApprovalNotifyProposal, "id" | "title">[],
   baseUrl: string | null,
@@ -105,14 +110,20 @@ export function formatApprovalBatch(
   const link = linkTo(baseUrl, "/approvals");
   if (link) lines.push("", `결재함: ${link}`);
   return {
-    // 묶음마다 다른 키 — notify.sh 의 같은 키 6시간 하한에 다음 묶음이 막히지 않게(첫 기안 id 로 가른다).
-    key: `approval-batch-${proposals[0]?.id ?? "empty"}`,
+    // 키는 실린 기안 **구성 전체**의 지문이다. 🪤 첫 기안 id 만 쓰면, 확인 POST 가 실패한 뒤 다음 회차에 같은 첫 기안
+    // + 새 기안으로 묶음이 다시 만들어질 때 notify.sh 의 같은 키 6시간 하한이 발송을 건너뛰고(exit 0) 발송기는 그것을
+    // 「보냈음」으로 읽어 새 기안을 알림 없이 확인해 버린다. 구성이 바뀌면 키도 바뀌어 다시 나간다(유실 대신 중복).
+    key: `approval-batch-${batchFingerprint(proposals.map((p) => p.id))}`,
     icon: "📝",
     title: `결재 대기 ${proposals.length}건`,
     detail: lines.join("\n"),
     ackField: "ownerNotifiedAt",
     proposalIds: proposals.map((p) => p.id),
   };
+}
+
+function batchFingerprint(ids: string[]): string {
+  return createHash("sha256").update([...ids].sort().join(",")).digest("hex").slice(0, 16);
 }
 
 /** 한 회차 목록 — 임계 미만이면 기안마다 1통, 이상이면 묶음 1통. 빈 목록이면 빈 배열. */

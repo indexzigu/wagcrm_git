@@ -60,9 +60,16 @@ async function pendingMessages(now: Date): Promise<ApprovalOutboxMessage[]> {
     rows.map(async (r) => {
       // sqlite(dev:local)는 Json 을 문자열로 저장한다 — 결재함 상세 API 와 같이 역직렬화한다.
       const payload = deserializeJsonField(r.payload);
+      // 이름 조회가 한 건에서 실패해도 그 기안을 이름 없이 보낸다 — 한 행의 실패가 다른 기안 알림까지 막지 않게.
       const [targetName, argLabels] = await Promise.all([
-        resolveEntityLabel(r.targetEntityType, r.targetEntityId),
-        resolveProposalArgLabels(payload),
+        resolveEntityLabel(r.targetEntityType, r.targetEntityId).catch((error: unknown) => {
+          console.error("[approval-outbox] 대상 이름 조회 실패 — 이름 없이 보낸다", r.id, error);
+          return null;
+        }),
+        resolveProposalArgLabels(payload).catch((error: unknown) => {
+          console.error("[approval-outbox] 기안 인자 이름 조회 실패 — 이름 없이 보낸다", r.id, error);
+          return null;
+        }),
       ]);
       return { ...r, payload, targetName, argLabels };
     }),

@@ -112,6 +112,21 @@ describe("approval-outbox 크론", () => {
     expect(body.messages[0].detail.split("\n")[0]).toBe("정산 확정");
   });
 
+  it("한 건의 이름 조회가 실패해도 그 기안은 이름 없이, 나머지는 그대로 보낸다", async () => {
+    findMany.mockResolvedValue([row("a"), row("b")]);
+    vi.mocked(resolveEntityLabel).mockImplementation(async (_t, id) => {
+      if (id === "s-a") throw new Error("lookup failed");
+      return "테스트셀러";
+    });
+    const res = await GET(get());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.messages.map((m: { key: string }) => m.key)).toEqual(["approval-a", "approval-b"]);
+    expect(body.messages[0].detail).not.toContain("대상:");
+    expect(body.messages[1].detail).toContain("대상: 셀러 테스트셀러");
+    expect(console.error).toHaveBeenCalled();
+  });
+
   it("4건부터는 이름 조회 없이 묶음 1통으로 전부 싣는다", async () => {
     findMany.mockResolvedValue(["a", "b", "c", "d"].map((id) => row(id)));
     const body = await (await GET(get())).json();
