@@ -62,10 +62,13 @@ import {
   MAX_AGENT_JOB_JSON_BYTES,
   MAX_RESULT_SUMMARY_CHARS,
   MAX_STRUCTURED_DATA_BYTES,
+  addCampaignItemsArgsSchema,
+  addCampaignItemsRequestArgsSchema,
   campaignOptionNameKey,
   sameOrderCampaignName,
   upsertProductMappingsRequestArgsSchema,
   type AddCampaignItemsArgs,
+  type AddCampaignItemsRequestArgs,
   type AgentJobPayload,
   type AgentJobResult,
   type AgentJobRoute,
@@ -1248,6 +1251,27 @@ async function orderCampaignSubjectResolves(
 }
 
 /**
+ * 캠페인 품목 기안의 판매 조건 id 채우기 — 봇이 보내지 않았으면 캠페인의 지금 판매 조건으로 채우고, 보냈으면 지금 값과
+ * 대조한다. 채운 args 는 저장 스키마로 다시 잰다(승인 시점 실행기가 같은 스키마로 읽는다).
+ */
+async function fillCampaignItemsMainDeal(
+  request: AddCampaignItemsRequestArgs,
+  client: ProposalTx,
+): Promise<{ kind: "READY"; args: AddCampaignItemsArgs } | { kind: "NOT_FOUND" } | { kind: "UNUSABLE"; detail: string }> {
+  const campaign = await client.salesCampaign.findUnique({ where: { id: request.campaignId }, select: { dealId: true } });
+  if (campaign === null) return { kind: "NOT_FOUND" };
+  if (request.mainDealId !== undefined && request.mainDealId !== campaign.dealId) {
+    return {
+      kind: "UNUSABLE",
+      detail: "mainDealId 가 판매캠페인의 지금 판매 조건과 다릅니다. mainDealId 를 빼고 다시 올리면 CRM 이 채웁니다.",
+    };
+  }
+  const stored = addCampaignItemsArgsSchema.safeParse({ ...request, mainDealId: campaign.dealId });
+  if (!stored.success) return { kind: "UNUSABLE", detail: "기안 내용을 저장 형식으로 맞출 수 없습니다." };
+  return { kind: "READY", args: stored.data };
+}
+
+/**
  * 판매캠페인 품목 추가 기안의 기안 시점 확인(T-271). 대상 캠페인 존재는 `targetResolves` 가 보고, 여기서는 봇이
  * 「다시 조회하면 고칠 수 있는」 어긋남을 이유 한 문장으로 돌려준다 — 승인 시점 실행기
  * (`write-actions/add-campaign-items.ts`)는 그 사이 화면 작업을 흡수하려고 더 너그럽다(이미 있는 줄 건너뜀 · 같은
@@ -1352,12 +1376,20 @@ async function createActionProposal(
   // 상품 매핑 기안은 봇 입력에 지금 값이 없다 — 봇 입력 스키마로 받고, 트랜잭션 안에서 지금 값을 채운 뒤
   // 저장 스키마(`definition.argsSchema`)로 다시 잰다. 나머지 액션은 봇 입력 = 저장 args 다.
   const snapshotsMappings = action === "upsert_product_mappings";
-  const parsedArgs = (snapshotsMappings ? upsertProductMappingsRequestArgsSchema : definition.argsSchema).safeParse(args);
+  // 캠페인 품목 기안은 봇 입력의 판매 조건 id 가 선택이다 — 트랜잭션 안에서 캠페인의 지금 판매 조건으로 채운 뒤
+  // 저장 스키마(`definition.argsSchema`)로 다시 잰다(`addCampaignItemsRequestSchema` 주석).
+  const fillsMainDeal = action === "add_campaign_items";
+  const requestSchema = snapshotsMappings
+    ? upsertProductMappingsRequestArgsSchema
+    : fillsMainDeal
+      ? addCampaignItemsRequestArgsSchema
+      : definition.argsSchema;
+  const parsedArgs = requestSchema.safeParse(args);
   if (!parsedArgs.success) {
     return failure("INVALID_INPUT", "action args failed validation");
   }
   let preparedIntent: WriteIntent | null = null;
-  if (!snapshotsMappings) {
+  if (!snapshotsMappings && !fillsMainDeal) {
     const built = await buildWriteIntent(intentTool, parsedArgs.data);
     if (!built.ok) return toolFailure(built.result);
     preparedIntent = built.intent;
@@ -1372,10 +1404,17 @@ async function createActionProposal(
     if (preparedIntent !== null) {
       intent = preparedIntent;
       if (!(await targetResolves(intent, tx))) return { kind: "NOT_FOUND" };
-      if (action === "add_campaign_items") {
-        const check = await campaignItemsSubjectCheck(parsedArgs.data as AddCampaignItemsArgs, tx);
-        if (!check.ok) return { kind: "UNUSABLE_CAMPAIGN_ITEMS", detail: check.detail };
-      }
+    } else if (fillsMainDeal) {
+      const filled = await fillCampaignItemsMainDeal(parsedArgs.data as AddCampaignItemsRequestArgs, tx);
+      if (filled.kind === "NOT_FOUND") return { kind: "NOT_FOUND" };
+      if (filled.kind === "UNUSABLE") return { kind: "UNUSABLE_CAMPAIGN_ITEMS", detail: filled.detail };
+      storedArgs = filled.args;
+      const built = await buildWriteIntent(intentTool, storedArgs);
+      if (!built.ok) return { kind: "INTENT_FAILED", result: built.result };
+      intent = built.intent;
+      if (!(await targetResolves(intent, tx))) return { kind: "NOT_FOUND" };
+      const check = await campaignItemsSubjectCheck(filled.args, tx);
+      if (!check.ok) return { kind: "UNUSABLE_CAMPAIGN_ITEMS", detail: check.detail };
     } else {
       const requestArgs = parsedArgs.data as UpsertProductMappingsRequestArgs;
       const subject = await orderCampaignSubjectResolves(requestArgs, tx);

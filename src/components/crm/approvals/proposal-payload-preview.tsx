@@ -463,10 +463,11 @@ function AddCampaignItemsPreview({
               const linked = dealId ? (labels?.linkedDeals?.[dealId] ?? null) : null;
               const newName = asText(row.dealName);
               const unitQuantity = typeof row.unitQuantity === "number" ? row.unitQuantity : undefined;
+              const supplementaryInfo = asText(row.supplementaryInfo) ?? undefined;
               // 새 하위품목은 실행기가 저장할 이름(`plannedOptionDealName` — 판매 조건 화면 규칙)으로 보인다. 판매 조건을 못
               // 풀었거나 단위 수량이 빠졌으면(승인 때 거절된다) 받은 글자 그대로.
               const planned = labels?.deal && newName
-                ? plannedOptionDealName({ dealName: labels.deal, unit: labels.dealUnit ?? null }, { dealName: newName ?? "", unitQuantity })
+                ? plannedOptionDealName({ dealName: labels.deal, unit: labels.dealUnit ?? null }, { dealName: newName, unitQuantity, supplementaryInfo })
                 : null;
               const name = dealId ? (linked?.name ?? "이름 확인 불가") : (planned ?? newName ?? "이름없음");
               const price = dealId
