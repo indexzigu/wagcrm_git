@@ -1272,20 +1272,20 @@ async function fillCampaignItemsMainDeal(
 }
 
 /**
- * 판매캠페인 품목 추가 기안의 기안 시점 확인(T-271). 대상 캠페인 존재는 `targetResolves` 가 보고, 여기서는 봇이
- * 「다시 조회하면 고칠 수 있는」 어긋남을 이유 한 문장으로 돌려준다 — 승인 시점 실행기
- * (`write-actions/add-campaign-items.ts`)는 그 사이 화면 작업을 흡수하려고 더 너그럽다(이미 있는 줄 건너뜀 · 같은
- * 이름 하위품목 재사용). 그래서 기안 시점은 엄격하게: 봇이 이미 있는 것을 「새로」 올리는 기안을 만들지 않는다.
+ * 판매캠페인 품목 추가 기안의 기안 시점 확인(T-271). 봇이 고칠 수 있는 어긋남(소속 아닌 하위품목 · 이미 품목에 있음 ·
+ * 기안 안 중복 · 단위 수량 누락)은 이유 한 문장으로 돌려주고, 같은 이름 하위품목이 이미 있는 새 줄은 그 하위품목 연결
+ * 줄로 바꿔 돌려준다 — 봇은 하위품목 id 를 받을 길이 없다(조회 결과 첫 줄만 받는다, 2026-10-27 실사용). 승인 시점
+ * 실행기(`write-actions/add-campaign-items.ts`)는 그 사이 화면 작업을 흡수하려고 더 너그럽다(이미 있는 줄 건너뜀).
  * 실행 역할은 봇 작업 역할이라 CampaignDeal 은 GRANT 된 칸(campaignId·dealId)만 고른다(마이그레이션 20261027120000).
  */
 async function campaignItemsSubjectCheck(
   args: AddCampaignItemsArgs,
   client: ProposalTx,
-): Promise<{ ok: true } | { ok: false; detail: string }> {
+): Promise<{ ok: true; args: AddCampaignItemsArgs } | { ok: false; detail: string }> {
   const campaign = await client.salesCampaign.findUnique({ where: { id: args.campaignId }, select: { dealId: true } });
   if (campaign === null) return { ok: false, detail: "판매캠페인을 찾을 수 없습니다." };
   if (campaign.dealId !== args.mainDealId) {
-    return { ok: false, detail: "mainDealId 가 판매캠페인의 지금 판매 조건과 다릅니다. get_campaign_items 로 다시 조회해 주세요." };
+    return { ok: false, detail: "mainDealId 가 판매캠페인의 지금 판매 조건과 다릅니다. mainDealId 를 빼고 다시 올려 주세요." };
   }
   const main = await client.deal.findUnique({
     where: { id: campaign.dealId },
@@ -1301,40 +1301,50 @@ async function campaignItemsSubjectCheck(
   ]);
   const linkable = new Set([main.id, ...options.map((option) => option.id)]);
   const inCampaign = new Set(items.map((item) => item.dealId));
-  const optionByName = new Map(options.map((option) => [campaignOptionNameKey(main.dealName, option.dealName), option.id]));
+  const optionByName = new Map(options.map((option) => [campaignOptionNameKey(main.dealName, option.dealName), option]));
   // 기안 안 새 줄끼리 저장 이름이 겹치는지(단위 판매 조건은 옵션 이름이 달라도 수량이 같으면 같은 이름이 된다).
   const plannedInProposal = new Set<string>();
+  const linkedInProposal = new Set<string>();
+  const rows: AddCampaignItemsArgs["items"] = [];
   for (const row of args.items) {
-    if (row.dealId) {
-      if (!linkable.has(row.dealId)) {
-        return { ok: false, detail: `dealId ${row.dealId} 는 이 판매캠페인 판매 조건의 하위품목이 아닙니다.` };
+    let link = row.dealId ?? null;
+    let label = row.dealId ?? "";
+    if (link === null) {
+      const plannedName = plannedOptionDealName(main, row);
+      if (plannedName === null) {
+        return {
+          ok: false,
+          detail: `판매 조건에 단위(${main.unit})가 있어 새 하위품목 줄에 unitQuantity 가 필요합니다(이름은 CRM 이 수량으로 만듭니다).`,
+        };
       }
-      if (inCampaign.has(row.dealId)) {
-        return { ok: false, detail: `dealId ${row.dealId} 는 이미 판매캠페인 품목에 있습니다. 그 줄을 빼고 올려 주세요.` };
+      const plannedKey = campaignOptionNameKey(main.dealName, plannedName);
+      if (plannedInProposal.has(plannedKey)) {
+        return { ok: false, detail: `새 하위품목 두 줄이 같은 이름(「${plannedName}」)으로 저장됩니다. 한 줄로 합쳐 주세요.` };
       }
-      continue;
+      plannedInProposal.add(plannedKey);
+      // 같은 이름 하위품목이 이미 있으면 새로 만들지 않고 그것을 연결하는 줄로 바꿔 올린다(봇은 알림 첫 줄만 받아 하위품목
+      // id 를 옮겨 적을 수 없다). 결재함은 연결 줄을 그 하위품목의 지금 이름·판매가로 보여 주므로 승인자가 판단할 수 있다.
+      const existing = optionByName.get(plannedKey);
+      if (existing === undefined) {
+        rows.push(row);
+        continue;
+      }
+      link = existing.id;
+      label = `「${existing.dealName}」`;
     }
-    const plannedName = plannedOptionDealName(main, row);
-    if (plannedName === null) {
-      return {
-        ok: false,
-        detail: `판매 조건에 단위(${main.unit})가 있어 새 하위품목 줄에 unitQuantity 가 필요합니다(이름은 CRM 이 수량으로 만듭니다).`,
-      };
+    if (!linkable.has(link)) {
+      return { ok: false, detail: `dealId ${link} 는 이 판매캠페인 판매 조건의 하위품목이 아닙니다.` };
     }
-    const plannedKey = campaignOptionNameKey(main.dealName, plannedName);
-    if (plannedInProposal.has(plannedKey)) {
-      return { ok: false, detail: `새 하위품목 두 줄이 같은 이름(「${plannedName}」)으로 저장됩니다. 한 줄로 합쳐 주세요.` };
+    if (inCampaign.has(link)) {
+      return { ok: false, detail: `${label} 은(는) 이미 판매캠페인 품목에 있습니다. 그 줄을 빼고 올려 주세요.` };
     }
-    plannedInProposal.add(plannedKey);
-    const existingId = optionByName.get(plannedKey);
-    if (existingId !== undefined) {
-      return {
-        ok: false,
-        detail: `「${row.dealName}」 하위품목이 이미 있습니다(dealId ${existingId}). 새로 만들지 말고 dealId 로 연결해 주세요.`,
-      };
+    if (linkedInProposal.has(link)) {
+      return { ok: false, detail: `${label} 을(를) 연결하는 줄이 기안 안에 두 번 있습니다. 한 줄로 합쳐 주세요.` };
     }
+    linkedInProposal.add(link);
+    rows.push({ dealId: link });
   }
-  return { ok: true };
+  return { ok: true, args: { ...args, items: rows } };
 }
 
 function assertNotAborted(signal: AbortSignal): void {
@@ -1408,13 +1418,14 @@ async function createActionProposal(
       const filled = await fillCampaignItemsMainDeal(parsedArgs.data as AddCampaignItemsRequestArgs, tx);
       if (filled.kind === "NOT_FOUND") return { kind: "NOT_FOUND" };
       if (filled.kind === "UNUSABLE") return { kind: "UNUSABLE_CAMPAIGN_ITEMS", detail: filled.detail };
-      storedArgs = filled.args;
+      const check = await campaignItemsSubjectCheck(filled.args, tx);
+      if (!check.ok) return { kind: "UNUSABLE_CAMPAIGN_ITEMS", detail: check.detail };
+      // 저장·제목은 확인이 돌려준 내용으로(같은 이름 새 줄 → 기존 하위품목 연결 줄로 바뀌었을 수 있다).
+      storedArgs = check.args;
       const built = await buildWriteIntent(intentTool, storedArgs);
       if (!built.ok) return { kind: "INTENT_FAILED", result: built.result };
       intent = built.intent;
       if (!(await targetResolves(intent, tx))) return { kind: "NOT_FOUND" };
-      const check = await campaignItemsSubjectCheck(filled.args, tx);
-      if (!check.ok) return { kind: "UNUSABLE_CAMPAIGN_ITEMS", detail: check.detail };
     } else {
       const requestArgs = parsedArgs.data as UpsertProductMappingsRequestArgs;
       const subject = await orderCampaignSubjectResolves(requestArgs, tx);

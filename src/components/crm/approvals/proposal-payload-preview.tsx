@@ -475,7 +475,13 @@ function AddCampaignItemsPreview({
                 : priceWithCommission(row.sellingPrice, row.totalCommissionRate);
               return (
                 <tr key={index} className="align-top text-foreground">
-                  <td className="py-1 pr-3 break-words">{name}</td>
+                  <td className="py-1 pr-3 break-words">
+                    {name}
+                    {/* 단위가 없는 판매 조건은 보충 정보가 이름에 안 들어가고 칸에만 저장된다 — 승인자가 보게 따로 적는다. */}
+                    {!dealId && supplementaryInfo && !name.includes(supplementaryInfo) ? (
+                      <span className="block text-muted-foreground">보충 정보: {supplementaryInfo}</span>
+                    ) : null}
+                  </td>
                   <td className="py-1 pr-3">{dealId ? "기존 하위품목 연결" : "새로 만들기"}</td>
                   <td className="py-1 break-words">{price ?? "—"}</td>
                 </tr>

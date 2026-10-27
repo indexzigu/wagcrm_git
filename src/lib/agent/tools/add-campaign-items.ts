@@ -69,7 +69,8 @@ export const addCampaignItemsTool: AgentTool<AddCampaignItemsArgs, AddCampaignIt
     "dealId, 새 하위품목이면 dealName·sellingPrice(선택: totalCommissionRate %, unitQuantity, supplementaryInfo)를 넣습니다. " +
     "dealName 은 옵션 이름(예: 3개입)만 넣어도 CRM 이 「판매 조건 이름 - 옵션 이름」으로 저장합니다. 판매 조건에 단위가 있으면 " +
     "unitQuantity 가 필수이고 이름은 「판매 조건 이름 - 6통 (보충 정보)」처럼 수량과 supplementaryInfo(예: 6개월분 + 케일 1박스)로 " +
-    "만들어집니다. 같은 이름 하위품목이 이미 있으면 기안이 거절되고 그 dealId 를 알려 줍니다. 기존 품목은 고치거나 지우지 않습니다. " +
+    "만들어집니다. 같은 이름 하위품목이 이미 있으면 CRM 이 기안 시점에 그 하위품목 연결 줄로 바꿔 올립니다. " +
+    "기존 품목은 고치거나 지우지 않습니다. " +
     "실제로 바꾸지 않고 승인 대기 기안만 만들며, 관리자가 직접 승인한 뒤에만 반영됩니다(자동 실행 없음).",
   inputSchema: addCampaignItemsArgsSchema,
   execute,

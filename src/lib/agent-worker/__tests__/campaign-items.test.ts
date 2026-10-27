@@ -297,15 +297,27 @@ describe("create_action_proposal — add_campaign_items (기안 시점 확인)",
   it.each([
     ["판매 조건 밑이 아닌 하위품목", { items: [{ dealId: "opt-other" }] }, /하위품목이 아닙니다/],
     ["이미 품목에 있는 하위품목", { items: [{ dealId: "opt-1" }] }, /이미 판매캠페인 품목에 있습니다/],
-    ["같은 이름 하위품목이 이미 있음", { items: [{ dealName: "가짜크림  2개입", sellingPrice: 1 }] }, /dealId opt-2.*dealId 로 연결/],
-    // 화면이 저장한 「판매 조건 이름 - 옵션 이름」과 옵션 이름만 보낸 줄도 같은 하위품목이다(`campaignOptionNameKey`).
-    ["옵션 이름만 보냈는데 「판매 조건 - 옵션」이 이미 있음", { items: [{ dealName: "3개입", sellingPrice: 1 }] }, /dealId opt-3.*dealId 로 연결/],
+    ["같은 이름 새 줄인데 그 하위품목이 이미 품목에 있음", { items: [{ dealName: "가짜크림 1개", sellingPrice: 1 }] }, /「가짜크림 1개」 은\(는\) 이미 판매캠페인 품목에 있습니다/],
+    ["같은 하위품목을 연결로 두 번(직접 + 같은 이름)", { items: [{ dealId: "opt-2" }, { dealName: "가짜크림 2개입", sellingPrice: 1 }] }, /두 번 있습니다/],
   ])("fails with a reason the bot can act on: %s", async (_label, overrides, detail) => {
     const outcome = await run("create_action_proposal", { ...base, ...overrides } as never);
     expect(outcome.toStatus).toBe("FAILED_FINAL");
     expect(outcome.result.resultSummary).toMatch(/TARGET_NOT_FOUND/);
     expect(outcome.result.resultSummary).toMatch(detail);
     expect(m.proposalCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["공백 차이만 있는 같은 이름", "가짜크림  2개입", "opt-2"],
+    // 화면이 저장한 「판매 조건 이름 - 옵션 이름」과 옵션 이름만 보낸 줄도 같은 하위품목이다(`campaignOptionNameKey`).
+    ["옵션 이름만 보냈는데 「판매 조건 - 옵션」이 이미 있음", "3개입", "opt-3"],
+  ])("a new row whose stored name already exists becomes a link row (%s) — the bot cannot learn option ids", async (_label, dealName, linked) => {
+    const outcome = await run("create_action_proposal", { ...base, items: [{ dealName, sellingPrice: 1 }] });
+    expect(outcome.toStatus).toBe("NEEDS_APPROVAL");
+    const created = m.proposalCreate.mock.calls[0][0] as { data: { payload: unknown; title: string } };
+    const payload = JSON.stringify(created.data.payload);
+    expect(payload).toContain(`"items":[{"dealId":"${linked}"}]`);
+    expect(created.data.title).toBe("캠페인 품목 1건 추가: 기존 하위품목 연결 1건");
   });
 
   it("a deal with a unit needs unitQuantity on new rows (the screen's rule)", async () => {
@@ -354,6 +366,12 @@ describe("add_campaign_items contract", () => {
     expect(accepts({ ...base, items: [{ dealName: "음수", sellingPrice: -1 }] })).toBe(false);
     expect(accepts({ ...base, items: [{ dealName: "요율 100", sellingPrice: 1, totalCommissionRate: 100 }] })).toBe(false);
     expect(accepts({ ...base, items: [] })).toBe(false);
+  });
+
+  it("the in-proposal key is name + unit quantity + supplementary info", () => {
+    const row = { dealName: "6통", sellingPrice: 1, unitQuantity: 6 };
+    expect(accepts({ ...base, items: [{ ...row, supplementaryInfo: "6개월분" }, { ...row, supplementaryInfo: "6개월분 + 케일 1박스" }] })).toBe(true);
+    expect(accepts({ ...base, items: [{ ...row, supplementaryInfo: "6개월분" }, { ...row, supplementaryInfo: " 6개월분 " }] })).toBe(false);
   });
 
   it("same name with different unit quantities is not a duplicate at the contract level (named by quantity under a unit)", () => {

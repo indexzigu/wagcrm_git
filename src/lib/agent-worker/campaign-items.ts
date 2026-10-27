@@ -213,8 +213,11 @@ function buildBotHeader(result: CampaignItemsResult): string {
   const [first, second] = result.campaigns;
   if (!first) return "get_campaign_items campaigns=0";
   if (result.campaigns.length === 1 && !result.truncated) {
-    const dealName = first.mainDeal ? Array.from(first.mainDeal.name).slice(0, HEADER_DEAL_NAME_CHARS).join("") : "없음";
-    return `campaign=${first.id} 판매조건「${dealName}」 하위품목 ${first.options.length}개`;
+    const deal = first.mainDeal
+      ? `판매조건「${Array.from(first.mainDeal.name).slice(0, HEADER_DEAL_NAME_CHARS).join("")}」`
+      : "판매조건 없음";
+    const count = `${first.options.length}${first.optionsTruncated ? "+" : ""}`;
+    return `campaign=${first.id} ${deal} 하위품목 ${count}개`;
   }
   const more = result.truncated ? `${MAX_CAMPAIGN_ITEMS_MATCHES}+` : String(result.campaigns.length);
   return `campaigns=${more} ids=${first.id}${second ? `,${second.id}` : ""} 좁혀서 다시 조회`;
