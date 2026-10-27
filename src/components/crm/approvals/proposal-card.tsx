@@ -14,6 +14,7 @@ import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
 import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
+import { ACTION_LABELS } from "@/lib/agent/action-labels";
 
 /**
  * ProposalCard — 기안 한 건의 카드(인라인 승인) (청사진 §1, §3-#4).
@@ -24,26 +25,7 @@ import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
  * 카드가 이 화면에 stale PENDING으로 남지 않도록 한다(critic #2).
  */
 
-/**
- * payload.action → 한글 라벨 매핑 (§1-2). 미지 action은 원문 그대로 노출한다.
- *
- * ⚠️ **WRITE 도구가 늘면 여기도 늘어야 한다** — 빠진 도구는 배지에 `create_partner`
- * 같은 영문 식별자로 뜬다(운영자에게는 그냥 읽을 수 없는 글자다). 레지스트리
- * (`WRITE_TOOL_NAMES`)·실행기(`WRITE_ACTIONS`)와의 짝은 `action-labels.contract.test.ts` 가 고정한다.
- */
-export const ACTION_LABELS: Record<string, string> = {
-  add_entity_memo: "메모 추가",
-  change_deal_status: "판매 조건 상태 변경",
-  confirm_settlement: "정산 확정",
-  create_partner: "거래처 등록",
-  create_deal: "판매 조건 등록",
-  update_settlement_amount: "정산 금액 수정",
-  update_record: "기록 수정",
-  upsert_product_mappings: "상품 매핑 등록",
-  add_campaign_items: "캠페인 품목 추가",
-  // [캘린더수집] 봇 도구가 아니라 캘린더 수집만 기안하는 실행기 액션 — 계약 상한이 실행기 화이트리스트다.
-  create_campaign_round: "새 회차 생성",
-};
+export { ACTION_LABELS };
 
 // confirm_settlement만 승인 시 확인 다이얼로그를 거친다(§1-3, critic Q4 — 금전 최고위험 액션).
 const SETTLEMENT_ACTION = "confirm_settlement";

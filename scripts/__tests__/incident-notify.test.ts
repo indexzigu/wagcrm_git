@@ -273,7 +273,7 @@ describe("incident-notify.sh 발송", () => {
     expect(readFileSync(path.join(r.logs, "incident-notify-count.tsv"), "utf8")).toBe(seeded);
   });
 
-  it("모드가 immediate·digest 가 아니면 호출하지 않고 exit 1", () => {
+  it("모드가 immediate·digest·approval 이 아니면 호출하지 않고 exit 1", () => {
     for (const mode of ["", "all"]) {
       const r = run({ mode, messages: [alert(1)] });
       expect(r.status, mode).toBe(1);
@@ -432,12 +432,88 @@ describe("incident-notify.sh 하루 즉시 알림 상한(배포 후 7일)", () =
   });
 });
 
+describe("incident-notify.sh approval 모드(결재 대기 알림)", () => {
+  const approval = (id: string, over: Record<string, unknown> = {}) => ({
+    key: `approval-${id}`,
+    icon: "📝",
+    title: `결재 대기: 기안 ${id}`,
+    detail: `메모 추가\n올린 곳: 슬랙봇 · 10-27 10:05\n\n기안 ${id} 내용`,
+    ackField: "ownerNotifiedAt",
+    proposalIds: [id],
+    ...over,
+  });
+  const body = (messages: unknown[]) => JSON.stringify({ ok: true, messages });
+  const acksOf = (post: string[]) =>
+    JSON.parse(post[post.indexOf("--data-binary") + 1]) as { acks: { proposalIds: string[]; ackField: string }[] };
+
+  it("approval-outbox 를 묻고(쿼리 없음) 보낸 기안을 proposalIds 로 확인한다", () => {
+    const r = run({ mode: "approval", body: body([approval("a"), approval("b")]) });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.gets).toHaveLength(1);
+    expect(r.gets[0]).toContain("http://127.0.0.1:3000/api/cron/approval-outbox");
+    expect(r.gets[0].some((a) => a.includes("?mode="))).toBe(false);
+    expect(r.notify).toEqual([
+      ["send", "approval-a", "결재 대기: 기안 a", "메모 추가\n올린 곳: 슬랙봇 · 10-27 10:05\n\n기안 a 내용", "📝"],
+      ["send", "approval-b", "결재 대기: 기안 b", "메모 추가\n올린 곳: 슬랙봇 · 10-27 10:05\n\n기안 b 내용", "📝"],
+    ]);
+    expect(r.strict).toEqual(["1", "1"]);
+    expect(r.posts[0]).toContain("http://127.0.0.1:3000/api/cron/approval-outbox");
+    expect(acksOf(r.posts[0]).acks).toEqual([
+      { proposalIds: ["a"], ackField: "ownerNotifiedAt" },
+      { proposalIds: ["b"], ackField: "ownerNotifiedAt" },
+    ]);
+    expect(r.lines[0]).toMatch(/\] OK {3}incident-notify approval sent=2 acked=2 capped=0$/);
+    expect(r.lines.join("\n")).not.toContain("기안 a 내용");
+  });
+
+  it("묶음 1통의 여러 id 를 한 줄로 확인한다", () => {
+    const r = run({ mode: "approval", body: body([approval("x", { key: "approval-batch-x", proposalIds: ["x", "y", "z", "w"] })]) });
+    expect(r.status, r.stderr).toBe(0);
+    expect(acksOf(r.posts[0]).acks).toEqual([{ proposalIds: ["x", "y", "z", "w"], ackField: "ownerNotifiedAt" }]);
+  });
+
+  it("사고 알림 하루 상한에 걸리지 않는다", () => {
+    const now = nowSec();
+    const r = run({ mode: "approval", body: body([approval("a")]), now, countFile: `since\t${now - 3600}\n${kstDate(now)}\t5\t1\n` });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.notify.map((c) => c[1])).toEqual(["approval-a"]);
+  });
+
+  it("못 보낸 기안은 확인하지 않는다 — 다음 회차에 다시 온다", () => {
+    const r = run({ mode: "approval", body: body([approval("a"), approval("b")]), notifyFailKeys: ["approval-a"] });
+    expect(r.status).toBe(1);
+    expect(acksOf(r.posts[0]).acks).toEqual([{ proposalIds: ["b"], ackField: "ownerNotifiedAt" }]);
+  });
+
+  it("사고 칸·사고 id 칸 이름이 오면 형식 오류로 아무것도 보내지 않는다", () => {
+    for (const bad of [approval("a", { ackField: "alertedAt" }), { ...approval("a"), proposalIds: undefined, incidentIds: ["a"] }]) {
+      const r = run({ mode: "approval", body: body([bad]) });
+      expect(r.status).toBe(1);
+      expect(r.notify).toHaveLength(0);
+      expect(r.lines[0]).toContain("응답 형식 오류");
+    }
+  });
+
+  it("사고 모드는 결재 칸(ownerNotifiedAt)을 받지 않는다", () => {
+    const r = run({ body: body([approval("a", { incidentIds: ["a"] })]) });
+    expect(r.status).toBe(1);
+    expect(r.notify).toHaveLength(0);
+  });
+
+  it("잠금은 사고 알림과 따로다 — immediate 잠금이 있어도 돈다", () => {
+    const r = run({ mode: "approval", body: body([approval("a")]), lockAgeS: 10, lockMode: "immediate" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.notify).toHaveLength(1);
+  });
+});
+
 describe("crontab 일정", () => {
   const src = readFileSync(CRONTAB, "utf8");
   const lines = src.split("\n");
   const expected = [
     "*/10 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh immediate >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1",
     "0 8 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh digest >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1",
+    "*/5 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh approval >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1",
   ];
   it.each(expected)("%s 가 활성 줄로 한 번 있고 바로 위가 주석이다", (line) => {
     const idx = lines.indexOf(line);
