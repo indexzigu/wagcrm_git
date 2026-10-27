@@ -55,7 +55,20 @@ export async function resolveEntityLabel(
 }
 
 /** 기안 내용(args)에 든 대상 id 를 화면 이름으로 푼 것 — 카드 미리보기가 id 대신 보여준다. */
-export type ProposalArgLabels = { seller: string | null; deal: string | null };
+export type LinkedDealLabel = { name: string; sellingPrice: number; totalCommissionRate: number | null };
+
+export type ProposalArgLabels = {
+  seller: string | null;
+  deal: string | null;
+  /**
+   * 판매캠페인 품목 추가(`add_campaign_items`, T-271)의 연결 줄 — 하위품목 id → 이름·판매가·총수수료율. 연결 줄은
+   * args 에 id 만 있어 승인자가 무엇을 어떤 값으로 붙이는지 서버가 풀어 보여야 한다(판매가가 판단 가치).
+   * 지워진 id 는 빠진다(미리보기가 「이름 확인 불가」로 그린다).
+   */
+  linkedDeals?: Readonly<Record<string, LinkedDealLabel>>;
+  /** 판매캠페인 품목 추가 — 상위 판매 조건의 단위. 새 하위품목이 저장될 이름(`plannedOptionDealName`)을 미리보기가 그린다. */
+  dealUnit?: string | null;
+};
 
 /**
  * [캘린더수집] 새 회차 생성(`create_campaign_round`) 기안은 대상 캠페인이 아직 없어 배지(`targetEntityName`)로
@@ -66,6 +79,9 @@ export type ProposalArgLabels = { seller: string | null; deal: string | null };
 export async function resolveProposalArgLabels(payload: unknown): Promise<ProposalArgLabels | null> {
   if (typeof payload !== "object" || payload === null) return null;
   const { action, args } = payload as { action?: unknown; args?: unknown };
+  if (action === "add_campaign_items" && typeof args === "object" && args !== null) {
+    return resolveCampaignItemsLabels(args as { mainDealId?: unknown; items?: unknown });
+  }
   if (action !== "create_campaign_round" || typeof args !== "object" || args === null) return null;
   const { dealId, sellerId } = args as { dealId?: unknown; sellerId?: unknown };
   if (typeof dealId !== "string" || typeof sellerId !== "string") return null;
@@ -77,4 +93,29 @@ export async function resolveProposalArgLabels(payload: unknown): Promise<Propos
   ]);
   const sellerLabel = seller ? sellerDisplayName(seller) : null;
   return { seller: sellerLabel, deal: deal?.dealName ?? null };
+}
+
+/** 판매캠페인 품목 추가 — 상위 판매 조건 이름과 연결 줄 하위품목 이름을 한 번에 푼다(셀러는 대상 배지가 보여 준다). */
+async function resolveCampaignItemsLabels(args: { mainDealId?: unknown; items?: unknown }): Promise<ProposalArgLabels | null> {
+  if (typeof args.mainDealId !== "string" || !Array.isArray(args.items)) return null;
+  const linkIds = args.items
+    .map((row) => (typeof row === "object" && row !== null ? (row as { dealId?: unknown }).dealId : undefined))
+    .filter((id): id is string => typeof id === "string");
+  const deals = await getPrisma().deal.findMany({
+    where: { id: { in: [args.mainDealId, ...linkIds] } },
+    select: { id: true, dealName: true, unit: true, sellingPrice: true, totalCommissionRate: true },
+  });
+  const byId = new Map(deals.map((deal) => [deal.id, deal]));
+  const linkedDeals: Record<string, LinkedDealLabel> = {};
+  for (const id of linkIds) {
+    const deal = byId.get(id);
+    if (!deal) continue;
+    linkedDeals[id] = {
+      name: deal.dealName,
+      sellingPrice: Number(deal.sellingPrice),
+      totalCommissionRate: deal.totalCommissionRate == null ? null : Number(deal.totalCommissionRate),
+    };
+  }
+  const main = byId.get(args.mainDealId);
+  return { seller: null, deal: main?.dealName ?? null, linkedDeals, dealUnit: main?.unit ?? null };
 }

@@ -40,6 +40,7 @@ export const ACTION_LABELS: Record<string, string> = {
   update_settlement_amount: "정산 금액 수정",
   update_record: "기록 수정",
   upsert_product_mappings: "상품 매핑 등록",
+  add_campaign_items: "캠페인 품목 추가",
   // [캘린더수집] 봇 도구가 아니라 캘린더 수집만 기안하는 실행기 액션 — 계약 상한이 실행기 화이트리스트다.
   create_campaign_round: "새 회차 생성",
 };

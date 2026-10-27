@@ -474,4 +474,72 @@ describe("ProposalPayloadPreview — [캘린더수집] 캘린더에서 온 기�
     expect(screen.getByText(/^원본:/)).toBeTruthy();
     expect(screen.queryByRole("link")).toBeNull();
   });
+
+  describe("판매캠페인 품목 추가(T-271)", () => {
+    const args = {
+      campaignId: "sc-1",
+      mainDealId: "main-1",
+      items: [
+        { dealName: "3개입", sellingPrice: 27_000, totalCommissionRate: 18 },
+        { dealId: "opt-2" },
+        { dealId: "gone" },
+      ],
+      memo: "새 구성 추가",
+    };
+
+    it("새 줄·연결 줄 모두 이름과 판매가(총수수료율)를 보여 주고 id 는 내보이지 않는다", () => {
+      render(
+        <ProposalPayloadPreview
+          action="add_campaign_items"
+          args={args}
+          argLabels={{
+            seller: null,
+            deal: "샘플 상품",
+            linkedDeals: { "opt-2": { name: "샘플 상품 2개입", sellingPrice: 19_000, totalCommissionRate: 20 } },
+          }}
+          targetEntityName="샘플 셀러 2차"
+        />,
+      );
+      expect(screen.getByText("샘플 셀러 2차")).toBeTruthy();
+      expect(screen.getByText("샘플 상품")).toBeTruthy();
+      expect(screen.getByText("새 구성 추가")).toBeTruthy();
+      // 새 하위품목은 실행기가 저장할 이름(「판매 조건 이름 - 옵션 이름」)으로 보인다.
+      expect(screen.getByText("샘플 상품 - 3개입")).toBeTruthy();
+      expect(screen.getByText("27,000원 · 총수수료율 18%")).toBeTruthy();
+      expect(screen.getByText("샘플 상품 2개입")).toBeTruthy();
+      expect(screen.getByText("19,000원 · 총수수료율 20%")).toBeTruthy();
+      expect(screen.getByText("이름 확인 불가")).toBeTruthy();
+      expect(screen.getAllByText("기존 하위품목 연결")).toHaveLength(2);
+      expect(screen.getByText("새로 만들기")).toBeTruthy();
+      expect(screen.getByText(/주문수량 0인 품목이 더해집니다/)).toBeTruthy();
+      // 이름을 못 푼 연결 줄은 판매가도 「—」(지어내지 않는다).
+      expect(screen.getByText("—")).toBeTruthy();
+      expect(screen.queryByText("opt-2")).toBeNull();
+      expect(screen.queryByText("gone")).toBeNull();
+    });
+
+    it("단위가 있는 판매 조건이면 새 하위품목 이름을 수량으로 보인다(실행기가 저장할 이름)", () => {
+      render(
+        <ProposalPayloadPreview
+          action="add_campaign_items"
+          args={{ ...args, items: [{ dealName: "3개 묶음", sellingPrice: 27_000, unitQuantity: 3 }] }}
+          argLabels={{ seller: null, deal: "샘플 상품", dealUnit: "개" }}
+        />,
+      );
+      expect(screen.getByText("샘플 상품 - 3개")).toBeTruthy();
+    });
+
+    it("판매가가 다르면 화면이 달라진다(승인자가 틀린 값을 알아볼 수 있다)", () => {
+      const { rerender } = render(<ProposalPayloadPreview action="add_campaign_items" args={args} />);
+      expect(screen.getByText("27,000원 · 총수수료율 18%")).toBeTruthy();
+      rerender(
+        <ProposalPayloadPreview
+          action="add_campaign_items"
+          args={{ ...args, items: [{ dealName: "3개입", sellingPrice: 270_000 }] }}
+        />,
+      );
+      expect(screen.getByText("270,000원")).toBeTruthy();
+      expect(screen.queryByText("27,000원 · 총수수료율 18%")).toBeNull();
+    });
+  });
 });

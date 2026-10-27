@@ -25,6 +25,7 @@ import {
   recordFieldLabel,
 } from "@/lib/record-update-labels";
 import { displayLabel } from "@/lib/display-label";
+import { plannedOptionDealName } from "@/lib/deal-display";
 import { campaignStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
 import { FIELD_LABELS } from "@/lib/field-labels";
 import { readCalendarInboundRef, type CalendarInboundRef } from "@/lib/calendar-inbound/ref";
@@ -411,6 +412,81 @@ function UpsertProductMappingsPreview({ args }: { args: Record<string, unknown> 
   );
 }
 
+/** 「27,000원 · 총수수료율 18%」 — 품목 표의 「총수수료율」과 같은 이름(셀러 수수료율과 가른다). */
+function priceWithCommission(price: unknown, commission: unknown): string | null {
+  const money = asMoney(price);
+  if (money === null) return null;
+  return typeof commission === "number" ? `${money} · 총수수료율 ${commission}%` : money;
+}
+
+/**
+ * 캠페인 품목 추가(T-271) — 어느 캠페인의 어떤 판매 조건 밑에, 무엇을 새로 만들고 무엇을 연결하는지. 판매가가 판단
+ * 가치라 새 줄·연결 줄 모두 판매가를 흐리지 않고 보인다(위 옵션 목록과 같은 규칙). 연결 줄은 args 에 id 만 있어 이름·
+ * 판매가는 서버가 푼 `argLabels.linkedDeals` 로 보인다 — 못 풀었으면 id 를 내보이지 않고 「이름 확인 불가」로 둔다
+ * (승인자는 id 로 판단할 수 없다). 화면 낱말은 품목 표(`campaign-deals-table.tsx`)와 같다: 캠페인 · 품목 · 주문수량.
+ */
+function AddCampaignItemsPreview({
+  args,
+  labels,
+  targetEntityName,
+}: {
+  args: Record<string, unknown>;
+  labels: ProposalArgLabels | null | undefined;
+  targetEntityName: string | null | undefined;
+}) {
+  const items = asRecordList(args.items);
+  if (items.length === 0) return null;
+  return (
+    <>
+      <Rows
+        rows={[
+          ["캠페인", asText(targetEntityName)],
+          ["판매 조건", labels?.deal ?? null],
+          ["메모", asText(args.memo)],
+        ]}
+      />
+      <p className="text-muted-foreground">
+        승인하면 매출 상세내역에 주문수량 0인 품목이 더해집니다. 기존 품목은 바뀌지 않습니다.
+      </p>
+      <div className="max-h-64 overflow-x-auto overflow-y-auto">
+        <table className="w-full border-collapse text-left tabular-nums">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="py-1 pr-3 font-normal">하위품목</th>
+              <th className="py-1 pr-3 font-normal">처리</th>
+              <th className="py-1 font-normal">판매가</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((row, index) => {
+              const dealId = asText(row.dealId);
+              const linked = dealId ? (labels?.linkedDeals?.[dealId] ?? null) : null;
+              const newName = asText(row.dealName);
+              const unitQuantity = typeof row.unitQuantity === "number" ? row.unitQuantity : undefined;
+              // 새 하위품목은 실행기가 저장할 이름(`plannedOptionDealName` — 판매 조건 화면 규칙)으로 보인다. 판매 조건을 못
+              // 풀었거나 단위 수량이 빠졌으면(승인 때 거절된다) 받은 글자 그대로.
+              const planned = labels?.deal && newName
+                ? plannedOptionDealName({ dealName: labels.deal, unit: labels.dealUnit ?? null }, { dealName: newName ?? "", unitQuantity })
+                : null;
+              const name = dealId ? (linked?.name ?? "이름 확인 불가") : (planned ?? newName ?? "이름없음");
+              const price = dealId
+                ? linked && priceWithCommission(linked.sellingPrice, linked.totalCommissionRate)
+                : priceWithCommission(row.sellingPrice, row.totalCommissionRate);
+              return (
+                <tr key={index} className="align-top text-foreground">
+                  <td className="py-1 pr-3 break-words">{name}</td>
+                  <td className="py-1 pr-3">{dealId ? "기존 하위품목 연결" : "새로 만들기"}</td>
+                  <td className="py-1 break-words">{price ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 /** `YYYY-MM-DD` 두 날 → 「시작 ~ 끝」, 같은 날이면 하루만. */
 function periodText(start: string | null, end: string | null): string | null {
   if (!start || !end) return null;
@@ -514,7 +590,7 @@ export function ProposalPayloadPreview({
   args: Record<string, unknown> | undefined;
   /** 기안 출처 칸 원본(역직렬화 전이어도 된다). */
   sourceRef?: unknown;
-  /** 서버가 args 의 id 를 이름으로 푼 것(새 회차 생성만). */
+  /** 서버가 args 의 id 를 이름으로 푼 것(새 회차 생성 · 캠페인 품목 추가). */
   argLabels?: ProposalArgLabels | null;
   /** 기안 대상의 이름(서버 해석 `targetEntityName`) — 기록 수정의 대상 칸에 쓴다. */
   targetEntityName?: string | null;
@@ -533,6 +609,8 @@ export function ProposalPayloadPreview({
       <UpsertProductMappingsPreview args={args} />
     ) : action === "create_campaign_round" ? (
       <CreateCampaignRoundPreview args={args} labels={argLabels} />
+    ) : action === "add_campaign_items" ? (
+      <AddCampaignItemsPreview args={args} labels={argLabels} targetEntityName={targetEntityName} />
     ) : null;
   if (!body && !origin) return null;
   return (

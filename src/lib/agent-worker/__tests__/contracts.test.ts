@@ -225,6 +225,7 @@ describe("get_settlement_report input (spec §3-E)", () => {
       "get_order_campaign_mappings",
       "get_store_product_options",
       "apply_product_mappings",
+      "get_campaign_items",
     ]);
   });
 
@@ -268,7 +269,7 @@ describe("create_action_proposal — update_settlement_amount (정산 금액 수
 
   it("sits right before update_record in the union (new actions are appended at the end)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-3)).toEqual(["update_settlement_amount", "update_record", "upsert_product_mappings"]);
+    expect(actions.slice(-4)).toEqual(["update_settlement_amount", "update_record", "upsert_product_mappings", "add_campaign_items"]);
   });
 
   it("field enum matches the screen-label table key for key, in order", () => {
@@ -502,9 +503,9 @@ describe("create_action_proposal — update_record (기록 수정)", () => {
   } as const;
   const accepts = (input: Record<string, unknown>) => AgentJobPayloadSchema.safeParse({ ...base, input }).success;
 
-  it("keeps its place in the union; only upsert_product_mappings is appended after it (python mirror compares literal order)", () => {
+  it("keeps its place in the union; only later actions are appended after it (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(actions.indexOf("update_record"))).toEqual(["update_record", "upsert_product_mappings"]);
+    expect(actions.slice(actions.indexOf("update_record"))).toEqual(["update_record", "upsert_product_mappings", "add_campaign_items"]);
   });
 
   it("entity enum matches the screen-label table key for key, in order", () => {
@@ -565,10 +566,11 @@ describe("get_order_campaign_mappings input (2026-10-15)", () => {
     AgentJobPayloadSchema.safeParse({ ...base, operation: "get_order_campaign_mappings", input }).success;
 
   it("keeps get_order_campaign_mappings right before the 2026-10-16 mapping operations", () => {
-    expect(AgentJobOperationSchema.options.slice(-3)).toEqual([
+    expect(AgentJobOperationSchema.options.slice(-4)).toEqual([
       "get_order_campaign_mappings",
       "get_store_product_options",
       "apply_product_mappings",
+      "get_campaign_items",
     ]);
   });
 
@@ -621,9 +623,9 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
     Buffer.byteLength(JSON.stringify(makeEnvelope("create_action_proposal", input)), "utf8");
   const accepts = (input: unknown) => createActionProposalInputSchema.safeParse(input).success;
 
-  it("is the last action literal in the union (python mirror compares literal order)", () => {
+  it("sits right before add_campaign_items in the union (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.at(-1)).toBe("upsert_product_mappings");
+    expect(actions.slice(-2)).toEqual(["upsert_product_mappings", "add_campaign_items"]);
   });
 
   it("accepts a new row (also through the AgentJob envelope: an array of scalar objects is depth 2)", () => {

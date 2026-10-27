@@ -8,6 +8,7 @@ import { isPermissionDeniedError } from "@/lib/db-permission-denied";
 import { containsSearch } from "@/lib/prisma-search";
 import { DEAL_STATUSES } from "@/lib/deal-status";
 import { toKstYmd } from "@/lib/date-utils";
+import { plannedOptionDealName } from "@/lib/deal-display";
 import type { SettlementAmountField } from "@/lib/settlement-amount-fields";
 import {
   aggregateCoversCampaigns,
@@ -31,6 +32,7 @@ import { createDealTool } from "@/lib/agent/tools/create-deal";
 import { updateSettlementAmountTool } from "@/lib/agent/tools/update-settlement-amount";
 import { updateRecordTool } from "@/lib/agent/tools/update-record";
 import { upsertProductMappingsTool } from "@/lib/agent/tools/upsert-product-mappings";
+import { addCampaignItemsTool } from "@/lib/agent/tools/add-campaign-items";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import {
@@ -60,8 +62,10 @@ import {
   MAX_AGENT_JOB_JSON_BYTES,
   MAX_RESULT_SUMMARY_CHARS,
   MAX_STRUCTURED_DATA_BYTES,
+  campaignOptionNameKey,
   sameOrderCampaignName,
   upsertProductMappingsRequestArgsSchema,
+  type AddCampaignItemsArgs,
   type AgentJobPayload,
   type AgentJobResult,
   type AgentJobRoute,
@@ -93,6 +97,7 @@ import {
   buildOrderCampaignMappingsSummary,
   readOrderCampaignMappings,
 } from "./order-campaign-mappings";
+import { buildCampaignItemsSummary, readCampaignItems, type CampaignItemsInput } from "./campaign-items";
 import { parseRouterDecision, type RouterDecisionParseResult } from "./router";
 import { callAgentInternalApi } from "./internal-api-client";
 import {
@@ -1146,6 +1151,32 @@ async function applyProductMappingsOperation(
 }
 
 // ---------------------------------------------------------------------------
+// get_campaign_items (2026-10-27 · T-271) — 판매캠페인과 그 품목·하위품목 읽기
+// ---------------------------------------------------------------------------
+
+/**
+ * 봇이 품목 추가 기안을 올리기 전에 지금 상태를 본다. 읽기·내보낼 칸은 `campaign-items.ts` 가 정한다(CampaignDeal 은
+ * 칸 단위 GRANT 라 명시 select). 없는 id 는 오류가 아니라 0건이다.
+ */
+async function campaignItems(input: CampaignItemsInput): Promise<OperationOutcome> {
+  const result = await readCampaignItems(input, getPrisma());
+  const { summary, optionCount } = buildCampaignItemsSummary(result);
+  return {
+    status: "SUCCEEDED",
+    summary: boundSummary(summary),
+    evidenceRefs: boundEvidence(result.campaigns.map((campaign) => campaign.id)),
+    actionProposalId: null,
+    record: {
+      title: `판매캠페인 ${result.campaigns.length}건 · 하위품목 ${optionCount}개`,
+      resultSummary: boundSummary(summary),
+      structuredResult: result,
+      dataSources: ["SalesCampaign", "Deal", "Seller", "CampaignDeal"],
+      query: { campaignId: input.campaignId ?? null, query: input.query ?? null },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // create_action_proposal — INSERT only (contract 5)
 // ---------------------------------------------------------------------------
 
@@ -1160,6 +1191,7 @@ const WRITE_INTENT_TOOLS = {
   update_settlement_amount: updateSettlementAmountTool,
   update_record: updateRecordTool,
   upsert_product_mappings: upsertProductMappingsTool,
+  add_campaign_items: addCampaignItemsTool,
 } as const;
 
 async function targetExists(entityType: string, entityId: string, client: ProposalTx): Promise<boolean> {
@@ -1215,6 +1247,72 @@ async function orderCampaignSubjectResolves(
   return sameOrderCampaignName(campaign.name, args.orderCampaignName) ? "RESOLVES" : "NAME_MISMATCH";
 }
 
+/**
+ * 판매캠페인 품목 추가 기안의 기안 시점 확인(T-271). 대상 캠페인 존재는 `targetResolves` 가 보고, 여기서는 봇이
+ * 「다시 조회하면 고칠 수 있는」 어긋남을 이유 한 문장으로 돌려준다 — 승인 시점 실행기
+ * (`write-actions/add-campaign-items.ts`)는 그 사이 화면 작업을 흡수하려고 더 너그럽다(이미 있는 줄 건너뜀 · 같은
+ * 이름 하위품목 재사용). 그래서 기안 시점은 엄격하게: 봇이 이미 있는 것을 「새로」 올리는 기안을 만들지 않는다.
+ * 실행 역할은 봇 작업 역할이라 CampaignDeal 은 GRANT 된 칸(campaignId·dealId)만 고른다(마이그레이션 20261027120000).
+ */
+async function campaignItemsSubjectCheck(
+  args: AddCampaignItemsArgs,
+  client: ProposalTx,
+): Promise<{ ok: true } | { ok: false; detail: string }> {
+  const campaign = await client.salesCampaign.findUnique({ where: { id: args.campaignId }, select: { dealId: true } });
+  if (campaign === null) return { ok: false, detail: "판매캠페인을 찾을 수 없습니다." };
+  if (campaign.dealId !== args.mainDealId) {
+    return { ok: false, detail: "mainDealId 가 판매캠페인의 지금 판매 조건과 다릅니다. get_campaign_items 로 다시 조회해 주세요." };
+  }
+  const main = await client.deal.findUnique({
+    where: { id: campaign.dealId },
+    select: { id: true, dealName: true, dealType: true, unit: true },
+  });
+  if (main === null) return { ok: false, detail: "판매캠페인의 판매 조건을 찾을 수 없습니다." };
+  if (main.dealType === "OPTION") {
+    return { ok: false, detail: "이 판매캠페인의 판매 조건이 하위품목이라 그 밑에 하위품목을 붙일 수 없습니다. 화면에서 처리해 주세요." };
+  }
+  const [options, items] = await Promise.all([
+    client.deal.findMany({ where: { parentDealId: main.id, dealType: "OPTION" }, select: { id: true, dealName: true } }),
+    client.campaignDeal.findMany({ where: { campaignId: args.campaignId }, select: { dealId: true } }),
+  ]);
+  const linkable = new Set([main.id, ...options.map((option) => option.id)]);
+  const inCampaign = new Set(items.map((item) => item.dealId));
+  const optionByName = new Map(options.map((option) => [campaignOptionNameKey(main.dealName, option.dealName), option.id]));
+  // 기안 안 새 줄끼리 저장 이름이 겹치는지(단위 판매 조건은 옵션 이름이 달라도 수량이 같으면 같은 이름이 된다).
+  const plannedInProposal = new Set<string>();
+  for (const row of args.items) {
+    if (row.dealId) {
+      if (!linkable.has(row.dealId)) {
+        return { ok: false, detail: `dealId ${row.dealId} 는 이 판매캠페인 판매 조건의 하위품목이 아닙니다.` };
+      }
+      if (inCampaign.has(row.dealId)) {
+        return { ok: false, detail: `dealId ${row.dealId} 는 이미 판매캠페인 품목에 있습니다. 그 줄을 빼고 올려 주세요.` };
+      }
+      continue;
+    }
+    const plannedName = plannedOptionDealName(main, row);
+    if (plannedName === null) {
+      return {
+        ok: false,
+        detail: `판매 조건에 단위(${main.unit})가 있어 새 하위품목 줄에 unitQuantity 가 필요합니다(이름은 CRM 이 수량으로 만듭니다).`,
+      };
+    }
+    const plannedKey = campaignOptionNameKey(main.dealName, plannedName);
+    if (plannedInProposal.has(plannedKey)) {
+      return { ok: false, detail: `새 하위품목 두 줄이 같은 이름(「${plannedName}」)으로 저장됩니다. 한 줄로 합쳐 주세요.` };
+    }
+    plannedInProposal.add(plannedKey);
+    const existingId = optionByName.get(plannedKey);
+    if (existingId !== undefined) {
+      return {
+        ok: false,
+        detail: `「${row.dealName}」 하위품목이 이미 있습니다(dealId ${existingId}). 새로 만들지 말고 dealId 로 연결해 주세요.`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
 function assertNotAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new ExecutionAbortedError();
 }
@@ -1226,6 +1324,8 @@ type ProposalTxOutcome =
   | { kind: "NAME_MISMATCH" }
   // 지금 값을 채울 수 없는 줄(같은 옵션 여러 줄 · 범위 밖 지금 값) — 기안을 만들지 않고 이유를 돌려준다.
   | { kind: "UNUSABLE_MAPPING"; detail: string }
+  // 판매캠페인 품목 추가 기안이 지금 캠페인과 어긋남(판매 조건 · 하위품목 소속 · 이미 품목에 있음 · 이름 중복).
+  | { kind: "UNUSABLE_CAMPAIGN_ITEMS"; detail: string }
   | { kind: "INTENT_FAILED"; result: Extract<ToolResult, { ok: false }> };
 
 type IntentTool = (typeof WRITE_INTENT_TOOLS)[keyof typeof WRITE_INTENT_TOOLS];
@@ -1272,6 +1372,10 @@ async function createActionProposal(
     if (preparedIntent !== null) {
       intent = preparedIntent;
       if (!(await targetResolves(intent, tx))) return { kind: "NOT_FOUND" };
+      if (action === "add_campaign_items") {
+        const check = await campaignItemsSubjectCheck(parsedArgs.data as AddCampaignItemsArgs, tx);
+        if (!check.ok) return { kind: "UNUSABLE_CAMPAIGN_ITEMS", detail: check.detail };
+      }
     } else {
       const requestArgs = parsedArgs.data as UpsertProductMappingsRequestArgs;
       const subject = await orderCampaignSubjectResolves(requestArgs, tx);
@@ -1300,6 +1404,8 @@ async function createActionProposal(
       return failure("TARGET_NOT_FOUND", "order campaign name differs from the proposal", ORDER_CAMPAIGN_NAME_MISMATCH_DETAIL);
     case "UNUSABLE_MAPPING":
       return failure("TARGET_NOT_FOUND", "current mapping value cannot be snapshotted", outcome.detail);
+    case "UNUSABLE_CAMPAIGN_ITEMS":
+      return failure("TARGET_NOT_FOUND", "campaign items proposal does not match the campaign", outcome.detail);
     case "INTENT_FAILED":
       return toolFailure(outcome.result);
     case "CREATED":
@@ -1333,6 +1439,7 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   get_store_product_options: (input, context) => storeProductOptions(input as StoreProductOptionsInput, context),
   apply_product_mappings: (input, context) =>
     applyProductMappingsOperation(input as unknown as ApplyProductMappingsInput, context),
+  get_campaign_items: (input) => campaignItems(input as CampaignItemsInput),
 };
 
 /** 결과 JSON 에 structuredData 칸이 붙을 때 더해지는 글자(앞 쉼표 + 키 + 콜론). */

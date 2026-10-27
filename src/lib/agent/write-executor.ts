@@ -25,6 +25,7 @@ export type { CreateDealArgs } from "./write-actions/create-deal";
 export type { UpdateSettlementAmountArgs } from "./write-actions/update-settlement-amount";
 export type { UpdateRecordArgs } from "./write-actions/update-record";
 export type { UpsertProductMappingsArgs } from "./write-actions/upsert-product-mappings";
+export type { AddCampaignItemsArgs } from "./write-actions/add-campaign-items";
 export type { CreateCampaignRoundArgs } from "./write-actions/create-campaign-round";
 export type { WriteActionResult, WriteActionEffectSpec } from "./write-actions/types";
 export {

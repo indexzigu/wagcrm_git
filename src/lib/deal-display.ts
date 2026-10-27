@@ -61,6 +61,23 @@ export function getDisplayDealName(deal: DealNameInput): string {
   return deal.dealName;
 }
 
+/**
+ * 새 하위품목이 저장될 이름(T-271 봇 기안 · 결재 미리보기 공용 — 클라이언트 안전한 이 파일에 둔다) — 판매 조건 화면의 「하위품목 추가」(`useDealOptions` `handleAddOption`)와 같은 규칙:
+ *  - 판매 조건에 단위(`unit`)가 있으면 이름은 단위 수량으로 만든다(`getDisplayDealName` = 「판매 조건 이름 - 3개」) —
+ *    화면은 이때 수량을 필수로 받는다. 수량이 없으면 null(기안 시점·승인 시점 모두 거절한다).
+ *  - 없으면 「판매 조건 이름 - 옵션 이름」(`formatOptionDealName`).
+ */
+export function plannedOptionDealName(
+  main: { dealName: string; unit: string | null },
+  row: { dealName?: string; unitQuantity?: number },
+): string | null {
+  if (main.unit) {
+    if (row.unitQuantity === undefined) return null;
+    return getDisplayDealName({ dealName: main.dealName, unit: main.unit, unitQuantity: row.unitQuantity });
+  }
+  return formatOptionDealName(main.dealName, row.dealName ?? "");
+}
+
 type DealBrandPartner = {
   name?: string | null;
   type?: string | null;
