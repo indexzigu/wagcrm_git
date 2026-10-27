@@ -277,6 +277,7 @@ export async function loadInvoiceLookupTargets(
     campaignIds,
     groupIds,
     sinceDays: invoiceLookupSinceDays(windows, todayYmd, "auto"),
-    includesUnit: (unitKey) => unitKeys.has(unitKey) || groupIds.has(unitKey) || campaignIds.has(unitKey),
+    // 단위 키는 `groupId ?? id` — 종전 규칙 대상도 `targets` 안에 있으므로 이 집합 하나가 전부 덮는다.
+    includesUnit: (unitKey) => unitKeys.has(unitKey),
   };
 }
