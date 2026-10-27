@@ -25,7 +25,6 @@ import { ACTION_LABELS } from "@/lib/agent/action-labels";
  * 카드가 이 화면에 stale PENDING으로 남지 않도록 한다(critic #2).
  */
 
-
 // confirm_settlement만 승인 시 확인 다이얼로그를 거친다(§1-3, critic Q4 — 금전 최고위험 액션).
 const SETTLEMENT_ACTION = "confirm_settlement";
 const SETTLEMENT_CONFIRM_MESSAGE = "정산 확정은 되돌릴 수 없습니다. 승인하시겠습니까?";
