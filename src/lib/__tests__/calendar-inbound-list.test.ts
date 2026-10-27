@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../prisma", () => ({ getPrisma: vi.fn() }));
-vi.mock("../google-calendar", () => ({
+vi.mock("../google-calendar", async (importOriginal) => ({
+  // 시간 제한 상수는 실제 값을 쓴다(잠금 안에 드는지 합산 검증).
+  GOOGLE_TOKEN_REQUEST_TIMEOUT_MS: (await importOriginal<typeof import("../google-calendar")>())
+    .GOOGLE_TOKEN_REQUEST_TIMEOUT_MS,
   getGoogleCalendarAccessToken: vi.fn(),
   getGoogleCalendarConnectionStatus: vi.fn(),
   getFinanceCalendarId: vi.fn(),
@@ -14,6 +17,9 @@ import {
   getGoogleCalendarConnectionStatus,
 } from "../google-calendar";
 import { getPrisma } from "../prisma";
+import { GOOGLE_TOKEN_REQUEST_TIMEOUT_MS } from "../google-calendar";
+import { SCAN_BUDGET_MS } from "../calendar-inbound/scan";
+import { LOCK_TX_TIMEOUT_MS } from "../calendar-inbound/run-lock";
 import {
   hasCrmDescriptionSignature,
   CANDIDATE_LIST_DEADLINE_MS,
@@ -145,15 +151,27 @@ describe("listAllDayCandidateEvents", () => {
       nowSpy.mockReturnValue(t0 + CANDIDATE_LIST_DEADLINE_MS + 1);
       return { ok: true, json: async () => ({ items: [], nextPageToken: "n2" }) };
     });
-    const res = await listAllDayCandidateEvents(RANGE);
-    nowSpy.mockRestore();
+    let res;
+    try {
+      res = await listAllDayCandidateEvents(RANGE);
+    } finally {
+      nowSpy.mockRestore();
+    }
     expect(res).toMatchObject({ ok: false, error: "이벤트 조회 시간 초과" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("시간 제한 상수는 회차 예산(55초)·잠금(120초)보다 짧다", () => {
+  it("시간 초과가 아닌 네트워크 오류는 종전처럼 던진다", async () => {
+    vi.mocked(getPrisma).mockReturnValue(fakePrismaWithLedger() as never);
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+    await expect(listAllDayCandidateEvents(RANGE)).rejects.toThrow("fetch failed");
+  });
+
+  it("토큰 갱신 + 조회 상한 + 회차 예산이 단일 실행 잠금(120초) 안에 든다", () => {
     expect(CANDIDATE_LIST_REQUEST_TIMEOUT_MS).toBeLessThan(CANDIDATE_LIST_DEADLINE_MS);
-    expect(CANDIDATE_LIST_DEADLINE_MS).toBeLessThan(55_000);
+    expect(
+      GOOGLE_TOKEN_REQUEST_TIMEOUT_MS + CANDIDATE_LIST_DEADLINE_MS + SCAN_BUDGET_MS,
+    ).toBeLessThan(LOCK_TX_TIMEOUT_MS);
   });
 });
 

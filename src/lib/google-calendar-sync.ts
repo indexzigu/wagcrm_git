@@ -1257,7 +1257,9 @@ function shiftDateStr(dateStr: string, days: number): string {
 /**
  * 후보 조회 시간 제한 — 구글이 응답 없이 멈추면 수집 회차가 단일 실행 잠금(120초,
  * `calendar-inbound/run-lock.ts`)보다 오래 붙잡혀 다음 회차와 겹칠 수 있다. 한 번의 요청(본문
- * 읽기 포함)과 전체 조회(페이지·캘린더 합산) 둘 다 묶는다. 전체 상한은 회차 예산(55초)보다 짧다.
+ * 읽기 포함)과 전체 조회(페이지·캘린더 합산) 둘 다 묶는다. 회차 예산(55초, scan.ts)은 조회가
+ * 끝난 뒤부터 재므로 최악은 토큰 갱신(10초) + 조회(40초) + 예산(55초) ≈ 105초 + 마지막 일정의
+ * DB 쓰기이고, 이 합이 잠금 120초 안에 들어야 한다(테스트가 고정).
  */
 export const CANDIDATE_LIST_REQUEST_TIMEOUT_MS = 15_000;
 export const CANDIDATE_LIST_DEADLINE_MS = 40_000;
@@ -1332,14 +1334,11 @@ export async function listAllDayCandidateEvents(opts: {
         }
         data = (await res.json()) as typeof data;
       } catch (error) {
-        const timedOut = error instanceof Error && error.name === "TimeoutError";
-        return {
-          ok: false,
-          error: timedOut
-            ? "이벤트 조회 시간 초과"
-            : `이벤트 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
-          ...empty,
-        };
+        // 시간 초과만 결과로 돌려준다 — 그 밖의 네트워크 오류는 종전처럼 던져 호출부가 기록한다.
+        if (error instanceof Error && error.name === "TimeoutError") {
+          return { ok: false, error: "이벤트 조회 시간 초과", ...empty };
+        }
+        throw error;
       }
 
       for (const ev of data.items ?? []) {

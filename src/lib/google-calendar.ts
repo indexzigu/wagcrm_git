@@ -100,6 +100,9 @@ export async function exchangeGoogleCalendarCode(code: string) {
   };
 }
 
+/** 토큰 갱신 요청 시간 제한 — 후보 조회 전체 상한(40초)과 합쳐도 회차 예산 안에 들도록 짧게 둔다. */
+export const GOOGLE_TOKEN_REQUEST_TIMEOUT_MS = 10_000;
+
 export async function getGoogleCalendarAccessToken(): Promise<string> {
   const prisma = getPrisma();
   const integration = await prisma.storageIntegration.findUnique({
@@ -121,6 +124,8 @@ export async function getGoogleCalendarAccessToken(): Promise<string> {
       refresh_token: decryptSecret(integration.encryptedRefreshToken),
       grant_type: "refresh_token",
     }),
+    // 구글이 멈추면 수집 회차가 단일 실행 잠금(120초)보다 오래 붙잡힌다 — 본문 읽기까지 묶는다.
+    signal: AbortSignal.timeout(GOOGLE_TOKEN_REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
     // 상태코드만으로는 처방이 갈리지 않는다 — 구글이 주는 `error` 코드가 진단의 전부다.
