@@ -7,6 +7,7 @@
 //
 // 순수 함수 — 셀러 목록(이미 로드된 데이터)만 입력받아 클라이언트에서 계산한다. 신규 쿼리 없음.
 
+import { sellerDisplayName } from "@/lib/seller-display-name";
 import { acquisitionChannelLabels } from "./crm-types";
 import { displayLabel } from "@/lib/display-label";
 
@@ -34,7 +35,7 @@ export type ConnectorRow = {
 };
 
 function displayName(s: SellerLike): string {
-  return s.alias && s.alias.trim() !== "" ? s.alias : s.name;
+  return sellerDisplayName({ name: s.name, alias: s.alias ?? null });
 }
 
 function sellerSales(s: SellerLike): number {

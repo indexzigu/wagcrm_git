@@ -1,3 +1,4 @@
+import { sellerDisplayName } from "@/lib/seller-display-name";
 import { getPrisma } from "@/lib/prisma";
 
 // ── 기본 상수 (운영 설정에서 오버라이드 가능) ──────────────────
@@ -135,7 +136,7 @@ export type FoldableBucketCampaign = {
 };
 
 function sellerLabel(c: FoldableBucketCampaign): string {
-  return c.seller.alias && c.seller.alias.trim() !== "" ? c.seller.alias : c.seller.name;
+  return sellerDisplayName(c.seller);
 }
 
 /**
