@@ -16,6 +16,8 @@ import {
 import { getPrisma } from "../prisma";
 import {
   hasCrmDescriptionSignature,
+  CANDIDATE_LIST_DEADLINE_MS,
+  CANDIDATE_LIST_REQUEST_TIMEOUT_MS,
   listAllDayCandidateEvents,
   syncCampaignToCalendar,
 } from "../google-calendar-sync";
@@ -115,6 +117,43 @@ describe("listAllDayCandidateEvents", () => {
     fetchMock.mockResolvedValue({ ok: false, status: 403 });
     const res = await listAllDayCandidateEvents(RANGE);
     expect(res).toMatchObject({ ok: false, error: "이벤트 조회 실패: 403", events: [] });
+  });
+
+  it("요청마다 시간 제한 신호를 걸어 보낸다", async () => {
+    vi.mocked(getPrisma).mockReturnValue(fakePrismaWithLedger() as never);
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ items: [] }) });
+    await listAllDayCandidateEvents(RANGE);
+    const init = fetchMock.mock.calls[0][1] as { signal?: AbortSignal };
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("구글이 멈춰 신호가 발동하면 시간 초과 error 로 끝난다", async () => {
+    vi.mocked(getPrisma).mockReturnValue(fakePrismaWithLedger() as never);
+    fetchMock.mockImplementation(async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    const res = await listAllDayCandidateEvents(RANGE);
+    expect(res).toMatchObject({ ok: false, error: "이벤트 조회 시간 초과", events: [] });
+  });
+
+  it("전체 조회 상한을 넘기면 다음 페이지를 부르지 않고 끝난다", async () => {
+    vi.mocked(getPrisma).mockReturnValue(fakePrismaWithLedger() as never);
+    const t0 = Date.now();
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(t0);
+    fetchMock.mockImplementation(async () => {
+      nowSpy.mockReturnValue(t0 + CANDIDATE_LIST_DEADLINE_MS + 1);
+      return { ok: true, json: async () => ({ items: [], nextPageToken: "n2" }) };
+    });
+    const res = await listAllDayCandidateEvents(RANGE);
+    nowSpy.mockRestore();
+    expect(res).toMatchObject({ ok: false, error: "이벤트 조회 시간 초과" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("시간 제한 상수는 회차 예산(55초)·잠금(120초)보다 짧다", () => {
+    expect(CANDIDATE_LIST_REQUEST_TIMEOUT_MS).toBeLessThan(CANDIDATE_LIST_DEADLINE_MS);
+    expect(CANDIDATE_LIST_DEADLINE_MS).toBeLessThan(55_000);
   });
 });
 
