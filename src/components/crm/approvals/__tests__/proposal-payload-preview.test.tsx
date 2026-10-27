@@ -529,6 +529,17 @@ describe("ProposalPayloadPreview — [캘린더수집] 캘린더에서 온 기�
       expect(screen.getByText("샘플 상품 - 3개")).toBeTruthy();
     });
 
+    it("보충 정보가 있으면 이름 괄호에 넣어 보인다", () => {
+      render(
+        <ProposalPayloadPreview
+          action="add_campaign_items"
+          args={{ ...args, items: [{ dealName: "6통 구성", sellingPrice: 159_500, unitQuantity: 6, supplementaryInfo: "6개월분 + 케일 1박스" }] }}
+          argLabels={{ seller: null, deal: "샘플 상품", dealUnit: "통" }}
+        />,
+      );
+      expect(screen.getByText("샘플 상품 - 6통 (6개월분 + 케일 1박스)")).toBeTruthy();
+    });
+
     it("판매가가 다르면 화면이 달라진다(승인자가 틀린 값을 알아볼 수 있다)", () => {
       const { rerender } = render(<ProposalPayloadPreview action="add_campaign_items" args={args} />);
       expect(screen.getByText("27,000원 · 총수수료율 18%")).toBeTruthy();

@@ -169,9 +169,16 @@ export async function readCampaignItems(input: CampaignItemsInput, client: Clien
 const won = (value: number): string => `${value.toLocaleString("ko-KR")}원`;
 const itemMark = (view: CampaignItemDealView): string => (view.inCampaign ? "품목에 있음" : "품목에 없음");
 
+/** 첫 줄에 싣는 판매 조건 이름 상한 — 첫 줄은 봇에게 가는 알림 한 줄(약 200자, 머리·링크 제외 약 87자)에 들어가야 한다. */
+const HEADER_DEAL_NAME_CHARS = 16;
+
 /**
- * 봇이 받는 결과 요약 — 캠페인 줄 아래에 판매 조건·하위품목 줄. 이름은 「…」로 감싼다(자유 글이라 값처럼 꾸밀 수 있다).
- * 2,000자 상한에 걸리면 뒤에서부터 줄을 덜고 머리에 표시한다.
+ * 봇이 받는 결과 요약. ⚠️ **첫 줄이 봇이 실제로 받는 전부다** — hermes 작업 완료 알림은 첫 줄(머리)과 들어가는 만큼의
+ * 행만 약 200자 안에 싣고 나머지는 슬랙 첨부 파일로 보내는데, 봇은 그 파일을 못 읽는다(2026-10-27 실사용에서 봇이
+ * 캠페인 id 를 몰라 오너에게 되물었다). 그래서 첫 줄에 기안에 필요한 값을 싣는다:
+ *  - 1건: `campaign=<id>` + 판매 조건 이름 + 하위품목 수 — 봇은 이 id 로 바로 기안한다(판매 조건 id 는 CRM 이 채운다).
+ *  - 여러 건: 앞 두 건의 id 와 「좁혀 다시 조회」 안내 — 어느 캠페인인지는 사람이 골라야 한다.
+ * 둘째 줄부터는 사람(첨부 파일·결재함 기록)을 위한 상세다. 이름은 「…」로 감싼다(자유 글이라 값처럼 꾸밀 수 있다).
  */
 export function buildCampaignItemsSummary(result: CampaignItemsResult): { summary: string; optionCount: number } {
   const lines: string[] = [];
@@ -194,11 +201,24 @@ export function buildCampaignItemsSummary(result: CampaignItemsResult): { summar
     }
     if (campaign.optionsTruncated) lines.push(`  (하위품목 ${MAX_OPTIONS_PER_CAMPAIGN}개까지만 표시)`);
   }
+  const header = buildBotHeader(result);
   const { summary } = buildBoundedSummary(
-    (shown) =>
-      `get_campaign_items: ${result.campaigns.length} campaign(s)${result.truncated ? ` (truncated at ${MAX_CAMPAIGN_ITEMS_MATCHES})` : ""}` +
-      (shown < lines.length ? ` (lines truncated ${shown}/${lines.length})` : ""),
+    (shown) => header + (shown < lines.length ? ` (상세 ${shown}/${lines.length}줄)` : ""),
     lines,
   );
   return { summary, optionCount };
+}
+
+function buildBotHeader(result: CampaignItemsResult): string {
+  const [first, second] = result.campaigns;
+  if (!first) return "get_campaign_items campaigns=0";
+  if (result.campaigns.length === 1 && !result.truncated) {
+    const deal = first.mainDeal
+      ? `판매조건「${Array.from(first.mainDeal.name).slice(0, HEADER_DEAL_NAME_CHARS).join("")}」`
+      : "판매조건 없음";
+    const count = `${first.options.length}${first.optionsTruncated ? "+" : ""}`;
+    return `campaign=${first.id} ${deal} 하위품목 ${count}개`;
+  }
+  const more = result.truncated ? `${MAX_CAMPAIGN_ITEMS_MATCHES}+` : String(result.campaigns.length);
+  return `campaigns=${more} ids=${first.id}${second ? `,${second.id}` : ""} 좁혀서 다시 조회`;
 }

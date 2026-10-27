@@ -299,6 +299,24 @@ describe("판매캠페인 품목 추가 — 단위가 있는 판매 조건(화�
     expect(await optionCount(f.mainId)).toBe(2);
   });
 
+  it("보충 정보가 있으면 화면처럼 이름 괄호에 넣고 칸에도 저장한다(「이름 - 6개 (6개월분 + 케일 1박스)」)", async () => {
+    const f = await fixture({ unit: "개" });
+    const id = await propose({
+      campaignId: f.campaignId,
+      mainDealId: f.mainId,
+      items: [{ dealName: "6개 케일 구성", sellingPrice: 159_500, unitQuantity: 6, supplementaryInfo: "6개월분 + 케일 1박스" }],
+    });
+
+    const outcome = await approveProposal(id, APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    const created = await realPrisma.deal.findFirstOrThrow({
+      where: { parentDealId: f.mainId, dealName: "가상 상품 - 6개 (6개월분 + 케일 1박스)" },
+    });
+    expect(created.supplementaryInfo).toBe("6개월분 + 케일 1박스");
+    expect(created.unitQuantity).toBe(6);
+  });
+
   it("단위 수량이 없으면 실패하고 아무것도 쓰지 않는다", async () => {
     const f = await fixture({ unit: "개" });
     const id = await propose({ campaignId: f.campaignId, mainDealId: f.mainId, items: [{ dealName: "3개입", sellingPrice: 1 }] });

@@ -64,11 +64,13 @@ async function execute(input: AddCampaignItemsArgs): Promise<ToolResult<AddCampa
 export const addCampaignItemsTool: AgentTool<AddCampaignItemsArgs, AddCampaignItemsData> = {
   name: "add_campaign_items",
   description:
-    "판매캠페인 하나의 품목(매출 상세내역 줄)에 하위품목을 덧붙이는 기안을 올립니다. mainDealId 에는 그 캠페인의 지금 " +
-    "판매 조건 id 를 넣습니다(get_campaign_items 로 확인). 줄마다 이미 있는 하위품목이면 dealId, 새 하위품목이면 " +
-    "dealName·sellingPrice(선택: totalCommissionRate %, unitQuantity)를 넣습니다. dealName 은 옵션 이름(예: 3개입)만 넣어도 " +
-    "CRM 이 판매 조건 화면과 같이 「판매 조건 이름 - 옵션 이름」으로 저장합니다. 판매 조건에 단위가 있으면 unitQuantity 가 " +
-    "필수이고 이름은 「판매 조건 이름 - 3개」처럼 수량으로 만들어집니다. 기존 품목은 고치거나 지우지 않습니다. " +
+    "판매캠페인 하나의 품목(매출 상세내역 줄)에 하위품목을 덧붙이는 기안을 올립니다. campaignId 는 get_campaign_items 결과 첫 줄의 " +
+    "campaign= 값입니다. mainDealId 는 생략하면 CRM 이 캠페인의 지금 판매 조건으로 채웁니다. 줄마다 이미 있는 하위품목이면 " +
+    "dealId, 새 하위품목이면 dealName·sellingPrice(선택: totalCommissionRate %, unitQuantity, supplementaryInfo)를 넣습니다. " +
+    "dealName 은 옵션 이름(예: 3개입)만 넣어도 CRM 이 「판매 조건 이름 - 옵션 이름」으로 저장합니다. 판매 조건에 단위가 있으면 " +
+    "unitQuantity 가 필수이고 이름은 「판매 조건 이름 - 6통 (보충 정보)」처럼 수량과 supplementaryInfo(예: 6개월분 + 케일 1박스)로 " +
+    "만들어집니다. 같은 이름 하위품목이 이미 있으면 CRM 이 기안 시점에 그 하위품목 연결 줄로 바꿔 올립니다. " +
+    "기존 품목은 고치거나 지우지 않습니다. " +
     "실제로 바꾸지 않고 승인 대기 기안만 만들며, 관리자가 직접 승인한 뒤에만 반영됩니다(자동 실행 없음).",
   inputSchema: addCampaignItemsArgsSchema,
   execute,

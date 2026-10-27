@@ -166,13 +166,29 @@ describe("readCampaignItems", () => {
   });
 });
 
+describe("buildCampaignItemsSummary — first line is what the bot receives", () => {
+  it("fits the bot's notification line with the campaign id, and names the narrowing step for several matches", async () => {
+    const one = buildCampaignItemsSummary(await readCampaignItems({ campaignId: "sc-1" }, client)).summary.split("\n")[0];
+    // hermes 알림 한 줄(200자) = 머리 + 첫 줄 + 결재함 링크. 실제 id 길이(25자)로 잰다.
+    const head = "WAG get_campaign_items[판매캠페인 품목] SUCCEEDED: ";
+    const link = " · 전체 보기: https://crm.ygrd.kr/approvals/cmvqeyqmd000fqelj6kk5q3iz";
+    const realistic = one.replace("sc-1", "cmvhdi63100i3qe2wajy6szpa");
+    expect(head.length + realistic.length + link.length).toBeLessThanOrEqual(200);
+
+    m.salesCampaignFindMany.mockResolvedValue([campaignRow, { ...campaignRow, id: "sc-2" }]);
+    const many = buildCampaignItemsSummary(await readCampaignItems({ query: "가짜" }, client)).summary.split("\n")[0];
+    expect(many).toBe("campaigns=2 ids=sc-1,sc-2 좁혀서 다시 조회");
+  });
+});
+
 describe("buildCampaignItemsSummary", () => {
   it("lists the campaign, its main deal and each option with ids the bot can reuse", async () => {
     const { summary, optionCount } = buildCampaignItemsSummary(await readCampaignItems({ campaignId: "sc-1" }, client));
     expect(optionCount).toBe(2);
     expect(summary).toBe(
       [
-        "get_campaign_items: 1 campaign(s)",
+        // 첫 줄 = 봇이 받는 알림 한 줄 — 기안에 쓸 캠페인 id 가 여기 있어야 한다.
+        "campaign=sc-1 판매조건「가짜크림」 하위품목 2개",
         "campaign=sc-1 셀러「가짜별칭」 2차 status=ACTIVE 2026-10-01~2026-10-07 품목 1줄",
         "  mainDeal=main-1 판매 조건「가짜크림」 10,000원 (품목에 없음)",
         "  하위품목 dealId=opt-1 「가짜크림 1개」 10,000원 (품목에 있음)",
@@ -245,6 +261,21 @@ describe("get_campaign_items through the executor", () => {
 describe("create_action_proposal — add_campaign_items (기안 시점 확인)", () => {
   const base = { action: "add_campaign_items", campaignId: "sc-1", mainDealId: "main-1" } as const;
 
+  it("fills mainDealId from the campaign when the bot leaves it out, and stores it for the approval-time check", async () => {
+    const { mainDealId: _omit, ...withoutMain } = base;
+    const outcome = await run("create_action_proposal", { ...withoutMain, items: [{ dealId: "opt-2" }] });
+    expect(outcome.toStatus).toBe("NEEDS_APPROVAL");
+    const created = m.proposalCreate.mock.calls[0][0] as { data: { payload: unknown } };
+    expect(JSON.stringify(created.data.payload)).toContain('"mainDealId":"main-1"');
+  });
+
+  it("rejects a mainDealId that is not the campaign's current deal, telling the bot to leave it out", async () => {
+    const outcome = await run("create_action_proposal", { ...base, mainDealId: "main-9", items: [{ dealId: "opt-2" }] });
+    expect(outcome.toStatus).toBe("FAILED_FINAL");
+    expect(outcome.result.resultSummary).toMatch(/mainDealId 를 빼고 다시 올리면 CRM 이 채웁니다/);
+    expect(m.proposalCreate).not.toHaveBeenCalled();
+  });
+
   it("creates a PENDING_APPROVAL proposal targeting the campaign with an id-free title", async () => {
     const outcome = await run("create_action_proposal", {
       ...base,
@@ -264,18 +295,29 @@ describe("create_action_proposal — add_campaign_items (기안 시점 확인)",
   });
 
   it.each([
-    ["mainDealId 가 지금 판매 조건과 다름", { mainDealId: "main-9", items: [{ dealId: "opt-2" }] }, /지금 판매 조건과 다릅니다/],
     ["판매 조건 밑이 아닌 하위품목", { items: [{ dealId: "opt-other" }] }, /하위품목이 아닙니다/],
     ["이미 품목에 있는 하위품목", { items: [{ dealId: "opt-1" }] }, /이미 판매캠페인 품목에 있습니다/],
-    ["같은 이름 하위품목이 이미 있음", { items: [{ dealName: "가짜크림  2개입", sellingPrice: 1 }] }, /dealId opt-2.*dealId 로 연결/],
-    // 화면이 저장한 「판매 조건 이름 - 옵션 이름」과 옵션 이름만 보낸 줄도 같은 하위품목이다(`campaignOptionNameKey`).
-    ["옵션 이름만 보냈는데 「판매 조건 - 옵션」이 이미 있음", { items: [{ dealName: "3개입", sellingPrice: 1 }] }, /dealId opt-3.*dealId 로 연결/],
+    ["같은 이름 새 줄인데 그 하위품목이 이미 품목에 있음", { items: [{ dealName: "가짜크림 1개", sellingPrice: 1 }] }, /「가짜크림 1개」 은\(는\) 이미 판매캠페인 품목에 있습니다/],
+    ["같은 하위품목을 연결로 두 번(직접 + 같은 이름)", { items: [{ dealId: "opt-2" }, { dealName: "가짜크림 2개입", sellingPrice: 1 }] }, /두 번 있습니다/],
   ])("fails with a reason the bot can act on: %s", async (_label, overrides, detail) => {
     const outcome = await run("create_action_proposal", { ...base, ...overrides } as never);
     expect(outcome.toStatus).toBe("FAILED_FINAL");
     expect(outcome.result.resultSummary).toMatch(/TARGET_NOT_FOUND/);
     expect(outcome.result.resultSummary).toMatch(detail);
     expect(m.proposalCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["공백 차이만 있는 같은 이름", "가짜크림  2개입", "opt-2"],
+    // 화면이 저장한 「판매 조건 이름 - 옵션 이름」과 옵션 이름만 보낸 줄도 같은 하위품목이다(`campaignOptionNameKey`).
+    ["옵션 이름만 보냈는데 「판매 조건 - 옵션」이 이미 있음", "3개입", "opt-3"],
+  ])("a new row whose stored name already exists becomes a link row (%s) — the bot cannot learn option ids", async (_label, dealName, linked) => {
+    const outcome = await run("create_action_proposal", { ...base, items: [{ dealName, sellingPrice: 1 }] });
+    expect(outcome.toStatus).toBe("NEEDS_APPROVAL");
+    const created = m.proposalCreate.mock.calls[0][0] as { data: { payload: unknown; title: string } };
+    const payload = JSON.stringify(created.data.payload);
+    expect(payload).toContain(`"items":[{"dealId":"${linked}"}]`);
+    expect(created.data.title).toBe("캠페인 품목 1건 추가: 기존 하위품목 연결 1건");
   });
 
   it("a deal with a unit needs unitQuantity on new rows (the screen's rule)", async () => {
@@ -316,10 +358,20 @@ describe("add_campaign_items contract", () => {
     expect(accepts({ ...base, items: [{}] })).toBe(false);
     expect(accepts({ ...base, items: [{ dealId: "opt-2", dealName: "둘 다" }] })).toBe(false);
     expect(accepts({ ...base, items: [{ dealId: "opt-2", sellingPrice: 1 }] })).toBe(false);
+    expect(accepts({ ...base, items: [{ dealId: "opt-2", supplementaryInfo: "케일 1박스" }] })).toBe(false);
+    expect(accepts({ ...base, items: [{ dealName: "6통", sellingPrice: 1, unitQuantity: 6, supplementaryInfo: "6개월분 + 케일 1박스" }] })).toBe(true);
+    // 봇 요청은 mainDealId 를 빼도 된다(CRM 이 채운다).
+    expect(accepts({ action: "add_campaign_items", campaignId: "sc-1", items: [{ dealId: "opt-2" }] })).toBe(true);
     expect(accepts({ ...base, items: [{ dealName: "가격 없음" }] })).toBe(false);
     expect(accepts({ ...base, items: [{ dealName: "음수", sellingPrice: -1 }] })).toBe(false);
     expect(accepts({ ...base, items: [{ dealName: "요율 100", sellingPrice: 1, totalCommissionRate: 100 }] })).toBe(false);
     expect(accepts({ ...base, items: [] })).toBe(false);
+  });
+
+  it("the in-proposal key is name + unit quantity + supplementary info", () => {
+    const row = { dealName: "6통", sellingPrice: 1, unitQuantity: 6 };
+    expect(accepts({ ...base, items: [{ ...row, supplementaryInfo: "6개월분" }, { ...row, supplementaryInfo: "6개월분 + 케일 1박스" }] })).toBe(true);
+    expect(accepts({ ...base, items: [{ ...row, supplementaryInfo: "6개월분" }, { ...row, supplementaryInfo: " 6개월분 " }] })).toBe(false);
   });
 
   it("same name with different unit quantities is not a duplicate at the contract level (named by quantity under a unit)", () => {

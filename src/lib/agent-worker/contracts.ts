@@ -527,6 +527,7 @@ export const upsertProductMappingsArgsSchema = upsertProductMappingsInputSchema
 export const MAX_CAMPAIGN_ITEMS_PER_PROPOSAL = 20;
 export const MAX_CAMPAIGN_ITEM_NAME_CHARS = 200;
 export const MAX_CAMPAIGN_ITEM_PRICE = 100_000_000;
+export const MAX_CAMPAIGN_ITEM_SUPPLEMENTARY_CHARS = 200;
 
 export const campaignItemRowSchema = z
   .object({
@@ -536,6 +537,9 @@ export const campaignItemRowSchema = z
     // 수수료율(%) — 화면의 하위품목 만들기 칸과 같은 단위. 없으면 상위 판매 조건의 수수료율을 물려받는다.
     totalCommissionRate: z.number().finite().min(0).max(99.99).optional(),
     unitQuantity: z.number().int().min(1).max(100_000).optional(),
+    // 보충 정보 — 판매 조건 화면 「하위품목 추가」의 보충 정보 칸과 같다. 단위가 있는 판매 조건이면 이름 괄호 안에 들어간다
+    // (「이름 - 6통 (6개월분 + 케일 1박스)」, `plannedOptionDealName`). 없는 판매 조건이면 이름에는 안 들어가고 칸에만 저장된다.
+    supplementaryInfo: z.string().trim().min(1).max(MAX_CAMPAIGN_ITEM_SUPPLEMENTARY_CHARS).optional(),
   })
   .strict();
 
@@ -573,11 +577,16 @@ export function refineCampaignItems(
       return;
     }
     if (row.dealId) {
-      if (row.sellingPrice !== undefined || row.totalCommissionRate !== undefined || row.unitQuantity !== undefined) {
+      if (
+        row.sellingPrice !== undefined ||
+        row.totalCommissionRate !== undefined ||
+        row.unitQuantity !== undefined ||
+        row.supplementaryInfo !== undefined
+      ) {
         context.addIssue({
           code: "custom",
           path: [...path, "sellingPrice"],
-          message: "dealId 로 연결하는 줄에는 가격·수수료율·수량을 넣지 않는다(이미 있는 하위품목 값을 쓴다).",
+          message: "dealId 로 연결하는 줄에는 가격·수수료율·수량·보충 정보를 넣지 않는다(이미 있는 하위품목 값을 쓴다).",
         });
       }
       if (seenIds.has(row.dealId)) {
@@ -595,7 +604,7 @@ export function refineCampaignItems(
     }
     // 이름 + 단위 수량 — 단위 있는 판매 조건은 저장 이름을 수량으로 만들어(`plannedOptionDealName`) 같은 이름·다른 수량이
     // 다른 하위품목이다. 저장 이름 기준의 기안 안 중복은 판매 조건을 아는 기안 시점 확인·승인 실행이 다시 막는다.
-    const key = `${campaignItemNameKey(row.dealName ?? "")}\u0000${row.unitQuantity ?? ""}`;
+    const key = [campaignItemNameKey(row.dealName ?? ""), row.unitQuantity ?? "", campaignItemNameKey(row.supplementaryInfo ?? "")].join("\u0000");
     if (seenNames.has(key)) {
       context.addIssue({ code: "custom", path: [...path, "dealName"], message: `같은 하위품목(이름·단위 수량)이 기안 안에 두 번 있다: ${row.dealName}` });
     }
@@ -609,6 +618,19 @@ export const addCampaignItemsInputSchema = z.object({
   items: z.array(campaignItemRowSchema).min(1).max(MAX_CAMPAIGN_ITEMS_PER_PROPOSAL),
   memo: z.string().trim().min(1).max(500).optional(),
 });
+
+/**
+ * 봇이 보내는 기안 입력(액션 이름 제외) — `mainDealId` 는 선택이다(2026-10-27 실사용). 봇은 작업 완료 알림의 첫 줄(약 200자)만
+ * 받아 조회 결과의 판매 조건 id 를 옮겨 적을 수 없었다. 빠지면 기안 시점에 CRM 작업 실행기가 캠페인의 지금 판매 조건으로
+ * 채우고, 주어졌으면 지금 값과 대조한다. 저장 args(`addCampaignItemsArgsSchema`)에서는 언제나 필수다(승인 시점 대조).
+ */
+export const addCampaignItemsRequestSchema = addCampaignItemsInputSchema.extend({
+  mainDealId: opaqueIdSchema.optional(),
+});
+
+export const addCampaignItemsRequestArgsSchema = addCampaignItemsRequestSchema.strict().superRefine(refineCampaignItems);
+
+export type AddCampaignItemsRequestArgs = z.infer<typeof addCampaignItemsRequestArgsSchema>;
 
 /** 저장 args 스키마 — 실행기(`write-actions/add-campaign-items.ts`)의 argsSchema, 기안 의도 도구의 입력, 결재함 미리보기. */
 export const addCampaignItemsArgsSchema = addCampaignItemsInputSchema.strict().superRefine(refineCampaignItems);
@@ -705,7 +727,7 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
       action: z.literal("add_campaign_items"),
-      ...addCampaignItemsInputSchema.shape,
+      ...addCampaignItemsRequestSchema.shape,
     })
     .strict()
     .superRefine(refineCampaignItems),

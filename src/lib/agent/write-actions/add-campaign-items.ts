@@ -8,7 +8,7 @@ import {
 import { recordActivityCreate, recordActivityMemo } from "@/lib/activity-log";
 import { CAMPAIGN_INVALIDATION_TAGS, CRM_CACHE_TAGS } from "@/lib/cache-tags";
 import { plannedOptionDealName } from "@/lib/deal-display";
-import { computeSupplyPrice } from "@/utils/deal-panel-helpers";
+import { buildOptionSupplementaryInfo, computeSupplyPrice } from "@/utils/deal-panel-helpers";
 import { applyRecordChanges, lockRecordRows, readRecordSnapshot } from "../record-update-entities";
 // 봇(작업 실행기)이 기안을 만들 때 쓰는 실행자 이름 — 기안자가 스스로 승인·실행하는 길을 막는다.
 import { AGENT_WORKER_ACTOR } from "@/lib/agent/agent-worker-proposal";
@@ -260,6 +260,8 @@ async function handleAddCampaignItems(
         totalCommissionRate: commission,
         unit: mainDeal.unit,
         unitQuantity: row.unitQuantity ?? null,
+        // 화면 「하위품목 추가」와 같은 저장 모양(`buildOptionSupplementaryInfo` — 모델명이 없으면 글 그대로).
+        supplementaryInfo: buildOptionSupplementaryInfo(row.supplementaryInfo ?? "", ""),
         dealType: "OPTION",
         parentDealId: mainDeal.id,
         optionSortOrder: nextSortOrder,
