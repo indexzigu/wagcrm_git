@@ -1255,6 +1255,16 @@ function shiftDateStr(dateStr: string, days: number): string {
 }
 
 /**
+ * 후보 조회 시간 제한 — 구글이 응답 없이 멈추면 수집 회차가 단일 실행 잠금(120초,
+ * `calendar-inbound/run-lock.ts`)보다 오래 붙잡혀 다음 회차와 겹칠 수 있다. 한 번의 요청(본문
+ * 읽기 포함)과 전체 조회(페이지·캘린더 합산) 둘 다 묶는다. 회차 예산(55초, scan.ts)은 조회가
+ * 끝난 뒤부터 재므로 최악은 토큰 갱신(10초) + 조회(40초) + 예산(55초) ≈ 105초 + 마지막 일정의
+ * DB 쓰기이고, 이 합이 잠금 120초 안에 들어야 한다(테스트가 고정).
+ */
+export const CANDIDATE_LIST_REQUEST_TIMEOUT_MS = 15_000;
+export const CANDIDATE_LIST_DEADLINE_MS = 40_000;
+
+/**
  * 기간 내 **종일·비반복·취소 아님** 이벤트를 모든 대상 캘린더(primary + 회계·정산)에서
  * 읽어 후보로 돌려준다. 읽기 전용. 장부 참조 집합도 함께 돌려주지만 **거르지는 않는다** —
  * 거르는 규칙(참조 id · `crmSigned`)은 호출부가 정한다.
@@ -1292,10 +1302,15 @@ export async function listAllDayCandidateEvents(opts: {
   ];
 
   const events: CandidateEvent[] = [];
+  const deadlineAt = Date.now() + CANDIDATE_LIST_DEADLINE_MS;
 
   for (const calendarId of calendarIds) {
     let pageToken: string | undefined;
     do {
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs <= 0) {
+        return { ok: false, error: "이벤트 조회 시간 초과", ...empty };
+      }
       const url = new URL(calendarEventsApi(calendarId));
       url.searchParams.set("timeMin", opts.timeMin);
       url.searchParams.set("timeMax", opts.timeMax);
@@ -1305,16 +1320,26 @@ export async function listAllDayCandidateEvents(opts: {
       url.searchParams.set("singleEvents", "false");
       if (pageToken) url.searchParams.set("pageToken", pageToken);
 
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        return { ok: false, error: `이벤트 조회 실패: ${res.status}`, ...empty };
+      let data: { items?: RawCalendarEvent[]; nextPageToken?: string };
+      try {
+        const res = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          // 신호가 본문 읽기까지 이어져 헤더만 오고 멈추는 경우도 끊는다.
+          signal: AbortSignal.timeout(
+            Math.min(CANDIDATE_LIST_REQUEST_TIMEOUT_MS, remainingMs),
+          ),
+        });
+        if (!res.ok) {
+          return { ok: false, error: `이벤트 조회 실패: ${res.status}`, ...empty };
+        }
+        data = (await res.json()) as typeof data;
+      } catch (error) {
+        // 시간 초과만 결과로 돌려준다 — 그 밖의 네트워크 오류는 종전처럼 던져 호출부가 기록한다.
+        if (error instanceof Error && error.name === "TimeoutError") {
+          return { ok: false, error: "이벤트 조회 시간 초과", ...empty };
+        }
+        throw error;
       }
-      const data = (await res.json()) as {
-        items?: RawCalendarEvent[];
-        nextPageToken?: string;
-      };
 
       for (const ev of data.items ?? []) {
         if (!ev.id || ev.status === "cancelled") continue;
