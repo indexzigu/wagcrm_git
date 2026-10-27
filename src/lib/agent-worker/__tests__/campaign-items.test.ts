@@ -283,6 +283,16 @@ describe("create_action_proposal — add_campaign_items (기안 시점 확인)",
     const missing = await run("create_action_proposal", { ...base, items: [{ dealName: "새 구성", sellingPrice: 1 }] });
     expect(missing.toStatus).toBe("FAILED_FINAL");
     expect(missing.result.resultSummary).toMatch(/unitQuantity 가 필요합니다/);
+    // 옵션 이름이 달라도 수량이 같으면 같은 이름(「가짜크림 - 3개」)으로 저장된다 — 기안 안 중복으로 막는다.
+    const twice = await run("create_action_proposal", {
+      ...base,
+      items: [
+        { dealName: "가", sellingPrice: 1, unitQuantity: 3 },
+        { dealName: "나", sellingPrice: 1, unitQuantity: 3 },
+      ],
+    });
+    expect(twice.toStatus).toBe("FAILED_FINAL");
+    expect(twice.result.resultSummary).toMatch(/같은 이름\(「가짜크림 - 3개」\)/);
     // 수량으로 만든 이름(「가짜크림 - 3개」)이 이미 있는 「가짜크림 - 3개입」과는 다른 이름이라 통과한다.
     const ok = await run("create_action_proposal", { ...base, items: [{ dealName: "새 구성", sellingPrice: 1, unitQuantity: 3 }] });
     expect(ok.toStatus).toBe("NEEDS_APPROVAL");
@@ -310,6 +320,18 @@ describe("add_campaign_items contract", () => {
     expect(accepts({ ...base, items: [{ dealName: "음수", sellingPrice: -1 }] })).toBe(false);
     expect(accepts({ ...base, items: [{ dealName: "요율 100", sellingPrice: 1, totalCommissionRate: 100 }] })).toBe(false);
     expect(accepts({ ...base, items: [] })).toBe(false);
+  });
+
+  it("same name with different unit quantities is not a duplicate at the contract level (named by quantity under a unit)", () => {
+    expect(
+      accepts({
+        ...base,
+        items: [
+          { dealName: "구성", sellingPrice: 1, unitQuantity: 3 },
+          { dealName: "구성", sellingPrice: 1, unitQuantity: 5 },
+        ],
+      }),
+    ).toBe(true);
   });
 
   it("rejects duplicates inside one proposal (same dealId, or same name after normalization)", () => {

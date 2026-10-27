@@ -593,9 +593,11 @@ export function refineCampaignItems(
         message: "새 하위품목(dealName)에는 판매가(sellingPrice)가 필요하다.",
       });
     }
-    const key = campaignItemNameKey(row.dealName ?? "");
+    // 이름 + 단위 수량 — 단위 있는 판매 조건은 저장 이름을 수량으로 만들어(`plannedOptionDealName`) 같은 이름·다른 수량이
+    // 다른 하위품목이다. 저장 이름 기준의 기안 안 중복은 판매 조건을 아는 기안 시점 확인·승인 실행이 다시 막는다.
+    const key = `${campaignItemNameKey(row.dealName ?? "")}\u0000${row.unitQuantity ?? ""}`;
     if (seenNames.has(key)) {
-      context.addIssue({ code: "custom", path: [...path, "dealName"], message: `같은 하위품목 이름이 기안 안에 두 번 있다: ${key}` });
+      context.addIssue({ code: "custom", path: [...path, "dealName"], message: `같은 하위품목(이름·단위 수량)이 기안 안에 두 번 있다: ${row.dealName}` });
     }
     seenNames.add(key);
   });

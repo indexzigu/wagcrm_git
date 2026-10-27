@@ -1278,6 +1278,8 @@ async function campaignItemsSubjectCheck(
   const linkable = new Set([main.id, ...options.map((option) => option.id)]);
   const inCampaign = new Set(items.map((item) => item.dealId));
   const optionByName = new Map(options.map((option) => [campaignOptionNameKey(main.dealName, option.dealName), option.id]));
+  // 기안 안 새 줄끼리 저장 이름이 겹치는지(단위 판매 조건은 옵션 이름이 달라도 수량이 같으면 같은 이름이 된다).
+  const plannedInProposal = new Set<string>();
   for (const row of args.items) {
     if (row.dealId) {
       if (!linkable.has(row.dealId)) {
@@ -1295,7 +1297,12 @@ async function campaignItemsSubjectCheck(
         detail: `판매 조건에 단위(${main.unit})가 있어 새 하위품목 줄에 unitQuantity 가 필요합니다(이름은 CRM 이 수량으로 만듭니다).`,
       };
     }
-    const existingId = optionByName.get(campaignOptionNameKey(main.dealName, plannedName));
+    const plannedKey = campaignOptionNameKey(main.dealName, plannedName);
+    if (plannedInProposal.has(plannedKey)) {
+      return { ok: false, detail: `새 하위품목 두 줄이 같은 이름(「${plannedName}」)으로 저장됩니다. 한 줄로 합쳐 주세요.` };
+    }
+    plannedInProposal.add(plannedKey);
+    const existingId = optionByName.get(plannedKey);
     if (existingId !== undefined) {
       return {
         ok: false,

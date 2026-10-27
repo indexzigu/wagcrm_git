@@ -283,6 +283,22 @@ describe("판매캠페인 품목 추가 — 단위가 있는 판매 조건(화�
     expect(created.unitQuantity).toBe(3);
   });
 
+  it("옵션 이름이 달라도 같은 수량 두 줄은 같은 이름이 되므로 실패하고 아무것도 쓰지 않는다", async () => {
+    const f = await fixture({ unit: "개" });
+    const id = await propose({
+      campaignId: f.campaignId,
+      mainDealId: f.mainId,
+      items: [
+        { dealName: "가", sellingPrice: 1, unitQuantity: 3 },
+        { dealName: "나", sellingPrice: 1, unitQuantity: 3 },
+      ],
+    });
+    const outcome = await approveProposal(id, APPROVER);
+    expect(outcome.ok).toBe(false);
+    expect(JSON.stringify(await proposal(id))).toMatch(/같은 이름/);
+    expect(await optionCount(f.mainId)).toBe(2);
+  });
+
   it("단위 수량이 없으면 실패하고 아무것도 쓰지 않는다", async () => {
     const f = await fixture({ unit: "개" });
     const id = await propose({ campaignId: f.campaignId, mainDealId: f.mainId, items: [{ dealName: "3개입", sellingPrice: 1 }] });

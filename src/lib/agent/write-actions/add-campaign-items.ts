@@ -175,6 +175,8 @@ async function handleAddCampaignItems(
   }
 
   const resolved: ResolvedItem[] = [];
+  // 기안 안 새 줄끼리 저장 이름이 겹치면 같은 이름 하위품목이 둘 생긴다 — 막는다(기안 시점 확인과 같은 규칙).
+  const plannedInProposal = new Set<string>();
   let skipped = 0;
   for (const row of args.items) {
     if (row.dealId) {
@@ -197,6 +199,10 @@ async function handleAddCampaignItems(
       );
     }
     const key = campaignOptionNameKey(mainDeal.dealName, plannedName);
+    if (plannedInProposal.has(key)) {
+      throw new Error(`새 하위품목 두 줄이 같은 이름(「${plannedName}」)으로 저장됩니다. 한 줄로 합쳐 다시 올려 주세요.`);
+    }
+    plannedInProposal.add(key);
     const sameName = optionsByName.get(key) ?? [];
     if (sameName.length > 0) {
       const [existing] = sameName;
