@@ -1,6 +1,7 @@
 import { CalendarDaysIcon, SparklesIcon, UserRoundIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CALENDAR_INBOUND_CREATED_BY } from "@/lib/calendar-inbound/ref";
+import { sourceLabelOf } from "@/lib/agent/proposal-source-label";
 
 /**
  * SourceBadge — 기안이 어디서 만들어졌는지 배지로 보여준다 (Plan 2 · Task 3).
@@ -48,15 +49,4 @@ export function SourceBadge({ createdBy }: { createdBy: string }) {
       {sourceLabelOf(createdBy)}
     </Badge>
   );
-}
-
-/**
- * 배지에 적히는 그 말 — 배지를 못 쓰는 자리(페이지 설명 줄 같은 평문)가 쓴다.
- * ⛔ 라벨을 그쪽에서 다시 쓰지 말 것: 출처 이름이 바뀌면 한쪽만 낡는다.
- */
-export function sourceLabelOf(createdBy: string): string {
-  if (createdBy === "AGENT_WORKER") return "슬랙봇";
-  if (createdBy === "AGENT") return "어시스턴트";
-  if (createdBy === CALENDAR_INBOUND_CREATED_BY) return "캘린더";
-  return "직접";
 }

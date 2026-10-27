@@ -17,7 +17,7 @@ import type { BulkApproveResponse } from "@/lib/action-proposal-bulk";
 import { PendingCard } from "./approval-cards";
 import type { ApprovalInboxItem } from "./approval-cards";
 import type { BulkApproveFn } from "./approval-hub-types";
-import { ACTION_LABELS } from "./proposal-card";
+import { ACTION_LABELS } from "@/lib/agent/action-labels";
 import { EmptyState, LoadErrorState, LoadMoreButton } from "./hub-states";
 import type { ApproveOptions } from "@/hooks/useProposalActions";
 import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";

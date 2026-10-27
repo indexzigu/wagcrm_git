@@ -60,8 +60,8 @@ describe("formatApprovalMessage", () => {
     expect(m.detail).toContain("새 회차 생성\n대상: 셀러 테스트셀러 · 판매 조건 테스트 상품");
   });
 
-  it("모르는 액션은 원문, 액션이 없으면 「기안」, 주소가 없으면 링크를 뺀다", () => {
-    expect(formatApprovalMessage(proposal({ payload: { action: "new_tool" } }), BASE).detail.split("\n")[0]).toBe("new_tool");
+  it("모르는 액션은 카드처럼 「알 수 없음」, 액션이 없으면 「기안」, 주소가 없으면 링크를 뺀다", () => {
+    expect(formatApprovalMessage(proposal({ payload: { action: "new_tool" } }), BASE).detail.split("\n")[0]).toBe("알 수 없음");
     const m = formatApprovalMessage(proposal({ payload: null, targetName: null }), null);
     expect(m.detail.split("\n")[0]).toBe("기안");
     expect(m.detail).not.toContain("대상:");
@@ -96,17 +96,17 @@ describe("formatApprovalMessages", () => {
 
 describe("formatApprovalBatch", () => {
   it("키는 구성 전체의 지문이다 — 첫 기안이 같아도 구성이 바뀌면 다른 키, 순서만 바뀌면 같은 키", () => {
-    const abcd = ["a", "b", "c", "d"].map((id) => ({ id, title: id }));
-    const key = (list: { id: string; title: string }[]) => formatApprovalBatch(list, BASE).key;
-    expect(key([...abcd, { id: "e", title: "e" }])).not.toBe(key(abcd));
+    const abcd = ["a", "b", "c", "d"].map((id) => ({ id, title: id, payload: null }));
+    const key = (list: { id: string; title: string; payload: unknown }[]) => formatApprovalBatch(list, BASE).key;
+    expect(key([...abcd, { id: "e", title: "e", payload: null }])).not.toBe(key(abcd));
     expect(key([...abcd].reverse())).toBe(key(abcd));
   });
 
-  it("제목은 10건까지 나열하고 나머지는 개수로 · 결재함 링크", () => {
-    const list = Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, title: `기안 ${i}` }));
+  it("종류·제목은 10건까지 나열하고 나머지는 개수로 · 결재함 링크", () => {
+    const list = Array.from({ length: 13 }, (_, i) => ({ id: `p${i}`, title: `기안 ${i}`, payload: { action: "confirm_settlement" } }));
     const m = formatApprovalBatch(list, BASE);
     const lines = m.detail.split("\n");
-    expect(lines.slice(0, 10)).toEqual(list.slice(0, 10).map((p) => `· ${p.title}`));
+    expect(lines.slice(0, 10)).toEqual(list.slice(0, 10).map((p) => `· [정산 확정] ${p.title}`));
     expect(lines).toContain("외 3건");
     expect(lines.at(-1)).toBe("결재함: https://crm.example.com/approvals");
     expect(m.key).toMatch(/^approval-batch-[0-9a-f]{16}$/);

@@ -127,10 +127,12 @@ describe("approval-outbox 크론", () => {
     expect(console.error).toHaveBeenCalled();
   });
 
-  it("4건부터는 이름 조회 없이 묶음 1통으로 전부 싣는다", async () => {
-    findMany.mockResolvedValue(["a", "b", "c", "d"].map((id) => row(id)));
+  it("4건부터는 이름 조회 없이 묶음 1통으로 전부 싣는다 — 줄마다 기안 종류(sqlite 문자열 payload 포함)", async () => {
+    findMany.mockResolvedValue(["a", "b", "c"].map((id) => row(id)).concat(row("d", { payload: JSON.stringify({ action: "confirm_settlement" }) })));
     const body = await (await GET(get())).json();
     expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].detail).toContain("· [메모 추가] 기안 a");
+    expect(body.messages[0].detail).toContain("· [정산 확정] 기안 d");
     expect(body.messages[0]).toMatchObject({ title: "결재 대기 4건", proposalIds: ["a", "b", "c", "d"] });
     expect(resolveEntityLabel).not.toHaveBeenCalled();
   });

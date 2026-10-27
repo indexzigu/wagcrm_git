@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { ACTION_LABELS } from "@/lib/agent/action-labels";
 import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import { kstDateTime } from "@/lib/cron-incident-report";
-import { displayLabel } from "@/lib/display-label";
+import { displayLabel, UNKNOWN_NAME } from "@/lib/display-label";
 import { ENTITY_TYPE_LABELS } from "@/components/crm/approvals/entity-type-labels";
-import { sourceLabelOf } from "@/components/crm/approvals/source-badge";
+import { sourceLabelOf } from "@/lib/agent/proposal-source-label";
 
 /**
  * 결재 대기 기안 → 오너 텔레그램 알림 문구. 순수 함수만 둔다 — 조회·확인 표시는 `/api/cron/approval-outbox`
@@ -59,6 +59,12 @@ function actionOf(payload: unknown): string | null {
   return typeof action === "string" && action ? action : null;
 }
 
+/** 기안 종류 이름 — 결재함 카드와 같은 표·같은 폴백(표에 없는 액션은 「알 수 없음」, 액션이 없으면 「기안」). */
+function actionLabelOf(payload: unknown): string {
+  const action = actionOf(payload);
+  return action ? displayLabel(ACTION_LABELS, action, UNKNOWN_NAME) : "기안";
+}
+
 function targetLine(p: ApprovalNotifyProposal): string | null {
   if (p.argLabels) {
     const parts = [
@@ -77,13 +83,13 @@ function linkTo(baseUrl: string | null, path: string): string | null {
 }
 
 export function formatApprovalMessage(p: ApprovalNotifyProposal, baseUrl: string | null): ApprovalOutboxMessage {
-  const action = actionOf(p.payload);
-  const lines: string[] = [action ? displayLabel(ACTION_LABELS, action, action) : "기안"];
+  const lines: string[] = [actionLabelOf(p.payload)];
   const target = targetLine(p);
   if (target) lines.push(target);
   lines.push(`올린 곳: ${sourceLabelOf(p.createdBy)} · ${kstDateTime(p.createdAt)}`);
   const summary = p.resultSummary?.trim();
-  // 봇 기안은 요약을 잘라 제목으로 쓴다 — 같은 글을 두 번 싣지 않는다.
+  // 제목과 요약이 같으면 한 번만 싣는다. 봇 기안은 요약 앞부분을 잘라 제목으로 쓰므로 요약이 더 길면 겹치더라도 전문을 싣는다
+  // — 잘린 제목만으로는 무엇을 승인하는지 다 보이지 않는다.
   if (summary && summary !== p.title.trim()) lines.push("", clip(summary, SUMMARY_MAX));
   const link = linkTo(baseUrl, `/approvals/${p.id}`);
   if (link) lines.push("", `열기: ${link}`);
@@ -102,10 +108,10 @@ export function formatApprovalMessage(p: ApprovalNotifyProposal, baseUrl: string
  * 「외 N건」과 결재함 링크로 알렸으므로 함께 확인한다(다음 회차에 같은 기안을 또 묶어 보내지 않게).
  */
 export function formatApprovalBatch(
-  proposals: Pick<ApprovalNotifyProposal, "id" | "title">[],
+  proposals: Pick<ApprovalNotifyProposal, "id" | "title" | "payload">[],
   baseUrl: string | null,
 ): ApprovalOutboxMessage {
-  const lines = proposals.slice(0, BATCH_LIST_MAX).map((p) => `· ${clip(p.title, TITLE_MAX)}`);
+  const lines = proposals.slice(0, BATCH_LIST_MAX).map((p) => `· [${actionLabelOf(p.payload)}] ${clip(p.title, TITLE_MAX)}`);
   if (proposals.length > BATCH_LIST_MAX) lines.push(`외 ${proposals.length - BATCH_LIST_MAX}건`);
   const link = linkTo(baseUrl, "/approvals");
   if (link) lines.push("", `결재함: ${link}`);

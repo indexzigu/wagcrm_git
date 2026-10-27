@@ -49,10 +49,10 @@ async function pendingMessages(now: Date): Promise<ApprovalOutboxMessage[]> {
   });
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || null;
 
-  // 묶음 알림은 제목만 싣는다 — 대상 이름을 풀 조회를 하지 않는다.
+  // 묶음 알림은 기안마다 종류와 제목만 싣는다 — 대상 이름을 풀 조회를 하지 않는다.
   if (rows.length >= APPROVAL_BATCH_THRESHOLD) {
     return formatApprovalMessages(
-      rows.map((r) => ({ ...r, payload: null, targetName: null, argLabels: null })),
+      rows.map((r) => ({ ...r, payload: deserializeJsonField(r.payload), targetName: null, argLabels: null })),
       baseUrl,
     );
   }
