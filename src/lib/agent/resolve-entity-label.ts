@@ -66,6 +66,8 @@ export type ProposalArgLabels = {
    * 지워진 id 는 빠진다(미리보기가 「이름 확인 불가」로 그린다).
    */
   linkedDeals?: Readonly<Record<string, LinkedDealLabel>>;
+  /** 판매캠페인 품목 추가 — 상위 판매 조건의 단위. 새 하위품목이 저장될 이름(`plannedOptionDealName`)을 미리보기가 그린다. */
+  dealUnit?: string | null;
 };
 
 /**
@@ -101,7 +103,7 @@ async function resolveCampaignItemsLabels(args: { mainDealId?: unknown; items?: 
     .filter((id): id is string => typeof id === "string");
   const deals = await getPrisma().deal.findMany({
     where: { id: { in: [args.mainDealId, ...linkIds] } },
-    select: { id: true, dealName: true, sellingPrice: true, totalCommissionRate: true },
+    select: { id: true, dealName: true, unit: true, sellingPrice: true, totalCommissionRate: true },
   });
   const byId = new Map(deals.map((deal) => [deal.id, deal]));
   const linkedDeals: Record<string, LinkedDealLabel> = {};
@@ -114,5 +116,6 @@ async function resolveCampaignItemsLabels(args: { mainDealId?: unknown; items?: 
       totalCommissionRate: deal.totalCommissionRate == null ? null : Number(deal.totalCommissionRate),
     };
   }
-  return { seller: null, deal: byId.get(args.mainDealId)?.dealName ?? null, linkedDeals };
+  const main = byId.get(args.mainDealId);
+  return { seller: null, deal: main?.dealName ?? null, linkedDeals, dealUnit: main?.unit ?? null };
 }

@@ -518,6 +518,17 @@ describe("ProposalPayloadPreview — [캘린더수집] 캘린더에서 온 기�
       expect(screen.queryByText("gone")).toBeNull();
     });
 
+    it("단위가 있는 판매 조건이면 새 하위품목 이름을 수량으로 보인다(실행기가 저장할 이름)", () => {
+      render(
+        <ProposalPayloadPreview
+          action="add_campaign_items"
+          args={{ ...args, items: [{ dealName: "3개 묶음", sellingPrice: 27_000, unitQuantity: 3 }] }}
+          argLabels={{ seller: null, deal: "샘플 상품", dealUnit: "개" }}
+        />,
+      );
+      expect(screen.getByText("샘플 상품 - 3개")).toBeTruthy();
+    });
+
     it("판매가가 다르면 화면이 달라진다(승인자가 틀린 값을 알아볼 수 있다)", () => {
       const { rerender } = render(<ProposalPayloadPreview action="add_campaign_items" args={args} />);
       expect(screen.getByText("27,000원 · 총수수료율 18%")).toBeTruthy();

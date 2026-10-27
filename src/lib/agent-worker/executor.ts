@@ -8,6 +8,7 @@ import { isPermissionDeniedError } from "@/lib/db-permission-denied";
 import { containsSearch } from "@/lib/prisma-search";
 import { DEAL_STATUSES } from "@/lib/deal-status";
 import { toKstYmd } from "@/lib/date-utils";
+import { plannedOptionDealName } from "@/lib/deal-display";
 import type { SettlementAmountField } from "@/lib/settlement-amount-fields";
 import {
   aggregateCoversCampaigns,
@@ -1264,7 +1265,7 @@ async function campaignItemsSubjectCheck(
   }
   const main = await client.deal.findUnique({
     where: { id: campaign.dealId },
-    select: { id: true, dealName: true, dealType: true },
+    select: { id: true, dealName: true, dealType: true, unit: true },
   });
   if (main === null) return { ok: false, detail: "판매캠페인의 판매 조건을 찾을 수 없습니다." };
   if (main.dealType === "OPTION") {
@@ -1287,7 +1288,14 @@ async function campaignItemsSubjectCheck(
       }
       continue;
     }
-    const existingId = optionByName.get(campaignOptionNameKey(main.dealName, row.dealName ?? ""));
+    const plannedName = plannedOptionDealName(main, row);
+    if (plannedName === null) {
+      return {
+        ok: false,
+        detail: `판매 조건에 단위(${main.unit})가 있어 새 하위품목 줄에 unitQuantity 가 필요합니다(이름은 CRM 이 수량으로 만듭니다).`,
+      };
+    }
+    const existingId = optionByName.get(campaignOptionNameKey(main.dealName, plannedName));
     if (existingId !== undefined) {
       return {
         ok: false,

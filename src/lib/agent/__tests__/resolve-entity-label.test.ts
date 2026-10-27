@@ -135,7 +135,7 @@ describe("resolveProposalArgLabels — 판매캠페인 품목 추가(T-271)의 �
 
   it("상위 판매 조건 이름과 연결 줄 하위품목 이름을 한 번의 조회로 푼다(새로 만들 줄은 조회하지 않는다)", async () => {
     dealFindManyMock.mockResolvedValue([
-      { id: "main-1", dealName: "샘플 상품", sellingPrice: 10_000, totalCommissionRate: 20 },
+      { id: "main-1", dealName: "샘플 상품", unit: "개", sellingPrice: 10_000, totalCommissionRate: 20 },
       { id: "opt-2", dealName: "샘플 상품 2개입", sellingPrice: 19_000, totalCommissionRate: null },
     ]);
     const labels = await resolveProposalArgLabels({
@@ -148,6 +148,7 @@ describe("resolveProposalArgLabels — 판매캠페인 품목 추가(T-271)의 �
       seller: null,
       deal: "샘플 상품",
       linkedDeals: { "opt-2": { name: "샘플 상품 2개입", sellingPrice: 19_000, totalCommissionRate: null } },
+      dealUnit: "개",
     });
   });
 
@@ -157,7 +158,7 @@ describe("resolveProposalArgLabels — 판매캠페인 품목 추가(T-271)의 �
       action: "add_campaign_items",
       args: { mainDealId: "main-1", items: [{ dealId: "gone" }] },
     });
-    expect(labels).toEqual({ seller: null, deal: "샘플 상품", linkedDeals: {} });
+    expect(labels).toEqual({ seller: null, deal: "샘플 상품", linkedDeals: {}, dealUnit: null });
   });
 
   it("모양이 깨진 내용은 조회 없이 null", async () => {

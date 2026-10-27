@@ -42,7 +42,7 @@ type Fixture = { campaignId: string; mainId: string; optionA: string; optionB: s
  * 품목 합계와 같다(화면 저장 뒤의 정상 상태).
  */
 async function fixture(
-  over: { campaignSales?: number; campaignQuantity?: number; withItem?: boolean } = {},
+  over: { campaignSales?: number; campaignQuantity?: number; withItem?: boolean; unit?: string } = {},
 ): Promise<Fixture> {
   const partner = await realPrisma.partner.create({ data: { id: nextId("ptn"), name: "가상 브랜드사", type: "BRAND" } });
   const seller = await realPrisma.seller.create({
@@ -53,7 +53,7 @@ async function fixture(
       id: nextId("main"),
       dealName: "가상 상품",
       brandName: "가상브랜드",
-      unit: "개",
+      unit: over.unit ?? null,
       partnerId: partner.id,
       partnerCompanyName: "가상 브랜드사",
       sellingPrice: 10_000,
@@ -179,7 +179,7 @@ describe("판매캠페인 품목 추가 — 승인 반영", () => {
     expect(created.partnerId).toBe(f.partnerId);
     expect(created.partnerCompanyName).toBe("가상 브랜드사");
     expect(created.brandName).toBe("가상브랜드");
-    expect(created.unit).toBe("개");
+    expect(created.unit).toBeNull();
     expect(created.unitQuantity).toBe(3);
     expect(Number(created.sellingPrice)).toBe(27_000);
     expect(Number(created.totalCommissionRate)).toBe(20);
@@ -263,6 +263,34 @@ describe("판매캠페인 품목 추가 — 승인 반영", () => {
     // 연결 줄은 하위품목의 지금 값을 쓴다(기안의 판매가가 아니다).
     const linked: any = rows.find((row: { dealId: string }) => row.dealId === f.optionB);
     expect(Number(linked.sellingPrice)).toBe(19_000);
+  });
+});
+
+describe("판매캠페인 품목 추가 — 단위가 있는 판매 조건(화면 규칙: 수량 필수 · 이름은 수량으로)", () => {
+  it("이름을 「판매 조건 이름 - {수량}{단위}」로 만들고 단위를 물려받는다", async () => {
+    const f = await fixture({ unit: "개" });
+    const id = await propose({
+      campaignId: f.campaignId,
+      mainDealId: f.mainId,
+      items: [{ dealName: "3개 묶음", sellingPrice: 27_000, unitQuantity: 3 }],
+    });
+
+    const outcome = await approveProposal(id, APPROVER);
+
+    expect(outcome.ok).toBe(true);
+    const created = await realPrisma.deal.findFirstOrThrow({ where: { parentDealId: f.mainId, dealName: "가상 상품 - 3개" } });
+    expect(created.unit).toBe("개");
+    expect(created.unitQuantity).toBe(3);
+  });
+
+  it("단위 수량이 없으면 실패하고 아무것도 쓰지 않는다", async () => {
+    const f = await fixture({ unit: "개" });
+    const id = await propose({ campaignId: f.campaignId, mainDealId: f.mainId, items: [{ dealName: "3개입", sellingPrice: 1 }] });
+    const outcome = await approveProposal(id, APPROVER);
+    expect(outcome.ok).toBe(false);
+    expect(JSON.stringify(await proposal(id))).toMatch(/단위 수량이 필요합니다/);
+    expect(await optionCount(f.mainId)).toBe(2);
+    expect(await items(f.campaignId)).toHaveLength(1);
   });
 });
 

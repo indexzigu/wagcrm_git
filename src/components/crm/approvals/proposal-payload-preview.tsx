@@ -25,7 +25,7 @@ import {
   recordFieldLabel,
 } from "@/lib/record-update-labels";
 import { displayLabel } from "@/lib/display-label";
-import { formatOptionDealName } from "@/lib/deal-display";
+import { plannedOptionDealName } from "@/lib/deal-display";
 import { campaignStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
 import { FIELD_LABELS } from "@/lib/field-labels";
 import { readCalendarInboundRef, type CalendarInboundRef } from "@/lib/calendar-inbound/ref";
@@ -462,12 +462,13 @@ function AddCampaignItemsPreview({
               const dealId = asText(row.dealId);
               const linked = dealId ? (labels?.linkedDeals?.[dealId] ?? null) : null;
               const newName = asText(row.dealName);
-              // 새 하위품목은 실행기가 저장할 이름(판매 조건 이름 접두)으로 보인다 — 판매 조건 이름을 못 풀었으면 받은 글자 그대로.
-              const name = dealId
-                ? (linked?.name ?? "이름 확인 불가")
-                : newName && labels?.deal
-                  ? formatOptionDealName(labels.deal, newName)
-                  : (newName ?? "이름없음");
+              const unitQuantity = typeof row.unitQuantity === "number" ? row.unitQuantity : undefined;
+              // 새 하위품목은 실행기가 저장할 이름(`plannedOptionDealName` — 판매 조건 화면 규칙)으로 보인다. 판매 조건을 못
+              // 풀었거나 단위 수량이 빠졌으면(승인 때 거절된다) 받은 글자 그대로.
+              const planned = labels?.deal
+                ? plannedOptionDealName({ dealName: labels.deal, unit: labels.dealUnit ?? null }, { dealName: newName ?? "", unitQuantity })
+                : null;
+              const name = dealId ? (linked?.name ?? "이름 확인 불가") : (planned ?? newName ?? "이름없음");
               const price = dealId
                 ? linked && priceWithCommission(linked.sellingPrice, linked.totalCommissionRate)
                 : priceWithCommission(row.sellingPrice, row.totalCommissionRate);

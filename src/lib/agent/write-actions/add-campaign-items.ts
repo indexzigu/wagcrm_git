@@ -7,7 +7,7 @@ import {
 } from "@/lib/agent-worker/contracts";
 import { recordActivityCreate, recordActivityMemo } from "@/lib/activity-log";
 import { CAMPAIGN_INVALIDATION_TAGS, CRM_CACHE_TAGS } from "@/lib/cache-tags";
-import { formatOptionDealName } from "@/lib/deal-display";
+import { plannedOptionDealName } from "@/lib/deal-display";
 import { computeSupplyPrice } from "@/utils/deal-panel-helpers";
 import { applyRecordChanges, lockRecordRows, readRecordSnapshot } from "../record-update-entities";
 // 봇(작업 실행기)이 기안을 만들 때 쓰는 실행자 이름 — 기안자가 스스로 승인·실행하는 길을 막는다.
@@ -30,10 +30,7 @@ type LinkableDeal = {
 
 type OptionDeal = LinkableDeal & { dealName: string; optionSortOrder: number };
 
-type ResolvedItem = { kind: "link"; deal: LinkableDeal } | { kind: "create"; row: CampaignItemRow };
-
-/** 같은 이름(비교 키)의 하위품목이 둘 이상이면 이름으로 고를 수 없다는 표시. */
-const AMBIGUOUS = "AMBIGUOUS";
+type ResolvedItem = { kind: "link"; deal: LinkableDeal } | { kind: "create"; row: CampaignItemRow; name: string };
 
 const toNumber = (value: Prisma.Decimal | number | null | undefined): number | null =>
   value == null ? null : Number(value);
@@ -42,8 +39,8 @@ const toNumber = (value: Prisma.Decimal | number | null | undefined): number | n
  * 판매캠페인 하나의 품목에 하위품목을 덧붙인다 — 사람이 승인했을 때만, 승인 라우트가 연 tx(기안 EXECUTED 전이와
  * 같은 트랜잭션) 안에서. 화면의 두 손 작업을 그대로 따른다:
  *  - 새 하위품목 = 판매 조건 화면의 「하위품목 추가」(`useDealOptions` → `POST /api/deals` → `dealService.createDeal`)
- *    와 같은 값: 이름은 화면과 같은 `formatOptionDealName`(「판매 조건 이름 - 옵션 이름」), 부모의 거래처·브랜드·단위·
- *    마진 정책을 물려받고, 수수료율은 입력이 없으면 부모 값, 원가(공급가)는
+ *    와 같은 값: 이름은 화면과 같은 규칙(`plannedOptionDealName` — 단위 있는 판매 조건은 「이름 - 3개」·수량 필수,
+ *    없으면 「이름 - 옵션 이름」), 부모의 거래처·브랜드·단위·마진 정책을 물려받고, 수수료율은 입력이 없으면 부모 값, 원가(공급가)는
  *    `computeSupplyPrice(판매가, 수수료율)`, 정렬 순서는 형제 최대값 + 1, 상태는 SOURCING.
  *    ⚠️ 정본 서비스 대신 tx.deal.create 를 직접 쓰는 이유: 서비스는 tx 를 받지 않고 커밋 전에 구글 드라이브 폴더를
  *    만든다(외부 IO). `create-deal.ts` 와 같은 선택이다.
@@ -170,10 +167,11 @@ async function handleAddCampaignItems(
   // ⑤
   const inCampaign = new Set(campaign.campaignDeals.map((row) => row.dealId));
   const optionsById = new Map(options.map((option) => [option.id, option]));
-  const optionsByName = new Map<string, OptionDeal | typeof AMBIGUOUS>();
+  // 같은 이름(비교 키)의 하위품목이 둘 이상이면 이름으로 고를 수 없다 — 그래서 목록으로 모은다.
+  const optionsByName = new Map<string, OptionDeal[]>();
   for (const option of options) {
     const key = campaignOptionNameKey(mainDeal.dealName, option.dealName);
-    optionsByName.set(key, optionsByName.has(key) ? AMBIGUOUS : option);
+    optionsByName.set(key, [...(optionsByName.get(key) ?? []), option]);
   }
 
   const resolved: ResolvedItem[] = [];
@@ -192,10 +190,17 @@ async function handleAddCampaignItems(
       inCampaign.add(deal.id);
       continue;
     }
-    const key = campaignOptionNameKey(mainDeal.dealName, row.dealName ?? "");
-    if (optionsByName.has(key)) {
-      const existing = optionsByName.get(key);
-      if (existing === undefined || existing === AMBIGUOUS) {
+    const plannedName = plannedOptionDealName(mainDeal, row);
+    if (plannedName === null) {
+      throw new Error(
+        `판매 조건 「${mainDeal.dealName}」에 단위(${mainDeal.unit})가 있어 새 하위품목에는 단위 수량이 필요합니다(화면과 같은 규칙).`,
+      );
+    }
+    const key = campaignOptionNameKey(mainDeal.dealName, plannedName);
+    const sameName = optionsByName.get(key) ?? [];
+    if (sameName.length > 0) {
+      const [existing] = sameName;
+      if (sameName.length > 1) {
         throw new Error(`「${key}」 이름의 하위품목이 둘 이상이라 어느 것을 연결할지 정할 수 없습니다. dealId 로 지정해 주세요.`);
       }
       if (inCampaign.has(existing.id)) {
@@ -206,7 +211,7 @@ async function handleAddCampaignItems(
       inCampaign.add(existing.id);
       continue;
     }
-    resolved.push({ kind: "create", row });
+    resolved.push({ kind: "create", row, name: plannedName });
   }
 
   if (resolved.length === 0) {
@@ -234,13 +239,13 @@ async function handleAddCampaignItems(
       });
       continue;
     }
-    const { row } = item;
+    const { row, name } = item;
     const sellingPrice = row.sellingPrice ?? 0;
     const commission = row.totalCommissionRate ?? mainCommission;
     const costPrice = computeSupplyPrice(sellingPrice, commission) ?? 0;
     const created = await tx.deal.create({
       data: {
-        dealName: formatOptionDealName(mainDeal.dealName, row.dealName ?? ""),
+        dealName: name,
         brandName: mainDeal.brandName,
         partnerId: mainDeal.partnerId,
         partnerCompanyName: mainDeal.partnerCompanyName,

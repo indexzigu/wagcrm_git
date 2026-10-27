@@ -278,6 +278,16 @@ describe("create_action_proposal — add_campaign_items (기안 시점 확인)",
     expect(m.proposalCreate).not.toHaveBeenCalled();
   });
 
+  it("a deal with a unit needs unitQuantity on new rows (the screen's rule)", async () => {
+    m.dealFindUnique.mockResolvedValue({ id: "main-1", dealName: "가짜크림", dealType: "MAIN", unit: "개" });
+    const missing = await run("create_action_proposal", { ...base, items: [{ dealName: "새 구성", sellingPrice: 1 }] });
+    expect(missing.toStatus).toBe("FAILED_FINAL");
+    expect(missing.result.resultSummary).toMatch(/unitQuantity 가 필요합니다/);
+    // 수량으로 만든 이름(「가짜크림 - 3개」)이 이미 있는 「가짜크림 - 3개입」과는 다른 이름이라 통과한다.
+    const ok = await run("create_action_proposal", { ...base, items: [{ dealName: "새 구성", sellingPrice: 1, unitQuantity: 3 }] });
+    expect(ok.toStatus).toBe("NEEDS_APPROVAL");
+  });
+
   it("refuses when the campaign's own deal is an option (no options under an option)", async () => {
     m.dealFindUnique.mockResolvedValue({ id: "main-1", dealName: "가짜크림", dealType: "OPTION" });
     const outcome = await run("create_action_proposal", { ...base, items: [{ dealName: "새 구성", sellingPrice: 1 }] });
