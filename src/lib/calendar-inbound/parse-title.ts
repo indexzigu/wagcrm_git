@@ -37,8 +37,9 @@ export function normalizeToken(s: string): string {
 const SPLIT_RE = /[\s×/\-]+|(?<![A-Za-z])[xX](?![A-Za-z])/u;
 const MIN_LEN = 2;
 
-function nameMatches(token: string, name: string): boolean {
+function nameMatches(token: string, name: string, opts: { wholeNameOnly?: boolean } = {}): boolean {
   if (token.length < MIN_LEN || name.length < MIN_LEN) return false;
+  if (opts.wholeNameOnly) return token.includes(name);
   return token === name || token.includes(name) || name.includes(token);
 }
 
@@ -81,17 +82,22 @@ function brandIdentity(deal: InboundDictionary["deals"][number]): string {
   );
 }
 
-/** 브랜드 매칭: 맞은 딜 전부. 서로 다른 브랜드 정체성이 2개 이상이면 모호. */
+/**
+ * 브랜드 매칭: 맞은 딜 전부. 서로 다른 브랜드 정체성이 2개 이상이면 모호.
+ * `wholeNameOnly` = 힌트(LLM) 경로 — 힌트가 등록 이름 **전체 이상**일 때만 맞는 것으로 본다. 이름 조각(예: 「브랜드」
+ * 라는 낱말)이 등록 이름 일부와 겹친다고 그 브랜드로 기안하면 엉뚱한 브랜드가 된다. 제목 토큰 경로는 기존 그대로.
+ */
 function matchBrand(
   tokens: string[],
   dict: InboundDictionary,
+  opts: { wholeNameOnly?: boolean } = {},
 ): { dealIds: string[] } | "none" | "ambiguous" {
   const hit: InboundDictionary["deals"] = [];
   for (const deal of dict.deals) {
     const names = [...deal.brandNames, deal.dealName, deal.partnerName ?? ""]
       .map(normalizeToken)
       .filter((n) => n.length > 0);
-    if (tokens.some((t) => names.some((n) => nameMatches(t, n))))
+    if (tokens.some((t) => names.some((n) => nameMatches(t, n, opts))))
       hit.push(deal);
   }
   if (hit.length === 0) return "none";
@@ -260,7 +266,7 @@ export function parseCalendarTitle(
   else {
     // 셀러에 쓴 토큰은 브랜드 후보에서 뺀다.
     const brandTokens = brandPool.filter((t) => !seller.usedTokens.has(t));
-    brand = matchBrand(brandTokens, dict);
+    brand = matchBrand(brandTokens, dict, { wholeNameOnly: useHints && Boolean(hints.brandHint) });
     if (brand === "none") failure = { ok: false, reason: "no_brand" };
     else if (brand === "ambiguous")
       failure = { ok: false, reason: "ambiguous_brand" };

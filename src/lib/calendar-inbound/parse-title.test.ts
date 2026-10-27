@@ -199,6 +199,34 @@ describe("parseCalendarTitle", () => {
   });
 });
 
+describe("힌트 경로의 브랜드 매칭 (T-266)", () => {
+  it("힌트가 등록 이름의 일부 조각이면 그 브랜드로 맞추지 않는다", () => {
+    const r = parseCalendarTitle("뭔가 이상한 제목", dict, {
+      sellerHint: "샘플셀러",
+      brandHint: "브랜드",
+      round: null,
+      kind: null,
+    });
+    expect(r).toEqual({ ok: false, reason: "no_brand" });
+  });
+
+  it("힌트가 등록 이름 전체를 담으면(이름 이상) 맞춘다", () => {
+    const r = parseCalendarTitle("뭔가 이상한 제목", dict, {
+      sellerHint: "샘플셀러",
+      brandHint: "테스트브랜드 공구",
+      round: null,
+      kind: null,
+    });
+    expect(r.ok && r.intent.dealIds).toEqual(["d1"]);
+  });
+
+  it("제목 토큰 경로(힌트 없음)의 부분 일치 규칙은 그대로다", () => {
+    // 「브랜드」 토큰이 두 브랜드 이름에 모두 들어 있어 모호 — 제목 경로는 조각 일치를 그대로 인정한다.
+    const r = parseCalendarTitle("샘플셀러 브랜드", dict);
+    expect(r).toEqual({ ok: false, reason: "ambiguous_brand" });
+  });
+});
+
 describe("KEYWORD_STRIP_RE", () => {
   it("종류·공급사 정규식의 낱말을 전부 걷어낸다(공유 정규식에서 파생)", () => {
     const words = [DEPOSIT_RE, PAYOUT_RE, SUPPLIER_RE].flatMap((re) =>

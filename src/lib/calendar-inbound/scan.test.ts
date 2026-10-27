@@ -68,6 +68,7 @@ type StoredRow = InboundRow & Omit<InboundRowWrite, "proposalId" | "parsed"> & {
 function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
   const rows = new Map<string, StoredRow>();
   const proposals = new Map<string, { status: string; data: Record<string, unknown> }>();
+  const retiredIds: string[] = [];
   let rowSeq = 0;
   let proposalSeq = 0;
   let clock = 0;
@@ -77,7 +78,11 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
     value: { ok: true, events, referencedIds: new Set(referenced) },
   };
   const resolveTarget = vi.fn(
-    async (_intent: ParsedCalendarIntent, _event: CandidateEvent): Promise<ResolveResult> => ({
+    async (
+      _intent: ParsedCalendarIntent,
+      _event: CandidateEvent,
+      _opts?: { linkedCampaignId?: string | null },
+    ): Promise<ResolveResult> => ({
       ok: true,
       draft: CREATE_DRAFT,
     }),
@@ -112,6 +117,11 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
     findRows: async (ids) => ids.flatMap((id) => (rows.has(id) ? [{ ...rows.get(id)! }] : [])),
     findProposalStatuses: async (ids) =>
       new Map(ids.flatMap((id) => (proposals.has(id) ? [[id, proposals.get(id)!.status] as const] : []))),
+    retireProposal: async (id) => {
+      retiredIds.push(id);
+      const proposal = proposals.get(id);
+      if (proposal?.status === "FAILED") proposal.status = "REJECTED";
+    },
     saveRow: async (googleEventId, write, expected) => {
       const existing = rows.get(googleEventId);
       if (expected) {
@@ -154,6 +164,7 @@ function makeHarness(events: CandidateEvent[], referenced: string[] = []) {
     batchSummaries,
     listCandidates,
     claimByApproval,
+    retiredIds,
   };
 }
 
@@ -543,6 +554,85 @@ describe("runCalendarInboundScan", () => {
     expect(summary).toMatchObject({ proposed: 0, skippedUnparsed: 1, adoptedNoop: 1 });
     expect(h.rows.get("e1")).toMatchObject({ status: "SKIPPED", skipReason: "no_deal", proposalId: null });
     expect(h.rows.get("e2")).toMatchObject({ status: "ADOPTED", proposalId: null });
+  });
+
+  it("재판정으로 새 기안이 올라오면 옛 FAILED 기안은 반려로 닫힌다(결재함에 죽은 카드가 안 남는다)", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.proposals.get("prop-1")!.status = "FAILED";
+    h.rows.get("e1")!.status = "PENDING_RETRY";
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.retiredIds).toEqual(["prop-1"]);
+    expect(h.proposals.get("prop-1")!.status).toBe("REJECTED");
+    expect(h.proposals.get("prop-2")!.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("재판정이 SKIPPED·해석 대기로 끝나도 옛 FAILED 기안은 닫히고, 이미 반려된 기안엔 손대지 않는다", async () => {
+    const h = makeHarness([ev("e1"), ev("e2")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    for (const id of ["e1", "e2"]) h.rows.get(id)!.status = "PENDING_RETRY";
+    h.proposals.get("prop-1")!.status = "FAILED";
+    h.proposals.get("prop-2")!.status = "REJECTED";
+    h.resolveTarget.mockImplementation(async () => ({ ok: false, reason: "no_deal" }));
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.retiredIds).toEqual(["prop-1"]);
+    expect(h.proposals.get("prop-2")!.status).toBe("REJECTED");
+  });
+
+  it("옛 기안 닫기가 실패해도 새 기안은 그대로 올라간다", async () => {
+    const h = makeHarness([ev("e1")]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.proposals.get("prop-1")!.status = "FAILED";
+    h.rows.get("e1")!.status = "PENDING_RETRY";
+    h.deps.retireProposal = async () => {
+      throw new Error("db down");
+    };
+
+    const summary = await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(summary).toMatchObject({ proposed: 1, errors: 0 });
+    expect(h.rows.get("e1")).toMatchObject({ status: "PROPOSED", proposalId: "prop-2" });
+  });
+
+  it("처리 끝(ADOPTED)인 캠페인 일정을 고쳐 다시 보면 연결된 캠페인을 대상으로 판정한다(새 회차로 올리지 않는다)", async () => {
+    const h = makeHarness([ev("e1", { summary: "샘플셀러 테스트브랜드" })]);
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    // 승인 뒤 장부 넘겨받기가 예외로 실패 → 행은 ADOPTED + 캠페인 연결만 남고 원본은 CRM 소유로 안 잡혔다.
+    h.proposals.get("prop-1")!.status = "EXECUTED";
+    Object.assign(h.rows.get("e1")!, { status: "ADOPTED", campaignId: "c1" });
+    h.listing.value = {
+      ok: true,
+      events: [ev("e1", { summary: "샘플셀러 테스트브랜드", endDate: "2026-11-12" })],
+      referencedIds: new Set(),
+    };
+    h.resolveTarget.mockClear();
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.resolveTarget).toHaveBeenCalledTimes(1);
+    expect(h.resolveTarget.mock.calls[0][2]).toEqual({ linkedCampaignId: "c1" });
+  });
+
+  it("입금·지급 일정으로 처리된 행은 연결 캠페인을 캠페인 일정의 대상으로 쓰지 않는다", async () => {
+    const h = makeHarness([ev("e1", { summary: "샘플셀러 테스트브랜드 입금" })]);
+    h.resolveTarget.mockImplementation(async () => ({ ok: true, draft: CREATE_DRAFT }));
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+    h.proposals.get("prop-1")!.status = "EXECUTED";
+    Object.assign(h.rows.get("e1")!, { status: "ADOPTED", campaignId: "c1" });
+    h.listing.value = {
+      ok: true,
+      events: [ev("e1", { summary: "샘플셀러 테스트브랜드 입금", startDate: "2026-11-05" })],
+      referencedIds: new Set(),
+    };
+    h.resolveTarget.mockClear();
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.resolveTarget.mock.calls[0][2]).toEqual({ linkedCampaignId: null });
   });
 
   it("PENDING_RETRY 행이 파서 실패로 해석 대기·SKIPPED 가 돼도 proposalId 를 비운다", async () => {

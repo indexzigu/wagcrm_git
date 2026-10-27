@@ -238,6 +238,26 @@ export class ActionProposalRepository {
     const prisma = getPrisma();
     return prisma.$transaction(runner);
   }
+
+  /**
+   * 새 기안으로 **대체된** 옛 실패(FAILED) 기안을 반려로 닫는다 — 캘린더 수집이 같은 일정을 다시 올렸을 때 결재함에
+   * 승인해도 거절만 뜨는 죽은 카드가 남지 않게 한다. 전역 전이 표(`TRANSITIONS`: FAILED→APPROVED 만)는 건드리지 않는
+   * 전용 경로다 — 일반 반려·승인 경로에서 FAILED→REJECTED 가 열리지 않는다. 그 사이 상태가 바뀌었으면(오너가 재시도
+   * 승인으로 집음 등) 아무것도 쓰지 않고 false.
+   */
+  static async rejectSupersededFailed(proposalId: string, options: { actor: string; note: string }): Promise<boolean> {
+    return getPrisma().$transaction(async (tx) => {
+      const claim = await tx.actionProposal.updateMany({
+        where: { id: proposalId, status: "FAILED" },
+        data: { status: "REJECTED" },
+      });
+      if (claim.count === 0) return false;
+      await tx.actionProposalEvent.create({
+        data: { proposalId, fromStatus: "FAILED", toStatus: "REJECTED", actor: options.actor, note: options.note },
+      });
+      return true;
+    });
+  }
 }
 
 /** §0-5 동시성 가드가 count===0일 때 던지는 전용 에러 — 호출부가 409로 매핑하기 쉽도록 구분한다. */
