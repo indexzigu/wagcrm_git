@@ -800,7 +800,7 @@ function defaultDeps(): CalendarInboundScanDeps {
       // 그 사이 오너가 재시도 승인으로 집었으면(FAILED 아님) 아무것도 쓰지 않는다 — 승인이 행·기안을 처리한다.
       await ActionProposalRepository.rejectSupersededFailed(proposalId, {
         actor: "calendar-inbound",
-        note: "캘린더 일정이 고쳐져 새 기안으로 대체됨",
+        note: "캘린더 일정이 고쳐져 다시 판정되어 이 기안은 더 쓰이지 않음",
       });
     },
     findRows: (googleEventIds) =>
