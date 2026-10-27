@@ -1096,6 +1096,9 @@ model ActionProposal {
   approvedBy       String?
   executedBy       String?
   approvedAt       DateTime?
+  // 결재 대기 알림(텔레그램)을 보낸 시각. 호스트 발송기가 보낸 뒤 `/api/cron/approval-outbox` POST 로 찍는다.
+  // null = 아직 안 알림. 도입 마이그레이션이 그때 이미 대기 중이던 기안을 채워 둬 첫 회차가 묵은 기안을 쏟지 않는다.
+  ownerNotifiedAt  DateTime?
   executedAt       DateTime?
   llmModel         String?
   promptTokens     Int?

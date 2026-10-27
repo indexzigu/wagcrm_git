@@ -19,7 +19,7 @@
 import { describe, expect, it } from "vitest";
 import { WRITE_TOOL_NAMES } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-actions";
-import { ACTION_LABELS } from "../proposal-card";
+import { ACTION_LABELS } from "@/lib/agent/action-labels";
 
 describe("ACTION_LABELS 계약", () => {
   it("모든 WRITE 도구에 한글 라벨이 있다", () => {

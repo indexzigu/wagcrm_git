@@ -129,7 +129,7 @@ export const UI_LABEL_TABLES = {
   "API 기록 출처": "apiProviderLabels (src/lib/crm-types.ts)",
   "대상 종류(거래처·셀러·판매 조건·캠페인)": "ENTITY_TYPE_LABELS (src/components/crm/approvals/entity-type-labels.ts)",
   "필드 이름": "FIELD_LABELS (src/lib/field-labels.ts)",
-  "결재함 작업 이름": "ACTION_LABELS (src/components/crm/approvals/proposal-card.tsx)",
+  "결재함 작업 이름": "ACTION_LABELS (src/lib/agent/action-labels.ts)",
   "주문 작업 기록": "ORDER_ACTION_LABELS (src/lib/order-converter/action-log.ts)",
   "사이드바 메뉴": "src/components/crm/crm-sidebar.tsx",
   "돈 이름": "MONEY_TERMS (src/lib/ui-glossary.ts)",

@@ -5,6 +5,12 @@ set -euo pipefail
 #
 #   incident-notify.sh immediate   # 10분마다: 조치가 필요한 사고(🙋)·정상화(✅)
 #   incident-notify.sh digest      # 매일 08:00: 하루치 요약(📋)
+#   incident-notify.sh approval    # 5분마다: 결재함에 새로 오른 기안(📝) — 사고가 아니라 결재 대기 알림이다
+#
+# approval 모드는 목록을 `/api/cron/approval-outbox`(src/app/api/cron/approval-outbox/route.ts)에서 받고, 레코드의
+# id 칸 이름이 `proposalIds`·확인 칸이 `ownerNotifiedAt` 인 것만 다르다. 발송·엄격 종료·확인 POST·실행 잠금은 같은
+# 경로를 탄다(잠금은 모드별이라 사고 알림 회차와 서로 막지 않는다). 하루 상한은 조치 알림(alertedAt)만 세므로
+# 결재 대기 알림에는 걸리지 않는다 — 한 회차에 많이 쌓이면 앱이 1통으로 묶는다.
 #
 # 앱(`/api/cron/incident-outbox`, src/app/api/cron/incident-outbox/route.ts)이 **무엇을 보낼지** 정한다.
 # 이 파일은 그 목록을 notify.sh 로 텔레그램에 내보내고, 보낸 것만 POST 로 「보냈음」을 찍는다.
@@ -49,7 +55,7 @@ LOGS_DIR="${INCIDENT_LOGS_DIR:-$HOME/selfhost/logs}"
 LOG="$LOGS_DIR/cron.log"
 COUNT_FILE="$LOGS_DIR/incident-notify-count.tsv"
 ENV_FILE="${INCIDENT_ENV_FILE:-$SELF_DIR/.env}"
-OUTBOX_URL="http://127.0.0.1:3000/api/cron/incident-outbox"
+OUTBOX_BASE="http://127.0.0.1:3000/api/cron"
 # $PY 도 의도적 미인용 — 테스트 훅 INCIDENT_PYTHON 이 "bash <경로>" 두 단어를 준다.
 PY="${INCIDENT_PYTHON:-/usr/bin/python3}"
 
@@ -77,9 +83,15 @@ log_line() { # label body
 }
 fail() { log_line FAIL "$MODE $*"; exit 1; }
 
+# 모드별 목록 주소 · 레코드의 id 칸 이름 · 허용 확인 칸(공백 구분).
 case "$MODE" in
-  immediate|digest) ;;
-  *) fail "사용법: incident-notify.sh immediate|digest" ;;
+  immediate|digest)
+    OUTBOX_URL="$OUTBOX_BASE/incident-outbox"; LIST_QUERY="?mode=${MODE}"
+    ID_FIELD="incidentIds"; ACK_FIELDS="alertedAt recoveryAlertedAt digestedAt" ;;
+  approval)
+    OUTBOX_URL="$OUTBOX_BASE/approval-outbox"; LIST_QUERY=""
+    ID_FIELD="proposalIds"; ACK_FIELDS="ownerNotifiedAt" ;;
+  *) fail "사용법: incident-notify.sh immediate|digest|approval" ;;
 esac
 
 # ── 실행 잠금(위 🔒) ─────────────────────────────────────────────────────────
@@ -137,11 +149,11 @@ CAP_ACTIVE=0
 [ $(( NOW - SINCE )) -lt "$CAP_WINDOW_S" ] && CAP_ACTIVE=1
 
 # ── 목록 조회 ────────────────────────────────────────────────────────────────
-if ! OUT="$($CURL -fsS -m 60 -H "Authorization: Bearer ${CRON_SECRET}" "${OUTBOX_URL}?mode=${MODE}" 2>&1)"; then
+if ! OUT="$($CURL -fsS -m 60 -H "Authorization: Bearer ${CRON_SECRET}" "${OUTBOX_URL}${LIST_QUERY}" 2>&1)"; then
   fail "목록 조회 실패: $OUT"
 fi
 
-# 응답을 NUL 구분 레코드(키·아이콘·제목·상세·확인칸·사고 id 쉼표 목록)로 푼다. 상세에 줄바꿈이 있어 NUL 로 가른다.
+# 응답을 NUL 구분 레코드(키·아이콘·제목·상세·확인칸·id 쉼표 목록 — 사고 또는 기안)로 푼다. 상세에 줄바꿈이 있어 NUL 로 가른다.
 # 형식이 하나라도 어긋나면 아무것도 보내지 않는다 — 반쯤 보내고 반쯤 확인하는 상태를 만들지 않는다.
 RECORDS="$TMP_DIR/records"
 if ! printf '%s' "$OUT" | $PY -I -c '
@@ -154,18 +166,18 @@ for m in data["messages"]:
     if not isinstance(m, dict):
         sys.exit(3)
     fields = [m.get(k) for k in ("key", "icon", "title", "detail", "ackField")]
-    ids = m.get("incidentIds")
+    ids = m.get(sys.argv[1])
     if not all(isinstance(f, str) and f and "\0" not in f for f in fields[:2] + fields[4:]):
         sys.exit(3)
     if not all(isinstance(f, str) and "\0" not in f for f in fields[2:4]):
         sys.exit(3)
-    if fields[4] not in ("alertedAt", "recoveryAlertedAt", "digestedAt"):
+    if fields[4] not in sys.argv[2].split():
         sys.exit(3)
     if not isinstance(ids, list) or not all(isinstance(i, str) and i and "," not in i and "\0" not in i for i in ids):
         sys.exit(3)
     for f in fields + [",".join(ids)]:
         out.write(f.encode("utf-8") + b"\0")
-' > "$RECORDS" 2>/dev/null; then
+' "$ID_FIELD" "$ACK_FIELDS" > "$RECORDS" 2>/dev/null; then
   fail "응답 형식 오류"
 fi
 
@@ -224,9 +236,9 @@ import json, sys
 acks = []
 for line in open(sys.argv[1], encoding="utf-8"):
     field, _, ids = line.rstrip("\n").partition("\t")
-    acks.append({"incidentIds": [i for i in ids.split(",") if i], "ackField": field})
+    acks.append({sys.argv[2]: [i for i in ids.split(",") if i], "ackField": field})
 print(json.dumps({"acks": acks}, ensure_ascii=False))
-' "$ACKS" 2>/dev/null)" || fail "확인 본문 만들기 실패(python3, sent=$sent capped=$capped)"
+' "$ACKS" "$ID_FIELD" 2>/dev/null)" || fail "확인 본문 만들기 실패(python3, sent=$sent capped=$capped)"
   if ! POST_OUT="$($CURL -fsS -m 60 -X POST -H "Authorization: Bearer ${CRON_SECRET}" \
         -H "Content-Type: application/json" --data-binary "$ACK_JSON" "$OUTBOX_URL" 2>&1)"; then
     fail "확인 표시 실패(sent=$sent capped=$capped — 다음 회차에 다시 오지만 notify.sh 6시간 하한이 거른다): $POST_OUT"

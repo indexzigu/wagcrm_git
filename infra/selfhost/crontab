@@ -123,3 +123,8 @@
 # incident-notify digest → KST 매일 08:00. 전날 08:00 ~ 오늘 08:00 의 사고 요약(📋) 1건 — 정상화된 것 ·
 # 지금 조치대기 · 막은 개수. 위 즉시 알림의 하루 상한(배포 후 7일)으로 넘긴 사고도 여기 조치대기로 실린다.
 0 8 * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh digest >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# incident-notify approval → **5분마다**. 결재함 「대기」에 새로 오른 기안(📝)을 기안 내용과 함께 텔레그램으로 알린다.
+# 앱(`/api/cron/approval-outbox`)이 올라온 지 5분 지난 미알림 기안만 내주고(정산 자동 실행이 먼저 처리할 틈), 한 회차에
+# 4건 이상이면 1통으로 묶는다. 사고 알림과 같은 발송기·같은 이유로 KNOWN_JOBS 밖이고 위 앱 크론 개수 앵커에도 세지 않는다.
+*/5 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh approval >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
