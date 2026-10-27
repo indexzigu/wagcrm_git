@@ -159,6 +159,17 @@ export const MONEY_TERMS = {
     definition: "매출총이익 − 공제세액 − 운영비 − 기타비용(산식 불변, 별도 작업 참조)",
     column: "SalesCampaign.operatingProfit",
   },
+  // 공제세액 묶음의 두 하위 줄(설계 2026-10-16 정산 세금 분리 §4 표기 원칙 ③). 「공제세액」 자체는 상위 이름으로 유지.
+  vat: {
+    label: "부가세",
+    definition: "수수료매출에 들어 있는 부가가치세. 예수금이라 손익 항목이 아니다",
+    column: "SalesCampaign.taxExpense",
+  },
+  withholdingTax: {
+    label: "원천세",
+    definition: "개인 셀러 지급액의 3.3%. 셀러 몫에서 떼어 대신 납부한다",
+    column: "셀러지급액 × 3.3% (개인 셀러만)",
+  },
   netIncomeEstimate: { label: "당기순이익(추정)", definition: "영업이익 − 추정 소득세", column: "pnl-report preTax − estimatedIncomeTax" },
   todaySales: {
     label: "오늘 판매금액",
