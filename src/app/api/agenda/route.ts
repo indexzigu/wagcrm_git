@@ -1,3 +1,4 @@
+import { sellerDisplayName } from "@/lib/seller-display-name";
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/prisma";
 import { calculateFollowUp } from "@/lib/followup-engine";
@@ -43,17 +44,15 @@ export async function GET() {
         const followUp = calculateFollowUp(engineInput, now);
         if (!followUp) return null;
 
-        const sellerDisplayName = task.seller.alias && task.seller.alias.trim() !== ""
-          ? task.seller.alias
-          : task.seller.name;
+        const sellerLabel = sellerDisplayName(task.seller);
 
         return {
           id: task.id,
           type: "TASK" as const,
           status: task.status,
-          title: `${task.deal.dealName} - ${sellerDisplayName}`,
+          title: `${task.deal.dealName} - ${sellerLabel}`,
           dealName: task.deal.dealName,
-          sellerName: sellerDisplayName,
+          sellerName: sellerLabel,
           dueDate: task.nextReminderAt ? task.nextReminderAt.toISOString() : null,
           followUpType: followUp.type,
           label: followUp.label,

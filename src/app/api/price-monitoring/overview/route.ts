@@ -1,3 +1,4 @@
+import { sellerDisplayName } from "@/lib/seller-display-name";
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/prisma";
 
@@ -85,8 +86,7 @@ export async function GET() {
       : [];
     const campaignLabel = new Map(
       campaigns.map((c) => {
-        const sellerName =
-          c.seller.alias && c.seller.alias.trim() !== "" ? c.seller.alias : c.seller.name;
+        const sellerName = sellerDisplayName(c.seller);
         const round = c.roundNumber && c.roundNumber > 1 ? ` ${c.roundNumber}차` : "";
         return [c.id, `${sellerName}${round}`];
       }),

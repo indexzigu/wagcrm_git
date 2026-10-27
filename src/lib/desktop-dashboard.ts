@@ -1,3 +1,4 @@
+import { sellerDisplayName } from "@/lib/seller-display-name";
 import { getPrisma } from "@/lib/prisma";
 import { DASHBOARD_SCOPE_CAPTION, isCountedForDashboard } from "./dashboard-scope";
 import { buildEffectiveCampaignPeriods } from "@/lib/campaign-group-count";
@@ -139,12 +140,11 @@ export type UpcomingCampaign = {
 };
 
 function campaignDisplayName(c: Pick<UpcomingCampaign, "campaignName" | "deal" | "seller">) {
-  const sellerDisplayName =
-    c.seller.alias && c.seller.alias.trim() !== "" ? c.seller.alias : c.seller.name;
+  const sellerLabel = sellerDisplayName(c.seller);
   const rawName =
     c.campaignName && c.campaignName.trim() !== ""
       ? c.campaignName
-      : `${c.deal.dealName} - ${sellerDisplayName}`;
+      : `${c.deal.dealName} - ${sellerLabel}`;
   return rawName.replace(/ · /g, " - ");
 }
 

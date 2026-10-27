@@ -7,6 +7,7 @@
 //
 // P7 egress: 캠페인 행을 fetch 하지 않고 groupBy 집계 한 번으로 (셀러,딜) 쌍 신호를 만든다.
 
+import { sellerDisplayName } from "@/lib/seller-display-name";
 import type { PrismaClient } from "@prisma/client";
 import { tallyEffectiveCampaignCounts } from "@/lib/campaign-group-count";
 import { RUN_STATUSES } from "@/lib/recampaign-timing";
@@ -170,7 +171,7 @@ export async function loadDealSellerCandidates(
       return [
         {
           ...c,
-          name: s.alias && s.alias.trim() !== "" ? s.alias : s.name,
+          name: sellerDisplayName(s),
           snsHandle: s.snsHandle,
           snsType: s.snsType,
           fitLevel: s.fitLevel,
@@ -262,7 +263,7 @@ export async function loadAutoProposableRerunPairs(
 
     out.push({
       sellerId: pair.sellerId,
-      sellerName: seller.alias && seller.alias.trim() !== "" ? seller.alias : seller.name,
+      sellerName: sellerDisplayName(seller),
       dealId: pair.dealId,
       dealName: deal.dealName,
       pairRunCount: pair.runCount,
