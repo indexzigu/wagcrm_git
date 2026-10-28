@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Campaign } from '@/types/campaign';
 import { queryKeys } from '@/lib/query-keys';
+import { notify } from '@/lib/toast';
 
 export interface NaverSyncMeta {
   lastSync: string | null;
@@ -31,6 +32,24 @@ async function fetchCampaignsPayload(): Promise<CampaignsPayload> {
 }
 
 const EMPTY_SYNC_META: NaverSyncMeta = { lastSync: null, syncing: false, syncType: null };
+
+export const MANUAL_SYNC_FAILED_MESSAGE = '주문 동기화에 실패했습니다. 잠시 후 「지금 동기화」를 눌러 주세요.';
+
+/**
+ * 수동 변경분 동기화(POST /order-converter/api/naver/sync, CHANGED)를 요청하고 실패면 던진다.
+ * 이 라우트는 동기화 실패를 200 + `error` 필드로 돌려준다(runChangedSync 가 예외를 삼켜 SyncResult.error 로
+ * 싣는다) — 상태 코드만 보면 실패가 성공으로 읽힌다. `skipped`(45초 쿨다운·진행 중 공유)는 실패가 아니다.
+ */
+export async function requestManualOrderSync(fetchImpl: typeof fetch = fetch): Promise<void> {
+  const res = await fetchImpl('/order-converter/api/naver/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'CHANGED' }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+  if (body?.error) throw new Error(String(body.error));
+}
 
 export function useCampaigns() {
   const queryClient = useQueryClient();
@@ -78,24 +97,26 @@ export function useCampaigns() {
 
   // 수동 새로고침: POST /order-converter/api/naver/sync를 await한 뒤 캠페인 데이터를 재조회한다.
   // 버튼 잠금은 mutation의 isPending(=refreshing)으로만 제어한다(서버 syncing 헤더와 분리).
+  // 실패는 알림으로 드러낸다 — 종전엔 console.error 로 삼켜 「눌렀는데 그대로」가 고장인지 변경 없음인지
+  // 구분할 수 없었다. 성공은 무음(「마지막 동기화」 시각이 바뀌는 것이 성공 신호, Toast Ownership).
   const refreshNowMutation = useMutation({
     mutationFn: async () => {
       try {
-        await fetch('/order-converter/api/naver/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: 'CHANGED' }),
-        });
-      } catch (e) {
-        console.error(e);
+        await requestManualOrderSync();
       } finally {
         await queryClient.invalidateQueries({ queryKey: queryKeys.campaigns() });
       }
     },
   });
 
+  // 발주확인·송장 회신 직후에도 불리므로 던지지 않는다(호출부가 await 없이 부른다).
   const refreshNow = useCallback(async () => {
-    await refreshNowMutation.mutateAsync();
+    try {
+      await refreshNowMutation.mutateAsync();
+    } catch (e) {
+      console.error('[useCampaigns] manual order sync failed:', e);
+      notify(MANUAL_SYNC_FAILED_MESSAGE, 'error');
+    }
   }, [refreshNowMutation]);
 
   const createCampaign = async (campaignData: Partial<Campaign>) => {
