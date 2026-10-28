@@ -1826,12 +1826,17 @@ export default function OrderDashboard() {
             <Button
               variant="outline"
               size="sm"
-              className="rounded-lg h-9 px-2.5 text-xs"
-              disabled={refreshing}
-              onClick={() => refreshNow()}
-              aria-label="주문 현황 새로고침"
+              className="rounded-lg h-9 gap-1.5 px-2.5 text-xs aria-disabled:opacity-60"
+              // disabled 대신 aria-disabled — 포커스된 버튼이 disabled 가 되면 포커스가 body 로 튕긴다
+              // (모바일 시트와 같은 처리). 진행 중 재입력은 핸들러가 막는다.
+              aria-disabled={refreshing}
+              aria-busy={refreshing}
+              onClick={() => { if (!refreshing) void refreshNow(); }}
+              title="네이버에서 바뀐 주문을 지금 가져옵니다"
             >
+              {/* 아이콘만 있던 시절 오너가 버튼인 줄 몰라 휴대폰 동기화로 돌아갔다 — 글자를 붙여 둔다. */}
               <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+              {refreshing ? '동기화 중' : '지금 동기화'}
             </Button>
             <Button
               variant="default"
