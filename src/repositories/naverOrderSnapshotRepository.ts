@@ -238,6 +238,8 @@ export const naverOrderSnapshotRepository = {
   // (종전에는 전 컬럼을 읽어 CHANGED 동기화마다 최신행 블롭이 왕복했다).
   // ⚠️ 아래 latestChangeCursor 와 정렬이 다르다(이쪽 lastCallTime · 저쪽 커서 값) — 서로 맞추지 말 것.
   // 이쪽은 「커서를 전진시킬 행」을 고르고(advanceCursor 대상), 저쪽은 「마지막 성공 시각」을 읽는다.
+  // ⛔ 이 반환값의 lastChangeStatusCursor 를 변경피드 조회 시작점으로 쓰지 말 것 — lastCallTime 은
+  // sweep·정밀 갱신도 밀어 올려 옛 커서 행이 뽑힌다. 시작점은 latestChangeCursor(값 최댓값)다.
   async findLatestCursor() {
     return prisma.naverOrderSnapshot.findFirst({
       where: { lastChangeStatusCursor: { not: null } },
