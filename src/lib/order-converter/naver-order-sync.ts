@@ -632,7 +632,7 @@ export async function runFullSync(options: RunFullSyncOptions): Promise<SyncResu
 const CHANGED_SYNC_DEFAULT_LOOKBACK_MIN = 15;
 
 /**
- * 변경피드 기반 증분 동기화. 커서(repo.findLatestCursor)가 없으면 now-15분부터 시작한다.
+ * 변경피드 기반 증분 동기화. 커서(repo.latestChangeCursor — 값 최댓값)가 없으면 now-15분부터 시작한다.
  * 변경된 productOrderId들의 상세를 조회 -> 날짜별로 귀속 -> merge -> upsert.
  * 조회범위(30일) 밖 날짜는 skip. 빈 결과여도 커서는 전진시킨다.
  */
