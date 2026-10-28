@@ -632,7 +632,7 @@ export async function runFullSync(options: RunFullSyncOptions): Promise<SyncResu
 const CHANGED_SYNC_DEFAULT_LOOKBACK_MIN = 15;
 
 /**
- * 변경피드 기반 증분 동기화. 커서(repo.findLatestCursor)가 없으면 now-15분부터 시작한다.
+ * 변경피드 기반 증분 동기화. 커서(repo.latestChangeCursor — 값 최댓값)가 없으면 now-15분부터 시작한다.
  * 변경된 productOrderId들의 상세를 조회 -> 날짜별로 귀속 -> merge -> upsert.
  * 조회범위(30일) 밖 날짜는 skip. 빈 결과여도 커서는 전진시킨다.
  */
@@ -644,7 +644,11 @@ export async function runChangedSync(): Promise<SyncResult> {
   try {
     let fromIso: string;
     try {
-      const cursorRow = await naverOrderSnapshotRepository.findLatestCursor();
+      // 조회 시작점은 커서 「값」의 최댓값(latestChangeCursor)이다 — findLatestCursor 가 아니다.
+      // 커서는 여러 날짜 행에 흩어져 남고, findLatestCursor 는 lastCallTime 순이라 배송중 sweep·
+      // syncOrdersByIds 가 옛 커서를 가진 행을 덮어쓰면 며칠 전 커서를 돌려준다(실측: 오늘 09:00 대신
+      // 3일 전 값). 그 값으로 변경피드를 물으면 그 사이 취소 등이 누락된 채 커서가 now 로 넘어간다.
+      const cursorRow = await naverOrderSnapshotRepository.latestChangeCursor();
       fromIso = cursorRow?.lastChangeStatusCursor || new Date(now.getTime() - CHANGED_SYNC_DEFAULT_LOOKBACK_MIN * 60 * 1000).toISOString();
     } catch (cursorErr) {
       console.warn('[naver-order-sync] Failed to read cursor, falling back to lookback window:', cursorErr);

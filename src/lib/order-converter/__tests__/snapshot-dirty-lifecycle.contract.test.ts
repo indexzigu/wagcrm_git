@@ -99,10 +99,13 @@ describe('핵심 불변식 — 무효화한 날짜를 동기화가 커버하면 
   const paymentDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
   const dateKey = orderToDateKey({ paymentDate })!;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     (global as any).__naverSyncInFlight = null;
     (global as any).__naverSyncLastAt = undefined;
     (global as any).__naverDailyCache = {};
+    // runChangedSync 의 조회 시작점 판독이 실제 DB 로 새지 않게 막는다.
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'latestChangeCursor').mockResolvedValue(null);
   });
 
   afterEach(() => {

@@ -46,6 +46,13 @@ function useFixedClockForFixedDateFixtures() {
   });
 }
 
+// runChangedSync 의 조회 시작점(latestChangeCursor)이 실제 DB 로 새지 않게 기본값을 막는다.
+// 시작점을 단언하는 테스트는 개별로 덮어쓴다(각 describe 의 afterEach 가 restoreAllMocks).
+beforeEach(async () => {
+  const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+  vi.spyOn(repoModule.naverOrderSnapshotRepository, 'latestChangeCursor').mockResolvedValue(null);
+});
+
 describe('orderToDateKey', () => {
   it('paymentDate를 우선 사용해 KST 날짜키를 계산한다', () => {
     // paymentDate가 UTC 자정 직후(=KST 오전 9시)라면 같은 날짜여야 한다
@@ -733,6 +740,31 @@ describe('runChangedSync 커서 전진 — 좁은 advanceCursor 경로 (egress �
     // 커서 전진이 orders 재기록(upsertDaily) 경로로 새지 않는다 — 블롭 왕복 회귀 방지.
     const cursorCalls = upsertSpy.mock.calls.filter(([arg]: any) => arg.lastChangeStatusCursor !== undefined);
     expect(cursorCalls).toHaveLength(0);
+  });
+
+  it('변경피드 조회 시작점은 커서 값의 최댓값이다 — lastCallTime 순 행의 옛 커서가 아니다', async () => {
+    const clientModule = await import('@/lib/order-converter/naver-commerce-client');
+    const repoModule = await import('@/repositories/naverOrderSnapshotRepository');
+
+    const apiSpy = vi
+      .spyOn(clientModule, 'apiRequest')
+      .mockImplementation(async (_m: string, path: string) =>
+        path.includes('last-changed-statuses') ? { data: { lastChangeStatuses: [] } } : { data: {} },
+      );
+    // 배송중 sweep 이 옛 커서 행의 lastCallTime 을 밀어 올린 상태: lastCallTime 순 1위 행은 3일 전 커서를 들고 있다.
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'findLatestCursor').mockResolvedValue({
+      snapshotDate: '2026-07-04',
+      lastChangeStatusCursor: '2026-07-05T00:00:00.000Z',
+    } as any);
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'latestChangeCursor').mockResolvedValue({
+      lastChangeStatusCursor: '2026-07-08T00:00:00.000Z',
+    } as any);
+    vi.spyOn(repoModule.naverOrderSnapshotRepository, 'advanceCursor').mockResolvedValue({} as any);
+
+    await runChangedSync();
+
+    const feedCall = apiSpy.mock.calls.find(([, path]) => String(path).includes('last-changed-statuses'));
+    expect(feedCall?.[3]).toMatchObject({ lastChangedFrom: '2026-07-08T00:00:00.000Z' });
   });
 
   it('변경분이 없고 오늘자가 L1에 없으면, 커서 보유 최신 행이 오늘자여도 그 행의 커서를 전진시킨다', async () => {
