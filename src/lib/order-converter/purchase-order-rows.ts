@@ -1,4 +1,4 @@
-import { orderMatchesCampaignProductId } from './campaign-match';
+import { orderMatchesCampaignProductId, orderProvesOtherProduct } from './campaign-match';
 import { interleaveAddonRows } from './group-orders';
 import { PENDING_FULFILLMENT_STATUSES } from './order-fetch-window';
 import { isSupplementProduct } from './product-class';
@@ -51,7 +51,7 @@ const normalize = (str: string) => (str || '').replace(/[^a-zA-Z0-9가-힣]/g, '
 
 /**
  * 이 주문(메인 상품 라인)이 캠페인에 귀속되는가 — 상품번호·캠페인명 일치가 1순위, 매핑 룰 일치는
- * **다른 활성 캠페인명을 가리키지 않을 때만** 인정한다. 추가구성상품은 여기서 판정하지 않는다
+ * **상품번호가 다른 상품이 아니고 다른 활성 캠페인명을 가리키지 않을 때만** 인정한다. 추가구성상품은 여기서 판정하지 않는다
  * (`buildPurchaseOrderRows` 의 2차 귀속).
  */
 export function orderMatchesCampaign(
@@ -105,7 +105,8 @@ export function orderMatchesCampaign(
 
   if (matchesCampName) return true;
 
-  if (matchedMapping) {
+  // 상품번호가 다른 상품이면 매핑이 맞아도 버린다(매출 집계 resolveMainOrderAttribution 과 같은 가드).
+  if (matchedMapping && !orderProvesOtherProduct(order, campaign.productId)) {
     // 매핑 룰에 맞더라도 상품명이 '다른 캠페인명'을 명시적으로 포함하고 있으면 무시
     const belongsToOther = activeCampaigns.some(
       (otherCamp) => otherCamp.id !== campaign.id && (pName.includes(otherCamp.name) || otherCamp.name.includes(pName)),

@@ -437,3 +437,20 @@ describe('composeIntradayFromFrozen — 읽기 합성(live 경로와 동형)', (
     expect(points).toEqual([]);
   });
 });
+
+describe('computeClosedCampaignCache — 상품번호가 다른 주문은 매핑으로 귀속하지 않는다(라이브 패리티)', () => {
+  const C = { id: 'campC', name: 'C마켓', productId: '5000', mappings: [{ productName: '공용상품', optionName: '옵션A', price: 10000 }] };
+
+  it('매핑이 맞아도 주문 상품번호가 캠페인과 다르면 집계하지 않는다', () => {
+    const foreign = order({ orderId: 'O9', productOrderId: 'P9', productOrderStatus: 'PAYED', productName: '공용상품', productOption: '옵션A', productId: '7001', originalProductId: '7000' });
+    const r = computeClosedCampaignCache(C, [foreign], new Set(), WINDOW);
+    expect(r.cachedTotalQuantity).toBe(0);
+    expect(r.cachedTotalOrders).toBe(0);
+  });
+
+  it('같은 상품번호면 매핑으로 집계한다', () => {
+    const own = order({ orderId: 'O10', productOrderId: 'P10', productOrderStatus: 'PAYED', productName: '공용상품', productOption: '옵션A', productId: '5001', originalProductId: '5000' });
+    const r = computeClosedCampaignCache(C, [own], new Set(), WINDOW);
+    expect(r.cachedTotalQuantity).toBe(1);
+  });
+});

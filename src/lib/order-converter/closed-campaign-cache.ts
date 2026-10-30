@@ -1,7 +1,7 @@
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from './group-orders';
 import { resolveSalesReportOptionLabel } from './sales-report-options';
 import { deriveOrderPipelineBucket } from './order-fulfillment';
-import { orderMatchesCampaignProductId, orderBelongsToPeerCampaign, type PeerCampaignWindow } from './campaign-match';
+import { orderMatchesCampaignProductId, orderProvesOtherProduct, orderBelongsToPeerCampaign, type PeerCampaignWindow } from './campaign-match';
 import { isSupplementProduct } from './product-class';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from './campaign-insights';
 import { pickBestMapping } from './mapping-match';
@@ -234,10 +234,10 @@ export function computeClosedCampaignCache(
     if (matchesCampName) {
       isCampaignOrder = true;
     } else if (matchedMapping) {
-      // 매핑 룰에 맞더라도 상품명이 다른 캠페인을 가리키고 그 캠페인 창이 이 결제 시각을 담을 수
-      // 있으면 그쪽 주문으로 간주(라이브 handler 와 같은 SSOT). 이름 매칭은 위에서 이미
-      // short-circuit 됐으므로, 자기 이름이 박힌 주문은 이 가드에 걸리지 않는다.
-      if (!orderBelongsToPeerCampaign(pName, orderTime, peers)) {
+      // 매핑 룰에 맞더라도 상품번호가 다른 상품이면 버리고, 상품명이 다른 캠페인을 가리키고 그 캠페인
+      // 창이 이 결제 시각을 담을 수 있으면 그쪽 주문으로 간주(라이브 handler 와 같은 SSOT). 이름 매칭은
+      // 위에서 이미 short-circuit 됐으므로, 자기 이름이 박힌 주문은 이 가드에 걸리지 않는다.
+      if (!orderProvesOtherProduct(order, campaign.productId) && !orderBelongsToPeerCampaign(pName, orderTime, peers)) {
         isCampaignOrder = true;
       }
     }

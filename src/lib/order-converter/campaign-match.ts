@@ -28,6 +28,26 @@ export function orderMatchesCampaignProductId(
     .some((v) => String(v) === target);
 }
 
+/**
+ * 주문이 이 캠페인과 **다른 스토어 상품**에서 왔음이 상품번호로 확정되는가.
+ * 캠페인·주문 양쪽에 번호가 있는데 원상품·채널 어느 쪽도 안 맞을 때만 true — 한쪽이라도 비면
+ * 판정하지 않는다(false, 매핑 폴백에 맡긴다).
+ *
+ * 매핑 폴백의 정밀도 가드다. 매핑 유사도는 낱말 하나만 겹쳐도 매칭이라(상품명 「…마켓」, 옵션명
+ * 「유산균」), 이 확인 없이는 같은 스토어의 다른 상품 주문이 섞인다(2026-10-29 실사고 — 창이 끝난
+ * 다른 셀러 회차의 상품이라 이웃 양보도 못 막았다). 같은 링크를 셀러가 바꿔 쓰는 회차는 번호가
+ * 같으므로 이 가드에 걸리지 않는다.
+ */
+export function orderProvesOtherProduct(
+  order: { productId?: unknown; originalProductId?: unknown } | null | undefined,
+  campaignProductId: unknown,
+): boolean {
+  if (campaignProductId == null || String(campaignProductId).trim() === '') return false;
+  const hasOrderId = [order?.productId, order?.originalProductId].some((v) => v != null && String(v).trim() !== '');
+  if (!hasOrderId) return false;
+  return !orderMatchesCampaignProductId(order, campaignProductId);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 같은 스토어 링크를 여러 캠페인이 순차로 쓰는 운영(오너 확정 2026-07-23)
 //
@@ -146,8 +166,9 @@ export type AttributionCampaign<M extends MappingLike = MappingLike> = {
  * 메인 품목(추가구성상품이 아닌 라인) 1건이 이 캠페인 소속인가.
  *
  * ① 캠페인명 매칭 — 캠페인 productId 가 있고 주문에 상품번호가 있으면 productId 일치일 때만
- *    상품명 포함을 인정한다. ② 아니면 매핑(mapping-match SSOT)이 맞되, 상품명이 **창이 이 결제를
- *    담을 수 있는** 다른 활성 캠페인을 가리키면 양보한다(`orderBelongsToPeerCampaign`).
+ *    상품명 포함을 인정한다. ② 아니면 매핑(mapping-match SSOT)이 맞되, 상품번호가 다른 상품임을
+ *    확정하면 버리고(`orderProvesOtherProduct`), 상품명이 **창이 이 결제를 담을 수 있는** 다른 활성
+ *    캠페인을 가리키면 양보한다(`orderBelongsToPeerCampaign`).
  * 판매 기간(집계창) 필터와 추가구성상품 분리는 호출부 몫이다 — 순서는 `collectCampaignAttributedOrders`.
  */
 export function resolveMainOrderAttribution<M extends MappingLike>(
@@ -171,7 +192,11 @@ export function resolveMainOrderAttribution<M extends MappingLike>(
   }
 
   if (matchesCampName) return { isCampaignOrder: true, matchedMapping };
-  if (matchedMapping && !orderBelongsToPeerCampaign(pName, orderTimeMs, peers)) {
+  if (
+    matchedMapping &&
+    !orderProvesOtherProduct(order, campaign.productId) &&
+    !orderBelongsToPeerCampaign(pName, orderTimeMs, peers)
+  ) {
     return { isCampaignOrder: true, matchedMapping };
   }
   return { isCampaignOrder: false, matchedMapping };
