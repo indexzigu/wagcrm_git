@@ -3,7 +3,7 @@ import {
   resolveOrderCountKey,
 } from "@/lib/order-converter/group-orders";
 import { computeSimilarityScore } from "@/lib/order-converter/similarity";
-import { orderMatchesCampaignProductId } from "@/lib/order-converter/campaign-match";
+import { orderMatchesCampaignProductId, orderProvesOtherProduct } from "@/lib/order-converter/campaign-match";
 import { isSupplementProduct } from "@/lib/order-converter/product-class";
 import { deriveOrderPipelineBucket } from "@/lib/order-converter/order-fulfillment";
 
@@ -396,7 +396,8 @@ export function attributeOrders(
       let isCampaignOrder = false;
       if (matchesCampName) {
         isCampaignOrder = true;
-      } else if (bestMapping) {
+      } else if (bestMapping && !orderProvesOtherProduct(order, oc.productId)) {
+        // 상품번호가 다른 상품이면 매핑이 맞아도 버린다(데스크톱 resolveMainOrderAttribution 과 같은 가드).
         // 상품명이 다른 진행중 발주 캠페인명을 명시적으로 포함하면 그쪽 주문으로 간주
         const belongsToOther = groups.some(
           (other) =>

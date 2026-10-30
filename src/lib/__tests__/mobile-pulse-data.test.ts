@@ -325,3 +325,24 @@ describe("computePulse — 빈 데이터", () => {
     });
   });
 });
+
+describe("computePulse — 상품번호가 다른 주문은 매핑으로 귀속하지 않는다(데스크톱 패리티)", () => {
+  const campaign = makeCampaign({
+    orderCampaign: {
+      id: "oc-1",
+      name: "와이그라운드 공구 특가전",
+      productId: "1001",
+      mappings: [{ productName: "프리미엄 마린콜라겐", optionName: "3박스", price: 30000, campaignDealId: "cd-1" }],
+    },
+  });
+
+  it("ignores a mapping-matched order whose product number differs from the OC", () => {
+    const result = computePulse([campaign], [makeOrder({ productId: "2002", originalProductId: "2000" })], TODAY_KEY);
+    expect(result.today.orders).toBe(0);
+  });
+
+  it("still attributes a mapping-matched order with the same product number", () => {
+    const result = computePulse([campaign], [makeOrder({ productId: "1002", originalProductId: "1001" })], TODAY_KEY);
+    expect(result.today.orders).toBe(1);
+  });
+});
