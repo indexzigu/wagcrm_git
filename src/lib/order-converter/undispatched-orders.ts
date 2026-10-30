@@ -13,7 +13,7 @@
 
 import { deriveOrderPipelineBucket, type OrderPipelineBucket } from './order-fulfillment';
 import { deriveClaimsFromOrder, isFinalCompletedStatus } from './claim-derive';
-import { orderMatchesCampaignProductId } from './campaign-match';
+import { orderMatchesCampaignProductId, orderProvesOtherProduct } from './campaign-match';
 import { isSupplementProduct } from './product-class';
 
 export type UndispatchedBucket = Extract<OrderPipelineBucket, 'newBefore' | 'newAfter' | 'pending'>;
@@ -166,7 +166,8 @@ export function orderMatchesCampaign(order: any, campaign: CampaignForUndispatch
     matchesCampName = true;
   }
 
-  return matchesCampName || !!matchedMapping;
+  // 매핑 폴백은 상품번호가 다른 상품이면 인정하지 않는다(매출 집계 resolveMainOrderAttribution 과 같은 가드).
+  return matchesCampName || (!!matchedMapping && !orderProvesOtherProduct(order, campaign.productId));
 }
 
 function orderTimeMs(order: any): number {

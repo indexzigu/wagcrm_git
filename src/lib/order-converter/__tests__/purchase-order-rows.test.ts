@@ -140,3 +140,19 @@ describe('orderMatchesCampaign — 상품번호 우선', () => {
     expect(orderMatchesCampaign({ productName: '테스트 공구 세트', productId: 'P2' }, withProduct, [])).toBe(false);
   });
 });
+
+describe('orderMatchesCampaign — 매핑 폴백도 상품번호가 다르면 인정하지 않는다', () => {
+  const withProduct = { ...campaign, productId: 'P1' };
+
+  it('옵션 매핑이 맞아도 주문 상품번호가 캠페인과 다르면 발주 대상이 아니다', () => {
+    expect(orderMatchesCampaign({ productName: '다른 상품', productOption: '블루', productId: 'P2', originalProductId: 'P9' }, withProduct, [])).toBe(false);
+  });
+
+  it('상품번호가 같으면 매핑으로 인정한다(원상품 번호 기준 포함)', () => {
+    expect(orderMatchesCampaign({ productName: '다른 상품', productOption: '블루', productId: 'C1', originalProductId: 'P1' }, withProduct, [])).toBe(true);
+  });
+
+  it('주문에 상품번호가 없으면 종전대로 매핑으로 인정한다', () => {
+    expect(orderMatchesCampaign({ productName: '다른 상품', productOption: '블루' }, withProduct, [])).toBe(true);
+  });
+});
