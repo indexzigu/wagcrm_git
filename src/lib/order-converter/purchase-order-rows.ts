@@ -105,8 +105,8 @@ export function orderMatchesCampaign(
 
   if (matchesCampName) return true;
 
+  // 상품번호가 다른 상품이면 매핑이 맞아도 버린다(매출 집계 resolveMainOrderAttribution 과 같은 가드).
   if (matchedMapping && !orderProvesOtherProduct(order, campaign.productId)) {
-    // 상품번호가 다른 상품이면 매핑이 맞아도 버린다(매출 집계 resolveMainOrderAttribution 과 같은 가드).
     // 매핑 룰에 맞더라도 상품명이 '다른 캠페인명'을 명시적으로 포함하고 있으면 무시
     const belongsToOther = activeCampaigns.some(
       (otherCamp) => otherCamp.id !== campaign.id && (pName.includes(otherCamp.name) || otherCamp.name.includes(pName)),

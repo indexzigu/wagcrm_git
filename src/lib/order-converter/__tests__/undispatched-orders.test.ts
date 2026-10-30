@@ -3,6 +3,7 @@ import {
   buildUndispatchedRows,
   deriveAlreadyDelayed,
   hasClaimInProgress,
+  orderMatchesCampaign,
   resolveCampaignWindowMs,
   type CampaignForUndispatched,
 } from '@/lib/order-converter/undispatched-orders';
@@ -168,7 +169,6 @@ describe('hasClaimInProgress — claim-derive 재사용 + 평면 폴백', () => 
   });
 });
 
-import { orderMatchesCampaign } from '@/lib/order-converter/undispatched-orders';
 
 describe('orderMatchesCampaign — 매핑 폴백도 상품번호가 다르면 인정하지 않는다', () => {
   it('옵션 매핑이 맞아도 주문 상품번호가 캠페인과 다르면 이 캠페인 미발송이 아니다', () => {
@@ -177,5 +177,10 @@ describe('orderMatchesCampaign — 매핑 폴백도 상품번호가 다르면 �
 
   it('상품번호가 같으면 매핑으로 인정한다', () => {
     expect(orderMatchesCampaign(order({ productName: '다른 브랜드 상품' }), campaign)).toBe(true);
+  });
+
+  it('상품번호가 한쪽이라도 없으면 종전대로 매핑으로 인정한다', () => {
+    expect(orderMatchesCampaign(order({ productName: '다른 브랜드 상품', productId: null }), campaign)).toBe(true);
+    expect(orderMatchesCampaign(order({ productName: '다른 브랜드 상품', productId: '2000002' }), { ...campaign, productId: null })).toBe(true);
   });
 });
