@@ -346,3 +346,39 @@ describe("computePulse — 상품번호가 다른 주문은 매핑으로 귀속�
     expect(result.today.orders).toBe(1);
   });
 });
+
+describe("computePulse — 이웃 양보는 이웃 판매기간이 결제 시각을 담을 때만(데스크톱 패리티, T-276)", () => {
+  // 같은 상품 링크를 상품명만 바꿔 셀러를 교체하는 순차 운영(P7 Same-Link Campaign Handover).
+  // 옛 회차 주문이 이름 변경 뒤 재동기화돼 새 회차 이름을 갖는다.
+  const mapping = { productName: "프리미엄 마린콜라겐", optionName: "3박스", price: 30000, campaignDealId: "cd-a" };
+  const roundA = makeCampaign({
+    id: "sc-a",
+    campaignDealIds: ["cd-a"],
+    orderCampaign: { id: "oc-a", name: "알파 회차 공구", productId: "1001", mappings: [mapping] },
+  });
+  const roundB = (startIso: string, endIso: string) =>
+    makeCampaign({
+      id: "sc-b",
+      startMs: new Date(kst(startIso)).getTime(),
+      endMs: endOfDayKstMs(new Date(kst(endIso))),
+      campaignDealIds: ["cd-b"],
+      orderCampaign: {
+        id: "oc-b",
+        name: "베타 회차 공구",
+        productId: "1001",
+        mappings: [{ ...mapping, campaignDealId: "cd-b" }],
+      },
+    });
+  const renamed = makeOrder({ productName: "[베타 회차 공구] 프리미엄 마린콜라겐" });
+
+  it("keeps the order in the old round when the new round's window cannot hold it (no silent drop)", () => {
+    // 종전 모바일은 이름만 보고 양보해, 옛 회차는 버리고 새 회차는 기간 밖이라 아무도 세지 않았다.
+    const result = computePulse([roundA, roundB("2026-08-01T00:00:00", "2026-08-31T00:00:00")], [renamed], TODAY_KEY);
+    expect(result.today.orders).toBe(1);
+  });
+
+  it("still yields to the new round when its window holds the payment (counted once)", () => {
+    const result = computePulse([roundA, roundB("2026-07-01T00:00:00", "2026-07-31T00:00:00")], [renamed], TODAY_KEY);
+    expect(result.today.orders).toBe(1);
+  });
+});

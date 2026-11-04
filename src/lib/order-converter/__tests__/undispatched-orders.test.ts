@@ -171,16 +171,27 @@ describe('hasClaimInProgress — claim-derive 재사용 + 평면 폴백', () => 
 
 
 describe('orderMatchesCampaign — 매핑 폴백도 상품번호가 다르면 인정하지 않는다', () => {
-  it('옵션 매핑이 맞아도 주문 상품번호가 캠페인과 다르면 이 캠페인 미발송이 아니다', () => {
-    expect(orderMatchesCampaign(order({ productName: '다른 브랜드 상품', productId: '2000002', originalProductId: '2000000' }), campaign)).toBe(false);
+  // 캠페인명이 상품명에 안 걸리게 해 매핑 폴백 경로만 탄다(상품·옵션 둘 다 매핑에 맞는 주문).
+  const mappingOnly: CampaignForUndispatched = { ...campaign, name: '공구 회차 A' };
+
+  it('매핑이 맞아도 주문 상품번호가 캠페인과 다르면 이 캠페인 미발송이 아니다', () => {
+    expect(orderMatchesCampaign(order({ productId: '2000002', originalProductId: '2000000' }), mappingOnly)).toBe(false);
   });
 
   it('상품번호가 같으면 매핑으로 인정한다', () => {
-    expect(orderMatchesCampaign(order({ productName: '다른 브랜드 상품' }), campaign)).toBe(true);
+    expect(orderMatchesCampaign(order(), mappingOnly)).toBe(true);
   });
 
   it('상품번호가 한쪽이라도 없으면 종전대로 매핑으로 인정한다', () => {
-    expect(orderMatchesCampaign(order({ productName: '다른 브랜드 상품', productId: null }), campaign)).toBe(true);
-    expect(orderMatchesCampaign(order({ productName: '다른 브랜드 상품', productId: '2000002' }), { ...campaign, productId: null })).toBe(true);
+    expect(orderMatchesCampaign(order({ productId: null }), mappingOnly)).toBe(true);
+    expect(orderMatchesCampaign(order({ productId: '2000002' }), { ...mappingOnly, productId: null })).toBe(true);
+  });
+});
+
+describe('orderMatchesCampaign — 매출 보고와 같은 귀속 규칙(T-276)', () => {
+  const mappingOnly: CampaignForUndispatched = { ...campaign, name: '공구 회차 A' };
+
+  it('상품·옵션이 둘 다 적힌 매핑은 옵션만 맞아서는 인정하지 않는다(종전 사본은 하나만 맞아도 인정했다)', () => {
+    expect(orderMatchesCampaign(order({ productName: '전혀 다른 상품' }), mappingOnly)).toBe(false);
   });
 });
