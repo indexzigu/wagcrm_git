@@ -88,17 +88,23 @@ function importedNames(source: string | ts.SourceFile, fileName = 'probe.ts'): s
 }
 
 /**
- * 객체 리터럴에서 `windowStartMs/EndMs` 속성 값으로 `resolveSaleWindowStartMs/EndMs` 를 **직접 호출**하는 곳
- * (`속성명 ← 호출명`). 단축 속성·스프레드·지역 변수 경유는 세지 않는다 — 막으려는 것은 조립식의 복사다.
+ * 객체 리터럴에서 `windowStartMs/EndMs` 속성 값 **식 안에서** `resolveSaleWindowStartMs/EndMs` 를 호출하는 곳
+ * (`속성명 ← 호출명`). `x ?? 호출`·삼항·`as`·괄호·따옴표 키도 잡는다. 단축 속성·스프레드·지역 변수 경유는
+ * 세지 않는다 — 막으려는 것은 조립식의 복사다.
  */
 function handAssembledWindows(source: string | ts.SourceFile, fileName = 'probe.ts'): string[] {
   const sf = typeof source === 'string' ? parse(source, fileName) : source;
   const hits: string[] = [];
   const visit = (node: ts.Node) => {
-    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && WINDOW_PROPS.has(node.name.text)) {
-      const init = node.initializer;
-      const name = ts.isCallExpression(init) ? calleeName(init) : null;
-      if (name && WINDOW_CALLEES.has(name)) hits.push(`${node.name.text} ← ${name}`);
+    const key =
+      ts.isPropertyAssignment(node) && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) ? node.name.text : null;
+    if (key && WINDOW_PROPS.has(key)) {
+      const findCalls = (n: ts.Node) => {
+        const name = ts.isCallExpression(n) ? calleeName(n) : null;
+        if (name && WINDOW_CALLEES.has(name)) hits.push(`${key} ← ${name}`);
+        ts.forEachChild(n, findCalls);
+      };
+      findCalls((node as ts.PropertyAssignment).initializer);
     }
     ts.forEachChild(node, visit);
   };
@@ -192,6 +198,12 @@ describe('C4 집계창을 소비처에서 손으로 조립하지 않는다', () 
       'windowStartMs ← resolveSaleWindowStartMs',
       'windowEndMs ← resolveSaleWindowEndMs',
     ]);
+    // 감싼 꼴도 잡는다(리뷰 지적: 직접 호출만 보면 `?? 호출`·삼항·따옴표 키가 빠져나간다).
+    expect(
+      handAssembledWindows(
+        "const p = { windowStartMs: x ?? resolveSaleWindowStartMs(c), 'windowEndMs': ok ? (resolveSaleWindowEndMs(c) as number) : null };",
+      ),
+    ).toEqual(['windowStartMs ← resolveSaleWindowStartMs', 'windowEndMs ← resolveSaleWindowEndMs']);
     const allowed = [
       "const p = { id, ...resolveCampaignWindowMs(c, 'live') };",
       'const s = resolveSaleWindowStartMs(c); const d = { windowStartMs: s };',
