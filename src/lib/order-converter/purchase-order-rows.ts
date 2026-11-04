@@ -123,7 +123,7 @@ export function orderMatchesCampaign(
   peers: readonly PeerCampaignWindow[],
   orderTimeMs: number = resolveOrderPaymentTime(order).orderTimeMs,
 ): boolean {
-  return resolveMainOrderAttribution(order, campaign, orderTimeMs, [...peers]).isCampaignOrder;
+  return resolveMainOrderAttribution(order, campaign, orderTimeMs, peers).isCampaignOrder;
 }
 
 /** 래퍼 한 줄 → 발주서 행. 주문일은 `YYYY-MM-DD HH:MM`. */

@@ -101,7 +101,7 @@ function peerWindowCanHold(peer: PeerCampaignWindow, orderTimeMs: number): boole
 export function orderBelongsToPeerCampaign(
   pName: string,
   orderTimeMs: number,
-  peers: PeerCampaignWindow[],
+  peers: readonly PeerCampaignWindow[],
 ): boolean {
   const name = pName || '';
   return peers.some((peer) => {
@@ -187,7 +187,7 @@ export function resolveMainOrderAttribution<M extends MappingLike>(
   order: { productName?: string | null; productOption?: string | null; productOptionName?: string | null; productId?: unknown; originalProductId?: unknown },
   campaign: AttributionCampaign<M> & { mappings: readonly M[] },
   orderTimeMs: number,
-  peers: PeerCampaignWindow[],
+  peers: readonly PeerCampaignWindow[],
 ): { isCampaignOrder: boolean; matchedMapping: M | null } {
   const pName = order.productName || '';
   const oName = order.productOption || order.productOptionName || '';
