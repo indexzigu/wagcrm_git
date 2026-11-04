@@ -1,7 +1,13 @@
 import { prisma } from './prisma';
 import { apiRequest } from './naver-commerce-client';
 import { fetchAllProductOrderPages, PRODUCT_ORDER_RANGE_TYPE_PAYED } from './product-order-paging';
-import { orderMatchesCampaign, type CampaignForMatch } from './purchase-order-rows';
+import {
+  buildPeerCampaignWindows,
+  orderMatchesCampaign,
+  PEER_CAMPAIGN_SELECT,
+  resolveWrapperPaymentTimeMs,
+  type CampaignForMatch,
+} from './purchase-order-rows';
 import { isSupplementProduct } from './product-class';
 
 /**
@@ -29,9 +35,10 @@ export async function resolveCampaignExpectedOrderIds(campaignId: string): Promi
   if (!campaign) throw new Error('캠페인을 찾을 수 없습니다.');
   if (!campaign.template) throw new Error('캠페인에 지정된 베이스 템플릿이 없습니다.');
 
+  // 이웃은 판매기간과 함께 싣는다 — 이름만이면 같은 링크 순차 회차에서 옛 회차 주문을 새 회차에 양보한다(P7).
   const activeCampaigns = await prisma.orderCampaign.findMany({
     where: { isActive: true },
-    select: { id: true, name: true },
+    select: PEER_CAMPAIGN_SELECT,
   });
 
   // 조회 기간: 캠페인 시작일부터 현재까지 (발주서 경로와 동일 규칙)
@@ -96,6 +103,7 @@ export async function resolveCampaignExpectedOrderIds(campaignId: string): Promi
     productId: campaign.productId,
     mappings: campaign.mappings.map((m) => ({ productName: m.productName, optionName: m.optionName })),
   };
+  const peers = buildPeerCampaignWindows(campaign.id, activeCampaigns);
 
   const orderIds = new Set<string>();
   const campaignProductIds = new Set<string>();
@@ -112,7 +120,7 @@ export async function resolveCampaignExpectedOrderIds(campaignId: string): Promi
       return;
     }
 
-    if (orderMatchesCampaign(order, campaignForMatch, activeCampaigns)) {
+    if (orderMatchesCampaign(order, campaignForMatch, peers, resolveWrapperPaymentTimeMs(wrapper))) {
       if (order.productId) campaignProductIds.add(String(order.productId));
       if (order.productOrderId) orderIds.add(String(order.productOrderId));
     }
