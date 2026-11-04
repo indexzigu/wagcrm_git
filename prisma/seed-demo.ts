@@ -1093,25 +1093,197 @@ async function seedTimelineContent() {
       },
     });
   }
+  await seedWorkingmomAiProfile();
+}
+
+type DemoCommentIntent = "inquiry" | "purchase" | "social" | "bot_or_irrelevant";
+
+/** 가상 댓글 원문 풀 — 실존 인물·계정명 없음. 의도 라벨은 사람이 붙인 정답이다(LLM 호출 없음). */
+const DEMO_COMMENT_POOL: Record<DemoCommentIntent, string[]> = {
+  inquiry: [
+    "이거 사이즈 어떻게 나왔어요? 100 입히면 될까요?",
+    "공구 일정이 언제까지인가요? 배송은 얼마나 걸려요?",
+    "색상 옵션은 몇 가지예요? 재입고 계획도 있나요?",
+    "아기 피부가 예민한데 성분 괜찮을까요? 알려주세요",
+    "묶음 구성이면 따로 살 수도 있나요?",
+    "무료배송 기준이 얼마인가요?",
+  ],
+  purchase: [
+    "방금 주문했어요! 도착이 기다려져요",
+    "저 이거 두 개 담았습니다 ㅎㅎ",
+    "지난 공구 때 써보고 재구매해요, 이번에도 신청 완료",
+    "마감 전에 구매 인증 남깁니다 🙌",
+    "링크 타고 바로 결제했어요",
+    "친구 것까지 같이 주문했어요",
+  ],
+  social: [
+    "오늘도 고생 많으셨어요, 응원합니다 💛",
+    "아이 표정이 너무 귀여워요 ㅎㅎ",
+    "저도 워킹맘이라 공감 백배예요",
+    "사진 분위기가 너무 좋네요",
+    "주말 잘 보내세요~",
+    "이 루틴 따라 해볼게요, 감사해요",
+  ],
+  bot_or_irrelevant: [
+    "Nice post! Follow me back",
+    "팔로우 해주시면 맞팔 할게요 >_<",
+    "💰 재택부업 문의는 프로필 링크로",
+    "great content 👍👍",
+  ],
+};
+
+interface DemoPostSpec {
+  offset: number;
+  hour: number;
+  mediaType: "image" | "reel" | "carousel" | "video";
+  caption: string;
+  likes: number;
+  comments: number;
+  sponsored?: boolean;
+  /** 이 게시물에 샘플로 붙는 댓글: [의도, 풀 인덱스]. */
+  sample: Array<[DemoCommentIntent, number]>;
+}
+
+/**
+ * 워킹맘수첩 가상 게시물 20건 — 일상/광고/공구를 섞는다.
+ * 앞 3건(9~11일 전)은 이 셀러의 「미검토 후보」 빈 상태 시나리오가 쓰는 permalink(demo-candidate-n)이고,
+ * 나머지는 그 캠페인 창(20~5일 전) 밖에 둬서 후보 3건 시나리오를 깨지 않는다.
+ */
+const WORKINGMOM_POSTS: Array<DemoPostSpec & { shortcode: string }> = [
+  { shortcode: "demo-wm-01", offset: 1, hour: 21, mediaType: "reel", caption: "퇴근 후 10분 정리 루틴 🧺 아이 재우고 나만의 시간", likes: 2480, comments: 61, sample: [["social", 0], ["social", 5], ["inquiry", 0]] },
+  { shortcode: "demo-wm-02", offset: 2, hour: 12, mediaType: "image", caption: "주말 도시락 싸기 성공! 아이가 다 먹었어요", likes: 1720, comments: 38, sample: [["social", 1], ["social", 3], ["bot_or_irrelevant", 0]] },
+  { shortcode: "demo-wm-03", offset: 4, hour: 20, mediaType: "carousel", caption: "이번 달 육아템 정리 – 진짜 쓴 것만 남겼어요", likes: 2210, comments: 74, sample: [["inquiry", 4], ["social", 2], ["purchase", 2]] },
+  { shortcode: "demo-candidate-1", offset: 11, hour: 11, mediaType: "reel", caption: "오늘 밤 9시 마감! 선착순 공구 마지막 안내드려요", likes: 3120, comments: 128, sample: [["purchase", 3], ["inquiry", 1], ["purchase", 4], ["inquiry", 2]] },
+  { shortcode: "demo-candidate-2", offset: 10, hour: 11, mediaType: "image", caption: "아침 등원 전쟁 끝, 커피 한 잔의 여유 ☕", likes: 1650, comments: 29, sample: [["social", 0], ["social", 4]] },
+  { shortcode: "demo-candidate-3", offset: 9, hour: 11, mediaType: "carousel", caption: "#광고 오로라랩 순한 선케어 2주 사용기", likes: 1890, comments: 52, sponsored: true, sample: [["inquiry", 3], ["inquiry", 0], ["social", 3]] },
+  { shortcode: "demo-wm-07", offset: 23, hour: 20, mediaType: "reel", caption: "프로바이오틱스 공구 오픈합니다! 댓글에 정보 남겨주시면 링크 보내드려요", likes: 3480, comments: 142, sample: [["purchase", 0], ["inquiry", 1], ["purchase", 1], ["inquiry", 5]] },
+  { shortcode: "demo-wm-08", offset: 26, hour: 13, mediaType: "image", caption: "아이랑 첫 캠핑 준비물 체크리스트", likes: 1980, comments: 45, sample: [["social", 5], ["inquiry", 4], ["social", 1]] },
+  { shortcode: "demo-wm-09", offset: 31, hour: 21, mediaType: "video", caption: "#협찬 그린테이블 영양 간식 맛 평가단", likes: 1540, comments: 33, sponsored: true, sample: [["inquiry", 5], ["social", 3], ["bot_or_irrelevant", 1]] },
+  { shortcode: "demo-wm-10", offset: 36, hour: 12, mediaType: "carousel", caption: "콜라겐 2차 공구 마감 임박이에요 (최저가 오늘까지)", likes: 3050, comments: 117, sample: [["purchase", 2], ["inquiry", 0], ["purchase", 5], ["inquiry", 1]] },
+  { shortcode: "demo-wm-11", offset: 42, hour: 19, mediaType: "image", caption: "비 오는 날 집콕 놀이 모음", likes: 1430, comments: 26, sample: [["social", 2], ["social", 0], ["bot_or_irrelevant", 2]] },
+  { shortcode: "demo-wm-12", offset: 49, hour: 20, mediaType: "reel", caption: "출근 준비 15분 컷 비결 공개", likes: 2760, comments: 68, sample: [["social", 5], ["inquiry", 3], ["social", 4]] },
+  { shortcode: "demo-wm-13", offset: 57, hour: 21, mediaType: "image", caption: "#광고 하늘 앰플 보름 사용 후기", likes: 1620, comments: 41, sponsored: true, sample: [["inquiry", 3], ["purchase", 4], ["social", 3]] },
+  { shortcode: "demo-wm-14", offset: 64, hour: 20, mediaType: "carousel", caption: "수납 정리 공구 오픈! 선착순 100세트 구매링크는 프로필에", likes: 3290, comments: 131, sample: [["purchase", 0], ["inquiry", 5], ["purchase", 5], ["bot_or_irrelevant", 3]] },
+  { shortcode: "demo-wm-15", offset: 72, hour: 12, mediaType: "image", caption: "엄마의 작은 사치, 퇴근길 빵집", likes: 1870, comments: 35, sample: [["social", 3], ["social", 1]] },
+  { shortcode: "demo-wm-16", offset: 81, hour: 21, mediaType: "video", caption: "아이 책상 셋팅 전후 비교", likes: 2140, comments: 49, sample: [["inquiry", 4], ["social", 2], ["bot_or_irrelevant", 0]] },
+  { shortcode: "demo-wm-17", offset: 90, hour: 20, mediaType: "reel", caption: "비타민 공구 3차 마감 D-1 🔥 재입고 안내", likes: 2960, comments: 109, sample: [["purchase", 1], ["inquiry", 2], ["purchase", 3]] },
+  { shortcode: "demo-wm-18", offset: 99, hour: 13, mediaType: "image", caption: "주말 가족 나들이 기록", likes: 1760, comments: 31, sample: [["social", 0], ["social", 5], ["bot_or_irrelevant", 1]] },
+  { shortcode: "demo-wm-19", offset: 108, hour: 21, mediaType: "carousel", caption: "#유료광고 데모 육아가전 한 달 후기", likes: 1480, comments: 28, sponsored: true, sample: [["inquiry", 0], ["inquiry", 1], ["social", 4]] },
+  { shortcode: "demo-wm-20", offset: 118, hour: 19, mediaType: "image", caption: "육아 7년차 워킹맘의 아침 루틴", likes: 2320, comments: 57, sample: [["social", 2], ["inquiry", 4], ["social", 5]] },
+];
+
+const DEMO_KEYWORD_CANDIDATES = ["공구", "마감", "배송", "사이즈", "재입고", "주문", "옵션", "성분", "링크", "후기"];
+
+/**
+ * 워킹맘수첩의 AI 분석 프로필(aiTags) — 운영 분석 경로와 같은 계산기(computeSellerMetrics·
+ * computeSubScores)를 가상 게시물에 돌려 채운다. 정성 분석(Gemini)은 호출하지 않고,
+ * comment_analysis 는 위 라벨된 가상 댓글의 집계로 대신한다. 캡션·댓글 원문은 저장하지 않는다
+ * (운영과 같은 개인정보 원칙 — aiTags 에는 집계·슬림 프리뷰만 남는다).
+ */
+async function seedWorkingmomAiProfile() {
+  const { computeSellerMetrics } = await import("../src/lib/seller-analysis/metrics");
+  const { computeSubScores } = await import("../src/lib/seller-analysis/scores");
+  const { toPostsPreview } = await import("../src/lib/seller-analysis/posts-preview-merge");
+
+  const followerCount = 132500;
+  const sampledIntents: DemoCommentIntent[] = [];
+  const rawPosts = WORKINGMOM_POSTS.map((p) => {
+    const sampleComments = p.sample.map(([intent, idx]) => {
+      sampledIntents.push(intent);
+      return DEMO_COMMENT_POOL[intent][idx];
+    });
+    return {
+      caption: p.caption,
+      likes: p.likes,
+      comments_count: p.comments,
+      sample_comments: sampleComments,
+      taken_at: kstDateTime(p.offset, p.hour, 10).toISOString(),
+      media_type: p.mediaType,
+      video_view_count: p.mediaType === "reel" || p.mediaType === "video" ? p.likes * 9 : null,
+      is_sponsored: p.sponsored === true,
+      thumbnail_url: null,
+      shortcode: p.shortcode,
+    };
+  });
+  const metrics = computeSellerMetrics(
+    {
+      seller_id: "workingmom.note.demo",
+      source_tier: "Tier1",
+      profile: { follower_count: followerCount },
+      raw_posts: rawPosts,
+      images: [],
+    },
+    NOW,
+  );
+  const scores = computeSubScores(metrics);
+
+  // 의도 분포: 라벨 비율을 합 100 정수로(최대잔여법).
+  const intents: DemoCommentIntent[] = ["inquiry", "purchase", "social", "bot_or_irrelevant"];
+  const raw = intents.map((k) => (sampledIntents.filter((i) => i === k).length / sampledIntents.length) * 100);
+  const floors = raw.map(Math.floor);
+  let rest = 100 - floors.reduce((a, b) => a + b, 0);
+  raw
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac)
+    .forEach(({ i }) => {
+      if (rest > 0) {
+        floors[i] += 1;
+        rest -= 1;
+      }
+    });
+  const intentDistribution = Object.fromEntries(intents.map((k, i) => [k, floors[i]]));
+
+  const allCommentText = rawPosts.flatMap((p) => p.sample_comments).join(" ");
+  const allText = `${allCommentText} ${rawPosts.map((p) => p.caption).join(" ")}`;
+  const topKeywords = DEMO_KEYWORD_CANDIDATES.map((k) => ({
+    k,
+    n: allText.split(k).length - 1,
+  }))
+    .filter((x) => x.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 5)
+    .map((x) => x.k);
+
+  const postsPreview = toPostsPreview(rawPosts as Parameters<typeof toPostsPreview>[0], 30).map((p, i) => ({
+    ...p,
+    permalink: `https://instagram.example.com/p/${WORKINGMOM_POSTS[i].shortcode}/`,
+  }));
+
   await prisma.sellerAiProfile.create({
     data: {
       sellerId: TIMELINE_EMPTY_SELLER,
       analyzedAt: daysAgo(1),
-      sourceTier: "Tier0",
+      sourceTier: "Tier1",
+      compositeScore: scores.composite,
+      confidence: scores.confidence,
       aiTags: {
+        category: "육아",
+        tags: ["워킹맘", "육아템", "공구", "일상", "정리수납"],
+        sub_categories: ["일상", "리빙"],
+        seller_analysis: {
+          estimated_age: "30대 후반",
+          content_style: "일과 육아를 오가는 담백한 일상 기록 + 정기 공구 안내 (가상 데이터)",
+          engagement_level: "Medium",
+          engagement_reason: "데모 데이터: 공구 게시물의 댓글이 일상 게시물보다 뚜렷하게 많습니다.",
+          commerce_suitability_score: 78,
+          commerce_suitability_reason: "데모 데이터: 공구 글에서 문의·구매 댓글 비중이 높아 전환 가능성이 큽니다.",
+        },
+        audience_analysis: { primary_gender: "Female", age_range: "30-44", keywords: ["육아맘", "직장인", "살림"] },
+        comment_analysis: { intent_distribution: intentDistribution, top_keywords: topKeywords },
+        metrics,
+        interaction_id: "demo-interaction",
+        profileMeta: { followerCount, followingCount: 412, postsCountTotal: 538, bio: "일과 육아 사이의 기록 (데모 계정)" },
         postsCollectedAt: daysAgo(1).toISOString(),
-        postsPreview: [1, 2, 3].map((n) => ({
-          permalink: `https://instagram.example.com/p/demo-candidate-${n}/`,
-          taken_at: kstDateTime(12 - n, 11, 0).toISOString(),
-          likes: 100 * n,
-          likes_hidden: false,
-          comments: n,
-          thumb: null,
-          media_type: n === 1 ? "reel" : "image",
-          is_gongu: n === 1,
-        })),
+        postsPreview,
       },
     },
+  });
+  console.log("[seed-demo] 워킹맘수첩 분석 프로필:", {
+    posts: rawPosts.length,
+    composite: scores.composite,
+    er: metrics.engagement.er,
+    adShare: metrics.ads.adShare,
+    intentDistribution,
   });
 }
 
