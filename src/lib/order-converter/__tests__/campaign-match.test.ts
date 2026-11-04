@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { orderMatchesCampaignProductId } from '../campaign-match';
+import { buildCampaignWindows, buildPeerCampaignWindows, orderMatchesCampaignProductId, resolveCampaignWindowMs } from '../campaign-match';
+import { resolveSaleWindowEndMs, resolveSaleWindowStartMs } from '../sale-window';
 
 describe('orderMatchesCampaignProductId (원상품/채널 번호 비대칭)', () => {
   it('캠페인 productId = 주문 originalProductId(원상품) → 매칭 (실사고 핵심)', () => {
@@ -162,5 +163,46 @@ describe('resolveMainOrderAttribution — 상품번호가 다른 주문은 매�
   it('주문에 상품번호가 없으면 종전대로 매핑만으로 귀속한다(하위호환)', () => {
     const r = resolveMainOrderAttribution({ ...otherProductOrder, productId: null, originalProductId: null }, camp, t, []);
     expect(r.isCampaignOrder).toBe(true);
+  });
+});
+
+describe('resolveCampaignWindowMs — 이웃·창 겹침 판정이 읽는 집계창의 유일한 조립식', () => {
+  // 저장 창 10/01~10/09, 판매관리 일정은 10/03~10/12 로 고쳐졌지만 아직 동기화 전인 캠페인.
+  const stored = { startDate: '2026-10-01T00:00:00.000+09:00', endDate: '2026-10-09T00:00:00.000+09:00', salePeriod: null };
+  const sales = { startDate: '2026-10-03T00:00:00.000+09:00', endDate: '2026-10-12T00:00:00.000+09:00' };
+  const ms = (iso: string) => new Date(iso).getTime();
+
+  it('live 는 판매관리 일정을 정본으로 읽는다(동기화 전에도) — 종료는 KST 그 날 끝까지', () => {
+    const w = resolveCampaignWindowMs({ ...stored, salesCampaigns: [{ ...sales, status: 'ACTIVE' }] }, 'live');
+    expect(w.windowStartMs).toBe(ms('2026-10-03T00:00:00.000+09:00'));
+    expect(w.windowEndMs).toBe(ms('2026-10-12T23:59:59.999+09:00'));
+  });
+
+  it('live 라도 정산 락이면 저장 창에 얼린다', () => {
+    const w = resolveCampaignWindowMs({ ...stored, salesCampaigns: [{ ...sales, status: 'SETTLEMENT_IN_PROGRESS' }] }, 'live');
+    expect(w.windowStartMs).toBe(ms('2026-10-01T00:00:00.000+09:00'));
+  });
+
+  it('stored 는 판매관리 일정을 보지 않고 sale-window 컷오프 그대로다', () => {
+    const camp = { ...stored, salesCampaigns: [{ ...sales, status: 'ACTIVE' }] };
+    expect(resolveCampaignWindowMs(camp, 'stored')).toEqual({
+      windowStartMs: resolveSaleWindowStartMs(camp),
+      windowEndMs: resolveSaleWindowEndMs(camp),
+    });
+  });
+
+  it('판매관리 일정이 없으면 live 와 stored 가 같다', () => {
+    const camp = { ...stored, salesCampaigns: [] };
+    expect(resolveCampaignWindowMs(camp, 'live')).toEqual(resolveCampaignWindowMs(camp, 'stored'));
+  });
+
+  it('buildCampaignWindows 는 순서를 지키고, buildPeerCampaignWindows 는 자기만 뺀다', () => {
+    const campaigns = [
+      { id: 'a', name: '회차 A', ...stored, salesCampaigns: [] },
+      { id: 'b', name: '회차 B', startDate: null, endDate: null, salePeriod: null, salesCampaigns: [] },
+    ];
+    expect(buildCampaignWindows(campaigns, 'live').map((w) => w.id)).toEqual(['a', 'b']);
+    const peers = buildPeerCampaignWindows('a', campaigns, 'live');
+    expect(peers).toEqual([{ id: 'b', name: '회차 B', windowStartMs: null, windowEndMs: null }]);
   });
 });

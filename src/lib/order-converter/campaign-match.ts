@@ -12,6 +12,7 @@
 
 import { pickBestMapping, type MappingLike } from './mapping-match';
 import { isSupplementProduct } from './product-class';
+import { resolveLiveOrderCampaignWindow, resolveSaleWindowEndMs, resolveSaleWindowStartMs } from './sale-window';
 
 /**
  * 주문이 캠페인의 상품에 productId로 귀속되는지 판정한다.
@@ -72,6 +73,61 @@ export type PeerCampaignWindow = {
   windowStartMs?: number | null;
   windowEndMs?: number | null;
 };
+
+/**
+ * 집계창을 어느 값으로 읽나.
+ * - `live` — 판매관리 일정이 정본, 정산 락이면 저장된 창(`resolveLiveOrderCampaignWindow`). **활성 캠페인을 보는
+ *   화면·발주서**(주문 관리 카드 · 홈 요약 · 발주서 세 경로)가 쓴다 — 오너가 판매관리에서 고친 기간이 동기화
+ *   전에도 바로 반영돼야 한다.
+ * - `stored` — 저장된 창(startDate/endDate → salePeriod 폴백)만. **마감 집계**(`closed-campaign-cache`)는 마감
+ *   시점 기록과 맞춰야 하고 이웃을 판매관리 일정 없이 싣는다. 같은 링크 창 겹침 감지도 동기화 전 저장값을 본다.
+ */
+export type CampaignWindowBasis = 'live' | 'stored';
+
+/** 창 산출에 필요한 캠페인 필드. `live` 는 `salesCampaigns` 가 있어야 판매관리 일정을 본다(없으면 저장 창과 같다). */
+export type CampaignWindowSource = {
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
+  salePeriod?: string | null;
+  salesCampaigns?: Array<{ startDate?: Date | string | null; endDate?: Date | string | null; status?: string | null }> | null;
+};
+
+/**
+ * 캠페인 하나의 집계창(ms) — 이웃 판정·창 겹침 감지가 읽는 **유일한 조립식**. null 이면 그쪽 끝 미확정.
+ * ⛔ 소비처에서 `resolveSaleWindowStartMs/EndMs` 를 `windowStartMs/EndMs` 에 직접 꽂지 말 것 — 같은 조립이
+ * 다섯 곳에 복사돼 창 기준(`live`/`stored`)이 화면마다 갈렸었다(`attribution-predicate-ssot.contract.test.ts` C4).
+ */
+export function resolveCampaignWindowMs(
+  camp: CampaignWindowSource,
+  basis: CampaignWindowBasis,
+): { windowStartMs: number | null; windowEndMs: number | null } {
+  let source: CampaignWindowSource = camp;
+  if (basis === 'live') {
+    const live = resolveLiveOrderCampaignWindow(camp);
+    source = { ...camp, startDate: live.startDate, endDate: live.endDate };
+  }
+  return { windowStartMs: resolveSaleWindowStartMs(source), windowEndMs: resolveSaleWindowEndMs(source) };
+}
+
+/** 캠페인 목록 → 같은 순서의 `{ id, name, 집계창 }` 목록(자기 자신 포함 — 호출부가 자기 창과 이웃을 함께 쓸 때). */
+export function buildCampaignWindows<C extends CampaignWindowSource & { id?: string | null; name: string }>(
+  campaigns: readonly C[],
+  basis: CampaignWindowBasis,
+): Array<Omit<PeerCampaignWindow, 'id'> & { id: C['id'] }> {
+  return campaigns.map((c) => ({ id: c.id, name: c.name, ...resolveCampaignWindowMs(c, basis) }));
+}
+
+/** 자기 자신(`selfId`)을 뺀 이웃 캠페인의 집계창 — 교차 귀속 가드(`orderBelongsToPeerCampaign`)의 입력. */
+export function buildPeerCampaignWindows<C extends CampaignWindowSource & { id: string; name: string }>(
+  selfId: string,
+  campaigns: readonly C[],
+  basis: CampaignWindowBasis,
+): PeerCampaignWindow[] {
+  return buildCampaignWindows(
+    campaigns.filter((c) => c.id !== selfId),
+    basis,
+  );
+}
 
 /** 이 이웃 캠페인의 집계창이 해당 결제 시각을 담을 수 있는가(= 그 주문의 주인일 수 있는가). */
 function peerWindowCanHold(peer: PeerCampaignWindow, orderTimeMs: number): boolean {
@@ -158,7 +214,8 @@ export function findSharedLinkWindowConflicts(
 // ⛔ 술어를 소비처에서 다시 쓰지 말 것 — `attribution-predicate-ssot.contract.test.ts` 가 막는다.
 // 소비처마다 다른 것은 **입력**뿐이다: 판매기간 필터(호출부 몫) · 이웃 목록(미발송은 이웃 없음,
 // 나머지는 전부 판매기간 포함).
-// 발주서도 이웃을 판매기간과 함께 넘긴다(`purchase-order-rows` `buildPeerCampaignWindows`, 2026-11-05).
+// 발주서도 이웃을 판매기간과 함께 넘긴다(`buildPeerCampaignWindows`, 2026-11-05). 이웃 창의 조립은 이 파일의
+// `resolveCampaignWindowMs`(기준 `live`/`stored`) 하나다 — 모바일 집계만 판매캠페인 행에서 직접 만든다(입력이 다르다).
 // 종전엔 이름만 넘겨 「기간 없는 이웃 = 항상 양보」였고, 같은 링크를 셀러만 바꿔 잇는 회차에서 옛 회차
 // 주문이 새 회차 이름으로 재동기화되면 옛 회차 발주서는 양보하고 새 회차 발주서는 시작일 필터로 걸러
 // 아무 발주서에도 안 실릴 수 있었다(아래 `orderBelongsToPeerCampaign` 이 막는 침묵 누락과 같은 모양).

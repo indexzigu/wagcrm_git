@@ -9,7 +9,7 @@
 // 이 레포의 반복 결함 유형이다):
 //  · 조회 범위   `resolveActiveCampaignsQueryStart` → `resolveLiveWindowKeys`
 //  · 주문 데이터 `hydrateSnapshotL1`(주문 관리 카드와 같은 프로세스 메모리 사본 — 블롭은 바뀐 날짜만)
-//  · 집계 창     `resolveLiveOrderCampaignWindow` → `resolveSaleWindowStartMs/EndMs`
+//  · 집계 창     campaign-match `buildCampaignWindows(…, 'live')`(= `resolveLiveOrderCampaignWindow` → `resolveSaleWindowStartMs/EndMs`)
 //  · 귀속        `collectCampaignAttributedOrders`(campaign-match)
 //  · 버킷·지연   `classifyOrderWork`(order-work)
 //  · 클레임      `loadClaimSourceOrders` → `deriveClaims` → `isCompleted` 아닌 것
@@ -22,14 +22,9 @@ import { prisma } from '@/lib/order-converter/prisma';
 import { naverOrderSnapshotRepository } from '@/repositories/naverOrderSnapshotRepository';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
 import { resolveLiveWindowKeys } from '@/lib/order-converter/daily-aggregate';
-import {
-  resolveActiveCampaignsQueryStart,
-  resolveLiveOrderCampaignWindow,
-  resolveSaleWindowEndMs,
-  resolveSaleWindowStartMs,
-} from '@/lib/order-converter/sale-window';
+import { resolveActiveCampaignsQueryStart } from '@/lib/order-converter/sale-window';
 import { getSnapshotL1Cache, hydrateSnapshotL1 } from '@/lib/order-converter/snapshot-l1-cache';
-import { collectCampaignAttributedOrders, type PeerCampaignWindow } from '@/lib/order-converter/campaign-match';
+import { buildCampaignWindows, collectCampaignAttributedOrders } from '@/lib/order-converter/campaign-match';
 import {
   classifyOrderWork,
   summarizeOrderWork,
@@ -99,25 +94,12 @@ export async function loadOrderWorkSummary(now: Date = new Date()): Promise<Orde
       orders.map((o) => o?.productOrderId).filter(Boolean),
     );
 
-    const windowed = activeCampaigns.map((camp) => {
-      const live = resolveLiveOrderCampaignWindow(camp);
-      const withWindow = { ...camp, startDate: live.startDate, endDate: live.endDate };
-      return {
-        camp: withWindow,
-        windowStartMs: resolveSaleWindowStartMs(withWindow),
-        windowEndMs: resolveSaleWindowEndMs(withWindow),
-      };
-    });
+    // 자기 창과 이웃 창을 한 번에(같은 순서) — 주문 관리 카드와 같은 `live` 기준(campaign-match SSOT).
+    const windows = buildCampaignWindows(activeCampaigns, 'live');
 
-    for (const { camp, windowStartMs, windowEndMs } of windowed) {
-      const peers: PeerCampaignWindow[] = windowed
-        .filter((other) => other.camp.id !== camp.id)
-        .map((other) => ({
-          id: other.camp.id,
-          name: other.camp.name,
-          windowStartMs: other.windowStartMs,
-          windowEndMs: other.windowEndMs,
-        }));
+    for (const [index, camp] of activeCampaigns.entries()) {
+      const { windowStartMs, windowEndMs } = windows[index];
+      const peers = windows.filter((other) => other.id !== camp.id);
       const attributed = collectCampaignAttributedOrders(
         orders,
         camp,
