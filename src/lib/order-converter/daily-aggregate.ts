@@ -953,8 +953,9 @@ export type PrismaLikeForAggregation = {
  * dealName/sellerName 은 귀속 판정에 쓰이지 않으므로 빈 문자열로 채운다(조인 절약).
  *
  * **isActive 게이트는 데스크톱과의 수치 정합 조건이다(제거 금지).** attributeOrders 의
- * belongsToOther(mobile-pulse-data.ts)는 "상품명이 다른 발주 캠페인명을 포함하면 그쪽
- * 주문으로 간주"해 라인을 배제하는데, 그 배제 우주가 데스크톱(campaigns-handler 의
+ * 이웃 양보(campaign-match `resolveMainOrderAttribution` 에 넘기는 `peersByOc`)는 "상품명이 다른
+ * 발주 캠페인명을 포함하고 그 창이 결제 시각을 담으면 그쪽 주문으로 간주"해 라인을 배제하는데,
+ * 그 배제 우주가 데스크톱(campaigns-handler 의
  * activeCampaigns = isActive 필터)과 달라지면 같은 주문이 두 화면에서 다르게 집계된다.
  * 마감 캠페인까지 우주에 넣으면, 반년 전 마감 캠페인명과 상품명이 겹치는 라인이
  * 모바일에서만 조용히 누락된다(에러 없이 과소집계 — P7 수치 정합성 위반).

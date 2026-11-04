@@ -3,7 +3,7 @@ import {
   resolveOrderCountKey,
 } from "@/lib/order-converter/group-orders";
 import { computeSimilarityScore } from "@/lib/order-converter/similarity";
-import { orderMatchesCampaignProductId, orderProvesOtherProduct } from "@/lib/order-converter/campaign-match";
+import { resolveMainOrderAttribution, type PeerCampaignWindow } from "@/lib/order-converter/campaign-match";
 import { isSupplementProduct } from "@/lib/order-converter/product-class";
 import { deriveOrderPipelineBucket } from "@/lib/order-converter/order-fulfillment";
 
@@ -176,65 +176,6 @@ const normalizeStr = (str: string) =>
   (str || "").replace(/[^a-zA-Z0-9가-힣]/g, "").toLowerCase();
 
 /**
- * 주문 1행 ↔ 발주 캠페인 매핑 후보 중 최고점 매핑 (campaigns/route.ts:428-475 미러).
- */
-function findBestMapping(
-  pName: string,
-  oName: string,
-  mappings: PulseMappingSource[],
-): PulseMappingSource | null {
-  const normPName = normalizeStr(pName);
-  const normOName = normalizeStr(oName);
-
-  let bestMapping: PulseMappingSource | null = null;
-  let highestScore = -1;
-
-  for (const m of mappings) {
-    const hasProduct = !!m.productName;
-    const hasOption = !!m.optionName;
-    if (!hasProduct && !hasOption) continue;
-
-    let productMatches = false;
-    let pScore = 0;
-    if (hasProduct) {
-      pScore = computeSimilarityScore(m.productName!, pName);
-      const normMProd = normalizeStr(m.productName!);
-      const exactIncludes =
-        normMProd.length > 0 &&
-        ((normPName.length > 0 && normPName.includes(normMProd)) ||
-          normMProd.includes(normPName));
-      if (pScore > 0.5 || exactIncludes) productMatches = true;
-    }
-
-    let optionMatches = false;
-    let oScore = 0;
-    if (hasOption) {
-      oScore = computeSimilarityScore(m.optionName!, oName);
-      const normMOpt = normalizeStr(m.optionName!);
-      const exactIncludes =
-        normMOpt.length > 0 &&
-        ((normOName.length > 0 && normOName.includes(normMOpt)) ||
-          normMOpt.includes(normOName));
-      if (oScore > 0.5 || exactIncludes) optionMatches = true;
-    }
-
-    let isMatch = false;
-    if (hasProduct && hasOption) isMatch = productMatches && optionMatches;
-    else if (hasProduct) isMatch = productMatches;
-    else if (hasOption) isMatch = optionMatches;
-
-    if (isMatch) {
-      const totalScore = (hasProduct ? pScore : 0) + (hasOption ? oScore : 0);
-      if (totalScore > highestScore) {
-        highestScore = totalScore;
-        bestMapping = m;
-      }
-    }
-  }
-  return bestMapping;
-}
-
-/**
  * 추가구성상품(추가옵션) 귀속용 옵션명 단독 매칭 (campaigns/route.ts:15-34 미러).
  */
 function findMappingByOptionName(
@@ -363,6 +304,19 @@ export function attributeOrders(
 
   const groups = [...ocGroups.values()];
 
+  // 교차 귀속 가드용 이웃 목록 — 발주 캠페인(OC)당 1회. 이웃 창은 그 OC 에 딸린 판매캠페인 기간의
+  // min(시작)~max(종료) 합성이다(P7 *Campaign Period SSOT* 1:N 규칙 — 데스크톱이 읽는
+  // OrderCampaign.startDate/endDate 가 판매캠페인에서 이 모양으로 동기화된다).
+  const ocWindows = groups.map((g) => ({
+    id: g.oc.id,
+    name: g.oc.name,
+    windowStartMs: Math.min(...g.campaigns.map((sc) => sc.startMs)),
+    windowEndMs: Math.max(...g.campaigns.map((sc) => sc.endMs)),
+  }));
+  const peersByOc = new Map<string, PeerCampaignWindow[]>(
+    groups.map((g) => [g.oc.id, ocWindows.filter((w) => w.id !== g.oc.id)]),
+  );
+
   // 이 캠페인(OC)에 귀속된 메인 품목 productId — 추가구성상품 2차 귀속용
   const matchedProductIdsByOc = new Map<string, Set<string>>();
   const deferredAddons: PulseOrderLike[] = [];
@@ -376,36 +330,19 @@ export function attributeOrders(
       continue;
     }
 
-    const pName = order.productName || "";
-    const oName = order.productOption || order.productOptionName || "";
     const orderTimeMs = resolveOrderTimeMs(order);
 
     for (const group of groups) {
       const { oc } = group;
-      const bestMapping = findBestMapping(pName, oName, oc.mappings);
-
-      let matchesCampName = false;
-      if (oc.productId && (order.productId != null || order.originalProductId != null)) {
-        if (orderMatchesCampaignProductId(order, oc.productId)) {
-          if (pName.includes(oc.name) || oc.name.includes(pName)) matchesCampName = true;
-        }
-      } else if (pName.includes(oc.name) || oc.name.includes(pName)) {
-        matchesCampName = true;
-      }
-
-      let isCampaignOrder = false;
-      if (matchesCampName) {
-        isCampaignOrder = true;
-      } else if (bestMapping && !orderProvesOtherProduct(order, oc.productId)) {
-        // 상품번호가 다른 상품이면 매핑이 맞아도 버린다(데스크톱 resolveMainOrderAttribution 과 같은 가드).
-        // 상품명이 다른 진행중 발주 캠페인명을 명시적으로 포함하면 그쪽 주문으로 간주
-        const belongsToOther = groups.some(
-          (other) =>
-            other.oc.id !== oc.id &&
-            (pName.includes(other.oc.name) || other.oc.name.includes(pName)),
-        );
-        if (!belongsToOther) isCampaignOrder = true;
-      }
+      // 귀속 술어는 데스크톱 주문 관리 카드와 **같은** campaign-match SSOT(`resolveMainOrderAttribution`).
+      // 종전에는 매핑 선택(옵션명 완전일치 우선 규칙 누락)과 이웃 양보(판매기간 조건 누락)를 여기서
+      // 따로 써서 모바일 숫자가 데스크톱과 갈릴 수 있었다(T-276). ⛔ 다시 펼쳐 쓰지 말 것.
+      const { isCampaignOrder, matchedMapping: bestMapping } = resolveMainOrderAttribution(
+        order,
+        oc,
+        orderTimeMs,
+        peersByOc.get(oc.id) ?? [],
+      );
 
       if (!isCampaignOrder) continue;
 

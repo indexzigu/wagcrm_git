@@ -1,10 +1,9 @@
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from './group-orders';
 import { resolveSalesReportOptionLabel } from './sales-report-options';
 import { deriveOrderPipelineBucket } from './order-fulfillment';
-import { orderMatchesCampaignProductId, orderProvesOtherProduct, orderBelongsToPeerCampaign, type PeerCampaignWindow } from './campaign-match';
+import { resolveMainOrderAttribution, type PeerCampaignWindow } from './campaign-match';
 import { isSupplementProduct } from './product-class';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from './campaign-insights';
-import { pickBestMapping } from './mapping-match';
 import { resolveSaleWindowStartMs, resolveSaleWindowEndMs } from './sale-window';
 import { fetchAllProductOrderPages, PRODUCT_ORDER_RANGE_TYPE_PAYED } from './product-order-paging';
 import {
@@ -212,35 +211,15 @@ export function computeClosedCampaignCache(
     const pName = order.productName || '';
     const oName = order.productOption || order.productOptionName || '';
 
-    // 매칭 판정은 mapping-match.ts SSOT(라이브 campaigns-handler와 공유) —
-    // 마감 스냅샷이 라이브 집계와 같은 매칭 규칙을 쓰게 한다.
-    const matchedMapping = pickBestMapping(campaign.mappings, pName, oName);
-
-    let isCampaignOrder = false;
-    let matchesCampName = false;
-
-    if (campaign.productId && (order.productId != null || order.originalProductId != null)) {
-      if (orderMatchesCampaignProductId(order, campaign.productId)) {
-        if (pName.includes(campaign.name) || campaign.name.includes(pName)) {
-          matchesCampName = true;
-        }
-      }
-    } else {
-      if (pName.includes(campaign.name) || campaign.name.includes(pName)) {
-        matchesCampName = true;
-      }
-    }
-
-    if (matchesCampName) {
-      isCampaignOrder = true;
-    } else if (matchedMapping) {
-      // 매핑 룰에 맞더라도 상품번호가 다른 상품이면 버리고, 상품명이 다른 캠페인을 가리키고 그 캠페인
-      // 창이 이 결제 시각을 담을 수 있으면 그쪽 주문으로 간주(라이브 handler 와 같은 SSOT). 이름 매칭은
-      // 위에서 이미 short-circuit 됐으므로, 자기 이름이 박힌 주문은 이 가드에 걸리지 않는다.
-      if (!orderProvesOtherProduct(order, campaign.productId) && !orderBelongsToPeerCampaign(pName, orderTime, peers)) {
-        isCampaignOrder = true;
-      }
-    }
+    // 귀속 판정(캠페인명·상품번호 → 매핑 폴백 + 상품번호 가드 + 이웃 양보)은 campaign-match SSOT
+    // (`resolveMainOrderAttribution`) — 라이브 주문 관리 카드와 **같은 술어**라 마감 스냅샷이 라이브
+    // 집계와 어긋나지 않는다. ⛔ 이 블록을 다시 펼쳐 쓰지 말 것(T-276: 5곳 사본이 한 곳씩 어긋났다).
+    const { isCampaignOrder, matchedMapping } = resolveMainOrderAttribution(
+      order,
+      { name: campaign.name, productId: campaign.productId, mappings: campaign.mappings },
+      orderTime,
+      peers,
+    );
 
     if (isCampaignOrder) {
       if (order.productId) campaignProductIds.add(String(order.productId));

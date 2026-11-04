@@ -1,4 +1,4 @@
-import { orderMatchesCampaignProductId, orderProvesOtherProduct } from './campaign-match';
+import { resolveMainOrderAttribution, resolveOrderPaymentTime, type PeerCampaignWindow } from './campaign-match';
 import { interleaveAddonRows } from './group-orders';
 import { PENDING_FULFILLMENT_STATUSES } from './order-fetch-window';
 import { isSupplementProduct } from './product-class';
@@ -47,74 +47,27 @@ export type PurchaseOrderRow = {
   _placeOrderStatus: string | undefined;
 };
 
-const normalize = (str: string) => (str || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
-
 /**
- * 이 주문(메인 상품 라인)이 캠페인에 귀속되는가 — 상품번호·캠페인명 일치가 1순위, 매핑 룰 일치는
- * **상품번호가 다른 상품이 아니고 다른 활성 캠페인명을 가리키지 않을 때만** 인정한다. 추가구성상품은 여기서 판정하지 않는다
+ * 이 주문(메인 상품 라인)이 캠페인에 귀속되는가. 추가구성상품은 여기서 판정하지 않는다
  * (`buildPurchaseOrderRows` 의 2차 귀속).
+ *
+ * 술어는 주문 관리 카드·매출 보고·마감 집계와 **같은** `resolveMainOrderAttribution`(campaign-match SSOT)이다.
+ * 종전에는 매핑 비교를 여기서 따로 썼고(글자 포함만 · 상품/옵션 중 하나만 맞아도 인정), 그래서 매출
+ * 보고에는 없는 주문이 발주서에 실리거나 그 반대가 될 수 있었다(T-276). ⛔ 다시 펼쳐 쓰지 말 것.
+ *
+ * 발주서만의 차이는 **입력**에 있다: 이웃 캠페인을 이름만으로 넘긴다(판매기간 없음 → 이름이 이웃을
+ * 가리키면 항상 양보 = 종전 발주서 동작). 판매기간 필터도 호출부가 `시작일~now` 로 따로 건다(P7).
  */
 export function orderMatchesCampaign(
   order: any,
   campaign: CampaignForMatch,
   activeCampaigns: { id: string; name: string }[],
 ): boolean {
-  const pName = order.productName || '';
-  const oName = order.productOption || '';
-  const normPName = normalize(pName);
-  const normOName = normalize(oName);
-
-  const matchedMapping = campaign.mappings.find((m) => {
-    const hasProduct = !!m.productName;
-    const hasOption = !!m.optionName;
-    if (!hasProduct && !hasOption) return false;
-
-    let productMatches = false;
-    if (hasProduct) {
-      const normMProd = normalize(m.productName);
-      if (normMProd.length > 0) {
-        productMatches =
-          (normPName.length > 0 && (normPName.includes(normMProd) || normMProd.includes(normPName))) ||
-          (normOName.length > 0 && (normOName.includes(normMProd) || normMProd.includes(normOName)));
-      }
-    }
-
-    let optionMatches = false;
-    if (hasOption) {
-      const normMOpt = normalize(m.optionName);
-      if (normMOpt.length > 0) {
-        optionMatches =
-          (normOName.length > 0 && (normOName.includes(normMOpt) || normMOpt.includes(normOName))) ||
-          (normPName.length > 0 && (normPName.includes(normMOpt) || normMOpt.includes(normPName)));
-      }
-    }
-
-    if (hasOption && optionMatches) return true;
-    if (hasProduct && !hasOption && productMatches) return true;
-    return productMatches || optionMatches;
-  });
-
-  let matchesCampName = false;
-  if (campaign.productId && (order.productId != null || order.originalProductId != null)) {
-    if (orderMatchesCampaignProductId(order, campaign.productId)) {
-      if (pName.includes(campaign.name) || campaign.name.includes(pName)) matchesCampName = true;
-    }
-  } else if (pName.includes(campaign.name) || campaign.name.includes(pName)) {
-    matchesCampName = true;
-  }
-
-  if (matchesCampName) return true;
-
-  // 상품번호가 다른 상품이면 매핑이 맞아도 버린다(매출 집계 resolveMainOrderAttribution 과 같은 가드).
-  if (matchedMapping && !orderProvesOtherProduct(order, campaign.productId)) {
-    // 매핑 룰에 맞더라도 상품명이 '다른 캠페인명'을 명시적으로 포함하고 있으면 무시
-    const belongsToOther = activeCampaigns.some(
-      (otherCamp) => otherCamp.id !== campaign.id && (pName.includes(otherCamp.name) || otherCamp.name.includes(pName)),
-    );
-    if (!belongsToOther) return true;
-  }
-
-  return false;
+  const peers: PeerCampaignWindow[] = activeCampaigns
+    .filter((other) => other.id !== campaign.id)
+    .map((other) => ({ id: other.id, name: other.name }));
+  const { orderTimeMs } = resolveOrderPaymentTime(order);
+  return resolveMainOrderAttribution(order, campaign, orderTimeMs, peers).isCampaignOrder;
 }
 
 /** 래퍼 한 줄 → 발주서 행. 주문일은 `YYYY-MM-DD HH:MM`. */

@@ -4,16 +4,14 @@
 // 파이프라인 버킷(newBefore/newAfter/pending) 필터 → 지연안내·클레임 상태 파생을 거쳐
 // 모달이 그릴 행(UndispatchedOrderRow)으로 정규화한다.
 //
-// 캠페인 귀속 판정은 캠페인 상세 라우트(campaigns/[id]/route.ts 마감 집계)와 동일 규칙을 쓴다:
-//  - 매핑(productName/optionName) 정규화 포함(containment) 매칭
-//  - 캠페인명 ↔ 상품명 포함 매칭(campaign.productId가 있으면 productId 일치 시에만)
-//  - 추가구성상품은 동일 productId의 메인 품목 귀속 여부로 2차 판단
+// 캠페인 귀속 판정은 campaign-match SSOT(`resolveMainOrderAttribution`)를 그대로 쓴다 — 주문 관리
+// 카드·마감 집계와 같은 술어다. 추가구성상품은 동일 productId 의 메인 품목 귀속 여부로 2차 판단.
 //
 // 이 모듈은 순수 함수만 담는다(fetch·DB 없음) — 유닛테스트 대상.
 
 import { deriveOrderPipelineBucket, type OrderPipelineBucket } from './order-fulfillment';
 import { deriveClaimsFromOrder, isFinalCompletedStatus } from './claim-derive';
-import { orderMatchesCampaignProductId, orderProvesOtherProduct } from './campaign-match';
+import { resolveMainOrderAttribution, resolveOrderPaymentTime } from './campaign-match';
 import { isSupplementProduct } from './product-class';
 
 export type UndispatchedBucket = Extract<OrderPipelineBucket, 'newBefore' | 'newAfter' | 'pending'>;
@@ -48,8 +46,6 @@ export interface CampaignForUndispatched {
   salePeriod?: string | null;
   mappings?: Array<{ productName?: string | null; optionName?: string | null }> | null;
 }
-
-const normalize = (str: string) => (str || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
 
 /**
  * 발송지연 안내 이력 필드 후보. 2026-07-10 스냅샷 실측(29일치 1,355건)에는 지연 처리된
@@ -119,55 +115,22 @@ export function resolveCampaignWindowMs(campaign: CampaignForUndispatched): { st
   return { startMs, endMs };
 }
 
-/** 캠페인 상세 라우트(마감 집계)와 동일한 캠페인 귀속 판정. */
+/**
+ * 메인 품목이 이 캠페인 소속인가 — 주문 관리 카드·마감 집계와 **같은** `resolveMainOrderAttribution`
+ * (campaign-match SSOT). 종전에는 매핑 비교를 여기서 따로 썼다(글자 포함만 · 상품/옵션 중 하나만
+ * 맞아도 인정) — 이 파일 머리 주석이 「마감 집계와 동일 규칙」이라 적은 채 실제로는 갈라져 있었다(T-276).
+ * ⛔ 다시 펼쳐 쓰지 말 것.
+ *
+ * 이웃 캠페인은 넘기지 않는다(이 라우트는 한 캠페인만 받는다) — 종전과 같이 이웃 양보 없음.
+ */
 export function orderMatchesCampaign(order: any, campaign: CampaignForUndispatched): boolean {
-  const pName = order.productName || '';
-  const oName = order.productOption || order.productOptionName || '';
-  const normPName = normalize(pName);
-  const normOName = normalize(oName);
-  const mappings = campaign.mappings || [];
-
-  const matchedMapping = mappings.find((m) => {
-    const hasProduct = !!m.productName;
-    const hasOption = !!m.optionName;
-    if (!hasProduct && !hasOption) return false;
-
-    let productMatches = false;
-    if (hasProduct) {
-      const normMProd = normalize(m.productName || '');
-      if (normMProd.length > 0) {
-        productMatches =
-          (normPName.length > 0 && (normPName.includes(normMProd) || normMProd.includes(normPName))) ||
-          (normOName.length > 0 && (normOName.includes(normMProd) || normMProd.includes(normOName)));
-      }
-    }
-
-    let optionMatches = false;
-    if (hasOption) {
-      const normMOpt = normalize(m.optionName || '');
-      if (normMOpt.length > 0) {
-        optionMatches =
-          (normOName.length > 0 && (normOName.includes(normMOpt) || normMOpt.includes(normOName))) ||
-          (normPName.length > 0 && (normPName.includes(normMOpt) || normMOpt.includes(normPName)));
-      }
-    }
-
-    if (hasOption && optionMatches) return true;
-    if (hasProduct && !hasOption && productMatches) return true;
-    return productMatches || optionMatches;
-  });
-
-  let matchesCampName = false;
-  if (campaign.productId && (order.productId != null || order.originalProductId != null)) {
-    if (orderMatchesCampaignProductId(order, campaign.productId)) {
-      if (pName.includes(campaign.name) || campaign.name.includes(pName)) matchesCampName = true;
-    }
-  } else if (pName.includes(campaign.name) || campaign.name.includes(pName)) {
-    matchesCampName = true;
-  }
-
-  // 매핑 폴백은 상품번호가 다른 상품이면 인정하지 않는다(매출 집계 resolveMainOrderAttribution 과 같은 가드).
-  return matchesCampName || (!!matchedMapping && !orderProvesOtherProduct(order, campaign.productId));
+  const { orderTimeMs: paymentTimeMs } = resolveOrderPaymentTime(order);
+  return resolveMainOrderAttribution(
+    order,
+    { name: campaign.name, productId: campaign.productId ?? null, mappings: campaign.mappings || [] },
+    paymentTimeMs,
+    [],
+  ).isCampaignOrder;
 }
 
 function orderTimeMs(order: any): number {
