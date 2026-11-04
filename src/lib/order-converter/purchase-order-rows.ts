@@ -3,6 +3,7 @@ import { interleaveAddonRows } from './group-orders';
 import { PENDING_FULFILLMENT_STATUSES } from './order-fetch-window';
 import { isSupplementProduct } from './product-class';
 import { resolveShippingMemo } from './shipping-memo';
+import { resolveLiveOrderCampaignWindow, resolveSaleWindowEndMs, resolveSaleWindowStartMs } from './sale-window';
 
 /**
  * 발주서에 실을 주문을 고르고 행으로 만드는 **판정 SSOT**(발주 자동화 2단계, 2026-10-06).
@@ -26,6 +27,60 @@ export type CampaignForMatch = {
   productId: string | null;
   mappings: { productName: string; optionName: string }[];
 };
+
+/**
+ * 교차 귀속 가드에 넘길 활성 주문캠페인 — 이름과 **판매기간 입력**. 기간 필드를 필수로 둔 것은 호출부가
+ * 이름만 실어 오면 컴파일이 깨지게 하려는 것이다(종전엔 `{ id, name }` 만 실어 「기간 없는 이웃 = 항상
+ * 양보」가 됐다 — campaign-match 머리 주석의 순차 전환 침묵 누락).
+ * `salesCampaigns` 는 판매관리 일정(기간 정본)이라 `{ startDate, endDate, status }` 로 함께 싣는다.
+ */
+export type PeerCampaignSource = {
+  id: string;
+  name: string;
+  startDate: Date | string | null;
+  endDate: Date | string | null;
+  salePeriod: string | null;
+  salesCampaigns: Array<{ startDate: Date | string | null; endDate: Date | string | null; status?: string | null }> | null;
+};
+
+/** 발주서 경로의 이웃 캠페인 적재 select — 세 호출부(발주요청·주문확인·수동 첨부 대조)가 같이 쓴다. */
+export const PEER_CAMPAIGN_SELECT = {
+  id: true,
+  name: true,
+  startDate: true,
+  endDate: true,
+  salePeriod: true,
+  salesCampaigns: { select: { startDate: true, endDate: true, status: true } },
+} as const;
+
+/**
+ * 자기 자신을 뺀 이웃 캠페인의 판매기간(ms). 창 산출은 주문 관리 카드·홈 요약(`order-work-summary`)과
+ * **같은** sale-window SSOT 다 — 판매관리 일정이 정본, 정산 락이면 저장된 창(`resolveLiveOrderCampaignWindow`)
+ * → 집계 컷오프(`resolveSaleWindowStartMs/EndMs`). 캠페인당 한 번만 만든다(주문 루프 안이면 주문×캠페인 배).
+ */
+export function buildPeerCampaignWindows(selfId: string, activeCampaigns: readonly PeerCampaignSource[]): PeerCampaignWindow[] {
+  return activeCampaigns
+    .filter((other) => other.id !== selfId)
+    .map((other) => {
+      const live = resolveLiveOrderCampaignWindow(other);
+      const withWindow = { ...other, startDate: live.startDate ?? null, endDate: live.endDate ?? null };
+      return {
+        id: other.id,
+        name: other.name,
+        windowStartMs: resolveSaleWindowStartMs(withWindow),
+        windowEndMs: resolveSaleWindowEndMs(withWindow),
+      };
+    });
+}
+
+/**
+ * 래퍼 한 줄의 결제 시각(ms). 네이버 조회 응답은 결제·주문 시각을 `order` 쪽에 싣는다 — `productOrder`
+ * 만 보면 실시간 경로에서 시각이 늘 0(불명)이 되어 이웃 판매기간 조건이 아예 발화하지 않는다.
+ * 평평하게 합칠 때(`normalizeQueriedOrder`)와 같은 우선순위(productOrder 키가 order 키를 덮음)로 합쳐 읽는다.
+ */
+export function resolveWrapperPaymentTimeMs(orderWrapper: OrderWrapper): number {
+  return resolveOrderPaymentTime({ ...(orderWrapper.order ?? {}), ...(orderWrapper.productOrder ?? {}) }).orderTimeMs;
+}
 
 /** 발주서 한 행. 한글 키는 엑셀 규칙(`excel-rules.ts` NAVER_ORDER_FIELDS)이 읽는 이름 그대로다. */
 export type PurchaseOrderRow = {
@@ -55,19 +110,20 @@ export type PurchaseOrderRow = {
  * 종전에는 매핑 비교를 여기서 따로 썼고(글자 포함만 · 상품/옵션 중 하나만 맞아도 인정), 그래서 매출
  * 보고에는 없는 주문이 발주서에 실리거나 그 반대가 될 수 있었다(T-276). ⛔ 다시 펼쳐 쓰지 말 것.
  *
- * 발주서만의 차이는 **입력**에 있다: 이웃 캠페인을 이름만으로 넘긴다(판매기간 없음 → 이름이 이웃을
- * 가리키면 항상 양보 = 종전 발주서 동작). 판매기간 필터도 호출부가 `시작일~now` 로 따로 건다(P7).
+ * 이웃 캠페인은 판매기간과 함께 넘긴다(`buildPeerCampaignWindows`) — 이름이 이웃을 가리켜도 그 이웃의
+ * 판매기간이 결제 시각을 담지 못하면 양보하지 않는다(같은 링크 순차 회차의 침묵 누락 방지, P7).
+ * 발주서만의 차이는 자기 판매기간 필터뿐이다 — 호출부가 `시작일~now` 로 따로 건다(P7).
+ *
+ * @param orderTimeMs 결제 시각. 래퍼에서 온 주문은 `resolveWrapperPaymentTimeMs` 로 구해 넘긴다
+ *   (생략하면 `order` 자체에서 읽는다 — 평평한 주문용).
  */
 export function orderMatchesCampaign(
   order: any,
   campaign: CampaignForMatch,
-  activeCampaigns: { id: string; name: string }[],
+  peers: readonly PeerCampaignWindow[],
+  orderTimeMs: number = resolveOrderPaymentTime(order).orderTimeMs,
 ): boolean {
-  const peers: PeerCampaignWindow[] = activeCampaigns
-    .filter((other) => other.id !== campaign.id)
-    .map((other) => ({ id: other.id, name: other.name }));
-  const { orderTimeMs } = resolveOrderPaymentTime(order);
-  return resolveMainOrderAttribution(order, campaign, orderTimeMs, peers).isCampaignOrder;
+  return resolveMainOrderAttribution(order, campaign, orderTimeMs, [...peers]).isCampaignOrder;
 }
 
 /** 래퍼 한 줄 → 발주서 행. 주문일은 `YYYY-MM-DD HH:MM`. */
@@ -116,10 +172,11 @@ const isPendingFulfillment = (status: unknown) =>
 export function buildPurchaseOrderRows(args: {
   wrappers: OrderWrapper[];
   campaign: CampaignForMatch;
-  activeCampaigns: { id: string; name: string }[];
+  activeCampaigns: readonly PeerCampaignSource[];
   excludeProductOrderIds?: ReadonlySet<string>;
 }): { rows: PurchaseOrderRow[]; pendingLineCount: number } {
   const { wrappers, campaign, activeCampaigns, excludeProductOrderIds } = args;
+  const peers = buildPeerCampaignWindows(campaign.id, activeCampaigns);
   const mainRows: PurchaseOrderRow[] = [];
   const addonRows: PurchaseOrderRow[] = [];
   const campaignProductIds = new Set<string>();
@@ -137,7 +194,7 @@ export function buildPurchaseOrderRows(args: {
       continue;
     }
 
-    if (orderMatchesCampaign(order, campaign, activeCampaigns)) {
+    if (orderMatchesCampaign(order, campaign, peers, resolveWrapperPaymentTimeMs(orderWrapper))) {
       if (order.productId) campaignProductIds.add(String(order.productId));
       mainRows.push(buildPurchaseOrderRow(orderWrapper));
     }

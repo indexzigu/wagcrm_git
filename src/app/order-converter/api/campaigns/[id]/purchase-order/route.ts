@@ -19,10 +19,12 @@ import { resolveCampaignQueryStartMs } from '@/lib/order-converter/mapping-servi
 import {
   buildPurchaseOrderRows,
   describeEmptyPurchaseOrder,
+  PEER_CAMPAIGN_SELECT,
   toPreviewRow,
   wrapFlatOrder,
   type DroppedOrder,
   type OrderWrapper,
+  type PeerCampaignSource,
 } from '@/lib/order-converter/purchase-order-rows';
 import {
   collectPreparedOrderWrappers,
@@ -79,9 +81,11 @@ async function loadCampaign(campaignId: string) {
     where: { id: campaignId },
     include: { mappings: true, salesCampaigns: { select: { startDate: true, endDate: true, status: true } } },
   });
+  // 이웃은 판매기간과 함께 싣는다(purchase-order-rows `PeerCampaignSource`) — 이름만이면 같은 링크 순차
+  // 회차에서 옛 회차 주문을 새 회차에 양보한다(P7 Same-Link Campaign Handover).
   const activeCampaigns = await prisma.orderCampaign.findMany({
     where: { isActive: true },
-    select: { id: true, name: true },
+    select: PEER_CAMPAIGN_SELECT,
   });
   return { campaign, activeCampaigns };
 }
@@ -236,7 +240,7 @@ async function handlePreview(request: NextRequest, { params }: RouteContext) {
 
 async function buildPreviewResponse(args: {
   campaign: any;
-  activeCampaigns: { id: string; name: string }[];
+  activeCampaigns: readonly PeerCampaignSource[];
   wrappers: OrderWrapper[];
   includePending: boolean;
   source: Source;
@@ -337,7 +341,7 @@ async function handleCommit(request: NextRequest, { params }: RouteContext) {
 
 async function commitPurchaseOrder(args: {
   campaign: any;
-  activeCampaigns: { id: string; name: string }[];
+  activeCampaigns: readonly PeerCampaignSource[];
   productOrderIds: string[];
   previewSet: Set<string>;
   confirmIds: string[];

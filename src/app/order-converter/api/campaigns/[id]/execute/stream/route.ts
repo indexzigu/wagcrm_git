@@ -5,7 +5,7 @@ import { apiRequest } from '@/lib/order-converter/naver-commerce-client';
 import { generateOrderExcelBuffer } from '@/lib/order-converter/excel-generator';
 import { loadOrderTemplateBuffer, resolveOrderBrand } from '@/lib/order-converter/order-brand';
 import { syncOrdersByIds } from '@/lib/order-converter/naver-order-sync';
-import { buildPurchaseOrderRows, describeEmptyPurchaseOrder } from '@/lib/order-converter/purchase-order-rows';
+import { buildPurchaseOrderRows, describeEmptyPurchaseOrder, PEER_CAMPAIGN_SELECT } from '@/lib/order-converter/purchase-order-rows';
 import { confirmPlaceOrders } from '@/lib/order-converter/place-order-confirm';
 import { PURCHASE_ORDER_COPY } from '@/lib/order-converter/purchase-order-client';
 import {
@@ -78,8 +78,11 @@ async function handleExecuteStreamGet(request: NextRequest, { params }: { params
           include: { mappings: true, salesCampaigns: { select: { startDate: true, endDate: true, status: true } } }
         });
         
+        // 이웃은 판매기간과 함께 싣는다(purchase-order-rows `PEER_CAMPAIGN_SELECT`) — 종전엔 전 컬럼을 싣고도
+        // 판정은 이름만 써서 같은 링크 순차 회차의 옛 주문을 새 회차에 양보했다(P7).
         const activeCampaigns = await prisma.orderCampaign.findMany({
           where: { isActive: true },
+          select: PEER_CAMPAIGN_SELECT,
         });
 
         if (!campaign || !campaign.template) {

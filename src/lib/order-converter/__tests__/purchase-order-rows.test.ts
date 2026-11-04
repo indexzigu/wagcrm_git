@@ -77,7 +77,8 @@ describe('buildPurchaseOrderRows — 발주 대상 판정', () => {
 
   it('매핑만 맞는 주문은 다른 활성 캠페인명을 가리키면 양보한다', () => {
     const order = wrapper({ productName: '다른 공구 블루', productOption: '블루' });
-    const other = [{ id: 'c2', name: '다른 공구' }];
+    // 판매기간 미확정 이웃 → 창으로 배제할 근거가 없으므로 종전대로 양보한다(campaign-match SSOT).
+    const other = [{ id: 'c2', name: '다른 공구', startDate: null, endDate: null, salePeriod: null, salesCampaigns: [] }];
     expect(buildPurchaseOrderRows({ wrappers: [order], campaign, activeCampaigns: other }).rows).toEqual([]);
     expect(buildPurchaseOrderRows({ wrappers: [order], campaign, activeCampaigns: [] }).rows).toHaveLength(1);
   });
@@ -154,5 +155,64 @@ describe('orderMatchesCampaign — 매핑 폴백도 상품번호가 다르면 �
 
   it('주문에 상품번호가 없으면 종전대로 매핑으로 인정한다', () => {
     expect(orderMatchesCampaign({ productName: '다른 상품', productOption: '블루' }, withProduct, [])).toBe(true);
+  });
+});
+
+describe('buildPurchaseOrderRows — 같은 상품 링크를 셀러만 바꿔 잇는 회차(P7 Same-Link Campaign Handover)', () => {
+  // 회차 A(앞) → 회차 B(뒤)가 같은 상품번호를 쓴다. 상품명을 B 이름으로 바꾸면 그 뒤 재동기화된
+  // A 기간의 옛 주문까지 B 이름을 갖는다 — 이름은 소유권 신호가 아니고, 결제 시각 × 판매기간만이 가른다.
+  const roundA = {
+    id: 'round-a',
+    name: '앞 회차 공구',
+    productId: 'P1',
+    mappings: [{ productName: '', optionName: '블루' }],
+  };
+  const roundB = {
+    id: 'round-b',
+    name: '뒤 회차 공구',
+    startDate: new Date('2026-10-10T00:00:00.000+09:00'),
+    endDate: new Date('2026-10-20T00:00:00.000+09:00'),
+    salePeriod: null,
+    salesCampaigns: [],
+  };
+  const roundASource = {
+    id: roundA.id,
+    name: roundA.name,
+    startDate: new Date('2026-10-01T00:00:00.000+09:00'),
+    endDate: new Date('2026-10-09T00:00:00.000+09:00'),
+    salePeriod: null,
+    salesCampaigns: [],
+  };
+  const renamed = { productName: '[뒤 회차 공구] 블루 세트', productOption: '색상: 블루', productId: 'P1' };
+
+  it('A 판매기간에 결제된 주문은 이름이 B 를 가리켜도 A 발주서에 남는다(실시간 조회 모양 — 결제 시각이 order 쪽)', () => {
+    const live = wrapper(renamed, { paymentDate: '2026-10-05T10:20:00.000+09:00' });
+    const { rows } = buildPurchaseOrderRows({ wrappers: [live], campaign: roundA, activeCampaigns: [roundASource, roundB] });
+    expect(rows.map((r) => r.상품주문번호)).toEqual(['PO-1']);
+  });
+
+  it('저장된 주문 사본(평평한 모양)도 같다', () => {
+    const flat = wrapFlatOrder({ ...wrapper(renamed).productOrder, paymentDate: '2026-10-05T10:20:00.000+09:00' });
+    const { rows } = buildPurchaseOrderRows({ wrappers: [flat], campaign: roundA, activeCampaigns: [roundASource, roundB] });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('B 판매기간에 결제된 주문은 종전대로 B 에 양보한다', () => {
+    const live = wrapper(renamed, { paymentDate: '2026-10-12T10:20:00.000+09:00' });
+    const { rows } = buildPurchaseOrderRows({ wrappers: [live], campaign: roundA, activeCampaigns: [roundASource, roundB] });
+    expect(rows).toEqual([]);
+  });
+
+  it('이웃 판매기간은 주문 관리 카드와 같이 판매관리 일정을 정본으로 읽는다', () => {
+    // 저장된 기간이 비어 있어도 판매관리 일정이 B 를 10/10 부터로 잡으면, 10/05 결제는 B 몫이 아니다.
+    const roundBFromSales = {
+      ...roundB,
+      startDate: null,
+      endDate: null,
+      salesCampaigns: [{ startDate: roundB.startDate, endDate: roundB.endDate, status: 'ACTIVE' }],
+    };
+    const live = wrapper(renamed, { paymentDate: '2026-10-05T10:20:00.000+09:00' });
+    const { rows } = buildPurchaseOrderRows({ wrappers: [live], campaign: roundA, activeCampaigns: [roundASource, roundBFromSales] });
+    expect(rows).toHaveLength(1);
   });
 });
