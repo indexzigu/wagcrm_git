@@ -1,7 +1,7 @@
 import { INVALID_ORDER_STATUSES, resolveOrderCountKey } from './group-orders';
 import { resolveSalesReportOptionLabel } from './sales-report-options';
 import { deriveOrderPipelineBucket } from './order-fulfillment';
-import { resolveMainOrderAttribution, type PeerCampaignWindow } from './campaign-match';
+import { buildCampaignWindows, resolveMainOrderAttribution, type PeerCampaignWindow } from './campaign-match';
 import { isSupplementProduct } from './product-class';
 import { createInsightAccumulator, trackOrderInsight, trackClaimInsight, buildCampaignInsights } from './campaign-insights';
 import { resolveSaleWindowStartMs, resolveSaleWindowEndMs } from './sale-window';
@@ -166,15 +166,12 @@ export function computeClosedCampaignCache(
   }> = [],
 ): ClosedCampaignCacheResult {
   // 자기 자신은 제외 — id 가 있으면 id 로, 없으면 이름으로 배제한다(핸들러의 otherCamp.id !== camp.id 대응).
-  // 창은 라이브와 같은 sale-window SSOT 로 파생해 두 경로의 양보 판정이 어긋나지 않게 한다.
-  const peers: PeerCampaignWindow[] = peerCampaigns
-    .filter((p) => (campaign.id != null && p.id != null ? p.id !== campaign.id : p.name !== campaign.name))
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      windowStartMs: resolveSaleWindowStartMs(p),
-      windowEndMs: resolveSaleWindowEndMs(p),
-    }));
+  // 창은 `stored` 기준(campaign-match `resolveCampaignWindowMs`) — 마감 집계는 마감 시점 기록과 맞추고, 호출부도
+  // 이웃을 판매관리 일정 없이 싣는다. 마감 캠페인은 기간 동기화 대상이 아니라 저장 창이 곧 그 회차의 기록이다.
+  const peers: PeerCampaignWindow[] = buildCampaignWindows(
+    peerCampaigns.filter((p) => (campaign.id != null && p.id != null ? p.id !== campaign.id : p.name !== campaign.name)),
+    'stored',
+  );
   let newOrderBeforeCount = 0;
   let newOrderAfterCount = 0;
   let pendingCount = 0;

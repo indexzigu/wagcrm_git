@@ -1,8 +1,8 @@
 import { prisma } from './prisma';
 import { apiRequest } from './naver-commerce-client';
 import { fetchAllProductOrderPages, PRODUCT_ORDER_RANGE_TYPE_PAYED } from './product-order-paging';
+import { buildPeerCampaignWindows } from './campaign-match';
 import {
-  buildPeerCampaignWindows,
   orderMatchesCampaign,
   PEER_CAMPAIGN_SELECT,
   resolveWrapperPaymentTimeMs,
@@ -103,7 +103,7 @@ export async function resolveCampaignExpectedOrderIds(campaignId: string): Promi
     productId: campaign.productId,
     mappings: campaign.mappings.map((m) => ({ productName: m.productName, optionName: m.optionName })),
   };
-  const peers = buildPeerCampaignWindows(campaign.id, activeCampaigns);
+  const peers = buildPeerCampaignWindows(campaign.id, activeCampaigns, 'live');
 
   const orderIds = new Set<string>();
   const campaignProductIds = new Set<string>();

@@ -18,7 +18,7 @@ import { collapseSettledCampaigns } from '@/lib/order-converter/settled-campaign
 import { buildCampaignSnapshotResponse, hasFrozenSnapshot } from '@/lib/order-converter/campaign-snapshot-response';
 import { classifyOrderWork } from '@/lib/order-converter/order-work';
 import { resolveLiveWindowKeys } from '@/lib/order-converter/daily-aggregate';
-import { orderMatchesCampaignProductId, findSharedLinkWindowConflicts, resolveMainOrderAttribution, addonBelongsToCampaign, resolveOrderPaymentTime, type PeerCampaignWindow } from '@/lib/order-converter/campaign-match';
+import { orderMatchesCampaignProductId, findSharedLinkWindowConflicts, resolveMainOrderAttribution, addonBelongsToCampaign, resolveOrderPaymentTime, buildCampaignWindows, resolveCampaignWindowMs } from '@/lib/order-converter/campaign-match';
 import { evaluateMappingMatch, normalizeMatchText } from '@/lib/order-converter/mapping-match';
 import { shouldSkipDealPush } from '@/lib/order-converter/sales-push';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
@@ -356,13 +356,8 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
     // 원천 실재 수량 초과). 해소는 코드가 아니라 운영자가 판매관리에서 회차 경계를 안 겹치게
     // 잡는 것이므로, 감지해서 남기는 데까지가 코드의 몫이다.
     const sharedLinkConflicts = findSharedLinkWindowConflicts(
-      activeCampaigns.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        productId: c.productId,
-        windowStartMs: resolveSaleWindowStartMs(c),
-        windowEndMs: resolveSaleWindowEndMs(c),
-      })),
+      // 동기화 전 저장 창으로 본다(`stored`) — 종전과 같은 기준이다.
+      activeCampaigns.map((c: any) => ({ id: c.id, name: c.name, productId: c.productId, ...resolveCampaignWindowMs(c, 'stored') })),
     );
     if (sharedLinkConflicts.length > 0) {
       console.warn(
@@ -601,6 +596,11 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       console.warn('[campaigns] 송장 회신 감지 로드 실패 — 도착 표시 생략:', err);
     }
 
+    // 이웃 창은 이 map **전에** 한 번, `live` 기준으로 만든다(campaign-match `resolveCampaignWindowMs`). 종전엔 map 안에서
+    // 캠페인마다 저장 창을 읽었는데, 각 캠페인의 창을 판매관리 일정으로 맞추는 갱신(아래 needsPeriodSync)이 그 map 안에서
+    // 차례로 일어나 **앞 순번 이웃은 갱신된 창, 뒤 순번 이웃은 갱신 전 창**을 봤다. live 창은 갱신 후 값과 같다(멱등).
+    const activePeerWindows = buildCampaignWindows(activeCampaigns, 'live');
+
     const campaignsWithStats = campaigns.map((camp: any) => {
       let newOrderBeforeCount = 0;
       let newOrderAfterCount = 0;
@@ -711,15 +711,8 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
       // 코드가 되고, 그걸 고정한 테스트가 프로덕션에서 발화하지 않는 초록불이 된다.
       // 판정 호출은 주문 순회 **뒤**(응답 조립 직전)에 있다 — 첫 매출 시각이 입력이기 때문이다.
 
-      // 교차 귀속 가드용 이웃 목록 — 캠페인당 1회만 만든다(주문 루프 안에서 만들면 주문×캠페인 배).
-      const peerCampaigns: PeerCampaignWindow[] = activeCampaigns
-        .filter((otherCamp: any) => otherCamp.id !== camp.id)
-        .map((otherCamp: any) => ({
-          id: otherCamp.id,
-          name: otherCamp.name,
-          windowStartMs: resolveSaleWindowStartMs(otherCamp),
-          windowEndMs: resolveSaleWindowEndMs(otherCamp),
-        }));
+      // 교차 귀속 가드용 이웃 목록 — 이 map 밖에서 한 번 만든 `live` 창(activePeerWindows)에서 자기만 뺀다.
+      const peerCampaigns = activePeerWindows.filter((other) => other.id !== camp.id);
 
       recentOrders.forEach((order) => {
         if (!order || !camp.mappings) return;
