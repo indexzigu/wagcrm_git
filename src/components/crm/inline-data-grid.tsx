@@ -300,7 +300,7 @@ export function InlineDataGrid<T extends { id: string }>({
                 key={row.id}
                 className={cn(
                   "border-b border-border transition-colors duration-150 hover:bg-primary-tint hover:shadow-soft-sm",
-                  isSelected ? "bg-primary/[0.06]" : "bg-card",
+                  isSelected ? "bg-primary/[0.08]" : "bg-card",
                   onRowClick && "cursor-pointer"
                 )}
                 onClick={() => onRowClick?.(row)}

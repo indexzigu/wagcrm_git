@@ -98,7 +98,7 @@ describe("InlineDataGrid selectable — 동작", () => {
     );
     const box = screen.getByRole("checkbox", { name: "가상 셀러 A 비교에 담기" }) as HTMLInputElement;
     expect(box.checked).toBe(true);
-    expect(box.closest("tr")!.className).toContain("bg-primary/[0.06]");
+    expect(box.closest("tr")!.className).toContain("bg-primary/[0.08]");
     await user.click(box);
     // 필터로 가려진 행의 선택은 그대로 둔다.
     expect(onSelectionChange).toHaveBeenCalledWith(["hidden-by-filter"]);

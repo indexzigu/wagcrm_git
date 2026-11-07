@@ -8,7 +8,7 @@ export default function SellerCompareLoading() {
         <Skeleton className="h-4 w-20" />
         <Skeleton className="h-6 w-28" />
       </div>
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
         {Array.from({ length: 9 }).map((_, row) => (
           <div key={row} className="flex gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0">
             <Skeleton className="h-4 w-32 shrink-0" />

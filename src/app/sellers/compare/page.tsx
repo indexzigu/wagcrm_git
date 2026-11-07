@@ -87,7 +87,7 @@ function CellValue({ cell }: { cell: ComparisonCell }) {
       : "text-slate-600";
   return (
     <>
-      <span className={`block text-[13px] tabular-nums ${tone}`}>
+      <span className={`block text-xs tabular-nums ${tone}`}>
         {cell.text}
         {cell.isBest && <span className="sr-only"> 최고</span>}
       </span>
