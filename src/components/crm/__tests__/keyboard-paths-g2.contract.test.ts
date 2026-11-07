@@ -146,3 +146,27 @@ describe("InlineDataGrid 첫 칸 render — 행 열기 button 안에 들어가�
     expect(inButton).not.toMatch(/<(div|p|h[1-6]|ul|ol|table)\b/);
   });
 });
+
+describe("InlineDataGrid selectable — 선택 칸은 행 열기 버튼과 따로 선다", () => {
+  /**
+   * [셀러분석] 비교 선택 열(2026-11-08). 체크박스가 행 열기 button 안이나 같은 칸에 들어가면
+   * 인터랙티브 중첩(무효 HTML)이 되고, 행 클릭으로 전파되면 「담기」가 패널까지 연다.
+   * 계약: ① 체크박스는 자기 td 의 label 안 ② 그 label 이 클릭 전파를 끊는다 ③ 이름은
+   * 「{이름} 비교에 담기」 ④ 행 열기 버튼은 여전히 **데이터** 첫 칸(columnIndex === 0)에 붙는다
+   * — 그래서 위 「첫 칸 render」 계약이 selectable 소비처(셀러 관리)에도 그대로 적용된다.
+   */
+  it("inline-data-grid.tsx", () => {
+    const src = code("inline-data-grid.tsx");
+    const cell = src.match(/\{selectable \? \(\s*<td[\s\S]*?<\/td>/)?.[0];
+    expect(cell, "선택 칸 구간을 못 찾았다 — 정규식 재확인").toBeTruthy();
+    expect(cell!).toMatch(/<label[^>]*onClick=\{\(e\) => e\.stopPropagation\(\)\}/);
+    expect(cell!).toMatch(/type="checkbox"/);
+    expect(cell!).toContain("비교에 담기");
+    expect(cell!).not.toMatch(/<button\b/);
+    expect(src).toMatch(/columnIndex === 0/);
+  });
+
+  it("sellers-management.tsx 는 selectable 로 그리드를 켠다", () => {
+    expect(code("sellers-management.tsx")).toMatch(/<InlineDataGrid[\s\S]*?\bselectable\b[\s\S]*?\/>/);
+  });
+});

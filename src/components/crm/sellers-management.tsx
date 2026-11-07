@@ -49,6 +49,13 @@ import {
 } from "@/components/ui/tooltip";
 import { analysisStaleLabel } from "@/lib/seller-analysis/staleness";
 import {
+  SELLER_COMPARE_MAX,
+  SELLER_COMPARE_MIN,
+  applyCompareSelection,
+  sellerCompareHref,
+} from "@/lib/seller-comparison-rows";
+import { sellerDisplayName } from "@/lib/seller-display-name";
+import {
   campaignRecency,
   isRecentlyRegistered,
   NEW_SELLER_WINDOW_DAYS,
@@ -495,6 +502,9 @@ export function SellersManagement({
   const [segment, setSegment] = useState<SellerSegment>("all");
   // 원클릭 분석 진행 중인 셀러 id (중복 클릭 가드 + 스피너 표시). null이면 유휴.
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  // [셀러분석] 비교에 담은 셀러 id — 필터·검색·세그먼트가 바뀌어도 유지한다(보이지 않는 행도 담긴 채).
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareLimitHit, setCompareLimitHit] = useState(false);
   const isComposingRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -687,7 +697,9 @@ export function SellersManagement({
 
   return (
     <CrmShell>
-      <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-5 md:px-8">
+      {/* overflow-clip(≠ hidden): 모양은 같게 잘라 내되 스크롤 컨테이너를 만들지 않는다 —
+          그래야 아래 비교 선택 바의 sticky bottom-0 이 CrmShell 의 실제 스크롤 영역에 붙는다. */}
+      <section className="flex min-h-0 flex-1 flex-col overflow-clip px-5 pb-5 pt-5 md:px-8">
         {/* 1줄 통계 요약 바 (유리 박스 외부 상단 배치)
 
             플랫폼별 hue(인스타=emerald · 유튜브=red · X=sky · 총캠페인=amber)를 회수했다 —
@@ -729,7 +741,7 @@ export function SellersManagement({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-ambient">
+        <div className="flex min-h-0 flex-1 flex-col overflow-clip rounded-2xl border border-border bg-card shadow-ambient">
           {dataSource === "mock" && dataSourceMessage ? (
             <div className="px-5 pt-5">
               <DataSourceBanner message={dataSourceMessage} />
@@ -845,7 +857,48 @@ export function SellersManagement({
                 setSelectedSeller(row);
               }}
               onPatch={handleInlinePatch}
+              selectable
+              selectedIds={compareIds}
+              selectionName={(row) => sellerDisplayName({ name: row.name, alias: row.alias ?? null })}
+              onSelectionChange={(next) => {
+                const result = applyCompareSelection(compareIds, next);
+                setCompareIds(result.ids);
+                setCompareLimitHit(result.limitHit);
+              }}
             />
+          )}
+          {compareIds.length > 0 && (
+            <div className="sticky bottom-0 z-10 flex shrink-0 items-center gap-3 border-t border-border bg-card px-5 py-3 shadow-soft-lg">
+              <p role="status" aria-live="polite" className="flex-1 text-[13px] text-slate-700">
+                <span className="font-semibold tabular-nums">{compareIds.length}명 선택</span>
+                <span className="ml-1 text-slate-500">(최대 {SELLER_COMPARE_MAX}명)</span>
+                {compareLimitHit ? (
+                  <span className="ml-2 text-status-caution-text">
+                    {SELLER_COMPARE_MAX}명까지 비교할 수 있습니다. 한 명을 빼고 담으세요
+                  </span>
+                ) : compareIds.length < SELLER_COMPARE_MIN ? (
+                  <span className="ml-2 text-slate-500">2명 이상 선택하세요</span>
+                ) : null}
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setCompareIds([]);
+                  setCompareLimitHit(false);
+                }}
+              >
+                선택 해제
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={compareIds.length < SELLER_COMPARE_MIN}
+                onClick={() => router.push(sellerCompareHref(compareIds))}
+              >
+                비교하기
+              </Button>
+            </div>
           )}
         </div>
       </section>
