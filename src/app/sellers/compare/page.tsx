@@ -157,7 +157,7 @@ function ComparisonGrid({ table, ids }: { table: ComparisonTable; ids: string[] 
             {section.key !== "score" && (
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th
-                  scope="colgroup"
+                  scope="rowgroup"
                   colSpan={columnCount + 1}
                   className="sticky left-0 bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-700"
                 >
