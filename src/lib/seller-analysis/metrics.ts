@@ -219,8 +219,8 @@ export function isValidComment(text: string): boolean {
 // ---------- 광고 감지 ----------
 
 const AD_KEYWORDS_KO = ['#광고', '#협찬', '#제공', '#유료광고', '광고입니다', '협찬받'];
-// 영문 해시태그는 부분일치 오탐 방지 (#adventure 등)
-const AD_HASHTAG_EN = /#(?:ad|sponsored)(?![a-z0-9_])/i;
+// 영문 해시태그는 부분일치 오탐 방지 (#adventure 등) — 게시 후 표기 점검(claims/ad-disclosure)도 공유
+export const AD_HASHTAG_EN = /#(?:ad|sponsored)(?![a-z0-9_])/i;
 
 export function isAdPost(post: Pick<RawPost, 'caption' | 'is_sponsored'>): boolean {
   if (post.is_sponsored === true) return true;

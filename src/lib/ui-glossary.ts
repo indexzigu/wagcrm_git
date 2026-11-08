@@ -67,6 +67,8 @@ export const STATUS_WORD_SPACING: Readonly<Record<string, string>> = {
   "샘플 테스트": "샘플테스트",
   "조치 대기": "조치대기",
   "재확인 중": "재확인중",
+  "광고 표기 미흡": "광고표기미흡",
+  "광고 표기 미점검": "광고표기미점검",
 };
 
 /**

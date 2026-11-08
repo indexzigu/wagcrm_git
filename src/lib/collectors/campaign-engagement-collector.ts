@@ -15,6 +15,7 @@ import {
   type EngagementAssetInput,
 } from "@/lib/campaign-post-engagement";
 import { describeFailureCause } from "@/lib/cron-outcome";
+import { nextAutoNote } from "@/lib/reference-enrich";
 
 const LEAD_DAYS = 7; // 캠페인 시작 전 티저 게시물 창(campaign-suggested-posts와 동일)
 const TRAIL_DAYS = 3; // 종료 후 최종 수치 확정 창
@@ -93,7 +94,7 @@ export async function syncCampaignPostEngagement(options?: {
       archivedAt: null,
       externalUrl: { not: null },
     },
-    select: { id: true, entityId: true, externalUrl: true, engagementSyncedAt: true },
+    select: { id: true, entityId: true, externalUrl: true, engagementSyncedAt: true, notes: true },
   });
   if (assets.length === 0) return result;
 
@@ -101,13 +102,21 @@ export async function syncCampaignPostEngagement(options?: {
   const sellerByCampaign = new Map(campaigns.map((c) => [c.id, c.seller]));
   const bySeller = new Map<
     string,
-    { snsHandle: string; assets: (EngagementAssetInput & { engagementSyncedAt: Date | null })[] }
+    {
+      snsHandle: string;
+      assets: (EngagementAssetInput & { engagementSyncedAt: Date | null; notes: string | null })[];
+    }
   >();
   for (const a of assets) {
     const seller = sellerByCampaign.get(a.entityId);
     if (!seller) continue;
     const bucket = bySeller.get(seller.id) ?? { snsHandle: seller.snsHandle, assets: [] };
-    bucket.assets.push({ id: a.id, externalUrl: a.externalUrl, engagementSyncedAt: a.engagementSyncedAt });
+    bucket.assets.push({
+      id: a.id,
+      externalUrl: a.externalUrl,
+      engagementSyncedAt: a.engagementSyncedAt,
+      notes: a.notes,
+    });
     bySeller.set(seller.id, bucket);
   }
 
@@ -175,9 +184,13 @@ export async function syncCampaignPostEngagement(options?: {
       const updates = matchAssetEngagement(sellerAssets, data.raw_posts);
       if (updates.length > 0) {
         const syncedAt = new Date();
+        const notesById = new Map(sellerAssets.map((a) => [a.id, a.notes]));
         await prisma.$transaction(
-          updates.map((u) =>
-            prisma.asset.update({
+          updates.map((u) => {
+            // 자동수집 메모 갱신 — 비었거나 「[자동수집]」 메모일 때만(오너 수기 메모는 그대로).
+            // 게시 후 광고 표기 점검이 이 메모를 읽으므로 셀러가 캡션을 고치면 다음 수집 때 재판정된다.
+            const notes = nextAutoNote(notesById.get(u.assetId), u.caption, u.likeCount);
+            return prisma.asset.update({
               where: { id: u.assetId },
               data: {
                 likeCount: u.likeCount,
@@ -188,9 +201,10 @@ export async function syncCampaignPostEngagement(options?: {
                 videoUrl: u.videoUrl,
                 postedAt: u.postedAt,
                 engagementSyncedAt: syncedAt,
+                ...(notes !== null ? { notes } : {}),
               },
-            }),
-          ),
+            });
+          }),
         );
         result.assetsUpdated += updates.length;
       }

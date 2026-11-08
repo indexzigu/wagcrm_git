@@ -26,6 +26,9 @@ export type AssetEngagementUpdate = {
   mediaType: string | null; // normalizeMediaType 값(image/video/reel/carousel/unknown 외는 null)
   videoUrl: string | null; // 릴스/영상 mp4(fbcdn 만료성 — 크론이 매일 갱신해 신선 유지)
   postedAt: Date | null; // 게시 시각(taken_at)
+  // 캡션 원문(줄바꿈 보존) — 어댑터가 자동수집 메모를 갱신해 게시 후 광고 표기 점검이 최신 캡션을 본다.
+  // 빈 캡션은 null(기존 메모를 지우지 않는다 — `nextAutoNote`).
+  caption: string | null;
 };
 
 const KNOWN_MEDIA_TYPES = new Set(["image", "video", "reel", "carousel", "unknown"]);
@@ -79,6 +82,7 @@ export function matchAssetEngagement(
       mediaType: mediaTypeOrNull(post.media_type),
       videoUrl: urlOrNull(post.video_url),
       postedAt: dateOrNull(post.taken_at),
+      caption: typeof post.caption === "string" && post.caption.trim() !== "" ? post.caption : null,
     });
   }
   return updates;
