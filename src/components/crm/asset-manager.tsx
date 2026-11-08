@@ -54,7 +54,17 @@ import type { SuggestedPost } from "@/lib/campaign-suggested-posts";
 import type { CampaignStory } from "@/lib/crm-types";
 import { instagramShortcode, isInstagramPermalink } from "@/lib/instagram-embed";
 import { deriveLinkName, normalizeReferenceUrl, postIdentityKey } from "@/lib/reference-url";
+import {
+  AD_DISCLOSURE_LABEL,
+  AD_DISCLOSURE_UNCHECKED_LABEL,
+  adDisclosureHint,
+  adDisclosureSummaryHint,
+  autoCaptionFromNotes,
+  checkAdDisclosure,
+  summarizeAdDisclosure,
+} from "@/lib/claims/ad-disclosure";
 import { InstagramEmbed } from "./instagram-embed";
+import { StatusDot } from "./status-dot";
 import { SellerContentCollectButton } from "./seller-content-collect-button";
 import { toast } from "@/lib/toast";
 
@@ -470,6 +480,22 @@ export function AssetManager({
     [visibleSuggestions, registeredPairs],
   );
   const registeredCount = registeredPairs.length;
+  // 게시 후 광고 표기 점검(표시 전용 — 쓰기·발송 없음). 등록(홍보) 게시물의 **자동수집 캡션만** 본다:
+  // 오너 수기 메모는 점검하지 않는다. 판정 정본은 `claims/ad-disclosure.ts`.
+  const adDisclosureById = useMemo(
+    () =>
+      new Map(
+        registeredPairs.map(({ asset }) => [
+          asset.id,
+          checkAdDisclosure(autoCaptionFromNotes(asset.notes), { mediaType: asset.mediaType }),
+        ]),
+      ),
+    [registeredPairs],
+  );
+  const adDisclosureSummary = useMemo(
+    () => summarizeAdDisclosure([...adDisclosureById.values()]),
+    [adDisclosureById],
+  );
   const candidateCount = visibleSuggestions.length;
 
   const recommendedProvider =
@@ -967,6 +993,23 @@ export function AssetManager({
             ) : null}
           </h3>
           <div className="flex items-center gap-2">
+            {/* 광고 표기 점검 건수 — 미흡 카드가 화면 밖에 있을 수 있어 머리에 센다. 할 일 없으면 무표시,
+                단 본문 미수집만 있으면 「미점검」을 낮은 톤으로 보여 침묵이 통과로 읽히지 않게 한다. */}
+            {adDisclosureSummary.flagged > 0 ? (
+              <StatusDot
+                tone="caution"
+                label={`${AD_DISCLOSURE_LABEL} ${adDisclosureSummary.flagged}건`}
+                hint={adDisclosureSummaryHint(adDisclosureSummary)}
+                testId="ad-disclosure-summary"
+              />
+            ) : adDisclosureSummary.unchecked > 0 ? (
+              <StatusDot
+                tone="neutral"
+                label={`${AD_DISCLOSURE_UNCHECKED_LABEL} ${adDisclosureSummary.unchecked}건`}
+                hint={adDisclosureSummaryHint(adDisclosureSummary)}
+                testId="ad-disclosure-summary"
+              />
+            ) : null}
             {/* 마지막 수집(SellerAiProfile.analyzedAt) — 후보 감지 피드의 신선도. 스토리 헤더와 동일 표기. */}
             {feedCollectedAt ? (
               <p className="inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground">
@@ -1238,9 +1281,12 @@ export function AssetManager({
               const mediaType = asset.mediaType ?? (shortcode ? formatMap[shortcode] : undefined);
               // 게시시각: 실제 IG postedAt 우선, 수동 추가건은 등록시각(createdAt) 폴백(정렬 키와 동일 규약).
               const postedLabel = formatDate(asset.postedAt ?? asset.createdAt);
+              const adDisclosure = adDisclosureById.get(asset.id);
+              const adDisclosureNote = adDisclosure ? adDisclosureHint(adDisclosure) : null;
               return (
                 <Fragment key={card.key}>
-                  <div className="relative min-w-0 overflow-hidden rounded-lg border bg-card transition-colors hover:border-foreground/30">
+                  {/* flex-col + 버튼 줄 mt-auto — 광고 표기 줄이 있는 카드와 없는 카드의 버튼 높이를 맞춘다. */}
+                  <div className="relative flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card transition-colors hover:border-foreground/30">
                     <PostThumb
                       href={post.externalUrl}
                       thumb={post.thumbnailUrl}
@@ -1277,7 +1323,18 @@ export function AssetManager({
                         ) : null;
                       })()}
                     </div>
-                    <div className="flex items-center gap-1 px-2 pb-2 pt-1">
+                    {/* 게시 후 광고 표기 점검 — 메타 줄(truncate)에 끼우면 ER 이 잘려 별도 줄로 둔다. */}
+                    {adDisclosureNote ? (
+                      <div className="px-2 pt-0.5">
+                        <StatusDot
+                          tone="caution"
+                          label={AD_DISCLOSURE_LABEL}
+                          hint={adDisclosureNote}
+                          testId="ad-disclosure-badge"
+                        />
+                      </div>
+                    ) : null}
+                    <div className="mt-auto flex items-center gap-1 px-2 pb-2 pt-1">
                       {canEmbed ? (
                         <Button
                           size="icon-sm"

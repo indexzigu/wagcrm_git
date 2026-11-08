@@ -33,6 +33,7 @@ describe("matchAssetEngagement", () => {
         mediaType: "image",
         videoUrl: null,
         postedAt: null,
+        caption: null,
       },
     ]);
   });
@@ -60,8 +61,22 @@ describe("matchAssetEngagement", () => {
         mediaType: "image",
         videoUrl: null,
         postedAt: null,
+        caption: null,
       },
     ]);
+  });
+
+  it("캡션 원문을 줄바꿈 그대로 싣는다(공백뿐이면 null — 기존 메모를 지우지 않게)", () => {
+    const [withCaption] = matchAssetEngagement(
+      [{ id: "a1", externalUrl: "https://www.instagram.com/p/CAP111/" }],
+      [rawPost("CAP111", { caption: "첫 줄\n#광고 둘째 줄" })],
+    );
+    expect(withCaption.caption).toBe("첫 줄\n#광고 둘째 줄");
+    const [blank] = matchAssetEngagement(
+      [{ id: "a2", externalUrl: "https://www.instagram.com/p/CAP222/" }],
+      [rawPost("CAP222", { caption: "   " })],
+    );
+    expect(blank.caption).toBeNull();
   });
 
   it("미매칭(Tier0 창 밖·비인스타 URL·파싱 불가)은 결과에서 제외 — 기존 값을 건드리지 않는다", () => {

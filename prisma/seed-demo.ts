@@ -13,6 +13,7 @@ import { createPrismaClient } from "../src/lib/prisma-client";
 import { generateCampaignName } from "../src/lib/campaign-name";
 import { KNOWN_JOBS } from "../src/lib/cron-jobs";
 import { DEMO_USER } from "../src/lib/demo-mode";
+import { buildAutoNote } from "../src/lib/reference-enrich";
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "";
 if (process.env.DEMO_MODE !== "1" || !DATABASE_URL.startsWith("file:")) {
@@ -1039,13 +1040,27 @@ const TIMELINE_EMPTY_SELLER = "demo-seller-workingmom";
 
 async function seedTimelineContent() {
   /** 창(13일 전~오늘) 안의 발행 시각 — 하루 저녁에 3건을 몰아 **클러스터 해체**를 검증한다. */
-  const postedOffsets: Array<{ offset: number; hour: number; minute: number; mediaType: string }> = [
-    { offset: 11, hour: 20, minute: 10, mediaType: "reel" },
-    { offset: 8, hour: 12, minute: 30, mediaType: "image" },
+  // caption = 가공 자동수집 캡션 — 게시 후 광고 표기 점검의 갈래(정상·누락·더 보기 뒤·릴스 둘째 줄·미수집)를
+  // 한 캠페인에서 실렌더로 보이기 위한 것이다(null = 본문 미수집).
+  const postedOffsets: Array<{
+    offset: number;
+    hour: number;
+    minute: number;
+    mediaType: string;
+    caption: string | null;
+  }> = [
+    { offset: 11, hour: 20, minute: 10, mediaType: "reel", caption: "#광고 하늘빛 보습 앰플 공구 오픈합니다\n아침저녁 세 방울이면 끝!" },
+    { offset: 8, hour: 12, minute: 30, mediaType: "image", caption: "건조한 계절엔 이 앰플 하나로 버텨요\n공구 링크는 프로필에 있어요" },
     // 같은 저녁 3건 — 축소하면 +2 로 묶이고 확대하면 개별로 풀려야 한다.
-    { offset: 5, hour: 21, minute: 5, mediaType: "carousel" },
-    { offset: 5, hour: 21, minute: 20, mediaType: "reel" },
-    { offset: 5, hour: 21, minute: 35, mediaType: "video" },
+    {
+      offset: 5,
+      hour: 21,
+      minute: 5,
+      mediaType: "carousel",
+      caption: "사용 전후 비교 사진 모음\n피부결이 확실히 달라졌어요\n\n#보습 #앰플 #겨울스킨케어 #데일리케어 #수분충전 #공구 #협찬",
+    },
+    { offset: 5, hour: 21, minute: 20, mediaType: "reel", caption: "세안 후 바로 바르는 루틴\n#협찬 #앰플" },
+    { offset: 5, hour: 21, minute: 35, mediaType: "video", caption: null },
   ];
   for (const [idx, p] of postedOffsets.entries()) {
     const postedAt = kstDateTime(p.offset, p.hour, p.minute);
@@ -1064,6 +1079,7 @@ async function seedTimelineContent() {
         commentCount: randInt(3, 44),
         likesHidden: false,
         engagementSyncedAt: NOW,
+        notes: p.caption ? buildAutoNote(p.caption, null) : null,
       },
     });
   }

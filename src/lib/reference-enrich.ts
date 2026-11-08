@@ -148,3 +148,27 @@ export function buildAutoNote(caption: string, likes: number | null): string {
   const likesSuffix = likes !== null ? ` · 좋아요 ${likes}` : "";
   return `${AUTO_NOTE_PREFIX}${truncated}${likesSuffix}`;
 }
+
+/**
+ * 일일 참여 수집기가 쥔 최신 캡션으로 자동수집 메모를 갱신할 값을 정한다(순수). null = 쓰지 않음.
+ * - 오너 수기 메모(접두 없음)는 **절대 덮지 않는다**(위 「사용자 메모 덮어쓰기 금지」 계약).
+ * - 비었거나 자동수집 메모면 최신 캡션으로 다시 쓴다 — 셀러가 캡션을 고치면 게시 후 광고 표기
+ *   점검(claims/ad-disclosure)이 다음 수집 때 재판정되게 하려는 것이다.
+ * - 캡션이 비면(수집 실패·빈 캡션) 기존 메모를 지우지 않는다. **캡션이 같으면** 쓰지 않는다
+ *   (좋아요만 달라진 경우 포함 — 메모의 좋아요는 첫 수집 시점 값으로 남는다).
+ */
+export function nextAutoNote(
+  currentNotes: string | null | undefined,
+  caption: string | null | undefined,
+  likes: number | null,
+): string | null {
+  if (!caption || caption.trim() === "") return null;
+  if (currentNotes && !currentNotes.startsWith(AUTO_NOTE_PREFIX)) return null;
+  const next = buildAutoNote(caption, likes);
+  if (currentNotes) {
+    // 캡션이 같으면 쓰지 않는다 — 좋아요 꼬리는 매일 바뀌므로 비교에서 뺀다(첫 수집 시점 값 유지).
+    const sameCaption = AUTO_NOTE_PREFIX + caption.trim().slice(0, AUTO_NOTE_CAPTION_MAX);
+    if (currentNotes === sameCaption || currentNotes.startsWith(`${sameCaption} · 좋아요 `)) return null;
+  }
+  return next;
+}
