@@ -10,6 +10,7 @@ import {
 import { isGraphConfigured, scrapeTier0 } from './graphScraper';
 import { fetchCommentsByShortcode, pickCommentTargets } from './apifyComments';
 import { recordApifyCommentUsage } from './apify-comment-usage';
+import { enrichTier0ReelViews } from './apifyReelViews';
 import { applyDbInstagramToken } from '@/lib/instagram-token';
 import { rapidApiFetch } from '@/lib/rapidapi-keys';
 
@@ -232,7 +233,18 @@ async function enrichTier0Comments(data: LosslessSellerData): Promise<void> {
 // 개인계정은 Tier0의 business_discovery 에러로 떨어져 자동으로 Tier1 폴백된다.
 // 전 티어 실패 시 원인을 전부 합쳐 throw한다. 빈 데이터를 성공처럼 반환하는 폴백 경로는
 // 두지 않는다 (P0 No Silent Failure).
-export async function scrapeSellerDataWaterfall(usernameOrUrl: string): Promise<LosslessSellerData> {
+export type WaterfallOptions = {
+  /**
+   * [셀러분석] Tier0 릴스 조회수 유료 보강(apifyReelViews, 월 상한) — **기본 꺼짐**.
+   * 오너가 「분석」 버튼을 눌렀을 때만 분석 라우트가 켠다(설계 §1-4 (A)). 크론·자동 트리거는 켜지 않는다.
+   */
+  enrichReelViews?: boolean;
+};
+
+export async function scrapeSellerDataWaterfall(
+  usernameOrUrl: string,
+  options: WaterfallOptions = {}
+): Promise<LosslessSellerData> {
   let handle = usernameOrUrl;
   try {
     const urlObj = new URL(usernameOrUrl);
@@ -253,6 +265,9 @@ export async function scrapeSellerDataWaterfall(usernameOrUrl: string): Promise<
     try {
       const data = await scrapeTier0(handle);
       await enrichTier0Comments(data);
+      // 조회수 보강은 Tier0 에서만 — Tier1/2 는 수집 응답에 이미 조회수가 있다(폴백 순서 불변).
+      // enrichTier0ReelViews 는 throw 하지 않는다(실패해도 Tier0 결과 유지).
+      if (options.enrichReelViews === true) await enrichTier0ReelViews(data);
       return data;
     } catch (error: any) {
       const msg = error?.message || String(error);

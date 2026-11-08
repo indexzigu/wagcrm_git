@@ -58,6 +58,13 @@ export interface LosslessSellerData {
   seller_id: string;
   source_tier?: string;
   debug_info?: string;
+  /**
+   * Owner-facing one-liner (Korean) set only when paid reel-view enrichment was requested but
+   * did not run or failed for a reason the owner should know (monthly cap, missing token, spend
+   * lookup failure, actor failure). The analyze route returns it so the button can show a toast;
+   * otherwise a capped month looks identical to "no data".
+   */
+  reel_views_notice?: string;
   profile: any;
   raw_posts: RawPost[];
   images: string[];

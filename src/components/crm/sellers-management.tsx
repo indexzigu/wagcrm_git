@@ -548,7 +548,8 @@ export function SellersManagement({
       setAnalyzingId(id);
       toast("분석을 시작합니다 · 1~2분 걸립니다");
       try {
-        const response = await fetch(`/api/sellers/${id}/analyze`, { method: "POST" });
+        // reelViews=1: 버튼 분석에서만 릴스 조회수 유료 보강(월 상한 · 분석 라우트 주석)
+        const response = await fetch(`/api/sellers/${id}/analyze?reelViews=1`, { method: "POST" });
         const payload = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(payload?.error || "분석에 실패했습니다");
@@ -559,6 +560,8 @@ export function SellersManagement({
         // 서버가 자동 반영한 지표 필드(오너 확정 2026-07-16 — 검토 확정 게이트 제거).
         // fitLevel은 서버 합산 규칙이 재계산한 값이라 함께 낙관 갱신해야 '평가' 배지가 안 낡는다.
         const applied = payload?.data?.applied ?? null;
+        const reelViewsNotice: string | null = payload?.data?.reelViewsNotice ?? null;
+        if (reelViewsNotice) toast.warning(reelViewsNotice);
         setSellers((prev) =>
           prev.map((seller) =>
             seller.id === id
