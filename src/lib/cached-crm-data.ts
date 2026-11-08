@@ -286,15 +286,9 @@ export async function getCachedSellerEngagementRates(): Promise<Record<string, n
   "use cache";
   cacheLife(CRM_CACHE_LIFE.warm);
   cacheTag(CRM_CACHE_TAGS.sellers);
-  try {
-    return await loadSellerEngagementRates(getPrisma());
-  } catch (e) {
-    console.warn(
-      "[sellers] 참여율 조회 실패 — 참여율 조건은 적용되지 않음:",
-      e instanceof Error ? e.message : e,
-    );
-    return {};
-  }
+  // 실패는 여기서 삼키지 않는다 — 캐시 안에서 빈 맵을 돌려주면 그 빈 맵이 warm 수명 내내 캐시돼
+  // 모든 참여율 링크가 「0건」이 된다. 호출처(페이지)가 캐시 밖에서 잡아 「적용 못 함」으로 표시한다.
+  return loadSellerEngagementRates(getPrisma());
 }
 
 /**

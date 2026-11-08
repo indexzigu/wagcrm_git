@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ExternalLinkIcon, SearchIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,8 @@ type MobileSellersViewProps = {
   commitSearch: (value: string) => void;
   onOpenSeller: (seller: SellerSummary) => void;
   isLoading?: boolean;
+  /** 슬랙 봇 링크의 「링크 조건」 줄 — 상단 안전 여백 안, 머리 바로 아래에 둔다. */
+  linkFilterSlot?: ReactNode;
 };
 
 function resolveChannelUrl(seller: SellerSummary) {
@@ -49,6 +52,7 @@ export function MobileSellersView({
   commitSearch,
   onOpenSeller,
   isLoading = false,
+  linkFilterSlot,
 }: MobileSellersViewProps) {
   return (
     <section className="mobile-tab-safe-top flex min-h-[calc(100dvh+1px)] flex-1 flex-col gap-4 px-5 pb-24">
@@ -69,6 +73,8 @@ export function MobileSellersView({
           <span>X {xCount}</span>
         </div>
       </MobileTopBar>
+
+      {linkFilterSlot}
 
       <InputGroup className="h-11 rounded-2xl border border-border bg-card shadow-soft-sm">
         <InputGroupAddon>

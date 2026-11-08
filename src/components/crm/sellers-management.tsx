@@ -92,7 +92,8 @@ type SellersManagementProps = {
   dataSource?: DashboardData["dataSource"];
   dataSourceMessage?: string;
   /** [셀러분석] sellerId → AI 분석 참여율(비율). 주소 필터 `minEr` 판정용 — 페이지 캐시에서만 온다. */
-  engagementRates?: Record<string, number>;
+  /** 셀러별 참여율(비율). null = 조회 실패 → 참여율 조건을 걸지 않고 「반영 못한 조건」으로 알린다. */
+  engagementRates?: Record<string, number> | null;
 };
 
 /** 셀러 표 컬럼 팩토리 — 테스트가 셀 렌더(휴면 배지 등)를 직접 확인하려고 내보낸다. */
@@ -513,6 +514,16 @@ export function SellersManagement({
   // (탭을 바꾸면 화면 상태가 이긴다), 나머지 조건은 목록에 추가로 건다.
   const linkFilter = useMemo(() => parseSellerListFilter(searchParams), [searchParams]);
   const linkSegment = linkFilter.filter.segment;
+  // 참여율 조회가 실패했으면(null) 참여율 조건은 걸지 않는다 — 걸면 모든 셀러가 「미분석」으로 빠져 0건이 된다.
+  const engagementRatesUnavailable =
+    engagementRates === null && linkFilter.filter.minEngagementPct !== undefined;
+  const appliedLinkFilter = useMemo(
+    () =>
+      engagementRatesUnavailable
+        ? { ...linkFilter.filter, minEngagementPct: undefined }
+        : linkFilter.filter,
+    [linkFilter, engagementRatesUnavailable],
+  );
   const [segment, setSegment] = useState<SellerSegment>(() => linkSegment ?? "all");
   // 원클릭 분석 진행 중인 셀러 id (중복 클릭 가드 + 스피너 표시). null이면 유휴.
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
@@ -654,7 +665,7 @@ export function SellersManagement({
       // segment 는 위 탭 판정이 소유한다 — 여기선 나머지 주소 조건만.
       matchesSellerListFilter(
         s,
-        { ...linkFilter.filter, segment: undefined },
+        { ...appliedLinkFilter, segment: undefined },
         { engagementRate: engagementRates?.[s.id] ?? null },
       ),
     );
@@ -672,10 +683,18 @@ export function SellersManagement({
       const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return dateB - dateA;
     });
-  }, [sellers, query, segment, linkFilter, engagementRates]);
+  }, [sellers, query, segment, appliedLinkFilter, engagementRates]);
 
-  const linkFilterChips = useMemo(() => describeSellerListFilter(linkFilter.filter), [linkFilter]);
-  const linkFilterUnreadable = useMemo(() => linkFilter.unreadable.map((u) => u.label), [linkFilter]);
+  const linkFilterChips = useMemo(() => describeSellerListFilter(appliedLinkFilter), [appliedLinkFilter]);
+  const mobileLinkFilterChips = useMemo(
+    () => describeSellerListFilter(appliedLinkFilter, { includeSegment: true }),
+    [appliedLinkFilter],
+  );
+  const linkFilterUnreadable = useMemo(() => {
+    const labels = linkFilter.unreadable.map((u) => u.label);
+    if (engagementRatesUnavailable) labels.push("참여율 조건(참여율 정보를 불러오지 못함)");
+    return labels;
+  }, [linkFilter, engagementRatesUnavailable]);
 
   // 「조건 지우기」 — 링크가 건 주소 조건만 지운다(검색어 q·열린 셀러 패널 주소는 그대로).
   const clearLinkFilter = useCallback(() => {
@@ -727,15 +746,18 @@ export function SellersManagement({
   if (isMobile) {
     return (
       <>
-        {/* 모바일 목록은 자체 카드 여백(px-5)을 쓰므로 같은 줄을 카드 모양으로 띄운다 */}
-        <SellerLinkFilterBar
-          chips={linkFilterChips}
-          unreadable={linkFilterUnreadable}
-          count={filteredSellers.length}
-          onClear={clearLinkFilter}
-          className="mx-5 mt-4 rounded-xl border bg-card"
-        />
         <MobileSellersView
+          linkFilterSlot={
+            // 모바일엔 세그먼트 탭이 없어 링크의 세그먼트도 칩으로 적는다. 상단 안전 여백 안에 들어가도록
+            // 뷰 안쪽 자리에 넣고, 목록 카드처럼 테두리 카드로 띄운다.
+            <SellerLinkFilterBar
+              chips={mobileLinkFilterChips}
+              unreadable={linkFilterUnreadable}
+              count={filteredSellers.length}
+              onClear={clearLinkFilter}
+              className="rounded-xl border bg-card px-4"
+            />
+          }
           sellers={filteredSellers}
           totalCount={sellers.length}
           instagramCount={sellerStats.instagramCount}

@@ -65,6 +65,15 @@ export const SELLER_LIST_FILTER_PARAM_KEYS = [
 ] as const;
 
 const SEGMENTS: readonly SellerListSegmentFilter[] = ["active", "prospect", "unanalyzed", "dormant"];
+
+/** 세그먼트 탭 라벨 — 데스크톱 탭과 (탭이 없는) 모바일 칩이 같은 말을 쓴다. */
+export const SELLER_SEGMENT_LABELS: Record<SellerSegment, string> = {
+  all: "전체",
+  active: "거래 셀러",
+  prospect: "발굴 후보",
+  unanalyzed: "미분석",
+  dormant: "휴면",
+};
 const SNS_TYPES: readonly SnsType[] = ["INSTAGRAM", "YOUTUBE", "X"];
 const CATEGORY_MAX_LENGTH = 30;
 const NON_NEGATIVE_INT = /^\d{1,10}$/;
@@ -136,10 +145,6 @@ export function parseSellerListFilter(params: Pick<URLSearchParams, "get">): {
   return { filter, unreadable };
 }
 
-export function hasSellerListFilter(filter: SellerListFilter): boolean {
-  return Object.values(filter).some((v) => v !== undefined);
-}
-
 /** 조건 → 주소 쿼리(앞의 `?` 없음). 파라미터 순서는 `SELLER_LIST_FILTER_PARAM_KEYS`. */
 export function buildSellerListQuery(filter: SellerListFilter): string {
   const params = new URLSearchParams();
@@ -187,8 +192,13 @@ export function matchesSellerListFilter(
  * 「링크 조건」 줄의 칩 문구. 세그먼트는 화면의 세그먼트 탭이 이미 보여 주므로 넣지 않는다.
  * 팔로워 표기는 목록 열과 같은 `formatFollowerCount`.
  */
-export function describeSellerListFilter(filter: SellerListFilter): string[] {
+export function describeSellerListFilter(
+  filter: SellerListFilter,
+  options: { includeSegment?: boolean } = {},
+): string[] {
   const chips: string[] = [];
+  // 데스크톱은 세그먼트 탭이 이 값을 보여 주므로 칩을 생략한다 — 탭이 없는 모바일만 칩으로 적는다.
+  if (options.includeSegment && filter.segment) chips.push(`보기 「${SELLER_SEGMENT_LABELS[filter.segment]}」`);
   if (filter.snsType) chips.push(`채널 ${snsTypeLabels[filter.snsType]}`);
   if (filter.category) chips.push(`카테고리 「${filter.category}」 포함`);
   const { minFollowers: min, maxFollowers: max } = filter;

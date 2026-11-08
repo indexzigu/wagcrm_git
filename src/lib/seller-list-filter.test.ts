@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { SellerSummary } from "@/lib/crm-types";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   buildSellerListQuery,
   describeSellerListFilter,
-  hasSellerListFilter,
   matchesSellerListFilter,
   parseSellerListFilter,
   SELLER_LIST_FILTER_PARAM_KEYS,
+  SELLER_SEGMENT_LABELS,
 } from "./seller-list-filter";
 
 function seller(over: Partial<SellerSummary> = {}): SellerSummary {
@@ -30,7 +32,6 @@ describe("parseSellerListFilter", () => {
     const { filter, unreadable } = parse("");
     expect(filter).toEqual({});
     expect(unreadable).toEqual([]);
-    expect(hasSellerListFilter(filter)).toBe(false);
   });
 
   it("지원 파라미터를 모두 읽는다", () => {
@@ -194,5 +195,21 @@ describe("describeSellerListFilter", () => {
 
   it("세그먼트는 탭이 보여 주므로 칩에 넣지 않는다", () => {
     expect(describeSellerListFilter({ segment: "prospect" })).toEqual([]);
+  });
+
+  it("탭이 없는 모바일은 세그먼트도 칩으로 적는다 — 조건이 걸렸는데 안 보이는 일이 없게", () => {
+    expect(describeSellerListFilter({ segment: "prospect" }, { includeSegment: true })).toEqual(["보기 「발굴 후보」"]);
+    expect(
+      describeSellerListFilter({ segment: "dormant", category: "육아" }, { includeSegment: true })[0],
+    ).toBe("보기 「휴면」");
+  });
+});
+
+describe("모바일 칩의 보기 이름 = 데스크톱 탭 이름", () => {
+  it("SELLER_SEGMENT_LABELS 의 모든 라벨이 셀러 목록 탭 선택지에 그대로 있다", () => {
+    const src = readFileSync(join(__dirname, "..", "components", "crm", "sellers-management.tsx"), "utf8");
+    for (const [value, label] of Object.entries(SELLER_SEGMENT_LABELS)) {
+      expect(src).toContain(`{ value: "${value}", label: "${label}" }`);
+    }
   });
 });
