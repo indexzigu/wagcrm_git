@@ -41,6 +41,15 @@ import {
   type PerfPost,
 } from "@/lib/campaign-performance-report";
 import { mergeSellerPostFeed, dedupeSellerPostsByUrl } from "@/lib/campaign-post-feed";
+import {
+  baselineBasisLine,
+  baselineUnavailableLine,
+  campaignVsBaseline,
+  computeLikesBaseline,
+  formatBaselineMultiple,
+  postVsBaseline,
+  type BaselineSample,
+} from "@/lib/campaign-post-baseline";
 import type { SuggestedPost } from "@/lib/campaign-suggested-posts";
 import type { CampaignStory } from "@/lib/crm-types";
 import { instagramShortcode, isInstagramPermalink } from "@/lib/instagram-embed";
@@ -231,6 +240,11 @@ export function AssetManager({
   }
   // 포맷별 반응(③b 후속) — media_type 맵(shortcode→포맷). 등록 게시물을 포맷별 ER로 묶는다.
   const [formatMap, setFormatMap] = useState<Record<string, string>>({});
+  // [셀러분석] 평소 대비 N배 — 같은 post-formats 응답의 평소 표본(받아 온 캠페인 id 와 함께).
+  // 다른 캠페인으로 넘어가면 id 가 달라 「불러오는 중」으로 보인다(이전 셀러 평소값 잔상 방지).
+  // baselineSample: undefined=불러오는 중, null=실패.
+  const [baselineLoad, setBaselineLoad] = useState<{ campaignId: string; sample: BaselineSample | null } | null>(null);
+  const baselineSample = baselineLoad?.campaignId === campaign.id ? baselineLoad.sample : undefined;
   // 성과 카드 객단가 정합용 — 진짜 주문건수(distinct)를 읽기 전용 라우트에서 가져온다(없으면 null).
   const [orderStats, setOrderStats] = useState<{ distinctOrderCount: number | null } | null>(null);
 
@@ -383,11 +397,20 @@ export function AssetManager({
     let cancelled = false;
     fetch(`/api/campaigns/${campaign.id}/post-formats`)
       .then(async (res) => {
-        if (!res.ok) return;
-        const data = (await res.json()) as { formats?: Record<string, string> };
-        if (!cancelled && data.formats) setFormatMap(data.formats);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const data = (await res.json()) as {
+          formats?: Record<string, string>;
+          baselineSample?: BaselineSample;
+        };
+        if (cancelled) return;
+        if (data.formats) setFormatMap(data.formats);
+        setBaselineLoad({ campaignId: campaign.id, sample: data.baselineSample ?? null });
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        // 포맷 맵은 없어도 리포트가 돈다. 평소 대비는 숫자 대신 「불러오지 못함」 사유로 드러낸다.
+        console.error("[asset-manager] post-formats load failed:", error);
+        if (!cancelled) setBaselineLoad({ campaignId: campaign.id, sample: null });
+      });
     return () => {
       cancelled = true;
     };
@@ -411,6 +434,25 @@ export function AssetManager({
   const formatComparison = useMemo(
     () => aggregateErByFormat(performance.posts, formatMap).filter((f) => f.avgEr !== null),
     [performance.posts, formatMap],
+  );
+  // [셀러분석] 평소 대비 — 이 캠페인 수집 기간 안 게시물과 등록 게시물(그룹 회차 포함)은 평소 표본에서
+  // 뺀다(자기 자신과 비교 금지). 규칙 SSOT 는 campaign-post-baseline.ts.
+  const likesBaseline = useMemo(() => {
+    if (baselineSample === undefined) return null; // 불러오는 중
+    const ownShortcodes = new Set(
+      sellerPosts
+        .map((a) => instagramShortcode(a.externalUrl))
+        .filter((sc): sc is string => !!sc),
+    );
+    return computeLikesBaseline(baselineSample, {
+      ownShortcodes,
+      startDate: campaign.startDate,
+      endDate: campaign.endDate,
+    });
+  }, [baselineSample, sellerPosts, campaign.startDate, campaign.endDate]);
+  const campaignMultiple = useMemo(
+    () => (likesBaseline !== null ? campaignVsBaseline(performance.posts, likesBaseline) : null),
+    [likesBaseline, performance.posts],
   );
 
   // 통합 셀러 게시물 피드 — 추천(후보)과 등록을 하나의 목록으로 병합해 최신순 정렬(오너 2026-07-12).
@@ -946,21 +988,45 @@ export function AssetManager({
         {performance.postCount > 0 ? (
           <div className="rounded-lg border bg-muted/30 p-3">
             <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+              {/* [셀러분석] 초점 = 평소 대비(오너 질문 「평소보다 잘 됐나」의 답). 계산 불가면 숫자 대신
+                  사유를 무채색으로 — 큰 청록 글씨가 남으면 가짜 숫자처럼 보인다(ss-ux 판정). */}
               <div className="min-w-0">
-                <div className="text-[11px] font-medium text-muted-foreground">평균 참여율 (ER)</div>
-                <div className="mt-0.5 flex items-baseline gap-1">
-                  <span className="text-2xl font-bold leading-none tabular-nums text-primary">
-                    {performance.avgEr !== null ? performance.avgEr.toFixed(1) : "—"}
-                  </span>
-                  <span className="text-sm font-semibold text-primary">%</span>
-                </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">
-                  {performance.followers !== null
-                    ? `좋아요 대비 · 팔로워 ${performance.followers.toLocaleString()}`
-                    : "팔로워 미확인으로 ER 계산 불가"}
-                </div>
+                <div className="text-[11px] font-medium text-muted-foreground">평소 대비</div>
+                {campaignMultiple !== null && likesBaseline?.ok ? (
+                  <>
+                    <div className="mt-0.5 text-2xl font-bold leading-none tabular-nums text-primary">
+                      {formatBaselineMultiple(campaignMultiple.multiple)}
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      {baselineBasisLine(likesBaseline)}
+                    </div>
+                    {campaignMultiple.postCount >= 2 ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        {`이번 게시물 ${campaignMultiple.postCount}개의 가운데 값`}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="mt-1 text-sm font-semibold text-muted-foreground">
+                    {likesBaseline === null
+                      ? "불러오는 중"
+                      : (baselineUnavailableLine(likesBaseline) ?? "비교할 인스타 게시물 좋아요 없음")}
+                  </div>
+                )}
               </div>
-              <dl className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-1 text-right text-[11px]">
+              {/* 통계 5칸(평균 참여율 추가) — 3열 2줄. 2열이면 3줄로 늘어져 초점보다 키가 커진다. */}
+              <dl className="grid shrink-0 grid-cols-3 gap-x-4 gap-y-1 text-right text-[11px]">
+                <div>
+                  <dt className="text-muted-foreground">평균 참여율</dt>
+                  <dd className="font-semibold tabular-nums text-foreground">
+                    {performance.avgEr !== null ? `${performance.avgEr.toFixed(1)}%` : "—"}
+                  </dd>
+                  <dd className="text-[10px] tabular-nums text-muted-foreground">
+                    {performance.followers !== null
+                      ? `팔로워 ${performance.followers.toLocaleString()}`
+                      : "팔로워 미확인"}
+                  </dd>
+                </div>
                 <div>
                   <dt className="text-muted-foreground">평균 좋아요</dt>
                   <dd className="font-semibold tabular-nums text-foreground">
@@ -1197,12 +1263,19 @@ export function AssetManager({
                           <span className="text-muted-foreground"> · 댓글 {post.comments.toLocaleString()}</span>
                         ) : null}
                         {post.er !== null ? (
-                          <>
-                            <span className="text-muted-foreground"> · </span>
-                            <span className="font-semibold text-foreground">ER {post.er.toFixed(1)}%</span>
-                          </>
+                          <span className="text-muted-foreground"> · ER {post.er.toFixed(1)}%</span>
                         ) : null}
                       </p>
+                      {/* [셀러분석] 평소 대비는 판단 숫자라 잘리는 메타 줄(카드 폭이 좁아 truncate)에 섞지 않고 한
+                          줄을 따로 쓴다. 색 없이 굵기만(관측값 — 색=의미 축 밖, 1 미만도 무채색). */}
+                      {(() => {
+                        const vs = likesBaseline ? postVsBaseline(post.likes, likesBaseline, post.externalUrl) : null;
+                        return vs !== null ? (
+                          <p className="truncate text-[11px] font-semibold tabular-nums text-foreground">
+                            평소 대비 {formatBaselineMultiple(vs)}
+                          </p>
+                        ) : null;
+                      })()}
                     </div>
                     <div className="flex items-center gap-1 px-2 pb-2 pt-1">
                       {canEmbed ? (
