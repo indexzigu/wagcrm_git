@@ -44,7 +44,7 @@ import { mergeSellerPostFeed, dedupeSellerPostsByUrl } from "@/lib/campaign-post
 import {
   baselineBasisLine,
   baselineUnavailableLine,
-  campaignVsBaseline as computeCampaignVsBaseline,
+  campaignVsBaseline,
   computeLikesBaseline,
   formatBaselineMultiple,
   postVsBaseline,
@@ -240,8 +240,11 @@ export function AssetManager({
   }
   // 포맷별 반응(③b 후속) — media_type 맵(shortcode→포맷). 등록 게시물을 포맷별 ER로 묶는다.
   const [formatMap, setFormatMap] = useState<Record<string, string>>({});
-  // [셀러분석] 평소 대비 N배 — 같은 post-formats 응답의 평소 표본. undefined=불러오는 중, null=실패.
-  const [baselineSample, setBaselineSample] = useState<BaselineSample | null | undefined>(undefined);
+  // [셀러분석] 평소 대비 N배 — 같은 post-formats 응답의 평소 표본(받아 온 캠페인 id 와 함께).
+  // 다른 캠페인으로 넘어가면 id 가 달라 「불러오는 중」으로 보인다(이전 셀러 평소값 잔상 방지).
+  // baselineSample: undefined=불러오는 중, null=실패.
+  const [baselineLoad, setBaselineLoad] = useState<{ campaignId: string; sample: BaselineSample | null } | null>(null);
+  const baselineSample = baselineLoad?.campaignId === campaign.id ? baselineLoad.sample : undefined;
   // 성과 카드 객단가 정합용 — 진짜 주문건수(distinct)를 읽기 전용 라우트에서 가져온다(없으면 null).
   const [orderStats, setOrderStats] = useState<{ distinctOrderCount: number | null } | null>(null);
 
@@ -401,12 +404,12 @@ export function AssetManager({
         };
         if (cancelled) return;
         if (data.formats) setFormatMap(data.formats);
-        setBaselineSample(data.baselineSample ?? null);
+        setBaselineLoad({ campaignId: campaign.id, sample: data.baselineSample ?? null });
       })
       .catch((error: unknown) => {
         // 포맷 맵은 없어도 리포트가 돈다. 평소 대비는 숫자 대신 「불러오지 못함」 사유로 드러낸다.
         console.error("[asset-manager] post-formats load failed:", error);
-        if (!cancelled) setBaselineSample(null);
+        if (!cancelled) setBaselineLoad({ campaignId: campaign.id, sample: null });
       });
     return () => {
       cancelled = true;
@@ -447,8 +450,8 @@ export function AssetManager({
       endDate: campaign.endDate,
     });
   }, [baselineSample, sellerPosts, campaign.startDate, campaign.endDate]);
-  const campaignVsBaseline = useMemo(
-    () => (likesBaseline !== null ? computeCampaignVsBaseline(performance.posts, likesBaseline) : null),
+  const campaignMultiple = useMemo(
+    () => (likesBaseline !== null ? campaignVsBaseline(performance.posts, likesBaseline) : null),
     [likesBaseline, performance.posts],
   );
 
@@ -989,17 +992,17 @@ export function AssetManager({
                   사유를 무채색으로 — 큰 청록 글씨가 남으면 가짜 숫자처럼 보인다(ss-ux 판정). */}
               <div className="min-w-0">
                 <div className="text-[11px] font-medium text-muted-foreground">평소 대비</div>
-                {campaignVsBaseline !== null && likesBaseline?.ok ? (
+                {campaignMultiple !== null && likesBaseline?.ok ? (
                   <>
                     <div className="mt-0.5 text-2xl font-bold leading-none tabular-nums text-primary">
-                      {formatBaselineMultiple(campaignVsBaseline.multiple)}
+                      {formatBaselineMultiple(campaignMultiple.multiple)}
                     </div>
                     <div className="mt-1 text-[11px] text-muted-foreground">
                       {baselineBasisLine(likesBaseline)}
                     </div>
-                    {campaignVsBaseline.postCount >= 2 ? (
+                    {campaignMultiple.postCount >= 2 ? (
                       <div className="text-[11px] text-muted-foreground">
-                        {`이번 게시물 ${campaignVsBaseline.postCount}개의 가운데 값`}
+                        {`이번 게시물 ${campaignMultiple.postCount}개의 가운데 값`}
                       </div>
                     ) : null}
                   </>
@@ -1007,7 +1010,7 @@ export function AssetManager({
                   <div className="mt-1 text-sm font-semibold text-muted-foreground">
                     {likesBaseline === null
                       ? "불러오는 중"
-                      : (baselineUnavailableLine(likesBaseline) ?? "게시물 좋아요 집계 전")}
+                      : (baselineUnavailableLine(likesBaseline) ?? "비교할 인스타 게시물 좋아요 없음")}
                   </div>
                 )}
               </div>

@@ -106,12 +106,22 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-/** 캠페인 수집 기간 [시작−7일, 마감+1일]. 한쪽만 있으면 그 경계만(추천 피드와 같은 규칙). */
+/**
+ * 캠페인 날짜(달력 날짜 = 값의 UTC 날짜 부분. "yyyy-mm-dd" 와 UTC 자정 ISO 둘 다)를 그날 KST 자정으로.
+ * UTC 자정 그대로 쓰면 KST 09시라 창 시작이 9시간 좁아진다.
+ */
+function kstDayStart(v: string | null): number | null {
+  const t = epochOrNull(v);
+  if (t === null) return null;
+  return Date.parse(`${new Date(t).toISOString().slice(0, 10)}T00:00:00+09:00`);
+}
+
+/** 캠페인 수집 기간 [시작−7일, 마감+1일](KST 날짜 단위). 한쪽만 있으면 그 경계만(추천 피드와 같은 규칙). */
 function campaignWindow(ex: BaselineExclusion): { lo: number | null; hi: number | null } {
-  const start = epochOrNull(ex.startDate ?? null);
-  const end = epochOrNull(ex.endDate ?? null);
+  const start = kstDayStart(ex.startDate ?? null);
+  const end = kstDayStart(ex.endDate ?? null);
   const lo = start !== null ? start - BASELINE_WINDOW_LEAD_DAYS * DAY_MS : null;
-  // 마감일은 날짜(자정)로 들어오므로 그날 하루를 더해 마감일 전체 + trail 일을 덮는다(제외는 넓을수록 안전).
+  // 마감일은 KST 자정이므로 하루를 더해 마감일 당일 전체 + trail 일(당일 포함)까지 덮는다 — 상한은 미포함 경계.
   const hi =
     end !== null
       ? end + (BASELINE_WINDOW_TRAIL_DAYS + 1) * DAY_MS

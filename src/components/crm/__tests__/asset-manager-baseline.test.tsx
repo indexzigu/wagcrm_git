@@ -113,6 +113,31 @@ describe("AssetManager — 평소 대비 N배", () => {
     expect(screen.queryByText(/평소 대비 \d/)).toBeNull();
   });
 
+  it("names the real reason when the baseline exists but no Instagram post has likes", async () => {
+    installFetch(async () => json({ formats: {}, baselineSample: SAMPLE }));
+    const yt = { ...sellerPost("p1", "MINE", 180), externalUrl: "https://youtu.be/abc" } as AssetRow;
+    render(<AssetManager campaign={campaign} initialAssets={[yt]} storage={storage} />);
+    await waitFor(() => expect(screen.getByText("비교할 인스타 게시물 좋아요 없음")).toBeTruthy());
+  });
+
+  it("does not carry the previous campaign's baseline into the next campaign", async () => {
+    let call = 0;
+    installFetch(() => (call++ === 0 ? Promise.resolve(json({ formats: {}, baselineSample: SAMPLE })) : new Promise<Response>(() => {})));
+    const { rerender } = render(
+      <AssetManager campaign={campaign} initialAssets={[sellerPost("p1", "MINE", 180)]} storage={storage} />,
+    );
+    await waitFor(() => expect(screen.getByText("1.8배")).toBeTruthy());
+    rerender(
+      <AssetManager
+        campaign={{ ...campaign, id: "camp-2" } as CampaignRow}
+        initialAssets={[sellerPost("p1", "MINE", 180)]}
+        storage={storage}
+      />,
+    );
+    expect(await screen.findByText("불러오는 중")).toBeTruthy();
+    expect(screen.queryByText("1.8배")).toBeNull();
+  });
+
   it("says it is loading instead of showing a dash", async () => {
     installFetch(() => new Promise<Response>(() => {}));
     render(<AssetManager campaign={campaign} initialAssets={[sellerPost("p1", "MINE", 180)]} storage={storage} />);

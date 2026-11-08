@@ -97,6 +97,18 @@ describe("computeLikesBaseline", () => {
     expect(r).toMatchObject({ ok: true, medianLikes: 100, sampleSize: 6 });
   });
 
+  it("opens the window at KST midnight of start-7d, not UTC midnight (9h earlier)", () => {
+    // 시작 3.10 → 창 시작 = 3.3 00:00 KST = 3.2 15:00Z. UTC 자정으로 읽으면 3.3 00:00Z 라 아래 글이 새어 든다.
+    const ex: BaselineExclusion = { ownShortcodes: new Set(), startDate: "2030-03-10", endDate: "2030-03-20" };
+    const inside = { likes: 9000, at: "2030-03-02T16:00:00.000Z" }; // KST 3.3 01:00 — 기간 안
+    const outside = { likes: 100, at: "2030-03-02T14:00:00.000Z" }; // KST 3.2 23:00 — 평소
+    const s = sample([100, 100, 100, 100, outside, inside]);
+    expect(computeLikesBaseline(s, ex)).toMatchObject({ ok: true, medianLikes: 100, sampleSize: 5 });
+    // UTC 자정 ISO 로 와도 같은 달력 날짜로 읽는다.
+    const iso = { ...ex, startDate: "2030-03-10T00:00:00.000Z", endDate: "2030-03-20T00:00:00.000Z" };
+    expect(computeLikesBaseline(s, iso)).toMatchObject({ ok: true, sampleSize: 5 });
+  });
+
   it("excludes hidden and zero-like posts (zero is indistinguishable from hidden on non-Graph tiers)", () => {
     const s = sample([200, 200, 200, 200, 200, "hidden", "hidden", 0, 0, 0, 0, 0, 0]);
     expect(computeLikesBaseline(s, NONE)).toMatchObject({ ok: true, medianLikes: 200, sampleSize: 5 });
