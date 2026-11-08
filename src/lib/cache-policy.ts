@@ -159,4 +159,11 @@ export const CRM_DYNAMIC_SURFACES: readonly CrmDynamicSurface[] = [
     notes:
       "T3 analysis report renders a stored SellerAiProfile snapshot; the heavy cross-campaign repurchase aggregate is cached via getCachedSellerRepurchase. Seller/aiProfile reads stay live (cheap indexed lookups).",
   },
+  {
+    id: "seller-compare",
+    path: "/sellers/compare",
+    tags: [CRM_CACHE_TAGS.sellers, CRM_CACHE_TAGS.pipeline],
+    notes:
+      "[셀러분석] 셀러 비교표(최대 8명). searchParams(ids) 를 읽는 동적 셸 + getCachedSellerComparison(warm) 데이터 층. sellers 태그 = 분석·팔로워 수집·셀러 수정, pipeline 태그 = 캠페인 쓰기(실적·마지막 진행).",
+  },
 ] as const;

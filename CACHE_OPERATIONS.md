@@ -57,6 +57,9 @@ differ from internal settlement bases. The order-campaigns payload
 which is forbidden inside `use cache`; splitting a read-only variant is the
 next lever if portal traffic grows.
 
+`/sellers/compare` (seller comparison table, up to 8 sellers) caches its data layer via
+`getCachedSellerComparison` (warm; tags `sellers` + `pipeline`) behind a dynamic `searchParams` shell.
+
 Dynamic exceptions are also declared there.
 
 - `/pipeline` (dynamic since 2026-07-12)

@@ -41,7 +41,20 @@ type InlineDataGridProps<T extends { id: string }> = {
   /** Unique ID for persisting column widths to localStorage */
   persistId?: string;
   isLoading?: boolean;
+  /**
+   * 행 선택 열(맨 앞 체크박스). 기본 꺼짐 — 켜지 않은 소비처는 렌더가 종전과 같다.
+   * 선택 상태는 소비처가 소유한다(제어형): 상한·필터 유지 같은 규칙은 `onSelectionChange` 를
+   * 받은 쪽이 판정하고, 거절하면 `selectedIds` 를 바꾸지 않으면 된다.
+   */
+  selectable?: boolean;
+  selectedIds?: readonly string[];
+  onSelectionChange?: (ids: string[]) => void;
+  /** 체크박스 접근 이름의 앞부분 — 「{이름} 비교에 담기」. 없으면 행 id 를 쓴다. */
+  selectionName?: (row: T) => string;
 };
+
+/** 선택 열 폭 — totalWidth·colgroup 이 같은 값을 써야 열이 밀리지 않는다. */
+const SELECT_COLUMN_WIDTH = 44;
 
 
 /** 편집 버튼·행 열기 버튼이 같은 표기를 쓰도록 값 서식을 한 곳에 둔다. */
@@ -67,14 +80,33 @@ export function InlineDataGrid<T extends { id: string }>({
   disableInlineEdit = false,
   persistId,
   isLoading = false,
+  selectable = false,
+  selectedIds,
+  onSelectionChange,
+  selectionName,
 }: InlineDataGridProps<T>) {
   const [editing, setEditing] = useState<{ id: string; key: string } | null>(null);
 
+  // 선택 열은 onDelete 열과 대칭으로 5곳(폭 합·colgroup·thead·스켈레톤·빈 행 colSpan)에 함께 들어간다.
+  // 한 곳만 빠지면 열이 한 칸씩 밀린다.
   const totalWidth = useMemo(() => {
     let sum = columns.reduce((acc, col) => acc + col.width, 0);
+    if (selectable) sum += SELECT_COLUMN_WIDTH;
     if (onDelete) sum += 80;
     return sum;
-  }, [columns, onDelete]);
+  }, [columns, onDelete, selectable]);
+
+  const selectedSet = useMemo(() => new Set(selectedIds ?? []), [selectedIds]);
+
+  function toggleSelected(rowId: string, checked: boolean) {
+    const current = selectedIds ?? [];
+    const next = checked
+      ? current.includes(rowId)
+        ? [...current]
+        : [...current, rowId]
+      : current.filter((id) => id !== rowId);
+    onSelectionChange?.(next);
+  }
 
   const [draft, setDraft] = useState("");
 
@@ -167,6 +199,7 @@ export function InlineDataGrid<T extends { id: string }>({
       <div className="overflow-x-auto">
         <table style={{ minWidth: totalWidth }} className="w-full table-fixed text-[13px]">
           <colgroup>
+            {selectable ? <col style={{ width: SELECT_COLUMN_WIDTH }} /> : null}
             {columns.map((column) => (
               <col
                 key={`col-${column.key}`}
@@ -177,6 +210,12 @@ export function InlineDataGrid<T extends { id: string }>({
           </colgroup>
           <thead>
             <tr className="border-b border-border bg-muted/60">
+              {/* 전체 선택은 두지 않는다 — 비교는 상한(8명)이 있는 고르기라 「전부」가 의미 없다. */}
+              {selectable ? (
+                <th className="w-11">
+                  <span className="sr-only">비교 선택</span>
+                </th>
+              ) : null}
               {columns.map((column) => {
                 const isSorted = sort?.key === column.key;
                 return (
@@ -226,6 +265,7 @@ export function InlineDataGrid<T extends { id: string }>({
             {isLoading ? (
               Array.from({ length: 5 }).map((_, rowIndex) => (
                 <tr key={`loading-row-${rowIndex}`} className="border-b border-border bg-card">
+                  {selectable ? <td key={`loading-cell-select-${rowIndex}`} className="h-11 px-3" /> : null}
                   {columns.map((column) => (
                     <td key={`loading-cell-${rowIndex}-${column.key}`} className="h-11 px-3">
                       <div className="flex items-center">
@@ -238,7 +278,7 @@ export function InlineDataGrid<T extends { id: string }>({
               ))
             ) : visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + (onDelete ? 1 : 0)} className="h-64">
+                <td colSpan={columns.length + (selectable ? 1 : 0) + (onDelete ? 1 : 0)} className="h-64">
                   <Empty className="border-0">
                     <EmptyHeader>
                       <EmptyMedia variant="icon">
@@ -253,15 +293,37 @@ export function InlineDataGrid<T extends { id: string }>({
                 </td>
               </tr>
             ) : (
-              visibleRows.map((row) => (
-              <tr 
-                key={row.id} 
+              visibleRows.map((row) => {
+              const isSelected = selectable && selectedSet.has(row.id);
+              return (
+              <tr
+                key={row.id}
                 className={cn(
-                  "border-b border-border bg-card transition-colors duration-150 hover:bg-primary-tint hover:shadow-soft-sm",
+                  "border-b border-border transition-colors duration-150 hover:bg-primary-tint hover:shadow-soft-sm",
+                  isSelected ? "bg-primary/[0.08]" : "bg-card",
                   onRowClick && "cursor-pointer"
                 )}
                 onClick={() => onRowClick?.(row)}
               >
+                {selectable ? (
+                  // 체크박스가 행의 첫 포커스다(G2 계약 selectable 케이스). 라벨이 칸 전체를 클릭 영역으로
+                  // 넓히고, stopPropagation 이 tr onClick(행 열기)과의 겹침을 막는다 — 라벨 클릭은 input 에
+                  // 합성 클릭을 한 번 더 보내므로 두 번 모두 여기서 멈춘다.
+                  <td className="h-11 p-0 text-center">
+                    <label
+                      className="flex h-11 w-full cursor-pointer items-center justify-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(event) => toggleSelected(row.id, event.target.checked)}
+                        className="size-4 cursor-pointer rounded border-slate-500 text-primary focus:ring-focus-ring"
+                        aria-label={`${selectionName ? selectionName(row) : row.id} 비교에 담기`}
+                      />
+                    </label>
+                  </td>
+                ) : null}
 
                 {columns.map((column, columnIndex) => {
                   const isEditing =
@@ -424,7 +486,8 @@ export function InlineDataGrid<T extends { id: string }>({
                   </td>
                 ) : null}
               </tr>
-            ))
+              );
+            })
             )}
           </tbody>
         </table>

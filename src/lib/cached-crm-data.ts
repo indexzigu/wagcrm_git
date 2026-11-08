@@ -465,3 +465,17 @@ export async function getCachedDefaultSettlementMonth(): Promise<string> {
   }
   return getPreviousMonth(currentMonth);
 }
+
+/**
+ * [셀러분석] 셀러 비교표 원재료(최대 8명). 키 = 정규화된 ids 문자열(순서 유지 — 열 순서가 주소 순서다).
+ * 무효화: 분석·팔로워 수집·셀러 수정(sellers) + 캠페인 쓰기(pipeline, 실적·마지막 진행).
+ * 결과는 직렬화 가능한 DTO 다(Decimal·Date 변환은 로더가 한다). 파생(최고값·위험 신호)은 렌더 시 계산.
+ */
+export async function getCachedSellerComparison(idsKey: string) {
+  "use cache";
+  cacheLife(CRM_CACHE_LIFE.warm);
+  cacheTag(CRM_CACHE_TAGS.sellers, CRM_CACHE_TAGS.pipeline);
+
+  const { loadSellerComparison } = await import("@/lib/seller-comparison");
+  return loadSellerComparison(getPrisma(), idsKey);
+}
