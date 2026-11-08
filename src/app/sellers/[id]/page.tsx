@@ -149,14 +149,14 @@ function ReelViewMultipleCard({ reach }: { reach: ReachMetrics | null }) {
         <>
           <div className="h-7 text-lg font-bold text-slate-900 tabular-nums">
             {formatReelViewMultiple(reach.reelViewMultiple)}
-            <span className="text-[9px] font-normal text-slate-500 ml-0.5">배</span>
+            <span className="text-[10px] font-normal text-slate-500 ml-0.5">배</span>
           </div>
-          <div className="text-[10px] text-slate-500">
-            팔로워 대비 릴스 조회 중앙값 · 릴스 {reach.reelViewSample}개 기준
+          <div className="text-[10px] text-slate-500 break-keep" title="팔로워 대비 릴스 조회수 중앙값">
+            릴스 {reach.reelViewSample}개 중앙값
           </div>
         </>
       ) : (
-        <div className="h-7 flex items-center text-[11px] text-slate-500">{unavailable}</div>
+        <div className="min-h-7 flex items-center text-[10px] leading-tight text-slate-500 break-keep">{unavailable}</div>
       )}
     </div>
   );
@@ -168,16 +168,16 @@ async function SimilarSellersSection({ sellerId, nowMs }: { sellerId: string; no
   const data = await getCachedSimilarSellers(sellerId);
   let body: ReactNode;
   if (data.status === "TARGET_UNANALYZED") {
-    body = <div className="px-4 py-3 text-[11px] text-slate-500">재분석하면 표시됩니다</div>;
+    body = <div className="px-4 py-3 text-[10px] text-slate-500">재분석하면 표시됩니다</div>;
   } else if (data.status === "POOL_TOO_SMALL") {
     body = (
-      <div className="px-4 py-3 text-[11px] text-slate-500">
+      <div className="px-4 py-3 text-[10px] text-slate-500">
         분석된 셀러가 {data.poolSize}명뿐이라 비교할 수 없습니다
       </div>
     );
   } else if (data.items.length === 0) {
     body = (
-      <div className="px-4 py-3 text-[11px] text-slate-500">
+      <div className="px-4 py-3 text-[10px] text-slate-500">
         분석된 셀러 {data.poolSize}명 중 비슷한 셀러가 없습니다
       </div>
     );
@@ -195,23 +195,22 @@ async function SimilarSellersSection({ sellerId, nowMs }: { sellerId: string; no
             <li key={item.id}>
               <Link
                 href={`/sellers/${item.id}`}
-                title={item.reasons.join(" · ")}
                 className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className="truncate text-[13px] font-medium text-slate-900">{item.displayName}</span>
                     {item.effectiveCampaigns > 0 ? (
-                      <span className="shrink-0 text-[11px] text-slate-700 tabular-nums">
+                      <span className="shrink-0 text-[10px] text-slate-700 tabular-nums">
                         진행 캠페인 {item.effectiveCampaigns}회
                         {item.lastRunStartAt ? ` · 마지막 ${relDays(item.lastRunStartAt, nowMs)}` : ""}
                       </span>
                     ) : (
-                      <span className="shrink-0 text-[11px] text-slate-500 tabular-nums">진행 캠페인 0회</span>
+                      <span className="shrink-0 text-[10px] text-slate-500 tabular-nums">진행 캠페인 0회</span>
                     )}
                   </div>
                   {meta.length > 0 && (
-                    <div className="truncate text-[11px] text-slate-500 tabular-nums">{meta.join(" · ")}</div>
+                    <div className="truncate text-[10px] text-slate-500 tabular-nums">{meta.join(" · ")}</div>
                   )}
                   <span className="sr-only">{item.reasons.join(", ")}</span>
                 </div>
@@ -231,7 +230,7 @@ async function SimilarSellersSection({ sellerId, nowMs }: { sellerId: string; no
         </h2>
         <span className="text-[10px] text-slate-500">카테고리·태그·팔로워 규모 기준 · 내부 전용</span>
       </div>
-      <div className="rounded-lg bg-slate-50 border border-slate-200">{body}</div>
+      <div className="overflow-hidden rounded-lg bg-slate-50 border border-slate-200">{body}</div>
     </section>
   );
 }

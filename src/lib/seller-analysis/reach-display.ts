@@ -5,7 +5,8 @@ import { REEL_VIEW_MIN_SAMPLE, type ReachMetrics } from './metrics';
 
 /** 배수 숫자 — 1 미만은 둘째 자리까지(0.04 와 0.4 를 구분), 10 이상은 정수. */
 export function formatReelViewMultiple(v: number): string {
-  if (v >= 10) return v.toFixed(0);
+  if (v > 0 && v < 0.01) return '<0.01'; // 0.004 would otherwise print as "0"
+  if (v >= 9.95) return v.toFixed(0); // 9.96 rounds to "10.0" under toFixed(1); keep ≥10 as integers
   if (v >= 1) return v.toFixed(1);
   return String(Number(v.toFixed(2))); // 0.80 → 0.8, 0.04 그대로
 }
@@ -37,6 +38,8 @@ export function reachReasonWord(reach: ReachMetrics | null): string | null {
       return '릴스 없음';
     case 'TOO_FEW':
       return '표본 부족';
+    case 'LEGACY':
+      return '재분석 전';
     default:
       return '미수집';
   }

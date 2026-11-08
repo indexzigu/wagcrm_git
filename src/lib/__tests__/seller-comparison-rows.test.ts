@@ -238,7 +238,7 @@ describe("릴스 조회 배수 행 (PR-2)", () => {
     expect(HIGHER_IS_BETTER_ROW_KEYS).toContain("reelViewMultiple");
   });
 
-  it("같은 원천이면 값·최고값 강조 · 값 없음은 사유 낱말(과거 분석본 = 미수집, 미분석)", () => {
+  it("같은 원천이면 값·최고값 강조 · 값 없음은 사유 낱말(과거 분석본 = 재분석 전, 미분석)", () => {
     const table = buildComparisonTable(
       [
         source({ id: "a", analysis: reachAnalysis(1.2, "views") }),
@@ -250,7 +250,7 @@ describe("릴스 조회 배수 행 (PR-2)", () => {
       NOW,
     );
     const cells = row(table, "reelViewMultiple").cells;
-    expect(cells.map((c) => c.text)).toEqual(["1.2배", "2.5배", "0.8배", "미수집", "미분석"]);
+    expect(cells.map((c) => c.text)).toEqual(["1.2배", "2.5배", "0.8배", "재분석 전", "미분석"]);
     expect(cells.map((c) => c.isBest)).toEqual([false, true, false, false, false]);
     expect(cells.some((c) => c.subText === "기준 다름")).toBe(false);
   });

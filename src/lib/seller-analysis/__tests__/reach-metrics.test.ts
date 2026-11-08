@@ -160,7 +160,9 @@ describe('표시 문구', () => {
     expect(formatReelViewMultiple(2.345)).toBe('2.3');
     expect(formatReelViewMultiple(0.042)).toBe('0.04');
     expect(formatReelViewMultiple(12.6)).toBe('13');
-    expect(reachReasonWord(normalizeReach(undefined))).toBe('미수집');
+    expect(reachReasonWord(normalizeReach(undefined))).toBe('재분석 전');
+    expect(formatReelViewMultiple(0.004)).toBe('<0.01');
+    expect(formatReelViewMultiple(9.96)).toBe('10');
     expect(reachReasonWord(computeReachMetrics([post('image', null)], 1))).toBe('릴스 없음');
   });
 });
