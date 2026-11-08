@@ -548,7 +548,8 @@ export function SellersManagement({
       setAnalyzingId(id);
       toast("분석을 시작합니다 · 1~2분 걸립니다");
       try {
-        const response = await fetch(`/api/sellers/${id}/analyze`, { method: "POST" });
+        // reelViews=1: 버튼 분석에서만 릴스 조회수 유료 보강(월 상한 · 분석 라우트 주석)
+        const response = await fetch(`/api/sellers/${id}/analyze?reelViews=1`, { method: "POST" });
         const payload = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(payload?.error || "분석에 실패했습니다");

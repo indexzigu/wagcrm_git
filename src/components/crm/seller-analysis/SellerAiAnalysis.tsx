@@ -103,7 +103,8 @@ export function SellerAiAnalysis({ sellerId, snsType, current, onAutoApplied }: 
     setAnalyzing(true);
     setError(null);
     try {
-      const res = await fetch(`/api/sellers/${sellerId}/analyze`, { method: "POST" });
+      // reelViews=1: 버튼 분석에서만 릴스 조회수 유료 보강(월 상한 · 분석 라우트 주석)
+      const res = await fetch(`/api/sellers/${sellerId}/analyze?reelViews=1`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `분석 실패 (${res.status})`);
       await load();

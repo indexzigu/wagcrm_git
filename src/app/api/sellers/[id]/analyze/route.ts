@@ -26,6 +26,22 @@ const POSTS_PREVIEW_CAP = 45;
 
 type Context = { params: Promise<{ id: string }> };
 
+/**
+ * [셀러분석] 릴스 조회수 유료 보강 opt-in 쿼리(`?reelViews=1`). 오너 확정(설계 §1-4 (A)):
+ * **「분석」 버튼을 눌렀을 때만** 보강한다 — 버튼 호출부(셀러 목록·상세 재분석)만 이 값을 붙이고,
+ * 신규 셀러 등록 직후 자동 분석은 붙이지 않는다. 크론은 이 라우트를 부르지 않는다.
+ */
+const REEL_VIEWS_QUERY_PARAM = "reelViews";
+
+function wantsReelViews(request: Request): boolean {
+  try {
+    return new URL(request.url).searchParams.get(REEL_VIEWS_QUERY_PARAM) === "1";
+  } catch (err) {
+    console.error("[analyze] 요청 URL 파싱 실패 — 릴스 조회수 보강 없이 진행:", err);
+    return false;
+  }
+}
+
 // 수집(워터폴 60~120s) + Gemini 분석이 Vercel 기본 함수 한도를 넘을 수 있어 명시 확장
 // (미설정 시 프로덕션에서 "분석 시작"이 타임아웃 — 2026-07-06 재호스팅 작업 중 발견한 갭)
 export const maxDuration = 300;
@@ -35,7 +51,7 @@ export const maxDuration = 300;
 // 지표 필드(평가 4종 + 미입력 카테고리)는 분석 완료 시 자동 반영한다(오너 확정 2026-07-16 —
 // 구 "검토 후 확정" 사람 검수 게이트 폐기, 자동 대상 정책 SSOT는 reviewMapping.autoCheck).
 // 객관 지표(팔로워·게시물수·bio·프로필 이미지·계정 이름)는 갱신 버튼·수집 크론과 동일 규약으로 Seller에 반영한다.
-export async function POST(_request: Request, context: Context) {
+export async function POST(request: Request, context: Context) {
   const { id } = await context.params;
   const prisma = getPrisma();
 
@@ -67,7 +83,9 @@ export async function POST(_request: Request, context: Context) {
 
   try {
     // 1) 수집 (워터폴 — 실패는 throw, 빈 데이터를 성공처럼 저장하지 않음: P0 No Silent Failure)
-    const losslessData = await scrapeSellerDataWaterfall(seller.snsHandle);
+    const losslessData = await scrapeSellerDataWaterfall(seller.snsHandle, {
+      enrichReelViews: wantsReelViews(request),
+    });
 
     // 2) 결정적 지표 (서버 계산 — 원본 기준, 클라이언트 값 신뢰 안 함)
     const metrics = computeSellerMetrics(losslessData);
