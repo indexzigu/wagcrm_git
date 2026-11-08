@@ -302,6 +302,9 @@ async function fetchReels(handle: string, token: string): Promise<FetchOutcome> 
  */
 let inFlightReservedUsd = 0;
 
+/** Owner-facing notice when the paid reel-view call failed (actor error or unexpected throw). */
+const REEL_VIEWS_FAILED_NOTICE = '릴스 조회수 가져오기에 실패해 조회수 없이 분석했습니다';
+
 /**
  * Paid calls whose ApiCallLog row failed to write, booked at max cost so the cap check does not
  * hand the same headroom out again. Process-local and conservative: it is never released (a
@@ -346,7 +349,7 @@ export async function enrichTier0ReelViews(
 
     const token = getApifyToken();
     if (!token) {
-      data.reel_views_notice = '릴스 조회수 보강을 건너뛰었습니다 — Apify 토큰이 설정되지 않았습니다';
+      data.reel_views_notice = 'Apify 토큰이 없어 릴스 조회수를 채우지 않았습니다';
       return skip('APIFY_API_TOKEN 미설정');
     }
 
@@ -357,7 +360,7 @@ export async function enrichTier0ReelViews(
     } catch (err) {
       console.error('[reel-views] 이번 달 지출 조회 실패 — 상한을 확인할 수 없어 호출하지 않습니다:', err);
       data.reel_views_notice =
-        '릴스 조회수 보강을 건너뛰었습니다 — 이번 달 사용액을 확인하지 못해 유료 호출을 막았습니다';
+        '이번 달 사용액을 확인하지 못해 릴스 조회수를 채우지 않았습니다(유료 호출 차단)';
       return skip('monthly spend lookup failed');
     }
     const maxCost = maxReelCallCostUsd();
@@ -367,7 +370,7 @@ export async function enrichTier0ReelViews(
         ` + in-flight $${inFlightReservedUsd}` +
         ` + max $${maxCost} > cap $${capUsd})`;
       console.warn(`[reel-views] 월 상한으로 조회수 보강을 건너뜁니다: ${reason}`);
-      data.reel_views_notice = `릴스 조회수 보강을 건너뛰었습니다 — 이번 달 상한 $${capUsd}에 도달했습니다`;
+      data.reel_views_notice = `이번 달 상한 $${capUsd}에 도달해 릴스 조회수를 채우지 않았습니다`;
       return skip(reason);
     }
 
@@ -407,7 +410,7 @@ export async function enrichTier0ReelViews(
           `[reel-views] 릴스 조회수 보강 실패(분석은 진행) handle=${handle} status=${usage.statusCode}: ${usage.errorMessage}`
         );
         data.debug_info = `${data.debug_info ?? ''} Apify reel views failed: ${usage.errorMessage}`;
-        data.reel_views_notice = '릴스 조회수 보강에 실패했습니다 — 조회수 없이 분석했습니다';
+        data.reel_views_notice = REEL_VIEWS_FAILED_NOTICE;
       }
       return { status: 'called', usage };
     } finally {
@@ -418,7 +421,7 @@ export async function enrichTier0ReelViews(
     const msg = truncateReason(error);
     console.error(`[reel-views] 릴스 조회수 보강 중 예외(분석은 진행): ${msg}`);
     data.debug_info = `${data.debug_info ?? ''} Apify reel views failed: ${msg}`;
-    data.reel_views_notice = '릴스 조회수 보강에 실패했습니다 — 조회수 없이 분석했습니다';
+    data.reel_views_notice = REEL_VIEWS_FAILED_NOTICE;
     return { status: 'skipped', reason: `error: ${msg}` };
   }
 }
