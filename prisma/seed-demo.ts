@@ -1094,6 +1094,39 @@ async function seedTimelineContent() {
     });
   }
   await seedWorkingmomAiProfile();
+  await seedWorkingmomCampaignPosts();
+}
+
+/**
+ * [셀러분석] 「평소 대비 N배」 데모 — 분석 프로필(평소 표본)이 있는 셀러의 지난 회차에 등록 게시물 2건.
+ * 4개월 전 회차라 게시물은 최근 프리뷰 밖이다(운영에서도 흔한 모양 — 자기 제외 없이 평소 표본 전체가 기준).
+ * 좋아요는 고정값: 평소(프리뷰 중앙값)의 대략 2배와 1배 근처가 나란히 보이게.
+ */
+async function seedWorkingmomCampaignPosts() {
+  const campaignId = "demo-camp-probiotic-workingmom-1";
+  const posts = [
+    { shortcode: "demo-wm-r1-01", offset: 124, mediaType: "reel", likes: 4380, comments: 156 },
+    { shortcode: "demo-wm-r1-02", offset: 121, mediaType: "carousel", likes: 2050, comments: 71 },
+  ];
+  for (const [idx, p] of posts.entries()) {
+    await prisma.asset.create({
+      data: {
+        provider: "EXTERNAL_LINK",
+        section: "SELLER_POST",
+        entityType: "CAMPAIGN",
+        entityId: campaignId,
+        campaignId,
+        fileName: `demo-wm-r1-post-${idx + 1}`,
+        externalUrl: `https://instagram.example.com/p/${p.shortcode}/`,
+        mediaType: p.mediaType,
+        postedAt: kstDateTime(p.offset, 20, 0),
+        likeCount: p.likes,
+        commentCount: p.comments,
+        likesHidden: false,
+        engagementSyncedAt: NOW,
+      },
+    });
+  }
 }
 
 type DemoCommentIntent = "inquiry" | "purchase" | "social" | "bot_or_irrelevant";

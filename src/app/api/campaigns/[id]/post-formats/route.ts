@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { getPrisma } from "@/lib/prisma";
 import { instagramShortcode } from "@/lib/instagram-embed";
+import { extractBaselineSample } from "@/lib/campaign-post-baseline";
 
 type Context = {
   params: Promise<{ id: string }>;
@@ -21,6 +22,10 @@ function extractPostsPreview(aiTags: unknown): PreviewPost[] {
  * media_type은 Asset에 없고 seller-analysis postsPreview에만 있으므로, 이 캠페인 셀러의 프리뷰에서
  * shortcode별 포맷을 뽑아 클라(aggregateErByFormat)가 등록 게시물을 포맷별로 묶게 한다.
  * 읽기 전용 · 신규 수집 트리거 없음 · requireAuth. 프리뷰(최근 ~30)에 없는 게시물은 클라에서 '기타'.
+ *
+ * [셀러분석] 같은 aiTags 읽기에서 「평소 대비 N배」용 평소 표본(baselineSample: shortcode·좋아요·숨김
+ * 슬림 목록, 최대 45행)도 함께 내린다 — 요청 수 증가 0. 자기 제외(이 캠페인 등록 게시물)는 등록 목록을
+ * 이미 가진 클라이언트가 한다(campaign-post-baseline.ts).
  */
 export async function GET(_request: Request, context: Context) {
   const auth = await requireAuth();
@@ -52,7 +57,7 @@ export async function GET(_request: Request, context: Context) {
       }
     }
 
-    return NextResponse.json({ formats });
+    return NextResponse.json({ formats, baselineSample: extractBaselineSample(profile?.aiTags) });
   } catch (error) {
     console.error("[/api/campaigns/[id]/post-formats] failed:", error);
     return NextResponse.json({ error: "포맷 정보를 불러오지 못했습니다." }, { status: 500 });
