@@ -190,8 +190,11 @@ export function buildReelViewsUsageMetadata(usage: ReelViewsCallUsage) {
   };
 }
 
-/** 호출 결과 영속 — 성공·실패 양쪽. 기록 실패는 분석을 깨뜨리지 않되 콘솔로 표면화한다. */
-export async function recordReelViewsUsage(usage: ReelViewsCallUsage): Promise<void> {
+/**
+ * 호출 결과 영속 — 성공·실패 양쪽. 기록 실패는 분석을 깨뜨리지 않되 콘솔로 표면화하고 false 를
+ * 돌려준다(호출자가 그 비용을 프로세스 내 미기록 지출로 계상해 상한이 새지 않게 한다).
+ */
+export async function recordReelViewsUsage(usage: ReelViewsCallUsage): Promise<boolean> {
   try {
     await getPrisma().apiCallLog.create({
       data: {
@@ -204,8 +207,10 @@ export async function recordReelViewsUsage(usage: ReelViewsCallUsage): Promise<v
         metadata: JSON.stringify(buildReelViewsUsageMetadata(usage)),
       },
     });
+    return true;
   } catch (err) {
-    console.error('[reel-views] 계측 기록 실패(분석 자체는 영향 없음):', err);
+    console.error('[reel-views] 계측 기록 실패(분석 자체는 영향 없음 · 비용은 미기록 지출로 계상):', err);
+    return false;
   }
 }
 
@@ -297,9 +302,17 @@ async function fetchReels(handle: string, token: string): Promise<FetchOutcome> 
  */
 let inFlightReservedUsd = 0;
 
-/** Test-only: reset the in-flight reservation between tests. */
+/**
+ * Paid calls whose ApiCallLog row failed to write, booked at max cost so the cap check does not
+ * hand the same headroom out again. Process-local and conservative: it is never released (a
+ * restart resets it, by which time the console error has surfaced the logging failure).
+ */
+let unrecordedSpendUsd = 0;
+
+/** Test-only: reset the in-process reservations between tests. */
 export function __resetReelViewsInFlightForTest(): void {
   inFlightReservedUsd = 0;
+  unrecordedSpendUsd = 0;
 }
 
 export type ReelViewsEnrichResult =
@@ -348,9 +361,10 @@ export async function enrichTier0ReelViews(
       return skip('monthly spend lookup failed');
     }
     const maxCost = maxReelCallCostUsd();
-    if (monthSpentBeforeUsd + inFlightReservedUsd + maxCost > capUsd) {
+    if (monthSpentBeforeUsd + unrecordedSpendUsd + inFlightReservedUsd + maxCost > capUsd) {
       const reason =
-        `monthly cap reached (spent $${monthSpentBeforeUsd} + in-flight $${inFlightReservedUsd}` +
+        `monthly cap reached (spent $${monthSpentBeforeUsd} + unrecorded $${unrecordedSpendUsd}` +
+        ` + in-flight $${inFlightReservedUsd}` +
         ` + max $${maxCost} > cap $${capUsd})`;
       console.warn(`[reel-views] 월 상한으로 조회수 보강을 건너뜁니다: ${reason}`);
       data.reel_views_notice = `릴스 조회수 보강을 건너뛰었습니다 — 이번 달 상한 $${capUsd}에 도달했습니다`;
@@ -382,7 +396,7 @@ export async function enrichTier0ReelViews(
         monthSpentBeforeUsd,
         capUsd,
       };
-      await recordReelViewsUsage(usage);
+      if (!(await recordReelViewsUsage(usage))) unrecordedSpendUsd += maxCost;
 
       if (usage.ok) {
         data.debug_info =

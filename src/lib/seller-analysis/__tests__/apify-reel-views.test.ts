@@ -232,6 +232,20 @@ describe("skip(호출·기록 없음)", () => {
     expect((await enrichTier0ReelViews(fixture([post({ shortcode: "R3" })]), NOW)).status).toBe("called");
   });
 
+  it("사용량 기록이 실패하면 그 비용을 미기록 지출로 계상해 다음 실행이 같은 여유를 다시 쓰지 못한다", async () => {
+    const spent = DEFAULT_REEL_VIEWS_MONTHLY_CAP_USD - maxReelCallCostUsd() * 1.5;
+    apiCallLogFindMany.mockResolvedValue([{ metadata: JSON.stringify({ estimatedCostUsd: spent }) }]);
+    apiCallLogCreate.mockRejectedValueOnce(new Error("db down"));
+    const fetchSpy = vi.fn().mockResolvedValue(okResponse([]));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    expect((await enrichTier0ReelViews(fixture([post({ shortcode: "R1" })]), NOW)).status).toBe("called");
+    const next = await enrichTier0ReelViews(fixture([post({ shortcode: "R2" })]), NOW);
+
+    expect(next.status === "skipped" && next.reason).toContain("unrecorded");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("정상 보강·상한 안 건너뜀(릴스 0개 등)에는 오너 안내를 달지 않는다", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse([{ shortCode: "R1", videoViewCount: 5 }])));
     const ok = fixture([post({ shortcode: "R1" })]);
