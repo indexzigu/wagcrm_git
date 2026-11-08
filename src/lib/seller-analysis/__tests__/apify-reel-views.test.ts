@@ -21,6 +21,7 @@ import {
   DEFAULT_REEL_VIEWS_MONTHLY_CAP_USD,
   REEL_RESULTS_LIMIT,
   REEL_VIEWS_CAP_ENV,
+  __resetReelViewsInFlightForTest,
   enrichTier0ReelViews,
   maxReelCallCostUsd,
   resolveMonthlyCapUsd,
@@ -73,6 +74,7 @@ beforeEach(() => {
   apiCallLogCreate.mockReset().mockResolvedValue({});
   apiCallLogFindMany.mockReset().mockResolvedValue([]);
   scrapeTier0.mockReset();
+  __resetReelViewsInFlightForTest();
   process.env.APIFY_API_TOKENS = TOKEN;
   delete process.env.APIFY_API_TOKEN;
   delete process.env[REEL_VIEWS_CAP_ENV];
@@ -203,6 +205,41 @@ describe("skip(호출·기록 없음)", () => {
     expect(apiCallLogCreate).not.toHaveBeenCalled();
     expect(data.raw_posts[0].video_view_count).toBeNull();
     expect(data.debug_info).toContain("Reel views skipped");
+    expect(data.reel_views_notice).toContain("상한");
+  });
+
+  it("동시 실행: 진행 중 호출의 최대 비용을 예약해 두 번째 실행은 상한으로 건너뛴다", async () => {
+    // 여유가 정확히 1회분(1.5회분 미만)만 남은 상태
+    const spent = DEFAULT_REEL_VIEWS_MONTHLY_CAP_USD - maxReelCallCostUsd() * 1.5;
+    apiCallLogFindMany.mockResolvedValue([{ metadata: JSON.stringify({ estimatedCostUsd: spent }) }]);
+    let release: (r: Response) => void = () => {};
+    const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (release = resolve)));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const first = enrichTier0ReelViews(fixture([post({ shortcode: "R1" })]), NOW);
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const secondData = fixture([post({ shortcode: "R2" })]);
+    const second = await enrichTier0ReelViews(secondData, NOW);
+
+    expect(second.status === "skipped" && second.reason).toContain("in-flight");
+    expect(secondData.reel_views_notice).toContain("상한");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    release(okResponse([]));
+    expect((await first).status).toBe("called");
+    // 예약은 기록 뒤 풀린다 — 같은 지출 기준이면 다음 실행은 다시 호출할 수 있다
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse([])));
+    expect((await enrichTier0ReelViews(fixture([post({ shortcode: "R3" })]), NOW)).status).toBe("called");
+  });
+
+  it("정상 보강·상한 안 건너뜀(릴스 0개 등)에는 오너 안내를 달지 않는다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(okResponse([{ shortCode: "R1", videoViewCount: 5 }])));
+    const ok = fixture([post({ shortcode: "R1" })]);
+    await enrichTier0ReelViews(ok, NOW);
+    expect(ok.reel_views_notice).toBeUndefined();
+    const none = fixture([post({ media_type: "image", shortcode: "P1" })]);
+    await enrichTier0ReelViews(none, NOW);
+    expect(none.reel_views_notice).toBeUndefined();
   });
 
   it("상한 안이면 호출한다(경계 바로 아래)", async () => {
@@ -254,6 +291,7 @@ describe("실패", () => {
     expect(row.errorMessage).toContain("hard limit");
     expect(JSON.parse(row.metadata).estimatedCostUsd).toBe(maxReelCallCostUsd());
     expect(console.error).toHaveBeenCalled();
+    expect(data.reel_views_notice).toContain("실패");
   });
 
   it("네트워크 오류도 1행(statusCode 0)", async () => {

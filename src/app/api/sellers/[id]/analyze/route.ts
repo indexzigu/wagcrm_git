@@ -34,12 +34,7 @@ type Context = { params: Promise<{ id: string }> };
 const REEL_VIEWS_QUERY_PARAM = "reelViews";
 
 function wantsReelViews(request: Request): boolean {
-  try {
-    return new URL(request.url).searchParams.get(REEL_VIEWS_QUERY_PARAM) === "1";
-  } catch (err) {
-    console.error("[analyze] 요청 URL 파싱 실패 — 릴스 조회수 보강 없이 진행:", err);
-    return false;
-  }
+  return new URL(request.url).searchParams.get(REEL_VIEWS_QUERY_PARAM) === "1";
 }
 
 // 수집(워터폴 60~120s) + Gemini 분석이 Vercel 기본 함수 한도를 넘을 수 있어 명시 확장
@@ -268,6 +263,8 @@ export async function POST(request: Request, context: Context) {
         // 자동 반영 결과 — 클라이언트가 행/패널 상태를 낙관 갱신하는 근거. 실패 시 null + 사유.
         applied,
         autoApplyError,
+        // 릴스 조회수 유료 보강을 요청했는데 적용되지 않은 사유(월 상한 등) — 버튼이 경고로 띄운다.
+        reelViewsNotice: losslessData.reel_views_notice ?? null,
       },
     });
   } catch (error: unknown) {

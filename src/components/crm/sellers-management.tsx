@@ -560,6 +560,8 @@ export function SellersManagement({
         // 서버가 자동 반영한 지표 필드(오너 확정 2026-07-16 — 검토 확정 게이트 제거).
         // fitLevel은 서버 합산 규칙이 재계산한 값이라 함께 낙관 갱신해야 '평가' 배지가 안 낡는다.
         const applied = payload?.data?.applied ?? null;
+        const reelViewsNotice: string | null = payload?.data?.reelViewsNotice ?? null;
+        if (reelViewsNotice) toast.warning(reelViewsNotice);
         setSellers((prev) =>
           prev.map((seller) =>
             seller.id === id

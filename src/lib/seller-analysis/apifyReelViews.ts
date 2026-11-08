@@ -288,6 +288,20 @@ async function fetchReels(handle: string, token: string): Promise<FetchOutcome> 
 
 // ---------- 오케스트레이션 ----------
 
+/**
+ * In-flight reservation (USD) for calls that started but have not written their ApiCallLog row
+ * yet. The cap check reads spend from ApiCallLog, which is only written after the call returns
+ * (up to the fetch timeout), so two concurrent "분석" runs would otherwise both pass the check.
+ * Process-local: the self-hosted server runs a single Node process; a multi-instance deployment
+ * would need a DB-level reservation instead.
+ */
+let inFlightReservedUsd = 0;
+
+/** Test-only: reset the in-flight reservation between tests. */
+export function __resetReelViewsInFlightForTest(): void {
+  inFlightReservedUsd = 0;
+}
+
 export type ReelViewsEnrichResult =
   | { status: 'skipped'; reason: string }
   | { status: 'called'; usage: ReelViewsCallUsage };
@@ -318,7 +332,10 @@ export async function enrichTier0ReelViews(
     if (!handle) return skip('no handle');
 
     const token = getApifyToken();
-    if (!token) return skip('APIFY_API_TOKEN 미설정');
+    if (!token) {
+      data.reel_views_notice = '릴스 조회수 보강을 건너뛰었습니다 — Apify 토큰이 설정되지 않았습니다';
+      return skip('APIFY_API_TOKEN 미설정');
+    }
 
     const capUsd = resolveMonthlyCapUsd();
     let monthSpentBeforeUsd: number;
@@ -326,54 +343,68 @@ export async function enrichTier0ReelViews(
       monthSpentBeforeUsd = await sumMonthReelViewsSpendUsd(now);
     } catch (err) {
       console.error('[reel-views] 이번 달 지출 조회 실패 — 상한을 확인할 수 없어 호출하지 않습니다:', err);
+      data.reel_views_notice =
+        '릴스 조회수 보강을 건너뛰었습니다 — 이번 달 사용액을 확인하지 못해 유료 호출을 막았습니다';
       return skip('monthly spend lookup failed');
     }
     const maxCost = maxReelCallCostUsd();
-    if (monthSpentBeforeUsd + maxCost > capUsd) {
-      const reason = `monthly cap reached (spent $${monthSpentBeforeUsd} + max $${maxCost} > cap $${capUsd})`;
+    if (monthSpentBeforeUsd + inFlightReservedUsd + maxCost > capUsd) {
+      const reason =
+        `monthly cap reached (spent $${monthSpentBeforeUsd} + in-flight $${inFlightReservedUsd}` +
+        ` + max $${maxCost} > cap $${capUsd})`;
       console.warn(`[reel-views] 월 상한으로 조회수 보강을 건너뜁니다: ${reason}`);
+      data.reel_views_notice = `릴스 조회수 보강을 건너뛰었습니다 — 이번 달 상한 $${capUsd}에 도달했습니다`;
       return skip(reason);
     }
 
-    const startedAt = Date.now();
-    const outcome = await fetchReels(handle, token);
-    const byShortcode = outcome.ok ? groupReelViewsByShortcode(outcome.items) : new Map();
-    const merged = mergeReelViews(data.raw_posts, byShortcode);
+    // Reserve synchronously right after the check (no await in between) so a concurrent run
+    // sees it; released once the ApiCallLog row is written (or on any throw).
+    inFlightReservedUsd += maxCost;
+    try {
+      const startedAt = Date.now();
+      const outcome = await fetchReels(handle, token);
+      const byShortcode = outcome.ok ? groupReelViewsByShortcode(outcome.items) : new Map();
+      const merged = mergeReelViews(data.raw_posts, byShortcode);
 
-    const usage: ReelViewsCallUsage = {
-      targetReels: targets.length,
-      resultsLimit: REEL_RESULTS_LIMIT,
-      receivedReels: outcome.items.length,
-      filledReels: merged.filled,
-      filledFromViews: merged.views,
-      filledFromPlays: merged.plays,
-      durationMs: Date.now() - startedAt,
-      statusCode: outcome.statusCode,
-      ok: outcome.ok,
-      errorMessage: outcome.errorMessage,
-      tokenFingerprint: describeApifyToken(token),
-      endpoint: REEL_VIEWS_ENDPOINT_LABEL,
-      monthSpentBeforeUsd,
-      capUsd,
-    };
-    await recordReelViewsUsage(usage);
+      const usage: ReelViewsCallUsage = {
+        targetReels: targets.length,
+        resultsLimit: REEL_RESULTS_LIMIT,
+        receivedReels: outcome.items.length,
+        filledReels: merged.filled,
+        filledFromViews: merged.views,
+        filledFromPlays: merged.plays,
+        durationMs: Date.now() - startedAt,
+        statusCode: outcome.statusCode,
+        ok: outcome.ok,
+        errorMessage: outcome.errorMessage,
+        tokenFingerprint: describeApifyToken(token),
+        endpoint: REEL_VIEWS_ENDPOINT_LABEL,
+        monthSpentBeforeUsd,
+        capUsd,
+      };
+      await recordReelViewsUsage(usage);
 
-    if (usage.ok) {
-      data.debug_info =
-        `${data.debug_info ?? ''} Apify reel views filled: ${merged.filled}/${targets.length} reels` +
-        ` (${usage.receivedReels} received, ${usage.durationMs}ms).`;
-    } else {
-      console.error(
-        `[reel-views] 릴스 조회수 보강 실패(분석은 진행) handle=${handle} status=${usage.statusCode}: ${usage.errorMessage}`
-      );
-      data.debug_info = `${data.debug_info ?? ''} Apify reel views failed: ${usage.errorMessage}`;
+      if (usage.ok) {
+        data.debug_info =
+          `${data.debug_info ?? ''} Apify reel views filled: ${merged.filled}/${targets.length} reels` +
+          ` (${usage.receivedReels} received, ${usage.durationMs}ms).`;
+      } else {
+        console.error(
+          `[reel-views] 릴스 조회수 보강 실패(분석은 진행) handle=${handle} status=${usage.statusCode}: ${usage.errorMessage}`
+        );
+        data.debug_info = `${data.debug_info ?? ''} Apify reel views failed: ${usage.errorMessage}`;
+        data.reel_views_notice = '릴스 조회수 보강에 실패했습니다 — 조회수 없이 분석했습니다';
+      }
+      return { status: 'called', usage };
+    } finally {
+      inFlightReservedUsd = Math.max(0, inFlightReservedUsd - maxCost);
     }
-    return { status: 'called', usage };
   } catch (error) {
     // 안전망: 여기서 throw 가 새면 성공한 Tier0 가 유료 Tier1 로 강등된다.
     const msg = truncateReason(error);
     console.error(`[reel-views] 릴스 조회수 보강 중 예외(분석은 진행): ${msg}`);
     data.debug_info = `${data.debug_info ?? ''} Apify reel views failed: ${msg}`;
+    data.reel_views_notice = '릴스 조회수 보강에 실패했습니다 — 조회수 없이 분석했습니다';
     return { status: 'skipped', reason: `error: ${msg}` };
   }
 }
