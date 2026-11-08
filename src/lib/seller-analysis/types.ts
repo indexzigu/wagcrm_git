@@ -4,6 +4,9 @@
 
 export type MediaType = 'image' | 'video' | 'reel' | 'carousel' | 'unknown';
 
+/** 조회수 원천 — views(조회) · plays(재생). 인스타가 두 수치를 따로 주므로 섞어 비교하지 않는다 */
+export type VideoViewSource = 'views' | 'plays';
+
 export interface RawPost {
   caption: string;
   likes: number;
@@ -15,6 +18,11 @@ export interface RawPost {
   taken_at: string | null; // ISO 8601, 없으면 null
   media_type: MediaType;
   video_view_count: number | null;
+  /** [셀러분석] video_view_count 가 어느 원천 필드에서 왔는가 — 수집 경로마다 다르다(Apify 는
+   *  videoViewCount 우선·videoPlayCount 폴백, RapidAPI 는 play_count 우선·view_count 폴백).
+   *  릴스 조회 배수(metrics.reach)가 「기준 다름」을 판정하는 근거. 조회수가 없거나(Tier0)
+   *  기록 이전 경로면 미설정/null. 폴백 순서 자체는 바꾸지 않는다(저장된 프리뷰 의미 보존). */
+  view_source?: VideoViewSource | null;
   is_sponsored: boolean;
   /** 릴스/비디오 원본 MP4 주소 (재호스팅 안 함, Hover-to-Play 용도) */
   video_url?: string | null;
@@ -96,4 +104,30 @@ export function toIsoTimestamp(value: unknown, now: Date = new Date()): string |
   const max = now.getTime() + 365 * 24 * 60 * 60 * 1000;
   if (ms < min || ms > max) return null;
   return new Date(ms).toISOString();
+}
+
+// ---------- 조회수 원천 판정 (수집 시점 기록 — 폴백 순서는 종전 그대로) ----------
+
+export interface PickedVideoView {
+  count: number | null;
+  source: VideoViewSource | null;
+}
+
+/**
+ * Apify posts 액터 항목의 조회수. 순서는 종전 식
+ * `videoViewCount ?? engagement.video_view_count ?? videoPlayCount` 와 **완전히 같다** —
+ * `??` 가 멈춘 자리(첫 non-nullish)가 원천이다. 그 값이 숫자가 아니면 조회수 없음.
+ */
+export function pickApifyVideoView(item: any): PickedVideoView {
+  const candidate = item?.videoViewCount ?? item?.engagement?.video_view_count ?? item?.videoPlayCount;
+  if (typeof candidate !== 'number') return { count: null, source: null };
+  const fromViews = item?.videoViewCount != null || item?.engagement?.video_view_count != null;
+  return { count: candidate, source: fromViews ? 'views' : 'plays' };
+}
+
+/** RapidAPI userposts 항목의 조회수 — 종전 식 `play_count ?? view_count` 와 같은 순서. */
+export function pickRapidApiVideoView(item: any): PickedVideoView {
+  const candidate = item?.play_count ?? item?.view_count;
+  if (typeof candidate !== 'number') return { count: null, source: null };
+  return { count: candidate, source: item?.play_count != null ? 'plays' : 'views' };
 }

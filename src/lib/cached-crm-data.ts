@@ -479,3 +479,17 @@ export async function getCachedSellerComparison(idsKey: string) {
   const { loadSellerComparison } = await import("@/lib/seller-comparison");
   return loadSellerComparison(getPrisma(), idsKey);
 }
+
+/**
+ * [셀러분석] 셀러 리포트 「비슷한 셀러」(최대 6명, 후보 = 분석된 셀러 전원). 내부 전용.
+ * 무효화 태그는 셀러 목록과 같다: sellers(분석·팔로워 수집·셀러 수정) + pipeline(캠페인 쓰기 →
+ * 진행 캠페인 수·마지막 진행). CAMPAIGN 태그에는 sellers 가 없으므로 두 태그 모두 필요하다.
+ */
+export async function getCachedSimilarSellers(sellerId: string) {
+  "use cache";
+  cacheLife(CRM_CACHE_LIFE.warm);
+  cacheTag(CRM_CACHE_TAGS.sellers, CRM_CACHE_TAGS.pipeline);
+
+  const { loadSimilarSellers } = await import("@/lib/seller-similar-sellers");
+  return loadSimilarSellers(getPrisma(), sellerId);
+}

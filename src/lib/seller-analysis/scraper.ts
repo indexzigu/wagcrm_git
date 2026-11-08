@@ -1,5 +1,12 @@
 import { getApifyToken } from './apify';
-import { LosslessSellerData, RawPost, normalizeMediaType, toIsoTimestamp } from './types'; // 데이터 형상 타입·헬퍼
+import {
+  LosslessSellerData,
+  RawPost,
+  normalizeMediaType,
+  pickApifyVideoView,
+  pickRapidApiVideoView,
+  toIsoTimestamp,
+} from './types'; // 데이터 형상 타입·헬퍼
 import { isGraphConfigured, scrapeTier0 } from './graphScraper';
 import { fetchCommentsByShortcode, pickCommentTargets } from './apifyComments';
 import { recordApifyCommentUsage } from './apify-comment-usage';
@@ -59,7 +66,7 @@ async function scrapeTier1(handle: string): Promise<LosslessSellerData> {
     // 대체용 최신 코멘트(latestComments)도 확인
     const latestCommentsList = (item.latestComments || []).map((c: any) => c.text);
 
-    const videoViewCandidate = item.videoViewCount ?? item.engagement?.video_view_count ?? item.videoPlayCount;
+    const videoView = pickApifyVideoView(item);
 
     return {
       caption: item.caption?.text || item.caption || "",
@@ -68,7 +75,8 @@ async function scrapeTier1(handle: string): Promise<LosslessSellerData> {
       sample_comments: commentsList.length > 0 ? commentsList : latestCommentsList,
       taken_at: toIsoTimestamp(item.timestamp ?? item.taken_at),
       media_type: normalizeMediaType(item.type ?? item.media?.type, item.productType),
-      video_view_count: typeof videoViewCandidate === 'number' ? videoViewCandidate : null,
+      video_view_count: videoView.count,
+      view_source: videoView.source,
       is_sponsored: item.isSponsored === true || item.paidPartnership === true,
       video_url: item.videoUrl || item.video_url || null,
       thumbnail_url: item.media?.display_uri || item.displayUrl || item.images?.[0] || null,
@@ -122,7 +130,7 @@ async function scrapeTier2(handle: string): Promise<LosslessSellerData> {
   const postsData = postsRaw?.data?.items || [];
 
   const raw_posts: RawPost[] = postsData.map((item: any) => {
-    const videoViewCandidate = item.play_count ?? item.view_count;
+    const videoView = pickRapidApiVideoView(item);
     return {
       caption: item.caption?.text || "",
       likes: item.like_count || 0,
@@ -130,7 +138,8 @@ async function scrapeTier2(handle: string): Promise<LosslessSellerData> {
       sample_comments: [], // RapidAPI 기본 posts 응답에는 딥 코멘트가 없음 (별도 코멘트 호출 필요)
       taken_at: toIsoTimestamp(item.taken_at), // unix 초 → ISO
       media_type: normalizeMediaType(item.media_type, item.product_type), // 1=image, 2=video, 8=carousel, clips=reel
-      video_view_count: typeof videoViewCandidate === 'number' ? videoViewCandidate : null,
+      video_view_count: videoView.count,
+      view_source: videoView.source,
       is_sponsored: item.is_paid_partnership === true,
       video_url: item.video_versions?.[0]?.url || null,
       thumbnail_url:

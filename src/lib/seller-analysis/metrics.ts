@@ -2,7 +2,7 @@
 // 원칙: 정량 지표는 코드가 계산하고, LLM은 해석·정성 판단만 한다 (블루프린트 §3.5).
 // NaN/Infinity를 절대 반환하지 않는다. 분모가 0이거나 데이터가 없으면 null.
 
-import { LosslessSellerData, MediaType, RawPost } from './types';
+import { LosslessSellerData, MediaType, RawPost, VideoViewSource } from './types';
 import { collapseRepostDuplicates } from './post-dedup';
 
 // ---------- 타입 ----------
@@ -128,6 +128,37 @@ export interface DataSufficiency {
   repostCollapsedCount?: number;
 }
 
+/**
+ * [셀러분석] 릴스 조회 배수 — 「팔로워 숫자만큼 릴스가 실제로 보이나?」.
+ *
+ * 이름이 「도달」이 아닌 이유: 인스타의 도달(reach)은 고유 계정 수이고 우리는 그것을 측정할 수
+ * 없다. 계산은 조회 ÷ 팔로워이므로 이름도 그대로 부른다(필드 키 `reach` 는 저장 경로 이름일 뿐).
+ * ⛔ 점수·reasons·Gemini 입력에 넣지 않는다 — 나란히 보여 주는 표시 지표다(gemini.ts 참조).
+ * 설계 정본: docs/private/specs/2026-11-08-seller-reach-similar-compare.md §1 (로컬 서고).
+ */
+export type ReelViewSource = VideoViewSource | 'mixed';
+
+/** 값이 null 인 사유. LEGACY 는 이 필드가 생기기 전 분석본(normalizeMetrics 가 붙인다). */
+export type ReachUnavailableReason = 'NO_REELS' | 'NO_VIEWS' | 'TOO_FEW' | 'NO_FOLLOWERS' | 'LEGACY';
+
+/** 조회수 있는 릴스가 이보다 적으면 중앙값을 내지 않는다(1~2개 중앙값은 그 게시물 자체다). */
+export const REEL_VIEW_MIN_SAMPLE = 3;
+
+export interface ReachMetrics {
+  /** 릴스별 (조회수 ÷ 팔로워)의 중앙값. 판단 불가면 null */
+  reelViewMultiple: number | null;
+  /** 조회수 중앙값 */
+  medianReelViews: number | null;
+  /** 조회수가 숫자로 있는 릴스 수 */
+  reelViewSample: number;
+  /** 릴스인데 조회수가 없는 수 (무료 Graph 경로는 조회수를 주지 않는다) */
+  reelsWithoutViews: number;
+  reelCount: number;
+  /** 표본의 조회수 원천 — 경로마다 views/plays 가 달라 섞이면 mixed. 원천 기록이 없으면 null */
+  viewSource: ReelViewSource | null;
+  unavailableReason: ReachUnavailableReason | null;
+}
+
 export interface SellerMetrics {
   engagement: EngagementMetrics;
   cadence: CadenceMetrics;
@@ -139,6 +170,8 @@ export interface SellerMetrics {
   commentQuality: CommentQualityMetrics;
   brandMentions: BrandMention[];
   dataSufficiency: DataSufficiency;
+  /** 릴스 조회 배수 (2026-11 신설). 과거 분석본은 normalizeMetrics 가 LEGACY 로 채운다 */
+  reach: ReachMetrics | null;
 }
 
 // ---------- 수치 유틸 (NaN/Infinity 방지) ----------
@@ -244,6 +277,44 @@ function groupEr(posts: RawPost[], followerCount: number): number | null {
   const avgC = mean(posts.map(p => p.comments_count || 0));
   if (avgL === null || avgC === null) return null;
   return safeDiv(avgL + avgC, followerCount);
+}
+
+// ---------- 릴스 조회 배수 ----------
+
+/** dedup 후 전 게시물 중 릴스만 본다(피드 영상·이미지의 조회수는 무시). */
+export function computeReachMetrics(posts: readonly RawPost[], followerCount: number): ReachMetrics {
+  const reels = posts.filter((p) => p.media_type === 'reel');
+  const withViews = reels.filter(
+    (p) => typeof p.video_view_count === 'number' && isFinite(p.video_view_count) && p.video_view_count >= 0,
+  );
+  const views = withViews.map((p) => p.video_view_count as number);
+
+  const sources = new Set(
+    withViews.map((p) => p.view_source).filter((v): v is VideoViewSource => v === 'views' || v === 'plays'),
+  );
+  const viewSource: ReelViewSource | null = sources.size === 0 ? null : sources.size > 1 ? 'mixed' : [...sources][0];
+
+  const base = {
+    reelViewSample: withViews.length,
+    reelsWithoutViews: reels.length - withViews.length,
+    reelCount: reels.length,
+    viewSource,
+  };
+
+  let unavailableReason: ReachUnavailableReason | null = null;
+  if (reels.length === 0) unavailableReason = 'NO_REELS';
+  else if (withViews.length === 0) unavailableReason = 'NO_VIEWS';
+  else if (withViews.length < REEL_VIEW_MIN_SAMPLE) unavailableReason = 'TOO_FEW';
+  else if (!(followerCount > 0)) unavailableReason = 'NO_FOLLOWERS';
+
+  const enoughSample = withViews.length >= REEL_VIEW_MIN_SAMPLE;
+  return {
+    ...base,
+    medianReelViews: enoughSample ? median(views) : null,
+    reelViewMultiple:
+      unavailableReason === null ? median(views.map((v) => v / followerCount).filter((r) => isFinite(r))) : null,
+    unavailableReason,
+  };
 }
 
 // ---------- 메인 ----------
@@ -449,5 +520,6 @@ export function computeSellerMetrics(data: LosslessSellerData, now: Date = new D
     commentQuality,
     brandMentions,
     dataSufficiency,
+    reach: computeReachMetrics(posts, followerCount),
   };
 }

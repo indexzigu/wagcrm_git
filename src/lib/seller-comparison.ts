@@ -3,11 +3,10 @@
 // 분석 스냅샷(SellerAiProfile.aiTags)은 셀러당 수백 KB 가 될 수 있다(postsPreview·Gemini 서술).
 // 비교표가 쓰는 경로는 category·metrics·profileMeta 와, 위험 신호 판정에 쓰는 게시물 두 필드
 // (taken_at·is_gongu)뿐이라 Postgres 에서는 그 경로만 jsonb 연산자로 잘라 받는다.
-// 파라미터는 Prisma.sql 태그 템플릿으로만 바인딩한다(문자열 보간 금지).
-// sqlite(dev:demo·dev:local 가공 데이터 DB)는 jsonb 연산자가 없어 aiTags 전체를 읽고 같은 투영을 JS 로 한다.
+// 경로 추출·파라미터 바인딩·sqlite 폴백은 비슷한 셀러와 공용 헬퍼(seller-ai-tags-paths.ts)가 맡는다.
 
-import { Prisma, type PrismaClient } from "@prisma/client";
-import { isSqliteDatabaseUrl } from "./prisma-client";
+import type { PrismaClient } from "@prisma/client";
+import { loadAiTagsPaths, projectAiTagsPaths } from "./seller-ai-tags-paths";
 import {
   normalizeComparisonIds,
   type SellerComparisonAnalysis,
@@ -53,62 +52,18 @@ function toIso(value: Date | string | null | undefined): string | null {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
+const COMPARISON_PATHS = ["category", "metrics", "profileMeta", "postsLite"] as const;
+
 /** aiTags 전체 → 비교표가 쓰는 경로만 (sqlite 경로 · Postgres 쿼리와 같은 모양) */
 export function projectAiTags(aiTags: unknown): Pick<
   AnalysisRow,
   "category" | "metrics" | "profileMeta" | "postsLite"
 > {
-  const tags = aiTags && typeof aiTags === "object" ? (aiTags as Record<string, unknown>) : {};
-  const posts = Array.isArray(tags.postsPreview) ? tags.postsPreview : null;
-  return {
-    category: tags.category ?? null,
-    metrics: tags.metrics ?? null,
-    profileMeta: tags.profileMeta ?? null,
-    postsLite: posts
-      ? posts
-          .filter((p): p is Record<string, unknown> => !!p && typeof p === "object")
-          .map((p) => ({ taken_at: p.taken_at ?? null, is_gongu: p.is_gongu === true }))
-      : null,
-  };
+  return projectAiTagsPaths(aiTags, COMPARISON_PATHS);
 }
 
 async function loadAnalysisRows(prisma: SellerComparisonPrisma, ids: string[]): Promise<AnalysisRow[]> {
-  if (ids.length === 0) return [];
-
-  if (isSqliteDatabaseUrl()) {
-    const rows = await prisma.sellerAiProfile.findMany({
-      where: { sellerId: { in: ids } },
-      select: { sellerId: true, analyzedAt: true, compositeScore: true, confidence: true, aiTags: true },
-    });
-    return rows.map((row) => ({
-      sellerId: row.sellerId,
-      analyzedAt: row.analyzedAt,
-      compositeScore: row.compositeScore,
-      confidence: row.confidence,
-      ...projectAiTags(row.aiTags),
-    }));
-  }
-
-  const rows = await prisma.$queryRaw<AnalysisRow[]>(Prisma.sql`
-    SELECT
-      "sellerId",
-      "analyzedAt",
-      "compositeScore",
-      "confidence",
-      "aiTags"->'category' AS "category",
-      "aiTags"->'metrics' AS "metrics",
-      "aiTags"->'profileMeta' AS "profileMeta",
-      CASE
-        WHEN jsonb_typeof("aiTags"->'postsPreview') = 'array' THEN (
-          SELECT jsonb_agg(jsonb_build_object('taken_at', p->'taken_at', 'is_gongu', p->'is_gongu'))
-          FROM jsonb_array_elements("aiTags"->'postsPreview') AS p
-        )
-        ELSE NULL
-      END AS "postsLite"
-    FROM "SellerAiProfile"
-    WHERE "sellerId" IN (${Prisma.join(ids)})
-  `);
-  return rows;
+  return loadAiTagsPaths(prisma, ids, COMPARISON_PATHS);
 }
 
 /**

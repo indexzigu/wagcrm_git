@@ -1,10 +1,10 @@
 // T3 전체 분석 리포트 (이식 스펙 §7) — 셀러 상세 시트(T2)의 딥다이브 확장.
 // 저장된 SellerAiProfile만 렌더(추가 API 호출 없음 — 스냅샷 서빙, 스펙 §8). RSC + loading.tsx 바운더리.
 // 원칙: 오디언스/도달 추정류 없음(측정 불가 명시), 신선도 라벨 필수, 썸네일은 인스타 CDN URL 참조(재호스팅 안 함).
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, ArrowLeft, AtSign, EyeOff, Loader2, Repeat, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowLeft, AtSign, ChevronRight, EyeOff, Loader2, Repeat, TrendingUp } from "lucide-react";
 import { getPrisma } from "@/lib/prisma";
 import { deriveSellerAiView } from "@/lib/seller-analysis/adapter";
 import { estimateActiveFollowers, normalizeMetrics } from "@/lib/seller-analysis/scores";
@@ -15,6 +15,10 @@ import { CommentIntent, readCommentAnalysis } from "@/components/crm/seller-anal
 import { PrintReportButton } from "@/components/crm/seller-analysis/PrintReportButton";
 import type { SellerCrossCampaignRepurchase } from "@/lib/cross-campaign-repurchase";
 import { getCachedSellerRepurchase } from "@/lib/cached-portal-data";
+import { getCachedSimilarSellers } from "@/lib/cached-crm-data";
+import { formatReelViewMultiple, reachUnavailableLine } from "@/lib/seller-analysis/reach-display";
+import type { ReachMetrics } from "@/lib/seller-analysis/metrics";
+import { formatFollowerCount } from "@/lib/partner-seller-display";
 import {
   summarizeSellerSalesPerformance,
   type SellerSalesPerformance,
@@ -130,6 +134,104 @@ function SalesPerformanceCard({ perf }: { perf: SellerSalesPerformance }) {
         </div>
       )}
     </div>
+  );
+}
+
+// [셀러분석] 릴스 조회 배수 KPI — 「팔로워 숫자만큼 릴스가 실제로 보이나?」. 점수에 넣지 않는 표시 지표.
+// 값이 없으면 숫자 칸 높이는 그대로 두고 사유 한 줄(대시 금지 — 「릴스 없음」과 「조회수 미수집」은 다른 정보).
+// 값은 판정·방향 축이 아니라 무채색(P8 색 5축 밖), 형제 KPI 카드와 같은 평면 카드.
+function ReelViewMultipleCard({ reach }: { reach: ReachMetrics | null }) {
+  const unavailable = reachUnavailableLine(reach);
+  return (
+    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+      <div className="text-[10px] text-slate-500">릴스 조회 배수</div>
+      {unavailable === null && reach && reach.reelViewMultiple !== null ? (
+        <>
+          <div className="h-7 text-lg font-bold text-slate-900 tabular-nums">
+            {formatReelViewMultiple(reach.reelViewMultiple)}
+            <span className="text-[10px] font-normal text-slate-500 ml-0.5">배</span>
+          </div>
+          <div className="text-[10px] text-slate-500 break-keep" title="팔로워 대비 릴스 조회수 중앙값">
+            릴스 {reach.reelViewSample}개 중앙값
+          </div>
+        </>
+      ) : (
+        <div className="min-h-7 flex items-center text-[10px] leading-tight text-slate-500 break-keep">{unavailable}</div>
+      )}
+    </div>
+  );
+}
+
+// [셀러분석] 비슷한 셀러 — 리포트 끝맺음을 「다음에 누구를 볼까」로(ss-ux P2). 내부 전용이라 인쇄본에서
+// 뺀다(리포트 전체가 data-print-root — 다른 셀러 정보가 PDF 로 나가지 않게). 후보 = 분석된 셀러 전원.
+async function SimilarSellersSection({ sellerId, nowMs }: { sellerId: string; nowMs: number }) {
+  const data = await getCachedSimilarSellers(sellerId);
+  let body: ReactNode;
+  if (data.status === "TARGET_UNANALYZED") {
+    body = <div className="px-4 py-3 text-[10px] text-slate-500">재분석하면 표시됩니다</div>;
+  } else if (data.status === "POOL_TOO_SMALL") {
+    body = (
+      <div className="px-4 py-3 text-[10px] text-slate-500">
+        분석된 셀러가 {data.poolSize}명뿐이라 비교할 수 없습니다
+      </div>
+    );
+  } else if (data.items.length === 0) {
+    body = (
+      <div className="px-4 py-3 text-[10px] text-slate-500">
+        분석된 셀러 {data.poolSize}명 중 비슷한 셀러가 없습니다
+      </div>
+    );
+  } else {
+    body = (
+      <ul className="divide-y divide-slate-200">
+        {data.items.map((item) => {
+          const meta = [
+            item.primaryCategory,
+            item.followers !== null ? `팔로워 ${formatFollowerCount(item.followers)}` : null,
+            item.engagementRate !== null ? `참여율 ${(item.engagementRate * 100).toFixed(1)}%` : null,
+            item.sharedTags.length > 0 ? `${item.sharedTags.join("·")} 겹침` : null,
+          ].filter((part): part is string => part !== null);
+          return (
+            <li key={item.id}>
+              <Link
+                href={`/sellers/${item.id}`}
+                className="flex items-center gap-2 px-4 py-2.5 hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:outline-none"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="truncate text-[13px] font-medium text-slate-900">{item.displayName}</span>
+                    {item.effectiveCampaigns > 0 ? (
+                      <span className="shrink-0 text-[10px] text-slate-700 tabular-nums">
+                        진행 캠페인 {item.effectiveCampaigns}회
+                        {item.lastRunStartAt ? ` · 마지막 ${relDays(item.lastRunStartAt, nowMs)}` : ""}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-[10px] text-slate-500 tabular-nums">진행 캠페인 0회</span>
+                    )}
+                  </div>
+                  {meta.length > 0 && (
+                    <div className="truncate text-[10px] text-slate-500 tabular-nums">{meta.join(" · ")}</div>
+                  )}
+                  <span className="sr-only">{item.reasons.join(", ")}</span>
+                </div>
+                <ChevronRight className="size-3.5 shrink-0 text-slate-400" aria-hidden />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+  return (
+    <section className="print:hidden" aria-labelledby="similar-sellers-heading">
+      <div className="flex items-baseline gap-2 mb-2">
+        <h2 id="similar-sellers-heading" className="text-[13px] font-semibold text-slate-900">
+          비슷한 셀러
+        </h2>
+        <span className="text-[10px] text-slate-500">카테고리·태그·팔로워 규모 기준 · 내부 전용</span>
+      </div>
+      <div className="overflow-hidden rounded-lg bg-slate-50 border border-slate-200">{body}</div>
+    </section>
   );
 }
 
@@ -316,7 +418,8 @@ async function SellerAnalysisReport({ params }: Params) {
       )}
 
       {/* KPI 카드 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+      {/* 순서: 참여율 → 릴스 조회 배수 → 댓글 반응률 → 광고 비중 → 공구 게시물. 2열 폭의 홀수 꼬리는 전폭. */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
         <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
           <div className="text-[10px] text-slate-500">인게이지먼트율</div>
           <div className="text-lg font-bold text-slate-900 tabular-nums">{pct(m.engagement.er)}</div>
@@ -330,6 +433,7 @@ async function SellerAnalysisReport({ params }: Params) {
             </div>
           )}
         </div>
+        <ReelViewMultipleCard reach={m.reach} />
         <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
           <div className="text-[10px] text-slate-500">댓글 반응률</div>
           <div className="text-lg font-bold text-slate-900 tabular-nums">{pct(m.engagement.commentToLikeRatio, 1)}</div>
@@ -342,7 +446,7 @@ async function SellerAnalysisReport({ params }: Params) {
           </div>
           <div className="text-[10px] text-slate-500">{m.ads.adCount}건 / {m.dataSufficiency.postCount}개</div>
         </div>
-        <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+        <div className="col-span-2 md:col-span-1 rounded-lg bg-slate-50 border border-slate-200 p-3">
           <div className="text-[10px] text-slate-500">공구 게시물</div>
           <div className="text-lg font-bold text-slate-900 tabular-nums">{m.gongu.gonguCount}건</div>
           <div className="text-[10px] text-slate-500">
@@ -405,6 +509,14 @@ async function SellerAnalysisReport({ params }: Params) {
           피드 프리뷰 없음. 이 분석은 프리뷰 저장 이전 버전입니다. 재분석하면 채워집니다.
         </div>
       )}
+
+      <Suspense
+        fallback={
+          <div className="print:hidden h-24 rounded-lg bg-slate-50 border border-slate-200" aria-hidden />
+        }
+      >
+        <SimilarSellersSection sellerId={seller.id} nowMs={nowMs} />
+      </Suspense>
 
       {/* 측정 한계 명시 (스펙 §3 — 거짓 정밀도 금지) */}
       <div className="flex items-start gap-1.5 text-[10px] text-slate-500 border-t border-slate-100 pt-3">
