@@ -11,6 +11,13 @@ import {
   SELLER_SCORE_BAND_TEXT_UNSET,
 } from "@/lib/seller-score-band";
 import { useFilterParams } from "@/hooks/use-filter-params";
+import { SellerLinkFilterBar } from "@/components/crm/seller-link-filter-bar";
+import {
+  describeSellerListFilter,
+  matchesSellerListFilter,
+  parseSellerListFilter,
+  SELLER_LIST_FILTER_PARAM_KEYS,
+} from "@/lib/seller-list-filter";
 import { useSellers } from "@/hooks/useSellers";
 import { PlusIcon, SearchIcon, Loader2, SparklesIcon, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -84,6 +91,8 @@ type SellersManagementProps = {
   initialSellers: SellerRow[];
   dataSource?: DashboardData["dataSource"];
   dataSourceMessage?: string;
+  /** [셀러분석] sellerId → AI 분석 참여율(비율). 주소 필터 `minEr` 판정용 — 페이지 캐시에서만 온다. */
+  engagementRates?: Record<string, number>;
 };
 
 /** 셀러 표 컬럼 팩토리 — 테스트가 셀 렌더(휴면 배지 등)를 직접 확인하려고 내보낸다. */
@@ -472,6 +481,7 @@ export function SellersManagement({
   initialSellers,
   dataSource,
   dataSourceMessage,
+  engagementRates,
 }: SellersManagementProps) {
   const isMobile = useIsMobile();
   const router = useRouter();
@@ -499,7 +509,11 @@ export function SellersManagement({
   const [bulkOpen, setBulkOpen] = useState(false);
   const [referralOpen, setReferralOpen] = useState(false);
   // 파생 세그먼트 (§12-3): 거래 이력·분석 유무로 자동 분기 — 유지 비용 0 (상태 아님, 계산되는 사실)
-  const [segment, setSegment] = useState<SellerSegment>("all");
+  // [셀러분석] 슬랙 봇 링크 등 주소 필터(seller-list-filter.ts SSOT). segment 는 탭 초기값으로만 쓰고
+  // (탭을 바꾸면 화면 상태가 이긴다), 나머지 조건은 목록에 추가로 건다.
+  const linkFilter = useMemo(() => parseSellerListFilter(searchParams), [searchParams]);
+  const linkSegment = linkFilter.filter.segment;
+  const [segment, setSegment] = useState<SellerSegment>(() => linkSegment ?? "all");
   // 원클릭 분석 진행 중인 셀러 id (중복 클릭 가드 + 스피너 표시). null이면 유휴.
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   // [셀러분석] 비교에 담은 셀러 id — 필터·검색·세그먼트가 바뀌어도 유지한다(보이지 않는 행도 담긴 채).
@@ -507,6 +521,11 @@ export function SellersManagement({
   const [compareLimitHit, setCompareLimitHit] = useState(false);
   const isComposingRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 같은 화면에서 다른 링크로 다시 들어오면(주소의 segment 가 바뀌면) 탭을 따라 맞춘다.
+  useEffect(() => {
+    if (linkSegment) setSegment(linkSegment);
+  }, [linkSegment]);
 
   // Sync local query when URL param changes externally
   useEffect(() => {
@@ -631,7 +650,14 @@ export function SellersManagement({
 
     // 파생 세그먼트 필터: 전체 / 거래 셀러(campaignCount>0) / 발굴 후보(=0) / 미분석(aiComposite==null) / 휴면(seller-dormancy SSOT).
     // 순수 함수(seller-segment.ts)로 분리 — property test로 기존 active/prospect 계약 + 신규 unanalyzed 검증.
-    const segmented = filterSellersBySegment(list, segment);
+    const segmented = filterSellersBySegment(list, segment).filter((s) =>
+      // segment 는 위 탭 판정이 소유한다 — 여기선 나머지 주소 조건만.
+      matchesSellerListFilter(
+        s,
+        { ...linkFilter.filter, segment: undefined },
+        { engagementRate: engagementRates?.[s.id] ?? null },
+      ),
+    );
 
     // 「휴면」 보기는 오래 쉰 셀러부터 — 재계약 검토 순서(오너 결정 2026-10-18). 다른 보기는 종전 정렬.
     if (segment === "dormant") return [...segmented].sort(compareByLongestDormancy);
@@ -646,7 +672,43 @@ export function SellersManagement({
       const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return dateB - dateA;
     });
-  }, [sellers, query, segment]);
+  }, [sellers, query, segment, linkFilter, engagementRates]);
+
+  const linkFilterChips = useMemo(() => describeSellerListFilter(linkFilter.filter), [linkFilter]);
+  const linkFilterUnreadable = useMemo(() => linkFilter.unreadable.map((u) => u.label), [linkFilter]);
+
+  // 「조건 지우기」 — 링크가 건 주소 조건만 지운다(검색어 q·열린 셀러 패널 주소는 그대로).
+  const clearLinkFilter = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const key of SELLER_LIST_FILTER_PARAM_KEYS) params.delete(key);
+    if (linkSegment) setSegment("all");
+    const next = params.toString();
+    router.replace(next ? `?${next}` : "?", { scroll: false });
+    // 줄이 사라지며 포커스를 잃지 않게 검색칸으로 옮긴다(모바일엔 이 칸이 없어 건너뛴다).
+    document.getElementById("seller-list-search")?.focus();
+  }, [searchParams, router, linkSegment]);
+
+  // 탭을 직접 바꾸면 링크가 건 segment 를 주소에서도 지운다 — 남겨 두면 새로고침·공유 때 되살아난다.
+  const handleSegmentChange = useCallback(
+    (next: SellerSegment) => {
+      setSegment(next);
+      if (searchParams.get("segment") === null) return;
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("segment");
+      const rest = params.toString();
+      router.replace(rest ? `?${rest}` : "?", { scroll: false });
+    },
+    [searchParams, router],
+  );
+
+  const linkFilterBar = (
+    <SellerLinkFilterBar
+      chips={linkFilterChips}
+      unreadable={linkFilterUnreadable}
+      count={filteredSellers.length}
+      onClear={clearLinkFilter}
+    />
+  );
 
   // Auto-open seller details if present in query parameters
   useEffect(() => {
@@ -665,6 +727,14 @@ export function SellersManagement({
   if (isMobile) {
     return (
       <>
+        {/* 모바일 목록은 자체 카드 여백(px-5)을 쓰므로 같은 줄을 카드 모양으로 띄운다 */}
+        <SellerLinkFilterBar
+          chips={linkFilterChips}
+          unreadable={linkFilterUnreadable}
+          count={filteredSellers.length}
+          onClear={clearLinkFilter}
+          className="mx-5 mt-4 rounded-xl border bg-card"
+        />
         <MobileSellersView
           sellers={filteredSellers}
           totalCount={sellers.length}
@@ -756,7 +826,7 @@ export function SellersManagement({
             <SegmentToggle<SellerSegment>
               ariaLabel="셀러 목록 보기"
               value={segment}
-              onValueChange={setSegment}
+              onValueChange={handleSegmentChange}
               options={[
                 { value: "all", label: "전체" },
                 { value: "active", label: "거래 셀러" },
@@ -791,6 +861,7 @@ export function SellersManagement({
                   debouncedSetFilter(val);
                 }}
                 placeholder="검색"
+                id="seller-list-search"
                 aria-label="셀러 검색"
                 className="h-full border-0 focus-visible:ring-0 text-xs"
               />
@@ -828,6 +899,7 @@ export function SellersManagement({
               신규 셀러
             </Button>
           </section>
+          {linkFilterBar}
 
           {sellers.length === 0 && !query ? (
             <div className="flex h-64 items-center justify-center">

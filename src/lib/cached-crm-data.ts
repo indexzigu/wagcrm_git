@@ -13,6 +13,7 @@ import { getPrisma } from "@/lib/prisma";
 import { findDealsNeedingReviewLink } from "@/lib/order-converter/review-link";
 import { getMobileSettlementCampaigns } from "@/lib/mobile-settlement-data";
 import { loadSellerSummaries } from "@/lib/seller-summary";
+import { loadSellerEngagementRates } from "@/lib/seller-engagement-rates";
 import { CRM_CACHE_TAGS } from "@/lib/cache-tags";
 import { CRM_CACHE_LIFE } from "@/lib/cache-policy";
 import { toAssetRow } from "@/lib/assets";
@@ -274,6 +275,26 @@ export async function getCachedSellersPageData() {
 
   // 단일 진실 원천(loadSellerSummaries) — GET /api/sellers 갱신 경로와 동일 필드 집합 보장.
   return loadSellerSummaries();
+}
+
+/**
+ * [셀러분석] 셀러 목록 주소 필터 `minEr`(봇 링크)용 참여율 맵 — 비싼 jsonb 조회라 페이지 캐시에서만 읽는다
+ * (seller-engagement-rates.ts 머리 주석). 실패해도 목록은 떠야 하므로 빈 맵 + 경고 — 그때 참여율 조건은
+ * 전원 「미분석」으로 빠지고, 칩 문구 「분석된 셀러만」이 그 사실을 가리킨다.
+ */
+export async function getCachedSellerEngagementRates(): Promise<Record<string, number>> {
+  "use cache";
+  cacheLife(CRM_CACHE_LIFE.warm);
+  cacheTag(CRM_CACHE_TAGS.sellers);
+  try {
+    return await loadSellerEngagementRates(getPrisma());
+  } catch (e) {
+    console.warn(
+      "[sellers] 참여율 조회 실패 — 참여율 조건은 적용되지 않음:",
+      e instanceof Error ? e.message : e,
+    );
+    return {};
+  }
 }
 
 /**
