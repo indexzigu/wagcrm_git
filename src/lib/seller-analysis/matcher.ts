@@ -72,8 +72,8 @@ function strOrNull(v: unknown): string | null {
   return t ? t : null;
 }
 
-/** 문자열 배열 안전 추출 (비문자열 원소 제거, trim, 빈 문자열 제거) */
-function strArray(v: unknown): string[] {
+/** 문자열 배열 안전 추출 (비문자열 원소 제거, trim, 빈 문자열 제거) — similarity.ts 도 쓴다 */
+export function strArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
   return v
     .filter((x): x is string => typeof x === 'string')
@@ -81,8 +81,8 @@ function strArray(v: unknown): string[] {
     .filter(Boolean);
 }
 
-/** 키워드 정규화: trim → 소문자 → 선행 '#' 제거 */
-function normalizeKeyword(s: string): string {
+/** 키워드 정규화: trim → 소문자 → 선행 '#' 제거 — similarity.ts 도 쓴다 */
+export function normalizeKeyword(s: string): string {
   return s.trim().toLowerCase().replace(/^#+/, '');
 }
 

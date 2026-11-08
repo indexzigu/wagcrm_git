@@ -6,7 +6,8 @@
 // ⛔ 새 지표 계산을 여기서 만들지 말 것 — 값은 전부 기존 SSOT 를 거친다:
 //   실적 = summarizeSellerSalesPerformance(그룹 1건 접기 = countEffectiveCampaigns) ·
 //   마지막 진행 = tallySellerRuns + computeDormancyTier(목록 「마지막 진행」과 같은 모수) ·
-//   팔로워 증감 = computeFollowerGrowthRate · 분석 지표 = normalizeMetrics · 위험 신호 = computeRiskFlags.
+//   팔로워 증감 = computeFollowerGrowthRate · 분석 지표 = normalizeMetrics(릴스 조회 배수 = metrics.reach 포함) ·
+//   위험 신호 = computeRiskFlags.
 //
 // 최고값 강조는 「높을수록 좋다」가 분명한 행만 받는다. 광고 비중·공구 비중·경과일·종합점수·팔로워는
 // 높다고 좋은 것이 아니거나(비중) 판단 근거로 확인되지 않아(종합점수, 매출과의 순위상관 미확인) 강조하지 않는다.
@@ -20,6 +21,7 @@ import { normalizeMetrics } from "./seller-analysis/scores";
 import { computeRiskFlags, type ProfileMeta, type RiskFlag } from "./seller-analysis/riskFlags";
 import type { PostPreview } from "./seller-analysis/types";
 import type { SellerMetrics } from "./seller-analysis/metrics";
+import { formatReelViewMultiple, reachReasonWord } from "./seller-analysis/reach-display";
 
 /** 한 화면에 비교하는 최대 셀러 수 — 1280px 에 라벨 열 + 셀러 열 8개가 들어가는 폭(§3-2). */
 export const SELLER_COMPARE_MAX = 8;
@@ -303,6 +305,11 @@ interface RowDef {
   /** 「높을수록 좋다」가 분명한 행만 true — 최고값 강조 대상 */
   higherIsBetter: boolean;
   cell: (col: DerivedColumn, now: Date) => ComparisonCell;
+  /**
+   * 열을 가로지르는 후처리(선택). 칸 하나만 봐서는 알 수 없는 판정 — 예: 릴스 조회 배수의
+   * 조회수 원천이 열마다 다르면 「기준 다름」을 달고 최고값 강조를 끈다.
+   */
+  finalize?: (cells: ComparisonCell[], cols: DerivedColumn[]) => { cells: ComparisonCell[]; suppressBest?: boolean };
 }
 
 interface SectionDef {
@@ -382,6 +389,32 @@ const SECTIONS: SectionDef[] = [
         label: "참여율",
         higherIsBetter: true,
         cell: (col) => analysisCell(col, (m) => m.engagement.er, (v) => formatPct(v, 2)),
+      },
+      {
+        // [셀러분석] 팔로워 대비 릴스 조회 중앙값(metrics.reach). 조회수 원천(조회/재생)이 열마다 다르면
+        // 같은 잣대가 아니므로 값 아래에 「기준 다름」을 달고, 최고값 강조도 하지 않는다.
+        key: "reelViewMultiple",
+        label: "릴스 조회 배수",
+        higherIsBetter: true,
+        cell: (col) => {
+          if (!col.metrics) return reasonCell("미분석");
+          const reach = col.metrics.reach;
+          const reason = reachReasonWord(reach);
+          if (reason !== null || !reach || reach.reelViewMultiple === null) return reasonCell(reason ?? "미수집");
+          return valueCell(`${formatReelViewMultiple(reach.reelViewMultiple)}배`, reach.reelViewMultiple, {
+            insufficient: col.lowConfidence,
+          });
+        },
+        finalize: (cells, cols) => {
+          const sources = new Set(
+            cells.flatMap((cell, index) => (cell.isReason ? [] : [cols[index].metrics?.reach?.viewSource ?? null])),
+          );
+          if (sources.size <= 1) return { cells };
+          return {
+            cells: cells.map((cell) => (cell.isReason ? cell : { ...cell, subText: "기준 다름" })),
+            suppressBest: true,
+          };
+        },
       },
       {
         key: "commentToLike",
@@ -488,8 +521,9 @@ export function buildComparisonTable(
     label: section.label,
     internal: section.internal,
     rows: section.rows.map((row) => {
-      const cells = columns.map((col) => row.cell(col, now));
-      const best = row.higherIsBetter ? pickBestIndex(cells) : null;
+      const raw = columns.map((col) => row.cell(col, now));
+      const { cells, suppressBest = false } = row.finalize ? row.finalize(raw, columns) : { cells: raw };
+      const best = row.higherIsBetter && !suppressBest ? pickBestIndex(cells) : null;
       return {
         key: row.key,
         label: row.label,

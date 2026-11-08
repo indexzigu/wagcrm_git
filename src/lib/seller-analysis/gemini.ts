@@ -62,6 +62,15 @@ const analysisSchema = {
   required: ["category", "tags", "seller_analysis", "audience_analysis"]
 };
 
+/**
+ * Gemini 에 보내는 computed_metrics. [셀러분석] 릴스 조회 배수(`reach`)는 뺀다 — 프롬프트 지시문이
+ * 이 지표를 모르는 채로 새 숫자가 들어가면 해석 출력이 흔들린다(지시문 변경은 별도 결정). 표시 전용 지표다.
+ */
+export function metricsForGemini(metrics: SellerMetrics): Omit<SellerMetrics, 'reach'> {
+  const { reach: _omitted, ...rest } = metrics;
+  return rest;
+}
+
 export async function analyzeSellerData(data: LosslessSellerData, metrics: SellerMetrics) {
   // 1. 시스템 프롬프트 — 정량은 코드가 계산 완료, LLM은 해석·정성 판단 전담
   const systemInstruction = `당신은 이커머스 및 인플루언서 마케팅 전문 데이터 분석가입니다.
@@ -77,7 +86,7 @@ export async function analyzeSellerData(data: LosslessSellerData, metrics: Selle
   // 2. 입력 데이터 구성 — 계산된 지표 + 원문(캡션·유효 댓글 상위 15개)
   const payloadText = JSON.stringify({
     profile: data.profile,
-    computed_metrics: metrics,
+    computed_metrics: metricsForGemini(metrics),
     raw_posts: data.raw_posts.slice(0, 30).map(post => ({
       caption: (post.caption || "").slice(0, 500),
       likes: post.likes,

@@ -208,3 +208,66 @@ describe("buildComparisonTable", () => {
     expect(anyBest).toBe(false);
   });
 });
+
+describe("릴스 조회 배수 행 (PR-2)", () => {
+  function reachAnalysis(multiple: number | null, viewSource: "views" | "plays" | "mixed" | null, reason: string | null = null) {
+    return {
+      ...analysis(0.02),
+      metrics: {
+        engagement: { er: 0.02, commentToLikeRatio: 0.002 },
+        reach: {
+          reelViewMultiple: multiple,
+          medianReelViews: multiple === null ? null : multiple * 1000,
+          reelViewSample: multiple === null ? 0 : 5,
+          reelsWithoutViews: 0,
+          reelCount: 5,
+          viewSource,
+          unavailableReason: reason,
+        },
+      },
+    };
+  }
+
+  it("규모·반응에서 참여율과 댓글 반응률 사이 · 높을수록 좋은 행", () => {
+    const table = buildComparisonTable([source({ id: "a" }), source({ id: "b" })], NOW);
+    const scale = table.sections.find((s) => s.key === "scale")!;
+    const keys = scale.rows.map((r) => r.key);
+    expect(keys.indexOf("reelViewMultiple")).toBe(keys.indexOf("engagementRate") + 1);
+    expect(keys.indexOf("commentToLike")).toBe(keys.indexOf("reelViewMultiple") + 1);
+    expect(row(table, "reelViewMultiple").label).toBe("릴스 조회 배수");
+    expect(HIGHER_IS_BETTER_ROW_KEYS).toContain("reelViewMultiple");
+  });
+
+  it("같은 원천이면 값·최고값 강조 · 값 없음은 사유 낱말(과거 분석본 = 미수집, 미분석)", () => {
+    const table = buildComparisonTable(
+      [
+        source({ id: "a", analysis: reachAnalysis(1.2, "views") }),
+        source({ id: "b", analysis: reachAnalysis(2.5, "views") }),
+        source({ id: "c", analysis: reachAnalysis(0.8, "views") }),
+        source({ id: "d", analysis: analysis(0.02) }),
+        source({ id: "e" }),
+      ],
+      NOW,
+    );
+    const cells = row(table, "reelViewMultiple").cells;
+    expect(cells.map((c) => c.text)).toEqual(["1.2배", "2.5배", "0.8배", "미수집", "미분석"]);
+    expect(cells.map((c) => c.isBest)).toEqual([false, true, false, false, false]);
+    expect(cells.some((c) => c.subText === "기준 다름")).toBe(false);
+  });
+
+  it("조회수 원천이 열마다 다르면 값 칸에 「기준 다름」 · 최고값 강조 없음", () => {
+    const table = buildComparisonTable(
+      [
+        source({ id: "a", analysis: reachAnalysis(1.2, "views") }),
+        source({ id: "b", analysis: reachAnalysis(2.5, "plays") }),
+        source({ id: "c", analysis: reachAnalysis(0.8, "views") }),
+        source({ id: "d", analysis: reachAnalysis(null, null, "NO_REELS") }),
+      ],
+      NOW,
+    );
+    const cells = row(table, "reelViewMultiple").cells;
+    expect(cells.map((c) => c.subText ?? null)).toEqual(["기준 다름", "기준 다름", "기준 다름", null]);
+    expect(cells[3].text).toBe("릴스 없음");
+    expect(cells.every((c) => !c.isBest)).toBe(true);
+  });
+});

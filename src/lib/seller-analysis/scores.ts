@@ -5,7 +5,7 @@
 //   - reasons에 실제 수치 근거를 한국어로 기록
 // metrics.ts는 수정하지 않는다 — 이 모듈은 소비자다.
 
-import { SellerMetrics } from './metrics';
+import type { ReachMetrics, ReachUnavailableReason, ReelViewSource, SellerMetrics } from './metrics';
 
 // ---------- 타입 ----------
 
@@ -97,6 +97,41 @@ function normalizeGonguFormatEntry(v: unknown): SellerMetrics['gongu']['formatSp
   };
 }
 
+const REACH_REASONS: readonly ReachUnavailableReason[] = ['NO_REELS', 'NO_VIEWS', 'TOO_FEW', 'NO_FOLLOWERS', 'LEGACY'];
+
+/**
+ * [셀러분석] 릴스 조회 배수 정규화. 이 필드가 없는 과거 분석본은 값 전부 null + `LEGACY` —
+ * 0 으로 채우지 말 것(「재분석 전」을 「조회 0」으로 읽게 된다). 점수·reasons 는 이 값을 읽지 않는다.
+ */
+export function normalizeReach(v: unknown): ReachMetrics {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) {
+    return {
+      reelViewMultiple: null,
+      medianReelViews: null,
+      reelViewSample: 0,
+      reelsWithoutViews: 0,
+      reelCount: 0,
+      viewSource: null,
+      unavailableReason: 'LEGACY',
+    };
+  }
+  const r = v as Record<string, unknown>;
+  const reelViewMultiple = nonNegOrNull(r.reelViewMultiple);
+  const storedReason = REACH_REASONS.find((reason) => reason === r.unavailableReason) ?? null;
+  const viewSource: ReelViewSource | null =
+    r.viewSource === 'views' || r.viewSource === 'plays' || r.viewSource === 'mixed' ? r.viewSource : null;
+  return {
+    reelViewMultiple,
+    medianReelViews: nonNegOrNull(r.medianReelViews),
+    reelViewSample: countOrZero(r.reelViewSample),
+    reelsWithoutViews: countOrZero(r.reelsWithoutViews),
+    reelCount: countOrZero(r.reelCount),
+    viewSource,
+    // 값이 없는데 사유도 읽을 수 없으면(손상 JSON) 재분석 전과 같은 취급
+    unavailableReason: reelViewMultiple === null ? (storedReason ?? 'LEGACY') : null,
+  };
+}
+
 export function normalizeMetrics(input: unknown): SellerMetrics {
   const m = (input && typeof input === 'object' ? input : {}) as Record<string, any>;
   const e = m.engagement ?? {};
@@ -173,6 +208,7 @@ export function normalizeMetrics(input: unknown): SellerMetrics {
       // 신설 필드(2026-07-23) — 재분석 전의 저장분에는 없으므로 0으로 정규화
       repostCollapsedCount: countOrZero(ds.repostCollapsedCount),
     },
+    reach: normalizeReach(m.reach),
   };
 }
 

@@ -157,7 +157,7 @@ export const CRM_DYNAMIC_SURFACES: readonly CrmDynamicSurface[] = [
     path: "/sellers/[id]",
     tags: [CRM_CACHE_TAGS.pipeline, CRM_CACHE_TAGS.settlement, CRM_CACHE_TAGS.sellers],
     notes:
-      "T3 analysis report renders a stored SellerAiProfile snapshot; the heavy cross-campaign repurchase aggregate is cached via getCachedSellerRepurchase. Seller/aiProfile reads stay live (cheap indexed lookups).",
+      "T3 analysis report renders a stored SellerAiProfile snapshot; the heavy cross-campaign repurchase aggregate is cached via getCachedSellerRepurchase. Seller/aiProfile reads stay live (cheap indexed lookups). [셀러분석] 「비슷한 셀러」 섹션은 getCachedSimilarSellers(warm, sellers + pipeline 태그).",
   },
   {
     id: "seller-compare",
