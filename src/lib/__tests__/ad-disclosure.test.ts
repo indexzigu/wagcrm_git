@@ -77,6 +77,15 @@ describe("checkAdDisclosure — 표기로 인정하지 않는 말(경계 오탐)
   });
 });
 
+describe("checkAdDisclosure — 제외 접미는 태그에 붙은 것만", () => {
+  it.each(["#광고 주말 특가 오픈", "#광고 비타민C 앰플", "#협찬 판매 시작", "#협찬 모델 컷 공개"])(
+    "띄어 쓴 다음 낱말은 막지 않는다: %s",
+    (caption) => {
+      expect(kind(caption)).toBe("OK");
+    },
+  );
+});
+
 describe("checkAdDisclosure — 위치", () => {
   it("앞 125자 안이면 정상, 뒤에만 있으면 LATE", () => {
     expect(kind(`${FILLER.slice(0, 100)} #광고`)).toBe("OK");
@@ -118,7 +127,16 @@ describe("checkAdDisclosure — 위치", () => {
 });
 
 describe("checkAdDisclosure — 부인 표현", () => {
-  it.each(["광고 아님 내 돈으로 샀어요 #광고", "협찬 아님!", "광고아니에요 진짜"])(
+  it.each([
+    "광고 아님 내 돈으로 샀어요 #광고",
+    "협찬 아님!",
+    "광고아니에요 진짜",
+    "#광고 협찬 아닙니다",
+    "광고 아닙니다 직접 샀어요",
+    "광고 아닌 찐후기",
+    "제품을 제공받지 않았습니다",
+    "협찬 받지 않은 솔직 후기",
+  ])(
     "광고·협찬 부인은 표기가 있어도 DENIAL: %s",
     (caption) => {
       expect(kind(caption)).toBe("DENIAL");
@@ -226,8 +244,16 @@ describe("nextAutoNote — 수집기의 자동수집 메모 갱신 규칙", () =
     );
   });
 
-  it("같으면 쓰지 않는다(null)", () => {
+  it("캡션이 같으면 쓰지 않는다 — 좋아요만 달라도(null)", () => {
     expect(nextAutoNote(`${AUTO_NOTE_PREFIX}#광고 앰플 · 좋아요 3`, "#광고 앰플", 3)).toBeNull();
+    expect(nextAutoNote(`${AUTO_NOTE_PREFIX}#광고 앰플 · 좋아요 3`, "#광고 앰플", 90)).toBeNull();
+    expect(nextAutoNote(`${AUTO_NOTE_PREFIX}#광고 앰플`, "#광고 앰플", 90)).toBeNull();
+  });
+
+  it("앞부분만 같은 다른 캡션은 갱신한다", () => {
+    expect(nextAutoNote(`${AUTO_NOTE_PREFIX}#광고 앰플 · 좋아요 3`, "#광고 앰플 2탄", 3)).toBe(
+      `${AUTO_NOTE_PREFIX}#광고 앰플 2탄 · 좋아요 3`,
+    );
   });
 
   it("오너 수기 메모는 절대 덮지 않는다", () => {

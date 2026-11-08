@@ -15,7 +15,7 @@ import {
   type EngagementAssetInput,
 } from "@/lib/campaign-post-engagement";
 import { describeFailureCause } from "@/lib/cron-outcome";
-import { nextAutoNote } from "@/lib/reference-enrich";
+import { AUTO_NOTE_PREFIX, nextAutoNote } from "@/lib/reference-enrich";
 
 const LEAD_DAYS = 7; // 캠페인 시작 전 티저 게시물 창(campaign-suggested-posts와 동일)
 const TRAIL_DAYS = 3; // 종료 후 최종 수치 확정 창
@@ -185,27 +185,39 @@ export async function syncCampaignPostEngagement(options?: {
       if (updates.length > 0) {
         const syncedAt = new Date();
         const notesById = new Map(sellerAssets.map((a) => [a.id, a.notes]));
-        await prisma.$transaction(
-          updates.map((u) => {
-            // 자동수집 메모 갱신 — 비었거나 「[자동수집]」 메모일 때만(오너 수기 메모는 그대로).
-            // 게시 후 광고 표기 점검이 이 메모를 읽으므로 셀러가 캡션을 고치면 다음 수집 때 재판정된다.
-            const notes = nextAutoNote(notesById.get(u.assetId), u.caption, u.likeCount);
-            return prisma.asset.update({
-              where: { id: u.assetId },
-              data: {
-                likeCount: u.likeCount,
-                commentCount: u.commentCount,
-                likesHidden: u.likesHidden,
-                // 표현 자산 — 같은 응답에서 동반 갱신(videoUrl은 만료성이라 매일 재서명분으로 교체)
-                mediaType: u.mediaType,
-                videoUrl: u.videoUrl,
-                postedAt: u.postedAt,
-                engagementSyncedAt: syncedAt,
-                ...(notes !== null ? { notes } : {}),
-              },
-            });
+        const engagementWrites = updates.map((u) =>
+          prisma.asset.update({
+            where: { id: u.assetId },
+            data: {
+              likeCount: u.likeCount,
+              commentCount: u.commentCount,
+              likesHidden: u.likesHidden,
+              // 표현 자산 — 같은 응답에서 동반 갱신(videoUrl은 만료성이라 매일 재서명분으로 교체)
+              mediaType: u.mediaType,
+              videoUrl: u.videoUrl,
+              postedAt: u.postedAt,
+              engagementSyncedAt: syncedAt,
+            },
           }),
         );
+        // 자동수집 메모 갱신 — 비었거나 「[자동수집]」 메모일 때만(오너 수기 메모는 그대로).
+        // 게시 후 광고 표기 점검이 이 메모를 읽으므로 셀러가 캡션을 고치면 다음 수집 때 재판정된다.
+        // 판단은 수집 전 스냅샷으로 하지만, 그 사이 오너가 메모를 저장했을 수 있으므로 쓰기 자체를
+        // 「비었거나 자동수집 메모」 조건으로 다시 막는다(updateMany where 가드).
+        const noteWrites = updates.flatMap((u) => {
+          const notes = nextAutoNote(notesById.get(u.assetId), u.caption, u.likeCount);
+          if (notes === null) return [];
+          return [
+            prisma.asset.updateMany({
+              where: {
+                id: u.assetId,
+                OR: [{ notes: null }, { notes: "" }, { notes: { startsWith: AUTO_NOTE_PREFIX } }],
+              },
+              data: { notes },
+            }),
+          ];
+        });
+        await prisma.$transaction([...engagementWrites, ...noteWrites]);
         result.assetsUpdated += updates.length;
       }
       result.sellersProcessed++;

@@ -49,7 +49,8 @@ const REEL_MEDIA_TYPES = new Set(["reel", "video"]);
 
 // 해시태그는 태그 **시작**이 표기 낱말이면 인정한다(#유료광고포함·#광고#협찬·#광고ad 가 실제 표기다).
 // 뒤에 붙으면 다른 뜻이 되는 접미만 막는다(#광고비·#광고문의·#협찬문의).
-const EXCLUDED_SUFFIX = "(?!\\s*(?:비|주|판|문의|모델|촬영|없|대행|회사|제안|효과))";
+// 접미는 태그에 **붙은** 것만 본다 — 「#광고 주말 특가」의 띄어 쓴 「주말」은 다른 낱말이다.
+const EXCLUDED_SUFFIX = "(?!(?:비|주|판|문의|모델|촬영|없|대행|회사|제안|효과))";
 const KO_HASHTAG = new RegExp(
   `#(?:유료\\s?광고|광고|제품\\s?협찬|협찬|제품\\s?제공)${EXCLUDED_SUFFIX}`,
   "gu",
@@ -75,7 +76,8 @@ const KO_PLAIN = new RegExp(
 // 화면의 금지 표현 판정은 시드가 아니라 `BannedPhraseRule` **DB 행**을 읽으므로 시드 공유는 거짓
 // 동기화이고, 여기는 「협찬 아니고 광고입니다」·「#광고 내돈내산으로 써보고」를 부인으로 보지 않도록
 // 판정이 다르다(DB 규칙은 문안 경고라 넓게 잡는 것이 맞다).
-const STRONG_DENIAL = /(?:광고|협찬)\s*(?:아님|아니(?![고라]))/gu;
+// 「아닙니다·아닌 후기」 같은 존댓말·관형형도 부인이다. 「제공받지 않았」은 제공 표기처럼 보여도 부인이다.
+const STRONG_DENIAL = /(?:(?:광고|협찬)\s*아(?:님|닙|닌|니(?![고라]))|(?:제공|협찬)\s*(?:을\s*)?받지\s*않)/gu;
 const WEAK_DENIAL = /내돈\s*내산/gu;
 
 function firstMatch(text: string, pattern: RegExp): { text: string; index: number } | null {
@@ -168,7 +170,7 @@ const HINT_BY_KIND: Partial<Record<AdDisclosureKind, string>> = {
 export function adDisclosureHint(result: AdDisclosureResult): string | null {
   const reason = HINT_BY_KIND[result.kind];
   if (!result.needsAction || !reason) return null;
-  // 구분 기호로 잇지 않는다 — 사유 문장의 마침표 뒤에 「 · 」가 오면 조각처럼 읽힌다(ss-ux 재검토).
+  // 구분 기호로 잇지 않는다 — 사유 문장의 마침표 뒤에 「 · 」가 오면 조각처럼 읽힌다.
   const found = result.denial
     ? `찾은 문구: 「${result.denial}」`
     : result.found
@@ -182,8 +184,15 @@ export const AD_DISCLOSURE_UNCHECKED_LABEL = "광고표기미점검";
 
 const NOT_LEGAL_ADVICE = "참고용 점검이며 법률 판단이 아닙니다.";
 
+/** 피드 머리 집계 — 조치 대상 수 · 본문 미수집 수 · 점검한 수. */
+export interface AdDisclosureSummary {
+  flagged: number;
+  unchecked: number;
+  checked: number;
+}
+
 /** 피드 머리 설명창 문구 — 무엇을 셌는지·못 본 것이 몇 건인지까지(0건이 통과로 오독되지 않게). */
-export function adDisclosureSummaryHint(summary: { flagged: number; unchecked: number; checked: number }): string {
+export function adDisclosureSummaryHint(summary: AdDisclosureSummary): string {
   const parts: string[] = [];
   if (summary.flagged > 0) {
     parts.push(
@@ -197,12 +206,7 @@ export function adDisclosureSummaryHint(summary: { flagged: number; unchecked: n
   return parts.join(" ");
 }
 
-/** 피드 머리용 집계 — 조치 대상 수 · 본문 미수집 수 · 점검한 수. */
-export function summarizeAdDisclosure(results: AdDisclosureResult[]): {
-  flagged: number;
-  unchecked: number;
-  checked: number;
-} {
+export function summarizeAdDisclosure(results: AdDisclosureResult[]): AdDisclosureSummary {
   const unchecked = results.filter((r) => r.kind === "NO_CAPTION").length;
   return {
     flagged: results.filter((r) => r.needsAction).length,

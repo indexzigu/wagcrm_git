@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * `Asset.notes` 의 자동수집 캡션을 읽는다. 수집기가 최신 캡션으로 그 메모를 갱신하지 않으면
  * 셀러가 캡션을 고쳐도 배지가 영영 남는다.
  *
- * 지키는 것: 오너 수기 메모(접두 없음)는 절대 덮지 않는다 · 같은 값·빈 캡션은 쓰지 않는다.
+ * 지키는 것: 오너 수기 메모(접두 없음)는 절대 덮지 않는다 · 같은 캡션·빈 캡션은 쓰지 않는다.
  */
 
 const campaignFindManyMock = vi.fn();
@@ -18,7 +18,8 @@ vi.mock("@/lib/prisma", () => ({
     salesCampaign: { findMany: (...a: unknown[]) => campaignFindManyMock(...a) },
     asset: {
       findMany: (...a: unknown[]) => assetFindManyMock(...a),
-      update: (args: unknown) => {
+      update: (args: unknown) => args,
+      updateMany: (args: unknown) => {
         assetUpdateMock(args);
         return args;
       },
@@ -60,10 +61,11 @@ const asset = (id: string, notes: string | null) => ({
   notes,
 });
 
-function notesWritten(): Record<string, string | undefined> {
+/** 메모를 쓴 자산 → 쓴 값. 쓰지 않은 자산은 키가 없다. */
+function notesWritten(): Record<string, string> {
   return Object.fromEntries(
     assetUpdateMock.mock.calls.map(([args]) => {
-      const { where, data } = args as { where: { id: string }; data: { notes?: string } };
+      const { where, data } = args as { where: { id: string }; data: { notes: string } };
       return [where.id, data.notes];
     }),
   );
@@ -99,9 +101,21 @@ describe("syncCampaignPostEngagement — 자동수집 메모 갱신", () => {
     expect(notesWritten()).toEqual({
       empty1: `${AUTO_NOTE_PREFIX}#광고 새 게시물 · 좋아요 10`,
       auto1: `${AUTO_NOTE_PREFIX}#협찬 고친 캡션\n둘째 줄 · 좋아요 10`,
-      memo1: undefined,
-      same1: undefined,
     });
+  });
+
+  it("메모 쓰기는 「비었거나 자동수집 메모」 조건으로 다시 막는다(수집 중 오너가 저장한 메모 보호)", async () => {
+    assetFindManyMock.mockReset().mockResolvedValue([asset("race1", null)]);
+    scrapeTier0Mock.mockResolvedValue({ raw_posts: [post("RACE1", "#광고 새 게시물")] });
+
+    await syncCampaignPostEngagement({ spacingMs: 0 });
+
+    const [args] = assetUpdateMock.mock.calls[0] as [{ where: { OR: unknown[] } }];
+    expect(args.where.OR).toEqual([
+      { notes: null },
+      { notes: "" },
+      { notes: { startsWith: AUTO_NOTE_PREFIX } },
+    ]);
   });
 
   it("캡션이 비어 오면 기존 자동수집 메모를 지우지 않는다", async () => {
@@ -110,6 +124,6 @@ describe("syncCampaignPostEngagement — 자동수집 메모 갱신", () => {
 
     await syncCampaignPostEngagement({ spacingMs: 0 });
 
-    expect(notesWritten()).toEqual({ keep1: undefined });
+    expect(notesWritten()).toEqual({});
   });
 });
