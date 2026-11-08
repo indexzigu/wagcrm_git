@@ -51,6 +51,14 @@ const AI_TAGS_PATHS = {
     sql: Prisma.sql`"aiTags"->'metrics'->'engagement'`,
     project: (t) => metricsGroup(t, "engagement"),
   },
+  /** 참여율 스칼라(비율) 하나만 — 셀러 목록이 전 셀러를 읽으므로 engagement 묶음 전체도 안 가져온다. */
+  engagementRate: {
+    sql: Prisma.sql`"aiTags"->'metrics'->'engagement'->'er'`,
+    project: (t) => {
+      const engagement = metricsGroup(t, "engagement");
+      return engagement && typeof engagement === "object" ? ((engagement as TagsRecord).er ?? null) : null;
+    },
+  },
   cadence: {
     sql: Prisma.sql`"aiTags"->'metrics'->'cadence'`,
     project: (t) => metricsGroup(t, "cadence"),
