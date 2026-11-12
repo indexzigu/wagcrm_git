@@ -29,7 +29,8 @@
     않는다.**
 
 - **Deploy Path Is PR-Merge Only:** 프로덕션 배포 경로는 `origin/main에서
-  분기한 격리 워크트리 → push → PR → 오너 머지(main 통합) →
+  분기한 격리 워크트리 → push → PR → 머지(main 통합 — 오너, 또는 아래
+  「에이전트 머지·운영 반영 예외」를 충족하면 에이전트) →
   scripts/promote-prod.sh 승격(main→release fast-forward) → Vercel Git 자동
   배포`가 유일하다. 로컬 `vercel --prod` 직배포는 로컬 트리 전체로 프로덕션을
   덮어 타 세션 작업을 드롭한(last-writer-wins) 실사고가 있어 금지한다.
@@ -39,6 +40,23 @@
   시점만 분리하는 배칭"이라 작업 흐름(머지 후 후속 작업)은 막히지 않는다.
   배경: 머지=즉시빌드 시절 main 머지 50회/4일 × 회당 ~20 CPU분이 Pro 포함
   크레딧($20/월)을 소진하는 페이스였다(2026-07-24 실측).
+
+- **에이전트 머지·운영 반영 예외 (오너 범주 승인 2026-11-12):** 아래를 모두 충족하면 에이전트가 PR 을
+  머지하고 메뉴바 「배포하기」와 같은 `~/selfhost/wagcrm/infra/selfhost/release-deploy.sh` 로 운영에
+  반영한 뒤 결과와 되돌리는 절차를 보고한다. 하나라도 못 채우면 `[오너]` 머지 요청으로 넘긴다.
+  ① CI 필수 체크 통과, deploy-guard·pr-review-gate 관문을 우회 없이 통과(`PR_REVIEW_GATE_OFF`·확인 전
+     `GATE_OK` 부착 금지).
+  ② 작성 세션이 아닌 리뷰어가 심각(HIGH 이상) 지적 0건으로 판정하고 「삭제 동작 변경 없음」을 명시
+     확인했다. 머지하는 세션은 리뷰어의 심각도를 다시 분류하지 않는다.
+  ③ 이번 반영 구간(`~/selfhost/logs/deployed.sha`..origin/main) 전체에 `prisma/` · `.env*` ·
+     경로에 `settlement` 가 든 파일(정산) · `ygrd-link/`(링크 서버 — 되돌리는 절차가 없음) · `infra/` 변경이
+     없다 — 이 PR 만이 아니라 함께 나가는 앞선 머지분까지 `git diff --stat` 으로 본다.
+  ④ 보고에 되돌리는 절차를 적는다(릴리스 연결 교체 → 서비스 재시작 → 반영 기록 갱신). `rollback.sh`
+     (클라우드 전환 되돌리기)는 이 절차가 아니다.
+  ⑤ 승격 레인(`promote-prod.sh`)은 이 예외에 들지 않는다.
+  **효력 정지:** 되돌리기 실행·반영 후 상태 점검 실패·오너의 회귀 신고 중 하나라도 생기면 이 항은 그
+  즉시 효력이 없다. 재개는 오너 승인으로만 한다. 권한 판정기 허용 문장(`~/.claude/settings.json`
+  `autoMode.allow`)은 오너가 넣는다 — 이 문서만으로는 작동하지 않는다.
 
 - **Two Projects, Three Branches (통합 main · 운영 release · 데모 demo):**
   ⛔ **절 이름의 「Two Projects」는 더 이상 사실이 아니다 — Vercel 프로젝트는 `wag-crm`
@@ -558,7 +576,7 @@
   **PR 생성 직후, 번호가
   확정되는 즉시** 제목 앞에 `#NN ` 프리픽스를 붙인다:
   `gh pr edit <N> --title "#<N> type(scope): 한글 요약"`.
-  프리픽스는 **오너가 머지하기 전에** 붙어 있어야 squash 커밋 제목(=Vercel
+  프리픽스는 **머지 전에**(누가 머지하든) 붙어 있어야 squash 커밋 제목(=Vercel
   대시보드의 Production 배포 행)에 실린다 — 머지 후 편집은 무효다. 이것은
   Vercel에서 배포 행을 식별하기 위한 오너 확정 규약이다. GitHub이 말미에
   붙이는 `(#NN)`은 긴 한글 제목에서 truncation으로 잘려 보이지 않으므로
