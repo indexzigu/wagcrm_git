@@ -239,7 +239,7 @@ export function MobilePipelineView({
       </MobileTopBar>
 
       {/* Search Bar */}
-      <InputGroup className="h-11 rounded-2xl border border-border bg-card shadow-soft-sm transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-focus-ring">
+      <InputGroup className="h-11 rounded-2xl border border-border bg-card shadow-soft-sm transition-[background-color,border-color,box-shadow] focus-within:bg-white focus-within:ring-2 focus-within:ring-focus-ring">
         <InputGroupAddon>
           <SearchIcon className="text-slate-400 size-4 ml-1" />
         </InputGroupAddon>

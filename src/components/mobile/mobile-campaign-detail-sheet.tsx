@@ -850,7 +850,7 @@ function SalesDetailBody({
         {source === "live" ? (
           <div className="flex flex-col pb-3 border-b border-slate-200/60">
             {/* 라벨만 primary — 라이브 수치임을 누적(확정치)과 은은하게 구분(ss 검토 P2) */}
-            <span className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-0.5">오늘 판매</span>
+            <span className="text-[10px] font-semibold text-primary mb-0.5">오늘 판매</span>
             <p className="text-[22px] font-black tabular-nums text-slate-800 tracking-tight leading-none">
               ₩{formatCurrency(today.revenue)}
             </p>
@@ -864,7 +864,7 @@ function SalesDetailBody({
         ) : null}
 
         <div className="flex flex-col">
-          <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">누적 매출</span>
+          <span className="text-[10px] font-medium text-slate-500 mb-0.5">누적 매출</span>
           <p className="text-[22px] font-black tabular-nums text-slate-800 tracking-tight leading-none">
             ₩{formatCurrency(cumulative.revenue)}
           </p>
@@ -1261,7 +1261,7 @@ function DailyTrend({ daily, todayYmd }: { daily: CampaignDailyPoint[]; todayYmd
               <div
                 key={point.date}
                 className={cn(
-                  "min-w-0 flex-1 rounded-t-md transition-all",
+                  "min-w-0 flex-1 rounded-t-md transition-colors",
                   isToday
                     // rgba(var(--primary),0.3) 은 무효였다 — --primary 는 RGB 트리플렛이
                     // 아니라 hex(#0F5F67)라 rgba(#0F5F67,0.3) 로 파싱 실패해 글로우가

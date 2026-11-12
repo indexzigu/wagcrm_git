@@ -164,7 +164,7 @@ function IncidentSection({ incidents, error }: { incidents: AutomationIncident[]
   if (error) {
     return (
       <section aria-label="이상 기록" className="shrink-0 border-t border-slate-100 px-3.5 py-2.5">
-        <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">이상 기록</p>
+        <p className="mb-1.5 text-[10px] font-bold text-slate-500">이상 기록</p>
         <p className="text-[11px] text-[var(--status-urgent-text)]">{error}</p>
       </section>
     );
@@ -174,7 +174,7 @@ function IncidentSection({ incidents, error }: { incidents: AutomationIncident[]
   const { shown, hiddenCount } = incidentDetailLines(incidents);
   return (
     <section aria-label="이상 기록" className="shrink-0 border-t border-slate-100 px-3.5 py-2.5">
-      <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">이상 기록</p>
+      <p className="mb-1.5 text-[10px] font-bold text-slate-500">이상 기록</p>
       {/* 조치대기는 자르지 않으므로 줄이 많을 수 있다 — 높이를 묶고 스크롤(키보드로도 닿게, 확인대기 목록과 같은 꼴). */}
       <ul tabIndex={0} className="max-h-[168px] space-y-2 overflow-y-auto pr-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-focus-ring">
         {shown.map((incident) => {
@@ -312,7 +312,7 @@ function JobDetailPopoverContent({
             aria-label="확인대기"
             className="min-h-0 shrink-0 border-t border-slate-100 px-3.5 py-2.5"
           >
-            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <p className="mb-1.5 text-[10px] font-bold text-slate-500">
               확인대기 {needsReview.total}건
             </p>
             {/* 스크롤 영역은 키보드로도 닿아야 한다 — 포커스가 안 가면 마우스 없이는 아래 건을 못 본다. */}
@@ -363,7 +363,7 @@ function JobDetailPopoverContent({
 
         {/* 로그 섹션만 flex-1·min-h-0 — available-height 캡이 걸리는 극단에서 이 목록이 줄며 스크롤로 흡수 */}
         <div className="flex min-h-0 flex-1 flex-col border-t border-slate-100 px-3.5 py-2.5">
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">작동 로그</p>
+          <p className="mb-1.5 text-[10px] font-bold text-slate-500">작동 로그</p>
           {logError ? (
             <p className="text-[11px] text-[var(--status-urgent-text)]">{logError}</p>
           ) : logs === null ? (

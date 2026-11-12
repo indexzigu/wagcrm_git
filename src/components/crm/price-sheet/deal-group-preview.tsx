@@ -138,7 +138,7 @@ export function DealGroupPreview({
                 {/* "existing" 그룹은 상위딜을 새로 만들지 않고 기존 딜에 하위품목만 붙이므로
                     신규 생성 개수에서 뺀다 — 아래 카드 본문의 "기존 딜에 추가" 문구와
                     헤더가 서로 모순되지 않게 한다. */}
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="text-[10px] font-semibold text-muted-foreground">
                   신규 생성 ({createdGroups.length}개 판매 조건)
                 </span>
                 {createdGroups.map((group) => (
@@ -148,7 +148,7 @@ export function DealGroupPreview({
                   >
                     <div className="flex flex-col gap-1.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <span className="text-[10px] font-semibold text-muted-foreground">
                           {group.parentPriceSource === "existing"
                             ? "기존 판매 조건에 추가"
                             : group.options
@@ -239,7 +239,7 @@ export function DealGroupPreview({
 
                       {group.options && (
                         <div className="mt-1 flex flex-col gap-1">
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span className="text-[10px] font-semibold text-muted-foreground">
                             하위 옵션 {group.options.length}개
                           </span>
                           <div className="flex max-h-60 flex-col gap-1 overflow-y-auto pr-1">
@@ -271,7 +271,7 @@ export function DealGroupPreview({
                 편집 UI를 두지 않는다(위 신규 생성 카드와 달리). */}
             {attachGroups.length > 0 && (
               <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="text-[10px] font-semibold text-muted-foreground">
                   기존 판매 조건에 추가 ({attachGroups.length}개 판매 조건)
                 </span>
                 {attachGroups.map((group) => (
@@ -281,7 +281,7 @@ export function DealGroupPreview({
                   >
                     <div className="flex flex-col gap-1.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <span className="text-[10px] font-semibold text-muted-foreground">
                           기존 판매 조건에 추가
                         </span>
                         <span className="text-sm font-medium text-foreground">
@@ -296,7 +296,7 @@ export function DealGroupPreview({
 
                       {group.options && (
                         <div className="mt-1 flex flex-col gap-1">
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span className="text-[10px] font-semibold text-muted-foreground">
                             하위 옵션 {group.options.length}개
                           </span>
                           <div className="flex max-h-60 flex-col gap-1 overflow-y-auto pr-1">
@@ -322,7 +322,7 @@ export function DealGroupPreview({
 
             {updates.length > 0 && (
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="text-[10px] font-semibold text-muted-foreground">
                   기존 판매 조건 업데이트 ({updates.length}건)
                 </span>
                 <div className="flex flex-col gap-1">

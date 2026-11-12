@@ -265,7 +265,7 @@ export function ReviewTable({
     <div className="flex flex-col gap-6">
       {segments.map(([segmentIndex, segmentRows]) => (
         <div key={segmentIndex} className="flex flex-col gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <h3 className="text-xs font-semibold text-muted-foreground">
             표 {segmentIndex + 1} ({segmentRows.length}행)
           </h3>
           <div className="overflow-x-auto rounded-lg border border-border/50">

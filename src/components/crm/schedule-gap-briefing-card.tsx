@@ -140,13 +140,13 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
                         >
                           <div
                             className={`
-                              w-full rounded-lg border transition-[height,scale,opacity,background-color,border-color] duration-300
+                              w-full rounded-lg border transition-[height,opacity,background-color,border-color] duration-300
                               flex items-center justify-center
                               ${isEmpty
                                 ? `${config.barBg} ${config.barBorder} border-dashed`
                                 : `${config.barBg} border-transparent`
                               }
-                              ${isEmpty ? "group-hover:scale-[1.03]" : "group-hover:opacity-90"}
+                              group-hover:opacity-90
                             `}
                             style={{ height: `${barHeight}px` }}
                           >
@@ -165,7 +165,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
                           <span
                             className={`
                               inline-flex items-center rounded-md px-1.5 py-[2px]
-                              text-[9px] ${config.weight} tracking-wide
+                              text-[9px] ${config.weight}
                               ${config.tagBg} ${config.tagText}
                             `}
                           >
