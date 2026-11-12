@@ -273,13 +273,13 @@ function ActiveCampaignSection({
           주문 파생 상세가 페이로드에 없으므로 그 자리에 빈 칸·「-」·안내 문구를 두지 않는다. */}
       {camp.totalOnly ? (
         <div data-testid="portal-headline" className="px-5 py-4 border-b border-slate-100">
-          <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
+          <div className="text-[11px] font-bold text-slate-500">누적 매출</div>
           <div className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{fmtWon(camp.totalRevenue)}</div>
         </div>
       ) : (
       <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
         <div className="px-5 py-4">
-          <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
+          <div className="text-[11px] font-bold text-slate-500">누적 매출</div>
           <div className="text-xl font-bold text-slate-900 mt-0.5 tabular-nums">{fmtWon(camp.totalRevenue)}</div>
           <div className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
             주문 {camp.distinctOrderCount.toLocaleString()}건 · 수량 {camp.totalQuantity.toLocaleString()}개
@@ -288,7 +288,7 @@ function ActiveCampaignSection({
         <div className="px-5 py-4">
           {/* 오늘 매출은 판매 집계지 돈이 오가는 사건(P8 §1 방향축)이 아니라 money-in 색을 받지 않는다.
               「오늘」은 라벨이, 강조는 크기·굵기가 맡아 옆 누적 매출 칸과 같은 무채색으로 둔다(종전 blue-600 은 축 밖 hue). */}
-          <div className="text-[11px] font-bold text-slate-500 uppercase">오늘 매출</div>
+          <div className="text-[11px] font-bold text-slate-500">오늘 매출</div>
           <div className="flex items-baseline gap-1.5 mt-0.5">
             <div className="text-xl font-bold text-slate-900 tabular-nums">{fmtWon(todayStat?.revenue || 0)}</div>
             {momentum && (

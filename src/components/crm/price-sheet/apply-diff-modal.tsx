@@ -91,7 +91,7 @@ export function ApplyDiffModal({
         <div className="flex max-h-96 flex-col gap-4 overflow-y-auto">
           {creates.length > 0 && (
             <div className="flex flex-col gap-2">
-              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+              <h4 className="text-xs font-semibold text-muted-foreground">
                 신규 판매 조건 생성 ({creates.length}건)
               </h4>
               {creates.map((row) => (
@@ -111,7 +111,7 @@ export function ApplyDiffModal({
                   "기존 딜에 추가" 어휘를 그대로 맞춘다). */}
               {newDealGroups.filter((g) => !g.attachToExisting).length > 0 && (
                 <div className="flex flex-col gap-1 rounded-md border border-border/50 bg-muted/20 p-2">
-                  <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                  <span className="text-[10px] font-semibold text-muted-foreground">
                     생성될 판매 조건 구조
                   </span>
                   {newDealGroups
@@ -132,7 +132,7 @@ export function ApplyDiffModal({
 
               {newDealGroups.filter((g) => g.attachToExisting).length > 0 && (
                 <div className="flex flex-col gap-1 rounded-md border border-border/50 bg-muted/20 p-2">
-                  <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                  <span className="text-[10px] font-semibold text-muted-foreground">
                     기존 판매 조건에 추가
                   </span>
                   {newDealGroups
@@ -152,7 +152,7 @@ export function ApplyDiffModal({
 
           {updates.length > 0 && (
             <div className="flex flex-col gap-2">
-              <h4 className="text-xs font-semibold uppercase text-muted-foreground">
+              <h4 className="text-xs font-semibold text-muted-foreground">
                 기존 판매 조건 갱신 ({updates.length}건)
               </h4>
               {updates.map((row) => (

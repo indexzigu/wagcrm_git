@@ -74,7 +74,7 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {summaryCards.map((card) => (
                   <div key={card.label} className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-soft-sm">
-                    <div className="text-xs font-bold text-slate-500 uppercase">{card.label}</div>
+                    <div className="text-xs font-bold text-slate-500">{card.label}</div>
                     <div className="text-xl font-bold text-slate-800 mt-1">{card.value}</div>
                     <div className="text-[11px] text-slate-500 mt-0.5">{card.sub}</div>
                   </div>
@@ -90,7 +90,7 @@ export default function CampaignInsightsModal({ campaign, onClose }: CampaignIns
                 </div>
                 <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm whitespace-nowrap min-w-[560px]">
-                  <thead className="bg-white border-b border-slate-100 text-xs text-slate-500 uppercase">
+                  <thead className="bg-white border-b border-slate-100 text-xs text-slate-500">
                     <tr>
                       <th className="px-5 py-3 font-bold">경로</th>
                       <th className="w-[90px] px-5 py-3 font-bold text-right">주문</th>

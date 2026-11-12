@@ -171,7 +171,7 @@ export default function SalesReportModal({
                 )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm whitespace-nowrap table-fixed min-w-[750px]">
-                    <thead className="bg-white border-b border-slate-100 text-xs text-slate-500 uppercase">
+                    <thead className="bg-white border-b border-slate-100 text-xs text-slate-500">
                       <tr>
                         <th className="px-5 py-3 font-bold text-left">구성(옵션)</th>
                         <th className="w-[100px] px-5 py-3 font-bold text-right">판매가격</th>
@@ -235,7 +235,7 @@ export default function SalesReportModal({
                   )}
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm whitespace-nowrap table-fixed min-w-[750px]">
-                      <thead className="bg-white border-b border-slate-100 text-xs text-slate-500 uppercase">
+                      <thead className="bg-white border-b border-slate-100 text-xs text-slate-500">
                         <tr>
                           <th className="px-5 py-3 font-bold text-left">구성(옵션)</th>
                           <th className="w-[100px] px-5 py-3 font-bold text-right">판매가격</th>

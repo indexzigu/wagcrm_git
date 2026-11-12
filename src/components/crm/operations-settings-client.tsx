@@ -176,7 +176,7 @@ export function OperationsSettingsClient() {
           {!goals ? <p className="text-xs text-muted-foreground">불러오는 중...</p> : (
             <>
               <label className="block space-y-1">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase">연간 목표 매출</span>
+                <span className="text-[11px] font-semibold text-muted-foreground">연간 목표 매출</span>
                 <Input
                   type="number"
                   min="0"

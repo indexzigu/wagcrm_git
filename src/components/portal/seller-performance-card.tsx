@@ -129,7 +129,7 @@ export async function SellerPerformanceCard({
           </div>
 
           <div className="px-6 py-5 border-b border-slate-100 text-center">
-            <div className="text-[11px] font-bold text-slate-500 uppercase">누적 매출</div>
+            <div className="text-[11px] font-bold text-slate-500">누적 매출</div>
             <div className="text-3xl font-bold text-slate-900 mt-1 tabular-nums">{fmtWon(camp.totalRevenue)}</div>
             {/* 합계만 보이는 캠페인(`totalOnly`)은 주문·수량 줄이 없다 — 페이로드에 값이 없다. */}
             {!camp.totalOnly && (
@@ -166,7 +166,7 @@ export async function SellerPerformanceCard({
           {contentPerf.postCount > 0 && (
             <div className="px-6 py-4 border-b border-slate-100">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] font-bold text-slate-500 uppercase shrink-0">
+                <span className="text-[11px] font-bold text-slate-500 shrink-0">
                   내 콘텐츠 성과
                 </span>
                 <span className="text-xs text-slate-500 text-right">
@@ -188,7 +188,7 @@ export async function SellerPerformanceCard({
                   ) : null}
                   <div className="min-w-0">
                     {/* 라벨(숫자 아님) → info, PALETTE_IMPL_SPEC.md 인디고 분류 2026-07-09 */}
-                    <div className="text-[10px] font-bold text-status-info uppercase">
+                    <div className="text-[10px] font-bold text-status-info">
                       베스트 게시물
                     </div>
                     <div className="text-xs text-slate-600 mt-0.5">{postMetricsLine(bestPost)}</div>

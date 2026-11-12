@@ -457,7 +457,7 @@ export default function CampaignEditModal({
                 )}
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full table-fixed text-left text-sm">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500">
                       <tr>
                         <th className="px-2 py-2 font-bold w-[16%]">상품명</th>
                         <th className="px-2 py-2 font-bold">옵션명</th>
