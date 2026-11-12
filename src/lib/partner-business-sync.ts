@@ -111,6 +111,8 @@ export type BusinessSyncNotice = {
   missingFields?: readonly CoreBusinessField[];
   filledFromInvoice?: readonly SupplementableField[];
   invoiceLookup?: { status: string; message?: string };
+  /** bizno.net 조회 자체가 실패했다(응답 오류·시간 초과) — 자료 없음과 다르다 */
+  biznoFailed?: boolean;
   bizCompanyName?: string | null;
 };
 
@@ -129,6 +131,9 @@ export function describeBusinessSync(
 
   if (filled.length > 0) {
     details.push(`세금계산서에서 ${filled.map((field) => FIELD_NAMES[field]).join("·")} 채움`);
+  }
+  if (notice.biznoFailed) {
+    details.push("사업자 조회 사이트(bizno) 응답 실패 — 잠시 뒤 다시 시도해 주세요");
   }
   if (notice.invoiceLookup?.status === "FAILED") {
     details.push(`메일함 조회 실패: ${notice.invoiceLookup.message ?? "원인 미상"}`);

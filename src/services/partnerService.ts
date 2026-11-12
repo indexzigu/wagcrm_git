@@ -111,7 +111,7 @@ async function scrapeBiznoWeb(businessNumber: string) {
 
     if (!res.ok) {
       console.warn(`[scrapeBiznoWeb] bizno fetch failed: HTTP ${res.status}`);
-      return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null };
+      return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null, failed: true };
     }
 
     const html = await res.text();
@@ -206,10 +206,11 @@ async function scrapeBiznoWeb(businessNumber: string) {
       companyName,
       businessType,
       businessItem,
+      failed: false,
     };
   } catch (err) {
     console.error("[scrapeBiznoWeb] Scraping failed or timed out:", err);
-    return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null };
+    return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null, failed: true };
   }
 }
 
@@ -480,8 +481,11 @@ export class PartnerService {
       let companyName: string | null = null;
       let businessType: string | null = null;
       let businessItem: string | null = null;
+      // bizno 장애(HTTP 오류·타임아웃)를 「자료 없음」과 구분해 화면에 알린다
+      let biznoFailed = false;
       try {
         const scraped = await scrapeBiznoWeb(businessNumber);
+        biznoFailed = scraped.failed;
         ceoName = scraped.ceoName;
         address = scraped.address;
         companyName = scraped.companyName;
@@ -535,6 +539,7 @@ export class PartnerService {
         // 화면이 「찾지 못한 칸」·「계산서에서 채운 칸」·「메일함 조회 실패」를 알린다
         missingFields: resolution.missingFields,
         filledFromInvoice: resolution.filledFromInvoice,
+        biznoFailed,
         invoiceLookup:
           invoiceLookup.status === "FAILED"
             ? { status: invoiceLookup.status, message: invoiceLookup.message }

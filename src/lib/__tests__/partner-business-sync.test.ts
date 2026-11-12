@@ -102,6 +102,15 @@ describe("describeBusinessSync", () => {
     expect(message.description).toContain("메일함 조회 실패: IMAP 접속 실패");
   });
 
+  it("tells a bizno outage apart from missing data", () => {
+    const message = describeBusinessSync(
+      { missingFields: ["ceoName", "businessType", "businessItem"], biznoFailed: true, invoiceLookup: { status: "NOT_FOUND" } },
+      null,
+    );
+    expect(message.tone).toBe("warning");
+    expect(message.description).toContain("사업자 조회 사이트(bizno) 응답 실패");
+  });
+
   it("reports success and names fields taken from invoices", () => {
     const message = describeBusinessSync(
       { missingFields: [], filledFromInvoice: ["businessType", "businessItem"], invoiceLookup: { status: "FOUND" } },
