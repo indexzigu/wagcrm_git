@@ -51,7 +51,10 @@ async function lookupInvoiceSupplement(
       ourBusinessNumber: SUPPLIER.businessNumber,
       target: { name: partner.name ?? "", businessNumber: partner.businessNumber },
     });
-    if (lookup.status !== "FOUND") return { status: "NOT_FOUND" };
+    if (lookup.status !== "FOUND") {
+      // 상한에 걸려 못 읽은 메일이 있으면 「없음」이 「전부 봤다」는 뜻이 아니다(계산서 찾기 라우트와 같은 규칙)
+      return { status: scan.truncated > 0 ? "NOT_FOUND_PARTIAL" : "NOT_FOUND" };
+    }
     const values: BusinessFieldValues = {};
     for (const field of fields) {
       const value = lookup.values[field];
@@ -540,10 +543,7 @@ export class PartnerService {
         missingFields: resolution.missingFields,
         filledFromInvoice: resolution.filledFromInvoice,
         biznoFailed,
-        invoiceLookup:
-          invoiceLookup.status === "FAILED"
-            ? { status: invoiceLookup.status, message: invoiceLookup.message }
-            : { status: invoiceLookup.status },
+        invoiceLookup: { status: invoiceLookup.status },
       };
     } catch (globalErr) {
       console.error("[PartnerService.syncBusinessInfo] 동기화 중 글로벌 오류 발생 (기존 값 반환):", globalErr);

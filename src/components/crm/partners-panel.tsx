@@ -129,7 +129,7 @@ const defaultSyncBusinessInfo = async (partnerId: string, force = false) => {
   const response = await fetch(`/api/partners/${partnerId}/business-info?force=${force}`);
   const body = await response.json().catch(() => null);
   // 서버가 준 실패 사유를 버리지 않는다(종전엔 「동기화 실패」 네 글자만 남았다).
-  if (!response.ok) throw new Error(body?.error ?? `사업자 정보 동기화에 실패했습니다. (HTTP ${response.status})`);
+  if (!response.ok) throw new Error(body?.error ?? "사업자 정보 동기화에 실패했습니다. 잠시 뒤 다시 시도해 주세요.");
   return body;
 };
 

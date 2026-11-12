@@ -96,10 +96,10 @@ describe("describeBusinessSync", () => {
 
   it("surfaces a mailbox failure instead of hiding it", () => {
     const message = describeBusinessSync(
-      { missingFields: ["businessType"], invoiceLookup: { status: "FAILED", message: "IMAP 접속 실패" } },
+      { missingFields: ["businessType"], invoiceLookup: { status: "FAILED" } },
       null,
     );
-    expect(message.description).toContain("메일함 조회 실패: IMAP 접속 실패");
+    expect(message.description).toContain("메일함의 세금계산서를 읽지 못했습니다");
   });
 
   it("tells a bizno outage apart from missing data", () => {
@@ -108,7 +108,15 @@ describe("describeBusinessSync", () => {
       null,
     );
     expect(message.tone).toBe("warning");
-    expect(message.description).toContain("사업자 조회 사이트(bizno) 응답 실패");
+    expect(message.description).toContain("사업자 조회 사이트가 응답하지 않았습니다");
+  });
+
+  it("does not claim the mailbox was fully checked when the scan was truncated", () => {
+    const message = describeBusinessSync(
+      { missingFields: ["businessItem"], invoiceLookup: { status: "NOT_FOUND_PARTIAL" } },
+      null,
+    );
+    expect(message.description).toContain("세금계산서를 일부만 확인했습니다");
   });
 
   it("reports success and names fields taken from invoices", () => {
