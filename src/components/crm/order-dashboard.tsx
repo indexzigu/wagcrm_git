@@ -1919,7 +1919,7 @@ export default function OrderDashboard() {
       </Sheet>
 
       {isLoading ? (
-        <div className="p-10 text-center text-slate-500 font-bold animate-pulse">데이터를 불러오는 중입니다...</div>
+        <div role="status" className="p-10 text-center text-slate-500">데이터를 불러오는 중입니다...</div>
       ) : campaigns.length === 0 ? (
         <div className="bg-card p-10 text-center rounded-2xl shadow-soft-sm border border-border text-slate-500">
           등록된 캠페인이 없습니다. 우측 상단의 [캠페인 등록] 버튼을 눌러주세요.

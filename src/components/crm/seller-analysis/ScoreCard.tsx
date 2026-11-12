@@ -114,7 +114,7 @@ export function ScoreCard({ scores, compact = false }: ScoreCardProps) {
         <div className="flex items-center gap-3">
           <Gauge className="w-5 h-5 text-slate-400" />
           <div>
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider">지표 종합 점수</div>
+            <div className="text-[10px] text-slate-500">지표 종합 점수</div>
             <div
               className={cn(
                 'text-2xl font-bold tabular-nums leading-tight',
