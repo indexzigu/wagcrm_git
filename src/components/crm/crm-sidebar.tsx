@@ -317,7 +317,7 @@ export function CrmSidebar() {
             // 6(left) + 36(아이콘) + 8(간격). 아이콘 슬롯 폭과 함께 움직여야 한다.
             "pl-[50px] truncate transition-[opacity,width,height,color,font-size,font-weight,letter-spacing] duration-150 ease-in-out whitespace-nowrap inline-block",
             isPrivacyMode 
-              ? "text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground"
+              ? "text-[11px] font-semibold text-sidebar-muted-foreground"
               : "text-[15px] font-bold tracking-tight text-sidebar-foreground",
             "group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:h-0 group-data-[collapsible=icon]:overflow-hidden group-data-[collapsible=icon]:pointer-events-none"
           )}>
