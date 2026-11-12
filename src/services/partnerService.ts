@@ -14,6 +14,59 @@ import {
   type OrderExcelRulesCore,
 } from "@/lib/order-converter/excel-rules";
 import { Prisma } from "@prisma/client";
+import {
+  fieldsNeedingSupplement,
+  normalizeBusinessValue,
+  resolveBusinessFields,
+  type BusinessFieldValues,
+  type InvoiceLookupOutcome,
+  type SupplementableField,
+} from "@/lib/partner-business-sync";
+import { scanTaxInvoiceMails } from "@/lib/tax-invoice-mail/mail-scan";
+import { findPartnerInvoiceInfo } from "@/lib/tax-invoice-mail/partner-invoice-lookup";
+import { isAcceptableEnrichmentValue } from "@/lib/agent/partner-enrichment-schema";
+import { SUPPLIER } from "@/lib/tax-invoice-builder";
+
+/** 계산서 보충 조회 창(일) — 결재함 거래처 등록 기안의 계산서 찾기와 같은 값. */
+const INVOICE_SUPPLEMENT_SINCE_DAYS = 180;
+
+/**
+ * bizno 가 비운 칸을 메일함의 전자세금계산서로 보충한다(읽기 전용).
+ * ⛔ 실패를 「계산서 없음」으로 접지 않는다 — 화면이 「메일함 조회 실패」를 따로 알린다.
+ * ⛔ 반환값에 대표자·주소가 있다 — 로그에 값을 남기지 말 것(P0).
+ */
+async function lookupInvoiceSupplement(
+  partner: { name: string | null; businessNumber: string },
+  fields: readonly SupplementableField[],
+): Promise<InvoiceLookupOutcome> {
+  if (fields.length === 0) return { status: "SKIPPED" };
+  try {
+    const scan = await scanTaxInvoiceMails({
+      sinceDays: INVOICE_SUPPLEMENT_SINCE_DAYS,
+      // 국세청 보안메일 첨부 비밀번호 = 공급받는자(우리) 사업자번호(계산서 찾기 라우트와 같다).
+      invoicePassword: SUPPLIER.businessNumber,
+    });
+    const lookup = findPartnerInvoiceInfo({
+      mails: scan.mails,
+      ourBusinessNumber: SUPPLIER.businessNumber,
+      target: { name: partner.name ?? "", businessNumber: partner.businessNumber },
+    });
+    if (lookup.status !== "FOUND") {
+      // 상한에 걸려 못 읽은 메일이 있으면 「없음」이 「전부 봤다」는 뜻이 아니다(계산서 찾기 라우트와 같은 규칙)
+      return { status: scan.truncated > 0 ? "NOT_FOUND_PARTIAL" : "NOT_FOUND" };
+    }
+    const values: BusinessFieldValues = {};
+    for (const field of fields) {
+      const value = lookup.values[field];
+      if (value && isAcceptableEnrichmentValue(field, value)) values[field] = value;
+    }
+    return { status: "FOUND", values };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "메일함 조회에 실패했습니다.";
+    console.error("[PartnerService.syncBusinessInfo] 계산서 보충 조회 실패:", message);
+    return { status: "FAILED", message };
+  }
+}
 
 const NTS_API_URL = "https://api.odcloud.kr/api/nts-businessman/v1/status";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일
@@ -61,7 +114,7 @@ async function scrapeBiznoWeb(businessNumber: string) {
 
     if (!res.ok) {
       console.warn(`[scrapeBiznoWeb] bizno fetch failed: HTTP ${res.status}`);
-      return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null };
+      return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null, failed: true };
     }
 
     const html = await res.text();
@@ -149,16 +202,18 @@ async function scrapeBiznoWeb(businessNumber: string) {
       }
     }
 
+    // bizno 는 자료 없는 칸을 "-" 로 그린다 — 값으로 저장하면 「대표자명: -」가 된다.
     return {
-      ceoName: ceoName || null,
-      address: address || null,
+      ceoName: normalizeBusinessValue(ceoName),
+      address: normalizeBusinessValue(address),
       companyName,
       businessType,
       businessItem,
+      failed: false,
     };
   } catch (err) {
     console.error("[scrapeBiznoWeb] Scraping failed or timed out:", err);
-    return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null };
+    return { ceoName: null, address: null, companyName: null, businessType: null, businessItem: null, failed: true };
   }
 }
 
@@ -429,8 +484,11 @@ export class PartnerService {
       let companyName: string | null = null;
       let businessType: string | null = null;
       let businessItem: string | null = null;
+      // bizno 장애(HTTP 오류·타임아웃)를 「자료 없음」과 구분해 화면에 알린다
+      let biznoFailed = false;
       try {
         const scraped = await scrapeBiznoWeb(businessNumber);
+        biznoFailed = scraped.failed;
         ceoName = scraped.ceoName;
         address = scraped.address;
         companyName = scraped.companyName;
@@ -440,14 +498,28 @@ export class PartnerService {
         console.error("[PartnerService.syncBusinessInfo] Bizno 스크래핑 처리 실패:", err);
       }
 
+      // 3단계: bizno 가 비운 칸(저장값도 빈 칸)만 메일함 계산서로 보충
+      const current: BusinessFieldValues = {
+        ceoName: partner.ceoName,
+        businessType: partner.businessType,
+        businessItem: partner.businessItem,
+        address: partner.address,
+      };
+      const scrapedValues: BusinessFieldValues = { ceoName, businessType, businessItem, address };
+      const invoiceLookup = await lookupInvoiceSupplement(
+        { name: partner.name, businessNumber },
+        fieldsNeedingSupplement(current, scrapedValues),
+      );
+      const resolution = resolveBusinessFields({
+        current,
+        scraped: scrapedValues,
+        invoice: invoiceLookup.status === "FOUND" ? invoiceLookup.values : null,
+      });
+
       // DB 업데이트
-      const updateData: Record<string, unknown> = { bizSyncedAt: new Date() };
+      const updateData: Record<string, unknown> = { bizSyncedAt: new Date(), ...resolution.updates };
       if (companyStatus !== null) updateData.companyStatus = companyStatus;
       if (companyRole !== null) updateData.companyRole = companyRole;
-      if (ceoName !== null) updateData.ceoName = ceoName;
-      if (address !== null) updateData.address = address;
-      if (businessType !== null) updateData.businessType = businessType;
-      if (businessItem !== null) updateData.businessItem = businessItem;
       // 상호(name)는 캠페인 자동명명·별칭의 기준이라 기존 값을 덮어쓰지 않는다.
       // 현재 거래처명이 비어있을 때만 스크랩한 상호로 채운다.
       if (companyName !== null && !partner.name?.trim()) {
@@ -467,6 +539,11 @@ export class PartnerService {
         // 스크랩한 공식 상호 — 기존 거래처명을 덮어쓰지 않았어도 UI가 참고할 수 있도록 별도 노출
         bizCompanyName: companyName,
         bizSyncedAt: updated.bizSyncedAt?.toISOString(),
+        // 화면이 「찾지 못한 칸」·「계산서에서 채운 칸」·「메일함 조회 실패」를 알린다
+        missingFields: resolution.missingFields,
+        filledFromInvoice: resolution.filledFromInvoice,
+        biznoFailed,
+        invoiceLookup: { status: invoiceLookup.status },
       };
     } catch (globalErr) {
       console.error("[PartnerService.syncBusinessInfo] 동기화 중 글로벌 오류 발생 (기존 값 반환):", globalErr);

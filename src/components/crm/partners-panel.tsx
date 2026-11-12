@@ -70,6 +70,7 @@ import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { LinkedSellersList } from "./linked-sellers-list";
 import { LinkedDealsList } from "./linked-deals-list";
 import { PartnerMonthlySettlementToggle } from "./partner-monthly-settlement-toggle";
+import { describeBusinessSync } from "@/lib/partner-business-sync";
 
 // --- Types ---
 
@@ -126,8 +127,10 @@ function useDesktop() {
 
 const defaultSyncBusinessInfo = async (partnerId: string, force = false) => {
   const response = await fetch(`/api/partners/${partnerId}/business-info?force=${force}`);
-  if (!response.ok) throw new Error("동기화 실패");
-  return response.json();
+  const body = await response.json().catch(() => null);
+  // 서버가 준 실패 사유를 버리지 않는다(종전엔 「동기화 실패」 네 글자만 남았다).
+  if (!response.ok) throw new Error(body?.error ?? "사업자 정보 동기화에 실패했습니다. 잠시 뒤 다시 시도해 주세요.");
+  return body;
 };
 
 const defaultUploadBusinessCardOcr = async (partnerId: string, fileBase64: string, mimeType: string) => {
@@ -1103,29 +1106,27 @@ export function PartnersPanel({
                         toast.info("최근 7일 이내에 동기화되었습니다. force 옵션으로 재조회합니다.");
                         return;
                       }
+                      // 서버가 돌려준 값이 저장된 값이다 — 「-」 자리표시를 지운 null 도 그대로 반영한다.
+                      const pick = (key: string, fallback: string | null | undefined) =>
+                        key in info ? ((info[key] as string | null) ?? null) : fallback;
                       onUpdated?.({
                         ...partner!,
                         companyStatus: info.companyStatus ?? partner!.companyStatus,
                         companyRole: info.companyRole ?? partner!.companyRole,
-                        ceoName: info.ceoName ?? partner!.ceoName,
-                        address: info.address ?? partner!.address,
-                        businessType: info.businessType ?? partner!.businessType,
-                        businessItem: info.businessItem ?? partner!.businessItem,
+                        ceoName: pick("ceoName", partner!.ceoName),
+                        address: pick("address", partner!.address),
+                        businessType: pick("businessType", partner!.businessType),
+                        businessItem: pick("businessItem", partner!.businessItem),
                         name: info.name ?? partner!.name,
                         bizSyncedAt: info.bizSyncedAt ? String(info.bizSyncedAt) : partner!.bizSyncedAt,
                       });
-                      const syncDetails = [
-                        info.businessType || info.businessItem
-                          ? `${[info.businessType ? "업태" : null, info.businessItem ? "종목" : null].filter(Boolean).join("·")} 포함`
-                          : null,
-                        info.bizCompanyName && info.bizCompanyName !== (info.name ?? partner!.name)
-                          ? `조회된 상호: ${info.bizCompanyName} (거래처명 유지)`
-                          : null,
-                      ].filter(Boolean);
+                      const message = describeBusinessSync(info, info.name ?? partner!.name);
                       // 토스트는 항상 1개 — 부가 정보는 description 한 줄로 합침(중복 토스트 방지)
-                      toast.success("사업자 정보가 동기화되었습니다.", {
-                        description: syncDetails.length > 0 ? syncDetails.join(" · ") : undefined,
-                      });
+                      if (message.tone === "warning") {
+                        toast.warning(message.title, { description: message.description });
+                      } else {
+                        toast.success(message.title, { description: message.description });
+                      }
                     } catch (error) {
                       toast.error(error instanceof Error ? error.message : "동기화에 실패했습니다.");
                     } finally {

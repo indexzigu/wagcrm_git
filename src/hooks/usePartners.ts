@@ -109,10 +109,11 @@ export function usePartners(initialPartners: PartnerRow[]) {
 
   const syncBusinessInfo = useCallback(async (partnerId: string, force = false) => {
     const response = await fetch(`/api/partners/${partnerId}/business-info?force=${force}`);
-    if (!response.ok) {
-      throw new Error("사업자등록 정보 동기화에 실패했습니다.");
+    const result = await response.json().catch(() => null);
+    // 서버가 준 실패 사유를 버리지 않는다(종전엔 고정 문구만 남아 원인을 알 수 없었다).
+    if (!response.ok || !result) {
+      throw new Error(result?.error ?? "사업자등록 정보 동기화에 실패했습니다. 잠시 뒤 다시 시도해 주세요.");
     }
-    const result = await response.json();
     if (result.error) {
       throw new Error(result.error);
     }
