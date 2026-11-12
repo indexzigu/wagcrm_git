@@ -91,8 +91,9 @@ describe("평문 명세서 — 자사 마진이 셀러에게 새지 않는다 (P
     expect(text).toContain("정산 금액 (부가세 포함)");
   });
 
-  it("법인은 부가세 제외 금액(공급가액)·부가세로 쪼개 보여준다", () => {
-    expect(text).toContain("부가세 제외 금액 (공급가액)");
+  it("법인은 공급가액·부가세로 쪼개 보여준다", () => {
+    expect(text).toContain("공급가액");
+    expect(text).not.toContain("부가세 제외 금액");
     expect(text).toContain("부가세:");
     expect(text).not.toContain("세금 공제");
   });

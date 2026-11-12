@@ -15,7 +15,8 @@ import {
  * 그대로 옮긴 값이다(같은 픽스처). 금액·이름은 전부 가공이다(P0).
  *
  * 같은 낱말 「공급가액」이 개인(판매 금액의 부가세 제외분)과 사업자(정산금의 부가세 제외분)에서
- * 뜻이 갈려 셀러가 헷갈리던 자리라, 개인 정산서에는 아예 싣지 않고 사업자는 괄호 안에서만 쓴다.
+ * 뜻이 갈려 셀러가 헷갈리던 자리라, 개인 정산서에는 아예 싣지 않고 사업자는 열 이름으로만 쓴다
+ * (오너 확정 2026-11-12: 「부가세 제외 금액 (공급가액)」 → 「공급가액」).
  */
 
 function campaign(overrides: Partial<CampaignRow> = {}): CampaignRow {
@@ -146,7 +147,7 @@ describe("셀러 정산서 줄 이름 (설계서 §14)", () => {
     }
   });
 
-  it("사업자 정산서 — 공급가액은 괄호 안에서만, 세금 공제·실제 입금액 줄은 없다", () => {
+  it("사업자 정산서 — 공급가액은 그 열 이름으로만, 세금 공제·실제 입금액 줄은 없다", () => {
     const { html, text } = render(FIXTURES.business);
     for (const label of [L.common.grossSales, L.common.rate, L.business.payout, L.business.supplyOfPayout, L.business.vat, L.common.campaignTotal, L.common.detailSection]) {
       expect(html).toContain(label);
