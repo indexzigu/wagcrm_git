@@ -222,7 +222,7 @@ export function InlineDataGrid<T extends { id: string }>({
                   <th
                     key={column.key}
                     className={cn(
-                      "group relative h-11 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
+                      "group relative h-11 px-3 text-[11px] font-semibold text-muted-foreground",
                       column.align === "right" && "text-right",
                       column.align === "center" && "text-center",
                       (!column.align || column.align === "left") && "text-left"
@@ -233,7 +233,7 @@ export function InlineDataGrid<T extends { id: string }>({
                       variant="ghost"
                       size="xs"
                       className={cn(
-                        "h-8 rounded-md px-2 text-[11px] font-semibold uppercase tracking-[0.08em] hover:bg-muted hover:text-foreground transition-colors",
+                        "h-8 rounded-md px-2 text-[11px] font-semibold hover:bg-muted hover:text-foreground transition-colors",
                         isSorted
                           ? "text-primary font-bold bg-primary/5"
                           : "text-muted-foreground",

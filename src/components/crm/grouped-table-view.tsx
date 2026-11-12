@@ -214,7 +214,7 @@ function GroupSection({
                     <Button
                       variant="ghost"
                       size="xs"
-                      className="-ml-1 h-8 rounded-md px-2 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase hover:bg-slate-100 hover:text-foreground"
+                      className="-ml-1 h-8 rounded-md px-2 text-[11px] font-semibold text-muted-foreground hover:bg-slate-100 hover:text-foreground"
                       onClick={() => onSort(col.field)}
                     >
                       {col.label}
