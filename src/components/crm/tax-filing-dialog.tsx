@@ -356,7 +356,7 @@ function DirectionBlock({
       </div>
       <table className="mt-2 w-full border-collapse text-xs">
         <thead>
-          <tr className="border-b border-border text-left text-[10px] uppercase text-muted-foreground">
+          <tr className="border-b border-border text-left text-[10px] text-muted-foreground">
             {showSelection ? <th className="w-6 py-1.5" /> : null}
             <th className="py-1.5 pr-2 font-medium">상대</th>
             <th className="py-1.5 pr-2 font-medium">캠페인</th>

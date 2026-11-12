@@ -69,7 +69,7 @@ function PostRow({ post, best }: { post: PerfPost; best: boolean }) {
       <div className="min-w-0 flex-1">
         {best && (
           // 라벨(숫자 아님) → info, PALETTE_IMPL_SPEC.md 인디고 분류 2026-07-09
-          <div className="text-[10px] font-bold text-status-info uppercase">베스트 게시물</div>
+          <div className="text-[10px] font-bold text-status-info">베스트 게시물</div>
         )}
         {post.caption && <div className="text-[11px] text-slate-500 truncate">{post.caption}</div>}
         <div className="text-xs text-slate-600 mt-0.5">{postMetricsLine(post)}</div>

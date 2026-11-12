@@ -381,7 +381,7 @@ describe("시간대 차트·인사이트 패널 틀(4차)", () => {
 describe("남은 파랑·보라(5차)", () => {
   it("셀러 포털: 오늘 매출은 무채색, 오픈 카운트다운은 네이비 틴트, 단골 수는 slate-900 — 마감 배지는 caution 토큰", () => {
     const src = sourceOf("portal/seller-portal-report.tsx");
-    expect(src).toContain('<div className="text-[11px] font-bold text-slate-500 uppercase">오늘 매출</div>');
+    expect(src).toContain('<div className="text-[11px] font-bold text-slate-500">오늘 매출</div>');
     expect(src).toContain('<div className="text-xl font-bold text-slate-900 tabular-nums">{fmtWon(todayStat?.revenue || 0)}</div>');
     expect(src).toContain('className: "bg-primary/10 text-primary border-primary/20", icon: "clock", mode: "open"');
     expect(src).toContain('<div className="text-xl font-bold text-slate-900 tabular-nums">{crossCampaignBuyers.toLocaleString()}명</div>');

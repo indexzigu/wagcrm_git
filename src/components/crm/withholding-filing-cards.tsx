@@ -375,7 +375,7 @@ export function WithholdingFilingCards({ month }: { month: string }) {
         <div className="mt-2 overflow-x-auto">
           <table className="w-full min-w-[560px] border-collapse text-xs">
             <thead>
-              <tr className="border-b border-border text-left text-[10px] uppercase text-muted-foreground">
+              <tr className="border-b border-border text-left text-[10px] text-muted-foreground">
                 <th className="py-1.5 pr-2 font-medium">성명</th>
                 <th className="py-1.5 pr-2 font-medium">주민등록번호</th>
                 <th className="py-1.5 pr-2 font-medium">귀속연도</th>

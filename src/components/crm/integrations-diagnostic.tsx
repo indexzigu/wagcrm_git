@@ -253,13 +253,13 @@ export function IntegrationsDiagnostic({
               {/* 드라이브 상세 정보 */}
               <div className="grid gap-3 sm:grid-cols-2 bg-slate-50/50 p-4 rounded-xl border border-slate-100 text-xs">
                 <div className="space-y-0.5">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase">연동 계정</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">연동 계정</span>
                   <p className="font-semibold text-slate-800 dark:text-slate-200">
                     {drive.accountEmail ?? "— 연결되지 않음 —"}
                   </p>
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase">루트 폴더 ID</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">루트 폴더 ID</span>
                   <p className="font-mono text-slate-600 dark:text-slate-400 truncate" title={drive.rootFolderId ?? ""}>
                     {drive.rootFolderId ?? "— 연결되지 않음 —"}
                   </p>
@@ -326,13 +326,13 @@ export function IntegrationsDiagnostic({
               {/* 캘린더 상세 정보 */}
               <div className="grid gap-3 sm:grid-cols-2 bg-slate-50/50 p-4 rounded-xl border border-slate-100 text-xs">
                 <div className="space-y-0.5">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase">연동 계정</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">연동 계정</span>
                   <p className="font-semibold text-slate-800 dark:text-slate-200">
                     {calendar.accountEmail ?? "— 연결되지 않음 —"}
                   </p>
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase">캠페인 일정 캘린더</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">캠페인 일정 캘린더</span>
                   <p className="font-semibold text-slate-600 dark:text-slate-400">
                     Primary Calendar (기본 캘린더)
                   </p>
@@ -343,7 +343,7 @@ export function IntegrationsDiagnostic({
                   비우면 종전대로 전부 primary. 반영·이사는 다음 동기화(전체 동기화 1회)다.
                   읽기 전용 진단 그리드와 시각 언어가 섞이지 않게 별도 블록으로 둔다(ss-ux P1). */}
               <div className="space-y-1.5 bg-slate-50/50 p-4 rounded-xl border border-slate-100 text-xs">
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase">
+                <span className="text-[10px] font-semibold text-muted-foreground">
                   회계·정산 캘린더 ID (선택)
                 </span>
                 <div className="flex items-center gap-2">
@@ -406,7 +406,7 @@ export function IntegrationsDiagnostic({
               <div className="space-y-3">
                 <div className="bg-muted/60 border border-border rounded-xl p-3 text-slate-700">
                   <div className="flex items-center gap-1.5 font-bold text-slate-800 mb-1">
-                    <CloudLightning className="size-3.5 text-slate-500 shrink-0 animate-pulse" />
+                    <CloudLightning className="size-3.5 text-slate-500 shrink-0" />
                     토큰 자격 자가 복구 원리
                   </div>
                   구글 API 보안 정책으로 인해 비활성 기간이 길어지거나 리프레시 토큰이 회수될 경우, 연동이 끊어질 수 있습니다. [재승인 및 복구] 버튼을 통해 사용자가 직접 동의 화면으로 리다이렉트되어 새로운 토큰을 갱신해 복구할 수 있습니다.
@@ -442,13 +442,13 @@ export function IntegrationsDiagnostic({
             <CardContent className="p-5 space-y-4">
               <div className="flex justify-between items-end text-xs">
                 <div>
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase">추정 사용량</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">추정 사용량</span>
                   <div className="text-lg font-bold font-mono text-slate-800 mt-0.5">
                     {formatBytes(supabaseStats.supabaseEstimatedBytes)}
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase">전체 무료 한도</span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">전체 무료 한도</span>
                   <div className="text-xs font-semibold font-mono text-slate-500 mt-0.5">
                     {formatBytes(supabaseStats.supabaseLimitBytes)}
                   </div>

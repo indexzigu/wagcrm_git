@@ -143,22 +143,22 @@ export function AccountManagementTable({ currentUserId }: { currentUserId: strin
         <Table className="min-w-[860px] text-[13px]">
           <TableHeader className="bg-muted/60">
             <TableRow className="border-b border-border hover:bg-transparent">
-              <TableHead className="h-11 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <TableHead className="h-11 px-3 text-[11px] font-semibold text-muted-foreground">
                 이름
               </TableHead>
-              <TableHead className="h-11 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <TableHead className="h-11 px-3 text-[11px] font-semibold text-muted-foreground">
                 이메일
               </TableHead>
-              <TableHead className="h-11 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <TableHead className="h-11 px-3 text-[11px] font-semibold text-muted-foreground">
                 상태
               </TableHead>
-              <TableHead className="h-11 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <TableHead className="h-11 px-3 text-[11px] font-semibold text-muted-foreground">
                 역할
               </TableHead>
-              <TableHead className="h-11 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <TableHead className="h-11 px-3 text-[11px] font-semibold text-muted-foreground">
                 마지막 로그인
               </TableHead>
-              <TableHead className="h-11 px-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <TableHead className="h-11 px-3 text-right text-[11px] font-semibold text-muted-foreground">
                 작업
               </TableHead>
             </TableRow>
