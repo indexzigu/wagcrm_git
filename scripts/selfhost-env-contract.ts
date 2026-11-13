@@ -290,6 +290,11 @@ export const SELFHOST_ENV_CONTRACT: readonly EnvContractEntry[] = [
     satisfiedBy: ["APIFY_API_TOKEN"],
   },
   {
+    envName: "NAVER_PRICE_APIFY_ENABLED",
+    disposition: "degrades",
+    reason: "네이버 외부 가격 수집 opt-in. 비면 네이버 소스를 호출하지 않고 상태에 사유를 남긴다",
+  },
+  {
     envName: "RAPIDAPI_KEY",
     disposition: "degrades",
     reason:
