@@ -289,15 +289,15 @@ MERGED 인데 대기 마커 16건이 남아 완료된 작업에 재착수 지시
 지도에 없는 문서는 다음 정리 때 아카이브 대상으로 간주한다
 (AGENTS.md의 Documentation Management Policy).
 
-- **항상 신뢰(살아있는 정본):** `PROJECT_MASTER.md`(작업 보드)와
-  `PROJECT_LOG.md`(완료 아카이브)는 **로컬 전용·git 미추적**이다 — 워크트리가
-  아닌 메인 레포 루트의 사본을 읽고 쓴다. 그 외: `CACHE_OPERATIONS.md` · `README.md`
+- **항상 신뢰(살아있는 정본):** `PROJECT_MASTER.md`(오너 할 일 목록)는
+  **로컬 전용·git 미추적**이다 — 워크트리가 아닌 메인 레포 루트의 사본을 쓴다.
+  `PROJECT_LOG.md` 는 2026-11-13 동결(더 쓰지 않음). 그 외: `CACHE_OPERATIONS.md` · `README.md`
   (로컬 실행·검증 명령) · `RELEASE_CHECKLIST.md` ·
   `SECURITY_AND_BACKUP_MANUAL.md` · `.knowledge/index.md` ·
   `FEATURE_SPEC.md`(구현 현황 정본) · `docs/agents/*.md`(본 거버넌스 모듈) ·
   `ygrd-link/README.md`(유입추적 Worker의 배포·시크릿·수집 항목 정본 — 이 레포에서
   유일하게 Cloudflare 배포 절차를 담는다. wag-crm 배포 규율(P6)과는 별개 레인이다) ·
-  `docs/handoff/*.md`(활성 작업 상세 — 인덱스 보드의 상세면) ·
+  `docs/handoff/*.md`(미완 작업의 재개 지점 — 세션 시작 시 읽기 의무 없음) ·
   `docs/private/{specs,plans}/*.md`(**로컬 서고, git 미추적** — 설계서·계획서의
   서식지. 종전 `docs/superpowers/` 추적분 56건이 2026-08-28 이곳으로 이관됐다
   (공개 전환 준비). fresh clone·클라우드 세션에는 존재하지 않는다 — 소스 주석의
