@@ -9,7 +9,12 @@ import {
   type ScoredCandidate,
 } from "./scoring";
 import { filterOutliers, type OutlierReason } from "./outlier";
-import { computeVerdict, VIOLATION_CONFIDENCE_FLOOR, type PriceVerdict } from "./verdict";
+import {
+  computeVerdict,
+  COMPOSITION_UNKNOWN_CONFIDENCE_FLOOR,
+  VIOLATION_CONFIDENCE_FLOOR,
+  type PriceVerdict,
+} from "./verdict";
 
 export type EvaluateInput<T extends ScorableCandidate> = {
   candidates: T[];
@@ -73,8 +78,17 @@ export function evaluateMarketPrice<T extends ScorableCandidate>(
   // 신뢰선 이상(고신뢰) 후보만 — 위반 "확정"의 근거로 삼는다. 저매치(신뢰선 미만)만으로
   // 최저가가 형성되면 다른 품목일 가능성이 높아 아래에서 REVIEW로 강등한다.
   // 오너가「같은 상품」으로 표시한 후보는 점수와 무관하게 고신뢰다. 브랜드 불일치는 이미 배제됐다.
-  const minConfidentItem =
-    sortedValid.find((c) => c.ownerLabel === "SAME" || c.matchScore >= VIOLATION_CONFIDENCE_FLOOR) ?? null;
+  // 우리 수량은 아는데 후보 수량을 모르면(구성 축 미확인) 더 높은 하한을 요구한다.
+  const compositionKnownForUs = Boolean(expectedUnit) && expectedQuantity != null;
+  const isConfident = (c: ScoredCandidate) => {
+    if (c.ownerLabel === "SAME") return true;
+    const floor =
+      compositionKnownForUs && c.extractedQuantity == null
+        ? COMPOSITION_UNKNOWN_CONFIDENCE_FLOOR
+        : VIOLATION_CONFIDENCE_FLOOR;
+    return c.matchScore >= floor;
+  };
+  const minConfidentItem = sortedValid.find(isConfident) ?? null;
 
   const ourUnitPrice = computeOurUnitPrice(ourTotalPrice, expectedQuantity);
 

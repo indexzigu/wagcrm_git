@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const repo = vi.hoisted(() => ({
   resolveRootDealId: vi.fn(),
+  resolveRootDealIds: vi.fn(),
   findMatchContext: vi.fn(),
   findByRootDealIds: vi.fn(),
   findBrandAliases: vi.fn(),
@@ -36,6 +37,9 @@ describe("/api/price-monitoring/labels", () => {
     vi.clearAllMocks();
     authMock.mockResolvedValue({ authenticated: true, context: {} });
     repo.resolveRootDealId.mockImplementation(async (id: string) => (id === "missing" ? null : "root-1"));
+    repo.resolveRootDealIds.mockImplementation(
+      async (ids: string[]) => new Map(ids.filter((id) => id !== "missing").map((id) => [id, "root-1"])),
+    );
     repo.findMatchContext.mockImplementation(async (id: string) =>
       id === "missing" ? null : { rootDealId: "root-1", brandName: "비비랩", unit: "박스", modelName: null, aliasesText: "뉴트리원" },
     );
@@ -58,6 +62,10 @@ describe("/api/price-monitoring/labels", () => {
     const res = await GET(new Request("http://localhost/api/price-monitoring/labels?dealIds=opt-1,opt-2,opt-1"));
     const body = await res.json();
     expect(body.roots).toEqual({ "opt-1": "root-1", "opt-2": "root-1" });
+    // one batched lookup, not one query per deal
+    expect(repo.resolveRootDealIds).toHaveBeenCalledTimes(1);
+    expect(repo.resolveRootDealIds).toHaveBeenCalledWith(["opt-1", "opt-2"]);
+    expect(repo.resolveRootDealId).not.toHaveBeenCalled();
     expect(body.labels["root-1"]).toHaveLength(1);
     expect(body.aliases["root-1"]).toEqual(["제조사A", "제조사B"]);
     expect(body.accuracy).toEqual({ total: 3, agreed: 2 });
@@ -106,6 +114,25 @@ describe("/api/price-monitoring/labels", () => {
     expect(evidence).toMatchObject({ brandMatch: "match", brandFoundIn: "productName", extraWords: ["스틱"] });
     expect(evidence.identities).toEqual(["비비랩", "뉴트리원"]);
     expect(evidence.seen).toBeNull();
+    expect(evidence.rules).toBe(2);
+    expect(evidence.queryEdited).toBeNull(); // no default query sent
+  });
+
+  it("POST records whether the owner edited the default search query", async () => {
+    const send = (searchQuery: string) =>
+      POST(
+        jsonRequest("POST", {
+          dealId: "opt-1",
+          label: "SAME",
+          searchQuery,
+          defaultQuery: "비비랩 올리브레몬 듀얼 올레샷 2박스",
+          candidate: { mall: "어떤몰", productName: "비비랩 올리브레몬 듀얼 올레샷 2박스" },
+        }),
+      );
+    await send("비비랩  올리브레몬 듀얼 올레샷 2박스"); // spacing only
+    await send("비비랩 올레샷");
+    expect(JSON.parse(repo.upsert.mock.calls[0][0].evidence).queryEdited).toBe(false);
+    expect(JSON.parse(repo.upsert.mock.calls[1][0].evidence).queryEdited).toBe(true);
   });
 
   it("POST keeps what the owner saw as a reference value, without trusting it for the judgment", async () => {

@@ -34,6 +34,14 @@ export type OutlierContext = {
 };
 
 /**
+ * 브랜드·상품 두 축을 통과했나(오너 표시 없을 때의 「같은 상품」 판정). 배제 판정과 오너 표시 근거
+ * (label-evidence.evidenceSaidSame)가 같이 쓴다 — 둘이 갈리면 정확도 계측이 어긋난다.
+ */
+export function passesIdentityAxes(candidate: Pick<ScoredCandidate, "brandMatch" | "matchScore">): boolean {
+  return candidate.brandMatch !== "missing" && candidate.matchScore >= MATCH_FLOOR;
+}
+
+/**
  * 후보 하나에 대해 배제 사유를 판정한다. 배제 사유가 없으면 null.
  * 여러 조건에 동시에 걸릴 수 있으므로 우선순위(키워드 > 오너「다른 상품」 > 브랜드 > 상품점수 >
  * 가격밴드 > 수량)로 하나만 반환한다. 오너가「같은 상품」으로 표시한 후보는 브랜드·상품 축을
@@ -50,7 +58,7 @@ export function detectOutlierReason(
 
   if (candidate.ownerLabel !== "SAME") {
     if (candidate.brandMatch === "missing") return "BRAND_MISMATCH";
-    if (candidate.matchScore < MATCH_FLOOR) return "MATCH_TOO_LOW";
+    if (!passesIdentityAxes(candidate)) return "MATCH_TOO_LOW";
   }
 
   if (ctx.ourTotalPrice > 0) {

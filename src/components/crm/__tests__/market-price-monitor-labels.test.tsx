@@ -13,6 +13,8 @@ const CANDIDATES = [
   { channel: "naver", mall: "어떤몰", productName: "비비랩 레몬 듀얼 스틱 2박스", price: 35000, shippingFee: 0, totalPrice: 35000, url: "https://example.com/b" },
   // another company's product sharing product words -> excluded by the brand axis
   { channel: "naver", mall: "메디트리", productName: "순 유기농 올레샷 올리브 오일 레몬즙 2박스", price: 25900, shippingFee: 0, totalPrice: 25900, url: "https://example.com/a" },
+  // same product words but no brand/company name anywhere -> excluded, flagged as a possible missing company name
+  { channel: "naver", mall: "정체몰", productName: "유기농 올리브레몬 듀얼 올레샷 2박스", price: 30000, shippingFee: 0, totalPrice: 30000, url: "https://example.com/n" },
   // same product, priced above ours
   { channel: "naver", mall: "비비랩공식", productName: "비비랩 유기농 올리브 엔 레몬 듀얼샷 올레샷 2박스", price: 41000, shippingFee: 0, totalPrice: 41000, url: "https://example.com/d" },
 ];
@@ -25,7 +27,17 @@ function mockFetch() {
     calls.push({ url, method, body });
     const json = (data: unknown) => ({ ok: true, status: 200, json: async () => data });
     if (url.startsWith("/api/price-monitoring/labels") && method === "GET") {
-      return json({ roots: { opt: "root" }, labels: { root: [] }, aliases: { root: [] }, accuracy: { total: 4, agreed: 3 } });
+      return json({
+        roots: { opt: "root" },
+        labels: { root: [] },
+        aliases: { root: [] },
+        accuracy: {
+          total: 4,
+          agreed: 3,
+          causes: [{ cause: "SHARED_WORDS", label: "같은 회사의 다른 상품(검색어 낱말 공유)", count: 1, examples: ["비비랩 레몬 듀얼 스틱"] }],
+          differentWords: [{ word: "스틱", count: 1 }],
+        },
+      });
     }
     if (url === "/api/price-monitoring/labels" && method === "POST") {
       return json({ rootDealId: "root", nameKey: "어떤몰|비비랩레몬듀얼스틱2박스", reevaluateError: null, accuracy: { total: 5, agreed: 3 } });
@@ -64,6 +76,14 @@ describe("MarketPriceMonitor — owner match labels", () => {
     const otherCompany = within(dialog).getByText(/순 유기농 올레샷/).closest("tr")!;
     expect(within(otherCompany).getByText("브랜드 없음")).toBeInTheDocument();
     expect(within(otherCompany).getByText(/브랜드·회사 이름 없음/)).toBeInTheDocument();
+    // the cell states a fact; how to fix it lives in the help text above the table
+    const noCompany = within(dialog).getByText("유기농 올리브레몬 듀얼 올레샷 2박스").closest("tr")!;
+    expect(within(noCompany).getByText("상품은 일치, 회사 이름 못 찾음")).toBeInTheDocument();
+    // cause line carries example product names for tracing
+    expect(within(dialog).getByText(/같은 회사의 다른 상품\(검색어 낱말 공유\) 1건/)).toHaveAttribute(
+      "title",
+      "예: 비비랩 레몬 듀얼 스틱",
+    );
   });
 
   it("marking the cheapest weak match as a different product re-judges immediately, and undo restores it", async () => {
@@ -82,6 +102,7 @@ describe("MarketPriceMonitor — owner match labels", () => {
       label: "DIFFERENT",
       candidate: { mall: "어떤몰", productName: "비비랩 레몬 듀얼 스틱 2박스" },
       searchQuery: "비비랩 올리브레몬 듀얼 올레샷 2박스",
+      defaultQuery: "비비랩 올리브레몬 듀얼 올레샷 2박스",
     });
 
     fireEvent.click(within(row()).getByRole("button", { name: "표시 취소" }));

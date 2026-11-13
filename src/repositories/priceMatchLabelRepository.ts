@@ -24,7 +24,7 @@ export type PriceMatchLabelInput = {
   evidence: string | null;
 };
 
-export type MatchContext = {
+export type MatchDealContext = {
   rootDealId: string;
   /** 표시한 딜의 브랜드명(옵션이면 자식 ?? 부모 — cron resolveMonitorFields 와 같은 순서). */
   brandName: string | null;
@@ -46,8 +46,18 @@ export const priceMatchLabelRepository = {
     return deal ? deal.parentDealId ?? deal.id : null;
   },
 
+  /** 여러 딜을 한 번에 루트 id 로 해소한다(없는 딜은 빠진다). */
+  async resolveRootDealIds(dealIds: readonly string[]): Promise<Map<string, string>> {
+    if (dealIds.length === 0) return new Map();
+    const deals = await getPrisma().deal.findMany({
+      where: { id: { in: [...dealIds] } },
+      select: { id: true, parentDealId: true },
+    });
+    return new Map(deals.map((deal) => [deal.id, deal.parentDealId ?? deal.id]));
+  },
+
   /** 표시 시점 재판정에 필요한 딜 맥락. 딜이 없으면 null. */
-  async findMatchContext(dealId: string): Promise<MatchContext | null> {
+  async findMatchContext(dealId: string): Promise<MatchDealContext | null> {
     const fields = {
       dealName: true,
       brandName: true,
@@ -106,10 +116,12 @@ export const priceMatchLabelRepository = {
   /**
    * 전체 오너 표시 중 시스템 판단과 같았던 비율 + 어긋난 원인별 건수 + 「다른 상품」을 가른 낱말 빈도 —
    * 자동 판정 정확도 계측이자 판정 개선 재료(2026-11-13 오너 지시).
+   * 전 행을 읽는다 — 오너가 손으로 누르는 표시라 행 수가 작다(수백 건 규모). 수천 건을 넘기면 최근 창으로 좁힐 것.
    */
   async accuracy(): Promise<MatchAccuracy & LabelInsights> {
     const rows = await getPrisma().priceMatchLabel.findMany({
-      select: { label: true, systemSaidSame: true, cause: true, evidence: true },
+      select: { label: true, systemSaidSame: true, cause: true, evidence: true, productName: true },
+      orderBy: { updatedAt: "desc" },
     });
     const valid = rows.flatMap((row) => (isOwnerMatchLabelValue(row.label) ? [{ ...row, label: row.label }] : []));
     return { ...summarizeAccuracy(valid), ...summarizeLabelInsights(valid) };

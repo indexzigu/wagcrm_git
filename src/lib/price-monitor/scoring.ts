@@ -116,6 +116,21 @@ export function matchesModelToken(productName: string, modelName: string): boole
   }
 }
 
+/**
+ * 축 ② 상품 점수 계산의 단일 출처 — 낱말 점수 + 모델명 보너스. 판정(scoreCandidate)과 오너 표시 근거
+ * (label-evidence)가 같이 쓴다: 둘이 갈리면 화면이 올린 후보가 「시스템도 다르다고 봤다」로 기록된다.
+ */
+export function productAxisScore(
+  coreWords: readonly string[],
+  productName: string,
+  modelName: string | null | undefined,
+): { wordScore: number; modelBonus: boolean; matchScore: number } {
+  const wordScore = productScore(coreWords, productName);
+  const modelBonus = !!modelName && matchesModelToken(productName, modelName);
+  const matchScore = Math.round(modelBonus ? Math.min(100, wordScore + MODEL_MATCH_BONUS) : wordScore);
+  return { wordScore, modelBonus, matchScore };
+}
+
 export type ScoredCandidate = ScorableCandidate & {
   /**
    * 0~100 상품 일치 점수(축 ②, 모델명 보너스 포함). 2026-11-13 전에는 브랜드·수량까지 섞인
@@ -153,11 +168,7 @@ function scoreWithCoreWords<T extends ScorableCandidate>(
 ): T & ScoredCandidate {
   const productName = candidate.productName ?? "";
   const identities = ctx.brandIdentities ?? [];
-  let score = productScore(coreWords, productName);
-
-  if (ctx.modelName && matchesModelToken(productName, ctx.modelName)) {
-    score = Math.min(100, score + MODEL_MATCH_BONUS);
-  }
+  const { matchScore } = productAxisScore(coreWords, productName, ctx.modelName);
 
   // 축 ③ 구성(수량)은 점수에 섞지 않는다 — 수량이 다르면 outlier 가 QUANTITY_MISMATCH 로 따로
   // 배제한다(오너 지적: 축을 섞으면 일치율이 엇갈린다). 단위가격 계산용으로만 추출한다.
@@ -171,7 +182,7 @@ function scoreWithCoreWords<T extends ScorableCandidate>(
 
   return {
     ...candidate,
-    matchScore: Math.round(score),
+    matchScore,
     brandMatch: brandAxis({ productName, mall: candidate.mall }, identities),
     ownerLabel: findOwnerLabel(candidate, ctx.ownerLabels),
     extractedQuantity,

@@ -201,6 +201,29 @@ describe("evaluateMarketPrice", () => {
       expect(result.allScored[0].excludeReason).toBe("QUANTITY_MISMATCH");
     });
 
+    it("수량을 못 읽은 후보는 상품 점수 75 이상일 때만 위반 확정 근거가 된다(옛 ×0.8 감점과 같은 효과)", () => {
+      const midNoQty = evaluateMarketPrice({
+        ...base,
+        candidates: [{ productName: "비비랩 듀얼 올레샷", mall: "x", price: 23000, totalPrice: 23000 }],
+      });
+      expect(midNoQty.allScored[0].matchScore).toBe(67);
+      expect(midNoQty.allScored[0].extractedQuantity).toBeNull();
+      expect(midNoQty.verdict).toBe("REVIEW");
+
+      const midWithQty = evaluateMarketPrice({
+        ...base,
+        candidates: [{ productName: "비비랩 듀얼 올레샷 2박스", mall: "x", price: 23000, totalPrice: 23000 }],
+      });
+      expect(midWithQty.allScored[0].matchScore).toBe(67);
+      expect(midWithQty.verdict).toBe("VIOLATED");
+
+      const highNoQty = evaluateMarketPrice({
+        ...base,
+        candidates: [{ productName: "비비랩 올리브레몬 듀얼 올레샷", mall: "x", price: 23000, totalPrice: 23000 }],
+      });
+      expect(highNoQty.verdict).toBe("VIOLATED");
+    });
+
     it("브랜드 이름이 하나도 없으면 브랜드 축을 쓰지 않는다(종전 동작)", () => {
       const result = evaluateMarketPrice({
         ...base,

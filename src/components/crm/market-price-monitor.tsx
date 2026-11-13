@@ -303,6 +303,8 @@ export function MarketPriceMonitor({
           },
           // 서버가 이 검색어로 후보를 다시 판정해 원인 근거를 저장한다(시스템 판정도 서버가 정한다).
           searchQuery,
+          // 화면이 처음 채운 검색어 — 오너가 고쳐 조회했는지 서버가 근거에 남긴다.
+          defaultQuery: item.searchQuery,
           // 표시하던 순간 화면에 보이던 판정 — 서버 재판정과 다를 때의 진단용 참고값.
           seen: {
             matchScore: candidate.matchScore,
@@ -532,7 +534,18 @@ export function MarketPriceMonitor({
             {labelState.accuracy.causes && labelState.accuracy.causes.length > 0 && (
               <div>
                 <span className="font-semibold text-slate-600">어긋난 원인</span>{" "}
-                {labelState.accuracy.causes.map((c) => `${c.label} ${c.count}건`).join(" · ")}
+                {labelState.accuracy.causes.map((c, index) => (
+                  <span key={c.cause}>
+                    {index > 0 && " · "}
+                    <span
+                      tabIndex={c.examples?.length ? 0 : undefined}
+                      title={c.examples?.length ? `예: ${c.examples.join(", ")}` : undefined}
+                      className={c.examples?.length ? "underline decoration-dotted underline-offset-2" : undefined}
+                    >
+                      {c.label} {c.count}건
+                    </span>
+                  </span>
+                ))}
               </div>
             )}
             {labelState.accuracy.differentWords && labelState.accuracy.differentWords.length > 0 && (
@@ -737,7 +750,7 @@ export function MarketPriceMonitor({
                         </Button>
                       </div>
                       <p className="mt-1 text-[10px] text-slate-500">
-                        {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다.
+                        {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다. 표에 「회사 이름 못 찾음」으로 빠진 후보가 같은 회사 제품이면 그 회사 이름을 여기 더하세요.
                       </p>
                     </div>
 
@@ -824,7 +837,7 @@ export function MarketPriceMonitor({
                                       </span>
                                     )}
                                     {isRescuable && (
-                                      <span className="text-[10px] text-slate-600">같은 회사면 위 「같은 회사로 볼 이름」에 추가</span>
+                                      <span className="text-[10px] text-slate-600">상품은 일치, 회사 이름 못 찾음</span>
                                     )}
                                     {fetchedItem.ownerLabel === "SAME" && (
                                       <span className="text-[10px] font-medium text-slate-700">같은 상품으로 표시함</span>

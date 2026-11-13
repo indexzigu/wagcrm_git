@@ -10,19 +10,34 @@ import {
   brandFoundIn,
   candidateExtraWords,
   productCoreWords,
-  productScore,
   productWordHits,
+  stripUrls,
   type BrandAxis,
   type WordHit,
 } from "./match-axes";
-import { MATCH_FLOOR } from "./outlier";
-import { MODEL_MATCH_BONUS, matchesModelToken, type OwnerMatchLabelValue } from "./scoring";
+import { MATCH_FLOOR, passesIdentityAxes } from "./outlier";
+import { productAxisScore, type OwnerMatchLabelValue } from "./scoring";
 
+/** 근거 JSON 의 형식 버전 — 필드 구성이 바뀌면 올린다(옛 형식은 집계에서 빠진다). */
 export const MATCH_EVIDENCE_VERSION = 1;
+
+/**
+ * 판정 규칙 버전 — 같은 상품 판정 규칙(축·점수·하한)을 바꿀 때마다 올린다. 표시마다 함께 저장해 규칙
+ * 개정 전후의 정확도를 나눠 볼 수 있게 한다(개정이 실제로 정확도를 올렸는지 확인하는 근거).
+ * 1 = 2026-11-13 이전 단일 점수, 2 = 2026-11-13 3축 분리.
+ */
+export const MATCH_RULES_VERSION = 2;
 
 export type MatchEvidence = {
   v: typeof MATCH_EVIDENCE_VERSION;
+  /** 이 근거를 만든 판정 규칙 버전(MATCH_RULES_VERSION). */
+  rules: number;
   searchQuery: string;
+  /**
+   * 오너가 기본 검색어를 고쳐 조회한 뒤 표시했나. 고친 검색어로 본 판정은 기본 검색어 판정과 다를 수 있어
+   * 원인을 읽을 때 갈라 봐야 한다. 기본 검색어를 모르면 null.
+   */
+  queryEdited: boolean | null;
   identities: string[];
   brandMatch: BrandAxis;
   brandFoundIn: "productName" | "mall" | "both" | null;
@@ -57,8 +72,15 @@ export function sanitizeSeenJudgment(value: unknown): SeenJudgment | null {
   };
 }
 
+function sameQuery(a: string, b: string): boolean {
+  const norm = (v: string) => stripUrls(v.normalize("NFC").toLowerCase()).replace(/\s+/g, "");
+  return norm(a) === norm(b);
+}
+
 export function buildMatchEvidence(input: {
   searchQuery: string;
+  /** 화면이 처음 채운 기본 검색어 — searchQuery 와 다르면 오너가 고친 것이다. */
+  defaultQuery?: string | null;
   identities: readonly string[];
   unit?: string | null;
   modelName?: string | null;
@@ -68,16 +90,18 @@ export function buildMatchEvidence(input: {
   const { searchQuery, identities, unit, candidate } = input;
   const modelName = input.modelName ?? null;
   const coreWords = productCoreWords(searchQuery, { identities, unit });
-  const wordScore = productScore(coreWords, candidate.productName);
-  // scoring.scoreCandidate 와 같은 규칙 — 여기서 갈리면 화면이 올린 후보가 「시스템도 다르다고 봤다」로 기록된다.
-  const modelBonus = !!modelName && matchesModelToken(candidate.productName, modelName);
+  // 판정(scoring)과 같은 함수 — 여기서 갈리면 화면이 올린 후보가 「시스템도 다르다고 봤다」로 기록된다.
+  const { wordScore, modelBonus, matchScore } = productAxisScore(coreWords, candidate.productName, modelName);
+  const defaultQuery = input.defaultQuery ?? null;
   return {
     v: MATCH_EVIDENCE_VERSION,
+    rules: MATCH_RULES_VERSION,
     searchQuery,
+    queryEdited: defaultQuery == null ? null : !sameQuery(defaultQuery, searchQuery),
     identities: [...identities],
     brandMatch: brandAxis(candidate, identities),
     brandFoundIn: brandFoundIn(candidate, identities),
-    matchScore: modelBonus ? Math.min(100, wordScore + MODEL_MATCH_BONUS) : wordScore,
+    matchScore,
     wordScore,
     modelName,
     modelBonus,
@@ -87,9 +111,9 @@ export function buildMatchEvidence(input: {
   };
 }
 
-/** 근거 기준 시스템 판정 — 브랜드 축이 「없음」이 아니고 상품 점수가 하한 이상이면 같은 상품으로 본 것. */
+/** 근거 기준 시스템 판정 — 배제 판정(outlier)과 같은 술어로, 오너 표시가 없었다면 같은 상품으로 봤는가. */
 export function evidenceSaidSame(evidence: Pick<MatchEvidence, "brandMatch" | "matchScore">): boolean {
-  return evidence.brandMatch !== "missing" && evidence.matchScore >= MATCH_FLOOR;
+  return passesIdentityAxes(evidence);
 }
 
 export type MatchCause =
@@ -132,12 +156,14 @@ export function classifyLabelCause(label: OwnerMatchLabelValue, evidence: MatchE
 }
 
 export type LabelInsights = {
-  causes: Array<{ cause: MatchCause; label: string; count: number }>;
+  /** examples = 그 원인으로 분류된 후보 상품명(최근 표시부터) — 어떤 상품 때문인지 되짚는 재료. */
+  causes: Array<{ cause: MatchCause; label: string; count: number; examples: string[] }>;
   /** 「다른 상품」 표시 후보에만 있던 낱말 빈도 상위 — 다른 상품을 가르는 낱말 후보. */
   differentWords: Array<{ word: string; count: number }>;
 };
 
 const MAX_INSIGHT_WORDS = 5;
+const MAX_CAUSE_EXAMPLES = 3;
 
 export function parseMatchEvidence(text: string | null | undefined): MatchEvidence | null {
   if (!text) return null;
@@ -154,13 +180,21 @@ function isMatchCause(value: string | null | undefined): value is MatchCause {
   return value != null && value in MATCH_CAUSE_LABEL;
 }
 
+/** rows 는 최근 표시부터 정렬돼 있다고 본다(예시가 최근 것부터 나오도록). */
 export function summarizeLabelInsights(
-  rows: ReadonlyArray<{ label: string; cause: string | null; evidence: string | null }>,
+  rows: ReadonlyArray<{ label: string; cause: string | null; evidence: string | null; productName?: string | null }>,
 ): LabelInsights {
-  const causeCounts = new Map<MatchCause, number>();
+  const causeStats = new Map<MatchCause, { count: number; examples: string[] }>();
   const wordCounts = new Map<string, number>();
   for (const row of rows) {
-    if (isMatchCause(row.cause)) causeCounts.set(row.cause, (causeCounts.get(row.cause) ?? 0) + 1);
+    if (isMatchCause(row.cause)) {
+      const stat = causeStats.get(row.cause) ?? { count: 0, examples: [] };
+      stat.count += 1;
+      if (row.productName && stat.examples.length < MAX_CAUSE_EXAMPLES && !stat.examples.includes(row.productName)) {
+        stat.examples.push(row.productName);
+      }
+      causeStats.set(row.cause, stat);
+    }
     // 시스템이 같은 상품으로 올렸던(원인이 있는) 「다른 상품」만 센다 — 이미 맞게 거른 다른 회사 제품의
     // 낱말까지 세면 판정을 고칠 단서(같은 회사 다른 라인의 낱말)가 묻힌다(재검토 L1).
     // 한계: 「같은 상품」 쪽과 대조하지 않으므로 「공식」「무료배송」 같은 범용어가 섞일 수 있다.
@@ -170,9 +204,12 @@ export function summarizeLabelInsights(
     }
   }
   return {
-    causes: Array.from(causeCounts, ([cause, count]) => ({ cause, label: MATCH_CAUSE_LABEL[cause], count })).sort(
-      (a, b) => b.count - a.count,
-    ),
+    causes: Array.from(causeStats, ([cause, stat]) => ({
+      cause,
+      label: MATCH_CAUSE_LABEL[cause],
+      count: stat.count,
+      examples: stat.examples,
+    })).sort((a, b) => b.count - a.count),
     differentWords: Array.from(wordCounts, ([word, count]) => ({ word, count }))
       .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word))
       .slice(0, MAX_INSIGHT_WORDS),

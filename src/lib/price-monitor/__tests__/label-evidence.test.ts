@@ -77,18 +77,36 @@ describe("summarizeLabelInsights", () => {
     const sibling = JSON.stringify(ev("비비랩 올리브레몬 듀얼 올레샷 스틱"));
     const sibling2 = JSON.stringify(ev("비비랩 올리브레몬 듀얼 올레샷 스틱 밸런스"));
     const insights = summarizeLabelInsights([
-      { label: "DIFFERENT", cause: "SHARED_WORDS", evidence: sibling },
-      { label: "DIFFERENT", cause: "SHARED_WORDS", evidence: sibling2 },
+      { label: "DIFFERENT", cause: "SHARED_WORDS", evidence: sibling, productName: "비비랩 올리브레몬 듀얼 올레샷 스틱" },
+      { label: "DIFFERENT", cause: "SHARED_WORDS", evidence: sibling2, productName: "비비랩 올리브레몬 듀얼 올레샷 스틱 밸런스" },
       { label: "SAME", cause: null, evidence: sibling },
       { label: "DIFFERENT", cause: "unknown-cause", evidence: "{broken" },
       // the system already excluded this one; its words are not a judgment-fixing clue
       { label: "DIFFERENT", cause: null, evidence: JSON.stringify(ev("비비랩 올리브레몬 듀얼 올레샷 녹즙")) },
     ]);
-    expect(insights.causes).toEqual([{ cause: "SHARED_WORDS", label: expect.any(String), count: 2 }]);
+    expect(insights.causes).toEqual([
+      {
+        cause: "SHARED_WORDS",
+        label: expect.any(String),
+        count: 2,
+        // example product names, in row order (most recent first), to trace which products caused it
+        examples: ["비비랩 올리브레몬 듀얼 올레샷 스틱", "비비랩 올리브레몬 듀얼 올레샷 스틱 밸런스"],
+      },
+    ]);
     expect(insights.differentWords).toEqual([
       { word: "스틱", count: 2 },
       { word: "밸런스", count: 1 },
     ]);
+  });
+
+  it("keeps at most three distinct examples per cause", () => {
+    const rows = ["a", "b", "a", "c", "d"].map((productName) => ({
+      label: "DIFFERENT",
+      cause: "SHARED_WORDS",
+      evidence: null,
+      productName,
+    }));
+    expect(summarizeLabelInsights(rows).causes[0]).toMatchObject({ count: 5, examples: ["a", "b", "c"] });
   });
 
   it("ignores unreadable or old-version evidence", () => {

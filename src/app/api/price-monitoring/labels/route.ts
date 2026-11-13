@@ -14,7 +14,7 @@ import { isOwnerMatchLabelValue, priceMatchLabelRepository } from "@/repositorie
 /**
  * 최저가 감시 — 오너 「같은 상품 / 다른 상품」 표시(2026-11-13 3축 분리).
  * GET    ?dealIds=a,b   → 딜(옵션 포함)별 루트 id · 루트별 표시 · 회사 이름 · 자동 판정 정확도
- * POST   { dealId, label, candidate, searchQuery } → 서버가 그 후보를 다시 판정해 축별 근거·원인 분류와 함께
+ * POST   { dealId, label, candidate, searchQuery, defaultQuery?, seen? } → 서버가 그 후보를 다시 판정해 축별 근거·원인 분류와 함께
  *        저장(오너 지시 2026-11-13: 「다른 상품」은 왜 올라왔는지 개선 데이터가 되어야 한다) 후 최신 스냅샷 재판정.
  *        시스템 판정(systemSaidSame)도 클라이언트 값이 아니라 이 재판정 근거로 정한다.
  * DELETE { dealId, nameKey } → 표시 취소 후 재판정
@@ -54,11 +54,7 @@ export async function GET(request: Request) {
   const raw = new URL(request.url).searchParams.get("dealIds") ?? "";
   const dealIds = Array.from(new Set(raw.split(",").map((id) => id.trim()).filter(Boolean))).slice(0, MAX_DEAL_IDS);
 
-  const roots: Record<string, string> = {};
-  for (const dealId of dealIds) {
-    const rootId = await priceMatchLabelRepository.resolveRootDealId(dealId);
-    if (rootId) roots[dealId] = rootId;
-  }
+  const roots: Record<string, string> = Object.fromEntries(await priceMatchLabelRepository.resolveRootDealIds(dealIds));
   const rootIds = Array.from(new Set(Object.values(roots)));
   const [labels, aliases, accuracy] = await Promise.all([
     priceMatchLabelRepository.findByRootDealIds(rootIds),
@@ -84,7 +80,8 @@ export async function POST(request: Request) {
   const candidate = body?.candidate ?? {};
   const productName = text(candidate.productName);
   const searchQuery = text(body?.searchQuery);
-  const tooLong = [productName, searchQuery, text(candidate.mall), text(candidate.url), text(candidate.channel)].some(
+  const defaultQuery = text(body?.defaultQuery);
+  const tooLong = [productName, searchQuery, defaultQuery, text(candidate.mall), text(candidate.url), text(candidate.channel)].some(
     (value) => value != null && value.length > MAX_FIELD_LENGTH,
   );
   if (!dealId || !isOwnerMatchLabelValue(label) || !productName || !searchQuery || tooLong) {
@@ -98,6 +95,7 @@ export async function POST(request: Request) {
   const mall = text(candidate.mall);
   const evidence = buildMatchEvidence({
     searchQuery,
+    defaultQuery,
     identities: buildBrandIdentities(context.brandName, context.aliasesText),
     unit: context.unit,
     modelName: context.modelName,
