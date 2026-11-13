@@ -16,7 +16,13 @@ import { StatusDot, type StatusTone } from "./status-dot";
 import { evaluateMarketPrice, type EvaluatedCandidate } from "@/lib/price-monitor/pipeline";
 import type { PriceVerdict } from "@/lib/price-monitor/verdict";
 import type { OutlierReason } from "@/lib/price-monitor/outlier";
-import { MARKET_SOURCE_LABEL, summarizeSourceFailures, type MarketSourceErrors } from "@/lib/price-monitor/source-errors";
+import {
+  MARKET_SOURCE_LABEL,
+  summarizeSourceFailures,
+  summarizeSourceStatuses,
+  type MarketSourceErrors,
+  type MarketSourceStates,
+} from "@/lib/price-monitor/source-errors";
 import { displayLabel } from "@/lib/display-label";
 
 export type MonitorItem = {
@@ -92,6 +98,8 @@ export function MarketPriceMonitor({
      * (실제로 그랬다: 쿠팡이 16일간 401 이었는데 화면에는 아무 흔적도 없었음).
      */
     sourceErrors?: MarketSourceErrors;
+    /** 소스별 상태와 조회시각. legacy 응답에는 없어 unknown으로 처리한다. */
+    sourceStates?: MarketSourceStates;
   }>>({});
   
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
@@ -146,6 +154,7 @@ export function MarketPriceMonitor({
             ourUnitPrice: evalResult.ourUnitPrice,
             searchedQuery: queryToSearch,
             sourceErrors: data.errors as MarketSourceErrors | undefined,
+            sourceStates: data.sources as MarketSourceStates | undefined,
           }
         }));
       } else {
@@ -207,7 +216,26 @@ export function MarketPriceMonitor({
 
   // 소스 실패는 딜마다 같은 값으로 반복되므로(같은 키·같은 API) 딜별로 붙이지 않고
   // 목록 위 한 곳에 모은다 — 17줄에 같은 경고를 반복하면 P8 §2대로 경고가 배경이 된다.
-  const sourceFailure = summarizeSourceFailures(items.map((i) => results[i.id]?.sourceErrors));
+  const sourceObservations = items.map((i) => ({
+    errors: results[i.id]?.sourceErrors,
+    sources: results[i.id]?.sourceStates,
+  }));
+  const sourceFailure = summarizeSourceFailures(sourceObservations);
+  const sourceStatus = summarizeSourceStatuses(sourceObservations);
+
+  const sourceStatusLabel: Record<"ok" | "empty" | "error" | "disabled", string> = {
+    ok: "정상",
+    empty: "결과 없음",
+    error: "실패",
+    disabled: "비활성",
+  };
+
+  const formatCheckedAt = (checkedAt: string): string => {
+    const date = new Date(checkedAt);
+    return Number.isNaN(date.getTime())
+      ? checkedAt
+      : date.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -241,16 +269,34 @@ export function MarketPriceMonitor({
           >
             <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
             <span className="font-semibold">
-              {sourceFailure.failed.map((f) => f.label).join(" · ")} 소스 응답 실패
+              {sourceFailure.failed.length > 0
+                ? `${sourceFailure.failed.map((f) => f.label).join(" · ")} 소스 응답 실패`
+                : sourceFailure.disabled.length > 0
+                  ? `${sourceFailure.disabled.map((f) => f.label).join(" · ")} 소스 비활성`
+                  : "소스 상태를 확인할 수 없습니다."}
             </span>
             <span className="font-normal">
               {sourceFailure.includedLabels.length > 0
                 ? `아래 최저가와 판정은 ${sourceFailure.includedLabels.join(" · ")}만 보고 계산됐습니다.`
-                : "판정 근거가 된 소스가 없습니다."}
+                : "판정 근거가 된 소스를 확인할 수 없습니다."}
             </span>
-            <span className="w-full text-[11px] font-normal">
-              {sourceFailure.failed.map((f) => `${f.label}: ${f.reason}`).join(" / ")}
-            </span>
+            {sourceFailure.failed.length > 0 && (
+              <span className="w-full text-[11px] font-normal">
+                {sourceFailure.failed.map((f) => `${f.label}: ${f.reason}`).join(" / ")}
+              </span>
+            )}
+          </div>
+        )}
+
+        {sourceStatus && (
+          <div className="shrink-0 mx-3 sm:mx-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+            <span className="font-semibold text-slate-600">소스별 조회</span>
+            {sourceStatus.statuses.map((status) => (
+              <span key={status.channel}>
+                {MARKET_SOURCE_LABEL[status.channel]} {sourceStatusLabel[status.status]} · {formatCheckedAt(status.checkedAt)}
+              </span>
+            ))}
+            {sourceStatus.unknown && <span>소스 상태 미확인</span>}
           </div>
         )}
 

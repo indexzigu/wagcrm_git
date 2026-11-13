@@ -10,13 +10,14 @@ export async function POST(req: Request) {
 
     if (!query) return NextResponse.json({ error: "No query provided" }, { status: 400 });
 
-    const { allItems, minItem, errors } = await fetchAllMarketPrices(query);
+    const { allItems, minItem, errors, sources } = await fetchAllMarketPrices(query);
 
     return NextResponse.json({
       success: true,
       minItem,
       allItems,
       errors,
+      sources,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

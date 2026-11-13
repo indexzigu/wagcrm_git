@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fetchAllMarketPrices } from "../market-fetch";
 
+vi.mock("../naver-apify-usage", () => ({
+  recordNaverApifyUsage: vi.fn(async () => true),
+}));
+
 // 실측 응답(2026-07-06, gift.kakao.com/a/gift-explorer/v1/search/products?query=홍삼정)을 축약한 픽스처.
 const KAKAO_FIXTURE = {
   products: {
@@ -36,10 +40,30 @@ const KAKAO_FIXTURE = {
   },
 };
 
-const NAVER_FIXTURE = {
-  items: [
-    { title: "<b>홍삼정</b> 120g", lprice: "99000", mallName: "G마켓", link: "https://gmarket.example/1" },
-  ],
+const NAVER_APIFY_FIXTURE = {
+  type: "product",
+  keyword: "홍삼정 120g",
+  productName: "홍삼정 120g",
+  salePrice: 99_000,
+  discountedSalePrice: 99_000,
+  deliveryFee: 0,
+  freeDelivery: true,
+  productPageUrl: "https://gmarket.example/1",
+  scrapedAt: new Date().toISOString(),
+};
+
+const NAVER_SUMMARY_URL =
+  "https://api.apify.com/v2/key-value-stores/store-market-fetch/records/RUN_SUMMARY";
+const NAVER_SUMMARY = {
+  targets: 1,
+  delivered: 1,
+  budgetStopped: false,
+  deadlineStopped: false,
+  extrasStoppedForCost: false,
+  perTarget: [{ label: "홍삼정 120g", total: 1, delivered: 1, blocked: null }],
+  notReadable: [],
+  skippedInputs: [],
+  searchCalls: { calls: 1, ok: 1, blocked: 0, captcha: 0, http: { "200": 1 } },
 };
 
 const COUPANG_FIXTURE = {
@@ -86,8 +110,8 @@ afterEach(() => {
 describe("fetchAllMarketPrices — 카카오 선물하기 채널", () => {
   it("gift-explorer 응답을 RawMarketItem으로 매핑한다(가격0 필터·URL 조합·무배 플래그)", async () => {
     // 네이버/쿠팡 키를 비워 카카오 경로만 실호출되게 격리한다(둘 다 키 미설정 시 fetch 없이 조기 반환).
-    vi.stubEnv("NAVER_SEARCH_CLIENT_ID", "");
-    vi.stubEnv("NAVER_SEARCH_CLIENT_SECRET", "");
+    vi.stubEnv("NAVER_PRICE_APIFY_ENABLED", "0");
+    vi.stubEnv("NAVER_PRICE_APIFY_TOKEN", "");
     vi.stubEnv("COUPANG_ACCESS_KEY", "");
     vi.stubEnv("COUPANG_SECRET_KEY", "");
     const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
@@ -96,7 +120,7 @@ describe("fetchAllMarketPrices — 카카오 선물하기 채널", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { allItems, minItem, errors } = await fetchAllMarketPrices("홍삼정 120g");
+    const { allItems, minItem, errors, sources } = await fetchAllMarketPrices("홍삼정 120g");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // 가격 0 상품은 제외되고 2건만 남는다.
@@ -110,14 +134,15 @@ describe("fetchAllMarketPrices — 카카오 선물하기 채널", () => {
     expect(allItems.find((i) => i.mall === "정관장")?.isFreeShipping).toBe(true);
     expect(minItem?.isFreeShipping).toBeNull();
     expect(errors.kakao).toBeNull();
-    // 네이버는 미설정 시 경고를 표면화하지만, 쿠팡은 미도입 파킹이라 침묵(error: null).
-    expect(errors.naver).toContain("미설정");
+    // 네이버는 종료된 공식 API와 외부 연결 필요 오류를 명시하고, 쿠팡은 미도입 파킹이라 침묵(error: null).
+    expect(errors.naver).toMatch(/2026-07-31|Apify|외부 연결/i);
+    expect(sources.naver.status).toBe("disabled");
     expect(errors.coupang).toBeNull();
   });
 
   it("비정상 status는 items 없이 errors.kakao로 표면화한다 — 사유 본문까지 함께", async () => {
-    vi.stubEnv("NAVER_SEARCH_CLIENT_ID", "");
-    vi.stubEnv("NAVER_SEARCH_CLIENT_SECRET", "");
+    vi.stubEnv("NAVER_PRICE_APIFY_ENABLED", "0");
+    vi.stubEnv("NAVER_PRICE_APIFY_TOKEN", "");
     vi.stubEnv("COUPANG_ACCESS_KEY", "");
     vi.stubEnv("COUPANG_SECRET_KEY", "");
     vi.stubGlobal("fetch", vi.fn(async () => rawResponse("service temporarily unavailable", 503)));
@@ -133,8 +158,8 @@ describe("fetchAllMarketPrices — 카카오 선물하기 채널", () => {
 
 describe("fetchAllMarketPrices — 실패 사유 기록(describeHttpFailure)", () => {
   const silenceOthers = () => {
-    vi.stubEnv("NAVER_SEARCH_CLIENT_ID", "");
-    vi.stubEnv("NAVER_SEARCH_CLIENT_SECRET", "");
+    vi.stubEnv("NAVER_PRICE_APIFY_ENABLED", "0");
+    vi.stubEnv("NAVER_PRICE_APIFY_TOKEN", "");
   };
 
   it("쿠팡 401의 실측 본문이 사유에 그대로 실린다(같은 401의 세 사유를 가른다)", async () => {
@@ -202,15 +227,22 @@ describe("fetchAllMarketPrices — 실패 사유 기록(describeHttpFailure)", (
   });
 
   it("3채널 결과를 하나의 목록으로 합쳐 최종가 오름차순 정렬한다", async () => {
-    vi.stubEnv("NAVER_SEARCH_CLIENT_ID", "id");
-    vi.stubEnv("NAVER_SEARCH_CLIENT_SECRET", "secret");
+    vi.stubEnv("NAVER_PRICE_APIFY_ENABLED", "1");
+    vi.stubEnv("NAVER_PRICE_APIFY_TOKEN", "test-token");
     vi.stubEnv("COUPANG_ACCESS_KEY", "ak");
     vi.stubEnv("COUPANG_SECRET_KEY", "sk");
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: RequestInfo | URL) => {
         const u = String(url);
-        if (u.includes("openapi.naver.com")) return jsonResponse(NAVER_FIXTURE);
+        if (u.includes("/v2/actors/topapi~naver-shopping-scraper/runs?")) {
+          return jsonResponse({ data: { id: "run-market-fetch", defaultDatasetId: "dataset-market-fetch" } });
+        }
+        if (u.includes("/v2/actor-runs/run-market-fetch")) {
+          return jsonResponse({ data: { status: "SUCCEEDED", defaultDatasetId: "dataset-market-fetch", output: { summary: NAVER_SUMMARY_URL } } });
+        }
+        if (u === NAVER_SUMMARY_URL) return jsonResponse(NAVER_SUMMARY);
+        if (u.includes("/v2/datasets/dataset-market-fetch/items")) return jsonResponse([NAVER_APIFY_FIXTURE]);
         if (u.includes("api-gateway.coupang.com")) return jsonResponse(COUPANG_FIXTURE);
         if (u.includes("gift.kakao.com")) return jsonResponse(KAKAO_FIXTURE);
         throw new Error(`unexpected url: ${u}`);
@@ -222,5 +254,21 @@ describe("fetchAllMarketPrices — 실패 사유 기록(describeHttpFailure)", (
     expect(allItems.map((i) => i.channel).sort()).toEqual(["coupang", "kakao", "kakao", "naver"]);
     expect(allItems.map((i) => i.totalPrice)).toEqual([35800, 99000, 101000, 114000]);
     expect(minItem?.channel).toBe("kakao");
+  });
+
+  it("deadlineAt가 지나면 세 소스 모두 외부 호출 없이 error 상태를 반환한다", async () => {
+    vi.stubEnv("NAVER_PRICE_APIFY_ENABLED", "1");
+    vi.stubEnv("NAVER_PRICE_APIFY_TOKEN", "test-token");
+    vi.stubEnv("COUPANG_ACCESS_KEY", "ak");
+    vi.stubEnv("COUPANG_SECRET_KEY", "sk");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchAllMarketPrices("deadline-case", { deadlineAt: Date.now() - 1 });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.sources.naver.status).toBe("error");
+    expect(result.sources.coupang.status).toBe("error");
+    expect(result.sources.kakao.status).toBe("error");
   });
 });
