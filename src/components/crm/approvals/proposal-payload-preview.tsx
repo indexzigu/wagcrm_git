@@ -494,6 +494,74 @@ function AddCampaignItemsPreview({
   );
 }
 
+/**
+ * 주문캠페인 새로 만들기(봇 기안) — 어느 스토어 상품을 누구(셀러)로, 어느 거래처 양식으로 만드는지와 함께 만들어질
+ * 매핑 줄(네이버 등록 옵션 그대로). 판단 가치 1순위는 **같은 상품에 이미 캠페인이 있는가**다 — 회차마다 새로 만드는 것이
+ * 표준이라 막지는 않지만, 봇이 같은 요청을 두 번 올렸거나 지난 회차를 착각했으면 여기서 걸러야 한다. 그래서 그 줄을
+ * 승인 버튼에 가까운 맨 아래가 아니라 상품 정보 바로 아래에 둔다. 옵션 줄은 접지 않는다(머리 주석).
+ */
+function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> }) {
+  const rows = asRecordList(args.mappings);
+  const name = asText(args.name);
+  if (!name || rows.length === 0) return null;
+  const sameProduct = asRecordList(args.sameProductCampaigns);
+  return (
+    <>
+      <Rows
+        rows={[
+          ["상품", name],
+          ["상품번호", asText(args.productId)],
+          ["셀러", asText(args.sellerName)],
+          ["거래처 양식", asText(args.templateName) ?? "없음"],
+          ["수신 메일", asText(args.toEmail)],
+          ["참조 메일", asText(args.ccEmail)],
+          ["스토어 기간", asText(args.salePeriod)],
+          ["기안 메모", asText(args.memo)],
+        ]}
+      />
+      {sameProduct.length > 0 && (
+        <div className="space-y-1">
+          <SectionTitle>같은 상품에 이미 있는 주문캠페인 {sameProduct.length}개</SectionTitle>
+          <ul className="space-y-0.5">
+            {sameProduct.map((campaign, index) => (
+              <li key={`${index}-${asText(campaign.id) ?? ""}`} className="flex items-start gap-1.5 text-foreground">
+                <AlertTriangleIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-status-caution" />
+                <span className="min-w-0 break-words">
+                  {asText(campaign.name) ?? "이름없음"}
+                  {campaign.isActive === false ? <span className="text-muted-foreground"> · 판매마감</span> : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="text-muted-foreground">
+        승인하면 주문 관리에 캠페인이 생기고 판매 조건 자동 연결과 주문 동기화가 돕니다. 상품코드는 비어 있습니다.
+      </p>
+      <div className="max-h-64 overflow-x-auto overflow-y-auto">
+        <table className="w-full border-collapse text-left tabular-nums">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="py-1 pr-3 font-normal">옵션명</th>
+              <th className="py-1 pr-3 font-normal">상품명</th>
+              <th className="py-1 font-normal">가격</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index} className="align-top text-foreground">
+                <td className="py-1 pr-3 break-words">{asText(row.optionName) ?? "—"}</td>
+                <td className="py-1 pr-3 break-words">{asText(row.productName) ?? "—"}</td>
+                <td className="py-1 break-words">{asMoney(row.price) ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 /** `YYYY-MM-DD` 두 날 → 「시작 ~ 끝」, 같은 날이면 하루만. */
 function periodText(start: string | null, end: string | null): string | null {
   if (!start || !end) return null;
@@ -618,6 +686,8 @@ export function ProposalPayloadPreview({
       <CreateCampaignRoundPreview args={args} labels={argLabels} />
     ) : action === "add_campaign_items" ? (
       <AddCampaignItemsPreview args={args} labels={argLabels} targetEntityName={targetEntityName} />
+    ) : action === "create_order_campaign" ? (
+      <CreateOrderCampaignPreview args={args} />
     ) : null;
   if (!body && !origin) return null;
   return (

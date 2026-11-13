@@ -2,10 +2,13 @@ import { z } from "zod";
 import {
   AgentJobSlackOriginSchema,
   applyProductMappingRowSchema,
+  createOrderCampaignArgsSchema,
+  createOrderCampaignRequestSchema,
   MAX_PRODUCT_MAPPING_ROWS,
   opaqueIdSchema,
   productMappingsAppliedStructuredDataSchema,
   refineDistinctMappingOptionNames,
+  refineOrderCampaignProductTarget,
   storeProductOptionsStructuredDataSchema,
 } from "@/lib/agent-worker/contracts";
 
@@ -22,6 +25,7 @@ export const LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(["127.0.0.1", "lo
 export const AGENT_INTERNAL_PATHS = {
   storeProductOptions: "/api/internal/agent/store-product-options",
   applyProductMappings: "/api/internal/agent/apply-product-mappings",
+  orderCampaignDraft: "/api/internal/agent/order-campaign-draft",
 } as const;
 
 export const storeProductOptionsRequestSchema = z
@@ -44,15 +48,32 @@ export const applyProductMappingsRequestSchema = z
 
 export type ApplyProductMappingsRequest = z.infer<typeof applyProductMappingsRequestSchema>;
 
+/** 주문캠페인 기안 초안 요청 — 봇 기안 입력에서 메모만 뺀 것(메모는 실행기가 저장 args 에 붙인다). */
+export const orderCampaignDraftRequestSchema = createOrderCampaignRequestSchema
+  .omit({ memo: true })
+  .strict()
+  .superRefine(refineOrderCampaignProductTarget);
+
+export type OrderCampaignDraftRequest = z.infer<typeof orderCampaignDraftRequestSchema>;
+
+/** 초안 = 저장 args(메모 제외). 실행기가 메모를 붙여 저장 스키마로 다시 잰다. */
+export const orderCampaignDraftDataSchema = createOrderCampaignArgsSchema.omit({ memo: true }).strict();
+
+export type OrderCampaignDraftData = z.infer<typeof orderCampaignDraftDataSchema>;
+
 /**
  * 창구 실패 코드. 봇 작업 결과 요약에 그대로 실린다(`… failed: <code> (<message>)`).
  * - CAMPAIGN_NOT_FOUND: 주문캠페인 없음
  * - NO_STORE_OPTIONS: 캠페인에 연결된 스토어 상품이 없거나(목록에서 번호 불일치) 그 상품에 이름 있는 옵션이 없음
- * - STORE_FETCH_FAILED: 네이버 조회 실패
+ * - STORE_FETCH_FAILED: 네이버 조회 실패(주문캠페인 초안은 거래처 양식·같은 상품 캠페인 DB 조회 실패도)
  * - OPTIONS_TOO_LARGE: 옵션 표가 결과 상한을 넘음(잘라서 주지 않는다)
  * - DUPLICATE_MAPPING · OUT_OF_RANGE: 지금 매핑 줄을 기안 값으로 옮길 수 없음(화면에서 정리)
  * - APPLY_FAILED: 저장 실행이 실패함(결재함에 FAILED 기록이 남는다)
  * - INVALID_INPUT: 요청 모양이 틀림
+ * - PRODUCT_NOT_FOUND: 상품명 일부·상품번호에 맞는 스토어 상품이 없음
+ * - PRODUCT_AMBIGUOUS: 상품명 일부가 여러 상품에 걸림(문구에 후보 이름·번호를 싣는다 — 봇이 오너에게 고르게 한다)
+ * - ORDER_BRAND_NOT_FOUND: 발주 거래처(거래처 양식)를 찾지 못했거나 여럿에 걸림
+ * - SELLER_NAME_REQUIRED: 셀러 이름을 상품명에서 찾지 못했고 입력에도 없음
  */
 export const AGENT_INTERNAL_FAILURE_CODES = [
   "CAMPAIGN_NOT_FOUND",
@@ -63,6 +84,10 @@ export const AGENT_INTERNAL_FAILURE_CODES = [
   "OUT_OF_RANGE",
   "APPLY_FAILED",
   "INVALID_INPUT",
+  "PRODUCT_NOT_FOUND",
+  "PRODUCT_AMBIGUOUS",
+  "ORDER_BRAND_NOT_FOUND",
+  "SELLER_NAME_REQUIRED",
 ] as const;
 
 export type AgentInternalFailureCode = (typeof AGENT_INTERNAL_FAILURE_CODES)[number];
@@ -87,6 +112,11 @@ export const storeProductOptionsResponseSchema = z.union([
 
 export const applyProductMappingsResponseSchema = z.union([
   z.object({ ok: z.literal(true), data: productMappingsAppliedStructuredDataSchema }).strict(),
+  failureSchema,
+]);
+
+export const orderCampaignDraftResponseSchema = z.union([
+  z.object({ ok: z.literal(true), data: orderCampaignDraftDataSchema }).strict(),
   failureSchema,
 ]);
 

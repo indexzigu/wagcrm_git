@@ -19,6 +19,7 @@ import {
   MAX_WORK_RECORDS_LIMIT,
   createActionProposalInputSchema,
   createAgentJobIdempotencyKey,
+  createOrderCampaignArgsSchema,
   isAgentJobTransitionAllowed,
   serializeAgentJobJson,
   upsertProductMappingsArgsSchema,
@@ -269,7 +270,13 @@ describe("create_action_proposal — update_settlement_amount (정산 금액 수
 
   it("sits right before update_record in the union (new actions are appended at the end)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-4)).toEqual(["update_settlement_amount", "update_record", "upsert_product_mappings", "add_campaign_items"]);
+    expect(actions.slice(-5)).toEqual([
+      "update_settlement_amount",
+      "update_record",
+      "upsert_product_mappings",
+      "add_campaign_items",
+      "create_order_campaign",
+    ]);
   });
 
   it("field enum matches the screen-label table key for key, in order", () => {
@@ -505,7 +512,12 @@ describe("create_action_proposal — update_record (기록 수정)", () => {
 
   it("keeps its place in the union; only later actions are appended after it (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(actions.indexOf("update_record"))).toEqual(["update_record", "upsert_product_mappings", "add_campaign_items"]);
+    expect(actions.slice(actions.indexOf("update_record"))).toEqual([
+      "update_record",
+      "upsert_product_mappings",
+      "add_campaign_items",
+      "create_order_campaign",
+    ]);
   });
 
   it("entity enum matches the screen-label table key for key, in order", () => {
@@ -625,7 +637,7 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
 
   it("sits right before add_campaign_items in the union (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-2)).toEqual(["upsert_product_mappings", "add_campaign_items"]);
+    expect(actions.slice(-3)).toEqual(["upsert_product_mappings", "add_campaign_items", "create_order_campaign"]);
   });
 
   it("accepts a new row (also through the AgentJob envelope: an array of scalar objects is depth 2)", () => {
@@ -761,5 +773,62 @@ describe("봇 상품 매핑 작업 입력 (2026-10-16)", () => {
     ["빈 상품코드", { orderCampaignId: "c1", mappings: [{ ...row, brandCode: " " }] }],
   ])("apply_product_mappings 는 %s 를 거절한다", (_label, input) => {
     expect(parse("apply_product_mappings", input)).toBe(false);
+  });
+});
+
+describe("create_action_proposal — create_order_campaign (주문캠페인 새로 만들기, 2026-11-13)", () => {
+  const accepts = (input: unknown) => createActionProposalInputSchema.safeParse(input).success;
+  const envelope = (input: unknown) => ({
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    operation: "create_action_proposal",
+    input,
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  });
+
+  it("is the last action in the union (python mirror compares literal order)", () => {
+    const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
+    expect(actions.at(-1)).toBe("create_order_campaign");
+  });
+
+  it("takes exactly one of productQuery / productId, plus optional sellerName·orderBrand·memo", () => {
+    const query = { action: "create_order_campaign", productQuery: "샘플 상품", sellerName: "샘플셀러", orderBrand: "샘플거래처" };
+    expect(accepts(query)).toBe(true);
+    expect(AgentJobPayloadSchema.safeParse(envelope(query)).success).toBe(true);
+    expect(accepts({ action: "create_order_campaign", productId: "12345678" })).toBe(true);
+    expect(accepts({ action: "create_order_campaign" })).toBe(false);
+    expect(accepts({ action: "create_order_campaign", productQuery: "샘플", productId: "1" })).toBe(false);
+  });
+
+  it("rejects bot-supplied Naver values (name·mappings come from the CRM draft, not the bot)", () => {
+    expect(accepts({ action: "create_order_campaign", productId: "1", name: "봇이 쓴 이름" })).toBe(false);
+    expect(accepts({ action: "create_order_campaign", productId: "1", mappings: [] })).toBe(false);
+    expect(accepts({ action: "create_order_campaign", productId: "12a" })).toBe(false);
+    expect(accepts({ action: "create_order_campaign", productQuery: "a" })).toBe(false);
+  });
+
+  it("stored args require a seller and at least one mapping row; same-product list is bounded", () => {
+    const stored = {
+      productId: "123",
+      channelProductNo: "456",
+      name: "[샘플셀러 X 샘플브랜드] 샘플 상품",
+      sellerName: "샘플셀러",
+      template: null,
+      templateName: null,
+      toEmail: null,
+      ccEmail: null,
+      thumbnailUrl: null,
+      category: null,
+      productStatus: "SALE",
+      salePeriod: "2026.11.20 ~ 2026.11.26",
+      mappings: [{ productName: "샘플 상품", optionName: "", price: 0 }],
+      sameProductCampaigns: [],
+    };
+    expect(createOrderCampaignArgsSchema.safeParse(stored).success).toBe(true);
+    expect(createOrderCampaignArgsSchema.safeParse({ ...stored, sellerName: " " }).success).toBe(false);
+    expect(createOrderCampaignArgsSchema.safeParse({ ...stored, mappings: [] }).success).toBe(false);
+    const many = Array.from({ length: 11 }, (_, i) => ({ id: `c${i}`, name: "n", isActive: true }));
+    expect(createOrderCampaignArgsSchema.safeParse({ ...stored, sameProductCampaigns: many }).success).toBe(false);
   });
 });

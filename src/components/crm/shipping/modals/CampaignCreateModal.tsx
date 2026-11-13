@@ -6,6 +6,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
+import { deriveOrderCampaignFieldsFromProduct } from '@/lib/order-converter/order-campaign-create';
 
 type CampaignCreateModalProps = {
   selectedProduct: any;
@@ -92,40 +93,15 @@ export default function CampaignCreateModal({
 
   useEffect(() => {
     if (selectedProduct) {
-      const cp = selectedProduct.channelProducts?.[0];
-      const name = cp?.name || selectedProduct.name || selectedProduct.originProduct?.name || '알수없는 상품명';
-      const thumb = cp?.representativeImage?.url || '';
-      const categoryName = cp?.wholeCategoryName?.split('>').pop() || selectedProduct.originProduct?.category?.name || selectedProduct.category?.name || '카테고리 미지정';
-      
-      let extractedSellerName = '';
-      const match = name.match(/^\[(.*?) X .*?\]/);
-      if (match && match[1]) {
-        extractedSellerName = match[1].trim();
-      }
-
-      const formatDt = (dtStr: string) => dtStr ? dtStr.split('T')[0].replace(/-/g, '.') : '';
-      let dateStr = '기간 미정';
-      const status = cp?.statusType || 'WAIT';
-      if (cp?.saleStartDate && cp?.saleEndDate) {
-        const start = new Date(cp.saleStartDate);
-        const end = new Date(cp.saleEndDate);
-        const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-        if (['WAIT', 'SUSPENDED', 'OUTOFSTOCK'].includes(status) && diffDays >= 13 && diffDays <= 15) {
-          dateStr = '미등록';
-        } else {
-          dateStr = `${formatDt(cp.saleStartDate)} ~ ${formatDt(cp.saleEndDate)}`;
-        }
-      } else if (cp?.saleStartDate) {
-        dateStr = `${formatDt(cp.saleStartDate)} ~ 계속`;
-      }
-      
-      setNewName(name);
-      setNewSellerName(extractedSellerName);
-      setNewThumbnailUrl(thumb);
-      setNewCategory(categoryName);
-      setNewProductStatus(status);
-      setNewSalePeriod(dateStr);
-      setMappings([{ productName: name, optionName: '', brandCode: '', price: 0 }]);
+      // 상품 → 칸 파생은 봇 기안과 같은 본체(`deriveOrderCampaignFieldsFromProduct`)를 쓴다.
+      const fields = deriveOrderCampaignFieldsFromProduct(selectedProduct);
+      setNewName(fields.name);
+      setNewSellerName(fields.sellerName);
+      setNewThumbnailUrl(fields.thumbnailUrl);
+      setNewCategory(fields.category);
+      setNewProductStatus(fields.productStatus);
+      setNewSalePeriod(fields.salePeriod);
+      setMappings([{ productName: fields.name, optionName: '', brandCode: '', price: 0 }]);
     }
   }, [selectedProduct]);
 
@@ -144,7 +120,7 @@ export default function CampaignCreateModal({
         category: newCategory,
         productStatus: newProductStatus,
         salePeriod: newSalePeriod,
-        productId: cp?.originProductNo?.toString() || cp?.productNo?.toString() || selectedProduct.originProduct?.productNo?.toString() || '',
+        productId: deriveOrderCampaignFieldsFromProduct(selectedProduct).productId,
         mappings: sortProductMappingsByProductName(mappings.filter(m => m.productName || m.optionName || m.brandCode))
       });
     } finally {

@@ -33,6 +33,7 @@ import { updateSettlementAmountTool } from "@/lib/agent/tools/update-settlement-
 import { updateRecordTool } from "@/lib/agent/tools/update-record";
 import { upsertProductMappingsTool } from "@/lib/agent/tools/upsert-product-mappings";
 import { addCampaignItemsTool } from "@/lib/agent/tools/add-campaign-items";
+import { createOrderCampaignTool } from "@/lib/agent/tools/create-order-campaign";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import {
@@ -65,10 +66,14 @@ import {
   addCampaignItemsArgsSchema,
   addCampaignItemsRequestArgsSchema,
   campaignOptionNameKey,
+  createOrderCampaignArgsSchema,
+  createOrderCampaignRequestArgsSchema,
   sameOrderCampaignName,
   upsertProductMappingsRequestArgsSchema,
   type AddCampaignItemsArgs,
   type AddCampaignItemsRequestArgs,
+  type CreateOrderCampaignArgs,
+  type CreateOrderCampaignRequestArgs,
   type AgentJobPayload,
   type AgentJobResult,
   type AgentJobRoute,
@@ -106,6 +111,7 @@ import { callAgentInternalApi } from "./internal-api-client";
 import {
   AGENT_INTERNAL_PATHS,
   applyProductMappingsResponseSchema,
+  orderCampaignDraftResponseSchema,
   storeProductOptionsResponseSchema,
 } from "@/lib/agent-internal/api-contract";
 import {
@@ -1195,6 +1201,7 @@ const WRITE_INTENT_TOOLS = {
   update_record: updateRecordTool,
   upsert_product_mappings: upsertProductMappingsTool,
   add_campaign_items: addCampaignItemsTool,
+  create_order_campaign: createOrderCampaignTool,
 } as const;
 
 async function targetExists(entityType: string, entityId: string, client: ProposalTx): Promise<boolean> {
@@ -1372,6 +1379,35 @@ async function buildWriteIntent(
   return intentResult.ok ? { ok: true, intent: intentResult.data.writeIntent } : { ok: false, result: intentResult };
 }
 
+/**
+ * 주문캠페인 새로 만들기 기안의 저장 args 받아오기 — 트랜잭션 **밖에서** CRM 앱 봇 내부 창구에 부탁한다(네이버 왕복이
+ * 기안 INSERT 트랜잭션을 붙잡지 않게). 이 실행기는 네이버 열쇠가 없다(`internal-api-client.ts`). 창구 실패 코드
+ * (PRODUCT_AMBIGUOUS 등)는 그대로 실패 코드가 되고 창구 문구(후보 이름·번호)가 붙는다 — 봇이 오너에게 고르게 한다.
+ * 메모는 창구에 보내지 않고 여기서 붙인 뒤 저장 스키마로 다시 잰다.
+ */
+async function draftOrderCampaignArgs(
+  request: CreateOrderCampaignRequestArgs,
+  signal: AbortSignal,
+): Promise<{ ok: true; args: CreateOrderCampaignArgs } | { ok: false; outcome: OperationFailure }> {
+  assertNotAborted(signal);
+  const { memo, ...draftRequest } = request;
+  const call = await callAgentInternalApi(
+    AGENT_INTERNAL_PATHS.orderCampaignDraft,
+    draftRequest,
+    orderCampaignDraftResponseSchema,
+    signal,
+  );
+  if (!call.ok) return { ok: false, outcome: failure(call.errorClass, "order campaign draft call failed", call.detail) };
+  if (!call.body.ok) {
+    return { ok: false, outcome: failure(call.body.code, "order campaign draft refused", call.body.message) };
+  }
+  const stored = createOrderCampaignArgsSchema.safeParse({ ...call.body.data, ...(memo !== undefined ? { memo } : {}) });
+  if (!stored.success) {
+    return { ok: false, outcome: failure("INTERNAL_API_BAD_RESPONSE", "order campaign draft failed stored-args validation") };
+  }
+  return { ok: true, args: stored.data };
+}
+
 async function createActionProposal(
   input: CreateActionProposalInput,
   { signal, origin }: OperationContext,
@@ -1389,18 +1425,28 @@ async function createActionProposal(
   // 캠페인 품목 기안은 봇 입력의 판매 조건 id 가 선택이다 — 트랜잭션 안에서 캠페인의 지금 판매 조건으로 채운 뒤
   // 저장 스키마(`definition.argsSchema`)로 다시 잰다(`addCampaignItemsRequestSchema` 주석).
   const fillsMainDeal = action === "add_campaign_items";
+  // 주문캠페인 기안은 봇 입력이 「무엇을 고를지」뿐이다 — 네이버 값으로 채운 저장 args 를 트랜잭션 밖에서 받아 온다.
+  const draftsOrderCampaign = action === "create_order_campaign";
   const requestSchema = snapshotsMappings
     ? upsertProductMappingsRequestArgsSchema
     : fillsMainDeal
       ? addCampaignItemsRequestArgsSchema
-      : definition.argsSchema;
+      : draftsOrderCampaign
+        ? createOrderCampaignRequestArgsSchema
+        : definition.argsSchema;
   const parsedArgs = requestSchema.safeParse(args);
   if (!parsedArgs.success) {
     return failure("INVALID_INPUT", "action args failed validation");
   }
+  let preparedArgs: unknown = parsedArgs.data;
+  if (draftsOrderCampaign) {
+    const drafted = await draftOrderCampaignArgs(parsedArgs.data as CreateOrderCampaignRequestArgs, signal);
+    if (!drafted.ok) return drafted.outcome;
+    preparedArgs = drafted.args;
+  }
   let preparedIntent: WriteIntent | null = null;
   if (!snapshotsMappings && !fillsMainDeal) {
-    const built = await buildWriteIntent(intentTool, parsedArgs.data);
+    const built = await buildWriteIntent(intentTool, preparedArgs);
     if (!built.ok) return toolFailure(built.result);
     preparedIntent = built.intent;
   }
@@ -1410,7 +1456,7 @@ async function createActionProposal(
   const prisma = getPrisma();
   const outcome = await prisma.$transaction(async (tx): Promise<ProposalTxOutcome> => {
     let intent: WriteIntent;
-    let storedArgs: unknown = parsedArgs.data;
+    let storedArgs: unknown = preparedArgs;
     if (preparedIntent !== null) {
       intent = preparedIntent;
       if (!(await targetResolves(intent, tx))) return { kind: "NOT_FOUND" };

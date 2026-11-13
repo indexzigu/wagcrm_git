@@ -553,4 +553,53 @@ describe("ProposalPayloadPreview — [캘린더수집] 캘린더에서 온 기�
       expect(screen.queryByText("27,000원 · 총수수료율 18%")).toBeNull();
     });
   });
+
+  describe("주문캠페인 등록(create_order_campaign)", () => {
+    const base = {
+      productId: "103",
+      channelProductNo: "203",
+      name: "[샘플셀러 X 샘플브랜드] 유산균",
+      sellerName: "샘플셀러",
+      template: "sample-brand",
+      templateName: "샘플거래처",
+      toEmail: "to@example.com",
+      ccEmail: null,
+      thumbnailUrl: null,
+      category: null,
+      productStatus: "SALE",
+      salePeriod: "2026.11.20 ~ 2026.11.26",
+      mappings: [
+        { productName: "유산균", optionName: "구성: 1박스", price: 30_000 },
+        { productName: "", optionName: "추가: 쇼핑백", price: 1_000 },
+      ],
+      sameProductCampaigns: [] as { id: string; name: string; isActive: boolean }[],
+    };
+
+    it("상품·셀러·거래처 양식과 옵션 줄 전부를 가격과 함께 보여준다", () => {
+      const { container } = render(<ProposalPayloadPreview action="create_order_campaign" args={base} />);
+      expect(screen.getByText("[샘플셀러 X 샘플브랜드] 유산균")).toBeTruthy();
+      expect(screen.getByText("샘플셀러")).toBeTruthy();
+      expect(screen.getByText("샘플거래처")).toBeTruthy();
+      const rows = Array.from(container.querySelectorAll("tbody tr")).map((tr) =>
+        Array.from(tr.querySelectorAll("td")).map((td) => td.textContent),
+      );
+      expect(rows).toEqual([
+        ["구성: 1박스", "유산균", "30,000원"],
+        ["추가: 쇼핑백", "—", "1,000원"],
+      ]);
+      expect(screen.queryByText(/같은 상품에 이미 있는/)).toBeNull();
+    });
+
+    it("같은 상품 캠페인이 있으면 이름과 판매마감 여부를 경고 줄로 보여준다", () => {
+      render(
+        <ProposalPayloadPreview
+          action="create_order_campaign"
+          args={{ ...base, sameProductCampaigns: [{ id: "oc1", name: "지난 회차", isActive: false }] }}
+        />,
+      );
+      expect(screen.getByText("같은 상품에 이미 있는 주문캠페인 1개")).toBeTruthy();
+      expect(screen.getByText("지난 회차")).toBeTruthy();
+      expect(screen.getByText(/판매마감/)).toBeTruthy();
+    });
+  });
 });

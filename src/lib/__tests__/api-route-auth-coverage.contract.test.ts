@@ -94,6 +94,7 @@ const EXEMPT_EXACT = [
   "/api/chat-room-mappings/reconcile",
   "/api/internal/agent/store-product-options",
   "/api/internal/agent/apply-product-mappings",
+  "/api/internal/agent/order-campaign-draft",
 ] as const;
 
 function isSessionExempt(pathname: string): boolean {
