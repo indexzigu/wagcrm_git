@@ -815,7 +815,7 @@ export function MarketPriceMonitor({
                                 <StatusDot
                                   tone="neutral"
                                   showDot={false}
-                                  label={`근거 ${suggestion.evidence.length}개`}
+                                  label={`예시 ${suggestion.evidence.length}개`}
                                   hint={suggestion.evidence.join(" / ")}
                                   className="text-[10px] font-normal text-slate-500"
                                 />
