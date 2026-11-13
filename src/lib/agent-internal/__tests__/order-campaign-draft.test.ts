@@ -74,6 +74,18 @@ describe("pickProduct", () => {
     expect(result.ok && result.candidate.productId).toBe("103");
   });
 
+  it("낱말로 나눈 질의는 순서와 사이 글자(머리의 X 등)에 상관없이 모든 낱말이 든 상품을 찾는다", () => {
+    // 사람은 「셀러 브랜드」로 부르지만 상품명 머리는 「[셀러 X 브랜드]」 — 통째 부분일치로는 영영 못 찾는다.
+    const bySellerBrand = pickProduct(PRODUCTS, { productQuery: "샘플셀러 샘플브랜드 유산균" });
+    expect(bySellerBrand.ok && bySellerBrand.candidate.productId).toBe("103");
+    const reordered = pickProduct(PRODUCTS, { productQuery: "유산균 샘플셀러" });
+    expect(reordered.ok && reordered.candidate.productId).toBe("103");
+  });
+
+  it("낱말 하나라도 상품명에 없으면 걸지 않는다", () => {
+    expect(pickProduct(PRODUCTS, { productQuery: "샘플셀러 오메가" })).toMatchObject({ ok: false, code: "PRODUCT_NOT_FOUND" });
+  });
+
   it("여럿에 걸리면 고르지 않고 후보 이름·번호를 판매중 먼저 돌려준다", () => {
     const result = pickProduct(PRODUCTS, { productQuery: "비타민" });
     expect(result.ok).toBe(false);

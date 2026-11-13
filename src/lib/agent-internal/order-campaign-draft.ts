@@ -71,6 +71,17 @@ export function productMatchKey(value: string): string {
   return value.normalize("NFC").toLowerCase().replace(/\s+/g, "");
 }
 
+/**
+ * 질의가 상품명에 걸리는가 — 띄어쓰기를 지운 통째 부분일치, 또는 질의의 낱말이 순서 무관하게 모두 들어 있으면 건다.
+ * 사람은 「셀러 브랜드」로 부르지만 상품명 머리는 「[셀러 X 브랜드]」라 통째 일치만으로는 영영 못 찾는다(실사용 실패).
+ */
+export function productQueryMatches(name: string, query: string): boolean {
+  const nameKey = productMatchKey(name);
+  if (nameKey.includes(productMatchKey(query))) return true;
+  const words = query.normalize("NFC").toLowerCase().split(/\s+/).filter(Boolean);
+  return words.length > 1 && words.every((word) => nameKey.includes(word));
+}
+
 type ProductCandidate = {
   product: unknown;
   name: string;
@@ -157,7 +168,7 @@ export function pickProduct(products: ReadonlyArray<unknown>, request: OrderCamp
   for (const product of products) {
     const candidate = toCandidate(product);
     if (!candidate || seen.has(candidate.productId)) continue;
-    if (!productMatchKey(candidate.name).includes(query)) continue;
+    if (!productQueryMatches(candidate.name, request.productQuery ?? "")) continue;
     seen.add(candidate.productId);
     matches.push(candidate);
   }
