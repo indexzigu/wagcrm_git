@@ -32,6 +32,7 @@ import {
 } from "@/lib/price-monitor/match-context";
 import type { LabelInsights } from "@/lib/price-monitor/label-evidence";
 import { candidateNameKey, candidateUrlKey } from "@/lib/price-monitor/match-axes";
+import { suggestBrandAliases, type AliasSuggestionSource } from "@/lib/price-monitor/alias-suggestions";
 import { toast } from "@/lib/toast";
 
 export type MonitorItem = {
@@ -52,10 +53,17 @@ type LabelState = {
   roots: Record<string, string>;
   labels: Record<string, OwnerMatchLabel[]>;
   aliases: Record<string, string[]>;
+  /** 루트별 거래처 이름 — 판정에는 안 쓰고 「같은 회사로 볼 이름」 제안 재료로만 쓴다. */
+  companies: Record<string, string | null>;
   accuracy: (MatchAccuracy & Partial<LabelInsights>) | null;
 };
 
-const EMPTY_LABEL_STATE: LabelState = { roots: {}, labels: {}, aliases: {}, accuracy: null };
+const EMPTY_LABEL_STATE: LabelState = { roots: {}, labels: {}, aliases: {}, companies: {}, accuracy: null };
+
+const ALIAS_SUGGESTION_SOURCE_LABEL: Record<AliasSuggestionSource, string> = {
+  COMPANY: "거래처 이름과 같음",
+  BRAND_PREFIX: "브랜드 첫 낱말",
+};
 
 type MultiMarketPriceMonitorProps = {
   items: MonitorItem[];
@@ -167,6 +175,7 @@ export function MarketPriceMonitor({
           roots: data.roots ?? {},
           labels: data.labels ?? {},
           aliases: data.aliases ?? {},
+          companies: data.companies ?? {},
           accuracy: data.accuracy ?? null,
         });
         setLabelLoadError(null);
@@ -362,16 +371,22 @@ export function MarketPriceMonitor({
     }
   };
 
-  const saveAliases = async (item: MonitorItem) => {
+  /**
+   * 입력칸 초안을 저장한다. added 를 주면(제안 수락) 초안(없으면 저장된 목록)에 그 이름을 더해 저장한다 —
+   * 저장 전 입력 중이던 이름을 버리지 않는다.
+   */
+  const saveAliases = async (item: MonitorItem, added?: string) => {
     const root = rootOf(item.id);
     const draft = aliasDrafts[root];
-    if (draft === undefined) return;
+    if (added === undefined && draft === undefined) return;
+    const base = draft !== undefined ? parseBrandAliases(draft) : (labelState.aliases[root] ?? []);
+    const names = added === undefined ? base : [...base, added];
     setSavingAliasRoot(root);
     try {
       const res = await fetch("/api/price-monitoring/brand-aliases", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId: item.id, aliases: parseBrandAliases(draft) }),
+        body: JSON.stringify({ dealId: item.id, aliases: names }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? `저장 실패 (HTTP ${res.status})`);
@@ -577,6 +592,12 @@ export function MarketPriceMonitor({
             const root = rootOf(item.id);
             const savedAliases = labelState.aliases[root] ?? [];
             const aliasDraft = aliasDrafts[root];
+            const aliasSuggestions = suggestBrandAliases({
+              brandName: item.brandName,
+              companyName: labelState.companies[root] ?? null,
+              aliases: savedAliases,
+              candidates: fetchedItems,
+            });
 
             const ourShipping = getOurShipping(item.sellingPrice);
             const ourTotalPrice = item.sellingPrice + ourShipping;
@@ -759,6 +780,37 @@ export function MarketPriceMonitor({
                       <p className="mt-1 text-[10px] text-slate-500">
                         {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다. 표에서 「{BRAND_AXIS_LABEL.missing}」으로 빠진 후보가 같은 회사 제품이면 그 회사 이름을 여기 더하세요.
                       </p>
+                      {/* 이름 제안(2026-11-14 오너 결정): 「브랜드 없음」으로 빠졌지만 상품명은 맞는 후보에서 찾은 거래처
+                          이름·브랜드 첫 낱말. 자동 반영하지 않고 오너가 눌러야 저장된다 — 플랫폼·유통사 거래처가 섞여 있다. */}
+                      {aliasSuggestions.length > 0 && (
+                        <div className="mt-2">
+                        <p className="text-[11px] font-medium text-slate-700">이 이름을 더하면 빠진 후보가 다시 비교됩니다</p>
+                        <ul className="mt-1 space-y-1" aria-label="같은 회사로 볼 이름 제안">
+                          {aliasSuggestions.map((suggestion) => (
+                            <li key={suggestion.name} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => saveAliases(item, suggestion.name)}
+                                disabled={savingAliasRoot === root}
+                                aria-label={`같은 회사로 볼 이름에 「${suggestion.name}」 추가`}
+                                className="h-7 px-2 text-[11px]"
+                              >
+                                {savingAliasRoot === root ? "저장 중" : `「${suggestion.name}」 추가`}
+                              </Button>
+                              {/* 판단 재료(근거 상품명)는 첫 예시를 본문에 둔다 — 설명창만으론 훑어볼 때 안 보인다. */}
+                              <StatusDot
+                                tone="neutral"
+                                showDot={false}
+                                label={`${ALIAS_SUGGESTION_SOURCE_LABEL[suggestion.source]} · 「${BRAND_AXIS_LABEL.missing}」으로 빠진 후보 ${suggestion.evidenceCount}건에 있음 · 예: ${suggestion.evidence[0] ?? ""}`}
+                                hint={`예: ${suggestion.evidence.join(", ")}`}
+                                className="whitespace-normal text-[11px] font-normal text-slate-500"
+                              />
+                            </li>
+                          ))}
+                        </ul>
+                        </div>
+                      )}
                     </div>
 
                     <div className="border rounded-lg bg-white overflow-x-auto">

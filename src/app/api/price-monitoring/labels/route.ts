@@ -56,16 +56,18 @@ export async function GET(request: Request) {
 
   const roots: Record<string, string> = Object.fromEntries(await priceMatchLabelRepository.resolveRootDealIds(dealIds));
   const rootIds = Array.from(new Set(Object.values(roots)));
-  const [labels, aliases, accuracy] = await Promise.all([
+  const [labels, aliasSettings, accuracy] = await Promise.all([
     priceMatchLabelRepository.findByRootDealIds(rootIds),
-    priceMatchLabelRepository.findBrandAliases(rootIds),
+    priceMatchLabelRepository.findBrandAliasSettings(rootIds),
     accuracySafely(),
   ]);
 
   return NextResponse.json({
     roots,
     labels: Object.fromEntries(rootIds.map((id) => [id, labels.get(id) ?? []])),
-    aliases: Object.fromEntries(rootIds.map((id) => [id, parseBrandAliases(aliases.get(id) ?? null)])),
+    aliases: Object.fromEntries(rootIds.map((id) => [id, parseBrandAliases(aliasSettings.get(id)?.aliasesText ?? null)])),
+    // 이름 제안 재료(판정에는 안 쓴다) — 화면이 「같은 회사로 볼 이름」 제안을 계산한다.
+    companies: Object.fromEntries(rootIds.map((id) => [id, aliasSettings.get(id)?.companyName ?? null])),
     accuracy,
   });
 }

@@ -19,7 +19,7 @@ const CANDIDATES = [
   { channel: "naver", mall: "비비랩공식", productName: "비비랩 유기농 올리브 엔 레몬 듀얼샷 올레샷 2박스", price: 41000, shippingFee: 0, totalPrice: 41000, url: "https://example.com/d" },
 ];
 
-function mockFetch() {
+function mockFetch(companies: Record<string, string | null> = {}) {
   const calls: Array<{ url: string; method: string; body: unknown }> = [];
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -31,6 +31,7 @@ function mockFetch() {
         roots: { opt: "root" },
         labels: { root: [] },
         aliases: { root: [] },
+        companies,
         accuracy: {
           total: 4,
           agreed: 3,
@@ -41,6 +42,9 @@ function mockFetch() {
     }
     if (url === "/api/price-monitoring/labels" && method === "POST") {
       return json({ rootDealId: "root", nameKey: "어떤몰|비비랩레몬듀얼스틱2박스", reevaluateError: null, accuracy: { total: 5, agreed: 3 } });
+    }
+    if (url === "/api/price-monitoring/brand-aliases" && method === "PUT") {
+      return json({ rootDealId: "root", aliases: (body as { aliases: string[] }).aliases, reevaluateError: null });
     }
     if (url === "/api/price-monitoring/labels" && method === "DELETE") {
       return json({ rootDealId: "root", removed: 1, reevaluateError: null, accuracy: { total: 4, agreed: 3 } });
@@ -108,5 +112,35 @@ describe("MarketPriceMonitor — owner match labels", () => {
     fireEvent.click(within(row()).getByRole("button", { name: "표시 취소" }));
     await within(dialog).findByText("검토");
     expect(calls.find((c) => c.method === "DELETE")?.body).toEqual({ dealId: "opt", nameKey: "어떤몰|비비랩레몬듀얼스틱2박스" });
+  });
+  it("suggests the deal's company name found in a 「브랜드 없음」 candidate, and saving it brings that candidate back", async () => {
+    const calls = mockFetch({ root: "(주)정체몰" });
+    const dialog = await openAndExpand();
+
+    expect(within(dialog).getByText(/거래처 이름과 같음 · 「브랜드 없음」으로 빠진 후보 1건에 있음 · 예: 유기농 올리브레몬 듀얼 올레샷 2박스/)).toBeTruthy();
+    const accept = await within(dialog).findByRole("button", { name: "같은 회사로 볼 이름에 「정체몰」 추가" });
+    const row = () => within(dialog).getByText("유기농 올리브레몬 듀얼 올레샷 2박스", { selector: "td *, td" }).closest("tr") as HTMLElement;
+    expect(within(row()).queryByText("배제: 브랜드 없음")).toBeTruthy();
+
+    fireEvent.click(accept);
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/price-monitoring/brand-aliases")).toBe(true));
+    const put = calls.find((c) => c.url === "/api/price-monitoring/brand-aliases");
+    expect(put?.method).toBe("PUT");
+    expect(put?.body).toEqual({ dealId: "opt", aliases: ["정체몰"] });
+
+    // accepted name is now an identity: the suggestion disappears and the input shows the saved name
+    await waitFor(() => expect(within(dialog).queryByRole("button", { name: "같은 회사로 볼 이름에 「정체몰」 추가" })).toBeNull());
+    expect((within(dialog).getByLabelText("같은 회사로 볼 이름") as HTMLInputElement).value).toBe("정체몰");
+    // the candidate is no longer excluded by the brand axis
+    expect(within(row()).queryByText("배제: 브랜드 없음")).toBeNull();
+  });
+
+  it("accepting a suggestion keeps a name the owner typed but has not saved yet", async () => {
+    const calls = mockFetch({ root: "(주)정체몰" });
+    const dialog = await openAndExpand();
+    fireEvent.change(within(dialog).getByLabelText("같은 회사로 볼 이름"), { target: { value: "제조사X" } });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "같은 회사로 볼 이름에 「정체몰」 추가" }));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/price-monitoring/brand-aliases")).toBe(true));
+    expect(calls.find((c) => c.url === "/api/price-monitoring/brand-aliases")?.body).toEqual({ dealId: "opt", aliases: ["제조사X", "정체몰"] });
   });
 });

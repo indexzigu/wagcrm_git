@@ -2,6 +2,10 @@
 // 설계 정본: docs/private/specs/2026-11-13-price-match-three-axis.md (로컬 서고)
 import type { OwnerMatchLabelValue } from "./scoring";
 
+/** 「같은 회사로 볼 이름」 저장 상한 — 저장 API 와 이름 제안이 같이 쓴다(제안이 저장 불가한 이름을 내지 않게). */
+export const MAX_BRAND_ALIASES = 20;
+export const MAX_BRAND_ALIAS_LENGTH = 40;
+
 /** 오너가 입력한 「같은 회사로 볼 이름」 텍스트(줄바꿈·쉼표 구분)를 목록으로. */
 export function parseBrandAliases(text: string | null | undefined): string[] {
   if (!text) return [];

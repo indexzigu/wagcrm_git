@@ -126,13 +126,24 @@ export const priceMatchLabelRepository = {
     return { ...summarizeAccuracy(valid), ...summarizeLabelInsights(valid) };
   },
 
-  async findBrandAliases(rootDealIds: readonly string[]): Promise<Map<string, string | null>> {
+  /**
+   * 루트 딜별 「같은 회사로 볼 이름」 원문과 거래처 이름. 거래처 이름은 판정에 쓰지 않는다 — 이름 제안
+   * (alias-suggestions)의 재료일 뿐이다(플랫폼·유통사 거래처가 섞여 있어 자동 반영은 오탐을 만든다).
+   */
+  async findBrandAliasSettings(
+    rootDealIds: readonly string[],
+  ): Promise<Map<string, { aliasesText: string | null; companyName: string | null }>> {
     if (rootDealIds.length === 0) return new Map();
     const rows = await getPrisma().deal.findMany({
       where: { id: { in: [...rootDealIds] } },
-      select: { id: true, monitorBrandAliases: true },
+      select: { id: true, monitorBrandAliases: true, partnerCompanyName: true, partner: { select: { name: true } } },
     });
-    return new Map(rows.map((row) => [row.id, row.monitorBrandAliases]));
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        { aliasesText: row.monitorBrandAliases, companyName: row.partner?.name ?? row.partnerCompanyName ?? null },
+      ]),
+    );
   },
 
   async saveBrandAliases(rootDealId: string, aliasesText: string | null) {

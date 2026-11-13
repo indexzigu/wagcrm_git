@@ -5,7 +5,7 @@ const repo = vi.hoisted(() => ({
   resolveRootDealIds: vi.fn(),
   findMatchContext: vi.fn(),
   findByRootDealIds: vi.fn(),
-  findBrandAliases: vi.fn(),
+  findBrandAliasSettings: vi.fn(),
   accuracy: vi.fn(),
   upsert: vi.fn(),
   remove: vi.fn(),
@@ -44,7 +44,9 @@ describe("/api/price-monitoring/labels", () => {
       id === "missing" ? null : { rootDealId: "root-1", brandName: "비비랩", unit: "박스", modelName: null, aliasesText: "뉴트리원" },
     );
     repo.findByRootDealIds.mockResolvedValue(new Map([["root-1", [{ nameKey: "k", urlKey: null, label: "SAME" }]]]));
-    repo.findBrandAliases.mockResolvedValue(new Map([["root-1", "제조사A\n제조사B"]]));
+    repo.findBrandAliasSettings.mockResolvedValue(
+      new Map([["root-1", { aliasesText: "제조사A\n제조사B", companyName: "제조사A" }]]),
+    );
     repo.accuracy.mockResolvedValue({ total: 3, agreed: 2 });
     repo.upsert.mockResolvedValue({});
     repo.remove.mockResolvedValue(1);
@@ -68,6 +70,7 @@ describe("/api/price-monitoring/labels", () => {
     expect(repo.resolveRootDealId).not.toHaveBeenCalled();
     expect(body.labels["root-1"]).toHaveLength(1);
     expect(body.aliases["root-1"]).toEqual(["제조사A", "제조사B"]);
+    expect(body.companies).toEqual({ "root-1": "제조사A" });
     expect(body.accuracy).toEqual({ total: 3, agreed: 2 });
   });
 
