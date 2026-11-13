@@ -72,7 +72,7 @@ export function sanitizeSeenJudgment(value: unknown): SeenJudgment | null {
 }
 
 /**
- * 띄어쓰기만 무시하고 비교한다 — 기호는 남긴다: 「2+1」 → 「21」 같은 수정은 구성을 바꾸는 진짜 수정이다.
+ * 띄어쓰기·대소문자·유니코드 정규화 차이만 무시하고 비교한다 — 기호는 남긴다: 「2+1」 → 「21」 같은 수정은 구성을 바꾸는 진짜 수정이다.
  */
 function sameQueryIgnoringSpaces(a: string, b: string): boolean {
   const norm = (v: string) => v.normalize("NFC").toLowerCase().replace(/\s+/g, "");
@@ -135,7 +135,8 @@ export const MATCH_CAUSE_LABEL: Record<MatchCause, string> = {
   MODEL_NAME: "모델명이 겹쳐 점수가 오름",
   PARTIAL_WORDS: "글자 조각이 겹쳐 점수가 오름",
   SHARED_WORDS: "같은 회사의 다른 상품(검색어 낱말 공유)",
-  BRAND_NOT_FOUND: "상품명·판매처에 브랜드·회사 이름 없음",
+  // 화면의 브랜드 칸·배제 사유와 같은 이름(「브랜드 없음」) — 한 상태·한 이름.
+  BRAND_NOT_FOUND: "「브랜드 없음」으로 빠짐",
   WORDS_DIFFER: "상품명 표기가 검색어와 다름",
 };
 
