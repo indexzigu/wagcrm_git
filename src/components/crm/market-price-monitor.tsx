@@ -371,15 +371,20 @@ export function MarketPriceMonitor({
     }
   };
 
+  /** 지금 화면 기준 이름 목록 — 입력 중 초안이 있으면 그것, 없으면 저장된 목록. 저장과 제안이 같이 쓴다. */
+  const effectiveAliases = (root: string): string[] => {
+    const draft = aliasDrafts[root];
+    return draft !== undefined ? parseBrandAliases(draft) : (labelState.aliases[root] ?? []);
+  };
+
   /**
    * 입력칸 초안을 저장한다. added 를 주면(제안 수락) 초안(없으면 저장된 목록)에 그 이름을 더해 저장한다 —
    * 저장 전 입력 중이던 이름을 버리지 않는다.
    */
   const saveAliases = async (item: MonitorItem, added?: string) => {
     const root = rootOf(item.id);
-    const draft = aliasDrafts[root];
-    if (added === undefined && draft === undefined) return;
-    const base = draft !== undefined ? parseBrandAliases(draft) : (labelState.aliases[root] ?? []);
+    if (added === undefined && aliasDrafts[root] === undefined) return;
+    const base = effectiveAliases(root);
     const names = added === undefined ? base : [...base, added];
     setSavingAliasRoot(root);
     try {
@@ -597,7 +602,7 @@ export function MarketPriceMonitor({
             const aliasSuggestions = suggestBrandAliases({
               brandName: item.brandName,
               companyName: labelState.companies[root] ?? null,
-              aliases: aliasDraft !== undefined ? parseBrandAliases(aliasDraft) : savedAliases,
+              aliases: effectiveAliases(root),
               candidates: fetchedItems,
             });
 
@@ -786,28 +791,35 @@ export function MarketPriceMonitor({
                           이름·브랜드 첫 낱말. 자동 반영하지 않고 오너가 눌러야 저장된다 — 플랫폼·유통사 거래처가 섞여 있다. */}
                       {aliasSuggestions.length > 0 && (
                         <div className="mt-2">
-                        <p className="text-[11px] font-medium text-slate-700">이 이름을 더하면 빠진 후보가 다시 비교됩니다</p>
+                        <p className="text-xs font-medium text-slate-700">이 이름을 더하면 빠진 후보가 다시 비교됩니다</p>
                         <ul className="mt-1 space-y-1" aria-label="같은 회사로 볼 이름 제안">
                           {aliasSuggestions.map((suggestion) => (
-                            <li key={suggestion.name} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
+                            <li key={suggestion.name} className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => saveAliases(item, suggestion.name)}
                                 disabled={savingAliasRoot === root}
                                 aria-label={`같은 회사로 볼 이름에 「${suggestion.name}」 추가`}
-                                className="h-7 px-2 text-[11px]"
+                                className="h-7 px-2 text-xs"
                               >
                                 {savingAliasRoot === root ? "저장 중" : `「${suggestion.name}」 추가`}
                               </Button>
-                              {/* 판단 재료(근거 상품명)는 첫 예시를 본문에 둔다 — 설명창만으론 훑어볼 때 안 보인다. */}
-                              <StatusDot
-                                tone="neutral"
-                                showDot={false}
-                                label={`${ALIAS_SUGGESTION_SOURCE_LABEL[suggestion.source]} · 「${BRAND_AXIS_LABEL.missing}」으로 빠진 후보 ${suggestion.evidenceCount}건에 있음 · 예: ${suggestion.evidence[0] ?? ""}`}
-                                hint={`예: ${suggestion.evidence.join(", ")}`}
-                                className="whitespace-normal text-[11px] font-normal text-slate-500"
-                              />
+                              {/* 판단 재료(근거 상품명)는 첫 예시를 본문 글줄에 둔다 — 설명창만으론 훑어볼 때 안 보인다.
+                                  배지는 짧은 말만 싣고(P8), 나머지 근거 상품명은 설명창으로 연다. */}
+                              <span className="text-[10px] text-slate-500">
+                                {ALIAS_SUGGESTION_SOURCE_LABEL[suggestion.source]} · 「{BRAND_AXIS_LABEL.missing}」으로 빠진 후보{" "}
+                                {suggestion.evidenceCount}건에 있음 · 예: {suggestion.evidence[0] ?? ""}
+                              </span>
+                              {suggestion.evidence.length > 1 && (
+                                <StatusDot
+                                  tone="neutral"
+                                  showDot={false}
+                                  label={`근거 ${suggestion.evidence.length}개`}
+                                  hint={suggestion.evidence.join(" / ")}
+                                  className="text-[10px] font-normal text-slate-500"
+                                />
+                              )}
                             </li>
                           ))}
                         </ul>

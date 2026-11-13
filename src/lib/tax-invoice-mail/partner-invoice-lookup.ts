@@ -21,6 +21,7 @@
  *
  * ⛔ 반환값에는 대표자·주소·이메일이 들어 있다 — 로그·봇 응답·커밋에 남기지 말 것(P0).
  */
+import { CORPORATE_MARKERS } from "@/lib/corporate-name";
 import type { PartnerEnrichment, PartnerEnrichmentField } from "@/lib/agent/partner-enrichment";
 import type { EtaxPartyDetail, ParsedEtaxInvoice } from "./etax-xml";
 import { normalizeEtaxBusinessNumber } from "./etax-xml";
@@ -86,9 +87,6 @@ function counterpartOf(mail: LookupMail, ourBusinessNumber: string): Counterpart
   }
   return null;
 }
-
-/** 법인 표기 — 같은 회사를 계산서는 「(주)왜그」, 대화는 「왜그」로 적는다. */
-const CORPORATE_MARKERS = /\(주\)|㈜|주식회사|\(유\)|유한회사|\(재\)|재단법인|\(사\)|사단법인/g;
 
 /** 상호 비교용 정규화. 완전 일치 비교에만 쓴다. */
 export function normalizePartnerName(value: string): string {

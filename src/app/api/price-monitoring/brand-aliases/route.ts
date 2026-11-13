@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import {
-  MAX_BRAND_ALIAS_LENGTH as MAX_ALIAS_LENGTH,
-  MAX_BRAND_ALIASES as MAX_ALIASES,
+  MAX_BRAND_ALIAS_LENGTH,
+  MAX_BRAND_ALIASES,
   formatBrandAliases,
   parseBrandAliases,
 } from "@/lib/price-monitor/match-context";
@@ -24,8 +24,11 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "회사 이름 정보가 올바르지 않습니다." }, { status: 400 });
   }
   const aliases = parseBrandAliases(list.join("\n"));
-  if (aliases.length > MAX_ALIASES || aliases.some((name) => name.length > MAX_ALIAS_LENGTH)) {
-    return NextResponse.json({ error: `회사 이름은 ${MAX_ALIASES}개, 한 이름당 ${MAX_ALIAS_LENGTH}자까지입니다.` }, { status: 400 });
+  if (aliases.length > MAX_BRAND_ALIASES || aliases.some((name) => name.length > MAX_BRAND_ALIAS_LENGTH)) {
+    return NextResponse.json(
+      { error: `회사 이름은 ${MAX_BRAND_ALIASES}개, 한 이름당 ${MAX_BRAND_ALIAS_LENGTH}자까지입니다.` },
+      { status: 400 },
+    );
   }
 
   const rootDealId = await priceMatchLabelRepository.resolveRootDealId(dealId);

@@ -5,7 +5,7 @@ const missing = (productName: string, matchScore = 65, mall = "몰"): AliasSugge
   productName,
   mall,
   matchScore,
-  brandMatch: "missing",
+  excludeReason: "BRAND_MISMATCH",
 });
 
 describe("cleanCompanyName", () => {
@@ -13,6 +13,7 @@ describe("cleanCompanyName", () => {
     expect(cleanCompanyName("(주)가나제약")).toBe("가나제약");
     expect(cleanCompanyName("주식회사 가나제약")).toBe("가나제약");
     expect(cleanCompanyName("㈜가")).toBeNull();
+    expect(cleanCompanyName("재단법인 가나재단")).toBe("가나재단");
     expect(cleanCompanyName(null)).toBeNull();
   });
 });
@@ -62,14 +63,15 @@ describe("suggestBrandAliases", () => {
     expect(out).toEqual([]);
   });
 
-  it("브랜드 축을 통과했거나 판정하지 않은 후보는 근거로 쓰지 않는다", () => {
+  it("「브랜드 없음」 때문에만 빠진 후보만 근거로 쓴다(유효·오너 「다른 상품」·제외 키워드 후보는 아니다)", () => {
     const out = suggestBrandAliases({
       brandName: "하루랩",
       companyName: "가나제약",
       aliases: [],
       candidates: [
-        { productName: "가나제약 하루랩 토마토샷", matchScore: 80, brandMatch: "match" },
-        { productName: "가나제약 토마토샷", matchScore: 80, brandMatch: "unknown" },
+        { productName: "가나제약 하루랩 토마토샷", matchScore: 80, excludeReason: null },
+        { productName: "[가나제약] 다른 토마토샷", matchScore: 80, excludeReason: "OWNER_DIFFERENT" },
+        { productName: "[가나제약] 토마토샷 중고", matchScore: 80, excludeReason: "EXCLUDE_KEYWORD" },
       ],
     });
     expect(out).toEqual([]);
