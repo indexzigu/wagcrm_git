@@ -54,6 +54,21 @@ describe("pickProduct", () => {
     expect(byChannel.ok && byChannel.candidate.channelProductNo).toBe("203");
   });
 
+  it("채널이 여럿인 상품은 상품번호로 지목한 채널을 쓴다(첫 채널로 바꿔 치지 않는다)", () => {
+    const multi = {
+      originProductNo: 104,
+      channelProducts: [
+        { channelProductNo: 204, originProductNo: 104, name: "[샘플셀러 X 샘플브랜드] 오메가3", statusType: "SALE" },
+        { channelProductNo: 304, originProductNo: 104, name: "[샘플셀러 X 샘플브랜드] 오메가3", statusType: "SALE" },
+      ],
+    };
+    const second = pickProduct([...PRODUCTS, multi], { productId: "304" });
+    expect(second.ok && second.candidate.channelProductNo).toBe("304");
+    expect(second.ok && second.candidate.productId).toBe("104");
+    const byOrigin = pickProduct([...PRODUCTS, multi], { productId: "104" });
+    expect(byOrigin.ok && byOrigin.candidate.channelProductNo).toBe("204");
+  });
+
   it("상품명 일부가 하나에만 걸리면 그 상품, 띄어쓰기·대소문자는 무시", () => {
     const result = pickProduct(PRODUCTS, { productQuery: "유 산균" });
     expect(result.ok && result.candidate.productId).toBe("103");

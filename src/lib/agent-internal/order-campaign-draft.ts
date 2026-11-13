@@ -91,9 +91,26 @@ function firstChannel(product: unknown): { channelProductNo: string; name: strin
   };
 }
 
-function toCandidate(product: unknown): ProductCandidate | null {
-  const channel = firstChannel(product);
-  if (!channel) return null;
+function hasChannel(product: unknown, channelProductNo: string): boolean {
+  const channels = (product as { channelProducts?: unknown } | null)?.channelProducts;
+  return (
+    Array.isArray(channels) &&
+    channels.some((c) => {
+      const no = (c as { channelProductNo?: unknown } | null)?.channelProductNo;
+      return no !== undefined && no !== null && String(no) === channelProductNo;
+    })
+  );
+}
+
+/**
+ * 상품 하나 → 기안 후보. `matchedChannelNo` 를 주면(상품번호로 지목한 경우) 그 채널을 쓴다 — 채널이 여럿인 상품에서
+ * 첫 채널로 바꿔 치면 지목하지 않은 채널의 옵션을 불러온다(GPT 검수 2026-11-13). 이름·기간 같은 표시 칸은 등록 창과
+ * 같게 `deriveOrderCampaignFieldsFromProduct`(첫 채널 기준)에서 온다.
+ */
+function toCandidate(product: unknown, matchedChannelNo?: string): ProductCandidate | null {
+  const first = firstChannel(product);
+  if (!first) return null;
+  const channel = matchedChannelNo ? { ...first, channelProductNo: matchedChannelNo } : first;
   const fields = deriveOrderCampaignFieldsFromProduct(product);
   return {
     product,
@@ -123,10 +140,8 @@ type PickResult = { ok: true; candidate: ProductCandidate } | AgentInternalFailu
 export function pickProduct(products: ReadonlyArray<unknown>, request: OrderCampaignDraftRequest): PickResult {
   if (request.productId) {
     const channel = findCampaignChannelProduct(products, request.productId);
-    const product = channel
-      ? products.find((p) => firstChannel(p)?.channelProductNo === channel.channelProductNo)
-      : undefined;
-    const candidate = product === undefined ? null : toCandidate(product);
+    const product = channel ? products.find((p) => hasChannel(p, channel.channelProductNo)) : undefined;
+    const candidate = product === undefined || !channel ? null : toCandidate(product, channel.channelProductNo);
     if (!candidate) {
       return agentInternalFailure(
         "PRODUCT_NOT_FOUND",
