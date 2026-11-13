@@ -133,6 +133,18 @@ describe("/api/price-monitoring/labels", () => {
     await send("비비랩 올레샷");
     expect(JSON.parse(repo.upsert.mock.calls[0][0].evidence).queryEdited).toBe(false);
     expect(JSON.parse(repo.upsert.mock.calls[1][0].evidence).queryEdited).toBe(true);
+    // symbols carry meaning (bundle offers): changing only a symbol is still an edit
+    await send("비비랩 올리브레몬 듀얼 올레샷 2박스 1+1");
+    await POST(
+      jsonRequest("POST", {
+        dealId: "opt-1",
+        label: "SAME",
+        searchQuery: "비비랩 올리브레몬 듀얼 올레샷 2박스 11",
+        defaultQuery: "비비랩 올리브레몬 듀얼 올레샷 2박스 1+1",
+        candidate: { mall: "어떤몰", productName: "비비랩 올리브레몬 듀얼 올레샷 2박스" },
+      }),
+    );
+    expect(JSON.parse(repo.upsert.mock.calls[3][0].evidence).queryEdited).toBe(true);
   });
 
   it("POST keeps what the owner saw as a reference value, without trusting it for the judgment", async () => {

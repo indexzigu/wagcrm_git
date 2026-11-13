@@ -11,7 +11,6 @@ import {
   candidateExtraWords,
   productCoreWords,
   productWordHits,
-  compact,
   type BrandAxis,
   type WordHit,
 } from "./match-axes";
@@ -72,6 +71,14 @@ export function sanitizeSeenJudgment(value: unknown): SeenJudgment | null {
   };
 }
 
+/**
+ * 띄어쓰기만 무시하고 비교한다 — 기호는 남긴다: 「2+1」 → 「21」 같은 수정은 구성을 바꾸는 진짜 수정이다.
+ */
+function sameQueryIgnoringSpaces(a: string, b: string): boolean {
+  const norm = (v: string) => v.normalize("NFC").toLowerCase().replace(/\s+/g, "");
+  return norm(a) === norm(b);
+}
+
 export function buildMatchEvidence(input: {
   searchQuery: string;
   /** 화면이 처음 채운 기본 검색어 — searchQuery 와 다르면 오너가 고친 것이다. */
@@ -92,7 +99,7 @@ export function buildMatchEvidence(input: {
     v: MATCH_EVIDENCE_VERSION,
     rules: MATCH_RULES_VERSION,
     searchQuery,
-    queryEdited: defaultQuery == null ? null : compact(defaultQuery) !== compact(searchQuery),
+    queryEdited: defaultQuery == null ? null : !sameQueryIgnoringSpaces(defaultQuery, searchQuery),
     identities: [...identities],
     brandMatch: brandAxis(candidate, identities),
     brandFoundIn: brandFoundIn(candidate, identities),

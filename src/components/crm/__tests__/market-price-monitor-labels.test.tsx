@@ -75,11 +75,12 @@ describe("MarketPriceMonitor — owner match labels", () => {
     expect(within(dialog).getByText(/내가 표시한 4건 중 3건이 자동 판정과 같음/)).toBeInTheDocument();
     const otherCompany = within(dialog).getByText(/순 유기농 올레샷/).closest("tr")!;
     expect(within(otherCompany).getByText("브랜드 없음")).toBeInTheDocument();
-    expect(within(otherCompany).getByText(/브랜드·회사 이름 없음/)).toBeInTheDocument();
+    // one state, one name: the axis cell and the exclusion reason use the same words
+    expect(within(otherCompany).getByText(/배제: 브랜드 없음/)).toBeInTheDocument();
     // one state, one name: the cell shows only the exclusion reason; how to fix it lives in the help text
     const noCompany = within(dialog).getByText("유기농 올리브레몬 듀얼 올레샷 2박스").closest("tr")!;
-    expect(within(noCompany).getByText(/브랜드·회사 이름 없음/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/「브랜드·회사 이름 없음」으로 빠진 후보가 같은 회사 제품이면/)).toBeInTheDocument();
+    expect(within(noCompany).getByText(/배제: 브랜드 없음/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/「브랜드 없음」으로 빠진 후보가 같은 회사 제품이면/)).toBeInTheDocument();
     // cause examples open in a hint reachable by mouse, keyboard focus and touch (a button trigger, not a title attribute)
     const cause = within(dialog).getByRole("button", { name: /같은 회사의 다른 상품\(검색어 낱말 공유\) 1건/ });
     expect(cause).not.toHaveAttribute("title");

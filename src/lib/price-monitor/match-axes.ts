@@ -31,8 +31,8 @@ function normalizeWords(value: string): string {
   return stripUrls(value.normalize("NFC").toLowerCase()).replace(/[^a-z0-9가-힣]+/g, " ").trim();
 }
 
-/** 띄어쓰기·기호·대소문자·URL 차이를 없앤 비교용 문자열. */
-export function compact(value: string): string {
+/** 띄어쓰기 차이를 없앤 비교용 문자열. */
+function compact(value: string): string {
   return normalizeWords(value).replace(/\s+/g, "");
 }
 

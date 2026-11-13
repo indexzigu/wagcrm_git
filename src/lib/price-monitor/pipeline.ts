@@ -37,7 +37,7 @@ export type EvaluateResult<T extends ScorableCandidate> = {
   /** 이상치 배제 후 남은 유효 후보 중 최저 총가 항목 */
   minValidItem: (T & ScoredCandidate) | null;
   /**
-   * 신뢰선(VIOLATION_CONFIDENCE_FLOOR, 수량을 못 읽은 후보는 COMPOSITION_UNKNOWN_CONFIDENCE_FLOOR) 이상
+   * 신뢰선(VIOLATION_CONFIDENCE_FLOOR 60, 수량을 못 읽은 후보는 COMPOSITION_UNKNOWN_CONFIDENCE_FLOOR 75) 이상
    * 유효 후보 중 최저 총가 항목. 위반 "확정"의 근거가
    * 되는 후보다(없으면 null → 저매치만 있어 REVIEW로 강등될 수 있음). 모달의 검토 표시용.
    */

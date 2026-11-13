@@ -90,7 +90,7 @@ const RESCUABLE_PRODUCT_SCORE = 70;
 const EXCLUDE_REASON_LABEL: Record<OutlierReason, string> = {
   EXCLUDE_KEYWORD: "제외 키워드(중고/해외직구 등)",
   OWNER_DIFFERENT: "다른 상품으로 표시함",
-  BRAND_MISMATCH: "브랜드·회사 이름 없음",
+  BRAND_MISMATCH: "브랜드 없음",
   MATCH_TOO_LOW: "상품명 불일치",
   PRICE_BAND_VIOLATION: "비정상 저가(밴드 초과)",
   QUANTITY_MISMATCH: "수량 불일치",
@@ -107,7 +107,7 @@ const VERDICT_BADGE: Record<
   OK: { label: "—", className: "text-slate-500", tone: null },
   TIE: { label: "동가", className: "text-status-caution-text", tone: "caution", hint: "최저가와 ±1% 이내입니다." },
   VIOLATED: { label: "위반", className: "text-status-urgent-text", tone: "urgent", hint: "우리 판매가보다 싼 곳이 있습니다." },
-  REVIEW: { label: "검토", className: "text-status-caution-text", tone: "caution", hint: "같은 상품인지 확신이 낮아(상품명 일치율이 낮거나 수량을 읽지 못함) 자동 판정을 보류했습니다." },
+  REVIEW: { label: "검토", className: "text-status-caution-text", tone: "caution", hint: "상품명 일치율이 기준보다 낮아 자동 판정을 보류했습니다. 수량을 읽지 못한 후보는 더 높은 기준을 씁니다." },
   NO_DATA: { label: "비교불가", className: "text-slate-500", tone: "neutral", hint: "비교할 수 있는 유효 후보가 없습니다." },
 };
 
@@ -544,7 +544,7 @@ export function MarketPriceMonitor({
                         showDot={false}
                         label={`${c.label} ${c.count}건`}
                         hint={`예: ${c.examples.join(", ")}`}
-                        className="text-[11px] font-normal text-slate-500"
+                        className="whitespace-normal text-[11px] font-normal text-slate-500"
                       />
                     ) : (
                       <span>
@@ -757,7 +757,7 @@ export function MarketPriceMonitor({
                         </Button>
                       </div>
                       <p className="mt-1 text-[10px] text-slate-500">
-                        {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다. 표에서 「브랜드·회사 이름 없음」으로 빠진 후보가 같은 회사 제품이면 그 회사 이름을 여기 더하세요.
+                        {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다. 표에서 「브랜드 없음」으로 빠진 후보가 같은 회사 제품이면 그 회사 이름을 여기 더하세요.
                       </p>
                     </div>
 
