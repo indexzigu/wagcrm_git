@@ -75,7 +75,7 @@ export default function CampaignEditModal({
     setEditTemplate(slug);
     const emails = brandEmailsFor(brandOptions, slug);
     if (emails.toEmail) setEditToEmail(emails.toEmail);
-    if (emails.ccEmail) setEditCcEmail(emails.ccEmail);
+    if (emails.ccEmail !== undefined) setEditCcEmail(emails.ccEmail);
   };
 
   // 코드표 없는 거래처용: 이 캠페인의 스토어 상품을 찾아(productId 우선, 이름 매칭 폴백)

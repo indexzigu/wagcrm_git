@@ -64,7 +64,7 @@ export default function CampaignCreateModal({
     setNewTemplate(slug);
     const emails = brandEmailsFor(brandOptions, slug);
     if (emails.toEmail) setNewToEmail(emails.toEmail);
-    if (emails.ccEmail) setNewCcEmail(emails.ccEmail);
+    if (emails.ccEmail !== undefined) setNewCcEmail(emails.ccEmail);
   };
 
   // 코드표 없는 거래처용: 선택한 스토어 상품의 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드.

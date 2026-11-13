@@ -24,9 +24,14 @@ describe("brandEmailsFor", () => {
     expect(brandEmailsFor(OPTIONS, "sample-a")).toEqual({ toEmail: "a@example.com", ccEmail: "a-cc@example.com" });
   });
 
-  it("거래처에 없는 칸은 돌려주지 않는다(지금 입력값 유지)", () => {
-    expect(brandEmailsFor(OPTIONS, "sample-b")).toEqual({ toEmail: "b@example.com" });
-    expect(brandEmailsFor(OPTIONS, "sample-c")).toEqual({});
+  it("수신이 없는 거래처는 수신을 돌려주지 않고(지금 입력값 유지), 참조가 없으면 참조를 비운다", () => {
+    // 참조를 남기면 앞서 고른 거래처의 참조 주소로 발주 메일이 간다.
+    expect(brandEmailsFor(OPTIONS, "sample-b")).toEqual({ toEmail: "b@example.com", ccEmail: "" });
+    expect(brandEmailsFor(OPTIONS, "sample-c")).toEqual({ ccEmail: "" });
+  });
+
+  it("목록에 없는 양식이나 빈 선택은 아무것도 바꾸지 않는다", () => {
+    expect(brandEmailsFor(OPTIONS, "unknown-slug")).toEqual({});
     expect(brandEmailsFor(OPTIONS, "")).toEqual({});
   });
 });

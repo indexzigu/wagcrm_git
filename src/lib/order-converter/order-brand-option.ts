@@ -29,8 +29,11 @@ export function toOrderBrandOptions(brands: unknown): OrderBrandOption[] {
 }
 
 /**
- * 양식을 고르면 캠페인에 물려줄 메일 — 그 거래처에 설정된 칸만 돌려준다(없는 칸은 지금 값을 그대로 둔다).
- * 등록 창의 기존 동작(설정된 메일이 있으면 덮어씀)과 같다.
+ * 양식을 고르면 캠페인에 물려줄 메일.
+ *  - 수신: 거래처에 있으면 덮어쓰고, 없으면 돌려주지 않는다(필수 칸이라 사람이 채운다).
+ *  - 참조: 목록에 있는 거래처면 그 값으로 바꾸고, 거래처에 참조가 없으면 빈 문자열로 비운다 — 안 비우면 앞서 고른
+ *    거래처의 참조 주소가 남아 발주 메일이 엉뚱한 곳에 참조로 간다(수정 창은 저장값이 미리 채워져 있어 더 잘 난다).
+ *  - 목록에 없는 양식(저장값만 있는 경우)은 아무것도 돌려주지 않는다.
  */
 export function brandEmailsFor(
   options: ReadonlyArray<OrderBrandOption>,
@@ -39,6 +42,6 @@ export function brandEmailsFor(
   const brand = options.find((o) => o.slug === slug);
   return {
     ...(brand?.toEmail ? { toEmail: brand.toEmail } : {}),
-    ...(brand?.ccEmail ? { ccEmail: brand.ccEmail } : {}),
+    ...(brand ? { ccEmail: brand.ccEmail ?? "" } : {}),
   };
 }
