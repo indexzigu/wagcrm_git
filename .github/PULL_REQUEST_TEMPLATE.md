@@ -1,4 +1,4 @@
-상세: 로컬 `docs/handoff/pr-<NN>-<슬러그>.md` (git 미추적)
+상세: 필요 시 로컬 `docs/handoff/pr-<NN>-<슬러그>.md` (git 미추적)
 
 - [x] 배포 지침 및 검증 로그 확인 완료
 
