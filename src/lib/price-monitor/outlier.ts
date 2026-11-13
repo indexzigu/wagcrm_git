@@ -16,6 +16,8 @@ export const EXCLUDE_KW = /중고|해외직구|리퍼|렌탈|반품|파손/;
 
 export type OutlierReason =
   | "EXCLUDE_KEYWORD"
+  | "OWNER_DIFFERENT"
+  | "BRAND_MISMATCH"
   | "MATCH_TOO_LOW"
   | "PRICE_BAND_VIOLATION"
   | "QUANTITY_MISMATCH";
@@ -33,7 +35,9 @@ export type OutlierContext = {
 
 /**
  * 후보 하나에 대해 배제 사유를 판정한다. 배제 사유가 없으면 null.
- * 여러 조건에 동시에 걸릴 수 있으므로 우선순위(키워드 > 매치점수 > 가격밴드 > 수량)로 하나만 반환.
+ * 여러 조건에 동시에 걸릴 수 있으므로 우선순위(키워드 > 오너「다른 상품」 > 브랜드 > 상품점수 >
+ * 가격밴드 > 수량)로 하나만 반환한다. 오너가「같은 상품」으로 표시한 후보는 브랜드·상품 축을
+ * 면제한다(구성·가격 밴드는 그대로 본다). MATCH_TOO_LOW 는 이제 "상품 축 미달"을 뜻한다.
  */
 export function detectOutlierReason(
   candidate: ScoredCandidate,
@@ -42,7 +46,12 @@ export function detectOutlierReason(
   const name = candidate.productName ?? "";
   if (EXCLUDE_KW.test(name)) return "EXCLUDE_KEYWORD";
 
-  if (candidate.matchScore < MATCH_FLOOR) return "MATCH_TOO_LOW";
+  if (candidate.ownerLabel === "DIFFERENT") return "OWNER_DIFFERENT";
+
+  if (candidate.ownerLabel !== "SAME") {
+    if (candidate.brandMatch === "missing") return "BRAND_MISMATCH";
+    if (candidate.matchScore < MATCH_FLOOR) return "MATCH_TOO_LOW";
+  }
 
   if (ctx.ourTotalPrice > 0) {
     const lowerBound = ctx.ourTotalPrice * (1 - PRICE_BAND);

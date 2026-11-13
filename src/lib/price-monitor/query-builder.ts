@@ -8,6 +8,8 @@
 // 읽지 않고 매 옵션 쿼리를 mainDealName 기반으로만 만들어(자식 옵션 차별화 실패) 있었다.
 // 이 함수가 그 로직을 대체한다.
 
+import { stripUrls } from "./match-axes";
+
 export type QueryBuilderInput = {
   /** AI가 메인 딜에서 1회 추출한 핵심 상품명. supplementaryInfo JSON의 searchKeyword. */
   searchKeyword?: string | null;
@@ -199,7 +201,16 @@ export function extractOptionToken(
  * (기존 테스트 바이트 동일 불변식).
  */
 export function buildSearchQuery(input: QueryBuilderInput): string {
-  const { searchKeyword, brandName, dealName, unitQuantity, unit, childDealName, parentDealName } = input;
+  // 재료 어느 칸에든 URL 이 섞여 들면 검색어 끝에 링크가 붙어 나간다(2026-11-13 실관측:
+  // "…2박스https://gift.kakao.com/product/…"). 오염된 칸이 어디인지와 무관하게 조립 전에 걷어낸다.
+  const clean = (value: string | null | undefined) => (value == null ? value : stripUrls(value));
+  const searchKeyword = clean(input.searchKeyword);
+  const brandName = clean(input.brandName);
+  const dealName = clean(input.dealName) ?? "";
+  const unit = clean(input.unit);
+  const childDealName = clean(input.childDealName);
+  const parentDealName = clean(input.parentDealName);
+  const { unitQuantity } = input;
 
   const core = (searchKeyword && searchKeyword.trim())
     ? searchKeyword.trim()

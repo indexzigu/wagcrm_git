@@ -18,7 +18,9 @@ describe("scoreCandidate", () => {
     expect(result.matchScore).toBeGreaterThanOrEqual(40);
   });
 
-  it("수량 불일치 시 페널티가 적용된다", () => {
+  // 2026-11-13 3축 분리: 구성(수량)은 상품 점수에 섞지 않는다. 수량이 다르면 outlier 가
+  // QUANTITY_MISMATCH 로 따로 배제한다(오너 지적 — 축을 섞으면 일치율이 엇갈린다).
+  it("구성(수량)은 상품 점수에 섞지 않고 추출 수량으로만 드러난다", () => {
     const matched = scoreCandidate(
       { productName: "종근당 락토핏 골드 4박스", price: 30000, totalPrice: 30000 },
       { targetQuery: "종근당 락토핏 골드", expectedUnit: "박스", expectedQuantity: 4 },
@@ -27,7 +29,9 @@ describe("scoreCandidate", () => {
       { productName: "종근당 락토핏 골드 2박스", price: 30000, totalPrice: 30000 },
       { targetQuery: "종근당 락토핏 골드", expectedUnit: "박스", expectedQuantity: 4 },
     );
-    expect(mismatched.matchScore).toBeLessThan(matched.matchScore);
+    expect(mismatched.matchScore).toBe(matched.matchScore);
+    expect(matched.extractedQuantity).toBe(4);
+    expect(mismatched.extractedQuantity).toBe(2);
   });
 
   it("단위가격을 정규화한다 (totalPrice/qty)", () => {
@@ -92,11 +96,11 @@ describe("scoreCandidate — modelName 토큰 가중 (P3-1)", () => {
 
   it("하이픈-공백 정규화 후 매치된다 ('PB-10000X' 모델 vs 'PB 10000X' 상품명 표기)", () => {
     const result = scoreCandidate(
-      { productName: "종근당 락토핏 골드 PB 10000X 정품", price: 30000, totalPrice: 30000 },
+      { productName: "종근당 락토핏 PB 10000X 정품", price: 30000, totalPrice: 30000 },
       { targetQuery: "종근당 락토핏 골드", modelName: "PB-10000X" },
     );
     const baseline = scoreCandidate(
-      { productName: "종근당 락토핏 골드 정품", price: 30000, totalPrice: 30000 },
+      { productName: "종근당 락토핏 정품", price: 30000, totalPrice: 30000 },
       { targetQuery: "종근당 락토핏 골드" },
     );
     expect(result.matchScore).toBeGreaterThan(baseline.matchScore);

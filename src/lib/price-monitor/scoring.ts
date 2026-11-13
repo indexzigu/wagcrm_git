@@ -1,15 +1,25 @@
 // 시장 최저가 후보 스코어링 — 순수함수(서버/클라 공유).
 //
-// 버그④ 복구: market-price-monitor.tsx가 자체 bigram 유사도(calculateSimilarity)를
-// 재구현하고 있었다. order-converter/similarity.ts의 computeSimilarityScore(마스터 데이터
-// 매칭에도 쓰이는 공용 함수)를 재사용해 이원화를 없앤다.
-import { computeSimilarityScore } from "@/lib/order-converter/similarity";
+// 서버(cron)와 화면(market-price-monitor.tsx)이 같은 함수를 쓴다(판정 일원화 — 버그④).
+// 2026-11-13: 종전 computeSimilarityScore(토큰 개수 × 20) 단일 점수를 버리고 match-axes.ts 의
+// 세 축(브랜드·상품·구성)으로 나눴다. 그 함수는 주문 매핑용으로 남아 있고 여기서는 쓰지 않는다.
 import { inferQuantityFromName } from "./query-builder";
+import {
+  brandAxis,
+  candidateNameKey,
+  productCoreWords,
+  productScore,
+  type BrandAxis,
+} from "./match-axes";
 
 export type ScorableCandidate = {
   productName?: string | null;
   price: number;
   totalPrice: number;
+  /** 판매처 — 브랜드 축(회사명이 판매처에만 있는 경우)과 오너 표시 열쇠에 쓴다. */
+  mall?: string | null;
+  /** 상품 주소 — 오너 표시 보조 열쇠. */
+  url?: string | null;
 };
 
 export type ScoringContext = {
@@ -23,12 +33,43 @@ export type ScoringContext = {
    * (P3-1). 페널티는 없다 — 쇼핑몰 상품명에 모델명이 생략되는 경우가 흔하기 때문이다.
    */
   modelName?: string | null;
+  /**
+   * 브랜드·회사 축의 정체성 이름(딜 brandName + 오너가 등록한 회사 이름 등). 비어 있으면 브랜드
+   * 축은 unknown 이고 판정에 쓰이지 않는다(종전 동작). 2026-11-13 3축 분리.
+   */
+  brandIdentities?: readonly string[];
+  /** 오너가 남긴 「같은 상품 / 다른 상품」 표시 — 열쇠가 맞는 후보에 붙는다. */
+  ownerLabels?: readonly OwnerMatchLabel[];
 };
+
+export type OwnerMatchLabelValue = "SAME" | "DIFFERENT";
+
+export type OwnerMatchLabel = {
+  nameKey: string;
+  urlKey: string | null;
+  label: OwnerMatchLabelValue;
+};
+
+/**
+ * 후보에 해당하는 오너 표시를 찾는다 — 판매처+상품명 열쇠로만. 주소 열쇠(urlKey)는 기록용이다:
+ * 쿠팡 제휴 주소는 쿼리를 떼면 전부 같은 값이 되어, 한 건 표시가 다른 쿠팡 후보 전체에 번진다.
+ */
+export function findOwnerLabel(
+  candidate: { productName?: string | null; mall?: string | null },
+  labels: readonly OwnerMatchLabel[] | undefined,
+): OwnerMatchLabelValue | null {
+  if (!labels || labels.length === 0) return null;
+  const nameKey = candidateNameKey(candidate.mall, candidate.productName);
+  return labels.find((l) => l.nameKey === nameKey)?.label ?? null;
+}
 
 /** 모델 토큰 정규화: lowercase + 공백/하이픈 제거 (P3-1, "PB-10000X" ~ "PB 10000X" 매치용). */
 function normalizeModelToken(value: string): string {
   return value.toLowerCase().replace(/[\s-]/g, "");
 }
+
+/** 후보 상품명에 모델명이 있으면 더하는 상품 점수. */
+export const MODEL_MATCH_BONUS = 30;
 
 /** 최소 정규화 길이 — 이보다 짧으면 우연 매치 가능성이 높아 스킵한다. */
 const MIN_MODEL_TOKEN_LENGTH = 3;
@@ -50,7 +91,7 @@ const PRICE_QTY_SUFFIX_PATTERN = /^(원|개|박스|통|세트|봉지|포|병|장
  * 두 조건을 모두 만족해야 인정한다("파워뱅크 10000 블랙"처럼 독립 토큰으로 등장하는 경우만
  * 통과). 영숫자 혼합 모델("PB-10000X")은 이 가드 대상이 아니므로 기존 동작 그대로 유지된다.
  */
-function matchesModelToken(productName: string, modelName: string): boolean {
+export function matchesModelToken(productName: string, modelName: string): boolean {
   const normalizedModel = normalizeModelToken(modelName);
   if (normalizedModel.length < MIN_MODEL_TOKEN_LENGTH) return false;
   const normalizedProduct = normalizeModelToken(productName);
@@ -76,8 +117,15 @@ function matchesModelToken(productName: string, modelName: string): boolean {
 }
 
 export type ScoredCandidate = ScorableCandidate & {
-  /** 0~100 종합 매치 점수 */
+  /**
+   * 0~100 상품 일치 점수(축 ②, 모델명 보너스 포함). 2026-11-13 전에는 브랜드·수량까지 섞인
+   * 단일 점수였다 — 저장된 옛 스냅샷의 값은 그 기준이다.
+   */
   matchScore: number;
+  /** 축 ① 브랜드·회사 일치. 옛 스냅샷에는 없다. */
+  brandMatch?: BrandAxis;
+  /** 오너 표시(같은 상품/다른 상품). 없으면 null. */
+  ownerLabel?: OwnerMatchLabelValue | null;
   /** 후보 상품명에서 역추출한 수량(없으면 null) */
   extractedQuantity: number | null;
   /** 단위가격(가격/수량). 수량 정보가 없으면 null. */
@@ -85,10 +133,8 @@ export type ScoredCandidate = ScorableCandidate & {
 };
 
 /**
- * 유사도(0~100 스케일) + 수량 토큰 보정을 결합한 매치 점수.
- * computeSimilarityScore는 절대치가 아니라 "매치된 토큰 가중합"이므로, 문자열 길이에 비례해
- * 커질 수 있다. 100 상한으로 clamp해 이후 outlier.ts의 MATCH_FLOOR(40)와 비교 가능한
- * 척도로 맞춘다.
+ * 후보 하나를 세 축으로 채점한다 — matchScore(상품 축, 0~100) · brandMatch(브랜드 축) ·
+ * extractedQuantity(구성 축 재료) · ownerLabel(오너 표시). 배제·강등 판정은 outlier/pipeline 몫이다.
  *
  * 제네릭 T를 받아 호출부가 넘긴 부가 필드(mall/url/channel 등)를 결과 타입에 그대로 보존한다.
  */
@@ -96,27 +142,26 @@ export function scoreCandidate<T extends ScorableCandidate>(
   candidate: T,
   ctx: ScoringContext,
 ): T & ScoredCandidate {
+  const identities = ctx.brandIdentities ?? [];
+  return scoreWithCoreWords(candidate, ctx, productCoreWords(ctx.targetQuery, { identities, unit: ctx.expectedUnit }));
+}
+
+function scoreWithCoreWords<T extends ScorableCandidate>(
+  candidate: T,
+  ctx: ScoringContext,
+  coreWords: readonly string[],
+): T & ScoredCandidate {
   const productName = candidate.productName ?? "";
-  const rawSimilarity = computeSimilarityScore(ctx.targetQuery, productName);
-  let score = Math.min(100, rawSimilarity * 20); // 토큰 1개 매치당 20점 스케일 (기존 UI 구현 계승)
+  const identities = ctx.brandIdentities ?? [];
+  let score = productScore(coreWords, productName);
 
   if (ctx.modelName && matchesModelToken(productName, ctx.modelName)) {
-    score = Math.min(100, score + 30);
+    score = Math.min(100, score + MODEL_MATCH_BONUS);
   }
 
+  // 축 ③ 구성(수량)은 점수에 섞지 않는다 — 수량이 다르면 outlier 가 QUANTITY_MISMATCH 로 따로
+  // 배제한다(오너 지적: 축을 섞으면 일치율이 엇갈린다). 단위가격 계산용으로만 추출한다.
   const extractedQuantity = inferQuantityFromName(productName, ctx.expectedUnit);
-
-  if (ctx.expectedUnit && ctx.expectedQuantity != null) {
-    if (extractedQuantity !== null) {
-      if (extractedQuantity !== ctx.expectedQuantity) {
-        score = score * 0.3; // 수량 불일치 — 강한 페널티
-      } else {
-        score = Math.min(100, score + 15); // 수량 일치 보너스
-      }
-    } else {
-      score = score * 0.8; // 수량 정보 자체가 없음 — 경미한 페널티
-    }
-  }
 
   const qtyForUnitPrice = extractedQuantity ?? ctx.expectedQuantity ?? null;
   const unitPrice =
@@ -127,6 +172,8 @@ export function scoreCandidate<T extends ScorableCandidate>(
   return {
     ...candidate,
     matchScore: Math.round(score),
+    brandMatch: brandAxis({ productName, mall: candidate.mall }, identities),
+    ownerLabel: findOwnerLabel(candidate, ctx.ownerLabels),
     extractedQuantity,
     unitPrice,
   };
@@ -136,7 +183,9 @@ export function scoreCandidates<T extends ScorableCandidate>(
   candidates: T[],
   ctx: ScoringContext,
 ): Array<T & ScoredCandidate> {
-  return candidates.map((c) => scoreCandidate(c, ctx));
+  // 기준 낱말은 후보마다 같으므로 한 번만 만든다(모달은 입력 중에도 다시 판정한다).
+  const coreWords = productCoreWords(ctx.targetQuery, { identities: ctx.brandIdentities ?? [], unit: ctx.expectedUnit });
+  return candidates.map((c) => scoreWithCoreWords(c, ctx, coreWords));
 }
 
 /** 우리 판매가의 단위가격(원/단위). 수량 정보가 없으면 null. */

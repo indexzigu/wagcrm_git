@@ -24,6 +24,15 @@ import {
   type MarketSourceStates,
 } from "@/lib/price-monitor/source-errors";
 import { displayLabel } from "@/lib/display-label";
+import type { OwnerMatchLabel, OwnerMatchLabelValue } from "@/lib/price-monitor/scoring";
+import {
+  buildBrandIdentities,
+  parseBrandAliases,
+  type MatchAccuracy,
+} from "@/lib/price-monitor/match-context";
+import type { LabelInsights } from "@/lib/price-monitor/label-evidence";
+import { candidateNameKey, candidateUrlKey } from "@/lib/price-monitor/match-axes";
+import { toast } from "@/lib/toast";
 
 export type MonitorItem = {
   id: string;
@@ -34,7 +43,19 @@ export type MonitorItem = {
   expectedQuantity?: number | null;
   /** AI가 추출한 모델명/모델코드(P3-2) — evaluateMarketPrice 판정 시 매치 보너스로 사용된다. */
   modelName?: string | null;
+  /** 딜 브랜드명(옵션이면 부모 것) — 브랜드·회사 축의 기본 정체성 이름(2026-11-13 3축 분리). */
+  brandName?: string | null;
 };
+
+/** /api/price-monitoring/labels GET 응답 — 딜(옵션)→루트, 루트별 오너 표시·회사 이름, 정확도. */
+type LabelState = {
+  roots: Record<string, string>;
+  labels: Record<string, OwnerMatchLabel[]>;
+  aliases: Record<string, string[]>;
+  accuracy: (MatchAccuracy & Partial<LabelInsights>) | null;
+};
+
+const EMPTY_LABEL_STATE: LabelState = { roots: {}, labels: {}, aliases: {}, accuracy: null };
 
 type MultiMarketPriceMonitorProps = {
   items: MonitorItem[];
@@ -54,8 +75,22 @@ type PriceItem = {
 
 type EvaluatedPriceItem = PriceItem & EvaluatedCandidate;
 
+type ItemEvaluation = {
+  items: EvaluatedPriceItem[];
+  minItem: EvaluatedPriceItem | null;
+  verdict: PriceVerdict;
+  ourUnitPrice: number | null;
+};
+
+const BRAND_AXIS_LABEL = { match: "브랜드 일치", missing: "브랜드 없음" } as const;
+
+/** 상품명은 거의 같은데 브랜드·회사 이름만 안 보여 빠진 후보 — 오너가 회사 이름을 더하면 되살아난다. */
+const RESCUABLE_PRODUCT_SCORE = 70;
+
 const EXCLUDE_REASON_LABEL: Record<OutlierReason, string> = {
   EXCLUDE_KEYWORD: "제외 키워드(중고/해외직구 등)",
+  OWNER_DIFFERENT: "다른 상품으로 표시함",
+  BRAND_MISMATCH: "브랜드·회사 이름 없음",
   MATCH_TOO_LOW: "상품명 불일치",
   PRICE_BAND_VIOLATION: "비정상 저가(밴드 초과)",
   QUANTITY_MISMATCH: "수량 불일치",
@@ -87,11 +122,15 @@ export function MarketPriceMonitor({
   // Map of itemId -> result state
   const [results, setResults] = useState<Record<string, {
     loading: boolean;
-    items: EvaluatedPriceItem[];
-    minItem: EvaluatedPriceItem | null;
-    verdict: PriceVerdict;
-    ourUnitPrice: number | null;
+    /**
+     * 조회 API 가 준 원래 후보. 판정은 저장하지 않고 그릴 때마다 오너 표시·회사 이름을 반영해 다시 낸다
+     * (표시가 조회보다 늦게 오거나 오너가 표시를 바꿔도 판정이 따라가게 — 2026-11-13).
+     */
+    rawItems?: PriceItem[];
+    /** 입력칸에 쓰는 중인 검색어 — 칠 때마다 바뀐다. */
     searchedQuery: string;
+    /** 위 rawItems 를 실제로 조회한 검색어 — 판정 기준이라 입력 중에 바뀌면 안 된다. */
+    fetchedQuery?: string;
     /**
      * 소스별 실패 사유(`/api/price-monitoring` 응답의 errors). 화면 상단 경고 배너의 재료다 —
      * 이걸 버리면 3소스 중 하나가 죽어도 남은 소스로 계산된 값이 무표시로 "최저가" 행세를 한다
@@ -103,6 +142,51 @@ export function MarketPriceMonitor({
   }>>({});
   
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+
+  // 오너 「같은 상품 / 다른 상품」 표시와 「같은 회사로 볼 이름」(2026-11-13 3축 분리). 판정 재료라
+  // 조회 결과와 따로 들고, 그릴 때 둘을 합쳐 판정한다.
+  const [labelState, setLabelState] = useState<LabelState>(EMPTY_LABEL_STATE);
+  const [labelLoadError, setLabelLoadError] = useState<string | null>(null);
+  const [pendingLabelKey, setPendingLabelKey] = useState<string | null>(null);
+  const [aliasDrafts, setAliasDrafts] = useState<Record<string, string>>({});
+  const [savingAliasRoot, setSavingAliasRoot] = useState<string | null>(null);
+  const dealIdsKey = items.map((item) => item.id).filter(Boolean).join(",");
+
+  useEffect(() => {
+    if (!isOpen || !dealIdsKey) return;
+    let cancelled = false;
+    fetch(`/api/price-monitoring/labels?dealIds=${encodeURIComponent(dealIdsKey)}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error ?? `요청 실패 (HTTP ${res.status})`);
+        return data as LabelState;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setLabelState({
+          roots: data.roots ?? {},
+          labels: data.labels ?? {},
+          aliases: data.aliases ?? {},
+          accuracy: data.accuracy ?? null,
+        });
+        setLabelLoadError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        // 숨기지 않는다 — 표시를 못 읽으면 판정이 오너 표시 없이 나오므로 화면 위에 알린다.
+        console.error("Price match labels fetch error:", error);
+        setLabelLoadError(error instanceof Error ? error.message : "불러오기 실패");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, dealIdsKey]);
+
+  // 옵션 딜 → 루트 딜 id 대응(라벨 표가 아니다). 응답 전에는 자기 자신을 루트로 본다.
+  const rootOf = (dealId: string) => {
+    const mappedRoot = labelState.roots[dealId];
+    return mappedRoot ?? dealId;
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
@@ -130,29 +214,13 @@ export function MarketPriceMonitor({
       });
       if (res.ok) {
         const data = await res.json();
-        const ourShipping = getOurShipping(item.sellingPrice);
-        const ourTotalPrice = item.sellingPrice + ourShipping;
-
-        // 버그④ 복구: 자체 bigram 유사도 재구현을 제거하고 공용 pipeline(scoring→outlier→verdict,
-        // computeSimilarityScore 재사용)으로 대체 — cron/price-monitoring과 동일 판정 로직.
-        const evalResult = evaluateMarketPrice({
-          candidates: (data.allItems || []) as PriceItem[],
-          targetQuery: queryToSearch,
-          ourTotalPrice,
-          expectedUnit: item.unit,
-          expectedQuantity: item.expectedQuantity,
-          modelName: item.modelName,
-        });
-
         setResults(prev => ({
           ...prev,
           [item.id]: {
             loading: false,
-            items: evalResult.allScored,
-            minItem: evalResult.minValidItem,
-            verdict: evalResult.verdict,
-            ourUnitPrice: evalResult.ourUnitPrice,
+            rawItems: (data.allItems || []) as PriceItem[],
             searchedQuery: queryToSearch,
+            fetchedQuery: queryToSearch,
             sourceErrors: data.errors as MarketSourceErrors | undefined,
             sourceStates: data.sources as MarketSourceStates | undefined,
           }
@@ -167,17 +235,161 @@ export function MarketPriceMonitor({
         ...prev,
         [item.id]: {
           loading: false,
-          items: [],
-          minItem: null,
-          verdict: "NO_DATA",
-          ourUnitPrice: null,
+          rawItems: [],
           searchedQuery: queryToSearch,
+          fetchedQuery: queryToSearch,
           // 요청 자체가 실패하면 어느 소스도 조회되지 않은 것이다. NO_DATA 배지만으로는
           // "검색 결과가 없다"로 읽혀(아래 렌더) 장애가 정상 결과로 위장되므로 3소스 전부
           // 실패로 표기해 같은 배너에 태운다.
           sourceErrors: { naver: reason, coupang: reason, kakao: reason },
         }
       }));
+    }
+  };
+
+  const evaluateItem = (item: MonitorItem, res: (typeof results)[string] | undefined): ItemEvaluation => {
+    const root = rootOf(item.id);
+    const result = evaluateMarketPrice({
+      candidates: res?.rawItems ?? [],
+      targetQuery: res?.fetchedQuery ?? res?.searchedQuery ?? item.searchQuery,
+      ourTotalPrice: item.sellingPrice + getOurShipping(item.sellingPrice),
+      expectedUnit: item.unit,
+      expectedQuantity: item.expectedQuantity,
+      modelName: item.modelName,
+      brandIdentities: buildBrandIdentities(item.brandName, (labelState.aliases[root] ?? []).join("\n")),
+      ownerLabels: labelState.labels[root] ?? [],
+    });
+    return {
+      items: result.allScored,
+      minItem: result.minValidItem,
+      verdict: result.verdict,
+      ourUnitPrice: result.ourUnitPrice,
+    };
+  };
+
+  /** 후보에 붙은 저장된 표시를 찾는다 — scoring.findOwnerLabel 과 같은 열쇠(판매처+상품명)로만. */
+  const findStoredLabel = (root: string, candidate: EvaluatedPriceItem) => {
+    const nameKey = candidateNameKey(candidate.mall, candidate.productName);
+    return (labelState.labels[root] ?? []).find((l) => l.nameKey === nameKey);
+  };
+
+  const warnIfNotReevaluated = (reevaluateError: unknown) => {
+    if (typeof reevaluateError === "string" && reevaluateError) {
+      toast.warning("저장했지만 홈 화면 판정은 다음 정기 조회 때 바뀝니다.", { description: reevaluateError });
+    }
+  };
+
+  const submitLabel = async (
+    item: MonitorItem,
+    candidate: EvaluatedPriceItem,
+    label: OwnerMatchLabelValue,
+    searchQuery: string,
+  ) => {
+    const root = rootOf(item.id);
+    const busyKey = `${root}|${candidateNameKey(candidate.mall, candidate.productName)}`;
+    setPendingLabelKey(busyKey);
+    try {
+      const res = await fetch("/api/price-monitoring/labels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: item.id,
+          label,
+          candidate: {
+            channel: candidate.channel,
+            mall: candidate.mall,
+            productName: candidate.productName,
+            url: candidate.url,
+          },
+          // 서버가 이 검색어로 후보를 다시 판정해 원인 근거를 저장한다(시스템 판정도 서버가 정한다).
+          searchQuery,
+          // 표시하던 순간 화면에 보이던 판정 — 서버 재판정과 다를 때의 진단용 참고값.
+          seen: {
+            matchScore: candidate.matchScore,
+            excludeReason: candidate.excludeReason ?? null,
+            ownerLabel: candidate.ownerLabel ?? null,
+          },
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? `저장 실패 (HTTP ${res.status})`);
+      const savedRoot: string = data.rootDealId ?? root;
+      setLabelState((prev) => {
+        const others = (prev.labels[savedRoot] ?? []).filter((l) => l.nameKey !== data.nameKey);
+        return {
+          ...prev,
+          roots: { ...prev.roots, [item.id]: savedRoot },
+          labels: {
+            ...prev.labels,
+            [savedRoot]: [...others, { nameKey: data.nameKey, urlKey: candidateUrlKey(candidate.url), label }],
+          },
+          accuracy: data.accuracy ?? prev.accuracy,
+        };
+      });
+      warnIfNotReevaluated(data.reevaluateError);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "표시를 저장하지 못했습니다.");
+    } finally {
+      setPendingLabelKey(null);
+    }
+  };
+
+  const removeLabel = async (item: MonitorItem, candidate: EvaluatedPriceItem) => {
+    const root = rootOf(item.id);
+    const stored = findStoredLabel(root, candidate);
+    if (!stored) return;
+    setPendingLabelKey(`${root}|${candidateNameKey(candidate.mall, candidate.productName)}`);
+    try {
+      const res = await fetch("/api/price-monitoring/labels", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId: item.id, nameKey: stored.nameKey }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? `취소 실패 (HTTP ${res.status})`);
+      setLabelState((prev) => ({
+        ...prev,
+        labels: { ...prev.labels, [root]: (prev.labels[root] ?? []).filter((l) => l.nameKey !== stored.nameKey) },
+        accuracy: data.accuracy ?? prev.accuracy,
+      }));
+      warnIfNotReevaluated(data.reevaluateError);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "표시를 취소하지 못했습니다.");
+    } finally {
+      setPendingLabelKey(null);
+    }
+  };
+
+  const saveAliases = async (item: MonitorItem) => {
+    const root = rootOf(item.id);
+    const draft = aliasDrafts[root];
+    if (draft === undefined) return;
+    setSavingAliasRoot(root);
+    try {
+      const res = await fetch("/api/price-monitoring/brand-aliases", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId: item.id, aliases: parseBrandAliases(draft) }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? `저장 실패 (HTTP ${res.status})`);
+      const savedRoot: string = data.rootDealId ?? root;
+      setLabelState((prev) => ({
+        ...prev,
+        roots: { ...prev.roots, [item.id]: savedRoot },
+        aliases: { ...prev.aliases, [savedRoot]: data.aliases ?? [] },
+      }));
+      setAliasDrafts((prev) => {
+        const next = { ...prev };
+        delete next[root];
+        return next;
+      });
+      toast.success("같은 회사로 볼 이름을 저장했습니다.");
+      warnIfNotReevaluated(data.reevaluateError);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "이름을 저장하지 못했습니다.");
+    } finally {
+      setSavingAliasRoot(null);
     }
   };
 
@@ -300,15 +512,51 @@ export function MarketPriceMonitor({
           </div>
         )}
 
+        {labelLoadError && (
+          <div
+            role="status"
+            className="shrink-0 mx-3 sm:mx-0 flex items-center gap-2 rounded-xl border border-status-caution/25 bg-status-caution-bg px-3.5 py-2 text-xs text-status-caution-text"
+          >
+            <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+            <span className="font-semibold">내 표시를 불러오지 못해 자동 판정만 보입니다.</span>
+            <span className="font-normal">{labelLoadError}</span>
+          </div>
+        )}
+
+        {labelState.accuracy && labelState.accuracy.total > 0 && (
+          <div className="shrink-0 mx-3 sm:mx-0 text-[11px] text-slate-500">
+            <span className="font-semibold text-slate-600">자동 판정 정확도</span>{" "}
+            내가 표시한 {labelState.accuracy.total}건 중 {labelState.accuracy.agreed}건이 자동 판정과 같음
+            ({Math.round((labelState.accuracy.agreed / labelState.accuracy.total) * 100)}%)
+            {/* 어긋난 표시의 원인과 「다른 상품」을 가른 낱말 — 판정 기준을 고칠 근거(오너 지시 2026-11-13). */}
+            {labelState.accuracy.causes && labelState.accuracy.causes.length > 0 && (
+              <div>
+                <span className="font-semibold text-slate-600">어긋난 원인</span>{" "}
+                {labelState.accuracy.causes.map((c) => `${c.label} ${c.count}건`).join(" · ")}
+              </div>
+            )}
+            {labelState.accuracy.differentWords && labelState.accuracy.differentWords.length > 0 && (
+              <div>
+                <span className="font-semibold text-slate-600">다른 상품에만 있던 낱말</span>{" "}
+                {labelState.accuracy.differentWords.map((w) => `${w.word} ${w.count}`).join(" · ")}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto min-h-0 space-y-3 p-3 sm:p-0">
           {items.map(item => {
             const res = results[item.id];
             const isLoading = res?.loading;
-            const minItem = res?.minItem;
-            const fetchedItems = res?.items || [];
-            const validItems = fetchedItems.filter((i) => !("excludeReason" in i));
+            const evaluation = evaluateItem(item, res);
+            const minItem = evaluation.minItem;
+            const fetchedItems = evaluation.items;
+            const validItems = fetchedItems.filter((i) => !i.excludeReason);
             const isSearched = !!res;
-            const verdict: PriceVerdict = res?.verdict ?? "NO_DATA";
+            const verdict: PriceVerdict = res && !res.loading ? evaluation.verdict : "NO_DATA";
+            const root = rootOf(item.id);
+            const savedAliases = labelState.aliases[root] ?? [];
+            const aliasDraft = aliasDrafts[root];
 
             const ourShipping = getOurShipping(item.sellingPrice);
             const ourTotalPrice = item.sellingPrice + ourShipping;
@@ -331,7 +579,7 @@ export function MarketPriceMonitor({
                 gapAmount = ourTotalPrice - minItem.totalPrice;
                 diffText = `1위보다 ${formatCurrency(gapAmount)}원 비쌈`;
               } else if (verdict === "REVIEW") {
-                diffText = "더 싼 후보가 있으나 일치율이 낮음, 다른 품목인지 확인 필요";
+                diffText = "더 싼 후보가 같은 상품인지 확인 필요";
               }
             }
 
@@ -363,8 +611,8 @@ export function MarketPriceMonitor({
                     </h4>
                     <div className="text-[11px] text-slate-500 mt-0.5">
                       우리 판매가: <span className="font-medium text-slate-700">{formatCurrency(ourTotalPrice)}원</span>
-                      {res?.ourUnitPrice != null && (
-                        <span className="text-slate-500"> ({formatCurrency(Math.round(res.ourUnitPrice))}원/{item.unit ?? "단위"})</span>
+                      {evaluation.ourUnitPrice != null && (
+                        <span className="text-slate-500"> ({formatCurrency(Math.round(evaluation.ourUnitPrice))}원/{item.unit ?? "단위"})</span>
                       )}
                     </div>
                   </div>
@@ -392,7 +640,7 @@ export function MarketPriceMonitor({
                         {diffText && <div className={`text-[9px] mt-0.5 ${VERDICT_BADGE[verdict].className}`}>{diffText}</div>}
                         {verdict === "NO_DATA" && (
                           <div className="text-[9px] mt-0.5 text-slate-500">
-                            {fetchedItems.length > 0 ? "유효 비교 후보 없음(전량 이상치 배제)" : "검색 결과 없음"}
+                            {fetchedItems.length > 0 ? "남은 후보가 모두 배제돼 비교할 수 없음" : "검색 결과 없음"}
                           </div>
                         )}
                       </div>
@@ -457,25 +705,68 @@ export function MarketPriceMonitor({
                       </Button>
                     </div>
 
+                    {/* 브랜드·회사 축의 이름 목록. 상품명에 브랜드만·제조사만·둘 다 적히는 경우가 섞여 있어
+                        (오너 관찰 2026-11-13) 판매 조건 브랜드명 외에 같은 회사로 볼 이름을 더 받는다. */}
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2">
+                        <label htmlFor={`brand-aliases-${item.id}`} className="shrink-0 text-[11px] font-medium text-slate-600">
+                          같은 회사로 볼 이름
+                        </label>
+                        <input
+                          id={`brand-aliases-${item.id}`}
+                          type="text"
+                          value={aliasDraft ?? savedAliases.join(", ")}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setAliasDrafts((prev) => ({ ...prev, [root]: val }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveAliases(item);
+                          }}
+                          className="h-8 min-w-0 flex-1 rounded-md border bg-white px-3 text-xs"
+                          placeholder="제조사·공식몰 이름 (쉼표로 구분)"
+                        />
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => saveAliases(item)}
+                          disabled={aliasDraft === undefined || savingAliasRoot === root}
+                          className="h-8 text-[11px] px-3"
+                        >
+                          {savingAliasRoot === root ? <Loader2 className="w-3 h-3 animate-spin" /> : "저장"}
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-[10px] text-slate-500">
+                        {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다.
+                      </p>
+                    </div>
+
                     <div className="border rounded-lg bg-white overflow-x-auto">
                       <table className="w-full text-xs text-slate-600">
                         <thead>
                           <tr className="border-b">
                             <th className="font-semibold px-2 py-2 text-left w-[9%]">채널</th>
                             <th className="font-semibold px-2 py-2 text-left w-[13%]">판매처</th>
-                            <th className="font-semibold px-2 py-2 text-left w-[28%]">수집된 상품명</th>
+                            <th className="font-semibold px-2 py-2 text-left w-[24%]">수집된 상품명</th>
                             <th className="font-semibold px-2 py-2 text-center w-[12%]">분석</th>
                             <th className="font-semibold px-2 py-2 text-right w-[9%]">상품가</th>
                             <th className="font-semibold px-2 py-2 text-right w-[7%]">배송비</th>
                             <th className="font-semibold px-2 py-2 text-right w-[10%]">최종가</th>
-                            <th className="font-semibold px-2 py-2 text-left w-[12%]">비고</th>
+                            <th className="font-semibold px-2 py-2 text-left w-[16%]">비고</th>
                           </tr>
                         </thead>
                         <tbody>
                           {fetchedItems.map((fetchedItem, idx) => {
-                            const isExcluded = "excludeReason" in fetchedItem && !!fetchedItem.excludeReason;
-                            const isLowest = !isExcluded && res.minItem?.url === fetchedItem.url;
-                            const isDanger = isLowest && fetchedItem.totalPrice < ourTotalPrice;
+                            const isExcluded = !!fetchedItem.excludeReason;
+                            const isLowest = !isExcluded && minItem?.url === fetchedItem.url;
+                            const labelBusy = pendingLabelKey === `${root}|${candidateNameKey(fetchedItem.mall, fetchedItem.productName)}`;
+                            const cheaperThanOurs = isLowest && fetchedItem.totalPrice < ourTotalPrice;
+                            // 확정 위반만 빨강, 같은 상품인지 확인 전(검토)이면 주의색 — 다른 상품일 수 있는 후보를 확정 위험으로 칠하지 않는다.
+                            const isDanger = cheaperThanOurs && verdict === "VIOLATED";
+                            const isUnconfirmed = cheaperThanOurs && verdict === "REVIEW";
+                            // 상품명은 거의 같은데 회사 이름만 안 보여 빠진 후보는 흐리게 두지 않는다(오너가 되살릴 행).
+                            const isRescuable =
+                              fetchedItem.excludeReason === "BRAND_MISMATCH" && fetchedItem.matchScore >= RESCUABLE_PRODUCT_SCORE;
 
                             let scoreColor = "text-slate-500";
                             if (fetchedItem.matchScore >= 80) scoreColor = "text-status-success font-medium";
@@ -485,7 +776,7 @@ export function MarketPriceMonitor({
                             return (
                               <tr
                                 key={idx}
-                                className={`border-b last:border-0 ${isDanger ? 'bg-status-urgent-bg' : isExcluded ? 'bg-slate-50/70 opacity-60' : 'hover:bg-slate-50'}`}
+                                className={`border-b last:border-0 ${isDanger ? 'bg-status-urgent-bg' : isUnconfirmed ? 'bg-status-caution-bg' : isExcluded && !isRescuable ? 'bg-slate-50/70 opacity-60' : isExcluded ? 'bg-slate-50/70' : 'hover:bg-slate-50'}`}
                               >
                                 <td className="px-2 py-2.5">
                                   <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-normal shadow-none px-1.5 py-0 text-[10px]">
@@ -497,9 +788,15 @@ export function MarketPriceMonitor({
                                   {fetchedItem.productName || "-"}
                                 </td>
                                 <td className="px-2 py-2.5 text-center">
+                                  {/* 세 축을 섞지 않고 따로 보인다(오너 지적 2026-11-13): 상품 일치율 · 브랜드 · 수량. */}
                                   <div className={`text-[11px] ${scoreColor}`}>
-                                    {fetchedItem.matchScore}% 일치
+                                    상품명 {fetchedItem.matchScore}%
                                   </div>
+                                  {fetchedItem.brandMatch && fetchedItem.brandMatch !== "unknown" && (
+                                    <div className={`text-[10px] ${fetchedItem.brandMatch === "missing" ? "font-medium text-slate-700" : "text-slate-500"}`}>
+                                      {BRAND_AXIS_LABEL[fetchedItem.brandMatch]}
+                                    </div>
+                                  )}
                                   {item.unit && (
                                     <div className="text-[10px] text-slate-500">
                                       {fetchedItem.extractedQuantity != null
@@ -520,11 +817,56 @@ export function MarketPriceMonitor({
                                   </a>
                                 </td>
                                 <td className="px-2 py-2.5">
-                                  {isExcluded && "excludeReason" in fetchedItem && fetchedItem.excludeReason && (
-                                    <span className="text-[10px] text-slate-500">
-                                      배제: {EXCLUDE_REASON_LABEL[fetchedItem.excludeReason]}
-                                    </span>
-                                  )}
+                                  <div className="flex flex-col items-start gap-1">
+                                    {fetchedItem.excludeReason && (
+                                      <span className="text-[10px] text-slate-500">
+                                        배제: {EXCLUDE_REASON_LABEL[fetchedItem.excludeReason]}
+                                      </span>
+                                    )}
+                                    {isRescuable && (
+                                      <span className="text-[10px] text-slate-600">같은 회사면 위 「같은 회사로 볼 이름」에 추가</span>
+                                    )}
+                                    {fetchedItem.ownerLabel === "SAME" && (
+                                      <span className="text-[10px] font-medium text-slate-700">같은 상품으로 표시함</span>
+                                    )}
+                                    {fetchedItem.ownerLabel ? (
+                                      <Button
+                                        size="xs"
+                                        variant="ghost"
+                                        disabled={labelBusy}
+                                        onClick={() => removeLabel(item, fetchedItem)}
+                                        title="이 판매 조건의 모든 옵션에서 표시를 지웁니다"
+                                        className="h-6 px-1.5 text-[10px] text-slate-600"
+                                      >
+                                        표시 취소
+                                      </Button>
+                                    ) : fetchedItem.productName ? (
+                                      <div className="flex gap-1">
+                                        <Button
+                                          size="xs"
+                                          variant={isExcluded ? "ghost" : "outline"}
+                                          disabled={labelBusy}
+                                          onClick={() => submitLabel(item, fetchedItem, "SAME", res?.fetchedQuery ?? item.searchQuery)}
+                                          aria-label={`${fetchedItem.productName}: 우리 상품과 같은 상품으로 표시`}
+                                          title="우리 상품과 같은 상품"
+                                          className={`h-6 px-1.5 text-[10px] ${isExcluded ? "text-slate-500" : ""}`}
+                                        >
+                                          같은 상품
+                                        </Button>
+                                        <Button
+                                          size="xs"
+                                          variant={isExcluded ? "ghost" : "outline"}
+                                          disabled={labelBusy}
+                                          onClick={() => submitLabel(item, fetchedItem, "DIFFERENT", res?.fetchedQuery ?? item.searchQuery)}
+                                          aria-label={`${fetchedItem.productName}: 우리 상품과 다른 상품으로 표시`}
+                                          title="우리 상품과 다른 상품"
+                                          className={`h-6 px-1.5 text-[10px] ${isExcluded ? "text-slate-500" : ""}`}
+                                        >
+                                          다른 상품
+                                        </Button>
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 </td>
                               </tr>
                             );

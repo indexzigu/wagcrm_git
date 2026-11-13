@@ -18,6 +18,9 @@ import { fetchAllMarketPrices } from "@/lib/price-monitor/market-fetch";
 import type { MarketSourceErrors } from "@/lib/price-monitor/source-errors";
 import { createMarketSourceState, type MarketSourceStates } from "@/lib/price-monitor/source-status";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { buildBrandIdentities } from "@/lib/price-monitor/match-context";
+import type { OwnerMatchLabel } from "@/lib/price-monitor/scoring";
+import { priceMatchLabelRepository } from "@/repositories/priceMatchLabelRepository";
 
 // naver-order-sync/route.ts의 verifyCronAuth 패턴을 그대로 복제한다.
 function todayDateKey(): string {
@@ -49,6 +52,10 @@ type MonitorTarget = {
   /** 자식 딜(하위 옵션)이면 buildSearchQuery의 childDealName/parentDealName에 전달(C1-3) */
   childDealName: string | null;
   parentDealName: string | null;
+  /** 오너 표시·회사 이름이 걸리는 루트 딜(옵션이면 부모). */
+  rootDealId: string;
+  /** 브랜드 축 정체성 이름 = 브랜드명(자식??부모) + 루트 딜의 「같은 회사로 볼 이름」. */
+  brandIdentities: string[];
 };
 
 type SourceAwareMarketFetchResult = Awaited<ReturnType<typeof fetchAllMarketPrices>>;
@@ -137,12 +144,14 @@ async function fetchMonitorTargets(): Promise<MonitorTarget[]> {
           supplementaryInfo: true,
           monitorEnabled: true,
           parentDealId: true,
+          monitorBrandAliases: true,
           parentDeal: {
             select: {
               dealName: true,
               brandName: true,
               supplementaryInfo: true,
               unit: true,
+              monitorBrandAliases: true,
             },
           },
         },
@@ -187,6 +196,11 @@ async function fetchMonitorTargets(): Promise<MonitorTarget[]> {
         cd.campaign.freeShippingThreshold != null ? Number(cd.campaign.freeShippingThreshold) : null,
       childDealName: resolved.childDealName,
       parentDealName: resolved.parentDealName,
+      rootDealId: cd.deal.parentDealId ?? cd.deal.id,
+      brandIdentities: buildBrandIdentities(
+        resolved.brandName,
+        cd.deal.parentDeal ? cd.deal.parentDeal.monitorBrandAliases : cd.deal.monitorBrandAliases,
+      ),
     };
   });
 }
@@ -202,6 +216,7 @@ async function processTarget(
   target: MonitorTarget,
   snapshotDate: string,
   fetchPrices: (query: string) => Promise<MarketFetchOutcome>,
+  ownerLabels: readonly OwnerMatchLabel[] = [],
 ): Promise<ProcessTargetResult> {
   // expectedQuantity는 자식 자신의 실제 표시명(target.dealName)에서 역추출한다(수량은 자식
   // 이름 자체에 리터럴로 존재). query의 core 폴백 재료는 청사진 §C1-1 규칙대로 부모
@@ -229,6 +244,8 @@ async function processTarget(
     expectedUnit: target.unit,
     expectedQuantity,
     modelName: target.modelName,
+    brandIdentities: target.brandIdentities,
+    ownerLabels,
   });
 
   await priceMonitorSnapshotRepository.upsertDaily({
@@ -308,9 +325,14 @@ async function handler(request: Request) {
 
     // 순차 배치 처리(Promise.allSettled) — 외부 소스에 대한 동시 과호출 방지.
     // 동일 query는 fetchCache에서 재사용하고, 전체 예산은 fetchAllMarketPrices에 전달한다.
+    const labelsByRoot = await priceMatchLabelRepository.findByRootDealIds(
+      Array.from(new Set(targets.map((target) => target.rootDealId))),
+    );
     const settled: PromiseSettledResult<ProcessTargetResult>[] = [];
     for (const target of targets) {
-      const outcome = await Promise.allSettled([processTarget(target, snapshotDate, fetchPrices)]);
+      const outcome = await Promise.allSettled([
+        processTarget(target, snapshotDate, fetchPrices, labelsByRoot.get(target.rootDealId) ?? []),
+      ]);
       settled.push(outcome[0]);
     }
 

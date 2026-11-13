@@ -1,7 +1,13 @@
 // 시장 최저가 모니터링 파이프라인 조립 — 순수함수(서버/클라 공유).
 // scoring → outlier → verdict 를 한 번에 묶어 API route(price-monitoring, cron)와
 // UI(market-price-monitor.tsx)가 동일한 판정 로직을 쓰게 한다("모달과 판정 로직 일원화").
-import { scoreCandidates, computeOurUnitPrice, type ScorableCandidate, type ScoredCandidate } from "./scoring";
+import {
+  scoreCandidates,
+  computeOurUnitPrice,
+  type OwnerMatchLabel,
+  type ScorableCandidate,
+  type ScoredCandidate,
+} from "./scoring";
 import { filterOutliers, type OutlierReason } from "./outlier";
 import { computeVerdict, VIOLATION_CONFIDENCE_FLOOR, type PriceVerdict } from "./verdict";
 
@@ -13,6 +19,10 @@ export type EvaluateInput<T extends ScorableCandidate> = {
   expectedQuantity?: number | null;
   /** AI가 추출한 모델명/모델코드(P3-2) — scoreCandidates ctx로 그대로 전달된다. */
   modelName?: string | null;
+  /** 브랜드·회사 축의 정체성 이름(딜 브랜드 + 오너 등록 회사 이름). 비면 브랜드 축 미적용. */
+  brandIdentities?: readonly string[];
+  /** 오너「같은 상품 / 다른 상품」 표시. */
+  ownerLabels?: readonly OwnerMatchLabel[];
 };
 
 export type EvaluatedCandidate = ScoredCandidate & { excludeReason?: OutlierReason };
@@ -40,13 +50,16 @@ export type EvaluateResult<T extends ScorableCandidate> = {
 export function evaluateMarketPrice<T extends ScorableCandidate>(
   input: EvaluateInput<T>,
 ): EvaluateResult<T> {
-  const { candidates, targetQuery, ourTotalPrice, expectedUnit, expectedQuantity, modelName } = input;
+  const { candidates, targetQuery, ourTotalPrice, expectedUnit, expectedQuantity, modelName, brandIdentities, ownerLabels } =
+    input;
 
   const scored = scoreCandidates(candidates, {
     targetQuery,
     expectedUnit,
     expectedQuantity,
     modelName,
+    brandIdentities,
+    ownerLabels,
   });
 
   const { valid, excluded } = filterOutliers(scored, {
@@ -59,8 +72,9 @@ export function evaluateMarketPrice<T extends ScorableCandidate>(
 
   // 신뢰선 이상(고신뢰) 후보만 — 위반 "확정"의 근거로 삼는다. 저매치(신뢰선 미만)만으로
   // 최저가가 형성되면 다른 품목일 가능성이 높아 아래에서 REVIEW로 강등한다.
+  // 오너가「같은 상품」으로 표시한 후보는 점수와 무관하게 고신뢰다. 브랜드 불일치는 이미 배제됐다.
   const minConfidentItem =
-    sortedValid.find((c) => c.matchScore >= VIOLATION_CONFIDENCE_FLOOR) ?? null;
+    sortedValid.find((c) => c.ownerLabel === "SAME" || c.matchScore >= VIOLATION_CONFIDENCE_FLOOR) ?? null;
 
   const ourUnitPrice = computeOurUnitPrice(ourTotalPrice, expectedQuantity);
 

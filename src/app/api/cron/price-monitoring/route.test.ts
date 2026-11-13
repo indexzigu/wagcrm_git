@@ -4,6 +4,7 @@ const prismaMock = vi.hoisted(() => ({ campaignDeal: { findMany: vi.fn() } }));
 const fetchAllMarketPricesMock = vi.hoisted(() => vi.fn());
 const evaluateMarketPriceMock = vi.hoisted(() => vi.fn());
 const upsertDailyMock = vi.hoisted(() => vi.fn());
+const findLabelsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/prisma", () => ({ getPrisma: () => prismaMock }));
 vi.mock("@/lib/cron-auth", () => ({ verifyCronAuth: () => true }));
@@ -35,6 +36,10 @@ vi.mock("@/lib/price-monitor/market-fetch", () => ({
 }));
 vi.mock("@/repositories/priceMonitorSnapshotRepository", () => ({
   priceMonitorSnapshotRepository: { upsertDaily: (...args: unknown[]) => upsertDailyMock(...args) },
+}));
+
+vi.mock("@/repositories/priceMatchLabelRepository", () => ({
+  priceMatchLabelRepository: { findByRootDealIds: (...args: unknown[]) => findLabelsMock(...args) },
 }));
 
 import { GET } from "./route";
@@ -78,6 +83,46 @@ describe("GET /api/cron/price-monitoring", () => {
       allScored: [],
     });
     upsertDailyMock.mockResolvedValue(undefined);
+    findLabelsMock.mockResolvedValue(new Map());
+  });
+
+  it("루트 딜의 오너 표시와 브랜드·회사 이름을 판정에 넘긴다(3축 판정 2026-11-13)", async () => {
+    prismaMock.campaignDeal.findMany.mockResolvedValue([
+      {
+        campaign: { id: "campaign-1", shippingFee: null, freeShippingThreshold: null },
+        deal: {
+          id: "option-1",
+          dealName: "테스트 딜 - 2박스",
+          brandName: null,
+          unit: "박스",
+          unitQuantity: 2,
+          sellingPrice: 10000,
+          supplementaryInfo: null,
+          monitorEnabled: true,
+          parentDealId: "root-1",
+          monitorBrandAliases: null,
+          parentDeal: {
+            dealName: "테스트 딜",
+            brandName: "테스트 브랜드",
+            supplementaryInfo: null,
+            unit: "박스",
+            monitorBrandAliases: "제조사A\n제조사B",
+          },
+        },
+      },
+    ]);
+    const labels = [{ nameKey: "몰|상품", urlKey: null, label: "DIFFERENT" }];
+    findLabelsMock.mockResolvedValue(new Map([["root-1", labels]]));
+
+    await GET(new Request("http://localhost/api/cron/price-monitoring"));
+
+    expect(findLabelsMock).toHaveBeenCalledWith(["root-1"]);
+    expect(evaluateMarketPriceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        brandIdentities: ["테스트 브랜드", "제조사A", "제조사B"],
+        ownerLabels: labels,
+      }),
+    );
   });
 
   it("소스 상태를 evidence.sourceStates에 저장하고 부분 수집을 summary에 집계한다", async () => {

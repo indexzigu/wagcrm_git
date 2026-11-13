@@ -195,6 +195,8 @@ model Deal {
   freeShippingThreshold Float?
   dealType              String            @default("MAIN") // MAIN | OPTION
   monitorEnabled        Boolean           @default(true)
+  // 최저가 감시 브랜드 축의 추가 정체성 이름(제조사 등), 줄바꿈 구분. 루트 딜에 둔다.
+  monitorBrandAliases   String?
   category              String? // FOOD | SUPPLEMENT | COSMETIC | GENERAL (C1 클레임 게이트)
   claims                DealClaim[]
   offerAnswers          DealOfferAnswer[]
@@ -204,6 +206,7 @@ model Deal {
   campaignDeals         CampaignDeal[]
   priceSheetRows        PriceSheetRow[]
   priceMonitorSnapshots PriceMonitorSnapshot[]
+  priceMatchLabels      PriceMatchLabel[]
 
   @@index([status])
   @@index([partnerId])
@@ -1064,6 +1067,36 @@ model PriceMonitorSnapshot {
   @@index([campaignId])
   @@index([verdict, snapshotDate])
 }
+// 최저가 감시 — 오너의 「같은 상품 / 다른 상품」 판정 기록(2026-11-13 3축 분리).
+// ①판정에 다시 적용(DIFFERENT=배제, SAME=브랜드·상품 축 면제) ②자동 판정 정확도 계측의 정답.
+// dealId 는 루트 딜(부모, 없으면 자기 자신) — 다른 회사 제품은 모든 옵션에서 다르다.
+// systemSaidSame: 표시 당시 시스템이 그 후보를 같은 상품으로 봤는가(브랜드·상품 축 통과).
+// 가격 밴드·수량으로 빠진 것은 「같은 상품」 판단과 무관하므로 여기서 거르지 않는다. 정확도 = 오너와의 일치율.
+model PriceMatchLabel {
+  id             String   @id @default(cuid())
+  dealId         String
+  nameKey        String
+  urlKey         String?
+  label          String // SAME | DIFFERENT
+  channel        String?
+  mall           String?
+  productName    String
+  url            String?
+  systemSaidSame Boolean
+  /// 표시 시점에 서버가 다시 판정한 원인 분류(label-evidence.ts MatchCause) — 일치면 null
+  cause          String?
+  searchQuery    String?
+  /// 축별 판정 근거 JSON 텍스트(label-evidence.ts MatchEvidence) — 판정 개선 재료
+  evidence       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deal           Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([dealId, nameKey])
+  @@index([dealId])
+  @@index([createdAt])
+}
+
 
 // ==== Phase 1 AI 데이터 모델 (2026-07-06, Opus 청사진 기반) ====
 // SQLite는 Json 타입을 지원하지 않으므로 Json 필드는 String(JSON 직렬화 텍스트)으로 저장한다.
