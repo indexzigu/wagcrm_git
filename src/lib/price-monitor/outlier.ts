@@ -58,6 +58,7 @@ export function detectOutlierReason(
 
   if (candidate.ownerLabel !== "SAME") {
     if (candidate.brandMatch === "missing") return "BRAND_MISMATCH";
+    // 브랜드 「없음」은 바로 위에서 걸렀으니 여기서 걸리는 것은 상품 점수 미달뿐이다.
     if (!passesIdentityAxes(candidate)) return "MATCH_TOO_LOW";
   }
 

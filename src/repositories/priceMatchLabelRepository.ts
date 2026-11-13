@@ -42,8 +42,7 @@ export function isOwnerMatchLabelValue(value: unknown): value is OwnerMatchLabel
 export const priceMatchLabelRepository = {
   /** 옵션 딜이면 부모 id, 아니면 자기 id. 딜이 없으면 null. */
   async resolveRootDealId(dealId: string): Promise<string | null> {
-    const deal = await getPrisma().deal.findUnique({ where: { id: dealId }, select: { id: true, parentDealId: true } });
-    return deal ? deal.parentDealId ?? deal.id : null;
+    return (await priceMatchLabelRepository.resolveRootDealIds([dealId])).get(dealId) ?? null;
   },
 
   /** 여러 딜을 한 번에 루트 id 로 해소한다(없는 딜은 빠진다). */
@@ -116,7 +115,7 @@ export const priceMatchLabelRepository = {
   /**
    * 전체 오너 표시 중 시스템 판단과 같았던 비율 + 어긋난 원인별 건수 + 「다른 상품」을 가른 낱말 빈도 —
    * 자동 판정 정확도 계측이자 판정 개선 재료(2026-11-13 오너 지시).
-   * 전 행을 읽는다 — 오너가 손으로 누르는 표시라 행 수가 작다(수백 건 규모). 수천 건을 넘기면 최근 창으로 좁힐 것.
+   * 전 행을 읽는다 — 오너가 손으로 누르는 표시라 행 수가 작다. 커지면 최근 창으로 좁힐 것.
    */
   async accuracy(): Promise<MatchAccuracy & LabelInsights> {
     const rows = await getPrisma().priceMatchLabel.findMany({

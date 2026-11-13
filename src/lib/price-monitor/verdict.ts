@@ -18,14 +18,17 @@ export const VIOLATION_CONFIDENCE_FLOOR = 60;
 /**
  * 구성(수량)을 모르는 후보 — 우리 쪽 수량은 알지만 후보 상품명에서 수량을 못 뽑은 경우 — 의 확신 하한.
  * 2026-11-13 축 분리 전에는 이런 후보의 단일 점수에 ×0.8 을 곱해 60 을 넘기려면 원점수 75 가
- * 필요했다. 축을 나누며 그 감점이 빠졌으므로, 같은 효과를 확신 하한에서 유지한다(요구 리뷰).
+ * 필요했다. 축을 나누며 그 감점이 빠졌으므로, 같은 효과를 확신 하한에서 유지한다.
  * 목록·배제 판정(MATCH_FLOOR)에는 쓰지 않는다 — 위반 "확정" 근거로 쓸지에만 쓴다.
  */
-export const COMPOSITION_UNKNOWN_CONFIDENCE_FLOOR = Math.ceil(VIOLATION_CONFIDENCE_FLOOR / 0.8);
+/** 축 분리 전 「수량 정보 없음」 감점 계수. */
+const LEGACY_MISSING_QUANTITY_FACTOR = 0.8;
+export const COMPOSITION_UNKNOWN_CONFIDENCE_FLOOR = Math.ceil(VIOLATION_CONFIDENCE_FLOOR / LEGACY_MISSING_QUANTITY_FACTOR);
 
 /**
  * - OK / TIE / VIOLATED / NO_DATA: computeVerdict가 가격만으로 판정한다.
- * - REVIEW: 최저가 후보의 일치율이 VIOLATION_CONFIDENCE_FLOOR 미만이라 "같은 상품 위반"으로
+ * - REVIEW: 최저가 후보의 일치율이 VIOLATION_CONFIDENCE_FLOOR 미만(수량을 못 읽은 후보는
+ *   COMPOSITION_UNKNOWN_CONFIDENCE_FLOOR 미만)이라 "같은 상품 위반"으로
  *   확신할 수 없어 강등된 상태(evaluateMarketPrice에서 파생). 알림·칸반 위반 배지를 만들지
  *   않고, 운영자 수동 검토용으로만 노출한다.
  */

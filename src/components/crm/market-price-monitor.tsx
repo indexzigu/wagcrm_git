@@ -84,7 +84,7 @@ type ItemEvaluation = {
 
 const BRAND_AXIS_LABEL = { match: "브랜드 일치", missing: "브랜드 없음" } as const;
 
-/** 상품명은 거의 같은데 브랜드·회사 이름만 안 보여 빠진 후보 — 오너가 회사 이름을 더하면 되살아난다. */
+/** 상품명은 거의 같은데 브랜드·회사 이름만 안 보여 빠진 후보 — 오너가 회사 이름을 더하면 되살아난다(흐리게 덮지 않는다). */
 const RESCUABLE_PRODUCT_SCORE = 70;
 
 const EXCLUDE_REASON_LABEL: Record<OutlierReason, string> = {
@@ -107,7 +107,7 @@ const VERDICT_BADGE: Record<
   OK: { label: "—", className: "text-slate-500", tone: null },
   TIE: { label: "동가", className: "text-status-caution-text", tone: "caution", hint: "최저가와 ±1% 이내입니다." },
   VIOLATED: { label: "위반", className: "text-status-urgent-text", tone: "urgent", hint: "우리 판매가보다 싼 곳이 있습니다." },
-  REVIEW: { label: "검토", className: "text-status-caution-text", tone: "caution", hint: "상품명 일치율이 낮아 자동 판정을 보류했습니다." },
+  REVIEW: { label: "검토", className: "text-status-caution-text", tone: "caution", hint: "같은 상품인지 확신이 낮아(상품명 일치율이 낮거나 수량을 읽지 못함) 자동 판정을 보류했습니다." },
   NO_DATA: { label: "비교불가", className: "text-slate-500", tone: "neutral", hint: "비교할 수 있는 유효 후보가 없습니다." },
 };
 
@@ -537,13 +537,20 @@ export function MarketPriceMonitor({
                 {labelState.accuracy.causes.map((c, index) => (
                   <span key={c.cause}>
                     {index > 0 && " · "}
-                    <span
-                      tabIndex={c.examples?.length ? 0 : undefined}
-                      title={c.examples?.length ? `예: ${c.examples.join(", ")}` : undefined}
-                      className={c.examples?.length ? "underline decoration-dotted underline-offset-2" : undefined}
-                    >
-                      {c.label} {c.count}건
-                    </span>
+                    {c.examples?.length ? (
+                      // 예시 상품명은 설명창으로 — 마우스·키보드 포커스·터치로 열린다(UI Copy Standard ②).
+                      <StatusDot
+                        tone="neutral"
+                        showDot={false}
+                        label={`${c.label} ${c.count}건`}
+                        hint={`예: ${c.examples.join(", ")}`}
+                        className="text-[11px] font-normal text-slate-500"
+                      />
+                    ) : (
+                      <span>
+                        {c.label} {c.count}건
+                      </span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -750,7 +757,7 @@ export function MarketPriceMonitor({
                         </Button>
                       </div>
                       <p className="mt-1 text-[10px] text-slate-500">
-                        {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다. 표에 「회사 이름 못 찾음」으로 빠진 후보가 같은 회사 제품이면 그 회사 이름을 여기 더하세요.
+                        {item.brandName ? `브랜드명 「${item.brandName}」` : "브랜드명"}이나 이 이름 중 하나가 상품명·판매처에 있으면 같은 회사 제품으로 봅니다. 이 판매 조건의 모든 옵션에 적용됩니다. 표에서 「브랜드·회사 이름 없음」으로 빠진 후보가 같은 회사 제품이면 그 회사 이름을 여기 더하세요.
                       </p>
                     </div>
 
@@ -835,9 +842,6 @@ export function MarketPriceMonitor({
                                       <span className="text-[10px] text-slate-500">
                                         배제: {EXCLUDE_REASON_LABEL[fetchedItem.excludeReason]}
                                       </span>
-                                    )}
-                                    {isRescuable && (
-                                      <span className="text-[10px] text-slate-600">상품은 일치, 회사 이름 못 찾음</span>
                                     )}
                                     {fetchedItem.ownerLabel === "SAME" && (
                                       <span className="text-[10px] font-medium text-slate-700">같은 상품으로 표시함</span>

@@ -11,7 +11,7 @@ import {
   candidateExtraWords,
   productCoreWords,
   productWordHits,
-  stripUrls,
+  compact,
   type BrandAxis,
   type WordHit,
 } from "./match-axes";
@@ -19,7 +19,7 @@ import { MATCH_FLOOR, passesIdentityAxes } from "./outlier";
 import { productAxisScore, type OwnerMatchLabelValue } from "./scoring";
 
 /** 근거 JSON 의 형식 버전 — 필드 구성이 바뀌면 올린다(옛 형식은 집계에서 빠진다). */
-export const MATCH_EVIDENCE_VERSION = 1;
+export const MATCH_EVIDENCE_VERSION = 2;
 
 /**
  * 판정 규칙 버전 — 같은 상품 판정 규칙(축·점수·하한)을 바꿀 때마다 올린다. 표시마다 함께 저장해 규칙
@@ -72,11 +72,6 @@ export function sanitizeSeenJudgment(value: unknown): SeenJudgment | null {
   };
 }
 
-function sameQuery(a: string, b: string): boolean {
-  const norm = (v: string) => stripUrls(v.normalize("NFC").toLowerCase()).replace(/\s+/g, "");
-  return norm(a) === norm(b);
-}
-
 export function buildMatchEvidence(input: {
   searchQuery: string;
   /** 화면이 처음 채운 기본 검색어 — searchQuery 와 다르면 오너가 고친 것이다. */
@@ -97,7 +92,7 @@ export function buildMatchEvidence(input: {
     v: MATCH_EVIDENCE_VERSION,
     rules: MATCH_RULES_VERSION,
     searchQuery,
-    queryEdited: defaultQuery == null ? null : !sameQuery(defaultQuery, searchQuery),
+    queryEdited: defaultQuery == null ? null : compact(defaultQuery) !== compact(searchQuery),
     identities: [...identities],
     brandMatch: brandAxis(candidate, identities),
     brandFoundIn: brandFoundIn(candidate, identities),
