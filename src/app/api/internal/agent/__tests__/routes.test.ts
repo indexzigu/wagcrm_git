@@ -1,19 +1,22 @@
 /**
- * 봇 내부 창구 라우트 2개 — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
+ * 봇 내부 창구 라우트 3개 — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
  * 본체 동작은 `src/lib/agent-internal/__tests__/*` 가 고정한다.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const optionsMock = vi.fn();
 const applyMock = vi.fn();
+const draftMock = vi.fn();
 vi.mock("@/lib/agent-internal/store-product-options", () => ({ getStoreProductOptions: (...a: unknown[]) => optionsMock(...a) }));
 vi.mock("@/lib/agent-internal/apply-product-mappings", () => ({ applyProductMappings: (...a: unknown[]) => applyMock(...a) }));
+vi.mock("@/lib/agent-internal/order-campaign-draft", () => ({ buildOrderCampaignDraft: (...a: unknown[]) => draftMock(...a) }));
 vi.mock("@/lib/order-converter/proxy-usage", () => ({
   withProxySource: (_source: string, handler: (...args: unknown[]) => unknown) => handler,
 }));
 
 const { POST: optionsPost } = await import("../store-product-options/route");
 const { POST: applyPost } = await import("../apply-product-mappings/route");
+const { POST: draftPost } = await import("../order-campaign-draft/route");
 
 const SECRET = "k".repeat(64);
 const original = process.env.AGENT_INTERNAL_API_SECRET;
@@ -30,6 +33,7 @@ beforeEach(() => {
   process.env.AGENT_INTERNAL_API_SECRET = SECRET;
   optionsMock.mockReset();
   applyMock.mockReset();
+  draftMock.mockReset();
 });
 afterEach(() => {
   if (original === undefined) delete process.env.AGENT_INTERNAL_API_SECRET;
@@ -74,5 +78,24 @@ describe("봇 내부 창구 라우트", () => {
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ ok: false, code: "NO_STORE_OPTIONS", message: "m" });
     expect(optionsMock).toHaveBeenCalledWith("c1");
+  });
+
+  it("주문캠페인 초안 창구 — 비밀값 없으면 404, 상품 지목이 0개·2개면 400, 통과하면 본체 결과", async () => {
+    const noSecret = await draftPost(post("/api/internal/agent/order-campaign-draft", { productQuery: "상품" }, {}));
+    const none = await draftPost(post("/api/internal/agent/order-campaign-draft", { sellerName: "s" }));
+    const both = await draftPost(
+      post("/api/internal/agent/order-campaign-draft", { productQuery: "상품", productId: "123" }),
+    );
+    const withMemo = await draftPost(
+      post("/api/internal/agent/order-campaign-draft", { productQuery: "상품", memo: "메모는 실행기가 붙인다" }),
+    );
+    expect([noSecret.status, none.status, both.status, withMemo.status]).toEqual([404, 400, 400, 400]);
+    expect(draftMock).not.toHaveBeenCalled();
+
+    draftMock.mockResolvedValue({ ok: false, code: "PRODUCT_AMBIGUOUS", message: "후보" });
+    const response = await draftPost(post("/api/internal/agent/order-campaign-draft", { productQuery: "상품" }));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ ok: false, code: "PRODUCT_AMBIGUOUS", message: "후보" });
+    expect(draftMock).toHaveBeenCalledWith({ productQuery: "상품" });
   });
 });

@@ -637,6 +637,87 @@ export const addCampaignItemsArgsSchema = addCampaignItemsInputSchema.strict().s
 
 export type AddCampaignItemsArgs = z.infer<typeof addCampaignItemsArgsSchema>;
 
+/**
+ * 주문캠페인(「주문 관리」 캠페인 등록) 새로 만들기 기안(2026-11-13). 오너의 손 작업은 「캠페인 등록 → 스토어 상품
+ * 고르기 → 셀러·거래처 양식 확인 → (스토어 옵션 불러오기) → 저장」이고, 봇은 그 앞부분을 대신해 기안을 올린다.
+ *
+ * 봇 입력은 **무엇을 고를지**뿐이다 — 상품(`productQuery` 상품명 일부 또는 `productId` 상품번호 중 정확히 하나),
+ * 셀러 이름(없으면 상품명 머리 `[셀러 X …]` 에서), 발주 거래처(`orderBrand`, 선택). 상품명·썸네일·기간·옵션 줄 같은
+ * 네이버 값은 봇이 옮겨 적지 않는다: 기안 시점에 작업 실행기가 CRM 앱 봇 내부 창구(`order-campaign-draft`)에 부탁해
+ * 앱이 네이버에서 직접 읽어 저장 args(`createOrderCampaignArgsSchema`)를 만든다 — 봇 작업 실행기는 네이버 열쇠가 없다.
+ * 상품명 일부가 여러 상품에 걸리면 기안을 만들지 않고 후보(이름·번호)를 실패 문구로 돌려준다(봇이 오너에게 묻는다).
+ */
+export const MAX_ORDER_CAMPAIGN_PRODUCT_QUERY_CHARS = 80;
+export const MAX_ORDER_CAMPAIGN_DRAFT_ROWS = 200;
+export const MAX_SAME_PRODUCT_CAMPAIGNS = 10;
+const naverProductNoSchema = z.string().trim().regex(/^[0-9]{1,20}$/);
+
+export const createOrderCampaignRequestSchema = z.object({
+  productQuery: z.string().trim().min(2).max(MAX_ORDER_CAMPAIGN_PRODUCT_QUERY_CHARS).optional(),
+  productId: naverProductNoSchema.optional(),
+  sellerName: z.string().trim().min(1).max(60).optional(),
+  orderBrand: z.string().trim().min(1).max(80).optional(),
+  memo: z.string().trim().min(1).max(500).optional(),
+});
+
+/** 상품 지목은 「상품명 일부」와 「상품번호」 중 정확히 하나. */
+export function refineOrderCampaignProductTarget(
+  value: { productQuery?: string; productId?: string },
+  context: z.RefinementCtx,
+): void {
+  if (Boolean(value.productQuery) === Boolean(value.productId)) {
+    context.addIssue({
+      code: "custom",
+      path: ["productQuery"],
+      message: "상품은 productQuery(상품명 일부)와 productId(스토어 상품번호) 중 정확히 하나로 지목해야 한다.",
+    });
+  }
+}
+
+export const createOrderCampaignRequestArgsSchema = createOrderCampaignRequestSchema
+  .strict()
+  .superRefine(refineOrderCampaignProductTarget);
+
+export type CreateOrderCampaignRequestArgs = z.infer<typeof createOrderCampaignRequestArgsSchema>;
+
+/** 저장 args 의 매핑 줄 — 네이버 등록 옵션 그대로(상품코드는 비어 있다; 코드는 이후 매핑 작업이 채운다). */
+export const orderCampaignDraftMappingRowSchema = z
+  .object({
+    productName: z.string().max(300),
+    optionName: z.string().max(500),
+    price: z.number().int().min(0).max(MAX_MAPPING_PRICE),
+  })
+  .strict();
+
+/**
+ * 저장 args — 기안 초안 창구가 만들고, 결재함 미리보기가 보여 주고, 승인 시점 실행기
+ * (`write-actions/create-order-campaign.ts`)가 그대로 캠페인을 만든다. `sameProductCampaigns` 는 승인자에게 보여 줄
+ * 「같은 상품에 이미 연결된 주문캠페인」(기안 시점 관측값)이고 저장에는 쓰지 않는다.
+ */
+export const createOrderCampaignArgsSchema = z
+  .object({
+    productId: naverProductNoSchema,
+    channelProductNo: naverProductNoSchema,
+    name: z.string().trim().min(1).max(300),
+    sellerName: z.string().trim().min(1).max(60),
+    template: z.string().max(80).nullable(),
+    templateName: z.string().max(120).nullable(),
+    toEmail: z.string().max(320).nullable(),
+    ccEmail: z.string().max(1000).nullable(),
+    thumbnailUrl: z.string().max(2000).nullable(),
+    category: z.string().max(200).nullable(),
+    productStatus: z.string().max(40).nullable(),
+    salePeriod: z.string().max(80).nullable(),
+    mappings: z.array(orderCampaignDraftMappingRowSchema).min(1).max(MAX_ORDER_CAMPAIGN_DRAFT_ROWS),
+    sameProductCampaigns: z
+      .array(z.object({ id: z.string(), name: z.string(), isActive: z.boolean() }).strict())
+      .max(MAX_SAME_PRODUCT_CAMPAIGNS),
+    memo: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+export type CreateOrderCampaignArgs = z.infer<typeof createOrderCampaignArgsSchema>;
+
 export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -731,6 +812,13 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     })
     .strict()
     .superRefine(refineCampaignItems),
+  z
+    .object({
+      action: z.literal("create_order_campaign"),
+      ...createOrderCampaignRequestSchema.shape,
+    })
+    .strict()
+    .superRefine(refineOrderCampaignProductTarget),
 ]);
 
 /**

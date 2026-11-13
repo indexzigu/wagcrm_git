@@ -24,6 +24,7 @@ import { shouldSkipDealPush } from '@/lib/order-converter/sales-push';
 import { orderFulfillmentRepository } from '@/repositories/orderFulfillmentRepository';
 import { resolveOrderBrand } from '@/lib/order-converter/order-brand';
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
+import { buildOrderCampaignCreateData } from '@/lib/order-converter/order-campaign-create';
 import { resolveInvoiceReplyStatus, type InvoiceReplyDetectionLite } from '@/lib/order-converter/invoice-reply-status';
 
 // 파이프라인 지연 경고(임계값 3개 + 경과일 계산)는 `order-work.ts`(classifyOrderWork)가 소유한다 —
@@ -1307,31 +1308,9 @@ export async function fetchAndSyncCampaigns(isForceRefresh: boolean, options: Fe
 export async function POST(req: Request) {
   try {
     const data = await req.json();
+    // 저장 칸 조립은 봇 기안 승인(`write-actions/create-order-campaign.ts`)과 같은 본체를 쓴다.
     const campaign = await prisma.orderCampaign.create({
-      data: {
-        name: data.name,
-        template: data.template || null, // Optional
-        sellerName: data.sellerName,
-        toEmail: data.toEmail || null,
-        ccEmail: data.ccEmail || null,
-        thumbnailUrl: data.thumbnailUrl || null,
-        category: data.category || null,
-        productStatus: data.productStatus || null,
-        salePeriod: data.salePeriod || null,
-        productId: data.productId || null,
-        startDate: data.startDate ? new Date(data.startDate) : null,
-        endDate: data.endDate ? new Date(data.endDate) : null,
-        ...(data.mappings && data.mappings.length > 0 && {
-          mappings: {
-            create: sortProductMappingsByProductName(data.mappings).map((m: any) => ({
-              productName: m.productName || '',
-              optionName: m.optionName || '',
-              brandCode: m.brandCode || '',
-              price: Number(m.price) || 0
-            }))
-          }
-        })
-      },
+      data: buildOrderCampaignCreateData(data),
       include: {
         mappings: true
       }

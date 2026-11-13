@@ -86,7 +86,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
     sellerFindUniqueMock.mockReset();
   });
 
-  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal, update_settlement_amount, update_record, upsert_product_mappings, create_campaign_round, add_campaign_items 10종이 등록되어 있다", () => {
+  it("WRITE_ACTIONS에 add_entity_memo, change_deal_status, confirm_settlement, create_partner, create_deal, update_settlement_amount, update_record, upsert_product_mappings, create_campaign_round, add_campaign_items, create_order_campaign 11종이 등록되어 있다", () => {
     expect(Object.keys(WRITE_ACTIONS).sort()).toEqual(
       [
         "add_entity_memo",
@@ -99,6 +99,7 @@ describe("write-executor — 화이트리스트 디스패치", () => {
         "upsert_product_mappings",
         "create_campaign_round",
         "add_campaign_items",
+        "create_order_campaign",
       ].sort()
     );
   });
