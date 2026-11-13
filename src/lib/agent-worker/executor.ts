@@ -34,6 +34,7 @@ import { updateRecordTool } from "@/lib/agent/tools/update-record";
 import { upsertProductMappingsTool } from "@/lib/agent/tools/upsert-product-mappings";
 import { addCampaignItemsTool } from "@/lib/agent/tools/add-campaign-items";
 import { createOrderCampaignTool } from "@/lib/agent/tools/create-order-campaign";
+import { createSalesCampaignRoundTool } from "@/lib/agent/tools/create-sales-campaign-round";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import {
@@ -68,6 +69,10 @@ import {
   campaignOptionNameKey,
   createOrderCampaignArgsSchema,
   createOrderCampaignRequestArgsSchema,
+  createSalesCampaignRoundArgsSchema,
+  createSalesCampaignRoundRequestArgsSchema,
+  type CreateSalesCampaignRoundArgs,
+  type CreateSalesCampaignRoundRequestArgs,
   sameOrderCampaignName,
   upsertProductMappingsRequestArgsSchema,
   type AddCampaignItemsArgs,
@@ -112,6 +117,7 @@ import {
   AGENT_INTERNAL_PATHS,
   applyProductMappingsResponseSchema,
   orderCampaignDraftResponseSchema,
+  salesCampaignRoundDraftResponseSchema,
   storeProductOptionsResponseSchema,
 } from "@/lib/agent-internal/api-contract";
 import {
@@ -1202,6 +1208,7 @@ const WRITE_INTENT_TOOLS = {
   upsert_product_mappings: upsertProductMappingsTool,
   add_campaign_items: addCampaignItemsTool,
   create_order_campaign: createOrderCampaignTool,
+  create_sales_campaign_round: createSalesCampaignRoundTool,
 } as const;
 
 async function targetExists(entityType: string, entityId: string, client: ProposalTx): Promise<boolean> {
@@ -1408,6 +1415,37 @@ async function draftOrderCampaignArgs(
   return { ok: true, args: stored.data };
 }
 
+/**
+ * 판매캠페인 다음 회차 기안의 저장 args 받아오기 — 주문캠페인과 같은 모양: 트랜잭션 **밖에서** CRM 앱 창구에 부탁하고
+ * (이전 회차 + 스토어 상품 → 새 캠페인 칸), 창구 실패 코드(PRODUCT_AMBIGUOUS·SALE_PERIOD_UNAVAILABLE 등)와 문구를 그대로
+ * 돌려준다 — 봇이 오너에게 후보·날짜를 묻는다. 메모는 여기서 붙인 뒤 저장 스키마로 다시 잰다.
+ */
+async function draftSalesCampaignRoundArgs(
+  request: CreateSalesCampaignRoundRequestArgs,
+  signal: AbortSignal,
+): Promise<{ ok: true; args: CreateSalesCampaignRoundArgs } | { ok: false; outcome: OperationFailure }> {
+  assertNotAborted(signal);
+  const { memo, ...draftRequest } = request;
+  const call = await callAgentInternalApi(
+    AGENT_INTERNAL_PATHS.salesCampaignRoundDraft,
+    draftRequest,
+    salesCampaignRoundDraftResponseSchema,
+    signal,
+  );
+  if (!call.ok) return { ok: false, outcome: failure(call.errorClass, "sales campaign round draft call failed", call.detail) };
+  if (!call.body.ok) {
+    return { ok: false, outcome: failure(call.body.code, "sales campaign round draft refused", call.body.message) };
+  }
+  const stored = createSalesCampaignRoundArgsSchema.safeParse({ ...call.body.data, ...(memo !== undefined ? { memo } : {}) });
+  if (!stored.success) {
+    return {
+      ok: false,
+      outcome: failure("INTERNAL_API_BAD_RESPONSE", "sales campaign round draft failed stored-args validation"),
+    };
+  }
+  return { ok: true, args: stored.data };
+}
+
 async function createActionProposal(
   input: CreateActionProposalInput,
   { signal, origin }: OperationContext,
@@ -1427,13 +1465,17 @@ async function createActionProposal(
   const fillsMainDeal = action === "add_campaign_items";
   // 주문캠페인 기안은 봇 입력이 「무엇을 고를지」뿐이다 — 네이버 값으로 채운 저장 args 를 트랜잭션 밖에서 받아 온다.
   const draftsOrderCampaign = action === "create_order_campaign";
+  // 판매캠페인 회차 기안도 같다 — 이전 회차·스토어 값으로 채운 저장 args 를 트랜잭션 밖에서 받아 온다.
+  const draftsSalesRound = action === "create_sales_campaign_round";
   const requestSchema = snapshotsMappings
     ? upsertProductMappingsRequestArgsSchema
     : fillsMainDeal
       ? addCampaignItemsRequestArgsSchema
       : draftsOrderCampaign
         ? createOrderCampaignRequestArgsSchema
-        : definition.argsSchema;
+        : draftsSalesRound
+          ? createSalesCampaignRoundRequestArgsSchema
+          : definition.argsSchema;
   const parsedArgs = requestSchema.safeParse(args);
   if (!parsedArgs.success) {
     return failure("INVALID_INPUT", "action args failed validation");
@@ -1441,6 +1483,11 @@ async function createActionProposal(
   let preparedArgs: unknown = parsedArgs.data;
   if (draftsOrderCampaign) {
     const drafted = await draftOrderCampaignArgs(parsedArgs.data as CreateOrderCampaignRequestArgs, signal);
+    if (!drafted.ok) return drafted.outcome;
+    preparedArgs = drafted.args;
+  }
+  if (draftsSalesRound) {
+    const drafted = await draftSalesCampaignRoundArgs(parsedArgs.data as CreateSalesCampaignRoundRequestArgs, signal);
     if (!drafted.ok) return drafted.outcome;
     preparedArgs = drafted.args;
   }

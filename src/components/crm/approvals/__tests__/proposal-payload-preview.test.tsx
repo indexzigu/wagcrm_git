@@ -603,3 +603,78 @@ describe("ProposalPayloadPreview — [캘린더수집] 캘린더에서 온 기�
     });
   });
 });
+
+describe("ProposalPayloadPreview — 판매캠페인 회차 등록(create_sales_campaign_round)", () => {
+  const base = {
+    previousCampaignId: "camp-1",
+    previousCampaignName: "샘플딜 - 샘플셀러",
+    dealId: "deal-1",
+    dealName: "샘플딜",
+    sellerId: "seller-1",
+    sellerName: "샘플셀러",
+    salesChannel: "OWN_MALL_NAVER",
+    isManualMargin: true,
+    totalMarginRate: 30,
+    sellerMarginRate: 12,
+    campaignItems: [
+      { dealId: "deal-1", dealName: "샘플딜", feeRate: 30, sellerMarginRate: 12, costPrice: 10_000, sellingPrice: 29_000 },
+      { dealId: "deal-2", dealName: "샘플딜 2개입", feeRate: null, sellerMarginRate: null, costPrice: null, sellingPrice: 55_000 },
+    ],
+    product: {
+      productId: "101",
+      channelProductNo: "201",
+      name: "[샘플셀러 X 샘플브랜드] 비타민 2차",
+      productStatus: "SALE",
+      salePeriod: "2026.12.01 ~ 2026.12.07",
+      source: "INPUT",
+    },
+    baseNaverLink: "https://smartstore.naver.com/ygrd/products/201",
+    startDate: "2026-12-01",
+    endDate: "2026-12-07",
+    dateSource: "STORE",
+    status: "PREPARATION",
+    expectedRoundNumber: 2,
+    expectedCampaignName: "샘플딜 - 샘플셀러 2차",
+    existingRounds: [{ id: "camp-1", name: "샘플딜 - 샘플셀러", startDate: "2026-11-01", endDate: "2026-11-07" }],
+    linkOrderCampaign: { id: "oc-2", name: "비타민 2차 주문" },
+  };
+
+  it("새 캠페인 이름·기간 출처·상태·스토어 상품·마진과 이어받는 품목 전부를 보여준다", () => {
+    const { container } = render(<ProposalPayloadPreview action="create_sales_campaign_round" args={base} />);
+    expect(screen.getByText("샘플딜 - 샘플셀러 2차")).toBeTruthy();
+    expect(screen.getByText("2026-12-01 ~ 2026-12-07(스토어 판매 기간 그대로)")).toBeTruthy();
+    // 기간을 스토어에서 그대로 가져왔으면 스토어 기간 줄을 다시 보이지 않는다.
+    expect(screen.queryByText("2026.12.01 ~ 2026.12.07")).toBeNull();
+    expect(screen.getByText("세팅대기")).toBeTruthy();
+    expect(screen.getByText("[샘플셀러 X 샘플브랜드] 비타민 2차(봇이 지정)")).toBeTruthy();
+    expect(screen.getByText("총 30% · 셀러 12%(수동)")).toBeTruthy();
+    expect(screen.getByText("비타민 2차 주문")).toBeTruthy();
+    expect(screen.getByText("같은 셀러·판매 조건의 기존 회차 1개")).toBeTruthy();
+    const rows = Array.from(container.querySelectorAll("tbody tr")).map((tr) =>
+      Array.from(tr.querySelectorAll("td")).map((td) => td.textContent),
+    );
+    expect(rows).toEqual([
+      ["샘플딜", "29,000원", "30%"],
+      ["샘플딜 2개입", "55,000원", "—"],
+    ]);
+    expect(screen.queryByText(/이전 회차에 연결된 스토어 상품을 그대로/)).toBeNull();
+  });
+
+  it("이전 회차 상품을 그대로 쓴 기안은 출처와 경고 줄을 보여주고, 자동 마진 줄은 숨긴다", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_sales_campaign_round"
+        args={{ ...base, isManualMargin: false, product: { ...base.product, source: "PREVIOUS_ROUND" } }}
+      />,
+    );
+    expect(screen.getByText("[샘플셀러 X 샘플브랜드] 비타민 2차(이전 회차에서 가져옴)")).toBeTruthy();
+    expect(screen.getByText(/이전 회차에 연결된 스토어 상품을 그대로 가져왔습니다/)).toBeTruthy();
+    expect(screen.queryByText("마진")).toBeNull();
+  });
+
+  it("봇이 날짜를 직접 준 기안은 스토어 기간 줄을 대조용으로 남긴다", () => {
+    render(<ProposalPayloadPreview action="create_sales_campaign_round" args={{ ...base, dateSource: "INPUT" }} />);
+    expect(screen.getByText("2026-12-01 ~ 2026-12-07(봇이 직접 입력)")).toBeTruthy();
+    expect(screen.getByText("2026.12.01 ~ 2026.12.07")).toBeTruthy();
+  });
+});

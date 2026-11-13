@@ -13,6 +13,7 @@ import { changeDealStatusAction } from "./change-deal-status";
 import { confirmSettlementAction } from "./confirm-settlement";
 import { createCampaignRoundAction } from "./create-campaign-round";
 import { createOrderCampaignAction } from "./create-order-campaign";
+import { createSalesCampaignRoundAction } from "./create-sales-campaign-round";
 import { createPartnerAction } from "./create-partner";
 import { createDealAction } from "./create-deal";
 import { updateSettlementAmountAction } from "./update-settlement-amount";
@@ -28,7 +29,7 @@ import type { WriteActionDefinition, WriteActionEffectSpec, WriteActionResult } 
  * update_record 를 더했고, 주문캠페인 상품 매핑을 새로 넣거나 고치는 upsert_product_mappings 를 더했고, 구글 캘린더에서 들어온
  * 새 회차를 만드는 create_campaign_round([캘린더수집] — 캘린더 수집만 기안, 봇 도구 아님)를 더했고, 판매캠페인 품목에
  * 하위품목을 덧붙이는 add_campaign_items(T-271)를 더하고, 네이버 상품에 연결된 주문캠페인을 새로 만드는 create_order_campaign 을
- * 더한 11종이다(승인은 언제나 수동, 사람만 — `approval-policy.ts`).
+ * 더하고, 이전 회차와 스토어 상품으로 판매캠페인 다음 회차를 만드는 create_sales_campaign_round 를 더한 12종이다(승인은 언제나 수동, 사람만 — `approval-policy.ts`).
  */
 export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
   add_entity_memo: addEntityMemoAction,
@@ -42,6 +43,7 @@ export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
   create_campaign_round: createCampaignRoundAction,
   add_campaign_items: addCampaignItemsAction,
   create_order_campaign: createOrderCampaignAction,
+  create_sales_campaign_round: createSalesCampaignRoundAction,
 };
 
 export type WriteActionName = keyof typeof WRITE_ACTIONS;

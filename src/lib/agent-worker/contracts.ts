@@ -718,6 +718,141 @@ export const createOrderCampaignArgsSchema = z
 
 export type CreateOrderCampaignArgs = z.infer<typeof createOrderCampaignArgsSchema>;
 
+/**
+ * 판매캠페인 다음 회차 등록 기안(2026-11-14). 오너의 손 작업은 「이전 회차를 보고 → 이번 스토어 상품의 판매 기간을
+ * 확인해 → 같은 판매 조건·셀러로 새 캠페인을 만든다」이고, 봇은 그것을 기안으로 올린다(결재함 승인 전에는 아무것도
+ * 쓰지 않는다).
+ *
+ * 봇 입력은 **무엇을 고를지**뿐이다 — 이전 회차(`previousCampaignId`, `get_campaign_items` 결과의 캠페인 id), 스토어
+ * 상품(`productQuery`/`productId` 중 많아야 하나 — 비우면 이전 회차에 연결된 주문캠페인의 상품), 날짜(`startDate`/
+ * `endDate`, 둘 다 넣거나 둘 다 빼기 — 빼면 스토어 판매 기간). 판매 조건·셀러·채널·마진·하위품목은 이전 회차에서,
+ * 기간·링크는 스토어 상품에서 CRM 앱 봇 내부 창구(`sales-campaign-round-draft`)가 채워 저장 args 를 만든다.
+ * 회차 번호·캠페인 이름은 저장하지 않는다 — 승인 때 `recalculateCampaignRounds` 가 시작일 순서로 붙인다(미리보기 값은
+ * 기안 시점 예상치).
+ */
+const ymdDateSchema = z.string().date();
+export const MAX_SALES_ROUND_CAMPAIGN_ITEMS = 50;
+export const MAX_SALES_ROUND_EXISTING_ROUNDS = 10;
+export const SALES_ROUND_CHANNELS = [
+  "UNSPECIFIED",
+  "OWN_MALL",
+  "OWN_MALL_NAVER",
+  "OWN_MALL_KAKAO",
+  "SELLER_MALL",
+  "BRAND_MALL",
+] as const;
+// 이름 붙은 상수로 둔다 — hermes 미러 테스트가 결과 상태 칸(status 의 enum 배열 리터럴)을 정규식으로 찾으므로 배열 리터럴을 두 번 쓰지 않는다.
+export const SALES_ROUND_STATUSES = ["PREPARATION", "ACTIVE", "CLOSED"] as const;
+
+export const createSalesCampaignRoundRequestSchema = z.object({
+  previousCampaignId: opaqueIdSchema,
+  productQuery: z.string().trim().min(2).max(MAX_ORDER_CAMPAIGN_PRODUCT_QUERY_CHARS).optional(),
+  productId: naverProductNoSchema.optional(),
+  startDate: ymdDateSchema.optional(),
+  endDate: ymdDateSchema.optional(),
+  memo: z.string().trim().min(1).max(500).optional(),
+});
+
+/** 상품 지목은 많아야 하나, 날짜는 둘 다 넣거나 둘 다 빼고, 끝이 시작보다 빠를 수 없다. */
+export function refineSalesCampaignRoundRequest(
+  value: { productQuery?: string; productId?: string; startDate?: string; endDate?: string },
+  context: z.RefinementCtx,
+): void {
+  if (value.productQuery && value.productId) {
+    context.addIssue({
+      code: "custom",
+      path: ["productQuery"],
+      message: "상품은 productQuery(상품명 일부)와 productId(스토어 상품번호) 중 많아야 하나로 지목한다.",
+    });
+  }
+  if (Boolean(value.startDate) !== Boolean(value.endDate)) {
+    context.addIssue({
+      code: "custom",
+      path: ["startDate"],
+      message: "날짜는 startDate 와 endDate 를 둘 다 넣거나 둘 다 뺀다(빼면 스토어 판매 기간을 쓴다).",
+    });
+  } else if (value.startDate && value.endDate && value.endDate < value.startDate) {
+    context.addIssue({ code: "custom", path: ["endDate"], message: "종료일은 시작일보다 빠를 수 없다." });
+  }
+}
+
+export const createSalesCampaignRoundRequestArgsSchema = createSalesCampaignRoundRequestSchema
+  .strict()
+  .superRefine(refineSalesCampaignRoundRequest);
+
+export type CreateSalesCampaignRoundRequestArgs = z.infer<typeof createSalesCampaignRoundRequestArgsSchema>;
+
+/** 이전 회차에서 옮겨 오는 하위품목 한 줄 — 수량·매출은 새 회차라 0 에서 시작한다(저장에 싣지 않는다). */
+const salesRoundCampaignItemSchema = z
+  .object({
+    dealId: opaqueIdSchema,
+    dealName: z.string().max(300),
+    feeRate: z.number().finite().nullable(),
+    sellerMarginRate: z.number().finite().nullable(),
+    costPrice: z.number().finite().nullable(),
+    sellingPrice: z.number().finite().nullable(),
+  })
+  .strict();
+
+/**
+ * 저장 args — 기안 초안 창구가 만들고, 결재함 미리보기가 보여 주고, 승인 시점 실행기
+ * (`write-actions/create-sales-campaign-round.ts`)가 화면 생성과 같은 본체(`createCampaignInTx`)로 캠페인을 만든다.
+ * `previousCampaignName`·`dealName`·`sellerName`·`product`·`expected*`·`existingRounds` 는 승인자에게 보여 줄 기안 시점
+ * 관측값이고 저장에는 쓰지 않는다(이름·회차는 승인 때 다시 계산된다).
+ */
+export const salesCampaignRoundArgsObjectSchema = z
+  .object({
+    previousCampaignId: opaqueIdSchema,
+    previousCampaignName: z.string().max(200).nullable(),
+    dealId: opaqueIdSchema,
+    dealName: z.string().max(300),
+    sellerId: opaqueIdSchema,
+    sellerName: z.string().max(100),
+    salesChannel: z.enum(SALES_ROUND_CHANNELS),
+    isManualMargin: z.boolean(),
+    totalMarginRate: z.number().finite(),
+    sellerMarginRate: z.number().finite(),
+    campaignItems: z.array(salesRoundCampaignItemSchema).max(MAX_SALES_ROUND_CAMPAIGN_ITEMS),
+    product: z
+      .object({
+        productId: naverProductNoSchema,
+        channelProductNo: naverProductNoSchema,
+        name: z.string().max(300),
+        productStatus: z.string().max(40).nullable(),
+        salePeriod: z.string().max(80).nullable(),
+        source: z.enum(["INPUT", "PREVIOUS_ROUND"]),
+      })
+      .strict(),
+    baseNaverLink: z.string().url().max(500),
+    startDate: ymdDateSchema,
+    endDate: ymdDateSchema,
+    dateSource: z.enum(["STORE", "INPUT"]),
+    status: z.enum(SALES_ROUND_STATUSES),
+    expectedRoundNumber: z.number().int().min(1).nullable(),
+    expectedCampaignName: z.string().max(100).nullable(),
+    existingRounds: z
+      .array(
+        z
+          .object({ id: z.string(), name: z.string().max(200).nullable(), startDate: ymdDateSchema, endDate: ymdDateSchema })
+          .strict(),
+      )
+      .max(MAX_SALES_ROUND_EXISTING_ROUNDS),
+    linkOrderCampaign: z.object({ id: opaqueIdSchema, name: z.string().max(300) }).strict().nullable(),
+    memo: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+/** 저장 기간 순서 — 끝이 시작보다 빠를 수 없다(초안 응답 스키마도 같은 판정을 쓴다). */
+export function refineSalesRoundPeriod(value: { startDate: string; endDate: string }, context: z.RefinementCtx): void {
+  if (value.endDate < value.startDate) {
+    context.addIssue({ code: "custom", path: ["endDate"], message: "종료일은 시작일보다 빠를 수 없다." });
+  }
+}
+
+export const createSalesCampaignRoundArgsSchema = salesCampaignRoundArgsObjectSchema.superRefine(refineSalesRoundPeriod);
+
+export type CreateSalesCampaignRoundArgs = z.infer<typeof createSalesCampaignRoundArgsSchema>;
+
 export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -819,6 +954,13 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     })
     .strict()
     .superRefine(refineOrderCampaignProductTarget),
+  z
+    .object({
+      action: z.literal("create_sales_campaign_round"),
+      ...createSalesCampaignRoundRequestSchema.shape,
+    })
+    .strict()
+    .superRefine(refineSalesCampaignRoundRequest),
 ]);
 
 /**

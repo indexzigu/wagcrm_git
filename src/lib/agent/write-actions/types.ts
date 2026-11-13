@@ -21,6 +21,11 @@ export type WriteActionResult = {
    * 그 액션들의 `executionResult` 모양은 그대로다.
    */
   createdCount?: number;
+  /**
+   * 커밋 뒤 판매 딜 자동 연결을 다시 돌릴 주문캠페인 id — 새 판매캠페인 회차(`create_sales_campaign_round`)가 기안 시점에
+   * 본 「같은 상품의 아직 연결 안 된 주문캠페인」. 선택 칸이라 다른 액션의 `executionResult` 모양은 그대로다.
+   */
+  linkOrderCampaignId?: string;
 };
 
 export type WriteActionHandler<TArgs> = (
@@ -53,6 +58,11 @@ export type WriteActionEffectSpec = {
    * 라우트)과 같은 fire-and-forget — `write-action-effects.ts`.
    */
   readonly autoMapOrderCampaignId?: string;
+  /**
+   * 커밋 뒤 구글 드라이브 폴더를 만들 **판매캠페인** id(드라이브가 연결돼 있을 때만) — 화면 생성 경로
+   * (`campaignService.createCampaign`)와 같은 `createCampaignDriveFolder`. 선택 칸이라 기존 액션은 건드리지 않는다.
+   */
+  readonly driveFolderCampaignId?: string;
 };
 
 export type WriteActionDefinition<TArgs = any> = {

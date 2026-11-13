@@ -1,7 +1,7 @@
 /**
  * WRITE 액션 **커밋 이후** 후속 처리 집행기 — 캐시 무효화 + 구글 캘린더 재동기화 + 주문캠페인 판매 딜
- * 자동 연결(`autoMapOrderCampaign`, 명세가 `autoMapOrderCampaignId` 를 줄 때만 · 지금은 새 줄을 만든 상품
- * 매핑 기안뿐). 자동 연결은 캠페인 편집 화면 저장과 같은 전체 재채점이라 기존 줄의 연결도 바꿀 수 있다.
+ * 자동 연결(`autoMapOrderCampaign`, 명세가 `autoMapOrderCampaignId` 를 줄 때만 · 새 줄을 만든 상품
+ * 매핑 기안·주문캠페인 등록·판매캠페인 회차 등록) + 새 판매캠페인 드라이브 폴더(`driveFolderCampaignId`). 자동 연결은 캠페인 편집 화면 저장과 같은 전체 재채점이라 기존 줄의 연결도 바꿀 수 있다.
  *
  * ## 왜 별도 모듈인가
  *
@@ -51,6 +51,15 @@ export function applyWriteActionEffects(action: string, result: WriteActionResul
           autoMapOrderCampaign(orderCampaignId).then(() => fetchAndSyncCampaigns(false))
         )
         .catch(e => console.error("Auto-mapping or sync failed:", e));
+    }
+
+    // 새 판매캠페인의 드라이브 폴더 — 화면 생성과 같은 fire-and-forget(`createCampaignDriveFolder` 가 실패를 로그로 남긴다).
+    // 동적 import 인 이유는 위 자동 연결과 같다(이 액션이 실제로 돌 때만 서비스 모듈을 로드한다).
+    const driveCampaignId = spec.driveFolderCampaignId;
+    if (driveCampaignId) {
+      import("@/services/campaignService")
+        .then(({ createCampaignDriveFolder }) => createCampaignDriveFolder(driveCampaignId))
+        .catch(e => console.error("[drive] 캠페인 폴더 후속 처리 로드 실패:", e));
     }
 
     // 캘린더는 외부 IO 라 `after()` 로 응답 밖으로 뺀다. 실패해도 쓰기를 막지 않는다.

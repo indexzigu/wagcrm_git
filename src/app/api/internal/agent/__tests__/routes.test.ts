@@ -1,5 +1,5 @@
 /**
- * 봇 내부 창구 라우트 3개 — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
+ * 봇 내부 창구 라우트 4개 — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
  * 본체 동작은 `src/lib/agent-internal/__tests__/*` 가 고정한다.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,9 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const optionsMock = vi.fn();
 const applyMock = vi.fn();
 const draftMock = vi.fn();
+const roundDraftMock = vi.fn();
 vi.mock("@/lib/agent-internal/store-product-options", () => ({ getStoreProductOptions: (...a: unknown[]) => optionsMock(...a) }));
 vi.mock("@/lib/agent-internal/apply-product-mappings", () => ({ applyProductMappings: (...a: unknown[]) => applyMock(...a) }));
 vi.mock("@/lib/agent-internal/order-campaign-draft", () => ({ buildOrderCampaignDraft: (...a: unknown[]) => draftMock(...a) }));
+vi.mock("@/lib/agent-internal/sales-campaign-round-draft", () => ({
+  buildSalesCampaignRoundDraft: (...a: unknown[]) => roundDraftMock(...a),
+}));
 vi.mock("@/lib/order-converter/proxy-usage", () => ({
   withProxySource: (_source: string, handler: (...args: unknown[]) => unknown) => handler,
 }));
@@ -17,6 +21,7 @@ vi.mock("@/lib/order-converter/proxy-usage", () => ({
 const { POST: optionsPost } = await import("../store-product-options/route");
 const { POST: applyPost } = await import("../apply-product-mappings/route");
 const { POST: draftPost } = await import("../order-campaign-draft/route");
+const { POST: roundDraftPost } = await import("../sales-campaign-round-draft/route");
 
 const SECRET = "k".repeat(64);
 const original = process.env.AGENT_INTERNAL_API_SECRET;
@@ -34,6 +39,7 @@ beforeEach(() => {
   optionsMock.mockReset();
   applyMock.mockReset();
   draftMock.mockReset();
+  roundDraftMock.mockReset();
 });
 afterEach(() => {
   if (original === undefined) delete process.env.AGENT_INTERNAL_API_SECRET;
@@ -97,5 +103,22 @@ describe("봇 내부 창구 라우트", () => {
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ ok: false, code: "PRODUCT_AMBIGUOUS", message: "후보" });
     expect(draftMock).toHaveBeenCalledWith({ productQuery: "상품" });
+  });
+
+  it("판매캠페인 회차 초안 창구 — 비밀값 없으면 404, 이전 회차 없음·상품 2개·날짜 한쪽·메모는 400, 통과하면 본체 결과", async () => {
+    const path = "/api/internal/agent/sales-campaign-round-draft";
+    const noSecret = await roundDraftPost(post(path, { previousCampaignId: "c1" }, {}));
+    const none = await roundDraftPost(post(path, { productQuery: "상품" }));
+    const both = await roundDraftPost(post(path, { previousCampaignId: "c1", productQuery: "상품", productId: "1" }));
+    const half = await roundDraftPost(post(path, { previousCampaignId: "c1", startDate: "2026-12-01" }));
+    const withMemo = await roundDraftPost(post(path, { previousCampaignId: "c1", memo: "메모는 실행기가 붙인다" }));
+    expect([noSecret.status, none.status, both.status, half.status, withMemo.status]).toEqual([404, 400, 400, 400, 400]);
+    expect(roundDraftMock).not.toHaveBeenCalled();
+
+    roundDraftMock.mockResolvedValue({ ok: false, code: "SALE_PERIOD_UNAVAILABLE", message: "날짜" });
+    const response = await roundDraftPost(post(path, { previousCampaignId: "c1" }));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ ok: false, code: "SALE_PERIOD_UNAVAILABLE", message: "날짜" });
+    expect(roundDraftMock).toHaveBeenCalledWith({ previousCampaignId: "c1" });
   });
 });

@@ -44,7 +44,7 @@ import type {
 } from "@/lib/campaign-update-plan";
 
 // Types matching the parsed inputs from the controller
-interface CreateCampaignInput {
+export interface CreateCampaignInput {
   dealId: string;
   sellerId: string;
   campaignName?: string;
@@ -250,138 +250,9 @@ export const campaignService = {
 
   async createCampaign(input: CreateCampaignInput, authContext: { userId: string; email: string }) {
     const prisma = getPrisma();
-    const [deal, seller] = await Promise.all([
-      prisma.deal.findUnique({ where: { id: input.dealId } }),
-      prisma.seller.findUnique({ where: { id: input.sellerId } }),
-    ]);
-
-    if (!deal || !seller) {
-      throw new Error("Deal or seller not found");
-    }
-
-    const automaticRate = resolveBaseMargin(
-      parseMarginPolicy(deal.baseMarginPolicy),
-      input.salesChannel as SalesChannel,
-    );
-    
-    const selectedRate = input.isManualMargin
-      ? {
-          totalMarginRate: input.totalMarginRate ?? automaticRate.totalMarginRate,
-          sellerMarginRate: input.sellerMarginRate ?? automaticRate.sellerMarginRate,
-        }
-      : automaticRate;
-    const rate = withNet(selectedRate);
-
-    const campaignDealsInput = input.campaignDeals || [{
-      dealId: input.dealId,
-      quantity: 0,
-      actualSales: 0,
-    }];
-
-    let totalActualSales = 0;
-    let totalOrderCount = 0;
-
-    for (const cd of campaignDealsInput) {
-      totalActualSales += cd.actualSales;
-      totalOrderCount += cd.quantity;
-    }
-
-    const createdCampaign = await campaignRepository.createWithDeals(
-      {
-        dealId: input.dealId,
-        sellerId: input.sellerId,
-        campaignName: input.campaignName ?? null,
-        startDate: new Date(input.startDate),
-        endDate: new Date(input.endDate),
-        salesChannel: input.salesChannel,
-        baseNaverLink: input.baseNaverLink,
-        generatedTrackingLink: "pending",
-        actualSales: totalActualSales,
-        quantity: totalOrderCount,
-        totalMarginRate: rate.totalMarginRate,
-        sellerMarginRate: rate.sellerMarginRate,
-        netMarginRate: rate.netMarginRate,
-        status: input.status,
-        isManualMargin: input.isManualMargin,
-        assignedTo: authContext.userId,
-      },
-      campaignDealsInput.map(cd => ({
-        dealId: cd.dealId,
-        quantity: cd.quantity,
-        actualSales: cd.actualSales,
-        feeRate: cd.feeRate ?? null,
-        sellerMarginRate: cd.sellerMarginRate ?? null,
-        costPrice: cd.costPrice ?? null,
-        sellingPrice: cd.sellingPrice ?? null,
-      }))
-    );
-
-    const generatedTrackingLink = buildNaverTrackingLink({
-      baseUrl: input.baseNaverLink,
-      snsType: seller.snsType as SnsType,
-      sellerId: seller.id,
-      campaignId: createdCampaign.id,
-    });
-
-    const updated = await campaignRepository.update(createdCampaign.id, {
-      generatedTrackingLink,
-    });
-
-    await ensureCampaignChecklistForStatus(
-      prisma,
-      updated.id,
-      updated.status as CampaignStatus,
-    );
-
-    await recordCampaignActivity({
-      campaignId: updated.id,
-      action: "CREATED",
-      label: "Campaign created",
-      details: `${updated.status} · ${updated.salesChannel}`,
-      actor: authContext.userId,
-    });
-
-    await prisma.activityLog.create({
-      data: {
-        entityType: "CAMPAIGN",
-        entityId: updated.id,
-        type: "CREATE",
-        fieldName: "assignedTo",
-        newValue: authContext.userId,
-        content: `Campaign created and assigned to ${authContext.email}`,
-        actor: authContext.userId,
-      },
-    });
-
-    // Google Drive integration
-    const driveName = updated.campaignName || `${deal.dealName} - ${seller.name}`;
-    prisma.storageIntegration.findUnique({
-      where: { provider: GOOGLE_DRIVE_PROVIDER },
-    }).then(async (driveIntegration) => {
-      if (driveIntegration?.status === "CONNECTED" && driveIntegration.rootFolderId) {
-        await googleDriveProvider.createFolderForEntity({
-          entityType: "CAMPAIGN",
-          entityId: updated.id,
-          entityName: driveName,
-          section: "PRODUCT_INTRO",
-        });
-      }
-    }).catch(() => undefined);
-
-    // 리뷰 해석 캐시 리셋(오너 데이터 경로 ②): 새 캠페인이 유효한 공구 단축링크를 가져오면,
-    // 해석 실패(FAILED, 7일 TTL)로 잠긴 딜의 캐시만 풀어 다음 collect-reviews 크론이 즉시
-    // 재해석하게 한다. RESOLVED는 유지 — 회차 신설은 잦아서 정상 캐시까지 지우면 실행당
-    // 해석 상한(REVIEW_RESOLVE_MAX_PER_RUN)만 낭비한다(명시 수정은 PATCH 라우트가 무조건 리셋).
-    if (pickShortLink([input.baseNaverLink])) {
-      await prisma.dealStoreLink.deleteMany({ where: { dealId: input.dealId, status: "FAILED" } });
-    }
-
-    // 차수 및 이름 자동 계산 실행
-    await prisma.$transaction(async (tx) => {
-      await recalculateCampaignRounds(input.dealId, input.sellerId, tx);
-    });
-
-    return campaignRepository.findByIdOrThrow(updated.id);
+    const created = await prisma.$transaction((tx) => createCampaignInTx(tx, input, authContext));
+    createCampaignDriveFolder(created.id, input.campaignName);
+    return campaignRepository.findByIdOrThrow(created.id);
   },
 
   /**
@@ -791,3 +662,175 @@ export const campaignService = {
 // bulk 생성 라우트와 공유하기 위해 campaignRounds.ts로 이전됨(advisory lock 포함).
 // 기존 import 경로(../campaignService)를 쓰는 테스트/호출부 호환을 위해 재수출.
 export { recalculateCampaignRounds };
+
+/**
+ * 판매캠페인 새로 만들기의 **DB 본체** — 호출부가 연 트랜잭션 안에서 돈다. 두 입구가 이 함수 하나를 부른다:
+ *  - 화면: `POST /api/campaigns` → `campaignService.createCampaign`(자체 트랜잭션).
+ *  - 봇: 결재함 승인 → `write-actions/create-sales-campaign-round.ts`(기안 EXECUTED 전이와 같은 트랜잭션 — 롤백되면
+ *    캠페인도 함께 사라진다).
+ * ⛔ 생성 규칙(마진 유도·추적 링크·체크리스트·이력·리뷰 캐시 리셋·회차/이름 재계산)을 호출부에 다시 쓰지 말 것.
+ * 외부 IO(구글 드라이브 폴더·캘린더)는 여기 두지 않는다 — 커밋 뒤 호출부가 한다(`createCampaignDriveFolder`).
+ */
+export async function createCampaignInTx(
+  tx: Prisma.TransactionClient,
+  input: CreateCampaignInput,
+  authContext: { userId: string; email?: string | null },
+): Promise<{ id: string; campaignName: string | null; roundNumber: number | null; status: string }> {
+  const [deal, seller] = await Promise.all([
+    tx.deal.findUnique({ where: { id: input.dealId } }),
+    tx.seller.findUnique({ where: { id: input.sellerId } }),
+  ]);
+
+  if (!deal || !seller) {
+    throw new Error("Deal or seller not found");
+  }
+
+  const automaticRate = resolveBaseMargin(
+    parseMarginPolicy(deal.baseMarginPolicy),
+    input.salesChannel as SalesChannel,
+  );
+
+  const selectedRate = input.isManualMargin
+    ? {
+        totalMarginRate: input.totalMarginRate ?? automaticRate.totalMarginRate,
+        sellerMarginRate: input.sellerMarginRate ?? automaticRate.sellerMarginRate,
+      }
+    : automaticRate;
+  const rate = withNet(selectedRate);
+
+  const campaignDealsInput = input.campaignDeals || [{
+    dealId: input.dealId,
+    quantity: 0,
+    actualSales: 0,
+  }];
+
+  let totalActualSales = 0;
+  let totalOrderCount = 0;
+
+  for (const cd of campaignDealsInput) {
+    totalActualSales += cd.actualSales;
+    totalOrderCount += cd.quantity;
+  }
+
+  const createdCampaign = await tx.salesCampaign.create({
+    data: {
+      dealId: input.dealId,
+      sellerId: input.sellerId,
+      campaignName: input.campaignName ?? null,
+      startDate: new Date(input.startDate),
+      endDate: new Date(input.endDate),
+      salesChannel: input.salesChannel,
+      baseNaverLink: input.baseNaverLink,
+      generatedTrackingLink: "pending",
+      actualSales: totalActualSales,
+      quantity: totalOrderCount,
+      totalMarginRate: rate.totalMarginRate,
+      sellerMarginRate: rate.sellerMarginRate,
+      netMarginRate: rate.netMarginRate,
+      status: input.status,
+      isManualMargin: input.isManualMargin,
+      assignedTo: authContext.userId,
+    },
+  });
+
+  for (const cd of campaignDealsInput) {
+    await tx.campaignDeal.create({
+      data: {
+        campaignId: createdCampaign.id,
+        dealId: cd.dealId,
+        quantity: cd.quantity,
+        actualSales: cd.actualSales,
+        feeRate: cd.feeRate ?? null,
+        sellerMarginRate: cd.sellerMarginRate ?? null,
+        costPrice: cd.costPrice ?? null,
+        sellingPrice: cd.sellingPrice ?? null,
+      },
+    });
+  }
+
+  const generatedTrackingLink = buildNaverTrackingLink({
+    baseUrl: input.baseNaverLink,
+    snsType: seller.snsType as SnsType,
+    sellerId: seller.id,
+    campaignId: createdCampaign.id,
+  });
+
+  const updated = await tx.salesCampaign.update({
+    where: { id: createdCampaign.id },
+    data: { generatedTrackingLink },
+    select: { id: true, status: true, salesChannel: true },
+  });
+
+  await ensureCampaignChecklistForStatus(
+    tx,
+    updated.id,
+    updated.status as CampaignStatus,
+  );
+
+  await recordCampaignActivity(
+    {
+      campaignId: updated.id,
+      action: "CREATED",
+      label: "Campaign created",
+      details: `${updated.status} · ${updated.salesChannel}`,
+      actor: authContext.userId,
+    },
+    tx,
+  );
+
+  await tx.activityLog.create({
+    data: {
+      entityType: "CAMPAIGN",
+      entityId: updated.id,
+      type: "CREATE",
+      fieldName: "assignedTo",
+      newValue: authContext.userId,
+      content: `Campaign created and assigned to ${authContext.email || authContext.userId}`,
+      actor: authContext.userId,
+    },
+  });
+
+  // 리뷰 해석 캐시 리셋(오너 데이터 경로 ②): 새 캠페인이 유효한 공구 단축링크를 가져오면,
+  // 해석 실패(FAILED, 7일 TTL)로 잠긴 딜의 캐시만 풀어 다음 collect-reviews 크론이 즉시
+  // 재해석하게 한다. RESOLVED는 유지 — 회차 신설은 잦아서 정상 캐시까지 지우면 실행당
+  // 해석 상한(REVIEW_RESOLVE_MAX_PER_RUN)만 낭비한다(명시 수정은 PATCH 라우트가 무조건 리셋).
+  if (pickShortLink([input.baseNaverLink])) {
+    await tx.dealStoreLink.deleteMany({ where: { dealId: input.dealId, status: "FAILED" } });
+  }
+
+  // 차수 및 이름 자동 계산 실행(같은 트랜잭션 — 딜×셀러 조합 전체 재번호).
+  await recalculateCampaignRounds(input.dealId, input.sellerId, tx);
+
+  const named = await tx.salesCampaign.findUniqueOrThrow({
+    where: { id: updated.id },
+    select: { id: true, campaignName: true, roundNumber: true, status: true },
+  });
+  return named;
+}
+
+/**
+ * 새 캠페인의 구글 드라이브 폴더 — 커밋 **뒤** fire-and-forget(외부 IO). 드라이브가 연결돼 있을 때만 만든다.
+ * 실패는 생성 결과를 바꾸지 않는다(종전 화면 경로와 같다) — 다만 삼키지 않고 로그로 남긴다.
+ */
+// 폴더 이름은 리팩터 전 규칙을 그대로 지킨다: 호출부가 준 캠페인명, 없으면 「딜 - 셀러 실명」.
+// 회차 재계산 뒤의 이름(별칭·N차)을 쓰면 기존 폴더 명명과 달라진다.
+export function createCampaignDriveFolder(campaignId: string, campaignName?: string | null): void {
+  const prisma = getPrisma();
+  Promise.all([
+    prisma.storageIntegration.findUnique({ where: { provider: GOOGLE_DRIVE_PROVIDER } }),
+    prisma.salesCampaign.findUnique({
+      where: { id: campaignId },
+      select: { deal: { select: { dealName: true } }, seller: { select: { name: true } } },
+    }),
+  ])
+    .then(async ([driveIntegration, campaign]) => {
+      if (driveIntegration?.status !== "CONNECTED" || !driveIntegration.rootFolderId || !campaign) return;
+      await googleDriveProvider.createFolderForEntity({
+        entityType: "CAMPAIGN",
+        entityId: campaignId,
+        entityName: campaignName || `${campaign.deal.dealName} - ${campaign.seller.name}`,
+        section: "PRODUCT_INTRO",
+      });
+    })
+    .catch((error) => console.error(`[drive] 캠페인 ${campaignId} 폴더 생성 실패:`, error));
+}
