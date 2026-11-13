@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/sheet";
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
 import { deriveOrderCampaignFieldsFromProduct } from '@/lib/order-converter/order-campaign-create';
+import { brandEmailsFor, toOrderBrandOptions, type OrderBrandOption } from '@/lib/order-converter/order-brand-option';
 
 type CampaignCreateModalProps = {
   selectedProduct: any;
@@ -34,7 +35,7 @@ export default function CampaignCreateModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [loadOptionsError, setLoadOptionsError] = useState<string | null>(null);
-  const [brandOptions, setBrandOptions] = useState<{ slug: string; displayName: string; toEmail: string | null; ccEmail: string | null }[]>([]);
+  const [brandOptions, setBrandOptions] = useState<OrderBrandOption[]>([]);
   const [brandLoadError, setBrandLoadError] = useState(false);
   const [brandsLoaded, setBrandsLoaded] = useState(false);
 
@@ -43,7 +44,7 @@ export default function CampaignCreateModal({
     let cancelled = false;
     fetch('/order-converter/api/brands')
       .then(r => { if (!r.ok) throw new Error('발주 브랜드 목록 조회 실패'); return r.json(); })
-      .then(d => { if (!cancelled && Array.isArray(d.brands)) setBrandOptions(d.brands.map((b: any) => ({ slug: b.slug, displayName: b.displayName, toEmail: b.toEmail ?? null, ccEmail: b.ccEmail ?? null }))); })
+      .then(d => { if (!cancelled && Array.isArray(d.brands)) setBrandOptions(toOrderBrandOptions(d.brands)); })
       .catch(() => { if (!cancelled) setBrandLoadError(true); })
       .finally(() => { if (!cancelled) setBrandsLoaded(true); });
     return () => { cancelled = true; };
@@ -61,9 +62,9 @@ export default function CampaignCreateModal({
   // F4-②: 브랜드 선택 시 거래처의 수신/참조 이메일을 캠페인에 상속(자동 채움).
   const handleBrandChange = (slug: string) => {
     setNewTemplate(slug);
-    const brand = brandOptions.find(b => b.slug === slug);
-    if (brand?.toEmail) setNewToEmail(brand.toEmail);
-    if (brand?.ccEmail) setNewCcEmail(brand.ccEmail);
+    const emails = brandEmailsFor(brandOptions, slug);
+    if (emails.toEmail) setNewToEmail(emails.toEmail);
+    if (emails.ccEmail) setNewCcEmail(emails.ccEmail);
   };
 
   // 코드표 없는 거래처용: 선택한 스토어 상품의 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드.
