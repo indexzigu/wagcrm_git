@@ -119,6 +119,7 @@ describe("처분 선언 표 — 표 자체의 위생", () => {
     const byKey = (k: string) => SELFHOST_ENV_CONTRACT.find((e) => e.envName === k)?.disposition;
     expect(byKey("INSTAGRAM_ACCESS_TOKEN")).toBe("optional");
     expect(byKey("YOUTUBE_API_KEY")).toBe("degrades");
+    expect(byKey("NAVER_PRICE_APIFY_ENABLED")).toBe("degrades");
   });
 });
 
