@@ -135,6 +135,15 @@ describe("MarketPriceMonitor — owner match labels", () => {
     expect(within(row()).queryByText("배제: 브랜드 없음")).toBeNull();
   });
 
+  it("hides suggestions when the unsaved draft is already at the save limit", async () => {
+    mockFetch({ root: "(주)정체몰" });
+    const dialog = await openAndExpand();
+    expect(await within(dialog).findByRole("button", { name: "같은 회사로 볼 이름에 「정체몰」 추가" })).toBeTruthy();
+    const twenty = Array.from({ length: 20 }, (_, i) => `이름${i}`).join(", ");
+    fireEvent.change(within(dialog).getByLabelText("같은 회사로 볼 이름"), { target: { value: twenty } });
+    expect(within(dialog).queryByRole("button", { name: "같은 회사로 볼 이름에 「정체몰」 추가" })).toBeNull();
+  });
+
   it("accepting a suggestion keeps a name the owner typed but has not saved yet", async () => {
     const calls = mockFetch({ root: "(주)정체몰" });
     const dialog = await openAndExpand();

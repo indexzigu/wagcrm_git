@@ -592,10 +592,12 @@ export function MarketPriceMonitor({
             const root = rootOf(item.id);
             const savedAliases = labelState.aliases[root] ?? [];
             const aliasDraft = aliasDrafts[root];
+            // 제안 수락은 입력 중 초안(없으면 저장된 목록)에 더해 저장하므로, 제안도 그 목록 기준으로 낸다
+            // (초안에 이미 상한만큼 있으면 저장이 거절된다 — GPT 리뷰 2026-11-14).
             const aliasSuggestions = suggestBrandAliases({
               brandName: item.brandName,
               companyName: labelState.companies[root] ?? null,
-              aliases: savedAliases,
+              aliases: aliasDraft !== undefined ? parseBrandAliases(aliasDraft) : savedAliases,
               candidates: fetchedItems,
             });
 
