@@ -512,7 +512,7 @@ function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> })
           ["상품", name],
           ["상품번호", asText(args.productId)],
           ["셀러", asText(args.sellerName)],
-          ["거래처 양식", asText(args.templateName) ?? asText(args.template) ?? "없음"],
+          ["거래처 양식", asText(args.templateName) ?? "없음"],
           ["수신 메일", asText(args.toEmail)],
           ["참조 메일", asText(args.ccEmail)],
           ["스토어 기간", asText(args.salePeriod)],

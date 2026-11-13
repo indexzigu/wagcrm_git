@@ -14,17 +14,17 @@ export function describeOrderCampaignProposal(
   args: Pick<CreateOrderCampaignArgs, "name" | "sellerName" | "templateName" | "mappings" | "sameProductCampaigns">,
 ): string {
   const parts = [
-    `주문캠페인 새로 만들기: 「${args.name}」`,
+    `주문캠페인 등록: 「${args.name}」`,
     `셀러 ${args.sellerName}`,
     `거래처 양식 ${args.templateName ?? "없음"}`,
-    `스토어 옵션 ${args.mappings.length}줄`,
+    `옵션 ${args.mappings.length}줄`,
   ];
   if (args.sameProductCampaigns.length > 0) parts.push(`같은 상품 캠페인 ${args.sameProductCampaigns.length}개 있음`);
   return parts.join(" · ");
 }
 
 /**
- * 주문캠페인 새로 만들기의 **기안 의도**만 만든다 — DB 를 읽지도 쓰지도 않는다. 초안(네이버 값)은 작업 실행기가
+ * 주문캠페인 등록의 **기안 의도**만 만든다 — DB 를 읽지도 쓰지도 않는다. 초안(네이버 값)은 작업 실행기가
  * 기안 직전에 CRM 앱 창구에서 받아 이 도구에 넘기고, 생성은 승인 시점에 `write-actions/create-order-campaign.ts` 가 한다.
  * 대상(target)은 null 이다 — 아직 없는 캠페인이고, 주문캠페인은 기안 대상 칸이 가리킬 수 있는 종류 밖이다.
  */

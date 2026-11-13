@@ -55,7 +55,7 @@ async function handleCreateOrderCampaign(
   return {
     refType: "ORDER_CAMPAIGN",
     refId: created.id,
-    summary: `주문캠페인 "${created.name}" 생성(셀러 ${args.sellerName}, 매핑 ${args.mappings.length}줄)`,
+    summary: `주문캠페인 "${created.name}" 등록(셀러 ${args.sellerName}, 옵션 ${args.mappings.length}줄)`,
     createdCount: args.mappings.length,
   };
 }
