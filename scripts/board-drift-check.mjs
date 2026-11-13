@@ -26,6 +26,8 @@
  *   node scripts/board-drift-check.mjs            # 보드 자동 탐색 후 점검
  *   node scripts/board-drift-check.mjs --board <경로>
  *   node scripts/board-drift-check.mjs --json     # 기계 판독용
+ *   node scripts/board-drift-check.mjs --status   # 보드 없이 gh·git·배포 마커만으로 PR 현황
+ *                                                 #   (열림 / 머지·미배포 / 배포 완료). 읽기 전용.
  *
  * 종료코드: 0=드리프트 없음(또는 점검 대상 없음) · 3=드리프트 있음 · 1=실행 오류
  *
@@ -1105,9 +1107,119 @@ function buildFact(item, prInfo, deployBase) {
   };
 }
 
+// ── 상태 조회(--status) ──────────────────────────────────────────────────────
+
+export const PR_STATUS = {
+  OPEN: "OPEN",
+  MERGED_UNDEPLOYED: "MERGED_UNDEPLOYED",
+  DEPLOYED: "DEPLOYED",
+  /** 머지됐지만 배포 여부를 못 정한다(마커 부재 · git 이 모르는 SHA). 미배포로 단정하지 않는다. */
+  MERGED_UNVERIFIED: "MERGED_UNVERIFIED",
+  CLOSED: "CLOSED",
+};
+
+/**
+ * PR 한 건의 현황을 gh·git·배포 마커 사실(`buildFact` 결과)만으로 정한다. 보드 문구는 보지 않는다.
+ * `inProd` 가 `null`(판정 불가)이면 미배포가 아니라 MERGED_UNVERIFIED 다(설계 원칙 2).
+ */
+export function classifyPrStatus(fact) {
+  if (fact.state === "OPEN") return PR_STATUS.OPEN;
+  if (!fact.merged) return PR_STATUS.CLOSED;
+  if (!fact.shaKnown || fact.inProd === null) return PR_STATUS.MERGED_UNVERIFIED;
+  return fact.inProd ? PR_STATUS.DEPLOYED : PR_STATUS.MERGED_UNDEPLOYED;
+}
+
+/**
+ * 보드 항목이 가리키는 PR 이 이미 배포까지 끝났으면 "배포됨 — 확인만 남음" 표시 대상이다.
+ * 반환은 출력용 문자열 배열일 뿐 — 보드를 건드리지 않는다.
+ */
+export function deployedBoardHints(items, statusByPr) {
+  return items
+    .filter((i) => statusByPr.get(i.pr) === PR_STATUS.DEPLOYED)
+    .map((i) => `#${i.pr} ${i.title.slice(0, 60)} — 배포됨 — 확인만 남음`);
+}
+
+function fetchPullRequestsDetailed(slug) {
+  const raw = sh("gh", [
+    "pr", "list", "-R", slug, "--state", "all", "--limit", "200",
+    "--json", "number,title,state,mergeCommit,mergedAt",
+  ]);
+  return JSON.parse(raw).map((pr) => ({
+    number: pr.number,
+    title: pr.title,
+    mergedAt: pr.mergedAt ?? null,
+    info: { state: pr.state, merged: pr.state === "MERGED", sha: pr.mergeCommit?.oid ?? null },
+  }));
+}
+
+function printStatus(deploy, groups, hints, boardPath) {
+  console.log(`📊 PR 현황 — gh·git·배포 마커 조회(읽기 전용, 파일 변경 없음)`);
+  if (deploy.sha) console.log(`   배포 마커: ${deploy.sha.slice(0, 7)}`);
+  else console.log(`   ⚠️ 배포 판정 불가 — ${deploy.reason}`);
+  const section = (title, rows, max) => {
+    console.log(`\n${title} ${rows.length}건`);
+    for (const r of rows.slice(0, max)) console.log(`  #${r.number} ${r.title}`);
+    if (rows.length > max) console.log(`  … 외 ${rows.length - max}건`);
+  };
+  section("🟡 열린 PR", groups[PR_STATUS.OPEN], 30);
+  section("🔵 머지됨·미배포", groups[PR_STATUS.MERGED_UNDEPLOYED], 30);
+  if (groups[PR_STATUS.MERGED_UNVERIFIED].length > 0) {
+    section("❔ 머지됨·배포 판정 불가", groups[PR_STATUS.MERGED_UNVERIFIED], 10);
+  }
+  section("🟢 배포 완료(최근 200건 중, 최신 순)", groups[PR_STATUS.DEPLOYED], 5);
+  if (hints) {
+    console.log(`\n📝 오너 목록(${boardPath})의 줄 중 배포 끝난 PR ${hints.length}건`);
+    for (const h of hints) console.log(`  ${h}`);
+  }
+}
+
+function statusMain(argv) {
+  const asJson = argv.includes("--json");
+  try {
+    sh("git", ["fetch", "origin", "main", "-q"]);
+  } catch (err) {
+    console.error(`⛔ git fetch 실패 — main 이력을 모른 채로는 머지 판정을 못 한다: ${err.message}`);
+    return 1;
+  }
+  const deploy = resolveDeployBase();
+  let prs;
+  try {
+    prs = fetchPullRequestsDetailed(REPO_SLUG);
+  } catch (err) {
+    console.error(`⛔ gh 조회 실패(${REPO_SLUG}): ${err.message}`);
+    return 1;
+  }
+  const groups = Object.fromEntries(Object.values(PR_STATUS).map((k) => [k, []]));
+  const statusByPr = new Map();
+  for (const pr of prs) {
+    const fact = buildFact({ legacy: false, repo: REPO_SLUG }, pr.info, deploy.sha);
+    const status = classifyPrStatus(fact);
+    statusByPr.set(pr.number, status);
+    groups[status].push(pr);
+  }
+  for (const k of Object.keys(groups)) groups[k].sort((a, b) => b.number - a.number);
+
+  const boardIdx = argv.indexOf("--board");
+  const boardPath = resolveBoardPath(boardIdx >= 0 ? argv[boardIdx + 1] : undefined);
+  const hints = existsSync(boardPath)
+    ? deployedBoardHints(
+        parseBoardItems(readFileSync(boardPath, "utf8")).filter((i) => !i.legacy),
+        statusByPr,
+      )
+    : null;
+
+  if (asJson) {
+    console.log(JSON.stringify({ deploy, groups, boardHints: hints }, null, 2));
+  } else {
+    printStatus(deploy, groups, hints, boardPath);
+  }
+  return 0;
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 function main(argv) {
+  if (argv.includes("--status")) return statusMain(argv);
   const asJson = argv.includes("--json");
   const boardIdx = argv.indexOf("--board");
   const boardPath = resolveBoardPath(boardIdx >= 0 ? argv[boardIdx + 1] : undefined);

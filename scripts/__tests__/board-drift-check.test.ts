@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 
 import {
   VERDICT,
+  PR_STATUS,
+  classifyPrStatus,
+  deployedBoardHints,
   DRIFT_VERDICTS,
   boardItemLines,
   classifyItem,
@@ -1314,5 +1317,38 @@ describe("보드 문구 → verdict 왕복 — 구 레포 26건 재현 (G)(H)", 
 
   it("`🔴 PR 오너 머지 대기` → 낡은 마커(2026-07-29 사고 유형은 구 레포에서도 사고다)", () => {
     expect(verdictOf("🔴 PR 오너 머지 대기")).toBe(VERDICT.STALE_MERGE_MARKER);
+  });
+});
+
+describe("--status: 보드 없이 PR 현황 분류", () => {
+  const base = { merged: false, shaKnown: false, inMain: false, inProd: null as boolean | null };
+
+  it("열린 PR 은 OPEN", () => {
+    expect(classifyPrStatus({ ...base, state: "OPEN" })).toBe(PR_STATUS.OPEN);
+  });
+  it("머지 안 하고 닫힌 PR 은 CLOSED", () => {
+    expect(classifyPrStatus({ ...base, state: "CLOSED" })).toBe(PR_STATUS.CLOSED);
+  });
+  it("머지됐고 마커가 조상이 아니면 머지·미배포", () => {
+    const fact = { ...base, state: "MERGED", merged: true, shaKnown: true, inMain: true, inProd: false };
+    expect(classifyPrStatus(fact)).toBe(PR_STATUS.MERGED_UNDEPLOYED);
+  });
+  it("머지됐고 마커의 조상이면 배포 완료", () => {
+    const fact = { ...base, state: "MERGED", merged: true, shaKnown: true, inMain: true, inProd: true };
+    expect(classifyPrStatus(fact)).toBe(PR_STATUS.DEPLOYED);
+  });
+  it("마커 부재(inProd null)·모르는 SHA 는 미배포로 단정하지 않는다", () => {
+    const noMarker = { ...base, state: "MERGED", merged: true, shaKnown: true, inMain: true, inProd: null };
+    const orphan = { ...base, state: "MERGED", merged: true, shaKnown: false, inMain: false, inProd: null };
+    expect(classifyPrStatus(noMarker)).toBe(PR_STATUS.MERGED_UNVERIFIED);
+    expect(classifyPrStatus(orphan)).toBe(PR_STATUS.MERGED_UNVERIFIED);
+  });
+  it("보드 줄이 가리키는 PR 이 배포됐으면 확인만 남음 힌트를 낸다", () => {
+    const items = [
+      { pr: 1, title: "배포된 일" },
+      { pr: 2, title: "열린 일" },
+    ];
+    const hints = deployedBoardHints(items, new Map([[1, PR_STATUS.DEPLOYED], [2, PR_STATUS.OPEN]]));
+    expect(hints).toEqual(["#1 배포된 일 — 배포됨 — 확인만 남음"]);
   });
 });
