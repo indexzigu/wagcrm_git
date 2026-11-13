@@ -1121,11 +1121,13 @@ export const PR_STATUS = {
 /**
  * PR 한 건의 현황을 gh·git·배포 마커 사실(`buildFact` 결과)만으로 정한다. 보드 문구는 보지 않는다.
  * `inProd` 가 `null`(판정 불가)이면 미배포가 아니라 MERGED_UNVERIFIED 다(설계 원칙 2).
+ * 고아 SHA 기준은 `classifyItem` 과 같이 `inMain` 이다 — 히스토리 재작성 전 머지 커밋은 객체가
+ * 로컬에 남아 `shaKnown` 이어도 main 에 없어, 마커의 조상이 아니라는 이유로 거짓 "미배포"가 된다.
  */
 export function classifyPrStatus(fact) {
   if (fact.state === "OPEN") return PR_STATUS.OPEN;
   if (!fact.merged) return PR_STATUS.CLOSED;
-  if (!fact.shaKnown || fact.inProd === null) return PR_STATUS.MERGED_UNVERIFIED;
+  if (!fact.shaKnown || !fact.inMain || fact.inProd === null) return PR_STATUS.MERGED_UNVERIFIED;
   return fact.inProd ? PR_STATUS.DEPLOYED : PR_STATUS.MERGED_UNDEPLOYED;
 }
 
@@ -1139,12 +1141,18 @@ export function deployedBoardHints(items, statusByPr) {
     .map((i) => `#${i.pr} ${i.title.slice(0, 60)} — 배포됨 — 확인만 남음`);
 }
 
+const STATUS_RECENT_LIMIT = 200;
+
 function fetchPullRequestsDetailed(slug) {
-  const raw = sh("gh", [
-    "pr", "list", "-R", slug, "--state", "all", "--limit", "200",
-    "--json", "number,title,state,mergeCommit,mergedAt",
-  ]);
-  return JSON.parse(raw).map((pr) => ({
+  const fields = "number,title,state,mergeCommit,mergedAt";
+  // "--state all" is newest-first and capped, so an old open PR would silently drop out of the
+  // open count. Open PRs are fetched on their own, uncapped in practice; the rest stay recent-only.
+  const recent = JSON.parse(sh("gh", [
+    "pr", "list", "-R", slug, "--state", "all", "--limit", String(STATUS_RECENT_LIMIT), "--json", fields,
+  ]));
+  const open = JSON.parse(sh("gh", ["pr", "list", "-R", slug, "--state", "open", "--limit", "1000", "--json", fields]));
+  const byNumber = new Map([...recent, ...open].map((pr) => [pr.number, pr]));
+  return [...byNumber.values()].map((pr) => ({
     number: pr.number,
     title: pr.title,
     mergedAt: pr.mergedAt ?? null,
@@ -1166,7 +1174,7 @@ function printStatus(deploy, groups, hints, boardPath) {
   if (groups[PR_STATUS.MERGED_UNVERIFIED].length > 0) {
     section("❔ 머지됨·배포 판정 불가", groups[PR_STATUS.MERGED_UNVERIFIED], 10);
   }
-  section("🟢 배포 완료(최근 200건 중, 최신 순)", groups[PR_STATUS.DEPLOYED], 5);
+  section(`🟢 배포 완료(최근 ${STATUS_RECENT_LIMIT}건 중, 최신 순)`, groups[PR_STATUS.DEPLOYED], 5);
   if (hints) {
     console.log(`\n📝 오너 목록(${boardPath})의 줄 중 배포 끝난 PR ${hints.length}건`);
     for (const h of hints) console.log(`  ${h}`);

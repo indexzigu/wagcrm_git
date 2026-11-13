@@ -1343,6 +1343,10 @@ describe("--status: 보드 없이 PR 현황 분류", () => {
     expect(classifyPrStatus(noMarker)).toBe(PR_STATUS.MERGED_UNVERIFIED);
     expect(classifyPrStatus(orphan)).toBe(PR_STATUS.MERGED_UNVERIFIED);
   });
+  it("main 에 없는 머지 커밋(히스토리 재작성 전·다른 베이스)은 미배포로 단정하지 않는다", () => {
+    const rewritten = { ...base, state: "MERGED", merged: true, shaKnown: true, inMain: false, inProd: false };
+    expect(classifyPrStatus(rewritten)).toBe(PR_STATUS.MERGED_UNVERIFIED);
+  });
   it("보드 줄이 가리키는 PR 이 배포됐으면 확인만 남음 힌트를 낸다", () => {
     const items = [
       { pr: 1, title: "배포된 일" },
