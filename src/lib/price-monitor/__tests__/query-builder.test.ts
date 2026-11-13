@@ -394,3 +394,31 @@ describe("buildMonitorWindowWhere (수집 시간창 — 판매기간 ±N일)", (
     expect(where.campaign.endDate).toEqual({ gte: new Date(now.getTime() - 3 * DAY) });
   });
 });
+
+describe("buildSearchQuery — URL 오염 제거 (2026-11-13)", () => {
+  it("검색 키워드에 붙어 든 링크를 검색어에서 지운다", () => {
+    expect(
+      buildSearchQuery({
+        searchKeyword: "비비랩 올리브레몬 듀얼 올레샷https://gift.kakao.com/product/123",
+        brandName: "비비랩",
+        dealName: "올리브레몬 듀얼 올레샷",
+        unitQuantity: 2,
+        unit: "박스",
+      }),
+    ).toBe("비비랩 올리브레몬 듀얼 올레샷 2박스");
+  });
+
+  it("단위나 옵션명에 섞인 링크도 지운다", () => {
+    expect(
+      buildSearchQuery({
+        searchKeyword: null,
+        brandName: "비비랩",
+        dealName: "올리브레몬 듀얼 올레샷",
+        unitQuantity: 2,
+        unit: "박스https://gift.kakao.com/product/123",
+        childDealName: "올리브레몬 듀얼 올레샷 - 2박스 https://gift.kakao.com/product/123",
+        parentDealName: "올리브레몬 듀얼 올레샷",
+      }),
+    ).not.toMatch(/https?:|kakao/);
+  });
+});

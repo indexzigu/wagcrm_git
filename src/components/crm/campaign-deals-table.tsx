@@ -56,6 +56,8 @@ type DealOption = {
   expectedQuantity?: number | null;
   /** AI가 추출한 모델명/모델코드(P3-2, UX1-B) — 자식(하위품목) supplementaryInfo에서 우선 파싱하고, 없으면 메인 딜로 폴백한다. */
   modelName?: string | null;
+  /** 판매 조건 브랜드명(옵션은 부모 것) — 최저가 감시의 브랜드·회사 축 기본 이름. */
+  brandName?: string | null;
 };
 
 function computeSupplyPrice(sellingPrice: number | null | undefined, commissionRate: number | null | undefined) {
@@ -174,6 +176,7 @@ export function CampaignDealsTable({
             unit: data.unit,
             expectedQuantity: mainParsedQuantity,
             modelName: mainModelName,
+            brandName: mainBrandName || null,
           });
 
           // 하위 자식 옵션들 추가
@@ -233,6 +236,7 @@ export function CampaignDealsTable({
                 unit: resolvedUnit,
                 expectedQuantity: parsedQuantity,
                 modelName: childModelName ?? mainModelName,
+                brandName: mainBrandName || null,
               });
             });
           }
@@ -504,6 +508,7 @@ export function CampaignDealsTable({
                     unit: originOpt?.unit,
                     expectedQuantity: originOpt?.expectedQuantity,
                     modelName: originOpt?.modelName,
+                    brandName: originOpt?.brandName,
                   };
                 })}
                 campaignShippingFee={campaign.shippingFee}
