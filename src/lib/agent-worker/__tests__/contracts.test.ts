@@ -906,3 +906,13 @@ describe("create_action_proposal — create_sales_campaign_round (판매캠페�
     expect(createSalesCampaignRoundArgsSchema.safeParse({ ...stored, salesChannel: "TIKTOK" }).success).toBe(false);
   });
 });
+
+describe("판매캠페인 회차 계약의 채널 목록", () => {
+  it("CRM 판매 채널 라벨 표와 같은 값을 같은 순서로 가진다(채널이 늘면 여기서 깨진다)", async () => {
+    const { SALES_ROUND_CHANNELS } = await import("../contracts");
+    const { salesChannelLabels } = await import("@/lib/crm-types");
+    // 워커 계약은 화면 타입 모듈을 import 하지 않는다 — 대신 이 테스트가 두 목록을 묶는다.
+    // 어긋나면 기안 빌더가 모르는 채널을 UNSPECIFIED 로 떨어뜨려 이전 회차 채널이 승인자 모르게 바뀐다.
+    expect([...SALES_ROUND_CHANNELS]).toEqual(Object.keys(salesChannelLabels));
+  });
+});

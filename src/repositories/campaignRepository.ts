@@ -25,28 +25,6 @@ export const campaignRepository = {
     });
   },
 
-  async createWithDeals(
-    campaignData: Prisma.SalesCampaignUncheckedCreateInput,
-    campaignDeals: Omit<Prisma.CampaignDealUncheckedCreateInput, "campaignId">[]
-  ) {
-    return getPrisma().$transaction(async (tx) => {
-      const createdCampaign = await tx.salesCampaign.create({
-        data: campaignData,
-      });
-
-      for (const cd of campaignDeals) {
-        await tx.campaignDeal.create({
-          data: {
-            ...cd,
-            campaignId: createdCampaign.id,
-          },
-        });
-      }
-
-      return createdCampaign;
-    });
-  },
-
   async update(id: string, data: Prisma.SalesCampaignUpdateInput) {
     return getPrisma().salesCampaign.update({
       where: { id },
