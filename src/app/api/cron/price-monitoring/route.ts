@@ -3,7 +3,7 @@ import { describeErrorChain } from "@/lib/cron-error-text";
 import { withSystemTaskStatus } from "@/lib/system-task-status";
 
 // 다른 크론 라우트(enrich-references, collect-instagram 등)와 동일한 상한.
-// 딜당 외부 3소스(네이버/쿠팡/카카오) 순차 조회 + 300ms 지연이라 기본값 의존 금지.
+// 딜당 외부 3소스를 순차 처리하므로 전체 240초 수집 예산과 300초 런타임 상한을 명시한다.
 export const maxDuration = 300;
 import { getPrisma } from "@/lib/prisma";
 import {
@@ -15,6 +15,8 @@ import {
 import { evaluateMarketPrice, type EvaluatedCandidate } from "@/lib/price-monitor/pipeline";
 import { priceMonitorSnapshotRepository } from "@/repositories/priceMonitorSnapshotRepository";
 import { fetchAllMarketPrices } from "@/lib/price-monitor/market-fetch";
+import type { MarketSourceErrors } from "@/lib/price-monitor/source-errors";
+import { createMarketSourceState, type MarketSourceStates } from "@/lib/price-monitor/source-status";
 import { verifyCronAuth } from "@/lib/cron-auth";
 
 // naver-order-sync/route.ts의 verifyCronAuth 패턴을 그대로 복제한다.
@@ -48,6 +50,58 @@ type MonitorTarget = {
   childDealName: string | null;
   parentDealName: string | null;
 };
+
+type SourceAwareMarketFetchResult = Awaited<ReturnType<typeof fetchAllMarketPrices>>;
+
+type ProcessTargetResult = {
+  verdict: string;
+  sourceFailures: number;
+  partial: boolean;
+  unprocessed: boolean;
+  allSourcesFailed: boolean;
+};
+
+const CRON_BUDGET_MS = 240_000;
+const BUDGET_EXPIRED_REASON = "수집 예산이 만료되어 조회하지 못했습니다.";
+
+type MarketFetchOutcome = {
+  result: SourceAwareMarketFetchResult;
+  unprocessed: boolean;
+};
+
+function buildBudgetExpiredResult(checkedAt = new Date().toISOString()): SourceAwareMarketFetchResult {
+  const errors: MarketSourceErrors = {
+    naver: BUDGET_EXPIRED_REASON,
+    coupang: BUDGET_EXPIRED_REASON,
+    kakao: BUDGET_EXPIRED_REASON,
+  };
+  const sources: MarketSourceStates = {
+    naver: createMarketSourceState("error", 0, checkedAt),
+    coupang: createMarketSourceState("error", 0, checkedAt),
+    kakao: createMarketSourceState("error", 0, checkedAt),
+  };
+  return { allItems: [], minItem: null, errors, sources };
+}
+
+function countSourceFailures(
+  errors: Record<string, string | null | undefined> | null | undefined,
+  sources: MarketSourceStates | undefined,
+): number {
+  if (sources) {
+    return Object.values(sources).filter((source) => source.status === "error").length;
+  }
+  return errors ? Object.values(errors).filter((reason) => typeof reason === "string" && reason.trim()).length : 0;
+}
+
+function hasPartialSourceResult(
+  errors: Record<string, string | null | undefined> | null | undefined,
+  sources: MarketSourceStates | undefined,
+): boolean {
+  if (sources) {
+    return Object.values(sources).some((source) => source.status === "error" || source.status === "disabled");
+  }
+  return countSourceFailures(errors, sources) > 0;
+}
 
 /**
  * 판매기간 전후 MONITOR_WINDOW_DAYS일 이내인 캠페인에 연결된 CampaignDeal 중 monitorEnabled인
@@ -144,7 +198,11 @@ function computeOurTotalPrice(target: MonitorTarget): number {
   return target.sellingPrice + (needsShipping ? target.campaignShippingFee! : 0);
 }
 
-async function processTarget(target: MonitorTarget, snapshotDate: string) {
+async function processTarget(
+  target: MonitorTarget,
+  snapshotDate: string,
+  fetchPrices: (query: string) => Promise<MarketFetchOutcome>,
+): Promise<ProcessTargetResult> {
   // expectedQuantity는 자식 자신의 실제 표시명(target.dealName)에서 역추출한다(수량은 자식
   // 이름 자체에 리터럴로 존재). query의 core 폴백 재료는 청사진 §C1-1 규칙대로 부모
   // dealName(target.coreDealName)을 사용한다 — 자식이 아니면 둘은 항상 동일하다.
@@ -161,7 +219,8 @@ async function processTarget(target: MonitorTarget, snapshotDate: string) {
 
   const ourTotalPrice = computeOurTotalPrice(target);
 
-  const { allItems, errors } = await fetchAllMarketPrices(query);
+  const { result: fetched, unprocessed } = await fetchPrices(query);
+  const { allItems, errors, sources } = fetched;
 
   const result = evaluateMarketPrice({
     candidates: allItems,
@@ -182,49 +241,105 @@ async function processTarget(target: MonitorTarget, snapshotDate: string) {
     verdict: result.verdict,
     validCount: result.validCount,
     rawResults: result.allScored as EvaluatedCandidate[],
-    evidence: { sourceErrors: errors, ourTotalPrice, hasSearchKeyword: !!target.searchKeyword },
+    evidence: {
+      sourceErrors: errors,
+      sourceStates: sources,
+      ourTotalPrice,
+      hasSearchKeyword: !!target.searchKeyword,
+    },
   });
 
   // 위반 신호는 별도 알림을 만들지 않는다 — 홈 "최저가 방어" 카드가 이 스냅샷을
   // 직접 읽어 라이브 표시한다(알림센터 해체, 2026-07-24 오너 확정,
   // /api/price-monitoring/overview). 스냅샷 적재가 곧 신호 발행이다.
 
-  return result.verdict;
+  const sourceFailures = countSourceFailures(errors, sources);
+  return {
+    verdict: result.verdict,
+    sourceFailures,
+    partial: hasPartialSourceResult(errors, sources),
+    unprocessed,
+    allSourcesFailed: !Object.values(sources).some((source) => source.status === "ok" || source.status === "empty"),
+  };
 }
 
 async function handler(request: Request) {
+  const deadlineAt = Date.now() + CRON_BUDGET_MS;
   if (!verifyCronAuth(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const snapshotDate = todayDateKey();
-  const summary = { total: 0, OK: 0, TIE: 0, VIOLATED: 0, REVIEW: 0, NO_DATA: 0, failed: 0 };
+  const summary = {
+    total: 0,
+    OK: 0,
+    TIE: 0,
+    VIOLATED: 0,
+    REVIEW: 0,
+    NO_DATA: 0,
+    failed: 0,
+    sourceFailures: 0,
+    partial: 0,
+    unprocessed: 0,
+    collectionFailures: 0,
+  };
 
   try {
     const targets = await fetchMonitorTargets();
     summary.total = targets.length;
+    const fetchCache = new Map<string, Promise<MarketFetchOutcome>>();
+    const fetchPrices = (query: string): Promise<MarketFetchOutcome> => {
+      if (Date.now() >= deadlineAt) {
+        return Promise.resolve({
+          result: buildBudgetExpiredResult(),
+          unprocessed: true,
+        });
+      }
+      const cached = fetchCache.get(query);
+      if (cached) return cached;
+      const request = fetchAllMarketPrices(query, { deadlineAt }).then((result) => ({
+        result,
+        // 수집 중 예산이 만료되면 결과가 일부 저장되더라도 실행은 미완료로 보고한다.
+        unprocessed: Date.now() >= deadlineAt,
+      }));
+      fetchCache.set(query, request);
+      return request;
+    };
 
-    // 순차 지연 배치 처리(Promise.allSettled) — 외부 소스에 대한 동시 과호출 방지.
-    // naver-order-sync 등 기존 cron과 달리 이 작업은 외부 API(네이버/쿠팡/카카오 선물하기)를
-    // 다수 호출하므로 각 딜 처리 사이에 짧은 지연을 둔다.
-    const settled: PromiseSettledResult<string>[] = [];
+    // 순차 배치 처리(Promise.allSettled) — 외부 소스에 대한 동시 과호출 방지.
+    // 동일 query는 fetchCache에서 재사용하고, 전체 예산은 fetchAllMarketPrices에 전달한다.
+    const settled: PromiseSettledResult<ProcessTargetResult>[] = [];
     for (const target of targets) {
-      const outcome = await Promise.allSettled([processTarget(target, snapshotDate)]);
+      const outcome = await Promise.allSettled([processTarget(target, snapshotDate, fetchPrices)]);
       settled.push(outcome[0]);
-      await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
     for (const s of settled) {
       if (s.status === "fulfilled") {
-        summary[s.value as keyof typeof summary] =
-          (summary[s.value as keyof typeof summary] as number) + 1;
+        summary[s.value.verdict as keyof typeof summary] =
+          (summary[s.value.verdict as keyof typeof summary] as number) + 1;
+        summary.sourceFailures += s.value.sourceFailures;
+        if (s.value.partial) summary.partial += 1;
+        if (s.value.unprocessed) summary.unprocessed += 1;
+        if (s.value.allSourcesFailed) summary.collectionFailures += 1;
       } else {
         summary.failed++;
         console.error("[cron/price-monitoring] target 처리 실패:", s.reason);
       }
     }
 
-    return NextResponse.json({ success: true, snapshotDate, summary });
+    const failed = summary.failed > 0 || summary.unprocessed > 0 || summary.collectionFailures > 0;
+    return NextResponse.json({
+      success: !failed,
+      failed,
+      failureReason: failed
+        ? summary.unprocessed > 0
+          ? `예산 만료로 ${summary.unprocessed}건을 처리하지 못했습니다.`
+          : `${summary.failed}건의 대상 처리 실패, ${summary.collectionFailures}건의 전체 소스 조회 실패가 발생했습니다.`
+        : undefined,
+      snapshotDate,
+      summary,
+    });
   } catch (error) {
     console.error("[cron/price-monitoring] Unexpected error:", error);
     return NextResponse.json(

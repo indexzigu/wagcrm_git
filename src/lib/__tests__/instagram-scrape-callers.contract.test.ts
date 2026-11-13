@@ -30,6 +30,7 @@ const ALLOWED_CALLERS = new Set([
   // [셀러분석] Tier0 릴스 조회수 보강(2026-11-08 오너 확정 — 「분석」 버튼 시만 · 월 상한 $2).
   // 호출부 고정은 reel-views-callers.contract.test.ts.
   "src/lib/seller-analysis/apifyReelViews.ts",
+  "src/lib/price-monitor/naver-apify.ts",
   "src/lib/rapidapi-keys.ts", // 키 풀·로테이션 게이트웨이 자신(호스트 리터럴은 없고 URL 에서 파생)
   "src/lib/reference-enrich-proxy.ts", // rapidApiFetch 재사용 + /userinfo(프로필 보강, 쿼터 공유)
   // 셀러 분석 워터폴(Tier0 실패 시 유료 폴백 — 스펙 §12′ 승인 경로)

@@ -1,6 +1,13 @@
 import { sellerDisplayName } from "@/lib/seller-display-name";
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/prisma";
+import { priceMonitorSnapshotRepository } from "@/repositories/priceMonitorSnapshotRepository";
+import {
+  MARKET_SOURCE_LABEL,
+  type MarketSourceChannel,
+  type MarketSourceStatus,
+} from "@/lib/price-monitor/source-errors";
+import type { MarketSourceState, MarketSourceStates } from "@/lib/price-monitor/source-status";
 
 /**
  * 홈 "최저가 방어" 카드 공급 API — 알림센터 해체(2026-07-24 오너 확정)의 대체 표면.
@@ -24,6 +31,161 @@ type OverviewEntry = {
   snapshotDate: string;
 };
 
+type SourceHealthEntry = {
+  status: MarketSourceStatus | "unknown";
+  checkedAt: string | null;
+  itemCount: number;
+  lastSuccessAt: string | null;
+  latestError: string | null;
+};
+
+type SourceHealth = Record<MarketSourceChannel, SourceHealthEntry>;
+
+const SOURCE_CHANNELS = Object.keys(MARKET_SOURCE_LABEL) as MarketSourceChannel[];
+const SOURCE_STATUSES = new Set<MarketSourceStatus>(["ok", "empty", "error", "disabled"]);
+const SOURCE_STATUS_PRIORITY: Record<SourceHealthEntry["status"], number> = {
+  ok: 1,
+  empty: 1,
+  disabled: 2,
+  unknown: 3,
+  error: 4,
+};
+const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const MAX_SOURCE_AGE_MS = (RECENT_WINDOW_DAYS + 1) * 24 * 60 * 60 * 1000;
+
+function createSourceHealth(): SourceHealth {
+  return Object.fromEntries(
+    SOURCE_CHANNELS.map((channel) => [
+      channel,
+      { status: "unknown", checkedAt: null, itemCount: 0, lastSuccessAt: null, latestError: null },
+    ]),
+  ) as SourceHealth;
+}
+
+function parseRecentTime(value: string | null, now = Date.now()): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+  if (parsed > now + MAX_FUTURE_SKEW_MS || parsed < now - MAX_SOURCE_AGE_MS) return null;
+  return parsed;
+}
+
+function isMarketSourceState(value: unknown, now = Date.now()): value is MarketSourceState {
+  if (value == null || typeof value !== "object") return false;
+  const state = value as Record<string, unknown>;
+  return (
+    typeof state.checkedAt === "string" &&
+    parseRecentTime(state.checkedAt, now) !== null &&
+    SOURCE_STATUSES.has(state.status as MarketSourceStatus) &&
+    typeof state.itemCount === "number" &&
+    Number.isFinite(state.itemCount) &&
+    state.itemCount >= 0
+  );
+}
+
+function readSourceStates(value: unknown, now = Date.now()): Partial<MarketSourceStates> {
+  if (value == null || typeof value !== "object") return {};
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    SOURCE_CHANNELS.flatMap((channel) => (isMarketSourceState(record[channel], now) ? [[channel, record[channel]]] : [])),
+  ) as Partial<MarketSourceStates>;
+}
+
+function readSourceErrors(value: unknown): Partial<Record<MarketSourceChannel, string>> {
+  if (value == null || typeof value !== "object") return {};
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    SOURCE_CHANNELS.flatMap((channel) => {
+      const reason = record[channel];
+      return typeof reason === "string" && reason.trim() ? [[channel, reason.trim()]] : [];
+    }),
+  ) as Partial<Record<MarketSourceChannel, string>>;
+}
+
+function timeValue(value: string | null, now = Date.now()): number {
+  return parseRecentTime(value, now) ?? 0;
+}
+
+function buildSourceHealth(
+  latestSnapshots: Array<{ snapshotDate: string; evidence: unknown }>,
+  historySnapshots: Array<{ snapshotDate: string; evidence: unknown }>,
+  now = Date.now(),
+): SourceHealth {
+  const health = createSourceHealth();
+
+  for (const channel of SOURCE_CHANNELS) {
+    const observations = latestSnapshots.map((snapshot) => {
+      const evidence = priceMonitorSnapshotRepository.parseEvidence(snapshot);
+      const states = readSourceStates(evidence?.sourceStates, now);
+      const errors = readSourceErrors(evidence?.sourceErrors);
+      const state = states[channel];
+      const reason = errors[channel] ?? null;
+      const observedAt = timeValue(state?.checkedAt ?? snapshot.snapshotDate, now);
+
+      if (!state) {
+        return {
+          status: "unknown" as const,
+          checkedAt: null,
+          itemCount: 0,
+          latestError: reason,
+          observedAt,
+        };
+      }
+
+      if (reason && state.status !== "disabled") {
+        return {
+          status: "error" as const,
+          checkedAt: state.checkedAt,
+          itemCount: state.itemCount,
+          latestError: reason,
+          observedAt,
+        };
+      }
+
+      return {
+        status: state.status,
+        checkedAt: state.checkedAt,
+        itemCount: state.itemCount,
+        latestError: state.status === "error" ? reason ?? "소스 응답 실패" : null,
+        observedAt,
+      };
+    });
+
+    const current = observations.reduce((best, candidate) => {
+      if (!best) return candidate;
+      const candidatePriority = SOURCE_STATUS_PRIORITY[candidate.status];
+      const bestPriority = SOURCE_STATUS_PRIORITY[best.status];
+      return candidatePriority > bestPriority || (candidatePriority === bestPriority && candidate.observedAt >= best.observedAt)
+        ? candidate
+        : best;
+    }, null as (typeof observations)[number] | null);
+
+    if (current) {
+      health[channel] = {
+        status: current.status,
+        checkedAt: current.checkedAt,
+        itemCount: current.itemCount,
+        lastSuccessAt: null,
+        latestError: current.latestError,
+      };
+    }
+
+    let lastSuccessValue = 0;
+    for (const snapshot of historySnapshots) {
+      const evidence = priceMonitorSnapshotRepository.parseEvidence(snapshot);
+      const state = readSourceStates(evidence?.sourceStates, now)[channel];
+      if (!state || (state.status !== "ok" && state.status !== "empty")) continue;
+      const successValue = parseRecentTime(state.checkedAt, now);
+      if (successValue !== null && successValue >= lastSuccessValue) {
+        lastSuccessValue = successValue;
+        health[channel].lastSuccessAt = state.checkedAt;
+      }
+    }
+  }
+
+  return health;
+}
+
 export async function GET() {
   try {
     const prisma = getPrisma();
@@ -40,6 +202,7 @@ export async function GET() {
         verdict: true,
         ourUnitPrice: true,
         minValidPrice: true,
+        evidence: true,
         deal: { select: { dealName: true } },
       },
     });
@@ -109,12 +272,24 @@ export async function GET() {
       (max, e) => (max === null || e.snapshotDate > max ? e.snapshotDate : max),
       null,
     );
+    const sourceSnapshots = snapshots.map((snapshot) => ({
+      snapshotDate: snapshot.snapshotDate,
+      evidence: snapshot.evidence,
+    }));
+    const sourceHealth = buildSourceHealth(
+      [...latestByTarget.values()].map((snapshot) => ({
+        snapshotDate: snapshot.snapshotDate,
+        evidence: snapshot.evidence,
+      })),
+      sourceSnapshots,
+    );
 
     return NextResponse.json({
       monitoredCount: entries.length,
       latestSnapshotDate,
       counts,
       violations,
+      sourceHealth,
     });
   } catch (error) {
     console.error("[api/price-monitoring/overview] GET error:", error);

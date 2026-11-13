@@ -2,9 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import {
+  MARKET_SOURCE_LABEL,
+  type MarketSourceChannel,
+  type MarketSourceStatus,
+} from "@/lib/price-monitor/source-errors";
 
 /**
  * 최저가 방어 카드 — 알림센터 해체(2026-07-24 오너 확정)의 대체 표면.
@@ -33,7 +38,89 @@ export type PriceOverview = {
     gap: number | null;
     snapshotDate: string;
   }>;
+  sourceHealth?: Partial<Record<MarketSourceChannel, PriceSourceHealth>>;
 };
+
+export type PriceSourceHealth = {
+  status: MarketSourceStatus | "unknown";
+  checkedAt: string | null;
+  itemCount: number;
+  lastSuccessAt: string | null;
+  latestError: string | null;
+};
+
+const SOURCE_CHANNELS = Object.keys(MARKET_SOURCE_LABEL) as MarketSourceChannel[];
+const SOURCE_STATUS_LABEL: Record<MarketSourceStatus | "unknown", string> = {
+  ok: "정상",
+  empty: "결과 없음",
+  error: "실패",
+  disabled: "비활성",
+  unknown: "알 수 없음",
+};
+const SOURCE_STALE_AFTER_MS = 36 * 60 * 60 * 1000;
+const SOURCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
+
+function formatSourceTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function parseSourceTime(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed) || parsed > Date.now() + SOURCE_FUTURE_SKEW_MS) return null;
+  return parsed;
+}
+
+function sourceWarning(sourceHealth: PriceOverview["sourceHealth"]): string | null {
+  if (!sourceHealth || SOURCE_CHANNELS.some((channel) => !sourceHealth[channel])) {
+    return "소스 상태를 알 수 없어 수집이 불완전합니다.";
+  }
+
+  const entries = SOURCE_CHANNELS.map((channel) => ({ channel, state: sourceHealth[channel]! }));
+  const issues = entries.filter(({ state }) => state.status !== "ok" && state.status !== "empty");
+  const freshnessIssues = entries.flatMap<{
+    channel: MarketSourceChannel;
+    kind: "unknown" | "none" | "stale" | "recent";
+    lastSuccessAt: string | null;
+  }>(({ channel, state }) => {
+    const isUnhealthy = state.status !== "ok" && state.status !== "empty";
+    const lastSuccessValue = parseSourceTime(state.lastSuccessAt);
+    if (lastSuccessValue === null) {
+      return [{ channel, kind: state.lastSuccessAt ? ("unknown" as const) : ("none" as const), lastSuccessAt: null }];
+    }
+    if (Date.now() - lastSuccessValue > SOURCE_STALE_AFTER_MS) {
+      return [{ channel, kind: "stale" as const, lastSuccessAt: state.lastSuccessAt }];
+    }
+    return isUnhealthy ? [{ channel, kind: "recent" as const, lastSuccessAt: state.lastSuccessAt }] : [];
+  });
+
+  if (issues.length > 0 || freshnessIssues.length > 0) {
+    const labels = [
+      ...issues.map(({ channel, state }) => `${MARKET_SOURCE_LABEL[channel]}(${SOURCE_STATUS_LABEL[state.status]})`),
+      ...freshnessIssues.filter(({ channel }) => {
+        const status = sourceHealth[channel]!.status;
+        return status === "ok" || status === "empty";
+      }).map(({ channel, kind }) =>
+        `${MARKET_SOURCE_LABEL[channel]}(${kind === "stale" ? "오래됨" : "마지막 성공 시각 확인 필요"})`,
+      ),
+    ].join(" · ");
+    const freshnessNote = freshnessIssues
+      .map(({ channel, kind, lastSuccessAt }) =>
+        kind === "stale" && lastSuccessAt
+          ? `${MARKET_SOURCE_LABEL[channel]} 마지막 성공 ${formatSourceTime(lastSuccessAt)} 이후 오래되어 수집 상태를 확인해야 합니다.`
+          : kind === "recent" && lastSuccessAt
+            ? `${MARKET_SOURCE_LABEL[channel]} 마지막 성공 ${formatSourceTime(lastSuccessAt)} 이후 다시 확인되지 않았습니다.`
+            : kind === "none"
+              ? `${MARKET_SOURCE_LABEL[channel]} 마지막 성공 이력이 없습니다.`
+          : `${MARKET_SOURCE_LABEL[channel]} 마지막 성공 시각을 확인할 수 없습니다.`,
+      )
+      .join(" ");
+    return `${labels} 소스 때문에 수집이 불완전합니다.${freshnessNote ? ` ${freshnessNote}` : ""}`;
+  }
+  return null;
+}
 
 // 판정 분포 범례 — 좋고 나쁨이 있는 축이므로 심각도 토큰만 탄다(P8).
 // 정상은 평상시 상태라 도트까지 무채색이다(오너 결정 2026-10-22 — 늘 켜진 초록은 신호를 잃는다, P8 §2).
@@ -128,39 +215,73 @@ export function PriceDefenseBody({ data, loading, error, refetch }: PriceOvervie
       </div>
     );
   }
+
+  const warning = sourceWarning(data?.sourceHealth);
+  const warningBanner = warning ? (
+    <div
+      role="status"
+      className="flex items-center gap-2 rounded-xl border border-status-caution/25 bg-status-caution-bg px-3 py-2 text-xs text-status-caution-text"
+    >
+      <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+      <span>{warning}</span>
+    </div>
+  ) : null;
+  const hasUnresolvedComparisons = Boolean(data && (data.counts.noData > 0 || data.counts.review > 0));
+  const comparisonNotice = hasUnresolvedComparisons ? (
+    <div className="flex items-center gap-2.5 pt-1 text-xs text-status-caution-text">
+      <span>비교 결과를 모두 확정할 수 없습니다.</span>
+      <span className="text-[11px] text-slate-500">
+        {[
+          data!.counts.noData > 0 ? `비교할 가격이 없는 판매 조건 ${data!.counts.noData}개` : null,
+          data!.counts.review > 0 ? `검토 필요 ${data!.counts.review}개` : null,
+        ].filter(Boolean).join(" · ")}
+      </span>
+    </div>
+  ) : null;
+
   if (data && data.violations.length > 0) {
     return (
-      <ul className="stagger-fade-in">
-        {data.violations.map((v) => (
-          <li key={`${v.dealId}:${v.campaignId ?? ""}`} className="border-b border-slate-100 last:border-b-0">
-            <Link
-              href={v.campaignId ? `/pipeline?peek=${v.campaignId}` : `/deals?selected=${v.dealId}`}
-              className="group flex items-center gap-2.5 py-2 px-1 transition-colors hover:bg-muted/40 rounded-md"
-            >
-              <span className="size-[7px] shrink-0 rounded-full bg-status-urgent" aria-hidden />
-              <span className="min-w-0 truncate text-[13px] font-semibold text-slate-700 group-hover:text-[var(--primary)]">
-                {v.dealName}
-              </span>
-              {v.campaignLabel && <span className="shrink-0 text-[11px] text-muted-foreground">{v.campaignLabel}</span>}
-              <span className="ml-auto shrink-0 text-[12px] font-bold text-status-urgent-text tabular-nums">
-                {v.gap !== null && v.gap > 0 ? `1위보다 ${formatWon(v.gap)} 비쌈` : "최저가 이탈"}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-2">
+        {warningBanner}
+        {comparisonNotice}
+        <ul className="stagger-fade-in">
+          {data.violations.map((v) => (
+            <li key={`${v.dealId}:${v.campaignId ?? ""}`} className="border-b border-slate-100 last:border-b-0">
+              <Link
+                href={v.campaignId ? `/pipeline?peek=${v.campaignId}` : `/deals?selected=${v.dealId}`}
+                className="group flex items-center gap-2.5 py-2 px-1 transition-colors hover:bg-muted/40 rounded-md"
+              >
+                <span className="size-[7px] shrink-0 rounded-full bg-status-urgent" aria-hidden />
+                <span className="min-w-0 truncate text-[13px] font-semibold text-slate-700 group-hover:text-[var(--primary)]">
+                  {v.dealName}
+                </span>
+                {v.campaignLabel && <span className="shrink-0 text-[11px] text-muted-foreground">{v.campaignLabel}</span>}
+                <span className="ml-auto shrink-0 text-[12px] font-bold text-status-urgent-text tabular-nums">
+                  {v.gap !== null && v.gap > 0 ? `1위보다 ${formatWon(v.gap)} 비쌈` : "최저가 이탈"}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
     );
   }
   return (
-    <div className="flex items-center gap-2.5 pt-1 text-xs text-slate-600">
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 text-[12px] font-bold border border-slate-200">
-        ✓
-      </span>
-      모든 판매 조건 최저가 이상 없음
-      <span className="text-[11px] text-slate-500">
-        모니터링 {data?.monitoredCount ?? 0}개 판매 조건
-        {data?.latestSnapshotDate ? ` · ${data.latestSnapshotDate} 스냅샷` : ""}
-      </span>
+    <div className="space-y-2">
+      {warningBanner}
+      {comparisonNotice}
+      {!warning && !hasUnresolvedComparisons && (
+        <div className="flex items-center gap-2.5 pt-1 text-xs text-slate-600">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 text-[12px] font-bold border border-slate-200">
+            ✓
+          </span>
+          모든 판매 조건 최저가 이상 없음
+          <span className="text-[11px] text-slate-500">
+            모니터링 {data?.monitoredCount ?? 0}개 판매 조건
+            {data?.latestSnapshotDate ? ` · ${data.latestSnapshotDate} 스냅샷` : ""}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
