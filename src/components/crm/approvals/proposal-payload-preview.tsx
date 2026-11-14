@@ -508,7 +508,8 @@ function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> })
   if (!name || rows.length === 0) return null;
   const sameProduct = asRecordList(args.sameProductCampaigns);
   const codeSource = asRecord(args.brandCodeSource);
-  const inherited = typeof codeSource?.inheritedRows === "number" ? codeSource.inheritedRows : 0;
+  // 줄 수는 실제 줄에서 센다 — 출처 칸의 숫자와 어긋나도 안내가 틀리지 않게.
+  const inherited = rows.filter((row) => asText(row.brandCode)).length;
   const blankCodes = rows.length - inherited;
   return (
     <>

@@ -844,6 +844,17 @@ describe("create_action_proposal — create_order_campaign (주문캠페인 새�
     expect(createOrderCampaignArgsSchema.safeParse(stored).success).toBe(true);
     expect(createOrderCampaignArgsSchema.safeParse({ ...stored, sellerName: " " }).success).toBe(false);
     expect(createOrderCampaignArgsSchema.safeParse({ ...stored, mappings: [] }).success).toBe(false);
+    // 상품코드 이어받기(2026-11-14) — 옛 기안(칸 없음)은 위에서 통과, 새 칸은 코드가 비면 안 된다.
+    const withCodes = {
+      ...stored,
+      mappings: [{ productName: "샘플 상품", optionName: "구성: 1박스", price: 0, brandCode: "CODE-1" }],
+      brandCodeSource: { kind: "SAME_PRODUCT", orderCampaignId: "oc-prev", orderCampaignName: "지난 회차", inheritedRows: 1 },
+    };
+    expect(createOrderCampaignArgsSchema.safeParse(withCodes).success).toBe(true);
+    expect(createOrderCampaignArgsSchema.safeParse({ ...withCodes, brandCodeSource: null }).success).toBe(true);
+    expect(
+      createOrderCampaignArgsSchema.safeParse({ ...withCodes, mappings: [{ ...withCodes.mappings[0], brandCode: " " }] }).success,
+    ).toBe(false);
     const many = Array.from({ length: 11 }, (_, i) => ({ id: `c${i}`, name: "n", isActive: true }));
     expect(createOrderCampaignArgsSchema.safeParse({ ...stored, sameProductCampaigns: many }).success).toBe(false);
   });

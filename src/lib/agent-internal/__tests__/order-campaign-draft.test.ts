@@ -244,6 +244,23 @@ describe("inheritBrandCodes — 지난 주문캠페인 상품코드 이어받기
     expect(result.source).toEqual({ kind: "SAME_OPTION", orderCampaignId: null, orderCampaignName: null, inheritedRows: 1 });
   });
 
+  it("같은 상품 캠페인의 코드가 공백뿐·상한 초과면 없는 것으로 보고 다른 주문캠페인에서 찾는다", async () => {
+    const d = deps({
+      findLatestCodedCampaign: vi.fn(async () => ({
+        id: "oc-prev",
+        name: "지난 회차 주문",
+        rows: [
+          { optionName: "구성: 1박스", brandCode: "   " },
+          { optionName: "구성: 3박스", brandCode: "X".repeat(33) },
+        ],
+      })),
+      findCodedRowsByOptionNames: vi.fn(async () => [{ optionName: "구성: 1박스", brandCode: "NT001" }]),
+    });
+    const result = await inheritBrandCodes(rows, ["103"], d);
+    expect(result.rows.map((row) => row.brandCode)).toEqual(["NT001", undefined, undefined]);
+    expect(result.source).toMatchObject({ kind: "SAME_OPTION", inheritedRows: 1 });
+  });
+
   it("붙은 줄이 없거나 옵션 없는 상품(빈 옵션명)이면 출처 없음 — 조회도 하지 않는다", async () => {
     const d = deps();
     expect((await inheritBrandCodes(rows, ["103"], d)).source).toBeNull();
@@ -265,7 +282,9 @@ describe("inheritBrandCodes — 지난 주문캠페인 상품코드 이어받기
 
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const fail = deps({ findLatestCodedCampaign: vi.fn(async () => { throw new Error("db down"); }) });
-    expect(await buildOrderCampaignDraft({ productId: "103" }, fail)).toMatchObject({ ok: false, code: "STORE_FETCH_FAILED" });
+    const failed = await buildOrderCampaignDraft({ productId: "103" }, fail);
+    expect(failed).toMatchObject({ ok: false, code: "STORE_FETCH_FAILED" });
+    expect(!failed.ok && failed.message).toContain("상품코드 조회");
     spy.mockRestore();
   });
 });

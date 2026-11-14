@@ -7,6 +7,7 @@ import { deriveOrderCampaignFieldsFromProduct } from "@/lib/order-converter/orde
 import { listOrderBrands, type OrderBrand } from "@/lib/order-converter/order-brand";
 import {
   MAX_ORDER_CAMPAIGN_DRAFT_ROWS,
+  MAX_MAPPING_BRAND_CODE_CHARS,
   MAX_SAME_PRODUCT_CAMPAIGNS,
   normalizeMappingOptionName,
 } from "@/lib/agent-worker/contracts";
@@ -97,12 +98,22 @@ const defaultDeps: OrderCampaignDraftDeps = {
     });
     return campaign ? { id: campaign.id, name: campaign.name, rows: campaign.mappings } : null;
   },
+  // 저장 글자 그대로 비교되는 조회라 NFC·NFD 두 표기를 함께 찾는다(맥 입력 한글은 NFD 로 저장될 수 있다). 옵션명·코드
+  // 짝만 필요하므로 distinct 로 회차 반복을 접고, 상한으로 이력이 길어져도 한 번에 읽는 양을 묶는다.
   findCodedRowsByOptionNames: (optionNames) =>
     getPrisma().productMapping.findMany({
-      where: { optionName: { in: [...optionNames] }, brandCode: { not: "" } },
+      where: {
+        optionName: { in: [...new Set(optionNames.flatMap((name) => [name.normalize("NFC"), name.normalize("NFD")]))] },
+        brandCode: { not: "" },
+      },
       select: { optionName: true, brandCode: true },
+      distinct: ["optionName", "brandCode"],
+      take: MAX_CODED_ROWS_LOOKUP,
     }),
 };
+
+/** 다른 상품에서 찾는 조회 상한 — 기안 줄 상한(200) × 옵션당 코드 여럿을 넉넉히 덮는다. */
+const MAX_CODED_ROWS_LOOKUP = 2000;
 
 /** 옵션명 비교 키 → 코드. 한 키에 코드가 둘 이상이면 그 키는 뺀다(추측하지 않는다). */
 function uniqueCodesByOption(rows: ReadonlyArray<CodedMappingRow>): Map<string, string> {
@@ -110,7 +121,8 @@ function uniqueCodesByOption(rows: ReadonlyArray<CodedMappingRow>): Map<string, 
   for (const row of rows) {
     const key = normalizeMappingOptionName(row.optionName);
     const code = row.brandCode.trim();
-    if (!key || !code) continue;
+    // 공백뿐이거나 계약 상한을 넘는 코드는 쓸 수 없다 — 하나 때문에 기안 전체가 막히지 않게 건너뛴다.
+    if (!key || !code || code.length > MAX_MAPPING_BRAND_CODE_CHARS) continue;
     const set = codes.get(key) ?? new Set<string>();
     set.add(code);
     codes.set(key, set);
@@ -132,9 +144,12 @@ export async function inheritBrandCodes<Row extends { optionName: string }>(
   const optionNames = [...new Set(rows.map((row) => row.optionName).filter((name) => name.trim() !== ""))];
   if (optionNames.length === 0) return { rows: [...rows], source: null };
 
-  const sameProduct = await deps.findLatestCodedCampaign(productNos);
+  // 같은 상품 캠페인에 쓸 수 있는 코드가 하나도 없으면(공백뿐 등) 「없음」으로 보고 ②로 넘어간다.
+  const latest = await deps.findLatestCodedCampaign(productNos);
+  const latestCodes = latest ? uniqueCodesByOption(latest.rows) : new Map<string, string>();
+  const sameProduct = latest && latestCodes.size > 0 ? latest : null;
   const kind = sameProduct ? "SAME_PRODUCT" : "SAME_OPTION";
-  const codes = uniqueCodesByOption(sameProduct ? sameProduct.rows : await deps.findCodedRowsByOptionNames(optionNames));
+  const codes = sameProduct ? latestCodes : uniqueCodesByOption(await deps.findCodedRowsByOptionNames(optionNames));
 
   let inheritedRows = 0;
   const withCodes = rows.map((row) => {
@@ -359,8 +374,13 @@ export async function buildOrderCampaignDraft(
   let sameProductCampaigns: Awaited<ReturnType<OrderCampaignDraftDeps["findCampaignsByProductNos"]>>;
   let inherited: Awaited<ReturnType<typeof inheritBrandCodes<(typeof mappings)[number]>>>;
   try {
-    sameProductCampaigns = await deps.findCampaignsByProductNos(productNos);
     inherited = await inheritBrandCodes(mappings, productNos, deps);
+  } catch (error) {
+    console.error("[agent-internal] order campaign draft brand code lookup failed:", describeError(error));
+    return agentInternalFailure("STORE_FETCH_FAILED", `지난 주문캠페인 상품코드 조회에 실패했습니다: ${describeError(error)}`);
+  }
+  try {
+    sameProductCampaigns = await deps.findCampaignsByProductNos(productNos);
   } catch (error) {
     console.error("[agent-internal] order campaign draft same-product lookup failed:", describeError(error));
     return agentInternalFailure("STORE_FETCH_FAILED", `같은 상품 캠페인 조회에 실패했습니다: ${describeError(error)}`);
