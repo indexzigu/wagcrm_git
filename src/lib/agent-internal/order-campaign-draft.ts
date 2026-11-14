@@ -69,6 +69,12 @@ export type OrderCampaignDraftDeps = {
   findCodedRowsByOptionNames: (optionNames: ReadonlyArray<string>) => Promise<CodedMappingRow[]>;
 };
 
+/**
+ * 다른 상품에서 찾는 조회의 결과 상한 — 기안 줄 상한(200) × 옵션당 코드 여럿을 넉넉히 덮는다. Prisma 는 distinct 를
+ * 앱 메모리에서 처리하므로(nativeDistinct 미사용) DB 가 읽는 행 수가 아니라 돌려받는 짝 수만 묶는다.
+ */
+const MAX_CODED_ROWS_LOOKUP = 2000;
+
 const defaultDeps: OrderCampaignDraftDeps = {
   listProducts: async () => {
     const data = await searchNaverProducts();
@@ -99,7 +105,7 @@ const defaultDeps: OrderCampaignDraftDeps = {
     return campaign ? { id: campaign.id, name: campaign.name, rows: campaign.mappings } : null;
   },
   // 저장 글자 그대로 비교되는 조회라 NFC·NFD 두 표기를 함께 찾는다(맥 입력 한글은 NFD 로 저장될 수 있다). 옵션명·코드
-  // 짝만 필요하므로 distinct 로 회차 반복을 접고, 상한으로 이력이 길어져도 한 번에 읽는 양을 묶는다.
+  // 짝만 필요하므로 distinct 로 회차 반복을 접고, 결과 짝 수에 상한을 둔다(위 상수 주석).
   findCodedRowsByOptionNames: (optionNames) =>
     getPrisma().productMapping.findMany({
       where: {
@@ -112,8 +118,6 @@ const defaultDeps: OrderCampaignDraftDeps = {
     }),
 };
 
-/** 다른 상품에서 찾는 조회 상한 — 기안 줄 상한(200) × 옵션당 코드 여럿을 넉넉히 덮는다. */
-const MAX_CODED_ROWS_LOOKUP = 2000;
 
 /** 옵션명 비교 키 → 코드. 한 키에 코드가 둘 이상이면 그 키는 뺀다(추측하지 않는다). */
 function uniqueCodesByOption(rows: ReadonlyArray<CodedMappingRow>): Map<string, string> {
