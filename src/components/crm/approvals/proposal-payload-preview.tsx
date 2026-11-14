@@ -499,12 +499,18 @@ function AddCampaignItemsPreview({
  * 매핑 줄(네이버 등록 옵션 그대로). 판단 가치 1순위는 **같은 상품에 이미 캠페인이 있는가**다 — 회차마다 새로 만드는 것이
  * 표준이라 막지는 않지만, 봇이 같은 요청을 두 번 올렸거나 지난 회차를 착각했으면 여기서 걸러야 한다. 그래서 그 줄을
  * 승인 버튼에 가까운 맨 아래가 아니라 상품 정보 바로 아래에 둔다. 옵션 줄은 접지 않는다(머리 주석).
+ * 상품코드는 지난 주문캠페인에서 이어받은 줄에만 있다 — 출처가 같은 상품이 아니면(옵션명만 같음) 다른 상품의 코드일 수
+ * 있어 확인을 부르는 경고로 보인다. 빈 줄은 「—」(빈 값)이고 승인 뒤 매핑 작업으로 채운다.
  */
 function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> }) {
   const rows = asRecordList(args.mappings);
   const name = asText(args.name);
   if (!name || rows.length === 0) return null;
   const sameProduct = asRecordList(args.sameProductCampaigns);
+  const codeSource = asRecord(args.brandCodeSource);
+  // 줄 수는 실제 줄에서 센다 — 출처 칸의 숫자와 어긋나도 안내가 틀리지 않게.
+  const inherited = rows.filter((row) => asText(row.brandCode)).length;
+  const blankCodes = rows.length - inherited;
   return (
     <>
       <Rows
@@ -535,8 +541,20 @@ function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> })
           </ul>
         </div>
       )}
+      {codeSource?.kind === "SAME_PRODUCT" ? (
+        <p className="text-foreground">
+          상품코드 {inherited}줄은 같은 상품의 지난 주문캠페인 「{asText(codeSource.orderCampaignName) ?? "이름없음"}」에서 옵션이
+          같은 줄의 코드를 가져왔습니다.
+        </p>
+      ) : codeSource?.kind === "SAME_OPTION" ? (
+        <CautionLine>
+          상품코드 {inherited}줄은 같은 상품의 지난 주문캠페인이 없어, 다른 주문캠페인에서 옵션 이름이 같은 줄의 코드를
+          가져왔습니다. 이번 거래처 코드와 맞는지 확인해 주세요.
+        </CautionLine>
+      ) : null}
       <p className="text-muted-foreground">
-        승인하면 주문 관리에 캠페인이 생기고 판매 조건 자동 연결과 주문 동기화가 돕니다. 상품코드는 비어 있습니다.
+        승인하면 주문 관리에 캠페인이 생기고 판매 조건 자동 연결과 주문 동기화가 돕니다.
+        {blankCodes > 0 ? ` 상품코드가 빈 ${blankCodes}줄은 승인 뒤 상품 매핑에서 채워 주세요.` : ""}
       </p>
       <div className="max-h-64 overflow-x-auto overflow-y-auto">
         <table className="w-full border-collapse text-left tabular-nums">
@@ -544,6 +562,7 @@ function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> })
             <tr className="text-muted-foreground">
               <th className="py-1 pr-3 font-normal">옵션명</th>
               <th className="py-1 pr-3 font-normal">상품명</th>
+              <th className="py-1 pr-3 font-normal">상품코드</th>
               <th className="py-1 font-normal">가격</th>
             </tr>
           </thead>
@@ -552,6 +571,7 @@ function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> })
               <tr key={index} className="align-top text-foreground">
                 <td className="py-1 pr-3 break-words">{asText(row.optionName) ?? "—"}</td>
                 <td className="py-1 pr-3 break-words">{asText(row.productName) ?? "—"}</td>
+                <td className="py-1 pr-3 break-words">{asText(row.brandCode) ?? "—"}</td>
                 <td className="py-1 break-words">{asMoney(row.price) ?? "—"}</td>
               </tr>
             ))}

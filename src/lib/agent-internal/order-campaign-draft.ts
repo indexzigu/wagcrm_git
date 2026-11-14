@@ -7,7 +7,9 @@ import { deriveOrderCampaignFieldsFromProduct } from "@/lib/order-converter/orde
 import { listOrderBrands, type OrderBrand } from "@/lib/order-converter/order-brand";
 import {
   MAX_ORDER_CAMPAIGN_DRAFT_ROWS,
+  MAX_MAPPING_BRAND_CODE_CHARS,
   MAX_SAME_PRODUCT_CAMPAIGNS,
+  normalizeMappingOptionName,
 } from "@/lib/agent-worker/contracts";
 import {
   agentInternalFailure,
@@ -28,11 +30,29 @@ import {
  * 상품 목록 0~1건(60초 안에 화면이 이미 불렀으면 0) + 채널상품 상세 1건. 후보가 여럿이거나 없으면 상세를 부르지 않아
  * 0~1건이다.
  *
+ * ## 상품코드 이어받기(2026-11-14)
+ * 상품코드는 거래처 코드표에서 오므로 네이버에 없다. 같은 상품을 회차마다 다시 파는 일이 흔해, 지난 주문캠페인에서
+ * **옵션명이 같은 줄**의 코드를 가져온다(`inheritBrandCodes`). 출처는 하나만 쓴다:
+ *  ① 같은 스토어 상품(상품번호)의 지난 주문캠페인 중 코드가 있는 가장 최근 것.
+ *  ② ①이 없을 때만 — 과거 전체 매핑에서 같은 옵션명에 코드가 **하나로 정해진** 줄. 같은 옵션명이라도 다른 스토어
+ *     상품에서 코드가 달랐던 실례가 있어(운영 실측) 갈리면 비운다. 결재함에 출처 종류를 따로 보인다.
+ * 가격은 가져오지 않는다(언제나 스토어 값). 모두 DB 조회라 Fixie 요청은 늘지 않는다.
+ *
  * ⛔ 상품명 일부가 여러 상품에 걸리면 **고르지 않는다** — 후보 이름·번호를 돌려줘 오너가 고르게 한다(봇이 사람
  *    확인 없이 쓰므로 `findCampaignChannelProduct` 와 같이 추측하지 않는다). 상품명이 질의와 정확히 같은 후보가
  *    하나뿐일 때만 그 하나를 고른다.
  */
 export type SameProductCampaign = { id: string; name: string; isActive: boolean };
+
+/** 코드가 있는 지난 매핑 줄. */
+export type CodedMappingRow = { optionName: string; brandCode: string };
+
+export type BrandCodeSource = {
+  kind: "SAME_PRODUCT" | "SAME_OPTION";
+  orderCampaignId: string | null;
+  orderCampaignName: string | null;
+  inheritedRows: number;
+};
 
 export type OrderCampaignDraftDeps = {
   /** 상품 목록 원소 배열(`searchNaverProducts().contents`). */
@@ -41,7 +61,19 @@ export type OrderCampaignDraftDeps = {
   fetchChannelProduct: (channelProductNo: string) => Promise<unknown>;
   listOrderBrands: () => Promise<ReadonlyArray<Pick<OrderBrand, "slug" | "displayName" | "toEmail" | "ccEmail">>>;
   findCampaignsByProductNos: (productNos: ReadonlyArray<string>) => Promise<SameProductCampaign[]>;
+  /** 같은 상품번호의 주문캠페인 중 코드 있는 줄이 있는 가장 최근 것과 그 코드 줄. */
+  findLatestCodedCampaign: (
+    productNos: ReadonlyArray<string>,
+  ) => Promise<{ id: string; name: string; rows: CodedMappingRow[] } | null>;
+  /** 이 옵션명(저장 글자 그대로)들의 코드 있는 매핑 줄 — 모든 주문캠페인에서. */
+  findCodedRowsByOptionNames: (optionNames: ReadonlyArray<string>) => Promise<CodedMappingRow[]>;
 };
+
+/**
+ * 다른 상품에서 찾는 조회의 결과 상한 — 기안 줄 상한(200) × 옵션당 코드 여럿을 넉넉히 덮는다. Prisma 는 distinct 를
+ * 앱 메모리에서 처리하므로(nativeDistinct 미사용) DB 가 읽는 행 수가 아니라 돌려받는 짝 수만 묶는다.
+ */
+const MAX_CODED_ROWS_LOOKUP = 2000;
 
 const defaultDeps: OrderCampaignDraftDeps = {
   listProducts: async () => {
@@ -60,7 +92,87 @@ const defaultDeps: OrderCampaignDraftDeps = {
       orderBy: { createdAt: "desc" },
       take: MAX_SAME_PRODUCT_CAMPAIGNS,
     }),
+  findLatestCodedCampaign: async (productNos) => {
+    const campaign = await getPrisma().orderCampaign.findFirst({
+      where: { productId: { in: [...productNos] }, mappings: { some: { brandCode: { not: "" } } } },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        mappings: { where: { brandCode: { not: "" } }, select: { optionName: true, brandCode: true } },
+      },
+    });
+    return campaign ? { id: campaign.id, name: campaign.name, rows: campaign.mappings } : null;
+  },
+  // 저장 글자 그대로 비교되는 조회라 NFC·NFD 두 표기를 함께 찾는다(맥 입력 한글은 NFD 로 저장될 수 있다). 옵션명·코드
+  // 짝만 필요하므로 distinct 로 회차 반복을 접고, 결과 짝 수에 상한을 둔다(위 상수 주석).
+  findCodedRowsByOptionNames: (optionNames) =>
+    getPrisma().productMapping.findMany({
+      where: {
+        optionName: { in: [...new Set(optionNames.flatMap((name) => [name.normalize("NFC"), name.normalize("NFD")]))] },
+        brandCode: { not: "" },
+      },
+      select: { optionName: true, brandCode: true },
+      distinct: ["optionName", "brandCode"],
+      take: MAX_CODED_ROWS_LOOKUP,
+    }),
 };
+
+
+/** 옵션명 비교 키 → 코드. 한 키에 코드가 둘 이상이면 그 키는 뺀다(추측하지 않는다). */
+function uniqueCodesByOption(rows: ReadonlyArray<CodedMappingRow>): Map<string, string> {
+  const codes = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const key = normalizeMappingOptionName(row.optionName);
+    const code = row.brandCode.trim();
+    // 공백뿐이거나 계약 상한을 넘는 코드는 쓸 수 없다 — 하나 때문에 기안 전체가 막히지 않게 건너뛴다.
+    if (!key || !code || code.length > MAX_MAPPING_BRAND_CODE_CHARS) continue;
+    const set = codes.get(key) ?? new Set<string>();
+    set.add(code);
+    codes.set(key, set);
+  }
+  const unique = new Map<string, string>();
+  for (const [key, set] of codes) if (set.size === 1) unique.set(key, [...set][0]);
+  return unique;
+}
+
+/**
+ * 지난 매핑에서 옵션명이 같은 줄의 상품코드를 붙인다 — 머리 주석의 ①→② 순서. 옵션명이 빈 줄(옵션 없는 상품)은
+ * 이어받지 않는다. 붙은 줄이 없으면 출처 null.
+ */
+export async function inheritBrandCodes<Row extends { optionName: string }>(
+  rows: ReadonlyArray<Row>,
+  productNos: ReadonlyArray<string>,
+  deps: Pick<OrderCampaignDraftDeps, "findLatestCodedCampaign" | "findCodedRowsByOptionNames">,
+): Promise<{ rows: Array<Row & { brandCode?: string }>; source: BrandCodeSource | null }> {
+  const optionNames = [...new Set(rows.map((row) => row.optionName).filter((name) => name.trim() !== ""))];
+  if (optionNames.length === 0) return { rows: [...rows], source: null };
+
+  // 같은 상품 캠페인에 쓸 수 있는 코드가 하나도 없으면(공백뿐 등) 「없음」으로 보고 ②로 넘어간다.
+  const latest = await deps.findLatestCodedCampaign(productNos);
+  const latestCodes = latest ? uniqueCodesByOption(latest.rows) : new Map<string, string>();
+  const sameProduct = latest && latestCodes.size > 0 ? latest : null;
+  const kind = sameProduct ? "SAME_PRODUCT" : "SAME_OPTION";
+  const codes = sameProduct ? latestCodes : uniqueCodesByOption(await deps.findCodedRowsByOptionNames(optionNames));
+
+  let inheritedRows = 0;
+  const withCodes = rows.map((row) => {
+    const code = row.optionName.trim() === "" ? undefined : codes.get(normalizeMappingOptionName(row.optionName));
+    if (code === undefined) return { ...row };
+    inheritedRows += 1;
+    return { ...row, brandCode: code };
+  });
+  if (inheritedRows === 0) return { rows: withCodes, source: null };
+  return {
+    rows: withCodes,
+    source: {
+      kind,
+      orderCampaignId: sameProduct?.id ?? null,
+      orderCampaignName: sameProduct?.name ?? null,
+      inheritedRows,
+    },
+  };
+}
 
 /** 후보 안내 문구에 싣는 후보 수와 이름 길이 — 실패 문구 상한(300자) 안에 들어가게 한다. */
 const MAX_LISTED_CANDIDATES = 4;
@@ -264,6 +376,13 @@ export async function buildOrderCampaignDraft(
 
   const productNos = [...new Set([candidate.productId, candidate.channelProductNo])];
   let sameProductCampaigns: Awaited<ReturnType<OrderCampaignDraftDeps["findCampaignsByProductNos"]>>;
+  let inherited: Awaited<ReturnType<typeof inheritBrandCodes<(typeof mappings)[number]>>>;
+  try {
+    inherited = await inheritBrandCodes(mappings, productNos, deps);
+  } catch (error) {
+    console.error("[agent-internal] order campaign draft brand code lookup failed:", describeError(error));
+    return agentInternalFailure("STORE_FETCH_FAILED", `지난 주문캠페인 상품코드 조회에 실패했습니다: ${describeError(error)}`);
+  }
   try {
     sameProductCampaigns = await deps.findCampaignsByProductNos(productNos);
   } catch (error) {
@@ -284,8 +403,9 @@ export async function buildOrderCampaignDraft(
     category: fields.category || null,
     productStatus: fields.productStatus || null,
     salePeriod: fields.salePeriod || null,
-    mappings,
+    mappings: inherited.rows,
     sameProductCampaigns,
+    brandCodeSource: inherited.source,
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

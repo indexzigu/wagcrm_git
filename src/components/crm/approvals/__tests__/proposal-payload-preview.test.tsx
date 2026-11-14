@@ -584,10 +584,44 @@ describe("ProposalPayloadPreview — [캘린더수집] 캘린더에서 온 기�
         Array.from(tr.querySelectorAll("td")).map((td) => td.textContent),
       );
       expect(rows).toEqual([
-        ["구성: 1박스", "유산균", "30,000원"],
-        ["추가: 쇼핑백", "—", "1,000원"],
+        ["구성: 1박스", "유산균", "—", "30,000원"],
+        ["추가: 쇼핑백", "—", "—", "1,000원"],
       ]);
       expect(screen.queryByText(/같은 상품에 이미 있는/)).toBeNull();
+      expect(screen.getByText(/상품코드가 빈 2줄은 승인 뒤 상품 매핑에서 채워 주세요/)).toBeTruthy();
+      expect(screen.queryByText(/코드를 가져왔습니다/)).toBeNull();
+    });
+
+    it("같은 상품의 지난 주문캠페인에서 이어받은 코드는 칸에 보이고 출처를 한 줄로", () => {
+      const { container } = render(
+        <ProposalPayloadPreview
+          action="create_order_campaign"
+          args={{
+            ...base,
+            mappings: [{ ...base.mappings[0], brandCode: "NT001" }, base.mappings[1]],
+            brandCodeSource: { kind: "SAME_PRODUCT", orderCampaignId: "oc-prev", orderCampaignName: "지난 회차 주문", inheritedRows: 1 },
+          }}
+        />,
+      );
+      expect(container.querySelector("tbody tr td:nth-child(3)")?.textContent).toBe("NT001");
+      expect(screen.getByText(/상품코드 1줄은 같은 상품의 지난 주문캠페인 「지난 회차 주문」에서/)).toBeTruthy();
+      expect(screen.getByText(/상품코드가 빈 1줄은/)).toBeTruthy();
+      expect(screen.queryByText(/거래처 코드와 맞는지 확인/)).toBeNull();
+    });
+
+    it("다른 주문캠페인의 같은 옵션에서 가져왔으면 확인 경고", () => {
+      render(
+        <ProposalPayloadPreview
+          action="create_order_campaign"
+          args={{
+            ...base,
+            mappings: [{ ...base.mappings[0], brandCode: "NT001" }, { ...base.mappings[1], brandCode: "NT009" }],
+            brandCodeSource: { kind: "SAME_OPTION", orderCampaignId: null, orderCampaignName: null, inheritedRows: 2 },
+          }}
+        />,
+      );
+      expect(screen.getByText(/상품코드 2줄은 같은 상품의 지난 주문캠페인이 없어/)).toBeTruthy();
+      expect(screen.queryByText(/상품코드가 빈/)).toBeNull();
     });
 
     it("같은 상품 캠페인이 있으면 이름과 판매마감 여부를 경고 줄로 보여준다", () => {

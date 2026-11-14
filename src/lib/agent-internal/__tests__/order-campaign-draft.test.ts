@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildOrderCampaignDraft,
+  inheritBrandCodes,
   pickOrderBrand,
   pickProduct,
   type OrderCampaignDraftDeps,
@@ -42,6 +43,8 @@ function deps(overrides: Partial<OrderCampaignDraftDeps> = {}): OrderCampaignDra
       { slug: "other", displayName: "다른거래처", toEmail: null, ccEmail: null },
     ]),
     findCampaignsByProductNos: vi.fn(async () => []),
+    findLatestCodedCampaign: vi.fn(async () => null),
+    findCodedRowsByOptionNames: vi.fn(async () => []),
     ...overrides,
   };
 }
@@ -188,6 +191,100 @@ describe("buildOrderCampaignDraft", () => {
     expect(await buildOrderCampaignDraft({ productId: "103" }, brandFail)).toMatchObject({ ok: false, code: "STORE_FETCH_FAILED" });
     const sameFail = deps({ findCampaignsByProductNos: vi.fn(async () => { throw new Error("db down"); }) });
     expect(await buildOrderCampaignDraft({ productId: "103" }, sameFail)).toMatchObject({ ok: false, code: "STORE_FETCH_FAILED" });
+    spy.mockRestore();
+  });
+});
+
+describe("inheritBrandCodes — 지난 주문캠페인 상품코드 이어받기", () => {
+  const rows = [
+    { productName: "p", optionName: "구성: 1박스", price: 30000 },
+    { productName: "p", optionName: "구성:  2박스 ", price: 55000 },
+    { productName: "p", optionName: "구성: 3박스", price: 80000 },
+  ];
+
+  it("같은 상품의 지난 주문캠페인이 있으면 그 하나에서만, 옵션명 비교 키로 가져온다(가격은 그대로)", async () => {
+    const d = deps({
+      findLatestCodedCampaign: vi.fn(async () => ({
+        id: "oc-prev",
+        name: "지난 회차 주문",
+        rows: [
+          { optionName: "구성: 1박스", brandCode: "NT001" },
+          { optionName: "구성: 2박스", brandCode: "NT002" },
+        ],
+      })),
+    });
+    const result = await inheritBrandCodes(rows, ["103", "203"], d);
+    expect(d.findLatestCodedCampaign).toHaveBeenCalledWith(["103", "203"]);
+    expect(d.findCodedRowsByOptionNames).not.toHaveBeenCalled();
+    expect(result.rows).toEqual([
+      { productName: "p", optionName: "구성: 1박스", price: 30000, brandCode: "NT001" },
+      { productName: "p", optionName: "구성:  2박스 ", price: 55000, brandCode: "NT002" },
+      { productName: "p", optionName: "구성: 3박스", price: 80000 },
+    ]);
+    expect(result.source).toEqual({
+      kind: "SAME_PRODUCT",
+      orderCampaignId: "oc-prev",
+      orderCampaignName: "지난 회차 주문",
+      inheritedRows: 2,
+    });
+  });
+
+  it("같은 상품이 없으면 과거 전체에서 코드가 하나로 정해진 옵션만, 갈리면 비운다", async () => {
+    const d = deps({
+      findCodedRowsByOptionNames: vi.fn(async () => [
+        { optionName: "구성: 1박스", brandCode: "NT001" },
+        { optionName: "구성: 1박스", brandCode: "NT001" },
+        { optionName: "구성: 3박스", brandCode: "NT003" },
+        { optionName: "구성: 3박스", brandCode: "XX999" },
+      ]),
+    });
+    const result = await inheritBrandCodes(rows, ["103"], d);
+    expect(d.findCodedRowsByOptionNames).toHaveBeenCalledWith(["구성: 1박스", "구성:  2박스 ", "구성: 3박스"]);
+    expect(result.rows.map((row) => row.brandCode)).toEqual(["NT001", undefined, undefined]);
+    expect(result.source).toEqual({ kind: "SAME_OPTION", orderCampaignId: null, orderCampaignName: null, inheritedRows: 1 });
+  });
+
+  it("같은 상품 캠페인의 코드가 공백뿐·상한 초과면 없는 것으로 보고 다른 주문캠페인에서 찾는다", async () => {
+    const d = deps({
+      findLatestCodedCampaign: vi.fn(async () => ({
+        id: "oc-prev",
+        name: "지난 회차 주문",
+        rows: [
+          { optionName: "구성: 1박스", brandCode: "   " },
+          { optionName: "구성: 3박스", brandCode: "X".repeat(33) },
+        ],
+      })),
+      findCodedRowsByOptionNames: vi.fn(async () => [{ optionName: "구성: 1박스", brandCode: "NT001" }]),
+    });
+    const result = await inheritBrandCodes(rows, ["103"], d);
+    expect(result.rows.map((row) => row.brandCode)).toEqual(["NT001", undefined, undefined]);
+    expect(result.source).toMatchObject({ kind: "SAME_OPTION", inheritedRows: 1 });
+  });
+
+  it("붙은 줄이 없거나 옵션 없는 상품(빈 옵션명)이면 출처 없음 — 조회도 하지 않는다", async () => {
+    const d = deps();
+    expect((await inheritBrandCodes(rows, ["103"], d)).source).toBeNull();
+    const single = deps();
+    const result = await inheritBrandCodes([{ productName: "단품", optionName: "", price: 12000 }], ["103"], single);
+    expect(result).toEqual({ rows: [{ productName: "단품", optionName: "", price: 12000 }], source: null });
+    expect(single.findLatestCodedCampaign).not.toHaveBeenCalled();
+  });
+
+  it("초안에 이어받은 코드와 출처가 실리고, 코드 조회가 던지면 STORE_FETCH_FAILED", async () => {
+    const d = deps({
+      findLatestCodedCampaign: vi.fn(async () => ({ id: "oc-prev", name: "지난 회차 주문", rows: [{ optionName: "구성: 2박스", brandCode: "NT002" }] })),
+    });
+    const result = await buildOrderCampaignDraft({ productId: "103" }, d);
+    if (!result.ok) throw new Error(result.message);
+    expect(result.data.mappings[1]).toMatchObject({ optionName: "구성: 2박스", brandCode: "NT002" });
+    expect(result.data.mappings[0]).not.toHaveProperty("brandCode");
+    expect(result.data.brandCodeSource).toMatchObject({ kind: "SAME_PRODUCT", inheritedRows: 1 });
+
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fail = deps({ findLatestCodedCampaign: vi.fn(async () => { throw new Error("db down"); }) });
+    const failed = await buildOrderCampaignDraft({ productId: "103" }, fail);
+    expect(failed).toMatchObject({ ok: false, code: "STORE_FETCH_FAILED" });
+    expect(!failed.ok && failed.message).toContain("상품코드 조회");
     spy.mockRestore();
   });
 });
