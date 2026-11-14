@@ -213,7 +213,10 @@ export type SlackDecisionRequest = z.infer<typeof slackDecisionRequestSchema>;
 
 /**
  * 슬랙 버튼 결정 응답 — hermes 가 이 값으로 카드를 고친다(`plugins/wag-operator` 사본 계약).
- *  - `ok:true` → `status` 는 처리 뒤 상태(`EXECUTED`·`REJECTED`).
+ *  - `ok:true` → `status` 는 처리 뒤 상태(`EXECUTED`·`REJECTED`). `executedRef` 는 실행이 남긴 결과 참조(예: 새 딜
+ *    `DEAL:<id>`) — 결재함 조회(`get_action_proposal` 첫 줄의 `executedRef=`)와 같은 값이다. 반려·참조 없음이면 `null`.
+ *    hermes 는 이 값으로 버튼을 누른 즉시 봇 대화에 결과 줄을 넣는다 — 칸이 **있다는 것**이 「이 CRM 은 참조를 싣는다」는
+ *    신호라, 값이 없어도 칸은 항상 싣는다(빠지면 hermes 는 확인 작업 경로로 되돌아간다).
  *  - `NOT_FOUND` 기안 없음 · `NOT_ELIGIBLE` 봇 기안이 아니거나 버튼 허용 액션이 아님(결재함에서 승인)
  *  - `ALREADY_DECIDED` 이미 처리됨 — `status` 는 다시 읽은 현재 상태
  *  - `EXECUTION_FAILED` 승인했으나 실행 실패(`status` = `FAILED`) · `INVALID_INPUT` 모양 오류 · `INTERNAL` 그 밖의 오류
@@ -229,6 +232,10 @@ export const SLACK_DECISION_FAILURE_CODES = [
 
 export type SlackDecisionFailureCode = (typeof SLACK_DECISION_FAILURE_CODES)[number];
 
+/** 실행 결과 참조 — 종류는 대문자·밑줄, id 는 불투명 id 글자만(hermes 가 같은 형식으로 다시 검사한다). */
+export type SlackDecisionExecutedRef = { type: string; id: string };
+
 export type SlackDecisionResponse =
-  | { ok: true; status: "EXECUTED" | "REJECTED" }
+  | { ok: true; status: "EXECUTED"; executedRef: SlackDecisionExecutedRef | null }
+  | { ok: true; status: "REJECTED"; executedRef: null }
   | { ok: false; code: SlackDecisionFailureCode; status: string | null };
