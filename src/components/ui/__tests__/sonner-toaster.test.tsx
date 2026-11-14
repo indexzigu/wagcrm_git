@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "@/lib/toast";
 import { Toaster } from "../sonner";
 import { Sheet, SheetContent, SheetTitle } from "../sheet";
+import { Drawer, DrawerContent, DrawerTitle } from "../drawer";
 
 /**
  * 오류 토스트는 닫을 때까지 남는다(`@/lib/toast`) — 그러니 닫는 수단이 반드시 보여야 하고,
@@ -69,6 +70,31 @@ describe("Toaster", () => {
 
     await waitFor(() => expect(screen.queryByText("옵션 상품 추가에 실패했습니다.")).not.toBeInTheDocument());
     // 알림 클릭을 「바깥 클릭」으로 읽으면 시트가 닫히며 입력 중인 폼이 사라진다.
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("드로어(모바일 변형)가 열려 있어도 알림을 닫을 수 있고, 드로어는 닫히지 않는다", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    render(
+      <>
+        <Toaster />
+        <Drawer open onOpenChange={onOpenChange}>
+          <DrawerContent aria-describedby={undefined}>
+            <DrawerTitle>옵션 등록</DrawerTitle>
+          </DrawerContent>
+        </Drawer>
+      </>,
+    );
+    await waitFor(() => expect(document.body.style.pointerEvents).toBe("none"));
+    act(() => {
+      toast.error("옵션 상품 추가에 실패했습니다.");
+    });
+    await screen.findByText("옵션 상품 추가에 실패했습니다.");
+
+    await user.click(screen.getByRole("button", { name: "알림 닫기" }));
+
+    await waitFor(() => expect(screen.queryByText("옵션 상품 추가에 실패했습니다.")).not.toBeInTheDocument());
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });
