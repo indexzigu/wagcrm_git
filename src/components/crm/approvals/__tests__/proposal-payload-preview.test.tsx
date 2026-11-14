@@ -740,7 +740,7 @@ describe("ProposalPayloadPreview — 판매캠페인 그룹 회차 등록(create
       ["딜B - 샘플셀러 2차", "없음"],
     ]);
     expect(screen.queryByText(/이미 연결돼 있습니다/)).toBeNull();
-    expect(screen.queryByText(/아직 연결돼 있습니다/)).toBeNull();
+    expect(screen.queryByText(/연결하지 않습니다/)).toBeNull();
     expect(screen.queryByText(/이전 그룹에 연결된 스토어 상품을 그대로/)).toBeNull();
   });
 
@@ -772,7 +772,7 @@ describe("ProposalPayloadPreview — 판매캠페인 그룹 회차 등록(create
     );
     expect(screen.getByText(/판매캠페인 1개가 이미 연결돼 있습니다/)).toBeTruthy();
     expect(screen.getByText("딜A - 샘플셀러 2차 · 2026-11-30 ~ 2026-12-06")).toBeTruthy();
-    expect(screen.getByText(/이전 그룹의 캠페인 1개가 아직 연결돼 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/이전 그룹 캠페인 1개가 연결돼 있어 연결하지 않습니다/)).toBeTruthy();
     expect(screen.getByText("딜B - 샘플셀러 · 2026-11-01 ~ 2026-11-07")).toBeTruthy();
   });
 

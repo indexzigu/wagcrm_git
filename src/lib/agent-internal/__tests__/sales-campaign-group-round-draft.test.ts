@@ -3,7 +3,7 @@
  *  ① 지난 그룹의 캠페인마다 판매 조건·채널·마진·하위품목을 잇고, 기간·링크는 스토어 상품 하나에서 읽어 모두에 쓴다
  *  ② 지난 회차 캠페인 지목이 없으면 「같은 상품번호의 주문캠페인에 연결된 가장 최근 그룹」을 지난 그룹으로 찾는다
  *  ③ 그룹이 아닌 캠페인을 지목하거나 그룹을 못 찾으면 PREVIOUS_GROUP_NOT_FOUND
- *  ④ 연결할 주문캠페인은 이미 다른 판매캠페인에 붙어 있어도 고르고, 붙은 캠페인을 otherLinkedCampaigns 로 보여 준다
+ *  ④ 연결할 주문캠페인은 같은 상품의 가장 최근 것 — 붙은 캠페인은 otherLinkedCampaigns 로 보여 주고, 그중 이전 그룹 캠페인이 있으면 연결하지 않는다
  *  ⑤ 어느 캠페인이든 같은 기간 회차가 이미 있으면 ROUND_ALREADY_EXISTS
  *  ⑥ 상품 목록 조회는 기안 1건당 최대 1회(Fixie 요청 수 — 그룹 멤버 수와 무관)
  */
@@ -160,10 +160,17 @@ describe("buildSalesCampaignGroupRoundDraft", () => {
     expect(d.findLatestGroupIdByProduct).not.toHaveBeenCalled();
   });
 
-  it("이전 그룹 캠페인이 붙은 주문캠페인은 연결 대상에서 뺀다(지난 회차 연결을 떼지 않게)", async () => {
-    const d = deps();
-    await buildSalesCampaignGroupRoundDraft({ productId: "101" }, d);
-    expect(d.findOrderCampaign).toHaveBeenCalledWith(["101", "201"], ["camp-a", "camp-b"]);
+  it("가장 최근 주문캠페인에 이전 그룹 캠페인이 붙어 있으면 연결하지 않고, 붙은 캠페인은 보여 준다", async () => {
+    const d = deps({
+      listLinkedCampaigns: vi.fn(async () => [
+        { id: "camp-b", name: "딜B - 샘플셀러", startDate: "2026-11-01", endDate: "2026-11-07" },
+      ]),
+    });
+    const result = await buildSalesCampaignGroupRoundDraft({ productId: "101" }, d);
+    if (!result.ok) throw new Error(result.message);
+    expect(d.findOrderCampaign).toHaveBeenCalledWith(["101", "201"]);
+    expect(result.data.linkOrderCampaign).toBeNull();
+    expect(result.data.otherLinkedCampaigns).toEqual([expect.objectContaining({ id: "camp-b" })]);
   });
 
   it("지난 그룹에 같은 판매 조건 캠페인이 둘이면 잇지 않는다", async () => {

@@ -698,9 +698,9 @@ function LinkedCampaignList({ campaigns }: { campaigns: Record<string, unknown>[
  * 판매캠페인 그룹 다음 회차 등록 — 승인자가 판단할 순서대로: 무엇이 생기나(새 그룹·기간·상태 → 새로 만들 캠페인 표)
  * → 근거 스토어 상품 → 연결할 주문캠페인과 그 경고 → 이전 그룹·메모.
  *
- * 연결 경고는 둘로 가른다. 연결할 주문캠페인(같은 상품의 가장 최근 것)에 **이전 그룹 캠페인**이 붙어 있으면 이번 회차용
- * 주문캠페인이 아직 없다는 뜻이라 반려가 맞고, **그 밖의 캠페인**이 붙어 있으면 오너가 미리 만들어 둔 자리 캠페인일
- * 가능성이 높아 승인 뒤 정리가 맞다 — 한 문장으로 덮으면 앞의 경우에 반대 행동을 부른다.
+ * 연결 경고는 둘로 가른다. 같은 상품의 가장 최근 주문캠페인에 **이전 그룹 캠페인**이 붙어 있으면 이번 회차용
+ * 주문캠페인이 아직 없다는 뜻이라 초안이 연결을 비워 두고(「없음」) 그 이유를 보이며, **그 밖의 캠페인**이 붙어 있으면
+ * 오너가 미리 만들어 둔 자리 캠페인일 가능성이 높아 승인 뒤 정리가 맞다 — 한 문장으로 덮으면 앞의 경우에 반대 행동을 부른다.
  */
 function CreateSalesCampaignGroupRoundPreview({ args }: { args: Record<string, unknown> }) {
   const period = periodText(asText(args.startDate), asText(args.endDate));
@@ -784,8 +784,8 @@ function CreateSalesCampaignGroupRoundPreview({ args }: { args: Record<string, u
       {linkedFromPrevious.length > 0 && (
         <div className="space-y-1">
           <CautionLine>
-            이 주문캠페인에는 이전 그룹의 캠페인 {linkedFromPrevious.length}개가 아직 연결돼 있습니다. 이번 회차용 주문캠페인이 아니면
-            반려해 주세요.
+            같은 상품의 가장 최근 주문캠페인에 이전 그룹 캠페인 {linkedFromPrevious.length}개가 연결돼 있어 연결하지 않습니다. 이번
+            회차용 주문캠페인을 만든 뒤 판매 관리에서 연결하거나, 반려하고 다시 요청해 주세요.
           </CautionLine>
           <LinkedCampaignList campaigns={linkedFromPrevious} />
         </div>
@@ -793,8 +793,8 @@ function CreateSalesCampaignGroupRoundPreview({ args }: { args: Record<string, u
       {linkedOthers.length > 0 && (
         <div className="space-y-1">
           <CautionLine>
-            이 주문캠페인에 판매캠페인 {linkedOthers.length}개가 이미 연결돼 있습니다. 미리 만들어 둔 캠페인이면 승인 뒤 판매 관리에서
-            지우거나 연결을 풀어 주세요.
+            이 주문캠페인에 판매캠페인 {linkedOthers.length}개가 이미 연결돼 있습니다. 승인 뒤 자동 연결이 옵션을 다시 나누므로 그
+            연결이 바뀔 수 있습니다. 미리 만들어 둔 캠페인이면 판매 관리에서 지우거나 연결을 풀어 주세요.
           </CautionLine>
           <LinkedCampaignList campaigns={linkedOthers} />
         </div>

@@ -43,9 +43,11 @@ import {
  *
  * 연결할 주문캠페인은 같은 상품번호의 판매 중 주문캠페인 중 가장 최근 것이다 — 단건 회차와 달리 **이미 다른
  * 판매캠페인에 붙어 있어도** 고른다(그룹은 한 주문캠페인을 여럿이 함께 쓰고, 오너가 미리 만든 자리 캠페인이 붙어 있을
- * 수 있다). 이미 붙은 판매캠페인은 `otherLinkedCampaigns` 로 승인자에게 보여 준다. 단 **이전 그룹 캠페인이 붙은
- * 주문캠페인은 고르지 않는다** — 이번 회차용 주문캠페인이 아직 없다는 뜻이고, 승인 뒤 자동 연결이 그 주문캠페인을 다시
- * 채점하면 새 캠페인이 옵션을 가져가 이전 회차 캠페인의 주문 연결이 풀릴 수 있다(코드 리뷰 2026-11-14). 그때는 연결 없음. 실제 연결은 승인 뒤 옵션 점수 자동 연결(`autoMapOrderCampaign`)이
+ * 수 있다). 이미 붙은 판매캠페인은 `otherLinkedCampaigns` 로 승인자에게 보여 준다. 단 **그 주문캠페인에 이전 그룹 캠페인이
+ * 붙어 있으면 연결하지 않는다**(`linkOrderCampaign` null, 붙은 캠페인은 그대로 `otherLinkedCampaigns` 로 보여 준다) —
+ * 이번 회차용 주문캠페인이 아직 없다는 뜻이고, 승인 뒤 자동 연결이 그 주문캠페인을 다시 채점하면 새 캠페인이 옵션을
+ * 가져가 이전 회차 캠페인의 주문 연결이 풀릴 수 있다(코드 리뷰 2026-11-14). 더 오래된 주문캠페인으로 내려가 고르지도
+ * 않는다 — 그것은 더 이전 회차의 것이다. 실제 연결은 승인 뒤 옵션 점수 자동 연결(`autoMapOrderCampaign`)이
  * 한다 — 화면 등록과 같은 경로다.
  *
  * ## Fixie(네이버 프록시) 요청 수 — 기안 1건당 0~1건
@@ -64,11 +66,8 @@ export type SalesCampaignGroupRoundDraftDeps = {
   loadGroup: (groupId: string) => Promise<PreviousGroup | null>;
   listProducts: () => Promise<ReadonlyArray<unknown>>;
   listRounds: (dealId: string, sellerId: string) => Promise<RoundSummary[]>;
-  /** 이 상품번호들의 판매 중 주문캠페인 중 가장 최근 것 — `excludeLinkedTo` 캠페인이 붙은 주문캠페인은 뺀다. */
-  findOrderCampaign: (
-    productNos: ReadonlyArray<string>,
-    excludeLinkedTo: ReadonlyArray<string>,
-  ) => Promise<{ id: string; name: string } | null>;
+  /** 이 상품번호들의 판매 중 주문캠페인 중 가장 최근 것(연결 여부 무관). */
+  findOrderCampaign: (productNos: ReadonlyArray<string>) => Promise<{ id: string; name: string } | null>;
   /** 이 주문캠페인에 이미 연결된 판매캠페인(최근 시작일 먼저, 상한까지). */
   listLinkedCampaigns: (orderCampaignId: string) => Promise<LinkedCampaign[]>;
   today: () => string;
@@ -105,13 +104,9 @@ const defaultDeps: SalesCampaignGroupRoundDraftDeps = {
   },
   listProducts: listStoreProducts,
   listRounds: listRoundsFromDb,
-  findOrderCampaign: async (productNos, excludeLinkedTo) =>
+  findOrderCampaign: async (productNos) =>
     getPrisma().orderCampaign.findFirst({
-      where: {
-        productId: { in: [...productNos] },
-        isActive: true,
-        salesCampaigns: { none: { id: { in: [...excludeLinkedTo] } } },
-      },
+      where: { productId: { in: [...productNos] }, isActive: true },
       select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
     }),
@@ -310,11 +305,10 @@ export async function buildSalesCampaignGroupRoundDraft(
         expectedCampaignName: generateCampaignName(member.dealName, member.sellerName, round),
       });
     }
-    linkOrderCampaign = await deps.findOrderCampaign(
-      productNos,
-      group.members.map((member) => member.id),
-    );
-    otherLinkedCampaigns = linkOrderCampaign ? await deps.listLinkedCampaigns(linkOrderCampaign.id) : [];
+    const latestOrderCampaign = await deps.findOrderCampaign(productNos);
+    otherLinkedCampaigns = latestOrderCampaign ? await deps.listLinkedCampaigns(latestOrderCampaign.id) : [];
+    const previousIds = new Set(group.members.map((member) => member.id));
+    linkOrderCampaign = otherLinkedCampaigns.some((campaign) => previousIds.has(campaign.id)) ? null : latestOrderCampaign;
   } catch (error) {
     return fail("회차", error);
   }
