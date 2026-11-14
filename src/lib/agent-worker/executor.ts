@@ -1133,12 +1133,13 @@ async function storeProductOptions(
 }
 
 /**
- * 스토어 옵션 줄의 상품코드·가격 즉시 저장(2026-10-16, 오너 결정: 짝 확인 「응」 한 번 = 승인). 실행 주체는 CRM 앱의
- * 봇 내부 창구이고, 결재함에는 그 창구가 EXECUTED 기록 1건을 남긴다(`actionProposalId`).
+ * 스토어 옵션 줄의 상품코드·가격 **기안**(오너 결정 2026-11-14 — 매핑도 다른 기안과 같은 승인 절차; 종전 10-16 의
+ * 「응」 = 즉시 저장은 폐기). 실행 주체는 CRM 앱의 봇 내부 창구이고, 바뀌는 줄이 있으면 승인대기 기안 1건을 남긴다.
+ * 그때 결과는 `NEEDS_APPROVAL` 이고 `evidenceRefs[0]` = 기안 id 다 — 봇 쪽 승인 감시·슬랙 카드가 그 자리에서
+ * 기안 id 를 읽는다(`create_action_proposal` 과 같은 모양). 바뀌는 줄이 없으면 기안 없이 `SUCCEEDED`.
  *
- * ⚠️ 쓰기라 연결·시간 초과도 재시도하지 않고 최종 실패로 끝낸다 — 앱이 이미 저장했는지 여기서는 모른다.
- *    다시 요청해도 안전하다: 창구는 이미 같은 값인 줄을 「그대로」로 세고 기록을 만들지 않는다.
- * ⚠️ 요청을 보낸 뒤 임대가 끊겨도(중단 신호) 앱 쪽 저장은 되돌릴 수 없다 — 보내기 직전에만 중단을 확인한다.
+ * ⚠️ 쓰기라 연결·시간 초과도 재시도하지 않고 최종 실패로 끝낸다 — 앱이 이미 기안을 남겼는지 여기서는 모른다.
+ * ⚠️ 요청을 보낸 뒤 임대가 끊겨도(중단 신호) 앱 쪽 기안은 되돌릴 수 없다 — 보내기 직전에만 중단을 확인한다.
  */
 async function applyProductMappingsOperation(
   input: ApplyProductMappingsInput,
@@ -1158,14 +1159,24 @@ async function applyProductMappingsOperation(
   if (!call.ok) return failure(call.errorClass, "apply call failed", call.detail);
   if (!call.body.ok) return failure(call.body.code, "apply refused", call.body.message);
   const { data } = call.body;
-  const saved = data.created + data.updated;
+  const toSave = data.created + data.updated;
+  const tail = `그대로 ${data.unchanged}줄 · 저장 안 함 ${data.rejected.length}줄`;
+  if (data.proposalId === null) {
+    return {
+      status: "SUCCEEDED",
+      summary: boundSummary(`주문캠페인 "${data.orderCampaign.name}" 상품 매핑 바뀔 줄 없음 · ${tail}`),
+      evidenceRefs: boundEvidence([data.orderCampaign.id]),
+      actionProposalId: null,
+      structuredData: fitStructuredData(data),
+    };
+  }
   return {
-    status: "SUCCEEDED",
+    status: "NEEDS_APPROVAL",
     summary: boundSummary(
-      `주문캠페인 "${data.orderCampaign.name}" 상품 매핑 저장 ${saved}줄(새로 ${data.created} · 바꿈 ${data.updated}) · ` +
-        `그대로 ${data.unchanged}줄 · 저장 안 함 ${data.rejected.length}줄`,
+      `주문캠페인 "${data.orderCampaign.name}" 상품 매핑 ${toSave}줄(새로 ${data.created} · 바꿈 ${data.updated}) 승인 대기 · ` +
+        `${tail} (proposal ${data.proposalId}, PENDING_APPROVAL)`,
     ),
-    evidenceRefs: boundEvidence([data.orderCampaign.id, data.proposalId]),
+    evidenceRefs: boundEvidence([data.proposalId, data.orderCampaign.id]),
     actionProposalId: data.proposalId,
     structuredData: fitStructuredData(data),
   };

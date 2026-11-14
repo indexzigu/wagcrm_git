@@ -1,5 +1,4 @@
 import { getPrisma } from "@/lib/prisma";
-import { approveProposal } from "@/lib/agent/approve-proposal";
 import {
   insertAgentWorkerProposal,
   snapshotProductMappingExpected,
@@ -7,7 +6,6 @@ import {
 } from "@/lib/agent/agent-worker-proposal";
 import { upsertProductMappingsTool } from "@/lib/agent/tools/upsert-product-mappings";
 import { planProductMappingUpsert } from "@/lib/order-converter/product-mapping-upsert";
-import { ActionProposalRepository } from "@/repositories/actionProposalRepository";
 import {
   MAX_MAPPING_OPTION_NAME_CHARS,
   MAX_MAPPING_PRODUCT_NAME_CHARS,
@@ -18,11 +16,11 @@ import {
 } from "@/lib/agent-worker/contracts";
 import { agentInternalFailure, type AgentInternalFailure, type ApplyProductMappingsRequest } from "./api-contract";
 import { loadStoreOptionsForApply, type StoreOptionsDeps } from "./store-product-options";
-import { AGENT_MAPPING_APPLY_ACTOR } from "./actors";
 
 /**
- * 봇 상품 매핑 **즉시 저장** — 봇 내부 창구 본체(오너 결정 2026-10-16: 짝 확인 「응」 한 번으로 바로 저장,
- * 결재함 승인 없음, 결재함에는 EXECUTED 기록만).
+ * 봇 상품 매핑 **기안** — 봇 내부 창구 본체. 오너 결정 2026-11-14: 매핑도 다른 기안과 같은 승인 절차를 탄다
+ * (결재함 대기 → 결재함 또는 슬랙 카드 [승인]·[반려]). 종전(2026-10-16)의 「짝 확인 「응」 = 승인 · 즉시 저장」은
+ * 폐기됐다 — 「응」을 승인으로 읽는 주체가 코드가 아니라 봇(LLM)이었다. 이 창구는 저장하지 않고 기안만 남긴다.
  *
  * 순서:
  *  ① 네이버 등록 옵션 대조 — 줄의 `optionName` 이 그 캠페인의 스토어 옵션 하나와 비교 키로 같아야 한다. 아니면
@@ -30,9 +28,9 @@ import { AGENT_MAPPING_APPLY_ACTOR } from "./actors";
  *     저장한다(봇이 보낸 글자가 아니라) — 매핑 줄의 키는 언제나 네이버 등록 옵션 글자다(설계 §3 불변).
  *  ② 지금 값 스냅샷 + 계획 — 봇 기안과 같은 함수(`snapshotProductMappingExpected` · `planProductMappingUpsert`).
  *     바뀌는 줄이 하나도 없으면 기록 없이 끝낸다(같은 요청을 다시 보내도 안전하다 — 두 번째는 「그대로」로 센다).
- *  ③ 기안 1건 INSERT(기안자 `AGENT_WORKER`, 출처 칸 = 슬랙 위치) → 정본 승인 함수 `approveProposal` 을
- *     실행자 `AGENT_MAPPING_APPLY_ACTOR` 로 즉시 부른다. 실행 순간의 가드(행 잠금·이름 대조·조건부 쓰기·
- *     자동 연결 후속 처리)는 결재함 승인과 **같은 코드**가 건다 — 여기서 쓰기를 다시 만들지 않는다.
+ *  ③ 기안 1건 INSERT(기안자 `AGENT_WORKER`, 상태 승인대기, 출처 칸 = 슬랙 위치)로 끝낸다. 승인 순간의
+ *     가드(행 잠금·이름 대조·조건부 쓰기·자동 연결 후속 처리)는 결재함·슬랙 승인이 부르는 정본 실행
+ *     (`upsert-product-mappings.ts`)이 건다 — 그 사이 화면에서 값이 바뀌면 승인이 정직하게 실패한다.
  *
  * ⚠️ 새 줄의 상품명은 그 스토어 옵션 줄의 상품명으로 채운다(설정 창 「스토어 옵션 불러오기」와 같다 — 상품명이
  *    있으면 주문 대조가 상품명·옵션명 둘 다 본다). 추가구성상품 줄은 스토어 쪽에서 이미 빈칸이라 빈칸 그대로 둔다. 계약 상한(`MAX_MAPPING_PRODUCT_NAME_CHARS`)을 넘는 상품명은 빈칸으로
@@ -44,7 +42,6 @@ type AppliedResult = { ok: true; data: ProductMappingsAppliedStructuredData } | 
 
 export type ApplyDeps = {
   storeOptions?: StoreOptionsDeps;
-  approve?: typeof approveProposal;
 };
 
 type PreparedOutcome =
@@ -53,10 +50,9 @@ type PreparedOutcome =
   | { kind: "UNUSABLE"; failure: AgentInternalFailure };
 
 /**
- * 같은 캠페인의 저장을 한 번에 하나씩 줄 세운다(프로세스 안). 슬랙에서 「응」이 두 번 오거나 봇이 같은 작업을
- * 다시 보내면 두 요청이 둘 다 「새 줄」로 계획한 뒤, 뒤의 것이 정본 실행의 행 잠금 아래에서 「이미 있습니다」로
- * 실패하고 결재함에 FAILED 기록을 남긴다 — DB 는 이미 요청대로인데도. 줄을 세우면 뒤의 요청은 앞의 결과 위에서
- * 계획해 「그대로 n줄」이 된다. 화면 저장과의 경합은 여전히 정본 실행의 조건부 쓰기가 잡는다(정직한 실패).
+ * 같은 캠페인의 기안 작성을 한 번에 하나씩 줄 세운다(프로세스 안) — 봇이 같은 작업을 겹쳐 보내도 스냅샷·INSERT 가
+ * 섞이지 않게 한다. 같은 내용의 승인대기 기안이 두 건 생길 수는 있다(앞 기안이 아직 승인 전이면 둘 다 「새 줄」로
+ * 계획한다) — 그때 뒤에 승인한 쪽은 정본 실행의 행 잠금 아래에서 「이미 있습니다」로 정직하게 실패한다.
  * 셀프호스트 앱은 프로세스 하나라 이것으로 충분하다(`globalThis` — 라우트 번들이 갈려도 같은 줄).
  */
 function campaignQueue(): Map<string, Promise<unknown>> {
@@ -78,27 +74,6 @@ async function inCampaignQueue<T>(orderCampaignId: string, task: () => Promise<T
     return await run;
   } finally {
     if (queue.get(orderCampaignId) === settled) queue.delete(orderCampaignId);
-  }
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * 승인 실행이 시작도 못 했을 때(승인 전이 실패·예외) 남은 승인대기 기록을 반려로 닫는다 — 그대로 두면 오너가
- * 결재함에서 낡은 줄을 나중에 승인할 수 있다. 이미 다른 상태면 건드리지 않는다(조건부 전이). 닫기 자체가 실패하면
- * 삼키지 않고 기록한 뒤 호출부의 실패 문구에 기록 id 를 남긴다.
- */
-async function closeOrphanProposal(proposalId: string, reason: string): Promise<void> {
-  try {
-    await ActionProposalRepository.transition(proposalId, "REJECTED", {
-      actor: AGENT_MAPPING_APPLY_ACTOR,
-      note: `봇 즉시 저장 중단: ${reason}`.slice(0, 500),
-      expectedFrom: "PENDING_APPROVAL",
-    });
-  } catch (error) {
-    console.error(`[agent-internal] orphan proposal ${proposalId} could not be closed:`, describeError(error));
   }
 }
 
@@ -188,7 +163,7 @@ async function applyInQueue(request: ApplyProductMappingsRequest, deps: ApplyDep
       intent: built.data.writeIntent,
       storedArgs,
       slack: request.slack,
-      note: "봇 상품 매핑 즉시 저장(짝 확인 응답 = 승인, 오너 결정 2026-10-16)",
+      note: "봇 상품 매핑 기안 상신, 관리자 승인 대기",
     });
     return {
       kind: "CREATED",
@@ -207,24 +182,6 @@ async function applyInQueue(request: ApplyProductMappingsRequest, deps: ApplyDep
     });
   }
 
-  const approve = deps.approve ?? approveProposal;
-  let outcome: Awaited<ReturnType<typeof approveProposal>>;
-  try {
-    outcome = await approve(prepared.proposalId, AGENT_MAPPING_APPLY_ACTOR, { expectedStatus: "PENDING_APPROVAL" });
-  } catch (error) {
-    // 실행 뒤 FAILED 기록이나 커밋 뒤 후속 처리가 던진 경우다 — 기록 상태는 모르므로 승인대기일 때만 닫는다.
-    await closeOrphanProposal(prepared.proposalId, describeError(error));
-    return agentInternalFailure("APPLY_FAILED", `저장 결과를 확인하지 못했습니다(결재함 기록 ${prepared.proposalId}): ${describeError(error)}`);
-  }
-  if (!outcome.ok) {
-    // 실행이 실패하면(EXECUTION_FAILED) 정본 함수가 이미 FAILED 로 기록했다. 그 밖(승인 전이 실패 등)은 승인대기로
-    // 남아 있으므로 닫는다.
-    if (outcome.status === "PENDING_APPROVAL") await closeOrphanProposal(prepared.proposalId, outcome.error);
-    return agentInternalFailure(
-      "APPLY_FAILED",
-      `저장하지 못했습니다(결재함 기록 ${prepared.proposalId}): ${outcome.error}`,
-    );
-  }
   return finalize({
     ok: true,
     data: {
@@ -238,12 +195,12 @@ async function applyInQueue(request: ApplyProductMappingsRequest, deps: ApplyDep
   });
 }
 
-/** 응답이 계약(12KB 상한 포함)을 지키는지 내보내기 전에 잰다 — 못 지키면 저장은 끝났으므로 그 사실을 문구로 남긴다. */
+/** 응답이 계약(12KB 상한 포함)을 지키는지 내보내기 전에 잰다 — 못 지키면 기안은 남았으므로 그 사실을 문구로 남긴다. */
 function finalize(result: { ok: true; data: ProductMappingsAppliedStructuredData }): AppliedResult {
   const parsed = productMappingsAppliedStructuredDataSchema.safeParse(result.data);
   if (parsed.success) return { ok: true, data: parsed.data };
   return agentInternalFailure(
     "APPLY_FAILED",
-    `저장은 끝났지만 결과를 봇에게 돌려줄 수 없습니다(결재함 기록 ${result.data.proposalId ?? "없음"}). CRM 캠페인 설정 창에서 확인해 주세요.`,
+    `기안은 남았지만 결과를 봇에게 돌려줄 수 없습니다(결재함 기록 ${result.data.proposalId ?? "없음"}). CRM 결재함에서 확인해 주세요.`,
   );
 }

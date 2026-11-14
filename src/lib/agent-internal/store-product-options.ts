@@ -19,9 +19,9 @@ import { agentInternalFailure, type AgentInternalFailure } from "./api-contract"
  *
  * ## Fixie(네이버 프록시) 요청 수
  * - 옵션 조회(`loadStoreOptionsFresh`): 상세 1건 + 상품 목록 0~1건(60초 안에 대시보드·설정 창이 이미 불렀으면 0).
- * - 즉시 저장(`loadStoreOptionsForApply`): 같은 캠페인을 `STORE_OPTIONS_REUSE_MS`(10분) 안에 조회했으면 **0건**
+ * - 매핑 기안(`loadStoreOptionsForApply`): 같은 캠페인을 `STORE_OPTIONS_REUSE_MS`(10분) 안에 조회했으면 **0건**
  *   — 그 조회 결과로 옵션 글자를 대조한다. 지났으면 조회와 같은 0~2건.
- * ⇒ 봇 매핑 요청 1회(조회 → 「응」 → 저장)는 보통 1~2건이다.
+ * ⇒ 봇 매핑 요청 1회(조회 → 확인 → 기안)는 보통 1~2건이다.
  *
  * ⚠️ 저장 쪽 재사용은 옵션 **글자 대조**에만 쓴다(무엇이 네이버 등록 옵션인가). 지금 매핑 값은 매번 DB 에서 새로
  *    읽는다(`apply-product-mappings.ts`). 10분 안에 스토어 옵션 글자를 바꾸면 옛 글자로 대조된다 — 봇은 그 사이
