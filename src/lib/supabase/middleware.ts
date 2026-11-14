@@ -262,6 +262,8 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname !== "/api/internal/agent/order-campaign-draft" &&
     request.nextUrl.pathname !== "/api/internal/agent/sales-campaign-round-draft" &&
     request.nextUrl.pathname !== "/api/internal/agent/sales-campaign-group-round-draft" &&
+    // 슬랙 버튼 결정 창구 — 인증은 핸들러의 `verifySlackDecisionRequest`(전용 비밀값, 워커 비밀값과 분리)가 유일하다.
+    request.nextUrl.pathname !== "/api/internal/agent/slack-decision" &&
     !request.nextUrl.pathname.startsWith("/login") &&
     !request.nextUrl.pathname.startsWith("/auth") &&
     // Sentry 터널(next.config.ts `tunnelRoute`) — 브라우저가 광고차단기를 우회해 에러를 보내는

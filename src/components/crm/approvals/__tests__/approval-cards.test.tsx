@@ -367,6 +367,17 @@ describe("ExecutedCard", () => {
     expect(screen.getByText("자동승인")).toHaveAttribute("data-variant", "status-success");
   });
 
+  it("슬랙 버튼으로 승인한 건은 「슬랙에서 승인」 — 완료 hue 그대로, 자동승인 아님", () => {
+    render(
+      <ul>
+        <ExecutedCard item={makeItem({ status: "EXECUTED", executedBy: "SLACK_OWNER_APPROVAL" })} />
+      </ul>
+    );
+    expect(screen.getByText("슬랙에서 승인")).toHaveAttribute("data-variant", "status-success");
+    expect(screen.queryByText("실행완료")).toBeNull();
+    expect(screen.queryByText("자동승인")).toBeNull();
+  });
+
   it("executedBy가 사람이면 '실행완료'를 보여준다 (자동승인 아님)", () => {
     render(
       <ul>

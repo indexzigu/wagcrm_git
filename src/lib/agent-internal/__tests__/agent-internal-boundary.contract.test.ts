@@ -4,6 +4,9 @@
  *     `agent-internal/apply-product-mappings.ts` 하나뿐이다. 다른 곳이 이 실행자로 `approveProposal` 을 부르면
  *     사람 승인 없는 매핑 쓰기가 네이버 옵션 대조 없이 열린다.
  *  B2 그 실행자 글자(따옴표 리터럴)는 `actors.ts` 한 곳에만 있다 — 사본이 생기면 B1 스캔을 우회한다.
+ *  B4 슬랙 버튼 승인자(`SLACK_OWNER_APPROVAL`)로 승인·반려를 부르는 파일은 `agent-internal/slack-decision.ts` 하나뿐이다 —
+ *     그 모듈이 「봇 기안만」·버튼 허용 액션 목록을 강제한다. 다른 곳이 이 승인자로 부르면 그 경계 없이 승인이 열린다.
+ *  B5 그 승인자 글자는 `actors.ts` 한 곳에만 있다.
  *  B3 앱은 루프백에만 바인드한다(`infra/selfhost/run-app.sh` HOSTNAME=127.0.0.1) — 창구의 터널 헤더·Host 검사는
  *     바깥 요청이 터널로만 들어온다는 전제 위에 서 있다.
  * 각 스캔은 양성 대조(잡혀야 할 것이 잡히는지)를 함께 본다.
@@ -16,6 +19,7 @@ const root = process.cwd();
 const SRC = join(root, "src");
 const APPLY_MODULE = ["src", "lib", "agent-internal", "apply-product-mappings.ts"].join(sep);
 const ACTORS_MODULE = ["src", "lib", "agent-internal", "actors.ts"].join(sep);
+const SLACK_DECISION_MODULE = ["src", "lib", "agent-internal", "slack-decision.ts"].join(sep);
 
 function walk(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -54,6 +58,21 @@ describe("봇 내부 창구 경계", () => {
 
   it("B2 실행자 글자는 actors.ts 에만 있다", () => {
     const offenders = FILES.filter((file) => /["'`]AGENT_MAPPING_APPLY["'`]/.test(file.code)).map((file) => file.rel);
+    expect(offenders).toEqual([ACTORS_MODULE]);
+  });
+
+  it("B4 슬랙 버튼 승인자로 승인·반려하는 파일은 슬랙 결정 모듈 하나뿐이다(양성 대조 포함)", () => {
+    const decide = FILES.find((file) => file.rel === SLACK_DECISION_MODULE);
+    expect(decide?.code).toMatch(/approve\(proposalId,\s*SLACK_OWNER_APPROVAL_ACTOR/);
+    const offenders = FILES.filter(
+      (file) =>
+        /SLACK_OWNER_APPROVAL_ACTOR/.test(file.code) && /\b(approveProposal|rejectProposal|transition)\b/.test(file.code),
+    ).map((file) => file.rel);
+    expect(offenders).toEqual([SLACK_DECISION_MODULE]);
+  });
+
+  it("B5 슬랙 버튼 승인자 글자는 actors.ts 에만 있다", () => {
+    const offenders = FILES.filter((file) => /["'`]SLACK_OWNER_APPROVAL["'`]/.test(file.code)).map((file) => file.rel);
     expect(offenders).toEqual([ACTORS_MODULE]);
   });
 
