@@ -4,6 +4,7 @@ import * as React from "react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { keepModalOpenOnToast } from "@/lib/toast-region"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
@@ -50,6 +51,7 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
@@ -66,6 +68,7 @@ function SheetContent({
           className
         )}
         {...props}
+        onInteractOutside={keepModalOpenOnToast(onInteractOutside)}
       >
         {children}
         {showCloseButton && (

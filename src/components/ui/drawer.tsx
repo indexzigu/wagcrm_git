@@ -4,6 +4,7 @@ import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
+import { keepModalOpenOnToast } from "@/lib/toast-region"
 
 function Drawer({
   ...props
@@ -48,6 +49,7 @@ function DrawerOverlay({
 function DrawerContent({
   className,
   children,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Content>) {
   return (
@@ -60,6 +62,7 @@ function DrawerContent({
           className
         )}
         {...props}
+        onInteractOutside={keepModalOpenOnToast(onInteractOutside)}
       >
         <div className="mx-auto mt-4 hidden h-1 w-[100px] shrink-0 rounded-full bg-muted group-data-[vaul-drawer-direction=bottom]/drawer-content:block" />
         {children}

@@ -4,6 +4,7 @@ import * as React from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { keepModalOpenOnToast } from "@/lib/toast-region"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
@@ -51,6 +52,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -65,6 +67,7 @@ function DialogContent({
           className
         )}
         {...props}
+        onInteractOutside={keepModalOpenOnToast(onInteractOutside)}
       >
         {children}
         {showCloseButton && (

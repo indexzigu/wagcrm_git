@@ -63,14 +63,8 @@ export function ShippingDialogFrame({
           event.preventDefault();
           if (returnFocusTarget?.isConnected) returnFocusTarget.focus();
         }}
-        // 알림(sonner)은 대화상자 밖에 뜬다 — 알림을 누른 것을 「바깥 클릭」으로 읽어 창까지 닫으면
-        // 발송·등록 결과를 보던 창이 사라진다. 종전 모달도 알림 클릭으로는 닫히지 않았다.
-        onInteractOutside={(event) => {
-          const target = event.target;
-          if (target instanceof Element && target.closest('[data-sonner-toaster]')) {
-            event.preventDefault();
-          }
-        }}
+        // 알림을 누른 것을 「바깥 클릭」으로 읽지 않는 가드는 공용 `DialogContent` 가 이미 건다
+        // (`keepModalOpenOnToast`, @/lib/toast-region) — 여기서 다시 달지 않는다.
         className={cn(
           // 프리미티브 기본값(grid·gap-4·p-4·text-sm·ring) 중 종전 모달에 없던 것을 되돌린다 —
           // 모달 안의 글자·여백은 각 모달이 이미 정한 값 그대로 보여야 한다.
