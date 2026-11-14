@@ -16,7 +16,7 @@ import type { WriteActionDefinition, WriteActionResult } from "./types";
  * 이후 봇 매핑 작업이나 캠페인 설정 창이 채운다.
  *
  * 가드:
- *  ① 사람 승인만 — 시스템 실행자(`SYSTEM_*`)·봇 실행자(`AGENT_WORKER`)·매핑 즉시 저장 실행자(`AGENT_MAPPING_APPLY`, 매핑
+ *  ① 사람 승인만 — 시스템 실행자(`SYSTEM_*`)·봇 실행자(`AGENT_WORKER`)·옛 매핑 즉시 저장 실행자(`AGENT_MAPPING_APPLY`, 2026-11-14 폐기 · 매핑
  *     저장 전용 창구)는 쓰기 전에 거부한다(없던 캠페인이 생기는 일).
  *  ② 생성 — 승인 tx 안에서. 실패하면 tx 가 통째로 롤백돼 기안이 FAILED 로 남는다.
  *
