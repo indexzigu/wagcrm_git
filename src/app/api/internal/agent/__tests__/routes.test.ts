@@ -1,5 +1,5 @@
 /**
- * 봇 내부 창구 라우트 5개 — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
+ * 봇 내부 창구 라우트 6개(슬랙 버튼 결정 창구 포함) — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
  * 본체 동작은 `src/lib/agent-internal/__tests__/*` 가 고정한다.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ const applyMock = vi.fn();
 const draftMock = vi.fn();
 const roundDraftMock = vi.fn();
 const groupRoundDraftMock = vi.fn();
+const slackDecisionMock = vi.fn();
 vi.mock("@/lib/agent-internal/store-product-options", () => ({ getStoreProductOptions: (...a: unknown[]) => optionsMock(...a) }));
 vi.mock("@/lib/agent-internal/apply-product-mappings", () => ({ applyProductMappings: (...a: unknown[]) => applyMock(...a) }));
 vi.mock("@/lib/agent-internal/order-campaign-draft", () => ({ buildOrderCampaignDraft: (...a: unknown[]) => draftMock(...a) }));
@@ -17,6 +18,9 @@ vi.mock("@/lib/agent-internal/sales-campaign-round-draft", () => ({
 }));
 vi.mock("@/lib/agent-internal/sales-campaign-group-round-draft", () => ({
   buildSalesCampaignGroupRoundDraft: (...a: unknown[]) => groupRoundDraftMock(...a),
+}));
+vi.mock("@/lib/agent-internal/slack-decision", () => ({
+  decideProposalFromSlack: (...a: unknown[]) => slackDecisionMock(...a),
 }));
 vi.mock("@/lib/order-converter/proxy-usage", () => ({
   withProxySource: (_source: string, handler: (...args: unknown[]) => unknown) => handler,
@@ -27,9 +31,12 @@ const { POST: applyPost } = await import("../apply-product-mappings/route");
 const { POST: draftPost } = await import("../order-campaign-draft/route");
 const { POST: roundDraftPost } = await import("../sales-campaign-round-draft/route");
 const { POST: groupRoundDraftPost } = await import("../sales-campaign-group-round-draft/route");
+const { POST: slackDecisionPost } = await import("../slack-decision/route");
 
 const SECRET = "k".repeat(64);
 const original = process.env.AGENT_INTERNAL_API_SECRET;
+const SLACK_SECRET = "s".repeat(64);
+const originalSlack = process.env.AGENT_SLACK_DECISION_SECRET;
 
 function post(path: string, body: unknown, headers: Record<string, string> = { "x-agent-internal-secret": SECRET }) {
   return new Request(`http://127.0.0.1:3000${path}`, {
@@ -41,6 +48,8 @@ function post(path: string, body: unknown, headers: Record<string, string> = { "
 
 beforeEach(() => {
   process.env.AGENT_INTERNAL_API_SECRET = SECRET;
+  process.env.AGENT_SLACK_DECISION_SECRET = SLACK_SECRET;
+  slackDecisionMock.mockReset();
   optionsMock.mockReset();
   applyMock.mockReset();
   draftMock.mockReset();
@@ -50,6 +59,8 @@ beforeEach(() => {
 afterEach(() => {
   if (original === undefined) delete process.env.AGENT_INTERNAL_API_SECRET;
   else process.env.AGENT_INTERNAL_API_SECRET = original;
+  if (originalSlack === undefined) delete process.env.AGENT_SLACK_DECISION_SECRET;
+  else process.env.AGENT_SLACK_DECISION_SECRET = originalSlack;
 });
 
 describe("봇 내부 창구 라우트", () => {
@@ -143,5 +154,53 @@ describe("봇 내부 창구 라우트", () => {
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ ok: false, code: "PREVIOUS_GROUP_NOT_FOUND", message: "그룹 없음" });
     expect(groupRoundDraftMock).toHaveBeenCalledWith({ productQuery: "상품" });
+  });
+
+  describe("슬랙 버튼 결정 창구", () => {
+    const path = "/api/internal/agent/slack-decision";
+    const body = { proposalId: "p1", decision: "approve" };
+
+    it("전용 비밀값만 연다 — 워커 비밀값·비밀값 없음·터널 경유는 본체를 부르지 않고 404", async () => {
+      const workerSecret = await slackDecisionPost(post(path, body));
+      const none = await slackDecisionPost(post(path, body, {}));
+      const viaTunnel = await slackDecisionPost(
+        post(path, body, { "x-agent-internal-secret": SLACK_SECRET, "cf-connecting-ip": "1.2.3.4" }),
+      );
+      expect([workerSecret.status, none.status, viaTunnel.status]).toEqual([404, 404, 404]);
+      expect(slackDecisionMock).not.toHaveBeenCalled();
+    });
+
+    it("슬랙 비밀값으로는 워커 창구가 열리지 않는다", async () => {
+      const response = await optionsPost(
+        post("/api/internal/agent/store-product-options", { orderCampaignId: "c1" }, { "x-agent-internal-secret": SLACK_SECRET }),
+      );
+      expect(response.status).toBe(404);
+      expect(optionsMock).not.toHaveBeenCalled();
+    });
+
+    it("두 비밀값이 같게 설정되면 결정 창구를 닫는다", async () => {
+      process.env.AGENT_SLACK_DECISION_SECRET = SECRET;
+      const response = await slackDecisionPost(post(path, body));
+      expect(response.status).toBe(404);
+      expect(slackDecisionMock).not.toHaveBeenCalled();
+    });
+
+    it("모양이 틀리면 400 INVALID_INPUT — 슬랙 좌표 같은 추가 칸도 받지 않는다", async () => {
+      const headers = { "x-agent-internal-secret": SLACK_SECRET };
+      const extra = await slackDecisionPost(post(path, { ...body, channel: "C1" }, headers));
+      const badDecision = await slackDecisionPost(post(path, { proposalId: "p1", decision: "retry" }, headers));
+      expect([extra.status, badDecision.status]).toEqual([400, 400]);
+      expect(await extra.json()).toEqual({ ok: false, code: "INVALID_INPUT", status: null });
+      expect(slackDecisionMock).not.toHaveBeenCalled();
+    });
+
+    it("통과하면 본체 결과를 200 으로 그대로 — 실패 결과도 카드 문구를 정하는 값이라 200", async () => {
+      const headers = { "x-agent-internal-secret": SLACK_SECRET };
+      slackDecisionMock.mockResolvedValueOnce({ ok: false, code: "ALREADY_DECIDED", status: "EXECUTED" });
+      const response = await slackDecisionPost(post(path, body, headers));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: false, code: "ALREADY_DECIDED", status: "EXECUTED" });
+      expect(slackDecisionMock).toHaveBeenCalledWith({ proposalId: "p1", decision: "approve" });
+    });
   });
 });

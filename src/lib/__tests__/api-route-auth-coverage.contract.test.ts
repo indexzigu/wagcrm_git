@@ -97,6 +97,7 @@ const EXEMPT_EXACT = [
   "/api/internal/agent/order-campaign-draft",
   "/api/internal/agent/sales-campaign-round-draft",
   "/api/internal/agent/sales-campaign-group-round-draft",
+  "/api/internal/agent/slack-decision",
 ] as const;
 
 function isSessionExempt(pathname: string): boolean {
@@ -125,6 +126,10 @@ const GUARD_RULES: GuardRule[] = [
   {
     pattern: /verifyAgentInternalRequest\s*\(/,
     reason: "@/lib/agent-internal/auth 의 봇 내부 창구 비밀값 검증(터널 경유 거부 포함)",
+  },
+  {
+    pattern: /verifySlackDecisionRequest\s*\(/,
+    reason: "@/lib/agent-internal/auth 의 슬랙 버튼 결정 창구 전용 비밀값 검증(터널 경유 거부 포함)",
   },
   {
     pattern: /requireAuth\s*\(|requireRole\s*\(/,

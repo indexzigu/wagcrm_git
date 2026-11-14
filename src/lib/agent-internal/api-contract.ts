@@ -35,6 +35,7 @@ export const AGENT_INTERNAL_PATHS = {
   orderCampaignDraft: "/api/internal/agent/order-campaign-draft",
   salesCampaignRoundDraft: "/api/internal/agent/sales-campaign-round-draft",
   salesCampaignGroupRoundDraft: "/api/internal/agent/sales-campaign-group-round-draft",
+  slackDecision: "/api/internal/agent/slack-decision",
 } as const;
 
 export const storeProductOptionsRequestSchema = z
@@ -196,3 +197,38 @@ export function httpStatusForFailure(code: AgentInternalFailureCode): number {
       return 422;
   }
 }
+
+/**
+ * 슬랙 버튼 결정 요청 — 기안 ID 와 결정 둘뿐(그 밖의 칸은 거부). 슬랙 채널·메시지 좌표는 싣지 않는다 —
+ * CRM 에 슬랙 식별자를 새로 남기지 않는다(카드 좌표는 hermes 로컬 상태에만 있다).
+ */
+export const slackDecisionRequestSchema = z
+  .object({
+    proposalId: opaqueIdSchema,
+    decision: z.enum(["approve", "reject"]),
+  })
+  .strict();
+
+export type SlackDecisionRequest = z.infer<typeof slackDecisionRequestSchema>;
+
+/**
+ * 슬랙 버튼 결정 응답 — hermes 가 이 값으로 카드를 고친다(`plugins/wag-operator` 사본 계약).
+ *  - `ok:true` → `status` 는 처리 뒤 상태(`EXECUTED`·`REJECTED`).
+ *  - `NOT_FOUND` 기안 없음 · `NOT_ELIGIBLE` 봇 기안이 아니거나 버튼 허용 액션이 아님(결재함에서 승인)
+ *  - `ALREADY_DECIDED` 이미 처리됨 — `status` 는 다시 읽은 현재 상태
+ *  - `EXECUTION_FAILED` 승인했으나 실행 실패(`status` = `FAILED`) · `INVALID_INPUT` 모양 오류 · `INTERNAL` 그 밖의 오류
+ */
+export const SLACK_DECISION_FAILURE_CODES = [
+  "NOT_FOUND",
+  "NOT_ELIGIBLE",
+  "ALREADY_DECIDED",
+  "EXECUTION_FAILED",
+  "INVALID_INPUT",
+  "INTERNAL",
+] as const;
+
+export type SlackDecisionFailureCode = (typeof SLACK_DECISION_FAILURE_CODES)[number];
+
+export type SlackDecisionResponse =
+  | { ok: true; status: "EXECUTED" | "REJECTED" }
+  | { ok: false; code: SlackDecisionFailureCode; status: string | null };

@@ -703,6 +703,11 @@ DB 접속도 최소권한 역할(`wag_agent_worker`)로 앱과 분리된다 — 
    키 한 줄이 있어야 창구가 열린다 — 어느 쪽이든 비면 창구는 404 로 닫혀 봇 매핑만 실패한다. 값 생성:
    `openssl rand -hex 32`(64자). 이 키는 네이버 열쇠나 DB 쓰기 권한이 아니다 — 창구 두 개만 부를 수 있고,
    창구는 Cloudflare 터널을 거쳐 온 요청을 비밀값과 무관하게 거절한다(`src/lib/agent-internal/auth.ts`).
+   **슬랙 버튼 승인 비밀값(2026-11-14 추가):** 슬랙 카드의 [승인]·[반려] 는 hermes 버튼 처리기가 앱의
+   `/api/internal/agent/slack-decision` 을 루프백으로 부른다. 이 창구는 **별도 값** `AGENT_SLACK_DECISION_SECRET`
+   만 받는다(워커 비밀값으로는 안 열리고, 두 값이 같으면 닫힌다). 앱 `.env` 에 한 줄, hermes 쪽은 봇 컨테이너에
+   마운트되지 않는 비밀 파일(`~/.hermes/secrets/` 아래, 0600)에 같은 값을 둔다 — 워커 env 에는 넣지 않는다.
+   비어 있으면 창구가 404 로 닫혀 슬랙 버튼만 「결재함에서 확인」으로 답한다. 값 생성: `openssl rand -hex 32`.
 2. **네이티브 addon 을 빌드한다**(레포 루트에서):
    ```bash
    npm run agent-worker:build-native

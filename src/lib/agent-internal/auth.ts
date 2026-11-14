@@ -35,14 +35,31 @@ function isLoopbackHost(hostHeader: string | null): boolean {
   }
 }
 
-export function verifyAgentInternalRequest(request: Request): boolean {
-  const secret = process.env.AGENT_INTERNAL_API_SECRET?.trim();
+/** 루프백 + 비밀값 검사 본체 — 어느 env 의 비밀값으로 잴지만 다르다(①~④ 위 설명). */
+function verifyLoopbackSecret(request: Request, secretEnv: string): boolean {
+  const secret = process.env[secretEnv]?.trim();
   if (!secret || secret.length < MIN_SECRET_CHARS) return false;
   if (TUNNEL_HEADERS.some((name) => request.headers.has(name))) return false;
   if (!isLoopbackHost(request.headers.get("host"))) return false;
   const provided = request.headers.get(AGENT_INTERNAL_SECRET_HEADER);
   if (!provided) return false;
   return safeEqual(provided, secret);
+}
+
+/** 봇 작업 실행기 창구 — 워커 비밀값(`AGENT_INTERNAL_API_SECRET`). */
+export function verifyAgentInternalRequest(request: Request): boolean {
+  return verifyLoopbackSecret(request, "AGENT_INTERNAL_API_SECRET");
+}
+
+/**
+ * 슬랙 버튼 결정 창구(`/api/internal/agent/slack-decision`) — 전용 비밀값(`AGENT_SLACK_DECISION_SECRET`)만 받는다.
+ * 승인을 실행하는 창구라 워커 비밀값과 분리한다: 워커 비밀값으로는 이 창구가 열리지 않고, 이 비밀값으로는 워커 창구가
+ * 열리지 않는다. 두 값이 같게 설정되면 분리가 무너지므로 이 창구를 닫는다(fail-closed).
+ */
+export function verifySlackDecisionRequest(request: Request): boolean {
+  const workerSecret = process.env.AGENT_INTERNAL_API_SECRET?.trim();
+  if (workerSecret && workerSecret === process.env.AGENT_SLACK_DECISION_SECRET?.trim()) return false;
+  return verifyLoopbackSecret(request, "AGENT_SLACK_DECISION_SECRET");
 }
 
 /** 인증 실패 응답 — 없는 경로와 구별되지 않게 본문 없는 404. */

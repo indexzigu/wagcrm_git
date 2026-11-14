@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCheckIcon, Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
+import { CheckCheckIcon, Loader2Icon, MessageSquareIcon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
 import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import type { ApproveOptions } from "@/hooks/useProposalActions";
 import { displayLabel } from "@/lib/display-label";
-import { AGENT_MAPPING_APPLY_ACTOR } from "@/lib/agent-internal/actors";
+import { AGENT_MAPPING_APPLY_ACTOR, SLACK_OWNER_APPROVAL_ACTOR } from "@/lib/agent-internal/actors";
 
 /** /api/action-proposals GET 응답 항목 형태 (route.ts와 형태를 맞춘다). */
 export type ApprovalInboxItem = {
@@ -278,6 +278,8 @@ export function PendingCard({
  * (`lib/agent/auto-execute/settlement-auto-execute.ts`) — 사람 승인과 구분해 「한도 안」을 밝힌다.
  * executedBy==="AGENT_MAPPING_APPLY" = 봇이 슬랙 짝 확인(「응」) 직후 바로 저장한 상품 매핑
  * (`lib/agent-internal/apply-product-mappings.ts`, 오너 결정 2026-10-16 — 결재함 승인 없이 기록만 남는다).
+ * executedBy==="SLACK_OWNER_APPROVAL" = 오너가 슬랙 카드의 [승인] 버튼으로 승인한 건
+ * (`lib/agent-internal/slack-decision.ts`, 오너 결정 2026-11-14) — 오너 승인이므로 「실행완료」와 같은 무게로 출처만 밝힌다.
  */
 export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
   return (
@@ -293,6 +295,11 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
           <Badge variant="status-success">
             <CheckCheckIcon aria-hidden />
             즉시저장
+          </Badge>
+        ) : item.executedBy === SLACK_OWNER_APPROVAL_ACTOR ? (
+          <Badge variant="status-success">
+            <MessageSquareIcon aria-hidden />
+            슬랙에서 승인
           </Badge>
         ) : item.executedBy === "AGENT" ? (
           <Badge variant="status-success">
