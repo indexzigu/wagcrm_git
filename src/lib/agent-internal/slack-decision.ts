@@ -14,7 +14,7 @@ import { SLACK_OWNER_APPROVAL_ACTOR } from "./actors";
  *  ② 액션이 `SLACK_DECIDABLE_ACTIONS` 에 있을 때만 — 돈·정산 칸·계산서 보강이 걸린 액션은 표를 보고 결재함에서 승인한다.
  *     (`update_record` 는 정산 금액·입금/지급 완료 칸까지 고칠 수 있어 제외 — 독립 검토 2026-11-14 지적.)
  *     모든 액션은 두 목록 중 하나에 있어야 한다 — 새 액션이 생기면 분류 계약 테스트가 실패해 판단을 강제한다(기본 = 제외).
- *  ③ 승인은 `PENDING_APPROVAL` 에서만(실패 기안 재실행은 결재함에서). 중복 클릭은 승인 본체의 상태 전이(CAS)가 막고,
+ *  ③ 대기 중(`PENDING_APPROVAL`)이 아닌 기안은 승인·반려를 시도하지 않는다(최종 방어는 여전히 본체의 상태 전이 CAS). 승인은 `PENDING_APPROVAL` 에서만(실패 기안 재실행은 결재함에서). 중복 클릭은 승인 본체의 상태 전이(CAS)가 막고,
  *     이미 처리된 기안이면 현재 상태를 다시 읽어 돌려준다(CONFLICT 의 상태는 낡은 값이라).
  * 승인자·반려자는 `SLACK_OWNER_APPROVAL_ACTOR` — 결재함이 「슬랙에서 승인」으로 표시한다.
  */
@@ -56,9 +56,17 @@ async function currentStatus(deps: SlackDecisionDeps, id: string): Promise<strin
   return (await deps.findProposal(id))?.status ?? null;
 }
 
-async function internalFailure(deps: SlackDecisionDeps, id: string, err: unknown): Promise<SlackDecisionResponse> {
+/**
+ * 승인·반려 본체가 던졌을 때 — 상태를 다시 읽어, 이미 끝난 상태(커밋 뒤 예외)면 ALREADY_DECIDED 로 알린다
+ * (카드가 「실패」로 남아 다시 누르게 되지 않게). 아직 대기 중이거나 읽지 못하면 INTERNAL(카드는 「결재함에서 확인」).
+ */
+async function failureFromThrow(deps: SlackDecisionDeps, id: string, err: unknown): Promise<SlackDecisionResponse> {
   console.error(`[slack-decision] ${id} 처리 중 예외:`, err);
-  return { ok: false, code: "INTERNAL", status: await currentStatus(deps, id).catch(() => null) };
+  const status = await currentStatus(deps, id).catch(() => null);
+  if (status !== null && status !== "PENDING_APPROVAL" && status !== "APPROVED") {
+    return { ok: false, code: "ALREADY_DECIDED", status };
+  }
+  return { ok: false, code: "INTERNAL", status };
 }
 
 export async function decideProposalFromSlack(
@@ -83,7 +91,7 @@ export async function decideProposalFromSlack(
     try {
       outcome = await deps.reject(proposalId, SLACK_OWNER_APPROVAL_ACTOR, "슬랙에서 반려");
     } catch (err) {
-      return internalFailure(deps, proposalId, err);
+      return failureFromThrow(deps, proposalId, err);
     }
     if (outcome.ok) return { ok: true, status: "REJECTED" };
     if (outcome.code === "NOT_FOUND") return { ok: false, code: "NOT_FOUND", status: null };
@@ -95,7 +103,7 @@ export async function decideProposalFromSlack(
     outcome = await deps.approve(proposalId, SLACK_OWNER_APPROVAL_ACTOR, { expectedStatus: "PENDING_APPROVAL" });
   } catch (err) {
     // 승인 본체는 커밋 뒤(실행 후속 효과 등)에도 던질 수 있다 — 상태를 다시 읽어 실은 EXECUTED 인지 알려 준다.
-    return internalFailure(deps, proposalId, err);
+    return failureFromThrow(deps, proposalId, err);
   }
   if (outcome.ok) return { ok: true, status: "EXECUTED" };
   if (outcome.code === "NOT_FOUND") return { ok: false, code: "NOT_FOUND", status: null };

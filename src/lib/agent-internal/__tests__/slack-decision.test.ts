@@ -146,7 +146,7 @@ describe("decideProposalFromSlack", () => {
     spy.mockRestore();
   });
 
-  it("승인 본체가 커밋 뒤 던져도 상태를 다시 읽어 INTERNAL + 현재 상태로 돌려준다", async () => {
+  it("승인 본체가 커밋 뒤 던지면 상태를 다시 읽어 이미 끝났으면 ALREADY_DECIDED 로 돌려준다", async () => {
     const findProposal = vi
       .fn()
       .mockResolvedValueOnce(botProposal("create_deal"))
@@ -157,7 +157,26 @@ describe("decideProposalFromSlack", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
       decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, deps(null, { findProposal, approve })),
-    ).resolves.toEqual({ ok: false, code: "INTERNAL", status: "EXECUTED" });
+    ).resolves.toEqual({ ok: false, code: "ALREADY_DECIDED", status: "EXECUTED" });
+    spy.mockRestore();
+  });
+
+  it("본체가 던졌는데 아직 대기 중이면 INTERNAL + 대기 상태(반려 경로 포함)", async () => {
+    const thrower = vi.fn(async () => {
+      throw new Error("db down");
+    });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const decision of ["approve", "reject"] as const) {
+      const d = deps(botProposal("create_deal"), {
+        approve: thrower as unknown as Approve,
+        reject: thrower as unknown as Reject,
+      });
+      await expect(decideProposalFromSlack({ proposalId: "p1", decision }, d)).resolves.toEqual({
+        ok: false,
+        code: "INTERNAL",
+        status: "PENDING_APPROVAL",
+      });
+    }
     spy.mockRestore();
   });
 
