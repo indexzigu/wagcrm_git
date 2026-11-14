@@ -32,7 +32,7 @@
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { ActionProposalRepository, ConcurrentModificationError } from "@/repositories/actionProposalRepository";
-import { executeWriteAction } from "@/lib/agent/write-executor";
+import { executeWriteAction, resolveWriteActionTxTimeoutMs } from "@/lib/agent/write-executor";
 import { applyWriteActionEffects } from "@/lib/agent/write-action-effects";
 import { parseStoredJson } from "@/lib/stored-json";
 import { adoptCalendarEventIntoLedger } from "@/lib/google-calendar-sync";
@@ -370,6 +370,8 @@ export async function approveProposal(
   // (apply-executor.ts M1 패턴과 동일 — 전이 실패 시 실행 결과도 함께 롤백돼야 상태-DB 불일치가 없다).
   const prisma = getPrisma();
   let outcome: { executed: ExecutedProposal; result: ExecutionResult };
+  // 행을 여럿 만드는 액션(그룹 회차)만 시간 상한을 늘린다 — 나머지는 Prisma 기본값 그대로(`txTimeoutMs` 주석).
+  const txTimeoutMs = resolveWriteActionTxTimeoutMs(payload.action);
   try {
     outcome = await prisma.$transaction(async (tx) => {
       const result = await executeWriteAction(payload.action, payload.args, approverId, tx);
@@ -390,7 +392,7 @@ export async function approveProposal(
         tx,
       });
       return { executed, result };
-    });
+    }, txTimeoutMs !== undefined ? { timeout: txTimeoutMs } : undefined);
   } catch (err) {
     const message = describeError(err);
     // tx2가 실패했으므로 실행(쓰기)과 EXECUTED 전이 모두 롤백된 상태다. 별도의(정상 동작하는)

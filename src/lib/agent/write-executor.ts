@@ -32,5 +32,6 @@ export {
   WRITE_ACTIONS,
   executeWriteAction,
   resolveWriteActionEffects,
+  resolveWriteActionTxTimeoutMs,
   type WriteActionName,
 } from "./write-actions";

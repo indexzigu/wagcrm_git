@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { searchNaverProducts } from "@/lib/order-converter/naver-commerce-api";
 import { deriveOrderCampaignFieldsFromProduct } from "@/lib/order-converter/order-campaign-create";
@@ -77,76 +78,87 @@ const toNumber = (value: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/** 이전 회차 한 건을 읽는 칸 — 그룹 회차 초안(`sales-campaign-group-round-draft.ts`)도 같은 칸으로 멤버를 읽는다. */
+export const previousRoundSelect = {
+  id: true,
+  campaignName: true,
+  dealId: true,
+  sellerId: true,
+  salesChannel: true,
+  isManualMargin: true,
+  totalMarginRate: true,
+  sellerMarginRate: true,
+  deal: { select: { dealName: true } },
+  seller: { select: { name: true, alias: true } },
+  orderCampaign: { select: { productId: true } },
+  campaignDeals: {
+    orderBy: { createdAt: "asc" },
+    select: {
+      dealId: true,
+      feeRate: true,
+      sellerMarginRate: true,
+      costPrice: true,
+      sellingPrice: true,
+      deal: { select: { dealName: true } },
+    },
+  },
+} satisfies Prisma.SalesCampaignSelect;
+
+type PreviousRoundRow = Prisma.SalesCampaignGetPayload<{ select: typeof previousRoundSelect }>;
+
+export function toPreviousRound(row: PreviousRoundRow): PreviousRound {
+  return {
+    id: row.id,
+    campaignName: row.campaignName,
+    dealId: row.dealId,
+    sellerId: row.sellerId,
+    salesChannel: row.salesChannel,
+    isManualMargin: row.isManualMargin,
+    totalMarginRate: toNumber(row.totalMarginRate) ?? 0,
+    sellerMarginRate: toNumber(row.sellerMarginRate) ?? 0,
+    dealName: row.deal.dealName,
+    // 셀러 표기는 별칭 우선(P2 Seller Alias Priority) — 캠페인 이름 조합과 같다.
+    sellerName: row.seller.alias || row.seller.name,
+    linkedProductId: row.orderCampaign?.productId?.trim() || null,
+    items: row.campaignDeals.map((cd) => ({
+      dealId: cd.dealId,
+      dealName: cd.deal.dealName,
+      feeRate: toNumber(cd.feeRate),
+      sellerMarginRate: toNumber(cd.sellerMarginRate),
+      costPrice: toNumber(cd.costPrice),
+      sellingPrice: toNumber(cd.sellingPrice),
+    })),
+  };
+}
+
+/** 같은 판매 조건·셀러의 캠페인 전부(시작일 오름차순) — 회차 예상·같은 기간 중복 판정용. */
+export async function listRoundsFromDb(dealId: string, sellerId: string): Promise<RoundSummary[]> {
+  const rows = await getPrisma().salesCampaign.findMany({
+    where: { dealId, sellerId },
+    select: { id: true, campaignName: true, startDate: true, endDate: true },
+    orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.campaignName,
+    startDate: toKstDateStr(row.startDate) ?? "",
+    endDate: toKstDateStr(row.endDate) ?? "",
+  }));
+}
+
+/** 스토어 상품 목록 원소 배열(`searchNaverProducts().contents`, 60초 공유 캐시). */
+export async function listStoreProducts(): Promise<ReadonlyArray<unknown>> {
+  const data = await searchNaverProducts();
+  return Array.isArray(data?.contents) ? data.contents : [];
+}
+
 const defaultDeps: SalesCampaignRoundDraftDeps = {
   loadPreviousRound: async (campaignId) => {
-    const row = await getPrisma().salesCampaign.findUnique({
-      where: { id: campaignId },
-      select: {
-        id: true,
-        campaignName: true,
-        dealId: true,
-        sellerId: true,
-        salesChannel: true,
-        isManualMargin: true,
-        totalMarginRate: true,
-        sellerMarginRate: true,
-        deal: { select: { dealName: true } },
-        seller: { select: { name: true, alias: true } },
-        orderCampaign: { select: { productId: true } },
-        campaignDeals: {
-          orderBy: { createdAt: "asc" },
-          select: {
-            dealId: true,
-            feeRate: true,
-            sellerMarginRate: true,
-            costPrice: true,
-            sellingPrice: true,
-            deal: { select: { dealName: true } },
-          },
-        },
-      },
-    });
-    if (!row) return null;
-    return {
-      id: row.id,
-      campaignName: row.campaignName,
-      dealId: row.dealId,
-      sellerId: row.sellerId,
-      salesChannel: row.salesChannel,
-      isManualMargin: row.isManualMargin,
-      totalMarginRate: toNumber(row.totalMarginRate) ?? 0,
-      sellerMarginRate: toNumber(row.sellerMarginRate) ?? 0,
-      dealName: row.deal.dealName,
-      // 셀러 표기는 별칭 우선(P2 Seller Alias Priority) — 캠페인 이름 조합과 같다.
-      sellerName: row.seller.alias || row.seller.name,
-      linkedProductId: row.orderCampaign?.productId?.trim() || null,
-      items: row.campaignDeals.map((cd) => ({
-        dealId: cd.dealId,
-        dealName: cd.deal.dealName,
-        feeRate: toNumber(cd.feeRate),
-        sellerMarginRate: toNumber(cd.sellerMarginRate),
-        costPrice: toNumber(cd.costPrice),
-        sellingPrice: toNumber(cd.sellingPrice),
-      })),
-    };
+    const row = await getPrisma().salesCampaign.findUnique({ where: { id: campaignId }, select: previousRoundSelect });
+    return row ? toPreviousRound(row) : null;
   },
-  listProducts: async () => {
-    const data = await searchNaverProducts();
-    return Array.isArray(data?.contents) ? data.contents : [];
-  },
-  listRounds: async (dealId, sellerId) => {
-    const rows = await getPrisma().salesCampaign.findMany({
-      where: { dealId, sellerId },
-      select: { id: true, campaignName: true, startDate: true, endDate: true },
-      orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
-    });
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.campaignName,
-      startDate: toKstDateStr(row.startDate) ?? "",
-      endDate: toKstDateStr(row.endDate) ?? "",
-    }));
-  },
+  listProducts: listStoreProducts,
+  listRounds: listRoundsFromDb,
   findUnlinkedOrderCampaign: async (productNos) =>
     getPrisma().orderCampaign.findFirst({
       where: { productId: { in: [...productNos] }, isActive: true, salesCampaigns: { none: {} } },

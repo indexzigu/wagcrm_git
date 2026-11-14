@@ -55,10 +55,15 @@ export function applyWriteActionEffects(action: string, result: WriteActionResul
 
     // 새 판매캠페인의 드라이브 폴더 — 화면 생성과 같은 fire-and-forget(`createCampaignDriveFolder` 가 실패를 로그로 남긴다).
     // 동적 import 인 이유는 위 자동 연결과 같다(이 액션이 실제로 돌 때만 서비스 모듈을 로드한다).
-    const driveCampaignId = spec.driveFolderCampaignId;
-    if (driveCampaignId) {
+    const driveCampaignIds = [
+      ...(spec.driveFolderCampaignId ? [spec.driveFolderCampaignId] : []),
+      ...(spec.driveFolderCampaignIds ?? []),
+    ];
+    if (driveCampaignIds.length > 0) {
       import("@/services/campaignService")
-        .then(({ createCampaignDriveFolder }) => createCampaignDriveFolder(driveCampaignId))
+        .then(({ createCampaignDriveFolder }) => {
+          for (const driveCampaignId of driveCampaignIds) createCampaignDriveFolder(driveCampaignId);
+        })
         .catch(e => console.error("[drive] 캠페인 폴더 후속 처리 로드 실패:", e));
     }
 

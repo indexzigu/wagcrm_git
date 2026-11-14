@@ -665,6 +665,154 @@ function CreateSalesCampaignRoundPreview({ args }: { args: Record<string, unknow
   );
 }
 
+/** 하위품목 판매가 요약 — 한 줄이면 그 값, 여럿이면 「첫 값 외 N」, 없으면 「없음」(빈 값 「—」과 구분). */
+function itemPriceSummary(items: Record<string, unknown>[]): string {
+  if (items.length === 0) return "없음";
+  const first = asMoney(items[0].sellingPrice) ?? "—";
+  return items.length === 1 ? first : `${first} 외 ${items.length - 1}`;
+}
+
+/** 경고 한 줄 — 단건 회차 블록의 상품 경고와 같은 모양. */
+function CautionLine({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-start gap-1.5 text-foreground">
+      <AlertTriangleIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-status-caution" />
+      <span className="min-w-0 break-words">{children}</span>
+    </p>
+  );
+}
+
+function LinkedCampaignList({ campaigns }: { campaigns: Record<string, unknown>[] }) {
+  return (
+    <ul className="space-y-0.5 pl-4.5 text-muted-foreground">
+      {campaigns.map((campaign, index) => (
+        <li key={`${index}-${asText(campaign.id) ?? ""}`} className="min-w-0 break-words tabular-nums">
+          {asText(campaign.name) ?? "이름없음"} · {periodText(asText(campaign.startDate), asText(campaign.endDate)) ?? "—"}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * 판매캠페인 그룹 다음 회차 등록 — 승인자가 판단할 순서대로: 무엇이 생기나(새 그룹·기간·상태 → 새로 만들 캠페인 표)
+ * → 근거 스토어 상품 → 연결할 주문캠페인과 그 경고 → 이전 그룹·메모.
+ *
+ * 연결 경고는 둘로 가른다. 연결할 주문캠페인(같은 상품의 가장 최근 것)에 **이전 그룹 캠페인**이 붙어 있으면 이번 회차용
+ * 주문캠페인이 아직 없다는 뜻이라 반려가 맞고, **그 밖의 캠페인**이 붙어 있으면 오너가 미리 만들어 둔 자리 캠페인일
+ * 가능성이 높아 승인 뒤 정리가 맞다 — 한 문장으로 덮으면 앞의 경우에 반대 행동을 부른다.
+ */
+function CreateSalesCampaignGroupRoundPreview({ args }: { args: Record<string, unknown> }) {
+  const period = periodText(asText(args.startDate), asText(args.endDate));
+  const product = asRecord(args.product);
+  const members = asRecordList(args.members);
+  if (!period || !product || members.length === 0) return null;
+  const status = asText(args.status);
+  const linkOrder = asRecord(args.linkOrderCampaign);
+  const otherLinked = asRecordList(args.otherLinkedCampaigns);
+  const previousIds = new Set(members.map((member) => asText(member.previousCampaignId)));
+  const linkedFromPrevious = otherLinked.filter((campaign) => previousIds.has(asText(campaign.id)));
+  const linkedOthers = otherLinked.filter((campaign) => !previousIds.has(asText(campaign.id)));
+  const fromStore = args.dateSource === "STORE";
+  const fromPreviousRound = product.source === "PREVIOUS_ROUND";
+  const productName = asText(product.name);
+  // 조합 캠페인은 채널이 하나다 — 모두 같으면 위 한 줄로 올리고, 섞였을 때만 표 열로 둔다.
+  const channels = new Set(members.map((member) => asText(member.salesChannel)));
+  const sharedChannel = channels.size === 1 ? [...channels][0] : null;
+  const anyManualMargin = members.some((member) => member.isManualMargin === true);
+  const marginText = (member: Record<string, unknown>) =>
+    member.isManualMargin === true && asPercent(member.totalMarginRate) && asPercent(member.sellerMarginRate)
+      ? `총 ${asPercent(member.totalMarginRate)} · 셀러 ${asPercent(member.sellerMarginRate)}(수동)`
+      : "—";
+  return (
+    <>
+      <Rows
+        rows={[
+          ["새 그룹", `${asText(args.sellerName) ?? ""} · 캠페인 ${members.length}개`],
+          ["기간", `${period}${fromStore ? "(스토어 판매 기간 그대로)" : "(봇이 직접 입력)"}`],
+          ["상태", status ? displayLabel(campaignStatusLabels, status) : null],
+          ["판매 채널", sharedChannel ? displayLabel(salesChannelLabels, sharedChannel) : null],
+        ]}
+      />
+      <div className="space-y-1">
+        <SectionTitle>새로 만들 캠페인</SectionTitle>
+        <div className="max-h-56 overflow-x-auto overflow-y-auto">
+          <table className="w-full border-collapse text-left tabular-nums">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="py-1 pr-3 font-normal">새 캠페인(예상)</th>
+                {!sharedChannel && <th className="py-1 pr-3 font-normal">판매 채널</th>}
+                <th className={`py-1 font-normal${anyManualMargin ? " pr-3" : ""}`}>이어받는 판매가</th>
+                {anyManualMargin && <th className="py-1 font-normal">마진</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((member, index) => {
+                const channel = asText(member.salesChannel);
+                return (
+                  <tr key={`${index}-${asText(member.dealId) ?? ""}`} className="align-top text-foreground">
+                    <td className="py-1 pr-3 break-words">
+                      {asText(member.expectedCampaignName) ?? asText(member.dealName) ?? "—"}
+                    </td>
+                    {!sharedChannel && (
+                      <td className="py-1 pr-3 break-words">{channel ? displayLabel(salesChannelLabels, channel) : "—"}</td>
+                    )}
+                    <td className={`py-1 break-words${anyManualMargin ? " pr-3" : ""}`}>
+                      {itemPriceSummary(asRecordList(member.campaignItems))}
+                    </td>
+                    {anyManualMargin && <td className="py-1 break-words">{marginText(member)}</td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <Rows
+        rows={[
+          ["스토어 상품", productName ? `${productName}${fromPreviousRound ? "(이전 그룹에서 가져옴)" : "(봇이 지정)"}` : null],
+          ["상품번호", asText(product.productId)],
+          ["스토어 기간", fromStore ? null : asText(product.salePeriod)],
+        ]}
+      />
+      {fromPreviousRound && (
+        <CautionLine>
+          봇이 상품을 지정하지 않아 이전 그룹에 연결된 스토어 상품을 그대로 가져왔습니다. 이번 회차 상품이 따로 있으면 반려해 주세요.
+        </CautionLine>
+      )}
+      <Rows rows={[["연결할 주문캠페인", linkOrder ? asText(linkOrder.name) : "없음"]]} />
+      {linkedFromPrevious.length > 0 && (
+        <div className="space-y-1">
+          <CautionLine>
+            이 주문캠페인에는 이전 그룹의 캠페인 {linkedFromPrevious.length}개가 아직 연결돼 있습니다. 이번 회차용 주문캠페인이 아니면
+            반려해 주세요.
+          </CautionLine>
+          <LinkedCampaignList campaigns={linkedFromPrevious} />
+        </div>
+      )}
+      {linkedOthers.length > 0 && (
+        <div className="space-y-1">
+          <CautionLine>
+            이 주문캠페인에 판매캠페인 {linkedOthers.length}개가 이미 연결돼 있습니다. 미리 만들어 둔 캠페인이면 승인 뒤 판매 관리에서
+            지우거나 연결을 풀어 주세요.
+          </CautionLine>
+          <LinkedCampaignList campaigns={linkedOthers} />
+        </div>
+      )}
+      <Rows
+        rows={[
+          ["이전 그룹", asText(args.previousGroupName)],
+          ["기안 메모", asText(args.memo)],
+        ]}
+      />
+      <p className="text-muted-foreground">
+        승인하면 위 캠페인과 새 그룹이 한 번에 생깁니다(하나라도 안 만들어지면 전부 취소). 번호·이름은 시작일 순서로 다시 붙고, 판매
+        조건·마진·품목은 이전 그룹에서 이어받으며, 수량·매출은 0에서 시작합니다.
+      </p>
+    </>
+  );
+}
+
 /** `YYYY-MM-DD` 두 날 → 「시작 ~ 끝」, 같은 날이면 하루만. */
 function periodText(start: string | null, end: string | null): string | null {
   if (!start || !end) return null;
@@ -793,6 +941,8 @@ export function ProposalPayloadPreview({
       <CreateOrderCampaignPreview args={args} />
     ) : action === "create_sales_campaign_round" ? (
       <CreateSalesCampaignRoundPreview args={args} />
+    ) : action === "create_sales_campaign_group_round" ? (
+      <CreateSalesCampaignGroupRoundPreview args={args} />
     ) : null;
   if (!body && !origin) return null;
   return (

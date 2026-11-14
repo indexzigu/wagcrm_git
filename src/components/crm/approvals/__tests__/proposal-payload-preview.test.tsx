@@ -678,3 +678,113 @@ describe("ProposalPayloadPreview — 판매캠페인 회차 등록(create_sales_
     expect(screen.getByText("2026.12.01 ~ 2026.12.07")).toBeTruthy();
   });
 });
+
+describe("ProposalPayloadPreview — 판매캠페인 그룹 회차 등록(create_sales_campaign_group_round)", () => {
+  const member = (dealId: string, dealName: string, items: number, manual = false) => ({
+    previousCampaignId: `prev-${dealId}`,
+    previousCampaignName: `${dealName} - 샘플셀러`,
+    dealId,
+    dealName,
+    salesChannel: "OWN_MALL_NAVER",
+    isManualMargin: manual,
+    totalMarginRate: manual ? 30 : 0,
+    sellerMarginRate: manual ? 12 : 0,
+    campaignItems: Array.from({ length: items }, (_, i) => ({
+      dealId: `${dealId}-${i}`,
+      dealName,
+      feeRate: 30,
+      sellerMarginRate: 12,
+      costPrice: null,
+      sellingPrice: 29_000 + i * 1_000,
+    })),
+    expectedRoundNumber: 2,
+    expectedCampaignName: `${dealName} - 샘플셀러 2차`,
+  });
+  const base = {
+    previousGroupId: "group-1",
+    previousGroupName: "[샘플셀러] 딜A 외 1건",
+    sellerId: "seller-1",
+    sellerName: "샘플셀러",
+    members: [member("deal-a", "딜A", 2), member("deal-b", "딜B", 0)],
+    product: {
+      productId: "101",
+      channelProductNo: "201",
+      name: "[샘플셀러 X 샘플브랜드] 조합 2차",
+      productStatus: "SALE",
+      salePeriod: "2026.12.01 ~ 2026.12.07",
+      source: "INPUT",
+    },
+    baseNaverLink: "https://smartstore.naver.com/ygrd/products/201",
+    startDate: "2026-12-01",
+    endDate: "2026-12-07",
+    dateSource: "STORE",
+    status: "PREPARATION",
+    linkOrderCampaign: { id: "oc-2", name: "조합 2차 주문" },
+    otherLinkedCampaigns: [],
+  };
+  const tableRows = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll("tbody tr")).map((tr) => Array.from(tr.querySelectorAll("td")).map((td) => td.textContent));
+
+  it("새 그룹·기간 출처·상태·공통 채널과 새로 만들 캠페인 전부를 보여준다", () => {
+    const { container } = render(<ProposalPayloadPreview action="create_sales_campaign_group_round" args={base} />);
+    expect(screen.getByText("샘플셀러 · 캠페인 2개")).toBeTruthy();
+    expect(screen.getByText("2026-12-01 ~ 2026-12-07(스토어 판매 기간 그대로)")).toBeTruthy();
+    expect(screen.getByText("세팅대기")).toBeTruthy();
+    expect(screen.getByText("자사몰(네이버)")).toBeTruthy();
+    expect(screen.getByText("[샘플셀러 X 샘플브랜드] 조합 2차(봇이 지정)")).toBeTruthy();
+    expect(screen.getByText("[샘플셀러] 딜A 외 1건")).toBeTruthy();
+    expect(screen.getByText("조합 2차 주문")).toBeTruthy();
+    // 채널이 모두 같으면 열을 빼고, 하위품목이 없으면 「없음」(빈 값 「—」과 구분).
+    expect(tableRows(container)).toEqual([
+      ["딜A - 샘플셀러 2차", "29,000원 외 1"],
+      ["딜B - 샘플셀러 2차", "없음"],
+    ]);
+    expect(screen.queryByText(/이미 연결돼 있습니다/)).toBeNull();
+    expect(screen.queryByText(/아직 연결돼 있습니다/)).toBeNull();
+    expect(screen.queryByText(/이전 그룹에 연결된 스토어 상품을 그대로/)).toBeNull();
+  });
+
+  it("수동 마진이 있거나 채널이 섞이면 그 열을 보여준다", () => {
+    const { container } = render(
+      <ProposalPayloadPreview
+        action="create_sales_campaign_group_round"
+        args={{ ...base, members: [member("deal-a", "딜A", 1, true), { ...member("deal-b", "딜B", 1), salesChannel: "SELLER_MALL" }] }}
+      />,
+    );
+    expect(tableRows(container)).toEqual([
+      ["딜A - 샘플셀러 2차", "자사몰(네이버)", "29,000원", "총 30% · 셀러 12%(수동)"],
+      ["딜B - 샘플셀러 2차", "셀러몰", "29,000원", "—"],
+    ]);
+  });
+
+  it("주문캠페인에 미리 만든 캠페인이 붙어 있으면 승인 뒤 정리 경고, 이전 그룹 캠페인이면 반려 경고", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_sales_campaign_group_round"
+        args={{
+          ...base,
+          otherLinkedCampaigns: [
+            { id: "ph", name: "딜A - 샘플셀러 2차", startDate: "2026-11-30", endDate: "2026-12-06" },
+            { id: "prev-deal-b", name: "딜B - 샘플셀러", startDate: "2026-11-01", endDate: "2026-11-07" },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText(/판매캠페인 1개가 이미 연결돼 있습니다/)).toBeTruthy();
+    expect(screen.getByText("딜A - 샘플셀러 2차 · 2026-11-30 ~ 2026-12-06")).toBeTruthy();
+    expect(screen.getByText(/이전 그룹의 캠페인 1개가 아직 연결돼 있습니다/)).toBeTruthy();
+    expect(screen.getByText("딜B - 샘플셀러 · 2026-11-01 ~ 2026-11-07")).toBeTruthy();
+  });
+
+  it("주문캠페인이 없으면 「없음」, 이전 그룹 상품을 그대로 쓰면 출처와 경고", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_sales_campaign_group_round"
+        args={{ ...base, linkOrderCampaign: null, product: { ...base.product, source: "PREVIOUS_ROUND" } }}
+      />,
+    );
+    expect(screen.getByText("연결할 주문캠페인").nextElementSibling?.textContent).toBe("없음");
+    expect(screen.getByText("[샘플셀러 X 샘플브랜드] 조합 2차(이전 그룹에서 가져옴)")).toBeTruthy();
+    expect(screen.getByText(/이전 그룹에 연결된 스토어 상품을 그대로 가져왔습니다/)).toBeTruthy();
+  });
+});

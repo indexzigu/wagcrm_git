@@ -7,6 +7,9 @@ import {
   refineSalesRoundPeriod,
   createSalesCampaignRoundRequestSchema,
   refineSalesCampaignRoundRequest,
+  salesCampaignGroupRoundArgsObjectSchema,
+  createSalesCampaignGroupRoundRequestSchema,
+  refineSalesCampaignGroupRoundRequest,
   createOrderCampaignRequestSchema,
   MAX_PRODUCT_MAPPING_ROWS,
   opaqueIdSchema,
@@ -31,6 +34,7 @@ export const AGENT_INTERNAL_PATHS = {
   applyProductMappings: "/api/internal/agent/apply-product-mappings",
   orderCampaignDraft: "/api/internal/agent/order-campaign-draft",
   salesCampaignRoundDraft: "/api/internal/agent/sales-campaign-round-draft",
+  salesCampaignGroupRoundDraft: "/api/internal/agent/sales-campaign-group-round-draft",
 } as const;
 
 export const storeProductOptionsRequestSchema = z
@@ -82,6 +86,21 @@ export const salesCampaignRoundDraftDataSchema = salesCampaignRoundArgsObjectSch
 
 export type SalesCampaignRoundDraftData = z.infer<typeof salesCampaignRoundDraftDataSchema>;
 
+/** 판매캠페인 그룹 다음 회차 기안 초안 요청 — 단건과 같이 메모만 뺀다. */
+export const salesCampaignGroupRoundDraftRequestSchema = createSalesCampaignGroupRoundRequestSchema
+  .omit({ memo: true })
+  .strict()
+  .superRefine(refineSalesCampaignGroupRoundRequest);
+
+export type SalesCampaignGroupRoundDraftRequest = z.infer<typeof salesCampaignGroupRoundDraftRequestSchema>;
+
+export const salesCampaignGroupRoundDraftDataSchema = salesCampaignGroupRoundArgsObjectSchema
+  .omit({ memo: true })
+  .strict()
+  .superRefine(refineSalesRoundPeriod);
+
+export type SalesCampaignGroupRoundDraftData = z.infer<typeof salesCampaignGroupRoundDraftDataSchema>;
+
 /**
  * 창구 실패 코드. 봇 작업 결과 요약에 그대로 실린다(`… failed: <code> (<message>)`).
  * - CAMPAIGN_NOT_FOUND: 주문캠페인 없음
@@ -98,6 +117,7 @@ export type SalesCampaignRoundDraftData = z.infer<typeof salesCampaignRoundDraft
  * - PRODUCT_REQUIRED: 판매캠페인 회차 기안에서 상품 지목이 없고 이전 회차에 연결된 스토어 상품도 없음
  * - SALE_PERIOD_UNAVAILABLE: 스토어 판매 기간이 없거나(미등록·기간 미정·끝 없음) 이미 끝남 — 날짜를 받아 다시 올린다
  * - ROUND_ALREADY_EXISTS: 같은 판매 조건·셀러에 같은 기간의 캠페인이 이미 있음
+ * - PREVIOUS_GROUP_NOT_FOUND: 그룹 회차 기안에서 지목한 캠페인이 그룹에 속하지 않았거나, 같은 스토어 상품을 쓴 지난 그룹이 없음
  * (판매캠페인 회차 기안의 이전 회차가 없으면 CAMPAIGN_NOT_FOUND)
  */
 export const AGENT_INTERNAL_FAILURE_CODES = [
@@ -116,6 +136,7 @@ export const AGENT_INTERNAL_FAILURE_CODES = [
   "PRODUCT_REQUIRED",
   "SALE_PERIOD_UNAVAILABLE",
   "ROUND_ALREADY_EXISTS",
+  "PREVIOUS_GROUP_NOT_FOUND",
 ] as const;
 
 export type AgentInternalFailureCode = (typeof AGENT_INTERNAL_FAILURE_CODES)[number];
@@ -150,6 +171,11 @@ export const orderCampaignDraftResponseSchema = z.union([
 
 export const salesCampaignRoundDraftResponseSchema = z.union([
   z.object({ ok: z.literal(true), data: salesCampaignRoundDraftDataSchema }).strict(),
+  failureSchema,
+]);
+
+export const salesCampaignGroupRoundDraftResponseSchema = z.union([
+  z.object({ ok: z.literal(true), data: salesCampaignGroupRoundDraftDataSchema }).strict(),
   failureSchema,
 ]);
 

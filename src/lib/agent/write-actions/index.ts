@@ -14,6 +14,7 @@ import { confirmSettlementAction } from "./confirm-settlement";
 import { createCampaignRoundAction } from "./create-campaign-round";
 import { createOrderCampaignAction } from "./create-order-campaign";
 import { createSalesCampaignRoundAction } from "./create-sales-campaign-round";
+import { createSalesCampaignGroupRoundAction } from "./create-sales-campaign-group-round";
 import { createPartnerAction } from "./create-partner";
 import { createDealAction } from "./create-deal";
 import { updateSettlementAmountAction } from "./update-settlement-amount";
@@ -29,7 +30,8 @@ import type { WriteActionDefinition, WriteActionEffectSpec, WriteActionResult } 
  * update_record 를 더했고, 주문캠페인 상품 매핑을 새로 넣거나 고치는 upsert_product_mappings 를 더했고, 구글 캘린더에서 들어온
  * 새 회차를 만드는 create_campaign_round([캘린더수집] — 캘린더 수집만 기안, 봇 도구 아님)를 더했고, 판매캠페인 품목에
  * 하위품목을 덧붙이는 add_campaign_items(T-271)를 더하고, 네이버 상품에 연결된 주문캠페인을 새로 만드는 create_order_campaign 을
- * 더하고, 이전 회차와 스토어 상품으로 판매캠페인 다음 회차를 만드는 create_sales_campaign_round 를 더한 12종이다(승인은 언제나 수동, 사람만 — `approval-policy.ts`).
+ * 더하고, 이전 회차와 스토어 상품으로 판매캠페인 다음 회차를 만드는 create_sales_campaign_round 를 더하고, 지난 캠페인 그룹을 이어
+ * 다음 회차 캠페인들과 새 그룹을 만드는 create_sales_campaign_group_round 를 더한 13종이다(승인은 언제나 수동, 사람만 — `approval-policy.ts`).
  */
 export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
   add_entity_memo: addEntityMemoAction,
@@ -44,6 +46,7 @@ export const WRITE_ACTIONS: Record<string, WriteActionDefinition> = {
   add_campaign_items: addCampaignItemsAction,
   create_order_campaign: createOrderCampaignAction,
   create_sales_campaign_round: createSalesCampaignRoundAction,
+  create_sales_campaign_group_round: createSalesCampaignGroupRoundAction,
 };
 
 export type WriteActionName = keyof typeof WRITE_ACTIONS;
@@ -78,6 +81,11 @@ export async function executeWriteAction(
  * `executeWriteAction` 의 반환 타입(`WriteActionResult`)은 `ActionProposal.executionResult`
  * 로 그대로 직렬화되므로 여기에 후속 처리 정보를 얹지 않고 **별도 조회**로 분리한다.
  */
+/** 승인 실행 트랜잭션의 시간 상한(ms) — 액션이 정하지 않았거나 모르는 액션이면 undefined(Prisma 기본값). */
+export function resolveWriteActionTxTimeoutMs(action: string): number | undefined {
+  return Object.hasOwn(WRITE_ACTIONS, action) ? WRITE_ACTIONS[action].txTimeoutMs : undefined;
+}
+
 export function resolveWriteActionEffects(
   action: string,
   result: WriteActionResult

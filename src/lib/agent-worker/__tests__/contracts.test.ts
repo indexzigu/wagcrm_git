@@ -21,6 +21,7 @@ import {
   createAgentJobIdempotencyKey,
   createOrderCampaignArgsSchema,
   createSalesCampaignRoundArgsSchema,
+  createSalesCampaignGroupRoundArgsSchema,
   isAgentJobTransitionAllowed,
   serializeAgentJobJson,
   upsertProductMappingsArgsSchema,
@@ -271,13 +272,14 @@ describe("create_action_proposal — update_settlement_amount (정산 금액 수
 
   it("sits right before update_record in the union (new actions are appended at the end)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-6)).toEqual([
+    expect(actions.slice(-7)).toEqual([
       "update_settlement_amount",
       "update_record",
       "upsert_product_mappings",
       "add_campaign_items",
       "create_order_campaign",
       "create_sales_campaign_round",
+      "create_sales_campaign_group_round",
     ]);
   });
 
@@ -520,6 +522,7 @@ describe("create_action_proposal — update_record (기록 수정)", () => {
       "add_campaign_items",
       "create_order_campaign",
       "create_sales_campaign_round",
+      "create_sales_campaign_group_round",
     ]);
   });
 
@@ -640,11 +643,12 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
 
   it("sits right before add_campaign_items in the union (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-4)).toEqual([
+    expect(actions.slice(-5)).toEqual([
       "upsert_product_mappings",
       "add_campaign_items",
       "create_order_campaign",
       "create_sales_campaign_round",
+      "create_sales_campaign_group_round",
     ]);
   });
 
@@ -797,7 +801,11 @@ describe("create_action_proposal — create_order_campaign (주문캠페인 새�
 
   it("keeps its place before create_sales_campaign_round (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-2)).toEqual(["create_order_campaign", "create_sales_campaign_round"]);
+    expect(actions.slice(-3)).toEqual([
+      "create_order_campaign",
+      "create_sales_campaign_round",
+      "create_sales_campaign_group_round",
+    ]);
   });
 
   it("takes exactly one of productQuery / productId, plus optional sellerName·orderBrand·memo", () => {
@@ -844,9 +852,9 @@ describe("create_action_proposal — create_order_campaign (주문캠페인 새�
 describe("create_action_proposal — create_sales_campaign_round (판매캠페인 다음 회차, 2026-11-14)", () => {
   const accepts = (input: unknown) => createActionProposalInputSchema.safeParse(input).success;
 
-  it("is the last action in the union (python mirror compares literal order)", () => {
+  it("keeps its place before create_sales_campaign_group_round (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.at(-1)).toBe("create_sales_campaign_round");
+    expect(actions.slice(-2)).toEqual(["create_sales_campaign_round", "create_sales_campaign_group_round"]);
   });
 
   it("needs the previous round; product target is optional but at most one; dates come as a pair", () => {
@@ -904,6 +912,74 @@ describe("create_action_proposal — create_sales_campaign_round (판매캠페�
     expect(createSalesCampaignRoundArgsSchema.safeParse({ ...stored, endDate: "2026-11-30" }).success).toBe(false);
     expect(createSalesCampaignRoundArgsSchema.safeParse({ ...stored, campaignName: "x" }).success).toBe(false);
     expect(createSalesCampaignRoundArgsSchema.safeParse({ ...stored, salesChannel: "TIKTOK" }).success).toBe(false);
+  });
+});
+
+describe("create_action_proposal — create_sales_campaign_group_round (판매캠페인 그룹 다음 회차, 2026-11-14)", () => {
+  const accepts = (input: unknown) => createActionProposalInputSchema.safeParse(input).success;
+
+  it("is the last action in the union (python mirror compares literal order)", () => {
+    const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
+    expect(actions.at(-1)).toBe("create_sales_campaign_group_round");
+  });
+
+  it("needs a previous campaign or a product target; product target at most one; dates come as a pair", () => {
+    const action = "create_sales_campaign_group_round";
+    expect(accepts({ action, previousCampaignId: "camp-1" })).toBe(true);
+    expect(accepts({ action, productQuery: "샘플 상품" })).toBe(true);
+    expect(accepts({ action, productId: "12345", memo: "다음 회차" })).toBe(true);
+    expect(accepts({ action, previousCampaignId: "camp-1", productId: "12345", startDate: "2026-12-01", endDate: "2026-12-07" })).toBe(true);
+    expect(accepts({ action })).toBe(false);
+    expect(accepts({ action, startDate: "2026-12-01", endDate: "2026-12-07" })).toBe(false);
+    expect(accepts({ action, productQuery: "샘플", productId: "1" })).toBe(false);
+    expect(accepts({ action, productId: "1", startDate: "2026-12-01" })).toBe(false);
+    expect(accepts({ action, productId: "1", groupId: "g1" })).toBe(false);
+  });
+
+  it("stored args are strict: 2..10 members, ordered period, bounded already-linked list", () => {
+    const member = (dealId: string) => ({
+      previousCampaignId: `prev-${dealId}`,
+      previousCampaignName: null,
+      dealId,
+      dealName: "샘플딜",
+      salesChannel: "OWN_MALL_NAVER",
+      isManualMargin: false,
+      totalMarginRate: 0,
+      sellerMarginRate: 0,
+      campaignItems: [],
+      expectedRoundNumber: null,
+      expectedCampaignName: null,
+    });
+    const stored = {
+      previousGroupId: "g1",
+      previousGroupName: null,
+      sellerId: "s1",
+      sellerName: "샘플셀러",
+      members: [member("d1"), member("d2")],
+      product: {
+        productId: "123",
+        channelProductNo: "456",
+        name: "샘플 상품",
+        productStatus: "SALE",
+        salePeriod: "2026.12.01 ~ 2026.12.07",
+        source: "INPUT",
+      },
+      baseNaverLink: "https://smartstore.naver.com/ygrd/products/456",
+      startDate: "2026-12-01",
+      endDate: "2026-12-07",
+      dateSource: "STORE",
+      status: "PREPARATION",
+      linkOrderCampaign: null,
+      otherLinkedCampaigns: [],
+    };
+    expect(createSalesCampaignGroupRoundArgsSchema.safeParse(stored).success).toBe(true);
+    expect(createSalesCampaignGroupRoundArgsSchema.safeParse({ ...stored, members: [member("d1")] }).success).toBe(false);
+    const eleven = Array.from({ length: 11 }, (_, i) => member(`d${i}`));
+    expect(createSalesCampaignGroupRoundArgsSchema.safeParse({ ...stored, members: eleven }).success).toBe(false);
+    expect(createSalesCampaignGroupRoundArgsSchema.safeParse({ ...stored, endDate: "2026-11-30" }).success).toBe(false);
+    expect(createSalesCampaignGroupRoundArgsSchema.safeParse({ ...stored, groupName: "x" }).success).toBe(false);
+    const linked = Array.from({ length: 11 }, (_, i) => ({ id: `c${i}`, name: null, startDate: "2026-12-01", endDate: "2026-12-07" }));
+    expect(createSalesCampaignGroupRoundArgsSchema.safeParse({ ...stored, otherLinkedCampaigns: linked }).success).toBe(false);
   });
 });
 

@@ -20,6 +20,7 @@ export const ACTION_LABELS: Record<string, string> = {
   add_campaign_items: "캠페인 품목 추가",
   create_order_campaign: "주문캠페인 등록",
   create_sales_campaign_round: "판매캠페인 회차 등록",
+  create_sales_campaign_group_round: "판매캠페인 그룹 회차 등록",
   // [캘린더수집] 봇 도구가 아니라 캘린더 수집만 기안하는 실행기 액션 — 계약 상한이 실행기 화이트리스트다.
   create_campaign_round: "새 회차 생성",
 };
