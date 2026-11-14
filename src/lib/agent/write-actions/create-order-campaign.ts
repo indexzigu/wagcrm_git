@@ -47,7 +47,8 @@ async function handleCreateOrderCampaign(
       productStatus: args.productStatus,
       salePeriod: args.salePeriod,
       productId: args.productId,
-      mappings: args.mappings.map((row) => ({ ...row, brandCode: "" })),
+      // 이어받은 상품코드만 싣고 나머지는 빈 코드(화면 저장과 같은 기본값) — 출처는 기안 미리보기가 보였다.
+      mappings: args.mappings.map((row) => ({ ...row, brandCode: row.brandCode ?? "" })),
     }),
     select: { id: true, name: true },
   });

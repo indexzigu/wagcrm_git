@@ -53,6 +53,24 @@ describe("create_order_campaign 승인 실행", () => {
     });
   });
 
+  it("기안이 이어받은 상품코드는 그 줄에만 싣는다", async () => {
+    const { tx, create } = fakeTx();
+    await createOrderCampaignAction.handler(
+      {
+        ...args,
+        mappings: [args.mappings[0], { ...args.mappings[1], brandCode: "NT001" }],
+        brandCodeSource: { kind: "SAME_PRODUCT", orderCampaignId: "oc-prev", orderCampaignName: "지난 회차", inheritedRows: 1 },
+      },
+      "owner-user-id",
+      tx,
+    );
+    const data = (create.mock.calls[0] as unknown as [{ data: { mappings: { create: unknown[] } } }])[0].data;
+    expect(data.mappings.create).toEqual([
+      { productName: "p", optionName: "구성: 1박스", brandCode: "NT001", price: 30000 },
+      { productName: "p", optionName: "구성: 2박스", brandCode: "", price: 55000 },
+    ]);
+  });
+
   it.each([["SYSTEM_AUTO"], [AGENT_WORKER_ACTOR], [AGENT_MAPPING_APPLY_ACTOR]])("실행자 %s 는 쓰기 전에 거부", async (actor) => {
     const { tx, create } = fakeTx();
     await expect(createOrderCampaignAction.handler(args, actor, tx)).rejects.toThrow("사람이 결재함에서 승인");

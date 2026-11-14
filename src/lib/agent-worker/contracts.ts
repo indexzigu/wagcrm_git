@@ -680,12 +680,29 @@ export const createOrderCampaignRequestArgsSchema = createOrderCampaignRequestSc
 
 export type CreateOrderCampaignRequestArgs = z.infer<typeof createOrderCampaignRequestArgsSchema>;
 
-/** 저장 args 의 매핑 줄 — 네이버 등록 옵션 그대로(상품코드는 비어 있다; 코드는 이후 매핑 작업이 채운다). */
+/**
+ * 저장 args 의 매핑 줄 — 네이버 등록 옵션 그대로. 상품코드는 지난 주문캠페인에서 이어받은 줄에만 있다
+ * (`brandCodeSource` 가 출처, 2026-11-14). 없는 줄은 빈 코드로 만들어지고 이후 매핑 작업이 채운다.
+ */
 export const orderCampaignDraftMappingRowSchema = z
   .object({
     productName: z.string().max(300),
     optionName: z.string().max(500),
     price: z.number().int().min(0).max(MAX_MAPPING_PRICE),
+    brandCode: z.string().trim().min(1).max(MAX_MAPPING_BRAND_CODE_CHARS).optional(),
+  })
+  .strict();
+
+/**
+ * 이어받은 상품코드의 출처 — `SAME_PRODUCT` 는 같은 스토어 상품의 지난 주문캠페인 하나, `SAME_OPTION` 은 같은 상품의
+ * 지난 주문캠페인이 없어 과거 전체에서 같은 옵션명에 코드가 하나로 정해진 줄들(다른 스토어 상품일 수 있다).
+ */
+export const orderCampaignBrandCodeSourceSchema = z
+  .object({
+    kind: z.enum(["SAME_PRODUCT", "SAME_OPTION"]),
+    orderCampaignId: z.string().nullable(),
+    orderCampaignName: z.string().max(300).nullable(),
+    inheritedRows: z.number().int().min(1).max(MAX_ORDER_CAMPAIGN_DRAFT_ROWS),
   })
   .strict();
 
@@ -712,6 +729,8 @@ export const createOrderCampaignArgsSchema = z
     sameProductCampaigns: z
       .array(z.object({ id: z.string(), name: z.string(), isActive: z.boolean() }).strict())
       .max(MAX_SAME_PRODUCT_CAMPAIGNS),
+    // 이어받은 줄이 없으면 null. 이 칸 이전에 저장된 기안은 칸이 없다(optional).
+    brandCodeSource: orderCampaignBrandCodeSourceSchema.nullable().optional(),
     memo: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
