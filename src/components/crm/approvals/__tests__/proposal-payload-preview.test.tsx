@@ -757,23 +757,36 @@ describe("ProposalPayloadPreview — 판매캠페인 그룹 회차 등록(create
     ]);
   });
 
-  it("주문캠페인에 미리 만든 캠페인이 붙어 있으면 승인 뒤 정리 경고, 이전 그룹 캠페인이면 반려 경고", () => {
+  it("연결할 주문캠페인에 미리 만든 캠페인이 붙어 있으면 승인 뒤 정리 경고", () => {
     render(
       <ProposalPayloadPreview
         action="create_sales_campaign_group_round"
         args={{
           ...base,
-          otherLinkedCampaigns: [
-            { id: "ph", name: "딜A - 샘플셀러 2차", startDate: "2026-11-30", endDate: "2026-12-06" },
-            { id: "prev-deal-b", name: "딜B - 샘플셀러", startDate: "2026-11-01", endDate: "2026-11-07" },
-          ],
+          otherLinkedCampaigns: [{ id: "ph", name: "딜A - 샘플셀러 2차", startDate: "2026-11-30", endDate: "2026-12-06" }],
         }}
       />,
     );
     expect(screen.getByText(/판매캠페인 1개가 이미 연결돼 있습니다/)).toBeTruthy();
     expect(screen.getByText("딜A - 샘플셀러 2차 · 2026-11-30 ~ 2026-12-06")).toBeTruthy();
-    expect(screen.getByText(/이전 그룹 캠페인 1개가 연결돼 있어 연결하지 않습니다/)).toBeTruthy();
+    expect(screen.queryByText(/연결하지 않습니다/)).toBeNull();
+  });
+
+  it("이전 그룹 캠페인 때문에 연결을 뺐으면 「없음」과 그 이유(승인 뒤 정리 경고는 없음)", () => {
+    render(
+      <ProposalPayloadPreview
+        action="create_sales_campaign_group_round"
+        args={{
+          ...base,
+          linkOrderCampaign: null,
+          otherLinkedCampaigns: [{ id: "prev-deal-b", name: "딜B - 샘플셀러", startDate: "2026-11-01", endDate: "2026-11-07" }],
+        }}
+      />,
+    );
+    expect(screen.getByText("연결할 주문캠페인").nextElementSibling?.textContent).toBe("없음");
+    expect(screen.getByText(/이전 그룹 캠페인이 연결돼 있어 연결하지 않습니다/)).toBeTruthy();
     expect(screen.getByText("딜B - 샘플셀러 · 2026-11-01 ~ 2026-11-07")).toBeTruthy();
+    expect(screen.queryByText(/이미 연결돼 있습니다/)).toBeNull();
   });
 
   it("주문캠페인이 없으면 「없음」, 이전 그룹 상품을 그대로 쓰면 출처와 경고", () => {

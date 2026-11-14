@@ -70,6 +70,8 @@ export type SalesCampaignGroupRoundDraftDeps = {
   findOrderCampaign: (productNos: ReadonlyArray<string>) => Promise<{ id: string; name: string } | null>;
   /** 이 주문캠페인에 이미 연결된 판매캠페인(최근 시작일 먼저, 상한까지). */
   listLinkedCampaigns: (orderCampaignId: string) => Promise<LinkedCampaign[]>;
+  /** 이 주문캠페인에 주어진 캠페인 중 하나라도 붙어 있는가 — 표시용 목록(상한으로 잘림)과 따로 센다. */
+  isAnyLinked: (orderCampaignId: string, campaignIds: ReadonlyArray<string>) => Promise<boolean>;
   today: () => string;
 };
 
@@ -110,6 +112,8 @@ const defaultDeps: SalesCampaignGroupRoundDraftDeps = {
       select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
     }),
+  isAnyLinked: async (orderCampaignId, campaignIds) =>
+    (await getPrisma().salesCampaign.count({ where: { orderCampaignId, id: { in: [...campaignIds] } } })) > 0,
   listLinkedCampaigns: async (orderCampaignId) => {
     const rows = await getPrisma().salesCampaign.findMany({
       where: { orderCampaignId },
@@ -307,8 +311,14 @@ export async function buildSalesCampaignGroupRoundDraft(
     }
     const latestOrderCampaign = await deps.findOrderCampaign(productNos);
     otherLinkedCampaigns = latestOrderCampaign ? await deps.listLinkedCampaigns(latestOrderCampaign.id) : [];
-    const previousIds = new Set(group.members.map((member) => member.id));
-    linkOrderCampaign = otherLinkedCampaigns.some((campaign) => previousIds.has(campaign.id)) ? null : latestOrderCampaign;
+    // 판정은 별도 조회 — 표시 목록은 상한으로 잘려 이전 그룹 캠페인이 빠질 수 있다.
+    const previousLinked =
+      latestOrderCampaign !== null &&
+      (await deps.isAnyLinked(
+        latestOrderCampaign.id,
+        group.members.map((member) => member.id),
+      ));
+    linkOrderCampaign = previousLinked ? null : latestOrderCampaign;
   } catch (error) {
     return fail("회차", error);
   }

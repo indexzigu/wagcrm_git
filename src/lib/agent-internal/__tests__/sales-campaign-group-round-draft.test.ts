@@ -62,6 +62,7 @@ function deps(overrides: Partial<SalesCampaignGroupRoundDraftDeps> = {}): SalesC
     listLinkedCampaigns: vi.fn(async () => [
       { id: "placeholder", name: "딜A - 샘플셀러 2차", startDate: "2026-11-30", endDate: "2026-12-06" },
     ]),
+    isAnyLinked: vi.fn(async () => false),
     today: () => "2026-11-14",
     ...overrides,
   };
@@ -165,12 +166,22 @@ describe("buildSalesCampaignGroupRoundDraft", () => {
       listLinkedCampaigns: vi.fn(async () => [
         { id: "camp-b", name: "딜B - 샘플셀러", startDate: "2026-11-01", endDate: "2026-11-07" },
       ]),
+      isAnyLinked: vi.fn(async () => true),
     });
     const result = await buildSalesCampaignGroupRoundDraft({ productId: "101" }, d);
     if (!result.ok) throw new Error(result.message);
     expect(d.findOrderCampaign).toHaveBeenCalledWith(["101", "201"]);
+    expect(d.isAnyLinked).toHaveBeenCalledWith("oc-2", ["camp-a", "camp-b"]);
     expect(result.data.linkOrderCampaign).toBeNull();
     expect(result.data.otherLinkedCampaigns).toEqual([expect.objectContaining({ id: "camp-b" })]);
+  });
+
+  it("이전 그룹이 아닌 캠페인만 붙어 있으면 연결하고 붙은 캠페인을 보여 준다", async () => {
+    const d = deps();
+    const result = await buildSalesCampaignGroupRoundDraft({ productId: "101" }, d);
+    if (!result.ok) throw new Error(result.message);
+    expect(result.data.linkOrderCampaign).toEqual({ id: "oc-2", name: "조합 2차 주문" });
+    expect(result.data.otherLinkedCampaigns).toEqual([expect.objectContaining({ id: "placeholder" })]);
   });
 
   it("지난 그룹에 같은 판매 조건 캠페인이 둘이면 잇지 않는다", async () => {
