@@ -5,6 +5,7 @@ import { Campaign } from '@/types/campaign';
 import { getDisplayDealName } from '@/lib/deal-display';
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
 import { findCampaignChannelProduct } from '@/lib/order-converter/store-channel-product';
+import { brandEmailsFor, toOrderBrandOptions, type OrderBrandOption } from '@/lib/order-converter/order-brand-option';
 
 /** 옵션명 정규화 키 — 스토어 옵션 재조회 시 기존 줄의 상품코드·단가·딜 연결을 이어받는 데 쓴다(공백·기호 표기 흔들림 흡수). */
 const normOptionKey = (s: string | null | undefined) => (s || '').replace(/[^a-zA-Z0-9가-힣]/g, '').toLowerCase();
@@ -43,7 +44,7 @@ export default function CampaignEditModal({
   const [recommendations, setRecommendations] = useState<Record<string, any[]>>({});
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [loadOptionsError, setLoadOptionsError] = useState<string | null>(null);
-  const [brandOptions, setBrandOptions] = useState<{ slug: string; displayName: string }[]>([]);
+  const [brandOptions, setBrandOptions] = useState<OrderBrandOption[]>([]);
   const [brandLoadError, setBrandLoadError] = useState(false);
   const [brandsLoaded, setBrandsLoaded] = useState(false);
   const [isPushingSales, setIsPushingSales] = useState(false);
@@ -54,7 +55,7 @@ export default function CampaignEditModal({
     let cancelled = false;
     fetch('/order-converter/api/brands')
       .then(r => { if (!r.ok) throw new Error('발주 브랜드 목록 조회 실패'); return r.json(); })
-      .then(d => { if (!cancelled && Array.isArray(d.brands)) setBrandOptions(d.brands.map((b: any) => ({ slug: b.slug, displayName: b.displayName }))); })
+      .then(d => { if (!cancelled && Array.isArray(d.brands)) setBrandOptions(toOrderBrandOptions(d.brands)); })
       .catch(() => { if (!cancelled) setBrandLoadError(true); })
       .finally(() => { if (!cancelled) setBrandsLoaded(true); });
     return () => { cancelled = true; };
@@ -64,10 +65,18 @@ export default function CampaignEditModal({
   const templateOptions = useMemo(() => {
     const opts = brandOptions.slice();
     if (editTemplate && !opts.some(o => o.slug === editTemplate)) {
-      opts.unshift({ slug: editTemplate, displayName: brandsLoaded ? editTemplate : '불러오는 중…' });
+      opts.unshift({ slug: editTemplate, displayName: brandsLoaded ? editTemplate : '불러오는 중…', toEmail: null, ccEmail: null });
     }
     return opts;
   }, [brandOptions, editTemplate, brandsLoaded]);
+
+  // 양식을 바꾸면 그 거래처의 수신/참조 메일을 물려받는다(등록 창과 같은 규칙 — 수신 메일이 필수라 안 채우면 저장도 막힌다).
+  const handleBrandChange = (slug: string) => {
+    setEditTemplate(slug);
+    const emails = brandEmailsFor(brandOptions, slug);
+    if (emails.toEmail) setEditToEmail(emails.toEmail);
+    if (emails.ccEmail !== undefined) setEditCcEmail(emails.ccEmail);
+  };
 
   // 코드표 없는 거래처용: 이 캠페인의 스토어 상품을 찾아(productId 우선, 이름 매칭 폴백)
   // 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드. 새 옵션의 상품코드는 비워두고(미기입 운영),
@@ -374,7 +383,7 @@ export default function CampaignEditModal({
               </div>
               <div className="col-span-1">
                 <label htmlFor="campaign-template-edit" className="block text-[11px] font-bold text-slate-500 mb-1">거래처 양식</label>
-                <select id="campaign-template-edit" value={editTemplate} onChange={e => setEditTemplate(e.target.value)} className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]">
+                <select id="campaign-template-edit" value={editTemplate} onChange={e => handleBrandChange(e.target.value)} className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-900 focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow] shadow-soft-sm h-[34px]">
                   <option value="" disabled={templateOptions.length > 0}>
                     {templateOptions.length === 0
                       ? (brandLoadError ? '목록 로드 실패: 새로고침' : '발주 브랜드 없음')
