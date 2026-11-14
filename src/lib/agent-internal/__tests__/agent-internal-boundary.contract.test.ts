@@ -1,8 +1,8 @@
 /**
  * 봇 내부 창구 경계 계약(보안 리뷰 2026-10-16) — 소스 스캔.
- *  B1 「사람 승인만」 가드를 통과하는 즉시 저장 실행자(`AGENT_MAPPING_APPLY`)로 승인하는 코드는
- *     `agent-internal/apply-product-mappings.ts` 하나뿐이다. 다른 곳이 이 실행자로 `approveProposal` 을 부르면
- *     사람 승인 없는 매핑 쓰기가 네이버 옵션 대조 없이 열린다.
+ *  B1 옛 즉시 저장 실행자(`AGENT_MAPPING_APPLY`)로 승인하는 코드는 **없다**(오너 결정 2026-11-14 — 매핑도 승인대기
+ *     기안 → 결재함·슬랙 승인; 종전 10-16 에는 `apply-product-mappings.ts` 하나만 허용했다). 매핑 창구는 승인 함수를
+ *     아예 부르지 않는다 — 다시 부르면 오너 확인 없는 매핑 쓰기가 되살아난다.
  *  B2 그 실행자 글자(따옴표 리터럴)는 `actors.ts` 한 곳에만 있다 — 사본이 생기면 B1 스캔을 우회한다.
  *  B4 슬랙 버튼 승인자(`SLACK_OWNER_APPROVAL`)로 승인·반려를 부르는 파일은 `agent-internal/slack-decision.ts` 하나뿐이다 —
  *     그 모듈이 「봇 기안만」·버튼 허용 액션 목록을 강제한다. 다른 곳이 이 승인자로 부르면 그 경계 없이 승인이 열린다.
@@ -45,15 +45,17 @@ describe("봇 내부 창구 경계", () => {
   it("스캔이 살아 있다(양성 대조)", () => {
     expect(FILES.length).toBeGreaterThan(300);
     const apply = FILES.find((file) => file.rel === APPLY_MODULE);
-    expect(apply?.code).toMatch(/approve\(prepared\.proposalId,\s*AGENT_MAPPING_APPLY_ACTOR/);
+    expect(apply?.code).toContain("insertAgentWorkerProposal");
     expect(FILES.find((file) => file.rel === ACTORS_MODULE)?.code).toContain('"AGENT_MAPPING_APPLY"');
   });
 
-  it("B1 즉시 저장 실행자로 승인하는 파일은 저장 모듈 하나뿐이다", () => {
-    const offenders = FILES.filter(
-      (file) => /AGENT_MAPPING_APPLY_ACTOR/.test(file.code) && /approveProposal\b/.test(file.code),
-    ).map((file) => file.rel);
-    expect(offenders).toEqual([APPLY_MODULE]);
+  it("B1 옛 즉시 저장 실행자로 승인하는 파일은 없고, 매핑 창구는 승인 함수를 부르지 않는다(양성 대조 포함)", () => {
+    const approvesAsMappingApply = (code: string) =>
+      /AGENT_MAPPING_APPLY_ACTOR/.test(code) && /approveProposal\b/.test(code);
+    expect(approvesAsMappingApply("approveProposal(id, AGENT_MAPPING_APPLY_ACTOR)")).toBe(true);
+    expect(FILES.filter((file) => approvesAsMappingApply(file.code)).map((file) => file.rel)).toEqual([]);
+    const apply = FILES.find((file) => file.rel === APPLY_MODULE);
+    expect(apply?.code).not.toMatch(/approveProposal\b|\bapprove\(/);
   });
 
   it("B2 실행자 글자는 actors.ts 에만 있다", () => {

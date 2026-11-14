@@ -276,7 +276,7 @@ export function PendingCard({
  * 자동승인 표기는 이모지가 아니라 `ZapIcon`(P8 — 이모지는 UI 아이콘으로 쓰지 않는다).
  * executedBy==="SYSTEM_AUTO" = 정산 금액 수정 자동 실행기가 슬랙 원문 대조·한도 확인 뒤 승인한 건
  * (`lib/agent/auto-execute/settlement-auto-execute.ts`) — 사람 승인과 구분해 「한도 안」을 밝힌다.
- * executedBy==="AGENT_MAPPING_APPLY" = 봇이 슬랙 짝 확인(「응」) 직후 바로 저장한 상품 매핑
+ * executedBy==="AGENT_MAPPING_APPLY" = 봇이 슬랙 짝 확인(「응」) 직후 바로 저장한 상품 매핑(2026-10-16 ~ 11-14 의 옛 경로 — 지난 기록 표시용)
  * (`lib/agent-internal/apply-product-mappings.ts`, 오너 결정 2026-10-16 — 결재함 승인 없이 기록만 남는다).
  * executedBy==="SLACK_OWNER_APPROVAL" = 오너가 슬랙 카드의 [승인] 버튼으로 승인한 건
  * (`lib/agent-internal/slack-decision.ts`, 오너 결정 2026-11-14) — 오너 승인이므로 「실행완료」와 같은 무게로 출처만 밝힌다.

@@ -1,5 +1,7 @@
 /**
- * 봇 상품 매핑 즉시 저장(`applyProductMappings`) — 창구 본체를 **실 SQLite**(격리 임시 파일)로 고정한다.
+ * 봇 상품 매핑 기안(`applyProductMappings`) — 창구 본체를 **실 SQLite**(격리 임시 파일)로 고정한다.
+ * 오너 결정 2026-11-14: 창구는 승인대기 기안만 남기고 저장하지 않는다. 저장은 결재함·슬랙 승인이 부르는 정본
+ * 승인 함수가 한다 — 아래 테스트는 그 승인까지 실제로 태워 「승인해야 저장된다」를 고정한다.
  *
  * 진짜: 기안 INSERT(`insertAgentWorkerProposal`) · 지금 값 스냅샷 · 정본 승인 함수(`approveProposal` tx1/tx2) ·
  *       매핑 실행 동작(`upsert-product-mappings` 의 사람 승인 가드·이름 대조·조건부 쓰기).
@@ -31,7 +33,8 @@ vi.mock("@/lib/agent/write-action-effects", () => ({
 }));
 
 const { applyProductMappings } = await import("../apply-product-mappings");
-const { AGENT_MAPPING_APPLY_ACTOR } = await import("../actors");
+const { AGENT_MAPPING_APPLY_ACTOR, SLACK_OWNER_APPROVAL_ACTOR } = await import("../actors");
+const { approveProposal } = await import("@/lib/agent/approve-proposal");
 const { resetStoreOptionsCacheForTest, STORE_OPTIONS_REUSE_MS } = await import("../store-product-options");
 type StoreOptionsDeps = import("../store-product-options").StoreOptionsDeps;
 
@@ -93,6 +96,18 @@ async function mappings() {
   });
 }
 
+type ApplyResult = Awaited<ReturnType<typeof applyProductMappings>>;
+
+/** 창구가 남긴 기안을 슬랙 버튼과 같은 승인자로 승인·실행한다. */
+async function approveFromSlack(result: ApplyResult) {
+  if (!result.ok || !result.data.proposalId) throw new Error("no proposal to approve");
+  const outcome = await approveProposal(result.data.proposalId, SLACK_OWNER_APPROVAL_ACTOR, {
+    expectedStatus: "PENDING_APPROVAL",
+  });
+  expect(outcome).toMatchObject({ ok: true });
+  return outcome;
+}
+
 beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), "wag-crm-agent-apply-"));
   const dbPath = join(tmpDir, "test.db");
@@ -124,33 +139,61 @@ beforeEach(async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
-describe("즉시 저장 — 「응」 한 번이 승인이다", () => {
-  it("새 줄은 스토어 옵션 글자·스토어 상품명으로 바로 저장되고 결재함에 EXECUTED 기록 1건이 남는다", async () => {
+describe("기안만 남긴다 — 저장은 결재함·슬랙 승인 뒤", () => {
+  it("창구는 승인대기 기안 1건만 남기고 아무것도 저장하지 않는다", async () => {
     const result = await applyProductMappings(
       { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] },
       { storeOptions: storeDeps },
     );
 
     expect(result).toMatchObject({ ok: true, data: { created: 1, updated: 0, unchanged: 0, rejected: [] } });
-    expect(await mappings()).toEqual([
-      { optionName: OPTION_A, productName: STORE_PRODUCT_NAME, brandCode: "TC-001", price: 30000, campaignDealId: null },
-    ]);
+    expect(await mappings()).toEqual([]);
     const proposals = await realPrisma.actionProposal.findMany();
     expect(proposals).toHaveLength(1);
     expect(proposals[0]).toMatchObject({
-      status: "EXECUTED",
+      status: "PENDING_APPROVAL",
       createdBy: "AGENT_WORKER",
-      executedBy: AGENT_MAPPING_APPLY_ACTOR,
+      executedBy: null,
       requestType: "crm_mutation",
     });
     expect(result.ok && result.data.proposalId).toBe(proposals[0].id);
     const events = await realPrisma.actionProposalEvent.findMany({ orderBy: { createdAt: "asc" } });
-    expect(events.map((event: { toStatus: string }) => event.toStatus)).toEqual(["PENDING_APPROVAL", "APPROVED", "EXECUTED"]);
+    expect(events.map((event: { toStatus: string }) => event.toStatus)).toEqual(["PENDING_APPROVAL"]);
+    expect(effectsCalls).toHaveLength(0);
+  });
+
+  it("슬랙 버튼 승인자로 승인하면 새 줄이 스토어 옵션 글자·스토어 상품명으로 저장된다", async () => {
+    const result = await applyProductMappings(
+      { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] },
+      { storeOptions: storeDeps },
+    );
+    await approveFromSlack(result);
+
+    expect(await mappings()).toEqual([
+      { optionName: OPTION_A, productName: STORE_PRODUCT_NAME, brandCode: "TC-001", price: 30000, campaignDealId: null },
+    ]);
+    expect(await realPrisma.actionProposal.findFirst()).toMatchObject({
+      status: "EXECUTED",
+      executedBy: SLACK_OWNER_APPROVAL_ACTOR,
+    });
     // 새 줄을 만들었으니 화면 저장과 같은 후속 처리(자동 연결)가 돈다.
     expect(effectsCalls).toHaveLength(1);
   });
 
-  it("코드표 이름은 저장되지 않는다 — 그 줄만 NOT_A_STORE_OPTION 으로 돌려주고 나머지는 저장한다", async () => {
+  it("옛 즉시 저장 실행자로 승인을 불러도 저장되지 않는다(「응」 = 승인 경로 폐기)", async () => {
+    const result = await applyProductMappings(
+      { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] },
+      { storeOptions: storeDeps },
+    );
+    if (!result.ok || !result.data.proposalId) throw new Error("expected a proposal");
+    const outcome = await approveProposal(result.data.proposalId, AGENT_MAPPING_APPLY_ACTOR, {
+      expectedStatus: "PENDING_APPROVAL",
+    });
+    expect(outcome).toMatchObject({ ok: false });
+    expect(await mappings()).toEqual([]);
+  });
+
+  it("코드표 이름은 기안에 들어가지 않는다 — 그 줄만 NOT_A_STORE_OPTION 으로 돌려주고 나머지는 승인 뒤 저장된다", async () => {
     const result = await applyProductMappings(
       {
         orderCampaignId: CAMPAIGN_ID,
@@ -166,6 +209,7 @@ describe("즉시 저장 — 「응」 한 번이 승인이다", () => {
       ok: true,
       data: { created: 1, rejected: [{ optionName: SHEET_ONLY_NAME, code: "NOT_A_STORE_OPTION" }] },
     });
+    await approveFromSlack(result);
     const saved = await mappings();
     expect(saved.map((row: { optionName: string }) => row.optionName)).toEqual([OPTION_B]);
     expect(saved.some((row: { optionName: string }) => row.optionName.includes("1BOX"))).toBe(false);
@@ -178,6 +222,7 @@ describe("즉시 저장 — 「응」 한 번이 승인이다", () => {
       { storeOptions: storeDeps },
     );
     expect(result).toMatchObject({ ok: true, data: { created: 1, rejected: [] } });
+    await approveFromSlack(result);
     expect((await mappings())[0].optionName).toBe(OPTION_A);
   });
 
@@ -190,6 +235,7 @@ describe("즉시 저장 — 「응」 한 번이 승인이다", () => {
       { storeOptions: storeDeps },
     );
     expect(result).toMatchObject({ ok: true, data: { created: 0, updated: 1, unchanged: 0 } });
+    await approveFromSlack(result);
     expect(await mappings()).toEqual([
       { optionName: OPTION_A, productName: "", brandCode: "TC-001", price: 30000, campaignDealId: null },
     ]);
@@ -199,9 +245,9 @@ describe("즉시 저장 — 「응」 한 번이 승인이다", () => {
     expect(executionResult.createdCount).toBe(0);
   });
 
-  it("같은 요청을 다시 보내면 「그대로」로 세고 기록을 더 만들지 않는다", async () => {
+  it("승인된 뒤 같은 요청을 다시 보내면 「그대로」로 세고 기안을 더 만들지 않는다", async () => {
     const request = { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] };
-    await applyProductMappings(request, { storeOptions: storeDeps });
+    await approveFromSlack(await applyProductMappings(request, { storeOptions: storeDeps }));
     const second = await applyProductMappings(request, { storeOptions: storeDeps });
     expect(second).toMatchObject({ ok: true, data: { proposalId: null, created: 0, updated: 0, unchanged: 1 } });
     expect(await realPrisma.actionProposal.count()).toBe(1);
@@ -249,44 +295,24 @@ describe("즉시 저장 — 「응」 한 번이 승인이다", () => {
 });
 
 describe("리뷰 보강(2026-10-16)", () => {
-  it("같은 요청이 동시에 두 번 와도(「응」 두 번) 하나는 저장, 하나는 「그대로」 — 실패·FAILED 기록이 없다", async () => {
+  it("승인 전 같은 요청이 동시에 두 번 오면 기안 두 건 — 먼저 승인한 쪽만 저장되고 뒤의 것은 정직하게 실패한다", async () => {
     const request = { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] };
     const [first, second] = await Promise.all([
       applyProductMappings(request, { storeOptions: storeDeps }),
       applyProductMappings(request, { storeOptions: storeDeps }),
     ]);
     expect(first).toMatchObject({ ok: true, data: { created: 1 } });
-    expect(second).toMatchObject({ ok: true, data: { created: 0, unchanged: 1, proposalId: null } });
-    expect(await realPrisma.actionProposal.count({ where: { status: "FAILED" } })).toBe(0);
-    expect(await mappings()).toHaveLength(1);
-  });
-
-  it("승인 실행이 시작도 못 하면 남은 승인대기 기록을 반려로 닫는다(오너가 낡은 줄을 나중에 승인하지 않게)", async () => {
-    const result = await applyProductMappings(
-      { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] },
-      {
-        storeOptions: storeDeps,
-        approve: async () => ({ ok: false, code: "APPROVE_ERROR", httpStatus: 500, error: "승인 처리 중 오류", status: "PENDING_APPROVAL" }),
-      },
-    );
-    expect(result).toMatchObject({ ok: false, code: "APPLY_FAILED" });
-    const proposals = await realPrisma.actionProposal.findMany();
-    expect(proposals.map((proposal: { status: string }) => proposal.status)).toEqual(["REJECTED"]);
+    expect(second).toMatchObject({ ok: true, data: { created: 1 } });
+    expect(await realPrisma.actionProposal.count({ where: { status: "PENDING_APPROVAL" } })).toBe(2);
     expect(await mappings()).toEqual([]);
-  });
 
-  it("승인 함수가 던져도 승인대기 기록을 닫고 실패를 돌려준다", async () => {
-    const result = await applyProductMappings(
-      { orderCampaignId: CAMPAIGN_ID, mappings: [{ optionName: OPTION_A, brandCode: "TC-001", price: 30000 }] },
-      {
-        storeOptions: storeDeps,
-        approve: async () => {
-          throw new Error("boom");
-        },
-      },
-    );
-    expect(result).toMatchObject({ ok: false, code: "APPLY_FAILED" });
-    expect((await realPrisma.actionProposal.findFirst()).status).toBe("REJECTED");
+    await approveFromSlack(first);
+    if (!second.ok || !second.data.proposalId) throw new Error("expected a proposal");
+    const late = await approveProposal(second.data.proposalId, SLACK_OWNER_APPROVAL_ACTOR, {
+      expectedStatus: "PENDING_APPROVAL",
+    });
+    expect(late).toMatchObject({ ok: false });
+    expect(await mappings()).toHaveLength(1);
   });
 
   it("원문이 매핑 상한(100자)을 넘는 스토어 옵션은 그 줄만 OPTION_NAME_TOO_LONG, 나머지는 저장한다", async () => {
@@ -341,6 +367,7 @@ describe("추가구성상품 줄(GPT 검수 2026-10-16)", () => {
       { storeOptions: storeDeps },
     );
     expect(result).toMatchObject({ ok: true, data: { created: 2 } });
+    await approveFromSlack(result);
     const byOption = Object.fromEntries(
       (await mappings()).map((row: { optionName: string; productName: string }) => [row.optionName, row.productName]),
     );

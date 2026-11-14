@@ -4,7 +4,7 @@ import { AGENT_INTERNAL_SECRET_HEADER, LOOPBACK_HOSTNAMES } from "@/lib/agent-in
 /**
  * 봇 작업 실행기 → CRM 앱 봇 내부 창구(`/api/internal/agent/*`) 호출 클라이언트(2026-10-16, 오너 결정 방식 A).
  *
- * 봇 작업 실행기는 네이버 열쇠도 매핑 쓰기 권한도 없다 — 스토어 옵션 조회와 매핑 즉시 저장은 앱이 앱 권한으로
+ * 봇 작업 실행기는 네이버 열쇠도 매핑 쓰기 권한도 없다 — 스토어 옵션 조회와 매핑 기안은 앱이 앱 권한으로
  * 하고, 여기서는 **부탁만** 한다. 워커 env(`infra/selfhost/agent-worker.env`)에 두 줄이 있어야 한다:
  *  - `AGENT_INTERNAL_API_SECRET` — 앱 env 와 같은 값(앱 `agent-internal/auth.ts` 가 대조한다).
  *  - `AGENT_INTERNAL_API_URL` — 선택. 비우면 `DEFAULT_AGENT_INTERNAL_API_URL`(앱 `run-app.sh` 의 바인드 주소).

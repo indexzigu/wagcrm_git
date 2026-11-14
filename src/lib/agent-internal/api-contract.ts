@@ -46,7 +46,7 @@ export const storeProductOptionsRequestSchema = z
 
 export type StoreProductOptionsRequest = z.infer<typeof storeProductOptionsRequestSchema>;
 
-/** 즉시 저장 요청 — 작업 입력에 슬랙 위치(기안 출처 칸)를 더했다. */
+/** 매핑 기안 요청 — 작업 입력에 슬랙 위치(기안 출처 칸)를 더했다. */
 export const applyProductMappingsRequestSchema = z
   .object({
     orderCampaignId: opaqueIdSchema,

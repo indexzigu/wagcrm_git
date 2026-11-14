@@ -1216,8 +1216,8 @@ const orderCampaignMappingsInputSchema = z
  * 봇 작업 실행기는 네이버 열쇠도 매핑 쓰기 권한도 없다(오너 결정 2026-10-16 방식 A).
  *
  * - `get_store_product_options`: 그 캠페인의 네이버 등록 옵션 + 옵션별 지금 매핑 값.
- * - `apply_product_mappings`: 옵션 줄의 상품코드·가격을 **바로 저장**한다(짝 확인 「응」 한 번이 승인이다 —
- *   결재함 승인 없음, 결재함에는 EXECUTED 기록 1건만 남는다). `optionName` 은 반드시 네이버 등록 옵션 글자여야
+ * - `apply_product_mappings`: 옵션 줄의 상품코드·가격을 **승인대기 기안**으로 남긴다(오너 결정 2026-11-14 — 다른
+ *   기안과 같은 승인 절차, 결재함 또는 슬랙 카드로 승인·반려. 종전 「응」 = 즉시 저장은 폐기). `optionName` 은 반드시 네이버 등록 옵션 글자여야
  *   하고, 아닌 줄은 창구가 그 줄만 `NOT_A_STORE_OPTION` 으로 돌려준다(코드표 이름이 매핑 줄의 키가 되는 길을
  *   서버가 막는다 — 봇을 믿지 않는다). 상품명 칸은 받지 않는다: 새 줄의 상품명은 창구가 스토어 값으로 채운다.
  */
@@ -1483,8 +1483,9 @@ export const APPLY_ROW_REJECTION_CODES = ["NOT_A_STORE_OPTION", "OPTION_NAME_TOO
 export const MAX_REJECTED_OPTION_NAME_CHARS = 40;
 
 /**
- * `apply_product_mappings` 결과. `proposalId` = 결재함에 남긴 EXECUTED 기록(바뀐 줄이 없으면 기록하지 않아 null).
- * `created`+`updated` = 저장한 줄, `unchanged` = 이미 같은 값이라 그대로 둔 줄, `rejected` = 저장하지 않은 줄.
+ * `apply_product_mappings` 결과. `proposalId` = 결재함에 남긴 승인대기 기안(바뀔 줄이 없으면 기안하지 않아 null).
+ * `created`+`updated` = 승인되면 저장될 줄, `unchanged` = 이미 같은 값이라 그대로 둘 줄, `rejected` = 기안에서 뺀 줄.
+ * (2026-11-14 부터 기안만 남긴다 — kind 이름 `product_mappings_applied` 는 봇과 공유한 계약 이름이라 유지한다.)
  */
 export const productMappingsAppliedStructuredDataSchema = z
   .object({

@@ -114,17 +114,31 @@ describe("apply_product_mappings", () => {
     mappings: [{ optionName: "구성: 1박스", brandCode: "TC-001", price: 10000 }],
   };
 
-  it("슬랙 위치를 실어 저장을 부탁하고, 결과·결재함 기록 id 를 돌려준다", async () => {
+  it("슬랙 위치를 실어 기안을 부탁하고, 승인 대기 · 기안 id 를 근거 첫 칸에 돌려준다(봇 승인 감시가 그 칸을 읽는다)", async () => {
     callMock.mockResolvedValue({ ok: true, body: { ok: true, data: appliedData } });
     const outcome = await executeAgentJob(job("apply_product_mappings", input), deps);
     if (outcome.kind !== "terminal") throw new Error("expected terminal");
-    expect(outcome.toStatus).toBe("SUCCEEDED");
+    expect(outcome.toStatus).toBe("NEEDS_APPROVAL");
     expect(outcome.result.actionProposalId).toBe("prop-1");
+    expect(outcome.result.evidenceRefs[0]).toBe("prop-1");
     expect(outcome.result.structuredData).toEqual(appliedData);
-    expect(outcome.result.resultSummary).toContain("저장 2줄");
+    expect(outcome.result.resultSummary).toContain("2줄");
+    expect(outcome.result.resultSummary).toContain("승인 대기");
     expect(outcome.result.resultSummary).toContain("저장 안 함 1줄");
     expect(callMock.mock.calls[0][0]).toBe("/api/internal/agent/apply-product-mappings");
     expect(callMock.mock.calls[0][1]).toEqual({ ...input, slack: SLACK });
+  });
+
+  it("바뀔 줄이 없으면(기안 없음) 승인 대기가 아니라 성공으로 끝낸다", async () => {
+    callMock.mockResolvedValue({
+      ok: true,
+      body: { ok: true, data: { ...appliedData, proposalId: null, created: 0, updated: 0, unchanged: 2 } },
+    });
+    const outcome = await executeAgentJob(job("apply_product_mappings", input), deps);
+    if (outcome.kind !== "terminal") throw new Error("expected terminal");
+    expect(outcome.toStatus).toBe("SUCCEEDED");
+    expect(outcome.result.actionProposalId).toBeNull();
+    expect(outcome.result.resultSummary).toContain("바뀔 줄 없음");
   });
 
   it("앱에 닿지 못해도 재시도하지 않고 최종 실패로 끝낸다", async () => {
