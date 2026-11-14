@@ -127,7 +127,11 @@ describe("decideProposalFromSlack", () => {
   });
 
   it("실행 실패는 EXECUTION_FAILED, 그 밖의 승인 오류는 INTERNAL", async () => {
-    const failed = deps(botProposal("create_deal", "FAILED"), { approve: approveFailing("EXECUTION_FAILED") });
+    const failedFind = vi
+      .fn()
+      .mockResolvedValueOnce(botProposal("create_deal"))
+      .mockResolvedValueOnce(botProposal("create_deal", "FAILED"));
+    const failed = deps(null, { findProposal: failedFind, approve: approveFailing("EXECUTION_FAILED") });
     const other = deps(botProposal("create_deal"), { approve: approveFailing("APPROVE_ERROR") });
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, failed)).resolves.toEqual({
@@ -155,5 +159,20 @@ describe("decideProposalFromSlack", () => {
       decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, deps(null, { findProposal, approve })),
     ).resolves.toEqual({ ok: false, code: "INTERNAL", status: "EXECUTED" });
     spy.mockRestore();
+  });
+
+  it("대기 중이 아닌 기안은 승인·반려를 부르지 않고 현재 상태로 ALREADY_DECIDED", async () => {
+    for (const status of ["FAILED", "EXECUTED", "REJECTED"]) {
+      for (const decision of ["approve", "reject"] as const) {
+        const d = deps(botProposal("create_deal", status));
+        await expect(decideProposalFromSlack({ proposalId: "p1", decision }, d)).resolves.toEqual({
+          ok: false,
+          code: "ALREADY_DECIDED",
+          status,
+        });
+        expect(d.approve).not.toHaveBeenCalled();
+        expect(d.reject).not.toHaveBeenCalled();
+      }
+    }
   });
 });

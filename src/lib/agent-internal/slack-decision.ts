@@ -75,6 +75,8 @@ export async function decideProposalFromSlack(
     typeof action === "string" &&
     SLACK_DECIDABLE_ACTIONS.has(action as WriteActionName);
   if (!eligible) return { ok: false, code: "NOT_ELIGIBLE", status: proposal.status };
+  // 대기 중이 아닌 기안은 승인·반려를 시도조차 하지 않는다 — 실패(FAILED) 기안은 일부 실행됐을 수 있어 결재함에서 본다.
+  if (proposal.status !== "PENDING_APPROVAL") return { ok: false, code: "ALREADY_DECIDED", status: proposal.status };
 
   if (decision === "reject") {
     let outcome: Awaited<ReturnType<SlackDecisionDeps["reject"]>>;
