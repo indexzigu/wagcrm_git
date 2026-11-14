@@ -26,6 +26,11 @@ export type WriteActionResult = {
    * 본 「같은 상품의 아직 연결 안 된 주문캠페인」. 선택 칸이라 다른 액션의 `executionResult` 모양은 그대로다.
    */
   linkOrderCampaignId?: string;
+  /**
+   * 이 실행이 새로 만든 판매캠페인 id 들 — 한 기안이 여럿을 만드는 그룹 회차(`create_sales_campaign_group_round`)만 싣는다.
+   * 후속 처리가 캠페인마다 드라이브 폴더를 만들 때 읽는다.
+   */
+  createdCampaignIds?: string[];
 };
 
 export type WriteActionHandler<TArgs> = (
@@ -63,6 +68,8 @@ export type WriteActionEffectSpec = {
    * (`campaignService.createCampaign`)와 같은 `createCampaignDriveFolder`. 선택 칸이라 기존 액션은 건드리지 않는다.
    */
   readonly driveFolderCampaignId?: string;
+  /** `driveFolderCampaignId` 의 여러 개 판 — 한 실행이 판매캠페인을 여럿 만들 때(그룹 회차). */
+  readonly driveFolderCampaignIds?: readonly string[];
 };
 
 export type WriteActionDefinition<TArgs = any> = {
@@ -73,6 +80,11 @@ export type WriteActionDefinition<TArgs = any> = {
    * 이 필드가 선택이었다면 "DB 는 바뀌는데 화면은 그대로"가 조용히 재발한다.
    */
   effects: (result: WriteActionResult) => WriteActionEffectSpec;
+  /**
+   * 승인 실행 트랜잭션의 시간 상한(ms). 없으면 Prisma 기본값(5초)이다. 한 승인이 행을 여럿 만드는 액션만 늘린다
+   * (그룹 회차: 캠페인마다 회차 재계산 + 그룹 잠금·재계산) — 5초를 넘기면 쓰기 전체가 롤백되고 기안이 FAILED 가 된다.
+   */
+  txTimeoutMs?: number;
 };
 
 /**

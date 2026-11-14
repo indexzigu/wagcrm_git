@@ -853,6 +853,101 @@ export const createSalesCampaignRoundArgsSchema = salesCampaignRoundArgsObjectSc
 
 export type CreateSalesCampaignRoundArgs = z.infer<typeof createSalesCampaignRoundArgsSchema>;
 
+/**
+ * 판매캠페인 그룹 다음 회차 등록 기안(2026-11-14). 지난 회차가 **캠페인 그룹**(셀러 1명 × 판매 조건 여럿, 화면의
+ * 「조합 캠페인 한 번에 만들기」)이면 그룹 안 캠페인 전부를 같은 기간으로 새로 만들고 새 그룹으로 묶는다.
+ *
+ * 봇 입력은 단건 회차와 같은 칸이되 **이전 회차는 선택**이다 — 오너는 보통 「이 주문캠페인(스토어 상품) 참고해서,
+ * 이전 회차 그룹 참고」라고 말하고, 그룹 id 는 봇 조회 결과에 나오지 않는다. 그래서 `previousCampaignId`(그룹 안 아무
+ * 캠페인)를 비우면 CRM 이 **같은 스토어 상품을 썼던 가장 최근 그룹**을 지난 회차로 찾는다. 둘 다 비우면 찾을 근거가
+ * 없으므로 상품 지목이나 이전 회차 중 하나는 있어야 한다.
+ */
+export const MAX_SALES_GROUP_ROUND_MEMBERS = 10;
+export const MAX_SALES_GROUP_ROUND_OTHER_LINKED = 10;
+
+export const createSalesCampaignGroupRoundRequestSchema = z.object({
+  previousCampaignId: opaqueIdSchema.optional(),
+  productQuery: z.string().trim().min(2).max(MAX_ORDER_CAMPAIGN_PRODUCT_QUERY_CHARS).optional(),
+  productId: naverProductNoSchema.optional(),
+  startDate: ymdDateSchema.optional(),
+  endDate: ymdDateSchema.optional(),
+  memo: z.string().trim().min(1).max(500).optional(),
+});
+
+/** 단건 회차 규칙(상품 많아야 하나·날짜 쌍·순서) + 이전 회차와 상품 지목 중 하나는 있어야 한다. */
+export function refineSalesCampaignGroupRoundRequest(
+  value: { previousCampaignId?: string; productQuery?: string; productId?: string; startDate?: string; endDate?: string },
+  context: z.RefinementCtx,
+): void {
+  refineSalesCampaignRoundRequest(value, context);
+  if (!value.previousCampaignId && !value.productQuery && !value.productId) {
+    context.addIssue({
+      code: "custom",
+      path: ["previousCampaignId"],
+      message: "지난 회차를 찾을 근거가 없다: previousCampaignId(그룹 안 캠페인) 또는 productQuery/productId(스토어 상품) 중 하나는 넣는다.",
+    });
+  }
+}
+
+export const createSalesCampaignGroupRoundRequestArgsSchema = createSalesCampaignGroupRoundRequestSchema
+  .strict()
+  .superRefine(refineSalesCampaignGroupRoundRequest);
+
+export type CreateSalesCampaignGroupRoundRequestArgs = z.infer<typeof createSalesCampaignGroupRoundRequestArgsSchema>;
+
+/** 그룹 안 캠페인 하나 — 단건 회차 args 중 판매 조건별로 다른 칸만. 셀러·상품·기간·상태는 그룹이 함께 쓴다. */
+const salesGroupRoundMemberSchema = z
+  .object({
+    previousCampaignId: opaqueIdSchema,
+    previousCampaignName: z.string().max(200).nullable(),
+    dealId: opaqueIdSchema,
+    dealName: z.string().max(300),
+    salesChannel: z.enum(SALES_ROUND_CHANNELS),
+    isManualMargin: z.boolean(),
+    totalMarginRate: z.number().finite(),
+    sellerMarginRate: z.number().finite(),
+    campaignItems: z.array(salesRoundCampaignItemSchema).max(MAX_SALES_ROUND_CAMPAIGN_ITEMS),
+    expectedRoundNumber: z.number().int().min(1).nullable(),
+    expectedCampaignName: z.string().max(100).nullable(),
+  })
+  .strict();
+
+/**
+ * 저장 args — 초안 창구(`sales-campaign-group-round-draft`)가 만들고, 승인 실행기
+ * (`write-actions/create-sales-campaign-group-round.ts`)가 판매 조건마다 `createCampaignInTx` 로 만든 뒤
+ * `campaignGroupService.createGroup` 으로 묶는다(한 트랜잭션 — 전부 되거나 전부 안 된다).
+ * `otherLinkedCampaigns` 는 연결할 주문캠페인에 이미 붙어 있는 다른 판매캠페인(승인자 경고용 관측값)이다.
+ */
+export const salesCampaignGroupRoundArgsObjectSchema = z
+  .object({
+    previousGroupId: opaqueIdSchema,
+    previousGroupName: z.string().max(200).nullable(),
+    sellerId: opaqueIdSchema,
+    sellerName: z.string().max(100),
+    members: z.array(salesGroupRoundMemberSchema).min(2).max(MAX_SALES_GROUP_ROUND_MEMBERS),
+    product: salesCampaignRoundArgsObjectSchema.shape.product,
+    baseNaverLink: z.string().url().max(500),
+    startDate: ymdDateSchema,
+    endDate: ymdDateSchema,
+    dateSource: z.enum(["STORE", "INPUT"]),
+    status: z.enum(SALES_ROUND_STATUSES),
+    linkOrderCampaign: z.object({ id: opaqueIdSchema, name: z.string().max(300) }).strict().nullable(),
+    otherLinkedCampaigns: z
+      .array(
+        z
+          .object({ id: z.string(), name: z.string().max(200).nullable(), startDate: ymdDateSchema, endDate: ymdDateSchema })
+          .strict(),
+      )
+      .max(MAX_SALES_GROUP_ROUND_OTHER_LINKED),
+    memo: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+export const createSalesCampaignGroupRoundArgsSchema =
+  salesCampaignGroupRoundArgsObjectSchema.superRefine(refineSalesRoundPeriod);
+
+export type CreateSalesCampaignGroupRoundArgs = z.infer<typeof createSalesCampaignGroupRoundArgsSchema>;
+
 export const createActionProposalInputSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -961,6 +1056,13 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     })
     .strict()
     .superRefine(refineSalesCampaignRoundRequest),
+  z
+    .object({
+      action: z.literal("create_sales_campaign_group_round"),
+      ...createSalesCampaignGroupRoundRequestSchema.shape,
+    })
+    .strict()
+    .superRefine(refineSalesCampaignGroupRoundRequest),
 ]);
 
 /**

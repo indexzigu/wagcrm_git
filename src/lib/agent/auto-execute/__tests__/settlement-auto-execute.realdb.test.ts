@@ -30,6 +30,8 @@ const campaignValues = new Map<string, number | null>();
 const executeCalls: unknown[] = [];
 
 vi.mock("@/lib/agent/write-executor", () => ({
+  // 승인 tx 시간 상한 — 이 테스트의 액션은 정하지 않는다(Prisma 기본값).
+  resolveWriteActionTxTimeoutMs: () => undefined,
   executeWriteAction: async (action: string, args: Record<string, unknown>) => {
     executeCalls.push({ action, args });
     const id = args.campaignId as string;

@@ -35,6 +35,7 @@ import { upsertProductMappingsTool } from "@/lib/agent/tools/upsert-product-mapp
 import { addCampaignItemsTool } from "@/lib/agent/tools/add-campaign-items";
 import { createOrderCampaignTool } from "@/lib/agent/tools/create-order-campaign";
 import { createSalesCampaignRoundTool } from "@/lib/agent/tools/create-sales-campaign-round";
+import { createSalesCampaignGroupRoundTool } from "@/lib/agent/tools/create-sales-campaign-group-round";
 import type { AgentTool, ToolResult, WriteIntent } from "@/lib/agent/tools/types";
 import { WRITE_ACTIONS } from "@/lib/agent/write-executor";
 import {
@@ -73,6 +74,10 @@ import {
   createSalesCampaignRoundRequestArgsSchema,
   type CreateSalesCampaignRoundArgs,
   type CreateSalesCampaignRoundRequestArgs,
+  createSalesCampaignGroupRoundArgsSchema,
+  createSalesCampaignGroupRoundRequestArgsSchema,
+  type CreateSalesCampaignGroupRoundArgs,
+  type CreateSalesCampaignGroupRoundRequestArgs,
   sameOrderCampaignName,
   upsertProductMappingsRequestArgsSchema,
   type AddCampaignItemsArgs,
@@ -118,6 +123,7 @@ import {
   applyProductMappingsResponseSchema,
   orderCampaignDraftResponseSchema,
   salesCampaignRoundDraftResponseSchema,
+  salesCampaignGroupRoundDraftResponseSchema,
   storeProductOptionsResponseSchema,
 } from "@/lib/agent-internal/api-contract";
 import {
@@ -1209,6 +1215,7 @@ const WRITE_INTENT_TOOLS = {
   add_campaign_items: addCampaignItemsTool,
   create_order_campaign: createOrderCampaignTool,
   create_sales_campaign_round: createSalesCampaignRoundTool,
+  create_sales_campaign_group_round: createSalesCampaignGroupRoundTool,
 } as const;
 
 async function targetExists(entityType: string, entityId: string, client: ProposalTx): Promise<boolean> {
@@ -1446,6 +1453,41 @@ async function draftSalesCampaignRoundArgs(
   return { ok: true, args: stored.data };
 }
 
+/**
+ * 판매캠페인 **그룹** 다음 회차 기안의 저장 args 받아오기 — 단건 회차(`draftSalesCampaignRoundArgs`)와 같은 모양이고 창구만
+ * 다르다(지난 그룹 + 스토어 상품 → 새 캠페인 여럿 + 새 그룹). 창구 실패 코드(PREVIOUS_GROUP_NOT_FOUND 등)와 문구를 그대로 돌려준다.
+ */
+async function draftSalesCampaignGroupRoundArgs(
+  request: CreateSalesCampaignGroupRoundRequestArgs,
+  signal: AbortSignal,
+): Promise<{ ok: true; args: CreateSalesCampaignGroupRoundArgs } | { ok: false; outcome: OperationFailure }> {
+  assertNotAborted(signal);
+  const { memo, ...draftRequest } = request;
+  const call = await callAgentInternalApi(
+    AGENT_INTERNAL_PATHS.salesCampaignGroupRoundDraft,
+    draftRequest,
+    salesCampaignGroupRoundDraftResponseSchema,
+    signal,
+  );
+  if (!call.ok) {
+    return { ok: false, outcome: failure(call.errorClass, "sales campaign group round draft call failed", call.detail) };
+  }
+  if (!call.body.ok) {
+    return { ok: false, outcome: failure(call.body.code, "sales campaign group round draft refused", call.body.message) };
+  }
+  const stored = createSalesCampaignGroupRoundArgsSchema.safeParse({
+    ...call.body.data,
+    ...(memo !== undefined ? { memo } : {}),
+  });
+  if (!stored.success) {
+    return {
+      ok: false,
+      outcome: failure("INTERNAL_API_BAD_RESPONSE", "sales campaign group round draft failed stored-args validation"),
+    };
+  }
+  return { ok: true, args: stored.data };
+}
+
 async function createActionProposal(
   input: CreateActionProposalInput,
   { signal, origin }: OperationContext,
@@ -1467,6 +1509,8 @@ async function createActionProposal(
   const draftsOrderCampaign = action === "create_order_campaign";
   // 판매캠페인 회차 기안도 같다 — 이전 회차·스토어 값으로 채운 저장 args 를 트랜잭션 밖에서 받아 온다.
   const draftsSalesRound = action === "create_sales_campaign_round";
+  // 판매캠페인 그룹 회차 기안도 같다 — 지난 그룹·스토어 값으로 채운 저장 args 를 트랜잭션 밖에서 받아 온다.
+  const draftsSalesGroupRound = action === "create_sales_campaign_group_round";
   const requestSchema = snapshotsMappings
     ? upsertProductMappingsRequestArgsSchema
     : fillsMainDeal
@@ -1475,7 +1519,9 @@ async function createActionProposal(
         ? createOrderCampaignRequestArgsSchema
         : draftsSalesRound
           ? createSalesCampaignRoundRequestArgsSchema
-          : definition.argsSchema;
+          : draftsSalesGroupRound
+            ? createSalesCampaignGroupRoundRequestArgsSchema
+            : definition.argsSchema;
   const parsedArgs = requestSchema.safeParse(args);
   if (!parsedArgs.success) {
     return failure("INVALID_INPUT", "action args failed validation");
@@ -1488,6 +1534,14 @@ async function createActionProposal(
   }
   if (draftsSalesRound) {
     const drafted = await draftSalesCampaignRoundArgs(parsedArgs.data as CreateSalesCampaignRoundRequestArgs, signal);
+    if (!drafted.ok) return drafted.outcome;
+    preparedArgs = drafted.args;
+  }
+  if (draftsSalesGroupRound) {
+    const drafted = await draftSalesCampaignGroupRoundArgs(
+      parsedArgs.data as CreateSalesCampaignGroupRoundRequestArgs,
+      signal,
+    );
     if (!drafted.ok) return drafted.outcome;
     preparedArgs = drafted.args;
   }

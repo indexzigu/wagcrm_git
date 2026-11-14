@@ -36,6 +36,8 @@ vi.mock("@/repositories/actionProposalRepository", () => ({
 }));
 
 vi.mock("@/lib/agent/write-executor", () => ({
+  // 승인 tx 시간 상한 — 이 테스트의 액션은 정하지 않는다(Prisma 기본값).
+  resolveWriteActionTxTimeoutMs: () => undefined,
   executeWriteAction: (...args: unknown[]) => executeWriteActionMock(...args),
 }));
 
