@@ -4,7 +4,7 @@ import { AGENT_WORKER_ACTOR } from "@/lib/agent/agent-worker-proposal";
 import type { WriteActionName } from "@/lib/agent/write-actions";
 import { parseStoredJsonObject } from "@/lib/stored-json";
 import { ActionProposalRepository } from "@/repositories/actionProposalRepository";
-import type { SlackDecisionRequest, SlackDecisionResponse } from "./api-contract";
+import type { SlackDecisionExecutedRef, SlackDecisionRequest, SlackDecisionResponse } from "./api-contract";
 import { SLACK_OWNER_APPROVAL_ACTOR } from "./actors";
 
 /**
@@ -52,6 +52,20 @@ const defaultDeps: SlackDecisionDeps = {
   reject: rejectProposal,
 };
 
+const REF_TYPE_RE = /^[A-Z_]{1,32}$/;
+const REF_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * 실행 결과 참조 — 결재함 조회가 `executedRefType`·`executedRefId` 로 남기는 값과 같다(`approve-proposal.ts` 전이 데이터).
+ * 형식이 어긋나면 싣지 않는다(`null`) — hermes 는 이 값을 봇 대화 줄에 넣으므로 자유 글자가 섞일 길을 닫는다.
+ */
+function executedRefOf(result: { refType?: unknown; refId?: unknown } | undefined): SlackDecisionExecutedRef | null {
+  const type = result?.refType;
+  const id = result?.refId;
+  if (typeof type !== "string" || typeof id !== "string") return null;
+  return REF_TYPE_RE.test(type) && REF_ID_RE.test(id) ? { type, id } : null;
+}
+
 async function currentStatus(deps: SlackDecisionDeps, id: string): Promise<string | null> {
   return (await deps.findProposal(id))?.status ?? null;
 }
@@ -93,7 +107,7 @@ export async function decideProposalFromSlack(
     } catch (err) {
       return failureFromThrow(deps, proposalId, err);
     }
-    if (outcome.ok) return { ok: true, status: "REJECTED" };
+    if (outcome.ok) return { ok: true, status: "REJECTED", executedRef: null };
     if (outcome.code === "NOT_FOUND") return { ok: false, code: "NOT_FOUND", status: null };
     return { ok: false, code: "ALREADY_DECIDED", status: await currentStatus(deps, proposalId) };
   }
@@ -105,7 +119,7 @@ export async function decideProposalFromSlack(
     // 승인 본체는 커밋 뒤(실행 후속 효과 등)에도 던질 수 있다 — 상태를 다시 읽어 실은 EXECUTED 인지 알려 준다.
     return failureFromThrow(deps, proposalId, err);
   }
-  if (outcome.ok) return { ok: true, status: "EXECUTED" };
+  if (outcome.ok) return { ok: true, status: "EXECUTED", executedRef: executedRefOf(outcome.result) };
   if (outcome.code === "NOT_FOUND") return { ok: false, code: "NOT_FOUND", status: null };
   if (ALREADY_DECIDED_CODES.has(outcome.code)) {
     return { ok: false, code: "ALREADY_DECIDED", status: await currentStatus(deps, proposalId) };

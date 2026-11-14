@@ -60,8 +60,32 @@ describe("decideProposalFromSlack", () => {
     await expect(decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, d)).resolves.toEqual({
       ok: true,
       status: "EXECUTED",
+      executedRef: null,
     });
     expect(d.approve).toHaveBeenCalledWith("p1", SLACK_OWNER_APPROVAL_ACTOR, { expectedStatus: "PENDING_APPROVAL" });
+  });
+
+  it("승인 결과 참조(새 딜 등)를 결재함 조회와 같은 형식으로 싣고, 형식이 어긋나면 싣지 않는다", async () => {
+    const withResult = (result: unknown) =>
+      deps(botProposal("create_deal"), {
+        approve: vi.fn(async () => ({ ok: true, result }) as unknown as Awaited<ReturnType<Approve>>) as unknown as Approve,
+      });
+    await expect(
+      decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, withResult({ refType: "DEAL", refId: "c_abc-1" })),
+    ).resolves.toEqual({ ok: true, status: "EXECUTED", executedRef: { type: "DEAL", id: "c_abc-1" } });
+    for (const bad of [
+      { refType: "PARTNER", refId: "id with space" },
+      { refType: "partner", refId: "c1" },
+      { refType: "PARTNER", refId: "" },
+      { refType: "PARTNER\nX", refId: "c1" },
+      undefined,
+    ]) {
+      await expect(decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, withResult(bad))).resolves.toEqual({
+        ok: true,
+        status: "EXECUTED",
+        executedRef: null,
+      });
+    }
   });
 
   it("반려: 슬랙 승인자·「슬랙에서 반려」 메모로 반려한다", async () => {
@@ -69,6 +93,7 @@ describe("decideProposalFromSlack", () => {
     await expect(decideProposalFromSlack({ proposalId: "p1", decision: "reject" }, d)).resolves.toEqual({
       ok: true,
       status: "REJECTED",
+      executedRef: null,
     });
     expect(d.reject).toHaveBeenCalledWith("p1", SLACK_OWNER_APPROVAL_ACTOR, "슬랙에서 반려");
     expect(d.approve).not.toHaveBeenCalled();
@@ -93,6 +118,7 @@ describe("decideProposalFromSlack", () => {
     await expect(decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, d)).resolves.toEqual({
       ok: true,
       status: "EXECUTED",
+      executedRef: null,
     });
   });
 
