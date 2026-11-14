@@ -24,7 +24,7 @@ describe("keepModalOpenOnToast", () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
-  it("호출부가 넘긴 핸들러를 먼저 부른다", () => {
+  it("호출부가 넘긴 핸들러도 부른다", () => {
     const handler = vi.fn();
     const event = outsideEvent(document.createElement("div"));
     keepModalOpenOnToast(handler)(event);
