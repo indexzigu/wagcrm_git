@@ -3,6 +3,10 @@ import {
   AgentJobSlackOriginSchema,
   applyProductMappingRowSchema,
   createOrderCampaignArgsSchema,
+  salesCampaignRoundArgsObjectSchema,
+  refineSalesRoundPeriod,
+  createSalesCampaignRoundRequestSchema,
+  refineSalesCampaignRoundRequest,
   createOrderCampaignRequestSchema,
   MAX_PRODUCT_MAPPING_ROWS,
   opaqueIdSchema,
@@ -26,6 +30,7 @@ export const AGENT_INTERNAL_PATHS = {
   storeProductOptions: "/api/internal/agent/store-product-options",
   applyProductMappings: "/api/internal/agent/apply-product-mappings",
   orderCampaignDraft: "/api/internal/agent/order-campaign-draft",
+  salesCampaignRoundDraft: "/api/internal/agent/sales-campaign-round-draft",
 } as const;
 
 export const storeProductOptionsRequestSchema = z
@@ -61,6 +66,22 @@ export const orderCampaignDraftDataSchema = createOrderCampaignArgsSchema.omit({
 
 export type OrderCampaignDraftData = z.infer<typeof orderCampaignDraftDataSchema>;
 
+/** 판매캠페인 다음 회차 기안 초안 요청 — 봇 기안 입력에서 메모만 뺀 것(메모는 실행기가 저장 args 에 붙인다). */
+export const salesCampaignRoundDraftRequestSchema = createSalesCampaignRoundRequestSchema
+  .omit({ memo: true })
+  .strict()
+  .superRefine(refineSalesCampaignRoundRequest);
+
+export type SalesCampaignRoundDraftRequest = z.infer<typeof salesCampaignRoundDraftRequestSchema>;
+
+/** 초안 = 저장 args(메모 제외). 실행기가 메모를 붙여 저장 스키마로 다시 잰다. */
+export const salesCampaignRoundDraftDataSchema = salesCampaignRoundArgsObjectSchema
+  .omit({ memo: true })
+  .strict()
+  .superRefine(refineSalesRoundPeriod);
+
+export type SalesCampaignRoundDraftData = z.infer<typeof salesCampaignRoundDraftDataSchema>;
+
 /**
  * 창구 실패 코드. 봇 작업 결과 요약에 그대로 실린다(`… failed: <code> (<message>)`).
  * - CAMPAIGN_NOT_FOUND: 주문캠페인 없음
@@ -74,6 +95,10 @@ export type OrderCampaignDraftData = z.infer<typeof orderCampaignDraftDataSchema
  * - PRODUCT_AMBIGUOUS: 상품명 일부가 여러 상품에 걸림(문구에 후보 이름·번호를 싣는다 — 봇이 오너에게 고르게 한다)
  * - ORDER_BRAND_NOT_FOUND: 발주 거래처(거래처 양식)를 찾지 못했거나 여럿에 걸림
  * - SELLER_NAME_REQUIRED: 셀러 이름을 상품명에서 찾지 못했고 입력에도 없음
+ * - PRODUCT_REQUIRED: 판매캠페인 회차 기안에서 상품 지목이 없고 이전 회차에 연결된 스토어 상품도 없음
+ * - SALE_PERIOD_UNAVAILABLE: 스토어 판매 기간이 없거나(미등록·기간 미정·끝 없음) 이미 끝남 — 날짜를 받아 다시 올린다
+ * - ROUND_ALREADY_EXISTS: 같은 판매 조건·셀러에 같은 기간의 캠페인이 이미 있음
+ * (판매캠페인 회차 기안의 이전 회차가 없으면 CAMPAIGN_NOT_FOUND)
  */
 export const AGENT_INTERNAL_FAILURE_CODES = [
   "CAMPAIGN_NOT_FOUND",
@@ -88,6 +113,9 @@ export const AGENT_INTERNAL_FAILURE_CODES = [
   "PRODUCT_AMBIGUOUS",
   "ORDER_BRAND_NOT_FOUND",
   "SELLER_NAME_REQUIRED",
+  "PRODUCT_REQUIRED",
+  "SALE_PERIOD_UNAVAILABLE",
+  "ROUND_ALREADY_EXISTS",
 ] as const;
 
 export type AgentInternalFailureCode = (typeof AGENT_INTERNAL_FAILURE_CODES)[number];
@@ -117,6 +145,11 @@ export const applyProductMappingsResponseSchema = z.union([
 
 export const orderCampaignDraftResponseSchema = z.union([
   z.object({ ok: z.literal(true), data: orderCampaignDraftDataSchema }).strict(),
+  failureSchema,
+]);
+
+export const salesCampaignRoundDraftResponseSchema = z.union([
+  z.object({ ok: z.literal(true), data: salesCampaignRoundDraftDataSchema }).strict(),
   failureSchema,
 ]);
 

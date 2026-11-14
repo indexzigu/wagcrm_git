@@ -20,6 +20,7 @@ import {
   createActionProposalInputSchema,
   createAgentJobIdempotencyKey,
   createOrderCampaignArgsSchema,
+  createSalesCampaignRoundArgsSchema,
   isAgentJobTransitionAllowed,
   serializeAgentJobJson,
   upsertProductMappingsArgsSchema,
@@ -270,12 +271,13 @@ describe("create_action_proposal — update_settlement_amount (정산 금액 수
 
   it("sits right before update_record in the union (new actions are appended at the end)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-5)).toEqual([
+    expect(actions.slice(-6)).toEqual([
       "update_settlement_amount",
       "update_record",
       "upsert_product_mappings",
       "add_campaign_items",
       "create_order_campaign",
+      "create_sales_campaign_round",
     ]);
   });
 
@@ -517,6 +519,7 @@ describe("create_action_proposal — update_record (기록 수정)", () => {
       "upsert_product_mappings",
       "add_campaign_items",
       "create_order_campaign",
+      "create_sales_campaign_round",
     ]);
   });
 
@@ -637,7 +640,12 @@ describe("create_action_proposal — upsert_product_mappings (상품 매핑 등�
 
   it("sits right before add_campaign_items in the union (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.slice(-3)).toEqual(["upsert_product_mappings", "add_campaign_items", "create_order_campaign"]);
+    expect(actions.slice(-4)).toEqual([
+      "upsert_product_mappings",
+      "add_campaign_items",
+      "create_order_campaign",
+      "create_sales_campaign_round",
+    ]);
   });
 
   it("accepts a new row (also through the AgentJob envelope: an array of scalar objects is depth 2)", () => {
@@ -787,9 +795,9 @@ describe("create_action_proposal — create_order_campaign (주문캠페인 새�
     origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
   });
 
-  it("is the last action in the union (python mirror compares literal order)", () => {
+  it("keeps its place before create_sales_campaign_round (python mirror compares literal order)", () => {
     const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
-    expect(actions.at(-1)).toBe("create_order_campaign");
+    expect(actions.slice(-2)).toEqual(["create_order_campaign", "create_sales_campaign_round"]);
   });
 
   it("takes exactly one of productQuery / productId, plus optional sellerName·orderBrand·memo", () => {
@@ -830,5 +838,81 @@ describe("create_action_proposal — create_order_campaign (주문캠페인 새�
     expect(createOrderCampaignArgsSchema.safeParse({ ...stored, mappings: [] }).success).toBe(false);
     const many = Array.from({ length: 11 }, (_, i) => ({ id: `c${i}`, name: "n", isActive: true }));
     expect(createOrderCampaignArgsSchema.safeParse({ ...stored, sameProductCampaigns: many }).success).toBe(false);
+  });
+});
+
+describe("create_action_proposal — create_sales_campaign_round (판매캠페인 다음 회차, 2026-11-14)", () => {
+  const accepts = (input: unknown) => createActionProposalInputSchema.safeParse(input).success;
+
+  it("is the last action in the union (python mirror compares literal order)", () => {
+    const actions = createActionProposalInputSchema.options.map((option) => option.shape.action.value);
+    expect(actions.at(-1)).toBe("create_sales_campaign_round");
+  });
+
+  it("needs the previous round; product target is optional but at most one; dates come as a pair", () => {
+    const base = { action: "create_sales_campaign_round", previousCampaignId: "camp-1" };
+    expect(accepts(base)).toBe(true);
+    expect(accepts({ ...base, productQuery: "샘플 상품", memo: "다음 회차" })).toBe(true);
+    expect(accepts({ ...base, productId: "12345" })).toBe(true);
+    expect(accepts({ ...base, startDate: "2026-12-01", endDate: "2026-12-07" })).toBe(true);
+    expect(accepts({ action: "create_sales_campaign_round" })).toBe(false);
+    expect(accepts({ ...base, productQuery: "샘플", productId: "1" })).toBe(false);
+    expect(accepts({ ...base, startDate: "2026-12-01" })).toBe(false);
+    expect(accepts({ ...base, startDate: "2026-12-07", endDate: "2026-12-01" })).toBe(false);
+    expect(accepts({ ...base, startDate: "2026-02-30", endDate: "2026-03-01" })).toBe(false);
+  });
+
+  it("rejects bot-supplied campaign values (deal·seller·margins come from the previous round in the CRM draft)", () => {
+    const base = { action: "create_sales_campaign_round", previousCampaignId: "camp-1" };
+    expect(accepts({ ...base, dealId: "d1" })).toBe(false);
+    expect(accepts({ ...base, campaignName: "봇이 쓴 이름" })).toBe(false);
+    expect(accepts({ ...base, status: "ACTIVE" })).toBe(false);
+  });
+
+  it("stored args are strict and keep the period ordered", () => {
+    const stored = {
+      previousCampaignId: "camp-1",
+      previousCampaignName: "샘플딜 - 샘플셀러 1차",
+      dealId: "d1",
+      dealName: "샘플딜",
+      sellerId: "s1",
+      sellerName: "샘플셀러",
+      salesChannel: "OWN_MALL_NAVER",
+      isManualMargin: false,
+      totalMarginRate: 30,
+      sellerMarginRate: 15,
+      campaignItems: [],
+      product: {
+        productId: "123",
+        channelProductNo: "456",
+        name: "샘플 상품",
+        productStatus: "SALE",
+        salePeriod: "2026.12.01 ~ 2026.12.07",
+        source: "INPUT",
+      },
+      baseNaverLink: "https://smartstore.naver.com/ygrd/products/456",
+      startDate: "2026-12-01",
+      endDate: "2026-12-07",
+      dateSource: "STORE",
+      status: "PREPARATION",
+      expectedRoundNumber: 2,
+      expectedCampaignName: "샘플딜 - 샘플셀러 2차",
+      existingRounds: [],
+      linkOrderCampaign: null,
+    };
+    expect(createSalesCampaignRoundArgsSchema.safeParse(stored).success).toBe(true);
+    expect(createSalesCampaignRoundArgsSchema.safeParse({ ...stored, endDate: "2026-11-30" }).success).toBe(false);
+    expect(createSalesCampaignRoundArgsSchema.safeParse({ ...stored, campaignName: "x" }).success).toBe(false);
+    expect(createSalesCampaignRoundArgsSchema.safeParse({ ...stored, salesChannel: "TIKTOK" }).success).toBe(false);
+  });
+});
+
+describe("판매캠페인 회차 계약의 채널 목록", () => {
+  it("CRM 판매 채널 라벨 표와 같은 값을 같은 순서로 가진다(채널이 늘면 여기서 깨진다)", async () => {
+    const { SALES_ROUND_CHANNELS } = await import("../contracts");
+    const { salesChannelLabels } = await import("@/lib/crm-types");
+    // 워커 계약은 화면 타입 모듈을 import 하지 않는다 — 대신 이 테스트가 두 목록을 묶는다.
+    // 어긋나면 기안 빌더가 모르는 채널을 UNSPECIFIED 로 떨어뜨려 이전 회차 채널이 승인자 모르게 바뀐다.
+    expect([...SALES_ROUND_CHANNELS]).toEqual(Object.keys(salesChannelLabels));
   });
 });

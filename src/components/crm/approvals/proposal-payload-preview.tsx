@@ -26,7 +26,7 @@ import {
 } from "@/lib/record-update-labels";
 import { displayLabel } from "@/lib/display-label";
 import { plannedOptionDealName } from "@/lib/deal-display";
-import { campaignStatusLabels, partnerTypeLabels } from "@/lib/crm-types";
+import { campaignStatusLabels, partnerTypeLabels, salesChannelLabels } from "@/lib/crm-types";
 import { FIELD_LABELS } from "@/lib/field-labels";
 import { readCalendarInboundRef, type CalendarInboundRef } from "@/lib/calendar-inbound/ref";
 import type { ProposalArgLabels } from "@/lib/agent/resolve-entity-label";
@@ -562,6 +562,109 @@ function CreateOrderCampaignPreview({ args }: { args: Record<string, unknown> })
   );
 }
 
+function asPercent(value: unknown): string | null {
+  return typeof value === "number" && Number.isFinite(value) ? `${value}%` : null;
+}
+
+/**
+ * 판매캠페인 다음 회차 등록 — 승인자가 판단할 순서대로: 무엇이 생기나(예상 이름·기간·상태) → 근거가 된 스토어 상품 →
+ * 이전 회차에서 이어받는 것(채널·마진·하위품목) → 이미 있는 회차. 이름·회차는 승인 때 시작일 순서로 다시 붙는다.
+ */
+function CreateSalesCampaignRoundPreview({ args }: { args: Record<string, unknown> }) {
+  const period = periodText(asText(args.startDate), asText(args.endDate));
+  const product = asRecord(args.product);
+  if (!period || !product) return null;
+  const status = asText(args.status);
+  const channel = asText(args.salesChannel);
+  const items = asRecordList(args.campaignItems);
+  const rounds = asRecordList(args.existingRounds);
+  const linkOrder = asRecord(args.linkOrderCampaign);
+  const fromStore = args.dateSource === "STORE";
+  const fromPreviousRound = product.source === "PREVIOUS_ROUND";
+  const productName = asText(product.name);
+  // 마진은 수동일 때만 보인다 — 자동(판매 조건 기준)이 기본값이라 늘 같은 줄은 판단에 쓰이지 않는다.
+  const manualMargin =
+    args.isManualMargin === true && asPercent(args.totalMarginRate) && asPercent(args.sellerMarginRate)
+      ? `총 ${asPercent(args.totalMarginRate)} · 셀러 ${asPercent(args.sellerMarginRate)}(수동)`
+      : null;
+  return (
+    <>
+      <Rows
+        rows={[
+          ["새 캠페인(예상)", asText(args.expectedCampaignName) ?? `${asText(args.dealName) ?? ""} - ${asText(args.sellerName) ?? ""}`],
+          ["기간", `${period}${fromStore ? "(스토어 판매 기간 그대로)" : "(봇이 직접 입력)"}`],
+          ["상태", status ? displayLabel(campaignStatusLabels, status) : null],
+        ]}
+      />
+      <Rows
+        rows={[
+          ["스토어 상품", productName ? `${productName}${fromPreviousRound ? "(이전 회차에서 가져옴)" : "(봇이 지정)"}` : null],
+          ["상품번호", asText(product.productId)],
+          // 기간을 스토어에서 그대로 가져왔으면 같은 날짜를 두 번 보이지 않는다 — 봇이 날짜를 줬을 때만 대조용으로 둔다.
+          ["스토어 기간", fromStore ? null : asText(product.salePeriod)],
+        ]}
+      />
+      {fromPreviousRound && (
+        <p className="flex items-start gap-1.5 text-foreground">
+          <AlertTriangleIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-status-caution" />
+          <span className="min-w-0 break-words">
+            봇이 상품을 지정하지 않아 이전 회차에 연결된 스토어 상품을 그대로 가져왔습니다. 이번 회차 상품이 따로 있으면 반려해 주세요.
+          </span>
+        </p>
+      )}
+      <Rows
+        rows={[
+          ["이전 회차", asText(args.previousCampaignName)],
+          ["판매 채널", channel ? displayLabel(salesChannelLabels, channel) : null],
+          ["마진", manualMargin],
+          ["연결할 주문캠페인", linkOrder ? asText(linkOrder.name) : null],
+          ["기안 메모", asText(args.memo)],
+        ]}
+      />
+      {items.length > 0 && (
+        <div className="space-y-1">
+          <SectionTitle>이어받는 품목 {items.length}개</SectionTitle>
+          <div className="max-h-48 overflow-x-auto overflow-y-auto">
+            <table className="w-full border-collapse text-left tabular-nums">
+              <thead>
+                <tr className="text-muted-foreground">
+                  <th className="py-1 pr-3 font-normal">판매 조건</th>
+                  <th className="py-1 pr-3 font-normal">판매가</th>
+                  <th className="py-1 font-normal">수수료율</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, index) => (
+                  <tr key={`${index}-${asText(item.dealId) ?? ""}`} className="align-top text-foreground">
+                    <td className="py-1 pr-3 break-words">{asText(item.dealName) ?? "—"}</td>
+                    <td className="py-1 pr-3 break-words">{asMoney(item.sellingPrice) ?? "—"}</td>
+                    <td className="py-1 break-words">{asPercent(item.feeRate) ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {rounds.length > 0 && (
+        <div className="space-y-1">
+          <SectionTitle>같은 셀러·판매 조건의 기존 회차 {rounds.length}개</SectionTitle>
+          <ul className="space-y-0.5 text-muted-foreground">
+            {rounds.map((round, index) => (
+              <li key={`${index}-${asText(round.id) ?? ""}`} className="min-w-0 break-words tabular-nums">
+                {asText(round.name) ?? "이름없음"} · {periodText(asText(round.startDate), asText(round.endDate)) ?? "—"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="text-muted-foreground">
+        승인하면 판매캠페인이 생기고, 회차 번호와 이름은 시작일 순서로 다시 붙습니다. 수량·매출은 0에서 시작합니다.
+      </p>
+    </>
+  );
+}
+
 /** `YYYY-MM-DD` 두 날 → 「시작 ~ 끝」, 같은 날이면 하루만. */
 function periodText(start: string | null, end: string | null): string | null {
   if (!start || !end) return null;
@@ -688,6 +791,8 @@ export function ProposalPayloadPreview({
       <AddCampaignItemsPreview args={args} labels={argLabels} targetEntityName={targetEntityName} />
     ) : action === "create_order_campaign" ? (
       <CreateOrderCampaignPreview args={args} />
+    ) : action === "create_sales_campaign_round" ? (
+      <CreateSalesCampaignRoundPreview args={args} />
     ) : null;
   if (!body && !origin) return null;
   return (
