@@ -141,4 +141,19 @@ describe("decideProposalFromSlack", () => {
     });
     spy.mockRestore();
   });
+
+  it("승인 본체가 커밋 뒤 던져도 상태를 다시 읽어 INTERNAL + 현재 상태로 돌려준다", async () => {
+    const findProposal = vi
+      .fn()
+      .mockResolvedValueOnce(botProposal("create_deal"))
+      .mockResolvedValueOnce(botProposal("create_deal", "EXECUTED"));
+    const approve = vi.fn(async () => {
+      throw new Error("post-commit effect failed");
+    }) as unknown as Approve;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, deps(null, { findProposal, approve })),
+    ).resolves.toEqual({ ok: false, code: "INTERNAL", status: "EXECUTED" });
+    spy.mockRestore();
+  });
 });

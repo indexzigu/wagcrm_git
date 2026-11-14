@@ -56,6 +56,11 @@ async function currentStatus(deps: SlackDecisionDeps, id: string): Promise<strin
   return (await deps.findProposal(id))?.status ?? null;
 }
 
+async function internalFailure(deps: SlackDecisionDeps, id: string, err: unknown): Promise<SlackDecisionResponse> {
+  console.error(`[slack-decision] ${id} 처리 중 예외:`, err);
+  return { ok: false, code: "INTERNAL", status: await currentStatus(deps, id).catch(() => null) };
+}
+
 export async function decideProposalFromSlack(
   request: SlackDecisionRequest,
   deps: SlackDecisionDeps = defaultDeps,
@@ -72,13 +77,24 @@ export async function decideProposalFromSlack(
   if (!eligible) return { ok: false, code: "NOT_ELIGIBLE", status: proposal.status };
 
   if (decision === "reject") {
-    const outcome = await deps.reject(proposalId, SLACK_OWNER_APPROVAL_ACTOR, "슬랙에서 반려");
+    let outcome: Awaited<ReturnType<SlackDecisionDeps["reject"]>>;
+    try {
+      outcome = await deps.reject(proposalId, SLACK_OWNER_APPROVAL_ACTOR, "슬랙에서 반려");
+    } catch (err) {
+      return internalFailure(deps, proposalId, err);
+    }
     if (outcome.ok) return { ok: true, status: "REJECTED" };
     if (outcome.code === "NOT_FOUND") return { ok: false, code: "NOT_FOUND", status: null };
     return { ok: false, code: "ALREADY_DECIDED", status: await currentStatus(deps, proposalId) };
   }
 
-  const outcome = await deps.approve(proposalId, SLACK_OWNER_APPROVAL_ACTOR, { expectedStatus: "PENDING_APPROVAL" });
+  let outcome: Awaited<ReturnType<SlackDecisionDeps["approve"]>>;
+  try {
+    outcome = await deps.approve(proposalId, SLACK_OWNER_APPROVAL_ACTOR, { expectedStatus: "PENDING_APPROVAL" });
+  } catch (err) {
+    // 승인 본체는 커밋 뒤(실행 후속 효과 등)에도 던질 수 있다 — 상태를 다시 읽어 실은 EXECUTED 인지 알려 준다.
+    return internalFailure(deps, proposalId, err);
+  }
   if (outcome.ok) return { ok: true, status: "EXECUTED" };
   if (outcome.code === "NOT_FOUND") return { ok: false, code: "NOT_FOUND", status: null };
   if (ALREADY_DECIDED_CODES.has(outcome.code)) {

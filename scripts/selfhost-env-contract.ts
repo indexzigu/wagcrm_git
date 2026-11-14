@@ -139,6 +139,12 @@ export const SELFHOST_ENV_CONTRACT: readonly EnvContractEntry[] = [
       "봇 내부 창구(`/api/internal/agent/*` — 슬랙 봇의 스토어 옵션 조회·상품 매핑 즉시 저장) 비밀값. 워커 env 에도 같은 값이 있어야 한다. 비면 창구가 404 로 닫혀 봇 매핑만 「창구가 닫혀 있습니다」로 실패하고 앱의 다른 기능은 영향이 없다 — required 가 아니라 degrades 다",
   },
   {
+    envName: "AGENT_SLACK_DECISION_SECRET",
+    disposition: "degrades",
+    reason:
+      "슬랙 버튼 승인 창구(`/api/internal/agent/slack-decision`) 전용 비밀값. hermes 비밀 파일과 같은 값이어야 한다. 비면 창구가 404 로 닫혀 슬랙 버튼만 「결재함에서 확인」으로 답하고 웹 결재함 승인은 영향이 없다 — degrades",
+  },
+  {
     envName: "INGEST_TOKEN",
     disposition: "required",
     reason:
