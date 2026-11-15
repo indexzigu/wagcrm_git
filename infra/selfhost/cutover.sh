@@ -77,7 +77,7 @@ HELD_CRON_JOBS="refresh-instagram-token rehost-seller-media naver-settlement-syn
 # 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
 # 테스트 오버라이드(*_TEST_PATH_CANDIDATES)는 이 후보까지 통째로 대체한다.
 HOST_OPT_CANDIDATES=""
-for _host_opt_dir in node/bin rclone jq cloudflared; do
+for _host_opt_dir in node/bin rclone jq cloudflared gh/bin; do
   if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then HOST_OPT_CANDIDATES="$HOST_OPT_CANDIDATES:$HOME/opt/$_host_opt_dir"; fi
 done
 PATH_CANDIDATES="${CUTOVER_TEST_PATH_CANDIDATES:-/usr/local/bin:/opt/homebrew/bin:/usr/local/opt/libpq/bin:/opt/homebrew/opt/libpq/bin$HOST_OPT_CANDIDATES}"

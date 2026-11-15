@@ -27,7 +27,7 @@ const PLISTS = [
   "kr.ygrd.wagcrm.preview.plist",
 ];
 const HOST_FILES = ["crontab", ...PLISTS.map((p) => path.join("launchd", p))];
-const OPT_LOOP = "for _host_opt_dir in node/bin rclone jq cloudflared; do";
+const OPT_LOOP = "for _host_opt_dir in node/bin rclone jq cloudflared gh/bin; do";
 
 const tmpRoots: string[] = [];
 const tmp = (): string => {
@@ -249,9 +249,9 @@ describe("~/opt 도구 후보", () => {
 
   it("있는 디렉터리만, 정해진 순서로 뒤에 붙는다", () => {
     const home = tmp();
-    for (const d of ["opt/node/bin", "opt/jq", "opt/cloudflared"]) mkdirSync(path.join(home, d), { recursive: true });
+    for (const d of ["opt/node/bin", "opt/jq", "opt/cloudflared", "opt/gh/bin"]) mkdirSync(path.join(home, d), { recursive: true });
     expect(runBlock(home)).toBe(
-      `/usr/bin:/bin:${home}/opt/node/bin:${home}/opt/jq:${home}/opt/cloudflared`,
+      `/usr/bin:/bin:${home}/opt/node/bin:${home}/opt/jq:${home}/opt/cloudflared:${home}/opt/gh/bin`,
     );
   });
 });

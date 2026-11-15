@@ -396,7 +396,7 @@ diff -r infra/selfhost/launchd ~/selfhost/rendered/launchd   # 홈·cloudflared 
 - 스크립트(`run-app.sh`·`backup*.sh`·`restore-drill.sh`·`cutover.sh` 등)는 홈을
   `$HOME` 에서 파생하므로 렌더가 필요 없다.
 - 도구 탐색: Homebrew 후보(`/usr/local/bin`·`/opt/homebrew/bin`) **뒤에**
-  `~/opt/node/bin` · `~/opt/rclone` · `~/opt/jq` · `~/opt/cloudflared` 를 **디렉터리가
+  `~/opt/node/bin` · `~/opt/rclone` · `~/opt/jq` · `~/opt/cloudflared` · `~/opt/gh/bin` 를 **디렉터리가
   있을 때만** 붙인다(Homebrew 없는 Big Sur 맥 용). `~/opt` 가 없는 아이맥의 PATH 는
   그대로다.
 - `preview.sh`(프리뷰 plist)·`cutover.sh`·`rollback.sh`(crontab 재설치)는 이 렌더러를
