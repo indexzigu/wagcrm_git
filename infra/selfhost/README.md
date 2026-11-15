@@ -648,6 +648,10 @@ SUPERSEDED**(2026-08-13 컷오버 완료). 지금은 전 줄이 활성 상태로
 cd ~/selfhost/wagcrm && crontab infra/selfhost/crontab && crontab -l | grep -cE '^[0-9*].*run-cron\.sh'
 ```
 
+⚠️ 위 명령은 **홈이 `/Users/z9` 인 아이맥 전용**이다(레포 crontab 이 아이맥 경로로 박혀 있다).
+홈이 다른 맥에서는 `render-host-files.sh --out` 으로 렌더한 crontab 을 설치한다 —
+「운영 체크아웃 경로 규약」의 「다른 맥으로 옮길 때 — 호스트 파일 렌더」.
+
 🪤 **앵커(`^[0-9*]`)를 빼고 `grep -c run-cron.sh` 로 세지 말 것 — 이 파일의 주석도
 `run-cron.sh` 를 언급하므로 활성 잡보다 큰 수가 나온다**(2026-08-13 실측: 그때는 주석이
 3줄이라 잡 15개인 상태에서 18 이 찍혀 오너가 개수 불일치로 오독했다). ⚠️ 그 **차이도**
