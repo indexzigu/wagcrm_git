@@ -22,10 +22,14 @@ import { PriceDefenseCard } from "../price-defense-card";
 
 const fetchMock = vi.fn();
 
+// "Healthy" must stay fresh relative to the 36h staleness window in the card,
+// so derive it from now — a fixed timestamp silently turns stale 36h later and
+// breaks every PR's CI (happened 2026-11-14 16:00 UTC).
+const healthyCheckedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 const healthySourceHealth = {
-  naver: { status: "ok", checkedAt: "2026-11-13T04:00:00.000Z", itemCount: 3, lastSuccessAt: "2026-11-13T04:00:00.000Z", latestError: null },
-  coupang: { status: "empty", checkedAt: "2026-11-13T04:00:00.000Z", itemCount: 0, lastSuccessAt: "2026-11-13T04:00:00.000Z", latestError: null },
-  kakao: { status: "ok", checkedAt: "2026-11-13T04:00:00.000Z", itemCount: 2, lastSuccessAt: "2026-11-13T04:00:00.000Z", latestError: null },
+  naver: { status: "ok", checkedAt: healthyCheckedAt, itemCount: 3, lastSuccessAt: healthyCheckedAt, latestError: null },
+  coupang: { status: "empty", checkedAt: healthyCheckedAt, itemCount: 0, lastSuccessAt: healthyCheckedAt, latestError: null },
+  kakao: { status: "ok", checkedAt: healthyCheckedAt, itemCount: 2, lastSuccessAt: healthyCheckedAt, latestError: null },
 };
 
 function mockOverview(payload: unknown) {
