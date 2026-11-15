@@ -153,8 +153,17 @@ case "$ARG" in
   /*) out_abs="$ARG" ;;
   *) out_abs="$PWD/$ARG" ;;
 esac
+case "/$ARG/" in
+  */../*) die "--out 에 '..' 를 쓰지 마세요($ARG) — 레포 안을 우회해 가리킬 수 있습니다." ;;
+esac
 case "$out_abs/" in
   "$REPO_DIR/"*) die "--out 이 레포 체크아웃 안을 가리킵니다($out_abs) — 레포 밖 폴더를 쓰세요." ;;
+esac
+# 이미 있는 가장 가까운 조상을 심볼릭 링크까지 풀어 한 번 더 본다(링크로 레포 안을 가리키는 경우).
+out_probe="$out_abs"
+while [ ! -d "$out_probe" ]; do out_probe="$(dirname "$out_probe")"; done
+case "$(cd "$out_probe" && pwd -P)/" in
+  "$REPO_DIR/"*) die "--out 이 (심볼릭 링크를 풀면) 레포 체크아웃 안입니다($out_abs) — 레포 밖 폴더를 쓰세요." ;;
 esac
 mkdir -p "$ARG/launchd"
 OUT_DIR="$(cd "$ARG" && pwd -P)"

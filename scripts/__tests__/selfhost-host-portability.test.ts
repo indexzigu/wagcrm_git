@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -136,6 +136,18 @@ describe("render-host-files.sh — 거부 경로", () => {
     expect(r.stdout).toBe("");
   });
 
+  it("--out 이 '..' 나 심볼릭 링크로 레포 안을 우회해 가리켜도 폴더를 만들기 전에 거부한다", () => {
+    const viaDots = path.join(os.tmpdir(), path.relative(os.tmpdir(), path.join(INFRA, `render-probe-dots-${process.pid}`)));
+    const r1 = render({ HOME: "/Users/z9", CLOUDFLARED_BIN: "/usr/local/bin/cloudflared" }, ["--out", `${os.tmpdir()}/../..${viaDots}`]);
+    expect(r1.status).not.toBe(0);
+    const link = path.join(tmp(), "into-repo");
+    execFileSync("ln", ["-s", INFRA, link]);
+    const r2 = render({ HOME: "/Users/z9", CLOUDFLARED_BIN: "/usr/local/bin/cloudflared" }, ["--out", path.join(link, `render-probe-link-${process.pid}`)]);
+    expect(r2.status).not.toBe(0);
+    expect(r2.stderr).toContain("심볼릭 링크");
+    expect(readdirSync(INFRA).filter((f) => f.startsWith("render-probe"))).toEqual([]);
+  });
+
   it("CLOUDFLARED_BIN 에 허용 밖 문자가 있으면 tunnel 렌더를 거부한다", () => {
     const r = render({ HOME: "/Users/z9", CLOUDFLARED_BIN: "/opt/cf#x" }, [
       "--file",
@@ -259,20 +271,28 @@ describe("설치 지점은 렌더러를 거친다", () => {
     expect(code).toContain('"$PREVIEW_SELF_DIR/render-host-files.sh" --file "$PREVIEW_CHECKOUT/infra/selfhost/launchd/$PLIST_NAME" > "$PLIST_DST"');
   });
 
+  const installFn = (f: string): string => {
+    const src = readFileSync(path.join(INFRA, f), "utf8");
+    const start = src.indexOf("install_rendered_crontab() {");
+    expect(start, f).toBeGreaterThan(0);
+    return src.slice(start, src.indexOf("\n}\n", start) + 3);
+  };
+
+  it("cutover.sh 와 rollback.sh 의 설치 함수는 같은 본문이다(아래 행위 테스트가 둘 다를 대표하도록)", () => {
+    expect(installFn("cutover.sh")).toBe(installFn("rollback.sh"));
+  });
+
   /** rollback.sh 의 실제 함수 정의를 잘라 가짜 crontab 으로 실행한다. */
   const runInstall = (crontabFile: string, home: string) => {
-    const src = readFileSync(path.join(INFRA, "rollback.sh"), "utf8");
-    const fn = src.slice(src.indexOf("install_rendered_crontab() {"), src.indexOf("\n}\n", src.indexOf("install_rendered_crontab() {")) + 3);
+    const fn = installFn("rollback.sh");
     expect(fn).toContain("render-host-files.sh");
-    const dir = tmp();
-    const bin = path.join(dir, "bin");
-    mkdirSync(bin);
-    const record = path.join(dir, "installed");
-    writeFileSync(path.join(bin, "crontab"), `#!/bin/bash\ncat "$1" > "${record}"\n`);
-    chmodSync(path.join(bin, "crontab"), 0o755);
-    const r = spawnSync("bash", ["-euo", "pipefail", "-c", `${fn}\ninstall_rendered_crontab`], {
+    const record = path.join(tmp(), "installed");
+    // 가짜 crontab 은 실행파일이 아니라 bash 함수로 가로챈다 — 새 실행파일 생성은
+    // gh-stub-guard 계약이 금지한다(macOS 첫 execve 검사 지연 → 타 테스트 타임아웃 flaky).
+    const fakeCrontab = `crontab() { cat "$1" > ${JSON.stringify(record)}; }`;
+    const r = spawnSync("bash", ["-euo", "pipefail", "-c", `${fakeCrontab}\n${fn}\ninstall_rendered_crontab`], {
       env: {
-        PATH: `${bin}:/usr/bin:/bin`,
+        PATH: "/usr/bin:/bin",
         HOME: home,
         TMPDIR: os.tmpdir(),
         REPO_ROOT: REPO,
