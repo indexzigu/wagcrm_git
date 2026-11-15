@@ -37,7 +37,15 @@ PRISMA_BIN="$PREVIEW_CHECKOUT/node_modules/.bin/prisma"
 PREVIEW_SCHEMA="$PREVIEW_CHECKOUT/prisma/schema.prisma"
 
 # PREVIEW_DB_TEST_PATH_CANDIDATES 는 가드 테스트 전용 오버라이드다(운영에서 설정 금지).
-PATH_CANDIDATES="${PREVIEW_DB_TEST_PATH_CANDIDATES:-/usr/local/bin:/opt/homebrew/bin:/usr/local/opt/libpq/bin:/opt/homebrew/opt/libpq/bin}"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+# 테스트 오버라이드(*_TEST_PATH_CANDIDATES)는 이 후보까지 통째로 대체한다.
+HOST_OPT_CANDIDATES=""
+for _host_opt_dir in node/bin rclone jq cloudflared; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then HOST_OPT_CANDIDATES="$HOST_OPT_CANDIDATES:$HOME/opt/$_host_opt_dir"; fi
+done
+PATH_CANDIDATES="${PREVIEW_DB_TEST_PATH_CANDIDATES:-/usr/local/bin:/opt/homebrew/bin:/usr/local/opt/libpq/bin:/opt/homebrew/opt/libpq/bin$HOST_OPT_CANDIDATES}"
 export PATH="$PATH_CANDIDATES:$PATH"
 
 mkdir -p "$LOG_DIR"

@@ -61,7 +61,8 @@ GDRIVE_REMOTE="gdrive"                   # rclone remote 이름. `rclone config 
                                           # 때 rclone 이 스스로 만드는 폴더 트리만 이후 계속 보고
                                           # 관리할 수 있다.
 GDRIVE_FOLDER="wagcrm-weekly-backups"
-LOG_DIR="/Users/z9/selfhost/logs"
+# 홈은 $HOME 에서 파생한다(아이맥 /Users/z9 에서는 종전 리터럴과 같은 값 — 2026-11 맥북 이관).
+LOG_DIR="$HOME/selfhost/logs"
 RETENTION_WEEKS="12"
 
 # ── 용량 가드를 여기 두지 않는 이유 ──
@@ -128,6 +129,13 @@ mkdir -p "$LOG_DIR"
 # 말 것 — 인터랙티브 셸의 PATH 를 그대로 물려받는 수동 실행에서는 이 버그가
 # 전혀 드러나지 않는다.
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
 
 command -v rclone >/dev/null || abort "rclone 이 설치돼 있지 않습니다 (PATH=$PATH 에서 찾지 못함)."
 command -v docker >/dev/null || abort "docker 가 설치돼 있지 않습니다 (PATH=$PATH 에서 찾지 못함)."

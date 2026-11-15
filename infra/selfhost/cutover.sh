@@ -49,7 +49,8 @@ ENV_FILE="$REPO_ROOT/infra/selfhost/.env"
 # 전용 오버라이드다(CUTOVER_TEST_NOW_HM 과 동일 취급 — 운영에서는 절대
 # 설정하지 않는다). 실제 크리덴셜은 항상 아래 기본 경로에서 읽는다.
 CUTOVER_ENV_FILE="${CUTOVER_TEST_ENV_FILE:-$REPO_ROOT/infra/selfhost/.env.cutover}"
-R2_CREDS_FILE="/Users/z9/selfhost/r2-credentials.txt"
+# 홈은 $HOME 에서 파생한다(아이맥 /Users/z9 에서는 종전 리터럴과 같은 값 — 2026-11 맥북 이관).
+R2_CREDS_FILE="$HOME/selfhost/r2-credentials.txt"
 R2_REMOTE="r2"
 R2_BACKUP_PREFIX="backups"
 LOG_DIR="$HOME/selfhost/logs"
@@ -71,10 +72,32 @@ HELD_CRON_JOBS="refresh-instagram-token rehost-seller-media naver-settlement-syn
 # CUTOVER_TEST_PATH_CANDIDATES 는 가드 자체를 테스트할 때만 쓰는 테스트 전용
 # 오버라이드다(운영에서는 절대 설정하지 않는다) — libpq 가 깔린 기계에서도
 # "실행파일 없음" 경로를 재현할 수 있어야 하기 때문이다.
-PATH_CANDIDATES="${CUTOVER_TEST_PATH_CANDIDATES:-/usr/local/bin:/opt/homebrew/bin:/usr/local/opt/libpq/bin:/opt/homebrew/opt/libpq/bin}"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+# 테스트 오버라이드(*_TEST_PATH_CANDIDATES)는 이 후보까지 통째로 대체한다.
+HOST_OPT_CANDIDATES=""
+for _host_opt_dir in node/bin rclone jq cloudflared; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then HOST_OPT_CANDIDATES="$HOST_OPT_CANDIDATES:$HOME/opt/$_host_opt_dir"; fi
+done
+PATH_CANDIDATES="${CUTOVER_TEST_PATH_CANDIDATES:-/usr/local/bin:/opt/homebrew/bin:/usr/local/opt/libpq/bin:/opt/homebrew/opt/libpq/bin$HOST_OPT_CANDIDATES}"
 export PATH="$PATH_CANDIDATES:$PATH"
 
 mkdir -p "$LOG_DIR"
+
+# crontab 은 이 맥의 홈 경로로 렌더한 뒤 설치한다(아이맥에서는 원본과 바이트 동일 —
+# render-host-files.sh). 렌더가 실패하면 빈 내용을 설치하지 않도록 임시 파일을 거친다.
+install_rendered_crontab() {
+  local rendered rc=0
+  rendered="$(mktemp "${TMPDIR:-/tmp}/crontab.rendered.XXXXXX")"
+  if "$REPO_ROOT/infra/selfhost/render-host-files.sh" --file "$CRONTAB_FILE" > "$rendered"; then
+    crontab "$rendered" || rc=$?
+  else
+    rc=1
+  fi
+  rm -f "$rendered"
+  return "$rc"
+}
 
 # ── 인자 파싱 ──
 DRY_RUN=0
@@ -1078,7 +1101,7 @@ stage8_activate_held_cron() {
     fi
   done
 
-  if ! crontab "$CRONTAB_FILE"; then
+  if ! install_rendered_crontab; then
     abort 8 "보류 크론 활성화" "crontab 재설치 실패 — $CRONTAB_FILE 은 이미 언주석 상태로 수정됐을 수 있습니다. 'crontab -l' 로 현재 설치 상태를 확인하십시오."
   fi
 

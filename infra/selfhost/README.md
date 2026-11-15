@@ -372,9 +372,39 @@ brew services start colima
 개발 세션을 파괴한다.
 
 launchd 는 `$HOME`/`~` 를 전개하지 않으므로 `kr.ygrd.wagcrm.app.plist` 의
-모든 경로는 **절대경로**로 박혀 있다. ⚠️ **이 경로들은 이 머신 전용이다**
-(`/Users/z9/selfhost/wagcrm`, `/Users/z9/selfhost/logs`) — 다른 머신에
-배포한다면 plist 의 경로를 전부 그 머신 기준으로 다시 써야 한다.
+모든 경로는 **절대경로**로 박혀 있다. 레포의 plist 6개·`crontab` 은 **아이맥(홈
+`/Users/z9`) 기준 렌더 결과**이고 그대로 아이맥 정본이다 — 다른 맥에서는 손으로
+고치지 말고 아래 렌더러로 그 맥의 경로를 만든다.
+
+### 다른 맥으로 옮길 때 — 호스트 파일 렌더 (2026-11 맥북 이관)
+
+`infra/selfhost/render-host-files.sh` 가 레포의 plist·crontab 에서 **두 가지만**
+바꿔 내보낸다: 접두 `/Users/z9/` → 그 맥의 홈, tunnel plist 의 cloudflared 경로.
+아이맥 값으로 렌더하면 원본과 바이트 동일하다(계약:
+`scripts/__tests__/selfhost-host-portability.test.ts`). 설치는 하지 않는다 —
+렌더 → diff 확인 → 사람이 설치한다.
+
+```bash
+# 대상 맥에서(홈·cloudflared 를 그 맥 기준으로 자동 결정; cloudflared 는
+# /usr/local/bin → /opt/homebrew/bin → ~/opt/cloudflared 순으로 찾는다)
+infra/selfhost/render-host-files.sh --out ~/selfhost/rendered
+diff -r infra/selfhost/launchd ~/selfhost/rendered/launchd   # 홈·cloudflared 줄만 달라야 한다
+# 확인 뒤 설치(예): cp ~/selfhost/rendered/launchd/<라벨>.plist ~/Library/LaunchAgents/
+#                   crontab ~/selfhost/rendered/crontab
+```
+
+- 스크립트(`run-app.sh`·`backup*.sh`·`restore-drill.sh`·`cutover.sh` 등)는 홈을
+  `$HOME` 에서 파생하므로 렌더가 필요 없다.
+- 도구 탐색: Homebrew 후보(`/usr/local/bin`·`/opt/homebrew/bin`) **뒤에**
+  `~/opt/node/bin` · `~/opt/rclone` · `~/opt/jq` · `~/opt/cloudflared` 를 **디렉터리가
+  있을 때만** 붙인다(Homebrew 없는 Big Sur 맥 용). `~/opt` 가 없는 아이맥의 PATH 는
+  그대로다.
+- `preview.sh`(프리뷰 plist)·`cutover.sh`·`rollback.sh`(crontab 재설치)는 이 렌더러를
+  거쳐 설치한다 — 아이맥에서는 종전과 같은 내용이 설치된다.
+- ⚠️ 아이맥의 **설치본** plist 4개(app·agent-worker·backup·backup-weekly)는 레포
+  파일과 다르다 — Login Items 에 한글 이름으로 보이도록 `~/.local/bg-labels/<이름>`
+  래퍼를 부르게 손으로 바꿔 둔 것이다(래퍼는 같은 스크립트를 exec 한다). 그래서 이
+  렌더러를 아이맥 설치본 덮어쓰기에 쓰지 않는다.
 
 ## `.env` 경고
 

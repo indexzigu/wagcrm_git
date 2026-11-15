@@ -9,7 +9,8 @@
 # `--config <복사본 경로>` 로 기동한다.
 
 tunnel: <TUNNEL-ID>
-credentials-file: /Users/z9/.cloudflared/<TUNNEL-ID>.json
+# <HOME> = 이 맥의 홈 절대경로(아이맥 /Users/z9 · 이관 대상 맥북 /Users/z9ro).
+credentials-file: <HOME>/.cloudflared/<TUNNEL-ID>.json
 
 ingress:
   # 앱 본체 — Task 2 의 launchd 서비스가 상주하는 포트.

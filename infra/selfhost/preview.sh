@@ -17,6 +17,8 @@ set -euo pipefail
 # 라벨·컨테이너 이름은 이 파일에 아예 등장하지 않는다(계약:
 # scripts/__tests__/preview-control.test.ts — 파괴적 줄 스캔 + 리터럴 부재).
 
+# 이 스크립트가 놓인 폴더(렌더러를 찾는 데 쓴다) — 실행 중 cwd 가 바뀌어도 안 깨지게 시작 시 고정한다.
+PREVIEW_SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREVIEW_LABEL="kr.ygrd.wagcrm.preview"
 PREVIEW_CONTAINER="wagcrm-preview-db"
 PREVIEW_CHECKOUT="$HOME/selfhost/wagcrm-preview"
@@ -36,6 +38,13 @@ PREVIEW_MARKER="$(dirname "$PREVIEW_CHECKOUT")/logs/deployed.${PREVIEW_LABEL##*.
 # 터미널에서 부르는 스크립트지만, psql(keg-only libpq)을 쓰는 preview-db.sh 를
 # 자식으로 부르므로 같은 후보를 물려준다.
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/local/opt/libpq/bin:/opt/homebrew/opt/libpq/bin:$PATH"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
 
 log() { printf '[preview] %s\n' "$*"; }
 abort() { printf '[preview] 중단: %s\n' "$*" >&2; exit 1; }
@@ -176,7 +185,10 @@ cmd_up() {
   [ "$unloaded" = 1 ] \
     || abort "launchctl bootout 대기 실패 — $PREVIEW_LABEL 이 도메인에서 빠지지 않습니다(15초 초과). launchctl list $PREVIEW_LABEL 로 상태를 직접 확인하세요."
 
-  cp "$PREVIEW_CHECKOUT/infra/selfhost/launchd/$PLIST_NAME" "$PLIST_DST"
+  # 이 맥의 홈·도구 경로로 렌더해 설치한다(아이맥에서는 원본과 바이트 동일 — render-host-files.sh).
+  # 렌더러는 **이 스크립트 옆의 것**을 쓴다: 프리뷰 체크아웃은 렌더러가 생기기 전 브랜치일 수 있다.
+  "$PREVIEW_SELF_DIR/render-host-files.sh" --file "$PREVIEW_CHECKOUT/infra/selfhost/launchd/$PLIST_NAME" > "$PLIST_DST" \
+    || { rm -f "$PLIST_DST"; abort "plist 렌더 실패 — $PREVIEW_CHECKOUT/infra/selfhost/launchd/$PLIST_NAME"; }
   launchctl bootstrap "gui/$(id -u)" "$PLIST_DST" || abort "launchctl bootstrap 실패 — plist: $PLIST_DST"
 
   log "빌드·기동 (deploy.sh 재사용)"

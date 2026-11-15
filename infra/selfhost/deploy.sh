@@ -3,6 +3,16 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 REPO_ROOT="$(pwd)"
 
+# deploy.sh 는 PATH 를 호출자(release-deploy.sh·터미널)에게서 받는다 — 그 위에 ~/opt
+# 후보만 덧붙인다(기존 해석은 그대로, 없으면 아무것도 안 붙는다).
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
+
 # ── P0 안전장치 ①: 이 스크립트는 `npm run build` 를 부르고, 그 안의
 # prisma-migrate-on-deploy 가 (VERCEL_ENV=production 가드를 통과한 경우에만)
 # DATABASE_URL 대상 DB 에 마이그레이션을 적용한다. 아래 host 가드가 검사하는
