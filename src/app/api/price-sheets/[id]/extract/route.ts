@@ -48,7 +48,8 @@ export async function POST(
 
   // T-310: 반영 중·반영 완료 시트는 재추출하지 않는다 — 추출(특히 LLM 경로 B)은 같은 품목을 다른
   // rawCells(=다른 rowHash)로 새 행으로 만들 수 있고, 그 행을 다시 매핑·반영하면 같은 딜이 또 생긴다.
-  // 행을 쓰기 전에 막는다.
+  // 시작 전에 막는다. 추출 도중 반영이 끝나면 새 행은 들어갈 수 있지만, 아래 조건부 상태 쓰기가
+  // 시트를 APPLIED 로 두므로 그 행은 다시 반영될 수 없다(반영 라우트가 APPLIED 시트를 409 로 거부).
   if (isApplyLocked(priceSheet.status)) {
     return NextResponse.json({ error: APPLY_LOCKED_MESSAGE }, { status: 409 });
   }

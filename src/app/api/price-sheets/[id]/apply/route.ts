@@ -192,15 +192,15 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          "이미 반영 중이거나 반영이 완료된 가격표입니다. 반영 중이던 요청이 멈춘 것이라면 10분 뒤 다시 반영을 누르면 이어서 반영됩니다.",
+          `이미 반영 중이거나 반영이 완료된 가격표입니다. 반영 중이던 요청이 멈춘 것이라면 ${APPLY_CLAIM_STALE_MS / 60_000}분 뒤 다시 반영을 누르면 이어서 반영됩니다.`,
       },
       { status: 409 }
     );
   }
 
-  const ownClaim = { id, status: "APPLYING", updatedAt: claimedAt };
+  const ownClaim = { id, status: "APPLYING" as const, updatedAt: claimedAt };
   // 반영이 커밋되지 않았을 때 돌아갈 상태. 넘겨받은 선점이면 직전 상태를 알 수 없으므로
-  // 반영 직전 단계인 MAPPED 로 둔다 — APPLYING 으로 되돌리면 다시 10분을 기다려야 한다.
+  // 반영 직전 단계인 MAPPED 로 둔다 — APPLYING 으로 되돌리면 다시 선점 만료(APPLY_CLAIM_STALE_MS)를 기다려야 한다.
   const restoreStatus = previousStatus === "APPLYING" ? "MAPPED" : previousStatus;
   const releaseClaim = () =>
     prisma.priceSheet.updateMany({ where: ownClaim, data: { status: restoreStatus } });
