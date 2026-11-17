@@ -64,6 +64,7 @@ import { getPrisma } from "@/lib/prisma";
 import { isSqliteDatabaseUrl } from "@/lib/prisma-client";
 import { AgentJobSlackOriginSchema, updateSettlementAmountArgsSchema } from "@/lib/agent-worker/contracts";
 import { approveProposal } from "@/lib/agent/approve-proposal";
+import { STALE_APPROVED_MS } from "@/lib/agent/stale-approved-recovery";
 import { describeConfirmedSettlement } from "@/lib/agent/write-actions/update-settlement-amount";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { startOfKstDayMs } from "@/lib/order-converter/sale-window";
@@ -104,7 +105,7 @@ export const MAX_CANDIDATES_PER_PASS = 10;
 export const PASS_BUDGET_MS = 60_000;
 const LOCK_TX_TIMEOUT_MS = 240_000;
 /** APPROVED 로 이만큼 멈춘 `SYSTEM_AUTO` 기안은 FAILED 로 보낸다. */
-export const STUCK_APPROVED_MS = 10 * 60 * 1000;
+export const STUCK_APPROVED_MS = STALE_APPROVED_MS;
 /** 고정 잠금 키(두 int4). 다른 잠금(`hashtext(...)` 계열)과 겹치지 않게 작은 상수 쌍을 쓴다. */
 const LOCK_KEY_CLASS = 7_301;
 const LOCK_KEY_OBJECT = 1;
