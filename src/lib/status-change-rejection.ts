@@ -39,16 +39,26 @@ function serverErrorText(body: unknown): string | null {
   return null;
 }
 
-function describeRejection(
+/** 실패 본문이 상태 전이 거절이면 서버가 실어 준 두 코드를, 아니면 null. 거절 판정은 여기 한 곳. */
+function rejectionCodes(
   body: unknown,
-  labels: Readonly<Record<string, string>>,
-): StatusChangeFailure | null {
+): { currentStatus: string; requestedStatus: string } | null {
   if (!body || typeof body !== "object") return null;
   const { currentStatus, requestedStatus } = body as {
     currentStatus?: unknown;
     requestedStatus?: unknown;
   };
   if (typeof currentStatus !== "string" || typeof requestedStatus !== "string") return null;
+  return { currentStatus, requestedStatus };
+}
+
+function describeRejection(
+  body: unknown,
+  labels: Readonly<Record<string, string>>,
+): StatusChangeFailure | null {
+  const codes = rejectionCodes(body);
+  if (!codes) return null;
+  const { currentStatus, requestedStatus } = codes;
 
   const from = Object.hasOwn(labels, currentStatus) ? labels[currentStatus] : null;
   const to = Object.hasOwn(labels, requestedStatus) ? labels[requestedStatus] : null;
@@ -71,12 +81,9 @@ export const DEAL_REJECTION_KEPT_EDITS_HINT =
  * (딜 상태 표에 없는 코드면 `currentStatus: null` — 화면에 반영하지 않는다). 거절이 아니면 null.
  */
 export function dealStatusRejection(body: unknown): { currentStatus: DealStatus | null } | null {
-  if (!body || typeof body !== "object") return null;
-  const { currentStatus, requestedStatus } = body as {
-    currentStatus?: unknown;
-    requestedStatus?: unknown;
-  };
-  if (typeof currentStatus !== "string" || typeof requestedStatus !== "string") return null;
+  const codes = rejectionCodes(body);
+  if (!codes) return null;
+  const { currentStatus } = codes;
   return {
     currentStatus: Object.hasOwn(dealStatusLabels, currentStatus)
       ? (currentStatus as DealStatus)

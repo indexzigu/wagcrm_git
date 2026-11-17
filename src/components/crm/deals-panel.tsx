@@ -184,6 +184,9 @@ function DealsPanelContent({
               onUpdated?.(
                 normalizeDealPanelData({ status: rejection.currentStatus }, deal),
               );
+            } else {
+              // 표에 없는 코드라 그대로 쓰지 않는다 — 판매 조건을 다시 읽어 서버 상태로 맞춘다.
+              void fetchDealDetails();
             }
             if (Object.keys(patch).some((field) => field !== "status")) {
               recoveryHint = DEAL_REJECTION_KEPT_EDITS_HINT;
@@ -210,7 +213,7 @@ function DealsPanelContent({
       // 토스트는 위 withMutationFeedback 이 이미 띄웠고, 훅은 실패를 받아 수정을 남겨 둔다.
       await promise;
     },
-    [deal, onUpdated],
+    [deal, onUpdated, fetchDealDetails],
   );
 
   const {
