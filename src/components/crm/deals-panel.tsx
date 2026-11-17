@@ -78,7 +78,11 @@ import { LinkedCampaignsList } from "./linked-campaigns-list";
 import { LinkedTasksList } from "./linked-tasks-list";
 
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
-import { dealSaveFailure } from "@/lib/status-change-rejection";
+import {
+  DEAL_REJECTION_KEPT_EDITS_HINT,
+  dealSaveFailure,
+  dealStatusRejection,
+} from "@/lib/status-change-rejection";
 import { displayLabel } from "@/lib/display-label";
 
 // --- Types ---
@@ -166,8 +170,26 @@ function DealsPanelContent({
         if (!res.ok) {
           // 실패 사유를 버리지 않는다 — 상태 전이 거절이면 서버가 읽은 현재 상태로 문장을 만든다.
           // 토스트는 아래 withMutationFeedback 한 곳이 띄운다(여기서 따로 띄우지 말 것).
-          const failure = dealSaveFailure(await res.json().catch(() => null));
-          throw Object.assign(new Error(failure.title), { recoveryHint: failure.hint });
+          const body = await res.json().catch(() => null);
+          const failure = dealSaveFailure(body);
+          let recoveryHint = failure.hint;
+          let discardFields: string[] | undefined;
+          // 상태만 거절됐으면 그 값만 대기 목록에서 빼고 같은 묶음의 다른 수정은 남긴다(T-312).
+          // 거절은 대개 화면 상태가 낡아서(봇·다른 탭) 생기므로 서버가 읽은 현재 상태로 맞춘다 —
+          // 서버는 쓰기 전에 거절하므로 patch 의 다른 값은 반영하지 않는다.
+          const rejection = "status" in patch ? dealStatusRejection(body) : null;
+          if (rejection) {
+            discardFields = ["status"];
+            if (rejection.currentStatus) {
+              onUpdated?.(
+                normalizeDealPanelData({ status: rejection.currentStatus }, deal),
+              );
+            }
+            if (Object.keys(patch).some((field) => field !== "status")) {
+              recoveryHint = DEAL_REJECTION_KEPT_EDITS_HINT;
+            }
+          }
+          throw Object.assign(new Error(failure.title), { recoveryHint, discardFields });
         }
         const updated = await res.json();
         onUpdated?.(
@@ -184,7 +206,9 @@ function DealsPanelContent({
         () => {},
       );
 
-      await promise.catch(() => {});
+      // 실패를 삼키지 않는다 — 삼키면 지연 저장 훅이 성공으로 보고 대기 중 수정을 전부 비운다(T-312).
+      // 토스트는 위 withMutationFeedback 이 이미 띄웠고, 훅은 실패를 받아 수정을 남겨 둔다.
+      await promise;
     },
     [deal, onUpdated],
   );
