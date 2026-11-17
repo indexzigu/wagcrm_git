@@ -1,4 +1,4 @@
-import { dealStatusLabels, taskStatusLabels } from "@/lib/crm-types";
+import { dealStatusLabels, taskStatusLabels, type DealStatus } from "@/lib/crm-types";
 import { DEFAULT_MUTATION_ERROR } from "@/lib/use-mutation-feedback";
 
 /**
@@ -39,16 +39,26 @@ function serverErrorText(body: unknown): string | null {
   return null;
 }
 
-function describeRejection(
+/** 실패 본문이 상태 전이 거절이면 서버가 실어 준 두 코드를, 아니면 null. 거절 판정은 여기 한 곳. */
+function rejectionCodes(
   body: unknown,
-  labels: Readonly<Record<string, string>>,
-): StatusChangeFailure | null {
+): { currentStatus: string; requestedStatus: string } | null {
   if (!body || typeof body !== "object") return null;
   const { currentStatus, requestedStatus } = body as {
     currentStatus?: unknown;
     requestedStatus?: unknown;
   };
   if (typeof currentStatus !== "string" || typeof requestedStatus !== "string") return null;
+  return { currentStatus, requestedStatus };
+}
+
+function describeRejection(
+  body: unknown,
+  labels: Readonly<Record<string, string>>,
+): StatusChangeFailure | null {
+  const codes = rejectionCodes(body);
+  if (!codes) return null;
+  const { currentStatus, requestedStatus } = codes;
 
   const from = Object.hasOwn(labels, currentStatus) ? labels[currentStatus] : null;
   const to = Object.hasOwn(labels, requestedStatus) ? labels[requestedStatus] : null;
@@ -57,6 +67,28 @@ function describeRejection(
       ? `지금 “${from}” 상태라 “${to}”(으)로 바꿀 수 없습니다.`
       : STATUS_REJECTION_FALLBACK;
   return { title, hint: STATUS_REJECTION_HINT };
+}
+
+/**
+ * 딜 패널 전용 할 일 — 상태만 거절되고 같은 묶음의 다른 수정은 남겼을 때. 패널이 서버의 현재 상태를
+ * 이미 반영했으므로 「새로고침」을 권하면 남겨 둔 수정을 버리게 된다(T-312).
+ */
+export const DEAL_REJECTION_KEPT_EDITS_HINT =
+  "지금 상태를 화면에 반영했습니다. 나머지 수정은 다시 저장하세요.";
+
+/**
+ * 딜 PATCH 실패 본문이 상태 전이 거절인가. 거절이면 서버가 읽은 현재 상태를 돌려준다
+ * (딜 상태 표에 없는 코드면 `currentStatus: null` — 화면에 반영하지 않는다). 거절이 아니면 null.
+ */
+export function dealStatusRejection(body: unknown): { currentStatus: DealStatus | null } | null {
+  const codes = rejectionCodes(body);
+  if (!codes) return null;
+  const { currentStatus } = codes;
+  return {
+    currentStatus: Object.hasOwn(dealStatusLabels, currentStatus)
+      ? (currentStatus as DealStatus)
+      : null,
+  };
 }
 
 /** 딜 PATCH(`/api/deals/[id]`) 실패 본문 → 토스트 문구. */

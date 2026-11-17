@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { DealsPanel, type DealPanelData } from "../deals-panel";
+import { DEAL_REJECTION_KEPT_EDITS_HINT } from "@/lib/status-change-rejection";
 
 // --- Mocks ---
 
@@ -1348,6 +1350,111 @@ describe("DealsPanel", () => {
       const [title] = mockToast.error.mock.calls[0];
       expect(typeof title).toBe("string");
       expect(title).toBe("저장하지 못했습니다.");
+    });
+
+    // T-312: a rejected status change must not silently drop the other field edits batched with it,
+    // and the panel must show the status the server reported (the screen's status was stale).
+    it("keeps the other edits pending and shows the server status after a rejected status change", async () => {
+      const patchBodies: Record<string, unknown>[] = [];
+      // The server's status. A bot moves it before the owner's save arrives, so the screen is stale.
+      let serverStatus: DealPanelData["status"] = "SOURCING";
+      global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+        // The panel re-reads the deal on open and on every deal change. Answer like the real server
+        // (current status + campaigns): an empty `{}` never fills `campaigns`, so the panel keeps
+        // re-reading, and a late reply built on the stale screen deal overwrote the synced status (CI).
+        if (!options?.method && url === "/api/deals/deal-1") {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ ...baseDeal, status: serverStatus, campaigns: [] }),
+          });
+        }
+        if (options?.method === "PATCH" && url === "/api/deals/deal-1") {
+          const body = JSON.parse(String(options.body)) as Record<string, unknown>;
+          patchBodies.push(body);
+          if (patchBodies.length === 1) {
+            serverStatus = "SAMPLE_TESTING";
+            return Promise.resolve({
+              ok: false,
+              status: 422,
+              json: () =>
+                Promise.resolve({
+                  error: "허용되지 않는 상태 변경입니다",
+                  currentStatus: "SAMPLE_TESTING",
+                  requestedStatus: "NEGOTIATING",
+                }),
+            });
+          }
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+        }
+        if (url.includes("/api/activity-log")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ entries: [] }) });
+        }
+        if (url.includes("/api/comments")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      });
+
+      // Stateful parent: feeds onUpdated back into `deal`, like the real page does.
+      function StatefulPanel() {
+        const [deal, setDeal] = useState<DealPanelData>({ ...baseDeal, status: "SOURCING" });
+        return (
+          <DealsPanel
+            deal={deal}
+            open
+            onOpenChange={vi.fn()}
+            onUpdated={setDeal}
+            onDeleted={vi.fn()}
+          />
+        );
+      }
+      render(<StatefulPanel />);
+
+      const nameInput = getInlineEditInput("판매 조건 이름");
+      fireEvent.change(nameInput, { target: { value: "바뀐 이름" } });
+      fireEvent.blur(nameInput);
+      fireEvent.click(screen.getByRole("button", { name: "협의" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "저장하기" })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "저장하기" }));
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledTimes(1);
+      });
+      expect(patchBodies[0]).toMatchObject({ dealName: "바뀐 이름", status: "NEGOTIATING" });
+      // The panel now shows the server's status, not the stale one.
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "샘플테스트" })).toHaveAttribute("aria-current", "step");
+      });
+      // The refresh hint would throw away the kept edits — the panel says the status was synced instead.
+      const [, options] = mockToast.error.mock.calls[0];
+      expect(options?.description).toBe(DEAL_REJECTION_KEPT_EDITS_HINT);
+
+      // The name edit is still pending; saving again sends it without the rejected status.
+      fireEvent.click(screen.getByRole("button", { name: "저장하기" }));
+      await waitFor(() => {
+        expect(patchBodies).toHaveLength(2);
+      });
+      expect(patchBodies[1]).toHaveProperty("dealName", "바뀐 이름");
+      expect(patchBodies[1]).not.toHaveProperty("status");
+      await waitFor(() => {
+        expect(mockToast.success).toHaveBeenCalledTimes(1);
+      });
+      expect(mockToast.error).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps pending edits when the save fails for another reason", async () => {
+      mockPatchFailure(500, { error: "수정 중 오류가 발생했습니다." });
+
+      await clickNegotiatingAndSave();
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "저장하기" })).not.toBeDisabled();
+      });
     });
   });
 

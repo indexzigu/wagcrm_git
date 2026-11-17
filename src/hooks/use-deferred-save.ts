@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type UseDeferredSaveOptions = {
-  /** Async save handler — receives accumulated patch object */
+  /**
+   * Async save handler — receives accumulated patch object. Throw to keep the changes pending;
+   * an error carrying `discardFields: string[]` drops just those fields (e.g. a rejected status).
+   */
   onSave: (patch: Record<string, unknown>) => Promise<void>;
   /** Idle timeout in ms before auto-save triggers (default: 5000) */
   idleTimeout?: number;
@@ -64,8 +67,16 @@ export function useDeferredSave({
       await onSaveRef.current(patch);
       setPendingChanges({});
       pendingRef.current = {};
-    } catch {
-      // Keep pending changes on failure — user can retry
+    } catch (error) {
+      // Keep pending changes on failure — user can retry. The save handler reports the failure
+      // itself (toast); it may name fields the server rejected so they are not re-sent as-is.
+      const discard = (error as { discardFields?: unknown } | null)?.discardFields;
+      if (Array.isArray(discard) && discard.length > 0) {
+        const kept = { ...pendingRef.current };
+        for (const field of discard) delete kept[String(field)];
+        pendingRef.current = kept;
+        setPendingChanges(kept);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -114,7 +125,8 @@ export function useDeferredSave({
         clearTimeout(timerRef.current);
       }
       if (autoSave && Object.keys(pendingRef.current).length > 0) {
-        void onSaveRef.current(pendingRef.current);
+        // onSave reports its own failure; nothing is left to keep the changes for after unmount.
+        onSaveRef.current(pendingRef.current).catch(() => {});
       }
     };
   }, [autoSave]);
