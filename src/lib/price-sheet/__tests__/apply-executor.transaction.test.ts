@@ -179,6 +179,47 @@ describe("applyPriceSheet — M1 Deal 쓰기 + EXECUTED 전이 원자성", () =>
     // 정상 경로는 PENDING_APPROVAL + APPROVED + (Deal+EXECUTED 묶음) = 3회.
     expect(transactionMock).toHaveBeenCalledTimes(3);
   });
+
+  it("T-310: finalize 훅은 Deal 쓰기·EXECUTED 와 같은 tx 콜백 안에서, 그 뒤에 실행된다", async () => {
+    const order: string[] = [];
+    dealUpdateMock.mockImplementation(async () => {
+      order.push("deal");
+      return { id: "deal-1" };
+    });
+    const finalize = vi.fn(async (tx: unknown) => {
+      order.push(`finalize@tx${transactionCallCount}`);
+      expect(tx).toBe(fakeTx);
+    });
+
+    await applyPriceSheet({
+      priceSheetId: "sheet-1",
+      partnerId: null,
+      actor: "tester@example.com",
+      rows: [baseRow()],
+      finalize,
+    });
+
+    expect(finalize).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["deal", "finalize@tx3"]);
+  });
+
+  it("T-310: finalize 가 던지면 전체가 reject 되고 기안은 FAILED 로 기록된다(딜 쓰기 롤백)", async () => {
+    await expect(
+      applyPriceSheet({
+        priceSheetId: "sheet-1",
+        partnerId: null,
+        actor: "tester@example.com",
+        rows: [baseRow()],
+        finalize: async () => {
+          throw new Error("claim lost");
+        },
+      })
+    ).rejects.toThrow(/가격표 반영 실행 실패: claim lost/);
+
+    expect(transactionMock).toHaveBeenCalledTimes(4);
+    const failedCallArgs = actionProposalUpdateMock.mock.calls.at(-1)?.[0];
+    expect(failedCallArgs?.data?.status).toBe("FAILED");
+  });
 });
 
 /**

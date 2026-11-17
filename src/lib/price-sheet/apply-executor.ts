@@ -333,8 +333,14 @@ export async function applyPriceSheet(input: {
   groupOverrides?: Record<string, DealGroupOverride>;
   /** 시트 단위 반영 방식(검수 화면 선택). 미전달 시 AUTO(현행 규칙). */
   bundle?: BundlePolicy;
+  /**
+   * 딜 쓰기·EXECUTED 전이와 같은 $transaction 안에서 마지막으로 실행할 호출부 작업(T-310).
+   * 반영 라우트가 행·시트를 APPLIED 로 닫는 데 쓴다 — 트랜잭션 밖에서 닫으면 딜은 커밋됐는데
+   * 시트가 되돌아가 재반영이 같은 딜을 또 만드는 틈이 생긴다. 던지면 딜 쓰기까지 전부 롤백된다.
+   */
+  finalize?: (tx: Prisma.TransactionClient) => Promise<void>;
 }) {
-  const { priceSheetId, partnerId, actor, rows, groupOverrides, bundle } = input;
+  const { priceSheetId, partnerId, actor, rows, groupOverrides, bundle, finalize } = input;
 
   const actions = buildApplyActions(rows, partnerId, groupOverrides, bundle);
 
@@ -383,6 +389,7 @@ export async function applyPriceSheet(input: {
         },
         tx,
       });
+      if (finalize) await finalize(tx);
       return { results, executed };
     });
     return { proposal: executed, results };

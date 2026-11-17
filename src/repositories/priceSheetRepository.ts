@@ -7,7 +7,8 @@ import type { Prisma } from "@prisma/client";
 // UPLOADED →(추출) EXTRACTED →(매칭) MAPPED →(검수) REVIEWED →(ActionProposal WRITE 경유) APPLIED
 // 추출 실패 시 EXTRACT_FAILED.
 // APPLYING = 반영 라우트가 중복 반영을 막으려고 잡는 진행 중 표시(반영이 끝나면 APPLIED,
-// 실패하면 직전 상태로 되돌린다). 실제로 쓰이는데 이 타입에 빠져 있었다.
+// 실패하면 직전 상태로 되돌린다). 실제로 쓰이는데 이 타입에 빠져 있었다. 요청이 죽어 남은
+// APPLYING 은 APPLY_CLAIM_STALE_MS 뒤 다음 반영 요청이 넘겨받는다(T-310).
 // ℹ️ REVIEWED 는 쓰는 코드가 없다 — 반영은 MAPPED 에서 바로 간다.
 export type PriceSheetStatus =
   | "UPLOADED"
@@ -17,6 +18,22 @@ export type PriceSheetStatus =
   | "APPLYING"
   | "APPLIED"
   | "EXTRACT_FAILED";
+
+// 반영 잠금 상태(T-310). APPLYING = 반영 요청이 선점 중, APPLIED = 딜에 반영 끝(종착점).
+// 이 두 상태의 시트는 추출·매핑·행 수정이 상태를 되돌리거나 행을 바꾸면 안 된다 —
+// 되돌아간 시트는 반영 버튼이 다시 살아나 같은 딜을 한 번 더 만들 수 있다.
+export const APPLY_LOCKED_STATUSES = ["APPLYING", "APPLIED"] as const satisfies readonly PriceSheetStatus[];
+
+export function isApplyLocked(status: string): boolean {
+  return (APPLY_LOCKED_STATUSES as readonly string[]).includes(status);
+}
+
+// APPLYING 선점이 이보다 오래되면 그 요청은 죽은 것으로 보고 다음 반영 요청이 넘겨받는다.
+// 근거: 살아 있는 반영 요청이 APPLYING 을 쥐는 시간은 실행기의 인터랙티브 $transaction
+// 상한(Prisma 기본 timeout 5초 + maxWait 2초)과 그 앞의 기안 쓰기 3회뿐이다. 10분은 그
+// 상한보다 두 자릿수 크다. 늦게 깨어난 원 요청은 선점 시각 토큰(updatedAt)이 바뀐 것을 보고
+// 스스로 롤백하므로(route.ts 의 fence), 넘겨받아도 이중 반영은 일어나지 않는다.
+export const APPLY_CLAIM_STALE_MS = 10 * 60 * 1000;
 
 // Json 이원화: Postgres는 객체 그대로, SQLite는 문자열 직렬화.
 export function serializeJsonField(value: unknown): unknown {
@@ -65,6 +82,22 @@ export class PriceSheetRepository {
         status,
       },
     });
+  }
+
+  /**
+   * 반영 잠금(APPLYING/APPLIED)이 아닐 때만 상태를 바꾼다. 읽고 나서 쓰는 사이에 반영이
+   * 끝날 수 있으므로(추출은 LLM 호출이라 길다) 조건을 쓰기 자체에 건다. 반환 = 바뀐 행 수(0/1).
+   */
+  static async updateStatusUnlessApplyLocked(
+    id: string,
+    status: PriceSheetStatus,
+    extra: Prisma.PriceSheetUncheckedUpdateManyInput = {}
+  ): Promise<number> {
+    const { count } = await getPrisma().priceSheet.updateMany({
+      where: { id, status: { notIn: [...APPLY_LOCKED_STATUSES] } },
+      data: { ...extra, status },
+    });
+    return count;
   }
 
   static async findMany<T extends Prisma.PriceSheetFindManyArgs>(
