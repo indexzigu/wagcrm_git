@@ -53,7 +53,16 @@ export async function PATCH(request: Request, context: Context) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
     if (error instanceof InvalidStatusTransitionError) {
-      return NextResponse.json({ error: error.message }, { status: 422 });
+      // 코드는 `error` 문장 밖에 따로 싣는다 — 화면이 라벨 표로 바꿔 사유를 말한다
+      // (`src/lib/status-change-rejection.ts`).
+      return NextResponse.json(
+        {
+          error: error.message,
+          currentStatus: error.currentStatus,
+          requestedStatus: error.requestedStatus,
+        },
+        { status: 422 },
+      );
     }
     console.error("[PATCH /api/deals/[id]] Error:", error);
     return NextResponse.json({ error: "수정 중 오류가 발생했습니다." }, { status: 500 });

@@ -120,32 +120,52 @@ export async function POST(req: NextRequest) {
     }
 
     // 성공 시 Task 상태 업데이트 (campaignId가 있을 경우)
+    //
+    // ⛔ 여기서부터는 실패해도 「발송 실패」로 답하지 않는다 — 메일은 이미 나갔고 되돌릴 수 없다.
+    // 종전엔 이 기록 저장이 던지면 바깥 catch 가 500 「메일을 보내는 중 오류」로 답했고, 화면이
+    // 「메일 다시 보내기」를 열어 거래처에 같은 발주서가 두 번 갈 수 있었다. 기록 실패는 서버
+    // 로그와 응답의 `recordSaved`·`warning` 으로 알린다(계약: route.test.ts).
+    let recordSaved = true;
     if (campaignId) {
       const d = new Date();
       const dKst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
       const today = dKst.toISOString().slice(0, 10);
-      
-      await prisma.dailyOrderTask.upsert({
-        where: {
-          campaignId_date: {
+
+      try {
+        await prisma.dailyOrderTask.upsert({
+          where: {
+            campaignId_date: {
+              campaignId,
+              date: today
+            }
+          },
+          update: {
+            status: 'EMAILED',
+            sentFileName: file.name,
+          },
+          create: {
             campaignId,
-            date: today
+            date: today,
+            status: 'EMAILED',
+            sentFileName: file.name,
           }
-        },
-        update: {
-          status: 'EMAILED',
-          sentFileName: file.name,
-        },
-        create: {
-          campaignId,
-          date: today,
-          status: 'EMAILED',
-          sentFileName: file.name,
-        }
-      });
+        });
+      } catch (recordErr) {
+        recordSaved = false;
+        console.error('발주 메일 발송 기록 저장 실패(발송은 성공 — 재발송 금지):', recordErr);
+      }
     }
 
-    return NextResponse.json({ message: '이메일이 성공적으로 발송되었습니다.' }, { status: 200 });
+    return NextResponse.json(
+      {
+        message: '이메일이 성공적으로 발송되었습니다.',
+        recordSaved,
+        ...(recordSaved
+          ? {}
+          : { warning: '메일은 발송됐지만 오늘 발주 기록을 저장하지 못했습니다. 다시 보내지 마세요.' }),
+      },
+      { status: 200 },
+    );
   } catch (error: any) {
     console.error('Email send error:', error);
     return NextResponse.json({ error: '발주요청 메일을 보내는 중 서버 오류가 발생했습니다.' }, { status: 500 });

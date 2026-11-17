@@ -7,7 +7,7 @@ import { assertEntityExists, type WriteActionDefinition, type WriteActionResult 
 
 const changeDealStatusArgsSchema = z.object({
   dealId: z.string().min(1),
-  newStatus: z.enum(DEAL_STATUSES as [DealStatus, ...DealStatus[]]),
+  newStatus: z.enum(DEAL_STATUSES),
 });
 
 export type ChangeDealStatusArgs = z.infer<typeof changeDealStatusArgsSchema>;

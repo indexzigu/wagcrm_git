@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CAMPAIGN_STATUSES } from "@/lib/campaign-status";
 import { campaignRepository } from "@/repositories/campaignRepository";
 import type { AgentTool, ToolResult } from "./types";
 import { isPermissionDeniedError } from "@/lib/db-permission-denied";
@@ -10,17 +11,6 @@ import type { PipelineStatusCount, PipelineCampaignSummary, GetPipelineStatusDat
 
 export type { PipelineStatusCount, PipelineCampaignSummary, GetPipelineStatusData };
 
-// campaign-checklist.ts의 campaignChecklistStatusSchema와 동일한 상태값 집합.
-const CAMPAIGN_STATUSES = [
-  "PROPOSAL",
-  "PREPARATION",
-  "ACTIVE",
-  "CLOSED",
-  "SETTLEMENT_WAIT",
-  "SETTLEMENT_IN_PROGRESS",
-  "COMPLETED",
-  "DROPPED",
-] as const;
 
 const inputSchema = z.object({
   sellerName: z.string().optional().describe("셀러 이름으로 필터링 (부분 일치)"),

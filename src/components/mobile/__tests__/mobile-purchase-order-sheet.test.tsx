@@ -431,6 +431,19 @@ describe("MobilePurchaseOrderSheet — 확정·발송", () => {
     expect(onSent).toHaveBeenCalledWith(1);
   });
 
+  it("메일은 나갔지만 발주 기록 저장이 실패하면 완료 화면에 경고를 보이고 재발송은 권하지 않는다", async () => {
+    stubFetch({
+      mail: [{ status: 200, body: { message: "ok", recordSaved: false, warning: "메일은 발송됐지만 오늘 발주 기록을 저장하지 못했습니다. 다시 보내지 마세요." } }],
+    });
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.click(await screen.findByRole("button", { name: "발주요청" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("다시 보내지 마세요");
+    expect(screen.queryByRole("button", { name: "메일 다시 보내기" })).not.toBeInTheDocument();
+    expect(callsTo("/order-converter/api/send-email", "POST")).toHaveLength(1);
+  });
+
   it("빠진 주문(dropped)은 사유와 함께 보여 준다", async () => {
     stubFetch({
       commit: {

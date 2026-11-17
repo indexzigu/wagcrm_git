@@ -1,35 +1,25 @@
 import { z } from "zod";
+import { DEAL_STATUSES, isValidTransition, type DealStatus } from "@/lib/deal-status";
 
-export const DEAL_STATUSES = [
-  "SOURCING",
-  "NEGOTIATING",
-  "SAMPLE_TESTING",
-  "CONFIRMED",
-  "ARCHIVED",
-  "DROPPED",
-] as const;
-export type DealStatus = (typeof DEAL_STATUSES)[number];
-
-/** Valid forward transitions + DROPPED from any state */
-const VALID_TRANSITIONS: Record<DealStatus, DealStatus[]> = {
-  SOURCING: ["NEGOTIATING", "DROPPED"],
-  NEGOTIATING: ["CONFIRMED", "SAMPLE_TESTING", "DROPPED"],
-  SAMPLE_TESTING: ["CONFIRMED", "DROPPED"],
-  CONFIRMED: ["ARCHIVED", "DROPPED"],
-  ARCHIVED: ["DROPPED"],
-  DROPPED: [],
-};
+// 딜 상태 목록·전이표의 정본은 `@/lib/deal-status` 하나다 — 여기 두 번째 사본이 있었고
+// 같은 상태로의 전이 처리만 달랐다. ⛔ 목록·전이표를 여기 다시 적지 말 것.
+export { DEAL_STATUSES };
+export type { DealStatus };
 
 /**
  * Validates whether a deal status transition is allowed.
  * Only forward transitions and transitions to DROPPED are permitted.
+ *
+ * ℹ️ `isValidTransition` 과 달리 **같은 상태로의 전이를 허용**한다("값 안 바뀜"을 유효로 보는
+ * 폼 검증용). 실제 저장 경로(`dealService.updateDeal`·봇 `change_deal_status`)는
+ * `isValidTransition` 을 쓴다.
  */
 export function isValidDealStatusTransition(
   from: DealStatus,
   to: DealStatus
 ): boolean {
   if (from === to) return true;
-  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+  return isValidTransition(from, to);
 }
 
 const marginRateSchema = z.object({
