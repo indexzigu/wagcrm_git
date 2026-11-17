@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 내면 안 된다 — 화면은 함께 실린 현재 상태·요청 상태 코드를 라벨 표로 바꿔 사유를 말한다.
 
 const findUniqueMock = vi.fn();
+let prismaOverride: unknown = null;
 
 vi.mock("@/lib/prisma", () => ({
-  getPrisma: () => ({
-    salesTask: { findUnique: (...args: unknown[]) => findUniqueMock(...args) },
-  }),
+  getPrisma: () =>
+    prismaOverride ?? {
+      salesTask: { findUnique: (...args: unknown[]) => findUniqueMock(...args) },
+    },
 }));
 
 vi.mock("@/lib/cache-tags", () => ({
@@ -38,6 +40,7 @@ function patch(body: unknown) {
 describe("PATCH /api/outreach/[id] — 상태 전이 거절", () => {
   beforeEach(() => {
     findUniqueMock.mockReset();
+    prismaOverride = null;
   });
 
   it("422 본문에 기존 문구와 함께 현재 상태·요청 상태를 싣는다", async () => {
@@ -56,5 +59,142 @@ describe("PATCH /api/outreach/[id] — 상태 전이 거절", () => {
       currentStatus: "CONVERTED",
       requestedStatus: "TESTING",
     });
+  });
+});
+
+// T-313: two overlapping "캠페인 생성 (승인)" requests for the same task (two tabs, double
+// submit) both read `linkedCampaignId = null`. The route must still create exactly one campaign:
+// creation and the claim of the task row run in one transaction, and the claim is a conditional
+// write (`linkedCampaignId: null`) so the losing request rolls back its campaign.
+//
+// The fake below models what Postgres does for us: writes made inside `$transaction` are only
+// committed when the callback resolves, and a conditional updateMany sees the committed state.
+// Writes made directly on the client (no transaction) commit immediately with no claim — that is
+// the pre-fix code path, which creates two campaigns here.
+function createConcurrencyFake() {
+  const task = {
+    id: "task-1",
+    dealId: "deal-1",
+    sellerId: "seller-1",
+    status: "PENDING_APPROVAL",
+    linkedCampaignId: null as string | null,
+    totalMarginRate: null,
+    sellerMarginRate: null,
+    negotiationMemo: null,
+    proposalSentAt: new Date("2026-11-01T00:00:00Z"),
+    confirmedAt: null,
+    respondedAt: null,
+    lastReminderAt: null,
+    nextReminderAt: null,
+    droppedAt: null,
+    dropReason: null,
+    proposalMessage: null,
+    testingMemo: null,
+    updatedAt: new Date("2026-11-01T00:00:00Z"),
+    deal: {
+      dealName: "Deal",
+      brandName: null,
+      partner: null,
+      baseMarginPolicy: null,
+      costPrice: null,
+      sellingPrice: null,
+    },
+    seller: {
+      id: "seller-1",
+      name: "Seller",
+      alias: null,
+      snsType: "INSTAGRAM",
+      currentFollowers: 0,
+      category: null,
+    },
+  };
+  const committedCampaigns: string[] = [];
+  let seq = 0;
+
+  // Both requests must read the task before either writes: release the reads together.
+  let pendingReads: Array<() => void> = [];
+  const findTask = () =>
+    new Promise((resolve) => {
+      pendingReads.push(() => resolve({ ...task }));
+      if (pendingReads.length === 2) {
+        const release = pendingReads;
+        pendingReads = [];
+        release.forEach((fn) => fn());
+      }
+    });
+
+  function client(staged: string[] | null, claims: { made: boolean } | null) {
+    const commitCampaign = (id: string) => (staged ? staged.push(id) : committedCampaigns.push(id));
+    return {
+      salesTask: {
+        findUnique: findTask,
+        updateMany: async ({ where, data }: { where: { id: string; linkedCampaignId?: null }; data: { linkedCampaignId: string } }) => {
+          if (where.id !== task.id) return { count: 0 };
+          if ("linkedCampaignId" in where && task.linkedCampaignId !== null) return { count: 0 };
+          task.linkedCampaignId = data.linkedCampaignId;
+          if (claims) claims.made = true;
+          return { count: 1 };
+        },
+        update: async ({ data }: { data: Record<string, unknown> }) => {
+          Object.assign(task, data);
+          return { ...task };
+        },
+      },
+      salesCampaign: {
+        create: async () => {
+          seq += 1;
+          const id = `campaign-${seq}`;
+          commitCampaign(id);
+          return { id };
+        },
+        update: async ({ where }: { where: { id: string } }) => ({ id: where.id }),
+        findUnique: async () => ({ campaignName: null, deal: { dealName: "Deal" }, seller: { name: "Seller", alias: null } }),
+      },
+      campaignDeal: { create: async () => ({}) },
+      deal: { findMany: async () => [] },
+      asset: { findMany: async () => [], updateMany: async () => ({ count: 0 }) },
+    };
+  }
+
+  const prisma = {
+    ...client(null, null),
+    $transaction: async <T>(fn: (tx: ReturnType<typeof client>) => Promise<T>) => {
+      const staged: string[] = [];
+      const claims = { made: false };
+      try {
+        const result = await fn(client(staged, claims));
+        committedCampaigns.push(...staged);
+        return result;
+      } catch (error) {
+        // Roll back only what this transaction wrote.
+        if (claims.made) task.linkedCampaignId = null;
+        throw error;
+      }
+    },
+  };
+
+  return { prisma, task, committedCampaigns };
+}
+
+describe("PATCH /api/outreach/[id] — 캠페인 생성 동시 요청", () => {
+  beforeEach(() => {
+    prismaOverride = null;
+  });
+
+  it("같은 테스크에 겹친 두 요청이 와도 캠페인은 하나만 만들어지고 둘 다 그 캠페인을 가리킨다", async () => {
+    const fake = createConcurrencyFake();
+    prismaOverride = fake.prisma;
+
+    const body = { status: "PENDING_APPROVAL", autoCreateCampaign: true };
+    const [first, second] = await Promise.all([patch(body), patch(body)]);
+
+    expect(fake.committedCampaigns).toHaveLength(1);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const [a, b] = [await first.json(), await second.json()];
+    expect(a.linkedCampaignId).toBe(fake.committedCampaigns[0]);
+    expect(b.linkedCampaignId).toBe(fake.committedCampaigns[0]);
+    expect(a.status).toBe("CONVERTED");
+    expect(b.status).toBe("CONVERTED");
   });
 });

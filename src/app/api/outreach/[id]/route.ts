@@ -31,6 +31,13 @@ function isSqliteRuntime() {
   return typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.startsWith("file:");
 }
 
+class CampaignClaimLostError extends Error {
+  constructor() {
+    super("outreach task already linked to a campaign by a concurrent request");
+    this.name = "CampaignClaimLostError";
+  }
+}
+
 export async function PATCH(request: Request, context: Context) {
   const { id } = await context.params;
   const body = await request.json();
@@ -200,35 +207,6 @@ export async function PATCH(request: Request, context: Context) {
       };
     }
 
-    const now = new Date();
-    const campaign = await prisma.salesCampaign.create({
-      data: {
-        dealId: task.dealId,
-        sellerId: task.sellerId,
-        status: "PREPARATION",
-        salesChannel: "OWN_MALL",
-        totalMarginRate: rates.totalMarginRate,
-        sellerMarginRate: rates.sellerMarginRate,
-        netMarginRate: rates.netMarginRate,
-        baseNaverLink: "",
-        generatedTrackingLink: "pending",
-        startDate: now,
-        endDate: now,
-      },
-    });
-
-    const generatedTrackingLink = buildNaverTrackingLink({
-      baseUrl: "",
-      snsType: task.seller.snsType as SnsType,
-      sellerId: task.seller.id,
-      campaignId: campaign.id,
-    });
-
-    await prisma.salesCampaign.update({
-      where: { id: campaign.id },
-      data: { generatedTrackingLink },
-    });
-
     // 테스크의 품목별 협의 요율 JSON 데이터 파싱
     let negotiatedRates: Record<string, number> = {};
     if (task.negotiationMemo) {
@@ -242,114 +220,169 @@ export async function PATCH(request: Request, context: Context) {
       }
     }
 
-    // 연결된 메인 딜의 하위 옵션 딜(품목) 목록 조회
-    const dealOptions = await prisma.deal.findMany({
-      where: { parentDealId: task.dealId },
-    });
-
-    if (dealOptions.length > 0) {
-      // 옵션 품목들이 존재할 때 각각 CampaignDeal 생성
-      for (const opt of dealOptions) {
-        const customRate = negotiatedRates[opt.id] !== undefined ? negotiatedRates[opt.id] : null;
-        await prisma.campaignDeal.create({
+    const createdCampaignId = await prisma
+      .$transaction(async (tx) => {
+        const now = new Date();
+        const campaign = await tx.salesCampaign.create({
           data: {
-            campaignId: campaign.id,
-            dealId: opt.id,
-            quantity: 0,
-            actualSales: 0,
-            feeRate: customRate !== null
-              ? customRate
-              : (opt.totalCommissionRate ? Number(opt.totalCommissionRate.toString()) : rates.sellerMarginRate),
-            costPrice: opt.costPrice ? Number(opt.costPrice.toString()) : 0,
-            sellingPrice: opt.sellingPrice ? Number(opt.sellingPrice.toString()) : 0,
+            dealId: task.dealId,
+            sellerId: task.sellerId,
+            status: "PREPARATION",
+            salesChannel: "OWN_MALL",
+            totalMarginRate: rates.totalMarginRate,
+            sellerMarginRate: rates.sellerMarginRate,
+            netMarginRate: rates.netMarginRate,
+            baseNaverLink: "",
+            generatedTrackingLink: "pending",
+            startDate: now,
+            endDate: now,
+          },
+        });
+
+        // Claim the task inside the same transaction: only the request whose conditional write
+        // flips linkedCampaignId from null wins. A concurrent request (second tab, double submit)
+        // gets count 0 — under Postgres the row lock makes it wait for the winner's commit — and
+        // throws, rolling back its own campaign. See route.test.ts "캠페인 생성 동시 요청".
+        const claim = await tx.salesTask.updateMany({
+          where: { id, linkedCampaignId: null },
+          data: { linkedCampaignId: campaign.id },
+        });
+        if (claim.count === 0) {
+          throw new CampaignClaimLostError();
+        }
+
+        const generatedTrackingLink = buildNaverTrackingLink({
+          baseUrl: "",
+          snsType: task.seller.snsType as SnsType,
+          sellerId: task.seller.id,
+          campaignId: campaign.id,
+        });
+
+        await tx.salesCampaign.update({
+          where: { id: campaign.id },
+          data: { generatedTrackingLink },
+        });
+
+        // 연결된 메인 딜의 하위 옵션 딜(품목) 목록 조회
+        const dealOptions = await tx.deal.findMany({
+          where: { parentDealId: task.dealId },
+        });
+
+        if (dealOptions.length > 0) {
+          // 옵션 품목들이 존재할 때 각각 CampaignDeal 생성
+          for (const opt of dealOptions) {
+            const customRate = negotiatedRates[opt.id] !== undefined ? negotiatedRates[opt.id] : null;
+            await tx.campaignDeal.create({
+              data: {
+                campaignId: campaign.id,
+                dealId: opt.id,
+                quantity: 0,
+                actualSales: 0,
+                feeRate: customRate !== null
+                  ? customRate
+                  : (opt.totalCommissionRate ? Number(opt.totalCommissionRate.toString()) : rates.sellerMarginRate),
+                costPrice: opt.costPrice ? Number(opt.costPrice.toString()) : 0,
+                sellingPrice: opt.sellingPrice ? Number(opt.sellingPrice.toString()) : 0,
+              },
+            });
+          }
+
+          // 캠페인 마스터의 하위 품목 개수(itemCount) 갱신
+          await tx.salesCampaign.update({
+            where: { id: campaign.id },
+            data: { itemCount: dealOptions.length },
+          });
+        } else {
+          // 하위 옵션 딜이 없을 시 메인 딜 자체를 1개 생성하여 데이터 정합성 무결성 확보
+          await tx.campaignDeal.create({
+            data: {
+              campaignId: campaign.id,
+              dealId: task.dealId,
+              quantity: 0,
+              actualSales: 0,
+              feeRate: rates.sellerMarginRate,
+              costPrice: task.deal.costPrice ? Number(task.deal.costPrice.toString()) : 0,
+              sellingPrice: task.deal.sellingPrice ? Number(task.deal.sellingPrice.toString()) : 0,
+            },
+          });
+          await tx.salesCampaign.update({
+            where: { id: campaign.id },
+            data: { itemCount: 1 },
+          });
+        }
+
+        return campaign.id;
+      })
+      .catch((error: unknown) => {
+        if (error instanceof CampaignClaimLostError) return null;
+        throw error;
+      });
+
+    // 캠페인 생성(승인) 완료 → 자동으로 CONVERTED 상태로 전환. 선점에 진 요청은 이긴 요청이
+    // 연결한 캠페인을 그대로 가리키고(linkedCampaignId 는 건드리지 않는다) 상태만 맞춘다.
+    updateData.status = "CONVERTED";
+
+    if (createdCampaignId) {
+      const campaign = { id: createdCampaignId };
+      updateData.linkedCampaignId = campaign.id;
+
+      // ── 드라이브 바로가기 이관 및 DB Asset 릴레이션 갱신 ──────────────────
+      // 1. OUTREACH 테스크에 연결된 바로가기 Asset 레코드 조회
+      const taskAssets: OutreachTaskAsset[] = isSqliteRuntime()
+        ? await prisma.asset.findMany({
+            where: { entityType: "OUTREACH", entityId: id, archivedAt: null },
+            select: { id: true },
+          })
+        : await prisma.asset.findMany({
+            where: { entityType: "OUTREACH", entityId: id, archivedAt: null },
+            select: { id: true, driveShortcutId: true, driveParentFolderId: true },
+          });
+
+      if (taskAssets.length > 0) {
+        // 2. 캠페인 드라이브 폴더 생성 (findOrCreate)
+        let campaignFolderId: string | null = null;
+        try {
+          const driveIntegration = await prisma.storageIntegration.findUnique({
+            where: { provider: GOOGLE_DRIVE_PROVIDER },
+          });
+          if (driveIntegration?.status === "CONNECTED" && driveIntegration.rootFolderId) {
+            campaignFolderId = await googleDriveProvider.createFolderForEntity({
+              entityType: "CAMPAIGN",
+              entityId: campaign.id,
+              entityName: `${task.deal.dealName} - ${task.seller.name}`,
+              section: "PRODUCT_INTRO",
+            });
+          }
+        } catch {
+          // 드라이브 미연결 환경: DB 갱신만 진행
+        }
+
+        // 3. 바로가기 파일들 캠페인 폴더로 이동 (드라이브 연결된 경우만)
+        if (campaignFolderId && !isSqliteRuntime()) {
+          await Promise.all(
+            taskAssets.map(async (asset) => {
+              if (!asset.driveShortcutId) return;
+              await moveDriveShortcut({
+                shortcutFileId: asset.driveShortcutId,
+                newParentFolderId: campaignFolderId!,
+                oldParentFolderId: asset.driveParentFolderId ?? undefined,
+              }).catch(() => undefined); // 실패 시 DB 갱신은 계속 진행
+            }),
+          );
+        }
+
+        // 4. DB Asset 레코드 일괄 업데이트 (entityType: CAMPAIGN, entityId: campaign.id)
+        await prisma.asset.updateMany({
+          where: { id: { in: taskAssets.map((a) => a.id) } },
+          data: {
+            entityType: "CAMPAIGN",
+            entityId: campaign.id,
+            ...(!isSqliteRuntime() && campaignFolderId ? { driveParentFolderId: campaignFolderId } : {}),
           },
         });
       }
-
-      // 캠페인 마스터의 하위 품목 개수(itemCount) 갱신
-      await prisma.salesCampaign.update({
-        where: { id: campaign.id },
-        data: { itemCount: dealOptions.length },
-      });
-    } else {
-      // 하위 옵션 딜이 없을 시 메인 딜 자체를 1개 생성하여 데이터 정합성 무결성 확보
-      await prisma.campaignDeal.create({
-        data: {
-          campaignId: campaign.id,
-          dealId: task.dealId,
-          quantity: 0,
-          actualSales: 0,
-          feeRate: rates.sellerMarginRate,
-          costPrice: task.deal.costPrice ? Number(task.deal.costPrice.toString()) : 0,
-          sellingPrice: task.deal.sellingPrice ? Number(task.deal.sellingPrice.toString()) : 0,
-        },
-      });
-      await prisma.salesCampaign.update({
-        where: { id: campaign.id },
-        data: { itemCount: 1 },
-      });
+      // ──────────────────────────────────────────────────────────────────────
     }
-
-    updateData.linkedCampaignId = campaign.id;
-    // 캠페인 생성(승인) 완료 → 자동으로 CONVERTED 상태로 전환
-    updateData.status = "CONVERTED";
-
-    // ── 드라이브 바로가기 이관 및 DB Asset 릴레이션 갱신 ──────────────────
-    // 1. OUTREACH 테스크에 연결된 바로가기 Asset 레코드 조회
-    const taskAssets: OutreachTaskAsset[] = isSqliteRuntime()
-      ? await prisma.asset.findMany({
-          where: { entityType: "OUTREACH", entityId: id, archivedAt: null },
-          select: { id: true },
-        })
-      : await prisma.asset.findMany({
-          where: { entityType: "OUTREACH", entityId: id, archivedAt: null },
-          select: { id: true, driveShortcutId: true, driveParentFolderId: true },
-        });
-
-    if (taskAssets.length > 0) {
-      // 2. 캠페인 드라이브 폴더 생성 (findOrCreate)
-      let campaignFolderId: string | null = null;
-      try {
-        const driveIntegration = await prisma.storageIntegration.findUnique({
-          where: { provider: GOOGLE_DRIVE_PROVIDER },
-        });
-        if (driveIntegration?.status === "CONNECTED" && driveIntegration.rootFolderId) {
-          campaignFolderId = await googleDriveProvider.createFolderForEntity({
-            entityType: "CAMPAIGN",
-            entityId: campaign.id,
-            entityName: `${task.deal.dealName} - ${task.seller.name}`,
-            section: "PRODUCT_INTRO",
-          });
-        }
-      } catch {
-        // 드라이브 미연결 환경: DB 갱신만 진행
-      }
-
-      // 3. 바로가기 파일들 캠페인 폴더로 이동 (드라이브 연결된 경우만)
-      if (campaignFolderId && !isSqliteRuntime()) {
-        await Promise.all(
-          taskAssets.map(async (asset) => {
-            if (!asset.driveShortcutId) return;
-            await moveDriveShortcut({
-              shortcutFileId: asset.driveShortcutId,
-              newParentFolderId: campaignFolderId!,
-              oldParentFolderId: asset.driveParentFolderId ?? undefined,
-            }).catch(() => undefined); // 실패 시 DB 갱신은 계속 진행
-          }),
-        );
-      }
-
-      // 4. DB Asset 레코드 일괄 업데이트 (entityType: CAMPAIGN, entityId: campaign.id)
-      await prisma.asset.updateMany({
-        where: { id: { in: taskAssets.map((a) => a.id) } },
-        data: {
-          entityType: "CAMPAIGN",
-          entityId: campaign.id,
-          ...(!isSqliteRuntime() && campaignFolderId ? { driveParentFolderId: campaignFolderId } : {}),
-        },
-      });
-    }
-    // ──────────────────────────────────────────────────────────────────────
   } else if (newStatus === "PENDING_APPROVAL" && autoCreateCampaign && task.linkedCampaignId) {
     // 이미 캠페인이 연결되어 있는 경우에도 CONVERTED 상태로 전환
     updateData.status = "CONVERTED";
