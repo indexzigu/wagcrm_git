@@ -323,8 +323,7 @@ export async function PATCH(request: Request, context: Context) {
     updateData.status = "CONVERTED";
 
     if (createdCampaignId) {
-      const campaign = { id: createdCampaignId };
-      updateData.linkedCampaignId = campaign.id;
+      updateData.linkedCampaignId = createdCampaignId;
 
       // ── 드라이브 바로가기 이관 및 DB Asset 릴레이션 갱신 ──────────────────
       // 1. OUTREACH 테스크에 연결된 바로가기 Asset 레코드 조회
@@ -348,7 +347,7 @@ export async function PATCH(request: Request, context: Context) {
           if (driveIntegration?.status === "CONNECTED" && driveIntegration.rootFolderId) {
             campaignFolderId = await googleDriveProvider.createFolderForEntity({
               entityType: "CAMPAIGN",
-              entityId: campaign.id,
+              entityId: createdCampaignId,
               entityName: `${task.deal.dealName} - ${task.seller.name}`,
               section: "PRODUCT_INTRO",
             });
@@ -371,12 +370,12 @@ export async function PATCH(request: Request, context: Context) {
           );
         }
 
-        // 4. DB Asset 레코드 일괄 업데이트 (entityType: CAMPAIGN, entityId: campaign.id)
+        // 4. DB Asset 레코드 일괄 업데이트 (entityType: CAMPAIGN, entityId: createdCampaignId)
         await prisma.asset.updateMany({
           where: { id: { in: taskAssets.map((a) => a.id) } },
           data: {
             entityType: "CAMPAIGN",
-            entityId: campaign.id,
+            entityId: createdCampaignId,
             ...(!isSqliteRuntime() && campaignFolderId ? { driveParentFolderId: campaignFolderId } : {}),
           },
         });
