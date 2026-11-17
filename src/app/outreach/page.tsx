@@ -94,6 +94,7 @@ import type { OutreachStatus } from "@/lib/validations/outreach";
 import type { AssetSection } from "@/lib/crm-types";
 import { assetSectionLabels } from "@/lib/crm-types";
 import { queryKeys } from "@/lib/query-keys";
+import { outreachStatusChangeFailure } from "@/lib/status-change-rejection";
 import {
   matchesAttention,
   OUTREACH_ATTENTION_LABELS,
@@ -275,32 +276,47 @@ export default function OutreachPage() {
       }),
     });
     if (!response.ok) {
-      toast.error("상태 변경에 실패했습니다.");
+      // 거절 사유(지금 무슨 단계라 어디로 못 가는지)를 버리지 않는다. 서버 `error` 문장은 영문 코드를
+      // 담고 있고 검증 실패면 객체라 그대로 넘기지 않는다 — 문구는 status-change-rejection 이 만든다.
+      const failure = outreachStatusChangeFailure(await response.json().catch(() => null));
+      toast.error(failure.title, failure.hint ? { description: failure.hint } : undefined);
       return;
     }
     const updated = await response.json();
     applyTaskUpdate(id, updated);
   }, [applyTaskUpdate]);
 
+  // 같은 테스크의 캠페인 생성 요청이 겹치면 서버가 둘 다 「연결된 캠페인 없음」으로 읽어 캠페인이 두 개
+  // 만들어진다(서버에 선점 장치가 없다). 응답이 오기 전의 두 번째 클릭은 여기서 버린다.
+  const creatingCampaignIdsRef = useRef<Set<string>>(new Set());
   const handleCreateCampaign = useCallback(async (taskId: string) => {
-    const response = await fetch(`/api/outreach/${taskId}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        status: "CONFIRMED",
-        autoCreateCampaign: true,
-      }),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      toast.error(data?.error ?? "캠페인 생성에 실패했습니다.");
-      return;
+    if (creatingCampaignIdsRef.current.has(taskId)) return;
+    creatingCampaignIdsRef.current.add(taskId);
+    try {
+      const response = await fetch(`/api/outreach/${taskId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          // 서버는 「승인 대기 + autoCreateCampaign」일 때만 캠페인을 만든다. 종전엔 서버 목록에 없는
+          // 옛 값을 보내 400 으로 거절됐다(계약: outreach-status-payload.contract.test.ts).
+          status: "PENDING_APPROVAL",
+          autoCreateCampaign: true,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        // 입력 검증 실패(400)의 error 는 문자열이 아니라 객체다 — 알림에는 문자열만 넘긴다.
+        toast.error(typeof data?.error === "string" ? data.error : "캠페인 생성에 실패했습니다.");
+        return;
+      }
+      const updated = await response.json();
+      applyTaskUpdate(taskId, updated);
+      toast.success("진행 준비 캠페인을 생성했습니다.");
+    } finally {
+      creatingCampaignIdsRef.current.delete(taskId);
     }
-    const updated = await response.json();
-    applyTaskUpdate(taskId, updated);
-    toast.success("진행 준비 캠페인을 생성했습니다.");
   }, [applyTaskUpdate]);
 
   const handleReminderSent = useCallback(async (taskId: string) => {

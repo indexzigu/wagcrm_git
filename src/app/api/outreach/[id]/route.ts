@@ -59,7 +59,13 @@ export async function PATCH(request: Request, context: Context) {
   const newStatus = statusInput ?? currentStatus;
   if (statusInput !== undefined && !isValidOutreachTransition(currentStatus, newStatus)) {
     return NextResponse.json(
-      { error: `허용되지 않는 상태 변경입니다: ${currentStatus} → ${newStatus}` },
+      // `error` 문장에는 영문 코드가 들어 있어 화면에 내면 안 된다. 화면은 따로 실은 두 코드를
+      // 라벨 표로 바꿔 사유를 말한다(`src/lib/status-change-rejection.ts`).
+      {
+        error: `허용되지 않는 상태 변경입니다: ${currentStatus} → ${newStatus}`,
+        currentStatus,
+        requestedStatus: newStatus,
+      },
       { status: 422 },
     );
   }

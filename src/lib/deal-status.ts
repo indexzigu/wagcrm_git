@@ -6,14 +6,14 @@ export type { DealStatus } from "./crm-types";
 /**
  * All possible deal statuses in pipeline order.
  */
-export const DEAL_STATUSES: readonly DealStatus[] = [
+export const DEAL_STATUSES = [
   "SOURCING",
   "NEGOTIATING",
   "SAMPLE_TESTING",
   "CONFIRMED",
   "ARCHIVED",
   "DROPPED",
-] as const;
+] as const satisfies readonly DealStatus[];
 
 /**
  * Valid status transitions for the deal pipeline.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { dealRepository } from "@/repositories/dealRepository";
 import { containsSearch } from "@/lib/prisma-search";
+import { DEAL_STATUSES } from "@/lib/deal-status";
 import type { AgentTool, ToolResult } from "./types";
 import { notFound, ok, queryFailed } from "./types";
 // Data 타입(+구성 타입)은 런타임-프리 모듈로 이동됐다(청사진 §2-1/§3-1, 번들 안전).
@@ -9,8 +10,6 @@ import { notFound, ok, queryFailed } from "./types";
 import type { DealSearchResultItem, SearchDealsData } from "./data-types";
 
 export type { DealSearchResultItem, SearchDealsData };
-
-const DEAL_STATUSES = ["SOURCING", "NEGOTIATING", "CONFIRMED", "SAMPLE_TESTING", "ARCHIVED", "DROPPED"] as const;
 
 const inputSchema = z.object({
   keyword: z.string().optional().describe("딜 이름/브랜드명 검색 키워드 (부분 일치)"),

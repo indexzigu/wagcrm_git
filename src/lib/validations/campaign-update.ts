@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { financialExpectationSchema } from "@/lib/campaign-financial-guard";
 import { SETTLEMENT_COUNTERPARTIES, SETTLEMENT_INVOICE_MODES } from "@/lib/settlement-items";
+import { CAMPAIGN_STATUSES } from "@/lib/campaign-status";
 
 /**
  * `PATCH /api/campaigns/[id]` 의 요청 스키마 — 라우트에서 옮겨 왔다(내용 그대로).
@@ -11,16 +12,7 @@ import { SETTLEMENT_COUNTERPARTIES, SETTLEMENT_INVOICE_MODES } from "@/lib/settl
  */
 export const updateCampaignSchema = z.object({
   status: z
-    .enum([
-      "PROPOSAL",
-      "PREPARATION",
-      "ACTIVE",
-      "CLOSED",
-      "SETTLEMENT_WAIT",
-      "SETTLEMENT_IN_PROGRESS",
-      "COMPLETED",
-      "DROPPED",
-    ])
+    .enum(CAMPAIGN_STATUSES)
     .optional(),
   salesChannel: z.enum(["UNSPECIFIED", "OWN_MALL", "OWN_MALL_NAVER", "OWN_MALL_KAKAO", "SELLER_MALL", "BRAND_MALL"]).optional(),
   actualSales: z.coerce.number().nonnegative().nullable().optional(),

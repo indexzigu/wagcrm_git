@@ -22,6 +22,9 @@ import { PriceDefenseCard } from "../price-defense-card";
 
 const fetchMock = vi.fn();
 
+// 테스트의 「지금」 — 아래 정상 픽스처(04:00Z)보다 2시간 뒤라 36시간 신선도 창 안이다.
+const PINNED_NOW = new Date("2026-11-13T06:00:00.000Z");
+
 const healthySourceHealth = {
   naver: { status: "ok", checkedAt: "2026-11-13T04:00:00.000Z", itemCount: 3, lastSuccessAt: "2026-11-13T04:00:00.000Z", latestError: null },
   coupang: { status: "empty", checkedAt: "2026-11-13T04:00:00.000Z", itemCount: 0, lastSuccessAt: "2026-11-13T04:00:00.000Z", latestError: null },
@@ -34,10 +37,20 @@ function mockOverview(payload: unknown) {
 
 describe("PriceDefenseCard", () => {
   beforeEach(() => {
+    // 카드는 소스 신선도를 실제 현재 시각 기준 36시간(SOURCE_STALE_AFTER_MS)으로
+    // 판정한다. 고정 픽스처(healthySourceHealth 의 2026-11-13T04:00Z)를 그대로 두면
+    // 벽시계가 흐르는 만큼 「정상」 픽스처가 「오래됨」으로 썩어 안심 문구 테스트가
+    // 날짜에 따라 깨진다. 그래서 「지금」을 픽스처 2시간 뒤로 고정한다.
+    // Date 만 가짜로 — setTimeout 까지 얼리면 Testing Library 의 findBy* 가 멈춘다.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(PINNED_NOW);
     fetchMock.mockReset();
     vi.stubGlobal("fetch", fetchMock);
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   it("위반이 있으면 판매 조건 이름·격차·캠페인 peek 링크를 렌더한다", async () => {
     mockOverview({

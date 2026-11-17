@@ -6,11 +6,15 @@ import type { Prisma } from "@prisma/client";
 // PriceSheet 상태기계 (청사진 §2):
 // UPLOADED →(추출) EXTRACTED →(매칭) MAPPED →(검수) REVIEWED →(ActionProposal WRITE 경유) APPLIED
 // 추출 실패 시 EXTRACT_FAILED.
+// APPLYING = 반영 라우트가 중복 반영을 막으려고 잡는 진행 중 표시(반영이 끝나면 APPLIED,
+// 실패하면 직전 상태로 되돌린다). 실제로 쓰이는데 이 타입에 빠져 있었다.
+// ℹ️ REVIEWED 는 쓰는 코드가 없다 — 반영은 MAPPED 에서 바로 간다.
 export type PriceSheetStatus =
   | "UPLOADED"
   | "EXTRACTED"
   | "MAPPED"
   | "REVIEWED"
+  | "APPLYING"
   | "APPLIED"
   | "EXTRACT_FAILED";
 

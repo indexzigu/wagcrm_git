@@ -1464,12 +1464,24 @@ export default function OrderDashboard() {
 
 
 
+  // 주문확인 in-flight 가드 — 이 스트림 라우트가 네이버 발주확인을 실행하므로 연타하면 발주확인이
+  // 두 번 돈다. 버튼 잠금은 busyActions(confirmOrder:*)가 맡고, 판정은 이 ref 로 한다: busyActions 는
+  // state 라 리렌더 전 같은 틱의 두 번째 호출이 아직 옛 값을 보고 통과한다(settlement-section 의 ref 가드와 같은 이유).
+  const confirmOrderInFlightRef = useRef<Set<string>>(new Set());
+
   const handleDownloadExcel = async (campaignId: string) => {
+    const busyKey = `confirmOrder:${campaignId}`;
+    if (confirmOrderInFlightRef.current.has(campaignId)) return; // 이미 이 캠페인 주문확인 진행 중 — 무음 무시
+    confirmOrderInFlightRef.current.add(campaignId);
+    setActionBusy(busyKey, true);
     const campRef = { id: campaignId, name: campaigns.find(c => c.id === campaignId)?.name ?? campaignId };
+    // 100% 도달 시 1초 뒤 지우는 타이머가 진행률을 소유한다 — 그 외 종료 경로(본문 없음·100% 없이 끝난
+    // 스트림)는 finally 에서 지워 진행률 표시가 화면에 남지 않게 한다.
+    let completed = false;
     try {
       setActiveProgress({ campaignId, progress: 0, message: '스트림 연결 중...' });
       const res = await fetch(`/order-converter/api/campaigns/${campaignId}/execute/stream?action=download`);
-      
+
       if (!res.ok) {
         throw new Error('서버 통신 오류');
       }
@@ -1548,7 +1560,8 @@ export default function OrderDashboard() {
                       setPreviewTab('orders');
                     }
                   }).catch(e => console.error("XLSX load error for preview", e));
-                  
+
+                  completed = true;
                   setTimeout(() => setActiveProgress(null), 1000);
                 }
               } catch (e) {
@@ -1566,6 +1579,10 @@ export default function OrderDashboard() {
         fatalError: e instanceof Error ? e.message : '요청 중 오류가 발생했습니다.',
       }));
       setActiveProgress(null);
+    } finally {
+      if (!completed) setActiveProgress(null);
+      confirmOrderInFlightRef.current.delete(campaignId);
+      setActionBusy(busyKey, false);
     }
   };
 
@@ -2454,7 +2471,7 @@ export default function OrderDashboard() {
 
                   {/* 3행: 실행 조작 버튼 (Action Buttons) */}
                   <div className="flex flex-wrap gap-2 items-center w-full" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => handleDownloadExcel(camp.id)} className="flex items-center gap-1.5 text-xs bg-card text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm relative overflow-hidden group">
+                    <button onClick={() => handleDownloadExcel(camp.id)} disabled={isActionBusy(`confirmOrder:${camp.id}`)} className="flex items-center gap-1.5 text-xs bg-card text-slate-700 hover:bg-slate-50 font-bold py-1.5 px-3 rounded-lg transition-colors border border-slate-200 shadow-soft-sm relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-card">
                       <div className="absolute inset-0 bg-slate-50 translate-y-full group-hover:translate-y-0 transition-transform"></div>
                       <span className="bg-status-success text-white text-[9px] px-1 rounded font-black leading-none py-0.5 relative z-10">N</span>
                       <span className="relative z-10">주문확인</span>

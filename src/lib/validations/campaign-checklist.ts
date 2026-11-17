@@ -1,15 +1,7 @@
 import { z } from "zod";
+import { CAMPAIGN_STATUSES } from "@/lib/campaign-status";
 
-export const campaignChecklistStatusSchema = z.enum([
-  "PROPOSAL",
-  "PREPARATION",
-  "ACTIVE",
-  "CLOSED",
-  "SETTLEMENT_WAIT",
-  "SETTLEMENT_IN_PROGRESS",
-  "COMPLETED",
-  "DROPPED",
-]);
+export const campaignChecklistStatusSchema = z.enum(CAMPAIGN_STATUSES);
 
 export const createCampaignChecklistItemSchema = z.object({
   label: z.string().trim().min(1, "항목명은 필수입니다").max(120),

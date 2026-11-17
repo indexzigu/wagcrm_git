@@ -9,6 +9,7 @@ import {
   base64ToFile,
   buildSendEmailFormData,
   readApiError as readError,
+  readSendEmailWarning,
   type PurchaseOrderAvailability as Availability,
   type PurchaseOrderPendingMail as PendingMail,
   type PurchaseOrderPreviewResponse as Preview,
@@ -112,6 +113,8 @@ export default function EmailSendModal({
   const [missingAck, setMissingAck] = useState(false);
   // 3단계 — 결과(성공·메일 실패 재시도).
   const [result, setResult] = useState<SendResult | null>(null);
+  // 메일은 나갔지만 오늘 발주 기록 저장이 실패했을 때의 서버 경고 — 완료 화면에 보여 준다.
+  const [recordWarning, setRecordWarning] = useState<string | null>(null);
   const [pendingMail, setPendingMail] = useState<PendingMail | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -212,8 +215,10 @@ export default function EmailSendModal({
       campaignId,
       orderIdsCsv,
     });
+    setRecordWarning(null);
     const res = await fetch('/order-converter/api/send-email', { method: 'POST', body: formData });
     if (!res.ok) throw new Error(await readError(res, PURCHASE_ORDER_COPY.mailFailedFallback));
+    setRecordWarning(await readSendEmailWarning(res));
   };
 
   // ── 자동 연동 ────────────────────────────────────────────────────────────
@@ -592,6 +597,11 @@ export default function EmailSendModal({
                 <p className="text-xs text-slate-700">
                   네이버 주문확인 {result.confirm.succeeded.toLocaleString('ko-KR')}건 완료
                   {result.confirm.requested === 0 ? ' (확인할 주문 없음)' : ''}
+                </p>
+              )}
+              {step === 'SUCCESS' && recordWarning && (
+                <p role="alert" className="rounded-xl bg-status-caution-bg p-3 text-xs text-status-caution-text">
+                  {recordWarning}
                 </p>
               )}
               {step === 'MAIL_FAILED' && (

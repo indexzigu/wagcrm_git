@@ -1289,6 +1289,68 @@ describe("DealsPanel", () => {
     });
   });
 
+  // 서버가 상태 변경을 거절하면(422) 그 사유를 화면 낱말로 보여야 한다. 종전엔 영문 "Save failed"
+  // 한 줄만 떴다. 현재 상태는 화면이 아는 값(낡았을 수 있다)이 아니라 서버가 읽은 값을 쓴다.
+  describe("Status change rejection feedback", () => {
+    function mockPatchFailure(status: number, body: unknown) {
+      global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+        if (options?.method === "PATCH" && url === "/api/deals/deal-1") {
+          return Promise.resolve({
+            ok: false,
+            status,
+            json: () => Promise.resolve(body),
+          });
+        }
+        if (url.includes("/api/activity-log")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ entries: [] }) });
+        }
+        if (url.includes("/api/comments")) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+      });
+    }
+
+    async function clickNegotiatingAndSave() {
+      renderDealsPanel({ deal: { ...baseDeal, status: "SOURCING" } });
+      fireEvent.click(screen.getByRole("button", { name: "협의" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "저장하기" })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "저장하기" }));
+    }
+
+    it("names the server-side current status and the target in on-screen words", async () => {
+      mockPatchFailure(422, {
+        error: "허용되지 않는 상태 변경입니다",
+        currentStatus: "DROPPED",
+        requestedStatus: "NEGOTIATING",
+      });
+
+      await clickNegotiatingAndSave();
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledTimes(1);
+      });
+      const [title, options] = mockToast.error.mock.calls[0];
+      expect(title).toBe("지금 “드랍” 상태라 “협의”(으)로 바꿀 수 없습니다.");
+      expect(options?.description).toBe("화면을 새로고침해 지금 상태를 확인하세요.");
+    });
+
+    it("never passes an object-shaped validation error to the toast", async () => {
+      mockPatchFailure(400, { error: { formErrors: [], fieldErrors: { status: ["Invalid"] } } });
+
+      await clickNegotiatingAndSave();
+
+      await waitFor(() => {
+        expect(mockToast.error).toHaveBeenCalledTimes(1);
+      });
+      const [title] = mockToast.error.mock.calls[0];
+      expect(typeof title).toBe("string");
+      expect(title).toBe("저장하지 못했습니다.");
+    });
+  });
+
   describe("Linked campaign display and activity log visibility", () => {
     it("renders linked campaign status labels in Korean", async () => {
       renderDealsPanel({
