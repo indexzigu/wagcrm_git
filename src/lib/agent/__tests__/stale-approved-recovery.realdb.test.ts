@@ -208,4 +208,44 @@ describe("T-311 승인 뒤 실행 전에 멈춘 기안", () => {
     expect(await recoverStaleApprovedProposals(new Date())).toEqual({ recovered: 0, errors: 1 });
     expect(await statusOf(id)).toBe("APPROVED");
   });
+
+  it("캘린더에서 들어온 기안이면 수집 행을 재판정 대기(PENDING_RETRY)로 되돌린다", async () => {
+    const id = await createPending();
+    const inbound = await realPrisma.calendarInboundEvent.create({
+      data: {
+        googleEventId: "evt-t311",
+        calendarId: "cal-t311",
+        summary: "테스트 일정",
+        startDate: "2026-11-20",
+        endDate: "2026-11-20",
+        fingerprint: "fp",
+        status: "PROPOSED",
+        proposalId: id,
+        lastSeenAt: new Date(),
+      },
+    });
+    const ref = {
+      calendarInbound: {
+        inboundId: inbound.id,
+        eventId: "evt-t311",
+        calendarId: "cal-t311",
+        ledgerKind: "campaign",
+        adopt: false,
+        summary: "테스트 일정",
+        startDate: "2026-11-20",
+        endDate: "2026-11-20",
+        htmlLink: null,
+        warnings: [],
+      },
+    };
+    await realPrisma.actionProposal.update({
+      where: { id },
+      data: { status: "APPROVED", sourceRef: JSON.stringify(ref), updatedAt: new Date(Date.now() - STALE_APPROVED_MS - 60_000) },
+    });
+
+    expect(await recoverStaleApprovedProposals(new Date())).toEqual({ recovered: 1, errors: 0 });
+    const row = await realPrisma.calendarInboundEvent.findUniqueOrThrow({ where: { id: inbound.id } });
+    expect(row.status).toBe("PENDING_RETRY");
+    await realPrisma.calendarInboundEvent.deleteMany({});
+  });
 });
