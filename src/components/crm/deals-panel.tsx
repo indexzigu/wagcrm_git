@@ -78,6 +78,7 @@ import { LinkedCampaignsList } from "./linked-campaigns-list";
 import { LinkedTasksList } from "./linked-tasks-list";
 
 import { withMutationFeedback } from "@/lib/use-mutation-feedback";
+import { dealSaveFailure } from "@/lib/status-change-rejection";
 import { displayLabel } from "@/lib/display-label";
 
 // --- Types ---
@@ -162,7 +163,12 @@ function DealsPanelContent({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       }).then(async (res) => {
-        if (!res.ok) throw new Error("Save failed");
+        if (!res.ok) {
+          // 실패 사유를 버리지 않는다 — 상태 전이 거절이면 서버가 읽은 현재 상태로 문장을 만든다.
+          // 토스트는 아래 withMutationFeedback 한 곳이 띄운다(여기서 따로 띄우지 말 것).
+          const failure = dealSaveFailure(await res.json().catch(() => null));
+          throw Object.assign(new Error(failure.title), { recoveryHint: failure.hint });
+        }
         const updated = await res.json();
         onUpdated?.(
           normalizeDealPanelData(

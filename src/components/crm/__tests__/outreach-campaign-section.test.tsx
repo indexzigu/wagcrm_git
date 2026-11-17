@@ -238,8 +238,11 @@ describe("Integration: Sales task workspace", () => {
         "/api/outreach/task-3",
         expect.objectContaining({
           method: "PATCH",
+          // 종전 단언은 서버 목록에 없는 옛 값("CONFIRMED")을 고정하고 있었다 — fetch 가 모의 객체라
+          // 서버의 400 거절이 이 테스트에서는 보이지 않았다. 서버가 받는 값은 PENDING_APPROVAL 이다
+          // (outreach-status-payload.contract.test.ts 가 서버 목록과 대조한다).
           body: JSON.stringify({
-            status: "CONFIRMED",
+            status: "PENDING_APPROVAL",
             autoCreateCampaign: true,
           }),
         }),

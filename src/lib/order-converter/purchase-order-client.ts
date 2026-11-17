@@ -70,6 +70,15 @@ export async function readApiError(res: Response, fallback: string): Promise<str
   return (data && typeof data.error === 'string' && data.error) || fallback;
 }
 
+/**
+ * `send-email` 성공(200) 응답의 경고 — 메일은 나갔지만 오늘 발주 기록 저장이 실패한 경우에만 문자열.
+ * 화면은 이것을 **완료 화면에** 보여 주고 재발송은 권하지 않는다(다시 보내면 거래처에 두 번 간다).
+ */
+export async function readSendEmailWarning(res: Response): Promise<string | null> {
+  const data = await res.json().catch(() => null);
+  return data && data.recordSaved === false && typeof data.warning === 'string' ? data.warning : null;
+}
+
 /** `send-email` 멀티파트 — 필드 집합의 정본. `productOrderIds` 는 발송 성공 시 배송대기 스탬프에 쓰인다. */
 export function buildSendEmailFormData(input: {
   file: File;

@@ -48,7 +48,12 @@ export async function withMutationFeedback<T>(
   } catch (error) {
     // 에러 발생 시 토스트
     const message = error instanceof Error && error.message ? error.message : errorMessage;
-    toast.error(message, { description: recoveryHint });
+    // 오류가 자기 할 일(`recoveryHint`)을 들고 오면 그것이 이긴다 — 상태 전이 거절에 「연결을
+    // 확인하고…」를 붙이면 원인과 할 일이 어긋난다(`status-change-rejection.ts`).
+    const carriedHint =
+      error instanceof Error ? (error as Error & { recoveryHint?: unknown }).recoveryHint : undefined;
+    const ownHint = typeof carriedHint === "string" ? carriedHint : null;
+    toast.error(message, { description: ownHint ?? recoveryHint });
     throw error;
   } finally {
     // 카운터 감소 및 클래스 제거

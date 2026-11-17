@@ -151,9 +151,22 @@ export class DealNotFoundError extends Error {
 }
 
 export class InvalidStatusTransitionError extends Error {
-  constructor(message = "허용되지 않는 상태 변경입니다") {
+  /**
+   * 거절 당시 DB 가 읽은 현재 상태와 요청 상태(코드). 딜 패널이 이 두 값으로 「지금 무슨 상태라
+   * 어디로 못 가는지」를 화면 낱말로 말한다 — 화면이 가진 상태는 낡았을 수 있어 쓸 수 없다.
+   * 코드는 문구(message)에 넣지 않는다: 봇 경로가 같은 오류의 문구를 그대로 받는다.
+   */
+  readonly currentStatus?: string;
+  readonly requestedStatus?: string;
+
+  constructor(
+    message = "허용되지 않는 상태 변경입니다",
+    transition?: { currentStatus: string; requestedStatus: string },
+  ) {
     super(message);
     this.name = "InvalidStatusTransitionError";
+    this.currentStatus = transition?.currentStatus;
+    this.requestedStatus = transition?.requestedStatus;
   }
 }
 
@@ -440,7 +453,10 @@ export const dealService = {
         data.status as Parameters<typeof isValidTransition>[1],
       );
       if (!valid) {
-        throw new InvalidStatusTransitionError();
+        throw new InvalidStatusTransitionError(undefined, {
+          currentStatus: currentDeal.status,
+          requestedStatus: data.status,
+        });
       }
     }
 
