@@ -28,6 +28,7 @@ import type { DraftCampaignResult } from "@/lib/mobile-draft-campaign";
 import type { ScheduleGapBriefing } from "@/lib/schedule-gap-briefing";
 import { formatInboundScanToast } from "@/lib/calendar-inbound/scan-toast";
 import type { ScanSummary } from "@/lib/calendar-inbound/scan";
+import { CAMPAIGN_STATUSES } from "@/lib/campaign-status";
 
 const calendarCampaignSchema = z.object({
   id: z.string(),
@@ -39,16 +40,7 @@ const calendarCampaignSchema = z.object({
   roundNumber: z.number().nullable().optional(),
   startDate: z.string(),
   endDate: z.string(),
-  status: z.enum([
-    "PROPOSAL",
-    "PREPARATION",
-    "ACTIVE",
-    "CLOSED",
-    "SETTLEMENT_WAIT",
-    "SETTLEMENT_IN_PROGRESS",
-    "COMPLETED",
-    "DROPPED",
-  ]),
+  status: z.enum(CAMPAIGN_STATUSES),
   // 자금 마커/상세 팝오버 — API(getCalendarMonthCampaigns)는 이미 반환 중이나
   // 과거 스키마가 선언하지 않아 .parse()가 조용히 걷어냈다(그래서 도트가 안 보임).
   // ⚠️ **같은 함정이 신규 필드에도 그대로 적용된다** — 여기 선언하지 않으면 API 가

@@ -1,6 +1,7 @@
 import type { CampaignStatus } from "./crm-types";
 import type { AppPrismaClient } from "./prisma-client";
 import { MONTHLY_INVOICE_MANAGED_MESSAGE } from "./campaign-invoices";
+import { CAMPAIGN_STATUSES } from "./campaign-status";
 
 export type ChecklistStatus = CampaignStatus;
 
@@ -61,16 +62,7 @@ type ChecklistDb = Pick<
   "campaignChecklistTemplate" | "campaignChecklistItem" | "salesCampaign"
 >;
 
-export const CAMPAIGN_STATUS_ORDER: CampaignStatus[] = [
-  "PROPOSAL",
-  "PREPARATION",
-  "ACTIVE",
-  "CLOSED",
-  "SETTLEMENT_WAIT",
-  "SETTLEMENT_IN_PROGRESS",
-  "COMPLETED",
-  "DROPPED",
-];
+export const CAMPAIGN_STATUS_ORDER: CampaignStatus[] = [...CAMPAIGN_STATUSES];
 
 export const WORKSPACE_STATUS_GROUPS = {
   pipeline: [

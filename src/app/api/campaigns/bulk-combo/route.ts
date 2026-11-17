@@ -10,6 +10,7 @@ import { campaignRepository } from "@/repositories/campaignRepository";
 import { campaignGroupService, CampaignGroupError } from "@/services/campaignGroupService";
 import { campaignGroupRepository } from "@/repositories/campaignGroupRepository";
 import { toCampaignGroupRow } from "@/lib/campaign-group-row";
+import { CAMPAIGN_STATUSES } from "@/lib/campaign-status";
 
 /**
  * POST /api/campaigns/bulk-combo — "셀러 1명 × 딜 N개" 조합 일괄 생성 + 그룹 동시 생성
@@ -44,16 +45,7 @@ const bulkComboSchema = z
       ])
       .optional(),
     status: z
-      .enum([
-        "PROPOSAL",
-        "PREPARATION",
-        "ACTIVE",
-        "CLOSED",
-        "SETTLEMENT_WAIT",
-        "SETTLEMENT_IN_PROGRESS",
-        "COMPLETED",
-        "DROPPED",
-      ])
+      .enum(CAMPAIGN_STATUSES)
       .default("PROPOSAL"),
   })
   .refine((value) => value.endDate >= value.startDate, {

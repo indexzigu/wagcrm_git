@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/api-auth";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
 import { campaignService } from "@/services/campaignService";
 import { syncCampaignToCalendar } from "@/lib/google-calendar-sync";
+import { CAMPAIGN_STATUSES } from "@/lib/campaign-status";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -54,16 +55,7 @@ const createCampaignSchema = z.object({
   ]),
   baseNaverLink: z.string().url(),
   status: z
-    .enum([
-      "PROPOSAL",
-      "PREPARATION",
-      "ACTIVE",
-      "CLOSED",
-      "SETTLEMENT_WAIT",
-      "SETTLEMENT_IN_PROGRESS",
-      "COMPLETED",
-      "DROPPED",
-    ])
+    .enum(CAMPAIGN_STATUSES)
     .default("PROPOSAL"),
   isManualMargin: z.boolean().default(false),
   totalMarginRate: z.coerce.number().optional(),

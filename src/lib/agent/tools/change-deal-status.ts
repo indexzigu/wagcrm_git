@@ -1,13 +1,13 @@
 import { z } from "zod";
-import { DEAL_STATUSES, type DealStatus } from "@/lib/deal-status";
+import { DEAL_STATUSES, dealStatusLabels, getValidNextStatuses } from "@/lib/deal-status";
 import type { AgentTool, ToolResult, WriteIntent } from "./types";
 import { missingParam, ok } from "./types";
 
 const inputSchema = z.object({
   dealId: z.string().min(1).describe("상태를 변경할 딜의 ID"),
   newStatus: z
-    .enum(DEAL_STATUSES as [DealStatus, ...DealStatus[]])
-    .describe("변경할 딜의 새 상태 (SOURCING, NEGOTIATING, SAMPLE_TESTING, CONFIRMED, ARCHIVED, DROPPED)"),
+    .enum(DEAL_STATUSES)
+    .describe(`변경할 딜의 새 상태 (${DEAL_STATUSES.join(", ")})`),
 });
 
 export type ChangeDealStatusInput = z.infer<typeof inputSchema>;
@@ -43,13 +43,22 @@ async function execute(input: ChangeDealStatusInput): Promise<ToolResult<ChangeD
   return ok({ writeIntent }, [], { dealId, newStatus });
 }
 
+// 낱말은 화면과 같은 `dealStatusLabels`, 허용 변경은 실제 전이표(`getValidNextStatuses`)에서 뽑는다.
+// 손으로 적어 두었던 설명은 화면과 다른 낱말(협상·보관·폐기)을 썼고, 어떤 변경이 되는지 알려 주지
+// 않아 봇이 거절될 기안을 만들 수 있었다(전이 검증은 승인 시점에야 돈다).
+const STATUS_GLOSSARY = DEAL_STATUSES.map((status) => `${status}(${dealStatusLabels[status]})`).join(", ");
+const TRANSITION_GUIDE = DEAL_STATUSES.map((status) => {
+  const next = getValidNextStatuses(status);
+  return next.length > 0 ? `${status} → ${next.join(" 또는 ")}` : `${status} → 없음(되돌릴 수 없음)`;
+}).join("; ");
+
 export const changeDealStatusTool: AgentTool<ChangeDealStatusInput, ChangeDealStatusData> = {
   name: "change_deal_status",
   description:
     "특정 딜의 진행 상태를 변경합니다. 딜 ID가 필요하며(search_deals로 먼저 조회), " +
     "사용자가 상태 변경을 명시적으로 요청할 때만 사용합니다. " +
-    "가능한 상태값: SOURCING(소싱), NEGOTIATING(협상), SAMPLE_TESTING(샘플테스트), " +
-    "CONFIRMED(확정), ARCHIVED(보관), DROPPED(폐기 — 되돌릴 수 없음). " +
+    `가능한 상태값: ${STATUS_GLOSSARY}. ` +
+    `허용되는 변경(현재 → 다음): ${TRANSITION_GUIDE}. 그 밖의 변경과 되돌리기는 승인 단계에서 거절됩니다. ` +
     "실제로 상태를 바꾸지 않고 승인 대기 기안을 생성합니다 — 관리자 승인 후에만 실제 반영됩니다.",
   inputSchema,
   execute,
