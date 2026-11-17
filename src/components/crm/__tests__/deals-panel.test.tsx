@@ -1356,11 +1356,23 @@ describe("DealsPanel", () => {
     // and the panel must show the status the server reported (the screen's status was stale).
     it("keeps the other edits pending and shows the server status after a rejected status change", async () => {
       const patchBodies: Record<string, unknown>[] = [];
+      // The server's status. A bot moves it before the owner's save arrives, so the screen is stale.
+      let serverStatus: DealPanelData["status"] = "SOURCING";
       global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+        // The panel re-reads the deal on open and on every deal change. Answer like the real server
+        // (current status + campaigns): an empty `{}` never fills `campaigns`, so the panel keeps
+        // re-reading, and a late reply built on the stale screen deal overwrote the synced status (CI).
+        if (!options?.method && url === "/api/deals/deal-1") {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ ...baseDeal, status: serverStatus, campaigns: [] }),
+          });
+        }
         if (options?.method === "PATCH" && url === "/api/deals/deal-1") {
           const body = JSON.parse(String(options.body)) as Record<string, unknown>;
           patchBodies.push(body);
           if (patchBodies.length === 1) {
+            serverStatus = "SAMPLE_TESTING";
             return Promise.resolve({
               ok: false,
               status: 422,
