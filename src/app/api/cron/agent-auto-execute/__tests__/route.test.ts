@@ -2,11 +2,16 @@
 //   ① 인증 — 공유 시크릿 SSOT(`@/lib/cron-auth`). 미인증이면 회차를 돌리지 않는다
 //   ② 관측 — withSystemTaskStatus("agent-auto-execute") 로 감싸고, 빈 회차는 `quiet: true`
 //   ③ 회차 안 처리 전부가 오류면 `failed: true`(레이더 빨강)
+//   ④ [T-311] 회차 앞에서 멈춘 승인 복구를 돈다 — 복구가 있으면 quiet 이 아니고, 복구가 던져도 회차는 돈다
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const passMock = vi.fn();
 vi.mock("@/lib/agent/auto-execute/settlement-auto-execute", () => ({
   runSettlementAutoExecutePass: (...a: unknown[]) => passMock(...a),
+}));
+const recoverMock = vi.fn();
+vi.mock("@/lib/agent/stale-approved-recovery", () => ({
+  recoverStaleApprovedProposals: (...a: unknown[]) => recoverMock(...a),
 }));
 vi.mock("@/lib/cron-auth", () => ({ verifyCronAuth: vi.fn() }));
 const { wrapped } = vi.hoisted(() => ({ wrapped: [] as string[] }));
@@ -43,6 +48,8 @@ function pass(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   passMock.mockReset();
+  recoverMock.mockReset();
+  recoverMock.mockResolvedValue({ recovered: 0, errors: 0 });
   vi.mocked(verifyCronAuth).mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -79,5 +86,30 @@ describe("agent-auto-execute 크론", () => {
     passMock.mockResolvedValue(pass({ errors: 1, executed: 1, quiet: false }));
     const body = await (await GET(req())).json();
     expect(body.failed).toBeUndefined();
+  });
+
+  it("[T-311] 미인증이면 멈춘 승인 복구도 돌리지 않는다", async () => {
+    vi.mocked(verifyCronAuth).mockReturnValue(false);
+    await GET(req());
+    expect(recoverMock).not.toHaveBeenCalled();
+  });
+
+  it("[T-311] 스위치가 off 인 회차에도 복구를 돌리고, 복구가 있으면 quiet 이 아니다", async () => {
+    vi.mocked(verifyCronAuth).mockReturnValue(true);
+    passMock.mockResolvedValue(pass({ mode: "off", ran: false }));
+    recoverMock.mockResolvedValue({ recovered: 2, errors: 0 });
+    const body = await (await GET(req())).json();
+    expect(recoverMock).toHaveBeenCalledTimes(1);
+    expect(body).toMatchObject({ ok: true, quiet: false, staleApproved: { recovered: 2, errors: 0 } });
+    expect(body.failed).toBeUndefined();
+  });
+
+  it("[T-311] 복구가 던져도 회차는 돌고, 오류로 드러난다(failed)", async () => {
+    vi.mocked(verifyCronAuth).mockReturnValue(true);
+    passMock.mockResolvedValue(pass());
+    recoverMock.mockRejectedValue(new Error("db down"));
+    const body = await (await GET(req())).json();
+    expect(passMock).toHaveBeenCalledTimes(1);
+    expect(body).toMatchObject({ ok: false, failed: true, quiet: false, staleApproved: { recovered: 0, errors: 1 } });
   });
 });
