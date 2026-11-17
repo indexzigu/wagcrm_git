@@ -175,8 +175,23 @@ jobs:
       - name: Apply migrations to the ephemeral database
         run: npx prisma migrate deploy --schema=./prisma/schema.prisma
 
+      # 빌드의 타입 검사 워커가 Node 기본 힙 한도에서 죽는 것을 막는다(T-315).
+      # 실측(2026-11-17): 11-15·11-17 실패 3건 모두 `next build` 의 「Running TypeScript」
+      # 에서 힙 2,041MB / 한도 약 2,082MB 로 `JavaScript heap out of memory` → SIGABRT.
+      # 같은 소스의 `tsc --noEmit` 은 한도 2,304MB 에서 죽고 3,072MB 에서 통과(사용 약 2.5GB)
+      # — 기본 한도에 여유가 없어 GC 타이밍에 따라 무작위로 실패했다(재실행하면 통과).
+      # Next 는 타입 검사 워커에 NODE_OPTIONS 의 이 값을 그대로 넘긴다
+      # (`next/dist/build/type-check.js` 의 `isolatedMemory: false`; 정적 생성 워커는 지운다).
+      # ⚠️ package.json 의 build 스크립트가 아니라 **이 스텝에만** 둔다 — 운영 빌드
+      # (자체호스팅)의 메모리 설정을 바꾸지 않기 위해서다.
+      # 타입 검사 사용량이 4GB 에 가까워지면 다시 올릴 것 — 아래 진단 줄이 기준값을 남긴다.
       - name: Run release preflight
-        run: npm run release:check
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          echo "runner memory (MB): $(free -m 2>/dev/null | awk '/^Mem:/ {print $2}')"
+          node -e 'console.log("node heap limit (MB):", Math.round(require("v8").getHeapStatistics().heap_size_limit / 1048576))'
+          npm run release:check
 
   # 비차단 테스트 잡 — release:check(배포 프리플라이트) 게이트와 병렬·독립 실행된다.
   # 이 잡에는 prod 시크릿을 주입하지 않으며(env 블록 없음), test:ci가 DATABASE_URL을
