@@ -1,8 +1,10 @@
 /**
  * M2 회귀 테스트: /apply 서버측 멱등 가드.
  * ① priceSheet.status === "APPLIED"면 즉시 409.
- * ② CAS(updateMany where status notIn [APPLIED, APPLYING])로 동시 요청을 방어한다.
- * ③ 반영된 행의 mappingStatus를 "APPLIED"로 전이해 재조회(MAPPED/NEW_DEAL) 대상에서 제외한다.
+ * ② CAS(updateMany where status notIn [APPLIED, APPLYING] OR 오래된 APPLYING)로 동시 요청을 방어한다.
+ * ③ 반영된 행의 mappingStatus를 "APPLIED"로 전이해 재조회(MAPPED/NEW_DEAL) 대상에서 제외한다
+ *    — T-310 이후 이 마감은 실행기 트랜잭션 안(finalize 훅)에서 선점 토큰 조건으로 일어난다.
+ *    선점 생애주기의 상태 단위 검증은 route.lifecycle.test.ts 가 맡는다.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -43,12 +45,30 @@ vi.mock("@/lib/prisma", () => ({
   }),
 }));
 
-vi.mock("@/repositories/priceSheetRepository", () => ({
+vi.mock("@/repositories/priceSheetRepository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/repositories/priceSheetRepository")>()),
   PriceSheetRepository: {
     findById: findByIdMock,
     updateStatus: updateStatusMock,
   },
 }));
+
+// Runs the route's finalize hook against a tx double, as the real executor does inside its $transaction.
+const txSheetUpdateManyMock = vi.fn();
+const txRowUpdateManyMock = vi.fn();
+async function applyRunningFinalize(input: { finalize?: (tx: unknown) => Promise<void> }) {
+  await input.finalize?.({
+    priceSheet: { updateMany: txSheetUpdateManyMock },
+    priceSheetRow: { updateMany: txRowUpdateManyMock },
+  });
+  return {
+    proposal: { id: "proposal-1", status: "EXECUTED" },
+    results: [
+      { dealId: "deal-1", action: "UPDATE" },
+      { dealId: "deal-2", action: "CREATE" },
+    ],
+  };
+}
 
 vi.mock("@/lib/price-sheet/apply-executor", () => ({
   applyPriceSheet: (...args: unknown[]) => applyPriceSheetMock(...args),
@@ -120,41 +140,43 @@ describe("POST /api/price-sheets/[id]/apply — M2 멱등 가드", () => {
     expect(res.status).toBe(409);
     expect(body.error).toMatch(/이미 반영 중이거나 반영이 완료된/);
     expect(applyPriceSheetMock).not.toHaveBeenCalled();
-    // CAS where 조건이 APPLIED/APPLYING을 모두 제외하는지 확인.
+    // CAS where: 잠금 상태(APPLIED/APPLYING)를 제외하되, 오래된 APPLYING 만은 넘겨받는다(T-310).
     const casArgs = priceSheetUpdateManyMock.mock.calls[0][0];
-    expect(casArgs.where.status.notIn).toEqual(expect.arrayContaining(["APPLIED", "APPLYING"]));
+    expect(casArgs.where.OR[0].status.notIn).toEqual(expect.arrayContaining(["APPLIED", "APPLYING"]));
+    expect(casArgs.where.OR[1]).toEqual({ status: "APPLYING", updatedAt: { lt: expect.any(Date) } });
     expect(casArgs.data.status).toBe("APPLYING");
+    expect(casArgs.data.updatedAt).toBeInstanceOf(Date);
   });
 
   it("③ 성공 시 반영된 행의 mappingStatus가 APPLIED로 전이되어 재조회 대상에서 제외된다", async () => {
-    findByIdMock.mockResolvedValue({ id: "sheet-1", status: "REVIEWED", partnerId: null });
+    findByIdMock
+      .mockResolvedValueOnce({ id: "sheet-1", status: "REVIEWED", partnerId: null })
+      .mockResolvedValueOnce({ id: "sheet-1", status: "APPLIED", partnerId: null });
     priceSheetUpdateManyMock.mockResolvedValue({ count: 1 });
     priceSheetRowFindManyMock.mockResolvedValue([
       { id: "row-1", mappingStatus: "MAPPED", mappedDealId: "deal-1" },
       { id: "row-2", mappingStatus: "NEW_DEAL", mappedDealId: null },
     ]);
-    applyPriceSheetMock.mockResolvedValue({
-      proposal: { id: "proposal-1", status: "EXECUTED" },
-      results: [
-        { dealId: "deal-1", action: "UPDATE" },
-        { dealId: "deal-2", action: "CREATE" },
-      ],
-    });
-    updateStatusMock.mockResolvedValue({ id: "sheet-1", status: "APPLIED" });
+    txSheetUpdateManyMock.mockResolvedValue({ count: 1 });
+    txRowUpdateManyMock.mockResolvedValue({ count: 2 });
+    applyPriceSheetMock.mockImplementation(applyRunningFinalize);
 
     const res = await POST(makeRequest(), makeParams("sheet-1"));
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(priceSheetRowUpdateManyMock).toHaveBeenCalledWith({
+    // 마감은 실행기 트랜잭션(tx) 안에서 — 최상위 클라이언트로 쓰면 딜 커밋과 갈라진다.
+    expect(txRowUpdateManyMock).toHaveBeenCalledWith({
       where: { id: { in: ["row-1", "row-2"] } },
       data: { mappingStatus: "APPLIED" },
     });
-    expect(updateStatusMock).toHaveBeenCalledWith(
-      "sheet-1",
-      "APPLIED",
-      expect.objectContaining({ reviewedBy: "tester@example.com" })
-    );
+    expect(priceSheetRowUpdateManyMock).not.toHaveBeenCalled();
+    const claimToken = priceSheetUpdateManyMock.mock.calls[0][0].data.updatedAt;
+    expect(txSheetUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: "sheet-1", status: "APPLYING", updatedAt: claimToken },
+      data: expect.objectContaining({ status: "APPLIED", reviewedBy: "tester@example.com" }),
+    });
+    expect(updateStatusMock).not.toHaveBeenCalled();
     expect(body.priceSheet.status).toBe("APPLIED");
     // 딜 목록 캐시(crm:deals) 무효화 — 누락 시 "반영 완료"는 뜨는데 목록에 새 딜이 안 보인다.
     expect(revalidateMasterDataCachesMock).toHaveBeenCalledTimes(1);
@@ -170,10 +192,12 @@ describe("POST /api/price-sheets/[id]/apply — M2 멱등 가드", () => {
 
     const res = await POST(makeRequest(), makeParams("sheet-1"));
     expect(res.status).toBe(502);
-    expect(priceSheetUpdateMock).toHaveBeenCalledWith({
-      where: { id: "sheet-1" },
+    // 선점 토큰 조건부로만 되돌린다(넘겨받힌 선점은 건드리지 않는다).
+    expect(priceSheetUpdateManyMock).toHaveBeenLastCalledWith({
+      where: { id: "sheet-1", status: "APPLYING", updatedAt: expect.any(Date) },
       data: { status: "REVIEWED" },
     });
+    expect(priceSheetUpdateMock).not.toHaveBeenCalled();
     // 실패 시엔 딜이 생성되지 않았으므로 캐시 무효화도 하지 않는다.
     expect(revalidateMasterDataCachesMock).not.toHaveBeenCalled();
   });
@@ -185,10 +209,12 @@ describe("POST /api/price-sheets/[id]/apply — M2 멱등 가드", () => {
 
     const res = await POST(makeRequest(), makeParams("sheet-1"));
     expect(res.status).toBe(409);
-    expect(priceSheetUpdateMock).toHaveBeenCalledWith({
-      where: { id: "sheet-1" },
+    // 선점 토큰 조건부로만 되돌린다(넘겨받힌 선점은 건드리지 않는다).
+    expect(priceSheetUpdateManyMock).toHaveBeenLastCalledWith({
+      where: { id: "sheet-1", status: "APPLYING", updatedAt: expect.any(Date) },
       data: { status: "REVIEWED" },
     });
+    expect(priceSheetUpdateMock).not.toHaveBeenCalled();
   });
 });
 

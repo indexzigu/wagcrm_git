@@ -12,6 +12,8 @@ const updateMock = vi.fn();
 const deleteMock = vi.fn();
 const updateMappingMock = vi.fn();
 const requireAuthMock = vi.fn();
+// Parent sheet lookup (T-310 lock guard). Default = an editable sheet.
+const sheetFindUniqueMock = vi.fn(async () => ({ id: "sheet-1", status: "MAPPED" }));
 
 vi.mock("@/lib/api-auth", () => ({
   requireAuth: () => requireAuthMock(),
@@ -19,6 +21,7 @@ vi.mock("@/lib/api-auth", () => ({
 
 vi.mock("@/lib/prisma", () => ({
   getPrisma: () => ({
+    priceSheet: { findUnique: sheetFindUniqueMock },
     priceSheetRow: {
       findUnique: findUniqueMock,
       update: updateMock,
@@ -27,7 +30,8 @@ vi.mock("@/lib/prisma", () => ({
   }),
 }));
 
-vi.mock("@/repositories/priceSheetRepository", () => ({
+vi.mock("@/repositories/priceSheetRepository", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/repositories/priceSheetRepository")>()),
   PriceSheetRowRepository: {
     updateMapping: updateMappingMock,
   },
@@ -234,5 +238,42 @@ describe("DELETE /api/price-sheets/[id]/rows/[rowId] — 추출 행 삭제", () 
 
     expect(res.status).toBe(409);
     expect(deleteMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH — T-310 반영 잠금(반영 중·반영 완료 행은 수정 불가)", () => {
+  beforeEach(() => {
+    findUniqueMock.mockReset();
+    updateMock.mockReset();
+    updateMappingMock.mockReset();
+    sheetFindUniqueMock.mockReset();
+    sheetFindUniqueMock.mockResolvedValue({ id: "sheet-1", status: "MAPPED" });
+    requireAuthMock.mockResolvedValue({ authenticated: true });
+  });
+
+  it("이미 반영된 행(APPLIED)은 값·매핑 변경 모두 409로 막는다", async () => {
+    findUniqueMock.mockResolvedValue({
+      id: "row-1",
+      priceSheetId: "sheet-1",
+      mappingStatus: "APPLIED",
+      mappedDealId: "deal-1",
+    });
+    const res = await PATCH(makeRequest({ mappingStatus: "NEW_DEAL", mappedDealId: null }), makeParams());
+    expect(res.status).toBe(409);
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(updateMappingMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["APPLYING", "APPLIED"])("시트가 %s 이면 미반영 행도 409로 막는다", async (status) => {
+    findUniqueMock.mockResolvedValue({
+      id: "row-1",
+      priceSheetId: "sheet-1",
+      mappingStatus: "NEW_DEAL",
+      mappedDealId: null,
+    });
+    sheetFindUniqueMock.mockResolvedValue({ id: "sheet-1", status });
+    const res = await PATCH(makeRequest({ sellingPrice: 1000 }), makeParams());
+    expect(res.status).toBe(409);
+    expect(updateMock).not.toHaveBeenCalled();
   });
 });

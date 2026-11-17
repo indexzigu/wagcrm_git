@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAuth } from "@/lib/api-auth";
 import { getPrisma } from "@/lib/prisma";
-import { PriceSheetRowRepository } from "@/repositories/priceSheetRepository";
+import { isApplyLocked, PriceSheetRowRepository } from "@/repositories/priceSheetRepository";
 import { normalizePriceSheetRowForResponse } from "@/lib/price-sheet/serialize-response";
 
 // M3: 비율 필드(commissionRate/discountRate)는 항상 0~1 소수로 저장한다(예: 30% -> 0.3).
@@ -48,6 +48,20 @@ export async function PATCH(
   const existing = await prisma.priceSheetRow.findUnique({ where: { id: rowId } });
   if (!existing || existing.priceSheetId !== id) {
     return NextResponse.json({ error: "행을 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  // T-310: 반영된 행, 그리고 반영 중·반영 완료 시트의 행은 고치지 않는다. 반영된 행을 MAPPED/
+  // NEW_DEAL 로 되돌리면 다음 반영이 그 행의 딜을 또 만들고, 반영 중에 바뀐 행은 반영된 값과
+  // 기록이 어긋난다.
+  if (existing.mappingStatus === "APPLIED") {
+    return NextResponse.json({ error: "이미 판매 조건에 반영된 행은 수정할 수 없습니다." }, { status: 409 });
+  }
+  const sheet = await prisma.priceSheet.findUnique({ where: { id }, select: { status: true } });
+  if (sheet && isApplyLocked(sheet.status)) {
+    return NextResponse.json(
+      { error: "반영 중이거나 반영이 끝난 가격표의 행은 수정할 수 없습니다." },
+      { status: 409 }
+    );
   }
 
   if (parsed.data.mappingStatus === "MAPPED" && !parsed.data.mappedDealId && !existing.mappedDealId) {
