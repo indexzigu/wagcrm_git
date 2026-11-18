@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, utimesSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, readdirSync } from "node:fs";
-import { writeCmdStub } from "./helpers/gh-stub";
+import { GNU_STAT_IMPL_BODY, writeCmdStub } from "./helpers/gh-stub";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -281,6 +281,20 @@ describe("expansion-loop.sh", () => {
     expect(cronLog()).toMatch(/OK expansion-loop/);
     expect(existsSync(lockDir())).toBe(false);
     expect(existsSync(lockDir() + ".reclaim")).toBe(false);
+  });
+
+  // CI runs on Linux: GNU `stat -f %m X` exits 1 but still prints file-system info to stdout,
+  // so a BSD-first mtime probe must not trust that output.
+  it("GNU stat host: stale lock is still reclaimed (age is numeric)", () => {
+    mkdirSync(lockDir(), { recursive: true });
+    const old = new Date(Date.now() - 3600_000);
+    utimesSync(lockDir(), old, old);
+    script("stat", GNU_STAT_IMPL_BODY);
+    const r = run(null, { EXPANSION_DRY: "1", EXPANSION_TIMEOUT_S: "1", PATH: `${bin}:${process.env.PATH ?? ""}` });
+    expect(r.stderr).not.toMatch(/syntax error|arithmetic/i);
+    expect(r.status).toBe(0);
+    expect(cronLog()).toMatch(/SKIP expansion-loop stale-lock-reclaimed age=\d+s/);
+    expect(cronLog()).toMatch(/OK expansion-loop/);
   });
 
   // Two runs reclaiming the same stale lock must not both end up owning it: only the holder

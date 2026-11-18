@@ -60,8 +60,14 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 143' INT TERM HUP
 
-# BSD(macOS) stat 먼저, 안 되면 GNU. 못 읽으면 현재 시각(= 낡지 않음으로 취급 → 건드리지 않는다).
-mtime_of() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || date +%s; }
+# GNU stat 먼저, 안 되면 BSD(macOS). 순서가 중요하다: GNU 의 `-f` 는 파일시스템 정보라 `stat -f %m X` 가
+# 실패하면서도 stdout 에 정보를 뱉는다(BSD 의 `-c` 는 stdout 없이 실패). 숫자가 아니면 현재 시각
+# (= 낡지 않음으로 취급 → 건드리지 않는다).
+mtime_of() {
+  local t
+  t=$(stat -c %Y "$1" 2>/dev/null) || t=$(stat -f %m "$1" 2>/dev/null) || t=""
+  case "$t" in ''|*[!0-9]*) date +%s ;; *) echo "$t" ;; esac
+}
 
 mkdir -p "$(dirname "$LOCK_DIR")"
 lock_age() { echo $(( $(date +%s) - $(mtime_of "$1") )); }
