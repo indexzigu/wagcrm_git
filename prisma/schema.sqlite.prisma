@@ -221,6 +221,9 @@ model SalesCampaign {
   salesCode               String?
   startDate               DateTime
   endDate                 DateTime
+  /// "Period not set yet" marker: set when startDate/endDate are placeholders (outreach auto-create).
+  /// The period is unset while either date still equals this value — see isCampaignPeriodUnset (campaign-period.ts).
+  periodPlaceholderAt     DateTime?
   salesChannel            String
   baseNaverLink           String
   generatedTrackingLink   String

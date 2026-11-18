@@ -201,6 +201,8 @@ export type SellerSummary = {
     partnerName: string | null;
     startDate: string;
     endDate: string;
+    /** 기간 미정(T-313, `isCampaignPeriodUnset`) — true 면 날짜는 자리표시라 「미정」으로 쓴다. */
+    periodUnset: boolean;
     status: CampaignStatus;
     actualSales: number | null;
   }>;
@@ -333,6 +335,12 @@ export type CampaignRow = {
   category?: string | null;
   startDate: string;
   endDate: string;
+  /**
+   * 기간 미정(T-313, `isCampaignPeriodUnset`) — true 면 startDate/endDate 는 자리표시라 화면은
+   * 날짜 대신 「미정」을 쓰고, 달력·기간 판정에서 뺀다. 필수인 이유: 행을 만드는 새 자리가 이
+   * 값을 빠뜨리면 컴파일이 막는다(빠뜨리면 자리표시 날짜가 진짜 기간처럼 보인다).
+   */
+  periodUnset: boolean;
   salesChannel: SalesChannel;
   /**
    * 주문관리(`OrderCampaign`)에 등록됐는가 — 자사 네이버 캠페인의 "세팅 완료" 신호.

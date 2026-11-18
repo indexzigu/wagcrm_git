@@ -98,13 +98,17 @@ export function buildMobilePipelineEntities(campaigns: CampaignRow[]): MobilePip
       (a, b) => a.startDate.localeCompare(b.startDate) || a.dealName.localeCompare(b.dealName, "ko"),
     );
     const first = sorted[0];
-    const startDate = sorted.reduce(
+    // 그룹 기간은 기간이 정해진 멤버로만 잡는다 — 기간 미정(T-313) 멤버의 자리표시 날짜가
+    // 기간을 늘리지 않게. 전원 미정이면 그룹 카드도 「미정」이다.
+    const dated = sorted.filter((member) => !member.periodUnset);
+    const periodSource = dated.length > 0 ? dated : sorted;
+    const startDate = periodSource.reduce(
       (min, member) => (member.startDate < min ? member.startDate : min),
-      first.startDate,
+      periodSource[0].startDate,
     );
-    const endDate = sorted.reduce(
+    const endDate = periodSource.reduce(
       (max, member) => (member.endDate > max ? member.endDate : max),
-      first.endDate,
+      periodSource[0].endDate,
     );
     const salesValues = sorted
       .map((member) => member.actualSales)
@@ -121,6 +125,7 @@ export function buildMobilePipelineEntities(campaigns: CampaignRow[]): MobilePip
         status,
         startDate,
         endDate,
+        periodUnset: dated.length === 0,
         actualSales: salesValues.length > 0 ? salesValues.reduce((sum, value) => sum + value, 0) : null,
         hasPriceViolation: sorted.some((member) => member.hasPriceViolation),
         violatedDealCount: sorted.reduce((sum, member) => sum + (member.violatedDealCount ?? 0), 0),

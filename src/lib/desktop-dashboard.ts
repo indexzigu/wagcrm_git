@@ -1,5 +1,6 @@
 import { sellerDisplayName } from "@/lib/seller-display-name";
 import { getPrisma } from "@/lib/prisma";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 import { DASHBOARD_SCOPE_CAPTION, isCountedForDashboard } from "./dashboard-scope";
 import { buildEffectiveCampaignPeriods } from "@/lib/campaign-group-count";
 import { findRevenueGoalsSafe } from "@/lib/revenue-goals";
@@ -313,7 +314,7 @@ export async function getDesktopDashboardData(now = new Date()) {
   const ninetyDaysAgo = new Date(now.getTime() - 90 * DAY_MS);
   const scheduleEnd = new Date(now.getTime() + 14 * DAY_MS);
 
-  const [campaigns, goalResult, outreach, googleCalendar, scheduleGapBriefing, taxableRevenueRows] = await Promise.all([
+  const [loadedCampaigns, goalResult, outreach, googleCalendar, scheduleGapBriefing, taxableRevenueRows] = await Promise.all([
     prisma.salesCampaign.findMany({
       select: {
         id: true,
@@ -321,6 +322,7 @@ export async function getDesktopDashboardData(now = new Date()) {
         campaignName: true,
         startDate: true,
         endDate: true,
+        periodPlaceholderAt: true,
         actualSales: true,
         totalMarginRate: true,
         sellerMarginRate: true,
@@ -394,6 +396,9 @@ export async function getDesktopDashboardData(now = new Date()) {
       },
     }),
   ]);
+  // 기간 미정(T-313) 캠페인은 날짜가 자리표시라 월 배분·다가올 일정·데이터 점검(「종료됐으나 실매출
+  // 미입력」) 어디에도 넣지 않는다 — 기간이 정해지면(날짜 저장) 자동으로 다시 잡힌다.
+  const campaigns = loadedCampaigns.filter((campaign) => !isCampaignPeriodUnset(campaign));
   const goals = goalResult.goals;
 
   const prevMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));

@@ -5,6 +5,7 @@ import { getPrisma } from "@/lib/prisma";
 import { recordActivityChange } from "@/lib/activity-log";
 import { getAuthContext } from "@/lib/auth-context";
 import { computeAutoStatus } from "@/lib/settlement-status";
+import { blocksStatusForUnsetPeriod } from "@/lib/campaign-period";
 import { syncCampaignToCalendar } from "@/lib/google-calendar-sync";
 import { revalidateCampaignCaches } from "@/lib/cache-tags";
 import { campaignInvoiceService } from "@/services/campaignInvoiceService";
@@ -113,6 +114,8 @@ export async function PATCH(
   // 조합 캠페인은 실캠페인 1개라 원본이 막히면 그룹 전이도 함께 보류된다(형제 전파 없음).
   const gated = await campaignInvoiceService.gateAutoCompletion(prisma, id, campaign.status, autoStatus);
   autoStatus = gated.status ?? null;
+  // 기간 미정(T-313) — 플래그만 저장하고 허용 밖 상태로는 옮기지 않는다.
+  if (autoStatus && blocksStatusForUnsetPeriod(campaign, autoStatus)) autoStatus = null;
   const monthlyCompletionBlocked = gated.blockedReason;
   const campaignUpdates: Prisma.SalesCampaignUpdateManyMutationInput = autoStatus
     ? { status: autoStatus }

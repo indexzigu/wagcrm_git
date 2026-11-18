@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/api-auth";
 import { parseCandidateQuery } from "@/lib/campaign-group-candidate-query";
 import { campaignGroupRepository } from "@/repositories/campaignGroupRepository";
 import { toCampaignCombineCandidateRow } from "@/lib/campaign-group-row";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 import {
   expandYmdRangeByWindow,
   GROUP_WINDOW_DAYS,
@@ -59,8 +60,11 @@ export async function GET(request: NextRequest) {
       startDate: new Date(parsed.data.startDate),
       endDate: new Date(parsed.data.endDate),
     };
-    const near = rows.filter((row) =>
-      overlapsOrNear(origin, { startDate: row.startDate, endDate: row.endDate }, GROUP_WINDOW_DAYS),
+    // 기간 미정(T-313) 캠페인은 날짜가 자리표시라 「기간이 가깝다」를 판정할 수 없다 — 후보·개수 모두에서 뺀다.
+    const near = rows.filter(
+      (row) =>
+        !isCampaignPeriodUnset(row) &&
+        overlapsOrNear(origin, { startDate: row.startDate, endDate: row.endDate }, GROUP_WINDOW_DAYS),
     );
 
     const candidates: CampaignCombineCandidateRow[] = near

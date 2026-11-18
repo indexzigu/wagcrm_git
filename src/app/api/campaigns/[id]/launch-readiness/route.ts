@@ -22,6 +22,7 @@ import {
 } from "@/lib/campaign-setup";
 import type { SalesChannel } from "@/lib/crm-types";
 import { toKstDateStr } from "@/lib/campaign-row";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 
 // Route segment config "dynamic"은 cacheComponents와 비호환이라 선언하지 않는다.
 
@@ -55,6 +56,8 @@ export async function GET(_request: Request, { params }: Context) {
     select: {
       id: true,
       startDate: true,
+      endDate: true,
+      periodPlaceholderAt: true,
       salesChannel: true,
       orderCampaignId: true,
       deal: {
@@ -266,6 +269,7 @@ export async function GET(_request: Request, { params }: Context) {
     // "오늘 오픈"을 "내일"로 읽는다. 레포 정본 변환을 쓴다.
     daysUntilStart: getDaysUntilStart({
       startDate: toKstDateStr(campaign.startDate) ?? "",
+      periodUnset: isCampaignPeriodUnset(campaign),
     }),
   });
 

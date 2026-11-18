@@ -234,8 +234,11 @@ export async function PATCH(request: Request, context: Context) {
             netMarginRate: rates.netMarginRate,
             baseNaverLink: "",
             generatedTrackingLink: "pending",
+            // No period yet ("기간 미정", T-313): the NOT NULL dates hold a placeholder and this
+            // marker says so. Any later date write makes the campaign dated (campaign-period.ts).
             startDate: now,
             endDate: now,
+            periodPlaceholderAt: now,
           },
         });
 

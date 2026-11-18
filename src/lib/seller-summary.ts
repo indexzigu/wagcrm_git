@@ -7,6 +7,7 @@
 
 import type { Prisma } from "@prisma/client";
 import { getPrisma } from "@/lib/prisma";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 import { tallyEffectiveCampaignCounts } from "@/lib/campaign-group-count";
 import { tallySellerRuns, type SellerRunSignals } from "@/lib/seller-dormancy";
 import { RUN_STATUSES } from "@/lib/recampaign-timing";
@@ -263,6 +264,7 @@ export async function loadSellerSummaries(opts?: {
       partnerName: campaign.deal.partner?.name ?? null,
       startDate: campaign.startDate.toISOString(),
       endDate: campaign.endDate.toISOString(),
+      periodUnset: isCampaignPeriodUnset(campaign),
       status: campaign.status as CampaignStatus,
       actualSales: campaign.actualSales != null ? Number(campaign.actualSales.toString()) : null,
     })),

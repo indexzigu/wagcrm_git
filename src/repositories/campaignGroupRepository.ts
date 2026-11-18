@@ -146,6 +146,8 @@ export const campaignGroupRepository = {
         status: true,
         startDate: true,
         endDate: true,
+        // 기간 미정(T-313) 판정 — 자리표시 날짜는 기간 창 판정에 쓰지 않는다(combinable 라우트).
+        periodPlaceholderAt: true,
         roundNumber: true,
         groupId: true,
         deal: {

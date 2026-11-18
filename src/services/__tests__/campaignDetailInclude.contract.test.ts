@@ -29,6 +29,7 @@ const baseCampaign: Parameters<typeof toCampaignRow>[0] = {
   updatedAt: new Date("2026-09-01T00:00:00Z"),
   startDate: new Date("2026-09-01T00:00:00Z"),
   endDate: new Date("2026-09-07T00:00:00Z"),
+  periodPlaceholderAt: null,
   salesChannel: "SELLER_MALL",
   baseNaverLink: "",
   generatedTrackingLink: "",

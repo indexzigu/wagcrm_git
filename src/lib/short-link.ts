@@ -1,6 +1,7 @@
 import { randomInt } from "crypto";
 import { pickConfirmedTargetLink } from "./campaign-link-surface";
 import type { AppPrismaClient } from "./prisma-client";
+import { isCampaignPeriodUnset } from "./campaign-period";
 
 /**
  * 유입추적 단축링크 발급/집계.
@@ -44,6 +45,19 @@ export function resolveLinkExpiry(endDate: Date | null): Date | null {
 }
 
 /**
+ * 만료 기준 종료일. 기간 미정(T-313, `isCampaignPeriodUnset`)이면 종료일이 자리표시라 기준이
+ * 없다 → null(무기한). 오너가 기간을 저장하면 `syncCampaignLinkExpiry` 가 새 종료일로 다시 잡는다.
+ */
+function linkExpiryEndDate(campaign: {
+  startDate: Date;
+  endDate: Date | null;
+  periodPlaceholderAt: Date | null;
+}): Date | null {
+  if (campaign.endDate && isCampaignPeriodUnset({ ...campaign, endDate: campaign.endDate })) return null;
+  return campaign.endDate;
+}
+
+/**
  * `syncCampaignLinkExpiry` 가 쓰는 클라이언트 표면. 트랜잭션 클라이언트(`Prisma.TransactionClient`)
  * 와 일반 클라이언트를 모두 받기 위해 **구조적 타입**으로 좁힌다 — 둘의 공통 조상 타입이 없다.
  */
@@ -51,8 +65,8 @@ export type LinkExpiryTx = {
   salesCampaign: {
     findMany(args: {
       where: { id?: string; groupId?: string };
-      select: { id: true; endDate: true };
-    }): Promise<Array<{ id: string; endDate: Date | null }>>;
+      select: { id: true; startDate: true; endDate: true; periodPlaceholderAt: true };
+    }): Promise<Array<{ id: string; startDate: Date; endDate: Date | null; periodPlaceholderAt: Date | null }>>;
   };
   trackedLink: {
     updateMany(args: {
@@ -80,14 +94,14 @@ export async function syncCampaignLinkExpiry(
 ): Promise<number> {
   const campaigns = await tx.salesCampaign.findMany({
     where: target.groupId ? { groupId: target.groupId } : { id: target.campaignId },
-    select: { id: true, endDate: true },
+    select: { id: true, startDate: true, endDate: true, periodPlaceholderAt: true },
   });
   if (campaigns.length === 0) return 0;
 
   // 같은 만료로 묶어 쓰기를 최소화한다. 팬아웃 뒤라면 보통 한 덩어리(= updateMany 1회)다.
   const groups = new Map<string, { expiresAt: Date | null; ids: string[] }>();
   for (const campaign of campaigns) {
-    const expiresAt = resolveLinkExpiry(campaign.endDate);
+    const expiresAt = resolveLinkExpiry(linkExpiryEndDate(campaign));
     const key = expiresAt?.toISOString() ?? "null";
     const bucket = groups.get(key) ?? { expiresAt, ids: [] };
     bucket.ids.push(campaign.id);
@@ -238,7 +252,9 @@ export async function ensureCampaignTrackedLink(
       sellerId: true,
       baseNaverLink: true,
       generatedTrackingLink: true,
+      startDate: true,
       endDate: true,
+      periodPlaceholderAt: true,
     },
   });
   if (!campaign) throw new Error("캠페인을 찾을 수 없습니다.");
@@ -271,7 +287,7 @@ export async function ensureCampaignTrackedLink(
     sellerId: campaign.sellerId,
     dealId: campaign.dealId,
     // 만료는 캠페인 종료일을 따라간다 — 계산은 `resolveLinkExpiry` 하나가 소유한다.
-    expiresAt: resolveLinkExpiry(campaign.endDate),
+    expiresAt: resolveLinkExpiry(linkExpiryEndDate(campaign)),
   });
 }
 

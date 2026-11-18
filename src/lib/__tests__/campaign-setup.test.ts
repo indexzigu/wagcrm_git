@@ -37,6 +37,8 @@ describe("getDaysUntilStart", () => {
   it("빈값·파싱 불가는 null(판정 불가)", () => {
     expect(getDaysUntilStart({ startDate: "" }, NOW)).toBeNull();
     expect(getDaysUntilStart({ startDate: "not-a-date" }, NOW)).toBeNull();
+    // T-313: an unset period's startDate is a placeholder — no day count from it.
+    expect(getDaysUntilStart({ ...campaign(-5), periodUnset: true }, NOW)).toBeNull();
   });
 });
 

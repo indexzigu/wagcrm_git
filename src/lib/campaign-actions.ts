@@ -66,8 +66,9 @@ function dayDiff(from: Date, to: Date) {
 
 export function getCampaignAction(campaign: CampaignRow, now = new Date()): CampaignAction {
   const action = ACTION_COPY[campaign.status];
+  // 기간 미정(T-313)이면 날짜가 자리표시라 기한을 만들지 않는다(만들면 생성 직후부터 「지남」).
   const dueDate =
-    action.offsetDays == null
+    action.offsetDays == null || campaign.periodUnset
       ? null
       : addDays(
           campaign.status === "ACTIVE" ||

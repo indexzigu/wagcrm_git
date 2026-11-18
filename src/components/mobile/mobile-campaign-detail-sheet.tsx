@@ -77,6 +77,8 @@ export type MobileCampaignDetailData = {
   salesChannel: SalesChannel;
   startDate: string;
   endDate: string;
+  /** 기간 미정(T-313) — true 면 startDate/endDate 는 자리표시라 「미정」으로 쓴다. */
+  periodUnset: boolean;
   expectedDepositDate: string | null;
   expectedPayoutDate: string | null;
   expectedSupplierPayoutDate: string | null;
@@ -111,6 +113,7 @@ export type MobileCampaignDetailMember = {
   status: string;
   startDate: string;
   endDate: string;
+  periodUnset: boolean;
   settlementSales: number | null;
   actualSales: number | null;
   sellerExpense: number | null;
@@ -147,7 +150,13 @@ export type CampaignDetailSource = Pick<
   | "isDepositReceived"
   | "isPayoutCompleted"
   | "isSupplierPayoutCompleted"
->;
+> & {
+  /**
+   * 기간 미정(T-313). 선택인 이유: 모바일 정산 스냅샷(MobileSettlementCampaign)은 정산 단계만
+   * 싣는데, 기간 미정 캠페인은 준비를 못 벗어나 그 목록에 오지 않는다. 비면 false.
+   */
+  periodUnset?: boolean;
+};
 
 export function campaignRowToDetailData(row: CampaignDetailSource): MobileCampaignDetailData {
   return {
@@ -161,6 +170,7 @@ export function campaignRowToDetailData(row: CampaignDetailSource): MobileCampai
     salesChannel: row.salesChannel,
     startDate: row.startDate,
     endDate: row.endDate,
+    periodUnset: row.periodUnset ?? false,
     expectedDepositDate: row.expectedDepositDate ?? null,
     expectedPayoutDate: row.expectedPayoutDate ?? null,
     expectedSupplierPayoutDate: row.expectedSupplierPayoutDate ?? null,
@@ -206,6 +216,10 @@ export function campaignRowsToGroupDetailData(
   if (members.length < 2) return campaignRowToDetailData(selectedRow);
 
   const first = members[0];
+  // 그룹 기간은 기간이 정해진 멤버만으로 잡는다 — 기간 미정(T-313) 멤버의 자리표시 날짜가
+  // 그룹 기간을 늘리지 않게. 전원 미정이면 그룹도 미정이다.
+  const datedMembers = members.filter((member) => !member.periodUnset);
+  const periodSource = datedMembers.length > 0 ? datedMembers : members;
   return {
     id: `group:${groupId}`,
     kind: "group",
@@ -217,8 +231,9 @@ export function campaignRowsToGroupDetailData(
     // 채널은 대표 멤버 것 — 그룹은 딜 분할이라 실무상 같다(desktop-dashboard 의 그룹
     // 이벤트와 같은 규약: 갈릴 때 조용히 두 채널의 칸을 합치지 않는다).
     salesChannel: first.salesChannel,
-    startDate: minIso(members.map((member) => member.startDate)),
-    endDate: maxIso(members.map((member) => member.endDate)),
+    startDate: minIso(periodSource.map((member) => member.startDate)),
+    endDate: maxIso(periodSource.map((member) => member.endDate)),
+    periodUnset: datedMembers.length === 0,
     expectedDepositDate: first.expectedDepositDate ?? null,
     expectedPayoutDate: first.expectedPayoutDate ?? null,
     expectedSupplierPayoutDate: first.expectedSupplierPayoutDate ?? null,
@@ -248,6 +263,7 @@ export function campaignRowsToGroupDetailData(
       status: member.status,
       startDate: member.startDate,
       endDate: member.endDate,
+      periodUnset: member.periodUnset,
       settlementSales: member.settlementSales ?? null,
       actualSales: member.actualSales ?? null,
       sellerExpense: member.sellerExpense ?? null,
@@ -567,7 +583,7 @@ export function MobileCampaignDetailSheet({
           <SheetDescription className="mt-2 text-xs font-medium text-slate-500 flex items-center gap-2">
             {/* ⛔ 판매 마감 D-day 를 여기 되살리지 말 것(오너 지시 2026-08-26 — 위 🪦).
                 기간 칩만 남는 것이 의도다. */}
-            <span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-600">{formatMd(campaign.startDate)} ~ {formatMd(campaign.endDate)}</span>
+            <span className="bg-slate-100 px-2 py-0.5 rounded-md text-slate-600">{campaign.periodUnset ? "미정" : `${formatMd(campaign.startDate)} ~ ${formatMd(campaign.endDate)}`}</span>
           </SheetDescription>
         </header>
 
@@ -666,7 +682,7 @@ export function MobileCampaignDetailSheet({
             <MobileSheetRow
               icon={<CalendarIcon aria-hidden="true" className="size-4 shrink-0 text-slate-400" />}
               label="판매 기간"
-              value={`${formatDateLabel(campaign.startDate)} → ${formatDateLabel(campaign.endDate)}`}
+              value={campaign.periodUnset ? "미정" : `${formatDateLabel(campaign.startDate)} → ${formatDateLabel(campaign.endDate)}`}
             />
             {/* 방향 색은 규칙 SSOT(lib/money-direction) — 구 리터럴 emerald-500 은 2.54:1 로
                 비텍스트 3:1 도 미달이었다. 이 파일 아래쪽 취소·반품 rose(ClaimsSummary)는
@@ -811,7 +827,7 @@ function GroupMembersSection({ members }: { members: MobileCampaignDetailMember[
           <MobileSheetRow
             key={member.id}
             icon={<LayersIcon className="size-3.5 text-slate-500" aria-hidden="true" />}
-            label={`${formatMd(member.startDate)} ~ ${formatMd(member.endDate)}`}
+            label={member.periodUnset ? "미정" : `${formatMd(member.startDate)} ~ ${formatMd(member.endDate)}`}
             value={member.dealName}
             trailing={
               <span className="flex shrink-0 items-center gap-1.5">

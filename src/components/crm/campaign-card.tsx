@@ -206,8 +206,9 @@ export function CampaignCard({
   onMove,
 }: CampaignCardProps) {
   const stageTargets = onMove ? (moveTargets ?? []).filter((t) => t.status !== campaign.status) : [];
-  const dateRange = formatDateRange(campaign.startDate, campaign.endDate);
-  const urgency = getDateUrgency(campaign.endDate);
+  // 기간 미정(T-313)이면 날짜는 자리표시다 — 「미정」만 쓰고 긴급도도 매기지 않는다.
+  const dateRange = campaign.periodUnset ? "미정" : formatDateRange(campaign.startDate, campaign.endDate);
+  const urgency: DateUrgency = campaign.periodUnset ? "unset" : getDateUrgency(campaign.endDate);
   const UrgencyIcon = urgencyIcon[urgency];
   const checklistSummary = campaign.checklistSummary;
   const action = getCampaignAction(campaign);
@@ -404,7 +405,11 @@ export function CampaignCard({
           <span
             className={cn(
               "text-[10px] font-medium flex items-center min-w-0 truncate",
-              urgencyTextClass[urgency],
+              // 기간 미정 준비 카드(T-313)는 「볼 것 없음」 회색이 아니다 — 날짜를 정해야 다음 단계로 간다.
+              // 새 색을 들이지 않고 제목과 같은 진한 글자로 올린다(종료 임박 주황과 섞지 않는다).
+              campaign.periodUnset && campaign.status === "PREPARATION"
+                ? "text-foreground font-semibold"
+                : urgencyTextClass[urgency],
             )}
             title={dateLabel}
           >

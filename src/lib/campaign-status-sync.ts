@@ -1,4 +1,5 @@
 import { toKstYmd } from "./date-utils";
+import { isCampaignPeriodUnset } from "./campaign-period";
 import { ensureCampaignChecklistForStatus } from "./campaign-checklist";
 import { recordCampaignActivity } from "./campaign-activity";
 import { revalidateCampaignCaches } from "./cache-tags";
@@ -13,6 +14,8 @@ export type CampaignStatusSyncCandidate = {
   startDate: Date | string;
   endDate: Date | string;
   groupId?: string | null;
+  /** "기간 미정" marker (T-313) — see `isCampaignPeriodUnset`. */
+  periodPlaceholderAt?: Date | string | null;
 };
 
 export type CampaignStatusSyncVerdict = {
@@ -35,6 +38,7 @@ export type CampaignStatusSyncVerdict = {
  *    - `toKstYmd(now) >= toKstYmd(startDate)` 및 `toKstYmd(now) <= toKstYmd(endDate)` 인 경우,
  *    - 현재 상태가 `PREPARATION`이면 -> `ACTIVE`(진행중)
  * 3. 이미 마감/정산/완료/드랍(`CLOSED`, `SETTLEMENT_WAIT`, `SETTLEMENT_IN_PROGRESS`, `COMPLETED`, `DROPPED` 등) 상태인 캠페인은 변경하지 않는다.
+ * 4. 기간 미정(`isCampaignPeriodUnset`, T-313) 캠페인은 날짜가 자리표시라 판정하지 않는다(NONE).
  */
 export function resolveScheduledCampaignStatus(
   campaign: CampaignStatusSyncCandidate,
@@ -42,6 +46,9 @@ export function resolveScheduledCampaignStatus(
 ): CampaignStatusSyncVerdict {
   const currentStatus = campaign.status as CampaignStatus;
   const groupId = campaign.groupId ?? null;
+  if (isCampaignPeriodUnset(campaign)) {
+    return { campaignId: campaign.id, groupId, currentStatus, targetStatus: null, reason: "NONE" };
+  }
   const todayKst = toKstYmd(now);
   const startKst = toKstYmd(new Date(campaign.startDate));
   const endKst = toKstYmd(new Date(campaign.endDate));
@@ -122,6 +129,7 @@ export async function syncCampaignStatusesBySchedule(
       startDate: true,
       endDate: true,
       groupId: true,
+      periodPlaceholderAt: true,
     },
   });
 

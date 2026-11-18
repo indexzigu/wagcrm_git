@@ -337,6 +337,42 @@ describe("syncAllCampaignsToCalendar (전체 동기화 — 완료 그룹 누락 
     };
   }
 
+  // T-313 Part A: 기간 미정 캠페인의 날짜는 자리표시다 — 캘린더에 그 날짜로 이벤트를 세우지 않는다.
+  it("기간 미정 준비 캠페인은 이벤트를 만들지 않고 기존 이벤트를 지운다(T-313)", async () => {
+    const placeholder = new Date("2026-09-01T03:00:00.000Z");
+    const unset = {
+      id: "u1",
+      status: "PREPARATION",
+      campaignName: "기간 미정 캠페인",
+      startDate: placeholder,
+      endDate: placeholder,
+      periodPlaceholderAt: placeholder,
+      salesChannel: "SELLER_MALL",
+      expectedDepositDate: null,
+      expectedPayoutDate: null,
+      expectedSupplierPayoutDate: null,
+      depositReceivedAt: null,
+      payoutCompletedAt: null,
+      supplierPayoutCompletedAt: null,
+      calendarEventIds: JSON.stringify({ campaign: "unset-ev" }),
+      deal: { dealName: "미정딜" },
+      seller: { name: "가공셀러", alias: null },
+    };
+    const prisma = makeFakePrisma({ ungrouped: [unset], groups: [] });
+    vi.mocked(getPrisma).mockReturnValue(prisma as never);
+
+    await syncAllCampaignsToCalendar();
+
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST"),
+    ).toHaveLength(0);
+    expect(
+      fetchMock.mock.calls
+        .filter(([, init]) => (init as RequestInit | undefined)?.method === "DELETE")
+        .map(([url]) => url as string),
+    ).toEqual(expect.arrayContaining([expect.stringContaining("/events/unset-ev")]));
+  });
+
   // 영업 존 제외의 **정리 경로**를 지키는 계약(오너 확정 2026-07-31).
   it("PROPOSAL 무그룹 캠페인은 조회 대상에 남기고(정리 가능해야 함) 기존 이벤트를 지운다", async () => {
     const proposal = {

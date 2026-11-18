@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { recordCampaignActivity } from "@/lib/campaign-activity";
 import { toCampaignRow } from "@/lib/campaign-row";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 import { getPrisma } from "@/lib/prisma";
 import { buildNaverTrackingLink } from "@/lib/tracking";
 import type { SnsType } from "@/lib/crm-types";
@@ -26,6 +27,8 @@ export async function POST(_request: Request, context: Context) {
       sellerId: source.sellerId,
       startDate: source.startDate,
       endDate: source.endDate,
+      // 기간 미정(T-313) 원본의 자리표시 날짜를 옮기면 표식도 옮긴다 — 복제본도 기간 미정이다.
+      periodPlaceholderAt: isCampaignPeriodUnset(source) ? source.periodPlaceholderAt : null,
       salesChannel: source.salesChannel,
       baseNaverLink: source.baseNaverLink,
       generatedTrackingLink: "pending",

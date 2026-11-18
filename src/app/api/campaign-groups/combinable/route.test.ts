@@ -121,6 +121,20 @@ describe("GET /api/campaign-groups/combinable", () => {
     expect(body.alreadyGroupedCount).toBe(0);
   });
 
+  it("기간 미정(T-313) 캠페인은 자리표시 날짜가 창에 걸려도 후보에서 뺀다 — 개수에도 넣지 않는다", async () => {
+    const placeholder = new Date("2026-07-02T03:00:00Z");
+    findManyMock.mockResolvedValue([
+      campaignFixture({ id: "dated" }),
+      campaignFixture({ id: "unset", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder }),
+    ]);
+
+    const body = await (await GET(req(BASE_QS))).json();
+
+    expect(findManyMock.mock.calls[0][0].select).toMatchObject({ periodPlaceholderAt: true });
+    expect(body.candidates.map((c: { campaignId: string }) => c.campaignId)).toEqual(["dated"]);
+    expect(body.alreadyGroupedCount).toBe(0);
+  });
+
   it("필수 파라미터 누락은 400", async () => {
     const response = await GET(req("startDate=2026-07-01&endDate=2026-07-05"));
     expect(response.status).toBe(400);

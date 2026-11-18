@@ -26,6 +26,7 @@ import {
   type MoneySlotAmountInput,
 } from "@/lib/tax-filing-board";
 import { campaignInvoiceService } from "@/services/campaignInvoiceService";
+import { blocksStatusForUnsetPeriod } from "@/lib/campaign-period";
 import { assertEntityExists, type WriteActionDefinition, type WriteActionResult } from "./types";
 
 const confirmSettlementArgsSchema = z.object({
@@ -204,6 +205,8 @@ async function handleConfirmSettlement(
   // 캠페인의 달별 공급사 계산서가 남아 있으면 상태 전이만 보류하고 그 사유를 결과 요약에 남긴다.
   const gated = await campaignInvoiceService.gateAutoCompletion(tx, args.campaignId, campaign.status, autoStatus);
   autoStatus = gated.status;
+  // 기간 미정(T-313) — 플래그만 확정하고 허용 밖 상태로는 옮기지 않는다.
+  if (autoStatus && blocksStatusForUnsetPeriod(campaign, autoStatus)) autoStatus = undefined;
   const monthlyCompletionBlocked = gated.blockedReason;
 
   // 레이스-세이프 조건부 쓰기(§3-b step 4). `expect` 에 사전 플래그 false 를 박아 원자화한다 —

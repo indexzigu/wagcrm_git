@@ -87,6 +87,7 @@ export const mockDashboardData: DashboardData = {
       snsHandle: "mina.market",
       startDate: "2026-05-04",
       endDate: "2026-05-10",
+      periodUnset: false,
       salesChannel: "OWN_MALL",
       baseNaverLink: "https://brand.example.com/products/glow-ampoule",
       generatedTrackingLink:
@@ -138,6 +139,7 @@ export const mockDashboardData: DashboardData = {
       snsHandle: "junhome",
       startDate: "2026-05-15",
       endDate: "2026-05-21",
+      periodUnset: false,
       salesChannel: "BRAND_MALL",
       baseNaverLink: "https://brand.example.com/wellness?ref=home",
       generatedTrackingLink:

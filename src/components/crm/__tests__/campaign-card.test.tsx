@@ -128,6 +128,24 @@ describe("CampaignCard — Urgency indicators", () => {
 // Tests: Primary content — seller name + deal name (Requirement 12.4)
 // ---------------------------------------------------------------------------
 
+describe("CampaignCard — 기간 미정(T-313)", () => {
+  it("기간 미정이면 날짜 대신 「미정」을 쓰고 긴급도 색을 매기지 않는다", () => {
+    render(
+      <CampaignCard
+        campaign={makeCampaign({ startDate: "2020-01-01", endDate: "2020-01-01", periodUnset: true })}
+        onOpen={noop}
+        onDelete={noop}
+        onDuplicate={noop}
+      />,
+    );
+
+    expect(screen.queryByText("01.01 ~ 01.01")).toBeNull();
+    const dateSpan = screen.getByText("미정").parentElement;
+    expect(dateSpan).toHaveClass("text-muted-foreground");
+    expect(dateSpan).not.toHaveClass("text-status-urgent-text");
+  });
+});
+
 describe("CampaignCard — Primary content", () => {
   it("displays deal name as primary content", () => {
     render(

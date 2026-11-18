@@ -447,6 +447,7 @@ describe("실렌더 (jsdom) — 그렙이 아니라 실제 DOM class 속성", ()
     snsHandle: "@mina",
     startDate: "2026-01-01",
     endDate: "2026-01-31",
+    periodUnset: false,
     salesChannel: "OWN_MALL",
     baseNaverLink: "",
     generatedTrackingLink: "",
