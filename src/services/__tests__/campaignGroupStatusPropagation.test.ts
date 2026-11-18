@@ -76,14 +76,25 @@ describe("propagateGroupStatus", () => {
       { id: "c1", status: "ACTIVE", salesChannel: "BRAND_MALL", startDate: dated, endDate: dated, periodPlaceholderAt: null },
       { id: "c2", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder },
       { id: "c3", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: dated, endDate: dated, periodPlaceholderAt: placeholder },
-      // An unset sibling sitting in PROPOSAL is held too — the rule is the target status, not the source.
-      { id: "c4", status: "PROPOSAL", salesChannel: "BRAND_MALL", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder },
     ]);
 
     const result = await propagateGroupStatus(tx, { ...BASE, originPreviousStatus: "PREPARATION", status: "ACTIVE" });
 
     expect(membersFindMany.mock.calls[0][0].select).toMatchObject({ periodPlaceholderAt: true });
     expect(result).toEqual([{ id: "c3", previousStatus: "PREPARATION" }]);
+  });
+
+  it("기간 미정 형제도 허용 상태(제안)로의 변경은 따라간다(T-313) — 판정은 목표 상태 기준", async () => {
+    const placeholder = new Date("2026-11-17T03:00:00.000Z");
+    const dated = new Date("2026-11-20T00:00:00.000Z");
+    membersFindMany.mockResolvedValue([
+      { id: "c1", status: "PROPOSAL", salesChannel: "BRAND_MALL", startDate: dated, endDate: dated, periodPlaceholderAt: null },
+      { id: "c2", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder },
+    ]);
+
+    const result = await propagateGroupStatus(tx, { ...BASE, originPreviousStatus: "PREPARATION", status: "PROPOSAL" });
+
+    expect(result).toEqual([{ id: "c2", previousStatus: "PREPARATION" }]);
   });
 
   it("정산 완료 전파는 월별 정산 체크가 남은 형제를 빼고 나머지만 따라가게 한다(T-240)", async () => {

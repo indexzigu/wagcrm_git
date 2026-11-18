@@ -169,7 +169,8 @@ export function CampaignGroupSection({
     return () => {
       cancelled = true;
     };
-    // suggestNonce가 오를 때만 실행. 날짜 변경은 nonce와 함께 오므로 필드 deps 포함해도 1회.
+    // suggestNonce가 오를 때만 실행. 날짜 변경은 nonce와 함께 오므로 필드 deps 포함해도 1회
+    // (periodUnset 이 풀리는 날짜 저장도 같은 변경이라 그 직후 1회 조회된다).
   }, [suggestNonce, groupId, campaign.id, campaign.sellerId, campaign.startDate, campaign.endDate, campaign.periodUnset]);
 
   /**

@@ -100,6 +100,23 @@ afterEach(() => {
 });
 
 describe("그룹으로 묶기 다이얼로그", () => {
+  it("기간 미정이면 묶기 버튼 대신 안내만 보이고, 날짜 기반 합류 제안도 조회하지 않는다(T-313)", async () => {
+    stubFetch({ candidates: [candidate()] });
+    render(
+      <CampaignGroupSection
+        campaign={{ ...ungroupedCampaign(), periodUnset: true } as CampaignRow}
+        suggestNonce={1}
+        onGroupMembershipChanged={onGroupMembershipChanged}
+      />,
+    );
+
+    expect(screen.getByText("캠페인 일정을 정하면 그룹으로 묶을 수 있습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "그룹으로 묶기" })).toBeNull();
+    // Placeholder dates must not drive suggest/combinable lookups.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/api/campaign-groups/"))).toBe(false);
+  });
+
   it("미그룹 후보를 고르면 현재 캠페인을 포함해 그룹 생성을 요청한다", async () => {
     stubFetch({ candidates: [candidate()] });
     await openDialog();
