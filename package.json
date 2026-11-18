@@ -45,6 +45,7 @@
     "guard:commit": "node scripts/commit-guard.mjs --staged",
     "release:check": "npm run env:check && npm run verify:cache-policy && npm run verify:release-config && npm run typecheck:scripts && npm run lint && npm run build",
     "board:check": "node scripts/board-drift-check.mjs",
+    "review:hotspots": "node scripts/review-hotspots.mjs",
     "db:generate": "prisma generate && DATABASE_URL=file:./dev.db prisma generate --schema prisma/schema.sqlite.prisma",
     "db:push": "tsx scripts/sqlite-push.ts",
     "db:sales-task:remote:plan": "node --import tsx scripts/print-sales-task-remote-sync.ts",
