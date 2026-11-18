@@ -284,8 +284,9 @@ describe("expansion-loop.sh", () => {
   });
 
   // CI runs on Linux: GNU `stat -f %m X` exits 1 but still prints file-system info to stdout,
-  // so a BSD-first mtime probe must not trust that output.
-  it("GNU stat host: stale lock is still reclaimed (age is numeric)", () => {
+  // so a BSD-first mtime probe must not trust that output. The imitation shells out to BSD stat,
+  // so it only runs on macOS; on Linux the real stat is GNU and the lock tests above cover it.
+  it.skipIf(process.platform !== "darwin")("GNU stat host: stale lock is still reclaimed (age is numeric)", () => {
     mkdirSync(lockDir(), { recursive: true });
     const old = new Date(Date.now() - 3600_000);
     utimesSync(lockDir(), old, old);
