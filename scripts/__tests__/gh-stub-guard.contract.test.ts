@@ -22,6 +22,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  CMD_STUB_WRAPPER_BODY,
+  CMD_STUB_WRAPPER_DIR_NAME,
   CURL_STUB_WRAPPER_BODY,
   CURL_STUB_WRAPPER_DIR_NAME,
   GH_STUB_WRAPPER_BODY,
@@ -140,5 +142,16 @@ describe("고정 래퍼는 본문과 버전이 한 쌍으로 움직인다", () =
 
   it("curl 래퍼도 스텁 본문을 **데이터로** 실행한다", () => {
     expect(CURL_STUB_WRAPPER_BODY).toContain('bash "$CURL_STUB_IMPL"');
+  });
+
+  it("이름 기반 범용 래퍼도 본문과 버전이 한 쌍으로 움직인다", () => {
+    expect(CMD_STUB_WRAPPER_DIR_NAME).toBe("wagcrm-cmd-stub-v1");
+    expect(CMD_STUB_WRAPPER_BODY).toBe(
+      '#!/usr/bin/env bash\nn="${0##*/}"; v="WAGCRM_STUB_${n//[^A-Za-z0-9]/_}"; exec bash "${!v}" "$@"\n',
+    );
+  });
+
+  it("범용 래퍼도 스텁 본문을 **데이터로** 실행한다", () => {
+    expect(CMD_STUB_WRAPPER_BODY).toContain('exec bash "${!v}"');
   });
 });

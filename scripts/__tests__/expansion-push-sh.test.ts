@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, chmodSync, realpathSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -433,10 +433,10 @@ describe("expansion-push.sh", () => {
   });
   it("push 가 거절되면 BLOCKED: git push 실패", () => {
     setup(OK_CHECKER);
-    const hook = join(origin, "hooks/pre-receive");
-    mkdirSync(join(origin, "hooks"), { recursive: true });
-    writeFileSync(hook, "#!/bin/sh\nexit 1\n");
-    chmodSync(hook, 0o755);
+    // 원격 거절은 실행파일 훅 대신 ref 충돌로 만든다(gh-stub-guard 계약): refs/heads/exp 가 파일 ref 이면
+    // refs/heads/exp/<slug> 를 만들 수 없어 push 가 실패한다.
+    const g = (...a: string[]) => execFileSync("git", ["--git-dir", origin, ...a], { encoding: "utf8" }).trim();
+    g("update-ref", "refs/heads/exp", g("rev-parse", "refs/heads/main"));
     const r = run();
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("BLOCKED: git push 실패");

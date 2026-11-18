@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, utimesSync, mkdirSync, writeFileSync, chmodSync, existsSync, readFileSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, utimesSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, readdirSync } from "node:fs";
+import { writeCmdStub } from "./helpers/gh-stub";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -12,11 +13,13 @@ let home: string;
 let repo: string;
 let bin: string;
 
+// 가짜 명령은 실행 권한 없는 데이터 본문 + 고정 래퍼 링크로 만든다(gh-stub-guard 계약).
+// 래퍼가 본문을 찾는 env 는 stubEnv 에 모아 run()·sql() 이 피시험 프로세스에 넘긴다.
+let stubEnv: Record<string, string> = {};
 const script = (name: string, body: string) => {
-  const p = join(bin, name);
-  writeFileSync(p, `#!/bin/bash\n${body}\n`);
-  chmodSync(p, 0o755);
-  return p;
+  const s = writeCmdStub(bin, name, `${body}\n`);
+  Object.assign(stubEnv, s.env);
+  return s.path;
 };
 const cronLog = () => {
   const p = join(home, "selfhost/logs/cron.log");
@@ -25,6 +28,7 @@ const cronLog = () => {
 const lockDir = () => join(home, "selfhost/locks/expansion-loop");
 
 beforeEach(() => {
+  stubEnv = {};
   root = mkdtempSync(join(tmpdir(), "exp-loop-"));
   home = join(root, "home");
   repo = join(root, "repo");
@@ -46,6 +50,7 @@ const run = (claude: string | null, extra: Record<string, string> = {}) => {
       EXPANSION_REPO: repo,
       EXPANSION_POST_BIN: post,
       EXPANSION_HERMES_DIR: "/h",
+      ...stubEnv,
       ...(claude ? { EXPANSION_CLAUDE_BIN: claude } : {}),
       ...extra,
     },
@@ -187,9 +192,7 @@ describe("expansion-loop.sh", () => {
   it("I4: node 가 깨지면 그 stderr 첫 줄을 사유에 붙이고 cost=unknown", () => {
     const fakeBin = join(root, "fakebin");
     mkdirSync(fakeBin);
-    const node = join(fakeBin, "node");
-    writeFileSync(node, "#!/bin/bash\necho zz-node-broken >&2\nexit 127\n");
-    chmodSync(node, 0o755);
+    Object.assign(stubEnv, writeCmdStub(fakeBin, "node", "echo zz-node-broken >&2\nexit 127\n").env);
     const c = script("claude-ok-nodeless", OK_CARDS());
     const r = run(c, { PATH: `${fakeBin}:${process.env.PATH ?? ""}` });
     expect(r.status).toBe(1);
@@ -316,7 +319,7 @@ describe("expansion-readonly-sql.sh", () => {
     const dockerLog = join(root, "docker.log");
     script("docker", `echo "PGOPTIONS_ARGS: $@" >> "${dockerLog}"`);
     const r = spawnSync("/bin/bash", [SQL, arg], {
-      env: { PATH: `${bin}:${process.env.PATH ?? ""}`, HOME: home },
+      env: { PATH: `${bin}:${process.env.PATH ?? ""}`, HOME: home, ...stubEnv },
       encoding: "utf8",
     });
     return { r, called: existsSync(dockerLog) ? readFileSync(dockerLog, "utf8") : "" };
