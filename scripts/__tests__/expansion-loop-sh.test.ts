@@ -387,11 +387,12 @@ describe("expansion-readonly-sql.sh", () => {
     expect(called).toBe("");
   });
 
-  it("data-modifying CTE reaches docker as postgres with read-only session, never supabase_admin", () => {
+  it("data-modifying CTE reaches docker as wag_expansion_ro with read-only session, never supabase_admin", () => {
     const { r, called } = sql("WITH d AS (DELETE FROM x RETURNING *) SELECT * FROM d");
     expect(r.status).toBe(0);
     expect(called).toContain("PGOPTIONS=-c default_transaction_read_only=on");
-    expect(called).toContain("-U postgres");
+    expect(called).toContain("-h 127.0.0.1 -U wag_expansion_ro ");
+    expect(called).not.toContain("-U postgres");
     expect(called).not.toContain("supabase_admin");
   });
 
@@ -407,7 +408,8 @@ describe("expansion-readonly-sql.sh", () => {
   it.each(["select 1", "select lower(name) from t", "select\n 1\t", 'select "createdAt" from "Campaign" where id = 1'])("negative control passes: %j", (q) => {
     const { r, called } = sql(q);
     expect(r.status).toBe(0);
-    expect(called).toContain("-U postgres");
+    expect(called).toContain("-h 127.0.0.1 -U wag_expansion_ro ");
+    expect(called).not.toContain("-U postgres");
   });
 
   it.each([
