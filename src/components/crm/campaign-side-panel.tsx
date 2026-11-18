@@ -910,7 +910,7 @@ export function CampaignSidePanel({
             <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
               <div className="text-xs font-semibold text-foreground">캠페인 일정</div>
               {periodUnset ? (
-                <p className="text-[11px] text-muted-foreground">두 날짜를 모두 고르면 저장됩니다</p>
+                <p className="text-xs text-muted-foreground">두 날짜를 모두 고르면 저장됩니다</p>
               ) : null}
               <div className="grid grid-cols-2 gap-4">
                 <div className="group/date flex items-center justify-between gap-2 rounded-md bg-white border border-slate-100 hover:bg-accent/30 px-3 py-1.5 shadow-soft-sm">

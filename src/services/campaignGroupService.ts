@@ -5,7 +5,7 @@ import {
   type CampaignGroupRollupUpdate,
 } from "@/repositories/campaignGroupRepository";
 import { generateGroupName } from "@/lib/campaign-group-name";
-import { isCampaignPeriodUnset } from "@/lib/campaign-period";
+import { blocksStatusForUnsetPeriod } from "@/lib/campaign-period";
 import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 import type { CampaignGroup, Prisma } from "@prisma/client";
 
@@ -469,9 +469,9 @@ export async function propagateGroupStatus(
       m.id !== originCampaignId &&
       !GROUP_STATUS_NON_FOLLOWING_SIBLINGS.includes(m.status) &&
       m.status !== status &&
-      // 기간 미정(T-313) 준비 멤버는 날짜를 정하기 전까지 준비에 머문다 — 그룹이 끌고 가지 않는다
-      // (campaignPatchService 의 준비 이탈 가드와 같은 규칙; DROPPED 는 위에서 이미 비전파).
-      !(m.status === "PREPARATION" && isCampaignPeriodUnset(m)) &&
+      // 기간 미정(T-313) 멤버는 날짜를 정하기 전까지 허용 상태(제안·세팅대기·드랍) 밖으로
+      // 끌려가지 않는다 — campaignPatchService 의 수동 변경 가드와 같은 판정이다.
+      !blocksStatusForUnsetPeriod(m, status) &&
       (input.isSiblingEligible ? input.isSiblingEligible(m) : true),
   );
   if (targets.length === 0) return [];

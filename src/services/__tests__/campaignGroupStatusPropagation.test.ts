@@ -76,6 +76,8 @@ describe("propagateGroupStatus", () => {
       { id: "c1", status: "ACTIVE", salesChannel: "BRAND_MALL", startDate: dated, endDate: dated, periodPlaceholderAt: null },
       { id: "c2", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder },
       { id: "c3", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: dated, endDate: dated, periodPlaceholderAt: placeholder },
+      // An unset sibling sitting in PROPOSAL is held too — the rule is the target status, not the source.
+      { id: "c4", status: "PROPOSAL", salesChannel: "BRAND_MALL", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder },
     ]);
 
     const result = await propagateGroupStatus(tx, { ...BASE, originPreviousStatus: "PREPARATION", status: "ACTIVE" });

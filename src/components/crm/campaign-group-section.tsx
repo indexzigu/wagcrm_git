@@ -151,6 +151,8 @@ export function CampaignGroupSection({
   useEffect(() => {
     if (!suggestNonce) return; // 0/undefined = 패널 오픈. 이벤트 없이는 조회 안 함.
     if (groupId) return; // 이미 그룹 소속이면 합류 제안 없음(병합 미지원).
+    // 기간 미정(T-313)이면 날짜가 자리표시라 날짜로 찾는 합류 제안이 무의미하다.
+    if (campaign.periodUnset) return;
     let cancelled = false;
     fetchActiveSuggestions({
       sellerId: campaign.sellerId,
@@ -168,7 +170,7 @@ export function CampaignGroupSection({
       cancelled = true;
     };
     // suggestNonce가 오를 때만 실행. 날짜 변경은 nonce와 함께 오므로 필드 deps 포함해도 1회.
-  }, [suggestNonce, groupId, campaign.id, campaign.sellerId, campaign.startDate, campaign.endDate]);
+  }, [suggestNonce, groupId, campaign.id, campaign.sellerId, campaign.startDate, campaign.endDate, campaign.periodUnset]);
 
   /**
    * 멤버십이 바뀐 캠페인들을 다시 읽어 상위 목록에 흘려보낸다(SSOT 에 얇게 위임).
@@ -624,15 +626,20 @@ export function CampaignGroupSection({
         이 캠페인은 그룹에 속해 있지 않습니다.
       </p>
 
-      <GroupCombineDialog
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        campaign={campaign}
-        joiningGroupId={joiningGroupId}
-        combining={combining}
-        onJoin={handleJoin}
-        onCombine={handleCombine}
-      />
+      {/* 기간 미정(T-313) — 묶기 후보는 날짜로 찾으므로 일정을 정한 뒤에 연다(자리표시 날짜로 엉뚱한 후보가 뜨지 않게). */}
+      {campaign.periodUnset ? (
+        <p className="text-xs text-muted-foreground">캠페인 일정을 정하면 그룹으로 묶을 수 있습니다.</p>
+      ) : (
+        <GroupCombineDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          campaign={campaign}
+          joiningGroupId={joiningGroupId}
+          combining={combining}
+          onJoin={handleJoin}
+          onCombine={handleCombine}
+        />
+      )}
     </section>
   );
 }
