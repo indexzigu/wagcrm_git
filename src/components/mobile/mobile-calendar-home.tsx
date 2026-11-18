@@ -142,6 +142,8 @@ export function MobileCalendarHome({
       status: calendarItem.status,
       startDate: calendarItem.startDate,
       endDate: calendarItem.endDate,
+      // 기간 미정(T-313) 캠페인은 달력 데이터에서 이미 빠진다(mobile-calendar-data) — 여기 오는 항목은 기간이 있다.
+      periodUnset: false,
       // ⛔ 이 세 줄을 빼지 말 것 — 상세 시트의 대금 줄도 슬롯 파생이라(#458) 채널이
       // 없으면 **타입 에러 없이** 기본(셀러몰) 구성으로 접힌다. 자사몰 항목을 캘린더에서
       // 열면 있지도 않은 입금 줄이 서고 공급사 지급 줄이 사라진다(침묵형 오표시).
@@ -177,6 +179,7 @@ export function MobileCalendarHome({
         status: member.status,
         startDate: member.startDate,
         endDate: member.endDate,
+        periodUnset: false,
         settlementSales: member.settlementSales,
         actualSales: member.actualSales,
         sellerExpense: member.sellerExpense,

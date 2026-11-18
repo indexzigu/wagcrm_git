@@ -276,6 +276,91 @@ describe("syncCampaignStatusesBySchedule (DB 전이 실행)", () => {
   });
 });
 
+// T-313 Part A: a campaign created from outreach has no period yet — its dates are a placeholder
+// (`periodPlaceholderAt`). The schedule transition must not read the placeholder as a real period.
+describe("기간 미정 캠페인은 일정 자동전이에서 빠진다 (T-313)", () => {
+  const placeholder = new Date("2026-09-01T03:00:00.000Z");
+  const unsetPrep: CampaignStatusSyncCandidate = {
+    id: "camp-unset",
+    status: "PREPARATION",
+    startDate: placeholder,
+    endDate: placeholder,
+    periodPlaceholderAt: placeholder,
+  };
+
+  it("기한이 지난 것처럼 보여도 판정은 NONE 이다", () => {
+    const verdict = resolveScheduledCampaignStatus(unsetPrep, new Date("2026-09-09T09:00:00+09:00"));
+    expect(verdict.targetStatus).toBeNull();
+    expect(verdict.reason).toBe("NONE");
+  });
+
+  it("자리표시 당일에도 진행 전환하지 않는다", () => {
+    const verdict = resolveScheduledCampaignStatus(unsetPrep, new Date("2026-09-01T12:00:00+09:00"));
+    expect(verdict.targetStatus).toBeNull();
+    expect(verdict.reason).toBe("NONE");
+  });
+
+  it("날짜를 한쪽만 정하면 아직 미정이라 전이하지 않는다", () => {
+    const halfDated = { ...unsetPrep, endDate: new Date("2026-09-05T00:00:00.000Z") };
+    const verdict = resolveScheduledCampaignStatus(halfDated, new Date("2026-09-09T09:00:00+09:00"));
+    expect(verdict.reason).toBe("NONE");
+  });
+
+  it("시작일·종료일을 모두 정하면 다시 일정대로 판정한다", () => {
+    const dated = {
+      ...unsetPrep,
+      startDate: new Date("2026-09-02T00:00:00.000Z"),
+      endDate: new Date("2026-09-05T00:00:00.000Z"),
+    };
+    const verdict = resolveScheduledCampaignStatus(dated, new Date("2026-09-09T09:00:00+09:00"));
+    expect(verdict.reason).toBe("EXPIRED_TO_CLOSED");
+  });
+
+  it("후보 조회가 periodPlaceholderAt 을 읽고, 기간 미정 후보는 쓰지 않는다", async () => {
+    const salesCampaign = {
+      findMany: vi.fn().mockResolvedValue([{ ...unsetPrep, groupId: null }]),
+      update: vi.fn(),
+    };
+    const fakePrisma = { salesCampaign, $transaction: vi.fn() };
+
+    const result = await syncCampaignStatusesBySchedule(fakePrisma as any, new Date("2026-09-09T09:00:00+09:00"));
+
+    expect(salesCampaign.findMany.mock.calls[0][0].select).toMatchObject({ periodPlaceholderAt: true });
+    expect(result.updatedCampaignIds).toEqual([]);
+    expect(fakePrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("그룹 형제가 기간 미정이면 원본이 진행으로 가도 따라가지 않는다", async () => {
+    const dated = { startDate: new Date("2026-08-25T00:00:00.000Z"), endDate: new Date("2026-09-20T00:00:00.000Z") };
+    const candidates = [{ id: "a", status: "PREPARATION", ...dated, groupId: "g1", periodPlaceholderAt: null }];
+    const members = [
+      { id: "a", status: "ACTIVE", salesChannel: "BRAND_MALL", ...dated, periodPlaceholderAt: null },
+      // Unset sibling whose placeholder is "today" — without the guard it would be judged STARTED_TO_ACTIVE.
+      { id: "b", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder },
+    ];
+    const txUpdate = vi.fn().mockResolvedValue({});
+    const txUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const membersFindMany = vi.fn().mockResolvedValue(members);
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(0),
+      campaignGroup: { findUnique: vi.fn().mockResolvedValue({ id: "g1", sellerId: "s1" }) },
+      salesCampaign: { update: txUpdate, findMany: membersFindMany, updateMany: txUpdateMany },
+      campaignActivity: { createMany: vi.fn() },
+    };
+    const fakePrisma = {
+      salesCampaign: { findMany: vi.fn().mockResolvedValue(candidates) },
+      $transaction: vi.fn(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
+    };
+
+    const result = await syncCampaignStatusesBySchedule(fakePrisma as any, new Date("2026-09-01T12:00:00+09:00"));
+
+    expect(txUpdate).toHaveBeenCalledWith({ where: { id: "a" }, data: { status: "ACTIVE" } });
+    expect(membersFindMany.mock.calls[0][0].select).toMatchObject({ periodPlaceholderAt: true });
+    expect(txUpdateMany).not.toHaveBeenCalled();
+    expect(result.propagatedSiblingIds).toEqual([]);
+  });
+});
+
 /** 락 단언은 env 에 따라 갈린다(sqlite 면 락 생략) — postgres 갈래를 명시 env 로 고정한다(P9). */
 async function withPostgresUrl<T>(fn: () => Promise<T>): Promise<T> {
   const saved = process.env.DATABASE_URL;

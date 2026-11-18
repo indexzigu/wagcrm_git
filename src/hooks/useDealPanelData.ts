@@ -10,6 +10,8 @@ export type LinkedCampaign = {
   status: string;
   startDate: string;
   endDate: string;
+  /** 기간 미정(T-313) — true 면 날짜는 자리표시다. 구 응답엔 없을 수 있어 비면 false. */
+  periodUnset: boolean;
 };
 
 /**
@@ -105,6 +107,7 @@ export function useDealPanelData({
             status: campaign.status as string,
             startDate: campaign.startDate as string,
             endDate: campaign.endDate as string,
+            periodUnset: campaign.periodUnset === true,
           })),
         );
         setLinkedCampaigns(filtered);

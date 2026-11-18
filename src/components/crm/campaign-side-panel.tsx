@@ -173,7 +173,14 @@ async function saveCampaignField(
   field: string,
   value: string | number
 ): Promise<{ success: boolean; data?: CampaignRow; error?: string }> {
-  const result = await patchCampaign<CampaignRow>(campaignId, { [field]: value }, { preferServerError: true });
+  return saveCampaignFields(campaignId, { [field]: value });
+}
+
+async function saveCampaignFields(
+  campaignId: string,
+  body: Record<string, string | number>,
+): Promise<{ success: boolean; data?: CampaignRow; error?: string }> {
+  const result = await patchCampaign<CampaignRow>(campaignId, body, { preferServerError: true });
   if (!result.ok) {
     return { success: false, error: result.error };
   }
@@ -193,9 +200,16 @@ type InlineDateEditProps = {
   /** For startDate validation: the current endDate */
   endDate?: string;
   onSaved: (updated: CampaignRow) => void;
+  /**
+   * 기간 미정(T-313) 모드. 저장된 날짜가 자리표시라 칸을 비워 두고(「미정」) 오너가 고르게 한다.
+   * 한 칸만 저장하면 다른 칸에 자리표시 날짜가 진짜 날짜처럼 남으므로, 짝 칸이 비어 있으면 고른
+   * 날짜를 화면에만 들고 있다가(`onPending`) 둘 다 고르면 시작일·종료일을 **한 요청으로** 저장한다.
+   * 이때 `value` 는 이 칸에 고른(아직 저장 안 한) 날짜 또는 "", `startDate`/`endDate` 는 짝 칸 값.
+   */
+  unsetPeriod?: { onPending: (value: string) => void };
 };
 
-function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved }: InlineDateEditProps) {
+function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved, unsetPeriod }: InlineDateEditProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [optimistic, setOptimistic] = useState<string | null>(null);
   const [flashError, setFlashError] = useState(false);
@@ -206,7 +220,9 @@ function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved 
   // Format for display: YYYY-MM-DD → YYYY.MM.DD
   const displayFormatted = displayValue
     ? displayValue.replace(/-/g, ".")
-    : "-";
+    : unsetPeriod
+      ? "미정"
+      : "-";
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -241,10 +257,26 @@ function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved 
         }
       }
 
-      setOptimistic(newValue);
       setErrorMsg(null);
 
-      const result = await saveCampaignField(campaignId, field, newValue);
+      // 기간 미정: 짝 칸이 아직 비었으면 저장하지 않고 고른 날짜만 들고 있는다.
+      const pairedValue = field === "startDate" ? endDate : startDate;
+      if (unsetPeriod && !pairedValue) {
+        unsetPeriod.onPending(newValue);
+        return;
+      }
+
+      setOptimistic(newValue);
+
+      const result =
+        unsetPeriod && pairedValue
+          ? await saveCampaignFields(
+              campaignId,
+              field === "startDate"
+                ? { startDate: newValue, endDate: pairedValue }
+                : { startDate: pairedValue, endDate: newValue },
+            )
+          : await saveCampaignField(campaignId, field, newValue);
       if (!result.success) {
         setOptimistic(null);
         setFlashError(true);
@@ -257,8 +289,11 @@ function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved 
       setOptimistic(null);
       // 그룹 캠페인은 일정이 통합 운영되므로 이 저장이 형제 멤버에도 함께 반영된다
       // (`fanOutMemberSchedule`). 되돌릴 수 없는 변경이라 몇 건이 함께 바뀌었는지 고지한다.
-      const baseMessage =
-        field === "startDate" ? "시작일이 변경되었습니다" : "마감일이 변경되었습니다";
+      const baseMessage = unsetPeriod
+        ? "판매 기간이 저장되었습니다"
+        : field === "startDate"
+          ? "시작일이 변경되었습니다"
+          : "마감일이 변경되었습니다";
       const syncedCount = result.data?.groupScheduleSyncedCount ?? 0;
       toast.success(
         syncedCount > 0
@@ -267,7 +302,7 @@ function InlineDateEdit({ value, field, campaignId, startDate, endDate, onSaved 
       );
       if (result.data) onSaved(result.data);
     },
-    [displayValue, field, campaignId, startDate, endDate, onSaved]
+    [displayValue, field, campaignId, startDate, endDate, onSaved, unsetPeriod]
   );
 
   if (isEditing) {
@@ -421,6 +456,22 @@ export function CampaignSidePanel({
   // CG-1 표면 ⓑ: 날짜 수정 이벤트마다 증가. 그룹 섹션은 이 값이 오를 때만 합류 제안을 재조회.
   const [groupSuggestNonce, setGroupSuggestNonce] = useState(0);
 
+  // 기간 미정(T-313): 한 칸만 고른 날짜는 저장하지 않고 여기 들고 있다가 두 칸이 다 차면 한 번에
+  // 저장한다(InlineDateEdit `unsetPeriod`). 다른 캠페인으로 바뀌면 들고 있던 값은 버린다(id 로 판정).
+  const [pendingPeriodState, setPendingPeriodState] = useState<{
+    campaignId: string | null;
+    startDate: string | null;
+    endDate: string | null;
+  }>({ campaignId: null, startDate: null, endDate: null });
+  const periodUnset = campaign?.periodUnset ?? false;
+  const pendingPeriod =
+    pendingPeriodState.campaignId === (campaign?.id ?? null)
+      ? pendingPeriodState
+      : { campaignId: null, startDate: null, endDate: null };
+  const setPendingDate = (field: "startDate" | "endDate", value: string) => {
+    setPendingPeriodState({ ...pendingPeriod, campaignId: campaign?.id ?? null, [field]: value });
+  };
+
   // 캠페인이 바뀌면(패널 오픈·형제 이동) 제안 nonce를 리셋 — 오픈만으로는 제안하지 않는다.
   useEffect(() => {
     setGroupSuggestNonce(0);
@@ -527,12 +578,12 @@ export function CampaignSidePanel({
     },
     {
       label: "캠페인 시작",
-      value: formatCampaignActionDate(campaign.startDate) ?? campaign.startDate,
+      value: campaign.periodUnset ? "미정" : (formatCampaignActionDate(campaign.startDate) ?? campaign.startDate),
       detail: campaign.sellerName,
     },
     {
       label: "캠페인 마감",
-      value: formatCampaignActionDate(campaign.endDate) ?? campaign.endDate,
+      value: campaign.periodUnset ? "미정" : (formatCampaignActionDate(campaign.endDate) ?? campaign.endDate),
       detail: campaign.partnerName,
     },
     ...(action.dueDate
@@ -858,15 +909,19 @@ export function CampaignSidePanel({
           <div className="border-t border-border pt-4 mt-4">
             <div className="space-y-2 rounded-2xl border border-border bg-card p-4">
               <div className="text-xs font-semibold text-foreground">캠페인 일정</div>
+              {periodUnset ? (
+                <p className="text-[11px] text-muted-foreground">두 날짜를 모두 고르면 저장됩니다</p>
+              ) : null}
               <div className="grid grid-cols-2 gap-4">
                 <div className="group/date flex items-center justify-between gap-2 rounded-md bg-white border border-slate-100 hover:bg-accent/30 px-3 py-1.5 shadow-soft-sm">
                   <span className="text-xs font-medium text-slate-600 shrink-0">시작일</span>
                   <div className="w-28 shrink-0">
                     <InlineDateEdit
-                      value={campaign.startDate}
+                      value={periodUnset ? (pendingPeriod.startDate ?? "") : campaign.startDate}
                       field="startDate"
                       campaignId={campaign.id}
-                      endDate={campaign.endDate}
+                      endDate={periodUnset ? (pendingPeriod.endDate ?? undefined) : campaign.endDate}
+                      unsetPeriod={periodUnset ? { onPending: (value) => setPendingDate("startDate", value) } : undefined}
                       onSaved={(updated) => {
                         onCampaignUpdated(updated);
                         setGroupSuggestNonce((n) => n + 1);
@@ -878,10 +933,11 @@ export function CampaignSidePanel({
                   <span className="text-xs font-medium text-slate-600 shrink-0">판매종료일</span>
                   <div className="w-28 shrink-0">
                     <InlineDateEdit
-                      value={campaign.endDate}
+                      value={periodUnset ? (pendingPeriod.endDate ?? "") : campaign.endDate}
                       field="endDate"
                       campaignId={campaign.id}
-                      startDate={campaign.startDate}
+                      startDate={periodUnset ? (pendingPeriod.startDate ?? undefined) : campaign.startDate}
+                      unsetPeriod={periodUnset ? { onPending: (value) => setPendingDate("endDate", value) } : undefined}
                       onSaved={(updated) => {
                         onCampaignUpdated(updated);
                         setGroupSuggestNonce((n) => n + 1);

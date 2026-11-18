@@ -35,6 +35,7 @@ function campaign(overrides: Partial<CampaignRow> = {}): CampaignRow {
     snsHandle: "seller",
     startDate: "2026-09-01",
     endDate: "2026-09-07",
+    periodUnset: false,
     salesChannel: "BRAND_MALL",
     baseNaverLink: "",
     generatedTrackingLink: "",

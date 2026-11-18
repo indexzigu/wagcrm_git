@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CAMPAIGN_FINANCIAL_STALE_CODE } from "./campaign-financial-guard";
+import { CAMPAIGN_PERIOD_REQUIRED_CODE, CAMPAIGN_PERIOD_REQUIRED_MESSAGE } from "./campaign-period";
 import {
   CAMPAIGN_FINANCIAL_STALE_MESSAGE,
   CAMPAIGN_GROUP_CONFLICT_MESSAGE,
@@ -123,6 +124,22 @@ describe("campaign-patch — 409 그룹 충돌 안내", () => {
     expect(result.stale).toBe(true);
     expect(result.conflict).toBe(false);
     expect(result.error).toBe(CAMPAIGN_FINANCIAL_STALE_MESSAGE);
+  });
+
+  it("기간 미정 거절(code 동반 409, T-313)은 그룹 문구가 아니라 그 사유를 그대로 보여준다 — 재시도 대상 아님", async () => {
+    stubFetch({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: CAMPAIGN_PERIOD_REQUIRED_MESSAGE, code: CAMPAIGN_PERIOD_REQUIRED_CODE }),
+    });
+
+    const result = await patchCampaign("c1", { status: "ACTIVE" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.conflict).toBe(false);
+    expect(result.stale).toBeUndefined();
+    expect(result.error).toBe(CAMPAIGN_PERIOD_REQUIRED_MESSAGE);
   });
 
   it("409 가 아닌 실패는 conflict 로 표시하지 않는다 — 재시도해도 소용없다", async () => {

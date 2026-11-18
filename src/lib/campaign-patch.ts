@@ -16,6 +16,7 @@
  */
 
 import { CAMPAIGN_FINANCIAL_STALE_CODE } from "@/lib/campaign-financial-guard";
+import { CAMPAIGN_PERIOD_REQUIRED_CODE, CAMPAIGN_PERIOD_REQUIRED_MESSAGE } from "@/lib/campaign-period";
 
 /**
  * 그룹 멤버십 충돌(409) 안내 — 문구 정본. 호출처에서 다시 적지 말 것.
@@ -112,6 +113,10 @@ async function requestCampaignPatch<T>(
           conflict: false,
           stale: true,
         };
+      }
+      // 기간 미정 캠페인의 준비 이탈 거절(T-313) — 재시도해도 소용없으니 그 사유를 그대로 보여준다.
+      if (payload.code === CAMPAIGN_PERIOD_REQUIRED_CODE) {
+        return { ok: false, error: CAMPAIGN_PERIOD_REQUIRED_MESSAGE, status: 409, conflict: false };
       }
       return {
         ok: false,

@@ -25,6 +25,7 @@ function makeCampaign(overrides: Partial<CampaignRow>): CampaignRow {
     snsHandle: "@test",
     startDate: "2025-01-01",
     endDate: "2025-01-31",
+    periodUnset: false,
     salesChannel: "OWN_MALL",
     baseNaverLink: "",
     generatedTrackingLink: "",

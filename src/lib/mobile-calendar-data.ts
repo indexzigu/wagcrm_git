@@ -1,5 +1,6 @@
 import type { SalesChannel } from "@/lib/crm-types";
 import { getPrisma } from "@/lib/prisma";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 
 /**
  * 모바일 캘린더 홈의 월 데이터. 캠페인 기간∩월 뿐 아니라
@@ -99,7 +100,9 @@ export async function getCalendarMonthCampaigns(
     orderBy: { startDate: "asc" },
   });
 
-  return campaigns.map((c) => {
+  // 기간 미정(T-313) 캠페인의 날짜는 자리표시라 달력에 세우지 않는다 — 데스크톱 /calendar 와
+  // 모바일 /schedule 이 이 로더 하나를 쓴다. 준비 단계라 자금 마커도 없다.
+  return campaigns.filter((c) => !isCampaignPeriodUnset(c)).map((c) => {
     // CG-2 dual-read: 그룹 캠페인은 그룹 값이 정본 — 그룹 값이 null이어도 캠페인
     // 잔존 스칼라로 폴백하지 않는다. 그룹 캠페인의 정산 필드 쓰기는 그룹 레코드로만
     // 가고 캠페인 스칼라는 그룹핑 시점에 얼어붙으므로(campaigns route의

@@ -5,6 +5,7 @@ import { isValidTransition } from "@/lib/deal-status";
 import { recordActivityCreate, recordActivityChange, recordActivityDelete, FIELD_LABELS, getCompareValue } from "@/lib/activity-log";
 import { googleDriveProvider } from "@/lib/asset-storage";
 import { getPrisma } from "@/lib/prisma";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 
 // --- Helpers ---
 
@@ -85,6 +86,7 @@ function serializeDealResponse(
       salesChannel: string;
       startDate: Date;
       endDate: Date;
+      periodPlaceholderAt: Date | null;
       actualSales: { toString(): string } | null;
       seller: { name: string; alias: string | null };
     }>;
@@ -121,6 +123,8 @@ function serializeDealResponse(
       sellerName: campaign.seller.alias || campaign.seller.name,
       startDate: campaign.startDate,
       endDate: campaign.endDate,
+      // 기간 미정(T-313) — 연결된 캠페인 목록이 자리표시 날짜 대신 「미정」을 쓴다.
+      periodUnset: isCampaignPeriodUnset(campaign),
       status: campaign.status,
       salesChannel: campaign.salesChannel,
       actualSales: toNumber(campaign.actualSales),

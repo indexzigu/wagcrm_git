@@ -50,6 +50,7 @@ const campaignRowArb = fc
     snsType: snsTypeArb,
     startDate: isoDateArb,
     endDate: isoDateArb,
+    periodUnset: fc.constant(false),
     salesChannel: salesChannelArb,
     status: campaignStatusArb,
     actualSales: fc.oneof(fc.constant(null), fc.integer({ min: 0, max: 10_000_000 })),

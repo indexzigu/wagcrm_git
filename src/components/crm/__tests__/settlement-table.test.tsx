@@ -49,6 +49,7 @@ const campaign: CampaignRow = {
   snsHandle: "@mina",
   startDate: "2026-01-01",
   endDate: "2026-01-31",
+  periodUnset: false,
   salesChannel: "OWN_MALL",
   baseNaverLink: "",
   generatedTrackingLink: "",

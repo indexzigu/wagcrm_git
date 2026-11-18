@@ -12,6 +12,7 @@ function createCampaign(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date("2026-06-25T00:00:00Z"),
     startDate: new Date("2026-06-23T00:00:00Z"),
     endDate: new Date("2026-06-30T00:00:00Z"),
+    periodPlaceholderAt: null,
     salesChannel: "OWN_MALL",
     baseNaverLink: "",
     generatedTrackingLink: "",

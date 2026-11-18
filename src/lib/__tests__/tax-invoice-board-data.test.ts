@@ -26,6 +26,7 @@ function narrow(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date("2026-10-01T00:00:00Z"),
     startDate: new Date("2026-09-01T00:00:00Z"),
     endDate: new Date("2026-09-10T00:00:00Z"),
+    periodPlaceholderAt: null,
     salesChannel: "SELLER_MALL",
     baseNaverLink: "",
     generatedTrackingLink: "",

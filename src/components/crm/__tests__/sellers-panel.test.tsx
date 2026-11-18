@@ -97,6 +97,7 @@ const baseSeller: SellerPanelData = {
       partnerName: null,
       startDate: "2024-03-01",
       endDate: "2024-03-15",
+      periodUnset: false,
       status: "COMPLETED",
       actualSales: 6200000,
     },

@@ -69,6 +69,21 @@ beforeEach(() => {
 });
 
 describe("propagateGroupStatus", () => {
+  it("기간 미정 준비 형제는 수동 상태 변경에도 따라가지 않는다(T-313) — 날짜가 정해진 준비 형제는 따라간다", async () => {
+    const placeholder = new Date("2026-11-17T03:00:00.000Z");
+    const dated = new Date("2026-11-20T00:00:00.000Z");
+    membersFindMany.mockResolvedValue([
+      { id: "c1", status: "ACTIVE", salesChannel: "BRAND_MALL", startDate: dated, endDate: dated, periodPlaceholderAt: null },
+      { id: "c2", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder },
+      { id: "c3", status: "PREPARATION", salesChannel: "BRAND_MALL", startDate: dated, endDate: dated, periodPlaceholderAt: placeholder },
+    ]);
+
+    const result = await propagateGroupStatus(tx, { ...BASE, originPreviousStatus: "PREPARATION", status: "ACTIVE" });
+
+    expect(membersFindMany.mock.calls[0][0].select).toMatchObject({ periodPlaceholderAt: true });
+    expect(result).toEqual([{ id: "c3", previousStatus: "PREPARATION" }]);
+  });
+
   it("정산 완료 전파는 월별 정산 체크가 남은 형제를 빼고 나머지만 따라가게 한다(T-240)", async () => {
     membersFindMany.mockResolvedValue(
       members(["c1", "COMPLETED"], ["c2", "SETTLEMENT_IN_PROGRESS"], ["c3", "SETTLEMENT_IN_PROGRESS"]),

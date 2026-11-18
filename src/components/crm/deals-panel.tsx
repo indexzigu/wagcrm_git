@@ -719,6 +719,7 @@ function DealsPanelContent({
               brandName: deal.brandName,
               startDate: c.startDate,
               endDate: c.endDate,
+              periodUnset: c.periodUnset,
               status: c.status,
             }))}
             loading={loadingCampaigns}

@@ -252,3 +252,23 @@ describe("getCalendarMonthCampaigns — CG-2 dual-read 그룹-정본(무폴백)"
     expect(row.depositReceivedAt).toBeNull();
   });
 });
+
+// T-313 Part A: a campaign whose period is not set yet stores placeholder dates — it must not
+// appear as a bar on the calendar (desktop /calendar and mobile /schedule share this loader).
+describe("getCalendarMonthCampaigns — 기간 미정 캠페인 제외(T-313)", () => {
+  beforeEach(() => {
+    findManyMock.mockReset();
+  });
+
+  it("기간 미정 캠페인은 달력에 싣지 않고, 기간이 정해진 캠페인은 그대로 싣는다", async () => {
+    const placeholder = new Date("2026-06-17T03:00:00.000Z");
+    findManyMock.mockResolvedValue([
+      makeRow({ id: "unset", status: "PREPARATION", startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder } as Partial<DbRow>),
+      makeRow({ id: "dated", periodPlaceholderAt: placeholder } as Partial<DbRow>),
+    ]);
+
+    const result = await getCalendarMonthCampaigns(2026, 6);
+
+    expect(result.map((c) => c.id)).toEqual(["dated"]);
+  });
+});

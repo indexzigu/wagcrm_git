@@ -1,5 +1,6 @@
 import type { CampaignRow, CampaignStatus, SalesChannel, SnsType } from "./crm-types";
 import { toKstYmd } from "./date-utils";
+import { isCampaignPeriodUnset } from "./campaign-period";
 import { summarizeChecklist, type CampaignChecklistItemRow } from "./campaign-checklist";
 import { decryptOrNull } from "./encryption";
 import { getDisplayDealName } from "./deal-display";
@@ -93,6 +94,8 @@ type CampaignWithRelations = {
   updatedAt: Date;
   startDate: Date;
   endDate: Date;
+  /** "기간 미정" marker (T-313) — required so a `select` that drops it fails to compile. */
+  periodPlaceholderAt: Date | null;
   salesChannel: string;
   /**
    * optional 인 이유: 이 입력 타입은 여러 쿼리가 공유하고, `select` 로 필드를 고른
@@ -366,6 +369,7 @@ export function toCampaignRow(
     category: campaign.seller.category ?? null,
     startDate: toKstDateStr(campaign.startDate)!,
     endDate: toKstDateStr(campaign.endDate)!,
+    periodUnset: isCampaignPeriodUnset(campaign),
     salesChannel: campaign.salesChannel as SalesChannel,
     isOrderRegistered: campaign.orderCampaignId != null,
     baseNaverLink: campaign.baseNaverLink,

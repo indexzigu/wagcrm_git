@@ -1,5 +1,6 @@
 import { sellerDisplayName } from "@/lib/seller-display-name";
 import { getPrisma } from "@/lib/prisma";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 
 // ── 기본 상수 (운영 설정에서 오버라이드 가능) ──────────────────
 export const DEFAULT_SCHEDULE_THRESHOLDS = {
@@ -302,7 +303,7 @@ export async function getScheduleGapBriefing(
   const rangeEnd = rawBuckets[rawBuckets.length - 1].end;
 
   // 향후 90일 범위 캠페인 (DROPPED, COMPLETED 제외)
-  const campaigns = await prisma.salesCampaign.findMany({
+  const loadedCampaigns = await prisma.salesCampaign.findMany({
     where: {
       startDate: { lte: rangeEnd },
       endDate: { gte: rangeStart },
@@ -312,6 +313,7 @@ export async function getScheduleGapBriefing(
       id: true,
       startDate: true,
       endDate: true,
+      periodPlaceholderAt: true,
       status: true,
       groupId: true,
       group: { select: { name: true } },
@@ -319,6 +321,8 @@ export async function getScheduleGapBriefing(
       seller: { select: { name: true, alias: true } },
     },
   });
+  // 기간 미정(T-313) 캠페인의 자리표시 날짜가 빈 일정을 「채운」 것으로 보이지 않게 뺀다.
+  const campaigns = loadedCampaigns.filter((c) => !isCampaignPeriodUnset(c));
 
   // 파이프라인 퍼널: 활성 SalesTask 집계
   const salesTasks = await prisma.salesTask.findMany({

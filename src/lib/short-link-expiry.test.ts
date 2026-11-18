@@ -61,13 +61,21 @@ import { join } from "node:path";
 describe("발급 경로는 인라인 계산을 갖지 않는다", () => {
   it("ensureCampaignTrackedLink 가 resolveLinkExpiry 를 쓴다", () => {
     const src = readFileSync(join(__dirname, "short-link.ts"), "utf8");
-    expect(src).toContain("expiresAt: resolveLinkExpiry(campaign.endDate)");
+    // 기간 미정(T-313)이면 종료일이 자리표시라 기준에서 뺀다 — 발급·재계산 두 경로가 같은 술어를 쓴다.
+    expect(src).toContain("expiresAt: resolveLinkExpiry(linkExpiryEndDate(campaign))");
+    expect(src).toContain("const expiresAt = resolveLinkExpiry(linkExpiryEndDate(campaign));");
     // 구 규칙의 밀리초 상수가 되살아나면 계산이 두 벌이 된다.
     expect(src).not.toContain("30 * 24 * 60 * 60 * 1000");
   });
 });
 
-type FakeCampaign = { id: string; groupId: string | null; endDate: Date | null };
+type FakeCampaign = {
+  id: string;
+  groupId: string | null;
+  endDate: Date | null;
+  startDate?: Date;
+  periodPlaceholderAt?: Date | null;
+};
 type FakeLink = { id: string; salesCampaignId: string | null; expiresAt: Date | null };
 
 /** 트랜잭션 클라이언트의 최소 표면만 흉내 낸다 — 이 함수가 쓰는 두 쿼리뿐이다. */
@@ -78,7 +86,12 @@ function makeTx(campaigns: FakeCampaign[], links: FakeLink[]) {
       async findMany({ where }: { where: { id?: string; groupId?: string } }) {
         return campaigns
           .filter((c) => (where.groupId ? c.groupId === where.groupId : c.id === where.id))
-          .map((c) => ({ id: c.id, endDate: c.endDate }));
+          .map((c) => ({
+            id: c.id,
+            startDate: c.startDate ?? c.endDate,
+            endDate: c.endDate,
+            periodPlaceholderAt: c.periodPlaceholderAt ?? null,
+          }));
       },
     },
     trackedLink: {
@@ -169,6 +182,18 @@ describe("syncCampaignLinkExpiry", () => {
     const { tx, calls } = makeTx(
       [{ id: "c1", groupId: null, endDate: null }],
       [{ id: "l1", salesCampaignId: "c1", expiresAt: kst("2026-08-01") }],
+    );
+
+    await syncCampaignLinkExpiry(tx as never, { campaignId: "c1", groupId: null });
+
+    expect(calls[0].expiresAt).toBeNull();
+  });
+
+  it("기간 미정(T-313)이면 자리표시 종료일로 만료를 잡지 않고 무기한으로 둔다", async () => {
+    const placeholder = new Date("2026-08-01T03:00:00.000Z");
+    const { tx, calls } = makeTx(
+      [{ id: "c1", groupId: null, startDate: placeholder, endDate: placeholder, periodPlaceholderAt: placeholder }],
+      [{ id: "l1", salesCampaignId: "c1", expiresAt: kst("2026-08-02") }],
     );
 
     await syncCampaignLinkExpiry(tx as never, { campaignId: "c1", groupId: null });

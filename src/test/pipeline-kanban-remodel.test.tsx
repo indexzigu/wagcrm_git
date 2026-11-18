@@ -112,6 +112,7 @@ function makeCampaign(overrides: Partial<CampaignRow> & { id: string; status: Ca
     snsHandle: "@test",
     startDate: "2025-01-01",
     endDate: "2025-02-01",
+    periodUnset: false,
     salesChannel: "OWN_MALL",
     baseNaverLink: "",
     generatedTrackingLink: "",

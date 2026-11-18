@@ -198,3 +198,43 @@ describe("PATCH /api/outreach/[id] — 캠페인 생성 동시 요청", () => {
     expect(b.status).toBe("CONVERTED");
   });
 });
+
+// T-313 Part A: a campaign created from outreach has no period yet ("기간 미정"). Its NOT NULL dates
+// are stored as a placeholder and `periodPlaceholderAt` marks them — all three must be the same
+// instant, or `isCampaignPeriodUnset` would read the campaign as dated.
+describe("PATCH /api/outreach/[id] — 캠페인 생성은 기간 미정으로 만든다", () => {
+  beforeEach(() => {
+    prismaOverride = null;
+  });
+
+  it("create 에 periodPlaceholderAt 을 시작일·종료일과 같은 시각으로 싣는다", async () => {
+    const fake = createConcurrencyFake();
+    const createdData: Array<Record<string, unknown>> = [];
+    const baseTransaction = fake.prisma.$transaction;
+    prismaOverride = {
+      ...fake.prisma,
+      // The concurrency fake holds reads until two requests arrive; this test sends one.
+      salesTask: { ...fake.prisma.salesTask, findUnique: async () => ({ ...fake.task }) },
+      $transaction: <T>(fn: (tx: never) => Promise<T>) =>
+        baseTransaction(async (tx) => {
+          const create = tx.salesCampaign.create;
+          tx.salesCampaign.create = async (args?: { data: Record<string, unknown> }) => {
+            if (args) createdData.push(args.data);
+            return create();
+          };
+          return fn(tx as never);
+        }),
+    };
+
+    const res = await patch({ status: "PENDING_APPROVAL", autoCreateCampaign: true });
+
+    expect(res.status).toBe(200);
+    expect(createdData).toHaveLength(1);
+    const data = createdData[0];
+    expect(data.status).toBe("PREPARATION");
+    expect(data.periodPlaceholderAt).toBeInstanceOf(Date);
+    const marker = (data.periodPlaceholderAt as Date).getTime();
+    expect((data.startDate as Date).getTime()).toBe(marker);
+    expect((data.endDate as Date).getTime()).toBe(marker);
+  });
+});

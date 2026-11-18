@@ -16,6 +16,11 @@ import type { Prisma } from "@prisma/client";
 import { describeChangedFields, recordCampaignActivity } from "@/lib/campaign-activity";
 import { ensureCampaignChecklistForStatus } from "@/lib/campaign-checklist";
 import { generateCampaignName } from "@/lib/campaign-name";
+import {
+  CAMPAIGN_PERIOD_REQUIRED_CODE,
+  CAMPAIGN_PERIOD_REQUIRED_MESSAGE,
+  blocksStatusForUnsetPeriod,
+} from "@/lib/campaign-period";
 import { getPrisma } from "@/lib/prisma";
 import { getCrmUsers } from "@/lib/user-registry";
 import {
@@ -123,6 +128,24 @@ export async function applyCampaignPatch(params: {
     return { kind: "error", status: 404, body: { error: "Campaign not found" } };
   }
 
+  // 기간 미정(T-313) 캠페인은 날짜를 정하기 전까지 제안·준비·드랍 밖으로 가지 못한다 — 이전 상태와
+  // 무관하다(칸반 이동은 아무 단계→아무 단계라, 드랍을 거쳐 판매중으로 가는 우회를 막는다).
+  // 이 요청이 날짜를 함께 보내면 저장 후 기준으로 판정한다(두 날짜를 다 쓰면 곧 기간이 정해진다).
+  // `loadPrevious` 는 include 라 startDate·endDate·periodPlaceholderAt 스칼라가 함께 온다.
+  const periodAfterWrite = {
+    startDate: data.startDate !== undefined ? new Date(data.startDate) : previous.startDate,
+    endDate: data.endDate !== undefined ? new Date(data.endDate) : previous.endDate,
+    periodPlaceholderAt: previous.periodPlaceholderAt,
+  };
+  if (data.status && data.status !== previous.status && blocksStatusForUnsetPeriod(periodAfterWrite, data.status)) {
+    // 사유 문구는 화면 토스트·에이전트 실패 사유로 그대로 간다 — `code` 가 그룹 충돌 409 와 가른다.
+    return {
+      kind: "error",
+      status: 409,
+      body: { error: CAMPAIGN_PERIOD_REQUIRED_MESSAGE, code: CAMPAIGN_PERIOD_REQUIRED_CODE },
+    };
+  }
+
   // 수동 정산 기준액 자격(R4) — 저장 후 상태(이 요청이 바꾸는 품목·요율 반영)로 판정한다.
   // 기준액을 새로 넣거나, 기준액이 있는 캠페인의 품목·요율을 바꿔 요율이 섞이면 거부한다.
   // 무관한 저장은 막지 않는다(이미 저장된 상태를 이유로 다른 편집까지 잠그지 않는다).
@@ -210,6 +233,8 @@ export async function applyCampaignPatch(params: {
     autoStatus = gated.status;
     monthlyCompletionBlocked = gated.blockedReason;
   }
+  // 기간 미정(T-313) — 정산 플래그가 다 차도 허용 밖 상태로는 옮기지 않는다(플래그만 저장).
+  if (autoStatus && blocksStatusForUnsetPeriod(periodAfterWrite, autoStatus)) autoStatus = undefined;
 
   const isOnlyNoOpSettlementToggle =
     !settlementStateChanged &&

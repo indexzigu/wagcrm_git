@@ -91,10 +91,12 @@ function compareCampaigns(
       cmp = a.status.localeCompare(b.status);
       break;
     case "startDate":
-      cmp = (a.startDate || "").localeCompare(b.startDate || "");
+      // 기간 미정(T-313)은 날짜 없음과 같이 정렬한다(자리표시 날짜로 줄 세우지 않는다).
+      cmp = (a.periodUnset ? "" : a.startDate || "").localeCompare(b.periodUnset ? "" : b.startDate || "");
       break;
     case "endDate":
-      cmp = (a.endDate || "").localeCompare(b.endDate || "");
+      // 기간 미정(T-313)은 날짜 없음과 같이 정렬한다(자리표시 날짜로 줄 세우지 않는다).
+      cmp = (a.periodUnset ? "" : a.endDate || "").localeCompare(b.periodUnset ? "" : b.endDate || "");
       break;
     case "actualSales":
       cmp = (a.actualSales ?? 0) - (b.actualSales ?? 0);
@@ -279,7 +281,7 @@ function GroupSection({
                           return (
                             <TableCell key={col.field} className={col.width}>
                               <span className="font-mono text-xs text-muted-foreground">
-                                {dateText(campaign.startDate)}
+                                {campaign.periodUnset ? "미정" : dateText(campaign.startDate)}
                               </span>
                             </TableCell>
                           );
@@ -287,7 +289,7 @@ function GroupSection({
                           return (
                             <TableCell key={col.field} className={col.width}>
                               <span className="font-mono text-xs text-muted-foreground">
-                                {dateText(campaign.endDate)}
+                                {campaign.periodUnset ? "미정" : dateText(campaign.endDate)}
                               </span>
                             </TableCell>
                           );

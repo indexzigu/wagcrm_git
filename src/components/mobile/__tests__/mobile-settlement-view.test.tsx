@@ -19,6 +19,7 @@ const campaign: CampaignRow = {
   snsHandle: "@gaon",
   startDate: "2026-05-17",
   endDate: "2026-05-26",
+  periodUnset: false,
   salesChannel: "OWN_MALL",
   baseNaverLink: "",
   generatedTrackingLink: "",

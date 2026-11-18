@@ -53,6 +53,7 @@ function makeCampaign(
     snsHandle: "@test_seller",
     startDate: "2026-01-01",
     endDate: "2026-06-30",
+    periodUnset: false,
     salesChannel,
     baseNaverLink: "https://smartstore.naver.com/test",
     generatedTrackingLink: "https://link.test/abc",

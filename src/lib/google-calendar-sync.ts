@@ -1,4 +1,5 @@
 import { getPrisma } from "@/lib/prisma";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 import {
   getFinanceCalendarId,
   getGoogleCalendarAccessToken,
@@ -151,6 +152,8 @@ type CampaignForSync = MoneyDateFields &
     salesChannel: string;
     startDate: Date;
     endDate: Date;
+    /** 기간 미정(T-313) 표식 — `isCalendarExcluded` 가 읽는다. */
+    periodPlaceholderAt: Date | null;
     calendarEventIds: string | null;
     seller: { name: string; alias: string | null; accountNumber: string | null };
   };
@@ -162,6 +165,7 @@ type GroupMemberForSync = MoneyDetailFields & {
   salesChannel: string;
   startDate: Date;
   endDate: Date;
+  periodPlaceholderAt: Date | null;
   calendarEventIds: string | null;
 };
 
@@ -225,6 +229,8 @@ const GROUP_SYNC_INCLUDE = {
       salesChannel: true,
       startDate: true,
       endDate: true,
+      // 기간 미정(T-313) 멤버는 그룹 이벤트 기간에서 뺀다(`calendarActiveMembers`).
+      periodPlaceholderAt: true,
       calendarEventIds: true,
       // 그룹의 대금 금액은 컬럼이 아니라 **멤버 합산**이다(`sumMoneySlotAmounts`) —
       // `CampaignGroup` 에는 정산 금액 컬럼이 없다.
@@ -564,9 +570,25 @@ async function deleteStaleEvents(
  */
 const CALENDAR_EXCLUDED_STATUSES = new Set(["DROPPED", "PROPOSAL"]);
 
+type CalendarExclusionInput = {
+  status: string;
+  startDate: Date;
+  endDate: Date;
+  periodPlaceholderAt: Date | null;
+};
+
+/**
+ * 캘린더에 올리지 않는 캠페인 — 비노출 상태이거나 **기간 미정**(T-313: 날짜가 자리표시라 그 날짜로
+ * 이벤트를 세우면 없는 일정이 생긴다). 상태 제외와 같은 정리 경로(기존 이벤트 삭제)를 탄다 — 오너가
+ * 기간을 저장하면 다음 동기화가 진짜 날짜로 다시 만든다. 개별·그룹·넘겨받기 판정이 이 술어 하나를 쓴다.
+ */
+function isCalendarExcluded(campaign: CalendarExclusionInput): boolean {
+  return CALENDAR_EXCLUDED_STATUSES.has(campaign.status) || isCampaignPeriodUnset(campaign);
+}
+
 /** 그룹에서 캘린더에 올릴 자격이 있는 멤버 — 그룹 동기화와 넘겨받기 사전 판정이 함께 쓴다. */
-function calendarActiveMembers<T extends { status: string }>(members: T[]): T[] {
-  return members.filter((m) => !CALENDAR_EXCLUDED_STATUSES.has(m.status));
+function calendarActiveMembers<T extends CalendarExclusionInput>(members: T[]): T[] {
+  return members.filter((m) => !isCalendarExcluded(m));
 }
 
 /**
@@ -576,12 +598,16 @@ function calendarActiveMembers<T extends { status: string }>(members: T[]): T[] 
  */
 function plannedEventKinds(
   target:
-    | { type: "campaign"; status: string; salesChannel: string; source: MoneyDateFields }
-    | { type: "group"; members: { id: string; status: string; salesChannel: string }[]; source: MoneyDateFields },
+    | ({ type: "campaign"; salesChannel: string; source: MoneyDateFields } & CalendarExclusionInput)
+    | {
+        type: "group";
+        members: ({ id: string; salesChannel: string } & CalendarExclusionInput)[];
+        source: MoneyDateFields;
+      },
 ): Set<EventKind> {
   let slots: CampaignMoneySlot[];
   if (target.type === "campaign") {
-    if (CALENDAR_EXCLUDED_STATUSES.has(target.status)) return new Set();
+    if (isCalendarExcluded(target)) return new Set();
     slots = resolveCampaignMoneySlots(target.salesChannel);
   } else {
     const activeMembers = calendarActiveMembers(target.members);
@@ -601,8 +627,8 @@ async function syncOne(
 ): Promise<CampaignSyncResult> {
   const stored = parseStoredIds(campaign.calendarEventIds);
 
-  // 드랍·제안 캠페인은 등록했던 이벤트를 제거하고 저장 id를 비운다.
-  if (CALENDAR_EXCLUDED_STATUSES.has(campaign.status)) {
+  // 드랍·제안·기간 미정 캠페인은 등록했던 이벤트를 제거하고 저장 id를 비운다.
+  if (isCalendarExcluded(campaign)) {
     const storedRefs = Object.values(stored).filter(
       (ref): ref is StoredEventRef => Boolean(ref?.id),
     );
@@ -946,6 +972,9 @@ export async function adoptCalendarEventIntoLedger(input: {
         groupId: true,
         status: true,
         salesChannel: true,
+        startDate: true,
+        endDate: true,
+        periodPlaceholderAt: true,
         calendarEventIds: true,
         ...MONEY_DATE_SELECT,
       },
@@ -961,7 +990,16 @@ export async function adoptCalendarEventIntoLedger(input: {
           id: true,
           calendarEventIds: true,
           ...MONEY_DATE_SELECT,
-          members: { select: { id: true, status: true, salesChannel: true } },
+          members: {
+            select: {
+              id: true,
+              status: true,
+              salesChannel: true,
+              startDate: true,
+              endDate: true,
+              periodPlaceholderAt: true,
+            },
+          },
         },
       });
       if (!group) return "not_found";
@@ -972,6 +1010,9 @@ export async function adoptCalendarEventIntoLedger(input: {
       planned = plannedEventKinds({
         type: "campaign",
         status: campaign.status,
+        startDate: campaign.startDate,
+        endDate: campaign.endDate,
+        periodPlaceholderAt: campaign.periodPlaceholderAt,
         salesChannel: campaign.salesChannel,
         source: campaign,
       });

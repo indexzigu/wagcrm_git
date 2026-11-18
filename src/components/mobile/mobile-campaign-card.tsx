@@ -52,7 +52,8 @@ export function MobileCampaignCard({
   const actionLabel = action.dueDate
     ? `${action.label} - ${formatCampaignActionDate(action.dueDate)}`
     : action.label;
-  const periodLabel = `${campaign.startDate.slice(5)} ~ ${campaign.endDate.slice(5)}`;
+  // 기간 미정(T-313)이면 날짜는 자리표시다 — 「미정」만 쓴다.
+  const periodLabel = campaign.periodUnset ? "미정" : `${campaign.startDate.slice(5)} ~ ${campaign.endDate.slice(5)}`;
   // 정산 변형의 상태 문구 — 채널 슬롯 순서의 **첫 미완료 칸**이 곧 다음 할 일이다.
   // ⛔ `!입금 → 입금 확인 필요` 로 되돌리지 말 것: 자사몰은 입금 칸이 없어 그 플래그가
   // 영원히 false 라, 공급사·셀러 지급을 다 끝낸 캠페인도 「입금 확인 필요」로 굳는다.

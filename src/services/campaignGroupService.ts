@@ -5,6 +5,7 @@ import {
   type CampaignGroupRollupUpdate,
 } from "@/repositories/campaignGroupRepository";
 import { generateGroupName } from "@/lib/campaign-group-name";
+import { isCampaignPeriodUnset } from "@/lib/campaign-period";
 import { campaignInvoiceService } from "@/services/campaignInvoiceService";
 import type { CampaignGroup, Prisma } from "@prisma/client";
 
@@ -341,6 +342,8 @@ export type GroupStatusSibling = {
   salesChannel: string;
   startDate: Date;
   endDate: Date;
+  /** "기간 미정" marker (T-313) — an unset PREPARATION sibling never follows the group forward. */
+  periodPlaceholderAt: Date | null;
 };
 
 /**
@@ -450,7 +453,14 @@ export async function propagateGroupStatus(
 
   const members = await tx.salesCampaign.findMany({
     where: { groupId },
-    select: { id: true, status: true, salesChannel: true, startDate: true, endDate: true },
+    select: {
+      id: true,
+      status: true,
+      salesChannel: true,
+      startDate: true,
+      endDate: true,
+      periodPlaceholderAt: true,
+    },
   });
   if (!members.some((m) => m.id === originCampaignId)) return [];
 
@@ -459,6 +469,9 @@ export async function propagateGroupStatus(
       m.id !== originCampaignId &&
       !GROUP_STATUS_NON_FOLLOWING_SIBLINGS.includes(m.status) &&
       m.status !== status &&
+      // 기간 미정(T-313) 준비 멤버는 날짜를 정하기 전까지 준비에 머문다 — 그룹이 끌고 가지 않는다
+      // (campaignPatchService 의 준비 이탈 가드와 같은 규칙; DROPPED 는 위에서 이미 비전파).
+      !(m.status === "PREPARATION" && isCampaignPeriodUnset(m)) &&
       (input.isSiblingEligible ? input.isSiblingEligible(m) : true),
   );
   if (targets.length === 0) return [];

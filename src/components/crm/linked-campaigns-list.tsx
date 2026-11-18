@@ -21,6 +21,8 @@ export type LinkedCampaign = {
   brandName?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  /** 기간 미정(T-313) — true 면 날짜 대신 「미정」을 쓴다. */
+  periodUnset?: boolean;
   status: string;
 };
 
@@ -66,7 +68,9 @@ export function LinkedCampaignsList({
               </div>
             )}
           </div>
-          {(campaign.startDate || campaign.endDate) && (
+          {campaign.periodUnset ? (
+            <p className="mt-0.5 truncate text-[10px] text-muted-foreground">기간 미정</p>
+          ) : (campaign.startDate || campaign.endDate) && (
             <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
               {campaign.startDate ? new Date(campaign.startDate).toLocaleDateString() : ""} ~ {campaign.endDate ? new Date(campaign.endDate).toLocaleDateString() : ""}
             </p>

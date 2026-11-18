@@ -90,9 +90,11 @@ function dayDiff(from: Date, to: Date) {
  * `startDate`가 비었거나 파싱 불가면 `null`(판정 불가).
  */
 export function getDaysUntilStart(
-  campaign: Pick<CampaignRow, "startDate">,
+  campaign: Pick<CampaignRow, "startDate"> & { periodUnset?: boolean },
   now = new Date(),
 ): number | null {
+  // 기간 미정(T-313)이면 시작일은 자리표시라 남은 일수를 매기지 않는다(「N일 지남」 오표시 방지).
+  if (campaign.periodUnset) return null;
   if (!campaign.startDate) return null;
   const start = parseYmd(campaign.startDate);
   if (Number.isNaN(start.getTime())) return null;
@@ -107,7 +109,7 @@ export function getDaysUntilStart(
  * 접어서 시야에서 지우는 것보다 펼쳐두는 쪽이 안전 실패다.
  */
 export function isInSetupWindow(
-  campaign: Pick<CampaignRow, "startDate">,
+  campaign: Pick<CampaignRow, "startDate"> & { periodUnset?: boolean },
   now = new Date(),
 ): boolean {
   const days = getDaysUntilStart(campaign, now);

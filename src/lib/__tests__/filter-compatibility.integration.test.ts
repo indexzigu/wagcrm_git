@@ -71,6 +71,7 @@ function arbCampaignRowForFilters(): fc.Arbitrary<CampaignRow> {
       snsHandle: "@test",
       startDate,
       endDate,
+      periodUnset: false,
       salesChannel: "OWN_MALL" as const,
       baseNaverLink: "",
       generatedTrackingLink: "",

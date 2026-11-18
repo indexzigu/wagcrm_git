@@ -1304,7 +1304,7 @@ export function SellerDetailContent({
                               )}
                             </div>
                             <div className="text-[10px] text-muted-foreground font-medium">
-                              기간: {c.startDate ? formatDate(c.startDate) : "-"} ~ {c.endDate ? formatDate(c.endDate) : "-"} <span className="mx-0.5 text-muted-foreground/50">·</span> 매출: {c.actualSales != null ? formatCurrency(c.actualSales) : "-"}
+                              기간: {c.periodUnset ? "미정" : <>{c.startDate ? formatDate(c.startDate) : "-"} ~ {c.endDate ? formatDate(c.endDate) : "-"}</>} <span className="mx-0.5 text-muted-foreground/50">·</span> 매출: {c.actualSales != null ? formatCurrency(c.actualSales) : "-"}
                             </div>
                           </div>
                           <div className="shrink-0 ml-3">

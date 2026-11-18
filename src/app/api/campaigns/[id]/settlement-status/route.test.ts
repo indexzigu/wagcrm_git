@@ -380,6 +380,27 @@ describe("PATCH /api/campaigns/[id]/settlement-status", () => {
     expect(completionBlockerMock).toHaveBeenCalledWith(expect.anything(), "c1");
   });
 
+  it("기간 미정 준비 캠페인은 플래그만 저장하고 COMPLETED 로 넘기지 않는다(T-313)", async () => {
+    const placeholder = new Date("2026-11-17T03:00:00.000Z");
+    const unset = {
+      salesChannel: "OWN_MALL_NAVER",
+      isPayoutCompleted: true,
+      status: "PREPARATION",
+      startDate: placeholder,
+      endDate: placeholder,
+      periodPlaceholderAt: placeholder,
+    };
+    campaignFindUniqueMock.mockResolvedValue(campaignFixture(unset));
+    wireCampaignWrite(campaignFixture(unset));
+
+    const response = await PATCH(patchRequest({ isSupplierPayoutCompleted: true }), context());
+    expect(response.status).toBe(200);
+
+    const data = lastCampaignWrite();
+    expect(data.isSupplierPayoutCompleted).toBe(true);
+    expect(data.status).toBeUndefined();
+  });
+
   it("공급사 지급 해제는 타임스탬프를 null 로 되돌린다", async () => {
     campaignFindUniqueMock.mockResolvedValue(
       campaignFixture({

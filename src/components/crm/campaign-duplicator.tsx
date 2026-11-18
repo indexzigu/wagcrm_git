@@ -121,7 +121,7 @@ export function CampaignDuplicator({
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">기간</span>
                 <span className="font-medium">
-                  {sourceCampaign.startDate} ~ {sourceCampaign.endDate}
+                  {sourceCampaign.periodUnset ? "미정" : `${sourceCampaign.startDate} ~ ${sourceCampaign.endDate}`}
                 </span>
               </div>
               <div className="flex items-center justify-between">
