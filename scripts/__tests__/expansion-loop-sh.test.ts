@@ -277,6 +277,37 @@ describe("expansion-loop.sh", () => {
     expect(cronLog()).toMatch(/SKIP expansion-loop stale-lock-reclaimed/);
     expect(cronLog()).toMatch(/OK expansion-loop/);
     expect(existsSync(lockDir())).toBe(false);
+    expect(existsSync(lockDir() + ".reclaim")).toBe(false);
+  });
+
+  // Two runs reclaiming the same stale lock must not both end up owning it: only the holder
+  // of the reclaim guard may rmdir+mkdir, so a run that finds the guard held backs off.
+  it("stale lock while another run holds the reclaim guard: SKIP, lock and guard untouched", () => {
+    mkdirSync(lockDir(), { recursive: true });
+    mkdirSync(lockDir() + ".reclaim");
+    const old = new Date(Date.now() - 3600_000);
+    utimesSync(lockDir(), old, old);
+    const r = run(null, { EXPANSION_DRY: "1", EXPANSION_TIMEOUT_S: "1" });
+    expect(r.status).toBe(0);
+    expect(cronLog()).toMatch(/SKIP expansion-loop locked/);
+    expect(cronLog()).not.toMatch(/stale-lock-reclaimed/);
+    expect(cronLog()).not.toMatch(/OK expansion-loop/);
+    expect(existsSync(lockDir())).toBe(true);
+    expect(existsSync(lockDir() + ".reclaim")).toBe(true);
+  });
+
+  it("guard left by a crashed reclaimer is cleared, but this run still SKIPs", () => {
+    mkdirSync(lockDir(), { recursive: true });
+    mkdirSync(lockDir() + ".reclaim");
+    const old = new Date(Date.now() - 3600_000);
+    utimesSync(lockDir(), old, old);
+    utimesSync(lockDir() + ".reclaim", old, old);
+    const r = run(null, { EXPANSION_DRY: "1", EXPANSION_TIMEOUT_S: "1" });
+    expect(r.status).toBe(0);
+    expect(cronLog()).toMatch(/SKIP expansion-loop locked/);
+    expect(cronLog()).not.toMatch(/OK expansion-loop/);
+    expect(existsSync(lockDir())).toBe(true);
+    expect(existsSync(lockDir() + ".reclaim")).toBe(false);
   });
 });
 

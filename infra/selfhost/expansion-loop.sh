@@ -64,10 +64,29 @@ trap 'exit 143' INT TERM HUP
 mtime_of() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || date +%s; }
 
 mkdir -p "$(dirname "$LOCK_DIR")"
+lock_age() { echo $(( $(date +%s) - $(mtime_of "$1") )); }
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   # 잠근 쪽이 SIGKILL·전원 손실로 죽으면 잠금이 영영 남는다 — 타임아웃+600초보다 오래된 잠금은 넘겨받는다.
-  age=$(( $(date +%s) - $(mtime_of "$LOCK_DIR") ))
-  if [ "$age" -gt $(( TIMEOUT_S + 600 )) ] && rmdir "$LOCK_DIR" 2>/dev/null && mkdir "$LOCK_DIR" 2>/dev/null; then
+  # 넘겨받기(rmdir→mkdir)는 원자적이지 않다: 두 실행이 함께 하면 한쪽이 다른 쪽의 새 잠금을 지워
+  # 둘 다 소유하게 된다. 그래서 회수 표지(.reclaim, mkdir 원자성)를 쥔 한 실행만 넘겨받고,
+  # 표지를 쥔 뒤 나이를 다시 잰다(먼저 넘겨받은 실행이 만든 새 잠금이면 낡지 않았다).
+  STALE_S=$(( TIMEOUT_S + 600 ))
+  RECLAIM_DIR="$LOCK_DIR.reclaim"
+  reclaimed=0
+  age=$(lock_age "$LOCK_DIR")
+  if [ "$age" -gt "$STALE_S" ]; then
+    if mkdir "$RECLAIM_DIR" 2>/dev/null; then
+      age=$(lock_age "$LOCK_DIR")
+      if [ "$age" -gt "$STALE_S" ] && rmdir "$LOCK_DIR" 2>/dev/null && mkdir "$LOCK_DIR" 2>/dev/null; then
+        reclaimed=1
+      fi
+      rmdir "$RECLAIM_DIR" 2>/dev/null || true
+    elif [ "$(lock_age "$RECLAIM_DIR")" -gt 600 ]; then
+      # 회수 도중 죽은 실행이 남긴 표지 — 지우기만 하고 이번 회차는 쉰다(잠금은 다음 회차가 넘겨받는다).
+      rmdir "$RECLAIM_DIR" 2>/dev/null || true
+    fi
+  fi
+  if [ "$reclaimed" -eq 1 ]; then
     log_line SKIP "stale-lock-reclaimed age=${age}s cost=0"
   else
     log_line SKIP "locked cost=0"
