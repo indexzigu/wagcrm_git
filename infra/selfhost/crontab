@@ -128,3 +128,11 @@
 # 앱(`/api/cron/approval-outbox`)이 올라온 지 5분 지난 미알림 기안만 내주고(정산 자동 실행이 먼저 처리할 틈), 한 회차에
 # 4건 이상이면 1통으로 묶는다. 사고 알림과 같은 발송기·같은 이유로 KNOWN_JOBS 밖이고 위 앱 크론 개수 앵커에도 세지 않는다.
 */5 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/incident-notify.sh approval >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+
+# expansion-loop → KST 매일 07:40. AI 확장 고리(설계: docs/private/specs/2026-11-17-ai-expansion-loop-design.md)의
+# 하루 회차 — 헤드리스 claude 운영자가 확장 지도·장부를 읽고 #에이전트 채널에 카드를 올린다(래퍼가 유일한 게시자).
+# 앱 크론이 아니다 — run-cron.sh 를 거치지 않고 KNOWN_JOBS 에도 없어 위 앱 크론 개수 앵커에 세지 않는다.
+# 비밀값은 레포 밖 `$HOME/selfhost/expansion.env`(권한 600, 미추적)에서만 읽는다: 헤드리스 인증 토큰
+# (CLAUDE_CODE_OAUTH_TOKEN — 대화형 로그인은 만료돼 크론에서 깨진다). 파일이 없으면 source 가 실패해
+# 회차가 시작되지 않고 그 오류가 아래 로그에 남는다(조용한 건너뛰기 금지).
+40 7 * * * /bin/bash -c 'set -a; . "$HOME/selfhost/expansion.env" || exit 1; set +a; exec /Users/z9/selfhost/wagcrm/infra/selfhost/expansion-loop.sh' >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1

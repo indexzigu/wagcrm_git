@@ -5,9 +5,12 @@ set -euo pipefail
 #   expansion-readonly-sql.sh "<SELECT/WITH 문 1개>"
 #
 # ⚠️ 이 래퍼의 문장 검사는 「최선 노력 필터」이지 보안 경계가 아니다 — 이름을 다시 쓰는 우회는 늘 존재한다.
-# 진짜 경계는 전용 SELECT 전용 DB 역할이며 오너 조치로 대기 중이다. 그때까지의 겹겹 방벽:
-#   1) 비슈퍼유저 역할 postgres 로 접속(supabase_admin 은 슈퍼유저라 쓰지 않는다)
-#   2) 세션 설정 default_transaction_read_only=on (세션 안에서 되돌릴 수 있어 단독 방벽이 아니다)
+# 진짜 경계는 전용 SELECT 전용 DB 역할 wag_expansion_ro 다(오너가 컨테이너 안에서 만든다 — 마이그레이션 아님).
+# 겹겹 방벽:
+#   1) 역할 wag_expansion_ro 로 접속 — public 스키마 SELECT 만, 슈퍼유저·쓰기·역할 전환 없음.
+#      비밀번호가 없어 컨테이너 안 127.0.0.1(trust)로만 로그인된다(바깥 망은 scram 이라 불가).
+#      역할이 없으면 psql 이 실패한다 — postgres 로 되돌아가는 폴백을 두지 않는다(조용한 권한 상승 금지).
+#   2) 세션 설정 default_transaction_read_only=on (역할 기본값으로도 걸려 있다; 단독 방벽은 아니다)
 #   3) 접두 검사(SELECT/WITH) + 주석·제어문자·다중 문장·위험 낱말 거부 — docker 호출 전 1차 관문
 # 거부는 exit 2 — docker 는 호출되지 않는다. 오탐(안전 쪽 거부)은 허용한다.
 
@@ -67,4 +70,4 @@ case "$norm" in
 esac
 
 exec "$DOCKER" exec -e PGOPTIONS='-c default_transaction_read_only=on' supabase-db \
-  psql -U postgres -d postgres -At -v ON_ERROR_STOP=1 -c "$SQL"
+  psql -h 127.0.0.1 -U wag_expansion_ro -d postgres -At -v ON_ERROR_STOP=1 -c "$SQL"
