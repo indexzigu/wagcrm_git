@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -233,4 +234,61 @@ export function curlStubEnv(dir: string): { PATH: string; CURL_STUB_IMPL: string
     PATH: `${ensureCurlWrapper()}:${process.env.PATH}`,
     CURL_STUB_IMPL: path.join(dir, "curl.impl"),
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * 이름 기반 범용 스텁 레인 (2026-11-18 추가)
+ *
+ * 왜: 피시험 스크립트가 여러 명령(가짜 claude·post·docker·sed·node …)을 경로나 PATH 로
+ * execve 하는 테스트가 있다. 명령마다 래퍼를 따로 두면 래퍼가 늘어나므로, 래퍼 하나가
+ * **자기가 불린 이름(`$0` 의 basename)** 으로 본문 데이터 파일 경로를 담은 env 변수를 고른다.
+ * 테스트는 `dir/<이름>` 에 래퍼로 가는 심볼릭 링크만 만든다(실행 권한 부여 없음) —
+ * execve 는 링크 대상(고정 래퍼 하나)에 대해 일어나므로 검사 비용은 머신당 1회다.
+ *
+ * env 변수 이름 = `WAGCRM_STUB_` + 이름의 영숫자 외 문자를 `_` 로 바꾼 것.
+ * ───────────────────────────────────────────────────────────────────────── */
+export const CMD_STUB_WRAPPER_DIR_NAME = "wagcrm-cmd-stub-v1";
+export const CMD_STUB_WRAPPER_BODY =
+  '#!/usr/bin/env bash\nn="${0##*/}"; v="WAGCRM_STUB_${n//[^A-Za-z0-9]/_}"; exec bash "${!v}" "$@"\n';
+
+const CMD_WRAPPER_DIR = path.join(tmpdir(), CMD_STUB_WRAPPER_DIR_NAME);
+
+function ensureCmdWrapper(): string {
+  const wrapper = path.join(CMD_WRAPPER_DIR, "stub");
+  let current = "";
+  try {
+    current = readFileSync(wrapper, "utf8");
+  } catch {
+    // 없으면 아래에서 만든다.
+  }
+  if (current !== CMD_STUB_WRAPPER_BODY) {
+    mkdirSync(CMD_WRAPPER_DIR, { recursive: true });
+    const staging = path.join(CMD_WRAPPER_DIR, `stub.${process.pid}.tmp`);
+    writeFileSync(staging, CMD_STUB_WRAPPER_BODY);
+    chmodSync(staging, 0o755);
+    renameSync(staging, wrapper);
+  }
+  return wrapper;
+}
+
+/** 스텁 env 변수 이름(래퍼의 bash 치환과 같은 규칙). */
+export function cmdStubVar(name: string): string {
+  return `WAGCRM_STUB_${name.replace(/[^A-Za-z0-9]/g, "_")}`;
+}
+
+/**
+ * `dir/<name>` 을 고정 래퍼로 가는 심볼릭 링크로 만들고, 본문(bash 소스)은 실행 권한 없는
+ * `dir/<name>.impl` 데이터 파일로 둔다. 반환한 env 를 피시험 프로세스의 env 에 펼쳐야
+ * 래퍼가 본문을 찾는다.
+ */
+export function writeCmdStub(
+  dir: string,
+  name: string,
+  body: string,
+): { path: string; env: Record<string, string> } {
+  const impl = path.join(dir, `${name}.impl`);
+  writeFileSync(impl, body);
+  const link = path.join(dir, name);
+  symlinkSync(ensureCmdWrapper(), link);
+  return { path: link, env: { [cmdStubVar(name)]: impl } };
 }
