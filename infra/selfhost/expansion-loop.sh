@@ -195,8 +195,9 @@ if [ -n "$OPS_WT" ]; then
     || fail "운영 트리: fetch 실패 $(head -n 1 "$WORK_DIR/git.err" 2>/dev/null)"
   OPS_SHA="$(git -C "$REPO" rev-parse --verify 'refs/expansion-ops/main^{commit}' 2>/dev/null)" || fail "운영 트리: main SHA 없음"
   if [ -f "$OPS_WT/.git" ] && ! git -C "$OPS_WT" rev-parse --git-dir >/dev/null 2>&1; then
-    # 관리 폴더가 prune 돼 끊긴 운영 트리(.git 파일 = 분리 트리) — 고칠 것이 없으니 지우고 아래에서 새로 만든다.
-    rm -rf "$OPS_WT" || fail "운영 트리: 끊긴 트리 삭제 실패"
+    # 관리 폴더가 prune 돼 끊긴 운영 트리(.git 파일 = 분리 트리) — 지우지 않고 옆으로 옮긴 뒤(안의 수기 편집 보존)
+    # 아래에서 새로 만든다.
+    mv "$OPS_WT" "$OPS_WT.broken-$(date +%Y%m%d%H%M%S)" || fail "운영 트리: 끊긴 트리 옮기기 실패"
   fi
   if [ -e "$OPS_WT/.git" ]; then
     # 운영 트리는 아무도 고치지 않는다 — 추적 파일이 바뀌어 있으면 덮지 않고 멈춘다(조용히 버리지 않는다).
@@ -204,10 +205,10 @@ if [ -n "$OPS_WT" ]; then
     git -C "$OPS_WT" checkout -q --detach "$OPS_SHA" 2> "$WORK_DIR/git.err" \
       || fail "운영 트리: checkout 실패 $(head -n 1 "$WORK_DIR/git.err" 2>/dev/null)"
   else
-    # 폴더만 지워지고 등록이 남아 있으면 worktree add 가 거부한다 — 빈 등록을 먼저 정리한다.
-    git -C "$REPO" worktree prune 2>/dev/null || true
+    # 폴더만 지워지고 등록이 남아 있으면 worktree add 가 거부한다 — -f 로 이 경로의 등록만 덮는다
+    # (worktree prune 은 다른 세션의 등록까지 지우므로 쓰지 않는다). 비어 있지 않은 폴더는 -f 로도 거부된다.
     mkdir -p "$(dirname "$OPS_WT")" 2>/dev/null || true
-    git -C "$REPO" worktree add -q --detach "$OPS_WT" "$OPS_SHA" 2> "$WORK_DIR/git.err" \
+    git -C "$REPO" worktree add -q -f --detach "$OPS_WT" "$OPS_SHA" 2> "$WORK_DIR/git.err" \
       || fail "운영 트리: 생성 실패 $(head -n 1 "$WORK_DIR/git.err" 2>/dev/null)"
   fi
   mkdir -p "$OPS_WT/docs" 2>/dev/null || true
@@ -239,7 +240,7 @@ try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 if(j&&typeof j.result==="string")console.log(j.result.replace(/\s+/g," ").slice(0,160));}catch(e){}' "$OUT" 2>/dev/null)" || RES_SNIP=""
 
 [ "$RG_TIMEOUT" -eq 0 ] || fail "타임아웃 ${TIMEOUT_S}s" "$COST"
-[ "$RG_RC" -eq 0 ] || fail "claude exit=$RG_RC ${RES_SNIP:-$(tail -c 200 "$ERR" 2>/dev/null)}" "$COST"
+[ "$RG_RC" -eq 0 ] || fail "claude exit=$RG_RC ${RES_SNIP:+$RES_SNIP | }$(tail -c 200 "$ERR" 2>/dev/null)" "$COST"
 
 # node 의 stderr 는 버리지 않는다 — node 가 없거나 깨진 것을 「결과 JSON 파손」으로 오인하지 않게 첫 줄을 사유에 붙인다.
 PARSE_ERR="$WORK_DIR/parse.err"
