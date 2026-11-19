@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, utimesSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, utimesSync, mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, readdirSync, realpathSync } from "node:fs";
 import { GNU_STAT_IMPL_BODY, writeCmdStub } from "./helpers/gh-stub";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -41,19 +41,28 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+const UNSET = "\u0000unset";
 const run = (claude: string | null, extra: Record<string, string> = {}) => {
-  const post = script("post.sh", `echo "$@" >> "${root}/post.argv"\ncat "$3" >> "${root}/post.content" 2>/dev/null || true`);
+  // 한 테스트에서 run() 을 두 번 부를 수 있다 — 같은 이름의 가짜 명령은 한 번만 만든다(stubEnv 는 테스트 단위로 유지).
+  const postPath = join(bin, "post.sh");
+  const post = existsSync(postPath)
+    ? postPath
+    : script("post.sh", `echo "$@" >> "${root}/post.argv"\ncat "$3" >> "${root}/post.content" 2>/dev/null || true`);
+  // 가짜 레포는 git 저장소가 아니므로 운영 트리는 기본으로 끈다 — 운영 트리 테스트만 UNSET 으로 기본값을 쓴다.
+  const env: Record<string, string> = {
+    PATH: process.env.PATH ?? "",
+    HOME: home,
+    EXPANSION_REPO: repo,
+    EXPANSION_POST_BIN: post,
+    EXPANSION_HERMES_DIR: "/h",
+    EXPANSION_OPS_WT: "none",
+    ...stubEnv,
+    ...(claude ? { EXPANSION_CLAUDE_BIN: claude } : {}),
+    ...extra,
+  };
+  for (const k of Object.keys(env)) if (env[k] === UNSET) delete env[k];
   return spawnSync("/bin/bash", [LOOP], {
-    env: {
-      PATH: process.env.PATH ?? "",
-      HOME: home,
-      EXPANSION_REPO: repo,
-      EXPANSION_POST_BIN: post,
-      EXPANSION_HERMES_DIR: "/h",
-      ...stubEnv,
-      ...(claude ? { EXPANSION_CLAUDE_BIN: claude } : {}),
-      ...extra,
-    },
+    env,
     encoding: "utf8",
     timeout: 30000,
   });
@@ -326,6 +335,120 @@ describe("expansion-loop.sh", () => {
     expect(cronLog()).not.toMatch(/OK expansion-loop/);
     expect(existsSync(lockDir())).toBe(true);
     expect(existsSync(lockDir() + ".reclaim")).toBe(false);
+  });
+});
+
+describe("expansion-loop.sh 운영 트리", () => {
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: home,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@example.com",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@example.com",
+      },
+    });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const opsWt = () => join(repo, ".claude/worktrees/expansion-ops");
+  let origin: string;
+  // 원격 main 에 marker=v1 을 올리고, 메인 체크아웃은 marker 를 바꾼 다른 브랜치에 둔다(다른 세션이 쓰는 상황).
+  beforeEach(() => {
+    probePath = "";
+    origin = join(root, "origin.git");
+    git(root, "init", "-q", "--bare", "-b", "main", origin);
+    git(repo, "init", "-q", "-b", "main");
+    writeFileSync(join(repo, ".gitignore"), "docs/private/\n.claude/worktrees/\n");
+    writeFileSync(join(repo, "marker.txt"), "v1\n");
+    git(repo, "add", ".gitignore", "marker.txt");
+    git(repo, "commit", "-q", "-m", "v1");
+    git(repo, "remote", "add", "origin", origin);
+    git(repo, "push", "-q", "origin", "HEAD:refs/heads/main");
+    git(repo, "checkout", "-q", "-b", "other-session");
+    writeFileSync(join(repo, "marker.txt"), "stale\n");
+    git(repo, "commit", "-q", "-am", "stale");
+  });
+  const pushMain = (v: string) => {
+    const tmp = join(root, `push-${v}`);
+    git(root, "clone", "-q", "-b", "main", origin, tmp);
+    writeFileSync(join(tmp, "marker.txt"), `${v}\n`);
+    git(tmp, "commit", "-q", "-am", v);
+    git(tmp, "push", "-q", "origin", "HEAD:refs/heads/main");
+  };
+  // 같은 이름의 가짜 명령은 한 번만 만들 수 있다 — 테스트마다 한 번 만들고 회차 사이에 재사용한다.
+  let probePath = "";
+  const probe = () =>
+    (probePath ||= script(
+      "claude-probe",
+      `pwd -P > "${root}/cwd"\ncat marker.txt > "${root}/marker"\nreadlink docs/private > "${root}/link"\n${OK_CARDS()}`,
+    ));
+  const read = (f: string) => readFileSync(join(root, f), "utf8").trim();
+
+  it("최신 main 으로 운영 트리를 만들고 거기서 운영자를 돌린다(docs/private 는 메인 쪽 링크)", () => {
+    const r = run(probe(), { EXPANSION_OPS_WT: UNSET });
+    expect(r.status).toBe(0);
+    expect(read("cwd")).toBe(realpathSync(opsWt()));
+    expect(read("marker")).toBe("v1");
+    expect(read("link")).toBe(join(repo, "docs/private"));
+    expect(readFileSync(join(repo, "marker.txt"), "utf8").trim()).toBe("stale");
+    expect(git(repo, "rev-parse", "--abbrev-ref", "HEAD")).toBe("other-session");
+  }, 30000);
+
+  it("다음 회차는 main 의 새 커밋으로 운영 트리를 옮긴다", () => {
+    expect(run(probe(), { EXPANSION_OPS_WT: UNSET }).status).toBe(0);
+    pushMain("v2");
+    expect(run(probe(), { EXPANSION_OPS_WT: UNSET }).status).toBe(0);
+    expect(read("marker")).toBe("v2");
+  }, 30000);
+
+  it("운영 트리의 추적 파일이 바뀌어 있으면 덮지 않고 FAIL, 운영자 미호출", () => {
+    expect(run(probe(), { EXPANSION_OPS_WT: UNSET }).status).toBe(0);
+    writeFileSync(join(opsWt(), "marker.txt"), "hand-edit\n");
+    rmSync(join(root, "marker"));
+    const r = run(probe(), { EXPANSION_OPS_WT: UNSET });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*운영 트리: 추적 파일 변경 있음/);
+    expect(existsSync(join(root, "marker"))).toBe(false);
+    expect(readFileSync(join(opsWt(), "marker.txt"), "utf8")).toBe("hand-edit\n");
+  }, 30000);
+
+  it("폴더만 지워지고 git 등록이 남아도 다시 만든다", () => {
+    expect(run(probe(), { EXPANSION_OPS_WT: UNSET }).status).toBe(0);
+    rmSync(opsWt(), { recursive: true, force: true });
+    expect(run(probe(), { EXPANSION_OPS_WT: UNSET }).status).toBe(0);
+    expect(read("marker")).toBe("v1");
+  }, 30000);
+
+  it("fetch 가 실패하면 FAIL 사유에 남기고 운영자를 부르지 않는다", () => {
+    git(repo, "remote", "remove", "origin");
+    const r = run(probe(), { EXPANSION_OPS_WT: UNSET });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*운영 트리: fetch 실패/);
+    expect(existsSync(join(root, "marker"))).toBe(false);
+  }, 30000);
+});
+
+describe("expansion-loop.sh 실패 사유", () => {
+  it("claude exit 1 이면 결과 JSON 의 result 앞부분을 사유에 붙인다", () => {
+    const c = script(
+      "claude-login",
+      `cat >/dev/null\necho '{"is_error":true,"total_cost_usd":0,"result":"Not logged in\\n  Please run /login"}'\nexit 1`,
+    );
+    expect(run(c).status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop cost=0 claude exit=1 Not logged in Please run \/login/);
+  });
+  it("is_error=true 면 result 앞부분을 사유에 붙이고 160자로 자른다", () => {
+    const long = "x".repeat(300);
+    const c = script("claude-iserr", `cat >/dev/null\necho '{"is_error":true,"total_cost_usd":0.1,"result":"${long}"}'`);
+    expect(run(c).status).toBe(1);
+    const line = cronLog().split("\n").find((l) => l.includes("FAIL expansion-loop")) ?? "";
+    expect(line).toContain(`결과 is_error=true ${"x".repeat(160)}`);
+    expect(line).not.toContain("x".repeat(161));
   });
 });
 
