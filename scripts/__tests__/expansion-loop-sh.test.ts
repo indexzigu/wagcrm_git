@@ -490,6 +490,9 @@ describe("expansion-loop.sh 앱 신원", () => {
       "claude-env",
       `echo "GH=\${GH_TOKEN-<unset>} GITHUB=\${GITHUB_TOKEN-<unset>}" > "${root}/claude.env"\n${OK_CARDS()}`,
     );
+  // 가짜 게시기: 카드 게시 단계가 받은 GH_TOKEN 을 기록한다(앱 토큰은 회차에만 준다).
+  const postProbe = () =>
+    script("post-env.sh", `echo "GH=\${GH_TOKEN-<unset>}" > "${root}/post.env"`);
   const claudeEnv = () => (existsSync(join(root, "claude.env")) ? readFileSync(join(root, "claude.env"), "utf8").trim() : "");
 
   it("키가 있으면 회차 직전에 앱 토큰을 받아 GH_TOKEN 으로 넘기고 GITHUB_TOKEN 은 지운다", () => {
@@ -505,8 +508,26 @@ describe("expansion-loop.sh 앱 신원", () => {
     expect(cronLog()).not.toContain("tok_stub_value");
   }, 20000);
 
+  it("카드 게시 단계에는 앱 토큰을 넘기지 않는다", () => {
+    const r = run(envProbe(), {
+      EXPANSION_APP_KEY: key(),
+      EXPANSION_APP_TOKEN_SCRIPT: tokenScript(),
+      EXPANSION_POST_BIN: postProbe(),
+    });
+    expect(r.status).toBe(0);
+    expect(claudeEnv()).toBe("GH=tok_stub_value GITHUB=<unset>");
+    expect(readFileSync(join(root, "post.env"), "utf8").trim()).toBe("GH=<unset>");
+  }, 20000);
+
   it("키 파일이 없으면 오너 자격으로 물러서지 않고 FAIL 로 멈춘다", () => {
     const r = run(envProbe(), { EXPANSION_APP_KEY: join(root, "missing.pem"), EXPANSION_APP_TOKEN_SCRIPT: tokenScript() });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*앱 키 없음/);
+    expect(existsSync(join(root, "claude.env"))).toBe(false);
+  }, 20000);
+
+  it("빈 값은 끄는 값이 아니다 — 오너 자격으로 진행하지 않고 FAIL", () => {
+    const r = run(envProbe(), { EXPANSION_APP_KEY: "", EXPANSION_APP_TOKEN_SCRIPT: tokenScript(), GH_TOKEN: "owner_token" });
     expect(r.status).toBe(1);
     expect(cronLog()).toMatch(/FAIL expansion-loop.*앱 키 없음/);
     expect(existsSync(join(root, "claude.env"))).toBe(false);

@@ -71,10 +71,16 @@ try {
   die(1, `응답이 JSON 이 아니다 (HTTP ${res.status})`);
 }
 if (res.status !== 201) die(1, `HTTP ${res.status} ${String(body?.message ?? "").slice(0, 120)}`);
+// 길이 하한은 형식 검증이 아니라 빈 값·잘린 값 거르기다(실제 설치 토큰은 40자 이상).
 if (typeof body?.token !== "string" || body.token.length < 20 || /\s/.test(body.token)) die(1, "응답에 토큰이 없다");
-// GitHub 이 요청보다 넓게 줬으면(있어선 안 되지만) 쓰지 않는다.
-const granted = body.permissions ?? {};
+// GitHub 이 요청보다 넓게 줬으면(있어선 안 되지만) 쓰지 않는다 — 권한도 저장소 범위도 요청과 같아야 한다.
+const granted = body.permissions;
+if (!granted || typeof granted !== "object" || Object.keys(granted).length === 0) die(1, "응답에 권한 목록이 없다");
 for (const [k, v] of Object.entries(granted)) {
   if (PERMISSIONS[k] !== v) die(1, `요청하지 않은 권한이 붙었다: ${k}=${v}`);
+}
+const repos = Array.isArray(body.repositories) ? body.repositories.map((r) => r?.name) : [];
+if (body.repository_selection !== "selected" || repos.length !== 1 || repos[0] !== REPO_NAME) {
+  die(1, `저장소 범위가 요청과 다르다 (${body.repository_selection ?? "?"}: ${repos.join(",") || "-"})`);
 }
 process.stdout.write(`${body.token}\n`);

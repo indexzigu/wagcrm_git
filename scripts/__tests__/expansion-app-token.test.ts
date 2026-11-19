@@ -44,7 +44,12 @@ beforeEach(() => {
   seen = {};
   reply = {
     status: 201,
-    body: { token: "ghs_" + "a".repeat(36), permissions: { contents: "write", pull_requests: "write", metadata: "read" } },
+    body: {
+      token: "ghs_" + "a".repeat(36),
+      permissions: { contents: "write", pull_requests: "write", metadata: "read" },
+      repository_selection: "selected",
+      repositories: [{ name: "wagcrm_git" }],
+    },
   };
 });
 
@@ -58,6 +63,7 @@ const run = (args: string[], env: Record<string, string> = {}) =>
     let stderr = "";
     p.stdout.on("data", (d) => (stdout += d));
     p.stderr.on("data", (d) => (stderr += d));
+    p.on("error", (e) => res({ status: -1, stdout, stderr: `${stderr}spawn error: ${e.message}` }));
     p.on("close", (status) => res({ status, stdout, stderr }));
   });
 
@@ -85,11 +91,31 @@ describe("expansion-app-token.mjs", () => {
   });
 
   it("요청보다 넓은 권한이 붙어 오면 토큰을 내지 않는다", async () => {
-    reply.body = { token: "ghs_" + "b".repeat(36), permissions: { contents: "write", administration: "write" } };
+    reply.body = { ...(reply.body as object), permissions: { contents: "write", administration: "write" } };
     const r = await run(["1", "2", keyPath]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     expect(r.stderr).toMatch(/요청하지 않은 권한이 붙었다: administration=write/);
+  });
+
+  it("권한 목록이 없으면 토큰을 내지 않는다", async () => {
+    reply.body = { ...(reply.body as object), permissions: undefined };
+    const r = await run(["1", "2", keyPath]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toMatch(/응답에 권한 목록이 없다/);
+  });
+
+  it.each([
+    ["all", [{ name: "wagcrm_git" }]],
+    ["selected", [{ name: "wagcrm_git" }, { name: "other" }]],
+    ["selected", []],
+  ])("저장소 범위가 요청과 다르면(%s %j) 토큰을 내지 않는다", async (selection, repositories) => {
+    reply.body = { ...(reply.body as object), repository_selection: selection, repositories };
+    const r = await run(["1", "2", keyPath]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toMatch(/저장소 범위가 요청과 다르다/);
   });
 
   it("HTTP 오류면 상태와 메시지만 stderr 에 남기고 실패한다", async () => {
@@ -101,7 +127,7 @@ describe("expansion-app-token.mjs", () => {
   });
 
   it("응답에 토큰이 없으면 실패", async () => {
-    reply.body = { permissions: {} };
+    reply.body = { ...(reply.body as object), token: undefined };
     const r = await run(["1", "2", keyPath]);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/응답에 토큰이 없다/);

@@ -42,8 +42,10 @@ case "$TIMEOUT_S" in ''|*[!0-9]*) TIMEOUT_S=3600 ;; esac
 # `expansion-bot-exp-only` 가 그 신원에게 exp/** 밖 브랜치 생성·갱신·삭제(= main 반영)를 막는다.
 # 키 파일이 없거나 발급이 실패하면 오너 자격으로 물러서지 않고 회차를 멈춘다. ID 는 비밀이 아니다(키가 비밀).
 # 한계: 같은 macOS 사용자로 돌므로 회차가 일부러 오너 keyring 토큰을 꺼내 쓰는 것까지는 못 막는다.
+# 끄는 값은 none 하나뿐이다 — 빈 값은 끄지 않고 아래에서 「앱 키 없음」 FAIL 로 간다(빈 대입 오타로 오너 자격 회차가 되지 않게).
 APP_KEY="${EXPANSION_APP_KEY-$HOME/selfhost/expansion-app.pem}"
-[ "$APP_KEY" = "none" ] && APP_KEY=""
+APP_OFF=0
+[ "$APP_KEY" = "none" ] && APP_OFF=1
 APP_ID="${EXPANSION_APP_ID:-5832880}"
 APP_INSTALLATION_ID="${EXPANSION_APP_INSTALLATION_ID:-183673676}"
 APP_TOKEN_SCRIPT="${EXPANSION_APP_TOKEN_SCRIPT:-$(cd "$(dirname "$0")" && pwd)/expansion-app-token.mjs}"
@@ -233,7 +235,7 @@ cd "$RUN_DIR" 2>/dev/null || fail "레포 경로 없음"
 rm -f "$CARDS_FILE"
 
 # 앱 토큰은 회차 직전에 발급한다(수명 1시간). gh 와 git(전역 자격 도우미 = gh auth git-credential)이 GH_TOKEN 을 쓴다.
-if [ -n "$APP_KEY" ]; then
+if [ "$APP_OFF" -eq 0 ]; then
   [ "$TIMEOUT_S" -le "$APP_TOKEN_TTL_S" ] || fail "시간 상한 ${TIMEOUT_S}s 가 앱 토큰 수명 ${APP_TOKEN_TTL_S}s 보다 길다"
   [ -s "$APP_KEY" ] || fail "앱 키 없음"
   APP_TOKEN="$(node "$APP_TOKEN_SCRIPT" "$APP_ID" "$APP_INSTALLATION_ID" "$APP_KEY" 2> "$WORK_DIR/app.err")" \
@@ -246,6 +248,8 @@ fi
 
 run_grouped "$TIMEOUT_S" "$PROMPT_PATH" "$OUT" "$ERR" \
   "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus --add-dir "$REPO"
+# 앱 토큰은 회차에만 준다 — 뒤의 결과 해석·카드 게시 프로세스에는 넘기지 않는다.
+[ "$APP_OFF" -eq 1 ] || unset GH_TOKEN
 
 # 비용은 종료코드·타임아웃 판정보다 먼저 읽는다(best-effort) — 실패한 실행도 지출은 남겨야 한다.
 COST="$(node -e '
