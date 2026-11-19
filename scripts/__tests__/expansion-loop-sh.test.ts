@@ -56,6 +56,8 @@ const run = (claude: string | null, extra: Record<string, string> = {}) => {
     EXPANSION_POST_BIN: post,
     EXPANSION_HERMES_DIR: "/h",
     EXPANSION_OPS_WT: "none",
+    // 앱 신원도 기본으로 끈다(가짜 HOME 에는 키가 없다) — 앱 신원 테스트만 켠다.
+    EXPANSION_APP_KEY: "none",
     ...stubEnv,
     ...(claude ? { EXPANSION_CLAUDE_BIN: claude } : {}),
     ...extra,
@@ -464,6 +466,85 @@ describe("expansion-loop.sh 실패 사유", () => {
     const line = cronLog().split("\n").find((l) => l.includes("FAIL expansion-loop")) ?? "";
     expect(line).toContain(`결과 is_error=true ${"x".repeat(160)}`);
     expect(line).not.toContain("x".repeat(161));
+  }, 20000);
+});
+
+describe("expansion-loop.sh 앱 신원", () => {
+  // 가짜 발급 스크립트: 인자를 기록하고 고정 토큰을 낸다(node 로 실행된다 — 실행 권한 없는 데이터 파일).
+  const tokenScript = (body = 'process.stdout.write("tok_stub_value\\n");') => {
+    const p = join(root, "fake-token.mjs");
+    writeFileSync(
+      p,
+      `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(join(root, "token.argv"))}, process.argv.slice(2).join(" ") + "\\n");\n${body}\n`,
+    );
+    return p;
+  };
+  const key = () => {
+    const p = join(root, "app.pem");
+    writeFileSync(p, "not-a-real-key");
+    return p;
+  };
+  // 가짜 claude: 받은 GH_TOKEN·GITHUB_TOKEN 을 기록한다.
+  const envProbe = () =>
+    script(
+      "claude-env",
+      `echo "GH=\${GH_TOKEN-<unset>} GITHUB=\${GITHUB_TOKEN-<unset>}" > "${root}/claude.env"\n${OK_CARDS()}`,
+    );
+  const claudeEnv = () => (existsSync(join(root, "claude.env")) ? readFileSync(join(root, "claude.env"), "utf8").trim() : "");
+
+  it("키가 있으면 회차 직전에 앱 토큰을 받아 GH_TOKEN 으로 넘기고 GITHUB_TOKEN 은 지운다", () => {
+    const r = run(envProbe(), {
+      EXPANSION_APP_KEY: key(),
+      EXPANSION_APP_TOKEN_SCRIPT: tokenScript(),
+      GH_TOKEN: "owner_token_must_not_leak",
+      GITHUB_TOKEN: "owner_token_must_not_leak",
+    });
+    expect(r.status).toBe(0);
+    expect(claudeEnv()).toBe("GH=tok_stub_value GITHUB=<unset>");
+    expect(readFileSync(join(root, "token.argv"), "utf8").trim()).toBe(`5832880 183673676 ${join(root, "app.pem")}`);
+    expect(cronLog()).not.toContain("tok_stub_value");
+  }, 20000);
+
+  it("키 파일이 없으면 오너 자격으로 물러서지 않고 FAIL 로 멈춘다", () => {
+    const r = run(envProbe(), { EXPANSION_APP_KEY: join(root, "missing.pem"), EXPANSION_APP_TOKEN_SCRIPT: tokenScript() });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*앱 키 없음/);
+    expect(existsSync(join(root, "claude.env"))).toBe(false);
+  }, 20000);
+
+  it("기본값(EXPANSION_APP_KEY 미지정)은 HOME/selfhost/expansion-app.pem 을 찾는다", () => {
+    const r = run(envProbe(), { EXPANSION_APP_KEY: UNSET_ENV, EXPANSION_APP_TOKEN_SCRIPT: tokenScript() });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*앱 키 없음/);
+  }, 20000);
+
+  it("발급이 실패하면 사유 첫 줄을 남기고 회차를 부르지 않는다", () => {
+    const r = run(envProbe(), {
+      EXPANSION_APP_KEY: key(),
+      EXPANSION_APP_TOKEN_SCRIPT: tokenScript('process.stderr.write("expansion-app-token: HTTP 401 Bad credentials\\n"); process.exit(1);'),
+    });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*앱 토큰 발급 실패 expansion-app-token: HTTP 401 Bad credentials/);
+    expect(existsSync(join(root, "claude.env"))).toBe(false);
+  }, 20000);
+
+  it("빈 토큰이면 FAIL", () => {
+    const r = run(envProbe(), { EXPANSION_APP_KEY: key(), EXPANSION_APP_TOKEN_SCRIPT: tokenScript("") });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*앱 토큰 발급 실패 \(빈 토큰\)/);
+  }, 20000);
+
+  it("시간 상한이 토큰 수명(3600s)보다 길면 발급 전에 FAIL", () => {
+    const r = run(envProbe(), { EXPANSION_APP_KEY: key(), EXPANSION_APP_TOKEN_SCRIPT: tokenScript(), EXPANSION_TIMEOUT_S: "3601" });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*시간 상한 3601s 가 앱 토큰 수명 3600s 보다 길다/);
+    expect(existsSync(join(root, "token.argv"))).toBe(false);
+  }, 20000);
+
+  it("none 이면 GH_TOKEN 을 건드리지 않는다(테스트·수동 실행용)", () => {
+    const r = run(envProbe(), { GH_TOKEN: "untouched" });
+    expect(r.status).toBe(0);
+    expect(claudeEnv()).toBe("GH=untouched GITHUB=<unset>");
   }, 20000);
 });
 
