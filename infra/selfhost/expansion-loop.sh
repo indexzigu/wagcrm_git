@@ -25,6 +25,7 @@ REPO="${EXPANSION_REPO:-$HOME/Projects/wag-crm}"
 # 운영자는 메인 체크아웃이 아니라 매 회차 최신 main 으로 맞춘 전용 분리 트리에서 돈다 — 메인 체크아웃은
 # 다른 세션이 아무 브랜치에나 둘 수 있어, 거기서 돌면 main 에만 있는 프로젝트 에이전트 정의를 못 찾는다.
 # docs/private 는 메인 체크아웃 한 곳에만 살므로 운영 트리에는 그쪽을 가리키는 링크를 둔다.
+# 운영자 프롬프트는 메인 체크아웃 절대 경로(카드·장부·실행 워크트리)에 쓰므로 claude 에 --add-dir "$REPO" 로 그 쓰기 범위를 준다.
 OPS_WT="${EXPANSION_OPS_WT-$REPO/.claude/worktrees/expansion-ops}"
 [ "$OPS_WT" = "none" ] && OPS_WT=""
 CLAUDE_BIN="${EXPANSION_CLAUDE_BIN:-claude}"
@@ -111,7 +112,7 @@ PROMPT="${EXPANSION_PROMPT:-docs/private/expansion/prompts/daily-run.md}"
 case "$PROMPT" in /*) PROMPT_PATH="$PROMPT" ;; *) PROMPT_PATH="$REPO/$PROMPT" ;; esac
 
 if [ "$DRY" = "1" ]; then
-  echo "DRY: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
+  echo "DRY: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus --add-dir $REPO < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
   log_line OK "cost=0 dry=1"
   exit 0
 fi
@@ -187,9 +188,16 @@ fail() { # reason [cost]
 [ -f "$PROMPT_PATH" ] || fail "프롬프트 없음"
 RUN_DIR="$REPO"
 if [ -n "$OPS_WT" ]; then
-  git -C "$REPO" fetch -q origin refs/heads/main 2> "$WORK_DIR/git.err" \
+  # 공유 FETCH_HEAD 는 다른 세션의 fetch 가 덮을 수 있다 — 전용 참조로 받는다. 저속 연결은 60초에 끊는다
+  # (run_grouped 밖이라 여기서 멈추면 락을 쥔 채 무기한 대기한다).
+  GIT_TERMINAL_PROMPT=0 git -C "$REPO" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 \
+    fetch -q origin +refs/heads/main:refs/expansion-ops/main 2> "$WORK_DIR/git.err" \
     || fail "운영 트리: fetch 실패 $(head -n 1 "$WORK_DIR/git.err" 2>/dev/null)"
-  OPS_SHA="$(git -C "$REPO" rev-parse --verify 'FETCH_HEAD^{commit}' 2>/dev/null)" || fail "운영 트리: FETCH_HEAD 없음"
+  OPS_SHA="$(git -C "$REPO" rev-parse --verify 'refs/expansion-ops/main^{commit}' 2>/dev/null)" || fail "운영 트리: main SHA 없음"
+  if [ -f "$OPS_WT/.git" ] && ! git -C "$OPS_WT" rev-parse --git-dir >/dev/null 2>&1; then
+    # 관리 폴더가 prune 돼 끊긴 운영 트리(.git 파일 = 분리 트리) — 고칠 것이 없으니 지우고 아래에서 새로 만든다.
+    rm -rf "$OPS_WT" || fail "운영 트리: 끊긴 트리 삭제 실패"
+  fi
   if [ -e "$OPS_WT/.git" ]; then
     # 운영 트리는 아무도 고치지 않는다 — 추적 파일이 바뀌어 있으면 덮지 않고 멈춘다(조용히 버리지 않는다).
     [ -z "$(git -C "$OPS_WT" status --porcelain --untracked-files=no 2>/dev/null)" ] || fail "운영 트리: 추적 파일 변경 있음"
@@ -212,7 +220,7 @@ cd "$RUN_DIR" 2>/dev/null || fail "레포 경로 없음"
 rm -f "$CARDS_FILE"
 
 run_grouped "$TIMEOUT_S" "$PROMPT_PATH" "$OUT" "$ERR" \
-  "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus
+  "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus --add-dir "$REPO"
 
 # 비용은 종료코드·타임아웃 판정보다 먼저 읽는다(best-effort) — 실패한 실행도 지출은 남겨야 한다.
 COST="$(node -e '

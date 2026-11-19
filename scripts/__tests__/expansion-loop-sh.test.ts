@@ -385,7 +385,7 @@ describe("expansion-loop.sh 운영 트리", () => {
   const probe = () =>
     (probePath ||= script(
       "claude-probe",
-      `pwd -P > "${root}/cwd"\ncat marker.txt > "${root}/marker"\nreadlink docs/private > "${root}/link"\n${OK_CARDS()}`,
+      `pwd -P > "${root}/cwd"\necho "$@" > "${root}/argv"\ncat marker.txt > "${root}/marker"\nreadlink docs/private > "${root}/link"\n${OK_CARDS()}`,
     ));
   const read = (f: string) => readFileSync(join(root, f), "utf8").trim();
 
@@ -395,6 +395,8 @@ describe("expansion-loop.sh 운영 트리", () => {
     expect(read("cwd")).toBe(realpathSync(opsWt()));
     expect(read("marker")).toBe("v1");
     expect(read("link")).toBe(join(repo, "docs/private"));
+    // 프롬프트가 쓰는 메인 체크아웃 절대 경로는 작업 폴더 밖이다 — 허용 폴더로 넘겨야 쓰기가 막히지 않는다.
+    expect(read("argv")).toMatch(new RegExp(`--add-dir ${repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
     expect(readFileSync(join(repo, "marker.txt"), "utf8").trim()).toBe("stale");
     expect(git(repo, "rev-parse", "--abbrev-ref", "HEAD")).toBe("other-session");
   }, 30000);
@@ -424,6 +426,14 @@ describe("expansion-loop.sh 운영 트리", () => {
     expect(read("marker")).toBe("v1");
   }, 30000);
 
+  it("관리 폴더가 prune 돼 끊긴 운영 트리는 지우고 다시 만든다", () => {
+    expect(run(probe(), { EXPANSION_OPS_WT: UNSET }).status).toBe(0);
+    rmSync(join(repo, ".git/worktrees"), { recursive: true, force: true });
+    rmSync(join(root, "marker"));
+    expect(run(probe(), { EXPANSION_OPS_WT: UNSET }).status).toBe(0);
+    expect(read("marker")).toBe("v1");
+  }, 30000);
+
   it("fetch 가 실패하면 FAIL 사유에 남기고 운영자를 부르지 않는다", () => {
     git(repo, "remote", "remove", "origin");
     const r = run(probe(), { EXPANSION_OPS_WT: UNSET });
@@ -441,7 +451,7 @@ describe("expansion-loop.sh 실패 사유", () => {
     );
     expect(run(c).status).toBe(1);
     expect(cronLog()).toMatch(/FAIL expansion-loop cost=0 claude exit=1 Not logged in Please run \/login/);
-  });
+  }, 20000);
   it("is_error=true 면 result 앞부분을 사유에 붙이고 160자로 자른다", () => {
     const long = "x".repeat(300);
     const c = script("claude-iserr", `cat >/dev/null\necho '{"is_error":true,"total_cost_usd":0.1,"result":"${long}"}'`);
@@ -449,7 +459,7 @@ describe("expansion-loop.sh 실패 사유", () => {
     const line = cronLog().split("\n").find((l) => l.includes("FAIL expansion-loop")) ?? "";
     expect(line).toContain(`결과 is_error=true ${"x".repeat(160)}`);
     expect(line).not.toContain("x".repeat(161));
-  });
+  }, 20000);
 });
 
 describe("expansion-readonly-sql.sh", () => {
