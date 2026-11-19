@@ -51,9 +51,16 @@
   ③ 이번 반영 구간(`~/selfhost/logs/deployed.sha`..origin/main) 전체에 `prisma/` · `.env*` ·
      경로에 `settlement` 가 든 파일(정산) · `ygrd-link/`(링크 서버 — 되돌리는 절차가 없음) · `infra/` 변경이
      없다 — 이 PR 만이 아니라 함께 나가는 앞선 머지분까지 `git diff --stat` 으로 본다.
+     단 `infra/selfhost/expansion-loop.sh` 한 파일은 `infra/` 에서 뺀다(배포 경로 밖의 크론 래퍼). 이 단서는
+     ⓐ 반영 구간에서 그 파일을 바꾼 커밋이 이번 PR 것 하나뿐이고(`git log --oneline <deployed.sha>..origin/main -- infra/selfhost/expansion-loop.sh`)
+     ⓑ 리뷰어가 「확장 회차의 권한 방식·`--add-dir` 범위·모델·타임아웃·잠금을 넓히는 변경 없음」을 명시한 때만 쓴다
+     (확장 회차가 자기 실행 래퍼로 스스로 한도를 풀지 못하게 — 근거: log 2026-11-19#03).
   ④ 보고에 되돌리는 절차를 적는다(릴리스 연결 교체 → 서비스 재시작 → 반영 기록 갱신). `rollback.sh`
      (클라우드 전환 되돌리기)는 이 절차가 아니다.
   ⑤ 승격 레인(`promote-prod.sh`)은 이 예외에 들지 않는다.
+  ⑥ head 브랜치가 `exp/` 로 시작하는 PR(확장 회차가 만든 PR)은 이 예외에 들지 않는다 — 회차가 자기 산출물을
+     스스로 통합·반영하지 못하게 오너 머지로 넘긴다. `gh pr view <N> --json headRefName` 으로 확인한다
+     (근거: log 2026-11-19#03).
   **효력 정지:** 되돌리기 실행·반영 후 상태 점검 실패·오너의 회귀 신고 중 하나라도 생기면 이 항은 그
   즉시 효력이 없다. 재개는 오너 승인으로만 한다. 권한 판정기 허용 문장(`~/.claude/settings.json`
   `autoMode.allow`)은 오너가 넣는다 — 이 문서만으로는 작동하지 않는다.
