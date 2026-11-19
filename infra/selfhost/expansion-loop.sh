@@ -7,7 +7,7 @@ set -euo pipefail
 # 실패(종료코드≠0 · 타임아웃 · 결과 JSON is_error · 결과 JSON 파손)면 cron.log 에 FAIL 줄을 쓰고
 # 「오늘은 건너뜀」 카드 1장을 hermes 게시 CLI 로 올린 뒤 exit 1 한다.
 #
-# env: EXPANSION_REPO · EXPANSION_CLAUDE_BIN · EXPANSION_TIMEOUT_S(3600) · EXPANSION_DRY(1=claude 미호출)
+# env: EXPANSION_REPO · EXPANSION_OPS_WT(운영 트리, none=끔) · EXPANSION_CLAUDE_BIN · EXPANSION_TIMEOUT_S(3600) · EXPANSION_DRY(1=claude 미호출)
 #      EXPANSION_LOG · EXPANSION_PROMPT(레포 기준 상대경로 가능; 기본 daily-run.md, 첫 회차는 명시 지정)
 #      EXPANSION_HERMES_DIR · EXPANSION_POST_BIN · EXPANSION_POST_TIMEOUT_S(120)
 #
@@ -22,6 +22,12 @@ set -euo pipefail
 export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin"
 
 REPO="${EXPANSION_REPO:-$HOME/Projects/wag-crm}"
+# 운영자는 메인 체크아웃이 아니라 매 회차 최신 main 으로 맞춘 전용 분리 트리에서 돈다 — 메인 체크아웃은
+# 다른 세션이 아무 브랜치에나 둘 수 있어, 거기서 돌면 main 에만 있는 프로젝트 에이전트 정의를 못 찾는다.
+# docs/private 는 메인 체크아웃 한 곳에만 살므로 운영 트리에는 그쪽을 가리키는 링크를 둔다.
+# 운영자 프롬프트는 메인 체크아웃 절대 경로(카드·장부·실행 워크트리)에 쓰므로 claude 에 --add-dir "$REPO" 로 그 쓰기 범위를 준다.
+OPS_WT="${EXPANSION_OPS_WT-$REPO/.claude/worktrees/expansion-ops}"
+[ "$OPS_WT" = "none" ] && OPS_WT=""
 CLAUDE_BIN="${EXPANSION_CLAUDE_BIN:-claude}"
 TIMEOUT_S="${EXPANSION_TIMEOUT_S:-3600}"
 DRY="${EXPANSION_DRY:-0}"
@@ -106,7 +112,7 @@ PROMPT="${EXPANSION_PROMPT:-docs/private/expansion/prompts/daily-run.md}"
 case "$PROMPT" in /*) PROMPT_PATH="$PROMPT" ;; *) PROMPT_PATH="$REPO/$PROMPT" ;; esac
 
 if [ "$DRY" = "1" ]; then
-  echo "DRY: cd $REPO; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
+  echo "DRY: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus --add-dir $REPO < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
   log_line OK "cost=0 dry=1"
   exit 0
 fi
@@ -180,11 +186,42 @@ fail() { # reason [cost]
 }
 
 [ -f "$PROMPT_PATH" ] || fail "프롬프트 없음"
-cd "$REPO" 2>/dev/null || fail "레포 경로 없음"
+RUN_DIR="$REPO"
+if [ -n "$OPS_WT" ]; then
+  # 공유 FETCH_HEAD 는 다른 세션의 fetch 가 덮을 수 있다 — 전용 참조로 받는다. 저속 연결은 60초에 끊는다
+  # (run_grouped 밖이라 여기서 멈추면 락을 쥔 채 무기한 대기한다).
+  GIT_TERMINAL_PROMPT=0 git -C "$REPO" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 \
+    fetch -q origin +refs/heads/main:refs/expansion-ops/main 2> "$WORK_DIR/git.err" \
+    || fail "운영 트리: fetch 실패 $(head -n 1 "$WORK_DIR/git.err" 2>/dev/null)"
+  OPS_SHA="$(git -C "$REPO" rev-parse --verify 'refs/expansion-ops/main^{commit}' 2>/dev/null)" || fail "운영 트리: main SHA 없음"
+  if [ -f "$OPS_WT/.git" ] && ! git -C "$OPS_WT" rev-parse --git-dir >/dev/null 2>&1; then
+    # 관리 폴더가 prune 돼 끊긴 운영 트리(.git 파일 = 분리 트리) — 지우지 않고 옆으로 옮긴 뒤(안의 수기 편집 보존)
+    # 아래에서 새로 만든다.
+    mv "$OPS_WT" "$OPS_WT.broken-$(date +%Y%m%d%H%M%S)" || fail "운영 트리: 끊긴 트리 옮기기 실패"
+  fi
+  if [ -e "$OPS_WT/.git" ]; then
+    # 운영 트리는 아무도 고치지 않는다 — 추적 파일이 바뀌어 있으면 덮지 않고 멈춘다(조용히 버리지 않는다).
+    [ -z "$(git -C "$OPS_WT" status --porcelain --untracked-files=no 2>/dev/null)" ] || fail "운영 트리: 추적 파일 변경 있음"
+    git -C "$OPS_WT" checkout -q --detach "$OPS_SHA" 2> "$WORK_DIR/git.err" \
+      || fail "운영 트리: checkout 실패 $(head -n 1 "$WORK_DIR/git.err" 2>/dev/null)"
+  else
+    # 폴더만 지워지고 등록이 남아 있으면 worktree add 가 거부한다 — -f 로 이 경로의 등록만 덮는다
+    # (worktree prune 은 다른 세션의 등록까지 지우므로 쓰지 않는다). 비어 있지 않은 폴더는 -f 로도 거부된다.
+    mkdir -p "$(dirname "$OPS_WT")" 2>/dev/null || true
+    git -C "$REPO" worktree add -q -f --detach "$OPS_WT" "$OPS_SHA" 2> "$WORK_DIR/git.err" \
+      || fail "운영 트리: 생성 실패 $(head -n 1 "$WORK_DIR/git.err" 2>/dev/null)"
+  fi
+  mkdir -p "$OPS_WT/docs" 2>/dev/null || true
+  [ -e "$OPS_WT/docs/private" ] || [ -L "$OPS_WT/docs/private" ] || ln -s "$REPO/docs/private" "$OPS_WT/docs/private" \
+    || fail "운영 트리: docs/private 링크 실패"
+  [ -L "$OPS_WT/docs/private" ] || fail "운영 트리: docs/private 가 링크가 아님"
+  RUN_DIR="$OPS_WT"
+fi
+cd "$RUN_DIR" 2>/dev/null || fail "레포 경로 없음"
 rm -f "$CARDS_FILE"
 
 run_grouped "$TIMEOUT_S" "$PROMPT_PATH" "$OUT" "$ERR" \
-  "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus
+  "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus --add-dir "$REPO"
 
 # 비용은 종료코드·타임아웃 판정보다 먼저 읽는다(best-effort) — 실패한 실행도 지출은 남겨야 한다.
 COST="$(node -e '
@@ -195,8 +232,15 @@ if(!Number.isFinite(c))process.exit(3);
 console.log(String(c));}catch(e){process.exit(3);}' "$OUT" 2>/dev/null)" || COST=unknown
 [ -n "$COST" ] || COST=unknown
 
+# 실패 사유: claude 는 --output-format json 에서 오류 문구(예: 로그인 만료)를 stderr 가 아니라 결과 JSON 의
+# result 에 쓴다 — 그 앞부분을 사유에 붙인다(없으면 빈 값; 판정에는 쓰지 않는다).
+RES_SNIP="$(node -e '
+const fs=require("fs");
+try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+if(j&&typeof j.result==="string")console.log(j.result.replace(/\s+/g," ").slice(0,160));}catch(e){}' "$OUT" 2>/dev/null)" || RES_SNIP=""
+
 [ "$RG_TIMEOUT" -eq 0 ] || fail "타임아웃 ${TIMEOUT_S}s" "$COST"
-[ "$RG_RC" -eq 0 ] || fail "claude exit=$RG_RC $(tail -c 200 "$ERR" 2>/dev/null)" "$COST"
+[ "$RG_RC" -eq 0 ] || fail "claude exit=$RG_RC ${RES_SNIP:+$RES_SNIP | }$(tail -c 200 "$ERR" 2>/dev/null)" "$COST"
 
 # node 의 stderr 는 버리지 않는다 — node 가 없거나 깨진 것을 「결과 JSON 파손」으로 오인하지 않게 첫 줄을 사유에 붙인다.
 PARSE_ERR="$WORK_DIR/parse.err"
@@ -208,7 +252,7 @@ if(!j||typeof j!=="object"||typeof j.is_error!=="boolean")process.exit(3);
 console.log(j.is_error?"1":"0");' "$OUT" 2> "$PARSE_ERR")" \
   || fail "결과 JSON 파손 $(head -n 1 "$PARSE_ERR" 2>/dev/null)" "$COST"
 
-[ "$IS_ERR" = "0" ] || fail "결과 is_error=true" "$COST"
+[ "$IS_ERR" = "0" ] || fail "결과 is_error=true $RES_SNIP" "$COST"
 
 # 운영자가 쓴 카드 파일: 유효 JSON 이고 cards 배열이 비어 있지 않아야 한다.
 node -e '
