@@ -428,6 +428,43 @@ describe("parseStoredSketches — 저장값이 깨져도 생성은 계속된다"
   });
 });
 
+describe("시안 usage — 시안 옆에 저장되는 선택 필드", () => {
+  const usage = { inputTokens: 123, outputTokens: 456, generatedAt: "2026-01-01T00:00:00.000Z" };
+
+  it("유효한 usage 는 저장·파싱 왕복 뒤에도 그대로 남는다", () => {
+    const s = { key: "a", url: "https://x/a.jpg", usage };
+    expect(parseStoredSketches(JSON.stringify([s]))).toEqual([s]);
+  });
+
+  it("깨진 usage 는 버리되 시안은 남긴다", () => {
+    for (const bad of [
+      "x",
+      null,
+      { inputTokens: 123 },
+      { generatedAt: 5 },
+      { inputTokens: -1, generatedAt: usage.generatedAt },
+      { inputTokens: "1", generatedAt: usage.generatedAt },
+    ]) {
+      expect(
+        parseStoredSketches(JSON.stringify([{ key: "a", url: "https://x/a.jpg", usage: bad }])),
+      ).toEqual([{ key: "a", url: "https://x/a.jpg" }]);
+    }
+  });
+
+  it("usage 없는 옛 형태도 그대로 읽힌다", () => {
+    expect(parseStoredSketches('[{"key":"a","url":"https://x/a.jpg"}]')).toEqual([
+      { key: "a", url: "https://x/a.jpg" },
+    ]);
+  });
+
+  it("mergeSketches 는 usage 를 떨어뜨리지 않는다", () => {
+    const c = cut();
+    const s = { key: cutSketchKey(c), url: "https://x/a.jpg", usage };
+    expect(mergeSketches([c], [s], [])).toEqual([s]);
+    expect(mergeSketches([c], [], [s])).toEqual([s]);
+  });
+});
+
 describe("저장 경로", () => {
   it("컷 키가 경로에 들어가 같은 컷이면 같은 객체를 덮어쓴다", () => {
     const c = cut();

@@ -33,7 +33,20 @@ const clientFor = (apiKey: string) => new GoogleGenAI({ apiKey });
 export type GeneratedImage = {
   bytes: ArrayBuffer;
   mimeType: string;
+  /** API 가 알려 준 사용 토큰. 응답에 없거나 깨졌으면 필드째 생략한다. */
+  usage?: { inputTokens?: number; outputTokens?: number };
 };
+
+/** `Interaction.usage` 를 방어적으로 읽는다 — 어떤 경우에도 던지지 않는다. */
+function readUsage(response: unknown): GeneratedImage["usage"] {
+  const u = (response as { usage?: unknown } | null)?.usage;
+  if (typeof u !== "object" || u === null) return undefined;
+  const { total_input_tokens: i, total_output_tokens: o } = u as Record<string, unknown>;
+  const ok = (n: unknown): n is number =>
+    typeof n === "number" && Number.isFinite(n) && n >= 0;
+  if (!ok(i) && !ok(o)) return undefined;
+  return { ...(ok(i) ? { inputTokens: i } : {}), ...(ok(o) ? { outputTokens: o } : {}) };
+}
 
 /**
  * SDK 응답에서 이미지 바이트를 꺼낸다.
@@ -68,9 +81,11 @@ export function extractInlineImage(response: unknown): GeneratedImage {
     typeof image?.mime_type === "string" && image.mime_type.startsWith("image/")
       ? image.mime_type
       : SKETCH_MIME_TYPE;
+  const usage = readUsage(response);
   return {
     bytes: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
     mimeType,
+    ...(usage ? { usage } : {}),
   };
 }
 

@@ -3,8 +3,22 @@
 // 빈 이미지를 저장하면 프레임에 깨진 그림이 박히고, 그때는 "모델이 이상한 걸 그렸다"와
 // "응답 모양이 바뀌었다"를 구분할 수 없다. 그래서 파싱은 던지고, 호출부가 컷 단위로 잡는다.
 
-import { describe, it, expect } from "vitest";
-import { extractInlineImage } from "../gemini-image";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const { recordFailure, rotation } = vi.hoisted(() => ({
+  recordFailure: vi.fn(),
+  rotation: vi.fn(),
+}));
+vi.mock("@/lib/agent/gemini-usage", () => ({
+  recordGeminiFailure: recordFailure,
+  truncateGeminiReason: (e: unknown) => String(e),
+}));
+vi.mock("@/lib/agent/gemini-client", async (orig) => ({
+  ...(await orig<typeof import("../gemini-client")>()),
+  withGeminiKeyRotation: rotation,
+}));
+
+import { extractInlineImage, generateSketchImage } from "../gemini-image";
 import { GeminiClientError } from "../gemini-client";
 
 /** 최소 100바이트를 넘기는 더미 base64(파싱 하한 검사를 통과시키기 위한 것). */
@@ -45,5 +59,54 @@ describe("extractInlineImage", () => {
     expect(() =>
       extractInlineImage({ output_image: { type: "image", uri: "https://x/a.jpg" } }),
     ).toThrow(GeminiClientError);
+  });
+});
+
+describe("extractInlineImage — usage 는 방어적으로 읽는다", () => {
+  const img = { type: "image", data: okBase64, mime_type: "image/jpeg" };
+
+  it("usage 토큰 수를 함께 돌려준다", () => {
+    const out = extractInlineImage({
+      output_image: img,
+      usage: { total_input_tokens: 123, total_output_tokens: 456 },
+    });
+    expect(out.usage).toEqual({ inputTokens: 123, outputTokens: 456 });
+  });
+
+  it("한쪽만 있으면 그쪽만 담는다", () => {
+    const out = extractInlineImage({ output_image: img, usage: { total_output_tokens: 456 } });
+    expect(out.usage).toEqual({ outputTokens: 456 });
+  });
+
+  it("usage 가 없거나 깨졌으면 필드를 생략하고 던지지 않는다", () => {
+    for (const usage of [
+      undefined,
+      null,
+      "x",
+      {},
+      { total_input_tokens: -1, total_output_tokens: Number.NaN },
+      { total_input_tokens: "123", total_output_tokens: Infinity },
+    ]) {
+      const out = extractInlineImage({ output_image: img, usage });
+      expect(out).not.toHaveProperty("usage");
+      expect(out.bytes.byteLength).toBe(256);
+    }
+  });
+});
+
+describe("generateSketchImage — 성공 경로는 ApiCallLog 행을 만들지 않는다", () => {
+  beforeEach(() => {
+    recordFailure.mockReset();
+    rotation.mockReset();
+  });
+
+  it("성공하면 usage 를 돌려주고 recordGeminiFailure 를 부르지 않는다", async () => {
+    rotation.mockResolvedValue({
+      output_image: { data: okBase64, mime_type: "image/jpeg" },
+      usage: { total_input_tokens: 123, total_output_tokens: 456 },
+    });
+    const out = await generateSketchImage("p");
+    expect(out.usage).toEqual({ inputTokens: 123, outputTokens: 456 });
+    expect(recordFailure).not.toHaveBeenCalled();
   });
 });

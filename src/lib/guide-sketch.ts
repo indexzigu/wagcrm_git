@@ -210,12 +210,46 @@ export function buildSketchPrompt(cut: GuideCut, product: SketchProduct): string
   ].join("\n");
 }
 
+/**
+ * 시안 1장을 그릴 때 API 가 알려 준 실제 사용 토큰 — 장당 비용을 나중에 재기 위한
+ * 기록이다(화면에 쓰지 않는다). 응답에 없으면 필드째 생략한다.
+ */
+export type SketchUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  /** 그린 시각(ISO). */
+  generatedAt: string;
+};
+
 /** 초안에 저장되는 시안 1건. `url` 은 우리 스토리지의 공개 URL이다. */
 export type GuideSketch = {
   /** `cutSketchKey` 결과 — 캐시 조회 키. */
   key: string;
   url: string;
+  /** 옛 저장분에는 없다(선택). */
+  usage?: SketchUsage;
 };
+
+const isTokenCount = (n: unknown): n is number =>
+  typeof n === "number" && Number.isFinite(n) && n >= 0;
+
+/** 깨진 usage 는 null — 시안 자체를 버리지 않고 이 필드만 떨군다. */
+function parseSketchUsage(raw: unknown): SketchUsage | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const u = raw as Record<string, unknown>;
+  if (typeof u.generatedAt !== "string") return null;
+  const hasIn = u.inputTokens !== undefined;
+  const hasOut = u.outputTokens !== undefined;
+  if ((hasIn && !isTokenCount(u.inputTokens)) || (hasOut && !isTokenCount(u.outputTokens))) {
+    return null;
+  }
+  if (!hasIn && !hasOut) return null;
+  return {
+    ...(hasIn ? { inputTokens: u.inputTokens as number } : {}),
+    ...(hasOut ? { outputTokens: u.outputTokens as number } : {}),
+    generatedAt: u.generatedAt,
+  };
+}
 
 /** 저장된 시안 목록(JSON 컬럼)을 안전하게 파싱한다. 깨졌으면 빈 배열. */
 export function parseStoredSketches(raw: string | null): GuideSketch[] {
@@ -223,13 +257,19 @@ export function parseStoredSketches(raw: string | null): GuideSketch[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (v): v is GuideSketch =>
-        typeof v === "object" &&
-        v !== null &&
-        typeof (v as GuideSketch).key === "string" &&
-        typeof (v as GuideSketch).url === "string",
-    );
+    return parsed
+      .filter(
+        (v): v is GuideSketch =>
+          typeof v === "object" &&
+          v !== null &&
+          typeof (v as GuideSketch).key === "string" &&
+          typeof (v as GuideSketch).url === "string",
+      )
+      .map((v) => {
+        const { usage: rawUsage, ...rest } = v;
+        const usage = parseSketchUsage(rawUsage);
+        return usage ? { ...rest, usage } : rest;
+      });
   } catch {
     // 저장값이 깨져도 생성은 계속돼야 한다 — 캐시 미스로 떨어질 뿐이다.
     return [];
