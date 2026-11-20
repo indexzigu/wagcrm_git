@@ -283,11 +283,10 @@ export async function getInflowReport(
     attention: {
       noClickLinks: rows.filter((row) => row.clicks === 0).length,
       activeNoClickLinks: rows.filter((row) => row.clicks === 0 && isWithinSalePeriod(row)).length,
-      // 만료 규칙이 "종료일 +30일"에서 "KST 종료일 + 유예일"로 좁혀지면서
-      // (resolveLinkExpiry, short-link.ts) 진행 중 캠페인도 마지막 2~3일 동안
-      // 여기 걸리게 됐다 — 그러면 건강하게 돌아가는 공구가 상시 "주의 필요"로
-      // 잡힌다. isWithinSalePeriod 로 진행 중인 캠페인을 모집단에서 빼서
-      // "조치가 필요한, 이미 끝난 캠페인의 링크"라는 원래 의미를 지킨다.
+      // 링크 만료 = KST 종료일 + 유예일(resolveLinkExpiry, short-link.ts). 유예가 이 7일 창보다
+      // 짧으면 진행 중 캠페인도 마지막 며칠 동안 여기 걸려 건강한 공구가 상시 "주의 필요"로
+      // 잡힌다. 지금(유예 7일)은 종료 뒤에만 걸리지만, isWithinSalePeriod 로 진행 중 캠페인을
+      // 모집단에서 빼 두어 유예를 줄여도 "조치가 필요한, 이미 끝난 캠페인의 링크"라는 의미를 지킨다.
       expiringSoonLinks: rows.filter(
         (row) =>
           row.expiresAt != null &&
