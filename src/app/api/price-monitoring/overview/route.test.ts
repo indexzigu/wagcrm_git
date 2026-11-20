@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
   priceMonitorSnapshot: { findMany: vi.fn() },
@@ -10,7 +10,11 @@ vi.mock("@/lib/prisma", () => ({ getPrisma: () => prismaMock }));
 import { GET } from "./route";
 
 describe("GET /api/price-monitoring/overview", () => {
+  // 라우트는 8일보다 오래된 수집 상태를 버린다. 아래 픽스처가 2026-11-1x 고정 날짜라 실제 시계를 쓰면
+  // 며칠 지나 저절로 깨진다(2026-11-20 실발생) — Date 만 고정한다(타이머까지 얼리면 비동기 대기가 멈춘다).
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T12:00:00.000Z"));
     vi.clearAllMocks();
     prismaMock.priceMonitorSnapshot.findMany.mockResolvedValue([
       {
@@ -32,6 +36,10 @@ describe("GET /api/price-monitoring/overview", () => {
       },
     ]);
     prismaMock.salesCampaign.findMany.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("저장된 evidence에서 최신 오류와 소스별 최근 성공을 요약한다", async () => {
