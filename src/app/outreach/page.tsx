@@ -33,6 +33,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EntityIdentity } from "@/components/crm/entity-identity";
+import { needsAcquisitionPrompt } from "@/lib/acquisition-prompt";
+import { AcquisitionChannelPrompt } from "@/components/crm/acquisition-channel-prompt";
 import { SellerIdentityInfo } from "@/components/crm/seller-identity-info";
 import { getDealIdentityParts } from "@/lib/deal-display";
 import { OutreachList, OutreachCardContent, type OutreachRow } from "@/components/crm/outreach-list";
@@ -289,6 +291,25 @@ export default function OutreachPage() {
   // 같은 테스크의 캠페인 생성 요청이 겹치면 서버가 둘 다 「연결된 캠페인 없음」으로 읽어 캠페인이 두 개
   // 만들어진다(서버에 선점 장치가 없다). 응답이 오기 전의 두 번째 클릭은 여기서 버린다.
   const creatingCampaignIdsRef = useRef<Set<string>>(new Set());
+  // 전환 직후 유입 경로가 빈 셀러에게 한 번 묻는다 — 채널은 기존 목록 API(GET /api/sellers)로 읽는다.
+  const [acquisitionPromptSellerId, setAcquisitionPromptSellerId] = useState<string | null>(null);
+  const promptAcquisitionChannel = useCallback(async (sellerId: string) => {
+    try {
+      const res = await fetch("/api/sellers");
+      if (!res.ok) {
+        console.warn("[acquisition-prompt] seller lookup failed", res.status);
+        return;
+      }
+      const data = await res.json();
+      const seller = ((data.sellers ?? []) as Array<{ id: string; acquisitionChannel?: string | null }>).find(
+        (item) => item.id === sellerId,
+      );
+      if (seller && needsAcquisitionPrompt(seller)) setAcquisitionPromptSellerId(sellerId);
+    } catch (error) {
+      // 묻기는 부가 기능이다 — 조회 실패가 전환 흐름을 막지 않되, 실패는 남긴다.
+      console.warn("[acquisition-prompt] seller lookup failed", error);
+    }
+  }, []);
   const handleCreateCampaign = useCallback(async (taskId: string) => {
     if (creatingCampaignIdsRef.current.has(taskId)) return;
     creatingCampaignIdsRef.current.add(taskId);
@@ -314,10 +335,14 @@ export default function OutreachPage() {
       const updated = await response.json();
       applyTaskUpdate(taskId, updated);
       toast.success("진행 준비 캠페인을 생성했습니다.");
+      const convertedSellerId =
+        updated?.sellerId ??
+        queryClient.getQueryData<OutreachRow[]>(queryKeys.outreach())?.find((item) => item.id === taskId)?.sellerId;
+      if (convertedSellerId) void promptAcquisitionChannel(convertedSellerId);
     } finally {
       creatingCampaignIdsRef.current.delete(taskId);
     }
-  }, [applyTaskUpdate]);
+  }, [applyTaskUpdate, promptAcquisitionChannel, queryClient]);
 
   const handleReminderSent = useCallback(async (taskId: string) => {
     const now = new Date();
@@ -1343,6 +1368,16 @@ export default function OutreachPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {acquisitionPromptSellerId && (
+        <div role="region" aria-label="유입 경로" className="fixed bottom-4 right-4 z-50 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card px-3 py-2 shadow-soft-sm">
+          <AcquisitionChannelPrompt
+            key={acquisitionPromptSellerId}
+            sellerId={acquisitionPromptSellerId}
+            onSaved={() => void queryClient.invalidateQueries({ queryKey: queryKeys.sellers() })}
+            onDone={() => setAcquisitionPromptSellerId(null)}
+          />
+        </div>
+      )}
     </>
   );
 }
