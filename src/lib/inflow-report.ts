@@ -284,7 +284,7 @@ export async function getInflowReport(
       noClickLinks: rows.filter((row) => row.clicks === 0).length,
       activeNoClickLinks: rows.filter((row) => row.clicks === 0 && isWithinSalePeriod(row)).length,
       // 만료 규칙이 "종료일 +30일"에서 "KST 종료일 + 유예일"로 좁혀지면서
-      // (resolveLinkExpiry, short-link.ts) 진행 중 캠페인도 마지막 한 주 내내
+      // (resolveLinkExpiry, short-link.ts) 진행 중 캠페인도 마지막 2~3일 동안
       // 여기 걸리게 됐다 — 그러면 건강하게 돌아가는 공구가 상시 "주의 필요"로
       // 잡힌다. isWithinSalePeriod 로 진행 중인 캠페인을 모집단에서 빼서
       // "조치가 필요한, 이미 끝난 캠페인의 링크"라는 원래 의미를 지킨다.
