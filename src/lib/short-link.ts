@@ -20,7 +20,18 @@ const MAX_CODE_ATTEMPTS = 5;
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /**
- * 링크 만료 시각 = **KST 종료일 다음날 00:00**. 종료일 당일은 종일 유효하다.
+ * 종료일이 지난 뒤에도 링크를 살려 두는 **유예 일수**. 공구 종료가 뒤늦게 연장되는 일이
+ * 있어, 종료일 당일 자정에 바로 꺼 버리면 이미 게시물에 박힌 링크가 먼저 죽는다.
+ *
+ * ⚠️ 이 값이 만료 규칙의 **유일한 조절점**이다 — 계산을 다시 쓰지 말고 이 상수만 바꾼다.
+ * 이미 발급된 링크는 이 값을 바꿔도 저절로 갱신되지 않는다(캠페인 종료일을 저장하거나
+ * `scripts/backfill-tracked-link-expiry.ts` 를 돌려야 새 규칙으로 다시 계산된다).
+ */
+export const LINK_EXPIRY_GRACE_DAYS = 4;
+
+/**
+ * 링크 만료 시각 = **KST 종료일 + `LINK_EXPIRY_GRACE_DAYS`일이 끝난 다음날 00:00**.
+ * 종료일부터 유예 마지막 날까지는 종일 유효하다(유예 0일이면 "종료일 다음날 00:00").
  *
  * ⛔ 밀리초 덧셈(구 규칙 `endDate + 30일`)으로 되돌리지 말 것 — 그 식은 `endDate` 의 **시각
  * 성분**을 그대로 끌고 가서, 같은 "30일"이 저장된 시각에 따라 28일 뒤·30일 뒤로 갈렸다.
@@ -39,7 +50,8 @@ export function resolveLinkExpiry(endDate: Date | null): Date | null {
   const nextKstMidnightAsUtc = Date.UTC(
     kst.getUTCFullYear(),
     kst.getUTCMonth(),
-    kst.getUTCDate() + 1, // Date.UTC 는 말일 초과를 다음 달로 정규화한다(8/31+1 → 9/1)
+    // 종료일 당일 + 유예 일수가 끝난 다음날. Date.UTC 는 말일 초과를 다음 달로 정규화한다(8/31+1 → 9/1)
+    kst.getUTCDate() + 1 + LINK_EXPIRY_GRACE_DAYS,
   );
   return new Date(nextKstMidnightAsUtc - KST_OFFSET_MS);
 }
