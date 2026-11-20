@@ -532,7 +532,7 @@ describe("PATCH /api/campaigns/[id]", () => {
     await PATCH(patchRequest({ startDate: "2026-07-01", endDate: "2026-07-20" }), context());
 
     // 2026-07-20T00:00:00Z(=07-20 09:00 KST) 종료 → 유예 7일(07-27 까지 유효) → 07-28 00:00 KST
-    // → UTC 07-24T15:00:00Z.
+    // → UTC 07-27T15:00:00Z.
     expect(trackedLinkUpdateManyMock).toHaveBeenCalledWith({
       where: { salesCampaignId: { in: ["c1"] } },
       data: { expiresAt: new Date("2026-07-27T15:00:00.000Z") },
