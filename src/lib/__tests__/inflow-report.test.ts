@@ -342,8 +342,8 @@ describe("조치가 필요한 것 (요약 행)", () => {
   });
 
   it("7일 안에 만료되는 링크를 센다 — 단, 종료된 캠페인만", async () => {
-    // 만료 규칙이 "종료일+30일" → "KST 종료일 다음날 00:00"로 좁혀지면서
-    // (resolveLinkExpiry, short-link.ts) 진행 중 캠페인도 마지막 한 주 내내
+    // 만료 규칙이 "종료일+30일" → "KST 종료일 + 유예일"로 좁혀지면서
+    // (resolveLinkExpiry, short-link.ts) 진행 중 캠페인도 마지막 2~3일 동안
     // "만료 임박"에 걸리게 됐다. isWithinSalePeriod 로 진행 중 캠페인을 빼야
     // "조치가 필요한, 이미 끝난 캠페인의 링크"라는 원래 의미가 유지된다.
     const endedCampaign = campaign({

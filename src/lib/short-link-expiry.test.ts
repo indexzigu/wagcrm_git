@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { resolveLinkExpiry, syncCampaignLinkExpiry } from "./short-link";
+import { LINK_EXPIRY_GRACE_DAYS, resolveLinkExpiry, syncCampaignLinkExpiry } from "./short-link";
 
 /**
- * 만료 규칙 = **KST 종료일 다음날 00:00**. 종료일 당일은 종일 유효하고, 날짜가 넘어가는
- * 순간 죽는다.
+ * 만료 규칙 = **KST 종료일 + 유예 4일이 끝난 다음날 00:00**. 종료일부터 유예 마지막 날까지는
+ * 종일 유효하고, 날짜가 넘어가는 순간 죽는다.
  *
  * ⏰ 고정 "오늘" 픽스처를 쓰지 않는다(P9) — 입력 종료일과 기대 만료를 한 쌍으로만 단언한다.
+ * 기대값은 일부러 **구체 날짜**로 적는다(계산식을 테스트에 되풀이하지 않는다) — 유예 일수를
+ * 바꾸면 이 파일이 깨져 의도한 변경인지 한 번 더 보게 한다.
  * 밀리초 덧셈(구 규칙 `+30일`)이 아니라 **날짜 경계**인 것이 이 규칙의 전부다: 종료일의
  * 시각 성분이 무엇이든 결과는 같은 순간이어야 한다.
  */
@@ -17,12 +19,25 @@ describe("resolveLinkExpiry", () => {
     expect(resolveLinkExpiry(null)).toBeNull();
   });
 
-  it("KST 종료일의 다음날 00:00 에 죽는다", () => {
-    expect(resolveLinkExpiry(kstMidnight("2026-08-23"))).toEqual(kstMidnight("2026-08-24"));
+  it("유예 일수는 4일이다 — 바꾸면 아래 날짜 단언을 의도적으로 함께 고친다", () => {
+    expect(LINK_EXPIRY_GRACE_DAYS).toBe(4);
+  });
+
+  it("KST 종료일 + 4일이 끝난 다음날 00:00 에 죽는다", () => {
+    // 종료일 8/23 → 유예 마지막 날 8/27 → 8/28 00:00(KST) 에 만료.
+    expect(resolveLinkExpiry(kstMidnight("2026-08-23"))).toEqual(kstMidnight("2026-08-28"));
+  });
+
+  it("종료일 직후에는 링크가 아직 살아 있다 — 종료가 뒤늦게 연장돼도 링크가 먼저 죽지 않는다", () => {
+    const expiresAt = resolveLinkExpiry(kstMidnight("2026-08-23"))!;
+    // 구 규칙(종료일 다음날 00:00)이었다면 이미 죽었을 시각들.
+    for (const probe of ["2026-08-24T00:00:00.000+09:00", "2026-08-25T12:00:00.000+09:00"]) {
+      expect(expiresAt < new Date(probe)).toBe(false);
+    }
   });
 
   it("종료일의 시각 성분이 결과를 바꾸지 않는다 — 28일·30일로 갈리던 원인이 이것이다", () => {
-    const expected = kstMidnight("2026-08-24");
+    const expected = kstMidnight("2026-08-28");
     expect(resolveLinkExpiry(new Date("2026-08-23T00:00:00.000+09:00"))).toEqual(expected);
     expect(resolveLinkExpiry(new Date("2026-08-23T09:30:00.000+09:00"))).toEqual(expected);
     expect(resolveLinkExpiry(new Date("2026-08-23T23:59:59.999+09:00"))).toEqual(expected);
@@ -31,18 +46,18 @@ describe("resolveLinkExpiry", () => {
   it("UTC 자정 근처 종료일도 KST 날짜로 가른다 — UTC 로 자르면 하루가 밀린다", () => {
     // UTC 2026-08-22T15:30Z = KST 2026-08-23 00:30 → KST 기준 8/23 이 종료일이다.
     expect(resolveLinkExpiry(new Date("2026-08-22T15:30:00.000Z"))).toEqual(
-      kstMidnight("2026-08-24"),
+      kstMidnight("2026-08-28"),
     );
     // UTC 2026-08-22T14:30Z = KST 2026-08-22 23:30 → 아직 8/22 다.
     expect(resolveLinkExpiry(new Date("2026-08-22T14:30:00.000Z"))).toEqual(
-      kstMidnight("2026-08-23"),
+      kstMidnight("2026-08-27"),
     );
   });
 
-  it("종료일 당일 23:59(KST)는 살아 있고 다음날 00:00 은 죽는다", () => {
+  it("유예 마지막 날 23:59(KST)는 살아 있고 그 다음날 00:00 은 죽는다", () => {
     const expiresAt = resolveLinkExpiry(kstMidnight("2026-08-23"))!;
-    const aliveAt = new Date("2026-08-23T23:59:59.000+09:00");
-    const deadAt = new Date("2026-08-24T00:00:00.000+09:00");
+    const aliveAt = new Date("2026-08-27T23:59:59.000+09:00");
+    const deadAt = new Date("2026-08-28T00:00:00.000+09:00");
     // 리다이렉터의 판정식과 같은 부등호를 쓴다(`ygrd-link/src/index.ts`: expiresAt < now).
     expect(expiresAt < aliveAt).toBe(false);
     expect(expiresAt < deadAt).toBe(false);
@@ -50,8 +65,8 @@ describe("resolveLinkExpiry", () => {
   });
 
   it("월·연 경계를 넘긴다", () => {
-    expect(resolveLinkExpiry(kstMidnight("2026-08-31"))).toEqual(kstMidnight("2026-09-01"));
-    expect(resolveLinkExpiry(kstMidnight("2026-12-31"))).toEqual(kstMidnight("2027-01-01"));
+    expect(resolveLinkExpiry(kstMidnight("2026-08-31"))).toEqual(kstMidnight("2026-09-05"));
+    expect(resolveLinkExpiry(kstMidnight("2026-12-31"))).toEqual(kstMidnight("2027-01-05"));
   });
 });
 
@@ -127,7 +142,7 @@ describe("syncCampaignLinkExpiry", () => {
 
     expect(updated).toBe(1);
     expect(calls).toHaveLength(1); // 쓰기는 updateMany 한 번
-    expect(calls[0].expiresAt).toEqual(kst("2026-09-11"));
+    expect(calls[0].expiresAt).toEqual(kst("2026-09-15"));
   });
 
   it("그룹이면 형제 멤버의 링크까지 함께 갱신한다 — 같은 공구는 같은 날 죽는다", async () => {
@@ -151,7 +166,7 @@ describe("syncCampaignLinkExpiry", () => {
 
     expect(updated).toBe(2);
     expect(calls[0].ids.sort()).toEqual(["origin", "sib"]);
-    expect(calls[0].expiresAt).toEqual(kst("2026-09-11"));
+    expect(calls[0].expiresAt).toEqual(kst("2026-09-15"));
   });
 
   it("형제의 종료일이 아직 갱신되지 않았으면 그 형제만 옛 날짜로 계산된다 — 팬아웃 뒤에 불러야 하는 이유", async () => {
@@ -174,7 +189,7 @@ describe("syncCampaignLinkExpiry", () => {
     // 그래서 호출 위치(팬아웃 뒤)가 이 기능의 계약이다.
     expect(calls).toHaveLength(2);
     expect(new Set(calls.map((c) => c.expiresAt?.toISOString()))).toEqual(
-      new Set([kst("2026-09-11").toISOString(), kst("2026-08-21").toISOString()]),
+      new Set([kst("2026-09-15").toISOString(), kst("2026-08-25").toISOString()]),
     );
   });
 
