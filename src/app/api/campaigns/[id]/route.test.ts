@@ -519,7 +519,7 @@ describe("PATCH /api/campaigns/[id]", () => {
   // I1 — 재계산 게이트는 문자열 리터럴("end date", campaign-update-plan.ts) 하나에 매달려
   // 있다. 이 라벨이 리팩터로 바뀌면 syncCampaignLinkExpiry 가 영원히 안 불리고, 링크가
   // 잘못된 날 죽은 뒤에야 드러난다 — 값까지 단언해 규칙이 바뀌어도 초록이 나오지 않게 한다.
-  it("종료일이 바뀌는 PATCH는 링크 만료를 KST 종료일 + 유예 4일 뒤 00:00으로 다시 쓴다", async () => {
+  it("종료일이 바뀌는 PATCH는 링크 만료를 KST 종료일 + 유예 7일 뒤 00:00으로 다시 쓴다", async () => {
     campaignFindUniqueMock.mockResolvedValue(
       campaignFixture({ groupId: null, group: null, endDate: new Date("2026-07-01T00:00:00.000Z") }),
     );
@@ -531,11 +531,11 @@ describe("PATCH /api/campaigns/[id]", () => {
 
     await PATCH(patchRequest({ startDate: "2026-07-01", endDate: "2026-07-20" }), context());
 
-    // 2026-07-20T00:00:00Z(=07-20 09:00 KST) 종료 → 유예 4일(07-24 까지 유효) → 07-25 00:00 KST
+    // 2026-07-20T00:00:00Z(=07-20 09:00 KST) 종료 → 유예 7일(07-27 까지 유효) → 07-28 00:00 KST
     // → UTC 07-24T15:00:00Z.
     expect(trackedLinkUpdateManyMock).toHaveBeenCalledWith({
       where: { salesCampaignId: { in: ["c1"] } },
-      data: { expiresAt: new Date("2026-07-24T15:00:00.000Z") },
+      data: { expiresAt: new Date("2026-07-27T15:00:00.000Z") },
     });
   });
 

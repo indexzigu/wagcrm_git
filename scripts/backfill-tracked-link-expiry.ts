@@ -23,7 +23,7 @@
  * 되돌릴 수 없는 방향). 예행 요약은 이 건수를 총 변경 건수와 별도로 센다.
  */
 import { getPrisma } from "../src/lib/prisma";
-import { resolveLinkExpiry } from "../src/lib/short-link";
+import { linkExpiryEndDate, resolveLinkExpiry } from "../src/lib/short-link";
 
 const prisma = getPrisma();
 
@@ -40,7 +40,7 @@ async function main() {
       id: true,
       code: true,
       expiresAt: true,
-      salesCampaign: { select: { id: true, endDate: true } },
+      salesCampaign: { select: { id: true, startDate: true, endDate: true, periodPlaceholderAt: true } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -48,7 +48,9 @@ async function main() {
   const changes = links
     .map((link) => ({
       link,
-      next: resolveLinkExpiry(link.salesCampaign?.endDate ?? null),
+      // 발급·종료일 변경과 같은 술어를 거친다 — 기간 미정(T-313) 캠페인은 종료일이 자리표시라 무기한이다.
+      // `endDate` 를 직접 넘기면 그 링크들이 자리표시 종료일로 만료돼 버린다.
+      next: resolveLinkExpiry(link.salesCampaign ? linkExpiryEndDate(link.salesCampaign) : null),
     }))
     .filter(({ link, next }) => (link.expiresAt?.getTime() ?? null) !== (next?.getTime() ?? null));
 

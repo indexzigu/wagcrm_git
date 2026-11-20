@@ -27,7 +27,7 @@ const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
  * 이미 발급된 링크는 이 값을 바꿔도 저절로 갱신되지 않는다(캠페인 종료일을 저장하거나
  * `scripts/backfill-tracked-link-expiry.ts` 를 돌려야 새 규칙으로 다시 계산된다).
  */
-export const LINK_EXPIRY_GRACE_DAYS = 4;
+export const LINK_EXPIRY_GRACE_DAYS = 7;
 
 /**
  * 링크 만료 시각 = **KST 종료일 + `LINK_EXPIRY_GRACE_DAYS`일이 끝난 다음날 00:00**.
@@ -60,7 +60,7 @@ export function resolveLinkExpiry(endDate: Date | null): Date | null {
  * 만료 기준 종료일. 기간 미정(T-313, `isCampaignPeriodUnset`)이면 종료일이 자리표시라 기준이
  * 없다 → null(무기한). 오너가 기간을 저장하면 `syncCampaignLinkExpiry` 가 새 종료일로 다시 잡는다.
  */
-function linkExpiryEndDate(campaign: {
+export function linkExpiryEndDate(campaign: {
   startDate: Date;
   endDate: Date | null;
   periodPlaceholderAt: Date | null;
