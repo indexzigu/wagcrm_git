@@ -31,10 +31,11 @@ set -euo pipefail
 # backup.sh 의 데이터 전용 덤프도 이 테이블을 아예 빼고 만든다).
 
 DB_CONTAINER="supabase-db"
-R2_CREDS_FILE="/Users/z9/selfhost/r2-credentials.txt"
+# 홈은 $HOME 에서 파생한다(아이맥 /Users/z9 에서는 종전 리터럴과 같은 값 — 2026-11 맥북 이관).
+R2_CREDS_FILE="$HOME/selfhost/r2-credentials.txt"
 R2_REMOTE="r2"
 R2_BACKUP_PREFIX="backups"
-LOG_FILE="/Users/z9/selfhost/logs/restore-drill.log"
+LOG_FILE="$HOME/selfhost/logs/restore-drill.log"
 # 실제 운영 체크아웃에서는 npm install 이 이미 끝난 상태이므로 기본값을
 # 그대로 쓰면 된다. 개발 워크트리에서 이 스크립트 자체를 테스트할 때는
 # 워크트리에 node_modules 가 없으므로(다른 워크트리와 공유하는 메인 레포
@@ -58,6 +59,13 @@ mkdir -p "$(dirname "$LOG_FILE")"
 # 옮겨질 가능성이 있으므로 backup.sh 와 같은 방어를 미리 넣어둔다 — 둘 중
 # 하나만 고치고 나머지를 "나중에"로 미루는 게 이번 실사고의 원인이었다.
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared gh/bin; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
 
 command -v rclone >/dev/null || abort "rclone 이 설치돼 있지 않습니다 (PATH=$PATH 에서 찾지 못함)."
 command -v docker >/dev/null || abort "docker 가 설치돼 있지 않습니다 (PATH=$PATH 에서 찾지 못함)."

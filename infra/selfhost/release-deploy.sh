@@ -42,6 +42,13 @@ fi
 # 보강이 없는 스크립트다(지금까지는 호출자가 대신 줬다). 이 줄이 없으면 배포는
 # `npm: command not found` 로 죽는다.
 export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared gh/bin; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
 
 PROD_CHECKOUT="$HOME/selfhost/wagcrm"
 WORKER_DIR="$PROD_CHECKOUT/ygrd-link"

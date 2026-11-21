@@ -60,6 +60,20 @@ PROD_HOSTNAME="crm.ygrd.kr"
 TUNNEL_NAME="wagcrm"
 HELD_CRON_JOBS="refresh-instagram-token rehost-seller-media naver-settlement-sync naver-order-sync tax-invoice-issue-confirm"
 
+# crontab 은 이 맥의 홈 경로로 렌더한 뒤 설치한다(아이맥에서는 원본과 바이트 동일 —
+# render-host-files.sh). 렌더가 실패하면 빈 내용을 설치하지 않도록 임시 파일을 거친다.
+install_rendered_crontab() {
+  local rendered rc=0
+  rendered="$(mktemp "${TMPDIR:-/tmp}/crontab.rendered.XXXXXX")"
+  if "$REPO_ROOT/infra/selfhost/render-host-files.sh" --file "$CRONTAB_FILE" > "$rendered"; then
+    crontab "$rendered" || rc=$?
+  else
+    rc=1
+  fi
+  rm -f "$rendered"
+  return "$rc"
+}
+
 YES=0
 for arg in "$@"; do
   case "$arg" in
@@ -108,7 +122,7 @@ for job in $HELD_CRON_JOBS; do
     log "이미 비활성이거나 예상한 형식이 아님(스킵): $job"
   fi
 done
-if ! crontab "$CRONTAB_FILE"; then
+if ! install_rendered_crontab; then
   abort "crontab 재설치 실패 — $CRONTAB_FILE 은 이미 재잠금 상태로 수정됐을 수 있습니다. 'crontab -l' 로 현재 설치 상태를 확인하십시오."
 fi
 active_after="$(crontab -l 2>/dev/null | grep -cE '^[0-9*].*run-cron\.sh' || true)"

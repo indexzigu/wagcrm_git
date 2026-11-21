@@ -32,6 +32,13 @@ MODE="full"
 
 # launchd 컨텍스트 대비 PATH 보강.
 export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared gh/bin; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
 
 # 테스트 훅 — 계약 테스트가 curl/docker/git 을 데이터 파일 스텁("bash <impl>")로
 # 갈아끼운다. 미설정이면 실제 명령. PATH 스텁(실행파일 신규 생성)을 쓰지 않는 이유는
