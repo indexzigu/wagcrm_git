@@ -58,6 +58,8 @@ const run = (claude: string | null, extra: Record<string, string> = {}) => {
     EXPANSION_OPS_WT: "none",
     // 앱 신원도 기본으로 끈다(가짜 HOME 에는 키가 없다) — 앱 신원 테스트만 켠다.
     EXPANSION_APP_KEY: "none",
+    // 기존 테스트의 가짜 claude 는 한 번 불리는 것을 전제한다 — 단계 분기 테스트만 fork(또는 기본값)로 돌린다.
+    EXPANSION_PHASES: "single",
     ...stubEnv,
     ...(claude ? { EXPANSION_CLAUDE_BIN: claude } : {}),
     ...extra,
@@ -597,6 +599,212 @@ describe("expansion-loop.sh 앱 신원", () => {
     const r = run(envProbe(), { GH_TOKEN: "untouched" });
     expect(r.status).toBe(0);
     expect(claudeEnv()).toBe("GH=untouched GITHUB=<unset>");
+  }, 20000);
+});
+
+describe("expansion-loop.sh 단계 분기(fork)", () => {
+  const SID = "0123abcd-0000-4000-8000-00000000000a";
+  type Resp = { json?: string; rc?: number };
+  // 가짜 claude: stdin 의 단계 표지로 단계를 가리고, 호출 인자·단계를 기록한 뒤 그 단계의 응답을 낸다.
+  // 갈래의 비용은 실물처럼 A 를 포함한 누적값으로 준다. 카드 파일은 단계 D(또는 single)가 쓴다.
+  const forkStub = (resp: Record<string, Resp>) => {
+    for (const [p, r] of Object.entries(resp)) {
+      if (r.json !== undefined) writeFileSync(join(root, `resp-${p}.json`), r.json);
+      if (r.rc !== undefined) writeFileSync(join(root, `rc-${p}`), String(r.rc));
+    }
+    return script(
+      "claude-phased",
+      [
+        'in=$(cat)',
+        'case "$in" in',
+        '  *"【단계 A】"*) p=A ;;',
+        '  *"【단계 B】"*) p=B ;;',
+        '  *"【단계 C】"*) p=C ;;',
+        '  *"【단계 D】"*) p=D ;;',
+        '  *) p=S ;;',
+        'esac',
+        `printf '%s\\n' "$p" >> "${root}/phases"`,
+        `printf '%s\\n' "$*" >> "${root}/calls"`,
+        `printf '%s' "$in" > "${root}/stdin-$p"`,
+        `if [ "$p" = D ] || [ "$p" = S ]; then`,
+        cardsSh(),
+        "fi",
+        `[ -f "${root}/resp-$p.json" ] && cat "${root}/resp-$p.json"`,
+        `[ -f "${root}/rc-$p" ] && exit "$(cat "${root}/rc-$p")"`,
+        "exit 0",
+      ].join("\n"),
+    );
+  };
+  const lines = (f: string) => (existsSync(join(root, f)) ? readFileSync(join(root, f), "utf8").trim().split("\n") : []);
+  const runRec = () => JSON.parse(readFileSync(join(repo, "docs/private/expansion/runs", `${today()}.json`), "utf8"));
+  const res = (cost: number, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ is_error: false, total_cost_usd: cost, session_id: SID, ...extra });
+  const happy = () => ({
+    A: { json: res(1.0, { num_turns: 10, modelUsage: { "claude-opus-5-5": { costUSD: 0.8 }, "claude-sonnet-5-5": { costUSD: 0.2 } } }) },
+    B: { json: res(1.5, { num_turns: 5, modelUsage: { "claude-opus-5-5": { costUSD: 1.2 }, "claude-sonnet-5-5": { costUSD: 0.3 } } }) },
+    C: { json: res(1.25, { num_turns: 6, modelUsage: { "claude-opus-5-5": { costUSD: 1.0 }, "claude-sonnet-5-5": { costUSD: 0.25 } } }) },
+    D: { json: res(1.75, { num_turns: 7, modelUsage: { "claude-opus-5-5": { costUSD: 1.4 }, "claude-sonnet-5-5": { costUSD: 0.35 } } }) },
+  });
+
+  it("1 기본값은 fork: 4번 부르고 갈래는 모두 A 세션에서 가르며, 비용은 A + 갈래 몫의 합", () => {
+    const r = run(forkStub(happy()), { EXPANSION_PHASES: UNSET_ENV });
+    expect(r.status).toBe(0);
+    expect(lines("phases")).toEqual(["A", "B", "C", "D"]);
+    const calls = lines("calls");
+    expect(calls[0]).not.toContain("--resume");
+    expect(calls[0]).not.toContain("--fork-session");
+    for (const c of calls.slice(1)) {
+      expect(c).toMatch(new RegExp(`^-p --resume ${SID} --fork-session `));
+      expect(c.endsWith(`--add-dir ${repo}`)).toBe(true);
+    }
+    // A 는 daily-run.md 본문 뒤에 단계 A 줄을 받고, 갈래는 자기 단계 줄만 받는다.
+    const a = readFileSync(join(root, "stdin-A"), "utf8");
+    expect(a.startsWith("go")).toBe(true);
+    expect(a).toContain("【단계 A】 이번 호출은 0~3절만 한다. 3절을 마치면 run.md 에 `단계 A 끝` 한 줄을 쓰고 멈춘다.");
+    expect(readFileSync(join(root, "stdin-B"), "utf8")).toMatch(/^【단계 B】 앞 대화\(단계 A\)에 이어 4·5절만 한다\./);
+    expect(readFileSync(join(root, "stdin-C"), "utf8")).toMatch(/^【단계 C】 앞 대화\(단계 A\)에 이어 7절만 한다\./);
+    expect(readFileSync(join(root, "stdin-D"), "utf8")).toMatch(/^【단계 D】 앞 대화\(단계 A\)에 이어 6·8·9·10·11절만 한다\./);
+    expect(cronLog()).toMatch(/OK expansion-loop cost=2\.5 post=ok turns=28 models=opus-5-5=2,sonnet-5-5=0\.5 phases=fork/);
+    const rec = runRec();
+    expect(rec.total_cost_usd).toBe(2.5);
+    expect(rec.num_turns).toBe(28);
+    expect(rec.model_cost_usd).toEqual({ "claude-opus-5-5": 2, "claude-sonnet-5-5": 0.5 });
+    expect(postCalls()).toEqual([`/h/plugins/wag-operator/expansion_cards.py post ${repo}/docs/private/expansion/out/${today()}-cards.json`]);
+  }, 20000);
+
+  it("2 single 은 예전처럼 한 번만 부르고 --resume 이 없다", () => {
+    const r = run(forkStub({ S: { json: res(1.25) } }), { EXPANSION_PHASES: "single" });
+    expect(r.status).toBe(0);
+    expect(lines("phases")).toEqual(["S"]);
+    expect(lines("calls")[0]).not.toContain("--resume");
+    expect(readFileSync(join(root, "stdin-S"), "utf8")).toBe("go");
+    expect(cronLog()).toMatch(/OK expansion-loop cost=1\.25 post=ok .*phases=single/);
+  }, 20000);
+
+  it("3 A 가 session_id 를 주지 않으면 FAIL, B 는 부르지 않는다", () => {
+    const r = run(forkStub({ A: { json: '{"is_error":false,"total_cost_usd":1.0}' } }), { EXPANSION_PHASES: "fork" });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A"]);
+    expect(cronLog()).toMatch(/FAIL expansion-loop cost=1 단계 A 세션 없음/);
+    expect(postCalls()).toHaveLength(1);
+    expect(postCalls()[0]).toMatch(/skipped-card\.json$/);
+  }, 20000);
+
+  it("3b session_id 형식이 틀려도 세션 없음으로 FAIL", () => {
+    const r = run(forkStub({ A: { json: JSON.stringify({ is_error: false, total_cost_usd: 1, session_id: "../evil" }) } }), {
+      EXPANSION_PHASES: "fork",
+    });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A"]);
+    expect(cronLog()).toMatch(/FAIL expansion-loop .*단계 A 세션 없음/);
+  }, 20000);
+
+  it("4 B 가 is_error 면 「단계 B」 로 FAIL, C·D 미호출, 비용은 A + B 몫", () => {
+    const h = happy();
+    const r = run(
+      forkStub({ A: h.A, B: { json: JSON.stringify({ is_error: true, total_cost_usd: 1.5, session_id: SID, result: "boom" }) } }),
+      { EXPANSION_PHASES: "fork" },
+    );
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A", "B"]);
+    expect(cronLog()).toMatch(/FAIL expansion-loop cost=1\.5 단계 B: 결과 is_error=true boom/);
+    expect(runRec().total_cost_usd).toBe(1.5);
+    expect(postCalls()).toHaveLength(1);
+    expect(postCalls()[0]).toMatch(/skipped-card\.json$/);
+  }, 20000);
+
+  it("4b 갈래가 exit≠0 이면 「단계 C: claude exit=」 로 FAIL, D 미호출", () => {
+    const h = happy();
+    const r = run(forkStub({ A: h.A, B: h.B, C: { json: res(1.25), rc: 2 } }), { EXPANSION_PHASES: "fork" });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A", "B", "C"]);
+    expect(cronLog()).toMatch(/FAIL expansion-loop cost=1\.75 단계 C: claude exit=2/);
+  }, 20000);
+
+  it("5 갈래 예산 상한 = cost(A) + (MAX − 지금까지 쓴 돈); 남은 예산이 없으면 갈래를 부르지 않는다", () => {
+    const r = run(forkStub(happy()), { EXPANSION_PHASES: "fork" });
+    expect(r.status).toBe(0);
+    const cap = (c: string) => c.match(/--max-budget-usd (\S+)/)?.[1];
+    // A 12 · B 1+(12−1) · C 1+(12−1.5) · D 1+(12−1.75)
+    expect(lines("calls").map(cap)).toEqual(["12", "12", "11.5", "11.25"]);
+  }, 20000);
+
+  it("5b A 가 예산을 다 쓰면 「단계 B: 예산 소진」 으로 FAIL", () => {
+    const r = run(forkStub(happy()), { EXPANSION_PHASES: "fork", EXPANSION_MAX_BUDGET_USD: "1" });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A"]);
+    expect(cronLog()).toMatch(/FAIL expansion-loop cost=1 단계 B: 예산 소진/);
+  });
+
+  it("I1 앞 갈래의 비용을 모르면 다음 갈래를 부르지 않고 「단계 C: 비용 불명」 으로 FAIL", () => {
+    const h = happy();
+    const r = run(forkStub({ A: h.A, B: { json: JSON.stringify({ is_error: false, session_id: SID }) } }), {
+      EXPANSION_PHASES: "fork",
+    });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A", "B"]);
+    expect(cronLog()).toMatch(/FAIL expansion-loop cost=unknown 단계 C: 비용 불명/);
+    expect(runRec().total_cost_usd).toBeNull();
+  }, 20000);
+
+  it("I2 EXPANSION_PROMPT 를 지정하면 기본값이어도 single 로 한 번만 부른다", () => {
+    writeFileSync(join(repo, "docs/private/expansion/prompts/first-run.md"), "first");
+    const r = run(forkStub({ S: { json: res(1.25) } }), {
+      EXPANSION_PHASES: UNSET_ENV,
+      EXPANSION_PROMPT: "docs/private/expansion/prompts/first-run.md",
+    });
+    expect(r.status).toBe(0);
+    expect(lines("phases")).toEqual(["S"]);
+    expect(lines("calls")[0]).not.toContain("--resume");
+    expect(readFileSync(join(root, "stdin-S"), "utf8")).toBe("first");
+    expect(cronLog()).toMatch(/OK expansion-loop cost=1\.25 post=ok .*phases=single/);
+  }, 20000);
+
+  it("M3 갈래 타임아웃 사유에는 그 갈래에 준 초를 적는다", () => {
+    const h = happy();
+    const stub = forkStub({ A: h.A });
+    // 단계 B 만 멈추게 한다(같은 가짜 명령 본문 앞에 끼워 넣는다).
+    const impl = stubEnv[Object.keys(stubEnv).find((k) => k.endsWith("claude_phased"))!];
+    const body = readFileSync(impl, "utf8").replace("exit 0", `[ "$p" = B ] && sleep 300\nexit 0`);
+    writeFileSync(impl, body);
+    const r = run(stub, { EXPANSION_PHASES: "fork", EXPANSION_TIMEOUT_S: "6" });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A", "B"]);
+    const m = cronLog().match(/FAIL expansion-loop cost=\S+ 단계 B: 타임아웃 (\d+)s/);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeLessThan(6);
+    expect(Number(m![1])).toBeGreaterThan(0);
+  }, 20000);
+
+  it("6 DRY 는 단계마다 한 줄씩 4줄을 찍고 claude 를 부르지 않는다(잘못된 값은 fork)", () => {
+    for (const v of [UNSET_ENV, "fork", "bogus"]) {
+      const r = run(null, { EXPANSION_DRY: "1", EXPANSION_PHASES: v });
+      expect(r.status).toBe(0);
+      const dry = r.stdout.trim().split("\n");
+      expect(dry.map((l) => l.slice(0, 10))).toEqual(["DRY: 단계 A:", "DRY: 단계 B:", "DRY: 단계 C:", "DRY: 단계 D:"]);
+      expect(dry[0]).toMatch(/--max-budget-usd 12 .*daily-run\.md/);
+      for (const l of dry.slice(1)) expect(l).toMatch(/--resume <A session_id> --fork-session /);
+    }
+    expect(cronLog()).toMatch(/OK expansion-loop cost=0 dry=1 phases=fork/);
+    expect(run(null, { EXPANSION_DRY: "1", EXPANSION_PHASES: "single" }).stdout.trim().split("\n")).toHaveLength(1);
+  });
+
+  it("갈래 도중 실패해도 건너뜀 카드 게시에는 앱 토큰을 넘기지 않는다", () => {
+    const tok = join(root, "fake-token.mjs");
+    writeFileSync(tok, 'process.stdout.write("tok_stub_value\\n");\n');
+    const keyPath = join(root, "app.pem");
+    writeFileSync(keyPath, "not-a-real-key");
+    const post = script("post-env.sh", `echo "GH=\${GH_TOKEN-<unset>}" > "${root}/post.env"`);
+    const h = happy();
+    const r = run(forkStub({ A: h.A, B: { json: res(1.5), rc: 1 } }), {
+      EXPANSION_PHASES: "fork",
+      EXPANSION_APP_KEY: keyPath,
+      EXPANSION_APP_TOKEN_SCRIPT: tok,
+      EXPANSION_POST_BIN: post,
+    });
+    expect(r.status).toBe(1);
+    expect(cronLog()).toMatch(/단계 B: claude exit=1/);
+    expect(readFileSync(join(root, "post.env"), "utf8").trim()).toBe("GH=<unset>");
   }, 20000);
 });
 

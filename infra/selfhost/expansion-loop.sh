@@ -8,7 +8,8 @@ set -euo pipefail
 # 「오늘은 건너뜀」 카드 1장을 hermes 게시 CLI 로 올린 뒤 exit 1 한다.
 #
 # env: EXPANSION_REPO · EXPANSION_OPS_WT(운영 트리, none=끔) · EXPANSION_CLAUDE_BIN · EXPANSION_TIMEOUT_S(3600) · EXPANSION_MAX_BUDGET_USD(12) · EXPANSION_DRY(1=claude 미호출)
-#      EXPANSION_LOG · EXPANSION_PROMPT(레포 기준 상대경로 가능; 기본 daily-run.md, 첫 회차는 명시 지정)
+#      EXPANSION_PHASES(fork=공통 준비 1회 + 분기 3갈래 · single=예전처럼 한 번에, 되돌림 스위치; 그 밖의 값은 fork)
+#      EXPANSION_LOG · EXPANSION_PROMPT(레포 기준 상대경로 가능; 기본 daily-run.md, 첫 회차는 명시 지정 — 지정하면 EXPANSION_PHASES 와 무관하게 single)
 #      EXPANSION_HERMES_DIR · EXPANSION_POST_BIN · EXPANSION_POST_TIMEOUT_S(120)
 #      EXPANSION_APP_KEY(앱 개인키, none=끔) · EXPANSION_APP_ID · EXPANSION_APP_INSTALLATION_ID · EXPANSION_APP_TOKEN_SCRIPT
 #
@@ -55,6 +56,21 @@ APP_INSTALLATION_ID="${EXPANSION_APP_INSTALLATION_ID:-183673676}"
 APP_TOKEN_SCRIPT="${EXPANSION_APP_TOKEN_SCRIPT:-$(cd "$(dirname "$0")" && pwd)/expansion-app-token.mjs}"
 # 앱 설치 토큰 수명은 1시간(GitHub 고정) — 회차 시간 상한이 그보다 길면 끝 무렵 push·PR 이 만료 토큰으로 실패한다.
 APP_TOKEN_TTL_S=3600
+
+# 회차 실행 방식. fork: 단계 A(새 세션, 0~3절)를 한 번 돌리고 B(4·5절)·C(7절)·D(6·8~11절)를 모두 A 의 세션에서
+# `--resume <A> --fork-session` 으로 갈라 차례로 돌린다 — 각 갈래는 A 까지의 앞부분만 캐시로 다시 읽고 서로의 차례는
+# 읽지 않는다(결과는 장부·run.md·out/ 파일로 넘겨받는다). 장부를 모든 단계가 고치므로 동시에 돌리지 않는다.
+# single: 예전처럼 daily-run.md 를 한 번에 돌린다(되돌림 스위치).
+PHASES="${EXPANSION_PHASES:-fork}"
+case "$PHASES" in single|fork) ;; *) PHASES=fork ;; esac
+# 지시문을 EXPANSION_PROMPT 로 따로 고른 회차(첫 회차 first-run.md 등)는 절 구성이 daily-run.md 와 달라
+# 단계 줄(「0~3절만」 등)이 맞지 않는다 — 그런 회차는 EXPANSION_PHASES 와 무관하게 한 번에 돌린다.
+[ -z "${EXPANSION_PROMPT:-}" ] || PHASES=single
+# 단계 안내 줄 — 운영자가 읽는 고정 문구다(작은따옴표 안: 백틱이 명령 치환으로 돌지 않게).
+PHASE_LINE_A='【단계 A】 이번 호출은 0~3절만 한다. 3절을 마치면 run.md 에 `단계 A 끝` 한 줄을 쓰고 멈춘다. 4절 이후는 래퍼가 별도 호출로 시킨다.'
+PHASE_LINE_B='【단계 B】 앞 대화(단계 A)에 이어 4·5절만 한다. 장부·run.md 는 파일에서 다시 읽고 시작한다. 끝나면 run.md 에 `단계 B 끝` 을 쓰고 멈춘다.'
+PHASE_LINE_C='【단계 C】 앞 대화(단계 A)에 이어 7절만 한다. 장부·run.md 는 파일에서 다시 읽고 시작한다(단계 B 결과가 반영돼 있다). 끝나면 run.md 에 `단계 C 끝` 을 쓰고 멈춘다.'
+PHASE_LINE_D='【단계 D】 앞 대화(단계 A)에 이어 6·8·9·10·11절만 한다. 장부·run.md·out/ 은 파일에서 다시 읽는다(단계 B·C 결과 반영). 카드 파일을 쓰고 11절 점검표를 마친 뒤 멈춘다.'
 
 EXP_DIR="$REPO/docs/private/expansion"
 RUNS_DIR="$EXP_DIR/runs"
@@ -130,8 +146,15 @@ PROMPT="${EXPANSION_PROMPT:-docs/private/expansion/prompts/daily-run.md}"
 case "$PROMPT" in /*) PROMPT_PATH="$PROMPT" ;; *) PROMPT_PATH="$REPO/$PROMPT" ;; esac
 
 if [ "$DRY" = "1" ]; then
-  echo "DRY: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus --max-budget-usd $MAX_BUDGET_USD --add-dir $REPO < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
-  log_line OK "cost=0 dry=1"
+  if [ "$PHASES" = "single" ]; then
+    echo "DRY: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus --max-budget-usd $MAX_BUDGET_USD --add-dir $REPO < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
+  else
+    echo "DRY: 단계 A: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus --max-budget-usd $MAX_BUDGET_USD --add-dir $REPO < $PROMPT_PATH + 단계 A 줄 (timeout ${TIMEOUT_S}s)"
+    for p in B C D; do
+      echo "DRY: 단계 $p: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --resume <A session_id> --fork-session --permission-mode auto --output-format json --model opus --max-budget-usd <cost(A)+남은 예산> --add-dir $REPO < 단계 $p 줄 (timeout 남은 시간)"
+    done
+  fi
+  log_line OK "cost=0 dry=1 phases=$PHASES"
   exit 0
 fi
 
@@ -188,8 +211,11 @@ OUT="$WORK_DIR/out.json"
 ERR="$WORK_DIR/err.txt"
 
 # 실패: FAIL 줄을 먼저 쓰고, 「오늘은 건너뜀」 카드를 올린 뒤 결과를 둘째 줄에 남긴다. 항상 exit 1.
+APP_TOKEN_LIVE=0
 fail() { # reason [cost]
   local cost="${2:-0}"
+  # 단계 도중 실패면 앱 토큰이 아직 살아 있다 — 건너뜀 카드 게시 프로세스에는 넘기지 않는다.
+  if [ "$APP_TOKEN_LIVE" -eq 1 ]; then unset GH_TOKEN; APP_TOKEN_LIVE=0; fi
   write_run FAIL "$cost" true
   log_line FAIL "cost=$cost $1"
   # 자리표시 날짜(2000-01-01)는 게시 CLI 검증용이다 — 원본은 두고 실행 날짜로 바꾼 임시 사본을 올린다.
@@ -241,7 +267,6 @@ if [ -n "$OPS_WT" ]; then
   RUN_DIR="$OPS_WT"
 fi
 cd "$RUN_DIR" 2>/dev/null || fail "레포 경로 없음"
-rm -f "$CARDS_FILE"
 
 # 앱 토큰은 회차 직전에 발급한다(수명 1시간). gh 와 git(전역 자격 도우미 = gh auth git-credential)이 GH_TOKEN 을 쓴다.
 if [ "$APP_OFF" -eq 0 ]; then
@@ -252,59 +277,138 @@ if [ "$APP_OFF" -eq 0 ]; then
   [ -n "$APP_TOKEN" ] || fail "앱 토큰 발급 실패 (빈 토큰)"
   unset GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
   export GH_TOKEN="$APP_TOKEN"
+  APP_TOKEN_LIVE=1
   unset APP_TOKEN
 fi
 
-run_grouped "$TIMEOUT_S" "$PROMPT_PATH" "$OUT" "$ERR" \
-  "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus --max-budget-usd "$MAX_BUDGET_USD" --add-dir "$REPO"
-# 앱 토큰은 회차에만 준다 — 뒤의 결과 해석·카드 게시 프로세스에는 넘기지 않는다.
-[ "$APP_OFF" -eq 1 ] || unset GH_TOKEN
-
-# 비용은 종료코드·타임아웃 판정보다 먼저 읽는다(best-effort) — 실패한 실행도 지출은 남겨야 한다.
-COST="$(node -e '
+# 단계 결과 합산(관찰용 — OK/FAIL 판정에는 쓰지 않는다). 인자: 지금까지 돈 단계의 결과 JSON, A 가 맨 앞.
+# 갈래(B·C·D)의 total_cost_usd·modelUsage 는 부모(A) 비용을 포함한 누적값이다(2026-11-21 실측) — 갈래 몫은 (갈래 − A),
+# 0 아래는 0 으로 자른다. 한 단계라도 비용을 모르면 합계도 unknown. num_turns 는 보고된 값을 그대로 더한다
+# (갈래의 num_turns 도 누적일 수 있다 — 미검증). 모델별 비용도 같은 방식(A 에 없던 모델은 A=0), 끝에서 소수 2자리.
+# 출력(탭 구분): cost|unknown · cost(A)|unknown · turns JSON · 모델별 JSON · 모델별 글
+aggregate_phases() {
+  local agg
+  agg="$(node -e '
 const fs=require("fs");
-try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-const c=j&&typeof j==="object"&&typeof j.total_cost_usd==="number"?j.total_cost_usd:NaN;
-if(!Number.isFinite(c))process.exit(3);
-console.log(String(c));}catch(e){process.exit(3);}' "$OUT" 2>/dev/null)" || COST=unknown
-[ -n "$COST" ] || COST=unknown
-BREAKDOWN="$(node -e '
-const fs=require("fs");
-try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-const t=Number.isInteger(j&&j.num_turns)?j.num_turns:null;
-const mu=j&&j.modelUsage&&typeof j.modelUsage==="object"?j.modelUsage:null;
+const rd=f=>{try{const j=JSON.parse(fs.readFileSync(f,"utf8"));return j&&typeof j==="object"?j:null;}catch(e){return null;}};
+const num=v=>typeof v==="number"&&Number.isFinite(v)?v:null;
+const r6=x=>Math.round(x*1e6)/1e6;
+const js=process.argv.slice(1).map(rd);
+const costs=js.map(j=>j?num(j.total_cost_usd):null);
+const a=costs[0];
+let cost="unknown";
+if(costs.every(c=>c!==null)){let t=a;for(const c of costs.slice(1))t+=Math.max(0,c-a);cost=String(r6(t));}
+let turns=0;for(const j of js){if(!j||!Number.isInteger(j.num_turns)){turns=null;break;}turns+=j.num_turns;}
+const usage=j=>{const mu=j&&j.modelUsage&&typeof j.modelUsage==="object"?j.modelUsage:null;if(!mu)return null;
+const m=new Map();for(const[k,v]of Object.entries(mu))m.set(String(k).replace(/[^a-z0-9.-]/gi,"").slice(0,40),v&&num(v.costUSD));return m;};
+const us=js.map(usage);
 let m=null,txt="unknown";
-if(mu){m={};const parts=[];for(const[k,v]of Object.entries(mu)){const c=v&&typeof v.costUSD==="number"&&Number.isFinite(v.costUSD)?Math.round(v.costUSD*100)/100:null;
-const key=String(k).replace(/[^a-z0-9.-]/gi,"").slice(0,40);m[key]=c;parts.push(key.replace(/^claude-/,"")+"="+(c===null?"?":c));}
+if(us.every(u=>u!==null)){const base=us[0],tot=new Map(base);
+for(const u of us.slice(1))for(const[k,fv]of u){const av=base.has(k)?base.get(k):0;const cur=tot.has(k)?tot.get(k):0;
+tot.set(k,cur===null||fv===null||av===null?null:cur+Math.max(0,fv-av));}
+m={};const parts=[];for(const[k,c]of tot){const v=c===null?null:Math.round(c*100)/100;m[k]=v;parts.push(k.replace(/^claude-/,"")+"="+(v===null?"?":v));}
 if(parts.length)txt=parts.join(",");else m=null;}
-console.log(JSON.stringify(t)+"\t"+JSON.stringify(m)+"\t"+txt);}catch(e){process.exit(3);}' "$OUT" 2>/dev/null)" || BREAKDOWN=""
-if [ -n "$BREAKDOWN" ]; then
-  TURNS_JSON="$(printf '%s' "$BREAKDOWN" | cut -f1)"
-  MODELS_JSON="$(printf '%s' "$BREAKDOWN" | cut -f2)"
-  MODELS_TXT="$(printf '%s' "$BREAKDOWN" | cut -f3)"
-fi
+console.log([cost,a===null?"unknown":String(a),JSON.stringify(turns),JSON.stringify(m),txt].join("\t"));' "$@" 2>/dev/null)" || agg=""
+  if [ -n "$agg" ]; then
+    COST="$(printf '%s' "$agg" | cut -f1)"
+    A_COST="$(printf '%s' "$agg" | cut -f2)"
+    TURNS_JSON="$(printf '%s' "$agg" | cut -f3)"
+    MODELS_JSON="$(printf '%s' "$agg" | cut -f4)"
+    MODELS_TXT="$(printf '%s' "$agg" | cut -f5)"
+  else
+    COST=unknown; A_COST=unknown; TURNS_JSON=null; MODELS_JSON=null; MODELS_TXT=unknown
+  fi
+  [ -n "$COST" ] || COST=unknown
+}
 
-# 실패 사유: claude 는 --output-format json 에서 오류 문구(예: 로그인 만료)를 stderr 가 아니라 결과 JSON 의
-# result 에 쓴다 — 그 앞부분을 사유에 붙인다(없으면 빈 값; 판정에는 쓰지 않는다).
-RES_SNIP="$(node -e '
+# 단계 하나를 돌리고 판정한다. 실패면 fail(종료) — 반드시 주 셸에서 부를 것($(…) 안에서 부르면 exit 가 회차를 못 끝낸다).
+# 시간: 회차 전체 마감(A 시작 + TIMEOUT_S)까지 남은 초. 예산: A 는 MAX, 갈래는 cost(A) + (MAX − 지금까지 쓴 돈).
+# 갈래의 --max-budget-usd 가 누적 비용에 걸리는지는 미검증이다 — cost(A) 를 더하는 쪽이 안전하다(최악이면 상한이 cost(A) 만큼 느슨).
+# cost(A) 나 지금까지 쓴 돈을 모르면 상한을 계산할 수 없다 — 느슨한 상한으로 돌리지 않고 「비용 불명」 FAIL 로 멈춘다.
+COST=unknown
+A_COST=unknown
+PHASE_OUTS=()
+DEADLINE_S=0
+run_phase() { # letter stdin_file [resume_session_id]
+  local letter="$1" inp="$2" sid="${3:-}" pfx="" out err left budget brc
+  [ "$PHASES" = "single" ] || pfx="단계 $letter: "
+  out="$WORK_DIR/out-$letter.json"
+  err="$WORK_DIR/err-$letter.txt"
+  if [ -z "$sid" ]; then
+    DEADLINE_S=$(( $(date +%s) + TIMEOUT_S ))
+    left="$TIMEOUT_S"
+    budget="$MAX_BUDGET_USD"
+  else
+    left=$(( DEADLINE_S - $(date +%s) ))
+    if [ "$left" -le 0 ]; then fail "${pfx}시간 초과" "$COST"; fi
+    if [ "$COST" = "unknown" ] || [ "$A_COST" = "unknown" ]; then fail "${pfx}비용 불명" "$COST"; fi
+    brc=0
+    budget="$(node -e '
+const [max,spent,a]=process.argv.slice(1);const m=Number(max),s=Number(spent),c=Number(a);
+if(!Number.isFinite(m)||!Number.isFinite(s)||!Number.isFinite(c))process.exit(4);
+const rem=m-s;if(!(rem>0))process.exit(3);
+console.log(String(Math.round((c+rem)*1e6)/1e6));' "$MAX_BUDGET_USD" "$COST" "$A_COST" 2>/dev/null)" || brc=$?
+    if [ "$brc" -eq 3 ]; then fail "${pfx}예산 소진" "$COST"; fi
+    if [ "$brc" -ne 0 ] || [ -z "$budget" ]; then fail "${pfx}예산 계산 실패" "$COST"; fi
+  fi
+  if [ -z "$sid" ]; then
+    run_grouped "$left" "$inp" "$out" "$err" \
+      "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus --max-budget-usd "$budget" --add-dir "$REPO"
+  else
+    run_grouped "$left" "$inp" "$out" "$err" \
+      "$CLAUDE_BIN" -p --resume "$sid" --fork-session --permission-mode auto --output-format json --model opus --max-budget-usd "$budget" --add-dir "$REPO"
+  fi
+  OUT="$out"
+  ERR="$err"
+  PHASE_OUTS+=("$out")
+  # 비용은 종료코드·타임아웃 판정보다 먼저 읽는다(best-effort) — 실패한 실행도 지출은 남겨야 한다.
+  aggregate_phases "${PHASE_OUTS[@]}"
+
+  # 실패 사유: claude 는 --output-format json 에서 오류 문구(예: 로그인 만료)를 stderr 가 아니라 결과 JSON 의
+  # result 에 쓴다 — 그 앞부분을 사유에 붙인다(없으면 빈 값; 판정에는 쓰지 않는다).
+  RES_SNIP="$(node -e '
 const fs=require("fs");
 try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 if(j&&typeof j.result==="string")console.log(j.result.replace(/\s+/g," ").slice(0,160));}catch(e){}' "$OUT" 2>/dev/null)" || RES_SNIP=""
 
-[ "$RG_TIMEOUT" -eq 0 ] || fail "타임아웃 ${TIMEOUT_S}s" "$COST"
-[ "$RG_RC" -eq 0 ] || fail "claude exit=$RG_RC ${RES_SNIP:+$RES_SNIP | }$(tail -c 200 "$ERR" 2>/dev/null)" "$COST"
+  # 이 단계에 준 초를 적는다(single·단계 A 는 TIMEOUT_S, 갈래는 마감까지 남은 초).
+  if [ "$RG_TIMEOUT" -ne 0 ]; then fail "${pfx}타임아웃 ${left}s" "$COST"; fi
+  if [ "$RG_RC" -ne 0 ]; then fail "${pfx}claude exit=$RG_RC ${RES_SNIP:+$RES_SNIP | }$(tail -c 200 "$ERR" 2>/dev/null)" "$COST"; fi
 
-# node 의 stderr 는 버리지 않는다 — node 가 없거나 깨진 것을 「결과 JSON 파손」으로 오인하지 않게 첫 줄을 사유에 붙인다.
-PARSE_ERR="$WORK_DIR/parse.err"
-IS_ERR="$(node -e '
+  # node 의 stderr 는 버리지 않는다 — node 가 없거나 깨진 것을 「결과 JSON 파손」으로 오인하지 않게 첫 줄을 사유에 붙인다.
+  PARSE_ERR="$WORK_DIR/parse.err"
+  IS_ERR="$(node -e '
 const fs=require("fs");
 let j;
 try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));}catch(e){process.exit(3);}
 if(!j||typeof j!=="object"||typeof j.is_error!=="boolean")process.exit(3);
 console.log(j.is_error?"1":"0");' "$OUT" 2> "$PARSE_ERR")" \
-  || fail "결과 JSON 파손 $(head -n 1 "$PARSE_ERR" 2>/dev/null)" "$COST"
+    || fail "${pfx}결과 JSON 파손 $(head -n 1 "$PARSE_ERR" 2>/dev/null)" "$COST"
 
-[ "$IS_ERR" = "0" ] || fail "결과 is_error=true $RES_SNIP" "$COST"
+  if [ "$IS_ERR" != "0" ]; then fail "${pfx}결과 is_error=true $RES_SNIP" "$COST"; fi
+}
+
+rm -f "$CARDS_FILE"
+if [ "$PHASES" = "single" ]; then
+  run_phase S "$PROMPT_PATH"
+else
+  { cat "$PROMPT_PATH" && printf '\n\n%s\n' "$PHASE_LINE_A"; } > "$WORK_DIR/in-A.md" || fail "단계 A: 입력 만들기 실패"
+  printf '%s\n' "$PHASE_LINE_B" > "$WORK_DIR/in-B.md"
+  printf '%s\n' "$PHASE_LINE_C" > "$WORK_DIR/in-C.md"
+  printf '%s\n' "$PHASE_LINE_D" > "$WORK_DIR/in-D.md"
+  run_phase A "$WORK_DIR/in-A.md"
+  A_SID="$(node -e '
+const fs=require("fs");
+try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+const s=j&&j.session_id;if(typeof s!=="string"||!/^[0-9a-f-]{36}$/.test(s))process.exit(3);console.log(s);}catch(e){process.exit(3);}' "$OUT" 2>/dev/null)" \
+    || fail "단계 A 세션 없음" "$COST"
+  # 갈래는 모두 A 의 세션에서 가른다(직전 갈래가 아니다) — B·C·D 는 서로의 차례를 다시 읽지 않는다.
+  run_phase B "$WORK_DIR/in-B.md" "$A_SID"
+  run_phase C "$WORK_DIR/in-C.md" "$A_SID"
+  run_phase D "$WORK_DIR/in-D.md" "$A_SID"
+fi
+# 앱 토큰은 회차에만 준다 — 뒤의 카드 확인·게시 프로세스에는 넘기지 않는다.
+if [ "$APP_TOKEN_LIVE" -eq 1 ]; then unset GH_TOKEN; APP_TOKEN_LIVE=0; fi
 
 # 운영자가 쓴 카드 파일: 유효 JSON 이고 cards 배열이 비어 있지 않아야 한다.
 node -e '
@@ -321,5 +425,5 @@ if [ "$POST_RESULT" != "ok" ]; then
 fi
 
 write_run OK "$COST" false
-log_line OK "cost=$COST post=ok turns=$TURNS_JSON models=$MODELS_TXT"
+log_line OK "cost=$COST post=ok turns=$TURNS_JSON models=$MODELS_TXT phases=$PHASES"
 exit 0
