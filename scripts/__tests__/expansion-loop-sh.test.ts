@@ -736,6 +736,46 @@ describe("expansion-loop.sh 단계 분기(fork)", () => {
     expect(cronLog()).toMatch(/FAIL expansion-loop cost=1 단계 B: 예산 소진/);
   });
 
+  it("I1 앞 갈래의 비용을 모르면 다음 갈래를 부르지 않고 「단계 C: 비용 불명」 으로 FAIL", () => {
+    const h = happy();
+    const r = run(forkStub({ A: h.A, B: { json: JSON.stringify({ is_error: false, session_id: SID }) } }), {
+      EXPANSION_PHASES: "fork",
+    });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A", "B"]);
+    expect(cronLog()).toMatch(/FAIL expansion-loop cost=unknown 단계 C: 비용 불명/);
+    expect(runRec().total_cost_usd).toBeNull();
+  }, 20000);
+
+  it("I2 EXPANSION_PROMPT 를 지정하면 기본값이어도 single 로 한 번만 부른다", () => {
+    writeFileSync(join(repo, "docs/private/expansion/prompts/first-run.md"), "first");
+    const r = run(forkStub({ S: { json: res(1.25) } }), {
+      EXPANSION_PHASES: UNSET_ENV,
+      EXPANSION_PROMPT: "docs/private/expansion/prompts/first-run.md",
+    });
+    expect(r.status).toBe(0);
+    expect(lines("phases")).toEqual(["S"]);
+    expect(lines("calls")[0]).not.toContain("--resume");
+    expect(readFileSync(join(root, "stdin-S"), "utf8")).toBe("first");
+    expect(cronLog()).toMatch(/OK expansion-loop cost=1\.25 post=ok .*phases=single/);
+  }, 20000);
+
+  it("M3 갈래 타임아웃 사유에는 그 갈래에 준 초를 적는다", () => {
+    const h = happy();
+    const stub = forkStub({ A: h.A });
+    // 단계 B 만 멈추게 한다(같은 가짜 명령 본문 앞에 끼워 넣는다).
+    const impl = stubEnv[Object.keys(stubEnv).find((k) => k.endsWith("claude_phased"))!];
+    const body = readFileSync(impl, "utf8").replace("exit 0", `[ "$p" = B ] && sleep 300\nexit 0`);
+    writeFileSync(impl, body);
+    const r = run(stub, { EXPANSION_PHASES: "fork", EXPANSION_TIMEOUT_S: "6" });
+    expect(r.status).toBe(1);
+    expect(lines("phases")).toEqual(["A", "B"]);
+    const m = cronLog().match(/FAIL expansion-loop cost=\S+ 단계 B: 타임아웃 (\d+)s/);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeLessThan(6);
+    expect(Number(m![1])).toBeGreaterThan(0);
+  }, 20000);
+
   it("6 DRY 는 단계마다 한 줄씩 4줄을 찍고 claude 를 부르지 않는다(잘못된 값은 fork)", () => {
     for (const v of [UNSET_ENV, "fork", "bogus"]) {
       const r = run(null, { EXPANSION_DRY: "1", EXPANSION_PHASES: v });

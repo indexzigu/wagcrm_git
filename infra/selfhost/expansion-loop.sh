@@ -63,6 +63,9 @@ APP_TOKEN_TTL_S=3600
 # single: 예전처럼 daily-run.md 를 한 번에 돌린다(되돌림 스위치).
 PHASES="${EXPANSION_PHASES:-fork}"
 case "$PHASES" in single|fork) ;; *) PHASES=fork ;; esac
+# 지시문을 EXPANSION_PROMPT 로 따로 고른 회차(첫 회차 first-run.md 등)는 절 구성이 daily-run.md 와 달라
+# 단계 줄(「0~3절만」 등)이 맞지 않는다 — 그런 회차는 EXPANSION_PHASES 와 무관하게 한 번에 돌린다.
+[ -z "${EXPANSION_PROMPT:-}" ] || PHASES=single
 # 단계 안내 줄 — 운영자가 읽는 고정 문구다(작은따옴표 안: 백틱이 명령 치환으로 돌지 않게).
 PHASE_LINE_A='【단계 A】 이번 호출은 0~3절만 한다. 3절을 마치면 run.md 에 `단계 A 끝` 한 줄을 쓰고 멈춘다. 4절 이후는 래퍼가 별도 호출로 시킨다.'
 PHASE_LINE_B='【단계 B】 앞 대화(단계 A)에 이어 4·5절만 한다. 장부·run.md 는 파일에서 다시 읽고 시작한다. 끝나면 run.md 에 `단계 B 끝` 을 쓰고 멈춘다.'
@@ -321,7 +324,7 @@ console.log([cost,a===null?"unknown":String(a),JSON.stringify(turns),JSON.string
 # 단계 하나를 돌리고 판정한다. 실패면 fail(종료) — 반드시 주 셸에서 부를 것($(…) 안에서 부르면 exit 가 회차를 못 끝낸다).
 # 시간: 회차 전체 마감(A 시작 + TIMEOUT_S)까지 남은 초. 예산: A 는 MAX, 갈래는 cost(A) + (MAX − 지금까지 쓴 돈).
 # 갈래의 --max-budget-usd 가 누적 비용에 걸리는지는 미검증이다 — cost(A) 를 더하는 쪽이 안전하다(최악이면 상한이 cost(A) 만큼 느슨).
-# cost(A) 나 지금까지 쓴 돈을 모르면(드묾) 갈래 상한은 MAX 로 둔다.
+# cost(A) 나 지금까지 쓴 돈을 모르면 상한을 계산할 수 없다 — 느슨한 상한으로 돌리지 않고 「비용 불명」 FAIL 로 멈춘다.
 COST=unknown
 A_COST=unknown
 PHASE_OUTS=()
@@ -338,10 +341,11 @@ run_phase() { # letter stdin_file [resume_session_id]
   else
     left=$(( DEADLINE_S - $(date +%s) ))
     if [ "$left" -le 0 ]; then fail "${pfx}시간 초과" "$COST"; fi
+    if [ "$COST" = "unknown" ] || [ "$A_COST" = "unknown" ]; then fail "${pfx}비용 불명" "$COST"; fi
     brc=0
     budget="$(node -e '
 const [max,spent,a]=process.argv.slice(1);const m=Number(max),s=Number(spent),c=Number(a);
-if(spent==="unknown"||a==="unknown"||!Number.isFinite(s)||!Number.isFinite(c)){console.log(String(m));process.exit(0);}
+if(!Number.isFinite(m)||!Number.isFinite(s)||!Number.isFinite(c))process.exit(4);
 const rem=m-s;if(!(rem>0))process.exit(3);
 console.log(String(Math.round((c+rem)*1e6)/1e6));' "$MAX_BUDGET_USD" "$COST" "$A_COST" 2>/dev/null)" || brc=$?
     if [ "$brc" -eq 3 ]; then fail "${pfx}예산 소진" "$COST"; fi
@@ -367,7 +371,8 @@ const fs=require("fs");
 try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 if(j&&typeof j.result==="string")console.log(j.result.replace(/\s+/g," ").slice(0,160));}catch(e){}' "$OUT" 2>/dev/null)" || RES_SNIP=""
 
-  if [ "$RG_TIMEOUT" -ne 0 ]; then fail "${pfx}타임아웃 ${TIMEOUT_S}s" "$COST"; fi
+  # 이 단계에 준 초를 적는다(single·단계 A 는 TIMEOUT_S, 갈래는 마감까지 남은 초).
+  if [ "$RG_TIMEOUT" -ne 0 ]; then fail "${pfx}타임아웃 ${left}s" "$COST"; fi
   if [ "$RG_RC" -ne 0 ]; then fail "${pfx}claude exit=$RG_RC ${RES_SNIP:+$RES_SNIP | }$(tail -c 200 "$ERR" 2>/dev/null)" "$COST"; fi
 
   # node 의 stderr 는 버리지 않는다 — node 가 없거나 깨진 것을 「결과 JSON 파손」으로 오인하지 않게 첫 줄을 사유에 붙인다.
