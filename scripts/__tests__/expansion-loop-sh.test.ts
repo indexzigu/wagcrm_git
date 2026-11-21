@@ -86,6 +86,17 @@ describe("expansion-loop.sh", () => {
     expect(existsSync(lockDir())).toBe(false);
   });
 
+  it("DRY: passes the default spend cap to claude", () => {
+    const r = run(null, { EXPANSION_DRY: "1" });
+    expect(r.stdout).toMatch(/--max-budget-usd 12 /);
+  });
+
+  it("DRY: honors a valid EXPANSION_MAX_BUDGET_USD and rejects garbage", () => {
+    expect(run(null, { EXPANSION_DRY: "1", EXPANSION_MAX_BUDGET_USD: "8.5" }).stdout).toMatch(/--max-budget-usd 8\.5 /);
+    expect(run(null, { EXPANSION_DRY: "1", EXPANSION_MAX_BUDGET_USD: "1;rm" }).stdout).toMatch(/--max-budget-usd 12 /);
+    expect(run(null, { EXPANSION_DRY: "1", EXPANSION_MAX_BUDGET_USD: "1.2.3" }).stdout).toMatch(/--max-budget-usd 12 /);
+  });
+
   it("pre-existing lock: SKIP, exit 0, lock untouched", () => {
     mkdirSync(lockDir(), { recursive: true });
     const r = run(null, { EXPANSION_DRY: "1" });

@@ -7,7 +7,7 @@ set -euo pipefail
 # 실패(종료코드≠0 · 타임아웃 · 결과 JSON is_error · 결과 JSON 파손)면 cron.log 에 FAIL 줄을 쓰고
 # 「오늘은 건너뜀」 카드 1장을 hermes 게시 CLI 로 올린 뒤 exit 1 한다.
 #
-# env: EXPANSION_REPO · EXPANSION_OPS_WT(운영 트리, none=끔) · EXPANSION_CLAUDE_BIN · EXPANSION_TIMEOUT_S(3600) · EXPANSION_DRY(1=claude 미호출)
+# env: EXPANSION_REPO · EXPANSION_OPS_WT(운영 트리, none=끔) · EXPANSION_CLAUDE_BIN · EXPANSION_TIMEOUT_S(3600) · EXPANSION_MAX_BUDGET_USD(12) · EXPANSION_DRY(1=claude 미호출)
 #      EXPANSION_LOG · EXPANSION_PROMPT(레포 기준 상대경로 가능; 기본 daily-run.md, 첫 회차는 명시 지정)
 #      EXPANSION_HERMES_DIR · EXPANSION_POST_BIN · EXPANSION_POST_TIMEOUT_S(120)
 #      EXPANSION_APP_KEY(앱 개인키, none=끔) · EXPANSION_APP_ID · EXPANSION_APP_INSTALLATION_ID · EXPANSION_APP_TOKEN_SCRIPT
@@ -38,6 +38,10 @@ POST_BIN="${EXPANSION_POST_BIN:-$HERMES_DIR/.venv/bin/python}"
 POST_TIMEOUT_S="${EXPANSION_POST_TIMEOUT_S:-120}"
 case "$POST_TIMEOUT_S" in ''|*[!0-9]*) POST_TIMEOUT_S=120 ;; esac
 case "$TIMEOUT_S" in ''|*[!0-9]*) TIMEOUT_S=3600 ;; esac
+# Per-run spend cap (claude --max-budget-usd). Main-context growth made cost climb run over run; this bounds it.
+# Invalid values fall back to the default rather than running uncapped.
+MAX_BUDGET_USD="${EXPANSION_MAX_BUDGET_USD:-12}"
+case "$MAX_BUDGET_USD" in ''|*[!0-9.]*|*.*.*|.*|*.) MAX_BUDGET_USD=12 ;; esac
 # 회차의 GitHub 신원은 오너 계정이 아니라 전용 GitHub App(wag-expansion-bot) 이다 — 저장소 규칙
 # `expansion-bot-exp-only` 가 그 신원에게 exp/** 밖 브랜치 생성·갱신·삭제(= main 반영)를 막는다.
 # 키 파일이 없거나 발급이 실패하면 오너 자격으로 물러서지 않고 회차를 멈춘다. ID 는 비밀이 아니다(키가 비밀).
@@ -126,7 +130,7 @@ PROMPT="${EXPANSION_PROMPT:-docs/private/expansion/prompts/daily-run.md}"
 case "$PROMPT" in /*) PROMPT_PATH="$PROMPT" ;; *) PROMPT_PATH="$REPO/$PROMPT" ;; esac
 
 if [ "$DRY" = "1" ]; then
-  echo "DRY: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus --add-dir $REPO < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
+  echo "DRY: cd ${OPS_WT:-$REPO}; $CLAUDE_BIN -p --permission-mode auto --output-format json --model opus --max-budget-usd $MAX_BUDGET_USD --add-dir $REPO < $PROMPT_PATH (timeout ${TIMEOUT_S}s)"
   log_line OK "cost=0 dry=1"
   exit 0
 fi
@@ -247,7 +251,7 @@ if [ "$APP_OFF" -eq 0 ]; then
 fi
 
 run_grouped "$TIMEOUT_S" "$PROMPT_PATH" "$OUT" "$ERR" \
-  "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus --add-dir "$REPO"
+  "$CLAUDE_BIN" -p --permission-mode auto --output-format json --model opus --max-budget-usd "$MAX_BUDGET_USD" --add-dir "$REPO"
 # 앱 토큰은 회차에만 준다 — 뒤의 결과 해석·카드 게시 프로세스에는 넘기지 않는다.
 [ "$APP_OFF" -eq 1 ] || unset GH_TOKEN
 
