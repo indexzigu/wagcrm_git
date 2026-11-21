@@ -170,12 +170,17 @@ post_card() { # card_file
   elif [ "$RG_RC" -eq 0 ]; then POST_RESULT=ok; fi
 }
 
+# Per-model cost + turn count from the result JSON (observation only — never used for OK/FAIL).
+# Filled after the run; null until then and whenever the fields are missing or malformed.
+TURNS_JSON=null
+MODELS_JSON=null
+MODELS_TXT=unknown
 write_run() { # status cost(숫자|unknown) is_error
   local cost_json="$2"
   [ "$cost_json" != "unknown" ] || cost_json=null
   mkdir -p "$RUNS_DIR" 2>/dev/null || return 0
-  printf '{"date":"%s","status":"%s","total_cost_usd":%s,"is_error":%s}\n' \
-    "$RUN_DATE" "$1" "$cost_json" "$3" > "$RUNS_DIR/$RUN_DATE.json" 2>/dev/null || true
+  printf '{"date":"%s","status":"%s","total_cost_usd":%s,"is_error":%s,"num_turns":%s,"model_cost_usd":%s}\n' \
+    "$RUN_DATE" "$1" "$cost_json" "$3" "$TURNS_JSON" "$MODELS_JSON" > "$RUNS_DIR/$RUN_DATE.json" 2>/dev/null || true
 }
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/expansion-loop.XXXXXX")"
@@ -263,6 +268,21 @@ const c=j&&typeof j==="object"&&typeof j.total_cost_usd==="number"?j.total_cost_
 if(!Number.isFinite(c))process.exit(3);
 console.log(String(c));}catch(e){process.exit(3);}' "$OUT" 2>/dev/null)" || COST=unknown
 [ -n "$COST" ] || COST=unknown
+BREAKDOWN="$(node -e '
+const fs=require("fs");
+try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+const t=Number.isInteger(j&&j.num_turns)?j.num_turns:null;
+const mu=j&&j.modelUsage&&typeof j.modelUsage==="object"?j.modelUsage:null;
+let m=null,txt="unknown";
+if(mu){m={};const parts=[];for(const[k,v]of Object.entries(mu)){const c=v&&typeof v.costUSD==="number"&&Number.isFinite(v.costUSD)?Math.round(v.costUSD*100)/100:null;
+const key=String(k).replace(/[^a-z0-9.-]/gi,"").slice(0,40);m[key]=c;parts.push(key.replace(/^claude-/,"")+"="+(c===null?"?":c));}
+if(parts.length)txt=parts.join(",");else m=null;}
+console.log(JSON.stringify(t)+"\t"+JSON.stringify(m)+"\t"+txt);}catch(e){process.exit(3);}' "$OUT" 2>/dev/null)" || BREAKDOWN=""
+if [ -n "$BREAKDOWN" ]; then
+  TURNS_JSON="$(printf '%s' "$BREAKDOWN" | cut -f1)"
+  MODELS_JSON="$(printf '%s' "$BREAKDOWN" | cut -f2)"
+  MODELS_TXT="$(printf '%s' "$BREAKDOWN" | cut -f3)"
+fi
 
 # 실패 사유: claude 는 --output-format json 에서 오류 문구(예: 로그인 만료)를 stderr 가 아니라 결과 JSON 의
 # result 에 쓴다 — 그 앞부분을 사유에 붙인다(없으면 빈 값; 판정에는 쓰지 않는다).
@@ -296,10 +316,10 @@ process.exit(j&&Array.isArray(j.cards)&&j.cards.length>0?0:3);}catch(e){process.
 post_card "$CARDS_FILE"
 if [ "$POST_RESULT" != "ok" ]; then
   write_run FAIL "$COST" true
-  log_line FAIL "cost=$COST post=$POST_RESULT"
+  log_line FAIL "cost=$COST post=$POST_RESULT turns=$TURNS_JSON models=$MODELS_TXT"
   exit 1
 fi
 
 write_run OK "$COST" false
-log_line OK "cost=$COST post=ok"
+log_line OK "cost=$COST post=ok turns=$TURNS_JSON models=$MODELS_TXT"
 exit 0
