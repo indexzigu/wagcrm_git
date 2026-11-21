@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # env: EXPANSION_REPO · EXPANSION_OPS_WT(운영 트리, none=끔) · EXPANSION_CLAUDE_BIN · EXPANSION_TIMEOUT_S(3600) · EXPANSION_MAX_BUDGET_USD(12) · EXPANSION_DRY(1=claude 미호출)
 #      EXPANSION_PHASES(fork=공통 준비 1회 + 분기 3갈래 · single=예전처럼 한 번에, 되돌림 스위치; 그 밖의 값은 fork)
-#      EXPANSION_LOG · EXPANSION_PROMPT(레포 기준 상대경로 가능; 기본 daily-run.md, 첫 회차는 명시 지정)
+#      EXPANSION_LOG · EXPANSION_PROMPT(레포 기준 상대경로 가능; 기본 daily-run.md, 첫 회차는 명시 지정 — 지정하면 EXPANSION_PHASES 와 무관하게 single)
 #      EXPANSION_HERMES_DIR · EXPANSION_POST_BIN · EXPANSION_POST_TIMEOUT_S(120)
 #      EXPANSION_APP_KEY(앱 개인키, none=끔) · EXPANSION_APP_ID · EXPANSION_APP_INSTALLATION_ID · EXPANSION_APP_TOKEN_SCRIPT
 #
