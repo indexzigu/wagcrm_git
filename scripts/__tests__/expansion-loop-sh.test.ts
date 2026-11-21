@@ -234,6 +234,26 @@ describe("expansion-loop.sh", () => {
     expect(existsSync(lockDir())).toBe(false);
   });
 
+  it("records turns and per-model cost when the result JSON has them", () => {
+    const json = '{"is_error":false,"total_cost_usd":3.5,"num_turns":42,"modelUsage":{"claude-opus-5-5":{"costUSD":2.256},"claude-sonnet-5-5":{"costUSD":1.244},"weird":{"costUSD":"x"}}}';
+    const r = run(script("claude-ok-models", cardsSh() + `cat >/dev/null\necho '${json}'`));
+    expect(r.status).toBe(0);
+    expect(cronLog()).toMatch(/OK expansion-loop cost=3\.5 post=ok turns=42 models=opus-5-5=2\.26,sonnet-5-5=1\.24,weird=\?/);
+    const rec = JSON.parse(readFileSync(join(repo, "docs/private/expansion/runs", `${today()}.json`), "utf8"));
+    expect(rec.total_cost_usd).toBe(3.5);
+    expect(rec.num_turns).toBe(42);
+    expect(rec.model_cost_usd).toEqual({ "claude-opus-5-5": 2.26, "claude-sonnet-5-5": 1.24, weird: null });
+  });
+
+  it("missing turns/modelUsage stay null and do not change the verdict", () => {
+    const r = run(script("claude-ok-nomodels", OK_CARDS()));
+    expect(r.status).toBe(0);
+    expect(cronLog()).toMatch(/OK expansion-loop cost=1\.25 post=ok turns=null models=unknown/);
+    const rec = JSON.parse(readFileSync(join(repo, "docs/private/expansion/runs", `${today()}.json`), "utf8"));
+    expect(rec.num_turns).toBeNull();
+    expect(rec.model_cost_usd).toBeNull();
+  });
+
   it("success without cards file: FAIL no-cards, skipped card posted once", () => {
     const r = run(script("claude-ok2", OK_JSON));
     expect(r.status).toBe(1);
