@@ -11,7 +11,6 @@ import { getPrisma } from "@/lib/prisma";
 import { describeFailureCause } from "@/lib/cron-outcome";
 import { GRAPH_API_BASE_URL } from "@/lib/instagram-graph-version";
 
-
 export type ApplyTokenResult = {
   source: "db" | "env" | "none";
   expiresAt: string | null;

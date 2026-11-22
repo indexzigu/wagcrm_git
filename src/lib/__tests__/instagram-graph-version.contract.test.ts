@@ -15,18 +15,20 @@ import {
 const SRC_ROOT = path.resolve(__dirname, "../..");
 const CONSTANT_MODULE = path.join(SRC_ROOT, "lib", "instagram-graph-version.ts");
 
-const VERSIONED_HOST = /graph\.facebook\.com\/v\d/;
+const GRAPH_HOST = /graph\.(?:facebook|instagram)\.com/;
+const BARE_VERSION = /^v\d+\.\d+$/;
 const VERSIONED_PATH = /(?:^|[\s/])\/v\d+\.\d+(?:\/|$|\?)/;
 
 export function findGraphVersionLiterals(source: string, fileName = "probe.ts"): string[] {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, fileName.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const hits: string[] = [];
-  const check = (text: string) => {
-    if (VERSIONED_HOST.test(text) || VERSIONED_PATH.test(text)) hits.push(text);
+  // 호스트 규칙: Graph 호스트 리터럴은 상수 모듈에만 둔다(버전을 변수로 끼워 넣는 우회도 막는다).
+  const check = (text: string, whole: boolean) => {
+    if (GRAPH_HOST.test(text) || VERSIONED_PATH.test(text) || (whole && BARE_VERSION.test(text))) hits.push(text);
   };
   const visit = (node: ts.Node) => {
-    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) check(node.text);
-    else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) check(node.text);
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) check(node.text, true);
+    else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) check(node.text, false);
     ts.forEachChild(node, visit);
   };
   visit(sf);
@@ -62,6 +64,14 @@ describe("Graph API 버전 단일 출처 계약", () => {
     expect(findGraphVersionLiterals("const u = `https://graph.facebook.com/v23.0/${id}?a=1`;")).toHaveLength(1);
     expect(findGraphVersionLiterals("const l = `GET /v21.0/${id}/business_discovery`;")).toHaveLength(1);
     expect(findGraphVersionLiterals('const l = "/v20.0/me";')).toHaveLength(1);
+  });
+
+  it("프로브: 버전을 변수로 끼운 템플릿·타 호스트·맨 버전 문자열도 잡힌다", () => {
+    expect(
+      findGraphVersionLiterals('const V = "v19.0"; const u = `https://graph.facebook.com/${V}/x`;').length,
+    ).toBeGreaterThanOrEqual(1);
+    expect(findGraphVersionLiterals('const u = "https://graph.instagram.com/v21.0/x";').length).toBeGreaterThanOrEqual(1);
+    expect(findGraphVersionLiterals('const V = "v19.0";')).toHaveLength(1);
   });
 
   it("프로브: 주석 속 버전은 잡지 않는다", () => {

@@ -45,7 +45,8 @@ export type GraphVersionExpiry = {
 export function evaluateGraphVersionExpiry(version: string, now: Date): GraphVersionExpiry {
   const iso = GRAPH_VERSION_EXPIRY[version];
   if (!iso) return { daysUntilExpiry: null, withinWarningWindow: false, expired: false, unknown: true };
-  const days = Math.ceil((Date.parse(`${iso}T00:00:00Z`) - now.getTime()) / MS_PER_DAY);
+  // `|| 0` 은 만료 직후 24시간의 -0 을 0 으로 정규화한다.
+  const days = Math.ceil((Date.parse(`${iso}T00:00:00Z`) - now.getTime()) / MS_PER_DAY) || 0;
   return {
     daysUntilExpiry: days,
     withinWarningWindow: days <= GRAPH_EXPIRY_WARNING_DAYS,

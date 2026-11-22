@@ -27,6 +27,12 @@ describe("evaluateGraphVersionExpiry", () => {
     expect(after).toMatchObject({ daysUntilExpiry: -3, expired: true, withinWarningWindow: true });
   });
 
+  it("만료 1시간 뒤에도 남은 일수는 -0 이 아닌 0 이다", () => {
+    const r = evaluateGraphVersionExpiry(VERSION, new Date(EXPIRY.getTime() + 3_600_000));
+    expect(r.daysUntilExpiry).toBe(0);
+    expect(r.expired).toBe(true);
+  });
+
   it("만료표에 없는 버전은 unknown 이며 경고하지 않는다", () => {
     expect(evaluateGraphVersionExpiry("v99.0", EXPIRY)).toEqual({
       daysUntilExpiry: null,
