@@ -4,6 +4,7 @@ import { collectModeUnsetReason, mockCollectBlockedReason, resolveCollectMode } 
 import { normalizeInstagramProfileMetrics, type InstagramProfileMetrics } from "@/lib/instagram-profile";
 import { recordSellerMetricsSnapshot, getKstMidnightUTC } from "@/lib/seller-history";
 import { proxyFetch } from "@/lib/order-converter/fetch-client";
+import { graphEndpointLabel, graphUrl } from "@/lib/instagram-graph-version";
 
 export type InstagramCollectorConfig = {
   appId: string;
@@ -311,7 +312,7 @@ export async function collectInstagramFollowers(
 
           if (!scraperSuccess) {
             // Meta Graph API Mode Fallback
-            const url = `https://graph.facebook.com/v19.0/${config.igBusinessAccountId}?fields=business_discovery.fields(followers_count,media_count,name,username,biography,profile_picture_url,website)&business_discovery.username=${seller.snsHandle}&access_token=${config.accessToken}`;
+            const url = graphUrl(`/${config.igBusinessAccountId}?fields=business_discovery.fields(followers_count,media_count,name,username,biography,profile_picture_url,website)&business_discovery.username=${seller.snsHandle}&access_token=${config.accessToken}`);
 
             let response;
           try {
@@ -323,7 +324,7 @@ export async function collectInstagramFollowers(
             
             await logApiCall(
               "INSTAGRAM",
-              `GET /v19.0/${config.igBusinessAccountId}/business_discovery`,
+              graphEndpointLabel(`/${config.igBusinessAccountId}/business_discovery`),
               500,
               false,
               errMsg,
@@ -342,7 +343,7 @@ export async function collectInstagramFollowers(
             
             await logApiCall(
               "INSTAGRAM",
-              `GET /v19.0/${config.igBusinessAccountId}/business_discovery`,
+              graphEndpointLabel(`/${config.igBusinessAccountId}/business_discovery`),
               429,
               false,
               errMsg,
@@ -358,7 +359,7 @@ export async function collectInstagramFollowers(
             
             await logApiCall(
               "INSTAGRAM",
-              `GET /v19.0/${config.igBusinessAccountId}/business_discovery`,
+              graphEndpointLabel(`/${config.igBusinessAccountId}/business_discovery`),
               response.status,
               false,
               errorMsg,
@@ -380,7 +381,7 @@ export async function collectInstagramFollowers(
             
             await logApiCall(
               "INSTAGRAM",
-              `GET /v19.0/${config.igBusinessAccountId}/business_discovery`,
+              graphEndpointLabel(`/${config.igBusinessAccountId}/business_discovery`),
               response.status,
               false,
               errorMsg,
@@ -408,7 +409,7 @@ export async function collectInstagramFollowers(
             
             await logApiCall(
               "INSTAGRAM",
-              `GET /v19.0/${config.igBusinessAccountId}/business_discovery`,
+              graphEndpointLabel(`/${config.igBusinessAccountId}/business_discovery`),
               200,
               false,
               errMsg,
@@ -423,7 +424,7 @@ export async function collectInstagramFollowers(
           // Log successful Meta call
           await logApiCall(
             "INSTAGRAM",
-            `GET /v19.0/${config.igBusinessAccountId}/business_discovery`,
+            graphEndpointLabel(`/${config.igBusinessAccountId}/business_discovery`),
             200,
             true,
             null,
@@ -464,7 +465,7 @@ export async function collectInstagramFollowers(
           "INSTAGRAM",
           mode === "mock"
             ? "/mock/instagram/business_discovery"
-            : `GET /v19.0/${config.igBusinessAccountId}/business_discovery`,
+            : graphEndpointLabel(`/${config.igBusinessAccountId}/business_discovery`),
           500,
           false,
           errMsg,

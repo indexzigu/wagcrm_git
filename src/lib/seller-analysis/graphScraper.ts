@@ -4,8 +4,8 @@
 // - is_sponsored 플래그 미제공 → 광고 판정은 캡션 감지(metrics.isAdPost)에 의존
 // - video_view_count 미제공 → null (metrics가 결측 허용)
 import { LosslessSellerData, RawPost, normalizeMediaType, toIsoTimestamp } from './types';
+import { graphUrl } from '@/lib/instagram-graph-version';
 
-const GRAPH_VERSION = 'v23.0';
 // Apify 30개는 결과수 비례 과금이라 축소했지만(2026-07-06), Graph는 media.limit(50) 1콜 무료 실측(2026-07-07) — 표본 복원
 const MEDIA_LIMIT = 50;
 
@@ -78,7 +78,7 @@ export async function scrapeTier0(handle: string): Promise<LosslessSellerData> {
   const fields =
     `business_discovery.username(${clean}){username,name,biography,followers_count,follows_count,media_count,profile_picture_url,website,` +
     `media.limit(${MEDIA_LIMIT}){caption,like_count,comments_count,timestamp,media_type,media_product_type,media_url,thumbnail_url,permalink}}`;
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${igUserId}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`;
+  const url = graphUrl(`/${igUserId}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`);
 
   const res = await fetch(url);
   const body = await res.json().catch(() => null);
