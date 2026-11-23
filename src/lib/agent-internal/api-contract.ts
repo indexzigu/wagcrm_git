@@ -18,6 +18,7 @@ import {
   refineOrderCampaignProductTarget,
   storeProductOptionsStructuredDataSchema,
 } from "@/lib/agent-worker/contracts";
+import { settlementReconciliationDataSchema } from "@/lib/tax-invoice-mail/settlement-reconcile";
 
 /**
  * 봇 내부 창구의 요청·응답 모양 — 창구(앱)와 부르는 쪽(봇 작업 실행기)이 같은 스키마를 import 한다.
@@ -36,6 +37,7 @@ export const AGENT_INTERNAL_PATHS = {
   salesCampaignRoundDraft: "/api/internal/agent/sales-campaign-round-draft",
   salesCampaignGroupRoundDraft: "/api/internal/agent/sales-campaign-group-round-draft",
   slackDecision: "/api/internal/agent/slack-decision",
+  settlementReconciliation: "/api/internal/agent/settlement-reconciliation",
 } as const;
 
 export const storeProductOptionsRequestSchema = z
@@ -120,6 +122,13 @@ export type SalesCampaignGroupRoundDraftData = z.infer<typeof salesCampaignGroup
  * - ROUND_ALREADY_EXISTS: 같은 판매 조건·셀러에 같은 기간의 캠페인이 이미 있음
  * - PREVIOUS_GROUP_NOT_FOUND: 그룹 회차 기안에서 지목한 캠페인이 그룹에 속하지 않았거나, 같은 스토어 상품을 쓴 지난 그룹이 없음
  * (판매캠페인 회차 기안의 이전 회차가 없으면 CAMPAIGN_NOT_FOUND)
+ * 정산 메일 대조(`settlement-reconciliation`, 판매캠페인이 없으면 CAMPAIGN_NOT_FOUND):
+ * - MAIL_NOT_CONFIGURED: 앱에 메일 수신 자격증명이 없음
+ * - STATEMENT_NOT_FOUND: 이 캠페인의 정산 메일이 기간 안에 없음(셀러·거래처 이름이 없어 못 고르는 경우 포함)
+ * - ATTACHMENT_UNREADABLE: 고른 메일의 첨부를 하나도 열 수 없음(암호·크기·손상) — 일부만이면 실패가 아니라 partial
+ * - SHEET_LAYOUT_CHANGED: 첨부 피벗 표의 양식이 바뀜(머리 행·총합계·정수 수량) — 짐작으로 읽지 않고 멈춘다
+ * - MAIL_FETCH_FAILED: 메일함 연결·헤더 조회 실패(시간 예산 초과 포함)
+ * - RECONCILE_FAILED: 그 밖의 오류 — 문구는 고정이다(오류 원문에 메일·셀 값이 섞일 수 있어 싣지 않는다)
  */
 export const AGENT_INTERNAL_FAILURE_CODES = [
   "CAMPAIGN_NOT_FOUND",
@@ -138,6 +147,12 @@ export const AGENT_INTERNAL_FAILURE_CODES = [
   "SALE_PERIOD_UNAVAILABLE",
   "ROUND_ALREADY_EXISTS",
   "PREVIOUS_GROUP_NOT_FOUND",
+  "MAIL_NOT_CONFIGURED",
+  "STATEMENT_NOT_FOUND",
+  "ATTACHMENT_UNREADABLE",
+  "SHEET_LAYOUT_CHANGED",
+  "MAIL_FETCH_FAILED",
+  "RECONCILE_FAILED",
 ] as const;
 
 export type AgentInternalFailureCode = (typeof AGENT_INTERNAL_FAILURE_CODES)[number];
@@ -180,6 +195,21 @@ export const salesCampaignGroupRoundDraftResponseSchema = z.union([
   failureSchema,
 ]);
 
+/** 정산 메일 대조 요청 — 판매캠페인 id 하나(조회 기간은 캠페인 기간에서 정한다). */
+export const settlementReconciliationRequestSchema = z
+  .object({
+    campaignId: opaqueIdSchema,
+  })
+  .strict();
+
+export type SettlementReconciliationRequest = z.infer<typeof settlementReconciliationRequestSchema>;
+
+/** 성공 데이터 모양이 곧 화이트리스트다(`settlement-reconcile.ts` — 금액·구매자·주문번호·제목·파일 이름 칸 없음). */
+export const settlementReconciliationResponseSchema = z.union([
+  z.object({ ok: z.literal(true), data: settlementReconciliationDataSchema }).strict(),
+  failureSchema,
+]);
+
 export function agentInternalFailure(code: AgentInternalFailureCode, message: string): AgentInternalFailure {
   return { ok: false, code, message: message.slice(0, MAX_AGENT_INTERNAL_MESSAGE_CHARS) };
 }
@@ -190,6 +220,8 @@ export function httpStatusForFailure(code: AgentInternalFailureCode): number {
     // CAMPAIGN_NOT_FOUND 도 422 다 — 404 는 인증 실패(본문 없음)가 쓰므로 겹치지 않게 한다.
     case "STORE_FETCH_FAILED":
     case "APPLY_FAILED":
+    case "MAIL_FETCH_FAILED":
+    case "RECONCILE_FAILED":
       return 502;
     case "INVALID_INPUT":
       return 400;

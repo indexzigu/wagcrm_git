@@ -72,4 +72,5 @@ export const OPERATION_LABELS: Record<string, string> = {
   get_tax_invoice_status: "세금계산서 대조",
   get_order_campaign_mappings: "주문캠페인 매핑",
   get_campaign_items: "캠페인 품목",
+  get_settlement_reconciliation: "정산 메일 대조",
 };

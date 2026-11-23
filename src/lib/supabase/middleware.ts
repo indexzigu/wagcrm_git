@@ -255,13 +255,14 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname !== "/api/chat-room-mappings" &&
     request.nextUrl.pathname !== "/api/chat-room-mappings/unmapped" &&
     request.nextUrl.pathname !== "/api/chat-room-mappings/reconcile" &&
-    // 봇 내부 창구 5개(봇 작업 실행기가 루프백으로 부른다, 세션 없음) — 정확 경로로만 제외한다. 인증은 핸들러의
+    // 봇 내부 창구 6개(봇 작업 실행기가 루프백으로 부른다, 세션 없음) — 정확 경로로만 제외한다. 인증은 핸들러의
     // `verifyAgentInternalRequest`(전용 비밀값 + 터널 경유 거부, 실패 시 404)가 유일하다(`agent-internal/auth.ts`).
     request.nextUrl.pathname !== "/api/internal/agent/store-product-options" &&
     request.nextUrl.pathname !== "/api/internal/agent/apply-product-mappings" &&
     request.nextUrl.pathname !== "/api/internal/agent/order-campaign-draft" &&
     request.nextUrl.pathname !== "/api/internal/agent/sales-campaign-round-draft" &&
     request.nextUrl.pathname !== "/api/internal/agent/sales-campaign-group-round-draft" &&
+    request.nextUrl.pathname !== "/api/internal/agent/settlement-reconciliation" &&
     // 슬랙 버튼 결정 창구 — 인증은 핸들러의 `verifySlackDecisionRequest`(전용 비밀값, 워커 비밀값과 분리)가 유일하다.
     request.nextUrl.pathname !== "/api/internal/agent/slack-decision" &&
     !request.nextUrl.pathname.startsWith("/login") &&

@@ -125,7 +125,9 @@ import {
   salesCampaignRoundDraftResponseSchema,
   salesCampaignGroupRoundDraftResponseSchema,
   storeProductOptionsResponseSchema,
+  settlementReconciliationResponseSchema,
 } from "@/lib/agent-internal/api-contract";
+import { formatSettlementReconciliation } from "@/lib/tax-invoice-mail/settlement-reconcile";
 import {
   hasShadowValidator,
   runLocalShadow,
@@ -1183,6 +1185,48 @@ async function applyProductMappingsOperation(
 }
 
 // ---------------------------------------------------------------------------
+// get_settlement_reconciliation (2026-11-23 v1) — 정산 메일 첨부 ↔ 품목 줄 옵션 대조 읽기
+// ---------------------------------------------------------------------------
+
+type SettlementReconciliationInput = { campaignId: string };
+
+/**
+ * 판매캠페인 하나의 브랜드 정산 메일(첨부 피벗) ↔ 품목 줄 대조. 실행 주체는 CRM 앱 봇 내부 창구다 — 이 실행기는 메일
+ * 자격증명이 없다(`internal-api-client.ts`). 창구 실패 코드(STATEMENT_NOT_FOUND 등)는 그대로 실패 코드가 된다.
+ * 요약 첫 줄이 봇이 받는 전부이고(`formatReconFirstLine`), 둘째 줄부터는 사람용이다. 봇용 구조화 결과(structuredData)는
+ * 싣지 않는다(v1 — hermes 가 읽는 종류가 아니다). 결재함 READ 기록은 창구 데이터(화이트리스트 모양) 그대로다.
+ */
+async function settlementReconciliation(
+  input: SettlementReconciliationInput,
+  { signal }: OperationContext,
+): Promise<OperationOutcome> {
+  assertNotAborted(signal);
+  const call = await callAgentInternalApi(
+    AGENT_INTERNAL_PATHS.settlementReconciliation,
+    { campaignId: input.campaignId },
+    settlementReconciliationResponseSchema,
+    signal,
+  );
+  if (!call.ok) return failure(call.errorClass, "settlement reconciliation call failed", call.detail);
+  if (!call.body.ok) return failure(call.body.code, "settlement reconciliation refused", call.body.message);
+  const { data } = call.body;
+  const summary = boundSummary(formatSettlementReconciliation(data));
+  return {
+    status: "SUCCEEDED",
+    summary,
+    evidenceRefs: boundEvidence([data.campaignId]),
+    actionProposalId: null,
+    record: {
+      title: `정산 메일 대조 · 메일 ${data.mailsRead}통 · 옵션 ${data.counts.options}개${data.partial ? " · 일부만 확인" : ""}`,
+      resultSummary: summary,
+      structuredResult: data,
+      dataSources: ["Mail", "SalesCampaign", "CampaignDeal", "Deal", "ProductMapping"],
+      query: { campaignId: input.campaignId },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // get_campaign_items (2026-10-27 · T-271) — 판매캠페인과 그 품목·하위품목 읽기
 // ---------------------------------------------------------------------------
 
@@ -1648,6 +1692,8 @@ export const OPERATION_REGISTRY: Record<AgentJobPayload["operation"], OperationH
   apply_product_mappings: (input, context) =>
     applyProductMappingsOperation(input as unknown as ApplyProductMappingsInput, context),
   get_campaign_items: (input) => campaignItems(input as CampaignItemsInput),
+  get_settlement_reconciliation: (input, context) =>
+    settlementReconciliation(input as SettlementReconciliationInput, context),
 };
 
 /** 결과 JSON 에 structuredData 칸이 붙을 때 더해지는 글자(앞 쉼표 + 키 + 콜론). */
