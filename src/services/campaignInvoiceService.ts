@@ -328,7 +328,8 @@ type InvoiceUnit = {
   expectedFromManual: boolean;
 };
 
-function sellerLabelsOf(seller: { name: string; alias: string | null } | null | undefined): string[] {
+/** 셀러 별칭·이름 — 정산서 대조 키. 봇 정산 대조(`agent-internal/settlement-reconciliation.ts`)도 같은 키를 쓴다. */
+export function sellerLabelsOf(seller: { name: string; alias: string | null } | null | undefined): string[] {
   if (!seller) return [];
   return [...new Set([seller.alias, seller.name].filter((v): v is string => Boolean(v && v.trim())).map((v) => v.trim()))];
 }

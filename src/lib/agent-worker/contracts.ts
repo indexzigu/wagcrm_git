@@ -55,6 +55,7 @@ export const AgentJobOperationSchema = z.enum([
   "get_store_product_options",
   "apply_product_mappings",
   "get_campaign_items",
+  "get_settlement_reconciliation",
 ]);
 
 export const AgentJobRouteSchema = z.enum([
@@ -1260,6 +1261,18 @@ const campaignItemsInputSchema = z
     }
   });
 
+/**
+ * 정산 메일 대조(`get_settlement_reconciliation`, 2026-11-23 v1) — 판매캠페인 하나의 브랜드 정산 메일 첨부(「피벗」
+ * 시트의 옵션명·수량)를 그 캠페인 품목 줄 수량·매핑과 옵션 단위로 대조한다. 실행 주체는 CRM 앱 봇 내부 창구다(워커에
+ * 메일 자격증명이 없다). 결과 첫 줄 하나가 봇이 받는 전부다(`formatReconFirstLine`). 아무것도 고치지 않는다 — 빠진
+ * 품목 줄·매핑은 `add_campaign_items` → 승인 뒤 `apply_product_mappings` 기안으로 넣는다.
+ */
+const settlementReconciliationInputSchema = z
+  .object({
+    campaignId: opaqueIdSchema,
+  })
+  .strict();
+
 const operationInputSchemas = {
   search_deals: searchDealsInputSchema,
   get_pipeline_status: pipelineStatusInputSchema,
@@ -1277,6 +1290,7 @@ const operationInputSchemas = {
   get_store_product_options: storeProductOptionsInputSchema,
   apply_product_mappings: applyProductMappingsInputSchema,
   get_campaign_items: campaignItemsInputSchema,
+  get_settlement_reconciliation: settlementReconciliationInputSchema,
 };
 
 const secretLikeInputKey = /(?:api[_-]?key|authorization|credential|password|secret|token)/i;

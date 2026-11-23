@@ -1,5 +1,5 @@
 /**
- * 봇 내부 창구 라우트 6개(슬랙 버튼 결정 창구 포함) — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
+ * 봇 내부 창구 라우트 7개(슬랙 버튼 결정 창구 포함) — 인증 실패면 본체를 부르지 않고 404, 모양이 틀리면 400, 통과하면 본체 결과를 그대로.
  * 본체 동작은 `src/lib/agent-internal/__tests__/*` 가 고정한다.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,10 @@ const draftMock = vi.fn();
 const roundDraftMock = vi.fn();
 const groupRoundDraftMock = vi.fn();
 const slackDecisionMock = vi.fn();
+const reconMock = vi.fn();
+vi.mock("@/lib/agent-internal/settlement-reconciliation", () => ({
+  getSettlementReconciliation: (...a: unknown[]) => reconMock(...a),
+}));
 vi.mock("@/lib/agent-internal/store-product-options", () => ({ getStoreProductOptions: (...a: unknown[]) => optionsMock(...a) }));
 vi.mock("@/lib/agent-internal/apply-product-mappings", () => ({ applyProductMappings: (...a: unknown[]) => applyMock(...a) }));
 vi.mock("@/lib/agent-internal/order-campaign-draft", () => ({ buildOrderCampaignDraft: (...a: unknown[]) => draftMock(...a) }));
@@ -32,6 +36,7 @@ const { POST: draftPost } = await import("../order-campaign-draft/route");
 const { POST: roundDraftPost } = await import("../sales-campaign-round-draft/route");
 const { POST: groupRoundDraftPost } = await import("../sales-campaign-group-round-draft/route");
 const { POST: slackDecisionPost } = await import("../slack-decision/route");
+const { POST: reconPost } = await import("../settlement-reconciliation/route");
 
 const SECRET = "k".repeat(64);
 const original = process.env.AGENT_INTERNAL_API_SECRET;
@@ -55,6 +60,7 @@ beforeEach(() => {
   draftMock.mockReset();
   roundDraftMock.mockReset();
   groupRoundDraftMock.mockReset();
+  reconMock.mockReset();
 });
 afterEach(() => {
   if (original === undefined) delete process.env.AGENT_INTERNAL_API_SECRET;
@@ -154,6 +160,31 @@ describe("봇 내부 창구 라우트", () => {
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ ok: false, code: "PREVIOUS_GROUP_NOT_FOUND", message: "그룹 없음" });
     expect(groupRoundDraftMock).toHaveBeenCalledWith({ productQuery: "상품" });
+  });
+
+  it("정산 메일 대조 창구 — 비밀값 없으면 404, 추가 칸은 400, 통과하면 본체 결과, 예외는 고정 실패", async () => {
+    const path = "/api/internal/agent/settlement-reconciliation";
+    const noSecret = await reconPost(post(path, { campaignId: "sc-1" }, {}));
+    const viaTunnel = await reconPost(post(path, { campaignId: "sc-1" }, { "x-agent-internal-secret": SECRET, "cf-ray": "x" }));
+    const extra = await reconPost(post(path, { campaignId: "sc-1", sinceDays: 30 }));
+    const missing = await reconPost(post(path, {}));
+    expect([noSecret.status, viaTunnel.status, extra.status, missing.status]).toEqual([404, 404, 400, 400]);
+    expect(reconMock).not.toHaveBeenCalled();
+
+    reconMock.mockResolvedValueOnce({ ok: false, code: "STATEMENT_NOT_FOUND", message: "m" });
+    const notFound = await reconPost(post(path, { campaignId: "sc-1" }));
+    expect(notFound.status).toBe(422);
+    expect(await notFound.json()).toEqual({ ok: false, code: "STATEMENT_NOT_FOUND", message: "m" });
+    expect(reconMock).toHaveBeenCalledWith("sc-1");
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    reconMock.mockRejectedValueOnce(new Error("셀 값 테스트구매자 가 섞인 오류"));
+    const thrown = await reconPost(post(path, { campaignId: "sc-1" }));
+    expect(thrown.status).toBe(502);
+    const thrownBody = await thrown.json();
+    expect(thrownBody).toEqual({ ok: false, code: "RECONCILE_FAILED", message: "정산 대조 중 오류가 났습니다." });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("테스트구매자");
+    warn.mockRestore();
   });
 
   describe("슬랙 버튼 결정 창구", () => {

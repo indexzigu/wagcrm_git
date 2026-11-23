@@ -229,6 +229,7 @@ describe("get_settlement_report input (spec §3-E)", () => {
       "get_store_product_options",
       "apply_product_mappings",
       "get_campaign_items",
+      "get_settlement_reconciliation",
     ]);
   });
 
@@ -584,11 +585,12 @@ describe("get_order_campaign_mappings input (2026-10-15)", () => {
     AgentJobPayloadSchema.safeParse({ ...base, operation: "get_order_campaign_mappings", input }).success;
 
   it("keeps get_order_campaign_mappings right before the 2026-10-16 mapping operations", () => {
-    expect(AgentJobOperationSchema.options.slice(-4)).toEqual([
+    expect(AgentJobOperationSchema.options.slice(-5)).toEqual([
       "get_order_campaign_mappings",
       "get_store_product_options",
       "apply_product_mappings",
       "get_campaign_items",
+      "get_settlement_reconciliation",
     ]);
   });
 
@@ -1001,5 +1003,32 @@ describe("판매캠페인 회차 계약의 채널 목록", () => {
     // 워커 계약은 화면 타입 모듈을 import 하지 않는다 — 대신 이 테스트가 두 목록을 묶는다.
     // 어긋나면 기안 빌더가 모르는 채널을 UNSPECIFIED 로 떨어뜨려 이전 회차 채널이 승인자 모르게 바뀐다.
     expect([...SALES_ROUND_CHANNELS]).toEqual(Object.keys(salesChannelLabels));
+  });
+});
+
+describe("get_settlement_reconciliation (2026-11-23 v1)", () => {
+  const base = {
+    schemaVersion: 1,
+    taskType: "deterministic",
+    skill: "none",
+    origin: { source: "hermes_slack", correlationId: "c-1", requesterDigest: "r", threadDigest: "t" },
+  } as const;
+  const parse = (input: unknown) =>
+    AgentJobPayloadSchema.safeParse({ ...base, operation: "get_settlement_reconciliation", input }).success;
+
+  // 파이썬 미러가 글자 순서를 대조한다 — 이 작업은 맨 끝(get_campaign_items 바로 뒤)이다.
+  it("is appended at the very end of the operation enum", () => {
+    const options = AgentJobOperationSchema.options;
+    expect(options[options.length - 1]).toBe("get_settlement_reconciliation");
+    expect(options.indexOf("get_settlement_reconciliation")).toBe(options.indexOf("get_campaign_items") + 1);
+  });
+
+  it("takes exactly one campaignId and nothing else", () => {
+    expect(parse({ campaignId: "sc-1" })).toBe(true);
+    expect(parse({})).toBe(false);
+    expect(parse({ campaignId: "" })).toBe(false);
+    expect(parse({ campaignId: "x".repeat(129) })).toBe(false);
+    expect(parse({ campaignId: "sc-1", sinceDays: 60 })).toBe(false);
+    expect(parse({ campaignId: 1 })).toBe(false);
   });
 });
