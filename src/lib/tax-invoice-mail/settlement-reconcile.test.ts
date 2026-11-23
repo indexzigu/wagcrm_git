@@ -50,8 +50,8 @@ const catalog: ReconCatalog = {
 
 const NO_SCAN: ReconScanFacts = { truncated: 0, unreadable: 0, ambiguous: 0, overlappingRounds: 0, timedOut: false };
 
-function mail(key: string, yearMonth: string, rows: ReconMail["rows"]): ReconMail {
-  return { key: key.padEnd(32, "0"), yearMonth, receivedDate: `${yearMonth}-28`, source: rows ? "XLS" : "NONE", rows };
+function mail(_label: string, yearMonth: string, rows: ReconMail["rows"]): ReconMail {
+  return { yearMonth, receivedDate: `${yearMonth}-28`, source: rows ? "XLS" : "NONE", rows };
 }
 
 describe("judgeOption — 판정표 칸마다", () => {
@@ -180,7 +180,20 @@ describe("reconcileSettlement — 메일 합산", () => {
     expect(data.partial).toBe(true);
     expect(data.withoutSheet).toBe(1);
     expect(data.counts.MAIL_MORE).toBe(1);
-    expect(formatSettlementReconciliation(data)).toContain("메일 많음도 확정 아님");
+    const text = formatSettlementReconciliation(data);
+    expect(text).toContain("메일 많음도 확정 아님");
+    // 사람용 옵션 줄도 미확정으로 쓴다 — 첫 줄 칸(메일많음=1)은 그대로.
+    expect(text).toContain("옵션「구성: 3박스」 메일 9 · CRM 4 · 메일 많음(미확정: 일부만 확인)");
+    expect(text).not.toContain("브랜드가 CRM 보다 많이 셈");
+    expect(text.split("\n")[0]).toContain(" 메일많음=1 ");
+  });
+
+  it("partial=0 이면 메일많음은 확정 문구다", () => {
+    const data = reconcileSettlement({ campaignId: "sc-1", mails: [mail("a", "2026-09", [{ label: "구성: 3박스", qty: 9 }])], catalog, scan: NO_SCAN });
+    expect(data.partial).toBe(false);
+    const text = formatSettlementReconciliation(data);
+    expect(text).toContain("옵션「구성: 3박스」 메일 9 · CRM 4 · 메일 많음(브랜드가 CRM 보다 많이 셈)");
+    expect(text).not.toContain("미확정");
   });
 
   it("상태 칸은 서로 겹치지 않는다 — 합 = 옵션 수", () => {
@@ -216,7 +229,7 @@ describe("출력 — 화이트리스트 · 첫 줄 · 사람용 줄", () => {
       "withoutSheet",
     ]);
     expect(Object.keys(data.options[0]).sort()).toEqual(["crmQty", "mailQty", "optionName", "status"]);
-    expect(Object.keys(data.mails[0]).sort()).toEqual(["key", "receivedDate", "source", "yearMonth"]);
+    expect(Object.keys(data.mails[0]).sort()).toEqual(["receivedDate", "source", "yearMonth"]);
     expect(settlementReconciliationDataSchema.safeParse({ ...data, amount: 1 }).success).toBe(false);
   });
 

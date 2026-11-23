@@ -97,7 +97,6 @@ export const settlementReconciliationDataSchema = z
       .array(
         z
           .object({
-            key: z.string().regex(/^[0-9a-f]{32}$/),
             yearMonth: yearMonthSchema,
             receivedDate: ymdSchema,
             source: z.enum(["XLS", "NONE"]),
@@ -136,9 +135,11 @@ export const settlementReconciliationDataSchema = z
 
 export type SettlementReconciliationData = z.infer<typeof settlementReconciliationDataSchema>;
 
-/** 메일 한 통(호출부가 고른 것). rows = 피벗 줄, 표를 못 읽었거나 없으면 null. */
+/**
+ * 메일 한 통(호출부가 고른 것). rows = 피벗 줄, 표를 못 읽었거나 없으면 null. 메일 식별 키는 없다 — 같은 메일 가르기는
+ * 내용 키(`mailContentKey`)로 하고, 출력에도 메일을 가리키는 값을 싣지 않는다(코드 리뷰 2026-11-24: 쓰는 곳 없음).
+ */
 export type ReconMail = {
-  key: string;
   yearMonth: string;
   receivedDate: string;
   source: "XLS" | "NONE";
@@ -293,7 +294,6 @@ export function reconcileSettlement(input: {
     timedOut: input.scan.timedOut,
     conflictMonths,
     mails: kept.slice(0, MAX_RECON_MAILS).map((mail) => ({
-      key: mail.key,
       yearMonth: mail.yearMonth,
       receivedDate: mail.receivedDate,
       source: mail.source,
@@ -309,9 +309,13 @@ export function reconcileSettlement(input: {
   };
 }
 
+/** 일부만 확인한 결과의 메일많음 — 같은 셀러 다른 회차 메일이 섞였을 수 있어 확정이 아니다. 충돌은 늘 확정이다. */
+export const MAIL_MORE_UNCONFIRMED_TEXT = "메일 많음(미확정: 일부만 확인)";
+
 const STATUS_TEXT: Record<ReconOptionStatus, string> = {
   MATCH: "일치",
   MAIL_LESS: "메일 적음(다음 달 메일 대기일 수 있음)",
+  // partial=1 이면 MAIL_MORE_UNCONFIRMED_TEXT 로 바뀐다(첫 줄 칸은 그대로).
   MAIL_MORE: "메일 많음(브랜드가 CRM 보다 많이 셈)",
   LINE_MISSING: "품목 줄 없음",
   MAPPING_MISSING: "매핑 없음",
@@ -350,6 +354,10 @@ function partialReasons(data: SettlementReconciliationData): string[] {
   return reasons;
 }
 
+function statusText(status: ReconOptionStatus, partial: boolean): string {
+  return status === "MAIL_MORE" && partial ? MAIL_MORE_UNCONFIRMED_TEXT : STATUS_TEXT[status];
+}
+
 /**
  * 결과 요약 전체 — 첫 줄(봇) + 둘째 줄부터 사람용(슬랙 첨부·결재함 기록). 옵션 줄은 40줄 · 전체 글자 상한
  * (`MAX_RESULT_SUMMARY_CHARS`) 안에서만 싣고 나머지는 「…외 N개」로 밝힌다.
@@ -367,7 +375,7 @@ export function formatSettlementReconciliation(data: SettlementReconciliationDat
   let shown = 0;
   for (const option of data.options) {
     if (shown >= MAX_RECON_SUMMARY_OPTION_LINES) break;
-    const line = `옵션「${option.optionName}」 메일 ${option.mailQty} · CRM ${option.crmQty ?? "-"} · ${STATUS_TEXT[option.status]}`;
+    const line = `옵션「${option.optionName}」 메일 ${option.mailQty} · CRM ${option.crmQty ?? "-"} · ${statusText(option.status, data.partial)}`;
     if (used + 1 + line.length > MAX_RESULT_SUMMARY_CHARS - reserve) break;
     lines.push(line);
     used += 1 + line.length;

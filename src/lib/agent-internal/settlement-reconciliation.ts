@@ -197,7 +197,7 @@ function judgeMail(mail: StatementAttachmentMail, unit: ReconUnit): MailJudgment
   if (!statementMentionsUnit(statement, unit.sellerLabels)) return { kind: "skip" };
   if (unit.otherSellerLabels.some((labels) => statementMentionsUnit(statement, labels))) return { kind: "ambiguous" };
 
-  const base = { key: mail.messageKey, yearMonth, receivedDate: toKstYmd(mail.receivedAt) };
+  const base = { yearMonth, receivedDate: toKstYmd(mail.receivedAt) };
   if (mail.spreadsheets.length === 0) {
     return mail.oversized > 0 ? { kind: "unreadable" } : { kind: "mail", mail: { ...base, source: "NONE", rows: null } };
   }

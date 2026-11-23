@@ -74,7 +74,7 @@ const data = {
   overlappingRounds: 0,
   timedOut: false,
   conflictMonths: ["2026-09"],
-  mails: [{ key: "a".repeat(32), yearMonth: "2026-10", receivedDate: "2026-11-05", source: "XLS" as const }],
+  mails: [{ yearMonth: "2026-10", receivedDate: "2026-11-05", source: "XLS" as const }],
   counts: { options: 2, MATCH: 1, MAIL_LESS: 0, MAIL_MORE: 0, LINE_MISSING: 1, MAPPING_MISSING: 0, MAPPING_WRONG_LINE: 0, OPTION_UNKNOWN: 0 },
   options: [
     { optionName: "구성: 6박스", status: "LINE_MISSING" as const, mailQty: 2, crmQty: null },
