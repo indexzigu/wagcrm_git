@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Package, RotateCcw, X } from 'lucide-react';
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { ConfirmActionDialog } from "@/components/crm/confirm-action-dialog";
 import { sortProductMappingsByProductName } from '@/lib/order-converter/product-mapping-sort';
 import { deriveOrderCampaignFieldsFromProduct } from '@/lib/order-converter/order-campaign-create';
 import { brandEmailsFor, toOrderBrandOptions, type OrderBrandOption } from '@/lib/order-converter/order-brand-option';
@@ -34,6 +37,7 @@ export default function CampaignCreateModal({
   const [mappings, setMappings] = useState([{ productName: '', optionName: '', brandCode: '', price: 0 }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  const [confirmReplaceOpen, setConfirmReplaceOpen] = useState(false);
   const [loadOptionsError, setLoadOptionsError] = useState<string | null>(null);
   const [brandOptions, setBrandOptions] = useState<OrderBrandOption[]>([]);
   const [brandLoadError, setBrandLoadError] = useState(false);
@@ -68,15 +72,13 @@ export default function CampaignCreateModal({
   };
 
   // 코드표 없는 거래처용: 선택한 스토어 상품의 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드.
-  // 상품코드는 비워둔다(미기입 운영). 기존 표에 입력된 내용이 있으면 대체 여부를 확인한다.
-  const handleLoadStoreOptions = async () => {
+  // 상품코드는 비워둔다(미기입 운영). 기존 표에 입력된 내용이 있으면 확인 창으로 대체 여부를 묻는다.
+  const fetchStoreOptions = async () => {
     const channelProductNo = selectedProduct?.channelProducts?.[0]?.channelProductNo;
     if (!channelProductNo) {
       setLoadOptionsError('선택된 상품의 채널상품번호를 찾을 수 없습니다.');
       return;
     }
-    const hasContent = mappings.some(m => m.optionName || m.brandCode || m.price > 0);
-    if (hasContent && !window.confirm('현재 매핑 표 내용을 스토어 옵션으로 대체할까요?')) return;
 
     setIsLoadingOptions(true);
     setLoadOptionsError(null);
@@ -89,7 +91,23 @@ export default function CampaignCreateModal({
       setLoadOptionsError(err?.message || '옵션 조회 중 오류가 발생했습니다.');
     } finally {
       setIsLoadingOptions(false);
+      // 실패 시 창을 닫고 시트 내부 loadOptionsError(role="alert")로 오류를 안내한다.
+      setConfirmReplaceOpen(false);
     }
+  };
+
+  const handleLoadStoreOptions = () => {
+    const channelProductNo = selectedProduct?.channelProducts?.[0]?.channelProductNo;
+    if (!channelProductNo) {
+      setLoadOptionsError('선택된 상품의 채널상품번호를 찾을 수 없습니다.');
+      return;
+    }
+    const hasContent = mappings.some(m => m.optionName || m.brandCode || m.price > 0);
+    if (hasContent) {
+      setConfirmReplaceOpen(true);
+      return;
+    }
+    void fetchStoreOptions();
   };
 
   useEffect(() => {
@@ -196,21 +214,31 @@ export default function CampaignCreateModal({
       >
         <SheetHeader className="shrink-0 border-b border-slate-100 flex flex-row justify-between items-center bg-white px-5 py-4 gap-0">
           <SheetTitle className="font-bold text-lg text-slate-800">신규 캠페인 등록</SheetTitle>
-          <div className="flex gap-2">
-            <button 
-              type="button" 
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
               onClick={onReselectProduct}
-              className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1.5 font-bold border border-slate-200 px-2.5 py-1.5 rounded-md hover:bg-slate-50 transition-colors"
+              className="gap-1.5 font-bold text-slate-600"
             >
-              상품 다시 선택 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            </button>
-            <button type="button" onClick={onClose} aria-label="닫기" className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
+              상품 다시 선택
+              <RotateCcw className="size-3.5" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              aria-label="닫기"
+              className="rounded-full text-slate-500 hover:text-slate-700"
+            >
+              <X className="size-4" aria-hidden="true" />
+            </Button>
           </div>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto [scrollbar-gutter:stable] p-5">
           <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in">
             {/* 상품 요약은 정보 표면이라 무채색(P8 §1·§4) — 강조는 굵기로. 이 창에서 파랑은 저장 버튼·입력 포커스 같은
                 상호작용 색에만 남는다. 값 줄은 알파 글자 대신 slate-700(3차 글자 규칙). */}
@@ -227,7 +255,7 @@ export default function CampaignCreateModal({
                   <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">카테고리</span> {newCategory}</span>
                   <span className="flex items-center gap-1 font-medium"><span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold">판매기간</span> {newSalePeriod}</span>
                   <span className="flex items-center gap-1 font-medium">
-                    <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                    <Package className="size-3.5 text-slate-500" aria-hidden="true" />
                     재고: <b>{stockQuantity.toLocaleString()}개</b>
                   </span>
                 </div>
@@ -269,16 +297,16 @@ export default function CampaignCreateModal({
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-xs font-bold text-slate-500">상품 매핑 표 (코드표 붙여넣기 또는 스토어 옵션 자동 로드 · 상품코드는 코드표 없으면 비워둠)</label>
                   <div className="flex gap-1.5">
-                    <button type="button" onClick={handleLoadStoreOptions} disabled={isLoadingOptions} className="text-xs bg-white text-primary border border-primary/30 px-2 py-1 rounded hover:bg-primary-tint font-bold transition-colors disabled:opacity-50">
+                    <Button type="button" variant="outline" size="xs" onClick={handleLoadStoreOptions} disabled={isLoadingOptions}>
                       {isLoadingOptions ? '동기화 중...' : 'N스토어 동기화'}
-                    </button>
-                    <button type="button" onClick={() => setMappings([...mappings, { productName: '', optionName: '', brandCode: '', price: 0 }])} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded hover:bg-slate-200 font-bold transition-colors">
+                    </Button>
+                    <Button type="button" variant="secondary" size="xs" onClick={() => setMappings([...mappings, { productName: '', optionName: '', brandCode: '', price: 0 }])}>
                       + 행 추가
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 {loadOptionsError && (
-                  <p className="text-xs text-destructive font-medium mb-2">{loadOptionsError}</p>
+                  <p role="alert" className="text-xs text-destructive font-medium mb-2">{loadOptionsError}</p>
                 )}
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-left text-sm">
@@ -319,9 +347,17 @@ export default function CampaignCreateModal({
                             className="w-full border border-slate-200 bg-white text-slate-900 placeholder-slate-400 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-focus-ring focus:border-primary outline-none transition-[border-color,box-shadow]" />
                           </td>
                           <td className="px-2 py-1.5 text-center">
-                            <button type="button" onClick={() => {
-                              if (mappings.length > 1) setMappings(mappings.filter((_, i) => i !== idx));
-                            }} aria-label={`${idx + 1}행 삭제`} className="text-destructive hover:text-status-urgent-text font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            <button
+                              type="button"
+                              disabled={mappings.length <= 1}
+                              onClick={() => {
+                                if (mappings.length > 1) setMappings(mappings.filter((_, i) => i !== idx));
+                              }}
+                              aria-label={`${idx + 1}행 삭제`}
+                              className="inline-flex size-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                              <X className="size-4" aria-hidden="true" />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -331,12 +367,22 @@ export default function CampaignCreateModal({
               </div>
             </div>
             <div className="flex gap-2 justify-end mt-6 pt-4 border-t border-slate-100">
-              <button type="button" onClick={onClose} className="px-5 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 font-bold transition-colors">취소</button>
-              <button type="submit" disabled={isSubmitting} className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] disabled:opacity-50">{isSubmitting ? '저장 중...' : '저장하기'}</button>
+              <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+              <Button type="submit" disabled={isSubmitting}>{isSubmitting ? '저장 중...' : '저장하기'}</Button>
             </div>
           </form>
         </div>
       </SheetContent>
+      <ConfirmActionDialog
+        open={confirmReplaceOpen}
+        onOpenChange={setConfirmReplaceOpen}
+        title="매핑 표를 스토어 옵션으로 대체할까요?"
+        description="현재 입력된 매핑 표 내용이 스마트스토어 옵션으로 덮어쓰여집니다."
+        confirmLabel="스토어 옵션으로 대체"
+        pendingLabel="불러오는 중..."
+        loading={isLoadingOptions}
+        onConfirm={fetchStoreOptions}
+      />
     </Sheet>
   );
 }

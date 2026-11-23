@@ -7,6 +7,7 @@ import {
   Boxes,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DataEmpty } from "@/components/ui/empty";
 
 import {
   InputGroup,
@@ -509,18 +510,21 @@ export function CrmDashboard({
             {/* 실행 보드는 검색칸을 보드 안에 들고 있어 빈 결과에도 보드를 그대로 둔다 — 빈 안내로 바꾸면 입력 중인
                 검색칸이 사라졌다 다른 자리에 나타나 화면이 튄다. 초기화는 위 「전체 필터 초기화」 줄이 맡는다. */}
             {filteredRows.length === 0 && hasActiveFilters && !useExecutionKanban ? (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-background px-6 py-16 text-center">
-                <p className="text-sm text-muted-foreground">
-                  필터 조건에 맞는 캠페인 없음
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-lg"
-                  onClick={resetPipelineFilters}
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-background px-6">
+                <DataEmpty
+                  title="필터 조건에 맞는 캠페인 없음"
+                  bordered={false}
+                  className="py-16"
                 >
-                  전체 필터 초기화
-                </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 rounded-lg"
+                    onClick={resetPipelineFilters}
+                  >
+                    전체 필터 초기화
+                  </Button>
+                </DataEmpty>
               </div>
             ) : viewMode === "kanban" ? (
               <div className="min-h-0 flex-1 overflow-auto bg-background p-4">

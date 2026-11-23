@@ -196,9 +196,16 @@ export function CampaignCreationForm({
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
-  // Debounce refs
+  // Debounce & error scroll refs
   const dealDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sellerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const serverErrorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (serverError) {
+      serverErrorRef.current?.scrollIntoView?.({ behavior: "auto", block: "nearest" });
+    }
+  }, [serverError]);
 
   const triggerDealSearch = useCallback((nextQuery: string) => {
     if (dealDebounceRef.current) {
@@ -368,7 +375,6 @@ export function CampaignCreationForm({
       onSuccess?.();
       return data;
     }).catch((err) => {
-      console.log("CATCH ERR:", err, "MSG:", err.message);
       const isNetworkError = err.message === "Network error" || err.message === "Failed to fetch";
       setServerError(isNetworkError ? "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." : err.message);
       throw err;
@@ -387,7 +393,11 @@ export function CampaignCreationForm({
     <ScrollArea className="min-h-0 flex-1">
       <div className="space-y-5 px-1 py-2">
         {serverError && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-status-urgent-text">
+          <div
+            ref={serverErrorRef}
+            role="alert"
+            className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-status-urgent-text"
+          >
             {serverError}
           </div>
         )}

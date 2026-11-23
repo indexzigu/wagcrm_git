@@ -330,7 +330,6 @@ describe("CampaignEditModal 스토어 옵션 다시 불러오기", () => {
 
   it("옵션명이 같은 줄은 상품코드·단가·판매 조건 연결을 이어받고, 새 옵션만 빈 상품코드로 더한다", async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     storeFetch([
       // 표기 흔들림(공백)이 있어도 같은 옵션으로 본다.
       { productName: "상품", optionName: "구성 : 1개월분", brandCode: "", price: 13000 },
@@ -340,6 +339,7 @@ describe("CampaignEditModal 스토어 옵션 다시 불러오기", () => {
     render(<CampaignEditModal campaign={campaign({ mappings: existing })} onClose={vi.fn()} onSubmit={onSubmit} />);
 
     await user.click(await screen.findByRole("button", { name: "N스토어 동기화" }));
+    await user.click(await screen.findByRole("button", { name: "스토어 옵션으로 맞추기" }));
 
     await screen.findByDisplayValue("구성: 3개월분");
     expect(screen.getByDisplayValue("CODE-A")).toBeInTheDocument();
@@ -357,12 +357,12 @@ describe("CampaignEditModal 스토어 옵션 다시 불러오기", () => {
 
   it("스토어에서 사라진 옵션은 지우지 않고 표에 남겨 표시한다", async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     storeFetch([{ productName: "상품", optionName: "구성: 1개월분", brandCode: "", price: 12000 }]);
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<CampaignEditModal campaign={campaign({ mappings: existing })} onClose={vi.fn()} onSubmit={onSubmit} />);
 
     await user.click(await screen.findByRole("button", { name: "N스토어 동기화" }));
+    await user.click(await screen.findByRole("button", { name: "스토어 옵션으로 맞추기" }));
 
     expect(await screen.findByText("스토어에 없는 옵션")).toBeInTheDocument();
     expect(screen.getByDisplayValue("CODE-B")).toBeInTheDocument();
@@ -378,16 +378,31 @@ describe("CampaignEditModal 스토어 옵션 다시 불러오기", () => {
 
   it("같은 옵션 줄이 둘이면 첫 줄만 이어받고, 나머지는 지우지 않고 중복으로 표시한다", async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     storeFetch([{ productName: "상품", optionName: "구성: 1개월분", brandCode: "", price: 12000 }]);
     const dup = [existing[0], { ...existing[0], id: "m-a2", brandCode: "CODE-A2" }];
     render(<CampaignEditModal campaign={campaign({ mappings: dup })} onClose={vi.fn()} onSubmit={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "N스토어 동기화" }));
+    await user.click(await screen.findByRole("button", { name: "스토어 옵션으로 맞추기" }));
 
     expect(await screen.findByText("중복 옵션")).toBeInTheDocument();
     expect(screen.getByDisplayValue("CODE-A")).toBeInTheDocument();
     expect(screen.getByDisplayValue("CODE-A2")).toBeInTheDocument();
     expect(screen.queryByText("스토어에 없는 옵션")).not.toBeInTheDocument();
+  });
+
+  it("캠페인 삭제는 window.confirm 대신 ConfirmActionDialog 를 거쳐 실행한다", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+    render(<CampaignEditModal campaign={campaign({ mappings: existing })} onClose={onClose} onSubmit={vi.fn()} onDelete={onDelete} />);
+
+    await user.click(await screen.findByRole("button", { name: "삭제" }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    await user.click(await screen.findByRole("button", { name: "캠페인 삭제" }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith("order-1"));
+    expect(onClose).toHaveBeenCalled();
   });
 });

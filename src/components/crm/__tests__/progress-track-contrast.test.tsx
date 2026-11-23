@@ -27,6 +27,7 @@ import EmailSendModal from "../shipping/modals/EmailSendModal";
 import type { InflowLinkRow } from "@/lib/inflow-report";
 import type { CampaignRow, SellerSummary } from "@/lib/crm-types";
 import type { SellerScores } from "@/lib/seller-analysis/scores";
+import { buttonVariants } from "@/components/ui/button";
 import { CampaignCountdown } from "@/components/portal/campaign-countdown";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -418,10 +419,10 @@ describe("생성 창 요약·포털 예정 카드 줄바꿈(6차)", () => {
     expect(src).toContain('className="w-16 h-16 rounded-lg object-cover border border-slate-200 shadow-soft-sm"');
     expect(src).toContain('<p className="text-sm text-slate-900 font-bold mb-1 line-clamp-1">{newName}</p>');
     expect(src).toContain("text-xs text-slate-700 mt-2 bg-card p-2 rounded-md");
-    expect(src).toContain('<svg className="w-3.5 h-3.5 text-slate-500" fill="none"');
+    expect(src).toContain('<Package className="size-3.5 text-slate-500"');
     expect(src).not.toMatch(/bg-blue-50|border-blue-100|border-blue-200|text-blue-900|text-blue-800|text-blue-500/);
-    // 저장 CTA 는 7차에서 다른 저장 버튼과 같은 네이비로(bg-primary).
-    expect(src).toContain("text-primary-foreground bg-primary rounded-lg hover:bg-primary/95");
+    // 저장 CTA 는 정본 Button(default = bg-primary text-primary-foreground)을 사용한다.
+    expect(src).toContain('<Button type="submit" disabled={isSubmitting}>');
   });
 
   it("셀러 포털 예정 카드: 제목 줄에는 배지가 없고, 오픈 배지는 줄바꿈되는 기간 줄에 있다", () => {
@@ -469,8 +470,19 @@ describe("남은 파랑 전수(7차)", () => {
   });
 
   it("저장 버튼은 지연 안내 창과 같은 네이비, 입력 포커스 테두리는 네이비", () => {
-    const save = "text-primary-foreground bg-primary rounded-lg hover:bg-primary/95";
-    for (const rel of files.slice(0, 3)) expect(sourceOf(rel)).toContain(save);
+    const defaultBtn = buttonVariants({ variant: "default" });
+    expect(defaultBtn).toContain("bg-primary");
+    expect(defaultBtn).toContain("text-primary-foreground");
+
+    // 등록·수정 자매 모달은 정본 shadcn Button(default = bg-primary text-primary-foreground)을 쓰고,
+    // 인라인 <svg> 및 브라우저 블로킹 confirm 을 남기지 않는다.
+    for (const rel of files.slice(0, 2)) {
+      const src = sourceOf(rel);
+      expect(src).toContain('<Button type="submit" disabled={isSubmitting}>');
+      expect(src).not.toMatch(/<svg\b/);
+      expect(src).not.toMatch(/\b(?:window\.)?confirm\(/);
+    }
+    expect(sourceOf(files[2])).toContain("text-primary-foreground bg-primary rounded-lg hover:bg-primary/95");
     expect(sourceOf("crm/shipping/modals/CampaignCreateModal.tsx")).toContain("focus:border-primary");
   });
 

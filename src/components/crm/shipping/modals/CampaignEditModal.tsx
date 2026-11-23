@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Settings, TriangleAlert, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { DialogTitle } from '@/components/ui/dialog';
+import { ConfirmActionDialog } from '@/components/crm/confirm-action-dialog';
 import { ShippingDialogFrame } from './ShippingDialogFrame';
 import { Campaign } from '@/types/campaign';
 import { getDisplayDealName } from '@/lib/deal-display';
@@ -43,6 +46,9 @@ export default function CampaignEditModal({
   const [isLoadingLog, setIsLoadingLog] = useState(false);
   const [recommendations, setRecommendations] = useState<Record<string, any[]>>({});
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [loadOptionsError, setLoadOptionsError] = useState<string | null>(null);
   const [brandOptions, setBrandOptions] = useState<OrderBrandOption[]>([]);
   const [brandLoadError, setBrandLoadError] = useState(false);
@@ -81,9 +87,7 @@ export default function CampaignEditModal({
   // 코드표 없는 거래처용: 이 캠페인의 스토어 상품을 찾아(productId 우선, 이름 매칭 폴백)
   // 옵션명·가격(추가구성 포함)을 매핑 표에 자동 로드. 새 옵션의 상품코드는 비워두고(미기입 운영),
   // 이미 있던 옵션 줄은 상품코드·단가·딜 연결을 이어받는다(아래 setEditMappings 주석).
-  const handleLoadStoreOptions = async () => {
-    if (editMappings.some(hasRowContent) && !window.confirm('스토어 옵션으로 매핑 표를 다시 맞출까요? 옵션명이 같은 줄의 상품코드·단가·판매 조건 연결은 그대로 남고, 스토어에 없는 옵션 줄은 지우지 않고 표시합니다.')) return;
-
+  const fetchStoreOptions = async () => {
     setIsLoadingOptions(true);
     setLoadOptionsError(null);
     try {
@@ -146,6 +150,28 @@ export default function CampaignEditModal({
       setLoadOptionsError(err?.message || '옵션 조회 중 오류가 발생했습니다.');
     } finally {
       setIsLoadingOptions(false);
+      // 실패 시 창을 닫고 모달 내부 loadOptionsError(role="alert")로 오류를 안내한다.
+      setConfirmSyncOpen(false);
+    }
+  };
+
+  const handleLoadStoreOptions = () => {
+    if (editMappings.some(hasRowContent)) {
+      setConfirmSyncOpen(true);
+      return;
+    }
+    void fetchStoreOptions();
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!onDelete || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDelete(campaign.id);
+      setConfirmDeleteOpen(false);
+      onClose();
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -359,15 +385,23 @@ export default function CampaignEditModal({
   return (
     <ShippingDialogFrame onClose={onClose} className="sm:max-w-4xl max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)]">
         <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl">
-          <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2"><svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> 캠페인 설정</DialogTitle>
-          <button type="button" onClick={onClose} aria-label="닫기" className="text-slate-500 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <DialogTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <Settings className="size-5 text-slate-500" aria-hidden="true" />
+            캠페인 설정
+          </DialogTitle>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="닫기"
+            className="rounded-full text-slate-500 hover:text-slate-700"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
         </div>
         
-        <div className="overflow-y-auto p-5">
+        <div className="overflow-y-auto [scrollbar-gutter:stable] p-5">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-1 min-w-0">
@@ -447,22 +481,23 @@ export default function CampaignEditModal({
                 <div className="flex justify-between items-center mb-2">
                   <label className="block text-xs font-bold text-slate-500">상품 매핑 표 (코드표 붙여넣기 또는 스토어 옵션 자동 로드 · 상품코드 선택)</label>
                   <div className="flex gap-1.5">
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="xs"
                       onClick={handlePushSales}
                       disabled={isPushingSales || isSubmitting || !editMappings.some((m) => m.campaignDealId)}
-                      className="text-xs bg-white text-primary border border-primary/30 px-2 py-1 rounded hover:bg-primary-tint font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isPushingSales ? '전송 중...' : '매출전송'}
-                    </button>
-                    <button type="button" onClick={handleLoadStoreOptions} disabled={isLoadingOptions} className="text-xs bg-white text-primary border border-primary/30 px-2 py-1 rounded hover:bg-primary-tint font-bold transition-colors disabled:opacity-50">
+                    </Button>
+                    <Button type="button" variant="outline" size="xs" onClick={handleLoadStoreOptions} disabled={isLoadingOptions}>
                       {isLoadingOptions ? '동기화 중...' : 'N스토어 동기화'}
-                    </button>
-                    <button type="button" onClick={() => setEditMappings([...editMappings, { productName: '', optionName: '', brandCode: '', price: 0, campaignDealId: null }])} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded hover:bg-slate-200 font-bold transition-colors">+ 행 추가</button>
+                    </Button>
+                    <Button type="button" variant="secondary" size="xs" onClick={() => setEditMappings([...editMappings, { productName: '', optionName: '', brandCode: '', price: 0, campaignDealId: null }])}>+ 행 추가</Button>
                   </div>
                 </div>
                 {loadOptionsError && (
-                  <p className="text-xs text-destructive font-medium mb-2">{loadOptionsError}</p>
+                  <p role="alert" className="text-xs text-destructive font-medium mb-2">{loadOptionsError}</p>
                 )}
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full table-fixed text-left text-sm">
@@ -492,9 +527,7 @@ export default function CampaignEditModal({
                               // 스토어 동기화 뒤 스토어 옵션과 짝이 안 맞는 기존 줄 — 지우지 않고 남겨 둔 것을 알린다.
                               // 가격 확인 배지와 같은 "배경 없는 텍스트+아이콘" 어휘.
                               <p id={`store-sync-note-${idx}`} className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-[var(--status-caution-text)]">
-                                <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />
-                                </svg>
+                                <TriangleAlert className="size-3 shrink-0" aria-hidden="true" />
                                 {m.storeSyncNote === 'duplicate' ? '중복 옵션' : '스토어에 없는 옵션'}
                               </p>
                             )}
@@ -552,9 +585,7 @@ export default function CampaignEditModal({
                                   </select>
                                   {priceMismatch && (
                                     <p id={`price-check-${idx}`} className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-[var(--status-caution-text)]">
-                                      <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />
-                                      </svg>
+                                      <TriangleAlert className="size-3 shrink-0" aria-hidden="true" />
                                       가격 확인: 옵션 {optionPrice.toLocaleString()} · 판매 조건 {dealPrice!.toLocaleString()}
                                     </p>
                                   )}
@@ -563,9 +594,17 @@ export default function CampaignEditModal({
                             })()}
                           </td>
                           <td className="px-2 py-1.5 text-center">
-                            <button type="button" onClick={() => {
-                              if (editMappings.length > 1) setEditMappings(editMappings.filter((_, i) => i !== idx));
-                            }} aria-label={`${idx + 1}행 삭제`} className="text-destructive hover:text-status-urgent-text font-bold p-1"><svg className="w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                            <button
+                              type="button"
+                              disabled={editMappings.length <= 1}
+                              onClick={() => {
+                                if (editMappings.length > 1) setEditMappings(editMappings.filter((_, i) => i !== idx));
+                              }}
+                              aria-label={`${idx + 1}행 삭제`}
+                              className="inline-flex size-7 items-center justify-center rounded-md text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                              <X className="size-4" aria-hidden="true" />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -578,9 +617,9 @@ export default function CampaignEditModal({
             <div className="mt-6 pt-4 border-t border-slate-100">
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-xs font-bold text-slate-500">자동 매핑 디버그 (개발용)</label>
-                <button type="button" onClick={fetchDebugLog} disabled={isLoadingLog} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded hover:bg-slate-200 font-bold transition-colors">
+                <Button type="button" variant="secondary" size="xs" onClick={fetchDebugLog} disabled={isLoadingLog}>
                   {isLoadingLog ? '불러오는 중...' : '로그 확인하기'}
-                </button>
+                </Button>
               </div>
               {debugLog && (
                 <div className="bg-slate-900 text-green-400 p-3 rounded-lg text-[10px] sm:text-xs font-mono whitespace-pre-wrap overflow-y-auto max-h-60 mt-2">
@@ -592,21 +631,38 @@ export default function CampaignEditModal({
             <div className="flex gap-2 justify-between mt-6 pt-4 border-t border-slate-100">
               <div>
                 {onDelete && (
-                  <button type="button" onClick={async () => {
-                    if (confirm('정말로 이 캠페인을 삭제하시겠습니까?')) {
-                      await onDelete(campaign.id);
-                      onClose();
-                    }
-                  }} className="px-5 py-2 text-sm text-status-urgent-text bg-status-urgent-bg hover:bg-status-urgent/10 rounded-lg font-bold transition-colors">삭제</button>
+                  <Button type="button" variant="destructive" onClick={() => setConfirmDeleteOpen(true)}>삭제</Button>
                 )}
               </div>
               <div className="flex gap-2">
-                <button type="button" onClick={onClose} className="px-5 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 font-bold transition-colors">취소</button>
-                <button type="submit" disabled={isSubmitting} className="px-5 py-2 text-sm text-primary-foreground bg-primary rounded-lg hover:bg-primary/95 font-bold shadow-soft-md transition-[background-color,opacity] disabled:opacity-50">{isSubmitting ? '수정 중...' : '수정하기'}</button>
+                <Button type="button" variant="outline" onClick={onClose}>취소</Button>
+                <Button type="submit" disabled={isSubmitting}>{isSubmitting ? '수정 중...' : '수정하기'}</Button>
               </div>
             </div>
           </form>
         </div>
+        <ConfirmActionDialog
+          open={confirmSyncOpen}
+          onOpenChange={setConfirmSyncOpen}
+          title="스토어 옵션으로 매핑 표를 다시 맞출까요?"
+          description="옵션명이 같은 줄의 상품코드·단가·판매 조건 연결은 그대로 남고, 스토어에 없는 옵션 줄은 지우지 않고 표시합니다."
+          confirmLabel="스토어 옵션으로 맞추기"
+          pendingLabel="불러오는 중..."
+          loading={isLoadingOptions}
+          onConfirm={fetchStoreOptions}
+        />
+        {onDelete && (
+          <ConfirmActionDialog
+            open={confirmDeleteOpen}
+            onOpenChange={setConfirmDeleteOpen}
+            title="이 캠페인을 삭제할까요?"
+            description="삭제된 주문관리 캠페인과 매핑 설정은 복구할 수 없습니다."
+            confirmLabel="캠페인 삭제"
+            pendingLabel="삭제 중..."
+            loading={isDeleting}
+            onConfirm={handleDeleteConfirm}
+          />
+        )}
     </ShippingDialogFrame>
   );
 }
