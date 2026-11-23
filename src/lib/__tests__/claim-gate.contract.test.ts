@@ -377,6 +377,9 @@ describe("banned-phrase-seed — 활용형·카테고리 배치 계약", () => {
     ["교수 인정 제품이에요.", "FOOD"],
     ["피부과 전문의 극찬!", "COSMETIC"],
     ["한의사님이 선택한 차입니다.", null],
+    ["의사분들이 추천해요.", "SUPPLEMENT"],
+    ["약사님들이 추천", "COSMETIC"],
+    ["의사선생님이 추천한", "FOOD"],
   ];
 
   /**
@@ -405,6 +408,9 @@ describe("banned-phrase-seed — 활용형·카테고리 배치 계약", () => {
     ["의사와 상담 후 섭취하세요.", "SUPPLEMENT"],
     ["피부과 테스트 완료.", "COSMETIC"],
     ["치료 중이신 분은 의사와 상의하세요.", "SUPPLEMENT"],
+    ["비전문가도 사용하기 쉬워요.", "COSMETIC"],
+    ["담당: 약사\n사용법: 하루 한 포", "SUPPLEMENT"],
+    ["의사와 상의 후 선택하세요.", "SUPPLEMENT"],
   ];
 
   it.each(MUST_FLAG)("위반을 잡는다: %s (%s)", (text, category) => {
