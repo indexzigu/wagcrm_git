@@ -27,6 +27,7 @@ import EmailSendModal from "../shipping/modals/EmailSendModal";
 import type { InflowLinkRow } from "@/lib/inflow-report";
 import type { CampaignRow, SellerSummary } from "@/lib/crm-types";
 import type { SellerScores } from "@/lib/seller-analysis/scores";
+import { buttonVariants } from "@/components/ui/button";
 import { CampaignCountdown } from "@/components/portal/campaign-countdown";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -469,10 +470,19 @@ describe("남은 파랑 전수(7차)", () => {
   });
 
   it("저장 버튼은 지연 안내 창과 같은 네이비, 입력 포커스 테두리는 네이비", () => {
-    const save = "text-primary-foreground bg-primary rounded-lg hover:bg-primary/95";
-    // CampaignCreateModal 은 정본 shadcn Button(default = bg-primary text-primary-foreground)으로 전환됨
-    expect(sourceOf(files[0])).toContain('<Button type="submit" disabled={isSubmitting}>');
-    for (const rel of files.slice(1, 3)) expect(sourceOf(rel)).toContain(save);
+    const defaultBtn = buttonVariants({ variant: "default" });
+    expect(defaultBtn).toContain("bg-primary");
+    expect(defaultBtn).toContain("text-primary-foreground");
+
+    // 등록·수정 자매 모달은 정본 shadcn Button(default = bg-primary text-primary-foreground)을 쓰고,
+    // 인라인 <svg> 및 브라우저 블로킹 confirm 을 남기지 않는다.
+    for (const rel of files.slice(0, 2)) {
+      const src = sourceOf(rel);
+      expect(src).toContain('<Button type="submit" disabled={isSubmitting}>');
+      expect(src).not.toMatch(/<svg\b/);
+      expect(src).not.toMatch(/\b(?:window\.)?confirm\(/);
+    }
+    expect(sourceOf(files[2])).toContain("text-primary-foreground bg-primary rounded-lg hover:bg-primary/95");
     expect(sourceOf("crm/shipping/modals/CampaignCreateModal.tsx")).toContain("focus:border-primary");
   });
 
