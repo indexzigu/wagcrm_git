@@ -27,6 +27,7 @@ import {
   type StatementAttachmentMail,
   type StatementAttachmentScanResult,
 } from "@/lib/tax-invoice-mail/brand-statement-scan";
+import { readStatementAttachmentPasswords } from "@/lib/tax-invoice-mail/statement-passwords";
 import { MAX_STATEMENT_ATTACHMENT_BYTES, readStatementPivot, type PivotRow } from "@/lib/tax-invoice-mail/statement-pivot-xls";
 import {
   MAX_RECON_MAILS,
@@ -236,8 +237,10 @@ function judgeMail(mail: StatementAttachmentMail, unit: ReconUnit): MailJudgment
     return mail.oversized > 0 ? { kind: "unreadable" } : { kind: "mail", mail: { ...base, source: "NONE", rows: null } };
   }
   let layoutChanged = false;
+  // 브랜드가 첨부에 열기 암호를 걸어 보낸다 — 비밀번호는 환경변수에서만(공개 레포, statement-passwords.ts).
+  const passwords = readStatementAttachmentPasswords();
   for (const content of mail.spreadsheets) {
-    const read = readStatementPivot(content);
+    const read = readStatementPivot(content, { passwords });
     if (read.ok) return { kind: "mail", mail: { ...base, source: "XLS", rows: read.rows as PivotRow[] } };
     if (read.code === "SHEET_LAYOUT_CHANGED") layoutChanged = true;
   }

@@ -15,7 +15,8 @@
  * 구매자 이름이 그대로 나왔다). 그래서 .xls 는 **읽기 전에 스트림을 잘라** 피벗 시트만 남긴다:
  *  1. CFB 컨테이너에서 Workbook 스트림을 꺼낸다(다른 스트림 — 문서 속성 등 — 은 넘기지 않는다).
  *  2. 전역 구간(첫 BOF ~ 짝 EOF)을 레코드 단위로 훑어 BoundSheet8(시트 이름·시작 위치)을 모은다. 암호 레코드
- *     (FILEPASS)가 있으면 그 자리에서 「못 읽음」.
+ *     (FILEPASS)가 남아 있으면 그 자리에서 「못 읽음」 — 암호 파일은 이 단계 앞에서 `decryptPivotStream` 이 비밀번호로
+ *     전역 + 피벗 시트**만** 풀고(발주서 시트는 풀지 않는다) FILEPASS 를 무력화해 넘긴다(`biff-rc4.ts`).
  *  3. 새 스트림 = 전역 구간 + 피벗 시트 구간. 해석기는 시트 구간을 BoundSheet8 의 시작 위치로 이름에 잇는다
  *     (`Directory[pos]`) — 그래서 피벗의 시작 위치를 새 자리(전역 구간 끝)로 고쳐 쓰고, 나머지 시트의 시작 위치는
  *     스트림 밖 값으로 바꿔 어느 구간에도 이어지지 않게 한다(레코드 길이는 그대로라 전역 구간의 다른 위치가 안 밀린다).
@@ -30,6 +31,7 @@
  */
 import * as XLSX from "xlsx";
 import { normalizeForCompare, toNfc } from "../text-normalize";
+import { decryptBiffRange, findFilePass, openBiffCipher, parseFilePass, RT_BOF, RT_BOUNDSHEET8, RT_EOF, RT_FILEPASS } from "./biff-rc4";
 
 /** 피벗 시트 이름(오너 메일함 실측). 비교는 NFC + 앞뒤 공백 제거 뒤 정확 일치. */
 export const PIVOT_SHEET_NAME = "피벗";
@@ -48,10 +50,6 @@ export type PivotReadResult = { ok: true; rows: PivotRow[] } | { ok: false; code
 
 const CFB_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] as const;
 
-const RT_BOF = 0x0809;
-const RT_EOF = 0x000a;
-const RT_BOUNDSHEET8 = 0x0085;
-const RT_FILEPASS = 0x002f;
 
 function startsWith(buffer: Buffer, bytes: readonly number[]): boolean {
   return buffer.length >= bytes.length && bytes.every((byte, index) => buffer[index] === byte);
@@ -121,7 +119,8 @@ export function buildPivotOnlyBiffStream(workbookStream: Buffer, expectedSheetNa
     const next = payloadStart + length;
     if (next > stream.length) fail("ATTACHMENT_UNREADABLE");
     if (type === RT_BOF) depth += 1;
-    // 암호가 걸린 통합 문서 — 복호하지 않는다(라이브러리의 기본 암호 시도도 타지 않게 여기서 멈춘다).
+    // 아직 암호 레코드가 남은 스트림은 읽지 않는다 — 복호한 스트림은 `decryptPivotStream` 이 이 레코드를 무력화해 넘긴다
+    // (라이브러리의 기본 암호 시도도 타지 않게 여기서 멈춘다).
     if (type === RT_FILEPASS) fail("ATTACHMENT_UNREADABLE");
     if (type === RT_BOUNDSHEET8) {
       if (length < 8) fail("ATTACHMENT_UNREADABLE");
@@ -180,13 +179,61 @@ export function isWorkbookContainer(content: Buffer): boolean {
   }
 }
 
-function pivotGridFromBiff(content: Buffer): Grid {
-  const names = XLSX.read(content, { type: "buffer", bookSheets: true }).SheetNames ?? [];
-  if (!names.some(sameSheetName)) fail("SHEET_LAYOUT_CHANGED");
+/** 복호한 스트림에서 FILEPASS 레코드를 아무 일도 안 하는 레코드로 바꾼다(같은 길이 — 뒤 위치가 안 밀린다). */
+const RT_NEUTRAL = 0x0fff;
+
+/**
+ * 암호가 걸린 Workbook 스트림 → 「전역 + 피벗 시트」만 푼 사본과 시트 이름 목록. 발주서 등 다른 시트는 **풀지 않는다**
+ * (암호문 그대로 남고 뒤에서 잘려 나간다). 비밀번호가 안 맞거나 방식을 모르면 ATTACHMENT_UNREADABLE.
+ */
+export function decryptPivotStream(stream: Buffer, filePass: { offset: number; payload: Buffer }, passwords: readonly string[]) {
+  const info = parseFilePass(filePass.payload);
+  const cipher = info ? openBiffCipher(info, passwords) : null;
+  if (!cipher) return fail("ATTACHMENT_UNREADABLE");
+  const plain = Buffer.from(stream);
+  const globalsEnd = substreamEnd(plain, 0);
+  if (!decryptBiffRange(plain, cipher, 0, globalsEnd)) return fail("ATTACHMENT_UNREADABLE");
+  plain.writeUInt16LE(RT_NEUTRAL, filePass.offset);
+
+  const sheets: { pos: number; name: string }[] = [];
+  for (let offset = 0; offset < globalsEnd; ) {
+    const type = plain.readUInt16LE(offset);
+    const length = plain.readUInt16LE(offset + 2);
+    const next = offset + 4 + length;
+    if (type === RT_BOUNDSHEET8) {
+      if (length < 8) fail("ATTACHMENT_UNREADABLE");
+      sheets.push({ pos: plain.readUInt32LE(offset + 4), name: readBoundSheetName(plain, offset + 4, next) });
+    }
+    offset = next;
+  }
+  const pivots = sheets.filter((sheet) => sameSheetName(sheet.name));
+  // 피벗이 없거나 둘 이상이면 풀지 않는다 — 뒤의 `buildPivotOnlyBiffStream` 이 SHEET_LAYOUT_CHANGED 로 멈춘다.
+  if (pivots.length === 1) {
+    const { pos } = pivots[0];
+    if (pos < globalsEnd || pos + 4 > plain.length || plain.readUInt16LE(pos) !== RT_BOF) fail("ATTACHMENT_UNREADABLE");
+    if (!decryptBiffRange(plain, cipher, pos, substreamEnd(plain, pos))) fail("ATTACHMENT_UNREADABLE");
+  }
+  return { stream: plain, names: sheets.map((sheet) => sheet.name) };
+}
+
+function pivotGridFromBiff(content: Buffer, passwords: readonly string[]): Grid {
   const container = XLSX.CFB.read(content, { type: "buffer" });
   const entry = XLSX.CFB.find(container, "/Workbook") ?? XLSX.CFB.find(container, "/Book");
   if (!entry?.content) fail("ATTACHMENT_UNREADABLE");
-  const pivotOnly = buildPivotOnlyBiffStream(Buffer.from(entry.content as Uint8Array), names);
+  const raw = Buffer.from(entry.content as Uint8Array);
+  const filePass = findFilePass(raw);
+  let source: Buffer;
+  let names: string[];
+  if (filePass) {
+    const decrypted = decryptPivotStream(raw, filePass, passwords);
+    source = decrypted.stream;
+    names = decrypted.names;
+  } else {
+    names = XLSX.read(content, { type: "buffer", bookSheets: true }).SheetNames ?? [];
+    source = raw;
+  }
+  if (!names.some(sameSheetName)) fail("SHEET_LAYOUT_CHANGED");
+  const pivotOnly = buildPivotOnlyBiffStream(source, names);
   const workbook = XLSX.read(pivotOnly, { type: "buffer", cellFormula: false, cellHTML: false, cellStyles: false });
   // 피벗 말고 다른 시트가 만들어졌으면 자르기가 실패한 것이다 — 읽지 않고 멈춘다.
   const built = Object.keys(workbook.Sheets ?? {});
@@ -271,16 +318,17 @@ export function parsePivotGrid(grid: Grid): PivotRow[] {
 /**
  * 첨부 한 개 → 피벗 옵션 줄. .xls(CFB)만 받는다 — ZIP(.xlsx·ods)·그 밖은 ATTACHMENT_UNREADABLE. 어떤 예외도 고정
  * 코드로만 바뀐다. 암호가 걸린 파일: .xls 는 FILEPASS 레코드, 암호 .xlsx 는 CFB 안의 암호 스트림(EncryptionInfo)으로
- * 나타난다 — 둘 다 「못 읽음」이다(복호하지 않는다).
+ * 나타난다. .xls 의 RC4 두 방식은 `options.passwords`(호출부가 환경변수에서 읽는다) 중 검증값이 맞는 것으로 풀고
+ * (`biff-rc4.ts`), 비밀번호가 없거나 안 맞거나 그 밖의 방식이면 「못 읽음」이다. 암호 .xlsx 는 풀지 않는다.
  */
-export function readStatementPivot(content: Buffer): PivotReadResult {
+export function readStatementPivot(content: Buffer, options: { passwords?: readonly string[] } = {}): PivotReadResult {
   try {
     if (content.length === 0 || content.length > MAX_STATEMENT_ATTACHMENT_BYTES) return { ok: false, code: "ATTACHMENT_UNREADABLE" };
     if (!startsWith(content, CFB_MAGIC)) return { ok: false, code: "ATTACHMENT_UNREADABLE" };
     const container = XLSX.CFB.read(content, { type: "buffer" });
     const encrypted = XLSX.CFB.find(container, "/EncryptionInfo") ?? XLSX.CFB.find(container, "/EncryptedPackage");
     if (encrypted) return { ok: false, code: "ATTACHMENT_UNREADABLE" };
-    return { ok: true, rows: parsePivotGrid(pivotGridFromBiff(content)) };
+    return { ok: true, rows: parsePivotGrid(pivotGridFromBiff(content, options.passwords ?? [])) };
   } catch (error) {
     // 라이브러리 예외 문구는 버린다(셀 값이 섞일 수 있다).
     return { ok: false, code: error instanceof PivotReadError ? error.code : "ATTACHMENT_UNREADABLE" };
