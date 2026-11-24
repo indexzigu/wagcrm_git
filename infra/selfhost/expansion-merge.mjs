@@ -121,7 +121,7 @@ export function selectWork(decisions, doneLines, key, approver) {
   const seen = new Set();
   for (const d of decisions) {
     if (d.decision !== "merge") continue;
-    const ok = isWellFormedMerge(d) && verifySignature(d, key) && (!approver || d.approver === approver);
+    const ok = isWellFormedMerge(d) && verifySignature(d, key) && typeof approver === "string" && approver !== "" && d.approver === approver;
     if (!ok) {
       const mark = typeof d.sig === "string" && d.sig ? `sig:${d.sig}` : `raw:${JSON.stringify(d).slice(0, 200)}`;
       if (!reported.has(mark) && !seen.has(mark)) invalid.push({ d, mark });
@@ -180,6 +180,10 @@ export async function run(deps) {
   if (!key) {
     deps.log("FAIL", "signing key missing — nothing processed");
     return "no-key";
+  }
+  if (!paths.approver) {
+    deps.log("FAIL", "approver id (WAG_SLACK_APPROVER_USER_ID) missing — nothing processed");
+    return "no-approver";
   }
   const { queue, invalid } = selectWork(decisions, doneLines, key, paths.approver);
   const nowIso = () => new Date(deps.now()).toISOString();
@@ -393,7 +397,8 @@ function realDeps() {
   };
   return {
     now: () => Date.now(),
-    readText: (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } },
+    // Missing file = empty; any other read error must surface (crash → logged, exit 1), never read as "no data".
+    readText: (p) => { try { return readFileSync(p, "utf8"); } catch (e) { if (e?.code === "ENOENT") return ""; throw e; } },
     exists: (p) => existsSync(p),
     appendLine: (p, obj) => { mkdirSync(dirname(p), { recursive: true }); appendFileSync(p, JSON.stringify(obj) + "\n"); },
     touch: (p, text) => writeFileSync(p, text),
@@ -462,7 +467,7 @@ function withLock(lockDir, fn) {
   return Promise.resolve().then(fn).finally(() => rmSync(lockDir, { recursive: true, force: true }));
 }
 
-const FAILING = new Set(["deploy-failed", "merge-failed", "merge-unknown", "no-key", "transient", "invalid"]);
+const FAILING = new Set(["deploy-failed", "merge-failed", "merge-unknown", "no-key", "no-approver", "transient", "invalid"]);
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const deps = realDeps();

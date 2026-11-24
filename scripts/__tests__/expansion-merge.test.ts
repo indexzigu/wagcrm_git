@@ -162,6 +162,15 @@ describe("expansion-merge run", () => {
     expect(h.gh).toEqual([]);
   });
 
+  it("refuses everything when the approver id is missing (fail closed, not 'any approver')", async () => {
+    const h = harness({ decisions: [signed()] });
+    h.deps.paths.approver = "";
+    expect(await M.run(h.deps)).toBe("no-approver");
+    expect(h.gh).toEqual([]);
+    expect(h.deployed).toBe(0);
+    expect(M.selectWork([signed()], [], KEY, "").queue).toEqual([]);
+  });
+
   it.each([
     ["approver mismatch", { approver: "U999" }],
     ["cardId not bound to pr", { cardId: "20261124-merge-pr1" }],
