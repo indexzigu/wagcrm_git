@@ -27,6 +27,8 @@ import { EntityLinkSelectField } from "./entity-link-select-field";
 import { FormDialogFrame } from "./form-dialog-frame";
 import { LinkSearchDialog } from "./link-search-dialog";
 import { SellerIdentityInfo } from "./seller-identity-info";
+import { AcquisitionChannelPrompt } from "./acquisition-channel-prompt";
+import { needsAcquisitionPrompt } from "@/lib/acquisition-prompt";
 
 type CampaignCreationSheetProps = {
   data: DashboardData;
@@ -86,6 +88,9 @@ export function CampaignCreationSheet({
   const [isSellerSearchOpen, setIsSellerSearchOpen] = useState(false);
   const [localDeals, setLocalDeals] = useState(data.deals);
   const [localSellers, setLocalSellers] = useState(data.sellers);
+  // 유입 경로가 빈 셀러에게 한 번 묻는다 — 채널을 아는 셀러(서버 요약 목록)만 대상이다.
+  // 서버 요약(data.sellers)은 페이지를 다시 읽기 전까지 낡아 있으므로, 이 창에서 답한 셀러를 기억해 다시 묻지 않는다.
+  const [acquisitionPromptDone, setAcquisitionPromptDone] = useState<ReadonlySet<string>>(() => new Set());
 
   // Reset form state when sheet opens
   useEffect(() => {
@@ -108,6 +113,11 @@ export function CampaignCreationSheet({
       setLocalSellers(data.sellers);
     }
   }, [open, defaultStatus, lockedDealId, data.deals, data.sellers]);
+
+  const acquisitionPromptSeller = useMemo(
+    () => data.sellers.find((seller) => seller.id === sellerId) ?? null,
+    [data.sellers, sellerId],
+  );
 
   const selectedDeal = useMemo(
     () => localDeals.find((deal) => deal.id === dealId) ?? null,
@@ -240,6 +250,15 @@ export function CampaignCreationSheet({
                   />
                 }
               />
+              {acquisitionPromptSeller &&
+                !acquisitionPromptDone.has(sellerId) &&
+                needsAcquisitionPrompt(acquisitionPromptSeller) && (
+                  <AcquisitionChannelPrompt
+                    key={sellerId}
+                    sellerId={sellerId}
+                    onDone={() => setAcquisitionPromptDone((prev) => new Set(prev).add(sellerId))}
+                  />
+                )}
 
               <Field>
                 <div className="flex w-full items-center justify-between">
