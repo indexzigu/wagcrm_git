@@ -13,7 +13,13 @@ import { describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 import type { ParsedSettlementStatement } from "@/lib/tax-invoice-mail/brand-statement";
 import type { StatementAttachmentMail, StatementAttachmentScanResult } from "@/lib/tax-invoice-mail/brand-statement-scan";
-import { getSettlementReconciliation, headerPriority, loadReconUnit, type ReconUnit } from "../settlement-reconciliation";
+import {
+  getSettlementReconciliation,
+  headerPriority,
+  loadReconUnit,
+  reconSellerLabelsOf,
+  type ReconUnit,
+} from "../settlement-reconciliation";
 
 const FAKE_PII = ["테스트구매자", "010-0000-0000", "가상시 가상로 1"] as const;
 
@@ -295,5 +301,59 @@ describe("loadReconUnit", () => {
     const db = fakeDb({ grouped: false });
     db.salesCampaign.findUnique = vi.fn(async () => null) as never;
     expect(await loadReconUnit(db as never, "sc-x")).toBeNull();
+  });
+
+  it("별칭이 「활동명 본명」이어도 활동명(첫 낱말) 하나만 적힌 메일을 이 캠페인 것으로 읽는다 — 다른 셀러 이름도 같은 규칙", async () => {
+    const db = fakeDb({ grouped: false });
+    const base = { startDate: new Date("2026-10-01"), endDate: new Date("2026-10-07"), orderCampaignId: "oc-1" };
+    db.salesCampaign.findUnique = vi.fn(async () => ({
+      id: "sc-1",
+      groupId: null,
+      dealId: "deal-main",
+      ...base,
+      sellerId: "seller-1",
+      seller: { name: "가나다 홍길동 | 영양제 • 건강습관", alias: "가나다 홍길동" },
+      deal: { partnerId: "partner-1", partner: { name: "브랜드A" } },
+    })) as never;
+    db.salesCampaign.findMany = vi.fn(async () => [
+      { id: "sc-12", groupId: null, sellerId: "seller-2", seller: { name: "라마바 김철수", alias: null } },
+    ]) as never;
+    const unit = await loadReconUnit(db as never, "sc-1");
+    expect(unit!.sellerLabels).toEqual(expect.arrayContaining(["가나다 홍길동", "가나다"]));
+    expect(unit!.otherSellerLabels[0]).toEqual(expect.arrayContaining(["라마바 김철수", "라마바"]));
+
+    // 제목·프로모션명에 「가나다님」만 있는 정산서(GOOD_PIVOT) — 통째 이름만 보면 제외돼 STATEMENT_NOT_FOUND 가 된다.
+    const result = await getSettlementReconciliation("sc-1", deps(okScan([mail()]), unit));
+    if (!result.ok) throw new Error(`expected ok: ${result.code}`);
+    expect(result.data.mailsRead).toBe(1);
+    expect(result.data.counts.MATCH).toBeGreaterThanOrEqual(1);
+    // 다른 셀러의 활동명만 적힌 메일은 이 캠페인 것이 아니다(첫 낱말이 걸려도 셀러가 다르면 제외).
+    const other = await getSettlementReconciliation(
+      "sc-1",
+      deps(okScan([mail({ statement: statement("[브랜드A] 10월 라마바님 정산서") })]), unit),
+    );
+    expect(other).toMatchObject({ ok: false, code: "STATEMENT_NOT_FOUND" });
+  });
+});
+
+describe("reconSellerLabelsOf", () => {
+  it("별칭·이름 그대로에 첫 낱말을 더한다(공백·| 앞) — 낱말이 하나면 그대로, 중복 없음", () => {
+    expect(reconSellerLabelsOf({ name: "가나다 홍길동 | 영양제 • 건강습관", alias: "가나다 홍길동" })).toEqual([
+      "가나다 홍길동",
+      "가나다 홍길동 | 영양제 • 건강습관",
+      "가나다",
+    ]);
+    expect(reconSellerLabelsOf({ name: "가나다", alias: null })).toEqual(["가나다"]);
+    expect(reconSellerLabelsOf({ name: "가나다", alias: "가나다" })).toEqual(["가나다"]);
+    expect(reconSellerLabelsOf(null)).toEqual([]);
+  });
+
+  it("실제 대조 함수(headerPriority)가 「가나다님」 제목을 이 셀러로 알아본다 · 한 글자 첫 낱말은 거른다", () => {
+    const labels = reconSellerLabelsOf({ name: "가나다 홍길동 | 영양제", alias: "가나다 홍길동" });
+    expect(headerPriority({ subject: "[브랜드A] 26년 10월 가나다님 마감정산서", from: "" }, { sellerLabels: labels, counterpartLabel: "" })).toBe(2);
+    expect(headerPriority({ subject: "[브랜드A] 26년 10월 다른셀러님 마감정산서", from: "" }, { sellerLabels: labels, counterpartLabel: "" })).toBe(0);
+    // 한글 한 글자 첫 낱말(「김 철수」→「김」)은 우연히 겹치므로 대조에 안 쓰인다(`statementMentionsUnit` 의 최소 길이).
+    const short = reconSellerLabelsOf({ name: "김 철수", alias: null });
+    expect(headerPriority({ subject: "[브랜드A] 김밥 정산서", from: "" }, { sellerLabels: short, counterpartLabel: "" })).toBe(0);
   });
 });

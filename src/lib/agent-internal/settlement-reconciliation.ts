@@ -68,6 +68,23 @@ type ReconClient = Pick<PrismaClient, "salesCampaign" | "campaignDeal" | "deal" 
 const EXCLUDED_STATUSES = ["DROPPED", "PROPOSAL"];
 
 /**
+ * 정산 메일 대조에서 셀러를 알아보는 이름들 — 별칭·이름에 더해 **그 첫 낱말**도 쓴다.
+ * 브랜드는 정산서 제목·프로모션명에 셀러 활동명만 적는데(예: 「가나다님」) CRM 별칭은 「가나다 홍길동」·이름은
+ * 「가나다 홍길동 | 영양제」처럼 뒤에 본명·설명이 붙는다. 통째 비교만 하면 같은 셀러의 메일이 「이름이 안 걸린 메일」로 빠져
+ * `STATEMENT_NOT_FOUND` 가 된다 — 그래서 「활동명 본명」 형태는 활동명 하나로도 판정한다.
+ * 낱말이 하나뿐인 이름은 그대로고, 너무 짧은 첫 낱말은 `statementMentionsUnit` 이 알아서 거른다(한글 2자·그 밖 3자 미만).
+ * 다른 셀러 이름 쪽(`otherSellerLabels`)에도 같은 규칙을 쓴다 — 양쪽이 같아야 어느 쪽 메일인지 모를 때 「모호」로 거른다.
+ * 정산서·세금계산서 화면의 대조(`sellerLabelsOf`)는 그대로다 — 이 규칙은 봇 정산 대조에만 닿는다.
+ */
+export function reconSellerLabelsOf(seller: { name: string; alias: string | null } | null | undefined): string[] {
+  const labels = sellerLabelsOf(seller);
+  const heads = labels
+    .filter((label) => /[\s|]/.test(label))
+    .map((label) => label.split(/[\s|]+/).find((token) => token.length > 0) ?? "");
+  return [...new Set([...labels, ...heads.filter((head) => head !== "")])];
+}
+
+/**
  * 캠페인 단위 읽기(앱 권한). 그룹 캠페인은 멤버 전부가 한 단위다 — 정산 메일 한 통이 그룹 옵션을 다 담는다.
  * 행을 펼쳐 넘기지 않고 쓰는 칸만 고른다(원가·마진 칸은 읽지 않는다).
  */
@@ -137,13 +154,13 @@ export async function loadReconUnit(db: ReconClient, campaignId: string): Promis
     ...new Map(
       neighbours
         .filter((other) => other.sellerId !== campaign.sellerId)
-        .map((other) => [other.sellerId, sellerLabelsOf(other.seller)] as const),
+        .map((other) => [other.sellerId, reconSellerLabelsOf(other.seller)] as const),
     ).values(),
   ].filter((labels) => labels.length > 0);
 
   return {
     campaignId: campaign.id,
-    sellerLabels: sellerLabelsOf(campaign.seller),
+    sellerLabels: reconSellerLabelsOf(campaign.seller),
     counterpartLabel: campaign.deal?.partner?.name?.trim() ?? "",
     periodStart,
     periodEnd,
