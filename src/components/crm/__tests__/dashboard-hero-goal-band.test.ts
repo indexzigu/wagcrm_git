@@ -51,11 +51,12 @@ describe("데스크톱 홈 히어로 — 달성 밴드 SSOT 소비", () => {
     expect(SOURCE).toContain("goalBarWidth(monthRate)");
   });
 
-  it("ShortageGridRow 의 증감·달성률이 한 밴드에서 색을 받는다", () => {
-    // 역전의 원인이던 두 규칙(isUp 삼항 색 · 달성률 고정 white/50)이 사라졌는지
+  it("흰 표면 KPI 스트립에서 달성률 밴드를 SSOT로 계산한다", () => {
+    // 다크 히어로 역전의 원인이던 두 규칙(isUp 삼항 색 · 달성률 고정 white/50)이 사라졌는지
     expect(SOURCE).not.toContain('const colorClass = isUp ? "text-[#E3C27A]" : "text-white/60"');
     expect(SOURCE).not.toContain('<p className="text-xs font-medium text-white/50">{displayRate(rateVal)}</p>');
-    expect(SOURCE).toContain("const bandClass = band");
+    expect(SOURCE).toContain("resolveGoalBand(monthRate)");
+    expect(SOURCE).toContain("resolveGoalBand(annualRate)");
   });
 });
 

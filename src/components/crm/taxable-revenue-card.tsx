@@ -181,7 +181,13 @@ function StatusRow({
   );
 }
 
-export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker }) {
+export function TaxableRevenueCard({
+  tracker,
+  className,
+}: {
+  tracker: TaxableRevenueTracker;
+  className?: string;
+}) {
   const tone = STATUS_TONE[tracker.status];
   const isOver = tracker.status === "OVER";
   const threshold = tracker.thresholdSupply;
@@ -230,7 +236,10 @@ export function TaxableRevenueCard({ tracker }: { tracker: TaxableRevenueTracker
   const needsAction = tracker.unspecifiedCount > 0 || tracker.missingAmountCount > 0;
 
   return (
-    <Card className="border-border bg-card shadow-soft-sm p-0" data-testid="taxable-revenue-card">
+    <Card
+      className={cn("border-border bg-card shadow-soft-sm p-0", className)}
+      data-testid="taxable-revenue-card"
+    >
       <CardContent className="px-4 py-3">
         {/* flex-wrap: 창을 줄여 폭이 모자라면 갱신일·등급이 다음 줄로 내려간다(P5 — 데스크톱은 폭과 무관하게 유지). */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-100 pb-2">
