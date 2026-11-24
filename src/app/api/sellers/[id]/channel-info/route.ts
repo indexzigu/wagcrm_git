@@ -6,6 +6,7 @@ import { applyDbInstagramToken } from "@/lib/instagram-token";
 import { assertSnapshotSourceAllowed, recordSellerMetricsSnapshot } from "@/lib/seller-history";
 import { collectModeUnsetReason, mockCollectBlockedReason, resolveCollectMode } from "@/lib/collect-mode";
 import { classifyGraphBdFailure, recordGraphBdFailure, type GraphBdFailure } from "@/lib/instagram-graph-error";
+import { graphUrl } from "@/lib/instagram-graph-version";
 
 // Vercel Hobby 플랜: 최대 10초. Apify는 비동기 모드 사용.
 
@@ -208,8 +209,8 @@ export async function GET(request: NextRequest, context: Context) {
           return NextResponse.json({ error: "Instagram API 설정(토큰/계정ID)이 누락되었습니다." }, { status: 500 });
         }
 
-        const graphUrl = `https://graph.facebook.com/v19.0/${igBusinessAccountId}?fields=business_discovery.fields(followers_count,media_count,name,username,biography,profile_picture_url,website)&business_discovery.username=${snsHandle}&access_token=${accessToken}`;
-        const res = await fetchWithTimeout(graphUrl);
+        const bdUrl = graphUrl(`/${igBusinessAccountId}?fields=business_discovery.fields(followers_count,media_count,name,username,biography,profile_picture_url,website)&business_discovery.username=${snsHandle}&access_token=${accessToken}`);
+        const res = await fetchWithTimeout(bdUrl);
         const body = await res.json().catch(() => null);
         const normalized: InstagramProfileMetrics = res.ok ? normalizeInstagramProfileMetrics(body) : {};
         const followers = normalized.followersCount;

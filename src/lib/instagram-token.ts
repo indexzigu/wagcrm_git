@@ -9,8 +9,7 @@
 
 import { getPrisma } from "@/lib/prisma";
 import { describeFailureCause } from "@/lib/cron-outcome";
-
-const GRAPH_VERSION = "v23.0";
+import { GRAPH_API_BASE_URL } from "@/lib/instagram-graph-version";
 
 export type ApplyTokenResult = {
   source: "db" | "env" | "none";
@@ -85,7 +84,7 @@ export async function refreshInstagramToken(now = new Date()): Promise<RefreshTo
 
   // 1) 장기 토큰 재교환 — 성공 시 새 60일 토큰
   const exchangeUrl =
-    `https://graph.facebook.com/${GRAPH_VERSION}/oauth/access_token` +
+    `${GRAPH_API_BASE_URL}/oauth/access_token` +
     `?grant_type=fb_exchange_token&client_id=${encodeURIComponent(appId)}` +
     `&client_secret=${encodeURIComponent(appSecret)}` +
     `&fb_exchange_token=${encodeURIComponent(currentToken)}`;
@@ -116,7 +115,7 @@ export async function refreshInstagramToken(now = new Date()): Promise<RefreshTo
   let neverExpires = false;
   try {
     const debugUrl =
-      `https://graph.facebook.com/${GRAPH_VERSION}/debug_token` +
+      `${GRAPH_API_BASE_URL}/debug_token` +
       `?input_token=${encodeURIComponent(newToken)}` +
       `&access_token=${encodeURIComponent(`${appId}|${appSecret}`)}`;
     const res = await fetch(debugUrl);
