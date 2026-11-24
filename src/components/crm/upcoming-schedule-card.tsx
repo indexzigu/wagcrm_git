@@ -16,7 +16,8 @@ export interface UpcomingEvent {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const isMoney = (type: string) => type.includes("입금") || type.includes("지급");
+const isMoney = (type: string) =>
+  type.includes("입금") || type.includes("지급") || type.includes("회계");
 /**
  * 이미 오간 돈인가 — 완료된 대금은 실제 이체일에 이 카드로 들어온다(당겨 지급 등).
  * ⛔ 완료 줄을 주의색으로 그리지 말 것: 「완료」라는 글자와 「주의」 색이 함께 뜨고,
