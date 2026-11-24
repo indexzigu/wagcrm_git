@@ -370,6 +370,20 @@ export const SELFHOST_ENV_CONTRACT: readonly EnvContractEntry[] = [
     reason: "위와 같은 그룹. 비면 OAuth 콜백이 성립하지 않는다",
   },
 
+  // ── iCloud 캘린더 ──────────────────────────────────────────────────────────
+  {
+    envName: "ICLOUD_EVENTS_CALENDAR_URL",
+    disposition: "optional",
+    reason:
+      "행사 일정 iCloud webcal/https ICS 피드 URL. 비면 iCloud 행사 일정 수집을 건너뛴다",
+  },
+  {
+    envName: "ICLOUD_FINANCE_CALENDAR_URL",
+    disposition: "optional",
+    reason:
+      "회계·정산 일정 iCloud webcal/https ICS 피드 URL. 비면 iCloud 회계·정산 일정 수집을 건너뛴다",
+  },
+
   // ── 링크·주소 ──────────────────────────────────────────────────────────────
   {
     envName: "NEXT_PUBLIC_SITE_URL",

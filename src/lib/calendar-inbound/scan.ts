@@ -25,10 +25,10 @@ import { Prisma } from "@prisma/client";
 import { getRequestTypeForAction } from "@/lib/agent/approval-policy";
 import { toKstYmd } from "@/lib/date-utils";
 import {
-  listAllDayCandidateEvents,
   type CandidateEvent,
   type CandidateListResult,
 } from "@/lib/google-calendar-sync";
+import { isReadOnlyInboundCalendar, listMergedInboundCandidateEvents } from "./icloud-ics";
 import { getPrisma } from "@/lib/prisma";
 import { isSqliteDatabaseUrl } from "@/lib/prisma-client";
 import { parseStoredJsonObject } from "@/lib/stored-json";
@@ -471,7 +471,7 @@ async function settleParsed(
     eventId: event.id,
     calendarId: event.calendarId,
     ledgerKind: draft.ledgerKind,
-    adopt: draft.adopt,
+    adopt: draft.adopt && !isReadOnlyInboundCalendar(event.calendarId),
     summary: event.summary,
     startDate: event.startDate,
     endDate: event.endDate,
@@ -790,7 +790,7 @@ function parsedColumn(value: InboundRowWrite["parsed"]) {
 
 function defaultDeps(): CalendarInboundScanDeps {
   return {
-    listCandidates: listAllDayCandidateEvents,
+    listCandidates: listMergedInboundCandidateEvents,
     loadDictionary: () => loadInboundDictionary(getPrisma()),
     extractHintsLocal: (summary, { timeoutMs }) => extractTitleHintsLocal(summary, { timeoutMs }),
     extractHintsBatch: (items, { timeoutMs }) => extractTitleHintsBatch(items, { totalTimeoutMs: timeoutMs }),
