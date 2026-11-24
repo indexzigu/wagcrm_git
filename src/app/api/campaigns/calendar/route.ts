@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { getCalendarMonthCampaigns } from "@/lib/mobile-calendar-data";
+import { fetchIcloudFinanceEvents } from "@/lib/icloud-finance-schedule";
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -14,6 +15,14 @@ export async function GET(request: NextRequest) {
     ? monthParam.split("-").map(Number)
     : [now.getFullYear(), now.getMonth() + 1];
 
-  const campaigns = await getCalendarMonthCampaigns(year, month);
-  return NextResponse.json({ campaigns });
+  const monthPadded = String(month).padStart(2, "0");
+  const lastDay = new Date(year, month, 0).getDate();
+  const windowStart = `${year}-${monthPadded}-01`;
+  const windowEnd = `${year}-${monthPadded}-${String(lastDay).padStart(2, "0")}`;
+
+  const [campaigns, financeEvents] = await Promise.all([
+    getCalendarMonthCampaigns(year, month),
+    fetchIcloudFinanceEvents(windowStart, windowEnd),
+  ]);
+  return NextResponse.json({ campaigns, financeEvents });
 }

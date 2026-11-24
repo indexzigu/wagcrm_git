@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { CrmShell } from "@/components/crm/crm-shell";
 import { DataLoadError } from "@/components/ui/empty";
 import { CalendarView, type CalendarCampaign } from "@/components/crm/calendar-view";
+import type { IcloudFinanceEvent } from "@/lib/icloud-finance-schedule";
 import {
   CalendarFilterBar,
   type CalendarSellerOption,
@@ -71,8 +72,17 @@ const calendarCampaignSchema = z.object({
   isSupplierPayoutCompleted: z.boolean().optional(),
 });
 
+const financeEventSchema = z.object({
+  id: z.string(),
+  date: z.string(),
+  endDate: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+});
+
 const calendarResponseSchema = z.object({
   campaigns: z.array(calendarCampaignSchema),
+  financeEvents: z.array(financeEventSchema).optional().default([]),
 });
 
 function currentMonthStr(): string {
@@ -105,6 +115,7 @@ export function CalendarPageClient({
   const router = useRouter();
   const [month, setMonth] = useState<string>(currentMonthStr);
   const [campaigns, setCampaigns] = useState<CalendarCampaign[]>([]);
+  const [financeEvents, setFinanceEvents] = useState<IcloudFinanceEvent[]>([]);
   const [loading, setLoading] = useState(false);
   // 조회 실패는 「이 달에 캠페인이 없다」와 다른 상태다 — 빈 달력으로 그리면 일정이 빈 것으로
   // 오판한다(interfaces 점검 #9). 재조회 중에도 안내를 유지해야 「다시 불러오기」가 제자리에서
@@ -197,6 +208,7 @@ export function CalendarPageClient({
       const data = calendarResponseSchema.parse(await res.json());
       if (isStale()) return;
       setCampaigns(data.campaigns);
+      setFinanceEvents(data.financeEvents);
       setLoadError(false);
     } catch (error) {
       if (isStale()) return;
@@ -204,6 +216,7 @@ export function CalendarPageClient({
       // 실패하면 닫을 때까지 남는 오류 토스트가 쌓인다.
       console.error("[calendar] 캠페인 로드 실패:", error);
       setCampaigns([]);
+      setFinanceEvents([]);
       setLoadError(true);
     } finally {
       if (!isStale()) setLoading(false);
@@ -389,6 +402,7 @@ export function CalendarPageClient({
       {/* 달력 */}
       <CalendarView
         campaigns={filteredCampaigns}
+        financeEvents={financeEvents}
         month={month}
         gaps={briefing?.gaps}
         onCreateDraft={openDraftDialog}

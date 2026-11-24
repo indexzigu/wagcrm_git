@@ -10,6 +10,7 @@ import {
   CalendarRange,
   CircleAlert,
   ExternalLink,
+  Landmark,
   Plus,
   UserRound,
   X,
@@ -61,11 +62,18 @@ import {
   type MonthGridDay,
 } from "@/lib/mobile-schedule-grid";
 
+import {
+  dedupeFinanceEventsAgainstCrm,
+  type IcloudFinanceEvent,
+} from "@/lib/icloud-finance-schedule";
+
 /** 캘린더 입력 = 월 캠페인(자금 필드 포함). calendar-entities의 입력 타입 재사용. */
 export type CalendarCampaign = CalendarCampaignInput;
 
 type CalendarViewProps = {
   campaigns: CalendarCampaign[];
+  /** iCloud 회계 캘린더 읽기 전용 일정 — 같은 날 기존 CRM 정산 마커와 중복 제외 후 표시. */
+  financeEvents?: IcloudFinanceEvent[];
   month: string; // YYYY-MM
   onCampaignClick?: (campaignId: string) => void;
   /** 매출 공백 구간(getScheduleGapBriefing) — DANGER/URGENT 날짜에 셀 배경 틴트. */
@@ -529,7 +537,7 @@ function GroupPopoverContent({
 }
 
 // ── 범례 ────────────────────────────────────────────────────────────
-function CalendarLegend() {
+function CalendarLegend({ showFinance }: { showFinance?: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/30 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
       {(Object.entries(campaignStatusLabels) as [CampaignStatus, string][]).map(
@@ -567,12 +575,19 @@ function CalendarLegend() {
         </span>
         지연
       </span>
+      {showFinance && (
+        <span className="inline-flex items-center gap-1">
+          <Landmark className="size-3 text-status-caution" aria-hidden="true" />
+          회계 일정
+        </span>
+      )}
     </div>
   );
 }
 
 export function CalendarView({
   campaigns,
+  financeEvents = [],
   month,
   onCampaignClick,
   gaps = [],
@@ -598,6 +613,25 @@ export function CalendarView({
     [entities, todayStr],
   );
 
+  const financeByDate = React.useMemo(() => {
+    if (financeEvents.length === 0) return new Map<string, IcloudFinanceEvent[]>();
+    const crmEntries: Array<{ date: string; label: string }> = [];
+    for (const [ymd, list] of moneyByDate.entries()) {
+      for (const m of list) {
+        crmEntries.push({ date: ymd, label: m.dealLabel });
+        if (m.sellerName) crmEntries.push({ date: ymd, label: `${m.sellerName} ${m.dealLabel}` });
+      }
+    }
+    const deduped = dedupeFinanceEventsAgainstCrm(financeEvents, crmEntries);
+    const map = new Map<string, IcloudFinanceEvent[]>();
+    for (const ev of deduped) {
+      const list = map.get(ev.date);
+      if (list) list.push(ev);
+      else map.set(ev.date, [ev]);
+    }
+    return map;
+  }, [financeEvents, moneyByDate]);
+
   const weeks = React.useMemo(
     () => getMonthGridWeeks(year, monthIndex),
     [year, monthIndex],
@@ -619,7 +653,7 @@ export function CalendarView({
   return (
     <TooltipProvider>
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft-sm">
-        <CalendarLegend />
+        <CalendarLegend showFinance={financeByDate.size > 0} />
 
         {/* Day of week headers */}
         <div className="grid grid-cols-7 border-b bg-muted/30">
@@ -656,6 +690,7 @@ export function CalendarView({
                     cellIdx={cellIdx}
                     todayStr={todayStr}
                     markers={moneyByDate.get(day.ymd)}
+                    financeMarkers={financeByDate.get(day.ymd)}
                     entityByKey={entityByKey}
                     gapUrgency={day.inMonth ? gapByDate.get(day.ymd) : undefined}
                     onCampaignClick={onCampaignClick}
@@ -790,6 +825,7 @@ function DateCell({
   cellIdx,
   todayStr,
   markers,
+  financeMarkers,
   entityByKey,
   gapUrgency,
   onCampaignClick,
@@ -799,6 +835,7 @@ function DateCell({
   cellIdx: number;
   todayStr: string;
   markers: MoneyMarkerEvent[] | undefined;
+  financeMarkers?: IcloudFinanceEvent[] | undefined;
   /** 마커 → 엔티티 되찾기용. 조합 도트가 **바와 같은 상세**를 연다. */
   entityByKey: Map<string, CalendarEntity>;
   gapUrgency: "DANGER" | "URGENT" | undefined;
@@ -809,7 +846,12 @@ function DateCell({
   const isWeekend = cellIdx === 0 || cellIdx === 6;
   const isToday = day.ymd === todayStr;
   const shown = markers?.slice(0, 3) ?? [];
-  const overflow = (markers?.length ?? 0) - shown.length;
+  const remainingSlots = Math.max(0, 3 - shown.length);
+  const shownFinance = financeMarkers?.slice(0, remainingSlots) ?? [];
+  const overflow =
+    (markers?.length ?? 0) -
+    shown.length +
+    ((financeMarkers?.length ?? 0) - shownFinance.length);
 
   return (
     <div
@@ -950,6 +992,49 @@ function DateCell({
               </Popover>
             );
           })}
+          {shownFinance.map((ev) => (
+            <Popover key={ev.id}>
+              <Tooltip>
+                <PopoverTrigger asChild>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`회계 일정 · ${ev.title}`}
+                    >
+                      <Landmark className="size-3.5 text-status-caution" aria-hidden="true" />
+                    </button>
+                  </TooltipTrigger>
+                </PopoverTrigger>
+                <TooltipContent>
+                  <p className="text-xs font-medium">{ev.title}</p>
+                  <p className="text-xs text-muted-foreground">회계 일정 (iCloud 읽기 전용)</p>
+                </TooltipContent>
+              </Tooltip>
+              <PopoverContent align="start" sideOffset={4} className="w-64 p-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-semibold text-foreground">{ev.title}</span>
+                    <PopoverClose
+                      aria-label="닫기"
+                      className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="size-3.5" aria-hidden="true" />
+                    </PopoverClose>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    회계 일정 · {ev.date} (iCloud 읽기 전용)
+                  </p>
+                  {ev.description ? (
+                    <p className="whitespace-pre-line rounded-md bg-muted/50 p-2 text-xs text-foreground">
+                      {ev.description}
+                    </p>
+                  ) : null}
+                </div>
+              </PopoverContent>
+            </Popover>
+          ))}
         </div>
         {overflow > 0 && (
           <span className="shrink-0 text-[9px] leading-none text-muted-foreground">

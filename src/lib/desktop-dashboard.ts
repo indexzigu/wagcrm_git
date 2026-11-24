@@ -1,6 +1,12 @@
 import { sellerDisplayName } from "@/lib/seller-display-name";
 import { getPrisma } from "@/lib/prisma";
 import { isCampaignPeriodUnset } from "@/lib/campaign-period";
+import { toKstYmd } from "@/lib/date-utils";
+import {
+  dedupeFinanceEventsAgainstCrm,
+  fetchIcloudFinanceEvents,
+  type IcloudFinanceEvent,
+} from "@/lib/icloud-finance-schedule";
 import { DASHBOARD_SCOPE_CAPTION, isCountedForDashboard } from "./dashboard-scope";
 import { buildEffectiveCampaignPeriods } from "@/lib/campaign-group-count";
 import { findRevenueGoalsSafe } from "@/lib/revenue-goals";
@@ -301,6 +307,25 @@ export function buildUpcomingEvents(campaigns: UpcomingCampaign[], now: Date, sc
     .map((event) => ({ ...event, date: event.date.toISOString() }));
 }
 
+export function mergeUpcomingWithFinanceEvents(
+  crmEvents: Array<{ date: string; type: string; label: string }>,
+  financeEvents: IcloudFinanceEvent[],
+): Array<{ date: string; type: string; label: string }> {
+  const deduped = dedupeFinanceEventsAgainstCrm(financeEvents, crmEvents);
+  if (deduped.length === 0) return crmEvents;
+  const merged = [
+    ...crmEvents,
+    ...deduped.map((ev) => ({
+      date: `${ev.date}T00:00:00+09:00`,
+      type: "회계 일정",
+      label: ev.title,
+    })),
+  ];
+  return merged
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(0, 14);
+}
+
 export async function getDesktopDashboardData(now = new Date()) {
   const prisma = getPrisma();
   const selectedMonth = monthKey(now);
@@ -314,7 +339,7 @@ export async function getDesktopDashboardData(now = new Date()) {
   const ninetyDaysAgo = new Date(now.getTime() - 90 * DAY_MS);
   const scheduleEnd = new Date(now.getTime() + 14 * DAY_MS);
 
-  const [loadedCampaigns, goalResult, outreach, googleCalendar, scheduleGapBriefing, taxableRevenueRows] = await Promise.all([
+  const [loadedCampaigns, goalResult, outreach, googleCalendar, scheduleGapBriefing, taxableRevenueRows, icloudFinanceEvents] = await Promise.all([
     prisma.salesCampaign.findMany({
       select: {
         id: true,
@@ -395,6 +420,7 @@ export async function getDesktopDashboardData(now = new Date()) {
         settlementItems: { select: { invoiceMode: true, counterparty: true, amount: true } },
       },
     }),
+    fetchIcloudFinanceEvents(toKstYmd(now), toKstYmd(scheduleEnd)),
   ]);
   // 기간 미정(T-313) 캠페인은 날짜가 자리표시라 월 배분·다가올 일정·데이터 점검(「종료됐으나 실매출
   // 미입력」) 어디에도 넣지 않는다 — 기간이 정해지면(날짜 저장) 자동으로 다시 잡힌다.
@@ -566,7 +592,10 @@ export async function getDesktopDashboardData(now = new Date()) {
           : null,
       };
     }),
-    upcomingEvents: buildUpcomingEvents(campaigns, now, scheduleEnd),
+    upcomingEvents: mergeUpcomingWithFinanceEvents(
+      buildUpcomingEvents(campaigns, now, scheduleEnd),
+      icloudFinanceEvents,
+    ),
     taxableRevenueTracker: buildTaxableRevenueTracker(
       taxableRevenueRows.map((row) => ({
         salesChannel: row.salesChannel,
