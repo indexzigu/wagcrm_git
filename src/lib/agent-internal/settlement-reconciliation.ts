@@ -53,6 +53,12 @@ export type ReconUnit = {
   periodEnd: Date;
   /** 같은 거래처와 기간이 겹치는 **다른 셀러**들의 이름 묶음 — 그 이름도 걸린 메일은 어느 쪽 것인지 모른다 */
   otherSellerLabels: string[][];
+  /**
+   * 활동명(첫 낱말)을 뺀 **통째 이름**만 — 메일에 이 셀러의 통째 이름이 분명히 적혀 있으면, 다른 셀러의 활동명이 우연히
+   * 같아도 모호로 버리지 않는다(없으면 위 두 칸을 그대로 쓴다).
+   */
+  sellerFullLabels?: string[];
+  otherSellerFullLabels?: string[][];
   /** 같은 거래처·같은 셀러의 다른 회차 중 메일 기간이 겹치는 수 */
   overlappingRounds: number;
   catalog: ReconCatalog;
@@ -66,6 +72,28 @@ export type SettlementReconciliationDeps = {
 type ReconClient = Pick<PrismaClient, "salesCampaign" | "campaignDeal" | "deal" | "productMapping">;
 
 const EXCLUDED_STATUSES = ["DROPPED", "PROPOSAL"];
+
+/** 별칭의 첫 낱말을 대조 이름으로 쓰는 최소 글자 수 — 두 글자 이름(「이수」)은 「이수정님」 같은 다른 사람에게 우연히 걸린다. */
+const MIN_ALIAS_HEAD_CHARS = 3;
+
+/**
+ * 정산 메일 대조에서 셀러를 알아보는 이름들 — 별칭·이름에 더해 **별칭의 첫 낱말**도 쓴다.
+ * 브랜드는 정산서 제목·프로모션명에 셀러 활동명만 적는데(예: 「가나다님」) CRM 별칭은 「가나다 홍길동」처럼 뒤에 본명이
+ * 붙는다. 통째 비교만 하면 같은 셀러의 메일이 「이름이 안 걸린 메일」로 빠져 `STATEMENT_NOT_FOUND` 가 된다 — 그래서
+ * 「활동명 본명」 형태의 별칭은 활동명 하나로도 판정한다. 이름(`name`)은 「… | 영양제」처럼 설명이 붙어 첫 낱말이
+ * 일반어일 수 있어 쓰지 않는다. 낱말이 하나뿐인 별칭·3자 미만 첫 낱말은 더하지 않는다.
+ * 다른 셀러 이름 쪽(`otherSellerLabels`)에도 같은 규칙을 쓴다 — 양쪽이 같아야 어느 쪽 메일인지 모를 때 「모호」로 거른다.
+ * 정산서·세금계산서 화면의 대조(`sellerLabelsOf`)는 그대로다 — 이 규칙은 봇 정산 대조에만 닿는다.
+ * 알려진 한계(미해결, 2026-11-24 리뷰): ① 두 글자 활동명은 대응하지 않는다(3자 미만) — 그 셀러는 계속 `STATEMENT_NOT_FOUND`.
+ * ② 별칭이 낱말 하나인 셀러와, 같은 거래처·기간에 그 낱말을 활동명으로 쓰는 다른 셀러가 함께 있으면, 그 낱말만 적힌 메일이
+ * 낱말 하나짜리 셀러 것으로 읽힌다(`judgeMail` 의 `namedInFull`; 이 규칙 이전에도 같은 동작이었다).
+ */
+export function reconSellerLabelsOf(seller: { name: string; alias: string | null } | null | undefined): string[] {
+  const labels = sellerLabelsOf(seller);
+  const alias = seller?.alias?.trim() ?? "";
+  const head = /[\s|]/.test(alias) ? (alias.split(/[\s|]+/).find((token) => token.length > 0) ?? "") : "";
+  return head.length >= MIN_ALIAS_HEAD_CHARS ? [...new Set([...labels, head])] : labels;
+}
 
 /**
  * 캠페인 단위 읽기(앱 권한). 그룹 캠페인은 멤버 전부가 한 단위다 — 정산 메일 한 통이 그룹 옵션을 다 담는다.
@@ -133,17 +161,19 @@ export async function loadReconUnit(db: ReconClient, campaignId: string): Promis
   const sameSellerRounds = new Set(
     neighbours.filter((other) => other.sellerId === campaign.sellerId).map((other) => other.groupId ?? other.id),
   );
-  const otherSellerLabels = [
+  const otherSellers = [
     ...new Map(
-      neighbours
-        .filter((other) => other.sellerId !== campaign.sellerId)
-        .map((other) => [other.sellerId, sellerLabelsOf(other.seller)] as const),
+      neighbours.filter((other) => other.sellerId !== campaign.sellerId).map((other) => [other.sellerId, other.seller] as const),
     ).values(),
-  ].filter((labels) => labels.length > 0);
+  ];
+  const otherSellerLabels = otherSellers.map((seller) => reconSellerLabelsOf(seller)).filter((labels) => labels.length > 0);
+  const otherSellerFullLabels = otherSellers.map((seller) => sellerLabelsOf(seller)).filter((labels) => labels.length > 0);
 
   return {
     campaignId: campaign.id,
-    sellerLabels: sellerLabelsOf(campaign.seller),
+    sellerLabels: reconSellerLabelsOf(campaign.seller),
+    sellerFullLabels: sellerLabelsOf(campaign.seller),
+    otherSellerFullLabels,
     counterpartLabel: campaign.deal?.partner?.name?.trim() ?? "",
     periodStart,
     periodEnd,
@@ -195,7 +225,11 @@ function judgeMail(mail: StatementAttachmentMail, unit: ReconUnit): MailJudgment
   // 이 캠페인 거래처가 보낸 것 · 이 셀러 이름이 걸린 것만(정산서 화면·크론과 같은 판정).
   if (!statementFromCounterpart(statement, unit.counterpartLabel)) return { kind: "skip" };
   if (!statementMentionsUnit(statement, unit.sellerLabels)) return { kind: "skip" };
-  if (unit.otherSellerLabels.some((labels) => statementMentionsUnit(statement, labels))) return { kind: "ambiguous" };
+  // 이 셀러의 통째 이름이 적힌 메일은 다른 셀러의 통째 이름과만 견준다 — 활동명(첫 낱말)이 같은 다른 셀러가 있어도
+  // 「가나다 홍길동」이라고 분명히 적힌 메일까지 모호로 버리지 않는다. 활동명으로만 알아본 메일은 활동명까지 견준다.
+  const namedInFull = statementMentionsUnit(statement, unit.sellerFullLabels ?? unit.sellerLabels);
+  const others = namedInFull ? (unit.otherSellerFullLabels ?? unit.otherSellerLabels) : unit.otherSellerLabels;
+  if (others.some((labels) => statementMentionsUnit(statement, labels))) return { kind: "ambiguous" };
 
   const base = { yearMonth, receivedDate: toKstYmd(mail.receivedAt) };
   if (mail.spreadsheets.length === 0) {
