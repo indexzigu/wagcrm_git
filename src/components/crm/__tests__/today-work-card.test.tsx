@@ -142,4 +142,17 @@ describe("TodayWorkCard", () => {
     expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0);
     expect(screen.queryByText("오늘 처리할 일이 없습니다")).not.toBeInTheDocument();
   });
+
+  it("카테고리가 1개뿐이면 중복 필터 탭 바를 숨기고, 2개 이상이면 노출한다", () => {
+    const singleCat: TodayWorkRow[] = [
+      { key: "data-check", label: "데이터 점검", count: 24, tone: "caution", href: "/#data-check", detail: "실제 매출 누락 외" },
+    ];
+    const { rerender } = render(
+      <TodayWorkCard rows={singleCat} loading={false} failedSources={[]} onRetry={() => {}} orderSync={fresh} />,
+    );
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+
+    rerender(<TodayWorkCard rows={rows} loading={false} failedSources={[]} onRetry={() => {}} orderSync={fresh} />);
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+  });
 });

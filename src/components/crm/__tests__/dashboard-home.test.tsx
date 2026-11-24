@@ -60,12 +60,16 @@ vi.mock("@/hooks/useApprovalInbox", () => ({
 }));
 
 vi.mock("@/components/ui/animated-number", () => ({
-  AnimatedNumber: ({ value, format, decimalPlaces = 0, suffix = "" }: any) => {
+  AnimatedNumber: ({ value, format = "number", decimalPlaces = 0, suffix = "" }: any) => {
     let display = String(value);
     if (format === "percent") {
       display = value.toFixed(decimalPlaces) + "%";
     } else if (format === "currency") {
       display = new Intl.NumberFormat("ko-KR", { style: "currency", currency: "KRW" }).format(value);
+    } else if (format === "raw") {
+      display = decimalPlaces > 0 ? value.toFixed(decimalPlaces) : String(value);
+    } else {
+      display = new Intl.NumberFormat("ko-KR").format(Math.round(value));
     }
     return <span>{display}{suffix}</span>;
   }
@@ -391,7 +395,7 @@ describe("DashboardHome", () => {
     expect(firstBand.contains(screen.getByRole("heading", { name: "이번 달 거래액" }))).toBe(true);
     expect(firstBand.contains(screen.getByRole("heading", { name: "연간 매출 누적" }))).toBe(true);
     expect(firstBand.contains(screen.getByRole("heading", { name: "예상 매출총이익" }))).toBe(true);
-    expect(firstBand.contains(screen.getByRole("heading", { name: "진행 캠페인" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "월 환산 캠페인 수" }))).toBe(true);
   });
 
   it("밴드 순서 — KPI 스트립 → 운영 코어 → 분석 및 점검", () => {
@@ -507,5 +511,53 @@ describe("DashboardHome", () => {
     expect(formatAxisWon(150_000_000)).toBe("1.5억");
     expect(formatAxisWon(225_000_000)).toBe("2.25억");
     expect(formatAxisWon(300_000_000)).toBe("3억");
+  });
+
+  it("월 환산 캠페인 수는 소수 첫째 자리(5.5건)를 반올림하지 않고 그대로 표시한다", () => {
+    render(
+      <DashboardHome
+        initialData={data({
+          scale: {
+            weightedCampaignCount: 5.5,
+            operatingDays: 20,
+            prevWeightedCampaignCount: 3.3,
+            prevOperatingDays: 14,
+            prevPrevWeightedCampaignCount: 2.0,
+          },
+        })}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "월 환산 캠페인 수" })).toBeInTheDocument();
+    expect(screen.getByText("5.5건")).toBeInTheDocument();
+  });
+
+  it("보조 지표 및 점검 기본 탭은 데이터 점검 이슈가 있으면 데이터 점검, 영업 전환이 비어 있으면 과세기준을 선택한다", () => {
+    const { unmount } = render(
+      <DashboardHome
+        initialData={data({
+          outreach90d: { total: 0, responded: 0, confirmed: 0, converted: 0 },
+          dataIntegrityIssues: [
+            {
+              campaignId: "c-1",
+              campaignName: "테스트 캠페인",
+              type: "MISSING_SALES",
+              label: "실제 매출 누락",
+            },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByRole("tab", { name: /데이터 점검/ })).toHaveAttribute("aria-selected", "true");
+    unmount();
+
+    render(
+      <DashboardHome
+        initialData={data({
+          outreach90d: { total: 0, responded: 0, confirmed: 0, converted: 0 },
+          dataIntegrityIssues: [],
+        })}
+      />,
+    );
+    expect(screen.getByRole("tab", { name: "과세기준" })).toHaveAttribute("aria-selected", "true");
   });
 });

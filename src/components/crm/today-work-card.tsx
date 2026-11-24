@@ -84,7 +84,7 @@ function WorkRow({ row }: { row: TodayWorkRow }) {
             </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0">
           <span
             data-slot="today-work-count"
             className={cn("tabular-nums text-xs font-semibold", COUNT_TEXT[row.tone])}
@@ -146,13 +146,14 @@ export function TodayWorkCard({
     order: orderCount,
     ops: opsCount,
   };
+  const activeCategoryCount = [settlementCount, orderCount, opsCount].filter((c) => c > 0).length;
   const effectiveFilter = filter !== "all" && categoryCounts[filter] === 0 ? "all" : filter;
 
   const displayedRows =
     effectiveFilter === "all" ? shownRows : shownRows.filter((r) => getRowCategory(r.key) === effectiveFilter);
 
   return (
-    <Card className="border-border bg-card shadow-soft-sm p-0 flex flex-col">
+    <Card className="border-border bg-card shadow-none p-0 flex flex-col">
       <CardContent className="p-0 flex flex-col flex-1">
         {/* 카드 헤더: 순수 <h2> 제목만 둔다 */}
         <div className="flex flex-wrap items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -193,8 +194,8 @@ export function TodayWorkCard({
           </div>
         ) : null}
 
-        {/* 밑줄 필터 탭 */}
-        {rows.length > 0 ? (
+        {/* 밑줄 필터 탭: 2개 이상 카테고리가 있을 때만 노출 */}
+        {rows.length > 0 && activeCategoryCount >= 2 ? (
           <div className="flex items-center gap-4 border-b border-slate-100 px-4" role="tablist">
             <button
               type="button"

@@ -318,7 +318,11 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   const [agendaError, setAgendaError] = useState<string | null>(null);
 
   const [chartTab, setChartTab] = useState<"recent6" | "annual">("recent6");
-  const [auxTab, setAuxTab] = useState<"funnel" | "tax" | "integrity" | "price">("funnel");
+  const [auxTab, setAuxTab] = useState<"funnel" | "tax" | "integrity" | "price">(() => {
+    if (initialData.dataIntegrityIssues.length > 0) return "integrity";
+    if (initialData.outreach90d.total > 0) return "funnel";
+    return "tax";
+  });
 
   const priceOverview = usePriceOverview();
   const reducedMotion = useReducedMotion();
@@ -491,7 +495,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
           <section
             data-band="kpi-strip"
             aria-label="핵심 실적 요약"
-            className="rounded-lg border border-border bg-card shadow-soft-sm grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[1.25fr_1.25fr_1fr_0.9fr] divide-y sm:divide-y-0 xl:divide-x divide-slate-100"
+            className="rounded-lg border border-border bg-card grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.25fr_1.25fr_1fr_0.9fr] divide-y lg:divide-y-0 lg:divide-x divide-slate-100"
           >
             {/* 1칸: 이번 달 거래액 */}
             <div data-slot="card" className="p-4 flex flex-col justify-between gap-2.5">
@@ -640,11 +644,11 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               </div>
             </div>
 
-            {/* 4칸: 진행 캠페인 */}
+            {/* 4칸: 월 환산 캠페인 수 */}
             <div data-slot="card" className="p-4 flex flex-col justify-between gap-2.5">
               <div className="flex items-center justify-between">
                 <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                  진행 캠페인
+                  월 환산 캠페인 수
                 </h2>
               </div>
               <div data-slot="metric-current-row" className="flex items-baseline justify-between gap-2">
@@ -652,6 +656,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   <span className="text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-foreground">
                     <AnimatedNumber
                       value={initialData.scale.weightedCampaignCount}
+                      format="raw"
                       suffix="건"
                       decimalPlaces={1}
                     />
@@ -685,7 +690,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
           {/* =========================================================================
              ZONE 2: Operational Core (data-band="ops-core")
              ========================================================================= */}
-          <section data-band="ops-core" className="grid gap-4 xl:grid-cols-[1.28fr_1fr] items-stretch">
+          <section data-band="ops-core" className="grid gap-4 lg:grid-cols-[1.28fr_1fr] items-stretch">
             {/* 좌측: 오늘 처리할 일 */}
             <div className="flex min-w-0 flex-col">
               <TodayWorkCard
@@ -698,7 +703,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
             </div>
 
             {/* 우측: 단일 패널 (일정 커버리지 + 다가올 14일 일정 + 캘린더 연동 푸터) */}
-            <div className="rounded-lg border border-border bg-card shadow-soft-sm flex flex-col">
+            <div className="rounded-lg border border-border bg-card flex flex-col">
               {initialData.scheduleGapBriefing ? (
                 <div className="p-4 border-b border-slate-100">
                   <div className="flex items-center justify-between pb-2.5">
@@ -738,9 +743,16 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
           {/* =========================================================================
              ZONE 3: Trend & Aux Checks (data-band="analytics")
              ========================================================================= */}
-          <section data-band="analytics" className="grid gap-4 xl:grid-cols-[1.55fr_1fr] items-stretch">
+          <div className="flex items-center gap-3 pt-1">
+            <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
+              월별 추이 및 보조 점검
+            </span>
+            <div className="h-px flex-1 bg-border" aria-hidden="true" />
+          </div>
+
+          <section data-band="analytics" className="grid gap-4 lg:grid-cols-[1.55fr_1fr] items-stretch">
             {/* 좌측: 거래액 추이 (최근 6개월 / 연간 월별) */}
-            <div data-band="sales-chart" className="rounded-lg border border-border bg-card shadow-soft-sm flex flex-col">
+            <div data-band="sales-chart" className="rounded-lg border border-border bg-card flex flex-col">
               <div className="px-4 pt-3.5 pb-0">
                 <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
                   거래액 추이
@@ -856,7 +868,7 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
             <div
               data-band="checks"
               id={DATA_CHECK_ANCHOR}
-              className="rounded-lg border border-border bg-card shadow-soft-sm flex flex-col scroll-mt-20"
+              className="rounded-lg border border-border bg-card flex flex-col scroll-mt-20"
             >
               <div className="px-4 pt-3.5 pb-0">
                 <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
