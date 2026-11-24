@@ -15,7 +15,8 @@
  * 구매자 이름이 그대로 나왔다). 그래서 .xls 는 **읽기 전에 스트림을 잘라** 피벗 시트만 남긴다:
  *  1. CFB 컨테이너에서 Workbook 스트림을 꺼낸다(다른 스트림 — 문서 속성 등 — 은 넘기지 않는다).
  *  2. 전역 구간(첫 BOF ~ 짝 EOF)을 레코드 단위로 훑어 BoundSheet8(시트 이름·시작 위치)을 모은다. 암호 레코드
- *     (FILEPASS)가 있으면 그 자리에서 「못 읽음」.
+ *     (FILEPASS)가 남아 있으면 그 자리에서 「못 읽음」 — 암호 파일은 이 단계 앞에서 `decryptPivotStream` 이 비밀번호로
+ *     전역 + 피벗 시트**만** 풀고(발주서 시트는 풀지 않는다) FILEPASS 를 무력화해 넘긴다(`biff-rc4.ts`).
  *  3. 새 스트림 = 전역 구간 + 피벗 시트 구간. 해석기는 시트 구간을 BoundSheet8 의 시작 위치로 이름에 잇는다
  *     (`Directory[pos]`) — 그래서 피벗의 시작 위치를 새 자리(전역 구간 끝)로 고쳐 쓰고, 나머지 시트의 시작 위치는
  *     스트림 밖 값으로 바꿔 어느 구간에도 이어지지 않게 한다(레코드 길이는 그대로라 전역 구간의 다른 위치가 안 밀린다).
@@ -30,7 +31,7 @@
  */
 import * as XLSX from "xlsx";
 import { normalizeForCompare, toNfc } from "../text-normalize";
-import { decryptBiffRange, findFilePass, openBiffCipher, parseFilePass, RT_BOUNDSHEET8, RT_FILEPASS } from "./biff-rc4";
+import { decryptBiffRange, findFilePass, openBiffCipher, parseFilePass, RT_BOF, RT_BOUNDSHEET8, RT_EOF, RT_FILEPASS } from "./biff-rc4";
 
 /** 피벗 시트 이름(오너 메일함 실측). 비교는 NFC + 앞뒤 공백 제거 뒤 정확 일치. */
 export const PIVOT_SHEET_NAME = "피벗";
@@ -49,8 +50,6 @@ export type PivotReadResult = { ok: true; rows: PivotRow[] } | { ok: false; code
 
 const CFB_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1] as const;
 
-const RT_BOF = 0x0809;
-const RT_EOF = 0x000a;
 
 function startsWith(buffer: Buffer, bytes: readonly number[]): boolean {
   return buffer.length >= bytes.length && bytes.every((byte, index) => buffer[index] === byte);

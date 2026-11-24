@@ -29,8 +29,9 @@ export const RT_FILEPASS = 0x002f;
 const NEVER_ENCRYPTED = new Set<number>([RT_BOF, RT_FILEPASS, 0x0194 /* UsrExcl */, 0x0195 /* FileLock */, 0x00e1 /* InterfaceHdr */, 0x0196 /* RRDInfo */, 0x0138 /* RRDHead */]);
 
 const BLOCK_SIZE = 1024;
-const MAX_PASSWORD_CHARS = 255;
-const MAX_PASSWORDS = 8;
+/** 후보 비밀번호 상한(개수·글자 수) — 환경변수 읽기(statement-passwords.ts)도 같은 값을 쓴다. */
+export const MAX_PASSWORD_CHARS = 255;
+export const MAX_PASSWORDS = 8;
 
 export type FilePassInfo = {
   scheme: "rc4" | "cryptoapi";

@@ -30,7 +30,7 @@ const PIVOT_GRID: unknown[][] = [
   ["총합계", 6, 240000],
 ];
 
-function plainWorkbookStream(): Buffer {
+function plainWorkbookStream(bookSST = false): Buffer {
   const wb = XLSX.utils.book_new();
   // 시트 앞쪽을 길게 채워 피벗이 1024바이트 블록 경계를 넘긴 자리에 놓이게 한다(재키 확인).
   const filler = Array.from({ length: 150 }, (_, i) => [`정산내역 ${i}`, i * 1000]);
@@ -44,7 +44,7 @@ function plainWorkbookStream(): Buffer {
     ]),
     "발주서",
   );
-  const content = XLSX.write(wb, { bookType: "biff8", type: "buffer" }) as Buffer;
+  const content = XLSX.write(wb, { bookType: "biff8", type: "buffer", bookSST }) as Buffer;
   const entry = XLSX.CFB.find(XLSX.CFB.read(content, { type: "buffer" }), "/Workbook");
   return Buffer.from(entry!.content as Uint8Array);
 }
@@ -104,10 +104,10 @@ function filePassPayload(scheme: Scheme, password: string, salt: Buffer): Buffer
     return Buffer.concat([Buffer.from([1, 0, 1, 0, 1, 0]), salt, encrypted]);
   }
   const csp = Buffer.from("Microsoft Enhanced Cryptographic Provider v1.0\0", "utf16le");
-  const header = Buffer.concat([le32(0x24), le32(0), le32(0x6801), le32(0x8004), le32(scheme.bits), le32(1), le32(0), le32(0), csp]);
+  const header = Buffer.concat([le32(0x04), le32(0), le32(0x6801), le32(0x8004), le32(scheme.bits), le32(1), le32(0), le32(0), csp]);
   return Buffer.concat([
     Buffer.from([1, 0, 4, 0, 2, 0]),
-    le32(0x24),
+    le32(0x04),
     le32(header.length),
     header,
     le32(16),
@@ -161,8 +161,23 @@ describe("암호 걸린 정산 첨부(.xls) 읽기", () => {
     expect(rc4(Buffer.from("Key"), Buffer.from("Plaintext")).toString("hex")).toBe("bbf316e8d940af0ad3");
   });
 
-  it("합성 스트림이 1024바이트 블록을 여러 개 넘는다(양성 대조 — 재키 위치를 실제로 건드린다)", () => {
-    expect(plainWorkbookStream().length).toBeGreaterThan(4096);
+  it("합성 스트림이 1024바이트 블록을 여러 개 넘고 블록 경계를 걸치는 레코드가 있다(양성 대조 — 재키 위치를 실제로 건드린다)", () => {
+    const stream = plainWorkbookStream();
+    expect(stream.length).toBeGreaterThan(4096);
+    let straddling = 0;
+    for (let offset = 0; offset + 4 <= stream.length; ) {
+      const next = offset + 4 + stream.readUInt16LE(offset + 2);
+      if (Math.floor(offset / 1024) !== Math.floor((next - 1) / 1024)) straddling += 1;
+      offset = next;
+    }
+    expect(straddling).toBeGreaterThan(0);
+  });
+
+  it("통합 문자열 표(SST)를 쓰는 파일도 같은 방식으로 풀린다(엑셀이 만든 파일은 SST 를 쓴다)", () => {
+    const encrypted = cfbWith(encryptStream(plainWorkbookStream(true), { kind: "rc4" }, PASSWORD));
+    const result = readStatementPivot(encrypted, { passwords: [PASSWORD] });
+    expect(result).toEqual({ ok: true, rows: EXPECTED });
+    expect(JSON.stringify(result)).not.toContain(FAKE_PII[0]);
   });
 
   it.each(SCHEMES)("%s — 비밀번호로 풀어 피벗을 읽는다", (_name, scheme) => {
@@ -242,12 +257,13 @@ describe("readStatementAttachmentPasswords", () => {
     expect(readStatementAttachmentPasswords({ STATEMENT_ATTACHMENT_PASSWORDS: "   " })).toEqual([]);
   });
 
-  it("글자 하나면 그대로(앞뒤 공백 제거) · JSON 배열이면 여럿 · 중복·빈 값·문자열 아님은 버린다", () => {
+  it("글자 하나면 그대로(앞뒤 공백 제거) · JSON 배열이면 여럿 · 중복·빈 값은 버린다", () => {
     expect(readStatementAttachmentPasswords({ STATEMENT_ATTACHMENT_PASSWORDS: "  one-pw " })).toEqual(["one-pw"]);
-    expect(readStatementAttachmentPasswords({ STATEMENT_ATTACHMENT_PASSWORDS: '["a1", " b2 ", "a1", "", 3]' })).toEqual(["a1", "b2"]);
+    expect(readStatementAttachmentPasswords({ STATEMENT_ATTACHMENT_PASSWORDS: '["a1", " b2 ", "a1", ""]' })).toEqual(["a1", "b2"]);
   });
 
-  it("깨진 JSON 은 빈 목록(예외·값 노출 없음)", () => {
-    expect(readStatementAttachmentPasswords({ STATEMENT_ATTACHMENT_PASSWORDS: '["a1", ' })).toEqual([]);
+  it("[ 로 시작해도 JSON 문자열 배열이 아니면 통째로 평문 비밀번호 하나다(조용히 사라지지 않는다)", () => {
+    expect(readStatementAttachmentPasswords({ STATEMENT_ATTACHMENT_PASSWORDS: "[pw-with-bracket" })).toEqual(["[pw-with-bracket"]);
+    expect(readStatementAttachmentPasswords({ STATEMENT_ATTACHMENT_PASSWORDS: "[1,2]" })).toEqual(["[1,2]"]);
   });
 });
