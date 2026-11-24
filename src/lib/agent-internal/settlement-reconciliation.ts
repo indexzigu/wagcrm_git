@@ -84,6 +84,9 @@ const MIN_ALIAS_HEAD_CHARS = 3;
  * 일반어일 수 있어 쓰지 않는다. 낱말이 하나뿐인 별칭·3자 미만 첫 낱말은 더하지 않는다.
  * 다른 셀러 이름 쪽(`otherSellerLabels`)에도 같은 규칙을 쓴다 — 양쪽이 같아야 어느 쪽 메일인지 모를 때 「모호」로 거른다.
  * 정산서·세금계산서 화면의 대조(`sellerLabelsOf`)는 그대로다 — 이 규칙은 봇 정산 대조에만 닿는다.
+ * 알려진 한계(미해결, 2026-11-24 리뷰): ① 두 글자 활동명은 대응하지 않는다(3자 미만) — 그 셀러는 계속 `STATEMENT_NOT_FOUND`.
+ * ② 별칭이 낱말 하나인 셀러와, 같은 거래처·기간에 그 낱말을 활동명으로 쓰는 다른 셀러가 함께 있으면, 그 낱말만 적힌 메일이
+ * 낱말 하나짜리 셀러 것으로 읽힌다(`judgeMail` 의 `namedInFull`; 이 규칙 이전에도 같은 동작이었다).
  */
 export function reconSellerLabelsOf(seller: { name: string; alias: string | null } | null | undefined): string[] {
   const labels = sellerLabelsOf(seller);
