@@ -220,8 +220,9 @@ describe("DashboardHome 스파크라인 기간 정합", () => {
     const zeroMonth = trend6().map((t, i) => (i === 2 ? { ...t, campaignCount: 0 } : t));
     const { container } = render(<DashboardHome initialData={data({ trend: zeroMonth })} />);
 
-    // 캠페인 수(bars) 카드 = 첫 스파크라인 SVG
-    const svg = container.querySelector('svg[viewBox="0 0 120 22"]')!;
+    // 캠페인 수(bars) 카드 = 막대 스파크라인 SVG
+    const svgs = [...container.querySelectorAll('svg[viewBox="0 0 120 22"]')];
+    const svg = svgs.find((s) => s.querySelector('rect[rx="1"]'))!;
     const bars = [...svg.querySelectorAll("rect")].filter((r) => r.getAttribute("rx") === "1");
     const zeroBar = bars[2];
 
@@ -380,31 +381,34 @@ describe("DashboardHome", () => {
     expect(screen.queryByText("정산 노출액")).not.toBeInTheDocument();
   });
 
-  // 밴드 재배치(애플 UI 리뉴얼 묶음 1-b, 오너 2026-10-17) — 첫 밴드는 두 초점(오늘 처리할 일 + 거래액 목표).
-  it("첫 밴드에 「오늘 처리할 일」과 거래액 목표 히어로가 함께 있다", () => {
+  // v5 3-Zone 밴드 구조 — 첫 밴드는 단일 연속 원장 KPI 스트립
+  it("첫 밴드는 단일 연속 원장 KPI 스트립(이번 달 거래액·연간 매출 누적 등)이다", () => {
     const { container } = render(<DashboardHome initialData={data()} />);
     const stack = container.querySelector("main > div.space-y-6")!;
-    // 맨 위 한 줄은 범위 안내(<p>), 그 다음이 첫 밴드다.
-    const firstBand = stack.querySelector('[data-band="focus"]')!;
+    // 맨 위 한 줄은 범위 안내(<p>), 그 다음이 첫 밴드(kpi-strip)다.
+    const firstBand = stack.querySelector('[data-band="kpi-strip"]')!;
     expect(firstBand).not.toBeNull();
-    expect(firstBand.contains(screen.getByRole("heading", { name: "오늘 처리할 일" }))).toBe(true);
     expect(firstBand.contains(screen.getByRole("heading", { name: "이번 달 거래액" }))).toBe(true);
-    expect(firstBand.contains(screen.getByRole("heading", { name: "연간 누적" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "연간 매출 누적" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "예상 매출총이익" }))).toBe(true);
+    expect(firstBand.contains(screen.getByRole("heading", { name: "진행 캠페인" }))).toBe(true);
   });
 
-  it("밴드 순서 — 두 초점 → 거래액 차트 → 일정 → 점검·과세기준", () => {
+  it("밴드 순서 — KPI 스트립 → 운영 코어 → 분석 및 점검", () => {
     const { container } = render(<DashboardHome initialData={data()} />);
     const stack = container.querySelector("main > div.space-y-6")!;
     const bands = [...stack.querySelectorAll(":scope > [data-band]")].map((el) => el.getAttribute("data-band"));
-    expect(bands).toEqual(["focus", "sales-chart", "schedule", "checks"]);
-    // 실적 지표 3장은 첫 밴드 좌 칸(「오늘 처리할 일」 아래)에 붙는다 — 히어로 옆을 비우지 않는다.
-    const metrics = stack.querySelector('[data-band="focus"] [data-band="metrics"]');
-    expect(metrics).not.toBeNull();
-    expect(metrics!.textContent).toContain("최근 90일 영업 전환");
-    // 데이터 점검 탭과 과세기준 카드는 같은 밴드(반폭씩).
-    const checks = stack.querySelector('[data-band="checks"]')!;
-    expect(checks.querySelector("#data-check")).not.toBeNull();
-    expect(checks.textContent).toContain("과세기준매출");
+    expect(bands).toEqual(["kpi-strip", "ops-core", "analytics"]);
+    // 운영 코어(Zone 2)에는 오늘 처리할 일과 일정 커버리지/일정이 배치된다.
+    const opsCore = stack.querySelector('[data-band="ops-core"]')!;
+    expect(opsCore.contains(screen.getByRole("heading", { name: "오늘 처리할 일" }))).toBe(true);
+    expect(opsCore.contains(screen.getByRole("heading", { name: "일정 커버리지" }))).toBe(true);
+    // 분석 및 점검(Zone 3)에는 거래액 차트와 보조 지표 및 점검(4탭)이 배치된다.
+    const analytics = stack.querySelector('[data-band="analytics"]')!;
+    expect(analytics.querySelector('[data-band="sales-chart"]')).not.toBeNull();
+    const checks = analytics.querySelector('[data-band="checks"]')!;
+    expect(analytics.querySelector("#data-check")).not.toBeNull();
+    expect(checks.textContent).toContain("과세기준");
   });
 
   it("「오늘 처리할 일」 데이터 점검 행의 목적지(#data-check)가 재배치 뒤에도 남는다", () => {
@@ -461,16 +465,12 @@ describe("DashboardHome", () => {
   });
 
   // 2026-10-18 최종 리뷰 묶음 — 첫 밴드 배치·잘림, 차트 가장자리 대비, 축 눈금.
-  it("첫 밴드는 히어로 높이를 실적 지표 칸이 받는다 — 「오늘 처리할 일」은 늘어나지 않는다", () => {
+  it("운영 코어 밴드는 그리드 items-stretch 로 배치된다", () => {
     const { container } = render(<DashboardHome initialData={data()} />);
-    const band = container.querySelector('[data-band="focus"]')!;
+    const band = container.querySelector('[data-band="ops-core"]')!;
     expect(band).toHaveClass("items-stretch");
-    const left = band.firstElementChild!;
-    expect(left).toHaveClass("h-full");
-    const metrics = band.querySelector('[data-band="metrics"]')!;
-    expect(metrics).toHaveClass("flex-1");
-    const todayCard = screen.getByRole("heading", { name: "오늘 처리할 일" }).closest('[data-slot="card"]')!;
-    expect(todayCard.className).not.toMatch(/\b(flex-1|h-full)\b/);
+    expect(band.contains(screen.getByRole("heading", { name: "오늘 처리할 일" }))).toBe(true);
+    expect(band.contains(screen.getByRole("heading", { name: "일정 커버리지" }))).toBe(true);
   });
 
   it("실적 카드 당월 줄은 증감을 값 아래로 내릴 수 있다 — 월 라벨과 겹치지 않게", () => {

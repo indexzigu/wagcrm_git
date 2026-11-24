@@ -7,7 +7,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { ScheduleGapBriefing, BucketUrgency } from "@/lib/schedule-gap-briefing";
+import { cn } from "@/lib/utils";
+import type { ScheduleGapBriefing, BucketUrgency, ScheduleBucket } from "@/lib/schedule-gap-briefing";
 
 // ── 스타일 매핑 ─────────────────────────────────────────────
 // PALETTE_IMPL_SPEC.md (오너 승인, 2026-07-09): DANGER/URGENT/CAUTION은 원래 서로 다른
@@ -178,36 +179,7 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
                         )}
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      className="flex flex-col items-start gap-1.5 p-3 min-w-[160px] max-w-[240px] bg-slate-950 border border-slate-800 text-white shadow-overlay"
-                    >
-                      <p className="text-xs font-semibold text-white whitespace-nowrap">
-                        {bucket.label}
-                      </p>
-                      <p className="text-[11px] text-slate-300 whitespace-nowrap">
-                        {bucket.confirmedCount > 0
-                          ? `확정 ${bucket.confirmedCount}건`
-                          : "확정 일정 없음"}
-                      </p>
-                      {bucket.campaigns.length > 0 && (
-                        <ul className="mt-1.5 w-full border-t border-slate-800 pt-1.5 space-y-1">
-                          {bucket.campaigns.slice(0, 3).map((c) => (
-                            <li
-                              key={c.id}
-                              className="text-[10px] text-slate-300 truncate w-full"
-                            >
-                              {c.label}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {bucket.actionLabel && (
-                        <p className="mt-1.5 text-[10px] font-semibold text-status-pending whitespace-nowrap">
-                          → {bucket.actionLabel}
-                        </p>
-                      )}
-                    </TooltipContent>
+                    <BucketTooltipContent bucket={bucket} />
                   </Tooltip>
                 </TooltipProvider>
               );
@@ -281,3 +253,133 @@ export function ScheduleGapBriefingBody({ data }: { data: ScheduleGapBriefing })
 // 풀폭 카드 래퍼는 삭제됨(오너 2026-07-24, ss-ux 지적) — 다가올 14일 일정과 탭으로 묶으면서
 // 프로덕션·테스트 어디서도 참조되지 않는 고아가 됐다. 헤더(제목·N구간 배지)는 SegmentedTabCard 의
 // 탭 라벨·카운트 배지가 대신하고, 본문은 위 ScheduleGapBriefingBody 를 직접 소비한다.
+
+function BucketTooltipContent({ bucket }: { bucket: ScheduleBucket }) {
+  return (
+    <TooltipContent
+      side="bottom"
+      className="flex flex-col items-start gap-1 p-2.5 min-w-[140px] max-w-[220px] bg-slate-950 border border-slate-800 text-white shadow-overlay"
+    >
+      <p className="text-xs font-semibold text-white whitespace-nowrap">
+        {bucket.label}
+      </p>
+      <p className="text-[11px] text-slate-300 whitespace-nowrap">
+        {bucket.confirmedCount > 0
+          ? `확정 ${bucket.confirmedCount}건`
+          : "확정 일정 없음"}
+      </p>
+      {bucket.campaigns.length > 0 && (
+        <ul className="mt-1 w-full border-t border-slate-800 pt-1 space-y-0.5">
+          {bucket.campaigns.slice(0, 3).map((c) => (
+            <li
+              key={c.id}
+              className="text-[10px] text-slate-300 truncate w-full"
+            >
+              {c.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      {bucket.actionLabel && (
+        <p className="mt-1 text-[10px] font-semibold text-status-pending whitespace-nowrap">
+          {bucket.actionLabel}
+        </p>
+      )}
+    </TooltipContent>
+  );
+}
+
+function getTileClass(count: number): string {
+  if (count === 0) {
+    return "bg-status-urgent-bg border border-dashed border-status-urgent-text/60 text-status-urgent-text";
+  }
+  if (count === 1) {
+    return "bg-primary/15 text-primary border border-transparent";
+  }
+  if (count <= 3) {
+    return "bg-primary/65 text-white border border-transparent";
+  }
+  return "bg-primary text-white border border-transparent";
+}
+
+function formatShortWeek(label: string): string {
+  return label.replace("월 ", "/").replace("주차", "").trim();
+}
+
+/**
+ * 일정 커버리지 히트맵 (확정안 Option B)
+ * 향후 12주 캠페인 밀도를 1줄 그리드 타일 스트립으로 렌더한다.
+ */
+export function ScheduleCoverageHeatmap({ data }: { data: ScheduleGapBriefing }) {
+  const { buckets } = data;
+  if (!buckets || buckets.length === 0) {
+    return (
+      <div className="py-4 text-center text-xs text-muted-foreground">
+        집계된 주간 일정 데이터가 없습니다
+      </div>
+    );
+  }
+
+  const emptyBuckets = buckets.filter((b) => b.confirmedCount === 0);
+  const emptyCount = emptyBuckets.length;
+  const emptyWeekLabels = emptyBuckets.map((b) => formatShortWeek(b.label));
+
+  return (
+    <div className="flex flex-col">
+      <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5" aria-label="향후 12주 주차별 캠페인 밀도">
+        {buckets.map((bucket) => {
+          const shortLabel = formatShortWeek(bucket.label);
+          const isEmpty = bucket.confirmedCount === 0;
+
+          return (
+            <TooltipProvider key={bucket.startDate} delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    tabIndex={0}
+                    className="flex flex-col items-center gap-1 cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring rounded-md"
+                  >
+                    <div
+                      className={cn(
+                        "w-full h-9 rounded-md flex items-center justify-center text-xs font-semibold tabular-nums transition-opacity hover:opacity-90",
+                        getTileClass(bucket.confirmedCount)
+                      )}
+                    >
+                      {bucket.confirmedCount}
+                    </div>
+                    <span
+                      className={cn(
+                        "text-[10.5px] tabular-nums tracking-tight whitespace-nowrap",
+                        isEmpty ? "text-status-urgent-text font-semibold" : "text-muted-foreground font-medium"
+                      )}
+                    >
+                      {shortLabel}
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <BucketTooltipContent bucket={bucket} />
+              </Tooltip>
+            </TooltipProvider>
+          );
+        })}
+      </div>
+
+      <div className="mt-2.5 flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          향후 12주 중{" "}
+          {emptyCount > 0 ? (
+            <strong className="text-status-urgent-text font-semibold">
+              {emptyCount}개 구간 공백
+            </strong>
+          ) : (
+            <strong className="text-foreground font-semibold">전 구간 확보</strong>
+          )}
+          {emptyCount > 0 && emptyWeekLabels.length > 0
+            ? ` (${emptyWeekLabels.slice(0, 3).join(", ")}${emptyWeekLabels.length > 3 ? " 외" : ""})`
+            : ""}
+        </span>
+        <span className="text-[11px] text-muted-foreground">단위: 건</span>
+      </div>
+    </div>
+  );
+}
