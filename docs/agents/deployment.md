@@ -30,7 +30,8 @@
 
 - **Deploy Path Is PR-Merge Only:** 프로덕션 배포 경로는 `origin/main에서
   분기한 격리 워크트리 → push → PR → 머지(main 통합 — 오너, 또는 아래
-  「에이전트 머지·운영 반영 예외」를 충족하면 에이전트) →
+  「에이전트 머지·운영 반영 예외」를 충족하면 에이전트, 확장 봇 PR 은 아래
+  「확장 봇 PR 오너 버튼 머지」 실행기) →
   scripts/promote-prod.sh 승격(main→release fast-forward) → Vercel Git 자동
   배포`가 유일하다. 로컬 `vercel --prod` 직배포는 로컬 트리 전체로 프로덕션을
   덮어 타 세션 작업을 드롭한(last-writer-wins) 실사고가 있어 금지한다.
@@ -64,6 +65,18 @@
   **효력 정지:** 되돌리기 실행·반영 후 상태 점검 실패·오너의 회귀 신고 중 하나라도 생기면 이 항은 그
   즉시 효력이 없다. 재개는 오너 승인으로만 한다. 권한 판정기 허용 문장(`~/.claude/settings.json`
   `autoMode.allow`)은 오너가 넣는다 — 이 문서만으로는 작동하지 않는다.
+
+- **확장 봇 PR 오너 버튼 머지:** `exp/` PR(⑥으로 위 예외에서 빠짐)은 오너가 슬랙 「머지 요청」 카드의
+  「머지·배포」 버튼을 누르면 `infra/selfhost/expansion-merge.mjs`(LLM 없는 실행기, 오너 gh 신원, 배포 사본
+  `~/selfhost/wagcrm` 의 crontab 10분)가 머지·반영한다 — 오너 머지이며 회차의 자기 반영이 아니다. 오너 클릭이 ② 의
+  리뷰어 판정을 대신한다. 실행기는 Claude Code 훅(deploy-guard·pr-review-gate)을 거치지 않으므로 다음을 스스로 확인한다:
+  승인 기록의 서명(hermes 슬랙 핸들러만 서명)·승인자·72시간 이내 · 작성자 `app/wag-expansion-bot`·대상 `main`·head `exp/`·
+  head SHA 가 승인한 SHA 와 같음(머지도 그 SHA 조건부) · 필수 체크 guard·preflight·test 성공·충돌 없음 · ③ 의 경로(대소문자
+  무시, 영문·숫자 밖 글자가 든 경로 포함)가 그 PR·반영 구간·링크 서버 미반영분 어디에도 없음(`expansion-loop.sh` 단서 없음).
+  배포 실패·반영 확인 실패면 정지 표지 `~/selfhost/expansion-merge.STOP` 을 만들고 멈춘다. 실행기는 이 표지를 만들기만 하고
+  지우지 않는다 — 오너가 지우기 전에는 돌지 않으며, 위 「효력 정지」 사유가 생기면 사람이 만든다. 결과 카드에 ④ 의 되돌리는
+  절차를 적는다. 서명 키 `~/selfhost/expansion-merge.key` 는 같은 macOS 사용자가 읽을 수 있어 완전한 경계가 아니다 — 확장
+  회차가 키를 읽거나 승인 기록(`decisions.jsonl` 의 merge 줄)을 쓰는 것은 금지다. (근거: log 2026-11-24#02)
 
 - **Two Projects, Three Branches (통합 main · 운영 release · 데모 demo):**
   ⛔ **절 이름의 「Two Projects」는 더 이상 사실이 아니다 — Vercel 프로젝트는 `wag-crm`
