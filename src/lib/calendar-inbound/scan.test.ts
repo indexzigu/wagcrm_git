@@ -260,6 +260,22 @@ describe("runCalendarInboundScan", () => {
     });
   });
 
+  it("icloud:events 및 icloud:finance 출처 이벤트는 기안 생성 시 adopt: false 가 된다", async () => {
+    const icloudEvent = ev("icloud:events:uid-1", {
+      calendarId: "icloud:events",
+      htmlLink: null,
+    });
+    const h = makeHarness([icloudEvent]);
+
+    await runCalendarInboundScan({ now: NOW, deps: h.deps });
+
+    expect(h.proposals.size).toBe(1);
+    const data = h.proposals.get("prop-1")!.data;
+    const ref = calendarInboundRefSchema.parse((data.sourceRef as { calendarInbound: unknown }).calendarInbound);
+    expect(ref.calendarId).toBe("icloud:events");
+    expect(ref.adopt).toBe(false);
+  });
+
   it("기간 수정 기안은 requestType 도 액션에서 정하고 대상 캠페인을 싣는다", async () => {
     const h = makeHarness([ev("e1")]);
     h.resolveTarget.mockResolvedValue({
