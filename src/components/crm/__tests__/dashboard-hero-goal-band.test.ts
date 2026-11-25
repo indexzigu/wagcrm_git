@@ -51,12 +51,20 @@ describe("데스크톱 홈 히어로 — 달성 밴드 SSOT 소비", () => {
     expect(SOURCE).toContain("goalBarWidth(monthRate)");
   });
 
-  it("흰 표면 KPI 스트립에서 달성률 밴드를 SSOT로 계산한다", () => {
+  it("진한 청록 목표 판에서 달성률 밴드를 SSOT(*_ON_NAVY)로 칠한다 — 흰 카드용 색 맵을 두지 않는다", () => {
     // 다크 히어로 역전의 원인이던 두 규칙(isUp 삼항 색 · 달성률 고정 white/50)이 사라졌는지
     expect(SOURCE).not.toContain('const colorClass = isUp ? "text-[#E3C27A]" : "text-white/60"');
     expect(SOURCE).not.toContain('<p className="text-xs font-medium text-white/50">{displayRate(rateVal)}</p>');
     expect(SOURCE).toContain("resolveGoalBand(monthRate)");
     expect(SOURCE).toContain("resolveGoalBand(annualRate)");
+    // 목표 판·지난 두 달 줄 모두 진한 청록 표면 맵을 소비한다
+    expect(SOURCE).toContain("GOAL_BAND_TEXT_ON_NAVY");
+    expect(SOURCE).toContain("GOAL_BAND_FILL_ON_NAVY");
+    expect(SOURCE).toContain("GOAL_BAND_TEXT_UNSET_ON_NAVY");
+    expect(SOURCE).toContain("const bandClass = band");
+    // 흰 표면 시절의 화면 전용 맵(달성=primary)이 되살아나지 않는다
+    expect(SOURCE).not.toContain("GOAL_BAND_TEXT_ON_WHITE");
+    expect(SOURCE).not.toContain('achieved: "text-primary"');
   });
 });
 

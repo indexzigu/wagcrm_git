@@ -396,23 +396,33 @@ describe("DashboardHome", () => {
     expect(firstBand.contains(screen.getByRole("heading", { name: "연간 매출 누적" }))).toBe(true);
     expect(firstBand.contains(screen.getByRole("heading", { name: "예상 매출총이익" }))).toBe(true);
     expect(firstBand.contains(screen.getByRole("heading", { name: "월 환산 캠페인 수" }))).toBe(true);
+    // 진한 청록 목표 판이 거래액·연간 누적 두 칸을 한 덩어리로 묶고, 페이지에서 유일하게 가장 높이 뜬다.
+    const hero = firstBand.querySelector('[data-slot="goal-hero"]')!;
+    expect(hero).not.toBeNull();
+    expect(hero.contains(screen.getByRole("heading", { name: "이번 달 거래액" }))).toBe(true);
+    expect(hero.contains(screen.getByRole("heading", { name: "연간 매출 누적" }))).toBe(true);
+    expect(hero).toHaveClass("bg-hero-deep", "shadow-soft-lg");
+    expect(container.querySelectorAll(".shadow-soft-lg")).toHaveLength(1);
   });
 
-  it("밴드 순서 — KPI 스트립 → 운영 코어 → 분석 및 점검", () => {
+  it("밴드 순서 — 목표 판·지표 → 차트·오늘 처리할 일 → 일정·점검 → 과세기준·영업 전환", () => {
     const { container } = render(<DashboardHome initialData={data()} />);
     const stack = container.querySelector("main > div.space-y-6")!;
     const bands = [...stack.querySelectorAll(":scope > [data-band]")].map((el) => el.getAttribute("data-band"));
-    expect(bands).toEqual(["kpi-strip", "ops-core", "analytics"]);
-    // 운영 코어(Zone 2)에는 오늘 처리할 일과 일정 커버리지/일정이 배치된다.
+    expect(bands).toEqual(["kpi-strip", "ops-core", "schedule-checks", "aux-metrics"]);
+    // 2줄: 거래액 차트 + 일정 커버리지 → 오늘 처리할 일
     const opsCore = stack.querySelector('[data-band="ops-core"]')!;
+    expect(opsCore.querySelector('[data-band="sales-chart"]')).not.toBeNull();
     expect(opsCore.contains(screen.getByRole("heading", { name: "오늘 처리할 일" }))).toBe(true);
     expect(opsCore.contains(screen.getByRole("heading", { name: "일정 커버리지" }))).toBe(true);
-    // 분석 및 점검(Zone 3)에는 거래액 차트와 보조 지표 및 점검(4탭)이 배치된다.
-    const analytics = stack.querySelector('[data-band="analytics"]')!;
-    expect(analytics.querySelector('[data-band="sales-chart"]')).not.toBeNull();
-    const checks = analytics.querySelector('[data-band="checks"]')!;
-    expect(analytics.querySelector("#data-check")).not.toBeNull();
-    expect(checks.textContent).toContain("과세기준");
+    // 3줄: 다가올 14일 일정 + 점검(#data-check)
+    const scheduleChecks = stack.querySelector('[data-band="schedule-checks"]')!;
+    expect(scheduleChecks.contains(screen.getByRole("heading", { name: "다가올 14일 일정" }))).toBe(true);
+    expect(scheduleChecks.querySelector("#data-check")).not.toBeNull();
+    // 4줄: 과세기준매출 + 최근 90일 영업 전환 — 탭 뒤가 아니라 항상 보인다
+    const aux = stack.querySelector('[data-band="aux-metrics"]')!;
+    expect(aux.textContent).toContain("과세기준매출");
+    expect(aux.textContent).toContain("최근 90일 영업 전환");
   });
 
   it("「오늘 처리할 일」 데이터 점검 행의 목적지(#data-check)가 재배치 뒤에도 남는다", () => {
@@ -475,6 +485,12 @@ describe("DashboardHome", () => {
     expect(band).toHaveClass("items-stretch");
     expect(band.contains(screen.getByRole("heading", { name: "오늘 처리할 일" }))).toBe(true);
     expect(band.contains(screen.getByRole("heading", { name: "일정 커버리지" }))).toBe(true);
+    // 오늘 처리할 일 카드는 늘리지 않는다(차트가 높이를 흡수) · 높이 고정인 커버리지가 위에 서서
+    // 오늘 처리할 일이 불러와져도 커버리지가 움직이지 않는다.
+    const today = screen.getByRole("heading", { name: "오늘 처리할 일" }).closest('[data-slot="card"]')!;
+    const coverage = screen.getByRole("heading", { name: "일정 커버리지" }).closest('[data-slot="card"]')!;
+    expect(today.className).not.toMatch(/\b(flex-1|h-full)\b/);
+    expect(coverage.compareDocumentPosition(today) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("실적 카드 당월 줄은 증감을 값 아래로 내릴 수 있다 — 월 라벨과 겹치지 않게", () => {
@@ -531,7 +547,7 @@ describe("DashboardHome", () => {
     expect(screen.getByText("5.5건")).toBeInTheDocument();
   });
 
-  it("보조 지표 및 점검 기본 탭은 데이터 점검 이슈가 있으면 데이터 점검, 영업 전환이 비어 있으면 과세기준을 선택한다", () => {
+  it("점검 카드의 기본 탭은 이슈가 있든 없든 데이터 점검 — 영업 전환·과세기준은 탭이 아니라 항상 보인다", () => {
     const { unmount } = render(
       <DashboardHome
         initialData={data({
@@ -550,14 +566,67 @@ describe("DashboardHome", () => {
     expect(screen.getByRole("tab", { name: /데이터 점검/ })).toHaveAttribute("aria-selected", "true");
     unmount();
 
-    render(
+    const { container } = render(
       <DashboardHome
         initialData={data({
-          outreach90d: { total: 0, responded: 0, confirmed: 0, converted: 0 },
+          outreach90d: { total: 40, responded: 18, confirmed: 6, converted: 6 },
           dataIntegrityIssues: [],
         })}
       />,
     );
-    expect(screen.getByRole("tab", { name: "과세기준" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /데이터 점검/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("tab", { name: /영업 전환/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /과세기준/ })).not.toBeInTheDocument();
+    // 누르지 않아도 두 카드의 내용이 보인다.
+    expect(screen.getByRole("heading", { name: "최근 90일 영업 전환" })).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="taxable-revenue-card"]')).not.toBeNull();
+  });
+
+  it("목표 판 달성률 색 — 달성 모래색 · 정상 무채색 · 심각 분홍, 숫자와 진행 막대가 같은 밴드를 탄다", () => {
+    const cases: Array<[number | null, string, string]> = [
+      [115_000_000, "text-accent-achieve-soft", "bg-accent-achieve"],
+      [64_000_000, "text-goal-miss", "bg-goal-miss"],
+      [88_000_000, "text-white/70", "bg-white/50"],
+    ];
+    for (const [monthActual, textClass, fillClass] of cases) {
+      const { container, unmount } = render(
+        <DashboardHome
+          initialData={data({ goals: { ...data().goals, monthTarget: 100_000_000, monthActual: monthActual! } })}
+        />,
+      );
+      const month = container.querySelector('[data-goal="month"]')!;
+      expect(month.querySelector('[data-slot="goal-rate"]')).toHaveClass(textClass);
+      expect(month.querySelector('[data-slot="goal-fill"]')).toHaveClass(fillClass);
+      unmount();
+    }
+
+    const { container } = render(<DashboardHome initialData={data()} />);
+    const unsetRate = container.querySelector('[data-goal="month"] [data-slot="goal-rate"]')!;
+    expect(unsetRate).toHaveTextContent("미설정");
+    expect(unsetRate).toHaveClass("text-white/60");
+  });
+
+  it("목표 판 아래 줄은 같은 해의 지난 두 달을 보이고, 보일 달이 없으면(1월) 줄 자체가 없다", () => {
+    const { container, unmount } = render(<DashboardHome initialData={data({ selectedMonth: "2026-06" })} />);
+    const history = container.querySelector('[data-slot="goal-history"]')!;
+    expect(history).not.toBeNull();
+    expect(history.textContent).toContain("5월");
+    expect(history.textContent).toContain("4월");
+    unmount();
+
+    const february = render(<DashboardHome initialData={data({ selectedMonth: "2026-02" })} />);
+    const febHistory = february.container.querySelector('[data-slot="goal-history"]')!;
+    expect(febHistory).not.toBeNull();
+    expect(febHistory.textContent).toContain("1월");
+    expect(febHistory.textContent).not.toContain("12월");
+    february.unmount();
+
+    const january = render(<DashboardHome initialData={data({ selectedMonth: "2026-01" })} />);
+    expect(january.container.querySelector('[data-slot="goal-history"]')).toBeNull();
+  });
+
+  it("「월별 추이 및 보조 점검」 구분 글자는 없다", () => {
+    const { container } = render(<DashboardHome initialData={data()} />);
+    expect(container.textContent).not.toContain("월별 추이 및 보조 점검");
   });
 });

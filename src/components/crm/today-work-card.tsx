@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -153,8 +152,11 @@ export function TodayWorkCard({
     effectiveFilter === "all" ? shownRows : shownRows.filter((r) => getRowCategory(r.key) === effectiveFilter);
 
   return (
-    <Card className="border-border bg-card shadow-none p-0 flex flex-col">
-      <CardContent className="p-0 flex flex-col flex-1">
+    <div
+      data-slot="card"
+      className="flex flex-col rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden text-sm text-card-foreground"
+    >
+      <div className="flex flex-1 flex-col">
         {/* 카드 헤더: 순수 <h2> 제목만 둔다 */}
         <div className="flex flex-wrap items-center justify-between border-b border-slate-100 px-4 py-3">
           <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
@@ -305,7 +307,7 @@ export function TodayWorkCard({
             </span>
           ) : null}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

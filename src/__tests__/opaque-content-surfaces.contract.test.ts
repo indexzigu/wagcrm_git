@@ -192,6 +192,9 @@ const EXCEPTIONS: Record<string, readonly Exception[]> = {
       count: 4,
       reason: "차트 범례·툴팁 표식(8~12px) — 모서리 사다리의 가장 작은 단도 이 크기에는 너무 둥글어 원과 구분되지 않는다(calendar-view 범례와 같은 사유)",
     },
+    { token: "bg-white/", cls: "bg-white/10", context: "", count: 2, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) · 진행 막대 홈" },
+    { token: "bg-white/", cls: "bg-white/50", context: "", count: 1, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) · 진행 막대 위 기준선" },
+    { token: "border-white/", cls: "border-white/10", context: "", count: 2, reason: "진한 청록 거래액 목표 히어로 위 — 흰 카드 토큰·slate 헤어라인은 진한 바탕에서 면·선이 되지 않는다(P8 §5 토큰은 표면 종속) · 칸 사이·지난 달 줄 위 구분선" },
   ],
   "components/mobile/mobile-home-view.tsx": [
     {
