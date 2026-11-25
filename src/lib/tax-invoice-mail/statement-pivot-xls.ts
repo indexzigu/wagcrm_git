@@ -82,6 +82,23 @@ function readBoundSheetName(stream: Buffer, payloadStart: number, payloadEnd: nu
   return highByte ? stream.toString("utf16le", start, end) : stream.toString("latin1", start, end);
 }
 
+const RT_NAME = 0x0018;
+const NAME_FLAG_BUILTIN = 0x0020;
+const BUILTIN_NAME_FILTER_DATABASE = 0x0d;
+
+/**
+ * 자동 필터가 걸린 시트의 내장 이름(`_FilterDatabase`) 레코드인가. 실제 브랜드 첨부는 발주서 시트에 자동 필터가 있는데,
+ * 시트를 잘라 내면 라이브러리가 이 이름을 「이미 없는 시트의 필터」로 붙이다 예외를 내 첨부가 통째로 못 읽힌다(2026-11-25 실파일).
+ * 표 값 읽기에 필요 없는 레코드라 잘라 내는 쪽에서 뺀다. 이름 레코드 배치: 플래그 2 · 키 1 · 글자 수 1 · 수식 길이 2 · 2 ·
+ * 시트 번호 2 · 문자열 길이 4칸 → 이름 문자열(첫 바이트 = 유니코드 플래그, 그다음 글자)이 14번째 바이트부터다.
+ */
+function isFilterDatabaseName(stream: Buffer, payloadStart: number, length: number): boolean {
+  if (length < 16) return false;
+  const flags = stream.readUInt16LE(payloadStart);
+  const nameLength = stream[payloadStart + 3];
+  return (flags & NAME_FLAG_BUILTIN) !== 0 && nameLength === 1 && stream[payloadStart + 15] === BUILTIN_NAME_FILTER_DATABASE;
+}
+
 /** BOF ~ 짝 EOF 구간의 끝 위치(EOF 레코드 다음). 안쪽 BOF(차트 등)는 깊이로 넘긴다. */
 function substreamEnd(stream: Buffer, start: number): number {
   let offset = start;
@@ -109,6 +126,7 @@ export function buildPivotOnlyBiffStream(workbookStream: Buffer, expectedSheetNa
   const stream = workbookStream;
   if (stream.length < 4 || stream.readUInt16LE(0) !== RT_BOF) fail("ATTACHMENT_UNREADABLE");
   const sheets: BoundSheet[] = [];
+  const dropped: { start: number; end: number }[] = [];
   let offset = 0;
   let depth = 0;
   let globalsEnd = -1;
@@ -122,6 +140,7 @@ export function buildPivotOnlyBiffStream(workbookStream: Buffer, expectedSheetNa
     // 아직 암호 레코드가 남은 스트림은 읽지 않는다 — 복호한 스트림은 `decryptPivotStream` 이 이 레코드를 무력화해 넘긴다
     // (라이브러리의 기본 암호 시도도 타지 않게 여기서 멈춘다).
     if (type === RT_FILEPASS) fail("ATTACHMENT_UNREADABLE");
+    if (type === RT_NAME && isFilterDatabaseName(stream, payloadStart, length)) dropped.push({ start: offset, end: next });
     if (type === RT_BOUNDSHEET8) {
       if (length < 8) fail("ATTACHMENT_UNREADABLE");
       sheets.push({
@@ -154,11 +173,21 @@ export function buildPivotOnlyBiffStream(workbookStream: Buffer, expectedSheetNa
   }
   const pivotEnd = substreamEnd(stream, pivot.pos);
 
-  const globals = Buffer.from(stream.subarray(0, globalsEnd));
+  // 자동 필터 이름 레코드는 빼고 전역 구간을 다시 이어 붙인다(`isFilterDatabaseName` 주석). 빠진 만큼 뒤 레코드 위치가 당겨진다.
+  const parts: Buffer[] = [];
+  let cursor = 0;
+  for (const range of dropped) {
+    parts.push(stream.subarray(cursor, range.start));
+    cursor = range.end;
+  }
+  parts.push(stream.subarray(cursor, globalsEnd));
+  const globals = Buffer.concat(parts);
+  const shiftedOffset = (original: number) =>
+    original - dropped.filter((range) => range.end <= original).reduce((sum, range) => sum + (range.end - range.start), 0);
   sheets.forEach((sheet, index) => {
     // 피벗은 전역 구간 바로 뒤로, 나머지는 스트림 밖(서로 다른 값 — 해석기가 위치로 이름을 묶는다)으로.
-    const pos = sheet === pivot ? globalsEnd : (0xffffff00 + index) >>> 0;
-    globals.writeUInt32LE(pos, sheet.recordOffset + 4);
+    const pos = sheet === pivot ? globals.length : (0xffffff00 + index) >>> 0;
+    globals.writeUInt32LE(pos, shiftedOffset(sheet.recordOffset) + 4);
   });
   return Buffer.concat([globals, stream.subarray(pivot.pos, pivotEnd)]);
 }
@@ -262,6 +291,8 @@ function readQty(value: unknown): number {
 
 const isTotalRow = (text: string) => normalizeForCompare(text) === "총합계";
 
+const BLANK_BUCKET_LABEL = normalizeForCompare("(비어 있음)");
+
 /**
  * 그리드 → 옵션 줄. 머리 행(「옵션명」이 든 칸과 「수량」이 든 칸)을 앞 15행 안에서 찾고, 그 아래를 「총합계」 행까지
  * 읽는다. ⚠️ 시트 아래쪽에 같은 표의 사본(작은 글씨)이 한 벌 더 있다 — 첫 「총합계」에서 멈춰야 두 번 세지 않는다.
@@ -299,6 +330,12 @@ export function parsePivotGrid(grid: Grid): PivotRow[] {
     }
     const qtyCell = row[qtyCol];
     const hasQty = qtyCell !== null && qtyCell !== undefined && cellText(qtyCell) !== "";
+    if (normalizeForCompare(label) === BLANK_BUCKET_LABEL) {
+      // 엑셀 피벗이 옵션 칸이 빈 행을 따로 묶는 줄(실제 첨부에 수량 없이 끼어 있다). 수량이 없으면 건너뛴다 — 총합계 대조가 그대로
+      // 지킨다. 수량이 있으면 어느 옵션의 것인지 알 수 없어 멈춘다.
+      if (hasQty && readQty(qtyCell) !== 0) fail("SHEET_LAYOUT_CHANGED");
+      continue;
+    }
     if (label === "") {
       if (hasQty) fail("SHEET_LAYOUT_CHANGED");
       continue;
