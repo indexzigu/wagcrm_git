@@ -100,6 +100,22 @@ describe("AgentJobRepository", () => {
     );
   });
 
+  it("quarantines a poison row as FAILED_SECURITY with failureCode PAYLOAD_INVALID", async () => {
+    findFirstMock.mockResolvedValue({ ...persistedJob, payload: "{not json" });
+    updateManyMock.mockResolvedValue({ count: 1 });
+    eventCreateMock.mockResolvedValue({});
+    const onQuarantined = vi.fn();
+
+    const claimed = await AgentJobRepository.claimNext("worker-1", new Date("2026-09-02T00:00:00.000Z"), onQuarantined);
+
+    expect(claimed).toBeNull();
+    expect(onQuarantined).toHaveBeenCalledTimes(1);
+    const quarantine = updateManyMock.mock.calls
+      .map((call) => (call[0] as { data: Record<string, unknown> }).data)
+      .find((data) => data.status === "FAILED_SECURITY");
+    expect(quarantine).toMatchObject({ status: "FAILED_SECURITY", failureCode: "PAYLOAD_INVALID" });
+  });
+
   it("reclaims an expired lease in the same transaction and turns the capped attempt into FAILED_FINAL", async () => {
     findFirstMock.mockResolvedValue({ ...persistedJob, status: "RUNNING", attempt: 2 });
     updateManyMock.mockResolvedValue({ count: 1 });

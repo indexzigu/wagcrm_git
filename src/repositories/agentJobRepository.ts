@@ -228,6 +228,7 @@ export class AgentJobRepository {
         toStatus: "FAILED_SECURITY",
         actor: workerId,
         eventCode: "PAYLOAD_INVALID",
+        failureCode: "PAYLOAD_INVALID",
         workerId,
         attempt: claimed.attempt,
         now,

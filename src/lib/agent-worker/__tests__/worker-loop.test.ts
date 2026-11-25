@@ -270,6 +270,26 @@ describe("worker loop durable processing", () => {
     await ok.loop.shutdown();
   });
 
+  it("does not pass failureCode for a non-FAILED_FINAL terminal even when errorClass is set", async () => {
+    const base = succeeded("a");
+    if (base.kind !== "terminal") throw new Error("expected terminal");
+    const handoff: ExecutionOutcome = {
+      ...base,
+      toStatus: "NEEDS_EXTERNAL_EXECUTOR",
+      errorClass: "ROUTER_TIMEOUT",
+      result: { ...base.result, status: "NEEDS_EXTERNAL_EXECUTOR" },
+    };
+    const { repository, loop } = build([job("a")], vi.fn(async () => handoff));
+
+    loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const last = repository.transition.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(last.toStatus).toBe("NEEDS_EXTERNAL_EXECUTOR");
+    expect(last).not.toHaveProperty("failureCode");
+    await loop.shutdown();
+  });
+
   it("stops the job when a heartbeat shows the lease is no longer owned", async () => {
     const execute = vi.fn((_job: AgentJobRecord, signal: AbortSignal) =>
       new Promise<ExecutionOutcome>((_resolve, reject) => {
