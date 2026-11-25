@@ -251,4 +251,84 @@ describe("parsePivotGrid", () => {
     expect(parsePivotGrid([["옵션명", "수량"], [null, null], ["가", 1], ["총합계", 1]])).toEqual([{ label: "가", qty: 1 }]);
     expect(() => parsePivotGrid([["옵션명", "수량"], [null, 2], ["총합계", 2]])).toThrow("SHEET_LAYOUT_CHANGED");
   });
+
+  it("피벗이 옵션 빈칸을 묶은 「(비어 있음)」 줄은 수량이 없으면 건너뛰고 총합계 대조는 그대로다", () => {
+    const grid = [["옵션명", "합계 : 수량"], ["가", 3], ["(비어 있음)", null], ["나", 2], ["총합계", 5]];
+    expect(parsePivotGrid(grid)).toEqual([
+      { label: "가", qty: 3 },
+      { label: "나", qty: 2 },
+    ]);
+    // 수량 0 은 건너뛴다 · 수량이 있으면 어느 옵션 것인지 몰라 멈춘다 · 총합계가 어긋나도 멈춘다.
+    expect(parsePivotGrid([["옵션명", "수량"], ["가", 1], ["(비어 있음)", 0], ["총합계", 1]])).toEqual([{ label: "가", qty: 1 }]);
+    expect(() => parsePivotGrid([["옵션명", "수량"], ["가", 1], ["(비어 있음)", 2], ["총합계", 3]])).toThrow("SHEET_LAYOUT_CHANGED");
+    expect(() => parsePivotGrid([["옵션명", "수량"], ["가", 1], ["(비어 있음)", null], ["총합계", 2]])).toThrow("SHEET_LAYOUT_CHANGED");
+  });
+});
+
+/** SheetJS 는 BIFF8 에 자동 필터 이름(`_FilterDatabase`)을 쓰지 않는다 — 실제 첨부처럼 전역 구간 끝에 직접 끼운다. */
+function withFilterDatabaseNames(content: Buffer, sheetIndexes: number[]): Buffer {
+  const stream = workbookStream(content);
+  const nameRecord = (sheetIndex: number) => {
+    const rgce = Buffer.alloc(11);
+    rgce[0] = 0x3b; // PtgArea3d
+    const payload = Buffer.alloc(16 + rgce.length);
+    payload.writeUInt16LE(0x0021, 0); // 숨김 + 내장 이름
+    payload[3] = 1; // 이름 글자 수
+    payload.writeUInt16LE(rgce.length, 4);
+    payload.writeUInt16LE(sheetIndex + 1, 8); // 시트 번호(1 부터)
+    payload[15] = 0x0d; // 내장 이름 번호: _FilterDatabase
+    rgce.copy(payload, 16);
+    const head = Buffer.alloc(4);
+    head.writeUInt16LE(0x0018, 0);
+    head.writeUInt16LE(payload.length, 2);
+    return Buffer.concat([head, payload]);
+  };
+  let offset = 0;
+  let depth = 0;
+  let globalsEof = -1;
+  while (offset + 4 <= stream.length) {
+    const type = stream.readUInt16LE(offset);
+    if (type === 0x0809) depth += 1;
+    if (type === 0x000a) {
+      depth -= 1;
+      if (depth === 0) {
+        globalsEof = offset;
+        break;
+      }
+    }
+    offset += 4 + stream.readUInt16LE(offset + 2);
+  }
+  const names = Buffer.concat(sheetIndexes.map(nameRecord));
+  const out = Buffer.concat([stream.subarray(0, globalsEof), names, stream.subarray(globalsEof)]);
+  for (let at = 0; at < globalsEof; at += 4 + out.readUInt16LE(at + 2)) {
+    // 시트 위치는 파일 앞에서부터의 절대 위치라 끼운 만큼 밀린다.
+    if (out.readUInt16LE(at) === 0x0085) out.writeUInt32LE(out.readUInt32LE(at + 4) + names.length, at + 4);
+  }
+  return cfbWith({ Workbook: out });
+}
+
+describe("readStatementPivot — 자동 필터가 걸린 실제 첨부 모양", () => {
+  const PIVOT_WITH_BLANK_BUCKET: unknown[][] = [
+    ["옵션명", "합계 : 수량", "합계 : 총판매가"],
+    ["구성: 3박스", 4, 120000],
+    ["(비어 있음)", null, null],
+    ["구성: 6박스", 2, 120000],
+    ["총합계", 6, 240000],
+  ];
+
+  it("발주서·피벗 시트에 자동 필터 이름이 있어도 읽는다(실파일에서 첨부 전체가 열리지 않던 결함)", () => {
+    const file = withFilterDatabaseNames(xls({ pivot: PIVOT_WITH_BLANK_BUCKET }), [2, 1]);
+    // 양성 대조: 끼운 이름 레코드가 실제로 들어 있다.
+    const names: number[] = [];
+    const stream = workbookStream(file);
+    for (let at = 0; at + 4 <= stream.length; at += 4 + stream.readUInt16LE(at + 2)) {
+      if (stream.readUInt16LE(at) === 0x0018) names.push(stream.readUInt16LE(at + 12));
+    }
+    expect(names).toEqual([3, 2]);
+    expect(readStatementPivot(file)).toEqual({ ok: true, rows: EXPECTED });
+  });
+
+  it("필터 이름이 없는 파일의 결과와 같다", () => {
+    expect(readStatementPivot(xls({ pivot: PIVOT_WITH_BLANK_BUCKET }))).toEqual({ ok: true, rows: EXPECTED });
+  });
 });
