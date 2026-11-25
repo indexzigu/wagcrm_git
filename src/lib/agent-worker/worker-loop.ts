@@ -184,6 +184,7 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
           toStatus: outcome.toStatus,
           actor: workerId,
           eventCode: outcome.toStatus,
+          ...(outcome.toStatus === "FAILED_FINAL" && outcome.errorClass ? { failureCode: outcome.errorClass } : {}),
           result: outcome.result,
           ...leaseIdentity(job),
         });
@@ -205,6 +206,7 @@ export function createWorkerLoop(options: WorkerLoopOptions): WorkerLoop {
           toStatus: "FAILED_SECURITY",
           actor: workerId,
           eventCode: outcome.errorClass,
+          failureCode: outcome.errorClass,
           ...leaseIdentity(job),
         });
         audit({

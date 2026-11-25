@@ -246,6 +246,71 @@ describe("AgentJobRepository", () => {
     });
   });
 
+  describe("transition failureCode (실패 분류 코드 기록)", () => {
+    const base = {
+      jobId: "job-1",
+      fromStatus: "RUNNING",
+      actor: "worker-1",
+      eventCode: "X",
+      workerId: "worker-1",
+      attempt: 0,
+      now: new Date("2026-09-02T00:00:00.000Z"),
+    } as const;
+    const failedResult = (status: "FAILED_FINAL" | "FAILED_SECURITY") => ({
+      schemaVersion: 1,
+      jobId: "job-1",
+      status,
+      route: "python",
+      modelUsed: "python",
+      validationResult: "fail",
+      resultSummary: "x failed",
+      actionProposalId: null,
+      evidenceRefs: [],
+    });
+    const dataOf = () => (updateManyMock.mock.calls.at(-1)?.[0] as { data: Record<string, unknown> }).data;
+
+    beforeEach(() => {
+      updateManyMock.mockReset();
+      eventCreateMock.mockReset();
+      updateManyMock.mockResolvedValue({ count: 1 });
+      eventCreateMock.mockResolvedValue({});
+    });
+
+    it.each(["FAILED_FINAL", "FAILED_SECURITY"] as const)("%s 는 분류 토큰을 failureCode 로 쓴다", async (toStatus) => {
+      await AgentJobRepository.transition({
+        ...base,
+        toStatus,
+        failureCode: "PRODUCT_AMBIGUOUS",
+        ...(toStatus === "FAILED_FINAL" ? { result: failedResult(toStatus) } : {}),
+      });
+      expect(dataOf().failureCode).toBe("PRODUCT_AMBIGUOUS");
+      expect(dataOf().status).toBe(toStatus);
+    });
+
+    it.each(["free text sentence", "lower_case", "A".repeat(65), "", "BAD-DASH"])(
+      "토큰 형식이 아닌 입력(%j)은 UNCLASSIFIED 로 쓴다",
+      async (bad) => {
+        await AgentJobRepository.transition({ ...base, toStatus: "FAILED_SECURITY", failureCode: bad });
+        expect(dataOf().failureCode).toBe("UNCLASSIFIED");
+      },
+    );
+
+    it("64자 토큰은 그대로 통과한다", async () => {
+      await AgentJobRepository.transition({ ...base, toStatus: "FAILED_SECURITY", failureCode: "A".repeat(64) });
+      expect(dataOf().failureCode).toBe("A".repeat(64));
+    });
+
+    it("failureCode 를 안 주면 칸을 건드리지 않는다", async () => {
+      await AgentJobRepository.transition({ ...base, toStatus: "FAILED_SECURITY" });
+      expect(dataOf()).not.toHaveProperty("failureCode");
+    });
+
+    it("실패가 아닌 전이는 failureCode 를 줘도 쓰지 않는다", async () => {
+      await AgentJobRepository.transition({ ...base, toStatus: "RUNNING", fromStatus: "CLAIMED", failureCode: "SOMETHING" });
+      expect(dataOf()).not.toHaveProperty("failureCode");
+    });
+  });
+
   describe("listRecent (결재함 봇 활동 탭)", () => {
     it("최신순·take·SUCCEEDED 제외를 where 로 만든다", async () => {
       findManyMock.mockResolvedValue([]);

@@ -28,7 +28,16 @@ type AgentJobTransitionBase = {
   actor: string;
   eventCode: string;
   result?: unknown;
+  /** Executor classification token; only persisted for FAILED_FINAL / FAILED_SECURITY (sanitized). */
+  failureCode?: string;
 };
+
+const FAILURE_CODE_TOKEN = /^[A-Z0-9_]{1,64}$/;
+
+/** Free-form text must never reach AgentJob.failureCode: anything that is not an upper-case token is UNCLASSIFIED. */
+export function sanitizeFailureCode(value: string): string {
+  return FAILURE_CODE_TOKEN.test(value) ? value : "UNCLASSIFIED";
+}
 
 type LeasedAgentJobTransitionInput = AgentJobTransitionBase & {
   fromStatus: "CLAIMED" | "RUNNING";
@@ -440,6 +449,11 @@ export class AgentJobRepository {
       "FAILED_SECURITY",
     ].some((status) => status === input.toStatus);
 
+    const failureCode =
+      input.failureCode !== undefined && (input.toStatus === "FAILED_FINAL" || input.toStatus === "FAILED_SECURITY")
+        ? sanitizeFailureCode(input.failureCode)
+        : undefined;
+
     const result = parsedResult
       ? serializeAgentJobJson(parsedResult, isSqliteDatabaseUrl())
       : undefined;
@@ -459,6 +473,7 @@ export class AgentJobRepository {
         data: {
           status: input.toStatus,
           ...(result === undefined ? {} : { result }),
+          ...(failureCode === undefined ? {} : { failureCode }),
           ...(queueRelease || terminal
             ? { workerId: null, leaseExpiresAt: null, heartbeatAt: null }
             : {}),
