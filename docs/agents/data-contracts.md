@@ -799,7 +799,7 @@
     (`geminiEndpointLabel`)만 쓰고, 키 구분이 필요하면 비가역 지문(sha256 앞 6자)만
     남긴다. **오류 본문은 우리가 만들지 않으므로**(프록시가 요청 URL 을 에코할 수 있다)
     저장 직전 `redactGeminiSecrets` 로 한 겹 더 지운다.
-  - **계측되지 않는 것:** 성공 호출량·토큰 사용량·중간 재시도 이력. "Gemini 호출 전량
+  - **계측되지 않는 것:** 성공 호출량·토큰 사용량(단 시안 이미지의 장당 토큰은 시안 JSON 옆에 남는다 — 아래 「촬영 컷 시안 생성」)·중간 재시도 이력. "Gemini 호출 전량
     계측"으로 읽지 말 것. 비용 추적이 필요하면 별도 설계 사안이다.
   - 계약은 `src/lib/agent/__tests__/gemini-usage.contract.test.ts` 가 고정한다 —
     키 유출·성공 행 생성·**클라이언트의 종국 실패 경로 누락**(소스 그렙)을 함께 막는다.
@@ -821,6 +821,7 @@
     해시)로 캐시한다 — 초안을 다시 생성해도 컷이 그대로면 이미지 호출이 **0건**이다.
     ⚠️ 키에 `why`(카피)나 `no`(번호)를 넣지 말 것 — 문구만 다듬거나 순서만 바꿔도
     돈이 나간다. 저장은 `DealGuideDraft.sketches`(JSON, 초안과 수명주기 동일).
+  - **장당 실사용 토큰은 시안 JSON 옆에 남긴다(`usage?`, 선택 칸 — T-317).** 성공 호출은 `ApiCallLog` 에 행을 만들지 않는 규율이라 그 대신이다. 값은 응답의 `total_input_tokens`·`total_output_tokens` 와 생성 시각뿐이고(응답에 없으면 필드째 생략), 재생성하면 덮어써지며 캐시 재사용분·옛 시안에는 없다 — 월 합계는 하한이다. ⚠️ 이미지 출력 토큰의 단가가 다를 수 있어 총합만으로 건당 비용을 확정하지 말 것(`total_thought_tokens`·`output_tokens_by_modality` 는 미저장).
   - **폭주 차단은 `MAX_SKETCHES_PER_GUIDE` 한 곳.** 프롬프트가 3~5컷을 요구해도
     **모델 출력은 보장이 아니다** — 컷 10개짜리 응답 하나가 곧 비용 사고다. 상한은
     **새로 그리는 것에만** 걸고(캐시 재사용은 비용 0), 초과분은 `skipped` 로 보고한다.
@@ -837,8 +838,10 @@
   - 저장은 기존 `uploadBytes`/`publicMediaUrl`(Supabase `seller-media`)을 재사용한다.
     별도 이미지 서버(imgBB 등)는 **불필요**로 판정 — 512px JPEG 이라 용량이 무의미하고
     (실측 2026-08-01 전체 59MB/Pro 100GB), 외부 호스트는 SSRF 가드·토큰·가용성만 늘린다.
-  - 계약: `guide-sketch.contract.test.ts`(스타일 락·상한·캐시 키) ·
-    `gemini-image.test.ts`(응답 파싱은 던진다 — 빈 이미지를 저장하지 않는다).
+  - 계약: `guide-sketch.contract.test.ts`(스타일 락·상한·캐시 키·usage 왕복) ·
+    `gemini-image.test.ts`(응답 파싱은 던진다 — 빈 이미지를 저장하지 않는다) ·
+    `gemini-image.no-success-row.test.ts`(성공 호출은 `apiCallLog` 에 쓰지 않는다) ·
+    `sketches/route.test.ts`(usage 가 시안에 붙는다).
 
 - **RapidAPI 키 풀(2026-07-23):** 키 선택 SSOT는 `src/lib/rapidapi-keys.ts`의
   `rapidApiFetch()` 하나다. RapidAPI를 직접 `fetch` 하지 말 것.
