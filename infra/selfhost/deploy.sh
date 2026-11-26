@@ -122,8 +122,22 @@ fi
 # "변경 없음" 조기 종료 경로보다 앞에 둬서 그 경우에도 좌표가 남게 한다.
 echo "[deploy] 레인 $APP_LAUNCHD_LABEL · 포트 $APP_PORT · 추종 브랜치 $TRACK_BRANCH"
 
+# ── 고정 배포(DEPLOY_EXPECT_SHA) — 확장 실행기의 「배포 승인」 카드 경로 ──
+# 오너가 승인한 것은 「이 sha 까지」다. 승인 확인과 이 fetch 사이에 main 에 다른
+# 머지가 들어오면, 아래 reset 이 승인 안 된 커밋까지 운영에 올린다(사후 확인은 이미 늦다).
+# 값을 주면 origin 의 최신이 그 sha 일 때만 진행하고, 다르면 체크아웃·빌드·마커를
+# 건드리기 전에 75 로 멈춘다(호출자는 "범위가 바뀜"으로 처리). 안 주면 종전과 같다.
+if [ -n "${DEPLOY_EXPECT_SHA:-}" ] && ! [[ "$DEPLOY_EXPECT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "중단: DEPLOY_EXPECT_SHA 형식이 틀렸습니다(40자리 소문자 16진수여야 함) — 배포하지 않습니다." >&2
+  exit 1
+fi
+
 git fetch origin "$TRACK_BRANCH"
 LATEST="$(git rev-parse "origin/$TRACK_BRANCH")"
+if [ -n "${DEPLOY_EXPECT_SHA:-}" ] && [ "$LATEST" != "$DEPLOY_EXPECT_SHA" ]; then
+  echo "중단: origin/$TRACK_BRANCH 가 승인한 sha 와 다릅니다(최신 ${LATEST:0:12}, 승인 ${DEPLOY_EXPECT_SHA:0:12}) — 배포하지 않습니다. 운영은 바뀌지 않았습니다." >&2
+  exit 75
+fi
 MARKER_SHA="$(cat "$MARKER_FILE" 2>/dev/null || true)"
 # ⚠️ "변경 없음" 판정은 HEAD(체크아웃 상태)가 아니라 이 마커와 비교한다.
 # HEAD 로 비교하면, 빌드가 실패해도 체크아웃 자체는 이미 최신으로
@@ -249,7 +263,9 @@ if [ "$APP_LAUNCHD_LABEL" = "kr.ygrd.wagcrm.app" ]; then
 fi
 
 git checkout "$TRACK_BRANCH"
-git reset --hard "origin/$TRACK_BRANCH"
+# 고정 배포면 원격 참조가 아니라 확인한 그 sha 로 맞춘다 — 사이에 다른 프로세스가
+# fetch 해 origin/$TRACK_BRANCH 가 움직여도 승인 밖 커밋이 섞이지 않는다.
+git reset --hard "${DEPLOY_EXPECT_SHA:-origin/$TRACK_BRANCH}"
 AFTER="$(git rev-parse HEAD)"
 
 echo "[deploy] ${MARKER_SHA:-(마커 없음)} → $AFTER"

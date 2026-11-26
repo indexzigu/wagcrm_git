@@ -608,6 +608,10 @@ interface DeployOpts {
   dryRun?: boolean;
   /** 살아 있는 PID 로 잠금을 미리 잡아 둔다 */
   lockHeldBy?: number;
+  /** deploy.sh 스텁의 종료코드(deployFails 보다 우선) */
+  deployRc?: number;
+  /** 추가 환경변수(예: DEPLOY_EXPECT_SHA) */
+  env?: Record<string, string>;
 }
 
 function runReleaseDeploy(opts: DeployOpts) {
@@ -638,7 +642,7 @@ esac`,
   const deployImpl = stub(
     bin,
     "deploy",
-    `echo "deploy.sh 실행됨" >> "${trace}"\nexit ${opts.deployFails ? 1 : 0}`,
+    `echo "deploy.sh 실행됨 expect=\${DEPLOY_EXPECT_SHA:-}" >> "${trace}"\nexit ${opts.deployRc ?? (opts.deployFails ? 1 : 0)}`,
   );
   const npmImpl = stub(bin, "npm", `echo "npm $*" >> "${trace}"`);
   const npxImpl = stub(
@@ -658,6 +662,7 @@ esac`,
         RELEASE_DEPLOY_SH: deployImpl,
         RELEASE_NPM_CMD: `bash ${npmImpl}`,
         RELEASE_NPX_CMD: `bash ${npxImpl}`,
+        ...(opts.env ?? {}),
       },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -691,6 +696,29 @@ describe("release-deploy.sh 행위 계약", () => {
     expect(r.trace).toContain("wrangler deploy");
     expect(r.trace).toContain("--no-install");
     expect(r.workerMarkerAfter).toBe("headsha1");
+  });
+
+  it("고정 배포: DEPLOY_EXPECT_SHA 를 deploy.sh 에 그대로 넘긴다", () => {
+    const pin = "a".repeat(40);
+    const r = runReleaseDeploy({ env: { DEPLOY_EXPECT_SHA: pin } });
+    expect(r.status).toBe(0);
+    expect(r.trace).toContain(`expect=${pin}`);
+  });
+
+  it("고정 배포에서 deploy.sh 가 75(main 이 승인 sha 와 다름)로 멈추면 75 를 그대로 돌려주고 링크 서버는 돌지 않는다", () => {
+    const r = runReleaseDeploy({ deployRc: 75, env: { DEPLOY_EXPECT_SHA: "a".repeat(40) } });
+    expect(r.status).toBe(75);
+    expect(r.trace).not.toContain("npx");
+    expect(r.trace).not.toContain("npm");
+    expect(r.workerMarkerAfter).toBeNull();
+    expect(r.stdout).toContain("승인한 sha");
+  });
+
+  it("고정하지 않은 배포에서는 75 도 종전처럼 실패(1)로 보고한다", () => {
+    const r = runReleaseDeploy({ deployRc: 75 });
+    expect(r.status).toBe(1);
+    expect(r.trace).toContain("expect=\n");
+    expect(r.stdout).toContain("링크 서버는 손대지 않았습니다");
   });
 
   it("CRM 이 실패하면 Worker 는 손대지 않는다", () => {
