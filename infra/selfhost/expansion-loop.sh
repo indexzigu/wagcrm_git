@@ -416,6 +416,14 @@ const fs=require("fs");
 try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 process.exit(j&&Array.isArray(j.cards)&&j.cards.length>0?0:3);}catch(e){process.exit(3);}' "$CARDS_FILE" 2>/dev/null \
   || fail "no-cards" "$COST"
+# 「배포 승인」 카드는 실행기(expansion-merge.mjs)만 올린다 — 회차가 같은 범위에 다른 본문을 단 카드를 끼우지 못하게
+# deploy 종류나 deploy 모양 id 가 하나라도 있으면 게시하지 않는다(T-340, 근거: log 2026-11-26#04).
+node -e '
+const fs=require("fs");
+try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+const bad=j.cards.some(c=>!c||c.kind==="deploy"||(typeof c.id==="string"&&/-deploy-/i.test(c.id)));
+process.exit(bad?3:0);}catch(e){process.exit(3);}' "$CARDS_FILE" 2>/dev/null \
+  || fail "deploy-card-from-run" "$COST"
 
 post_card "$CARDS_FILE"
 if [ "$POST_RESULT" != "ok" ]; then
