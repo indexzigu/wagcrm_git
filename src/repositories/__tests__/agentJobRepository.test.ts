@@ -100,6 +100,22 @@ describe("AgentJobRepository", () => {
     );
   });
 
+  it("quarantines a poison row as FAILED_SECURITY with failureCode PAYLOAD_INVALID", async () => {
+    findFirstMock.mockResolvedValue({ ...persistedJob, payload: "{not json" });
+    updateManyMock.mockResolvedValue({ count: 1 });
+    eventCreateMock.mockResolvedValue({});
+    const onQuarantined = vi.fn();
+
+    const claimed = await AgentJobRepository.claimNext("worker-1", new Date("2026-09-02T00:00:00.000Z"), onQuarantined);
+
+    expect(claimed).toBeNull();
+    expect(onQuarantined).toHaveBeenCalledTimes(1);
+    const quarantine = updateManyMock.mock.calls
+      .map((call) => (call[0] as { data: Record<string, unknown> }).data)
+      .find((data) => data.status === "FAILED_SECURITY");
+    expect(quarantine).toMatchObject({ status: "FAILED_SECURITY", failureCode: "PAYLOAD_INVALID" });
+  });
+
   it("reclaims an expired lease in the same transaction and turns the capped attempt into FAILED_FINAL", async () => {
     findFirstMock.mockResolvedValue({ ...persistedJob, status: "RUNNING", attempt: 2 });
     updateManyMock.mockResolvedValue({ count: 1 });
@@ -243,6 +259,71 @@ describe("AgentJobRepository", () => {
         const job = await AgentJobRepository.findById("job-1");
         expect(job?.result?.structuredData).toEqual(structuredData);
       }
+    });
+  });
+
+  describe("transition failureCode (실패 분류 코드 기록)", () => {
+    const base = {
+      jobId: "job-1",
+      fromStatus: "RUNNING",
+      actor: "worker-1",
+      eventCode: "X",
+      workerId: "worker-1",
+      attempt: 0,
+      now: new Date("2026-09-02T00:00:00.000Z"),
+    } as const;
+    const failedResult = (status: "FAILED_FINAL" | "FAILED_SECURITY") => ({
+      schemaVersion: 1,
+      jobId: "job-1",
+      status,
+      route: "python",
+      modelUsed: "python",
+      validationResult: "fail",
+      resultSummary: "x failed",
+      actionProposalId: null,
+      evidenceRefs: [],
+    });
+    const dataOf = () => (updateManyMock.mock.calls.at(-1)?.[0] as { data: Record<string, unknown> }).data;
+
+    beforeEach(() => {
+      updateManyMock.mockReset();
+      eventCreateMock.mockReset();
+      updateManyMock.mockResolvedValue({ count: 1 });
+      eventCreateMock.mockResolvedValue({});
+    });
+
+    it.each(["FAILED_FINAL", "FAILED_SECURITY"] as const)("%s 는 분류 토큰을 failureCode 로 쓴다", async (toStatus) => {
+      await AgentJobRepository.transition({
+        ...base,
+        toStatus,
+        failureCode: "PRODUCT_AMBIGUOUS",
+        ...(toStatus === "FAILED_FINAL" ? { result: failedResult(toStatus) } : {}),
+      });
+      expect(dataOf().failureCode).toBe("PRODUCT_AMBIGUOUS");
+      expect(dataOf().status).toBe(toStatus);
+    });
+
+    it.each(["free text sentence", "lower_case", "A".repeat(65), "", "BAD-DASH"])(
+      "토큰 형식이 아닌 입력(%j)은 UNCLASSIFIED 로 쓴다",
+      async (bad) => {
+        await AgentJobRepository.transition({ ...base, toStatus: "FAILED_SECURITY", failureCode: bad });
+        expect(dataOf().failureCode).toBe("UNCLASSIFIED");
+      },
+    );
+
+    it("64자 토큰은 그대로 통과한다", async () => {
+      await AgentJobRepository.transition({ ...base, toStatus: "FAILED_SECURITY", failureCode: "A".repeat(64) });
+      expect(dataOf().failureCode).toBe("A".repeat(64));
+    });
+
+    it("failureCode 를 안 주면 칸을 건드리지 않는다", async () => {
+      await AgentJobRepository.transition({ ...base, toStatus: "FAILED_SECURITY" });
+      expect(dataOf()).not.toHaveProperty("failureCode");
+    });
+
+    it("실패가 아닌 전이는 failureCode 를 줘도 쓰지 않는다", async () => {
+      await AgentJobRepository.transition({ ...base, toStatus: "RUNNING", fromStatus: "CLAIMED", failureCode: "SOMETHING" });
+      expect(dataOf()).not.toHaveProperty("failureCode");
     });
   });
 

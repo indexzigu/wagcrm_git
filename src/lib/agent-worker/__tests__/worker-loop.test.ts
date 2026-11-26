@@ -232,6 +232,64 @@ describe("worker loop durable processing", () => {
     await loop.shutdown();
   });
 
+  it("passes the security errorClass as failureCode on FAILED_SECURITY", async () => {
+    const execute = vi.fn(async () => ({ kind: "security", errorClass: "ROUTER_OUTPUT_REJECTED" }) as ExecutionOutcome);
+    const { repository, loop } = build([job("a")], execute);
+
+    loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(repository.transition).toHaveBeenLastCalledWith(expect.objectContaining({ toStatus: "FAILED_SECURITY", eventCode: "ROUTER_OUTPUT_REJECTED", failureCode: "ROUTER_OUTPUT_REJECTED" }));
+    await loop.shutdown();
+  });
+
+  it("passes the executor errorClass as failureCode on FAILED_FINAL, and none on success", async () => {
+    const base = succeeded("a");
+    if (base.kind !== "terminal") throw new Error("expected terminal");
+    const failed: ExecutionOutcome = {
+      ...base,
+      toStatus: "FAILED_FINAL",
+      errorClass: "TARGET_NOT_FOUND",
+      result: { ...base.result, status: "FAILED_FINAL", validationResult: "fail" },
+    };
+    const execute = vi.fn(async () => failed);
+    const { repository, loop } = build([job("a")], execute);
+
+    loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(repository.transition).toHaveBeenLastCalledWith(expect.objectContaining({ toStatus: "FAILED_FINAL", eventCode: "FAILED_FINAL", failureCode: "TARGET_NOT_FOUND" }));
+    await loop.shutdown();
+
+    const ok = build([job("b")], vi.fn(async () => succeeded("b")));
+    ok.loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const last = ok.repository.transition.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(last.toStatus).toBe("SUCCEEDED");
+    expect(last).not.toHaveProperty("failureCode");
+    await ok.loop.shutdown();
+  });
+
+  it("does not pass failureCode for a non-FAILED_FINAL terminal even when errorClass is set", async () => {
+    const base = succeeded("a");
+    if (base.kind !== "terminal") throw new Error("expected terminal");
+    const handoff: ExecutionOutcome = {
+      ...base,
+      toStatus: "NEEDS_EXTERNAL_EXECUTOR",
+      errorClass: "ROUTER_TIMEOUT",
+      result: { ...base.result, status: "NEEDS_EXTERNAL_EXECUTOR" },
+    };
+    const { repository, loop } = build([job("a")], vi.fn(async () => handoff));
+
+    loop.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const last = repository.transition.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(last.toStatus).toBe("NEEDS_EXTERNAL_EXECUTOR");
+    expect(last).not.toHaveProperty("failureCode");
+    await loop.shutdown();
+  });
+
   it("stops the job when a heartbeat shows the lease is no longer owned", async () => {
     const execute = vi.fn((_job: AgentJobRecord, signal: AbortSignal) =>
       new Promise<ExecutionOutcome>((_resolve, reject) => {
