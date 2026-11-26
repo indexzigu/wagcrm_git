@@ -11,6 +11,7 @@ import {
 import { RUN_STATUSES } from "@/lib/recampaign-timing";
 import { auditLaunchReadiness } from "@/lib/offer/launch-readiness";
 import { checkText } from "@/lib/claims/claim-gate";
+import { countSkippedCategoryRules } from "@/lib/claims/suggest-claim-category";
 import {
   loadDealClaimContext,
   toGateClaims,
@@ -283,6 +284,11 @@ export async function GET(_request: Request, { params }: Context) {
      * 운영자는 "통과했다"로 읽는다(미검사와 무결점은 화면에서 구분되지 않는다).
      * `#174` 가 근거 카드에서 세운 것과 같은 규약이다.
      */
+    /** 카테고리 미지정으로 보지 않은 카테고리 규칙 수(활성 규칙에서 센다). */
+    skippedCategoryRuleCount: countSkippedCategoryRules(
+      activeRules,
+      gateContext.category,
+    ),
     claimGateSource: latestDraft ? "ASSET_DRAFT" : "NO_ASSET_DRAFT",
     /** 검사한 자료를 셀러에게 보낸 시점(없으면 null). */
     claimGateCheckedAt: latestDraft?.sentAt ?? null,

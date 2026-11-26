@@ -803,7 +803,7 @@ function DealsPanelContent({
         {/* 표현 관리(클레임 레지스트리) — 표현 검사·자료 생성의 게이트 입력(C1 M2b).
             key=딜 — VOC 와 같은 이유로 딜 전환 시 이전 딜의 목록·입력 상태 누수를 막는다. */}
         <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-soft-sm">
-          <DealClaimsSection key={deal.id} dealId={deal.id} />
+          <DealClaimsSection key={deal.id} dealId={deal.id} dealName={deal.dealName} />
         </div>
 
         {/* 오퍼 진단 — 표현 관리 바로 아래에 둔다(C2 M2). 위가 "이 표현을 써도

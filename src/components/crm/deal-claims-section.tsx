@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  SUGGESTED_CATEGORY_LABEL,
+  suggestClaimCategory,
+} from "@/lib/claims/suggest-claim-category";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, PlusIcon, SparklesIcon, TrashIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -85,7 +89,13 @@ type DealClaim = {
   source: string | null;
 };
 
-export function DealClaimsSection({ dealId }: { dealId: string }) {
+export function DealClaimsSection({
+  dealId,
+  dealName,
+}: {
+  dealId: string;
+  dealName?: string;
+}) {
   const [claims, setClaims] = useState<DealClaim[]>([]);
   const [category, setCategory] = useState<string>("GENERAL");
   const [loading, setLoading] = useState(true);
@@ -128,6 +138,10 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 미지정일 때만 제안 — 저장은 「적용」 클릭이 기존 저장 경로를 탈 때만 일어난다.
+  const suggestion =
+    category === "GENERAL" ? suggestClaimCategory(dealName) : null;
 
   async function handleCategoryChange(next: string) {
     const previous = category;
@@ -319,6 +333,20 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
               ))}
             </SelectContent>
           </Select>
+          {suggestion ? (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              {SUGGESTED_CATEGORY_LABEL[suggestion.category]}으로 보입니다 (근거: ‘
+              {suggestion.keyword}’)
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                onClick={() => void handleCategoryChange(suggestion.category)}
+              >
+                적용
+              </Button>
+            </span>
+          ) : null}
         </div>
       </header>
 

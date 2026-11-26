@@ -69,6 +69,26 @@ describe("DealClaimsSection", () => {
     ).toBeInTheDocument();
   });
 
+  it("카테고리 미지정이면 이름 낱말로 제안하고, 적용을 눌러야만 저장한다", async () => {
+    const patch = vi.fn(() => json({ ok: true }));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        "GET /api/deals/d1/claims": () => json({ category: null, claims: [] }),
+        "PATCH /api/deals/d1": patch,
+      }),
+    );
+    const user = userEvent.setup();
+    render(<DealClaimsSection dealId="d1" dealName="프리미엄 유산균 30포" />);
+
+    expect(await screen.findByText(/건강기능식품으로 보입니다/)).toBeInTheDocument();
+    expect(patch).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "적용" }));
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    const init = (patch.mock.calls as unknown as [RequestInfo, RequestInit][])[0][1];
+    expect(JSON.parse(String(init.body))).toEqual({ category: "SUPPLEMENT" });
+  });
+
   it("클레임을 상태·종류·근거유형과 함께 보여준다", async () => {
     vi.stubGlobal(
       "fetch",

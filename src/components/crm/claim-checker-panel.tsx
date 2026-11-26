@@ -1,5 +1,6 @@
 "use client";
 
+import { countSkippedCategoryRules } from "@/lib/claims/suggest-claim-category";
 import { useEffect, useMemo, useState } from "react";
 import {
   ShieldCheckIcon,
@@ -203,6 +204,11 @@ export function ClaimCheckerPanel({
   const violationGroups = useMemo(
     () => groupViolations(result?.violations ?? []),
     [result],
+  );
+
+  const skippedCategoryRuleCount = countSkippedCategoryRules(
+    rules,
+    category === "GENERAL" ? null : category,
   );
 
   const activeRuleCount = useMemo(
@@ -418,6 +424,13 @@ export function ClaimCheckerPanel({
                   ))}
                 </ul>
               </div>
+            ) : null}
+
+            {skippedCategoryRuleCount > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                카테고리 미지정이라 카테고리 규칙 {skippedCategoryRuleCount}개는
+                보지 않았습니다
+              </p>
             ) : null}
 
             {result.verdict === "PASS" ? (
