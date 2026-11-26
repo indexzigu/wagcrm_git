@@ -139,7 +139,14 @@ export async function POST(request: Request, context: Context) {
       try {
         const path = sketchStoragePath(id, key, kind);
         await uploadBytes(path, image.bytes, image.mimeType);
-        return { key, url: publicMediaUrl(path) };
+        return {
+          key,
+          url: publicMediaUrl(path),
+          // 장당 비용 측정용 기록 — 성공 행은 ApiCallLog 에 남기지 않는 규칙이라 시안 옆에 둔다.
+          ...(image.usage
+            ? { usage: { ...image.usage, generatedAt: new Date().toISOString() } }
+            : {}),
+        };
       } catch (err) {
         throw new SketchStepError("UPLOAD", err);
       }
