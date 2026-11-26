@@ -269,6 +269,19 @@ describe("expansion-loop.sh", () => {
     expect(cronLog()).toMatch(/no-cards/);
   });
 
+  it("operator cards with kind deploy: FAIL deploy-card-from-run, operator cards never posted", () => {
+    const body = '{"date":"2026-01-01","cards":[{"id":"20260101-deploy-89abcdef-01234567","kind":"deploy","title":"t","body":"b"}]}';
+    expect(run(script("claude-ok5", cardsSh(body) + OK_JSON)).status).toBe(1);
+    expect(cronLog()).toMatch(/FAIL expansion-loop.*deploy-card-from-run/);
+    expect(postCalls().some((c) => /-cards\.json/.test(c))).toBe(false);
+  });
+
+  it("operator cards with a deploy-shaped id under another kind: FAIL deploy-card-from-run", () => {
+    const body = '{"date":"2026-01-01","cards":[{"id":"20260101-deploy-89abcdef-01234567","kind":"proposal","title":"t","body":"b"}]}';
+    expect(run(script("claude-ok6", cardsSh(body) + OK_JSON)).status).toBe(1);
+    expect(cronLog()).toMatch(/deploy-card-from-run/);
+  });
+
   it("cards post failure: FAIL with post=failed, exit 1", () => {
     const bad = script("post-bad", "exit 1");
     const r = run(script("claude-ok4", OK_CARDS()), { EXPANSION_POST_BIN: bad });
