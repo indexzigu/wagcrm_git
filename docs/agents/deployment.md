@@ -82,7 +82,7 @@
   배포 실패·반영 확인 실패면 정지 표지 `~/selfhost/expansion-merge.STOP` 을 만들고 멈춘다. 실행기는 이 표지를 만들기만 하고
   지우지 않는다 — 오너가 지우기 전에는 돌지 않으며, 위 「효력 정지」 사유가 생기면 사람이 만든다. 결과 카드에 ④ 의 되돌리는
   절차를 적는다. 서명 키 `~/selfhost/expansion-merge.key` 는 같은 macOS 사용자가 읽을 수 있어 완전한 경계가 아니다 — 확장
-  회차가 키를 읽거나 승인 기록(`decisions.jsonl` 의 merge 줄)을 쓰는 것은 금지다. (근거: log 2026-11-24#02, 2026-11-26#04)
+  회차가 키를 읽거나 승인 기록(`decisions.jsonl` 의 merge·deploy 줄)을 쓰는 것은 금지다. (근거: log 2026-11-24#02, 2026-11-26#04)
 
 - **Two Projects, Three Branches (통합 main · 운영 release · 데모 demo):**
   ⛔ **절 이름의 「Two Projects」는 더 이상 사실이 아니다 — Vercel 프로젝트는 `wag-crm`
