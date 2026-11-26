@@ -236,7 +236,8 @@ export function escapePath(p) {
   return String(p).replace(/[^\x20-\x7e]|\\/g, (c) => (c === "\\" ? "\\\\" : `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`));
 }
 
-const cleanSubject = (s) => String(s).replace(/[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ").slice(0, 100);
+const stripSubject = (s) => String(s).replace(/[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ");
+const cleanSubject = (s) => Array.from(stripSubject(s)).slice(0, 100).join("");
 const slackLength = (s) => s.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").length;
 
 export function localDate(ms) {
@@ -297,6 +298,15 @@ export function cardsPayload(card, ms) {
   }
   const date = localDate(ms);
   return { date, cards: [{ ...card, id: `${date.replaceAll("-", "")}-${card.id}` }] };
+}
+
+// The menubar-only notice is sent once per (from, tip, marker) range, not per merge approval, so a range that
+// turns menubar-only after a card was posted still reaches the owner.
+const sameRange = (x, from, tip, marker) => x.from === from && x.tip === tip && x.marker === marker;
+const menubarNoticed = (doneLines, from, tip, marker) =>
+  doneLines.some((x) => x.status === "menubar-notice" && sameRange(x, from, tip, marker));
+function recordMenubarNotice(deps, from, tip, marker, reason, at) {
+  deps.appendLine(deps.paths.done, { status: "menubar-notice", from, tip, marker, reason, at });
 }
 
 // Guarded paths between `from` (production) and `tip`. A missing link-server marker counts as a hit:
@@ -366,7 +376,9 @@ export async function run(deps) {
   const deploys = selectDeploy(decisions, doneLines, key, paths.approver);
   const nowIso = () => new Date(deps.now()).toISOString();
   const note = (id, title, body) => {
-    if (!deps.post({ id, kind: "backlog", title, body })) deps.log("FAIL", `${id} card post failed`);
+    const ok = deps.post({ id, kind: "backlog", title, body });
+    if (!ok) deps.log("FAIL", `${id} card post failed`);
+    return ok;
   };
   const notify = (pr, title, body) => note(`note-merge-pr${pr}`, title, body);
 
@@ -409,11 +421,26 @@ function deployOne(deps, d, doneLines, nowIso, note) {
   const noteId = `note-deploy-${d.tip.slice(0, 8)}`;
   const finish = (status, reason) =>
     deps.appendLine(paths.done, { kind: "deploy", cardId: d.cardId, from: d.from, tip: d.tip, marker: d.marker, sig: d.sig, status, reason, at: nowIso() });
-  const reject = (reason) => {
+  let menubarRange = null; // set by nextFor when the current range is menubar-only
+  const reject = (reason, next) => {
     finish("rejected", reason);
     deps.log("SKIP", `${tag} rejected: ${reason}`);
-    note(noteId, "배포 보류 — 배포 승인 카드", `배포하지 않았습니다: ${reason}. 운영은 바뀌지 않았습니다. 봇 PR 머지가 다시 시도될 때 지금 구간으로 새 카드가 올라옵니다(같은 구간이면 메뉴바 「배포하기」).`);
+    const ok = note(noteId, "배포 보류 — 배포 승인 카드", `배포하지 않았습니다: ${reason}. 운영은 바뀌지 않았습니다. ${next}`);
+    if (ok && menubarRange) recordMenubarNotice(deps, ...menubarRange, nowIso());
     return "rejected";
+  };
+  // What happens next for the range as it is now (after a fetch): menubar, a fresh card, or nothing to approve.
+  // A menubar answer here also counts as that range's menubar notice, so the merge path does not repeat it.
+  const nextFor = (from, tip, marker) => {
+    const now = SHA_RE.test(from) ? rangeHits(deps, from, tip) : null;
+    if (now === null) return "봇 PR 머지가 다시 시도될 때 지금 구간을 다시 확인합니다.";
+    if (!now.length) return "지금 구간에는 사람 확인이 필요한 경로가 없어 봇 PR 머지가 그대로 이어집니다.";
+    const why = menubarOnlyReason(now);
+    if (why) {
+      if (!menubarNoticed(doneLines, from, tip, marker)) menubarRange = [from, tip, marker, why];
+      return `지금 구간은 버튼으로 배포할 수 없습니다(${why}) — 메뉴바 「배포하기」로 반영해 주세요.`;
+    }
+    return "봇 PR 머지가 다시 시도될 때 지금 구간으로 새 「배포 승인」 카드가 올라옵니다(구간 본문이 한도를 넘으면 메뉴바 안내).";
   };
 
   const age = deps.now() - Date.parse(d.at);
@@ -426,9 +453,9 @@ function deployOne(deps, d, doneLines, nowIso, note) {
   const cards = doneLines.filter((x) => x.status === "deploy-card");
   const latest = cards.at(-1);
   if (!latest || latest.cardId !== d.cardId || latest.from !== d.from || latest.tip !== d.tip || latest.marker !== d.marker)
-    return reject("가장 최근 배포 카드가 아님 — 범위가 바뀜, 새 카드");
+    return reject("가장 최근 배포 카드가 아님", "가장 최근에 올라온 「배포 승인」 카드로 다시 승인해 주세요.");
   if (doneLines.some((x) => x.kind === "deploy" && x.cardId === d.cardId && (x.status === "deployed" || x.status === "deploy-failed")))
-    return reject("이미 처리된 배포 카드");
+    return reject("이미 처리된 배포 카드", "더 할 일은 없습니다.");
 
   const fetched = deps.git(["fetch", "-q", "origin", `+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}`]);
   const tipNow = deps.git(["rev-parse", `origin/${BASE_BRANCH}`]);
@@ -437,17 +464,24 @@ function deployOne(deps, d, doneLines, nowIso, note) {
     return "transient";
   }
   const deployedBefore = (deps.readText(paths.deployedSha) ?? "").trim();
-  if (deployedBefore !== d.from) return reject("운영 sha 가 카드와 다름 — 범위가 바뀜, 새 카드");
-  if (tipNow.out.trim() !== d.tip) return reject("main 이 카드 뒤에 움직임 — 범위가 바뀜, 새 카드");
-  if ((deps.readText(paths.workerMarker) ?? "").trim() !== d.marker) return reject("링크 서버 배포 기록이 바뀜 — 새 카드");
+  const markerNow = (deps.readText(paths.workerMarker) ?? "").trim();
+  const changed = (reason) => reject(reason, nextFor(deployedBefore, tipNow.out.trim(), markerNow));
+  if (deployedBefore !== d.from) return changed("운영 sha 가 카드와 다름 — 범위가 바뀜");
+  if (tipNow.out.trim() !== d.tip) return changed("main 이 카드 뒤에 움직임 — 범위가 바뀜");
+  if (markerNow !== d.marker) return changed("링크 서버 배포 기록이 바뀜");
   const hits = rangeHits(deps, d.from, d.tip);
   if (hits === null) {
     deps.log("FAIL", `${tag} cannot read deploy range — will retry`);
     return "transient";
   }
-  const menubar = menubarOnlyReason(hits);
-  if (menubar) return reject(`버튼으로 배포할 수 없는 구간(${menubar}) — 메뉴바 「배포하기」`);
+  if (menubarOnlyReason(hits)) return changed("버튼으로 배포할 수 없는 구간");
 
+  // Re-check the halt markers right before the point of no return (the fetch above can take a while, and an
+  // owner may have created STOP meanwhile). The click stays open: it is processed once the marker is gone.
+  if (deps.exists(paths.stop) || deps.exists(paths.inprogress)) {
+    deps.log("SKIP", `${tag} halted (stop or in-progress marker appeared) — not deployed`);
+    return "stopped";
+  }
   // Point of no return: the in-progress marker first, so a crash anywhere below leaves the executor halted.
   deps.touch(paths.inprogress, `deploy from=${d.from} tip=${d.tip} at=${nowIso()}\n`);
   const deployRc = deps.deploy();
@@ -559,8 +593,9 @@ async function tryOne(deps, d, doneLines, nowIso, notify) {
         if (deps.post(card)) deps.appendLine(paths.done, { status: "deploy-card", cardId: card.id, from: deployedBefore, tip, marker, at: nowIso() });
         else deps.log("FAIL", `deploy card ${card.id} post failed — will retry`);
       }
-    } else if (firstWait) {
-      notify(d.pr, `머지 대기 — PR #${d.pr}`, `함께 배포될 앞선 머지분에 사람 확인이 필요한 경로가 있습니다(${preHits.slice(0, 5).map(escapePath).join(", ")}). 버튼으로 배포할 수 없는 구간입니다(${menubar}). 메뉴바 「배포하기」로 먼저 반영하시면 이어서 처리합니다.`);
+    } else if (!menubarNoticed(doneLines, deployedBefore, tip, marker)) {
+      const ok = notify(d.pr, `머지 대기 — PR #${d.pr}`, `함께 배포될 앞선 머지분에 사람 확인이 필요한 경로가 있습니다(${preHits.slice(0, 5).map(escapePath).join(", ")}). 버튼으로 배포할 수 없는 구간입니다(${menubar}). 메뉴바 「배포하기」로 먼저 반영하시면 이어서 처리합니다.`);
+      if (ok) recordMenubarNotice(deps, deployedBefore, tip, marker, menubar, nowIso());
     }
     return "range-guarded";
   }

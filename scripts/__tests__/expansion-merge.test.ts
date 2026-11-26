@@ -521,6 +521,42 @@ describe("expansion-merge deploy card (merge path)", () => {
     expect(h.merged).toBe(false);
   });
 
+  it("a range turning menubar-only after a card was posted still gets one menubar notice", async () => {
+    const d = signed();
+    const old = "6".repeat(40);
+    const h = harness({
+      decisions: [d], range: ["infra/selfhost/expansion-merge.mjs"],
+      done: [{ status: "range-wait", sig: d.sig, pr: 309 }, cardLine({ tip: old, cardId: `20261124-deploy-${old.slice(0, 8)}-${DEPLOYED.slice(0, 8)}` })],
+    });
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(deployCards(h)).toEqual([]);
+    expect(h.posts).toHaveLength(1);
+    expect(h.posts[0].body).toContain("메뉴바 「배포하기」");
+    expect(h.files.done).toContain('"status":"menubar-notice"');
+  });
+
+  it("a failed menubar notice is retried next run", async () => {
+    const h = harness({ decisions: [signed()], range: ["infra/selfhost/expansion-merge.mjs"] });
+    let n = 0;
+    h.deps.post = (c: unknown) => { n++; if (n === 1) return false; h.posts.push(c); return true; };
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(h.files.done).not.toContain("menubar-notice");
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(h.posts).toHaveLength(1);
+    expect(h.files.done).toContain("menubar-notice");
+  });
+
+  it("commit subjects are capped by code points (no split surrogate pair)", async () => {
+    const subject = `abc1234 ${"x".repeat(91)}\u{1F600}tail`;
+    const h = harness({ decisions: [signed()], range: prisma, commits: [subject] });
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    const [card] = deployCards(h);
+    expect(card.body).toContain(`${"x".repeat(91)}\u{1F600}`);
+    expect(card.body).not.toContain("tail");
+    expect(card.body).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  });
+
   it("exactly 30 short guarded paths still get a card", async () => {
     const h = harness({ decisions: [signed()], range: Array.from({ length: 30 }, (_, i) => `prisma/m${i}.sql`) });
     expect(await M.run(h.deps)).toBe("range-guarded");
@@ -572,6 +608,47 @@ describe("expansion-merge deploy decision", () => {
     expect(h.files.done).toContain('"status":"rejected"');
     expect(h.posts.at(-1).id).toBe(`note-deploy-${TIP.slice(0, 8)}`);
     expect(await M.run(h.deps)).not.toBe("rejected");
+  });
+
+  it("rejection when the new range is menubar-only says 메뉴바 and counts as that range's notice", async () => {
+    const h = harness({ decisions: [signedDeploy(), signed()], done: [cardLine()], tip: "6".repeat(40), range: ["infra/selfhost/expansion-merge.mjs"], deployTo: TIP });
+    expect(await M.run(h.deps)).toBe("rejected");
+    expect(h.posts.at(-1).body).toContain("메뉴바 「배포하기」");
+    expect(h.posts.at(-1).body).not.toContain("새 「배포 승인」 카드");
+    expect(h.files.done).toContain('"status":"menubar-notice"');
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(h.posts).toHaveLength(1);
+  });
+
+  it("rejection when the new range can take a card promises a fresh card, which the merge path then posts", async () => {
+    const tip = "6".repeat(40);
+    const h = harness({ decisions: [signedDeploy(), signed()], done: [cardLine()], tip, range, deployTo: TIP });
+    expect(await M.run(h.deps)).toBe("rejected");
+    expect(h.posts.at(-1).body).toContain("새 「배포 승인」 카드");
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(h.posts.filter((c) => c.kind === "deploy").map((c) => c.tip)).toEqual([tip]);
+  });
+
+  it("rejection when the new range has no guarded paths says the merge continues", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], tip: "6".repeat(40), range: ["src/a.ts"], deployTo: TIP });
+    expect(await M.run(h.deps)).toBe("rejected");
+    expect(h.posts.at(-1).body).toContain("그대로 이어집니다");
+  });
+
+  it("STOP appearing after the fetch blocks the deploy and keeps the click open", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: TIP });
+    const git = h.deps.git;
+    let armed = true;
+    h.deps.git = (args: string[]) => {
+      if (armed && args[0] === "fetch") { armed = false; h.deps.touch("stop"); }
+      return git(args);
+    };
+    expect(await M.run(h.deps)).toBe("stopped");
+    expect(h.deployed).toBe(0);
+    expect(h.inprogress).toBe(false);
+    expect(h.files.done).not.toMatch(/"status":"(rejected|deployed|deploy-failed)"/);
+    h.deps.remove("stop");
+    expect(await M.run(h.deps)).toBe("deployed");
   });
 
   it("expires clicks older than 24h", async () => {
