@@ -1,6 +1,17 @@
 // Expansion-bot PR merge executor — merges and deploys a bot PR (exp/* → main) only after the owner clicked the
-// Slack 「머지·배포」 button for that exact head SHA. Deterministic: no LLM. Runs from crontab every 10 min via
+// Slack 「머지·배포」 button for that exact head SHA. Deterministic: no LLM. Runs every 10 min as the launchd user
+// agent kr.ygrd.wagcrm.expansion-merge (infra/selfhost/launchd/; cron cannot read the login keychain) via
 // expansion-merge.sh, under the owner's gh identity, from the production checkout (~/selfhost/wagcrm).
+//
+// Deploy card: when the range between what runs in production (deployed.sha) and origin/main already holds
+// guarded paths from earlier merges, the merge waits and this file posts one 「배포 승인」 card per exact
+// (from = deployed.sha, tip = origin/main, marker = link-server deploy marker) triple, listing every guarded path
+// and the range commits. The owner's 「배포」 click (HMAC-signed by the hermes handler with the deploy prefix) is
+// the owner's deploy decision: it runs release-deploy.sh only while all three SHAs are unchanged, the card is
+// the latest one posted, and the click is ≤ 24 h old; the deploy must then land exactly on tip or the executor
+// halts. Ranges touching ygrd-link/ (no rollback procedure), lacking a link-server marker, changing this file,
+// or holding > 30 guarded paths get no button — a plain note sends the owner to the menubar 「배포하기」.
+// Contract: side-session note t340-contract.md v1 (card payload, decision row, deploy signature message).
 //
 // Why: deployment.md clause ⑥ keeps exp/* PRs out of agent self-merge so the expansion loop cannot integrate
 // its own output. The owner's click (HMAC-signed by the hermes Slack handler) is the owner's merge decision;
@@ -13,8 +24,9 @@
 // forging a deliberate secret-extraction step instead of a one-line append; it is not a hard boundary.
 //
 // Safety shape:
-// - One decision per run. Signature/approver/card binding are checked before anything else, so an unsigned or
-//   forged line can never consume (void) a real owner approval.
+// - One decision per run (a deploy decision goes before merge work). Signature/approver/card binding are checked
+//   before anything else, so an unsigned or forged line can never consume (void) a real owner approval. Merge and
+//   deploy signatures use different message prefixes, so neither can be replayed as the other.
 // - File lists come from git (-z, --no-renames, case-folded match) — `gh --json files` truncates at 100 and the
 //   host filesystem is case-insensitive (`Prisma/x` lands in `prisma/`).
 // - An in-progress marker is written before the merge and removed only after a verified deploy (or a clean
@@ -47,14 +59,37 @@ const ROLLBACK_NOTE =
 export const TERMINAL = new Set(["rejected", "expired", "failed", "merged", "deployed", "deploy-failed"]);
 const MERGED_STATES = new Set(["merged", "deployed", "deploy-failed"]);
 
+// Deploy card (contract t340 v1). The deploy prefix differs from SIG_PREFIX: domain separation, so a merge
+// signature can never verify as a deploy decision or the other way round.
+export const DEPLOY_SIG_PREFIX = "wag-expansion-deploy-v1";
+export const DEPLOY_MAX_AGE_MS = 24 * 3600 * 1000;
+export const MAX_DEPLOY_PATHS = 30;
+export const MAX_BODY = 2000; // hermes expansion_cards.py MAX_BODY (counted after its &<> escaping)
+const MAX_DEPLOY_COMMITS = 20;
+export const NO_MARKER = "(ygrd-link 배포 기록 없음)";
+const DEPLOY_CARD_RE = /^(\d{8})-deploy-([0-9a-f]{8})-([0-9a-f]{8})$/;
+const AT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
 export function signatureMessage(d) {
   return [SIG_PREFIX, d.cardId, String(d.pr), d.sha, d.approver, d.channel, d.ts, d.at].join("|");
 }
 
+export function deploySignatureMessage(d) {
+  return [DEPLOY_SIG_PREFIX, d.cardId, d.from, d.tip, d.marker, d.approver, d.channel, d.ts, d.at].join("|");
+}
+
+function hmacMatches(message, sig, key) {
+  if (typeof sig !== "string" || !SIG_RE.test(sig) || !key) return false;
+  const want = createHmac("sha256", Buffer.from(key, "utf8")).update(message, "utf8").digest();
+  return timingSafeEqual(want, Buffer.from(sig, "hex"));
+}
+
 export function verifySignature(d, key) {
-  if (typeof d?.sig !== "string" || !SIG_RE.test(d.sig) || !key) return false;
-  const want = createHmac("sha256", Buffer.from(key, "utf8")).update(signatureMessage(d), "utf8").digest();
-  return timingSafeEqual(want, Buffer.from(d.sig, "hex"));
+  return hmacMatches(signatureMessage(d ?? {}), d?.sig, key);
+}
+
+export function verifyDeploySignature(d, key) {
+  return hmacMatches(deploySignatureMessage(d ?? {}), d?.sig, key);
 }
 
 // Paths that must never ship without a human session (deployment.md exception ③, stricter: no
@@ -136,6 +171,148 @@ export function selectWork(decisions, doneLines, key, approver) {
   return { queue, invalid };
 }
 
+// A deploy decision row. The card id must embed tip[:8] and from[:8] of the very SHAs it carries.
+export function isWellFormedDeploy(d) {
+  if (!d || typeof d !== "object" || d.decision !== "deploy") return false;
+  if (![d.from, d.tip, d.marker].every((s) => typeof s === "string" && SHA_RE.test(s))) return false;
+  const m = typeof d.cardId === "string" ? DEPLOY_CARD_RE.exec(d.cardId) : null;
+  return (
+    !!m &&
+    m[2] === d.tip.slice(0, 8) &&
+    m[3] === d.from.slice(0, 8) &&
+    typeof d.at === "string" &&
+    AT_RE.test(d.at) &&
+    Number.isFinite(Date.parse(d.at)) &&
+    typeof d.approver === "string" &&
+    SLACK_ID_RE.test(d.approver) &&
+    typeof d.channel === "string" &&
+    SLACK_ID_RE.test(d.channel) &&
+    typeof d.ts === "string" &&
+    TS_RE.test(d.ts)
+  );
+}
+
+// Same shape as selectWork, for deploy clicks: { queue (verified, unclosed, oldest first), invalid }.
+export function selectDeploy(decisions, doneLines, key, approver) {
+  const closedSig = new Set(doneLines.filter((x) => TERMINAL.has(x.status) && x.sig).map((x) => x.sig));
+  const reported = new Set(doneLines.filter((x) => x.status === "invalid").map((x) => x.mark));
+  const invalid = [];
+  const queue = [];
+  const seen = new Set();
+  for (const d of decisions) {
+    if (d.decision !== "deploy") continue;
+    const ok = isWellFormedDeploy(d) && verifyDeploySignature(d, key) && typeof approver === "string" && approver !== "" && d.approver === approver;
+    if (!ok) {
+      const mark = typeof d.sig === "string" && d.sig ? `sig:${d.sig}` : `raw:${JSON.stringify(d).slice(0, 200)}`;
+      if (!reported.has(mark) && !seen.has(mark)) invalid.push({ d, mark });
+      seen.add(mark);
+      continue;
+    }
+    if (closedSig.has(d.sig) || seen.has(d.sig)) continue;
+    seen.add(d.sig);
+    queue.push(d);
+  }
+  queue.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  return { queue, invalid };
+}
+
+// Unicode-aware fold for the rule paths below: NFKC maps look-alikes such as U+017F «ſ» → s and U+212A (Kelvin)
+// → K before lower-casing, so `ygrd-linK/` cannot dodge the menubar-only rule on a case-insensitive disk.
+const fold = (p) => String(p).normalize("NFKC").toLowerCase();
+
+// Guarded ranges a deploy button may not cover → owner-facing reason (Korean), or null when a card is allowed.
+export function menubarOnlyReason(hits) {
+  if (hits.includes(NO_MARKER)) return "링크 서버 배포 기록 없음";
+  const f = hits.map(fold);
+  if (f.some((p) => p.startsWith("ygrd-link/"))) return "ygrd-link/ 변경 — 되돌리는 절차 없음";
+  if (f.includes("infra/selfhost/expansion-merge.mjs")) return "실행기 infra/selfhost/expansion-merge.mjs 변경";
+  if (hits.length > MAX_DEPLOY_PATHS) return `걸린 경로 ${hits.length}개(${MAX_DEPLOY_PATHS}개 초과)`;
+  return null;
+}
+
+// Paths are shown with every non-printable-ASCII character escaped (and «\» doubled), so a look-alike path
+// cannot pass for an ordinary one on the card.
+export function escapePath(p) {
+  return String(p).replace(/[^\x20-\x7e]|\\/g, (c) => (c === "\\" ? "\\\\" : `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`));
+}
+
+const cleanSubject = (s) => String(s).replace(/[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, " ").slice(0, 100);
+const slackLength = (s) => s.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").length;
+
+export function localDate(ms) {
+  const n = new Date(ms);
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+}
+
+// Builds the 「배포 승인」 card. Every guarded path is always listed; commits are trimmed first to fit MAX_BODY.
+// Returns { card } or { reason } (body cannot fit with all paths → menubar only).
+export function buildDeployCard({ date, from, tip, marker, hits, commits }) {
+  const f = hits.map(fold);
+  const warnings = [];
+  if (f.some((p) => p.startsWith("prisma/"))) warnings.push("⚠ prisma/ 변경: 배포 중 운영 DB 에 자동 적용, 되돌릴 수 없음");
+  if (f.includes("infra/selfhost/deploy.sh") || f.includes("infra/selfhost/release-deploy.sh"))
+    warnings.push("⚠ 배포 스크립트 변경: 이번 배포는 옛 스크립트로 돌고, 새 동작은 다음 배포부터");
+  const head = [
+    "운영에 아직 반영되지 않은 앞선 머지분에 사람 확인이 필요한 경로가 있어 확장 봇 PR 머지를 멈췄습니다. 이 구간을 지금 배포할지 정해 주세요.",
+    ...warnings,
+    `운영 sha: ${from}`,
+    `대상 sha(main): ${tip}`,
+    `링크 서버 배포 기록 sha: ${marker}`,
+    `걸린 경로 ${hits.length}개:`,
+    ...hits.map((p) => `- ${escapePath(p)}`),
+  ];
+  const tail = `「배포」를 누르면 세 sha 가 그대로이고 24시간 이내일 때만 release-deploy.sh 로 반영합니다. 하나라도 바뀌면 거부하고 새 카드를 올립니다. ${ROLLBACK_NOTE}`;
+  for (let shown = Math.min(commits.length, MAX_DEPLOY_COMMITS); shown >= 0; shown--) {
+    const more = commits.length - shown;
+    const body = [
+      ...head,
+      `구간 커밋 ${commits.length}개:`,
+      ...commits.slice(0, shown).map(cleanSubject),
+      ...(more ? [`… 외 ${more}건`] : []),
+      tail,
+    ].join("\n");
+    if (slackLength(body) <= MAX_BODY) {
+      return {
+        card: {
+          date,
+          id: `${date.replaceAll("-", "")}-deploy-${tip.slice(0, 8)}-${from.slice(0, 8)}`,
+          kind: "deploy",
+          title: `배포 승인 요청 — 운영 ${from.slice(0, 8)} → main ${tip.slice(0, 8)}`,
+          body,
+          from,
+          tip,
+          marker,
+        },
+      };
+    }
+  }
+  return { reason: "걸린 경로 목록이 카드 본문 한도를 넘음" };
+}
+
+// The contract payload for `expansion_cards.py post` (a deploy card already carries its own date and full id).
+export function cardsPayload(card, ms) {
+  if (card.kind === "deploy") {
+    const { date, ...rest } = card;
+    return { date, cards: [rest] };
+  }
+  const date = localDate(ms);
+  return { date, cards: [{ ...card, id: `${date.replaceAll("-", "")}-${card.id}` }] };
+}
+
+// Guarded paths between `from` (production) and `tip`. A missing link-server marker counts as a hit:
+// release-deploy.sh would then deploy ygrd-link/ unconditionally. null = unreadable (retry later).
+function rangeHits(deps, from, tip) {
+  if (!SHA_RE.test(from)) return null;
+  const crm = deps.git(["diff", "-z", "--no-renames", "--name-only", from, tip]);
+  if (crm.rc !== 0) return null;
+  const hits = zList(crm.out).filter(isForbiddenPath);
+  const marker = (deps.readText(deps.paths.workerMarker) ?? "").trim();
+  if (!SHA_RE.test(marker)) return [...hits, NO_MARKER];
+  const w = deps.git(["diff", "-z", "--no-renames", "--name-only", marker, tip, "--", "ygrd-link/"]);
+  if (w.rc !== 0) return null;
+  return [...hits, ...zList(w.out)];
+}
+
 // Static PR gates. Returns a rejection reason (Korean, owner-facing) or null.
 export function prGateReason(pr, d) {
   if (pr.state !== "OPEN") return `PR 이 열려 있지 않음(${pr.state})`;
@@ -174,7 +351,7 @@ const zList = (out) => String(out ?? "").split("\0").filter(Boolean);
 export async function run(deps) {
   const { paths } = deps;
   const decisions = parseJsonl(deps.readText(paths.decisions));
-  if (!decisions.some((d) => d.decision === "merge")) return "idle";
+  if (!decisions.some((d) => d.decision === "merge" || d.decision === "deploy")) return "idle";
   const doneLines = parseJsonl(deps.readText(paths.done));
   const key = (deps.readText(paths.key) ?? "").trim();
   if (!key) {
@@ -186,13 +363,16 @@ export async function run(deps) {
     return "no-approver";
   }
   const { queue, invalid } = selectWork(decisions, doneLines, key, paths.approver);
+  const deploys = selectDeploy(decisions, doneLines, key, paths.approver);
   const nowIso = () => new Date(deps.now()).toISOString();
-  const notify = (pr, title, body) => {
-    if (!deps.post({ id: `note-merge-pr${pr}`, kind: "backlog", title, body })) deps.log("FAIL", `pr=${pr} card post failed`);
+  const note = (id, title, body) => {
+    if (!deps.post({ id, kind: "backlog", title, body })) deps.log("FAIL", `${id} card post failed`);
   };
+  const notify = (pr, title, body) => note(`note-merge-pr${pr}`, title, body);
 
   if (deps.exists(paths.stop) || deps.exists(paths.inprogress)) {
-    if (queue.length) deps.log("SKIP", `halted (stop or in-progress marker present), ${queue.length} approval(s) waiting`);
+    const waiting = queue.length + deploys.queue.length;
+    if (waiting) deps.log("SKIP", `halted (stop or in-progress marker present), ${waiting} approval(s) waiting`);
     return "stopped";
   }
   if (invalid.length) {
@@ -202,6 +382,15 @@ export async function run(deps) {
     notify(prs[0] ?? 0, "머지 거부 — 승인 기록 서명 불일치",
       `서명이 맞지 않는 머지 승인 기록 ${invalid.length}건을 처리하지 않았습니다(PR ${prs.map((n) => `#${n}`).join(", ") || "알 수 없음"}). 버튼을 누른 적이 없다면 확장 회차 점검이 필요합니다.`);
   }
+  if (deploys.invalid.length) {
+    for (const x of deploys.invalid)
+      deps.appendLine(paths.done, { kind: "deploy", status: "invalid", mark: x.mark, cardId: typeof x.d.cardId === "string" ? x.d.cardId.slice(0, 64) : null, at: nowIso() });
+    deps.log("FAIL", `ignored ${deploys.invalid.length} malformed/unsigned/mis-signed deploy line(s)`);
+    note("note-deploy-invalid", "배포 거부 — 승인 기록 서명 불일치",
+      `서명이 맞지 않는 배포 승인 기록 ${deploys.invalid.length}건을 처리하지 않았습니다. 「배포」 버튼을 누른 적이 없다면 확장 회차 점검이 필요합니다.`);
+  }
+  // A deploy click goes first and is the only decision handled this run.
+  if (deploys.queue.length) return deployOne(deps, deploys.queue[0], doneLines, nowIso, note);
   let sawTransient = false;
   for (const d of queue) {
     const r = await tryOne(deps, d, doneLines, nowIso, notify);
@@ -209,7 +398,77 @@ export async function run(deps) {
     else if (r !== "waiting") return r;
   }
   if (sawTransient) return "transient";
-  return queue.length ? "waiting" : invalid.length ? "invalid" : "idle";
+  return queue.length ? "waiting" : invalid.length || deploys.invalid.length ? "invalid" : "idle";
+}
+
+// Owner's 「배포」 click on a deploy card. Everything is re-derived from git and the ledger; the click only says
+// "this exact (from, tip, marker) triple, as shown on the latest card".
+function deployOne(deps, d, doneLines, nowIso, note) {
+  const { paths } = deps;
+  const tag = `deploy ${d.tip.slice(0, 8)}←${d.from.slice(0, 8)}`;
+  const noteId = `note-deploy-${d.tip.slice(0, 8)}`;
+  const finish = (status, reason) =>
+    deps.appendLine(paths.done, { kind: "deploy", cardId: d.cardId, from: d.from, tip: d.tip, marker: d.marker, sig: d.sig, status, reason, at: nowIso() });
+  const reject = (reason) => {
+    finish("rejected", reason);
+    deps.log("SKIP", `${tag} rejected: ${reason}`);
+    note(noteId, "배포 보류 — 배포 승인 카드", `배포하지 않았습니다: ${reason}. 운영은 바뀌지 않았습니다. 봇 PR 머지가 다시 시도될 때 지금 구간으로 새 카드가 올라옵니다(같은 구간이면 메뉴바 「배포하기」).`);
+    return "rejected";
+  };
+
+  const age = deps.now() - Date.parse(d.at);
+  if (!(age >= 0 && age <= DEPLOY_MAX_AGE_MS)) {
+    finish("expired", "승인 후 24시간 경과");
+    deps.log("SKIP", `${tag} approval expired`);
+    note(noteId, "배포 보류 — 승인 24시간 경과", "「배포」 클릭 뒤 24시간이 지나 배포하지 않았습니다. 같은 구간은 새 카드가 올라오지 않으니 메뉴바 「배포하기」를 쓰세요.");
+    return "expired";
+  }
+  const cards = doneLines.filter((x) => x.status === "deploy-card");
+  const latest = cards.at(-1);
+  if (!latest || latest.cardId !== d.cardId || latest.from !== d.from || latest.tip !== d.tip || latest.marker !== d.marker)
+    return reject("가장 최근 배포 카드가 아님 — 범위가 바뀜, 새 카드");
+  if (doneLines.some((x) => x.kind === "deploy" && x.cardId === d.cardId && (x.status === "deployed" || x.status === "deploy-failed")))
+    return reject("이미 처리된 배포 카드");
+
+  const fetched = deps.git(["fetch", "-q", "origin", `+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}`]);
+  const tipNow = deps.git(["rev-parse", `origin/${BASE_BRANCH}`]);
+  if (fetched.rc !== 0 || tipNow.rc !== 0 || !SHA_RE.test(tipNow.out.trim())) {
+    deps.log("FAIL", `${tag} git fetch failed — will retry`);
+    return "transient";
+  }
+  const deployedBefore = (deps.readText(paths.deployedSha) ?? "").trim();
+  if (deployedBefore !== d.from) return reject("운영 sha 가 카드와 다름 — 범위가 바뀜, 새 카드");
+  if (tipNow.out.trim() !== d.tip) return reject("main 이 카드 뒤에 움직임 — 범위가 바뀜, 새 카드");
+  if ((deps.readText(paths.workerMarker) ?? "").trim() !== d.marker) return reject("링크 서버 배포 기록이 바뀜 — 새 카드");
+  const hits = rangeHits(deps, d.from, d.tip);
+  if (hits === null) {
+    deps.log("FAIL", `${tag} cannot read deploy range — will retry`);
+    return "transient";
+  }
+  const menubar = menubarOnlyReason(hits);
+  if (menubar) return reject(`버튼으로 배포할 수 없는 구간(${menubar}) — 메뉴바 「배포하기」`);
+
+  // Point of no return: the in-progress marker first, so a crash anywhere below leaves the executor halted.
+  deps.touch(paths.inprogress, `deploy from=${d.from} tip=${d.tip} at=${nowIso()}\n`);
+  const deployRc = deps.deploy();
+  deps.git(["fetch", "-q", "origin"]);
+  const deployedAfter = (deps.readText(paths.deployedSha) ?? "").trim();
+  if (deployRc !== 0 || deployedAfter !== d.tip) {
+    const why = `deploy rc=${deployRc} deployed=${deployedAfter.slice(0, 12) || "none"} want=${d.tip.slice(0, 12)}`;
+    deps.touch(paths.stop, `${tag} ${why}\n`);
+    deps.remove(paths.inprogress);
+    finish("deploy-failed", why);
+    deps.log("FAIL", `${tag} ${why}; halted`);
+    note(noteId, "배포 실패 — 배포 승인 카드",
+      `운영 반영이 승인한 대상 sha 와 맞는지 확인되지 않았습니다(배포 종료코드 ${deployRc}, 운영 sha ${deployedAfter.slice(0, 8) || "없음"}, 대상 ${d.tip.slice(0, 8)}). 실행기를 멈췄습니다 — 사람 세션에서 확인 후 정지 표지를 지워야 다시 돕니다. ${ROLLBACK_NOTE}`);
+    return "deploy-failed";
+  }
+  deps.remove(paths.inprogress);
+  finish("deployed", "");
+  deps.log("OK", `${tag} deployed`);
+  note(noteId, "배포 완료 — 배포 승인 카드",
+    `운영이 ${d.tip.slice(0, 8)} 로 반영됐습니다(이전 ${d.from.slice(0, 8)}). 기다리던 봇 PR 머지는 다음 회차에 이어집니다. ${ROLLBACK_NOTE}`);
+  return "deployed";
 }
 
 async function tryOne(deps, d, doneLines, nowIso, notify) {
@@ -263,30 +522,45 @@ async function tryOne(deps, d, doneLines, nowIso, notify) {
   const prHit = zList(prFiles.out).filter(isForbiddenPath);
   if (prHit.length) return reject(`사람 세션이 필요한 경로 변경: ${prHit.slice(0, 5).join(", ")}`);
 
-  // Guarded paths between what runs in production and `tip`. A missing link-server marker counts as a hit:
-  // release-deploy.sh would then deploy ygrd-link/ unconditionally.
-  const rangeHits = (from, tip) => {
-    if (!SHA_RE.test(from)) return null;
-    const crm = deps.git(["diff", "-z", "--no-renames", "--name-only", from, tip]);
-    if (crm.rc !== 0) return null;
-    const hits = zList(crm.out).filter(isForbiddenPath);
-    const marker = (deps.readText(paths.workerMarker) ?? "").trim();
-    if (!SHA_RE.test(marker)) return [...hits, "(ygrd-link 배포 기록 없음)"];
-    const w = deps.git(["diff", "-z", "--no-renames", "--name-only", marker, tip, "--", "ygrd-link/"]);
-    if (w.rc !== 0) return null;
-    return [...hits, ...zList(w.out)];
-  };
+  // Guarded paths between what runs in production and the current main tip (resolved once to a SHA, so the
+  // deploy card names exactly the range that was checked).
+  const tipRes = deps.git(["rev-parse", `origin/${BASE_BRANCH}`]);
+  const tip = tipRes.out.trim();
   const deployedBefore = (deps.readText(paths.deployedSha) ?? "").trim();
-  const preHits = rangeHits(deployedBefore, `origin/${BASE_BRANCH}`);
+  const preHits = tipRes.rc === 0 && SHA_RE.test(tip) ? rangeHits(deps, deployedBefore, tip) : null;
   if (preHits === null) {
     deps.log("FAIL", `pr=${d.pr} cannot read deploy range — will retry`);
     return "transient";
   }
   if (preHits.length) {
-    deps.log("SKIP", `pr=${d.pr} deploy range has guarded paths; waiting for a human deploy`);
-    if (!doneLines.some((x) => x.status === "range-wait" && x.sig === d.sig)) {
-      finish("range-wait", preHits.slice(0, 5).join(", "));
-      notify(d.pr, `머지 대기 — PR #${d.pr}`, `함께 배포될 앞선 머지분에 사람 확인이 필요한 경로가 있습니다(${preHits.slice(0, 5).join(", ")}). 메뉴바 「배포하기」로 먼저 반영하시면 이어서 처리합니다.`);
+    deps.log("SKIP", `pr=${d.pr} deploy range has guarded paths; waiting for a deploy`);
+    const marker = (deps.readText(paths.workerMarker) ?? "").trim();
+    let menubar = menubarOnlyReason(preHits);
+    let card = null;
+    if (!menubar) {
+      const log = deps.git(["log", "--no-decorate", "--format=%h %s", `${deployedBefore}..${tip}`]);
+      if (log.rc !== 0) {
+        deps.log("FAIL", `pr=${d.pr} range commit list failed — will retry`);
+        return "transient";
+      }
+      const built = buildDeployCard({
+        date: localDate(deps.now()), from: deployedBefore, tip, marker, hits: preHits,
+        commits: log.out.split("\n").filter((l) => l.trim()),
+      });
+      if (built.card) card = built.card;
+      else menubar = built.reason;
+    }
+    const firstWait = !doneLines.some((x) => x.status === "range-wait" && x.sig === d.sig);
+    if (firstWait) finish("range-wait", preHits.slice(0, 5).map(escapePath).join(", "));
+    if (card) {
+      // One card per exact (from, tip, marker) triple, independent of which merge approval is waiting.
+      const posted = doneLines.some((x) => x.status === "deploy-card" && x.from === deployedBefore && x.tip === tip && x.marker === marker);
+      if (!posted) {
+        if (deps.post(card)) deps.appendLine(paths.done, { status: "deploy-card", cardId: card.id, from: deployedBefore, tip, marker, at: nowIso() });
+        else deps.log("FAIL", `deploy card ${card.id} post failed — will retry`);
+      }
+    } else if (firstWait) {
+      notify(d.pr, `머지 대기 — PR #${d.pr}`, `함께 배포될 앞선 머지분에 사람 확인이 필요한 경로가 있습니다(${preHits.slice(0, 5).map(escapePath).join(", ")}). 버튼으로 배포할 수 없는 구간입니다(${menubar}). 메뉴바 「배포하기」로 먼저 반영하시면 이어서 처리합니다.`);
     }
     return "range-guarded";
   }
@@ -329,7 +603,7 @@ async function tryOne(deps, d, doneLines, nowIso, notify) {
   const refetch = deps.git(["fetch", "-q", "origin", `+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}`]);
   const onMain = refetch.rc === 0 && deps.git(["merge-base", "--is-ancestor", mergeOid, `origin/${BASE_BRANCH}`]).rc === 0;
   if (!onMain) return halt("merge commit not on origin/main", `배포 보류 — PR #${d.pr} 은 머지됨`, "머지 커밋이 main 에 있는지 확인하지 못했습니다.");
-  const postHits = rangeHits(deployedBefore, `origin/${BASE_BRANCH}`);
+  const postHits = rangeHits(deps, deployedBefore, `origin/${BASE_BRANCH}`);
   if (postHits === null || postHits.length)
     return halt(`guarded paths in range after merge (${(postHits ?? ["unreadable"]).slice(0, 3).join(", ")})`,
       `배포 보류 — PR #${d.pr} 은 머지됨`, "머지 사이에 사람 확인이 필요한 경로가 함께 배포될 구간에 들어왔습니다.");
@@ -342,7 +616,7 @@ async function tryOne(deps, d, doneLines, nowIso, notify) {
     return halt(`deploy rc=${deployRc} contains=${contains}`, `배포 실패 — PR #${d.pr} 은 머지됨`,
       `머지는 됐지만 운영 반영이 확인되지 않았습니다(배포 종료코드 ${deployRc}).`);
   // main may have moved between our check and the deploy's own fetch: re-check what actually shipped.
-  const shipped = rangeHits(deployedBefore, deployedAfter);
+  const shipped = rangeHits(deps, deployedBefore, deployedAfter);
   if (shipped === null || shipped.length)
     return halt(`shipped range has guarded paths (${(shipped ?? ["unreadable"]).slice(0, 3).join(", ")})`,
       `배포 확인 필요 — PR #${d.pr}`, "배포는 끝났지만, 확인 뒤 main 에 들어온 변경 중 사람 확인이 필요한 경로가 함께 나갔습니다.");
@@ -416,10 +690,8 @@ function realDeps() {
       if (!channel) return false;
       const dir = mkdtempSync(join(tmpdir(), "exp-merge-card-"));
       try {
-        const n = new Date();
-        const date = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
         const file = join(dir, "cards.json");
-        writeFileSync(file, JSON.stringify({ date, cards: [{ ...card, id: `${date.replaceAll("-", "")}-${card.id}` }] }));
+        writeFileSync(file, JSON.stringify(cardsPayload(card, Date.now())));
         const r = sh(join(hermes, ".venv/bin/python"), [join(hermes, "plugins/wag-operator/expansion_cards.py"), "post", file],
           { timeout: 120 * 1000, env: { ...baseEnv, WAG_EXPANSION_CHANNEL_ID: channel } });
         return r.rc === 0;
