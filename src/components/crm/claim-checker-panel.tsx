@@ -1,6 +1,5 @@
 "use client";
 
-import { countSkippedCategoryRules } from "@/lib/claims/suggest-claim-category";
 import { useEffect, useMemo, useState } from "react";
 import {
   ShieldCheckIcon,
@@ -23,6 +22,7 @@ import {
   type DealClaimInput,
 } from "@/lib/claims/claim-gate";
 import { cn } from "@/lib/utils";
+import { countSkippedCategoryRules } from "@/lib/claims/suggest-claim-category";
 
 /**
  * 표현 검사 패널 (C1 M2).

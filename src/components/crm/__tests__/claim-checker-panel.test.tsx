@@ -90,6 +90,20 @@ describe("ClaimCheckerPanel", () => {
     expect(screen.getByText("화장품법 §13")).toBeInTheDocument();
   });
 
+  it("카테고리 미지정이면 건너뛴 카테고리 규칙 수를 밝히고, 고르면 지운다", async () => {
+    const user = userEvent.setup();
+    render(<ClaimCheckerPanel rules={RULES} />);
+
+    await user.type(screen.getByLabelText("검사할 문구"), "이번 주 금요일에 오픈합니다");
+    expect(
+      screen.getByText(/카테고리 규칙 1개는\s*보지 않았습니다/),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("상품 카테고리"));
+    await user.click(screen.getByRole("option", { name: "화장품" }));
+    expect(screen.queryByText(/보지 않았습니다/)).not.toBeInTheDocument();
+  });
+
   it("겹치는 매치는 버려지지 않고 병합돼 본문에서 찾을 수 있다", async () => {
     const user = userEvent.setup();
     // "아토피"(WARN)와 "아토피 치료"(BLOCK)가 같은 구간에서 겹쳐 걸린다.

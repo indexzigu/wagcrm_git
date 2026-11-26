@@ -38,6 +38,15 @@ describe("suggestClaimCategory", () => {
     });
   });
 
+  it("낱말이 다른 말에 박힌 경우는 제안하지 않고, 합성어는 살린다", () => {
+    expect(suggestClaimCategory("아이스크림 케이크")?.category).not.toBe("COSMETIC");
+    expect(suggestClaimCategory("생크림 크림치즈 크림빵")).toBeNull();
+    expect(suggestClaimCategory("토너먼트")).toBeNull();
+    expect(suggestClaimCategory("리소스 팩")).toBeNull();
+    expect(suggestClaimCategory("수분크림")?.category).toBe("COSMETIC");
+    expect(suggestClaimCategory("핸드크림 토너")?.category).toBe("COSMETIC");
+  });
+
   it("두 카테고리 낱말이 함께 걸리면 제안하지 않는다", () => {
     expect(suggestClaimCategory("유산균 크림 세트")).toBeNull();
   });

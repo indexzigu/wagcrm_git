@@ -13,6 +13,14 @@ const KEYWORDS: Record<SuggestableCategory, readonly string[]> = {
   FOOD: ["간식", "소스", "음료", "과자", "김치", "라면", "밀키트"],
 };
 
+/**
+ * 낱말 일부가 다른 말에 박힌 흔한 경우 — 매칭 전에 걷어 낸다. 한글 lookbehind 는
+ * 수분크림·핸드크림까지 죽이므로 쓰지 않는다.
+ */
+const EXCLUDED_PHRASES = [
+  "아이스크림", "생크림", "크림치즈", "크림빵", "슈크림", "토너먼트", "리소스",
+] as const;
+
 export interface ClaimCategorySuggestion {
   category: SuggestableCategory;
   /** 근거가 된 낱말 — 화면이 그대로 보여 준다. */
@@ -37,7 +45,8 @@ export function countSkippedCategoryRules(
 export function suggestClaimCategory(
   ...texts: (string | null | undefined)[]
 ): ClaimCategorySuggestion | null {
-  const haystack = texts.filter(Boolean).join(" ").toLowerCase();
+  let haystack = texts.filter(Boolean).join(" ").toLowerCase();
+  for (const phrase of EXCLUDED_PHRASES) haystack = haystack.replaceAll(phrase, " ");
   if (!haystack) return null;
   const hits: ClaimCategorySuggestion[] = [];
   for (const category of Object.keys(KEYWORDS) as SuggestableCategory[]) {

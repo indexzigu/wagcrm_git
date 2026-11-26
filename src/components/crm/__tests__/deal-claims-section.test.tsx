@@ -83,10 +83,39 @@ describe("DealClaimsSection", () => {
 
     expect(await screen.findByText(/건강기능식품으로 보입니다/)).toBeInTheDocument();
     expect(patch).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "적용" }));
+    await user.click(screen.getByRole("button", { name: "건강기능식품으로 카테고리 적용" }));
     await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
     const init = (patch.mock.calls as unknown as [RequestInfo, RequestInit][])[0][1];
     expect(JSON.parse(String(init.body))).toEqual({ category: "SUPPLEMENT" });
+  });
+
+  it("카테고리가 이미 있으면 제안하지 않는다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({
+        "GET /api/deals/d1/claims": () => json({ category: "SUPPLEMENT", claims: [] }),
+      }),
+    );
+    render(<DealClaimsSection dealId="d1" dealName="프리미엄 유산균 30포" />);
+    await screen.findByText(/등록된 표현이 없습니다/);
+    expect(screen.queryByText(/으로 보입니다/)).not.toBeInTheDocument();
+  });
+
+  it("불러오는 중에는 제안하지 않는다", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    render(<DealClaimsSection dealId="d1" dealName="프리미엄 유산균 30포" />);
+    expect(screen.queryByText(/으로 보입니다/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /카테고리 적용/ })).not.toBeInTheDocument();
+  });
+
+  it("불러오기에 실패하면 제안하지 않는다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({ "GET /api/deals/d1/claims": () => json({ error: "x" }, 500) }),
+    );
+    render(<DealClaimsSection dealId="d1" dealName="프리미엄 유산균 30포" />);
+    await screen.findByText(/클레임을 불러오지 못했습니다/);
+    expect(screen.queryByText(/으로 보입니다/)).not.toBeInTheDocument();
   });
 
   it("클레임을 상태·종류·근거유형과 함께 보여준다", async () => {
