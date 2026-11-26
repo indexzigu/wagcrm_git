@@ -143,4 +143,5 @@
 # 정지: `$HOME/selfhost/expansion-merge.STOP` 이 있으면 돌지 않는다(배포 실패 시 실행기가 스스로 만든다 — 사람이 지운다).
 # 앱 크론이 아니다 — run-cron.sh 를 거치지 않고 KNOWN_JOBS 에도 없다. expansion.env 를 source 하지 않는다(회차 토큰을 배포로
 # 넘기지 않게) — 실행기가 그 파일에서 카드 채널 값 하나만 읽는다.
-*/10 * * * * /Users/z9/selfhost/wagcrm/infra/selfhost/expansion-merge.sh >> /Users/z9/selfhost/logs/cron-launchd.log 2>&1
+# ⛔ crontab 에서 돌리지 않는다 — launchd 사용자 에이전트 `infra/selfhost/launchd/kr.ygrd.wagcrm.expansion-merge.plist` 로 옮겼다.
+# cron 은 로그인 세션 밖이라 gh 토큰이 든 키체인을 못 읽어 매 회차 'gh token ... unavailable' 로 멈췄다(실사고 2026-11-26).

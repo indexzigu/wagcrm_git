@@ -68,7 +68,7 @@
 
 - **확장 봇 PR 오너 버튼 머지:** `exp/` PR(⑥으로 위 예외에서 빠짐)은 오너가 슬랙 「머지 요청」 카드의
   「머지·배포」 버튼을 누르면 `infra/selfhost/expansion-merge.mjs`(LLM 없는 실행기, 오너 gh 신원, 배포 사본
-  `~/selfhost/wagcrm` 의 crontab 10분)가 머지·반영한다 — 오너 머지이며 회차의 자기 반영이 아니다. 오너 클릭이 ② 의
+  `~/selfhost/wagcrm` 의 launchd 사용자 에이전트 10분 — cron 은 키체인을 못 읽는다)가 머지·반영한다 — 오너 머지이며 회차의 자기 반영이 아니다. 오너 클릭이 ② 의
   리뷰어 판정을 대신한다. 실행기는 Claude Code 훅(deploy-guard·pr-review-gate)을 거치지 않으므로 다음을 스스로 확인한다:
   승인 기록의 서명(hermes 슬랙 핸들러만 서명)·승인자·72시간 이내 · 작성자 `app/wag-expansion-bot`·대상 `main`·head `exp/`·
   head SHA 가 승인한 SHA 와 같음(머지도 그 SHA 조건부) · 필수 체크 guard·preflight·test 성공·충돌 없음 · ③ 의 경로(대소문자

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 - Why launchd, not crontab (incident 2026-11-26): the executor reads the owner's gh token with
+	   `gh auth token --user indexzigu`, and gh keeps it in the macOS login keychain. cron jobs run
+	   outside the user's GUI security session and cannot read that keychain — probed from cron:
+	   "no oauth token found for github.com account indexzigu" (rc=1), while the same command works
+	   in a login shell. A LaunchAgent in gui/<uid> runs inside the login session, so the token
+	   stays in the keychain (no plaintext token file). Trade-off: it only runs while the owner is
+	   logged in — same condition as the app agent.
+	 - StartInterval 600 = every 10 minutes (was `*/10` in crontab). No KeepAlive: this is a
+	   periodic job, and KeepAlive would respawn-loop on a nonzero exit (see backup.plist).
+	 - Absolute paths: launchd does not expand $HOME/~.
+	 - Safety design is unchanged: fail-closed token lookup, signed approvals, STOP marker
+	   (~/selfhost/expansion-merge.STOP) are all enforced by expansion-merge.mjs itself.
+	 - Install / reload:
+	     cp infra/selfhost/launchd/kr.ygrd.wagcrm.expansion-merge.plist ~/Library/LaunchAgents/
+	     launchctl bootout gui/$(id -u)/kr.ygrd.wagcrm.expansion-merge 2>/dev/null
+	     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/kr.ygrd.wagcrm.expansion-merge.plist
+	-->
+	<key>Label</key>
+	<string>kr.ygrd.wagcrm.expansion-merge</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/z9/selfhost/wagcrm/infra/selfhost/expansion-merge.sh</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/z9/selfhost/wagcrm</string>
+
+	<key>StartInterval</key>
+	<integer>600</integer>
+
+	<key>StandardOutPath</key>
+	<string>/Users/z9/selfhost/logs/cron-launchd.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/Users/z9/selfhost/logs/cron-launchd.log</string>
+</dict>
+</plist>
