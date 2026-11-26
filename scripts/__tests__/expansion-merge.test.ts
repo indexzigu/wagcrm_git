@@ -692,6 +692,15 @@ describe("expansion-merge deploy decision", () => {
     expect(h.files.done).not.toContain("배포 직전 main 이 움직임");
   });
 
+  it("75 with production unchanged but origin/main unreadable afterwards → STOP + deploy-failed", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: DEPLOYED, deployRc: 75, tipAfterDeploy: "6".repeat(40) });
+    const git = h.deps.git;
+    h.deps.git = (args: string[]) => (args[0] === "rev-parse" && h.deployed > 0 ? { rc: 1, out: "" } : git(args));
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.stop).toBe(true);
+    expect(h.files.done).not.toContain("배포 직전 main 이 움직임");
+  });
+
   it("75 but production changed anyway → STOP + deploy-failed", async () => {
     const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: "9".repeat(40), deployRc: 75 });
     expect(await M.run(h.deps)).toBe("deploy-failed");
