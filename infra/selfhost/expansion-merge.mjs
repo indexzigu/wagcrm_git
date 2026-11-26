@@ -501,14 +501,14 @@ function deployOne(deps, d, doneLines, nowIso, note) {
   const deployRc = deps.deploy({ expectSha: d.tip });
   deps.git(["fetch", "-q", "origin"]);
   const deployedAfter = (deps.readText(paths.deployedSha) ?? "").trim();
-  if (deployRc === DEPLOY_PIN_MISMATCH && deployedAfter === d.from) {
+  const tipAfter = deps.git(["rev-parse", `origin/${BASE_BRANCH}`]);
+  const tipNow2 = tipAfter.rc === 0 ? tipAfter.out.trim() : "";
+  // Benign only when the pin really tripped: 75, production unchanged, AND main verifiably moved off the tip.
+  // A stray 75 from anything else (main unmoved or unreadable) falls through to deploy-failed + STOP.
+  if (deployRc === DEPLOY_PIN_MISMATCH && deployedAfter === d.from && SHA_RE.test(tipNow2) && tipNow2 !== d.tip) {
     // main moved between our check and the deploy's own fetch; nothing shipped. Not a failure: close the click.
     deps.remove(paths.inprogress);
-    const tipAfter = deps.git(["rev-parse", `origin/${BASE_BRANCH}`]);
-    const tipNow2 = tipAfter.rc === 0 ? tipAfter.out.trim() : "";
-    const next = SHA_RE.test(tipNow2)
-      ? nextFor(d.from, tipNow2, (deps.readText(paths.workerMarker) ?? "").trim())
-      : "봇 PR 머지가 다시 시도될 때 지금 구간을 다시 확인합니다.";
+    const next = nextFor(d.from, tipNow2, (deps.readText(paths.workerMarker) ?? "").trim());
     return reject("배포 직전 main 이 움직임 — 범위가 바뀌어 배포하지 않음", next);
   }
   if (deployRc !== 0 || deployedAfter !== d.tip) {

@@ -685,6 +685,13 @@ describe("expansion-merge deploy decision", () => {
     expect(h.posts.filter((c) => c.kind === "deploy").map((c) => c.tip)).toEqual([moved]);
   });
 
+  it("75 with production unchanged but main NOT moved (stray 75) → STOP + deploy-failed", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: DEPLOYED, deployRc: 75 });
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.stop).toBe(true);
+    expect(h.files.done).not.toContain("배포 직전 main 이 움직임");
+  });
+
   it("75 but production changed anyway → STOP + deploy-failed", async () => {
     const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: "9".repeat(40), deployRc: 75 });
     expect(await M.run(h.deps)).toBe("deploy-failed");
