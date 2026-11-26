@@ -80,7 +80,7 @@ describe("deploy.sh 고정 배포(DEPLOY_EXPECT_SHA)", () => {
     const script = [
       "set -euo pipefail",
       'TRACK_BRANCH=main; MARKER_FILE=/nonexistent',
-      'git() { echo "git $*" >> /dev/stderr; if [ "$1" = rev-parse ]; then echo "' + LATEST + '"; fi; }',
+      'git() { echo "git $*" >&2; if [ "$1" = rev-parse ]; then echo "' + LATEST + '"; fi; }',
       src.slice(start, end),
       'echo "PASSED $LATEST"',
     ].join("\n");
