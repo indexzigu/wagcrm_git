@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 import { useReducedMotion } from "motion/react";
 
-import { Card, CardContent } from "@/components/ui/card";
 import {
   ChartContainer,
   ChartTooltip,
@@ -28,15 +27,31 @@ import { useWaitingAutomationIncidents } from "@/hooks/useAutomationIncidents";
 import type { DesktopDashboardData } from "@/lib/desktop-dashboard";
 import { DASHBOARD_PAGE_SCOPE_CAPTION } from "@/lib/dashboard-scope";
 import { formatCurrency, formatNumber } from "@/lib/format";
-import { resolveGoalBand, goalBarWidth, type GoalBand } from "@/lib/goal-band";
+import {
+  resolveGoalBand,
+  goalBarWidth,
+  GOAL_BAND_TEXT_ON_NAVY,
+  GOAL_BAND_FILL_ON_NAVY,
+  GOAL_BAND_TEXT_UNSET_ON_NAVY,
+} from "@/lib/goal-band";
 
 /**
- * WAG CRM 대시보드 v5 (확정안 3-Zone 구조)
+ * WAG CRM 대시보드 — 4줄 구조(2026-11-26 「대시보드 느낌」 되살림)
  *
- * Zone 1: data-band="kpi-strip" (단일 연속 원장 바 — 이번 달 거래액 · 연간 매출 누적 · 예상 매출총이익 · 진행 캠페인)
- * Zone 2: data-band="ops-core" (운영 코어 — 오늘 처리할 일 Style B · 일정 커버리지 Heatmap + 14일 일정)
- * Zone 3: data-band="analytics" (분석 및 점검 — 거래액 추이 ComposedChart · 보조 지표 및 점검 4탭)
+ * 1줄 data-band="kpi-strip": 진한 청록 목표 판(이번 달 거래액 · 연간 매출 누적 · 지난 두 달) + 흰 지표 2칸
+ *   (예상 매출총이익 · 월 환산 캠페인 수). 목표 판만 shadow-soft-lg — 화면의 단일 초점.
+ * 2줄 data-band="ops-core": 거래액 추이 차트(왼쪽) · 일정 커버리지 → 오늘 처리할 일(오른쪽)
+ * 3줄 data-band="schedule-checks": 다가올 14일 일정 · 점검(데이터 점검 / 최저가 2탭)
+ * 4줄 data-band="aux-metrics": 과세기준매출 · 최근 90일 영업 전환(탭 없이 항상 노출)
+ *
+ * 표면은 전부 `ui/Card` 가 아니라 평범한 요소다 — Card 는 shadow-soft-md + hover 그림자를 주입하고 `cn` 은
+ * 그 그림자를 지우지 못해(shadow-none 이 먹지 않았다) 흰 패널이 목표 판과 같은 높이로 떴다. 흰 패널 = PANEL.
  */
+
+/** 흰 패널 표면 — sm 그림자 + 헤어라인(P8 Elevation Ladder: 화면에 여러 개 = sm). */
+const PANEL = "rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden text-sm text-card-foreground";
+/** 2~4줄 공통 좌우 비율 — 줄마다 세로 이음매가 같은 x 에 선다. */
+const SEAM = "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]";
 
 const chartConfig = {
   revenue: { label: "총거래액", color: "var(--chart-1)" },
@@ -306,11 +321,53 @@ interface AgendaData {
   settlements: AgendaItem[];
 }
 
-const GOAL_BAND_TEXT_ON_WHITE: Record<GoalBand, string> = {
-  achieved: "text-primary",
-  normal: "text-foreground",
-  missed: "text-status-urgent-text",
-};
+function ShortageGridRow({
+  monthKey,
+  actual,
+  target,
+  show,
+}: {
+  monthKey: string;
+  actual: number;
+  target: number | null;
+  show: boolean;
+}) {
+  if (!show) return null;
+
+  const rateVal = rate(actual, target);
+  const change = target ? actual - target : 0;
+  const hasTarget = target != null && target > 0;
+
+  const isUp = change > 0;
+  // 색은 달성 밴드 한 곳에서만 나온다(goal-band SSOT). 이전엔 증감(isUp)과 달성률이
+  // 서로 다른 규칙을 써서 초과=골드·미달=흐림으로 뒤집혀 있었다 — 조치가 필요한 쪽이
+  // 방치해도 되는 쪽보다 흐렸다. 방향은 부호(▲▼)가, 심각도는 밴드 색이 맡는다.
+  const band = resolveGoalBand(rateVal);
+  const bandClass = band ? GOAL_BAND_TEXT_ON_NAVY[band] : GOAL_BAND_TEXT_UNSET_ON_NAVY;
+  const sign = isUp ? "▲" : "▼";
+  const absChange = Math.abs(change);
+
+  return (
+    <div className="inline-grid grid-cols-[24px_72px_10px_65px_auto] items-baseline gap-x-1.5">
+      <span className="text-[11px] text-white/60 shrink-0">{monthLabel(monthKey)}</span>
+      <p className="text-xs font-medium text-white/60 text-left">{formatCurrency(actual)}</p>
+      {hasTarget ? (
+        <>
+          <span className={`text-[10px] font-semibold text-center ${bandClass}`}>{sign}</span>
+          <span className={`text-[10px] font-semibold text-right ${bandClass}`}>{formatCurrency(absChange)}</span>
+        </>
+      ) : (
+        <>
+          <span />
+          <span />
+        </>
+      )}
+      <div className="text-right">
+        <p className={`text-xs font-medium ${bandClass}`}>{displayRate(rateVal)}</p>
+      </div>
+    </div>
+  );
+}
 
 export function DashboardHome({ initialData }: { initialData: DesktopDashboardData }) {
   const [agendaData, setAgendaData] = useState<AgendaData>({ tasks: [], settlements: [] });
@@ -318,11 +375,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   const [agendaError, setAgendaError] = useState<string | null>(null);
 
   const [chartTab, setChartTab] = useState<"recent6" | "annual">("recent6");
-  const [auxTab, setAuxTab] = useState<"funnel" | "tax" | "integrity" | "price">(() => {
-    if (initialData.dataIntegrityIssues.length > 0) return "integrity";
-    if (initialData.outreach90d.total > 0) return "funnel";
-    return "tax";
-  });
+  // 영업 전환·과세기준은 탭에서 나와 맨 아래 줄에 항상 보인다 — 점검 카드의 탭은 데이터 점검 / 최저가 둘뿐.
+  const [auxTab, setAuxTab] = useState<"integrity" | "price">("integrity");
 
   const priceOverview = usePriceOverview();
   const reducedMotion = useReducedMotion();
@@ -410,23 +464,33 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
   const monthBand = resolveGoalBand(monthRate);
   const annualBand = resolveGoalBand(annualRate);
 
-  const monthBandTextClass = monthBand ? GOAL_BAND_TEXT_ON_WHITE[monthBand] : "text-muted-foreground";
-  const annualBandTextClass = annualBand ? GOAL_BAND_TEXT_ON_WHITE[annualBand] : "text-muted-foreground";
-
-  const monthFillClass =
-    monthBand === "missed"
-      ? "bg-[var(--status-urgent)]"
-      : monthBand
-      ? "bg-primary"
-      : "";
-  const annualFillClass =
-    annualBand === "missed"
-      ? "bg-[var(--status-urgent)]"
-      : annualBand
-      ? "bg-primary"
-      : "";
+  // 목표 판은 진한 청록 표면이다 — 흰 카드용 색(--status-urgent·primary)은 거기서 대비가 안 나온다(P8 §5).
+  const monthBandTextClass = monthBand ? GOAL_BAND_TEXT_ON_NAVY[monthBand] : GOAL_BAND_TEXT_UNSET_ON_NAVY;
+  const annualBandTextClass = annualBand ? GOAL_BAND_TEXT_ON_NAVY[annualBand] : GOAL_BAND_TEXT_UNSET_ON_NAVY;
+  // 미설정이면 fill 클래스를 아예 주지 않는다(모바일 히어로와 같은 처리). "미설정인데 normal
+  // 색을 칠하고 너비 0으로 가린다"로 두면, 이 클래스가 폭과 분리된 곳에 재사용될 때 되살아난다.
+  const monthFillClass = monthBand ? GOAL_BAND_FILL_ON_NAVY[monthBand] : "";
+  const annualFillClass = annualBand ? GOAL_BAND_FILL_ON_NAVY[annualBand] : "";
 
   const currentMonthKey = initialData.selectedMonth;
+  const year = currentMonthKey.slice(0, 4);
+
+  // 목표 판 아래 줄: 지난 두 달. 연간 누적 맥락이라 같은 해의 달만 보인다(1월이면 줄이 없다).
+  const prevDate = new Date(`${currentMonthKey}-01T00:00:00Z`);
+  prevDate.setUTCMonth(prevDate.getUTCMonth() - 1);
+  const prevMonthKey = prevDate.toISOString().slice(0, 7);
+
+  const prevPrevDate = new Date(`${currentMonthKey}-01T00:00:00Z`);
+  prevPrevDate.setUTCMonth(prevPrevDate.getUTCMonth() - 2);
+  const prevPrevMonthKey = prevPrevDate.toISOString().slice(0, 7);
+
+  const showPrevYtd = prevMonthKey.startsWith(year);
+  const showPrevPrevYtd = prevPrevMonthKey.startsWith(year);
+
+  const priceTabAvailable =
+    priceOverview.loading || priceOverview.error || (priceOverview.data != null && priceOverview.data.monitoredCount > 0);
+  // 최저가 탭을 골랐는데 그 탭이 사라졌으면(감시 상품 0) 데이터 점검을 보인다 — 빈 탭 본문을 남기지 않는다.
+  const shownAuxTab = auxTab === "price" && !priceTabAvailable ? "integrity" : auxTab;
   const currentYtd = initialData.goals.ytdActual;
 
   const chartYValues = [
@@ -490,269 +554,244 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
           <p className="mb-3 text-[11px] text-muted-foreground">{DASHBOARD_PAGE_SCOPE_CAPTION}</p>
 
           {/* =========================================================================
-             ZONE 1: Unified Continuous Ledger Bar (data-band="kpi-strip")
+             ROW 1: 목표 판(진한 청록) + 흰 지표 2칸 (data-band="kpi-strip")
+             숫자 4개 한 줄 훑기를 유지하되, 왼쪽 두 칸(거래액·연간 누적)만 진한 청록 한 덩어리로
+             묶어 화면의 단일 초점(shadow-soft-lg, 페이지당 1개)으로 띄운다. xl 미만에서는 판과
+             지표가 위아래로 쌓인다(1024~1279 도 정식 배치).
              ========================================================================= */}
           <section
             data-band="kpi-strip"
             aria-label="핵심 실적 요약"
-            className="rounded-lg border border-border bg-card grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1.25fr_1.25fr_1fr_0.9fr] divide-y lg:divide-y-0 lg:divide-x divide-slate-100"
+            className="grid gap-4 items-stretch xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
           >
-            {/* 1칸: 이번 달 거래액 */}
-            <div data-slot="card" className="p-4 flex flex-col justify-between gap-2.5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                  이번 달 거래액
-                </h2>
-              </div>
-              <div className="flex items-baseline justify-between gap-2">
-                <div className="flex items-baseline gap-1">
-                  <span className="text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-foreground">
-                    <AnimatedNumber value={initialData.goals.monthActual} format="currency" />
-                  </span>
-                </div>
-                <span className={cn("text-xs font-semibold tabular-nums", monthBandTextClass)}>
-                  {displayRate(monthRate)}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1.5 mt-auto">
-                <div className="relative h-1.5 rounded-full bg-slate-100" title={`오늘 경과 ${monthElapsedPct}%`}>
-                  <div
-                    className={cn("h-full rounded-full animate-grow-x", monthFillClass)}
-                    style={{ width: `${goalBarWidth(monthRate)}%` }}
-                  />
-                  <div
-                    className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-slate-900/60 rounded-full cursor-default"
-                    style={{ left: `${monthElapsedPct}%` }}
-                    title={`오늘 경과 ${monthElapsedPct}%`}
-                  />
-                </div>
-                <div className="flex items-baseline justify-between text-xs text-muted-foreground">
-                  <span className="tabular-nums">
-                    목표 {initialData.goals.monthTarget == null ? "미설정" : formatCurrency(initialData.goals.monthTarget)}
-                    <Link
-                      href="/settings/operations?section=goals"
-                      className="ml-1 text-muted-foreground hover:text-primary underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      설정
-                    </Link>
-                  </span>
-                  <span className="text-[11px] leading-none">
-                    {monthlyActionHint(monthRate, initialData.goals.monthTarget != null)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 2칸: 연간 매출 누적 */}
-            <div data-slot="card" className="p-4 flex flex-col justify-between gap-2.5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                  연간 매출 누적
-                </h2>
-              </div>
-              <div className="flex items-baseline justify-between gap-2">
-                <div className="flex items-baseline gap-1">
-                  <span className="text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-foreground">
-                    <AnimatedNumber value={currentYtd} format="currency" />
-                  </span>
-                </div>
-                <span className={cn("text-xs font-semibold tabular-nums", annualBandTextClass)}>
-                  {annualRate == null ? (
-                    "미설정"
-                  ) : (
-                    <AnimatedNumber value={annualRate} format="percent" decimalPlaces={1} fallback="미설정" />
-                  )}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1.5 mt-auto">
-                <div className="relative h-1.5 rounded-full bg-slate-100" title={`연간 목표 대비 ${displayRate(annualRate)}`}>
-                  <div
-                    className={cn("h-full rounded-full animate-grow-x", annualFillClass)}
-                    style={{ width: `${goalBarWidth(annualRate)}%` }}
-                  />
-                  {initialData.ytdHistory && initialData.goals.annualTarget && initialData.ytdHistory.slice(0, -1).map((h) => {
-                    const p = (h.ytd / initialData.goals.annualTarget!) * 100;
-                    if (p <= 0 || p >= 100) return null;
-                    return (
-                      <div 
-                        key={h.month} 
-                        className="absolute top-0 bottom-0 w-0.5 bg-slate-200 cursor-default" 
-                        style={{ left: `${p}%` }} 
-                        title={`${monthLabel(h.month)} 누적: ${formatCurrency(h.ytd)}`} 
-                      />
-                    );
-                  })}
-                  <div
-                    className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-slate-900/60 rounded-full cursor-default"
-                    style={{ left: `${yearElapsedPct}%` }}
-                    title={`연중 경과 ${yearElapsedPct}%`}
-                  />
-                </div>
-                <div className="flex items-baseline justify-between text-xs text-muted-foreground">
-                  <span className="tabular-nums">
-                    1월~{parseInt(currentMonthKey.slice(5, 7), 10)}월 누적 (목표 {initialData.goals.annualTarget == null ? "미설정" : formatCurrency(initialData.goals.annualTarget)})
-                  </span>
-                  <span className="tabular-nums font-medium text-foreground">
-                    {remainingAnnual !== null ? `잔여 ${formatCurrency(remainingAnnual)}` : ""}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 3칸: 예상 매출총이익 */}
-            <div data-slot="card" className="p-4 flex flex-col justify-between gap-2.5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                  예상 매출총이익
-                </h2>
-              </div>
-              <div data-slot="metric-current-row" className="flex items-baseline justify-between gap-2">
-                <div className="flex items-baseline gap-1">
-                  <span className="text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-foreground">
-                    <AnimatedNumber value={initialData.profitability.expectedMargin} format="currency" />
-                  </span>
-                </div>
-                <div className="flex min-w-0 flex-1 flex-row-reverse flex-wrap items-baseline justify-start gap-x-1.5">
-                  <StockTrendIndicator
-                    current={initialData.profitability.expectedMargin}
-                    previous={initialData.profitability.prevExpectedMargin}
-                    isCurrency={true}
-                  />
-                </div>
-              </div>
-              <div className="flex items-end justify-between gap-2 mt-auto">
-                <div className="text-[11px] tabular-nums text-muted-foreground leading-tight">
-                  {lossMonths.length > 0 ? (
-                    <span className="font-semibold text-status-urgent-text">
-                      {lossMonths.map(monthLabel).join("·")} 적자
+            <div
+              data-slot="goal-hero"
+              className="flex flex-col rounded-2xl bg-hero-deep text-white shadow-soft-lg overflow-hidden"
+            >
+              <div className="grid flex-1 grid-cols-1 sm:grid-cols-2">
+                {/* 이번 달 거래액 */}
+                <div data-slot="card" data-goal="month" className="flex flex-col gap-2.5 px-5 pt-4 pb-3.5">
+                  <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-white/90">이번 달 거래액</h2>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <span className="text-[28px] font-bold leading-none tracking-[-0.025em] tabular-nums">
+                      <AnimatedNumber value={initialData.goals.monthActual} format="currency" />
                     </span>
-                  ) : (
-                    <>
-                      <span>진행 중 판단용 추정치</span>
-                      <br />
-                      <span>전월 {formatCurrency(initialData.profitability.prevExpectedMargin)}</span>
-                    </>
-                  )}
-                </div>
-                <div className="w-[120px] shrink-0">
-                  <Sparkline
-                    points={initialData.trend.map((t) => t.expectedMargin)}
-                    months={initialData.trend.map((t) => t.month)}
-                    type="line"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 4칸: 월 환산 캠페인 수 */}
-            <div data-slot="card" className="p-4 flex flex-col justify-between gap-2.5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                  월 환산 캠페인 수
-                </h2>
-              </div>
-              <div data-slot="metric-current-row" className="flex items-baseline justify-between gap-2">
-                <div className="flex items-baseline gap-1">
-                  <span className="text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-foreground">
-                    <AnimatedNumber
-                      value={initialData.scale.weightedCampaignCount}
-                      format="raw"
-                      suffix="건"
-                      decimalPlaces={1}
-                    />
-                  </span>
-                </div>
-                <div className="flex min-w-0 flex-1 flex-row-reverse flex-wrap items-baseline justify-start gap-x-1.5">
-                  <StockTrendIndicator
-                    current={initialData.scale.weightedCampaignCount}
-                    previous={initialData.scale.prevWeightedCampaignCount}
-                    suffix="건"
-                  />
-                </div>
-              </div>
-              <div className="flex items-end justify-between gap-2 mt-auto">
-                <div className="text-[11px] tabular-nums text-muted-foreground leading-tight">
-                  <span>전월 {initialData.scale.prevWeightedCampaignCount.toFixed(1)}건</span>
-                  <br />
-                  <span className="text-[10px] text-muted-foreground">조합 1건 집계</span>
-                </div>
-                <div className="w-[120px] shrink-0">
-                  <Sparkline
-                    points={initialData.trend.map((t) => t.campaignCount)}
-                    months={initialData.trend.map((t) => t.month)}
-                    type="bars"
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* =========================================================================
-             ZONE 2: Operational Core (data-band="ops-core")
-             ========================================================================= */}
-          <section data-band="ops-core" className="grid gap-4 lg:grid-cols-[1.28fr_1fr] items-stretch">
-            {/* 좌측: 오늘 처리할 일 */}
-            <div className="flex min-w-0 flex-col">
-              <TodayWorkCard
-                rows={todayRows}
-                loading={orderWork.isLoading || agendaLoading || approvals.isLoading || automationWaiting.isLoading}
-                failedSources={todayFailedSources}
-                onRetry={retryTodayWork}
-                orderSync={orderSync}
-              />
-            </div>
-
-            {/* 우측: 단일 패널 (일정 커버리지 + 다가올 14일 일정 + 캘린더 연동 푸터) */}
-            <div className="rounded-lg border border-border bg-card flex flex-col">
-              {initialData.scheduleGapBriefing ? (
-                <div className="p-4 border-b border-slate-100">
-                  <div className="flex items-center justify-between pb-2.5">
-                    <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                      일정 커버리지
-                    </h2>
+                    <span
+                      data-slot="goal-rate"
+                      className={cn("text-2xl font-bold leading-none tabular-nums", monthBandTextClass)}
+                    >
+                      {monthRate == null ? (
+                        "미설정"
+                      ) : (
+                        <AnimatedNumber value={monthRate} format="percent" decimalPlaces={1} fallback="미설정" />
+                      )}
+                    </span>
                   </div>
-                  <ScheduleCoverageHeatmap data={initialData.scheduleGapBriefing} />
+                  <div className="relative h-1.5 rounded-full bg-white/10" title={`오늘 경과 ${monthElapsedPct}%`}>
+                    <div
+                      data-slot="goal-fill"
+                      className={cn("h-full rounded-full animate-grow-x", monthFillClass)}
+                      style={{ width: `${goalBarWidth(monthRate)}%` }}
+                    />
+                    <div
+                      className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-white rounded-full cursor-default"
+                      style={{ left: `${monthElapsedPct}%` }}
+                      title={`오늘 경과 ${monthElapsedPct}%`}
+                    />
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2 text-[11px] text-white/60">
+                    <span className="tabular-nums">
+                      목표 {initialData.goals.monthTarget == null ? "미설정" : formatCurrency(initialData.goals.monthTarget)}
+                      <Link
+                        href="/settings/operations?section=goals"
+                        className="ml-1 underline text-white/70 hover:text-white rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+                      >
+                        설정
+                      </Link>
+                    </span>
+                    <span className="leading-none text-white/80">
+                      {monthlyActionHint(monthRate, initialData.goals.monthTarget != null)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 연간 매출 누적 */}
+                <div
+                  data-slot="card"
+                  data-goal="annual"
+                  className="flex flex-col gap-2.5 px-5 pt-4 pb-3.5 border-t border-white/10 sm:border-t-0 sm:border-l"
+                >
+                  <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-white/90">연간 매출 누적</h2>
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <span className="text-[28px] font-bold leading-none tracking-[-0.025em] tabular-nums">
+                      <AnimatedNumber value={currentYtd} format="currency" />
+                    </span>
+                    <span
+                      data-slot="goal-rate"
+                      className={cn("text-2xl font-bold leading-none tabular-nums", annualBandTextClass)}
+                    >
+                      {annualRate == null ? (
+                        "미설정"
+                      ) : (
+                        <AnimatedNumber value={annualRate} format="percent" decimalPlaces={1} fallback="미설정" />
+                      )}
+                    </span>
+                  </div>
+                  <div className="relative h-1.5 rounded-full bg-white/10" title={`연간 목표 대비 ${displayRate(annualRate)}`}>
+                    <div
+                      data-slot="goal-fill"
+                      className={cn("h-full rounded-full animate-grow-x", annualFillClass)}
+                      style={{ width: `${goalBarWidth(annualRate)}%` }}
+                    />
+                    {initialData.ytdHistory && initialData.goals.annualTarget && initialData.ytdHistory.slice(0, -1).map((h) => {
+                      const p = (h.ytd / initialData.goals.annualTarget!) * 100;
+                      if (p <= 0 || p >= 100) return null;
+                      return (
+                        <div
+                          key={h.month}
+                          className="absolute top-0 bottom-0 w-0.5 bg-white/50 cursor-default"
+                          style={{ left: `${p}%` }}
+                          title={`${monthLabel(h.month)} 누적: ${formatCurrency(h.ytd)}`}
+                        />
+                      );
+                    })}
+                    <div
+                      className="absolute top-[-3px] bottom-[-3px] w-[1.5px] bg-white rounded-full cursor-default"
+                      style={{ left: `${yearElapsedPct}%` }}
+                      title={`연중 경과 ${yearElapsedPct}%`}
+                    />
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2 text-[11px] text-white/60">
+                    <span className="tabular-nums">
+                      1월~{parseInt(currentMonthKey.slice(5, 7), 10)}월 누적 (목표 {initialData.goals.annualTarget == null ? "미설정" : formatCurrency(initialData.goals.annualTarget)})
+                    </span>
+                    <span className="font-medium text-white/90 tabular-nums">
+                      {remainingAnnual !== null ? `잔여 ${formatCurrency(remainingAnnual)}` : ""}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 지난 두 달 실적 · 목표 대비 부족/초과 · 달성률 — 같은 해일 때만(연간 누적 맥락) */}
+              {showPrevYtd || showPrevPrevYtd ? (
+                <div
+                  data-slot="goal-history"
+                  className="flex flex-wrap items-baseline gap-x-8 gap-y-1 border-t border-white/10 px-5 py-2.5"
+                >
+                  <ShortageGridRow
+                    monthKey={prevMonthKey}
+                    actual={initialData.goals.prevMonthActual}
+                    target={initialData.goals.prevMonthTarget}
+                    show={showPrevYtd}
+                  />
+                  <ShortageGridRow
+                    monthKey={prevPrevMonthKey}
+                    actual={initialData.goals.prevPrevMonthActual}
+                    target={initialData.goals.prevPrevMonthTarget}
+                    show={showPrevPrevYtd}
+                  />
                 </div>
               ) : null}
+            </div>
 
-              <div className="p-4 flex flex-1 flex-col">
-                <div className="flex items-center justify-between pb-2">
-                  <h3 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                    다가올 14일 일정
-                  </h3>
+            <div className="grid grid-cols-2 gap-4">
+              {/* 예상 매출총이익 */}
+              <div data-slot="card" className={`${PANEL} p-4 flex flex-col gap-2`}>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
+                    예상 매출총이익
+                  </h2>
                 </div>
-                <UpcomingScheduleBody
-                  events={initialData.upcomingEvents}
-                  thisWeekLabel={thisWeekLabel}
-                  nextWeekLabel={nextWeekLabel}
-                />
+                <div data-slot="metric-current-row" className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-foreground">
+                      <AnimatedNumber value={initialData.profitability.expectedMargin} format="currency" />
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 flex-auto flex-row-reverse flex-wrap items-baseline justify-start gap-x-1.5">
+                    <StockTrendIndicator
+                      current={initialData.profitability.expectedMargin}
+                      previous={initialData.profitability.prevExpectedMargin}
+                      isCurrency={true}
+                    />
+                  </div>
+                </div>
+                <div className="mt-auto flex items-end justify-between gap-2 xl:flex-col xl:items-stretch xl:gap-1.5">
+                  <div className="text-[11px] tabular-nums text-muted-foreground leading-tight">
+                    {lossMonths.length > 0 ? (
+                      <span className="font-semibold text-status-urgent-text">
+                        {lossMonths.map(monthLabel).join("·")} 적자
+                      </span>
+                    ) : (
+                      <>
+                        <span>진행 중 판단용 추정치</span>
+                        <br />
+                        <span>전월 {formatCurrency(initialData.profitability.prevExpectedMargin)}</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="w-[120px] shrink-0 xl:order-first xl:w-full">
+                    <Sparkline
+                      points={initialData.trend.map((t) => t.expectedMargin)}
+                      months={initialData.trend.map((t) => t.month)}
+                      type="line"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-auto flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-xs text-muted-foreground">
-                <CalendarSyncBadge connected={initialData.googleCalendarConnected} />
-                <Link
-                  href="/calendar"
-                  className="text-xs text-primary hover:underline font-medium rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                >
-                  전체 일정 보기
-                </Link>
+              {/* 월 환산 캠페인 수 */}
+              <div data-slot="card" className={`${PANEL} p-4 flex flex-col gap-2`}>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
+                    월 환산 캠페인 수
+                  </h2>
+                </div>
+                <div data-slot="metric-current-row" className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[22px] font-semibold tracking-[-0.025em] tabular-nums text-foreground">
+                      <AnimatedNumber
+                        value={initialData.scale.weightedCampaignCount}
+                        format="raw"
+                        suffix="건"
+                        decimalPlaces={1}
+                      />
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 flex-auto flex-row-reverse flex-wrap items-baseline justify-start gap-x-1.5">
+                    <StockTrendIndicator
+                      current={initialData.scale.weightedCampaignCount}
+                      previous={initialData.scale.prevWeightedCampaignCount}
+                      suffix="건"
+                    />
+                  </div>
+                </div>
+                <div className="mt-auto flex items-end justify-between gap-2 xl:flex-col xl:items-stretch xl:gap-1.5">
+                  <div className="text-[11px] tabular-nums text-muted-foreground leading-tight">
+                    <span>전월 {initialData.scale.prevWeightedCampaignCount.toFixed(1)}건</span>
+                    <br />
+                    <span className="text-[10px] text-muted-foreground">조합 1건 집계</span>
+                  </div>
+                  <div className="w-[120px] shrink-0 xl:order-first xl:w-full">
+                    <Sparkline
+                      points={initialData.trend.map((t) => t.campaignCount)}
+                      months={initialData.trend.map((t) => t.month)}
+                      type="bars"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
           {/* =========================================================================
-             ZONE 3: Trend & Aux Checks (data-band="analytics")
+             ROW 2: 거래액 추이(왼쪽 넓게) + 일정 커버리지·오늘 처리할 일(오른쪽) (data-band="ops-core")
+             items-stretch 라 차트가 오른쪽 열 높이를 흡수한다 — 오늘 처리할 일이 길어지면 차트가
+             같이 길어져 빈 바닥이 생기지 않는다. 오늘 처리할 일 카드 자체는 늘리지 않는다.
              ========================================================================= */}
-          <div className="flex items-center gap-3 pt-1">
-            <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
-              월별 추이 및 보조 점검
-            </span>
-            <div className="h-px flex-1 bg-border" aria-hidden="true" />
-          </div>
-
-          <section data-band="analytics" className="grid gap-4 lg:grid-cols-[1.55fr_1fr] items-stretch">
+          <section data-band="ops-core" className={`grid gap-4 items-stretch ${SEAM}`}>
             {/* 좌측: 거래액 추이 (최근 6개월 / 연간 월별) */}
-            <div data-band="sales-chart" className="rounded-lg border border-border bg-card flex flex-col">
+            <div data-band="sales-chart" className={`${PANEL} flex min-w-0 flex-col`}>
               <div className="px-4 pt-3.5 pb-0">
                 <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
                   거래액 추이
@@ -795,8 +834,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                     caption="월별 추이 · 목표 대비"
                     showGoal={initialData.trend.some((t) => t.goal != null)}
                   />
-                  <div className="flex-1 flex items-center justify-center">
-                    <ChartContainer config={chartConfig} className="h-[262px] w-full">
+                  <div className="relative flex-1 min-h-[262px]">
+                    <ChartContainer config={chartConfig} className="absolute inset-0 aspect-auto h-full w-full">
                       <ComposedChart data={initialData.trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
                         <CartesianGrid vertical={false} strokeDasharray="3 3" />
                         <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
@@ -831,8 +870,8 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                     caption="연간 월별"
                     showGoal={initialData.yearlyTrend.some((t) => t.goal != null)}
                   />
-                  <div className="flex-1 flex items-center justify-center">
-                    <ChartContainer config={chartConfig} className="h-[262px] w-full">
+                  <div className="relative flex-1 min-h-[262px]">
+                    <ChartContainer config={chartConfig} className="absolute inset-0 aspect-auto h-full w-full">
                       <ComposedChart data={initialData.yearlyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2}>
                         <CartesianGrid vertical={false} strokeDasharray="3 3" />
                         <XAxis dataKey="month" tickFormatter={(value) => `${parseInt(value.slice(5), 10)}월`} tickLine={false} axisLine={false} />
@@ -864,54 +903,77 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
               )}
             </div>
 
-            {/* 우측: 보조 지표 및 점검 (data-band="checks", id={DATA_CHECK_ANCHOR}) */}
+            {/* 우측: 일정 커버리지(높이 고정 — 오늘 처리할 일이 불러와져도 움직이지 않게 먼저) → 오늘 처리할 일 */}
+            <div className="flex min-w-0 flex-col gap-4">
+              {initialData.scheduleGapBriefing ? (
+                <div data-slot="card" className={`${PANEL} p-4`}>
+                  <div className="flex items-center justify-between pb-2.5">
+                    <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
+                      일정 커버리지
+                    </h2>
+                  </div>
+                  <ScheduleCoverageHeatmap data={initialData.scheduleGapBriefing} />
+                </div>
+              ) : null}
+              <TodayWorkCard
+                rows={todayRows}
+                loading={orderWork.isLoading || agendaLoading || approvals.isLoading || automationWaiting.isLoading}
+                failedSources={todayFailedSources}
+                onRetry={retryTodayWork}
+                orderSync={orderSync}
+              />
+            </div>
+          </section>
+
+          {/* =========================================================================
+             ROW 3: 다가올 14일 일정 + 점검(데이터 점검 / 최저가) (data-band="schedule-checks")
+             ========================================================================= */}
+          <section data-band="schedule-checks" className={`grid gap-4 items-stretch ${SEAM}`}>
+            <div data-band="schedule" className={`${PANEL} flex min-w-0 flex-col`}>
+              <div className="p-4 flex flex-1 flex-col">
+                <div className="flex items-center justify-between pb-2">
+                  <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
+                    다가올 14일 일정
+                  </h2>
+                </div>
+                <UpcomingScheduleBody
+                  events={initialData.upcomingEvents}
+                  thisWeekLabel={thisWeekLabel}
+                  nextWeekLabel={nextWeekLabel}
+                />
+              </div>
+
+              <div className="mt-auto flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-xs text-muted-foreground">
+                <CalendarSyncBadge connected={initialData.googleCalendarConnected} />
+                <Link
+                  href="/calendar"
+                  className="text-xs text-primary hover:underline font-medium rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                >
+                  전체 일정 보기
+                </Link>
+              </div>
+            </div>
+
+            {/* 우측: 점검 (data-band="checks", id={DATA_CHECK_ANCHOR}) — 「오늘 처리할 일」 데이터 점검 행의 목적지 */}
             <div
               data-band="checks"
               id={DATA_CHECK_ANCHOR}
-              className="rounded-lg border border-border bg-card flex flex-col scroll-mt-20"
+              className={`${PANEL} flex min-w-0 flex-col scroll-mt-20`}
             >
               <div className="px-4 pt-3.5 pb-0">
                 <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">
-                  보조 지표 및 점검
+                  점검
                 </h2>
               </div>
               <div className="flex items-center gap-4 px-4 border-b border-slate-100 mt-1" role="tablist">
                 <button
                   type="button"
                   role="tab"
-                  aria-selected={auxTab === "funnel"}
-                  onClick={() => setAuxTab("funnel")}
-                  className={cn(
-                    "relative py-2 text-xs font-medium transition-colors cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
-                    auxTab === "funnel"
-                      ? "text-foreground font-semibold after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  영업 전환
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={auxTab === "tax"}
-                  onClick={() => setAuxTab("tax")}
-                  className={cn(
-                    "relative py-2 text-xs font-medium transition-colors cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
-                    auxTab === "tax"
-                      ? "text-foreground font-semibold after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-primary"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  과세기준
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={auxTab === "integrity"}
+                  aria-selected={shownAuxTab === "integrity"}
                   onClick={() => setAuxTab("integrity")}
                   className={cn(
                     "relative py-2 text-xs font-medium transition-colors cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
-                    auxTab === "integrity"
+                    shownAuxTab === "integrity"
                       ? "text-foreground font-semibold after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-primary"
                       : "text-muted-foreground hover:text-foreground"
                   )}
@@ -923,15 +985,15 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                     </span>
                   ) : null}
                 </button>
-                {priceOverview.loading || priceOverview.error || (priceOverview.data && priceOverview.data.monitoredCount > 0) ? (
+                {priceTabAvailable ? (
                   <button
                     type="button"
                     role="tab"
-                    aria-selected={auxTab === "price"}
+                    aria-selected={shownAuxTab === "price"}
                     onClick={() => setAuxTab("price")}
                     className={cn(
                       "relative py-2 text-xs font-medium transition-colors cursor-pointer rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring",
-                      auxTab === "price"
+                      shownAuxTab === "price"
                         ? "text-foreground font-semibold after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-[2px] after:bg-primary"
                         : "text-muted-foreground hover:text-foreground"
                     )}
@@ -946,64 +1008,13 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                 ) : null}
               </div>
 
-              {auxTab === "funnel" ? (
-                <div className="p-4 flex flex-1 flex-col justify-center">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pb-2 mb-3 border-b border-slate-100">
-                    <span className="text-xs font-semibold text-foreground">최근 90일 영업 전환</span>
-                    <p
-                      className="min-w-[8rem] flex-1 break-keep text-[11px] text-muted-foreground"
-                      title={`확정 ${initialData.outreach90d.confirmed}건 · 확정률 ${ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}`}
-                    >
-                      확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
-                    </p>
-                  </div>
-                  <div className="flex flex-1 flex-col justify-center gap-3">
-                    {[
-                      { label: "접촉", count: initialData.outreach90d.total, base: initialData.outreach90d.total, strong: false, showRate: false },
-                      { label: "응답", count: initialData.outreach90d.responded, base: initialData.outreach90d.total, strong: false, showRate: true },
-                      { label: "전환", count: initialData.outreach90d.converted, base: initialData.outreach90d.total, strong: true, showRate: true },
-                    ].map((row, i) => (
-                      <div key={row.label} className="flex items-center gap-2.5">
-                        <span className="w-[28px] shrink-0 text-xs font-medium text-muted-foreground">{row.label}</span>
-                        <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
-                          <div
-                            className="h-full rounded-full animate-grow-x"
-                            style={{
-                              width: row.base > 0 ? `${Math.max((row.count / row.base) * 100, 2)}%` : "2%",
-                              backgroundColor: "var(--chart-1)",
-                              opacity: row.strong ? 1 : 0.6,
-                              animationDelay: `${i * 60}ms`,
-                            }}
-                          />
-                        </div>
-                        <span className="w-[36px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
-                          {row.showRate ? ratioText(row.count, row.base) : ""}
-                        </span>
-                        <span className="w-[32px] shrink-0 text-right text-xs font-semibold text-foreground tabular-nums">
-                          {row.count}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {auxTab === "tax" ? (
-                <div className="p-4 flex-1 flex flex-col justify-center">
-                  <TaxableRevenueCard
-                    tracker={initialData.taxableRevenueTracker}
-                    className="border-0 shadow-none bg-transparent"
-                  />
-                </div>
-              ) : null}
-
-              {auxTab === "integrity" ? (
+              {shownAuxTab === "integrity" ? (
                 <div className="p-4 flex-1 overflow-y-auto">
                   <DataIntegrityBody issues={initialData.dataIntegrityIssues} />
                 </div>
               ) : null}
 
-              {auxTab === "price" ? (
+              {shownAuxTab === "price" ? (
                 <div className="p-4 flex-1 flex flex-col min-h-0">
                   {priceOverview.data && (
                     <div className="mb-2 shrink-0">
@@ -1015,6 +1026,53 @@ export function DashboardHome({ initialData }: { initialData: DesktopDashboardDa
                   </div>
                 </div>
               ) : null}
+            </div>
+          </section>
+
+          {/* =========================================================================
+             ROW 4: 과세기준매출 + 최근 90일 영업 전환 — 탭 뒤에 숨기지 않고 항상 보인다 (data-band="aux-metrics")
+             ========================================================================= */}
+          <section data-band="aux-metrics" className={`grid gap-4 items-stretch ${SEAM}`}>
+            <TaxableRevenueCard tracker={initialData.taxableRevenueTracker} />
+
+            <div data-slot="card" className={`${PANEL} p-4 flex flex-col`}>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pb-2 mb-3 border-b border-slate-100">
+                <h2 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">최근 90일 영업 전환</h2>
+                <p
+                  className="min-w-[8rem] flex-1 break-keep text-[11px] text-muted-foreground"
+                  title={`확정 ${initialData.outreach90d.confirmed}건 · 확정률 ${ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}`}
+                >
+                  확정 {initialData.outreach90d.confirmed}건 · 확정률 {ratioText(initialData.outreach90d.confirmed, initialData.outreach90d.total)}
+                </p>
+              </div>
+              <div className="flex flex-1 flex-col justify-center gap-3">
+                {[
+                  { label: "접촉", count: initialData.outreach90d.total, base: initialData.outreach90d.total, strong: false, showRate: false },
+                  { label: "응답", count: initialData.outreach90d.responded, base: initialData.outreach90d.total, strong: false, showRate: true },
+                  { label: "전환", count: initialData.outreach90d.converted, base: initialData.outreach90d.total, strong: true, showRate: true },
+                ].map((row, i) => (
+                  <div key={row.label} className="flex items-center gap-2.5">
+                    <span className="w-[28px] shrink-0 text-xs font-medium text-muted-foreground">{row.label}</span>
+                    <div className="flex-1 h-2.5 rounded-full bg-slate-300 overflow-hidden">
+                      <div
+                        className="h-full rounded-full animate-grow-x"
+                        style={{
+                          width: row.base > 0 ? `${Math.max((row.count / row.base) * 100, 2)}%` : "2%",
+                          backgroundColor: "var(--chart-1)",
+                          opacity: row.strong ? 1 : 0.6,
+                          animationDelay: `${i * 60}ms`,
+                        }}
+                      />
+                    </div>
+                    <span className="w-[36px] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                      {row.showRate ? ratioText(row.count, row.base) : ""}
+                    </span>
+                    <span className="w-[32px] shrink-0 text-right text-xs font-semibold text-foreground tabular-nums">
+                      {row.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         </div>

@@ -155,4 +155,16 @@ describe("TodayWorkCard", () => {
     rerender(<TodayWorkCard rows={rows} loading={false} failedSources={[]} onRetry={() => {}} orderSync={fresh} />);
     expect(screen.getByRole("tablist")).toBeInTheDocument();
   });
+
+  it("카드 표면은 sm 그림자 + 2xl 모서리 — ui/Card 의 md·hover 그림자가 새지 않는다(P8 Elevation Ladder)", () => {
+    const { container } = render(
+      <TodayWorkCard rows={rows} loading={false} failedSources={[]} onRetry={() => {}} orderSync={fresh} />,
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(root).toHaveAttribute("data-slot", "card");
+    expect(root).toHaveClass("shadow-soft-sm", "rounded-2xl");
+    for (const leaked of ["shadow-none", "shadow-soft-md", "shadow-soft-hover"]) {
+      expect(root.className).not.toContain(leaked);
+    }
+  });
 });

@@ -23,7 +23,6 @@
 
 import { useState, type PointerEvent, type ReactNode } from "react";
 import { Info, Landmark } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -236,11 +235,15 @@ export function TaxableRevenueCard({
   const needsAction = tracker.unspecifiedCount > 0 || tracker.missingAmountCount > 0;
 
   return (
-    <Card
-      className={cn("border-border bg-card shadow-soft-sm p-0", className)}
+    <div
+      data-slot="card"
       data-testid="taxable-revenue-card"
+      className={cn(
+        "rounded-2xl border border-border bg-card shadow-soft-sm overflow-hidden text-sm text-card-foreground",
+        className,
+      )}
     >
-      <CardContent className="px-4 py-3">
+      <div className="px-4 py-3">
         {/* flex-wrap: 창을 줄여 폭이 모자라면 갱신일·등급이 다음 줄로 내려간다(P5 — 데스크톱은 폭과 무관하게 유지). */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-100 pb-2">
           <Landmark className="size-4 shrink-0 text-[var(--primary)]" aria-hidden />
@@ -432,7 +435,7 @@ export function TaxableRevenueCard({
             )}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
