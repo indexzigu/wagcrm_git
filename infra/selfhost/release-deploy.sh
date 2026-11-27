@@ -109,7 +109,16 @@ fi
 
 # ── 3. 레인 1 — CRM ────────────────────────────────────────────
 echo "[release] 1/2 CRM 배포"
-if ! bash "$DEPLOY_SH"; then
+# DEPLOY_EXPECT_SHA(확장 실행기의 고정 배포)는 export 여부와 무관하게 아래 줄에서 명시적으로 deploy.sh 에 넘긴다.
+# deploy.sh 가 "main 이 승인 sha 와 다름"으로 멈추면(75) 그 코드를 그대로 돌려줘
+# 호출자가 실패가 아니라 "범위가 바뀜"으로 처리하게 한다. 링크 서버 단계는 돌지 않는다.
+CRM_RC=0
+DEPLOY_EXPECT_SHA="${DEPLOY_EXPECT_SHA:-}" bash "$DEPLOY_SH" || CRM_RC=$?
+if [ "$CRM_RC" = "75" ] && [ -n "${DEPLOY_EXPECT_SHA:-}" ]; then
+  echo "중단: main 이 승인한 sha 와 달라 CRM 배포를 하지 않았습니다 — 링크 서버도 손대지 않았습니다." >&2
+  exit 75
+fi
+if [ "$CRM_RC" != "0" ]; then
   echo "중단: CRM 배포가 실패했습니다 — 링크 서버는 손대지 않았습니다." >&2
   exit 1
 fi

@@ -67,6 +67,9 @@ export const MAX_DEPLOY_PATHS = 30;
 export const MAX_BODY = 2000; // hermes expansion_cards.py MAX_BODY (counted after its &<> escaping)
 const MAX_DEPLOY_COMMITS = 20;
 export const NO_MARKER = "(ygrd-link 배포 기록 없음)";
+// deploy.sh (passed through by release-deploy.sh) exits 75 when origin/main is not DEPLOY_EXPECT_SHA — before it
+// touches the checkout, build or markers.
+export const DEPLOY_PIN_MISMATCH = 75;
 const DEPLOY_CARD_RE = /^(\d{8})-deploy-([0-9a-f]{8})-([0-9a-f]{8})$/;
 const AT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
@@ -300,6 +303,18 @@ export function cardsPayload(card, ms) {
   return { date, cards: [{ ...card, id: `${date.replaceAll("-", "")}-${card.id}` }] };
 }
 
+// Claims the in-progress marker with an exclusive create, then re-checks STOP, so neither a parallel claim nor
+// an owner STOP made a moment earlier can slip past the point of no return. false = halted, nothing started.
+function claimInProgress(deps, text) {
+  const { paths } = deps;
+  if (deps.exists(paths.stop) || !deps.claim(paths.inprogress, text)) return false;
+  if (deps.exists(paths.stop)) {
+    deps.remove(paths.inprogress);
+    return false;
+  }
+  return true;
+}
+
 // The menubar-only notice is sent once per (from, tip, marker) range, not per merge approval, so a range that
 // turns menubar-only after a card was posted still reaches the owner.
 const sameRange = (x, from, tip, marker) => x.from === from && x.tip === tip && x.marker === marker;
@@ -354,8 +369,8 @@ export function checksVerdict(rollup) {
 
 const zList = (out) => String(out ?? "").split("\0").filter(Boolean);
 
-// deps: { now, readText, appendLine, exists, touch, remove, gh(args)->{rc,out}, git(args)->{rc,out},
-//         deploy()->rc, post(card)->bool, log(label, body), paths }
+// deps: { now, readText, appendLine, exists, touch, claim(path, text)->bool (exclusive create), remove,
+//         gh(args)->{rc,out}, git(args)->{rc,out}, deploy({ expectSha }?)->rc, post(card)->bool, log(label, body), paths }
 // paths.stop is owner-only (the executor creates it to halt, never deletes it). paths.inprogress marks a merge
 // in flight; a leftover one (crash/kill) also halts until a human removes it.
 export async function run(deps) {
@@ -476,17 +491,26 @@ function deployOne(deps, d, doneLines, nowIso, note) {
   }
   if (menubarOnlyReason(hits)) return changed("버튼으로 배포할 수 없는 구간");
 
-  // Re-check the halt markers right before the point of no return (the fetch above can take a while, and an
-  // owner may have created STOP meanwhile). The click stays open: it is processed once the marker is gone.
-  if (deps.exists(paths.stop) || deps.exists(paths.inprogress)) {
-    deps.log("SKIP", `${tag} halted (stop or in-progress marker appeared) — not deployed`);
+  // Point of no return: claim the in-progress marker (exclusive) and re-check STOP — the fetch above can take a
+  // while and an owner may have created STOP meanwhile. The click stays open: it runs once the marker is gone.
+  if (!claimInProgress(deps, `deploy from=${d.from} tip=${d.tip} at=${nowIso()}\n`)) {
+    deps.log("SKIP", `${tag} halted (stop or in-progress marker present) — not deployed`);
     return "stopped";
   }
-  // Point of no return: the in-progress marker first, so a crash anywhere below leaves the executor halted.
-  deps.touch(paths.inprogress, `deploy from=${d.from} tip=${d.tip} at=${nowIso()}\n`);
-  const deployRc = deps.deploy();
+  // Pinned: deploy.sh refuses (75) unless origin/main is still exactly the approved tip when it fetches.
+  const deployRc = deps.deploy({ expectSha: d.tip });
   deps.git(["fetch", "-q", "origin"]);
   const deployedAfter = (deps.readText(paths.deployedSha) ?? "").trim();
+  const tipAfter = deps.git(["rev-parse", `origin/${BASE_BRANCH}`]);
+  const tipNow2 = tipAfter.rc === 0 ? tipAfter.out.trim() : "";
+  // Benign only when the pin really tripped: 75, production unchanged, AND main verifiably moved off the tip.
+  // A stray 75 from anything else (main unmoved or unreadable) falls through to deploy-failed + STOP.
+  if (deployRc === DEPLOY_PIN_MISMATCH && deployedAfter === d.from && SHA_RE.test(tipNow2) && tipNow2 !== d.tip) {
+    // main moved between our check and the deploy's own fetch; nothing shipped. Not a failure: close the click.
+    deps.remove(paths.inprogress);
+    const next = nextFor(d.from, tipNow2, (deps.readText(paths.workerMarker) ?? "").trim());
+    return reject("배포 직전 main 이 움직임 — 범위가 바뀌어 배포하지 않음", next);
+  }
   if (deployRc !== 0 || deployedAfter !== d.tip) {
     const why = `deploy rc=${deployRc} deployed=${deployedAfter.slice(0, 12) || "none"} want=${d.tip.slice(0, 12)}`;
     deps.touch(paths.stop, `${tag} ${why}\n`);
@@ -600,8 +624,12 @@ async function tryOne(deps, d, doneLines, nowIso, notify) {
     return "range-guarded";
   }
 
-  // Point of no return: the in-progress marker first, so a crash anywhere below leaves the executor halted.
-  deps.touch(paths.inprogress, `pr=${d.pr} sha=${d.sha} at=${nowIso()}\n`);
+  // Point of no return: the in-progress marker first (exclusive, then STOP re-checked), so a crash anywhere below
+  // leaves the executor halted.
+  if (!claimInProgress(deps, `pr=${d.pr} sha=${d.sha} at=${nowIso()}\n`)) {
+    deps.log("SKIP", `pr=${d.pr} halted (stop or in-progress marker present) — not merged`);
+    return "stopped";
+  }
   if (pr.isDraft && deps.gh(["pr", "ready", String(d.pr)]).rc !== 0) {
     deps.remove(paths.inprogress);
     deps.log("FAIL", `pr=${d.pr} ready failed — will retry`);
@@ -711,11 +739,16 @@ function realDeps() {
     exists: (p) => existsSync(p),
     appendLine: (p, obj) => { mkdirSync(dirname(p), { recursive: true }); appendFileSync(p, JSON.stringify(obj) + "\n"); },
     touch: (p, text) => writeFileSync(p, text),
+    claim: (p, text) => {
+      try { writeFileSync(p, text, { flag: "wx" }); return true; } catch (e) { if (e?.code === "EEXIST") return false; throw e; }
+    },
     remove: (p) => rmSync(p, { force: true }),
     gh: (args) => sh("gh", [...args, "--repo", "indexzigu/wagcrm_git"], { cwd: repo, env: { ...baseEnv, GH_TOKEN: token() } }),
     git: (args) => sh("git", ["-C", repo, ...args]),
-    deploy: () => {
-      const r = sh("bash", [join(repo, "infra/selfhost/release-deploy.sh")], { timeout: 45 * 60 * 1000 });
+    // expectSha pins the deploy (DEPLOY_EXPECT_SHA → deploy.sh); the merge path calls it without one.
+    deploy: (opts = {}) => {
+      const env = opts.expectSha ? { ...baseEnv, DEPLOY_EXPECT_SHA: opts.expectSha } : baseEnv;
+      const r = sh("bash", [join(repo, "infra/selfhost/release-deploy.sh")], { timeout: 45 * 60 * 1000, env });
       mkdirSync(logs, { recursive: true });
       appendFileSync(join(logs, "expansion-merge-deploy.log"), `[${stamp()}] rc=${r.rc}\n${r.out}${r.err}\n`);
       return r.rc;

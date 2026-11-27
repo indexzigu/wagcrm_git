@@ -49,7 +49,7 @@ type Opts = {
   decisions?: unknown[]; done?: unknown[]; pr?: unknown; prRc?: number; prFiles?: string[]; range?: string[];
   rangeAfter?: string[]; worker?: string[]; workerMarker?: string; deployRc?: number; mergedState?: string;
   stop?: boolean; inprogress?: boolean; key?: string; containsRc?: number; head?: string; onMainRc?: number;
-  shippedExtra?: string[]; prSeq?: unknown[]; tip?: string; deployedSha?: string; deployTo?: string; commits?: string[];
+  shippedExtra?: string[]; prSeq?: unknown[]; tip?: string; deployedSha?: string; deployTo?: string; commits?: string[]; tipAfterDeploy?: string;
 };
 function harness(o: Opts) {
   const files: Record<string, string> = {
@@ -67,6 +67,8 @@ function harness(o: Opts) {
   let stop = !!o.stop;
   let inprogress = !!o.inprogress;
   let viewN = 0;
+  let tipNow = o.tip ?? TIP;
+  const deployOpts: unknown[] = [];
   let merged = false;
   const z = (xs: string[]) => xs.join("\0") + (xs.length ? "\0" : "");
   const deps = {
@@ -75,6 +77,12 @@ function harness(o: Opts) {
     exists: (p: string) => (p === "stop" && stop) || (p === "inprogress" && inprogress),
     appendLine: (p: string, obj: unknown) => { files[p] = (files[p] ? files[p] + "\n" : "") + JSON.stringify(obj); },
     touch: (p: string) => { if (p === "stop") stop = true; if (p === "inprogress") inprogress = true; },
+    claim: (p: string) => {
+      if (p !== "inprogress") return true;
+      if (inprogress) return false;
+      inprogress = true;
+      return true;
+    },
     remove: (p: string) => { if (p === "stop") stop = false; if (p === "inprogress") inprogress = false; },
     gh: (args: string[]) => {
       gh.push(args);
@@ -88,7 +96,7 @@ function harness(o: Opts) {
       return { rc: 0, out: "" };
     },
     git: (args: string[]) => {
-      if (args[0] === "rev-parse") return { rc: 0, out: `${args[1] === "origin/main" ? (o.tip ?? TIP) : (o.head ?? SHA)}\n` };
+      if (args[0] === "rev-parse") return { rc: 0, out: `${args[1] === "origin/main" ? tipNow : (o.head ?? SHA)}\n` };
       if (args[0] === "log") return { rc: 0, out: (o.commits ?? ["abc1234 feat: earlier merge"]).join("\n") + "\n" };
       if (args[0] === "diff") {
         if (args.includes("ygrd-link/")) return { rc: 0, out: z(o.worker ?? []) };
@@ -102,13 +110,17 @@ function harness(o: Opts) {
       }
       return { rc: 0, out: "" };
     },
-    deploy: () => { deployed++; files.dsha = o.deployTo ?? MERGED; return o.deployRc ?? 0; },
+    deploy: (opts?: unknown) => {
+      deployed++; deployOpts.push(opts); files.dsha = o.deployTo ?? MERGED;
+      if (o.tipAfterDeploy) tipNow = o.tipAfterDeploy;
+      return o.deployRc ?? 0;
+    },
     post: (c: unknown) => { posts.push(c); return true; },
     log: (label: string, body: string) => logs.push(`${label} ${body}`),
     paths: { decisions: "dec", done: "done", key: "key", stop: "stop", inprogress: "inprogress", deployedSha: "dsha", workerMarker: "wmark", approver: "U123" },
   };
   return {
-    deps, gh, posts, logs, files,
+    deps, gh, posts, logs, files, deployOpts,
     get deployed() { return deployed; }, get stop() { return stop; }, get inprogress() { return inprogress; }, get merged() { return merged; },
   };
 }
@@ -649,6 +661,81 @@ describe("expansion-merge deploy decision", () => {
     expect(h.files.done).not.toMatch(/"status":"(rejected|deployed|deploy-failed)"/);
     h.deps.remove("stop");
     expect(await M.run(h.deps)).toBe("deployed");
+  });
+
+  it("the deploy is pinned to the approved tip; the merge path is not pinned", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: TIP });
+    expect(await M.run(h.deps)).toBe("deployed");
+    expect(h.deployOpts).toEqual([{ expectSha: TIP }]);
+    const m = harness({ decisions: [signed()] });
+    expect(await M.run(m.deps)).toBe("deployed");
+    expect(m.deployOpts).toEqual([undefined]);
+  });
+
+  it("pin mismatch (75) with production unchanged: no STOP, rejected, and the next merge attempt posts a fresh card", async () => {
+    const moved = "6".repeat(40);
+    const h = harness({ decisions: [signedDeploy(), signed()], done: [cardLine()], range, deployTo: DEPLOYED, deployRc: 75, tipAfterDeploy: moved });
+    expect(await M.run(h.deps)).toBe("rejected");
+    expect(h.stop).toBe(false);
+    expect(h.inprogress).toBe(false);
+    expect(h.files.done).toContain("배포 직전 main 이 움직임 — 범위가 바뀌어 배포하지 않음");
+    expect(h.files.done).not.toContain('"status":"deploy-failed"');
+    expect(h.posts.at(-1).body).toContain("새 「배포 승인」 카드");
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(h.posts.filter((c) => c.kind === "deploy").map((c) => c.tip)).toEqual([moved]);
+  });
+
+  it("75 with production unchanged but main NOT moved (stray 75) → STOP + deploy-failed", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: DEPLOYED, deployRc: 75 });
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.stop).toBe(true);
+    expect(h.files.done).not.toContain("배포 직전 main 이 움직임");
+  });
+
+  it("75 with production unchanged but origin/main unreadable afterwards → STOP + deploy-failed", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: DEPLOYED, deployRc: 75, tipAfterDeploy: "6".repeat(40) });
+    const git = h.deps.git;
+    h.deps.git = (args: string[]) => (args[0] === "rev-parse" && h.deployed > 0 ? { rc: 1, out: "" } : git(args));
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.stop).toBe(true);
+    expect(h.files.done).not.toContain("배포 직전 main 이 움직임");
+  });
+
+  it("75 but production changed anyway → STOP + deploy-failed", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: "9".repeat(40), deployRc: 75 });
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.stop).toBe(true);
+  });
+
+  it("in-progress claimed by someone else at the point of no return → stopped, click stays open", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: TIP });
+    h.deps.claim = () => false;
+    expect(await M.run(h.deps)).toBe("stopped");
+    expect(h.deployed).toBe(0);
+    expect(h.files.done).not.toMatch(/"status":"(rejected|deployed|deploy-failed)"/);
+  });
+
+  it("STOP created just as in-progress is claimed → in-progress removed, stopped, nothing deployed", async () => {
+    const h = harness({ decisions: [signedDeploy()], done: [cardLine()], range, deployTo: TIP });
+    const claim = h.deps.claim;
+    h.deps.claim = (p: string) => { h.deps.touch("stop"); return claim(p); };
+    expect(await M.run(h.deps)).toBe("stopped");
+    expect(h.deployed).toBe(0);
+    expect(h.inprogress).toBe(false);
+    expect(h.stop).toBe(true);
+  });
+
+  it("merge path also claims in-progress exclusively and re-checks STOP", async () => {
+    const a = harness({ decisions: [signed()] });
+    a.deps.claim = () => false;
+    expect(await M.run(a.deps)).toBe("stopped");
+    expect(a.merged).toBe(false);
+    const b = harness({ decisions: [signed()] });
+    const claim = b.deps.claim;
+    b.deps.claim = (p: string) => { b.deps.touch("stop"); return claim(p); };
+    expect(await M.run(b.deps)).toBe("stopped");
+    expect(b.merged).toBe(false);
+    expect(b.inprogress).toBe(false);
   });
 
   it("expires clicks older than 24h", async () => {
