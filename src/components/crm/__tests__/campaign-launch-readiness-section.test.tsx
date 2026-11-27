@@ -77,6 +77,14 @@ describe("CampaignLaunchReadinessSection", () => {
         ),
       );
 
+    it("카테고리 미지정으로 건너뛴 규칙 수를 밝힌다", async () => {
+      withGateSource({ skippedCategoryRuleCount: 4 });
+      render(<CampaignLaunchReadinessSection campaignId="c1" />);
+      expect(
+        await screen.findByText(/카테고리 규칙 4개는\s*보지 않았습니다/),
+      ).toBeInTheDocument();
+    });
+
     it("검사할 자료가 없으면 그 사실을 밝힌다", async () => {
       withGateSource({ claimGateSource: "NO_ASSET_DRAFT" });
       render(<CampaignLaunchReadinessSection campaignId="c1" />);

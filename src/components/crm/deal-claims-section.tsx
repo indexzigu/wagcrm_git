@@ -14,6 +14,10 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import {
+  SUGGESTED_CATEGORY_LABEL,
+  suggestClaimCategory,
+} from "@/lib/claims/suggest-claim-category";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 import { previewText } from "./confirm-action-dialog";
 
@@ -85,7 +89,13 @@ type DealClaim = {
   source: string | null;
 };
 
-export function DealClaimsSection({ dealId }: { dealId: string }) {
+export function DealClaimsSection({
+  dealId,
+  dealName,
+}: {
+  dealId: string;
+  dealName?: string;
+}) {
   const [claims, setClaims] = useState<DealClaim[]>([]);
   const [category, setCategory] = useState<string>("GENERAL");
   const [loading, setLoading] = useState(true);
@@ -128,6 +138,13 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 미지정일 때만 제안 — 저장은 「적용」 클릭이 기존 저장 경로를 탈 때만 일어난다.
+  // 불러오기 중·실패 때는 "미지정"이 확인된 값이 아니므로 제안하지 않는다.
+  const suggestion =
+    !loading && !error && category === "GENERAL"
+      ? suggestClaimCategory(dealName)
+      : null;
 
   async function handleCategoryChange(next: string) {
     const previous = category;
@@ -319,6 +336,21 @@ export function DealClaimsSection({ dealId }: { dealId: string }) {
               ))}
             </SelectContent>
           </Select>
+          {suggestion ? (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              {SUGGESTED_CATEGORY_LABEL[suggestion.category]}으로 보입니다 (근거: ‘
+              {suggestion.keyword}’)
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                aria-label={`${SUGGESTED_CATEGORY_LABEL[suggestion.category]}으로 카테고리 적용`}
+                onClick={() => void handleCategoryChange(suggestion.category)}
+              >
+                적용
+              </Button>
+            </span>
+          ) : null}
         </div>
       </header>
 

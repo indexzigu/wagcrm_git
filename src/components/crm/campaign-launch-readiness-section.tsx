@@ -31,6 +31,8 @@ type ReadinessResponse = ReadinessAudit & {
   campaignId: string;
   dealName: string | null;
   requiredDisclosureCount: number;
+  /** 카테고리 미지정이라 판정에서 빠진 카테고리 규칙 수 — 0 이 아니면 화면이 밝힌다. */
+  skippedCategoryRuleCount?: number;
   /**
    * 표현 게이트가 **무엇을 근거로** 판정했는가. `NO_ASSET_DRAFT` 면 검사할 본문이
    * 없어 표현 축이 아예 돌지 않은 것이다 — 이 값을 화면이 버리면 운영자는 항목이
@@ -237,6 +239,13 @@ export function CampaignLaunchReadinessSection({
                 : " 필수 고지도 아직 등록되지 않았습니다."}{" "}
               판매 조건에서 콘텐츠 가이드를 생성해 보내면 다음 조회부터 금지 표현과 고지
               누락을 함께 판정합니다.
+            </p>
+          )}
+
+          {(data.skippedCategoryRuleCount ?? 0) > 0 && (
+            <p className="rounded-md border border-input bg-background px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
+              카테고리 미지정이라 카테고리 규칙 {data.skippedCategoryRuleCount}개는
+              보지 않았습니다
             </p>
           )}
 
