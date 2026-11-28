@@ -39,7 +39,7 @@ export async function GET(_request: Request, context: Context) {
   const payload = deserializeJsonField(proposal.payload);
   // [캘린더수집] 새 회차 기안은 대상 캠페인이 없어 배지로 이름을 못 보인다 — args 의 셀러·판매 조건을 푼다.
   const argLabels = await resolveProposalArgLabels(payload);
-  // 실패 기안이면 다른 경로로 이미 반영됐는지 — 상세 카드도 목록 카드처럼 「이미반영됨」 배지와 종결 버튼을 띄운다.
+  // 실패 기안이면 다른 경로로 이미 반영됐는지 — 상세 카드도 목록 카드처럼 「반영완료」 배지와 종결 버튼을 띄운다.
   const alreadyApplied = proposal.status === "FAILED" ? await detectAlreadyApplied(payload, getPrisma()) : undefined;
   // 반려 기안이 오너가 실패에서 종결한 것이면 상세 배지도 「종결됨」이다(목록의 `closedFromFailure` 와 같은 판정).
   const closedFromFailure = proposal.status === "REJECTED" ? (proposal.events ?? []).some(isFailedCloseEvent) : undefined;

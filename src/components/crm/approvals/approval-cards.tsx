@@ -39,7 +39,7 @@ export type ApprovalInboxItem = {
   sourceRef?: unknown;
   /** [캘린더수집] 새 회차 생성 기안의 셀러·판매 조건 이름(서버 해석). */
   argLabels?: ProposalArgLabels | null;
-  /** 실패 탭 전용 — 다른 경로로 이미 반영됐는가(서버 판정 `already-applied.ts`). true 면 「이미반영됨」 배지. */
+  /** 실패 탭 전용 — 다른 경로로 이미 반영됐는가(서버 판정 `already-applied.ts`). true 면 「반영완료」 배지. */
   alreadyApplied?: boolean;
   /** 반려 탭 전용 — 오너가 실패에서 종결한 기안인가. true 면 「반려됨」 대신 「종결됨」. */
   closedFromFailure?: boolean;
@@ -332,7 +332,7 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
  * (§6-1 "금전 가드 일관성" — 취소 시 approve 미호출).
  *
  * [종결]은 다른 경로로 이미 처리했거나 더 필요 없는 실패 기안을 실패 탭에서 뺀다(`onClose`).
- * 서버가 「이미 반영됨」으로 판정한 카드(`alreadyApplied`)는 「이미반영됨」 배지를 달고 종결을 주 버튼으로 올린다 —
+ * 서버가 「이미 반영됨」으로 판정한 카드(`alreadyApplied`)는 「반영완료」 배지를 달고 종결을 주 버튼으로 올린다 —
  * 그 카드에서 재시도는 같은 거절을 다시 받을 뿐이다. `onClose` 가 없으면(스텁) 종전처럼 재시도만 그린다.
  */
 export function FailedCard({

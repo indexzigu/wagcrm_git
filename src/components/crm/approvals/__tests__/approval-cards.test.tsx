@@ -6,7 +6,7 @@
  * 상태·로딩 표시는 결재함 허브(Task 4, /approvals)가 소유하므로 여기서는 각 카드를
  * 직접 렌더해 검증한다. M1 Promise 계약(await + finally + mountedRef)은 그대로다.
  */
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // 실제 next/link 처럼 나머지 props 를 <a> 로 흘린다 — 포커스 링 클래스 계약을
@@ -514,12 +514,12 @@ describe("실패 기안 종결", () => {
     expect(retry.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(isOutline(retry)).toBe(false);
     expect(isOutline(close)).toBe(true);
-    expect(screen.queryByText("이미반영됨")).toBeNull();
+    expect(screen.queryByText("반영완료")).toBeNull();
   });
 
-  it("이미 반영됨이면 「이미반영됨」 배지를 달고, 자리는 그대로 둔 채 종결을 주 버튼으로 올린다", () => {
+  it("이미 반영됨이면 「반영완료」 배지를 달고, 자리는 그대로 둔 채 종결을 주 버튼으로 올린다", () => {
     render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
-    expect(screen.getByText("이미반영됨")).toBeTruthy();
+    expect(screen.getByText("반영완료")).toBeTruthy();
     const retry = screen.getByRole("button", { name: "재시도" });
     const close = screen.getByRole("button", { name: "종결" });
     expect(retry.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -527,9 +527,9 @@ describe("실패 기안 종결", () => {
     expect(isOutline(close)).toBe(false);
   });
 
-  it("「이미반영됨」 풀이는 title 이 아니라 키보드로 초점을 받는 설명창 버튼으로 연다", () => {
+  it("「반영완료」 풀이는 title 이 아니라 키보드로 초점을 받는 설명창 버튼으로 연다", () => {
     render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
-    const trigger = screen.getByRole("button", { name: "이미반영됨" });
+    const trigger = screen.getByRole("button", { name: "반영완료" });
     expect(trigger.getAttribute("title")).toBeNull();
   });
 
@@ -538,7 +538,7 @@ describe("실패 기안 종결", () => {
     render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={onClose} /></ul>);
     fireEvent.click(screen.getByRole("button", { name: "종결" }));
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole("button", { name: "기안 종결" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "종결" }));
     await waitFor(() => expect(onClose).toHaveBeenCalledWith("proposal-1"));
   });
 
@@ -546,7 +546,7 @@ describe("실패 기안 종결", () => {
     const onClose = vi.fn().mockRejectedValue(new Error("실패 상태가 아닌 기안이라 종결할 수 없습니다(이미 처리됨)."));
     render(<ul><FailedCard item={failed()} onApprove={vi.fn()} onClose={onClose} /></ul>);
     fireEvent.click(screen.getByRole("button", { name: "종결" }));
-    fireEvent.click(await screen.findByRole("button", { name: "기안 종결" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "종결" }));
     expect(await screen.findByText("실패 상태가 아닌 기안이라 종결할 수 없습니다(이미 처리됨).")).toBeTruthy();
   });
 
