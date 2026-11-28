@@ -237,7 +237,8 @@ export function httpStatusForFailure(code: AgentInternalFailureCode): number {
 export const slackDecisionRequestSchema = z
   .object({
     proposalId: opaqueIdSchema,
-    decision: z.enum(["approve", "reject"]),
+    /** `preview` = 카드 글 조회(아무것도 쓰지 않는다). 카드를 올리기 전에 hermes 가 부른다. */
+    decision: z.enum(["approve", "reject", "preview"]),
   })
   .strict();
 
@@ -266,6 +267,14 @@ export type SlackDecisionFailureCode = (typeof SLACK_DECISION_FAILURE_CODES)[num
 
 /** 실행 결과 참조 — 종류는 대문자·밑줄, id 는 불투명 id 글자만(hermes 가 같은 형식으로 다시 검사한다). */
 export type SlackDecisionExecutedRef = { type: string; id: string };
+
+/** 카드 글 — `slack-approval-brief.ts` 가 만든다. hermes 는 이 줄들을 그대로 싣는다(이스케이프·길이 자르기만). */
+export type SlackApprovalBriefPayload = { heading: string; lines: string[]; caution: string | null; complete: boolean };
+
+/** `decision: "preview"` 응답 — 자격이 있고 대기 중일 때만 글을 준다. 실패 코드는 결정 응답과 같은 뜻이다. */
+export type SlackPreviewResponse =
+  | { ok: true; status: "PENDING_APPROVAL"; action: string; brief: SlackApprovalBriefPayload }
+  | { ok: false; code: SlackDecisionFailureCode; status: string | null };
 
 export type SlackDecisionResponse =
   | { ok: true; status: "EXECUTED"; executedRef: SlackDecisionExecutedRef | null }
