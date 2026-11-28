@@ -50,6 +50,14 @@ const TARGET_FLAG: Record<SettlementTarget, keyof SettlementCompletionFlags> = {
 };
 
 /**
+ * 확정 대상이 켜는 완료 플래그 — 실패 기안의 「이미 반영됨」 판정(`agent/already-applied.ts`)이
+ * 실행기와 같은 대응을 쓰도록 내보낸다. ⛔ 호출부에서 다시 매핑하지 말 것.
+ */
+export function settlementTargetFlag(target: SettlementTarget): keyof SettlementCompletionFlags {
+  return TARGET_FLAG[target];
+}
+
+/**
  * 슬롯 라벨("공급사 지급" 등) — 사유 문구가 채널마다 정확한 상대를 말하도록.
  * ⛔ 문자열을 손으로 조립하지 말 것: 상대·동사 모두 슬롯이 소유한다.
  */

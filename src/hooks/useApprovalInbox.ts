@@ -63,7 +63,7 @@ export function useApprovalInbox(
     staleTime: 15000,
   });
 
-  const { approve, reject } = useProposalActions();
+  const { approve, reject, close } = useProposalActions();
   const approveMany = useBulkApproveProposals();
 
   // 진행 중인 「더 보기」가 있으면 다시 부르지 않는다 — 같은 커서로 두 번 부르면
@@ -86,6 +86,7 @@ export function useApprovalInbox(
     isError: query.isError,
     approve,
     reject,
+    close,
     approveMany,
     refetch: query.refetch,
   };

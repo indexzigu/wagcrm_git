@@ -77,7 +77,8 @@ function manualFlagFor(field: SettlementAmountField): ManualFlag | null {
  * 은 0) 「비어 있음」을 0원으로 본 기안이 통과한다. 물품대금의 0 은 「다른 캠페인 계산서에
  * 합산됨」 표시라 null 과 뜻이 반대다(`goods-cost.ts` 3-상태).
  */
-function matchesExpected(current: DecimalLike, expected: number | null): boolean {
+/** 저장값과 원 단위 금액이 같은가(Decimal 비교, null ≠ 0). 「이미 반영됨」 판정도 이것을 쓴다. */
+export function matchesExpected(current: DecimalLike, expected: number | null): boolean {
   if (current == null) return expected === null;
   if (expected === null) return false;
   return new Prisma.Decimal(current.toString()).equals(expected);

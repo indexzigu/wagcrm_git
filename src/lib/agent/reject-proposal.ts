@@ -1,4 +1,8 @@
-import { ActionProposalRepository, ConcurrentModificationError } from "@/repositories/actionProposalRepository";
+import {
+  ActionProposalRepository,
+  ConcurrentModificationError,
+  FAILED_CLOSE_NOTE,
+} from "@/repositories/actionProposalRepository";
 import { findInboundRow, markInboundRejected, readCalendarInboundRef } from "@/lib/calendar-inbound/adopt";
 
 /**
@@ -31,14 +35,38 @@ export async function rejectProposal(id: string, actor: string, note: string): P
     throw err;
   }
 
-  const inboundRef = readCalendarInboundRef(proposal.sourceRef);
-  if (inboundRef) {
-    try {
-      const row = await findInboundRow(inboundRef.inboundId);
-      if (row?.proposalId === proposal.id) await markInboundRejected(inboundRef.inboundId, proposal.id);
-    } catch (markError) {
-      console.error(`[rejectProposal ${id}] 캘린더 수집 행 반려 표기 실패:`, markError);
-    }
-  }
+  await markCalendarInboundRejected(proposal, "rejectProposal");
   return { ok: true, proposal: rejected };
+}
+
+/** 캘린더 출신 기안이면 수집 행을 반려로 적는다 — 이 기안을 가리킬 때만. 실패해도 반려(커밋됨)는 성공이다. */
+async function markCalendarInboundRejected(
+  proposal: { id: string; sourceRef: unknown },
+  caller: string,
+): Promise<void> {
+  const inboundRef = readCalendarInboundRef(proposal.sourceRef);
+  if (!inboundRef) return;
+  try {
+    const row = await findInboundRow(inboundRef.inboundId);
+    if (row?.proposalId === proposal.id) await markInboundRejected(inboundRef.inboundId, proposal.id);
+  } catch (markError) {
+    console.error(`[${caller} ${proposal.id}] 캘린더 수집 행 반려 표기 실패:`, markError);
+  }
+}
+
+export type CloseFailedProposalOutcome = { ok: true } | { ok: false; code: "NOT_FOUND" | "CONFLICT" };
+
+/**
+ * 실패(FAILED) 기안 종결 — 결재함 실패 탭의 「종결」 버튼(`POST /api/action-proposals/[id]/close`).
+ * 다른 경로로 이미 처리했거나 더 필요 없는 실패 기안을 실패 목록에서 빼서 반려 탭에 「종결됨」으로 남긴다.
+ * 쓰기(실행)는 없다. 반려와 같은 이유로 캘린더 수집 행도 반려로 적어 같은 일정을 다시 기안하지 않게 한다.
+ * 그 사이 재시도로 상태가 바뀌었으면 CONFLICT.
+ */
+export async function closeFailedProposal(id: string, actor: string): Promise<CloseFailedProposalOutcome> {
+  const proposal = await ActionProposalRepository.findById(id);
+  if (!proposal) return { ok: false, code: "NOT_FOUND" };
+  const closed = await ActionProposalRepository.closeFailed(id, { actor, note: FAILED_CLOSE_NOTE });
+  if (!closed) return { ok: false, code: "CONFLICT" };
+  await markCalendarInboundRejected(proposal, "closeFailedProposal");
+  return { ok: true };
 }

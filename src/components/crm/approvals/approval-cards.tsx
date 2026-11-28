@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ENTITY_TYPE_LABELS, actionHasNoTargetYet } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
+import { CloseFailedButton } from "./close-failed-button";
+import { AlreadyAppliedBadge } from "./already-applied-badge";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
 import { formatShortDateTime } from "./format-time";
@@ -37,6 +39,10 @@ export type ApprovalInboxItem = {
   sourceRef?: unknown;
   /** [캘린더수집] 새 회차 생성 기안의 셀러·판매 조건 이름(서버 해석). */
   argLabels?: ProposalArgLabels | null;
+  /** 실패 탭 전용 — 다른 경로로 이미 반영됐는가(서버 판정 `already-applied.ts`). true 면 「이미반영됨」 배지. */
+  alreadyApplied?: boolean;
+  /** 반려 탭 전용 — 오너가 실패에서 종결한 기안인가. true 면 「반려됨」 대신 「종결됨」. */
+  closedFromFailure?: boolean;
 };
 
 // 정산(confirm_settlement) 승인은 카드(proposal-card.tsx)와 동일한 확인 다이얼로그를
@@ -320,17 +326,23 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
 }
 
 /**
- * 실패 카드 — errorMessage + [재시도] 버튼(§6-1).
+ * 실패 카드 — errorMessage + [재시도]·[종결] 버튼(§6-1).
  * useProposalActions.approve를 재사용(FAILED→APPROVED 상태기계 재시도)하며,
  * confirm_settlement이면 proposal-card와 동일한 확인 다이얼로그를 경유한다
  * (§6-1 "금전 가드 일관성" — 취소 시 approve 미호출).
+ *
+ * [종결]은 다른 경로로 이미 처리했거나 더 필요 없는 실패 기안을 실패 탭에서 뺀다(`onClose`).
+ * 서버가 「이미 반영됨」으로 판정한 카드(`alreadyApplied`)는 「이미반영됨」 배지를 달고 종결을 주 버튼으로 올린다 —
+ * 그 카드에서 재시도는 같은 거절을 다시 받을 뿐이다. `onClose` 가 없으면(스텁) 종전처럼 재시도만 그린다.
  */
 export function FailedCard({
   item,
   onApprove,
+  onClose,
 }: {
   item: ApprovalInboxItem;
   onApprove: (id: string) => Promise<unknown>;
+  onClose?: (id: string) => Promise<unknown>;
 }) {
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -365,11 +377,31 @@ export function FailedCard({
     }
   };
 
+  const handleClose = async () => {
+    if (pending || !onClose) return;
+    setPending(true);
+    setError(null);
+    try {
+      await onClose(item.id);
+    } catch (err) {
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : "종결 처리 중 오류가 발생했습니다.");
+      }
+    } finally {
+      if (mountedRef.current) {
+        setPending(false);
+      }
+    }
+  };
+
+  const applied = item.alreadyApplied === true;
+
   return (
     <li className={CARD_ROOT_CLASS}>
       <div className="flex flex-wrap items-center gap-2">
         <EntityBadge item={item} />
         <Badge variant="destructive">실패</Badge>
+        {applied && <AlreadyAppliedBadge />}
         <SourceBadge createdBy={item.createdBy} />
         <span className="text-xs tabular-nums text-muted-foreground">
           {formatShortDateTime(item.createdAt)}
@@ -397,11 +429,14 @@ export function FailedCard({
         </p>
       )}
 
+      {/* 버튼 자리는 [재시도][종결]로 고정하고 강조만 옮긴다 — 카드마다 순서가 바뀌면 목록을 훑으며
+          같은 자리를 누르는 습관이 오조작이 된다(재시도는 정산 외에는 확인 창이 없다, ss-ux 검토 2026-11-28). */}
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={handleRetry} disabled={pending}>
+        <Button size="sm" variant={applied && onClose ? "outline" : "default"} onClick={handleRetry} disabled={pending}>
           {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
           재시도
         </Button>
+        {onClose && <CloseFailedButton onClose={handleClose} disabled={pending} primary={applied} />}
       </div>
     </li>
   );
@@ -413,7 +448,7 @@ export function RejectedCard({ item }: { item: ApprovalInboxItem }) {
     <li className={CARD_ROOT_CLASS}>
       <div className="flex flex-wrap items-center gap-2">
         <EntityBadge item={item} />
-        <Badge variant="outline">반려됨</Badge>
+        <Badge variant="outline">{item.closedFromFailure ? "종결됨" : "반려됨"}</Badge>
         <SourceBadge createdBy={item.createdBy} />
         <span className="text-xs tabular-nums text-muted-foreground">
           {formatShortDateTime(item.createdAt)}

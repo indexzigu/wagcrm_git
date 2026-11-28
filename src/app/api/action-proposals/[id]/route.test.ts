@@ -18,6 +18,8 @@ vi.mock("@/repositories/actionProposalRepository", () => ({
   },
   // 라우트가 payload/executionResult 역직렬화에 사용 — 문자열이면 파싱, 객체면 그대로(실제 구현과 동일).
   deserializeJsonField: (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v),
+  isFailedCloseEvent: (e: { fromStatus: string | null; toStatus: string; note: string | null }) =>
+    e.fromStatus === "FAILED" && e.toStatus === "REJECTED" && e.note === "실패 기안 종결(오너)",
 }));
 
 const resolveArgLabelsMock = vi.fn();
@@ -25,6 +27,12 @@ vi.mock("@/lib/agent/resolve-entity-label", () => ({
   resolveEntityLabel: (...args: unknown[]) => resolveEntityLabelMock(...args),
   resolveProposalArgLabels: (...args: unknown[]) => resolveArgLabelsMock(...args),
 }));
+
+const detectAlreadyAppliedMock = vi.fn();
+vi.mock("@/lib/agent/already-applied", () => ({
+  detectAlreadyApplied: (...args: unknown[]) => detectAlreadyAppliedMock(...args),
+}));
+vi.mock("@/lib/prisma", () => ({ getPrisma: () => ({ fake: "prisma" }) }));
 
 const { GET } = await import("./route");
 
@@ -169,5 +177,49 @@ describe("GET /api/action-proposals/[id]", () => {
     expect(body.sourceRef).toEqual(sourceRef);
     expect(resolveArgLabelsMock).toHaveBeenCalledWith(payload);
     expect(body.argLabels).toEqual({ seller: "샘플", deal: "테스트브랜드 봄딜" });
+  });
+});
+
+describe("실패 기안의 이미 반영됨 판정", () => {
+  beforeEach(() => {
+    requireAuthMock.mockResolvedValue({ authenticated: true, context: { userId: "u1", role: "admin" } });
+    resolveEntityLabelMock.mockResolvedValue(null);
+    resolveArgLabelsMock.mockResolvedValue(null);
+    detectAlreadyAppliedMock.mockReset().mockResolvedValue(true);
+  });
+
+  it("실패 기안이면 alreadyApplied 를 싣는다", async () => {
+    findByIdMock.mockResolvedValue({ id: "p1", status: "FAILED", payload: { action: "confirm_settlement", args: {} }, sourceRef: null });
+    const body = await (await GET(makeRequest("p1"), makeParams("p1"))).json();
+    expect(body.alreadyApplied).toBe(true);
+  });
+
+  it("실패가 아니면 판정하지 않고 칸도 없다", async () => {
+    findByIdMock.mockResolvedValue({ id: "p1", status: "PENDING_APPROVAL", payload: null, sourceRef: null });
+    const body = await (await GET(makeRequest("p1"), makeParams("p1"))).json();
+    expect(body).not.toHaveProperty("alreadyApplied");
+    expect(detectAlreadyAppliedMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("실패에서 종결한 반려 기안", () => {
+  beforeEach(() => {
+    requireAuthMock.mockResolvedValue({ authenticated: true, context: { userId: "u1", role: "admin" } });
+    resolveEntityLabelMock.mockResolvedValue(null);
+    resolveArgLabelsMock.mockResolvedValue(null);
+  });
+
+  it("종결 이벤트가 있으면 closedFromFailure=true, 일반 반려면 false", async () => {
+    findByIdMock.mockResolvedValue({
+      id: "p1", status: "REJECTED", payload: null, sourceRef: null,
+      events: [{ fromStatus: "FAILED", toStatus: "REJECTED", note: "실패 기안 종결(오너)" }],
+    });
+    expect((await (await GET(makeRequest("p1"), makeParams("p1"))).json()).closedFromFailure).toBe(true);
+
+    findByIdMock.mockResolvedValue({
+      id: "p1", status: "REJECTED", payload: null, sourceRef: null,
+      events: [{ fromStatus: "PENDING_APPROVAL", toStatus: "REJECTED", note: "관리자 반려" }],
+    });
+    expect((await (await GET(makeRequest("p1"), makeParams("p1"))).json()).closedFromFailure).toBe(false);
   });
 });

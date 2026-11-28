@@ -200,6 +200,11 @@ export async function readRecordSnapshot(
   }
 }
 
+/** 저장값이 없는 행동 칸인가 — 지금 값과 비교해 반영 여부를 판정할 수 없는 칸이다. */
+export function isActionOnlyField(entityType: RecordEntityType, field: string): boolean {
+  return ACTION_ONLY_FIELDS[entityType].has(field);
+}
+
 /** 지금 값 — 행동 칸은 저장값이 없어 언제나 null 이다. */
 export function currentValueOf(entityType: RecordEntityType, snapshot: RecordSnapshot, field: string): unknown {
   if (ACTION_ONLY_FIELDS[entityType].has(field)) return null;
