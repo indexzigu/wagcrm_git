@@ -18,7 +18,8 @@ vi.mock("@/repositories/actionProposalRepository", () => ({
   },
   // 라우트가 payload/executionResult 역직렬화에 사용 — 문자열이면 파싱, 객체면 그대로(실제 구현과 동일).
   deserializeJsonField: (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v),
-  FAILED_CLOSE_NOTE: "실패 기안 종결(오너)",
+  isFailedCloseEvent: (e: { fromStatus: string | null; toStatus: string; note: string | null }) =>
+    e.fromStatus === "FAILED" && e.toStatus === "REJECTED" && e.note === "실패 기안 종결(오너)",
 }));
 
 const resolveArgLabelsMock = vi.fn();

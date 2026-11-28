@@ -274,7 +274,12 @@ export class ActionProposalRepository {
  */
 export const FAILED_CLOSE_NOTE = "실패 기안 종결(오너)";
 
-/** 반려 탭 목록 중 오너가 실패에서 종결한 기안 id — 이벤트 한 번 조회로 한 페이지를 가린다. */
+/** 이 이벤트가 오너의 실패 기안 종결인가 — 목록(`findFailedClosedIds`)과 상세 라우트가 같은 판정을 쓴다. */
+export function isFailedCloseEvent(event: { fromStatus: string | null; toStatus: string; note: string | null }): boolean {
+  return event.fromStatus === "FAILED" && event.toStatus === "REJECTED" && event.note === FAILED_CLOSE_NOTE;
+}
+
+/** 반려 탭 목록 중 오너가 실패에서 종결한 기안 id — 이벤트 한 번 조회로 한 페이지를 가린다(조건은 `isFailedCloseEvent` 와 같다). */
 export async function findFailedClosedIds(proposalIds: readonly string[]): Promise<Set<string>> {
   if (proposalIds.length === 0) return new Set();
   const rows = await getPrisma().actionProposalEvent.findMany({

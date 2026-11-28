@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/api-auth";
 import {
   ActionProposalRepository,
   deserializeJsonField,
-  FAILED_CLOSE_NOTE,
+  isFailedCloseEvent,
 } from "@/repositories/actionProposalRepository";
 import { resolveEntityLabel, resolveProposalArgLabels } from "@/lib/agent/resolve-entity-label";
 import { detectAlreadyApplied } from "@/lib/agent/already-applied";
@@ -39,14 +39,10 @@ export async function GET(_request: Request, context: Context) {
   const payload = deserializeJsonField(proposal.payload);
   // [캘린더수집] 새 회차 기안은 대상 캠페인이 없어 배지로 이름을 못 보인다 — args 의 셀러·판매 조건을 푼다.
   const argLabels = await resolveProposalArgLabels(payload);
-  // 실패 기안이면 다른 경로로 이미 반영됐는지 — 상세 카드도 목록 카드처럼 「반영됨」 배지와 종결 버튼을 띄운다.
+  // 실패 기안이면 다른 경로로 이미 반영됐는지 — 상세 카드도 목록 카드처럼 「이미반영됨」 배지와 종결 버튼을 띄운다.
   const alreadyApplied = proposal.status === "FAILED" ? await detectAlreadyApplied(payload, getPrisma()) : undefined;
   // 반려 기안이 오너가 실패에서 종결한 것이면 상세 배지도 「종결됨」이다(목록의 `closedFromFailure` 와 같은 판정).
-  const events = (proposal as { events?: { fromStatus: string | null; toStatus: string; note: string | null }[] }).events;
-  const closedFromFailure =
-    proposal.status === "REJECTED"
-      ? (events ?? []).some((e) => e.fromStatus === "FAILED" && e.toStatus === "REJECTED" && e.note === FAILED_CLOSE_NOTE)
-      : undefined;
+  const closedFromFailure = proposal.status === "REJECTED" ? (proposal.events ?? []).some(isFailedCloseEvent) : undefined;
 
   return NextResponse.json({
     ...proposal,
