@@ -13,7 +13,10 @@ import {
   type BriefDeps,
 } from "../slack-approval-brief";
 
-const names: BriefDeps = { entityName: vi.fn(async (_type, id: string) => `이름-${id}`) };
+const names: BriefDeps = {
+  entityName: vi.fn(async (_type, id: string) => `이름-${id}`),
+  settlementScope: vi.fn(async () => 1),
+};
 
 function proposal(action: string, args: Record<string, unknown>, resultSummary: string | null = null) {
   return { payload: { action, args }, resultSummary, targetEntityType: null, targetEntityId: null };
@@ -64,7 +67,21 @@ describe("buildSlackApprovalBrief — 줄 순서와 문구(R4)", () => {
 
   it("정산 확정·기록 수정·거래처 등록·회차 생성도 실행 명세에서 내용 줄을 만든다", async () => {
     const confirm = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), names);
-    expect(confirm.lines.slice(0, 2)).toEqual(["대상: 캠페인 「이름-c1」", "바뀌는 값: 지급완료 표시를 켭니다."]);
+    expect(confirm.lines.slice(0, 3)).toEqual([
+      "대상: 캠페인 「이름-c1」",
+      "바뀌는 값: 지급완료 표시를 켭니다.",
+      "금액: 이 기안에는 금액이 없습니다. 「전체 보기」에서 확인합니다.",
+    ]);
+    const grouped = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), {
+      ...names,
+      settlementScope: vi.fn(async () => 3),
+    });
+    expect(grouped.lines).toContain("묶음: 같은 묶음의 캠페인 3개에 함께 적용합니다.");
+    const unknownScope = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), {
+      ...names,
+      settlementScope: vi.fn(async () => null),
+    });
+    expect(unknownScope.complete).toBe(false);
 
     const record = await buildSlackApprovalBrief(proposal("update_record", SAMPLES.update_record), names);
     expect(record.lines[0]).toBe("대상: 캠페인 「이름-c1」");
@@ -141,7 +158,10 @@ describe("buildSlackApprovalBrief — 지어낸 설명 금지(R5)", () => {
   });
 
   it("이름 조회가 실패해도 글을 만든다(이름 자리는 「(이름 없음)」)", async () => {
-    const failing: BriefDeps = { entityName: vi.fn(async () => Promise.reject(new Error("db down"))) };
+    const failing: BriefDeps = {
+      entityName: vi.fn(async () => Promise.reject(new Error("db down"))),
+      settlementScope: vi.fn(async () => 1),
+    };
     const brief = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), failing);
     expect(brief.lines[0]).toBe("대상: 캠페인 「(이름 없음)」");
   });

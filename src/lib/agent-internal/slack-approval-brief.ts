@@ -12,6 +12,7 @@ import {
   formatSettlementAmountKrw,
   isSettlementAmountField,
 } from "@/lib/settlement-amount-fields";
+import { getPrisma } from "@/lib/prisma";
 import { parseStoredJsonObject } from "@/lib/stored-json";
 
 /**
@@ -90,9 +91,22 @@ export type BriefProposal = {
 export type BriefDeps = {
   /** 대상 이름 — 못 찾으면 null */
   entityName: (type: ResolvableEntityType, id: string) => Promise<string | null>;
+  /** 정산 확정이 함께 바꾸는 캠페인 수 — 묶음이면 묶음 멤버 수, 아니면 1. 못 읽으면 null */
+  settlementScope: (campaignId: string) => Promise<number | null>;
 };
 
-const defaultDeps: BriefDeps = { entityName: (type, id) => resolveEntityLabel(type, id) };
+async function readSettlementScope(campaignId: string): Promise<number | null> {
+  const prisma = getPrisma();
+  const campaign = await prisma.salesCampaign.findUnique({ where: { id: campaignId }, select: { groupId: true } });
+  if (!campaign) return null;
+  if (!campaign.groupId) return 1;
+  return prisma.salesCampaign.count({ where: { groupId: campaign.groupId } });
+}
+
+const defaultDeps: BriefDeps = {
+  entityName: (type, id) => resolveEntityLabel(type, id),
+  settlementScope: readSettlementScope,
+};
 
 function str(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -148,10 +162,17 @@ async function detailLines(
     }
     case "confirm_settlement": {
       const target = args.target;
-      if (target !== "deposit" && target !== "payout") return null;
+      const campaignId = str(args.campaignId);
+      if ((target !== "deposit" && target !== "payout") || !campaignId) return null;
+      // 확정은 묶음 전체에 걸린다(실행기가 묶음 멤버를 함께 고친다) — 범위를 못 읽으면 내용을 다 못 보인 것이다.
+      const scope = await deps.settlementScope(campaignId).catch(() => null);
+      if (scope === null) return null;
       return [
-        await targetLine(deps, "CAMPAIGN", str(args.campaignId)),
+        await targetLine(deps, "CAMPAIGN", campaignId),
         `바뀌는 값: ${target === "deposit" ? "입금확정" : "지급완료"} 표시를 켭니다.`,
+        // 이 기안의 실행 명세에는 금액이 없다 — 카드에 지어내지 않고(R5) 확인할 곳을 적는다.
+        "금액: 이 기안에는 금액이 없습니다. 「전체 보기」에서 확인합니다.",
+        ...(scope > 1 ? [`묶음: 같은 묶음의 캠페인 ${scope}개에 함께 적용합니다.`] : []),
       ];
     }
     case "update_record": {

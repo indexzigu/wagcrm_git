@@ -273,7 +273,7 @@ export type SlackApprovalBriefPayload = { heading: string; lines: string[]; caut
 
 /** `decision: "preview"` 응답 — 자격이 있고 대기 중일 때만 글을 준다. 실패 코드는 결정 응답과 같은 뜻이다. */
 export type SlackPreviewResponse =
-  | { ok: true; status: "PENDING_APPROVAL"; brief: SlackApprovalBriefPayload }
+  | { ok: true; status: "PENDING_APPROVAL"; action: string; brief: SlackApprovalBriefPayload }
   | { ok: false; code: SlackDecisionFailureCode; status: string | null };
 
 export type SlackDecisionResponse =

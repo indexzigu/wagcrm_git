@@ -249,7 +249,7 @@ describe("돈 기안 슬랙 승인", () => {
 });
 
 describe("previewProposalForSlack", () => {
-  const names = { entityName: vi.fn(async () => "테스트 캠페인") };
+  const names = { entityName: vi.fn(async () => "테스트 캠페인"), settlementScope: vi.fn(async () => 1) };
 
   it("자격 있는 대기 기안이면 카드 글을 돌려주고 아무것도 쓰지 않는다", async () => {
     const d = deps({
@@ -262,6 +262,7 @@ describe("previewProposalForSlack", () => {
     const result = await previewProposalForSlack("p1", d, names);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("unreachable");
+    expect(result.action).toBe("update_settlement_amount");
     expect(result.brief.heading).toBe("승인 요청: 정산 금액 수정");
     expect(result.brief.lines).toContain("바뀌는 값: 셀러지급액 1,000원 → 1,500원");
     expect(result.brief.caution).not.toBeNull();

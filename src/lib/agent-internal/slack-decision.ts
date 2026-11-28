@@ -27,7 +27,8 @@ import { SLACK_OWNER_APPROVAL_ACTOR } from "./actors";
  *  ③ 대기 중(`PENDING_APPROVAL`)이 아닌 기안은 승인·반려를 시도하지 않는다(최종 방어는 여전히 본체의 상태 전이 CAS). 승인은 `PENDING_APPROVAL` 에서만(실패 기안 재실행은 결재함에서). 중복 클릭은 승인 본체의 상태 전이(CAS)가 막고,
  *     이미 처리된 기안이면 현재 상태를 다시 읽어 돌려준다(CONFLICT 의 상태는 낡은 값이라).
  * 승인자·반려자는 `SLACK_OWNER_APPROVAL_ACTOR` — 결재함이 「슬랙에서 승인」으로 표시한다. 이 값은 사람 승인으로 다뤄져
- * 정산 확정 뒤 금액 수정도 통과한다(`isAutomatedActor`) — 카드의 주의 줄이 그 확인을 오너에게 맡긴다.
+ * 정산 확정 뒤 금액 수정도 통과한다(`isAutomatedActor`). ⚠️ 카드는 지금 확정 여부를 표시하지 않는다 — 결재함과 같은 규칙이고,
+ * 실행 뒤 결과 요약에 「정산 확정 후 수정」이 남는다(후속 후보: 카드에 확정 여부 줄).
  * 거래처 등록은 결재함 승인에서만 계산서 정보 보강(`partnerEnrichment`)이 붙는다 — 슬랙 승인은 보강 없이 등록하고 카드가 그렇게 적는다.
  */
 export const SLACK_DECIDABLE_ACTIONS: ReadonlySet<WriteActionName> = new Set<WriteActionName>([
@@ -134,7 +135,9 @@ export async function previewProposalForSlack(
     },
     briefDeps,
   );
-  return { ok: true, status: "PENDING_APPROVAL", brief };
+  // 기안 종류를 함께 준다 — hermes 는 자기 기록의 종류와 다르면 버튼을 달지 않는다(글 필수 판정을 로컬 기록에만 기대지 않게).
+  const action = parseStoredJsonObject(proposal.payload).action;
+  return { ok: true, status: "PENDING_APPROVAL", action: typeof action === "string" ? action : "", brief };
 }
 
 export async function decideProposalFromSlack(
