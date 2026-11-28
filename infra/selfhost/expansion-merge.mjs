@@ -63,6 +63,12 @@ const MERGED_STATES = new Set(["merged", "deployed", "deploy-failed"]);
 // signature can never verify as a deploy decision or the other way round.
 export const DEPLOY_SIG_PREFIX = "wag-expansion-deploy-v1";
 export const DEPLOY_MAX_AGE_MS = 24 * 3600 * 1000;
+// An approval still "transient" this long after the click is stuck, not flaky: tell the owner once (T-343).
+export const STUCK_NOTICE_MS = 2 * 3600 * 1000;
+// After a squash merge GitHub can take a while to link the merge commit to its PR; deploy.sh's CI gate (T-069)
+// fails closed until it does. Poll for the link before deploying (T-341).
+export const LINK_WAIT_MS = 5 * 60 * 1000;
+export const LINK_POLL_MS = 10 * 1000;
 export const MAX_DEPLOY_PATHS = 30;
 export const MAX_BODY = 2000; // hermes expansion_cards.py MAX_BODY (counted after its &<> escaping)
 const MAX_DEPLOY_COMMITS = 20;
@@ -225,7 +231,7 @@ const fold = (p) => String(p).normalize("NFKC").toLowerCase();
 
 // Guarded ranges a deploy button may not cover → owner-facing reason (Korean), or null when a card is allowed.
 export function menubarOnlyReason(hits) {
-  if (hits.includes(NO_MARKER)) return "링크 서버 배포 기록 없음";
+  if (hits.includes(NO_MARKER)) return "링크 서버 배포 기록 없음 — 메뉴바 배포가 링크 서버도 다시 올리며 wrangler 로그인이 필요할 수 있음";
   const f = hits.map(fold);
   if (f.some((p) => p.startsWith("ygrd-link/"))) return "ygrd-link/ 변경 — 되돌리는 절차 없음";
   if (f.includes("infra/selfhost/expansion-merge.mjs")) return "실행기 infra/selfhost/expansion-merge.mjs 변경";
@@ -333,6 +339,10 @@ function rangeHits(deps, from, tip) {
   const hits = zList(crm.out).filter(isForbiddenPath);
   const marker = (deps.readText(deps.paths.workerMarker) ?? "").trim();
   if (!SHA_RE.test(marker)) return [...hits, NO_MARKER];
+  // A well-formed sha that is not a commit in this repo (e.g. from before the history-free repo move) cannot be
+  // diffed; release-deploy.sh treats it as "no record" and redeploys the link server, so the range is menubar-only.
+  // Returning null here would make every attempt "transient" forever, silently (11-27).
+  if (deps.git(["cat-file", "-e", `${marker}^{commit}`]).rc !== 0) return [...hits, NO_MARKER];
   const w = deps.git(["diff", "-z", "--no-renames", "--name-only", marker, tip, "--", "ygrd-link/"]);
   if (w.rc !== 0) return null;
   return [...hits, ...zList(w.out)];
@@ -416,13 +426,27 @@ export async function run(deps) {
     note("note-deploy-invalid", "배포 거부 — 승인 기록 서명 불일치",
       `서명이 맞지 않는 배포 승인 기록 ${deploys.invalid.length}건을 처리하지 않았습니다. 「배포」 버튼을 누른 적이 없다면 확장 회차 점검이 필요합니다.`);
   }
+  // Once per approval: a click that has been "transient" for STUCK_NOTICE_MS is stuck, so say so (T-343).
+  const noticeStuck = (d, post) => {
+    const age = deps.now() - Date.parse(d.at);
+    if (!(age > STUCK_NOTICE_MS) || doneLines.some((x) => x.status === "stuck-notice" && x.sig === d.sig)) return;
+    if (post()) deps.appendLine(paths.done, { status: "stuck-notice", sig: d.sig, at: nowIso() });
+  };
+  const STUCK_BODY = "승인을 받았지만 실행기가 같은 일시 오류로 계속 다시 시도하고 있어 자동으로 진행되지 않고 있습니다. 실행기 로그(~/selfhost/logs/cron.log 의 expansion-merge 줄)를 사람 세션에서 확인해 주세요. 운영은 바뀌지 않았습니다.";
   // A deploy click goes first and is the only decision handled this run.
-  if (deploys.queue.length) return deployOne(deps, deploys.queue[0], doneLines, nowIso, note);
+  if (deploys.queue.length) {
+    const d = deploys.queue[0];
+    const r = deployOne(deps, d, doneLines, nowIso, note);
+    if (r === "transient") noticeStuck(d, () => note(`note-stuck-deploy-${d.tip.slice(0, 8)}`, "배포 승인 정체 — 자동 진행 안 됨", STUCK_BODY));
+    return r;
+  }
   let sawTransient = false;
   for (const d of queue) {
     const r = await tryOne(deps, d, doneLines, nowIso, notify);
-    if (r === "transient") sawTransient = true;
-    else if (r !== "waiting") return r;
+    if (r === "transient") {
+      sawTransient = true;
+      noticeStuck(d, () => notify(d.pr, `머지 승인 정체 — PR #${d.pr}`, STUCK_BODY));
+    } else if (r !== "waiting") return r;
   }
   if (sawTransient) return "transient";
   return queue.length ? "waiting" : invalid.length || deploys.invalid.length ? "invalid" : "idle";
@@ -527,6 +551,23 @@ function deployOne(deps, d, doneLines, nowIso, note) {
   note(noteId, "배포 완료 — 배포 승인 카드",
     `운영이 ${d.tip.slice(0, 8)} 로 반영됐습니다(이전 ${d.from.slice(0, 8)}). 기다리던 봇 PR 머지는 다음 회차에 이어집니다. ${ROLLBACK_NOTE}`);
   return "deployed";
+}
+
+// True once GitHub lists `pr` among the merged PRs of `sha` (what deploy.sh's T-069 gate asks). Errors count as
+// "not yet"; the wait is bounded and the caller halts (fail-closed) if the link never shows.
+async function waitForPrLink(deps, sha, pr) {
+  const polls = Math.floor(LINK_WAIT_MS / LINK_POLL_MS);
+  for (let i = 0; ; i++) {
+    const r = deps.prLinks(sha);
+    if (r.rc === 0 && r.prs.includes(pr)) return true;
+    if (i >= polls) {
+      // Keep the last answer: "gh kept failing" and "GitHub never linked it" need different fixes.
+      const last = r.rc === 0 ? `linked PRs [${r.prs.join(",")}]` : `gh rc=${r.rc} ${String(r.err ?? "").trim().slice(0, 200)}`;
+      deps.log("FAIL", `pr=${pr} merge ${sha.slice(0, 8)} not linked after ${LINK_WAIT_MS / 60000} min; last: ${last}`);
+      return false;
+    }
+    await deps.sleep(LINK_POLL_MS);
+  }
 }
 
 async function tryOne(deps, d, doneLines, nowIso, notify) {
@@ -666,6 +707,12 @@ async function tryOne(deps, d, doneLines, nowIso, notify) {
   const refetch = deps.git(["fetch", "-q", "origin", `+refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}`]);
   const onMain = refetch.rc === 0 && deps.git(["merge-base", "--is-ancestor", mergeOid, `origin/${BASE_BRANCH}`]).rc === 0;
   if (!onMain) return halt("merge commit not on origin/main", `배포 보류 — PR #${d.pr} 은 머지됨`, "머지 커밋이 main 에 있는지 확인하지 못했습니다.");
+  if (!(await waitForPrLink(deps, mergeOid, d.pr)))
+    return halt(`merge commit not linked to PR on GitHub after ${LINK_WAIT_MS / 60000} min`, `배포 보류 — PR #${d.pr} 은 머지됨`,
+      `GitHub 이 머지 커밋을 PR #${d.pr} 에 ${LINK_WAIT_MS / 60000}분 안에 연결하지 않아 배포 관문을 통과할 수 없어 배포하지 않았습니다(운영은 그대로). 연결이 보이면 메뉴바 「배포하기」로 반영하세요.`);
+  // The wait can take minutes: an owner STOP created meanwhile must win over the deploy.
+  if (deps.exists(paths.stop))
+    return halt("STOP set while waiting for the PR link", `배포 보류 — PR #${d.pr} 은 머지됨`, "기다리는 사이 정지 표지가 생겨 배포하지 않았습니다(운영은 그대로).");
   const postHits = rangeHits(deps, deployedBefore, `origin/${BASE_BRANCH}`);
   if (postHits === null || postHits.length)
     return halt(`guarded paths in range after merge (${(postHits ?? ["unreadable"]).slice(0, 3).join(", ")})`,
@@ -745,6 +792,19 @@ function realDeps() {
     remove: (p) => rmSync(p, { force: true }),
     gh: (args) => sh("gh", [...args, "--repo", "indexzigu/wagcrm_git"], { cwd: repo, env: { ...baseEnv, GH_TOKEN: token() } }),
     git: (args) => sh("git", ["-C", repo, ...args]),
+    // Merged PR numbers GitHub links to a commit (the same API deploy.sh's T-069 gate uses). `gh api` takes no --repo.
+    prLinks: (sha) => {
+      const r = sh("gh", ["api", `repos/indexzigu/wagcrm_git/commits/${sha}/pulls`, "--jq", "[.[] | select(.merged_at != null) | .number]"],
+        { cwd: repo, env: { ...baseEnv, GH_TOKEN: token() } });
+      if (r.rc !== 0) return { rc: r.rc, prs: [], err: r.err };
+      try {
+        const prs = JSON.parse(r.out);
+        return Array.isArray(prs) ? { rc: 0, prs } : { rc: 1, prs: [], err: "unexpected gh api output" };
+      } catch (e) {
+        return { rc: 1, prs: [], err: `gh api output not JSON: ${e?.message ?? e}` };
+      }
+    },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     // expectSha pins the deploy (DEPLOY_EXPECT_SHA → deploy.sh); the merge path calls it without one.
     deploy: (opts = {}) => {
       const env = opts.expectSha ? { ...baseEnv, DEPLOY_EXPECT_SHA: opts.expectSha } : baseEnv;

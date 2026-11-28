@@ -50,6 +50,7 @@ type Opts = {
   rangeAfter?: string[]; worker?: string[]; workerMarker?: string; deployRc?: number; mergedState?: string;
   stop?: boolean; inprogress?: boolean; key?: string; containsRc?: number; head?: string; onMainRc?: number;
   shippedExtra?: string[]; prSeq?: unknown[]; tip?: string; deployedSha?: string; deployTo?: string; commits?: string[]; tipAfterDeploy?: string;
+  linkSeq?: Array<number[] | null>; catFileRc?: number;
 };
 function harness(o: Opts) {
   const files: Record<string, string> = {
@@ -69,6 +70,9 @@ function harness(o: Opts) {
   let viewN = 0;
   let tipNow = o.tip ?? TIP;
   const deployOpts: unknown[] = [];
+  const sleeps: number[] = [];
+  const linkCalls: string[] = [];
+  let lastMergedPr = 0;
   let merged = false;
   const z = (xs: string[]) => xs.join("\0") + (xs.length ? "\0" : "");
   const deps = {
@@ -92,10 +96,11 @@ function harness(o: Opts) {
         const seq = o.prSeq ? o.prSeq[Math.min(viewN++, o.prSeq.length - 1)] : (o.pr ?? goodPr());
         return { rc: o.prRc ?? 0, out: JSON.stringify(seq) };
       }
-      if (args[1] === "merge") merged = true;
+      if (args[1] === "merge") { merged = true; lastMergedPr = Number(args[2]); }
       return { rc: 0, out: "" };
     },
     git: (args: string[]) => {
+      if (args[0] === "cat-file") return { rc: o.catFileRc ?? 0, out: "" };
       if (args[0] === "rev-parse") return { rc: 0, out: `${args[1] === "origin/main" ? tipNow : (o.head ?? SHA)}\n` };
       if (args[0] === "log") return { rc: 0, out: (o.commits ?? ["abc1234 feat: earlier merge"]).join("\n") + "\n" };
       if (args[0] === "diff") {
@@ -115,12 +120,19 @@ function harness(o: Opts) {
       if (o.tipAfterDeploy) tipNow = o.tipAfterDeploy;
       return o.deployRc ?? 0;
     },
+    prLinks: (sha: string) => {
+      const seq = o.linkSeq ?? [[lastMergedPr]];
+      const r = seq[Math.min(linkCalls.length, seq.length - 1)];
+      linkCalls.push(sha);
+      return r === null ? { rc: 1, prs: [] } : { rc: 0, prs: r };
+    },
+    sleep: (ms: number) => { sleeps.push(ms); return Promise.resolve(); },
     post: (c: unknown) => { posts.push(c); return true; },
     log: (label: string, body: string) => logs.push(`${label} ${body}`),
     paths: { decisions: "dec", done: "done", key: "key", stop: "stop", inprogress: "inprogress", deployedSha: "dsha", workerMarker: "wmark", approver: "U123" },
   };
   return {
-    deps, gh, posts, logs, files, deployOpts,
+    deps, gh, posts, logs, files, deployOpts, sleeps, linkCalls,
     get deployed() { return deployed; }, get stop() { return stop; }, get inprogress() { return inprogress; }, get merged() { return merged; },
   };
 }
@@ -788,5 +800,98 @@ describe("expansion-merge deploy decision", () => {
       expect(await M.run(h.deps)).toBe("stopped");
       expect(h.deployed).toBe(0);
     }
+  });
+});
+
+// T-343: a well-formed link-server marker that is not a commit in this repo (e.g. from the pre-migration history)
+// used to make every attempt "transient" forever, silently. It must count as "no marker" (menubar-only notice).
+describe("expansion-merge unknown link-server marker (T-343)", () => {
+  it("marker sha absent from the repo → menubar-only notice, no silent retry", async () => {
+    const h = harness({ decisions: [signed()], catFileRc: 1 });
+    expect(await M.run(h.deps)).toBe("range-guarded");
+    expect(h.merged).toBe(false);
+    expect(h.logs.join("\n")).not.toContain("cannot read deploy range");
+    expect(h.posts.filter((c) => c.kind === "deploy")).toEqual([]);
+    expect(h.posts.at(-1).body).toContain("링크 서버 배포 기록 없음");
+  });
+
+  it("an approval stuck in transient for over 2h notifies the owner once", async () => {
+    const d = signed({ at: "2026-11-24T09:00:00Z" });
+    const h = harness({ decisions: [d], prRc: 1 });
+    expect(await M.run(h.deps)).toBe("transient");
+    expect(h.posts).toHaveLength(1);
+    expect(h.posts[0].title).toContain("PR #309");
+    expect(h.posts[0].body).toContain("자동으로 진행되지 않고");
+    expect(h.files.done).toContain('"status":"stuck-notice"');
+    expect(await M.run(h.deps)).toBe("transient");
+    expect(h.posts).toHaveLength(1);
+  });
+
+  it("a transient approval younger than 2h does not notify", async () => {
+    const h = harness({ decisions: [signed()], prRc: 1 });
+    expect(await M.run(h.deps)).toBe("transient");
+    expect(h.posts).toEqual([]);
+  });
+
+  it("a deploy click stuck in transient for over 2h notifies once", async () => {
+    const h = harness({ decisions: [signedDeploy({ at: "2026-11-24T09:00:00Z" })], done: [cardLine()], range: ["prisma/schema.prisma"], deployTo: TIP });
+    const git = h.deps.git;
+    h.deps.git = (args: string[]) => (args[0] === "fetch" ? { rc: 1, out: "" } : git(args));
+    expect(await M.run(h.deps)).toBe("transient");
+    expect(h.posts).toHaveLength(1);
+    expect(await M.run(h.deps)).toBe("transient");
+    expect(h.posts).toHaveLength(1);
+  });
+});
+
+// T-341: right after a squash merge GitHub may not yet link the merge commit to its PR, and deploy.sh's CI gate
+// (T-069) then fails closed — that halted the executor on 11-26. Wait (bounded) for the link before deploying.
+describe("expansion-merge waits for the PR link before deploying (T-341)", () => {
+  it("link already visible → deploys without waiting", async () => {
+    const h = harness({ decisions: [signed()] });
+    expect(await M.run(h.deps)).toBe("deployed");
+    expect(h.linkCalls).toEqual([MERGED]);
+    expect(h.sleeps).toEqual([]);
+  });
+
+  it("link appears after two polls (errors count as not yet) → deploys", async () => {
+    const h = harness({ decisions: [signed()], linkSeq: [[], null, [309]] });
+    expect(await M.run(h.deps)).toBe("deployed");
+    expect(h.sleeps).toEqual([M.LINK_POLL_MS, M.LINK_POLL_MS]);
+    expect(h.deployed).toBe(1);
+  });
+
+  it("a link to a different PR does not count", async () => {
+    const h = harness({ decisions: [signed()], linkSeq: [[310]] });
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.deployed).toBe(0);
+  });
+
+  it("STOP created during the wait wins: no deploy, deploy-failed", async () => {
+    const h = harness({ decisions: [signed()], linkSeq: [[], [309]] });
+    const sleep = h.deps.sleep;
+    h.deps.sleep = (ms: number) => { h.deps.touch("stop"); return sleep(ms); };
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.deployed).toBe(0);
+    expect(h.stop).toBe(true);
+    expect(h.inprogress).toBe(false);
+    expect(h.files.done).toContain("STOP set while waiting for the PR link");
+  });
+
+  it("gh failing throughout is logged with its last error", async () => {
+    const h = harness({ decisions: [signed()], linkSeq: [null] });
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.logs.join("\n")).toMatch(/not linked after 5 min; last: gh rc=1/);
+  });
+
+  it("never linked within the budget → no deploy, STOP + deploy-failed, owner told to use the menubar", async () => {
+    const h = harness({ decisions: [signed()], linkSeq: [[]] });
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.deployed).toBe(0);
+    expect(h.stop).toBe(true);
+    expect(h.inprogress).toBe(false);
+    expect(h.sleeps.length).toBe(M.LINK_WAIT_MS / M.LINK_POLL_MS);
+    expect(h.posts.at(-1).body).toContain("메뉴바 「배포하기」");
+    expect(h.files.done).toContain('"status":"deploy-failed"');
   });
 });
