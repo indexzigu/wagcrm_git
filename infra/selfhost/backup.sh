@@ -50,10 +50,11 @@ set -euo pipefail
 DB_CONTAINER="supabase-db"
 PG_USER="postgres"
 PG_DB="postgres"
-R2_CREDS_FILE="/Users/z9/selfhost/r2-credentials.txt"
+# 홈은 $HOME 에서 파생한다(아이맥 /Users/z9 에서는 종전 리터럴과 같은 값 — 2026-11 맥북 이관).
+R2_CREDS_FILE="$HOME/selfhost/r2-credentials.txt"
 R2_REMOTE="r2"                     # rclone remote 이름(테스트 완료: list/upload/delete 전부 동작)
 R2_BACKUP_PREFIX="backups"
-LOG_DIR="/Users/z9/selfhost/logs"
+LOG_DIR="$HOME/selfhost/logs"
 RETENTION_DAYS="30"
 # 무료 티어(10GB)의 80% = 8GiB. 여기서 멈추는 이유: 오너의 명시적 우려는
 # "무료 티어를 조용히 넘겨서 과금되는 것" — 이 가드가 그 시나리오를 막는
@@ -81,6 +82,13 @@ mkdir -p "$LOG_DIR"
 # 불필요했지만, 이 스크립트는 그렇지 않다). 후보 목록을 "단순화"해서
 # 지우지 말 것 — 다음에도 같은 방식으로 조용히 죽는다.
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared gh/bin; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
 
 # ── R2_BUCKET 읽기 — 이 파일에서 R2_BUCKET **한 줄만** 읽는다. 다른 값
 # (R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_ENDPOINT)은 rclone 설정

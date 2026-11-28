@@ -97,6 +97,13 @@ export NODE_ENV=production
 # KeepAlive 가 ThrottleInterval(기본 10초)마다 조용히 재시도만 반복하는
 # 크래시루프가 된다.
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+# 두 번째 맥 도구 후보(~/opt — Homebrew 없는 Big Sur 서버, 2026-11 맥북 이관). 기존 후보
+# **뒤**에, 디렉터리가 있을 때만 붙인다 → ~/opt 가 없는 아이맥은 PATH 가 한 글자도 안 바뀐다.
+# 후보 목록은 레포 전체에서 같다(계약: scripts/__tests__/selfhost-host-portability.test.ts).
+for _host_opt_dir in node/bin rclone jq cloudflared gh/bin; do
+  if [ -n "${HOME:-}" ] && [ -d "$HOME/opt/$_host_opt_dir" ]; then PATH="$PATH:$HOME/opt/$_host_opt_dir"; fi
+done
+export PATH
 NODE_BIN="$(command -v node || true)"
 if [ -z "$NODE_BIN" ]; then
   die "node 실행파일을 찾을 수 없습니다 (PATH=$PATH). node 설치 경로를 확인하고 이 스크립트의 PATH 후보 목록을 갱신하세요."
