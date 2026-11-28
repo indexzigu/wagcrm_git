@@ -8,7 +8,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 const HINT = "현재 값이 이 기안이 바꾸려던 값과 이미 같습니다. 다시 실행하지 않고 종결해도 됩니다.";
 
 /**
- * 실패 기안의 「이미반영됨」 배지 — 서버 판정(`lib/agent/already-applied.ts`)이 true 일 때만 그린다.
+ * 실패 기안의 「반영완료」 배지 — 서버 판정(`lib/agent/already-applied.ts`)이 true 일 때만 그린다.
  * 목록 카드(`approval-cards.tsx` FailedCard)와 상세 카드(`proposal-card.tsx`)가 함께 쓴다.
  *
  * 풀이는 설명창으로 연다 — 마우스·키보드 포커스·터치(P2 화면 문구 기준 ②, 패턴 정본 `status-dot.tsx` 의 `hint`).
@@ -31,7 +31,7 @@ export function AlreadyAppliedBadge() {
         >
           <Badge variant="status-success">
             <CircleCheckIcon aria-hidden />
-            <span className="underline decoration-dotted underline-offset-4">이미반영됨</span>
+            <span className="underline decoration-dotted underline-offset-4">반영완료</span>
           </Badge>
         </button>
       </HoverCardTrigger>
