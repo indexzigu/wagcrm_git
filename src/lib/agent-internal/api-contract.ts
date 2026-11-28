@@ -269,7 +269,7 @@ export type SlackDecisionFailureCode = (typeof SLACK_DECISION_FAILURE_CODES)[num
 export type SlackDecisionExecutedRef = { type: string; id: string };
 
 /** 카드 글 — `slack-approval-brief.ts` 가 만든다. hermes 는 이 줄들을 그대로 싣는다(이스케이프·길이 자르기만). */
-export type SlackApprovalBriefPayload = { heading: string; lines: string[]; caution: string | null };
+export type SlackApprovalBriefPayload = { heading: string; lines: string[]; caution: string | null; complete: boolean };
 
 /** `decision: "preview"` 응답 — 자격이 있고 대기 중일 때만 글을 준다. 실패 코드는 결정 응답과 같은 뜻이다. */
 export type SlackPreviewResponse =

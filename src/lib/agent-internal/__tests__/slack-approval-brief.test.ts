@@ -4,7 +4,14 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { WRITE_ACTIONS } from "@/lib/agent/write-actions";
-import { BRIEF_TEXT, MONEY_ACTIONS, buildSlackApprovalBrief, type BriefDeps } from "../slack-approval-brief";
+import {
+  BRIEF_TEXT,
+  CONTENT_REQUIRED_ACTIONS,
+  MAX_BRIEF_FIELDS,
+  MONEY_ACTIONS,
+  buildSlackApprovalBrief,
+  type BriefDeps,
+} from "../slack-approval-brief";
 
 const names: BriefDeps = { entityName: vi.fn(async (_type, id: string) => `이름-${id}`) };
 
@@ -15,8 +22,13 @@ function proposal(action: string, args: Record<string, unknown>, resultSummary: 
 const SAMPLES: Record<string, Record<string, unknown>> = {
   update_settlement_amount: { campaignId: "c1", field: "sellerExpense", expectedCurrentKrw: 1_000_000, newAmountKrw: 1_200_000 },
   confirm_settlement: { campaignId: "c1", target: "payout" },
-  update_record: { entityType: "CAMPAIGN", entityId: "c1", changes: { memo: "새 메모" }, expected: { memo: "옛 메모" } },
-  create_partner: { partner: { name: "가상상사", type: "SUPPLIER" }, contacts: [{}] },
+  update_record: {
+    entityType: "CAMPAIGN",
+    entityId: "c1",
+    changes: { taxExpense: 2_000, quantity: 30 },
+    expected: { taxExpense: 1_000, quantity: 20 },
+  },
+  create_partner: { partner: { name: "가상상사", type: "BRAND" }, contacts: [{ name: "가상 담당" }] },
   create_campaign_round: { dealId: "d1", sellerId: "s1", startDate: "2026-12-01", endDate: "2026-12-07" },
 };
 
@@ -37,6 +49,7 @@ describe("buildSlackApprovalBrief — 줄 순서와 문구(R4)", () => {
         BRIEF_TEXT.undo,
       ],
       caution: BRIEF_TEXT.caution,
+      complete: true,
     });
   });
 
@@ -55,10 +68,14 @@ describe("buildSlackApprovalBrief — 줄 순서와 문구(R4)", () => {
 
     const record = await buildSlackApprovalBrief(proposal("update_record", SAMPLES.update_record), names);
     expect(record.lines[0]).toBe("대상: 캠페인 「이름-c1」");
-    expect(record.lines[1]).toMatch(/^바뀌는 값: .+ → .+/);
+    // 칸마다 한 줄 — 칸 이름에 「 · 」가 있어도 금액이 다른 줄로 갈라지지 않는다.
+    expect(record.lines[1]).toMatch(/^바뀌는 값: 공제세액 · 부가세 .*1,000.* → .*2,000/);
+    expect(record.lines[2]).toMatch(/^바뀌는 값: .+ .*20.* → .*30/);
+    expect(record.lines).toHaveLength(2 + 1 + 2);
+    expect(record.complete).toBe(true);
 
     const partner = await buildSlackApprovalBrief(proposal("create_partner", SAMPLES.create_partner), names);
-    expect(partner.lines[0]).toMatch(/^새 거래처: 「가상상사」/);
+    expect(partner.lines[0]).toBe("새 거래처: 「가상상사」 (브랜드)");
     expect(partner.lines).toContain("계산서 정보: 채우지 않습니다. 필요하면 결재함 승인으로 채웁니다.");
     expect(partner.caution).toBeNull();
 
@@ -72,6 +89,42 @@ describe("buildSlackApprovalBrief — 줄 순서와 문구(R4)", () => {
 });
 
 describe("buildSlackApprovalBrief — 지어낸 설명 금지(R5)", () => {
+  it("내용 필수 액션이 명세에서 내용을 못 만들면 complete=false 다(hermes 가 버튼을 달지 않는다)", async () => {
+    for (const action of CONTENT_REQUIRED_ACTIONS) {
+      const brief = await buildSlackApprovalBrief(proposal(action, {}, "봇이 쓴 설명"), names);
+      expect([action, brief.complete]).toEqual([action, false]);
+      expect(brief.lines.join("\n")).not.toContain("봇이 쓴");
+    }
+    const ok = await buildSlackApprovalBrief(proposal("create_deal", {}, null), names);
+    expect(ok.complete).toBe(true);
+  });
+
+  it("기록 수정 칸이 상한을 넘으면 칸을 자르지 않고 complete=false 로 결재함에 보낸다", async () => {
+    const fields = Array.from({ length: MAX_BRIEF_FIELDS + 1 }, (_, i) => `f${i}`);
+    const changes = Object.fromEntries(fields.map((f) => [f, "새 값"]));
+    const brief = await buildSlackApprovalBrief(
+      proposal("update_record", { entityType: "CAMPAIGN", entityId: "c1", changes, expected: changes }),
+      names,
+    );
+    expect(brief.complete).toBe(false);
+    expect(brief.lines[0]).toBe(BRIEF_TEXT.noDetail);
+  });
+
+  it("긴 값은 값마다 잘라 「→ 바꿀 값」이 줄 안에 남는다", async () => {
+    const long = "가".repeat(500);
+    const brief = await buildSlackApprovalBrief(
+      proposal("update_record", {
+        entityType: "PARTNER",
+        entityId: "p1",
+        changes: { address: "새 주소" },
+        expected: { address: long },
+      }),
+      names,
+    );
+    expect(brief.lines[1]).toMatch(/…\s*→ .*새 주소/);
+    expect(brief.lines[1].length).toBeLessThan(200);
+  });
+
   it("돈 기안은 명세가 깨져도 봇 요약으로 메우지 않는다", async () => {
     for (const action of MONEY_ACTIONS) {
       const brief = await buildSlackApprovalBrief(proposal(action, {}, "봇이 쓴 그럴듯한 설명"), names);

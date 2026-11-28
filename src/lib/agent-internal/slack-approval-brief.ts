@@ -1,8 +1,12 @@
 import { ACTION_LABELS } from "@/lib/agent/action-labels";
-import { describeRecordChanges } from "@/lib/agent/write-actions/update-record";
 import { resolveEntityLabel, type ResolvableEntityType } from "@/lib/agent/resolve-entity-label";
 import { partnerTypeLabels } from "@/lib/crm-types";
-import { RECORD_ENTITY_LABELS, isRecordEntityType } from "@/lib/record-update-labels";
+import {
+  RECORD_ENTITY_LABELS,
+  formatRecordValue,
+  isRecordEntityType,
+  recordFieldLabel,
+} from "@/lib/record-update-labels";
 import {
   SETTLEMENT_AMOUNT_FIELD_LABELS,
   formatSettlementAmountKrw,
@@ -34,7 +38,24 @@ export type SlackApprovalBrief = {
   lines: string[];
   /** ⑥ 주의 — 돈이 걸린 기안만. 그 밖에는 null */
   caution: string | null;
+  /**
+   * 내용 줄을 실행 명세로 **다** 만들었는가. `CONTENT_REQUIRED_ACTIONS` 가 false 면 hermes 는 버튼을 달지 않고 결재함
+   * 링크 카드로 내려간다(값을 못 보고 누르는 일을 막는다). 그 밖의 액션은 늘 true.
+   */
+  complete: boolean;
 };
+
+/**
+ * 내용 줄 없이는 슬랙 버튼을 달지 않는 액션 — hermes `BRIEF_REQUIRED_ACTIONS` 사본(2026-11-28 결재함 전용에서 옮긴 5종).
+ * 주의 줄은 이 중 돈이 오가는 `MONEY_ACTIONS` 만 붙인다(거래처 등록·회차 생성은 금액을 바꾸지 않는다).
+ */
+export const CONTENT_REQUIRED_ACTIONS: ReadonlySet<string> = new Set([
+  "update_settlement_amount",
+  "confirm_settlement",
+  "update_record",
+  "create_partner",
+  "create_campaign_round",
+]);
 
 /** 결재함 표 없이 슬랙에서 승인하는 돈 기안 — 카드에 주의 줄을 붙인다. */
 export const MONEY_ACTIONS: ReadonlySet<string> = new Set([
@@ -54,6 +75,10 @@ export const BRIEF_TEXT = {
 } as const;
 
 const BOT_NOTE_MAX = 300;
+/** 값 하나의 표기 상한 — 긴 주소·메모가 「→ 바꿀 값」을 줄 밖으로 밀어내지 않게 값마다 자른다. */
+const VALUE_MAX = 80;
+/** 기록 수정 기안이 카드에 칸별로 싣는 최대 칸 수 — 넘으면 내용을 다 못 보이므로 complete=false 로 결재함에 보낸다. */
+export const MAX_BRIEF_FIELDS = 8;
 
 export type BriefProposal = {
   payload: unknown;
@@ -135,14 +160,18 @@ async function detailLines(
       const expected = args.expected;
       if (!isRecordEntityType(entityType) || !isPlainObject(changes) || !isPlainObject(expected)) return null;
       const fields = Object.keys(changes);
-      if (fields.length === 0) return null;
-      const described = describeRecordChanges({ entityType, changes, expected } as Parameters<
-        typeof describeRecordChanges
-      >[0]);
+      if (fields.length === 0 || fields.length > MAX_BRIEF_FIELDS) return null;
       const target = isResolvable(entityType)
         ? await targetLine(deps, entityType, str(args.entityId))
         : `대상: ${RECORD_ENTITY_LABELS[entityType]}`;
-      return [target, ...described.split(" · ").map((line) => `바뀌는 값: ${line}`)];
+      // 칸마다 한 줄 — 칸 이름·값에 「 · 」가 들어 있어도(예: 「공제세액 · 부가세」) 줄이 갈라지지 않는다.
+      const lines = fields.map(
+        (field) =>
+          `바뀌는 값: ${recordFieldLabel(entityType, field)} ` +
+          `${clip(formatRecordValue(entityType, field, expected[field]), VALUE_MAX)} → ` +
+          clip(formatRecordValue(entityType, field, changes[field]), VALUE_MAX),
+      );
+      return [target, ...lines];
     }
     case "create_partner": {
       const partner = isPlainObject(args.partner) ? args.partner : null;
@@ -154,7 +183,7 @@ async function detailLines(
         : null;
       const contacts = Array.isArray(args.contacts) ? args.contacts.length : 0;
       return [
-        `새 거래처: 「${name}」${typeLabel ? ` (${typeLabel})` : ""}`,
+        `새 거래처: 「${clip(name, VALUE_MAX)}」${typeLabel ? ` (${typeLabel})` : ""}`,
         `담당자: ${contacts}명을 함께 등록합니다.`,
         "계산서 정보: 채우지 않습니다. 필요하면 결재함 승인으로 채웁니다.",
       ];
@@ -162,10 +191,11 @@ async function detailLines(
     case "create_campaign_round": {
       const start = str(args.startDate);
       const end = str(args.endDate);
+      if (!start || !end) return null;
       return [
         await targetLine(deps, "DEAL", str(args.dealId)),
         await targetLine(deps, "SELLER", str(args.sellerId)),
-        `기간: ${start ?? "?"} ~ ${end ?? "?"}`,
+        `기간: ${start} ~ ${end}`,
       ];
     }
     default: {
@@ -193,13 +223,15 @@ export async function buildSlackApprovalBrief(
   const label = ACTION_LABELS[action] ?? "기안";
   const money = MONEY_ACTIONS.has(action);
 
-  let detail = await detailLines(action, args, proposal, deps);
-  // 돈 기안인데 명세에서 내용을 못 만들면 봇 요약으로 메우지 않는다(R5) — 「전체 보기」로 보낸다.
-  if (!detail || detail.length === 0) detail = [BRIEF_TEXT.noDetail];
+  const built = await detailLines(action, args, proposal, deps);
+  // 명세에서 내용을 못 만들면 봇 요약으로 메우지 않는다(R5) — 「전체 보기」로 보내고, 내용 필수 액션이면 버튼도 막는다.
+  const complete = (built !== null && built.length > 0) || !CONTENT_REQUIRED_ACTIONS.has(action);
+  const detail = built && built.length > 0 ? built : [BRIEF_TEXT.noDetail];
 
   return {
     heading: `${BRIEF_TEXT.headingPrefix}${label}`,
     lines: [...detail, BRIEF_TEXT.onApprove, BRIEF_TEXT.undo],
     caution: money ? BRIEF_TEXT.caution : null,
+    complete,
   };
 }
