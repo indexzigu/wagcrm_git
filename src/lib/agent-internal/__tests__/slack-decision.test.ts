@@ -8,6 +8,7 @@ import {
   SLACK_DECIDABLE_ACTIONS,
   SLACK_EXCLUDED_ACTIONS,
   decideProposalFromSlack,
+  previewProposalForSlack,
   type SlackDecisionDeps,
 } from "../slack-decision";
 import { SLACK_OWNER_APPROVAL_ACTOR } from "../actors";
@@ -47,9 +48,15 @@ describe("슬랙 버튼 허용 액션 분류", () => {
     expect(SLACK_DECIDABLE_ACTIONS.size + SLACK_EXCLUDED_ACTIONS.size).toBe(Object.keys(WRITE_ACTIONS).length);
   });
 
-  it("돈·정산 칸·계산서 보강이 걸린 액션은 제외다", () => {
-    for (const name of ["confirm_settlement", "update_settlement_amount", "update_record", "create_partner"]) {
-      expect(SLACK_EXCLUDED_ACTIONS.has(name as never)).toBe(true);
+  it("돈이 걸린 5종도 슬랙에서 바로 적용한다(오너 결정 2026-11-28 — 결재함 이중 승인 없앰)", () => {
+    for (const name of [
+      "confirm_settlement",
+      "update_settlement_amount",
+      "update_record",
+      "create_partner",
+      "create_campaign_round",
+    ]) {
+      expect(SLACK_DECIDABLE_ACTIONS.has(name as never)).toBe(true);
     }
   });
 });
@@ -99,11 +106,11 @@ describe("decideProposalFromSlack", () => {
     expect(d.approve).not.toHaveBeenCalled();
   });
 
-  it("봇이 올리지 않은 기안·제외 액션은 승인도 반려도 부르지 않는다(NOT_ELIGIBLE)", async () => {
-    const human = deps({ createdBy: "user-1", status: "PENDING_APPROVAL", payload: { action: "create_deal" } });
-    const settlement = deps(botProposal("update_record"));
-    const stringPayload = deps({ ...botProposal("confirm_settlement"), payload: JSON.stringify({ action: "confirm_settlement" }) });
-    for (const d of [human, settlement, stringPayload]) {
+  it("봇이 올리지 않은 기안·목록 밖 액션은 승인도 반려도 부르지 않는다(NOT_ELIGIBLE)", async () => {
+    const human = deps({ createdBy: "user-1", status: "PENDING_APPROVAL", payload: { action: "update_settlement_amount" } });
+    const unknown = deps(botProposal("not_a_write_action"));
+    const stringPayload = deps({ ...botProposal("x"), payload: JSON.stringify({ action: "not_a_write_action" }) });
+    for (const d of [human, unknown, stringPayload]) {
       for (const decision of ["approve", "reject"] as const) {
         const result = await decideProposalFromSlack({ proposalId: "p1", decision }, d);
         expect(result).toMatchObject({ ok: false, code: "NOT_ELIGIBLE" });
@@ -219,5 +226,58 @@ describe("decideProposalFromSlack", () => {
         expect(d.reject).not.toHaveBeenCalled();
       }
     }
+  });
+});
+
+describe("돈 기안 슬랙 승인", () => {
+  it("정산 금액 수정 기안을 슬랙 승인자로 바로 실행한다", async () => {
+    const d = deps(botProposal("update_settlement_amount"));
+    await expect(decideProposalFromSlack({ proposalId: "p1", decision: "approve" }, d)).resolves.toMatchObject({
+      ok: true,
+      status: "EXECUTED",
+    });
+    expect(d.approve).toHaveBeenCalledWith("p1", SLACK_OWNER_APPROVAL_ACTOR, { expectedStatus: "PENDING_APPROVAL" });
+  });
+
+  it("글 조회(preview) 값이 승인 함수로 들어와도 승인하지 않는다", async () => {
+    const d = deps(botProposal("confirm_settlement"));
+    const result = await decideProposalFromSlack({ proposalId: "p1", decision: "preview" as never }, d);
+    expect(result).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    expect(d.approve).not.toHaveBeenCalled();
+    expect(d.reject).not.toHaveBeenCalled();
+  });
+});
+
+describe("previewProposalForSlack", () => {
+  const names = { entityName: vi.fn(async () => "테스트 캠페인") };
+
+  it("자격 있는 대기 기안이면 카드 글을 돌려주고 아무것도 쓰지 않는다", async () => {
+    const d = deps({
+      ...botProposal("update_settlement_amount"),
+      payload: {
+        action: "update_settlement_amount",
+        args: { campaignId: "c1", field: "sellerExpense", expectedCurrentKrw: 1000, newAmountKrw: 1500 },
+      },
+    });
+    const result = await previewProposalForSlack("p1", d, names);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.brief.heading).toBe("승인 요청: 정산 금액 수정");
+    expect(result.brief.lines).toContain("바뀌는 값: 셀러지급액 1,000원 → 1,500원");
+    expect(result.brief.caution).not.toBeNull();
+    expect(d.approve).not.toHaveBeenCalled();
+    expect(d.reject).not.toHaveBeenCalled();
+  });
+
+  it("자격 없음·처리됨·없음이면 글을 주지 않는다", async () => {
+    await expect(
+      previewProposalForSlack("p1", deps({ createdBy: "user-1", status: "PENDING_APPROVAL", payload: { action: "create_deal" } }), names),
+    ).resolves.toMatchObject({ ok: false, code: "NOT_ELIGIBLE" });
+    await expect(previewProposalForSlack("p1", deps(botProposal("create_deal", "EXECUTED")), names)).resolves.toMatchObject({
+      ok: false,
+      code: "ALREADY_DECIDED",
+      status: "EXECUTED",
+    });
+    await expect(previewProposalForSlack("p1", deps(null), names)).resolves.toMatchObject({ ok: false, code: "NOT_FOUND" });
   });
 });
