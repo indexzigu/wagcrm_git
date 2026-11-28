@@ -7,7 +7,11 @@ import {
   deriveSettlementState,
   isValidSettlementAction,
   computeAutoStatus,
+  isSettlementTarget,
+  settlementSlotLabel,
+  SETTLEMENT_TARGETS,
 } from "@/lib/settlement-status";
+import { resolveCampaignMoneySlots } from "@/lib/tax-filing-board";
 
 /** 종전 두 축(입금·지급)만 있는 채널의 플래그 묶음. */
 const legacyFlags = (deposit: boolean, payout: boolean) => ({
@@ -90,6 +94,38 @@ describe("isValidSettlementAction (전진 전용 · 슬롯 순서)", () => {
   });
   it("자사몰: 공급사 지급이 끝나면 셀러 지급 OK", () => {
     expect(isValidSettlementAction(ownMallFlags(true, false), "payout")).toEqual({ ok: true });
+  });
+
+  // 오너 결정 2026-11-28 — 봇이 자사몰 공급사 지급도 기안한다(첫 레그라 선행 조건이 없다).
+  it("자사몰: supplierPayout 은 첫 레그라 바로 OK, 이미 끝났으면 거부", () => {
+    expect(isValidSettlementAction(ownMallFlags(false, false), "supplierPayout")).toEqual({ ok: true });
+    const done = isValidSettlementAction(ownMallFlags(true, false), "supplierPayout");
+    expect(done.ok === false && done.reason).toMatch(/이미 공급사 지급 완료/);
+  });
+  it("자사몰이 아닌 채널의 supplierPayout 은 칸이 없어 거부(셀러몰 공급사 지급은 payout)", () => {
+    for (const salesChannel of ["SELLER_MALL", "BRAND_MALL"]) {
+      const r = isValidSettlementAction({ ...legacyFlags(true, false), salesChannel }, "supplierPayout");
+      expect([salesChannel, r.ok === false && r.reason]).toEqual([salesChannel, expect.stringMatching(/공급사 지급 칸이 따로 없습니다/)]);
+    }
+  });
+});
+
+describe("SETTLEMENT_TARGETS · settlementSlotLabel", () => {
+  it("타깃 목록 = 슬롯 키 전부(채널 합집합)", () => {
+    const keys = new Set(
+      ["OWN_MALL_NAVER", "BRAND_MALL", "SELLER_MALL"].flatMap((c) => resolveCampaignMoneySlots(c).map((s) => s.key)),
+    );
+    expect([...SETTLEMENT_TARGETS].sort()).toEqual([...keys].sort());
+    expect(isSettlementTarget("supplierPayout")).toBe(true);
+    expect(isSettlementTarget("refund")).toBe(false);
+  });
+  it("라벨은 슬롯의 상대 + 동사 — 같은 payout 이 채널마다 다른 상대를 말한다", () => {
+    const label = (channel: string, key: string) =>
+      settlementSlotLabel(resolveCampaignMoneySlots(channel).find((s) => s.key === key)!);
+    expect(label("OWN_MALL_NAVER", "supplierPayout")).toBe("공급사 지급");
+    expect(label("OWN_MALL_NAVER", "payout")).toBe("셀러 지급");
+    expect(label("SELLER_MALL", "payout")).toBe("공급사 지급");
+    expect(label("BRAND_MALL", "deposit")).toBe("공급사 입금");
   });
 });
 

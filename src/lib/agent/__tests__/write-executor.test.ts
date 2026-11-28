@@ -57,6 +57,7 @@ vi.mock("@/lib/prisma", () => ({
 
 const { executeWriteAction, WRITE_ACTIONS } = await import("../write-executor");
 const { createActionProposalInputSchema } = await import("@/lib/agent-worker/contracts");
+const { SETTLEMENT_TARGETS } = await import("@/lib/settlement-status");
 
 const activityLogCreateManyMock = vi.fn();
 const fakeTx = {
@@ -822,6 +823,186 @@ describe("write-executor — confirm_settlement (🔴 금전, 청사진 §3-b)",
 });
 
 /**
+ * 자사몰 공급사 지급(`supplierPayout`) — 오너 결정 2026-11-28 로 봇 기안 대상이 됐다. 금액은 수기 물품대금
+ * (`settlementGoodsCost`, 슬롯 SSOT)이고 금액 게이트는 다른 칸과 똑같이 걸린다. 이름·금액은 전부 지어낸 값이다.
+ */
+describe("write-executor — confirm_settlement × 자사몰 공급사 지급 · 지급일", () => {
+  function ownMallCampaign(over: Record<string, unknown> = {}) {
+    return {
+      id: "camp-om",
+      status: "SETTLEMENT_WAIT",
+      salesChannel: "OWN_MALL_NAVER",
+      groupId: null,
+      group: null,
+      isDepositReceived: false,
+      isPayoutCompleted: false,
+      isSupplierPayoutCompleted: false,
+      actualSales: 3_000_000,
+      sellerExpense: 300_000,
+      settlementSales: 900_000,
+      actualPayoutAmount: null,
+      settlementGoodsCost: 1_234_000,
+      ...over,
+    };
+  }
+
+  async function confirm(args: Record<string, unknown>) {
+    return executeWriteAction("confirm_settlement", { campaignId: "camp-om", ...args } as never, "admin@example.com", fakeTx);
+  }
+
+  const kstToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
+  const shiftDays = (ymd: string, days: number) => {
+    const d = new Date(`${ymd}T00:00:00.000Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+
+  beforeEach(() => {
+    recordActivityChangeMock.mockReset();
+    campaignFindUniqueMock.mockReset();
+    campaignUpdateManyMock.mockReset();
+    campaignFindManyMock.mockReset();
+    groupUpdateManyMock.mockReset();
+    groupFindUniqueMock.mockReset();
+    campaignUpdateManyMock.mockResolvedValue({ count: 1 });
+    groupUpdateManyMock.mockResolvedValue({ count: 1 });
+    recordActivityChangeMock.mockResolvedValue({ id: "log" });
+  });
+
+  it("공급사 지급 완료: isSupplierPayoutCompleted · supplierPayoutCompletedAt 를 쓰고 결과 요약에 칸·금액·날짜를 남긴다", async () => {
+    campaignFindUniqueMock.mockResolvedValue(ownMallCampaign());
+    const completedOn = shiftDays(kstToday(), -3);
+
+    const result = await confirm({ target: "supplierPayout", completedOn });
+
+    const call = campaignUpdateManyMock.mock.calls[0][0];
+    expect(call.where).toEqual({ id: "camp-om", isSupplierPayoutCompleted: false });
+    expect(call.data).toMatchObject({ isSupplierPayoutCompleted: true });
+    // 셀러 지급 레그는 건드리지 않는다.
+    expect(call.data).not.toHaveProperty("isPayoutCompleted");
+    expect(call.data).not.toHaveProperty("payoutCompletedAt");
+    // 날짜만 받은 완료일은 캠페인 편집 저장과 같은 규약(UTC 자정)이고, 화면(KST)에서 그 날짜로 읽힌다.
+    const stored = call.data.supplierPayoutCompletedAt as Date;
+    expect(stored).toEqual(new Date(completedOn));
+    expect(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(stored)).toBe(completedOn);
+    expect(recordActivityChangeMock).toHaveBeenCalledWith(
+      "CAMPAIGN",
+      "camp-om",
+      "isSupplierPayoutCompleted",
+      false,
+      true,
+      "admin@example.com",
+      fakeTx,
+    );
+    expect(result.summary).toBe(
+      `정산 공급사 지급 완료 처리 (pending→confirmed) · 금액 1,234,000원 · 지급일 ${completedOn}`,
+    );
+  });
+
+  it("지급일이 없으면 승인한 시각을 기록한다(종전 동작)", async () => {
+    campaignFindUniqueMock.mockResolvedValue(ownMallCampaign());
+    const before = Date.now();
+    const result = await confirm({ target: "supplierPayout" });
+    const stored = campaignUpdateManyMock.mock.calls[0][0].data.supplierPayoutCompletedAt as Date;
+    expect(stored.getTime()).toBeGreaterThanOrEqual(before - 1000);
+    expect(stored.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+    expect(result.summary).toContain(`지급일 ${kstToday()}`);
+  });
+
+  it("오늘(KST)은 받고, 미래 날짜는 아무것도 쓰지 않고 거부한다", async () => {
+    campaignFindUniqueMock.mockResolvedValue(ownMallCampaign());
+    await confirm({ target: "supplierPayout", completedOn: kstToday() });
+    expect(campaignUpdateManyMock).toHaveBeenCalledTimes(1);
+
+    campaignUpdateManyMock.mockClear();
+    recordActivityChangeMock.mockClear();
+    await expect(confirm({ target: "supplierPayout", completedOn: shiftDays(kstToday(), 1) })).rejects.toThrow(
+      /미래 날짜는 지급 완료일로 기록하지 않습니다/,
+    );
+    expect(campaignUpdateManyMock).not.toHaveBeenCalled();
+    expect(recordActivityChangeMock).not.toHaveBeenCalled();
+  });
+
+  it("셀러 지급(payout)을 공급사 지급보다 먼저 하면 거부한다", async () => {
+    campaignFindUniqueMock.mockResolvedValue(ownMallCampaign({ actualPayoutAmount: 300_000 }));
+    await expect(confirm({ target: "payout" })).rejects.toThrow(
+      /정산 셀러 지급 완료 불가: 공급사 지급 완료가 선행되어야/,
+    );
+    expect(campaignUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("공급사 지급이 끝난 뒤의 payout 은 셀러 지급 레그를 쓴다", async () => {
+    campaignFindUniqueMock.mockResolvedValue(
+      ownMallCampaign({ isSupplierPayoutCompleted: true, actualPayoutAmount: 300_000 }),
+    );
+    const result = await confirm({ target: "payout" });
+    const call = campaignUpdateManyMock.mock.calls[0][0];
+    expect(call.where).toEqual({ id: "camp-om", isPayoutCompleted: false });
+    expect(call.data).toMatchObject({ isPayoutCompleted: true, status: "COMPLETED" });
+    expect(result.summary).toMatch(/^정산 셀러 지급 완료 처리 \(confirmed→paid\) · 금액 300,000원 · 지급일 /);
+  });
+
+  it.each(["SELLER_MALL", "BRAND_MALL"])("%s 에는 공급사 전용 칸이 없어 supplierPayout 을 거부한다", async (salesChannel) => {
+    campaignFindUniqueMock.mockResolvedValue(ownMallCampaign({ salesChannel, isDepositReceived: true }));
+    await expect(confirm({ target: "supplierPayout" })).rejects.toThrow(/공급사 지급 칸이 따로 없습니다/);
+    expect(campaignUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["미입력(null)", null, /필요한 값: 수기 물품대금\(settlementGoodsCost\)/],
+    ["합산 이관(0)", 0, /합산/],
+  ])("금액 게이트: 물품대금 %s 이면 거부한다", async (_label, goodsCost, message) => {
+    campaignFindUniqueMock.mockResolvedValue(ownMallCampaign({ settlementGoodsCost: goodsCost }));
+    await expect(confirm({ target: "supplierPayout" })).rejects.toThrow(message);
+    expect(campaignUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("묶음이면 멤버 물품대금을 합산해 그룹 스칼라에 쓰고, 합계를 결과 요약에 남긴다", async () => {
+    const group = { id: "g-om", isDepositReceived: false, isPayoutCompleted: false, isSupplierPayoutCompleted: false };
+    const rep = ownMallCampaign({ groupId: "g-om", group, settlementGoodsCost: 1_000_000 });
+    campaignFindUniqueMock.mockResolvedValue(rep);
+    groupFindUniqueMock.mockResolvedValue({ ...group, isSupplierPayoutCompleted: true, sellerId: "s1" });
+    campaignFindManyMock.mockResolvedValue([
+      rep,
+      { ...rep, id: "camp-om2", settlementGoodsCost: 500_000 },
+      { ...rep, id: "camp-om3", settlementGoodsCost: 0 },
+      { ...rep, id: "camp-om4", settlementGoodsCost: 250_000 },
+    ]);
+
+    const result = await confirm({ target: "supplierPayout" });
+
+    expect(groupUpdateManyMock.mock.calls[0][0].data).toMatchObject({ isSupplierPayoutCompleted: true });
+    expect(result.summary).toContain("금액 1,750,000원");
+  });
+
+  it("묶음 한 멤버라도 물품대금이 미입력이면 합계가 미정이라 거부하고, 막은 멤버 기준으로 안내한다", async () => {
+    // ALL_OR_NOTHING: 대표 멤버는 값이 있는데 형제 하나가 비어 있다 — 「채우라」는 대표가 아니라 그 형제의 빈칸이다.
+    const group = { id: "g-om", isDepositReceived: false, isPayoutCompleted: false, isSupplierPayoutCompleted: false };
+    const rep = ownMallCampaign({ groupId: "g-om", group, settlementGoodsCost: 1_000_000 });
+    campaignFindUniqueMock.mockResolvedValue(rep);
+    campaignFindManyMock.mockResolvedValue([rep, { ...rep, id: "camp-om2", settlementGoodsCost: null }]);
+
+    await expect(confirm({ target: "supplierPayout" })).rejects.toThrow(
+      /정산 공급사 지급 완료 불가: 금액 근거가 비어 있거나 0 이하입니다\. 필요한 값: 수기 물품대금\(settlementGoodsCost\)/,
+    );
+    expect(groupUpdateManyMock).not.toHaveBeenCalled();
+  });
+
+  it("합산 이관(0) 멤버가 앞에 있어도 미입력 멤버 기준으로 안내한다", async () => {
+    // 합산 이관은 묶음의 정상 상태다 — 그 멤버로 문구를 만들면 「채울 것이 없다」가 나와 진짜 빈칸을 가린다.
+    const group = { id: "g-om", isDepositReceived: false, isPayoutCompleted: false, isSupplierPayoutCompleted: false };
+    const rep = ownMallCampaign({ groupId: "g-om", group, settlementGoodsCost: 0 });
+    campaignFindUniqueMock.mockResolvedValue(rep);
+    campaignFindManyMock.mockResolvedValue([rep, { ...rep, id: "camp-om2", settlementGoodsCost: null }]);
+
+    await expect(confirm({ target: "supplierPayout" })).rejects.toThrow(
+      /필요한 값: 수기 물품대금\(settlementGoodsCost\)/,
+    );
+    expect(groupUpdateManyMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * CG-1 회귀 — 조합 캠페인의 정산 확정.
  *
  * 완료 플래그의 정본은 **그룹 스칼라**이고 멤버 행 값은 낡을 수 있다. 종전 이 핸들러는
@@ -1365,11 +1546,14 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     memo: "메모",
   };
 
+  const confirmSettlementArgs = { campaignId: "camp-1", target: "supplierPayout", completedOn: "2026-01-15" };
+
   it.each([
     ["create_partner", createPartnerArgs],
     ["create_deal", createDealArgs],
     ["update_settlement_amount", updateSettlementAmountArgs],
     ["update_record", updateRecordArgs],
+    ["confirm_settlement", confirmSettlementArgs],
   ])("%s: 계약이 받는 최대 payload를 argsSchema도 그대로 받는다", (action, args) => {
     expect(createActionProposalInputSchema.safeParse({ action, ...args }).success).toBe(true);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(args).success).toBe(true);
@@ -1384,6 +1568,19 @@ describe("write-executor — argsSchema가 계약(contracts.ts)과 같은 모양
     const withUnknownKey = { ...args, unknownField: "x" };
     expect(createActionProposalInputSchema.safeParse({ action, ...withUnknownKey }).success).toBe(false);
     expect(WRITE_ACTIONS[action].argsSchema.safeParse(withUnknownKey).success).toBe(false);
+  });
+
+  it("confirm_settlement: 계약의 타깃 글자 목록이 정본(SETTLEMENT_TARGETS)과 같고, 날짜는 실제 달력 날짜만 받는다", () => {
+    for (const target of SETTLEMENT_TARGETS) {
+      const args = { campaignId: "camp-1", target };
+      expect([target, createActionProposalInputSchema.safeParse({ action: "confirm_settlement", ...args }).success]).toEqual([target, true]);
+      expect([target, WRITE_ACTIONS.confirm_settlement.argsSchema.safeParse(args).success]).toEqual([target, true]);
+    }
+    for (const bad of [{ target: "refund" }, { target: "payout", completedOn: "2026-02-30" }, { target: "payout", completedOn: "2026/01/15" }]) {
+      const args = { campaignId: "camp-1", ...bad };
+      expect(createActionProposalInputSchema.safeParse({ action: "confirm_settlement", ...args }).success).toBe(false);
+      expect(WRITE_ACTIONS.confirm_settlement.argsSchema.safeParse(args).success).toBe(false);
+    }
   });
 
   // 상품 매핑은 2026-10-16 부터 두 모양이다: 봇 계약은 지금 값(expected) 없는 줄, 저장 args(argsSchema)는

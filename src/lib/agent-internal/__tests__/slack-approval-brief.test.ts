@@ -12,11 +12,30 @@ import {
   buildSlackApprovalBrief,
   type BriefDeps,
 } from "../slack-approval-brief";
+import type { SettlementConfirmPreview } from "@/lib/settlement-confirm-preview";
+
+/** 정산 확정 카드가 읽는 계획(가상 값) — 단일 캠페인 · 셀러 지급 · 1,000,000원. */
+const sellerPayoutPreview: SettlementConfirmPreview = {
+  slot: { counterpartLabel: "셀러", verb: "지급" },
+  ready: true,
+  amountKrw: 1_000_000,
+  memberCount: 1,
+};
 
 const names: BriefDeps = {
   entityName: vi.fn(async (_type, id: string) => `이름-${id}`),
-  settlementScope: vi.fn(async () => 1),
+  settlementPreview: vi.fn(async () => sellerPayoutPreview),
 };
+
+function withPreview(preview: SettlementConfirmPreview | null | Error): BriefDeps {
+  return {
+    ...names,
+    settlementPreview: vi.fn(async () => {
+      if (preview instanceof Error) throw preview;
+      return preview;
+    }),
+  };
+}
 
 function proposal(action: string, args: Record<string, unknown>, resultSummary: string | null = null) {
   return { payload: { action, args }, resultSummary, targetEntityType: null, targetEntityId: null };
@@ -67,21 +86,13 @@ describe("buildSlackApprovalBrief — 줄 순서와 문구(R4)", () => {
 
   it("정산 확정·기록 수정·거래처 등록·회차 생성도 실행 명세에서 내용 줄을 만든다", async () => {
     const confirm = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), names);
-    expect(confirm.lines.slice(0, 3)).toEqual([
+    expect(confirm.lines.slice(0, 4)).toEqual([
       "대상: 캠페인 「이름-c1」",
-      "바뀌는 값: 지급완료 표시를 켭니다.",
-      "금액: 이 기안에는 금액이 없습니다. 「전체 보기」에서 확인합니다.",
+      "바뀌는 값: 셀러 지급 완료 표시를 켭니다.",
+      "금액: 1,000,000원",
+      "지급일: 승인한 날로 기록합니다.",
     ]);
-    const grouped = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), {
-      ...names,
-      settlementScope: vi.fn(async () => 3),
-    });
-    expect(grouped.lines).toContain("묶음: 같은 묶음의 캠페인 3개에 함께 적용합니다.");
-    const unknownScope = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), {
-      ...names,
-      settlementScope: vi.fn(async () => null),
-    });
-    expect(unknownScope.complete).toBe(false);
+    expect(confirm.complete).toBe(true);
 
     const record = await buildSlackApprovalBrief(proposal("update_record", SAMPLES.update_record), names);
     expect(record.lines[0]).toBe("대상: 캠페인 「이름-c1」");
@@ -102,6 +113,97 @@ describe("buildSlackApprovalBrief — 줄 순서와 문구(R4)", () => {
       "대상: 셀러 「이름-s1」",
       "기간: 2026-12-01 ~ 2026-12-07",
     ]);
+  });
+});
+
+describe("buildSlackApprovalBrief — 정산 확정 카드(칸 · 금액 · 날짜)", () => {
+  const supplierGroupPreview: SettlementConfirmPreview = {
+    slot: { counterpartLabel: "공급사", verb: "지급" },
+    ready: true,
+    amountKrw: 4_400_000,
+    memberCount: 4,
+  };
+
+  it("자사몰 공급사 지급 · 묶음 4개 · 지급일: 칸 라벨·합계·날짜를 순서대로 싣는다", async () => {
+    const brief = await buildSlackApprovalBrief(
+      proposal("confirm_settlement", { campaignId: "c1", target: "supplierPayout", completedOn: "2026-01-15" }),
+      withPreview(supplierGroupPreview),
+    );
+    expect(brief).toEqual({
+      heading: "승인 요청: 정산 확정",
+      lines: [
+        "대상: 캠페인 「이름-c1」",
+        "바뀌는 값: 공급사 지급 완료 표시를 켭니다.",
+        "금액: 4,400,000원 (묶음 캠페인 4개 합계)",
+        "지급일: 2026-01-15",
+        BRIEF_TEXT.onApprove,
+        BRIEF_TEXT.undo,
+      ],
+      caution: BRIEF_TEXT.caution,
+      complete: true,
+    });
+  });
+
+  it("계획을 타깃과 캠페인으로 읽는다(카드와 실행기가 같은 칸을 본다)", async () => {
+    const deps = withPreview(supplierGroupPreview);
+    await buildSlackApprovalBrief(proposal("confirm_settlement", { campaignId: "c9", target: "supplierPayout" }), deps);
+    expect(deps.settlementPreview).toHaveBeenCalledWith("c9", "supplierPayout");
+  });
+
+  it("입금 칸은 날짜 낱말도 슬롯 동사에서 온다(입금일)", async () => {
+    const brief = await buildSlackApprovalBrief(
+      proposal("confirm_settlement", { campaignId: "c1", target: "deposit" }),
+      withPreview({ slot: { counterpartLabel: "공급사", verb: "입금" }, ready: true, amountKrw: 500_000, memberCount: 1 }),
+    );
+    expect(brief.lines.slice(1, 4)).toEqual([
+      "바뀌는 값: 공급사 입금 완료 표시를 켭니다.",
+      "금액: 500,000원",
+      "입금일: 승인한 날로 기록합니다.",
+    ]);
+  });
+
+  it("옛 「금액이 없습니다」 줄과 옛 묶음 줄은 더 싣지 않는다", async () => {
+    const brief = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), withPreview(supplierGroupPreview));
+    const text = brief.lines.join("\n");
+    expect(text).not.toContain("금액이 없습니다");
+    expect(text).not.toContain("묶음: ");
+  });
+
+  // 실행기가 거절할 기안에는 버튼을 달지 않는다 — 누르면 실패만 하는 버튼이다(hermes 는 결재함 링크 카드로 내려간다).
+  it.each([
+    ["계획을 못 읽음", null],
+    ["계획 읽기 실패", new Error("db down")],
+    ["칸이 없는 채널", { ...sellerPayoutPreview, slot: null }],
+    ["상태기계 거부(순서·이미 완료)", { ...sellerPayoutPreview, ready: false }],
+    ["금액 미정", { ...sellerPayoutPreview, amountKrw: null }],
+    ["금액 0원", { ...sellerPayoutPreview, amountKrw: 0 }],
+    ["금액 음수", { ...sellerPayoutPreview, amountKrw: -1 }],
+  ] as const)("%s → complete=false · 금액 줄 없음", async (_label, preview) => {
+    const brief = await buildSlackApprovalBrief(
+      proposal("confirm_settlement", SAMPLES.confirm_settlement, "봇이 쓴 설명"),
+      withPreview(preview as SettlementConfirmPreview | null | Error),
+    );
+    expect(brief.complete).toBe(false);
+    expect(brief.lines[0]).toBe(BRIEF_TEXT.noDetail);
+    expect(brief.lines.join("\n")).not.toMatch(/금액:|봇이 쓴/);
+  });
+
+  it("미래·잘못된 지급일이면 버튼을 달지 않는다(실행기가 거절한다)", async () => {
+    const tomorrow = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    for (const completedOn of [tomorrow, "2026-02-30", "어제", ""]) {
+      const brief = await buildSlackApprovalBrief(
+        proposal("confirm_settlement", { ...SAMPLES.confirm_settlement, completedOn }),
+        names,
+      );
+      expect([completedOn, brief.complete]).toEqual([completedOn, false]);
+    }
+  });
+
+  it("알 수 없는 타깃이면 계획을 읽지 않고 complete=false 다", async () => {
+    const deps = withPreview(sellerPayoutPreview);
+    const brief = await buildSlackApprovalBrief(proposal("confirm_settlement", { campaignId: "c1", target: "refund" }), deps);
+    expect(brief.complete).toBe(false);
+    expect(deps.settlementPreview).not.toHaveBeenCalled();
   });
 });
 
@@ -167,7 +269,7 @@ describe("buildSlackApprovalBrief — 지어낸 설명 금지(R5)", () => {
   it("이름 조회가 실패해도 글을 만든다(이름 자리는 「(이름 없음)」)", async () => {
     const failing: BriefDeps = {
       entityName: vi.fn(async () => Promise.reject(new Error("db down"))),
-      settlementScope: vi.fn(async () => 1),
+      settlementPreview: vi.fn(async () => sellerPayoutPreview),
     };
     const brief = await buildSlackApprovalBrief(proposal("confirm_settlement", SAMPLES.confirm_settlement), failing);
     expect(brief.lines[0]).toBe("대상: 캠페인 「(이름 없음)」");

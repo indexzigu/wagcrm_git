@@ -32,6 +32,30 @@ describe("confirm_settlement 도구", () => {
     expect(result.data.writeIntent.summary).toEqual(expect.stringContaining("지급완료"));
   });
 
+  it("supplierPayout · completedOn 을 기안 args 에 그대로 싣는다", async () => {
+    const result = await run({ campaignId: "camp-3", target: "supplierPayout", completedOn: "2026-01-15" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.writeIntent.args).toEqual({ campaignId: "camp-3", target: "supplierPayout", completedOn: "2026-01-15" });
+    expect(result.data.writeIntent.summary).toEqual(expect.stringContaining("공급사 지급완료"));
+  });
+
+  it("completedOn 은 실제 달력 날짜만 받는다", () => {
+    const parse = (completedOn: string) =>
+      confirmSettlementTool.inputSchema.safeParse({ campaignId: "c", target: "payout", completedOn }).success;
+    expect(parse("2026-01-15")).toBe(true);
+    expect(parse("2026-02-30")).toBe(false);
+    expect(parse("1월 15일")).toBe(false);
+  });
+
+  it("설명이 채널별 칸을 말한다(봇이 공급사 지급을 셀러 지급으로 오기안하지 않게)", () => {
+    const d = confirmSettlementTool.description;
+    expect(d).toMatch(/자사몰.*supplierPayout.*공급사/);
+    expect(d).toMatch(/셀러몰.*payout\(공급사 지급\)/);
+    expect(d).toMatch(/completedOn/);
+    expect(d).toMatch(/되묻습니다/);
+  });
+
   it("campaignId가 비면 MISSING_PARAM으로 종료한다", async () => {
     const result = await run({ campaignId: "   ", target: "deposit" });
     expect(result.ok).toBe(false);

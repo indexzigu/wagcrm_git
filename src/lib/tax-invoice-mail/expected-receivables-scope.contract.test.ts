@@ -148,10 +148,11 @@ const RAW_FIELD_ALLOWED: Record<string, string> = {
   // `operatingProfit`·「조정 후 손익」에는 여전히 들어가지 않는다.
   "lib/calendar-entities.ts":
     "대금 칸 금액 타입·위임(값 통과만 — 판정은 tax-filing-board SSOT, 그룹 접기 규약도 SSOT 조회)",
-  "lib/agent/write-actions/confirm-settlement.ts":
-    "AI 확정 게이트의 금액 근거 조립(Decimal → number 통과만, 산술 없음) — T-151에서 " +
-    "lib/agent/write-executor.ts 핸들러 분할 시 이 파일로 이동(그 경로는 이제 배럴이라 " +
-    "settlementGoodsCost 를 직접 참조하지 않는다)",
+  "lib/settlement-confirm-preview.ts":
+    "AI 확정 게이트·슬랙 카드가 공유하는 금액 근거 조립(`toMoneySlotSource` — Decimal → number 통과만, 산술 없음). " +
+    "T-151 에서 write-executor.ts → write-actions/confirm-settlement.ts 로, 2026-11-28 에 카드와 공유하려고 " +
+    "이 모듈로 옮겼다(실행기는 이제 settlementGoodsCost 를 직접 참조하지 않는다)",
+  "lib/__tests__/settlement-confirm-preview.test.ts": "위 공유 계획의 그룹 합산·합산 이관(0) 픽스처. 값 통과만",
   "lib/agent/__tests__/write-executor.test.ts": "위 게이트의 3-상태 계약 픽스처",
   "lib/mobile-calendar-data.ts": "DB → 캘린더 페이로드 매핑(Decimal → number 통과만)",
   "lib/mobile-settlement-data.ts": "DB → 모바일 정산 페이로드 매핑(Decimal → number 통과만)",

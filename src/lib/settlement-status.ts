@@ -20,42 +20,77 @@
  * 미러링한다 — 에이전트 경로와 버튼 경로가 동일한 최종 상태를 만들도록 하기 위함.
  */
 
-import { resolveCampaignMoneySlots, resolveSettlementCompletionFlags } from "./tax-filing-board";
+import {
+  resolveCampaignMoneySlots,
+  resolveSettlementCompletionFlags,
+  type CampaignMoneySlot,
+} from "./tax-filing-board";
 
 /** 캠페인별 정산 상태 라벨. 채널 슬롯 순서의 완료 진척도에서 파생. */
 export type SettlementStateLabel = "pending" | "confirmed" | "paid";
 
 /**
- * confirm_settlement 가 전진시킬 대상 축.
+ * confirm_settlement 가 전진시킬 대상 축 — 값이 곧 슬롯 키(`CampaignMoneySlot.key`)다.
  *
- * ⚠️ **자사몰의 공급사 지급 레그는 일부러 여기 없다.** 그 레그에는 담을 금액 컬럼이 없어
- * (표시·게이트가 함께 읽는 `settlementSales`·`actualPayoutAmount` 는 각각 **입금 축**과
- * **셀러 지급 축**이라 어느 쪽도 공급사 지급액이 아니다) 아래 write-executor 의
- * **금액 무결성 하드 게이트**(security-reviewer H1 — 금액 미입력·0 이하 확정 거부)를
- * 만족시킬 방법이 없다. 게이트를 자사몰만 면제하면 LLM 기안 경로에서 「유령 완료」를
- * 막는 장치가 그 채널에서만 사라진다. 공급사 지급은 사람이 금액을 보며 누르는 **버튼
- * 경로(정산 카드 체크박스) 소유**로 남긴다 — 아래 `isValidSettlementAction` 은 그 레그의
- * 완료 여부를 **선행 조건으로 읽기만** 한다.
+ * 채널마다 같은 키가 다른 상대를 가리킨다(`resolveCampaignMoneySlots` 가 정본):
+ *  - 자사몰: `supplierPayout` = 공급사 지급(먼저) · `payout` = 셀러 지급. 입금 칸은 없다.
+ *  - 브랜드몰: `deposit` = 공급사 입금(먼저) · `payout` = 셀러 지급.
+ *  - 셀러몰: `deposit` = 셀러 입금(먼저) · `payout` = **공급사** 지급(지급 칸이 하나뿐이라 기존 payout 필드를 쓴다).
  *
- * ℹ️ 표시(캘린더·대시보드)와 이 쓰기 게이트는 **같은 두 컬럼**을 읽는다(2026-08-25 통일).
- * 컬럼 선택 근거와 죽은 컬럼 이력은 `calendar-entities.MONEY_AMOUNT_FIELD` 주석이 정본이다.
- * ⛔ 한쪽만 옛 컬럼으로 되돌리지 말 것 — 그 어긋남이 게이트를 조용히 영구 차단했다.
+ * 오너 결정 2026-11-28: 봇이 자사몰 **공급사 지급** 완료도 기안할 수 있다(`supplierPayout`).
+ * 종전 이 자리의 「공급사 지급 레그에는 금액 컬럼이 없어 제외한다」는 **SUPERSEDED** — 그 레그의
+ * 금액은 슬롯 SSOT(`sumMoneySlotAmounts` → 수기 물품대금, 그룹은
+ * ALL_OR_NOTHING)가 이미 계산한다. 금액 게이트(금액 미정·0 이하 거부, security-reviewer H1)는
+ * 이 레그에도 **그대로** 걸린다 — 면제하지 말 것.
+ *
+ * ⛔ 목록을 다른 곳에서 손으로 다시 적지 말 것 — 도구·실행기 스키마는 `SETTLEMENT_TARGETS` 를
+ * 참조한다(예외: 봇 작업 계약 `agent-worker/contracts.ts` 는 hermes 가 글자를 대조하는 사본이고,
+ * write-executor 테스트가 이 목록과 같은지 강제한다).
  */
-export type SettlementTarget = "deposit" | "payout";
+export const SETTLEMENT_TARGETS = ["deposit", "payout", "supplierPayout"] as const;
+export type SettlementTarget = (typeof SETTLEMENT_TARGETS)[number];
+
+/** 저장된 payload(`unknown`)에서 타깃을 읽을 때의 가드 — 목록을 다시 적지 않는다. */
+export function isSettlementTarget(value: unknown): value is SettlementTarget {
+  return typeof value === "string" && (SETTLEMENT_TARGETS as readonly string[]).includes(value);
+}
 
 /** `SettlementTarget` → 완료 플래그 필드. 슬롯의 `flagField` 어휘와 같은 축이다. */
 const TARGET_FLAG: Record<SettlementTarget, keyof SettlementCompletionFlags> = {
   deposit: "isDepositReceived",
   payout: "isPayoutCompleted",
+  supplierPayout: "isSupplierPayoutCompleted",
+};
+
+/** 그 채널에 대상 칸이 없을 때의 사유. `Record` 라 타깃이 늘면 컴파일이 막는다. */
+const TARGET_MISSING_REASON: Record<SettlementTarget, string> = {
+  deposit: "이 판매채널에는 입금 확정 절차가 없습니다.",
+  payout: "이 판매채널에는 지급 완료 절차가 없습니다.",
+  // 셀러몰처럼 지급 칸이 하나뿐인 채널은 공급사 지급이 `payout` 이다.
+  supplierPayout: "이 판매채널에는 공급사 지급 칸이 따로 없습니다. 지급 칸은 payout 입니다.",
+};
+
+/** 대상 칸이 이미 끝났을 때의 사유. */
+const TARGET_DONE_REASON: Record<SettlementTarget, string> = {
+  deposit: "이미 입금 확정된 정산입니다.",
+  payout: "이미 지급 완료된 정산입니다.",
+  supplierPayout: "이미 공급사 지급 완료된 정산입니다.",
 };
 
 /**
- * 슬롯 라벨("공급사 지급" 등) — 사유 문구가 채널마다 정확한 상대를 말하도록.
- * ⛔ 문자열을 손으로 조립하지 말 것: 상대·동사 모두 슬롯이 소유한다.
+ * 슬롯의 화면 라벨 「상대 + 동사」(「공급사 지급」·「셀러 입금」). 실행기 결과 요약·슬랙 카드·
+ * 사유 문구가 이 함수 하나로 같은 낱말을 쓴다.
+ * ⛔ 문자열을 손으로 조립하지 말 것: 상대·동사 모두 슬롯이 소유한다
+ * (`resolveSlotBadgeText` 는 좁은 칸용 **축약**이라 이 자리에 쓰지 않는다).
  */
+export function settlementSlotLabel(slot: Pick<CampaignMoneySlot, "counterpartLabel" | "verb">): string {
+  return `${slot.counterpartLabel} ${slot.verb}`;
+}
+
+/** 채널 + 플래그 → 슬롯 라벨. 사유 문구가 채널마다 정확한 상대를 말하도록. */
 function slotLabel(salesChannel: string, flagField: keyof SettlementCompletionFlags): string {
   const slot = resolveCampaignMoneySlots(salesChannel).find((s) => s.flagField === flagField);
-  return slot ? `${slot.counterpartLabel} ${slot.verb}` : "정산";
+  return slot ? settlementSlotLabel(slot) : "정산";
 }
 
 /**
@@ -96,6 +131,10 @@ export function deriveSettlementState(campaign: {
  *   - `payout`(= 셀러 지급) → 공급사 지급이 선행돼야 OK. 종전에는 `isDepositReceived`
  *     가 영원히 false 라 **어시스턴트로는 자사몰 지급 완료를 아예 못 했다**(오너 확정
  *     2026-08-25: 슬롯 순서로 일반화).
+ *   - `supplierPayout`(= 공급사 지급) → 첫 레그라 선행 조건 없이 OK(오너 결정 2026-11-28).
+ *
+ * 자사몰이 아닌 채널의 `supplierPayout` → **거부**(그 채널에 공급사 전용 칸이 없다 —
+ * 셀러몰의 공급사 지급은 `payout` 이다).
  */
 export function isValidSettlementAction(
   campaign: { salesChannel: string } & SettlementCompletionFlags,
@@ -112,19 +151,10 @@ export function isValidSettlementAction(
 
   const index = legs.indexOf(targetFlag);
   if (index < 0) {
-    return {
-      ok: false,
-      reason:
-        target === "deposit"
-          ? "이 판매채널에는 입금 확정 절차가 없습니다."
-          : "이 판매채널에는 지급 완료 절차가 없습니다.",
-    };
+    return { ok: false, reason: TARGET_MISSING_REASON[target] };
   }
   if (campaign[targetFlag]) {
-    return {
-      ok: false,
-      reason: target === "deposit" ? "이미 입금 확정된 정산입니다." : "이미 지급 완료된 정산입니다.",
-    };
+    return { ok: false, reason: TARGET_DONE_REASON[target] };
   }
 
   const blocking = legs.slice(0, index).filter((flag) => !campaign[flag]);

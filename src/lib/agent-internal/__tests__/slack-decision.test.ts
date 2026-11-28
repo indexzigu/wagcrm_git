@@ -249,7 +249,10 @@ describe("돈 기안 슬랙 승인", () => {
 });
 
 describe("previewProposalForSlack", () => {
-  const names = { entityName: vi.fn(async () => "테스트 캠페인"), settlementScope: vi.fn(async () => 1) };
+  const names = {
+    entityName: vi.fn(async () => "테스트 캠페인"),
+    settlementPreview: vi.fn(async () => ({ slot: { counterpartLabel: "셀러", verb: "지급" as const }, ready: true, amountKrw: 1000, memberCount: 1 })),
+  };
 
   it("자격 있는 대기 기안이면 카드 글을 돌려주고 아무것도 쓰지 않는다", async () => {
     const d = deps({
