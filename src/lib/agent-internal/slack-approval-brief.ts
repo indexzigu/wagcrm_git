@@ -27,7 +27,7 @@ import { parseStoredJsonObject } from "@/lib/stored-json";
  *     「지금 값 → 바꿀 값」 = 금액·칸 변경의 유일한 표기.
  *  R4 줄 순서는 고정이다: ① 제목(승인 요청: 종류) ② 대상 ③ 바뀌는 내용 ④ 승인하면 ⑤ 되돌리기 ⑥ 주의(돈 기안만).
  *  R5 지어낸 설명을 넣지 않는다 — 내용 줄은 기안의 실행 명세(`payload.args`)와 DB 이름에서만 만든다.
- *     봇(LLM)이 쓴 기안 요약은 돈이 걸린 기안에 싣지 않는다. 다른 기안은 「봇 설명」이라고 밝혀 싣는다.
+ *     봇(LLM)이 쓴 기안 요약은 어떤 카드에도 싣지 않는다 — 명세로 못 만드는 내용은 「전체 보기」로 보낸다.
  *
  * 글은 슬랙 mrkdwn 으로 해석되지 않는 평문이다 — 이스케이프·길이 자르기는 hermes 카드 게시기가 한 번 더 한다.
  */
@@ -47,7 +47,9 @@ export type SlackApprovalBrief = {
 };
 
 /**
- * 내용 줄 없이는 슬랙 버튼을 달지 않는 액션 — hermes `BRIEF_REQUIRED_ACTIONS` 사본(2026-11-28 결재함 전용에서 옮긴 5종).
+ * 내용 줄 없이는 슬랙 버튼을 달지 않는 액션 — hermes `plugins/wag-operator/slack_approval.py` 의 `BRIEF_REQUIRED_ACTIONS`
+ * 사본(2026-11-28 결재함 전용에서 옮긴 5종). 한쪽만 바꾸면 내용 없이 버튼이 붙거나 버튼이 빠진다 — 두 목록을 같이
+ * 바꾼다(hermes 쪽은 `tests/test_slack_approval.py` 가 그 목록을 고정한다).
  * 주의 줄은 이 중 돈이 오가는 `MONEY_ACTIONS` 만 붙인다(거래처 등록·회차 생성은 금액을 바꾸지 않는다).
  */
 export const CONTENT_REQUIRED_ACTIONS: ReadonlySet<string> = new Set([
@@ -72,10 +74,10 @@ export const BRIEF_TEXT = {
   caution: "⚠️ 돈이 걸린 기안입니다. 금액과 대상을 확인한 뒤 누릅니다.",
   unknownTarget: "(이름 없음)",
   noDetail: "바뀌는 내용: 「전체 보기」에서 확인합니다.",
-  botNotePrefix: "봇 설명: ",
+  // 슬랙 승인 뒤에는 기안이 끝나 보강을 붙일 수 없다 — 채우려면 버튼 대신 결재함에서 승인해야 한다고 먼저 알린다.
+  partnerEnrichment: "계산서 정보: 슬랙 승인은 채우지 않습니다. 채우려면 결재함에서 승인합니다.",
 } as const;
 
-const BOT_NOTE_MAX = 300;
 /** 값 하나의 표기 상한 — 긴 주소·메모가 「→ 바꿀 값」을 줄 밖으로 밀어내지 않게 값마다 자른다. */
 const VALUE_MAX = 80;
 /** 기록 수정 기안이 카드에 칸별로 싣는 최대 칸 수 — 넘으면 내용을 다 못 보이므로 complete=false 로 결재함에 보낸다. */
@@ -83,6 +85,7 @@ export const MAX_BRIEF_FIELDS = 8;
 
 export type BriefProposal = {
   payload: unknown;
+  /** 봇이 쓴 기안 요약 — 받기만 하고 카드에 싣지 않는다(R5). 테스트가 이 값이 새지 않음을 고정한다. */
   resultSummary: string | null;
   targetEntityType: string | null;
   targetEntityId: string | null;
@@ -204,9 +207,9 @@ async function detailLines(
         : null;
       const contacts = Array.isArray(args.contacts) ? args.contacts.length : 0;
       return [
-        `새 거래처: 「${clip(name, VALUE_MAX)}」${typeLabel ? ` (${typeLabel})` : ""}`,
+        `대상: 새 거래처 「${clip(name, VALUE_MAX)}」${typeLabel ? ` (${typeLabel})` : ""}`,
         `담당자: ${contacts}명을 함께 등록합니다.`,
-        "계산서 정보: 채우지 않습니다. 필요하면 결재함 승인으로 채웁니다.",
+        BRIEF_TEXT.partnerEnrichment,
       ];
     }
     case "create_campaign_round": {
@@ -220,11 +223,11 @@ async function detailLines(
       ];
     }
     default: {
+      // 봇(LLM) 요약은 어떤 카드에도 싣지 않는다(R5) — 종전 카드의 「고정 문구 + 링크만」 설계(위조·주입 방지)를 지킨다.
       const lines: string[] = [];
       const type = proposal.targetEntityType;
       if (isResolvable(type) && proposal.targetEntityId) lines.push(await targetLine(deps, type, proposal.targetEntityId));
-      const note = str(proposal.resultSummary);
-      lines.push(note ? `${BRIEF_TEXT.botNotePrefix}${clip(note, BOT_NOTE_MAX)}` : BRIEF_TEXT.noDetail);
+      lines.push(BRIEF_TEXT.noDetail);
       return lines;
     }
   }

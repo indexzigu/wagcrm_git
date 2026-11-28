@@ -92,8 +92,8 @@ describe("buildSlackApprovalBrief — 줄 순서와 문구(R4)", () => {
     expect(record.complete).toBe(true);
 
     const partner = await buildSlackApprovalBrief(proposal("create_partner", SAMPLES.create_partner), names);
-    expect(partner.lines[0]).toBe("새 거래처: 「가상상사」 (브랜드)");
-    expect(partner.lines).toContain("계산서 정보: 채우지 않습니다. 필요하면 결재함 승인으로 채웁니다.");
+    expect(partner.lines[0]).toBe("대상: 새 거래처 「가상상사」 (브랜드)");
+    expect(partner.lines).toContain(BRIEF_TEXT.partnerEnrichment);
     expect(partner.caution).toBeNull();
 
     const round = await buildSlackApprovalBrief(proposal("create_campaign_round", SAMPLES.create_campaign_round), names);
@@ -151,9 +151,16 @@ describe("buildSlackApprovalBrief — 지어낸 설명 금지(R5)", () => {
     }
   });
 
-  it("그 밖의 기안은 봇 요약을 「봇 설명」이라고 밝혀 싣는다", async () => {
+  it("돈이 안 걸린 기안도 봇 요약을 싣지 않는다(종전 카드의 고정 문구 설계)", async () => {
+    for (const action of Object.keys(WRITE_ACTIONS)) {
+      const brief = await buildSlackApprovalBrief(proposal(action, SAMPLES[action] ?? {}, "봇이 쓴 가상 설명"), names);
+      expect([action, [brief.heading, ...brief.lines, brief.caution ?? ""].join("\n").includes("봇이 쓴")]).toEqual([
+        action,
+        false,
+      ]);
+    }
     const brief = await buildSlackApprovalBrief(proposal("create_deal", {}, "가상 판매 조건 등록"), names);
-    expect(brief.lines[0]).toBe("봇 설명: 가상 판매 조건 등록");
+    expect(brief.lines[0]).toBe(BRIEF_TEXT.noDetail);
     expect(brief.caution).toBeNull();
   });
 
@@ -173,7 +180,6 @@ describe("buildSlackApprovalBrief — 짧은 문장·능동형·용어 통일(R1
       const brief = await buildSlackApprovalBrief(proposal(action, SAMPLES[action] ?? {}, "가상 설명"), names);
       expect(brief.heading.startsWith(BRIEF_TEXT.headingPrefix)).toBe(true);
       const prose = [...brief.lines, brief.caution ?? ""]
-        .filter((l) => !l.startsWith(BRIEF_TEXT.botNotePrefix))
         .map((l) => l.replace(/「[^」]*」/g, "").replace(/:.*→.*/, ":"));
       for (const line of prose) {
         expect([action, line, line.length <= PROSE_MAX]).toEqual([action, line, true]);
