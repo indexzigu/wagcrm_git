@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
-import { ActionProposalRepository, deserializeJsonField } from "@/repositories/actionProposalRepository";
+import {
+  ActionProposalRepository,
+  deserializeJsonField,
+  findFailedClosedIds,
+} from "@/repositories/actionProposalRepository";
 import type { ActionProposalKind, ActionProposalStatus } from "@/repositories/actionProposalRepository";
 import { resolveEntityLabel, resolveProposalArgLabels } from "@/lib/agent/resolve-entity-label";
+import { detectAlreadyApplied } from "@/lib/agent/already-applied";
+import { getPrisma } from "@/lib/prisma";
 
 /**
  * 한 페이지 크기. 조회 결과는 봇이 돌 때마다 쌓이므로 커서(before)로 넘긴다(§3-B).
@@ -58,6 +64,8 @@ function parseBeforeParam(raw: string | null): Date | null {
  * kind 필터 기본값은 WRITE(§3-B) — 조회 결과(READ) 탭은 kind=READ 를 명시해 받는다.
  * before 커서로 페이지네이션하고, count는 페이지 크기가 아닌 조건 전체 건수를 돌려준다.
  * 각 항목에 서버에서 해석한 targetEntityName을 붙여 승인자가 실제 대상을 보게 한다(§0-6).
+ * 실패 탭(FAILED)은 항목마다 `alreadyApplied`(다른 경로로 이미 반영됐는가 — `already-applied.ts`)를,
+ * 반려 탭(REJECTED)은 `closedFromFailure`(오너가 실패에서 종결했는가)를 덧붙인다. 다른 탭에는 싣지 않는다.
  */
 export async function GET(request: Request) {
   const auth = await requireAuth();
@@ -76,6 +84,7 @@ export async function GET(request: Request) {
   const page = proposals.slice(0, PAGE_SIZE);
   const nextBefore = proposals.length > PAGE_SIZE ? new Date(page[page.length - 1].createdAt).toISOString() : null;
 
+  const closedIds = status === "REJECTED" ? await findFailedClosedIds(page.map((p) => p.id)) : null;
   const items = await Promise.all(
     page.map(async (proposal) => {
       const targetEntityName = await resolveEntityLabel(
@@ -86,7 +95,20 @@ export async function GET(request: Request) {
       // payload.action으로 라벨을 읽는다. sourceRef 도 같다 — 캘린더 출신 카드가 「원본 일정」을 읽는다.
       const payload = deserializeJsonField(proposal.payload);
       const argLabels = await resolveProposalArgLabels(payload);
-      return { ...proposal, payload, sourceRef: deserializeJsonField(proposal.sourceRef), targetEntityName, argLabels };
+      const extra =
+        status === "FAILED"
+          ? { alreadyApplied: await detectAlreadyApplied(payload, getPrisma()) }
+          : closedIds
+            ? { closedFromFailure: closedIds.has(proposal.id) }
+            : {};
+      return {
+        ...proposal,
+        payload,
+        sourceRef: deserializeJsonField(proposal.sourceRef),
+        targetEntityName,
+        argLabels,
+        ...extra,
+      };
     })
   );
 

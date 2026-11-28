@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
+import { CheckCheckIcon, Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useProposalActions } from "@/hooks/useProposalActions";
 import { ENTITY_TYPE_LABELS, actionHasNoTargetYet } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
+import { CloseFailedButton } from "./close-failed-button";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
@@ -45,6 +46,17 @@ type ProposalDetail = {
   /** [캘린더수집] 기안 출처 칸·새 회차 이름 — 목록 카드(`ApprovalInboxItem`)와 같은 칸. */
   sourceRef?: unknown;
   argLabels?: ProposalArgLabels | null;
+  /** 실패 기안 전용 — 다른 경로로 이미 반영됐는가(서버 판정). 목록 카드와 같은 칸. */
+  alreadyApplied?: boolean;
+  /** 반려 기안 전용 — 오너가 실패에서 종결했는가. 상태 칩이 「종결됨」으로 바뀐다. */
+  closedFromFailure?: boolean;
+};
+
+/** 이 카드가 쓰는 결재 동작 — `close` 는 선택(없는 스텁은 종결 버튼을 그리지 않는다). */
+type ProposalActionsHook = () => {
+  approve: ReturnType<typeof useProposalActions>["approve"];
+  reject: ReturnType<typeof useProposalActions>["reject"];
+  close?: ReturnType<typeof useProposalActions>["close"];
 };
 
 async function fetchProposal(id: string): Promise<ProposalDetail> {
@@ -109,7 +121,7 @@ function StatusChip({ proposal }: { proposal: ProposalDetail }) {
     return <Badge variant="destructive">실패</Badge>;
   }
   if (proposal.status === "REJECTED") {
-    return <Badge variant="outline">반려됨</Badge>;
+    return <Badge variant="outline">{proposal.closedFromFailure ? "종결됨" : "반려됨"}</Badge>;
   }
   if (proposal.status === "DRAFT") {
     // 가격표 반영 기안이 승인대기로 넘어가기 전 잠깐 머무는 상태(장애 시 남는다).
@@ -125,7 +137,7 @@ export function ProposalCard({
   useProposalActionsHook = useProposalActions,
 }: {
   id: string;
-  useProposalActionsHook?: typeof useProposalActions;
+  useProposalActionsHook?: ProposalActionsHook;
 }) {
   const query = useQuery({
     queryKey: ["action-proposal", id],
@@ -133,7 +145,7 @@ export function ProposalCard({
     refetchOnWindowFocus: true,
   });
 
-  const { approve, reject } = useProposalActionsHook();
+  const { approve, reject, close } = useProposalActionsHook();
   const [pending, setPending] = React.useState(false);
   // 거래처 등록 기안에서 「계산서에서 채우기」로 고른 값 — 승인 요청에 함께 싣는다.
   const [partnerEnrichment, setPartnerEnrichment] = React.useState<PartnerEnrichment | undefined>();
@@ -185,6 +197,23 @@ export function ProposalCard({
     }
   };
 
+  const handleClose = async () => {
+    if (pending || !close) return;
+    setPending(true);
+    setError(null);
+    try {
+      await close(id);
+    } catch (err) {
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : "종결 처리 중 오류가 발생했습니다.");
+      }
+    } finally {
+      if (mountedRef.current) {
+        setPending(false);
+      }
+    }
+  };
+
   if (query.isLoading) {
     return (
       <div
@@ -212,6 +241,8 @@ export function ProposalCard({
   const action = proposal.payload?.action;
   const actionLabel = displayLabel(ACTION_LABELS, action, UNKNOWN_NAME);
   const isSettlement = action === SETTLEMENT_ACTION;
+  // 실패 기안이 이미 반영됐으면 이 카드의 할 일은 재시도가 아니라 종결이다 — 종결을 주 버튼으로 올린다(목록 카드와 같은 규칙).
+  const applied = proposal.status === "FAILED" && proposal.alreadyApplied === true;
   // [캘린더수집] 새 회차 생성은 대상 캠페인이 아직 없다 — 이름 없는 「캠페인」 배지를 달지 않는다.
   const entityLabel = proposal.targetEntityType && !actionHasNoTargetYet(action)
     ? displayLabel(ENTITY_TYPE_LABELS, proposal.targetEntityType, "") || null
@@ -234,6 +265,12 @@ export function ProposalCard({
           </Badge>
         )}
         <StatusChip proposal={proposal} />
+        {applied && (
+          <Badge variant="status-success" title="바꾸려던 값이 지금 이미 그대로입니다. 종결해도 됩니다.">
+            <CheckCheckIcon className="size-3" />
+            반영됨
+          </Badge>
+        )}
       </div>
 
       <p className="text-sm text-foreground">{proposal.title}</p>
@@ -279,11 +316,17 @@ export function ProposalCard({
             결재함 상세(`/approvals/[id]`, Plan 2 Task 5)에도 얹히는데, 그 화면에서
             누르는 일은 「다시 해봐」 하나뿐이다(괄호는 구현 설명이지 사용자의 일이
             아니다). 실제로 approve(id) 를 부르는 것은 그대로다. */}
+        {proposal.status === "FAILED" && applied && close && (
+          <CloseFailedButton onClose={handleClose} disabled={pending} primary />
+        )}
         {proposal.status === "FAILED" && (
-          <Button size="sm" onClick={handleApprove} disabled={pending}>
+          <Button size="sm" variant={applied && close ? "outline" : "default"} onClick={handleApprove} disabled={pending}>
             {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
             재시도
           </Button>
+        )}
+        {proposal.status === "FAILED" && !applied && close && (
+          <CloseFailedButton onClose={handleClose} disabled={pending} />
         )}
       </div>
     </div>

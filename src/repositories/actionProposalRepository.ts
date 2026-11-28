@@ -241,11 +241,19 @@ export class ActionProposalRepository {
 
   /**
    * 새 기안으로 **대체된** 옛 실패(FAILED) 기안을 반려로 닫는다 — 캘린더 수집이 같은 일정을 다시 올렸을 때 결재함에
-   * 승인해도 거절만 뜨는 죽은 카드가 남지 않게 한다. 전역 전이 표(`TRANSITIONS`: FAILED→APPROVED 만)는 건드리지 않는
-   * 전용 경로다 — 일반 반려·승인 경로에서 FAILED→REJECTED 가 열리지 않는다. 그 사이 상태가 바뀌었으면(오너가 재시도
-   * 승인으로 집음 등) 아무것도 쓰지 않고 false.
+   * 승인해도 거절만 뜨는 죽은 카드가 남지 않게 한다. 본체는 `closeFailed` 와 같다.
    */
   static async rejectSupersededFailed(proposalId: string, options: { actor: string; note: string }): Promise<boolean> {
+    return ActionProposalRepository.closeFailed(proposalId, options);
+  }
+
+  /**
+   * 실패(FAILED) 기안을 반려(REJECTED)로 닫는다. 소비처는 둘이다 — 위의 캘린더 대체 정리와, 오너가 결재함 실패 탭에서
+   * 누르는 「종결」(`lib/agent/reject-proposal.ts` 의 `closeFailedProposal`, note = `FAILED_CLOSE_NOTE`).
+   * 전역 전이 표(`TRANSITIONS`: FAILED→APPROVED 만)는 건드리지 않는 전용 경로다 — 일반 반려(`transition`)에서는
+   * FAILED→REJECTED 가 열리지 않는다. 그 사이 상태가 바뀌었으면(오너가 재시도 승인으로 집음 등) 아무것도 쓰지 않고 false.
+   */
+  static async closeFailed(proposalId: string, options: { actor: string; note: string }): Promise<boolean> {
     return getPrisma().$transaction(async (tx) => {
       const claim = await tx.actionProposal.updateMany({
         where: { id: proposalId, status: "FAILED" },
@@ -258,6 +266,22 @@ export class ActionProposalRepository {
       return true;
     });
   }
+}
+
+/**
+ * 오너가 결재함에서 종결한 실패 기안의 이벤트 note — 반려 탭이 이 note 로 「반려됨」과 「종결됨」을 가른다.
+ * ⛔ 문구를 바꾸면 이미 종결한 기안이 「반려됨」으로 돌아간다(저장된 이벤트와 글자로 대조한다).
+ */
+export const FAILED_CLOSE_NOTE = "실패 기안 종결(오너)";
+
+/** 반려 탭 목록 중 오너가 실패에서 종결한 기안 id — 이벤트 한 번 조회로 한 페이지를 가린다. */
+export async function findFailedClosedIds(proposalIds: readonly string[]): Promise<Set<string>> {
+  if (proposalIds.length === 0) return new Set();
+  const rows = await getPrisma().actionProposalEvent.findMany({
+    where: { proposalId: { in: [...proposalIds] }, fromStatus: "FAILED", toStatus: "REJECTED", note: FAILED_CLOSE_NOTE },
+    select: { proposalId: true },
+  });
+  return new Set(rows.map((row) => row.proposalId));
 }
 
 /** §0-5 동시성 가드가 count===0일 때 던지는 전용 에러 — 호출부가 409로 매핑하기 쉽도록 구분한다. */

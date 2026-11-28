@@ -36,18 +36,21 @@ function ProposalCard({
   item,
   approve,
   reject,
+  close,
 }: {
   tab: ApprovalsTab;
   item: ApprovalInboxItem;
   approve: (id: string, options?: ApproveOptions) => Promise<unknown>;
   reject: (id: string) => Promise<unknown>;
+  close?: (id: string) => Promise<unknown>;
 }) {
   switch (tab) {
     case "executed":
       return <ExecutedCard item={item} />;
     case "failed":
       // 실패 카드의 [재시도]는 승인과 같은 경로다(FAILED→APPROVED 재시도, Task 3).
-      return <FailedCard item={item} onApprove={approve} />;
+      // [종결]은 재시도 없이 실패 탭에서 빼는 전용 경로다(FAILED→REJECTED, `POST …/close`).
+      return <FailedCard item={item} onApprove={approve} onClose={close} />;
     case "rejected":
       return <RejectedCard item={item} />;
     default:
@@ -71,6 +74,7 @@ export function ProposalTabBody({
     refetch,
     approve,
     reject,
+    close,
     approveMany,
     loadMore,
     isLoadingMore,
@@ -108,7 +112,7 @@ export function ProposalTabBody({
     <div className="flex flex-col gap-2">
       <ul className="flex flex-col gap-2">
         {items.map((item) => (
-          <ProposalCard key={item.id} tab={tab} item={item} approve={approve} reject={reject} />
+          <ProposalCard key={item.id} tab={tab} item={item} approve={approve} reject={reject} close={close} />
         ))}
       </ul>
       {hasMore && <LoadMoreButton onClick={() => loadMore()} disabled={isLoadingMore} />}

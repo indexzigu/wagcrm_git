@@ -28,6 +28,10 @@ export type ApprovalInboxHook = (
   approve: (id: string, options?: ApproveOptions) => Promise<unknown>;
   reject: (id: string) => Promise<unknown>;
   /**
+   * 실패 기안 종결. 선택적인 이유는 `approveMany` 와 같다 — 없는 스텁은 실패 카드에 종결 버튼을 그리지 않는다.
+   */
+  close?: (id: string) => Promise<unknown>;
+  /**
    * 일괄 승인(대기 탭의 선택 승인). 선택적인 이유: 이 필드가 없는 스텁(기존 허브 테스트)은
    * 일괄 승인 도구 없이 종전 화면을 그린다 — 실제 훅은 항상 준다.
    */
