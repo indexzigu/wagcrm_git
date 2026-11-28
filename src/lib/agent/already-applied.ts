@@ -23,7 +23,7 @@ import { matchesExpected } from "./write-actions/update-settlement-amount";
  *  - 비교는 **실행기와 같은 읽기·비교 함수**로 한다(묶음 캠페인은 묶음 행이 정본 — CG-1, 날짜는 KST 달력 날짜,
  *    금액은 Decimal). ⛔ 여기서 플래그 대응이나 날짜 정규화를 다시 쓰지 말 것 — 실행기와 갈리면 배지가 거짓말한다.
  *  - 바꿀 값이 **전부** 같을 때만 true. 판정하지 않는 액션·대상 없음·인자 불량·조회 오류는 false(배지 없음)다 —
- *    「모름」을 「반영완료」으로 읽게 하지 않는다.
+ *    「모름」을 「반영완료」로 읽게 하지 않는다.
  *  - 조회 오류는 목록 전체를 깨지 않도록 여기서 삼키되 로그를 남긴다.
  */
 export type AlreadyAppliedDb = Pick<Prisma.TransactionClient, "salesCampaign" | "deal" | "partner" | "seller">;
@@ -45,7 +45,7 @@ async function confirmSettlementApplied(args: unknown, db: AlreadyAppliedDb): Pr
   if (!campaign) return false;
   const flag = settlementTargetFlag(parsed.data.target);
   // 그 판매채널에 이 절차가 없으면(예: 입금 레그 없는 채널의 입금 확정) 애초에 적용할 수 없는 기안이다 —
-  // 낡은 플래그가 켜져 있어도 「반영완료」이 아니다(실행기 `isValidSettlementAction` 과 같은 레그 목록).
+  // 낡은 플래그가 켜져 있어도 「반영완료」가 아니다(실행기 `isValidSettlementAction` 과 같은 레그 목록).
   if (!resolveSettlementCompletionFlags(campaign.salesChannel).includes(flag)) return false;
   const flags = resolveSettlementFlagSnapshot(campaign, campaign.groupId ? campaign.group : null);
   return flags[flag] === true;
