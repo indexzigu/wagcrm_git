@@ -67,7 +67,7 @@ const TARGET_MISSING_REASON: Record<SettlementTarget, string> = {
   deposit: "이 판매채널에는 입금 확정 절차가 없습니다.",
   payout: "이 판매채널에는 지급 완료 절차가 없습니다.",
   // 셀러몰처럼 지급 칸이 하나뿐인 채널은 공급사 지급이 `payout` 이다.
-  supplierPayout: "이 판매채널에는 공급사 지급 칸이 따로 없습니다. 지급 칸은 payout 입니다.",
+  supplierPayout: "이 판매채널에는 공급사 지급 칸이 따로 없습니다. 지급 칸이 하나라 「지급 완료」로 기안합니다.",
 };
 
 /** 대상 칸이 이미 끝났을 때의 사유. */
