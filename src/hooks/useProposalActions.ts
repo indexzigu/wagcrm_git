@@ -78,5 +78,19 @@ export function useProposalActions() {
     [invalidate]
   );
 
-  return { approve, reject };
+  // 실패 기안 종결 — 실패 탭에서 빼 반려 탭에 「종결됨」으로 남긴다(`POST …/close`). 계약은 reject 와 같다.
+  const close = React.useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/action-proposals/${id}/close`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      invalidate(id);
+      if (!res.ok) {
+        throw new Error(body?.error || `종결 처리에 실패했습니다 (status=${res.status})`);
+      }
+      return body;
+    },
+    [invalidate]
+  );
+
+  return { approve, reject, close };
 }

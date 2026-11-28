@@ -493,3 +493,67 @@ describe("RejectedCard", () => {
     expect(screen.queryByRole("button", { name: /재시도/ })).not.toBeInTheDocument();
   });
 });
+
+describe("실패 기안 종결", () => {
+  const failed = (overrides: Partial<ApprovalInboxItem> = {}) =>
+    makeItem({ status: "FAILED", errorMessage: "정산 지급완료 불가: 공급사 지급 완료가 선행되어야 처리할 수 있습니다.", ...overrides });
+
+  it("onClose 가 없으면(스텁) 종전처럼 재시도만 그린다", () => {
+    render(<ul><FailedCard item={failed()} onApprove={vi.fn()} /></ul>);
+    expect(screen.getByRole("button", { name: "재시도" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "종결" })).toBeNull();
+  });
+
+  // 버튼 자리는 [재시도][종결]로 고정이고 강조(주 버튼)만 옮긴다. 주 버튼은 data-variant 가 default 다.
+  const isOutline = (el: HTMLElement) => el.getAttribute("data-variant") === "outline";
+
+  it("반영 판정이 없으면 재시도가 주 버튼이고 종결은 보조다(배지 없음)", () => {
+    render(<ul><FailedCard item={failed()} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
+    const retry = screen.getByRole("button", { name: "재시도" });
+    const close = screen.getByRole("button", { name: "종결" });
+    expect(retry.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(isOutline(retry)).toBe(false);
+    expect(isOutline(close)).toBe(true);
+    expect(screen.queryByText("이미반영됨")).toBeNull();
+  });
+
+  it("이미 반영됨이면 「이미반영됨」 배지를 달고, 자리는 그대로 둔 채 종결을 주 버튼으로 올린다", () => {
+    render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
+    expect(screen.getByText("이미반영됨")).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "재시도" });
+    const close = screen.getByRole("button", { name: "종결" });
+    expect(retry.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(isOutline(retry)).toBe(true);
+    expect(isOutline(close)).toBe(false);
+  });
+
+  it("「이미반영됨」 풀이는 title 이 아니라 키보드로 초점을 받는 설명창 버튼으로 연다", () => {
+    render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
+    const trigger = screen.getByRole("button", { name: "이미반영됨" });
+    expect(trigger.getAttribute("title")).toBeNull();
+  });
+
+  it("종결은 확인 창을 거쳐서만 onClose 를 부른다", async () => {
+    const onClose = vi.fn().mockResolvedValue(undefined);
+    render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={onClose} /></ul>);
+    fireEvent.click(screen.getByRole("button", { name: "종결" }));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "기안 종결" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith("proposal-1"));
+  });
+
+  it("종결이 실패하면 오류를 카드에 알린다", async () => {
+    const onClose = vi.fn().mockRejectedValue(new Error("실패 상태가 아닌 기안이라 종결할 수 없습니다(이미 처리됨)."));
+    render(<ul><FailedCard item={failed()} onApprove={vi.fn()} onClose={onClose} /></ul>);
+    fireEvent.click(screen.getByRole("button", { name: "종결" }));
+    fireEvent.click(await screen.findByRole("button", { name: "기안 종결" }));
+    expect(await screen.findByText("실패 상태가 아닌 기안이라 종결할 수 없습니다(이미 처리됨).")).toBeTruthy();
+  });
+
+  it("반려 탭은 실패에서 종결한 기안을 「종결됨」으로, 일반 반려는 「반려됨」으로 보인다", () => {
+    const { rerender } = render(<ul><RejectedCard item={makeItem({ status: "REJECTED", closedFromFailure: true })} /></ul>);
+    expect(screen.getByText("종결됨")).toBeTruthy();
+    rerender(<ul><RejectedCard item={makeItem({ status: "REJECTED" })} /></ul>);
+    expect(screen.getByText("반려됨")).toBeTruthy();
+  });
+});

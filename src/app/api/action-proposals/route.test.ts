@@ -10,6 +10,7 @@ const requireAuthMock = vi.fn();
 const findManyMock = vi.fn();
 const countMock = vi.fn();
 const resolveEntityLabelMock = vi.fn();
+const findFailedClosedIdsMock = vi.fn();
 
 vi.mock("@/lib/api-auth", () => ({
   requireAuth: () => requireAuthMock(),
@@ -22,7 +23,14 @@ vi.mock("@/repositories/actionProposalRepository", () => ({
   },
   // 라우트가 payload 역직렬화에 사용 — 문자열이면 파싱, 객체면 그대로(실제 구현과 동일).
   deserializeJsonField: (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v),
+  findFailedClosedIds: (...args: unknown[]) => findFailedClosedIdsMock(...args),
 }));
+
+const detectAlreadyAppliedMock = vi.fn();
+vi.mock("@/lib/agent/already-applied", () => ({
+  detectAlreadyApplied: (...args: unknown[]) => detectAlreadyAppliedMock(...args),
+}));
+vi.mock("@/lib/prisma", () => ({ getPrisma: () => ({ fake: "prisma" }) }));
 
 const resolveArgLabelsMock = vi.fn();
 vi.mock("@/lib/agent/resolve-entity-label", () => ({
@@ -46,6 +54,8 @@ describe("GET /api/action-proposals", () => {
     requireAuthMock.mockResolvedValue({ authenticated: true, context: { userId: "u1", role: "admin" } });
     resolveEntityLabelMock.mockResolvedValue("락토핏 골드");
     countMock.mockResolvedValue(0);
+    findFailedClosedIdsMock.mockReset().mockResolvedValue(new Set());
+    detectAlreadyAppliedMock.mockReset().mockResolvedValue(false);
   });
 
   it("비인증 시 401을 반환한다", async () => {
@@ -233,5 +243,56 @@ describe("kind·before·count (결재함 §3-B)", () => {
     await GET(makeRequest("?before=not-a-date"));
     const call = findManyMock.mock.calls[0][0] as { where: Record<string, unknown> };
     expect(call.where.createdAt).toBeUndefined();
+  });
+});
+
+describe("실패 기안 종결 표시", () => {
+  beforeEach(() => {
+    requireAuthMock.mockResolvedValue({ authenticated: true, context: { userId: "u1", role: "admin" } });
+    resolveEntityLabelMock.mockResolvedValue(null);
+    resolveArgLabelsMock.mockResolvedValue(null);
+    countMock.mockResolvedValue(2);
+    findFailedClosedIdsMock.mockReset().mockResolvedValue(new Set());
+    detectAlreadyAppliedMock.mockReset().mockResolvedValue(false);
+  });
+
+  const rows = [
+    { id: "p1", payload: { action: "confirm_settlement", args: { campaignId: "c1", target: "payout" } }, sourceRef: null, createdAt: new Date("2026-11-27T06:20:00Z") },
+    { id: "p2", payload: { action: "add_entity_memo", args: {} }, sourceRef: null, createdAt: new Date("2026-11-27T06:19:00Z") },
+  ];
+
+  it("실패 탭은 항목마다 이미 반영됐는지 판정해 alreadyApplied 로 싣는다", async () => {
+    findManyMock.mockResolvedValue(rows);
+    detectAlreadyAppliedMock.mockImplementation(async (payload: { action: string }) => payload.action === "confirm_settlement");
+    const res = await GET(makeRequest("?status=FAILED"));
+    const body = await res.json();
+    expect(body.items.map((i: { id: string; alreadyApplied: boolean }) => [i.id, i.alreadyApplied])).toEqual([
+      ["p1", true],
+      ["p2", false],
+    ]);
+    expect(findFailedClosedIdsMock).not.toHaveBeenCalled();
+  });
+
+  it("반려 탭은 실패에서 종결한 기안을 closedFromFailure 로 가린다(판정은 하지 않는다)", async () => {
+    findManyMock.mockResolvedValue(rows);
+    findFailedClosedIdsMock.mockResolvedValue(new Set(["p2"]));
+    const res = await GET(makeRequest("?status=REJECTED"));
+    const body = await res.json();
+    expect(findFailedClosedIdsMock).toHaveBeenCalledWith(["p1", "p2"]);
+    expect(body.items.map((i: { id: string; closedFromFailure: boolean }) => [i.id, i.closedFromFailure])).toEqual([
+      ["p1", false],
+      ["p2", true],
+    ]);
+    expect(detectAlreadyAppliedMock).not.toHaveBeenCalled();
+  });
+
+  it("다른 탭에는 두 칸 모두 싣지 않는다", async () => {
+    findManyMock.mockResolvedValue(rows);
+    const res = await GET(makeRequest("?status=PENDING_APPROVAL"));
+    const body = await res.json();
+    expect(body.items[0]).not.toHaveProperty("alreadyApplied");
+    expect(body.items[0]).not.toHaveProperty("closedFromFailure");
+    expect(detectAlreadyAppliedMock).not.toHaveBeenCalled();
+    expect(findFailedClosedIdsMock).not.toHaveBeenCalled();
   });
 });
