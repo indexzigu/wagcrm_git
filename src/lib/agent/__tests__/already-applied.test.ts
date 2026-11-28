@@ -104,6 +104,16 @@ describe("detectAlreadyApplied", () => {
       const row = campaign({ salesChannel: noDeposit, isDepositReceived: true });
       expect(await detectAlreadyApplied(deposit, fakeDb(row))).toBe(false);
     });
+
+    it("자사몰 공급사 지급 기안(지급일 포함)은 공급사 지급 표시로 판정", async () => {
+      const supplier = {
+        action: "confirm_settlement",
+        args: { campaignId: "camp-1", target: "supplierPayout", completedOn: "2026-01-15" },
+      };
+      const ownMall = { salesChannel: "OWN_MALL_NAVER" };
+      expect(await detectAlreadyApplied(supplier, fakeDb(campaign({ ...ownMall, isSupplierPayoutCompleted: true })))).toBe(true);
+      expect(await detectAlreadyApplied(supplier, fakeDb(campaign({ ...ownMall, isPayoutCompleted: true })))).toBe(false);
+    });
   });
 
   describe("update_record", () => {

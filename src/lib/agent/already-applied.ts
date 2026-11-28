@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { updateRecordArgsSchema, updateSettlementAmountArgsSchema } from "@/lib/agent-worker/contracts";
-import { settlementTargetFlag } from "@/lib/settlement-status";
+import { SETTLEMENT_TARGETS, settlementTargetFlag } from "@/lib/settlement-status";
 import { resolveSettlementCompletionFlags } from "@/lib/tax-filing-board";
 import { resolveSettlementFlagSnapshot } from "@/lib/settlement-flag-write";
 import {
@@ -30,7 +30,8 @@ export type AlreadyAppliedDb = Pick<Prisma.TransactionClient, "salesCampaign" | 
 
 const confirmSettlementArgsSchema = z.object({
   campaignId: z.string().min(1),
-  target: z.enum(["deposit", "payout"]),
+  // 대상 목록은 실행기와 같은 SSOT — 손으로 적으면 새 대상(supplierPayout)의 실패 기안이 판정에서 빠진다.
+  target: z.enum(SETTLEMENT_TARGETS),
 });
 
 const payloadSchema = z.object({ action: z.string(), args: z.unknown() });

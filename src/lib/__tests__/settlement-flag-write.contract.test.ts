@@ -33,6 +33,17 @@ const DELEGATING_PATHS = [
   "src/lib/agent/write-actions/confirm-settlement.ts",
 ] as const;
 
+/**
+ * 정본 플래그를 **읽는** 자리. 실행기(`write-actions/confirm-settlement.ts`)는 2026-11-28 부터 읽기를 슬랙 카드와
+ * 공유하는 계획 모듈(`settlement-confirm-preview.ts` 의 `resolveSettlementConfirmPlan`)에 맡긴다 — 카드가 보여 준
+ * 칸·금액과 실행기가 판정하는 칸·금액이 같은 읽기에서 나오게 하려는 이동이다. 그래서 읽기 단언은 그 모듈에 걸고,
+ * 실행기에는 「그 계획을 통해 읽는다」를 따로 단언한다(아래). 쓰기 단언(`DELEGATING_PATHS`)은 그대로 실행기에 걸린다.
+ */
+const FLAG_READ_PATHS = [
+  "src/app/api/campaigns/[id]/settlement-status/route.ts",
+  "src/lib/settlement-confirm-preview.ts",
+] as const;
+
 const SSOT_MODULE = "@/lib/settlement-flag-write";
 const WRITE_METHODS = new Set(["update", "updateMany", "upsert", "create", "createMany"]);
 const GUARDED_MODELS = new Set(["salesCampaign", "campaignGroup"]);
@@ -89,7 +100,7 @@ describe("settlement-flag-write 계약 — 플래그 쓰기는 CG-1 SSOT 를 통
     },
   );
 
-  it.each(DELEGATING_PATHS)(
+  it.each(FLAG_READ_PATHS)(
     "%s 는 정본 플래그를 resolveSettlementFlagSnapshot 으로 읽는다",
     (relativePath) => {
       const source = read(relativePath);
@@ -98,6 +109,13 @@ describe("settlement-flag-write 계약 — 플래그 쓰기는 CG-1 SSOT 를 통
       expect(source).not.toMatch(/group\?\.\s*is(?:Deposit|Payout|SupplierPayout)\w*\s*\?\?/);
     },
   );
+
+  it("confirm-settlement 실행기는 정본 플래그를 공유 계획(resolveSettlementConfirmPlan)으로 읽고 손으로 고르지 않는다", () => {
+    const source = read("src/lib/agent/write-actions/confirm-settlement.ts");
+    expect(source).toContain("@/lib/settlement-confirm-preview");
+    expect(source).toMatch(/\bresolveSettlementConfirmPlan\(/);
+    expect(source).not.toMatch(/group\?\.\s*is(?:Deposit|Payout|SupplierPayout)\w*\s*\?\?/);
+  });
 
   /**
    * 양성 대조군 — 위 그물이 실제로 무언가를 잡는지 확인한다. AST 순회가 깨지면 위 단언들은

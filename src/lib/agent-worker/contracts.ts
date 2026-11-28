@@ -995,7 +995,11 @@ export const createActionProposalInputSchema = z.discriminatedUnion("action", [
     .object({
       action: z.literal("confirm_settlement"),
       campaignId: opaqueIdSchema,
-      target: z.enum(["deposit", "payout"]),
+      // 정본은 `settlement-status.ts` 의 `SETTLEMENT_TARGETS` 다 — hermes 가 이 파일의 **글자**를 대조하므로 배열을
+      // 펼쳐 둔다(write-executor 테스트가 정본과 같은지 강제한다). 자사몰 공급사 지급 = supplierPayout(오너 결정 2026-11-28).
+      target: z.enum(["deposit", "payout", "supplierPayout"]),
+      // 오너가 말한 지급일·입금일(KST 달력 날짜). 미래 날짜는 실행 시점에 거부된다.
+      completedOn: ymdDateSchema.optional(),
     })
     .strict(),
   z

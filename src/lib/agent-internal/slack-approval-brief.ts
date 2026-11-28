@@ -14,6 +14,14 @@ import {
 } from "@/lib/settlement-amount-fields";
 import { getPrisma } from "@/lib/prisma";
 import { parseStoredJsonObject } from "@/lib/stored-json";
+import { isSettlementTarget, settlementSlotLabel, type SettlementTarget } from "@/lib/settlement-status";
+import {
+  checkSettlementCompletedOn,
+  isConfirmableAmount,
+  resolveSettlementConfirmPlan,
+  toSettlementConfirmPreview,
+  type SettlementConfirmPreview,
+} from "@/lib/settlement-confirm-preview";
 
 /**
  * 슬랙 승인 요청 카드의 글(오너 결정 2026-11-28 — 돈이 걸린 기안도 슬랙 버튼 한 번으로 바로 적용한다. 대신 카드가
@@ -26,7 +34,8 @@ import { parseStoredJsonObject } from "@/lib/stored-json";
  *     기안 = 승인을 기다리는 요청 / 승인 = 바로 적용 / 반려 = 적용하지 않음 / 대상 = 바뀌는 CRM 항목 /
  *     「지금 값 → 바꿀 값」 = 금액·칸 변경의 유일한 표기.
  *  R4 줄 순서는 고정이다: ① 제목(승인 요청: 종류) ② 대상 ③ 바뀌는 내용 ④ 승인하면 ⑤ 되돌리기 ⑥ 주의(돈 기안만).
- *  R5 지어낸 설명을 넣지 않는다 — 내용 줄은 기안의 실행 명세(`payload.args`)와 DB 이름에서만 만든다.
+ *  R5 지어낸 설명을 넣지 않는다 — 내용 줄은 기안의 실행 명세(`payload.args`)와 DB 값에서만 만든다. DB 값은 이름과,
+ *     실행기가 적용할 금액·칸(정산 확정은 실행기와 같은 계획 `resolveSettlementConfirmPlan` 에서 읽는다)이다.
  *     봇(LLM)이 쓴 기안 요약은 어떤 카드에도 싣지 않는다 — 명세로 못 만드는 내용은 「전체 보기」로 보낸다.
  *
  * 글은 슬랙 mrkdwn 으로 해석되지 않는 평문이다 — 이스케이프·길이 자르기는 hermes 카드 게시기가 한 번 더 한다.
@@ -74,6 +83,8 @@ export const BRIEF_TEXT = {
   caution: "⚠️ 돈이 걸린 기안입니다. 금액과 대상을 확인한 뒤 누릅니다.",
   unknownTarget: "(이름 없음)",
   noDetail: "바뀌는 내용: 「전체 보기」에서 확인합니다.",
+  // 정산 확정에 날짜가 없을 때 — 실행기는 승인한 시각을 완료일로 쓴다.
+  completedOnApproval: "승인한 날로 기록합니다.",
   // 슬랙 승인 뒤에는 기안이 끝나 보강을 붙일 수 없다 — 채우려면 버튼 대신 결재함에서 승인해야 한다고 먼저 알린다.
   partnerEnrichment: "계산서 정보: 슬랙 승인은 채우지 않습니다. 채우려면 결재함에서 승인합니다.",
 } as const;
@@ -94,21 +105,23 @@ export type BriefProposal = {
 export type BriefDeps = {
   /** 대상 이름 — 못 찾으면 null */
   entityName: (type: ResolvableEntityType, id: string) => Promise<string | null>;
-  /** 정산 확정이 함께 바꾸는 캠페인 수 — 묶음이면 묶음 멤버 수, 아니면 1. 못 읽으면 null */
-  settlementScope: (campaignId: string) => Promise<number | null>;
+  /**
+   * 정산 확정이 바꿀 칸 · 금액 · 묶음 범위 — 실행기와 **같은 계획**(`resolveSettlementConfirmPlan`)에서 온다. 캠페인이 없으면 null.
+   * ⚠️ 알려진 한계: 카드의 금액은 **카드를 만들 때** 읽은 값이고, 실행기는 버튼을 누른 순간 같은 계획을 다시 읽어 그 값을
+   *    적용한다(그 사이 금액을 고치면 카드와 적용 금액이 다를 수 있다). 적용된 금액은 실행 결과 요약에 남는다.
+   *    카드 금액을 기안에 묶어 대조하는 장치는 두지 않았다.
+   */
+  settlementPreview: (campaignId: string, target: SettlementTarget) => Promise<SettlementConfirmPreview | null>;
 };
 
-async function readSettlementScope(campaignId: string): Promise<number | null> {
-  const prisma = getPrisma();
-  const campaign = await prisma.salesCampaign.findUnique({ where: { id: campaignId }, select: { groupId: true } });
-  if (!campaign) return null;
-  if (!campaign.groupId) return 1;
-  return prisma.salesCampaign.count({ where: { groupId: campaign.groupId } });
+async function readSettlementPreview(campaignId: string, target: SettlementTarget): Promise<SettlementConfirmPreview | null> {
+  const plan = await resolveSettlementConfirmPlan(getPrisma(), campaignId, target);
+  return plan ? toSettlementConfirmPreview(plan) : null;
 }
 
 const defaultDeps: BriefDeps = {
   entityName: (type, id) => resolveEntityLabel(type, id),
-  settlementScope: readSettlementScope,
+  settlementPreview: readSettlementPreview,
 };
 
 function str(value: unknown): string | null {
@@ -166,16 +179,21 @@ async function detailLines(
     case "confirm_settlement": {
       const target = args.target;
       const campaignId = str(args.campaignId);
-      if ((target !== "deposit" && target !== "payout") || !campaignId) return null;
-      // 확정은 묶음 전체에 걸린다(실행기가 묶음 멤버를 함께 고친다) — 범위를 못 읽으면 내용을 다 못 보인 것이다.
-      const scope = await deps.settlementScope(campaignId).catch(() => null);
-      if (scope === null) return null;
+      if (!isSettlementTarget(target) || !campaignId) return null;
+      // 날짜를 실었는데 실행기가 거절할 날짜(미래·잘못된 날짜)면 버튼을 달지 않는다 — 누르면 실패만 한다.
+      const completedOn = args.completedOn === undefined ? null : str(args.completedOn);
+      if (args.completedOn !== undefined && (!completedOn || !checkSettlementCompletedOn(completedOn).ok)) return null;
+      const preview = await deps.settlementPreview(campaignId, target).catch(() => null);
+      // 실행기가 거절하는 경우(칸 없음 · 순서·이미 완료 · 금액 미정·0 이하)는 내용을 만들지 않는다 → complete=false.
+      if (!preview || !preview.slot || !preview.ready || !isConfirmableAmount(preview.amountKrw)) return null;
+      // 칸 이름·날짜 낱말은 슬롯이 소유한다(「공급사 지급」·「입금일」) — 타깃 삼항으로 다시 짓지 않는다.
+      const group = preview.memberCount > 1 ? ` (묶음 캠페인 ${preview.memberCount}개 합계)` : "";
       return [
         await targetLine(deps, "CAMPAIGN", campaignId),
-        `바뀌는 값: ${target === "deposit" ? "입금확정" : "지급완료"} 표시를 켭니다.`,
-        // 이 기안의 실행 명세에는 금액이 없다 — 카드에 지어내지 않고(R5) 확인할 곳을 적는다.
-        "금액: 이 기안에는 금액이 없습니다. 「전체 보기」에서 확인합니다.",
-        ...(scope > 1 ? [`묶음: 같은 묶음의 캠페인 ${scope}개에 함께 적용합니다.`] : []),
+        `바뀌는 값: ${settlementSlotLabel(preview.slot)} 완료 표시를 켭니다.`,
+        // 슬랙이 긴 카드를 접으므로 금액은 위쪽에 둔다.
+        `금액: ${formatSettlementAmountKrw(preview.amountKrw)}${group}`,
+        `${preview.slot.verb}일: ${completedOn ?? BRIEF_TEXT.completedOnApproval}`,
       ];
     }
     case "update_record": {

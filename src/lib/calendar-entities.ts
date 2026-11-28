@@ -410,8 +410,8 @@ export function foldGroupMoney(members: readonly GroupMoneyMember[]): GroupMoney
  * 가 이미 쓰던 규약 그대로다).
  *
  * ⛔ **전원이 값 없음이면 0 이 아니라 `null`(= 「미정」)이다** — 금전 대조에서 「0원」은
- * 확인된 0 으로 읽힌다. 금액 컬럼 자체가 없는 슬롯(자사몰 공급사 지급)도 같은 이유로
- * 항상 `null` 이다.
+ * 확인된 0 으로 읽힌다. 공급사 지급 칸(수기 물품대금)은 한 멤버라도 미입력이면 합계가
+ * `null` 이다(아래 ALL_OR_NOTHING — 종전 「자사몰 공급사 지급은 항상 null」은 T-057 로 SUPERSEDED).
  */
 export function sumMoneySlotAmounts(
   members: readonly MoneySlotAmountSource[],
