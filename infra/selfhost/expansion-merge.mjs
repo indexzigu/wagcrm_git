@@ -560,7 +560,12 @@ async function waitForPrLink(deps, sha, pr) {
   for (let i = 0; ; i++) {
     const r = deps.prLinks(sha);
     if (r.rc === 0 && r.prs.includes(pr)) return true;
-    if (i >= polls) return false;
+    if (i >= polls) {
+      // Keep the last answer: "gh kept failing" and "GitHub never linked it" need different fixes.
+      const last = r.rc === 0 ? `linked PRs [${r.prs.join(",")}]` : `gh rc=${r.rc} ${String(r.err ?? "").trim().slice(0, 200)}`;
+      deps.log("FAIL", `pr=${pr} merge ${sha.slice(0, 8)} not linked after ${LINK_WAIT_MS / 60000} min; last: ${last}`);
+      return false;
+    }
     await deps.sleep(LINK_POLL_MS);
   }
 }
@@ -705,6 +710,9 @@ async function tryOne(deps, d, doneLines, nowIso, notify) {
   if (!(await waitForPrLink(deps, mergeOid, d.pr)))
     return halt(`merge commit not linked to PR on GitHub after ${LINK_WAIT_MS / 60000} min`, `배포 보류 — PR #${d.pr} 은 머지됨`,
       `GitHub 이 머지 커밋을 PR #${d.pr} 에 ${LINK_WAIT_MS / 60000}분 안에 연결하지 않아 배포 관문을 통과할 수 없어 배포하지 않았습니다(운영은 그대로). 연결이 보이면 메뉴바 「배포하기」로 반영하세요.`);
+  // The wait can take minutes: an owner STOP created meanwhile must win over the deploy.
+  if (deps.exists(paths.stop))
+    return halt("STOP set while waiting for the PR link", `배포 보류 — PR #${d.pr} 은 머지됨`, "기다리는 사이 정지 표지가 생겨 배포하지 않았습니다(운영은 그대로).");
   const postHits = rangeHits(deps, deployedBefore, `origin/${BASE_BRANCH}`);
   if (postHits === null || postHits.length)
     return halt(`guarded paths in range after merge (${(postHits ?? ["unreadable"]).slice(0, 3).join(", ")})`,
@@ -788,12 +796,12 @@ function realDeps() {
     prLinks: (sha) => {
       const r = sh("gh", ["api", `repos/indexzigu/wagcrm_git/commits/${sha}/pulls`, "--jq", "[.[] | select(.merged_at != null) | .number]"],
         { cwd: repo, env: { ...baseEnv, GH_TOKEN: token() } });
-      if (r.rc !== 0) return { rc: r.rc, prs: [] };
+      if (r.rc !== 0) return { rc: r.rc, prs: [], err: r.err };
       try {
         const prs = JSON.parse(r.out);
-        return Array.isArray(prs) ? { rc: 0, prs } : { rc: 1, prs: [] };
-      } catch {
-        return { rc: 1, prs: [] };
+        return Array.isArray(prs) ? { rc: 0, prs } : { rc: 1, prs: [], err: "unexpected gh api output" };
+      } catch (e) {
+        return { rc: 1, prs: [], err: `gh api output not JSON: ${e?.message ?? e}` };
       }
     },
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

@@ -867,6 +867,23 @@ describe("expansion-merge waits for the PR link before deploying (T-341)", () =>
     expect(h.deployed).toBe(0);
   });
 
+  it("STOP created during the wait wins: no deploy, deploy-failed", async () => {
+    const h = harness({ decisions: [signed()], linkSeq: [[], [309]] });
+    const sleep = h.deps.sleep;
+    h.deps.sleep = (ms: number) => { h.deps.touch("stop"); return sleep(ms); };
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.deployed).toBe(0);
+    expect(h.stop).toBe(true);
+    expect(h.inprogress).toBe(false);
+    expect(h.files.done).toContain("STOP set while waiting for the PR link");
+  });
+
+  it("gh failing throughout is logged with its last error", async () => {
+    const h = harness({ decisions: [signed()], linkSeq: [null] });
+    expect(await M.run(h.deps)).toBe("deploy-failed");
+    expect(h.logs.join("\n")).toMatch(/not linked after 5 min; last: gh rc=1/);
+  });
+
   it("never linked within the budget → no deploy, STOP + deploy-failed, owner told to use the menubar", async () => {
     const h = harness({ decisions: [signed()], linkSeq: [[]] });
     expect(await M.run(h.deps)).toBe("deploy-failed");
