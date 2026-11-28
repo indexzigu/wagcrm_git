@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { updateRecordArgsSchema, updateSettlementAmountArgsSchema } from "@/lib/agent-worker/contracts";
 import { settlementTargetFlag } from "@/lib/settlement-status";
+import { resolveSettlementCompletionFlags } from "@/lib/tax-filing-board";
 import { resolveSettlementFlagSnapshot } from "@/lib/settlement-flag-write";
 import {
   currentValueOf,
@@ -42,8 +43,12 @@ async function confirmSettlementApplied(args: unknown, db: AlreadyAppliedDb): Pr
     include: { group: true },
   });
   if (!campaign) return false;
+  const flag = settlementTargetFlag(parsed.data.target);
+  // 그 판매채널에 이 절차가 없으면(예: 입금 레그 없는 채널의 입금 확정) 애초에 적용할 수 없는 기안이다 —
+  // 낡은 플래그가 켜져 있어도 「이미반영됨」이 아니다(실행기 `isValidSettlementAction` 과 같은 레그 목록).
+  if (!resolveSettlementCompletionFlags(campaign.salesChannel).includes(flag)) return false;
   const flags = resolveSettlementFlagSnapshot(campaign, campaign.groupId ? campaign.group : null);
-  return flags[settlementTargetFlag(parsed.data.target)] === true;
+  return flags[flag] === true;
 }
 
 async function updateRecordApplied(args: unknown, db: AlreadyAppliedDb): Promise<boolean> {

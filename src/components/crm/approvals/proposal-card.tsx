@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCheckIcon, Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
+import { Loader2Icon, ShieldCheckIcon, ZapIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { useProposalActions } from "@/hooks/useProposalActions";
 import { ENTITY_TYPE_LABELS, actionHasNoTargetYet } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
 import { CloseFailedButton } from "./close-failed-button";
+import { AlreadyAppliedBadge } from "./already-applied-badge";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { PartnerInvoiceEnrichment } from "./partner-invoice-enrichment";
 import type { PartnerEnrichment } from "@/lib/agent/partner-enrichment";
@@ -265,12 +266,7 @@ export function ProposalCard({
           </Badge>
         )}
         <StatusChip proposal={proposal} />
-        {applied && (
-          <Badge variant="status-success" title="바꾸려던 값이 지금 이미 그대로입니다. 종결해도 됩니다.">
-            <CheckCheckIcon className="size-3" />
-            반영됨
-          </Badge>
-        )}
+        {applied && <AlreadyAppliedBadge />}
       </div>
 
       <p className="text-sm text-foreground">{proposal.title}</p>
@@ -316,17 +312,15 @@ export function ProposalCard({
             결재함 상세(`/approvals/[id]`, Plan 2 Task 5)에도 얹히는데, 그 화면에서
             누르는 일은 「다시 해봐」 하나뿐이다(괄호는 구현 설명이지 사용자의 일이
             아니다). 실제로 approve(id) 를 부르는 것은 그대로다. */}
-        {proposal.status === "FAILED" && applied && close && (
-          <CloseFailedButton onClose={handleClose} disabled={pending} primary />
-        )}
+        {/* 버튼 자리는 [재시도][종결]로 고정하고 강조만 옮긴다(목록 카드와 같은 규칙). */}
         {proposal.status === "FAILED" && (
           <Button size="sm" variant={applied && close ? "outline" : "default"} onClick={handleApprove} disabled={pending}>
             {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
             재시도
           </Button>
         )}
-        {proposal.status === "FAILED" && !applied && close && (
-          <CloseFailedButton onClose={handleClose} disabled={pending} />
+        {proposal.status === "FAILED" && close && (
+          <CloseFailedButton onClose={handleClose} disabled={pending} primary={applied} />
         )}
       </div>
     </div>

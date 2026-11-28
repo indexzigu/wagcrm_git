@@ -93,6 +93,17 @@ describe("detectAlreadyApplied", () => {
     it("대상 캠페인이 없으면 반영 안 됨", async () => {
       expect(await detectAlreadyApplied(payload, fakeDb(null))).toBe(false);
     });
+
+    it("그 판매채널에 없는 절차면 낡은 플래그가 켜져 있어도 반영 안 됨", async () => {
+      const deposit = { action: "confirm_settlement", args: { campaignId: "camp-1", target: "deposit" } };
+      const { resolveSettlementCompletionFlags } = await import("@/lib/tax-filing-board");
+      const noDeposit = ["OWN_MALL", "SELLER_MALL", "BRAND_MALL"].find(
+        (ch) => !resolveSettlementCompletionFlags(ch).includes("isDepositReceived"),
+      );
+      expect(noDeposit).toBeDefined();
+      const row = campaign({ salesChannel: noDeposit, isDepositReceived: true });
+      expect(await detectAlreadyApplied(deposit, fakeDb(row))).toBe(false);
+    });
   });
 
   describe("update_record", () => {

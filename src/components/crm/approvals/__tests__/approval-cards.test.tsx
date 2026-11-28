@@ -504,18 +504,33 @@ describe("실패 기안 종결", () => {
     expect(screen.queryByRole("button", { name: "종결" })).toBeNull();
   });
 
-  it("반영 판정이 없으면 재시도가 주 버튼이고 종결은 뒤에 보조로 온다(배지 없음)", () => {
+  // 버튼 자리는 [재시도][종결]로 고정이고 강조(주 버튼)만 옮긴다. 주 버튼은 data-variant 가 default 다.
+  const isOutline = (el: HTMLElement) => el.getAttribute("data-variant") === "outline";
+
+  it("반영 판정이 없으면 재시도가 주 버튼이고 종결은 보조다(배지 없음)", () => {
     render(<ul><FailedCard item={failed()} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
-    const buttons = screen.getAllByRole("button").map((b) => b.textContent?.trim());
-    expect(buttons).toEqual(["재시도", "종결"]);
-    expect(screen.queryByText("반영됨")).toBeNull();
+    const retry = screen.getByRole("button", { name: "재시도" });
+    const close = screen.getByRole("button", { name: "종결" });
+    expect(retry.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(isOutline(retry)).toBe(false);
+    expect(isOutline(close)).toBe(true);
+    expect(screen.queryByText("이미반영됨")).toBeNull();
   });
 
-  it("이미 반영됨이면 「반영됨」 배지를 달고 종결이 앞(주 버튼)으로 온다", () => {
+  it("이미 반영됨이면 「이미반영됨」 배지를 달고, 자리는 그대로 둔 채 종결을 주 버튼으로 올린다", () => {
     render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
-    expect(screen.getByText("반영됨")).toBeTruthy();
-    const buttons = screen.getAllByRole("button").map((b) => b.textContent?.trim());
-    expect(buttons).toEqual(["종결", "재시도"]);
+    expect(screen.getByText("이미반영됨")).toBeTruthy();
+    const retry = screen.getByRole("button", { name: "재시도" });
+    const close = screen.getByRole("button", { name: "종결" });
+    expect(retry.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(isOutline(retry)).toBe(true);
+    expect(isOutline(close)).toBe(false);
+  });
+
+  it("「이미반영됨」 풀이는 title 이 아니라 키보드로 초점을 받는 설명창 버튼으로 연다", () => {
+    render(<ul><FailedCard item={failed({ alreadyApplied: true })} onApprove={vi.fn()} onClose={vi.fn()} /></ul>);
+    const trigger = screen.getByRole("button", { name: "이미반영됨" });
+    expect(trigger.getAttribute("title")).toBeNull();
   });
 
   it("종결은 확인 창을 거쳐서만 onClose 를 부른다", async () => {

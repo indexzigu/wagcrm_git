@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { ENTITY_TYPE_LABELS, actionHasNoTargetYet } from "./entity-type-labels";
 import { RejectConfirmButton } from "./reject-confirm-button";
 import { CloseFailedButton } from "./close-failed-button";
+import { AlreadyAppliedBadge } from "./already-applied-badge";
 import { ProposalPayloadPreview } from "./proposal-payload-preview";
 import { SourceBadge } from "./source-badge";
 import { formatShortDateTime } from "./format-time";
@@ -38,7 +39,7 @@ export type ApprovalInboxItem = {
   sourceRef?: unknown;
   /** [캘린더수집] 새 회차 생성 기안의 셀러·판매 조건 이름(서버 해석). */
   argLabels?: ProposalArgLabels | null;
-  /** 실패 탭 전용 — 다른 경로로 이미 반영됐는가(서버 판정 `already-applied.ts`). true 면 「반영됨」 배지. */
+  /** 실패 탭 전용 — 다른 경로로 이미 반영됐는가(서버 판정 `already-applied.ts`). true 면 「이미반영됨」 배지. */
   alreadyApplied?: boolean;
   /** 반려 탭 전용 — 오너가 실패에서 종결한 기안인가. true 면 「반려됨」 대신 「종결됨」. */
   closedFromFailure?: boolean;
@@ -331,7 +332,7 @@ export function ExecutedCard({ item }: { item: ApprovalInboxItem }) {
  * (§6-1 "금전 가드 일관성" — 취소 시 approve 미호출).
  *
  * [종결]은 다른 경로로 이미 처리했거나 더 필요 없는 실패 기안을 실패 탭에서 뺀다(`onClose`).
- * 서버가 「이미 반영됨」으로 판정한 카드(`alreadyApplied`)는 「반영됨」 배지를 달고 종결을 주 버튼으로 올린다 —
+ * 서버가 「이미 반영됨」으로 판정한 카드(`alreadyApplied`)는 「이미반영됨」 배지를 달고 종결을 주 버튼으로 올린다 —
  * 그 카드에서 재시도는 같은 거절을 다시 받을 뿐이다. `onClose` 가 없으면(스텁) 종전처럼 재시도만 그린다.
  */
 export function FailedCard({
@@ -400,12 +401,7 @@ export function FailedCard({
       <div className="flex flex-wrap items-center gap-2">
         <EntityBadge item={item} />
         <Badge variant="destructive">실패</Badge>
-        {applied && (
-          <Badge variant="status-success" title="바꾸려던 값이 지금 이미 그대로입니다. 종결해도 됩니다.">
-            <CheckCheckIcon aria-hidden />
-            반영됨
-          </Badge>
-        )}
+        {applied && <AlreadyAppliedBadge />}
         <SourceBadge createdBy={item.createdBy} />
         <span className="text-xs tabular-nums text-muted-foreground">
           {formatShortDateTime(item.createdAt)}
@@ -433,13 +429,14 @@ export function FailedCard({
         </p>
       )}
 
+      {/* 버튼 자리는 [재시도][종결]로 고정하고 강조만 옮긴다 — 카드마다 순서가 바뀌면 목록을 훑으며
+          같은 자리를 누르는 습관이 오조작이 된다(재시도는 정산 외에는 확인 창이 없다, ss-ux 검토 2026-11-28). */}
       <div className="flex items-center gap-2">
-        {applied && onClose && <CloseFailedButton onClose={handleClose} disabled={pending} primary />}
         <Button size="sm" variant={applied && onClose ? "outline" : "default"} onClick={handleRetry} disabled={pending}>
           {pending ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
           재시도
         </Button>
-        {!applied && onClose && <CloseFailedButton onClose={handleClose} disabled={pending} />}
+        {onClose && <CloseFailedButton onClose={handleClose} disabled={pending} primary={applied} />}
       </div>
     </li>
   );
